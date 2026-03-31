@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>הטמעת נתונים לריכוז לקוחות</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+            background: #f0f2f5;
+            color: #1a1a2e;
+            min-height: 100vh;
+            direction: rtl;
+        }
+        header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: white;
+            padding: 24px 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        header a {
+            color: white;
+            text-decoration: none;
+            font-size: 1.4rem;
+            opacity: 0.8;
+        }
+        header a:hover { opacity: 1; }
+        header h1 { font-size: 1.4rem; }
+        .container {
+            max-width: 800px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+        .step {
+            background: white;
+            border-radius: 12px;
+            padding: 28px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        }
+        .step.hidden { display: none; }
+        .step h2 {
+            font-size: 1.2rem;
+            margin-bottom: 20px;
+            color: #1a1a2e;
+            border-bottom: 2px solid #e8e8e8;
+            padding-bottom: 10px;
+        }
+        .form-group {
+            margin-bottom: 18px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+        .form-group input[type="file"],
+        .form-group input[type="number"],
+        .form-group input[type="text"] {
+            width: 100%;
+            padding: 10px 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-family: inherit;
+            transition: border-color 0.2s;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: #4a6cf7;
+        }
+        .coords-row {
+            display: flex;
+            gap: 16px;
+        }
+        .coords-row .form-group { flex: 1; }
+        .btn {
+            padding: 12px 32px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-family: inherit;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s, transform 0.1s;
+        }
+        .btn:active { transform: scale(0.97); }
+        .btn-primary {
+            background: #4a6cf7;
+            color: white;
+        }
+        .btn-primary:hover { background: #3a5ce5; }
+        .btn-primary:disabled {
+            background: #b0b0b0;
+            cursor: not-allowed;
+        }
+        .btn-success {
+            background: #22c55e;
+            color: white;
+        }
+        .btn-success:hover { background: #16a34a; }
+        .btn-secondary {
+            background: #e8e8e8;
+            color: #333;
+        }
+        .btn-secondary:hover { background: #d0d0d0; }
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+            padding: 6px 14px;
+            font-size: 0.85rem;
+        }
+        .btn-danger:hover { background: #dc2626; }
+        .preview-area {
+            position: relative;
+            display: inline-block;
+            margin-top: 12px;
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            overflow: hidden;
+            max-width: 100%;
+            cursor: crosshair;
+        }
+        .preview-area img {
+            display: block;
+            max-width: 100%;
+        }
+        .preview-marker {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background: rgba(239, 68, 68, 0.8);
+            border: 2px solid white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            box-shadow: 0 0 6px rgba(0,0,0,0.3);
+        }
+        .preview-text {
+            position: absolute;
+            pointer-events: none;
+            color: #000;
+            white-space: pre;
+        }
+        .records-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+        }
+        .records-table th,
+        .records-table td {
+            padding: 10px 12px;
+            text-align: right;
+            border-bottom: 1px solid #eee;
+        }
+        .records-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        .records-table tr:hover td { background: #fafbff; }
+        .add-record-form {
+            display: flex;
+            gap: 12px;
+            align-items: end;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+        .add-record-form .form-group { margin-bottom: 0; }
+        .settings-summary {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 14px 18px;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+            display: flex;
+            gap: 24px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .settings-summary span { color: #555; }
+        .settings-summary strong { color: #1a1a2e; }
+        .actions-bar {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        .font-size-group {
+            display: flex;
+            gap: 16px;
+            align-items: end;
+        }
+        .font-size-group .form-group { flex: 1; }
+        .progress-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .progress-overlay.hidden { display: none; }
+        .progress-box {
+            background: white;
+            border-radius: 12px;
+            padding: 32px;
+            text-align: center;
+            min-width: 280px;
+        }
+        .progress-box .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #e0e0e0;
+            border-top: 4px solid #4a6cf7;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .color-preview {
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            border: 2px solid #e0e0e0;
+            cursor: pointer;
+            vertical-align: middle;
+        }
+        .font-color-row {
+            display: flex;
+            gap: 16px;
+            align-items: end;
+        }
+        .font-color-row .form-group { flex: 1; }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="../index.html">→</a>
+        <h1>הטמעת נתונים לריכוז לקוחות</h1>
+    </header>
+
+    <div class="container">
+        <!-- Step 1: Settings -->
+        <div class="step" id="step1">
+            <h2>שלב 1: הגדרות בסיס</h2>
+
+            <div class="form-group">
+                <label>תמונת רקע (PNG / JPG)</label>
+                <input type="file" id="imageInput" accept="image/png,image/jpeg,image/jpg">
+            </div>
+
+            <div class="form-group">
+                <label>פונט (קובץ TTF / OTF)</label>
+                <input type="file" id="fontInput" accept=".ttf,.otf">
+            </div>
+
+            <div class="font-color-row">
+                <div class="form-group">
+                    <label>גודל פונט (px)</label>
+                    <input type="number" id="fontSizeInput" value="24" min="8" max="200">
+                </div>
+                <div class="form-group">
+                    <label>צבע טקסט</label>
+                    <input type="color" id="textColorInput" value="#000000" class="color-preview">
+                </div>
+            </div>
+
+            <div class="coords-row">
+                <div class="form-group">
+                    <label>מיקום X</label>
+                    <input type="number" id="xInput" value="430" min="0">
+                </div>
+                <div class="form-group">
+                    <label>מיקום Y</label>
+                    <input type="number" id="yInput" value="220" min="0">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>תצוגה מקדימה (לחץ על התמונה לבחירת מיקום)</label>
+                <div class="preview-area" id="previewArea" style="display:none;">
+                    <img id="previewImg" src="">
+                    <div class="preview-marker" id="previewMarker" style="display:none;"></div>
+                    <div class="preview-text" id="previewText" style="display:none;">טקסט לדוגמה</div>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" id="toStep2Btn" disabled>המשך לשלב הבא</button>
+        </div>
+
+        <!-- Step 2: Records -->
+        <div class="step hidden" id="step2">
+            <h2>שלב 2: יצירת רשומות</h2>
+
+            <div class="settings-summary" id="settingsSummary"></div>
+
+            <div class="add-record-form">
+                <div class="form-group" style="flex:1;">
+                    <label>שם קובץ</label>
+                    <input type="text" id="recordName" placeholder="למשל: משה כהן">
+                </div>
+                <div class="form-group" style="flex:2;">
+                    <label>טקסט לשדה</label>
+                    <input type="text" id="recordText" placeholder="למשל: לכבוד משה כהן">
+                </div>
+                <button class="btn btn-primary" id="addRecordBtn">הוסף</button>
+            </div>
+
+            <table class="records-table" id="recordsTable">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>שם קובץ</th>
+                        <th>טקסט</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="recordsBody"></tbody>
+            </table>
+
+            <div class="actions-bar">
+                <button class="btn btn-success" id="generateBtn" disabled>הורד ZIP</button>
+                <button class="btn btn-secondary" id="backBtn">חזרה להגדרות</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Progress overlay -->
+    <div class="progress-overlay hidden" id="progressOverlay">
+        <div class="progress-box">
+            <div class="spinner"></div>
+            <div id="progressText">מייצר קבצים...</div>
+        </div>
+    </div>
+
+    <script>
+        const { jsPDF } = window.jspdf;
+
+        // State
+        let imageData = null;
+        let imageType = '';
+        let imageWidth = 0;
+        let imageHeight = 0;
+        let fontData = null;
+        let fontName = '';
+        let records = [];
+
+        // Elements
+        const imageInput = document.getElementById('imageInput');
+        const fontInput = document.getElementById('fontInput');
+        const fontSizeInput = document.getElementById('fontSizeInput');
+        const textColorInput = document.getElementById('textColorInput');
+        const xInput = document.getElementById('xInput');
+        const yInput = document.getElementById('yInput');
+        const previewArea = document.getElementById('previewArea');
+        const previewImg = document.getElementById('previewImg');
+        const previewMarker = document.getElementById('previewMarker');
+        const previewText = document.getElementById('previewText');
+        const toStep2Btn = document.getElementById('toStep2Btn');
+        const step1 = document.getElementById('step1');
+        const step2 = document.getElementById('step2');
+        const recordName = document.getElementById('recordName');
+        const recordText = document.getElementById('recordText');
+        const addRecordBtn = document.getElementById('addRecordBtn');
+        const recordsBody = document.getElementById('recordsBody');
+        const generateBtn = document.getElementById('generateBtn');
+        const backBtn = document.getElementById('backBtn');
+        const settingsSummary = document.getElementById('settingsSummary');
+        const progressOverlay = document.getElementById('progressOverlay');
+        const progressText = document.getElementById('progressText');
+
+        // Image upload
+        imageInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            imageType = file.type === 'image/png' ? 'PNG' : 'JPEG';
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                imageData = ev.target.result;
+                previewImg.src = imageData;
+                previewArea.style.display = 'inline-block';
+                const img = new Image();
+                img.onload = () => {
+                    imageWidth = img.naturalWidth;
+                    imageHeight = img.naturalHeight;
+                    updateMarker();
+                    checkStep1();
+                };
+                img.src = imageData;
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // Font upload
+        fontInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            fontName = file.name.replace(/\.(ttf|otf)$/i, '');
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                fontData = ev.target.result;
+                updatePreviewText();
+                checkStep1();
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        // Click on preview to set coordinates
+        previewArea.addEventListener('click', (e) => {
+            const rect = previewImg.getBoundingClientRect();
+            const scaleX = imageWidth / previewImg.clientWidth;
+            const scaleY = imageHeight / previewImg.clientHeight;
+            const x = Math.round((e.clientX - rect.left) * scaleX);
+            const y = Math.round((e.clientY - rect.top) * scaleY);
+            xInput.value = x;
+            yInput.value = y;
+            updateMarker();
+        });
+
+        // Update marker on coordinate change
+        xInput.addEventListener('input', updateMarker);
+        yInput.addEventListener('input', updateMarker);
+        fontSizeInput.addEventListener('input', updatePreviewText);
+        textColorInput.addEventListener('input', updatePreviewText);
+
+        function updateMarker() {
+            if (!imageWidth) return;
+            const x = parseInt(xInput.value) || 0;
+            const y = parseInt(yInput.value) || 0;
+            const displayX = (x / imageWidth) * 100;
+            const displayY = (y / imageHeight) * 100;
+            previewMarker.style.left = displayX + '%';
+            previewMarker.style.top = displayY + '%';
+            previewMarker.style.display = 'block';
+            updatePreviewText();
+        }
+
+        function updatePreviewText() {
+            if (!imageWidth) return;
+            const x = parseInt(xInput.value) || 0;
+            const y = parseInt(yInput.value) || 0;
+            const fontSize = parseInt(fontSizeInput.value) || 24;
+            const color = textColorInput.value;
+            const displayX = (x / imageWidth) * previewImg.clientWidth;
+            const displayY = (y / imageHeight) * previewImg.clientHeight;
+            const scale = previewImg.clientWidth / imageWidth;
+            previewText.style.right = 'auto';
+            previewText.style.left = 'auto';
+            // Position from left since text is RTL
+            previewText.style.left = displayX + 'px';
+            previewText.style.top = displayY + 'px';
+            previewText.style.fontSize = (fontSize * scale) + 'px';
+            previewText.style.color = color;
+            previewText.style.direction = 'rtl';
+            previewText.style.transform = 'translateX(-100%)';
+            previewText.style.display = 'block';
+
+            if (fontData && fontName) {
+                try {
+                    const fontFace = new FontFace('PreviewFont', fontData);
+                    fontFace.load().then((loaded) => {
+                        document.fonts.add(loaded);
+                        previewText.style.fontFamily = 'PreviewFont';
+                    });
+                } catch (e) {}
+            }
+        }
+
+        function checkStep1() {
+            toStep2Btn.disabled = !(imageData && fontData);
+        }
+
+        // Go to step 2
+        toStep2Btn.addEventListener('click', () => {
+            step1.classList.add('hidden');
+            step2.classList.remove('hidden');
+            const fontSize = fontSizeInput.value;
+            settingsSummary.innerHTML = `
+                <span>מיקום: <strong>X=${xInput.value}, Y=${yInput.value}</strong></span>
+                <span>גודל פונט: <strong>${fontSize}px</strong></span>
+                <span>פונט: <strong>${fontName}</strong></span>
+            `;
+        });
+
+        // Back to step 1
+        backBtn.addEventListener('click', () => {
+            step2.classList.add('hidden');
+            step1.classList.remove('hidden');
+        });
+
+        // Add record
+        function addRecord() {
+            const name = recordName.value.trim();
+            const text = recordText.value.trim();
+            if (!name || !text) return;
+            records.push({ name, text });
+            recordName.value = '';
+            recordText.value = '';
+            recordName.focus();
+            renderRecords();
+        }
+
+        addRecordBtn.addEventListener('click', addRecord);
+        recordName.addEventListener('keydown', (e) => { if (e.key === 'Enter') recordText.focus(); });
+        recordText.addEventListener('keydown', (e) => { if (e.key === 'Enter') addRecord(); });
+
+        function renderRecords() {
+            recordsBody.innerHTML = '';
+            records.forEach((rec, i) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${i + 1}</td>
+                    <td>${escapeHtml(rec.name)}</td>
+                    <td>${escapeHtml(rec.text)}</td>
+                    <td><button class="btn btn-danger" onclick="removeRecord(${i})">מחק</button></td>
+                `;
+                recordsBody.appendChild(tr);
+            });
+            generateBtn.disabled = records.length === 0;
+        }
+
+        function removeRecord(index) {
+            records.splice(index, 1);
+            renderRecords();
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // Generate PDFs and ZIP
+        generateBtn.addEventListener('click', async () => {
+            progressOverlay.classList.remove('hidden');
+            const zip = new JSZip();
+            const x = parseInt(xInput.value) || 0;
+            const y = parseInt(yInput.value) || 0;
+            const fontSize = parseInt(fontSizeInput.value) || 24;
+            const textColor = textColorInput.value;
+
+            // Convert hex color to RGB
+            const r = parseInt(textColor.slice(1, 3), 16);
+            const g = parseInt(textColor.slice(3, 5), 16);
+            const b = parseInt(textColor.slice(5, 7), 16);
+
+            // Convert font to base64
+            const fontBase64 = arrayBufferToBase64(fontData);
+
+            for (let i = 0; i < records.length; i++) {
+                const rec = records[i];
+                progressText.textContent = `מייצר קובץ ${i + 1} מתוך ${records.length}...`;
+
+                // Create PDF with image dimensions (px to pt: 1px = 0.75pt)
+                const pxToPt = 72 / 96;
+                const widthPt = imageWidth * pxToPt;
+                const heightPt = imageHeight * pxToPt;
+
+                const doc = new jsPDF({
+                    orientation: imageWidth > imageHeight ? 'landscape' : 'portrait',
+                    unit: 'pt',
+                    format: [widthPt, heightPt]
+                });
+
+                // Add font
+                doc.addFileToVFS(fontName + '.ttf', fontBase64);
+                doc.addFont(fontName + '.ttf', fontName, 'normal');
+                doc.setFont(fontName);
+                doc.setFontSize(fontSize * pxToPt);
+                doc.setTextColor(r, g, b);
+
+                // Add image
+                doc.addImage(imageData, imageType, 0, 0, widthPt, heightPt);
+
+                // Add text (RTL - right-aligned at x position)
+                const textX = x * pxToPt;
+                const textY = y * pxToPt;
+                doc.text(rec.text, textX, textY, { align: 'right' });
+
+                const pdfBlob = doc.output('arraybuffer');
+                zip.file(rec.name + '.pdf', pdfBlob);
+
+                // Small delay to keep UI responsive
+                await new Promise(r => setTimeout(r, 10));
+            }
+
+            progressText.textContent = 'אורז קובץ ZIP...';
+            const content = await zip.generateAsync({ type: 'blob' });
+            const url = URL.createObjectURL(content);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'documents.zip';
+            a.click();
+            URL.revokeObjectURL(url);
+            progressOverlay.classList.add('hidden');
+        });
+
+        function arrayBufferToBase64(buffer) {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary);
+        }
+    </script>
+</body>
+</html>
