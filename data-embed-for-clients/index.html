@@ -598,7 +598,7 @@
                 const textX = x * pxToPt;
                 const textY = y * pxToPt;
                 const reversedText = rec.text.split('').reverse().join('');
-                doc.text(reversedText, textX, textY, { align: 'left' });
+                doc.text(reversedText, textX, textY, { align: 'right', baseline: 'top' });
 
                 const pdfBlob = doc.output('arraybuffer');
                 zip.file(rec.name + '.pdf', pdfBlob);
