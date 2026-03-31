@@ -233,6 +233,33 @@
             cursor: pointer;
             vertical-align: middle;
         }
+        .font-selector select {
+            width: 100%;
+            padding: 10px 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-family: inherit;
+            margin-bottom: 10px;
+            background: white;
+        }
+        .font-selector select:focus {
+            outline: none;
+            border-color: #4a6cf7;
+        }
+        .font-upload-row {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .save-font-label {
+            white-space: nowrap;
+            font-size: 0.9rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
         .font-color-row {
             display: flex;
             gap: 16px;
@@ -258,8 +285,18 @@
             </div>
 
             <div class="form-group">
-                <label>פונט (קובץ TTF / OTF)</label>
-                <input type="file" id="fontInput" accept=".ttf,.otf">
+                <label>פונט</label>
+                <div class="font-selector">
+                    <select id="fontSelect">
+                        <option value="">-- בחר פונט שמור --</option>
+                    </select>
+                    <div class="font-upload-row">
+                        <input type="file" id="fontInput" accept=".ttf,.otf">
+                        <label class="save-font-label">
+                            <input type="checkbox" id="saveFontCheck"> שמור בשרת
+                        </label>
+                    </div>
+                </div>
             </div>
 
             <div class="font-color-row">
@@ -359,6 +396,8 @@
         // Elements
         const imageInput = document.getElementById('imageInput');
         const fontInput = document.getElementById('fontInput');
+        const fontSelect = document.getElementById('fontSelect');
+        const saveFontCheck = document.getElementById('saveFontCheck');
         const fontSizeInput = document.getElementById('fontSizeInput');
         const textColorInput = document.getElementById('textColorInput');
         const xInput = document.getElementById('xInput');
@@ -402,16 +441,70 @@
             reader.readAsDataURL(file);
         });
 
-        // Font upload
-        fontInput.addEventListener('change', (e) => {
+        // Load saved fonts from server
+        async function loadSavedFonts() {
+            try {
+                const res = await fetch('api.php?action=list');
+                const data = await res.json();
+                fontSelect.innerHTML = '<option value="">-- בחר פונט שמור --</option>';
+                (data.fonts || []).forEach(f => {
+                    const opt = document.createElement('option');
+                    opt.value = f.filename;
+                    opt.textContent = f.name;
+                    fontSelect.appendChild(opt);
+                });
+            } catch (e) {
+                // No server / API not available - hide select
+                fontSelect.style.display = 'none';
+                saveFontCheck.parentElement.style.display = 'none';
+            }
+        }
+        loadSavedFonts();
+
+        // Select saved font from server
+        fontSelect.addEventListener('change', async () => {
+            const filename = fontSelect.value;
+            if (!filename) return;
+            try {
+                const res = await fetch('fonts/' + filename);
+                const buffer = await res.arrayBuffer();
+                fontData = buffer;
+                fontName = filename.replace(/\.(ttf|otf)$/i, '');
+                fontInput.value = '';
+                updatePreviewText();
+                checkStep1();
+            } catch (e) {
+                alert('שגיאה בטעינת הפונט מהשרת');
+            }
+        });
+
+        // Font upload (from file)
+        fontInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
             fontName = file.name.replace(/\.(ttf|otf)$/i, '');
             const reader = new FileReader();
-            reader.onload = (ev) => {
+            reader.onload = async (ev) => {
                 fontData = ev.target.result;
+                fontSelect.value = '';
                 updatePreviewText();
                 checkStep1();
+
+                // Save to server if checked
+                if (saveFontCheck.checked) {
+                    const formData = new FormData();
+                    formData.append('font', file);
+                    try {
+                        const res = await fetch('api.php?action=upload', { method: 'POST', body: formData });
+                        const data = await res.json();
+                        if (data.success) {
+                            await loadSavedFonts();
+                            fontSelect.value = data.font.filename;
+                        }
+                    } catch (e) {
+                        console.error('Failed to save font to server');
+                    }
+                }
             };
             reader.readAsArrayBuffer(file);
         });
