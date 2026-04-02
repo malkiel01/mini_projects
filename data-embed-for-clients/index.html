@@ -987,8 +987,8 @@
                     doc.text(reversedText, 0, heightPt + baseFontSize, { align: 'right' });
                     doc.restoreGraphicsState();
                 } else {
-                    // Wrap mode: keep font size as-is
-                    doc.setFontSize(baseFontSize);
+                    // Wrap mode: height matches frame (scaleY), width flows freely
+                    doc.setFontSize(baseFontSize * scaleY);
                     doc.text(reversedText, textX, textY, { align: 'right', baseline: 'top', angle: -rotation });
                 }
 
