@@ -955,20 +955,39 @@
                 const reversedText = rec.text.split('').reverse().join('');
                 const textMode = textModeInput.value;
                 const baseFontSize = fontSize * pxToPt;
-                // Frame width in pt (from image coordinates)
-                const frameWidthPt = frameWidthImg * pxToPt;
+                // Frame dimensions in pt (from image coordinates)
+                const fwPt = frameWidthImg * pxToPt;
+                const fhPt = frameHeightImg * pxToPt;
 
-                if (textMode === 'fixed') {
-                    // Fixed frame: shrink font so text fits exactly in frame width
+                if (textMode === 'fixed' && fwPt > 0 && fhPt > 0) {
+                    // Fixed frame: stretch/squish text to fill frame exactly
                     doc.setFontSize(baseFontSize);
                     const textWidth = doc.getTextWidth(reversedText);
-                    if (textWidth > 0 && frameWidthPt > 0) {
-                        const fitSize = baseFontSize * (frameWidthPt / textWidth);
-                        doc.setFontSize(Math.min(baseFontSize, fitSize));
-                    }
-                    doc.text(reversedText, textX, textY, { align: 'right', baseline: 'top', angle: -rotation });
+                    const textHeight = baseFontSize;
+                    const sx = fwPt / textWidth;
+                    const sy = fhPt / textHeight;
+
+                    // Apply transform matrix with rotation + scale
+                    const rad = (-rotation) * Math.PI / 180;
+                    const cos = Math.cos(rad);
+                    const sin = Math.sin(rad);
+                    const ma = sx * cos;
+                    const mb = sx * sin;
+                    const mc = -sy * sin;
+                    const md = sy * cos;
+                    // PDF coords: y is from bottom
+                    const pdfX = textX;
+                    const pdfY = heightPt - textY;
+
+                    doc.saveGraphicsState();
+                    doc.internal.write(
+                        `${ma.toFixed(6)} ${(-mb).toFixed(6)} ${(-mc).toFixed(6)} ${md.toFixed(6)} ${pdfX.toFixed(2)} ${pdfY.toFixed(2)} cm`
+                    );
+                    // y=heightPt compensates for jsPDF's internal y-flip → places text at (0,0) in transformed space
+                    doc.text(reversedText, 0, heightPt, { align: 'right' });
+                    doc.restoreGraphicsState();
                 } else {
-                    // Wrap mode: keep font size, wrap text within frame width
+                    // Wrap mode: keep font size as-is
                     doc.setFontSize(baseFontSize);
                     doc.text(reversedText, textX, textY, { align: 'right', baseline: 'top', angle: -rotation });
                 }
