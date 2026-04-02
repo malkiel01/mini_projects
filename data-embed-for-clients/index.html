@@ -333,6 +333,70 @@
             outline: none;
             border-color: #4a6cf7;
         }
+        /* Fields management */
+        .fields-section { margin-bottom: 20px; }
+        .fields-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .fields-header h3 { font-size: 1.05rem; color: #1a1a2e; }
+        .fields-list {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+        .field-card {
+            padding: 8px 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .field-card:hover { border-color: #4a6cf7; }
+        .field-card.active {
+            border-color: #4a6cf7;
+            background: #eef1ff;
+        }
+        .field-card .field-type-badge {
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: #e8e8e8;
+            color: #555;
+        }
+        .field-card.active .field-type-badge { background: #4a6cf7; color: white; }
+        .field-card .field-delete {
+            background: none;
+            border: none;
+            color: #ccc;
+            cursor: pointer;
+            font-size: 1.1rem;
+            padding: 0 2px;
+            line-height: 1;
+        }
+        .field-card .field-delete:hover { color: #ef4444; }
+        .field-settings { display: none; }
+        .field-settings.visible { display: block; }
+        .field-settings-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #4a6cf7;
+        }
+        .field-value-row {
+            margin-top: 10px;
+        }
+        .btn-sm {
+            padding: 8px 18px;
+            font-size: 0.9rem;
+        }
     </style>
 </head>
 <body>
@@ -366,36 +430,71 @@
                 </div>
             </div>
 
-            <div class="font-color-row">
-                <div class="form-group">
-                    <label>גודל פונט (px)</label>
-                    <input type="number" id="fontSizeInput" value="24" min="8" max="200">
+            <!-- Fields management -->
+            <div class="fields-section">
+                <div class="fields-header">
+                    <h3>שדות</h3>
+                    <button class="btn btn-primary btn-sm" id="addFieldBtn">+ הוסף שדה</button>
                 </div>
-                <div class="form-group">
-                    <label>צבע טקסט</label>
-                    <input type="color" id="textColorInput" value="#000000" class="color-preview">
-                </div>
-                <div class="form-group">
-                    <label>התנהגות טקסט</label>
-                    <select id="textModeInput">
-                        <option value="wrap">גלישת טקסט (מתרחב לפי תוכן)</option>
-                        <option value="fixed">מידות מקובעות (מצומצם למסגרת)</option>
-                    </select>
-                </div>
-            </div>
+                <div class="fields-list" id="fieldsList"></div>
 
-            <div class="coords-row">
-                <div class="form-group">
-                    <label>מיקום X</label>
-                    <input type="number" id="xInput" value="430" min="0">
-                </div>
-                <div class="form-group">
-                    <label>מיקום Y</label>
-                    <input type="number" id="yInput" value="220" min="0">
-                </div>
-                <div class="form-group">
-                    <label>סיבוב (מעלות)</label>
-                    <input type="number" id="rotationInput" value="0" min="-360" max="360">
+                <div class="field-settings" id="fieldSettings">
+                    <div class="field-settings-title" id="fieldSettingsTitle">הגדרות שדה</div>
+
+                    <div class="form-group">
+                        <label>שם שדה</label>
+                        <input type="text" id="fieldNameInput" placeholder="שם השדה">
+                    </div>
+
+                    <div class="coords-row">
+                        <div class="form-group">
+                            <label>סוג ערך</label>
+                            <select id="fieldValueTypeInput">
+                                <option value="list">ערך מרשימה (שונה לכל מסמך)</option>
+                                <option value="fixed">ערך קבוע (זהה לכולם)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="field-value-row" id="fixedValueRow" style="display:none;">
+                        <div class="form-group">
+                            <label>ערך קבוע</label>
+                            <input type="text" id="fieldFixedValueInput" placeholder="הטקסט שיופיע בכל המסמכים">
+                        </div>
+                    </div>
+
+                    <div class="font-color-row">
+                        <div class="form-group">
+                            <label>גודל פונט (px)</label>
+                            <input type="number" id="fontSizeInput" value="24" min="8" max="200">
+                        </div>
+                        <div class="form-group">
+                            <label>צבע טקסט</label>
+                            <input type="color" id="textColorInput" value="#000000" class="color-preview">
+                        </div>
+                        <div class="form-group">
+                            <label>התנהגות טקסט</label>
+                            <select id="textModeInput">
+                                <option value="wrap">גלישת טקסט</option>
+                                <option value="fixed">מידות מקובעות</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="coords-row">
+                        <div class="form-group">
+                            <label>מיקום X</label>
+                            <input type="number" id="xInput" value="430" min="0">
+                        </div>
+                        <div class="form-group">
+                            <label>מיקום Y</label>
+                            <input type="number" id="yInput" value="220" min="0">
+                        </div>
+                        <div class="form-group">
+                            <label>סיבוב (מעלות)</label>
+                            <input type="number" id="rotationInput" value="0" min="-360" max="360">
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -531,6 +630,120 @@
         const step2 = document.getElementById('step2');
         const recordName = document.getElementById('recordName');
         const recordText = document.getElementById('recordText');
+        const addFieldBtn = document.getElementById('addFieldBtn');
+        const fieldsList = document.getElementById('fieldsList');
+        const fieldSettings = document.getElementById('fieldSettings');
+        const fieldSettingsTitle = document.getElementById('fieldSettingsTitle');
+        const fieldNameInput = document.getElementById('fieldNameInput');
+        const fieldValueTypeInput = document.getElementById('fieldValueTypeInput');
+        const fieldFixedValueInput = document.getElementById('fieldFixedValueInput');
+        const fixedValueRow = document.getElementById('fixedValueRow');
+
+        // --- FIELD MANAGEMENT ---
+        addFieldBtn.addEventListener('click', () => {
+            const field = createField();
+            fields.push(field);
+            selectField(field.id);
+            renderFieldsList();
+            checkStep1();
+        });
+
+        function selectField(id) {
+            activeFieldId = id;
+            const field = getActiveField();
+            if (!field) {
+                fieldSettings.classList.remove('visible');
+                return;
+            }
+            fieldSettings.classList.add('visible');
+            fieldSettingsTitle.textContent = 'הגדרות: ' + field.name;
+            fieldNameInput.value = field.name;
+            fieldValueTypeInput.value = field.valueType;
+            fieldFixedValueInput.value = field.fixedValue;
+            fixedValueRow.style.display = field.valueType === 'fixed' ? 'block' : 'none';
+            fontSizeInput.value = field.fontSize;
+            textColorInput.value = field.color;
+            textModeInput.value = field.textMode;
+            xInput.value = field.x;
+            yInput.value = field.y;
+            rotationInput.value = field.rotation;
+            renderFieldsList();
+            updateAllHandles();
+        }
+
+        function deleteField(id) {
+            fields = fields.filter(f => f.id !== id);
+            if (activeFieldId === id) {
+                activeFieldId = fields.length > 0 ? fields[0].id : null;
+                if (activeFieldId) selectField(activeFieldId);
+                else fieldSettings.classList.remove('visible');
+            }
+            renderFieldsList();
+            updateAllHandles();
+            checkStep1();
+        }
+
+        function renderFieldsList() {
+            fieldsList.innerHTML = '';
+            fields.forEach(f => {
+                const card = document.createElement('div');
+                card.className = 'field-card' + (f.id === activeFieldId ? ' active' : '');
+                const typeBadge = f.valueType === 'fixed' ? 'קבוע' : 'רשימה';
+                card.innerHTML = `
+                    <span>${escapeHtml(f.name)}</span>
+                    <span class="field-type-badge">${typeBadge}</span>
+                    <button class="field-delete" data-id="${f.id}">&times;</button>
+                `;
+                card.addEventListener('click', (e) => {
+                    if (e.target.classList.contains('field-delete')) {
+                        deleteField(parseInt(e.target.dataset.id));
+                    } else {
+                        selectField(f.id);
+                    }
+                });
+                fieldsList.appendChild(card);
+            });
+        }
+
+        // Sync settings inputs → active field
+        function syncFieldFromInputs() {
+            const field = getActiveField();
+            if (!field) return;
+            field.name = fieldNameInput.value.trim() || field.name;
+            field.valueType = fieldValueTypeInput.value;
+            field.fixedValue = fieldFixedValueInput.value;
+            field.fontSize = parseInt(fontSizeInput.value) || 24;
+            field.color = textColorInput.value;
+            field.textMode = textModeInput.value;
+            field.x = parseInt(xInput.value) || 0;
+            field.y = parseInt(yInput.value) || 0;
+            field.rotation = parseInt(rotationInput.value) || 0;
+        }
+
+        // Bind all settings inputs to sync
+        [fontSizeInput, xInput, yInput, rotationInput].forEach(el => {
+            el.addEventListener('input', () => { syncFieldFromInputs(); updateAllHandles(); });
+        });
+        [textColorInput].forEach(el => {
+            el.addEventListener('input', () => { syncFieldFromInputs(); updateAllHandles(); });
+        });
+        [textModeInput].forEach(el => {
+            el.addEventListener('change', () => { syncFieldFromInputs(); });
+        });
+        fieldNameInput.addEventListener('input', () => {
+            syncFieldFromInputs();
+            fieldSettingsTitle.textContent = 'הגדרות: ' + (fieldNameInput.value.trim() || '');
+            renderFieldsList();
+        });
+        fieldValueTypeInput.addEventListener('change', () => {
+            fixedValueRow.style.display = fieldValueTypeInput.value === 'fixed' ? 'block' : 'none';
+            syncFieldFromInputs();
+            updateAllHandles();
+        });
+        fieldFixedValueInput.addEventListener('input', () => {
+            syncFieldFromInputs();
+            updateAllHandles();
+        });
         const addRecordBtn = document.getElementById('addRecordBtn');
         const recordsBody = document.getElementById('recordsBody');
         const generateBtn = document.getElementById('generateBtn');
@@ -783,6 +996,11 @@
             textHandle.classList.remove('dragging');
         });
 
+        // Placeholder - will be replaced in step 3
+        function updateAllHandles() {
+            updateTextHandle();
+        }
+
         function updateTextHandle() {
             if (!imageWidth) return;
             const x = parseInt(xInput.value) || 0;
@@ -854,7 +1072,7 @@
         }
 
         function checkStep1() {
-            toStep2Btn.disabled = !(imageData && fontData);
+            toStep2Btn.disabled = !(imageData && fontData && fields.length > 0);
         }
 
         // Go to step 2
