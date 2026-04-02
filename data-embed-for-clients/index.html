@@ -160,14 +160,19 @@
             box-shadow: 0 0 4px rgba(0,0,0,0.3);
             z-index: 10;
         }
-        .resize-handle {
-            width: 12px;
-            height: 12px;
+        .rh {
+            width: 10px;
+            height: 10px;
             border-radius: 2px;
-            bottom: -8px;
-            left: -8px;
-            cursor: nwse-resize;
         }
+        .rh-tl { top: -7px; left: -7px; cursor: nwse-resize; }
+        .rh-tc { top: -7px; left: 50%; margin-left: -5px; cursor: ns-resize; }
+        .rh-tr { top: -7px; right: -7px; cursor: nesw-resize; }
+        .rh-ml { top: 50%; left: -7px; margin-top: -5px; cursor: ew-resize; }
+        .rh-mr { top: 50%; right: -7px; margin-top: -5px; cursor: ew-resize; }
+        .rh-bl { bottom: -7px; left: -7px; cursor: nesw-resize; }
+        .rh-bc { bottom: -7px; left: 50%; margin-left: -5px; cursor: ns-resize; }
+        .rh-br { bottom: -7px; right: -7px; cursor: nwse-resize; }
         .rotate-handle {
             width: 14px;
             height: 14px;
@@ -375,7 +380,14 @@
                         <div class="rotate-line"></div>
                         <div class="handle rotate-handle" data-type="rotate"></div>
                         <div class="preview-text" id="previewText">טקסט לדוגמה</div>
-                        <div class="handle resize-handle" data-type="resize"></div>
+                        <div class="handle rh rh-tl" data-type="resize" data-dir="tl"></div>
+                        <div class="handle rh rh-tc" data-type="resize" data-dir="tc"></div>
+                        <div class="handle rh rh-tr" data-type="resize" data-dir="tr"></div>
+                        <div class="handle rh rh-ml" data-type="resize" data-dir="ml"></div>
+                        <div class="handle rh rh-mr" data-type="resize" data-dir="mr"></div>
+                        <div class="handle rh rh-bl" data-type="resize" data-dir="bl"></div>
+                        <div class="handle rh rh-bc" data-type="resize" data-dir="bc"></div>
+                        <div class="handle rh rh-br" data-type="resize" data-dir="br"></div>
                     </div>
                 </div>
             </div>
@@ -443,6 +455,8 @@
         let fontName = '';
         let records = [];
         let rotation = 0;
+        let scaleX = 1;
+        let scaleY = 1;
 
         // Elements
         const imageInput = document.getElementById('imageInput');
@@ -616,14 +630,22 @@
 
         // --- RESIZE ---
         let resizeState = null;
-        textHandle.querySelector('[data-type="resize"]').addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            resizeState = {
-                startMouseY: e.clientY,
-                startFontSize: parseInt(fontSizeInput.value) || 24,
-                scale: imageHeight / previewImg.clientHeight,
-            };
+        textHandle.querySelectorAll('[data-type="resize"]').forEach(handle => {
+            handle.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const dir = handle.dataset.dir;
+                const textRect = previewText.getBoundingClientRect();
+                resizeState = {
+                    dir,
+                    startMouseX: e.clientX,
+                    startMouseY: e.clientY,
+                    startScaleX: scaleX,
+                    startScaleY: scaleY,
+                    textWidth: textRect.width / scaleX,
+                    textHeight: textRect.height / scaleY,
+                };
+            });
         });
 
         // --- ROTATE ---
@@ -649,9 +671,20 @@
                 updateTextHandle();
             }
             if (resizeState) {
-                const dy = (e.clientY - resizeState.startMouseY) * resizeState.scale;
-                const newSize = Math.max(8, Math.min(200, Math.round(resizeState.startFontSize + dy)));
-                fontSizeInput.value = newSize;
+                const dx = e.clientX - resizeState.startMouseX;
+                const dy = e.clientY - resizeState.startMouseY;
+                const dir = resizeState.dir;
+                const affectsX = dir.includes('l') || dir.includes('r');
+                const affectsY = dir.includes('t') || dir.includes('b');
+                if (affectsX) {
+                    // Left handles: dragging left = wider (RTL), Right handles: dragging right = wider
+                    const sign = dir.includes('l') ? -1 : 1;
+                    scaleX = Math.max(0.1, resizeState.startScaleX + (dx * sign) / resizeState.textWidth);
+                }
+                if (affectsY) {
+                    const sign = dir.includes('t') ? -1 : 1;
+                    scaleY = Math.max(0.1, resizeState.startScaleY + (dy * sign) / resizeState.textHeight);
+                }
                 updateTextHandle();
             }
             if (rotateState) {
@@ -692,6 +725,8 @@
             previewText.style.fontSize = (fontSize * scale) + 'px';
             previewText.style.color = color;
             previewText.style.direction = 'rtl';
+            previewText.style.transform = `scale(${scaleX}, ${scaleY})`;
+            previewText.style.transformOrigin = 'top right';
 
             if (fontData && fontName) {
                 try {
@@ -822,11 +857,28 @@
                 // Add image
                 doc.addImage(imageData, imageType, 0, 0, widthPt, heightPt);
 
-                // Add text (RTL - reverse text for jsPDF which doesn't support RTL natively)
+                // Add text with scale and rotation using PDF transform matrix
                 const textX = x * pxToPt;
                 const textY = y * pxToPt;
                 const reversedText = rec.text.split('').reverse().join('');
-                doc.text(reversedText, textX, textY, { align: 'right', baseline: 'top', angle: -rotation });
+                const rad = (-rotation) * Math.PI / 180;
+                const cos = Math.cos(rad);
+                const sin = Math.sin(rad);
+                // Transform matrix: scale then rotate, anchored at (textX, textY)
+                doc.saveGraphicsState();
+                const a = cos * scaleX;
+                const b = sin * scaleX;
+                const c = -sin * scaleY;
+                const d = cos * scaleY;
+                const eVal = textX;
+                const f = textY;
+                // jsPDF Matrix: [a, b, c, d, e, f] in PDF coordinate system (y-up)
+                const pageH = heightPt;
+                doc.internal.write(
+                    `${a.toFixed(6)} ${(-b).toFixed(6)} ${(-c).toFixed(6)} ${d.toFixed(6)} ${eVal.toFixed(2)} ${(pageH - f).toFixed(2)} cm`
+                );
+                doc.text(reversedText, 0, 0, { align: 'right', baseline: 'top' });
+                doc.restoreGraphicsState();
 
                 const pdfBlob = doc.output('arraybuffer');
                 zip.file(rec.name + '.pdf', pdfBlob);
