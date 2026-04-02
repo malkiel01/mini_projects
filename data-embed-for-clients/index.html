@@ -123,30 +123,72 @@
             margin-top: 12px;
             border: 2px dashed #ccc;
             border-radius: 8px;
-            overflow: hidden;
             max-width: 100%;
             cursor: crosshair;
         }
         .preview-area img {
             display: block;
             max-width: 100%;
+            user-select: none;
+            -webkit-user-drag: none;
         }
-        .preview-marker {
+        .text-handle {
             position: absolute;
-            width: 12px;
-            height: 12px;
-            background: rgba(239, 68, 68, 0.8);
-            border: 2px solid white;
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
-            pointer-events: none;
-            box-shadow: 0 0 6px rgba(0,0,0,0.3);
+            cursor: grab;
+            user-select: none;
+        }
+        .text-handle.active {
+            outline: 2px dashed #4a6cf7;
+            outline-offset: 4px;
+        }
+        .text-handle.active .handle {
+            display: block;
+        }
+        .text-handle.dragging {
+            cursor: grabbing;
         }
         .preview-text {
-            position: absolute;
-            pointer-events: none;
             color: #000;
             white-space: pre;
+            pointer-events: none;
+        }
+        .handle {
+            display: none;
+            position: absolute;
+            background: #4a6cf7;
+            border: 2px solid white;
+            box-shadow: 0 0 4px rgba(0,0,0,0.3);
+            z-index: 10;
+        }
+        .resize-handle {
+            width: 12px;
+            height: 12px;
+            border-radius: 2px;
+            bottom: -8px;
+            left: -8px;
+            cursor: nwse-resize;
+        }
+        .rotate-handle {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            top: -28px;
+            left: 50%;
+            transform: translateX(-50%);
+            cursor: grab;
+        }
+        .rotate-line {
+            position: absolute;
+            width: 1px;
+            height: 18px;
+            background: #4a6cf7;
+            top: -18px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: none;
+        }
+        .text-handle.active .rotate-line {
+            display: block;
         }
         .records-table {
             width: 100%;
@@ -319,14 +361,22 @@
                     <label>מיקום Y</label>
                     <input type="number" id="yInput" value="220" min="0">
                 </div>
+                <div class="form-group">
+                    <label>סיבוב (מעלות)</label>
+                    <input type="number" id="rotationInput" value="0" min="-360" max="360">
+                </div>
             </div>
 
             <div class="form-group">
-                <label>תצוגה מקדימה (לחץ על התמונה לבחירת מיקום)</label>
+                <label>תצוגה מקדימה (גרור את הטקסט למיקום הרצוי)</label>
                 <div class="preview-area" id="previewArea" style="display:none;">
                     <img id="previewImg" src="">
-                    <div class="preview-marker" id="previewMarker" style="display:none;"></div>
-                    <div class="preview-text" id="previewText" style="display:none;">טקסט לדוגמה</div>
+                    <div class="text-handle" id="textHandle" style="display:none;">
+                        <div class="rotate-line"></div>
+                        <div class="handle rotate-handle" data-type="rotate"></div>
+                        <div class="preview-text" id="previewText">טקסט לדוגמה</div>
+                        <div class="handle resize-handle" data-type="resize"></div>
+                    </div>
                 </div>
             </div>
 
@@ -392,6 +442,7 @@
         let fontData = null;
         let fontName = '';
         let records = [];
+        let rotation = 0;
 
         // Elements
         const imageInput = document.getElementById('imageInput');
@@ -402,9 +453,10 @@
         const textColorInput = document.getElementById('textColorInput');
         const xInput = document.getElementById('xInput');
         const yInput = document.getElementById('yInput');
+        const rotationInput = document.getElementById('rotationInput');
         const previewArea = document.getElementById('previewArea');
         const previewImg = document.getElementById('previewImg');
-        const previewMarker = document.getElementById('previewMarker');
+        const textHandle = document.getElementById('textHandle');
         const previewText = document.getElementById('previewText');
         const toStep2Btn = document.getElementById('toStep2Btn');
         const step1 = document.getElementById('step1');
@@ -433,7 +485,7 @@
                 img.onload = () => {
                     imageWidth = img.naturalWidth;
                     imageHeight = img.naturalHeight;
-                    updateMarker();
+                    updateTextHandle();
                     checkStep1();
                 };
                 img.src = imageData;
@@ -471,7 +523,7 @@
                 fontData = buffer;
                 fontName = filename.replace(/\.(ttf|otf)$/i, '');
                 fontInput.value = '';
-                updatePreviewText();
+                updateTextHandle();
                 checkStep1();
             } catch (e) {
                 alert('שגיאה בטעינת הפונט מהשרת');
@@ -487,7 +539,7 @@
             reader.onload = async (ev) => {
                 fontData = ev.target.result;
                 fontSelect.value = '';
-                updatePreviewText();
+                updateTextHandle();
                 checkStep1();
 
                 // Save to server if checked
@@ -509,55 +561,137 @@
             reader.readAsArrayBuffer(file);
         });
 
-        // Click on preview to set coordinates
+        // Click on preview image to set position (not on the text handle)
         previewArea.addEventListener('click', (e) => {
-            const rect = previewImg.getBoundingClientRect();
-            const scaleX = imageWidth / previewImg.clientWidth;
-            const scaleY = imageHeight / previewImg.clientHeight;
-            const x = Math.round((e.clientX - rect.left) * scaleX);
-            const y = Math.round((e.clientY - rect.top) * scaleY);
-            xInput.value = x;
-            yInput.value = y;
-            updateMarker();
+            if (e.target === previewImg) {
+                const rect = previewImg.getBoundingClientRect();
+                const scaleX = imageWidth / previewImg.clientWidth;
+                const scaleY = imageHeight / previewImg.clientHeight;
+                const x = Math.round((e.clientX - rect.left) * scaleX);
+                const y = Math.round((e.clientY - rect.top) * scaleY);
+                xInput.value = x;
+                yInput.value = y;
+                updateTextHandle();
+                textHandle.classList.add('active');
+            }
         });
 
-        // Update marker on coordinate change
-        xInput.addEventListener('input', updateMarker);
-        yInput.addEventListener('input', updateMarker);
-        fontSizeInput.addEventListener('input', updatePreviewText);
-        textColorInput.addEventListener('input', updatePreviewText);
+        // Select/deselect text handle
+        textHandle.addEventListener('mousedown', (e) => {
+            textHandle.classList.add('active');
+            e.stopPropagation();
+        });
+        document.addEventListener('click', (e) => {
+            if (!textHandle.contains(e.target) && e.target !== previewImg) {
+                textHandle.classList.remove('active');
+            }
+        });
 
-        function updateMarker() {
-            if (!imageWidth) return;
-            const x = parseInt(xInput.value) || 0;
-            const y = parseInt(yInput.value) || 0;
-            const displayX = (x / imageWidth) * 100;
-            const displayY = (y / imageHeight) * 100;
-            previewMarker.style.left = displayX + '%';
-            previewMarker.style.top = displayY + '%';
-            previewMarker.style.display = 'block';
-            updatePreviewText();
-        }
+        // Input fields sync
+        xInput.addEventListener('input', updateTextHandle);
+        yInput.addEventListener('input', updateTextHandle);
+        rotationInput.addEventListener('input', () => {
+            rotation = parseInt(rotationInput.value) || 0;
+            updateTextHandle();
+        });
+        fontSizeInput.addEventListener('input', updateTextHandle);
+        textColorInput.addEventListener('input', updateTextHandle);
 
-        function updatePreviewText() {
+        // --- DRAG ---
+        let dragState = null;
+        textHandle.addEventListener('mousedown', (e) => {
+            if (e.target.dataset.type) return; // handle clicks go to resize/rotate
+            e.preventDefault();
+            textHandle.classList.add('dragging');
+            const rect = previewImg.getBoundingClientRect();
+            dragState = {
+                startMouseX: e.clientX,
+                startMouseY: e.clientY,
+                startX: parseInt(xInput.value) || 0,
+                startY: parseInt(yInput.value) || 0,
+                scaleX: imageWidth / previewImg.clientWidth,
+                scaleY: imageHeight / previewImg.clientHeight,
+            };
+        });
+
+        // --- RESIZE ---
+        let resizeState = null;
+        textHandle.querySelector('[data-type="resize"]').addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            resizeState = {
+                startMouseY: e.clientY,
+                startFontSize: parseInt(fontSizeInput.value) || 24,
+                scale: imageHeight / previewImg.clientHeight,
+            };
+        });
+
+        // --- ROTATE ---
+        let rotateState = null;
+        textHandle.querySelector('[data-type="rotate"]').addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const rect = textHandle.getBoundingClientRect();
+            rotateState = {
+                centerX: rect.left + rect.width / 2,
+                centerY: rect.top + rect.height / 2,
+                startAngle: rotation,
+            };
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (dragState) {
+                const dx = (e.clientX - dragState.startMouseX) * dragState.scaleX;
+                const dy = (e.clientY - dragState.startMouseY) * dragState.scaleY;
+                // RTL: moving mouse right means X decreases (text start moves left in image coords)
+                xInput.value = Math.round(dragState.startX - dx);
+                yInput.value = Math.round(dragState.startY + dy);
+                updateTextHandle();
+            }
+            if (resizeState) {
+                const dy = (resizeState.startMouseY - e.clientY) * resizeState.scale;
+                const newSize = Math.max(8, Math.min(200, Math.round(resizeState.startFontSize + dy)));
+                fontSizeInput.value = newSize;
+                updateTextHandle();
+            }
+            if (rotateState) {
+                const angle = Math.atan2(
+                    e.clientY - rotateState.centerY,
+                    e.clientX - rotateState.centerX
+                ) * (180 / Math.PI) + 90;
+                rotation = Math.round(angle);
+                rotationInput.value = rotation;
+                updateTextHandle();
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            dragState = null;
+            resizeState = null;
+            rotateState = null;
+            textHandle.classList.remove('dragging');
+        });
+
+        function updateTextHandle() {
             if (!imageWidth) return;
             const x = parseInt(xInput.value) || 0;
             const y = parseInt(yInput.value) || 0;
             const fontSize = parseInt(fontSizeInput.value) || 24;
             const color = textColorInput.value;
+            const scale = previewImg.clientWidth / imageWidth;
             const displayX = (x / imageWidth) * previewImg.clientWidth;
             const displayY = (y / imageHeight) * previewImg.clientHeight;
-            const scale = previewImg.clientWidth / imageWidth;
-            previewText.style.right = 'auto';
-            previewText.style.left = 'auto';
-            // Position from left since text is RTL
-            previewText.style.left = displayX + 'px';
-            previewText.style.top = displayY + 'px';
+
+            // Position: the handle's right edge is at X (RTL text starts from right)
+            textHandle.style.left = displayX + 'px';
+            textHandle.style.top = displayY + 'px';
+            textHandle.style.transform = `translateX(-100%) rotate(${rotation}deg)`;
+            textHandle.style.transformOrigin = 'top right';
+            textHandle.style.display = 'block';
+
             previewText.style.fontSize = (fontSize * scale) + 'px';
             previewText.style.color = color;
             previewText.style.direction = 'rtl';
-            previewText.style.transform = 'translateX(-100%)';
-            previewText.style.display = 'block';
 
             if (fontData && fontName) {
                 try {
@@ -582,6 +716,7 @@
             settingsSummary.innerHTML = `
                 <span>מיקום: <strong>X=${xInput.value}, Y=${yInput.value}</strong></span>
                 <span>גודל פונט: <strong>${fontSize}px</strong></span>
+                <span>סיבוב: <strong>${rotation}°</strong></span>
                 <span>פונט: <strong>${fontName}</strong></span>
             `;
         });
@@ -691,7 +826,7 @@
                 const textX = x * pxToPt;
                 const textY = y * pxToPt;
                 const reversedText = rec.text.split('').reverse().join('');
-                doc.text(reversedText, textX, textY, { align: 'right', baseline: 'top' });
+                doc.text(reversedText, textX, textY, { align: 'right', baseline: 'top', angle: -rotation });
 
                 const pdfBlob = doc.output('arraybuffer');
                 zip.file(rec.name + '.pdf', pdfBlob);
