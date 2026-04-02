@@ -914,33 +914,17 @@
                 doc.addFont(fontName + '.ttf', fontName, 'normal');
                 doc.setFont(fontName);
                 doc.setFontSize(fontSize * pxToPt);
+                doc.setFontSize(fontSize * pxToPt * scaleY);
                 doc.setTextColor(cr, cg, cb);
 
                 // Add image
                 doc.addImage(imageData, imageType, 0, 0, widthPt, heightPt);
 
-                // Add text with scale and rotation using PDF transform matrix
+                // Add text
                 const textX = x * pxToPt;
                 const textY = y * pxToPt;
                 const reversedText = rec.text.split('').reverse().join('');
-                const rad = (-rotation) * Math.PI / 180;
-                const cos = Math.cos(rad);
-                const sin = Math.sin(rad);
-                // Transform matrix: scale then rotate, anchored at (textX, textY)
-                doc.saveGraphicsState();
-                const a = cos * scaleX;
-                const b = sin * scaleX;
-                const c = -sin * scaleY;
-                const d = cos * scaleY;
-                const eVal = textX;
-                const f = textY;
-                // jsPDF Matrix: [a, b, c, d, e, f] in PDF coordinate system (y-up)
-                const pageH = heightPt;
-                doc.internal.write(
-                    `${a.toFixed(6)} ${(-b).toFixed(6)} ${(-c).toFixed(6)} ${d.toFixed(6)} ${eVal.toFixed(2)} ${(pageH - f).toFixed(2)} cm`
-                );
-                doc.text(reversedText, 0, 0, { align: 'right', baseline: 'top' });
-                doc.restoreGraphicsState();
+                doc.text(reversedText, textX, textY, { align: 'right', baseline: 'top', angle: -rotation, charSpace: (scaleX - 1) * fontSize * pxToPt * 0.5 });
 
                 const pdfBlob = doc.output('arraybuffer');
                 zip.file(rec.name + '.pdf', pdfBlob);
