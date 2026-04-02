@@ -984,7 +984,7 @@
                         `${ma.toFixed(6)} ${(-mb).toFixed(6)} ${(-mc).toFixed(6)} ${md.toFixed(6)} ${pdfX.toFixed(2)} ${pdfY.toFixed(2)} cm`
                     );
                     // y=heightPt compensates for jsPDF's internal y-flip → places text at (0,0) in transformed space
-                    doc.text(reversedText, 0, heightPt, { align: 'right' });
+                    doc.text(reversedText, 0, heightPt + baseFontSize, { align: 'right' });
                     doc.restoreGraphicsState();
                 } else {
                     // Wrap mode: keep font size as-is
