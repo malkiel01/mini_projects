@@ -136,10 +136,11 @@
             position: absolute;
             cursor: grab;
             user-select: none;
+            border: 2px dashed transparent;
+            padding: 4px;
         }
         .text-handle.active {
-            outline: 2px dashed #4a6cf7;
-            outline-offset: 4px;
+            border-color: #4a6cf7;
         }
         .text-handle.active .handle {
             display: block;
@@ -722,12 +723,14 @@
             textHandle.style.transformOrigin = 'top right';
             textHandle.style.display = 'block';
 
-            // Counter-scale handles so they stay the same visual size
+            // Counter-scale handles and border so they stay the same visual size
             const invX = 1 / scaleX;
             const invY = 1 / scaleY;
             textHandle.querySelectorAll('.handle').forEach(h => {
                 h.style.transform = `scale(${invX}, ${invY})`;
             });
+            textHandle.style.borderWidth = `${2 * invY}px ${2 * invX}px`;
+            textHandle.style.padding = `${4 * invY}px ${4 * invX}px`;
 
             previewText.style.fontSize = (fontSize * scale) + 'px';
             previewText.style.color = color;
