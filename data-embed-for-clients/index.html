@@ -718,15 +718,20 @@
             // Position: the handle's right edge is at X (RTL text starts from right)
             textHandle.style.left = displayX + 'px';
             textHandle.style.top = displayY + 'px';
-            textHandle.style.transform = `translateX(-100%) rotate(${rotation}deg)`;
+            textHandle.style.transform = `translateX(-100%) rotate(${rotation}deg) scale(${scaleX}, ${scaleY})`;
             textHandle.style.transformOrigin = 'top right';
             textHandle.style.display = 'block';
+
+            // Counter-scale handles so they stay the same visual size
+            const invX = 1 / scaleX;
+            const invY = 1 / scaleY;
+            textHandle.querySelectorAll('.handle').forEach(h => {
+                h.style.transform = `scale(${invX}, ${invY})`;
+            });
 
             previewText.style.fontSize = (fontSize * scale) + 'px';
             previewText.style.color = color;
             previewText.style.direction = 'rtl';
-            previewText.style.transform = `scale(${scaleX}, ${scaleY})`;
-            previewText.style.transformOrigin = 'top right';
 
             if (fontData && fontName) {
                 try {
