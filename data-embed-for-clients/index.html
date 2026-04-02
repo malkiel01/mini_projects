@@ -136,17 +136,25 @@
             position: absolute;
             cursor: grab;
             user-select: none;
-            border: 2px dashed transparent;
-            padding: 4px;
-        }
-        .text-handle.active {
-            border-color: #4a6cf7;
         }
         .text-handle.active .handle {
             display: block;
         }
+        .text-handle.active .rotate-line {
+            display: block;
+        }
+        .text-handle.active .border-box {
+            display: block;
+        }
         .text-handle.dragging {
             cursor: grabbing;
+        }
+        .border-box {
+            display: none;
+            position: absolute;
+            top: -6px; left: -6px; right: -6px; bottom: -6px;
+            border: 2px dashed #4a6cf7;
+            pointer-events: none;
         }
         .preview-text {
             color: #000;
@@ -166,35 +174,32 @@
             height: 10px;
             border-radius: 2px;
         }
-        .rh-tl { top: -7px; left: -7px; cursor: nwse-resize; }
-        .rh-tc { top: -7px; left: 50%; margin-left: -5px; cursor: ns-resize; }
-        .rh-tr { top: -7px; right: -7px; cursor: nesw-resize; }
-        .rh-ml { top: 50%; left: -7px; margin-top: -5px; cursor: ew-resize; }
-        .rh-mr { top: 50%; right: -7px; margin-top: -5px; cursor: ew-resize; }
-        .rh-bl { bottom: -7px; left: -7px; cursor: nesw-resize; }
-        .rh-bc { bottom: -7px; left: 50%; margin-left: -5px; cursor: ns-resize; }
-        .rh-br { bottom: -7px; right: -7px; cursor: nwse-resize; }
+        .rh-tl { top: -6px; left: -6px; cursor: nwse-resize; }
+        .rh-tc { top: -6px; left: 50%; margin-left: -5px; cursor: ns-resize; }
+        .rh-tr { top: -6px; right: -6px; cursor: nesw-resize; }
+        .rh-ml { top: 50%; left: -6px; margin-top: -5px; cursor: ew-resize; }
+        .rh-mr { top: 50%; right: -6px; margin-top: -5px; cursor: ew-resize; }
+        .rh-bl { bottom: -6px; left: -6px; cursor: nesw-resize; }
+        .rh-bc { bottom: -6px; left: 50%; margin-left: -5px; cursor: ns-resize; }
+        .rh-br { bottom: -6px; right: -6px; cursor: nwse-resize; }
         .rotate-handle {
             width: 14px;
             height: 14px;
             border-radius: 50%;
-            top: -28px;
+            top: -30px;
             left: 50%;
-            transform: translateX(-50%);
+            margin-left: -7px;
             cursor: grab;
         }
         .rotate-line {
             position: absolute;
             width: 1px;
-            height: 18px;
+            height: 20px;
             background: #4a6cf7;
-            top: -18px;
+            top: -20px;
             left: 50%;
-            transform: translateX(-50%);
             display: none;
-        }
-        .text-handle.active .rotate-line {
-            display: block;
+            pointer-events: none;
         }
         .records-table {
             width: 100%;
@@ -378,9 +383,10 @@
                 <div class="preview-area" id="previewArea" style="display:none;">
                     <img id="previewImg" src="">
                     <div class="text-handle" id="textHandle" style="display:none;">
+                        <div class="preview-text" id="previewText">טקסט לדוגמה</div>
+                        <div class="border-box"></div>
                         <div class="rotate-line"></div>
                         <div class="handle rotate-handle" data-type="rotate"></div>
-                        <div class="preview-text" id="previewText">טקסט לדוגמה</div>
                         <div class="handle rh rh-tl" data-type="resize" data-dir="tl"></div>
                         <div class="handle rh rh-tc" data-type="resize" data-dir="tc"></div>
                         <div class="handle rh rh-tr" data-type="resize" data-dir="tr"></div>
@@ -712,29 +718,15 @@
             const y = parseInt(yInput.value) || 0;
             const fontSize = parseInt(fontSizeInput.value) || 24;
             const color = textColorInput.value;
-            const scale = previewImg.clientWidth / imageWidth;
+            const imgScale = previewImg.clientWidth / imageWidth;
             const displayX = (x / imageWidth) * previewImg.clientWidth;
             const displayY = (y / imageHeight) * previewImg.clientHeight;
 
-            // Position: the handle's right edge is at X (RTL text starts from right)
-            textHandle.style.left = displayX + 'px';
-            textHandle.style.top = displayY + 'px';
-            textHandle.style.transform = `translateX(-100%) rotate(${rotation}deg) scale(${scaleX}, ${scaleY})`;
-            textHandle.style.transformOrigin = 'top right';
-            textHandle.style.display = 'block';
-
-            // Counter-scale handles and border so they stay the same visual size
-            const invX = 1 / scaleX;
-            const invY = 1 / scaleY;
-            textHandle.querySelectorAll('.handle').forEach(h => {
-                h.style.transform = `scale(${invX}, ${invY})`;
-            });
-            textHandle.style.borderWidth = `${2 * invY}px ${2 * invX}px`;
-            textHandle.style.padding = `${4 * invY}px ${4 * invX}px`;
-
-            previewText.style.fontSize = (fontSize * scale) + 'px';
+            // Set text style first (before measuring)
+            previewText.style.fontSize = (fontSize * imgScale) + 'px';
             previewText.style.color = color;
             previewText.style.direction = 'rtl';
+            previewText.style.transform = 'none';
 
             if (fontData && fontName) {
                 try {
@@ -742,9 +734,47 @@
                     fontFace.load().then((loaded) => {
                         document.fonts.add(loaded);
                         previewText.style.fontFamily = 'PreviewFont';
+                        // Re-measure after font loads
+                        sizeTextHandle(displayX, displayY);
                     });
                 } catch (e) {}
             }
+
+            // Make visible so we can measure
+            textHandle.style.display = 'block';
+            textHandle.style.width = 'auto';
+            textHandle.style.height = 'auto';
+            textHandle.style.transform = 'none';
+
+            // Defer measurement to next frame
+            requestAnimationFrame(() => sizeTextHandle(displayX, displayY));
+        }
+
+        function sizeTextHandle(displayX, displayY) {
+            // Measure unscaled text size
+            const naturalW = previewText.offsetWidth;
+            const naturalH = previewText.offsetHeight;
+
+            // Apply scale to text via transform
+            previewText.style.transform = `scale(${scaleX}, ${scaleY})`;
+            previewText.style.transformOrigin = 'top right';
+
+            // Set wrapper to scaled dimensions
+            const scaledW = naturalW * scaleX;
+            const scaledH = naturalH * scaleY;
+            textHandle.style.width = scaledW + 'px';
+            textHandle.style.height = scaledH + 'px';
+
+            // Position: right edge at X (RTL), rotate around top-right
+            textHandle.style.left = (displayX - scaledW) + 'px';
+            textHandle.style.top = displayY + 'px';
+            textHandle.style.transform = `rotate(${rotation}deg)`;
+            textHandle.style.transformOrigin = 'top right';
+
+            // Position text inside: anchor at top-right of wrapper
+            previewText.style.position = 'absolute';
+            previewText.style.right = '0';
+            previewText.style.top = '0';
         }
 
         function checkStep1() {
