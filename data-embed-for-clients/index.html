@@ -485,6 +485,8 @@
         let rotation = 0;
         let scaleX = 1;
         let scaleY = 1;
+        let frameWidthImg = 0;
+        let frameHeightImg = 0;
 
         // Elements
         const imageInput = document.getElementById('imageInput');
@@ -801,6 +803,11 @@
             const naturalW = previewText.offsetWidth;
             const naturalH = previewText.offsetHeight;
 
+            // Save frame dimensions in image coordinates
+            const imgScale = previewImg.clientWidth / imageWidth;
+            frameWidthImg = (naturalW * scaleX) / imgScale;
+            frameHeightImg = (naturalH * scaleY) / imgScale;
+
             // Apply scale to text via transform
             previewText.style.transform = `scale(${scaleX}, ${scaleY})`;
             previewText.style.transformOrigin = 'top right';
@@ -947,28 +954,23 @@
                 const textY = y * pxToPt;
                 const reversedText = rec.text.split('').reverse().join('');
                 const textMode = textModeInput.value;
-                const baseFontSize = fontSize * pxToPt * scaleY;
+                const baseFontSize = fontSize * pxToPt;
+                // Frame width in pt (from image coordinates)
+                const frameWidthPt = frameWidthImg * pxToPt;
 
                 if (textMode === 'fixed') {
-                    // Fixed frame: measure text and shrink font to fit frame width
-                    const frameWidth = previewText.offsetWidth * scaleX * pxToPt;
+                    // Fixed frame: shrink font so text fits exactly in frame width
                     doc.setFontSize(baseFontSize);
                     const textWidth = doc.getTextWidth(reversedText);
-                    if (textWidth > frameWidth && frameWidth > 0) {
-                        doc.setFontSize(baseFontSize * (frameWidth / textWidth));
+                    if (textWidth > 0 && frameWidthPt > 0) {
+                        const fitSize = baseFontSize * (frameWidthPt / textWidth);
+                        doc.setFontSize(Math.min(baseFontSize, fitSize));
                     }
                     doc.text(reversedText, textX, textY, { align: 'right', baseline: 'top', angle: -rotation });
                 } else {
-                    // Wrap mode: text wraps to multiple lines within frame width
-                    const frameWidth = previewText.offsetWidth * scaleX * pxToPt;
+                    // Wrap mode: keep font size, wrap text within frame width
                     doc.setFontSize(baseFontSize);
-                    if (frameWidth > 0) {
-                        // Split text into lines that fit the frame
-                        const lines = doc.splitTextToSize(reversedText, frameWidth);
-                        doc.text(lines, textX, textY, { align: 'right', baseline: 'top', angle: -rotation });
-                    } else {
-                        doc.text(reversedText, textX, textY, { align: 'right', baseline: 'top', angle: -rotation });
-                    }
+                    doc.text(reversedText, textX, textY, { align: 'right', baseline: 'top', angle: -rotation });
                 }
 
                 const pdfBlob = doc.output('arraybuffer');
