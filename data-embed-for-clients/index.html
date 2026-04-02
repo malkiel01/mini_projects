@@ -317,8 +317,22 @@
             display: flex;
             gap: 16px;
             align-items: end;
+            flex-wrap: wrap;
         }
-        .font-color-row .form-group { flex: 1; }
+        .font-color-row .form-group { flex: 1; min-width: 140px; }
+        .form-group select {
+            width: 100%;
+            padding: 10px 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-family: inherit;
+            background: white;
+        }
+        .form-group select:focus {
+            outline: none;
+            border-color: #4a6cf7;
+        }
     </style>
 </head>
 <body>
@@ -360,6 +374,13 @@
                 <div class="form-group">
                     <label>צבע טקסט</label>
                     <input type="color" id="textColorInput" value="#000000" class="color-preview">
+                </div>
+                <div class="form-group">
+                    <label>התנהגות טקסט</label>
+                    <select id="textModeInput">
+                        <option value="wrap">גלישת טקסט (מתרחב לפי תוכן)</option>
+                        <option value="fixed">מידות מקובעות (מצומצם למסגרת)</option>
+                    </select>
                 </div>
             </div>
 
@@ -472,6 +493,7 @@
         const saveFontCheck = document.getElementById('saveFontCheck');
         const fontSizeInput = document.getElementById('fontSizeInput');
         const textColorInput = document.getElementById('textColorInput');
+        const textModeInput = document.getElementById('textModeInput');
         const xInput = document.getElementById('xInput');
         const yInput = document.getElementById('yInput');
         const rotationInput = document.getElementById('rotationInput');
@@ -810,10 +832,12 @@
             step1.classList.add('hidden');
             step2.classList.remove('hidden');
             const fontSize = fontSizeInput.value;
+            const modeLabel = textModeInput.value === 'fixed' ? 'מקובע' : 'גלישה';
             settingsSummary.innerHTML = `
                 <span>מיקום: <strong>X=${xInput.value}, Y=${yInput.value}</strong></span>
                 <span>גודל פונט: <strong>${fontSize}px</strong></span>
                 <span>סיבוב: <strong>${rotation}°</strong></span>
+                <span>טקסט: <strong>${modeLabel}</strong></span>
                 <span>פונט: <strong>${fontName}</strong></span>
             `;
         });
@@ -913,8 +937,6 @@
                 doc.addFileToVFS(fontName + '.ttf', fontBase64);
                 doc.addFont(fontName + '.ttf', fontName, 'normal');
                 doc.setFont(fontName);
-                doc.setFontSize(fontSize * pxToPt);
-                doc.setFontSize(fontSize * pxToPt * scaleY);
                 doc.setTextColor(cr, cg, cb);
 
                 // Add image
@@ -924,7 +946,30 @@
                 const textX = x * pxToPt;
                 const textY = y * pxToPt;
                 const reversedText = rec.text.split('').reverse().join('');
-                doc.text(reversedText, textX, textY, { align: 'right', baseline: 'top', angle: -rotation, charSpace: (scaleX - 1) * fontSize * pxToPt * 0.5 });
+                const textMode = textModeInput.value;
+                const baseFontSize = fontSize * pxToPt * scaleY;
+
+                if (textMode === 'fixed') {
+                    // Fixed frame: measure text and shrink font to fit frame width
+                    const frameWidth = previewText.offsetWidth * scaleX * pxToPt;
+                    doc.setFontSize(baseFontSize);
+                    const textWidth = doc.getTextWidth(reversedText);
+                    if (textWidth > frameWidth && frameWidth > 0) {
+                        doc.setFontSize(baseFontSize * (frameWidth / textWidth));
+                    }
+                    doc.text(reversedText, textX, textY, { align: 'right', baseline: 'top', angle: -rotation });
+                } else {
+                    // Wrap mode: text wraps to multiple lines within frame width
+                    const frameWidth = previewText.offsetWidth * scaleX * pxToPt;
+                    doc.setFontSize(baseFontSize);
+                    if (frameWidth > 0) {
+                        // Split text into lines that fit the frame
+                        const lines = doc.splitTextToSize(reversedText, frameWidth);
+                        doc.text(lines, textX, textY, { align: 'right', baseline: 'top', angle: -rotation });
+                    } else {
+                        doc.text(reversedText, textX, textY, { align: 'right', baseline: 'top', angle: -rotation });
+                    }
+                }
 
                 const pdfBlob = doc.output('arraybuffer');
                 zip.file(rec.name + '.pdf', pdfBlob);
