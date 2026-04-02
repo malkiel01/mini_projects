@@ -482,11 +482,34 @@
         let fontData = null;
         let fontName = '';
         let records = [];
-        let rotation = 0;
-        let scaleX = 1;
-        let scaleY = 1;
-        let frameWidthImg = 0;
-        let frameHeightImg = 0;
+
+        // Fields system
+        let fields = [];
+        let activeFieldId = null;
+        let fieldIdCounter = 0;
+
+        function createField(name) {
+            return {
+                id: ++fieldIdCounter,
+                name: name || 'שדה ' + fieldIdCounter,
+                x: 430,
+                y: 220,
+                fontSize: 24,
+                color: '#000000',
+                rotation: 0,
+                scaleX: 1,
+                scaleY: 1,
+                textMode: 'wrap',
+                valueType: 'list',
+                fixedValue: '',
+                frameWidthImg: 0,
+                frameHeightImg: 0,
+            };
+        }
+
+        function getActiveField() {
+            return fields.find(f => f.id === activeFieldId) || null;
+        }
 
         // Elements
         const imageInput = document.getElementById('imageInput');
