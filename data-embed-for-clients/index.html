@@ -174,19 +174,19 @@
             height: 10px;
             border-radius: 2px;
         }
-        .rh-tl { top: -6px; left: -6px; cursor: nwse-resize; }
-        .rh-tc { top: -6px; left: 50%; margin-left: -5px; cursor: ns-resize; }
-        .rh-tr { top: -6px; right: -6px; cursor: nesw-resize; }
-        .rh-ml { top: 50%; left: -6px; margin-top: -5px; cursor: ew-resize; }
-        .rh-mr { top: 50%; right: -6px; margin-top: -5px; cursor: ew-resize; }
-        .rh-bl { bottom: -6px; left: -6px; cursor: nesw-resize; }
-        .rh-bc { bottom: -6px; left: 50%; margin-left: -5px; cursor: ns-resize; }
-        .rh-br { bottom: -6px; right: -6px; cursor: nwse-resize; }
+        .rh-tl { top: -11px; left: -11px; cursor: nwse-resize; }
+        .rh-tc { top: -11px; left: 50%; margin-left: -5px; cursor: ns-resize; }
+        .rh-tr { top: -11px; right: -11px; cursor: nesw-resize; }
+        .rh-ml { top: 50%; left: -11px; margin-top: -5px; cursor: ew-resize; }
+        .rh-mr { top: 50%; right: -11px; margin-top: -5px; cursor: ew-resize; }
+        .rh-bl { bottom: -11px; left: -11px; cursor: nesw-resize; }
+        .rh-bc { bottom: -11px; left: 50%; margin-left: -5px; cursor: ns-resize; }
+        .rh-br { bottom: -11px; right: -11px; cursor: nwse-resize; }
         .rotate-handle {
             width: 14px;
             height: 14px;
             border-radius: 50%;
-            top: -30px;
+            top: -32px;
             left: 50%;
             margin-left: -7px;
             cursor: grab;
@@ -194,9 +194,9 @@
         .rotate-line {
             position: absolute;
             width: 1px;
-            height: 20px;
+            height: 22px;
             background: #4a6cf7;
-            top: -20px;
+            top: -22px;
             left: 50%;
             display: none;
             pointer-events: none;
@@ -643,6 +643,11 @@
                 e.stopPropagation();
                 const dir = handle.dataset.dir;
                 const textRect = previewText.getBoundingClientRect();
+                const imgScale = previewImg.clientWidth / imageWidth;
+                const naturalW_img = (textRect.width / scaleX) / imgScale;
+                const naturalH_img = (textRect.height / scaleY) / imgScale;
+                const currentX = parseInt(xInput.value) || 0;
+                const currentY = parseInt(yInput.value) || 0;
                 resizeState = {
                     dir,
                     startMouseX: e.clientX,
@@ -651,6 +656,13 @@
                     startScaleY: scaleY,
                     textWidth: textRect.width / scaleX,
                     textHeight: textRect.height / scaleY,
+                    naturalW_img,
+                    naturalH_img,
+                    // Anchor edges (opposite side of handle)
+                    leftEdge: currentX - naturalW_img * scaleX,
+                    bottomEdge: currentY + naturalH_img * scaleY,
+                    startX: currentX,
+                    startY: currentY,
                 };
             });
         });
@@ -684,13 +696,25 @@
                 const affectsX = dir.includes('l') || dir.includes('r');
                 const affectsY = dir.includes('t') || dir.includes('b');
                 if (affectsX) {
-                    // Left handles: dragging left = wider (RTL), Right handles: dragging right = wider
                     const sign = dir.includes('l') ? -1 : 1;
                     scaleX = Math.max(0.1, resizeState.startScaleX + (dx * sign) / resizeState.textWidth);
                 }
                 if (affectsY) {
                     const sign = dir.includes('t') ? -1 : 1;
                     scaleY = Math.max(0.1, resizeState.startScaleY + (dy * sign) / resizeState.textHeight);
+                }
+                // Adjust position to keep opposite edge anchored
+                if (dir.includes('r')) {
+                    // Dragging right side → left edge stays fixed
+                    xInput.value = Math.round(resizeState.leftEdge + resizeState.naturalW_img * scaleX);
+                } else {
+                    xInput.value = resizeState.startX;
+                }
+                if (dir.includes('t')) {
+                    // Dragging top side → bottom edge stays fixed
+                    yInput.value = Math.round(resizeState.bottomEdge - resizeState.naturalH_img * scaleY);
+                } else {
+                    yInput.value = resizeState.startY;
                 }
                 updateTextHandle();
             }
