@@ -644,12 +644,12 @@
                 const dx = (e.clientX - dragState.startMouseX) * dragState.scaleX;
                 const dy = (e.clientY - dragState.startMouseY) * dragState.scaleY;
                 // RTL: moving mouse right means X decreases (text start moves left in image coords)
-                xInput.value = Math.round(dragState.startX - dx);
+                xInput.value = Math.round(dragState.startX + dx);
                 yInput.value = Math.round(dragState.startY + dy);
                 updateTextHandle();
             }
             if (resizeState) {
-                const dy = (resizeState.startMouseY - e.clientY) * resizeState.scale;
+                const dy = (e.clientY - resizeState.startMouseY) * resizeState.scale;
                 const newSize = Math.max(8, Math.min(200, Math.round(resizeState.startFontSize + dy)));
                 fontSizeInput.value = newSize;
                 updateTextHandle();
