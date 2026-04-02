@@ -502,20 +502,7 @@
                 <label>תצוגה מקדימה (גרור את הטקסט למיקום הרצוי)</label>
                 <div class="preview-area" id="previewArea" style="display:none;">
                     <img id="previewImg" src="">
-                    <div class="text-handle" id="textHandle" style="display:none;">
-                        <div class="preview-text" id="previewText">טקסט לדוגמה</div>
-                        <div class="border-box"></div>
-                        <div class="rotate-line"></div>
-                        <div class="handle rotate-handle" data-type="rotate"></div>
-                        <div class="handle rh rh-tl" data-type="resize" data-dir="tl"></div>
-                        <div class="handle rh rh-tc" data-type="resize" data-dir="tc"></div>
-                        <div class="handle rh rh-tr" data-type="resize" data-dir="tr"></div>
-                        <div class="handle rh rh-ml" data-type="resize" data-dir="ml"></div>
-                        <div class="handle rh rh-mr" data-type="resize" data-dir="mr"></div>
-                        <div class="handle rh rh-bl" data-type="resize" data-dir="bl"></div>
-                        <div class="handle rh rh-bc" data-type="resize" data-dir="bc"></div>
-                        <div class="handle rh rh-br" data-type="resize" data-dir="br"></div>
-                    </div>
+                    <!-- text-handles are created dynamically per field -->
                 </div>
             </div>
 
@@ -623,8 +610,7 @@
         const rotationInput = document.getElementById('rotationInput');
         const previewArea = document.getElementById('previewArea');
         const previewImg = document.getElementById('previewImg');
-        const textHandle = document.getElementById('textHandle');
-        const previewText = document.getElementById('previewText');
+        // textHandle and previewText are now created dynamically per field
         const toStep2Btn = document.getElementById('toStep2Btn');
         const step1 = document.getElementById('step1');
         const step2 = document.getElementById('step2');
@@ -766,7 +752,7 @@
                 img.onload = () => {
                     imageWidth = img.naturalWidth;
                     imageHeight = img.naturalHeight;
-                    updateTextHandle();
+                    updateAllHandles();
                     checkStep1();
                 };
                 img.src = imageData;
@@ -804,7 +790,7 @@
                 fontData = buffer;
                 fontName = filename.replace(/\.(ttf|otf)$/i, '');
                 fontInput.value = '';
-                updateTextHandle();
+                updateAllHandles();
                 checkStep1();
             } catch (e) {
                 alert('שגיאה בטעינת הפונט מהשרת');
@@ -820,7 +806,7 @@
             reader.onload = async (ev) => {
                 fontData = ev.target.result;
                 fontSelect.value = '';
-                updateTextHandle();
+                updateAllHandles();
                 checkStep1();
 
                 // Save to server if checked
@@ -842,233 +828,256 @@
             reader.readAsArrayBuffer(file);
         });
 
-        // Click on preview image to set position (not on the text handle)
-        previewArea.addEventListener('click', (e) => {
-            if (e.target === previewImg) {
-                const rect = previewImg.getBoundingClientRect();
-                const scaleX = imageWidth / previewImg.clientWidth;
-                const scaleY = imageHeight / previewImg.clientHeight;
-                const x = Math.round((e.clientX - rect.left) * scaleX);
-                const y = Math.round((e.clientY - rect.top) * scaleY);
-                xInput.value = x;
-                yInput.value = y;
-                updateTextHandle();
-                textHandle.classList.add('active');
-            }
-        });
-
-        // Select/deselect text handle
-        textHandle.addEventListener('mousedown', (e) => {
-            textHandle.classList.add('active');
-            e.stopPropagation();
-        });
-        document.addEventListener('click', (e) => {
-            if (!textHandle.contains(e.target) && e.target !== previewImg) {
-                textHandle.classList.remove('active');
-            }
-        });
-
-        // Input fields sync
-        xInput.addEventListener('input', updateTextHandle);
-        yInput.addEventListener('input', updateTextHandle);
-        rotationInput.addEventListener('input', () => {
-            rotation = parseInt(rotationInput.value) || 0;
-            updateTextHandle();
-        });
-        fontSizeInput.addEventListener('input', updateTextHandle);
-        textColorInput.addEventListener('input', updateTextHandle);
-
-        // --- DRAG ---
+        // ========== MULTI-FIELD PREVIEW SYSTEM ==========
+        let handleElements = {}; // { fieldId: { handle, text } }
         let dragState = null;
-        textHandle.addEventListener('mousedown', (e) => {
-            if (e.target.dataset.type) return; // handle clicks go to resize/rotate
-            e.preventDefault();
-            textHandle.classList.add('dragging');
-            const rect = previewImg.getBoundingClientRect();
-            dragState = {
-                startMouseX: e.clientX,
-                startMouseY: e.clientY,
-                startX: parseInt(xInput.value) || 0,
-                startY: parseInt(yInput.value) || 0,
-                scaleX: imageWidth / previewImg.clientWidth,
-                scaleY: imageHeight / previewImg.clientHeight,
-            };
-        });
-
-        // --- RESIZE ---
         let resizeState = null;
-        textHandle.querySelectorAll('[data-type="resize"]').forEach(handle => {
+        let rotateState = null;
+        let interactFieldId = null; // field being dragged/resized/rotated
+
+        function createHandleEl(field) {
+            const handle = document.createElement('div');
+            handle.className = 'text-handle';
+            handle.dataset.fieldId = field.id;
+            handle.innerHTML = `
+                <div class="preview-text">${field.valueType === 'fixed' ? escapeHtml(field.fixedValue || field.name) : escapeHtml(field.name)}</div>
+                <div class="border-box"></div>
+                <div class="rotate-line"></div>
+                <div class="handle rotate-handle" data-type="rotate"></div>
+                <div class="handle rh rh-tl" data-type="resize" data-dir="tl"></div>
+                <div class="handle rh rh-tc" data-type="resize" data-dir="tc"></div>
+                <div class="handle rh rh-tr" data-type="resize" data-dir="tr"></div>
+                <div class="handle rh rh-ml" data-type="resize" data-dir="ml"></div>
+                <div class="handle rh rh-mr" data-type="resize" data-dir="mr"></div>
+                <div class="handle rh rh-bl" data-type="resize" data-dir="bl"></div>
+                <div class="handle rh rh-bc" data-type="resize" data-dir="bc"></div>
+                <div class="handle rh rh-br" data-type="resize" data-dir="br"></div>
+            `;
+            const textEl = handle.querySelector('.preview-text');
+
+            // Click to select
             handle.addEventListener('mousedown', (e) => {
+                if (e.target.dataset.type) return;
+                selectField(field.id);
                 e.preventDefault();
                 e.stopPropagation();
-                const dir = handle.dataset.dir;
-                const textRect = previewText.getBoundingClientRect();
-                const imgScale = previewImg.clientWidth / imageWidth;
-                const naturalW_img = (textRect.width / scaleX) / imgScale;
-                const naturalH_img = (textRect.height / scaleY) / imgScale;
-                const currentX = parseInt(xInput.value) || 0;
-                const currentY = parseInt(yInput.value) || 0;
-                resizeState = {
-                    dir,
+                handle.classList.add('dragging');
+                interactFieldId = field.id;
+                dragState = {
                     startMouseX: e.clientX,
                     startMouseY: e.clientY,
-                    startScaleX: scaleX,
-                    startScaleY: scaleY,
-                    textWidth: textRect.width / scaleX,
-                    textHeight: textRect.height / scaleY,
-                    naturalW_img,
-                    naturalH_img,
-                    // Anchor edges (opposite side of handle)
-                    leftEdge: currentX - naturalW_img * scaleX,
-                    bottomEdge: currentY + naturalH_img * scaleY,
-                    startX: currentX,
-                    startY: currentY,
+                    startX: field.x,
+                    startY: field.y,
+                    ratioX: imageWidth / previewImg.clientWidth,
+                    ratioY: imageHeight / previewImg.clientHeight,
                 };
             });
+
+            // Resize handles
+            handle.querySelectorAll('[data-type="resize"]').forEach(rh => {
+                rh.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    selectField(field.id);
+                    interactFieldId = field.id;
+                    const dir = rh.dataset.dir;
+                    const textRect = textEl.getBoundingClientRect();
+                    const imgScale = previewImg.clientWidth / imageWidth;
+                    const nwi = (textRect.width / field.scaleX) / imgScale;
+                    const nhi = (textRect.height / field.scaleY) / imgScale;
+                    resizeState = {
+                        dir,
+                        startMouseX: e.clientX,
+                        startMouseY: e.clientY,
+                        startScaleX: field.scaleX,
+                        startScaleY: field.scaleY,
+                        textWidth: textRect.width / field.scaleX,
+                        textHeight: textRect.height / field.scaleY,
+                        naturalW_img: nwi,
+                        naturalH_img: nhi,
+                        leftEdge: field.x - nwi * field.scaleX,
+                        bottomEdge: field.y + nhi * field.scaleY,
+                        startX: field.x,
+                        startY: field.y,
+                    };
+                });
+            });
+
+            // Rotate handle
+            handle.querySelector('[data-type="rotate"]').addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                selectField(field.id);
+                interactFieldId = field.id;
+                const rect = handle.getBoundingClientRect();
+                rotateState = {
+                    centerX: rect.left + rect.width / 2,
+                    centerY: rect.top + rect.height / 2,
+                };
+            });
+
+            previewArea.appendChild(handle);
+            handleElements[field.id] = { handle, text: textEl };
+        }
+
+        // Click on image → move active field
+        previewArea.addEventListener('click', (e) => {
+            if (e.target === previewImg && activeFieldId) {
+                const field = getActiveField();
+                if (!field) return;
+                const rect = previewImg.getBoundingClientRect();
+                field.x = Math.round((e.clientX - rect.left) * (imageWidth / previewImg.clientWidth));
+                field.y = Math.round((e.clientY - rect.top) * (imageHeight / previewImg.clientHeight));
+                xInput.value = field.x;
+                yInput.value = field.y;
+                updateAllHandles();
+            }
         });
 
-        // --- ROTATE ---
-        let rotateState = null;
-        textHandle.querySelector('[data-type="rotate"]').addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const rect = textHandle.getBoundingClientRect();
-            rotateState = {
-                centerX: rect.left + rect.width / 2,
-                centerY: rect.top + rect.height / 2,
-                startAngle: rotation,
-            };
+        // Deselect on outside click
+        document.addEventListener('click', (e) => {
+            if (!previewArea.contains(e.target) && !document.querySelector('.field-card.active')?.contains(e.target)) {
+                // Don't deselect - keep active field for usability
+            }
         });
 
+        // Global mousemove for drag/resize/rotate
         document.addEventListener('mousemove', (e) => {
+            const field = fields.find(f => f.id === interactFieldId);
+            if (!field) return;
+
             if (dragState) {
-                const dx = (e.clientX - dragState.startMouseX) * dragState.scaleX;
-                const dy = (e.clientY - dragState.startMouseY) * dragState.scaleY;
-                // RTL: moving mouse right means X decreases (text start moves left in image coords)
-                xInput.value = Math.round(dragState.startX + dx);
-                yInput.value = Math.round(dragState.startY + dy);
-                updateTextHandle();
+                const dx = (e.clientX - dragState.startMouseX) * dragState.ratioX;
+                const dy = (e.clientY - dragState.startMouseY) * dragState.ratioY;
+                field.x = Math.round(dragState.startX + dx);
+                field.y = Math.round(dragState.startY + dy);
+                xInput.value = field.x;
+                yInput.value = field.y;
+                syncFieldFromInputs();
+                updateAllHandles();
             }
             if (resizeState) {
                 const dx = e.clientX - resizeState.startMouseX;
                 const dy = e.clientY - resizeState.startMouseY;
                 const dir = resizeState.dir;
-                const affectsX = dir.includes('l') || dir.includes('r');
-                const affectsY = dir.includes('t') || dir.includes('b');
-                if (affectsX) {
+                if (dir.includes('l') || dir.includes('r')) {
                     const sign = dir.includes('l') ? -1 : 1;
-                    scaleX = Math.max(0.1, resizeState.startScaleX + (dx * sign) / resizeState.textWidth);
+                    field.scaleX = Math.max(0.1, resizeState.startScaleX + (dx * sign) / resizeState.textWidth);
                 }
-                if (affectsY) {
+                if (dir.includes('t') || dir.includes('b')) {
                     const sign = dir.includes('t') ? -1 : 1;
-                    scaleY = Math.max(0.1, resizeState.startScaleY + (dy * sign) / resizeState.textHeight);
+                    field.scaleY = Math.max(0.1, resizeState.startScaleY + (dy * sign) / resizeState.textHeight);
                 }
-                // Adjust position to keep opposite edge anchored
                 if (dir.includes('r')) {
-                    // Dragging right side → left edge stays fixed
-                    xInput.value = Math.round(resizeState.leftEdge + resizeState.naturalW_img * scaleX);
-                } else {
-                    xInput.value = resizeState.startX;
-                }
+                    field.x = Math.round(resizeState.leftEdge + resizeState.naturalW_img * field.scaleX);
+                } else { field.x = resizeState.startX; }
                 if (dir.includes('t')) {
-                    // Dragging top side → bottom edge stays fixed
-                    yInput.value = Math.round(resizeState.bottomEdge - resizeState.naturalH_img * scaleY);
-                } else {
-                    yInput.value = resizeState.startY;
-                }
-                updateTextHandle();
+                    field.y = Math.round(resizeState.bottomEdge - resizeState.naturalH_img * field.scaleY);
+                } else { field.y = resizeState.startY; }
+                xInput.value = field.x;
+                yInput.value = field.y;
+                updateAllHandles();
             }
             if (rotateState) {
-                const angle = Math.atan2(
-                    e.clientY - rotateState.centerY,
-                    e.clientX - rotateState.centerX
-                ) * (180 / Math.PI) + 90;
-                rotation = Math.round(angle);
-                rotationInput.value = rotation;
-                updateTextHandle();
+                const angle = Math.atan2(e.clientY - rotateState.centerY, e.clientX - rotateState.centerX) * (180 / Math.PI) + 90;
+                field.rotation = Math.round(angle);
+                rotationInput.value = field.rotation;
+                syncFieldFromInputs();
+                updateAllHandles();
             }
         });
 
         document.addEventListener('mouseup', () => {
+            if (interactFieldId && handleElements[interactFieldId]) {
+                handleElements[interactFieldId].handle.classList.remove('dragging');
+            }
             dragState = null;
             resizeState = null;
             rotateState = null;
-            textHandle.classList.remove('dragging');
+            interactFieldId = null;
         });
 
-        // Placeholder - will be replaced in step 3
+        // ========== RENDER ALL HANDLES ==========
         function updateAllHandles() {
-            updateTextHandle();
-        }
-
-        function updateTextHandle() {
             if (!imageWidth) return;
-            const x = parseInt(xInput.value) || 0;
-            const y = parseInt(yInput.value) || 0;
-            const fontSize = parseInt(fontSizeInput.value) || 24;
-            const color = textColorInput.value;
             const imgScale = previewImg.clientWidth / imageWidth;
-            const displayX = (x / imageWidth) * previewImg.clientWidth;
-            const displayY = (y / imageHeight) * previewImg.clientHeight;
 
-            // Set text style first (before measuring)
-            previewText.style.fontSize = (fontSize * imgScale) + 'px';
-            previewText.style.color = color;
-            previewText.style.direction = 'rtl';
-            previewText.style.transform = 'none';
+            // Remove handles for deleted fields
+            Object.keys(handleElements).forEach(id => {
+                if (!fields.find(f => f.id == id)) {
+                    handleElements[id].handle.remove();
+                    delete handleElements[id];
+                }
+            });
 
-            if (fontData && fontName) {
-                try {
-                    const fontFace = new FontFace('PreviewFont', fontData);
-                    fontFace.load().then((loaded) => {
-                        document.fonts.add(loaded);
-                        previewText.style.fontFamily = 'PreviewFont';
-                        // Re-measure after font loads
-                        sizeTextHandle(displayX, displayY);
-                    });
-                } catch (e) {}
-            }
+            fields.forEach(field => {
+                // Create handle if not exists
+                if (!handleElements[field.id]) {
+                    createHandleEl(field);
+                }
+                const { handle, text } = handleElements[field.id];
 
-            // Make visible so we can measure
-            textHandle.style.display = 'block';
-            textHandle.style.width = 'auto';
-            textHandle.style.height = 'auto';
-            textHandle.style.transform = 'none';
+                // Active state
+                if (field.id === activeFieldId) {
+                    handle.classList.add('active');
+                } else {
+                    handle.classList.remove('active');
+                }
 
-            // Defer measurement to next frame
-            requestAnimationFrame(() => sizeTextHandle(displayX, displayY));
-        }
+                // Update text content
+                const displayText = field.valueType === 'fixed' ? (field.fixedValue || field.name) : field.name;
+                text.textContent = displayText;
 
-        function sizeTextHandle(displayX, displayY) {
-            // Measure unscaled text size
-            const naturalW = previewText.offsetWidth;
-            const naturalH = previewText.offsetHeight;
+                // Style
+                text.style.fontSize = (field.fontSize * imgScale) + 'px';
+                text.style.color = field.color;
+                text.style.direction = 'rtl';
+                text.style.transform = 'none';
 
-            // Save frame dimensions in image coordinates
-            const imgScale = previewImg.clientWidth / imageWidth;
-            frameWidthImg = (naturalW * scaleX) / imgScale;
-            frameHeightImg = (naturalH * scaleY) / imgScale;
+                if (fontData && fontName) {
+                    try {
+                        const fontFace = new FontFace('PreviewFont', fontData);
+                        fontFace.load().then((loaded) => {
+                            document.fonts.add(loaded);
+                            text.style.fontFamily = 'PreviewFont';
+                        });
+                    } catch (e) {}
+                }
 
-            // Apply scale to text via transform
-            previewText.style.transform = `scale(${scaleX}, ${scaleY})`;
-            previewText.style.transformOrigin = 'top right';
+                // Measure and position
+                handle.style.display = 'block';
+                handle.style.width = 'auto';
+                handle.style.height = 'auto';
+                handle.style.transform = 'none';
 
-            // Set wrapper to scaled dimensions
-            const scaledW = naturalW * scaleX;
-            const scaledH = naturalH * scaleY;
-            textHandle.style.width = scaledW + 'px';
-            textHandle.style.height = scaledH + 'px';
+                requestAnimationFrame(() => {
+                    const naturalW = text.offsetWidth;
+                    const naturalH = text.offsetHeight;
 
-            // Position: right edge at X (RTL), rotate around top-right
-            textHandle.style.left = (displayX - scaledW) + 'px';
-            textHandle.style.top = displayY + 'px';
-            textHandle.style.transform = `rotate(${rotation}deg)`;
-            textHandle.style.transformOrigin = 'top right';
+                    // Save frame dimensions
+                    field.frameWidthImg = (naturalW * field.scaleX) / imgScale;
+                    field.frameHeightImg = (naturalH * field.scaleY) / imgScale;
 
-            // Position text inside: anchor at top-right of wrapper
-            previewText.style.position = 'absolute';
-            previewText.style.right = '0';
-            previewText.style.top = '0';
+                    text.style.transform = `scale(${field.scaleX}, ${field.scaleY})`;
+                    text.style.transformOrigin = 'top right';
+
+                    const scaledW = naturalW * field.scaleX;
+                    const scaledH = naturalH * field.scaleY;
+                    const displayX = (field.x / imageWidth) * previewImg.clientWidth;
+                    const displayY = (field.y / imageHeight) * previewImg.clientHeight;
+
+                    handle.style.width = scaledW + 'px';
+                    handle.style.height = scaledH + 'px';
+                    handle.style.left = (displayX - scaledW) + 'px';
+                    handle.style.top = displayY + 'px';
+                    handle.style.transform = `rotate(${field.rotation}deg)`;
+                    handle.style.transformOrigin = 'top right';
+
+                    text.style.position = 'absolute';
+                    text.style.right = '0';
+                    text.style.top = '0';
+                });
+            });
         }
 
         function checkStep1() {
