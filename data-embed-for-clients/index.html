@@ -515,26 +515,13 @@
 
             <div class="settings-summary" id="settingsSummary"></div>
 
-            <div class="add-record-form">
-                <div class="form-group" style="flex:2;">
-                    <label>טקסט לשדה</label>
-                    <input type="text" id="recordText" placeholder="למשל: לכבוד משה כהן">
-                </div>
-                <div class="form-group" style="flex:1;">
-                    <label>שם קובץ</label>
-                    <input type="text" id="recordName" placeholder="ימולא אוטומטית">
-                </div>
-                <button class="btn btn-primary" id="addRecordBtn">הוסף</button>
+            <div class="add-record-form" id="addRecordForm">
+                <!-- Dynamic inputs generated per list-type field -->
             </div>
 
             <table class="records-table" id="recordsTable">
-                <thead>
-                    <tr>
-                        <th>#</th>
-                        <th>שם קובץ</th>
-                        <th>טקסט</th>
-                        <th></th>
-                    </tr>
+                <thead id="recordsHead">
+                    <!-- Dynamic columns -->
                 </thead>
                 <tbody id="recordsBody"></tbody>
             </table>
@@ -614,8 +601,7 @@
         const toStep2Btn = document.getElementById('toStep2Btn');
         const step1 = document.getElementById('step1');
         const step2 = document.getElementById('step2');
-        const recordName = document.getElementById('recordName');
-        const recordText = document.getElementById('recordText');
+        // recordName and record inputs are now dynamic
         const addFieldBtn = document.getElementById('addFieldBtn');
         const fieldsList = document.getElementById('fieldsList');
         const fieldSettings = document.getElementById('fieldSettings');
@@ -730,11 +716,6 @@
             syncFieldFromInputs();
             updateAllHandles();
         });
-        const addRecordBtn = document.getElementById('addRecordBtn');
-        const recordsBody = document.getElementById('recordsBody');
-        const generateBtn = document.getElementById('generateBtn');
-        const backBtn = document.getElementById('backBtn');
-        const settingsSummary = document.getElementById('settingsSummary');
         const progressOverlay = document.getElementById('progressOverlay');
         const progressText = document.getElementById('progressText');
 
@@ -1084,19 +1065,36 @@
             toStep2Btn.disabled = !(imageData && fontData && fields.length > 0);
         }
 
+        // ========== STEP 2: DYNAMIC RECORDS ==========
+        const addRecordForm = document.getElementById('addRecordForm');
+        const recordsHead = document.getElementById('recordsHead');
+        const recordsBody = document.getElementById('recordsBody');
+        const generateBtn = document.getElementById('generateBtn');
+        const backBtn = document.getElementById('backBtn');
+        const settingsSummary = document.getElementById('settingsSummary');
+
+        function getListFields() {
+            return fields.filter(f => f.valueType === 'list');
+        }
+
+        function getFixedFields() {
+            return fields.filter(f => f.valueType === 'fixed');
+        }
+
         // Go to step 2
         toStep2Btn.addEventListener('click', () => {
             step1.classList.add('hidden');
             step2.classList.remove('hidden');
-            const fontSize = fontSizeInput.value;
-            const modeLabel = textModeInput.value === 'fixed' ? 'מקובע' : 'גלישה';
-            settingsSummary.innerHTML = `
-                <span>מיקום: <strong>X=${xInput.value}, Y=${yInput.value}</strong></span>
-                <span>גודל פונט: <strong>${fontSize}px</strong></span>
-                <span>סיבוב: <strong>${rotation}°</strong></span>
-                <span>טקסט: <strong>${modeLabel}</strong></span>
-                <span>פונט: <strong>${fontName}</strong></span>
-            `;
+            const listFields = getListFields();
+            const fixedFields = getFixedFields();
+            let summaryHtml = `<span>שדות: <strong>${fields.length}</strong></span>`;
+            summaryHtml += `<span>פונט: <strong>${fontName}</strong></span>`;
+            if (fixedFields.length > 0) {
+                summaryHtml += `<span>שדות קבועים: <strong>${fixedFields.map(f => f.name).join(', ')}</strong></span>`;
+            }
+            settingsSummary.innerHTML = summaryHtml;
+            buildRecordForm();
+            renderRecords();
         });
 
         // Back to step 1
@@ -1105,43 +1103,100 @@
             step1.classList.remove('hidden');
         });
 
-        // Auto-fill filename from text
-        recordText.addEventListener('input', () => {
-            if (!recordName.dataset.manual) {
-                recordName.value = recordText.value.trim();
-            }
-        });
-        recordName.addEventListener('input', () => {
-            recordName.dataset.manual = recordName.value.trim() !== recordText.value.trim() ? '1' : '';
-        });
+        function buildRecordForm() {
+            const listFields = getListFields();
+            addRecordForm.innerHTML = '';
 
-        // Add record
+            // One input per list field
+            listFields.forEach((f, i) => {
+                const div = document.createElement('div');
+                div.className = 'form-group';
+                div.style.flex = '2';
+                div.innerHTML = `<label>${escapeHtml(f.name)}</label>
+                    <input type="text" data-field-id="${f.id}" class="record-field-input" placeholder="${escapeHtml(f.name)}">`;
+                addRecordForm.appendChild(div);
+            });
+
+            // Filename input
+            const nameDiv = document.createElement('div');
+            nameDiv.className = 'form-group';
+            nameDiv.style.flex = '1';
+            nameDiv.innerHTML = `<label>שם קובץ</label>
+                <input type="text" id="recordNameInput" placeholder="ימולא אוטומטית">`;
+            addRecordForm.appendChild(nameDiv);
+
+            // Add button
+            const btn = document.createElement('button');
+            btn.className = 'btn btn-primary';
+            btn.textContent = 'הוסף';
+            btn.addEventListener('click', addRecord);
+            addRecordForm.appendChild(btn);
+
+            // Auto-fill filename from first list field
+            const firstInput = addRecordForm.querySelector('.record-field-input');
+            if (firstInput) {
+                firstInput.addEventListener('input', () => {
+                    const nameInput = document.getElementById('recordNameInput');
+                    if (!nameInput.dataset.manual) {
+                        nameInput.value = firstInput.value.trim();
+                    }
+                });
+            }
+
+            // Enter key on inputs
+            addRecordForm.querySelectorAll('input').forEach(inp => {
+                inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') addRecord(); });
+            });
+
+            // Build table header
+            recordsHead.innerHTML = '';
+            const headTr = document.createElement('tr');
+            headTr.innerHTML = '<th>#</th><th>שם קובץ</th>';
+            listFields.forEach(f => {
+                headTr.innerHTML += `<th>${escapeHtml(f.name)}</th>`;
+            });
+            headTr.innerHTML += '<th></th>';
+            recordsHead.appendChild(headTr);
+        }
+
         function addRecord() {
-            const text = recordText.value.trim();
-            if (!text) return;
-            const name = recordName.value.trim() || text;
-            records.push({ name, text });
-            recordName.value = '';
-            recordText.value = '';
-            delete recordName.dataset.manual;
-            recordText.focus();
+            const listFields = getListFields();
+            const inputs = addRecordForm.querySelectorAll('.record-field-input');
+            const nameInput = document.getElementById('recordNameInput');
+            const values = {};
+            let hasValue = false;
+
+            inputs.forEach(inp => {
+                const val = inp.value.trim();
+                values[inp.dataset.fieldId] = val;
+                if (val) hasValue = true;
+            });
+
+            if (!hasValue) return;
+
+            const name = nameInput.value.trim() || inputs[0]?.value.trim() || 'document';
+            records.push({ name, values });
+
+            // Clear inputs
+            inputs.forEach(inp => inp.value = '');
+            nameInput.value = '';
+            delete nameInput.dataset.manual;
+            if (inputs[0]) inputs[0].focus();
+
             renderRecords();
         }
 
-        addRecordBtn.addEventListener('click', addRecord);
-        recordText.addEventListener('keydown', (e) => { if (e.key === 'Enter') addRecord(); });
-        recordName.addEventListener('keydown', (e) => { if (e.key === 'Enter') addRecord(); });
-
         function renderRecords() {
+            const listFields = getListFields();
             recordsBody.innerHTML = '';
             records.forEach((rec, i) => {
                 const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${i + 1}</td>
-                    <td>${escapeHtml(rec.name)}</td>
-                    <td>${escapeHtml(rec.text)}</td>
-                    <td><button class="btn btn-danger" onclick="removeRecord(${i})">מחק</button></td>
-                `;
+                let html = `<td>${i + 1}</td><td>${escapeHtml(rec.name)}</td>`;
+                listFields.forEach(f => {
+                    html += `<td>${escapeHtml(rec.values[f.id] || '')}</td>`;
+                });
+                html += `<td><button class="btn btn-danger" onclick="removeRecord(${i})">מחק</button></td>`;
+                tr.innerHTML = html;
                 recordsBody.appendChild(tr);
             });
             generateBtn.disabled = records.length === 0;
