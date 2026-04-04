@@ -645,11 +645,32 @@
         });
 
         addImageFieldBtn.addEventListener('click', () => {
-            const field = createField(null, 'image');
-            fields.push(field);
-            selectField(field.id);
-            renderFieldsList();
-            checkStep1();
+            // Open file picker first, only create field if image selected
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/*';
+            input.addEventListener('change', () => {
+                const file = input.files[0];
+                if (!file) return;
+                const field = createField(file.name.replace(/\.[^.]+$/, ''), 'image');
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    field.imageData = ev.target.result;
+                    const img = new Image();
+                    img.onload = () => {
+                        field.imageWidth = img.naturalWidth;
+                        field.imageHeight = img.naturalHeight;
+                        fields.push(field);
+                        selectField(field.id);
+                        renderFieldsList();
+                        checkStep1();
+                        updateAllHandles();
+                    };
+                    img.src = ev.target.result;
+                };
+                reader.readAsDataURL(file);
+            });
+            input.click();
         });
 
         // Image upload for image fields
@@ -931,7 +952,8 @@
                     selectField(field.id);
                     interactFieldId = field.id;
                     const dir = rh.dataset.dir;
-                    const textRect = textEl.getBoundingClientRect();
+                    const contentEl = (field.fieldType === 'image' ? imgEl : textEl) || handle;
+                    const textRect = contentEl.getBoundingClientRect();
                     const imgScale = previewImg.clientWidth / imageWidth;
                     const nwi = (textRect.width / field.scaleX) / imgScale;
                     const nhi = (textRect.height / field.scaleY) / imgScale;
