@@ -952,23 +952,24 @@
                     selectField(field.id);
                     interactFieldId = field.id;
                     const dir = rh.dataset.dir;
-                    const contentEl = (field.fieldType === 'image' ? imgEl : textEl) || handle;
-                    const textRect = contentEl.getBoundingClientRect();
-                    const imgScale = previewImg.clientWidth / imageWidth;
-                    const nwi = (textRect.width / field.scaleX) / imgScale;
-                    const nhi = (textRect.height / field.scaleY) / imgScale;
+                    const iScale = previewImg.clientWidth / imageWidth;
+                    // Use handle dimensions (already correctly sized) for 1:1 tracking
+                    const handleW = handle.offsetWidth;
+                    const handleH = handle.offsetHeight;
+                    const nwi = handleW / iScale;
+                    const nhi = handleH / iScale;
                     resizeState = {
                         dir,
                         startMouseX: e.clientX,
                         startMouseY: e.clientY,
                         startScaleX: field.scaleX,
                         startScaleY: field.scaleY,
-                        textWidth: textRect.width,
-                        textHeight: textRect.height,
-                        naturalW_img: nwi,
-                        naturalH_img: nhi,
-                        leftEdge: field.x - nwi * field.scaleX,
-                        bottomEdge: field.y + nhi * field.scaleY,
+                        textWidth: handleW,
+                        textHeight: handleH,
+                        naturalW_img: nwi / field.scaleX,
+                        naturalH_img: nhi / field.scaleY,
+                        leftEdge: field.x - (nwi / field.scaleX) * field.scaleX,
+                        bottomEdge: field.y + (nhi / field.scaleY) * field.scaleY,
                         startX: field.x,
                         startY: field.y,
                     };
@@ -1098,44 +1099,38 @@
 
                 // --- IMAGE FIELD ---
                 if (field.fieldType === 'image') {
+                    const baseW = field.imageWidth * imgScale;
+                    const baseH = field.imageHeight * imgScale;
+
                     if (img && field.imageData) {
                         img.src = field.imageData;
                         img.style.display = 'block';
-                        img.style.width = (field.imageWidth * imgScale) + 'px';
-                        img.style.height = 'auto';
+                        img.style.width = baseW + 'px';
+                        img.style.height = baseH + 'px';
+                        img.style.transform = 'none';
+                    }
+
+                    field.frameWidthImg = field.imageWidth * field.scaleX;
+                    field.frameHeightImg = field.imageHeight * field.scaleY;
+
+                    const scaledW = baseW * field.scaleX;
+                    const scaledH = baseH * field.scaleY;
+                    const displayX = (field.x / imageWidth) * previewImg.clientWidth;
+                    const displayY = (field.y / imageHeight) * previewImg.clientHeight;
+
+                    if (img) {
+                        img.style.transform = `scale(${field.scaleX}, ${field.scaleY})`;
+                        img.style.transformOrigin = 'top right';
                     }
 
                     handle.style.display = 'block';
-                    handle.style.width = 'auto';
-                    handle.style.height = 'auto';
-                    handle.style.transform = 'none';
-
-                    requestAnimationFrame(() => {
-                        const contentEl = img || handle;
-                        const naturalW = contentEl.offsetWidth || 100;
-                        const naturalH = contentEl.offsetHeight || 100;
-
-                        field.frameWidthImg = (naturalW * field.scaleX) / imgScale;
-                        field.frameHeightImg = (naturalH * field.scaleY) / imgScale;
-
-                        if (contentEl.style) {
-                            contentEl.style.transform = `scale(${field.scaleX}, ${field.scaleY})`;
-                            contentEl.style.transformOrigin = 'top right';
-                        }
-
-                        const scaledW = naturalW * field.scaleX;
-                        const scaledH = naturalH * field.scaleY;
-                        const displayX = (field.x / imageWidth) * previewImg.clientWidth;
-                        const displayY = (field.y / imageHeight) * previewImg.clientHeight;
-
-                        handle.style.width = scaledW + 'px';
-                        handle.style.height = scaledH + 'px';
-                        handle.style.left = (displayX - scaledW) + 'px';
-                        handle.style.top = displayY + 'px';
-                        handle.style.transform = `rotate(${field.rotation}deg)`;
-                        handle.style.transformOrigin = 'top right';
-                    });
-                    return; // skip text rendering below
+                    handle.style.width = scaledW + 'px';
+                    handle.style.height = scaledH + 'px';
+                    handle.style.left = (displayX - scaledW) + 'px';
+                    handle.style.top = displayY + 'px';
+                    handle.style.transform = `rotate(${field.rotation}deg)`;
+                    handle.style.transformOrigin = 'top right';
+                    return;
                 }
 
                 // --- TEXT FIELD ---
