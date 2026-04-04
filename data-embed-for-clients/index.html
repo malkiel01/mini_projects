@@ -1187,6 +1187,37 @@
             interactFieldId = null;
         });
 
+        // --- COPY / PASTE FIELDS ---
+        let copiedField = null;
+
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+
+            // Ctrl+C / Cmd+C = copy active field
+            if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+                const field = getActiveField();
+                if (!field) return;
+                copiedField = JSON.parse(JSON.stringify(field));
+                e.preventDefault();
+            }
+
+            // Ctrl+V / Cmd+V = paste copied field
+            if ((e.ctrlKey || e.metaKey) && e.key === 'v' && copiedField) {
+                const newField = JSON.parse(JSON.stringify(copiedField));
+                newField.id = ++fieldIdCounter;
+                newField.name = copiedField.name + ' (עותק)';
+                // Offset position slightly so it's visible
+                newField.x += 20;
+                newField.y += 20;
+                fields.push(newField);
+                selectField(newField.id);
+                renderFieldsList();
+                updateAllHandles();
+                checkStep1();
+                e.preventDefault();
+            }
+        });
+
         // ========== RENDER ALL HANDLES ==========
         function updateAllHandles() {
             if (!getImageWidth()) return;
@@ -1303,8 +1334,7 @@
         }
 
         function checkStep1() {
-            const hasFields = pages.some(p => p.fields.length > 0);
-            toStep2Btn.disabled = !(pages.length > 0 && fontData && hasFields);
+            toStep2Btn.disabled = !(pages.length > 0 && fontData);
         }
 
         // ========== STEP 2: DYNAMIC RECORDS ==========
