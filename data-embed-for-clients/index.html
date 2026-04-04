@@ -434,7 +434,8 @@
             <div class="fields-section">
                 <div class="fields-header">
                     <h3>שדות</h3>
-                    <button class="btn btn-primary btn-sm" id="addFieldBtn">+ הוסף שדה</button>
+                    <button class="btn btn-primary btn-sm" id="addFieldBtn">+ שדה טקסט</button>
+                    <button class="btn btn-secondary btn-sm" id="addImageFieldBtn">+ שדה תמונה</button>
                 </div>
                 <div class="fields-list" id="fieldsList"></div>
 
@@ -463,6 +464,17 @@
                         </div>
                     </div>
 
+                    <!-- Image field settings -->
+                    <div id="imageFieldSettings" style="display:none;">
+                        <div class="form-group">
+                            <label>העלאת תמונה (PNG שקוף נתמך)</label>
+                            <input type="file" id="fieldImageInput" accept="image/*">
+                        </div>
+                        <div id="fieldImagePreview" style="max-width:120px;margin-bottom:12px;"></div>
+                    </div>
+
+                    <!-- Text field settings -->
+                    <div id="textFieldSettings">
                     <div class="font-color-row">
                         <div class="form-group">
                             <label>גודל פונט (px)</label>
@@ -480,6 +492,7 @@
                             </select>
                         </div>
                     </div>
+                    </div><!-- /textFieldSettings -->
 
                     <div class="coords-row">
                         <div class="form-group">
@@ -561,10 +574,11 @@
         let activeFieldId = null;
         let fieldIdCounter = 0;
 
-        function createField(name) {
+        function createField(name, fieldType) {
             return {
                 id: ++fieldIdCounter,
-                name: name || 'שדה ' + fieldIdCounter,
+                name: name || (fieldType === 'image' ? 'תמונה ' : 'שדה ') + fieldIdCounter,
+                fieldType: fieldType || 'text', // 'text' or 'image'
                 x: 430,
                 y: 220,
                 fontSize: 24,
@@ -573,10 +587,14 @@
                 scaleX: 1,
                 scaleY: 1,
                 textMode: 'wrap',
-                valueType: 'list',
+                valueType: fieldType === 'image' ? 'fixed' : 'list',
                 fixedValue: '',
                 frameWidthImg: 0,
                 frameHeightImg: 0,
+                // Image field specific
+                imageData: null,
+                imageWidth: 100,
+                imageHeight: 100,
             };
         }
 
@@ -612,12 +630,47 @@
         const fixedValueRow = document.getElementById('fixedValueRow');
 
         // --- FIELD MANAGEMENT ---
+        const addImageFieldBtn = document.getElementById('addImageFieldBtn');
+        const imageFieldSettings = document.getElementById('imageFieldSettings');
+        const textFieldSettings = document.getElementById('textFieldSettings');
+        const fieldImageInput = document.getElementById('fieldImageInput');
+        const fieldImagePreview = document.getElementById('fieldImagePreview');
+
         addFieldBtn.addEventListener('click', () => {
-            const field = createField();
+            const field = createField(null, 'text');
             fields.push(field);
             selectField(field.id);
             renderFieldsList();
             checkStep1();
+        });
+
+        addImageFieldBtn.addEventListener('click', () => {
+            const field = createField(null, 'image');
+            fields.push(field);
+            selectField(field.id);
+            renderFieldsList();
+            checkStep1();
+        });
+
+        // Image upload for image fields
+        fieldImageInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const field = getActiveField();
+            if (!field || field.fieldType !== 'image') return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                field.imageData = ev.target.result;
+                const img = new Image();
+                img.onload = () => {
+                    field.imageWidth = img.naturalWidth;
+                    field.imageHeight = img.naturalHeight;
+                    fieldImagePreview.innerHTML = `<img src="${field.imageData}" style="max-width:120px;border-radius:6px;border:1px solid #ddd;">`;
+                    updateAllHandles();
+                };
+                img.src = ev.target.result;
+            };
+            reader.readAsDataURL(file);
         });
 
         function selectField(id) {
@@ -630,12 +683,25 @@
             fieldSettings.classList.add('visible');
             fieldSettingsTitle.textContent = 'הגדרות: ' + field.name;
             fieldNameInput.value = field.name;
-            fieldValueTypeInput.value = field.valueType;
-            fieldFixedValueInput.value = field.fixedValue;
-            fixedValueRow.style.display = field.valueType === 'fixed' ? 'block' : 'none';
-            fontSizeInput.value = field.fontSize;
-            textColorInput.value = field.color;
-            textModeInput.value = field.textMode;
+
+            const isImage = field.fieldType === 'image';
+            imageFieldSettings.style.display = isImage ? 'block' : 'none';
+            textFieldSettings.style.display = isImage ? 'none' : 'block';
+
+            if (isImage) {
+                fieldImagePreview.innerHTML = field.imageData
+                    ? `<img src="${field.imageData}" style="max-width:120px;border-radius:6px;border:1px solid #ddd;">`
+                    : '';
+                fieldImageInput.value = '';
+            } else {
+                fieldValueTypeInput.value = field.valueType;
+                fieldFixedValueInput.value = field.fixedValue;
+                fixedValueRow.style.display = field.valueType === 'fixed' ? 'block' : 'none';
+                fontSizeInput.value = field.fontSize;
+                textColorInput.value = field.color;
+                textModeInput.value = field.textMode;
+            }
+
             xInput.value = field.x;
             yInput.value = field.y;
             rotationInput.value = field.rotation;
@@ -660,7 +726,7 @@
             fields.forEach(f => {
                 const card = document.createElement('div');
                 card.className = 'field-card' + (f.id === activeFieldId ? ' active' : '');
-                const typeBadge = f.valueType === 'fixed' ? 'קבוע' : 'רשימה';
+                const typeBadge = f.fieldType === 'image' ? '🖼️' : (f.valueType === 'fixed' ? 'קבוע' : 'רשימה');
                 card.innerHTML = `
                     <span>${escapeHtml(f.name)}</span>
                     <span class="field-type-badge">${typeBadge}</span>
@@ -820,8 +886,10 @@
             const handle = document.createElement('div');
             handle.className = 'text-handle';
             handle.dataset.fieldId = field.id;
-            handle.innerHTML = `
-                <div class="preview-text">${field.valueType === 'fixed' ? escapeHtml(field.fixedValue || field.name) : escapeHtml(field.name)}</div>
+            const contentHtml = field.fieldType === 'image'
+                ? `<div class="preview-content"><img class="preview-field-img" src="" style="display:none;pointer-events:none;"></div>`
+                : `<div class="preview-text">${field.valueType === 'fixed' ? escapeHtml(field.fixedValue || field.name) : escapeHtml(field.name)}</div>`;
+            handle.innerHTML = `${contentHtml}
                 <div class="border-box"></div>
                 <div class="rotate-line"></div>
                 <div class="handle rotate-handle" data-type="rotate"></div>
@@ -835,6 +903,7 @@
                 <div class="handle rh rh-br" data-type="resize" data-dir="br"></div>
             `;
             const textEl = handle.querySelector('.preview-text');
+            const imgEl = handle.querySelector('.preview-field-img');
 
             // Click to select
             handle.addEventListener('mousedown', (e) => {
@@ -898,7 +967,7 @@
             });
 
             previewArea.appendChild(handle);
-            handleElements[field.id] = { handle, text: textEl };
+            handleElements[field.id] = { handle, text: textEl, img: imgEl };
         }
 
         // Click on image → move active field
@@ -996,7 +1065,7 @@
                 if (!handleElements[field.id]) {
                     createHandleEl(field);
                 }
-                const { handle, text } = handleElements[field.id];
+                const { handle, text, img } = handleElements[field.id];
 
                 // Active state
                 if (field.id === activeFieldId) {
@@ -1005,11 +1074,52 @@
                     handle.classList.remove('active');
                 }
 
-                // Update text content
+                // --- IMAGE FIELD ---
+                if (field.fieldType === 'image') {
+                    if (img && field.imageData) {
+                        img.src = field.imageData;
+                        img.style.display = 'block';
+                        img.style.width = (field.imageWidth * imgScale) + 'px';
+                        img.style.height = 'auto';
+                    }
+
+                    handle.style.display = 'block';
+                    handle.style.width = 'auto';
+                    handle.style.height = 'auto';
+                    handle.style.transform = 'none';
+
+                    requestAnimationFrame(() => {
+                        const contentEl = img || handle;
+                        const naturalW = contentEl.offsetWidth || 100;
+                        const naturalH = contentEl.offsetHeight || 100;
+
+                        field.frameWidthImg = (naturalW * field.scaleX) / imgScale;
+                        field.frameHeightImg = (naturalH * field.scaleY) / imgScale;
+
+                        if (contentEl.style) {
+                            contentEl.style.transform = `scale(${field.scaleX}, ${field.scaleY})`;
+                            contentEl.style.transformOrigin = 'top right';
+                        }
+
+                        const scaledW = naturalW * field.scaleX;
+                        const scaledH = naturalH * field.scaleY;
+                        const displayX = (field.x / imageWidth) * previewImg.clientWidth;
+                        const displayY = (field.y / imageHeight) * previewImg.clientHeight;
+
+                        handle.style.width = scaledW + 'px';
+                        handle.style.height = scaledH + 'px';
+                        handle.style.left = (displayX - scaledW) + 'px';
+                        handle.style.top = displayY + 'px';
+                        handle.style.transform = `rotate(${field.rotation}deg)`;
+                        handle.style.transformOrigin = 'top right';
+                    });
+                    return; // skip text rendering below
+                }
+
+                // --- TEXT FIELD ---
                 const displayText = field.valueType === 'fixed' ? (field.fixedValue || field.name) : field.name;
                 text.textContent = displayText;
 
-                // Style
                 text.style.fontSize = (field.fontSize * imgScale) + 'px';
                 text.style.color = field.color;
                 text.style.direction = 'rtl';
@@ -1025,7 +1135,6 @@
                     } catch (e) {}
                 }
 
-                // Measure and position
                 handle.style.display = 'block';
                 handle.style.width = 'auto';
                 handle.style.height = 'auto';
@@ -1215,6 +1324,18 @@
 
         // ========== GENERATE PDFs ==========
         function renderFieldToPdf(doc, field, text, pxToPt, widthPt, heightPt) {
+            // IMAGE FIELD
+            if (field.fieldType === 'image' && field.imageData) {
+                const imgX = field.x * pxToPt;
+                const imgY = field.y * pxToPt;
+                const imgW = field.frameWidthImg * pxToPt;
+                const imgH = field.frameHeightImg * pxToPt;
+                // Position: right edge at X (RTL-style), top at Y
+                doc.addImage(field.imageData, 'PNG', imgX - imgW, imgY, imgW, imgH);
+                return;
+            }
+
+            // TEXT FIELD
             const reversedText = text.split('').reverse().join('');
             const baseFontSize = field.fontSize * pxToPt;
             const textX = field.x * pxToPt;
@@ -1285,6 +1406,13 @@
 
                 // Render ALL fields
                 fields.forEach(field => {
+                    if (field.fieldType === 'image') {
+                        // Image fields always render (fixed value)
+                        if (field.imageData) {
+                            renderFieldToPdf(doc, field, '', pxToPt, widthPt, heightPt);
+                        }
+                        return;
+                    }
                     let text = '';
                     if (field.valueType === 'fixed') {
                         text = field.fixedValue || '';
