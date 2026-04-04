@@ -6,6 +6,7 @@
     <title>הטמעת נתונים לריכוז לקוחות</title>
     <script src="https://unpkg.com/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
     <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -390,6 +391,26 @@
             margin-bottom: 12px;
             color: #4a6cf7;
         }
+        .page-nav {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 10px;
+            margin-bottom: 6px;
+        }
+        .page-nav button {
+            padding: 6px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            background: white;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: 600;
+        }
+        .page-nav button:hover { border-color: #4a6cf7; }
+        .page-nav button:disabled { opacity: 0.4; cursor: not-allowed; }
+        .page-nav span { font-size: 0.9rem; color: #555; }
         .field-value-row {
             margin-top: 10px;
         }
@@ -411,8 +432,8 @@
             <h2>שלב 1: הגדרות בסיס</h2>
 
             <div class="form-group">
-                <label>תמונת רקע (PNG / JPG)</label>
-                <input type="file" id="imageInput" accept="image/png,image/jpeg,image/jpg">
+                <label>תמונת רקע או PDF</label>
+                <input type="file" id="imageInput" accept="image/png,image/jpeg,image/jpg,application/pdf,.pdf">
             </div>
 
             <div class="form-group">
@@ -513,6 +534,11 @@
 
             <div class="form-group">
                 <label>תצוגה מקדימה (גרור את הטקסט למיקום הרצוי)</label>
+                <div class="page-nav" id="pageNav" style="display:none;">
+                    <button id="prevPageBtn">&rarr; הקודם</button>
+                    <span id="pageIndicator">עמוד 1 מתוך 1</span>
+                    <button id="nextPageBtn">הבא &larr;</button>
+                </div>
                 <div class="preview-area" id="previewArea" style="display:none;">
                     <img id="previewImg" src="">
                     <!-- text-handles are created dynamically per field -->
@@ -560,19 +586,38 @@
         }
         const { jsPDF } = window.jspdf;
 
+        // PDF.js worker
+        if (window.pdfjsLib) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+
         // State
-        let imageData = null;
-        let imageType = '';
-        let imageWidth = 0;
-        let imageHeight = 0;
+        let pages = []; // Array of { pageObj.imageData, pageObj.imageType, imageWidth, imageHeight, fields: [] }
+        let currentPage = 0;
         let fontData = null;
         let fontName = '';
         let records = [];
 
-        // Fields system
-        let fields = [];
+        // Fields system (now per-page via pages[currentPage].fields)
         let activeFieldId = null;
         let fieldIdCounter = 0;
+
+        function getCurrentPage() { return pages[currentPage] || null; }
+        function get_fields() { const p = getCurrentPage(); return p ? p.fields : []; }
+        // Proxy 'fields' as getter/setter to current page
+        Object.defineProperty(window, '_fields', {
+            get() { return get_fields(); }
+        });
+        // We'll use a local `fields` variable that we keep in sync
+        let fields = [];
+        function syncFields() {
+            const p = getCurrentPage();
+            if (p) { fields = p.fields; }
+        }
+        function getImageData() { const p = getCurrentPage(); return p ? p.imageData : null; }
+        function getImageType() { const p = getCurrentPage(); return p ? p.imageType : ''; }
+        function getImageWidth() { const p = getCurrentPage(); return p ? p.imageWidth : 0; }
+        function getImageHeight() { const p = getCurrentPage(); return p ? p.imageHeight : 0; }
 
         function createField(name, fieldType) {
             return {
@@ -806,26 +851,98 @@
         const progressOverlay = document.getElementById('progressOverlay');
         const progressText = document.getElementById('progressText');
 
-        // Image upload
-        imageInput.addEventListener('change', (e) => {
+        // Image / PDF upload
+        const pageNav = document.getElementById('pageNav');
+        const prevPageBtn = document.getElementById('prevPageBtn');
+        const nextPageBtn = document.getElementById('nextPageBtn');
+        const pageIndicator = document.getElementById('pageIndicator');
+
+        imageInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
-            imageType = file.type === 'image/png' ? 'PNG' : 'JPEG';
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                imageData = ev.target.result;
-                previewImg.src = imageData;
-                previewArea.style.display = 'inline-block';
-                const img = new Image();
-                img.onload = () => {
-                    imageWidth = img.naturalWidth;
-                    imageHeight = img.naturalHeight;
-                    updateAllHandles();
-                    checkStep1();
+
+            if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+                // PDF: render each page to image
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                pages = [];
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const viewport = page.getViewport({ scale: 2 });
+                    const canvas = document.createElement('canvas');
+                    canvas.width = viewport.width;
+                    canvas.height = viewport.height;
+                    const ctx = canvas.getContext('2d');
+                    await page.render({ canvasContext: ctx, viewport }).promise;
+                    pages.push({
+                        imageData: canvas.toDataURL('image/png'),
+                        imageType: 'PNG',
+                        imageWidth: viewport.width,
+                        imageHeight: viewport.height,
+                        fields: [],
+                    });
+                }
+                currentPage = 0;
+                syncFields();
+                showCurrentPage();
+            } else {
+                // Single image
+                const imgType = file.type === 'image/png' ? 'PNG' : 'JPEG';
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    const imgSrc = ev.target.result;
+                    const img = new Image();
+                    img.onload = () => {
+                        pages = [{
+                            imageData: imgSrc,
+                            imageType: imgType,
+                            imageWidth: img.naturalWidth,
+                            imageHeight: img.naturalHeight,
+                            fields: [],
+                        }];
+                        currentPage = 0;
+                        syncFields();
+                        showCurrentPage();
+                    };
+                    img.src = imgSrc;
                 };
-                img.src = imageData;
-            };
-            reader.readAsDataURL(file);
+                reader.readAsDataURL(file);
+            }
+        });
+
+        function showCurrentPage() {
+            const p = getCurrentPage();
+            if (!p) return;
+            syncFields();
+            activeFieldId = null;
+            // Clear all handles
+            Object.values(handleElements).forEach(h => h.handle.remove());
+            handleElements = {};
+
+            previewImg.src = p.imageData;
+            previewArea.style.display = 'inline-block';
+
+            // Page navigation
+            if (pages.length > 1) {
+                pageNav.style.display = 'flex';
+                pageIndicator.textContent = `עמוד ${currentPage + 1} מתוך ${pages.length}`;
+                prevPageBtn.disabled = currentPage === 0;
+                nextPageBtn.disabled = currentPage === pages.length - 1;
+            } else {
+                pageNav.style.display = 'none';
+            }
+
+            fieldSettings.classList.remove('visible');
+            renderFieldsList();
+            updateAllHandles();
+            checkStep1();
+        }
+
+        prevPageBtn.addEventListener('click', () => {
+            if (currentPage > 0) { currentPage--; showCurrentPage(); }
+        });
+        nextPageBtn.addEventListener('click', () => {
+            if (currentPage < pages.length - 1) { currentPage++; showCurrentPage(); }
         });
 
         // Load saved fonts from server
@@ -939,8 +1056,8 @@
                     startMouseY: e.clientY,
                     startX: field.x,
                     startY: field.y,
-                    ratioX: imageWidth / previewImg.clientWidth,
-                    ratioY: imageHeight / previewImg.clientHeight,
+                    ratioX: getImageWidth() / previewImg.clientWidth,
+                    ratioY: getImageHeight() / previewImg.clientHeight,
                 };
             });
 
@@ -952,7 +1069,7 @@
                     selectField(field.id);
                     interactFieldId = field.id;
                     const dir = rh.dataset.dir;
-                    const iScale = previewImg.clientWidth / imageWidth;
+                    const iScale = previewImg.clientWidth / getImageWidth();
                     // Use handle dimensions (already correctly sized) for 1:1 tracking
                     const handleW = handle.offsetWidth;
                     const handleH = handle.offsetHeight;
@@ -999,8 +1116,8 @@
                 const field = getActiveField();
                 if (!field) return;
                 const rect = previewImg.getBoundingClientRect();
-                field.x = Math.round((e.clientX - rect.left) * (imageWidth / previewImg.clientWidth));
-                field.y = Math.round((e.clientY - rect.top) * (imageHeight / previewImg.clientHeight));
+                field.x = Math.round((e.clientX - rect.left) * (getImageWidth() / previewImg.clientWidth));
+                field.y = Math.round((e.clientY - rect.top) * (getImageHeight() / previewImg.clientHeight));
                 xInput.value = field.x;
                 yInput.value = field.y;
                 updateAllHandles();
@@ -1072,8 +1189,8 @@
 
         // ========== RENDER ALL HANDLES ==========
         function updateAllHandles() {
-            if (!imageWidth) return;
-            const imgScale = previewImg.clientWidth / imageWidth;
+            if (!getImageWidth()) return;
+            const imgScale = previewImg.clientWidth / getImageWidth();
 
             // Remove handles for deleted fields
             Object.keys(handleElements).forEach(id => {
@@ -1118,8 +1235,8 @@
                     field.frameWidthImg = field.imageWidth * field.scaleX;
                     field.frameHeightImg = field.imageHeight * field.scaleY;
 
-                    const displayX = (field.x / imageWidth) * previewImg.clientWidth;
-                    const displayY = (field.y / imageHeight) * previewImg.clientHeight;
+                    const displayX = (field.x / getImageWidth()) * previewImg.clientWidth;
+                    const displayY = (field.y / getImageHeight()) * previewImg.clientHeight;
 
                     handle.style.display = 'block';
                     handle.style.width = scaledW + 'px';
@@ -1168,8 +1285,8 @@
 
                     const scaledW = naturalW * field.scaleX;
                     const scaledH = naturalH * field.scaleY;
-                    const displayX = (field.x / imageWidth) * previewImg.clientWidth;
-                    const displayY = (field.y / imageHeight) * previewImg.clientHeight;
+                    const displayX = (field.x / getImageWidth()) * previewImg.clientWidth;
+                    const displayY = (field.y / getImageHeight()) * previewImg.clientHeight;
 
                     handle.style.width = scaledW + 'px';
                     handle.style.height = scaledH + 'px';
@@ -1186,7 +1303,8 @@
         }
 
         function checkStep1() {
-            toStep2Btn.disabled = !(imageData && fontData && fields.length > 0);
+            const hasFields = pages.some(p => p.fields.length > 0);
+            toStep2Btn.disabled = !(pages.length > 0 && fontData && hasFields);
         }
 
         // ========== STEP 2: DYNAMIC RECORDS ==========
@@ -1197,12 +1315,16 @@
         const backBtn = document.getElementById('backBtn');
         const settingsSummary = document.getElementById('settingsSummary');
 
+        function getAllFields() {
+            return pages.flatMap(p => p.fields);
+        }
+
         function getListFields() {
-            return fields.filter(f => f.valueType === 'list');
+            return getAllFields().filter(f => f.valueType === 'list' && f.fieldType !== 'image');
         }
 
         function getFixedFields() {
-            return fields.filter(f => f.valueType === 'fixed');
+            return getAllFields().filter(f => f.valueType === 'fixed' && f.fieldType !== 'image');
         }
 
         // Go to step 2
@@ -1398,17 +1520,19 @@
             const zip = new JSZip();
             const fontBase64 = arrayBufferToBase64(fontData);
             const pxToPt = 72 / 96;
-            const widthPt = imageWidth * pxToPt;
-            const heightPt = imageHeight * pxToPt;
 
             for (let i = 0; i < records.length; i++) {
                 const rec = records[i];
                 progressText.textContent = `מייצר קובץ ${i + 1} מתוך ${records.length}...`;
 
+                // First page determines initial doc size
+                const firstPage = pages[0];
+                const firstW = firstPage.imageWidth * pxToPt;
+                const firstH = firstPage.imageHeight * pxToPt;
                 const doc = new jsPDF({
-                    orientation: imageWidth > imageHeight ? 'landscape' : 'portrait',
+                    orientation: firstPage.imageWidth > firstPage.imageHeight ? 'landscape' : 'portrait',
                     unit: 'pt',
-                    format: [widthPt, heightPt]
+                    format: [firstW, firstH]
                 });
 
                 // Add font
@@ -1416,28 +1540,37 @@
                 doc.addFont(fontName + '.ttf', fontName, 'normal');
                 doc.setFont(fontName);
 
-                // Add image
-                doc.addImage(imageData, imageType, 0, 0, widthPt, heightPt);
+                // Render each page
+                pages.forEach((pageObj, pi) => {
+                    const widthPt = pageObj.imageWidth * pxToPt;
+                    const heightPt = pageObj.imageHeight * pxToPt;
 
-                // Render ALL fields
-                fields.forEach(field => {
-                    if (field.fieldType === 'image') {
-                        // Image fields always render (fixed value)
-                        if (field.imageData) {
-                            renderFieldToPdf(doc, field, '', pxToPt, widthPt, heightPt);
+                    if (pi > 0) {
+                        doc.addPage([widthPt, heightPt], pageObj.imageWidth > pageObj.imageHeight ? 'landscape' : 'portrait');
+                    }
+
+                    // Add background image
+                    doc.addImage(pageObj.imageData, pageObj.imageType, 0, 0, widthPt, heightPt);
+
+                    // Render fields for this page
+                    pageObj.fields.forEach(field => {
+                        if (field.fieldType === 'image') {
+                            if (field.imageData) {
+                                renderFieldToPdf(doc, field, '', pxToPt, widthPt, heightPt);
+                            }
+                            return;
                         }
-                        return;
-                    }
-                    let text = '';
-                    if (field.valueType === 'fixed') {
-                        text = field.fixedValue || '';
-                    } else {
-                        text = rec.values[field.id] || '';
-                    }
-                    if (text) {
-                        doc.setFont(fontName);
-                        renderFieldToPdf(doc, field, text, pxToPt, widthPt, heightPt);
-                    }
+                        let text = '';
+                        if (field.valueType === 'fixed') {
+                            text = field.fixedValue || '';
+                        } else {
+                            text = rec.values[field.id] || '';
+                        }
+                        if (text) {
+                            doc.setFont(fontName);
+                            renderFieldToPdf(doc, field, text, pxToPt, widthPt, heightPt);
+                        }
+                    });
                 });
 
                 const pdfBlob = doc.output('arraybuffer');
