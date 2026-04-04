@@ -1101,27 +1101,25 @@
                 if (field.fieldType === 'image') {
                     const baseW = field.imageWidth * imgScale;
                     const baseH = field.imageHeight * imgScale;
+                    const scaledW = baseW * field.scaleX;
+                    const scaledH = baseH * field.scaleY;
 
                     if (img && field.imageData) {
                         img.src = field.imageData;
                         img.style.display = 'block';
-                        img.style.width = baseW + 'px';
-                        img.style.height = baseH + 'px';
+                        img.style.width = scaledW + 'px';
+                        img.style.height = scaledH + 'px';
                         img.style.transform = 'none';
+                        img.style.position = 'absolute';
+                        img.style.right = '0';
+                        img.style.top = '0';
                     }
 
                     field.frameWidthImg = field.imageWidth * field.scaleX;
                     field.frameHeightImg = field.imageHeight * field.scaleY;
 
-                    const scaledW = baseW * field.scaleX;
-                    const scaledH = baseH * field.scaleY;
                     const displayX = (field.x / imageWidth) * previewImg.clientWidth;
                     const displayY = (field.y / imageHeight) * previewImg.clientHeight;
-
-                    if (img) {
-                        img.style.transform = `scale(${field.scaleX}, ${field.scaleY})`;
-                        img.style.transformOrigin = 'top right';
-                    }
 
                     handle.style.display = 'block';
                     handle.style.width = scaledW + 'px';
