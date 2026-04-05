@@ -528,6 +528,77 @@
             display: block;
             border-color: #f59e0b;
         }
+        /* API Export Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.6);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.visible { display: flex; }
+        .modal-box {
+            background: white;
+            border-radius: 12px;
+            padding: 28px;
+            max-width: 700px;
+            width: 90%;
+            max-height: 85vh;
+            overflow-y: auto;
+            direction: rtl;
+        }
+        .modal-box h3 {
+            font-size: 1.2rem;
+            margin-bottom: 16px;
+            color: #1a1a2e;
+        }
+        .modal-box pre {
+            background: #1a1a2e;
+            color: #a5d6ff;
+            border-radius: 8px;
+            padding: 14px;
+            font-size: 0.8rem;
+            overflow-x: auto;
+            direction: ltr;
+            text-align: left;
+            margin: 10px 0;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .modal-box .form-group { margin-bottom: 14px; }
+        .modal-close {
+            float: left;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #999;
+        }
+        .modal-close:hover { color: #333; }
+        .api-field-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 6px 0;
+            font-size: 0.9rem;
+        }
+        .api-field-row .badge {
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 4px;
+            background: #e8e8e8;
+        }
+        .copy-btn {
+            padding: 4px 12px;
+            font-size: 0.8rem;
+            background: #4a6cf7;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -589,6 +660,13 @@
                     <div class="menu-dropdown">
                         <div class="menu-option" id="menuShowAllBtn"><span class="menu-icon">👁</span> הצג כל השדות</div>
                         <div class="menu-option" id="menuHideHandlesBtn"><span class="menu-icon">🔲</span> הסתר ידיות</div>
+                    </div>
+                </div>
+                <div class="menu-item" data-menu="api">
+                    יצוא
+                    <div class="menu-dropdown">
+                        <div class="menu-option" id="menuExportApiBtn"><span class="menu-icon">🔗</span> יצוא API</div>
+                        <div class="menu-option" id="menuLoadTemplateBtn"><span class="menu-icon">📂</span> טען תבנית</div>
                     </div>
                 </div>
             </div>
@@ -726,6 +804,54 @@
             <div class="actions-bar">
                 <button class="btn btn-success" id="generateBtn" disabled>הורד ZIP</button>
                 <button class="btn btn-secondary" id="backBtn">חזרה להגדרות</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- API Export Modal -->
+    <div class="modal-overlay" id="apiModal">
+        <div class="modal-box">
+            <button class="modal-close" id="apiModalClose">&times;</button>
+            <h3>🔗 יצוא API</h3>
+
+            <div class="form-group">
+                <label>שם התבנית</label>
+                <input type="text" id="templateNameInput" placeholder="למשל: מכתב ללקוחות">
+            </div>
+
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="allowSourceReplace"> אפשר החלפת קובץ מקור דרך ה-API (base64)
+                </label>
+            </div>
+
+            <div class="form-group">
+                <label>שדות זמינים ב-API:</label>
+                <div id="apiFieldsList"></div>
+            </div>
+
+            <button class="btn btn-primary" id="saveTemplateBtn">שמור תבנית</button>
+
+            <div id="apiDocsSection" style="display:none;">
+                <h3 style="margin-top:20px;">📡 תיעוד API</h3>
+
+                <div class="form-group">
+                    <label>Endpoint:</label>
+                    <pre id="apiEndpointUrl"></pre>
+                    <button class="copy-btn" id="copyEndpointBtn">העתק</button>
+                </div>
+
+                <div class="form-group">
+                    <label>מבנה הבקשה (POST JSON):</label>
+                    <pre id="apiRequestBody"></pre>
+                    <button class="copy-btn" id="copyRequestBtn">העתק</button>
+                </div>
+
+                <div class="form-group">
+                    <label>דוגמת curl:</label>
+                    <pre id="apiCurlExample"></pre>
+                    <button class="copy-btn" id="copyCurlBtn">העתק</button>
+                </div>
             </div>
         </div>
     </div>
@@ -2051,6 +2177,147 @@
             div.textContent = str;
             return div.innerHTML;
         }
+
+        // ========== API EXPORT ==========
+        const apiModal = document.getElementById('apiModal');
+        const apiModalClose = document.getElementById('apiModalClose');
+        const templateNameInput = document.getElementById('templateNameInput');
+        const allowSourceReplace = document.getElementById('allowSourceReplace');
+        const apiFieldsList = document.getElementById('apiFieldsList');
+        const saveTemplateBtn = document.getElementById('saveTemplateBtn');
+        const apiDocsSection = document.getElementById('apiDocsSection');
+
+        document.getElementById('menuExportApiBtn').addEventListener('click', () => {
+            apiModal.classList.add('visible');
+            // Populate fields list
+            const allFields = pages.flatMap(p => p.fields);
+            const listFields = allFields.filter(f => f.valueType === 'list' && f.fieldType !== 'image');
+            apiFieldsList.innerHTML = '';
+            listFields.forEach(f => {
+                const row = document.createElement('div');
+                row.className = 'api-field-row';
+                row.innerHTML = `
+                    <span>${escapeHtml(f.name)}</span>
+                    <span class="badge">ID: ${f.id}</span>
+                    <span class="badge">רשימה</span>
+                `;
+                apiFieldsList.appendChild(row);
+            });
+            if (listFields.length === 0) {
+                apiFieldsList.innerHTML = '<div style="color:#999;font-size:0.85rem;">אין שדות מסוג רשימה</div>';
+            }
+        });
+
+        apiModalClose.addEventListener('click', () => { apiModal.classList.remove('visible'); });
+        apiModal.addEventListener('click', (e) => { if (e.target === apiModal) apiModal.classList.remove('visible'); });
+
+        saveTemplateBtn.addEventListener('click', async () => {
+            const name = templateNameInput.value.trim();
+            if (!name) { alert('נא להזין שם תבנית'); return; }
+
+            const templateData = {
+                name,
+                allowSourceReplace: allowSourceReplace.checked,
+                pages: pages.map(p => ({
+                    imageData: p.imageData,
+                    imageType: p.imageType,
+                    imageWidth: p.imageWidth,
+                    imageHeight: p.imageHeight,
+                    fields: p.fields,
+                })),
+                fontName,
+                fontData: fontData ? arrayBufferToBase64(fontData) : null,
+            };
+
+            try {
+                const res = await fetch('api.php?action=save_template', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(templateData),
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showApiDocs(data.id, name);
+                } else {
+                    alert('שגיאה: ' + (data.error || 'לא ידוע'));
+                }
+            } catch (e) {
+                alert('שגיאה בשמירה: ' + e.message);
+            }
+        });
+
+        function showApiDocs(templateId, name) {
+            apiDocsSection.style.display = 'block';
+            const baseUrl = window.location.origin + window.location.pathname.replace('index.html', '');
+            const endpoint = `${baseUrl}api.php?action=render&id=${templateId}`;
+
+            document.getElementById('apiEndpointUrl').textContent = `POST ${endpoint}`;
+
+            const allFields = pages.flatMap(p => p.fields);
+            const listFields = allFields.filter(f => f.valueType === 'list' && f.fieldType !== 'image');
+
+            const bodyObj = {};
+            if (allowSourceReplace.checked) {
+                bodyObj.source_image = "data:image/png;base64,... (base64 של תמונה חדשה)";
+            }
+            bodyObj.fields = {};
+            listFields.forEach(f => {
+                bodyObj.fields[f.id] = `ערך עבור ${f.name}`;
+            });
+
+            document.getElementById('apiRequestBody').textContent = JSON.stringify(bodyObj, null, 2);
+
+            const curlBody = JSON.stringify(bodyObj);
+            document.getElementById('apiCurlExample').textContent =
+                `curl -X POST "${endpoint}" \\\n  -H "Content-Type: application/json" \\\n  -d '${curlBody}'`;
+
+            // Copy buttons
+            document.getElementById('copyEndpointBtn').onclick = () => {
+                navigator.clipboard.writeText(endpoint);
+            };
+            document.getElementById('copyRequestBtn').onclick = () => {
+                navigator.clipboard.writeText(JSON.stringify(bodyObj, null, 2));
+            };
+            document.getElementById('copyCurlBtn').onclick = () => {
+                navigator.clipboard.writeText(document.getElementById('apiCurlExample').textContent);
+            };
+        }
+
+        // Load template
+        document.getElementById('menuLoadTemplateBtn').addEventListener('click', async () => {
+            try {
+                const res = await fetch('api.php?action=list_templates');
+                const data = await res.json();
+                if (!data.templates || data.templates.length === 0) {
+                    alert('אין תבניות שמורות');
+                    return;
+                }
+                const names = data.templates.map((t, i) => `${i + 1}. ${t.name} (${t.id})`).join('\n');
+                const choice = prompt('בחר תבנית (הזן מספר):\n' + names);
+                if (!choice) return;
+                const idx = parseInt(choice) - 1;
+                if (idx < 0 || idx >= data.templates.length) return;
+                const tpl = data.templates[idx];
+
+                const tplRes = await fetch('api.php?action=get_template&id=' + tpl.id);
+                const tplData = await tplRes.json();
+
+                // Load template into editor
+                pages = tplData.pages || [];
+                if (tplData.fontData && tplData.fontName) {
+                    fontName = tplData.fontName;
+                    const binary = atob(tplData.fontData);
+                    const bytes = new Uint8Array(binary.length);
+                    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                    fontData = bytes.buffer;
+                }
+                currentPage = 0;
+                syncFields();
+                showCurrentPage();
+            } catch (e) {
+                alert('שגיאה בטעינת תבנית: ' + e.message);
+            }
+        });
 
         // ========== GENERATE PDFs ==========
         function renderFieldToPdf(doc, field, text, pxToPt, widthPt, heightPt) {
