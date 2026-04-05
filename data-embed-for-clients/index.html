@@ -1245,14 +1245,14 @@
             const textEl = handle.querySelector('.preview-text');
             const imgEl = handle.querySelector('.preview-field-img');
 
-            // Click to select
+            // Click to select + drag
             handle.addEventListener('mousedown', (e) => {
                 if (e.target.dataset.type) return;
-                selectField(field.id);
                 e.preventDefault();
                 e.stopPropagation();
-                handle.classList.add('dragging');
+                activeFieldId = field.id;
                 interactFieldId = field.id;
+                handle.classList.add('dragging');
                 dragState = {
                     startMouseX: e.clientX,
                     startMouseY: e.clientY,
@@ -1268,16 +1268,16 @@
                 rh.addEventListener('mousedown', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    selectField(field.id);
-                    interactFieldId = field.id;
-                    const dir = rh.dataset.dir;
-                    // Get current field from fields array (not closure)
-                    const f = fields.find(ff => ff.id === field.id);
-                    if (!f) return;
+                    // Measure BEFORE selectField (which may recreate handles)
                     const handleW = handle.offsetWidth || 1;
                     const handleH = handle.offsetHeight || 1;
+                    // Select field (sets activeFieldId, updates UI)
+                    activeFieldId = field.id;
+                    interactFieldId = field.id;
+                    const f = fields.find(ff => ff.id === field.id);
+                    if (!f) return;
+                    const dir = rh.dataset.dir;
                     const iScale = previewImg.clientWidth / (getImageWidth() || 1);
-                    // Natural dimensions in image coords (without scale)
                     const natW = (handleW / f.scaleX) / iScale;
                     const natH = (handleH / f.scaleY) / iScale;
                     resizeState = {
@@ -1302,9 +1302,9 @@
             handle.querySelector('[data-type="rotate"]').addEventListener('mousedown', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                selectField(field.id);
-                interactFieldId = field.id;
                 const rect = handle.getBoundingClientRect();
+                activeFieldId = field.id;
+                interactFieldId = field.id;
                 rotateState = {
                     centerX: rect.left + rect.width / 2,
                     centerY: rect.top + rect.height / 2,
@@ -1385,13 +1385,18 @@
         });
 
         document.addEventListener('mouseup', () => {
-            if (interactFieldId && handleElements[interactFieldId]) {
-                handleElements[interactFieldId].handle.classList.remove('dragging');
+            const wasInteracting = interactFieldId;
+            if (wasInteracting && handleElements[wasInteracting]) {
+                handleElements[wasInteracting].handle.classList.remove('dragging');
             }
             dragState = null;
             resizeState = null;
             rotateState = null;
             interactFieldId = null;
+            // Full UI sync after interaction ends
+            if (wasInteracting) {
+                selectField(wasInteracting);
+            }
         });
 
         // --- COPY / PASTE FIELDS ---
