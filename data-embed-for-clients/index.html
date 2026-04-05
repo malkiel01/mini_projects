@@ -1334,7 +1334,7 @@
         }
 
         function checkStep1() {
-            toStep2Btn.disabled = !(pages.length > 0 && fontData);
+            toStep2Btn.disabled = !(pages.length > 0);
         }
 
         // ========== STEP 2: DYNAMIC RECORDS ==========
@@ -1448,9 +1448,7 @@
                 if (val) hasValue = true;
             });
 
-            if (!hasValue) return;
-
-            const name = nameInput.value.trim() || inputs[0]?.value.trim() || 'document';
+            const name = nameInput.value.trim() || inputs[0]?.value.trim() || 'document_' + (records.length + 1);
             records.push({ name, values });
 
             // Clear inputs
@@ -1548,7 +1546,7 @@
         generateBtn.addEventListener('click', async () => {
             progressOverlay.classList.remove('hidden');
             const zip = new JSZip();
-            const fontBase64 = arrayBufferToBase64(fontData);
+            const fontBase64 = fontData ? arrayBufferToBase64(fontData) : null;
             const pxToPt = 72 / 96;
 
             for (let i = 0; i < records.length; i++) {
@@ -1565,10 +1563,12 @@
                     format: [firstW, firstH]
                 });
 
-                // Add font
-                doc.addFileToVFS(fontName + '.ttf', fontBase64);
-                doc.addFont(fontName + '.ttf', fontName, 'normal');
-                doc.setFont(fontName);
+                // Add font (if available)
+                if (fontBase64 && fontName) {
+                    doc.addFileToVFS(fontName + '.ttf', fontBase64);
+                    doc.addFont(fontName + '.ttf', fontName, 'normal');
+                    doc.setFont(fontName);
+                }
 
                 // Render each page
                 pages.forEach((pageObj, pi) => {
@@ -1597,7 +1597,7 @@
                             text = rec.values[field.id] || '';
                         }
                         if (text) {
-                            doc.setFont(fontName);
+                            if (fontName) doc.setFont(fontName);
                             renderFieldToPdf(doc, field, text, pxToPt, widthPt, heightPt);
                         }
                     });
