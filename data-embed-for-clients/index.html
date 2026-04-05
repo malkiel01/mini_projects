@@ -1271,26 +1271,29 @@
                     selectField(field.id);
                     interactFieldId = field.id;
                     const dir = rh.dataset.dir;
-                    const iScale = previewImg.clientWidth / getImageWidth();
-                    // Use handle dimensions (already correctly sized) for 1:1 tracking
-                    const handleW = handle.offsetWidth;
-                    const handleH = handle.offsetHeight;
-                    const nwi = handleW / iScale;
-                    const nhi = handleH / iScale;
+                    // Get current field from fields array (not closure)
+                    const f = fields.find(ff => ff.id === field.id);
+                    if (!f) return;
+                    const handleW = handle.offsetWidth || 1;
+                    const handleH = handle.offsetHeight || 1;
+                    const iScale = previewImg.clientWidth / (getImageWidth() || 1);
+                    // Natural dimensions in image coords (without scale)
+                    const natW = (handleW / f.scaleX) / iScale;
+                    const natH = (handleH / f.scaleY) / iScale;
                     resizeState = {
                         dir,
                         startMouseX: e.clientX,
                         startMouseY: e.clientY,
-                        startScaleX: field.scaleX,
-                        startScaleY: field.scaleY,
+                        startScaleX: f.scaleX,
+                        startScaleY: f.scaleY,
                         textWidth: handleW,
                         textHeight: handleH,
-                        naturalW_img: nwi / field.scaleX,
-                        naturalH_img: nhi / field.scaleY,
-                        leftEdge: field.x - (nwi / field.scaleX) * field.scaleX,
-                        bottomEdge: field.y + (nhi / field.scaleY) * field.scaleY,
-                        startX: field.x,
-                        startY: field.y,
+                        naturalW_img: natW,
+                        naturalH_img: natH,
+                        leftEdge: f.x - natW * f.scaleX,
+                        bottomEdge: f.y + natH * f.scaleY,
+                        startX: f.x,
+                        startY: f.y,
                     };
                 });
             });
@@ -1361,13 +1364,15 @@
                     field.scaleY = Math.max(0.1, resizeState.startScaleY + (dy * sign) / resizeState.textHeight);
                 }
                 if (dir.includes('r')) {
-                    field.x = Math.round(resizeState.leftEdge + resizeState.naturalW_img * field.scaleX);
+                    field.x = Math.round(resizeState.leftEdge + resizeState.naturalW_img * field.scaleX) || resizeState.startX;
                 } else { field.x = resizeState.startX; }
                 if (dir.includes('t')) {
-                    field.y = Math.round(resizeState.bottomEdge - resizeState.naturalH_img * field.scaleY);
+                    field.y = Math.round(resizeState.bottomEdge - resizeState.naturalH_img * field.scaleY) || resizeState.startY;
                 } else { field.y = resizeState.startY; }
-                xInput.value = field.x;
-                yInput.value = field.y;
+                if (activeFieldId === interactFieldId) {
+                    xInput.value = field.x;
+                    yInput.value = field.y;
+                }
                 updateAllHandles();
             }
             if (rotateState) {
