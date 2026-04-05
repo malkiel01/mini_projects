@@ -472,6 +472,58 @@
         .btn-draw-cancel { background: #ef4444; color: white; }
         .btn-draw-clear { background: #555; color: white; }
         .btn-eyedropper { background: #f59e0b; color: white; }
+
+        /* Editor menubar */
+        .editor-menubar {
+            display: none;
+            background: #1a1a2e;
+            border-radius: 10px 10px 0 0;
+            padding: 0;
+            direction: rtl;
+        }
+        .editor-menubar.visible { display: flex; }
+        .menu-item {
+            position: relative;
+            padding: 10px 18px;
+            color: #ccc;
+            font-size: 0.9rem;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.15s, color 0.15s;
+        }
+        .menu-item:hover { background: #2a2a4e; color: white; }
+        .menu-item.open { background: #2a2a4e; color: white; }
+        .menu-dropdown {
+            display: none;
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background: #22223a;
+            border-radius: 0 0 8px 8px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+            min-width: 200px;
+            z-index: 200;
+            padding: 6px 0;
+        }
+        .menu-item.open .menu-dropdown { display: block; }
+        .menu-option {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 18px;
+            color: #ccc;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+            white-space: nowrap;
+        }
+        .menu-option:hover { background: #3a3a5e; color: white; }
+        .menu-option .menu-icon { font-size: 1.1rem; width: 22px; text-align: center; }
+        .menu-sep {
+            height: 1px;
+            background: #3a3a5e;
+            margin: 4px 0;
+        }
     </style>
 </head>
 <body>
@@ -505,14 +557,36 @@
                 </div>
             </div>
 
+            <!-- Editor menubar -->
+            <div class="editor-menubar" id="editorMenubar">
+                <div class="menu-item" data-menu="insert">
+                    הוספה
+                    <div class="menu-dropdown">
+                        <div class="menu-option" id="addFieldBtn"><span class="menu-icon">T</span> שדה טקסט</div>
+                        <div class="menu-option" id="addImageFieldBtn"><span class="menu-icon">🖼</span> שדה תמונה</div>
+                        <div class="menu-option" id="startDrawBtn"><span class="menu-icon">✏️</span> ציור חופשי</div>
+                    </div>
+                </div>
+                <div class="menu-item" data-menu="edit">
+                    עריכה
+                    <div class="menu-dropdown">
+                        <div class="menu-option" id="menuCopyBtn"><span class="menu-icon">📋</span> העתק שדה</div>
+                        <div class="menu-option" id="menuPasteBtn"><span class="menu-icon">📌</span> הדבק שדה</div>
+                        <div class="menu-sep"></div>
+                        <div class="menu-option" id="menuDeleteBtn"><span class="menu-icon">🗑</span> מחק שדה</div>
+                    </div>
+                </div>
+                <div class="menu-item" data-menu="view">
+                    תצוגה
+                    <div class="menu-dropdown">
+                        <div class="menu-option" id="menuShowAllBtn"><span class="menu-icon">👁</span> הצג כל השדות</div>
+                        <div class="menu-option" id="menuHideHandlesBtn"><span class="menu-icon">🔲</span> הסתר ידיות</div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Fields management -->
             <div class="fields-section" id="fieldsSection" style="display:none;">
-                <div class="fields-header">
-                    <h3>שדות</h3>
-                    <button class="btn btn-primary btn-sm" id="addFieldBtn">+ שדה טקסט</button>
-                    <button class="btn btn-secondary btn-sm" id="addImageFieldBtn">+ שדה תמונה</button>
-                    <button class="btn btn-secondary btn-sm" id="startDrawBtn" style="background:#f59e0b;color:white;">+ ציור חופשי</button>
-                </div>
                 <div class="fields-list" id="fieldsList"></div>
 
                 <div class="field-settings" id="fieldSettings">
@@ -742,6 +816,63 @@
         const fieldValueTypeInput = document.getElementById('fieldValueTypeInput');
         const fieldFixedValueInput = document.getElementById('fieldFixedValueInput');
         const fixedValueRow = document.getElementById('fixedValueRow');
+
+        // --- MENUBAR ---
+        const editorMenubar = document.getElementById('editorMenubar');
+        document.querySelectorAll('.menu-item[data-menu]').forEach(item => {
+            item.addEventListener('click', (e) => {
+                if (e.target.closest('.menu-option')) return; // let option handle
+                const wasOpen = item.classList.contains('open');
+                document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('open'));
+                if (!wasOpen) item.classList.add('open');
+            });
+        });
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.menu-item')) {
+                document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('open'));
+            }
+        });
+        // Close menu after option click
+        document.querySelectorAll('.menu-option').forEach(opt => {
+            opt.addEventListener('click', () => {
+                document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('open'));
+            });
+        });
+
+        // Menu: Edit actions
+        document.getElementById('menuCopyBtn').addEventListener('click', () => {
+            const field = getActiveField();
+            if (field) copiedField = JSON.parse(JSON.stringify(field));
+        });
+        document.getElementById('menuPasteBtn').addEventListener('click', () => {
+            if (!copiedField) return;
+            const newField = JSON.parse(JSON.stringify(copiedField));
+            newField.id = ++fieldIdCounter;
+            newField.name = copiedField.name + ' (עותק)';
+            newField.x += 20;
+            newField.y += 20;
+            fields.push(newField);
+            selectField(newField.id);
+            renderFieldsList();
+            updateAllHandles();
+        });
+        document.getElementById('menuDeleteBtn').addEventListener('click', () => {
+            if (activeFieldId) deleteField(activeFieldId);
+        });
+
+        // Menu: View actions
+        let handlesHidden = false;
+        document.getElementById('menuHideHandlesBtn').addEventListener('click', () => {
+            handlesHidden = !handlesHidden;
+            Object.values(handleElements).forEach(h => {
+                h.handle.querySelectorAll('.handle, .border-box, .rotate-line').forEach(el => {
+                    el.style.display = handlesHidden ? 'none' : '';
+                });
+            });
+        });
+        document.getElementById('menuShowAllBtn').addEventListener('click', () => {
+            Object.values(handleElements).forEach(h => h.handle.classList.add('active'));
+        });
 
         // --- FIELD MANAGEMENT ---
         const addImageFieldBtn = document.getElementById('addImageFieldBtn');
@@ -983,6 +1114,7 @@
             const p = getCurrentPage();
             if (!p) return;
             document.getElementById('fieldsSection').style.display = 'block';
+            editorMenubar.classList.add('visible');
             syncFields();
             activeFieldId = null;
             // Clear all handles
