@@ -506,7 +506,7 @@
             </div>
 
             <!-- Fields management -->
-            <div class="fields-section">
+            <div class="fields-section" id="fieldsSection" style="display:none;">
                 <div class="fields-header">
                     <h3>שדות</h3>
                     <button class="btn btn-primary btn-sm" id="addFieldBtn">+ שדה טקסט</button>
@@ -982,6 +982,7 @@
         function showCurrentPage() {
             const p = getCurrentPage();
             if (!p) return;
+            document.getElementById('fieldsSection').style.display = 'block';
             syncFields();
             activeFieldId = null;
             // Clear all handles
