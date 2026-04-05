@@ -1357,13 +1357,17 @@
                 const dx = e.clientX - resizeState.startMouseX;
                 const dy = e.clientY - resizeState.startMouseY;
                 const dir = resizeState.dir;
+                // Convert mouse pixels to image coords, then divide by natural size
+                const iScale = previewImg.clientWidth / (getImageWidth() || 1);
+                const natW = resizeState.naturalW_img || 1;
+                const natH = resizeState.naturalH_img || 1;
                 if (dir.includes('l') || dir.includes('r')) {
                     const sign = dir.includes('l') ? -1 : 1;
-                    field.scaleX = Math.max(0.1, resizeState.startScaleX + (dx * sign) / resizeState.textWidth);
+                    field.scaleX = Math.max(0.1, resizeState.startScaleX + (dx * sign) / (natW * iScale));
                 }
                 if (dir.includes('t') || dir.includes('b')) {
                     const sign = dir.includes('t') ? -1 : 1;
-                    field.scaleY = Math.max(0.1, resizeState.startScaleY + (dy * sign) / resizeState.textHeight);
+                    field.scaleY = Math.max(0.1, resizeState.startScaleY + (dy * sign) / (natH * iScale));
                 }
                 if (dir.includes('r')) {
                     field.x = Math.round(resizeState.leftEdge + resizeState.naturalW_img * field.scaleX) || resizeState.startX;
