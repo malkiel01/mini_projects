@@ -524,6 +524,10 @@
             background: #3a3a5e;
             margin: 4px 0;
         }
+        .text-handle.selected .border-box {
+            display: block;
+            border-color: #f59e0b;
+        }
     </style>
 </head>
 <body>
@@ -570,10 +574,14 @@
                 <div class="menu-item" data-menu="edit">
                     עריכה
                     <div class="menu-dropdown">
-                        <div class="menu-option" id="menuCopyBtn"><span class="menu-icon">📋</span> העתק שדה</div>
-                        <div class="menu-option" id="menuPasteBtn"><span class="menu-icon">📌</span> הדבק שדה</div>
+                        <div class="menu-option" id="menuSelectModeBtn"><span class="menu-icon">🔘</span> מצב בחירה (Shift+לחיצה)</div>
+                        <div class="menu-option" id="menuSelectAllBtn"><span class="menu-icon">☑️</span> בחר הכל</div>
+                        <div class="menu-option" id="menuDeselectBtn"><span class="menu-icon">⬜</span> בטל בחירה</div>
                         <div class="menu-sep"></div>
-                        <div class="menu-option" id="menuDeleteBtn"><span class="menu-icon">🗑</span> מחק שדה</div>
+                        <div class="menu-option" id="menuCopyBtn"><span class="menu-icon">📋</span> העתק</div>
+                        <div class="menu-option" id="menuPasteBtn"><span class="menu-icon">📌</span> הדבק</div>
+                        <div class="menu-sep"></div>
+                        <div class="menu-option" id="menuDeleteBtn"><span class="menu-icon">🗑</span> מחק נבחרים</div>
                     </div>
                 </div>
                 <div class="menu-item" data-menu="view">
@@ -846,25 +854,86 @@
             });
         });
 
-        // Menu: Edit actions
+        // --- MULTI-SELECT ---
+        let selectedFieldIds = new Set();
+
+        function getSelectedFields() {
+            return fields.filter(f => selectedFieldIds.has(f.id));
+        }
+
+        function toggleFieldSelection(id, addToSelection) {
+            if (addToSelection) {
+                if (selectedFieldIds.has(id)) {
+                    selectedFieldIds.delete(id);
+                } else {
+                    selectedFieldIds.add(id);
+                }
+            } else {
+                selectedFieldIds.clear();
+                selectedFieldIds.add(id);
+            }
+            activeFieldId = id;
+            updateSelectionVisuals();
+        }
+
+        function updateSelectionVisuals() {
+            Object.entries(handleElements).forEach(([id, h]) => {
+                const numId = parseInt(id);
+                if (selectedFieldIds.has(numId)) {
+                    h.handle.classList.add('selected');
+                } else {
+                    h.handle.classList.remove('selected');
+                }
+            });
+        }
+
+        // Select all / deselect
+        document.getElementById('menuSelectAllBtn').addEventListener('click', () => {
+            selectedFieldIds = new Set(fields.map(f => f.id));
+            updateSelectionVisuals();
+        });
+        document.getElementById('menuDeselectBtn').addEventListener('click', () => {
+            selectedFieldIds.clear();
+            updateSelectionVisuals();
+        });
+        document.getElementById('menuSelectModeBtn').addEventListener('click', () => {
+            // Just a hint - Shift+click works
+        });
+
+        // Menu: Edit actions (work on selection)
         document.getElementById('menuCopyBtn').addEventListener('click', () => {
-            const field = getActiveField();
-            if (field) copiedField = JSON.parse(JSON.stringify(field));
+            const sel = getSelectedFields();
+            if (sel.length > 0) {
+                copiedField = JSON.parse(JSON.stringify(sel));
+            } else {
+                const field = getActiveField();
+                if (field) copiedField = JSON.parse(JSON.stringify([field]));
+            }
         });
         document.getElementById('menuPasteBtn').addEventListener('click', () => {
             if (!copiedField) return;
-            const newField = JSON.parse(JSON.stringify(copiedField));
-            newField.id = ++fieldIdCounter;
-            newField.name = copiedField.name + ' (עותק)';
-            newField.x += 20;
-            newField.y += 20;
-            fields.push(newField);
-            selectField(newField.id);
+            const toPaste = Array.isArray(copiedField) ? copiedField : [copiedField];
+            selectedFieldIds.clear();
+            toPaste.forEach(src => {
+                const newField = JSON.parse(JSON.stringify(src));
+                newField.id = ++fieldIdCounter;
+                newField.name = src.name + ' (עותק)';
+                newField.x += 20;
+                newField.y += 20;
+                fields.push(newField);
+                selectedFieldIds.add(newField.id);
+                activeFieldId = newField.id;
+            });
+            selectField(activeFieldId);
             renderFieldsList();
             updateAllHandles();
+            updateSelectionVisuals();
         });
         document.getElementById('menuDeleteBtn').addEventListener('click', () => {
-            if (activeFieldId) deleteField(activeFieldId);
+            const toDelete = selectedFieldIds.size > 0 ? [...selectedFieldIds] : (activeFieldId ? [activeFieldId] : []);
+            toDelete.forEach(id => deleteField(id));
+            selectedFieldIds.clear();
+            updateSelectionVisuals();
         });
 
         // Menu: View actions
@@ -1252,12 +1321,12 @@
             const textEl = handle.querySelector('.preview-text');
             const imgEl = handle.querySelector('.preview-field-img');
 
-            // Click to select + drag
+            // Click to select + drag (Shift = multi-select)
             handle.addEventListener('mousedown', (e) => {
                 if (e.target.dataset.type) return;
                 e.preventDefault();
                 e.stopPropagation();
-                activeFieldId = field.id;
+                toggleFieldSelection(field.id, e.shiftKey);
                 interactFieldId = field.id;
                 handle.classList.add('dragging');
                 dragState = {
@@ -1412,34 +1481,62 @@
             }
         });
 
-        // --- COPY / PASTE FIELDS ---
+        // --- COPY / PASTE FIELDS (keyboard) ---
         let copiedField = null;
 
         document.addEventListener('keydown', (e) => {
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
 
-            // Ctrl+C / Cmd+C = copy active field
-            if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
-                const field = getActiveField();
-                if (!field) return;
-                copiedField = JSON.parse(JSON.stringify(field));
+            // Ctrl+A = select all
+            if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+                selectedFieldIds = new Set(fields.map(f => f.id));
+                updateSelectionVisuals();
                 e.preventDefault();
             }
 
-            // Ctrl+V / Cmd+V = paste copied field
+            // Ctrl+C = copy selected
+            if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+                const sel = getSelectedFields();
+                if (sel.length > 0) {
+                    copiedField = JSON.parse(JSON.stringify(sel));
+                } else {
+                    const field = getActiveField();
+                    if (field) copiedField = JSON.parse(JSON.stringify([field]));
+                }
+                e.preventDefault();
+            }
+
+            // Ctrl+V = paste
             if ((e.ctrlKey || e.metaKey) && e.key === 'v' && copiedField) {
-                const newField = JSON.parse(JSON.stringify(copiedField));
-                newField.id = ++fieldIdCounter;
-                newField.name = copiedField.name + ' (עותק)';
-                // Offset position slightly so it's visible
-                newField.x += 20;
-                newField.y += 20;
-                fields.push(newField);
-                selectField(newField.id);
+                const toPaste = Array.isArray(copiedField) ? copiedField : [copiedField];
+                selectedFieldIds.clear();
+                toPaste.forEach(src => {
+                    const newField = JSON.parse(JSON.stringify(src));
+                    newField.id = ++fieldIdCounter;
+                    newField.name = src.name + ' (עותק)';
+                    newField.x += 20;
+                    newField.y += 20;
+                    fields.push(newField);
+                    selectedFieldIds.add(newField.id);
+                    activeFieldId = newField.id;
+                });
+                selectField(activeFieldId);
                 renderFieldsList();
                 updateAllHandles();
+                updateSelectionVisuals();
                 checkStep1();
                 e.preventDefault();
+            }
+
+            // Delete = delete selected
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                const toDelete = selectedFieldIds.size > 0 ? [...selectedFieldIds] : (activeFieldId ? [activeFieldId] : []);
+                if (toDelete.length > 0) {
+                    toDelete.forEach(id => deleteField(id));
+                    selectedFieldIds.clear();
+                    updateSelectionVisuals();
+                    e.preventDefault();
+                }
             }
         });
 
