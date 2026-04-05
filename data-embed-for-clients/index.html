@@ -1271,15 +1271,17 @@
                     // Measure BEFORE selectField (which may recreate handles)
                     const handleW = handle.offsetWidth || 1;
                     const handleH = handle.offsetHeight || 1;
-                    // Select field (sets activeFieldId, updates UI)
                     activeFieldId = field.id;
                     interactFieldId = field.id;
                     const f = fields.find(ff => ff.id === field.id);
                     if (!f) return;
                     const dir = rh.dataset.dir;
-                    const iScale = previewImg.clientWidth / (getImageWidth() || 1);
-                    const natW = (handleW / f.scaleX) / iScale;
-                    const natH = (handleH / f.scaleY) / iScale;
+                    // Use frame dimensions from field (in image coords)
+                    // frameWidthImg = naturalW * scaleX, so naturalW = frameWidthImg / scaleX
+                    const fwi = f.frameWidthImg || 1;
+                    const fhi = f.frameHeightImg || 1;
+                    const natW = fwi / f.scaleX;
+                    const natH = fhi / f.scaleY;
                     resizeState = {
                         dir,
                         startMouseX: e.clientX,
@@ -1290,8 +1292,8 @@
                         textHeight: handleH,
                         naturalW_img: natW,
                         naturalH_img: natH,
-                        leftEdge: f.x - natW * f.scaleX,
-                        bottomEdge: f.y + natH * f.scaleY,
+                        leftEdge: f.x - fwi,
+                        bottomEdge: f.y + fhi,
                         startX: f.x,
                         startY: f.y,
                     };
