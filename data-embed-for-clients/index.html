@@ -668,11 +668,18 @@
                     <button class="btn-eyedropper" id="eyedropperBtn">דגימה</button>
                     <label>עובי <input type="range" id="drawSize" min="1" max="50" value="4"></label>
                     <label>שקיפות <input type="range" id="drawOpacity" min="0.1" max="1" step="0.1" value="1"></label>
+                    <label>כלי <select id="drawTool">
+                        <option value="brush">✏️ מכחול</option>
+                        <option value="line">📏 קו</option>
+                        <option value="circle">⭕ עיגול</option>
+                        <option value="rect">⬜ מלבן</option>
+                    </select></label>
                     <label>מכחול <select id="drawBrush">
                         <option value="round">עגול</option>
                         <option value="square">מרובע</option>
                         <option value="spray">ספריי</option>
                     </select></label>
+                    <label><input type="checkbox" id="drawFill"> מילוי</label>
                     <button class="btn-draw-clear" id="drawClearBtn">נקה</button>
                     <button class="btn-draw-done" id="drawDoneBtn">שמור ציור</button>
                     <button class="btn-draw-cancel" id="drawCancelBtn">ביטול</button>
@@ -1443,6 +1450,8 @@
         const drawSizeInput = document.getElementById('drawSize');
         const drawOpacityInput = document.getElementById('drawOpacity');
         const drawBrushInput = document.getElementById('drawBrush');
+        const drawToolInput = document.getElementById('drawTool');
+        const drawFillInput = document.getElementById('drawFill');
         const drawClearBtn = document.getElementById('drawClearBtn');
         const drawDoneBtn = document.getElementById('drawDoneBtn');
         const drawCancelBtn = document.getElementById('drawCancelBtn');
@@ -1452,8 +1461,9 @@
         let drawCtx = null;
         let isDrawing = false;
         let isEyedropper = false;
-        let strokeCanvas = null; // temp canvas for current stroke
+        let strokeCanvas = null;
         let strokeCtx = null;
+        let shapeStart = null; // {x, y} for line/circle/rect start point
 
         startDrawBtn.addEventListener('click', () => {
             if (!pages.length) return;
@@ -1516,25 +1526,27 @@
             }
 
             isDrawing = true;
-            // Save current main canvas state for compositing
             drawCanvas._snapshot = drawCtx.getImageData(0, 0, drawCanvas.width, drawCanvas.height);
-            // Clear stroke canvas
             strokeCtx.clearRect(0, 0, strokeCanvas.width, strokeCanvas.height);
             const pos = getDrawPos(e);
+            shapeStart = pos;
             const brush = drawBrushInput.value;
             const size = parseInt(drawSizeInput.value);
-            strokeCtx.globalAlpha = 1; // stroke canvas always full opacity
+            const tool = drawToolInput.value;
+            strokeCtx.globalAlpha = 1;
             strokeCtx.strokeStyle = drawColorInput.value;
             strokeCtx.fillStyle = drawColorInput.value;
             strokeCtx.lineWidth = size;
             strokeCtx.lineCap = brush === 'square' ? 'square' : 'round';
             strokeCtx.lineJoin = brush === 'square' ? 'miter' : 'round';
 
-            if (brush === 'spray') {
-                drawSpray(pos.x, pos.y, size);
-            } else {
-                strokeCtx.beginPath();
-                strokeCtx.moveTo(pos.x, pos.y);
+            if (tool === 'brush') {
+                if (brush === 'spray') {
+                    drawSpray(pos.x, pos.y, size);
+                } else {
+                    strokeCtx.beginPath();
+                    strokeCtx.moveTo(pos.x, pos.y);
+                }
             }
             compositeStroke();
         });
@@ -1542,12 +1554,43 @@
         previewArea.addEventListener('mousemove', (e) => {
             if (!isDrawing || !drawCanvas) return;
             const pos = getDrawPos(e);
-            const brush = drawBrushInput.value;
-            if (brush === 'spray') {
-                drawSpray(pos.x, pos.y, parseInt(drawSizeInput.value));
+            const tool = drawToolInput.value;
+            const size = parseInt(drawSizeInput.value);
+            const fill = drawFillInput.checked;
+
+            if (tool === 'brush') {
+                const brush = drawBrushInput.value;
+                if (brush === 'spray') {
+                    drawSpray(pos.x, pos.y, size);
+                } else {
+                    strokeCtx.lineTo(pos.x, pos.y);
+                    strokeCtx.stroke();
+                }
             } else {
-                strokeCtx.lineTo(pos.x, pos.y);
-                strokeCtx.stroke();
+                // For shapes: redraw from start on each move
+                strokeCtx.clearRect(0, 0, strokeCanvas.width, strokeCanvas.height);
+                strokeCtx.beginPath();
+                const sx = shapeStart.x, sy = shapeStart.y;
+                const ex = pos.x, ey = pos.y;
+
+                if (tool === 'line') {
+                    strokeCtx.moveTo(sx, sy);
+                    strokeCtx.lineTo(ex, ey);
+                    strokeCtx.stroke();
+                } else if (tool === 'rect') {
+                    if (fill) {
+                        strokeCtx.fillRect(Math.min(sx, ex), Math.min(sy, ey), Math.abs(ex - sx), Math.abs(ey - sy));
+                    } else {
+                        strokeCtx.strokeRect(Math.min(sx, ex), Math.min(sy, ey), Math.abs(ex - sx), Math.abs(ey - sy));
+                    }
+                } else if (tool === 'circle') {
+                    const rx = Math.abs(ex - sx) / 2;
+                    const ry = Math.abs(ey - sy) / 2;
+                    const cx = Math.min(sx, ex) + rx;
+                    const cy = Math.min(sy, ey) + ry;
+                    strokeCtx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+                    if (fill) { strokeCtx.fill(); } else { strokeCtx.stroke(); }
+                }
             }
             compositeStroke();
         });
