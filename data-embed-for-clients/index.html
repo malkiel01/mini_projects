@@ -1142,10 +1142,12 @@
         });
 
         function selectField(id) {
+            isSyncingToUI = true;
             activeFieldId = id;
             const field = getActiveField();
             if (!field) {
                 fieldSettings.classList.remove('visible');
+                isSyncingToUI = false;
                 return;
             }
             fieldSettings.classList.add('visible');
@@ -1173,6 +1175,7 @@
             xInput.value = field.x;
             yInput.value = field.y;
             rotationInput.value = field.rotation;
+            isSyncingToUI = false;
             renderFieldsList();
             updateAllHandles();
         }
@@ -1212,7 +1215,10 @@
         }
 
         // Sync settings inputs → active field
+        let isSyncingToUI = false; // prevent feedback loop
+
         function syncFieldFromInputs() {
+            if (isSyncingToUI) return;
             const field = getActiveField();
             if (!field) return;
             field.name = fieldNameInput.value.trim() || field.name;
