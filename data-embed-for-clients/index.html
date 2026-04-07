@@ -2,7 +2,7 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>הטמעת נתונים לריכוז לקוחות</title>
     <script src="https://unpkg.com/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
     <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
@@ -590,6 +590,19 @@
             border-radius: 4px;
             background: #e8e8e8;
         }
+        /* Mobile touch */
+        @media (max-width: 600px) {
+            .rh { width: 16px; height: 16px; }
+            .rotate-handle { width: 20px; height: 20px; }
+            .menu-option { padding: 14px 18px; }
+            .container { padding: 0 10px; }
+            .step { padding: 16px; }
+            .font-color-row { flex-direction: column; }
+            .coords-row { flex-direction: column; }
+            .draw-toolbar { flex-direction: column; align-items: stretch; }
+        }
+        .preview-area { touch-action: none; }
+        .text-handle { touch-action: none; }
         .copy-btn {
             padding: 4px 12px;
             font-size: 0.8rem;
@@ -865,6 +878,40 @@
     </div>
 
     <script>
+        // Touch → Mouse adapter for mobile support
+        function addTouchSupport(el) {
+            el.addEventListener('touchstart', (e) => {
+                if (e.touches.length !== 1) return;
+                const t = e.touches[0];
+                const mouseEvt = new MouseEvent('mousedown', {
+                    clientX: t.clientX, clientY: t.clientY,
+                    shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey,
+                    bubbles: true
+                });
+                t.target.dispatchEvent(mouseEvt);
+                e.preventDefault();
+            }, { passive: false });
+
+            el.addEventListener('touchmove', (e) => {
+                if (e.touches.length !== 1) return;
+                const t = e.touches[0];
+                const mouseEvt = new MouseEvent('mousemove', {
+                    clientX: t.clientX, clientY: t.clientY,
+                    bubbles: true
+                });
+                document.dispatchEvent(mouseEvt);
+                e.preventDefault();
+            }, { passive: false });
+
+            el.addEventListener('touchend', (e) => {
+                const mouseEvt = new MouseEvent('mouseup', { bubbles: true });
+                document.dispatchEvent(mouseEvt);
+            });
+        }
+
+        // Apply to preview area (handles drawing + field interactions)
+        addTouchSupport(document.getElementById('previewArea'));
+
         if (!window.jspdf) {
             alert('שגיאה: ספריית jsPDF לא נטענה. נסה לרענן את הדף.');
         }
