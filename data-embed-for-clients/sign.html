@@ -133,8 +133,12 @@
             <div class="doc-preview" id="docPreview">
                 <img id="docImg" src="">
             </div>
-            <div class="download-bar">
-                <button class="btn btn-success" id="downloadBtn" disabled>הורד מסמך חתום</button>
+            <div class="download-bar" id="actionBar">
+                <button class="btn btn-primary" id="lockBtn" disabled>🔒 נעל וחתום</button>
+                <button class="btn btn-success" id="downloadBtn" style="display:none;">📥 הורד מסמך חתום</button>
+            </div>
+            <div id="lockedMsg" class="status-msg success" style="display:none;">
+                ✅ המסמך נחתם ונשמר בהצלחה. ניתן להוריד את הקובץ.
             </div>
             <div id="statusMsg"></div>
 
@@ -319,14 +323,17 @@
             return template.pages.flatMap(p => p.fields.filter(f => f.fieldType === 'signature'));
         }
 
+        let isLocked = false;
+        let signedPdfBlob = null;
+
         function checkAllSigned() {
             const sigFields = getSignatureFields();
             const allSigned = sigFields.length > 0 && sigFields.every(f => signatures[f.id]);
-            document.getElementById('downloadBtn').disabled = !allSigned;
+            document.getElementById('lockBtn').disabled = !allSigned || isLocked;
         }
 
-        // --- GENERATE SIGNED PDF ---
-        document.getElementById('downloadBtn').addEventListener('click', async () => {
+        // --- LOCK & SAVE ---
+        document.getElementById('lockBtn').addEventListener('click', async () => {
             const pxToPt = 72 / 96;
             const firstPage = template.pages[0];
             const doc = new jsPDF({
@@ -379,20 +386,12 @@
                 });
             });
 
-            // Download
-            const pdfBlob = doc.output('blob');
-            const url = URL.createObjectURL(pdfBlob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = (template.name || 'signed_document') + '.pdf';
-            a.click();
-            URL.revokeObjectURL(url);
-
-            // Save to server
+            // Lock: save to server, then show download
+            signedPdfBlob = doc.output('blob');
             try {
                 const formData = new FormData();
                 formData.append('template_id', templateId);
-                formData.append('pdf', pdfBlob, (template.name || 'signed') + '.pdf');
+                formData.append('pdf', signedPdfBlob, (template.name || 'signed') + '.pdf');
                 formData.append('signatures', JSON.stringify(signatures));
                 formData.append('device', JSON.stringify({
                     userAgent: navigator.userAgent,
@@ -402,10 +401,33 @@
                     timestamp: new Date().toISOString(),
                 }));
                 await fetch('api.php?action=save_signed', { method: 'POST', body: formData });
-                showStatus('המסמך החתום נשמר בהצלחה!', 'success');
+
+                // Lock UI
+                isLocked = true;
+                document.getElementById('lockBtn').style.display = 'none';
+                document.getElementById('downloadBtn').style.display = 'inline-block';
+                document.getElementById('lockedMsg').style.display = 'block';
+
+                // Disable signature areas
+                document.querySelectorAll('.sig-area').forEach(el => {
+                    el.style.pointerEvents = 'none';
+                    el.style.cursor = 'default';
+                });
+
             } catch (e) {
-                showStatus('המסמך הורד אך לא נשמר בשרת', 'error');
+                showStatus('שגיאה בשמירת המסמך: ' + e.message, 'error');
             }
+        });
+
+        // --- DOWNLOAD SIGNED PDF ---
+        document.getElementById('downloadBtn').addEventListener('click', () => {
+            if (!signedPdfBlob) return;
+            const url = URL.createObjectURL(signedPdfBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = (template.name || 'signed_document') + '.pdf';
+            a.click();
+            URL.revokeObjectURL(url);
         });
 
         function showStatus(msg, type) {
