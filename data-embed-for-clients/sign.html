@@ -334,6 +334,11 @@
 
         // --- LOCK & SAVE ---
         document.getElementById('lockBtn').addEventListener('click', async () => {
+            const lockBtn = document.getElementById('lockBtn');
+            lockBtn.disabled = true;
+            lockBtn.textContent = '⏳ שומר...';
+
+            try {
             const pxToPt = 72 / 96;
             const firstPage = template.pages[0];
             const doc = new jsPDF({
@@ -388,7 +393,6 @@
 
             // Lock: save to server, then show download
             signedPdfBlob = doc.output('blob');
-            try {
                 const formData = new FormData();
                 formData.append('template_id', templateId);
                 formData.append('pdf', signedPdfBlob, (template.name || 'signed') + '.pdf');
@@ -404,7 +408,7 @@
 
                 // Lock UI
                 isLocked = true;
-                document.getElementById('lockBtn').style.display = 'none';
+                lockBtn.style.display = 'none';
                 document.getElementById('downloadBtn').style.display = 'inline-block';
                 document.getElementById('lockedMsg').style.display = 'block';
 
@@ -415,6 +419,8 @@
                 });
 
             } catch (e) {
+                lockBtn.disabled = false;
+                lockBtn.textContent = '🔒 נעל וחתום';
                 showStatus('שגיאה בשמירת המסמך: ' + e.message, 'error');
             }
         });
