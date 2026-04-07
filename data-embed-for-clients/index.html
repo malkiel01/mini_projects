@@ -1583,17 +1583,12 @@
             handleElements[field.id] = { handle, text: textEl, img: imgEl };
         }
 
-        // Click on image → move active field
+        // Click on image → deselect fields
         previewArea.addEventListener('click', (e) => {
-            if (e.target === previewImg && activeFieldId) {
-                const field = getActiveField();
-                if (!field) return;
-                const rect = previewImg.getBoundingClientRect();
-                field.x = Math.round((e.clientX - rect.left) * (getImageWidth() / previewImg.clientWidth));
-                field.y = Math.round((e.clientY - rect.top) * (getImageHeight() / previewImg.clientHeight));
-                xInput.value = field.x;
-                yInput.value = field.y;
-                updateAllHandles();
+            if (e.target === previewImg) {
+                selectedFieldIds.clear();
+                updateSelectionVisuals();
+            }
             }
         });
 
