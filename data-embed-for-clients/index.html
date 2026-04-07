@@ -157,6 +157,21 @@
             border: 2px dashed #4a6cf7;
             pointer-events: none;
         }
+        .signature-placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px dashed #999;
+            border-radius: 6px;
+            color: #999;
+            font-size: 14px;
+            background: rgba(255,255,255,0.7);
+            pointer-events: none;
+            min-width: 120px;
+            min-height: 50px;
+            width: 100%;
+            height: 100%;
+        }
         .preview-text {
             color: #000;
             white-space: pre;
@@ -653,6 +668,7 @@
                         <div class="menu-option" id="addFieldBtn"><span class="menu-icon">T</span> שדה טקסט</div>
                         <div class="menu-option" id="addImageFieldBtn"><span class="menu-icon">🖼</span> שדה תמונה</div>
                         <div class="menu-option" id="startDrawBtn"><span class="menu-icon">✏️</span> ציור חופשי</div>
+                        <div class="menu-option" id="addSignatureFieldBtn"><span class="menu-icon">✍️</span> שדה חתימה</div>
                     </div>
                 </div>
                 <div class="menu-item" data-menu="edit">
@@ -951,8 +967,8 @@
         function createField(name, fieldType) {
             return {
                 id: ++fieldIdCounter,
-                name: name || (fieldType === 'image' ? 'תמונה ' : 'שדה ') + fieldIdCounter,
-                fieldType: fieldType || 'text', // 'text' or 'image'
+                name: name || (fieldType === 'image' ? 'תמונה ' : fieldType === 'signature' ? 'חתימה ' : 'שדה ') + fieldIdCounter,
+                fieldType: fieldType || 'text', // 'text', 'image', or 'signature'
                 x: 430,
                 y: 220,
                 fontSize: 24,
@@ -1158,6 +1174,19 @@
             input.click();
         });
 
+        // Add signature field
+        document.getElementById('addSignatureFieldBtn').addEventListener('click', () => {
+            const field = createField(null, 'signature');
+            field.valueType = 'fixed';
+            field.imageWidth = 300;
+            field.imageHeight = 150;
+            fields.push(field);
+            selectField(field.id);
+            renderFieldsList();
+            checkStep1();
+            updateAllHandles();
+        });
+
         // Image upload for image fields
         fieldImageInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
@@ -1235,7 +1264,7 @@
             fields.forEach(f => {
                 const card = document.createElement('div');
                 card.className = 'field-card' + (f.id === activeFieldId ? ' active' : '');
-                const typeBadge = f.fieldType === 'image' ? '🖼️' : (f.valueType === 'fixed' ? 'קבוע' : 'רשימה');
+                const typeBadge = f.fieldType === 'image' ? '🖼️' : f.fieldType === 'signature' ? '✍️' : (f.valueType === 'fixed' ? 'קבוע' : 'רשימה');
                 card.innerHTML = `
                     <span>${escapeHtml(f.name)}</span>
                     <span class="field-type-badge">${typeBadge}</span>
@@ -1472,9 +1501,14 @@
             const handle = document.createElement('div');
             handle.className = 'text-handle';
             handle.dataset.fieldId = field.id;
-            const contentHtml = field.fieldType === 'image'
-                ? `<div class="preview-content"><img class="preview-field-img" src="" style="display:none;pointer-events:none;"></div>`
-                : `<div class="preview-text">${field.valueType === 'fixed' ? escapeHtml(field.fixedValue || field.name) : escapeHtml(field.name)}</div>`;
+            let contentHtml;
+            if (field.fieldType === 'image') {
+                contentHtml = `<div class="preview-content"><img class="preview-field-img" src="" style="display:none;pointer-events:none;"></div>`;
+            } else if (field.fieldType === 'signature') {
+                contentHtml = `<div class="signature-placeholder">✍️ ${escapeHtml(field.name)}</div>`;
+            } else {
+                contentHtml = `<div class="preview-text">${field.valueType === 'fixed' ? escapeHtml(field.fixedValue || field.name) : escapeHtml(field.name)}</div>`;
+            }
             handle.innerHTML = `${contentHtml}
                 <div class="border-box"></div>
                 <div class="rotate-line"></div>
@@ -2008,8 +2042,8 @@
                     handle.classList.remove('active');
                 }
 
-                // --- IMAGE FIELD ---
-                if (field.fieldType === 'image') {
+                // --- SIGNATURE / IMAGE FIELD ---
+                if (field.fieldType === 'image' || field.fieldType === 'signature') {
                     const baseW = field.imageWidth * imgScale;
                     const baseH = field.imageHeight * imgScale;
                     const scaledW = baseW * field.scaleX;
@@ -2024,6 +2058,12 @@
                         img.style.position = 'absolute';
                         img.style.right = '0';
                         img.style.top = '0';
+                    }
+                    // Signature placeholder sizing
+                    const sigEl = handle.querySelector('.signature-placeholder');
+                    if (sigEl) {
+                        sigEl.style.width = scaledW + 'px';
+                        sigEl.style.height = scaledH + 'px';
                     }
 
                     field.frameWidthImg = field.imageWidth * field.scaleX;
