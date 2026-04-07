@@ -394,6 +394,13 @@
                 formData.append('template_id', templateId);
                 formData.append('pdf', pdfBlob, (template.name || 'signed') + '.pdf');
                 formData.append('signatures', JSON.stringify(signatures));
+                formData.append('device', JSON.stringify({
+                    userAgent: navigator.userAgent,
+                    platform: navigator.platform,
+                    language: navigator.language,
+                    screen: screen.width + 'x' + screen.height,
+                    timestamp: new Date().toISOString(),
+                }));
                 await fetch('api.php?action=save_signed', { method: 'POST', body: formData });
                 showStatus('המסמך החתום נשמר בהצלחה!', 'success');
             } catch (e) {

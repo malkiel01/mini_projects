@@ -885,6 +885,12 @@
                     <pre id="signUrlDisplay"></pre>
                     <button class="copy-btn" id="copySignUrlBtn">העתק קישור</button>
                 </div>
+
+                <div class="form-group" id="trackUrlSection" style="display:none;">
+                    <label>📋 קישור מעקב חתימות:</label>
+                    <pre id="trackUrlDisplay"></pre>
+                    <button class="copy-btn" id="copyTrackUrlBtn">העתק קישור</button>
+                </div>
             </div>
         </div>
     </div>
@@ -2403,6 +2409,15 @@
             } else {
                 signUrlSection.style.display = 'none';
             }
+
+            // Tracking URL (always show after save)
+            const trackUrlSection = document.getElementById('trackUrlSection');
+            const trackUrl = `${baseUrl}track.html?id=${templateId}`;
+            trackUrlSection.style.display = 'block';
+            document.getElementById('trackUrlDisplay').textContent = trackUrl;
+            document.getElementById('copyTrackUrlBtn').onclick = () => {
+                navigator.clipboard.writeText(trackUrl);
+            };
 
             // Copy buttons
             document.getElementById('copyEndpointBtn').onclick = () => {

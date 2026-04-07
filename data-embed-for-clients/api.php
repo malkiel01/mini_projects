@@ -150,10 +150,22 @@ if ($action === 'save_signed' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $filename = date('Y-m-d_H-i-s') . '_' . bin2hex(random_bytes(4)) . '.pdf';
     move_uploaded_file($_FILES['pdf']['tmp_name'], $tplDir . '/' . $filename);
 
-    // Save signatures JSON
+    // Save metadata (signatures + device info + IP)
+    $baseName = pathinfo($filename, PATHINFO_FILENAME);
+    $meta = [
+        'filename' => $filename,
+        'template_id' => $safeTplId,
+        'signed_at' => date('c'),
+        'ip' => $_SERVER['REMOTE_ADDR'] ?? '',
+        'device' => json_decode($_POST['device'] ?? '{}', true),
+        'signatures_count' => 0,
+    ];
     if (!empty($_POST['signatures'])) {
-        file_put_contents($tplDir . '/' . pathinfo($filename, PATHINFO_FILENAME) . '_sig.json', $_POST['signatures']);
+        $sigs = json_decode($_POST['signatures'], true);
+        $meta['signatures_count'] = is_array($sigs) ? count($sigs) : 0;
+        file_put_contents($tplDir . '/' . $baseName . '_sig.json', $_POST['signatures']);
     }
+    file_put_contents($tplDir . '/' . $baseName . '_meta.json', json_encode($meta, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
 
     echo json_encode(['success' => true, 'filename' => $filename]);
     exit;
@@ -167,10 +179,16 @@ if ($action === 'list_signed') {
     $files = [];
     if ($templateId && is_dir($tplDir)) {
         foreach (glob($tplDir . '/*.pdf') as $file) {
+            $baseName = pathinfo($file, PATHINFO_FILENAME);
+            $metaFile = $tplDir . '/' . $baseName . '_meta.json';
+            $meta = file_exists($metaFile) ? json_decode(file_get_contents($metaFile), true) : [];
             $files[] = [
                 'filename' => basename($file),
-                'date' => date('c', filemtime($file)),
+                'date' => $meta['signed_at'] ?? date('c', filemtime($file)),
                 'size' => filesize($file),
+                'ip' => $meta['ip'] ?? '',
+                'device' => $meta['device'] ?? null,
+                'signatures_count' => $meta['signatures_count'] ?? 0,
             ];
         }
     }
