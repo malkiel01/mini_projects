@@ -1505,16 +1505,27 @@
                 if (e.target.dataset.type) return;
                 e.preventDefault();
                 e.stopPropagation();
-                toggleFieldSelection(field.id, e.shiftKey);
+                // If not shift and field not already selected, clear selection
+                if (!e.shiftKey && !selectedFieldIds.has(field.id)) {
+                    selectedFieldIds.clear();
+                }
+                selectedFieldIds.add(field.id);
+                activeFieldId = field.id;
+                updateSelectionVisuals();
                 interactFieldId = field.id;
                 handle.classList.add('dragging');
+                // Store start positions for ALL selected fields
+                const startPositions = {};
+                getSelectedFields().forEach(f => {
+                    startPositions[f.id] = { x: f.x, y: f.y };
+                });
                 dragState = {
                     startMouseX: e.clientX,
                     startMouseY: e.clientY,
-                    startX: field.x,
-                    startY: field.y,
+                    startPositions,
                     ratioX: getImageWidth() / previewImg.clientWidth,
                     ratioY: getImageHeight() / previewImg.clientHeight,
+                    didMove: false,
                 };
             });
 
@@ -1601,11 +1612,22 @@
             if (dragState) {
                 const dx = (e.clientX - dragState.startMouseX) * dragState.ratioX;
                 const dy = (e.clientY - dragState.startMouseY) * dragState.ratioY;
-                field.x = Math.round(dragState.startX + dx);
-                field.y = Math.round(dragState.startY + dy);
-                xInput.value = field.x;
-                yInput.value = field.y;
-                syncFieldFromInputs();
+                dragState.didMove = true;
+                // Move ALL selected fields
+                getSelectedFields().forEach(f => {
+                    const sp = dragState.startPositions[f.id];
+                    if (sp) {
+                        f.x = Math.round(sp.x + dx);
+                        f.y = Math.round(sp.y + dy);
+                    }
+                });
+                // Update inputs for the active field
+                if (activeFieldId === interactFieldId) {
+                    isSyncingToUI = true;
+                    xInput.value = field.x;
+                    yInput.value = field.y;
+                    isSyncingToUI = false;
+                }
                 updateAllHandles();
             }
             if (resizeState) {
@@ -1647,6 +1669,7 @@
 
         document.addEventListener('mouseup', () => {
             const wasInteracting = interactFieldId;
+            const wasDrag = dragState && dragState.didMove;
             if (wasInteracting && handleElements[wasInteracting]) {
                 handleElements[wasInteracting].handle.classList.remove('dragging');
             }
@@ -1654,9 +1677,20 @@
             resizeState = null;
             rotateState = null;
             interactFieldId = null;
-            // Full UI sync after interaction ends
+            // Sync UI after interaction - but use isSyncingToUI to prevent feedback
             if (wasInteracting) {
-                selectField(wasInteracting);
+                isSyncingToUI = true;
+                const f = fields.find(ff => ff.id === wasInteracting);
+                if (f) {
+                    activeFieldId = wasInteracting;
+                    xInput.value = f.x;
+                    yInput.value = f.y;
+                    rotationInput.value = f.rotation;
+                }
+                isSyncingToUI = false;
+                renderFieldsList();
+                updateAllHandles();
+                updateSelectionVisuals();
             }
         });
 
