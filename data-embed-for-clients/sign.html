@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>חתימה על מסמך</title>
+    <script src="https://unpkg.com/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+            background: #f0f2f5;
+            color: #1a1a2e;
+            min-height: 100vh;
+            direction: rtl;
+        }
+        header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        header h1 { font-size: 1.3rem; }
+        .container {
+            max-width: 900px;
+            margin: 20px auto;
+            padding: 0 16px;
+        }
+        .doc-preview {
+            position: relative;
+            display: inline-block;
+            margin-bottom: 20px;
+            max-width: 100%;
+        }
+        .doc-preview img {
+            display: block;
+            max-width: 100%;
+            border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+        }
+        .sig-area {
+            position: absolute;
+            border: 2px dashed #4a6cf7;
+            border-radius: 4px;
+            background: rgba(255,255,255,0.8);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #4a6cf7;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .sig-area.signed {
+            border-color: #22c55e;
+            background: transparent;
+        }
+        .sig-area.signed img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        /* Signature pad modal */
+        .sig-modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.6);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .sig-modal.visible { display: flex; }
+        .sig-modal-box {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            width: 90%;
+            max-width: 500px;
+            text-align: center;
+        }
+        .sig-modal-box h3 { margin-bottom: 14px; font-size: 1.1rem; }
+        .sig-canvas {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            width: 100%;
+            height: 200px;
+            touch-action: none;
+            cursor: crosshair;
+        }
+        .sig-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 14px;
+        }
+        .btn {
+            padding: 10px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-family: inherit;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        .btn-primary { background: #4a6cf7; color: white; }
+        .btn-success { background: #22c55e; color: white; }
+        .btn-secondary { background: #e8e8e8; color: #333; }
+        .btn-danger { background: #ef4444; color: white; }
+        .download-bar {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .status-msg {
+            text-align: center;
+            padding: 16px;
+            margin: 16px 0;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+        .status-msg.success { background: #dcfce7; color: #166534; }
+        .status-msg.error { background: #fee2e2; color: #991b1b; }
+        .loading { text-align: center; padding: 60px; color: #999; font-size: 1.1rem; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>חתימה על מסמך</h1>
+    </header>
+    <div class="container">
+        <div id="loading" class="loading">טוען מסמך...</div>
+        <div id="content" style="display:none;">
+            <div class="doc-preview" id="docPreview">
+                <img id="docImg" src="">
+            </div>
+            <div class="download-bar">
+                <button class="btn btn-success" id="downloadBtn" disabled>הורד מסמך חתום</button>
+            </div>
+            <div id="statusMsg"></div>
+
+            <!-- Page nav for multi-page -->
+            <div style="text-align:center;margin:10px 0;" id="signPageNav" hidden>
+                <button class="btn btn-secondary" id="signPrevBtn">→ הקודם</button>
+                <span id="signPageIndicator"></span>
+                <button class="btn btn-secondary" id="signNextBtn">הבא ←</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Signature pad modal -->
+    <div class="sig-modal" id="sigModal">
+        <div class="sig-modal-box">
+            <h3>חתום כאן</h3>
+            <canvas class="sig-canvas" id="sigCanvas"></canvas>
+            <div class="sig-actions">
+                <button class="btn btn-primary" id="sigSaveBtn">אישור</button>
+                <button class="btn btn-danger" id="sigClearBtn">נקה</button>
+                <button class="btn btn-secondary" id="sigCancelBtn">ביטול</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { jsPDF } = window.jspdf;
+        const params = new URLSearchParams(window.location.search);
+        const templateId = params.get('id');
+        let template = null;
+        let currentSignPage = 0;
+        let signatures = {}; // { fieldId: dataUrl }
+
+        async function init() {
+            if (!templateId) {
+                document.getElementById('loading').textContent = 'חסר מזהה תבנית';
+                return;
+            }
+            try {
+                const res = await fetch('api.php?action=get_template&id=' + templateId);
+                if (!res.ok) throw new Error('Template not found');
+                template = await res.json();
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('content').style.display = 'block';
+                renderPage(0);
+            } catch (e) {
+                document.getElementById('loading').textContent = 'שגיאה בטעינת המסמך: ' + e.message;
+            }
+        }
+
+        function renderPage(pageIdx) {
+            currentSignPage = pageIdx;
+            const page = template.pages[pageIdx];
+            if (!page) return;
+            const docImg = document.getElementById('docImg');
+            docImg.src = page.imageData;
+            const preview = document.getElementById('docPreview');
+
+            // Remove old sig areas
+            preview.querySelectorAll('.sig-area').forEach(el => el.remove());
+
+            docImg.onload = () => {
+                const imgW = docImg.clientWidth;
+                const imgH = docImg.clientHeight;
+                const natW = page.imageWidth;
+                const natH = page.imageHeight;
+                const scaleX = imgW / natW;
+                const scaleY = imgH / natH;
+
+                // Render fixed text/image fields as overlays (read-only)
+                // Render signature fields as clickable areas
+                page.fields.forEach(field => {
+                    if (field.fieldType === 'signature') {
+                        const div = document.createElement('div');
+                        div.className = 'sig-area' + (signatures[field.id] ? ' signed' : '');
+                        const fw = field.imageWidth * field.scaleX * scaleX;
+                        const fh = field.imageHeight * field.scaleY * scaleY;
+                        const fx = field.x * scaleX;
+                        const fy = field.y * scaleY;
+                        div.style.width = fw + 'px';
+                        div.style.height = fh + 'px';
+                        div.style.left = (fx - fw) + 'px';
+                        div.style.top = fy + 'px';
+
+                        if (signatures[field.id]) {
+                            div.innerHTML = `<img src="${signatures[field.id]}">`;
+                        } else {
+                            div.textContent = 'לחץ לחתימה';
+                        }
+
+                        div.addEventListener('click', () => openSignPad(field.id));
+                        preview.appendChild(div);
+                    }
+                });
+            };
+
+            // Page navigation
+            if (template.pages.length > 1) {
+                document.getElementById('signPageNav').hidden = false;
+                document.getElementById('signPageIndicator').textContent = `עמוד ${pageIdx + 1} מתוך ${template.pages.length}`;
+                document.getElementById('signPrevBtn').disabled = pageIdx === 0;
+                document.getElementById('signNextBtn').disabled = pageIdx === template.pages.length - 1;
+            }
+
+            checkAllSigned();
+        }
+
+        document.getElementById('signPrevBtn').addEventListener('click', () => renderPage(currentSignPage - 1));
+        document.getElementById('signNextBtn').addEventListener('click', () => renderPage(currentSignPage + 1));
+
+        // --- SIGNATURE PAD ---
+        const sigModal = document.getElementById('sigModal');
+        const sigCanvas = document.getElementById('sigCanvas');
+        const sigCtx = sigCanvas.getContext('2d');
+        let sigDrawing = false;
+        let currentSigFieldId = null;
+
+        function openSignPad(fieldId) {
+            currentSigFieldId = fieldId;
+            sigModal.classList.add('visible');
+            sigCanvas.width = sigCanvas.clientWidth;
+            sigCanvas.height = sigCanvas.clientHeight;
+            sigCtx.clearRect(0, 0, sigCanvas.width, sigCanvas.height);
+            sigCtx.lineWidth = 2;
+            sigCtx.lineCap = 'round';
+            sigCtx.strokeStyle = '#000';
+        }
+
+        function getSigPos(e) {
+            const r = sigCanvas.getBoundingClientRect();
+            const touch = e.touches ? e.touches[0] : e;
+            return { x: touch.clientX - r.left, y: touch.clientY - r.top };
+        }
+
+        sigCanvas.addEventListener('mousedown', (e) => {
+            sigDrawing = true;
+            const p = getSigPos(e);
+            sigCtx.beginPath();
+            sigCtx.moveTo(p.x, p.y);
+        });
+        sigCanvas.addEventListener('mousemove', (e) => {
+            if (!sigDrawing) return;
+            const p = getSigPos(e);
+            sigCtx.lineTo(p.x, p.y);
+            sigCtx.stroke();
+        });
+        sigCanvas.addEventListener('mouseup', () => sigDrawing = false);
+        sigCanvas.addEventListener('mouseleave', () => sigDrawing = false);
+
+        // Touch
+        sigCanvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            sigDrawing = true;
+            const p = getSigPos(e);
+            sigCtx.beginPath();
+            sigCtx.moveTo(p.x, p.y);
+        }, { passive: false });
+        sigCanvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (!sigDrawing) return;
+            const p = getSigPos(e);
+            sigCtx.lineTo(p.x, p.y);
+            sigCtx.stroke();
+        }, { passive: false });
+        sigCanvas.addEventListener('touchend', () => sigDrawing = false);
+
+        document.getElementById('sigClearBtn').addEventListener('click', () => {
+            sigCtx.clearRect(0, 0, sigCanvas.width, sigCanvas.height);
+        });
+
+        document.getElementById('sigCancelBtn').addEventListener('click', () => {
+            sigModal.classList.remove('visible');
+        });
+
+        document.getElementById('sigSaveBtn').addEventListener('click', () => {
+            signatures[currentSigFieldId] = sigCanvas.toDataURL('image/png');
+            sigModal.classList.remove('visible');
+            renderPage(currentSignPage);
+        });
+
+        function getSignatureFields() {
+            return template.pages.flatMap(p => p.fields.filter(f => f.fieldType === 'signature'));
+        }
+
+        function checkAllSigned() {
+            const sigFields = getSignatureFields();
+            const allSigned = sigFields.length > 0 && sigFields.every(f => signatures[f.id]);
+            document.getElementById('downloadBtn').disabled = !allSigned;
+        }
+
+        // --- GENERATE SIGNED PDF ---
+        document.getElementById('downloadBtn').addEventListener('click', async () => {
+            const pxToPt = 72 / 96;
+            const firstPage = template.pages[0];
+            const doc = new jsPDF({
+                orientation: firstPage.imageWidth > firstPage.imageHeight ? 'landscape' : 'portrait',
+                unit: 'pt',
+                format: [firstPage.imageWidth * pxToPt, firstPage.imageHeight * pxToPt]
+            });
+
+            // Add font if available
+            if (template.fontData && template.fontName) {
+                doc.addFileToVFS(template.fontName + '.ttf', template.fontData);
+                doc.addFont(template.fontName + '.ttf', template.fontName, 'normal');
+            }
+
+            template.pages.forEach((page, pi) => {
+                const wPt = page.imageWidth * pxToPt;
+                const hPt = page.imageHeight * pxToPt;
+                if (pi > 0) doc.addPage([wPt, hPt]);
+
+                // Background
+                doc.addImage(page.imageData, page.imageType || 'PNG', 0, 0, wPt, hPt);
+
+                // Render fields
+                page.fields.forEach(field => {
+                    if (field.fieldType === 'signature') {
+                        const sigData = signatures[field.id];
+                        if (sigData) {
+                            const fw = field.imageWidth * field.scaleX * pxToPt;
+                            const fh = field.imageHeight * field.scaleY * pxToPt;
+                            const fx = field.x * pxToPt;
+                            const fy = field.y * pxToPt;
+                            doc.addImage(sigData, 'PNG', fx - fw, fy, fw, fh);
+                        }
+                    } else if (field.fieldType === 'image' && field.imageData) {
+                        const fw = field.frameWidthImg * pxToPt;
+                        const fh = field.frameHeightImg * pxToPt;
+                        const fx = field.x * pxToPt;
+                        const fy = field.y * pxToPt;
+                        doc.addImage(field.imageData, 'PNG', fx - fw, fy, fw, fh);
+                    } else if (field.fieldType === 'text' && field.valueType === 'fixed' && field.fixedValue) {
+                        if (template.fontName) doc.setFont(template.fontName);
+                        doc.setFontSize(field.fontSize * pxToPt);
+                        const cr = parseInt(field.color.slice(1, 3), 16);
+                        const cg = parseInt(field.color.slice(3, 5), 16);
+                        const cb = parseInt(field.color.slice(5, 7), 16);
+                        doc.setTextColor(cr, cg, cb);
+                        const rev = field.fixedValue.split('').reverse().join('');
+                        doc.text(rev, field.x * pxToPt, field.y * pxToPt, { align: 'right', baseline: 'top', angle: -(field.rotation || 0) });
+                    }
+                });
+            });
+
+            // Download
+            const pdfBlob = doc.output('blob');
+            const url = URL.createObjectURL(pdfBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = (template.name || 'signed_document') + '.pdf';
+            a.click();
+            URL.revokeObjectURL(url);
+
+            // Save to server
+            try {
+                const formData = new FormData();
+                formData.append('template_id', templateId);
+                formData.append('pdf', pdfBlob, (template.name || 'signed') + '.pdf');
+                formData.append('signatures', JSON.stringify(signatures));
+                await fetch('api.php?action=save_signed', { method: 'POST', body: formData });
+                showStatus('המסמך החתום נשמר בהצלחה!', 'success');
+            } catch (e) {
+                showStatus('המסמך הורד אך לא נשמר בשרת', 'error');
+            }
+        });
+
+        function showStatus(msg, type) {
+            const el = document.getElementById('statusMsg');
+            el.className = 'status-msg ' + type;
+            el.textContent = msg;
+        }
+
+        init();
+    </script>
+</body>
+</html>

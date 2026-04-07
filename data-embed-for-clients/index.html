@@ -879,6 +879,12 @@
                     <pre id="apiCurlExample"></pre>
                     <button class="copy-btn" id="copyCurlBtn">העתק</button>
                 </div>
+
+                <div class="form-group" id="signUrlSection" style="display:none;">
+                    <label>✍️ קישור חתימה ללקוח:</label>
+                    <pre id="signUrlDisplay"></pre>
+                    <button class="copy-btn" id="copySignUrlBtn">העתק קישור</button>
+                </div>
             </div>
         </div>
     </div>
@@ -2382,6 +2388,21 @@
             const curlBody = JSON.stringify(bodyObj);
             document.getElementById('apiCurlExample').textContent =
                 `curl -X POST "${endpoint}" \\\n  -H "Content-Type: application/json" \\\n  -d '${curlBody}'`;
+
+            // Signature URL
+            const allFieldsAll = pages.flatMap(p => p.fields);
+            const hasSignature = allFieldsAll.some(f => f.fieldType === 'signature');
+            const signUrlSection = document.getElementById('signUrlSection');
+            if (hasSignature) {
+                const signUrl = `${baseUrl}sign.html?id=${templateId}`;
+                signUrlSection.style.display = 'block';
+                document.getElementById('signUrlDisplay').textContent = signUrl;
+                document.getElementById('copySignUrlBtn').onclick = () => {
+                    navigator.clipboard.writeText(signUrl);
+                };
+            } else {
+                signUrlSection.style.display = 'none';
+            }
 
             // Copy buttons
             document.getElementById('copyEndpointBtn').onclick = () => {

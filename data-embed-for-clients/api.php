@@ -131,5 +131,52 @@ if ($action === 'render' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
+// --- SAVE SIGNED DOCUMENT ---
+if ($action === 'save_signed' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $signedDir = __DIR__ . '/signed';
+    if (!is_dir($signedDir)) { mkdir($signedDir, 0755, true); }
+
+    $templateId = $_POST['template_id'] ?? '';
+    if (!$templateId || !isset($_FILES['pdf'])) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Missing template_id or pdf']);
+        exit;
+    }
+
+    $safeTplId = preg_replace('/[^a-zA-Z0-9_-]/', '', $templateId);
+    $tplDir = $signedDir . '/' . $safeTplId;
+    if (!is_dir($tplDir)) { mkdir($tplDir, 0755, true); }
+
+    $filename = date('Y-m-d_H-i-s') . '_' . bin2hex(random_bytes(4)) . '.pdf';
+    move_uploaded_file($_FILES['pdf']['tmp_name'], $tplDir . '/' . $filename);
+
+    // Save signatures JSON
+    if (!empty($_POST['signatures'])) {
+        file_put_contents($tplDir . '/' . pathinfo($filename, PATHINFO_FILENAME) . '_sig.json', $_POST['signatures']);
+    }
+
+    echo json_encode(['success' => true, 'filename' => $filename]);
+    exit;
+}
+
+// --- LIST SIGNED DOCUMENTS ---
+if ($action === 'list_signed') {
+    $signedDir = __DIR__ . '/signed';
+    $templateId = preg_replace('/[^a-zA-Z0-9_-]/', '', $_GET['id'] ?? '');
+    $tplDir = $signedDir . '/' . $templateId;
+    $files = [];
+    if ($templateId && is_dir($tplDir)) {
+        foreach (glob($tplDir . '/*.pdf') as $file) {
+            $files[] = [
+                'filename' => basename($file),
+                'date' => date('c', filemtime($file)),
+                'size' => filesize($file),
+            ];
+        }
+    }
+    echo json_encode(['files' => $files]);
+    exit;
+}
+
 http_response_code(400);
 echo json_encode(['error' => 'Invalid action']);
