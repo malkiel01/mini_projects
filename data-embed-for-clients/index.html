@@ -658,9 +658,7 @@
                 <div class="menu-item" data-menu="edit">
                     עריכה
                     <div class="menu-dropdown">
-                        <div class="menu-option" id="menuSelectModeBtn"><span class="menu-icon">🔘</span> מצב בחירה (Shift+לחיצה)</div>
                         <div class="menu-option" id="menuSelectAllBtn"><span class="menu-icon">☑️</span> בחר הכל</div>
-                        <div class="menu-option" id="menuDeselectBtn"><span class="menu-icon">⬜</span> בטל בחירה</div>
                         <div class="menu-sep"></div>
                         <div class="menu-option" id="menuCopyBtn"><span class="menu-icon">📋</span> העתק</div>
                         <div class="menu-option" id="menuPasteBtn"><span class="menu-icon">📌</span> הדבק</div>
@@ -1064,13 +1062,6 @@
         document.getElementById('menuSelectAllBtn').addEventListener('click', () => {
             selectedFieldIds = new Set(fields.map(f => f.id));
             updateSelectionVisuals();
-        });
-        document.getElementById('menuDeselectBtn').addEventListener('click', () => {
-            selectedFieldIds.clear();
-            updateSelectionVisuals();
-        });
-        document.getElementById('menuSelectModeBtn').addEventListener('click', () => {
-            // Just a hint - Shift+click works
         });
 
         // Menu: Edit actions (work on selection)
