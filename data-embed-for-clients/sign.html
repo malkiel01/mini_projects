@@ -338,6 +338,12 @@
             lockBtn.disabled = true;
             lockBtn.textContent = '⏳ שומר...';
 
+            // Disable all signature areas immediately
+            document.querySelectorAll('.sig-area').forEach(el => {
+                el.style.pointerEvents = 'none';
+                el.style.cursor = 'wait';
+            });
+
             try {
             const pxToPt = 72 / 96;
             const firstPage = template.pages[0];
@@ -421,6 +427,11 @@
             } catch (e) {
                 lockBtn.disabled = false;
                 lockBtn.textContent = '🔒 נעל וחתום';
+                // Re-enable signature areas on error
+                document.querySelectorAll('.sig-area').forEach(el => {
+                    el.style.pointerEvents = '';
+                    el.style.cursor = 'pointer';
+                });
                 showStatus('שגיאה בשמירת המסמך: ' + e.message, 'error');
             }
         });
