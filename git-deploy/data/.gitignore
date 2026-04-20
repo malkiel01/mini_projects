@@ -1,0 +1,3 @@
+# All runtime data - never commit
+*
+!.gitignore

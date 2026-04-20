@@ -1,0 +1,114 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+    background: #f0f2f5;
+    color: #1a1a2e;
+    min-height: 100vh;
+    line-height: 1.5;
+}
+
+code { font-family: 'Courier New', ui-monospace, monospace; background: #eef0f4; padding: 1px 5px; border-radius: 3px; font-size: 0.92em; }
+.muted { color: #666; }
+.small { font-size: 0.85rem; }
+
+/* ---- Top bar ---- */
+.topbar { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: white; padding: 14px 20px; }
+.topbar-inner { max-width: 1100px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.brand { font-size: 1.2rem; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; }
+.brand-icon { font-size: 1.4rem; }
+.topbar-nav { display: flex; gap: 8px; flex-wrap: wrap; }
+.topbar-nav .btn-ghost { color: white; border-color: rgba(255,255,255,0.3); }
+.topbar-nav .btn-ghost:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.5); }
+
+/* ---- Layout ---- */
+.container { max-width: 1100px; margin: 0 auto; padding: 30px 20px; }
+.page-head { margin-bottom: 20px; }
+.page-head h1 { margin: 0 0 4px; font-size: 1.8rem; }
+
+/* ---- Auth pages ---- */
+.page-auth { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+.auth-card { background: white; max-width: 440px; width: 100%; padding: 32px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+.auth-card h1 { margin: 0 0 4px; font-size: 1.8rem; text-align: center; }
+.auth-card .subtitle { margin: 0 0 24px; text-align: center; color: #666; }
+
+/* ---- Forms ---- */
+.field { margin-bottom: 16px; }
+.field label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 0.9rem; }
+.field input[type=text], .field input[type=password], .field textarea, .field select {
+    width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.95rem; font-family: inherit;
+    background: white; transition: border-color 0.15s;
+}
+.field input:focus, .field textarea:focus, .field select:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79,70,229,0.15); }
+.field small { display: block; margin-top: 4px; color: #666; font-size: 0.82rem; line-height: 1.4; }
+.field textarea { min-height: 70px; resize: vertical; font-family: ui-monospace, 'Courier New', monospace; }
+
+/* ---- Buttons ---- */
+.btn { display: inline-block; padding: 8px 16px; border: 1px solid transparent; border-radius: 6px; font-size: 0.9rem; font-family: inherit; cursor: pointer; text-decoration: none; transition: all 0.15s; white-space: nowrap; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: #4f46e5; color: white; border-color: #4f46e5; }
+.btn-primary:hover:not(:disabled) { background: #4338ca; }
+.btn-secondary { background: white; color: #4f46e5; border-color: #4f46e5; }
+.btn-secondary:hover:not(:disabled) { background: #eef0ff; }
+.btn-ghost { background: transparent; color: #333; border-color: #d1d5db; }
+.btn-ghost:hover:not(:disabled) { background: #f0f2f5; }
+.btn-danger-ghost { background: transparent; color: #c62828; border-color: transparent; padding: 6px 10px; }
+.btn-danger-ghost:hover:not(:disabled) { background: #fff0f0; border-color: #ffc0c0; }
+
+/* ---- Alerts ---- */
+.alert { padding: 12px 16px; border-radius: 6px; margin-bottom: 16px; font-size: 0.92rem; }
+.alert-success { background: #e8f5e9; color: #1b5e20; border: 1px solid #a5d6a7; }
+.alert-error { background: #ffebee; color: #b71c1c; border: 1px solid #ef9a9a; }
+
+/* ---- Repo cards ---- */
+.repo-list { display: grid; gap: 16px; }
+.repo-card { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #e5e7eb; }
+.repo-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.repo-card h2 { margin: 0 0 4px; font-size: 1.15rem; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.repo-desc { margin: 6px 0 0; color: #555; font-size: 0.9rem; }
+.tag { display: inline-block; font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+.tag-private { background: #fff3e0; color: #e65100; }
+.repo-actions { display: flex; gap: 8px; }
+
+/* ---- Paths ---- */
+.paths { display: flex; flex-direction: column; gap: 10px; padding-top: 10px; border-top: 1px dashed #e5e7eb; }
+.path-row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 12px; background: #f9fafb; border-radius: 8px; border: 1px solid #eef0f4; flex-wrap: wrap; }
+.path-info { flex: 1; min-width: 200px; }
+.path-line code { font-size: 0.92rem; background: white; border: 1px solid #e5e7eb; }
+.path-meta { margin-top: 4px; display: flex; gap: 4px; flex-wrap: wrap; }
+.path-commit-msg { margin-top: 4px; font-size: 0.88rem; color: #333; font-style: italic; }
+.path-actions { display: flex; gap: 6px; align-items: center; }
+.path-empty { padding: 10px; text-align: center; }
+
+.deploy-output {
+    width: 100%; margin-top: 10px; padding: 12px; background: #0f172a; color: #e5e7eb;
+    border-radius: 6px; font-family: ui-monospace, 'Courier New', monospace; font-size: 0.82rem;
+    white-space: pre-wrap; word-break: break-word; max-height: 400px; overflow: auto; direction: ltr; text-align: left;
+}
+.deploy-output.is-error { background: #450a0a; color: #fecaca; }
+.deploy-output.is-success { background: #052e16; color: #bbf7d0; }
+
+/* ---- Empty state ---- */
+.empty { padding: 40px; text-align: center; background: white; border-radius: 10px; color: #666; border: 2px dashed #e5e7eb; }
+
+/* ---- Modal ---- */
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 100; }
+.modal[hidden] { display: none; }
+.modal-box { background: white; border-radius: 10px; padding: 24px; max-width: 550px; width: 100%; max-height: 90vh; overflow: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.25); }
+.modal-box h3 { margin: 0 0 4px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+
+/* ---- Settings ---- */
+.settings-section { background: white; border-radius: 10px; padding: 20px; margin-bottom: 16px; border: 1px solid #e5e7eb; }
+.settings-section h2 { margin: 0 0 12px; font-size: 1.1rem; }
+
+/* ---- Spinner on button ---- */
+.btn.is-loading { position: relative; color: transparent !important; pointer-events: none; }
+.btn.is-loading::after {
+    content: ""; position: absolute; inset: 0; margin: auto;
+    width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent;
+    border-radius: 50%; animation: spin 0.7s linear infinite; color: #fff;
+}
+.btn-secondary.is-loading::after { color: #4f46e5; }
+.btn-ghost.is-loading::after { color: #333; }
+@keyframes spin { to { transform: rotate(360deg); } }

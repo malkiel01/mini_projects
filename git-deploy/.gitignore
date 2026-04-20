@@ -1,0 +1,4 @@
+# Runtime data folder is ignored entirely (see data/.gitignore)
+data/config.json
+data/logs/
+data/cache/
