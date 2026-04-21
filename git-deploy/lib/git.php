@@ -89,11 +89,14 @@ class Git {
             // existing repo: fetch + checkout + reset to remote branch
             $steps = [];
             $steps[] = $this->run('git remote set-url origin ' . escapeshellarg($authUrl), $targetPath);
-            $steps[] = $this->run('git fetch origin ' . escapeshellarg($branch), $targetPath);
+            // Use explicit refspec so the remote-tracking ref is updated too (old git doesn't do this implicitly).
+            $refspec = '+refs/heads/' . $branch . ':refs/remotes/origin/' . $branch;
+            $steps[] = $this->run('git fetch origin ' . escapeshellarg($refspec), $targetPath);
             if (!end($steps)['ok']) return $this->summarize('fetch failed', $steps);
             // Check out the branch (create local tracking branch if missing)
             $steps[] = $this->run('git checkout ' . escapeshellarg($branch) . ' 2>&1 || git checkout -b ' . escapeshellarg($branch) . ' origin/' . escapeshellarg($branch), $targetPath);
-            $steps[] = $this->run('git reset --hard origin/' . escapeshellarg($branch), $targetPath);
+            // Reset to the freshly-fetched tip via FETCH_HEAD (works on git 1.8+).
+            $steps[] = $this->run('git reset --hard FETCH_HEAD', $targetPath);
             // Restore origin url to non-tokenized to avoid leaking token in .git/config
             $steps[] = $this->run('git remote set-url origin ' . escapeshellarg('https://github.com/' . $fullName . '.git'), $targetPath);
             $steps[] = $this->run('git rev-parse HEAD', $targetPath);
