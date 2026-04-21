@@ -1,0 +1,2223 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>אנליסט מסד נתונים</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+    background: #f0f2f5;
+    color: #1a1a2e;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+
+  /* =========================================================
+     CONNECTION SCREEN
+     ========================================================= */
+  #connectionScreen {
+    position: fixed; inset: 0;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px; overflow-y: auto;
+  }
+  .connection-card {
+    background: white; border-radius: 16px; padding: 40px;
+    width: 100%; max-width: 480px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  }
+  .connection-card .header-row {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 8px;
+  }
+  .connection-card .icon-box {
+    font-size: 2.5rem;
+  }
+  .connection-card h1 {
+    font-size: 1.5rem; color: #1a1a2e;
+  }
+  .connection-card .subtitle {
+    color: #666; font-size: 0.95rem; margin-bottom: 24px;
+  }
+  .back-link {
+    display: inline-block; color: #5a8dee; text-decoration: none;
+    font-size: 0.9rem; margin-bottom: 16px;
+  }
+  .back-link:hover { text-decoration: underline; }
+
+  .form-group { margin-bottom: 16px; }
+  .form-group label {
+    display: block; font-size: 0.85rem; color: #555;
+    margin-bottom: 6px; font-weight: 500;
+  }
+  .form-group input, .form-group select, .form-group textarea {
+    width: 100%; padding: 10px 14px;
+    border: 1px solid #ddd; border-radius: 8px;
+    font-size: 0.95rem; font-family: inherit;
+    background: #fafafa; transition: all 0.2s;
+  }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+    outline: none; border-color: #5a8dee;
+    background: white; box-shadow: 0 0 0 3px rgba(90,141,238,0.15);
+  }
+  .form-row {
+    display: grid; grid-template-columns: 2fr 1fr; gap: 12px;
+  }
+
+  .btn {
+    padding: 10px 20px; border: none; border-radius: 8px;
+    font-size: 0.95rem; cursor: pointer; font-family: inherit;
+    transition: all 0.2s; display: inline-flex; align-items: center;
+    gap: 6px; font-weight: 500;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, #5a8dee 0%, #3b5bdb 100%);
+    color: white;
+  }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(59,91,219,0.3); }
+  .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+  .btn-secondary { background: #e9ecef; color: #333; }
+  .btn-secondary:hover { background: #dee2e6; }
+  .btn-danger { background: #dc3545; color: white; }
+  .btn-danger:hover { background: #c82333; }
+  .btn-success { background: #28a745; color: white; }
+  .btn-success:hover { background: #218838; }
+  .btn-block { width: 100%; justify-content: center; padding: 12px; }
+
+  .error-message {
+    background: #fee; color: #c33; border: 1px solid #fcc;
+    padding: 10px 14px; border-radius: 8px; margin-top: 12px;
+    font-size: 0.9rem; display: none;
+  }
+
+  /* =========================================================
+     MAIN LAYOUT
+     ========================================================= */
+  #mainScreen { display: none; height: 100vh; flex-direction: column; }
+
+  .main-header {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    color: white; padding: 12px 20px;
+    display: flex; align-items: center; gap: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1); flex-shrink: 0;
+  }
+  .main-header .back-btn {
+    color: white; text-decoration: none; font-size: 1.4rem;
+    padding: 4px 8px; border-radius: 6px;
+    transition: background 0.2s;
+  }
+  .main-header .back-btn:hover { background: rgba(255,255,255,0.15); }
+  .main-header h1 { font-size: 1.2rem; font-weight: 500; }
+  .main-header .db-badge {
+    background: rgba(255,255,255,0.15); padding: 4px 12px;
+    border-radius: 20px; font-size: 0.85rem;
+  }
+  .main-header .spacer { flex: 1; }
+
+  .layout {
+    display: flex; flex: 1; overflow: hidden;
+  }
+
+  /* --- Sidebar --- */
+  .sidebar {
+    width: 280px; background: white;
+    border-left: 1px solid #e0e0e0;
+    display: flex; flex-direction: column; flex-shrink: 0;
+  }
+  .sidebar-search {
+    padding: 12px; border-bottom: 1px solid #eee;
+  }
+  .sidebar-search input {
+    width: 100%; padding: 8px 12px; border: 1px solid #ddd;
+    border-radius: 6px; font-size: 0.9rem;
+  }
+  .sidebar-section { padding: 8px 0; }
+  .sidebar-section-title {
+    padding: 8px 16px; font-size: 0.75rem; color: #888;
+    font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .sidebar-list {
+    list-style: none; max-height: 40vh; overflow-y: auto;
+  }
+  .sidebar-item {
+    padding: 8px 16px; cursor: pointer; font-size: 0.9rem;
+    display: flex; align-items: center; gap: 8px;
+    transition: background 0.15s; border-right: 3px solid transparent;
+  }
+  .sidebar-item:hover { background: #f5f7fa; }
+  .sidebar-item.active {
+    background: #eef2ff; color: #3b5bdb;
+    border-right-color: #3b5bdb; font-weight: 500;
+  }
+  .sidebar-item .item-icon {
+    opacity: 0.6; flex-shrink: 0;
+  }
+  .sidebar-scroll { flex: 1; overflow-y: auto; }
+
+  /* --- Content area --- */
+  .content {
+    flex: 1; overflow: hidden;
+    display: flex; flex-direction: column;
+    background: #f7f8fa;
+  }
+  .welcome {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; flex: 1;
+    color: #999; text-align: center; padding: 40px;
+  }
+  .welcome .welcome-icon { font-size: 4rem; margin-bottom: 16px; opacity: 0.4; }
+  .welcome h2 { font-size: 1.3rem; color: #666; margin-bottom: 8px; }
+  .welcome p { font-size: 0.95rem; }
+
+  .table-view { display: none; flex-direction: column; height: 100%; }
+  .table-view.active { display: flex; }
+
+  .table-header-bar {
+    background: white; padding: 16px 24px;
+    border-bottom: 1px solid #e0e0e0; flex-shrink: 0;
+  }
+  .table-header-bar .title-row {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 4px;
+  }
+  .table-header-bar h2 {
+    font-size: 1.3rem; color: #1a1a2e;
+  }
+  .table-header-bar .type-badge {
+    background: #e9ecef; color: #555;
+    padding: 2px 10px; border-radius: 12px;
+    font-size: 0.75rem; font-weight: 600;
+  }
+  .table-header-bar .type-badge.view { background: #fff3cd; color: #856404; }
+  .table-header-bar .meta {
+    color: #888; font-size: 0.85rem;
+  }
+
+  .tabs-bar {
+    background: white; padding: 0 24px;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex; gap: 4px; flex-shrink: 0;
+    overflow-x: auto;
+  }
+  .tab-btn {
+    padding: 12px 20px; border: none; background: none;
+    cursor: pointer; font-size: 0.9rem;
+    border-bottom: 3px solid transparent;
+    color: #666; font-family: inherit;
+    transition: all 0.15s; white-space: nowrap;
+  }
+  .tab-btn:hover { color: #3b5bdb; }
+  .tab-btn.active {
+    color: #3b5bdb; border-bottom-color: #3b5bdb; font-weight: 500;
+  }
+
+  .tab-content {
+    flex: 1; overflow: auto; padding: 24px;
+    display: none;
+  }
+  .tab-content.active { display: block; }
+
+  .loading {
+    display: flex; align-items: center; justify-content: center;
+    padding: 40px; color: #888;
+  }
+  .spinner {
+    width: 24px; height: 24px;
+    border: 3px solid #eee; border-top-color: #3b5bdb;
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+    margin-left: 12px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* =========================================================
+     DATA TABLES (shared across tabs)
+     ========================================================= */
+  .section-card {
+    background: white; border-radius: 10px;
+    padding: 20px; margin-bottom: 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .section-card h3 {
+    font-size: 1.05rem; color: #1a1a2e;
+    margin-bottom: 14px; display: flex;
+    align-items: center; gap: 8px;
+    padding-bottom: 10px; border-bottom: 1px solid #f0f0f0;
+  }
+  .section-card .section-actions { margin-right: auto; display: flex; gap: 6px; }
+  .section-card .count-badge {
+    background: #eef2ff; color: #3b5bdb;
+    padding: 2px 10px; border-radius: 12px;
+    font-size: 0.8rem; font-weight: 600;
+  }
+
+  .data-table {
+    width: 100%; border-collapse: collapse;
+    font-size: 0.88rem;
+  }
+  .data-table th, .data-table td {
+    padding: 8px 12px; text-align: right;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  .data-table th {
+    background: #f8f9fb; color: #555;
+    font-weight: 600; font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    position: sticky; top: 0;
+  }
+  .data-table tbody tr:hover { background: #fafbfc; }
+  .data-table tbody td {
+    color: #333; white-space: nowrap;
+    max-width: 300px; overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .data-table .mono {
+    font-family: 'Consolas', 'Monaco', monospace;
+    color: #5a6268; font-size: 0.85rem;
+  }
+  .data-table .muted { color: #888; font-style: italic; }
+  .table-wrap {
+    overflow-x: auto; border-radius: 8px;
+    border: 1px solid #eee;
+  }
+
+  .pill {
+    display: inline-block; padding: 2px 8px;
+    border-radius: 10px; font-size: 0.72rem;
+    font-weight: 600; background: #e9ecef;
+    color: #555;
+  }
+  .pill.pk  { background: #fff3cd; color: #856404; }
+  .pill.fk  { background: #d1ecf1; color: #0c5460; }
+  .pill.uq  { background: #d4edda; color: #155724; }
+  .pill.idx { background: #e2e3e5; color: #383d41; }
+  .pill.null-yes { background: #f8d7da; color: #721c24; }
+  .pill.null-no  { background: #d4edda; color: #155724; }
+
+  .info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+  }
+  .info-item {
+    background: #f8f9fb; padding: 10px 14px;
+    border-radius: 8px; border: 1px solid #f0f0f0;
+  }
+  .info-item .label {
+    font-size: 0.75rem; color: #888;
+    text-transform: uppercase; letter-spacing: 0.3px;
+    margin-bottom: 4px;
+  }
+  .info-item .value {
+    font-size: 0.95rem; color: #1a1a2e;
+    font-weight: 500; word-break: break-all;
+  }
+
+  .empty-state {
+    text-align: center; padding: 30px 20px;
+    color: #999; font-size: 0.9rem;
+  }
+
+  .trigger-item {
+    background: #f8f9fb; padding: 14px;
+    border-radius: 8px; margin-bottom: 10px;
+    border-right: 3px solid #3b5bdb;
+  }
+  .trigger-item .trigger-head {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 8px;
+  }
+  .trigger-item .trigger-name {
+    font-weight: 600; color: #1a1a2e;
+  }
+  .trigger-item pre {
+    background: #1e1e2e; color: #d4d4d4;
+    padding: 10px; border-radius: 6px;
+    font-size: 0.82rem; overflow-x: auto;
+    font-family: 'Consolas', 'Monaco', monospace;
+    white-space: pre-wrap; word-wrap: break-word;
+  }
+
+  /* =========================================================
+     DATA TAB - pagination + crud
+     ========================================================= */
+  .data-toolbar {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 14px; flex-wrap: wrap;
+  }
+  .data-toolbar .stat {
+    color: #666; font-size: 0.9rem;
+  }
+  .data-toolbar .spacer { flex: 1; }
+
+  .pagination {
+    display: flex; gap: 4px; align-items: center;
+    margin-top: 14px; justify-content: center;
+  }
+  .pagination button {
+    padding: 6px 12px; border: 1px solid #ddd;
+    background: white; border-radius: 6px;
+    cursor: pointer; font-size: 0.85rem;
+    color: #555; min-width: 36px;
+  }
+  .pagination button:hover:not(:disabled) { background: #eef2ff; border-color: #3b5bdb; color: #3b5bdb; }
+  .pagination button.active {
+    background: #3b5bdb; border-color: #3b5bdb; color: white;
+  }
+  .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .pagination .page-info {
+    padding: 0 10px; font-size: 0.85rem; color: #666;
+  }
+  .pagination select {
+    padding: 6px 10px; border: 1px solid #ddd;
+    border-radius: 6px; font-size: 0.85rem;
+  }
+
+  .rows-table {
+    font-size: 0.85rem;
+  }
+  .rows-table td.cell-value {
+    max-width: 240px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .rows-table td.actions-cell {
+    white-space: nowrap;
+    text-align: center;
+  }
+  .rows-table .null-val {
+    color: #aaa; font-style: italic; font-size: 0.8rem;
+  }
+  .rows-table tr.highlight { background: #fff8e1 !important; }
+
+  /* =========================================================
+     MODAL
+     ========================================================= */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1000; padding: 20px; overflow-y: auto;
+  }
+  .modal {
+    background: white; border-radius: 12px;
+    max-width: 640px; width: 100%;
+    max-height: 90vh; display: flex; flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  }
+  .modal-header {
+    padding: 16px 20px; border-bottom: 1px solid #eee;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .modal-header h3 { font-size: 1.1rem; color: #1a1a2e; }
+  .modal-close {
+    background: none; border: none; font-size: 1.4rem;
+    cursor: pointer; color: #888; padding: 0 6px;
+    border-radius: 4px;
+  }
+  .modal-close:hover { background: #f0f0f0; color: #333; }
+  .modal-body {
+    padding: 20px; overflow-y: auto; flex: 1;
+  }
+  .modal-footer {
+    padding: 14px 20px; border-top: 1px solid #eee;
+    display: flex; gap: 8px; justify-content: flex-end;
+  }
+
+  .row-field {
+    margin-bottom: 14px;
+  }
+  .row-field label {
+    display: block; margin-bottom: 4px; font-size: 0.85rem;
+    color: #555; font-weight: 500;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .row-field label .col-type {
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.75rem; color: #888;
+    background: #f0f2f5; padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .row-field .null-toggle {
+    font-size: 0.75rem; color: #666;
+    margin-right: auto; cursor: pointer;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .row-field input, .row-field textarea {
+    width: 100%; padding: 8px 12px;
+    border: 1px solid #ddd; border-radius: 6px;
+    font-size: 0.9rem; font-family: inherit;
+    background: #fafafa;
+  }
+  .row-field textarea { resize: vertical; min-height: 60px; }
+  .row-field.is-null input, .row-field.is-null textarea {
+    background: #f5f5f5; color: #aaa;
+    text-decoration: line-through;
+  }
+  .row-field .hint {
+    font-size: 0.75rem; color: #888; margin-top: 2px;
+  }
+
+  /* =========================================================
+     RELATIONSHIPS - visual ERD
+     ========================================================= */
+  .rel-view-toggle {
+    display: inline-flex; border: 1px solid #ddd;
+    border-radius: 8px; overflow: hidden; margin-bottom: 16px;
+  }
+  .rel-view-toggle button {
+    padding: 8px 16px; border: none; background: white;
+    cursor: pointer; font-size: 0.9rem; color: #666;
+    font-family: inherit;
+  }
+  .rel-view-toggle button.active {
+    background: #3b5bdb; color: white;
+  }
+
+  .erd-wrap {
+    position: relative; background: #fafbfc;
+    border: 1px solid #e0e0e0; border-radius: 8px;
+    height: 70vh; overflow: auto;
+  }
+  .erd-canvas {
+    position: relative; width: 2400px; height: 1600px;
+  }
+  .erd-svg {
+    position: absolute; inset: 0;
+    pointer-events: none; width: 100%; height: 100%;
+  }
+  .erd-svg path {
+    fill: none; stroke: #3b5bdb;
+    stroke-width: 2; opacity: 0.6;
+  }
+  .erd-svg path.highlighted {
+    stroke: #dc3545; stroke-width: 3; opacity: 1;
+  }
+
+  .erd-table {
+    position: absolute; background: white;
+    border: 1.5px solid #3b5bdb; border-radius: 8px;
+    min-width: 180px; font-size: 0.8rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    user-select: none;
+  }
+  .erd-table.selected {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 3px rgba(220,53,69,0.2);
+  }
+  .erd-table.highlighted {
+    border-color: #28a745;
+    box-shadow: 0 0 0 3px rgba(40,167,69,0.2);
+  }
+  .erd-table-header {
+    background: linear-gradient(135deg, #3b5bdb, #1a1a2e);
+    color: white; padding: 8px 12px;
+    border-radius: 6px 6px 0 0;
+    cursor: move; font-weight: 600;
+  }
+  .erd-table.selected .erd-table-header {
+    background: linear-gradient(135deg, #dc3545, #8b0000);
+  }
+  .erd-table-col {
+    padding: 5px 12px; border-top: 1px solid #eee;
+    display: flex; align-items: center; gap: 6px;
+    font-size: 0.78rem;
+  }
+  .erd-table-col.is-pk {
+    background: #fff9e6; font-weight: 600; color: #856404;
+  }
+  .erd-table-col.is-fk {
+    background: #e7f3ff; color: #004085;
+  }
+  .erd-table-col .col-icon {
+    flex-shrink: 0; opacity: 0.7;
+  }
+  .erd-table-col .col-type {
+    font-family: monospace; color: #888;
+    font-size: 0.72rem; margin-right: auto;
+  }
+
+  .erd-legend {
+    position: absolute; bottom: 12px; right: 12px;
+    background: rgba(255,255,255,0.95);
+    padding: 10px 14px; border-radius: 8px;
+    font-size: 0.78rem; color: #666;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  }
+  .erd-legend div { margin: 3px 0; }
+
+  /* =========================================================
+     CODE BLOCK - SQL / JSON display
+     ========================================================= */
+  .code-block {
+    position: relative; background: #1e1e2e;
+    border-radius: 8px; overflow: hidden;
+  }
+  .code-block pre {
+    padding: 16px 20px; color: #d4d4d4;
+    font-family: 'Consolas', 'Monaco', 'Menlo', monospace;
+    font-size: 0.85rem; line-height: 1.6;
+    overflow-x: auto; white-space: pre-wrap;
+    word-wrap: break-word;
+    max-height: 600px; overflow-y: auto;
+    direction: ltr; text-align: left;
+  }
+  .code-actions {
+    position: absolute; top: 10px; left: 10px;
+    display: flex; gap: 6px; z-index: 2;
+  }
+  .code-actions button {
+    background: rgba(255,255,255,0.1); color: white;
+    border: 1px solid rgba(255,255,255,0.2);
+    padding: 5px 12px; border-radius: 6px;
+    font-size: 0.78rem; cursor: pointer;
+    font-family: inherit;
+  }
+  .code-actions button:hover { background: rgba(255,255,255,0.2); }
+  .code-actions button.copied { background: #28a745; border-color: #28a745; }
+
+  /* Simple SQL syntax coloring */
+  .sql-kw { color: #569cd6; font-weight: 600; }
+  .sql-type { color: #4ec9b0; }
+  .sql-str { color: #ce9178; }
+  .sql-num { color: #b5cea8; }
+  .sql-comment { color: #6a9955; font-style: italic; }
+
+  /* =========================================================
+     EXPORT TAB
+     ========================================================= */
+  .export-option {
+    background: white; border: 1.5px solid #eee;
+    border-radius: 10px; padding: 18px;
+    margin-bottom: 14px; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .export-option:hover {
+    border-color: #3b5bdb;
+    box-shadow: 0 2px 8px rgba(59,91,219,0.1);
+  }
+  .export-option.selected {
+    border-color: #3b5bdb; background: #f0f4ff;
+  }
+  .export-option .opt-title {
+    font-size: 1rem; font-weight: 600;
+    color: #1a1a2e; margin-bottom: 4px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .export-option .opt-desc {
+    color: #666; font-size: 0.85rem;
+  }
+  .export-options-panel {
+    background: #f8f9fb; padding: 16px;
+    border-radius: 10px; margin: 16px 0;
+    border: 1px solid #e8eaed;
+  }
+  .checkbox-group {
+    display: flex; align-items: center;
+    gap: 8px; padding: 8px 0;
+    font-size: 0.9rem; cursor: pointer;
+  }
+  .checkbox-group input[type=checkbox] {
+    width: 16px; height: 16px;
+  }
+  .view-item {
+    background: white; padding: 8px 12px;
+    border-radius: 6px; margin: 4px 0;
+    display: flex; align-items: center; gap: 8px;
+    border: 1px solid #e8eaed;
+    font-size: 0.85rem;
+  }
+
+  /* Toast notifications */
+  #toastContainer {
+    position: fixed; top: 20px; left: 50%;
+    transform: translateX(-50%); z-index: 2000;
+    display: flex; flex-direction: column; gap: 8px;
+    pointer-events: none;
+  }
+  .toast {
+    background: white; padding: 12px 20px;
+    border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    border-right: 4px solid #3b5bdb;
+    min-width: 260px; max-width: 500px;
+    animation: slideIn 0.2s ease-out;
+  }
+  .toast.success { border-right-color: #28a745; }
+  .toast.error { border-right-color: #dc3545; }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     CONNECTION SCREEN
+     ============================================================ -->
+<div id="connectionScreen">
+  <div class="connection-card">
+    <a href="../index.html" class="back-link">→ חזרה לכלים</a>
+    <div class="header-row">
+      <div class="icon-box">🗄️</div>
+      <h1>אנליסט מסד נתונים</h1>
+    </div>
+    <p class="subtitle">חיבור למסד נתונים MySQL לניתוח וניהול</p>
+
+    <form id="connectionForm">
+      <div class="form-row">
+        <div class="form-group">
+          <label>כתובת השרת</label>
+          <input type="text" id="dbHost" value="localhost" required>
+        </div>
+        <div class="form-group">
+          <label>פורט</label>
+          <input type="number" id="dbPort" value="3306" required>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>שם מסד הנתונים</label>
+        <input type="text" id="dbName" required>
+      </div>
+      <div class="form-group">
+        <label>שם משתמש</label>
+        <input type="text" id="dbUser" required>
+      </div>
+      <div class="form-group">
+        <label>סיסמה</label>
+        <input type="password" id="dbPass">
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-block" id="connectBtn">
+        🔌 התחברות
+      </button>
+
+      <div id="connectionError" class="error-message"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ============================================================
+     MAIN SCREEN
+     ============================================================ -->
+<div id="mainScreen">
+  <div class="main-header">
+    <a href="../index.html" class="back-btn" title="חזרה לכלים">→</a>
+    <h1>🗄️ אנליסט מסד נתונים</h1>
+    <span class="db-badge" id="dbBadge"></span>
+    <div class="spacer"></div>
+    <button class="btn btn-secondary" id="disconnectBtn">🔌 התנתקות</button>
+  </div>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-search">
+        <input type="text" id="sidebarSearch" placeholder="🔍 חיפוש טבלה...">
+      </div>
+      <div class="sidebar-scroll">
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">טבלאות (<span id="tablesCount">0</span>)</div>
+          <ul class="sidebar-list" id="tablesList"></ul>
+        </div>
+        <div class="sidebar-section" id="viewsSection" style="display:none">
+          <div class="sidebar-section-title">תצוגות (<span id="viewsCount">0</span>)</div>
+          <ul class="sidebar-list" id="viewsList"></ul>
+        </div>
+      </div>
+    </aside>
+
+    <main class="content">
+      <div class="welcome" id="welcomeScreen">
+        <div class="welcome-icon">📊</div>
+        <h2>ברוכים הבאים לאנליסט מסד נתונים</h2>
+        <p>בחרו טבלה או תצוגה מהרשימה בצד כדי להתחיל</p>
+      </div>
+
+      <div class="table-view" id="tableView">
+        <div class="table-header-bar">
+          <div class="title-row">
+            <h2 id="currentTableName">-</h2>
+            <span class="type-badge" id="currentTableType">טבלה</span>
+          </div>
+          <div class="meta" id="currentTableMeta"></div>
+        </div>
+
+        <div class="tabs-bar">
+          <button class="tab-btn active" data-tab="structure">📋 מבנה</button>
+          <button class="tab-btn" data-tab="data">📊 נתונים</button>
+          <button class="tab-btn" data-tab="relationships">🔗 קשרים</button>
+          <button class="tab-btn" data-tab="sql">💾 SQL</button>
+          <button class="tab-btn" data-tab="export">📤 ייצוא</button>
+        </div>
+
+        <div class="tab-content active" id="tab-structure">
+          <div class="loading">
+            <div class="spinner"></div>
+            <span>טוען...</span>
+          </div>
+        </div>
+        <div class="tab-content" id="tab-data"></div>
+        <div class="tab-content" id="tab-relationships"></div>
+        <div class="tab-content" id="tab-sql"></div>
+        <div class="tab-content" id="tab-export"></div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div id="toastContainer"></div>
+
+<script>
+/* ===============================================================
+   STATE - connection credentials held in memory only
+   =============================================================== */
+const state = {
+  conn: null,       // {host, port, database, username, password}
+  tables: [],
+  views: [],
+  currentItem: null,   // {name, type: 'table'|'view'}
+  activeTab: 'structure',
+  tableCache: {}       // per-table cached data to avoid re-fetching on tab switch
+};
+
+/* ===============================================================
+   API helper
+   =============================================================== */
+async function api(action, params = {}) {
+  if (!state.conn) throw new Error('לא מחובר למסד נתונים');
+  const res = await fetch('api.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ...state.conn, ...params })
+  });
+  const data = await res.json();
+  if (!data.success) {
+    throw new Error(data.error || 'שגיאה לא ידועה');
+  }
+  return data;
+}
+
+/* ===============================================================
+   UI helpers
+   =============================================================== */
+function $(id) { return document.getElementById(id); }
+
+function escapeHtml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function toast(message, type = 'info') {
+  const t = document.createElement('div');
+  t.className = 'toast ' + type;
+  t.textContent = message;
+  $('toastContainer').appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 3500);
+}
+
+function showLoading(container) {
+  container.innerHTML = '<div class="loading"><div class="spinner"></div><span>טוען...</span></div>';
+}
+
+/* ===============================================================
+   CONNECTION
+   =============================================================== */
+$('connectionForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = $('connectBtn');
+  const errBox = $('connectionError');
+  errBox.style.display = 'none';
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner" style="width:16px;height:16px;border-width:2px;margin:0 0 0 8px"></div> מתחבר...';
+
+  const conn = {
+    host: $('dbHost').value.trim(),
+    port: $('dbPort').value.trim() || 3306,
+    database: $('dbName').value.trim(),
+    username: $('dbUser').value.trim(),
+    password: $('dbPass').value
+  };
+  state.conn = conn;
+
+  try {
+    const result = await api('connect');
+    state.tables = result.tables || [];
+    state.views = result.views || [];
+    showMainScreen();
+  } catch (err) {
+    state.conn = null;
+    errBox.textContent = '❌ שגיאת חיבור: ' + err.message;
+    errBox.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '🔌 התחברות';
+  }
+});
+
+$('disconnectBtn').addEventListener('click', () => {
+  if (!confirm('להתנתק ממסד הנתונים?')) return;
+  state.conn = null;
+  state.tables = [];
+  state.views = [];
+  state.currentItem = null;
+  state.tableCache = {};
+  $('connectionScreen').style.display = 'flex';
+  $('mainScreen').style.display = 'none';
+  $('dbPass').value = '';
+});
+
+function showMainScreen() {
+  $('connectionScreen').style.display = 'none';
+  $('mainScreen').style.display = 'flex';
+  $('dbBadge').textContent = state.conn.database;
+  renderSidebar();
+}
+
+/* ===============================================================
+   SIDEBAR
+   =============================================================== */
+function renderSidebar() {
+  const filter = ($('sidebarSearch').value || '').toLowerCase();
+  const filteredTables = state.tables.filter(t => t.toLowerCase().includes(filter));
+  const filteredViews = state.views.filter(v => v.toLowerCase().includes(filter));
+
+  $('tablesCount').textContent = filteredTables.length;
+  $('viewsCount').textContent = filteredViews.length;
+  $('viewsSection').style.display = state.views.length ? '' : 'none';
+
+  const tablesList = $('tablesList');
+  tablesList.innerHTML = filteredTables.map(t => `
+    <li class="sidebar-item ${state.currentItem && state.currentItem.name === t && state.currentItem.type === 'table' ? 'active' : ''}"
+        data-name="${escapeHtml(t)}" data-type="table">
+      <span class="item-icon">📋</span>
+      <span>${escapeHtml(t)}</span>
+    </li>
+  `).join('');
+
+  const viewsList = $('viewsList');
+  viewsList.innerHTML = filteredViews.map(v => `
+    <li class="sidebar-item ${state.currentItem && state.currentItem.name === v && state.currentItem.type === 'view' ? 'active' : ''}"
+        data-name="${escapeHtml(v)}" data-type="view">
+      <span class="item-icon">👁️</span>
+      <span>${escapeHtml(v)}</span>
+    </li>
+  `).join('');
+
+  document.querySelectorAll('.sidebar-item').forEach(item => {
+    item.addEventListener('click', () => {
+      selectItem(item.dataset.name, item.dataset.type);
+    });
+  });
+}
+
+$('sidebarSearch').addEventListener('input', renderSidebar);
+
+/* ===============================================================
+   ITEM SELECTION & TABS
+   =============================================================== */
+function selectItem(name, type) {
+  state.currentItem = { name, type };
+  state.activeTab = 'structure';
+  state.tableCache[name] = state.tableCache[name] || {};
+
+  $('welcomeScreen').style.display = 'none';
+  $('tableView').classList.add('active');
+  $('currentTableName').textContent = name;
+
+  const typeBadge = $('currentTableType');
+  typeBadge.textContent = type === 'view' ? 'תצוגה' : 'טבלה';
+  typeBadge.className = 'type-badge' + (type === 'view' ? ' view' : '');
+  $('currentTableMeta').textContent = '';
+
+  // reset tabs
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === 'structure');
+  });
+  document.querySelectorAll('.tab-content').forEach(c => {
+    c.classList.toggle('active', c.id === 'tab-structure');
+  });
+
+  renderSidebar();
+  loadActiveTab();
+}
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    state.activeTab = btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.tab-content').forEach(c => {
+      c.classList.toggle('active', c.id === 'tab-' + state.activeTab);
+    });
+    loadActiveTab();
+  });
+});
+
+function loadActiveTab() {
+  if (!state.currentItem) return;
+  const container = $('tab-' + state.activeTab);
+
+  switch (state.activeTab) {
+    case 'structure':    renderStructureTab(container); break;
+    case 'data':         renderDataTab(container); break;
+    case 'relationships':renderRelationshipsTab(container); break;
+    case 'sql':          renderSqlTab(container); break;
+    case 'export':       renderExportTab(container); break;
+  }
+}
+
+/* ===============================================================
+   TAB CONTENTS - placeholders filled in stages 2-7
+   =============================================================== */
+async function renderStructureTab(c) {
+  const item = state.currentItem;
+  if (!item) return;
+  showLoading(c);
+
+  try {
+    // Views only need columns; fetch from get_table_structure anyway
+    const data = await api('get_table_structure', { table: item.name });
+
+    // cache & meta line
+    state.tableCache[item.name].structure = data;
+    updateTableMeta(data);
+
+    const cols = data.columns || [];
+    const indexes = data.indexes || [];
+    const fks = data.foreignKeys || [];
+    const triggers = data.triggers || [];
+    const info = data.tableInfo || {};
+
+    // Group indexes by name
+    const indexGroups = {};
+    indexes.forEach(idx => {
+      const name = idx.Key_name;
+      if (!indexGroups[name]) {
+        indexGroups[name] = {
+          name, unique: idx.Non_unique == 0,
+          type: idx.Index_type, columns: []
+        };
+      }
+      indexGroups[name].columns.push(idx.Column_name);
+    });
+
+    // FK set for pill rendering on columns
+    const fkCols = new Set(fks.map(fk => fk.COLUMN_NAME));
+
+    let html = '';
+
+    // Table info section (for tables only)
+    if (item.type === 'table' && info) {
+      html += `
+        <div class="section-card">
+          <h3>ℹ️ מידע כללי</h3>
+          <div class="info-grid">
+            <div class="info-item"><div class="label">מנוע</div><div class="value">${escapeHtml(info.ENGINE || '-')}</div></div>
+            <div class="info-item"><div class="label">קידוד</div><div class="value">${escapeHtml(info.TABLE_COLLATION || '-')}</div></div>
+            <div class="info-item"><div class="label">מספר שורות (משוער)</div><div class="value">${info.TABLE_ROWS ?? '-'}</div></div>
+            <div class="info-item"><div class="label">AUTO_INCREMENT</div><div class="value">${info.AUTO_INCREMENT ?? '-'}</div></div>
+            <div class="info-item"><div class="label">הערה</div><div class="value">${escapeHtml(info.TABLE_COMMENT || '-')}</div></div>
+            <div class="info-item"><div class="label">נוצר בתאריך</div><div class="value">${escapeHtml(info.CREATE_TIME || '-')}</div></div>
+          </div>
+        </div>`;
+    }
+
+    // Columns section
+    const canManageCols = item.type === 'table';
+    html += `
+      <div class="section-card">
+        <h3>
+          📋 עמודות
+          <span class="count-badge">${cols.length}</span>
+          ${canManageCols ? `<div class="section-actions"><button class="btn btn-primary" id="addColumnBtn">➕ הוסף עמודה</button></div>` : ''}
+        </h3>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>#</th><th>שם</th><th>סוג</th><th>Null</th>
+                <th>מפתח</th><th>ברירת מחדל</th><th>תכונות נוספות</th>
+                <th>קידוד</th><th>הערה</th>
+                ${canManageCols ? '<th>פעולות</th>' : ''}
+              </tr>
+            </thead>
+            <tbody>
+              ${cols.map((col, i) => {
+                const pills = [];
+                if (col.Key === 'PRI') pills.push('<span class="pill pk">PK</span>');
+                if (col.Key === 'UNI') pills.push('<span class="pill uq">UNIQUE</span>');
+                if (col.Key === 'MUL') pills.push('<span class="pill idx">INDEX</span>');
+                if (fkCols.has(col.Field)) pills.push('<span class="pill fk">FK</span>');
+                return `
+                  <tr>
+                    <td class="mono">${i + 1}</td>
+                    <td><strong>${escapeHtml(col.Field)}</strong></td>
+                    <td class="mono">${escapeHtml(col.Type)}</td>
+                    <td>${col.Null === 'YES'
+                      ? '<span class="pill null-yes">YES</span>'
+                      : '<span class="pill null-no">NO</span>'}</td>
+                    <td>${pills.join(' ') || '<span class="muted">-</span>'}</td>
+                    <td class="mono">${col.Default === null ? '<span class="muted">NULL</span>' : escapeHtml(col.Default)}</td>
+                    <td class="mono">${escapeHtml(col.Extra || '')}</td>
+                    <td class="mono" style="font-size:0.78rem">${escapeHtml(col.Collation || '-')}</td>
+                    <td>${escapeHtml(col.Comment || '')}</td>
+                    ${canManageCols ? `<td><button class="btn btn-danger drop-col-btn" data-col="${escapeHtml(col.Field)}" style="padding:4px 10px;font-size:0.8rem">🗑️</button></td>` : ''}
+                  </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+
+    // FK summary
+    if (fks.length) {
+      html += `
+        <div class="section-card">
+          <h3>🔗 מפתחות זרים <span class="count-badge">${fks.length}</span></h3>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr>
+                <th>שם אילוץ</th><th>עמודה</th><th>טבלה מקושרת</th>
+                <th>עמודה מקושרת</th><th>ON UPDATE</th><th>ON DELETE</th>
+              </tr></thead>
+              <tbody>
+                ${fks.map(fk => `
+                  <tr>
+                    <td class="mono">${escapeHtml(fk.CONSTRAINT_NAME)}</td>
+                    <td><strong>${escapeHtml(fk.COLUMN_NAME)}</strong></td>
+                    <td>${escapeHtml(fk.REFERENCED_TABLE_NAME)}</td>
+                    <td>${escapeHtml(fk.REFERENCED_COLUMN_NAME)}</td>
+                    <td class="mono">${escapeHtml(fk.UPDATE_RULE)}</td>
+                    <td class="mono">${escapeHtml(fk.DELETE_RULE)}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>`;
+    }
+
+    // Indexes section
+    const idxList = Object.values(indexGroups);
+    if (idxList.length) {
+      html += `
+        <div class="section-card">
+          <h3>🔑 אינדקסים <span class="count-badge">${idxList.length}</span></h3>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr><th>שם</th><th>סוג</th><th>עמודות</th><th>ייחודי</th></tr></thead>
+              <tbody>
+                ${idxList.map(idx => `
+                  <tr>
+                    <td><strong>${escapeHtml(idx.name)}</strong></td>
+                    <td class="mono">${escapeHtml(idx.type)}</td>
+                    <td class="mono">${idx.columns.map(escapeHtml).join(', ')}</td>
+                    <td>${idx.unique ? '<span class="pill uq">UNIQUE</span>' : '<span class="pill idx">INDEX</span>'}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>`;
+    }
+
+    // Triggers section
+    if (triggers.length) {
+      html += `
+        <div class="section-card">
+          <h3>⚡ טריגרים <span class="count-badge">${triggers.length}</span></h3>
+          ${triggers.map(t => `
+            <div class="trigger-item">
+              <div class="trigger-head">
+                <span class="trigger-name">${escapeHtml(t.TRIGGER_NAME)}</span>
+                <span class="pill">${escapeHtml(t.ACTION_TIMING)} ${escapeHtml(t.EVENT_MANIPULATION)}</span>
+              </div>
+              <pre>${escapeHtml(t.ACTION_STATEMENT)}</pre>
+            </div>
+          `).join('')}
+        </div>`;
+    }
+
+    c.innerHTML = html;
+
+    // Wire up column actions
+    const addBtn = $('addColumnBtn');
+    if (addBtn) addBtn.addEventListener('click', openAddColumnModal);
+
+    c.querySelectorAll('.drop-col-btn').forEach(btn => {
+      btn.addEventListener('click', () => dropColumn(btn.dataset.col));
+    });
+
+  } catch (err) {
+    c.innerHTML = `<div class="empty-state">❌ שגיאה: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function updateTableMeta(data) {
+  const meta = [];
+  const info = data.tableInfo;
+  if (info) {
+    if (info.ENGINE) meta.push(info.ENGINE);
+    if (info.TABLE_ROWS !== null && info.TABLE_ROWS !== undefined) meta.push(info.TABLE_ROWS + ' שורות');
+  }
+  meta.push((data.columns || []).length + ' עמודות');
+  $('currentTableMeta').textContent = meta.join(' · ');
+}
+
+/* ===============================================================
+   ADD COLUMN MODAL
+   =============================================================== */
+function openAddColumnModal() {
+  const item = state.currentItem;
+  const structure = state.tableCache[item.name].structure;
+  const existingCols = structure ? structure.columns.map(c => c.Field) : [];
+
+  const commonTypes = [
+    'INT', 'BIGINT', 'SMALLINT', 'TINYINT',
+    'VARCHAR(255)', 'TEXT', 'LONGTEXT',
+    'DECIMAL(10,2)', 'FLOAT', 'DOUBLE',
+    'DATE', 'DATETIME', 'TIMESTAMP', 'TIME',
+    'BOOLEAN', 'JSON', 'BLOB'
+  ];
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-backdrop';
+  modal.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h3>➕ הוספת עמודה ל-${escapeHtml(item.name)}</h3>
+        <button class="modal-close">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="row-field">
+          <label>שם העמודה <span style="color:#dc3545">*</span></label>
+          <input type="text" id="colName" placeholder="למשל: email, created_at" required>
+          <div class="hint">אותיות, ספרות וקו תחתון בלבד</div>
+        </div>
+
+        <div class="row-field">
+          <label>סוג הנתונים</label>
+          <div style="display:flex;gap:8px">
+            <select id="colTypeSelect" style="flex:1;padding:8px 12px;border:1px solid #ddd;border-radius:6px;background:#fafafa">
+              ${commonTypes.map(t => `<option value="${t}">${t}</option>`).join('')}
+              <option value="__custom__">-- מותאם אישית --</option>
+            </select>
+            <input type="text" id="colTypeCustom" placeholder="למשל: ENUM('a','b')" style="flex:1;display:none">
+          </div>
+        </div>
+
+        <div class="row-field">
+          <label>
+            <input type="checkbox" id="colNullable" checked style="margin-left:4px">
+            מאפשר NULL
+          </label>
+        </div>
+
+        <div class="row-field">
+          <label>ערך ברירת מחדל (אופציונלי)</label>
+          <input type="text" id="colDefault" placeholder="השאר ריק אם אין">
+        </div>
+
+        <div class="row-field">
+          <label>מיקום בטבלה</label>
+          <select id="colAfter" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;background:#fafafa">
+            <option value="">בסוף (ברירת מחדל)</option>
+            ${existingCols.map(c => `<option value="${escapeHtml(c)}">אחרי ${escapeHtml(c)}</option>`).join('')}
+          </select>
+        </div>
+
+        <div class="row-field">
+          <label>הערה (אופציונלי)</label>
+          <input type="text" id="colComment" placeholder="תיאור העמודה">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelColBtn">ביטול</button>
+        <button class="btn btn-success" id="saveColBtn">💾 הוסף עמודה</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+
+  const close = () => modal.remove();
+  modal.querySelector('.modal-close').addEventListener('click', close);
+  modal.querySelector('#cancelColBtn').addEventListener('click', close);
+  modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+
+  const typeSelect = modal.querySelector('#colTypeSelect');
+  const typeCustom = modal.querySelector('#colTypeCustom');
+  typeSelect.addEventListener('change', () => {
+    if (typeSelect.value === '__custom__') {
+      typeCustom.style.display = 'block';
+      typeCustom.focus();
+    } else {
+      typeCustom.style.display = 'none';
+    }
+  });
+
+  modal.querySelector('#saveColBtn').addEventListener('click', async () => {
+    const colName = modal.querySelector('#colName').value.trim();
+    if (!colName) { toast('יש להזין שם עמודה', 'error'); return; }
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(colName)) {
+      toast('שם העמודה חייב להתחיל באות ולהכיל רק אותיות, ספרות וקו תחתון', 'error');
+      return;
+    }
+
+    const colType = typeSelect.value === '__custom__'
+      ? typeCustom.value.trim()
+      : typeSelect.value;
+    if (!colType) { toast('יש לבחור סוג עמודה', 'error'); return; }
+
+    const params = {
+      table: item.name,
+      column_name: colName,
+      column_type: colType,
+      nullable: modal.querySelector('#colNullable').checked,
+      default_value: modal.querySelector('#colDefault').value || null,
+      comment: modal.querySelector('#colComment').value || '',
+      after_column: modal.querySelector('#colAfter').value || ''
+    };
+
+    try {
+      await api('add_column', params);
+      toast('✅ העמודה נוספה בהצלחה', 'success');
+      close();
+      delete state.tableCache[item.name].structure;
+      renderStructureTab($('tab-structure'));
+    } catch (err) {
+      toast('❌ שגיאה: ' + err.message, 'error');
+    }
+  });
+}
+
+/* ===============================================================
+   DROP COLUMN (with FK check on the server side)
+   =============================================================== */
+async function dropColumn(columnName) {
+  const item = state.currentItem;
+  if (!confirm(`האם למחוק את העמודה "${columnName}" מהטבלה "${item.name}"?\n\nהפעולה אינה הפיכה!`)) {
+    return;
+  }
+
+  try {
+    const res = await api('drop_column', { table: item.name, column: columnName });
+    if (res.success) {
+      toast('✅ העמודה נמחקה', 'success');
+      delete state.tableCache[item.name].structure;
+      renderStructureTab($('tab-structure'));
+    }
+  } catch (err) {
+    // Server returns error with FK info if blocked
+    const msg = err.message || 'שגיאה במחיקת עמודה';
+    showFkConflictDialog(msg);
+  }
+}
+
+function showFkConflictDialog(errorMessage) {
+  const modal = document.createElement('div');
+  modal.className = 'modal-backdrop';
+  modal.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h3>🚫 לא ניתן למחוק</h3>
+        <button class="modal-close">×</button>
+      </div>
+      <div class="modal-body">
+        <div style="font-size:1rem;color:#555;line-height:1.7">
+          <p style="margin-bottom:12px;color:#dc3545;font-weight:500">⚠️ ${escapeHtml(errorMessage)}</p>
+          <p style="margin-bottom:12px">ל-MySQL אין אפשרות למחוק עמודה שיש עליה מפתח זר (Foreign Key) או שמפתח זר בטבלה אחרת מתייחס אליה.</p>
+          <p><strong>פתרון:</strong> יש קודם להסיר את מפתחות הזרים הקשורים לפני המחיקה.</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary modal-close">הבנתי</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+  modal.querySelectorAll('.modal-close').forEach(b => {
+    b.addEventListener('click', () => modal.remove());
+  });
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+}
+async function renderDataTab(c) {
+  const item = state.currentItem;
+  if (!item) return;
+
+  // init page state
+  const cacheKey = item.name + ':' + item.type;
+  const cache = state.tableCache[item.name];
+  cache.dataPage = cache.dataPage || 1;
+  cache.dataLimit = cache.dataLimit || 50;
+
+  showLoading(c);
+
+  try {
+    const action = item.type === 'view' ? 'get_view_data' : 'get_table_data';
+    const params = item.type === 'view'
+      ? { view: item.name, page: cache.dataPage, limit: cache.dataLimit }
+      : { table: item.name, page: cache.dataPage, limit: cache.dataLimit };
+
+    const data = await api(action, params);
+
+    // also need structure for add-row modal + column types
+    let structure = cache.structure;
+    if (!structure && item.type === 'table') {
+      structure = await api('get_table_structure', { table: item.name });
+      cache.structure = structure;
+    }
+
+    cache.dataResult = data;
+    const rows = data.rows || [];
+    const pkCols = data.primaryKeys || [];
+    const canEdit = item.type === 'table';
+    const columnNames = rows.length ? Object.keys(rows[0]) : (structure ? structure.columns.map(c => c.Field) : []);
+
+    let html = `
+      <div class="data-toolbar">
+        <div class="stat">סה"כ: <strong>${data.total}</strong> שורות</div>
+        <div class="spacer"></div>
+        <label style="font-size:0.85rem;color:#666">שורות בעמוד:
+          <select id="pageLimitSelect">
+            ${[10, 25, 50, 100, 200].map(n =>
+              `<option value="${n}" ${cache.dataLimit === n ? 'selected' : ''}>${n}</option>`
+            ).join('')}
+          </select>
+        </label>
+        ${canEdit ? `<button class="btn btn-primary" id="addRowBtn">➕ הוסף שורה</button>` : ''}
+        <button class="btn btn-secondary" id="refreshBtn">🔄 רענן</button>
+      </div>`;
+
+    if (rows.length === 0) {
+      html += '<div class="empty-state">📭 אין נתונים להצגה</div>';
+    } else {
+      html += `
+        <div class="table-wrap">
+          <table class="data-table rows-table">
+            <thead>
+              <tr>
+                ${columnNames.map(cn => {
+                  const isPk = pkCols.includes(cn);
+                  return `<th>${isPk ? '🔑 ' : ''}${escapeHtml(cn)}</th>`;
+                }).join('')}
+                ${canEdit ? '<th style="width:60px">פעולות</th>' : ''}
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map((row, idx) => `
+                <tr data-row-idx="${idx}">
+                  ${columnNames.map(cn => {
+                    const v = row[cn];
+                    if (v === null) return '<td><span class="null-val">NULL</span></td>';
+                    const s = String(v);
+                    return `<td class="cell-value" title="${escapeHtml(s)}">${escapeHtml(s.length > 100 ? s.slice(0, 100) + '…' : s)}</td>`;
+                  }).join('')}
+                  ${canEdit ? `<td class="actions-cell"><button class="btn btn-danger delete-row-btn" data-idx="${idx}" style="padding:4px 8px;font-size:0.75rem">🗑️</button></td>` : ''}
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>`;
+
+      // Pagination
+      html += renderPagination(data.page, data.totalPages);
+    }
+
+    c.innerHTML = html;
+
+    // Wire up controls
+    $('pageLimitSelect').addEventListener('change', (e) => {
+      cache.dataLimit = parseInt(e.target.value, 10);
+      cache.dataPage = 1;
+      renderDataTab(c);
+    });
+    $('refreshBtn').addEventListener('click', () => renderDataTab(c));
+    const addBtn = $('addRowBtn');
+    if (addBtn) addBtn.addEventListener('click', openAddRowModal);
+
+    c.querySelectorAll('.pag-btn').forEach(b => {
+      b.addEventListener('click', () => {
+        cache.dataPage = parseInt(b.dataset.page, 10);
+        renderDataTab(c);
+      });
+    });
+
+    c.querySelectorAll('.delete-row-btn').forEach(b => {
+      b.addEventListener('click', () => {
+        const idx = parseInt(b.dataset.idx, 10);
+        deleteRow(rows[idx], pkCols, columnNames);
+      });
+    });
+  } catch (err) {
+    c.innerHTML = `<div class="empty-state">❌ שגיאה: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function renderPagination(currentPage, totalPages) {
+  if (totalPages <= 1) return '';
+  const pages = [];
+  const add = (p) => pages.push(p);
+
+  add(1);
+  if (currentPage > 4) pages.push('…');
+  for (let p = Math.max(2, currentPage - 2); p <= Math.min(totalPages - 1, currentPage + 2); p++) {
+    pages.push(p);
+  }
+  if (currentPage < totalPages - 3) pages.push('…');
+  if (totalPages > 1) add(totalPages);
+
+  return `
+    <div class="pagination">
+      <button class="pag-btn" data-page="${Math.max(1, currentPage - 1)}" ${currentPage === 1 ? 'disabled' : ''}>‹ קודם</button>
+      ${pages.map(p => p === '…'
+        ? `<span class="page-info">…</span>`
+        : `<button class="pag-btn ${p === currentPage ? 'active' : ''}" data-page="${p}">${p}</button>`
+      ).join('')}
+      <button class="pag-btn" data-page="${Math.min(totalPages, currentPage + 1)}" ${currentPage === totalPages ? 'disabled' : ''}>הבא ›</button>
+      <span class="page-info">עמוד ${currentPage} מתוך ${totalPages}</span>
+    </div>`;
+}
+
+/* ===============================================================
+   DELETE ROW
+   =============================================================== */
+async function deleteRow(row, pkCols, allCols) {
+  const item = state.currentItem;
+  const where = {};
+
+  if (pkCols && pkCols.length) {
+    pkCols.forEach(c => { where[c] = row[c]; });
+  } else {
+    allCols.forEach(c => { where[c] = row[c]; });
+  }
+
+  const whereDesc = Object.entries(where)
+    .map(([k, v]) => `${k} = ${v === null ? 'NULL' : v}`)
+    .join(', ');
+  if (!confirm('למחוק שורה?\n\n' + whereDesc)) return;
+
+  try {
+    const res = await api('delete_row', { table: item.name, where });
+    if (res.affectedRows > 0) {
+      toast('✅ השורה נמחקה בהצלחה', 'success');
+      renderDataTab($('tab-data'));
+    } else {
+      toast('⚠️ לא נמחקה אף שורה', 'error');
+    }
+  } catch (err) {
+    toast('❌ שגיאה: ' + err.message, 'error');
+  }
+}
+
+/* ===============================================================
+   ADD ROW MODAL
+   =============================================================== */
+function openAddRowModal() {
+  const item = state.currentItem;
+  const structure = state.tableCache[item.name].structure;
+  if (!structure) { toast('יש לטעון קודם את מבנה הטבלה', 'error'); return; }
+
+  const cols = structure.columns || [];
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-backdrop';
+  modal.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h3>➕ הוספת שורה חדשה ל-${escapeHtml(item.name)}</h3>
+        <button class="modal-close">×</button>
+      </div>
+      <div class="modal-body">
+        <form id="addRowForm">
+          ${cols.map(col => {
+            const isAuto = (col.Extra || '').includes('auto_increment');
+            const nullable = col.Null === 'YES';
+            const inputType = inferInputType(col.Type);
+            const isTextArea = /text|blob|json/i.test(col.Type);
+            const defaultTxt = col.Default !== null ? `ברירת מחדל: ${col.Default}` :
+                               (nullable ? 'ניתן להשאיר ריק' : '⚠️ שדה חובה');
+            return `
+              <div class="row-field" data-col="${escapeHtml(col.Field)}" data-nullable="${nullable}">
+                <label>
+                  <strong>${escapeHtml(col.Field)}</strong>
+                  <span class="col-type">${escapeHtml(col.Type)}</span>
+                  ${isAuto ? '<span class="pill">AUTO</span>' : ''}
+                  ${col.Key === 'PRI' ? '<span class="pill pk">PK</span>' : ''}
+                  ${nullable ? `<label class="null-toggle"><input type="checkbox" class="null-chk"> NULL</label>` : ''}
+                </label>
+                ${isTextArea
+                  ? `<textarea class="row-input" ${isAuto ? 'placeholder="השאר ריק לייצור אוטומטי"' : ''}></textarea>`
+                  : `<input type="${inputType}" class="row-input" ${isAuto ? 'placeholder="השאר ריק לייצור אוטומטי"' : ''}>`}
+                <div class="hint">${escapeHtml(defaultTxt)}${col.Comment ? ' · ' + escapeHtml(col.Comment) : ''}</div>
+              </div>`;
+          }).join('')}
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelRowBtn">ביטול</button>
+        <button class="btn btn-success" id="saveRowBtn">💾 שמירה</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+
+  const close = () => modal.remove();
+  modal.querySelector('.modal-close').addEventListener('click', close);
+  modal.querySelector('#cancelRowBtn').addEventListener('click', close);
+  modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+
+  // null toggle handlers
+  modal.querySelectorAll('.null-chk').forEach(chk => {
+    chk.addEventListener('change', () => {
+      const field = chk.closest('.row-field');
+      field.classList.toggle('is-null', chk.checked);
+      const inp = field.querySelector('.row-input');
+      if (inp) inp.disabled = chk.checked;
+    });
+  });
+
+  modal.querySelector('#saveRowBtn').addEventListener('click', async () => {
+    const data = {};
+    modal.querySelectorAll('.row-field').forEach(field => {
+      const colName = field.dataset.col;
+      const nullChk = field.querySelector('.null-chk');
+      const input = field.querySelector('.row-input');
+      if (nullChk && nullChk.checked) {
+        data[colName] = '__NULL__';
+      } else {
+        const v = input.value;
+        if (v === '') {
+          data[colName] = '__SKIP__'; // let MySQL use default/auto_increment
+        } else {
+          data[colName] = v;
+        }
+      }
+    });
+
+    try {
+      const res = await api('add_row', { table: item.name, data });
+      toast('✅ שורה חדשה נוספה' + (res.insertId ? ' (ID: ' + res.insertId + ')' : ''), 'success');
+      close();
+      renderDataTab($('tab-data'));
+    } catch (err) {
+      toast('❌ שגיאה: ' + err.message, 'error');
+    }
+  });
+}
+
+function inferInputType(mysqlType) {
+  const t = (mysqlType || '').toLowerCase();
+  if (/int|decimal|float|double|numeric/.test(t)) return 'number';
+  if (/^date\b/.test(t)) return 'date';
+  if (/^datetime|^timestamp/.test(t)) return 'datetime-local';
+  if (/^time\b/.test(t)) return 'time';
+  return 'text';
+}
+async function renderRelationshipsTab(c) {
+  const item = state.currentItem;
+  if (!item) return;
+
+  const cache = state.tableCache[item.name];
+  cache.relView = cache.relView || 'list';
+
+  showLoading(c);
+
+  try {
+    const rels = await api('get_relationships', { table: item.name });
+    cache.relationships = rels;
+
+    let html = `
+      <div class="rel-view-toggle">
+        <button data-view="list" class="${cache.relView === 'list' ? 'active' : ''}">📋 רשימה</button>
+        <button data-view="visual" class="${cache.relView === 'visual' ? 'active' : ''}">🗺️ תרשים ויזואלי</button>
+      </div>
+      <div id="relContent"></div>`;
+
+    c.innerHTML = html;
+
+    c.querySelectorAll('.rel-view-toggle button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        cache.relView = btn.dataset.view;
+        renderRelationshipsTab(c);
+      });
+    });
+
+    if (cache.relView === 'list') {
+      renderRelListView($('relContent'), rels);
+    } else {
+      await renderRelVisualView($('relContent'));
+    }
+  } catch (err) {
+    c.innerHTML = `<div class="empty-state">❌ שגיאה: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function renderRelListView(container, rels) {
+  const { outgoing, incoming } = rels;
+  let html = '';
+
+  if (outgoing.length) {
+    html += `
+      <div class="section-card">
+        <h3>↗️ יחסים יוצאים <span class="count-badge">${outgoing.length}</span>
+          <span style="font-size:0.8rem;color:#888;margin-right:8px;font-weight:400">(הטבלה הנוכחית מתייחסת אל...)</span>
+        </h3>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr>
+              <th>אילוץ</th><th>עמודה</th><th>→</th>
+              <th>טבלת יעד</th><th>עמודה ביעד</th><th>ON UPDATE</th><th>ON DELETE</th>
+            </tr></thead>
+            <tbody>
+              ${outgoing.map(fk => `
+                <tr>
+                  <td class="mono">${escapeHtml(fk.CONSTRAINT_NAME)}</td>
+                  <td><strong>${escapeHtml(fk.COLUMN_NAME)}</strong></td>
+                  <td style="text-align:center;color:#3b5bdb">←</td>
+                  <td><a href="#" class="rel-link" data-table="${escapeHtml(fk.REFERENCED_TABLE_NAME)}">${escapeHtml(fk.REFERENCED_TABLE_NAME)}</a></td>
+                  <td>${escapeHtml(fk.REFERENCED_COLUMN_NAME)}</td>
+                  <td class="mono">${escapeHtml(fk.UPDATE_RULE)}</td>
+                  <td class="mono">${escapeHtml(fk.DELETE_RULE)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  if (incoming.length) {
+    html += `
+      <div class="section-card">
+        <h3>↙️ יחסים נכנסים <span class="count-badge">${incoming.length}</span>
+          <span style="font-size:0.8rem;color:#888;margin-right:8px;font-weight:400">(טבלאות אחרות מתייחסות אל הטבלה הנוכחית)</span>
+        </h3>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr>
+              <th>אילוץ</th><th>טבלת מקור</th><th>עמודת מקור</th>
+              <th>→</th><th>עמודה בטבלה זו</th><th>ON UPDATE</th><th>ON DELETE</th>
+            </tr></thead>
+            <tbody>
+              ${incoming.map(fk => `
+                <tr>
+                  <td class="mono">${escapeHtml(fk.CONSTRAINT_NAME)}</td>
+                  <td><a href="#" class="rel-link" data-table="${escapeHtml(fk.SOURCE_TABLE)}">${escapeHtml(fk.SOURCE_TABLE)}</a></td>
+                  <td><strong>${escapeHtml(fk.SOURCE_COLUMN)}</strong></td>
+                  <td style="text-align:center;color:#3b5bdb">←</td>
+                  <td>${escapeHtml(fk.REFERENCED_COLUMN_NAME)}</td>
+                  <td class="mono">${escapeHtml(fk.UPDATE_RULE)}</td>
+                  <td class="mono">${escapeHtml(fk.DELETE_RULE)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  if (!outgoing.length && !incoming.length) {
+    html = '<div class="empty-state">🔗 אין קשרים (Foreign Keys) עבור טבלה זו</div>';
+  }
+
+  container.innerHTML = html;
+
+  container.querySelectorAll('.rel-link').forEach(a => {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      const name = a.dataset.table;
+      if (state.tables.includes(name)) selectItem(name, 'table');
+    });
+  });
+}
+
+/* ===============================================================
+   VISUAL ERD - draggable tables with SVG connection lines
+   =============================================================== */
+async function renderRelVisualView(container) {
+  showLoading(container);
+  let data;
+  try {
+    data = await api('get_all_relationships');
+  } catch (err) {
+    container.innerHTML = `<div class="empty-state">❌ שגיאה: ${escapeHtml(err.message)}</div>`;
+    return;
+  }
+
+  const tables = data.tables || [];
+  const tableColumns = data.tableColumns || {};
+  const rels = data.relationships || [];
+  const currentName = state.currentItem.name;
+
+  // Auto-layout: grid with tables that connect to current one placed nearby
+  const connected = new Set();
+  rels.forEach(r => {
+    if (r.TABLE_NAME === currentName) connected.add(r.REFERENCED_TABLE_NAME);
+    if (r.REFERENCED_TABLE_NAME === currentName) connected.add(r.TABLE_NAME);
+  });
+
+  const positions = {};
+  const cols = 5;
+  const colW = 240, rowH = 260;
+
+  // Current table in center
+  if (tables.includes(currentName)) {
+    positions[currentName] = { x: 2 * colW + 40, y: 1 * rowH + 40 };
+  }
+
+  // Connected tables around current
+  const connectedArr = [...connected].filter(t => tables.includes(t));
+  connectedArr.forEach((t, i) => {
+    const angle = (i / connectedArr.length) * 2 * Math.PI;
+    positions[t] = {
+      x: 2 * colW + 40 + Math.cos(angle) * 280,
+      y: 1 * rowH + 40 + Math.sin(angle) * 220
+    };
+  });
+
+  // Other tables in grid below
+  let r = 3, col = 0;
+  tables.forEach(t => {
+    if (positions[t]) return;
+    positions[t] = { x: col * colW + 40, y: r * rowH + 40 };
+    col++;
+    if (col >= cols) { col = 0; r++; }
+  });
+
+  // Determine PK and FK sets per table
+  const pkSet = {}, fkSet = {};
+  tables.forEach(t => {
+    pkSet[t] = new Set();
+    fkSet[t] = new Set();
+    (tableColumns[t] || []).forEach(c => {
+      if (c.Key === 'PRI') pkSet[t].add(c.Field);
+    });
+  });
+  rels.forEach(r => {
+    if (!fkSet[r.TABLE_NAME]) fkSet[r.TABLE_NAME] = new Set();
+    fkSet[r.TABLE_NAME].add(r.COLUMN_NAME);
+  });
+
+  container.innerHTML = `
+    <div class="erd-wrap" id="erdWrap">
+      <div class="erd-canvas" id="erdCanvas">
+        <svg class="erd-svg" id="erdSvg" viewBox="0 0 2400 1600"></svg>
+        ${tables.map(t => {
+          const p = positions[t];
+          const cls = ['erd-table'];
+          if (t === currentName) cls.push('selected');
+          else if (connected.has(t)) cls.push('highlighted');
+          const colsArr = tableColumns[t] || [];
+          return `
+            <div class="${cls.join(' ')}" data-table="${escapeHtml(t)}"
+                 style="right: ${p.x}px; top: ${p.y}px">
+              <div class="erd-table-header">📋 ${escapeHtml(t)}</div>
+              ${colsArr.slice(0, 12).map(c => {
+                const isPk = pkSet[t].has(c.Field);
+                const isFk = fkSet[t] && fkSet[t].has(c.Field);
+                const cls = ['erd-table-col'];
+                if (isPk) cls.push('is-pk');
+                if (isFk) cls.push('is-fk');
+                return `
+                  <div class="${cls.join(' ')}" data-col="${escapeHtml(c.Field)}">
+                    <span class="col-icon">${isPk ? '🔑' : isFk ? '🔗' : '·'}</span>
+                    <span>${escapeHtml(c.Field)}</span>
+                    <span class="col-type">${escapeHtml(c.Type.split('(')[0])}</span>
+                  </div>`;
+              }).join('')}
+              ${colsArr.length > 12 ? `<div class="erd-table-col" style="color:#888;font-style:italic">+ ${colsArr.length - 12} נוספות</div>` : ''}
+            </div>`;
+        }).join('')}
+      </div>
+      <div class="erd-legend">
+        <div>🟧 <strong>אדום</strong>: הטבלה הנוכחית</div>
+        <div>🟩 <strong>ירוק</strong>: טבלאות מקושרות</div>
+        <div>⬜ <strong>כחול</strong>: שאר הטבלאות</div>
+        <div style="margin-top:6px;padding-top:6px;border-top:1px solid #eee">
+          גרור טבלה לשינוי המיקום
+        </div>
+      </div>
+    </div>`;
+
+  // Draw SVG lines
+  drawErdLines(rels, positions, currentName);
+
+  // Enable dragging
+  container.querySelectorAll('.erd-table').forEach(el => {
+    enableDrag(el, positions, rels, currentName);
+  });
+}
+
+function drawErdLines(rels, positions, currentName) {
+  const svg = $('erdSvg');
+  if (!svg) return;
+
+  // Get actual dims
+  const canvas = $('erdCanvas');
+  svg.setAttribute('viewBox', `0 0 ${canvas.offsetWidth} ${canvas.offsetHeight}`);
+
+  // Helper: get approximate connection point for a table
+  function anchor(tableName) {
+    const p = positions[tableName];
+    if (!p) return null;
+    const el = document.querySelector(`.erd-table[data-table="${CSS.escape(tableName)}"]`);
+    if (!el) return null;
+    // Note: RTL layout - x is measured from right edge
+    const canvasWidth = canvas.offsetWidth;
+    return {
+      cx: canvasWidth - p.x - el.offsetWidth / 2,
+      cy: p.y + el.offsetHeight / 2
+    };
+  }
+
+  const paths = [];
+  const seen = new Set();
+  rels.forEach(r => {
+    const key = r.TABLE_NAME + '|' + r.REFERENCED_TABLE_NAME;
+    if (seen.has(key)) return;
+    seen.add(key);
+
+    const a = anchor(r.TABLE_NAME);
+    const b = anchor(r.REFERENCED_TABLE_NAME);
+    if (!a || !b) return;
+
+    const isHighlighted = r.TABLE_NAME === currentName || r.REFERENCED_TABLE_NAME === currentName;
+    const dx = (b.cx - a.cx) * 0.4;
+    const d = `M ${a.cx},${a.cy} C ${a.cx + dx},${a.cy} ${b.cx - dx},${b.cy} ${b.cx},${b.cy}`;
+    paths.push(`<path d="${d}" class="${isHighlighted ? 'highlighted' : ''}"></path>`);
+  });
+
+  svg.innerHTML = paths.join('');
+}
+
+function enableDrag(el, positions, rels, currentName) {
+  const header = el.querySelector('.erd-table-header');
+  if (!header) return;
+
+  let dragging = false, startX, startY, startRight, startTop;
+
+  header.addEventListener('mousedown', (e) => {
+    dragging = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    const style = el.style;
+    startRight = parseFloat(style.right);
+    startTop = parseFloat(style.top);
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    // Because RTL: positive right when moving left (dx negative)
+    el.style.right = (startRight - dx) + 'px';
+    el.style.top = (startTop + dy) + 'px';
+    positions[el.dataset.table] = {
+      x: startRight - dx, y: startTop + dy
+    };
+    drawErdLines(rels, positions, currentName);
+  });
+
+  document.addEventListener('mouseup', () => { dragging = false; });
+}
+async function renderSqlTab(c) {
+  const item = state.currentItem;
+  if (!item) return;
+  showLoading(c);
+
+  try {
+    const data = await api('get_create_table', { table: item.name });
+    const sql = data.sql || '';
+    const highlighted = highlightSql(sql);
+
+    c.innerHTML = `
+      <div class="section-card">
+        <h3>💾 קוד ${item.type === 'view' ? 'CREATE VIEW' : 'CREATE TABLE'}</h3>
+        <div class="code-block">
+          <div class="code-actions">
+            <button id="copySqlBtn">📋 העתק</button>
+            <button id="downloadSqlBtn">💾 הורד .sql</button>
+          </div>
+          <pre>${highlighted}</pre>
+        </div>
+      </div>`;
+
+    $('copySqlBtn').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(sql);
+        const btn = $('copySqlBtn');
+        btn.textContent = '✅ הועתק';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = '📋 העתק'; btn.classList.remove('copied'); }, 2000);
+      } catch (e) {
+        toast('❌ לא ניתן להעתיק: ' + e.message, 'error');
+      }
+    });
+
+    $('downloadSqlBtn').addEventListener('click', () => {
+      downloadFile(sql, item.name + '.sql', 'text/plain');
+    });
+  } catch (err) {
+    c.innerHTML = `<div class="empty-state">❌ שגיאה: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function highlightSql(sql) {
+  const keywords = ['CREATE', 'TABLE', 'VIEW', 'IF', 'NOT', 'EXISTS', 'AS', 'SELECT', 'FROM',
+    'PRIMARY', 'KEY', 'FOREIGN', 'REFERENCES', 'UNIQUE', 'INDEX', 'CONSTRAINT',
+    'DEFAULT', 'NULL', 'AUTO_INCREMENT', 'ON', 'UPDATE', 'DELETE', 'CASCADE',
+    'SET', 'NO', 'ACTION', 'RESTRICT', 'USING', 'ENGINE', 'CHARSET', 'COLLATE',
+    'UNSIGNED', 'CHECK', 'COMMENT', 'WHERE', 'AND', 'OR', 'JOIN', 'INNER', 'LEFT', 'RIGHT'];
+  const types = ['INT', 'BIGINT', 'SMALLINT', 'TINYINT', 'MEDIUMINT', 'VARCHAR', 'CHAR',
+    'TEXT', 'LONGTEXT', 'MEDIUMTEXT', 'TINYTEXT', 'DATE', 'DATETIME', 'TIMESTAMP',
+    'TIME', 'YEAR', 'DECIMAL', 'NUMERIC', 'FLOAT', 'DOUBLE', 'BOOLEAN', 'BOOL',
+    'BLOB', 'LONGBLOB', 'JSON', 'ENUM', 'SET', 'BINARY', 'VARBINARY'];
+
+  let out = escapeHtml(sql);
+
+  // Strings first (to avoid coloring keywords inside strings)
+  out = out.replace(/&#39;([^&]*?)&#39;/g, m => `<span class="sql-str">${m}</span>`);
+  out = out.replace(/&quot;([^&]*?)&quot;/g, m => `<span class="sql-str">${m}</span>`);
+
+  // Numbers
+  out = out.replace(/\b(\d+)\b/g, '<span class="sql-num">$1</span>');
+
+  // Keywords
+  keywords.forEach(k => {
+    out = out.replace(new RegExp('\\b' + k + '\\b', 'g'), `<span class="sql-kw">${k}</span>`);
+  });
+
+  // Types
+  types.forEach(t => {
+    out = out.replace(new RegExp('\\b' + t + '\\b', 'gi'), m => `<span class="sql-type">${m}</span>`);
+  });
+
+  return out;
+}
+
+function downloadFile(content, filename, mime = 'text/plain') {
+  const blob = new Blob([content], { type: mime + ';charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+async function renderExportTab(c) {
+  const item = state.currentItem;
+  if (!item) return;
+
+  c.innerHTML = `
+    <div class="section-card">
+      <h3>📤 ייצוא ל-JSON</h3>
+      <p style="color:#666;font-size:0.9rem;margin-bottom:16px">
+        בחרו איזה מידע לייצא מ-<strong>${escapeHtml(item.name)}</strong>
+      </p>
+
+      <div class="export-option" data-type="structure">
+        <div class="opt-title">🏗️ מבנה בלבד</div>
+        <div class="opt-desc">עמודות, סוגים, אינדקסים, מפתחות זרים וטריגרים - ללא תוכן</div>
+      </div>
+
+      <div class="export-option" data-type="data">
+        <div class="opt-title">📊 תוכן בלבד</div>
+        <div class="opt-desc">כל השורות של הטבלה כמערך JSON</div>
+      </div>
+
+      <div class="export-option" data-type="both">
+        <div class="opt-title">📦 מבנה + תוכן</div>
+        <div class="opt-desc">חבילה מלאה - מבנה הטבלה יחד עם כל הנתונים</div>
+      </div>
+
+      <div id="exportOptionsPanel" style="display:none"></div>
+
+      <div style="margin-top:16px;display:flex;gap:10px">
+        <button class="btn btn-primary" id="doExportBtn" disabled>⬇️ ייצא והורד</button>
+        <button class="btn btn-secondary" id="previewExportBtn" disabled>👁️ תצוגה מקדימה</button>
+      </div>
+
+      <div id="exportPreview" style="margin-top:20px;display:none"></div>
+    </div>`;
+
+  let selectedType = null;
+  let includeViewColumns = false;
+  let selectedViews = new Set();
+  let availableViews = [];
+
+  c.querySelectorAll('.export-option').forEach(opt => {
+    opt.addEventListener('click', () => {
+      c.querySelectorAll('.export-option').forEach(o => o.classList.remove('selected'));
+      opt.classList.add('selected');
+      selectedType = opt.dataset.type;
+      $('doExportBtn').disabled = false;
+      $('previewExportBtn').disabled = false;
+      showExportOptions();
+    });
+  });
+
+  async function showExportOptions() {
+    const panel = $('exportOptionsPanel');
+
+    if (selectedType === 'structure') {
+      panel.style.display = 'none';
+      return;
+    }
+
+    // For data/both - ask about view columns
+    panel.style.display = 'block';
+    panel.className = 'export-options-panel';
+    panel.innerHTML = `
+      <div style="font-weight:600;margin-bottom:10px">🔧 אפשרויות נוספות:</div>
+      <label class="checkbox-group">
+        <input type="checkbox" id="includeViewsChk">
+        <span>כלול גם עמודות מתוך תצוגות (Views) שקשורות לטבלה זו</span>
+      </label>
+      <div id="viewsListContainer" style="margin-top:10px;display:none"></div>`;
+
+    const chk = $('includeViewsChk');
+    chk.addEventListener('change', async () => {
+      includeViewColumns = chk.checked;
+      const viewsContainer = $('viewsListContainer');
+
+      if (includeViewColumns) {
+        viewsContainer.style.display = 'block';
+        viewsContainer.innerHTML = '<div class="loading"><div class="spinner"></div><span>מחפש תצוגות קשורות...</span></div>';
+
+        try {
+          if (item.type === 'view') {
+            // If we're on a view, there's nothing extra to find
+            viewsContainer.innerHTML = '<div class="empty-state">הפריט הנוכחי הוא כבר תצוגה (View)</div>';
+          } else {
+            const res = await api('get_table_views', { table: item.name });
+            availableViews = res.views || [];
+
+            if (availableViews.length === 0) {
+              viewsContainer.innerHTML = '<div class="empty-state">🔍 לא נמצאו תצוגות המשתמשות בטבלה זו</div>';
+            } else {
+              viewsContainer.innerHTML = `
+                <div style="font-size:0.85rem;color:#666;margin-bottom:8px">נמצאו ${availableViews.length} תצוגות - בחרו מהן להכליל:</div>
+                ${availableViews.map(v => `
+                  <label class="view-item">
+                    <input type="checkbox" class="view-chk" data-name="${escapeHtml(v.name)}">
+                    <span>👁️ <strong>${escapeHtml(v.name)}</strong></span>
+                    <span style="color:#888;margin-right:auto;font-size:0.78rem">${v.columns.length} עמודות</span>
+                  </label>
+                `).join('')}`;
+
+              viewsContainer.querySelectorAll('.view-chk').forEach(ch => {
+                ch.addEventListener('change', () => {
+                  if (ch.checked) selectedViews.add(ch.dataset.name);
+                  else selectedViews.delete(ch.dataset.name);
+                });
+              });
+            }
+          }
+        } catch (err) {
+          viewsContainer.innerHTML = `<div class="empty-state">❌ שגיאה: ${escapeHtml(err.message)}</div>`;
+        }
+      } else {
+        viewsContainer.style.display = 'none';
+        selectedViews.clear();
+      }
+    });
+  }
+
+  async function buildExport() {
+    const out = {
+      database: state.conn.database,
+      [item.type]: item.name,
+      exportedAt: new Date().toISOString()
+    };
+
+    if (selectedType === 'structure' || selectedType === 'both') {
+      let struct = state.tableCache[item.name].structure;
+      if (!struct) {
+        struct = await api('get_table_structure', { table: item.name });
+        state.tableCache[item.name].structure = struct;
+      }
+      out.structure = {
+        columns: struct.columns,
+        indexes: struct.indexes,
+        foreignKeys: struct.foreignKeys,
+        triggers: struct.triggers,
+        tableInfo: struct.tableInfo
+      };
+      // include create-table
+      try {
+        const sqlRes = await api('get_create_table', { table: item.name });
+        out.structure.createStatement = sqlRes.sql;
+      } catch (e) { /* ignore */ }
+    }
+
+    if (selectedType === 'data' || selectedType === 'both') {
+      const action = item.type === 'view' ? 'get_full_view_data' : 'get_full_table_data';
+      const params = item.type === 'view' ? { view: item.name } : { table: item.name };
+      const dataRes = await api(action, params);
+      out.data = dataRes.rows;
+
+      if (includeViewColumns && selectedViews.size > 0) {
+        out.relatedViews = {};
+        for (const viewName of selectedViews) {
+          try {
+            const vd = await api('get_full_view_data', { view: viewName });
+            out.relatedViews[viewName] = vd.rows;
+          } catch (e) {
+            out.relatedViews[viewName] = { error: e.message };
+          }
+        }
+      }
+    }
+
+    return out;
+  }
+
+  $('doExportBtn').addEventListener('click', async () => {
+    const btn = $('doExportBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner" style="width:16px;height:16px;border-width:2px;margin:0"></div>';
+    try {
+      const exp = await buildExport();
+      const json = JSON.stringify(exp, null, 2);
+      const fname = item.name + '_' + selectedType + '_' + new Date().toISOString().slice(0, 10) + '.json';
+      downloadFile(json, fname, 'application/json');
+      toast('✅ הקובץ הורד', 'success');
+    } catch (err) {
+      toast('❌ שגיאה: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '⬇️ ייצא והורד';
+    }
+  });
+
+  $('previewExportBtn').addEventListener('click', async () => {
+    const preview = $('exportPreview');
+    preview.style.display = 'block';
+    preview.innerHTML = '<div class="loading"><div class="spinner"></div><span>מכין תצוגה מקדימה...</span></div>';
+    try {
+      const exp = await buildExport();
+      const json = JSON.stringify(exp, null, 2);
+      const trimmed = json.length > 50000 ? json.slice(0, 50000) + '\n\n... (נקטע לתצוגה - השתמשו בהורדה לקובץ המלא)' : json;
+      preview.innerHTML = `
+        <div class="code-block">
+          <div class="code-actions">
+            <button id="copyJsonBtn">📋 העתק</button>
+          </div>
+          <pre>${escapeHtml(trimmed)}</pre>
+        </div>`;
+      $('copyJsonBtn').addEventListener('click', async () => {
+        await navigator.clipboard.writeText(json);
+        const b = $('copyJsonBtn');
+        b.textContent = '✅ הועתק'; b.classList.add('copied');
+        setTimeout(() => { b.textContent = '📋 העתק'; b.classList.remove('copied'); }, 2000);
+      });
+    } catch (err) {
+      preview.innerHTML = `<div class="empty-state">❌ ${escapeHtml(err.message)}</div>`;
+    }
+  });
+}
+</script>
+</body>
+</html>
