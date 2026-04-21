@@ -88,8 +88,8 @@ class Git {
         if ($this->isGitDir($targetPath)) {
             // existing repo: fetch + checkout + reset to remote branch
             $steps = [];
-            $steps[] = $this->run('git -c credential.helper= remote set-url origin ' . escapeshellarg($authUrl), $targetPath);
-            $steps[] = $this->run('git -c credential.helper= fetch origin ' . escapeshellarg($branch), $targetPath);
+            $steps[] = $this->run('git remote set-url origin ' . escapeshellarg($authUrl), $targetPath);
+            $steps[] = $this->run('git fetch origin ' . escapeshellarg($branch), $targetPath);
             if (!end($steps)['ok']) return $this->summarize('fetch failed', $steps);
             // Check out the branch (create local tracking branch if missing)
             $steps[] = $this->run('git checkout ' . escapeshellarg($branch) . ' 2>&1 || git checkout -b ' . escapeshellarg($branch) . ' origin/' . escapeshellarg($branch), $targetPath);
@@ -111,10 +111,10 @@ class Git {
         }
 
         $steps = [];
-        $steps[] = $this->run('git -c credential.helper= clone --branch ' . escapeshellarg($branch) . ' ' . escapeshellarg($authUrl) . ' .', $targetPath);
+        $steps[] = $this->run('git clone --branch ' . escapeshellarg($branch) . ' ' . escapeshellarg($authUrl) . ' .', $targetPath);
         if (!end($steps)['ok']) {
             // try clone without branch if branch arg was wrong
-            $steps[] = $this->run('git -c credential.helper= clone ' . escapeshellarg($authUrl) . ' .', $targetPath);
+            $steps[] = $this->run('git clone ' . escapeshellarg($authUrl) . ' .', $targetPath);
             if (end($steps)['ok']) {
                 $steps[] = $this->run('git checkout ' . escapeshellarg($branch), $targetPath);
             }
