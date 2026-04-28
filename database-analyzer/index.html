@@ -2399,7 +2399,24 @@ async function renderSqlTabTable(c, item) {
   });
   const idxList = Object.values(indexGroups);
 
-  let html = '';
+  // ---------------------------------------------------------------
+  // 4F - Quick navigation (TOC) - rendered first so users can jump.
+  // Section ids referenced here must match the buildSqlSection ids below.
+  // ---------------------------------------------------------------
+  const tocLinks = [
+    { id: 'overview',     label: 'ℹ️ סקירה' },
+    { id: 'create',       label: '📝 CREATE' },
+    { id: 'alter-add',    label: '➕ ALTER הוספה' },
+    { id: 'alter-modify', label: '✏️ ALTER שינוי' },
+    { id: 'alter-remove', label: '➖ ALTER הסרה' },
+    { id: 'drop-table',   label: '🗑️ DROP' },
+    { id: 'truncate',     label: '🧹 TRUNCATE' },
+    { id: 'cheatsheet',   label: '📋 לוגיקה' }
+  ];
+
+  let html = '<div class="sql-toc">' +
+    tocLinks.map(l => `<a data-jump="${l.id}">${l.label}</a>`).join('') +
+    '</div>';
 
   // ---------------------------------------------------------------
   // 4B - Overview / Dependencies
