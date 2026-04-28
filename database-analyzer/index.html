@@ -2477,6 +2477,94 @@ async function renderSqlTabTable(c, item) {
     scripts: [{ sql: data.createSql || '', filename: item.name + '.sql' }]
   });
 
+  // ---------------------------------------------------------------
+  // 4C - ALTER add (columns / indexes / FKs / triggers)
+  // ---------------------------------------------------------------
+  const addScripts = [];
+
+  // Generic ADD COLUMN template
+  addScripts.push({
+    label: '🧩 תבנית גנרית להוספת עמודה',
+    sql:
+      `ALTER TABLE ${qid(item.name)}\n` +
+      `  ADD COLUMN \`new_column\` VARCHAR(255) NULL DEFAULT NULL\n` +
+      `  AFTER ${qid(cols[0] ? cols[0].Field : 'id')};`
+  });
+
+  // ADD COLUMN per existing column (so the user has a working example for each)
+  cols.forEach((col, i) => {
+    const after = i > 0 ? cols[i - 1].Field : null;
+    addScripts.push({
+      label: `➕ הוספת עמודה זהה ל-${col.Field}`,
+      sql: genAddColumnSql(item.name, col, after),
+      compact: true
+    });
+  });
+
+  // ADD INDEX per existing index (skip PRIMARY - usually defined inline in CREATE)
+  idxList.filter(i => i.name !== 'PRIMARY').forEach(idx => {
+    addScripts.push({
+      label: `🔑 הוספת אינדקס ${idx.name}${idx.unique ? ' (UNIQUE)' : ''}`,
+      sql: genAddIndexSql(item.name, idx),
+      compact: true
+    });
+  });
+
+  // Generic ADD INDEX template if there are no examples
+  if (!idxList.filter(i => i.name !== 'PRIMARY').length) {
+    addScripts.push({
+      label: '🧩 תבנית גנרית להוספת אינדקס',
+      sql: `ALTER TABLE ${qid(item.name)} ADD INDEX \`idx_new\` (\`column1\`, \`column2\`);`
+    });
+  }
+
+  // ADD FOREIGN KEY per existing FK
+  fks.forEach(fk => {
+    addScripts.push({
+      label: `🔗 הוספת FK ${fk.CONSTRAINT_NAME}`,
+      sql: genAddFkSql(item.name, fk),
+      compact: true
+    });
+  });
+
+  // Generic ADD FK template if there are no examples
+  if (!fks.length) {
+    addScripts.push({
+      label: '🧩 תבנית גנרית להוספת FK',
+      sql:
+        `ALTER TABLE ${qid(item.name)}\n` +
+        `  ADD CONSTRAINT \`fk_${item.name}_other\`\n` +
+        `    FOREIGN KEY (\`other_id\`)\n` +
+        `    REFERENCES \`other_table\` (\`id\`)\n` +
+        `    ON UPDATE CASCADE\n` +
+        `    ON DELETE RESTRICT;`
+    });
+  }
+
+  // Trigger template
+  addScripts.push({
+    label: '⚡ תבנית להוספת טריגר (BEFORE INSERT)',
+    sql: genTriggerTemplate(item.name, 'BEFORE', 'INSERT')
+  });
+
+  html += buildSqlSection({
+    id: 'alter-add',
+    icon: '➕',
+    title: 'ALTER — הוספת רכיבים',
+    severity: 'success',
+    badge: addScripts.length,
+    info: `
+      הוספת עמודות, אינדקסים, מפתחות זרים וטריגרים. <strong>הערות חשובות:</strong>
+      <ul>
+        <li><strong>ADD COLUMN</strong> ל-NOT NULL ללא DEFAULT ייכשל אם יש שורות קיימות. תוסיפו <code>DEFAULT</code> או הוסיפו תחילה כ-NULL ואז עדכנו ערכים.</li>
+        <li><strong>ADD UNIQUE INDEX</strong> ייכשל אם יש כפילויות בעמודה. נקו את הנתונים קודם.</li>
+        <li><strong>ADD FOREIGN KEY</strong> ייכשל אם יש שורות עם ערך שלא קיים בטבלת היעד. ודאו שהנתונים תואמים.</li>
+        <li><strong>טריגרים</strong> דורשים <code>DELIMITER //</code> כשמריצים מ-CLI; ב-phpMyAdmin זה אופציונלי.</li>
+      </ul>
+    `,
+    scripts: addScripts
+  });
+
   c.innerHTML = html;
   wireSqlTab(c);
 }
