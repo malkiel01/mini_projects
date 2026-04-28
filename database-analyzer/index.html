@@ -2040,6 +2040,206 @@ function enableDrag(el, positions, rels, currentName) {
 
   document.addEventListener('mouseup', () => { dragging = false; });
 }
+/* ===============================================================
+   SQL GENERATOR HELPERS - build CREATE/ALTER/DROP scripts from
+   the structure returned by the get_sql_scripts endpoint.
+   =============================================================== */
+
+// Quote an identifier the same way the server does
+function qid(name) {
+  return '`' + String(name).replace(/`/g, '``') + '`';
+}
+
+// Quote a SQL string literal
+function sqlStr(s) {
+  return "'" + String(s).replace(/\\/g, '\\\\').replace(/'/g, "''") + "'";
+}
+
+// Default-value clauses come back from MySQL as either a literal or an
+// expression like CURRENT_TIMESTAMP / NOW(). Expressions must NOT be quoted.
+function isSqlExpressionDefault(v) {
+  if (v === null || v === undefined) return false;
+  return /^(CURRENT_TIMESTAMP|CURRENT_DATE|CURRENT_TIME|NOW\(\)|UTC_TIMESTAMP|UUID\(\))/i.test(String(v).trim());
+}
+
+// Build a column definition snippet:
+//   `name` VARCHAR(255) NOT NULL DEFAULT 'foo' COMMENT 'bar'
+// Used inside CREATE / ADD / MODIFY / CHANGE COLUMN statements.
+function genColumnDef(col) {
+  const parts = [qid(col.Field), col.Type];
+  parts.push(col.Null === 'YES' ? 'NULL' : 'NOT NULL');
+
+  if (col.Default !== null && col.Default !== undefined) {
+    parts.push('DEFAULT ' + (isSqlExpressionDefault(col.Default) ? col.Default : sqlStr(col.Default)));
+  } else if (col.Null === 'YES' && !/auto_increment/i.test(col.Extra || '')) {
+    parts.push('DEFAULT NULL');
+  }
+
+  // Extra: auto_increment, on update CURRENT_TIMESTAMP, etc.
+  if (col.Extra) parts.push(col.Extra);
+
+  if (col.Comment) parts.push('COMMENT ' + sqlStr(col.Comment));
+
+  return parts.join(' ');
+}
+
+// ALTER TABLE - column operations
+function genAddColumnSql(table, col, afterCol) {
+  let sql = `ALTER TABLE ${qid(table)}\n  ADD COLUMN ${genColumnDef(col)}`;
+  if (afterCol) sql += `\n  AFTER ${qid(afterCol)}`;
+  return sql + ';';
+}
+
+function genModifyColumnSql(table, col) {
+  return `ALTER TABLE ${qid(table)}\n  MODIFY COLUMN ${genColumnDef(col)};`;
+}
+
+function genRenameColumnSql(table, oldName, col) {
+  // CHANGE accepts a full new definition + new name
+  const newDef = genColumnDef(col);
+  return `ALTER TABLE ${qid(table)}\n  CHANGE COLUMN ${qid(oldName)} ${newDef};`;
+}
+
+function genDropColumnSql(table, columnName) {
+  return `ALTER TABLE ${qid(table)} DROP COLUMN ${qid(columnName)};`;
+}
+
+// ALTER TABLE - index operations.
+// `idx` here is the grouped index shape used in renderStructureTab:
+//   { name, unique, type, columns: [...] }
+function genAddIndexSql(table, idx) {
+  const cols = idx.columns.map(qid).join(', ');
+  if (idx.name === 'PRIMARY') {
+    return `ALTER TABLE ${qid(table)} ADD PRIMARY KEY (${cols});`;
+  }
+  if (/FULLTEXT/i.test(idx.type || '')) {
+    return `ALTER TABLE ${qid(table)} ADD FULLTEXT INDEX ${qid(idx.name)} (${cols});`;
+  }
+  if (/SPATIAL/i.test(idx.type || '')) {
+    return `ALTER TABLE ${qid(table)} ADD SPATIAL INDEX ${qid(idx.name)} (${cols});`;
+  }
+  if (idx.unique) {
+    return `ALTER TABLE ${qid(table)} ADD UNIQUE INDEX ${qid(idx.name)} (${cols});`;
+  }
+  return `ALTER TABLE ${qid(table)} ADD INDEX ${qid(idx.name)} (${cols});`;
+}
+
+function genDropIndexSql(table, indexName) {
+  if (indexName === 'PRIMARY') {
+    return `ALTER TABLE ${qid(table)} DROP PRIMARY KEY;`;
+  }
+  return `ALTER TABLE ${qid(table)} DROP INDEX ${qid(indexName)};`;
+}
+
+// ALTER TABLE - foreign key operations
+function genAddFkSql(table, fk) {
+  return `ALTER TABLE ${qid(table)}\n` +
+         `  ADD CONSTRAINT ${qid(fk.CONSTRAINT_NAME)}\n` +
+         `    FOREIGN KEY (${qid(fk.COLUMN_NAME)})\n` +
+         `    REFERENCES ${qid(fk.REFERENCED_TABLE_NAME)} (${qid(fk.REFERENCED_COLUMN_NAME)})\n` +
+         `    ON UPDATE ${fk.UPDATE_RULE}\n` +
+         `    ON DELETE ${fk.DELETE_RULE};`;
+}
+
+function genDropFkSql(table, fkName) {
+  return `ALTER TABLE ${qid(table)} DROP FOREIGN KEY ${qid(fkName)};`;
+}
+
+// Trigger operations - we can drop existing ones, and offer a template
+// for creating new ones (the user fills in the body).
+function genDropTriggerSql(triggerName) {
+  return `DROP TRIGGER IF EXISTS ${qid(triggerName)};`;
+}
+
+function genTriggerTemplate(table, timing, event) {
+  const triggerName = `${table}_${(timing || 'BEFORE').toLowerCase()}_${(event || 'INSERT').toLowerCase()}`;
+  const refRow = (event || 'INSERT').toUpperCase() === 'DELETE' ? 'OLD' : 'NEW';
+  return `DELIMITER //\n` +
+         `CREATE TRIGGER ${qid(triggerName)}\n` +
+         `${(timing || 'BEFORE').toUpperCase()} ${(event || 'INSERT').toUpperCase()} ON ${qid(table)}\n` +
+         `FOR EACH ROW\n` +
+         `BEGIN\n` +
+         `  -- כאן הקוד שלך, גישה לשורה דרך ${refRow}.column_name\n` +
+         `  -- לדוגמה: SET ${refRow}.updated_at = NOW();\n` +
+         `END//\n` +
+         `DELIMITER ;`;
+}
+
+// Table-level operations
+function genRenameTableSql(oldName, newName) {
+  return `RENAME TABLE ${qid(oldName)} TO ${qid(newName || 'new_name')};`;
+}
+
+function genTruncateSql(table) {
+  return `TRUNCATE TABLE ${qid(table)};`;
+}
+
+function genDropTableSql(table) {
+  return `DROP TABLE IF EXISTS ${qid(table)};`;
+}
+
+// Build the multi-step DROP TABLE flow that respects dependencies:
+//   1. drop incoming FK constraints in OTHER tables
+//   2. drop views that reference this table
+//   3. drop triggers attached to this table
+//   4. drop the table itself
+// Returns an array of { label, sql, kind } so the UI can render each
+// step as its own copyable block.
+function genDropTableFlow(tableName, incomingFks, referencingViews, triggers) {
+  const steps = [];
+
+  if (incomingFks && incomingFks.length) {
+    steps.push({
+      kind: 'fks',
+      label: `שלב 1 · הסרת ${incomingFks.length} מפתחות זרים נכנסים מטבלאות אחרות`,
+      sql: incomingFks.map(fk =>
+        `ALTER TABLE ${qid(fk.SOURCE_TABLE)} DROP FOREIGN KEY ${qid(fk.CONSTRAINT_NAME)};`
+      ).join('\n')
+    });
+  }
+
+  if (referencingViews && referencingViews.length) {
+    steps.push({
+      kind: 'views',
+      label: `שלב ${steps.length + 1} · הסרת ${referencingViews.length} VIEWs שמתייחסים לטבלה`,
+      sql: referencingViews.map(v => `DROP VIEW IF EXISTS ${qid(v)};`).join('\n')
+    });
+  }
+
+  if (triggers && triggers.length) {
+    steps.push({
+      kind: 'triggers',
+      label: `שלב ${steps.length + 1} · הסרת ${triggers.length} טריגרים`,
+      sql: triggers.map(t => `DROP TRIGGER IF EXISTS ${qid(t.TRIGGER_NAME)};`).join('\n')
+    });
+  }
+
+  steps.push({
+    kind: 'drop',
+    label: `שלב ${steps.length + 1} · הסרת הטבלה`,
+    sql: genDropTableSql(tableName)
+  });
+
+  return steps;
+}
+
+// VIEW operations
+function genReplaceViewSql(originalCreateSql) {
+  // SHOW CREATE TABLE returns: "CREATE ALGORITHM=... DEFINER=... SQL SECURITY ... VIEW `name` AS ..."
+  // Insert "OR REPLACE" right after the leading CREATE.
+  return originalCreateSql.replace(/^CREATE\b/i, 'CREATE OR REPLACE');
+}
+
+function genAlterViewSql(originalCreateSql) {
+  // ALTER VIEW preserves the same syntax but cannot create. Convert by
+  // swapping the leading CREATE [...] VIEW for ALTER [...] VIEW.
+  return originalCreateSql.replace(/^CREATE\b/i, 'ALTER');
+}
+
+function genDropViewSql(viewName) {
+  return `DROP VIEW IF EXISTS ${qid(viewName)};`;
+}
+
 async function renderSqlTab(c) {
   const item = state.currentItem;
   if (!item) return;
