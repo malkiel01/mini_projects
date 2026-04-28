@@ -2681,6 +2681,106 @@ async function renderSqlTabTable(c, item) {
     scripts: removeScripts
   });
 
+  // ---------------------------------------------------------------
+  // 4E - DROP TABLE flow (multi-step, dependency-aware)
+  // ---------------------------------------------------------------
+  const dropFlow = genDropTableFlow(item.name, incomingFks, referencingViews, triggers);
+  const dropScripts = dropFlow.map(step => ({
+    label: step.label,
+    sql: step.sql,
+    compact: step.kind !== 'drop'
+  }));
+
+  // Bonus: a single combined script users can copy in one click
+  if (dropFlow.length > 1) {
+    const combined = dropFlow.map(s => `-- ${s.label}\n${s.sql}`).join('\n\n');
+    dropScripts.unshift({
+      label: '📦 כל ה-flow בסקריפט אחד',
+      sql: combined
+    });
+  }
+
+  html += buildSqlSection({
+    id: 'drop-table',
+    icon: '🗑️',
+    title: 'DROP TABLE — הסרת הטבלה',
+    severity: 'danger',
+    badge: dropFlow.length + (dropFlow.length > 1 ? 1 : 0),
+    info: `
+      הסרת הטבלה כולה. <strong>הפעולה לא הפיכה — תוודאו שיש גיבוי.</strong>
+      ${dropFlow.length > 1
+        ? `<div style="margin-top:8px"><strong>סדר ההפעלה:</strong> חובה להריץ את הסקריפטים לפי הסדר כדי לעקוף את אכיפת ה-FK.</div>`
+        : `<div style="margin-top:8px">לטבלה אין FKs נכנסים, VIEWs מתייחסים או טריגרים, אז <code>DROP TABLE</code> ירוץ ישירות.</div>`}
+      <ul style="margin-top:8px">
+        ${incomingFks.length ? `<li>יש <strong>${incomingFks.length}</strong> מפתחות זרים נכנסים שצריך להסיר ראשונים, אחרת תקבלו <code>cannot delete or update a parent row</code>.</li>` : ''}
+        ${referencingViews.length ? `<li>יש <strong>${referencingViews.length}</strong> VIEWs שמתייחסים — אם לא תסירו אותם, הם יישברו (יחזירו שגיאה בכל שאילתה אחרי ה-DROP).</li>` : ''}
+        ${triggers.length ? `<li>טריגרים יוסרו אוטומטית עם הטבלה אבל מומלץ להסיר אותם מפורשות — קל יותר לשחזר אם משהו השתבש.</li>` : ''}
+        <li>אם רק רוצים <em>לרוקן</em> נתונים בלי להסיר את הטבלה — תשתמשו בסקציית <strong>TRUNCATE</strong> למטה.</li>
+        <li>שווה להריץ <code>BEGIN;</code> לפני, ואם משהו לא צפוי קורה — <code>ROLLBACK;</code>. <em>שימו לב:</em> ב-MySQL פעולות DDL כמו DROP TABLE לא ניתנות ל-rollback אצל InnoDB גם בתוך טרנזקציה.</li>
+      </ul>
+    `,
+    scripts: dropScripts
+  });
+
+  // ---------------------------------------------------------------
+  // 4E - TRUNCATE
+  // ---------------------------------------------------------------
+  html += buildSqlSection({
+    id: 'truncate',
+    icon: '🧹',
+    title: 'TRUNCATE — ריקון התוכן',
+    severity: 'warning',
+    info: `
+      <code>TRUNCATE</code> מוחק את כל השורות במהירות (מהיר בהרבה מ-<code>DELETE</code>) ומאפס את ה-AUTO_INCREMENT.
+      <ul>
+        <li><strong>לא מפעיל טריגרים</strong> מסוג DELETE — אם הלוגיקה שלכם תלויה בהם, השתמשו ב-<code>DELETE FROM</code> במקום.</li>
+        <li>${incomingFks.length
+            ? `<strong>ייכשל</strong> כי יש ${incomingFks.length} FKs נכנסים. צריך להסיר אותם ראשונים, או למחוק קודם את הנתונים בטבלאות התלויות.`
+            : `אין FKs נכנסים — TRUNCATE יעבוד ישירות.`}</li>
+        <li>במקרה של AUTO_INCREMENT — אחרי TRUNCATE הספירה מתחילה מ-1 שוב. אם זה לא רצוי, השתמשו ב-<code>DELETE FROM ${escapeHtml(qid(item.name))};</code> שלא מאפס.</li>
+      </ul>
+    `,
+    scripts: [
+      { label: '🧹 ריקון התבלה', sql: genTruncateSql(item.name) },
+      { label: '🐢 חלופה איטית עם DELETE (שומרת AUTO_INCREMENT, מפעילה טריגרים)', sql: `DELETE FROM ${qid(item.name)};`, compact: true }
+    ]
+  });
+
+  // ---------------------------------------------------------------
+  // 4E - General cheat sheet (pre/post operation logic)
+  // ---------------------------------------------------------------
+  html += buildSqlSection({
+    id: 'cheatsheet',
+    icon: '📋',
+    title: 'לוגיקה לפני/אחרי — תזכורת מהירה',
+    info: `
+      <strong>לפני כל שינוי מבני (DDL):</strong>
+      <ol>
+        <li><strong>גיבוי</strong> — <code>mysqldump</code> או snapshot של המסד. בייחוד לפני DROP/RENAME/MODIFY.</li>
+        <li><strong>בדיקה בסביבת פיתוח</strong> — להריץ את הסקריפט על העתק, לוודא שלא נשבר משהו.</li>
+        <li><strong>נעילת אפליקציה</strong> — להעלות maintenance mode אם הטבלה פעילה. שינויים על InnoDB לרוב online, אבל לא תמיד.</li>
+        <li><strong>לזהות תלויות</strong> — לפתוח את לשונית "קשרים" ולסקור FKs נכנסים, VIEWs מתייחסים, טריגרים.</li>
+      </ol>
+      <strong>אחרי השינוי:</strong>
+      <ol>
+        <li><strong>בדיקת מבנה</strong> — להריץ <code>SHOW CREATE TABLE</code> ולוודא שהמצב התקבל.</li>
+        <li><strong>בדיקת אכיפה</strong> — לנסות INSERT/UPDATE שאמור להיכשל מול האילוצים החדשים, לוודא שהוא נכשל.</li>
+        <li><strong>VIEWs</strong> שמתייחסים לטבלה צריכים להיבדק — לפעמים שינוי טיפוס שובר אותם בלי שגיאת compile עד הריצה.</li>
+        <li><strong>טריגרים</strong> שמתייחסים לעמודה ששונתה — להריץ INSERT/UPDATE קצר ולוודא שהם עדיין עובדים.</li>
+        <li><strong>אינדקסים</strong> חדשים — להריץ <code>ANALYZE TABLE</code> כדי שה-optimizer ידע עליהם.</li>
+        <li><strong>אפליקציה</strong> — לעדכן ORM/migrations/queries שמסתמכים על שמות עמודות שהשתנו.</li>
+      </ol>
+      <strong>שגיאות נפוצות וטיפול:</strong>
+      <ul>
+        <li><code>errno 150</code> — בעיית FK; ברוב המקרים שם או טיפוס לא תואמים, או יש FK נכנס שמונע DROP.</li>
+        <li><code>cannot delete or update a parent row</code> — יש FK נכנס עם <code>ON DELETE RESTRICT</code>; להסיר את ה-FK או לשנות אותו ל-<code>CASCADE</code>/<code>SET NULL</code>.</li>
+        <li><code>duplicate entry</code> ב-ADD UNIQUE — לנקות נתונים כפולים לפני.</li>
+        <li><code>data too long for column</code> — הסוג הוקטן והנתונים לא נכנסים; להגדיל את הסוג או לקצר נתונים.</li>
+      </ul>
+    `,
+    scripts: []
+  });
+
   c.innerHTML = html;
   wireSqlTab(c);
 }
