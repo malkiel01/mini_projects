@@ -2565,6 +2565,122 @@ async function renderSqlTabTable(c, item) {
     scripts: addScripts
   });
 
+  // ---------------------------------------------------------------
+  // 4D - ALTER modify (column types, rename, table rename)
+  // ---------------------------------------------------------------
+  const fkColSet = new Set(fks.map(f => f.COLUMN_NAME));
+  const incomingColSet = new Set(incomingFks.map(f => f.REFERENCED_COLUMN_NAME));
+
+  const modifyScripts = [];
+
+  cols.forEach(col => {
+    const flags = [];
+    if (fkColSet.has(col.Field)) flags.push('FK יוצא');
+    if (incomingColSet.has(col.Field)) flags.push('יעד של FK נכנס');
+    const flagsStr = flags.length ? ` ⚠️ (${flags.join(', ')})` : '';
+    modifyScripts.push({
+      label: `✏️ MODIFY ${col.Field}${flagsStr}`,
+      sql: genModifyColumnSql(item.name, col),
+      compact: true
+    });
+  });
+
+  // CHANGE/rename column template (one example per column)
+  cols.forEach(col => {
+    const renamed = Object.assign({}, col, { Field: col.Field + '_renamed' });
+    modifyScripts.push({
+      label: `🏷️ שינוי שם ${col.Field} → ${renamed.Field}`,
+      sql: genRenameColumnSql(item.name, col.Field, renamed),
+      compact: true
+    });
+  });
+
+  // RENAME TABLE template
+  modifyScripts.push({
+    label: `📛 שינוי שם הטבלה כולה`,
+    sql: genRenameTableSql(item.name, item.name + '_new')
+  });
+
+  html += buildSqlSection({
+    id: 'alter-modify',
+    icon: '✏️',
+    title: 'ALTER — שינוי רכיבים',
+    severity: 'warning',
+    badge: modifyScripts.length,
+    info: `
+      שינוי סוג/אורך/NULL/DEFAULT של עמודה, שינוי שם עמודה, שינוי שם טבלה.
+      <ul>
+        <li><strong>MODIFY COLUMN</strong> משנה את כל המאפיינים. אם תשמיטו <code>NOT NULL</code> או <code>DEFAULT</code> הם ייעלמו — תמיד הגדירו את כל הסט הרצוי.</li>
+        <li>שינוי סוג עם נתונים קיימים (למשל <code>VARCHAR(255)</code> ל-<code>VARCHAR(50)</code>) יחתוך נתונים בלי אזהרה אם <code>sql_mode</code> לא מחמיר.</li>
+        <li><strong>שינוי עמודה עם FK</strong>: צריך שהסוג בעמודה ובעמודת היעד יישאר תואם. אחרת תקבלו <code>foreign key constraint fails</code>.</li>
+        <li><strong>RENAME TABLE</strong> מעביר את כל ה-FKs, ה-views (כל עוד הם מתייחסים לטבלה בשם המלא) וה-triggers — אך טריגרים שמתייחסים לשם הישן בקוד שלהם <em>לא</em> יתעדכנו.</li>
+        <li>אם אתם רוצים לשנות רק שם עמודה ב-MySQL 8+, יש <code>ALTER TABLE ... RENAME COLUMN old TO new</code> כתחליף קצר ל-<code>CHANGE COLUMN</code>.</li>
+      </ul>
+    `,
+    scripts: modifyScripts
+  });
+
+  // ---------------------------------------------------------------
+  // 4D - ALTER remove (drop columns / indexes / FKs / triggers)
+  // ---------------------------------------------------------------
+  const removeScripts = [];
+
+  cols.forEach(col => {
+    const flags = [];
+    if (fkColSet.has(col.Field)) flags.push('FK יוצא');
+    if (incomingColSet.has(col.Field)) flags.push('יעד של FK נכנס');
+    if (col.Key === 'PRI') flags.push('PRIMARY KEY');
+    const flagsStr = flags.length ? ` ⚠️ (${flags.join(', ')})` : '';
+    removeScripts.push({
+      label: `🗑️ DROP COLUMN ${col.Field}${flagsStr}`,
+      sql: genDropColumnSql(item.name, col.Field),
+      compact: true
+    });
+  });
+
+  idxList.filter(i => i.name !== 'PRIMARY').forEach(idx => {
+    removeScripts.push({
+      label: `🗑️ DROP INDEX ${idx.name}`,
+      sql: genDropIndexSql(item.name, idx.name),
+      compact: true
+    });
+  });
+
+  fks.forEach(fk => {
+    removeScripts.push({
+      label: `🗑️ DROP FOREIGN KEY ${fk.CONSTRAINT_NAME}`,
+      sql: genDropFkSql(item.name, fk.CONSTRAINT_NAME),
+      compact: true
+    });
+  });
+
+  triggers.forEach(t => {
+    removeScripts.push({
+      label: `🗑️ DROP TRIGGER ${t.TRIGGER_NAME}`,
+      sql: genDropTriggerSql(t.TRIGGER_NAME),
+      compact: true
+    });
+  });
+
+  html += buildSqlSection({
+    id: 'alter-remove',
+    icon: '➖',
+    title: 'ALTER — הסרת רכיבים',
+    severity: 'danger',
+    badge: removeScripts.length,
+    info: `
+      הסרת עמודות, אינדקסים, מפתחות זרים וטריגרים. <strong>אזהרות:</strong>
+      <ul>
+        <li><strong>DROP COLUMN</strong> על עמודה עם FK ייכשל. צריך קודם להריץ <code>DROP FOREIGN KEY</code> בטבלה הזו, ואם מישהו מצביע אליה — גם בטבלאות האחרות.</li>
+        <li><strong>DROP COLUMN</strong> על PRIMARY KEY מסיר רק את העמודה אבל לא את ה-PK עצמו. השתמשו ב-<code>DROP PRIMARY KEY</code> בנפרד אם צריך.</li>
+        <li><strong>DROP INDEX</strong> על אינדקס שמשמש כ-FK לא יעבוד עד שה-FK יוסר.</li>
+        <li><strong>DROP FOREIGN KEY</strong> בטוח — הוא לא מוחק נתונים, רק את האילוץ. אבל אחרי שמוחקים אין יותר אכיפה אוטומטית.</li>
+        <li>במקרה של שגיאה <code>errno 150</code> ברוב המקרים זה אומר שיש FK שמתייחס לעמודה — תפתחו את סקציית ⚠️ FK הנכנסים בלשונית "קשרים".</li>
+      </ul>
+    `,
+    scripts: removeScripts
+  });
+
   c.innerHTML = html;
   wireSqlTab(c);
 }
