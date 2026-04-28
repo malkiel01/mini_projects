@@ -2359,16 +2359,151 @@ async function renderSqlTab(c) {
   }
 }
 
-// VIEW branch - kept on the existing simple flow until step 5 expands it.
+// VIEW branch - mirrors the table layout with the operations relevant
+// to views: CREATE / CREATE OR REPLACE / ALTER VIEW / DROP VIEW.
 async function renderSqlTabView(c, item) {
-  const data = await api('get_create_table', { table: item.name });
-  c.innerHTML = buildSqlSection({
-    id: 'create-view',
-    icon: '💾',
-    title: 'קוד CREATE VIEW',
+  const data = await api('get_sql_scripts', { table: item.name, type: 'view' });
+  const createSql = data.createSql || '';
+  const viewInfo = data.viewInfo || {};
+  const viewCols = data.columns || [];
+
+  // TOC
+  const tocLinks = [
+    { id: 'view-overview', label: 'ℹ️ סקירה' },
+    { id: 'view-create',   label: '📝 CREATE' },
+    { id: 'view-replace',  label: '🔄 REPLACE' },
+    { id: 'view-alter',    label: '✏️ ALTER' },
+    { id: 'view-drop',     label: '🗑️ DROP' },
+    { id: 'view-notes',    label: '📋 לוגיקה' }
+  ];
+
+  let html = '<div class="sql-toc">' +
+    tocLinks.map(l => `<a data-jump="${l.id}">${l.label}</a>`).join('') +
+    '</div>';
+
+  // Overview
+  const updatable = viewInfo.IS_UPDATABLE === 'YES';
+  html += buildSqlSection({
+    id: 'view-overview',
+    icon: 'ℹ️',
+    title: 'סקירה',
     openByDefault: true,
-    scripts: [{ sql: data.sql || '', filename: item.name + '.sql' }]
+    info: `
+      <div style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:10px">
+        <span><strong>עמודות:</strong> <code>${viewCols.length}</code></span>
+        <span><strong>ניתן לעדכון:</strong> <code>${updatable ? 'כן' : 'לא'}</code></span>
+        <span><strong>CHECK OPTION:</strong> <code>${escapeHtml(viewInfo.CHECK_OPTION || 'NONE')}</code></span>
+        <span><strong>SECURITY:</strong> <code>${escapeHtml(viewInfo.SECURITY_TYPE || 'DEFINER')}</code></span>
+      </div>
+      <ul>
+        <li><strong>VIEW</strong> הוא שאילתה שמורה — אין לו נתונים משלו, הוא ממשיך להחזיר את התוצאה המעודכנת מהטבלאות שמתחתיו.</li>
+        ${updatable
+            ? `<li><strong>ניתן לעדכון</strong> — אפשר להריץ INSERT/UPDATE/DELETE דרך ה-VIEW (במגבלות MySQL: ללא <code>GROUP BY</code>, <code>DISTINCT</code>, <code>UNION</code>, <code>JOIN</code> מורכב, וכו').</li>`
+            : `<li><strong>קריאה בלבד</strong> — לא ניתן לעדכן דרכו, רק SELECT.</li>`}
+        <li><strong>SECURITY = DEFINER</strong> אומר שהשאילתה רצה בהרשאות של מי שיצר את ה-VIEW. <strong>INVOKER</strong> רץ בהרשאות המשתמש המבצע.</li>
+      </ul>
+    `,
+    scripts: []
   });
+
+  // CREATE VIEW
+  html += buildSqlSection({
+    id: 'view-create',
+    icon: '📝',
+    title: 'CREATE VIEW',
+    openByDefault: true,
+    info: `
+      הסקריפט המלא ליצירת ה-VIEW (תוצאת <code>SHOW CREATE VIEW</code>).
+      <ul>
+        <li>הריצו על מסד ריק כדי לשחזר את ה-VIEW. הטבלאות שאליהן הוא מתייחס חייבות להיות קיימות מראש.</li>
+        <li>אם ה-VIEW כבר קיים — שורת <code>CREATE</code> תיכשל. השתמשו בסקציית <strong>CREATE OR REPLACE</strong> במקום.</li>
+        <li>שורת <code>DEFINER=...</code> תכיל את שם המשתמש שיצר את ה-VIEW. אם תריצו במסד אחר — שווה לערוך אותה לשם משתמש קיים, או להסיר את החלק.</li>
+      </ul>
+    `,
+    scripts: [{ sql: createSql, filename: item.name + '.sql' }]
+  });
+
+  // CREATE OR REPLACE
+  html += buildSqlSection({
+    id: 'view-replace',
+    icon: '🔄',
+    title: 'CREATE OR REPLACE VIEW',
+    severity: 'success',
+    info: `
+      הדרך הנפוצה לעדכן VIEW קיים. אם ה-VIEW לא קיים — נוצר; אם קיים — מוחלף.
+      <ul>
+        <li><strong>בטוח מ-DROP+CREATE</strong> — הזכויות (GRANT) על ה-VIEW נשמרות. ב-DROP+CREATE הן נמחקות.</li>
+        <li>אפשר לשנות את שאילתת ה-SELECT ואת רשימת העמודות ב-VIEW לפי הצורך.</li>
+        <li>אם משנים את <strong>סוג העמודות</strong> שה-VIEW מחזיר, בדקו שאף VIEW אחר לא בנוי על ה-VIEW הזה (אחרת ה-VIEW המתבסס עלול להישבר).</li>
+      </ul>
+    `,
+    scripts: [{ sql: genReplaceViewSql(createSql), filename: item.name + '_replace.sql' }]
+  });
+
+  // ALTER VIEW
+  html += buildSqlSection({
+    id: 'view-alter',
+    icon: '✏️',
+    title: 'ALTER VIEW',
+    severity: 'warning',
+    info: `
+      <code>ALTER VIEW</code> דומה ל-<code>CREATE OR REPLACE</code> אך <strong>חייב</strong> שה-VIEW יהיה קיים — אחרת ייכשל.
+      <ul>
+        <li>ההבדל המעשי: <code>CREATE OR REPLACE</code> פועל גם כשאין VIEW; <code>ALTER VIEW</code> מבטיח שאתם מעדכנים אובייקט קיים ולא יוצרים חדש בטעות.</li>
+        <li>הזכויות נשמרות גם כאן (כמו ב-CREATE OR REPLACE).</li>
+        <li>אפשר לשנות את ה-<code>ALGORITHM</code>, <code>SQL SECURITY</code>, ו-<code>WITH CHECK OPTION</code> דרך הפקודה הזו.</li>
+      </ul>
+    `,
+    scripts: [{ sql: genAlterViewSql(createSql), filename: item.name + '_alter.sql' }]
+  });
+
+  // DROP VIEW
+  html += buildSqlSection({
+    id: 'view-drop',
+    icon: '🗑️',
+    title: 'DROP VIEW',
+    severity: 'danger',
+    info: `
+      הסרת ה-VIEW. <strong>הפעולה לא הפיכה.</strong>
+      <ul>
+        <li><code>DROP VIEW IF EXISTS</code> בטוח לריצות חוזרות — לא יזרוק שגיאה אם ה-VIEW לא קיים.</li>
+        <li>הסרת VIEW <strong>לא משפיעה</strong> על הטבלאות שמתחתיו. הן נשארות שלמות.</li>
+        <li>כל GRANTs שניתנו על ה-VIEW יימחקו גם הם — אם תיצרו אותו מחדש תצטרכו לתת הרשאות שוב.</li>
+        <li>אם יש VIEWs אחרים שנבנו על ה-VIEW הזה — הם יישברו. תבדקו ב-<code>INFORMATION_SCHEMA.VIEWS</code> אילו VIEWs מתייחסים אליו.</li>
+      </ul>
+    `,
+    scripts: [{ sql: genDropViewSql(item.name) }]
+  });
+
+  // Cheat sheet
+  html += buildSqlSection({
+    id: 'view-notes',
+    icon: '📋',
+    title: 'לוגיקה לפני/אחרי',
+    info: `
+      <strong>לפני שינוי VIEW:</strong>
+      <ol>
+        <li>לזהות אילו VIEWs/דוחות/אפליקציות צורכים את ה-VIEW הזה.</li>
+        <li>לוודא שהשינוי לא מסיר עמודות שמשתמשים בהן (אם תסירו עמודה — שאילתות שמשתמשות בה ייכשלו).</li>
+        <li>אם ה-VIEW ניתן לעדכון ויש קוד שמבצע דרכו INSERT/UPDATE — לוודא שהשינוי לא הופך אותו ל-read-only.</li>
+      </ol>
+      <strong>אחרי שינוי:</strong>
+      <ol>
+        <li>להריץ <code>SELECT * FROM ${escapeHtml(qid(item.name))} LIMIT 1;</code> לוודא שאין שגיאת compile.</li>
+        <li>לבדוק <code>SHOW CREATE VIEW</code> ולוודא שמה ש-MySQL שמר תואם למה שביקשתם.</li>
+        <li>אם השתמשתם ב-<code>WITH CHECK OPTION</code> — לוודא שהוא עובד (לנסות INSERT שאמור להיכשל).</li>
+      </ol>
+      <strong>שגיאות נפוצות:</strong>
+      <ul>
+        <li><code>View's SELECT contains a subquery in the FROM clause</code> — חלק מ-VIEWs לא ניתנים לעדכון בגלל subqueries. תפצלו לוגיקה.</li>
+        <li><code>The user specified as a definer does not exist</code> — שורת DEFINER מצביעה למשתמש שלא קיים. ערכו ל-<code>CURRENT_USER</code> או ל-משתמש קיים.</li>
+        <li><code>Reference to a non-yet existing table/column</code> — ה-VIEW מתבסס על שם שלא קיים יותר. ערכו את השאילתה.</li>
+      </ul>
+    `,
+    scripts: []
+  });
+
+  c.innerHTML = html;
   wireSqlTab(c);
 }
 
