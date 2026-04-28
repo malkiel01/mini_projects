@@ -2363,6 +2363,7 @@ async function renderSqlTab(c) {
 // to views: CREATE / CREATE OR REPLACE / ALTER VIEW / DROP VIEW.
 async function renderSqlTabView(c, item) {
   const data = await api('get_sql_scripts', { table: item.name, type: 'view' });
+  data.createSql = formatSql(data.createSql || '');
   const createSql = data.createSql || '';
   const viewInfo = data.viewInfo || {};
   const viewCols = data.columns || [];
@@ -2510,6 +2511,7 @@ async function renderSqlTabView(c, item) {
 // TABLE branch skeleton. Sections beyond CREATE will be filled in 4B-4E.
 async function renderSqlTabTable(c, item) {
   const data = await api('get_sql_scripts', { table: item.name, type: 'table' });
+  data.createSql = formatSql(data.createSql || '');
 
   // Cache for downstream sections (4B-4E)
   state.tableCache[item.name] = state.tableCache[item.name] || {};
@@ -2935,6 +2937,118 @@ async function renderSqlTabTable(c, item) {
 
   c.innerHTML = html;
   wireSqlTab(c);
+}
+
+// Pretty-print a CREATE TABLE / CREATE VIEW that arrived as one long line
+// from MySQL. Already-multiline input is returned untouched. The output is
+// the canonical form we store in sqlScripts so copy/download/highlight all
+// share it.
+function formatSql(sql) {
+  if (!sql) return sql;
+  if (sql.includes('\n')) return sql;
+
+  // Protect quoted identifiers and string literals so the keyword regexes
+  // and the comma-walker don't misinterpret content inside them.
+  const tokens = [];
+  let s = sql.replace(/`[^`]*`|'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g, (m) => {
+    tokens.push(m);
+    return `\x00${tokens.length - 1}\x00`;
+  });
+
+  const isView  = /^\s*CREATE\s+(OR\s+REPLACE\s+)?(ALGORITHM\s*=\s*\w+\s+)?(DEFINER\s*=\s*\S+\s+)?(SQL\s+SECURITY\s+\w+\s+)?VIEW\b/i.test(s);
+  const isTable = /^\s*CREATE\s+TABLE\b/i.test(s);
+  const isAlter = /^\s*ALTER\s+(ALGORITHM\s*=\s*\w+\s+)?(DEFINER\s*=\s*\S+\s+)?(SQL\s+SECURITY\s+\w+\s+)?VIEW\b/i.test(s);
+
+  if (isView || isAlter) {
+    s = formatViewSql(s);
+  } else if (isTable) {
+    s = formatTableSql(s);
+  }
+
+  // Restore protected tokens
+  s = s.replace(/\x00(\d+)\x00/g, (_, i) => tokens[+i]);
+  return s;
+}
+
+function formatViewSql(s) {
+  // Major clause breaks
+  s = s.replace(/\s+AS\s+select\s+/i, ' AS\nSELECT\n  ');
+  s = s.replace(/\s+from\s+/i, '\nFROM ');
+  s = s.replace(/\s+left\s+join\s+/gi,  '\n  LEFT JOIN ');
+  s = s.replace(/\s+right\s+join\s+/gi, '\n  RIGHT JOIN ');
+  s = s.replace(/\s+inner\s+join\s+/gi, '\n  INNER JOIN ');
+  s = s.replace(/\s+cross\s+join\s+/gi, '\n  CROSS JOIN ');
+  s = s.replace(/\s+on\s*\(/gi, '\n    ON (');
+  s = s.replace(/\s+where\s+/gi, '\nWHERE ');
+  s = s.replace(/\s+group\s+by\s+/gi, '\nGROUP BY ');
+  s = s.replace(/\s+having\s+/gi, '\nHAVING ');
+  s = s.replace(/\s+order\s+by\s+/gi, '\nORDER BY ');
+  s = s.replace(/\s+limit\s+/gi, '\nLIMIT ');
+  // Boolean connectors only when at start of a join/where condition - we
+  // keep this gentle to avoid mangling AND inside expressions.
+  s = s.replace(/\s+and\s+/gi, '\n  AND ');
+  s = s.replace(/\s+or\s+/gi, '\n  OR ');
+
+  // Break the SELECT list commas (only top-level ones, before FROM)
+  s = breakTopLevelCommasUntil(s, '\nFROM ', '  ');
+
+  return s;
+}
+
+function formatTableSql(s) {
+  // Find the first matching paren pair and break inside it
+  let firstOpen = -1, depth = 0;
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '(') {
+      if (firstOpen === -1) firstOpen = i;
+      depth++;
+    } else if (s[i] === ')') {
+      depth--;
+      if (depth === 0 && firstOpen !== -1) {
+        const before = s.slice(0, firstOpen);
+        const inner  = s.slice(firstOpen + 1, i);
+        const after  = s.slice(i + 1);
+        const formatted = breakTopLevelCommas(inner, '  ').trim();
+        s = before.replace(/\s+$/, '') + ' (\n  ' + formatted + '\n)' + after;
+        break;
+      }
+    }
+  }
+
+  // Newline before table options (ENGINE=, DEFAULT, etc.)
+  s = s.replace(/\)\s+ENGINE/i, ')\n  ENGINE');
+  s = s.replace(/\s+DEFAULT\s+CHARSET=/i, '\n  DEFAULT CHARSET=');
+  s = s.replace(/\s+COLLATE=/i, '\n  COLLATE=');
+  s = s.replace(/\s+ROW_FORMAT=/i, '\n  ROW_FORMAT=');
+  s = s.replace(/\s+COMMENT=/i, '\n  COMMENT=');
+
+  return s;
+}
+
+// Break top-level commas (depth 0 only) onto new lines with the given indent.
+function breakTopLevelCommas(s, indent) {
+  let out = '', depth = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '(') depth++;
+    else if (c === ')') depth--;
+    if (c === ',' && depth === 0) {
+      out += ',\n' + indent;
+      while (i + 1 < s.length && /\s/.test(s[i + 1])) i++;
+    } else {
+      out += c;
+    }
+  }
+  return out;
+}
+
+// Same as above but only for the prefix of `s` before the first occurrence
+// of `terminator`. Used so we break commas in the SELECT list but leave the
+// FROM/ON commas untouched (they're inside join expressions).
+function breakTopLevelCommasUntil(s, terminator, indent) {
+  const idx = s.indexOf(terminator);
+  if (idx < 0) return breakTopLevelCommas(s, indent);
+  return breakTopLevelCommas(s.slice(0, idx), indent) + s.slice(idx);
 }
 
 function highlightSql(sql) {
