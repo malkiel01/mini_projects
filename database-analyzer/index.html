@@ -583,6 +583,126 @@
   .sql-comment { color: #6a9955; font-style: italic; }
 
   /* =========================================================
+     SQL TAB - collapsible categories
+     ========================================================= */
+  .sql-toc {
+    background: white; border-radius: 10px;
+    padding: 14px 18px; margin-bottom: 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    display: flex; flex-wrap: wrap; gap: 8px;
+  }
+  .sql-toc a {
+    padding: 6px 12px; background: #eef2ff;
+    color: #3b5bdb; border-radius: 16px;
+    text-decoration: none; font-size: 0.82rem;
+    font-weight: 500; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .sql-toc a:hover { background: #3b5bdb; color: white; }
+
+  .sql-section {
+    background: white; border-radius: 10px;
+    margin-bottom: 12px; overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    border: 1px solid #eef2ff;
+  }
+  .sql-section.danger { border-color: #fcc; }
+  .sql-section.warn   { border-color: #ffe7ba; }
+  .sql-section.success { border-color: #c8e6c9; }
+
+  .sql-section-header {
+    padding: 14px 18px; cursor: pointer;
+    display: flex; align-items: center; gap: 10px;
+    background: #f8f9fb; border-bottom: 1px solid transparent;
+    user-select: none; transition: background 0.15s;
+  }
+  .sql-section-header:hover { background: #eef2ff; }
+  .sql-section.open .sql-section-header {
+    border-bottom-color: #eee;
+  }
+  .sql-section-header h3 {
+    flex: 1; font-size: 1rem; color: #1a1a2e;
+    font-weight: 600; display: flex;
+    align-items: center; gap: 8px;
+  }
+  .sql-section.danger .sql-section-header h3 { color: #b02a37; }
+  .sql-section.warn .sql-section-header h3 { color: #815100; }
+  .sql-section.success .sql-section-header h3 { color: #1e7e34; }
+
+  .sql-section-header .toggle-icon {
+    font-size: 0.9rem; color: #888;
+    transition: transform 0.2s;
+  }
+  .sql-section.open .toggle-icon { transform: rotate(90deg); }
+
+  .sql-section-header .count-badge.small {
+    font-size: 0.72rem; padding: 1px 8px;
+  }
+
+  .sql-section-body {
+    display: none; padding: 16px 18px;
+  }
+  .sql-section.open .sql-section-body { display: block; }
+
+  .sql-info-note {
+    background: #f0f4ff; border-right: 3px solid #3b5bdb;
+    padding: 10px 14px; border-radius: 6px;
+    color: #1a1a2e; font-size: 0.88rem;
+    line-height: 1.6; margin-bottom: 14px;
+  }
+  .sql-info-note.warning {
+    background: #fff8e6; border-right-color: #f0ad4e; color: #5a4500;
+  }
+  .sql-info-note.danger {
+    background: #fee; border-right-color: #dc3545; color: #5a1620;
+  }
+  .sql-info-note.success {
+    background: #f0fff4; border-right-color: #28a745; color: #1a3a1f;
+  }
+  .sql-info-note strong { color: inherit; }
+  .sql-info-note ol, .sql-info-note ul {
+    margin: 6px 18px;
+  }
+  .sql-info-note li { margin: 3px 0; }
+  .sql-info-note code {
+    background: rgba(0,0,0,0.06); padding: 1px 5px;
+    border-radius: 3px; font-family: 'Consolas', monospace;
+    font-size: 0.85em;
+  }
+
+  .sql-script {
+    margin-bottom: 14px;
+  }
+  .sql-script .script-label {
+    font-size: 0.82rem; color: #555; margin-bottom: 6px;
+    display: flex; align-items: center; gap: 6px;
+    font-weight: 500;
+  }
+  .sql-script .script-label .pill {
+    font-size: 0.68rem;
+  }
+  .sql-script .code-block pre {
+    max-height: 280px; padding: 12px 16px; font-size: 0.82rem;
+  }
+  .sql-script.compact .code-block pre {
+    max-height: 160px;
+  }
+  .script-empty {
+    background: #f8f9fb; border: 1px dashed #ddd;
+    border-radius: 6px; padding: 14px;
+    color: #888; font-size: 0.88rem; text-align: center;
+  }
+
+  .dep-pill {
+    display: inline-block; padding: 3px 10px;
+    background: #fff3cd; color: #815100;
+    border-radius: 12px; font-size: 0.78rem;
+    margin: 2px 4px 2px 0; font-weight: 500;
+  }
+  .dep-pill.danger { background: #f8d7da; color: #721c24; }
+  .dep-pill.success { background: #d4edda; color: #155724; }
+
+  /* =========================================================
      EXPORT TAB
      ========================================================= */
   .export-option {
