@@ -2240,46 +2240,158 @@ function genDropViewSql(viewName) {
   return `DROP VIEW IF EXISTS ${qid(viewName)};`;
 }
 
+// Raw SQL registry: highlighted HTML lives in the DOM, but copy/download
+// must use raw text. Keys are auto-generated per render and cleared on
+// each new renderSqlTab() invocation.
+const sqlScripts = new Map();
+let sqlScriptCounter = 0;
+
+// Build a single collapsible section. `scripts` is [{label, sql, filename}].
+// `info` is raw HTML (callers control its content - intentional, since the
+// notes need <strong>/<ol>/<code> formatting).
+function buildSqlSection({ id, icon, title, severity, info, scripts, badge, openByDefault }) {
+  const sevClass = severity ? ' ' + severity : '';
+  const openClass = openByDefault ? ' open' : '';
+  const badgeHtml = badge ? `<span class="count-badge small">${escapeHtml(String(badge))}</span>` : '';
+  const infoHtml = info ? `<div class="sql-info-note ${severity || ''}">${info}</div>` : '';
+
+  let scriptsHtml = '';
+  if (!scripts || !scripts.length) {
+    scriptsHtml = info ? '' : '<div class="script-empty">אין רכיבים להציג</div>';
+  } else {
+    scriptsHtml = scripts.map(s => {
+      const sid = 'sql_' + (++sqlScriptCounter);
+      sqlScripts.set(sid, s.sql || '');
+      const label = s.label
+        ? `<div class="script-label">${escapeHtml(s.label)}</div>`
+        : '';
+      const fname = escapeHtml(s.filename || (id + '.sql'));
+      return `
+        <div class="sql-script${s.compact ? ' compact' : ''}">
+          ${label}
+          <div class="code-block">
+            <div class="code-actions">
+              <button class="copy-script-btn" data-sid="${sid}">📋 העתק</button>
+              <button class="download-script-btn" data-sid="${sid}" data-fname="${fname}">💾 הורד</button>
+            </div>
+            <pre>${highlightSql(s.sql || '')}</pre>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  return `
+    <div class="sql-section${sevClass}${openClass}" id="section-${id}">
+      <div class="sql-section-header" data-toggle-section="${id}">
+        <span class="toggle-icon">▶</span>
+        <h3>${icon || ''} ${escapeHtml(title)} ${badgeHtml}</h3>
+      </div>
+      <div class="sql-section-body">
+        ${infoHtml}
+        ${scriptsHtml}
+      </div>
+    </div>`;
+}
+
+// Single delegated click handler for toggle / copy / download / TOC jumps.
+function wireSqlTab(container) {
+  container.addEventListener('click', async (e) => {
+    const toggle = e.target.closest('[data-toggle-section]');
+    if (toggle) {
+      const sec = toggle.closest('.sql-section');
+      if (sec) sec.classList.toggle('open');
+      return;
+    }
+
+    const copyBtn = e.target.closest('.copy-script-btn');
+    if (copyBtn) {
+      const sql = sqlScripts.get(copyBtn.dataset.sid);
+      if (sql == null) return;
+      try {
+        await navigator.clipboard.writeText(sql);
+        const original = copyBtn.textContent;
+        copyBtn.textContent = '✅ הועתק';
+        copyBtn.classList.add('copied');
+        setTimeout(() => { copyBtn.textContent = original; copyBtn.classList.remove('copied'); }, 1800);
+      } catch (err) {
+        toast('❌ לא ניתן להעתיק: ' + err.message, 'error');
+      }
+      return;
+    }
+
+    const dlBtn = e.target.closest('.download-script-btn');
+    if (dlBtn) {
+      const sql = sqlScripts.get(dlBtn.dataset.sid);
+      if (sql == null) return;
+      downloadFile(sql, dlBtn.dataset.fname || 'script.sql', 'text/plain');
+      return;
+    }
+
+    const jump = e.target.closest('[data-jump]');
+    if (jump) {
+      e.preventDefault();
+      const target = container.querySelector('#section-' + jump.dataset.jump);
+      if (target) {
+        target.classList.add('open');
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+  });
+}
+
 async function renderSqlTab(c) {
   const item = state.currentItem;
   if (!item) return;
   showLoading(c);
 
+  // Reset script registry on every render
+  sqlScripts.clear();
+  sqlScriptCounter = 0;
+
   try {
-    const data = await api('get_create_table', { table: item.name });
-    const sql = data.sql || '';
-    const highlighted = highlightSql(sql);
-
-    c.innerHTML = `
-      <div class="section-card">
-        <h3>💾 קוד ${item.type === 'view' ? 'CREATE VIEW' : 'CREATE TABLE'}</h3>
-        <div class="code-block">
-          <div class="code-actions">
-            <button id="copySqlBtn">📋 העתק</button>
-            <button id="downloadSqlBtn">💾 הורד .sql</button>
-          </div>
-          <pre>${highlighted}</pre>
-        </div>
-      </div>`;
-
-    $('copySqlBtn').addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(sql);
-        const btn = $('copySqlBtn');
-        btn.textContent = '✅ הועתק';
-        btn.classList.add('copied');
-        setTimeout(() => { btn.textContent = '📋 העתק'; btn.classList.remove('copied'); }, 2000);
-      } catch (e) {
-        toast('❌ לא ניתן להעתיק: ' + e.message, 'error');
-      }
-    });
-
-    $('downloadSqlBtn').addEventListener('click', () => {
-      downloadFile(sql, item.name + '.sql', 'text/plain');
-    });
+    if (item.type === 'view') {
+      await renderSqlTabView(c, item);
+    } else {
+      await renderSqlTabTable(c, item);
+    }
   } catch (err) {
     c.innerHTML = `<div class="empty-state">❌ שגיאה: ${escapeHtml(err.message)}</div>`;
   }
+}
+
+// VIEW branch - kept on the existing simple flow until step 5 expands it.
+async function renderSqlTabView(c, item) {
+  const data = await api('get_create_table', { table: item.name });
+  c.innerHTML = buildSqlSection({
+    id: 'create-view',
+    icon: '💾',
+    title: 'קוד CREATE VIEW',
+    openByDefault: true,
+    scripts: [{ sql: data.sql || '', filename: item.name + '.sql' }]
+  });
+  wireSqlTab(c);
+}
+
+// TABLE branch skeleton. Sections beyond CREATE will be filled in 4B-4E.
+async function renderSqlTabTable(c, item) {
+  const data = await api('get_sql_scripts', { table: item.name, type: 'table' });
+
+  // Cache for downstream sections (4B-4E)
+  state.tableCache[item.name] = state.tableCache[item.name] || {};
+  state.tableCache[item.name].sqlScripts = data;
+
+  let html = '';
+
+  html += buildSqlSection({
+    id: 'create',
+    icon: '📝',
+    title: 'CREATE TABLE',
+    openByDefault: true,
+    scripts: [{ sql: data.createSql || '', filename: item.name + '.sql' }]
+  });
+
+  c.innerHTML = html;
+  wireSqlTab(c);
 }
 
 function highlightSql(sql) {
