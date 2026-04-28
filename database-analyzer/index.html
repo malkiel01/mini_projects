@@ -2380,13 +2380,100 @@ async function renderSqlTabTable(c, item) {
   state.tableCache[item.name] = state.tableCache[item.name] || {};
   state.tableCache[item.name].sqlScripts = data;
 
+  const cols = data.columns || [];
+  const indexes = data.indexes || [];
+  const fks = data.foreignKeys || [];
+  const incomingFks = data.incomingFks || [];
+  const triggers = data.triggers || [];
+  const referencingViews = data.referencingViews || [];
+  const info = data.tableInfo || {};
+
+  // Group raw indexes (one row per column) into logical indexes
+  const indexGroups = {};
+  indexes.forEach(idx => {
+    const n = idx.Key_name;
+    if (!indexGroups[n]) {
+      indexGroups[n] = { name: n, unique: idx.Non_unique == 0, type: idx.Index_type, columns: [] };
+    }
+    indexGroups[n].columns.push(idx.Column_name);
+  });
+  const idxList = Object.values(indexGroups);
+
   let html = '';
 
+  // ---------------------------------------------------------------
+  // 4B - Overview / Dependencies
+  // ---------------------------------------------------------------
+  const depPills = [];
+  if (incomingFks.length) {
+    depPills.push(`<span class="dep-pill danger">⚠️ ${incomingFks.length} מפתחות זרים נכנסים</span>`);
+  }
+  if (referencingViews.length) {
+    depPills.push(`<span class="dep-pill">👁️ ${referencingViews.length} VIEWs מתייחסים</span>`);
+  }
+  if (triggers.length) {
+    depPills.push(`<span class="dep-pill">⚡ ${triggers.length} טריגרים</span>`);
+  }
+  if (fks.length) {
+    depPills.push(`<span class="dep-pill success">🔗 ${fks.length} מפתחות זרים יוצאים</span>`);
+  }
+
+  const hasBlockingDeps = incomingFks.length > 0 || referencingViews.length > 0;
+  const overviewSeverity = hasBlockingDeps ? 'warning' : null;
+
+  const incomingList = incomingFks.length
+    ? `<ul>${incomingFks.map(fk =>
+        `<li><code>${escapeHtml(fk.SOURCE_TABLE)}.${escapeHtml(fk.SOURCE_COLUMN)}</code> → <code>${escapeHtml(item.name)}.${escapeHtml(fk.REFERENCED_COLUMN_NAME)}</code> <span class="muted">(${escapeHtml(fk.CONSTRAINT_NAME)})</span></li>`
+      ).join('')}</ul>`
+    : '';
+  const viewsList = referencingViews.length
+    ? `<ul>${referencingViews.map(v => `<li><code>${escapeHtml(v)}</code></li>`).join('')}</ul>`
+    : '';
+
+  const overviewInfo = `
+    <div style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:10px">
+      <span><strong>מנוע:</strong> <code>${escapeHtml(info.ENGINE || '-')}</code></span>
+      <span><strong>קידוד:</strong> <code>${escapeHtml(info.TABLE_COLLATION || '-')}</code></span>
+      ${info.AUTO_INCREMENT ? `<span><strong>AUTO_INCREMENT הבא:</strong> <code>${escapeHtml(info.AUTO_INCREMENT)}</code></span>` : ''}
+      <span><strong>עמודות:</strong> <code>${cols.length}</code></span>
+      <span><strong>אינדקסים:</strong> <code>${idxList.length}</code></span>
+    </div>
+    <div style="margin-bottom:8px">${depPills.join(' ') || '<span class="muted">אין תלויות חיצוניות</span>'}</div>
+    ${hasBlockingDeps ? `
+      <div style="margin-top:10px;padding-top:10px;border-top:1px dashed rgba(0,0,0,0.1)">
+        <strong>שים לב לפני DROP/ALTER גדול:</strong>
+        ${incomingFks.length ? `<div style="margin-top:6px">טבלאות אחרות מצביעות לטבלה הזו דרך FK — חובה להסיר אותם קודם:</div>${incomingList}` : ''}
+        ${referencingViews.length ? `<div style="margin-top:6px">VIEWs שמתייחסים לטבלה (יישברו אם הטבלה תושמט):</div>${viewsList}` : ''}
+      </div>
+    ` : ''}
+  `;
+
+  html += buildSqlSection({
+    id: 'overview',
+    icon: 'ℹ️',
+    title: 'סקירה ותלויות',
+    severity: overviewSeverity,
+    info: overviewInfo,
+    scripts: [],
+    openByDefault: true
+  });
+
+  // ---------------------------------------------------------------
+  // CREATE TABLE - now with explanatory note
+  // ---------------------------------------------------------------
   html += buildSqlSection({
     id: 'create',
     icon: '📝',
     title: 'CREATE TABLE',
     openByDefault: true,
+    info: `
+      הסקריפט המלא ליצירת הטבלה כפי ש-MySQL רואה אותה (תוצאת <code>SHOW CREATE TABLE</code>).
+      <ul>
+        <li>אם תריצו אותו על מסד אחר תקבלו טבלה זהה כולל אינדקסים ו-FKs.</li>
+        <li>במקרה שטבלאות שאליהן ה-FKs מצביעים לא קיימות עדיין — יש להריץ אותן <strong>לפני</strong> סקריפט זה.</li>
+        <li>אפשר להוסיף <code>DROP TABLE IF EXISTS ${escapeHtml(qid(item.name))};</code> בראש הקובץ כדי להחליף טבלה קיימת.</li>
+      </ul>
+    `,
     scripts: [{ sql: data.createSql || '', filename: item.name + '.sql' }]
   });
 
