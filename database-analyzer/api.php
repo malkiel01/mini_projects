@@ -456,6 +456,181 @@ try {
             break;
         }
 
+        // ============================================================
+        // GET DATABASE OVERVIEW - whole-DB summary for the dashboard
+        // ============================================================
+        case 'get_database_overview': {
+            $stmt = $pdo->query("SHOW FULL TABLES");
+            $tables = [];
+            $views = [];
+            while ($row = $stmt->fetch(PDO::FETCH_NUM)) {
+                if ($row[1] === 'BASE TABLE') $tables[] = $row[0];
+                else $views[] = $row[0];
+            }
+
+            $stmt = $pdo->prepare("
+                SELECT TABLE_NAME, TABLE_ROWS, ENGINE, TABLE_COLLATION,
+                       DATA_LENGTH, INDEX_LENGTH, AUTO_INCREMENT, TABLE_COMMENT
+                FROM INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'
+            ");
+            $stmt->execute([$database]);
+            $tableInfo = [];
+            foreach ($stmt->fetchAll() as $r) {
+                $tableInfo[$r['TABLE_NAME']] = $r;
+            }
+
+            $tableColumns = [];
+            foreach ($tables as $t) {
+                $s = $pdo->query("SHOW COLUMNS FROM " . quoteId($t));
+                $tableColumns[$t] = $s->fetchAll();
+            }
+
+            $stmt = $pdo->prepare("
+                SELECT kcu.TABLE_NAME, kcu.COLUMN_NAME,
+                       kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME,
+                       kcu.CONSTRAINT_NAME, rc.UPDATE_RULE, rc.DELETE_RULE
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                LEFT JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
+                    ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
+                    AND kcu.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA
+                WHERE kcu.TABLE_SCHEMA = ? AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+            ");
+            $stmt->execute([$database]);
+            $relationships = $stmt->fetchAll();
+
+            $stmt = $pdo->prepare(
+                "SELECT TRIGGER_NAME, EVENT_OBJECT_TABLE, ACTION_TIMING, EVENT_MANIPULATION
+                 FROM INFORMATION_SCHEMA.TRIGGERS WHERE EVENT_OBJECT_SCHEMA = ?"
+            );
+            $stmt->execute([$database]);
+            $triggers = $stmt->fetchAll();
+
+            echo json_encode([
+                'success' => true,
+                'database' => $database,
+                'tables' => $tables,
+                'views' => $views,
+                'tableInfo' => $tableInfo,
+                'tableColumns' => $tableColumns,
+                'relationships' => $relationships,
+                'triggers' => $triggers
+            ]);
+            break;
+        }
+
+        // ============================================================
+        // EXPORT DATABASE - full DB export in one call
+        //   mode: 'structure' | 'data' | 'both'
+        // ============================================================
+        case 'export_database': {
+            $mode = $input['mode'] ?? 'both';
+            if (!in_array($mode, ['structure', 'data', 'both'], true)) {
+                echo json_encode(['success' => false, 'error' => 'mode חייב להיות structure / data / both']);
+                break;
+            }
+
+            $stmt = $pdo->query("SHOW FULL TABLES");
+            $tables = [];
+            $views = [];
+            while ($row = $stmt->fetch(PDO::FETCH_NUM)) {
+                if ($row[1] === 'BASE TABLE') $tables[] = $row[0];
+                else $views[] = $row[0];
+            }
+
+            $out = [
+                'database' => $database,
+                'exportedAt' => date('c'),
+                'mode' => $mode,
+                'tables' => []
+            ];
+
+            $stmtFK = $pdo->prepare("
+                SELECT kcu.CONSTRAINT_NAME, kcu.COLUMN_NAME,
+                       kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME,
+                       rc.UPDATE_RULE, rc.DELETE_RULE
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                LEFT JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
+                    ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
+                    AND kcu.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA
+                WHERE kcu.TABLE_SCHEMA = ? AND kcu.TABLE_NAME = ?
+                  AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+            ");
+
+            $stmtTrig = $pdo->prepare("
+                SELECT TRIGGER_NAME, ACTION_TIMING, EVENT_MANIPULATION, ACTION_STATEMENT
+                FROM INFORMATION_SCHEMA.TRIGGERS
+                WHERE EVENT_OBJECT_SCHEMA = ? AND EVENT_OBJECT_TABLE = ?
+            ");
+
+            $stmtInfo = $pdo->prepare(
+                "SELECT TABLE_COMMENT, ENGINE, TABLE_COLLATION, AUTO_INCREMENT, TABLE_ROWS, CREATE_TIME, UPDATE_TIME
+                 FROM INFORMATION_SCHEMA.TABLES
+                 WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?"
+            );
+
+            foreach ($tables as $t) {
+                $qt = quoteId($t);
+                $entry = ['name' => $t];
+
+                if ($mode === 'structure' || $mode === 'both') {
+                    $cs = $pdo->query("SHOW FULL COLUMNS FROM {$qt}");
+                    $entry['columns'] = $cs->fetchAll();
+
+                    $is = $pdo->query("SHOW INDEX FROM {$qt}");
+                    $entry['indexes'] = $is->fetchAll();
+
+                    $stmtFK->execute([$database, $t]);
+                    $entry['foreignKeys'] = $stmtFK->fetchAll();
+
+                    $stmtTrig->execute([$database, $t]);
+                    $entry['triggers'] = $stmtTrig->fetchAll();
+
+                    $stmtInfo->execute([$database, $t]);
+                    $entry['tableInfo'] = $stmtInfo->fetch();
+
+                    $createStmt = $pdo->query("SHOW CREATE TABLE {$qt}");
+                    $createRow = $createStmt->fetch(PDO::FETCH_NUM);
+                    $entry['createStatement'] = $createRow[1] ?? '';
+                }
+
+                if ($mode === 'data' || $mode === 'both') {
+                    $ds = $pdo->query("SELECT * FROM {$qt}");
+                    $entry['data'] = $ds->fetchAll();
+                }
+
+                $out['tables'][] = $entry;
+            }
+
+            if (!empty($views)) {
+                $out['views'] = [];
+                foreach ($views as $v) {
+                    $qv = quoteId($v);
+                    $vEntry = ['name' => $v];
+                    if ($mode === 'structure' || $mode === 'both') {
+                        $cs = $pdo->query("SHOW FULL COLUMNS FROM {$qv}");
+                        $vEntry['columns'] = $cs->fetchAll();
+                        $createStmt = $pdo->query("SHOW CREATE VIEW {$qv}");
+                        $createRow = $createStmt->fetch(PDO::FETCH_NUM);
+                        $vEntry['createStatement'] = $createRow[1] ?? '';
+                    }
+                    if ($mode === 'data' || $mode === 'both') {
+                        try {
+                            $ds = $pdo->query("SELECT * FROM {$qv}");
+                            $vEntry['data'] = $ds->fetchAll();
+                        } catch (Exception $e) {
+                            $vEntry['data'] = [];
+                            $vEntry['dataError'] = $e->getMessage();
+                        }
+                    }
+                    $out['views'][] = $vEntry;
+                }
+            }
+
+            echo json_encode(['success' => true, 'export' => $out]);
+            break;
+        }
+
         default:
             http_response_code(400);
             echo json_encode(['success' => false, 'error' => 'פעולה לא מוכרת: ' . $action]);

@@ -162,15 +162,6 @@
     display: flex; flex-direction: column;
     background: #f7f8fa;
   }
-  .welcome {
-    display: flex; flex-direction: column; align-items: center;
-    justify-content: center; flex: 1;
-    color: #999; text-align: center; padding: 40px;
-  }
-  .welcome .welcome-icon { font-size: 4rem; margin-bottom: 16px; opacity: 0.4; }
-  .welcome h2 { font-size: 1.3rem; color: #666; margin-bottom: 8px; }
-  .welcome p { font-size: 0.95rem; }
-
   .table-view { display: none; flex-direction: column; height: 100%; }
   .table-view.active { display: flex; }
 
@@ -546,6 +537,112 @@
   .erd-legend div { margin: 3px 0; }
 
   /* =========================================================
+     DASHBOARD - main screen after connection
+     ========================================================= */
+  .dashboard { display: none; flex-direction: column; height: 100%; }
+  .dashboard.active { display: flex; }
+
+  .dashboard-header {
+    background: white; padding: 18px 24px;
+    border-bottom: 1px solid #e0e0e0; flex-shrink: 0;
+  }
+  .dashboard-header h2 {
+    font-size: 1.35rem; color: #1a1a2e;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .dashboard-header .db-name {
+    font-family: monospace; color: #3b5bdb;
+    background: #eef2ff; padding: 2px 10px;
+    border-radius: 6px; font-size: 0.95rem;
+  }
+  .dashboard-content {
+    flex: 1; overflow: auto; padding: 24px;
+  }
+
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 14px; margin-bottom: 20px;
+  }
+  .stat-card {
+    background: white; border-radius: 10px;
+    padding: 16px 18px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    border-right: 4px solid #3b5bdb;
+  }
+  .stat-card .stat-label {
+    font-size: 0.8rem; color: #888;
+    margin-bottom: 6px;
+  }
+  .stat-card .stat-value {
+    font-size: 1.6rem; font-weight: 700;
+    color: #1a1a2e;
+  }
+  .stat-card.green   { border-right-color: #28a745; }
+  .stat-card.orange  { border-right-color: #fd7e14; }
+  .stat-card.purple  { border-right-color: #6f42c1; }
+  .stat-card.cyan    { border-right-color: #17a2b8; }
+
+  .dl-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+  }
+  .dl-btn {
+    background: white; border: 2px solid #e0e0e0;
+    border-radius: 10px; padding: 18px 16px;
+    cursor: pointer; text-align: right;
+    transition: all 0.15s; font-family: inherit;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .dl-btn:hover {
+    border-color: #3b5bdb; transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(59,91,219,0.12);
+  }
+  .dl-btn:disabled {
+    opacity: 0.5; cursor: not-allowed; transform: none;
+  }
+  .dl-btn .dl-title {
+    font-size: 1rem; font-weight: 600; color: #1a1a2e;
+  }
+  .dl-btn .dl-desc {
+    font-size: 0.82rem; color: #666;
+  }
+  .dl-btn .dl-spinner {
+    width: 16px; height: 16px;
+    border: 2px solid #eee; border-top-color: #3b5bdb;
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+    display: inline-block;
+  }
+
+  .rel-list-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; border-bottom: 1px solid #f0f0f0;
+    font-size: 0.88rem;
+  }
+  .rel-list-item:last-child { border-bottom: none; }
+  .rel-list-item:hover { background: #fafbfc; }
+  .rel-list-item .rel-arrow { color: #3b5bdb; font-weight: 700; }
+  .rel-list-item code {
+    font-family: monospace; background: #f0f0f5;
+    padding: 2px 6px; border-radius: 4px;
+    font-size: 0.82rem;
+  }
+  .rel-list-item .rel-link {
+    color: #3b5bdb; cursor: pointer; text-decoration: none;
+  }
+  .rel-list-item .rel-link:hover { text-decoration: underline; }
+
+  .back-to-dash {
+    background: #eef2ff; color: #3b5bdb;
+    border: 1px solid #c7d2fe; border-radius: 6px;
+    padding: 4px 10px; cursor: pointer;
+    font-family: inherit; font-size: 0.82rem;
+    margin-left: 8px;
+  }
+  .back-to-dash:hover { background: #dbeafe; }
+
+  /* =========================================================
      CODE BLOCK - SQL / JSON display
      ========================================================= */
   .code-block {
@@ -726,15 +823,19 @@
     </aside>
 
     <main class="content">
-      <div class="welcome" id="welcomeScreen">
-        <div class="welcome-icon">📊</div>
-        <h2>ברוכים הבאים לאנליסט מסד נתונים</h2>
-        <p>בחרו טבלה או תצוגה מהרשימה בצד כדי להתחיל</p>
+      <div class="dashboard active" id="dashboardScreen">
+        <div class="dashboard-header">
+          <h2>📊 דשבורד מסד נתונים <span class="db-name" id="dashDbName"></span></h2>
+        </div>
+        <div class="dashboard-content" id="dashboardBody">
+          <div class="loading"><div class="spinner"></div><span>טוען סקירת מסד נתונים...</span></div>
+        </div>
       </div>
 
       <div class="table-view" id="tableView">
         <div class="table-header-bar">
           <div class="title-row">
+            <button class="back-to-dash" id="backToDashBtn">🏠 חזרה לדשבורד</button>
             <h2 id="currentTableName">-</h2>
             <span class="type-badge" id="currentTableType">טבלה</span>
           </div>
@@ -872,7 +973,22 @@ function showMainScreen() {
   $('connectionScreen').style.display = 'none';
   $('mainScreen').style.display = 'flex';
   $('dbBadge').textContent = state.conn.database;
+  $('dashDbName').textContent = state.conn.database;
   renderSidebar();
+  showDashboard();
+}
+
+function showDashboard() {
+  state.currentItem = null;
+  $('dashboardScreen').classList.add('active');
+  $('tableView').classList.remove('active');
+  document.querySelectorAll('.sidebar-item.active').forEach(el => el.classList.remove('active'));
+  renderDashboard();
+}
+
+function showTableView() {
+  $('dashboardScreen').classList.remove('active');
+  $('tableView').classList.add('active');
 }
 
 /* ===============================================================
@@ -914,6 +1030,295 @@ function renderSidebar() {
 
 $('sidebarSearch').addEventListener('input', renderSidebar);
 
+$('backToDashBtn').addEventListener('click', showDashboard);
+
+/* ===============================================================
+   DASHBOARD - main overview after connecting
+   =============================================================== */
+async function renderDashboard() {
+  const body = $('dashboardBody');
+  body.innerHTML = '<div class="loading"><div class="spinner"></div><span>טוען סקירה...</span></div>';
+
+  let overview;
+  try {
+    overview = await api('get_database_overview');
+  } catch (err) {
+    body.innerHTML = `<div class="empty-state">❌ שגיאה: ${escapeHtml(err.message)}</div>`;
+    return;
+  }
+
+  const tables = overview.tables || [];
+  const views = overview.views || [];
+  const rels = overview.relationships || [];
+  const triggers = overview.triggers || [];
+  const tableInfo = overview.tableInfo || {};
+  const tableColumns = overview.tableColumns || {};
+
+  let totalRows = 0;
+  let totalSize = 0;
+  Object.values(tableInfo).forEach(info => {
+    totalRows += parseInt(info.TABLE_ROWS || 0, 10);
+    totalSize += parseInt(info.DATA_LENGTH || 0, 10) + parseInt(info.INDEX_LENGTH || 0, 10);
+  });
+
+  const sizeStr = formatBytes(totalSize);
+
+  body.innerHTML = `
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">📋 טבלאות</div>
+        <div class="stat-value">${tables.length}</div>
+      </div>
+      <div class="stat-card cyan">
+        <div class="stat-label">👁️ תצוגות</div>
+        <div class="stat-value">${views.length}</div>
+      </div>
+      <div class="stat-card green">
+        <div class="stat-label">🔗 קשרי FK</div>
+        <div class="stat-value">${rels.length}</div>
+      </div>
+      <div class="stat-card orange">
+        <div class="stat-label">⚡ טריגרים</div>
+        <div class="stat-value">${triggers.length}</div>
+      </div>
+      <div class="stat-card purple">
+        <div class="stat-label">📊 סה״כ שורות</div>
+        <div class="stat-value">${totalRows.toLocaleString('he-IL')}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">💾 גודל</div>
+        <div class="stat-value" style="font-size:1.2rem">${sizeStr}</div>
+      </div>
+    </div>
+
+    <div class="section-card">
+      <h3>⬇️ הורדת מסד הנתונים המלא</h3>
+      <p style="color:#666;font-size:0.88rem;margin-bottom:14px">
+        מוריד קובץ JSON אחד עם כל הטבלאות. הקובץ כולל גם את הצהרות ה-CREATE TABLE,
+        מפתחות זרים, אינדקסים וטריגרים.
+      </p>
+      <div class="dl-grid">
+        <button class="dl-btn" data-mode="structure">
+          <span class="dl-title">🏗️ מבנה בלבד</span>
+          <span class="dl-desc">סכמה של כל הטבלאות — ללא נתונים</span>
+        </button>
+        <button class="dl-btn" data-mode="data">
+          <span class="dl-title">📊 תוכן בלבד</span>
+          <span class="dl-desc">כל השורות מכל הטבלאות</span>
+        </button>
+        <button class="dl-btn" data-mode="both">
+          <span class="dl-title">📦 מבנה + תוכן</span>
+          <span class="dl-desc">חבילה מלאה — מסד הנתונים כולו</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="section-card">
+      <h3>🗺️ תרשים יחסים מלא <span class="count-badge">${tables.length} טבלאות</span></h3>
+      <div id="dashErdContainer">
+        ${tables.length === 0
+          ? '<div class="empty-state">אין טבלאות להציג</div>'
+          : ''}
+      </div>
+    </div>
+
+    <div class="section-card">
+      <h3>🔗 רשימת כל הקשרים <span class="count-badge">${rels.length}</span></h3>
+      <div id="dashRelList"></div>
+    </div>
+  `;
+
+  if (tables.length > 0) {
+    renderDashboardErd($('dashErdContainer'), tables, tableColumns, rels);
+  }
+  renderDashboardRelList($('dashRelList'), rels);
+
+  body.querySelectorAll('.dl-btn').forEach(btn => {
+    btn.addEventListener('click', () => downloadFullExport(btn.dataset.mode, btn));
+  });
+}
+
+function formatBytes(bytes) {
+  if (!bytes) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0;
+  while (bytes >= 1024 && i < units.length - 1) { bytes /= 1024; i++; }
+  return bytes.toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+}
+
+function renderDashboardErd(container, tables, tableColumns, rels) {
+  // Auto-layout: simple grid, no center table (whole-DB view)
+  const positions = {};
+  const cols = Math.ceil(Math.sqrt(tables.length * 1.4));
+  const colW = 240, rowH = 270;
+  tables.forEach((t, i) => {
+    const r = Math.floor(i / cols);
+    const c = i % cols;
+    positions[t] = { x: c * colW + 40, y: r * rowH + 40 };
+  });
+
+  const pkSet = {}, fkSet = {};
+  tables.forEach(t => {
+    pkSet[t] = new Set();
+    fkSet[t] = new Set();
+    (tableColumns[t] || []).forEach(c => {
+      if (c.Key === 'PRI') pkSet[t].add(c.Field);
+    });
+  });
+  rels.forEach(r => {
+    if (!fkSet[r.TABLE_NAME]) fkSet[r.TABLE_NAME] = new Set();
+    fkSet[r.TABLE_NAME].add(r.COLUMN_NAME);
+  });
+
+  const totalRows = Math.ceil(tables.length / cols);
+  const canvasW = Math.max(2400, cols * colW + 80);
+  const canvasH = Math.max(800, totalRows * rowH + 80);
+
+  container.innerHTML = `
+    <div class="erd-wrap">
+      <div class="erd-canvas" id="dashErdCanvas" style="width:${canvasW}px;height:${canvasH}px">
+        <svg class="erd-svg" id="dashErdSvg"></svg>
+        ${tables.map(t => {
+          const p = positions[t];
+          const colsArr = tableColumns[t] || [];
+          return `
+            <div class="erd-table" data-table="${escapeHtml(t)}"
+                 style="right: ${p.x}px; top: ${p.y}px">
+              <div class="erd-table-header">📋 ${escapeHtml(t)}</div>
+              ${colsArr.slice(0, 12).map(c => {
+                const isPk = pkSet[t].has(c.Field);
+                const isFk = fkSet[t] && fkSet[t].has(c.Field);
+                const cls = ['erd-table-col'];
+                if (isPk) cls.push('is-pk');
+                if (isFk) cls.push('is-fk');
+                return `
+                  <div class="${cls.join(' ')}">
+                    <span class="col-icon">${isPk ? '🔑' : isFk ? '🔗' : '·'}</span>
+                    <span>${escapeHtml(c.Field)}</span>
+                    <span class="col-type">${escapeHtml(c.Type.split('(')[0])}</span>
+                  </div>`;
+              }).join('')}
+              ${colsArr.length > 12 ? `<div class="erd-table-col" style="color:#888;font-style:italic">+ ${colsArr.length - 12} נוספות</div>` : ''}
+            </div>`;
+        }).join('')}
+      </div>
+      <div class="erd-legend">
+        <div>🔑 מפתח ראשי (PK)</div>
+        <div>🔗 מפתח זר (FK)</div>
+        <div style="margin-top:6px;padding-top:6px;border-top:1px solid #eee">
+          לחצו על טבלה לצפייה בפרטים · גררו את הכותרת להזזה
+        </div>
+      </div>
+    </div>`;
+
+  drawDashErdLines(rels, positions);
+
+  container.querySelectorAll('.erd-table').forEach(el => {
+    enableDashDrag(el, positions, rels);
+    el.querySelector('.erd-table-header').addEventListener('dblclick', () => {
+      selectItem(el.dataset.table, 'table');
+    });
+  });
+}
+
+function drawDashErdLines(rels, positions) {
+  const svg = $('dashErdSvg');
+  const canvas = $('dashErdCanvas');
+  if (!svg || !canvas) return;
+  svg.setAttribute('viewBox', `0 0 ${canvas.offsetWidth} ${canvas.offsetHeight}`);
+
+  function anchor(tableName) {
+    const p = positions[tableName];
+    if (!p) return null;
+    const el = canvas.querySelector(`.erd-table[data-table="${CSS.escape(tableName)}"]`);
+    if (!el) return null;
+    const w = canvas.offsetWidth;
+    return {
+      cx: w - p.x - el.offsetWidth / 2,
+      cy: p.y + el.offsetHeight / 2
+    };
+  }
+
+  const paths = [];
+  const seen = new Set();
+  rels.forEach(r => {
+    const key = r.TABLE_NAME + '|' + r.REFERENCED_TABLE_NAME;
+    if (seen.has(key)) return;
+    seen.add(key);
+    const a = anchor(r.TABLE_NAME);
+    const b = anchor(r.REFERENCED_TABLE_NAME);
+    if (!a || !b) return;
+    const dx = (b.cx - a.cx) * 0.4;
+    const d = `M ${a.cx},${a.cy} C ${a.cx + dx},${a.cy} ${b.cx - dx},${b.cy} ${b.cx},${b.cy}`;
+    paths.push(`<path d="${d}"></path>`);
+  });
+  svg.innerHTML = paths.join('');
+}
+
+function enableDashDrag(el, positions, rels) {
+  const header = el.querySelector('.erd-table-header');
+  if (!header) return;
+  let dragging = false, startX, startY, startRight, startTop;
+
+  header.addEventListener('mousedown', (e) => {
+    dragging = true;
+    startX = e.clientX; startY = e.clientY;
+    startRight = parseFloat(el.style.right);
+    startTop = parseFloat(el.style.top);
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    el.style.right = (startRight - dx) + 'px';
+    el.style.top = (startTop + dy) + 'px';
+    positions[el.dataset.table] = { x: startRight - dx, y: startTop + dy };
+    drawDashErdLines(rels, positions);
+  });
+  document.addEventListener('mouseup', () => { dragging = false; });
+}
+
+function renderDashboardRelList(container, rels) {
+  if (!rels.length) {
+    container.innerHTML = '<div class="empty-state">לא נמצאו קשרי Foreign Key במסד הנתונים</div>';
+    return;
+  }
+  container.innerHTML = rels.map(r => `
+    <div class="rel-list-item">
+      <a class="rel-link" data-table="${escapeHtml(r.TABLE_NAME)}">${escapeHtml(r.TABLE_NAME)}</a>
+      <code>${escapeHtml(r.COLUMN_NAME)}</code>
+      <span class="rel-arrow">←</span>
+      <a class="rel-link" data-table="${escapeHtml(r.REFERENCED_TABLE_NAME)}">${escapeHtml(r.REFERENCED_TABLE_NAME)}</a>
+      <code>${escapeHtml(r.REFERENCED_COLUMN_NAME)}</code>
+      <span style="color:#aaa;margin-right:auto;font-size:0.78rem">${escapeHtml(r.CONSTRAINT_NAME || '')}</span>
+    </div>
+  `).join('');
+
+  container.querySelectorAll('.rel-link').forEach(a => {
+    a.addEventListener('click', () => selectItem(a.dataset.table, 'table'));
+  });
+}
+
+async function downloadFullExport(mode, btn) {
+  const labels = { structure: 'מבנה', data: 'תוכן', both: 'מבנה + תוכן' };
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="dl-spinner"></span><span class="dl-desc">מכין ${labels[mode]}...</span>`;
+  try {
+    const res = await api('export_database', { mode });
+    const json = JSON.stringify(res.export, null, 2);
+    const fname = state.conn.database + '_' + mode + '_' + new Date().toISOString().slice(0, 10) + '.json';
+    downloadFile(json, fname, 'application/json');
+    toast('✅ הקובץ הורד בהצלחה', 'success');
+  } catch (err) {
+    toast('❌ שגיאה: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = original;
+  }
+}
+
 /* ===============================================================
    ITEM SELECTION & TABS
    =============================================================== */
@@ -922,8 +1327,7 @@ function selectItem(name, type) {
   state.activeTab = 'structure';
   state.tableCache[name] = state.tableCache[name] || {};
 
-  $('welcomeScreen').style.display = 'none';
-  $('tableView').classList.add('active');
+  showTableView();
   $('currentTableName').textContent = name;
 
   const typeBadge = $('currentTableType');
