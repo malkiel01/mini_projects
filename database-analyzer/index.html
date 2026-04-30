@@ -680,6 +680,126 @@
   .sql-comment { color: #6a9955; font-style: italic; }
 
   /* =========================================================
+     SQL TAB - collapsible categories
+     ========================================================= */
+  .sql-toc {
+    background: white; border-radius: 10px;
+    padding: 14px 18px; margin-bottom: 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    display: flex; flex-wrap: wrap; gap: 8px;
+  }
+  .sql-toc a {
+    padding: 6px 12px; background: #eef2ff;
+    color: #3b5bdb; border-radius: 16px;
+    text-decoration: none; font-size: 0.82rem;
+    font-weight: 500; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .sql-toc a:hover { background: #3b5bdb; color: white; }
+
+  .sql-section {
+    background: white; border-radius: 10px;
+    margin-bottom: 12px; overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    border: 1px solid #eef2ff;
+  }
+  .sql-section.danger { border-color: #fcc; }
+  .sql-section.warn   { border-color: #ffe7ba; }
+  .sql-section.success { border-color: #c8e6c9; }
+
+  .sql-section-header {
+    padding: 14px 18px; cursor: pointer;
+    display: flex; align-items: center; gap: 10px;
+    background: #f8f9fb; border-bottom: 1px solid transparent;
+    user-select: none; transition: background 0.15s;
+  }
+  .sql-section-header:hover { background: #eef2ff; }
+  .sql-section.open .sql-section-header {
+    border-bottom-color: #eee;
+  }
+  .sql-section-header h3 {
+    flex: 1; font-size: 1rem; color: #1a1a2e;
+    font-weight: 600; display: flex;
+    align-items: center; gap: 8px;
+  }
+  .sql-section.danger .sql-section-header h3 { color: #b02a37; }
+  .sql-section.warn .sql-section-header h3 { color: #815100; }
+  .sql-section.success .sql-section-header h3 { color: #1e7e34; }
+
+  .sql-section-header .toggle-icon {
+    font-size: 0.9rem; color: #888;
+    transition: transform 0.2s;
+  }
+  .sql-section.open .toggle-icon { transform: rotate(90deg); }
+
+  .sql-section-header .count-badge.small {
+    font-size: 0.72rem; padding: 1px 8px;
+  }
+
+  .sql-section-body {
+    display: none; padding: 16px 18px;
+  }
+  .sql-section.open .sql-section-body { display: block; }
+
+  .sql-info-note {
+    background: #f0f4ff; border-right: 3px solid #3b5bdb;
+    padding: 10px 14px; border-radius: 6px;
+    color: #1a1a2e; font-size: 0.88rem;
+    line-height: 1.6; margin-bottom: 14px;
+  }
+  .sql-info-note.warning {
+    background: #fff8e6; border-right-color: #f0ad4e; color: #5a4500;
+  }
+  .sql-info-note.danger {
+    background: #fee; border-right-color: #dc3545; color: #5a1620;
+  }
+  .sql-info-note.success {
+    background: #f0fff4; border-right-color: #28a745; color: #1a3a1f;
+  }
+  .sql-info-note strong { color: inherit; }
+  .sql-info-note ol, .sql-info-note ul {
+    margin: 6px 18px;
+  }
+  .sql-info-note li { margin: 3px 0; }
+  .sql-info-note code {
+    background: rgba(0,0,0,0.06); padding: 1px 5px;
+    border-radius: 3px; font-family: 'Consolas', monospace;
+    font-size: 0.85em;
+  }
+
+  .sql-script {
+    margin-bottom: 14px;
+  }
+  .sql-script .script-label {
+    font-size: 0.82rem; color: #555; margin-bottom: 6px;
+    display: flex; align-items: center; gap: 6px;
+    font-weight: 500;
+  }
+  .sql-script .script-label .pill {
+    font-size: 0.68rem;
+  }
+  .sql-script .code-block pre {
+    max-height: 280px; padding: 12px 16px; font-size: 0.82rem;
+  }
+  .sql-script.compact .code-block pre {
+    max-height: 160px;
+  }
+  .script-empty {
+    background: #f8f9fb; border: 1px dashed #ddd;
+    border-radius: 6px; padding: 14px;
+    color: #888; font-size: 0.88rem; text-align: center;
+  }
+
+  .dep-pill {
+    display: inline-block; padding: 3px 10px;
+    background: #fff3cd; color: #815100;
+    border-radius: 12px; font-size: 0.78rem;
+    margin: 2px 4px 2px 0; font-weight: 500;
+  }
+  .dep-pill.danger { background: #f8d7da; color: #721c24; }
+  .dep-pill.success { background: #d4edda; color: #155724; }
+
+  /* =========================================================
      EXPORT TAB
      ========================================================= */
   .export-option {
@@ -2324,46 +2444,1015 @@ function enableDrag(el, positions, rels, currentName) {
 
   document.addEventListener('mouseup', () => { dragging = false; });
 }
+/* ===============================================================
+   SQL GENERATOR HELPERS - build CREATE/ALTER/DROP scripts from
+   the structure returned by the get_sql_scripts endpoint.
+   =============================================================== */
+
+// Quote an identifier the same way the server does
+function qid(name) {
+  return '`' + String(name).replace(/`/g, '``') + '`';
+}
+
+// Quote a SQL string literal
+function sqlStr(s) {
+  return "'" + String(s).replace(/\\/g, '\\\\').replace(/'/g, "''") + "'";
+}
+
+// Default-value clauses come back from MySQL as either a literal or an
+// expression like CURRENT_TIMESTAMP / NOW(). Expressions must NOT be quoted.
+function isSqlExpressionDefault(v) {
+  if (v === null || v === undefined) return false;
+  return /^(CURRENT_TIMESTAMP|CURRENT_DATE|CURRENT_TIME|NOW\(\)|UTC_TIMESTAMP|UUID\(\))/i.test(String(v).trim());
+}
+
+// Build a column definition snippet:
+//   `name` VARCHAR(255) NOT NULL DEFAULT 'foo' COMMENT 'bar'
+// Used inside CREATE / ADD / MODIFY / CHANGE COLUMN statements.
+function genColumnDef(col) {
+  const parts = [qid(col.Field), col.Type];
+  parts.push(col.Null === 'YES' ? 'NULL' : 'NOT NULL');
+
+  if (col.Default !== null && col.Default !== undefined) {
+    parts.push('DEFAULT ' + (isSqlExpressionDefault(col.Default) ? col.Default : sqlStr(col.Default)));
+  } else if (col.Null === 'YES' && !/auto_increment/i.test(col.Extra || '')) {
+    parts.push('DEFAULT NULL');
+  }
+
+  // Extra: auto_increment, on update CURRENT_TIMESTAMP, etc.
+  if (col.Extra) parts.push(col.Extra);
+
+  if (col.Comment) parts.push('COMMENT ' + sqlStr(col.Comment));
+
+  return parts.join(' ');
+}
+
+// ALTER TABLE - column operations
+function genAddColumnSql(table, col, afterCol) {
+  let sql = `ALTER TABLE ${qid(table)}\n  ADD COLUMN ${genColumnDef(col)}`;
+  if (afterCol) sql += `\n  AFTER ${qid(afterCol)}`;
+  return sql + ';';
+}
+
+function genModifyColumnSql(table, col) {
+  return `ALTER TABLE ${qid(table)}\n  MODIFY COLUMN ${genColumnDef(col)};`;
+}
+
+function genRenameColumnSql(table, oldName, col) {
+  // CHANGE accepts a full new definition + new name
+  const newDef = genColumnDef(col);
+  return `ALTER TABLE ${qid(table)}\n  CHANGE COLUMN ${qid(oldName)} ${newDef};`;
+}
+
+function genDropColumnSql(table, columnName) {
+  return `ALTER TABLE ${qid(table)} DROP COLUMN ${qid(columnName)};`;
+}
+
+// ALTER TABLE - index operations.
+// `idx` here is the grouped index shape used in renderStructureTab:
+//   { name, unique, type, columns: [...] }
+function genAddIndexSql(table, idx) {
+  const cols = idx.columns.map(qid).join(', ');
+  if (idx.name === 'PRIMARY') {
+    return `ALTER TABLE ${qid(table)} ADD PRIMARY KEY (${cols});`;
+  }
+  if (/FULLTEXT/i.test(idx.type || '')) {
+    return `ALTER TABLE ${qid(table)} ADD FULLTEXT INDEX ${qid(idx.name)} (${cols});`;
+  }
+  if (/SPATIAL/i.test(idx.type || '')) {
+    return `ALTER TABLE ${qid(table)} ADD SPATIAL INDEX ${qid(idx.name)} (${cols});`;
+  }
+  if (idx.unique) {
+    return `ALTER TABLE ${qid(table)} ADD UNIQUE INDEX ${qid(idx.name)} (${cols});`;
+  }
+  return `ALTER TABLE ${qid(table)} ADD INDEX ${qid(idx.name)} (${cols});`;
+}
+
+function genDropIndexSql(table, indexName) {
+  if (indexName === 'PRIMARY') {
+    return `ALTER TABLE ${qid(table)} DROP PRIMARY KEY;`;
+  }
+  return `ALTER TABLE ${qid(table)} DROP INDEX ${qid(indexName)};`;
+}
+
+// ALTER TABLE - foreign key operations
+function genAddFkSql(table, fk) {
+  return `ALTER TABLE ${qid(table)}\n` +
+         `  ADD CONSTRAINT ${qid(fk.CONSTRAINT_NAME)}\n` +
+         `    FOREIGN KEY (${qid(fk.COLUMN_NAME)})\n` +
+         `    REFERENCES ${qid(fk.REFERENCED_TABLE_NAME)} (${qid(fk.REFERENCED_COLUMN_NAME)})\n` +
+         `    ON UPDATE ${fk.UPDATE_RULE}\n` +
+         `    ON DELETE ${fk.DELETE_RULE};`;
+}
+
+function genDropFkSql(table, fkName) {
+  return `ALTER TABLE ${qid(table)} DROP FOREIGN KEY ${qid(fkName)};`;
+}
+
+// Trigger operations - we can drop existing ones, and offer a template
+// for creating new ones (the user fills in the body).
+function genDropTriggerSql(triggerName) {
+  return `DROP TRIGGER IF EXISTS ${qid(triggerName)};`;
+}
+
+function genTriggerTemplate(table, timing, event) {
+  const triggerName = `${table}_${(timing || 'BEFORE').toLowerCase()}_${(event || 'INSERT').toLowerCase()}`;
+  const refRow = (event || 'INSERT').toUpperCase() === 'DELETE' ? 'OLD' : 'NEW';
+  return `DELIMITER //\n` +
+         `CREATE TRIGGER ${qid(triggerName)}\n` +
+         `${(timing || 'BEFORE').toUpperCase()} ${(event || 'INSERT').toUpperCase()} ON ${qid(table)}\n` +
+         `FOR EACH ROW\n` +
+         `BEGIN\n` +
+         `  -- כאן הקוד שלך, גישה לשורה דרך ${refRow}.column_name\n` +
+         `  -- לדוגמה: SET ${refRow}.updated_at = NOW();\n` +
+         `END//\n` +
+         `DELIMITER ;`;
+}
+
+// Table-level operations
+function genRenameTableSql(oldName, newName) {
+  return `RENAME TABLE ${qid(oldName)} TO ${qid(newName || 'new_name')};`;
+}
+
+function genTruncateSql(table) {
+  return `TRUNCATE TABLE ${qid(table)};`;
+}
+
+function genDropTableSql(table) {
+  return `DROP TABLE IF EXISTS ${qid(table)};`;
+}
+
+// Build the multi-step DROP TABLE flow that respects dependencies:
+//   1. drop incoming FK constraints in OTHER tables
+//   2. drop views that reference this table
+//   3. drop triggers attached to this table
+//   4. drop the table itself
+// Returns an array of { label, sql, kind } so the UI can render each
+// step as its own copyable block.
+function genDropTableFlow(tableName, incomingFks, referencingViews, triggers) {
+  const steps = [];
+
+  if (incomingFks && incomingFks.length) {
+    steps.push({
+      kind: 'fks',
+      label: `שלב 1 · הסרת ${incomingFks.length} מפתחות זרים נכנסים מטבלאות אחרות`,
+      sql: incomingFks.map(fk =>
+        `ALTER TABLE ${qid(fk.SOURCE_TABLE)} DROP FOREIGN KEY ${qid(fk.CONSTRAINT_NAME)};`
+      ).join('\n')
+    });
+  }
+
+  if (referencingViews && referencingViews.length) {
+    steps.push({
+      kind: 'views',
+      label: `שלב ${steps.length + 1} · הסרת ${referencingViews.length} VIEWs שמתייחסים לטבלה`,
+      sql: referencingViews.map(v => `DROP VIEW IF EXISTS ${qid(v)};`).join('\n')
+    });
+  }
+
+  if (triggers && triggers.length) {
+    steps.push({
+      kind: 'triggers',
+      label: `שלב ${steps.length + 1} · הסרת ${triggers.length} טריגרים`,
+      sql: triggers.map(t => `DROP TRIGGER IF EXISTS ${qid(t.TRIGGER_NAME)};`).join('\n')
+    });
+  }
+
+  steps.push({
+    kind: 'drop',
+    label: `שלב ${steps.length + 1} · הסרת הטבלה`,
+    sql: genDropTableSql(tableName)
+  });
+
+  return steps;
+}
+
+// VIEW operations
+function genReplaceViewSql(originalCreateSql) {
+  // SHOW CREATE TABLE returns: "CREATE ALGORITHM=... DEFINER=... SQL SECURITY ... VIEW `name` AS ..."
+  // Insert "OR REPLACE" right after the leading CREATE.
+  return originalCreateSql.replace(/^CREATE\b/i, 'CREATE OR REPLACE');
+}
+
+function genAlterViewSql(originalCreateSql) {
+  // ALTER VIEW preserves the same syntax but cannot create. Convert by
+  // swapping the leading CREATE [...] VIEW for ALTER [...] VIEW.
+  return originalCreateSql.replace(/^CREATE\b/i, 'ALTER');
+}
+
+function genDropViewSql(viewName) {
+  return `DROP VIEW IF EXISTS ${qid(viewName)};`;
+}
+
+// Raw SQL registry: highlighted HTML lives in the DOM, but copy/download
+// must use raw text. Keys are auto-generated per render and cleared on
+// each new renderSqlTab() invocation.
+const sqlScripts = new Map();
+let sqlScriptCounter = 0;
+
+// Build a single collapsible section. `scripts` is [{label, sql, filename}].
+// `info` is raw HTML (callers control its content - intentional, since the
+// notes need <strong>/<ol>/<code> formatting).
+function buildSqlSection({ id, icon, title, severity, info, scripts, badge, openByDefault }) {
+  const sevClass = severity ? ' ' + severity : '';
+  const openClass = openByDefault ? ' open' : '';
+  const badgeHtml = badge ? `<span class="count-badge small">${escapeHtml(String(badge))}</span>` : '';
+  const infoHtml = info ? `<div class="sql-info-note ${severity || ''}">${info}</div>` : '';
+
+  let scriptsHtml = '';
+  if (!scripts || !scripts.length) {
+    scriptsHtml = info ? '' : '<div class="script-empty">אין רכיבים להציג</div>';
+  } else {
+    scriptsHtml = scripts.map(s => {
+      const sid = 'sql_' + (++sqlScriptCounter);
+      sqlScripts.set(sid, s.sql || '');
+      const label = s.label
+        ? `<div class="script-label">${escapeHtml(s.label)}</div>`
+        : '';
+      const fname = escapeHtml(s.filename || (id + '.sql'));
+      return `
+        <div class="sql-script${s.compact ? ' compact' : ''}">
+          ${label}
+          <div class="code-block">
+            <div class="code-actions">
+              <button class="copy-script-btn" data-sid="${sid}">📋 העתק</button>
+              <button class="download-script-btn" data-sid="${sid}" data-fname="${fname}">💾 הורד</button>
+            </div>
+            <pre>${highlightSql(s.sql || '')}</pre>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  return `
+    <div class="sql-section${sevClass}${openClass}" id="section-${id}">
+      <div class="sql-section-header" data-toggle-section="${id}">
+        <span class="toggle-icon">▶</span>
+        <h3>${icon || ''} ${escapeHtml(title)} ${badgeHtml}</h3>
+      </div>
+      <div class="sql-section-body">
+        ${infoHtml}
+        ${scriptsHtml}
+      </div>
+    </div>`;
+}
+
+// Single delegated click handler for toggle / copy / download / TOC jumps.
+function wireSqlTab(container) {
+  container.addEventListener('click', async (e) => {
+    const toggle = e.target.closest('[data-toggle-section]');
+    if (toggle) {
+      const sec = toggle.closest('.sql-section');
+      if (sec) sec.classList.toggle('open');
+      return;
+    }
+
+    const copyBtn = e.target.closest('.copy-script-btn');
+    if (copyBtn) {
+      const sql = sqlScripts.get(copyBtn.dataset.sid);
+      if (sql == null) return;
+      try {
+        await navigator.clipboard.writeText(sql);
+        const original = copyBtn.textContent;
+        copyBtn.textContent = '✅ הועתק';
+        copyBtn.classList.add('copied');
+        setTimeout(() => { copyBtn.textContent = original; copyBtn.classList.remove('copied'); }, 1800);
+      } catch (err) {
+        toast('❌ לא ניתן להעתיק: ' + err.message, 'error');
+      }
+      return;
+    }
+
+    const dlBtn = e.target.closest('.download-script-btn');
+    if (dlBtn) {
+      const sql = sqlScripts.get(dlBtn.dataset.sid);
+      if (sql == null) return;
+      downloadFile(sql, dlBtn.dataset.fname || 'script.sql', 'text/plain');
+      return;
+    }
+
+    const jump = e.target.closest('[data-jump]');
+    if (jump) {
+      e.preventDefault();
+      const target = container.querySelector('#section-' + jump.dataset.jump);
+      if (target) {
+        target.classList.add('open');
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+  });
+}
+
 async function renderSqlTab(c) {
   const item = state.currentItem;
   if (!item) return;
   showLoading(c);
 
+  // Reset script registry on every render
+  sqlScripts.clear();
+  sqlScriptCounter = 0;
+
   try {
-    const data = await api('get_create_table', { table: item.name });
-    const sql = data.sql || '';
-    const highlighted = highlightSql(sql);
-
-    c.innerHTML = `
-      <div class="section-card">
-        <h3>💾 קוד ${item.type === 'view' ? 'CREATE VIEW' : 'CREATE TABLE'}</h3>
-        <div class="code-block">
-          <div class="code-actions">
-            <button id="copySqlBtn">📋 העתק</button>
-            <button id="downloadSqlBtn">💾 הורד .sql</button>
-          </div>
-          <pre>${highlighted}</pre>
-        </div>
-      </div>`;
-
-    $('copySqlBtn').addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(sql);
-        const btn = $('copySqlBtn');
-        btn.textContent = '✅ הועתק';
-        btn.classList.add('copied');
-        setTimeout(() => { btn.textContent = '📋 העתק'; btn.classList.remove('copied'); }, 2000);
-      } catch (e) {
-        toast('❌ לא ניתן להעתיק: ' + e.message, 'error');
-      }
-    });
-
-    $('downloadSqlBtn').addEventListener('click', () => {
-      downloadFile(sql, item.name + '.sql', 'text/plain');
-    });
+    if (item.type === 'view') {
+      await renderSqlTabView(c, item);
+    } else {
+      await renderSqlTabTable(c, item);
+    }
   } catch (err) {
     c.innerHTML = `<div class="empty-state">❌ שגיאה: ${escapeHtml(err.message)}</div>`;
   }
+}
+
+// VIEW branch - mirrors the table layout with the operations relevant
+// to views: CREATE / CREATE OR REPLACE / ALTER VIEW / DROP VIEW.
+async function renderSqlTabView(c, item) {
+  const data = await api('get_sql_scripts', { table: item.name, type: 'view' });
+  data.createSql = formatSql(data.createSql || '');
+  const createSql = data.createSql || '';
+  const viewInfo = data.viewInfo || {};
+  const viewCols = data.columns || [];
+
+  // TOC
+  const tocLinks = [
+    { id: 'view-overview', label: 'ℹ️ סקירה' },
+    { id: 'view-create',   label: '📝 CREATE' },
+    { id: 'view-replace',  label: '🔄 REPLACE' },
+    { id: 'view-alter',    label: '✏️ ALTER' },
+    { id: 'view-drop',     label: '🗑️ DROP' },
+    { id: 'view-notes',    label: '📋 לוגיקה' }
+  ];
+
+  let html = '<div class="sql-toc">' +
+    tocLinks.map(l => `<a data-jump="${l.id}">${l.label}</a>`).join('') +
+    '</div>';
+
+  // Overview
+  const updatable = viewInfo.IS_UPDATABLE === 'YES';
+  html += buildSqlSection({
+    id: 'view-overview',
+    icon: 'ℹ️',
+    title: 'סקירה',
+    openByDefault: true,
+    info: `
+      <div style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:10px">
+        <span><strong>עמודות:</strong> <code>${viewCols.length}</code></span>
+        <span><strong>ניתן לעדכון:</strong> <code>${updatable ? 'כן' : 'לא'}</code></span>
+        <span><strong>CHECK OPTION:</strong> <code>${escapeHtml(viewInfo.CHECK_OPTION || 'NONE')}</code></span>
+        <span><strong>SECURITY:</strong> <code>${escapeHtml(viewInfo.SECURITY_TYPE || 'DEFINER')}</code></span>
+      </div>
+      <ul>
+        <li><strong>VIEW</strong> הוא שאילתה שמורה — אין לו נתונים משלו, הוא ממשיך להחזיר את התוצאה המעודכנת מהטבלאות שמתחתיו.</li>
+        ${updatable
+            ? `<li><strong>ניתן לעדכון</strong> — אפשר להריץ INSERT/UPDATE/DELETE דרך ה-VIEW (במגבלות MySQL: ללא <code>GROUP BY</code>, <code>DISTINCT</code>, <code>UNION</code>, <code>JOIN</code> מורכב, וכו').</li>`
+            : `<li><strong>קריאה בלבד</strong> — לא ניתן לעדכן דרכו, רק SELECT.</li>`}
+        <li><strong>SECURITY = DEFINER</strong> אומר שהשאילתה רצה בהרשאות של מי שיצר את ה-VIEW. <strong>INVOKER</strong> רץ בהרשאות המשתמש המבצע.</li>
+      </ul>
+    `,
+    scripts: []
+  });
+
+  // CREATE VIEW
+  html += buildSqlSection({
+    id: 'view-create',
+    icon: '📝',
+    title: 'CREATE VIEW',
+    openByDefault: true,
+    info: `
+      הסקריפט המלא ליצירת ה-VIEW (תוצאת <code>SHOW CREATE VIEW</code>).
+      <ul>
+        <li>הריצו על מסד ריק כדי לשחזר את ה-VIEW. הטבלאות שאליהן הוא מתייחס חייבות להיות קיימות מראש.</li>
+        <li>אם ה-VIEW כבר קיים — שורת <code>CREATE</code> תיכשל. השתמשו בסקציית <strong>CREATE OR REPLACE</strong> במקום.</li>
+        <li>שורת <code>DEFINER=...</code> תכיל את שם המשתמש שיצר את ה-VIEW. אם תריצו במסד אחר — שווה לערוך אותה לשם משתמש קיים, או להסיר את החלק.</li>
+      </ul>
+    `,
+    scripts: [{ sql: createSql, filename: item.name + '.sql' }]
+  });
+
+  // CREATE OR REPLACE
+  html += buildSqlSection({
+    id: 'view-replace',
+    icon: '🔄',
+    title: 'CREATE OR REPLACE VIEW',
+    severity: 'success',
+    info: `
+      הדרך הנפוצה לעדכן VIEW קיים. אם ה-VIEW לא קיים — נוצר; אם קיים — מוחלף.
+      <ul>
+        <li><strong>בטוח מ-DROP+CREATE</strong> — הזכויות (GRANT) על ה-VIEW נשמרות. ב-DROP+CREATE הן נמחקות.</li>
+        <li>אפשר לשנות את שאילתת ה-SELECT ואת רשימת העמודות ב-VIEW לפי הצורך.</li>
+        <li>אם משנים את <strong>סוג העמודות</strong> שה-VIEW מחזיר, בדקו שאף VIEW אחר לא בנוי על ה-VIEW הזה (אחרת ה-VIEW המתבסס עלול להישבר).</li>
+      </ul>
+    `,
+    scripts: [{ sql: genReplaceViewSql(createSql), filename: item.name + '_replace.sql' }]
+  });
+
+  // ALTER VIEW
+  html += buildSqlSection({
+    id: 'view-alter',
+    icon: '✏️',
+    title: 'ALTER VIEW',
+    severity: 'warning',
+    info: `
+      <code>ALTER VIEW</code> דומה ל-<code>CREATE OR REPLACE</code> אך <strong>חייב</strong> שה-VIEW יהיה קיים — אחרת ייכשל.
+      <ul>
+        <li>ההבדל המעשי: <code>CREATE OR REPLACE</code> פועל גם כשאין VIEW; <code>ALTER VIEW</code> מבטיח שאתם מעדכנים אובייקט קיים ולא יוצרים חדש בטעות.</li>
+        <li>הזכויות נשמרות גם כאן (כמו ב-CREATE OR REPLACE).</li>
+        <li>אפשר לשנות את ה-<code>ALGORITHM</code>, <code>SQL SECURITY</code>, ו-<code>WITH CHECK OPTION</code> דרך הפקודה הזו.</li>
+      </ul>
+    `,
+    scripts: [{ sql: genAlterViewSql(createSql), filename: item.name + '_alter.sql' }]
+  });
+
+  // DROP VIEW
+  html += buildSqlSection({
+    id: 'view-drop',
+    icon: '🗑️',
+    title: 'DROP VIEW',
+    severity: 'danger',
+    info: `
+      הסרת ה-VIEW. <strong>הפעולה לא הפיכה.</strong>
+      <ul>
+        <li><code>DROP VIEW IF EXISTS</code> בטוח לריצות חוזרות — לא יזרוק שגיאה אם ה-VIEW לא קיים.</li>
+        <li>הסרת VIEW <strong>לא משפיעה</strong> על הטבלאות שמתחתיו. הן נשארות שלמות.</li>
+        <li>כל GRANTs שניתנו על ה-VIEW יימחקו גם הם — אם תיצרו אותו מחדש תצטרכו לתת הרשאות שוב.</li>
+        <li>אם יש VIEWs אחרים שנבנו על ה-VIEW הזה — הם יישברו. תבדקו ב-<code>INFORMATION_SCHEMA.VIEWS</code> אילו VIEWs מתייחסים אליו.</li>
+      </ul>
+    `,
+    scripts: [{ sql: genDropViewSql(item.name) }]
+  });
+
+  // Cheat sheet
+  html += buildSqlSection({
+    id: 'view-notes',
+    icon: '📋',
+    title: 'לוגיקה לפני/אחרי',
+    info: `
+      <strong>לפני שינוי VIEW:</strong>
+      <ol>
+        <li>לזהות אילו VIEWs/דוחות/אפליקציות צורכים את ה-VIEW הזה.</li>
+        <li>לוודא שהשינוי לא מסיר עמודות שמשתמשים בהן (אם תסירו עמודה — שאילתות שמשתמשות בה ייכשלו).</li>
+        <li>אם ה-VIEW ניתן לעדכון ויש קוד שמבצע דרכו INSERT/UPDATE — לוודא שהשינוי לא הופך אותו ל-read-only.</li>
+      </ol>
+      <strong>אחרי שינוי:</strong>
+      <ol>
+        <li>להריץ <code>SELECT * FROM ${escapeHtml(qid(item.name))} LIMIT 1;</code> לוודא שאין שגיאת compile.</li>
+        <li>לבדוק <code>SHOW CREATE VIEW</code> ולוודא שמה ש-MySQL שמר תואם למה שביקשתם.</li>
+        <li>אם השתמשתם ב-<code>WITH CHECK OPTION</code> — לוודא שהוא עובד (לנסות INSERT שאמור להיכשל).</li>
+      </ol>
+      <strong>שגיאות נפוצות:</strong>
+      <ul>
+        <li><code>View's SELECT contains a subquery in the FROM clause</code> — חלק מ-VIEWs לא ניתנים לעדכון בגלל subqueries. תפצלו לוגיקה.</li>
+        <li><code>The user specified as a definer does not exist</code> — שורת DEFINER מצביעה למשתמש שלא קיים. ערכו ל-<code>CURRENT_USER</code> או ל-משתמש קיים.</li>
+        <li><code>Reference to a non-yet existing table/column</code> — ה-VIEW מתבסס על שם שלא קיים יותר. ערכו את השאילתה.</li>
+      </ul>
+    `,
+    scripts: []
+  });
+
+  c.innerHTML = html;
+  wireSqlTab(c);
+}
+
+// TABLE branch skeleton. Sections beyond CREATE will be filled in 4B-4E.
+async function renderSqlTabTable(c, item) {
+  const data = await api('get_sql_scripts', { table: item.name, type: 'table' });
+  data.createSql = formatSql(data.createSql || '');
+
+  // Cache for downstream sections (4B-4E)
+  state.tableCache[item.name] = state.tableCache[item.name] || {};
+  state.tableCache[item.name].sqlScripts = data;
+
+  const cols = data.columns || [];
+  const indexes = data.indexes || [];
+  const fks = data.foreignKeys || [];
+  const incomingFks = data.incomingFks || [];
+  const triggers = data.triggers || [];
+  const referencingViews = data.referencingViews || [];
+  const info = data.tableInfo || {};
+
+  // Group raw indexes (one row per column) into logical indexes
+  const indexGroups = {};
+  indexes.forEach(idx => {
+    const n = idx.Key_name;
+    if (!indexGroups[n]) {
+      indexGroups[n] = { name: n, unique: idx.Non_unique == 0, type: idx.Index_type, columns: [] };
+    }
+    indexGroups[n].columns.push(idx.Column_name);
+  });
+  const idxList = Object.values(indexGroups);
+
+  // ---------------------------------------------------------------
+  // 4F - Quick navigation (TOC) - rendered first so users can jump.
+  // Section ids referenced here must match the buildSqlSection ids below.
+  // ---------------------------------------------------------------
+  const tocLinks = [
+    { id: 'overview',     label: 'ℹ️ סקירה' },
+    { id: 'create',       label: '📝 CREATE' },
+    { id: 'alter-add',    label: '➕ ALTER הוספה' },
+    { id: 'alter-modify', label: '✏️ ALTER שינוי' },
+    { id: 'alter-remove', label: '➖ ALTER הסרה' },
+    { id: 'drop-table',   label: '🗑️ DROP' },
+    { id: 'truncate',     label: '🧹 TRUNCATE' },
+    { id: 'cheatsheet',   label: '📋 לוגיקה' }
+  ];
+
+  let html = '<div class="sql-toc">' +
+    tocLinks.map(l => `<a data-jump="${l.id}">${l.label}</a>`).join('') +
+    '</div>';
+
+  // ---------------------------------------------------------------
+  // 4B - Overview / Dependencies
+  // ---------------------------------------------------------------
+  const depPills = [];
+  if (incomingFks.length) {
+    depPills.push(`<span class="dep-pill danger">⚠️ ${incomingFks.length} מפתחות זרים נכנסים</span>`);
+  }
+  if (referencingViews.length) {
+    depPills.push(`<span class="dep-pill">👁️ ${referencingViews.length} VIEWs מתייחסים</span>`);
+  }
+  if (triggers.length) {
+    depPills.push(`<span class="dep-pill">⚡ ${triggers.length} טריגרים</span>`);
+  }
+  if (fks.length) {
+    depPills.push(`<span class="dep-pill success">🔗 ${fks.length} מפתחות זרים יוצאים</span>`);
+  }
+
+  const hasBlockingDeps = incomingFks.length > 0 || referencingViews.length > 0;
+  const overviewSeverity = hasBlockingDeps ? 'warning' : null;
+
+  const incomingList = incomingFks.length
+    ? `<ul>${incomingFks.map(fk =>
+        `<li><code>${escapeHtml(fk.SOURCE_TABLE)}.${escapeHtml(fk.SOURCE_COLUMN)}</code> → <code>${escapeHtml(item.name)}.${escapeHtml(fk.REFERENCED_COLUMN_NAME)}</code> <span class="muted">(${escapeHtml(fk.CONSTRAINT_NAME)})</span></li>`
+      ).join('')}</ul>`
+    : '';
+  const viewsList = referencingViews.length
+    ? `<ul>${referencingViews.map(v => `<li><code>${escapeHtml(v)}</code></li>`).join('')}</ul>`
+    : '';
+
+  const overviewInfo = `
+    <div style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:10px">
+      <span><strong>מנוע:</strong> <code>${escapeHtml(info.ENGINE || '-')}</code></span>
+      <span><strong>קידוד:</strong> <code>${escapeHtml(info.TABLE_COLLATION || '-')}</code></span>
+      ${info.AUTO_INCREMENT ? `<span><strong>AUTO_INCREMENT הבא:</strong> <code>${escapeHtml(info.AUTO_INCREMENT)}</code></span>` : ''}
+      <span><strong>עמודות:</strong> <code>${cols.length}</code></span>
+      <span><strong>אינדקסים:</strong> <code>${idxList.length}</code></span>
+    </div>
+    <div style="margin-bottom:8px">${depPills.join(' ') || '<span class="muted">אין תלויות חיצוניות</span>'}</div>
+    ${hasBlockingDeps ? `
+      <div style="margin-top:10px;padding-top:10px;border-top:1px dashed rgba(0,0,0,0.1)">
+        <strong>שים לב לפני DROP/ALTER גדול:</strong>
+        ${incomingFks.length ? `<div style="margin-top:6px">טבלאות אחרות מצביעות לטבלה הזו דרך FK — חובה להסיר אותם קודם:</div>${incomingList}` : ''}
+        ${referencingViews.length ? `<div style="margin-top:6px">VIEWs שמתייחסים לטבלה (יישברו אם הטבלה תושמט):</div>${viewsList}` : ''}
+      </div>
+    ` : ''}
+  `;
+
+  html += buildSqlSection({
+    id: 'overview',
+    icon: 'ℹ️',
+    title: 'סקירה ותלויות',
+    severity: overviewSeverity,
+    info: overviewInfo,
+    scripts: [],
+    openByDefault: true
+  });
+
+  // ---------------------------------------------------------------
+  // CREATE TABLE - now with explanatory note
+  // ---------------------------------------------------------------
+  html += buildSqlSection({
+    id: 'create',
+    icon: '📝',
+    title: 'CREATE TABLE',
+    openByDefault: true,
+    info: `
+      הסקריפט המלא ליצירת הטבלה כפי ש-MySQL רואה אותה (תוצאת <code>SHOW CREATE TABLE</code>).
+      <ul>
+        <li>אם תריצו אותו על מסד אחר תקבלו טבלה זהה כולל אינדקסים ו-FKs.</li>
+        <li>במקרה שטבלאות שאליהן ה-FKs מצביעים לא קיימות עדיין — יש להריץ אותן <strong>לפני</strong> סקריפט זה.</li>
+        <li>אפשר להוסיף <code>DROP TABLE IF EXISTS ${escapeHtml(qid(item.name))};</code> בראש הקובץ כדי להחליף טבלה קיימת.</li>
+      </ul>
+    `,
+    scripts: [{ sql: data.createSql || '', filename: item.name + '.sql' }]
+  });
+
+  // ---------------------------------------------------------------
+  // 4C - ALTER add (columns / indexes / FKs / triggers)
+  // ---------------------------------------------------------------
+  const addScripts = [];
+
+  // Generic ADD COLUMN template
+  addScripts.push({
+    label: '🧩 תבנית גנרית להוספת עמודה',
+    sql:
+      `ALTER TABLE ${qid(item.name)}\n` +
+      `  ADD COLUMN \`new_column\` VARCHAR(255) NULL DEFAULT NULL\n` +
+      `  AFTER ${qid(cols[0] ? cols[0].Field : 'id')};`
+  });
+
+  // ADD COLUMN per existing column (so the user has a working example for each)
+  cols.forEach((col, i) => {
+    const after = i > 0 ? cols[i - 1].Field : null;
+    addScripts.push({
+      label: `➕ הוספת עמודה זהה ל-${col.Field}`,
+      sql: genAddColumnSql(item.name, col, after),
+      compact: true
+    });
+  });
+
+  // ADD INDEX per existing index (skip PRIMARY - usually defined inline in CREATE)
+  idxList.filter(i => i.name !== 'PRIMARY').forEach(idx => {
+    addScripts.push({
+      label: `🔑 הוספת אינדקס ${idx.name}${idx.unique ? ' (UNIQUE)' : ''}`,
+      sql: genAddIndexSql(item.name, idx),
+      compact: true
+    });
+  });
+
+  // Generic ADD INDEX template if there are no examples
+  if (!idxList.filter(i => i.name !== 'PRIMARY').length) {
+    addScripts.push({
+      label: '🧩 תבנית גנרית להוספת אינדקס',
+      sql: `ALTER TABLE ${qid(item.name)} ADD INDEX \`idx_new\` (\`column1\`, \`column2\`);`
+    });
+  }
+
+  // ADD FOREIGN KEY per existing FK
+  fks.forEach(fk => {
+    addScripts.push({
+      label: `🔗 הוספת FK ${fk.CONSTRAINT_NAME}`,
+      sql: genAddFkSql(item.name, fk),
+      compact: true
+    });
+  });
+
+  // Generic ADD FK template if there are no examples
+  if (!fks.length) {
+    addScripts.push({
+      label: '🧩 תבנית גנרית להוספת FK',
+      sql:
+        `ALTER TABLE ${qid(item.name)}\n` +
+        `  ADD CONSTRAINT \`fk_${item.name}_other\`\n` +
+        `    FOREIGN KEY (\`other_id\`)\n` +
+        `    REFERENCES \`other_table\` (\`id\`)\n` +
+        `    ON UPDATE CASCADE\n` +
+        `    ON DELETE RESTRICT;`
+    });
+  }
+
+  // Trigger template
+  addScripts.push({
+    label: '⚡ תבנית להוספת טריגר (BEFORE INSERT)',
+    sql: genTriggerTemplate(item.name, 'BEFORE', 'INSERT')
+  });
+
+  html += buildSqlSection({
+    id: 'alter-add',
+    icon: '➕',
+    title: 'ALTER — הוספת רכיבים',
+    severity: 'success',
+    badge: addScripts.length,
+    info: `
+      הוספת עמודות, אינדקסים, מפתחות זרים וטריגרים. <strong>הערות חשובות:</strong>
+      <ul>
+        <li><strong>ADD COLUMN</strong> ל-NOT NULL ללא DEFAULT ייכשל אם יש שורות קיימות. תוסיפו <code>DEFAULT</code> או הוסיפו תחילה כ-NULL ואז עדכנו ערכים.</li>
+        <li><strong>ADD UNIQUE INDEX</strong> ייכשל אם יש כפילויות בעמודה. נקו את הנתונים קודם.</li>
+        <li><strong>ADD FOREIGN KEY</strong> ייכשל אם יש שורות עם ערך שלא קיים בטבלת היעד. ודאו שהנתונים תואמים.</li>
+        <li><strong>טריגרים</strong> דורשים <code>DELIMITER //</code> כשמריצים מ-CLI; ב-phpMyAdmin זה אופציונלי.</li>
+      </ul>
+    `,
+    scripts: addScripts
+  });
+
+  // ---------------------------------------------------------------
+  // 4D - ALTER modify (column types, rename, table rename)
+  // ---------------------------------------------------------------
+  const fkColSet = new Set(fks.map(f => f.COLUMN_NAME));
+  const incomingColSet = new Set(incomingFks.map(f => f.REFERENCED_COLUMN_NAME));
+
+  const modifyScripts = [];
+
+  cols.forEach(col => {
+    const flags = [];
+    if (fkColSet.has(col.Field)) flags.push('FK יוצא');
+    if (incomingColSet.has(col.Field)) flags.push('יעד של FK נכנס');
+    const flagsStr = flags.length ? ` ⚠️ (${flags.join(', ')})` : '';
+    modifyScripts.push({
+      label: `✏️ MODIFY ${col.Field}${flagsStr}`,
+      sql: genModifyColumnSql(item.name, col),
+      compact: true
+    });
+  });
+
+  // CHANGE/rename column template (one example per column)
+  cols.forEach(col => {
+    const renamed = Object.assign({}, col, { Field: col.Field + '_renamed' });
+    modifyScripts.push({
+      label: `🏷️ שינוי שם ${col.Field} → ${renamed.Field}`,
+      sql: genRenameColumnSql(item.name, col.Field, renamed),
+      compact: true
+    });
+  });
+
+  // RENAME TABLE template
+  modifyScripts.push({
+    label: `📛 שינוי שם הטבלה כולה`,
+    sql: genRenameTableSql(item.name, item.name + '_new')
+  });
+
+  html += buildSqlSection({
+    id: 'alter-modify',
+    icon: '✏️',
+    title: 'ALTER — שינוי רכיבים',
+    severity: 'warning',
+    badge: modifyScripts.length,
+    info: `
+      שינוי סוג/אורך/NULL/DEFAULT של עמודה, שינוי שם עמודה, שינוי שם טבלה.
+      <ul>
+        <li><strong>MODIFY COLUMN</strong> משנה את כל המאפיינים. אם תשמיטו <code>NOT NULL</code> או <code>DEFAULT</code> הם ייעלמו — תמיד הגדירו את כל הסט הרצוי.</li>
+        <li>שינוי סוג עם נתונים קיימים (למשל <code>VARCHAR(255)</code> ל-<code>VARCHAR(50)</code>) יחתוך נתונים בלי אזהרה אם <code>sql_mode</code> לא מחמיר.</li>
+        <li><strong>שינוי עמודה עם FK</strong>: צריך שהסוג בעמודה ובעמודת היעד יישאר תואם. אחרת תקבלו <code>foreign key constraint fails</code>.</li>
+        <li><strong>RENAME TABLE</strong> מעביר את כל ה-FKs, ה-views (כל עוד הם מתייחסים לטבלה בשם המלא) וה-triggers — אך טריגרים שמתייחסים לשם הישן בקוד שלהם <em>לא</em> יתעדכנו.</li>
+        <li>אם אתם רוצים לשנות רק שם עמודה ב-MySQL 8+, יש <code>ALTER TABLE ... RENAME COLUMN old TO new</code> כתחליף קצר ל-<code>CHANGE COLUMN</code>.</li>
+      </ul>
+    `,
+    scripts: modifyScripts
+  });
+
+  // ---------------------------------------------------------------
+  // 4D - ALTER remove (drop columns / indexes / FKs / triggers)
+  // ---------------------------------------------------------------
+  const removeScripts = [];
+
+  cols.forEach(col => {
+    const flags = [];
+    if (fkColSet.has(col.Field)) flags.push('FK יוצא');
+    if (incomingColSet.has(col.Field)) flags.push('יעד של FK נכנס');
+    if (col.Key === 'PRI') flags.push('PRIMARY KEY');
+    const flagsStr = flags.length ? ` ⚠️ (${flags.join(', ')})` : '';
+    removeScripts.push({
+      label: `🗑️ DROP COLUMN ${col.Field}${flagsStr}`,
+      sql: genDropColumnSql(item.name, col.Field),
+      compact: true
+    });
+  });
+
+  idxList.filter(i => i.name !== 'PRIMARY').forEach(idx => {
+    removeScripts.push({
+      label: `🗑️ DROP INDEX ${idx.name}`,
+      sql: genDropIndexSql(item.name, idx.name),
+      compact: true
+    });
+  });
+
+  fks.forEach(fk => {
+    removeScripts.push({
+      label: `🗑️ DROP FOREIGN KEY ${fk.CONSTRAINT_NAME}`,
+      sql: genDropFkSql(item.name, fk.CONSTRAINT_NAME),
+      compact: true
+    });
+  });
+
+  triggers.forEach(t => {
+    removeScripts.push({
+      label: `🗑️ DROP TRIGGER ${t.TRIGGER_NAME}`,
+      sql: genDropTriggerSql(t.TRIGGER_NAME),
+      compact: true
+    });
+  });
+
+  html += buildSqlSection({
+    id: 'alter-remove',
+    icon: '➖',
+    title: 'ALTER — הסרת רכיבים',
+    severity: 'danger',
+    badge: removeScripts.length,
+    info: `
+      הסרת עמודות, אינדקסים, מפתחות זרים וטריגרים. <strong>אזהרות:</strong>
+      <ul>
+        <li><strong>DROP COLUMN</strong> על עמודה עם FK ייכשל. צריך קודם להריץ <code>DROP FOREIGN KEY</code> בטבלה הזו, ואם מישהו מצביע אליה — גם בטבלאות האחרות.</li>
+        <li><strong>DROP COLUMN</strong> על PRIMARY KEY מסיר רק את העמודה אבל לא את ה-PK עצמו. השתמשו ב-<code>DROP PRIMARY KEY</code> בנפרד אם צריך.</li>
+        <li><strong>DROP INDEX</strong> על אינדקס שמשמש כ-FK לא יעבוד עד שה-FK יוסר.</li>
+        <li><strong>DROP FOREIGN KEY</strong> בטוח — הוא לא מוחק נתונים, רק את האילוץ. אבל אחרי שמוחקים אין יותר אכיפה אוטומטית.</li>
+        <li>במקרה של שגיאה <code>errno 150</code> ברוב המקרים זה אומר שיש FK שמתייחס לעמודה — תפתחו את סקציית ⚠️ FK הנכנסים בלשונית "קשרים".</li>
+      </ul>
+    `,
+    scripts: removeScripts
+  });
+
+  // ---------------------------------------------------------------
+  // 4E - DROP TABLE flow (multi-step, dependency-aware)
+  // ---------------------------------------------------------------
+  const dropFlow = genDropTableFlow(item.name, incomingFks, referencingViews, triggers);
+  const dropScripts = dropFlow.map(step => ({
+    label: step.label,
+    sql: step.sql,
+    compact: step.kind !== 'drop'
+  }));
+
+  // Bonus: a single combined script users can copy in one click
+  if (dropFlow.length > 1) {
+    const combined = dropFlow.map(s => `-- ${s.label}\n${s.sql}`).join('\n\n');
+    dropScripts.unshift({
+      label: '📦 כל ה-flow בסקריפט אחד',
+      sql: combined
+    });
+  }
+
+  html += buildSqlSection({
+    id: 'drop-table',
+    icon: '🗑️',
+    title: 'DROP TABLE — הסרת הטבלה',
+    severity: 'danger',
+    badge: dropFlow.length + (dropFlow.length > 1 ? 1 : 0),
+    info: `
+      הסרת הטבלה כולה. <strong>הפעולה לא הפיכה — תוודאו שיש גיבוי.</strong>
+      ${dropFlow.length > 1
+        ? `<div style="margin-top:8px"><strong>סדר ההפעלה:</strong> חובה להריץ את הסקריפטים לפי הסדר כדי לעקוף את אכיפת ה-FK.</div>`
+        : `<div style="margin-top:8px">לטבלה אין FKs נכנסים, VIEWs מתייחסים או טריגרים, אז <code>DROP TABLE</code> ירוץ ישירות.</div>`}
+      <ul style="margin-top:8px">
+        ${incomingFks.length ? `<li>יש <strong>${incomingFks.length}</strong> מפתחות זרים נכנסים שצריך להסיר ראשונים, אחרת תקבלו <code>cannot delete or update a parent row</code>.</li>` : ''}
+        ${referencingViews.length ? `<li>יש <strong>${referencingViews.length}</strong> VIEWs שמתייחסים — אם לא תסירו אותם, הם יישברו (יחזירו שגיאה בכל שאילתה אחרי ה-DROP).</li>` : ''}
+        ${triggers.length ? `<li>טריגרים יוסרו אוטומטית עם הטבלה אבל מומלץ להסיר אותם מפורשות — קל יותר לשחזר אם משהו השתבש.</li>` : ''}
+        <li>אם רק רוצים <em>לרוקן</em> נתונים בלי להסיר את הטבלה — תשתמשו בסקציית <strong>TRUNCATE</strong> למטה.</li>
+        <li>שווה להריץ <code>BEGIN;</code> לפני, ואם משהו לא צפוי קורה — <code>ROLLBACK;</code>. <em>שימו לב:</em> ב-MySQL פעולות DDL כמו DROP TABLE לא ניתנות ל-rollback אצל InnoDB גם בתוך טרנזקציה.</li>
+      </ul>
+    `,
+    scripts: dropScripts
+  });
+
+  // ---------------------------------------------------------------
+  // 4E - TRUNCATE
+  // ---------------------------------------------------------------
+  html += buildSqlSection({
+    id: 'truncate',
+    icon: '🧹',
+    title: 'TRUNCATE — ריקון התוכן',
+    severity: 'warning',
+    info: `
+      <code>TRUNCATE</code> מוחק את כל השורות במהירות (מהיר בהרבה מ-<code>DELETE</code>) ומאפס את ה-AUTO_INCREMENT.
+      <ul>
+        <li><strong>לא מפעיל טריגרים</strong> מסוג DELETE — אם הלוגיקה שלכם תלויה בהם, השתמשו ב-<code>DELETE FROM</code> במקום.</li>
+        <li>${incomingFks.length
+            ? `<strong>ייכשל</strong> כי יש ${incomingFks.length} FKs נכנסים. צריך להסיר אותם ראשונים, או למחוק קודם את הנתונים בטבלאות התלויות.`
+            : `אין FKs נכנסים — TRUNCATE יעבוד ישירות.`}</li>
+        <li>במקרה של AUTO_INCREMENT — אחרי TRUNCATE הספירה מתחילה מ-1 שוב. אם זה לא רצוי, השתמשו ב-<code>DELETE FROM ${escapeHtml(qid(item.name))};</code> שלא מאפס.</li>
+      </ul>
+    `,
+    scripts: [
+      { label: '🧹 ריקון התבלה', sql: genTruncateSql(item.name) },
+      { label: '🐢 חלופה איטית עם DELETE (שומרת AUTO_INCREMENT, מפעילה טריגרים)', sql: `DELETE FROM ${qid(item.name)};`, compact: true }
+    ]
+  });
+
+  // ---------------------------------------------------------------
+  // 4E - General cheat sheet (pre/post operation logic)
+  // ---------------------------------------------------------------
+  html += buildSqlSection({
+    id: 'cheatsheet',
+    icon: '📋',
+    title: 'לוגיקה לפני/אחרי — תזכורת מהירה',
+    info: `
+      <strong>לפני כל שינוי מבני (DDL):</strong>
+      <ol>
+        <li><strong>גיבוי</strong> — <code>mysqldump</code> או snapshot של המסד. בייחוד לפני DROP/RENAME/MODIFY.</li>
+        <li><strong>בדיקה בסביבת פיתוח</strong> — להריץ את הסקריפט על העתק, לוודא שלא נשבר משהו.</li>
+        <li><strong>נעילת אפליקציה</strong> — להעלות maintenance mode אם הטבלה פעילה. שינויים על InnoDB לרוב online, אבל לא תמיד.</li>
+        <li><strong>לזהות תלויות</strong> — לפתוח את לשונית "קשרים" ולסקור FKs נכנסים, VIEWs מתייחסים, טריגרים.</li>
+      </ol>
+      <strong>אחרי השינוי:</strong>
+      <ol>
+        <li><strong>בדיקת מבנה</strong> — להריץ <code>SHOW CREATE TABLE</code> ולוודא שהמצב התקבל.</li>
+        <li><strong>בדיקת אכיפה</strong> — לנסות INSERT/UPDATE שאמור להיכשל מול האילוצים החדשים, לוודא שהוא נכשל.</li>
+        <li><strong>VIEWs</strong> שמתייחסים לטבלה צריכים להיבדק — לפעמים שינוי טיפוס שובר אותם בלי שגיאת compile עד הריצה.</li>
+        <li><strong>טריגרים</strong> שמתייחסים לעמודה ששונתה — להריץ INSERT/UPDATE קצר ולוודא שהם עדיין עובדים.</li>
+        <li><strong>אינדקסים</strong> חדשים — להריץ <code>ANALYZE TABLE</code> כדי שה-optimizer ידע עליהם.</li>
+        <li><strong>אפליקציה</strong> — לעדכן ORM/migrations/queries שמסתמכים על שמות עמודות שהשתנו.</li>
+      </ol>
+      <strong>שגיאות נפוצות וטיפול:</strong>
+      <ul>
+        <li><code>errno 150</code> — בעיית FK; ברוב המקרים שם או טיפוס לא תואמים, או יש FK נכנס שמונע DROP.</li>
+        <li><code>cannot delete or update a parent row</code> — יש FK נכנס עם <code>ON DELETE RESTRICT</code>; להסיר את ה-FK או לשנות אותו ל-<code>CASCADE</code>/<code>SET NULL</code>.</li>
+        <li><code>duplicate entry</code> ב-ADD UNIQUE — לנקות נתונים כפולים לפני.</li>
+        <li><code>data too long for column</code> — הסוג הוקטן והנתונים לא נכנסים; להגדיל את הסוג או לקצר נתונים.</li>
+      </ul>
+    `,
+    scripts: []
+  });
+
+  c.innerHTML = html;
+  wireSqlTab(c);
+}
+
+// Pretty-print a CREATE TABLE / CREATE VIEW that arrived as one long line
+// from MySQL. Already-multiline input is returned untouched. The output is
+// the canonical form we store in sqlScripts so copy/download/highlight all
+// share it.
+function formatSql(sql) {
+  if (!sql) return sql;
+  if (sql.includes('\n')) return sql;
+
+  // Protect quoted identifiers and string literals so the keyword regexes
+  // and the comma-walker don't misinterpret content inside them.
+  const tokens = [];
+  let s = sql.replace(/`[^`]*`|'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g, (m) => {
+    tokens.push(m);
+    return `\x00${tokens.length - 1}\x00`;
+  });
+
+  const isView  = /^\s*CREATE\s+(OR\s+REPLACE\s+)?(ALGORITHM\s*=\s*\w+\s+)?(DEFINER\s*=\s*\S+\s+)?(SQL\s+SECURITY\s+\w+\s+)?VIEW\b/i.test(s);
+  const isTable = /^\s*CREATE\s+TABLE\b/i.test(s);
+  const isAlter = /^\s*ALTER\s+(ALGORITHM\s*=\s*\w+\s+)?(DEFINER\s*=\s*\S+\s+)?(SQL\s+SECURITY\s+\w+\s+)?VIEW\b/i.test(s);
+
+  if (isView || isAlter) {
+    s = formatViewSql(s);
+  } else if (isTable) {
+    s = formatTableSql(s);
+  }
+
+  // Restore protected tokens
+  s = s.replace(/\x00(\d+)\x00/g, (_, i) => tokens[+i]);
+  return s;
+}
+
+function formatViewSql(s) {
+  // Major clause breaks
+  s = s.replace(/\s+AS\s+select\s+/i, ' AS\nSELECT\n  ');
+  s = s.replace(/\s+from\s+/i, '\nFROM ');
+  s = s.replace(/\s+left\s+join\s+/gi,  '\n  LEFT JOIN ');
+  s = s.replace(/\s+right\s+join\s+/gi, '\n  RIGHT JOIN ');
+  s = s.replace(/\s+inner\s+join\s+/gi, '\n  INNER JOIN ');
+  s = s.replace(/\s+cross\s+join\s+/gi, '\n  CROSS JOIN ');
+  s = s.replace(/\s+on\s*\(/gi, '\n    ON (');
+  s = s.replace(/\s+where\s+/gi, '\nWHERE ');
+  s = s.replace(/\s+group\s+by\s+/gi, '\nGROUP BY ');
+  s = s.replace(/\s+having\s+/gi, '\nHAVING ');
+  s = s.replace(/\s+order\s+by\s+/gi, '\nORDER BY ');
+  s = s.replace(/\s+limit\s+/gi, '\nLIMIT ');
+  // Boolean connectors only when at start of a join/where condition - we
+  // keep this gentle to avoid mangling AND inside expressions.
+  s = s.replace(/\s+and\s+/gi, '\n  AND ');
+  s = s.replace(/\s+or\s+/gi, '\n  OR ');
+
+  // Break the SELECT list commas (only top-level ones, before FROM)
+  s = breakTopLevelCommasUntil(s, '\nFROM ', '  ');
+
+  return s;
+}
+
+function formatTableSql(s) {
+  // Find the first matching paren pair and break inside it
+  let firstOpen = -1, depth = 0;
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '(') {
+      if (firstOpen === -1) firstOpen = i;
+      depth++;
+    } else if (s[i] === ')') {
+      depth--;
+      if (depth === 0 && firstOpen !== -1) {
+        const before = s.slice(0, firstOpen);
+        const inner  = s.slice(firstOpen + 1, i);
+        const after  = s.slice(i + 1);
+        const formatted = breakTopLevelCommas(inner, '  ').trim();
+        s = before.replace(/\s+$/, '') + ' (\n  ' + formatted + '\n)' + after;
+        break;
+      }
+    }
+  }
+
+  // Newline before table options (ENGINE=, DEFAULT, etc.)
+  s = s.replace(/\)\s+ENGINE/i, ')\n  ENGINE');
+  s = s.replace(/\s+DEFAULT\s+CHARSET=/i, '\n  DEFAULT CHARSET=');
+  s = s.replace(/\s+COLLATE=/i, '\n  COLLATE=');
+  s = s.replace(/\s+ROW_FORMAT=/i, '\n  ROW_FORMAT=');
+  s = s.replace(/\s+COMMENT=/i, '\n  COMMENT=');
+
+  return s;
+}
+
+// Break top-level commas (depth 0 only) onto new lines with the given indent.
+function breakTopLevelCommas(s, indent) {
+  let out = '', depth = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '(') depth++;
+    else if (c === ')') depth--;
+    if (c === ',' && depth === 0) {
+      out += ',\n' + indent;
+      while (i + 1 < s.length && /\s/.test(s[i + 1])) i++;
+    } else {
+      out += c;
+    }
+  }
+  return out;
+}
+
+// Same as above but only for the prefix of `s` before the first occurrence
+// of `terminator`. Used so we break commas in the SELECT list but leave the
+// FROM/ON commas untouched (they're inside join expressions).
+function breakTopLevelCommasUntil(s, terminator, indent) {
+  const idx = s.indexOf(terminator);
+  if (idx < 0) return breakTopLevelCommas(s, indent);
+  return breakTopLevelCommas(s.slice(0, idx), indent) + s.slice(idx);
 }
 
 function highlightSql(sql) {

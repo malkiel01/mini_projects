@@ -174,6 +174,121 @@ try {
         }
 
         // ============================================================
+        // GET SQL SCRIPTS - everything needed to render the SQL tab:
+        // CREATE statement, structural pieces, dependencies (incoming
+        // FKs, referencing views, triggers) for ALTER/DROP guidance
+        // ============================================================
+        case 'get_sql_scripts': {
+            $name = $input['table'] ?? '';
+            $type = $input['type'] ?? 'table';
+            $qt = quoteId($name);
+
+            $stmt = $pdo->query("SHOW CREATE TABLE {$qt}");
+            $row = $stmt->fetch(PDO::FETCH_NUM);
+            $createSql = $row[1] ?? ($row[0] ?? '');
+
+            if ($type === 'view') {
+                $stmt = $pdo->prepare(
+                    "SELECT VIEW_DEFINITION, IS_UPDATABLE, CHECK_OPTION, SECURITY_TYPE, DEFINER
+                     FROM INFORMATION_SCHEMA.VIEWS
+                     WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?"
+                );
+                $stmt->execute([$database, $name]);
+                $viewInfo = $stmt->fetch();
+
+                $stmt = $pdo->query("SHOW COLUMNS FROM {$qt}");
+                $viewColumns = $stmt->fetchAll();
+
+                echo json_encode([
+                    'success' => true,
+                    'type' => 'view',
+                    'createSql' => $createSql,
+                    'viewInfo' => $viewInfo,
+                    'columns' => $viewColumns
+                ]);
+                break;
+            }
+
+            $stmt = $pdo->query("SHOW FULL COLUMNS FROM {$qt}");
+            $columns = $stmt->fetchAll();
+
+            $stmt = $pdo->query("SHOW INDEX FROM {$qt}");
+            $indexes = $stmt->fetchAll();
+
+            $stmt = $pdo->prepare("
+                SELECT kcu.CONSTRAINT_NAME, kcu.COLUMN_NAME,
+                       kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME,
+                       rc.UPDATE_RULE, rc.DELETE_RULE
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
+                    ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
+                    AND kcu.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA
+                WHERE kcu.TABLE_SCHEMA = ? AND kcu.TABLE_NAME = ?
+                  AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+            ");
+            $stmt->execute([$database, $name]);
+            $foreignKeys = $stmt->fetchAll();
+
+            $stmt = $pdo->prepare("
+                SELECT kcu.CONSTRAINT_NAME, kcu.TABLE_NAME AS SOURCE_TABLE,
+                       kcu.COLUMN_NAME AS SOURCE_COLUMN, kcu.REFERENCED_COLUMN_NAME,
+                       rc.UPDATE_RULE, rc.DELETE_RULE
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
+                    ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
+                    AND kcu.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA
+                WHERE kcu.TABLE_SCHEMA = ? AND kcu.REFERENCED_TABLE_NAME = ?
+            ");
+            $stmt->execute([$database, $name]);
+            $incomingFks = $stmt->fetchAll();
+
+            $stmt = $pdo->prepare(
+                "SELECT TRIGGER_NAME, ACTION_TIMING, EVENT_MANIPULATION, ACTION_STATEMENT,
+                        ACTION_ORIENTATION
+                 FROM INFORMATION_SCHEMA.TRIGGERS
+                 WHERE EVENT_OBJECT_SCHEMA = ? AND EVENT_OBJECT_TABLE = ?"
+            );
+            $stmt->execute([$database, $name]);
+            $triggers = $stmt->fetchAll();
+
+            $stmt = $pdo->prepare(
+                "SELECT TABLE_NAME, VIEW_DEFINITION FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_SCHEMA = ?"
+            );
+            $stmt->execute([$database]);
+            $allViews = $stmt->fetchAll();
+            $referencingViews = [];
+            foreach ($allViews as $view) {
+                $def = $view['VIEW_DEFINITION'] ?? '';
+                if (stripos($def, "`{$name}`") !== false ||
+                    preg_match('/\b' . preg_quote($name, '/') . '\b/i', $def)) {
+                    $referencingViews[] = $view['TABLE_NAME'];
+                }
+            }
+
+            $stmt = $pdo->prepare(
+                "SELECT TABLE_COMMENT, ENGINE, TABLE_COLLATION, AUTO_INCREMENT
+                 FROM INFORMATION_SCHEMA.TABLES
+                 WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?"
+            );
+            $stmt->execute([$database, $name]);
+            $tableInfo = $stmt->fetch();
+
+            echo json_encode([
+                'success' => true,
+                'type' => 'table',
+                'createSql' => $createSql,
+                'columns' => $columns,
+                'indexes' => $indexes,
+                'foreignKeys' => $foreignKeys,
+                'incomingFks' => $incomingFks,
+                'triggers' => $triggers,
+                'referencingViews' => $referencingViews,
+                'tableInfo' => $tableInfo
+            ]);
+            break;
+        }
+
+        // ============================================================
         // GET RELATIONSHIPS - FKs for a specific table (in/out)
         // ============================================================
         case 'get_relationships': {
