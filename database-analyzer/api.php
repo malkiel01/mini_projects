@@ -746,6 +746,239 @@ try {
             break;
         }
 
+        // ============================================================
+        // GET TRUNCATE PLAN - returns tables in safe truncation order
+        //   (children first, parents last) + per-table row counts
+        // ============================================================
+        case 'get_truncate_plan': {
+            $stmt = $pdo->query("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'");
+            $tables = [];
+            while ($row = $stmt->fetch(PDO::FETCH_NUM)) $tables[] = $row[0];
+
+            $stmt = $pdo->prepare("
+                SELECT TABLE_NAME, REFERENCED_TABLE_NAME
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+                WHERE TABLE_SCHEMA = ? AND REFERENCED_TABLE_NAME IS NOT NULL
+            ");
+            $stmt->execute([$database]);
+            $deps = $stmt->fetchAll();
+
+            // Build dependency graph: parents[child] = [parents...]
+            $parents = [];
+            foreach ($tables as $t) $parents[$t] = [];
+            foreach ($deps as $d) {
+                if (in_array($d['TABLE_NAME'], $tables, true) && in_array($d['REFERENCED_TABLE_NAME'], $tables, true)) {
+                    if ($d['TABLE_NAME'] !== $d['REFERENCED_TABLE_NAME']) {
+                        $parents[$d['TABLE_NAME']][$d['REFERENCED_TABLE_NAME']] = true;
+                    }
+                }
+            }
+
+            // Topological sort (Kahn's): emit parents first; we will reverse for truncate
+            $remaining = $parents;
+            $order = [];
+            while (!empty($remaining)) {
+                $emitted = [];
+                foreach ($remaining as $t => $ps) {
+                    $hasUnresolved = false;
+                    foreach ($ps as $p => $_) {
+                        if (isset($remaining[$p])) { $hasUnresolved = true; break; }
+                    }
+                    if (!$hasUnresolved) $emitted[] = $t;
+                }
+                if (empty($emitted)) {
+                    // cycle - emit all remaining as-is (FK_CHECKS=0 will save us)
+                    foreach ($remaining as $t => $_) $order[] = $t;
+                    break;
+                }
+                foreach ($emitted as $t) { $order[] = $t; unset($remaining[$t]); }
+            }
+
+            // Reverse: children first, parents last (truncate-safe)
+            $truncateOrder = array_reverse($order);
+
+            // Row counts
+            $rowCounts = [];
+            $totalRows = 0;
+            foreach ($truncateOrder as $t) {
+                try {
+                    $s = $pdo->query("SELECT COUNT(*) AS c FROM " . quoteId($t));
+                    $c = intval($s->fetch()['c']);
+                    $rowCounts[$t] = $c;
+                    $totalRows += $c;
+                } catch (Exception $e) {
+                    $rowCounts[$t] = -1;
+                }
+            }
+
+            echo json_encode([
+                'success' => true,
+                'truncateOrder' => $truncateOrder,
+                'rowCounts' => $rowCounts,
+                'totalRows' => $totalRows,
+                'tableCount' => count($truncateOrder)
+            ]);
+            break;
+        }
+
+        // ============================================================
+        // TRUNCATE DATABASE - empties all tables (data only, schema stays)
+        //   Requires confirmation token: $input['confirm'] === database name
+        // ============================================================
+        case 'truncate_database': {
+            $confirm = $input['confirm'] ?? '';
+            if ($confirm !== $database) {
+                echo json_encode(['success' => false, 'error' => 'אישור שגוי - יש להזין את שם מסד הנתונים בדיוק']);
+                break;
+            }
+
+            $stmt = $pdo->query("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'");
+            $tables = [];
+            while ($row = $stmt->fetch(PDO::FETCH_NUM)) $tables[] = $row[0];
+
+            $pdo->exec("SET FOREIGN_KEY_CHECKS=0");
+            $truncated = [];
+            $errors = [];
+            try {
+                foreach ($tables as $t) {
+                    try {
+                        $pdo->exec("TRUNCATE TABLE " . quoteId($t));
+                        $truncated[] = $t;
+                    } catch (Exception $e) {
+                        $errors[$t] = $e->getMessage();
+                    }
+                }
+            } finally {
+                $pdo->exec("SET FOREIGN_KEY_CHECKS=1");
+            }
+
+            echo json_encode([
+                'success' => empty($errors),
+                'truncated' => $truncated,
+                'errors' => $errors,
+                'tableCount' => count($truncated)
+            ]);
+            break;
+        }
+
+        // ============================================================
+        // CLONE DATABASE - copies all data from current DB to target DB
+        //   Both DBs must exist on the same MySQL server with same creds
+        // ============================================================
+        case 'clone_database': {
+            $target = trim($input['target'] ?? '');
+            if ($target === '') {
+                echo json_encode(['success' => false, 'error' => 'לא הוזן שם מסד נתונים יעד']);
+                break;
+            }
+            if ($target === $database) {
+                echo json_encode(['success' => false, 'error' => 'מסד היעד זהה למסד המקור']);
+                break;
+            }
+
+            $qTarget = quoteId($target);
+            $qSource = quoteId($database);
+
+            // Verify target DB exists and is accessible
+            try {
+                $check = $pdo->prepare("SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ?");
+                $check->execute([$target]);
+                if (!$check->fetch()) {
+                    echo json_encode(['success' => false, 'error' => "מסד היעד '{$target}' לא קיים"]);
+                    break;
+                }
+            } catch (Exception $e) {
+                echo json_encode(['success' => false, 'error' => 'אין הרשאה לבדוק את מסד היעד: ' . $e->getMessage()]);
+                break;
+            }
+
+            // List source tables
+            $stmt = $pdo->query("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'");
+            $sourceTables = [];
+            while ($row = $stmt->fetch(PDO::FETCH_NUM)) $sourceTables[] = $row[0];
+
+            // Topological order (parents first - so FKs are satisfiable as we copy)
+            $stmt = $pdo->prepare("
+                SELECT TABLE_NAME, REFERENCED_TABLE_NAME
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+                WHERE TABLE_SCHEMA = ? AND REFERENCED_TABLE_NAME IS NOT NULL
+            ");
+            $stmt->execute([$database]);
+            $deps = $stmt->fetchAll();
+
+            $parents = [];
+            foreach ($sourceTables as $t) $parents[$t] = [];
+            foreach ($deps as $d) {
+                if (in_array($d['TABLE_NAME'], $sourceTables, true) && in_array($d['REFERENCED_TABLE_NAME'], $sourceTables, true)) {
+                    if ($d['TABLE_NAME'] !== $d['REFERENCED_TABLE_NAME']) {
+                        $parents[$d['TABLE_NAME']][$d['REFERENCED_TABLE_NAME']] = true;
+                    }
+                }
+            }
+            $remaining = $parents;
+            $order = [];
+            while (!empty($remaining)) {
+                $emitted = [];
+                foreach ($remaining as $t => $ps) {
+                    $hasUnresolved = false;
+                    foreach ($ps as $p => $_) {
+                        if (isset($remaining[$p])) { $hasUnresolved = true; break; }
+                    }
+                    if (!$hasUnresolved) $emitted[] = $t;
+                }
+                if (empty($emitted)) {
+                    foreach ($remaining as $t => $_) $order[] = $t;
+                    break;
+                }
+                foreach ($emitted as $t) { $order[] = $t; unset($remaining[$t]); }
+            }
+
+            // Verify target tables exist
+            $missing = [];
+            foreach ($order as $t) {
+                try {
+                    $pdo->query("SELECT 1 FROM {$qTarget}." . quoteId($t) . " LIMIT 0");
+                } catch (Exception $e) {
+                    $missing[] = $t;
+                }
+            }
+            if (!empty($missing)) {
+                echo json_encode([
+                    'success' => false,
+                    'error' => 'במסד היעד חסרות הטבלאות הבאות: ' . implode(', ', $missing),
+                    'missing' => $missing
+                ]);
+                break;
+            }
+
+            $pdo->exec("SET FOREIGN_KEY_CHECKS=0");
+            $copied = [];
+            $errors = [];
+            try {
+                foreach ($order as $t) {
+                    $qt = quoteId($t);
+                    try {
+                        $pdo->exec("INSERT INTO {$qTarget}.{$qt} SELECT * FROM {$qSource}.{$qt}");
+                        $cs = $pdo->query("SELECT COUNT(*) AS c FROM {$qTarget}.{$qt}");
+                        $copied[$t] = intval($cs->fetch()['c']);
+                    } catch (Exception $e) {
+                        $errors[$t] = $e->getMessage();
+                    }
+                }
+            } finally {
+                $pdo->exec("SET FOREIGN_KEY_CHECKS=1");
+            }
+
+            echo json_encode([
+                'success' => empty($errors),
+                'copied' => $copied,
+                'errors' => $errors,
+                'target' => $target,
+                'source' => $database
+            ]);
+            break;
+        }
+
         default:
             http_response_code(400);
             echo json_encode(['success' => false, 'error' => 'פעולה לא מוכרת: ' . $action]);

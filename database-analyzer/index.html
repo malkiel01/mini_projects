@@ -643,6 +643,91 @@
   .back-to-dash:hover { background: #dbeafe; }
 
   /* =========================================================
+     DANGER ZONE - destructive operations
+     ========================================================= */
+  .danger-zone {
+    background: linear-gradient(135deg, #fff5f5, #fff0f0);
+    border: 2px solid #fecaca;
+  }
+  .danger-zone h3 { color: #b91c1c; }
+  .ops-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+  }
+  .op-btn {
+    background: white; border: 2px solid #fecaca;
+    border-radius: 10px; padding: 18px 16px;
+    cursor: pointer; text-align: right;
+    transition: all 0.15s; font-family: inherit;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .op-btn:hover {
+    border-color: #dc2626; transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(220,38,38,0.15);
+  }
+  .op-btn .op-title {
+    font-size: 1rem; font-weight: 600; color: #b91c1c;
+  }
+  .op-btn .op-desc { font-size: 0.82rem; color: #7f1d1d; }
+  .op-btn.clone { border-color: #fbbf24; }
+  .op-btn.clone:hover { border-color: #d97706; box-shadow: 0 4px 12px rgba(217,119,6,0.18); }
+  .op-btn.clone .op-title { color: #b45309; }
+  .op-btn.clone .op-desc { color: #92400e; }
+
+  /* danger modal warnings */
+  .warn-box {
+    background: #fef2f2; border: 1px solid #fecaca;
+    border-radius: 8px; padding: 14px 16px;
+    margin-bottom: 14px; color: #991b1b;
+  }
+  .warn-box ul { margin: 8px 18px 0; }
+  .warn-box li { margin: 3px 0; }
+  .info-box {
+    background: #eff6ff; border: 1px solid #bfdbfe;
+    border-radius: 8px; padding: 12px 14px;
+    margin-bottom: 14px; color: #1e3a8a; font-size: 0.88rem;
+  }
+
+  .confirm-input {
+    width: 100%; padding: 10px 12px;
+    border: 2px solid #fecaca; border-radius: 8px;
+    font-family: monospace; font-size: 1rem;
+    direction: ltr; text-align: left;
+  }
+  .confirm-input:focus {
+    outline: none; border-color: #dc2626;
+  }
+
+  .btn-danger {
+    background: #dc2626; color: white; border: none;
+    padding: 8px 16px; border-radius: 8px;
+    cursor: pointer; font-family: inherit; font-weight: 500;
+    transition: all 0.15s;
+  }
+  .btn-danger:hover { background: #b91c1c; }
+  .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .step-list {
+    background: #f8fafc; border-radius: 8px;
+    padding: 12px 16px; margin: 10px 0;
+    font-size: 0.84rem; max-height: 240px; overflow-y: auto;
+  }
+  .step-list .step-item {
+    display: flex; gap: 10px; padding: 4px 0;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  .step-list .step-item:last-child { border-bottom: none; }
+  .step-list .step-num { color: #888; min-width: 20px; }
+  .step-list .step-name {
+    font-family: monospace; color: #1a1a2e; flex: 1;
+  }
+  .step-list .step-rows { color: #666; font-size: 0.8rem; }
+  .step-list .step-status { font-size: 0.85rem; }
+  .step-list .step-status.ok { color: #16a34a; }
+  .step-list .step-status.err { color: #dc2626; }
+
+  /* =========================================================
      CODE BLOCK - SQL / JSON display
      ========================================================= */
   .code-block {
@@ -1246,6 +1331,23 @@ async function renderDashboard() {
       <h3>🔗 רשימת כל הקשרים <span class="count-badge">${rels.length}</span></h3>
       <div id="dashRelList"></div>
     </div>
+
+    <div class="section-card danger-zone">
+      <h3>⚠️ אזור סכנה — פעולות הרסניות</h3>
+      <p style="color:#7f1d1d;font-size:0.88rem;margin-bottom:14px">
+        שתי הפעולות מטה משנות את מסד הנתונים בצורה משמעותית. לכל אחת יש זרימת אישור עם אזהרות והזדמנות לגיבוי.
+      </p>
+      <div class="ops-grid">
+        <button class="op-btn" id="truncateBtn">
+          <span class="op-title">🗑️ ריקון מסד נתונים</span>
+          <span class="op-desc">מוחק את כל התוכן מכל הטבלאות. מבנה הטבלאות נשאר.</span>
+        </button>
+        <button class="op-btn clone" id="cloneBtn">
+          <span class="op-title">📋 שכפול מסד נתונים</span>
+          <span class="op-desc">מעתיק את כל התוכן ממסד זה למסד אחר על אותו שרת.</span>
+        </button>
+      </div>
+    </div>
   `;
 
   if (tables.length > 0) {
@@ -1256,6 +1358,9 @@ async function renderDashboard() {
   body.querySelectorAll('.dl-btn').forEach(btn => {
     btn.addEventListener('click', () => downloadFullExport(btn.dataset.mode, btn));
   });
+
+  $('truncateBtn').addEventListener('click', openTruncateFlow);
+  $('cloneBtn').addEventListener('click', openCloneFlow);
 }
 
 function formatBytes(bytes) {
@@ -1264,6 +1369,259 @@ function formatBytes(bytes) {
   let i = 0;
   while (bytes >= 1024 && i < units.length - 1) { bytes /= 1024; i++; }
   return bytes.toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+}
+
+/* ===============================================================
+   TRUNCATE DATABASE FLOW - 3-step destructive wizard
+   =============================================================== */
+async function openTruncateFlow() {
+  const dbName = state.conn.database;
+  const modal = document.createElement('div');
+  modal.className = 'modal-backdrop';
+  modal.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h3>⚠️ ריקון מסד נתונים: ${escapeHtml(dbName)}</h3>
+        <button class="modal-close">×</button>
+      </div>
+      <div class="modal-body" id="truncBody">
+        <div class="loading"><div class="spinner"></div><span>מנתח את מבנה הטבלאות...</span></div>
+      </div>
+      <div class="modal-footer" id="truncFooter"></div>
+    </div>`;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.querySelector('.modal-close').addEventListener('click', close);
+  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+
+  let plan;
+  try {
+    plan = await api('get_truncate_plan');
+  } catch (err) {
+    $('truncBody').innerHTML = `<div class="warn-box">❌ שגיאה: ${escapeHtml(err.message)}</div>`;
+    $('truncFooter').innerHTML = `<button class="btn btn-secondary">סגור</button>`;
+    $('truncFooter').querySelector('button').addEventListener('click', close);
+    return;
+  }
+
+  renderTruncateStep1(plan, dbName, close);
+}
+
+function renderTruncateStep1(plan, dbName, close) {
+  const orderHtml = plan.truncateOrder.map((t, i) => `
+    <div class="step-item">
+      <span class="step-num">${i + 1}.</span>
+      <span class="step-name">${escapeHtml(t)}</span>
+      <span class="step-rows">${plan.rowCounts[t] >= 0 ? plan.rowCounts[t].toLocaleString('he-IL') + ' שורות' : '—'}</span>
+    </div>
+  `).join('');
+
+  $('truncBody').innerHTML = `
+    <div class="warn-box">
+      <strong>⚠️ אזהרה</strong>
+      <ul>
+        <li><strong>${plan.tableCount}</strong> טבלאות יתרוקנו</li>
+        <li>סך הכל <strong>${plan.totalRows.toLocaleString('he-IL')}</strong> שורות יימחקו</li>
+        <li>מונה ה-AUTO_INCREMENT יאופס לכל טבלה</li>
+        <li>מבנה הטבלאות, אינדקסים, FK וטריגרים יישארו ללא שינוי</li>
+        <li>פעולה זו <strong>אינה ניתנת לביטול</strong> ללא גיבוי</li>
+      </ul>
+    </div>
+    <div class="info-box">
+      <strong>סדר הריקון</strong> (children → parents, על פי FK):
+      <div class="step-list">${orderHtml || '<div style="text-align:center;color:#888">אין טבלאות</div>'}</div>
+    </div>
+  `;
+  $('truncFooter').innerHTML = `
+    <button class="btn btn-secondary" id="truncCancel">ביטול</button>
+    <button class="btn btn-primary" id="truncProceed">המשך לשלב הגיבוי →</button>
+  `;
+  $('truncCancel').addEventListener('click', close);
+  $('truncProceed').addEventListener('click', () => renderTruncateStep2(plan, dbName, close));
+}
+
+function renderTruncateStep2(plan, dbName, close) {
+  $('truncBody').innerHTML = `
+    <div class="info-box">
+      <strong>💾 גיבוי לפני ריקון?</strong><br>
+      מומלץ מאוד להוריד גיבוי מלא של מסד הנתונים (מבנה + תוכן) לפני המחיקה.
+      תוכל לשחזר ממנו ידנית במקרה הצורך.
+    </div>
+    <div id="backupStatus"></div>
+  `;
+  $('truncFooter').innerHTML = `
+    <button class="btn btn-secondary" id="truncBack">← חזרה</button>
+    <button class="btn btn-secondary" id="truncSkipBackup">דלג על הגיבוי</button>
+    <button class="btn btn-primary" id="truncDoBackup">⬇️ הורד גיבוי מלא</button>
+  `;
+  $('truncBack').addEventListener('click', () => renderTruncateStep1(plan, dbName, close));
+  $('truncSkipBackup').addEventListener('click', () => {
+    if (!confirm('בטוח שאתה רוצה להמשיך בלי גיבוי? פעולת הריקון לא ניתנת לביטול!')) return;
+    renderTruncateStep3(plan, dbName, close, false);
+  });
+  $('truncDoBackup').addEventListener('click', async () => {
+    const btn = $('truncDoBackup');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="dl-spinner"></span> יוצר גיבוי...';
+    $('backupStatus').innerHTML = '<div class="info-box">⏳ הגיבוי מועלה — אל תסגור את החלון</div>';
+    try {
+      const res = await api('export_database', { mode: 'both' });
+      const json = JSON.stringify(res.export, null, 2);
+      const fname = dbName + '_backup-before-truncate_' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '.json';
+      downloadFile(json, fname, 'application/json');
+      $('backupStatus').innerHTML = `<div class="warn-box" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534">✅ הגיבוי הורד: <code>${escapeHtml(fname)}</code></div>`;
+      btn.innerHTML = '✅ הגיבוי הושלם';
+      setTimeout(() => renderTruncateStep3(plan, dbName, close, true), 800);
+    } catch (err) {
+      $('backupStatus').innerHTML = `<div class="warn-box">❌ הגיבוי נכשל: ${escapeHtml(err.message)}</div>`;
+      btn.disabled = false;
+      btn.innerHTML = '⬇️ הורד גיבוי מלא';
+    }
+  });
+}
+
+function renderTruncateStep3(plan, dbName, close, hasBackup) {
+  $('truncBody').innerHTML = `
+    <div class="warn-box">
+      <strong>🔴 אישור סופי</strong><br>
+      אתה עומד למחוק <strong>${plan.totalRows.toLocaleString('he-IL')}</strong> שורות מ-<strong>${plan.tableCount}</strong> טבלאות במסד <code>${escapeHtml(dbName)}</code>.<br>
+      ${hasBackup ? '✅ נוצר גיבוי לפני הפעולה' : '⚠️ <strong>לא נוצר גיבוי!</strong>'}
+    </div>
+    <div>
+      <label style="display:block;margin-bottom:6px;font-weight:500">
+        כדי לאשר, הקלד את שם מסד הנתונים בדיוק:
+      </label>
+      <input type="text" class="confirm-input" id="confirmInput" placeholder="${escapeHtml(dbName)}" autocomplete="off">
+    </div>
+    <div id="truncResult" style="margin-top:14px"></div>
+  `;
+  $('truncFooter').innerHTML = `
+    <button class="btn btn-secondary" id="truncBack2">← חזרה</button>
+    <button class="btn-danger" id="truncExecute" disabled>🗑️ ריקון מסד הנתונים</button>
+  `;
+  $('truncBack2').addEventListener('click', () => renderTruncateStep2(plan, dbName, close));
+  const input = $('confirmInput');
+  input.focus();
+  input.addEventListener('input', () => {
+    $('truncExecute').disabled = input.value !== dbName;
+  });
+  $('truncExecute').addEventListener('click', async () => {
+    const btn = $('truncExecute');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="dl-spinner"></span> מרוקן...';
+    try {
+      const res = await api('truncate_database', { confirm: dbName });
+      const okCount = res.truncated.length;
+      const errCount = Object.keys(res.errors).length;
+      let html = `<div class="warn-box" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534">✅ רוקנו ${okCount} טבלאות בהצלחה</div>`;
+      if (errCount > 0) {
+        html += `<div class="warn-box">⚠️ ${errCount} טבלאות נכשלו:<ul>` +
+          Object.entries(res.errors).map(([t, e]) => `<li><code>${escapeHtml(t)}</code>: ${escapeHtml(e)}</li>`).join('') +
+          '</ul></div>';
+      }
+      $('truncResult').innerHTML = html;
+      $('truncFooter').innerHTML = `<button class="btn btn-primary" id="truncDone">סיום</button>`;
+      $('truncDone').addEventListener('click', () => { close(); renderDashboard(); });
+      toast(`✅ רוקנו ${okCount} טבלאות`, 'success');
+    } catch (err) {
+      $('truncResult').innerHTML = `<div class="warn-box">❌ שגיאה: ${escapeHtml(err.message)}</div>`;
+      btn.disabled = false;
+      btn.innerHTML = '🗑️ ריקון מסד הנתונים';
+    }
+  });
+}
+
+/* ===============================================================
+   CLONE DATABASE FLOW
+   =============================================================== */
+async function openCloneFlow() {
+  const sourceDb = state.conn.database;
+  const modal = document.createElement('div');
+  modal.className = 'modal-backdrop';
+  modal.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h3>📋 שכפול מסד נתונים</h3>
+        <button class="modal-close">×</button>
+      </div>
+      <div class="modal-body" id="cloneBody">
+        <div class="info-box">
+          <strong>זרימה:</strong>
+          מסד היעד צריך להיות קיים ב-MySQL ולהכיל את אותן טבלאות (מבנה זהה).
+          רצוי שהוא יהיה ריק — אחרת השורות הקיימות בו יישארו ויתווספו עוד.<br>
+          <strong>טיפ:</strong> רוקן את מסד היעד תחילה (חבר אליו ישירות וריק אותו), ואז חזור הנה.
+        </div>
+
+        <div style="margin-bottom:14px">
+          <label style="display:block;margin-bottom:4px;font-weight:500;color:#666;font-size:0.85rem">מסד מקור (אתה מחובר אליו):</label>
+          <code style="background:#eef2ff;color:#3b5bdb;padding:8px 12px;border-radius:6px;display:block;font-size:0.95rem">${escapeHtml(sourceDb)}</code>
+        </div>
+
+        <div>
+          <label style="display:block;margin-bottom:4px;font-weight:500">שם מסד היעד:</label>
+          <input type="text" class="confirm-input" id="targetInput" placeholder="לדוגמה: my_db_v4" autocomplete="off">
+          <div style="color:#888;font-size:0.78rem;margin-top:4px">
+            חייב להיות שם של מסד נתונים קיים על אותו שרת MySQL
+          </div>
+        </div>
+
+        <div id="cloneResult" style="margin-top:14px"></div>
+      </div>
+      <div class="modal-footer" id="cloneFooter">
+        <button class="btn btn-secondary" id="cloneCancel">ביטול</button>
+        <button class="btn btn-primary" id="cloneNext" disabled>בדוק תאימות →</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.querySelector('.modal-close').addEventListener('click', close);
+  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+  $('cloneCancel').addEventListener('click', close);
+
+  const input = $('targetInput');
+  input.focus();
+  input.addEventListener('input', () => {
+    const v = input.value.trim();
+    $('cloneNext').disabled = !v || v === sourceDb;
+  });
+
+  $('cloneNext').addEventListener('click', async () => {
+    const target = input.value.trim();
+    if (!target) return;
+    if (!confirm(`לשכפל את כל התוכן של "${sourceDb}" אל "${target}"?\n\nהפעולה תבצע INSERT לכל הטבלאות. אם יש שורות קיימות במסד היעד, ייתכנו התנגשויות PK.`)) return;
+
+    const btn = $('cloneNext');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="dl-spinner"></span> משכפל...';
+    $('cloneResult').innerHTML = '<div class="info-box">⏳ מעתיק נתונים — עלול לקחת זמן עבור מסדים גדולים</div>';
+    try {
+      const res = await api('clone_database', { target });
+      let html = '';
+      const totalCopied = Object.values(res.copied).reduce((a, b) => a + b, 0);
+      const tableCount = Object.keys(res.copied).length;
+      html += `<div class="warn-box" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534">
+        ✅ שוכפלו <strong>${totalCopied.toLocaleString('he-IL')}</strong> שורות ב-<strong>${tableCount}</strong> טבלאות
+      </div>`;
+      const rows = Object.entries(res.copied).map(([t, n]) =>
+        `<div class="step-item"><span class="step-name">${escapeHtml(t)}</span><span class="step-rows">${n.toLocaleString('he-IL')} שורות</span></div>`
+      ).join('');
+      html += `<div class="step-list">${rows}</div>`;
+      const errCount = Object.keys(res.errors || {}).length;
+      if (errCount > 0) {
+        html += `<div class="warn-box" style="margin-top:10px">⚠️ ${errCount} טבלאות נכשלו:<ul>` +
+          Object.entries(res.errors).map(([t, e]) => `<li><code>${escapeHtml(t)}</code>: ${escapeHtml(e)}</li>`).join('') +
+          '</ul></div>';
+      }
+      $('cloneResult').innerHTML = html;
+      $('cloneFooter').innerHTML = `<button class="btn btn-primary" id="cloneDone">סיום</button>`;
+      $('cloneDone').addEventListener('click', close);
+      toast(`✅ שוכפלו ${totalCopied.toLocaleString('he-IL')} שורות`, 'success');
+    } catch (err) {
+      $('cloneResult').innerHTML = `<div class="warn-box">❌ ${escapeHtml(err.message)}</div>`;
+      btn.disabled = false;
+      btn.innerHTML = 'בדוק תאימות →';
+    }
+  });
 }
 
 function renderDashboardErd(container, tables, tableColumns, rels) {
