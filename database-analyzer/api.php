@@ -652,30 +652,45 @@ try {
         }
 
         // ============================================================
-        // EXPORT DATABASE - full DB export in one call
+        // EXPORT DATABASE - chunked ZIP export (no memory blow-up)
         //   mode: 'structure' | 'data' | 'both'
         // ============================================================
         case 'export_database': {
+            ini_set('memory_limit', '256M');
+            @set_time_limit(300);
+
             $mode = $input['mode'] ?? 'both';
             if (!in_array($mode, ['structure', 'data', 'both'], true)) {
                 echo json_encode(['success' => false, 'error' => 'mode חייב להיות structure / data / both']);
                 break;
             }
 
-            $stmt = $pdo->query("SHOW FULL TABLES");
-            $tables = [];
-            $views = [];
-            while ($row = $stmt->fetch(PDO::FETCH_NUM)) {
-                if ($row[1] === 'BASE TABLE') $tables[] = $row[0];
-                else $views[] = $row[0];
+            $exportDir = __DIR__ . '/exports';
+            if (!is_dir($exportDir)) @mkdir($exportDir, 0755, true);
+
+            // Clean exports older than 1 hour
+            foreach (glob($exportDir . '/*.zip') as $old) {
+                if (filemtime($old) < time() - 3600) @unlink($old);
             }
 
-            $out = [
-                'database' => $database,
-                'exportedAt' => date('c'),
-                'mode' => $mode,
-                'tables' => []
-            ];
+            $zipName = $database . '_' . $mode . '_' . date('Ymd_His') . '.zip';
+            $zipPath = $exportDir . '/' . $zipName;
+
+            $zip = new ZipArchive();
+            if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+                echo json_encode(['success' => false, 'error' => 'לא ניתן ליצור קובץ ZIP']);
+                break;
+            }
+
+            $stmt = $pdo->query("SHOW FULL TABLES");
+            $allItems = [];
+            while ($row = $stmt->fetch(PDO::FETCH_NUM)) {
+                $allItems[] = ['name' => $row[0], 'type' => $row[1]];
+            }
+
+            $chunkSize = 5000;
+            $structure = ['database' => $database, 'exportedAt' => date('c'), 'mode' => $mode, 'tables' => [], 'views' => []];
+            $tempFiles = [];
 
             $stmtFK = $pdo->prepare("
                 SELECT kcu.CONSTRAINT_NAME, kcu.COLUMN_NAME,
@@ -697,69 +712,97 @@ try {
 
             $stmtInfo = $pdo->prepare(
                 "SELECT TABLE_COMMENT, ENGINE, TABLE_COLLATION, AUTO_INCREMENT, TABLE_ROWS, CREATE_TIME, UPDATE_TIME
-                 FROM INFORMATION_SCHEMA.TABLES
-                 WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?"
+                 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?"
             );
 
-            foreach ($tables as $t) {
-                $qt = quoteId($t);
-                $entry = ['name' => $t];
+            foreach ($allItems as $item) {
+                $name = $item['name'];
+                $isView = ($item['type'] !== 'BASE TABLE');
+                $qt = quoteId($name);
 
+                // Structure
                 if ($mode === 'structure' || $mode === 'both') {
+                    $entry = ['name' => $name];
                     $cs = $pdo->query("SHOW FULL COLUMNS FROM {$qt}");
                     $entry['columns'] = $cs->fetchAll();
 
-                    $is = $pdo->query("SHOW INDEX FROM {$qt}");
-                    $entry['indexes'] = $is->fetchAll();
-
-                    $stmtFK->execute([$database, $t]);
-                    $entry['foreignKeys'] = $stmtFK->fetchAll();
-
-                    $stmtTrig->execute([$database, $t]);
-                    $entry['triggers'] = $stmtTrig->fetchAll();
-
-                    $stmtInfo->execute([$database, $t]);
-                    $entry['tableInfo'] = $stmtInfo->fetch();
+                    if (!$isView) {
+                        $is = $pdo->query("SHOW INDEX FROM {$qt}");
+                        $entry['indexes'] = $is->fetchAll();
+                        $stmtFK->execute([$database, $name]);
+                        $entry['foreignKeys'] = $stmtFK->fetchAll();
+                        $stmtTrig->execute([$database, $name]);
+                        $entry['triggers'] = $stmtTrig->fetchAll();
+                        $stmtInfo->execute([$database, $name]);
+                        $entry['tableInfo'] = $stmtInfo->fetch();
+                    }
 
                     $createStmt = $pdo->query("SHOW CREATE TABLE {$qt}");
                     $createRow = $createStmt->fetch(PDO::FETCH_NUM);
                     $entry['createStatement'] = $createRow[1] ?? '';
+
+                    if ($isView) $structure['views'][] = $entry;
+                    else $structure['tables'][] = $entry;
                 }
 
+                // Data - stream in chunks to temp file
                 if ($mode === 'data' || $mode === 'both') {
-                    $ds = $pdo->query("SELECT * FROM {$qt}");
-                    $entry['data'] = $ds->fetchAll();
-                }
+                    try {
+                        $count = intval($pdo->query("SELECT COUNT(*) FROM {$qt}")->fetchColumn());
+                        $tmpFile = tempnam(sys_get_temp_dir(), 'dbexp_');
+                        $tempFiles[] = $tmpFile;
+                        $fp = fopen($tmpFile, 'w');
 
-                $out['tables'][] = $entry;
-            }
+                        fwrite($fp, '{"table":' . json_encode($name) . ',"rowCount":' . $count . ',"rows":[');
+                        $first = true;
 
-            if (!empty($views)) {
-                $out['views'] = [];
-                foreach ($views as $v) {
-                    $qv = quoteId($v);
-                    $vEntry = ['name' => $v];
-                    if ($mode === 'structure' || $mode === 'both') {
-                        $cs = $pdo->query("SHOW FULL COLUMNS FROM {$qv}");
-                        $vEntry['columns'] = $cs->fetchAll();
-                        $createStmt = $pdo->query("SHOW CREATE VIEW {$qv}");
-                        $createRow = $createStmt->fetch(PDO::FETCH_NUM);
-                        $vEntry['createStatement'] = $createRow[1] ?? '';
-                    }
-                    if ($mode === 'data' || $mode === 'both') {
-                        try {
-                            $ds = $pdo->query("SELECT * FROM {$qv}");
-                            $vEntry['data'] = $ds->fetchAll();
-                        } catch (Exception $e) {
-                            $vEntry['data'] = [];
-                            $vEntry['dataError'] = $e->getMessage();
+                        for ($offset = 0; $offset < $count; $offset += $chunkSize) {
+                            $chunk = $pdo->query("SELECT * FROM {$qt} LIMIT {$chunkSize} OFFSET {$offset}")->fetchAll();
+                            foreach ($chunk as $row) {
+                                // Sanitize binary data
+                                foreach ($row as $k => &$val) {
+                                    if (is_string($val) && !mb_check_encoding($val, 'UTF-8')) {
+                                        $val = base64_encode($val);
+                                    }
+                                }
+                                unset($val);
+                                if (!$first) fwrite($fp, ',');
+                                fwrite($fp, json_encode($row, JSON_UNESCAPED_UNICODE));
+                                $first = false;
+                            }
+                            unset($chunk);
                         }
+
+                        fwrite($fp, ']}');
+                        fclose($fp);
+
+                        $folder = $isView ? 'views' : 'tables';
+                        $zip->addFile($tmpFile, "data/{$folder}/{$name}.json");
+                    } catch (Exception $e) {
+                        $zip->addFromString("data/{$name}.error.txt", $e->getMessage());
                     }
-                    $out['views'][] = $vEntry;
                 }
             }
 
-            echo json_encode(['success' => true, 'export' => $out]);
+            // Add structure JSON
+            if ($mode === 'structure' || $mode === 'both') {
+                $zip->addFromString('structure.json', json_encode($structure, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+            }
+
+            $zip->close();
+
+            // Clean temp files
+            foreach ($tempFiles as $tmp) @unlink($tmp);
+
+            $fileSize = filesize($zipPath);
+            $_logDetail .= " | ZIP {$fileSize} bytes";
+
+            echo json_encode([
+                'success' => true,
+                'file' => 'exports/' . $zipName,
+                'filename' => $zipName,
+                'size' => $fileSize
+            ]);
             break;
         }
 
