@@ -1785,29 +1785,51 @@ async function downloadFullExport(mode, btn) {
   const labels = { structure: 'מבנה', data: 'תוכן', both: 'מבנה + תוכן' };
   const original = btn.innerHTML;
   btn.disabled = true;
-
-  let seconds = 0;
-  const timer = setInterval(() => {
-    seconds++;
-    btn.innerHTML = `<span class="dl-spinner"></span><span class="dl-desc">מייצא ${labels[mode]}... ${seconds} שניות</span>`;
-  }, 1000);
-  btn.innerHTML = `<span class="dl-spinner"></span><span class="dl-desc">מייצא ${labels[mode]}... 0 שניות</span>`;
+  btn.innerHTML = `<span class="dl-spinner"></span><span class="dl-desc">מתחיל ייצוא ${labels[mode]}...</span>`;
 
   try {
-    const res = await api('export_database', { mode });
-    clearInterval(timer);
+    // Step 1: Start the export job
+    const start = await api('export_database', { mode });
+    const jobId = start.jobId;
+    const total = start.total;
+
+    // Step 2: Poll for progress
+    const result = await new Promise((resolve, reject) => {
+      const poll = setInterval(async () => {
+        try {
+          const status = await api('export_status', { jobId });
+          if (status.status === 'done') {
+            clearInterval(poll);
+            resolve(status);
+          } else if (status.status === 'error') {
+            clearInterval(poll);
+            reject(new Error(status.error || 'שגיאת ייצוא'));
+          } else {
+            const pct = Math.round((status.current / status.total) * 100);
+            btn.innerHTML = `<span class="dl-spinner"></span><span class="dl-desc">${pct}% | טבלה ${status.current}/${status.total}: ${status.currentTable}</span>`;
+          }
+        } catch (e) {
+          // Polling failed - might be temporary, keep trying
+        }
+      }, 2000);
+
+      // Timeout after 10 minutes
+      setTimeout(() => { clearInterval(poll); reject(new Error('timeout - הייצוא לקח יותר מ-10 דקות')); }, 600000);
+    });
+
+    // Step 3: Download the ZIP
     const link = document.createElement('a');
-    link.href = res.file;
-    link.download = res.filename;
+    link.href = result.file;
+    link.download = result.filename;
     document.body.appendChild(link);
     link.click();
     link.remove();
-    const sizeStr = res.size > 1048576
-      ? (res.size / 1048576).toFixed(1) + ' MB'
-      : Math.round(res.size / 1024) + ' KB';
-    toast(`✅ ZIP מוכן להורדה (${sizeStr}) | ${seconds} שניות`, 'success');
+
+    const sizeStr = result.size > 1048576
+      ? (result.size / 1048576).toFixed(1) + ' MB'
+      : Math.round(result.size / 1024) + ' KB';
+    toast(`✅ ZIP מוכן (${sizeStr})`, 'success');
   } catch (err) {
-    clearInterval(timer);
     toast('❌ שגיאה: ' + err.message, 'error');
   } finally {
     btn.disabled = false;
