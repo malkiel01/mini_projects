@@ -1,5 +1,8 @@
 <?php
 ini_set('display_errors', 0);
+ini_set('memory_limit', '512M');
+ini_set('max_execution_time', '120');
+set_time_limit(120);
 error_reporting(E_ALL);
 
 set_error_handler(function($severity, $message, $file, $line) {
@@ -140,8 +143,24 @@ function getReferencingViews($pdo, $db, $table) {
     return $result;
 }
 
+function sanitizeRows($rows) {
+    foreach ($rows as &$row) {
+        foreach ($row as $key => &$val) {
+            if (is_string($val) && !mb_check_encoding($val, 'UTF-8')) {
+                $val = base64_encode($val);
+            }
+        }
+    }
+    return $rows;
+}
+
 try {
     switch ($action) {
+
+        case 'ping': {
+            success(['pong' => true, 'php' => PHP_VERSION, 'memory_limit' => ini_get('memory_limit'), 'time' => date('c')]);
+            break;
+        }
 
         case 'connect': {
             $pdo = getPdo($input);
@@ -243,7 +262,8 @@ try {
             $rows = $pdo->query("SELECT * FROM " . qi($table) . " LIMIT {$limit} OFFSET {$offset}")->fetchAll();
             $pk = getPrimaryKeys($pdo, $db, $table);
 
-            success(['rows' => $rows, 'total' => intval($total), 'primaryKeys' => $pk]);
+            success(['rows' => sanitizeRows($rows), 'total' => intval($total), 'primaryKeys' => $pk]);
+            break;
         }
 
         case 'get_view_data': {
@@ -258,7 +278,8 @@ try {
             $total = $pdo->query("SELECT COUNT(*) FROM " . qi($view))->fetchColumn();
             $rows = $pdo->query("SELECT * FROM " . qi($view) . " LIMIT {$limit} OFFSET {$offset}")->fetchAll();
 
-            success(['rows' => $rows, 'total' => intval($total)]);
+            success(['rows' => sanitizeRows($rows), 'total' => intval($total)]);
+            break;
         }
 
         case 'get_full_table_data': {
@@ -266,7 +287,8 @@ try {
             $table = $input['table'] ?? '';
             if (!$table) fail('חסר שם טבלה');
             $rows = $pdo->query("SELECT * FROM " . qi($table))->fetchAll();
-            success(['rows' => $rows]);
+            success(['rows' => sanitizeRows($rows)]);
+            break;
         }
 
         case 'get_full_view_data': {
@@ -274,7 +296,8 @@ try {
             $view = $input['view'] ?? '';
             if (!$view) fail('חסר שם תצוגה');
             $rows = $pdo->query("SELECT * FROM " . qi($view))->fetchAll();
-            success(['rows' => $rows]);
+            success(['rows' => sanitizeRows($rows)]);
+            break;
         }
 
         case 'get_create_table': {
@@ -392,13 +415,18 @@ try {
                         $entry['indexes'] = getIndexes($pdo, $name);
                         $entry['foreignKeys'] = getForeignKeys($pdo, $db, $name);
                     }
-                    $createRow = $pdo->query("SHOW CREATE TABLE " . qi($name))->fetch();
-                    $entry['createSql'] = $createRow['Create Table'] ?? $createRow['Create View'] ?? '';
+                    try {
+                        $createRow = $pdo->query("SHOW CREATE TABLE " . qi($name))->fetch();
+                        $entry['createSql'] = $createRow['Create Table'] ?? $createRow['Create View'] ?? '';
+                    } catch (Exception $e) {
+                        $entry['createSql'] = '';
+                    }
                 }
 
                 if ($mode === 'data' || $mode === 'both') {
                     try {
-                        $entry['rows'] = $pdo->query("SELECT * FROM " . qi($name))->fetchAll();
+                        $tableRows = $pdo->query("SELECT * FROM " . qi($name))->fetchAll();
+                        $entry['rows'] = sanitizeRows($tableRows);
                     } catch (Exception $e) {
                         $entry['rows'] = [];
                         $entry['dataError'] = $e->getMessage();
@@ -409,6 +437,7 @@ try {
             }
 
             success(['export' => $export]);
+            break;
         }
 
         case 'add_row': {
