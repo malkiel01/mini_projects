@@ -652,15 +652,10 @@ try {
         }
 
         // ============================================================
-        // EXPORT DATABASE - async chunked ZIP export
-        //   Step 1: 'export_database' starts the job, returns job ID
-        //   Step 2: 'export_status' polls progress
+        // EXPORT DATABASE - spawns background worker, returns job ID
+        //   Frontend polls 'export_status' for progress
         // ============================================================
         case 'export_database': {
-            ini_set('memory_limit', '256M');
-            @set_time_limit(600);
-            ignore_user_abort(true);
-
             $mode = $input['mode'] ?? 'both';
             if (!in_array($mode, ['structure', 'data', 'both'], true)) {
                 echo json_encode(['success' => false, 'error' => 'mode חייב להיות structure / data / both']);
@@ -670,154 +665,46 @@ try {
             $exportDir = __DIR__ . '/exports';
             if (!is_dir($exportDir)) @mkdir($exportDir, 0755, true);
 
-            // Clean exports older than 1 hour
+            // Clean old files (older than 1 hour)
             foreach (glob($exportDir . '/*.zip') as $old) {
                 if (filemtime($old) < time() - 3600) @unlink($old);
             }
-            foreach (glob($exportDir . '/*.json') as $old) {
+            foreach (glob($exportDir . '/export_*.json') as $old) {
                 if (filemtime($old) < time() - 3600) @unlink($old);
             }
 
+            // Count tables for progress
+            $stmt = $pdo->query("SHOW FULL TABLES");
+            $totalItems = 0;
+            while ($stmt->fetch()) $totalItems++;
+
             $jobId = uniqid('export_');
             $progressFile = $exportDir . '/' . $jobId . '.json';
-            $zipName = $database . '_' . $mode . '_' . date('Ymd_His') . '.zip';
-            $zipPath = $exportDir . '/' . $zipName;
 
-            // Get list of tables for progress tracking
-            $stmt = $pdo->query("SHOW FULL TABLES");
-            $allItems = [];
-            while ($row = $stmt->fetch(PDO::FETCH_NUM)) {
-                $allItems[] = ['name' => $row[0], 'type' => $row[1]];
-            }
-            $totalItems = count($allItems);
-
-            // Write initial progress and return immediately
-            $progress = ['status' => 'working', 'current' => 0, 'total' => $totalItems, 'currentTable' => '', 'jobId' => $jobId];
-            @file_put_contents($progressFile, json_encode($progress, JSON_UNESCAPED_UNICODE));
-
-            // Send response now, continue working in background
-            echo json_encode(['success' => true, 'jobId' => $jobId, 'total' => $totalItems]);
-            header('Content-Length: ' . ob_get_length());
-            if (function_exists('fastcgi_finish_request')) {
-                fastcgi_finish_request();
-            } else {
-                ob_end_flush();
-                flush();
-            }
-
-            // === Background work starts here ===
-            $zip = new ZipArchive();
-            if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
-                @file_put_contents($progressFile, json_encode(['status' => 'error', 'error' => 'לא ניתן ליצור ZIP'], JSON_UNESCAPED_UNICODE));
-                break;
-            }
-
-            $chunkSize = 5000;
-            $structure = ['database' => $database, 'exportedAt' => date('c'), 'mode' => $mode, 'tables' => [], 'views' => []];
-            $tempFiles = [];
-
-            $stmtFK = $pdo->prepare("
-                SELECT kcu.CONSTRAINT_NAME, kcu.COLUMN_NAME,
-                       kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME,
-                       rc.UPDATE_RULE, rc.DELETE_RULE
-                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
-                LEFT JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
-                    ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
-                    AND kcu.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA
-                WHERE kcu.TABLE_SCHEMA = ? AND kcu.TABLE_NAME = ?
-                  AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
-            ");
-            $stmtTrig = $pdo->prepare("
-                SELECT TRIGGER_NAME, ACTION_TIMING, EVENT_MANIPULATION, ACTION_STATEMENT
-                FROM INFORMATION_SCHEMA.TRIGGERS
-                WHERE EVENT_OBJECT_SCHEMA = ? AND EVENT_OBJECT_TABLE = ?
-            ");
-            $stmtInfo = $pdo->prepare(
-                "SELECT TABLE_COMMENT, ENGINE, TABLE_COLLATION, AUTO_INCREMENT, TABLE_ROWS, CREATE_TIME, UPDATE_TIME
-                 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?"
-            );
-
-            foreach ($allItems as $idx => $item) {
-                $name = $item['name'];
-                $isView = ($item['type'] !== 'BASE TABLE');
-                $qt = quoteId($name);
-
-                // Update progress
-                @file_put_contents($progressFile, json_encode([
-                    'status' => 'working',
-                    'current' => $idx + 1,
-                    'total' => $totalItems,
-                    'currentTable' => $name
-                ], JSON_UNESCAPED_UNICODE));
-
-                if ($mode === 'structure' || $mode === 'both') {
-                    $entry = ['name' => $name];
-                    $entry['columns'] = $pdo->query("SHOW FULL COLUMNS FROM {$qt}")->fetchAll();
-                    if (!$isView) {
-                        $entry['indexes'] = $pdo->query("SHOW INDEX FROM {$qt}")->fetchAll();
-                        $stmtFK->execute([$database, $name]);
-                        $entry['foreignKeys'] = $stmtFK->fetchAll();
-                        $stmtTrig->execute([$database, $name]);
-                        $entry['triggers'] = $stmtTrig->fetchAll();
-                        $stmtInfo->execute([$database, $name]);
-                        $entry['tableInfo'] = $stmtInfo->fetch();
-                    }
-                    $createRow = $pdo->query("SHOW CREATE TABLE {$qt}")->fetch(PDO::FETCH_NUM);
-                    $entry['createStatement'] = $createRow[1] ?? '';
-                    if ($isView) $structure['views'][] = $entry;
-                    else $structure['tables'][] = $entry;
-                }
-
-                if ($mode === 'data' || $mode === 'both') {
-                    try {
-                        $count = intval($pdo->query("SELECT COUNT(*) FROM {$qt}")->fetchColumn());
-                        $tmpFile = tempnam(sys_get_temp_dir(), 'dbexp_');
-                        $tempFiles[] = $tmpFile;
-                        $fp = fopen($tmpFile, 'w');
-                        fwrite($fp, '{"table":' . json_encode($name) . ',"rowCount":' . $count . ',"rows":[');
-                        $first = true;
-                        for ($offset = 0; $offset < $count; $offset += $chunkSize) {
-                            $chunk = $pdo->query("SELECT * FROM {$qt} LIMIT {$chunkSize} OFFSET {$offset}")->fetchAll();
-                            foreach ($chunk as $row) {
-                                foreach ($row as $k => &$val) {
-                                    if (is_string($val) && !mb_check_encoding($val, 'UTF-8')) {
-                                        $val = base64_encode($val);
-                                    }
-                                }
-                                unset($val);
-                                if (!$first) fwrite($fp, ',');
-                                fwrite($fp, json_encode($row, JSON_UNESCAPED_UNICODE));
-                                $first = false;
-                            }
-                            unset($chunk);
-                        }
-                        fwrite($fp, ']}');
-                        fclose($fp);
-                        $folder = $isView ? 'views' : 'tables';
-                        $zip->addFile($tmpFile, "data/{$folder}/{$name}.json");
-                    } catch (Exception $e) {
-                        $zip->addFromString("data/{$name}.error.txt", $e->getMessage());
-                    }
-                }
-            }
-
-            if ($mode === 'structure' || $mode === 'both') {
-                $zip->addFromString('structure.json', json_encode($structure, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
-            }
-
-            $zip->close();
-            foreach ($tempFiles as $tmp) @unlink($tmp);
-
-            $fileSize = filesize($zipPath);
-
-            // Write final progress
+            // Write initial progress
             @file_put_contents($progressFile, json_encode([
-                'status' => 'done',
-                'file' => 'exports/' . $zipName,
-                'filename' => $zipName,
-                'size' => $fileSize
+                'status' => 'starting',
+                'current' => 0,
+                'total' => $totalItems,
+                'currentTable' => '',
+                'percent' => 0
             ], JSON_UNESCAPED_UNICODE));
 
+            // Spawn background worker
+            $workerPath = __DIR__ . '/export_worker.php';
+            $params = json_encode([
+                'host' => $input['host'] ?? 'localhost',
+                'port' => $input['port'] ?? 3306,
+                'database' => $database,
+                'username' => $input['username'] ?? '',
+                'password' => $input['password'] ?? '',
+                'mode' => $mode
+            ]);
+
+            $cmd = 'php ' . escapeshellarg($workerPath) . ' ' . escapeshellarg($jobId) . ' ' . escapeshellarg($params) . ' > /dev/null 2>&1 &';
+            exec($cmd);
+
+            echo json_encode(['success' => true, 'jobId' => $jobId, 'total' => $totalItems]);
             break;
         }
 
