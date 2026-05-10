@@ -1,721 +1,993 @@
 <?php
-ini_set('display_errors', 0);
-ini_set('memory_limit', '512M');
-ini_set('max_execution_time', '120');
-@set_time_limit(120);
-error_reporting(0);
+/**
+ * Database Analyzer API
+ * MySQL database analysis and management endpoints
+ */
 
 header('Content-Type: application/json; charset=utf-8');
 
-$input = json_decode(file_get_contents('php://input'), true) ?: [];
+$raw = file_get_contents('php://input');
+$input = json_decode($raw, true);
+
+if (!$input || !is_array($input)) {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'error' => 'Invalid JSON request']);
+    exit;
+}
+
 $action = $input['action'] ?? '';
 
-function success($data = []) {
-    $json = json_encode(array_merge(['success' => true], $data), JSON_UNESCAPED_UNICODE);
-    if ($json === false) {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'error' => 'JSON encode error: ' . json_last_error_msg()], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-    echo $json;
-    exit;
-}
-
-function fail($msg, $code = 400) {
-    http_response_code($code);
-    echo json_encode(['success' => false, 'error' => $msg], JSON_UNESCAPED_UNICODE);
-    exit;
-}
-
-function getPdo($input) {
-    $host = $input['host'] ?? 'localhost';
-    $port = intval($input['port'] ?? 3306);
-    $db   = $input['database'] ?? '';
-    $user = $input['username'] ?? '';
-    $pass = $input['password'] ?? '';
-    if (!$db) fail('חסר שם מסד נתונים');
-    try {
-        $pdo = new PDO(
-            "mysql:host={$host};port={$port};dbname={$db};charset=utf8mb4",
-            $user, $pass,
-            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
-        );
-        return $pdo;
-    } catch (PDOException $e) {
-        fail('שגיאת חיבור: ' . $e->getMessage());
-    }
-}
-
-function qi($name) {
+/**
+ * Safely quote a MySQL identifier (table/column name)
+ */
+function quoteId($name) {
     return '`' . str_replace('`', '``', $name) . '`';
 }
 
-function getDbName($input) {
-    return $input['database'] ?? '';
-}
+/**
+ * Build a PDO connection from request parameters
+ */
+function getConnection($input) {
+    $host = $input['host'] ?? 'localhost';
+    $port = intval($input['port'] ?? 3306);
+    $database = $input['database'] ?? '';
+    $username = $input['username'] ?? '';
+    $password = $input['password'] ?? '';
 
-function getColumns($pdo, $db, $table) {
-    $stmt = $pdo->prepare("SELECT COLUMN_NAME AS `Field`, COLUMN_TYPE AS `Type`, IS_NULLABLE AS `Null`,
-        COLUMN_KEY AS `Key`, COLUMN_DEFAULT AS `Default`, EXTRA AS `Extra`,
-        COLLATION_NAME AS `Collation`, COLUMN_COMMENT AS `Comment`
-        FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION");
-    $stmt->execute([$db, $table]);
-    return $stmt->fetchAll();
-}
-
-function getIndexes($pdo, $table) {
-    try {
-        return $pdo->query("SHOW INDEX FROM " . qi($table))->fetchAll();
-    } catch (Exception $e) { return []; }
-}
-
-function getForeignKeys($pdo, $db, $table) {
-    $stmt = $pdo->prepare("SELECT kcu.COLUMN_NAME, kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME,
-        kcu.CONSTRAINT_NAME, rc.UPDATE_RULE, rc.DELETE_RULE
-        FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
-        JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME AND kcu.TABLE_SCHEMA = rc.CONSTRAINT_SCHEMA
-        WHERE kcu.TABLE_SCHEMA = ? AND kcu.TABLE_NAME = ? AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
-        ORDER BY kcu.ORDINAL_POSITION");
-    $stmt->execute([$db, $table]);
-    return $stmt->fetchAll();
-}
-
-function getIncomingFks($pdo, $db, $table) {
-    $stmt = $pdo->prepare("SELECT kcu.TABLE_NAME AS SOURCE_TABLE, kcu.COLUMN_NAME AS SOURCE_COLUMN,
-        kcu.REFERENCED_COLUMN_NAME, kcu.CONSTRAINT_NAME, rc.UPDATE_RULE, rc.DELETE_RULE
-        FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
-        JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME AND kcu.TABLE_SCHEMA = rc.CONSTRAINT_SCHEMA
-        WHERE kcu.TABLE_SCHEMA = ? AND kcu.REFERENCED_TABLE_NAME = ?
-        ORDER BY kcu.ORDINAL_POSITION");
-    $stmt->execute([$db, $table]);
-    return $stmt->fetchAll();
-}
-
-function getTriggers($pdo, $db, $table) {
-    $stmt = $pdo->prepare("SELECT TRIGGER_NAME, ACTION_TIMING, EVENT_MANIPULATION, ACTION_STATEMENT
-        FROM INFORMATION_SCHEMA.TRIGGERS WHERE TRIGGER_SCHEMA = ? AND EVENT_OBJECT_TABLE = ?");
-    $stmt->execute([$db, $table]);
-    return $stmt->fetchAll();
-}
-
-function getTableInfo($pdo, $db, $table) {
-    $stmt = $pdo->prepare("SELECT ENGINE, TABLE_COLLATION, TABLE_ROWS, AUTO_INCREMENT,
-        TABLE_COMMENT, CREATE_TIME, DATA_LENGTH, INDEX_LENGTH
-        FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?");
-    $stmt->execute([$db, $table]);
-    return $stmt->fetch() ?: [];
-}
-
-function getPrimaryKeys($pdo, $db, $table) {
-    $stmt = $pdo->prepare("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
-        WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND CONSTRAINT_NAME = 'PRIMARY' ORDER BY ORDINAL_POSITION");
-    $stmt->execute([$db, $table]);
-    return $stmt->fetchAll(PDO::FETCH_COLUMN);
-}
-
-function getReferencingViews($pdo, $db, $table) {
-    $stmt = $pdo->prepare("SELECT TABLE_NAME, VIEW_DEFINITION FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_SCHEMA = ?");
-    $stmt->execute([$db]);
-    $views = $stmt->fetchAll();
-    $result = [];
-    foreach ($views as $v) {
-        if (stripos($v['VIEW_DEFINITION'], $table) !== false && $v['TABLE_NAME'] !== $table) {
-            $result[] = $v['TABLE_NAME'];
-        }
-    }
-    return $result;
-}
-
-function sanitizeRows($rows) {
-    foreach ($rows as &$row) {
-        foreach ($row as $key => &$val) {
-            if (is_string($val) && !mb_check_encoding($val, 'UTF-8')) {
-                $val = base64_encode($val);
-            }
-        }
-    }
-    return $rows;
+    $dsn = "mysql:host={$host};port={$port};dbname={$database};charset=utf8mb4";
+    return new PDO($dsn, $username, $password, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4",
+        PDO::ATTR_TIMEOUT => 10,
+    ]);
 }
 
 try {
+    $pdo = getConnection($input);
+    $database = $input['database'] ?? '';
+
     switch ($action) {
 
-        case 'ping': {
-            success(['pong' => true, 'php' => PHP_VERSION, 'memory_limit' => ini_get('memory_limit'), 'time' => date('c')]);
-            break;
-        }
-
+        // ============================================================
+        // CONNECT - test connection and return tables + views list
+        // ============================================================
         case 'connect': {
-            $pdo = getPdo($input);
-            $rows = $pdo->query("SHOW FULL TABLES")->fetchAll();
+            $stmt = $pdo->query("SHOW FULL TABLES");
             $tables = [];
             $views = [];
-            foreach ($rows as $r) {
-                $keys = array_keys($r);
-                $name = $r[$keys[0]];
-                $type = $r[$keys[1]] ?? 'BASE TABLE';
-                if ($type === 'VIEW') {
-                    $views[] = ['name' => $name, 'type' => 'view'];
+            while ($row = $stmt->fetch(PDO::FETCH_NUM)) {
+                if ($row[1] === 'BASE TABLE') {
+                    $tables[] = $row[0];
                 } else {
-                    $tables[] = ['name' => $name, 'type' => 'table'];
+                    $views[] = $row[0];
                 }
             }
-            success(['tables' => $tables, 'views' => $views]);
-        }
-
-        case 'get_database_overview': {
-            $pdo = getPdo($input);
-            $db = getDbName($input);
-
-            $rows = $pdo->query("SHOW FULL TABLES")->fetchAll();
-            $tables = [];
-            $views = [];
-            foreach ($rows as $r) {
-                $keys = array_keys($r);
-                $name = $r[$keys[0]];
-                $type = $r[$keys[1]] ?? 'BASE TABLE';
-                if ($type === 'VIEW') $views[] = ['name' => $name];
-                else $tables[] = ['name' => $name];
-            }
-
-            $stmt = $pdo->prepare("SELECT TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME, CONSTRAINT_NAME
-                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = ? AND REFERENCED_TABLE_NAME IS NOT NULL");
-            $stmt->execute([$db]);
-            $relationships = $stmt->fetchAll();
-
-            $stmt = $pdo->prepare("SELECT TRIGGER_NAME, EVENT_OBJECT_TABLE, ACTION_TIMING, EVENT_MANIPULATION
-                FROM INFORMATION_SCHEMA.TRIGGERS WHERE TRIGGER_SCHEMA = ?");
-            $stmt->execute([$db]);
-            $triggers = $stmt->fetchAll();
-
-            $stmt = $pdo->prepare("SELECT TABLE_NAME, ENGINE, TABLE_COLLATION, TABLE_ROWS, AUTO_INCREMENT,
-                TABLE_COMMENT, CREATE_TIME, DATA_LENGTH, INDEX_LENGTH
-                FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'");
-            $stmt->execute([$db]);
-            $tableInfoRows = $stmt->fetchAll();
-            $tableInfo = [];
-            $tableColumns = [];
-            foreach ($tableInfoRows as $ti) {
-                $tableInfo[$ti['TABLE_NAME']] = $ti;
-            }
-
-            $stmt = $pdo->prepare("SELECT TABLE_NAME, COUNT(*) AS col_count
-                FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? GROUP BY TABLE_NAME");
-            $stmt->execute([$db]);
-            foreach ($stmt->fetchAll() as $row) {
-                $tableColumns[$row['TABLE_NAME']] = intval($row['col_count']);
-            }
-
-            success([
+            echo json_encode([
+                'success' => true,
                 'tables' => $tables,
                 'views' => $views,
-                'relationships' => $relationships,
-                'triggers' => $triggers,
-                'tableInfo' => $tableInfo,
-                'tableColumns' => $tableColumns,
+                'database' => $database
             ]);
+            break;
         }
 
+        // ============================================================
+        // GET TABLE STRUCTURE - columns, indexes, triggers, FKs, info
+        // ============================================================
         case 'get_table_structure': {
-            $pdo = getPdo($input);
-            $db = getDbName($input);
             $table = $input['table'] ?? '';
-            if (!$table) fail('חסר שם טבלה');
+            $qt = quoteId($table);
 
-            success([
-                'columns' => getColumns($pdo, $db, $table),
-                'indexes' => getIndexes($pdo, $table),
-                'foreignKeys' => getForeignKeys($pdo, $db, $table),
-                'triggers' => getTriggers($pdo, $db, $table),
-                'tableInfo' => getTableInfo($pdo, $db, $table),
+            $stmt = $pdo->query("SHOW FULL COLUMNS FROM {$qt}");
+            $columns = $stmt->fetchAll();
+
+            $stmt = $pdo->query("SHOW INDEX FROM {$qt}");
+            $indexes = $stmt->fetchAll();
+
+            $stmt = $pdo->prepare(
+                "SELECT TRIGGER_NAME, ACTION_TIMING, EVENT_MANIPULATION, ACTION_STATEMENT
+                 FROM INFORMATION_SCHEMA.TRIGGERS
+                 WHERE EVENT_OBJECT_SCHEMA = ? AND EVENT_OBJECT_TABLE = ?"
+            );
+            $stmt->execute([$database, $table]);
+            $triggers = $stmt->fetchAll();
+
+            $stmt = $pdo->prepare("
+                SELECT kcu.CONSTRAINT_NAME, kcu.COLUMN_NAME,
+                       kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME,
+                       rc.UPDATE_RULE, rc.DELETE_RULE
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
+                    ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
+                    AND kcu.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA
+                WHERE kcu.TABLE_SCHEMA = ? AND kcu.TABLE_NAME = ?
+                  AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+            ");
+            $stmt->execute([$database, $table]);
+            $foreignKeys = $stmt->fetchAll();
+
+            $stmt = $pdo->prepare(
+                "SELECT TABLE_COMMENT, ENGINE, TABLE_COLLATION, AUTO_INCREMENT, TABLE_ROWS, CREATE_TIME, UPDATE_TIME
+                 FROM INFORMATION_SCHEMA.TABLES
+                 WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?"
+            );
+            $stmt->execute([$database, $table]);
+            $tableInfo = $stmt->fetch();
+
+            echo json_encode([
+                'success' => true,
+                'columns' => $columns,
+                'indexes' => $indexes,
+                'triggers' => $triggers,
+                'foreignKeys' => $foreignKeys,
+                'tableInfo' => $tableInfo
             ]);
+            break;
         }
 
+        // ============================================================
+        // GET TABLE DATA - paginated rows with primary key info
+        // ============================================================
         case 'get_table_data': {
-            $pdo = getPdo($input);
-            $db = getDbName($input);
             $table = $input['table'] ?? '';
-            if (!$table) fail('חסר שם טבלה');
-
             $page = max(1, intval($input['page'] ?? 1));
-            $limit = min(500, max(1, intval($input['limit'] ?? 50)));
+            $limit = max(1, min(500, intval($input['limit'] ?? 50)));
             $offset = ($page - 1) * $limit;
+            $qt = quoteId($table);
 
-            $total = $pdo->query("SELECT COUNT(*) FROM " . qi($table))->fetchColumn();
-            $rows = $pdo->query("SELECT * FROM " . qi($table) . " LIMIT {$limit} OFFSET {$offset}")->fetchAll();
-            $pk = getPrimaryKeys($pdo, $db, $table);
+            $stmt = $pdo->query("SELECT COUNT(*) AS total FROM {$qt}");
+            $total = intval($stmt->fetch()['total']);
 
-            success(['rows' => sanitizeRows($rows), 'total' => intval($total), 'primaryKeys' => $pk]);
-            break;
-        }
+            $stmt = $pdo->query("SELECT * FROM {$qt} LIMIT {$limit} OFFSET {$offset}");
+            $rows = $stmt->fetchAll();
 
-        case 'get_view_data': {
-            $pdo = getPdo($input);
-            $view = $input['view'] ?? '';
-            if (!$view) fail('חסר שם תצוגה');
+            $stmt = $pdo->query("SHOW KEYS FROM {$qt} WHERE Key_name = 'PRIMARY'");
+            $pkColumns = [];
+            while ($row = $stmt->fetch()) {
+                $pkColumns[] = $row['Column_name'];
+            }
 
-            $page = max(1, intval($input['page'] ?? 1));
-            $limit = min(500, max(1, intval($input['limit'] ?? 50)));
-            $offset = ($page - 1) * $limit;
-
-            $total = $pdo->query("SELECT COUNT(*) FROM " . qi($view))->fetchColumn();
-            $rows = $pdo->query("SELECT * FROM " . qi($view) . " LIMIT {$limit} OFFSET {$offset}")->fetchAll();
-
-            success(['rows' => sanitizeRows($rows), 'total' => intval($total)]);
-            break;
-        }
-
-        case 'get_full_table_data': {
-            $pdo = getPdo($input);
-            $table = $input['table'] ?? '';
-            if (!$table) fail('חסר שם טבלה');
-            $rows = $pdo->query("SELECT * FROM " . qi($table))->fetchAll();
-            success(['rows' => sanitizeRows($rows)]);
-            break;
-        }
-
-        case 'get_full_view_data': {
-            $pdo = getPdo($input);
-            $view = $input['view'] ?? '';
-            if (!$view) fail('חסר שם תצוגה');
-            $rows = $pdo->query("SELECT * FROM " . qi($view))->fetchAll();
-            success(['rows' => sanitizeRows($rows)]);
-            break;
-        }
-
-        case 'get_create_table': {
-            $pdo = getPdo($input);
-            $table = $input['table'] ?? '';
-            if (!$table) fail('חסר שם טבלה');
-            $row = $pdo->query("SHOW CREATE TABLE " . qi($table))->fetch();
-            $sql = $row['Create Table'] ?? $row['Create View'] ?? '';
-            success(['sql' => $sql]);
-        }
-
-        case 'get_relationships': {
-            $pdo = getPdo($input);
-            $db = getDbName($input);
-            $table = $input['table'] ?? '';
-            if (!$table) fail('חסר שם טבלה');
-
-            success([
-                'outgoing' => getForeignKeys($pdo, $db, $table),
-                'incoming' => getIncomingFks($pdo, $db, $table),
+            echo json_encode([
+                'success' => true,
+                'rows' => $rows,
+                'total' => $total,
+                'page' => $page,
+                'limit' => $limit,
+                'totalPages' => $total > 0 ? ceil($total / $limit) : 1,
+                'primaryKeys' => $pkColumns
             ]);
+            break;
         }
 
-        case 'get_all_relationships': {
-            $pdo = getPdo($input);
-            $db = getDbName($input);
-            $stmt = $pdo->prepare("SELECT TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME, CONSTRAINT_NAME
-                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = ? AND REFERENCED_TABLE_NAME IS NOT NULL");
-            $stmt->execute([$db]);
-            success(['relationships' => $stmt->fetchAll()]);
-        }
-
-        case 'get_sql_scripts': {
-            $pdo = getPdo($input);
-            $db = getDbName($input);
+        // ============================================================
+        // GET CREATE TABLE - full CREATE TABLE statement
+        // ============================================================
+        case 'get_create_table': {
             $table = $input['table'] ?? '';
-            $type = $input['type'] ?? 'table';
-            if (!$table) fail('חסר שם טבלה');
+            $qt = quoteId($table);
+            $stmt = $pdo->query("SHOW CREATE TABLE {$qt}");
+            $row = $stmt->fetch(PDO::FETCH_NUM);
+            $sql = $row[1] ?? ($row[0] ?? '');
+            echo json_encode(['success' => true, 'sql' => $sql]);
+            break;
+        }
 
-            $createRow = $pdo->query("SHOW CREATE TABLE " . qi($table))->fetch();
-            $createSql = $createRow['Create Table'] ?? $createRow['Create View'] ?? '';
-            $columns = getColumns($pdo, $db, $table);
+        // ============================================================
+        // GET SQL SCRIPTS - everything needed to render the SQL tab:
+        // CREATE statement, structural pieces, dependencies (incoming
+        // FKs, referencing views, triggers) for ALTER/DROP guidance
+        // ============================================================
+        case 'get_sql_scripts': {
+            $name = $input['table'] ?? '';
+            $type = $input['type'] ?? 'table';
+            $qt = quoteId($name);
+
+            $stmt = $pdo->query("SHOW CREATE TABLE {$qt}");
+            $row = $stmt->fetch(PDO::FETCH_NUM);
+            $createSql = $row[1] ?? ($row[0] ?? '');
 
             if ($type === 'view') {
-                $stmt = $pdo->prepare("SELECT IS_UPDATABLE, CHECK_OPTION, SECURITY_TYPE
-                    FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?");
-                $stmt->execute([$db, $table]);
-                $viewInfo = $stmt->fetch() ?: [];
+                $stmt = $pdo->prepare(
+                    "SELECT VIEW_DEFINITION, IS_UPDATABLE, CHECK_OPTION, SECURITY_TYPE, DEFINER
+                     FROM INFORMATION_SCHEMA.VIEWS
+                     WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?"
+                );
+                $stmt->execute([$database, $name]);
+                $viewInfo = $stmt->fetch();
 
-                success([
+                $stmt = $pdo->query("SHOW COLUMNS FROM {$qt}");
+                $viewColumns = $stmt->fetchAll();
+
+                echo json_encode([
+                    'success' => true,
+                    'type' => 'view',
                     'createSql' => $createSql,
-                    'columns' => $columns,
                     'viewInfo' => $viewInfo,
+                    'columns' => $viewColumns
                 ]);
-            } else {
-                $indexes = getIndexes($pdo, $table);
-                $fks = getForeignKeys($pdo, $db, $table);
-                $incomingFks = getIncomingFks($pdo, $db, $table);
-                $triggers = getTriggers($pdo, $db, $table);
-                $referencingViews = getReferencingViews($pdo, $db, $table);
-                $tableInfo = getTableInfo($pdo, $db, $table);
-
-                success([
-                    'createSql' => $createSql,
-                    'columns' => $columns,
-                    'indexes' => $indexes,
-                    'foreignKeys' => $fks,
-                    'incomingFks' => $incomingFks,
-                    'triggers' => $triggers,
-                    'referencingViews' => $referencingViews,
-                    'tableInfo' => $tableInfo,
-                ]);
+                break;
             }
-        }
 
-        case 'get_table_views': {
-            $pdo = getPdo($input);
-            $db = getDbName($input);
-            $table = $input['table'] ?? '';
-            if (!$table) fail('חסר שם טבלה');
+            $stmt = $pdo->query("SHOW FULL COLUMNS FROM {$qt}");
+            $columns = $stmt->fetchAll();
 
-            $stmt = $pdo->prepare("SELECT TABLE_NAME, VIEW_DEFINITION FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_SCHEMA = ?");
-            $stmt->execute([$db]);
+            $stmt = $pdo->query("SHOW INDEX FROM {$qt}");
+            $indexes = $stmt->fetchAll();
+
+            $stmt = $pdo->prepare("
+                SELECT kcu.CONSTRAINT_NAME, kcu.COLUMN_NAME,
+                       kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME,
+                       rc.UPDATE_RULE, rc.DELETE_RULE
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
+                    ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
+                    AND kcu.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA
+                WHERE kcu.TABLE_SCHEMA = ? AND kcu.TABLE_NAME = ?
+                  AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+            ");
+            $stmt->execute([$database, $name]);
+            $foreignKeys = $stmt->fetchAll();
+
+            $stmt = $pdo->prepare("
+                SELECT kcu.CONSTRAINT_NAME, kcu.TABLE_NAME AS SOURCE_TABLE,
+                       kcu.COLUMN_NAME AS SOURCE_COLUMN, kcu.REFERENCED_COLUMN_NAME,
+                       rc.UPDATE_RULE, rc.DELETE_RULE
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
+                    ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
+                    AND kcu.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA
+                WHERE kcu.TABLE_SCHEMA = ? AND kcu.REFERENCED_TABLE_NAME = ?
+            ");
+            $stmt->execute([$database, $name]);
+            $incomingFks = $stmt->fetchAll();
+
+            $stmt = $pdo->prepare(
+                "SELECT TRIGGER_NAME, ACTION_TIMING, EVENT_MANIPULATION, ACTION_STATEMENT,
+                        ACTION_ORIENTATION
+                 FROM INFORMATION_SCHEMA.TRIGGERS
+                 WHERE EVENT_OBJECT_SCHEMA = ? AND EVENT_OBJECT_TABLE = ?"
+            );
+            $stmt->execute([$database, $name]);
+            $triggers = $stmt->fetchAll();
+
+            $stmt = $pdo->prepare(
+                "SELECT TABLE_NAME, VIEW_DEFINITION FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_SCHEMA = ?"
+            );
+            $stmt->execute([$database]);
             $allViews = $stmt->fetchAll();
-
-            $result = [];
-            foreach ($allViews as $v) {
-                if (stripos($v['VIEW_DEFINITION'], $table) !== false) {
-                    $viewName = $v['TABLE_NAME'];
-                    $viewCols = getColumns($pdo, $db, $viewName);
-                    $result[] = ['name' => $viewName, 'columns' => $viewCols];
-                }
-            }
-            success(['views' => $result]);
-        }
-
-        case 'export_database': {
-            $pdo = getPdo($input);
-            $db = getDbName($input);
-            $mode = $input['mode'] ?? 'both';
-            $chunkSize = 5000;
-
-            writeLog("export_database ZIP: mode={$mode}, db={$db}");
-
-            $exportDir = __DIR__ . '/exports';
-            if (!is_dir($exportDir)) mkdir($exportDir, 0755, true);
-
-            // Clean old exports (older than 1 hour)
-            foreach (glob($exportDir . '/*.zip') as $old) {
-                if (filemtime($old) < time() - 3600) @unlink($old);
-            }
-
-            $zipName = $db . '_' . $mode . '_' . date('Ymd_His') . '.zip';
-            $zipPath = $exportDir . '/' . $zipName;
-
-            $zip = new ZipArchive();
-            if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
-                fail('לא ניתן ליצור קובץ ZIP');
-            }
-
-            $tablesList = $pdo->query("SHOW FULL TABLES")->fetchAll();
-            $structure = ['database' => $db, 'exportedAt' => date('c'), 'tables' => []];
-            $tempFiles = [];
-
-            foreach ($tablesList as $r) {
-                $keys = array_keys($r);
-                $name = $r[$keys[0]];
-                $type = $r[$keys[1]] ?? 'BASE TABLE';
-                $isView = ($type === 'VIEW');
-
-                writeLog("export_database: processing {$name}");
-
-                // Structure
-                if ($mode === 'structure' || $mode === 'both') {
-                    $tableStruct = [
-                        'name' => $name,
-                        'type' => $isView ? 'view' : 'table',
-                        'columns' => getColumns($pdo, $db, $name),
-                    ];
-                    if (!$isView) {
-                        $tableStruct['indexes'] = getIndexes($pdo, $name);
-                        $tableStruct['foreignKeys'] = getForeignKeys($pdo, $db, $name);
-                    }
-                    try {
-                        $createRow = $pdo->query("SHOW CREATE TABLE " . qi($name))->fetch();
-                        $tableStruct['createSql'] = $createRow['Create Table'] ?? $createRow['Create View'] ?? '';
-                    } catch (Exception $e) {
-                        $tableStruct['createSql'] = '';
-                    }
-                    $structure['tables'][] = $tableStruct;
-                }
-
-                // Data - stream in chunks to temp file
-                if ($mode === 'data' || $mode === 'both') {
-                    try {
-                        $count = intval($pdo->query("SELECT COUNT(*) FROM " . qi($name))->fetchColumn());
-                        $tmpFile = tempnam(sys_get_temp_dir(), 'dbexp_');
-                        $tempFiles[] = $tmpFile;
-                        $fp = fopen($tmpFile, 'w');
-
-                        fwrite($fp, '{"table":' . json_encode($name) . ',"type":"' . ($isView ? 'view' : 'table') . '","rowCount":' . $count . ',"rows":[');
-
-                        $firstRow = true;
-                        for ($offset = 0; $offset < $count; $offset += $chunkSize) {
-                            $chunk = $pdo->query("SELECT * FROM " . qi($name) . " LIMIT {$chunkSize} OFFSET {$offset}")->fetchAll();
-                            $chunk = sanitizeRows($chunk);
-                            foreach ($chunk as $row) {
-                                if (!$firstRow) fwrite($fp, ',');
-                                fwrite($fp, json_encode($row, JSON_UNESCAPED_UNICODE));
-                                $firstRow = false;
-                            }
-                            unset($chunk);
-                        }
-
-                        fwrite($fp, ']}');
-                        fclose($fp);
-
-                        $zip->addFile($tmpFile, "data/{$name}.json");
-                        writeLog("export_database: {$name} done ({$count} rows)");
-                    } catch (Exception $e) {
-                        writeLog("export_database: FAILED {$name}: " . $e->getMessage());
-                        $zip->addFromString("data/{$name}.error.txt", $e->getMessage());
-                    }
+            $referencingViews = [];
+            foreach ($allViews as $view) {
+                $def = $view['VIEW_DEFINITION'] ?? '';
+                if (stripos($def, "`{$name}`") !== false ||
+                    preg_match('/\b' . preg_quote($name, '/') . '\b/i', $def)) {
+                    $referencingViews[] = $view['TABLE_NAME'];
                 }
             }
 
-            // Add structure JSON
-            if ($mode === 'structure' || $mode === 'both') {
-                $zip->addFromString('structure.json', json_encode($structure, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
-            }
+            $stmt = $pdo->prepare(
+                "SELECT TABLE_COMMENT, ENGINE, TABLE_COLLATION, AUTO_INCREMENT
+                 FROM INFORMATION_SCHEMA.TABLES
+                 WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?"
+            );
+            $stmt->execute([$database, $name]);
+            $tableInfo = $stmt->fetch();
 
-            $zip->close();
-
-            // Clean temp files
-            foreach ($tempFiles as $tmp) {
-                @unlink($tmp);
-            }
-
-            $fileSize = filesize($zipPath);
-            writeLog("export_database: ZIP created: {$zipName} ({$fileSize} bytes)");
-
-            success([
-                'file' => 'exports/' . $zipName,
-                'filename' => $zipName,
-                'size' => $fileSize
+            echo json_encode([
+                'success' => true,
+                'type' => 'table',
+                'createSql' => $createSql,
+                'columns' => $columns,
+                'indexes' => $indexes,
+                'foreignKeys' => $foreignKeys,
+                'incomingFks' => $incomingFks,
+                'triggers' => $triggers,
+                'referencingViews' => $referencingViews,
+                'tableInfo' => $tableInfo
             ]);
             break;
         }
 
+        // ============================================================
+        // GET RELATIONSHIPS - FKs for a specific table (in/out)
+        // ============================================================
+        case 'get_relationships': {
+            $table = $input['table'] ?? '';
+
+            $stmt = $pdo->prepare("
+                SELECT kcu.CONSTRAINT_NAME, kcu.COLUMN_NAME,
+                       kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME,
+                       rc.UPDATE_RULE, rc.DELETE_RULE
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
+                    ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
+                    AND kcu.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA
+                WHERE kcu.TABLE_SCHEMA = ? AND kcu.TABLE_NAME = ?
+                  AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+            ");
+            $stmt->execute([$database, $table]);
+            $outgoing = $stmt->fetchAll();
+
+            $stmt = $pdo->prepare("
+                SELECT kcu.CONSTRAINT_NAME, kcu.TABLE_NAME AS SOURCE_TABLE,
+                       kcu.COLUMN_NAME AS SOURCE_COLUMN, kcu.REFERENCED_COLUMN_NAME,
+                       rc.UPDATE_RULE, rc.DELETE_RULE
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
+                    ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
+                    AND kcu.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA
+                WHERE kcu.TABLE_SCHEMA = ? AND kcu.REFERENCED_TABLE_NAME = ?
+            ");
+            $stmt->execute([$database, $table]);
+            $incoming = $stmt->fetchAll();
+
+            echo json_encode(['success' => true, 'outgoing' => $outgoing, 'incoming' => $incoming]);
+            break;
+        }
+
+        // ============================================================
+        // GET ALL RELATIONSHIPS - used by the ERD visualization
+        // ============================================================
+        case 'get_all_relationships': {
+            $stmt = $pdo->prepare("
+                SELECT kcu.TABLE_NAME, kcu.COLUMN_NAME,
+                       kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME,
+                       kcu.CONSTRAINT_NAME
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                WHERE kcu.TABLE_SCHEMA = ? AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+            ");
+            $stmt->execute([$database]);
+            $relationships = $stmt->fetchAll();
+
+            $stmt = $pdo->query("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'");
+            $tables = [];
+            while ($row = $stmt->fetch(PDO::FETCH_NUM)) {
+                $tables[] = $row[0];
+            }
+
+            $tableColumns = [];
+            foreach ($tables as $t) {
+                $s = $pdo->query("SHOW COLUMNS FROM " . quoteId($t));
+                $tableColumns[$t] = $s->fetchAll();
+            }
+
+            echo json_encode([
+                'success' => true,
+                'relationships' => $relationships,
+                'tables' => $tables,
+                'tableColumns' => $tableColumns
+            ]);
+            break;
+        }
+
+        // ============================================================
+        // ADD ROW
+        // ============================================================
         case 'add_row': {
-            $pdo = getPdo($input);
             $table = $input['table'] ?? '';
             $data = $input['data'] ?? [];
-            if (!$table) fail('חסר שם טבלה');
-            if (empty($data)) fail('חסרים נתונים');
+            $qt = quoteId($table);
 
             $cols = [];
-            $vals = [];
-            $params = [];
+            $placeholders = [];
+            $values = [];
             foreach ($data as $col => $val) {
-                if ($val === '__SKIP__' || $val === '') continue;
-                $cols[] = qi($col);
-                if ($val === '__NULL__' || $val === null) {
-                    $vals[] = 'NULL';
-                } else {
-                    $vals[] = '?';
-                    $params[] = $val;
-                }
+                if ($val === '__SKIP__') continue;
+                $cols[] = quoteId($col);
+                $placeholders[] = '?';
+                $values[] = ($val === '__NULL__') ? null : $val;
             }
 
-            if (empty($cols)) fail('אין נתונים להוספה');
+            if (empty($cols)) {
+                echo json_encode(['success' => false, 'error' => 'לא סופקו נתונים']);
+                break;
+            }
 
-            $sql = "INSERT INTO " . qi($table) . " (" . implode(', ', $cols) . ") VALUES (" . implode(', ', $vals) . ")";
+            $sql = "INSERT INTO {$qt} (" . implode(', ', $cols) . ") VALUES (" . implode(', ', $placeholders) . ")";
             $stmt = $pdo->prepare($sql);
-            $stmt->execute($params);
-
-            success(['insertId' => $pdo->lastInsertId()]);
+            $stmt->execute($values);
+            echo json_encode(['success' => true, 'insertId' => $pdo->lastInsertId()]);
+            break;
         }
 
+        // ============================================================
+        // DELETE ROW
+        // ============================================================
         case 'delete_row': {
-            $pdo = getPdo($input);
             $table = $input['table'] ?? '';
             $where = $input['where'] ?? [];
-            if (!$table) fail('חסר שם טבלה');
-            if (empty($where)) fail('חסרים תנאי מחיקה');
+            $qt = quoteId($table);
+
+            if (empty($where)) {
+                echo json_encode(['success' => false, 'error' => 'לא סופקו תנאים למחיקה']);
+                break;
+            }
 
             $conditions = [];
-            $params = [];
+            $values = [];
             foreach ($where as $col => $val) {
                 if ($val === null) {
-                    $conditions[] = qi($col) . " IS NULL";
+                    $conditions[] = quoteId($col) . " IS NULL";
                 } else {
-                    $conditions[] = qi($col) . " = ?";
-                    $params[] = $val;
+                    $conditions[] = quoteId($col) . " = ?";
+                    $values[] = $val;
                 }
             }
 
-            $sql = "DELETE FROM " . qi($table) . " WHERE " . implode(' AND ', $conditions) . " LIMIT 1";
+            $sql = "DELETE FROM {$qt} WHERE " . implode(' AND ', $conditions) . " LIMIT 1";
             $stmt = $pdo->prepare($sql);
-            $stmt->execute($params);
-
-            success(['affectedRows' => $stmt->rowCount()]);
+            $stmt->execute($values);
+            echo json_encode(['success' => true, 'affectedRows' => $stmt->rowCount()]);
+            break;
         }
 
+        // ============================================================
+        // ADD COLUMN
+        // ============================================================
         case 'add_column': {
-            $pdo = getPdo($input);
             $table = $input['table'] ?? '';
             $colName = $input['column_name'] ?? '';
-            $colType = $input['column_type'] ?? '';
+            $colType = $input['column_type'] ?? 'VARCHAR(255)';
             $nullable = $input['nullable'] ?? true;
-            $defaultValue = $input['default_value'] ?? null;
+            $defaultVal = $input['default_value'] ?? null;
             $comment = $input['comment'] ?? '';
-            $afterColumn = $input['after_column'] ?? '';
+            $afterCol = $input['after_column'] ?? '';
+            $qt = quoteId($table);
+            $qc = quoteId($colName);
 
-            if (!$table) fail('חסר שם טבלה');
-            if (!$colName) fail('חסר שם עמודה');
-            if (!$colType) fail('חסר סוג עמודה');
-
-            $sql = "ALTER TABLE " . qi($table) . " ADD COLUMN " . qi($colName) . " " . $colType;
+            $sql = "ALTER TABLE {$qt} ADD COLUMN {$qc} {$colType}";
             if (!$nullable) $sql .= " NOT NULL";
-            if ($defaultValue !== null && $defaultValue !== '') {
-                $sql .= " DEFAULT " . $pdo->quote($defaultValue);
+            if ($defaultVal !== null && $defaultVal !== '') {
+                $sql .= " DEFAULT " . $pdo->quote($defaultVal);
             }
-            if ($comment) $sql .= " COMMENT " . $pdo->quote($comment);
-            if ($afterColumn) $sql .= " AFTER " . qi($afterColumn);
+            if ($comment !== '') {
+                $sql .= " COMMENT " . $pdo->quote($comment);
+            }
+            if ($afterCol !== '') {
+                $sql .= " AFTER " . quoteId($afterCol);
+            }
 
             $pdo->exec($sql);
-            success([]);
+            echo json_encode(['success' => true]);
+            break;
         }
 
+        // ============================================================
+        // DROP COLUMN (with FK check)
+        // ============================================================
         case 'drop_column': {
-            $pdo = getPdo($input);
-            $db = getDbName($input);
             $table = $input['table'] ?? '';
             $column = $input['column'] ?? '';
-            if (!$table || !$column) fail('חסר שם טבלה או עמודה');
 
-            // Check FK references
-            $stmt = $pdo->prepare("SELECT TABLE_NAME, COLUMN_NAME, CONSTRAINT_NAME
-                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
-                WHERE TABLE_SCHEMA = ? AND REFERENCED_TABLE_NAME = ? AND REFERENCED_COLUMN_NAME = ?");
-            $stmt->execute([$db, $table, $column]);
-            $refs = $stmt->fetchAll();
+            $stmt = $pdo->prepare("
+                SELECT kcu.CONSTRAINT_NAME, kcu.TABLE_NAME, kcu.COLUMN_NAME,
+                       kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                WHERE kcu.TABLE_SCHEMA = ? AND (
+                    (kcu.TABLE_NAME = ? AND kcu.COLUMN_NAME = ? AND kcu.REFERENCED_TABLE_NAME IS NOT NULL)
+                    OR (kcu.REFERENCED_TABLE_NAME = ? AND kcu.REFERENCED_COLUMN_NAME = ?)
+                )
+            ");
+            $stmt->execute([$database, $table, $column, $table, $column]);
+            $fks = $stmt->fetchAll();
 
-            if (!empty($refs)) {
-                $details = array_map(function($r) {
-                    return $r['TABLE_NAME'] . '.' . $r['COLUMN_NAME'] . ' (' . $r['CONSTRAINT_NAME'] . ')';
-                }, $refs);
-                fail("לא ניתן למחוק את העמודה - קיימים הקשרים:\n" . implode("\n", $details));
+            if (!empty($fks)) {
+                echo json_encode([
+                    'success' => false,
+                    'error' => 'לא ניתן למחוק עמודה זו - קיימים קשרי Foreign Key',
+                    'constraints' => $fks
+                ]);
+                break;
             }
 
-            $stmt = $pdo->prepare("SELECT CONSTRAINT_NAME, REFERENCED_TABLE_NAME
-                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
-                WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL");
-            $stmt->execute([$db, $table, $column]);
-            $outRefs = $stmt->fetchAll();
-
-            if (!empty($outRefs)) {
-                $details = array_map(function($r) {
-                    return $r['CONSTRAINT_NAME'] . ' → ' . $r['REFERENCED_TABLE_NAME'];
-                }, $outRefs);
-                fail("לא ניתן למחוק - העמודה חלק ממפתח זר:\n" . implode("\n", $details));
-            }
-
-            $pdo->exec("ALTER TABLE " . qi($table) . " DROP COLUMN " . qi($column));
-            success([]);
+            $pdo->exec("ALTER TABLE " . quoteId($table) . " DROP COLUMN " . quoteId($column));
+            echo json_encode(['success' => true]);
+            break;
         }
 
-        case 'get_truncate_plan': {
-            $pdo = getPdo($input);
-            $db = getDbName($input);
+        // ============================================================
+        // GET TABLE VIEWS - find views that reference a given table
+        // ============================================================
+        case 'get_table_views': {
+            $table = $input['table'] ?? '';
 
-            $stmt = $pdo->prepare("SELECT TABLE_NAME, TABLE_ROWS
-                FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'");
-            $stmt->execute([$db]);
-            $tables = $stmt->fetchAll();
+            $stmt = $pdo->prepare(
+                "SELECT TABLE_NAME, VIEW_DEFINITION FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_SCHEMA = ?"
+            );
+            $stmt->execute([$database]);
+            $allViews = $stmt->fetchAll();
 
-            $totalRows = 0;
-            $tableList = [];
+            $relatedViews = [];
+            foreach ($allViews as $view) {
+                $def = $view['VIEW_DEFINITION'] ?? '';
+                if (stripos($def, "`{$table}`") !== false ||
+                    preg_match('/\b' . preg_quote($table, '/') . '\b/i', $def)) {
+                    $vn = quoteId($view['TABLE_NAME']);
+                    try {
+                        $colStmt = $pdo->query("SHOW COLUMNS FROM {$vn}");
+                        $viewCols = $colStmt->fetchAll();
+                        $relatedViews[] = [
+                            'name' => $view['TABLE_NAME'],
+                            'columns' => $viewCols
+                        ];
+                    } catch (Exception $e) {
+                        // skip views we can't read
+                    }
+                }
+            }
+
+            echo json_encode(['success' => true, 'views' => $relatedViews]);
+            break;
+        }
+
+        // ============================================================
+        // GET VIEW DATA - query a view with pagination
+        // ============================================================
+        case 'get_view_data': {
+            $view = $input['view'] ?? '';
+            $page = max(1, intval($input['page'] ?? 1));
+            $limit = max(1, min(500, intval($input['limit'] ?? 50)));
+            $offset = ($page - 1) * $limit;
+            $qv = quoteId($view);
+
+            $stmt = $pdo->query("SELECT COUNT(*) AS total FROM {$qv}");
+            $total = intval($stmt->fetch()['total']);
+
+            $stmt = $pdo->query("SELECT * FROM {$qv} LIMIT {$limit} OFFSET {$offset}");
+            $rows = $stmt->fetchAll();
+
+            echo json_encode([
+                'success' => true,
+                'rows' => $rows,
+                'total' => $total,
+                'page' => $page,
+                'limit' => $limit,
+                'totalPages' => $total > 0 ? ceil($total / $limit) : 1
+            ]);
+            break;
+        }
+
+        // ============================================================
+        // GET FULL TABLE DATA - no pagination, used for JSON export
+        // ============================================================
+        case 'get_full_table_data': {
+            $table = $input['table'] ?? '';
+            $qt = quoteId($table);
+            $stmt = $pdo->query("SELECT * FROM {$qt}");
+            $rows = $stmt->fetchAll();
+            echo json_encode(['success' => true, 'rows' => $rows]);
+            break;
+        }
+
+        // ============================================================
+        // GET FULL VIEW DATA - no pagination, used for JSON export
+        // ============================================================
+        case 'get_full_view_data': {
+            $view = $input['view'] ?? '';
+            $qv = quoteId($view);
+            $stmt = $pdo->query("SELECT * FROM {$qv}");
+            $rows = $stmt->fetchAll();
+            echo json_encode(['success' => true, 'rows' => $rows]);
+            break;
+        }
+
+        // ============================================================
+        // GET DATABASE OVERVIEW - whole-DB summary for the dashboard
+        // ============================================================
+        case 'get_database_overview': {
+            $stmt = $pdo->query("SHOW FULL TABLES");
+            $tables = [];
+            $views = [];
+            while ($row = $stmt->fetch(PDO::FETCH_NUM)) {
+                if ($row[1] === 'BASE TABLE') $tables[] = $row[0];
+                else $views[] = $row[0];
+            }
+
+            $stmt = $pdo->prepare("
+                SELECT TABLE_NAME, TABLE_ROWS, ENGINE, TABLE_COLLATION,
+                       DATA_LENGTH, INDEX_LENGTH, AUTO_INCREMENT, TABLE_COMMENT
+                FROM INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'
+            ");
+            $stmt->execute([$database]);
+            $tableInfo = [];
+            foreach ($stmt->fetchAll() as $r) {
+                $tableInfo[$r['TABLE_NAME']] = $r;
+            }
+
+            $tableColumns = [];
             foreach ($tables as $t) {
-                $rows = intval($t['TABLE_ROWS']);
-                $totalRows += $rows;
-                $tableList[] = ['name' => $t['TABLE_NAME'], 'rows' => $rows];
+                $s = $pdo->query("SHOW COLUMNS FROM " . quoteId($t));
+                $tableColumns[$t] = $s->fetchAll();
             }
 
-            success(['tableCount' => count($tables), 'totalRows' => $totalRows, 'tables' => $tableList]);
+            $stmt = $pdo->prepare("
+                SELECT kcu.TABLE_NAME, kcu.COLUMN_NAME,
+                       kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME,
+                       kcu.CONSTRAINT_NAME, rc.UPDATE_RULE, rc.DELETE_RULE
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                LEFT JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
+                    ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
+                    AND kcu.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA
+                WHERE kcu.TABLE_SCHEMA = ? AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+            ");
+            $stmt->execute([$database]);
+            $relationships = $stmt->fetchAll();
+
+            $stmt = $pdo->prepare(
+                "SELECT TRIGGER_NAME, EVENT_OBJECT_TABLE, ACTION_TIMING, EVENT_MANIPULATION
+                 FROM INFORMATION_SCHEMA.TRIGGERS WHERE EVENT_OBJECT_SCHEMA = ?"
+            );
+            $stmt->execute([$database]);
+            $triggers = $stmt->fetchAll();
+
+            echo json_encode([
+                'success' => true,
+                'database' => $database,
+                'tables' => $tables,
+                'views' => $views,
+                'tableInfo' => $tableInfo,
+                'tableColumns' => $tableColumns,
+                'relationships' => $relationships,
+                'triggers' => $triggers
+            ]);
+            break;
         }
 
+        // ============================================================
+        // EXPORT DATABASE - full DB export in one call
+        //   mode: 'structure' | 'data' | 'both'
+        // ============================================================
+        case 'export_database': {
+            $mode = $input['mode'] ?? 'both';
+            if (!in_array($mode, ['structure', 'data', 'both'], true)) {
+                echo json_encode(['success' => false, 'error' => 'mode חייב להיות structure / data / both']);
+                break;
+            }
+
+            $stmt = $pdo->query("SHOW FULL TABLES");
+            $tables = [];
+            $views = [];
+            while ($row = $stmt->fetch(PDO::FETCH_NUM)) {
+                if ($row[1] === 'BASE TABLE') $tables[] = $row[0];
+                else $views[] = $row[0];
+            }
+
+            $out = [
+                'database' => $database,
+                'exportedAt' => date('c'),
+                'mode' => $mode,
+                'tables' => []
+            ];
+
+            $stmtFK = $pdo->prepare("
+                SELECT kcu.CONSTRAINT_NAME, kcu.COLUMN_NAME,
+                       kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME,
+                       rc.UPDATE_RULE, rc.DELETE_RULE
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                LEFT JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
+                    ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
+                    AND kcu.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA
+                WHERE kcu.TABLE_SCHEMA = ? AND kcu.TABLE_NAME = ?
+                  AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+            ");
+
+            $stmtTrig = $pdo->prepare("
+                SELECT TRIGGER_NAME, ACTION_TIMING, EVENT_MANIPULATION, ACTION_STATEMENT
+                FROM INFORMATION_SCHEMA.TRIGGERS
+                WHERE EVENT_OBJECT_SCHEMA = ? AND EVENT_OBJECT_TABLE = ?
+            ");
+
+            $stmtInfo = $pdo->prepare(
+                "SELECT TABLE_COMMENT, ENGINE, TABLE_COLLATION, AUTO_INCREMENT, TABLE_ROWS, CREATE_TIME, UPDATE_TIME
+                 FROM INFORMATION_SCHEMA.TABLES
+                 WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?"
+            );
+
+            foreach ($tables as $t) {
+                $qt = quoteId($t);
+                $entry = ['name' => $t];
+
+                if ($mode === 'structure' || $mode === 'both') {
+                    $cs = $pdo->query("SHOW FULL COLUMNS FROM {$qt}");
+                    $entry['columns'] = $cs->fetchAll();
+
+                    $is = $pdo->query("SHOW INDEX FROM {$qt}");
+                    $entry['indexes'] = $is->fetchAll();
+
+                    $stmtFK->execute([$database, $t]);
+                    $entry['foreignKeys'] = $stmtFK->fetchAll();
+
+                    $stmtTrig->execute([$database, $t]);
+                    $entry['triggers'] = $stmtTrig->fetchAll();
+
+                    $stmtInfo->execute([$database, $t]);
+                    $entry['tableInfo'] = $stmtInfo->fetch();
+
+                    $createStmt = $pdo->query("SHOW CREATE TABLE {$qt}");
+                    $createRow = $createStmt->fetch(PDO::FETCH_NUM);
+                    $entry['createStatement'] = $createRow[1] ?? '';
+                }
+
+                if ($mode === 'data' || $mode === 'both') {
+                    $ds = $pdo->query("SELECT * FROM {$qt}");
+                    $entry['data'] = $ds->fetchAll();
+                }
+
+                $out['tables'][] = $entry;
+            }
+
+            if (!empty($views)) {
+                $out['views'] = [];
+                foreach ($views as $v) {
+                    $qv = quoteId($v);
+                    $vEntry = ['name' => $v];
+                    if ($mode === 'structure' || $mode === 'both') {
+                        $cs = $pdo->query("SHOW FULL COLUMNS FROM {$qv}");
+                        $vEntry['columns'] = $cs->fetchAll();
+                        $createStmt = $pdo->query("SHOW CREATE VIEW {$qv}");
+                        $createRow = $createStmt->fetch(PDO::FETCH_NUM);
+                        $vEntry['createStatement'] = $createRow[1] ?? '';
+                    }
+                    if ($mode === 'data' || $mode === 'both') {
+                        try {
+                            $ds = $pdo->query("SELECT * FROM {$qv}");
+                            $vEntry['data'] = $ds->fetchAll();
+                        } catch (Exception $e) {
+                            $vEntry['data'] = [];
+                            $vEntry['dataError'] = $e->getMessage();
+                        }
+                    }
+                    $out['views'][] = $vEntry;
+                }
+            }
+
+            echo json_encode(['success' => true, 'export' => $out]);
+            break;
+        }
+
+        // ============================================================
+        // GET TRUNCATE PLAN - returns tables in safe truncation order
+        //   (children first, parents last) + per-table row counts
+        // ============================================================
+        case 'get_truncate_plan': {
+            $stmt = $pdo->query("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'");
+            $tables = [];
+            while ($row = $stmt->fetch(PDO::FETCH_NUM)) $tables[] = $row[0];
+
+            $stmt = $pdo->prepare("
+                SELECT TABLE_NAME, REFERENCED_TABLE_NAME
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+                WHERE TABLE_SCHEMA = ? AND REFERENCED_TABLE_NAME IS NOT NULL
+            ");
+            $stmt->execute([$database]);
+            $deps = $stmt->fetchAll();
+
+            // Build dependency graph: parents[child] = [parents...]
+            $parents = [];
+            foreach ($tables as $t) $parents[$t] = [];
+            foreach ($deps as $d) {
+                if (in_array($d['TABLE_NAME'], $tables, true) && in_array($d['REFERENCED_TABLE_NAME'], $tables, true)) {
+                    if ($d['TABLE_NAME'] !== $d['REFERENCED_TABLE_NAME']) {
+                        $parents[$d['TABLE_NAME']][$d['REFERENCED_TABLE_NAME']] = true;
+                    }
+                }
+            }
+
+            // Topological sort (Kahn's): emit parents first; we will reverse for truncate
+            $remaining = $parents;
+            $order = [];
+            while (!empty($remaining)) {
+                $emitted = [];
+                foreach ($remaining as $t => $ps) {
+                    $hasUnresolved = false;
+                    foreach ($ps as $p => $_) {
+                        if (isset($remaining[$p])) { $hasUnresolved = true; break; }
+                    }
+                    if (!$hasUnresolved) $emitted[] = $t;
+                }
+                if (empty($emitted)) {
+                    // cycle - emit all remaining as-is (FK_CHECKS=0 will save us)
+                    foreach ($remaining as $t => $_) $order[] = $t;
+                    break;
+                }
+                foreach ($emitted as $t) { $order[] = $t; unset($remaining[$t]); }
+            }
+
+            // Reverse: children first, parents last (truncate-safe)
+            $truncateOrder = array_reverse($order);
+
+            // Row counts
+            $rowCounts = [];
+            $totalRows = 0;
+            foreach ($truncateOrder as $t) {
+                try {
+                    $s = $pdo->query("SELECT COUNT(*) AS c FROM " . quoteId($t));
+                    $c = intval($s->fetch()['c']);
+                    $rowCounts[$t] = $c;
+                    $totalRows += $c;
+                } catch (Exception $e) {
+                    $rowCounts[$t] = -1;
+                }
+            }
+
+            echo json_encode([
+                'success' => true,
+                'truncateOrder' => $truncateOrder,
+                'rowCounts' => $rowCounts,
+                'totalRows' => $totalRows,
+                'tableCount' => count($truncateOrder)
+            ]);
+            break;
+        }
+
+        // ============================================================
+        // TRUNCATE DATABASE - empties all tables (data only, schema stays)
+        //   Requires confirmation token: $input['confirm'] === database name
+        // ============================================================
         case 'truncate_database': {
-            $pdo = getPdo($input);
-            $db = getDbName($input);
             $confirm = $input['confirm'] ?? '';
+            if ($confirm !== $database) {
+                echo json_encode(['success' => false, 'error' => 'אישור שגוי - יש להזין את שם מסד הנתונים בדיוק']);
+                break;
+            }
 
-            if ($confirm !== $db) fail('שם מסד הנתונים לא תואם');
+            $stmt = $pdo->query("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'");
+            $tables = [];
+            while ($row = $stmt->fetch(PDO::FETCH_NUM)) $tables[] = $row[0];
 
-            $pdo->exec("SET FOREIGN_KEY_CHECKS = 0");
-
-            $stmt = $pdo->prepare("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES
-                WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'");
-            $stmt->execute([$db]);
-            $tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
-
+            $pdo->exec("SET FOREIGN_KEY_CHECKS=0");
             $truncated = [];
             $errors = [];
-            foreach ($tables as $t) {
-                try {
-                    $pdo->exec("TRUNCATE TABLE " . qi($t));
-                    $truncated[] = $t;
-                } catch (Exception $e) {
-                    $errors[$t] = $e->getMessage();
+            try {
+                foreach ($tables as $t) {
+                    try {
+                        $pdo->exec("TRUNCATE TABLE " . quoteId($t));
+                        $truncated[] = $t;
+                    } catch (Exception $e) {
+                        $errors[$t] = $e->getMessage();
+                    }
                 }
+            } finally {
+                $pdo->exec("SET FOREIGN_KEY_CHECKS=1");
             }
 
-            $pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
-            success(['truncated' => $truncated, 'errors' => $errors]);
+            echo json_encode([
+                'success' => empty($errors),
+                'truncated' => $truncated,
+                'errors' => $errors,
+                'tableCount' => count($truncated)
+            ]);
+            break;
         }
 
+        // ============================================================
+        // CLONE DATABASE - copies all data from current DB to target DB
+        //   Both DBs must exist on the same MySQL server with same creds
+        // ============================================================
         case 'clone_database': {
-            $pdo = getPdo($input);
-            $db = getDbName($input);
-            $target = $input['target'] ?? '';
-
-            if (!$target) fail('חסר שם יעד');
-            if (!preg_match('/^[a-zA-Z0-9_]+$/', $target)) fail('שם מסד נתונים לא חוקי');
-
-            $pdo->exec("CREATE DATABASE IF NOT EXISTS " . qi($target) . " CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-
-            $stmt = $pdo->prepare("SELECT TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ?");
-            $stmt->execute([$db]);
-            $items = $stmt->fetchAll();
-
-            $created = [];
-            $errors = [];
-
-            // Clone tables first
-            foreach ($items as $item) {
-                if ($item['TABLE_TYPE'] !== 'BASE TABLE') continue;
-                $name = $item['TABLE_NAME'];
-                try {
-                    $pdo->exec("CREATE TABLE " . qi($target) . "." . qi($name) . " LIKE " . qi($db) . "." . qi($name));
-                    $pdo->exec("INSERT INTO " . qi($target) . "." . qi($name) . " SELECT * FROM " . qi($db) . "." . qi($name));
-                    $created[] = $name;
-                } catch (Exception $e) {
-                    $errors[$name] = $e->getMessage();
-                }
+            $target = trim($input['target'] ?? '');
+            if ($target === '') {
+                echo json_encode(['success' => false, 'error' => 'לא הוזן שם מסד נתונים יעד']);
+                break;
+            }
+            if ($target === $database) {
+                echo json_encode(['success' => false, 'error' => 'מסד היעד זהה למסד המקור']);
+                break;
             }
 
-            // Clone views
-            foreach ($items as $item) {
-                if ($item['TABLE_TYPE'] === 'BASE TABLE') continue;
-                $name = $item['TABLE_NAME'];
-                try {
-                    $row = $pdo->query("SHOW CREATE VIEW " . qi($db) . "." . qi($name))->fetch();
-                    $viewSql = $row['Create View'] ?? '';
-                    if ($viewSql) {
-                        $viewSql = preg_replace('/DEFINER=`[^`]*`@`[^`]*`/', 'DEFINER=CURRENT_USER', $viewSql);
-                        $viewSql = str_replace(qi($db) . '.', qi($target) . '.', $viewSql);
-                        $pdo->exec("USE " . qi($target));
-                        $pdo->exec($viewSql);
-                        $pdo->exec("USE " . qi($db));
-                        $created[] = $name . ' (VIEW)';
+            $qTarget = quoteId($target);
+            $qSource = quoteId($database);
+
+            // Verify target DB exists and is accessible
+            try {
+                $check = $pdo->prepare("SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ?");
+                $check->execute([$target]);
+                if (!$check->fetch()) {
+                    echo json_encode(['success' => false, 'error' => "מסד היעד '{$target}' לא קיים"]);
+                    break;
+                }
+            } catch (Exception $e) {
+                echo json_encode(['success' => false, 'error' => 'אין הרשאה לבדוק את מסד היעד: ' . $e->getMessage()]);
+                break;
+            }
+
+            // List source tables
+            $stmt = $pdo->query("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'");
+            $sourceTables = [];
+            while ($row = $stmt->fetch(PDO::FETCH_NUM)) $sourceTables[] = $row[0];
+
+            // Topological order (parents first - so FKs are satisfiable as we copy)
+            $stmt = $pdo->prepare("
+                SELECT TABLE_NAME, REFERENCED_TABLE_NAME
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+                WHERE TABLE_SCHEMA = ? AND REFERENCED_TABLE_NAME IS NOT NULL
+            ");
+            $stmt->execute([$database]);
+            $deps = $stmt->fetchAll();
+
+            $parents = [];
+            foreach ($sourceTables as $t) $parents[$t] = [];
+            foreach ($deps as $d) {
+                if (in_array($d['TABLE_NAME'], $sourceTables, true) && in_array($d['REFERENCED_TABLE_NAME'], $sourceTables, true)) {
+                    if ($d['TABLE_NAME'] !== $d['REFERENCED_TABLE_NAME']) {
+                        $parents[$d['TABLE_NAME']][$d['REFERENCED_TABLE_NAME']] = true;
                     }
-                } catch (Exception $e) {
-                    $errors[$name] = $e->getMessage();
                 }
             }
+            $remaining = $parents;
+            $order = [];
+            while (!empty($remaining)) {
+                $emitted = [];
+                foreach ($remaining as $t => $ps) {
+                    $hasUnresolved = false;
+                    foreach ($ps as $p => $_) {
+                        if (isset($remaining[$p])) { $hasUnresolved = true; break; }
+                    }
+                    if (!$hasUnresolved) $emitted[] = $t;
+                }
+                if (empty($emitted)) {
+                    foreach ($remaining as $t => $_) $order[] = $t;
+                    break;
+                }
+                foreach ($emitted as $t) { $order[] = $t; unset($remaining[$t]); }
+            }
 
-            success(['created' => $created, 'errors' => $errors, 'targetDatabase' => $target]);
+            // Verify target tables exist
+            $missing = [];
+            foreach ($order as $t) {
+                try {
+                    $pdo->query("SELECT 1 FROM {$qTarget}." . quoteId($t) . " LIMIT 0");
+                } catch (Exception $e) {
+                    $missing[] = $t;
+                }
+            }
+            if (!empty($missing)) {
+                echo json_encode([
+                    'success' => false,
+                    'error' => 'במסד היעד חסרות הטבלאות הבאות: ' . implode(', ', $missing),
+                    'missing' => $missing
+                ]);
+                break;
+            }
+
+            $pdo->exec("SET FOREIGN_KEY_CHECKS=0");
+            $copied = [];
+            $errors = [];
+            try {
+                foreach ($order as $t) {
+                    $qt = quoteId($t);
+                    try {
+                        $pdo->exec("INSERT INTO {$qTarget}.{$qt} SELECT * FROM {$qSource}.{$qt}");
+                        $cs = $pdo->query("SELECT COUNT(*) AS c FROM {$qTarget}.{$qt}");
+                        $copied[$t] = intval($cs->fetch()['c']);
+                    } catch (Exception $e) {
+                        $errors[$t] = $e->getMessage();
+                    }
+                }
+            } finally {
+                $pdo->exec("SET FOREIGN_KEY_CHECKS=1");
+            }
+
+            echo json_encode([
+                'success' => empty($errors),
+                'copied' => $copied,
+                'errors' => $errors,
+                'target' => $target,
+                'source' => $database
+            ]);
+            break;
         }
 
         default:
-            fail('פעולה לא ידועה: ' . $action, 404);
+            http_response_code(400);
+            echo json_encode(['success' => false, 'error' => 'פעולה לא מוכרת: ' . $action]);
     }
+
 } catch (PDOException $e) {
-    fail('שגיאת מסד נתונים: ' . $e->getMessage(), 500);
+    http_response_code(500);
+    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 } catch (Exception $e) {
-    fail($e->getMessage(), 500);
+    http_response_code(500);
+    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }
