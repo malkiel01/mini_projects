@@ -2,49 +2,19 @@
 ini_set('display_errors', 0);
 ini_set('memory_limit', '512M');
 ini_set('max_execution_time', '120');
-set_time_limit(120);
-error_reporting(E_ALL);
-
-define('LOG_FILE', __DIR__ . '/debug.log');
-
-function writeLog($msg) {
-    @file_put_contents(LOG_FILE, "[" . date('Y-m-d H:i:s') . "] {$msg}\n", FILE_APPEND | LOCK_EX);
-}
-
-set_error_handler(function($severity, $message, $file, $line) {
-    writeLog("ERROR: {$message} at {$file}:{$line}");
-    throw new ErrorException($message, 0, $severity, $file, $line);
-});
-
-register_shutdown_function(function() {
-    $error = error_get_last();
-    if ($error && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
-        writeLog("FATAL: {$error['message']} at {$error['file']}:{$error['line']}");
-        http_response_code(500);
-        header('Content-Type: application/json; charset=utf-8');
-        echo json_encode([
-            'success' => false,
-            'error' => 'שגיאת PHP: ' . $error['message'] . ' (שורה ' . $error['line'] . ')'
-        ], JSON_UNESCAPED_UNICODE);
-    }
-    writeLog("=== REQUEST END ===\n");
-});
+@set_time_limit(120);
+error_reporting(0);
 
 header('Content-Type: application/json; charset=utf-8');
 
-$rawInput = file_get_contents('php://input');
-$input = json_decode($rawInput, true) ?: [];
+$input = json_decode(file_get_contents('php://input'), true) ?: [];
 $action = $input['action'] ?? '';
-writeLog("ACTION: {$action} | input_size=" . strlen($rawInput));
 
 function success($data = []) {
-    writeLog("SUCCESS response for action, preparing JSON...");
-    $merged = array_merge(['success' => true], $data);
-    $json = json_encode($merged, JSON_UNESCAPED_UNICODE);
+    $json = json_encode(array_merge(['success' => true], $data), JSON_UNESCAPED_UNICODE);
     if ($json === false) {
-        writeLog("JSON ENCODE FAILED: " . json_last_error_msg());
         http_response_code(500);
-        echo json_encode(['success' => false, 'error' => 'שגיאת קידוד JSON: ' . json_last_error_msg()], JSON_UNESCAPED_UNICODE);
+        echo json_encode(['success' => false, 'error' => 'JSON encode error: ' . json_last_error_msg()], JSON_UNESCAPED_UNICODE);
         exit;
     }
     echo $json;
@@ -52,7 +22,6 @@ function success($data = []) {
 }
 
 function fail($msg, $code = 400) {
-    writeLog("FAIL: {$msg}");
     http_response_code($code);
     echo json_encode(['success' => false, 'error' => $msg], JSON_UNESCAPED_UNICODE);
     exit;
