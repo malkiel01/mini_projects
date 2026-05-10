@@ -8,13 +8,8 @@ error_reporting(E_ALL);
 define('LOG_FILE', __DIR__ . '/debug.log');
 
 function writeLog($msg) {
-    $time = date('Y-m-d H:i:s');
-    $mem = round(memory_get_usage(true) / 1024 / 1024, 2) . 'MB';
-    file_put_contents(LOG_FILE, "[{$time}] [{$mem}] {$msg}\n", FILE_APPEND | LOCK_EX);
+    @file_put_contents(LOG_FILE, "[" . date('Y-m-d H:i:s') . "] {$msg}\n", FILE_APPEND | LOCK_EX);
 }
-
-writeLog("=== REQUEST START ===");
-writeLog("PHP " . PHP_VERSION . " | memory_limit=" . ini_get('memory_limit'));
 
 set_error_handler(function($severity, $message, $file, $line) {
     writeLog("ERROR: {$message} at {$file}:{$line}");
