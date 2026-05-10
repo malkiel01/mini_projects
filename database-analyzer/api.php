@@ -5,13 +5,26 @@ ini_set('max_execution_time', '120');
 set_time_limit(120);
 error_reporting(E_ALL);
 
+define('LOG_FILE', __DIR__ . '/debug.log');
+
+function writeLog($msg) {
+    $time = date('Y-m-d H:i:s');
+    $mem = round(memory_get_usage(true) / 1024 / 1024, 2) . 'MB';
+    file_put_contents(LOG_FILE, "[{$time}] [{$mem}] {$msg}\n", FILE_APPEND | LOCK_EX);
+}
+
+writeLog("=== REQUEST START ===");
+writeLog("PHP " . PHP_VERSION . " | memory_limit=" . ini_get('memory_limit'));
+
 set_error_handler(function($severity, $message, $file, $line) {
+    writeLog("ERROR: {$message} at {$file}:{$line}");
     throw new ErrorException($message, 0, $severity, $file, $line);
 });
 
 register_shutdown_function(function() {
     $error = error_get_last();
     if ($error && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
+        writeLog("FATAL: {$error['message']} at {$error['file']}:{$error['line']}");
         http_response_code(500);
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode([
@@ -19,17 +32,22 @@ register_shutdown_function(function() {
             'error' => 'שגיאת PHP: ' . $error['message'] . ' (שורה ' . $error['line'] . ')'
         ], JSON_UNESCAPED_UNICODE);
     }
+    writeLog("=== REQUEST END ===\n");
 });
 
 header('Content-Type: application/json; charset=utf-8');
 
-$input = json_decode(file_get_contents('php://input'), true) ?: [];
+$rawInput = file_get_contents('php://input');
+$input = json_decode($rawInput, true) ?: [];
 $action = $input['action'] ?? '';
+writeLog("ACTION: {$action} | input_size=" . strlen($rawInput));
 
 function success($data = []) {
+    writeLog("SUCCESS response for action, preparing JSON...");
     $merged = array_merge(['success' => true], $data);
     $json = json_encode($merged, JSON_UNESCAPED_UNICODE);
     if ($json === false) {
+        writeLog("JSON ENCODE FAILED: " . json_last_error_msg());
         http_response_code(500);
         echo json_encode(['success' => false, 'error' => 'שגיאת קידוד JSON: ' . json_last_error_msg()], JSON_UNESCAPED_UNICODE);
         exit;
@@ -39,6 +57,7 @@ function success($data = []) {
 }
 
 function fail($msg, $code = 400) {
+    writeLog("FAIL: {$msg}");
     http_response_code($code);
     echo json_encode(['success' => false, 'error' => $msg], JSON_UNESCAPED_UNICODE);
     exit;
@@ -398,6 +417,9 @@ try {
             $pdo = getPdo($input);
             $db = getDbName($input);
             $mode = $input['mode'] ?? 'both';
+            $maxRowsPerTable = 10000;
+
+            writeLog("export_database: mode={$mode}, db={$db}");
 
             $rows = $pdo->query("SHOW FULL TABLES")->fetchAll();
             $export = ['database' => $db, 'exportedAt' => date('c'), 'tables' => []];
@@ -406,6 +428,8 @@ try {
                 $keys = array_keys($r);
                 $name = $r[$keys[0]];
                 $type = $r[$keys[1]] ?? 'BASE TABLE';
+
+                writeLog("export_database: processing table {$name}");
 
                 $entry = ['name' => $name, 'type' => $type === 'VIEW' ? 'view' : 'table'];
 
@@ -420,22 +444,32 @@ try {
                         $entry['createSql'] = $createRow['Create Table'] ?? $createRow['Create View'] ?? '';
                     } catch (Exception $e) {
                         $entry['createSql'] = '';
+                        writeLog("export_database: SHOW CREATE failed for {$name}: " . $e->getMessage());
                     }
                 }
 
                 if ($mode === 'data' || $mode === 'both') {
                     try {
-                        $tableRows = $pdo->query("SELECT * FROM " . qi($name))->fetchAll();
+                        $count = $pdo->query("SELECT COUNT(*) FROM " . qi($name))->fetchColumn();
+                        $entry['totalRows'] = intval($count);
+                        $tableRows = $pdo->query("SELECT * FROM " . qi($name) . " LIMIT {$maxRowsPerTable}")->fetchAll();
                         $entry['rows'] = sanitizeRows($tableRows);
+                        if ($count > $maxRowsPerTable) {
+                            $entry['truncated'] = true;
+                            $entry['note'] = "הוצגו {$maxRowsPerTable} שורות מתוך {$count}";
+                        }
+                        writeLog("export_database: {$name} - {$count} rows fetched");
                     } catch (Exception $e) {
                         $entry['rows'] = [];
                         $entry['dataError'] = $e->getMessage();
+                        writeLog("export_database: data fetch failed for {$name}: " . $e->getMessage());
                     }
                 }
 
                 $export['tables'][] = $entry;
             }
 
+            writeLog("export_database: done, encoding JSON...");
             success(['export' => $export]);
             break;
         }
