@@ -1785,9 +1785,17 @@ async function downloadFullExport(mode, btn) {
   const labels = { structure: 'מבנה', data: 'תוכן', both: 'מבנה + תוכן' };
   const original = btn.innerHTML;
   btn.disabled = true;
-  btn.innerHTML = `<span class="dl-spinner"></span><span class="dl-desc">מכין ${labels[mode]} (ZIP)...</span>`;
+
+  let seconds = 0;
+  const timer = setInterval(() => {
+    seconds++;
+    btn.innerHTML = `<span class="dl-spinner"></span><span class="dl-desc">מייצא ${labels[mode]}... ${seconds} שניות</span>`;
+  }, 1000);
+  btn.innerHTML = `<span class="dl-spinner"></span><span class="dl-desc">מייצא ${labels[mode]}... 0 שניות</span>`;
+
   try {
     const res = await api('export_database', { mode });
+    clearInterval(timer);
     const link = document.createElement('a');
     link.href = res.file;
     link.download = res.filename;
@@ -1797,8 +1805,9 @@ async function downloadFullExport(mode, btn) {
     const sizeStr = res.size > 1048576
       ? (res.size / 1048576).toFixed(1) + ' MB'
       : Math.round(res.size / 1024) + ' KB';
-    toast(`✅ ZIP מוכן להורדה (${sizeStr})`, 'success');
+    toast(`✅ ZIP מוכן להורדה (${sizeStr}) | ${seconds} שניות`, 'success');
   } catch (err) {
+    clearInterval(timer);
     toast('❌ שגיאה: ' + err.message, 'error');
   } finally {
     btn.disabled = false;
