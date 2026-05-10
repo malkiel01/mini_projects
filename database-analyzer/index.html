@@ -1116,11 +1116,13 @@ function escapeHtml(s) {
 }
 
 function toast(message, type = 'info') {
+  if (type === 'error') console.error('[DB Analyzer]', message);
   const t = document.createElement('div');
   t.className = 'toast ' + type;
   t.textContent = message;
   $('toastContainer').appendChild(t);
-  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 3500);
+  const duration = type === 'error' ? 10000 : 3500;
+  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, duration);
 }
 
 function showLoading(container) {
@@ -4036,7 +4038,8 @@ async function renderExportTab(c) {
       downloadFile(json, fname, 'application/json');
       toast('✅ הקובץ הורד', 'success');
     } catch (err) {
-      toast('❌ שגיאה: ' + err.message, 'error');
+      console.error('[Export Error]', err);
+      toast('❌ שגיאה בייצוא: ' + err.message, 'error');
     } finally {
       btn.disabled = false;
       btn.innerHTML = '⬇️ ייצא והורד';

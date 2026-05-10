@@ -5,7 +5,14 @@ $input = json_decode(file_get_contents('php://input'), true) ?: [];
 $action = $input['action'] ?? '';
 
 function success($data = []) {
-    echo json_encode(array_merge(['success' => true], $data), JSON_UNESCAPED_UNICODE);
+    $merged = array_merge(['success' => true], $data);
+    $json = json_encode($merged, JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR);
+    if ($json === false) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => 'שגיאת קידוד JSON: ' . json_last_error_msg()], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    echo $json;
     exit;
 }
 
