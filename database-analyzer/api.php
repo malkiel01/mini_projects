@@ -417,60 +417,112 @@ try {
             $pdo = getPdo($input);
             $db = getDbName($input);
             $mode = $input['mode'] ?? 'both';
-            $maxRowsPerTable = 10000;
+            $chunkSize = 5000;
 
-            writeLog("export_database: mode={$mode}, db={$db}");
+            writeLog("export_database ZIP: mode={$mode}, db={$db}");
 
-            $rows = $pdo->query("SHOW FULL TABLES")->fetchAll();
-            $export = ['database' => $db, 'exportedAt' => date('c'), 'tables' => []];
+            $exportDir = __DIR__ . '/exports';
+            if (!is_dir($exportDir)) mkdir($exportDir, 0755, true);
 
-            foreach ($rows as $r) {
+            // Clean old exports (older than 1 hour)
+            foreach (glob($exportDir . '/*.zip') as $old) {
+                if (filemtime($old) < time() - 3600) @unlink($old);
+            }
+
+            $zipName = $db . '_' . $mode . '_' . date('Ymd_His') . '.zip';
+            $zipPath = $exportDir . '/' . $zipName;
+
+            $zip = new ZipArchive();
+            if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+                fail('לא ניתן ליצור קובץ ZIP');
+            }
+
+            $tablesList = $pdo->query("SHOW FULL TABLES")->fetchAll();
+            $structure = ['database' => $db, 'exportedAt' => date('c'), 'tables' => []];
+            $tempFiles = [];
+
+            foreach ($tablesList as $r) {
                 $keys = array_keys($r);
                 $name = $r[$keys[0]];
                 $type = $r[$keys[1]] ?? 'BASE TABLE';
+                $isView = ($type === 'VIEW');
 
-                writeLog("export_database: processing table {$name}");
+                writeLog("export_database: processing {$name}");
 
-                $entry = ['name' => $name, 'type' => $type === 'VIEW' ? 'view' : 'table'];
-
+                // Structure
                 if ($mode === 'structure' || $mode === 'both') {
-                    $entry['columns'] = getColumns($pdo, $db, $name);
-                    if ($type !== 'VIEW') {
-                        $entry['indexes'] = getIndexes($pdo, $name);
-                        $entry['foreignKeys'] = getForeignKeys($pdo, $db, $name);
+                    $tableStruct = [
+                        'name' => $name,
+                        'type' => $isView ? 'view' : 'table',
+                        'columns' => getColumns($pdo, $db, $name),
+                    ];
+                    if (!$isView) {
+                        $tableStruct['indexes'] = getIndexes($pdo, $name);
+                        $tableStruct['foreignKeys'] = getForeignKeys($pdo, $db, $name);
                     }
                     try {
                         $createRow = $pdo->query("SHOW CREATE TABLE " . qi($name))->fetch();
-                        $entry['createSql'] = $createRow['Create Table'] ?? $createRow['Create View'] ?? '';
+                        $tableStruct['createSql'] = $createRow['Create Table'] ?? $createRow['Create View'] ?? '';
                     } catch (Exception $e) {
-                        $entry['createSql'] = '';
-                        writeLog("export_database: SHOW CREATE failed for {$name}: " . $e->getMessage());
+                        $tableStruct['createSql'] = '';
                     }
+                    $structure['tables'][] = $tableStruct;
                 }
 
+                // Data - stream in chunks to temp file
                 if ($mode === 'data' || $mode === 'both') {
                     try {
-                        $count = $pdo->query("SELECT COUNT(*) FROM " . qi($name))->fetchColumn();
-                        $entry['totalRows'] = intval($count);
-                        $tableRows = $pdo->query("SELECT * FROM " . qi($name) . " LIMIT {$maxRowsPerTable}")->fetchAll();
-                        $entry['rows'] = sanitizeRows($tableRows);
-                        if ($count > $maxRowsPerTable) {
-                            $entry['truncated'] = true;
-                            $entry['note'] = "הוצגו {$maxRowsPerTable} שורות מתוך {$count}";
+                        $count = intval($pdo->query("SELECT COUNT(*) FROM " . qi($name))->fetchColumn());
+                        $tmpFile = tempnam(sys_get_temp_dir(), 'dbexp_');
+                        $tempFiles[] = $tmpFile;
+                        $fp = fopen($tmpFile, 'w');
+
+                        fwrite($fp, '{"table":' . json_encode($name) . ',"type":"' . ($isView ? 'view' : 'table') . '","rowCount":' . $count . ',"rows":[');
+
+                        $firstRow = true;
+                        for ($offset = 0; $offset < $count; $offset += $chunkSize) {
+                            $chunk = $pdo->query("SELECT * FROM " . qi($name) . " LIMIT {$chunkSize} OFFSET {$offset}")->fetchAll();
+                            $chunk = sanitizeRows($chunk);
+                            foreach ($chunk as $row) {
+                                if (!$firstRow) fwrite($fp, ',');
+                                fwrite($fp, json_encode($row, JSON_UNESCAPED_UNICODE));
+                                $firstRow = false;
+                            }
+                            unset($chunk);
                         }
-                        writeLog("export_database: {$name} - {$count} rows fetched");
+
+                        fwrite($fp, ']}');
+                        fclose($fp);
+
+                        $zip->addFile($tmpFile, "data/{$name}.json");
+                        writeLog("export_database: {$name} done ({$count} rows)");
                     } catch (Exception $e) {
-                        $entry['rows'] = [];
-                        $entry['dataError'] = $e->getMessage();
-                        writeLog("export_database: data fetch failed for {$name}: " . $e->getMessage());
+                        writeLog("export_database: FAILED {$name}: " . $e->getMessage());
+                        $zip->addFromString("data/{$name}.error.txt", $e->getMessage());
                     }
                 }
-
-                $export['tables'][] = $entry;
             }
 
-            writeLog("export_database: done, encoding JSON...");
-            success(['export' => $export]);
+            // Add structure JSON
+            if ($mode === 'structure' || $mode === 'both') {
+                $zip->addFromString('structure.json', json_encode($structure, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+            }
+
+            $zip->close();
+
+            // Clean temp files
+            foreach ($tempFiles as $tmp) {
+                @unlink($tmp);
+            }
+
+            $fileSize = filesize($zipPath);
+            writeLog("export_database: ZIP created: {$zipName} ({$fileSize} bytes)");
+
+            success([
+                'file' => 'exports/' . $zipName,
+                'filename' => $zipName,
+                'size' => $fileSize
+            ]);
             break;
         }
 

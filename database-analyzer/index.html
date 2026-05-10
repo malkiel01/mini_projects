@@ -1475,10 +1475,13 @@ function renderTruncateStep2(plan, dbName, close) {
     $('backupStatus').innerHTML = '<div class="info-box">⏳ הגיבוי מועלה — אל תסגור את החלון</div>';
     try {
       const res = await api('export_database', { mode: 'both' });
-      const json = JSON.stringify(res.export, null, 2);
-      const fname = dbName + '_backup-before-truncate_' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '.json';
-      downloadFile(json, fname, 'application/json');
-      $('backupStatus').innerHTML = `<div class="warn-box" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534">✅ הגיבוי הורד: <code>${escapeHtml(fname)}</code></div>`;
+      const link = document.createElement('a');
+      link.href = res.file;
+      link.download = res.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      $('backupStatus').innerHTML = `<div class="warn-box" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534">✅ הגיבוי הורד: <code>${escapeHtml(res.filename)}</code></div>`;
       btn.innerHTML = '✅ הגיבוי הושלם';
       setTimeout(() => renderTruncateStep3(plan, dbName, close, true), 800);
     } catch (err) {
@@ -1791,13 +1794,20 @@ async function downloadFullExport(mode, btn) {
   const labels = { structure: 'מבנה', data: 'תוכן', both: 'מבנה + תוכן' };
   const original = btn.innerHTML;
   btn.disabled = true;
-  btn.innerHTML = `<span class="dl-spinner"></span><span class="dl-desc">מכין ${labels[mode]}...</span>`;
+  btn.innerHTML = `<span class="dl-spinner"></span><span class="dl-desc">מכין ${labels[mode]} (ZIP)...</span>`;
   try {
     const res = await api('export_database', { mode });
-    const json = JSON.stringify(res.export, null, 2);
-    const fname = state.conn.database + '_' + mode + '_' + new Date().toISOString().slice(0, 10) + '.json';
-    downloadFile(json, fname, 'application/json');
-    toast('✅ הקובץ הורד בהצלחה', 'success');
+    // Download the ZIP file
+    const link = document.createElement('a');
+    link.href = res.file;
+    link.download = res.filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    const sizeStr = res.size > 1048576
+      ? (res.size / 1048576).toFixed(1) + ' MB'
+      : (res.size / 1024).toFixed(0) + ' KB';
+    toast(`✅ הקובץ מוכן להורדה (${sizeStr})`, 'success');
   } catch (err) {
     toast('❌ שגיאה: ' + err.message, 'error');
   } finally {
