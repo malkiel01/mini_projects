@@ -6,16 +6,33 @@
 
 header('Content-Type: application/json; charset=utf-8');
 
+$_LOG_FILE = __DIR__ . '/logs/api.log';
+
 $raw = file_get_contents('php://input');
 $input = json_decode($raw, true);
 
 if (!$input || !is_array($input)) {
     http_response_code(400);
     echo json_encode(['success' => false, 'error' => 'Invalid JSON request']);
+    @file_put_contents($_LOG_FILE, "[" . date('Y-m-d H:i:s') . "] [{$_SERVER['REMOTE_ADDR']}] REJECT | Invalid JSON\n", FILE_APPEND | LOCK_EX);
     exit;
 }
 
 $action = $input['action'] ?? '';
+$_startTime = microtime(true);
+$_logDetail = $input['table'] ?? $input['view'] ?? '';
+
+register_shutdown_function(function() {
+    global $action, $_startTime, $_LOG_FILE, $_logDetail;
+    $ms = round((microtime(true) - $_startTime) * 1000);
+    $code = http_response_code() ?: 200;
+    $status = ($code >= 200 && $code < 400) ? 'OK' : 'FAIL';
+    $mem = round(memory_get_peak_usage(true) / 1024 / 1024, 1);
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '-';
+    $detail = $_logDetail ? " | {$_logDetail}" : '';
+    $line = "[" . date('Y-m-d H:i:s') . "] [{$ip}] {$action} => {$status} ({$code}) | {$ms}ms | {$mem}MB{$detail}";
+    @file_put_contents($_LOG_FILE, $line . "\n", FILE_APPEND | LOCK_EX);
+});
 
 /**
  * Safely quote a MySQL identifier (table/column name)
@@ -987,7 +1004,9 @@ try {
 } catch (PDOException $e) {
     http_response_code(500);
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    $_logDetail .= ' | PDO: ' . $e->getMessage();
 } catch (Exception $e) {
     http_response_code(500);
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    $_logDetail .= ' | ' . $e->getMessage();
 }
