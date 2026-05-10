@@ -1,9 +1,8 @@
 <?php
 /**
- * Export Worker - runs as background process
+ * Export Worker - coordinates parallel table export
  * Usage: php export_worker.php <jobId> <paramsJson>
  */
-
 if (php_sapi_name() !== 'cli') exit('CLI only');
 
 ini_set('memory_limit', '256M');
@@ -11,11 +10,11 @@ set_time_limit(600);
 
 $jobId = $argv[1] ?? '';
 $params = json_decode($argv[2] ?? '{}', true);
-
 if (!$jobId || !$params) exit('Missing params');
 
 $exportDir = __DIR__ . '/exports';
 $progressFile = $exportDir . '/' . $jobId . '.json';
+$maxParallel = 4;
 
 function progress($data) {
     global $progressFile;
@@ -32,6 +31,7 @@ $database = $params['database'] ?? '';
 $username = $params['username'] ?? '';
 $password = $params['password'] ?? '';
 $mode = $params['mode'] ?? 'both';
+$includeViews = !empty($params['includeViews']);
 
 try {
     $pdo = new PDO(
@@ -53,102 +53,142 @@ if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
     exit;
 }
 
+// Get all tables and views
 $stmt = $pdo->query("SHOW FULL TABLES");
-$allItems = [];
+$tables = [];
+$views = [];
 while ($row = $stmt->fetch(PDO::FETCH_NUM)) {
-    $allItems[] = ['name' => $row[0], 'type' => $row[1]];
+    if ($row[1] === 'BASE TABLE') {
+        $tables[] = $row[0];
+    } else {
+        $views[] = $row[0];
+    }
 }
-$totalItems = count($allItems);
 
-$chunkSize = 5000;
-$structure = ['database' => $database, 'exportedAt' => date('c'), 'mode' => $mode, 'tables' => [], 'views' => []];
-$tempFiles = [];
+$allForData = $tables;
+if ($includeViews) {
+    $allForData = array_merge($tables, $views);
+}
+$totalItems = count($allForData);
+$totalStructure = count($tables) + ($includeViews ? count($views) : count($views)); // structure always includes views list
 
-$stmtFK = $pdo->prepare("
-    SELECT kcu.CONSTRAINT_NAME, kcu.COLUMN_NAME, kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME, rc.UPDATE_RULE, rc.DELETE_RULE
-    FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
-    LEFT JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME AND kcu.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA
-    WHERE kcu.TABLE_SCHEMA = ? AND kcu.TABLE_NAME = ? AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
-");
-$stmtTrig = $pdo->prepare("
-    SELECT TRIGGER_NAME, ACTION_TIMING, EVENT_MANIPULATION, ACTION_STATEMENT
-    FROM INFORMATION_SCHEMA.TRIGGERS WHERE EVENT_OBJECT_SCHEMA = ? AND EVENT_OBJECT_TABLE = ?
-");
-$stmtInfo = $pdo->prepare(
-    "SELECT TABLE_COMMENT, ENGINE, TABLE_COLLATION, AUTO_INCREMENT, TABLE_ROWS, CREATE_TIME, UPDATE_TIME
-     FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?"
-);
+progress(['status' => 'working', 'current' => 0, 'total' => $totalItems, 'currentTable' => 'מבנה...', 'percent' => 0]);
 
-foreach ($allItems as $idx => $item) {
-    $name = $item['name'];
-    $isView = ($item['type'] !== 'BASE TABLE');
-    $qt = quoteId($name);
+// ============ STRUCTURE (fast, sequential) ============
+if ($mode === 'structure' || $mode === 'both') {
+    $structure = ['database' => $database, 'exportedAt' => date('c'), 'mode' => $mode, 'tables' => [], 'views' => []];
 
-    progress([
-        'status' => 'working',
-        'current' => $idx + 1,
-        'total' => $totalItems,
-        'currentTable' => $name,
-        'percent' => round(($idx + 1) / $totalItems * 100)
-    ]);
+    $stmtFK = $pdo->prepare("
+        SELECT kcu.CONSTRAINT_NAME, kcu.COLUMN_NAME, kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME, rc.UPDATE_RULE, rc.DELETE_RULE
+        FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+        LEFT JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME AND kcu.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA
+        WHERE kcu.TABLE_SCHEMA = ? AND kcu.TABLE_NAME = ? AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+    ");
+    $stmtTrig = $pdo->prepare("
+        SELECT TRIGGER_NAME, ACTION_TIMING, EVENT_MANIPULATION, ACTION_STATEMENT
+        FROM INFORMATION_SCHEMA.TRIGGERS WHERE EVENT_OBJECT_SCHEMA = ? AND EVENT_OBJECT_TABLE = ?
+    ");
+    $stmtInfo = $pdo->prepare(
+        "SELECT TABLE_COMMENT, ENGINE, TABLE_COLLATION, AUTO_INCREMENT, TABLE_ROWS, CREATE_TIME, UPDATE_TIME
+         FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?"
+    );
 
-    if ($mode === 'structure' || $mode === 'both') {
-        $entry = ['name' => $name];
+    foreach ($tables as $t) {
+        $qt = quoteId($t);
+        $entry = ['name' => $t];
         $entry['columns'] = $pdo->query("SHOW FULL COLUMNS FROM {$qt}")->fetchAll();
-        if (!$isView) {
-            $entry['indexes'] = $pdo->query("SHOW INDEX FROM {$qt}")->fetchAll();
-            $stmtFK->execute([$database, $name]);
-            $entry['foreignKeys'] = $stmtFK->fetchAll();
-            $stmtTrig->execute([$database, $name]);
-            $entry['triggers'] = $stmtTrig->fetchAll();
-            $stmtInfo->execute([$database, $name]);
-            $entry['tableInfo'] = $stmtInfo->fetch();
-        }
+        $entry['indexes'] = $pdo->query("SHOW INDEX FROM {$qt}")->fetchAll();
+        $stmtFK->execute([$database, $t]);
+        $entry['foreignKeys'] = $stmtFK->fetchAll();
+        $stmtTrig->execute([$database, $t]);
+        $entry['triggers'] = $stmtTrig->fetchAll();
+        $stmtInfo->execute([$database, $t]);
+        $entry['tableInfo'] = $stmtInfo->fetch();
         $createRow = $pdo->query("SHOW CREATE TABLE {$qt}")->fetch(PDO::FETCH_NUM);
         $entry['createStatement'] = $createRow[1] ?? '';
-        if ($isView) $structure['views'][] = $entry;
-        else $structure['tables'][] = $entry;
+        $structure['tables'][] = $entry;
     }
 
-    if ($mode === 'data' || $mode === 'both') {
-        try {
-            $count = intval($pdo->query("SELECT COUNT(*) FROM {$qt}")->fetchColumn());
-            $tmpFile = tempnam(sys_get_temp_dir(), 'dbexp_');
-            $tempFiles[] = $tmpFile;
-            $fp = fopen($tmpFile, 'w');
-            fwrite($fp, '{"table":' . json_encode($name) . ',"rowCount":' . $count . ',"rows":[');
-            $first = true;
-            for ($offset = 0; $offset < $count; $offset += $chunkSize) {
-                $chunk = $pdo->query("SELECT * FROM {$qt} LIMIT {$chunkSize} OFFSET {$offset}")->fetchAll();
-                foreach ($chunk as $row) {
-                    foreach ($row as $k => &$val) {
-                        if (is_string($val) && !mb_check_encoding($val, 'UTF-8')) {
-                            $val = base64_encode($val);
-                        }
-                    }
-                    unset($val);
-                    if (!$first) fwrite($fp, ',');
-                    fwrite($fp, json_encode($row, JSON_UNESCAPED_UNICODE));
-                    $first = false;
-                }
-                unset($chunk);
-            }
-            fwrite($fp, ']}');
-            fclose($fp);
-            $folder = $isView ? 'views' : 'tables';
-            $zip->addFile($tmpFile, "data/{$folder}/{$name}.json");
-        } catch (Exception $e) {
-            $zip->addFromString("data/{$name}.error.txt", $e->getMessage());
-        }
+    foreach ($views as $v) {
+        $qv = quoteId($v);
+        $entry = ['name' => $v];
+        $entry['columns'] = $pdo->query("SHOW FULL COLUMNS FROM {$qv}")->fetchAll();
+        $createRow = $pdo->query("SHOW CREATE VIEW {$qv}")->fetch(PDO::FETCH_NUM);
+        $entry['createStatement'] = $createRow[1] ?? '';
+        $structure['views'][] = $entry;
     }
+
+    $zip->addFromString('structure.json', json_encode($structure, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+    unset($structure);
 }
 
-if ($mode === 'structure' || $mode === 'both') {
-    $zip->addFromString('structure.json', json_encode($structure, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+// ============ DATA (parallel) ============
+if ($mode === 'data' || $mode === 'both') {
+    $workerScript = __DIR__ . '/export_table_worker.php';
+    $connParams = [
+        'host' => $host, 'port' => $port,
+        'database' => $database, 'username' => $username, 'password' => $password
+    ];
+
+    $tempFiles = [];
+    $pending = [];
+
+    // Process in batches of $maxParallel
+    for ($i = 0; $i < count($allForData); $i += $maxParallel) {
+        $batch = array_slice($allForData, $i, $maxParallel);
+        $processes = [];
+
+        foreach ($batch as $tableName) {
+            $tmpFile = tempnam(sys_get_temp_dir(), 'dbexp_');
+            $tempFiles[$tableName] = $tmpFile;
+
+            $tableParams = array_merge($connParams, ['table' => $tableName]);
+            $cmd = 'php ' . escapeshellarg($workerScript) . ' ' . escapeshellarg($tmpFile) . ' ' . escapeshellarg(json_encode($tableParams));
+
+            $proc = proc_open($cmd, [['pipe', 'r'], ['pipe', 'w'], ['pipe', 'w']], $pipes);
+            if (is_resource($proc)) {
+                fclose($pipes[0]);
+                $processes[] = ['proc' => $proc, 'pipes' => $pipes, 'table' => $tableName];
+            }
+        }
+
+        // Wait for batch to complete
+        foreach ($processes as $p) {
+            stream_get_contents($p['pipes'][1]);
+            fclose($p['pipes'][1]);
+            fclose($p['pipes'][2]);
+            proc_close($p['proc']);
+        }
+
+        // Update progress
+        $done = min($i + $maxParallel, count($allForData));
+        $pct = round($done / $totalItems * 100);
+        $currentNames = implode(', ', $batch);
+        progress([
+            'status' => 'working',
+            'current' => $done,
+            'total' => $totalItems,
+            'currentTable' => $currentNames,
+            'percent' => $pct
+        ]);
+    }
+
+    // Add all temp files to ZIP
+    foreach ($tempFiles as $tableName => $tmpFile) {
+        if (file_exists($tmpFile) && filesize($tmpFile) > 0) {
+            $isView = in_array($tableName, $views);
+            $folder = $isView ? 'views' : 'tables';
+            $zip->addFile($tmpFile, "data/{$folder}/{$tableName}.json");
+        }
+    }
 }
 
 $zip->close();
-foreach ($tempFiles as $tmp) @unlink($tmp);
+
+// Clean temp files
+if (!empty($tempFiles)) {
+    foreach ($tempFiles as $tmp) @unlink($tmp);
+}
 
 $fileSize = filesize($zipPath);
 

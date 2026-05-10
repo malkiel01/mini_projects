@@ -1302,6 +1302,12 @@ async function renderDashboard() {
         מוריד קובץ JSON אחד עם כל הטבלאות. הקובץ כולל גם את הצהרות ה-CREATE TABLE,
         מפתחות זרים, אינדקסים וטריגרים.
       </p>
+      <div style="margin-bottom:12px">
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;cursor:pointer">
+          <input type="checkbox" id="exportIncludeViews" style="width:16px;height:16px">
+          כלול גם נתוני Views (בד"כ מיותר - הנתונים קיימים בטבלאות המקור)
+        </label>
+      </div>
       <div class="dl-grid">
         <button class="dl-btn" data-mode="structure">
           <span class="dl-title">🏗️ מבנה בלבד</span>
@@ -1356,7 +1362,10 @@ async function renderDashboard() {
   renderDashboardRelList($('dashRelList'), rels);
 
   body.querySelectorAll('.dl-btn').forEach(btn => {
-    btn.addEventListener('click', () => downloadFullExport(btn.dataset.mode, btn));
+    btn.addEventListener('click', () => {
+      const includeViews = $('exportIncludeViews')?.checked || false;
+      downloadFullExport(btn.dataset.mode, btn, includeViews);
+    });
   });
 
   $('truncateBtn').addEventListener('click', openTruncateFlow);
@@ -1781,15 +1790,14 @@ function renderDashboardRelList(container, rels) {
   });
 }
 
-async function downloadFullExport(mode, btn) {
+async function downloadFullExport(mode, btn, includeViews = false) {
   const labels = { structure: 'מבנה', data: 'תוכן', both: 'מבנה + תוכן' };
   const original = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = `<span class="dl-spinner"></span><span class="dl-desc">מתחיל ייצוא ${labels[mode]}...</span>`;
 
   try {
-    // Step 1: Start the export job
-    const start = await api('export_database', { mode });
+    const start = await api('export_database', { mode, includeViews });
     const jobId = start.jobId;
     const total = start.total;
 

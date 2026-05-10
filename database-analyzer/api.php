@@ -692,13 +692,15 @@ try {
 
             // Spawn background worker
             $workerPath = __DIR__ . '/export_worker.php';
+            $includeViews = !empty($input['includeViews']);
             $params = json_encode([
                 'host' => $input['host'] ?? 'localhost',
                 'port' => $input['port'] ?? 3306,
                 'database' => $database,
                 'username' => $input['username'] ?? '',
                 'password' => $input['password'] ?? '',
-                'mode' => $mode
+                'mode' => $mode,
+                'includeViews' => $includeViews
             ]);
 
             $cmd = 'php ' . escapeshellarg($workerPath) . ' ' . escapeshellarg($jobId) . ' ' . escapeshellarg($params) . ' > /dev/null 2>&1 &';
