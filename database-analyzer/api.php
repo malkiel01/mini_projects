@@ -1,4 +1,23 @@
 <?php
+ini_set('display_errors', 0);
+error_reporting(E_ALL);
+
+set_error_handler(function($severity, $message, $file, $line) {
+    throw new ErrorException($message, 0, $severity, $file, $line);
+});
+
+register_shutdown_function(function() {
+    $error = error_get_last();
+    if ($error && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
+        http_response_code(500);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'success' => false,
+            'error' => 'שגיאת PHP: ' . $error['message'] . ' (שורה ' . $error['line'] . ')'
+        ], JSON_UNESCAPED_UNICODE);
+    }
+});
+
 header('Content-Type: application/json; charset=utf-8');
 
 $input = json_decode(file_get_contents('php://input'), true) ?: [];
@@ -6,7 +25,7 @@ $action = $input['action'] ?? '';
 
 function success($data = []) {
     $merged = array_merge(['success' => true], $data);
-    $json = json_encode($merged, JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR);
+    $json = json_encode($merged, JSON_UNESCAPED_UNICODE);
     if ($json === false) {
         http_response_code(500);
         echo json_encode(['success' => false, 'error' => 'שגיאת קידוד JSON: ' . json_last_error_msg()], JSON_UNESCAPED_UNICODE);
