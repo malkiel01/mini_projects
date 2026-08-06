@@ -72,6 +72,10 @@ class Config {
                 'data' => [],
             ],
             'logs' => [],
+            // תווית/מי-הוסיף/מתי לכל כלל ב-settings.allowed_ips, ממופתח לפי הכלל עצמו.
+            'ip_meta' => [],
+            'ip_history' => [],
+            'ip_throttle' => [],
         ];
     }
 
