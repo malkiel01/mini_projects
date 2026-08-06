@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="איחוד ופיצול קבצים">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#g)"/>
+  <g fill="none" stroke="#ffffff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round">
+    <!-- שני קבצים מתמזגים לאחד -->
+    <path d="M150 130h74l44 44v58" fill="rgba(255,255,255,.16)"/>
+    <path d="M224 130v44h44"/>
+    <path d="M288 130h74l44 44v58" fill="rgba(255,255,255,.16)"/>
+    <path d="M362 130v44h44"/>
+    <!-- חיצים מתכנסים -->
+    <path d="M186 264v46h140v-46"/>
+    <path d="M256 310v52"/>
+    <path d="M256 400 216 356h80z" fill="#ffffff" stroke-width="18"/>
+  </g>
+</svg>

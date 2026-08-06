@@ -1,0 +1,27 @@
+{
+  "name": "איחוד ופיצול קבצים",
+  "short_name": "איחוד קבצים",
+  "description": "איחוד תמונות וקבצי PDF לקובץ PDF אחד, ופיצול PDF לתמונות בתוך ZIP. הכל בדפדפן, ללא העלאה לשרת.",
+  "lang": "he",
+  "dir": "rtl",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f4f6fb",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "./assets/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/icons/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
