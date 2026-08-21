@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="השלמות לשיפוץ">
+  <rect width="512" height="512" rx="112" fill="#16213e"/>
+  <rect x="136" y="96" width="240" height="320" rx="28" fill="#f8fafc"/>
+  <rect x="196" y="70" width="120" height="56" rx="20" fill="#ea580c"/>
+  <g fill="#cbd5e1">
+    <rect x="176" y="186" width="112" height="20" rx="10"/>
+    <rect x="176" y="256" width="150" height="20" rx="10"/>
+    <rect x="176" y="326" width="128" height="20" rx="10"/>
+  </g>
+  <g fill="none" stroke="#16a34a" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M312 186l22 22 42-46"/>
+  </g>
+</svg>
