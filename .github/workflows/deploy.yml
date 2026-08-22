@@ -8,7 +8,10 @@ name: Deploy to production
 # rsync רץ בלי --delete בכוונה: קבצים שקיימים רק בשרת נשארים במקומם.
 #
 # Secrets נדרשים ב-Settings → Secrets and variables → Actions:
-#   DEPLOY_SSH_KEY  מפתח SSH פרטי בעל גישה לשרת, בלי סיסמה
+#   DEPLOY_SSH_KEY         מפתח SSH פרטי בעל גישה לשרת
+#   DEPLOY_SSH_PASSPHRASE  אופציונלי. נדרש רק אם המפתח נעול בסיסמה
+#                          (שורת Proc-Type: 4,ENCRYPTED בראש הקובץ).
+#                          למפתח פתוח — להשמיט, והשלב מדלג על עצמו.
 #   DEPLOY_HOST     כתובת השרת
 #   DEPLOY_USER     שם המשתמש בשרת
 #   DEPLOY_PATH     הנתיב לתיקיית האתר, למשל /home2/<user>/public_html/mini_projects
@@ -73,6 +76,32 @@ jobs:
       # מחרוזת מהסוד עצמו, ולכן הדפסת השורות אינה מלמדת דבר; מספרים נגזרים
       # עוברים, ואינם מאפשרים לשחזר את המפתח.
       # מפתח RSA-2048 תקין: 27 שורות, גוף base64 באורך 64, אפס שורות זרות.
+      # מפתח פתוח עובד ישירות מול ssh, בדיוק כמו ב-kadisha-vaad, והשלב
+      # הזה מדלג על עצמו. מפתח נעול אינו ניתן לפתיחה ע"י ssh ללא
+      # אינטראקציה, ולכן הוא נטען ל-ssh-agent עם הסיסמה.
+      # כך אותו workflow משרת את שני המקרים בלי לדעת מראש מה הוגדר.
+      - name: Unlock the deploy key if it has a passphrase
+        env:
+          DEPLOY_PASS: ${{ secrets.DEPLOY_SSH_PASSPHRASE }}
+        run: |
+          if [ -z "$DEPLOY_PASS" ]; then
+            echo "לא הוגדרה סיסמה — המפתח אמור להיות פתוח, ssh ישתמש בו ישירות"
+            exit 0
+          fi
+          eval "$(ssh-agent -s)"
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> "$GITHUB_ENV"
+          # ssh-add אינו קורא סיסמה מ-stdin; הדרך הנתמכת היא תוכנית עזר.
+          cat > "$RUNNER_TEMP/askpass" <<'SH'
+          #!/bin/sh
+          printf '%s\n' "$DEPLOY_PASS"
+          SH
+          chmod +x "$RUNNER_TEMP/askpass"
+          SSH_ASKPASS="$RUNNER_TEMP/askpass" SSH_ASKPASS_REQUIRE=force \
+            ssh-add ~/.ssh/deploy_key
+          rm -f "$RUNNER_TEMP/askpass"
+          ssh-add -l
+
       # בדיקה יחידה, אזהרה בלבד: מפרידה בין "המפתח אינו קריא" לבין
       # "המפתח נדחה בשרת". שתי התקלות נראות זהות מצד ה-rsync.
       - name: Verify the deploy key is readable
