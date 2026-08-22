@@ -66,11 +66,25 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      # השרת ישן והמפתח הוא RSA. OpenSSH 8.8+ (מה שרץ על הראנר) מכבה כברירת
-      # מחדל את חתימות ssh-rsa, ולכן המפתח אפילו לא מוצע והחיבור נופל
-      # ל-password ומסתיים ב-"Too many authentication failures".
-      # PreferredAuthentications=publickey חוסם את הנפילה הזו כדי שכישלון
-      # אמיתי יופיע כ-"Permission denied (publickey)" ולא כהודעה מטעה.
+      # PreferredAuthentications=publickey חוסם נפילה לאימות סיסמה, שהופכת
+      # כישלון מפתח להודעה מטעה על ריבוי נסיונות במקום "Permission denied
+      # (publickey)" שאומר בדיוק מה קרה.
+      # מדפיס טביעת אצבע בלבד — לא חומר סודי. מבדיל בין שתי תקלות שנראות
+      # זהות מבחוץ: מפתח שלא נטען (בעיית העתקה) מול מפתח תקין שאינו מאושר
+      # בשרת. בלי זה שתיהן מופיעות כ-"Permission denied (publickey)".
+      - name: Verify the deploy key is readable
+        run: |
+          echo "lines:      $(wc -l < ~/.ssh/deploy_key)"
+          echo "first line: $(head -n1 ~/.ssh/deploy_key)"
+          echo "last line:  $(tail -n1 ~/.ssh/deploy_key)"
+          # אבחון בלבד: לא מפיל את הפריסה. אם ssh-keygen מתנהג אחרת מהצפוי,
+          # עדיף שה-rsync יכריע ולא ששער עזר יחסום פריסה תקינה.
+          if ssh-keygen -l -f ~/.ssh/deploy_key; then
+            echo "המפתח נקרא בהצלחה (טביעת האצבע למעלה)"
+          else
+            echo "::warning::לא ניתן לקרוא את DEPLOY_SSH_KEY כמפתח פרטי — חשד לתקלת העתקה"
+          fi
+
       - name: Deploy code via rsync (no --delete; never touches runtime data)
         run: |
           rsync -rlptz \
@@ -87,8 +101,6 @@ jobs:
                  -o StrictHostKeyChecking=no \
                  -o BatchMode=yes \
                  -o IdentitiesOnly=yes \
-                 -o PreferredAuthentications=publickey \
-                 -o PubkeyAcceptedKeyTypes=+ssh-rsa \
-                 -o HostKeyAlgorithms=+ssh-rsa" \
+                 -o PreferredAuthentications=publickey" \
             ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/"
           echo "Deploy complete"
