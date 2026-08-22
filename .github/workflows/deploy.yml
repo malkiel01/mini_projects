@@ -66,6 +66,11 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
 
+      # השרת ישן והמפתח הוא RSA. OpenSSH 8.8+ (מה שרץ על הראנר) מכבה כברירת
+      # מחדל את חתימות ssh-rsa, ולכן המפתח אפילו לא מוצע והחיבור נופל
+      # ל-password ומסתיים ב-"Too many authentication failures".
+      # PreferredAuthentications=publickey חוסם את הנפילה הזו כדי שכישלון
+      # אמיתי יופיע כ-"Permission denied (publickey)" ולא כהודעה מטעה.
       - name: Deploy code via rsync (no --delete; never touches runtime data)
         run: |
           rsync -rlptz \
@@ -78,6 +83,12 @@ jobs:
             --exclude='node_modules/' \
             --exclude='*.log' --exclude='error_log' \
             --exclude='.DS_Store' --exclude='._*' \
-            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            -e "ssh -v -i ~/.ssh/deploy_key \
+                 -o StrictHostKeyChecking=no \
+                 -o BatchMode=yes \
+                 -o IdentitiesOnly=yes \
+                 -o PreferredAuthentications=publickey \
+                 -o PubkeyAcceptedKeyTypes=+ssh-rsa \
+                 -o HostKeyAlgorithms=+ssh-rsa" \
             ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/"
           echo "Deploy complete"
