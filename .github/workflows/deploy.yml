@@ -1,0 +1,83 @@
+name: Deploy to production
+
+# פריסה אוטומטית git -> שרת. מופעלת בכל push לענף שממנו האתר מוגש,
+# ובהפעלה ידנית. מעלה קוד בלבד ב-rsync — לא נוגעת בנתוני הריצה שבשרת
+# (data/ של git-deploy ושל renovation-punchlist מכילות אסימונים, הגדרות
+# ומדיה שהמשתמשים העלו).
+#
+# rsync רץ בלי --delete בכוונה: קבצים שקיימים רק בשרת נשארים במקומם.
+#
+# Secrets נדרשים ב-Settings → Secrets and variables → Actions:
+#   DEPLOY_SSH_KEY  מפתח SSH פרטי בעל גישה לשרת
+#   DEPLOY_HOST     כתובת השרת
+#   DEPLOY_USER     שם המשתמש בשרת
+#   DEPLOY_PATH     הנתיב לתיקיית האתר, למשל /home2/<user>/public_html/mini_projects
+
+on:
+  push:
+    branches: [claude/landing-page-coordinates-0yx2p]
+  workflow_dispatch: {}
+
+# לעולם לא שתי פריסות במקביל.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP 8.3 (matches the server)
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+
+      - name: PHP syntax-check gate (abort deploy on any parse error)
+        run: |
+          set -euo pipefail
+          ERR=0
+          while IFS= read -r -d '' f; do
+            php -l "$f" > /dev/null || ERR=1
+          done < <(find . -name '*.php' -not -path './.git/*' -print0)
+          if [ "$ERR" -ne 0 ]; then echo "::error::PHP syntax errors — aborting deploy"; exit 1; fi
+          echo "PHP lint OK"
+
+      - name: JS syntax-check gate
+        run: |
+          set -euo pipefail
+          ERR=0
+          # הקבצים הם ES modules; node --check מנתח כמודול לפי הסיומת .mjs,
+          # ולכן כל קובץ נבדק דרך עותק זמני. vendor/ הוא קוד צד-שלישי מוקטן
+          # ולא נבדק.
+          while IFS= read -r -d '' f; do
+            cp "$f" "$RUNNER_TEMP/check.mjs"
+            node --check "$RUNNER_TEMP/check.mjs" || { echo "::error file=$f::syntax error"; ERR=1; }
+          done < <(find . -name '*.js' -not -path './.git/*' -not -path '*/vendor/*' -print0)
+          if [ "$ERR" -ne 0 ]; then echo "::error::JS syntax errors — aborting deploy"; exit 1; fi
+          echo "JS lint OK"
+
+      - name: Prepare SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Deploy code via rsync (no --delete; never touches runtime data)
+        run: |
+          rsync -rlptz \
+            --exclude='.git' --exclude='.github' \
+            --exclude='git-deploy/data/config.json' \
+            --exclude='git-deploy/data/logs/' --exclude='git-deploy/data/cache/' \
+            --exclude='renovation-punchlist/data/config.json' \
+            --exclude='renovation-punchlist/data/store.json' \
+            --exclude='renovation-punchlist/data/media/' \
+            --exclude='node_modules/' \
+            --exclude='*.log' --exclude='error_log' \
+            --exclude='.DS_Store' --exclude='._*' \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/"
+          echo "Deploy complete"
