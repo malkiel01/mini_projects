@@ -62,6 +62,27 @@ jobs:
           if [ "$ERR" -ne 0 ]; then echo "::error::JS syntax errors — aborting deploy"; exit 1; fi
           echo "JS lint OK"
 
+      # יעד רב-שורתי נשלח לשרת כמחרוזת אחת, וה-shell המרוחק מריץ כל שורה
+      # כפקודה. התוצאה היא עשרות שגיאות "command not found" שאינן רומזות
+      # במה מדובר. עדיף להיעצר כאן עם הודעה שאומרת איזה סוד שגוי.
+      - name: Validate the deploy target
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER_: ${{ secrets.DEPLOY_USER }}
+          PATH_: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          bad=0
+          # ‏printf '%s' אינו מוסיף שורה, ולכן ערך תקין בן שורה אחת נותר 0.
+          [ "$(printf '%s' "$HOST"  | wc -l)" -eq 0 ] || { echo "::error::DEPLOY_HOST מכיל יותר משורה אחת"; bad=1; }
+          [ "$(printf '%s' "$USER_" | wc -l)" -eq 0 ] || { echo "::error::DEPLOY_USER מכיל יותר משורה אחת"; bad=1; }
+          [ "$(printf '%s' "$PATH_" | wc -l)" -eq 0 ] || { echo "::error::DEPLOY_PATH מכיל יותר משורה אחת — כנראה הודבק לשם המפתח במקום הנתיב"; bad=1; }
+          case "$PATH_" in
+            /*) ;;
+            *) echo "::error::DEPLOY_PATH חייב להיות נתיב מוחלט המתחיל ב-/"; bad=1 ;;
+          esac
+          [ "$bad" -eq 0 ] || exit 1
+          echo "היעד תקין: שלושת הסודות בני שורה אחת, והנתיב מוחלט"
+
       - name: Prepare SSH key
         run: |
           mkdir -p ~/.ssh
