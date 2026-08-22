@@ -8,7 +8,9 @@ name: Deploy to production
 # rsync רץ בלי --delete בכוונה: קבצים שקיימים רק בשרת נשארים במקומם.
 #
 # Secrets נדרשים ב-Settings → Secrets and variables → Actions:
-#   DEPLOY_SSH_KEY  מפתח SSH פרטי בעל גישה לשרת
+#   DEPLOY_SSH_KEY         מפתח SSH פרטי בעל גישה לשרת
+#   DEPLOY_SSH_PASSPHRASE  הסיסמה של המפתח. נדרש רק אם המפתח נעול;
+#                          למפתח בלי סיסמה אפשר להשמיט אותו לגמרי.
 #   DEPLOY_HOST     כתובת השרת
 #   DEPLOY_USER     שם המשתמש בשרת
 #   DEPLOY_PATH     הנתיב לתיקיית האתר, למשל /home2/<user>/public_html/mini_projects
@@ -73,6 +75,27 @@ jobs:
       # מחרוזת מהסוד עצמו, ולכן הדפסת השורות אינה מלמדת דבר; מספרים נגזרים
       # עוברים, ואינם מאפשרים לשחזר את המפתח.
       # מפתח RSA-2048 תקין: 27 שורות, גוף base64 באורך 64, אפס שורות זרות.
+      # ssh-add טוען את המפתח פעם אחת ומחזיק אותו פתוח בזיכרון, כך שה-rsync
+      # לא נדרש לסיסמה. זה עובד גם למפתח בלי סיסמה: ssh-add פשוט לא שואל,
+      # ולכן אותו workflow מתאים לשני המקרים בלי תנאים.
+      - name: Load the deploy key into ssh-agent
+        env:
+          DEPLOY_PASS: ${{ secrets.DEPLOY_SSH_PASSPHRASE }}
+        run: |
+          eval "$(ssh-agent -s)"
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> "$GITHUB_ENV"
+          # ssh-add לא קורא סיסמה מ-stdin; הדרך הנתמכת היא תוכנית עזר.
+          cat > "$RUNNER_TEMP/askpass" <<'SH'
+          #!/bin/sh
+          printf '%s\n' "$DEPLOY_PASS"
+          SH
+          chmod +x "$RUNNER_TEMP/askpass"
+          SSH_ASKPASS="$RUNNER_TEMP/askpass" SSH_ASKPASS_REQUIRE=force \
+            ssh-add ~/.ssh/deploy_key
+          rm -f "$RUNNER_TEMP/askpass"
+          ssh-add -l
+
       - name: Analyse the deploy key shape
         run: |
           KEY=~/.ssh/deploy_key
@@ -100,10 +123,9 @@ jobs:
             --exclude='node_modules/' \
             --exclude='*.log' --exclude='error_log' \
             --exclude='.DS_Store' --exclude='._*' \
-            -e "ssh -v -i ~/.ssh/deploy_key \
+            -e "ssh -v \
                  -o StrictHostKeyChecking=no \
                  -o BatchMode=yes \
-                 -o IdentitiesOnly=yes \
                  -o PreferredAuthentications=publickey" \
             ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/"
           echo "Deploy complete"
