@@ -69,20 +69,23 @@ jobs:
       # PreferredAuthentications=publickey חוסם נפילה לאימות סיסמה, שהופכת
       # כישלון מפתח להודעה מטעה על ריבוי נסיונות במקום "Permission denied
       # (publickey)" שאומר בדיוק מה קרה.
-      # מדפיס טביעת אצבע בלבד — לא חומר סודי. מבדיל בין שתי תקלות שנראות
-      # זהות מבחוץ: מפתח שלא נטען (בעיית העתקה) מול מפתח תקין שאינו מאושר
-      # בשרת. בלי זה שתיהן מופיעות כ-"Permission denied (publickey)".
-      - name: Verify the deploy key is readable
+      # מנתח את *צורת* המפתח בלבד — ספירות, אורכים וכן/לא. גיטהאב מצנזר כל
+      # מחרוזת מהסוד עצמו, ולכן הדפסת השורות אינה מלמדת דבר; מספרים נגזרים
+      # עוברים, ואינם מאפשרים לשחזר את המפתח.
+      # מפתח RSA-2048 תקין: 27 שורות, גוף base64 באורך 64, אפס שורות זרות.
+      - name: Analyse the deploy key shape
         run: |
-          echo "lines:      $(wc -l < ~/.ssh/deploy_key)"
-          echo "first line: $(head -n1 ~/.ssh/deploy_key)"
-          echo "last line:  $(tail -n1 ~/.ssh/deploy_key)"
-          # אבחון בלבד: לא מפיל את הפריסה. אם ssh-keygen מתנהג אחרת מהצפוי,
-          # עדיף שה-rsync יכריע ולא ששער עזר יחסום פריסה תקינה.
-          if ssh-keygen -l -f ~/.ssh/deploy_key; then
-            echo "המפתח נקרא בהצלחה (טביעת האצבע למעלה)"
+          KEY=~/.ssh/deploy_key
+          body=$(sed '1d;$d' "$KEY")
+          echo "סה\"כ שורות:            $(wc -l < "$KEY")"
+          echo "שורה ראשונה = BEGIN:    $(head -n1 "$KEY" | grep -cE '^-----BEGIN [A-Z ]*PRIVATE KEY-----$' || true)"
+          echo "שורה אחרונה = END:      $(tail -n1 "$KEY" | grep -cE '^-----END [A-Z ]*PRIVATE KEY-----$' || true)"
+          echo "שורות גוף לא-base64:    $(printf '%s\n' "$body" | grep -cvE '^[A-Za-z0-9+/=]*$' || true)"
+          echo "אורך שורת גוף מינ/מקס:  $(printf '%s\n' "$body" | awk '{print length}' | sort -n | head -1) / $(printf '%s\n' "$body" | awk '{print length}' | sort -n | tail -1)"
+          if ssh-keygen -l -f "$KEY"; then
+            echo "המפתח נקרא בהצלחה"
           else
-            echo "::warning::לא ניתן לקרוא את DEPLOY_SSH_KEY כמפתח פרטי — חשד לתקלת העתקה"
+            echo "::warning::DEPLOY_SSH_KEY אינו מפתח פרטי קריא"
           fi
 
       - name: Deploy code via rsync (no --delete; never touches runtime data)
