@@ -295,3 +295,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .drow--bad { background: color-mix(in srgb, var(--blocked) 8%, transparent); }
 
 .skills { display: flex; flex-direction: column; gap: 6px; margin-block-end: 10px; }
+
+/* מסך הכישלון של הטעינה — צריך להיות קריא גם כשכל השאר לא נטען. */
+.boot-error { max-width: 40rem; margin: 15vh auto; padding: 24px; text-align: center;
+              display: flex; flex-direction: column; gap: 12px; }
+.boot-error h1 { font-size: 1.3rem; }
+.boot-error p { color: var(--ink-soft); font-size: .92rem; line-height: 1.7; }
+.boot-error a { color: var(--accent); }

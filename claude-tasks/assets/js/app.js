@@ -1,4 +1,4 @@
-import { $, $$, el, toast, api, state, timeAgo } from './core.js';
+import { $, $$, el, toast, api, state, timeAgo, on, set } from './core.js';
 import { loadConnections, loadProviders, runTask } from './platform.js';
 
 /**
@@ -49,7 +49,7 @@ async function boot() {
   $('#gate').hidden = false;
 }
 
-$('#gateForm').addEventListener('submit', async (e) => {
+on('#gateForm', 'submit', async (e) => {
   e.preventDefault();
   const err = $('#gateErr');
   err.hidden = true;
@@ -67,8 +67,8 @@ $('#gateForm').addEventListener('submit', async (e) => {
 });
 
 async function enterApp() {
-  $('#app').hidden = false;
-  $('#adminBtn').hidden = state.user?.role !== 'admin';
+  set('#app', 'hidden', false);
+  set('#adminBtn', 'hidden', state.user?.role !== 'admin');
 
   await loadTopics();
   await refresh();
@@ -270,7 +270,7 @@ async function openTask(id) {
   $('#detail').showModal();
 }
 
-$('#replyForm').addEventListener('submit', async (e) => {
+on('#replyForm', 'submit', async (e) => {
   e.preventDefault();
   const body = $('#replyBody').value.trim();
   if (!body) return;
@@ -282,7 +282,7 @@ $('#replyForm').addEventListener('submit', async (e) => {
   } catch (ex) { toast(ex.message, 'error'); }
 });
 
-$('#dRun').addEventListener('click', async (e) => {
+on('#dRun', 'click', async (e) => {
   const btn = e.currentTarget;
   btn.disabled = true;
   try {
@@ -294,7 +294,7 @@ $('#dRun').addEventListener('click', async (e) => {
   btn.disabled = false;
 });
 
-$('#dDone').addEventListener('click', async () => {
+on('#dDone', 'click', async () => {
   try {
     await api('update-task', { id: state.openTaskId, status: 'done' });
     $('#detail').close();
@@ -305,20 +305,22 @@ $('#dDone').addEventListener('click', async () => {
 
 /* ── קליטה מהירה ───────────────────────────────────────────── */
 
-$('#captureForm').addEventListener('submit', async (e) => {
+on('#captureForm', 'submit', async (e) => {
   e.preventDefault();
   const title = $('#capTitle').value.trim();
   if (!title) return;
 
-  const choice = $('#capTopic').value;
+  // ‏?. על שדות הבחירה: הוספת מטלה היא הפעולה המרכזית, ואסור שהיא
+  // תישבר בגלל שדה משני שחסר מהדף.
+  const choice = $('#capTopic')?.value ?? 'auto';
   try {
     const r = await api('create-task', {
       title,
       topic_id: choice === 'auto' || choice === '' ? null : choice,
       auto_topic: choice === 'auto',
-      kind: $('#capKind').value,
-      priority: $('#capPriority').value,
-      provider: $('#capProvider').value || '',
+      kind: $('#capKind')?.value || 'question',
+      priority: $('#capPriority')?.value || 'normal',
+      provider: $('#capProvider')?.value || '',
     });
     $('#capTitle').value = '';
     clearGuess();
@@ -339,17 +341,17 @@ $('#captureForm').addEventListener('submit', async (e) => {
  * מילות מפתח בלבד — זה רץ תוך כדי הקלדה ואסור שיעלה כסף.
  */
 
-function clearGuess() { $('#capHint').hidden = true; }
+function clearGuess() { set('#capHint', 'hidden', true); }
 
 let guessTimer = null;
-$('#capTitle').addEventListener('input', () => {
+on('#capTitle', 'input', () => {
   clearTimeout(guessTimer);
   const title = $('#capTitle').value.trim();
-  if ($('#capTopic').value !== 'auto' || title.length < 6) return clearGuess();
+  if (($('#capTopic')?.value ?? 'auto') !== 'auto' || title.length < 6) return clearGuess();
   guessTimer = setTimeout(() => guess(title), 400);
 });
 
-$('#capTopic').addEventListener('change', () => {
+on('#capTopic', 'change', () => {
   if ($('#capTopic').value !== 'auto') clearGuess();
 });
 
@@ -359,10 +361,11 @@ async function guess(title) {
     if (title !== $('#capTitle').value.trim()) return;   // המשתמש המשיך להקליד
 
     const box = $('#capHint');
+    if (!box) return;
     if (r.topic_name) {
       box.textContent = `ישויך ל״${r.topic_name}״`;
       box.className = 'guess guess--hit';
-    } else if (state.ai.has_key && state.ai.auto_catalog) {
+    } else if (state.ai?.has_key && state.ai?.auto_catalog) {
       box.textContent = 'אין התאמה למילות מפתח — המודל יחליט בהוספה';
       box.className = 'guess';
     } else {
@@ -386,7 +389,7 @@ async function applyHint(id, name) {
   } catch (ex) { toast(ex.message, 'error'); }
 }
 
-$('#catalogBtn').addEventListener('click', async (e) => {
+on('#catalogBtn', 'click', async (e) => {
   const btn = e.currentTarget;
   btn.disabled = true;
   const original = btn.textContent;
@@ -405,7 +408,7 @@ $('#catalogBtn').addEventListener('click', async (e) => {
   } finally { btn.disabled = false; }
 });
 
-$('#topicForm').addEventListener('submit', async (e) => {
+on('#topicForm', 'submit', async (e) => {
   e.preventDefault();
   try {
     await api('create-topic', { name: $('#topicName').value, repo: $('#topicRepo').value });
@@ -417,7 +420,7 @@ $('#topicForm').addEventListener('submit', async (e) => {
 
 /* ── סינון וניווט ──────────────────────────────────────────── */
 
-$('#statusChips').addEventListener('click', (e) => {
+on('#statusChips', 'click', (e) => {
   const chip = e.target.closest('.chip');
   if (!chip) return;
   $$('.chip', $('#statusChips')).forEach((c) => c.classList.toggle('is-active', c === chip));
@@ -426,20 +429,20 @@ $('#statusChips').addEventListener('click', (e) => {
 });
 
 let searchTimer = null;
-$('#search').addEventListener('input', (e) => {
+on('#search', 'input', (e) => {
   state.search = e.target.value;
   clearTimeout(searchTimer);
   searchTimer = setTimeout(refresh, 250);
 });
 
-$('#menuBtn').addEventListener('click', () => { $('#drawer').hidden = false; });
-$('#drawer').addEventListener('click', (e) => { if (e.target === $('#drawer')) $('#drawer').hidden = true; });
+on('#menuBtn', 'click', () => { $('#drawer').hidden = false; });
+on('#drawer', 'click', (e) => { if (e.target === $('#drawer')) $('#drawer').hidden = true; });
 $$('[data-close]').forEach((b) => b.addEventListener('click', () => {
   const t = $(`#${b.dataset.close}`);
   if (t.tagName === 'DIALOG') t.close(); else t.hidden = true;
 }));
 
-$('#logoutBtn').addEventListener('click', async () => {
+on('#logoutBtn', 'click', async () => {
   await api('logout').catch(() => {});
   location.reload();
 });
@@ -457,7 +460,7 @@ function openTopicEdit(topic) {
   $('#topicEdit').showModal();
 }
 
-$('#topicEditForm').addEventListener('submit', async (e) => {
+on('#topicEditForm', 'submit', async (e) => {
   e.preventDefault();
   try {
     await api('update-topic', {
@@ -489,12 +492,12 @@ async function reorder(useModel) {
   }
 }
 
-$('#teReorder').addEventListener('click', () => reorder(false));
-$('#teReorderAi').addEventListener('click', () => reorder(true));
+on('#teReorder', 'click', () => reorder(false));
+on('#teReorderAi', 'click', () => reorder(true));
 
 /* ── הגדרות ────────────────────────────────────────────────── */
 
-$('#settingsBtn').addEventListener('click', () => {
+on('#settingsBtn', 'click', () => {
   $('#tokenValue').textContent = '••••••••';
   $('#tokenShow').hidden = false;
   $('#adminOnly').hidden = state.user?.role === 'admin';
@@ -526,7 +529,7 @@ function renderAi() {
   $('#aiClear').hidden = !ai.has_key || ai.key_from_env || !admin;
 }
 
-$('#aiForm').addEventListener('submit', async (e) => {
+on('#aiForm', 'submit', async (e) => {
   e.preventDefault();
   const payload = {
     provider: $('#aiProvider').value,
@@ -545,7 +548,7 @@ $('#aiForm').addEventListener('submit', async (e) => {
   } catch (ex) { toast(ex.message, 'error'); }
 });
 
-$('#aiClear').addEventListener('click', async () => {
+on('#aiClear', 'click', async () => {
   try {
     const r = await api('set-ai', { key: '' });
     state.ai = r.ai;
@@ -554,14 +557,14 @@ $('#aiClear').addEventListener('click', async () => {
   } catch (ex) { toast(ex.message, 'error'); }
 });
 
-$('#aiTest').addEventListener('click', async () => {
+on('#aiTest', 'click', async () => {
   try {
     const r = await api('test-ai');
     toast(r.message, 'ok');
   } catch (ex) { toast(ex.message, 'error'); }
 });
 
-$('#tokenShow').addEventListener('click', async () => {
+on('#tokenShow', 'click', async () => {
   try {
     const r = await api('worker-token');
     $('#tokenValue').textContent = r.worker_token;
@@ -569,7 +572,7 @@ $('#tokenShow').addEventListener('click', async () => {
   } catch (ex) { toast(ex.message, 'error'); }
 });
 
-$('#userForm').addEventListener('submit', async (e) => {
+on('#userForm', 'submit', async (e) => {
   e.preventDefault();
   try {
     await api('create-user', {
@@ -593,5 +596,21 @@ setInterval(() => {
 }, 20000);
 
 boot().catch((ex) => {
-  document.body.textContent = `טעינה נכשלה: ${ex.message}`;
+  /*
+   * מסך הכישלון היחיד שהמשתמש יראה, ולכן הוא צריך לומר מה לעשות ולא רק
+   * מה קרה. שתי התקלות השכיחות הן דף ישן במטמון ותקלה בשרת, ולכל אחת
+   * יש מסלול משלה.
+   */
+  document.body.replaceChildren(
+    el('div', { class: 'boot-error' }, [
+      el('h1', { text: 'הטעינה נכשלה' }),
+      el('p', { text: ex.message }),
+      el('p', { text: 'נסו רענון מלא: Ctrl+Shift+R (במק: Cmd+Shift+R).' }),
+      el('p', {}, [
+        el('span', { text: 'אם זה נמשך — ' }),
+        el('a', { href: './health.php', text: 'בדיקת הסביבה בשרת' }),
+        el('span', { text: ' תראה מה חסר.' }),
+      ]),
+    ]),
+  );
 });

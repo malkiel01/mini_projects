@@ -5,7 +5,7 @@
  * ההגדרות שנוגעים בהן פעם בכמה שבועות.
  */
 
-import { $, $$, el, api, toast, state } from './core.js';
+import { $, $$, el, api, toast, state, on } from './core.js';
 
 /* ── חיבורים ───────────────────────────────────────────────────── */
 
@@ -33,7 +33,7 @@ function renderGithub() {
   }
 }
 
-$('#ghForm').addEventListener('submit', async (e) => {
+on('#ghForm', 'submit', async (e) => {
   e.preventDefault();
   const token = $('#ghToken').value.trim();
   if (!token) return toast('אין מה לשמור — התיבה ריקה', 'error');
@@ -45,7 +45,7 @@ $('#ghForm').addEventListener('submit', async (e) => {
   } catch (ex) { toast(ex.message, 'error'); }
 });
 
-$('#ghDisconnect').addEventListener('click', async () => {
+on('#ghDisconnect', 'click', async () => {
   try {
     await api('disconnect-github');
     await loadConnections();
@@ -179,7 +179,7 @@ async function loadRepoOptions() {
   }
 }
 
-$('#projForm').addEventListener('submit', async (e) => {
+on('#projForm', 'submit', async (e) => {
   e.preventDefault();
   const [owner, name] = ($('#pRepo').value || '/').split('/');
   const repo = state.repos?.find((r) => r.full_name === $('#pRepo').value);
@@ -195,7 +195,7 @@ $('#projForm').addEventListener('submit', async (e) => {
   } catch (ex) { toast(ex.message, 'error'); }
 });
 
-$('#repoForm').addEventListener('submit', async (e) => {
+on('#repoForm', 'submit', async (e) => {
   e.preventDefault();
   const name = $('#rName').value.trim();
   if (!name) return;
@@ -266,7 +266,7 @@ function renderMembers(members) {
   ])));
 }
 
-$('#pvAddMember').addEventListener('submit', async (e) => {
+on('#pvAddMember', 'submit', async (e) => {
   e.preventDefault();
   try {
     await api('set-member', {
@@ -325,10 +325,10 @@ async function removeSkill(s) {
   } catch (ex) { toast(ex.message, 'error'); }
 }
 
-$('#skNew').addEventListener('click', () => skillForm(true));
-$('#skCancel').addEventListener('click', () => skillForm(false));
+on('#skNew', 'click', () => skillForm(true));
+on('#skCancel', 'click', () => skillForm(false));
 
-$('#pvSkillForm').addEventListener('submit', async (e) => {
+on('#pvSkillForm', 'submit', async (e) => {
   e.preventDefault();
   try {
     await api('save-skill', {
@@ -369,7 +369,7 @@ function renderEngine(project, engine) {
     : `${when} שימו לב: כתובת הלוח (${engine.board_url}) אינה https ציבורית, ולכן ההרצה לא תוכל לדווח בחזרה.`;
 }
 
-$('#pvInstall').addEventListener('click', async (e) => {
+on('#pvInstall', 'click', async (e) => {
   const btn = e.currentTarget;
   btn.disabled = true;
   const was = btn.textContent;
@@ -386,7 +386,7 @@ $('#pvInstall').addEventListener('click', async (e) => {
   }
 });
 
-$('#pvSaveCheck').addEventListener('click', async () => {
+on('#pvSaveCheck', 'click', async () => {
   try {
     await api('update-project', { id: state.openProject.id, check_command: $('#pvCheck').value });
     toast('פקודת הבדיקה נשמרה', 'ok');
@@ -506,7 +506,7 @@ async function showAdminTab(tab) {
   }
 }
 
-$('#adminTabs').addEventListener('click', (e) => {
+on('#adminTabs', 'click', (e) => {
   const chip = e.target.closest('.chip');
   if (!chip) return;
   $$('.chip', $('#adminTabs')).forEach((c) => c.classList.toggle('is-active', c === chip));
@@ -515,14 +515,14 @@ $('#adminTabs').addEventListener('click', (e) => {
 
 /* ── פתיחת החלוניות ────────────────────────────────────────────── */
 
-$('#projectsBtn').addEventListener('click', async () => {
+on('#projectsBtn', 'click', async () => {
   $('#projects').showModal();
   await loadConnections().catch(() => {});
   await loadProjects().catch((ex) => toast(ex.message, 'error'));
   await loadRepoOptions();
 });
 
-$('#adminBtn').addEventListener('click', () => {
+on('#adminBtn', 'click', () => {
   $('#admin').showModal();
   showAdminTab('diag');
 });
