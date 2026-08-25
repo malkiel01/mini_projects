@@ -68,6 +68,9 @@
     <button type="submit" class="btn btn--primary">הוספה</button>
   </form>
 
+  <!-- מה הקטלוג האוטומטי חושב, עוד לפני שלחצת "הוספה" -->
+  <p class="guess" id="capHint" hidden></p>
+
   <div class="toolbar">
     <input type="search" id="search" placeholder="חיפוש במטלות…" autocomplete="off">
     <div class="chips" id="statusChips">
@@ -91,6 +94,14 @@
       <button type="button" class="icon-btn" data-close="drawer">✕</button>
     </header>
     <nav class="topics" id="topics"></nav>
+
+    <div class="drawer__tools">
+      <button type="button" class="btn btn--ghost btn--wide" id="catalogBtn" hidden></button>
+      <p class="hint" id="catalogHint">
+        הקטלוג משייך מטלות חדשות לנושא לפי מילות המפתח שלו. ✎ ליד נושא — לכוונון.
+      </p>
+    </div>
+
     <form class="drawer__add" id="topicForm">
       <input type="text" id="topicName" placeholder="נושא חדש" required>
       <input type="text" id="topicRepo" placeholder="ריפו (אופציונלי)" dir="ltr">
@@ -122,6 +133,44 @@
   </div>
 </dialog>
 
+<!-- ── עריכת נושא ────────────────────────────────────────────── -->
+<dialog class="sheet" id="topicEdit">
+  <div class="sheet__inner">
+    <header class="sheet__head">
+      <h2>עריכת נושא</h2>
+      <button type="button" class="icon-btn" data-close="topicEdit">✕</button>
+    </header>
+    <div class="sheet__body">
+      <form class="stack" id="topicEditForm">
+        <label class="field"><span>שם</span><input type="text" id="teName" required></label>
+        <label class="field">
+          <span>מילות מפתח</span>
+          <input type="text" id="teKeywords" placeholder="קבלן, צבע, אינסטלציה">
+        </label>
+        <p class="hint">
+          מופרדות בפסיק. מטלה חדשה שמכילה אחת מהן תשויך לכאן מעצמה.
+          צירוף של כמה מילים ("github actions") נחשב סימן חזק יותר ממילה בודדת.
+        </p>
+        <label class="field"><span>תיאור</span><input type="text" id="teDesc"></label>
+        <label class="field"><span>ריפו</span><input type="text" id="teRepo" dir="ltr"></label>
+        <button type="submit" class="btn btn--primary">שמירה</button>
+      </form>
+
+      <hr>
+      <h3>סדר העבודה</h3>
+      <p class="hint">
+        מסדר את המטלות הפתוחות של הנושא: תשתית לפני מה שנשען עליה, דחוף
+        מוקדם, ומטלה שכתוב בה "#12" תמיד אחרי מטלה 12.
+      </p>
+      <div class="row">
+        <button type="button" class="btn btn--ghost" id="teReorder">סידור לפי כללים</button>
+        <button type="button" class="btn btn--ghost" id="teReorderAi" hidden>סידור עם המודל</button>
+      </div>
+      <p class="hint" id="teOrderResult" hidden></p>
+    </div>
+  </div>
+</dialog>
+
 <!-- ── הגדרות ────────────────────────────────────────────────── -->
 <dialog class="sheet" id="settings">
   <div class="sheet__inner">
@@ -139,6 +188,31 @@
         <code id="tokenValue">••••••••</code>
         <button type="button" class="btn btn--ghost" id="tokenShow">הצגה</button>
       </div>
+
+      <hr>
+      <h3>קטלוג אוטומטי</h3>
+      <p class="hint" id="aiState">טוען…</p>
+      <p class="hint">
+        בלי מפתח, השיוך נעשה לפי מילות המפתח של הנושאים — עובד מיד ובחינם.
+        עם מפתח Anthropic, מודל קורא את המטלה, מבין טקסט חופשי ויודע להציע
+        נושא חדש כשאף קיים לא מתאים. החיוב הוא לפי שימוש, על חשבון המפתח.
+      </p>
+      <form class="stack" id="aiForm">
+        <label class="field">
+          <span>מפתח API של Anthropic</span>
+          <input type="password" id="aiKey" dir="ltr" placeholder="sk-ant-… (ריק = ניתוק)" autocomplete="off">
+        </label>
+        <label class="field"><span>מודל</span><input type="text" id="aiModel" dir="ltr"></label>
+        <label class="check">
+          <input type="checkbox" id="aiAuto" checked>
+          <span>לקטלג מטלה חדשה אוטומטית</span>
+        </label>
+        <div class="row">
+          <button type="submit" class="btn btn--ghost">שמירה</button>
+          <button type="button" class="btn btn--ghost" id="aiTest">בדיקת חיבור</button>
+          <button type="button" class="btn btn--ghost" id="aiClear" hidden>ניתוק המפתח</button>
+        </div>
+      </form>
 
       <hr>
       <h3>משתמש חדש</h3>

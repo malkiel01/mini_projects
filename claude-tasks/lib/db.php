@@ -10,7 +10,9 @@
 
 declare(strict_types=1);
 
-const DB_FILE = __DIR__ . '/../data/tasks.sqlite';
+// ניתן לדריסה לפני הטעינה — כך הבדיקות רצות על מסד זמני ולא נוגעות
+// בנתונים האמיתיים.
+if (!defined('DB_FILE')) define('DB_FILE', __DIR__ . '/../data/tasks.sqlite');
 
 /** משך ההחזקה של מטלה שנתפסה. עובד שקרס משחרר אותה מעצמו בתום הזמן. */
 const CLAIM_MINUTES = 30;
@@ -90,6 +92,21 @@ function migrate(PDO $pdo): void {
         CREATE INDEX IF NOT EXISTS idx_tasks_topic ON tasks(topic_id);
         CREATE INDEX IF NOT EXISTS idx_notes_task  ON notes(task_id, created_at);
     ");
+
+    // תוספות הקטלוג האוטומטי. מסדים שנוצרו לפני הפיצ'ר משודרגים בהרצה
+    // הבאה בלי לגעת בנתונים שבהם.
+    addColumn($pdo, 'topics', 'keywords',         "TEXT NOT NULL DEFAULT ''");
+    addColumn($pdo, 'tasks',  'topic_source',     "TEXT NOT NULL DEFAULT 'manual'");
+    addColumn($pdo, 'tasks',  'topic_hint',       "TEXT NOT NULL DEFAULT ''");
+    addColumn($pdo, 'tasks',  'topic_confidence', 'REAL NOT NULL DEFAULT 0');
+}
+
+/** ALTER TABLE ADD COLUMN אינו מכיר IF NOT EXISTS ב-SQLite — בודקים לבד. */
+function addColumn(PDO $pdo, string $table, string $column, string $definition): void {
+    foreach ($pdo->query("PRAGMA table_info($table)")->fetchAll() as $col) {
+        if ($col['name'] === $column) return;
+    }
+    $pdo->exec("ALTER TABLE $table ADD COLUMN $column $definition");
 }
 
 /* ── מצבי מטלה ─────────────────────────────────────────────────────
@@ -107,6 +124,8 @@ function migrate(PDO $pdo): void {
 const STATUSES  = ['open', 'in_progress', 'blocked', 'answered', 'done', 'cancelled'];
 const PICKABLE  = ['answered', 'open'];   // הסדר קובע עדיפות: קודם מה שנענה
 const KINDS     = ['code', 'question', 'research'];
+/** איך הנושא נקבע: אדם בחר, מילות מפתח התאימו, מודל החליט, או שאין. */
+const TOPIC_SOURCES = ['manual', 'keyword', 'llm', 'none'];
 const PRIORITIES = ['high', 'normal', 'low'];
 
 function nowTs(): int { return time(); }
@@ -205,10 +224,11 @@ function addNote(PDO $pdo, int $taskId, string $author, string $kind, string $bo
 }
 
 /** ספירה לפי סטטוס — מזין את המונים בראש הממשק. */
-function statusCounts(PDO $pdo, ?int $topicId = null): array {
+function statusCounts(PDO $pdo, ?int $topicId = null, bool $unassignedOnly = false): array {
     $sql = 'SELECT status, COUNT(*) c FROM tasks';
     $args = [];
-    if ($topicId !== null) { $sql .= ' WHERE topic_id = ?'; $args[] = $topicId; }
+    if ($unassignedOnly)          { $sql .= ' WHERE topic_id IS NULL'; }
+    elseif ($topicId !== null)    { $sql .= ' WHERE topic_id = ?'; $args[] = $topicId; }
     $sql .= ' GROUP BY status';
 
     $st = $pdo->prepare($sql);

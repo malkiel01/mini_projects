@@ -225,3 +225,27 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
 }
+
+/* ── קטלוג אוטומטי ──────────────────────────────────────────── */
+
+/* מה שהמערכת חושבת, מתחת לשורת ההקלדה. שקט כברירת מחדל, ומודגש
+   רק כשיש שיוך ממשי — אחרת זה מסיח בכל הקלדה. */
+.guess { margin: -6px 16px 8px; font-size: .8rem; color: var(--ink-faint); }
+.guess--hit { color: var(--accent); font-weight: 600; }
+
+.topic-row { display: flex; align-items: center; gap: 2px; }
+.topic-row .topic { flex: 1; }
+.topic-row .icon-btn { opacity: .45; font-size: .9rem; }
+.topic-row:hover .icon-btn, .topic-row .icon-btn:focus-visible { opacity: 1; }
+
+/* הצעת נושא היא כפתור, לא תווית: לחיצה אחת יוצרת את הנושא. */
+.badge--hint { cursor: pointer; border: 1px dashed var(--accent); color: var(--accent);
+               background: transparent; font: inherit; font-size: .72rem; }
+.badge--hint:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+
+.drawer__tools { padding: 10px 14px; border-block-start: 1px solid var(--line); }
+.drawer__tools .hint { margin-block-start: 8px; }
+
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.check { display: flex; align-items: center; gap: 8px; font-size: .86rem; color: var(--ink-soft); }
+.check input { width: auto; }

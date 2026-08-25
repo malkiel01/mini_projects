@@ -12,20 +12,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
-
-const CONFIG_FILE = __DIR__ . '/../data/config.json';
-
-function config(): array {
-    if (is_file(CONFIG_FILE)) {
-        $c = json_decode((string) file_get_contents(CONFIG_FILE), true);
-        if (is_array($c) && !empty($c['worker_token'])) return $c;
-    }
-    // נוצר בפנייה הראשונה, כך שאין ברירת מחדל ידועה מראש.
-    $c = ['worker_token' => bin2hex(random_bytes(24)), 'created_at' => date('c')];
-    file_put_contents(CONFIG_FILE, json_encode($c, JSON_PRETTY_PRINT), LOCK_EX);
-    @chmod(CONFIG_FILE, 0600);
-    return $c;
-}
+require_once __DIR__ . '/config.php';
 
 function sessionStart(): void {
     if (session_status() !== PHP_SESSION_NONE) return;

@@ -13,6 +13,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/lib/auth.php';
+require_once __DIR__ . '/lib/order.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -129,21 +130,51 @@ try {
 
     /* ── נושאים ────────────────────────────────────────────────── */
 
-    case 'topics':
+    case 'topics': {
         $rows = db()->query(
             'SELECT t.*, (SELECT COUNT(*) FROM tasks k
                            WHERE k.topic_id = t.id AND k.status NOT IN ("done","cancelled")) open_count
                FROM topics t WHERE archived = 0 ORDER BY t.name'
         )->fetchAll();
-        ok(['topics' => $rows]);
+        // מטלות שלא שויכו — הן שמזינות את כפתור "קטלג את מה שנשאר".
+        $un = (int) db()->query(
+            'SELECT COUNT(*) c FROM tasks WHERE topic_id IS NULL AND status NOT IN ("done","cancelled")'
+        )->fetch()['c'];
+        ok(['topics' => $rows, 'unassigned' => $un, 'ai' => aiStatus()]);
+    }
 
     case 'create-topic':
         $me   = requireUser($user);
         $name = str_field($in, 'name', 80);
         if ($name === '') fail('חסר שם לנושא');
-        db()->prepare('INSERT INTO topics (name, description, repo, created_by, created_at) VALUES (?,?,?,?,?)')
-            ->execute([$name, str_field($in, 'description', 2000), str_field($in, 'repo', 120), $me['id'], nowTs()]);
+        db()->prepare('INSERT INTO topics (name, description, repo, keywords, created_by, created_at)
+                       VALUES (?,?,?,?,?,?)')
+            ->execute([$name, str_field($in, 'description', 2000), str_field($in, 'repo', 120),
+                       str_field($in, 'keywords', 1000), $me['id'], nowTs()]);
         ok(['id' => (int) db()->lastInsertId()]);
+
+    /**
+     * עריכת נושא. מילות המפתח הן הכלי שבידי המשתמש לכוון את הקטלוג
+     * האוטומטי בלי מודל ובלי עלות.
+     */
+    case 'update-topic': {
+        requireUser($user);
+        $id = (int) ($in['id'] ?? 0);
+        $st = db()->prepare('SELECT id FROM topics WHERE id = ?');
+        $st->execute([$id]);
+        if (!$st->fetch()) fail('נושא לא נמצא', 404);
+
+        $sets = []; $args = [];
+        foreach (['name' => 80, 'description' => 2000, 'repo' => 120, 'keywords' => 1000] as $f => $max) {
+            if (array_key_exists($f, $in)) { $sets[] = "$f = ?"; $args[] = str_field($in, $f, $max); }
+        }
+        if (array_key_exists('archived', $in)) { $sets[] = 'archived = ?'; $args[] = $in['archived'] ? 1 : 0; }
+        if (!$sets) fail('אין מה לעדכן');
+
+        $args[] = $id;
+        db()->prepare('UPDATE topics SET ' . implode(', ', $sets) . ' WHERE id = ?')->execute($args);
+        ok();
+    }
 
     /* ── מטלות ─────────────────────────────────────────────────── */
 
@@ -156,7 +187,13 @@ try {
                   WHERE 1=1';
         $args = [];
 
-        if (($tid = int_or_null($in, 'topic_id')) !== null) { $sql .= ' AND k.topic_id = ?'; $args[] = $tid; }
+        // 'none' = דווקא מה שלא שויך. זה המסך שבו מתקנים את מה שהקטלוג
+        // לא הצליח לסווג, ולכן הוא צריך סינון משלו.
+        $unassigned = ($in['topic_id'] ?? null) === 'none';
+        $tid = $unassigned ? null : int_or_null($in, 'topic_id');
+
+        if ($unassigned)          { $sql .= ' AND k.topic_id IS NULL'; }
+        elseif ($tid !== null)    { $sql .= ' AND k.topic_id = ?'; $args[] = $tid; }
 
         $status = $in['status'] ?? '';
         if (is_string($status) && in_array($status, STATUSES, true)) {
@@ -179,7 +216,7 @@ try {
 
         $st = db()->prepare($sql);
         $st->execute($args);
-        ok(['tasks' => $st->fetchAll(), 'counts' => statusCounts(db(), int_or_null($in, 'topic_id'))]);
+        ok(['tasks' => $st->fetchAll(), 'counts' => statusCounts(db(), $tid, $unassigned)]);
     }
 
     case 'task': {
@@ -192,24 +229,210 @@ try {
     case 'create-task': {
         $me    = requireUser($user);
         $title = str_field($in, 'title', 200);
+        $body  = str_field($in, 'body', 20000);
         if ($title === '') fail('חסרה כותרת למטלה');
+
+        /*
+         * זה הלב של הקטלוג האוטומטי: כשלא נבחר נושא, המערכת בוחרת אחד.
+         * אם היא לא בטוחה — היא לא מנחשת, אלא משאירה בלי נושא ורושמת
+         * הצעה. מטלה בלי נושא בולטת ומתוקנת בקליק; מטלה בנושא הלא נכון
+         * פשוט נעלמת.
+         */
+        $topicId = int_or_null($in, 'topic_id');
+        $auto    = $topicId === null && ($in['auto_topic'] ?? true) !== false;
+        $verdict = null;
+
+        if ($auto) {
+            $verdict = classifyTask(db(), $title, $body, [
+                'key'   => aiAuto() ? aiKey() : '',
+                'model' => aiModel(),
+            ]);
+            $topicId = $verdict['topic_id'];
+        }
 
         db()->prepare(
             'INSERT INTO tasks (topic_id, title, body, kind, priority, repo, branch, seq,
+                                topic_source, topic_hint, topic_confidence,
                                 created_by, created_at, updated_at)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
         )->execute([
-            int_or_null($in, 'topic_id'),
+            $topicId,
             $title,
-            str_field($in, 'body', 20000),
+            $body,
             pick_field($in, 'kind', KINDS, 'question'),
             pick_field($in, 'priority', PRIORITIES, 'normal'),
             str_field($in, 'repo', 120),
             str_field($in, 'branch', 120),
             (int) ($in['seq'] ?? 0),
+            $verdict ? $verdict['source'] : 'manual',
+            $verdict ? (string) ($verdict['hint'] ?? '') : '',
+            $verdict ? (float) $verdict['confidence'] : 0,
             $me['id'], nowTs(), nowTs(),
         ]);
-        ok(['id' => (int) db()->lastInsertId()]);
+        $id = (int) db()->lastInsertId();
+
+        // סידור לפי כללים בלבד: זה קורה בכל הוספה, ואסור שיעלה כסף או
+        // ישהה את התגובה. סידור עם מודל מופעל ידנית מהמגירה.
+        $order = reorderTopic(db(), $topicId);
+
+        ok([
+            'id'         => $id,
+            'topic_id'   => $topicId,
+            'topic_name' => $verdict['topic_name'] ?? null,
+            'source'     => $verdict['source'] ?? 'manual',
+            'confidence' => $verdict['confidence'] ?? null,
+            'hint'       => $verdict['hint'] ?? null,
+            'fallback'   => $verdict['fallback'] ?? null,
+            'position'   => array_search($id, $order['order'] ?? [], true),
+        ]);
+    }
+
+    /* ── קטלוג אוטומטי ─────────────────────────────────────────── */
+
+    /**
+     * תצוגה מקדימה בזמן הקלדה. מילות מפתח בלבד — נקרא על כל הקשה
+     * (מושהית), ואסור שיפנה למודל בתשלום.
+     */
+    case 'classify': {
+        requireUser($user);
+        $title = str_field($in, 'title', 200);
+        if ($title === '') ok(['topic_id' => null, 'source' => 'none']);
+        ok(classifyTask(db(), $title, str_field($in, 'body', 20000), ['key' => '']));
+    }
+
+    /**
+     * מקטלג מטלות שנשארו בלי נושא. מוגבל למנה אחת בכל קריאה, כדי
+     * שעשרות מטלות לא ייתרגמו לעשרות פניות למודל בבקשה אחת.
+     */
+    case 'catalog-backlog': {
+        requireUser($user);
+        $limit = max(1, min(25, (int) ($in['limit'] ?? 15)));
+        $st = db()->prepare(
+            'SELECT id, title, body FROM tasks
+              WHERE topic_id IS NULL AND status NOT IN ("done","cancelled")
+              ORDER BY id DESC LIMIT ?'
+        );
+        $st->execute([$limit]);
+        $rows = $st->fetchAll();
+
+        $key      = aiKey();
+        $assigned = 0; $hints = 0; $touched = [];
+        $results  = [];
+
+        foreach ($rows as $r) {
+            $v = classifyTask(db(), (string) $r['title'], (string) $r['body'],
+                              ['key' => $key, 'model' => aiModel()]);
+            db()->prepare('UPDATE tasks SET topic_id = ?, topic_source = ?, topic_hint = ?,
+                                            topic_confidence = ?, updated_at = ? WHERE id = ?')
+                ->execute([$v['topic_id'], $v['source'], (string) ($v['hint'] ?? ''),
+                           (float) $v['confidence'], nowTs(), $r['id']]);
+
+            if ($v['topic_id'] !== null) { $assigned++; $touched[$v['topic_id']] = true; }
+            elseif (!empty($v['hint']))  { $hints++; }
+
+            $results[] = ['id' => (int) $r['id'], 'title' => $r['title'],
+                          'topic_id' => $v['topic_id'], 'topic_name' => $v['topic_name'],
+                          'hint' => $v['hint'] ?? null, 'confidence' => $v['confidence'],
+                          'source' => $v['source']];
+        }
+        foreach (array_keys($touched) as $tid) reorderTopic(db(), (int) $tid);
+
+        ok(['checked' => count($rows), 'assigned' => $assigned, 'hints' => $hints, 'results' => $results]);
+    }
+
+    /**
+     * הופך הצעת נושא לנושא אמיתי, ומושך אליו את כל המטלות שקיבלו את
+     * אותה הצעה — אחרת המשתמש היה מאשר את אותו נושא חמש פעמים.
+     */
+    case 'apply-hint': {
+        $me   = requireUser($user);
+        $id   = (int) ($in['id'] ?? 0);
+        $task = getTask(db(), $id);
+        if (!$task) fail('מטלה לא נמצאה', 404);
+
+        $name = str_field($in, 'name', 80) ?: (string) $task['topic_hint'];
+        if ($name === '') fail('אין שם לנושא');
+
+        $st = db()->prepare('SELECT id FROM topics WHERE name = ? AND archived = 0');
+        $st->execute([$name]);
+        $existing = $st->fetch();
+
+        if ($existing) {
+            $tid = (int) $existing['id'];
+        } else {
+            db()->prepare('INSERT INTO topics (name, description, repo, keywords, created_by, created_at)
+                           VALUES (?,?,?,?,?,?)')
+                ->execute([$name, 'נוצר מהצעת הקטלוג האוטומטי', '', '', $me['id'], nowTs()]);
+            $tid = (int) db()->lastInsertId();
+        }
+
+        $hint = (string) $task['topic_hint'];
+        $upd  = db()->prepare("UPDATE tasks SET topic_id = ?, topic_source = 'manual', topic_hint = '',
+                                               updated_at = ? WHERE id = ?");
+        $upd->execute([$tid, nowTs(), $id]);
+
+        $also = 0;
+        if ($hint !== '') {
+            $sib = db()->prepare('SELECT id FROM tasks WHERE topic_id IS NULL AND topic_hint = ? AND id <> ?');
+            $sib->execute([$hint, $id]);
+            foreach ($sib->fetchAll() as $row) { $upd->execute([$tid, nowTs(), $row['id']]); $also++; }
+        }
+        reorderTopic(db(), $tid);
+        ok(['topic_id' => $tid, 'name' => $name, 'also_moved' => $also]);
+    }
+
+    /** סידור מחדש של נושא. עם מודל רק כשהמשתמש ביקש זאת במפורש. */
+    case 'reorder-topic': {
+        requireUser($user);
+        $useModel = ($in['use_model'] ?? false) === true;
+        $r = reorderTopic(db(), int_or_null($in, 'topic_id'), [
+            'key'   => $useModel ? aiKey() : '',
+            'model' => aiModel(),
+        ]);
+        ok($r);
+    }
+
+    /** מצב הקטלוג. המפתח עצמו לא יוצא מכאן לעולם. */
+    case 'ai-status':
+        requireUser($user);
+        ok(['ai' => aiStatus()]);
+
+    case 'set-ai': {
+        $me = requireUser($user);
+        if ($me['role'] !== 'admin') fail('רק מנהל יכול לשנות את הגדרות הקטלוג', 403);
+
+        $patch = [];
+        if (array_key_exists('anthropic_key', $in)) {
+            $key = trim((string) $in['anthropic_key']);
+            // מחרוזת ריקה = ניתוק המודל וחזרה לקטלוג לפי מילות מפתח.
+            if ($key !== '' && !preg_match('/^sk-ant-[A-Za-z0-9_\-]{20,200}$/', $key)) {
+                fail('המפתח אינו בפורמט של מפתח Anthropic (sk-ant-…)');
+            }
+            $patch['anthropic_key'] = $key !== '' ? $key : null;
+        }
+        if (array_key_exists('ai_model', $in))     $patch['ai_model']     = str_field($in, 'ai_model', 60);
+        if (array_key_exists('auto_catalog', $in)) $patch['auto_catalog'] = (bool) $in['auto_catalog'];
+        if (!$patch) fail('אין מה לעדכן');
+
+        configSet($patch);
+        ok(['ai' => aiStatus()]);
+    }
+
+    /** בדיקת חיבור למודל. פנייה זעירה, כדי שהמשתמש ידע מיד אם המפתח טוב. */
+    case 'test-ai': {
+        $me = requireUser($user);
+        if ($me['role'] !== 'admin') fail('רק מנהל יכול לבדוק את החיבור', 403);
+        $key = aiKey();
+        if ($key === '') fail('לא הוגדר מפתח');
+        try {
+            anthropicText(anthropicCall([
+                'model' => aiModel(), 'max_tokens' => 8,
+                'messages' => [['role' => 'user', 'content' => 'ענה במילה אחת: אישור']],
+            ], $key));
+            ok(['message' => 'החיבור למודל תקין']);
+        } catch (Throwable $e) {
+            fail($e->getMessage());
+        }
     }
 
     case 'update-task': {

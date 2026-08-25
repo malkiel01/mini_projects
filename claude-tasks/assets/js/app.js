@@ -27,6 +27,15 @@ const state = {
   tasks: [],
   counts: {},
   openTaskId: null,
+  unassigned: 0,
+  ai: { has_key: false, model: '', auto_catalog: true, key_from_env: false },
+  editTopicId: null,
+};
+
+/** איך נקבע הנושא — מוצג על הכרטיס, כדי שיהיה ברור מה המערכת החליטה לבד. */
+const SOURCE = {
+  keyword: { icon: '🪄', title: 'שויך אוטומטית לפי מילות מפתח' },
+  llm:     { icon: '🪄', title: 'שויך אוטומטית על ידי המודל' },
 };
 
 /* ── עזרים ─────────────────────────────────────────────────── */
@@ -119,39 +128,56 @@ async function enterApp() {
 /* ── נושאים ────────────────────────────────────────────────── */
 
 async function loadTopics() {
-  const { topics } = await api('topics');
+  const { topics, unassigned, ai } = await api('topics');
   state.topics = topics;
+  state.unassigned = unassigned || 0;
+  if (ai) state.ai = ai;
+
+  const row = (label, id, count, topic) => {
+    const btn = el('button', {
+      type: 'button',
+      class: `topic${state.topicId === id ? ' is-active' : ''}`,
+      onclick: () => selectTopic(id),
+    }, [
+      el('span', { text: label }),
+      el('span', { class: 'count', text: String(count) }),
+    ]);
+    if (!topic) return btn;
+    return el('div', { class: 'topic-row' }, [
+      btn,
+      el('button', {
+        type: 'button', class: 'icon-btn', title: 'עריכה ומילות מפתח',
+        onclick: () => openTopicEdit(topic),
+      }, ['✎']),
+    ]);
+  };
 
   $('#topics').replaceChildren(
-    el('button', {
-      type: 'button',
-      class: `topic${state.topicId === null ? ' is-active' : ''}`,
-      onclick: () => selectTopic(null),
-    }, [el('span', { text: 'כל הנושאים' })]),
-    ...topics.map((t) => el('button', {
-      type: 'button',
-      class: `topic${state.topicId === t.id ? ' is-active' : ''}`,
-      onclick: () => selectTopic(t.id),
-    }, [
-      el('span', { text: t.name }),
-      el('span', { class: 'count', text: String(t.open_count) }),
-    ])),
+    row('כל הנושאים', null, ''),
+    ...topics.map((t) => row(t.name, t.id, t.open_count, t)),
+    ...(state.unassigned ? [row('ללא נושא', 'none', state.unassigned)] : []),
   );
 
+  // הכפתור מופיע רק כשיש מה לקטלג — אחרת הוא רעש.
+  const cat = $('#catalogBtn');
+  cat.hidden = state.unassigned === 0;
+  cat.textContent = `קטלוג ${state.unassigned} מטלות ללא נושא`;
+
   $('#capTopic').replaceChildren(
-    el('option', { value: '', text: 'ללא נושא' }),
+    el('option', { value: 'auto', text: '✨ נושא אוטומטי' }),
+    el('option', { value: '', text: 'בלי נושא' }),
     ...topics.map((t) => el('option', { value: String(t.id), text: t.name })),
   );
-  if (state.topicId) $('#capTopic').value = String(state.topicId);
+  $('#capTopic').value = typeof state.topicId === 'number' ? String(state.topicId) : 'auto';
 }
 
 function selectTopic(id) {
   state.topicId = id;
   $('#drawer').hidden = true;
-  $('#scopeLabel').textContent = id
-    ? (state.topics.find((t) => t.id === id)?.name ?? 'נושא')
-    : 'כל הנושאים';
-  if (id) $('#capTopic').value = String(id);
+  $('#scopeLabel').textContent = id === 'none'
+    ? 'ללא נושא'
+    : (id ? (state.topics.find((t) => t.id === id)?.name ?? 'נושא') : 'כל הנושאים');
+  if (typeof id === 'number') $('#capTopic').value = String(id);
   loadTopics();
   refresh();
 }
@@ -188,7 +214,25 @@ function taskCard(t) {
   const badges = [el('span', { class: `badge ${st.cls}`, text: st.label })];
 
   if (t.priority === 'high') badges.push(el('span', { class: 'badge badge--high', text: '⚠ דחוף' }));
-  if (t.topic_name) badges.push(el('span', { class: 'badge badge--topic', text: t.topic_name }));
+
+  if (t.topic_name) {
+    const auto = SOURCE[t.topic_source];
+    badges.push(el('span', {
+      class: 'badge badge--topic',
+      title: auto ? `${auto.title} (${Math.round((t.topic_confidence || 0) * 100)}%)` : 'נושא שנבחר ידנית',
+      text: auto ? `${auto.icon} ${t.topic_name}` : t.topic_name,
+    }));
+  } else if (t.topic_hint) {
+    // הצעה שממתינה לאישור: קליק אחד הופך אותה לנושא ומושך אליו גם את
+    // שאר המטלות שקיבלו את אותה הצעה.
+    badges.push(el('button', {
+      type: 'button',
+      class: 'badge badge--hint',
+      title: 'הקטלוג הציע נושא חדש — לחיצה תיצור אותו',
+      text: `💡 ${t.topic_hint}`,
+      onclick: (ev) => { ev.stopPropagation(); applyHint(t.id, t.topic_hint); },
+    }));
+  }
   badges.push(el('span', { class: 'badge', text: KIND[t.kind] || t.kind }));
   if (Number(t.note_count) > 0) badges.push(el('span', { class: 'badge', text: `💬 ${t.note_count}` }));
   if (t.claimed_by) badges.push(el('span', { class: 'badge', text: `🤖 ${t.claimed_by}` }));
@@ -275,18 +319,99 @@ $('#captureForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const title = $('#capTitle').value.trim();
   if (!title) return;
+
+  const choice = $('#capTopic').value;
   try {
-    await api('create-task', {
+    const r = await api('create-task', {
       title,
-      topic_id: $('#capTopic').value || null,
+      topic_id: choice === 'auto' || choice === '' ? null : choice,
+      auto_topic: choice === 'auto',
       kind: $('#capKind').value,
       priority: $('#capPriority').value,
     });
     $('#capTitle').value = '';
+    clearGuess();
     await loadTopics();
     await refresh();
-    toast('נוסף לתור', 'ok');
+
+    if (r.topic_name)   toast(`נוסף ל״${r.topic_name}״`, 'ok');
+    else if (r.hint)    toast(`נוסף · הקטלוג מציע נושא חדש: ${r.hint}`, 'ok');
+    else                toast('נוסף לתור', 'ok');
+    // המודל נכשל אך המטלה נשמרה — שקיפות במקום שקט.
+    if (r.fallback) toast(`הקטלוג עבד לפי מילות מפתח: ${r.fallback}`, 'error');
   } catch (ex) { toast(ex.message, 'error'); }
+});
+
+/* ── ניחוש חי ───────────────────────────────────────────────────
+ *
+ * מראה לאן המטלה הולכת עוד לפני ההוספה, כדי שהשיוך לא יהיה הפתעה.
+ * מילות מפתח בלבד — זה רץ תוך כדי הקלדה ואסור שיעלה כסף.
+ */
+
+function clearGuess() { $('#capHint').hidden = true; }
+
+let guessTimer = null;
+$('#capTitle').addEventListener('input', () => {
+  clearTimeout(guessTimer);
+  const title = $('#capTitle').value.trim();
+  if ($('#capTopic').value !== 'auto' || title.length < 6) return clearGuess();
+  guessTimer = setTimeout(() => guess(title), 400);
+});
+
+$('#capTopic').addEventListener('change', () => {
+  if ($('#capTopic').value !== 'auto') clearGuess();
+});
+
+async function guess(title) {
+  try {
+    const r = await api('classify', { title });
+    if (title !== $('#capTitle').value.trim()) return;   // המשתמש המשיך להקליד
+
+    const box = $('#capHint');
+    if (r.topic_name) {
+      box.textContent = `ישויך ל״${r.topic_name}״`;
+      box.className = 'guess guess--hit';
+    } else if (state.ai.has_key && state.ai.auto_catalog) {
+      box.textContent = 'אין התאמה למילות מפתח — המודל יחליט בהוספה';
+      box.className = 'guess';
+    } else {
+      box.textContent = 'לא זוהה נושא — ייכנס לרשימת "ללא נושא"';
+      box.className = 'guess';
+    }
+    box.hidden = false;
+  } catch { clearGuess(); }
+}
+
+/* ── קטלוג של מה שנשאר ─────────────────────────────────────────── */
+
+async function applyHint(id, name) {
+  try {
+    const r = await api('apply-hint', { id, name });
+    await loadTopics();
+    await refresh();
+    toast(r.also_moved
+      ? `הנושא ״${r.name}״ נוצר · הועברו אליו עוד ${r.also_moved} מטלות`
+      : `הנושא ״${r.name}״ נוצר`, 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+}
+
+$('#catalogBtn').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = 'מקטלג…';
+  try {
+    const r = await api('catalog-backlog', { limit: 25 });
+    await loadTopics();
+    await refresh();
+    const parts = [`נבדקו ${r.checked}`];
+    if (r.assigned) parts.push(`שויכו ${r.assigned}`);
+    if (r.hints)    parts.push(`${r.hints} עם הצעת נושא`);
+    toast(parts.join(' · '), 'ok');
+  } catch (ex) {
+    toast(ex.message, 'error');
+    btn.textContent = original;
+  } finally { btn.disabled = false; }
 });
 
 $('#topicForm').addEventListener('submit', async (e) => {
@@ -328,13 +453,112 @@ $('#logoutBtn').addEventListener('click', async () => {
   location.reload();
 });
 
+/* ── עריכת נושא וסדר העבודה ────────────────────────────────── */
+
+function openTopicEdit(topic) {
+  state.editTopicId = topic.id;
+  $('#teName').value     = topic.name;
+  $('#teKeywords').value = topic.keywords || '';
+  $('#teDesc').value     = topic.description || '';
+  $('#teRepo').value     = topic.repo || '';
+  $('#teOrderResult').hidden = true;
+  $('#teReorderAi').hidden = !state.ai.has_key;
+  $('#topicEdit').showModal();
+}
+
+$('#topicEditForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await api('update-topic', {
+      id: state.editTopicId,
+      name: $('#teName').value,
+      keywords: $('#teKeywords').value,
+      description: $('#teDesc').value,
+      repo: $('#teRepo').value,
+    });
+    $('#topicEdit').close();
+    await loadTopics();
+    await refresh();
+    toast('הנושא עודכן', 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+});
+
+async function reorder(useModel) {
+  const box = $('#teOrderResult');
+  box.hidden = false;
+  box.textContent = 'מסדר…';
+  try {
+    const r = await api('reorder-topic', { topic_id: state.editTopicId, use_model: useModel });
+    box.textContent = r.ordered < 2
+      ? 'אין מספיק מטלות פתוחות בנושא כדי לסדר'
+      : `סודרו ${r.ordered} מטלות — ${r.reason}`;
+    await refresh();
+  } catch (ex) {
+    box.textContent = ex.message;
+  }
+}
+
+$('#teReorder').addEventListener('click', () => reorder(false));
+$('#teReorderAi').addEventListener('click', () => reorder(true));
+
 /* ── הגדרות ────────────────────────────────────────────────── */
 
 $('#settingsBtn').addEventListener('click', () => {
   $('#tokenValue').textContent = '••••••••';
   $('#tokenShow').hidden = false;
   $('#adminOnly').hidden = state.user?.role === 'admin';
+  renderAi();
   $('#settings').showModal();
+});
+
+function renderAi() {
+  const ai = state.ai;
+  $('#aiModel').value = ai.model || '';
+  $('#aiAuto').checked = ai.auto_catalog !== false;
+  $('#aiKey').value = '';
+  $('#aiKey').placeholder = ai.has_key ? `מוגדר · …${ai.key_tail} (ריק = ללא שינוי)` : 'sk-ant-…';
+
+  $('#aiState').textContent = ai.has_key
+    ? (ai.key_from_env
+        ? 'מחובר למודל — המפתח מגיע ממשתנה סביבה של השרת.'
+        : `מחובר למודל (…${ai.key_tail}).`)
+    : 'עובד לפי מילות מפתח בלבד. אין מפתח מוגדר, ולכן אין חיוב.';
+
+  // רק מנהל משנה את ההגדרה — לשאר אין טעם להציג טופס שיידחה.
+  const admin = state.user?.role === 'admin';
+  $$('#aiForm input, #aiForm button').forEach((n) => { n.disabled = !admin; });
+  $('#aiClear').hidden = !ai.has_key || ai.key_from_env || !admin;
+}
+
+$('#aiForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const payload = { ai_model: $('#aiModel').value.trim(), auto_catalog: $('#aiAuto').checked };
+  // שדה ריק פירושו "אל תיגע במפתח". ניתוק נעשה במחיקה מפורשת.
+  const key = $('#aiKey').value.trim();
+  if (key !== '') payload.anthropic_key = key;
+
+  try {
+    const r = await api('set-ai', payload);
+    state.ai = r.ai;
+    renderAi();
+    toast('ההגדרות נשמרו', 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+});
+
+$('#aiClear').addEventListener('click', async () => {
+  try {
+    const r = await api('set-ai', { anthropic_key: '' });
+    state.ai = r.ai;
+    renderAi();
+    toast('המפתח נותק — הקטלוג ממשיך לפי מילות מפתח', 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+});
+
+$('#aiTest').addEventListener('click', async () => {
+  try {
+    const r = await api('test-ai');
+    toast(r.message, 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
 });
 
 $('#tokenShow').addEventListener('click', async () => {
