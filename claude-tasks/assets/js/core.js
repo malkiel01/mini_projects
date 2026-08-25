@@ -9,6 +9,27 @@
 export const $ = (s, r = document) => r.querySelector(s);
 export const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
+/**
+ * קושר מאזין, ולא מתפוצץ כשהאלמנט אינו קיים.
+ *
+ * הקשירות נעשות ברמת המודול, ולכן אלמנט חסר אחד — למשל כשהדפדפן מחזיק
+ * ‏index.html ישן במטמון אחרי פריסה — היה זורק חריגה שמפילה את טעינת
+ * המודול כולו, והדף נשאר ריק. תכונה שחסרה עדיפה על דף שאינו נטען.
+ */
+export function on(selector, event, handler) {
+  const node = $(selector);
+  if (node) node.addEventListener(event, handler);
+  else console.warn(`[מטלות] אין אלמנט ${selector} — ייתכן שהדף במטמון ישן`);
+  return node;
+}
+
+/** קיצור בטוח לקביעת תכונה על אלמנט שאולי אינו קיים. */
+export function set(selector, prop, value) {
+  const node = $(selector);
+  if (node) node[prop] = value;
+  return node;
+}
+
 export const state = {
 
   user: null,
