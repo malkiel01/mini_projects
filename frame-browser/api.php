@@ -48,19 +48,49 @@ try {
      */
     if ($ourScheme === 'https' && str_starts_with(strtolower($res['url']), 'http://')) {
         out(['success' => true, 'url' => $res['url'], 'status' => $res['status'],
-             'framable' => false, 'reason' => 'הדף מוגש ב-http, והדפדפן חוסם תוכן כזה בתוך אתר מאובטח',
+             'verdict' => 'blocked', 'framable' => false,
+             'reason' => 'הדף מוגש ב-http, והדפדפן חוסם תוכן כזה בתוך אתר מאובטח',
              'title' => pageTitle($res['body']), 'mixed_content' => true]);
     }
     
-    [$framable, $reason] = framingVerdict($res, $origin);
-    
+    [$allowed, $reason] = framingVerdict($res, $origin);
+
+    /*
+     * שתי שאלות נפרדות, ועד עכשיו ערבבתי אותן:
+     *
+     *   1. האם האתר אוסר הטמעה — נקבע בכותרות בלבד, וגם תשובת שגיאה
+     *      נושאת אותן.
+     *   2. האם הבדיקה שלנו הצליחה בכלל.
+     *
+     * ‏403 מ-Cloudflare הוא כישלון של השנייה, לא תשובה לראשונה. להסיק
+     * ממנו "האתר חוסם" זו טעות שמונעת מהמשתמש לראות דף שהיה נפתח אצלו
+     * בסדר גמור. כשאיננו יודעים — אומרים זאת, ונותנים לדפדפן לנסות.
+     */
+    $challenge = looksLikeChallenge($res);
+    $advisory  = '';
+
+    if (!$allowed) {
+        $verdict = 'blocked';                    // הכותרות מפורשות; אין ספק
+    } elseif ($challenge) {
+        $verdict = 'unsure';
+        $advisory = 'שירות הגנה על האתר חסם את הבדיקה מהשרת. בדפדפן שלכם ייתכן שייפתח.';
+    } elseif ($res['status'] >= 400) {
+        $verdict = 'unsure';
+        $advisory = "האתר החזיר {$res['status']} לבדיקה שלנו. ייתכן שהדף עצמו נפתח בכל זאת.";
+    } else {
+        $verdict = 'ok';
+    }
+
     out([
-        'success'   => true,
-        'url'       => $res['url'],
-        'status'    => $res['status'],
-        'framable'  => $framable && $res['status'] < 400,
-        'reason'    => $res['status'] >= 400 ? "האתר החזיר שגיאה {$res['status']}" : $reason,
-        'title'     => pageTitle($res['body']),
+        'success'    => true,
+        'url'        => $res['url'],
+        'status'     => $res['status'],
+        'verdict'    => $verdict,
+        'framable'   => $verdict !== 'blocked',
+        'reason'     => $reason,
+        'advisory'   => $advisory,
+        'challenge'  => $challenge,
+        'title'      => pageTitle($res['body']),
         'redirected' => $res['url'] !== $url,
     ]);
 } catch (InspectError $e) {

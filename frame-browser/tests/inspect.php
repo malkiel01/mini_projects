@@ -98,5 +98,33 @@ check('עם תכונות',      pageTitle('<title dir="rtl">כותרת</title>')
 check('בלי כותרת',      pageTitle('<html><body>x</body>'), '');
 check('עברית ב-UTF-8 נשמרת', pageTitle('<title>עיריית תל אביב</title>'), 'עיריית תל אביב');
 
+echo "\n— אתגר של שירות הגנה —\n";
+$res = fn(int $status, array $headers = [], string $body = '') =>
+    ['status' => $status, 'headers' => $headers, 'body' => $body];
+
+check('403 של Cloudflare לפי הכותרת',
+      looksLikeChallenge($res(403, ['server' => 'cloudflare'])), true);
+check('לפי cf-ray',
+      looksLikeChallenge($res(403, ['cf-ray' => 'abc'])), true);
+check('לפי cf-mitigated גם ב-200',
+      looksLikeChallenge($res(200, ['cf-mitigated' => 'challenge'])), true);
+check('לפי גוף הדף',
+      looksLikeChallenge($res(403, [], '<title>Just a moment...</title>')), true);
+check('checking your browser',
+      looksLikeChallenge($res(503, [], 'Checking your browser before accessing')), true);
+
+// אלה דווקא לא אתגר, וחשוב שלא ייחשבו ככזה
+check('403 רגיל בלי סימנים', looksLikeChallenge($res(403, ['server' => 'nginx'])), false);
+check('404 אינו אתגר',       looksLikeChallenge($res(404, ['server' => 'cloudflare'])), false);
+check('200 תקין',            looksLikeChallenge($res(200, ['server' => 'cloudflare'])), false);
+check('500 אינו אתגר',       looksLikeChallenge($res(500, ['server' => 'nginx'])), false);
+
+echo "\n— ‏403 אינו איסור הטמעה —\n";
+// זו הטעות שתוקנה: תשובת שגיאה אינה אומרת דבר על הטמעה, והכותרות כן.
+check('403 בלי כותרות חוסמות — עדיין מותר',
+      framingVerdict($res(403, ['server' => 'cloudflare']), 'https://x.com')[0], true);
+check('403 עם DENY — חסום',
+      framingVerdict($res(403, ['server' => 'cloudflare', 'x-frame-options' => 'DENY']), 'https://x.com')[0], false);
+
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 exit($fail === 0 ? 0 : 1);
