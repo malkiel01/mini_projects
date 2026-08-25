@@ -152,3 +152,12 @@ hr { border: 0; border-block-start: 1px solid var(--line); width: 100%; margin: 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
 }
+
+/* הסתייגות מעל מסגרת שנטענת בכל זאת — נראית, ולא גוזלת את המקום מהתוכן. */
+.pane__stack { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.pane__advisory { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+                  padding: 7px 12px; font-size: .78rem; line-height: 1.5;
+                  background: #fef3c7; color: #92400e;
+                  border-block-end: 1px solid #fde68a; }
+.pane__advisory-link { color: #92400e; font-weight: 700; white-space: nowrap; }
+.pane--unsure { border-color: #fbbf24; }

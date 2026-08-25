@@ -66,7 +66,8 @@ function hostOf(url) {
 /* ── מסגרות ────────────────────────────────────────────────────── */
 
 function addPane(url = '') {
-  const pane = { id: nextId++, url, status: url ? 'checking' : 'empty', title: '', reason: '' };
+  const pane = { id: nextId++, url, status: url ? 'checking' : 'empty',
+                 title: '', reason: '', advisory: '' };
   state.panes.push(pane);
   render();
   if (url) inspect(pane);
@@ -81,7 +82,7 @@ function addPane(url = '') {
  */
 function ensurePanes() {
   while (state.panes.length < state.cols) {
-    state.panes.push({ id: nextId++, url: '', status: 'empty', title: '', reason: '' });
+    state.panes.push({ id: nextId++, url: '', status: 'empty', title: '', reason: '', advisory: '' });
   }
 }
 
@@ -101,7 +102,9 @@ function setPane(id, patch) {
 
 /** שואל את השרת אם הכתובת ניתנת להטמעה, ורק אז יוצר את המסגרת. */
 async function inspect(pane) {
-  setPane(pane.id, { status: 'checking', reason: '', title: '' });
+  // מה שהוקלד, לפני שהפניה החליפה את הכתובת. בלי זה, פתיחה חוזרת של
+  // אותה כתובת שעברה הפניה נראית כמו כתובת חדשה ופותחת מסגרת כפולה.
+  setPane(pane.id, { status: 'checking', reason: '', title: '', requested: pane.url });
 
   try {
     const res = await fetch(`./api.php?url=${encodeURIComponent(pane.url)}`);
@@ -109,11 +112,19 @@ async function inspect(pane) {
 
     if (!data.success) return setPane(pane.id, { status: 'error', reason: data.error });
 
-    // הפניה מחליפה את הכתובת: עדיף שהשורה תראה לאן באמת הגענו.
-    const patch = { title: data.title || '', url: data.url || pane.url };
-
-    if (data.framable) setPane(pane.id, { ...patch, status: 'ok' });
-    else setPane(pane.id, { ...patch, status: 'blocked', reason: data.reason });
+    /*
+     * ‏verdict מפריד בין "האתר אוסר" (הכותרות אמרו זאת) לבין "לא הצלחנו
+     * לבדוק" — למשל שירות הגנה שחסם את השרת שלנו. במקרה השני מנסים
+     * להטמיע בכל זאת: הדפדפן של המשתמש עשוי לעבור במקום שהשרת נחסם.
+     */
+    setPane(pane.id, {
+      // הפניה מחליפה את הכתובת: עדיף שהשורה תראה לאן באמת הגענו.
+      url: data.url || pane.url,
+      title: data.title || '',
+      status: data.verdict || (data.framable ? 'ok' : 'blocked'),
+      reason: data.reason || '',
+      advisory: data.advisory || '',
+    });
 
     remember(pane.url, data.title);
   } catch (ex) {
@@ -132,7 +143,7 @@ function paneToolbar(pane) {
       if (e.key !== 'Enter') return;
       e.preventDefault();
       const url = normalize(e.target.value);
-      if (url) { pane.url = url; inspect(pane); persist(); }
+      if (url) { pane.url = url; pane.advisory = ''; inspect(pane); persist(); }
     },
   });
 
@@ -197,15 +208,30 @@ function paneBody(pane) {
     loading: 'lazy',
   });
 
-  // האתר אישר הטמעה ובכל זאת לא נטען — קורה כשיש חסימה בשכבת ה-JS.
+  // לא נטען בזמן סביר. במצב "לא בטוח" זו התשובה שחיכינו לה, ובמצב
+  // "מותר" זו חסימה שנעשתה בשכבת ה-JS ולא בכותרות.
   const timer = setTimeout(() => {
-    if (!frame.dataset.loaded) {
-      setPane(pane.id, { status: 'error', reason: 'האתר אישר הטמעה אך הדף לא נטען בזמן סביר' });
-    }
+    if (frame.dataset.loaded) return;
+    setPane(pane.id, {
+      status: 'blocked',
+      reason: pane.status === 'unsure'
+        ? 'הדף לא נטען. סביר שהאתר חוסם הטמעה, ושירות ההגנה שלו מנע מאיתנו לוודא זאת מראש.'
+        : 'האתר אישר הטמעה בכותרות, אך הדף לא נטען — ייתכן שהחסימה נעשית בקוד של האתר.',
+    });
   }, LOAD_TIMEOUT);
   frame.addEventListener('load', () => { frame.dataset.loaded = '1'; clearTimeout(timer); });
 
-  return frame;
+  if (!pane.advisory) return frame;
+
+  // הסתייגות מוצגת מעל המסגרת ולא במקומה: התוכן חשוב יותר מההערה.
+  return el('div', { class: 'pane__stack' }, [
+    el('div', { class: 'pane__advisory' }, [
+      el('span', { text: `⚠ ${pane.advisory}` }),
+      el('a', { class: 'pane__advisory-link', href: pane.url, target: '_blank',
+                rel: 'noopener noreferrer', text: 'פתיחה בלשונית' }),
+    ]),
+    frame,
+  ]);
 }
 
 function render() {
@@ -239,7 +265,12 @@ function remember(url, title) {
 }
 
 function open(url) {
-  // המסגרת הריקה הראשונה, ואם אין — חדשה.
+  // כתובת שכבר פתוחה נטענת מחדש במקומה. בלי זה, לחיצה חוזרת על אותו
+  // קיצור מייצרת עוד ועוד מסגרות זהות.
+  const same = state.panes.find((p) => p.url === url || p.requested === url);
+  if (same) { inspect(same); return; }
+
+  // אחרת: המסגרת הריקה הראשונה, ואם אין — חדשה.
   const target = state.panes.find((p) => p.status === 'empty');
   if (target) { target.url = url; inspect(target); }
   else addPane(url);

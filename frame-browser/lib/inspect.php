@@ -228,6 +228,30 @@ function framingVerdict(array $res, string $origin): array {
     return [true, ''];
 }
 
+/**
+ * האם התשובה היא מסך אתגר של שירות הגנה, ולא הדף עצמו.
+ *
+ * ‏Cloudflare ודומיו מחזירים 403 עם דף "Just a moment…" לכל פנייה שאינה
+ * נראית להם כדפדפן אמיתי. זה חוסם את הבדיקה שלנו מהשרת, אבל אינו אומר
+ * דבר על מה שיקרה בדפדפן של המשתמש — שם יש עוגיות, JS, והיסטוריה.
+ */
+function looksLikeChallenge(array $res): bool {
+    $h = $res['headers'];
+
+    if (isset($h['cf-mitigated'])) return true;
+    if (!in_array($res['status'], [401, 403, 429, 503], true)) return false;
+
+    $server = strtolower($h['server'] ?? '');
+    if (str_contains($server, 'cloudflare') || isset($h['cf-ray'])) return true;
+
+    $body = strtolower(substr($res['body'], 0, 4000));
+    foreach (['just a moment', 'checking your browser', 'attention required',
+              'ddos protection', 'enable javascript and cookies'] as $sign) {
+        if (str_contains($body, $sign)) return true;
+    }
+    return false;
+}
+
 function pageTitle(string $body): string {
     if (!preg_match('#<title[^>]*>(.*?)</title>#is', $body, $m)) return '';
 
