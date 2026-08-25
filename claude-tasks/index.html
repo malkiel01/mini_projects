@@ -44,6 +44,8 @@
       <h1>מטלות לקלוד</h1>
       <p id="scopeLabel">כל הנושאים</p>
     </div>
+    <button type="button" class="icon-btn" id="projectsBtn" title="פרויקטים">📁</button>
+    <button type="button" class="icon-btn" id="adminBtn" title="ניהול" hidden>🛡</button>
     <button type="button" class="icon-btn" id="settingsBtn" title="הגדרות">⚙</button>
     <button type="button" class="icon-btn" id="logoutBtn" title="יציאה">⎋</button>
   </header>
@@ -60,6 +62,7 @@
       <option value="code">קוד</option>
       <option value="research">מחקר</option>
     </select>
+    <select id="capProvider" title="מי יבצע את המטלה"></select>
     <select id="capPriority" title="עדיפות">
       <option value="normal">רגיל</option>
       <option value="high">דחוף</option>
@@ -171,6 +174,91 @@
   </div>
 </dialog>
 
+<!-- ── פרויקטים ──────────────────────────────────────────────── -->
+<dialog class="sheet" id="projects">
+  <div class="sheet__inner">
+    <header class="sheet__head">
+      <h2>פרויקטים</h2>
+      <button type="button" class="icon-btn" data-close="projects">✕</button>
+    </header>
+    <div class="sheet__body">
+      <p class="hint" id="projGate" hidden>
+        כדי לקשר פרויקט לריפו צריך קודם לחבר חשבון גיטהאב — הגדרות ← חיבור לגיטהאב.
+      </p>
+      <div class="plist" id="projList"></div>
+
+      <hr>
+      <h3>פרויקט חדש</h3>
+      <form class="stack" id="projForm">
+        <label class="field"><span>שם</span><input type="text" id="pName" required></label>
+        <label class="field">
+          <span>ריפו</span>
+          <select id="pRepo"></select>
+        </label>
+        <p class="hint" id="pRepoHint">הרשימה נטענת מהגיטהאב שלך.</p>
+        <button type="submit" class="btn btn--primary">יצירה</button>
+      </form>
+
+      <hr>
+      <h3>ריפו חדש בגיטהאב</h3>
+      <form class="stack" id="repoForm">
+        <label class="field"><span>שם</span><input type="text" id="rName" dir="ltr" placeholder="my-new-project"></label>
+        <label class="check"><input type="checkbox" id="rPrivate" checked><span>פרטי</span></label>
+        <button type="submit" class="btn btn--ghost">יצירה בגיטהאב</button>
+      </form>
+    </div>
+  </div>
+</dialog>
+
+<!-- ── פרויקט יחיד ───────────────────────────────────────────── -->
+<dialog class="sheet" id="projectView">
+  <div class="sheet__inner">
+    <header class="sheet__head">
+      <h2 id="pvTitle">פרויקט</h2>
+      <button type="button" class="icon-btn" data-close="projectView">✕</button>
+    </header>
+    <div class="sheet__body">
+      <div class="dmeta" id="pvMeta"></div>
+
+      <h3>חברים</h3>
+      <div class="members" id="pvMembers"></div>
+      <form class="row" id="pvAddMember" hidden>
+        <select id="pvPerson"></select>
+        <select id="pvLevel">
+          <option value="read">צפייה</option>
+          <option value="write">כתיבה</option>
+          <option value="admin">ניהול</option>
+        </select>
+        <button type="submit" class="btn btn--ghost">הוספה</button>
+      </form>
+
+      <hr>
+      <h3>קבצים</h3>
+      <nav class="crumbs" id="pvCrumbs"></nav>
+      <div class="tree" id="pvTree"></div>
+      <pre class="filebox" id="pvFile" hidden></pre>
+    </div>
+  </div>
+</dialog>
+
+<!-- ── ניהול ─────────────────────────────────────────────────── -->
+<dialog class="sheet" id="admin">
+  <div class="sheet__inner">
+    <header class="sheet__head">
+      <h2>ניהול מערכת</h2>
+      <button type="button" class="icon-btn" data-close="admin">✕</button>
+    </header>
+    <div class="sheet__body">
+      <div class="chips" id="adminTabs">
+        <button type="button" class="chip is-active" data-tab="diag">סביבה</button>
+        <button type="button" class="chip" data-tab="users">משתמשים</button>
+        <button type="button" class="chip" data-tab="events">יומן</button>
+      </div>
+      <div id="adminBody"></div>
+    </div>
+  </div>
+</dialog>
+
 <!-- ── הגדרות ────────────────────────────────────────────────── -->
 <dialog class="sheet" id="settings">
   <div class="sheet__inner">
@@ -190,17 +278,50 @@
       </div>
 
       <hr>
+      <h3>חיבור לגיטהאב</h3>
+      <p class="hint" id="ghState">טוען…</p>
+      <form class="stack" id="ghForm">
+        <label class="field">
+          <span>Personal Access Token</span>
+          <input type="password" id="ghToken" dir="ltr" placeholder="ghp_… / github_pat_…" autocomplete="off">
+        </label>
+        <p class="hint">
+          נוצר ב‑github.com ← Settings ← Developer settings ← Tokens.
+          ההיקפים הנדרשים: <code dir="ltr">repo</code> לקריאה וכתיבה בקוד,
+          ו‑<code dir="ltr">workflow</code> כדי שקלוד יוכל להריץ מטלות פיתוח.
+          הטוקן נשמר מוצפן ואינו חוזר מהשרת לעולם.
+        </p>
+        <div class="row">
+          <button type="submit" class="btn btn--ghost">חיבור</button>
+          <button type="button" class="btn btn--ghost" id="ghDisconnect" hidden>ניתוק</button>
+        </div>
+      </form>
+
+      <hr>
+      <h3>ספקי בינה מלאכותית</h3>
+      <p class="hint">
+        כל ספק שתחבר יהיה זמין לבחירה בכל מטלה. החיוב הוא על החשבון שלך אצל
+        אותו ספק. הספק המסומן ★ הוא ברירת המחדל למטלה שלא נבחר לה אחר.
+      </p>
+      <div class="providers" id="providerList"></div>
+
+      <hr>
       <h3>קטלוג אוטומטי</h3>
       <p class="hint" id="aiState">טוען…</p>
       <p class="hint">
         בלי מפתח, השיוך נעשה לפי מילות המפתח של הנושאים — עובד מיד ובחינם.
-        עם מפתח Anthropic, מודל קורא את המטלה, מבין טקסט חופשי ויודע להציע
-        נושא חדש כשאף קיים לא מתאים. החיוב הוא לפי שימוש, על חשבון המפתח.
+        עם מפתח, מודל קורא את המטלה, מבין טקסט חופשי ויודע להציע נושא חדש
+        כשאף קיים לא מתאים. למשתמש שחיבר ספק משלו נעשה השימוש על חשבונו;
+        המפתח כאן הוא גיבוי כללי לכל מי שלא חיבר.
       </p>
       <form class="stack" id="aiForm">
         <label class="field">
-          <span>מפתח API של Anthropic</span>
-          <input type="password" id="aiKey" dir="ltr" placeholder="sk-ant-… (ריק = ניתוק)" autocomplete="off">
+          <span>ספק</span>
+          <select id="aiProvider"></select>
+        </label>
+        <label class="field">
+          <span>מפתח API כללי</span>
+          <input type="password" id="aiKey" dir="ltr" placeholder="ריק = ללא שינוי" autocomplete="off">
         </label>
         <label class="field"><span>מודל</span><input type="text" id="aiModel" dir="ltr"></label>
         <label class="check">

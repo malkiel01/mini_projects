@@ -154,9 +154,9 @@ try {
                FROM topics t WHERE archived = 0 ORDER BY t.name'
         )->fetchAll();
         // מטלות שלא שויכו — הן שמזינות את כפתור "קטלג את מה שנשאר".
-        $un = (int) db()->query(
-            'SELECT COUNT(*) c FROM tasks WHERE topic_id IS NULL AND status NOT IN ("done","cancelled")'
-        )->fetch()['c'];
+        $un = (int) db()->query(<<<SQL
+            SELECT COUNT(*) c FROM tasks WHERE topic_id IS NULL AND status NOT IN ('done','cancelled')
+            SQL)->fetch()['c'];
         ok(['topics' => $rows, 'unassigned' => $un, 'ai' => aiStatus()]);
     }
 
@@ -588,7 +588,6 @@ try {
     case 'my-connections': {
         $me = requireUser($user);
         $gh = userSecret((int) $me['id'], 'github_token');
-        $an = userSecret((int) $me['id'], 'anthropic_key');
         ok(['connections' => [
             'github' => [
                 'connected' => $gh !== '',
@@ -596,7 +595,9 @@ try {
                 'scopes'    => array_values(array_filter(explode(',', (string) ($me['github_scopes'] ?? '')))),
                 'tail'      => secretTail($gh),
             ],
-            'anthropic' => ['connected' => $an !== '', 'tail' => secretTail($an)],
+            // ספקי הבינה חיים בטבלה משלהם — ראה action=providers.
+            'providers' => userProviders((int) $me['id']),
+            'default_provider' => (string) ($me['default_provider'] ?? ''),
         ]]);
     }
 
@@ -629,18 +630,6 @@ try {
             ->execute([$me['id']]);
         logEvent($me, 'github.disconnect');
         ok();
-    }
-
-    /** מפתח קלוד אישי. גובר על המפתח הכללי בפעולות של המשתמש הזה. */
-    case 'set-my-anthropic-key': {
-        $me  = requireUser($user);
-        $key = trim((string) ($in['key'] ?? ''));
-        if ($key !== '' && !preg_match('/^sk-ant-[A-Za-z0-9_\\-]{20,200}$/', $key)) {
-            fail('המפתח אינו בפורמט של מפתח Anthropic (sk-ant-…)');
-        }
-        setUserSecret((int) $me['id'], 'anthropic_key', $key);
-        logEvent($me, $key === '' ? 'anthropic.disconnect' : 'anthropic.connect');
-        ok(['connected' => $key !== '', 'tail' => secretTail($key)]);
     }
 
     /* ── גיטהאב ────────────────────────────────────────────────── */
@@ -738,12 +727,15 @@ try {
     case 'admin-users': {
         $me = requireUser($user);
         if ($me['role'] !== 'admin') fail('למנהל בלבד', 403);
-        ok(['users' => db()->query(
-            'SELECT id, username, display_name, role, created_at, github_login,
-                    (github_token <> "") has_github, (anthropic_key <> "") has_key,
-                    (SELECT COUNT(*) FROM project_members m WHERE m.user_id = users.id) projects
-               FROM users ORDER BY id'
-        )->fetchAll()]);
+        // מרכאות בודדות דרך heredoc: ב-SQLite "" הוא מזהה, והוא נופל
+        // למחרוזת רק כברירת מחדל היסטורית שאפשר לכבות.
+        ok(['users' => db()->query(<<<SQL
+            SELECT id, username, display_name, role, created_at, github_login, default_provider,
+                   (github_token <> '') has_github,
+                   (SELECT COUNT(*) FROM user_providers p WHERE p.user_id = users.id) providers,
+                   (SELECT COUNT(*) FROM project_members m WHERE m.user_id = users.id) projects
+              FROM users ORDER BY id
+            SQL)->fetchAll()]);
     }
 
     case 'admin-events': {
@@ -874,9 +866,13 @@ try {
     default:
         fail('פעולה לא מוכרת: ' . $action, 404);
     }
+} catch (AppError $e) {
+    // שגיאה שנוסחה עבור המשתמש — מגיעה אליו כלשונה.
+    fail($e->getMessage(), $e->status);
 } catch (InvalidArgumentException $e) {
     fail($e->getMessage());
 } catch (Throwable $e) {
+    // תקלה לא צפויה: נרשמת אצלנו, ולא נחשפת החוצה.
     error_log('claude-tasks: ' . $e->getMessage());
     fail('שגיאת שרת', 500);
 }

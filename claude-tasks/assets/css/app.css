@@ -252,3 +252,44 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 
 .badge--link { text-decoration: none; border: 1px solid var(--line); }
 .badge--link:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── פלטפורמה ────────────────────────────────────────────────── */
+
+.providers { display: flex; flex-direction: column; gap: 12px; }
+.provider { border: 1px solid var(--line); border-radius: 12px; padding: 12px;
+            display: flex; flex-direction: column; gap: 8px; }
+.provider.is-on { border-color: var(--accent); }
+.provider__head { display: flex; justify-content: space-between; align-items: baseline;
+                  gap: 8px; flex-wrap: wrap; }
+
+.plist { display: flex; flex-direction: column; gap: 8px; }
+.pcard { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; text-align: start;
+         padding: 12px; border: 1px solid var(--line); border-radius: 12px;
+         background: var(--surface); cursor: pointer; }
+.pcard:hover { border-color: var(--accent); }
+
+.members { display: flex; flex-direction: column; gap: 6px; margin-block-end: 10px; }
+.member { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+          padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; }
+.member select { width: auto; padding: 6px 8px; }
+
+.crumbs { display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+          font-size: .82rem; margin-block-end: 8px; }
+.crumb { background: none; border: 0; color: var(--accent); cursor: pointer;
+         font: inherit; padding: 2px 4px; }
+.tree { display: flex; flex-direction: column; }
+.tree__row { display: flex; align-items: center; gap: 8px; text-align: start;
+             padding: 8px 10px; background: none; border: 0; border-block-end: 1px solid var(--line);
+             cursor: pointer; font: inherit; color: inherit; }
+.tree__row:hover { background: var(--surface-2); }
+
+/* קוד נשאר LTR גם בעמוד עברי, ונגלל לרוחב במקום לשבור את הפריסה. */
+.filebox { direction: ltr; text-align: left; background: var(--surface-2);
+           border: 1px solid var(--line); border-radius: 10px; padding: 12px;
+           overflow-x: auto; font-size: .78rem; line-height: 1.5; max-height: 60vh; }
+
+.diag { display: flex; flex-direction: column; }
+.drow { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline;
+        padding: 8px 4px; border-block-end: 1px solid var(--line); font-size: .84rem; }
+.drow b { min-width: 180px; }
+.drow--bad { background: color-mix(in srgb, var(--blocked) 8%, transparent); }

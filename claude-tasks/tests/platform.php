@@ -60,6 +60,9 @@ check('הרשאות מפתח ההצפנה', substr(sprintf('%o', fileperms(SECRE
 echo "\n— צורת מפתח לפי ספק —\n";
 throws('מפתח OpenAI בתיבה של Anthropic', fn() => checkProviderKey('anthropic', 'sk-proj-abcdefghijklmnop'), 'sk-ant-');
 throws('מפתח קצר מדי', fn() => checkProviderKey('openai', 'sk-123'), 'קצר');
+// "sk-ant-" מתחיל ב-"sk-", ולכן בדיקת תחילית תמימה הייתה מקבלת אותו.
+throws('מפתח Anthropic בתיבה של OpenAI',
+       fn() => checkProviderKey('openai', 'sk-ant-abcdefghijklmnopqrst'), 'Anthropic');
 throws('ספק לא מוכר', fn() => checkProviderKey('nosuch', 'sk-ant-abcdefghijklmnopqrst'), 'לא מוכר');
 checkProviderKey('anthropic', 'sk-ant-abcdefghijklmnopqrst');
 checkProviderKey('google', 'AIzaabcdefghijklmnopqrst');

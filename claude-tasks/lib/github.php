@@ -10,6 +10,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/errors.php';
+
 const GH_API = 'https://api.github.com';
 const GH_UA  = 'claude-tasks-board';
 
@@ -23,7 +25,7 @@ function ghRequest(string $token, string $method, string $path,
     $json = $body !== null ? json_encode($body, JSON_UNESCAPED_UNICODE) : null;
 
     if ($transport) return $transport($method, $url, $json, $token);
-    if (!function_exists('curl_init')) throw new RuntimeException('cURL אינו זמין בשרת');
+    if (!function_exists('curl_init')) throw new AppError('cURL אינו זמין בשרת');
 
     $ch = curl_init($url);
     $headers = [];
@@ -52,7 +54,7 @@ function ghRequest(string $token, string $method, string $path,
     $err  = curl_error($ch);
     curl_close($ch);
 
-    if ($raw === false) throw new RuntimeException('הפנייה לגיטהאב נכשלה: ' . $err);
+    if ($raw === false) throw new AppError('הפנייה לגיטהאב נכשלה: ' . $err);
 
     $data = json_decode((string) $raw, true);
     return ['status' => $code, 'data' => is_array($data) ? $data : [], 'headers' => $headers,
@@ -67,7 +69,7 @@ function ghRequest(string $token, string $method, string $path,
  */
 function ghFail(array $res, string $what) {
     $msg = (string) ($res['data']['message'] ?? '');
-    throw new RuntimeException(match ($res['status']) {
+    throw new AppError(match ($res['status']) {
         401 => 'הטוקן של גיטהאב נדחה — ייתכן שפג או בוטל',
         403 => str_contains($msg, 'rate limit')
                  ? 'חרגת ממכסת הפניות של גיטהאב — נסה שוב בעוד כמה דקות'
@@ -219,7 +221,7 @@ function ghDispatchWorkflow(string $token, string $owner, string $repo, string $
 function ghSetSecret(string $token, string $owner, string $repo, string $name, string $value,
                      ?callable $transport = null): void {
     if (!function_exists('sodium_crypto_box_seal')) {
-        throw new RuntimeException('ext-sodium חסר בשרת — אי אפשר להצפין סוד עבור גיטהאב');
+        throw new AppError('ext-sodium חסר בשרת — אי אפשר להצפין סוד עבור גיטהאב');
     }
     $key = ghOk(ghRequest($token, 'GET', "/repos/$owner/$repo/actions/secrets/public-key", null, $transport),
                 'מפתח הסודות של הריפו');

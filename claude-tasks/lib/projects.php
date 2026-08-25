@@ -17,6 +17,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/crypto.php';
+require_once __DIR__ . '/errors.php';
 require_once __DIR__ . '/ai.php';
 require_once __DIR__ . '/config.php';
 
@@ -77,7 +78,7 @@ function userSecret(int $userId, string $column): string {
 function requireGithubToken(array $user): string {
     $token = userSecret((int) $user['id'], 'github_token');
     if ($token === '') {
-        throw new RuntimeException('לא חובר חשבון גיטהאב. הגדרות ← חיבור לגיטהאב');
+        throw new AppError('לא חובר חשבון גיטהאב. הגדרות ← חיבור לגיטהאב');
     }
     return $token;
 }
@@ -103,12 +104,12 @@ function requireProject(int $projectId, array $user, string $minLevel): array {
     $st = db()->prepare('SELECT * FROM projects WHERE id = ?');
     $st->execute([$projectId]);
     $project = $st->fetch();
-    if (!$project) throw new RuntimeException('הפרויקט לא נמצא');
+    if (!$project) throw new AppError('הפרויקט לא נמצא', 404);
 
     $level = projectLevel($projectId, $user);
     if ($level === null || levelRank($level) < levelRank($minLevel)) {
         logEvent($user, 'deny', "project:$projectId", false, "נדרש $minLevel, יש " . ($level ?? 'כלום'));
-        throw new RuntimeException('אין לך הרשאה מספקת בפרויקט הזה');
+        throw new AppError('אין לך הרשאה מספקת בפרויקט הזה', 403);
     }
     $project['my_level'] = $level;
     return $project;
@@ -163,12 +164,12 @@ function createProject(array $user, string $name, string $owner, string $repo,
 }
 
 function projectMembers(int $projectId): array {
-    $st = db()->prepare(
-        'SELECT m.user_id, m.level, m.added_at, u.username, u.display_name, u.github_login,
-                (u.github_token <> "") has_github
-           FROM project_members m JOIN users u ON u.id = m.user_id
-          WHERE m.project_id = ? ORDER BY m.level DESC, u.display_name'
-    );
+    $st = db()->prepare(<<<SQL
+        SELECT m.user_id, m.level, m.added_at, u.username, u.display_name, u.github_login,
+               (u.github_token <> '') has_github
+          FROM project_members m JOIN users u ON u.id = m.user_id
+         WHERE m.project_id = ? ORDER BY m.level DESC, u.display_name
+        SQL);
     $st->execute([$projectId]);
     return array_map(fn($r) => ['user_id' => (int) $r['user_id'], 'level' => $r['level'],
         'username' => $r['username'], 'display_name' => $r['display_name'],
@@ -304,7 +305,7 @@ function userConn(array $user, string $provider = '', string $model = ''): array
 
     // ספק שהתבקש במפורש ואינו מחובר — לא נופלים בשקט לספק אחר.
     if ($provider !== '' && $provider !== (string) (aiConn()['provider'] ?? '')) {
-        throw new RuntimeException('הספק "' . $provider . '" אינו מחובר לחשבון שלך');
+        throw new AppError('הספק "' . $provider . '" אינו מחובר לחשבון שלך');
     }
 
     $global = aiConn();

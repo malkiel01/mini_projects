@@ -14,6 +14,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/errors.php';
+
 /**
  * הספקים הנתמכים.
  *
@@ -59,6 +61,20 @@ function checkProviderKey(string $provider, string $key) {
         throw new InvalidArgumentException(
             "מפתח של " . PROVIDERS[$provider]['label'] . " אמור להתחיל ב-\"$prefix\" — ודא שלא הודבק מפתח של ספק אחר"
         );
+    }
+
+    /*
+     * ‏"sk-ant-" מתחיל ב-"sk-", ולכן מפתח של Anthropic עובר בקלות את
+     * הבדיקה של OpenAI. תחילית ארוכה יותר של ספק אחר גוברת: היא מזהה
+     * במדויק, ובלי זה השגיאה הייתה מתגלה רק בפנייה הראשונה בתשלום.
+     */
+    foreach (PROVIDERS as $other => $meta) {
+        if ($other === $provider || $meta['prefix'] === '') continue;
+        if (strlen($meta['prefix']) > strlen($prefix) && str_starts_with($key, $meta['prefix'])) {
+            throw new InvalidArgumentException(
+                'זה נראה כמו מפתח של ' . $meta['label'] . ', ולא של ' . PROVIDERS[$provider]['label']
+            );
+        }
     }
 }
 
@@ -137,8 +153,8 @@ function aiComplete(array $conn, string $system, string $prompt,
     $model    = trim((string) ($conn['model'] ?? '')) ?: (PROVIDERS[$provider]['default'] ?? '');
 
     if (!providerExists($provider)) throw new InvalidArgumentException('ספק לא מוכר: ' . $provider);
-    if ($key === '')   throw new RuntimeException('לא הוגדר מפתח עבור ' . PROVIDERS[$provider]['label']);
-    if ($model === '') throw new RuntimeException('לא הוגדר מודל עבור ' . PROVIDERS[$provider]['label']);
+    if ($key === '')   throw new AppError('לא הוגדר מפתח עבור ' . PROVIDERS[$provider]['label']);
+    if ($model === '') throw new AppError('לא הוגדר מודל עבור ' . PROVIDERS[$provider]['label']);
 
     [$url, $headers, $body] = providerRequest($provider, $model, $system, $prompt, $maxTokens);
 
@@ -157,7 +173,7 @@ function aiComplete(array $conn, string $system, string $prompt,
 
     if (($res['status'] ?? 0) !== 200) {
         $msg = providerError($provider, $data);
-        throw new RuntimeException(match ((int) ($res['status'] ?? 0)) {
+        throw new AppError(match ((int) ($res['status'] ?? 0)) {
             401, 403 => 'המפתח של ' . PROVIDERS[$provider]['label'] . ' נדחה',
             429      => PROVIDERS[$provider]['label'] . ': המכסה נגמרה או שהשירות עמוס',
             404      => "המודל \"$model\" אינו קיים אצל " . PROVIDERS[$provider]['label'],
@@ -166,12 +182,12 @@ function aiComplete(array $conn, string $system, string $prompt,
     }
 
     $text = providerText($provider, $data);
-    if (trim($text) === '') throw new RuntimeException(PROVIDERS[$provider]['label'] . ' החזיר תשובה ריקה');
+    if (trim($text) === '') throw new AppError(PROVIDERS[$provider]['label'] . ' החזיר תשובה ריקה');
     return $text;
 }
 
 function aiHttp(string $url, array $headers, string $json): array {
-    if (!function_exists('curl_init')) throw new RuntimeException('cURL אינו זמין בשרת');
+    if (!function_exists('curl_init')) throw new AppError('cURL אינו זמין בשרת');
 
     $ch = curl_init($url);
     curl_setopt_array($ch, [
@@ -187,7 +203,7 @@ function aiHttp(string $url, array $headers, string $json): array {
     $err  = curl_error($ch);
     curl_close($ch);
 
-    if ($body === false) throw new RuntimeException('הפנייה לספק נכשלה: ' . $err);
+    if ($body === false) throw new AppError('הפנייה לספק נכשלה: ' . $err);
     return ['status' => $code, 'body' => (string) $body];
 }
 
@@ -196,9 +212,9 @@ function extractJson(string $text): array {
     $start = strpos($text, '{');
     $end   = strrpos($text, '}');
     if ($start === false || $end === false || $end < $start) {
-        throw new RuntimeException('לא נמצא JSON בתשובת המודל');
+        throw new AppError('לא נמצא JSON בתשובת המודל');
     }
     $data = json_decode(substr($text, $start, $end - $start + 1), true);
-    if (!is_array($data)) throw new RuntimeException('ה-JSON בתשובת המודל אינו תקין');
+    if (!is_array($data)) throw new AppError('ה-JSON בתשובת המודל אינו תקין');
     return $data;
 }
