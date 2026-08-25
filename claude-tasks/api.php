@@ -48,6 +48,21 @@ function pick_field(array $in, string $key, array $allowed, string $default): st
     return in_array($v, $allowed, true) ? $v : $default;
 }
 
+/**
+ * כתובת חיצונית שהמערכת תציג כקישור.
+ *
+ * מוגבלת ל-http/https בכוונה: הערך הזה נכתב לתוך href, ו-javascript:
+ * שם הוא הרצת קוד בדפדפן של מי שלוחץ.
+ */
+function url_field(array $in, string $key): ?string {
+    $v = $in[$key] ?? null;
+    if (!is_string($v)) return null;
+    $v = trim($v);
+    if ($v === '') return '';
+    if (!preg_match('~^https?://[^\s<>"\']{3,290}$~', $v)) fail("הערך בשדה $key אינו כתובת http/https תקינה");
+    return $v;
+}
+
 function int_or_null(array $in, string $key): ?int {
     $v = $in[$key] ?? null;
     return ($v === null || $v === '') ? null : (int) $v;
@@ -450,6 +465,7 @@ try {
                 $sets[] = "$f = ?"; $args[] = $in[$f];
             }
         }
+        if (array_key_exists('session_url', $in)) { $sets[] = 'session_url = ?'; $args[] = url_field($in, 'session_url'); }
         if (array_key_exists('topic_id', $in)) { $sets[] = 'topic_id = ?'; $args[] = int_or_null($in, 'topic_id'); }
         if (array_key_exists('seq', $in))      { $sets[] = 'seq = ?';      $args[] = (int) $in['seq']; }
 
@@ -482,8 +498,16 @@ try {
 
     case 'claim': {
         if (!$worker) fail('פעולה לעובדים בלבד', 403);
+        $url  = url_field($in, 'session_url');
         $task = claimNextTask(db(), $worker, int_or_null($in, 'topic_id'));
         if (!$task) ok(['task' => null, 'message' => 'אין מטלות ממתינות']);
+
+        // הסשן שמחזיק במטלה עכשיו. נרשם במשיכה ולא בסיום, כדי שגם
+        // מטלה שנתקעה באמצע תשאיר שביל חזרה.
+        if ($url) {
+            db()->prepare('UPDATE tasks SET session_url = ? WHERE id = ?')->execute([$url, $task['id']]);
+            $task['session_url'] = $url;
+        }
         ok(['task' => $task, 'notes' => taskNotes(db(), (int) $task['id'])]);
     }
 
@@ -497,6 +521,9 @@ try {
         addNote(db(), $id, $worker, 'question', $q);
         db()->prepare("UPDATE tasks SET status='blocked', claimed_by='', claim_until=0, updated_at=? WHERE id=?")
             ->execute([nowTs(), $id]);
+        if ($url = url_field($in, 'session_url')) {
+            db()->prepare('UPDATE tasks SET session_url = ? WHERE id = ?')->execute([$url, $id]);
+        }
         ok();
     }
 
@@ -510,6 +537,9 @@ try {
 
         db()->prepare("UPDATE tasks SET status='done', claimed_by='', claim_until=0, updated_at=? WHERE id=?")
             ->execute([nowTs(), $id]);
+        if ($url = url_field($in, 'session_url')) {
+            db()->prepare('UPDATE tasks SET session_url = ? WHERE id = ?')->execute([$url, $id]);
+        }
         ok();
     }
 

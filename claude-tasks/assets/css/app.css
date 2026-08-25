@@ -249,3 +249,6 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .row { display: flex; gap: 8px; flex-wrap: wrap; }
 .check { display: flex; align-items: center; gap: 8px; font-size: .86rem; color: var(--ink-soft); }
 .check input { width: auto; }
+
+.badge--link { text-decoration: none; border: 1px solid var(--line); }
+.badge--link:hover { border-color: var(--accent); color: var(--accent); }

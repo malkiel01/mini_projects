@@ -236,6 +236,14 @@ function taskCard(t) {
   badges.push(el('span', { class: 'badge', text: KIND[t.kind] || t.kind }));
   if (Number(t.note_count) > 0) badges.push(el('span', { class: 'badge', text: `💬 ${t.note_count}` }));
   if (t.claimed_by) badges.push(el('span', { class: 'badge', text: `🤖 ${t.claimed_by}` }));
+
+  // השביל חזרה לסשן שעבד על המטלה. נפתח בלשונית נפרדת, ולחיצה עליו
+  // לא אמורה לפתוח גם את חלונית המטלה.
+  if (t.session_url) badges.push(el('a', {
+    class: 'badge badge--link', href: t.session_url, target: '_blank', rel: 'noopener noreferrer',
+    title: 'הסשן שעבד על המטלה', text: '🔗 סשן',
+    onclick: (ev) => ev.stopPropagation(),
+  }));
   badges.push(el('span', { class: 'badge', text: timeAgo(Number(t.updated_at)) }));
 
   return el('article', {
@@ -272,6 +280,10 @@ async function openTask(id) {
                 el('span', { class: 'badge', text: KIND[task.kind] || task.kind })];
   if (task.repo) meta.push(el('span', { class: 'badge', text: `📦 ${task.repo}` }));
   if (task.branch) meta.push(el('span', { class: 'badge', text: `🌿 ${task.branch}` }));
+  if (task.session_url) meta.push(el('a', {
+    class: 'badge badge--link', href: task.session_url, target: '_blank', rel: 'noopener noreferrer',
+    text: '🔗 פתיחת הסשן',
+  }));
   $('#dMeta').replaceChildren(...meta);
 
   $('#dBody').textContent = task.body || '(אין תיאור מפורט)';

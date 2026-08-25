@@ -99,6 +99,10 @@ function migrate(PDO $pdo): void {
     addColumn($pdo, 'tasks',  'topic_source',     "TEXT NOT NULL DEFAULT 'manual'");
     addColumn($pdo, 'tasks',  'topic_hint',       "TEXT NOT NULL DEFAULT ''");
     addColumn($pdo, 'tasks',  'topic_confidence', 'REAL NOT NULL DEFAULT 0');
+
+    // קישור לסשן שעבד על המטלה. הלוח מחליף את הצ'אט, אבל כשצריך לחזור
+    // ולראות איך משהו נעשה — זה השביל חזרה.
+    addColumn($pdo, 'tasks',  'session_url',      "TEXT NOT NULL DEFAULT ''");
 }
 
 /** ALTER TABLE ADD COLUMN אינו מכיר IF NOT EXISTS ב-SQLite — בודקים לבד. */
