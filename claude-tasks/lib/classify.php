@@ -20,13 +20,12 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/ai.php';
 
 /** ניקוד מינימלי לשיוך לפי מילות מפתח, והפער הנדרש מהנושא שאחריו. */
 const TOPIC_MIN_SCORE = 4.0;
 const TOPIC_MARGIN    = 1.4;
 
-const ANTHROPIC_URL   = 'https://api.anthropic.com/v1/messages';
-const ANTHROPIC_MODEL = 'claude-haiku-4-5-20251001';
 
 /* ── עיבוד טקסט ────────────────────────────────────────────────
  *
@@ -244,72 +243,6 @@ function classifyByKeywords(string $title, string $body, array $profiles): array
 
 /* ── המודל ─────────────────────────────────────────────────────── */
 
-/**
- * פנייה ל-API של Anthropic.
- *
- * ‏$transport מוזרק בבדיקות. בלעדיו אי אפשר לבדוק את בניית הבקשה ואת
- * פענוח התשובה בלי מפתח אמיתי ובלי לשלם על כל הרצה.
- */
-function anthropicCall(array $payload, string $key, ?callable $transport = null): array {
-    $json = json_encode($payload, JSON_UNESCAPED_UNICODE);
-    if ($transport) return $transport($json, $key);
-
-    if (!function_exists('curl_init')) throw new RuntimeException('cURL אינו זמין בשרת');
-
-    $ch = curl_init(ANTHROPIC_URL);
-    curl_setopt_array($ch, [
-        CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => $json,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => 20,
-        CURLOPT_CONNECTTIMEOUT => 8,
-        CURLOPT_HTTPHEADER     => [
-            'Content-Type: application/json',
-            'x-api-key: ' . $key,
-            'anthropic-version: 2023-06-01',
-        ],
-    ]);
-    $res  = curl_exec($ch);
-    $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $err  = curl_error($ch);
-    curl_close($ch);
-
-    if ($res === false) throw new RuntimeException('פנייה למודל נכשלה: ' . $err);
-    return ['status' => $code, 'body' => (string) $res];
-}
-
-/** מחלץ את הטקסט מתשובת ה-API, ומתרגם שגיאות למשהו שאפשר להציג. */
-function anthropicText(array $res): string {
-    $data = json_decode($res['body'], true);
-
-    if ($res['status'] !== 200) {
-        $msg = is_array($data) ? ($data['error']['message'] ?? '') : '';
-        throw new RuntimeException(match ($res['status']) {
-            401     => 'מפתח ה-API נדחה',
-            429     => 'המודל עמוס או שהמכסה נגמרה',
-            default => "המודל החזיר שגיאה ({$res['status']}) $msg",
-        });
-    }
-    $out = '';
-    foreach ($data['content'] ?? [] as $block) {
-        if (($block['type'] ?? '') === 'text') $out .= $block['text'];
-    }
-    if ($out === '') throw new RuntimeException('המודל החזיר תשובה ריקה');
-    return $out;
-}
-
-/** מודלים נוטים לעטוף JSON בטקסט. לוקחים את הבלוק ולא את העטיפה. */
-function extractJson(string $text): array {
-    $start = strpos($text, '{');
-    $end   = strrpos($text, '}');
-    if ($start === false || $end === false || $end < $start) {
-        throw new RuntimeException('לא נמצא JSON בתשובת המודל');
-    }
-    $data = json_decode(substr($text, $start, $end - $start + 1), true);
-    if (!is_array($data)) throw new RuntimeException('ה-JSON בתשובת המודל אינו תקין');
-    return $data;
-}
-
 function classifyPrompt(array $topics, string $title, string $body): string {
     $lines = [];
     foreach ($topics as $t) {
@@ -335,17 +268,15 @@ function classifyPrompt(array $topics, string $title, string $body): string {
     TXT;
 }
 
-/** שיוך בעזרת המודל. חריגה נזרקת כדי שהקורא ייפול חזרה למילות מפתח. */
-function classifyByModel(array $topics, string $title, string $body, string $key,
-                         string $model = ANTHROPIC_MODEL, ?callable $transport = null): array {
-    $res = anthropicCall([
-        'model'      => $model,
-        'max_tokens' => 300,
-        'system'     => 'אתה מקטלג מטלות. אתה עונה JSON בלבד, בלי טקסט לפניו או אחריו.',
-        'messages'   => [['role' => 'user', 'content' => classifyPrompt($topics, $title, $body)]],
-    ], $key, $transport);
-
-    $data  = extractJson(anthropicText($res));
+/** שיוך בעזרת מודל. חריגה נזרקת כדי שהקורא ייפול חזרה למילות מפתח. */
+function classifyByModel(array $topics, string $title, string $body, array $conn,
+                         ?callable $transport = null): array {
+    $data = extractJson(aiComplete(
+        $conn,
+        'אתה מקטלג מטלות. אתה עונה JSON בלבד, בלי טקסט לפניו או אחריו.',
+        classifyPrompt($topics, $title, $body),
+        300, $transport
+    ));
     $valid = array_column($topics, 'id');
 
     $tid = $data['topic_id'] ?? null;
@@ -364,6 +295,7 @@ function classifyByModel(array $topics, string $title, string $body, string $key
         'hint'       => $tid === null ? $new : null,
         'confidence' => round($conf, 2),
         'source'     => 'llm',
+        'provider'   => (string) ($conn['provider'] ?? ''),
         'reason'     => is_string($data['reason'] ?? null) ? mb_substr($data['reason'], 0, 300) : '',
     ];
 }
@@ -387,11 +319,10 @@ function classifyTask(PDO $pdo, string $title, string $body = '', array $opts = 
         unset($t);
     }
 
-    $key = $opts['key'] ?? '';
-    if ($key !== '') {
+    $conn = $opts['conn'] ?? [];
+    if (!empty($conn['key'])) {
         try {
-            $r = classifyByModel($topics, $title, $body, $key,
-                                 $opts['model'] ?? ANTHROPIC_MODEL, $opts['transport'] ?? null);
+            $r = classifyByModel($topics, $title, $body, $conn, $opts['transport'] ?? null);
             $r['topic_name'] = $r['topic_id'] !== null ? ($profiles[$r['topic_id']]['name'] ?? null) : null;
             $r['fallback']   = null;
             return $r;
@@ -409,6 +340,7 @@ function classifyTask(PDO $pdo, string $title, string $body = '', array $opts = 
         'source'     => $r['source'],
         'reason'     => $r['topic_id'] !== null ? 'התאמה למילות המפתח של הנושא' : 'אין התאמה מובהקת לאף נושא',
         'fallback'   => $note ?? null,
+        'provider'   => '',
         'scores'     => $r['scores'],
     ];
 }

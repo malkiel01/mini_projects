@@ -1,3 +1,6 @@
+import { $, $$, el, toast, api, state, timeAgo } from './core.js';
+import { loadConnections, loadProviders, runTask } from './platform.js';
+
 /**
  * מטלות לקלוד — ממשק.
  *
@@ -5,8 +8,6 @@
  * ממתין דווקא לי. השאר משני.
  */
 
-const $ = (s, r = document) => r.querySelector(s);
-const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
 const STATUS = {
   open:        { label: 'בתור',      cls: '' },
@@ -18,19 +19,6 @@ const STATUS = {
 };
 const KIND = { code: 'קוד', question: 'שאלה', research: 'מחקר' };
 
-const state = {
-  user: null,
-  topics: [],
-  topicId: null,
-  status: 'active',
-  search: '',
-  tasks: [],
-  counts: {},
-  openTaskId: null,
-  unassigned: 0,
-  ai: { has_key: false, model: '', auto_catalog: true, key_from_env: false },
-  editTopicId: null,
-};
 
 /** איך נקבע הנושא — מוצג על הכרטיס, כדי שיהיה ברור מה המערכת החליטה לבד. */
 const SOURCE = {
@@ -40,50 +28,9 @@ const SOURCE = {
 
 /* ── עזרים ─────────────────────────────────────────────────── */
 
-function el(tag, props = {}, children = []) {
-  const n = document.createElement(tag);
-  for (const [k, v] of Object.entries(props)) {
-    if (v === null || v === undefined || v === false) continue;
-    if (k === 'text') n.textContent = v;
-    else if (k === 'class') n.className = v;
-    else if (k === 'dataset') Object.assign(n.dataset, v);
-    else if (k.startsWith('on')) n.addEventListener(k.slice(2).toLowerCase(), v);
-    else n.setAttribute(k, v === true ? '' : v);
-  }
-  for (const c of [].concat(children)) if (c) n.append(c);
-  return n;
-}
 
-function toast(msg, kind = '') {
-  const host = $('#toasts');
-  while (host.children.length >= 3) host.firstElementChild.remove();
-  const n = el('div', { class: `toast${kind ? ` toast--${kind}` : ''}`, text: msg });
-  host.append(n);
-  setTimeout(() => n.remove(), kind === 'error' ? 5000 : 2600);
-}
 
-/** קריאה ל-API. שגיאה מגיעה כחריגה כדי שהקורא לא ישכח לבדוק. */
-async function api(action, payload = {}) {
-  const res = await fetch(`./api.php?action=${encodeURIComponent(action)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'same-origin',
-    body: JSON.stringify(payload),
-  });
-  let data;
-  try { data = await res.json(); } catch { throw new Error(`תשובה לא תקינה מהשרת (${res.status})`); }
-  if (!data.success) throw new Error(data.error || `שגיאה (${res.status})`);
-  return data;
-}
 
-function timeAgo(ts) {
-  const mins = Math.floor((Date.now() / 1000 - ts) / 60);
-  if (mins < 1) return 'עכשיו';
-  if (mins < 60) return `לפני ${mins} דק׳`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `לפני ${hours} שע׳`;
-  return `לפני ${Math.floor(hours / 24)} ימים`;
-}
 
 /* ── כניסה ─────────────────────────────────────────────────── */
 
@@ -121,8 +68,14 @@ $('#gateForm').addEventListener('submit', async (e) => {
 
 async function enterApp() {
   $('#app').hidden = false;
+  $('#adminBtn').hidden = state.user?.role !== 'admin';
+
   await loadTopics();
   await refresh();
+
+  // כישלון בטעינת ההגדרות לא אמור למנוע עבודה על מטלות.
+  loadConnections().catch(() => {});
+  loadProviders().catch(() => {});
 }
 
 /* ── נושאים ────────────────────────────────────────────────── */
@@ -239,6 +192,12 @@ function taskCard(t) {
 
   // השביל חזרה לסשן שעבד על המטלה. נפתח בלשונית נפרדת, ולחיצה עליו
   // לא אמורה לפתוח גם את חלונית המטלה.
+  if (t.pr_url) badges.push(el('a', {
+    class: 'badge badge--link', href: t.pr_url, target: '_blank', rel: 'noopener noreferrer',
+    title: 'ה-PR שנפתח למטלה', text: '🔀 PR',
+    onclick: (ev) => ev.stopPropagation(),
+  }));
+
   if (t.session_url) badges.push(el('a', {
     class: 'badge badge--link', href: t.session_url, target: '_blank', rel: 'noopener noreferrer',
     title: 'הסשן שעבד על המטלה', text: '🔗 סשן',
@@ -284,6 +243,13 @@ async function openTask(id) {
     class: 'badge badge--link', href: task.session_url, target: '_blank', rel: 'noopener noreferrer',
     text: '🔗 פתיחת הסשן',
   }));
+  if (task.pr_url) meta.push(el('a', {
+    class: 'badge badge--link', href: task.pr_url, target: '_blank', rel: 'noopener noreferrer',
+    text: '🔀 ה-PR',
+  }));
+
+  // הרצה אפשרית רק כשיש ריפו מאחורי המטלה. ההרשאה עצמה נבדקת בשרת.
+  $('#dRun').hidden = !task.project_id;
   $('#dMeta').replaceChildren(...meta);
 
   $('#dBody').textContent = task.body || '(אין תיאור מפורט)';
@@ -316,6 +282,18 @@ $('#replyForm').addEventListener('submit', async (e) => {
   } catch (ex) { toast(ex.message, 'error'); }
 });
 
+$('#dRun').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  try {
+    const r = await runTask(state.openTaskId);
+    $('#detail').close();
+    await refresh();
+    toast(`נשלחה להרצה ב-${r.provider} (${r.model})`, 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+  btn.disabled = false;
+});
+
 $('#dDone').addEventListener('click', async () => {
   try {
     await api('update-task', { id: state.openTaskId, status: 'done' });
@@ -340,6 +318,7 @@ $('#captureForm').addEventListener('submit', async (e) => {
       auto_topic: choice === 'auto',
       kind: $('#capKind').value,
       priority: $('#capPriority').value,
+      provider: $('#capProvider').value || '',
     });
     $('#capTitle').value = '';
     clearGuess();
@@ -525,6 +504,11 @@ $('#settingsBtn').addEventListener('click', () => {
 
 function renderAi() {
   const ai = state.ai;
+  const sel = $('#aiProvider');
+  if (!sel.options.length && state.providers.length) {
+    sel.replaceChildren(...state.providers.map((p) => el('option', { value: p.provider, text: p.label })));
+  }
+  sel.value = ai.provider || 'anthropic';
   $('#aiModel').value = ai.model || '';
   $('#aiAuto').checked = ai.auto_catalog !== false;
   $('#aiKey').value = '';
@@ -532,9 +516,9 @@ function renderAi() {
 
   $('#aiState').textContent = ai.has_key
     ? (ai.key_from_env
-        ? 'מחובר למודל — המפתח מגיע ממשתנה סביבה של השרת.'
-        : `מחובר למודל (…${ai.key_tail}).`)
-    : 'עובד לפי מילות מפתח בלבד. אין מפתח מוגדר, ולכן אין חיוב.';
+        ? `${ai.label}: המפתח מגיע ממשתנה סביבה של השרת.`
+        : `${ai.label} (…${ai.key_tail}) · מודל ${ai.model}`)
+    : 'עובד לפי מילות מפתח בלבד. אין מפתח כללי מוגדר, ולכן אין חיוב.';
 
   // רק מנהל משנה את ההגדרה — לשאר אין טעם להציג טופס שיידחה.
   const admin = state.user?.role === 'admin';
@@ -544,10 +528,14 @@ function renderAi() {
 
 $('#aiForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const payload = { ai_model: $('#aiModel').value.trim(), auto_catalog: $('#aiAuto').checked };
+  const payload = {
+    provider: $('#aiProvider').value,
+    ai_model: $('#aiModel').value.trim(),
+    auto_catalog: $('#aiAuto').checked,
+  };
   // שדה ריק פירושו "אל תיגע במפתח". ניתוק נעשה במחיקה מפורשת.
   const key = $('#aiKey').value.trim();
-  if (key !== '') payload.anthropic_key = key;
+  if (key !== '') payload.key = key;
 
   try {
     const r = await api('set-ai', payload);
@@ -559,7 +547,7 @@ $('#aiForm').addEventListener('submit', async (e) => {
 
 $('#aiClear').addEventListener('click', async () => {
   try {
-    const r = await api('set-ai', { anthropic_key: '' });
+    const r = await api('set-ai', { key: '' });
     state.ai = r.ai;
     renderAi();
     toast('המפתח נותק — הקטלוג ממשיך לפי מילות מפתח', 'ok');

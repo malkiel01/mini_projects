@@ -86,47 +86,54 @@ echo "\n— המודל (תעבורה מזויפת) —\n";
 $topics = [['id' => $shipuz, 'name' => 'שיפוצים', 'description' => ''],
            ['id' => $deploy, 'name' => 'פריסה', 'description' => '']];
 
-$reply = fn(string $text) => fn($json, $key) => ['status' => 200,
+// תעבורה מזויפת: מקבלת את מה ש-aiComplete שולח, ומחזירה תשובה בפורמט
+// של Anthropic. הפורמטים של שאר הספקים נבדקים ב-tests/platform.php.
+$reply = fn(string $text) => fn($provider, $url, $json, $key) => ['status' => 200,
     'body' => json_encode(['content' => [['type' => 'text', 'text' => $text]]], JSON_UNESCAPED_UNICODE)];
 
-$r = classifyByModel($topics, 'לצבוע את הסלון', '', 'k', 'm',
+$conn = ['provider' => 'anthropic', 'key' => 'sk-ant-testtesttesttest', 'model' => 'm'];
+
+$r = classifyByModel($topics, 'לצבוע את הסלון', '', $conn,
         $reply('{"topic_id": ' . $shipuz . ', "new_topic": null, "confidence": 0.9, "reason": "צביעה"}'));
 check('תשובת מודל תקינה', $r['topic_id'], $shipuz);
 check('מקור: מודל', $r['source'], 'llm');
 
-$r = classifyByModel($topics, 'x', '', 'k', 'm',
+$r = classifyByModel($topics, 'x', '', $conn,
         $reply("בטח! הנה:\n```json\n{\"topic_id\": null, \"new_topic\": \"כספים\", \"confidence\": 0.8}\n```\nבהצלחה"));
 check('JSON עטוף בטקסט', $r['hint'], 'כספים');
 check('בלי נושא קיים', $r['topic_id'], null);
 
-$r = classifyByModel($topics, 'x', '', 'k', 'm', $reply('{"topic_id": 9999, "confidence": 0.9}'));
+$r = classifyByModel($topics, 'x', '', $conn, $reply('{"topic_id": 9999, "confidence": 0.9}'));
 check('מזהה שהומצא נדחה', $r['topic_id'], null);
 
-$r = classifyByModel($topics, 'x', '', 'k', 'm',
+$r = classifyByModel($topics, 'x', '', $conn,
         $reply('{"topic_id": ' . $shipuz . ', "confidence": 0.2, "new_topic": "אחר"}'));
 check('ביטחון נמוך — לא משייכים', $r['topic_id'], null);
 
 try {
-    classifyByModel($topics, 'x', '', 'k', 'm', fn($j, $k) => ['status' => 401, 'body' => '{"error":{"message":"bad"}}']);
+    classifyByModel($topics, 'x', '', $conn,
+        fn($p, $u, $j, $k) => ['status' => 401, 'body' => '{"error":{"message":"bad"}}']);
     check('401 זורק', false, true);
 } catch (RuntimeException $e) { check('401 זורק חריגה', str_contains($e->getMessage(), 'נדחה'), true); }
 
 echo "\n— נפילה חזרה למילות מפתח —\n";
-$boom = function ($j, $k) { throw new RuntimeException('רשת נפלה'); };
-$r = classifyTask($pdo, 'לתאם עם הקבלן ריצוף', '', ['key' => 'sk-ant-x', 'transport' => $boom]);
+$boom = function ($p, $u, $j, $k) { throw new RuntimeException('רשת נפלה'); };
+$r = classifyTask($pdo, 'לתאם עם הקבלן ריצוף', '', ['conn' => $conn, 'transport' => $boom]);
 check('המודל נפל — מילות המפתח תפסו', $r['topic_id'], $shipuz);
 check('מדווח על הנפילה', str_contains((string) $r['fallback'], 'רשת נפלה'), true);
 check('המקור מסומן נכון', $r['source'], 'keyword');
 
-$r = classifyTask($pdo, 'לצבוע את הסלון', '', ['key' => '']);
+$r = classifyTask($pdo, 'לצבוע את הסלון', '', ['conn' => []]);
 check('בלי מפתח — לא פונים למודל', $r['source'] !== 'llm', true);
 
 echo "\n— בקשת המודל —\n";
 $seen = null;
-classifyByModel($topics, 'כותרת', 'גוף', 'sk-ant-key', 'my-model', function ($json, $key) use (&$seen) {
-    $seen = ['payload' => json_decode($json, true), 'key' => $key];
-    return ['status' => 200, 'body' => json_encode(['content' => [['type' => 'text', 'text' => '{"topic_id":null}']]])];
-});
+classifyByModel($topics, 'כותרת', 'גוף',
+    ['provider' => 'anthropic', 'key' => 'sk-ant-key', 'model' => 'my-model'],
+    function ($provider, $url, $json, $key) use (&$seen) {
+        $seen = ['payload' => json_decode($json, true), 'key' => $key, 'url' => $url];
+        return ['status' => 200, 'body' => json_encode(['content' => [['type' => 'text', 'text' => '{"topic_id":null}']]])];
+    });
 check('המודל שנשלח', $seen['payload']['model'], 'my-model');
 check('המפתח מועבר', $seen['key'], 'sk-ant-key');
 truthy('הנושאים בפרומפט', str_contains($seen['payload']['messages'][0]['content'], 'שיפוצים'));
@@ -165,27 +172,33 @@ echo "\n— סידור עם מודל —\n";
 $tasks = db()->query("SELECT id,title,body,kind,priority,created_at FROM tasks WHERE topic_id=$proj")->fetchAll();
 $ids   = array_map(fn($t) => (int) $t['id'], $tasks);
 $rev   = array_reverse($ids);
-$r = orderByModel($tasks, 'k', 'm', $reply(json_encode(['order' => $rev, 'reason' => 'כי כן'])));
+$r = orderByModel($tasks, $conn, $reply(json_encode(['order' => $rev, 'reason' => 'כי כן'])));
 check('סדר מהמודל מתקבל', $r['order'], $rev);
 
 $partial = [$ids[0]];
-$r = orderByModel($tasks, 'k', 'm', $reply(json_encode(['order' => array_merge($partial, [999999])])));
+$r = orderByModel($tasks, $conn, $reply(json_encode(['order' => array_merge($partial, [999999])])));
 check('מזהה שהומצא מושמט', in_array(999999, $r['order'], true), false);
 check('מטלות שנשכחו מצורפות', count($r['order']), count($ids));
 check('מה שהמודל ביקש נשאר ראשון', $r['order'][0], $ids[0]);
 
 try {
-    orderByModel($tasks, 'k', 'm', $reply('{"order": []}'));
+    orderByModel($tasks, $conn, $reply('{"order": []}'));
     check('סדר ריק זורק', false, true);
 } catch (RuntimeException $e) { check('סדר ריק זורק חריגה', true, true); }
 
 echo "\n— הגדרות —\n";
 check('ברירת מחדל: אין מפתח', aiStatus()['has_key'], false);
 check('ברירת מחדל: קטלוג פעיל', aiAuto(), true);
-configSet(['anthropic_key' => 'sk-ant-abcd1234']);
+configSet(['ai_key' => 'sk-ant-abcd1234']);
 check('המפתח נשמר', aiKey(), 'sk-ant-abcd1234');
 check('רק הזנב נחשף', aiStatus()['key_tail'], '1234');
-configSet(['anthropic_key' => null]);
+check('ברירת המחדל: Anthropic', aiConn()['provider'], 'anthropic');
+configSet(['ai_provider' => 'openai', 'ai_model' => 'some-model']);
+check('אפשר להחליף ספק', aiConn()['provider'], 'openai');
+check('המודל נשמר', aiModel(), 'some-model');
+configSet(['ai_provider' => 'anthropic', 'ai_model' => '']);
+check('מודל ריק חוזר לברירת המחדל', aiModel(), PROVIDERS['anthropic']['default']);
+configSet(['ai_key' => null]);
 check('אפשר לנתק', aiKey(), '');
 check('הרשאות הקובץ', substr(sprintf('%o', fileperms(CONFIG_FILE)), -3), '600');
 

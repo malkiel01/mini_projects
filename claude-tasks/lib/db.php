@@ -10,6 +10,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/crypto.php';
+
 // ניתן לדריסה לפני הטעינה — כך הבדיקות רצות על מסד זמני ולא נוגעות
 // בנתונים האמיתיים.
 if (!defined('DB_FILE')) define('DB_FILE', __DIR__ . '/../data/tasks.sqlite');
@@ -21,10 +23,7 @@ function db(): PDO {
     static $pdo = null;
     if ($pdo instanceof PDO) return $pdo;
 
-    $dir = dirname(DB_FILE);
-    if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
-        throw new RuntimeException('תיקיית data/ אינה ניתנת ליצירה');
-    }
+    ensureDataDir(dirname(DB_FILE));
 
     $pdo = new PDO('sqlite:' . DB_FILE, null, null, [
         PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
@@ -103,6 +102,93 @@ function migrate(PDO $pdo): void {
     // קישור לסשן שעבד על המטלה. הלוח מחליף את הצ'אט, אבל כשצריך לחזור
     // ולראות איך משהו נעשה — זה השביל חזרה.
     addColumn($pdo, 'tasks',  'session_url',      "TEXT NOT NULL DEFAULT ''");
+
+    /*
+     * שכבת הפלטפורמה: פרויקטים שקשורים לריפו, חברות והרשאות, ויומן
+     * פעולות. הסודות של המשתמש (טוקן גיטהאב, מפתח Anthropic) יושבים
+     * עליו ומוצפנים — ראה lib/crypto.php.
+     */
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS projects (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            name           TEXT NOT NULL,
+            repo_owner     TEXT NOT NULL DEFAULT '',
+            repo_name      TEXT NOT NULL DEFAULT '',
+            default_branch TEXT NOT NULL DEFAULT 'main',
+            description    TEXT NOT NULL DEFAULT '',
+            created_by     INTEGER REFERENCES users(id),
+            created_at     INTEGER NOT NULL,
+            archived       INTEGER NOT NULL DEFAULT 0,
+            -- אסימון עובד משלו לכל פרויקט: הוא נשלח לתוך הריפו כסוד,
+            -- ולכן אסור שיהיה המפתח לכל הלוח.
+            agent_token    TEXT NOT NULL DEFAULT '',
+            check_command  TEXT NOT NULL DEFAULT '',
+            engine_at      INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS project_members (
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            user_id    INTEGER NOT NULL REFERENCES users(id)    ON DELETE CASCADE,
+            level      TEXT NOT NULL DEFAULT 'read',
+            added_at   INTEGER NOT NULL,
+            PRIMARY KEY (project_id, user_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS events (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER REFERENCES users(id),
+            actor      TEXT NOT NULL DEFAULT '',
+            action     TEXT NOT NULL,
+            target     TEXT NOT NULL DEFAULT '',
+            ok         INTEGER NOT NULL DEFAULT 1,
+            detail     TEXT NOT NULL DEFAULT '',
+            ip         TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS user_providers (
+            user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            provider TEXT NOT NULL,
+            api_key  TEXT NOT NULL DEFAULT '',
+            model    TEXT NOT NULL DEFAULT '',
+            added_at INTEGER NOT NULL,
+            PRIMARY KEY (user_id, provider)
+        );
+
+        CREATE TABLE IF NOT EXISTS skills (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            -- NULL = סקיל גלובלי, זמין בכל הפרויקטים
+            project_id  INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+            name        TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            body        TEXT NOT NULL DEFAULT '',
+            always      INTEGER NOT NULL DEFAULT 0,
+            created_by  INTEGER REFERENCES users(id),
+            created_at  INTEGER NOT NULL,
+            updated_at  INTEGER NOT NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_skill_name ON skills(IFNULL(project_id, 0), name);
+        CREATE INDEX IF NOT EXISTS idx_events_time   ON events(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_members_user  ON project_members(user_id);
+    ");
+
+    addColumn($pdo, 'users', 'github_token',  "TEXT NOT NULL DEFAULT ''");
+    addColumn($pdo, 'users', 'github_login',  "TEXT NOT NULL DEFAULT ''");
+    addColumn($pdo, 'users', 'github_scopes', "TEXT NOT NULL DEFAULT ''");
+    addColumn($pdo, 'users', 'default_provider', "TEXT NOT NULL DEFAULT ''");
+    addColumn($pdo, 'tasks', 'project_id',        'INTEGER');
+
+    // מי מבצע את המטלה. ריק = ברירת המחדל של מי שפתח אותה.
+    addColumn($pdo, 'tasks', 'provider',          "TEXT NOT NULL DEFAULT ''");
+    addColumn($pdo, 'tasks', 'model',             "TEXT NOT NULL DEFAULT ''");
+    addColumn($pdo, 'tasks', 'run_url',           "TEXT NOT NULL DEFAULT ''");
+    addColumn($pdo, 'tasks', 'pr_url',            "TEXT NOT NULL DEFAULT ''");
+
+    // פרויקטים שנוצרו לפני המנוע.
+    addColumn($pdo, 'projects', 'agent_token',   "TEXT NOT NULL DEFAULT ''");
+    addColumn($pdo, 'projects', 'check_command', "TEXT NOT NULL DEFAULT ''");
+    addColumn($pdo, 'projects', 'engine_at',     'INTEGER NOT NULL DEFAULT 0');
 }
 
 /** ALTER TABLE ADD COLUMN אינו מכיר IF NOT EXISTS ב-SQLite — בודקים לבד. */
@@ -153,14 +239,16 @@ function releaseExpiredClaims(PDO $pdo): int {
  * ‏BEGIN IMMEDIATE נוטל את נעילת הכתיבה כבר בפתיחה. בלעדיו שני עובדים
  * היו קוראים את אותה שורה ושניהם "מנצחים" בעדכון.
  */
-function claimNextTask(PDO $pdo, string $worker, ?int $topicId = null): ?array {
+function claimNextTask(PDO $pdo, string $worker, ?int $topicId = null, ?int $projectId = null): ?array {
     releaseExpiredClaims($pdo);
 
     $pdo->beginTransaction();
     try {
         $sql = "SELECT * FROM tasks WHERE status IN ('answered','open')";
         $args = [];
-        if ($topicId !== null) { $sql .= " AND topic_id = ?"; $args[] = $topicId; }
+        if ($topicId !== null)   { $sql .= " AND topic_id = ?";   $args[] = $topicId; }
+        // עובד עם אסימון של פרויקט אינו רואה מטלות של פרויקטים אחרים.
+        if ($projectId !== null) { $sql .= " AND project_id = ?"; $args[] = $projectId; }
         // מטלה שנענתה קודמת לחדשה: אדם כבר ממתין לה.
         $sql .= " ORDER BY CASE status WHEN 'answered' THEN 0 ELSE 1 END,
                            CASE priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,

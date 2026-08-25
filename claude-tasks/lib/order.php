@@ -130,16 +130,13 @@ function orderPrompt(array $tasks): string {
  * סידור בעזרת המודל. התשובה נאכפת מול הרשימה שנשלחה: מזהה שהומצא
  * מושמט, ומטלה שנשכחה מצורפת בסוף. כך תשובה חלקית מקלקלת קצת ולא הכל.
  */
-function orderByModel(array $tasks, string $key, string $model = ANTHROPIC_MODEL,
-                      ?callable $transport = null): array {
-    $res = anthropicCall([
-        'model'      => $model,
-        'max_tokens' => 800,
-        'system'     => 'אתה מסדר מטלות לפי סדר עבודה. אתה עונה JSON בלבד.',
-        'messages'   => [['role' => 'user', 'content' => orderPrompt($tasks)]],
-    ], $key, $transport);
-
-    $data  = extractJson(anthropicText($res));
+function orderByModel(array $tasks, array $conn, ?callable $transport = null): array {
+    $data = extractJson(aiComplete(
+        $conn,
+        'אתה מסדר מטלות לפי סדר עבודה. אתה עונה JSON בלבד.',
+        orderPrompt($tasks),
+        800, $transport
+    ));
     $ids   = array_map(fn($t) => (int) $t['id'], $tasks);
     $order = [];
 
@@ -178,10 +175,10 @@ function reorderTopic(PDO $pdo, ?int $topicId, array $opts = []): array {
     $reason = 'תשתית לפני לוגיקה, דחוף קודם, ותלות מפורשת נשמרת';
     $order  = heuristicOrder($tasks);
 
-    $key = $opts['key'] ?? '';
-    if ($key !== '') {
+    $conn = $opts['conn'] ?? [];
+    if (!empty($conn['key'])) {
         try {
-            $r      = orderByModel($tasks, $key, $opts['model'] ?? ANTHROPIC_MODEL, $opts['transport'] ?? null);
+            $r      = orderByModel($tasks, $conn, $opts['transport'] ?? null);
             $order  = $r['order'];
             $reason = $r['reason'] !== '' ? $r['reason'] : 'סודר על ידי המודל';
             $source = 'llm';
