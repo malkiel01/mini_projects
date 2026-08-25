@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>דפדפן משובץ</title>
+<meta name="description" content="פותח כתובות בתוך הדף, כמה במקביל, ואומר מראש איזה אתר מרשה הטמעה ואיזה לא.">
+<meta name="theme-color" content="#0f172a">
+<link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./assets/css/app.css">
+</head>
+<body>
+
+<header class="bar">
+  <form class="omni" id="omniForm">
+    <!-- type="text" ולא "url": אימות הדפדפן פוסל "example.org" בלי סכימה
+         וחוסם את השליחה בשקט, בזמן שהקוד יודע להשלים אותה בעצמו. -->
+    <input type="text" inputmode="url" id="omni" placeholder="הדביקו כתובת ולחצו Enter"
+           autocomplete="off" dir="ltr" spellcheck="false">
+    <button type="submit" class="btn btn--primary">פתיחה</button>
+  </form>
+
+  <div class="bar__tools">
+    <div class="seg" id="layoutSeg" role="group" aria-label="פריסה">
+      <button type="button" class="seg__btn is-active" data-cols="1" title="מסגרת אחת">▉</button>
+      <button type="button" class="seg__btn" data-cols="2" title="שתיים זו לצד זו">▊▊</button>
+      <button type="button" class="seg__btn" data-cols="4" title="ארבע">▖▗▘▝</button>
+    </div>
+    <button type="button" class="icon-btn" id="savedBtn" title="שמורים">★</button>
+    <button type="button" class="icon-btn" id="helpBtn" title="עזרה">?</button>
+  </div>
+</header>
+
+<!-- הגישה המהירה: מה שנשמר, ומה שנפתח לאחרונה -->
+<nav class="quick" id="quick"></nav>
+
+<main class="grid" id="grid" data-cols="1"></main>
+
+<!-- ── שמורים ────────────────────────────────────────────────── -->
+<dialog class="sheet" id="saved">
+  <div class="sheet__inner">
+    <header class="sheet__head">
+      <h2>קישורים שמורים</h2>
+      <button type="button" class="icon-btn" data-close="saved">✕</button>
+    </header>
+    <div class="sheet__body">
+      <form class="stack" id="saveForm">
+        <label class="field"><span>כתובת</span><input type="text" inputmode="url" id="sUrl" dir="ltr" required></label>
+        <label class="field"><span>שם</span><input type="text" id="sName" placeholder="אופציונלי"></label>
+        <button type="submit" class="btn btn--primary">שמירה</button>
+      </form>
+      <hr>
+      <div class="savelist" id="savedList"></div>
+      <hr>
+      <h3>נפתחו לאחרונה</h3>
+      <div class="savelist" id="historyList"></div>
+      <button type="button" class="btn btn--ghost" id="clearHistory">ניקוי ההיסטוריה</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ── עזרה ──────────────────────────────────────────────────── -->
+<dialog class="sheet" id="help">
+  <div class="sheet__inner">
+    <header class="sheet__head">
+      <h2>למה חלק מהאתרים לא נפתחים</h2>
+      <button type="button" class="icon-btn" data-close="help">✕</button>
+    </header>
+    <div class="sheet__body">
+      <p class="hint">
+        אתר יכול לומר לדפדפן "אל תרשה להטמיע אותי בתוך אתר אחר". גוגל,
+        פייסבוק, בנקים ורבים אחרים עושים זאת — כהגנה מפני התקפה שבה אתר
+        זדוני מטמיע אותם ומתעתע במשתמש ללחוץ על מה שאינו רואה.
+      </p>
+      <p class="hint">
+        <b>זו החלטה של האתר, ואי אפשר לעקוף אותה מהצד שלנו.</b> מה שכן
+        אפשר — ואנחנו עושים — הוא לשאול את האתר מראש ולומר לכם מיד, במקום
+        להציג מלבן לבן ריק.
+      </p>
+      <hr>
+      <h3>שתי הכותרות שקובעות</h3>
+      <p class="hint">
+        <code dir="ltr">X-Frame-Options</code> — הישנה. <code dir="ltr">DENY</code> חוסם בכל
+        מקום, <code dir="ltr">SAMEORIGIN</code> מרשה רק בתוך האתר עצמו.
+      </p>
+      <p class="hint">
+        <code dir="ltr">Content-Security-Policy: frame-ancestors</code> — החדשה, וגוברת
+        על הראשונה. מונה במפורש מי רשאי להטמיע.
+      </p>
+      <hr>
+      <h3>מקרה נוסף</h3>
+      <p class="hint">
+        דף שמוגש ב‑<code dir="ltr">http</code> לא ייטען בתוך אתר <code dir="ltr">https</code>
+        גם אם הוא מרשה זאת — הדפדפן חוסם "תוכן מעורב". במקרה כזה נסו את
+        אותה כתובת עם <code dir="ltr">https</code>.
+      </p>
+    </div>
+  </div>
+</dialog>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script type="module" src="./assets/js/app.js"></script>
+</body>
+</html>
