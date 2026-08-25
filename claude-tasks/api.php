@@ -14,6 +14,8 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/lib/order.php';
+require_once __DIR__ . '/lib/github.php';
+require_once __DIR__ . '/lib/projects.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -253,25 +255,42 @@ try {
          * הצעה. מטלה בלי נושא בולטת ומתוקנת בקליק; מטלה בנושא הלא נכון
          * פשוט נעלמת.
          */
+        // שיוך לפרויקט מחייב שהמשתמש חבר בו — גם רק כדי לפתוח מטלה.
+        $projectId = int_or_null($in, 'project_id');
+        if ($projectId !== null) requireProject($projectId, $me, 'read');
+
+        // ספק שנבחר למטלה חייב להיות מחובר לחשבון של מי שפתח אותה.
+        $provider = str_field($in, 'provider', 30);
+        if ($provider !== '') {
+            if (!providerExists($provider)) fail('ספק לא מוכר');
+            if (!isset(userProviders((int) $me['id'])[$provider])) {
+                fail('הספק "' . $provider . '" אינו מחובר לחשבון שלך');
+            }
+        }
+
         $topicId = int_or_null($in, 'topic_id');
         $auto    = $topicId === null && ($in['auto_topic'] ?? true) !== false;
         $verdict = null;
 
         if ($auto) {
+            // החיבור של מי שפתח את המטלה, לא של המערכת: כל אחד נחסם
+            // ומחויב על החשבון שלו.
             $verdict = classifyTask(db(), $title, $body, [
-                'key'   => aiAuto() ? aiKey() : '',
-                'model' => aiModel(),
+                'conn' => aiAuto() ? userConn($me) : [],
             ]);
             $topicId = $verdict['topic_id'];
         }
 
         db()->prepare(
-            'INSERT INTO tasks (topic_id, title, body, kind, priority, repo, branch, seq,
-                                topic_source, topic_hint, topic_confidence,
+            'INSERT INTO tasks (topic_id, project_id, provider, model, title, body, kind, priority,
+                                repo, branch, seq, topic_source, topic_hint, topic_confidence,
                                 created_by, created_at, updated_at)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
         )->execute([
             $topicId,
+            $projectId,
+            $provider,
+            str_field($in, 'model', 80),
             $title,
             $body,
             pick_field($in, 'kind', KINDS, 'question'),
@@ -293,6 +312,7 @@ try {
         ok([
             'id'         => $id,
             'topic_id'   => $topicId,
+            'project_id' => $projectId,
             'topic_name' => $verdict['topic_name'] ?? null,
             'source'     => $verdict['source'] ?? 'manual',
             'confidence' => $verdict['confidence'] ?? null,
@@ -312,7 +332,7 @@ try {
         requireUser($user);
         $title = str_field($in, 'title', 200);
         if ($title === '') ok(['topic_id' => null, 'source' => 'none']);
-        ok(classifyTask(db(), $title, str_field($in, 'body', 20000), ['key' => '']));
+        ok(classifyTask(db(), $title, str_field($in, 'body', 20000), ['conn' => []]));
     }
 
     /**
@@ -320,7 +340,7 @@ try {
      * שעשרות מטלות לא ייתרגמו לעשרות פניות למודל בבקשה אחת.
      */
     case 'catalog-backlog': {
-        requireUser($user);
+        $me = requireUser($user);
         $limit = max(1, min(25, (int) ($in['limit'] ?? 15)));
         $st = db()->prepare(
             'SELECT id, title, body FROM tasks
@@ -330,13 +350,12 @@ try {
         $st->execute([$limit]);
         $rows = $st->fetchAll();
 
-        $key      = aiKey();
+        $conn     = userConn($me);
         $assigned = 0; $hints = 0; $touched = [];
         $results  = [];
 
         foreach ($rows as $r) {
-            $v = classifyTask(db(), (string) $r['title'], (string) $r['body'],
-                              ['key' => $key, 'model' => aiModel()]);
+            $v = classifyTask(db(), (string) $r['title'], (string) $r['body'], ['conn' => $conn]);
             db()->prepare('UPDATE tasks SET topic_id = ?, topic_source = ?, topic_hint = ?,
                                             topic_confidence = ?, updated_at = ? WHERE id = ?')
                 ->execute([$v['topic_id'], $v['source'], (string) ($v['hint'] ?? ''),
@@ -398,11 +417,10 @@ try {
 
     /** סידור מחדש של נושא. עם מודל רק כשהמשתמש ביקש זאת במפורש. */
     case 'reorder-topic': {
-        requireUser($user);
+        $me = requireUser($user);
         $useModel = ($in['use_model'] ?? false) === true;
         $r = reorderTopic(db(), int_or_null($in, 'topic_id'), [
-            'key'   => $useModel ? aiKey() : '',
-            'model' => aiModel(),
+            'conn' => $useModel ? userConn($me) : [],
         ]);
         ok($r);
     }
@@ -414,22 +432,29 @@ try {
 
     case 'set-ai': {
         $me = requireUser($user);
-        if ($me['role'] !== 'admin') fail('רק מנהל יכול לשנות את הגדרות הקטלוג', 403);
+        if ($me['role'] !== 'admin') fail('רק מנהל יכול לשנות את הגדרות המערכת', 403);
 
         $patch = [];
-        if (array_key_exists('anthropic_key', $in)) {
-            $key = trim((string) $in['anthropic_key']);
-            // מחרוזת ריקה = ניתוק המודל וחזרה לקטלוג לפי מילות מפתח.
-            if ($key !== '' && !preg_match('/^sk-ant-[A-Za-z0-9_\-]{20,200}$/', $key)) {
-                fail('המפתח אינו בפורמט של מפתח Anthropic (sk-ant-…)');
-            }
-            $patch['anthropic_key'] = $key !== '' ? $key : null;
+        if (array_key_exists('provider', $in)) {
+            $prov = (string) $in['provider'];
+            if (!providerExists($prov)) fail('ספק לא מוכר');
+            $patch['ai_provider'] = $prov;
         }
-        if (array_key_exists('ai_model', $in))     $patch['ai_model']     = str_field($in, 'ai_model', 60);
+        if (array_key_exists('key', $in)) {
+            $key = trim((string) $in['key']);
+            // מחרוזת ריקה = ניתוק, וחזרה לקטלוג לפי מילות מפתח בלבד.
+            if ($key !== '') {
+                try { checkProviderKey($patch['ai_provider'] ?? aiConn()['provider'], $key); }
+                catch (InvalidArgumentException $e) { fail($e->getMessage()); }
+            }
+            $patch['ai_key'] = $key !== '' ? $key : null;
+        }
+        if (array_key_exists('ai_model', $in))     $patch['ai_model']     = str_field($in, 'ai_model', 80);
         if (array_key_exists('auto_catalog', $in)) $patch['auto_catalog'] = (bool) $in['auto_catalog'];
         if (!$patch) fail('אין מה לעדכן');
 
         configSet($patch);
+        logEvent($me, 'system.ai', (string) ($patch['ai_provider'] ?? ''));
         ok(['ai' => aiStatus()]);
     }
 
@@ -437,14 +462,11 @@ try {
     case 'test-ai': {
         $me = requireUser($user);
         if ($me['role'] !== 'admin') fail('רק מנהל יכול לבדוק את החיבור', 403);
-        $key = aiKey();
-        if ($key === '') fail('לא הוגדר מפתח');
+        $conn = aiConn();
+        if ($conn['key'] === '') fail('לא הוגדר מפתח');
         try {
-            anthropicText(anthropicCall([
-                'model' => aiModel(), 'max_tokens' => 8,
-                'messages' => [['role' => 'user', 'content' => 'ענה במילה אחת: אישור']],
-            ], $key));
-            ok(['message' => 'החיבור למודל תקין']);
+            aiComplete($conn, 'ענה קצר.', 'ענה במילה אחת: אישור', 16);
+            ok(['message' => 'החיבור ל' . (PROVIDERS[$conn['provider']]['label'] ?? '') . ' תקין']);
         } catch (Throwable $e) {
             fail($e->getMessage());
         }
@@ -492,6 +514,295 @@ try {
             if ($task['status'] === 'blocked') $kind = 'answer';
         }
         ok(addNote(db(), $id, $author, $kind, $text));
+    }
+
+    /* ── ספקי בינה מלאכותית של המשתמש ──────────────────────────
+     *
+     * המערכת אינה קשורה לספק אחד: כל משתמש מחבר את מי שיש לו, ובוחר
+     * לכל מטלה מי יבצע אותה.
+     */
+
+    case 'providers': {
+        $me   = requireUser($user);
+        $mine = userProviders((int) $me['id']);
+
+        $catalog = [];
+        foreach (PROVIDERS as $id => $meta) {
+            $catalog[] = [
+                'provider'  => $id,
+                'label'     => $meta['label'],
+                'hint'      => $meta['hint'],
+                'prefix'    => $meta['prefix'],
+                'default_model' => $meta['default'],
+                'connected' => $mine[$id]['connected'] ?? false,
+                'model'     => $mine[$id]['model'] ?? $meta['default'],
+                'tail'      => $mine[$id]['tail'] ?? '',
+            ];
+        }
+        ok(['providers' => $catalog, 'default' => (string) ($me['default_provider'] ?? ''),
+            'system' => aiStatus()]);
+    }
+
+    case 'connect-provider': {
+        $me = requireUser($user);
+        setUserProvider($me, str_field($in, 'provider', 30), trim((string) ($in['key'] ?? '')),
+                        str_field($in, 'model', 80));
+        ok(['providers' => userProviders((int) $me['id'])]);
+    }
+
+    case 'disconnect-provider': {
+        $me = requireUser($user);
+        removeUserProvider($me, str_field($in, 'provider', 30));
+        ok();
+    }
+
+    case 'set-default-provider': {
+        $me = requireUser($user);
+        setDefaultProvider($me, str_field($in, 'provider', 30));
+        ok();
+    }
+
+    /** בדיקת חיבור אמיתית לספק של המשתמש — פנייה זעירה, לא ניחוש. */
+    case 'test-provider': {
+        $me   = requireUser($user);
+        $prov = str_field($in, 'provider', 30);
+        try {
+            $conn = userConn($me, $prov);
+            if ($conn['key'] === '') fail('הספק אינו מחובר');
+            $reply = aiComplete($conn, 'ענה קצר מאוד.', 'ענה במילה אחת: אישור', 16);
+            logEvent($me, 'provider.test', $prov, true, $conn['model']);
+            ok(['message' => 'החיבור תקין', 'model' => $conn['model'],
+                'reply' => mb_substr(trim($reply), 0, 80)]);
+        } catch (Throwable $e) {
+            logEvent($me, 'provider.test', $prov, false, $e->getMessage());
+            fail($e->getMessage());
+        }
+    }
+
+    /* ── חיבורים אישיים ────────────────────────────────────────
+     *
+     * כל משתמש מביא את הגיטהאב שלו ואת מפתח קלוד שלו. הסודות מוצפנים
+     * במנוחה ולעולם לא חוזרים ב-API — רק "מחובר" וארבע ספרות.
+     */
+
+    case 'my-connections': {
+        $me = requireUser($user);
+        $gh = userSecret((int) $me['id'], 'github_token');
+        $an = userSecret((int) $me['id'], 'anthropic_key');
+        ok(['connections' => [
+            'github' => [
+                'connected' => $gh !== '',
+                'login'     => (string) ($me['github_login'] ?? ''),
+                'scopes'    => array_values(array_filter(explode(',', (string) ($me['github_scopes'] ?? '')))),
+                'tail'      => secretTail($gh),
+            ],
+            'anthropic' => ['connected' => $an !== '', 'tail' => secretTail($an)],
+        ]]);
+    }
+
+    case 'connect-github': {
+        $me    = requireUser($user);
+        $token = trim((string) ($in['token'] ?? ''));
+        if ($token === '') fail('חסר טוקן');
+
+        // מאמתים מול גיטהאב לפני השמירה. טוקן פסול שנשמר היה מתגלה רק
+        // בפעולה הבאה, ושם כבר לא ברור שהבעיה היא בחיבור.
+        try {
+            $who = ghWhoAmI($token);
+        } catch (Throwable $e) {
+            logEvent($me, 'github.connect', '', false, $e->getMessage());
+            fail($e->getMessage());
+        }
+
+        setUserSecret((int) $me['id'], 'github_token', $token);
+        db()->prepare('UPDATE users SET github_login = ?, github_scopes = ? WHERE id = ?')
+            ->execute([$who['login'], implode(',', $who['scopes']), $me['id']]);
+
+        logEvent($me, 'github.connect', $who['login'], true, implode(',', $who['scopes']));
+        ok(['github' => $who]);
+    }
+
+    case 'disconnect-github': {
+        $me = requireUser($user);
+        setUserSecret((int) $me['id'], 'github_token', '');
+        db()->prepare("UPDATE users SET github_login = '', github_scopes = '' WHERE id = ?")
+            ->execute([$me['id']]);
+        logEvent($me, 'github.disconnect');
+        ok();
+    }
+
+    /** מפתח קלוד אישי. גובר על המפתח הכללי בפעולות של המשתמש הזה. */
+    case 'set-my-anthropic-key': {
+        $me  = requireUser($user);
+        $key = trim((string) ($in['key'] ?? ''));
+        if ($key !== '' && !preg_match('/^sk-ant-[A-Za-z0-9_\\-]{20,200}$/', $key)) {
+            fail('המפתח אינו בפורמט של מפתח Anthropic (sk-ant-…)');
+        }
+        setUserSecret((int) $me['id'], 'anthropic_key', $key);
+        logEvent($me, $key === '' ? 'anthropic.disconnect' : 'anthropic.connect');
+        ok(['connected' => $key !== '', 'tail' => secretTail($key)]);
+    }
+
+    /* ── גיטהאב ────────────────────────────────────────────────── */
+
+    case 'repos': {
+        $me = requireUser($user);
+        ok(['repos' => ghRepos(requireGithubToken($me), (int) ($in['page'] ?? 1), 50)]);
+    }
+
+    case 'create-repo': {
+        $me   = requireUser($user);
+        $name = str_field($in, 'name', 100);
+        $repo = ghCreateRepo(requireGithubToken($me), $name, ($in['private'] ?? true) !== false,
+                             str_field($in, 'description', 300));
+        logEvent($me, 'repo.create', $repo['full_name']);
+        ok(['repo' => $repo]);
+    }
+
+    /* ── פרויקטים ──────────────────────────────────────────────── */
+
+    case 'projects':
+        ok(['projects' => listProjects(requireUser($user))]);
+
+    case 'create-project': {
+        $me = requireUser($user);
+        $id = createProject($me,
+            str_field($in, 'name', 80),
+            str_field($in, 'repo_owner', 100),
+            str_field($in, 'repo_name', 100),
+            str_field($in, 'default_branch', 100, 'main'),
+            str_field($in, 'description', 2000));
+        ok(['id' => $id]);
+    }
+
+    case 'project': {
+        $me      = requireUser($user);
+        $project = requireProject((int) ($in['id'] ?? 0), $me, 'read');
+        ok(['project' => $project, 'members' => projectMembers((int) $project['id'])]);
+    }
+
+    /** רשימת המשתמשים לבחירת חברים. שם ומזהה בלבד — לא כתובות ולא סודות. */
+    case 'people': {
+        requireUser($user);
+        ok(['people' => db()->query('SELECT id, username, display_name FROM users ORDER BY display_name')
+                            ->fetchAll()]);
+    }
+
+    case 'set-member': {
+        $me = requireUser($user);
+        requireProject((int) ($in['project_id'] ?? 0), $me, 'admin');
+        setMember($me, (int) $in['project_id'], (int) ($in['user_id'] ?? 0),
+                  (string) ($in['level'] ?? 'read'));
+        ok();
+    }
+
+    case 'remove-member': {
+        $me = requireUser($user);
+        requireProject((int) ($in['project_id'] ?? 0), $me, 'admin');
+        removeMember($me, (int) $in['project_id'], (int) ($in['user_id'] ?? 0));
+        ok();
+    }
+
+    /* ── עיון בקוד ─────────────────────────────────────────────── */
+
+    case 'repo-tree': {
+        $me      = requireUser($user);
+        $project = requireProject((int) ($in['project_id'] ?? 0), $me, 'read');
+        if ($project['repo_name'] === '') fail('לפרויקט לא מקושר ריפו');
+
+        ok(['tree' => ghContents(requireGithubToken($me), $project['repo_owner'], $project['repo_name'],
+                                 str_field($in, 'path', 400),
+                                 str_field($in, 'ref', 100, (string) $project['default_branch']))]);
+    }
+
+    case 'repo-write': {
+        $me      = requireUser($user);
+        $project = requireProject((int) ($in['project_id'] ?? 0), $me, 'write');
+        if ($project['repo_name'] === '') fail('לפרויקט לא מקושר ריפו');
+
+        $path = str_field($in, 'path', 400);
+        if ($path === '') fail('חסר נתיב לקובץ');
+
+        $r = ghPutFile(requireGithubToken($me), $project['repo_owner'], $project['repo_name'],
+                       $path, (string) ($in['content'] ?? ''),
+                       str_field($in, 'message', 300, 'עדכון דרך לוח המטלות'),
+                       str_field($in, 'branch', 100, (string) $project['default_branch']),
+                       str_field($in, 'sha', 100));
+
+        logEvent($me, 'repo.write', "{$project['repo_owner']}/{$project['repo_name']}:$path");
+        ok(['result' => $r]);
+    }
+
+    /* ── ניהול ─────────────────────────────────────────────────── */
+
+    case 'admin-users': {
+        $me = requireUser($user);
+        if ($me['role'] !== 'admin') fail('למנהל בלבד', 403);
+        ok(['users' => db()->query(
+            'SELECT id, username, display_name, role, created_at, github_login,
+                    (github_token <> "") has_github, (anthropic_key <> "") has_key,
+                    (SELECT COUNT(*) FROM project_members m WHERE m.user_id = users.id) projects
+               FROM users ORDER BY id'
+        )->fetchAll()]);
+    }
+
+    case 'admin-events': {
+        $me = requireUser($user);
+        if ($me['role'] !== 'admin') fail('למנהל בלבד', 403);
+
+        $sql  = 'SELECT * FROM events WHERE 1=1';
+        $args = [];
+        if (($uid = int_or_null($in, 'user_id')) !== null) { $sql .= ' AND user_id = ?'; $args[] = $uid; }
+        if (($act = str_field($in, 'action', 60)) !== '')  { $sql .= ' AND action LIKE ?'; $args[] = "$act%"; }
+        if (($in['failed_only'] ?? false) === true)        { $sql .= ' AND ok = 0'; }
+        $sql .= ' ORDER BY id DESC LIMIT ' . max(1, min(500, (int) ($in['limit'] ?? 100)));
+
+        $st = db()->prepare($sql);
+        $st->execute($args);
+        ok(['events' => $st->fetchAll()]);
+    }
+
+    /**
+     * בדיקת סביבה. נועדה לענות על "למה זה לא עובד אצלי בשרת" בלי גישת
+     * SSH: מה קיים, מה חסר, ולאן אפשר לצאת מכאן.
+     */
+    case 'admin-diagnostics': {
+        $me = requireUser($user);
+        if ($me['role'] !== 'admin') fail('למנהל בלבד', 403);
+
+        $reach = function (string $url): array {
+            if (!function_exists('curl_init')) return ['ok' => false, 'detail' => 'cURL חסר'];
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 8,
+                                    CURLOPT_CONNECTTIMEOUT => 5, CURLOPT_NOBODY => true,
+                                    CURLOPT_HTTPHEADER => ['User-Agent: ' . GH_UA]]);
+            $okc = curl_exec($ch) !== false;
+            $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $err  = curl_error($ch);
+            curl_close($ch);
+            return ['ok' => $okc, 'detail' => $okc ? "HTTP $code" : $err];
+        };
+
+        $keyPerms = is_file(SECRET_KEY_FILE) ? substr(sprintf('%o', fileperms(SECRET_KEY_FILE)), -3) : '—';
+
+        ok(['diagnostics' => [
+            'php'            => PHP_VERSION,
+            'pdo_sqlite'     => extension_loaded('pdo_sqlite'),
+            'curl'           => function_exists('curl_init'),
+            'sodium'         => function_exists('sodium_crypto_box_seal'),
+            'mbstring'       => function_exists('mb_substr'),
+            'data_writable'  => is_writable(dirname(DB_FILE)),
+            'secret_key'     => ['exists' => is_file(SECRET_KEY_FILE), 'perms' => $keyPerms],
+            'db_size'        => is_file(DB_FILE) ? filesize(DB_FILE) : 0,
+            'reach_github'   => $reach('https://api.github.com'),
+            'reach_anthropic' => $reach('https://api.anthropic.com'),
+            'counts'         => [
+                'users'    => (int) db()->query('SELECT COUNT(*) c FROM users')->fetch()['c'],
+                'projects' => (int) db()->query('SELECT COUNT(*) c FROM projects')->fetch()['c'],
+                'tasks'    => (int) db()->query('SELECT COUNT(*) c FROM tasks')->fetch()['c'],
+                'events'   => (int) db()->query('SELECT COUNT(*) c FROM events')->fetch()['c'],
+            ],
+        ]]);
     }
 
     /* ── עובדים ────────────────────────────────────────────────── */

@@ -103,6 +103,67 @@ function migrate(PDO $pdo): void {
     // קישור לסשן שעבד על המטלה. הלוח מחליף את הצ'אט, אבל כשצריך לחזור
     // ולראות איך משהו נעשה — זה השביל חזרה.
     addColumn($pdo, 'tasks',  'session_url',      "TEXT NOT NULL DEFAULT ''");
+
+    /*
+     * שכבת הפלטפורמה: פרויקטים שקשורים לריפו, חברות והרשאות, ויומן
+     * פעולות. הסודות של המשתמש (טוקן גיטהאב, מפתח Anthropic) יושבים
+     * עליו ומוצפנים — ראה lib/crypto.php.
+     */
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS projects (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            name           TEXT NOT NULL,
+            repo_owner     TEXT NOT NULL DEFAULT '',
+            repo_name      TEXT NOT NULL DEFAULT '',
+            default_branch TEXT NOT NULL DEFAULT 'main',
+            description    TEXT NOT NULL DEFAULT '',
+            created_by     INTEGER REFERENCES users(id),
+            created_at     INTEGER NOT NULL,
+            archived       INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS project_members (
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            user_id    INTEGER NOT NULL REFERENCES users(id)    ON DELETE CASCADE,
+            level      TEXT NOT NULL DEFAULT 'read',
+            added_at   INTEGER NOT NULL,
+            PRIMARY KEY (project_id, user_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS events (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER REFERENCES users(id),
+            actor      TEXT NOT NULL DEFAULT '',
+            action     TEXT NOT NULL,
+            target     TEXT NOT NULL DEFAULT '',
+            ok         INTEGER NOT NULL DEFAULT 1,
+            detail     TEXT NOT NULL DEFAULT '',
+            ip         TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS user_providers (
+            user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            provider TEXT NOT NULL,
+            api_key  TEXT NOT NULL DEFAULT '',
+            model    TEXT NOT NULL DEFAULT '',
+            added_at INTEGER NOT NULL,
+            PRIMARY KEY (user_id, provider)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_events_time   ON events(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_members_user  ON project_members(user_id);
+    ");
+
+    addColumn($pdo, 'users', 'github_token',  "TEXT NOT NULL DEFAULT ''");
+    addColumn($pdo, 'users', 'github_login',  "TEXT NOT NULL DEFAULT ''");
+    addColumn($pdo, 'users', 'github_scopes', "TEXT NOT NULL DEFAULT ''");
+    addColumn($pdo, 'users', 'default_provider', "TEXT NOT NULL DEFAULT ''");
+    addColumn($pdo, 'tasks', 'project_id',        'INTEGER');
+
+    // מי מבצע את המטלה. ריק = ברירת המחדל של מי שפתח אותה.
+    addColumn($pdo, 'tasks', 'provider',          "TEXT NOT NULL DEFAULT ''");
+    addColumn($pdo, 'tasks', 'model',             "TEXT NOT NULL DEFAULT ''");
 }
 
 /** ALTER TABLE ADD COLUMN אינו מכיר IF NOT EXISTS ב-SQLite — בודקים לבד. */

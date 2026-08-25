@@ -30,7 +30,11 @@ function sessionStart(): void {
 function currentUser(): ?array {
     sessionStart();
     if (empty($_SESSION['uid'])) return null;
-    $st = db()->prepare('SELECT id, username, display_name, role FROM users WHERE id = ?');
+    // כולל את שדות הפרופיל שכל בקשה נזקקת להם. הסודות עצמם אינם כאן —
+    // הם נשלפים ומפוענחים רק בנקודה שבה משתמשים בהם.
+    $st = db()->prepare('SELECT id, username, display_name, role, github_login, github_scopes,
+                                default_provider
+                           FROM users WHERE id = ?');
     $st->execute([$_SESSION['uid']]);
     return $st->fetch() ?: null;
 }

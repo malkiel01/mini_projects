@@ -45,19 +45,31 @@ function configSet(array $patch): array {
 }
 
 /**
- * מפתח ה-API של Anthropic. משתנה סביבה גובר על הקובץ, כדי שאפשר יהיה
- * להחזיק אותו מחוץ לדיסק בשרתים שמאפשרים זאת.
+ * החיבור הכללי של המערכת — משמש כשלמשתמש אין ספק משלו.
+ *
+ * משתנה סביבה גובר על הקובץ, כדי שאפשר יהיה להחזיק את המפתח מחוץ
+ * לדיסק בשרתים שמאפשרים זאת.
  */
-function aiKey(): string {
-    $env = getenv('ANTHROPIC_API_KEY');
-    if (is_string($env) && $env !== '') return $env;
-    return (string) (config()['anthropic_key'] ?? '');
+function aiConn(): array {
+    $c        = config();
+    $provider = (string) ($c['ai_provider'] ?? 'anthropic');
+    if (!providerExists($provider)) $provider = 'anthropic';
+
+    $env = $provider === 'anthropic' ? getenv('ANTHROPIC_API_KEY') : false;
+    // ai_key הוא השם הנוכחי; anthropic_key נקרא כדי לא לאבד הגדרה ישנה.
+    $key = is_string($env) && $env !== ''
+        ? $env
+        : (string) ($c['ai_key'] ?? $c['anthropic_key'] ?? '');
+
+    $model = trim((string) ($c['ai_model'] ?? ''));
+    if ($model === '') $model = PROVIDERS[$provider]['default'] ?? '';
+
+    return ['provider' => $provider, 'key' => $key, 'model' => $model,
+            'from_env' => is_string($env) && $env !== ''];
 }
 
-function aiModel(): string {
-    $m = trim((string) (config()['ai_model'] ?? ''));
-    return $m !== '' ? $m : ANTHROPIC_MODEL;
-}
+function aiKey(): string   { return aiConn()['key']; }
+function aiModel(): string { return aiConn()['model']; }
 
 /** האם לקטלג אוטומטית בהוספת מטלה. ברירת המחדל: כן. */
 function aiAuto(): bool { return (bool) (config()['auto_catalog'] ?? true); }
@@ -67,12 +79,14 @@ function aiAuto(): bool { return (bool) (config()['auto_catalog'] ?? true); }
  * אחרונות, מספיק כדי לזהות איזה מפתח מוגדר.
  */
 function aiStatus(): array {
-    $key = aiKey();
+    $conn = aiConn();
     return [
-        'model'        => aiModel(),
+        'provider'     => $conn['provider'],
+        'label'        => PROVIDERS[$conn['provider']]['label'] ?? $conn['provider'],
+        'model'        => $conn['model'],
         'auto_catalog' => aiAuto(),
-        'has_key'      => $key !== '',
-        'key_tail'     => $key !== '' ? substr($key, -4) : '',
-        'key_from_env' => is_string(getenv('ANTHROPIC_API_KEY')) && getenv('ANTHROPIC_API_KEY') !== '',
+        'has_key'      => $conn['key'] !== '',
+        'key_tail'     => substr($conn['key'], -4),
+        'key_from_env' => $conn['from_env'],
     ];
 }
