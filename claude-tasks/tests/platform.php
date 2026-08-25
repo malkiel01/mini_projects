@@ -368,6 +368,45 @@ check('ולא לפרויקט אחר', workerScope()['project_id'] === $other, fa
 $_SERVER['HTTP_X_WORKER_NAME'] = 'שם עם תווים <לא חוקיים>';
 check('שם לא תקין מוחלף', workerScope()['name'], 'worker');
 
+echo "\n— סקילים —\n";
+require_once __DIR__ . '/../lib/skills.php';
+
+throws('שם ריק נדחה', fn() => saveSkill($mal, $pid2, '', 'x', 'y', false), 'שם סקיל');
+throws('סקיל בלי תוכן נדחה', fn() => saveSkill($mal, $pid2, 'ריק', 'x', '   ', false), 'תוכן');
+
+$s1 = saveSkill($mal, $pid2, 'פריסה', 'כשצריך להעלות לשרת', 'קודם בדיקות, אחר כך rsync', false);
+$s2 = saveSkill($mal, $pid2, 'סגנון', 'תמיד', 'הערות בעברית, שמות באנגלית', true);
+$s3 = saveSkill($mal, null,  'מוסכמות', 'לכל הפרויקטים', 'מסרים בעברית', false);
+
+check('שם עברי מתקבל', skillByName($pid2, 'פריסה')['name'], 'פריסה');
+throws('שם כפול באותו תחום', fn() => saveSkill($mal, $pid2, 'פריסה', 'x', 'y', false), 'כבר קיים');
+
+$list = skillsFor($pid2);
+check('הפרויקט רואה את שלו ואת הגלובלי', count($list), 3);
+check('מה שתמיד — ראשון', $list[0]['name'], 'סגנון');
+check('הרשימה בלי גוף', array_key_exists('body', $list[0]), false);
+$scopes = array_column($list, 'scope', 'name');
+check('סקיל של פרויקט מסומן ככזה', $scopes['פריסה'], 'project');
+check('וסקיל גלובלי ככזה', $scopes['מוסכמות'], 'global');
+
+check('פרויקט אחר רואה רק גלובלי', array_column(skillsFor($other), 'name'), ['מוסכמות']);
+check('ולא את של השני', skillByName($other, 'פריסה'), null);
+
+// סקיל של פרויקט גובר על גלובלי באותו שם
+saveSkill($mal, $pid2, 'מוסכמות', 'גרסת הפרויקט', 'כאן דווקא באנגלית', false);
+check('הפרויקט גובר על הגלובלי', skillByName($pid2, 'מוסכמות')['body'], 'כאן דווקא באנגלית');
+check('ואצל אחר נשאר הגלובלי', skillByName($other, 'מוסכמות')['body'], 'מסרים בעברית');
+
+$payload = skillsPayload($pid2);
+$byName  = array_column($payload, null, 'name');
+check('"תמיד" נשלח עם גוף', $byName['סגנון']['body'], 'הערות בעברית, שמות באנגלית');
+check('השאר בלי גוף', $byName['פריסה']['body'], null);
+check('אבל עם מתי להשתמש', $byName['פריסה']['description'], 'כשצריך להעלות לשרת');
+
+deleteSkill($mal, $s1);
+check('מחיקה עובדת', skillByName($pid2, 'פריסה'), null);
+throws('מחיקת סקיל שאינו קיים', fn() => deleteSkill($mal, 99999), 'לא נמצא');
+
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 array_map('unlink', glob("$tmp/*") ?: []);
 @rmdir($tmp);

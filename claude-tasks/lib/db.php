@@ -155,6 +155,20 @@ function migrate(PDO $pdo): void {
             PRIMARY KEY (user_id, provider)
         );
 
+        CREATE TABLE IF NOT EXISTS skills (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            -- NULL = סקיל גלובלי, זמין בכל הפרויקטים
+            project_id  INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+            name        TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            body        TEXT NOT NULL DEFAULT '',
+            always      INTEGER NOT NULL DEFAULT 0,
+            created_by  INTEGER REFERENCES users(id),
+            created_at  INTEGER NOT NULL,
+            updated_at  INTEGER NOT NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_skill_name ON skills(IFNULL(project_id, 0), name);
         CREATE INDEX IF NOT EXISTS idx_events_time   ON events(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_members_user  ON project_members(user_id);
     ");

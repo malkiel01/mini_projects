@@ -215,6 +215,7 @@ async function openProject(id) {
   const { project, members, engine } = await api('project', { id });
   state.openProject = project;
   renderEngine(project, engine);
+  loadSkills().catch(() => {});
 
   $('#pvTitle').textContent = project.name;
   $('#pvMeta').replaceChildren(
@@ -275,6 +276,72 @@ $('#pvAddMember').addEventListener('submit', async (e) => {
     });
     openProject(state.openProject.id);
     toast('החבר נוסף', 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+});
+
+/* ── סקילים ────────────────────────────────────────────────────── */
+
+async function loadSkills() {
+  const { skills } = await api('skills', { project_id: state.openProject.id });
+  const admin = state.openProject.my_level === 'admin';
+
+  $('#skNew').hidden = !admin;
+  $('#pvSkills').replaceChildren(...(skills.length ? skills.map((s) => el('div', { class: 'member' }, [
+    el('b', { text: s.name }),
+    el('span', { class: 'hint', text: s.description || '—' }),
+    s.always ? el('span', { class: 'badge', text: 'תמיד' }) : null,
+    s.scope === 'global' ? el('span', { class: 'badge', text: 'גלובלי' }) : null,
+    admin ? el('button', { type: 'button', class: 'icon-btn', title: 'עריכה',
+      onclick: () => editSkill(s.id) }, ['✎']) : null,
+    admin ? el('button', { type: 'button', class: 'icon-btn', title: 'מחיקה',
+      onclick: () => removeSkill(s) }, ['✕']) : null,
+  ])) : [el('p', { class: 'hint', text: 'אין עדיין סקילים בפרויקט.' })]));
+}
+
+function skillForm(open, skill = null) {
+  $('#pvSkillForm').hidden = !open;
+  $('#skNew').hidden = open || state.openProject?.my_level !== 'admin';
+  $('#skId').value    = skill?.id || '';
+  $('#skName').value  = skill?.name || '';
+  $('#skDesc').value  = skill?.description || '';
+  $('#skBody').value  = skill?.body || '';
+  $('#skAlways').checked = !!skill?.always;
+}
+
+async function editSkill(id) {
+  const { skills } = await api('skills', { project_id: state.openProject.id });
+  const brief = skills.find((s) => s.id === id);
+  if (!brief) return;
+  // הרשימה אינה נושאת את הגוף — מושכים אותו רק כשעורכים.
+  const { skill } = await api('skill', { project_id: state.openProject.id, name: brief.name });
+  skillForm(true, skill);
+}
+
+async function removeSkill(s) {
+  try {
+    await api('delete-skill', { id: s.id });
+    await loadSkills();
+    toast(`הסקיל "${s.name}" נמחק`, 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+}
+
+$('#skNew').addEventListener('click', () => skillForm(true));
+$('#skCancel').addEventListener('click', () => skillForm(false));
+
+$('#pvSkillForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await api('save-skill', {
+      id: $('#skId').value ? Number($('#skId').value) : null,
+      project_id: state.openProject.id,
+      name: $('#skName').value,
+      description: $('#skDesc').value,
+      body: $('#skBody').value,
+      always: $('#skAlways').checked,
+    });
+    skillForm(false);
+    await loadSkills();
+    toast('הסקיל נשמר', 'ok');
   } catch (ex) { toast(ex.message, 'error'); }
 });
 

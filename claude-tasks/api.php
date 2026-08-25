@@ -17,6 +17,7 @@ require_once __DIR__ . '/lib/order.php';
 require_once __DIR__ . '/lib/github.php';
 require_once __DIR__ . '/lib/projects.php';
 require_once __DIR__ . '/lib/engine.php';
+require_once __DIR__ . '/lib/skills.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -707,6 +708,70 @@ try {
         ok();
     }
 
+    /* ── סקילים מותאמים ────────────────────────────────────────
+     *
+     * אופרציה שחוזרת על עצמה נשמרת פעם אחת, ומוזרקת לכל מטלה במקום
+     * להיכתב מחדש בכל בקשה.
+     */
+
+    case 'skills': {
+        $me  = requireUser($user);
+        $pid = int_or_null($in, 'project_id');
+        if ($pid !== null) requireProject($pid, $me, 'read');
+        ok(['skills' => skillsFor($pid)]);
+    }
+
+    /** גוף הסקיל. נפרד מהרשימה, כי הרשימה נטענת הרבה והגוף ארוך. */
+    case 'skill': {
+        $pid = int_or_null($in, 'project_id');
+
+        // גם הרץ בגיטהאב מושך מכאן, ולכן שני מסלולי הזיהוי מתקבלים.
+        if ($user) {
+            if ($pid !== null) requireProject($pid, $user, 'read');
+        } elseif ($worker) {
+            $pid = $scope['project_id'] ?? $pid;
+        } else {
+            fail('נדרשת התחברות', 401);
+        }
+
+        $skill = skillByName($pid, str_field($in, 'name', 60));
+        if (!$skill) fail('הסקיל לא נמצא', 404);
+        ok(['skill' => $skill]);
+    }
+
+    case 'save-skill': {
+        $me  = requireUser($user);
+        $pid = int_or_null($in, 'project_id');
+
+        // סקיל של פרויקט — מנהל הפרויקט. סקיל גלובלי — מנהל המערכת,
+        // כי הוא חל על העבודה של כולם.
+        if ($pid !== null) requireProject($pid, $me, 'admin');
+        elseif ($me['role'] !== 'admin') fail('סקיל גלובלי נוצר על ידי מנהל המערכת בלבד', 403);
+
+        ok(['id' => saveSkill($me, $pid,
+            str_field($in, 'name', 60),
+            str_field($in, 'description', 300),
+            str_field($in, 'body', 20000),
+            ($in['always'] ?? false) === true,
+            int_or_null($in, 'id'))]);
+    }
+
+    case 'delete-skill': {
+        $me = requireUser($user);
+        $id = (int) ($in['id'] ?? 0);
+
+        $st = db()->prepare('SELECT project_id FROM skills WHERE id = ?');
+        $st->execute([$id]);
+        $row = $st->fetch();
+        if (!$row) fail('הסקיל לא נמצא', 404);
+
+        if ($row['project_id'] !== null) requireProject((int) $row['project_id'], $me, 'admin');
+        elseif ($me['role'] !== 'admin') fail('סקיל גלובלי נמחק על ידי מנהל המערכת בלבד', 403);
+
+        deleteSkill($me, $id);
+        ok();
+    }
+
     /* ── מנוע ההרצה ────────────────────────────────────────────── */
 
     /**
@@ -949,7 +1014,8 @@ try {
         $args[] = $id;
 
         db()->prepare('UPDATE tasks SET ' . implode(', ', $sets) . ' WHERE id = ?')->execute($args);
-        ok(['task' => getTask(db(), $id), 'notes' => taskNotes(db(), $id)]);
+        ok(['task' => getTask(db(), $id), 'notes' => taskNotes(db(), $id),
+            'skills' => skillsPayload($task['project_id'] === null ? null : (int) $task['project_id'])]);
     }
 
     /** מאריך את ההחזקה. מטלה ארוכה לא תשוחרר באמצע העבודה. */

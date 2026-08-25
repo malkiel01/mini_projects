@@ -234,6 +234,36 @@
       </form>
 
       <hr>
+      <h3>סקילים</h3>
+      <p class="hint">
+        אופרציה שחוזרת על עצמה — סדר פעולות, מוסכמה בפרויקט, דרך מסוימת
+        לכתוב בדיקה — נשמרת כאן פעם אחת במקום להיכתב מחדש בכל מטלה.
+        לרץ נמסרת רשימת השמות, והוא מושך את ההוראות המלאות כשהן נחוצות.
+      </p>
+      <div class="skills" id="pvSkills"></div>
+      <form class="stack" id="pvSkillForm" hidden>
+        <input type="hidden" id="skId">
+        <label class="field"><span>שם</span><input type="text" id="skName" required></label>
+        <label class="field">
+          <span>מתי להשתמש</span>
+          <input type="text" id="skDesc" placeholder="המשפט שלפיו הרץ יחליט אם למשוך את הסקיל">
+        </label>
+        <label class="field">
+          <span>ההוראות</span>
+          <textarea id="skBody" rows="8" placeholder="מה לעשות, בסדר, ומה להיזהר ממנו"></textarea>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="skAlways">
+          <span>לצרף לכל מטלה בפרויקט (בלי שיצטרך לבקש)</span>
+        </label>
+        <div class="row">
+          <button type="submit" class="btn btn--primary">שמירה</button>
+          <button type="button" class="btn btn--ghost" id="skCancel">ביטול</button>
+        </div>
+      </form>
+      <button type="button" class="btn btn--ghost" id="skNew">סקיל חדש</button>
+
+      <hr>
       <h3>מנוע ההרצה</h3>
       <p class="hint" id="pvEngineState">בודק…</p>
       <p class="hint">

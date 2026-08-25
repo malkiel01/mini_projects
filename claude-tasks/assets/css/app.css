@@ -293,3 +293,5 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
         padding: 8px 4px; border-block-end: 1px solid var(--line); font-size: .84rem; }
 .drow b { min-width: 180px; }
 .drow--bad { background: color-mix(in srgb, var(--blocked) 8%, transparent); }
+
+.skills { display: flex; flex-direction: column; gap: 6px; margin-block-end: 10px; }

@@ -208,6 +208,7 @@ const SYSTEM = `אתה מפתח שעובד על ריפו קוד. אתה עונה
 בכל תשובה בחר פעולה אחת:
 
 {"action":"read","paths":["src/a.js"]}  — לקרוא קבצים לפני שמחליטים. עד 12 בכל פעם.
+{"action":"skill","name":"שם הסקיל"}   — למשוך הוראות של סקיל מהרשימה שקיבלת.
 {"action":"edit","summary":"מה עשית, בעברית","commit_message":"...","files":[{"path":"...","content":"התוכן המלא של הקובץ"}],"delete":["..."]}
 {"action":"question","question":"מה בדיוק חסר לך כדי להמשיך"}
 
@@ -215,16 +216,31 @@ const SYSTEM = `אתה מפתח שעובד על ריפו קוד. אתה עונה
 - ‏content הוא הקובץ השלם אחרי השינוי, לא תיקון חלקי ולא קטע.
 - אל תנחש תוכן של קובץ שלא קראת. קרא קודם.
 - ‏question רק כשבאמת אי אפשר להתקדם בלי הכרעה של אדם — לא כדי לאשר משהו שאתה כבר בטוח בו.
+- אם יש סקיל שמתאים למטלה, משוך אותו לפני שאתה מתחיל. הוא מכיל את הדרך שבה בפרויקט הזה עושים את זה.
 - שנה מעט ככל האפשר. אל תרחיב את המטלה מעבר למה שנתבקש.
 - כתוב בסגנון הקוד שסביבך: אותם שמות, אותה רמת הערות, אותם ניבים.`;
 
 async function main() {
-  const { task, notes } = await board('start', { id: TASK_ID, run_url: RUN_URL });
+  const { task, notes, skills = [] } = await board('start', { id: TASK_ID, run_url: RUN_URL });
+
+  /*
+   * סקיל שסומן "תמיד" מגיע עם גופו המלא — סימנו אותו ככזה כדי שיחול
+   * בלי שהדגם יצטרך לזכור לבקש. השאר מגיעים כמדד, ונמשכים לפי צורך:
+   * לדחוף את כולם לכל פרומפט מבזבז הקשר ומטשטש את המטלה עצמה.
+   */
+  const always  = skills.filter((s) => s.always && s.body);
+  const onIndex = skills.filter((s) => !s.always);
 
   const history = [
     `# המטלה\n${task.title}\n\n${task.body || '(אין פירוט)'}`,
     notes.length
       ? `# השיחה עד כה\n${notes.map((n) => `[${n.author} · ${n.kind}] ${n.body}`).join('\n')}`
+      : '',
+    always.length
+      ? `# הוראות שחלות תמיד\n${always.map((s) => `## ${s.name}\n${s.body}`).join('\n\n')}`
+      : '',
+    onIndex.length
+      ? `# סקילים זמינים (משוך במידת הצורך)\n${onIndex.map((s) => `- ${s.name}: ${s.description || '—'}`).join('\n')}`
       : '',
     `# עץ הקבצים\n${repoTree()}`,
   ].filter(Boolean);
@@ -238,6 +254,16 @@ async function main() {
       await board('block', { id: TASK_ID, question: reply.question, session_url: RUN_URL });
       console.log('נחסמה בשאלה:', reply.question);
       return;
+    }
+
+    if (reply.action === 'skill') {
+      try {
+        const { skill } = await board('skill', { name: reply.name });
+        history.push(`# סקיל: ${skill.name}\n${skill.body}`);
+      } catch (e) {
+        history.push(`# סקיל: ${reply.name}\n(לא נמצא — ${e.message})`);
+      }
+      continue;
     }
 
     if (reply.action === 'read') {
