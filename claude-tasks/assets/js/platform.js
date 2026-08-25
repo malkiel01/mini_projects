@@ -212,8 +212,9 @@ $('#repoForm').addEventListener('submit', async (e) => {
 /* ── פרויקט יחיד ───────────────────────────────────────────────── */
 
 async function openProject(id) {
-  const { project, members } = await api('project', { id });
+  const { project, members, engine } = await api('project', { id });
   state.openProject = project;
+  renderEngine(project, engine);
 
   $('#pvTitle').textContent = project.name;
   $('#pvMeta').replaceChildren(
@@ -276,6 +277,60 @@ $('#pvAddMember').addEventListener('submit', async (e) => {
     toast('החבר נוסף', 'ok');
   } catch (ex) { toast(ex.message, 'error'); }
 });
+
+/* ── מנוע ההרצה ────────────────────────────────────────────────── */
+
+function renderEngine(project, engine) {
+  const box = $('#pvEngineState');
+  $('#pvCheck').value = engine.check_command || '';
+
+  const admin = project.my_level === 'admin';
+  $('#pvInstall').disabled = !admin || !project.repo_name;
+  $('#pvSaveCheck').disabled = !admin;
+  $('#pvInstall').textContent = engine.installed ? 'התקנה מחדש' : 'התקנת המנוע';
+
+  if (!project.repo_name) { box.textContent = 'אין ריפו מקושר, ולכן אין מה להתקין.'; return; }
+
+  const when = engine.installed
+    ? `מותקן (${new Date(engine.installed_at * 1000).toLocaleDateString('he-IL')}).`
+    : 'טרם הותקן.';
+
+  // הריצה בגיטהאב מדווחת חזרה דרך הרשת. כתובת מקומית פירושה שהיא תעבוד
+  // ותיעלם בלי שאיש יידע, ועדיף לומר זאת לפני ההתקנה ולא אחריה.
+  box.textContent = engine.board_public
+    ? when
+    : `${when} שימו לב: כתובת הלוח (${engine.board_url}) אינה https ציבורית, ולכן ההרצה לא תוכל לדווח בחזרה.`;
+}
+
+$('#pvInstall').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  const was = btn.textContent;
+  btn.textContent = 'מתקין…';
+  try {
+    const r = await api('install-engine', { project_id: state.openProject.id });
+    const summary = Object.entries(r.files).map(([f, what]) => `${f.split('/').pop()}: ${what}`).join(' · ');
+    toast(`המנוע הותקן — ${summary}`, 'ok');
+    openProject(state.openProject.id);
+  } catch (ex) {
+    toast(ex.message, 'error');
+    btn.textContent = was;
+    btn.disabled = false;
+  }
+});
+
+$('#pvSaveCheck').addEventListener('click', async () => {
+  try {
+    await api('update-project', { id: state.openProject.id, check_command: $('#pvCheck').value });
+    toast('פקודת הבדיקה נשמרה', 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+});
+
+/** שולח מטלה להרצה. נקרא מחלונית המטלה ב-app.js. */
+export async function runTask(id) {
+  const r = await api('run-task', { id });
+  return r;
+}
 
 /* ── עיון בקוד ─────────────────────────────────────────────────── */
 

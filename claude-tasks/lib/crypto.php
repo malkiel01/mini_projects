@@ -14,6 +14,33 @@ declare(strict_types=1);
 
 if (!defined('SECRET_KEY_FILE')) define('SECRET_KEY_FILE', __DIR__ . '/../data/secret.key');
 
+/** התוכן שחוסם גישה ישירה ל-data/ בשרתי Apache. */
+const DATA_HTACCESS = <<<TXT
+    # נוצר אוטומטית. data/ מכילה את מסד המטלות, אסימונים, ומפתח ההצפנה.
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+    TXT;
+
+/**
+ * מוודא שתיקיית הנתונים קיימת ושהיא חסומה לגישה ישירה.
+ *
+ * ‏.htaccess מגיע עם הריפו, אבל תיקייה שנוצרה בזמן ריצה — בהתקנה חדשה,
+ * או אחרי שמישהו מחק אותה — הייתה נוצרת בלעדיו, ואז מפתח ההצפנה ומסד
+ * המטלות מוגשים ישירות מהדפדפן. ההגנה לא צריכה להיות תלויה בפריסה.
+ */
+function ensureDataDir(string $dir): void {
+    if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
+        throw new RuntimeException("התיקייה $dir אינה ניתנת ליצירה");
+    }
+    $guard = $dir . '/.htaccess';
+    if (!is_file($guard)) @file_put_contents($guard, DATA_HTACCESS);
+}
+
 /** נוצר בשימוש הראשון. 32 בתים אקראיים, בהרשאות קריאה לבעלים בלבד. */
 function secretKey(): string {
     static $key = null;
@@ -24,8 +51,7 @@ function secretKey(): string {
         if (strlen($raw) === 32) return $key = $raw;
     }
 
-    $dir = dirname(SECRET_KEY_FILE);
-    if (!is_dir($dir)) @mkdir($dir, 0755, true);
+    ensureDataDir(dirname(SECRET_KEY_FILE));
 
     $key = random_bytes(32);
     // כתיבה לקובץ זמני ואז שינוי שם: אחרת חלון קצר שבו הקובץ קיים

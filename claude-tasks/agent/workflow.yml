@@ -1,0 +1,63 @@
+# מנוע ההרצה של לוח המטלות.
+#
+# מותקן על ידי הלוח, ומופעל ממנו: הלוח שולח מזהה מטלה, והריצה כאן עושה
+# את העבודה על הריפו — קוראת, כותבת, מריצה בדיקות, ופותחת PR.
+#
+# הקובץ הזה מנוהל אוטומטית. שינוי ידני יידרס בהתקנה הבאה.
+#
+# סודות שהלוח מתקין בריפו:
+#   AGENT_BOARD_TOKEN  אסימון עובד של הפרויקט הזה בלבד — לא של כל הלוח
+#   AGENT_AI_KEY       מפתח הספק של מי שהתקין את המנוע
+
+name: Claude tasks agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_id:       { description: 'מזהה המטלה בלוח', required: true }
+      board_url:     { description: 'כתובת ה-API של הלוח', required: true }
+      provider:      { description: 'anthropic / openai / google', required: true }
+      model:         { description: 'שם המודל', required: true }
+      base_branch:   { description: 'הענף שממנו יוצאים', required: false, default: '' }
+      check_command: { description: 'פקודת בדיקה של הפרויקט', required: false, default: '' }
+
+# שתי מטלות במקביל על אותו ריפו היו נלחמות על אותם קבצים.
+concurrency:
+  group: claude-agent-${{ github.event.inputs.task_id }}
+  cancel-in-progress: false
+
+jobs:
+  work:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.base_branch || github.event.repository.default_branch }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+
+      - name: Run the task
+        env:
+          BOARD_URL:     ${{ github.event.inputs.board_url }}
+          BOARD_TOKEN:   ${{ secrets.AGENT_BOARD_TOKEN }}
+          AI_KEY:        ${{ secrets.AGENT_AI_KEY }}
+          PROVIDER:      ${{ github.event.inputs.provider }}
+          MODEL:         ${{ github.event.inputs.model }}
+          TASK_ID:       ${{ github.event.inputs.task_id }}
+          BASE_BRANCH:   ${{ github.event.inputs.base_branch || github.event.repository.default_branch }}
+          CHECK_COMMAND: ${{ github.event.inputs.check_command }}
+          GITHUB_TOKEN:  ${{ secrets.GITHUB_TOKEN }}
+        run: node .github/claude-agent/run.mjs

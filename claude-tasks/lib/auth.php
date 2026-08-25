@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/crypto.php';
 
 function sessionStart(): void {
     if (session_status() !== PHP_SESSION_NONE) return;
@@ -106,11 +107,41 @@ function logout(): void {
     session_destroy();
 }
 
-/** מזהה עובד מתוך הכותרת. מחזיר את שמו, או null אם אינו עובד מורשה. */
-function workerName(): ?string {
-    $token = $_SERVER['HTTP_X_WORKER_TOKEN'] ?? '';
-    if ($token === '' || !hash_equals(config()['worker_token'], $token)) return null;
+/**
+ * מזהה עובד מתוך הכותרת, ומחזיר גם את תחום הפעולה שלו.
+ *
+ * שני סוגי אסימון:
+ *   הכללי  — של הלוח כולו. ניתן לסשן שאנחנו מפעילים בעצמנו.
+ *   פרויקט — נשלח כסוד לתוך ריפו, ולכן מוגבל למטלות של אותו פרויקט.
+ *            סוד בריפו נגיש למי שיכול לערוך שם workflow, ואסימון כללי
+ *            במקום כזה היה נותן לו את כל הלוח.
+ *
+ * מחזיר ['name' => …, 'project_id' => int|null], או null אם אינו מורשה.
+ */
+function workerScope(): ?array {
+    $token = (string) ($_SERVER['HTTP_X_WORKER_TOKEN'] ?? '');
+    if ($token === '') return null;
 
-    $name = trim($_SERVER['HTTP_X_WORKER_NAME'] ?? 'worker');
-    return preg_match('/^[A-Za-z0-9 ._-]{1,40}$/', $name) ? $name : 'worker';
+    $name = trim((string) ($_SERVER['HTTP_X_WORKER_NAME'] ?? 'worker'));
+    // הלוכסן מותר כדי ששם כמו "actions/openai" ישרוד — הוא מזהה מי
+    // ביצע בפועל, וזה בדיוק מה שרוצים לראות על המטלה.
+    if (!preg_match('#^[A-Za-z0-9 ._/-]{1,40}$#', $name)) $name = 'worker';
+
+    if (hash_equals(config()['worker_token'], $token)) {
+        return ['name' => $name, 'project_id' => null];
+    }
+
+    // אסימון של פרויקט. ההשוואה נעשית על כל השורות בזמן קבוע, כדי שלא
+    // ידלוף מידע מהפרש הזמנים.
+    $match = null;
+    foreach (db()->query("SELECT id, agent_token FROM projects WHERE agent_token <> ''")->fetchAll() as $row) {
+        if (hash_equals(decryptSecret((string) $row['agent_token']), $token)) $match = (int) $row['id'];
+    }
+    return $match === null ? null : ['name' => $name, 'project_id' => $match];
+}
+
+/** שם העובד בלבד — לשימושים שאינם צריכים את התחום. */
+function workerName(): ?string {
+    $scope = workerScope();
+    return $scope ? $scope['name'] : null;
 }

@@ -129,6 +129,7 @@
         <textarea id="replyBody" rows="3" placeholder="תשובה או הערה…"></textarea>
         <div class="reply__row">
           <button type="submit" class="btn btn--primary">שליחה</button>
+          <button type="button" class="btn btn--ghost" id="dRun" hidden>הרצה בגיטהאב</button>
           <button type="button" class="btn btn--ghost" id="dDone">סימון כהושלמה</button>
         </div>
       </form>
@@ -231,6 +232,29 @@
         </select>
         <button type="submit" class="btn btn--ghost">הוספה</button>
       </form>
+
+      <hr>
+      <h3>מנוע ההרצה</h3>
+      <p class="hint" id="pvEngineState">בודק…</p>
+      <p class="hint">
+        המנוע הוא workflow שהלוח מתקין בריפו. משם הוא רץ עם עותק מלא של
+        הקוד, מריץ את הבדיקות, ופותח PR — דברים שאחסון PHP לא יכול לעשות.
+        ההתקנה כותבת שני קבצים תחת <code dir="ltr">.github/</code> ושותלת
+        שני סודות בריפו.
+      </p>
+      <label class="field">
+        <span>פקודת בדיקה</span>
+        <input type="text" id="pvCheck" dir="ltr" placeholder="npm test · composer test · pytest">
+      </label>
+      <p class="hint">
+        רצה לפני כל דחיפה. אם נכשלת — המנוע מנסה לתקן, ואם לא הצליח הוא
+        חוסם את המטלה עם הפלט במקום לדחוף קוד שבור. קבצי PHP ו‑JS נבדקים
+        תחבירית ממילא.
+      </p>
+      <div class="row">
+        <button type="button" class="btn btn--primary" id="pvInstall">התקנת המנוע</button>
+        <button type="button" class="btn btn--ghost" id="pvSaveCheck">שמירת הפקודה</button>
+      </div>
 
       <hr>
       <h3>קבצים</h3>

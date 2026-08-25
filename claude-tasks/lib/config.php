@@ -27,8 +27,7 @@ function config(bool $reload = false): array {
 }
 
 function configWrite(array $c): array {
-    $dir = dirname(CONFIG_FILE);
-    if (!is_dir($dir)) @mkdir($dir, 0755, true);
+    ensureDataDir(dirname(CONFIG_FILE));
     file_put_contents(CONFIG_FILE, json_encode($c, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), LOCK_EX);
     @chmod(CONFIG_FILE, 0600);
     return $c;

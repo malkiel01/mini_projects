@@ -16,6 +16,7 @@ require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/lib/order.php';
 require_once __DIR__ . '/lib/github.php';
 require_once __DIR__ . '/lib/projects.php';
+require_once __DIR__ . '/lib/engine.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -78,7 +79,23 @@ $action = $_GET['action'] ?? (is_string($in['action'] ?? null) ? $in['action'] :
 config();
 
 $user   = currentUser();
-$worker = workerName();
+$scope  = workerScope();
+$worker = $scope['name'] ?? null;
+
+/**
+ * מטלה שעובד רשאי לגעת בה.
+ *
+ * אסימון של פרויקט מוגבל למטלות שלו. בלי הבדיקה הזו, סוד שנשלח לריפו
+ * אחד היה פותח את כל הלוח.
+ */
+function workerTask(?array $scope, int $id): array {
+    $task = getTask(db(), $id);
+    if (!$task) fail('מטלה לא נמצאה', 404);
+    if (($scope['project_id'] ?? null) !== null && (int) $task['project_id'] !== $scope['project_id']) {
+        fail('המטלה אינה שייכת לפרויקט של האסימון', 403);
+    }
+    return $task;
+}
 
 /*
  * פעולות פתוחות: כניסה, והרשמה כל עוד אין אף משתמש. ההרשמה נסגרת מאליה
@@ -667,7 +684,64 @@ try {
     case 'project': {
         $me      = requireUser($user);
         $project = requireProject((int) ($in['id'] ?? 0), $me, 'read');
-        ok(['project' => $project, 'members' => projectMembers((int) $project['id'])]);
+        // האסימון של הפרויקט אינו נשלח לממשק — הוא נכתב ישירות לסוד בריפו.
+        unset($project['agent_token']);
+        ok(['project' => $project, 'members' => projectMembers((int) $project['id']),
+            'engine' => engineStatus($project)]);
+    }
+
+    case 'update-project': {
+        $me      = requireUser($user);
+        $project = requireProject((int) ($in['id'] ?? 0), $me, 'admin');
+
+        $sets = []; $args = [];
+        foreach (['name' => 80, 'description' => 2000, 'default_branch' => 100,
+                  'check_command' => 300] as $f => $max) {
+            if (array_key_exists($f, $in)) { $sets[] = "$f = ?"; $args[] = str_field($in, $f, $max); }
+        }
+        if (!$sets) fail('אין מה לעדכן');
+        $args[] = $project['id'];
+
+        db()->prepare('UPDATE projects SET ' . implode(', ', $sets) . ' WHERE id = ?')->execute($args);
+        logEvent($me, 'project.update', 'project:' . $project['id']);
+        ok();
+    }
+
+    /* ── מנוע ההרצה ────────────────────────────────────────────── */
+
+    /**
+     * מתקין את המנוע בריפו. דורש ניהול בפרויקט: זו כתיבה לריפו של
+     * מישהו, ושתילת סוד בו.
+     */
+    case 'install-engine': {
+        $me      = requireUser($user);
+        $project = requireProject((int) ($in['project_id'] ?? 0), $me, 'admin');
+
+        $conn = userConn($me, str_field($in, 'provider', 30));
+        if ($conn['key'] === '') fail('חברו ספק בינה מלאכותית לפני התקנת המנוע');
+
+        ok(installEngine($me, $project, $conn));
+    }
+
+    case 'engine-status': {
+        $me      = requireUser($user);
+        $project = requireProject((int) ($in['project_id'] ?? 0), $me, 'read');
+        ok(['engine' => engineStatus($project)]);
+    }
+
+    /**
+     * שולח מטלה להרצה. דורש דרגת כתיבה — מכאן והלאה נכתב קוד בריפו.
+     */
+    case 'run-task': {
+        $me   = requireUser($user);
+        $task = getTask(db(), (int) ($in['id'] ?? 0));
+        if (!$task) fail('מטלה לא נמצאה', 404);
+        if ($task['project_id'] === null) fail('המטלה אינה משויכת לפרויקט, ולכן אין ריפו להריץ עליו');
+
+        $project = requireProject((int) $task['project_id'], $me, 'write');
+        $conn    = userConn($me, (string) $task['provider'], (string) $task['model']);
+
+        ok(dispatchTask($me, $project, $task, $conn));
     }
 
     /** רשימת המשתמשים לבחירת חברים. שם ומזהה בלבד — לא כתובות ולא סודות. */
@@ -802,7 +876,7 @@ try {
     case 'claim': {
         if (!$worker) fail('פעולה לעובדים בלבד', 403);
         $url  = url_field($in, 'session_url');
-        $task = claimNextTask(db(), $worker, int_or_null($in, 'topic_id'));
+        $task = claimNextTask(db(), $worker, int_or_null($in, 'topic_id'), $scope['project_id'] ?? null);
         if (!$task) ok(['task' => null, 'message' => 'אין מטלות ממתינות']);
 
         // הסשן שמחזיק במטלה עכשיו. נרשם במשיכה ולא בסיום, כדי שגם
@@ -818,7 +892,7 @@ try {
         if (!$worker) fail('פעולה לעובדים בלבד', 403);
         $id = (int) ($in['id'] ?? 0);
         $q  = str_field($in, 'question', 20000);
-        if (!getTask(db(), $id)) fail('מטלה לא נמצאה', 404);
+        workerTask($scope, $id);
         if ($q === '') fail('חסרה השאלה');
 
         addNote(db(), $id, $worker, 'question', $q);
@@ -833,13 +907,16 @@ try {
     case 'complete': {
         if (!$worker) fail('פעולה לעובדים בלבד', 403);
         $id = (int) ($in['id'] ?? 0);
-        if (!getTask(db(), $id)) fail('מטלה לא נמצאה', 404);
+        workerTask($scope, $id);
 
         $result = str_field($in, 'result', 20000);
         if ($result !== '') addNote(db(), $id, $worker, 'result', $result);
 
         db()->prepare("UPDATE tasks SET status='done', claimed_by='', claim_until=0, updated_at=? WHERE id=?")
             ->execute([nowTs(), $id]);
+        if ($pr = url_field($in, 'pr_url')) {
+            db()->prepare('UPDATE tasks SET pr_url = ? WHERE id = ?')->execute([$pr, $id]);
+        }
         if ($url = url_field($in, 'session_url')) {
             db()->prepare('UPDATE tasks SET session_url = ? WHERE id = ?')->execute([$url, $id]);
         }
@@ -849,15 +926,37 @@ try {
     case 'release': {
         if (!$worker) fail('פעולה לעובדים בלבד', 403);
         $id = (int) ($in['id'] ?? 0);
+        workerTask($scope, $id);
         db()->prepare("UPDATE tasks SET status='open', claimed_by='', claim_until=0, updated_at=?
                         WHERE id=? AND status='in_progress'")->execute([nowTs(), $id]);
         ok();
+    }
+
+    /**
+     * תופס מטלה מסוימת. המנוע מקבל מטלה שנשלחה אליו ואינו מושך מהתור,
+     * ולכן claim לא מתאים לו.
+     */
+    case 'start': {
+        if (!$worker) fail('פעולה לעובדים בלבד', 403);
+        $id   = (int) ($in['id'] ?? 0);
+        $task = workerTask($scope, $id);
+
+        if (in_array($task['status'], ['done', 'cancelled'], true)) fail('המטלה כבר סגורה');
+
+        $sets = ["status='in_progress'", 'claimed_by=?', 'claim_until=?', 'updated_at=?'];
+        $args = [$worker, nowTs() + CLAIM_MINUTES * 60, nowTs()];
+        if ($url = url_field($in, 'run_url')) { $sets[] = 'run_url=?'; $args[] = $url; }
+        $args[] = $id;
+
+        db()->prepare('UPDATE tasks SET ' . implode(', ', $sets) . ' WHERE id = ?')->execute($args);
+        ok(['task' => getTask(db(), $id), 'notes' => taskNotes(db(), $id)]);
     }
 
     /** מאריך את ההחזקה. מטלה ארוכה לא תשוחרר באמצע העבודה. */
     case 'heartbeat': {
         if (!$worker) fail('פעולה לעובדים בלבד', 403);
         $id = (int) ($in['id'] ?? 0);
+        workerTask($scope, $id);
         db()->prepare("UPDATE tasks SET claim_until=? WHERE id=? AND claimed_by=?")
             ->execute([nowTs() + CLAIM_MINUTES * 60, $id, $worker]);
         ok(['claim_until' => nowTs() + CLAIM_MINUTES * 60]);

@@ -1,5 +1,5 @@
 import { $, $$, el, toast, api, state, timeAgo } from './core.js';
-import { loadConnections, loadProviders } from './platform.js';
+import { loadConnections, loadProviders, runTask } from './platform.js';
 
 /**
  * מטלות לקלוד — ממשק.
@@ -192,6 +192,12 @@ function taskCard(t) {
 
   // השביל חזרה לסשן שעבד על המטלה. נפתח בלשונית נפרדת, ולחיצה עליו
   // לא אמורה לפתוח גם את חלונית המטלה.
+  if (t.pr_url) badges.push(el('a', {
+    class: 'badge badge--link', href: t.pr_url, target: '_blank', rel: 'noopener noreferrer',
+    title: 'ה-PR שנפתח למטלה', text: '🔀 PR',
+    onclick: (ev) => ev.stopPropagation(),
+  }));
+
   if (t.session_url) badges.push(el('a', {
     class: 'badge badge--link', href: t.session_url, target: '_blank', rel: 'noopener noreferrer',
     title: 'הסשן שעבד על המטלה', text: '🔗 סשן',
@@ -237,6 +243,13 @@ async function openTask(id) {
     class: 'badge badge--link', href: task.session_url, target: '_blank', rel: 'noopener noreferrer',
     text: '🔗 פתיחת הסשן',
   }));
+  if (task.pr_url) meta.push(el('a', {
+    class: 'badge badge--link', href: task.pr_url, target: '_blank', rel: 'noopener noreferrer',
+    text: '🔀 ה-PR',
+  }));
+
+  // הרצה אפשרית רק כשיש ריפו מאחורי המטלה. ההרשאה עצמה נבדקת בשרת.
+  $('#dRun').hidden = !task.project_id;
   $('#dMeta').replaceChildren(...meta);
 
   $('#dBody').textContent = task.body || '(אין תיאור מפורט)';
@@ -267,6 +280,18 @@ $('#replyForm').addEventListener('submit', async (e) => {
     await refresh();
     toast(r.reopened ? 'נשלח — המטלה חזרה לתור של Claude' : 'ההערה נשמרה', 'ok');
   } catch (ex) { toast(ex.message, 'error'); }
+});
+
+$('#dRun').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  try {
+    const r = await runTask(state.openTaskId);
+    $('#detail').close();
+    await refresh();
+    toast(`נשלחה להרצה ב-${r.provider} (${r.model})`, 'ok');
+  } catch (ex) { toast(ex.message, 'error'); }
+  btn.disabled = false;
 });
 
 $('#dDone').addEventListener('click', async () => {

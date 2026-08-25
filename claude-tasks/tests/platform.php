@@ -241,6 +241,133 @@ check('הקלט הועבר', $dispatched['body']['inputs']['task_id'], '7');
 throws('כישלון הפעלה מדווח',
        fn() => ghDispatchWorkflow('t', 'o', 'r', 'agent.yml', 'main', [], $gh(404, ['message' => 'x'])), 'לא נמצא');
 
+echo "\n— מנוע ההרצה —\n";
+require_once __DIR__ . '/../lib/engine.php';
+
+$_SERVER['HTTPS']       = 'on';
+$_SERVER['HTTP_HOST']   = 'mbe-plus.com';
+$_SERVER['SCRIPT_NAME'] = '/mini_projects/claude-tasks/api.php';
+check('כתובת הלוח נגזרת מהבקשה', boardUrl(), 'https://mbe-plus.com/mini_projects/claude-tasks/api.php');
+configSet(['board_url' => 'https://example.org/api.php']);
+check('אפשר לדרוס בהגדרות', boardUrl(), 'https://example.org/api.php');
+configSet(['board_url' => null]);
+
+$pid2 = createProject($mal, 'המנוע', 'malkiel01', 'demo');
+$st = db()->prepare('SELECT * FROM projects WHERE id = ?'); $st->execute([$pid2]);
+$proj2 = $st->fetch();
+
+$tok = projectAgentToken($pid2);
+check('אסימון פרויקט נוצר', strlen($tok), 48);
+check('יציב בין קריאות', projectAgentToken($pid2), $tok);
+check('נשמר מוצפן', str_contains((string) db()->query("SELECT agent_token FROM projects WHERE id=$pid2")->fetch()['agent_token'], $tok), false);
+check('אפשר להחליף', projectAgentToken($pid2, true) === $tok, false);
+
+// תעבורת גיטהאב מזויפת: הקבצים אינם קיימים, והמפתח הציבורי תקין.
+$calls = [];
+$ghFake = function ($method, $url, $json, $token) use (&$calls) {
+    $calls[] = ['method' => $method, 'url' => $url, 'body' => json_decode((string) $json, true)];
+    if (str_contains($url, '/actions/secrets/public-key')) {
+        return ['status' => 200, 'headers' => [], 'raw' => '',
+                'data' => ['key' => base64_encode(str_repeat('K', 32)), 'key_id' => '1']];
+    }
+    if (str_contains($url, '/actions/secrets/')) return ['status' => 201, 'data' => [], 'headers' => [], 'raw' => ''];
+    if ($method === 'GET')  return ['status' => 404, 'data' => ['message' => 'Not Found'], 'headers' => [], 'raw' => ''];
+    if ($method === 'PUT')  return ['status' => 201, 'headers' => [], 'raw' => '',
+        'data' => ['content' => ['sha' => 'new'], 'commit' => ['sha' => 'c1']]];
+    return ['status' => 204, 'data' => [], 'headers' => [], 'raw' => ''];
+};
+
+setUserSecret((int) $mal['id'], 'github_token', 'ghp_token');
+$conn2 = ['provider' => 'openai', 'key' => 'sk-openaiopenaiopenai12', 'model' => 'gpt-x'];
+$res = installEngine($mal, $proj2, $conn2, $ghFake);
+check('שני קבצים נכתבו', array_values($res['files']), ['נוצר', 'נוצר']);
+
+$puts = array_values(array_filter($calls, fn($c) => $c['method'] === 'PUT' && str_contains($c['url'], '/contents/')));
+check('ה-workflow הותקן', str_contains($puts[0]['url'], '.github/workflows/claude-agent.yml'), true);
+check('הרץ הותקן', str_contains($puts[1]['url'], '.github/claude-agent/run.mjs'), true);
+check('התוכן הוא הקובץ האמיתי',
+      str_contains(base64_decode($puts[1]['body']['content']), 'מנוע ההרצה'), true);
+
+$secrets = array_values(array_filter($calls, fn($c) => str_contains($c['url'], '/actions/secrets/AGENT')));
+check('שני סודות נשלחו', count($secrets), 2);
+check('הסוד מוצפן ולא גולמי',
+      str_contains(json_encode($secrets, JSON_UNESCAPED_UNICODE), 'sk-openaiopenai'), false);
+check('אסימון הפרויקט לא נשלח גולמי',
+      str_contains(json_encode($secrets, JSON_UNESCAPED_UNICODE), projectAgentToken($pid2)), false);
+
+$st->execute([$pid2]); $proj2 = $st->fetch();
+check('המנוע מסומן כמותקן', engineStatus($proj2)['installed'], true);
+
+// התקנה חוזרת על תוכן זהה
+$calls = [];
+$ghSame = function ($method, $url, $json, $token) use (&$calls) {
+    $calls[] = "$method $url";
+    if (str_contains($url, 'public-key')) return ['status' => 200, 'headers' => [], 'raw' => '',
+        'data' => ['key' => base64_encode(str_repeat('K', 32)), 'key_id' => '1']];
+    if (str_contains($url, '/actions/secrets/')) return ['status' => 201, 'data' => [], 'headers' => [], 'raw' => ''];
+    if ($method === 'GET') {
+        $path = str_contains($url, 'run.mjs') ? __DIR__ . '/../agent/run.mjs' : __DIR__ . '/../agent/workflow.yml';
+        return ['status' => 200, 'headers' => [], 'raw' => '', 'data' => ['type' => 'file',
+            'path' => 'x', 'sha' => 'abc', 'content' => base64_encode((string) file_get_contents($path))]];
+    }
+    return ['status' => 201, 'data' => ['content' => ['sha' => 's']], 'headers' => [], 'raw' => ''];
+};
+$res = installEngine($mal, $proj2, $conn2, $ghSame);
+check('קובץ זהה אינו נכתב שוב', array_values($res['files']), ['ללא שינוי', 'ללא שינוי']);
+// הסודות נכתבים תמיד; מה שאסור הוא כתיבה חוזרת של קובץ זהה.
+check('ואין כתיבה חוזרת של קובץ',
+      count(array_filter($calls, fn($c) => str_starts_with($c, 'PUT') && str_contains($c, '/contents/'))), 0);
+
+echo "\n— שליחת מטלה להרצה —\n";
+db()->prepare('INSERT INTO tasks (project_id,title,body,kind,priority,status,created_by,created_at,updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?)')
+    ->execute([$pid2, 'להוסיף כפתור', '', 'code', 'normal', 'blocked', $mal['id'], time(), time()]);
+$tid = (int) db()->lastInsertId();
+$task2 = getTask(db(), $tid);
+
+$sent = null;
+$dispatch = function ($method, $url, $json, $token) use (&$sent) {
+    $sent = ['url' => $url, 'body' => json_decode((string) $json, true)];
+    return ['status' => 204, 'data' => [], 'headers' => [], 'raw' => ''];
+};
+dispatchTask($mal, $proj2, $task2, $conn2, $dispatch);
+check('הופעל ה-workflow הנכון', str_contains($sent['url'], 'claude-agent.yml/dispatches'), true);
+check('מזהה המטלה עבר', $sent['body']['inputs']['task_id'], (string) $tid);
+check('הספק עבר', $sent['body']['inputs']['provider'], 'openai');
+check('כתובת הלוח עברה', str_starts_with($sent['body']['inputs']['board_url'], 'https://'), true);
+check('מטלה חסומה חזרה לתור', getTask(db(), $tid)['status'], 'open');
+
+throws('בלי ספק אין הרצה',
+       fn() => dispatchTask($mal, $proj2, $task2, ['provider' => 'openai', 'key' => '', 'model' => 'm'], $dispatch),
+       'ספק');
+
+$_SERVER['HTTPS'] = 'off';
+throws('כתובת שאינה https נעצרת', fn() => dispatchTask($mal, $proj2, $task2, $conn2, $dispatch), 'https');
+$_SERVER['HTTPS'] = 'on';
+
+echo "\n— תחום האסימון של עובד —\n";
+require_once __DIR__ . '/../lib/auth.php';
+
+$_SERVER['HTTP_X_WORKER_NAME'] = 'actions/openai';
+unset($_SERVER['HTTP_X_WORKER_TOKEN']);
+check('בלי אסימון — לא עובד', workerScope(), null);
+
+$_SERVER['HTTP_X_WORKER_TOKEN'] = 'לא-נכון';
+check('אסימון שגוי נדחה', workerScope(), null);
+
+$_SERVER['HTTP_X_WORKER_TOKEN'] = config()['worker_token'];
+check('האסימון הכללי — כל הלוח', workerScope(), ['name' => 'actions/openai', 'project_id' => null]);
+
+$_SERVER['HTTP_X_WORKER_TOKEN'] = projectAgentToken($pid2);
+check('אסימון פרויקט מוגבל אליו', workerScope(), ['name' => 'actions/openai', 'project_id' => $pid2]);
+
+// אסימון של פרויקט אחד לא פותח פרויקט אחר
+$other = createProject($mal, 'אחר', 'malkiel01', 'other');
+check('ולא לפרויקט אחר', workerScope()['project_id'] === $other, false);
+
+$_SERVER['HTTP_X_WORKER_NAME'] = 'שם עם תווים <לא חוקיים>';
+check('שם לא תקין מוחלף', workerScope()['name'], 'worker');
+
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 array_map('unlink', glob("$tmp/*") ?: []);
 @rmdir($tmp);

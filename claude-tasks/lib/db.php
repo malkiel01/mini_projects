@@ -10,6 +10,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/crypto.php';
+
 // ניתן לדריסה לפני הטעינה — כך הבדיקות רצות על מסד זמני ולא נוגעות
 // בנתונים האמיתיים.
 if (!defined('DB_FILE')) define('DB_FILE', __DIR__ . '/../data/tasks.sqlite');
@@ -21,10 +23,7 @@ function db(): PDO {
     static $pdo = null;
     if ($pdo instanceof PDO) return $pdo;
 
-    $dir = dirname(DB_FILE);
-    if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
-        throw new RuntimeException('תיקיית data/ אינה ניתנת ליצירה');
-    }
+    ensureDataDir(dirname(DB_FILE));
 
     $pdo = new PDO('sqlite:' . DB_FILE, null, null, [
         PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
@@ -119,7 +118,12 @@ function migrate(PDO $pdo): void {
             description    TEXT NOT NULL DEFAULT '',
             created_by     INTEGER REFERENCES users(id),
             created_at     INTEGER NOT NULL,
-            archived       INTEGER NOT NULL DEFAULT 0
+            archived       INTEGER NOT NULL DEFAULT 0,
+            -- אסימון עובד משלו לכל פרויקט: הוא נשלח לתוך הריפו כסוד,
+            -- ולכן אסור שיהיה המפתח לכל הלוח.
+            agent_token    TEXT NOT NULL DEFAULT '',
+            check_command  TEXT NOT NULL DEFAULT '',
+            engine_at      INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS project_members (
@@ -164,6 +168,13 @@ function migrate(PDO $pdo): void {
     // מי מבצע את המטלה. ריק = ברירת המחדל של מי שפתח אותה.
     addColumn($pdo, 'tasks', 'provider',          "TEXT NOT NULL DEFAULT ''");
     addColumn($pdo, 'tasks', 'model',             "TEXT NOT NULL DEFAULT ''");
+    addColumn($pdo, 'tasks', 'run_url',           "TEXT NOT NULL DEFAULT ''");
+    addColumn($pdo, 'tasks', 'pr_url',            "TEXT NOT NULL DEFAULT ''");
+
+    // פרויקטים שנוצרו לפני המנוע.
+    addColumn($pdo, 'projects', 'agent_token',   "TEXT NOT NULL DEFAULT ''");
+    addColumn($pdo, 'projects', 'check_command', "TEXT NOT NULL DEFAULT ''");
+    addColumn($pdo, 'projects', 'engine_at',     'INTEGER NOT NULL DEFAULT 0');
 }
 
 /** ALTER TABLE ADD COLUMN אינו מכיר IF NOT EXISTS ב-SQLite — בודקים לבד. */
@@ -214,14 +225,16 @@ function releaseExpiredClaims(PDO $pdo): int {
  * ‏BEGIN IMMEDIATE נוטל את נעילת הכתיבה כבר בפתיחה. בלעדיו שני עובדים
  * היו קוראים את אותה שורה ושניהם "מנצחים" בעדכון.
  */
-function claimNextTask(PDO $pdo, string $worker, ?int $topicId = null): ?array {
+function claimNextTask(PDO $pdo, string $worker, ?int $topicId = null, ?int $projectId = null): ?array {
     releaseExpiredClaims($pdo);
 
     $pdo->beginTransaction();
     try {
         $sql = "SELECT * FROM tasks WHERE status IN ('answered','open')";
         $args = [];
-        if ($topicId !== null) { $sql .= " AND topic_id = ?"; $args[] = $topicId; }
+        if ($topicId !== null)   { $sql .= " AND topic_id = ?";   $args[] = $topicId; }
+        // עובד עם אסימון של פרויקט אינו רואה מטלות של פרויקטים אחרים.
+        if ($projectId !== null) { $sql .= " AND project_id = ?"; $args[] = $projectId; }
         // מטלה שנענתה קודמת לחדשה: אדם כבר ממתין לה.
         $sql .= " ORDER BY CASE status WHEN 'answered' THEN 0 ELSE 1 END,
                            CASE priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,

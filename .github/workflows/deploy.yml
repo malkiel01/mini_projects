@@ -58,7 +58,7 @@ jobs:
           while IFS= read -r -d '' f; do
             cp "$f" "$RUNNER_TEMP/check.mjs"
             node --check "$RUNNER_TEMP/check.mjs" || { echo "::error file=$f::syntax error"; ERR=1; }
-          done < <(find . -name '*.js' -not -path './.git/*' -not -path '*/vendor/*' -print0)
+          done < <(find . \( -name '*.js' -o -name '*.mjs' \) -not -path './.git/*' -not -path '*/vendor/*' -print0)
           if [ "$ERR" -ne 0 ]; then echo "::error::JS syntax errors — aborting deploy"; exit 1; fi
           echo "JS lint OK"
 
@@ -138,6 +138,9 @@ jobs:
             --exclude='renovation-punchlist/data/config.json' \
             --exclude='renovation-punchlist/data/store.json' \
             --exclude='renovation-punchlist/data/media/' \
+            --exclude='claude-tasks/data/*.sqlite*' \
+            --exclude='claude-tasks/data/config.json' \
+            --exclude='claude-tasks/data/secret.key' \
             --exclude='node_modules/' \
             --exclude='*.log' --exclude='error_log' \
             --exclude='.DS_Store' --exclude='._*' \
