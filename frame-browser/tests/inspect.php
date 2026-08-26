@@ -174,5 +174,21 @@ check('שירות הגנה',
 check('כישלון מוחלט',
       str_contains(probeConclusion($att('failed'), []), 'אינו זמין'), true);
 
+echo "\n— מסך אתגר קודם לכותרות —\n";
+// הטעות שתוקנה: Cloudflare שולח SAMEORIGIN משלו על מסך האתגר. להסיק ממנו
+// שהאתר אוסר הטמעה זה לייחס לו עמדה שמעולם לא הביע.
+$challengeRes = ['status' => 403, 'headers' => ['server' => 'cloudflare',
+                 'x-frame-options' => 'SAMEORIGIN'], 'body' => 'Just a moment...'];
+check('מזוהה כאתגר', looksLikeChallenge($challengeRes), true);
+check('ובכל זאת הכותרות אומרות "חסום"',
+      framingVerdict($challengeRes, 'https://x.com')[0], false);
+check('ולכן ההכרעה חייבת לשקול קודם את האתגר',
+      probeRow('x', 'y', $challengeRes + ['ms' => 1], 'https://x.com')['verdict'], 'challenge');
+
+// דף אמיתי עם אותה כותרת — כאן "חסום" הוא נכון
+$realRes = ['status' => 200, 'headers' => ['server' => 'nginx',
+            'x-frame-options' => 'SAMEORIGIN'], 'body' => '<title>אתר</title>', 'ms' => 1];
+check('דף אמיתי עם SAMEORIGIN — חסום', probeRow('x', 'y', $realRes, 'https://x.com')['verdict'], 'blocked');
+
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 exit($fail === 0 ? 0 : 1);

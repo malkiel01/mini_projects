@@ -200,3 +200,9 @@ hr { border: 0; border-block-start: 1px solid var(--line); width: 100%; margin: 
 .dbg__url { flex: 1; min-width: 0; }
 
 .icon-btn.is-on { background: var(--accent); color: #fff; }
+
+.dbg__paste-wrap { display: flex; flex-direction: column; gap: 7px; margin-block-start: 6px;
+                   padding-block-start: 10px; border-block-start: 1px dashed var(--line); }
+.dbg__paste { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px;
+              font-family: ui-monospace, monospace; font-size: .74rem; resize: vertical; }
+.dbg__scan { display: flex; flex-direction: column; gap: 8px; }

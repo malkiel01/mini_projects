@@ -235,6 +235,55 @@ function debugPanel(pane) {
     ...(candidates.length
       ? candidates.map((c) => candidateRow(pane, c))
       : [el('p', { class: 'dbg__why', text: 'לא נמצאו מסגרות פנימיות בדף שהתקבל.' })]),
+
+    pasteScanner(pane),
+  ]);
+}
+
+/**
+ * המוצא כששירות הגנה חוסם את השרת.
+ *
+ * הדפדפן של המשתמש כבר עבר את האתגר ורואה את הדף האמיתי; השרת לעולם
+ * לא יראה אותו. אז הוא מדביק את המקור, והחילוץ נעשה עליו. הנגן יושב
+ * לרוב בדומיין אחר שאינו מוגן כלל — ואותו כן אפשר לבדוק ולהטמיע.
+ */
+function pasteScanner(pane) {
+  const box = el('textarea', {
+    class: 'dbg__paste', rows: '4', dir: 'ltr', spellcheck: 'false',
+    placeholder: '<html> … הדביקו כאן את מקור הדף',
+  });
+
+  const out = el('div', { class: 'dbg__scan' });
+
+  const run = async () => {
+    const html = box.value.trim();
+    if (!html) return;
+    out.replaceChildren(el('p', { class: 'dbg__why', text: 'סורק…' }));
+    try {
+      const res = await fetch(`./api.php?url=${encodeURIComponent(pane.url)}&scan=1`,
+                              { method: 'POST', body: html });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+
+      out.replaceChildren(
+        el('p', { class: 'dbg__conclusion', text: data.conclusion }),
+        ...data.candidates.map((c) => candidateRow(pane, c)),
+      );
+    } catch (ex) {
+      out.replaceChildren(el('p', { class: 'dbg__why', text: `הסריקה נכשלה: ${ex.message}` }));
+    }
+  };
+
+  return el('div', { class: 'dbg__paste-wrap' }, [
+    el('h4', { class: 'dbg__title', text: 'מצאו את הנגן ידנית' }),
+    el('p', { class: 'dbg__why', text:
+      'כששירות הגנה חוסם את השרת, רק הדפדפן שלכם רואה את הדף האמיתי. פתחו אותו ' +
+      'בלשונית, העתיקו את מקור הדף, והדביקו כאן — אחפש בו את המסגרות הפנימיות.' }),
+    el('p', { class: 'dbg__facts', text:
+      'במחשב: Ctrl+U ואז Ctrl+A, Ctrl+C · באנדרואיד: הוסיפו view-source: לפני הכתובת' }),
+    box,
+    el('button', { type: 'button', class: 'btn btn--primary', onclick: run }, ['סריקת הקוד']),
+    out,
   ]);
 }
 
@@ -305,6 +354,11 @@ function paneBody(pane) {
           text: 'פתיחה בלשונית חדשה' }),
         el('button', { type: 'button', class: 'btn btn--ghost', onclick: () => toggleDebug(pane) },
           ['בדיקה מעמיקה']),
+        // הבדיקה שלנו אינה חזקה מהדפדפן. כשהיא לא בטוחה — שהמשתמש יראה בעצמו.
+        el('button', {
+          type: 'button', class: 'btn btn--ghost',
+          onclick: () => setPane(pane.id, { status: 'ok', advisory: 'הוטמע בכפייה, בניגוד לתוצאת הבדיקה.' }),
+        }, ['נסה להטמיע בכל זאת']),
       ]),
       isBlocked ? el('p', { class: 'hint', text: 'זו החלטה של האתר, ולא משהו שאפשר לעקוף מכאן.' }) : null,
     ]);

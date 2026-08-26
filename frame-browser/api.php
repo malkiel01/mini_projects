@@ -40,6 +40,46 @@ try {
     $ourScheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
     $origin    = $ourScheme . '://' . ($_SERVER['HTTP_HOST'] ?? '');
     
+    /*
+     * סריקת HTML שהמשתמש הדביק.
+     *
+     * כשירות הגנה חוסם את השרת, הדפדפן של המשתמש הוא היחיד שרואה את הדף
+     * האמיתי — הוא כבר עבר את האתגר. הוא מדביק את מקור הדף, וכאן מחלצים
+     * ממנו את המסגרות הפנימיות ובודקים כל אחת. הנגן יושב לרוב בדומיין
+     * אחר, שאינו מוגן כלל.
+     */
+    if (($_GET['scan'] ?? '') === '1') {
+        $html = file_get_contents('php://input');
+        if ($html === false || trim($html) === '') fail('לא הודבק תוכן', 'no_html');
+        if (strlen($html) > 3_000_000) $html = substr($html, 0, 3_000_000);
+
+        $candidates = [];
+        foreach (findFrameCandidates($html, $url) as $cand) {
+            $entry = ['url' => $cand, 'framable' => null, 'reason' => '', 'status' => 0, 'title' => ''];
+            try {
+                $r = fetchHead($cand, ['ua' => BROWSER_UA, 'max_bytes' => 8192]);
+                [$ok, $why] = framingVerdict($r, $origin);
+                $challenged = looksLikeChallenge($r);
+
+                $entry['status']   = $r['status'];
+                $entry['framable'] = $ok && !$challenged;
+                $entry['reason']   = $challenged ? 'שירות הגנה חסם גם את הבדיקה של המסגרת הזו' : $why;
+                $entry['title']    = pageTitle($r['body']);
+            } catch (InspectError $e) {
+                $entry['reason']   = $e->getMessage();
+                $entry['framable'] = false;
+            }
+            $candidates[] = $entry;
+        }
+
+        $open = count(array_filter($candidates, fn($c) => $c['framable'] === true));
+        out(['success' => true, 'candidates' => $candidates, 'bytes' => strlen($html),
+             'conclusion' => $candidates
+                ? ($open ? "נמצאו $open מסגרות פתוחות מתוך " . count($candidates) . '. נסו אותן.'
+                         : 'נמצאו מסגרות, אך אף אחת מהן אינה ניתנת להטמעה.')
+                : 'לא נמצאו מסגרות פנימיות בקוד שהודבק.']);
+    }
+
     // אבחון מעמיק: מנסה כמה שיטות, וסורק את הדף אחרי מסגרות פנימיות.
     // יקר יותר בזמן ובפניות, ולכן רץ רק כשמבקשים אותו במפורש.
     if (($_GET['deep'] ?? '') === '1') {
@@ -75,11 +115,19 @@ try {
     $challenge = looksLikeChallenge($res);
     $advisory  = '';
 
-    if (!$allowed) {
-        $verdict = 'blocked';                    // הכותרות מפורשות; אין ספק
-    } elseif ($challenge) {
+    /*
+     * מסך אתגר נבדק ראשון, ולא הכותרות.
+     *
+     * זו הייתה טעות: כשהתשובה היא מסך "Just a moment", הכותרות שבה שייכות
+     * לשירות ההגנה ולא לאתר — Cloudflare שולח SAMEORIGIN משלו. להסיק
+     * מהן שהאתר אוסר הטמעה זה לייחס לו עמדה שמעולם לא הביע.
+     */
+    if ($challenge) {
         $verdict = 'unsure';
-        $advisory = 'שירות הגנה על האתר חסם את הבדיקה מהשרת. בדפדפן שלכם ייתכן שייפתח.';
+        $advisory = 'שירות הגנה חסם את הבדיקה מהשרת, ולכן מה שקיבלנו אינו הדף האמיתי. '
+                  . 'בדפדפן שלכם ייתכן שייפתח.';
+    } elseif (!$allowed) {
+        $verdict = 'blocked';                    // הכותרות של הדף עצמו; אין ספק
     } elseif ($res['status'] >= 400) {
         $verdict = 'unsure';
         $advisory = "האתר החזיר {$res['status']} לבדיקה שלנו. ייתכן שהדף עצמו נפתח בכל זאת.";
