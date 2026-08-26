@@ -142,6 +142,8 @@ jobs:
             --exclude='claude-tasks/data/config.json' \
             --exclude='claude-tasks/data/secret.key' \
             --exclude='node_modules/' \
+            --exclude='guarded-browser/android/' \
+            --exclude='guarded-browser/data/*.sqlite*' \
             --exclude='*.log' --exclude='error_log' \
             --exclude='.DS_Store' --exclude='._*' \
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
