@@ -224,6 +224,12 @@ function debugPanel(pane) {
 
   const { attempts = [], candidates = [], conclusion = '' } = pane.debug;
 
+  // הגיעו לכאן מהכפתור שעל המסגרת — הצעד הבא נמצא בתחתית, אז מגלגלים אליו.
+  if (pane.focusPaste) {
+    pane.focusPaste = false;
+    setTimeout(() => $('.dbg__paste-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+  }
+
   return el('div', { class: 'dbg' }, [
     el('div', { class: 'dbg__top' }, [el('h3', { text: 'אבחון' }), back]),
     conclusion ? el('p', { class: 'dbg__conclusion', text: conclusion }) : null,
@@ -394,12 +400,20 @@ function paneBody(pane) {
 
   if (!pane.advisory) return frame;
 
-  // הסתייגות מוצגת מעל המסגרת ולא במקומה: התוכן חשוב יותר מההערה.
+  /*
+   * מסגרת שנחסמה עדיין מפעילה load — הדפדפן טוען לתוכה דף שגיאה משלו.
+   * לכן אי אפשר לזהות מ-JS שהיא ריקה, והמשתמש נשאר מול ריבוע אפור בלי
+   * לדעת מה עכשיו. במקום לנחש, נותנים לו את הצעד הבא ליד ההסתייגות.
+   */
   return el('div', { class: 'pane__stack' }, [
     el('div', { class: 'pane__advisory' }, [
       el('span', { text: `⚠ ${pane.advisory}` }),
       el('a', { class: 'pane__advisory-link', href: pane.url, target: '_blank',
                 rel: 'noopener noreferrer', text: 'פתיחה בלשונית' }),
+      el('button', {
+        type: 'button', class: 'pane__advisory-btn',
+        onclick: () => { pane.focusPaste = true; toggleDebug(pane); },
+      }, ['לא רואים תוכן? מצאו את הנגן הפנימי']),
     ]),
     frame,
   ]);

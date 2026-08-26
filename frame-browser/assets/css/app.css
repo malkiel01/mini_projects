@@ -206,3 +206,8 @@ hr { border: 0; border-block-start: 1px solid var(--line); width: 100%; margin: 
 .dbg__paste { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px;
               font-family: ui-monospace, monospace; font-size: .74rem; resize: vertical; }
 .dbg__scan { display: flex; flex-direction: column; gap: 8px; }
+
+.pane__advisory-btn { background: #92400e; color: #fff; border: 0; border-radius: 999px;
+                      padding: 4px 12px; font: inherit; font-size: .74rem; font-weight: 700;
+                      cursor: pointer; white-space: nowrap; }
+.pane__advisory-btn:hover { background: #78350f; }
