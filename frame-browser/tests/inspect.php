@@ -126,5 +126,53 @@ check('403 בלי כותרות חוסמות — עדיין מותר',
 check('403 עם DENY — חסום',
       framingVerdict($res(403, ['server' => 'cloudflare', 'x-frame-options' => 'DENY']), 'https://x.com')[0], false);
 
+echo "\n— חילוץ מסגרות פנימיות —\n";
+$base = 'https://liveball.sx/team/772';
+
+$html = '<iframe src="https://player.example.com/embed/abc" allowfullscreen></iframe>';
+check('iframe פשוט', findFrameCandidates($html, $base), ['https://player.example.com/embed/abc']);
+
+check('נתיב יחסי הופך למוחלט',
+      findFrameCandidates('<iframe src="/play/9">', $base), ['https://liveball.sx/play/9']);
+check('כתובת ללא סכימה',
+      findFrameCandidates('<iframe src="//cdn.x.com/embed/1">', $base), ['https://cdn.x.com/embed/1']);
+check('data-src נתפס גם הוא',
+      findFrameCandidates('<iframe data-src="https://p.com/player/5">', $base), ['https://p.com/player/5']);
+
+check('פרסום ומדידה מסוננים',
+      findFrameCandidates('<iframe src="https://www.googletagmanager.com/ns.html?id=1">', $base), []);
+check('data: מסונן',
+      findFrameCandidates('<iframe src="data:text/html,x">', $base), []);
+check('כפילויות מאוחדות',
+      count(findFrameCandidates('<iframe src="https://a.com/embed/1"><iframe src="https://a.com/embed/1">', $base)), 1);
+
+// נגן קודם לשאר — זה מה שהמשתמש מחפש
+$mixed = '<iframe src="https://ads.co/banner"></iframe><iframe src="https://s.tv/embed/77"></iframe>';
+check('נגן ראשון ברשימה', findFrameCandidates($mixed, $base)[0], 'https://s.tv/embed/77');
+
+check('כתובת נגן גם בלי תגית iframe',
+      in_array('https://cdn.tv/player/22.html',
+               findFrameCandidates('var u = "https://cdn.tv/player/22.html";', $base), true), true);
+check('דף בלי כלום', findFrameCandidates('<p>שלום</p>', $base), []);
+
+echo "\n— תמצית ה-CSP —\n";
+check('החלק הרלוונטי בלבד',
+      frameAncestorsOf("default-src \'self\'; frame-ancestors \'none\'; img-src *"), "\'none\'");
+check('בלי frame-ancestors', frameAncestorsOf("default-src \'self\'"), '');
+check('CSP ריק', frameAncestorsOf(''), '');
+
+echo "\n— מסקנת האבחון —\n";
+$att = fn(string $v) => [['verdict' => $v]];
+check('מסגרת פתוחה גוברת על הכול',
+      str_contains(probeConclusion($att('blocked'), [['framable' => true]]), 'מסגרת פנימית'), true);
+check('הצלחה בשיטה כלשהי',
+      str_contains(probeConclusion($att('ok'), []), 'הצליחה'), true);
+check('חסימה מפורשת',
+      str_contains(probeConclusion($att('blocked'), []), 'אוסר הטמעה'), true);
+check('שירות הגנה',
+      str_contains(probeConclusion($att('challenge'), []), 'שירות הגנה'), true);
+check('כישלון מוחלט',
+      str_contains(probeConclusion($att('failed'), []), 'אינו זמין'), true);
+
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 exit($fail === 0 ? 0 : 1);

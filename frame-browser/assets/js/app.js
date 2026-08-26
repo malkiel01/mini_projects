@@ -67,7 +67,7 @@ function hostOf(url) {
 
 function addPane(url = '') {
   const pane = { id: nextId++, url, status: url ? 'checking' : 'empty',
-                 title: '', reason: '', advisory: '' };
+                 title: '', reason: '', advisory: '', view: 'normal', debug: null };
   state.panes.push(pane);
   render();
   if (url) inspect(pane);
@@ -82,7 +82,8 @@ function addPane(url = '') {
  */
 function ensurePanes() {
   while (state.panes.length < state.cols) {
-    state.panes.push({ id: nextId++, url: '', status: 'empty', title: '', reason: '', advisory: '' });
+    state.panes.push({ id: nextId++, url: '', status: 'empty', title: '', reason: '',
+                       advisory: '', view: 'normal', debug: null });
   }
 }
 
@@ -104,7 +105,8 @@ function setPane(id, patch) {
 async function inspect(pane) {
   // מה שהוקלד, לפני שהפניה החליפה את הכתובת. בלי זה, פתיחה חוזרת של
   // אותה כתובת שעברה הפניה נראית כמו כתובת חדשה ופותחת מסגרת כפולה.
-  setPane(pane.id, { status: 'checking', reason: '', title: '', requested: pane.url });
+  setPane(pane.id, { status: 'checking', reason: '', title: '', requested: pane.url,
+                     debug: null, view: 'normal' });
 
   try {
     const res = await fetch(`./api.php?url=${encodeURIComponent(pane.url)}`);
@@ -132,6 +134,110 @@ async function inspect(pane) {
   }
 }
 
+/* ── אבחון ─────────────────────────────────────────────────────── */
+
+const VERDICT = {
+  ok:         { label: 'עבר',            cls: 'good' },
+  blocked:    { label: 'חוסם הטמעה',     cls: 'bad' },
+  challenge:  { label: 'שירות הגנה חסם', cls: 'warn' },
+  http_error: { label: 'שגיאת HTTP',     cls: 'warn' },
+  failed:     { label: 'לא הגיע',        cls: 'bad' },
+};
+
+async function toggleDebug(pane) {
+  if (pane.view === 'debug') return setPane(pane.id, { view: 'normal' });
+
+  setPane(pane.id, { view: 'debug' });
+  if (pane.debug) return;
+
+  try {
+    const res = await fetch(`./api.php?url=${encodeURIComponent(pane.url)}&deep=1`);
+    const data = await res.json();
+    setPane(pane.id, { debug: data.success ? data : { error: data.error } });
+  } catch (ex) {
+    setPane(pane.id, { debug: { error: `האבחון נכשל: ${ex.message}` } });
+  }
+}
+
+/** שורה אחת בטבלת הניסיונות. */
+function attemptRow(a) {
+  const v = VERDICT[a.verdict] || { label: a.verdict, cls: '' };
+
+  const facts = [];
+  if (a.status) facts.push(`HTTP ${a.status}`);
+  if (a.ms) facts.push(`${a.ms} מ״ש`);
+  if (a.bytes) facts.push(`${Math.round(a.bytes / 1024)}KB`);
+  if (a.server) facts.push(`שרת: ${a.server}`);
+
+  const headers = [];
+  if (a.xfo) headers.push(`X-Frame-Options: ${a.xfo}`);
+  if (a.csp) headers.push(`frame-ancestors: ${a.csp}`);
+  if (!a.xfo && !a.csp && a.status && a.status < 400) headers.push('לא נשלחה כותרת חסימה');
+
+  return el('div', { class: `dbg__row dbg__row--${v.cls}` }, [
+    el('div', { class: 'dbg__head' }, [
+      el('b', { text: a.name }),
+      el('span', { class: `dbg__badge dbg__badge--${v.cls}`, text: v.label }),
+    ]),
+    el('p', { class: 'dbg__why', text: a.why }),
+    facts.length ? el('p', { class: 'dbg__facts', dir: 'ltr', text: facts.join(' · ') }) : null,
+    ...headers.map((h) => el('code', { class: 'dbg__hdr', dir: 'ltr', text: h })),
+    a.title ? el('p', { class: 'dbg__facts', text: `כותרת: ${a.title}` }) : null,
+    a.reason ? el('p', { class: 'dbg__why', text: a.reason }) : null,
+  ]);
+}
+
+/** מסגרת פנימית שנמצאה בדף — עם כפתור שמנסה אותה כאן ועכשיו. */
+function candidateRow(pane, c) {
+  const ok = c.framable === true;
+  return el('div', { class: `dbg__row dbg__row--${ok ? 'good' : 'bad'}` }, [
+    el('div', { class: 'dbg__head' }, [
+      el('code', { class: 'dbg__url', dir: 'ltr', text: c.url }),
+      el('span', { class: `dbg__badge dbg__badge--${ok ? 'good' : 'bad'}`,
+        text: ok ? 'ניתן להטמעה' : 'חסום' }),
+    ]),
+    c.title ? el('p', { class: 'dbg__why', text: c.title }) : null,
+    c.reason ? el('p', { class: 'dbg__why', text: c.reason }) : null,
+    ok ? el('button', {
+      type: 'button', class: 'btn btn--primary',
+      onclick: () => { pane.url = c.url; pane.advisory = ''; inspect(pane); persist(); },
+    }, ['פתיחה כאן']) : null,
+  ]);
+}
+
+function debugPanel(pane) {
+  const back = el('button', { type: 'button', class: 'btn btn--ghost',
+    onclick: () => setPane(pane.id, { view: 'normal' }) }, ['חזרה']);
+
+  if (!pane.debug) {
+    return el('div', { class: 'dbg' }, [
+      el('div', { class: 'pane__note' }, [
+        el('div', { class: 'spinner' }),
+        el('p', { text: 'מנסה כמה שיטות מול האתר, וסורק את הדף אחרי מסגרות פנימיות…' }),
+      ]),
+    ]);
+  }
+
+  if (pane.debug.error) {
+    return el('div', { class: 'dbg' }, [el('p', { class: 'dbg__why', text: pane.debug.error }), back]);
+  }
+
+  const { attempts = [], candidates = [], conclusion = '' } = pane.debug;
+
+  return el('div', { class: 'dbg' }, [
+    el('div', { class: 'dbg__top' }, [el('h3', { text: 'אבחון' }), back]),
+    conclusion ? el('p', { class: 'dbg__conclusion', text: conclusion }) : null,
+
+    el('h4', { class: 'dbg__title', text: `שיטות שנוסו (${attempts.length})` }),
+    ...attempts.map(attemptRow),
+
+    el('h4', { class: 'dbg__title', text: `מסגרות פנימיות בדף (${candidates.length})` }),
+    ...(candidates.length
+      ? candidates.map((c) => candidateRow(pane, c))
+      : [el('p', { class: 'dbg__why', text: 'לא נמצאו מסגרות פנימיות בדף שהתקבל.' })]),
+  ]);
+}
+
 /* ── תצוגה ─────────────────────────────────────────────────────── */
 
 function paneToolbar(pane) {
@@ -148,6 +254,11 @@ function paneToolbar(pane) {
   });
 
   const tools = [
+    el('button', {
+      type: 'button', class: `icon-btn${pane.view === 'debug' ? ' is-on' : ''}`,
+      title: 'אבחון: מה השרת ניסה ומה קיבל',
+      onclick: () => pane.url && toggleDebug(pane),
+    }, ['🔍']),
     el('button', { type: 'button', class: 'icon-btn', title: 'טעינה מחדש',
       onclick: () => pane.url && inspect(pane) }, ['⟳']),
     el('a', { class: 'icon-btn', href: pane.url || '#', target: '_blank', rel: 'noopener noreferrer',
@@ -168,6 +279,8 @@ function paneToolbar(pane) {
  * הדף בלשונית — שם הוא כן ייפתח.
  */
 function paneBody(pane) {
+  if (pane.view === 'debug') return debugPanel(pane);
+
   if (pane.status === 'empty') {
     return el('div', { class: 'pane__note' }, [
       el('p', { text: 'הדביקו כתובת בשורה שמעל, או בחרו קישור שמור.' }),
@@ -187,8 +300,12 @@ function paneBody(pane) {
       el('div', { class: 'pane__icon', text: isBlocked ? '⛔' : '⚠' }),
       el('h3', { text: isBlocked ? `${hostOf(pane.url)} אינו מרשה הטמעה` : 'לא הצלחתי לבדוק' }),
       el('p', { text: pane.reason }),
-      el('a', { class: 'btn btn--primary', href: pane.url, target: '_blank', rel: 'noopener noreferrer',
-        text: 'פתיחה בלשונית חדשה' }),
+      el('div', { class: 'row' }, [
+        el('a', { class: 'btn btn--primary', href: pane.url, target: '_blank', rel: 'noopener noreferrer',
+          text: 'פתיחה בלשונית חדשה' }),
+        el('button', { type: 'button', class: 'btn btn--ghost', onclick: () => toggleDebug(pane) },
+          ['בדיקה מעמיקה']),
+      ]),
       isBlocked ? el('p', { class: 'hint', text: 'זו החלטה של האתר, ולא משהו שאפשר לעקוף מכאן.' }) : null,
     ]);
   }
