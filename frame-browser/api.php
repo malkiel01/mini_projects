@@ -40,6 +40,12 @@ try {
     $ourScheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
     $origin    = $ourScheme . '://' . ($_SERVER['HTTP_HOST'] ?? '');
     
+    // אבחון מעמיק: מנסה כמה שיטות, וסורק את הדף אחרי מסגרות פנימיות.
+    // יקר יותר בזמן ובפניות, ולכן רץ רק כשמבקשים אותו במפורש.
+    if (($_GET['deep'] ?? '') === '1') {
+        out(['success' => true, 'url' => $url] + deepProbe($url, $origin));
+    }
+    
     $res = fetchHead($url);
     
     /*
