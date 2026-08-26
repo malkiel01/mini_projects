@@ -187,21 +187,38 @@ function attemptRow(a) {
   ]);
 }
 
-/** מסגרת פנימית שנמצאה בדף — עם כפתור שמנסה אותה כאן ועכשיו. */
+/**
+ * מסגרת פנימית שנמצאה בדף — עם כפתור שמנסה אותה כאן ועכשיו.
+ *
+ * שלושה מצבים ולא שניים, מאותה סיבה שבמסלול הראשי: מועמד שהבדיקה
+ * שלנו נחסמה עליו אינו מועמד חסום. לסמן אותו אדום ולא לתת כפתור זה
+ * להסתיר בדיוק את הנגן שהמשתמש מחפש — ולכן דווקא לו מגיע כפתור.
+ */
 function candidateRow(pane, c) {
-  const ok = c.framable === true;
-  return el('div', { class: `dbg__row dbg__row--${ok ? 'good' : 'bad'}` }, [
+  const state = c.framable === true ? 'good' : c.framable === false ? 'bad' : 'warn';
+  const label = { good: 'ניתן להטמעה', bad: 'חסום', warn: 'לא ידוע' }[state];
+
+  const open = () => { pane.url = c.url; pane.advisory = c.reason || ''; inspect(pane); persist(); };
+
+  // גם מועמד שהכריז על עצמו חסום מקבל ניסיון, כמו "נסה בכל זאת"
+  // שבמסגרת עצמה — הבדיקה שלנו אינה חזקה מהדפדפן.
+  const button = {
+    good: () => el('button', { type: 'button', class: 'btn btn--primary', onclick: open },
+                   ['פתיחה כאן']),
+    warn: () => el('button', { type: 'button', class: 'btn btn--primary', onclick: open },
+                   ['נסו בכל זאת']),
+    bad:  () => el('button', { type: 'button', class: 'btn btn--ghost', onclick: open },
+                   ['לנסות בכל זאת']),
+  }[state]();
+
+  return el('div', { class: `dbg__row dbg__row--${state}` }, [
     el('div', { class: 'dbg__head' }, [
       el('code', { class: 'dbg__url', dir: 'ltr', text: c.url }),
-      el('span', { class: `dbg__badge dbg__badge--${ok ? 'good' : 'bad'}`,
-        text: ok ? 'ניתן להטמעה' : 'חסום' }),
+      el('span', { class: `dbg__badge dbg__badge--${state}`, text: label }),
     ]),
     c.title ? el('p', { class: 'dbg__why', text: c.title }) : null,
     c.reason ? el('p', { class: 'dbg__why', text: c.reason }) : null,
-    ok ? el('button', {
-      type: 'button', class: 'btn btn--primary',
-      onclick: () => { pane.url = c.url; pane.advisory = ''; inspect(pane); persist(); },
-    }, ['פתיחה כאן']) : null,
+    button,
   ]);
 }
 
