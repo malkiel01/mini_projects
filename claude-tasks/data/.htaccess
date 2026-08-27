@@ -1,9 +1,0 @@
-# חסימת גישה ישירה: tasks.sqlite מכיל את כל המטלות והמשתמשים,
-# ו-config.json את אסימון העובד. הכל מוגש רק דרך api.php.
-<IfModule mod_authz_core.c>
-    Require all denied
-</IfModule>
-<IfModule !mod_authz_core.c>
-    Order allow,deny
-    Deny from all
-</IfModule>

@@ -138,9 +138,6 @@ jobs:
             --exclude='renovation-punchlist/data/config.json' \
             --exclude='renovation-punchlist/data/store.json' \
             --exclude='renovation-punchlist/data/media/' \
-            --exclude='claude-tasks/data/*.sqlite*' \
-            --exclude='claude-tasks/data/config.json' \
-            --exclude='claude-tasks/data/secret.key' \
             --exclude='node_modules/' \
             --exclude='*.log' --exclude='error_log' \
             --exclude='.DS_Store' --exclude='._*' \
