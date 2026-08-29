@@ -47,6 +47,10 @@ class Store(context: Context) {
         prefs.edit()
             .putString("policy", payload.optJSONObject("policy")?.toString() ?: "{}")
             .putString("rules", payload.optJSONArray("rules")?.toString() ?: "[]")
+            .putString("categories", payload.optJSONObject("categories")?.toString() ?: "{}")
+            .putString("domain_map", payload.optJSONObject("domain_map")?.toString() ?: "{}")
+            .putString("platforms", payload.optJSONObject("platforms")?.toString() ?: "{}")
+            .putString("platform_items", payload.optJSONObject("platform_items")?.toString() ?: "{}")
             .putString("name", payload.optJSONObject("user")?.optString("name") ?: "")
             .putLong("policy_at", System.currentTimeMillis())
             .apply()
@@ -57,9 +61,22 @@ class Store(context: Context) {
         catch (e: Exception) { Policy() }
 
     fun rules(): List<Rule> = try {
-        val arr = JSONArray(prefs.getString("rules", "[]") ?: "[]")
-        (0 until arr.length()).map { Rule.from(arr.getJSONObject(it)) }
+        PolicyEngine.rulesFrom(JSONArray(prefs.getString("rules", "[]") ?: "[]"))
     } catch (e: Exception) { emptyList() }
+
+    /** כל מה שהמנוע צריך, כפי שהתקבל מהשרת. */
+    fun ruleSet(): RuleSet = try {
+        RuleSet(
+            rules = rules(),
+            categories = PolicyEngine.stringMap(obj("categories")),
+            domainMap = PolicyEngine.listMap(obj("domain_map")),
+            platforms = PolicyEngine.platformsFrom(obj("platforms")),
+            platformItems = PolicyEngine.itemsFrom(obj("platform_items")),
+        )
+    } catch (e: Exception) { RuleSet(rules = rules()) }
+
+    private fun obj(key: String): JSONObject? =
+        try { JSONObject(prefs.getString(key, "{}") ?: "{}") } catch (e: Exception) { null }
 
     fun displayName(): String = prefs.getString("name", "") ?: ""
 

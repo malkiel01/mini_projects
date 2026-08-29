@@ -35,8 +35,8 @@ note($msg, 'bad');
 <div class="card">
   <h2>כניסת מנהל</h2>
   <form method="post">
-    <label><span>שם משתמש</span><input type="text" name="username" required autofocus></label>
-    <label><span>סיסמה</span><input type="password" name="password" required></label>
+    <label><span class="lbl">שם משתמש</span><input type="text" name="username" required autofocus></label>
+    <label><span class="lbl">סיסמה</span><input type="password" name="password" required></label>
     <button class="btn btn--go" type="submit">כניסה</button>
   </form>
 </div>

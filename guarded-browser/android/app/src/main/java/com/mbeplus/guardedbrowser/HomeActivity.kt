@@ -83,7 +83,7 @@ class HomeActivity : AppCompatActivity() {
         val policy = store.policy()
 
         // שורת הכתובת קיימת רק כשהמצב מתיר אותה. בקיוסק אין מה להקליד.
-        val canType = policy.mode != Policy.MODE_KIOSK
+        val canType = policy.mode == Policy.MODE_BROWSER
         b.urlRow.visibility = if (canType && enabled) View.VISIBLE else View.GONE
 
         if (tiles.isEmpty()) {

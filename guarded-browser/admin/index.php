@@ -59,7 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $pending = all("SELECT * FROM users WHERE status = 'pending' ORDER BY created_at");
-$others  = all("SELECT u.*, p.mode,
+$others  = all("SELECT u.*, p.mode, p.posture,
                  (SELECT COUNT(*) FROM devices d WHERE d.user_id = u.id) AS devices,
                  (SELECT COUNT(*) FROM rules r WHERE r.user_id = u.id AND r.enabled = 1) AS rules
                 FROM users u LEFT JOIN policies p ON p.user_id = u.id
@@ -75,14 +75,15 @@ note($msg, $kind);
   <h2>ממתינים לאישור (<?= count($pending) ?>)</h2>
   <p class="hint">עד האישור אין להם גישה לשום דבר.</p>
   <table>
-    <tr><th>שם משתמש</th><th>שם מלא</th><th>דוא״ל</th><th>נרשם</th><th></th></tr>
+    <thead><tr><th>שם משתמש</th><th>שם מלא</th><th>דוא״ל</th><th>נרשם</th><th></th></tr></thead>
+    <tbody>
     <?php foreach ($pending as $u): ?>
     <tr>
-      <td><code><?= h($u['username']) ?></code></td>
-      <td><?= h($u['display_name']) ?: '—' ?></td>
-      <td><?= h($u['email']) ?: '—' ?></td>
-      <td><?= h(substr($u['created_at'], 0, 10)) ?></td>
-      <td class="row-actions">
+      <td data-l="משתמש"><code><?= h($u['username']) ?></code></td>
+      <td data-l="שם"><?= h($u['display_name']) ?: '—' ?></td>
+      <td data-l="דוא״ל"><?= h($u['email']) ?: '—' ?></td>
+      <td data-l="נרשם"><?= h(substr($u['created_at'], 0, 10)) ?></td>
+      <td class="acts">
         <form method="post"><input type="hidden" name="csrf" value="<?= h($csrf) ?>">
           <input type="hidden" name="user_id" value="<?= (int) $u['id'] ?>">
           <button class="btn btn--go btn--sm" name="action" value="approve">אישור</button>
@@ -95,6 +96,7 @@ note($msg, $kind);
       </td>
     </tr>
     <?php endforeach; ?>
+    </tbody>
   </table>
 </div>
 <?php endif; ?>
@@ -103,17 +105,21 @@ note($msg, $kind);
   <h2>משתמשים (<?= count($others) ?>)</h2>
   <p class="hint">לחיצה על שם פותחת את ההרשאות, הכללים והמכשירים שלו.</p>
   <table>
-    <tr><th>שם</th><th>מצב</th><th>מצב גלישה</th><th>כללים</th><th>מכשירים</th><th>תוקף</th><th></th></tr>
+    <thead><tr><th>שם</th><th>מצב</th><th>גישה</th><th>כללים</th><th>מכשירים</th><th>תוקף</th><th></th></tr></thead>
+    <tbody>
     <?php foreach ($others as $u): ?>
     <tr>
-      <td><a href="user.php?id=<?= (int) $u['id'] ?>"><code><?= h($u['username']) ?></code></a>
+      <td data-l="שם"><a href="user.php?id=<?= (int) $u['id'] ?>"><code><?= h($u['username']) ?></code></a>
           <?= $u['is_admin'] ? ' <span class="pill">מנהל</span>' : '' ?></td>
-      <td><?= statusPill($u['status']) ?></td>
-      <td><?= h(explode('—', MODE_LABELS[$u['mode'] ?? MODE_KIOSK] ?? '')[0]) ?></td>
-      <td><?= (int) $u['rules'] ?></td>
-      <td><?= (int) $u['devices'] ?></td>
-      <td><?= h($u['expires_at'] ? substr($u['expires_at'], 0, 10) : '—') ?></td>
-      <td class="row-actions">
+      <td data-l="מצב"><?= statusPill($u['status']) ?></td>
+      <td data-l="גישה"><?= h(MODE_LABELS[$u['mode'] ?? MODE_KIOSK][0] ?? '') ?> ·
+          <?= ($u['posture'] ?? POSTURE_DENY) === POSTURE_ALLOW
+                ? '<span class="pill pill--wait">פתוח כברירת מחדל</span>'
+                : '<span class="pill pill--mute">סגור כברירת מחדל</span>' ?></td>
+      <td data-l="כללים"><?= (int) $u['rules'] ?></td>
+      <td data-l="מכשירים"><?= (int) $u['devices'] ?></td>
+      <td data-l="תוקף"><?= h($u['expires_at'] ? substr($u['expires_at'], 0, 10) : '—') ?></td>
+      <td class="acts">
         <?php if ((int) $u['id'] !== (int) $admin['id']): ?>
         <form method="post">
           <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
@@ -128,6 +134,7 @@ note($msg, $kind);
       </td>
     </tr>
     <?php endforeach; ?>
+    </tbody>
   </table>
 </div>
 <?php layoutEnd();

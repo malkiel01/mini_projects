@@ -45,6 +45,8 @@ function schemaStatements(): array {
     "CREATE TABLE IF NOT EXISTS policies (
         user_id            INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
         mode               TEXT    NOT NULL DEFAULT 'kiosk',
+        posture            TEXT    NOT NULL DEFAULT 'deny_all',
+        blocked_types      TEXT    NOT NULL DEFAULT '',
         timezone           TEXT    NOT NULL DEFAULT 'Asia/Jerusalem',
         days_mask          INTEGER NOT NULL DEFAULT 127,
         window_start       TEXT    NOT NULL DEFAULT '',
@@ -116,6 +118,74 @@ function schemaStatements(): array {
         detail     TEXT    NOT NULL DEFAULT ''
     )",
     "CREATE INDEX IF NOT EXISTS idx_audit_user ON audit(user_id, id DESC)",
+
+
+    // ── קטגוריות תוכן ────────────────────────────────────────────
+    // ‏ההיתר לפי *סוג* ולא לפי כתובת. "לחסום קניות" הוא כלל אחד,
+    // במקום רשימה של מאות דומיינים שתמיד תהיה חסרה.
+    "CREATE TABLE IF NOT EXISTS category_rules (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        category   TEXT    NOT NULL,
+        action     TEXT    NOT NULL DEFAULT 'allow',
+        created_at TEXT    NOT NULL,
+        UNIQUE (user_id, category)
+    )",
+
+    // שיוך דומיין לקטגוריה. נזרע מקטלוג מובנה, והמנהל מוסיף משלו.
+    // ‏source מפריד בין השניים כדי שעדכון הקטלוג לא ימחק ידניים.
+    "CREATE TABLE IF NOT EXISTS domain_categories (
+        id       INTEGER PRIMARY KEY AUTOINCREMENT,
+        domain   TEXT    NOT NULL,
+        category TEXT    NOT NULL,
+        source   TEXT    NOT NULL DEFAULT 'seed',
+        UNIQUE (domain, category)
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_domcat ON domain_categories(domain)",
+
+    // ── פלטפורמות עם היתר מפורט ─────────────────────────────────
+    // יוטיוב אינו אתר אחד: דף הבית, החיפוש, ערוץ וסרטון הם דברים
+    // שונים לחלוטין מבחינת מה שמותר. שורה לכל משתמש ולכל פלטפורמה.
+    //
+    // ‏mode: off (חסום) | full (הכול) | restricted (רק המאושרים)
+    "CREATE TABLE IF NOT EXISTS platform_rules (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        platform   TEXT    NOT NULL,
+        mode       TEXT    NOT NULL DEFAULT 'off',
+        allow_search  INTEGER NOT NULL DEFAULT 0,
+        allow_shorts  INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT    NOT NULL,
+        UNIQUE (user_id, platform)
+    )",
+
+    // הפריטים שאושרו בתוך פלטפורמה: ערוץ, סרטון או פלייליסט.
+    "CREATE TABLE IF NOT EXISTS platform_items (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        platform    TEXT    NOT NULL,
+        kind        TEXT    NOT NULL,
+        item_id     TEXT    NOT NULL,
+        label       TEXT    NOT NULL DEFAULT '',
+        action      TEXT    NOT NULL DEFAULT 'allow',
+        created_at  TEXT    NOT NULL,
+        UNIQUE (user_id, platform, kind, item_id)
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_platitems ON platform_items(user_id, platform)",
+
+    // מטמון סרטון→ערוץ.
+    //
+    // מכתובת של סרטון אי אפשר לדעת לאיזה ערוץ הוא שייך; צריך לשאול את
+    // יוטיוב. שאלה אחת לכל סרטון, והתשובה נשמרת — אחרת כל צפייה הייתה
+    // פנייה נוספת, והמשתמש היה מחכה.
+    "CREATE TABLE IF NOT EXISTS video_owner (
+        platform   TEXT NOT NULL,
+        video_id   TEXT NOT NULL,
+        channel_id TEXT NOT NULL DEFAULT '',
+        title      TEXT NOT NULL DEFAULT '',
+        fetched_at TEXT NOT NULL,
+        PRIMARY KEY (platform, video_id)
+    )",
 
     ];
 }

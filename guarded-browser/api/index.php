@@ -61,12 +61,22 @@ function policyPayload(array $user): array {
     $uid    = (int) $user['id'];
     $policy = policyFor($uid);
     $tz     = (string) $policy['timezone'];
-    $rules  = rulesFor($uid);
+    $set    = ruleSetFor($uid);
 
     $used  = usedTodaySeconds($uid, $tz);
-    $state = evaluate($user, $policy, $rules, nowIn($tz), ['url' => '', 'used_today' => $used]);
+    $state = evaluate($user, $policy, $set, nowIn($tz), ['url' => '', 'used_today' => $used]);
 
     $quota = (int) $policy['daily_quota_min'];
+
+    // הקטגוריות נשלחות כמפה מצומצמת: רק דומיינים ששייכים לקטגוריה
+    // שיש עליה כלל. אין טעם לשלוח למכשיר קטלוג של מאות דומיינים
+    // שאיש לא הגדיר עליהם דבר.
+    $active = array_keys($set['categories']);
+    $slim   = [];
+    foreach ($set['domain_map'] as $domain => $cats) {
+        $hit = array_values(array_intersect($cats, $active));
+        if ($hit) $slim[$domain] = $hit;
+    }
 
     return [
         'ok'   => true,
@@ -78,6 +88,8 @@ function policyPayload(array $user): array {
         ],
         'policy' => [
             'mode'              => $policy['mode'],
+            'posture'           => $policy['posture'],
+            'blocked_types'     => $policy['blocked_types'],
             'timezone'          => $tz,
             'days_mask'         => (int) $policy['days_mask'],
             'window_start'      => $policy['window_start'],
@@ -88,14 +100,21 @@ function policyPayload(array $user): array {
             'block_screenshots' => (bool) $policy['block_screenshots'],
             'keep_history'      => (bool) $policy['keep_history'],
         ],
-        // רק מה שהאפליקציה צריכה. sort_order ו-created_at אינם עניינה.
         'rules' => array_map(fn($r) => [
             'label'     => $r['label'],
             'pattern'   => $r['pattern'],
             'scope'     => $r['scope'],
             'action'    => $r['action'],
             'show_tile' => (bool) $r['show_tile'],
-        ], $rules),
+        ], $set['rules']),
+        'categories'     => $set['categories'],
+        'domain_map'     => $slim,
+        'platforms'      => array_map(fn($p) => [
+            'mode'         => $p['mode'],
+            'allow_search' => (bool) $p['allow_search'],
+            'allow_shorts' => (bool) $p['allow_shorts'],
+        ], $set['platforms']),
+        'platform_items' => $set['platform_items'],
         'state' => [
             'allowed'        => $state['allow'],
             'code'           => $state['code'],
@@ -189,11 +208,12 @@ try {
         $url  = field('url');
         $main = (string) (body()['main_frame'] ?? '1') !== '0';
 
-        $d = evaluate($user, $policy, rulesFor($uid), nowIn($tz), [
-            'url'        => $url,
-            'main_frame' => $main,
-            'used_today' => usedTodaySeconds($uid, $tz),
-            'session'    => (int) (body()['session_sec'] ?? 0),
+        $d = evaluate($user, $policy, ruleSetFor($uid), nowIn($tz), [
+            'url'          => $url,
+            'main_frame'   => $main,
+            'content_type' => (string) (body()['content_type'] ?? ''),
+            'used_today'   => usedTodaySeconds($uid, $tz),
+            'session'      => (int) (body()['session_sec'] ?? 0),
         ]);
 
         // ניווט בלבד נרשם. משאב נלווה היה מציף את היומן באלפי שורות.
@@ -217,7 +237,7 @@ try {
         addUsage($uid, $tz, $seconds);
 
         $used = usedTodaySeconds($uid, $tz);
-        $d = evaluate($user, $policy, rulesFor($uid), nowIn($tz), [
+        $d = evaluate($user, $policy, ruleSetFor($uid), nowIn($tz), [
             'url' => '', 'used_today' => $used,
             'session' => (int) (body()['session_sec'] ?? 0),
         ]);

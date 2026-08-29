@@ -31,7 +31,7 @@ class BrowserActivity : AppCompatActivity() {
     private lateinit var b: ActivityBrowserBinding
     private lateinit var store: Store
     private lateinit var policy: Policy
-    private var rules: List<Rule> = emptyList()
+    private var ruleSet: RuleSet = RuleSet()
 
     private var usedSec = 0          // נוצל היום, לפי השרת
     private var sessionSec = 0       // משך הישיבה הנוכחית
@@ -53,7 +53,7 @@ class BrowserActivity : AppCompatActivity() {
         super.onCreate(state)
         store = Store(this)
         policy = store.policy()
-        rules = store.rules()
+        ruleSet = store.ruleSet()
 
         // חסימת צילום מסך חייבת לקרות לפני setContentView כדי לחול
         // גם על התצוגה המקדימה במחליף האפליקציות.
@@ -69,8 +69,8 @@ class BrowserActivity : AppCompatActivity() {
         setupWebView()
 
         // ההכרעה הראשונה לפני שנטען משהו: גם הכניסה עצמה נבדקת.
-        val v = PolicyEngine.evaluate(policy, rules, start, true, usedSec, sessionSec)
-        if (!v.allow) { refuse(v.reason.ifEmpty { "הכתובת אינה מותרת" }); return }
+        val v = PolicyEngine.evaluate(policy, ruleSet, start, true, usedSec, sessionSec)
+        if (!v.allow && !v.needsServer) { refuse(v.reason.ifEmpty { "הכתובת אינה מותרת" }); return }
 
         b.web.loadUrl(PolicyEngine.normalize(start)?.let { normalizedToUrl(start) } ?: start)
 
@@ -118,10 +118,20 @@ class BrowserActivity : AppCompatActivity() {
                 view: WebView, request: WebResourceRequest,
             ): Boolean {
                 val url = request.url.toString()
-                val v = PolicyEngine.evaluate(policy, rules, url, true, usedSec, sessionSec)
+                val v = PolicyEngine.evaluate(policy, ruleSet, url, true, usedSec, sessionSec)
+
                 if (v.allow) {
                     verifyWithServer(url)
                     return false
+                }
+                /*
+                 * ‏needsServer אינו סירוב: זו שאלה שהתשובה לה אינה
+                 * במכשיר (לאיזה ערוץ שייך הסרטון). נבלע כאן, נשאל
+                 * את השרת, ואם הוא מתיר — נטען.
+                 */
+                if (v.needsServer) {
+                    askServerThenLoad(url)
+                    return true
                 }
                 refuse(v.reason)
                 return true      // הניווט נבלע; הדף הנוכחי נשאר
@@ -138,9 +148,11 @@ class BrowserActivity : AppCompatActivity() {
                 if (!url.startsWith("http")) return null
 
                 val v = PolicyEngine.evaluate(
-                    policy, rules, url, request.isForMainFrame, usedSec, sessionSec)
+                    policy, ruleSet, url, request.isForMainFrame, usedSec, sessionSec)
 
-                return if (v.allow) null
+                // משאב שדורש הכרעת שרת אינו נחסם: חסימה שקטה של
+                // משאב היא מסך שבור בלי הסבר. הניווט כבר נבדק.
+                return if (v.allow || v.needsServer) null
                 else WebResourceResponse("text/plain", "utf-8",
                                          ByteArrayInputStream(ByteArray(0)))
             }
@@ -191,6 +203,23 @@ class BrowserActivity : AppCompatActivity() {
             usedSec = j.optInt("used_today_sec", usedSec)
             if (!j.optBoolean("allowed", true)) {
                 refuse(j.optString("reason", "הגישה הופסקה"))
+            }
+        }
+    }
+
+    /**
+     * שואל את השרת על כתובת שהמכשיר אינו יכול להכריע עליה, ורק אז
+     * טוען. זה הקישור בין האכיפה המקומית לבין הידע שיושב בשרת.
+     */
+    private fun askServerThenLoad(url: String) {
+        b.progress.visibility = View.VISIBLE
+        Api.check(store.token, url, true) { r ->
+            b.progress.visibility = View.GONE
+            val j = r.json
+            when {
+                j == null -> refuse("אין חיבור לשרת, ולא ניתן לוודא שהכתובת מותרת")
+                j.optBoolean("allowed") -> b.web.loadUrl(url)
+                else -> refuse(j.optString("reason", "הכתובת אינה מותרת"))
             }
         }
     }

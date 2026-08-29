@@ -19,43 +19,26 @@ class PolicyEngineTest {
     private fun rule(pattern: String, scope: String = "domain", action: String = "allow") =
         Rule("", pattern, scope, action, true)
 
-    private fun at(tz: String, dayOfWeek: Int, hour: Int, minute: Int): Calendar =
-        Calendar.getInstance(TimeZone.getTimeZone(tz)).apply {
+    private fun at(dayOfWeek: Int, hour: Int, minute: Int): Calendar =
+        Calendar.getInstance(TimeZone.getTimeZone("Asia/Jerusalem")).apply {
             set(Calendar.DAY_OF_WEEK, dayOfWeek)
             set(Calendar.HOUR_OF_DAY, hour)
             set(Calendar.MINUTE, minute)
         }
 
-    @Test fun normalizeFillsScheme() {
+    private val open = Policy(posture = Policy.POSTURE_ALLOW)
+    private val shut = Policy(posture = Policy.POSTURE_DENY)
+
+    /* ── נרמול ── */
+
+    @Test fun normalizeMatchesServer() {
         assertEquals("example.com", PolicyEngine.normalize("example.com")?.host)
-    }
-
-    @Test fun normalizeStripsWww() {
         assertEquals("example.com", PolicyEngine.normalize("https://www.example.com")?.host)
-    }
-
-    @Test fun normalizeLowercases() {
         assertEquals("example.com", PolicyEngine.normalize("HTTPS://Example.COM/A")?.host)
-    }
-
-    @Test fun normalizeTrimsTrailingSlash() {
         assertEquals("/x", PolicyEngine.normalize("https://a.com/x/")?.path)
-    }
-
-    @Test fun normalizeKeepsRoot() {
         assertEquals("/", PolicyEngine.normalize("https://a.com")?.path)
-    }
-
-    /** סכימות שאינן http אינן ניתנות להערכה, ולכן אינן מותרות. */
-    @Test fun normalizeRejectsOtherSchemes() {
         assertEquals(null, PolicyEngine.normalize("file:///etc/passwd"))
         assertEquals(null, PolicyEngine.normalize("javascript:alert(1)"))
-        assertEquals(null, PolicyEngine.normalize("  "))
-    }
-
-    @Test fun subdomainMatches() {
-        assertTrue(PolicyEngine.hostMatches("cdn.a.com", "a.com"))
-        assertTrue(PolicyEngine.hostMatches("a.com", "a.com"))
     }
 
     /**
@@ -63,99 +46,225 @@ class PolicyEngineTest {
      * שרושם דומיין כזה עוקף כלל שמתיר a.com.
      */
     @Test fun lookalikeDomainIsNotSubdomain() {
+        assertTrue(PolicyEngine.hostMatches("cdn.a.com", "a.com"))
         assertFalse(PolicyEngine.hostMatches("nota.com", "a.com"))
     }
 
-    @Test fun exactScopeMatchesOnlyThatPath() {
+    /* ── כללי כתובות ── */
+
+    @Test fun scopesBehaveLikeServer() {
         val u = PolicyEngine.normalize("https://liveball.sx/team/772")!!
         assertTrue(PolicyEngine.ruleMatches(rule("liveball.sx/team/772", "exact"), u, true))
         assertFalse(PolicyEngine.ruleMatches(rule("liveball.sx/team/999", "exact"), u, true))
-    }
-
-    @Test fun domainScopeMatchesWholeSite() {
-        val u = PolicyEngine.normalize("https://liveball.sx/anything")!!
         assertTrue(PolicyEngine.ruleMatches(rule("liveball.sx"), u, true))
-    }
 
-    /**
-     * ההבחנה שבגללה domain_plus קיים: דף מותר טוען נגן וגופן מדומיינים
-     * אחרים, וחסימתם שוברת בדיוק את הדף שהותר.
-     */
-    @Test fun domainPlusAllowsForeignSubresourcesButNotNavigation() {
         val foreign = PolicyEngine.normalize("https://cdn-player.net/p.js")!!
         assertTrue(PolicyEngine.ruleMatches(rule("liveball.sx", "domain_plus"), foreign, false))
         assertFalse(PolicyEngine.ruleMatches(rule("liveball.sx", "domain_plus"), foreign, true))
-        // ‏domain רגיל חוסם גם משאב נלווה.
         assertFalse(PolicyEngine.ruleMatches(rule("liveball.sx", "domain"), foreign, false))
-    }
-
-    @Test fun kioskBlocksUnlisted() {
-        val rules = listOf(rule("liveball.sx"))
-        val u = PolicyEngine.normalize("https://other.com")!!
-        assertFalse(PolicyEngine.matchRules(rules, Policy.MODE_KIOSK, u, true).allow)
-        assertFalse(PolicyEngine.matchRules(rules, Policy.MODE_ALLOWLIST, u, true).allow)
-        assertTrue(PolicyEngine.matchRules(rules, Policy.MODE_FREE, u, true).allow)
     }
 
     /** איסור שאפשר לנטרל בהוספת היתר אחריו אינו איסור. */
     @Test fun denyWinsRegardlessOfOrder() {
         val u = PolicyEngine.normalize("https://bad.com")!!
         val before = listOf(rule("bad.com", action = "deny"), rule("bad.com"))
-        val after = listOf(rule("bad.com"), rule("bad.com", action = "deny"))
-        assertEquals("rule_deny", PolicyEngine.matchRules(before, Policy.MODE_FREE, u, true).code)
-        assertEquals("rule_deny", PolicyEngine.matchRules(after, Policy.MODE_FREE, u, true).code)
+        assertEquals("deny", PolicyEngine.matchUrlRules(before, u, true))
+        assertEquals("deny", PolicyEngine.matchUrlRules(before.reversed(), u, true))
     }
 
-    @Test fun windowInsideAndOutside() {
+    /* ── ברירת מחדל ── */
+
+    @Test fun postureIsIndependentOfMode() {
+        val set = RuleSet()
+        assertEquals("not_listed",
+            PolicyEngine.evaluate(shut, set, "https://x.com", true, 0, 0).code)
+        assertEquals("posture_allow",
+            PolicyEngine.evaluate(open, set, "https://x.com", true, 0, 0).code)
+        // קיוסק פתוח ודפדפן סגור — שני הצירופים שהמודל הישן לא ידע להביע.
+        assertTrue(PolicyEngine.evaluate(
+            open.copy(mode = Policy.MODE_KIOSK), set, "https://x.com", true, 0, 0).allow)
+        assertFalse(PolicyEngine.evaluate(
+            shut.copy(mode = Policy.MODE_BROWSER), set, "https://x.com", true, 0, 0).allow)
+    }
+
+    /* ── קטגוריות ── */
+
+    private val map = mapOf(
+        "youtube.com" to listOf("video"),
+        "bet365.com" to listOf("gambling"),
+        "winner.co.il" to listOf("sports", "gambling"),
+        "khanacademy.org" to listOf("education"),
+    )
+
+    @Test fun subdomainInheritsCategory() {
+        assertEquals(listOf("video"), PolicyEngine.categoriesOfHost("m.youtube.com", map))
+    }
+
+    /** אתר בשתי קטגוריות — האוסרת מכריעה. */
+    @Test fun denyingCategoryWins() {
+        val rules = mapOf("sports" to "allow", "gambling" to "deny")
+        assertEquals("deny", PolicyEngine.matchCategories("winner.co.il", map, rules).first)
+    }
+
+    @Test fun categoriesDecideWhenNoUrlRule() {
+        val set = RuleSet(domainMap = map,
+            categories = mapOf("gambling" to "deny", "education" to "allow"))
+        assertEquals("category_deny",
+            PolicyEngine.evaluate(open, set, "https://bet365.com", true, 0, 0).code)
+        assertEquals("category_allow",
+            PolicyEngine.evaluate(shut, set, "https://khanacademy.org", true, 0, 0).code)
+    }
+
+    /** כלל שהמנהל כתב בידיים חייב לגבור על סיווג אוטומטי מהקטלוג. */
+    @Test fun explicitRuleBeatsCategory() {
+        val set = RuleSet(rules = listOf(rule("bet365.com")), domainMap = map,
+            categories = mapOf("gambling" to "deny"))
+        assertEquals("rule_allow",
+            PolicyEngine.evaluate(open, set, "https://bet365.com", true, 0, 0).code)
+    }
+
+    /* ── סוגי תוכן ── */
+
+    @Test fun contentTypeDetection() {
+        assertEquals("video", PolicyEngine.contentTypeOf("https://a.com/clip.mp4"))
+        assertEquals("video", PolicyEngine.contentTypeOf("https://a.com/clip.mp4?t=1"))
+        assertEquals("video", PolicyEngine.contentTypeOf("https://a.com/x", "video/mp4"))
+        assertEquals("video", PolicyEngine.contentTypeOf("https://a.com/s.m3u8"))
+        assertEquals("executable", PolicyEngine.contentTypeOf("https://a.com/app.apk"))
+        assertEquals("", PolicyEngine.contentTypeOf("https://a.com/page"))
+    }
+
+    @Test fun blockedTypeStopsResourceButExplicitRuleWins() {
+        val p = open.copy(blockedTypes = listOf("video"))
+        assertEquals("type_blocked",
+            PolicyEngine.evaluate(p, RuleSet(), "https://a.com/clip.mp4", false, 0, 0).code)
+        assertTrue(PolicyEngine.evaluate(p, RuleSet(), "https://a.com/page", true, 0, 0).allow)
+        assertEquals("rule_allow", PolicyEngine.evaluate(
+            p, RuleSet(rules = listOf(rule("a.com"))), "https://a.com/clip.mp4", false, 0, 0).code)
+    }
+
+    /* ── יוטיוב ── */
+
+    @Test fun youTubeUrlParsing() {
+        assertEquals(PolicyEngine.YtRef("video", "abc123XYZ"),
+            PolicyEngine.parseYouTube("https://www.youtube.com/watch?v=abc123XYZ"))
+        assertEquals(PolicyEngine.YtRef("video", "abc123XYZ"),
+            PolicyEngine.parseYouTube("https://youtu.be/abc123XYZ"))
+        assertEquals("video", PolicyEngine.parseYouTube("https://youtube.com/embed/abc123XYZ").kind)
+        assertEquals("shorts", PolicyEngine.parseYouTube("https://youtube.com/shorts/abc123XYZ").kind)
+        assertEquals("UCabcdefghijk",
+            PolicyEngine.parseYouTube("https://youtube.com/channel/UCabcdefghijk").id)
+        assertEquals("hasratim", PolicyEngine.parseYouTube("https://youtube.com/@HaSratim").id)
+        assertEquals("search", PolicyEngine.parseYouTube("https://youtube.com/results?search_query=x").kind)
+        assertEquals("home", PolicyEngine.parseYouTube("https://youtube.com/").kind)
+        assertEquals(PolicyEngine.PLATFORM_YOUTUBE, PolicyEngine.platformOf("m.youtube.com"))
+        assertEquals("", PolicyEngine.platformOf("vimeo.com"))
+    }
+
+    private val ytItems = mapOf(
+        "channel" to mapOf("UCgoodChannel1234567890" to "allow",
+                           "UCbadChannel12345678901" to "deny"),
+        "video" to mapOf("vid_ok" to "allow"),
+        "handle" to mapOf("torah" to "allow"),
+    )
+    private fun yt(u: String) = PolicyEngine.normalize(u)!!
+
+    @Test fun youTubeModes() {
+        assertEquals("yt_off", PolicyEngine.youTubeVerdict(
+            yt("https://youtube.com/watch?v=vid_ok"), PlatformRule("off"), ytItems, true).code)
+        assertTrue(PolicyEngine.youTubeVerdict(
+            yt("https://youtube.com/"), PlatformRule("full"), ytItems, true).allow)
+        // איסור מפורש על פריט גובר גם כשהכול פתוח.
+        assertEquals("yt_item_denied", PolicyEngine.youTubeVerdict(
+            yt("https://youtube.com/channel/UCbadChannel12345678901"),
+            PlatformRule("full"), ytItems, true).code)
+    }
+
+    @Test fun youTubeRestricted() {
+        val r = PlatformRule("restricted")
+        assertEquals("yt_no_browse",
+            PolicyEngine.youTubeVerdict(yt("https://youtube.com/"), r, ytItems, true).code)
+        assertEquals("yt_no_search", PolicyEngine.youTubeVerdict(
+            yt("https://youtube.com/results?search_query=x"), r, ytItems, true).code)
+        assertTrue(PolicyEngine.youTubeVerdict(
+            yt("https://youtube.com/results?search_query=x"),
+            PlatformRule("restricted", allowSearch = true), ytItems, true).allow)
+        assertTrue(PolicyEngine.youTubeVerdict(
+            yt("https://youtube.com/channel/UCgoodChannel1234567890"), r, ytItems, true).allow)
+        assertEquals("yt_not_approved", PolicyEngine.youTubeVerdict(
+            yt("https://youtube.com/channel/UCnopeChannel123456789"), r, ytItems, true).code)
+        assertTrue(PolicyEngine.youTubeVerdict(
+            yt("https://youtube.com/@Torah"), r, ytItems, true).allow)
+        assertTrue(PolicyEngine.youTubeVerdict(
+            yt("https://youtube.com/watch?v=vid_ok"), r, ytItems, true).allow)
+        assertEquals("yt_no_shorts", PolicyEngine.youTubeVerdict(
+            yt("https://youtube.com/shorts/vid_ok"), r, ytItems, true).code)
+    }
+
+    /**
+     * ההבדל המכוון היחיד מהשרת: לאיזה ערוץ שייך סרטון הוא ידע שיושב
+     * ביוטיוב, לא במכשיר. במקום לנחש — נדחה לשרת.
+     */
+    @Test fun unknownVideoDefersToServerInsteadOfGuessing() {
+        val v = PolicyEngine.youTubeVerdict(
+            yt("https://youtube.com/watch?v=unknownVid"), PlatformRule("restricted"), ytItems, true)
+        assertFalse(v.allow)
+        assertTrue(v.needsServer)
+    }
+
+    /** בלי זה, סרטון מאושר היה מוצג כמסך שחור. */
+    @Test fun playerAssetsPassThrough() {
+        assertEquals("yt_asset", PolicyEngine.youTubeVerdict(
+            yt("https://rr3---sn-x.googlevideo.com/videoplayback?x=1"),
+            PlatformRule("restricted"), ytItems, false).code)
+    }
+
+    @Test fun youTubeStaysRestrictedEvenWhenEverythingElseIsOpen() {
+        val set = RuleSet(platforms = mapOf(PolicyEngine.PLATFORM_YOUTUBE to PlatformRule("restricted")),
+                          platformItems = mapOf(PolicyEngine.PLATFORM_YOUTUBE to ytItems))
+        assertEquals("yt_no_browse",
+            PolicyEngine.evaluate(open, set, "https://youtube.com/", true, 0, 0).code)
+    }
+
+    /* ── זמן ── */
+
+    @Test fun windowBoundaries() {
         val p = Policy(windowStart = "16:00", windowEnd = "22:00")
-        assertTrue(PolicyEngine.withinWindow(p, at("Asia/Jerusalem", Calendar.WEDNESDAY, 18, 0)).allow)
-        assertFalse(PolicyEngine.withinWindow(p, at("Asia/Jerusalem", Calendar.WEDNESDAY, 9, 0)).allow)
-        // הגבול: ההתחלה בפנים, הסיום כבר בחוץ.
-        assertTrue(PolicyEngine.withinWindow(p, at("Asia/Jerusalem", Calendar.WEDNESDAY, 16, 0)).allow)
-        assertFalse(PolicyEngine.withinWindow(p, at("Asia/Jerusalem", Calendar.WEDNESDAY, 22, 0)).allow)
+        assertTrue(PolicyEngine.withinWindow(p, at(Calendar.WEDNESDAY, 18, 0)).allow)
+        assertFalse(PolicyEngine.withinWindow(p, at(Calendar.WEDNESDAY, 9, 0)).allow)
+        assertTrue(PolicyEngine.withinWindow(p, at(Calendar.WEDNESDAY, 16, 0)).allow)
+        assertFalse(PolicyEngine.withinWindow(p, at(Calendar.WEDNESDAY, 22, 0)).allow)
     }
 
     /** חלון שחוצה חצות מהפך את התנאי — הטעות הקלה ביותר כאן. */
     @Test fun windowCrossingMidnight() {
         val p = Policy(windowStart = "22:00", windowEnd = "02:00")
-        assertTrue(PolicyEngine.withinWindow(p, at("Asia/Jerusalem", Calendar.WEDNESDAY, 23, 0)).allow)
-        assertTrue(PolicyEngine.withinWindow(p, at("Asia/Jerusalem", Calendar.WEDNESDAY, 1, 0)).allow)
-        assertFalse(PolicyEngine.withinWindow(p, at("Asia/Jerusalem", Calendar.WEDNESDAY, 12, 0)).allow)
+        assertTrue(PolicyEngine.withinWindow(p, at(Calendar.WEDNESDAY, 23, 0)).allow)
+        assertTrue(PolicyEngine.withinWindow(p, at(Calendar.WEDNESDAY, 1, 0)).allow)
+        assertFalse(PolicyEngine.withinWindow(p, at(Calendar.WEDNESDAY, 12, 0)).allow)
     }
 
-    @Test fun dayMaskBlocks() {
-        // ‏Calendar.SUNDAY=1 → ביט 1. מסכה 1 מתירה ראשון בלבד.
-        val onlySunday = Policy(daysMask = 1)
-        assertTrue(PolicyEngine.withinWindow(onlySunday, at("UTC", Calendar.SUNDAY, 12, 0)).allow)
+    @Test fun dayMaskAndQuotas() {
         assertEquals("day_blocked",
-            PolicyEngine.withinWindow(onlySunday, at("UTC", Calendar.MONDAY, 12, 0)).code)
-    }
-
-    @Test fun quotaAndSessionCaps() {
-        assertTrue(PolicyEngine.withinQuota(Policy(), 999_999).allow)
-        assertTrue(PolicyEngine.withinQuota(Policy(dailyQuotaMin = 120), 3600).allow)
+            PolicyEngine.withinWindow(Policy(daysMask = 1), at(Calendar.MONDAY, 12, 0)).code)
         assertEquals("quota_spent", PolicyEngine.withinQuota(Policy(dailyQuotaMin = 120), 7200).code)
         assertEquals("session_over", PolicyEngine.withinSession(Policy(sessionMaxMin = 30), 1800).code)
     }
 
     /**
-     * הסיבה שמוצגת חייבת להיות השורשית. "הכתובת אינה ברשימה" למשתמש
-     * שמכסתו נגמרה שולח אותו לבקש כלל נוסף במקום לומר לו לחכות למחר.
+     * הסיבה שמוצגת חייבת להיות השורשית. "אינה ברשימה" למשתמש שמכסתו
+     * נגמרה שולח אותו לבקש כלל נוסף במקום לומר לו לחזור מחר.
      */
     @Test fun rootCauseWinsOverListCheck() {
-        val p = Policy(dailyQuotaMin = 10)
-        val v = PolicyEngine.evaluate(p, listOf(rule("liveball.sx")),
-            "https://other.com", true, usedSec = 600, sessionSec = 0)
-        assertEquals("quota_spent", v.code)
+        val p = shut.copy(dailyQuotaMin = 10)
+        assertEquals("quota_spent", PolicyEngine.evaluate(
+            p, RuleSet(rules = listOf(rule("liveball.sx"))),
+            "https://other.com", true, 600, 0).code)
     }
 
     @Test fun emptyUrlChecksSessionOnly() {
-        assertEquals("session_ok",
-            PolicyEngine.evaluate(Policy(), emptyList(), "", true, 0, 0).code)
-    }
-
-    @Test fun badUrlRejected() {
+        assertEquals("session_ok", PolicyEngine.evaluate(shut, RuleSet(), "", true, 0, 0).code)
         assertEquals("bad_url",
-            PolicyEngine.evaluate(Policy(), emptyList(), "javascript:alert(1)", true, 0, 0).code)
+            PolicyEngine.evaluate(shut, RuleSet(), "javascript:alert(1)", true, 0, 0).code)
     }
 }

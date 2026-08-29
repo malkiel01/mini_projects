@@ -50,8 +50,8 @@ note($msg, $kind);
   <h2>יצירת המנהל הראשון</h2>
   <p class="hint">פעולה חד-פעמית. אחריה המסך הזה נועל את עצמו.</p>
   <form method="post">
-    <label><span>שם משתמש</span><input type="text" name="username" required autofocus></label>
-    <label><span>סיסמה (8 תווים לפחות)</span><input type="password" name="password" required></label>
+    <label><span class="lbl">שם משתמש</span><input type="text" name="username" required autofocus></label>
+    <label><span class="lbl">סיסמה (8 תווים לפחות)</span><input type="password" name="password" required></label>
     <button class="btn btn--go" type="submit">יצירה</button>
   </form>
 </div>
