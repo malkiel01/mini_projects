@@ -1,0 +1,236 @@
+<?php
+/**
+ * נקודת הקצה היחידה של האפליקציה.
+ *
+ * ‏?do=register | login | policy | check | heartbeat
+ *
+ * ריכוז בקובץ אחד ולא חמישה: כל הבקשות חולקות אימות, טיפול בשגיאות
+ * ופורמט תשובה, והפיצול היה מייצר חמישה עותקים של אותה חמישייה.
+ *
+ * ‏האכיפה כפולה בכוונה. האפליקציה מקבלת את המדיניות ואוכפת אותה
+ * מקומית כדי שכל לחיצה לא תדרוש רשת; השרת אוכף שוב בכל רענון. לקוח
+ * שנפרץ יכול להיתקע על מדיניות ישנה, לא להמציא לעצמו חדשה.
+ */
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/../lib/auth.php';
+
+header('Content-Type: application/json; charset=utf-8');
+header('X-Content-Type-Options: nosniff');
+header('Cache-Control: no-store');
+
+function out(array $payload, int $code = 200): never {
+    http_response_code($code);
+    echo json_encode($payload, JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+function bad(string $message, string $code = 'error', int $http = 400): never {
+    out(['ok' => false, 'error' => $message, 'code' => $code], $http);
+}
+
+/** גוף הבקשה כ-JSON, או מערך ריק. */
+function body(): array {
+    static $cache = null;
+    if ($cache !== null) return $cache;
+    $raw = file_get_contents('php://input') ?: '';
+    $data = json_decode($raw, true);
+    return $cache = is_array($data) ? $data : [];
+}
+
+function field(string $name, string $default = ''): string {
+    $v = body()[$name] ?? $_POST[$name] ?? $_GET[$name] ?? $default;
+    return is_string($v) ? trim($v) : $default;
+}
+
+/** המשתמש המחובר, או 401. */
+function requireUser(): array {
+    $u = userByToken(bearerToken());
+    if (!$u) bad('נדרשת כניסה מחדש', 'unauthorized', 401);
+    return $u;
+}
+
+/**
+ * המדיניות כפי שהאפליקציה צריכה אותה — הגדרות, כללים, ומצב הרגע.
+ *
+ * הכללים נשלחים במלואם כדי שהאכיפה המקומית תוכל להכריע בלי רשת.
+ * הם אינם סוד: הם רשימת מה שמותר למשתמש הזה ממילא.
+ */
+function policyPayload(array $user): array {
+    $uid    = (int) $user['id'];
+    $policy = policyFor($uid);
+    $tz     = (string) $policy['timezone'];
+    $rules  = rulesFor($uid);
+
+    $used  = usedTodaySeconds($uid, $tz);
+    $state = evaluate($user, $policy, $rules, nowIn($tz), ['url' => '', 'used_today' => $used]);
+
+    $quota = (int) $policy['daily_quota_min'];
+
+    return [
+        'ok'   => true,
+        'user' => [
+            'id'       => $uid,
+            'username' => $user['username'],
+            'name'     => $user['display_name'] ?: $user['username'],
+            'status'   => $user['status'],
+        ],
+        'policy' => [
+            'mode'              => $policy['mode'],
+            'timezone'          => $tz,
+            'days_mask'         => (int) $policy['days_mask'],
+            'window_start'      => $policy['window_start'],
+            'window_end'        => $policy['window_end'],
+            'daily_quota_min'   => $quota,
+            'session_max_min'   => (int) $policy['session_max_min'],
+            'allow_downloads'   => (bool) $policy['allow_downloads'],
+            'block_screenshots' => (bool) $policy['block_screenshots'],
+            'keep_history'      => (bool) $policy['keep_history'],
+        ],
+        // רק מה שהאפליקציה צריכה. sort_order ו-created_at אינם עניינה.
+        'rules' => array_map(fn($r) => [
+            'label'     => $r['label'],
+            'pattern'   => $r['pattern'],
+            'scope'     => $r['scope'],
+            'action'    => $r['action'],
+            'show_tile' => (bool) $r['show_tile'],
+        ], $rules),
+        'state' => [
+            'allowed'        => $state['allow'],
+            'code'           => $state['code'],
+            'reason'         => $state['reason'],
+            'used_today_sec' => $used,
+            'quota_left_sec' => $quota > 0 ? max(0, $quota * 60 - $used) : -1,
+        ],
+    ];
+}
+
+try {
+    $do = $_GET['do'] ?? '';
+
+    /* ── הרשמה עצמית ──────────────────────────────────────────────
+     * נוצר חשבון pending בלבד. אין אסימון ואין גישה עד שהמנהל מאשר.
+     */
+    if ($do === 'register') {
+        $username = field('username');
+        $password = field('password');
+
+        if ($e = usernameProblem($username)) bad($e, 'bad_username');
+        if ($e = passwordProblem($password)) bad($e, 'bad_password');
+
+        if (one('SELECT id FROM users WHERE username = ?', [$username])) {
+            bad('שם המשתמש הזה כבר תפוס', 'taken');
+        }
+
+        db()->beginTransaction();
+        q('INSERT INTO users (username, email, display_name, password_hash, status, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)',
+          [$username, mb_substr(field('email'), 0, 200), mb_substr(field('name'), 0, 80),
+           hashPassword($password), 'pending', nowIso()]);
+        $uid = (int) db()->lastInsertId();
+        // שורת מדיניות נוצרת מיד, כדי שהפאנל יראה משתמש שלם לעריכה.
+        q('INSERT INTO policies (user_id, updated_at) VALUES (?, ?)', [$uid, nowIso()]);
+        db()->commit();
+
+        audit($uid, 'register', true, '', 'pending', $username);
+        out(['ok' => true, 'status' => 'pending',
+             'message' => 'ההרשמה נקלטה. החשבון ייפתח לאחר אישור המנהל.']);
+    }
+
+    /* ── כניסה ─────────────────────────────────────────────────────
+     * מחזירה אסימון מכשיר. חשבון שאינו active מקבל סירוב עם הסיבה,
+     * ולא אסימון שאי אפשר להשתמש בו.
+     */
+    if ($do === 'login') {
+        $username = field('username');
+        $password = field('password');
+
+        if (tooManyFailures($username)) {
+            bad('יותר מדי ניסיונות. נסו שוב בעוד רבע שעה.', 'rate_limited', 429);
+        }
+
+        $u = one('SELECT * FROM users WHERE username = ?', [$username]);
+
+        // אותה הודעה לשם שגוי ולסיסמה שגויה: הודעה מפורטת מאשרת
+        // לתוקף אילו שמות קיימים.
+        if (!$u || !password_verify($password, $u['password_hash'])) {
+            audit((int) ($u['id'] ?? 0), 'login_fail', false, '', 'bad_credentials', $username);
+            bad('שם משתמש או סיסמה שגויים', 'bad_credentials', 401);
+        }
+
+        $state = accountState($u, nowIn((string) policyFor((int) $u['id'])['timezone']));
+        if (!$state['allow']) {
+            audit((int) $u['id'], 'login_denied', false, '', $state['code']);
+            bad($state['reason'], $state['code'], 403);
+        }
+
+        $max   = (int) policyFor((int) $u['id'])['max_devices'];
+        $token = registerDevice((int) $u['id'], field('device_name'), field('device_id'), $max);
+        audit((int) $u['id'], 'login', true, '', 'ok', field('device_name'));
+
+        out(['ok' => true, 'token' => $token] + policyPayload($u));
+    }
+
+    /* ── רענון מדיניות ─────────────────────────────────────────── */
+    if ($do === 'policy') {
+        out(policyPayload(requireUser()));
+    }
+
+    /* ── בדיקת כתובת ───────────────────────────────────────────────
+     * האפליקציה כבר הכריעה מקומית. זו ההכרעה המחייבת.
+     */
+    if ($do === 'check') {
+        $user   = requireUser();
+        $uid    = (int) $user['id'];
+        $policy = policyFor($uid);
+        $tz     = (string) $policy['timezone'];
+
+        $url  = field('url');
+        $main = (string) (body()['main_frame'] ?? '1') !== '0';
+
+        $d = evaluate($user, $policy, rulesFor($uid), nowIn($tz), [
+            'url'        => $url,
+            'main_frame' => $main,
+            'used_today' => usedTodaySeconds($uid, $tz),
+            'session'    => (int) (body()['session_sec'] ?? 0),
+        ]);
+
+        // ניווט בלבד נרשם. משאב נלווה היה מציף את היומן באלפי שורות.
+        if ($main) audit($uid, 'nav', $d['allow'], $url, $d['code']);
+
+        out(['ok' => true, 'allowed' => $d['allow'], 'code' => $d['code'], 'reason' => $d['reason']]);
+    }
+
+    /* ── פעימה ─────────────────────────────────────────────────────
+     * צוברת זמן צפייה ומחזירה את המצב. זה גם ערוץ הניתוק: מנהל
+     * שמשעה חשבון או מוחק מכשיר — הפעימה הבאה מחזירה סירוב.
+     */
+    if ($do === 'heartbeat') {
+        $user   = requireUser();
+        $uid    = (int) $user['id'];
+        $policy = policyFor($uid);
+        $tz     = (string) $policy['timezone'];
+
+        // חסם עליון לפעימה: דיווח מנופח לא יוכל לשרוף מכסה של יום.
+        $seconds = max(0, min(300, (int) (body()['seconds'] ?? 0)));
+        addUsage($uid, $tz, $seconds);
+
+        $used = usedTodaySeconds($uid, $tz);
+        $d = evaluate($user, $policy, rulesFor($uid), nowIn($tz), [
+            'url' => '', 'used_today' => $used,
+            'session' => (int) (body()['session_sec'] ?? 0),
+        ]);
+
+        $quota = (int) $policy['daily_quota_min'];
+        out(['ok' => true, 'allowed' => $d['allow'], 'code' => $d['code'], 'reason' => $d['reason'],
+             'used_today_sec' => $used,
+             'quota_left_sec' => $quota > 0 ? max(0, $quota * 60 - $used) : -1]);
+    }
+
+    bad('פעולה לא מוכרת', 'unknown_action', 404);
+
+} catch (Throwable $e) {
+    error_log('guarded-browser api: ' . $e->getMessage());
+    bad('שגיאת שרת', 'server', 500);
+}

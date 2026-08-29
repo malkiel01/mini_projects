@@ -55,29 +55,29 @@ try {
 
         $candidates = [];
         foreach (findFrameCandidates($html, $url) as $cand) {
-            $entry = ['url' => $cand, 'framable' => null, 'reason' => '', 'status' => 0, 'title' => ''];
-            try {
-                $r = fetchHead($cand, ['ua' => BROWSER_UA, 'max_bytes' => 8192]);
-                [$ok, $why] = framingVerdict($r, $origin);
-                $challenged = looksLikeChallenge($r);
-
-                $entry['status']   = $r['status'];
-                $entry['framable'] = $ok && !$challenged;
-                $entry['reason']   = $challenged ? 'שירות הגנה חסם גם את הבדיקה של המסגרת הזו' : $why;
-                $entry['title']    = pageTitle($r['body']);
-            } catch (InspectError $e) {
-                $entry['reason']   = $e->getMessage();
-                $entry['framable'] = false;
-            }
-            $candidates[] = $entry;
+            $candidates[] = checkCandidate($cand, $origin);
         }
 
-        $open = count(array_filter($candidates, fn($c) => $c['framable'] === true));
+        $open   = count(array_filter($candidates, fn($c) => $c['framable'] === true));
+        $unsure = count(array_filter($candidates, fn($c) => $c['framable'] === null));
+        $total  = count($candidates);
+
+        if (!$total) {
+            $conclusion = 'לא נמצאו מסגרות פנימיות בקוד שהודבק.';
+        } elseif ($open) {
+            $conclusion = "נמצאו $open מסגרות פתוחות מתוך $total. נסו אותן.";
+        } elseif ($unsure) {
+            // ההבחנה שעולה כאן כסף: מועמד שהבדיקה שלנו נחסמה עליו אינו
+            // מועמד חסום, ואם נציג אותו ככזה נסתיר בדיוק את הנגן המבוקש.
+            $conclusion = "מתוך $total מסגרות, $unsure לא ניתנות לבדיקה מהשרת — "
+                        . 'לרוב כי שירות הגנה חוסם גם אותן. נסו אותן בכל זאת; '
+                        . 'הדפדפן שלכם הוא זה שמכריע.';
+        } else {
+            $conclusion = 'נמצאו מסגרות, וכולן אמרו במפורש שאינן ניתנות להטמעה.';
+        }
+
         out(['success' => true, 'candidates' => $candidates, 'bytes' => strlen($html),
-             'conclusion' => $candidates
-                ? ($open ? "נמצאו $open מסגרות פתוחות מתוך " . count($candidates) . '. נסו אותן.'
-                         : 'נמצאו מסגרות, אך אף אחת מהן אינה ניתנת להטמעה.')
-                : 'לא נמצאו מסגרות פנימיות בקוד שהודבק.']);
+             'conclusion' => $conclusion]);
     }
 
     // אבחון מעמיק: מנסה כמה שיטות, וסורק את הדף אחרי מסגרות פנימיות.

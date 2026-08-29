@@ -1,0 +1,241 @@
+package com.mbeplus.guardedbrowser
+
+import android.annotation.SuppressLint
+import android.app.AlertDialog
+import android.graphics.Bitmap
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.View
+import android.view.WindowManager
+import android.webkit.*
+import androidx.activity.OnBackPressedCallback
+import androidx.appcompat.app.AppCompatActivity
+import com.mbeplus.guardedbrowser.databinding.ActivityBrowserBinding
+import java.io.ByteArrayInputStream
+
+/**
+ * הדפדפן.
+ *
+ * ‏WebView נייטיב טוען את הדף כמסמך עליון, ולכן X-Frame-Options
+ * ו-frame-ancestors אינם חלים עליו כלל — הם חוסמים הטמעה, ואין כאן
+ * הטמעה. זו הסיבה שאתר שסירב להיפתח בתוך iframe נפתח כאן.
+ *
+ * שתי נקודות אכיפה, ולא אחת:
+ *   • shouldOverrideUrlLoading — ניווט. מה שהמשתמש הולך אליו.
+ *   • shouldInterceptRequest   — כל משאב. תמונה, סקריפט, נגן.
+ * בלי השנייה, דף מותר יכול להיות מעטפת שטוענת בתוכה תוכן אסור.
+ */
+class BrowserActivity : AppCompatActivity() {
+
+    private lateinit var b: ActivityBrowserBinding
+    private lateinit var store: Store
+    private lateinit var policy: Policy
+    private var rules: List<Rule> = emptyList()
+
+    private var usedSec = 0          // נוצל היום, לפי השרת
+    private var sessionSec = 0       // משך הישיבה הנוכחית
+    private var closing = false
+
+    private val ticker = Handler(Looper.getMainLooper())
+    private val beat = object : Runnable {
+        override fun run() {
+            sessionSec += BEAT_SEC
+            sendBeat()
+            ticker.postDelayed(this, BEAT_SEC * 1000L)
+        }
+    }
+
+    companion object { private const val BEAT_SEC = 30 }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    override fun onCreate(state: Bundle?) {
+        super.onCreate(state)
+        store = Store(this)
+        policy = store.policy()
+        rules = store.rules()
+
+        // חסימת צילום מסך חייבת לקרות לפני setContentView כדי לחול
+        // גם על התצוגה המקדימה במחליף האפליקציות.
+        if (policy.blockScreenshots) {
+            window.setFlags(WindowManager.LayoutParams.FLAG_SECURE,
+                            WindowManager.LayoutParams.FLAG_SECURE)
+        }
+
+        b = ActivityBrowserBinding.inflate(layoutInflater)
+        setContentView(b.root)
+
+        val start = intent.getStringExtra("url") ?: ""
+        setupWebView()
+
+        // ההכרעה הראשונה לפני שנטען משהו: גם הכניסה עצמה נבדקת.
+        val v = PolicyEngine.evaluate(policy, rules, start, true, usedSec, sessionSec)
+        if (!v.allow) { refuse(v.reason.ifEmpty { "הכתובת אינה מותרת" }); return }
+
+        b.web.loadUrl(PolicyEngine.normalize(start)?.let { normalizedToUrl(start) } ?: start)
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (b.web.canGoBack()) b.web.goBack() else finish()
+            }
+        })
+        b.close.setOnClickListener { finish() }
+        b.reload.setOnClickListener { b.web.reload() }
+    }
+
+    /** משלים סכימה כשהמשתמש הקליד "example.com" בלי אחת. */
+    private fun normalizedToUrl(raw: String): String =
+        if (Regex("^[a-zA-Z][a-zA-Z0-9+.\\-]*:").containsMatchIn(raw.trim())) raw.trim()
+        else "https://" + raw.trim()
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun setupWebView() = with(b.web.settings) {
+        javaScriptEnabled = true
+        domStorageEnabled = true
+        mediaPlaybackRequiresUserGesture = false
+        useWideViewPort = true
+        loadWithOverviewMode = true
+        builtInZoomControls = true
+        displayZoomControls = false
+        // ‏UA של דפדפן אמיתי: אתרים מאחורי שירותי הגנה מגישים מסך
+        // אתגר לכל מי שאינו נראה כדפדפן.
+        userAgentString = userAgentString.replace("; wv", "")
+
+        CookieManager.getInstance().setAcceptCookie(true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(b.web, true)
+
+        b.web.webChromeClient = object : WebChromeClient() {
+            override fun onProgressChanged(view: WebView?, p: Int) {
+                b.progress.progress = p
+                b.progress.visibility = if (p in 1..99) View.VISIBLE else View.GONE
+            }
+        }
+
+        b.web.webViewClient = object : WebViewClient() {
+
+            /** ניווט — מה שהמשתמש הולך אליו. */
+            override fun shouldOverrideUrlLoading(
+                view: WebView, request: WebResourceRequest,
+            ): Boolean {
+                val url = request.url.toString()
+                val v = PolicyEngine.evaluate(policy, rules, url, true, usedSec, sessionSec)
+                if (v.allow) {
+                    verifyWithServer(url)
+                    return false
+                }
+                refuse(v.reason)
+                return true      // הניווט נבלע; הדף הנוכחי נשאר
+            }
+
+            /**
+             * כל משאב. חוסם בתשובה ריקה ולא ב-null — null פירושו
+             * "טען כרגיל", כלומר בדיוק ההפך ממה שהתכוונו.
+             */
+            override fun shouldInterceptRequest(
+                view: WebView, request: WebResourceRequest,
+            ): WebResourceResponse? {
+                val url = request.url.toString()
+                if (!url.startsWith("http")) return null
+
+                val v = PolicyEngine.evaluate(
+                    policy, rules, url, request.isForMainFrame, usedSec, sessionSec)
+
+                return if (v.allow) null
+                else WebResourceResponse("text/plain", "utf-8",
+                                         ByteArrayInputStream(ByteArray(0)))
+            }
+
+            override fun onPageStarted(view: WebView?, url: String?, icon: Bitmap?) {
+                b.address.text = url ?: ""
+            }
+        }
+
+        // הורדות לפי ההרשאה. בלי היתר — הודעה, ולא כישלון שקט.
+        b.web.setDownloadListener { url, _, _, _, _ ->
+            if (policy.allowDownloads) {
+                startActivity(android.content.Intent(
+                    android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+            } else {
+                toast("הורדת קבצים אינה מותרת בחשבון שלך")
+            }
+        }
+
+        if (!policy.keepHistory) {
+            CookieManager.getInstance().removeAllCookies(null)
+            WebStorage.getInstance().deleteAllData()
+        }
+    }
+
+    /**
+     * אימות מול השרת אחרי שהאכיפה המקומית התירה.
+     *
+     * מאשר את ההכרעה בדיעבד ומזין את היומן. אם השרת חולק — הדף נסגר.
+     * זה מה שהופך את האכיפה המקומית לנוחות ולא למקור הסמכות.
+     */
+    private fun verifyWithServer(url: String) {
+        Api.check(store.token, url, true) { r ->
+            if (r.json?.optString("code") == "unauthorized") { refuse("נדרשת כניסה מחדש"); return@check }
+            // שגיאת רשת אינה סירוב: r.json ריק פירושו שלא הצלחנו לשאול.
+            if (r.json != null && !r.json.optBoolean("allowed", true)) {
+                refuse(r.json.optString("reason", "הכתובת אינה מותרת"))
+            }
+        }
+    }
+
+    /** פעימה: צוברת זמן, ומביאה את המצב. זה גם ערוץ הניתוק מרחוק. */
+    private fun sendBeat() {
+        Api.heartbeat(store.token, BEAT_SEC, sessionSec) { r ->
+            val j = r.json ?: return@heartbeat        // אין רשת — ממשיכים
+            if (j.optString("code") == "unauthorized") { refuse("נדרשת כניסה מחדש"); return@heartbeat }
+
+            usedSec = j.optInt("used_today_sec", usedSec)
+            if (!j.optBoolean("allowed", true)) {
+                refuse(j.optString("reason", "הגישה הופסקה"))
+            }
+        }
+    }
+
+    /** מסך סירוב אחד לכל הסיבות. סוגר את הדפדפן — לא רק את הדף. */
+    private fun refuse(reason: String) {
+        if (closing) return
+        closing = true
+
+        ticker.removeCallbacks(beat)
+        b.web.stopLoading()
+        b.web.loadUrl("about:blank")
+
+        AlertDialog.Builder(this)
+            .setTitle("הגישה נחסמה")
+            .setMessage(reason.ifEmpty { "הכתובת אינה מותרת בחשבון שלך" })
+            .setCancelable(false)
+            .setPositiveButton("סגירה") { _, _ -> finish() }
+            .show()
+    }
+
+    private fun toast(s: String) =
+        android.widget.Toast.makeText(this, s, android.widget.Toast.LENGTH_SHORT).show()
+
+    override fun onResume() {
+        super.onResume()
+        if (!closing) ticker.postDelayed(beat, BEAT_SEC * 1000L)
+        b.web.onResume()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // הזמן נספר רק כשהמסך באמת פתוח: אפליקציה ברקע אינה צפייה.
+        ticker.removeCallbacks(beat)
+        b.web.onPause()
+    }
+
+    override fun onDestroy() {
+        ticker.removeCallbacks(beat)
+        if (!policy.keepHistory) {
+            b.web.clearHistory()
+            b.web.clearCache(true)
+            CookieManager.getInstance().removeAllCookies(null)
+        }
+        b.web.destroy()
+        super.onDestroy()
+    }
+}

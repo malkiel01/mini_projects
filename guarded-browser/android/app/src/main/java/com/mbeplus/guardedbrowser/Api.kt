@@ -1,0 +1,92 @@
+package com.mbeplus.guardedbrowser
+
+import org.json.JSONObject
+import java.io.BufferedReader
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.concurrent.Executors
+
+/**
+ * פנייה לשרת. ‏HttpURLConnection בלבד — בלי ספריות חיצוניות.
+ *
+ * כל קריאה רצה ב-thread נפרד ומחזירה לראשי, כי אנדרואיד אוסר רשת
+ * ב-thread הראשי ובצדק.
+ */
+object Api {
+
+    private val pool = Executors.newFixedThreadPool(2)
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+
+    class Result(val ok: Boolean, val json: JSONObject?, val error: String)
+
+    private fun base() = BuildConfig.API_BASE.trimEnd('/') + "/api/index.php?do="
+
+    /**
+     * ‏POST עם JSON. token ריק = בקשה לא מזוהה (הרשמה, כניסה).
+     *
+     * שגיאת רשת אינה זהה לסירוב מהשרת: הראשונה משאירה את המשתמש עם
+     * המדיניות השמורה, השנייה מחליפה אותה. הקורא מבדיל לפי ok.
+     */
+    fun call(action: String, body: JSONObject, token: String = "", cb: (Result) -> Unit) {
+        pool.execute {
+            var conn: HttpURLConnection? = null
+            val res = try {
+                conn = (URL(base() + action).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    connectTimeout = 12_000
+                    readTimeout = 15_000
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                    setRequestProperty("Accept", "application/json")
+                    if (token.isNotEmpty()) setRequestProperty("Authorization", "Bearer $token")
+                }
+                conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+
+                val code = conn.responseCode
+                // גוף השגיאה נושא את הסיבה בעברית; בלעדיו נציג "שגיאה" סתמית.
+                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                val text = stream?.bufferedReader(Charsets.UTF_8)
+                    ?.use(BufferedReader::readText) ?: ""
+
+                val json = try { JSONObject(text) } catch (e: Exception) { null }
+                when {
+                    json == null -> Result(false, null, "תשובה לא תקינה מהשרת")
+                    json.optBoolean("ok") -> Result(true, json, "")
+                    else -> Result(false, json, json.optString("error", "הבקשה נדחתה"))
+                }
+            } catch (e: Exception) {
+                Result(false, null, "אין חיבור לשרת")
+            } finally {
+                conn?.disconnect()
+            }
+            main.post { cb(res) }
+        }
+    }
+
+    fun register(username: String, password: String, name: String, email: String,
+                 cb: (Result) -> Unit) =
+        call("register", JSONObject().apply {
+            put("username", username); put("password", password)
+            put("name", name); put("email", email)
+        }, cb = cb)
+
+    fun login(username: String, password: String, deviceName: String, deviceId: String,
+              cb: (Result) -> Unit) =
+        call("login", JSONObject().apply {
+            put("username", username); put("password", password)
+            put("device_name", deviceName); put("device_id", deviceId)
+        }, cb = cb)
+
+    fun policy(token: String, cb: (Result) -> Unit) =
+        call("policy", JSONObject(), token, cb)
+
+    fun check(token: String, url: String, mainFrame: Boolean, cb: (Result) -> Unit) =
+        call("check", JSONObject().apply {
+            put("url", url); put("main_frame", if (mainFrame) "1" else "0")
+        }, token, cb)
+
+    fun heartbeat(token: String, seconds: Int, sessionSec: Int, cb: (Result) -> Unit) =
+        call("heartbeat", JSONObject().apply {
+            put("seconds", seconds); put("session_sec", sessionSec)
+        }, token, cb)
+}
