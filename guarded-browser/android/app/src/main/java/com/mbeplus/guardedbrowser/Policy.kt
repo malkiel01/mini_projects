@@ -52,6 +52,8 @@ data class Policy(
     val allowDownloads: Boolean = false,
     val blockScreenshots: Boolean = false,
     val keepHistory: Boolean = true,
+    val allowPip: Boolean = false,
+    val allowBackground: Boolean = false,
 ) {
     companion object {
         const val MODE_KIOSK = "kiosk"
@@ -75,6 +77,8 @@ data class Policy(
             allowDownloads = o.optBoolean("allow_downloads"),
             blockScreenshots = o.optBoolean("block_screenshots"),
             keepHistory = o.optBoolean("keep_history", true),
+            allowPip = o.optBoolean("allow_pip"),
+            allowBackground = o.optBoolean("allow_background"),
         )
     }
 }

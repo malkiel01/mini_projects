@@ -73,6 +73,8 @@ function migrate(PDO $pdo): void {
         'posture'       => "TEXT NOT NULL DEFAULT 'deny_all'",
         'blocked_types' => "TEXT NOT NULL DEFAULT ''",
         'ad_block'      => "TEXT NOT NULL DEFAULT ''",
+        'allow_pip'        => 'INTEGER NOT NULL DEFAULT 0',
+        'allow_background' => 'INTEGER NOT NULL DEFAULT 0',
     ];
     foreach ($add as $col => $def) {
         if (!in_array($col, $have, true)) {
@@ -197,6 +199,7 @@ function policyFor(int $userId): array {
         'days_mask' => 127, 'window_start' => '', 'window_end' => '',
         'ad_block' => '', 'daily_quota_min' => 0, 'session_max_min' => 0, 'max_devices' => 1,
         'allow_downloads' => 0, 'block_screenshots' => 0, 'keep_history' => 1,
+        'allow_pip' => 0, 'allow_background' => 0,
     ];
 }
 

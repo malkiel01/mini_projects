@@ -101,6 +101,8 @@ function policyPayload(array $user): array {
             'allow_downloads'   => (bool) $policy['allow_downloads'],
             'block_screenshots' => (bool) $policy['block_screenshots'],
             'keep_history'      => (bool) $policy['keep_history'],
+            'allow_pip'         => (bool) $policy['allow_pip'],
+            'allow_background'  => (bool) $policy['allow_background'],
         ],
         'rules' => array_map(fn($r) => [
             'label'     => $r['label'],

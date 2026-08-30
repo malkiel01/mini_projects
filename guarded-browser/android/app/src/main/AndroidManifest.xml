@@ -4,6 +4,17 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 
+    <!--
+      המשך ריצה מחוץ לאפליקציה.
+
+      בלי שירות חזית אנדרואיד הורג את התהליך ביציאה — ואז נקטעת לא
+      רק הצפייה אלא גם האכיפה: הפעימה שסופרת את מכסת הזמן ומקבלת
+      השעיה מהשרת מפסיקה לרוץ.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
     <application
         android:allowBackup="false"
         android:label="@string/app_name"
@@ -21,8 +32,18 @@
         <activity android:name=".HomeActivity" android:exported="false"/>
 
         <!-- ‏excludeFromRecents ו-noHistory אינם מוגדרים כאן בכוונה:
-             חסימת התצוגה המקדימה נקבעת לפי ההרשאה, ב-FLAG_SECURE. -->
+             חסימת התצוגה המקדימה נקבעת לפי ההרשאה, ב-FLAG_SECURE.
+
+             ‏smallestScreenSize ו-screenLayout נדרשים ל-PiP: בלעדיהם
+             אנדרואיד יוצר מחדש את ה-Activity במעבר לחלון הצף,
+             והנגן מתחיל מהתחלה. -->
         <activity android:name=".BrowserActivity" android:exported="false"
-            android:configChanges="orientation|screenSize|keyboardHidden"/>
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"/>
+
+        <service android:name=".GuardService" android:exported="false"
+            android:foregroundServiceType="mediaPlayback"/>
     </application>
 </manifest>

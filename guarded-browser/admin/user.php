@@ -62,6 +62,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'allow_downloads'   => isset($_POST['allow_downloads']) ? 1 : 0,
             'block_screenshots' => isset($_POST['block_screenshots']) ? 1 : 0,
             'keep_history'      => isset($_POST['keep_history']) ? 1 : 0,
+            'allow_pip'         => isset($_POST['allow_pip']) ? 1 : 0,
+            'allow_background'  => isset($_POST['allow_background']) ? 1 : 0,
             'updated_at'        => nowIso(),
         ]);
 
@@ -379,6 +381,18 @@ note($msg, $kind);
     <?= $policy['block_screenshots'] ? 'checked' : '' ?>>לחסום צילום מסך והקלטה</label>
   <label class="switch"><input type="checkbox" name="keep_history"
     <?= $policy['keep_history'] ? 'checked' : '' ?>>לשמור היסטוריית גלישה במכשיר</label>
+
+  <hr class="sep">
+  <p class="hint" style="margin-bottom:10px"><strong>המשך צפייה מחוץ לאפליקציה</strong></p>
+  <label class="switch"><input type="checkbox" name="allow_pip"
+    <?= $policy['allow_pip'] ? 'checked' : '' ?>>חלון צף — הסרטון ממשיך בחלון קטן ביציאה מהאפליקציה</label>
+  <label class="switch"><input type="checkbox" name="allow_background"
+    <?= $policy['allow_background'] ? 'checked' : '' ?>>המשך ברקע — גם אחרי סגירת החלון הצף</label>
+  <p class="hint" style="margin:0">
+    שניהם כבויים כברירת מחדל. כשהם פעילים, <strong>מכסת הזמן ממשיכה להיספר</strong>
+    והשרת ממשיך לאכוף — סיום מכסה או השעיה עוצרים את הצפייה גם ברקע.
+    מופיעה התראה קבועה, כדי שיהיה ברור שהאפליקציה רצה.
+  </p>
   <label><span class="lbl">הערה פנימית</span>
     <textarea name="note" rows="2"><?= h($user['note']) ?></textarea></label>
 <?php secClose(); ?>

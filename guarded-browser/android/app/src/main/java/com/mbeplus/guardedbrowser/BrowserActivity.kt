@@ -2,6 +2,13 @@ package com.mbeplus.guardedbrowser
 
 import android.annotation.SuppressLint
 import android.app.AlertDialog
+import android.app.PictureInPictureParams
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.Build
+import android.util.Rational
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.os.Handler
@@ -37,6 +44,24 @@ class BrowserActivity : AppCompatActivity() {
     private var sessionSec = 0       // משך הישיבה הנוכחית
     private var closing = false
     private var lastAllowed = ""      // הכתובת המותרת האחרונה, לחזרה אליה
+    private var background = false    // ממשיכים לרוץ מחוץ לאפליקציה
+    private var onScreen = false      // האם יש מסך להציג עליו דיאלוג
+
+    /*
+     * סגירת ההתראה חייבת לעצור גם את הצפייה.
+     *
+     * שירות שנעצר בלי לעצור את מה שהחזיק היה משאיר קול מתנגן בלי
+     * שום דרך לעצור אותו — האפליקציה כבר לא על המסך.
+     */
+    private val stopFromNotification = object : BroadcastReceiver() {
+        override fun onReceive(c: Context?, i: Intent?) {
+            background = false
+            b.web.evaluateJavascript(
+                "(function(){try{document.querySelectorAll('video,audio')" +
+                ".forEach(function(m){m.pause();});}catch(e){}})()", null)
+            finish()
+        }
+    }
 
     private val ticker = Handler(Looper.getMainLooper())
     private val beat = object : Runnable {
@@ -84,6 +109,28 @@ class BrowserActivity : AppCompatActivity() {
         })
         b.close.setOnClickListener { finish() }
         b.reload.setOnClickListener { b.web.reload() }
+
+        /*
+         * הרשאת התראות נדרשת מאנדרואיד 13 ומעלה.
+         *
+         * בלעדיה שירות החזית עדיין רץ, אבל ההתראה אינה מוצגת —
+         * כלומר האפליקציה ממשיכה לרוץ בלי שהמשתמש יודע, וזה בדיוק
+         * מה שלא רוצים. נשאלת רק כשההרשאה בפועל ניתנה.
+         */
+        if ((policy.allowPip || policy.allowBackground) &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 11)
+        }
+
+        val filter = IntentFilter(GuardService.ACTION_STOP)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(stopFromNotification, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(stopFromNotification, filter)
+        }
     }
 
     /** משלים סכימה כשהמשתמש הקליד "example.com" בלי אחת. */
@@ -426,9 +473,24 @@ class BrowserActivity : AppCompatActivity() {
         closing = true
 
         ticker.removeCallbacks(beat)
+        background = false
+        GuardService.stop(this)
         hideCover()
         b.web.stopLoading()
         b.web.loadUrl("about:blank")
+
+        /*
+         * דיאלוג עובד רק כשיש מסך.
+         *
+         * חסימה ברקע — מכסה שנגמרה, השעיה מהשרת — קורית כשהאפליקציה
+         * אינה מוצגת, ודיאלוג שם קורס או נבלע. ההודעה עוברת אז
+         * להתראה, שהיא המקום היחיד שבו המשתמש יראה אותה.
+         */
+        if (!onScreen) {
+            GuardService.start(this, reason.ifEmpty { "הצפייה הופסקה" })
+            ticker.postDelayed({ GuardService.stop(this); finish() }, 6000)
+            return
+        }
 
         AlertDialog.Builder(this)
             .setTitle("הגישה נחסמה")
@@ -441,22 +503,81 @@ class BrowserActivity : AppCompatActivity() {
     private fun toast(s: String) =
         android.widget.Toast.makeText(this, s, android.widget.Toast.LENGTH_SHORT).show()
 
+    /**
+     * המשתמש יוצא מהאפליקציה — הרגע להיכנס לחלון צף.
+     *
+     * רק כשההרשאה ניתנה וכשבאמת מתנגן משהו: חלון צף על דף טקסט הוא
+     * מטרד, לא תכונה.
+     */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (closing || !policy.allowPip) return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+
+        b.web.evaluateJavascript(
+            "(function(){try{var v=document.querySelector('video');" +
+            "return !!(v&&!v.paused&&!v.ended);}catch(e){return false;}})()"
+        ) { playing ->
+            if (playing == "true") enterPip()
+        }
+    }
+
+    private fun enterPip() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        try {
+            enterPictureInPictureMode(
+                PictureInPictureParams.Builder()
+                    .setAspectRatio(Rational(16, 9))
+                    .build())
+        } catch (e: Exception) { /* מכשיר שאינו תומך — פשוט לא נכנסים */ }
+    }
+
+    override fun onPictureInPictureModeChanged(inPip: Boolean, config: android.content.res.Configuration) {
+        super.onPictureInPictureModeChanged(inPip, config)
+        // בחלון צף אין מקום לשורת כתובת ולכפתורים; רק הווידאו.
+        b.bar.visibility = if (inPip) View.GONE else View.VISIBLE
+        b.address.visibility = if (inPip) View.GONE else View.VISIBLE
+    }
+
     override fun onResume() {
         super.onResume()
+        onScreen = true
         if (!closing) ticker.postDelayed(beat, BEAT_SEC * 1000L)
         b.web.onResume()
+        // חזרנו למסך — אין עוד סיבה להתראה.
+        if (!background) GuardService.stop(this)
     }
 
     override fun onPause() {
         super.onPause()
-        // הזמן נספר רק כשהמסך באמת פתוח: אפליקציה ברקע אינה צפייה.
-        ticker.removeCallbacks(beat)
-        b.web.onPause()
+        onScreen = false
+
+        /*
+         * ‏ברקע הזמן ממשיך להיספר, וזו החלטה ולא פרט טכני.
+         *
+         * מי שהתיר צפייה ברקע התיר צפייה — ומכסת זמן שנעצרת ברגע
+         * שהמסך מתכבה היא מכסה שאפשר לעקוף בלחיצה אחת. הפעימה גם
+         * ממשיכה לקבל השעיה מהשרת, ולכן האכיפה חיה גם כאן.
+         */
+        val keepGoing = policy.allowBackground || isInPictureInPictureMode
+
+        if (keepGoing && !closing) {
+            background = true
+            GuardService.start(this, "הצפייה ממשיכה. מכסת הזמן נספרת.")
+        } else {
+            background = false
+            ticker.removeCallbacks(beat)
+            b.web.onPause()
+            GuardService.stop(this)
+        }
     }
 
     override fun onDestroy() {
         ticker.removeCallbacks(beat)
         ticker.removeCallbacks(coverTimeout)
+        background = false
+        GuardService.stop(this)
+        try { unregisterReceiver(stopFromNotification) } catch (e: Exception) { }
         if (!policy.keepHistory) {
             b.web.clearHistory()
             b.web.clearCache(true)

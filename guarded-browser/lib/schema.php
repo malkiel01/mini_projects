@@ -58,6 +58,8 @@ function schemaStatements(): array {
         allow_downloads    INTEGER NOT NULL DEFAULT 0,
         block_screenshots  INTEGER NOT NULL DEFAULT 0,
         keep_history       INTEGER NOT NULL DEFAULT 1,
+        allow_pip          INTEGER NOT NULL DEFAULT 0,
+        allow_background   INTEGER NOT NULL DEFAULT 0,
         updated_at         TEXT    NOT NULL DEFAULT ''
     )",
 
