@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import android.util.Rational
+import android.webkit.JavascriptInterface
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.os.Handler
@@ -46,6 +47,23 @@ class BrowserActivity : AppCompatActivity() {
     private var lastAllowed = ""      // הכתובת המותרת האחרונה, לחזרה אליה
     private var background = false    // ממשיכים לרוץ מחוץ לאפליקציה
     private var onScreen = false      // האם יש מסך להציג עליו דיאלוג
+    @Volatile private var mediaPlaying = false
+
+    /**
+     * הדף מדווח מתי מתנגן משהו.
+     *
+     * הגרסה הקודמת שאלה את הדף ברגע היציאה, דרך evaluateJavascript
+     * — קריאה אסינכרונית. עד שהתשובה חזרה, אנדרואיד כבר העביר את
+     * המסך למצב מושהה, ו-enterPictureInPictureMode נדחה שם תמיד.
+     * לכן המצב נשמר מראש, וההחלטה ביציאה היא מיידית.
+     *
+     * הממשק חושף בוליאני יחיד. דף עוין יכול לשקר עליו, ואז המשתמש
+     * יקבל חלון צף על דף בלי וידאו — מטרד, לא פרצה.
+     */
+    inner class MediaBridge {
+        @JavascriptInterface
+        fun setPlaying(playing: Boolean) { mediaPlaying = playing }
+    }
 
     /*
      * סגירת ההתראה חייבת לעצור גם את הצפייה.
@@ -109,6 +127,8 @@ class BrowserActivity : AppCompatActivity() {
         })
         b.close.setOnClickListener { finish() }
         b.reload.setOnClickListener { b.web.reload() }
+        b.pip.setOnClickListener { onPipButton() }
+        b.pip.visibility = if (policy.allowPip) View.VISIBLE else View.GONE
 
         /*
          * הרשאת התראות נדרשת מאנדרואיד 13 ומעלה.
@@ -153,6 +173,8 @@ class BrowserActivity : AppCompatActivity() {
 
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(b.web, true)
+
+        b.web.addJavascriptInterface(MediaBridge(), "GBMedia")
 
         b.web.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView?, p: Int) {
@@ -209,6 +231,9 @@ class BrowserActivity : AppCompatActivity() {
 
             override fun onPageStarted(view: WebView?, url: String?, icon: Bitmap?) {
                 b.address.text = url ?: ""
+                // דף חדש — עדיין לא מתנגן בו דבר. בלי האיפוס, יציאה
+                // מדף טקסט הייתה פותחת חלון צף על סמך הדף הקודם.
+                mediaPlaying = false
             }
 
             /*
@@ -226,6 +251,7 @@ class BrowserActivity : AppCompatActivity() {
                 b.address.text = url
                 enforceCurrent(url)
                 hideAds()
+                watchMedia()
             }
 
             override fun onPageFinished(view: WebView, url: String) {
@@ -233,6 +259,7 @@ class BrowserActivity : AppCompatActivity() {
                 enforceCurrent(url)
                 styleRestrictedYouTube(url)
                 hideAds()
+                watchMedia()
             }
         }
 
@@ -413,6 +440,29 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     /**
+     * מאזין לאירועי ניגון ומדווח לאפליקציה.
+     *
+     * ‏MutationObserver כי יוטיוב מחליף את תגית הווידאו תוך כדי,
+     * ומאזין שנרשם פעם אחת מפסיק לדעת מה קורה.
+     */
+    private fun watchMedia() {
+        if (!policy.allowPip && !policy.allowBackground) return
+        b.web.evaluateJavascript(
+            "(function(){try{" +
+            "function report(){var v=document.querySelector('video,audio');" +
+            "GBMedia.setPlaying(!!(v&&!v.paused&&!v.ended&&v.readyState>2));}" +
+            "function hook(){document.querySelectorAll('video,audio').forEach(function(m){" +
+            "if(m.__gbHooked)return;m.__gbHooked=1;" +
+            "['play','pause','ended','playing','emptied'].forEach(function(e){" +
+            "m.addEventListener(e,report);});});report();}" +
+            "hook();" +
+            "if(!window.__gbMediaObs){window.__gbMediaObs=new MutationObserver(hook);" +
+            "window.__gbMediaObs.observe(document.documentElement,{childList:true,subtree:true});}" +
+            "if(!window.__gbMediaT)window.__gbMediaT=setInterval(report,1000);" +
+            "}catch(e){}})()", null)
+    }
+
+    /**
      * הסתרת שטחי פרסום, ודילוג על פרסומות יוטיוב.
      *
      * חסימת הרשת מונעת את הטעינה, אבל המסגרת הריקה נשארת ומשאירה
@@ -511,25 +561,64 @@ class BrowserActivity : AppCompatActivity() {
      */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (closing || !policy.allowPip) return
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-
-        b.web.evaluateJavascript(
-            "(function(){try{var v=document.querySelector('video');" +
-            "return !!(v&&!v.paused&&!v.ended);}catch(e){return false;}})()"
-        ) { playing ->
-            if (playing == "true") enterPip()
-        }
+        if (closing || !policy.allowPip || !mediaPlaying) return
+        // סינכרוני, בלי שום המתנה: זה הרגע האחרון שבו אנדרואיד מרשה.
+        enterPip()
     }
 
-    private fun enterPip() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        try {
+    /** האם המערכת בכלל מרשה לאפליקציה הזו חלון צף. */
+    private fun pipAllowed(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+        if (!packageManager.hasSystemFeature(
+                android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)) return false
+        // ‏unsafeCheckOpNoThrow קיים רק מ-API 29; בגרסאות ישנות יותר
+        // אין דרך לשאול, ולכן פשוט מנסים והמערכת מכריעה.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return true
+        return try {
+            val ops = getSystemService(android.app.AppOpsManager::class.java)
+            ops.unsafeCheckOpNoThrow(android.app.AppOpsManager.OPSTR_PICTURE_IN_PICTURE,
+                android.os.Process.myUid(), packageName) == android.app.AppOpsManager.MODE_ALLOWED
+        } catch (e: Throwable) { true }
+    }
+
+    private fun enterPip(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+        return try {
             enterPictureInPictureMode(
-                PictureInPictureParams.Builder()
-                    .setAspectRatio(Rational(16, 9))
-                    .build())
-        } catch (e: Exception) { /* מכשיר שאינו תומך — פשוט לא נכנסים */ }
+                PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build())
+        } catch (e: Exception) { false }
+    }
+
+    /**
+     * כפתור מפורש לחלון צף.
+     *
+     * בלעדיו הדרך היחידה להיכנס היא לחיצה על "בית" — ואז כשזה לא
+     * עובד אין שום דרך לדעת אם התכונה כבויה, אם המערכת חוסמת, או אם
+     * פשוט לא זוהה ניגון. כפתור שאומר בדיוק מה חסר פותר את זה.
+     */
+    private fun onPipButton() {
+        when {
+            !policy.allowPip ->
+                toast("חלון צף אינו מאושר בחשבון שלך. המנהל מפעיל אותו בהגדרות המשתמש.")
+
+            !pipAllowed() -> {
+                toast("אנדרואיד חוסם חלון צף לאפליקציה הזו. פותח את ההגדרות…")
+                try {
+                    startActivity(Intent("android.settings.PICTURE_IN_PICTURE_SETTINGS")
+                        .setData(android.net.Uri.parse("package:$packageName")))
+                } catch (e: Exception) {
+                    try {
+                        startActivity(Intent(
+                            android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            android.net.Uri.parse("package:$packageName")))
+                    } catch (e2: Exception) { toast("לא נמצא מסך ההגדרות במכשיר הזה") }
+                }
+            }
+
+            !mediaPlaying -> toast("חלון צף נפתח רק כשמתנגן סרטון")
+
+            !enterPip() -> toast("המכשיר לא אפשר לפתוח חלון צף")
+        }
     }
 
     override fun onPictureInPictureModeChanged(inPip: Boolean, config: android.content.res.Configuration) {

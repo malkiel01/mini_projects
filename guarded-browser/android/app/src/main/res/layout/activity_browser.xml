@@ -14,6 +14,9 @@
             android:layout_height="wrap_content" android:textSize="12sp"
             android:textColor="@color/dim" android:maxLines="1" android:ellipsize="middle"
             android:layoutDirection="ltr" android:textDirection="ltr"/>
+        <Button android:id="@+id/pip" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:text="חלון צף"
+            android:visibility="gone" style="?attr/borderlessButtonStyle"/>
         <Button android:id="@+id/reload" android:layout_width="wrap_content"
             android:layout_height="wrap_content" android:text="רענון"
             style="?attr/borderlessButtonStyle"/>
