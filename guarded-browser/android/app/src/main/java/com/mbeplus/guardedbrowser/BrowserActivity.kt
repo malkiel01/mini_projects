@@ -48,6 +48,9 @@ class BrowserActivity : AppCompatActivity() {
     private var background = false    // ממשיכים לרוץ מחוץ לאפליקציה
     private var onScreen = false      // האם יש מסך להציג עליו דיאלוג
     @Volatile private var mediaPlaying = false
+    private var pipRequested = false          // ביקשנו PiP; המצב עוד לא התעדכן
+    private var customView: View? = null      // הווידאו במסך מלא
+    private var customCallback: WebChromeClient.CustomViewCallback? = null
 
     /**
      * הדף מדווח מתי מתנגן משהו.
@@ -122,6 +125,15 @@ class BrowserActivity : AppCompatActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
+                // יציאה ממסך מלא קודמת לניווט אחורה: אחרת "אחורה"
+                // מחליף דף בזמן שהמשתמש רק רצה לצאת מהווידאו.
+                if (customView != null) {
+                    b.web.evaluateJavascript(
+                        "(function(){try{(document.exitFullscreen||" +
+                        "document.webkitExitFullscreen||function(){}).call(document);}catch(e){}})()",
+                        null)
+                    return
+                }
                 if (b.web.canGoBack()) b.web.goBack() else finish()
             }
         })
@@ -180,6 +192,32 @@ class BrowserActivity : AppCompatActivity() {
             override fun onProgressChanged(view: WebView?, p: Int) {
                 b.progress.progress = p
                 b.progress.visibility = if (p in 1..99) View.VISIBLE else View.GONE
+            }
+
+            /*
+             * ‏WebView אינו מציג וידאו במסך מלא בעצמו — הוא מוסר את
+             * התצוגה לאפליקציה. בלי המימוש הזה כפתור המסך המלא של
+             * יוטיוב אינו עושה דבר, ובחלון צף מוצג כל הדף מוקטן
+             * במקום הווידאו בלבד.
+             */
+            override fun onShowCustomView(view: View, cb: CustomViewCallback) {
+                if (customView != null) { cb.onCustomViewHidden(); return }
+                customView = view
+                customCallback = cb
+                b.fullscreen.addView(view)
+                b.fullscreen.visibility = View.VISIBLE
+                b.web.visibility = View.GONE
+                b.bar.visibility = View.GONE
+            }
+
+            override fun onHideCustomView() {
+                b.fullscreen.removeAllViews()
+                b.fullscreen.visibility = View.GONE
+                b.web.visibility = View.VISIBLE
+                if (!isInPictureInPictureMode) b.bar.visibility = View.VISIBLE
+                customView = null
+                customCallback?.onCustomViewHidden()
+                customCallback = null
             }
         }
 
@@ -590,10 +628,24 @@ class BrowserActivity : AppCompatActivity() {
 
     private fun enterPip(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+
+        /*
+         * מבקשים מהדף להעביר את הווידאו למסך מלא לפני הכניסה.
+         *
+         * חלון צף מציג את מה שה-Activity מציגה. בלי זה הוא מקבל את
+         * כל הדף — כותרות, המלצות ורקע שחור — במקום את הווידאו.
+         */
+        b.web.evaluateJavascript(
+            "(function(){try{var v=document.querySelector('video');" +
+            "if(v&&!document.fullscreenElement){" +
+            "(v.requestFullscreen||v.webkitRequestFullscreen||function(){}).call(v);}" +
+            "}catch(e){}})()", null)
+
+        pipRequested = true
         return try {
             enterPictureInPictureMode(
                 PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build())
-        } catch (e: Exception) { false }
+        } catch (e: Exception) { pipRequested = false; false }
     }
 
     /**
@@ -660,9 +712,23 @@ class BrowserActivity : AppCompatActivity() {
 
     override fun onPictureInPictureModeChanged(inPip: Boolean, config: android.content.res.Configuration) {
         super.onPictureInPictureModeChanged(inPip, config)
+
         // בחלון צף אין מקום לשורת כתובת ולכפתורים; רק הווידאו.
-        b.bar.visibility = if (inPip) View.GONE else View.VISIBLE
+        b.bar.visibility = if (inPip || customView != null) View.GONE else View.VISIBLE
         b.address.visibility = if (inPip) View.GONE else View.VISIBLE
+
+        if (inPip) {
+            // הכיסוי אטום; אילו נשאר, החלון הצף היה מציג אותו במקום הווידאו.
+            hideCover()
+            b.web.onResume()
+        } else {
+            pipRequested = false
+            // חזרה מהחלון הצף — יוצאים גם ממסך מלא, אחרת נשארים
+            // בווידאו בלי שום דרך לחזור לדפדפן.
+            if (customView != null) b.web.evaluateJavascript(
+                "(function(){try{(document.exitFullscreen||document.webkitExitFullscreen" +
+                "||function(){}).call(document);}catch(e){}})()", null)
+        }
     }
 
     override fun onResume() {
@@ -705,7 +771,14 @@ class BrowserActivity : AppCompatActivity() {
          * שהמסך מתכבה היא מכסה שאפשר לעקוף בלחיצה אחת. הפעימה גם
          * ממשיכה לקבל השעיה מהשרת, ולכן האכיפה חיה גם כאן.
          */
-        val keepGoing = policy.allowBackground || isInPictureInPictureMode
+        /*
+         * ‏pipRequested ולא isInPictureInPictureMode בלבד.
+         *
+         * ‏onPause רץ *לפני* שהמצב מתעדכן ל-PiP, ולכן הבדיקה הישנה
+         * החזירה false בדיוק ברגע המעבר — ה-WebView הושהה, והחלון
+         * הצף נפתח על וידאו עצור ומסך שחור.
+         */
+        val keepGoing = policy.allowBackground || pipRequested || isInPictureInPictureMode
 
         if (keepGoing && !closing) {
             background = true

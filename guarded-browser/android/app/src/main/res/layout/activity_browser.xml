@@ -39,6 +39,18 @@
         <WebView android:id="@+id/web" android:layout_width="match_parent"
             android:layout_height="match_parent"/>
 
+        <!--
+          מארח לווידאו במסך מלא.
+
+          ‏WebView אינו יודע לבדו להציג וידאו במסך מלא: הוא מוסר את
+          התצוגה לאפליקציה דרך onShowCustomView, ומי שאינו מממש את
+          זה מקבל כפתור מסך-מלא שאינו עושה דבר — ובחלון צף, את כל
+          הדף מוקטן במקום את הווידאו.
+        -->
+        <FrameLayout android:id="@+id/fullscreen" android:layout_width="match_parent"
+            android:layout_height="match_parent" android:background="#000"
+            android:visibility="gone"/>
+
         <LinearLayout android:id="@+id/cover" android:layout_width="match_parent"
             android:layout_height="match_parent" android:orientation="vertical"
             android:gravity="center" android:visibility="gone"
