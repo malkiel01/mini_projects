@@ -122,8 +122,9 @@ function isYouTubeAsset(string $url): bool {
 
 /** שולף את מזהה הערוץ מדף הצפייה. מחזיר '' אם לא הצליח. */
 function fetchYouTubeOwner(string $videoId): array {
-    if (!preg_match('#^[A-Za-z0-9_-]{6,20}$#', $videoId)) return ['channel' => '', 'title' => ''];
-    if (!function_exists('curl_init')) return ['channel' => '', 'title' => ''];
+    $none = ['channel' => '', 'handle' => '', 'title' => ''];
+    if (!preg_match('#^[A-Za-z0-9_-]{6,20}$#', $videoId)) return $none;
+    if (!function_exists('curl_init')) return $none;
 
     $url = 'https://www.youtube.com/watch?v=' . rawurlencode($videoId);
     $ch  = curl_init($url);
@@ -166,6 +167,20 @@ function parseYouTubeOwnerHtml(string $html): array {
         if (preg_match($re, $html, $m)) { $channel = $m[1]; break; }
     }
 
+    /*
+     * גם הכינוי, ולא רק המזהה.
+     *
+     * מנהל שמאשר ערוץ מדביק "@Name" — זה מה שהוא מכיר. הפענוח מחזיר
+     * "UC..." בלבד, והשניים לעולם לא נפגשים: ערוץ שאושר בכינוי לא
+     * יתאים לאף סרטון. לכן שניהם נשמרים, וההתאמה נעשית מול שניהם.
+     */
+    $handle = '';
+    foreach (['#"canonicalBaseUrl"\s*:\s*"/@([A-Za-z0-9._-]+)"#',
+              '#"ownerProfileUrl"\s*:\s*"[^"]*/@([A-Za-z0-9._-]+)"#',
+              '#<link rel="canonical" href="[^"]*/@([A-Za-z0-9._-]+)"#'] as $re) {
+        if (preg_match($re, $html, $m)) { $handle = strtolower($m[1]); break; }
+    }
+
     $title = '';
     if (preg_match('#<meta name="title" content="([^"]*)"#', $html, $m)) {
         $title = html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5, 'UTF-8');
@@ -174,7 +189,8 @@ function parseYouTubeOwnerHtml(string $html): array {
                  html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5, 'UTF-8')));
     }
 
-    return ['channel' => $channel, 'title' => mb_substr($title, 0, 200)];
+    return ['channel' => $channel, 'handle' => $handle,
+            'title' => mb_substr($title, 0, 200)];
 }
 
 /**

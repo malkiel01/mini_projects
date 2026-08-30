@@ -128,7 +128,22 @@ check('ערוץ אחר נחסם',
 // מטמון הבעלות: תשובה ריקה נשמרת, ואינה גוררת פנייה בכל לחיצה.
 q('INSERT INTO video_owner (platform, video_id, channel_id, title, fetched_at) VALUES (?,?,?,?,?)',
   [PLATFORM_YOUTUBE, 'cachedVid1', 'UCtestChannel123456789', 'בדיקה', nowIso()]);
-check('המטמון מחזיר בלי רשת', youTubeOwner('cachedVid1'), 'UCtestChannel123456789');
+// הפענוח מחזיר מזהה וכינוי גם יחד: המנהל מאשר באחת מהצורות,
+// והפענוח מחזיר את השנייה.
+check('המטמון מחזיר בלי רשת',
+      youTubeOwner('cachedVid1')['channel'], 'UCtestChannel123456789');
+
+q('INSERT INTO video_owner (platform, video_id, channel_id, handle, title, fetched_at)
+   VALUES (?,?,?,?,?,?)',
+  [PLATFORM_YOUTUBE, 'handleOnlyV', '', 'mercazdafyomi', 'רק כינוי', nowIso()]);
+check('וגם כינוי בלבד', youTubeOwner('handleOnlyV')['handle'], 'mercazdafyomi');
+
+q('INSERT INTO platform_items (user_id, platform, kind, item_id, action, created_at)
+   VALUES (?,?,?,?,?,?)',
+  [$uid, PLATFORM_YOUTUBE, 'handle', 'mercazdafyomi', 'allow', nowIso()]);
+check('סרטון נפתח לפי ערוץ שאושר בכינוי',
+      evaluate($u, $pol, ruleSetFor($uid), $now,
+               ['url' => 'https://youtube.com/watch?v=handleOnlyV'])['code'], 'yt_channel_allowed');
 check('וסרטון מהערוץ הזה נפתח',
       evaluate($u, $pol, ruleSetFor($uid), $now,
                ['url' => 'https://youtube.com/watch?v=cachedVid1'])['code'], 'yt_channel_allowed');

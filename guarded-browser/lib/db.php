@@ -64,6 +64,10 @@ function migrate(PDO $pdo): void {
         return array_column($pdo->query("PRAGMA table_info($table)")->fetchAll(), 'name');
     };
 
+    if (!in_array('handle', $columns('video_owner'), true)) {
+        $pdo->exec("ALTER TABLE video_owner ADD COLUMN handle TEXT NOT NULL DEFAULT ''");
+    }
+
     $have = $columns('policies');
     $add  = [
         'posture'       => "TEXT NOT NULL DEFAULT 'deny_all'",
@@ -284,22 +288,27 @@ function platformItemsFor(int $userId): array {
  * ריקה נשמרת לזמן קצר — אחרת סרטון שיוטיוב לא ענה עליו היה גורר
  * פנייה חוזרת בכל לחיצה.
  */
-function youTubeOwner(string $videoId): string {
-    $row = one('SELECT channel_id, fetched_at FROM video_owner WHERE platform = ? AND video_id = ?',
-               [PLATFORM_YOUTUBE, $videoId]);
+function youTubeOwner(string $videoId): array {
+    $row = one('SELECT channel_id, handle, fetched_at FROM video_owner
+                WHERE platform = ? AND video_id = ?', [PLATFORM_YOUTUBE, $videoId]);
 
     if ($row) {
-        if ($row['channel_id'] !== '') return $row['channel_id'];
-        // כישלון נשמר לשעה בלבד: ייתכן שהיה תקלה רגעית.
-        if (strtotime($row['fetched_at']) > time() - 3600) return '';
+        if ($row['channel_id'] !== '' || $row['handle'] !== '') {
+            return ['channel' => $row['channel_id'], 'handle' => $row['handle']];
+        }
+        // כישלון נשמר לשעה בלבד: ייתכן שהייתה תקלה רגעית.
+        if (strtotime($row['fetched_at']) > time() - 3600) {
+            return ['channel' => '', 'handle' => ''];
+        }
     }
 
     $info = fetchYouTubeOwner($videoId);
     upsert('video_owner',
            ['platform' => PLATFORM_YOUTUBE, 'video_id' => $videoId],
-           ['channel_id' => $info['channel'], 'title' => $info['title'], 'fetched_at' => nowIso()]);
+           ['channel_id' => $info['channel'], 'handle' => $info['handle'],
+            'title' => $info['title'], 'fetched_at' => nowIso()]);
 
-    return $info['channel'];
+    return ['channel' => $info['channel'], 'handle' => $info['handle']];
 }
 
 /** כל מה שהמנוע צריך על משתמש, במקום אחד. */
@@ -310,6 +319,6 @@ function ruleSetFor(int $userId): array {
         'domain_map'     => domainMap(),
         'platforms'      => platformRulesFor($userId),
         'platform_items' => platformItemsFor($userId),
-        'owner_of'       => fn(string $v) => youTubeOwner($v),
+        'owner_of'       => fn(string $v) => youTubeOwner($v),   // ['channel'=>…, 'handle'=>…]
     ];
 }

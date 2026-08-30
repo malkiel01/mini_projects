@@ -168,8 +168,14 @@ $ytUrl   = fn(string $u) => normalizeUrl($u);
 $ytItems = ['channel' => ['UCgoodChannel1234567890' => 'allow', 'UCbadChannel12345678901' => 'deny'],
             'video'   => ['vid_ok' => 'allow'],
             'handle'  => ['torah' => 'allow']];
-$owner   = fn(string $v) => ['vid_from_good' => 'UCgoodChannel1234567890', 'vid_from_bad' => 'UCbadChannel12345678901',
-                             'vid_orphan' => ''][$v] ?? 'UCotherChan1234567890z';
+$owner   = fn(string $v) => match ($v) {
+    'vid_from_good'   => ['channel' => 'UCgoodChannel1234567890', 'handle' => 'goodguy'],
+    'vid_from_bad'    => ['channel' => 'UCbadChannel12345678901', 'handle' => 'badguy'],
+    'vid_orphan'      => ['channel' => '', 'handle' => ''],
+    // סרטון שהפענוח החזיר עליו רק כינוי, בלי מזהה ערוץ.
+    'vid_handle_only' => ['channel' => '', 'handle' => 'torah'],
+    default           => ['channel' => 'UCotherChan1234567890z', 'handle' => 'someone'],
+};
 
 check('כבוי — הכול חסום',
       youTubeVerdict($ytUrl('https://youtube.com/watch?v=vid_ok'),
@@ -418,6 +424,28 @@ check('דף הערוץ אינו חיפוש', isYouTubeSearchEndpoint('/youtubei/
 check('הצעות ההשלמה נחסמות בפועל',
       youTubeVerdict($ytUrl('https://www.youtube.com/complete/search?q=x'),
                      $noSearch, $ytItems, false)['code'], 'yt_no_search');
+
+
+echo "\n— ערוץ שאושר בכינוי —\n";
+/*
+ * המנהל מדביק "@Name" — זה מה שהוא מכיר. הפענוח מחזיר "UC..." בלבד,
+ * והשניים לעולם לא נפגשו: ערוץ שאושר בכינוי לא התאים לאף סרטון,
+ * והמשתמש קיבל "לא הצלחנו לוודא" על ערוץ שאושר לו במפורש.
+ */
+check('סרטון מותאם לפי הכינוי כשאין מזהה',
+      youTubeVerdict($ytUrl('https://youtube.com/watch?v=vid_handle_only'),
+                     $restricted, $ytItems, true, $owner)['code'], 'yt_channel_allowed');
+check('ומול מזהה הערוץ כרגיל',
+      youTubeVerdict($ytUrl('https://youtube.com/watch?v=vid_from_good'),
+                     $restricted, $ytItems, true, $owner)['code'], 'yt_channel_allowed');
+check('פענוח ריק לגמרי עדיין סוגר',
+      youTubeVerdict($ytUrl('https://youtube.com/watch?v=vid_orphan'),
+                     $restricted, $ytItems, true, $owner)['code'], 'yt_owner_unknown');
+// איסור על אחת הצורות חוסם, גם אם השנייה לא הוגדרה.
+$denyHandle = ['handle' => ['someone' => 'deny']];
+check('איסור לפי כינוי חוסם',
+      youTubeVerdict($ytUrl('https://youtube.com/watch?v=whatever'),
+                     $restricted, $denyHandle, true, $owner)['code'], 'yt_item_denied');
 
 
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";

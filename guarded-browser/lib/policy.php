@@ -246,17 +246,29 @@ function youTubeVerdict(array $url, array $rule, array $items, bool $isMainFrame
             return decision(false, 'yt_owner_unknown',
                 'לא ניתן לבדוק לאיזה ערוץ הסרטון שייך');
         }
-        $channel = (string) $ownerOf($id);
+        $owner   = (array) $ownerOf($id);
+        $channel = (string) ($owner['channel'] ?? '');
+        $handle  = (string) ($owner['handle'] ?? '');
 
-        if ($channel === '') {
+        if ($channel === '' && $handle === '') {
             // כישלון פענוח נסגר ולא נפתח: היתר שניתן מחוסר ידיעה אינו היתר.
             return decision(false, 'yt_owner_unknown',
                 'לא הצלחנו לוודא לאיזה ערוץ הסרטון שייך, ולכן הוא לא נפתח');
         }
-        if ($itemAction('channel', $channel) === 'deny') {
+
+        /*
+         * שתי הצורות נבדקות, כי המנהל אישר באחת מהן והפענוח מחזיר
+         * את השנייה. ערוץ שאושר בכינוי "@Name" לא היה מתאים לעולם
+         * לסרטון שהפענוח שלו החזיר "UC...".
+         */
+        $actions = [];
+        if ($channel !== '') $actions[] = $itemAction('channel', $channel);
+        if ($handle !== '')  $actions[] = $itemAction('handle', $handle);
+
+        if (in_array('deny', $actions, true)) {
             return decision(false, 'yt_item_denied', 'הערוץ של הסרטון הזה חסום עבורך');
         }
-        return $itemAction('channel', $channel) === 'allow'
+        return in_array('allow', $actions, true)
             ? decision(true, 'yt_channel_allowed')
             : decision(false, 'yt_not_approved', 'הסרטון הזה אינו מערוץ שאושר לך');
     }

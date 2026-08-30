@@ -55,6 +55,21 @@ $checks = [
           $pdo->query('SELECT COUNT(*) FROM domain_categories')->fetchColumn() . ' סיווגים'),
 ];
 
+/*
+ * בדיקה חיה מול יוטיוב.
+ *
+ * "לאשר ערוץ שלם" עומד או נופל על היכולת של השרת לשאול את יוטיוב
+ * לאיזה ערוץ שייך סרטון. באחסון משותף היציאה החוצה חסומה לא פעם,
+ * וזה נראה למשתמש כ"לא הצלחנו לוודא" בלי שום רמז לסיבה. הבדיקה
+ * רצה רק בלחיצה, כי היא איטית.
+ */
+$probeResult = null;
+if (($_POST['action'] ?? '') === 'probe_youtube') {
+    $t0 = microtime(true);
+    $info = fetchYouTubeOwner('dQw4w9WgXcQ');
+    $probeResult = $info + ['ms' => (int) round((microtime(true) - $t0) * 1000)];
+}
+
 $log  = is_file(errorLogPath()) ? (string) file_get_contents(errorLogPath()) : '';
 $csrf = csrfToken();
 
@@ -79,6 +94,33 @@ note($msg ?? '', 'ok');
     <?php endforeach; ?>
     </tbody>
   </table>
+</div>
+
+<div class="card">
+  <h2>גישה ליוטיוב</h2>
+  <p class="hint">
+    אישור ערוץ שלם דורש שהשרת ישאל את יוטיוב לאיזה ערוץ שייך כל סרטון.
+    אם היציאה מהשרת חסומה, זה ייראה למשתמש כ"לא הצלחנו לוודא".
+  </p>
+  <?php if ($probeResult !== null): ?>
+    <?php if ($probeResult['channel'] !== '' || $probeResult['handle'] !== ''): ?>
+      <div class="note note--ok">
+        השרת הגיע ליוטיוב (<?= (int) $probeResult['ms'] ?> מ״ש).
+        מזהה ערוץ: <code><?= h($probeResult['channel']) ?: '—' ?></code> ·
+        כינוי: <code><?= h($probeResult['handle']) ? '@' . h($probeResult['handle']) : '—' ?></code>
+      </div>
+    <?php else: ?>
+      <div class="note note--bad">
+        השרת לא הצליח לפענח (<?= (int) $probeResult['ms'] ?> מ״ש). כנראה היציאה מהשרת
+        חסומה, או שיוטיוב החזיר דף אחר. במצב הזה אפשר לאשר סרטונים אחד-אחד,
+        אבל לא ערוץ שלם.
+      </div>
+    <?php endif; ?>
+  <?php endif; ?>
+  <form method="post">
+    <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+    <button class="btn btn--go" name="action" value="probe_youtube">בדיקה עכשיו</button>
+  </form>
 </div>
 
 <div class="card">

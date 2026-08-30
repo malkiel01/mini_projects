@@ -182,6 +182,7 @@ function schemaStatements(): array {
         platform   TEXT NOT NULL,
         video_id   TEXT NOT NULL,
         channel_id TEXT NOT NULL DEFAULT '',
+        handle     TEXT NOT NULL DEFAULT '',
         title      TEXT NOT NULL DEFAULT '',
         fetched_at TEXT NOT NULL,
         PRIMARY KEY (platform, video_id)
