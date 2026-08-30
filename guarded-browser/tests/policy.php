@@ -280,5 +280,47 @@ check('מכסה קודמת לרשימה',
 check('בקשה בלי כתובת בודקת רק את החשבון',
       evaluate($user(), $pol(), $set(), $now, ['url' => ''])['code'], 'session_ok');
 
+echo "\n— קלט מקוצר של יוטיוב —\n";
+/*
+ * הדרישה להדביק כתובת מלאה היא עבודה שהמערכת אמורה לעשות במקום
+ * המנהל: מי שרוצה לאשר ערוץ מכיר אותו בשם, לא ב-URL.
+ */
+check('כינוי בלבד',
+      normalizeYouTubeInput('@MercazDafYomi'), ['kind' => 'handle', 'id' => 'mercazdafyomi']);
+check('כינוי באות גדולה יורד לקטנה',
+      normalizeYouTubeInput('@MERCAZ')['id'], 'mercaz');
+check('שם בלי @',
+      normalizeYouTubeInput('MercazDafYomi'), ['kind' => 'handle', 'id' => 'mercazdafyomi']);
+/*
+ * הבאג שהתיקון הזה מונע: השלמה עיוורת של הקידומת הפכה
+ * "youtube.com/@x" ל-"youtube.com/youtube.com/@x".
+ */
+check('דומיין בלי סכימה',
+      normalizeYouTubeInput('youtube.com/@MercazDafYomi'),
+      ['kind' => 'handle', 'id' => 'mercazdafyomi']);
+check('עם www ובלי סכימה',
+      normalizeYouTubeInput('www.youtube.com/@Mercaz')['id'], 'mercaz');
+check('כתובת מלאה',
+      normalizeYouTubeInput('https://www.youtube.com/@Mercaz')['id'], 'mercaz');
+check('קישור מקוצר בלי סכימה',
+      normalizeYouTubeInput('youtu.be/dQw4w9WgXcQ'),
+      ['kind' => 'video', 'id' => 'dQw4w9WgXcQ']);
+check('מזהה ערוץ חשוף',
+      normalizeYouTubeInput('UCabcdefghijklmnopqrstuv'),
+      ['kind' => 'channel', 'id' => 'UCabcdefghijklmnopqrstuv']);
+check('מזהה סרטון חשוף',
+      normalizeYouTubeInput('dQw4w9WgXcQ'), ['kind' => 'video', 'id' => 'dQw4w9WgXcQ']);
+check('מזהה פלייליסט חשוף',
+      normalizeYouTubeInput('PLabcdefghij123')['kind'], 'playlist');
+check('כתובת צפייה מלאה',
+      normalizeYouTubeInput('https://youtube.com/watch?v=dQw4w9WgXcQ'),
+      ['kind' => 'video', 'id' => 'dQw4w9WgXcQ']);
+check('Shorts',
+      normalizeYouTubeInput('youtube.com/shorts/dQw4w9WgXcQ')['kind'], 'shorts');
+check('ריק אינו מזהה',   normalizeYouTubeInput('   ')['kind'], 'other');
+check('תווים פסולים',     normalizeYouTubeInput('@שלום עולם')['kind'], 'other');
+check('דומיין אחר לגמרי', normalizeYouTubeInput('vimeo.com/123')['kind'], 'other');
+
+
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 exit($fail === 0 ? 0 : 1);

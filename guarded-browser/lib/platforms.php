@@ -167,3 +167,54 @@ function parseYouTubeOwnerHtml(string $html): array {
 
     return ['channel' => $channel, 'title' => mb_substr($title, 0, 200)];
 }
+
+/**
+ * מקבל מה שהמנהל הדביק, ומחזיר סוג ומזהה.
+ *
+ * הדרישה להדביק כתובת מלאה היא עבודה שהמערכת אמורה לעשות במקומו:
+ * מי שרוצה לאשר ערוץ מכיר אותו בשם, לא ב-URL. לכן כל הצורות האלה
+ * מתקבלות:
+ *
+ *   ‏@MercazDafYomi                       כינוי
+ *   ‏MercazDafYomi                        שם בלי @
+ *   ‏youtube.com/@MercazDafYomi           בלי סכימה
+ *   ‏https://www.youtube.com/@Mercaz…     כתובת מלאה
+ *   ‏UCxxxxxxxxxxxxxxxxxxxxxx             מזהה ערוץ
+ *   ‏dQw4w9WgXcQ                          מזהה סרטון
+ *   ‏PLxxxxxxxx                           מזהה פלייליסט
+ *   ‏youtu.be/dQw4w9WgXcQ                 קישור מקוצר
+ */
+function normalizeYouTubeInput(string $raw): array {
+    $raw = trim($raw);
+    if ($raw === '') return ['kind' => 'other', 'id' => ''];
+
+    // כינוי מפורש — הצורה הנפוצה, ואין בה ספק.
+    if (str_starts_with($raw, '@')) {
+        $name = substr($raw, 1);
+        return preg_match('#^[A-Za-z0-9._-]+$#', $name)
+            ? ['kind' => 'handle', 'id' => strtolower($name)]
+            : ['kind' => 'other', 'id' => ''];
+    }
+
+    /*
+     * נראה ככתובת: יש בו נקודה או לוכסן. הסכימה מושלמת אם חסרה,
+     * אחרת "youtube.com/@x" היה הופך ל"youtube.com/youtube.com/@x".
+     */
+    if (str_contains($raw, '/') || str_contains($raw, '.')) {
+        $url = preg_match('#^[a-z][a-z0-9+.\-]*://#i', $raw) ? $raw : 'https://' . $raw;
+        return parseYouTube($url);
+    }
+
+    // מזהים חשופים, לפי הצורה שלהם. מזהה ערוץ הוא UC ועוד 22 תווים.
+    if (preg_match('#^UC[A-Za-z0-9_-]{22}$#', $raw))            return ['kind' => 'channel', 'id' => $raw];
+    if (preg_match('#^(?:PL|UU|OL|RD|LL|FL)[A-Za-z0-9_-]{10,}$#', $raw))
+                                                                return ['kind' => 'playlist', 'id' => $raw];
+    // מזהה סרטון הוא בדיוק 11 תווים; שם ערוץ באורך כזה הוא נדיר,
+    // והמנהל רואה בטבלה מה זוהה ויכול להסיר.
+    if (preg_match('#^[A-Za-z0-9_-]{11}$#', $raw))              return ['kind' => 'video', 'id' => $raw];
+
+    // מילה רגילה — שם ערוץ בלי @.
+    return preg_match('#^[A-Za-z0-9._-]+$#', $raw)
+        ? ['kind' => 'handle', 'id' => strtolower($raw)]
+        : ['kind' => 'other', 'id' => ''];
+}

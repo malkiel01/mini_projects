@@ -107,13 +107,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
          * אמורה לעשות במקומו.
          */
         $paste = trim((string) ($_POST['yt_url'] ?? ''));
-        $p = parseYouTube(preg_match('#^https?://#i', $paste) ? $paste
-                          : 'https://www.youtube.com/' . ltrim($paste, '/'));
+        $p = normalizeYouTubeInput($paste);
 
         if ($p['kind'] === 'shorts') $p['kind'] = 'video';
 
         if (!in_array($p['kind'], ['video', 'channel', 'handle', 'playlist'], true) || $p['id'] === '') {
-            $msg = 'לא זיהיתי בקישור ערוץ, סרטון או פלייליסט'; $kind = 'bad';
+            $msg = 'לא זיהיתי ערוץ, סרטון או פלייליסט. אפשר להדביק קישור, '
+                 . 'או לכתוב רק @שם-הערוץ'; $kind = 'bad';
         } else {
             $label = trim((string) ($_POST['yt_label'] ?? ''));
 
@@ -134,7 +134,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  action=excluded.action, label=excluded.label',
               [$uid, PLATFORM_YOUTUBE, $p['kind'], $p['id'], mb_substr($label, 0, 120),
                ($_POST['yt_action'] ?? 'allow') === 'deny' ? 'deny' : 'allow', nowIso()]);
-            $msg = 'נוסף לרשימת יוטיוב';
+
+            // אומרים מה זוהה, לא רק "נוסף": קלט מקוצר הוא ניחוש
+            // מושכל, ומי שרואה "סרטון" במקום "ערוץ" מתקן מיד.
+            $kindName = ['channel' => 'ערוץ', 'handle' => 'ערוץ', 'video' => 'סרטון',
+                         'playlist' => 'פלייליסט'][$p['kind']];
+            $msg = "נוסף כ$kindName: {$p['id']}";
         }
 
     } elseif ($action === 'yt_del') {
@@ -395,9 +400,13 @@ secOpen('יוטיוב', YT_MODE_LABELS[$yt['mode']][0] . ' ' . $countTag(count($
   <form method="post">
     <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
     <input type="hidden" name="action" value="yt_add">
-    <label><span class="lbl">הדביקו קישור לערוץ, סרטון או פלייליסט</span>
+    <label><span class="lbl">ערוץ, סרטון או פלייליסט</span>
       <input type="text" name="yt_url" dir="ltr" required
-             placeholder="https://youtube.com/@channel"></label>
+             placeholder="@MercazDafYomi"></label>
+    <p class="hint" style="margin:-6px 0 14px">
+      מספיק <code>@שם-הערוץ</code>. אפשר גם קישור מלא, <code>youtu.be/…</code>,
+      או מזהה חשוף — המערכת מזהה לבד ואומרת מה נקלט.
+    </p>
     <div class="grid">
       <label><span class="lbl">שם (לא חובה)</span><input type="text" name="yt_label"></label>
       <label><span class="lbl">פעולה</span>
