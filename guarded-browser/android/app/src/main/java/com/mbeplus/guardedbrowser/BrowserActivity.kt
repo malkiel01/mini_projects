@@ -128,7 +128,7 @@ class BrowserActivity : AppCompatActivity() {
         b.close.setOnClickListener { finish() }
         b.reload.setOnClickListener { b.web.reload() }
         b.pip.setOnClickListener { onPipButton() }
-        b.pip.visibility = if (policy.allowPip) View.VISIBLE else View.GONE
+        b.pip.visibility = View.VISIBLE
 
         /*
          * הרשאת התראות נדרשת מאנדרואיד 13 ומעלה.
@@ -597,27 +597,57 @@ class BrowserActivity : AppCompatActivity() {
      * פשוט לא זוהה ניגון. כפתור שאומר בדיוק מה חסר פותר את זה.
      */
     private fun onPipButton() {
-        when {
-            !policy.allowPip ->
-                toast("חלון צף אינו מאושר בחשבון שלך. המנהל מפעיל אותו בהגדרות המשתמש.")
+        // אם הכול תקין פשוט נכנסים, ואין מה להסביר.
+        if (policy.allowPip && pipAllowed() && mediaPlaying && enterPip()) return
 
-            !pipAllowed() -> {
-                toast("אנדרואיד חוסם חלון צף לאפליקציה הזו. פותח את ההגדרות…")
-                try {
-                    startActivity(Intent("android.settings.PICTURE_IN_PICTURE_SETTINGS")
-                        .setData(android.net.Uri.parse("package:$packageName")))
-                } catch (e: Exception) {
-                    try {
-                        startActivity(Intent(
-                            android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                            android.net.Uri.parse("package:$packageName")))
-                    } catch (e2: Exception) { toast("לא נמצא מסך ההגדרות במכשיר הזה") }
-                }
-            }
+        /*
+         * וכשנכשל — אומרים בדיוק מה חסר.
+         *
+         * "לא עובד" הוא הדיווח הנפוץ ביותר וחסר התועלת ביותר: יש
+         * כאן ארבעה תנאים, וכל אחד מהם דורש פעולה אחרת לגמרי. מסך
+         * שמראה את כל הארבעה חוסך סבב שלם של ניחושים.
+         */
+        val sdk = Build.VERSION.SDK_INT
+        val hasFeature = packageManager.hasSystemFeature(
+            android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)
+        val systemOk = pipAllowed()
 
-            !mediaPlaying -> toast("חלון צף נפתח רק כשמתנגן סרטון")
+        val lines = listOf(
+            pipRow("מאושר בחשבון שלך", policy.allowPip,
+                   "המנהל מפעיל זאת באזור \u0022מכשיר והתנהגות\u0022"),
+            pipRow("המכשיר תומך", hasFeature && sdk >= Build.VERSION_CODES.O,
+                   "נדרש אנדרואיד 8 ומעלה. כאן: API " + sdk +
+                   (if (hasFeature) "" else ", ואין תמיכה בחומרה")),
+            pipRow("אנדרואיד מרשה לאפליקציה", systemOk,
+                   "הגדרות ← אפליקציות ← גישה מיוחדת ← תמונה בתוך תמונה"),
+            pipRow("מזוהה סרטון מתנגן", mediaPlaying,
+                   "הפעילו סרטון, ובזמן שהוא רץ לחצו כאן שוב"),
+        )
 
-            !enterPip() -> toast("המכשיר לא אפשר לפתוח חלון צף")
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("חלון צף — מה חסר")
+            .setMessage(lines.joinToString("\n\n"))
+            .setPositiveButton("סגירה", null)
+
+        if (policy.allowPip && !systemOk) {
+            dialog.setNeutralButton("פתיחת ההגדרות") { _, _ -> openPipSettings() }
+        }
+        dialog.show()
+    }
+
+    private fun pipRow(label: String, ok: Boolean, hint: String): String =
+        (if (ok) "\u2713 " else "\u2717 ") + label + (if (ok) "" else "\n     " + hint)
+
+    private fun openPipSettings() {
+        try {
+            startActivity(Intent("android.settings.PICTURE_IN_PICTURE_SETTINGS")
+                .setData(android.net.Uri.parse("package:$packageName")))
+        } catch (e: Exception) {
+            try {
+                startActivity(Intent(
+                    android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.parse("package:$packageName")))
+            } catch (e2: Exception) { toast("לא נמצא מסך ההגדרות במכשיר הזה") }
         }
     }
 
