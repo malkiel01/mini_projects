@@ -47,6 +47,7 @@ class Store(context: Context) {
         prefs.edit()
             .putString("policy", payload.optJSONObject("policy")?.toString() ?: "{}")
             .putString("rules", payload.optJSONArray("rules")?.toString() ?: "[]")
+            .putString("tiles", payload.optJSONArray("tiles")?.toString() ?: "[]")
             .putString("categories", payload.optJSONObject("categories")?.toString() ?: "{}")
             .putString("domain_map", payload.optJSONObject("domain_map")?.toString() ?: "{}")
             .putString("platforms", payload.optJSONObject("platforms")?.toString() ?: "{}")
@@ -62,6 +63,20 @@ class Store(context: Context) {
 
     fun rules(): List<Rule> = try {
         PolicyEngine.rulesFrom(JSONArray(prefs.getString("rules", "[]") ?: "[]"))
+    } catch (e: Exception) { emptyList() }
+
+    /**
+     * האריחים שהשרת שלח.
+     *
+     * שרת ישן אינו שולח tiles, ולכן יש נפילה חזרה לכללי הכתובות —
+     * אחרת עדכון של האפליקציה לפני עדכון השרת היה מוחק את המסך.
+     */
+    fun tiles(): List<Tile> = try {
+        val t = PolicyEngine.tilesFrom(JSONArray(prefs.getString("tiles", "[]") ?: "[]"))
+        t.ifEmpty {
+            rules().filter { it.showTile && it.action == "allow" }
+                .map { Tile(it.label.ifEmpty { it.pattern }, it.pattern, "url") }
+        }
     } catch (e: Exception) { emptyList() }
 
     /** כל מה שהמנוע צריך, כפי שהתקבל מהשרת. */

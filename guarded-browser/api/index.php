@@ -107,6 +107,14 @@ function policyPayload(array $user): array {
             'action'    => $r['action'],
             'show_tile' => (bool) $r['show_tile'],
         ], $set['rules']),
+        /*
+         * אריחים — מה שמוצג במסך הפתיחה.
+         *
+         * נפרד מ-rules בכוונה: rules הוא רשימת אכיפה, ופריט יוטיוב
+         * מאושר אינו כלל כתובת. אילו הוזרק לשם, האפליקציה הייתה
+         * מתייחסת אליו כהיתר גורף לדומיין ועוקפת את כללי הפלטפורמה.
+         */
+        'tiles'          => tilesFor($set),
         'categories'     => $set['categories'],
         'domain_map'     => $slim,
         'platforms'      => array_map(fn($p) => [
@@ -123,6 +131,35 @@ function policyPayload(array $user): array {
             'quota_left_sec' => $quota > 0 ? max(0, $quota * 60 - $used) : -1,
         ],
     ];
+}
+
+
+/**
+ * האריחים שהמשתמש יראה: כללי כתובות שסומנו להצגה, ובנוסף כל פריט
+ * יוטיוב שאושר.
+ *
+ * בלי החלק השני, ערוץ מאושר אינו נגיש כלל במצב קיוסק — אין שורת
+ * כתובת, ואין אריח שמוביל אליו.
+ */
+function tilesFor(array $set): array {
+    $tiles = [];
+
+    foreach ($set['rules'] as $r) {
+        if ($r['action'] !== 'allow' || !$r['show_tile']) continue;
+        $tiles[] = ['label' => $r['label'] ?: $r['pattern'], 'url' => $r['pattern'],
+                    'kind' => 'url'];
+    }
+
+    foreach (($set['platform_items'][PLATFORM_YOUTUBE] ?? []) as $kind => $items) {
+        foreach ($items as $id => $action) {
+            if ($action !== 'allow') continue;
+            $url = youTubeItemUrl((string) $kind, (string) $id);
+            if ($url === '') continue;
+            $tiles[] = ['label' => youTubeItemFallbackLabel((string) $kind, (string) $id),
+                        'url' => $url, 'kind' => 'youtube'];
+        }
+    }
+    return $tiles;
 }
 
 try {

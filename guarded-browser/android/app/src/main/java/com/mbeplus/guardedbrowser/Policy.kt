@@ -76,6 +76,23 @@ data class Policy(
     }
 }
 
+/**
+ * אריח במסך הפתיחה.
+ *
+ * נפרד מ-Rule בכוונה: Rule הוא כלל אכיפה, ואריח הוא רק קיצור דרך.
+ * ערוץ יוטיוב מאושר הוא אריח בלי שיהיה כלל כתובת — ואילו ערבבנו
+ * ביניהם, הוא היה הופך להיתר גורף לכל youtube.com.
+ */
+data class Tile(val label: String, val url: String, val kind: String) {
+    companion object {
+        fun from(o: JSONObject) = Tile(
+            label = o.optString("label"),
+            url = o.optString("url"),
+            kind = o.optString("kind", "url"),
+        )
+    }
+}
+
 /** הגדרות פלטפורמה (כרגע יוטיוב) והפריטים שאושרו בה. */
 data class PlatformRule(
     val mode: String = "off",           // off | restricted | full
@@ -417,6 +434,9 @@ object PolicyEngine {
 
     fun rulesFrom(arr: JSONArray?): List<Rule> =
         (0 until (arr?.length() ?: 0)).map { Rule.from(arr!!.getJSONObject(it)) }
+
+    fun tilesFrom(arr: JSONArray?): List<Tile> =
+        (0 until (arr?.length() ?: 0)).map { Tile.from(arr!!.getJSONObject(it)) }
 
     fun stringMap(o: JSONObject?): Map<String, String> {
         if (o == null) return emptyMap()

@@ -140,8 +140,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'add_rule') {
         $pattern = trim((string) ($_POST['pattern'] ?? ''));
         $scope   = in_array($_POST['scope'] ?? '', SCOPES, true) ? $_POST['scope'] : 'domain';
+        $parsed  = normalizeUrl($pattern);
 
-        if (!normalizeUrl($pattern)) {
+        /*
+         * כלל כתובת על יוטיוב הוא מלכודת, ולכן הוא מנותב מכאן.
+         *
+         * ‏youtu.be/ID מפנה מיד ל-youtube.com/watch — דומיין אחר,
+         * שהכלל כבר אינו חל עליו. ההכרעה נופלת אז לכללי הפלטפורמה,
+         * והמנהל רואה "חסום" על כתובת שהוא בטוח שהתיר. במקום להסביר
+         * את זה בהערה, הקלט נשמר במקום שבו הוא באמת נאכף.
+         */
+        if ($parsed && platformOf($parsed['host']) === PLATFORM_YOUTUBE) {
+            $p = normalizeYouTubeInput($pattern);
+            if ($p['kind'] === 'shorts') $p['kind'] = 'video';
+
+            if (in_array($p['kind'], ['video', 'channel', 'handle', 'playlist'], true)) {
+                upsert('platform_items',
+                       ['user_id' => $uid, 'platform' => PLATFORM_YOUTUBE,
+                        'kind' => $p['kind'], 'item_id' => $p['id']],
+                       ['label' => mb_substr(trim((string) ($_POST['label'] ?? '')), 0, 120),
+                        'action' => ($_POST['rule_action'] ?? 'allow') === 'deny' ? 'deny' : 'allow'],
+                       ['created_at' => nowIso()]);
+                $kindName = ['channel' => 'ערוץ', 'handle' => 'ערוץ', 'video' => 'סרטון',
+                             'playlist' => 'פלייליסט'][$p['kind']];
+                $msg = "זו כתובת יוטיוב, ולכן היא נוספה לרשימת יוטיוב כ$kindName — "
+                     . 'שם היא נאכפת. כלל כתובת רגיל לא היה עובד עליה.';
+            } else {
+                $msg = 'זו כתובת יוטיוב שלא זיהיתי כערוץ, סרטון או פלייליסט. '
+                     . 'נסו להוסיף אותה באזור יוטיוב.'; $kind = 'bad';
+            }
+        } elseif (!$parsed) {
             $msg = 'הכתובת אינה תקינה'; $kind = 'bad';
         } else {
             q('INSERT INTO rules (user_id, label, pattern, scope, action, show_tile, sort_order, created_at)
@@ -338,8 +366,16 @@ note($msg, $kind);
 
 <?php
 /* ── יוטיוב: טופס נפרד, כי הוא נשמר בנפרד ─────────────────────── */
-secOpen('יוטיוב', YT_MODE_LABELS[$yt['mode']][0] . ' ' . $countTag(count($ytItems)));
+$ytAllowed = count(array_filter($ytItems, fn($i) => $i['action'] === 'allow'));
+$ytWarn = ($yt['mode'] === 'off' && $ytAllowed > 0) ? ' ⚠ הרשימה לא נאכפת' : '';
+secOpen('יוטיוב', YT_MODE_LABELS[$yt['mode']][0] . $ytWarn . ' ' . $countTag(count($ytItems)));
 ?>
+  <?php if ($ytWarn !== ''): ?>
+    <div class="note note--bad">
+      אישרת <?= $ytAllowed ?> פריטים, אבל יוטיוב מוגדר "חסום לגמרי" — ולכן אף אחד מהם
+      לא ייפתח. בחרו <strong>"רק מה שאישרתי"</strong> ושמרו.
+    </div>
+  <?php endif; ?>
   <form method="post">
     <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
     <input type="hidden" name="action" value="youtube">
@@ -413,7 +449,10 @@ secOpen('יוטיוב', YT_MODE_LABELS[$yt['mode']][0] . ' ' . $countTag(count($
 <?php secClose(); ?>
 
 <?php secOpen('כללי כתובות', $countTag(count($rules))); ?>
-  <p class="hint">הציר המפורש ביותר, ולכן גובר על קטגוריות ועל סוגי תוכן. איסור גובר על היתר תמיד.</p>
+  <p class="hint">
+    הציר המפורש ביותר, ולכן גובר על קטגוריות ועל סוגי תוכן. איסור גובר על היתר תמיד.
+    <br><strong>כתובת יוטיוב שתודבק כאן תנותב אוטומטית לאזור יוטיוב</strong> — שם היא נאכפת.
+  </p>
   <table>
     <thead><tr><th>שם</th><th>כתובת</th><th>גבול</th><th>פעולה</th><th></th></tr></thead>
     <tbody>

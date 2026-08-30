@@ -322,5 +322,38 @@ check('תווים פסולים',     normalizeYouTubeInput('@שלום עולם')
 check('דומיין אחר לגמרי', normalizeYouTubeInput('vimeo.com/123')['kind'], 'other');
 
 
+echo "\n— כתובת של פריט יוטיוב —\n";
+/*
+ * בלי הכתובות האלה, ערוץ מאושר אינו נגיש בכלל במצב קיוסק: האריחים
+ * נבנים מכללי כתובות, ולפריט פלטפורמה אין כתובת משלו.
+ */
+check('ערוץ',     youTubeItemUrl('channel', 'UCabc'), 'https://www.youtube.com/channel/UCabc');
+check('כינוי',    youTubeItemUrl('handle', 'mercaz'), 'https://www.youtube.com/@mercaz');
+check('סרטון',    youTubeItemUrl('video', 'abc123'), 'https://www.youtube.com/watch?v=abc123');
+check('פלייליסט', youTubeItemUrl('playlist', 'PL1'), 'https://www.youtube.com/playlist?list=PL1');
+check('סוג לא מוכר', youTubeItemUrl('nope', 'x'), '');
+
+// הכתובות שנוצרות חייבות להיות מזוהות חזרה, אחרת האריח ייחסם.
+foreach ([['channel', 'UCabcdefghijklmnopqrstuv'], ['handle', 'mercaz'],
+          ['video', 'dQw4w9WgXcQ'], ['playlist', 'PLabcdefghij123']] as [$k, $id]) {
+    $back = parseYouTube(youTubeItemUrl($k, $id));
+    check("הלוך-חזור: $k", [$back['kind'], $back['id']], [$k, $id]);
+}
+
+/*
+ * המלכודת שהתגלתה בייצור: youtu.be/ID מפנה ל-youtube.com/watch,
+ * דומיין אחר שכלל הכתובת כבר אינו חל עליו. ההכרעה נופלת אז לכללי
+ * הפלטפורמה, והמנהל רואה "חסום" על כתובת שהוא בטוח שהתיר.
+ */
+$shortLink = [$rule('https://youtu.be/_rYPW4QzwG8', ['scope' => 'domain_plus'])];
+$ytOff = $set(['rules' => $shortLink, 'platforms' => [PLATFORM_YOUTUBE => ['mode' => 'off']]]);
+check('הקישור המקוצר עצמו מותר לפי הכלל',
+      evaluate($user(), $pol(), $ytOff, $now, ['url' => 'https://youtu.be/_rYPW4QzwG8'])['code'],
+      'rule_allow');
+check('אבל היעד שאליו הוא מפנה כבר לא',
+      evaluate($user(), $pol(), $ytOff, $now,
+               ['url' => 'https://www.youtube.com/watch?v=_rYPW4QzwG8'])['code'], 'yt_off');
+
+
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 exit($fail === 0 ? 0 : 1);

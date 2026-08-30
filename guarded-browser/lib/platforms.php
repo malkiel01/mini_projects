@@ -218,3 +218,29 @@ function normalizeYouTubeInput(string $raw): array {
         ? ['kind' => 'handle', 'id' => strtolower($raw)]
         : ['kind' => 'other', 'id' => ''];
 }
+
+/**
+ * הכתובת שפותחת פריט יוטיוב מאושר.
+ *
+ * בלי זה, ערוץ שאושר אינו נגיש בכלל במצב קיוסק: האריחים נבנים
+ * מכללי כתובות, ולפריט פלטפורמה אין כתובת משלו.
+ */
+function youTubeItemUrl(string $kind, string $id): string {
+    return match ($kind) {
+        'channel'  => 'https://www.youtube.com/channel/' . $id,
+        'handle'   => 'https://www.youtube.com/@' . $id,
+        'video'    => 'https://www.youtube.com/watch?v=' . $id,
+        'playlist' => 'https://www.youtube.com/playlist?list=' . $id,
+        default    => '',
+    };
+}
+
+/** שם ברירת מחדל לאריח, כשהמנהל לא נתן אחד. */
+function youTubeItemFallbackLabel(string $kind, string $id): string {
+    return match ($kind) {
+        'channel', 'handle' => 'ערוץ: ' . ($kind === 'handle' ? '@' . $id : $id),
+        'video'             => 'סרטון',
+        'playlist'          => 'פלייליסט',
+        default             => $id,
+    };
+}
