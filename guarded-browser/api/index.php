@@ -284,6 +284,22 @@ try {
         out(['ok' => true, 'allowed' => $d['allow'], 'code' => $d['code'], 'reason' => $d['reason']]);
     }
 
+    /* ── רישום אבחון מהמכשיר ────────────────────────────────────
+     * נשמרים 30 האחרונים בלבד: זהו מאגר אבחון, לא יומן קבוע.
+     */
+    if ($do === 'trace') {
+        $user = requireUser();
+        $body = mb_substr((string) (body()['body'] ?? ''), 0, 60000);
+        if (trim($body) === '') bad('רישום ריק', 'empty');
+
+        q('INSERT INTO traces (user_id, at, label, device, sdk, body) VALUES (?,?,?,?,?,?)',
+          [(int) $user['id'], nowIso(), mb_substr(field('label'), 0, 40),
+           mb_substr(field('device'), 0, 80), (int) (body()['sdk'] ?? 0), $body]);
+
+        q('DELETE FROM traces WHERE id NOT IN (SELECT id FROM traces ORDER BY id DESC LIMIT 30)');
+        out(['ok' => true]);
+    }
+
     /* ── פעימה ─────────────────────────────────────────────────────
      * צוברת זמן צפייה ומחזירה את המצב. זה גם ערוץ הניתוק: מנהל
      * שמשעה חשבון או מוחק מכשיר — הפעימה הבאה מחזירה סירוב.

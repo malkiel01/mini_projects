@@ -131,6 +131,34 @@ note($msg ?? '', 'ok');
 </div>
 
 <div class="card">
+  <h2>רישומי אבחון מהמכשיר</h2>
+  <p class="hint">
+    רצף האירועים שהאפליקציה הקליטה, עם מצב הדגלים בכל נקודה.
+    <br>לשליחה מהמכשיר: בדפדפן, <strong>לחיצה ארוכה על "חלון צף"</strong>.
+  </p>
+  <?php $traces = all('SELECT t.*, u.username FROM traces t
+                       LEFT JOIN users u ON u.id = t.user_id
+                       ORDER BY t.id DESC LIMIT 10');
+  if (!$traces): ?>
+    <p class="hint" style="margin:0">עדיין לא נשלח דבר.</p>
+  <?php else: foreach ($traces as $t): ?>
+    <details class="sec" style="margin-bottom:10px">
+      <summary>
+        <?= h(str_replace(['T','Z'], [' ',''], substr($t['at'], 0, 16))) ?>
+        <span class="sec-tag"><?= h($t['username'] ?? '—') ?> ·
+          <?= h($t['device']) ?> · API <?= (int) $t['sdk'] ?> ·
+          <?= h($t['label']) ?></span>
+      </summary>
+      <div class="sec-body">
+        <pre style="direction:ltr;text-align:left;white-space:pre;font-size:11.5px;
+                    background:var(--bg);padding:12px;border-radius:9px;
+                    overflow:auto;max-height:70vh"><?= h($t['body']) ?></pre>
+      </div>
+    </details>
+  <?php endforeach; endif; ?>
+</div>
+
+<div class="card">
   <h2>יומן שגיאות</h2>
   <p class="hint">
     <?= $log === '' ? 'ריק — לא נרשמה שגיאה.' : 'השגיאות האחרונות. העתיקו ושלחו לי.' ?>

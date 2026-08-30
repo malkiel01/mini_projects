@@ -208,5 +208,20 @@ function schemaStatements(): array {
     )",
     "CREATE INDEX IF NOT EXISTS idx_alerts_open ON alerts(acked_at, id DESC)",
 
+
+    // ── רישומי אבחון מהמכשיר ────────────────────────────────────
+    // רצף האירועים שהאפליקציה הקליטה. תקלה שנמשכת פחות משנייה אינה
+    // ניתנת לתיאור במילים, וזה המקום היחיד שבו רואים אותה.
+    "CREATE TABLE IF NOT EXISTS traces (
+        id      INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        at      TEXT    NOT NULL,
+        label   TEXT    NOT NULL DEFAULT '',
+        device  TEXT    NOT NULL DEFAULT '',
+        sdk     INTEGER NOT NULL DEFAULT 0,
+        body    TEXT    NOT NULL DEFAULT ''
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_traces ON traces(id DESC)",
+
     ];
 }

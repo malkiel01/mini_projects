@@ -65,7 +65,14 @@ class BrowserActivity : AppCompatActivity() {
      */
     inner class MediaBridge {
         @JavascriptInterface
-        fun setPlaying(playing: Boolean) { mediaPlaying = playing }
+        fun setPlaying(playing: Boolean) {
+            if (mediaPlaying != playing) Trace.log("media", if (playing) "מתנגן" else "נעצר")
+            mediaPlaying = playing
+        }
+
+        /** הדף מדווח על אירועים משלו — מסך מלא, שגיאות, מידות. */
+        @JavascriptInterface
+        fun note(tag: String, detail: String) { Trace.log("js:$tag", detail) }
     }
 
     /*
@@ -119,6 +126,10 @@ class BrowserActivity : AppCompatActivity() {
         val v = PolicyEngine.evaluate(policy, ruleSet, start, true, usedSec, sessionSec)
         if (!v.allow && !v.needsServer) { refuse(v.reason.ifEmpty { "הכתובת אינה מותרת" }); return }
 
+        Trace.reset()
+        Trace.log("browser.open", "sdk=" + Build.VERSION.SDK_INT +
+            " allowPip=" + policy.allowPip + " allowBg=" + policy.allowBackground)
+
         val first = PolicyEngine.normalize(start)?.let { normalizedToUrl(start) } ?: start
         lastAllowed = first
         b.web.loadUrl(first)
@@ -140,6 +151,9 @@ class BrowserActivity : AppCompatActivity() {
         b.close.setOnClickListener { finish() }
         b.reload.setOnClickListener { b.web.reload() }
         b.pip.setOnClickListener { onPipButton() }
+        // לחיצה ארוכה שולחת את רישום האבחון. מוסתר מהמשתמש הרגיל,
+        // וזמין מיד למי שמנסה להבין למה משהו לא עבד.
+        b.pip.setOnLongClickListener { sendTrace(); true }
         b.pip.visibility = View.VISIBLE
 
         /*
@@ -201,6 +215,7 @@ class BrowserActivity : AppCompatActivity() {
              * במקום הווידאו בלבד.
              */
             override fun onShowCustomView(view: View, cb: CustomViewCallback) {
+                Trace.log("onShowCustomView", view.javaClass.simpleName + " " + state())
                 if (customView != null) { cb.onCustomViewHidden(); return }
                 customView = view
                 customCallback = cb
@@ -211,6 +226,7 @@ class BrowserActivity : AppCompatActivity() {
             }
 
             override fun onHideCustomView() {
+                Trace.log("onHideCustomView", state())
                 b.fullscreen.removeAllViews()
                 b.fullscreen.visibility = View.GONE
                 b.web.visibility = View.VISIBLE
@@ -389,6 +405,7 @@ class BrowserActivity : AppCompatActivity() {
      * את הטעינה של הדף שאליו נחזור, והמשתמש היה נתקע על כיסוי לבן.
      */
     private fun showCover() {
+        Trace.log("showCover", state())
         b.web.evaluateJavascript(
             "(function(){try{document.querySelectorAll('video,audio')" +
             ".forEach(function(m){m.pause();});}catch(e){}})()", null)
@@ -417,6 +434,7 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     private fun hideCover() {
+        if (b.cover.visibility == View.VISIBLE) Trace.log("hideCover", state())
         ticker.removeCallbacks(coverTimeout)
         b.cover.visibility = View.GONE
     }
@@ -606,6 +624,7 @@ class BrowserActivity : AppCompatActivity() {
      */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
+        Trace.log("onUserLeaveHint", state())
         if (closing || !policy.allowPip || !mediaPlaying) return
         // סינכרוני, בלי שום המתנה: זה הרגע האחרון שבו אנדרואיד מרשה.
         enterPip()
@@ -635,17 +654,18 @@ class BrowserActivity : AppCompatActivity() {
          * חלון צף מציג את מה שה-Activity מציגה. בלי זה הוא מקבל את
          * כל הדף — כותרות, המלצות ורקע שחור — במקום את הווידאו.
          */
-        b.web.evaluateJavascript(
-            "(function(){try{var v=document.querySelector('video');" +
-            "if(v&&!document.fullscreenElement){" +
-            "(v.requestFullscreen||v.webkitRequestFullscreen||function(){}).call(v);}" +
-            "}catch(e){}})()", null)
-
+        pinVideo(true)
         pipRequested = true
         return try {
-            enterPictureInPictureMode(
+            val ok = enterPictureInPictureMode(
                 PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build())
-        } catch (e: Exception) { pipRequested = false; false }
+            Trace.log("enterPictureInPictureMode", "returned=$ok " + state())
+            ok
+        } catch (e: Exception) {
+            Trace.log("enterPictureInPictureMode", "EXCEPTION " + e.javaClass.simpleName + ": " + e.message)
+            pipRequested = false
+            false
+        }
     }
 
     /**
@@ -694,6 +714,65 @@ class BrowserActivity : AppCompatActivity() {
         dialog.show()
     }
 
+
+    /**
+     * מצמיד את הווידאו לכל המסך, או משחרר אותו.
+     *
+     * הניסיון הקודם ביקש מסך מלא דרך requestFullscreen — וזו קריאה
+     * שהדפדפן דוחה בלי מחוות משתמש. לחיצה על כפתור באפליקציה אינה
+     * מחווה בתוך הדף, ולכן הבקשה נדחתה בשקט וה-PiP קיבל את כל הדף:
+     * כותרות, המלצות, ורקע שחור מסביב לווידאו הקטן.
+     *
+     * הצמדה ב-CSS אינה דורשת מחווה ואינה יכולה להידחות. הדף מדווח
+     * חזרה מה מצא, כדי שהרישום יראה אם היה בכלל וידאו להצמיד.
+     */
+    /**
+     * שולח את הרישום לשרת, לצפייה בפאנל.
+     *
+     * תקלה שקורית פעם אחת ונמשכת פחות משנייה אינה ניתנת לתיאור
+     * במילים — "לא עובד" הוא כל מה שנשאר ממנה. הרצף המדויק, עם מצב
+     * הדגלים בכל נקודה, הופך אותה לניתנת לפתרון בסבב אחד.
+     */
+    private fun sendTrace() {
+        if (Trace.isEmpty()) { toast("אין מה לשלוח עדיין"); return }
+        toast("שולח אבחון…")
+        Api.trace(store.token, "pip", Trace.dump()) { r ->
+            toast(if (r.ok) "האבחון נשלח. הוא מופיע בפאנל תחת \u0022אבחון\u0022."
+                  else "השליחה נכשלה: " + r.error)
+        }
+    }
+
+    private fun pinVideo(on: Boolean) {
+        val js = if (on)
+            "(function(){try{" +
+            "var v=document.querySelector('video');" +
+            "if(!v){GBMedia.note('pinVideo','לא נמצאה תגית וידאו');return;}" +
+            "var s=document.getElementById('gb-pin');" +
+            "if(!s){s=document.createElement('style');s.id='gb-pin';" +
+            "document.documentElement.appendChild(s);}" +
+            "s.textContent='html,body{background:#000!important;overflow:hidden!important}'+" +
+            "'video{position:fixed!important;top:0!important;left:0!important;'+" +
+            "'width:100vw!important;height:100vh!important;max-width:none!important;'+" +
+            "'max-height:none!important;object-fit:contain!important;background:#000!important;'+" +
+            "'z-index:2147483647!important;transform:none!important}';" +
+            "GBMedia.note('pinVideo','הוצמד '+Math.round(v.videoWidth)+'x'+" +
+            "Math.round(v.videoHeight)+' paused='+v.paused);" +
+            "}catch(e){GBMedia.note('pinVideo','שגיאה: '+e);}})()"
+        else
+            "(function(){try{var s=document.getElementById('gb-pin');" +
+            "if(s)s.textContent='';GBMedia.note('pinVideo','שוחרר');}catch(e){}})()"
+
+        b.web.evaluateJavascript(js, null)
+    }
+
+    /** מצב הדגלים ברגע נתון. זה מה שמעניין ליד כל אירוע ברישום. */
+    private fun state(): String =
+        "playing=$mediaPlaying pipReq=$pipRequested inPip=" +
+        (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isInPictureInPictureMode) +
+        " custom=" + (customView != null) +
+        " cover=" + (b.cover.visibility == View.VISIBLE) +
+        " bg=$background allowPip=${policy.allowPip} allowBg=${policy.allowBackground}"
+
     private fun pipRow(label: String, ok: Boolean, hint: String): String =
         (if (ok) "\u2713 " else "\u2717 ") + label + (if (ok) "" else "\n     " + hint)
 
@@ -712,6 +791,7 @@ class BrowserActivity : AppCompatActivity() {
 
     override fun onPictureInPictureModeChanged(inPip: Boolean, config: android.content.res.Configuration) {
         super.onPictureInPictureModeChanged(inPip, config)
+        Trace.log("pipModeChanged", "inPip=$inPip " + state())
 
         // בחלון צף אין מקום לשורת כתובת ולכפתורים; רק הווידאו.
         b.bar.visibility = if (inPip || customView != null) View.GONE else View.VISIBLE
@@ -723,7 +803,8 @@ class BrowserActivity : AppCompatActivity() {
             b.web.onResume()
         } else {
             pipRequested = false
-            // חזרה מהחלון הצף — יוצאים גם ממסך מלא, אחרת נשארים
+            pinVideo(false)
+            // אם הדף כן נכנס למסך מלא משלו — לצאת ממנו, אחרת נשארים
             // בווידאו בלי שום דרך לחזור לדפדפן.
             if (customView != null) b.web.evaluateJavascript(
                 "(function(){try{(document.exitFullscreen||document.webkitExitFullscreen" +
@@ -734,6 +815,7 @@ class BrowserActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         onScreen = true
+        Trace.log("onResume", state())
         if (!closing) ticker.postDelayed(beat, BEAT_SEC * 1000L)
         b.web.onResume()
         // חזרנו למסך — אין עוד סיבה להתראה.
@@ -763,6 +845,7 @@ class BrowserActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         onScreen = false
+        Trace.log("onPause", state())
 
         /*
          * ‏ברקע הזמן ממשיך להיספר, וזו החלטה ולא פרט טכני.
@@ -780,12 +863,15 @@ class BrowserActivity : AppCompatActivity() {
          */
         val keepGoing = policy.allowBackground || pipRequested || isInPictureInPictureMode
 
+        Trace.log("onPause.decision", "keepGoing=$keepGoing closing=$closing")
+
         if (keepGoing && !closing) {
             background = true
             GuardService.start(this, "הצפייה ממשיכה. מכסת הזמן נספרת.")
         } else {
             background = false
             ticker.removeCallbacks(beat)
+            Trace.log("webView.onPause", "השהיית ה-WebView — כאן הניגון נעצר")
             b.web.onPause()
             GuardService.stop(this)
         }

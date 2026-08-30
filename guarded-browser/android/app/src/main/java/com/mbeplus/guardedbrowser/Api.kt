@@ -94,6 +94,15 @@ object Api {
             if (clientAllowed != null) put("client_allowed", clientAllowed)
         }, token, cb)
 
+    /** שולח את רישום האבחון לשרת, לצפייה בפאנל. */
+    fun trace(token: String, label: String, body: String, cb: (Result) -> Unit) =
+        call("trace", JSONObject().apply {
+            put("label", label)
+            put("body", body)
+            put("device", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+            put("sdk", android.os.Build.VERSION.SDK_INT)
+        }, token, cb)
+
     fun heartbeat(token: String, seconds: Int, sessionSec: Int, cb: (Result) -> Unit) =
         call("heartbeat", JSONObject().apply {
             put("seconds", seconds); put("session_sec", sessionSec)
