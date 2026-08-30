@@ -38,7 +38,7 @@ class BrowserActivity : AppCompatActivity() {
 
     private lateinit var b: ActivityBrowserBinding
     private lateinit var store: Store
-    private lateinit var policy: Policy
+    private var policy: Policy = Policy()
     private var ruleSet: RuleSet = RuleSet()
 
     private var usedSec = 0          // נוצל היום, לפי השרת
@@ -446,7 +446,14 @@ class BrowserActivity : AppCompatActivity() {
      * ומאזין שנרשם פעם אחת מפסיק לדעת מה קורה.
      */
     private fun watchMedia() {
-        if (!policy.allowPip && !policy.allowBackground) return
+        /*
+         * מותקן תמיד, גם כשההרשאה כבויה.
+         *
+         * בגרסה הקודמת הוא רץ רק כשחלון צף אושר — ולכן מסך האבחון
+         * הראה "לא מזוהה סרטון מתנגן" בכל פעם שההרשאה הייתה כבויה,
+         * כלומר הציג תוצאה של הבעיה כאילו הייתה בעיה נוספת. אבחון
+         * שסותר את עצמו גרוע מאין אבחון.
+         */
         b.web.evaluateJavascript(
             "(function(){try{" +
             "function report(){var v=document.querySelector('video,audio');" +
@@ -665,6 +672,26 @@ class BrowserActivity : AppCompatActivity() {
         b.web.onResume()
         // חזרנו למסך — אין עוד סיבה להתראה.
         if (!background) GuardService.stop(this)
+        refreshPolicy()
+    }
+
+    /**
+     * מושך מדיניות עדכנית מהשרת.
+     *
+     * בלי זה, שינוי שהמנהל עשה בפאנל נכנס לתוקף רק אחרי חזרה למסך
+     * הפתיחה — והמשתמש רואה "לא מאושר" על משהו שאושר לו לפני רגע.
+     * שגיאת רשת אינה משנה דבר: ממשיכים עם מה שכבר יש.
+     */
+    private fun refreshPolicy() {
+        Api.policy(store.token) { r ->
+            val j = r.json ?: return@policy
+            if (!j.optBoolean("ok")) return@policy
+
+            store.savePolicy(j)
+            policy = store.policy()
+            ruleSet = store.ruleSet()
+            b.pip.visibility = View.VISIBLE
+        }
     }
 
     override fun onPause() {
