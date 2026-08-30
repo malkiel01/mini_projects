@@ -293,11 +293,23 @@ class BrowserActivity : AppCompatActivity() {
             append(".ytp-endscreen-content,.ytp-ce-element,.ytp-pause-overlay,")
             append("ytd-reel-shelf-renderer,ytd-rich-shelf-renderer")
         }
-        b.web.evaluateJavascript(
-            "(function(){try{var s=document.getElementById('gb-style')||" +
-            "document.createElement('style');s.id='gb-style';" +
-            "s.textContent='$hide{display:none!important}';" +
-            "document.documentElement.appendChild(s);}catch(e){}})()", null)
+        /*
+         * ‏MutationObserver ולא הזרקה חד-פעמית: יוטיוב מרנדר את הדף
+         * אחרי onPageFinished ומחליף חלקים ממנו תוך כדי, ולכן סגנון
+         * שהוזרק פעם אחת נעלם. הצופה מחזיר אותו בכל שינוי.
+         */
+        val js = "(function(){try{" +
+            "var css='" + hide + "{display:none!important}';" +
+            "function put(){var s=document.getElementById('gb-style');" +
+            "if(!s){s=document.createElement('style');s.id='gb-style';" +
+            "(document.head||document.documentElement).appendChild(s);}" +
+            "if(s.textContent!==css)s.textContent=css;}" +
+            "put();" +
+            "if(!window.__gbObs){window.__gbObs=new MutationObserver(put);" +
+            "window.__gbObs.observe(document.documentElement," +
+            "{childList:true,subtree:true});}" +
+            "}catch(e){}})()"
+        b.web.evaluateJavascript(js, null)
     }
 
     /**

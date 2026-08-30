@@ -383,5 +383,42 @@ check('במצב פתוח החיפוש אינו נחסם',
                      ['mode' => 'full'], $ytItems, false)['allow'], true);
 
 
+echo "\n— חיפוש בתוך דף ערוץ —\n";
+/*
+ * הפער שהתגלה: /@ערוץ/search נקרא "ערוץ מאושר" ועבר, בזמן שיוטיוב
+ * מציג שם גם תוצאות מערוצים אחרים. חיפוש הוא חיפוש, לא משנה מאיזה
+ * דף התחילו אותו.
+ */
+check('חיפוש בדף ערוץ מזוהה כחיפוש',
+      parseYouTube('https://www.youtube.com/@Mercaz/search?query=x')['kind'], 'search');
+check('וגם בצורת channel',
+      parseYouTube('https://www.youtube.com/channel/UCabcdefghijk/search?query=x')['kind'], 'search');
+check('ודף הערוץ עצמו נשאר ערוץ',
+      parseYouTube('https://www.youtube.com/@Mercaz')['kind'], 'handle');
+check('וגם לשוניות אחרות שלו',
+      parseYouTube('https://www.youtube.com/@Mercaz/videos')['kind'], 'handle');
+check('בפועל — חיפוש בדף ערוץ מאושר עדיין נחסם',
+      youTubeVerdict($ytUrl('https://www.youtube.com/@Torah/search?query=x'),
+                     $restricted, $ytItems, true)['code'], 'yt_no_search');
+check('וכשהחיפוש הותר — נפתח',
+      youTubeVerdict($ytUrl('https://www.youtube.com/@Torah/search?query=x'),
+                     ['mode' => 'restricted', 'allow_search' => 1], $ytItems, true)['allow'], true);
+
+
+echo "\n— נקודות הקצה של החיפוש —\n";
+/*
+ * חסימת /results לבדה אינה מספיקה: יוטיוב הוא אתר עמוד-יחיד,
+ * והתוצאות וההצעות מגיעות בבקשות רקע. אם הן עוברות, המשתמש רואה
+ * תוצאות ותמונות ממוזערות גם כשהניווט אליהן ייחסם.
+ */
+check('בקשת חיפוש',   isYouTubeSearchEndpoint('/youtubei/v1/search'), true);
+check('הצעות השלמה',  isYouTubeSearchEndpoint('/complete/search'), true);
+check('הנגן אינו חיפוש', isYouTubeSearchEndpoint('/youtubei/v1/player'), false);
+check('דף הערוץ אינו חיפוש', isYouTubeSearchEndpoint('/youtubei/v1/browse'), false);
+check('הצעות ההשלמה נחסמות בפועל',
+      youTubeVerdict($ytUrl('https://www.youtube.com/complete/search?q=x'),
+                     $noSearch, $ytItems, false)['code'], 'yt_no_search');
+
+
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 exit($fail === 0 ? 0 : 1);

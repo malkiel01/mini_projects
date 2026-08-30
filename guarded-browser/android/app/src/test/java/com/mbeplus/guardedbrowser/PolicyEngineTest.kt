@@ -230,6 +230,30 @@ class PolicyEngineTest {
             PlatformRule("restricted", allowSearch = true), ytItems, false).allow)
     }
 
+
+    /**
+     * חיפוש בתוך דף ערוץ — /@name/search — נקרא קודם "ערוץ מאושר"
+     * ועבר, בזמן שיוטיוב מציג שם גם תוצאות מערוצים אחרים.
+     */
+    @Test fun channelPageSearchCountsAsSearch() {
+        assertEquals("search",
+            PolicyEngine.parseYouTube("https://www.youtube.com/@Mercaz/search?query=x").kind)
+        assertEquals("handle",
+            PolicyEngine.parseYouTube("https://www.youtube.com/@Mercaz").kind)
+        assertEquals("handle",
+            PolicyEngine.parseYouTube("https://www.youtube.com/@Mercaz/videos").kind)
+        assertEquals("yt_no_search", PolicyEngine.youTubeVerdict(
+            yt("https://www.youtube.com/@Torah/search?query=x"),
+            PlatformRule("restricted"), ytItems, true).code)
+    }
+
+    @Test fun searchFeedsAreBlockedAtRequestLevel() {
+        assertTrue(PolicyEngine.isYouTubeSearchEndpoint("/youtubei/v1/search"))
+        assertTrue(PolicyEngine.isYouTubeSearchEndpoint("/complete/search"))
+        assertFalse(PolicyEngine.isYouTubeSearchEndpoint("/youtubei/v1/player"))
+        assertFalse(PolicyEngine.isYouTubeSearchEndpoint("/youtubei/v1/browse"))
+    }
+
     /** בלי זה, סרטון מאושר היה מוצג כמסך שחור. */
     @Test fun playerAssetsPassThrough() {
         assertEquals("yt_asset", PolicyEngine.youTubeVerdict(

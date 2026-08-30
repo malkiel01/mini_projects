@@ -187,7 +187,7 @@ function youTubeVerdict(array $url, array $rule, array $items, bool $isMainFrame
          * מספיק — צריך לחסום את הבקשה שמחזירה את התוצאות.
          */
         if (($rule['mode'] ?? '') === 'restricted' && !($rule['allow_search'] ?? 0)
-            && str_starts_with($url['path'], '/youtubei/v1/search')) {
+            && isYouTubeSearchEndpoint($url['path'])) {
             return decision(false, 'yt_no_search', 'החיפוש ביוטיוב חסום עבורך');
         }
 

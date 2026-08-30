@@ -64,6 +64,15 @@ function parseYouTube(string $url): array {
     if (preg_match('#^/shorts/([A-Za-z0-9_-]{6,})#', $path, $m)) {
         return ['kind' => 'shorts', 'id' => $m[1]];
     }
+    /*
+     * חיפוש בתוך דף ערוץ — /@name/search או /channel/UC.../search.
+     *
+     * חייב להיבדק לפני תבניות הערוץ, אחרת הוא נקרא "ערוץ מאושר"
+     * ועובר. יוטיוב מציג שם גם תוצאות מערוצים אחרים, ולכן חיפוש
+     * הוא חיפוש — לא משנה מאיזה דף התחילו אותו.
+     */
+    if (preg_match('#/search$#', $path)) return ['kind' => 'search', 'id' => ''];
+
     if (preg_match('#^/channel/(UC[A-Za-z0-9_-]{10,})#', $path, $m)) {
         return ['kind' => 'channel', 'id' => $m[1]];
     }
@@ -243,4 +252,19 @@ function youTubeItemFallbackLabel(string $kind, string $id): string {
         'playlist'          => 'פלייליסט',
         default             => $id,
     };
+}
+
+/**
+ * נקודות הקצה שמזינות את החיפוש.
+ *
+ * לחסום את הכתובת /results לבדה אינו מספיק: יוטיוב הוא אתר
+ * עמוד-יחיד, והתוצאות וההצעות מגיעות בבקשות רקע. אם הן עוברות,
+ * המשתמש רואה תוצאות ותמונות ממוזערות גם כשהניווט אליהן ייחסם.
+ */
+function isYouTubeSearchEndpoint(string $path): bool {
+    foreach (['/youtubei/v1/search', '/complete/search', '/search_ajax',
+              '/youtubei/v1/get_search_suggestions'] as $prefix) {
+        if (str_starts_with($path, $prefix)) return true;
+    }
+    return false;
 }

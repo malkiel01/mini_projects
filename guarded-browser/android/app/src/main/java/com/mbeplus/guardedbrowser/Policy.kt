@@ -281,6 +281,12 @@ object PolicyEngine {
         if (path == "/watch" && !query["v"].isNullOrEmpty()) return YtRef("video", query["v"]!!)
         Regex("^/(?:embed|v)/([A-Za-z0-9_-]{6,})").find(path)?.let { return YtRef("video", it.groupValues[1]) }
         Regex("^/shorts/([A-Za-z0-9_-]{6,})").find(path)?.let { return YtRef("shorts", it.groupValues[1]) }
+        /*
+         * חיפוש בתוך דף ערוץ — /@name/search. חייב להיבדק לפני
+         * תבניות הערוץ, אחרת הוא נקרא "ערוץ מאושר" ועובר; יוטיוב
+         * מציג שם גם תוצאות מערוצים אחרים.
+         */
+        if (path.endsWith("/search")) return YtRef("search", "")
         Regex("^/channel/(UC[A-Za-z0-9_-]{10,})").find(path)?.let { return YtRef("channel", it.groupValues[1]) }
         Regex("^/@([A-Za-z0-9._-]+)").find(path)?.let { return YtRef("handle", it.groupValues[1].lowercase()) }
         Regex("^/(?:c|user)/([A-Za-z0-9._-]+)").find(path)?.let { return YtRef("handle", it.groupValues[1].lowercase()) }
@@ -289,6 +295,17 @@ object PolicyEngine {
         if (path == "/" || path.startsWith("/feed")) return YtRef("home", "")
         return YtRef("other", "")
     }
+
+    /**
+     * נקודות הקצה שמזינות את החיפוש.
+     *
+     * חסימת /results לבדה אינה מספיקה: התוצאות וההצעות מגיעות
+     * בבקשות רקע, ובלי לחסום אותן המשתמש רואה תוצאות ותמונות
+     * ממוזערות גם כשהניווט אליהן ייחסם.
+     */
+    fun isYouTubeSearchEndpoint(path: String): Boolean =
+        listOf("/youtubei/v1/search", "/complete/search", "/search_ajax",
+               "/youtubei/v1/get_search_suggestions").any { path.startsWith(it) }
 
     /**
      * משאבי הנגן אינם ניווט. בלי המעבר הזה, מצב מוגבל היה חוסם את
@@ -313,7 +330,7 @@ object PolicyEngine {
              * את תוכן הדף. חסימת /results לבדה אינה עוצרת אותו.
              */
             if (rule.mode == "restricted" && !rule.allowSearch &&
-                url.path.startsWith("/youtubei/v1/search")) {
+                isYouTubeSearchEndpoint(url.path)) {
                 return Verdict(false, "yt_no_search", "החיפוש ביוטיוב חסום עבורך")
             }
             if (isYouTubeAsset(url.full)) return Verdict(true, "yt_asset")
