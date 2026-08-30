@@ -448,5 +448,34 @@ check('איסור לפי כינוי חוסם',
                      $restricted, $denyHandle, true, $owner)['code'], 'yt_item_denied');
 
 
+echo "\n— פענוח בעלות מ-oEmbed —\n";
+/*
+ * הדף הרגיל של יוטיוב הוא מגה-בייט, וגוגל מחליפה אותו בדף הסכמה
+ * לעוגיות בפניות מדאטה-סנטר — התשובה חוזרת מהר ובהצלחה, ופשוט אין
+ * בה מזהה ערוץ. ‏oEmbed הוא קילובייט של JSON שמחזיר בדיוק את זה.
+ */
+check('כינוי מ-author_url',
+      parseOEmbedOwner(['author_url' => 'https://www.youtube.com/@MercazDafYomi'])['handle'],
+      'mercazdafyomi');
+check('מזהה ערוץ מ-author_url',
+      parseOEmbedOwner(['author_url' => 'https://www.youtube.com/channel/UCabcdefghijk'])['channel'],
+      'UCabcdefghijk');
+check('כותרת נשמרת',
+      parseOEmbedOwner(['author_url' => 'https://www.youtube.com/@x', 'title' => 'שיעור'])['title'],
+      'שיעור');
+check('תשובה ריקה אינה ממציאה',
+      parseOEmbedOwner([]), ['channel' => '', 'handle' => '', 'title' => '']);
+
+// הגיבוי: גריפת דף הצפייה, כששני הזיהויים קיימים בו.
+$html = '<meta name="title" content="שיעור יומי">'
+      . '{"channelId":"UCabcdefghijklmnop","canonicalBaseUrl":"/@MercazDafYomi"}';
+check('גיבוי HTML — מזהה', parseYouTubeOwnerHtml($html)['channel'], 'UCabcdefghijklmnop');
+check('גיבוי HTML — כינוי', parseYouTubeOwnerHtml($html)['handle'], 'mercazdafyomi');
+check('גיבוי HTML — כותרת', parseYouTubeOwnerHtml($html)['title'], 'שיעור יומי');
+check('דף הסכמה אינו מייצר זהות',
+      parseYouTubeOwnerHtml('<html><body>Before you continue to YouTube</body></html>'),
+      ['channel' => '', 'handle' => '', 'title' => '']);
+
+
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 exit($fail === 0 ? 0 : 1);

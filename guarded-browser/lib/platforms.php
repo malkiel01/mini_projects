@@ -120,35 +120,103 @@ function isYouTubeAsset(string $url): bool {
  * התשובה נשמרת במטמון לצמיתות: הבעלות על סרטון אינה משתנה.
  */
 
-/** שולף את מזהה הערוץ מדף הצפייה. מחזיר '' אם לא הצליח. */
-function fetchYouTubeOwner(string $videoId): array {
-    $none = ['channel' => '', 'handle' => '', 'title' => ''];
-    if (!preg_match('#^[A-Za-z0-9_-]{6,20}$#', $videoId)) return $none;
-    if (!function_exists('curl_init')) return $none;
+/**
+ * פנייה אחת החוצה, עם ברירות מחדל שמתאימות לשרת.
+ *
+ * ‏CONSENT ו-SOCS: לפניות מדאטה-סנטר גוגל מגישה דף הסכמה לעוגיות
+ * במקום התוכן. העוגיות האלה מדלגות עליו. בלעדיהן התשובה מגיעה
+ * מהר ובהצלחה — ופשוט אין בה את מה שחיפשנו.
+ */
+function httpGet(string $url, int $maxBytes = 300000): array {
+    if (!function_exists('curl_init')) return ['status' => 0, 'body' => '', 'error' => 'אין cURL'];
 
-    $url = 'https://www.youtube.com/watch?v=' . rawurlencode($videoId);
-    $ch  = curl_init($url);
     $body = '';
-
+    $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_MAXREDIRS      => 3,
-        CURLOPT_TIMEOUT        => 8,
-        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_MAXREDIRS      => 4,
+        CURLOPT_TIMEOUT        => 10,
+        CURLOPT_CONNECTTIMEOUT => 6,
         CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
                                 . '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-        CURLOPT_HTTPHEADER     => ['Accept-Language: en-US,en;q=0.9'],
-        // הדף ענק, והמזהה יושב בראשו. 300KB מספיקים, ואין טעם למשוך יותר.
-        CURLOPT_WRITEFUNCTION  => function ($ch, $chunk) use (&$body) {
+        CURLOPT_HTTPHEADER     => ['Accept-Language: en-US,en;q=0.9',
+                                   'Accept: text/html,application/json,*/*'],
+        CURLOPT_COOKIE         => 'CONSENT=YES+cb; SOCS=CAISOAgCEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjQwNjExLjA2X3AwGgJlbiACGgYIgLC_swY',
+        CURLOPT_WRITEFUNCTION  => function ($ch, $chunk) use (&$body, $maxBytes) {
             $body .= $chunk;
-            return strlen($body) > 300000 ? 0 : strlen($chunk);
+            return strlen($body) > $maxBytes ? 0 : strlen($chunk);
         },
     ]);
     curl_exec($ch);
+    $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err    = curl_error($ch);
+    $errno  = curl_errno($ch);
     curl_close($ch);
 
-    return parseYouTubeOwnerHtml($body);
+    // ‏23 = הפסקנו את הכתיבה בכוונה אחרי maxBytes, וזו אינה שגיאה.
+    return ['status' => $status, 'body' => $body,
+            'error' => ($errno && $errno !== CURLE_WRITE_ERROR) ? $err : ''];
+}
+
+/**
+ * מי הבעלים של הסרטון.
+ *
+ * ‏oEmbed קודם, וגריפת דף הצפייה רק כגיבוי. הסיבה מעשית: oEmbed הוא
+ * נקודת קצה רשמית שמחזירה קילובייט של JSON עם author_url — ואילו דף
+ * הצפייה הוא מגה-בייט שגוגל מחליפה בדף הסכמה לפניות מדאטה-סנטר.
+ * בשרת שלנו זה בדיוק מה שקרה: התשובה חזרה מהר, ופשוט לא היה בה
+ * מזהה ערוץ.
+ */
+function fetchYouTubeOwner(string $videoId): array {
+    $none = ['channel' => '', 'handle' => '', 'title' => '', 'via' => '', 'detail' => ''];
+    if (!preg_match('#^[A-Za-z0-9_-]{6,20}$#', $videoId)) return $none;
+
+    $r = httpGet('https://www.youtube.com/oembed?format=json&url='
+                 . rawurlencode('https://www.youtube.com/watch?v=' . $videoId), 20000);
+
+    if ($r['status'] === 200) {
+        $j = json_decode($r['body'], true);
+        if (is_array($j)) {
+            $owner = parseOEmbedOwner($j);
+            if ($owner['channel'] !== '' || $owner['handle'] !== '') {
+                return $owner + ['via' => 'oembed', 'detail' => ''];
+            }
+        }
+    }
+
+    // גיבוי: דף הצפייה עצמו.
+    $r2 = httpGet('https://www.youtube.com/watch?v=' . rawurlencode($videoId));
+    $owner = parseYouTubeOwnerHtml($r2['body']);
+    if ($owner['channel'] !== '' || $owner['handle'] !== '') {
+        return $owner + ['via' => 'html', 'detail' => ''];
+    }
+
+    // ‏array_replace ולא +: איחוד מערכים אינו דורס מפתח שכבר קיים,
+    // ו-$none כבר מכיל detail ריק — הפירוט היה נבלע בשקט.
+    return array_replace($none, [
+        'detail' => "oembed: {$r['status']} " . ($r['error'] ?: '')
+                  . " · html: {$r2['status']} " . strlen($r2['body']) . 'b '
+                  . ($r2['error'] ?: ''),
+    ]);
+}
+
+/**
+ * מפענח את תשובת oEmbed.
+ *
+ * ‏author_url הוא כתובת הערוץ — בצורת @כינוי או /channel/UC..., לפי
+ * מה שיוטיוב מחזיר. שתי הצורות מטופלות, כי המנהל עשוי לאשר בכל אחת.
+ */
+function parseOEmbedOwner(array $json): array {
+    $author = (string) ($json['author_url'] ?? '');
+    $channel = '';
+    $handle  = '';
+
+    if (preg_match('#/channel/(UC[A-Za-z0-9_-]{10,})#', $author, $m)) $channel = $m[1];
+    if (preg_match('#/@([A-Za-z0-9._-]+)#', $author, $m))             $handle  = strtolower($m[1]);
+
+    return ['channel' => $channel, 'handle' => $handle,
+            'title' => mb_substr((string) ($json['title'] ?? ''), 0, 200)];
 }
 
 /**

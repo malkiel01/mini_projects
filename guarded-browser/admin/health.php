@@ -105,15 +105,22 @@ note($msg ?? '', 'ok');
   <?php if ($probeResult !== null): ?>
     <?php if ($probeResult['channel'] !== '' || $probeResult['handle'] !== ''): ?>
       <div class="note note--ok">
-        השרת הגיע ליוטיוב (<?= (int) $probeResult['ms'] ?> מ״ש).
+        השרת הגיע ליוטיוב (<?= (int) $probeResult['ms'] ?> מ״ש,
+        דרך <?= h($probeResult['via'] ?? '') ?>).
         מזהה ערוץ: <code><?= h($probeResult['channel']) ?: '—' ?></code> ·
         כינוי: <code><?= h($probeResult['handle']) ? '@' . h($probeResult['handle']) : '—' ?></code>
       </div>
     <?php else: ?>
       <div class="note note--bad">
-        השרת לא הצליח לפענח (<?= (int) $probeResult['ms'] ?> מ״ש). כנראה היציאה מהשרת
-        חסומה, או שיוטיוב החזיר דף אחר. במצב הזה אפשר לאשר סרטונים אחד-אחד,
-        אבל לא ערוץ שלם.
+        השרת לא הצליח לפענח (<?= (int) $probeResult['ms'] ?> מ״ש).
+        <?php if (!empty($probeResult['detail'])): ?>
+          <br><code><?= h($probeResult['detail']) ?></code>
+          <br><small>
+            ‏0 = לא הייתה תשובה כלל (יציאה חסומה) ·
+            ‏200 עם גוף גדול = התקבל דף, אך בלי זהות ערוץ — לרוב דף הסכמה לעוגיות.
+          </small>
+        <?php endif; ?>
+        <br>במצב הזה אפשר לאשר סרטונים אחד-אחד, אבל לא ערוץ שלם.
       </div>
     <?php endif; ?>
   <?php endif; ?>
