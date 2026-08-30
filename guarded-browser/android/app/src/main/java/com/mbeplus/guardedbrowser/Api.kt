@@ -19,6 +19,11 @@ object Api {
 
     class Result(val ok: Boolean, val json: JSONObject?, val error: String)
 
+    /** הכתובת שאליה פנינו — כדי שכשל יצביע על היעד ולא רק על עצמו. */
+    private fun hostOf(): String =
+        try { java.net.URI(BuildConfig.API_BASE).host ?: BuildConfig.API_BASE }
+        catch (e: Exception) { BuildConfig.API_BASE }
+
     private fun base() = BuildConfig.API_BASE.trimEnd('/') + "/api/index.php?do="
 
     /**
@@ -50,12 +55,31 @@ object Api {
 
                 val json = try { JSONObject(text) } catch (e: Exception) { null }
                 when {
-                    json == null -> Result(false, null, "תשובה לא תקינה מהשרת")
+                    json == null -> {
+                        Trace.log("api.badjson", action + " HTTP " + code + ", " + text.length + "b")
+                        Result(false, null, "תשובה לא תקינה מהשרת (HTTP " + code + ")")
+                    }
                     json.optBoolean("ok") -> Result(true, json, "")
                     else -> Result(false, json, json.optString("error", "הבקשה נדחתה"))
                 }
             } catch (e: Exception) {
-                Result(false, null, "אין חיבור לשרת")
+                /*
+                 * שם החריגה, לא רק "אין חיבור".
+                 *
+                 * ‏UnknownHostException, SSLException, SocketTimeout
+                 * ו-"CLEARTEXT not permitted" הן תקלות שונות לגמרי
+                 * שדורשות פעולות שונות — ו"אין חיבור לשרת" מכסה את
+                 * כולן באותה מידה של חוסר תועלת.
+                 */
+                val why = when (e) {
+                    is java.net.UnknownHostException -> "לא נמצא השרת (DNS או אין רשת)"
+                    is java.net.SocketTimeoutException -> "השרת לא ענה בזמן"
+                    is javax.net.ssl.SSLException -> "בעיית אבטחה בחיבור (SSL)"
+                    is java.net.ConnectException -> "לא ניתן להתחבר לשרת"
+                    else -> e.javaClass.simpleName + ": " + (e.message ?: "")
+                }
+                Trace.log("api.fail", action + " -> " + why)
+                Result(false, null, why + "\n" + hostOf())
             } finally {
                 conn?.disconnect()
             }
