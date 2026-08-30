@@ -30,8 +30,11 @@ $dbFile  = dataDir() . '/app.sqlite';
 
 $checks = [
     probe('גרסת PHP', PHP_VERSION_ID >= 80000, PHP_VERSION, 'נדרש 8.0 ומעלה'),
-    probe('גרסת SQLite', version_compare($sqlite, '3.24', '>='), $sqlite,
-          'נדרש 3.24 ומעלה — בלעדיו ON CONFLICT אינו נתמך והשמירה נכשלת'),
+    // הקוד נכתב כך שיעבוד גם בגרסאות ישנות, ולכן זו הערה ולא כשל.
+    probe('גרסת SQLite', version_compare($sqlite, '3.7', '>='), $sqlite,
+          version_compare($sqlite, '3.24', '<')
+            ? 'גרסה ישנה מ-3.24 — הקוד נמנע מ-UPSERT ולכן זה תקין'
+            : ''),
     probe('הרחבת PDO SQLite', in_array('sqlite', PDO::getAvailableDrivers(), true),
           implode(', ', PDO::getAvailableDrivers())),
     probe('cURL', function_exists('curl_init'), function_exists('curl_init') ? 'זמין' : 'חסר',

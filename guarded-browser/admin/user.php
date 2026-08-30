@@ -49,26 +49,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $types = array_values(array_intersect(
             (array) ($_POST['types'] ?? []), array_keys(contentTypeCatalog())));
 
-        q('INSERT INTO policies (user_id, mode, posture, blocked_types, timezone, days_mask,
-             window_start, window_end, daily_quota_min, session_max_min, max_devices,
-             allow_downloads, block_screenshots, keep_history, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-           ON CONFLICT(user_id) DO UPDATE SET
-             mode=excluded.mode, posture=excluded.posture, blocked_types=excluded.blocked_types,
-             timezone=excluded.timezone, days_mask=excluded.days_mask,
-             window_start=excluded.window_start, window_end=excluded.window_end,
-             daily_quota_min=excluded.daily_quota_min, session_max_min=excluded.session_max_min,
-             max_devices=excluded.max_devices, allow_downloads=excluded.allow_downloads,
-             block_screenshots=excluded.block_screenshots, keep_history=excluded.keep_history,
-             updated_at=excluded.updated_at',
-          [$uid, $mode, $post, implode(',', $types), $tz, $mask, $ws, $we,
-           max(0, (int) ($_POST['daily_quota_min'] ?? 0)),
-           max(0, (int) ($_POST['session_max_min'] ?? 0)),
-           max(1, (int) ($_POST['max_devices'] ?? 1)),
-           isset($_POST['allow_downloads']) ? 1 : 0,
-           isset($_POST['block_screenshots']) ? 1 : 0,
-           isset($_POST['keep_history']) ? 1 : 0,
-           nowIso()]);
+        upsert('policies', ['user_id' => $uid], [
+            'mode' => $mode, 'posture' => $post, 'blocked_types' => implode(',', $types),
+            'timezone' => $tz, 'days_mask' => $mask,
+            'window_start' => $ws, 'window_end' => $we,
+            'daily_quota_min'   => max(0, (int) ($_POST['daily_quota_min'] ?? 0)),
+            'session_max_min'   => max(0, (int) ($_POST['session_max_min'] ?? 0)),
+            'max_devices'       => max(1, (int) ($_POST['max_devices'] ?? 1)),
+            'allow_downloads'   => isset($_POST['allow_downloads']) ? 1 : 0,
+            'block_screenshots' => isset($_POST['block_screenshots']) ? 1 : 0,
+            'keep_history'      => isset($_POST['keep_history']) ? 1 : 0,
+            'updated_at'        => nowIso(),
+        ]);
 
         q('UPDATE users SET expires_at = ?, display_name = ?, note = ? WHERE id = ?',
           [trim((string) ($_POST['expires_at'] ?? '')),
@@ -90,14 +82,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'youtube') {
         $m = in_array($_POST['yt_mode'] ?? '', ['off', 'restricted', 'full'], true)
              ? $_POST['yt_mode'] : 'off';
-        q('INSERT INTO platform_rules (user_id, platform, mode, allow_search, allow_shorts, created_at)
-           VALUES (?,?,?,?,?,?)
-           ON CONFLICT(user_id, platform) DO UPDATE SET
-             mode=excluded.mode, allow_search=excluded.allow_search,
-             allow_shorts=excluded.allow_shorts',
-          [$uid, PLATFORM_YOUTUBE, $m,
-           isset($_POST['allow_search']) ? 1 : 0,
-           isset($_POST['allow_shorts']) ? 1 : 0, nowIso()]);
+        upsert('platform_rules',
+               ['user_id' => $uid, 'platform' => PLATFORM_YOUTUBE],
+               ['mode' => $m,
+                'allow_search' => isset($_POST['allow_search']) ? 1 : 0,
+                'allow_shorts' => isset($_POST['allow_shorts']) ? 1 : 0],
+               ['created_at' => nowIso()]);
         $msg = 'הגדרות יוטיוב נשמרו';
 
     } elseif ($action === 'yt_add') {
@@ -128,12 +118,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $label = (string) ($owner['title'] ?? '');
             }
 
-            q('INSERT INTO platform_items (user_id, platform, kind, item_id, label, action, created_at)
-               VALUES (?,?,?,?,?,?,?)
-               ON CONFLICT(user_id, platform, kind, item_id) DO UPDATE SET
-                 action=excluded.action, label=excluded.label',
-              [$uid, PLATFORM_YOUTUBE, $p['kind'], $p['id'], mb_substr($label, 0, 120),
-               ($_POST['yt_action'] ?? 'allow') === 'deny' ? 'deny' : 'allow', nowIso()]);
+            upsert('platform_items',
+                   ['user_id' => $uid, 'platform' => PLATFORM_YOUTUBE,
+                    'kind' => $p['kind'], 'item_id' => $p['id']],
+                   ['label' => mb_substr($label, 0, 120),
+                    'action' => ($_POST['yt_action'] ?? 'allow') === 'deny' ? 'deny' : 'allow'],
+                   ['created_at' => nowIso()]);
 
             // אומרים מה זוהה, לא רק "נוסף": קלט מקוצר הוא ניחוש
             // מושכל, ומי שרואה "סרטון" במקום "ערוץ" מתקן מיד.

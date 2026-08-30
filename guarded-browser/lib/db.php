@@ -145,6 +145,43 @@ function all(string $sql, array $args = []): array {
     return q($sql, $args)->fetchAll();
 }
 
+
+/**
+ * הוספה-או-עדכון שעובדת בכל גרסת SQLite.
+ *
+ * ‏"INSERT ... ON CONFLICT DO UPDATE" נוסף רק ב-SQLite 3.24 (2018),
+ * ובאחסון משותף עדיין נפוצות גרסאות ישנות יותר — שם הוא נופל על
+ * "near ON: syntax error". שתי פקודות במקומו עובדות בכל מקום:
+ * ‏INSERT OR IGNORE יוצר את השורה אם אינה קיימת, ו-UPDATE כותב את
+ * הערכים. הסדר הזה גם בטוח מפני מרוץ בין שתי בקשות, בניגוד ל-
+ * "בדוק ואז הוסף".
+ *
+ *   $key        — העמודות שמזהות את השורה
+ *   $values     — מה שנכתב גם בהוספה וגם בעדכון
+ *   $insertOnly — מה שנכתב רק בהוספה (created_at וכדומה)
+ */
+function upsert(string $table, array $key, array $values, array $insertOnly = []): void {
+    // שמות עמודות אינם ניתנים לפרמטור, ולכן נבדקים במפורש. כל
+    // הקוראים מעבירים שמות קבועים, וזו רשת ביטחון ולא הגנה יחידה.
+    foreach ([$table, ...array_keys($key), ...array_keys($values), ...array_keys($insertOnly)] as $n) {
+        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string) $n)) {
+            throw new InvalidArgumentException("שם עמודה או טבלה לא תקין: $n");
+        }
+    }
+
+    $insert = $key + $values + $insertOnly;
+    $cols   = implode(', ', array_map(fn($c) => "\"$c\"", array_keys($insert)));
+    $marks  = implode(', ', array_fill(0, count($insert), '?'));
+    q("INSERT OR IGNORE INTO \"$table\" ($cols) VALUES ($marks)", array_values($insert));
+
+    if (!$values) return;
+
+    $set   = implode(', ', array_map(fn($c) => "\"$c\" = ?", array_keys($values)));
+    $where = implode(' AND ', array_map(fn($c) => "\"$c\" = ?", array_keys($key)));
+    q("UPDATE \"$table\" SET $set WHERE $where",
+      array_merge(array_values($values), array_values($key)));
+}
+
 /* ── שליפות ─────────────────────────────────────────────────────── */
 
 /** מדיניות המשתמש, עם ברירות מחדל אם טרם נוצרה שורה. */
@@ -169,12 +206,18 @@ function usedTodaySeconds(int $userId, string $tz): int {
     return (int) ($row['seconds'] ?? 0);
 }
 
-/** צובר שניות ליום הנוכחי. UPSERT כדי שלא יידרש SELECT לפני. */
+/**
+ * צובר שניות ליום הנוכחי.
+ *
+ * כאן צריך חיבור ולא החלפה, ולכן זו אינה upsert רגילה: קודם מובטח
+ * שהשורה קיימת, ואז מוסיפים לה. שתי הפקודות עובדות בכל גרסת SQLite.
+ */
 function addUsage(int $userId, string $tz, int $seconds): void {
     if ($seconds <= 0) return;
-    q('INSERT INTO usage (user_id, day, seconds) VALUES (?, ?, ?)
-       ON CONFLICT(user_id, day) DO UPDATE SET seconds = seconds + excluded.seconds',
-      [$userId, todayIn($tz), $seconds]);
+    $day = todayIn($tz);
+    q('INSERT OR IGNORE INTO usage (user_id, day, seconds) VALUES (?, ?, 0)', [$userId, $day]);
+    q('UPDATE usage SET seconds = seconds + ? WHERE user_id = ? AND day = ?',
+      [$seconds, $userId, $day]);
 }
 
 /**
@@ -252,12 +295,9 @@ function youTubeOwner(string $videoId): string {
     }
 
     $info = fetchYouTubeOwner($videoId);
-    q('INSERT INTO video_owner (platform, video_id, channel_id, title, fetched_at)
-       VALUES (?,?,?,?,?)
-       ON CONFLICT(platform, video_id) DO UPDATE SET
-         channel_id = excluded.channel_id, title = excluded.title,
-         fetched_at = excluded.fetched_at',
-      [PLATFORM_YOUTUBE, $videoId, $info['channel'], $info['title'], nowIso()]);
+    upsert('video_owner',
+           ['platform' => PLATFORM_YOUTUBE, 'video_id' => $videoId],
+           ['channel_id' => $info['channel'], 'title' => $info['title'], 'fetched_at' => nowIso()]);
 
     return $info['channel'];
 }

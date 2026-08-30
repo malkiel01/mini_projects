@@ -157,6 +157,47 @@ $after = policyFor($uid);
 check('free הפך לדפדפן', $after['mode'], MODE_BROWSER);
 check('ולפתוח כברירת מחדל', $after['posture'], POSTURE_ALLOW);
 
+echo "\n— תאימות SQLite —\n";
+/*
+ * ‏"INSERT ... ON CONFLICT DO UPDATE" נוסף ב-SQLite 3.24 (2018).
+ * בסביבת הפיתוח יש גרסה חדשה, ולכן הוא עבר כאן — ונפל בייצור על
+ * "near ON: syntax error". הבדיקה הזו סורקת את הקוד עצמו, כי אי
+ * אפשר לבדוק את זה מול בסיס נתונים חדש.
+ */
+$offenders = [];
+foreach (glob(__DIR__ . '/../{lib,admin,api}/*.php', GLOB_BRACE) ?: [] as $file) {
+    $code = (string) file_get_contents($file);
+    // מתעלמים מהערות: הן מסבירות את האיסור ואינן מפרות אותו.
+    $code = preg_replace('#/\*.*?\*/|//[^\n]*#s', '', $code);
+    if (preg_match('/ON\s+CONFLICT/i', (string) $code)) $offenders[] = basename($file);
+}
+check('אין ON CONFLICT בשום קובץ', $offenders, []);
+
+echo "\n— upsert נייד —\n";
+upsert('platform_rules', ['user_id' => $uid, 'platform' => 'testplat'],
+       ['mode' => 'restricted'], ['created_at' => nowIso()]);
+check('הוספה יוצרת שורה',
+      one('SELECT mode FROM platform_rules WHERE user_id=? AND platform=?',
+          [$uid, 'testplat'])['mode'], 'restricted');
+
+upsert('platform_rules', ['user_id' => $uid, 'platform' => 'testplat'],
+       ['mode' => 'full'], ['created_at' => '1999-01-01T00:00:00Z']);
+$row = one('SELECT mode, created_at FROM platform_rules WHERE user_id=? AND platform=?',
+           [$uid, 'testplat']);
+check('קריאה שנייה מעדכנת', $row['mode'], 'full');
+// ‏created_at הוא insertOnly: עדכון אינו אמור לדרוס אותו, אחרת
+// "מתי נוצר" היה הופך ל"מתי נגעו בזה לאחרונה".
+check('ושדה הוספה-בלבד אינו נדרס', $row['created_at'] !== '1999-01-01T00:00:00Z', true);
+check('ואין כפילות',
+      (int) one('SELECT COUNT(*) n FROM platform_rules WHERE user_id=? AND platform=?',
+                [$uid, 'testplat'])['n'], 1);
+
+check('שם עמודה פסול נדחה', (function () use ($uid) {
+    try { upsert('policies', ['user_id' => $uid], ['mode; DROP TABLE users' => 'x']); return false; }
+    catch (InvalidArgumentException) { return true; }
+})(), true);
+
+
 echo "\n— מכשירים —\n";
 $token = registerDevice($uid, 'Pixel 8', 'abc-123', 1);
 check('אסימון באורך צפוי', strlen($token), 64);

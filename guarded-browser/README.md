@@ -141,6 +141,14 @@ Actions → Build Android APK → Run workflow
 
 מסך המשתמש מחולק לאזורים מתקפלים (`<details>`, בלי JS): גישה · קטגוריות · סוגי תוכן · זמן · מכשיר · יוטיוב · כללי כתובות · מכשירים · פעילות. הראשון פתוח כי הוא ההחלטה שמכתיבה את כל השאר.
 
+## תאימות SQLite
+
+השרת הוא אחסון משותף, ושם עדיין רצות גרסאות SQLite ישנות. **`INSERT ... ON CONFLICT DO UPDATE` (UPSERT) נוסף רק ב-3.24, ולכן אינו בשימוש כאן** — בסביבת פיתוח עם גרסה חדשה הוא עובר בשקט ונופל בייצור על `near "ON": syntax error`.
+
+במקומו `upsert()` ב-`lib/db.php`: `INSERT OR IGNORE` ואז `UPDATE`. עובד בכל גרסה, ובטוח מפני מרוץ בין שתי בקשות — בניגוד ל"בדוק ואז הוסף".
+
+זה לא נתפס בבדיקות רגילות, כי הן רצות מול SQLite חדש. לכן `tests/integration.php` **סורק את הקוד עצמו** ונכשל אם `ON CONFLICT` חוזר.
+
 ## אבטחה
 
 - **סיסמאות** — `password_hash` ב-Argon2id כשזמין.
@@ -155,7 +163,7 @@ Actions → Build Android APK → Run workflow
 
 ```
 php guarded-browser/tests/policy.php        # 99 — מנוע ההרשאות בבידוד
-php guarded-browser/tests/integration.php   # 50 — סכימה ושאילתות אמיתיות
+php guarded-browser/tests/integration.php   # 56 — סכימה ושאילתות אמיתיות
 ```
 
 בדיקות האנדרואיד רצות ב-CI לפני כל בנייה (`./gradlew test`).
