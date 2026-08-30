@@ -355,5 +355,33 @@ check('אבל היעד שאליו הוא מפנה כבר לא',
                ['url' => 'https://www.youtube.com/watch?v=_rYPW4QzwG8'])['code'], 'yt_off');
 
 
+echo "\n— חיפוש באתר עמוד-יחיד —\n";
+/*
+ * יוטיוב הוא אתר עמוד-יחיד: לחיצה על תוצאת חיפוש אינה ניווט, אלא
+ * בקשת רקע שמחליפה את תוכן הדף. חסימת /results לבדה אינה עוצרת
+ * את החיפוש — צריך לחסום את הבקשה שמחזירה את התוצאות.
+ */
+$noSearch = ['mode' => 'restricted', 'allow_search' => 0];
+$yesSearch = ['mode' => 'restricted', 'allow_search' => 1];
+
+check('בקשת החיפוש נחסמת',
+      youTubeVerdict($ytUrl('https://www.youtube.com/youtubei/v1/search?key=x'),
+                     $noSearch, $ytItems, false)['code'], 'yt_no_search');
+check('וכשהחיפוש הותר — עוברת',
+      youTubeVerdict($ytUrl('https://www.youtube.com/youtubei/v1/search?key=x'),
+                     $yesSearch, $ytItems, false)['allow'], true);
+// הנגן חייב להמשיך לעבוד: חסימה גורפת של youtubei הייתה משאירה
+// מסך שחור גם על סרטון שאושר.
+check('בקשת הנגן ממשיכה לעבוד',
+      youTubeVerdict($ytUrl('https://www.youtube.com/youtubei/v1/player?key=x'),
+                     $noSearch, $ytItems, false)['code'], 'yt_asset');
+check('ובקשת דף הערוץ גם',
+      youTubeVerdict($ytUrl('https://www.youtube.com/youtubei/v1/browse?key=x'),
+                     $noSearch, $ytItems, false)['code'], 'yt_asset');
+check('במצב פתוח החיפוש אינו נחסם',
+      youTubeVerdict($ytUrl('https://www.youtube.com/youtubei/v1/search?key=x'),
+                     ['mode' => 'full'], $ytItems, false)['allow'], true);
+
+
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 exit($fail === 0 ? 0 : 1);

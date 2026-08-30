@@ -306,7 +306,18 @@ object PolicyEngine {
                        items: Map<String, Map<String, String>>, isMainFrame: Boolean): Verdict {
         if (rule.mode == "off") return Verdict(false, "yt_off", "יוטיוב חסום בחשבון שלך")
 
-        if (!isMainFrame && isYouTubeAsset(url.full)) return Verdict(true, "yt_asset")
+        if (!isMainFrame) {
+            /*
+             * נקודת הקצה של החיפוש נחסמת בנפרד: יוטיוב הוא אתר
+             * עמוד-יחיד, והחיפוש אינו ניווט אלא בקשת רקע שמחליפה
+             * את תוכן הדף. חסימת /results לבדה אינה עוצרת אותו.
+             */
+            if (rule.mode == "restricted" && !rule.allowSearch &&
+                url.path.startsWith("/youtubei/v1/search")) {
+                return Verdict(false, "yt_no_search", "החיפוש ביוטיוב חסום עבורך")
+            }
+            if (isYouTubeAsset(url.full)) return Verdict(true, "yt_asset")
+        }
 
         val ref = parseYouTube(url.full)
         fun action(kind: String, id: String) = items[kind]?.get(id) ?: ""

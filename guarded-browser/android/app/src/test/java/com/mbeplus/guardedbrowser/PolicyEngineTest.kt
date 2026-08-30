@@ -212,6 +212,24 @@ class PolicyEngineTest {
         assertTrue(v.needsServer)
     }
 
+
+    /**
+     * יוטיוב הוא אתר עמוד-יחיד: החיפוש אינו ניווט אלא בקשת רקע
+     * שמחליפה את תוכן הדף. חסימת /results לבדה אינה עוצרת אותו.
+     */
+    @Test fun searchEndpointIsBlockedButPlayerKeepsWorking() {
+        val r = PlatformRule("restricted", allowSearch = false)
+        assertEquals("yt_no_search", PolicyEngine.youTubeVerdict(
+            yt("https://www.youtube.com/youtubei/v1/search?key=x"), r, ytItems, false).code)
+        assertEquals("yt_asset", PolicyEngine.youTubeVerdict(
+            yt("https://www.youtube.com/youtubei/v1/player?key=x"), r, ytItems, false).code)
+        assertEquals("yt_asset", PolicyEngine.youTubeVerdict(
+            yt("https://www.youtube.com/youtubei/v1/browse?key=x"), r, ytItems, false).code)
+        assertTrue(PolicyEngine.youTubeVerdict(
+            yt("https://www.youtube.com/youtubei/v1/search?key=x"),
+            PlatformRule("restricted", allowSearch = true), ytItems, false).allow)
+    }
+
     /** בלי זה, סרטון מאושר היה מוצג כמסך שחור. */
     @Test fun playerAssetsPassThrough() {
         assertEquals("yt_asset", PolicyEngine.youTubeVerdict(

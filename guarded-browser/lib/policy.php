@@ -178,10 +178,22 @@ function youTubeVerdict(array $url, array $rule, array $items, bool $isMainFrame
         return decision(false, 'yt_off', 'יוטיוב חסום בחשבון שלך');
     }
 
-    // משאבי הנגן עצמם אינם ניווט. בלי המעבר הזה, מצב מוגבל היה חוסם
-    // את הווידאו של הסרטון שכן אושר, והמשתמש היה רואה מסך שחור.
-    if (!$isMainFrame && isYouTubeAsset($url['full'])) {
-        return decision(true, 'yt_asset');
+    if (!$isMainFrame) {
+        /*
+         * נקודת הקצה של החיפוש נחסמת בנפרד.
+         *
+         * יוטיוב הוא אתר עמוד-יחיד: החיפוש אינו ניווט אלא בקשת רקע
+         * שמחליפה את תוכן הדף. לחסום רק את הכתובת /results אינו
+         * מספיק — צריך לחסום את הבקשה שמחזירה את התוצאות.
+         */
+        if (($rule['mode'] ?? '') === 'restricted' && !($rule['allow_search'] ?? 0)
+            && str_starts_with($url['path'], '/youtubei/v1/search')) {
+            return decision(false, 'yt_no_search', 'החיפוש ביוטיוב חסום עבורך');
+        }
+
+        // משאבי הנגן עצמם אינם ניווט. בלי המעבר הזה, מצב מוגבל היה
+        // חוסם את הווידאו של הסרטון שכן אושר, והמשתמש היה רואה מסך שחור.
+        if (isYouTubeAsset($url['full'])) return decision(true, 'yt_asset');
     }
 
     $parsed = parseYouTube($url['full']);

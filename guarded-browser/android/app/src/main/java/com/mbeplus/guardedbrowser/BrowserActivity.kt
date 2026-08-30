@@ -36,6 +36,7 @@ class BrowserActivity : AppCompatActivity() {
     private var usedSec = 0          // נוצל היום, לפי השרת
     private var sessionSec = 0       // משך הישיבה הנוכחית
     private var closing = false
+    private var lastAllowed = ""      // הכתובת המותרת האחרונה, לחזרה אליה
 
     private val ticker = Handler(Looper.getMainLooper())
     private val beat = object : Runnable {
@@ -72,7 +73,9 @@ class BrowserActivity : AppCompatActivity() {
         val v = PolicyEngine.evaluate(policy, ruleSet, start, true, usedSec, sessionSec)
         if (!v.allow && !v.needsServer) { refuse(v.reason.ifEmpty { "הכתובת אינה מותרת" }); return }
 
-        b.web.loadUrl(PolicyEngine.normalize(start)?.let { normalizedToUrl(start) } ?: start)
+        val first = PolicyEngine.normalize(start)?.let { normalizedToUrl(start) } ?: start
+        lastAllowed = first
+        b.web.loadUrl(first)
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -160,6 +163,28 @@ class BrowserActivity : AppCompatActivity() {
             override fun onPageStarted(view: WebView?, url: String?, icon: Bitmap?) {
                 b.address.text = url ?: ""
             }
+
+            /*
+             * ‏אתרי עמוד-יחיד — יוטיוב בראשם — מחליפים דף בלי לנווט.
+             *
+             * לחיצה על סרטון בתוך יוטיוב אינה קוראת ל-
+             * shouldOverrideUrlLoading בכלל: הדף מריץ history.pushState
+             * ומחליף את התוכן בעצמו. אכיפה שיושבת רק על ניווט פשוט לא
+             * רצה שם, והמשתמש חיפש והגיע לכל סרטון שרצה.
+             *
+             * ‏doUpdateVisitedHistory נקרא גם על pushState, ולכן הוא
+             * נקודת האכיפה האמיתית באתרים כאלה.
+             */
+            override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
+                b.address.text = url
+                enforceCurrent(url)
+            }
+
+            override fun onPageFinished(view: WebView, url: String) {
+                b.address.text = url
+                enforceCurrent(url)
+                styleRestrictedYouTube(url)
+            }
         }
 
         // הורדות לפי ההרשאה. בלי היתר — הודעה, ולא כישלון שקט.
@@ -208,6 +233,74 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     /**
+     * אכיפה על הכתובת שמוצגת עכשיו, יהיה אשר יהיה מה שהביא אותה.
+     *
+     * ‏חזרה לכתובת המותרת האחרונה ולא סגירת הדפדפן: המשתמש לא עשה
+     * דבר אסור — הוא לחץ על מה שיוטיוב הציע לו. לסגור עליו את הכול
+     * בגלל זה זו ענישה על ממשק של מישהו אחר.
+     */
+    private fun enforceCurrent(url: String) {
+        if (closing || url.isEmpty() || url == "about:blank") return
+        if (url == lastAllowed) return
+
+        val v = PolicyEngine.evaluate(policy, ruleSet, url, true, usedSec, sessionSec)
+        when {
+            v.allow -> { lastAllowed = url; verifyWithServer(url) }
+            v.needsServer -> Api.check(store.token, url, true) { r ->
+                val j = r.json
+                when {
+                    j == null -> revert("אין חיבור לשרת, ולא ניתן לוודא שהכתובת מותרת")
+                    j.optBoolean("allowed") -> lastAllowed = url
+                    else -> revert(j.optString("reason", "הכתובת אינה מותרת"))
+                }
+            }
+            else -> revert(v.reason)
+        }
+    }
+
+    /** מחזיר לכתובת המותרת האחרונה, ומסביר למה. */
+    private fun revert(reason: String) {
+        if (closing) return
+        b.web.stopLoading()
+        toast(reason.ifEmpty { "הכתובת אינה מותרת בחשבון שלך" })
+
+        val back = lastAllowed
+        if (back.isEmpty()) { refuse(reason); return }
+        b.web.post { b.web.loadUrl(back) }
+    }
+
+    /**
+     * במצב יוטיוב מוגבל, מסתיר את מה שמזמין לצאת מהערוץ — חיפוש,
+     * תפריט צדדי, והמלצות בסוף סרטון.
+     *
+     * זה שכבת נוחות בלבד: האכיפה היא enforceCurrent, והסתרה בלבד
+     * הייתה עקיפה של שורת כתובת אחת. אבל ממשק שמציע כל הזמן מה
+     * שייחסם הוא ממשק מתסכל.
+     */
+    private fun styleRestrictedYouTube(url: String) {
+        val yt = ruleSet.platforms[PolicyEngine.PLATFORM_YOUTUBE] ?: return
+        if (yt.mode != "restricted") return
+        if (PolicyEngine.platformOf(PolicyEngine.normalize(url)?.host ?: "") !=
+            PolicyEngine.PLATFORM_YOUTUBE) return
+
+        val hide = buildString {
+            if (!yt.allowSearch) {
+                append("ytd-searchbox,#search,#search-form,#center.ytd-masthead,")
+                append("ytd-search-header-renderer,")
+            }
+            append("#guide,#guide-button,ytd-mini-guide-renderer,tp-yt-app-drawer,")
+            append("#related,ytd-compact-video-renderer,ytd-watch-next-secondary-results-renderer,")
+            append(".ytp-endscreen-content,.ytp-ce-element,.ytp-pause-overlay,")
+            append("ytd-reel-shelf-renderer,ytd-rich-shelf-renderer")
+        }
+        b.web.evaluateJavascript(
+            "(function(){try{var s=document.getElementById('gb-style')||" +
+            "document.createElement('style');s.id='gb-style';" +
+            "s.textContent='$hide{display:none!important}';" +
+            "document.documentElement.appendChild(s);}catch(e){}})()", null)
+    }
+
+    /**
      * שואל את השרת על כתובת שהמכשיר אינו יכול להכריע עליה, ורק אז
      * טוען. זה הקישור בין האכיפה המקומית לבין הידע שיושב בשרת.
      */
@@ -218,7 +311,7 @@ class BrowserActivity : AppCompatActivity() {
             val j = r.json
             when {
                 j == null -> refuse("אין חיבור לשרת, ולא ניתן לוודא שהכתובת מותרת")
-                j.optBoolean("allowed") -> b.web.loadUrl(url)
+                j.optBoolean("allowed") -> { lastAllowed = url; b.web.loadUrl(url) }
                 else -> refuse(j.optString("reason", "הכתובת אינה מותרת"))
             }
         }
