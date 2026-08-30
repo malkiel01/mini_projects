@@ -201,11 +201,18 @@ function layoutTop(string $title, ?array $admin = null): void {
   .acts form { display:inline; }
   hr.sep { border:0; border-top:1px solid var(--line); margin:18px 0; }
 
-  /* סרגל שמירה שנשאר בהישג יד גם בטופס ארוך */
+  /*
+   * סרגל שמירה שנשאר בהישג יד גם בטופס ארוך.
+   *
+   * ‏margin-bottom שלילי היה מושך את הסעיף שאחריו אל מתחת לסרגל
+   * ומסתיר אותו לגמרי — כך נעלם כל אזור יוטיוב מהמסך. סרגל דביק
+   * חייב להשאיר לתוכן שאחריו את המקום שלו.
+   */
   .savebar {
     position:sticky; bottom:0; background:var(--card); border-top:1px solid var(--line);
-    padding:12px 14px; margin:16px -14px -60px; z-index:15;
-    padding-bottom:calc(12px + env(safe-area-inset-bottom));
+    padding:12px 14px calc(12px + env(safe-area-inset-bottom));
+    margin:16px -14px 14px; z-index:15;
+    box-shadow:0 -6px 14px rgba(0,0,0,.10);
   }
 </style>
 <header class="top">
@@ -215,6 +222,7 @@ function layoutTop(string $title, ?array $admin = null): void {
     <a href="index.php">משתמשים</a>
     <a href="categories.php">קטלוג</a>
     <a href="audit.php">יומן</a>
+    <a href="health.php">אבחון</a>
     <a href="logout.php">יציאה</a>
   </nav>
   <?php endif; ?>

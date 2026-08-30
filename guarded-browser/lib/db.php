@@ -11,6 +11,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/schema.php';
 require_once __DIR__ . '/policy.php';
 require_once __DIR__ . '/catalog.php';
+require_once __DIR__ . '/errors.php';
 
 /**
  * תיקיית הנתונים.
@@ -18,6 +19,8 @@ require_once __DIR__ . '/catalog.php';
  * ניתנת לעקיפה במשתנה סביבה כדי שהבדיקות יריצו את הסכימה האמיתית על
  * בסיס נתונים זמני. בלי זה שגיאת SQL הייתה מתגלה רק בשרת.
  */
+installErrorHandlers();
+
 function dataDir(): string {
     return getenv('GB_DATA_DIR') ?: __DIR__ . '/../data';
 }
