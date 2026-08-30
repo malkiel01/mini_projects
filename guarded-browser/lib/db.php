@@ -72,6 +72,7 @@ function migrate(PDO $pdo): void {
     $add  = [
         'posture'       => "TEXT NOT NULL DEFAULT 'deny_all'",
         'blocked_types' => "TEXT NOT NULL DEFAULT ''",
+        'ad_block'      => "TEXT NOT NULL DEFAULT ''",
     ];
     foreach ($add as $col => $def) {
         if (!in_array($col, $have, true)) {
@@ -194,7 +195,7 @@ function policyFor(int $userId): array {
         'user_id' => $userId, 'mode' => MODE_KIOSK, 'posture' => POSTURE_DENY,
         'blocked_types' => '', 'timezone' => 'Asia/Jerusalem',
         'days_mask' => 127, 'window_start' => '', 'window_end' => '',
-        'daily_quota_min' => 0, 'session_max_min' => 0, 'max_devices' => 1,
+        'ad_block' => '', 'daily_quota_min' => 0, 'session_max_min' => 0, 'max_devices' => 1,
         'allow_downloads' => 0, 'block_screenshots' => 0, 'keep_history' => 1,
     ];
 }

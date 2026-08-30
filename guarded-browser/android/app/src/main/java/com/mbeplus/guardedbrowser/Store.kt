@@ -52,6 +52,8 @@ class Store(context: Context) {
             .putString("domain_map", payload.optJSONObject("domain_map")?.toString() ?: "{}")
             .putString("platforms", payload.optJSONObject("platforms")?.toString() ?: "{}")
             .putString("platform_items", payload.optJSONObject("platform_items")?.toString() ?: "{}")
+            .putString("ad_hosts", payload.optJSONArray("ad_hosts")?.toString() ?: "[]")
+            .putString("ad_css", payload.optString("ad_css"))
             .putString("name", payload.optJSONObject("user")?.optString("name") ?: "")
             .putLong("policy_at", System.currentTimeMillis())
             .apply()
@@ -87,6 +89,9 @@ class Store(context: Context) {
             domainMap = PolicyEngine.listMap(obj("domain_map")),
             platforms = PolicyEngine.platformsFrom(obj("platforms")),
             platformItems = PolicyEngine.itemsFrom(obj("platform_items")),
+            adHosts = PolicyEngine.stringList(
+                JSONArray(prefs.getString("ad_hosts", "[]") ?: "[]")),
+            adCss = prefs.getString("ad_css", "") ?: "",
         )
     } catch (e: Exception) { RuleSet(rules = rules()) }
 

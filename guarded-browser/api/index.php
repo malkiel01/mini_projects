@@ -15,6 +15,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../lib/auth.php';
+require_once __DIR__ . '/../lib/alerts.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -90,6 +91,7 @@ function policyPayload(array $user): array {
             'mode'              => $policy['mode'],
             'posture'           => $policy['posture'],
             'blocked_types'     => $policy['blocked_types'],
+            'ad_block'          => $policy['ad_block'],
             'timezone'          => $tz,
             'days_mask'         => (int) $policy['days_mask'],
             'window_start'      => $policy['window_start'],
@@ -115,6 +117,10 @@ function policyPayload(array $user): array {
          * מתייחסת אליו כהיתר גורף לדומיין ועוקפת את כללי הפלטפורמה.
          */
         'tiles'          => tilesFor($set),
+        // הרשימות נשלחות למכשיר כדי שהחסימה תקרה שם, לפני הטעינה.
+        // חסימה שמחכה לשרת היא פרסומת שכבר ירדה.
+        'ad_hosts'       => adHosts(),
+        'ad_css'         => adCssSelectors(),
         'categories'     => $set['categories'],
         'domain_map'     => $slim,
         'platforms'      => array_map(fn($p) => [
@@ -255,6 +261,23 @@ try {
 
         // ניווט בלבד נרשם. משאב נלווה היה מציף את היומן באלפי שורות.
         if ($main) audit($uid, 'nav', $d['allow'], $url, $d['code']);
+
+        /*
+         * מה שהאפליקציה החליטה, כדי שאפשר יהיה להשוות.
+         *
+         * ‏client_allowed מגיע מהאפליקציה עצמה, ולכן אינו ראיה —
+         * לקוח שנפרץ לגמרי פשוט לא ישלח אותו. אבל פריצה חלקית,
+         * שבה האכיפה המקומית נשברה והדיווח נשאר, נתפסת כאן מיד.
+         * וגם בלעדיו, כל ניווט עדיין נבדק בשרת.
+         */
+        if ($main) {
+            $claimed = body()['client_allowed'] ?? null;
+            if ($claimed !== null) {
+                $host = normalizeUrl($url)['host'] ?? '';
+                checkEnforcementGap($uid, $url, (bool) $claimed, $d, platformOf($host));
+            }
+            if (!$d['allow']) checkProbing($uid, $url);
+        }
 
         out(['ok' => true, 'allowed' => $d['allow'], 'code' => $d['code'], 'reason' => $d['reason']]);
     }

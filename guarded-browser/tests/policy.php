@@ -477,5 +477,53 @@ check('דף הסכמה אינו מייצר זהות',
       ['channel' => '', 'handle' => '', 'title' => '']);
 
 
+echo "\n— חסימת פרסומות —\n";
+/*
+ * פרסומת אינה יעד שהמשתמש ביקש, אלא משאב בתוך דף שכן ביקש. לכן
+ * היא נבדקת לפני כללי הכתובות: אילו נבדקה אחריהם, "התר את האתר
+ * הזה" היה מחזיר את כל הפרסומות שבו.
+ */
+$ads = $pol(['posture' => POSTURE_ALLOW, 'ad_block' => 'network,cosmetic,youtube']);
+$adUrl = fn(string $u) => normalizeUrl($u);
+
+check('דומיין פרסום נחסם',
+      isAdRequest($ads, $adUrl('https://doubleclick.net/x'), false), true);
+check('גם תת-דומיין שלו',
+      isAdRequest($ads, $adUrl('https://cdn.googlesyndication.com/a.js'), false), true);
+check('נתיב פרסומי בדומיין תמים',
+      isAdRequest($ads, $adUrl('https://news.co.il/pagead/banner.js'), false), true);
+check('משאב רגיל עובר',
+      isAdRequest($ads, $adUrl('https://news.co.il/style.css'), false), false);
+check('מדידת פרסומות של יוטיוב נחסמת',
+      isAdRequest($ads, $adUrl('https://www.youtube.com/api/stats/ads?x=1'), false), true);
+// חסימת הווידאו עצמו הייתה חוסמת את הסרטון שכן אושר.
+check('אבל הווידאו עצמו עובר',
+      isAdRequest($ads, $adUrl('https://rr1.googlevideo.com/videoplayback?x=1'), false), false);
+
+// כשהמצב כבוי — שום דבר לא נחסם.
+$noAds = $pol(['posture' => POSTURE_ALLOW]);
+check('כשהחסימה כבויה — עובר',
+      isAdRequest($noAds, $adUrl('https://doubleclick.net/x'), false), false);
+
+// ניווט אמיתי נחסם רק כשחסימת חלונות קופצים הופעלה.
+check('ניווט לדומיין פרסום — רק עם popups',
+      isAdRequest($ads, $adUrl('https://doubleclick.net/x'), true), false);
+check('ועם popups — נחסם',
+      isAdRequest($pol(['ad_block' => 'popups']), $adUrl('https://doubleclick.net/x'), true), true);
+
+/*
+ * הקדימות שהיא כל העניין: כלל שמתיר את האתר אינו מחזיר את
+ * הפרסומות שבתוכו.
+ */
+check('היתר מפורש לאתר אינו מחזיר את פרסומותיו',
+      evaluate($user(), $ads, $set(['rules' => [$rule('news.co.il', ['scope' => 'domain_plus'])]]),
+               $now, ['url' => 'https://doubleclick.net/ad.js', 'main_frame' => false])['code'],
+      'ad_blocked');
+check('והתוכן של אותו אתר כן נטען',
+      evaluate($user(), $ads, $set(['rules' => [$rule('news.co.il', ['scope' => 'domain_plus'])]]),
+               $now, ['url' => 'https://news.co.il/article', 'main_frame' => true])['code'],
+      'rule_allow');
+
+
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 exit($fail === 0 ? 0 : 1);

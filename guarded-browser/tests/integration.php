@@ -17,6 +17,7 @@ $tmp = sys_get_temp_dir() . '/gb-test-' . getmypid();
 putenv("GB_DATA_DIR=$tmp");
 
 require_once __DIR__ . '/../lib/auth.php';
+require_once __DIR__ . '/../lib/alerts.php';
 
 // ניקוי גם כשהבדיקה נופלת באמצע.
 register_shutdown_function(function () use ($tmp) {
@@ -211,6 +212,50 @@ check('שם עמודה פסול נדחה', (function () use ($uid) {
     try { upsert('policies', ['user_id' => $uid], ['mode; DROP TABLE users' => 'x']); return false; }
     catch (InvalidArgumentException) { return true; }
 })(), true);
+
+
+echo "\n— זיהוי כשל אכיפה —\n";
+/*
+ * האכיפה כפולה, ולכן העניין הוא ברגע שהצדדים חולקים: אפליקציה
+ * שהתירה כתובת שהשרת אוסר היא אפליקציה שהאכיפה בה לא עשתה את שלה.
+ */
+q('DELETE FROM alerts');
+q("UPDATE platform_rules SET mode = 'restricted' WHERE user_id = ?", [$uid]);
+
+$deny = ['allow' => false, 'code' => 'yt_not_approved', 'reason' => ''];
+checkEnforcementGap($uid, 'https://youtube.com/watch?v=x', true, $deny, PLATFORM_YOUTUBE);
+
+check('נרשמה התרעה', openAlertCount(), 1);
+check('בחומרה גבוהה', openAlerts()[0]['severity'], 'high');
+// נעילה מיידית, לא המתנה לכך שהמנהל יסתכל.
+check('והפלטפורמה ננעלה',
+      platformRulesFor($uid)[PLATFORM_YOUTUBE]['mode'], 'off');
+// הרשימה שהמנהל בנה נשארת — פתיחה מחדש היא לחיצה, לא בנייה מחדש.
+check('אבל הפריטים המאושרים נשמרו',
+      count(platformItemsFor($uid)[PLATFORM_YOUTUBE] ?? []) > 0, true);
+
+q('DELETE FROM alerts');
+checkEnforcementGap($uid, 'https://x.com', true, ['allow' => true, 'code' => 'ok'], '');
+check('הסכמה אינה מייצרת התרעה', openAlertCount(), 0);
+// לקוח שחסם משהו שמותר הוא מחמיר מדי, לא פרוץ.
+checkEnforcementGap($uid, 'https://x.com', false, $deny, PLATFORM_YOUTUBE);
+check('וגם לקוח מחמיר מדי אינו התרעה', openAlertCount(), 0);
+
+echo "\n— ניסיונות חוזרים —\n";
+q('DELETE FROM alerts');
+q('DELETE FROM audit WHERE user_id = ?', [$uid]);
+for ($i = 0; $i < PROBE_LIMIT - 1; $i++) audit($uid, 'nav', false, "https://x$i.com", 'not_listed');
+checkProbing($uid, 'https://x.com');
+check('מתחת לסף — שקט', openAlertCount(), 0);
+
+audit($uid, 'nav', false, 'https://last.com', 'not_listed');
+checkProbing($uid, 'https://x.com');
+check('מעל הסף — התרעה', openAlertCount(), 1);
+// דפוס אינו ראיה, ולכן הוא מתריע ואינו נועל: משתמש תמים שנתקע
+// אינו אמור למצוא את עצמו חסום.
+check('אבל אינו נועל', openAlerts()[0]['severity'], 'warn');
+
+q('DELETE FROM alerts'); q('DELETE FROM audit WHERE user_id = ?', [$uid]);
 
 
 echo "\n— מכשירים —\n";

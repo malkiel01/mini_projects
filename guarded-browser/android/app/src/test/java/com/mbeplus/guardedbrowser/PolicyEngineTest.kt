@@ -254,6 +254,52 @@ class PolicyEngineTest {
         assertFalse(PolicyEngine.isYouTubeSearchEndpoint("/youtubei/v1/browse"))
     }
 
+
+    /* ── פרסומות ── */
+
+    private val adSet = RuleSet(adHosts = listOf("doubleclick.net", "googlesyndication.com",
+                                                 "taboola.com"))
+    private val adsOn = Policy(posture = Policy.POSTURE_ALLOW,
+                               adBlock = listOf("network", "cosmetic", "youtube"))
+
+    @Test fun adDomainsAndPathsAreBlocked() {
+        fun ad(u: String, main: Boolean = false) =
+            PolicyEngine.isAdRequest(adsOn, adSet, PolicyEngine.normalize(u)!!, main)
+
+        assertTrue(ad("https://doubleclick.net/x"))
+        assertTrue(ad("https://cdn.googlesyndication.com/a.js"))
+        assertTrue(ad("https://news.co.il/pagead/banner.js"))
+        assertFalse(ad("https://news.co.il/style.css"))
+        // ניווט אמיתי נחסם רק עם popups: דומיין פרסומי שהוקלד ביד אינו פרסומת.
+        assertFalse(ad("https://doubleclick.net/x", main = true))
+        assertTrue(PolicyEngine.isAdRequest(
+            Policy(adBlock = listOf("popups")), adSet,
+            PolicyEngine.normalize("https://doubleclick.net/x")!!, true))
+    }
+
+    /** חסימת הווידאו הייתה חוסמת את הסרטון שכן אושר. */
+    @Test fun youTubeAdTrackingBlockedButVideoIsNot() {
+        fun ad(u: String) =
+            PolicyEngine.isAdRequest(adsOn, adSet, PolicyEngine.normalize(u)!!, false)
+        assertTrue(ad("https://www.youtube.com/api/stats/ads?x=1"))
+        assertFalse(ad("https://rr1.googlevideo.com/videoplayback?x=1"))
+    }
+
+    /** היתר מפורש לאתר אינו מחזיר את הפרסומות שבתוכו. */
+    @Test fun explicitAllowDoesNotRestoreAds() {
+        val set = adSet.copy(rules = listOf(rule("news.co.il", "domain_plus")))
+        assertEquals("ad_blocked", PolicyEngine.evaluate(
+            adsOn, set, "https://doubleclick.net/ad.js", false, 0, 0).code)
+        assertEquals("rule_allow", PolicyEngine.evaluate(
+            adsOn, set, "https://news.co.il/article", true, 0, 0).code)
+    }
+
+    @Test fun adBlockingOffLetsEverythingThrough() {
+        assertFalse(PolicyEngine.isAdRequest(
+            Policy(posture = Policy.POSTURE_ALLOW), adSet,
+            PolicyEngine.normalize("https://doubleclick.net/x")!!, false))
+    }
+
     /** בלי זה, סרטון מאושר היה מוצג כמסך שחור. */
     @Test fun playerAssetsPassThrough() {
         assertEquals("yt_asset", PolicyEngine.youTubeVerdict(

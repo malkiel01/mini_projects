@@ -178,12 +178,14 @@ class BrowserActivity : AppCompatActivity() {
             override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
                 b.address.text = url
                 enforceCurrent(url)
+                hideAds()
             }
 
             override fun onPageFinished(view: WebView, url: String) {
                 b.address.text = url
                 enforceCurrent(url)
                 styleRestrictedYouTube(url)
+                hideAds()
             }
         }
 
@@ -210,7 +212,8 @@ class BrowserActivity : AppCompatActivity() {
      * זה מה שהופך את האכיפה המקומית לנוחות ולא למקור הסמכות.
      */
     private fun verifyWithServer(url: String) {
-        Api.check(store.token, url, true) { r ->
+        // ‏true = האפליקציה התירה. השרת משווה, וחוסר הסכמה הוא ההתרעה.
+        Api.check(store.token, url, true, clientAllowed = true) { r ->
             if (r.json?.optString("code") == "unauthorized") { refuse("נדרשת כניסה מחדש"); return@check }
             // שגיאת רשת אינה סירוב: r.json ריק פירושו שלא הצלחנו לשאול.
             if (r.json != null && !r.json.optBoolean("allowed", true)) {
@@ -358,6 +361,45 @@ class BrowserActivity : AppCompatActivity() {
             "if(!window.__gbObs){window.__gbObs=new MutationObserver(put);" +
             "window.__gbObs.observe(document.documentElement," +
             "{childList:true,subtree:true});}" +
+            "}catch(e){}})()"
+        b.web.evaluateJavascript(js, null)
+    }
+
+    /**
+     * הסתרת שטחי פרסום, ודילוג על פרסומות יוטיוב.
+     *
+     * חסימת הרשת מונעת את הטעינה, אבל המסגרת הריקה נשארת ומשאירה
+     * חור בדף — ההסתרה היא השלמה, לא תחליף. ופרסומת ביוטיוב מוגשת
+     * מאותו מקור כמו הסרטון, ולכן אי אפשר לחסום אותה ברשת בלי
+     * לחסום את הסרטון: היא מדולגת.
+     */
+    private fun hideAds() {
+        val cosmetic = "cosmetic" in policy.adBlock && ruleSet.adCss.isNotEmpty()
+        val ytAds = "youtube" in policy.adBlock
+        if (!cosmetic && !ytAds) return
+
+        val css = if (cosmetic) ruleSet.adCss.replace("'", "") else ""
+        val js = "(function(){try{" +
+            (if (cosmetic)
+                "var css='" + css + "{display:none!important}';" +
+                "function put(){var s=document.getElementById('gb-ads');" +
+                "if(!s){s=document.createElement('style');s.id='gb-ads';" +
+                "(document.head||document.documentElement).appendChild(s);}" +
+                "if(s.textContent!==css)s.textContent=css;}put();"
+             else "function put(){}") +
+            (if (ytAds)
+                // דילוג: לחיצה על כפתור הדילוג, והרצה מהירה של פרסומת
+                // שאין לה כפתור כזה.
+                "function skip(){try{" +
+                "var b=document.querySelector('.ytp-ad-skip-button,.ytp-skip-ad-button," +
+                ".ytp-ad-skip-button-modern');if(b)b.click();" +
+                "if(document.querySelector('.ad-showing,.ytp-ad-player-overlay')){" +
+                "var v=document.querySelector('video');" +
+                "if(v&&v.duration){v.currentTime=v.duration;v.muted=true;}}" +
+                "}catch(e){}}skip();" +
+                "if(!window.__gbAdT)window.__gbAdT=setInterval(function(){put();skip();},700);"
+             else
+                "if(!window.__gbAdT)window.__gbAdT=setInterval(put,1500);") +
             "}catch(e){}})()"
         b.web.evaluateJavascript(js, null)
     }

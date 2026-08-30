@@ -15,6 +15,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/catalog.php';
 require_once __DIR__ . '/platforms.php';
+require_once __DIR__ . '/adblock.php';
 
 /* ── שני צירים נפרדים ──────────────────────────────────────────────
  *
@@ -372,13 +373,14 @@ function withinSession(array $policy, int $sessionSeconds): array {
  *
  *   1. מצב החשבון       — מושעה, פג תוקף
  *   2. תנאי זמן         — יום, חלון, מכסה, ישיבה
- *   3. כלל כתובת אוסר   — הדבר המפורש ביותר שיש
- *   4. כלל כתובת מתיר   — ומכאן מותר, בלי בדיקות נוספות
- *   5. פלטפורמה         — יוטיוב וכדומה, היתר ברמת ערוץ וסרטון
- *   6. סוג תוכן         — מה נטען, לא לאן פונים
- *   7. קטגוריה אוסרת
- *   8. קטגוריה מתירה
- *   9. ברירת המחדל      — posture
+ *   3. פרסומת           — לפני הכללים, אחרת היתר לאתר מחזיר את פרסומותיו
+ *   4. כלל כתובת אוסר   — הדבר המפורש ביותר שיש
+ *   5. כלל כתובת מתיר   — ומכאן מותר, בלי בדיקות נוספות
+ *   6. פלטפורמה         — יוטיוב וכדומה, היתר ברמת ערוץ וסרטון
+ *   7. סוג תוכן         — מה נטען, לא לאן פונים
+ *   8. קטגוריה אוסרת
+ *   9. קטגוריה מתירה
+ *  10. ברירת המחדל      — posture
  *
  * מי שהופך שניים מהשלבים האלה מקבל מערכת שאי אפשר להסביר: כלל שהמנהל
  * כתב במפורש חייב לגבור על סיווג אוטומטי, ואיסור חייב לגבור על היתר.
@@ -405,7 +407,19 @@ function evaluate(array $user, array $policy, array $set, DateTimeImmutable $now
     $main    = (bool) ($ctx['main_frame'] ?? true);
     $posture = (string) ($policy['posture'] ?? POSTURE_DENY);
 
-    // 3–4. כללי כתובות
+    /*
+     * ‏3. פרסומות — לפני כללי הכתובות, ולא אחריהם.
+     *
+     * פרסומת אינה יעד שהמשתמש ביקש; היא משאב שנטען בתוך דף שכן
+     * ביקש. אילו נבדקה אחרי כללי הכתובות, "התר את האתר הזה" היה
+     * מחזיר את כל הפרסומות שבו — כלומר חסימת הפרסומות הייתה מתבטלת
+     * בדיוק באתרים שהמנהל טרח להתיר.
+     */
+    if (isAdRequest($policy, $url, $main)) {
+        return decision(false, 'ad_blocked', 'פרסומת נחסמה');
+    }
+
+    // 4–5. כללי כתובות
     $u = matchUrlRules($set['rules'] ?? [], $url, $main);
     if ($u['verdict'] === 'deny') {
         return decision(false, 'rule_deny',
@@ -413,7 +427,7 @@ function evaluate(array $user, array $policy, array $set, DateTimeImmutable $now
     }
     if ($u['verdict'] === 'allow') return decision(true, 'rule_allow');
 
-    // 5. פלטפורמה
+    // 6. פלטפורמה
     $platform = platformOf($url['host']);
     if ($platform !== '' && isset($set['platforms'][$platform])) {
         if ($platform === PLATFORM_YOUTUBE) {
@@ -423,11 +437,11 @@ function evaluate(array $user, array $policy, array $set, DateTimeImmutable $now
         }
     }
 
-    // 6. סוג תוכן
+    // 7. סוג תוכן
     $d = matchContentType($policy, $url['full'], (string) ($ctx['content_type'] ?? ''));
     if (!$d['allow']) return $d;
 
-    // 7–8. קטגוריות
+    // 8–9. קטגוריות
     $c = matchCategories($url['host'], $set['domain_map'] ?? [], $set['categories'] ?? []);
     if ($c['verdict'] === 'deny') {
         return decision(false, 'category_deny',
@@ -435,7 +449,7 @@ function evaluate(array $user, array $policy, array $set, DateTimeImmutable $now
     }
     if ($c['verdict'] === 'allow') return decision(true, 'category_allow');
 
-    // 9. ברירת המחדל
+    // 10. ברירת המחדל
     return $posture === POSTURE_ALLOW
         ? decision(true, 'posture_allow')
         : decision(false, 'not_listed',

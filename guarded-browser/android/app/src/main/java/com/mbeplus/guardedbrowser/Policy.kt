@@ -42,6 +42,7 @@ data class Policy(
     val mode: String = MODE_KIOSK,
     val posture: String = POSTURE_DENY,
     val blockedTypes: List<String> = emptyList(),
+    val adBlock: List<String> = emptyList(),
     val timezone: String = "Asia/Jerusalem",
     val daysMask: Int = 127,
     val windowStart: String = "",
@@ -62,6 +63,8 @@ data class Policy(
             mode = o.optString("mode", MODE_KIOSK),
             posture = o.optString("posture", POSTURE_DENY),
             blockedTypes = o.optString("blocked_types").split(",")
+                .map { it.trim() }.filter { it.isNotEmpty() },
+            adBlock = o.optString("ad_block").split(",")
                 .map { it.trim() }.filter { it.isNotEmpty() },
             timezone = o.optString("timezone", "Asia/Jerusalem"),
             daysMask = o.optInt("days_mask", 127),
@@ -115,6 +118,8 @@ data class RuleSet(
     val domainMap: Map<String, List<String>> = emptyMap(),
     val platforms: Map<String, PlatformRule> = emptyMap(),
     val platformItems: Map<String, Map<String, Map<String, String>>> = emptyMap(),
+    val adHosts: List<String> = emptyList(),
+    val adCss: String = "",
 )
 
 data class Verdict(
@@ -428,6 +433,15 @@ object PolicyEngine {
         if (url.isEmpty()) return Verdict(true, "session_ok")
         val u = normalize(url) ?: return Verdict(false, "bad_url", "הכתובת אינה תקינה")
 
+        /*
+         * פרסומות לפני כללי הכתובות, ולא אחריהם: פרסומת אינה יעד
+         * שהמשתמש ביקש אלא משאב בתוך דף שכן ביקש. אילו נבדקה
+         * אחריהם, "התר את האתר הזה" היה מחזיר את כל פרסומותיו.
+         */
+        if (isAdRequest(p, set, u, isMainFrame)) {
+            return Verdict(false, "ad_blocked", "פרסומת נחסמה")
+        }
+
         when (matchUrlRules(set.rules, u, isMainFrame)) {
             "deny" -> return Verdict(false, "rule_deny", "הכתובת הזו נחסמה עבורך")
             "allow" -> return Verdict(true, "rule_allow")
@@ -459,6 +473,42 @@ object PolicyEngine {
     }
 
     /* ── פענוח מטען ה-JSON מהשרת ────────────────────────────────── */
+
+
+    /* ── פרסומות ────────────────────────────────────────────────── */
+
+    private val AD_PATHS = listOf(
+        Regex("^/pagead/"), Regex("^/ads?/"), Regex("^/adserver"), Regex("^/adframe"),
+        Regex("^/advert"), Regex("^/banners?/"), Regex("^/sponsor"), Regex("^/ptracking"),
+        Regex("/googleads?"), Regex("/prebid"), Regex("[?&]ad_type="), Regex("[?&]adunit="),
+    )
+    private val YT_AD_PATHS = listOf(
+        Regex("^/api/stats/ads"), Regex("^/pagead/"), Regex("^/ptracking"), Regex("^/get_midroll"),
+    )
+
+    /**
+     * ניווט אמיתי נחסם רק כשחסימת חלונות קופצים הופעלה: דומיין
+     * פרסומי שהמשתמש הקליד בעצמו אינו פרסומת.
+     */
+    fun isAdRequest(p: Policy, set: RuleSet, url: Url, isMainFrame: Boolean): Boolean {
+        if (isMainFrame && "popups" !in p.adBlock) return false
+        if (!isMainFrame && "network" !in p.adBlock) return false
+
+        if (set.adHosts.any { hostMatches(url.host, it) }) return true
+
+        val full = url.path + if (url.query.isNotEmpty()) "?" + url.query else ""
+        if (AD_PATHS.any { it.containsMatchIn(full) }) return true
+
+        // יוטיוב: רק נתיבי המדידה. הווידאו מגיע מאותו מקור, וחסימתו
+        // הייתה חוסמת את הסרטון שכן אושר.
+        if (platformOf(url.host) == PLATFORM_YOUTUBE && "youtube" in p.adBlock) {
+            if (YT_AD_PATHS.any { it.containsMatchIn(url.path) }) return true
+        }
+        return false
+    }
+
+    fun stringList(arr: JSONArray?): List<String> =
+        (0 until (arr?.length() ?: 0)).map { arr!!.optString(it) }.filter { it.isNotEmpty() }
 
     fun rulesFrom(arr: JSONArray?): List<Rule> =
         (0 until (arr?.length() ?: 0)).map { Rule.from(arr!!.getJSONObject(it)) }

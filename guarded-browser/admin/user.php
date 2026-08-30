@@ -48,9 +48,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $types = array_values(array_intersect(
             (array) ($_POST['types'] ?? []), array_keys(contentTypeCatalog())));
+        $adModes = array_values(array_intersect(
+            (array) ($_POST['ads'] ?? []), array_keys(adBlockCatalog())));
 
         upsert('policies', ['user_id' => $uid], [
             'mode' => $mode, 'posture' => $post, 'blocked_types' => implode(',', $types),
+            'ad_block' => implode(',', $adModes),
             'timezone' => $tz, 'days_mask' => $mask,
             'window_start' => $ws, 'window_end' => $we,
             'daily_quota_min'   => max(0, (int) ($_POST['daily_quota_min'] ?? 0)),
@@ -206,6 +209,7 @@ $rules   = all('SELECT * FROM rules WHERE user_id = ? ORDER BY sort_order, id', 
 $devices = all('SELECT * FROM devices WHERE user_id = ? ORDER BY last_seen_at DESC', [$uid]);
 $cats    = categoryRulesFor($uid);
 $types   = array_filter(explode(',', (string) $policy['blocked_types']));
+$adModes = array_filter(explode(',', (string) $policy['ad_block']));
 $yt      = platformRulesFor($uid)[PLATFORM_YOUTUBE]
            ?? ['mode' => 'off', 'allow_search' => 0, 'allow_shorts' => 0];
 $ytItems = all('SELECT * FROM platform_items WHERE user_id = ? AND platform = ? ORDER BY kind, id',
@@ -305,6 +309,26 @@ note($msg, $kind);
     <?php endforeach; ?>
   </div>
   <p class="hint" style="margin:14px 0 0">מסומן = חסום.</p>
+<?php secClose(); ?>
+
+<?php secOpen('חסימת פרסומות', $adModes ? '(' . count($adModes) . ')' : 'כבוי'); ?>
+  <p class="hint">
+    ציר נפרד מהקטגוריות: קטגוריה "פרסום" קובעת אם מותר <em>לנווט</em> לאתר פרסומי,
+    וזה כמעט אף פעם לא מה שקורה. פרסומת אמיתית היא משאב בתוך דף שהמשתמש כן ביקש,
+    ולכן היא נחסמת <strong>גם באתרים שהתרתם במפורש</strong>.
+  </p>
+  <div class="pick">
+    <?php foreach (adBlockCatalog() as $key => [$label, $icon, $desc]): ?>
+      <label>
+        <input type="checkbox" name="ads[]" value="<?= h($key) ?>"
+               <?= in_array($key, $adModes, true) ? 'checked' : '' ?>>
+        <span><b><?= $icon ?> <?= h($label) ?></b><small><?= h($desc) ?></small></span>
+      </label>
+    <?php endforeach; ?>
+  </div>
+  <p class="hint" style="margin:12px 0 0">
+    לסימון הכול — זו ההגדרה המקיפה ביותר, ואין סיבה לא לבחור בה אלא אם אתר מסוים נשבר.
+  </p>
 <?php secClose(); ?>
 
 <?php secOpen('זמן ומכסות'); ?>

@@ -80,9 +80,18 @@ object Api {
     fun policy(token: String, cb: (Result) -> Unit) =
         call("policy", JSONObject(), token, cb)
 
-    fun check(token: String, url: String, mainFrame: Boolean, cb: (Result) -> Unit) =
+    /**
+     * ‏clientAllowed הוא מה שהאפליקציה עצמה החליטה.
+     *
+     * השרת משווה: אם האפליקציה התירה משהו שהוא אוסר, האכיפה במכשיר
+     * נעקפה — וזו ההתרעה. לקוח שנפרץ לגמרי פשוט לא ישלח את השדה,
+     * ולכן זו אינה ראיה; אבל פריצה חלקית נתפסת כאן מיד.
+     */
+    fun check(token: String, url: String, mainFrame: Boolean,
+              clientAllowed: Boolean? = null, cb: (Result) -> Unit) =
         call("check", JSONObject().apply {
             put("url", url); put("main_frame", if (mainFrame) "1" else "0")
+            if (clientAllowed != null) put("client_allowed", clientAllowed)
         }, token, cb)
 
     fun heartbeat(token: String, seconds: Int, sessionSec: Int, cb: (Result) -> Unit) =

@@ -47,6 +47,7 @@ function schemaStatements(): array {
         mode               TEXT    NOT NULL DEFAULT 'kiosk',
         posture            TEXT    NOT NULL DEFAULT 'deny_all',
         blocked_types      TEXT    NOT NULL DEFAULT '',
+        ad_block           TEXT    NOT NULL DEFAULT '',
         timezone           TEXT    NOT NULL DEFAULT 'Asia/Jerusalem',
         days_mask          INTEGER NOT NULL DEFAULT 127,
         window_start       TEXT    NOT NULL DEFAULT '',
@@ -187,6 +188,23 @@ function schemaStatements(): array {
         fetched_at TEXT NOT NULL,
         PRIMARY KEY (platform, video_id)
     )",
+
+
+    // ── התרעות ──────────────────────────────────────────────────
+    // כשהאכיפה במכשיר נכשלת, מישהו חייב לדעת. שורה כאן היא אירוע
+    // שהמנהל צריך לראות, ולא רק שורה נוספת ביומן שאיש לא קורא.
+    "CREATE TABLE IF NOT EXISTS alerts (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id    INTEGER NOT NULL,
+        at         TEXT    NOT NULL,
+        kind       TEXT    NOT NULL,
+        severity   TEXT    NOT NULL DEFAULT 'warn',
+        title      TEXT    NOT NULL,
+        detail     TEXT    NOT NULL DEFAULT '',
+        url        TEXT    NOT NULL DEFAULT '',
+        acked_at   TEXT    NOT NULL DEFAULT ''
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_alerts_open ON alerts(acked_at, id DESC)",
 
     ];
 }
