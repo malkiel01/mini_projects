@@ -22,6 +22,28 @@
         android:layout_width="match_parent" android:layout_height="3dp"
         android:max="100" android:visibility="gone"/>
 
-    <WebView android:id="@+id/web" android:layout_width="match_parent"
-        android:layout_height="match_parent"/>
+    <!--
+      ‏הכיסוי יושב מעל ה-WebView, ולא מחליף אותו.
+
+      האכיפה באתר עמוד-יחיד רצה אחרי שהדף כבר הוחלף, ולכן סרטון לא
+      מאושר הספיק להבהב על המסך לפני שנחסם. כיסוי אטום שעולה ברגע
+      שהכתובת משתנה — ויורד רק כשהיא אושרה — הופך את ההבזק לבלתי
+      נראה, בלי להסתמך על מהירות הבדיקה.
+    -->
+    <FrameLayout android:layout_width="match_parent" android:layout_height="match_parent">
+
+        <WebView android:id="@+id/web" android:layout_width="match_parent"
+            android:layout_height="match_parent"/>
+
+        <LinearLayout android:id="@+id/cover" android:layout_width="match_parent"
+            android:layout_height="match_parent" android:orientation="vertical"
+            android:gravity="center" android:visibility="gone"
+            android:background="?android:attr/colorBackground"
+            android:clickable="true" android:focusable="true">
+            <ProgressBar android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+            <TextView android:id="@+id/coverText" android:layout_width="wrap_content"
+                android:layout_height="wrap_content" android:layout_marginTop="14dp"
+                android:textSize="15sp" android:textColor="@color/dim" android:text="בודק…"/>
+        </LinearLayout>
+    </FrameLayout>
 </LinearLayout>

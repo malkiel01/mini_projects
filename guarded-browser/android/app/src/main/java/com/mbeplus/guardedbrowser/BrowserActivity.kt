@@ -241,16 +241,25 @@ class BrowserActivity : AppCompatActivity() {
      */
     private fun enforceCurrent(url: String) {
         if (closing || url.isEmpty() || url == "about:blank") return
-        if (url == lastAllowed) return
+        if (url == lastAllowed) { hideCover(); return }
+
+        /*
+         * הכיסוי עולה לפני ההכרעה, לא אחריה.
+         *
+         * ההכרעה על סרטון לא מוכר דורשת פנייה לשרת, ובזמן הזה יוטיוב
+         * כבר מציג את הסרטון ומשמיע אותו. חסימה שמגיעה חצי שנייה
+         * אחר כך היא חסימה שהמשתמש כבר ראה מה היה מאחוריה.
+         */
+        showCover()
 
         val v = PolicyEngine.evaluate(policy, ruleSet, url, true, usedSec, sessionSec)
         when {
-            v.allow -> { lastAllowed = url; verifyWithServer(url) }
+            v.allow -> { lastAllowed = url; hideCover(); verifyWithServer(url) }
             v.needsServer -> Api.check(store.token, url, true) { r ->
                 val j = r.json
                 when {
                     j == null -> revert("אין חיבור לשרת, ולא ניתן לוודא שהכתובת מותרת")
-                    j.optBoolean("allowed") -> lastAllowed = url
+                    j.optBoolean("allowed") -> { lastAllowed = url; hideCover() }
                     else -> revert(j.optString("reason", "הכתובת אינה מותרת"))
                 }
             }
@@ -258,14 +267,55 @@ class BrowserActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * מכסה את המסך ומשתיק כל ניגון.
+     *
+     * ‏pause על תגיות ה-video ולא onPause של ה-WebView: השני עוצר גם
+     * את הטעינה של הדף שאליו נחזור, והמשתמש היה נתקע על כיסוי לבן.
+     */
+    private fun showCover() {
+        b.web.evaluateJavascript(
+            "(function(){try{document.querySelectorAll('video,audio')" +
+            ".forEach(function(m){m.pause();});}catch(e){}})()", null)
+
+        if (b.cover.visibility != View.VISIBLE) {
+            b.coverText.text = "בודק…"
+            b.cover.visibility = View.VISIBLE
+        }
+
+        /*
+         * רשת ביטחון: כיסוי אטום שנתקע הוא דפדפן בלתי שמיש.
+         *
+         * אם התשובה לא הגיעה בזמן סביר — רשת שנפלה, שרת שלא ענה —
+         * המסך נפתח עם הודעה, במקום להשאיר את המשתמש מול ריבוע ריק
+         * בלי שום דרך להבין מה קרה.
+         */
+        ticker.removeCallbacks(coverTimeout)
+        ticker.postDelayed(coverTimeout, 8000)
+    }
+
+    private val coverTimeout = Runnable {
+        if (b.cover.visibility == View.VISIBLE && !closing) {
+            b.coverText.text = "הבדיקה לא הסתיימה. חוזר אחורה."
+            revert("לא הצלחנו לוודא שהכתובת מותרת")
+        }
+    }
+
+    private fun hideCover() {
+        ticker.removeCallbacks(coverTimeout)
+        b.cover.visibility = View.GONE
+    }
+
     /** מחזיר לכתובת המותרת האחרונה, ומסביר למה. */
     private fun revert(reason: String) {
         if (closing) return
+        ticker.removeCallbacks(coverTimeout)
         b.web.stopLoading()
         toast(reason.ifEmpty { "הכתובת אינה מותרת בחשבון שלך" })
 
         val back = lastAllowed
         if (back.isEmpty()) { refuse(reason); return }
+        // הכיסוי נשאר עד שהדף המותר נטען, אחרת נראה שוב מה שנחסם.
         b.web.post { b.web.loadUrl(back) }
     }
 
@@ -317,9 +367,8 @@ class BrowserActivity : AppCompatActivity() {
      * טוען. זה הקישור בין האכיפה המקומית לבין הידע שיושב בשרת.
      */
     private fun askServerThenLoad(url: String) {
-        b.progress.visibility = View.VISIBLE
+        showCover()
         Api.check(store.token, url, true) { r ->
-            b.progress.visibility = View.GONE
             val j = r.json
             when {
                 j == null -> refuse("אין חיבור לשרת, ולא ניתן לוודא שהכתובת מותרת")
@@ -335,6 +384,7 @@ class BrowserActivity : AppCompatActivity() {
         closing = true
 
         ticker.removeCallbacks(beat)
+        hideCover()
         b.web.stopLoading()
         b.web.loadUrl("about:blank")
 
@@ -364,6 +414,7 @@ class BrowserActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         ticker.removeCallbacks(beat)
+        ticker.removeCallbacks(coverTimeout)
         if (!policy.keepHistory) {
             b.web.clearHistory()
             b.web.clearCache(true)
