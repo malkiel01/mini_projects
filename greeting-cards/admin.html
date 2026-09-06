@@ -303,9 +303,12 @@
                     <input type="file" id="bgFileInput" accept="image/*" multiple>
                 </div>
 
-                <div class="upload-zone" id="bgZipUpload" style="padding:16px">
-                    <div>📦 או העלו קובץ ZIP עם תמונות רקע</div>
-                    <input type="file" id="bgZipInput" accept=".zip">
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0">
+                    <label class="btn btn-outline" style="cursor:pointer">
+                        📦 העלאת ZIP
+                        <input type="file" id="bgZipInput" style="display:none" onchange="if(this.files[0]){uploadBgZip(this.files[0]);this.value=''}">
+                    </label>
+                    <span id="adminZipStatus" style="font-size:0.85rem;color:#888"></span>
                 </div>
 
                 <div class="items-grid" id="bgGrid"></div>
@@ -462,20 +465,40 @@ async function uploadBgFiles(files) {
 }
 
 async function uploadBgZip(file) {
+    const status = document.getElementById('adminZipStatus');
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (ext !== 'zip') { toast('יש לבחור קובץ ZIP', 'error'); status.textContent = '❌ לא ZIP'; return; }
+
+    status.textContent = '⏳ מעלה ' + file.name + '...';
+    status.style.color = '#4a6cf7';
     toast('מעלה ZIP...');
     const fd = new FormData();
     fd.append('zipfile', file);
     try {
         const res = await fetch(API + '?action=admin_upload_bg_zip', { method: 'POST', body: fd });
-        const data = await res.json();
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch (e) {
+            status.textContent = '❌ שגיאת שרת';
+            status.style.color = '#dc3545';
+            toast('שגיאת שרת', 'error');
+            console.error('Response:', text);
+            return;
+        }
         if (data.success) {
-            toast(`הועלו ${data.added} רקעים מ-ZIP`, 'success');
+            status.textContent = '✅ הועלו ' + data.added + ' רקעים';
+            status.style.color = '#28a745';
+            toast('הועלו ' + data.added + ' רקעים מ-ZIP', 'success');
             loadBackgrounds();
         } else {
+            status.textContent = '❌ ' + data.message;
+            status.style.color = '#dc3545';
             toast(data.message, 'error');
         }
     } catch (e) {
-        toast('שגיאה', 'error');
+        status.textContent = '❌ שגיאה: ' + e.message;
+        status.style.color = '#dc3545';
+        toast('שגיאה: ' + e.message, 'error');
     }
 }
 
@@ -584,14 +607,7 @@ document.addEventListener('DOMContentLoaded', () => {
     bgZone.ondragleave = () => bgZone.style.borderColor = '#ccc';
     bgZone.ondrop = e => { e.preventDefault(); bgZone.style.borderColor = '#ccc'; uploadBgFiles(e.dataTransfer.files); };
 
-    // Bg ZIP upload
-    const zipZone = document.getElementById('bgZipUpload');
-    const zipInput = document.getElementById('bgZipInput');
-    zipZone.onclick = () => zipInput.click();
-    zipInput.onchange = () => { if (zipInput.files[0]) uploadBgZip(zipInput.files[0]); zipInput.value = ''; };
-    zipZone.ondragover = e => { e.preventDefault(); zipZone.style.borderColor = '#4a6cf7'; };
-    zipZone.ondragleave = () => zipZone.style.borderColor = '#ccc';
-    zipZone.ondrop = e => { e.preventDefault(); zipZone.style.borderColor = '#ccc'; if (e.dataTransfer.files[0]) uploadBgZip(e.dataTransfer.files[0]); };
+    // Bg ZIP upload — handled by inline onchange
 
     // Font upload
     const fontZone = document.getElementById('fontUpload');
