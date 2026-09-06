@@ -323,7 +323,7 @@ function uploadUserBackground($usersDir, $token) {
 
     $file = $_FILES['background'];
     $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-    if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp'])) respond(false, 'תמונה לא נתמכת');
+    if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tiff', 'tif', 'heic', 'heif', 'svg', 'avif'])) respond(false, 'תמונה לא נתמכת');
     if ($file['size'] > 20 * 1024 * 1024) respond(false, 'קובץ גדול מדי (20MB מקסימום)');
 
     $id = uniqid('ubg_');
@@ -355,7 +355,7 @@ function uploadUserBackgroundZip($usersDir, $token) {
 
     $added = 0;
     $errors = [];
-    $validExts = ['jpg', 'jpeg', 'png', 'webp'];
+    $validExts = ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tiff', 'tif', 'heic', 'heif', 'svg', 'avif'];
 
     for ($i = 0; $i < $zip->numFiles; $i++) {
         $entry = $zip->getNameIndex($i);
@@ -417,7 +417,7 @@ function getUserBackground($usersDir, $token) {
     if (!file_exists($imgFile)) respond(false, 'קובץ רקע חסר');
 
     // Return image directly
-    $mime = ['jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'];
+    $mime = ['jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'bmp' => 'image/bmp', 'gif' => 'image/gif', 'tiff' => 'image/tiff', 'tif' => 'image/tiff', 'heic' => 'image/heic', 'heif' => 'image/heif', 'svg' => 'image/svg+xml', 'avif' => 'image/avif'];
     header('Content-Type: ' . ($mime[$meta['ext']] ?? 'application/octet-stream'));
     header('Content-Length: ' . filesize($imgFile));
     header('Content-Disposition: inline; filename="' . $meta['filename'] . '"');
@@ -536,7 +536,7 @@ function handleBackgroundUpload($dir) {
     if (empty($_FILES['background'])) respond(false, 'No background file provided');
     $file = $_FILES['background'];
     $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-    if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp'])) respond(false, 'Unsupported image format');
+    if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tiff', 'tif', 'heic', 'heif', 'svg', 'avif'])) respond(false, 'Unsupported image format');
     if ($file['size'] > 20 * 1024 * 1024) respond(false, 'Image too large (max 20MB)');
 
     $id = uniqid('bg_');
@@ -599,7 +599,7 @@ function adminUploadBgZip($backgroundsDir) {
     if ($zip->open($file['tmp_name']) !== true) respond(false, 'שגיאה בפתיחת ZIP');
 
     $added = 0;
-    $validExts = ['jpg', 'jpeg', 'png', 'webp'];
+    $validExts = ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tiff', 'tif', 'heic', 'heif', 'svg', 'avif'];
     for ($i = 0; $i < $zip->numFiles; $i++) {
         $entry = $zip->getNameIndex($i);
         if (substr($entry, -1) === '/' || strpos(basename($entry), '.') === 0) continue;

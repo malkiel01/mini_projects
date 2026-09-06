@@ -481,7 +481,7 @@ async function uploadBgZip(file) {
     const progressCount = document.getElementById('adminZipProgressCount');
     const progressFill = document.getElementById('adminZipProgressFill');
     const btn = document.getElementById('adminZipBtn');
-    const validExts = ['jpg', 'jpeg', 'png', 'webp'];
+    const validExts = ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tiff', 'tif', 'heic', 'heif', 'svg', 'avif'];
     const ext = file.name.split('.').pop().toLowerCase();
 
     if (ext !== 'zip') { toast('יש לבחור קובץ ZIP', 'error'); status.textContent = '❌ לא ZIP'; return; }
@@ -495,8 +495,9 @@ async function uploadBgZip(file) {
         const imageFiles = [];
         zip.forEach((path, entry) => {
             if (entry.dir) return;
+            if (path.includes('__MACOSX') || path.includes('/.')) return;
             const name = path.split('/').pop();
-            if (name.startsWith('.')) return;
+            if (!name || name.startsWith('.') || name.startsWith('._')) return;
             const e = name.split('.').pop().toLowerCase();
             if (validExts.includes(e)) imageFiles.push({ path, name, ext: e, entry });
         });
@@ -520,7 +521,7 @@ async function uploadBgZip(file) {
 
             try {
                 const blob = await img.entry.async('blob');
-                const mimes = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+                const mimes = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', bmp: 'image/bmp', gif: 'image/gif', tiff: 'image/tiff', tif: 'image/tiff', heic: 'image/heic', heif: 'image/heif', svg: 'image/svg+xml', avif: 'image/avif' };
                 const imageFile = new File([blob], img.name, { type: mimes[img.ext] || 'image/jpeg' });
                 const fd = new FormData();
                 fd.append('background', imageFile);
