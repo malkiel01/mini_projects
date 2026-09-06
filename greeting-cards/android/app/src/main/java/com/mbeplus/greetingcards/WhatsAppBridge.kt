@@ -1,25 +1,100 @@
 package com.mbeplus.greetingcards
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.ContactsContract
 import android.provider.Settings
 import android.util.Base64
 import android.util.Log
 import android.webkit.JavascriptInterface
 import android.widget.Toast
+import androidx.core.content.ContextCompat
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
 /**
  * JavaScript bridge — injected into the WebView as `window.GreetingCardsAndroid`.
- * Receives recipient data + images from the web app and starts the send queue.
+ * Reads the phone's contacts, and receives recipient data + images from the
+ * web app to start the WhatsApp send queue.
  */
 class WhatsAppBridge(private val context: Context) {
 
     companion object {
         private const val TAG = "WhatsAppBridge"
+    }
+
+    // ─── Contacts ────────────────────────────────────
+    //
+    // ‏Contact Picker API של הדפדפן אינו קיים ב-WebView, ולכן אנשי
+    // הקשר נקראים כאן ישירות מספר הטלפונים של המכשיר.
+
+    @JavascriptInterface
+    fun hasContactsPermission(): Boolean =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) ==
+            PackageManager.PERMISSION_GRANTED
+
+    /**
+     * מבקש את ההרשאה. התשובה חוזרת ל-JS דרך window.onContactsPermissionResult,
+     * כי דיאלוג ההרשאות אינו חוסם ואי אפשר להחזיר את התוצאה מכאן.
+     */
+    @JavascriptInterface
+    fun requestContactsPermission() {
+        (context as? MainActivity)?.requestContactsPermission()
+    }
+
+    /**
+     * ‏JSON: {"contacts":[{"name":…,"phone":…}]} או {"error":…}.
+     *
+     * טבלת הטלפונים מחזיקה שורה לכל מספר, ולכן איש קשר עם נייד ובית
+     * מופיע פעמיים. הכפילויות מסוננות לפי שם + הספרות של המספר, כדי
+     * ש"050-1234567" ו-"0501234567" ייחשבו לאותו מספר.
+     */
+    @JavascriptInterface
+    fun readContacts(): String {
+        if (!hasContactsPermission()) {
+            return JSONObject().put("error", "permission_denied").toString()
+        }
+
+        val contacts = JSONArray()
+        val seen = mutableSetOf<String>()
+
+        try {
+            context.contentResolver.query(
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                arrayOf(
+                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                    ContactsContract.CommonDataKinds.Phone.NUMBER,
+                ),
+                null, null,
+                "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} COLLATE LOCALIZED ASC",
+            )?.use { cursor ->
+                val nameCol = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                val numCol = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                if (nameCol < 0 || numCol < 0) {
+                    return JSONObject().put("error", "columns_missing").toString()
+                }
+
+                while (cursor.moveToNext()) {
+                    val name = cursor.getString(nameCol)?.trim().orEmpty()
+                    if (name.isEmpty()) continue
+                    val phone = cursor.getString(numCol)?.trim().orEmpty()
+
+                    if (!seen.add("$name|${phone.filter(Char::isDigit)}")) continue
+
+                    contacts.put(JSONObject().put("name", name).put("phone", phone))
+                }
+            } ?: return JSONObject().put("error", "query_failed").toString()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to read contacts", e)
+            return JSONObject().put("error", e.message ?: "read_failed").toString()
+        }
+
+        Log.i(TAG, "Read ${contacts.length()} contacts")
+        return JSONObject().put("contacts", contacts).toString()
     }
 
     @JavascriptInterface

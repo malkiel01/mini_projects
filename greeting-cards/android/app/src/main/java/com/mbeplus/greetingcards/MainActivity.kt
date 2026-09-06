@@ -33,6 +33,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val FILE_CHOOSER_REQUEST = 1001
+        private const val CONTACTS_PERMISSION_REQUEST = 1002
         private const val NOTIFICATION_PERMISSION_REQUEST = 1003
     }
 
@@ -151,9 +152,29 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    fun requestContactsPermission() {
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(Manifest.permission.READ_CONTACTS),
+            CONTACTS_PERMISSION_REQUEST
+        )
+    }
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        // Permission results handled silently — the service works without notification permission
-        // (just won't show notifications on Android 13+)
+
+        // דיאלוג ההרשאות אינו חוסם, ולכן דף הווב אינו יכול לחכות לתשובה
+        // בקריאה שפתחה אותו. התשובה מוזרקת אליו כאן.
+        if (requestCode == CONTACTS_PERMISSION_REQUEST) {
+            val granted = grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            binding.webView.evaluateJavascript(
+                "window.onContactsPermissionResult && window.onContactsPermissionResult($granted)",
+                null
+            )
+        }
+
+        // הרשאת ההתראות אינה נדרשת לשליחה עצמה — בלעדיה רק לא תוצג
+        // התקדמות ב-notification, ולכן אין מה לדווח לדף.
     }
 }
