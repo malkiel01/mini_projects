@@ -618,6 +618,153 @@
         }
         .no-bg-placeholder .icon { font-size: 3rem; margin-bottom: 10px; }
 
+        /* ─── Auth Overlay ────────────────────────── */
+        .auth-overlay {
+            position: fixed;
+            inset: 0;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            z-index: 10000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .auth-overlay.hidden { display: none; }
+        .auth-box {
+            background: white;
+            border-radius: 20px;
+            padding: 36px 32px;
+            width: 90%;
+            max-width: 400px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .auth-box h1 { text-align: center; margin-bottom: 8px; font-size: 1.5rem; }
+        .auth-box .subtitle { text-align: center; color: #888; margin-bottom: 24px; font-size: 0.9rem; }
+        .auth-tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #eee;
+        }
+        .auth-tab {
+            flex: 1;
+            text-align: center;
+            padding: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            color: #999;
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s;
+        }
+        .auth-tab.active { color: #4a6cf7; border-bottom-color: #4a6cf7; }
+        .auth-form { display: none; }
+        .auth-form.active { display: block; }
+        .auth-form .form-group { margin-bottom: 14px; }
+        .auth-form .form-group label { display: block; margin-bottom: 4px; font-weight: 600; font-size: 0.9rem; }
+        .auth-form .form-group input {
+            width: 100%;
+            padding: 12px 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-family: inherit;
+        }
+        .auth-error { color: #dc3545; font-size: 0.85rem; margin-bottom: 10px; min-height: 1.2em; }
+        .user-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 12px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 20px;
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+        .user-badge:hover { background: rgba(255,255,255,0.25); }
+
+        /* ─── Contacts ────────────────────────────── */
+        .contacts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 10px;
+            margin: 12px 0;
+        }
+        .contact-card {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        .contact-card.selected { border-color: #4a6cf7; background: #f0f4ff; }
+        .contact-card .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #4a6cf7;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1rem;
+            flex-shrink: 0;
+        }
+        .contact-card .info { flex: 1; min-width: 0; }
+        .contact-card .original-name { font-size: 0.8rem; color: #999; }
+        .contact-card .display-name {
+            font-weight: 600;
+            font-size: 0.95rem;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .contact-card .display-name input {
+            border: 1px solid transparent;
+            background: transparent;
+            font-family: inherit;
+            font-size: 0.95rem;
+            font-weight: 600;
+            padding: 2px 4px;
+            border-radius: 4px;
+            width: 100%;
+        }
+        .contact-card .display-name input:focus {
+            border-color: #4a6cf7;
+            background: white;
+            outline: none;
+        }
+        .contact-card .check {
+            width: 22px;
+            height: 22px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .contact-actions {
+            display: flex;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+        .bulk-edit-bar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 16px;
+            background: #fff8e1;
+            border-radius: 8px;
+            margin: 10px 0;
+            flex-wrap: wrap;
+        }
+        .contacts-stats {
+            display: flex;
+            gap: 16px;
+            margin: 10px 0;
+            font-size: 0.9rem;
+            color: #666;
+        }
+        .contacts-stats strong { color: #1a1a2e; }
+
         /* ─── Responsive ──────────────────────────── */
         @media (max-width: 600px) {
             header h1 { font-size: 1.1rem; }
@@ -678,18 +825,68 @@
 </head>
 <body>
 
+<!-- ─── Auth Overlay ───────────────────────────────── -->
+<div class="auth-overlay" id="authOverlay">
+    <div class="auth-box">
+        <h1>🎆 כרטיסי ברכה</h1>
+        <div class="subtitle">התחברו כדי לשמור את אנשי הקשר והכרטיסים שלכם</div>
+        <div class="auth-tabs">
+            <div class="auth-tab active" onclick="switchAuthTab('login')">התחברות</div>
+            <div class="auth-tab" onclick="switchAuthTab('register')">הרשמה</div>
+        </div>
+        <div class="auth-error" id="authError"></div>
+        <!-- Login -->
+        <div class="auth-form active" id="loginForm">
+            <div class="form-group">
+                <label>שם משתמש</label>
+                <input type="text" id="loginUser" placeholder="שם משתמש" autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label>סיסמה</label>
+                <input type="password" id="loginPass" placeholder="סיסמה" autocomplete="current-password">
+            </div>
+            <button class="btn btn-primary" style="width:100%;padding:14px" onclick="doLogin()">התחבר</button>
+        </div>
+        <!-- Register -->
+        <div class="auth-form" id="registerForm">
+            <div class="form-group">
+                <label>שם משתמש</label>
+                <input type="text" id="regUser" placeholder="לפחות 2 תווים" autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label>שם תצוגה</label>
+                <input type="text" id="regDisplayName" placeholder="השם שיופיע (אופציונלי)">
+            </div>
+            <div class="form-group">
+                <label>סיסמה</label>
+                <input type="password" id="regPass" placeholder="לפחות 4 תווים" autocomplete="new-password">
+            </div>
+            <button class="btn btn-primary" style="width:100%;padding:14px" onclick="doRegister()">הרשמה</button>
+        </div>
+        <div style="text-align:center;margin-top:16px">
+            <a href="#" style="font-size:0.85rem;color:#999" onclick="skipAuth();return false">המשך ללא חשבון →</a>
+        </div>
+    </div>
+</div>
+
 <!-- ─── Header ────────────────────────────────────── -->
 <header>
     <a href="../index.html" title="חזרה לדף הראשי">→</a>
     <h1>🎆 כרטיסי ברכה לשנה טובה</h1>
+    <div class="user-badge" id="userBadge" style="display:none" onclick="showUserMenu()">
+        <span>👤</span>
+        <span id="userDisplayName"></span>
+        <span style="opacity:0.6">▾</span>
+    </div>
 </header>
 
 <!-- ─── Tabs ──────────────────────────────────────── -->
 <div class="tabs" id="tabs">
     <div class="tab active" data-step="1" onclick="switchStep(1)">① הגדרות</div>
     <div class="tab" data-step="2" onclick="switchStep(2)">② עיצוב הכרטיס</div>
-    <div class="tab" data-step="3" onclick="switchStep(3)">③ נמענים <span class="badge" id="recipientsBadge" style="display:none">0</span></div>
-    <div class="tab" data-step="4" onclick="switchStep(4)">④ ייצוא</div>
+    <div class="tab" data-step="3" onclick="switchStep(3)">③ אנשי קשר <span class="badge" id="contactsBadge" style="display:none">0</span></div>
+    <div class="tab" data-step="4" onclick="switchStep(4)">④ נמענים <span class="badge" id="recipientsBadge" style="display:none">0</span></div>
+    <div class="tab" data-step="5" onclick="switchStep(5)">⑤ ייצוא</div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════
@@ -881,9 +1078,77 @@
 </div>
 
 <!-- ═══════════════════════════════════════════════════
-     STEP 3: Recipients
+     STEP 3: Contacts
      ═══════════════════════════════════════════════════ -->
 <div class="step-panel" id="step3">
+    <div class="panel-content">
+        <div class="card">
+            <h2>📱 אנשי קשר</h2>
+            <p style="margin-bottom:16px;color:#666;font-size:0.9rem">
+                ייבאו אנשי קשר מהטלפון, מאקסל, או הוסיפו ידנית. לכל איש קשר יש <strong>שם תצוגה</strong> שיופיע על הכרטיס.
+            </p>
+
+            <div class="btn-group" style="margin-bottom:16px">
+                <button class="btn btn-primary" onclick="importPhoneContacts()" id="phoneImportBtn">
+                    📱 ייבוא מהטלפון
+                </button>
+                <label class="btn btn-outline" style="cursor:pointer">
+                    📁 ייבוא מאקסל / CSV
+                    <input type="file" id="contactsExcelInput" accept=".xlsx,.xls,.csv,.vcf" style="display:none" onchange="importContactsFile(this)">
+                </label>
+                <button class="btn btn-outline" onclick="addContactManual()">➕ הוספה ידנית</button>
+            </div>
+
+            <!-- Stats -->
+            <div class="contacts-stats" id="contactsStats" style="display:none">
+                <span>סה"כ: <strong id="totalContacts">0</strong></span>
+                <span>נבחרו: <strong id="selectedContacts">0</strong></span>
+                <span>
+                    <button class="btn btn-sm btn-outline" onclick="selectAllContacts(true)">בחר הכל</button>
+                    <button class="btn btn-sm btn-outline" onclick="selectAllContacts(false)">נקה בחירה</button>
+                </span>
+            </div>
+
+            <!-- Bulk edit bar -->
+            <div class="bulk-edit-bar" id="bulkEditBar" style="display:none">
+                <span>✏️ <strong>עריכה מרובה:</strong></span>
+                <button class="btn btn-sm btn-outline" onclick="resetAllDisplayNames()">↺ אפס שמות תצוגה לשמות מקוריים</button>
+                <button class="btn btn-sm btn-outline" onclick="addPrefixToNames()">הוסף תחילית</button>
+                <button class="btn btn-sm btn-outline" onclick="addSuffixToNames()">הוסף סיומת</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteSelectedContacts()">🗑️ מחק נבחרים</button>
+            </div>
+
+            <!-- Search -->
+            <div class="form-group" id="contactsSearchWrap" style="display:none">
+                <input type="text" id="contactsSearch" placeholder="🔍 חיפוש אנשי קשר..." oninput="filterContacts(this.value)">
+            </div>
+
+            <!-- Contacts grid -->
+            <div class="contacts-grid" id="contactsGrid"></div>
+
+            <!-- Empty state -->
+            <div id="contactsEmpty" class="empty-state">
+                <div class="icon">📱</div>
+                <p>אין אנשי קשר עדיין</p>
+                <p style="font-size:0.85rem">ייבאו מהטלפון או הוסיפו ידנית</p>
+            </div>
+
+            <div class="btn-group" style="margin-top:12px" id="contactsSaveBar" style="display:none">
+                <button class="btn btn-success" onclick="saveContactsToServer()">💾 שמור אנשי קשר</button>
+            </div>
+        </div>
+
+        <div class="btn-group" style="justify-content:center">
+            <button class="btn btn-outline" onclick="switchStep(2)">← חזרה לעיצוב</button>
+            <button class="btn btn-primary" onclick="useContactsAsRecipients();switchStep(4)">המשך לנמענים →</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     STEP 4: Recipients
+     ═══════════════════════════════════════════════════ -->
+<div class="step-panel" id="step4">
     <div class="panel-content">
         <div class="card">
             <h2>📋 רשימת נמענים</h2>
@@ -937,16 +1202,16 @@
         </div>
 
         <div class="btn-group" style="justify-content:center">
-            <button class="btn btn-outline" onclick="switchStep(2)">← חזרה לעיצוב</button>
-            <button class="btn btn-primary" onclick="switchStep(4)">המשך לייצוא →</button>
+            <button class="btn btn-outline" onclick="switchStep(3)">← חזרה לאנשי קשר</button>
+            <button class="btn btn-primary" onclick="switchStep(5)">המשך לייצוא →</button>
         </div>
     </div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════
-     STEP 4: Export
+     STEP 5: Export
      ═══════════════════════════════════════════════════ -->
-<div class="step-panel" id="step4">
+<div class="step-panel" id="step5">
     <div class="panel-content">
         <div class="card">
             <h2>📦 ייצוא כרטיסים</h2>
@@ -993,7 +1258,7 @@
         </div>
 
         <div class="btn-group" style="justify-content:center">
-            <button class="btn btn-outline" onclick="switchStep(3)">← חזרה לנמענים</button>
+            <button class="btn btn-outline" onclick="switchStep(4)">← חזרה לנמענים</button>
         </div>
     </div>
 </div>
@@ -1011,6 +1276,10 @@
      JAVASCRIPT
      ═══════════════════════════════════════════════════ -->
 <script>
+/* ─── Auth State ─────────────────────────────────── */
+let authToken = '';
+let currentUser = null;
+
 /* ─── State ──────────────────────────────────────── */
 const state = {
     backgroundImage: null,     // data URL of background
@@ -1018,6 +1287,8 @@ const state = {
     fields: [],                // text fields on card
     selectedFieldId: null,
     clipboard: null,           // copied field data
+    contacts: [],              // array of { id, name, displayName, phone, email, selected }
+    contactsFilter: '',
     recipients: [],            // array of { col1: val, col2: val }
     fonts: [
         // ─── Google Fonts (עברית) ────────────────
@@ -2480,9 +2751,12 @@ function switchStep(n) {
         renderAllFields();
     }
     if (n === 3) {
-        updateRecipientsUI();
+        renderContactsList();
     }
     if (n === 4) {
+        updateRecipientsUI();
+    }
+    if (n === 5) {
         updateExportSummary();
         updateFilenameSelect();
     }
@@ -2513,6 +2787,502 @@ function toast(msg, type = '') {
     clearTimeout(el._timeout);
     el._timeout = setTimeout(() => el.classList.remove('show'), 3000);
 }
+
+/* ═══════════════════════════════════════════════════
+   AUTH
+   ═══════════════════════════════════════════════════ */
+
+function switchAuthTab(tab) {
+    document.querySelectorAll('.auth-tab').forEach((t, i) => t.classList.toggle('active', (i === 0 && tab === 'login') || (i === 1 && tab === 'register')));
+    document.getElementById('loginForm').classList.toggle('active', tab === 'login');
+    document.getElementById('registerForm').classList.toggle('active', tab === 'register');
+    document.getElementById('authError').textContent = '';
+}
+
+async function doLogin() {
+    const username = document.getElementById('loginUser').value.trim();
+    const password = document.getElementById('loginPass').value;
+    if (!username || !password) { document.getElementById('authError').textContent = 'נא למלא שם משתמש וסיסמה'; return; }
+
+    try {
+        const res = await fetch(API_URL + '?action=login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+        if (data.success) {
+            authToken = data.token;
+            currentUser = { username: data.username, displayName: data.displayName };
+            onAuthSuccess();
+        } else {
+            document.getElementById('authError').textContent = data.message;
+        }
+    } catch (e) {
+        document.getElementById('authError').textContent = 'שגיאת חיבור לשרת';
+    }
+}
+
+async function doRegister() {
+    const username = document.getElementById('regUser').value.trim();
+    const displayName = document.getElementById('regDisplayName').value.trim();
+    const password = document.getElementById('regPass').value;
+    if (!username || !password) { document.getElementById('authError').textContent = 'נא למלא שם משתמש וסיסמה'; return; }
+
+    try {
+        const res = await fetch(API_URL + '?action=register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password, displayName: displayName || username })
+        });
+        const data = await res.json();
+        if (data.success) {
+            authToken = data.token;
+            currentUser = { username: data.username, displayName: data.displayName };
+            onAuthSuccess();
+        } else {
+            document.getElementById('authError').textContent = data.message;
+        }
+    } catch (e) {
+        document.getElementById('authError').textContent = 'שגיאת חיבור לשרת';
+    }
+}
+
+function skipAuth() {
+    document.getElementById('authOverlay').classList.add('hidden');
+}
+
+function onAuthSuccess() {
+    document.getElementById('authOverlay').classList.add('hidden');
+    document.getElementById('userBadge').style.display = 'flex';
+    document.getElementById('userDisplayName').textContent = currentUser.displayName;
+    toast('שלום ' + currentUser.displayName + '! 👋', 'success');
+    loadContactsFromServer();
+}
+
+async function checkAuth() {
+    // Check cookie-based auth
+    try {
+        const res = await fetch(API_URL + '?action=check_auth', { credentials: 'include' });
+        const data = await res.json();
+        if (data.success) {
+            authToken = getCookie('gc_token');
+            currentUser = { username: data.username, displayName: data.displayName };
+            onAuthSuccess();
+            return true;
+        }
+    } catch (e) {}
+    return false;
+}
+
+function getCookie(name) {
+    const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+    return match ? match[2] : '';
+}
+
+function showUserMenu() {
+    const html = `
+        <h2>👤 ${escapeHtml(currentUser.displayName)}</h2>
+        <p style="color:#666;margin-bottom:16px">@${escapeHtml(currentUser.username)}</p>
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="doLogout()">🚪 התנתק</button>
+            <button class="btn btn-outline" onclick="closeModal()">סגור</button>
+        </div>
+    `;
+    showModal(html);
+}
+
+async function doLogout() {
+    await fetch(API_URL + '?action=logout', { credentials: 'include' });
+    authToken = '';
+    currentUser = null;
+    document.getElementById('userBadge').style.display = 'none';
+    document.getElementById('authOverlay').classList.remove('hidden');
+    closeModal();
+    toast('התנתקת');
+}
+
+/* ═══════════════════════════════════════════════════
+   CONTACTS
+   ═══════════════════════════════════════════════════ */
+
+async function loadContactsFromServer() {
+    if (!authToken) return;
+    try {
+        const res = await fetch(API_URL + '?action=load_contacts', {
+            headers: { 'X-Auth-Token': authToken },
+            credentials: 'include'
+        });
+        const data = await res.json();
+        if (data.success && data.contacts) {
+            state.contacts = data.contacts;
+            updateContactsBadge();
+        }
+    } catch (e) {}
+}
+
+async function saveContactsToServer() {
+    if (!authToken) { toast('התחבר כדי לשמור אנשי קשר', 'error'); return; }
+    try {
+        const res = await fetch(API_URL + '?action=save_contacts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Auth-Token': authToken },
+            body: JSON.stringify({ contacts: state.contacts }),
+            credentials: 'include'
+        });
+        const data = await res.json();
+        if (data.success) {
+            toast('אנשי הקשר נשמרו! (' + data.count + ')', 'success');
+        } else {
+            toast(data.message, 'error');
+        }
+    } catch (e) {
+        toast('שגיאה בשמירה', 'error');
+    }
+}
+
+function renderContactsList() {
+    const grid = document.getElementById('contactsGrid');
+    const empty = document.getElementById('contactsEmpty');
+    const stats = document.getElementById('contactsStats');
+    const bulkBar = document.getElementById('bulkEditBar');
+    const searchWrap = document.getElementById('contactsSearchWrap');
+
+    const filtered = state.contactsFilter
+        ? state.contacts.filter(c => c.name.includes(state.contactsFilter) || c.displayName.includes(state.contactsFilter) || (c.phone || '').includes(state.contactsFilter))
+        : state.contacts;
+
+    if (state.contacts.length === 0) {
+        empty.style.display = 'block';
+        grid.innerHTML = '';
+        stats.style.display = 'none';
+        bulkBar.style.display = 'none';
+        searchWrap.style.display = 'none';
+        return;
+    }
+
+    empty.style.display = 'none';
+    stats.style.display = 'flex';
+    bulkBar.style.display = 'flex';
+    searchWrap.style.display = 'block';
+
+    document.getElementById('totalContacts').textContent = state.contacts.length;
+    document.getElementById('selectedContacts').textContent = state.contacts.filter(c => c.selected).length;
+
+    grid.innerHTML = '';
+    filtered.forEach(c => {
+        const initials = (c.name || '?').substring(0, 2);
+        const isEdited = c.displayName !== c.name;
+        const div = document.createElement('div');
+        div.className = 'contact-card' + (c.selected ? ' selected' : '');
+        div.innerHTML = `
+            <input type="checkbox" class="check" ${c.selected ? 'checked' : ''}
+                   onchange="toggleContactSelected('${c.id}', this.checked)">
+            <div class="avatar">${escapeHtml(initials)}</div>
+            <div class="info">
+                <div class="original-name">📇 ${escapeHtml(c.name)}${c.phone ? ' · ' + escapeHtml(c.phone) : ''}</div>
+                <div class="display-name">
+                    <span style="color:#999;font-size:0.8rem">✏️</span>
+                    <input type="text" value="${escapeHtml(c.displayName)}"
+                           onchange="updateContactDisplayName('${c.id}', this.value)"
+                           title="שם תצוגה — מה שיופיע על הכרטיס"
+                           style="${isEdited ? 'color:#4a6cf7' : ''}">
+                </div>
+            </div>
+            <div class="contact-actions">
+                <button class="delete-row-btn" onclick="deleteContact('${c.id}')" title="מחק">✕</button>
+            </div>
+        `;
+        grid.appendChild(div);
+    });
+
+    updateContactsBadge();
+}
+
+function toggleContactSelected(id, checked) {
+    const c = state.contacts.find(x => x.id === id);
+    if (c) c.selected = checked;
+    renderContactsList();
+}
+
+function updateContactDisplayName(id, newName) {
+    const c = state.contacts.find(x => x.id === id);
+    if (c) c.displayName = newName.trim() || c.name;
+    // Don't re-render on every keystroke, just on blur/change
+}
+
+function deleteContact(id) {
+    state.contacts = state.contacts.filter(c => c.id !== id);
+    renderContactsList();
+}
+
+function selectAllContacts(selected) {
+    state.contacts.forEach(c => c.selected = selected);
+    renderContactsList();
+}
+
+function resetAllDisplayNames() {
+    state.contacts.forEach(c => c.displayName = c.name);
+    renderContactsList();
+    toast('שמות התצוגה אופסו');
+}
+
+function addPrefixToNames() {
+    const prefix = prompt('הזינו תחילית (למשל "לכבוד "):');
+    if (!prefix) return;
+    state.contacts.filter(c => c.selected).forEach(c => {
+        if (!c.displayName.startsWith(prefix)) c.displayName = prefix + c.displayName;
+    });
+    renderContactsList();
+    toast('התחילית נוספה לנבחרים');
+}
+
+function addSuffixToNames() {
+    const suffix = prompt('הזינו סיומת (למשל " ומשפחתו"):');
+    if (!suffix) return;
+    state.contacts.filter(c => c.selected).forEach(c => {
+        if (!c.displayName.endsWith(suffix)) c.displayName = c.displayName + suffix;
+    });
+    renderContactsList();
+    toast('הסיומת נוספה לנבחרים');
+}
+
+function deleteSelectedContacts() {
+    const count = state.contacts.filter(c => c.selected).length;
+    if (!confirm(`למחוק ${count} אנשי קשר נבחרים?`)) return;
+    state.contacts = state.contacts.filter(c => !c.selected);
+    renderContactsList();
+}
+
+function filterContacts(q) {
+    state.contactsFilter = q;
+    renderContactsList();
+}
+
+function addContactManual() {
+    const html = `
+        <h2>➕ הוספת איש קשר</h2>
+        <div class="form-group">
+            <label>שם</label>
+            <input type="text" id="newContactName" placeholder="שם מלא">
+        </div>
+        <div class="form-group">
+            <label>טלפון (אופציונלי)</label>
+            <input type="tel" id="newContactPhone" placeholder="050-1234567">
+        </div>
+        <div class="form-group">
+            <label>שם תצוגה (ברירת מחדל = השם)</label>
+            <input type="text" id="newContactDisplay" placeholder="מה יופיע על הכרטיס">
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-primary" onclick="saveNewContact()">➕ הוסף</button>
+            <button class="btn btn-outline" onclick="closeModal()">ביטול</button>
+        </div>
+    `;
+    showModal(html);
+}
+
+function saveNewContact() {
+    const name = document.getElementById('newContactName').value.trim();
+    if (!name) { toast('נא להזין שם', 'error'); return; }
+    const phone = document.getElementById('newContactPhone').value.trim();
+    const display = document.getElementById('newContactDisplay').value.trim();
+
+    state.contacts.push({
+        id: 'c_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+        name,
+        displayName: display || name,
+        phone,
+        email: '',
+        selected: true,
+    });
+
+    closeModal();
+    renderContactsList();
+    toast('איש קשר נוסף: ' + name);
+}
+
+function updateContactsBadge() {
+    const badge = document.getElementById('contactsBadge');
+    const selected = state.contacts.filter(c => c.selected).length;
+    if (selected > 0) {
+        badge.style.display = '';
+        badge.textContent = selected;
+    } else {
+        badge.style.display = 'none';
+    }
+}
+
+/* ─── Phone Contacts Import (Contact Picker API) ── */
+
+async function importPhoneContacts() {
+    // Check if Contact Picker API is available (Android Chrome)
+    if ('contacts' in navigator && 'ContactsManager' in window) {
+        try {
+            const props = ['name', 'tel', 'email'];
+            const opts = { multiple: true };
+            const contacts = await navigator.contacts.select(props, opts);
+
+            let added = 0;
+            contacts.forEach(c => {
+                const name = c.name?.[0] || '';
+                if (!name) return;
+                // Skip if already exists
+                if (state.contacts.find(x => x.name === name && x.phone === (c.tel?.[0] || ''))) return;
+                state.contacts.push({
+                    id: 'c_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+                    name,
+                    displayName: name,
+                    phone: c.tel?.[0] || '',
+                    email: c.email?.[0] || '',
+                    selected: true,
+                });
+                added++;
+            });
+
+            renderContactsList();
+            toast(`יובאו ${added} אנשי קשר מהטלפון`, 'success');
+        } catch (e) {
+            if (e.name !== 'TypeError') toast('הייבוא בוטל', 'error');
+        }
+    } else {
+        // Fallback: show file upload dialog
+        toast('ייבוא מהטלפון זמין רק בכרום באנדרואיד. השתמשו בייבוא מקובץ.', 'error');
+        document.getElementById('contactsExcelInput').click();
+    }
+}
+
+/* ─── Contacts File Import (Excel/CSV/vCard) ────── */
+
+function importContactsFile(input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    const ext = file.name.split('.').pop().toLowerCase();
+
+    if (ext === 'vcf') {
+        importVCard(file);
+    } else {
+        importContactsExcel(file);
+    }
+    input.value = '';
+}
+
+function importVCard(file) {
+    const reader = new FileReader();
+    reader.onload = e => {
+        const text = e.target.result;
+        const cards = text.split('BEGIN:VCARD');
+        let added = 0;
+        cards.forEach(card => {
+            if (!card.trim()) return;
+            const fnMatch = card.match(/FN[;:](.+)/);
+            const telMatch = card.match(/TEL[;:](.+)/);
+            const emailMatch = card.match(/EMAIL[;:](.+)/);
+
+            const name = fnMatch ? fnMatch[1].trim() : '';
+            if (!name) return;
+
+            const phone = telMatch ? telMatch[1].replace(/[^\d+\-]/g, '').trim() : '';
+            const email = emailMatch ? emailMatch[1].trim() : '';
+
+            if (state.contacts.find(x => x.name === name && x.phone === phone)) return;
+
+            state.contacts.push({
+                id: 'c_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+                name,
+                displayName: name,
+                phone,
+                email,
+                selected: true,
+            });
+            added++;
+        });
+
+        renderContactsList();
+        toast(`יובאו ${added} אנשי קשר מ-vCard`, 'success');
+    };
+    reader.readAsText(file);
+}
+
+function importContactsExcel(file) {
+    const reader = new FileReader();
+    reader.onload = e => {
+        try {
+            const workbook = XLSX.read(e.target.result, { type: 'array' });
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+            if (rows.length === 0) { toast('הקובץ ריק', 'error'); return; }
+
+            const cols = Object.keys(rows[0]);
+            // Try to auto-detect name/phone columns
+            const nameCol = cols.find(c => /שם|name/i.test(c)) || cols[0];
+            const phoneCol = cols.find(c => /טלפון|phone|tel|נייד/i.test(c)) || cols[1] || '';
+            const emailCol = cols.find(c => /mail|אימייל|דוא/i.test(c)) || '';
+
+            let added = 0;
+            rows.forEach(row => {
+                const name = String(row[nameCol] || '').trim();
+                if (!name) return;
+                const phone = phoneCol ? String(row[phoneCol] || '').trim() : '';
+                const email = emailCol ? String(row[emailCol] || '').trim() : '';
+
+                if (state.contacts.find(x => x.name === name && x.phone === phone)) return;
+
+                state.contacts.push({
+                    id: 'c_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+                    name,
+                    displayName: name,
+                    phone,
+                    email,
+                    selected: true,
+                });
+                added++;
+            });
+
+            renderContactsList();
+            toast(`יובאו ${added} אנשי קשר מהקובץ`, 'success');
+        } catch (err) {
+            toast('שגיאה בקריאת הקובץ: ' + err.message, 'error');
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+/* ─── Transfer contacts to recipients ────────────── */
+
+function useContactsAsRecipients() {
+    const selected = state.contacts.filter(c => c.selected);
+    if (selected.length === 0) return;
+
+    const listColumns = getListColumns();
+    if (listColumns.length === 0) return;
+
+    // Map selected contacts to recipients, using displayName for the first list column
+    state.recipients = selected.map(c => {
+        const rec = {};
+        listColumns.forEach((col, i) => {
+            if (i === 0) {
+                rec[col] = c.displayName; // First column gets the display name
+            } else {
+                rec[col] = '';
+            }
+        });
+        return rec;
+    });
+
+    updateRecipientsBadge();
+    renderRecipientsTable();
+    renderAllFields();
+}
+
+/* ─── Init: check auth on load ───────────────────── */
+checkAuth();
+
+// Handle Enter key in auth forms
+document.getElementById('loginPass')?.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+document.getElementById('regPass')?.addEventListener('keydown', e => { if (e.key === 'Enter') doRegister(); });
 
 </script>
 </body>
