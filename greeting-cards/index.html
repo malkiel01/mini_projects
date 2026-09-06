@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>כרטיסי ברכה לשנה טובה</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;700;900&family=Rubik:wght@400;700&family=Assistant:wght@400;700&family=Secular+One&family=Suez+One&family=Varela+Round&family=Alef:wght@400;700&family=Noto+Sans+Hebrew:wght@400;700;900&family=Noto+Serif+Hebrew:wght@400;700&family=Karantina:wght@400;700&family=Amatic+SC:wght@400;700&family=Frank+Ruhl+Libre:wght@400;700&display=swap">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -719,7 +720,7 @@
         <!-- Font -->
         <div class="card">
             <h2>🔤 פונט</h2>
-            <p style="margin-bottom:12px;font-size:0.9rem;color:#666">בחרו פונט מובנה או העלו פונט עברי (TTF/OTF)</p>
+            <p style="margin-bottom:12px;font-size:0.9rem;color:#666">12 פונטים עבריים מובנים (ברירת מחדל: Heebo) + אפשרות להעלות פונט מותאם (TTF/OTF)</p>
             <div class="font-list" id="fontList"></div>
 
             <h3>העלאת פונט מותאם:</h3>
@@ -1019,14 +1020,25 @@ const state = {
     clipboard: null,           // copied field data
     recipients: [],            // array of { col1: val, col2: val }
     fonts: [
+        // ─── Google Fonts (עברית) ────────────────
+        { id: 'heebo', name: 'Heebo ❤️', family: '"Heebo", sans-serif', builtin: true, default: true },
+        { id: 'rubik', name: 'Rubik', family: '"Rubik", sans-serif', builtin: true },
+        { id: 'assistant', name: 'Assistant', family: '"Assistant", sans-serif', builtin: true },
+        { id: 'secular', name: 'Secular One', family: '"Secular One", sans-serif', builtin: true },
+        { id: 'suez', name: 'Suez One', family: '"Suez One", serif', builtin: true },
+        { id: 'varela', name: 'Varela Round', family: '"Varela Round", sans-serif', builtin: true },
+        { id: 'alef', name: 'Alef', family: '"Alef", sans-serif', builtin: true },
+        { id: 'noto-sans', name: 'Noto Sans Hebrew', family: '"Noto Sans Hebrew", sans-serif', builtin: true },
+        { id: 'noto-serif', name: 'Noto Serif Hebrew', family: '"Noto Serif Hebrew", serif', builtin: true },
+        { id: 'frank', name: 'Frank Ruhl Libre', family: '"Frank Ruhl Libre", serif', builtin: true },
+        { id: 'karantina', name: 'Karantina', family: '"Karantina", sans-serif', builtin: true },
+        { id: 'amatic', name: 'Amatic SC', family: '"Amatic SC", cursive', builtin: true },
+        // ─── פונטי מערכת ────────────────────────
         { id: 'arial', name: 'Arial', family: 'Arial, sans-serif', builtin: true },
         { id: 'david', name: 'David', family: '"David", serif', builtin: true },
         { id: 'tahoma', name: 'Tahoma', family: 'Tahoma, sans-serif', builtin: true },
-        { id: 'frank', name: 'Frank Ruhl', family: '"Frank Ruhl Libre", serif', builtin: true },
-        { id: 'timesnew', name: 'Times New Roman', family: '"Times New Roman", serif', builtin: true },
-        { id: 'courier', name: 'Courier New', family: '"Courier New", monospace', builtin: true },
     ],
-    selectedFont: 'arial',
+    selectedFont: 'heebo',
     exportFormat: 'pdf',
     zoom: 1,
     showHandles: true,
@@ -1197,19 +1209,37 @@ function initFonts() {
 function renderFontList() {
     const container = document.getElementById('fontList');
     container.innerHTML = '';
-    state.fonts.forEach(f => {
-        const chip = document.createElement('div');
-        chip.className = 'font-chip' + (f.id === state.selectedFont ? ' selected' : '');
-        chip.style.fontFamily = f.family;
-        chip.onclick = () => { state.selectedFont = f.id; renderFontList(); };
 
-        let html = f.name;
-        if (!f.builtin) {
-            html += `<span class="delete-font" onclick="event.stopPropagation();removeFont('${f.id}')" title="הסר פונט">×</span>`;
-        }
-        chip.innerHTML = html;
-        container.appendChild(chip);
-    });
+    // Separate Google/system/custom fonts
+    const googleFonts = state.fonts.filter(f => f.builtin && !['arial','david','tahoma'].includes(f.id));
+    const systemFonts = state.fonts.filter(f => f.builtin && ['arial','david','tahoma'].includes(f.id));
+    const customFonts = state.fonts.filter(f => !f.builtin);
+
+    const addSection = (label, fonts) => {
+        if (fonts.length === 0) return;
+        const lbl = document.createElement('div');
+        lbl.style.cssText = 'width:100%;font-size:0.75rem;color:#999;margin-top:8px;margin-bottom:2px';
+        lbl.textContent = label;
+        container.appendChild(lbl);
+        fonts.forEach(f => {
+            const chip = document.createElement('div');
+            chip.className = 'font-chip' + (f.id === state.selectedFont ? ' selected' : '');
+            chip.style.fontFamily = f.family;
+            chip.onclick = () => { state.selectedFont = f.id; renderFontList(); };
+
+            let html = f.name;
+            if (f.default) html += ' <span style="font-size:0.7rem;color:#28a745">ברירת מחדל</span>';
+            if (!f.builtin) {
+                html += `<span class="delete-font" onclick="event.stopPropagation();removeFont('${f.id}')" title="הסר פונט">×</span>`;
+            }
+            chip.innerHTML = html;
+            container.appendChild(chip);
+        });
+    };
+
+    addSection('פונטים עבריים (Google Fonts)', googleFonts);
+    addSection('פונטי מערכת', systemFonts);
+    addSection('פונטים מותאמים', customFonts);
 }
 
 function updateFontSelect() {
