@@ -67,10 +67,23 @@ try {
         case 'get_template':    getTemplate($templatesDir); break;
         case 'delete_template': deleteTemplate($templatesDir); break;
 
-        // ─── Backgrounds ────────────────────────────
+        // ─── Backgrounds (global defaults) ──────────
         case 'upload_background':   handleBackgroundUpload($backgroundsDir); break;
         case 'list_backgrounds':    listBackgrounds($backgroundsDir); break;
         case 'delete_background':   deleteBackground($backgroundsDir); break;
+
+        // ─── User Backgrounds (per-user) ────────────
+        case 'upload_user_bg':      requireAuth($usersDir, $token); uploadUserBackground($usersDir, $token); break;
+        case 'upload_user_bg_zip':  requireAuth($usersDir, $token); uploadUserBackgroundZip($usersDir, $token); break;
+        case 'list_user_bgs':       requireAuth($usersDir, $token); listUserBackgrounds($usersDir, $token); break;
+        case 'delete_user_bg':      requireAuth($usersDir, $token); deleteUserBackground($usersDir, $token, $input); break;
+        case 'get_user_bg':         requireAuth($usersDir, $token); getUserBackground($usersDir, $token); break;
+
+        // ─── Admin (global defaults management) ─────
+        case 'admin_upload_bg':     handleBackgroundUpload($backgroundsDir); break;
+        case 'admin_delete_bg':     deleteBackground($backgroundsDir); break;
+        case 'admin_upload_font':   handleFontUpload($fontsDir); break;
+        case 'admin_delete_font':   deleteFont($fontsDir); break;
 
         default:
             respond(false, 'Unknown action: ' . $action);
@@ -286,6 +299,143 @@ function loadUserData($usersDir, $token) {
     $data = file_exists($file) ? json_decode(file_get_contents($file), true) : [];
 
     respond(true, 'OK', ['data' => $data ?: []]);
+}
+
+// ═══════════════════════════════════════════════════════
+// User Backgrounds (per-user)
+// ═══════════════════════════════════════════════════════
+
+function getUserBgDir($usersDir, $token) {
+    $userDir = getUserDir($usersDir, $token);
+    if (!$userDir) return null;
+    $bgDir = $userDir . '/backgrounds';
+    if (!is_dir($bgDir)) mkdir($bgDir, 0755, true);
+    return $bgDir;
+}
+
+function uploadUserBackground($usersDir, $token) {
+    $bgDir = getUserBgDir($usersDir, $token);
+    if (!$bgDir) respond(false, 'משתמש לא נמצא');
+    if (empty($_FILES['background'])) respond(false, 'No file provided');
+
+    $file = $_FILES['background'];
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp'])) respond(false, 'תמונה לא נתמכת');
+    if ($file['size'] > 20 * 1024 * 1024) respond(false, 'קובץ גדול מדי (20MB מקסימום)');
+
+    $id = uniqid('ubg_');
+    $filename = $id . '.' . $ext;
+    if (!move_uploaded_file($file['tmp_name'], $bgDir . '/' . $filename)) respond(false, 'שגיאה בשמירה');
+
+    $meta = [
+        'id' => $id,
+        'name' => $_POST['name'] ?? pathinfo($file['name'], PATHINFO_FILENAME),
+        'filename' => $filename,
+        'ext' => $ext,
+        'size' => $file['size'],
+        'uploaded' => date('c'),
+    ];
+    file_put_contents($bgDir . '/' . $id . '.json', json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    respond(true, 'רקע הועלה', $meta);
+}
+
+function uploadUserBackgroundZip($usersDir, $token) {
+    $bgDir = getUserBgDir($usersDir, $token);
+    if (!$bgDir) respond(false, 'משתמש לא נמצא');
+    if (empty($_FILES['zipfile'])) respond(false, 'No ZIP file provided');
+
+    $file = $_FILES['zipfile'];
+    if ($file['size'] > 100 * 1024 * 1024) respond(false, 'ZIP גדול מדי (100MB מקסימום)');
+
+    $zip = new ZipArchive();
+    if ($zip->open($file['tmp_name']) !== true) respond(false, 'שגיאה בפתיחת ה-ZIP');
+
+    $added = 0;
+    $errors = [];
+    $validExts = ['jpg', 'jpeg', 'png', 'webp'];
+
+    for ($i = 0; $i < $zip->numFiles; $i++) {
+        $entry = $zip->getNameIndex($i);
+        // Skip directories and hidden files
+        if (substr($entry, -1) === '/' || strpos(basename($entry), '.') === 0) continue;
+
+        $ext = strtolower(pathinfo($entry, PATHINFO_EXTENSION));
+        if (!in_array($ext, $validExts)) continue;
+
+        $data = $zip->getFromIndex($i);
+        if ($data === false || strlen($data) < 100) continue;
+        if (strlen($data) > 20 * 1024 * 1024) { $errors[] = basename($entry) . ' גדול מדי'; continue; }
+
+        $id = uniqid('ubg_');
+        $filename = $id . '.' . $ext;
+        file_put_contents($bgDir . '/' . $filename, $data);
+
+        $meta = [
+            'id' => $id,
+            'name' => pathinfo(basename($entry), PATHINFO_FILENAME),
+            'filename' => $filename,
+            'ext' => $ext,
+            'size' => strlen($data),
+            'uploaded' => date('c'),
+        ];
+        file_put_contents($bgDir . '/' . $id . '.json', json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        $added++;
+    }
+    $zip->close();
+
+    respond(true, "הועלו $added רקעים מ-ZIP", ['added' => $added, 'errors' => $errors]);
+}
+
+function listUserBackgrounds($usersDir, $token) {
+    $bgDir = getUserBgDir($usersDir, $token);
+    if (!$bgDir) respond(false, 'משתמש לא נמצא');
+
+    $bgs = [];
+    foreach (glob($bgDir . '/*.json') as $f) {
+        $m = json_decode(file_get_contents($f), true);
+        if ($m) $bgs[] = $m;
+    }
+    usort($bgs, fn($a, $b) => strcmp($b['uploaded'] ?? '', $a['uploaded'] ?? ''));
+    respond(true, 'OK', ['backgrounds' => $bgs]);
+}
+
+function getUserBackground($usersDir, $token) {
+    $bgDir = getUserBgDir($usersDir, $token);
+    if (!$bgDir) respond(false, 'משתמש לא נמצא');
+
+    $id = $_GET['id'] ?? '';
+    if (!$id) respond(false, 'Missing ID');
+
+    $metaFile = $bgDir . '/' . $id . '.json';
+    if (!file_exists($metaFile)) respond(false, 'רקע לא נמצא');
+
+    $meta = json_decode(file_get_contents($metaFile), true);
+    $imgFile = $bgDir . '/' . $meta['filename'];
+    if (!file_exists($imgFile)) respond(false, 'קובץ רקע חסר');
+
+    // Return image directly
+    $mime = ['jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'];
+    header('Content-Type: ' . ($mime[$meta['ext']] ?? 'application/octet-stream'));
+    header('Content-Length: ' . filesize($imgFile));
+    header('Content-Disposition: inline; filename="' . $meta['filename'] . '"');
+    readfile($imgFile);
+    exit;
+}
+
+function deleteUserBackground($usersDir, $token, $input) {
+    $bgDir = getUserBgDir($usersDir, $token);
+    if (!$bgDir) respond(false, 'משתמש לא נמצא');
+
+    $id = $input['id'] ?? $_GET['id'] ?? '';
+    if (!$id) respond(false, 'Missing ID');
+
+    $metaFile = $bgDir . '/' . $id . '.json';
+    if (!file_exists($metaFile)) respond(false, 'רקע לא נמצא');
+
+    $meta = json_decode(file_get_contents($metaFile), true);
+    @unlink($bgDir . '/' . $meta['filename']);
+    @unlink($metaFile);
+    respond(true, 'רקע נמחק');
 }
 
 // ═══════════════════════════════════════════════════════
