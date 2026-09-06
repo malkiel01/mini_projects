@@ -1,15 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  אייקון האפליקציה: רימון — סמל שנה טובה.
+  ‏108x108 הוא הקנבס של adaptive icon; רק המרכז (כ-72x72) מובטח
+  להיראות אחרי חיתוך למסכה עגולה, ולכן כל הרימון בתוך התחום הזה.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Background circle -->
+
+    <!-- כתר הרימון -->
     <path
-        android:fillColor="#4a6cf7"
-        android:pathData="M54,54m-40,0a40,40 0,1 1,80 0a40,40 0,1 1,-80 0"/>
-    <!-- Star/sparkle icon representing greeting/celebration -->
+        android:fillColor="#8E1B1B"
+        android:pathData="M49,44 L46,30 L51,34 L54,24 L57,34 L62,30 L59,44 Z"/>
+
+    <!-- גוף הרימון -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M54,30 L58,46 L74,46 L61,55 L65,71 L54,62 L43,71 L47,55 L34,46 L50,46 Z"/>
+        android:fillColor="#D32F2F"
+        android:pathData="M54,41
+            C67,41 77,51 77,63
+            C77,74 67,83 54,83
+            C41,83 31,74 31,63
+            C31,51 41,41 54,41 Z"/>
+
+    <!-- הדגשת אור בצד ימין עליון -->
+    <path
+        android:fillColor="#EF5350"
+        android:pathData="M42,52
+            C46,47 51,45 56,46
+            C50,49 45,53 43,58 Z"/>
+
+    <!-- גרגרי הרימון -->
+    <path android:fillColor="#FFE0B2" android:pathData="M46,60 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0"/>
+    <path android:fillColor="#FFE0B2" android:pathData="M62,60 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0"/>
+    <path android:fillColor="#FFE0B2" android:pathData="M54,71 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0"/>
 </vector>
