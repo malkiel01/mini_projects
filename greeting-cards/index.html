@@ -1667,7 +1667,7 @@ async function uploadZipBackgrounds(file) {
     const progressText = document.getElementById('zipProgressText');
     const progressCount = document.getElementById('zipProgressCount');
     const progressFill = document.getElementById('zipProgressFill');
-    const validExts = ['jpg', 'jpeg', 'png', 'webp'];
+    const validExts = ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tiff', 'tif', 'heic', 'heif', 'svg', 'avif'];
 
     try {
         // Extract ZIP client-side using JSZip (already loaded)
@@ -1676,20 +1676,33 @@ async function uploadZipBackgrounds(file) {
 
         // Collect image files
         const imageFiles = [];
+        let skippedCount = 0;
         zip.forEach((path, entry) => {
             if (entry.dir) return;
+            // Skip macOS resource forks and hidden files
+            if (path.includes('__MACOSX')) return;
+            if (path.includes('/.')) return;
             const name = path.split('/').pop();
-            if (name.startsWith('.')) return;
+            if (!name || name.startsWith('.') || name.startsWith('._')) return;
             const ext = name.split('.').pop().toLowerCase();
             if (validExts.includes(ext)) {
                 imageFiles.push({ path, name, ext, entry });
+            } else {
+                skippedCount++;
+                console.log('ZIP: skipped non-image file:', path, 'ext:', ext);
             }
         });
 
+        console.log('ZIP: found', imageFiles.length, 'images, skipped', skippedCount, 'files');
+
         if (imageFiles.length === 0) {
-            status.textContent = '❌ לא נמצאו תמונות ב-ZIP';
+            // Show what files WERE in the ZIP for debugging
+            const allFiles = [];
+            zip.forEach((path, entry) => { if (!entry.dir) allFiles.push(path); });
+            console.log('ZIP contents:', allFiles);
+            status.textContent = '❌ לא נמצאו תמונות ב-ZIP (' + allFiles.length + ' קבצים לא מתאימים)';
             status.style.color = '#dc3545';
-            toast('לא נמצאו תמונות (JPG/PNG/WebP) ב-ZIP', 'error');
+            toast('לא נמצאו תמונות ב-ZIP. פורמטים נתמכים: JPG, PNG, WebP, BMP, GIF, TIFF', 'error');
             resetZipBtn();
             return;
         }
@@ -1710,7 +1723,7 @@ async function uploadZipBackgrounds(file) {
             try {
                 // Extract as blob
                 const blob = await img.entry.async('blob');
-                const mimeTypes = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+                const mimeTypes = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', bmp: 'image/bmp', gif: 'image/gif', tiff: 'image/tiff', tif: 'image/tiff', heic: 'image/heic', heif: 'image/heif', svg: 'image/svg+xml', avif: 'image/avif' };
                 const imageFile = new File([blob], img.name, { type: mimeTypes[img.ext] || 'image/jpeg' });
 
                 // Upload individually
