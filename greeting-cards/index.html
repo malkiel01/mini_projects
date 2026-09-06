@@ -1,0 +1,2489 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>כרטיסי ברכה לשנה טובה</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        /* ─── Reset & Base ────────────────────────── */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+            background: #f0f2f5;
+            color: #1a1a2e;
+            min-height: 100vh;
+            direction: rtl;
+        }
+        header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: white;
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        header a { color: white; text-decoration: none; font-size: 1.4rem; opacity: 0.8; }
+        header a:hover { opacity: 1; }
+        header h1 { font-size: 1.3rem; flex: 1; }
+
+        /* ─── Tabs ────────────────────────────────── */
+        .tabs {
+            display: flex;
+            background: white;
+            border-bottom: 2px solid #e0e0e0;
+            overflow-x: auto;
+        }
+        .tab {
+            padding: 14px 24px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: #666;
+            border-bottom: 3px solid transparent;
+            white-space: nowrap;
+            transition: all 0.2s;
+            user-select: none;
+        }
+        .tab:hover { color: #1a1a2e; background: #f8f9fa; }
+        .tab.active { color: #4a6cf7; border-bottom-color: #4a6cf7; }
+        .tab.disabled { opacity: 0.4; pointer-events: none; }
+        .tab .badge {
+            background: #4a6cf7;
+            color: white;
+            border-radius: 10px;
+            padding: 1px 7px;
+            font-size: 0.75rem;
+            margin-right: 6px;
+        }
+
+        /* ─── Step Panels ─────────────────────────── */
+        .step-panel { display: none; }
+        .step-panel.active { display: block; }
+
+        .panel-content {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 24px 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        }
+        .card h2 {
+            font-size: 1.1rem;
+            margin-bottom: 16px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        .card h3 {
+            font-size: 0.95rem;
+            margin: 16px 0 10px;
+            color: #444;
+        }
+
+        /* ─── Form Controls ───────────────────────── */
+        .form-group { margin-bottom: 16px; }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        input[type="text"], input[type="number"], select, textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-family: inherit;
+            transition: border-color 0.2s;
+        }
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #4a6cf7;
+        }
+        input[type="color"] {
+            width: 50px;
+            height: 36px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            cursor: pointer;
+            padding: 2px;
+        }
+        input[type="range"] { width: 100%; }
+
+        .row { display: flex; gap: 12px; flex-wrap: wrap; }
+        .row > * { flex: 1; min-width: 120px; }
+
+        .btn {
+            padding: 10px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-family: inherit;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn:active { transform: scale(0.97); }
+        .btn-primary { background: #4a6cf7; color: white; }
+        .btn-primary:hover { background: #3a5ce5; }
+        .btn-success { background: #28a745; color: white; }
+        .btn-success:hover { background: #218838; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn-danger:hover { background: #c82333; }
+        .btn-outline {
+            background: white;
+            color: #4a6cf7;
+            border: 2px solid #4a6cf7;
+        }
+        .btn-outline:hover { background: #f0f4ff; }
+        .btn-sm { padding: 6px 14px; font-size: 0.85rem; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .btn-group { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+
+        /* ─── Gallery Grid ────────────────────────── */
+        .gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 12px;
+            margin: 12px 0;
+        }
+        .gallery-item {
+            position: relative;
+            border-radius: 10px;
+            overflow: hidden;
+            cursor: pointer;
+            border: 3px solid transparent;
+            transition: all 0.2s;
+            aspect-ratio: 3/2;
+        }
+        .gallery-item:hover { border-color: #4a6cf7; transform: scale(1.03); }
+        .gallery-item.selected { border-color: #4a6cf7; box-shadow: 0 0 0 3px rgba(74,108,247,0.3); }
+        .gallery-item canvas, .gallery-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        .gallery-item .label {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0,0,0,0.6);
+            color: white;
+            padding: 4px 8px;
+            font-size: 0.75rem;
+            text-align: center;
+        }
+
+        /* ─── Font List ───────────────────────────── */
+        .font-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 10px 0;
+        }
+        .font-chip {
+            padding: 8px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .font-chip:hover { border-color: #4a6cf7; }
+        .font-chip.selected { border-color: #4a6cf7; background: #f0f4ff; color: #4a6cf7; }
+        .font-chip .delete-font {
+            margin-right: 6px;
+            color: #dc3545;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        /* ─── Design Editor ───────────────────────── */
+        .design-layout {
+            display: flex;
+            gap: 16px;
+            padding: 16px 20px;
+            min-height: calc(100vh - 130px);
+        }
+        @media (max-width: 900px) {
+            .design-layout { flex-direction: column; }
+        }
+
+        /* Menu Bar */
+        .menubar {
+            display: flex;
+            background: white;
+            border-bottom: 1px solid #e0e0e0;
+            padding: 0 16px;
+        }
+        .menu-item {
+            position: relative;
+            padding: 10px 16px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #555;
+            transition: all 0.2s;
+        }
+        .menu-item:hover { background: #f0f4ff; color: #4a6cf7; }
+        .menu-dropdown {
+            display: none;
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+            min-width: 200px;
+            z-index: 100;
+            overflow: hidden;
+        }
+        .menu-item:hover .menu-dropdown,
+        .menu-dropdown.show { display: block; }
+        .menu-option {
+            padding: 10px 16px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 400;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background 0.15s;
+        }
+        .menu-option:hover { background: #f0f4ff; }
+        .menu-option .shortcut {
+            margin-right: auto;
+            margin-left: 0;
+            color: #999;
+            font-size: 0.8rem;
+        }
+        .menu-sep { height: 1px; background: #eee; margin: 4px 0; }
+
+        /* Canvas Area */
+        .canvas-area {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            overflow: auto;
+            background: #e8e8e8;
+            border-radius: 12px;
+            padding: 20px;
+            min-height: 400px;
+        }
+        .canvas-wrapper {
+            position: relative;
+            display: inline-block;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+            border-radius: 4px;
+            overflow: visible;
+        }
+        .canvas-wrapper img {
+            display: block;
+            max-width: 100%;
+            max-height: calc(100vh - 250px);
+            user-select: none;
+            -webkit-user-drag: none;
+        }
+
+        /* Text Fields on Canvas */
+        .text-field {
+            position: absolute;
+            cursor: move;
+            user-select: none;
+            min-width: 40px;
+            min-height: 24px;
+            padding: 4px 8px;
+            outline: 2px dashed transparent;
+            transition: outline-color 0.15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            white-space: nowrap;
+            z-index: 10;
+        }
+        .text-field:hover { outline-color: rgba(74,108,247,0.4); }
+        .text-field.selected {
+            outline: 2px solid #4a6cf7;
+            z-index: 20;
+        }
+        .text-field .field-text {
+            pointer-events: none;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+        .text-field.list-field .field-text::after {
+            content: ' 📋';
+            font-size: 0.6em;
+        }
+
+        /* Resize Handles */
+        .resize-handle {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: #4a6cf7;
+            border: 2px solid white;
+            border-radius: 2px;
+            z-index: 30;
+            display: none;
+        }
+        .text-field.selected .resize-handle { display: block; }
+        .resize-handle.tl { top: -5px; right: -5px; cursor: nwse-resize; }
+        .resize-handle.tc { top: -5px; right: calc(50% - 5px); cursor: ns-resize; }
+        .resize-handle.tr { top: -5px; left: -5px; cursor: nesw-resize; }
+        .resize-handle.ml { top: calc(50% - 5px); right: -5px; cursor: ew-resize; }
+        .resize-handle.mr { top: calc(50% - 5px); left: -5px; cursor: ew-resize; }
+        .resize-handle.bl { bottom: -5px; right: -5px; cursor: nesw-resize; }
+        .resize-handle.bc { bottom: -5px; right: calc(50% - 5px); cursor: ns-resize; }
+        .resize-handle.br { bottom: -5px; left: -5px; cursor: nwse-resize; }
+
+        /* Rotation Handle */
+        .rotation-handle {
+            position: absolute;
+            top: -30px;
+            right: calc(50% - 8px);
+            width: 16px;
+            height: 16px;
+            background: #28a745;
+            border: 2px solid white;
+            border-radius: 50%;
+            cursor: grab;
+            z-index: 30;
+            display: none;
+        }
+        .text-field.selected .rotation-handle { display: block; }
+        .rotation-line {
+            position: absolute;
+            top: -18px;
+            right: calc(50% - 0.5px);
+            width: 1px;
+            height: 14px;
+            background: #28a745;
+            display: none;
+            z-index: 29;
+        }
+        .text-field.selected .rotation-line { display: block; }
+
+        /* Properties Panel */
+        .props-panel {
+            width: 280px;
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            overflow-y: auto;
+            max-height: calc(100vh - 180px);
+            flex-shrink: 0;
+        }
+        @media (max-width: 900px) {
+            .props-panel { width: 100%; max-height: none; }
+        }
+        .props-panel h3 {
+            font-size: 1rem;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        .prop-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .prop-row label {
+            min-width: 60px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #555;
+        }
+        .prop-row input, .prop-row select {
+            flex: 1;
+            padding: 6px 8px;
+            font-size: 0.85rem;
+        }
+        .prop-row input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            flex: 0;
+        }
+
+        /* Templates Bar */
+        .templates-bar {
+            display: flex;
+            gap: 8px;
+            padding: 8px 16px;
+            background: #fafafa;
+            border-bottom: 1px solid #eee;
+            overflow-x: auto;
+        }
+        .template-chip {
+            padding: 6px 14px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 16px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+        .template-chip:hover { border-color: #4a6cf7; background: #f0f4ff; }
+
+        /* ─── Recipients Table ────────────────────── */
+        .recipients-table-wrapper {
+            overflow-x: auto;
+            margin: 16px 0;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .recipients-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 400px;
+        }
+        .recipients-table th, .recipients-table td {
+            padding: 10px 14px;
+            border-bottom: 1px solid #eee;
+            text-align: right;
+            font-size: 0.9rem;
+        }
+        .recipients-table th {
+            background: #f8f9fa;
+            font-weight: 700;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        .recipients-table tr:hover td { background: #f8f9fa; }
+        .recipients-table input {
+            border: 1px solid transparent;
+            padding: 4px 8px;
+            width: 100%;
+            font-family: inherit;
+            font-size: 0.9rem;
+            border-radius: 4px;
+            transition: border-color 0.2s;
+        }
+        .recipients-table input:focus {
+            border-color: #4a6cf7;
+            outline: none;
+        }
+        .recipients-table .row-num {
+            color: #999;
+            font-size: 0.8rem;
+            width: 40px;
+            text-align: center;
+        }
+        .recipients-table .row-actions {
+            width: 50px;
+            text-align: center;
+        }
+        .delete-row-btn {
+            background: none;
+            border: none;
+            color: #dc3545;
+            cursor: pointer;
+            font-size: 1.1rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        .delete-row-btn:hover { background: #fee; }
+
+        /* ─── Export Panel ────────────────────────── */
+        .export-options {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin: 16px 0;
+        }
+        .export-option {
+            padding: 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+        }
+        .export-option:hover { border-color: #4a6cf7; background: #f8f9ff; }
+        .export-option.selected { border-color: #4a6cf7; background: #f0f4ff; }
+        .export-option .icon { font-size: 2rem; margin-bottom: 8px; }
+        .export-option h4 { margin-bottom: 4px; }
+        .export-option p { font-size: 0.8rem; color: #666; }
+
+        /* Progress */
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            margin: 16px 0;
+            overflow: hidden;
+        }
+        .progress-bar .fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4a6cf7, #28a745);
+            border-radius: 4px;
+            transition: width 0.3s;
+        }
+        .progress-text { font-size: 0.85rem; color: #666; margin-bottom: 8px; }
+
+        /* ─── Empty State ─────────────────────────── */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+        }
+        .empty-state .icon { font-size: 3rem; margin-bottom: 12px; }
+        .empty-state p { margin-bottom: 8px; }
+
+        /* ─── Toast ───────────────────────────────── */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: #333;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            z-index: 9999;
+            transition: transform 0.3s;
+            max-width: 90%;
+        }
+        .toast.show { transform: translateX(-50%) translateY(0); }
+        .toast.error { background: #dc3545; }
+        .toast.success { background: #28a745; }
+
+        /* ─── Modal ───────────────────────────────── */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal {
+            background: white;
+            border-radius: 16px;
+            padding: 28px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+        }
+        .modal h2 { margin-bottom: 16px; font-size: 1.2rem; }
+        .modal-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-start;
+            margin-top: 20px;
+        }
+
+        /* ─── No background placeholder ───────────── */
+        .no-bg-placeholder {
+            width: 600px;
+            height: 400px;
+            background: #f8f8f8;
+            border: 3px dashed #ccc;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #aaa;
+            font-size: 1.1rem;
+        }
+        .no-bg-placeholder .icon { font-size: 3rem; margin-bottom: 10px; }
+
+        /* ─── Responsive ──────────────────────────── */
+        @media (max-width: 600px) {
+            header h1 { font-size: 1.1rem; }
+            .tab { padding: 10px 14px; font-size: 0.85rem; }
+            .card { padding: 16px; }
+            .gallery { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+            .props-panel { padding: 12px; }
+        }
+
+        /* ─── Upload Zone ─────────────────────────── */
+        .upload-zone {
+            border: 2px dashed #ccc;
+            border-radius: 12px;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: #888;
+        }
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: #4a6cf7;
+            background: #f8f9ff;
+            color: #4a6cf7;
+        }
+        .upload-zone .icon { font-size: 2rem; margin-bottom: 8px; }
+        .upload-zone input { display: none; }
+
+        /* Status bar */
+        .status-bar {
+            background: #f8f9fa;
+            border-top: 1px solid #eee;
+            padding: 6px 16px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            color: #888;
+        }
+
+        /* Preview minicard */
+        .preview-minicard {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 8px;
+            display: inline-block;
+            margin: 4px;
+        }
+        .preview-minicard canvas {
+            display: block;
+            border-radius: 4px;
+        }
+        .preview-minicard .name {
+            text-align: center;
+            font-size: 0.75rem;
+            margin-top: 4px;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+
+<!-- ─── Header ────────────────────────────────────── -->
+<header>
+    <a href="../index.html" title="חזרה לדף הראשי">→</a>
+    <h1>🎆 כרטיסי ברכה לשנה טובה</h1>
+</header>
+
+<!-- ─── Tabs ──────────────────────────────────────── -->
+<div class="tabs" id="tabs">
+    <div class="tab active" data-step="1" onclick="switchStep(1)">① הגדרות</div>
+    <div class="tab" data-step="2" onclick="switchStep(2)">② עיצוב הכרטיס</div>
+    <div class="tab" data-step="3" onclick="switchStep(3)">③ נמענים <span class="badge" id="recipientsBadge" style="display:none">0</span></div>
+    <div class="tab" data-step="4" onclick="switchStep(4)">④ ייצוא</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     STEP 1: Setup — Background & Font
+     ═══════════════════════════════════════════════════ -->
+<div class="step-panel active" id="step1">
+    <div class="panel-content">
+        <!-- Background -->
+        <div class="card">
+            <h2>🖼️ תמונת רקע</h2>
+            <div class="upload-zone" id="bgUploadZone">
+                <div class="icon">📁</div>
+                <div>גררו תמונה לכאן או <strong>לחצו לבחירה</strong></div>
+                <div style="font-size:0.8rem;margin-top:4px">JPG, PNG, WebP — עד 20MB</div>
+                <input type="file" id="bgFileInput" accept="image/*">
+            </div>
+            <div id="bgPreview" style="margin-top:12px;display:none">
+                <img id="bgPreviewImg" style="max-width:100%;max-height:200px;border-radius:8px;border:1px solid #ddd">
+                <div style="margin-top:8px">
+                    <button class="btn btn-sm btn-outline" onclick="clearBackground()">🗑️ הסר רקע</button>
+                </div>
+            </div>
+
+            <h3>או בחרו מהגלריה:</h3>
+            <div class="gallery" id="bgGallery"></div>
+        </div>
+
+        <!-- Font -->
+        <div class="card">
+            <h2>🔤 פונט</h2>
+            <p style="margin-bottom:12px;font-size:0.9rem;color:#666">בחרו פונט מובנה או העלו פונט עברי (TTF/OTF)</p>
+            <div class="font-list" id="fontList"></div>
+
+            <h3>העלאת פונט מותאם:</h3>
+            <div class="row">
+                <div class="form-group">
+                    <label>שם הפונט</label>
+                    <input type="text" id="fontName" placeholder="למשל: דוד מודרני">
+                </div>
+            </div>
+            <div class="upload-zone" id="fontUploadZone" style="padding:20px">
+                <div>📁 גררו קובץ פונט (TTF/OTF) או <strong>לחצו</strong></div>
+                <input type="file" id="fontFileInput" accept=".ttf,.otf,.woff,.woff2">
+            </div>
+        </div>
+
+        <div class="btn-group" style="justify-content:center">
+            <button class="btn btn-primary" onclick="goToDesign()">המשך לעיצוב ←</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     STEP 2: Design — Card Editor
+     ═══════════════════════════════════════════════════ -->
+<div class="step-panel" id="step2">
+    <!-- Menu bar -->
+    <div class="menubar">
+        <div class="menu-item">
+            הוסף ▾
+            <div class="menu-dropdown">
+                <div class="menu-option" onclick="addField('fixed')">➕ שדה טקסט קבוע</div>
+                <div class="menu-option" onclick="addField('list')">📋 שדה מרשימה</div>
+                <div class="menu-sep"></div>
+                <div class="menu-option" onclick="showTextTemplates()">📝 תבנית טקסט מוכנה</div>
+            </div>
+        </div>
+        <div class="menu-item">
+            עריכה ▾
+            <div class="menu-dropdown">
+                <div class="menu-option" onclick="copyField()">📋 העתק <span class="shortcut">Ctrl+C</span></div>
+                <div class="menu-option" onclick="pasteField()">📄 הדבק <span class="shortcut">Ctrl+V</span></div>
+                <div class="menu-sep"></div>
+                <div class="menu-option" onclick="duplicateField()">⧉ שכפל שדה</div>
+                <div class="menu-option" onclick="deleteSelectedField()">🗑️ מחק שדה <span class="shortcut">Del</span></div>
+                <div class="menu-sep"></div>
+                <div class="menu-option" onclick="centerFieldH()">↔ מרכז אופקית</div>
+                <div class="menu-option" onclick="centerFieldV()">↕ מרכז אנכית</div>
+            </div>
+        </div>
+        <div class="menu-item">
+            תצוגה ▾
+            <div class="menu-dropdown">
+                <div class="menu-option" onclick="toggleHandles()">👁️ הצג/הסתר ידיות</div>
+                <div class="menu-option" onclick="toggleGrid()">📐 הצג/הסתר רשת</div>
+                <div class="menu-sep"></div>
+                <div class="menu-option" onclick="zoomIn()">🔍+ הגדל</div>
+                <div class="menu-option" onclick="zoomOut()">🔍- הקטן</div>
+                <div class="menu-option" onclick="zoomReset()">↺ אפס גודל</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Text templates bar -->
+    <div class="templates-bar" id="templatesBar">
+        <span style="color:#999;font-size:0.8rem;padding:6px 0">תבניות:</span>
+    </div>
+
+    <!-- Editor layout -->
+    <div class="design-layout">
+        <!-- Canvas area -->
+        <div class="canvas-area" id="canvasArea">
+            <div class="canvas-wrapper" id="canvasWrapper">
+                <!-- Background image goes here -->
+                <div class="no-bg-placeholder" id="noBgPlaceholder">
+                    <div class="icon">🖼️</div>
+                    <div>לא נבחרה תמונת רקע</div>
+                    <button class="btn btn-sm btn-outline" style="margin-top:12px" onclick="switchStep(1)">חזרו להגדרות</button>
+                </div>
+                <img id="canvasImg" style="display:none" draggable="false">
+                <!-- Text fields are added here dynamically -->
+            </div>
+        </div>
+
+        <!-- Properties panel -->
+        <div class="props-panel" id="propsPanel">
+            <h3>⚙️ מאפייני שדה</h3>
+            <div id="propsEmpty" class="empty-state" style="padding:20px 10px">
+                <div class="icon">👆</div>
+                <p>בחרו שדה לעריכה</p>
+                <p style="font-size:0.8rem">או הוסיפו שדה חדש מתפריט "הוסף"</p>
+            </div>
+            <div id="propsContent" style="display:none">
+                <div class="prop-row">
+                    <label>טקסט</label>
+                    <input type="text" id="propText" oninput="updateFieldProp('text', this.value)">
+                </div>
+                <div class="prop-row">
+                    <label>סוג</label>
+                    <select id="propType" onchange="updateFieldProp('type', this.value)">
+                        <option value="fixed">קבוע (זהה לכולם)</option>
+                        <option value="list">מרשימה (שונה לכל נמען)</option>
+                    </select>
+                </div>
+                <div class="prop-row" id="propColumnRow" style="display:none">
+                    <label>עמודה</label>
+                    <input type="text" id="propColumn" placeholder="שם עמודה" oninput="updateFieldProp('listColumn', this.value)">
+                </div>
+                <div class="prop-row">
+                    <label>פונט</label>
+                    <select id="propFont" onchange="updateFieldProp('fontFamily', this.value)"></select>
+                </div>
+                <div class="prop-row">
+                    <label>גודל</label>
+                    <input type="range" id="propSize" min="8" max="120" value="32" oninput="updateFieldProp('fontSize', +this.value)">
+                    <span id="propSizeVal" style="min-width:30px;font-size:0.85rem">32</span>
+                </div>
+                <div class="prop-row">
+                    <label>צבע</label>
+                    <input type="color" id="propColor" value="#ffffff" oninput="updateFieldProp('color', this.value)">
+                </div>
+                <div class="prop-row">
+                    <label>Bold</label>
+                    <input type="checkbox" id="propBold" onchange="updateFieldProp('bold', this.checked)">
+                </div>
+                <div class="prop-row">
+                    <label>סיבוב</label>
+                    <input type="range" id="propRotation" min="-180" max="180" value="0" oninput="updateFieldProp('rotation', +this.value)">
+                    <span id="propRotationVal" style="min-width:35px;font-size:0.85rem">0°</span>
+                </div>
+                <div class="prop-row">
+                    <label>מרווח</label>
+                    <input type="range" id="propSpacing" min="-5" max="30" value="0" step="0.5" oninput="updateFieldProp('letterSpacing', +this.value)">
+                    <span id="propSpacingVal" style="min-width:30px;font-size:0.85rem">0</span>
+                </div>
+                <div class="prop-row">
+                    <label>רוחב</label>
+                    <input type="range" id="propScaleX" min="50" max="200" value="100" oninput="updateFieldProp('scaleX', +this.value)">
+                    <span id="propScaleXVal" style="min-width:35px;font-size:0.85rem">100%</span>
+                </div>
+                <div class="prop-row">
+                    <label>שקיפות</label>
+                    <input type="range" id="propOpacity" min="0" max="100" value="100" oninput="updateFieldProp('opacity', +this.value)">
+                    <span id="propOpacityVal" style="min-width:35px;font-size:0.85rem">100%</span>
+                </div>
+                <div class="btn-group" style="margin-top:16px">
+                    <button class="btn btn-sm btn-outline" onclick="duplicateField()">⧉ שכפל</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteSelectedField()">🗑️ מחק</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="status-bar">
+        <span id="statusFields">שדות: 0</span>
+        <span id="statusZoom">100%</span>
+        <span id="statusSize">—</span>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     STEP 3: Recipients
+     ═══════════════════════════════════════════════════ -->
+<div class="step-panel" id="step3">
+    <div class="panel-content">
+        <div class="card">
+            <h2>📋 רשימת נמענים</h2>
+            <p style="margin-bottom:16px;color:#666;font-size:0.9rem">
+                טענו רשימה מקובץ Excel/CSV, או הזינו ידנית. כל שדה "מרשימה" מהכרטיס יופיע כעמודה.
+            </p>
+
+            <div id="noListFields" class="empty-state" style="padding:20px">
+                <div class="icon">📋</div>
+                <p>אין שדות מרשימה בכרטיס</p>
+                <p style="font-size:0.85rem">חזרו לשלב העיצוב והוסיפו שדה מסוג "מרשימה"</p>
+            </div>
+
+            <div id="hasListFields" style="display:none">
+                <div class="btn-group" style="margin-bottom:16px">
+                    <label class="btn btn-outline" style="cursor:pointer">
+                        📁 טען מ-Excel / CSV
+                        <input type="file" id="excelInput" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadExcelFile(this)">
+                    </label>
+                    <button class="btn btn-outline" onclick="addRecipientRow()">➕ שורה חדשה</button>
+                    <button class="btn btn-sm btn-danger" onclick="clearRecipients()" id="clearRecipientsBtn" style="display:none">🗑️ נקה הכל</button>
+                </div>
+
+                <!-- Column mapping for Excel -->
+                <div id="columnMapping" class="card" style="display:none;background:#fffbe6;margin:12px 0">
+                    <h3>🔗 מיפוי עמודות</h3>
+                    <p style="font-size:0.85rem;color:#666;margin-bottom:12px">התאימו כל שדה מרשימה לעמודה מהקובץ:</p>
+                    <div id="mappingFields"></div>
+                    <div class="btn-group">
+                        <button class="btn btn-sm btn-primary" onclick="applyMapping()">✓ החל מיפוי</button>
+                        <button class="btn btn-sm btn-outline" onclick="cancelMapping()">ביטול</button>
+                    </div>
+                </div>
+
+                <div class="recipients-table-wrapper">
+                    <table class="recipients-table" id="recipientsTable">
+                        <thead id="recipientsHead"></thead>
+                        <tbody id="recipientsBody"></tbody>
+                    </table>
+                </div>
+
+                <div class="btn-group" style="margin-top:8px">
+                    <button class="btn btn-outline btn-sm" onclick="addRecipientRow()">➕ עוד שורה</button>
+                </div>
+
+                <div id="recipientPreview" style="margin-top:20px;display:none">
+                    <h3>📷 תצוגה מקדימה</h3>
+                    <div id="recipientPreviewCards" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="btn-group" style="justify-content:center">
+            <button class="btn btn-outline" onclick="switchStep(2)">← חזרה לעיצוב</button>
+            <button class="btn btn-primary" onclick="switchStep(4)">המשך לייצוא →</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     STEP 4: Export
+     ═══════════════════════════════════════════════════ -->
+<div class="step-panel" id="step4">
+    <div class="panel-content">
+        <div class="card">
+            <h2>📦 ייצוא כרטיסים</h2>
+
+            <div id="exportSummary" style="margin-bottom:16px;padding:12px;background:#f8f9fa;border-radius:8px;font-size:0.9rem"></div>
+
+            <h3>פורמט ייצוא</h3>
+            <div class="export-options">
+                <div class="export-option selected" data-format="pdf" onclick="selectExportFormat('pdf')">
+                    <div class="icon">📄</div>
+                    <h4>PDF</h4>
+                    <p>כרטיסים בפורמט PDF</p>
+                </div>
+                <div class="export-option" data-format="png" onclick="selectExportFormat('png')">
+                    <div class="icon">🖼️</div>
+                    <h4>PNG</h4>
+                    <p>תמונות באיכות גבוהה</p>
+                </div>
+                <div class="export-option" data-format="jpg" onclick="selectExportFormat('jpg')">
+                    <div class="icon">📷</div>
+                    <h4>JPG</h4>
+                    <p>תמונות קומפקטיות</p>
+                </div>
+            </div>
+
+            <h3>שם הקובץ</h3>
+            <div class="form-group">
+                <select id="filenameField">
+                    <option value="__index__">מספר סידורי (1, 2, 3...)</option>
+                </select>
+                <p style="font-size:0.8rem;color:#888;margin-top:4px">כל קובץ ייקרא לפי הערך בשדה שנבחר</p>
+            </div>
+
+            <div class="btn-group" style="justify-content:center;margin-top:24px">
+                <button class="btn btn-success" id="exportBtn" onclick="startExport()" style="font-size:1.1rem;padding:14px 40px">
+                    📦 הורד ZIP
+                </button>
+            </div>
+
+            <div id="exportProgress" style="display:none;margin-top:20px">
+                <div class="progress-text" id="exportProgressText">מכין כרטיסים...</div>
+                <div class="progress-bar"><div class="fill" id="exportProgressFill" style="width:0"></div></div>
+            </div>
+        </div>
+
+        <div class="btn-group" style="justify-content:center">
+            <button class="btn btn-outline" onclick="switchStep(3)">← חזרה לנמענים</button>
+        </div>
+    </div>
+</div>
+
+<!-- ─── Modal ──────────────────────────────────────── -->
+<div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal" id="modalContent"></div>
+</div>
+
+<!-- ─── Toast ──────────────────────────────────────── -->
+<div class="toast" id="toast"></div>
+
+
+<!-- ═══════════════════════════════════════════════════
+     JAVASCRIPT
+     ═══════════════════════════════════════════════════ -->
+<script>
+/* ─── State ──────────────────────────────────────── */
+const state = {
+    backgroundImage: null,     // data URL of background
+    backgroundNatural: null,   // { width, height }
+    fields: [],                // text fields on card
+    selectedFieldId: null,
+    clipboard: null,           // copied field data
+    recipients: [],            // array of { col1: val, col2: val }
+    fonts: [
+        { id: 'arial', name: 'Arial', family: 'Arial, sans-serif', builtin: true },
+        { id: 'david', name: 'David', family: '"David", serif', builtin: true },
+        { id: 'tahoma', name: 'Tahoma', family: 'Tahoma, sans-serif', builtin: true },
+        { id: 'frank', name: 'Frank Ruhl', family: '"Frank Ruhl Libre", serif', builtin: true },
+        { id: 'timesnew', name: 'Times New Roman', family: '"Times New Roman", serif', builtin: true },
+        { id: 'courier', name: 'Courier New', family: '"Courier New", monospace', builtin: true },
+    ],
+    selectedFont: 'arial',
+    exportFormat: 'pdf',
+    zoom: 1,
+    showHandles: true,
+    showGrid: false,
+    customFontData: {},  // id -> { base64, ext, family }
+    excelColumns: null,  // columns from imported excel
+    excelData: null,     // rows from imported excel
+};
+
+let fieldIdCounter = 0;
+let dragState = null;
+const API_URL = 'api.php';
+
+/* ─── Text templates ─────────────────────────────── */
+const textTemplates = [
+    'שנה טובה ומתוקה!',
+    'שנה טובה ומבורכת',
+    'לשנה טובה תכתבו ותחתמו',
+    'תזכו לשנים רבות',
+    'שנה של בריאות, שמחה והצלחה',
+    'שנה טובה, שנת שלום ואהבה',
+    'כתיבה וחתימה טובה',
+    'שנה טובה\nלכל בית ישראל',
+];
+
+/* ─── Gallery backgrounds ────────────────────────── */
+const galleryBackgrounds = [
+    { id: 'gold', name: 'זהב קלאסי', colors: ['#b8860b', '#daa520', '#ffd700', '#f4e5a1'] },
+    { id: 'royal', name: 'כחול רויאל', colors: ['#1a237e', '#283593', '#3f51b5', '#7986cb'] },
+    { id: 'emerald', name: 'ירוק אמרלד', colors: ['#1b5e20', '#2e7d32', '#4caf50', '#a5d6a7'] },
+    { id: 'purple', name: 'סגול מלכותי', colors: ['#4a148c', '#6a1b9a', '#9c27b0', '#ce93d8'] },
+    { id: 'pomegranate', name: 'אדום ורימונים', colors: ['#b71c1c', '#c62828', '#e53935', '#ef9a9a'] },
+    { id: 'white', name: 'לבן אלגנטי', colors: ['#f5f5f5', '#eeeeee', '#e0e0e0', '#bdbdbd'] },
+];
+
+function generateGalleryBg(bg) {
+    const c = document.createElement('canvas');
+    c.width = 1200; c.height = 800;
+    const ctx = c.getContext('2d');
+
+    // Background gradient
+    const grad = ctx.createLinearGradient(0, 0, c.width, c.height);
+    grad.addColorStop(0, bg.colors[0]);
+    grad.addColorStop(0.5, bg.colors[1]);
+    grad.addColorStop(1, bg.colors[2]);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, c.width, c.height);
+
+    // Decorative elements
+    ctx.globalAlpha = 0.15;
+    for (let i = 0; i < 30; i++) {
+        const x = Math.random() * c.width;
+        const y = Math.random() * c.height;
+        const r = 20 + Math.random() * 60;
+        ctx.beginPath();
+        // Draw 6-point stars
+        for (let j = 0; j < 6; j++) {
+            const angle = (j * 60 - 90) * Math.PI / 180;
+            const px = x + r * Math.cos(angle);
+            const py = y + r * Math.sin(angle);
+            j === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fillStyle = bg.colors[3];
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Gold border
+    ctx.strokeStyle = bg.colors[3];
+    ctx.lineWidth = 6;
+    ctx.strokeRect(30, 30, c.width - 60, c.height - 60);
+
+    // Inner border
+    ctx.strokeStyle = bg.colors[3];
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.5;
+    ctx.strokeRect(45, 45, c.width - 90, c.height - 90);
+    ctx.globalAlpha = 1;
+
+    // Corner decorations
+    const cornerSize = 40;
+    ctx.strokeStyle = bg.colors[3];
+    ctx.lineWidth = 3;
+    [[35, 35], [c.width-35, 35], [35, c.height-35], [c.width-35, c.height-35]].forEach(([cx,cy]) => {
+        ctx.beginPath();
+        ctx.arc(cx, cy, cornerSize, 0, Math.PI * 2);
+        ctx.stroke();
+    });
+
+    return c.toDataURL('image/jpeg', 0.9);
+}
+
+function generateGalleryThumbnail(bg) {
+    const c = document.createElement('canvas');
+    c.width = 320; c.height = 213;
+    const ctx = c.getContext('2d');
+
+    const grad = ctx.createLinearGradient(0, 0, c.width, c.height);
+    grad.addColorStop(0, bg.colors[0]);
+    grad.addColorStop(0.5, bg.colors[1]);
+    grad.addColorStop(1, bg.colors[2]);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, c.width, c.height);
+
+    // Stars
+    ctx.globalAlpha = 0.15;
+    for (let i = 0; i < 12; i++) {
+        const x = Math.random() * c.width;
+        const y = Math.random() * c.height;
+        const r = 8 + Math.random() * 20;
+        ctx.beginPath();
+        for (let j = 0; j < 6; j++) {
+            const angle = (j * 60 - 90) * Math.PI / 180;
+            const px = x + r * Math.cos(angle);
+            const py = y + r * Math.sin(angle);
+            j === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fillStyle = bg.colors[3];
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Border
+    ctx.strokeStyle = bg.colors[3];
+    ctx.lineWidth = 3;
+    ctx.strokeRect(8, 8, c.width - 16, c.height - 16);
+
+    return c;
+}
+
+/* ─── Initialization ─────────────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
+    initGallery();
+    initFonts();
+    initTemplatesBar();
+    initDragAndDrop();
+    loadServerFonts();
+    setupKeyboard();
+});
+
+function initGallery() {
+    const gallery = document.getElementById('bgGallery');
+    galleryBackgrounds.forEach(bg => {
+        const item = document.createElement('div');
+        item.className = 'gallery-item';
+        item.dataset.bgId = bg.id;
+        item.onclick = () => selectGalleryBg(bg);
+
+        const canvas = generateGalleryThumbnail(bg);
+        item.appendChild(canvas);
+
+        const label = document.createElement('div');
+        label.className = 'label';
+        label.textContent = bg.name;
+        item.appendChild(label);
+
+        gallery.appendChild(item);
+    });
+}
+
+function initFonts() {
+    renderFontList();
+    updateFontSelect();
+}
+
+function renderFontList() {
+    const container = document.getElementById('fontList');
+    container.innerHTML = '';
+    state.fonts.forEach(f => {
+        const chip = document.createElement('div');
+        chip.className = 'font-chip' + (f.id === state.selectedFont ? ' selected' : '');
+        chip.style.fontFamily = f.family;
+        chip.onclick = () => { state.selectedFont = f.id; renderFontList(); };
+
+        let html = f.name;
+        if (!f.builtin) {
+            html += `<span class="delete-font" onclick="event.stopPropagation();removeFont('${f.id}')" title="הסר פונט">×</span>`;
+        }
+        chip.innerHTML = html;
+        container.appendChild(chip);
+    });
+}
+
+function updateFontSelect() {
+    const select = document.getElementById('propFont');
+    if (!select) return;
+    select.innerHTML = '';
+    state.fonts.forEach(f => {
+        const opt = document.createElement('option');
+        opt.value = f.family;
+        opt.textContent = f.name;
+        opt.style.fontFamily = f.family;
+        select.appendChild(opt);
+    });
+}
+
+function initTemplatesBar() {
+    const bar = document.getElementById('templatesBar');
+    textTemplates.forEach(t => {
+        const chip = document.createElement('div');
+        chip.className = 'template-chip';
+        chip.textContent = t.replace('\n', ' ');
+        chip.onclick = () => {
+            addField('fixed', t);
+            toast('הוסף שדה טקסט: ' + t.substring(0, 20) + '...');
+        };
+        bar.appendChild(chip);
+    });
+}
+
+/* ─── Drag & Drop for uploads ────────────────────── */
+function initDragAndDrop() {
+    // Background upload zone
+    const bgZone = document.getElementById('bgUploadZone');
+    const bgInput = document.getElementById('bgFileInput');
+
+    bgZone.onclick = () => bgInput.click();
+    bgInput.onchange = () => { if (bgInput.files[0]) loadBackgroundFile(bgInput.files[0]); };
+
+    bgZone.ondragover = e => { e.preventDefault(); bgZone.classList.add('dragover'); };
+    bgZone.ondragleave = () => bgZone.classList.remove('dragover');
+    bgZone.ondrop = e => {
+        e.preventDefault();
+        bgZone.classList.remove('dragover');
+        if (e.dataTransfer.files[0]) loadBackgroundFile(e.dataTransfer.files[0]);
+    };
+
+    // Font upload zone
+    const fontZone = document.getElementById('fontUploadZone');
+    const fontInput = document.getElementById('fontFileInput');
+
+    fontZone.onclick = () => fontInput.click();
+    fontInput.onchange = () => { if (fontInput.files[0]) loadFontFile(fontInput.files[0]); };
+
+    fontZone.ondragover = e => { e.preventDefault(); fontZone.classList.add('dragover'); };
+    fontZone.ondragleave = () => fontZone.classList.remove('dragover');
+    fontZone.ondrop = e => {
+        e.preventDefault();
+        fontZone.classList.remove('dragover');
+        if (e.dataTransfer.files[0]) loadFontFile(e.dataTransfer.files[0]);
+    };
+}
+
+/* ─── Background Management ──────────────────────── */
+function loadBackgroundFile(file) {
+    if (!file.type.startsWith('image/')) { toast('יש לבחור קובץ תמונה', 'error'); return; }
+    if (file.size > 20 * 1024 * 1024) { toast('הקובץ גדול מדי (מקסימום 20MB)', 'error'); return; }
+
+    const reader = new FileReader();
+    reader.onload = e => setBackground(e.target.result);
+    reader.readAsDataURL(file);
+}
+
+function setBackground(dataUrl) {
+    const img = new Image();
+    img.onload = () => {
+        state.backgroundImage = dataUrl;
+        state.backgroundNatural = { width: img.naturalWidth, height: img.naturalHeight };
+
+        // Update preview in step 1
+        document.getElementById('bgPreview').style.display = 'block';
+        document.getElementById('bgPreviewImg').src = dataUrl;
+
+        // Clear gallery selection
+        document.querySelectorAll('.gallery-item').forEach(el => el.classList.remove('selected'));
+
+        // Update canvas in step 2
+        updateCanvasBackground();
+        updateStatusBar();
+    };
+    img.src = dataUrl;
+}
+
+function selectGalleryBg(bg) {
+    // Highlight selected
+    document.querySelectorAll('.gallery-item').forEach(el => el.classList.remove('selected'));
+    document.querySelector(`.gallery-item[data-bg-id="${bg.id}"]`).classList.add('selected');
+
+    // Generate full-size background
+    const dataUrl = generateGalleryBg(bg);
+    setBackground(dataUrl);
+    toast('נבחר רקע: ' + bg.name);
+}
+
+function clearBackground() {
+    state.backgroundImage = null;
+    state.backgroundNatural = null;
+    document.getElementById('bgPreview').style.display = 'none';
+    document.querySelectorAll('.gallery-item').forEach(el => el.classList.remove('selected'));
+    updateCanvasBackground();
+}
+
+function updateCanvasBackground() {
+    const img = document.getElementById('canvasImg');
+    const placeholder = document.getElementById('noBgPlaceholder');
+    if (state.backgroundImage) {
+        img.src = state.backgroundImage;
+        img.style.display = 'block';
+        placeholder.style.display = 'none';
+    } else {
+        img.style.display = 'none';
+        placeholder.style.display = 'flex';
+    }
+}
+
+/* ─── Font Management ────────────────────────────── */
+function loadFontFile(file) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['ttf', 'otf', 'woff', 'woff2'].includes(ext)) {
+        toast('פורמט לא נתמך. השתמשו ב-TTF, OTF, WOFF', 'error');
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = e => {
+        const base64 = btoa(new Uint8Array(e.target.result).reduce((s, b) => s + String.fromCharCode(b), ''));
+        const name = document.getElementById('fontName').value || file.name.replace(/\.[^.]+$/, '');
+        const id = 'custom_' + Date.now();
+        const family = 'CustomFont_' + id;
+
+        // Register @font-face
+        const fontFace = new FontFace(family, `url(data:font/${ext};base64,${base64})`);
+        fontFace.load().then(loaded => {
+            document.fonts.add(loaded);
+
+            state.fonts.push({ id, name, family, builtin: false });
+            state.customFontData[id] = { base64, ext, family };
+            state.selectedFont = id;
+
+            renderFontList();
+            updateFontSelect();
+            document.getElementById('fontName').value = '';
+            toast('פונט נוסף: ' + name, 'success');
+
+            // Try to save to server
+            uploadFontToServer(file, name, id);
+        }).catch(() => {
+            toast('שגיאה בטעינת הפונט', 'error');
+        });
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+async function uploadFontToServer(file, name, id) {
+    try {
+        const fd = new FormData();
+        fd.append('font', file);
+        fd.append('name', name);
+        const res = await fetch(API_URL + '?action=upload_font', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!data.success) console.warn('Font server save failed:', data.message);
+    } catch (e) {
+        console.warn('Could not save font to server:', e);
+    }
+}
+
+async function loadServerFonts() {
+    try {
+        const res = await fetch(API_URL + '?action=list_fonts');
+        const data = await res.json();
+        if (data.success && data.fonts) {
+            for (const meta of data.fonts) {
+                // Skip if already loaded
+                if (state.fonts.find(f => f.name === meta.name)) continue;
+
+                try {
+                    const fontRes = await fetch(API_URL + '?action=get_font&id=' + meta.id);
+                    const fontData = await fontRes.json();
+                    if (fontData.success && fontData.data) {
+                        const family = 'ServerFont_' + meta.id;
+                        const fontFace = new FontFace(family, `url(data:font/${meta.ext};base64,${fontData.data})`);
+                        const loaded = await fontFace.load();
+                        document.fonts.add(loaded);
+
+                        state.fonts.push({ id: meta.id, name: meta.name, family, builtin: false });
+                        state.customFontData[meta.id] = { base64: fontData.data, ext: meta.ext, family };
+                    }
+                } catch (e) {
+                    console.warn('Could not load server font:', meta.name, e);
+                }
+            }
+            renderFontList();
+            updateFontSelect();
+        }
+    } catch (e) {
+        // Server not available — that's fine, we work offline
+    }
+}
+
+function removeFont(id) {
+    state.fonts = state.fonts.filter(f => f.id !== id);
+    delete state.customFontData[id];
+    if (state.selectedFont === id) state.selectedFont = 'arial';
+    renderFontList();
+    updateFontSelect();
+    // Try server delete
+    fetch(API_URL + '?action=delete_font&id=' + id, { method: 'DELETE' }).catch(() => {});
+}
+
+/* ─── Field Management ───────────────────────────── */
+function createFieldObj(type = 'fixed', text = '') {
+    const font = state.fonts.find(f => f.id === state.selectedFont) || state.fonts[0];
+    return {
+        id: 'field_' + (++fieldIdCounter),
+        text: text || (type === 'list' ? 'שם' : 'שנה טובה'),
+        type,
+        listColumn: type === 'list' ? 'שם' : '',
+        x: 50,  // % from left of image
+        y: 50,  // % from top of image
+        fontSize: 32,
+        fontFamily: font.family,
+        color: '#ffffff',
+        rotation: 0,
+        bold: false,
+        letterSpacing: 0,
+        scaleX: 100,
+        opacity: 100,
+    };
+}
+
+function addField(type = 'fixed', text = '') {
+    const field = createFieldObj(type, text);
+    state.fields.push(field);
+    renderField(field);
+    selectField(field.id);
+    updateRecipientsUI();
+    updateStatusBar();
+    toast(type === 'list' ? 'נוסף שדה מרשימה' : 'נוסף שדה טקסט');
+
+    // Make sure we're on design step
+    if (!document.getElementById('step2').classList.contains('active')) {
+        switchStep(2);
+    }
+}
+
+function renderField(field) {
+    const wrapper = document.getElementById('canvasWrapper');
+    let el = document.getElementById(field.id);
+    if (!el) {
+        el = document.createElement('div');
+        el.id = field.id;
+        el.className = 'text-field' + (field.type === 'list' ? ' list-field' : '');
+
+        // Create text span
+        const textSpan = document.createElement('span');
+        textSpan.className = 'field-text';
+        el.appendChild(textSpan);
+
+        // Create 8 resize handles
+        ['tl','tc','tr','ml','mr','bl','bc','br'].forEach(pos => {
+            const h = document.createElement('div');
+            h.className = 'resize-handle ' + pos;
+            h.dataset.handle = pos;
+            el.appendChild(h);
+        });
+
+        // Rotation handle
+        const rotLine = document.createElement('div');
+        rotLine.className = 'rotation-line';
+        el.appendChild(rotLine);
+
+        const rotHandle = document.createElement('div');
+        rotHandle.className = 'rotation-handle';
+        rotHandle.dataset.handle = 'rotate';
+        el.appendChild(rotHandle);
+
+        wrapper.appendChild(el);
+
+        // Events
+        el.addEventListener('mousedown', e => onFieldMouseDown(e, field.id));
+        el.addEventListener('touchstart', e => onFieldTouchStart(e, field.id), { passive: false });
+    }
+
+    // Update visual
+    const textSpan = el.querySelector('.field-text');
+    let displayText = field.text;
+    if (field.type === 'list' && state.recipients.length > 0) {
+        displayText = state.recipients[0][field.listColumn] || field.text;
+    }
+    textSpan.textContent = displayText;
+
+    el.style.left = field.x + '%';
+    el.style.top = field.y + '%';
+    el.style.transform = `translate(-50%, -50%) rotate(${field.rotation}deg) scaleX(${field.scaleX / 100})`;
+    el.style.fontSize = field.fontSize + 'px';
+    el.style.fontFamily = field.fontFamily;
+    el.style.color = field.color;
+    el.style.fontWeight = field.bold ? 'bold' : 'normal';
+    el.style.letterSpacing = field.letterSpacing + 'px';
+    el.style.opacity = field.opacity / 100;
+
+    el.className = 'text-field' + (field.type === 'list' ? ' list-field' : '') +
+                   (field.id === state.selectedFieldId ? ' selected' : '');
+
+    // Handle visibility
+    if (!state.showHandles) {
+        el.querySelectorAll('.resize-handle, .rotation-handle, .rotation-line').forEach(h => h.style.display = 'none');
+    }
+}
+
+function renderAllFields() {
+    state.fields.forEach(f => renderField(f));
+}
+
+function selectField(id) {
+    state.selectedFieldId = id;
+    // Update CSS
+    document.querySelectorAll('.text-field').forEach(el => {
+        el.classList.toggle('selected', el.id === id);
+    });
+    // Update props panel
+    updatePropsPanel();
+}
+
+function updatePropsPanel() {
+    const field = state.fields.find(f => f.id === state.selectedFieldId);
+    if (!field) {
+        document.getElementById('propsEmpty').style.display = 'block';
+        document.getElementById('propsContent').style.display = 'none';
+        return;
+    }
+
+    document.getElementById('propsEmpty').style.display = 'none';
+    document.getElementById('propsContent').style.display = 'block';
+
+    document.getElementById('propText').value = field.text;
+    document.getElementById('propType').value = field.type;
+    document.getElementById('propColumnRow').style.display = field.type === 'list' ? 'flex' : 'none';
+    document.getElementById('propColumn').value = field.listColumn;
+    document.getElementById('propFont').value = field.fontFamily;
+    document.getElementById('propSize').value = field.fontSize;
+    document.getElementById('propSizeVal').textContent = field.fontSize;
+    document.getElementById('propColor').value = field.color;
+    document.getElementById('propBold').checked = field.bold;
+    document.getElementById('propRotation').value = field.rotation;
+    document.getElementById('propRotationVal').textContent = field.rotation + '°';
+    document.getElementById('propSpacing').value = field.letterSpacing;
+    document.getElementById('propSpacingVal').textContent = field.letterSpacing;
+    document.getElementById('propScaleX').value = field.scaleX;
+    document.getElementById('propScaleXVal').textContent = field.scaleX + '%';
+    document.getElementById('propOpacity').value = field.opacity;
+    document.getElementById('propOpacityVal').textContent = field.opacity + '%';
+}
+
+function updateFieldProp(prop, value) {
+    const field = state.fields.find(f => f.id === state.selectedFieldId);
+    if (!field) return;
+
+    field[prop] = value;
+
+    // Update display values
+    if (prop === 'fontSize') document.getElementById('propSizeVal').textContent = value;
+    if (prop === 'rotation') document.getElementById('propRotationVal').textContent = value + '°';
+    if (prop === 'letterSpacing') document.getElementById('propSpacingVal').textContent = value;
+    if (prop === 'scaleX') document.getElementById('propScaleXVal').textContent = value + '%';
+    if (prop === 'opacity') document.getElementById('propOpacityVal').textContent = value + '%';
+
+    // Show/hide column row
+    if (prop === 'type') {
+        document.getElementById('propColumnRow').style.display = value === 'list' ? 'flex' : 'none';
+        if (value === 'list' && !field.listColumn) field.listColumn = field.text;
+        updateRecipientsUI();
+    }
+
+    renderField(field);
+}
+
+function deleteSelectedField() {
+    if (!state.selectedFieldId) return;
+    const el = document.getElementById(state.selectedFieldId);
+    if (el) el.remove();
+    state.fields = state.fields.filter(f => f.id !== state.selectedFieldId);
+    state.selectedFieldId = null;
+    updatePropsPanel();
+    updateRecipientsUI();
+    updateStatusBar();
+}
+
+function duplicateField() {
+    const field = state.fields.find(f => f.id === state.selectedFieldId);
+    if (!field) return;
+    const dup = { ...field, id: 'field_' + (++fieldIdCounter), x: field.x + 3, y: field.y + 3 };
+    state.fields.push(dup);
+    renderField(dup);
+    selectField(dup.id);
+    updateStatusBar();
+}
+
+function copyField() {
+    const field = state.fields.find(f => f.id === state.selectedFieldId);
+    if (!field) { toast('לא נבחר שדה', 'error'); return; }
+    state.clipboard = { ...field };
+    toast('שדה הועתק');
+}
+
+function pasteField() {
+    if (!state.clipboard) { toast('אין שדה להדבקה', 'error'); return; }
+    const dup = { ...state.clipboard, id: 'field_' + (++fieldIdCounter), x: state.clipboard.x + 5, y: state.clipboard.y + 5 };
+    state.fields.push(dup);
+    renderField(dup);
+    selectField(dup.id);
+    updateStatusBar();
+    toast('שדה הודבק');
+}
+
+function centerFieldH() {
+    const field = state.fields.find(f => f.id === state.selectedFieldId);
+    if (!field) return;
+    field.x = 50;
+    renderField(field);
+}
+
+function centerFieldV() {
+    const field = state.fields.find(f => f.id === state.selectedFieldId);
+    if (!field) return;
+    field.y = 50;
+    renderField(field);
+}
+
+/* ─── Field Dragging & Interaction ───────────────── */
+function onFieldMouseDown(e, fieldId) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    selectField(fieldId);
+
+    const handle = e.target.dataset?.handle;
+    if (handle === 'rotate') {
+        startRotation(e, fieldId);
+    } else if (handle) {
+        startResize(e, fieldId, handle);
+    } else if (e.target.classList.contains('text-field') || e.target.classList.contains('field-text')) {
+        startDrag(e, fieldId);
+    }
+}
+
+function onFieldTouchStart(e, fieldId) {
+    e.preventDefault();
+    const touch = e.touches[0];
+    const fakeEvent = { clientX: touch.clientX, clientY: touch.clientY, preventDefault: () => {}, stopPropagation: () => {} };
+
+    selectField(fieldId);
+
+    const handle = e.target.dataset?.handle;
+    if (handle === 'rotate') {
+        startRotation(fakeEvent, fieldId, true);
+    } else if (handle) {
+        startResize(fakeEvent, fieldId, handle, true);
+    } else {
+        startDrag(fakeEvent, fieldId, true);
+    }
+}
+
+function startDrag(e, fieldId, isTouch = false) {
+    const field = state.fields.find(f => f.id === fieldId);
+    if (!field) return;
+
+    const wrapper = document.getElementById('canvasWrapper');
+    const rect = wrapper.getBoundingClientRect();
+
+    dragState = {
+        type: 'drag',
+        fieldId,
+        startX: e.clientX,
+        startY: e.clientY,
+        startFieldX: field.x,
+        startFieldY: field.y,
+        wrapperRect: rect,
+    };
+
+    const moveEvent = isTouch ? 'touchmove' : 'mousemove';
+    const endEvent = isTouch ? 'touchend' : 'mouseup';
+
+    const onMove = ev => {
+        const pt = isTouch ? ev.touches[0] : ev;
+        const dx = pt.clientX - dragState.startX;
+        const dy = pt.clientY - dragState.startY;
+        field.x = dragState.startFieldX + (dx / dragState.wrapperRect.width) * 100;
+        field.y = dragState.startFieldY + (dy / dragState.wrapperRect.height) * 100;
+        // Clamp
+        field.x = Math.max(0, Math.min(100, field.x));
+        field.y = Math.max(0, Math.min(100, field.y));
+        renderField(field);
+    };
+
+    const onEnd = () => {
+        document.removeEventListener(moveEvent, onMove);
+        document.removeEventListener(endEvent, onEnd);
+        dragState = null;
+    };
+
+    document.addEventListener(moveEvent, onMove, { passive: false });
+    document.addEventListener(endEvent, onEnd);
+}
+
+function startResize(e, fieldId, handle, isTouch = false) {
+    const field = state.fields.find(f => f.id === fieldId);
+    if (!field) return;
+
+    dragState = {
+        type: 'resize',
+        fieldId,
+        handle,
+        startX: e.clientX,
+        startY: e.clientY,
+        startFontSize: field.fontSize,
+    };
+
+    const moveEvent = isTouch ? 'touchmove' : 'mousemove';
+    const endEvent = isTouch ? 'touchend' : 'mouseup';
+
+    const onMove = ev => {
+        const pt = isTouch ? ev.touches[0] : ev;
+        const dx = pt.clientX - dragState.startX;
+        const dy = pt.clientY - dragState.startY;
+
+        // Use diagonal distance for size change
+        let delta = 0;
+        if (handle.includes('b')) delta = dy;
+        else if (handle.includes('t')) delta = -dy;
+        if (handle.includes('l')) delta = Math.max(delta, dx);
+        else if (handle.includes('r')) delta = Math.max(delta, -dx);
+        if (handle === 'ml' || handle === 'mr') delta = Math.abs(dx) * (dx > 0 ? 1 : -1) * (handle === 'mr' ? -1 : 1);
+
+        field.fontSize = Math.max(8, Math.min(200, dragState.startFontSize + delta * 0.5));
+        renderField(field);
+        updatePropsPanel();
+    };
+
+    const onEnd = () => {
+        document.removeEventListener(moveEvent, onMove);
+        document.removeEventListener(endEvent, onEnd);
+        dragState = null;
+    };
+
+    document.addEventListener(moveEvent, onMove, { passive: false });
+    document.addEventListener(endEvent, onEnd);
+}
+
+function startRotation(e, fieldId, isTouch = false) {
+    const field = state.fields.find(f => f.id === fieldId);
+    if (!field) return;
+
+    const el = document.getElementById(fieldId);
+    const rect = el.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    dragState = {
+        type: 'rotate',
+        fieldId,
+        centerX,
+        centerY,
+        startRotation: field.rotation,
+    };
+
+    const moveEvent = isTouch ? 'touchmove' : 'mousemove';
+    const endEvent = isTouch ? 'touchend' : 'mouseup';
+
+    const onMove = ev => {
+        const pt = isTouch ? ev.touches[0] : ev;
+        const angle = Math.atan2(pt.clientY - dragState.centerY, pt.clientX - dragState.centerX);
+        field.rotation = Math.round(angle * 180 / Math.PI + 90);
+        // Snap to 0, 90, 180, 270 within 5 degrees
+        [0, 90, -90, 180, -180].forEach(snap => {
+            if (Math.abs(field.rotation - snap) < 5) field.rotation = snap;
+        });
+        renderField(field);
+        updatePropsPanel();
+    };
+
+    const onEnd = () => {
+        document.removeEventListener(moveEvent, onMove);
+        document.removeEventListener(endEvent, onEnd);
+        dragState = null;
+    };
+
+    document.addEventListener(moveEvent, onMove, { passive: false });
+    document.addEventListener(endEvent, onEnd);
+}
+
+// Click on canvas area to deselect
+document.addEventListener('click', e => {
+    if (e.target.id === 'canvasArea' || e.target.id === 'canvasImg') {
+        selectField(null);
+    }
+});
+
+/* ─── Keyboard Shortcuts ─────────────────────────── */
+function setupKeyboard() {
+    document.addEventListener('keydown', e => {
+        // Don't interfere with inputs
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+            deleteSelectedField();
+        } else if (e.ctrlKey && e.key === 'c') {
+            e.preventDefault();
+            copyField();
+        } else if (e.ctrlKey && e.key === 'v') {
+            e.preventDefault();
+            pasteField();
+        } else if (e.ctrlKey && e.key === 'd') {
+            e.preventDefault();
+            duplicateField();
+        } else if (e.key === 'Escape') {
+            selectField(null);
+        }
+
+        // Arrow keys for nudging
+        const field = state.fields.find(f => f.id === state.selectedFieldId);
+        if (field && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+            e.preventDefault();
+            const step = e.shiftKey ? 0.1 : 0.5;
+            if (e.key === 'ArrowUp') field.y -= step;
+            if (e.key === 'ArrowDown') field.y += step;
+            if (e.key === 'ArrowLeft') field.x += step; // RTL
+            if (e.key === 'ArrowRight') field.x -= step; // RTL
+            field.x = Math.max(0, Math.min(100, field.x));
+            field.y = Math.max(0, Math.min(100, field.y));
+            renderField(field);
+        }
+    });
+}
+
+/* ─── View Controls ──────────────────────────────── */
+function toggleHandles() {
+    state.showHandles = !state.showHandles;
+    document.querySelectorAll('.resize-handle, .rotation-handle, .rotation-line').forEach(el => {
+        el.style.display = state.showHandles ? '' : 'none';
+    });
+    toast(state.showHandles ? 'ידיות מוצגות' : 'ידיות מוסתרות');
+}
+
+function toggleGrid() {
+    state.showGrid = !state.showGrid;
+    const wrapper = document.getElementById('canvasWrapper');
+    if (state.showGrid) {
+        wrapper.style.backgroundImage = 'repeating-linear-gradient(0deg, rgba(0,0,0,0.1) 0px, transparent 1px, transparent 50px),' +
+            'repeating-linear-gradient(90deg, rgba(0,0,0,0.1) 0px, transparent 1px, transparent 50px)';
+        wrapper.style.backgroundSize = '50px 50px';
+    } else {
+        wrapper.style.backgroundImage = 'none';
+    }
+    toast(state.showGrid ? 'רשת מוצגת' : 'רשת מוסתרת');
+}
+
+function zoomIn() { state.zoom = Math.min(3, state.zoom + 0.25); applyZoom(); }
+function zoomOut() { state.zoom = Math.max(0.25, state.zoom - 0.25); applyZoom(); }
+function zoomReset() { state.zoom = 1; applyZoom(); }
+
+function applyZoom() {
+    const wrapper = document.getElementById('canvasWrapper');
+    wrapper.style.transform = `scale(${state.zoom})`;
+    wrapper.style.transformOrigin = 'top center';
+    document.getElementById('statusZoom').textContent = Math.round(state.zoom * 100) + '%';
+}
+
+/* ─── Text Templates Modal ───────────────────────── */
+function showTextTemplates() {
+    const html = `
+        <h2>📝 תבניות טקסט מוכנות</h2>
+        <p style="color:#666;margin-bottom:16px">בחרו ברכה להוספה לכרטיס:</p>
+        <div style="display:flex;flex-direction:column;gap:8px">
+            ${textTemplates.map(t => `
+                <div class="template-chip" style="text-align:center;padding:12px;font-size:1rem"
+                     onclick="addField('fixed','${t.replace(/'/g, "\\'")}');closeModal()">
+                    ${t.replace('\n', '<br>')}
+                </div>
+            `).join('')}
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="closeModal()">סגור</button>
+        </div>
+    `;
+    showModal(html);
+}
+
+/* ─── Recipients ─────────────────────────────────── */
+function getListFields() {
+    return state.fields.filter(f => f.type === 'list');
+}
+
+function getListColumns() {
+    return getListFields().map(f => f.listColumn || f.text);
+}
+
+function updateRecipientsUI() {
+    const listFields = getListFields();
+    const noFields = document.getElementById('noListFields');
+    const hasFields = document.getElementById('hasListFields');
+
+    if (listFields.length === 0) {
+        noFields.style.display = 'block';
+        hasFields.style.display = 'none';
+        return;
+    }
+
+    noFields.style.display = 'none';
+    hasFields.style.display = 'block';
+
+    renderRecipientsTable();
+    updateFilenameSelect();
+    updateRecipientsBadge();
+}
+
+function renderRecipientsTable() {
+    const columns = getListColumns();
+    if (columns.length === 0) return;
+
+    const head = document.getElementById('recipientsHead');
+    const body = document.getElementById('recipientsBody');
+
+    // Header
+    head.innerHTML = '<tr><th class="row-num">#</th>' +
+        columns.map(c => `<th>${escapeHtml(c)}</th>`).join('') +
+        '<th class="row-actions"></th></tr>';
+
+    // Body
+    body.innerHTML = '';
+    state.recipients.forEach((rec, i) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td class="row-num">${i + 1}</td>` +
+            columns.map(c => `<td><input type="text" value="${escapeHtml(rec[c] || '')}" onchange="updateRecipient(${i},'${escapeHtml(c)}',this.value)"></td>`).join('') +
+            `<td class="row-actions"><button class="delete-row-btn" onclick="deleteRecipient(${i})" title="מחק שורה">✕</button></td>`;
+        body.appendChild(tr);
+    });
+
+    document.getElementById('clearRecipientsBtn').style.display = state.recipients.length > 0 ? '' : 'none';
+}
+
+function addRecipientRow() {
+    const columns = getListColumns();
+    const row = {};
+    columns.forEach(c => row[c] = '');
+    state.recipients.push(row);
+    renderRecipientsTable();
+    updateRecipientsBadge();
+
+    // Focus first input in last row
+    const tbody = document.getElementById('recipientsBody');
+    const inputs = tbody.lastElementChild?.querySelectorAll('input');
+    if (inputs?.[0]) inputs[0].focus();
+}
+
+function updateRecipient(index, column, value) {
+    if (state.recipients[index]) {
+        state.recipients[index][column] = value;
+        renderAllFields(); // Update preview
+    }
+}
+
+function deleteRecipient(index) {
+    state.recipients.splice(index, 1);
+    renderRecipientsTable();
+    updateRecipientsBadge();
+    renderAllFields();
+}
+
+function clearRecipients() {
+    if (!confirm('למחוק את כל הנמענים?')) return;
+    state.recipients = [];
+    renderRecipientsTable();
+    updateRecipientsBadge();
+    renderAllFields();
+}
+
+function updateRecipientsBadge() {
+    const badge = document.getElementById('recipientsBadge');
+    if (state.recipients.length > 0) {
+        badge.style.display = '';
+        badge.textContent = state.recipients.length;
+    } else {
+        badge.style.display = 'none';
+    }
+}
+
+/* ─── Excel/CSV Import ───────────────────────────── */
+function loadExcelFile(input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = e => {
+        try {
+            const workbook = XLSX.read(e.target.result, { type: 'array' });
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+            if (rows.length === 0) {
+                toast('הקובץ ריק', 'error');
+                return;
+            }
+
+            const excelColumns = Object.keys(rows[0]);
+            const listColumns = getListColumns();
+
+            // Check if columns match directly
+            const allMatch = listColumns.every(c => excelColumns.includes(c));
+            if (allMatch) {
+                // Direct import
+                state.recipients = rows.map(row => {
+                    const rec = {};
+                    listColumns.forEach(c => rec[c] = String(row[c] || ''));
+                    return rec;
+                });
+                renderRecipientsTable();
+                updateRecipientsBadge();
+                renderAllFields();
+                toast(`נטענו ${state.recipients.length} רשומות`, 'success');
+            } else {
+                // Show column mapping dialog
+                state.excelColumns = excelColumns;
+                state.excelData = rows;
+                showColumnMapping(excelColumns, listColumns);
+            }
+        } catch (err) {
+            toast('שגיאה בקריאת הקובץ: ' + err.message, 'error');
+        }
+    };
+    reader.readAsArrayBuffer(file);
+    input.value = '';
+}
+
+function showColumnMapping(excelCols, listCols) {
+    const container = document.getElementById('mappingFields');
+    container.innerHTML = '';
+
+    listCols.forEach(lc => {
+        const div = document.createElement('div');
+        div.className = 'prop-row';
+        div.innerHTML = `
+            <label style="min-width:100px">${escapeHtml(lc)}</label>
+            <select data-list-col="${escapeHtml(lc)}">
+                <option value="">— לא ממופה —</option>
+                ${excelCols.map(ec => `<option value="${escapeHtml(ec)}" ${ec === lc ? 'selected' : ''}>${escapeHtml(ec)}</option>`).join('')}
+            </select>
+        `;
+        container.appendChild(div);
+    });
+
+    document.getElementById('columnMapping').style.display = 'block';
+}
+
+function applyMapping() {
+    const selects = document.querySelectorAll('#mappingFields select');
+    const mapping = {};
+    selects.forEach(s => {
+        if (s.value) mapping[s.dataset.listCol] = s.value;
+    });
+
+    state.recipients = state.excelData.map(row => {
+        const rec = {};
+        Object.entries(mapping).forEach(([listCol, excelCol]) => {
+            rec[listCol] = String(row[excelCol] || '');
+        });
+        // Fill unmapped columns
+        getListColumns().forEach(c => { if (!(c in rec)) rec[c] = ''; });
+        return rec;
+    });
+
+    document.getElementById('columnMapping').style.display = 'none';
+    renderRecipientsTable();
+    updateRecipientsBadge();
+    renderAllFields();
+    toast(`נטענו ${state.recipients.length} רשומות`, 'success');
+}
+
+function cancelMapping() {
+    document.getElementById('columnMapping').style.display = 'none';
+    state.excelColumns = null;
+    state.excelData = null;
+}
+
+/* ─── Export ──────────────────────────────────────── */
+function updateFilenameSelect() {
+    const select = document.getElementById('filenameField');
+    const columns = getListColumns();
+    const current = select.value;
+
+    select.innerHTML = '<option value="__index__">מספר סידורי (1, 2, 3...)</option>';
+    columns.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c;
+        opt.textContent = c;
+        select.appendChild(opt);
+    });
+
+    if (current && [...select.options].find(o => o.value === current)) {
+        select.value = current;
+    } else if (columns.length > 0) {
+        select.value = columns[0];
+    }
+}
+
+function selectExportFormat(format) {
+    state.exportFormat = format;
+    document.querySelectorAll('.export-option').forEach(el => {
+        el.classList.toggle('selected', el.dataset.format === format);
+    });
+}
+
+function updateExportSummary() {
+    const div = document.getElementById('exportSummary');
+    const listFields = getListFields();
+    const fixedFields = state.fields.filter(f => f.type === 'fixed');
+    const count = Math.max(1, state.recipients.length);
+
+    div.innerHTML = `
+        <div>📊 <strong>${count}</strong> כרטיסים ייווצרו</div>
+        <div>🔤 <strong>${fixedFields.length}</strong> שדות קבועים | <strong>${listFields.length}</strong> שדות מרשימה</div>
+        <div>📐 רזולוציה: ${state.backgroundNatural ? state.backgroundNatural.width + '×' + state.backgroundNatural.height : 'לא נבחר רקע'}</div>
+    `;
+}
+
+async function startExport() {
+    if (!state.backgroundImage) {
+        toast('יש לבחור תמונת רקע לפני הייצוא', 'error');
+        return;
+    }
+
+    if (state.fields.length === 0) {
+        toast('אין שדות טקסט בכרטיס', 'error');
+        return;
+    }
+
+    const recipients = state.recipients.length > 0 ? state.recipients : [{}];
+    const filenameField = document.getElementById('filenameField').value;
+    const format = state.exportFormat;
+
+    const btn = document.getElementById('exportBtn');
+    btn.disabled = true;
+    document.getElementById('exportProgress').style.display = 'block';
+
+    try {
+        const zip = new JSZip();
+        const total = recipients.length;
+
+        for (let i = 0; i < total; i++) {
+            const recipient = recipients[i];
+            const progress = ((i + 1) / total * 100);
+            document.getElementById('exportProgressFill').style.width = progress + '%';
+            document.getElementById('exportProgressText').textContent = `מכין כרטיס ${i + 1} מתוך ${total}...`;
+
+            // Generate filename
+            let filename;
+            if (filenameField === '__index__') {
+                filename = String(i + 1);
+            } else {
+                filename = recipient[filenameField] || String(i + 1);
+            }
+            // Sanitize filename
+            filename = filename.replace(/[\\/:*?"<>|]/g, '_').trim() || String(i + 1);
+
+            if (format === 'pdf') {
+                const pdfBlob = await generatePDF(recipient);
+                zip.file(filename + '.pdf', pdfBlob);
+            } else {
+                const imgBlob = await generateImage(recipient, format);
+                zip.file(filename + '.' + format, imgBlob);
+            }
+
+            // Yield to prevent UI freezing
+            await new Promise(r => setTimeout(r, 10));
+        }
+
+        document.getElementById('exportProgressText').textContent = 'יוצר קובץ ZIP...';
+        const blob = await zip.generateAsync({ type: 'blob' }, meta => {
+            document.getElementById('exportProgressFill').style.width = meta.percent + '%';
+        });
+
+        // Download
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'greeting_cards.zip';
+        a.click();
+        URL.revokeObjectURL(url);
+
+        toast('הקובץ הורד בהצלחה! 🎉', 'success');
+    } catch (err) {
+        toast('שגיאה ביצירת הקבצים: ' + err.message, 'error');
+        console.error(err);
+    } finally {
+        btn.disabled = false;
+        document.getElementById('exportProgress').style.display = 'none';
+    }
+}
+
+/* ─── PDF Generation ─────────────────────────────── */
+async function generatePDF(recipient) {
+    const { jsPDF } = window.jspdf;
+    const nat = state.backgroundNatural;
+    const isLandscape = nat.width > nat.height;
+
+    // Create PDF matching image aspect ratio
+    const pdfWidth = isLandscape ? 297 : 210;  // A4 dimensions in mm
+    const pdfHeight = isLandscape ? 210 : 297;
+    const pdf = new jsPDF({
+        orientation: isLandscape ? 'landscape' : 'portrait',
+        unit: 'mm',
+        format: [pdfWidth, pdfHeight],
+    });
+
+    // Register custom fonts
+    for (const field of state.fields) {
+        const fontEntry = Object.entries(state.customFontData).find(([id, d]) => d.family === field.fontFamily);
+        if (fontEntry) {
+            const [id, data] = fontEntry;
+            const fontFileName = id + '.' + data.ext;
+            try {
+                pdf.addFileToVFS(fontFileName, data.base64);
+                pdf.addFont(fontFileName, data.family, 'normal');
+                if (field.bold) {
+                    pdf.addFont(fontFileName, data.family, 'bold');
+                }
+            } catch (e) {
+                // Font already registered
+            }
+        }
+    }
+
+    // Add background image
+    pdf.addImage(state.backgroundImage, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+
+    // Add text fields
+    for (const field of state.fields) {
+        let text = field.text;
+        if (field.type === 'list' && recipient[field.listColumn] !== undefined) {
+            text = recipient[field.listColumn];
+        }
+
+        // Convert position from % to mm
+        const x = (field.x / 100) * pdfWidth;
+        const y = (field.y / 100) * pdfHeight;
+
+        // Font size: convert from screen px to PDF pt (approximate)
+        const scaleFactor = pdfWidth / (state.backgroundNatural?.width || 1200);
+        const fontSize = field.fontSize * scaleFactor * 2.83; // px to mm to pt approximation
+
+        // Set font
+        const fontEntry = Object.entries(state.customFontData).find(([id, d]) => d.family === field.fontFamily);
+        if (fontEntry) {
+            try {
+                pdf.setFont(fontEntry[1].family, field.bold ? 'bold' : 'normal');
+            } catch (e) {
+                pdf.setFont('Helvetica', field.bold ? 'bold' : 'normal');
+            }
+        } else {
+            pdf.setFont('Helvetica', field.bold ? 'bold' : 'normal');
+        }
+        pdf.setFontSize(fontSize);
+
+        // Color
+        const color = hexToRgb(field.color);
+        pdf.setTextColor(color.r, color.g, color.b);
+
+        // Apply rotation if any
+        if (field.rotation !== 0) {
+            pdf.saveGraphicsState();
+            // Translate to position, rotate, translate back
+            const rad = field.rotation * Math.PI / 180;
+            const cos = Math.cos(rad);
+            const sin = Math.sin(rad);
+            // jsPDF transform matrix
+            pdf.setCurrentTransformationMatrix(
+                new pdf.Matrix(cos, sin, -sin, cos, x - x*cos + y*sin, y - x*sin - y*cos)
+            );
+        }
+
+        // Hebrew RTL handling — reverse characters
+        const processedText = processRTL(text);
+
+        // Draw text centered
+        pdf.text(processedText, x, y, { align: 'center', charSpace: field.letterSpacing * scaleFactor * 0.5 });
+
+        if (field.rotation !== 0) {
+            pdf.restoreGraphicsState();
+        }
+    }
+
+    return pdf.output('blob');
+}
+
+/* ─── Image Generation (PNG/JPG) ─────────────────── */
+async function generateImage(recipient, format) {
+    const canvas = document.createElement('canvas');
+    const nat = state.backgroundNatural;
+    canvas.width = nat.width;
+    canvas.height = nat.height;
+    const ctx = canvas.getContext('2d');
+
+    // Draw background
+    const bgImg = new Image();
+    await new Promise((resolve, reject) => {
+        bgImg.onload = resolve;
+        bgImg.onerror = reject;
+        bgImg.src = state.backgroundImage;
+    });
+    ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
+
+    // Draw text fields
+    for (const field of state.fields) {
+        let text = field.text;
+        if (field.type === 'list' && recipient[field.listColumn] !== undefined) {
+            text = recipient[field.listColumn];
+        }
+
+        const x = (field.x / 100) * canvas.width;
+        const y = (field.y / 100) * canvas.height;
+
+        ctx.save();
+        ctx.translate(x, y);
+        if (field.rotation) ctx.rotate(field.rotation * Math.PI / 180);
+        if (field.scaleX !== 100) ctx.scale(field.scaleX / 100, 1);
+
+        ctx.font = (field.bold ? 'bold ' : '') + field.fontSize * (canvas.width / 800) + 'px ' + field.fontFamily;
+        ctx.fillStyle = field.color;
+        ctx.globalAlpha = field.opacity / 100;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        if (field.letterSpacing > 0) {
+            // Manual letter spacing
+            const chars = text.split('');
+            let totalWidth = 0;
+            chars.forEach(ch => totalWidth += ctx.measureText(ch).width + field.letterSpacing);
+            let cx = -totalWidth / 2;
+            chars.forEach(ch => {
+                ctx.fillText(ch, cx + ctx.measureText(ch).width / 2, 0);
+                cx += ctx.measureText(ch).width + field.letterSpacing;
+            });
+        } else {
+            ctx.fillText(text, 0, 0);
+        }
+
+        ctx.restore();
+    }
+
+    return new Promise(resolve => {
+        canvas.toBlob(blob => resolve(blob), format === 'png' ? 'image/png' : 'image/jpeg', 0.95);
+    });
+}
+
+/* ─── RTL Processing ─────────────────────────────── */
+function processRTL(text) {
+    // Simple Hebrew RTL processing for jsPDF
+    // Reverse Hebrew characters but keep numbers LTR
+    const result = [];
+    let hebrewBuffer = [];
+    let numberBuffer = [];
+
+    for (const ch of text) {
+        const code = ch.charCodeAt(0);
+        const isHebrew = (code >= 0x0590 && code <= 0x05FF) || (code >= 0xFB1D && code <= 0xFB4F);
+        const isNumber = (code >= 0x30 && code <= 0x39);
+
+        if (isHebrew || (!isNumber && hebrewBuffer.length > 0 && !isNumber)) {
+            if (numberBuffer.length > 0) {
+                hebrewBuffer.push(...numberBuffer);
+                numberBuffer = [];
+            }
+            hebrewBuffer.push(ch);
+        } else if (isNumber) {
+            numberBuffer.push(ch);
+        } else {
+            if (hebrewBuffer.length > 0) {
+                result.push(...hebrewBuffer.reverse());
+                hebrewBuffer = [];
+            }
+            if (numberBuffer.length > 0) {
+                result.push(...numberBuffer);
+                numberBuffer = [];
+            }
+            result.push(ch);
+        }
+    }
+
+    // Flush remaining
+    if (numberBuffer.length > 0) {
+        hebrewBuffer.push(...numberBuffer);
+    }
+    if (hebrewBuffer.length > 0) {
+        result.push(...hebrewBuffer.reverse());
+    }
+
+    return result.join('');
+}
+
+/* ─── Utility Functions ──────────────────────────── */
+function hexToRgb(hex) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return { r, g, b };
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function updateStatusBar() {
+    document.getElementById('statusFields').textContent = 'שדות: ' + state.fields.length;
+    if (state.backgroundNatural) {
+        document.getElementById('statusSize').textContent =
+            state.backgroundNatural.width + '×' + state.backgroundNatural.height;
+    }
+}
+
+/* ─── Step Navigation ────────────────────────────── */
+function switchStep(n) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', +t.dataset.step === n));
+    document.querySelectorAll('.step-panel').forEach((p, i) => p.classList.toggle('active', i + 1 === n));
+
+    if (n === 2) {
+        updateCanvasBackground();
+        renderAllFields();
+    }
+    if (n === 3) {
+        updateRecipientsUI();
+    }
+    if (n === 4) {
+        updateExportSummary();
+        updateFilenameSelect();
+    }
+}
+
+function goToDesign() {
+    if (!state.backgroundImage) {
+        toast('מומלץ לבחור תמונת רקע לפני המעבר לעיצוב', 'error');
+    }
+    switchStep(2);
+}
+
+/* ─── Modal ──────────────────────────────────────── */
+function showModal(html) {
+    document.getElementById('modalContent').innerHTML = html;
+    document.getElementById('modalOverlay').classList.add('show');
+}
+
+function closeModal() {
+    document.getElementById('modalOverlay').classList.remove('show');
+}
+
+/* ─── Toast ──────────────────────────────────────── */
+function toast(msg, type = '') {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = 'toast show' + (type ? ' ' + type : '');
+    clearTimeout(el._timeout);
+    el._timeout = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+</script>
+</body>
+</html>
