@@ -318,7 +318,8 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            white-space: nowrap;
+            white-space: pre-wrap;
+            text-align: center;
             z-index: 10;
         }
         .text-field:hover { outline-color: rgba(74,108,247,0.4); }
@@ -1012,7 +1013,7 @@
             <div id="propsContent" style="display:none">
                 <div class="prop-row">
                     <label>טקסט</label>
-                    <input type="text" id="propText" oninput="updateFieldProp('text', this.value)">
+                    <textarea id="propText" rows="3" oninput="updateFieldProp('text', this.value)" style="resize:vertical;min-height:40px"></textarea>
                 </div>
                 <div class="prop-row">
                     <label>סוג</label>
@@ -2600,11 +2601,16 @@ async function generatePDF(recipient) {
             );
         }
 
-        // Hebrew RTL handling — reverse characters
-        const processedText = processRTL(text);
+        // Hebrew RTL handling — reverse characters, split multiline
+        const lines = text.split('\n');
+        const lineHeightMm = fontSize * 0.5; // approximate line height in mm
+        const totalHeight = (lines.length - 1) * lineHeightMm;
 
-        // Draw text centered
-        pdf.text(processedText, x, y, { align: 'center', charSpace: field.letterSpacing * scaleFactor * 0.5 });
+        lines.forEach((line, lineIdx) => {
+            const processedLine = processRTL(line);
+            const ly = y - totalHeight / 2 + lineIdx * lineHeightMm;
+            pdf.text(processedLine, x, ly, { align: 'center', charSpace: field.letterSpacing * scaleFactor * 0.5 });
+        });
 
         if (field.rotation !== 0) {
             pdf.restoreGraphicsState();
@@ -2646,25 +2652,33 @@ async function generateImage(recipient, format) {
         if (field.rotation) ctx.rotate(field.rotation * Math.PI / 180);
         if (field.scaleX !== 100) ctx.scale(field.scaleX / 100, 1);
 
-        ctx.font = (field.bold ? 'bold ' : '') + field.fontSize * (canvas.width / 800) + 'px ' + field.fontFamily;
+        const scaledFontSize = field.fontSize * (canvas.width / 800);
+        ctx.font = (field.bold ? 'bold ' : '') + scaledFontSize + 'px ' + field.fontFamily;
         ctx.fillStyle = field.color;
         ctx.globalAlpha = field.opacity / 100;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
-        if (field.letterSpacing > 0) {
-            // Manual letter spacing
-            const chars = text.split('');
-            let totalWidth = 0;
-            chars.forEach(ch => totalWidth += ctx.measureText(ch).width + field.letterSpacing);
-            let cx = -totalWidth / 2;
-            chars.forEach(ch => {
-                ctx.fillText(ch, cx + ctx.measureText(ch).width / 2, 0);
-                cx += ctx.measureText(ch).width + field.letterSpacing;
-            });
-        } else {
-            ctx.fillText(text, 0, 0);
-        }
+        // Split multiline text
+        const lines = text.split('\n');
+        const lineHeight = scaledFontSize * 1.3;
+        const totalTextHeight = (lines.length - 1) * lineHeight;
+
+        lines.forEach((line, lineIdx) => {
+            const ly = -totalTextHeight / 2 + lineIdx * lineHeight;
+            if (field.letterSpacing > 0) {
+                const chars = line.split('');
+                let totalWidth = 0;
+                chars.forEach(ch => totalWidth += ctx.measureText(ch).width + field.letterSpacing);
+                let cx = -totalWidth / 2;
+                chars.forEach(ch => {
+                    ctx.fillText(ch, cx + ctx.measureText(ch).width / 2, ly);
+                    cx += ctx.measureText(ch).width + field.letterSpacing;
+                });
+            } else {
+                ctx.fillText(line, 0, ly);
+            }
+        });
 
         ctx.restore();
     }
