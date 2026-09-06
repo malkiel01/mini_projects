@@ -913,11 +913,18 @@
 
             <h3>העלאת רקעים מ-ZIP:</h3>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0">
-                <label class="btn btn-outline" style="cursor:pointer">
+                <label class="btn btn-outline" style="cursor:pointer" id="zipBtn">
                     📦 בחרו קובץ ZIP
                     <input type="file" id="zipFileInput" style="display:none" onchange="onZipSelected(this)">
                 </label>
                 <span id="zipStatus" style="font-size:0.85rem;color:#888"></span>
+            </div>
+            <div id="zipProgress" style="display:none;margin:8px 0">
+                <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:4px">
+                    <span id="zipProgressText">מעלה...</span>
+                    <span id="zipProgressCount"></span>
+                </div>
+                <div class="progress-bar"><div class="fill" id="zipProgressFill" style="width:0"></div></div>
             </div>
 
             <h3>הרקעים שלי:</h3>
@@ -1593,23 +1600,21 @@ function initDragAndDrop() {
     // ZIP upload — handled by inline onchange="onZipSelected(this)"
 }
 
-/* ─── ZIP Background Upload ──────────────────────── */
+/* ─── ZIP Background Upload (client-side extraction) ── */
 function onZipSelected(input) {
     const file = input.files[0];
-    input.value = ''; // Reset for re-selection
+    input.value = '';
     if (!file) return;
 
     const status = document.getElementById('zipStatus');
-    status.textContent = 'נבחר: ' + file.name + ' (' + (file.size / 1024 / 1024).toFixed(1) + 'MB)';
-
     const ext = file.name.split('.').pop().toLowerCase();
+
     if (ext !== 'zip') {
         status.textContent = '❌ הקובץ שנבחר אינו ZIP (.' + ext + ')';
         status.style.color = '#dc3545';
         toast('יש לבחור קובץ ZIP', 'error');
         return;
     }
-
     if (!authToken) {
         status.textContent = '❌ יש להתחבר כדי להעלות';
         status.style.color = '#dc3545';
@@ -1618,47 +1623,110 @@ function onZipSelected(input) {
     }
 
     status.style.color = '#4a6cf7';
-    status.textContent = '⏳ מעלה... ' + file.name;
+    status.textContent = '⏳ פורס ZIP...';
+    document.getElementById('zipBtn').style.pointerEvents = 'none';
+    document.getElementById('zipBtn').style.opacity = '0.5';
+
     uploadZipBackgrounds(file);
 }
 
 async function uploadZipBackgrounds(file) {
     const status = document.getElementById('zipStatus');
-    const fd = new FormData();
-    fd.append('zipfile', file);
+    const progress = document.getElementById('zipProgress');
+    const progressText = document.getElementById('zipProgressText');
+    const progressCount = document.getElementById('zipProgressCount');
+    const progressFill = document.getElementById('zipProgressFill');
+    const validExts = ['jpg', 'jpeg', 'png', 'webp'];
+
     try {
-        const res = await fetch(API_URL + '?action=upload_user_bg_zip', {
-            method: 'POST',
-            headers: { 'X-Auth-Token': authToken },
-            body: fd,
-            credentials: 'include'
+        // Extract ZIP client-side using JSZip (already loaded)
+        status.textContent = '⏳ קורא ZIP...';
+        const zip = await JSZip.loadAsync(file);
+
+        // Collect image files
+        const imageFiles = [];
+        zip.forEach((path, entry) => {
+            if (entry.dir) return;
+            const name = path.split('/').pop();
+            if (name.startsWith('.')) return;
+            const ext = name.split('.').pop().toLowerCase();
+            if (validExts.includes(ext)) {
+                imageFiles.push({ path, name, ext, entry });
+            }
         });
-        const text = await res.text();
-        console.log('ZIP upload response:', text);
-        let data;
-        try { data = JSON.parse(text); } catch (e) {
-            status.textContent = '❌ שגיאת שרת';
+
+        if (imageFiles.length === 0) {
+            status.textContent = '❌ לא נמצאו תמונות ב-ZIP';
             status.style.color = '#dc3545';
-            toast('שגיאת שרת — תשובה לא תקינה', 'error');
-            console.error('Non-JSON response:', text);
+            toast('לא נמצאו תמונות (JPG/PNG/WebP) ב-ZIP', 'error');
+            resetZipBtn();
             return;
         }
-        if (data.success) {
-            status.textContent = '✅ הועלו ' + data.added + ' רקעים!';
-            status.style.color = '#28a745';
-            toast('הועלו ' + data.added + ' רקעים! 🎉', 'success');
-            loadUserBackgrounds();
-        } else {
-            status.textContent = '❌ ' + data.message;
-            status.style.color = '#dc3545';
-            toast(data.message, 'error');
+
+        // Show progress
+        progress.style.display = 'block';
+        let uploaded = 0;
+        let errors = 0;
+
+        for (let i = 0; i < imageFiles.length; i++) {
+            const img = imageFiles[i];
+            const pct = ((i + 1) / imageFiles.length * 100).toFixed(0);
+
+            progressText.textContent = '⏳ מעלה: ' + img.name;
+            progressCount.textContent = (i + 1) + ' / ' + imageFiles.length;
+            progressFill.style.width = pct + '%';
+
+            try {
+                // Extract as blob
+                const blob = await img.entry.async('blob');
+                const mimeTypes = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+                const imageFile = new File([blob], img.name, { type: mimeTypes[img.ext] || 'image/jpeg' });
+
+                // Upload individually
+                const fd = new FormData();
+                fd.append('background', imageFile);
+                fd.append('name', img.name.replace(/\.[^.]+$/, ''));
+
+                const res = await fetch(API_URL + '?action=upload_user_bg', {
+                    method: 'POST',
+                    headers: { 'X-Auth-Token': authToken },
+                    body: fd,
+                    credentials: 'include'
+                });
+                const data = await res.json();
+                if (data.success) uploaded++;
+                else errors++;
+            } catch (e) {
+                console.error('Failed to upload', img.name, e);
+                errors++;
+            }
         }
+
+        // Done
+        progressFill.style.width = '100%';
+        const msg = '✅ הועלו ' + uploaded + ' רקעים' + (errors ? ' (' + errors + ' שגיאות)' : '') + '!';
+        status.textContent = msg;
+        status.style.color = '#28a745';
+        progressText.textContent = msg;
+        toast(msg, 'success');
+        loadUserBackgrounds();
+
+        // Hide progress after 3 seconds
+        setTimeout(() => { progress.style.display = 'none'; }, 3000);
+
     } catch (e) {
-        console.error('ZIP upload error:', e);
-        status.textContent = '❌ שגיאה: ' + e.message;
+        console.error('ZIP error:', e);
+        status.textContent = '❌ שגיאה בקריאת ZIP: ' + e.message;
         status.style.color = '#dc3545';
-        toast('שגיאה בהעלאה: ' + e.message, 'error');
+        toast('שגיאה: ' + e.message, 'error');
     }
+
+    resetZipBtn();
+}
+
+function resetZipBtn() {
+    const btn = document.getElementById('zipBtn');
+    if (btn) { btn.style.pointerEvents = ''; btn.style.opacity = ''; }
 }
 
 /* ─── User Backgrounds ───────────────────────────── */
