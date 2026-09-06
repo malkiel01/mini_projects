@@ -911,7 +911,20 @@
                 </div>
             </div>
 
-            <h3>או בחרו מהגלריה:</h3>
+            <h3>העלאת רקעים מ-ZIP:</h3>
+            <div class="upload-zone" id="zipUploadZone" style="padding:16px">
+                <div>📦 גררו קובץ ZIP עם תמונות רקע או <strong>לחצו</strong></div>
+                <div style="font-size:0.8rem;margin-top:4px;color:#999">כל תמונה בתוך ה-ZIP תועלה כרקע</div>
+                <input type="file" id="zipFileInput" accept=".zip">
+            </div>
+
+            <h3>הרקעים שלי:</h3>
+            <div class="gallery" id="userBgGallery"></div>
+            <div id="userBgEmpty" style="text-align:center;color:#999;font-size:0.85rem;padding:12px;display:none">
+                עדיין לא הועלו רקעים — העלו תמונה או ZIP למעלה
+            </div>
+
+            <h3>רקעים מוכנים:</h3>
             <div class="gallery" id="bgGallery"></div>
         </div>
 
@@ -1572,6 +1585,126 @@ function initDragAndDrop() {
         fontZone.classList.remove('dragover');
         if (e.dataTransfer.files[0]) loadFontFile(e.dataTransfer.files[0]);
     };
+
+    // ZIP upload zone
+    const zipZone = document.getElementById('zipUploadZone');
+    const zipInput = document.getElementById('zipFileInput');
+    zipZone.onclick = () => zipInput.click();
+    zipInput.onchange = () => { if (zipInput.files[0]) uploadZipBackgrounds(zipInput.files[0]); };
+    zipZone.ondragover = e => { e.preventDefault(); zipZone.classList.add('dragover'); };
+    zipZone.ondragleave = () => zipZone.classList.remove('dragover');
+    zipZone.ondrop = e => {
+        e.preventDefault();
+        zipZone.classList.remove('dragover');
+        if (e.dataTransfer.files[0]) uploadZipBackgrounds(e.dataTransfer.files[0]);
+    };
+}
+
+/* ─── ZIP Background Upload ──────────────────────── */
+async function uploadZipBackgrounds(file) {
+    if (!authToken) { toast('התחבר כדי להעלות רקעים', 'error'); return; }
+    if (!file.name.toLowerCase().endsWith('.zip')) { toast('יש לבחור קובץ ZIP', 'error'); return; }
+
+    toast('מעלה רקעים מ-ZIP...');
+    const fd = new FormData();
+    fd.append('zipfile', file);
+    try {
+        const res = await fetch(API_URL + '?action=upload_user_bg_zip', {
+            method: 'POST',
+            headers: { 'X-Auth-Token': authToken },
+            body: fd,
+            credentials: 'include'
+        });
+        const data = await res.json();
+        if (data.success) {
+            toast(`הועלו ${data.added} רקעים! 🎉`, 'success');
+            loadUserBackgrounds();
+        } else {
+            toast(data.message, 'error');
+        }
+    } catch (e) {
+        toast('שגיאה בהעלאה', 'error');
+    }
+}
+
+/* ─── User Backgrounds ───────────────────────────── */
+async function loadUserBackgrounds() {
+    if (!authToken) {
+        document.getElementById('userBgEmpty').style.display = 'block';
+        return;
+    }
+    try {
+        const res = await fetch(API_URL + '?action=list_user_bgs', {
+            headers: { 'X-Auth-Token': authToken },
+            credentials: 'include'
+        });
+        const data = await res.json();
+        if (data.success) {
+            renderUserBackgrounds(data.backgrounds || []);
+        }
+    } catch (e) {}
+}
+
+function renderUserBackgrounds(bgs) {
+    const gallery = document.getElementById('userBgGallery');
+    const empty = document.getElementById('userBgEmpty');
+    gallery.innerHTML = '';
+
+    if (bgs.length === 0) {
+        empty.style.display = 'block';
+        return;
+    }
+    empty.style.display = 'none';
+
+    bgs.forEach(bg => {
+        const item = document.createElement('div');
+        item.className = 'gallery-item';
+        item.dataset.bgId = bg.id;
+
+        const img = document.createElement('img');
+        img.src = API_URL + '?action=get_user_bg&id=' + bg.id + '&token=' + authToken;
+        img.loading = 'lazy';
+        item.appendChild(img);
+
+        const label = document.createElement('div');
+        label.className = 'label';
+        label.innerHTML = escapeHtml(bg.name) + ' <span onclick="event.stopPropagation();deleteUserBg(\'' + bg.id + '\')" style="cursor:pointer;margin-right:4px" title="מחק">✕</span>';
+        item.appendChild(label);
+
+        item.onclick = () => {
+            // Load full image and set as background
+            const fullImg = new Image();
+            fullImg.onload = () => {
+                const c = document.createElement('canvas');
+                c.width = fullImg.naturalWidth;
+                c.height = fullImg.naturalHeight;
+                c.getContext('2d').drawImage(fullImg, 0, 0);
+                setBackground(c.toDataURL('image/jpeg', 0.95));
+                toast('נבחר רקע: ' + bg.name);
+            };
+            fullImg.crossOrigin = 'anonymous';
+            fullImg.src = API_URL + '?action=get_user_bg&id=' + bg.id + '&token=' + authToken;
+        };
+
+        gallery.appendChild(item);
+    });
+}
+
+async function deleteUserBg(id) {
+    if (!confirm('למחוק רקע זה?')) return;
+    try {
+        const res = await fetch(API_URL + '?action=delete_user_bg', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Auth-Token': authToken },
+            body: JSON.stringify({ id }),
+            credentials: 'include'
+        });
+        const data = await res.json();
+        if (data.success) {
+            toast('רקע נמחק');
+            loadUserBackgrounds();
+        }
+    } catch (e) {}
 }
 
 /* ─── Background Management ──────────────────────── */
@@ -1580,7 +1713,21 @@ function loadBackgroundFile(file) {
     if (file.size > 20 * 1024 * 1024) { toast('הקובץ גדול מדי (מקסימום 20MB)', 'error'); return; }
 
     const reader = new FileReader();
-    reader.onload = e => setBackground(e.target.result);
+    reader.onload = e => {
+        setBackground(e.target.result);
+        // Also save to user backgrounds if logged in
+        if (authToken) {
+            const fd = new FormData();
+            fd.append('background', file);
+            fd.append('name', file.name.replace(/\.[^.]+$/, ''));
+            fetch(API_URL + '?action=upload_user_bg', {
+                method: 'POST',
+                headers: { 'X-Auth-Token': authToken },
+                body: fd,
+                credentials: 'include'
+            }).then(() => loadUserBackgrounds()).catch(() => {});
+        }
+    };
     reader.readAsDataURL(file);
 }
 
@@ -2872,6 +3019,7 @@ function onAuthSuccess() {
     document.getElementById('userDisplayName').textContent = currentUser.displayName;
     toast('שלום ' + currentUser.displayName + '! 👋', 'success');
     loadContactsFromServer();
+    loadUserBackgrounds();
 }
 
 async function checkAuth() {
