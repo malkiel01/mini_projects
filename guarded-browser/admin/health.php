@@ -1,0 +1,176 @@
+<?php
+/**
+ * אבחון סביבה.
+ *
+ * ‏500 ריק אומר "משהו נשבר" ולא אומר מה, ובאחסון משותף אין גישה ללוג
+ * של PHP. המסך הזה עונה על השאלות שמפרידות בין תקלה בקוד לתקלה
+ * בסביבה, ומציג את יומן השגיאות שנרשם.
+ */
+declare(strict_types=1);
+require_once __DIR__ . '/../lib/auth.php';
+require_once __DIR__ . '/../lib/ui.php';
+
+$admin = requireAdmin();
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    checkCsrf();
+    if (($_POST['action'] ?? '') === 'clear_log') { @unlink(errorLogPath()); $msg = 'היומן נוקה'; }
+}
+
+/** בדיקה יחידה: שם, האם תקין, ומה נמצא בפועל. */
+function probe(string $name, bool $ok, string $detail, string $note = ''): array {
+    return ['name' => $name, 'ok' => $ok, 'detail' => $detail, 'note' => $note];
+}
+
+$pdo     = db();
+$sqlite  = $pdo->query('SELECT sqlite_version()')->fetchColumn();
+$cols    = array_column($pdo->query('PRAGMA table_info(policies)')->fetchAll(), 'name');
+$tables  = array_column($pdo->query("SELECT name FROM sqlite_master WHERE type='table'")->fetchAll(), 'name');
+$dbFile  = dataDir() . '/app.sqlite';
+
+$checks = [
+    probe('גרסת PHP', PHP_VERSION_ID >= 80000, PHP_VERSION, 'נדרש 8.0 ומעלה'),
+    // הקוד נכתב כך שיעבוד גם בגרסאות ישנות, ולכן זו הערה ולא כשל.
+    probe('גרסת SQLite', version_compare($sqlite, '3.7', '>='), $sqlite,
+          version_compare($sqlite, '3.24', '<')
+            ? 'גרסה ישנה מ-3.24 — הקוד נמנע מ-UPSERT ולכן זה תקין'
+            : ''),
+    probe('הרחבת PDO SQLite', in_array('sqlite', PDO::getAvailableDrivers(), true),
+          implode(', ', PDO::getAvailableDrivers())),
+    probe('cURL', function_exists('curl_init'), function_exists('curl_init') ? 'זמין' : 'חסר',
+          'נדרש כדי לזהות לאיזה ערוץ שייך סרטון ביוטיוב'),
+    probe('תיקיית הנתונים ניתנת לכתיבה', is_writable(dataDir()), dataDir()),
+    probe('קובץ בסיס הנתונים', is_writable($dbFile), $dbFile),
+    probe('כל הטבלאות קיימות',
+          count(array_intersect(['users','policies','rules','devices','usage','audit',
+                'category_rules','domain_categories','platform_rules','platform_items',
+                'video_owner'], $tables)) === 11,
+          implode(', ', $tables)),
+    probe('העמודות החדשות ב-policies',
+          in_array('posture', $cols, true) && in_array('blocked_types', $cols, true),
+          implode(', ', $cols),
+          'אם חסרות — המיגרציה לא רצה, וכל שמירת הרשאות תיכשל'),
+    probe('הקטלוג נזרע',
+          (int) $pdo->query('SELECT COUNT(*) FROM domain_categories')->fetchColumn() > 50,
+          $pdo->query('SELECT COUNT(*) FROM domain_categories')->fetchColumn() . ' סיווגים'),
+];
+
+/*
+ * בדיקה חיה מול יוטיוב.
+ *
+ * "לאשר ערוץ שלם" עומד או נופל על היכולת של השרת לשאול את יוטיוב
+ * לאיזה ערוץ שייך סרטון. באחסון משותף היציאה החוצה חסומה לא פעם,
+ * וזה נראה למשתמש כ"לא הצלחנו לוודא" בלי שום רמז לסיבה. הבדיקה
+ * רצה רק בלחיצה, כי היא איטית.
+ */
+$probeResult = null;
+if (($_POST['action'] ?? '') === 'probe_youtube') {
+    $t0 = microtime(true);
+    $info = fetchYouTubeOwner('dQw4w9WgXcQ');
+    $probeResult = $info + ['ms' => (int) round((microtime(true) - $t0) * 1000)];
+}
+
+$log  = is_file(errorLogPath()) ? (string) file_get_contents(errorLogPath()) : '';
+$csrf = csrfToken();
+
+layoutTop('אבחון', $admin);
+note($msg ?? '', 'ok');
+?>
+<div class="card">
+  <h2>סביבת השרת</h2>
+  <p class="hint">כל שורה אדומה כאן היא סיבה אפשרית לשגיאה 500.</p>
+  <table>
+    <thead><tr><th>בדיקה</th><th>מצב</th><th>מה נמצא</th></tr></thead>
+    <tbody>
+    <?php foreach ($checks as $c): ?>
+      <tr>
+        <td data-l="בדיקה"><?= h($c['name']) ?>
+          <?php if ($c['note'] !== ''): ?><br><small style="color:var(--dim)"><?= h($c['note']) ?></small><?php endif; ?>
+        </td>
+        <td data-l="מצב"><?= $c['ok'] ? '<span class="pill pill--ok">תקין</span>'
+                                       : '<span class="pill pill--stop">בעיה</span>' ?></td>
+        <td data-l="מה נמצא"><code><?= h(mb_substr($c['detail'], 0, 200)) ?></code></td>
+      </tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>גישה ליוטיוב</h2>
+  <p class="hint">
+    אישור ערוץ שלם דורש שהשרת ישאל את יוטיוב לאיזה ערוץ שייך כל סרטון.
+    אם היציאה מהשרת חסומה, זה ייראה למשתמש כ"לא הצלחנו לוודא".
+  </p>
+  <?php if ($probeResult !== null): ?>
+    <?php if ($probeResult['channel'] !== '' || $probeResult['handle'] !== ''): ?>
+      <div class="note note--ok">
+        השרת הגיע ליוטיוב (<?= (int) $probeResult['ms'] ?> מ״ש,
+        דרך <?= h($probeResult['via'] ?? '') ?>).
+        מזהה ערוץ: <code><?= h($probeResult['channel']) ?: '—' ?></code> ·
+        כינוי: <code><?= h($probeResult['handle']) ? '@' . h($probeResult['handle']) : '—' ?></code>
+      </div>
+    <?php else: ?>
+      <div class="note note--bad">
+        השרת לא הצליח לפענח (<?= (int) $probeResult['ms'] ?> מ״ש).
+        <?php if (!empty($probeResult['detail'])): ?>
+          <br><code><?= h($probeResult['detail']) ?></code>
+          <br><small>
+            ‏0 = לא הייתה תשובה כלל (יציאה חסומה) ·
+            ‏200 עם גוף גדול = התקבל דף, אך בלי זהות ערוץ — לרוב דף הסכמה לעוגיות.
+          </small>
+        <?php endif; ?>
+        <br>במצב הזה אפשר לאשר סרטונים אחד-אחד, אבל לא ערוץ שלם.
+      </div>
+    <?php endif; ?>
+  <?php endif; ?>
+  <form method="post">
+    <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+    <button class="btn btn--go" name="action" value="probe_youtube">בדיקה עכשיו</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>רישומי אבחון מהמכשיר</h2>
+  <p class="hint">
+    רצף האירועים שהאפליקציה הקליטה, עם מצב הדגלים בכל נקודה.
+    <br>לשליחה מהמכשיר: בדפדפן, <strong>לחיצה ארוכה על "חלון צף"</strong>.
+  </p>
+  <?php $traces = all('SELECT t.*, u.username FROM traces t
+                       LEFT JOIN users u ON u.id = t.user_id
+                       ORDER BY t.id DESC LIMIT 10');
+  if (!$traces): ?>
+    <p class="hint" style="margin:0">עדיין לא נשלח דבר.</p>
+  <?php else: foreach ($traces as $t): ?>
+    <details class="sec" style="margin-bottom:10px">
+      <summary>
+        <?= h(str_replace(['T','Z'], [' ',''], substr($t['at'], 0, 16))) ?>
+        <span class="sec-tag"><?= h($t['username'] ?? '—') ?> ·
+          <?= h($t['device']) ?> · API <?= (int) $t['sdk'] ?> ·
+          <?= h($t['label']) ?></span>
+      </summary>
+      <div class="sec-body">
+        <pre style="direction:ltr;text-align:left;white-space:pre;font-size:11.5px;
+                    background:var(--bg);padding:12px;border-radius:9px;
+                    overflow:auto;max-height:70vh"><?= h($t['body']) ?></pre>
+      </div>
+    </details>
+  <?php endforeach; endif; ?>
+</div>
+
+<div class="card">
+  <h2>יומן שגיאות</h2>
+  <p class="hint">
+    <?= $log === '' ? 'ריק — לא נרשמה שגיאה.' : 'השגיאות האחרונות. העתיקו ושלחו לי.' ?>
+  </p>
+  <?php if ($log !== ''): ?>
+    <pre style="direction:ltr;text-align:left;white-space:pre-wrap;font-size:12px;
+                background:var(--bg);padding:12px;border-radius:9px;overflow:auto;max-height:60vh"><?=
+      h(mb_substr($log, -12000)) ?></pre>
+    <form method="post" style="margin-top:12px">
+      <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+      <button class="btn btn--stop" name="action" value="clear_log">ניקוי היומן</button>
+    </form>
+  <?php endif; ?>
+</div>
+<?php layoutEnd();
