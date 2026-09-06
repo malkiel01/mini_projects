@@ -3423,41 +3423,104 @@ function updateContactsBadge() {
 
 /* ─── Phone Contacts Import (Contact Picker API) ── */
 
+/**
+ * שלושה מסלולי ייבוא, לפי מה שהסביבה מאפשרת:
+ *
+ * ‏1. באפליקציה — גשר נייטיב שקורא את ספר הטלפונים ישירות.
+ *    ‏Contact Picker API של הדפדפן אינו קיים ב-WebView כלל, ולכן
+ *    בלי המסלול הזה הכפתור באפליקציה פשוט לא היה עושה דבר.
+ * ‏2. בכרום אנדרואיד — בורר אנשי הקשר של הדפדפן.
+ * ‏3. בכל השאר — ייבוא מקובץ.
+ */
 async function importPhoneContacts() {
-    // Check if Contact Picker API is available (Android Chrome)
+    const android = window.GreetingCardsAndroid;
+
+    if (android?.readContacts) {
+        if (android.hasContactsPermission()) {
+            importContactsFromAndroid();
+        } else {
+            // הדיאלוג אינו חוסם; MainActivity מזריק את התשובה לכאן.
+            window.onContactsPermissionResult = granted => {
+                if (granted) importContactsFromAndroid();
+                else toast('ההרשאה לאנשי קשר נדחתה', 'error');
+            };
+            android.requestContactsPermission();
+        }
+        return;
+    }
+
     if ('contacts' in navigator && 'ContactsManager' in window) {
         try {
-            const props = ['name', 'tel', 'email'];
-            const opts = { multiple: true };
-            const contacts = await navigator.contacts.select(props, opts);
-
-            let added = 0;
-            contacts.forEach(c => {
-                const name = c.name?.[0] || '';
-                if (!name) return;
-                // Skip if already exists
-                if (state.contacts.find(x => x.name === name && x.phone === (c.tel?.[0] || ''))) return;
-                state.contacts.push({
-                    id: 'c_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-                    name,
-                    displayName: name,
-                    phone: c.tel?.[0] || '',
-                    email: c.email?.[0] || '',
-                    selected: true,
-                });
-                added++;
-            });
-
+            const picked = await navigator.contacts.select(['name', 'tel', 'email'], { multiple: true });
+            const added = addImportedContacts(picked.map(c => ({
+                name: c.name?.[0] || '',
+                phone: c.tel?.[0] || '',
+                email: c.email?.[0] || '',
+            })));
             renderContactsList();
             toast(`יובאו ${added} אנשי קשר מהטלפון`, 'success');
         } catch (e) {
             if (e.name !== 'TypeError') toast('הייבוא בוטל', 'error');
         }
-    } else {
-        // Fallback: show file upload dialog
-        toast('ייבוא מהטלפון זמין רק בכרום באנדרואיד. השתמשו בייבוא מקובץ.', 'error');
-        document.getElementById('contactsExcelInput').click();
+        return;
     }
+
+    toast('ייבוא ישיר אינו זמין כאן — בחרו קובץ', 'error');
+    document.getElementById('contactsExcelInput').click();
+}
+
+function importContactsFromAndroid() {
+    let result;
+    try {
+        result = JSON.parse(window.GreetingCardsAndroid.readContacts());
+    } catch (e) {
+        toast('שגיאה בקריאת אנשי הקשר', 'error');
+        return;
+    }
+
+    if (result.error) {
+        toast(result.error === 'permission_denied'
+            ? 'אין הרשאה לאנשי קשר'
+            : 'שגיאה בקריאת אנשי הקשר: ' + result.error, 'error');
+        return;
+    }
+
+    const found = result.contacts || [];
+    if (found.length === 0) {
+        toast('לא נמצאו אנשי קשר בטלפון', 'error');
+        return;
+    }
+
+    const added = addImportedContacts(found);
+    renderContactsList();
+    toast(added === 0
+        ? `כל ${found.length} אנשי הקשר כבר ברשימה`
+        : `יובאו ${added} אנשי קשר מהטלפון`, added === 0 ? '' : 'success');
+}
+
+/** מוסיף רק את מי שאינו ברשימה, ומחזיר כמה נוספו בפועל. */
+function addImportedContacts(incoming) {
+    let added = 0;
+    incoming.forEach(c => {
+        const name = (c.name || '').trim();
+        if (!name) return;
+        const phone = (c.phone || '').trim();
+        const digits = phone.replace(/\D/g, '');
+        const duplicate = state.contacts.some(x =>
+            x.name === name && x.phone.replace(/\D/g, '') === digits);
+        if (duplicate) return;
+
+        state.contacts.push({
+            id: 'c_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            name,
+            displayName: name,
+            phone,
+            email: (c.email || '').trim(),
+            selected: true,
+        });
+        added++;
+    });
+    return added;
 }
 
 /* ─── Contacts File Import (Excel/CSV/vCard) ────── */
