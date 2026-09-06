@@ -1,0 +1,585 @@
+/**
+ * דפדפן משובץ.
+ *
+ * מדביקים כתובת, והיא נפתחת בתוך הדף. אפשר כמה במקביל.
+ *
+ * הדבר שמפריד את זה מ-iframe שכתבתם בעצמכם: לפני ההטמעה השרת שואל את
+ * האתר אם הוא בכלל מרשה. ‏iframe שנחסם אינו מדווח דבר — הדפדפן פשוט מסרב
+ * לצייר, ונשאר מלבן ריק שלא אומר אם האתר איטי, הכתובת שגויה, או שהאתר
+ * חוסם. כאן התשובה מגיעה לפני שהמסגרת בכלל נוצרת.
+ */
+
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+
+const STORE = { saved: 'fb.saved', history: 'fb.history', panes: 'fb.panes', cols: 'fb.cols' };
+const MAX_HISTORY = 20;
+const LOAD_TIMEOUT = 15000;
+
+const state = { panes: [], cols: 1 };
+let nextId = 1;
+
+/* ── עזרים ─────────────────────────────────────────────────────── */
+
+function el(tag, props = {}, children = []) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k === 'text') n.textContent = v;
+    else if (k === 'class') n.className = v;
+    else if (k === 'dataset') Object.assign(n.dataset, v);
+    else if (k.startsWith('on')) n.addEventListener(k.slice(2).toLowerCase(), v);
+    else n.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of [].concat(children)) if (c) n.append(c);
+  return n;
+}
+
+function toast(msg, kind = '') {
+  const host = $('#toasts');
+  while (host.children.length >= 3) host.firstElementChild.remove();
+  const n = el('div', { class: `toast${kind ? ` toast--${kind}` : ''}`, text: msg });
+  host.append(n);
+  setTimeout(() => n.remove(), kind === 'error' ? 5000 : 2600);
+}
+
+/** אחסון מקומי נופל בגלישה פרטית ובחסימת אתרים — לא סיבה להפיל את הדף. */
+function load(key, fallback) {
+  try { return JSON.parse(localStorage.getItem(key)) ?? fallback; }
+  catch { return fallback; }
+}
+function save(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* אין מקום, ניחא */ }
+}
+
+/** משלים סכימה ומנקה. מה שהמשתמש מדביק לא תמיד כתובת מלאה. */
+function normalize(raw) {
+  const url = raw.trim();
+  if (!url) return '';
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
+}
+
+function hostOf(url) {
+  try { return new URL(url).host; } catch { return url; }
+}
+
+/* ── מסגרות ────────────────────────────────────────────────────── */
+
+function addPane(url = '') {
+  const pane = { id: nextId++, url, status: url ? 'checking' : 'empty',
+                 title: '', reason: '', advisory: '', view: 'normal', debug: null };
+  state.panes.push(pane);
+  render();
+  if (url) inspect(pane);
+  return pane;
+}
+
+/**
+ * משלים מסגרות ריקות עד למספר שהפריסה דורשת.
+ *
+ * פריסה של ארבע עם שלוש מסגרות נראית שבורה, וזה קורה גם בהחלפת פריסה
+ * וגם בטעינה מחדש — מסגרת ריקה אינה נשמרת, ולכן אין מה לשחזר.
+ */
+function ensurePanes() {
+  while (state.panes.length < state.cols) {
+    state.panes.push({ id: nextId++, url: '', status: 'empty', title: '', reason: '',
+                       advisory: '', view: 'normal', debug: null });
+  }
+}
+
+function closePane(id) {
+  state.panes = state.panes.filter((p) => p.id !== id);
+  if (!state.panes.length) addPane();
+  render();
+  persist();
+}
+
+function setPane(id, patch) {
+  const pane = state.panes.find((p) => p.id === id);
+  if (!pane) return;
+  Object.assign(pane, patch);
+  render();
+}
+
+/** שואל את השרת אם הכתובת ניתנת להטמעה, ורק אז יוצר את המסגרת. */
+async function inspect(pane) {
+  // מה שהוקלד, לפני שהפניה החליפה את הכתובת. בלי זה, פתיחה חוזרת של
+  // אותה כתובת שעברה הפניה נראית כמו כתובת חדשה ופותחת מסגרת כפולה.
+  setPane(pane.id, { status: 'checking', reason: '', title: '', requested: pane.url,
+                     debug: null, view: 'normal' });
+
+  try {
+    const res = await fetch(`./api.php?url=${encodeURIComponent(pane.url)}`);
+    const data = await res.json();
+
+    if (!data.success) return setPane(pane.id, { status: 'error', reason: data.error });
+
+    /*
+     * ‏verdict מפריד בין "האתר אוסר" (הכותרות אמרו זאת) לבין "לא הצלחנו
+     * לבדוק" — למשל שירות הגנה שחסם את השרת שלנו. במקרה השני מנסים
+     * להטמיע בכל זאת: הדפדפן של המשתמש עשוי לעבור במקום שהשרת נחסם.
+     */
+    setPane(pane.id, {
+      // הפניה מחליפה את הכתובת: עדיף שהשורה תראה לאן באמת הגענו.
+      url: data.url || pane.url,
+      title: data.title || '',
+      status: data.verdict || (data.framable ? 'ok' : 'blocked'),
+      reason: data.reason || '',
+      advisory: data.advisory || '',
+    });
+
+    remember(pane.url, data.title);
+  } catch (ex) {
+    setPane(pane.id, { status: 'error', reason: `הבדיקה נכשלה: ${ex.message}` });
+  }
+}
+
+/* ── אבחון ─────────────────────────────────────────────────────── */
+
+const VERDICT = {
+  ok:         { label: 'עבר',            cls: 'good' },
+  blocked:    { label: 'חוסם הטמעה',     cls: 'bad' },
+  challenge:  { label: 'שירות הגנה חסם', cls: 'warn' },
+  http_error: { label: 'שגיאת HTTP',     cls: 'warn' },
+  failed:     { label: 'לא הגיע',        cls: 'bad' },
+};
+
+async function toggleDebug(pane) {
+  if (pane.view === 'debug') return setPane(pane.id, { view: 'normal' });
+
+  setPane(pane.id, { view: 'debug' });
+  if (pane.debug) return;
+
+  try {
+    const res = await fetch(`./api.php?url=${encodeURIComponent(pane.url)}&deep=1`);
+    const data = await res.json();
+    setPane(pane.id, { debug: data.success ? data : { error: data.error } });
+  } catch (ex) {
+    setPane(pane.id, { debug: { error: `האבחון נכשל: ${ex.message}` } });
+  }
+}
+
+/** שורה אחת בטבלת הניסיונות. */
+function attemptRow(a) {
+  const v = VERDICT[a.verdict] || { label: a.verdict, cls: '' };
+
+  const facts = [];
+  if (a.status) facts.push(`HTTP ${a.status}`);
+  if (a.ms) facts.push(`${a.ms} מ״ש`);
+  if (a.bytes) facts.push(`${Math.round(a.bytes / 1024)}KB`);
+  if (a.server) facts.push(`שרת: ${a.server}`);
+
+  const headers = [];
+  if (a.xfo) headers.push(`X-Frame-Options: ${a.xfo}`);
+  if (a.csp) headers.push(`frame-ancestors: ${a.csp}`);
+  if (!a.xfo && !a.csp && a.status && a.status < 400) headers.push('לא נשלחה כותרת חסימה');
+
+  return el('div', { class: `dbg__row dbg__row--${v.cls}` }, [
+    el('div', { class: 'dbg__head' }, [
+      el('b', { text: a.name }),
+      el('span', { class: `dbg__badge dbg__badge--${v.cls}`, text: v.label }),
+    ]),
+    el('p', { class: 'dbg__why', text: a.why }),
+    facts.length ? el('p', { class: 'dbg__facts', dir: 'ltr', text: facts.join(' · ') }) : null,
+    ...headers.map((h) => el('code', { class: 'dbg__hdr', dir: 'ltr', text: h })),
+    a.title ? el('p', { class: 'dbg__facts', text: `כותרת: ${a.title}` }) : null,
+    a.reason ? el('p', { class: 'dbg__why', text: a.reason }) : null,
+  ]);
+}
+
+/**
+ * מסגרת פנימית שנמצאה בדף — עם כפתור שמנסה אותה כאן ועכשיו.
+ *
+ * שלושה מצבים ולא שניים, מאותה סיבה שבמסלול הראשי: מועמד שהבדיקה
+ * שלנו נחסמה עליו אינו מועמד חסום. לסמן אותו אדום ולא לתת כפתור זה
+ * להסתיר בדיוק את הנגן שהמשתמש מחפש — ולכן דווקא לו מגיע כפתור.
+ */
+function candidateRow(pane, c) {
+  const state = c.framable === true ? 'good' : c.framable === false ? 'bad' : 'warn';
+  const label = { good: 'ניתן להטמעה', bad: 'חסום', warn: 'לא ידוע' }[state];
+
+  const open = () => { pane.url = c.url; pane.advisory = c.reason || ''; inspect(pane); persist(); };
+
+  // גם מועמד שהכריז על עצמו חסום מקבל ניסיון, כמו "נסה בכל זאת"
+  // שבמסגרת עצמה — הבדיקה שלנו אינה חזקה מהדפדפן.
+  const button = {
+    good: () => el('button', { type: 'button', class: 'btn btn--primary', onclick: open },
+                   ['פתיחה כאן']),
+    warn: () => el('button', { type: 'button', class: 'btn btn--primary', onclick: open },
+                   ['נסו בכל זאת']),
+    bad:  () => el('button', { type: 'button', class: 'btn btn--ghost', onclick: open },
+                   ['לנסות בכל זאת']),
+  }[state]();
+
+  return el('div', { class: `dbg__row dbg__row--${state}` }, [
+    el('div', { class: 'dbg__head' }, [
+      el('code', { class: 'dbg__url', dir: 'ltr', text: c.url }),
+      el('span', { class: `dbg__badge dbg__badge--${state}`, text: label }),
+    ]),
+    c.title ? el('p', { class: 'dbg__why', text: c.title }) : null,
+    c.reason ? el('p', { class: 'dbg__why', text: c.reason }) : null,
+    button,
+  ]);
+}
+
+function debugPanel(pane) {
+  const back = el('button', { type: 'button', class: 'btn btn--ghost',
+    onclick: () => setPane(pane.id, { view: 'normal' }) }, ['חזרה']);
+
+  if (!pane.debug) {
+    return el('div', { class: 'dbg' }, [
+      el('div', { class: 'pane__note' }, [
+        el('div', { class: 'spinner' }),
+        el('p', { text: 'מנסה כמה שיטות מול האתר, וסורק את הדף אחרי מסגרות פנימיות…' }),
+      ]),
+    ]);
+  }
+
+  if (pane.debug.error) {
+    return el('div', { class: 'dbg' }, [el('p', { class: 'dbg__why', text: pane.debug.error }), back]);
+  }
+
+  const { attempts = [], candidates = [], conclusion = '' } = pane.debug;
+
+  // הגיעו לכאן מהכפתור שעל המסגרת — הצעד הבא נמצא בתחתית, אז מגלגלים אליו.
+  if (pane.focusPaste) {
+    pane.focusPaste = false;
+    setTimeout(() => $('.dbg__paste-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+  }
+
+  return el('div', { class: 'dbg' }, [
+    el('div', { class: 'dbg__top' }, [el('h3', { text: 'אבחון' }), back]),
+    conclusion ? el('p', { class: 'dbg__conclusion', text: conclusion }) : null,
+
+    el('h4', { class: 'dbg__title', text: `שיטות שנוסו (${attempts.length})` }),
+    ...attempts.map(attemptRow),
+
+    el('h4', { class: 'dbg__title', text: `מסגרות פנימיות בדף (${candidates.length})` }),
+    ...(candidates.length
+      ? candidates.map((c) => candidateRow(pane, c))
+      : [el('p', { class: 'dbg__why', text: 'לא נמצאו מסגרות פנימיות בדף שהתקבל.' })]),
+
+    pasteScanner(pane),
+  ]);
+}
+
+/**
+ * המוצא כששירות הגנה חוסם את השרת.
+ *
+ * הדפדפן של המשתמש כבר עבר את האתגר ורואה את הדף האמיתי; השרת לעולם
+ * לא יראה אותו. אז הוא מדביק את המקור, והחילוץ נעשה עליו. הנגן יושב
+ * לרוב בדומיין אחר שאינו מוגן כלל — ואותו כן אפשר לבדוק ולהטמיע.
+ */
+function pasteScanner(pane) {
+  const box = el('textarea', {
+    class: 'dbg__paste', rows: '4', dir: 'ltr', spellcheck: 'false',
+    placeholder: '<html> … הדביקו כאן את מקור הדף',
+  });
+
+  const out = el('div', { class: 'dbg__scan' });
+
+  const run = async () => {
+    const html = box.value.trim();
+    if (!html) return;
+    out.replaceChildren(el('p', { class: 'dbg__why', text: 'סורק…' }));
+    try {
+      const res = await fetch(`./api.php?url=${encodeURIComponent(pane.url)}&scan=1`,
+                              { method: 'POST', body: html });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+
+      out.replaceChildren(
+        el('p', { class: 'dbg__conclusion', text: data.conclusion }),
+        ...data.candidates.map((c) => candidateRow(pane, c)),
+      );
+    } catch (ex) {
+      out.replaceChildren(el('p', { class: 'dbg__why', text: `הסריקה נכשלה: ${ex.message}` }));
+    }
+  };
+
+  return el('div', { class: 'dbg__paste-wrap' }, [
+    el('h4', { class: 'dbg__title', text: 'מצאו את הנגן ידנית' }),
+    el('p', { class: 'dbg__why', text:
+      'כששירות הגנה חוסם את השרת, רק הדפדפן שלכם רואה את הדף האמיתי. פתחו אותו ' +
+      'בלשונית, העתיקו את מקור הדף, והדביקו כאן — אחפש בו את המסגרות הפנימיות.' }),
+    el('p', { class: 'dbg__facts', text:
+      'במחשב: Ctrl+U ואז Ctrl+A, Ctrl+C · באנדרואיד: הוסיפו view-source: לפני הכתובת' }),
+    box,
+    el('button', { type: 'button', class: 'btn btn--primary', onclick: run }, ['סריקת הקוד']),
+    out,
+  ]);
+}
+
+/* ── תצוגה ─────────────────────────────────────────────────────── */
+
+function paneToolbar(pane) {
+  const addr = el('input', {
+    type: 'text', inputmode: 'url', class: 'pane__addr', dir: 'ltr',
+    value: pane.url, spellcheck: 'false',
+    placeholder: 'כתובת…',
+    onkeydown: (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const url = normalize(e.target.value);
+      if (url) { pane.url = url; pane.advisory = ''; inspect(pane); persist(); }
+    },
+  });
+
+  const tools = [
+    el('button', {
+      type: 'button', class: `icon-btn${pane.view === 'debug' ? ' is-on' : ''}`,
+      title: 'אבחון: מה השרת ניסה ומה קיבל',
+      onclick: () => pane.url && toggleDebug(pane),
+    }, ['🔍']),
+    el('button', { type: 'button', class: 'icon-btn', title: 'טעינה מחדש',
+      onclick: () => pane.url && inspect(pane) }, ['⟳']),
+    el('a', { class: 'icon-btn', href: pane.url || '#', target: '_blank', rel: 'noopener noreferrer',
+      title: 'פתיחה בלשונית חדשה' }, ['↗']),
+    el('button', { type: 'button', class: 'icon-btn', title: 'שמירה',
+      onclick: () => { if (pane.url) { addSaved(pane.url, pane.title); toast('נשמר', 'ok'); } } }, ['★']),
+    el('button', { type: 'button', class: 'icon-btn', title: 'סגירה',
+      onclick: () => closePane(pane.id) }, ['✕']),
+  ];
+
+  return el('div', { class: 'pane__bar' }, [addr, el('div', { class: 'pane__tools' }, tools)]);
+}
+
+/**
+ * מה שמוצג בתוך המסגרת בכל מצב.
+ *
+ * מצב חסום אינו הודעת שגיאה אלא מסך עם מוצא: הסיבה, ולחצן שפותח את
+ * הדף בלשונית — שם הוא כן ייפתח.
+ */
+function paneBody(pane) {
+  if (pane.view === 'debug') return debugPanel(pane);
+
+  if (pane.status === 'empty') {
+    return el('div', { class: 'pane__note' }, [
+      el('p', { text: 'הדביקו כתובת בשורה שמעל, או בחרו קישור שמור.' }),
+    ]);
+  }
+
+  if (pane.status === 'checking') {
+    return el('div', { class: 'pane__note' }, [
+      el('div', { class: 'spinner' }),
+      el('p', { text: `בודק אם ${hostOf(pane.url)} מרשה הטמעה…` }),
+    ]);
+  }
+
+  if (pane.status === 'blocked' || pane.status === 'error') {
+    const isBlocked = pane.status === 'blocked';
+    return el('div', { class: 'pane__note pane__note--stop' }, [
+      el('div', { class: 'pane__icon', text: isBlocked ? '⛔' : '⚠' }),
+      el('h3', { text: isBlocked ? `${hostOf(pane.url)} אינו מרשה הטמעה` : 'לא הצלחתי לבדוק' }),
+      el('p', { text: pane.reason }),
+      el('div', { class: 'row' }, [
+        el('a', { class: 'btn btn--primary', href: pane.url, target: '_blank', rel: 'noopener noreferrer',
+          text: 'פתיחה בלשונית חדשה' }),
+        el('button', { type: 'button', class: 'btn btn--ghost', onclick: () => toggleDebug(pane) },
+          ['בדיקה מעמיקה']),
+        // הבדיקה שלנו אינה חזקה מהדפדפן. כשהיא לא בטוחה — שהמשתמש יראה בעצמו.
+        el('button', {
+          type: 'button', class: 'btn btn--ghost',
+          onclick: () => setPane(pane.id, { status: 'ok', advisory: 'הוטמע בכפייה, בניגוד לתוצאת הבדיקה.' }),
+        }, ['נסה להטמיע בכל זאת']),
+      ]),
+      isBlocked ? el('p', { class: 'hint', text: 'זו החלטה של האתר, ולא משהו שאפשר לעקוף מכאן.' }) : null,
+    ]);
+  }
+
+  /*
+   * ‏sandbox מגביל את מה שהדף המוטמע רשאי לעשות. allow-same-origin נשאר
+   * כי בלעדיו אתרים רבים לא מתפקדים (עוגיות ואחסון), והוא בטוח כאן:
+   * הסכנה שבצירוף allow-scripts היא רק כשמטמיעים תוכן מהאתר שלנו עצמו.
+   * allow-top-navigation לא ניתן בכוונה — דף מוטמע לא יחטוף את הלשונית.
+   */
+  const frame = el('iframe', {
+    class: 'pane__frame',
+    src: pane.url,
+    referrerpolicy: 'no-referrer-when-downgrade',
+    sandbox: 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox',
+    allow: 'fullscreen; clipboard-write',
+    loading: 'lazy',
+  });
+
+  // לא נטען בזמן סביר. במצב "לא בטוח" זו התשובה שחיכינו לה, ובמצב
+  // "מותר" זו חסימה שנעשתה בשכבת ה-JS ולא בכותרות.
+  const timer = setTimeout(() => {
+    if (frame.dataset.loaded) return;
+    setPane(pane.id, {
+      status: 'blocked',
+      reason: pane.status === 'unsure'
+        ? 'הדף לא נטען. סביר שהאתר חוסם הטמעה, ושירות ההגנה שלו מנע מאיתנו לוודא זאת מראש.'
+        : 'האתר אישר הטמעה בכותרות, אך הדף לא נטען — ייתכן שהחסימה נעשית בקוד של האתר.',
+    });
+  }, LOAD_TIMEOUT);
+  frame.addEventListener('load', () => { frame.dataset.loaded = '1'; clearTimeout(timer); });
+
+  if (!pane.advisory) return frame;
+
+  /*
+   * מסגרת שנחסמה עדיין מפעילה load — הדפדפן טוען לתוכה דף שגיאה משלו.
+   * לכן אי אפשר לזהות מ-JS שהיא ריקה, והמשתמש נשאר מול ריבוע אפור בלי
+   * לדעת מה עכשיו. במקום לנחש, נותנים לו את הצעד הבא ליד ההסתייגות.
+   */
+  return el('div', { class: 'pane__stack' }, [
+    el('div', { class: 'pane__advisory' }, [
+      el('span', { text: `⚠ ${pane.advisory}` }),
+      el('a', { class: 'pane__advisory-link', href: pane.url, target: '_blank',
+                rel: 'noopener noreferrer', text: 'פתיחה בלשונית' }),
+      el('button', {
+        type: 'button', class: 'pane__advisory-btn',
+        onclick: () => { pane.focusPaste = true; toggleDebug(pane); },
+      }, ['לא רואים תוכן? מצאו את הנגן הפנימי']),
+    ]),
+    frame,
+  ]);
+}
+
+function render() {
+  $('#grid').dataset.cols = String(state.cols);
+  $('#grid').replaceChildren(...state.panes.map((pane) => {
+    const title = pane.title && pane.status === 'ok' ? pane.title : '';
+    return el('section', { class: `pane pane--${pane.status}` }, [
+      paneToolbar(pane),
+      title ? el('div', { class: 'pane__title', text: title }) : null,
+      paneBody(pane),
+    ]);
+  }));
+  renderQuick();
+}
+
+/* ── שמורים והיסטוריה ──────────────────────────────────────────── */
+
+function addSaved(url, name = '') {
+  const saved = load(STORE.saved, []);
+  if (saved.some((s) => s.url === url)) return;
+  saved.unshift({ url, name: name || hostOf(url) });
+  save(STORE.saved, saved.slice(0, 60));
+  renderQuick();
+  renderSaved();
+}
+
+function remember(url, title) {
+  const history = load(STORE.history, []).filter((h) => h.url !== url);
+  history.unshift({ url, name: title || hostOf(url), at: Date.now() });
+  save(STORE.history, history.slice(0, MAX_HISTORY));
+}
+
+function open(url) {
+  // כתובת שכבר פתוחה נטענת מחדש במקומה. בלי זה, לחיצה חוזרת על אותו
+  // קיצור מייצרת עוד ועוד מסגרות זהות.
+  const same = state.panes.find((p) => p.url === url || p.requested === url);
+  if (same) { inspect(same); return; }
+
+  // אחרת: המסגרת הריקה הראשונה, ואם אין — חדשה.
+  const target = state.panes.find((p) => p.status === 'empty');
+  if (target) { target.url = url; inspect(target); }
+  else addPane(url);
+  persist();
+}
+
+function renderQuick() {
+  const saved = load(STORE.saved, []);
+  const recent = load(STORE.history, []).filter((h) => !saved.some((s) => s.url === h.url));
+
+  $('#quick').replaceChildren(
+    ...saved.slice(0, 8).map((s) => el('button', {
+      type: 'button', class: 'chip chip--saved', title: s.url,
+      text: `★ ${s.name}`, onclick: () => open(s.url),
+    })),
+    ...recent.slice(0, 6).map((h) => el('button', {
+      type: 'button', class: 'chip', title: h.url,
+      text: h.name, onclick: () => open(h.url),
+    })),
+  );
+}
+
+function renderSaved() {
+  const saved = load(STORE.saved, []);
+  $('#savedList').replaceChildren(...(saved.length ? saved.map((s, i) => el('div', { class: 'saverow' }, [
+    el('button', { type: 'button', class: 'saverow__open', onclick: () => { open(s.url); $('#saved').close(); } }, [
+      el('b', { text: s.name }),
+      el('span', { class: 'hint', dir: 'ltr', text: s.url }),
+    ]),
+    el('button', { type: 'button', class: 'icon-btn', title: 'מחיקה', onclick: () => {
+      const list = load(STORE.saved, []);
+      list.splice(i, 1);
+      save(STORE.saved, list);
+      renderSaved(); renderQuick();
+    } }, ['✕']),
+  ])) : [el('p', { class: 'hint', text: 'אין עדיין קישורים שמורים.' })]));
+
+  const history = load(STORE.history, []);
+  $('#historyList').replaceChildren(...(history.length ? history.map((h) => el('div', { class: 'saverow' }, [
+    el('button', { type: 'button', class: 'saverow__open', onclick: () => { open(h.url); $('#saved').close(); } }, [
+      el('b', { text: h.name }),
+      el('span', { class: 'hint', dir: 'ltr', text: h.url }),
+    ]),
+    el('button', { type: 'button', class: 'icon-btn', title: 'שמירה',
+      onclick: () => { addSaved(h.url, h.name); toast('נשמר', 'ok'); } }, ['★']),
+  ])) : [el('p', { class: 'hint', text: 'עוד לא נפתחו כתובות.' })]));
+}
+
+/* ── שמירת מצב ─────────────────────────────────────────────────── */
+
+function persist() {
+  save(STORE.panes, state.panes.map((p) => p.url).filter(Boolean));
+  save(STORE.cols, state.cols);
+}
+
+/* ── אירועים ───────────────────────────────────────────────────── */
+
+$('#omniForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const url = normalize($('#omni').value);
+  if (!url) return;
+  open(url);
+  $('#omni').value = '';
+});
+
+$('#layoutSeg').addEventListener('click', (e) => {
+  const btn = e.target.closest('.seg__btn');
+  if (!btn) return;
+  $$('.seg__btn').forEach((b) => b.classList.toggle('is-active', b === btn));
+  state.cols = Number(btn.dataset.cols);
+
+  ensurePanes();
+  render();
+  persist();
+});
+
+$('#savedBtn').addEventListener('click', () => { renderSaved(); $('#saved').showModal(); });
+$('#helpBtn').addEventListener('click', () => $('#help').showModal());
+$$('[data-close]').forEach((b) => b.addEventListener('click', () => $(`#${b.dataset.close}`).close()));
+
+$('#saveForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const url = normalize($('#sUrl').value);
+  if (!url) return;
+  addSaved(url, $('#sName').value.trim());
+  $('#sUrl').value = ''; $('#sName').value = '';
+  toast('נשמר', 'ok');
+});
+
+$('#clearHistory').addEventListener('click', () => {
+  save(STORE.history, []);
+  renderSaved(); renderQuick();
+  toast('ההיסטוריה נוקתה', 'ok');
+});
+
+/* ── פתיחה ─────────────────────────────────────────────────────── */
+
+state.cols = load(STORE.cols, 1);
+$$('.seg__btn').forEach((b) => b.classList.toggle('is-active', Number(b.dataset.cols) === state.cols));
+
+const restored = load(STORE.panes, []);
+restored.forEach((url) => addPane(url));
+ensurePanes();
+if (!state.panes.length) addPane();
+
+// כתובת בשורת הכתובת של הדף עצמו: ?url=... פותחת אותה מיד.
+const wanted = new URLSearchParams(location.search).get('url');
+if (wanted) open(normalize(wanted));
+
+render();

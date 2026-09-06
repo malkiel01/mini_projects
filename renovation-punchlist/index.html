@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>השלמות לשיפוץ</title>
+<meta name="description" content="ניהול רשימת הפינישים שנשארו בשיפוץ — תמונה או סרטון, תיאור, אחראי ומעקב ביצוע.">
+<meta name="theme-color" content="#0f172a">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./assets/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./assets/icons/icon.svg">
+<link rel="stylesheet" href="./assets/css/app.css">
+</head>
+<body>
+
+<header class="app-bar">
+  <div class="app-bar__heading">
+    <h1>השלמות לשיפוץ</h1>
+    <p class="app-bar__sub" id="projectName">רשימת הפינישים שנשארו</p>
+  </div>
+  <div class="app-bar__actions">
+    <button type="button" id="syncBtn" class="icon-btn" title="סנכרון" hidden>
+      <span aria-hidden="true">⟳</span><span class="sr-only">סנכרון</span>
+    </button>
+    <button type="button" id="settingsBtn" class="icon-btn" title="הגדרות">
+      <span aria-hidden="true">⚙</span><span class="sr-only">הגדרות</span>
+    </button>
+  </div>
+</header>
+
+<section class="progress" aria-label="התקדמות">
+  <div class="progress__track"><div class="progress__fill" id="progressFill"></div></div>
+  <div class="progress__stats" id="progressStats">אין עדיין השלמות</div>
+</section>
+
+<div class="toolbar">
+  <div class="toolbar__search">
+    <input type="search" id="search" placeholder="חיפוש בתיאור, אחראי או מיקום…" autocomplete="off">
+  </div>
+
+  <div class="chips" id="statusChips" role="group" aria-label="סינון לפי סטטוס">
+    <button type="button" class="chip is-active" data-status="all">הכול</button>
+    <button type="button" class="chip" data-status="open">פתוח</button>
+    <button type="button" class="chip" data-status="progress">בתהליך</button>
+    <button type="button" class="chip" data-status="done">בוצע</button>
+  </div>
+
+  <div class="toolbar__selects">
+    <label class="field field--inline">
+      <span>אחראי</span>
+      <select id="filterAssignee"><option value="">כולם</option></select>
+    </label>
+    <label class="field field--inline">
+      <span>מיקום</span>
+      <select id="filterLocation"><option value="">הכול</option></select>
+    </label>
+    <label class="field field--inline">
+      <span>מיון</span>
+      <select id="sortBy">
+        <option value="created-desc">נוספו לאחרונה</option>
+        <option value="created-asc">הישנות קודם</option>
+        <option value="due">לפי תאריך יעד</option>
+        <option value="priority">דחופות קודם</option>
+        <option value="location">לפי מיקום</option>
+      </select>
+    </label>
+  </div>
+</div>
+
+<main class="list" id="list" aria-live="polite"></main>
+
+<p class="empty" id="empty" hidden></p>
+
+<button type="button" class="fab" id="addBtn">
+  <span aria-hidden="true">＋</span> השלמה חדשה
+</button>
+
+<!-- ── עורך ההשלמה ──────────────────────────────────────────────── -->
+<dialog class="sheet" id="editor">
+  <form method="dialog" class="sheet__inner" id="editorForm">
+    <header class="sheet__head">
+      <h2 id="editorTitle">השלמה חדשה</h2>
+      <button type="button" class="icon-btn" data-close="editor" title="סגירה">
+        <span aria-hidden="true">✕</span><span class="sr-only">סגירה</span>
+      </button>
+    </header>
+
+    <div class="sheet__body">
+      <label class="field">
+        <span>תיאור קצר <b class="req">*</b></span>
+        <input type="text" id="fTitle" required maxlength="120" placeholder="למשל: חסר סף אלומיניום בכניסה לממ״ד">
+      </label>
+
+      <label class="field">
+        <span>תיאור מפורט</span>
+        <textarea id="fDetails" rows="4" placeholder="מה בדיוק צריך לעשות, איזה חומר, הערות מהסיור…"></textarea>
+      </label>
+
+      <div class="field-row">
+        <label class="field">
+          <span>על מי מוטל</span>
+          <input type="text" id="fAssignee" list="assigneeList" placeholder="שם בעל המקצוע">
+          <datalist id="assigneeList"></datalist>
+        </label>
+        <label class="field">
+          <span>מיקום</span>
+          <input type="text" id="fLocation" list="locationList" placeholder="חדר / אזור">
+          <datalist id="locationList"></datalist>
+        </label>
+      </div>
+
+      <div class="field-row">
+        <label class="field">
+          <span>סטטוס</span>
+          <select id="fStatus">
+            <option value="open">פתוח</option>
+            <option value="progress">בתהליך</option>
+            <option value="done">בוצע</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>עדיפות</span>
+          <select id="fPriority">
+            <option value="normal">רגילה</option>
+            <option value="high">דחוף</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>תאריך יעד</span>
+          <input type="date" id="fDue">
+        </label>
+      </div>
+
+      <div class="field">
+        <span>תמונות וסרטונים</span>
+        <div class="media-add">
+          <label class="btn btn--ghost">
+            <span aria-hidden="true">📷</span> צילום
+            <input type="file" id="fCapture" accept="image/*" capture="environment" multiple hidden>
+          </label>
+          <label class="btn btn--ghost">
+            <span aria-hidden="true">🎬</span> סרטון
+            <input type="file" id="fVideo" accept="video/*" capture="environment" hidden>
+          </label>
+          <label class="btn btn--ghost">
+            <span aria-hidden="true">🖼</span> מהגלריה
+            <input type="file" id="fPick" accept="image/*,video/*" multiple hidden>
+          </label>
+        </div>
+        <div class="media-grid" id="mediaGrid"></div>
+        <p class="hint" id="mediaHint" hidden></p>
+      </div>
+    </div>
+
+    <footer class="sheet__foot">
+      <button type="button" class="btn btn--danger-ghost" id="deleteBtn" hidden>מחיקה</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn btn--ghost" data-close="editor">ביטול</button>
+      <button type="submit" class="btn btn--primary" id="saveBtn">שמירה</button>
+    </footer>
+  </form>
+</dialog>
+
+<!-- ── הגדרות ───────────────────────────────────────────────────── -->
+<dialog class="sheet" id="settings">
+  <div class="sheet__inner">
+    <header class="sheet__head">
+      <h2>הגדרות</h2>
+      <button type="button" class="icon-btn" data-close="settings" title="סגירה">
+        <span aria-hidden="true">✕</span><span class="sr-only">סגירה</span>
+      </button>
+    </header>
+
+    <div class="sheet__body">
+      <label class="field">
+        <span>שם הפרויקט</span>
+        <input type="text" id="sProject" placeholder="דירה ברחוב…" maxlength="80">
+      </label>
+
+      <label class="switch">
+        <input type="checkbox" id="sCompress" checked>
+        <span>
+          כיווץ תמונות לפני שמירה
+          <small>מקטין צילומי מצלמה ל‑1600px. מומלץ — אחרת עשרות תמונות ממלאות את האחסון.</small>
+        </span>
+      </label>
+
+      <hr>
+
+      <h3>סנכרון בין מכשירים <small class="tag">אופציונלי</small></h3>
+      <p class="hint">
+        האפליקציה עובדת במלואה בלי שרת. הגדרת כתובת מפעילה שיתוף של אותה רשימה
+        בין כל מי שמשתמש באותו אסימון — בעל הבית, הקבלן ובעלי המקצוע.
+      </p>
+
+      <label class="field">
+        <span>כתובת השרת</span>
+        <input type="url" id="sUrl" dir="ltr" placeholder="https://example.com/renovation-punchlist/">
+      </label>
+      <label class="field">
+        <span>אסימון גישה</span>
+        <input type="password" id="sToken" dir="ltr" autocomplete="off" placeholder="אותו אסימון שהוגדר בשרת">
+      </label>
+      <label class="switch">
+        <input type="checkbox" id="sAutoSync">
+        <span>סנכרון אוטומטי אחרי כל שינוי</span>
+      </label>
+
+      <div class="btn-row">
+        <button type="button" class="btn btn--ghost" id="testBtn">בדיקת חיבור</button>
+        <button type="button" class="btn btn--primary" id="syncNowBtn">סנכרון עכשיו</button>
+      </div>
+      <p class="hint" id="syncStatus"></p>
+
+      <hr>
+
+      <h3>גיבוי מקומי</h3>
+      <p class="hint">קובץ JSON יחיד עם כל ההשלמות והמדיה. שימושי להעברה חד־פעמית בלי שרת.</p>
+      <div class="btn-row">
+        <button type="button" class="btn btn--ghost" id="exportBtn">ייצוא</button>
+        <label class="btn btn--ghost">
+          ייבוא
+          <input type="file" id="importInput" accept="application/json,.json" hidden>
+        </label>
+      </div>
+
+      <hr>
+
+      <p class="hint" id="storageInfo"></p>
+      <button type="button" class="btn btn--danger-ghost" id="wipeBtn">מחיקת כל הנתונים במכשיר</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ── מציג מדיה ────────────────────────────────────────────────── -->
+<div class="lightbox" id="lightbox" hidden>
+  <button type="button" class="lightbox__close" id="lightboxClose" title="סגירה">
+    <span aria-hidden="true">✕</span><span class="sr-only">סגירה</span>
+  </button>
+  <div class="lightbox__stage" id="lightboxStage"></div>
+  <p class="lightbox__caption" id="lightboxCaption"></p>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script type="module" src="./assets/js/app.js"></script>
+</body>
+</html>

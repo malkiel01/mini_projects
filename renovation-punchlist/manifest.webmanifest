@@ -1,0 +1,27 @@
+{
+  "name": "השלמות לשיפוץ",
+  "short_name": "השלמות",
+  "description": "ניהול רשימת הפינישים שנשארו בשיפוץ — תמונה או סרטון, תיאור, אחראי ומעקב ביצוע.",
+  "lang": "he",
+  "dir": "rtl",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f4f6fb",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "./assets/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/icons/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

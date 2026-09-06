@@ -1,0 +1,9 @@
+# חסימת גישה ישירה לתיקייה: config.json מכיל את אסימון הגישה,
+# והמדיה מוגשת דרך api.php אחרי בדיקת אסימון בלבד.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>

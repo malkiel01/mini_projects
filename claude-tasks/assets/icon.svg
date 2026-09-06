@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="מטלות לקלוד">
+  <rect width="512" height="512" rx="112" fill="#16213e"/>
+  <rect x="120" y="112" width="272" height="288" rx="26" fill="#f8fafc"/>
+  <g fill="none" stroke="#4f46e5" stroke-width="20" stroke-linecap="round">
+    <path d="M168 186h60M168 256h60M168 326h60"/>
+  </g>
+  <g fill="none" stroke="#16a34a" stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M268 186l22 22 54-58"/>
+  </g>
+  <g fill="none" stroke="#dc2626" stroke-width="20" stroke-linecap="round">
+    <path d="M268 256h76M268 326h48"/>
+  </g>
+</svg>
