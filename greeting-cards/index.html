@@ -1280,6 +1280,37 @@
             </div>
         </div>
 
+        <!-- WhatsApp Send (Android app only) -->
+        <div id="whatsappSendSection" class="card" style="display:none;border:2px solid #25D366;background:#f0fff4">
+            <h2 style="color:#25D366">📲 שליחה ב-WhatsApp</h2>
+            <p style="color:#666;margin-bottom:12px">שליחה אוטומטית של הכרטיסים ישירות ב-WhatsApp לכל נמען עם מספר טלפון.</p>
+
+            <div id="whatsappChecks" style="margin-bottom:12px"></div>
+
+            <div class="row" style="margin-bottom:12px">
+                <div class="form-group">
+                    <label>שלח דרך:</label>
+                    <select id="whatsappPackageSelect"></select>
+                </div>
+                <div class="form-group">
+                    <label>השהיה בין שליחות (שניות):</label>
+                    <input type="number" id="sendDelay" value="3" min="1" max="30">
+                </div>
+            </div>
+
+            <div class="btn-group" style="justify-content:center">
+                <button class="btn btn-success" id="whatsappSendBtn" onclick="startWhatsAppSend()"
+                        style="font-size:1.1rem;padding:14px 40px;background:#25D366">
+                    📲 שלח ב-WhatsApp
+                </button>
+            </div>
+
+            <div id="whatsappProgress" style="display:none;margin-top:16px">
+                <div class="progress-text" id="whatsappProgressText"></div>
+                <div class="progress-bar"><div class="fill" id="whatsappProgressFill" style="width:0"></div></div>
+            </div>
+        </div>
+
         <div class="btn-group" style="justify-content:center">
             <button class="btn btn-outline" onclick="switchStep(4)">← חזרה לנמענים</button>
         </div>
@@ -3547,6 +3578,137 @@ checkAuth();
 // Handle Enter key in auth forms
 document.getElementById('loginPass')?.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
 document.getElementById('regPass')?.addEventListener('keydown', e => { if (e.key === 'Enter') doRegister(); });
+
+/* ═══════════════════════════════════════════════════
+   WHATSAPP SEND (Android Bridge)
+   ═══════════════════════════════════════════════════ */
+
+function isInAndroidApp() {
+    return typeof window.GreetingCardsAndroid !== 'undefined';
+}
+
+function initWhatsAppSection() {
+    if (!isInAndroidApp()) return;
+
+    const section = document.getElementById('whatsappSendSection');
+    section.style.display = 'block';
+
+    const checks = document.getElementById('whatsappChecks');
+    const whatsappAvailable = window.GreetingCardsAndroid.isWhatsAppAvailable();
+    const accessibilityEnabled = window.GreetingCardsAndroid.isAccessibilityServiceEnabled();
+    const withPhone = getRecipientsWithPhone().length;
+
+    let html = '';
+    html += `<div style="color:${whatsappAvailable ? '#28a745' : '#dc3545'}">
+        ${whatsappAvailable ? '✅' : '❌'} WhatsApp ${whatsappAvailable ? 'מותקן' : 'אינו מותקן'}
+    </div>`;
+    html += `<div style="color:${accessibilityEnabled ? '#28a745' : '#dc3545'}">
+        ${accessibilityEnabled ? '✅' : '❌'} שירות נגישות ${accessibilityEnabled ? 'פעיל' : 'לא פעיל'}
+        ${!accessibilityEnabled ? '<button class="btn btn-sm btn-outline" onclick="window.GreetingCardsAndroid.openAccessibilitySettings()" style="margin-right:8px">הפעל</button>' : ''}
+    </div>`;
+    html += `<div style="color:${withPhone > 0 ? '#28a745' : '#dc3545'}">
+        ${withPhone > 0 ? '✅' : '⚠️'} ${withPhone} נמענים עם מספר טלפון
+    </div>`;
+    checks.innerHTML = html;
+
+    document.getElementById('whatsappSendBtn').disabled = !whatsappAvailable || !accessibilityEnabled || withPhone === 0;
+
+    // Populate WhatsApp package selector
+    try {
+        const packages = JSON.parse(window.GreetingCardsAndroid.getWhatsAppPackages());
+        const select = document.getElementById('whatsappPackageSelect');
+        select.innerHTML = '';
+        packages.forEach(pkg => {
+            const opt = document.createElement('option');
+            opt.value = pkg.packageName;
+            opt.textContent = pkg.label;
+            select.appendChild(opt);
+        });
+    } catch (e) {}
+}
+
+function getRecipientsWithPhone() {
+    // Try contacts first
+    const selected = state.contacts.filter(c => c.selected && c.phone);
+    if (selected.length > 0) return selected;
+    // Fallback: check recipients for phone column
+    return state.recipients.filter(r => {
+        const phoneCol = Object.keys(r).find(k => /טלפון|phone|tel|נייד/i.test(k));
+        return phoneCol && r[phoneCol];
+    });
+}
+
+async function startWhatsAppSend() {
+    if (!state.backgroundImage) { toast('יש לבחור תמונת רקע', 'error'); return; }
+
+    const selectedContacts = state.contacts.filter(c => c.selected && c.phone);
+    const recipients = state.recipients.length > 0 ? state.recipients : [{}];
+    const listColumns = getListColumns();
+    const whatsappPackage = document.getElementById('whatsappPackageSelect').value;
+    const delay = parseInt(document.getElementById('sendDelay').value) || 3;
+
+    const sendList = [];
+    const progressDiv = document.getElementById('whatsappProgress');
+    const progressText = document.getElementById('whatsappProgressText');
+    const progressFill = document.getElementById('whatsappProgressFill');
+    progressDiv.style.display = 'block';
+
+    // Build send list — match recipients to contacts with phone numbers
+    for (let i = 0; i < recipients.length; i++) {
+        const recipient = recipients[i];
+        const nameValue = listColumns.length > 0 ? recipient[listColumns[0]] : '';
+        const contact = selectedContacts.find(c => c.displayName === nameValue);
+
+        if (!contact || !contact.phone) continue;
+
+        progressText.textContent = `מכין תמונה ${sendList.length + 1}...`;
+        progressFill.style.width = ((i + 1) / recipients.length * 50) + '%';
+
+        const imageBlob = await generateImage(recipient, 'jpg');
+        const base64 = await blobToBase64(imageBlob);
+
+        sendList.push({
+            name: contact.displayName,
+            phone: contact.phone,
+            imageBase64: base64,
+            imageFormat: 'jpg'
+        });
+    }
+
+    if (sendList.length === 0) {
+        toast('אין נמענים עם מספר טלפון', 'error');
+        progressDiv.style.display = 'none';
+        return;
+    }
+
+    progressText.textContent = `שולח ${sendList.length} כרטיסים ב-WhatsApp...`;
+    progressFill.style.width = '100%';
+
+    const payload = JSON.stringify({
+        recipients: sendList,
+        whatsappPackage: whatsappPackage,
+        delaySeconds: delay
+    });
+
+    window.GreetingCardsAndroid.startWhatsAppSend(payload);
+    toast(`מתחיל שליחה ל-${sendList.length} נמענים... 📲`, 'success');
+}
+
+function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+}
+
+// Hook into step 5 to init WhatsApp section
+const _origSwitchStep = switchStep;
+switchStep = function(n) {
+    _origSwitchStep(n);
+    if (n === 5) initWhatsAppSection();
+};
 
 </script>
 </body>

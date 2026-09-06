@@ -23,7 +23,7 @@ import com.mbeplus.greetingcards.databinding.ActivityMainBinding
  * - Full-screen WebView loading the greeting cards site
  * - File upload support (images, fonts, ZIP files)
  * - Download support (ZIP export)
- * - Contact Picker API passthrough
+ * - WhatsApp auto-send via JavaScript bridge
  * - Back navigation within the web app
  */
 class MainActivity : AppCompatActivity() {
@@ -33,7 +33,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val FILE_CHOOSER_REQUEST = 1001
-        private const val CONTACTS_PERMISSION_REQUEST = 1002
+        private const val NOTIFICATION_PERMISSION_REQUEST = 1003
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -58,16 +58,17 @@ class MainActivity : AppCompatActivity() {
             setSupportZoom(true)
             builtInZoomControls = true
             displayZoomControls = false
-            // Allow mixed content for local file access
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-            // Cache for offline performance
             cacheMode = WebSettings.LOAD_DEFAULT
         }
+
+        // Add JavaScript bridge for WhatsApp sending
+        val bridge = WhatsAppBridge(this)
+        webView.addJavascriptInterface(bridge, "GreetingCardsAndroid")
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val url = request.url.toString()
-                // Keep greeting cards site in WebView, open others externally
                 return if (url.contains("mbe-plus.com/mini_projects/greeting-cards")) {
                     false
                 } else {
@@ -78,7 +79,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         webView.webChromeClient = object : WebChromeClient() {
-            // File upload support
             override fun onShowFileChooser(
                 webView: WebView,
                 filePathCallback: ValueCallback<Array<Uri>>,
@@ -100,7 +100,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Download support (ZIP export)
-        webView.setDownloadListener { url, _, contentDisposition, mimeType, contentLength ->
+        webView.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
             try {
                 val request = DownloadManager.Request(Uri.parse(url))
                 val fileName = URLUtil.guessFileName(url, contentDisposition, mimeType)
@@ -115,6 +115,19 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "ההורדה החלה: $fileName", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Toast.makeText(this, "שגיאה בהורדה", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                    NOTIFICATION_PERMISSION_REQUEST
+                )
             }
         }
     }
@@ -140,10 +153,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == CONTACTS_PERMISSION_REQUEST) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Toast.makeText(this, "הרשאה לאנשי קשר אושרה", Toast.LENGTH_SHORT).show()
-            }
-        }
+        // Permission results handled silently — the service works without notification permission
+        // (just won't show notifications on Android 13+)
     }
 }

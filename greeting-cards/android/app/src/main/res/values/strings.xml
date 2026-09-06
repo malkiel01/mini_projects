@@ -1,4 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">כרטיסי ברכה</string>
+    <string name="accessibility_service_description">שירות זה מאפשר שליחה אוטומטית של כרטיסי ברכה דרך WhatsApp. השירות לוחץ על כפתור השליחה בוואטסאפ באופן אוטומטי.</string>
+    <string name="whatsapp_not_installed">WhatsApp אינו מותקן במכשיר</string>
+    <string name="accessibility_not_enabled">יש להפעיל את שירות הנגישות כדי לשלוח אוטומטית</string>
+    <string name="sending_progress">שולח %1$d/%2$d — %3$s</string>
+    <string name="send_complete">הושלם! נשלחו %1$d כרטיסים</string>
+    <string name="send_paused">השליחה מושהית</string>
+    <string name="send_cancelled">השליחה בוטלה</string>
+    <string name="notification_channel_name">שליחת כרטיסי ברכה</string>
+    <string name="notification_channel_desc">התראות על שליחת כרטיסי ברכה ב-WhatsApp</string>
 </resources>
