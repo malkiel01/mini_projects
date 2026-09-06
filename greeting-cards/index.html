@@ -318,9 +318,15 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            white-space: pre-wrap;
             text-align: center;
             z-index: 10;
+
+            /* ‏pre ולא pre-wrap: הרוחב הזמין לאלמנט ממוקם־מוחלט נמדד
+               מהמיקום שלו ועד קצה המכיל, ולכן עם גלישה הטקסט היה נשבר
+               לשורות ככל שגוררים ימינה — במקום פשוט לזוז לשם. בלי גלישה
+               הרוחב הוא רוחב הטקסט עצמו, זהה בכל מיקום.
+               שדה שהוגדרה לו גלישה מקבל width ו-pre-wrap ב-renderField. */
+            white-space: pre;
         }
         .text-field:hover { outline-color: rgba(74,108,247,0.4); }
         .text-field.selected {
@@ -1084,6 +1090,16 @@
                     <label>שקיפות</label>
                     <input type="range" id="propOpacity" min="0" max="100" value="100" oninput="updateFieldProp('opacity', +this.value)">
                     <span id="propOpacityVal" style="min-width:35px;font-size:0.85rem">100%</span>
+                </div>
+                <div class="prop-row">
+                    <label title="בלי גלישה, שורה יורדת רק במקום שבו ירדה שורה בטקסט">גלישה</label>
+                    <input type="checkbox" id="propWrap" onchange="updateFieldProp('wrapWidth', this.checked ? 40 : 0)">
+                    <span style="font-size:0.8rem;color:#888">שבירה אוטומטית</span>
+                </div>
+                <div class="prop-row" id="propWrapWidthRow" style="display:none">
+                    <label>רוחב גלישה</label>
+                    <input type="range" id="propWrapWidth" min="10" max="100" value="40" oninput="updateFieldProp('wrapWidth', +this.value)">
+                    <span id="propWrapWidthVal" style="min-width:35px;font-size:0.85rem">40%</span>
                 </div>
                 <div class="btn-group" style="margin-top:16px">
                     <button class="btn btn-sm btn-outline" onclick="duplicateField()">⧉ שכפל</button>
@@ -2041,6 +2057,9 @@ function createFieldObj(type = 'fixed', text = '') {
         letterSpacing: 0,
         scaleX: 100,
         opacity: 100,
+        // רוחב הגלישה כאחוז מרוחב התמונה. 0 = בלי גלישה: שורה יורדת
+        // רק במקום שבו יש ירידת שורה בטקסט עצמו.
+        wrapWidth: 0,
     };
 }
 
@@ -2115,6 +2134,17 @@ function renderField(field) {
     el.style.letterSpacing = field.letterSpacing + 'px';
     el.style.opacity = field.opacity / 100;
 
+    // בלי גלישה הרוחב נשאר רוחב הטקסט, כדי שגרירה תזיז את השדה
+    // ולא תשבור אותו לשורות. עם גלישה הרוחב מפורש, ולכן גם הוא
+    // אינו תלוי במיקום.
+    if (field.wrapWidth > 0) {
+        el.style.width = field.wrapWidth + '%';
+        el.style.whiteSpace = 'pre-wrap';
+    } else {
+        el.style.width = '';
+        el.style.whiteSpace = 'pre';
+    }
+
     el.className = 'text-field' + (field.type === 'list' ? ' list-field' : '') +
                    (field.id === state.selectedFieldId ? ' selected' : '');
 
@@ -2166,6 +2196,11 @@ function updatePropsPanel() {
     document.getElementById('propScaleXVal').textContent = field.scaleX + '%';
     document.getElementById('propOpacity').value = field.opacity;
     document.getElementById('propOpacityVal').textContent = field.opacity + '%';
+    const wrap = field.wrapWidth || 0;
+    document.getElementById('propWrap').checked = wrap > 0;
+    document.getElementById('propWrapWidthRow').style.display = wrap > 0 ? 'flex' : 'none';
+    document.getElementById('propWrapWidth').value = wrap || 40;
+    document.getElementById('propWrapWidthVal').textContent = (wrap || 40) + '%';
 }
 
 function updateFieldProp(prop, value) {
@@ -2180,6 +2215,14 @@ function updateFieldProp(prop, value) {
     if (prop === 'letterSpacing') document.getElementById('propSpacingVal').textContent = value;
     if (prop === 'scaleX') document.getElementById('propScaleXVal').textContent = value + '%';
     if (prop === 'opacity') document.getElementById('propOpacityVal').textContent = value + '%';
+    if (prop === 'wrapWidth') {
+        document.getElementById('propWrap').checked = value > 0;
+        document.getElementById('propWrapWidthRow').style.display = value > 0 ? 'flex' : 'none';
+        if (value > 0) {
+            document.getElementById('propWrapWidth').value = value;
+            document.getElementById('propWrapWidthVal').textContent = value + '%';
+        }
+    }
 
     // Show/hide column row
     if (prop === 'type') {
@@ -2895,7 +2938,11 @@ async function generatePDF(recipient) {
         }
 
         // Hebrew RTL handling — reverse characters, split multiline
-        const lines = text.split('\n');
+        const lines = layoutLines(
+            text,
+            t => pdf.getTextWidth(t),
+            field.wrapWidth > 0 ? (field.wrapWidth / 100) * pdfWidth : 0
+        );
         const lineHeightMm = fontSize * 0.5; // approximate line height in mm
         const totalHeight = (lines.length - 1) * lineHeightMm;
 
@@ -2953,7 +3000,11 @@ async function generateImage(recipient, format) {
         ctx.textBaseline = 'middle';
 
         // Split multiline text
-        const lines = text.split('\n');
+        const lines = layoutLines(
+            text,
+            t => ctx.measureText(t).width,
+            field.wrapWidth > 0 ? (field.wrapWidth / 100) * canvas.width : 0
+        );
         const lineHeight = scaledFontSize * 1.3;
         const totalTextHeight = (lines.length - 1) * lineHeight;
 
@@ -2979,6 +3030,41 @@ async function generateImage(recipient, format) {
     return new Promise(resolve => {
         canvas.toBlob(blob => resolve(blob), format === 'png' ? 'image/png' : 'image/jpeg', 0.95);
     });
+}
+
+/* ─── Line Layout ────────────────────────────────── */
+/**
+ * מפרק טקסט לשורות בדיוק כפי שהעורך מציג אותן.
+ *
+ * ירידות שורה מפורשות תמיד נשמרות. גלישה אוטומטית מתרחשת רק
+ * כשהוגדר maxWidth, ואז המדידה נעשית בפונט עצמו — לכן היא זהה
+ * לזו של הדפדפן, ומה שנראה בעורך הוא מה שייצא בקובץ.
+ *
+ * @param measure  מחזיר את רוחב הטקסט ביחידות של היעד (px לקנבס, mm ל-PDF)
+ * @param maxWidth רוחב מרבי באותן יחידות; 0 מבטל גלישה
+ */
+function layoutLines(text, measure, maxWidth) {
+    const paragraphs = String(text).split('\n');
+    if (!maxWidth) return paragraphs;
+
+    const lines = [];
+    paragraphs.forEach(paragraph => {
+        const words = paragraph.split(' ');
+        let line = '';
+        words.forEach(word => {
+            const candidate = line ? line + ' ' + word : word;
+            // מילה בודדת ארוכה מהרוחב נשארת שלמה וגולשת — עדיף מלחתוך
+            // אותה באמצע.
+            if (line && measure(candidate) > maxWidth) {
+                lines.push(line);
+                line = word;
+            } else {
+                line = candidate;
+            }
+        });
+        lines.push(line);
+    });
+    return lines;
 }
 
 /* ─── RTL Processing ─────────────────────────────── */
