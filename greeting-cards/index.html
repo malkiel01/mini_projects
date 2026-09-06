@@ -1060,7 +1060,7 @@
                 </div>
                 <div class="prop-row">
                     <label>גודל</label>
-                    <input type="range" id="propSize" min="8" max="120" value="32" oninput="updateFieldProp('fontSize', +this.value)">
+                    <input type="range" id="propSize" min="4" max="480" value="60" oninput="updateFieldProp('fontSize', +this.value)">
                     <span id="propSizeVal" style="min-width:30px;font-size:0.85rem">32</span>
                 </div>
                 <div class="prop-row">
@@ -1936,14 +1936,24 @@ function updateCanvasBackground() {
     const img = document.getElementById('canvasImg');
     const placeholder = document.getElementById('noBgPlaceholder');
     if (state.backgroundImage) {
+        // רוחב התצוגה ידוע רק אחרי שהתמונה נטענה, וממנו נגזר גודל
+        // הטקסט על המסך — ולכן השדות מצוירים מחדש כאן.
+        img.onload = () => { syncFontSizeRange(); renderAllFields(); };
         img.src = state.backgroundImage;
         img.style.display = 'block';
         placeholder.style.display = 'none';
+        if (img.complete) { syncFontSizeRange(); renderAllFields(); }
     } else {
         img.style.display = 'none';
         placeholder.style.display = 'flex';
     }
 }
+
+// שינוי גודל החלון משנה את רוחב התצוגה, ואיתו את היחס בין המסך
+// לתמונה. בלי זה הטקסט היה נשאר בגודל של הרוחב הקודם.
+window.addEventListener('resize', () => {
+    if (state.backgroundImage) renderAllFields();
+});
 
 /* ─── Font Management ────────────────────────────── */
 function loadFontFile(file) {
@@ -2040,6 +2050,43 @@ function removeFont(id) {
 }
 
 /* ─── Field Management ───────────────────────────── */
+
+/**
+ * גדלים בשדה (fontSize, letterSpacing) נמדדים בפיקסלים של התמונה
+ * הסופית — לא של המסך. העורך הוא תצוגה מוקטנת שלה, ולכן הוא מכפיל
+ * בפקטור הזה.
+ *
+ * זו נקודת האמת היחידה ליחס בין העורך לייצוא: אם הגודל היה נמדד
+ * במסך, אותו שדה היה יוצא בגודל אחר בכל רזולוציית תמונה ובכל רוחב
+ * חלון.
+ */
+function getDisplayScale() {
+    const img = document.getElementById('canvasImg');
+    const natural = state.backgroundNatural?.width;
+    if (!natural || !img?.clientWidth) return 1;
+    return img.clientWidth / natural;
+}
+
+/** רוחב התמונה שביחס אליו נמדדים הגדלים, גם לפני שנבחר רקע. */
+function referenceWidth() {
+    return state.backgroundNatural?.width || 1200;
+}
+
+/** הגבול נגזר מהתמונה: מה שסביר על תמונה בת 800px חותך תמונה בת 4000px. */
+function maxFontSize() {
+    return Math.round(referenceWidth() * 0.4);
+}
+
+function clampFontSize(size) {
+    return Math.max(4, Math.min(maxFontSize(), Math.round(size)));
+}
+
+/** מרענן את טווח מחוון הגודל אחרי החלפת רקע. */
+function syncFontSizeRange() {
+    const slider = document.getElementById('propSize');
+    if (slider) slider.max = maxFontSize();
+}
+
 function createFieldObj(type = 'fixed', text = '') {
     const font = state.fonts.find(f => f.id === state.selectedFont) || state.fonts[0];
     return {
@@ -2049,7 +2096,9 @@ function createFieldObj(type = 'fixed', text = '') {
         listColumn: type === 'list' ? 'שם' : '',
         x: 50,  // % from left of image
         y: 50,  // % from top of image
-        fontSize: 32,
+        // ‏5% מרוחב התמונה — גודל שנראה סביר על כל רזולוציה, במקום
+        // מספר קבוע שהוא ענק על תמונה קטנה וזעיר על גדולה.
+        fontSize: Math.round(referenceWidth() * 0.05),
         fontFamily: font.family,
         color: '#ffffff',
         rotation: 0,
@@ -2127,11 +2176,12 @@ function renderField(field) {
     el.style.left = field.x + '%';
     el.style.top = field.y + '%';
     el.style.transform = `translate(-50%, -50%) rotate(${field.rotation}deg) scaleX(${field.scaleX / 100})`;
-    el.style.fontSize = field.fontSize + 'px';
+    const displayScale = getDisplayScale();
+    el.style.fontSize = (field.fontSize * displayScale) + 'px';
     el.style.fontFamily = field.fontFamily;
     el.style.color = field.color;
     el.style.fontWeight = field.bold ? 'bold' : 'normal';
-    el.style.letterSpacing = field.letterSpacing + 'px';
+    el.style.letterSpacing = (field.letterSpacing * displayScale) + 'px';
     el.style.opacity = field.opacity / 100;
 
     // בלי גלישה הרוחב נשאר רוחב הטקסט, כדי שגרירה תזיז את השדה
@@ -2184,6 +2234,8 @@ function updatePropsPanel() {
     document.getElementById('propColumnRow').style.display = field.type === 'list' ? 'flex' : 'none';
     document.getElementById('propColumn').value = field.listColumn;
     document.getElementById('propFont').value = field.fontFamily;
+    // הטווח לפני הערך: דפדפן חותך ערך שחורג מ-max של המחוון.
+    syncFontSizeRange();
     document.getElementById('propSize').value = field.fontSize;
     document.getElementById('propSizeVal').textContent = field.fontSize;
     document.getElementById('propColor').value = field.color;
@@ -2391,7 +2443,11 @@ function startResize(e, fieldId, handle, isTouch = false) {
         else if (handle.includes('r')) delta = Math.max(delta, -dx);
         if (handle === 'ml' || handle === 'mr') delta = Math.abs(dx) * (dx > 0 ? 1 : -1) * (handle === 'mr' ? -1 : 1);
 
-        field.fontSize = Math.max(8, Math.min(200, dragState.startFontSize + delta * 0.5));
+        // הגרירה נמדדת בפיקסלים של המסך, והגודל נשמר בפיקסלים של
+        // התמונה — בלי החלוקה, גרירה בתצוגה מוקטנת הייתה מגדילה
+        // את הטקסט הרבה יותר מהמרחק שעברה האצבע.
+        const perScreenPixel = 0.5 / getDisplayScale();
+        field.fontSize = clampFontSize(dragState.startFontSize + delta * perScreenPixel);
         renderField(field);
         updatePropsPanel();
     };
@@ -2903,9 +2959,11 @@ async function generatePDF(recipient) {
         const x = (field.x / 100) * pdfWidth;
         const y = (field.y / 100) * pdfHeight;
 
-        // Font size: convert from screen px to PDF pt (approximate)
+        // ‏fontSize הוא בפיקסלים של התמונה. scaleFactor ממיר אותם
+        // למ"מ של העמוד, ו-MM_TO_PT משם לנקודות, שבהן jsPDF מבטא
+        // גודל גופן.
         const scaleFactor = pdfWidth / (state.backgroundNatural?.width || 1200);
-        const fontSize = field.fontSize * scaleFactor * 2.83; // px to mm to pt approximation
+        const fontSize = field.fontSize * scaleFactor * MM_TO_PT;
 
         // Set font
         const fontEntry = Object.entries(state.customFontData).find(([id, d]) => d.family === field.fontFamily);
@@ -2943,13 +3001,15 @@ async function generatePDF(recipient) {
             t => pdf.getTextWidth(t),
             field.wrapWidth > 0 ? (field.wrapWidth / 100) * pdfWidth : 0
         );
-        const lineHeightMm = fontSize * 0.5; // approximate line height in mm
+        // אותו יחס גובה־שורה כמו בייצוא לתמונה, כדי ששני הפורמטים
+        // יראו זהים; fontSize כאן בנקודות ולכן חוזרים דרכן למ"מ.
+        const lineHeightMm = (fontSize / MM_TO_PT) * LINE_HEIGHT;
         const totalHeight = (lines.length - 1) * lineHeightMm;
 
         lines.forEach((line, lineIdx) => {
             const processedLine = processRTL(line);
             const ly = y - totalHeight / 2 + lineIdx * lineHeightMm;
-            pdf.text(processedLine, x, ly, { align: 'center', charSpace: field.letterSpacing * scaleFactor * 0.5 });
+            pdf.text(processedLine, x, ly, { align: 'center', charSpace: field.letterSpacing * scaleFactor });
         });
 
         if (field.rotation !== 0) {
@@ -2992,7 +3052,9 @@ async function generateImage(recipient, format) {
         if (field.rotation) ctx.rotate(field.rotation * Math.PI / 180);
         if (field.scaleX !== 100) ctx.scale(field.scaleX / 100, 1);
 
-        const scaledFontSize = field.fontSize * (canvas.width / 800);
+        // הקנבס הוא התמונה בגודלה המקורי, ו-fontSize כבר נמדד ביחידות
+        // שלה — ולכן אין כאן המרה.
+        const scaledFontSize = field.fontSize;
         ctx.font = (field.bold ? 'bold ' : '') + scaledFontSize + 'px ' + field.fontFamily;
         ctx.fillStyle = field.color;
         ctx.globalAlpha = field.opacity / 100;
@@ -3005,7 +3067,7 @@ async function generateImage(recipient, format) {
             t => ctx.measureText(t).width,
             field.wrapWidth > 0 ? (field.wrapWidth / 100) * canvas.width : 0
         );
-        const lineHeight = scaledFontSize * 1.3;
+        const lineHeight = scaledFontSize * LINE_HEIGHT;
         const totalTextHeight = (lines.length - 1) * lineHeight;
 
         lines.forEach((line, lineIdx) => {
@@ -3031,6 +3093,12 @@ async function generateImage(recipient, format) {
         canvas.toBlob(blob => resolve(blob), format === 'png' ? 'image/png' : 'image/jpeg', 0.95);
     });
 }
+
+/* ─── Typographic constants ──────────────────────── */
+/** ‏1 מ"מ בנקודות. jsPDF מבטא גודל גופן בנקודות ומידות עמוד במ"מ. */
+const MM_TO_PT = 2.8346;
+/** יחס גובה־שורה, משותף לתמונה ול-PDF כדי ששניהם ייראו זהים. */
+const LINE_HEIGHT = 1.3;
 
 /* ─── Line Layout ────────────────────────────────── */
 /**
