@@ -80,10 +80,13 @@ try {
         case 'get_user_bg':         requireAuth($usersDir, $token); getUserBackground($usersDir, $token); break;
 
         // ─── Admin (global defaults management) ─────
+        case 'admin_check':         adminCheck($dataDir, $input); break;
         case 'admin_upload_bg':     handleBackgroundUpload($backgroundsDir); break;
+        case 'admin_upload_bg_zip': adminUploadBgZip($backgroundsDir); break;
         case 'admin_delete_bg':     deleteBackground($backgroundsDir); break;
         case 'admin_upload_font':   handleFontUpload($fontsDir); break;
         case 'admin_delete_font':   deleteFont($fontsDir); break;
+        case 'admin_list_users':    adminListUsers($usersDir, $dataDir, $input); break;
 
         default:
             respond(false, 'Unknown action: ' . $action);
@@ -560,6 +563,107 @@ function deleteBackground($dir) {
     @unlink($dir . '/' . $meta['filename']);
     @unlink($metaFile);
     respond(true, 'Background deleted');
+}
+
+// ═══════════════════════════════════════════════════════
+// Admin Functions
+// ═══════════════════════════════════════════════════════
+
+function getAdminPassword($dataDir) {
+    $configFile = $dataDir . '/admin_config.json';
+    if (file_exists($configFile)) {
+        $cfg = json_decode(file_get_contents($configFile), true);
+        return $cfg['password'] ?? 'admin123';
+    }
+    // Create default config
+    $cfg = ['password' => 'admin123'];
+    file_put_contents($configFile, json_encode($cfg, JSON_PRETTY_PRINT));
+    return 'admin123';
+}
+
+function adminCheck($dataDir, $input) {
+    $pass = $input['password'] ?? '';
+    $correct = getAdminPassword($dataDir);
+    if ($pass === $correct) {
+        respond(true, 'OK');
+    }
+    respond(false, 'סיסמה שגויה');
+}
+
+function adminUploadBgZip($backgroundsDir) {
+    if (empty($_FILES['zipfile'])) respond(false, 'No ZIP file');
+    $file = $_FILES['zipfile'];
+    if ($file['size'] > 100 * 1024 * 1024) respond(false, 'ZIP גדול מדי');
+
+    $zip = new ZipArchive();
+    if ($zip->open($file['tmp_name']) !== true) respond(false, 'שגיאה בפתיחת ZIP');
+
+    $added = 0;
+    $validExts = ['jpg', 'jpeg', 'png', 'webp'];
+    for ($i = 0; $i < $zip->numFiles; $i++) {
+        $entry = $zip->getNameIndex($i);
+        if (substr($entry, -1) === '/' || strpos(basename($entry), '.') === 0) continue;
+        $ext = strtolower(pathinfo($entry, PATHINFO_EXTENSION));
+        if (!in_array($ext, $validExts)) continue;
+
+        $data = $zip->getFromIndex($i);
+        if ($data === false || strlen($data) < 100) continue;
+        if (strlen($data) > 20 * 1024 * 1024) continue;
+
+        $id = uniqid('bg_');
+        $filename = $id . '.' . $ext;
+        file_put_contents($backgroundsDir . '/' . $filename, $data);
+
+        $meta = [
+            'id' => $id,
+            'name' => pathinfo(basename($entry), PATHINFO_FILENAME),
+            'filename' => $filename,
+            'ext' => $ext,
+            'size' => strlen($data),
+            'uploaded' => date('c'),
+        ];
+        file_put_contents($backgroundsDir . '/' . $id . '.json', json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        $added++;
+    }
+    $zip->close();
+    respond(true, "הועלו $added רקעים", ['added' => $added]);
+}
+
+function adminListUsers($usersDir, $dataDir, $input) {
+    $pass = $input['password'] ?? '';
+    if ($pass !== getAdminPassword($dataDir)) respond(false, 'לא מורשה');
+
+    $users = [];
+    foreach (glob($usersDir . '/*/profile.json') as $file) {
+        $profile = json_decode(file_get_contents($file), true);
+        if (!$profile) continue;
+
+        $userDir = dirname($file);
+        $contactsCount = 0;
+        $contactsFile = $userDir . '/contacts.json';
+        if (file_exists($contactsFile)) {
+            $contacts = json_decode(file_get_contents($contactsFile), true);
+            $contactsCount = is_array($contacts) ? count($contacts) : 0;
+        }
+
+        $bgCount = 0;
+        $bgDir = $userDir . '/backgrounds';
+        if (is_dir($bgDir)) {
+            $bgCount = count(glob($bgDir . '/*.json'));
+        }
+
+        $users[] = [
+            'username' => $profile['username'] ?? '',
+            'displayName' => $profile['displayName'] ?? '',
+            'contactsCount' => $contactsCount,
+            'backgroundsCount' => $bgCount,
+            'created' => $profile['created'] ?? '',
+            'lastLogin' => $profile['lastLogin'] ?? '',
+        ];
+    }
+
+    usort($users, fn($a, $b) => strcmp($b['lastLogin'] ?? '', $a['lastLogin'] ?? ''));
+    respond(true, 'OK', ['users' => $users]);
 }
 
 // ═══════════════════════════════════════════════════════

@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ניהול כרטיסי ברכה</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+            background: #f0f2f5;
+            color: #1a1a2e;
+            min-height: 100vh;
+            direction: rtl;
+        }
+        header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: white;
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        header a { color: white; text-decoration: none; font-size: 1.4rem; opacity: 0.8; }
+        header a:hover { opacity: 1; }
+        header h1 { font-size: 1.3rem; flex: 1; }
+        .badge-admin {
+            background: #dc3545;
+            color: white;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 700;
+        }
+
+        /* Auth */
+        .auth-gate {
+            max-width: 400px;
+            margin: 80px auto;
+            background: white;
+            border-radius: 16px;
+            padding: 32px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .auth-gate h2 { margin-bottom: 20px; }
+        .auth-gate input {
+            width: 100%;
+            padding: 12px 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-family: inherit;
+            margin-bottom: 12px;
+        }
+        .auth-gate input:focus { outline: none; border-color: #4a6cf7; }
+        .error-msg { color: #dc3545; font-size: 0.85rem; margin-bottom: 10px; min-height: 1.2em; }
+
+        /* Layout */
+        .container { max-width: 1000px; margin: 0 auto; padding: 24px 20px; }
+        .tabs {
+            display: flex;
+            background: white;
+            border-bottom: 2px solid #e0e0e0;
+            margin-bottom: 24px;
+            border-radius: 12px 12px 0 0;
+            overflow: hidden;
+        }
+        .tab {
+            flex: 1;
+            padding: 14px;
+            text-align: center;
+            cursor: pointer;
+            font-weight: 600;
+            color: #666;
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s;
+        }
+        .tab:hover { color: #1a1a2e; background: #f8f9fa; }
+        .tab.active { color: #4a6cf7; border-bottom-color: #4a6cf7; }
+
+        .panel { display: none; }
+        .panel.active { display: block; }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        }
+        .card h2 {
+            font-size: 1.1rem;
+            margin-bottom: 16px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .btn {
+            padding: 10px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-family: inherit;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn:active { transform: scale(0.97); }
+        .btn-primary { background: #4a6cf7; color: white; }
+        .btn-primary:hover { background: #3a5ce5; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn-danger:hover { background: #c82333; }
+        .btn-outline { background: white; color: #4a6cf7; border: 2px solid #4a6cf7; }
+        .btn-outline:hover { background: #f0f4ff; }
+        .btn-sm { padding: 6px 14px; font-size: 0.85rem; }
+        .btn-group { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+
+        .upload-zone {
+            border: 2px dashed #ccc;
+            border-radius: 12px;
+            padding: 24px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: #888;
+            margin: 12px 0;
+        }
+        .upload-zone:hover { border-color: #4a6cf7; background: #f8f9ff; color: #4a6cf7; }
+        .upload-zone input { display: none; }
+
+        /* Grid */
+        .items-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 16px;
+            margin: 16px 0;
+        }
+        .item-card {
+            border: 2px solid #e8e8e8;
+            border-radius: 12px;
+            overflow: hidden;
+            transition: all 0.2s;
+        }
+        .item-card:hover { border-color: #4a6cf7; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .item-card img {
+            width: 100%;
+            aspect-ratio: 3/2;
+            object-fit: cover;
+            display: block;
+            background: #f0f0f0;
+        }
+        .item-card .info {
+            padding: 10px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .item-card .name { font-weight: 600; font-size: 0.9rem; }
+        .item-card .meta { font-size: 0.75rem; color: #999; }
+
+        /* Font preview */
+        .font-card {
+            border: 2px solid #e8e8e8;
+            border-radius: 12px;
+            padding: 16px;
+            transition: all 0.2s;
+        }
+        .font-card:hover { border-color: #4a6cf7; }
+        .font-card .preview {
+            font-size: 1.4rem;
+            margin-bottom: 8px;
+            min-height: 2em;
+            color: #333;
+        }
+        .font-card .details {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .font-card .name { font-weight: 600; font-size: 0.9rem; }
+        .font-card .size { font-size: 0.75rem; color: #999; }
+
+        /* Stats */
+        .stats-row {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            flex: 1;
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        }
+        .stat-card .number { font-size: 2rem; font-weight: 700; color: #4a6cf7; }
+        .stat-card .label { font-size: 0.85rem; color: #666; margin-top: 4px; }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: #333;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            z-index: 9999;
+            transition: transform 0.3s;
+        }
+        .toast.show { transform: translateX(-50%) translateY(0); }
+        .toast.success { background: #28a745; }
+        .toast.error { background: #dc3545; }
+
+        .empty-state { text-align: center; padding: 40px; color: #999; }
+        .empty-state .icon { font-size: 3rem; margin-bottom: 12px; }
+
+        /* Users list */
+        .users-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .users-table th, .users-table td {
+            padding: 10px 14px;
+            border-bottom: 1px solid #eee;
+            text-align: right;
+            font-size: 0.9rem;
+        }
+        .users-table th { background: #f8f9fa; font-weight: 700; }
+        .users-table tr:hover td { background: #f8f9fa; }
+
+        @media (max-width: 600px) {
+            .stats-row { flex-direction: column; }
+            .items-grid { grid-template-columns: 1fr 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ─── Auth Gate ──────────────────────────────────── -->
+<div id="authGate" class="auth-gate">
+    <h2>🔒 אזור ניהול</h2>
+    <p style="color:#666;margin-bottom:20px">הזינו את סיסמת הניהול</p>
+    <div class="error-msg" id="authError"></div>
+    <input type="password" id="adminPass" placeholder="סיסמת ניהול" onkeydown="if(event.key==='Enter')checkAdminPass()">
+    <button class="btn btn-primary" style="width:100%;padding:14px" onclick="checkAdminPass()">כניסה</button>
+    <p style="margin-top:16px;font-size:0.8rem;color:#999">
+        סיסמת ברירת מחדל: <code>admin123</code><br>
+        שנו אותה בקובץ <code>admin_config.json</code>
+    </p>
+</div>
+
+<!-- ─── Admin Panel (hidden until auth) ───────────── -->
+<div id="adminPanel" style="display:none">
+    <header>
+        <a href="index.html" title="חזרה לאפליקציה">→</a>
+        <h1>⚙️ ניהול כרטיסי ברכה</h1>
+        <span class="badge-admin">מנהל</span>
+    </header>
+
+    <div class="container">
+        <!-- Stats -->
+        <div class="stats-row">
+            <div class="stat-card">
+                <div class="number" id="statBgs">0</div>
+                <div class="label">רקעים ברירת מחדל</div>
+            </div>
+            <div class="stat-card">
+                <div class="number" id="statFonts">0</div>
+                <div class="label">פונטים מותאמים</div>
+            </div>
+            <div class="stat-card">
+                <div class="number" id="statUsers">0</div>
+                <div class="label">משתמשים רשומים</div>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('backgrounds')">🖼️ רקעים</div>
+            <div class="tab" onclick="switchTab('fonts')">🔤 פונטים</div>
+            <div class="tab" onclick="switchTab('users')">👥 משתמשים</div>
+        </div>
+
+        <!-- ═══ Backgrounds Panel ═══ -->
+        <div class="panel active" id="panelBackgrounds">
+            <div class="card">
+                <h2>🖼️ רקעים ברירת מחדל</h2>
+                <p style="color:#666;font-size:0.9rem;margin-bottom:12px">
+                    רקעים אלה מוצגים לכל המשתמשים בגלריה "רקעים מוכנים"
+                </p>
+
+                <div class="upload-zone" id="bgUpload">
+                    <div>📁 גררו תמונות רקע לכאן או <strong>לחצו לבחירה</strong></div>
+                    <div style="font-size:0.8rem;margin-top:4px">JPG, PNG, WebP — ניתן לבחור מספר קבצים</div>
+                    <input type="file" id="bgFileInput" accept="image/*" multiple>
+                </div>
+
+                <div class="upload-zone" id="bgZipUpload" style="padding:16px">
+                    <div>📦 או העלו קובץ ZIP עם תמונות רקע</div>
+                    <input type="file" id="bgZipInput" accept=".zip">
+                </div>
+
+                <div class="items-grid" id="bgGrid"></div>
+                <div class="empty-state" id="bgEmpty" style="display:none">
+                    <div class="icon">🖼️</div>
+                    <p>אין רקעים — העלו תמונות למעלה</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ Fonts Panel ═══ -->
+        <div class="panel" id="panelFonts">
+            <div class="card">
+                <h2>🔤 פונטים מותאמים</h2>
+                <p style="color:#666;font-size:0.9rem;margin-bottom:12px">
+                    פונטים אלה זמינים לכל המשתמשים בנוסף ל-Google Fonts המובנים
+                </p>
+
+                <div class="upload-zone" id="fontUpload">
+                    <div>📁 העלו קובץ פונט (TTF / OTF / WOFF)</div>
+                    <input type="file" id="fontFileInput">
+                </div>
+                <div style="margin:8px 0">
+                    <label style="font-size:0.9rem;font-weight:600">שם הפונט:</label>
+                    <input type="text" id="fontNameInput" placeholder="שם תצוגה לפונט" style="padding:8px 12px;border:2px solid #e0e0e0;border-radius:8px;font-size:0.95rem;width:100%;margin-top:4px">
+                </div>
+
+                <div class="items-grid" id="fontGrid"></div>
+                <div class="empty-state" id="fontEmpty" style="display:none">
+                    <div class="icon">🔤</div>
+                    <p>אין פונטים מותאמים — העלו למעלה</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ Users Panel ═══ -->
+        <div class="panel" id="panelUsers">
+            <div class="card">
+                <h2>👥 משתמשים רשומים</h2>
+                <table class="users-table" id="usersTable">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>שם משתמש</th>
+                            <th>שם תצוגה</th>
+                            <th>אנשי קשר</th>
+                            <th>רקעים</th>
+                            <th>הצטרפות</th>
+                            <th>כניסה אחרונה</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersBody"></tbody>
+                </table>
+                <div class="empty-state" id="usersEmpty" style="display:none">
+                    <div class="icon">👥</div>
+                    <p>אין משתמשים רשומים עדיין</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = 'api.php';
+let adminPassword = '';
+
+/* ─── Admin Auth ──────────────────────────────────── */
+async function checkAdminPass() {
+    const pass = document.getElementById('adminPass').value;
+    if (!pass) { document.getElementById('authError').textContent = 'הזינו סיסמה'; return; }
+
+    try {
+        const res = await fetch(API + '?action=admin_check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: pass })
+        });
+        const data = await res.json();
+        if (data.success) {
+            adminPassword = pass;
+            document.getElementById('authGate').style.display = 'none';
+            document.getElementById('adminPanel').style.display = 'block';
+            loadAll();
+        } else {
+            document.getElementById('authError').textContent = data.message || 'סיסמה שגויה';
+        }
+    } catch (e) {
+        document.getElementById('authError').textContent = 'שגיאת חיבור';
+    }
+}
+
+/* ─── Tabs ────────────────────────────────────────── */
+function switchTab(tab) {
+    document.querySelectorAll('.tab').forEach((t, i) => {
+        const tabs = ['backgrounds', 'fonts', 'users'];
+        t.classList.toggle('active', tabs[i] === tab);
+    });
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('panel' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.add('active');
+}
+
+/* ─── Load All Data ───────────────────────────────── */
+async function loadAll() {
+    loadBackgrounds();
+    loadFonts();
+    loadUsers();
+}
+
+/* ─── Backgrounds ─────────────────────────────────── */
+async function loadBackgrounds() {
+    const res = await fetch(API + '?action=list_backgrounds');
+    const data = await res.json();
+    const bgs = data.backgrounds || [];
+
+    document.getElementById('statBgs').textContent = bgs.length;
+    document.getElementById('bgEmpty').style.display = bgs.length === 0 ? 'block' : 'none';
+
+    const grid = document.getElementById('bgGrid');
+    grid.innerHTML = '';
+    bgs.forEach(bg => {
+        const card = document.createElement('div');
+        card.className = 'item-card';
+        card.innerHTML = `
+            <img src="backgrounds/${bg.filename}" alt="${esc(bg.name)}" loading="lazy">
+            <div class="info">
+                <div>
+                    <div class="name">${esc(bg.name)}</div>
+                    <div class="meta">${formatSize(bg.size)}</div>
+                </div>
+                <button class="btn btn-sm btn-danger" onclick="deleteBg('${bg.id}')">🗑️</button>
+            </div>
+        `;
+        grid.appendChild(card);
+    });
+}
+
+async function uploadBgFiles(files) {
+    let uploaded = 0;
+    for (const file of files) {
+        if (!file.type.startsWith('image/')) continue;
+        const fd = new FormData();
+        fd.append('background', file);
+        fd.append('name', file.name.replace(/\.[^.]+$/, ''));
+        try {
+            const res = await fetch(API + '?action=admin_upload_bg', { method: 'POST', body: fd });
+            const data = await res.json();
+            if (data.success) uploaded++;
+        } catch (e) {}
+    }
+    toast(`הועלו ${uploaded} רקעים`, 'success');
+    loadBackgrounds();
+}
+
+async function uploadBgZip(file) {
+    toast('מעלה ZIP...');
+    const fd = new FormData();
+    fd.append('zipfile', file);
+    try {
+        const res = await fetch(API + '?action=admin_upload_bg_zip', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (data.success) {
+            toast(`הועלו ${data.added} רקעים מ-ZIP`, 'success');
+            loadBackgrounds();
+        } else {
+            toast(data.message, 'error');
+        }
+    } catch (e) {
+        toast('שגיאה', 'error');
+    }
+}
+
+async function deleteBg(id) {
+    if (!confirm('למחוק רקע זה?')) return;
+    await fetch(API + '?action=admin_delete_bg&id=' + id, { method: 'DELETE' });
+    toast('רקע נמחק');
+    loadBackgrounds();
+}
+
+/* ─── Fonts ───────────────────────────────────────── */
+async function loadFonts() {
+    const res = await fetch(API + '?action=list_fonts');
+    const data = await res.json();
+    const fonts = data.fonts || [];
+
+    document.getElementById('statFonts').textContent = fonts.length;
+    document.getElementById('fontEmpty').style.display = fonts.length === 0 ? 'block' : 'none';
+
+    const grid = document.getElementById('fontGrid');
+    grid.innerHTML = '';
+    fonts.forEach(f => {
+        const card = document.createElement('div');
+        card.className = 'font-card';
+        card.innerHTML = `
+            <div class="preview">שנה טובה ומתוקה — ${esc(f.name)}</div>
+            <div class="details">
+                <div>
+                    <div class="name">${esc(f.name)}</div>
+                    <div class="size">${f.ext.toUpperCase()} · ${formatSize(f.size)}</div>
+                </div>
+                <button class="btn btn-sm btn-danger" onclick="deleteFont('${f.id}')">🗑️</button>
+            </div>
+        `;
+        grid.appendChild(card);
+    });
+}
+
+async function uploadFont(file) {
+    const name = document.getElementById('fontNameInput').value.trim() || file.name.replace(/\.[^.]+$/, '');
+    const fd = new FormData();
+    fd.append('font', file);
+    fd.append('name', name);
+    try {
+        const res = await fetch(API + '?action=admin_upload_font', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (data.success) {
+            toast('פונט הועלה: ' + name, 'success');
+            document.getElementById('fontNameInput').value = '';
+            loadFonts();
+        } else {
+            toast(data.message, 'error');
+        }
+    } catch (e) {
+        toast('שגיאה', 'error');
+    }
+}
+
+async function deleteFont(id) {
+    if (!confirm('למחוק פונט זה?')) return;
+    await fetch(API + '?action=admin_delete_font&id=' + id, { method: 'DELETE' });
+    toast('פונט נמחק');
+    loadFonts();
+}
+
+/* ─── Users ───────────────────────────────────────── */
+async function loadUsers() {
+    try {
+        const res = await fetch(API + '?action=admin_list_users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: adminPassword })
+        });
+        const data = await res.json();
+        const users = data.users || [];
+
+        document.getElementById('statUsers').textContent = users.length;
+        document.getElementById('usersEmpty').style.display = users.length === 0 ? 'block' : 'none';
+
+        const tbody = document.getElementById('usersBody');
+        tbody.innerHTML = '';
+        users.forEach((u, i) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${i + 1}</td>
+                <td><strong>${esc(u.username)}</strong></td>
+                <td>${esc(u.displayName || '')}</td>
+                <td>${u.contactsCount || 0}</td>
+                <td>${u.backgroundsCount || 0}</td>
+                <td>${formatDate(u.created)}</td>
+                <td>${formatDate(u.lastLogin)}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } catch (e) {}
+}
+
+/* ─── Init Upload Zones ──────────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
+    // Bg upload
+    const bgZone = document.getElementById('bgUpload');
+    const bgInput = document.getElementById('bgFileInput');
+    bgZone.onclick = () => bgInput.click();
+    bgInput.onchange = () => { if (bgInput.files.length) uploadBgFiles(bgInput.files); bgInput.value = ''; };
+    bgZone.ondragover = e => { e.preventDefault(); bgZone.style.borderColor = '#4a6cf7'; };
+    bgZone.ondragleave = () => bgZone.style.borderColor = '#ccc';
+    bgZone.ondrop = e => { e.preventDefault(); bgZone.style.borderColor = '#ccc'; uploadBgFiles(e.dataTransfer.files); };
+
+    // Bg ZIP upload
+    const zipZone = document.getElementById('bgZipUpload');
+    const zipInput = document.getElementById('bgZipInput');
+    zipZone.onclick = () => zipInput.click();
+    zipInput.onchange = () => { if (zipInput.files[0]) uploadBgZip(zipInput.files[0]); zipInput.value = ''; };
+    zipZone.ondragover = e => { e.preventDefault(); zipZone.style.borderColor = '#4a6cf7'; };
+    zipZone.ondragleave = () => zipZone.style.borderColor = '#ccc';
+    zipZone.ondrop = e => { e.preventDefault(); zipZone.style.borderColor = '#ccc'; if (e.dataTransfer.files[0]) uploadBgZip(e.dataTransfer.files[0]); };
+
+    // Font upload
+    const fontZone = document.getElementById('fontUpload');
+    const fontInput = document.getElementById('fontFileInput');
+    fontZone.onclick = () => fontInput.click();
+    fontInput.onchange = () => { if (fontInput.files[0]) uploadFont(fontInput.files[0]); fontInput.value = ''; };
+    fontZone.ondragover = e => { e.preventDefault(); fontZone.style.borderColor = '#4a6cf7'; };
+    fontZone.ondragleave = () => fontZone.style.borderColor = '#ccc';
+    fontZone.ondrop = e => { e.preventDefault(); fontZone.style.borderColor = '#ccc'; if (e.dataTransfer.files[0]) uploadFont(e.dataTransfer.files[0]); };
+});
+
+/* ─── Helpers ─────────────────────────────────────── */
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+function formatDate(d) {
+    if (!d) return '—';
+    try { return new Date(d).toLocaleDateString('he-IL', { day: 'numeric', month: 'short', year: 'numeric' }); }
+    catch (e) { return d; }
+}
+function toast(msg, type = '') {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = 'toast show' + (type ? ' ' + type : '');
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.classList.remove('show'), 3000);
+}
+</script>
+</body>
+</html>
