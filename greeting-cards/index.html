@@ -915,7 +915,7 @@
             <div class="upload-zone" id="zipUploadZone" style="padding:16px">
                 <div>📦 גררו קובץ ZIP עם תמונות רקע או <strong>לחצו</strong></div>
                 <div style="font-size:0.8rem;margin-top:4px;color:#999">כל תמונה בתוך ה-ZIP תועלה כרקע</div>
-                <input type="file" id="zipFileInput" accept=".zip">
+                <input type="file" id="zipFileInput">
             </div>
 
             <h3>הרקעים שלי:</h3>
@@ -1560,8 +1560,9 @@ function initDragAndDrop() {
     const bgZone = document.getElementById('bgUploadZone');
     const bgInput = document.getElementById('bgFileInput');
 
-    bgZone.onclick = () => bgInput.click();
-    bgInput.onchange = () => { if (bgInput.files[0]) loadBackgroundFile(bgInput.files[0]); };
+    bgZone.onclick = e => { if (e.target !== bgInput) bgInput.click(); };
+    bgInput.onclick = e => e.stopPropagation();
+    bgInput.onchange = () => { if (bgInput.files[0]) loadBackgroundFile(bgInput.files[0]); bgInput.value = ''; };
 
     bgZone.ondragover = e => { e.preventDefault(); bgZone.classList.add('dragover'); };
     bgZone.ondragleave = () => bgZone.classList.remove('dragover');
@@ -1575,8 +1576,9 @@ function initDragAndDrop() {
     const fontZone = document.getElementById('fontUploadZone');
     const fontInput = document.getElementById('fontFileInput');
 
-    fontZone.onclick = () => fontInput.click();
-    fontInput.onchange = () => { if (fontInput.files[0]) loadFontFile(fontInput.files[0]); };
+    fontZone.onclick = e => { if (e.target !== fontInput) fontInput.click(); };
+    fontInput.onclick = e => e.stopPropagation();
+    fontInput.onchange = () => { if (fontInput.files[0]) loadFontFile(fontInput.files[0]); fontInput.value = ''; };
 
     fontZone.ondragover = e => { e.preventDefault(); fontZone.classList.add('dragover'); };
     fontZone.ondragleave = () => fontZone.classList.remove('dragover');
@@ -1589,8 +1591,15 @@ function initDragAndDrop() {
     // ZIP upload zone
     const zipZone = document.getElementById('zipUploadZone');
     const zipInput = document.getElementById('zipFileInput');
-    zipZone.onclick = () => zipInput.click();
-    zipInput.onchange = () => { if (zipInput.files[0]) uploadZipBackgrounds(zipInput.files[0]); };
+    zipZone.onclick = e => { if (e.target !== zipInput) zipInput.click(); };
+    zipInput.onclick = e => e.stopPropagation();
+    zipInput.onchange = () => {
+        if (zipInput.files[0]) {
+            console.log('ZIP selected:', zipInput.files[0].name, zipInput.files[0].size);
+            uploadZipBackgrounds(zipInput.files[0]);
+        }
+        zipInput.value = '';
+    };
     zipZone.ondragover = e => { e.preventDefault(); zipZone.classList.add('dragover'); };
     zipZone.ondragleave = () => zipZone.classList.remove('dragover');
     zipZone.ondrop = e => {
@@ -1602,8 +1611,9 @@ function initDragAndDrop() {
 
 /* ─── ZIP Background Upload ──────────────────────── */
 async function uploadZipBackgrounds(file) {
-    if (!authToken) { toast('התחבר כדי להעלות רקעים', 'error'); return; }
-    if (!file.name.toLowerCase().endsWith('.zip')) { toast('יש לבחור קובץ ZIP', 'error'); return; }
+    if (!authToken) { toast('יש להתחבר כדי להעלות רקעים', 'error'); return; }
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (ext !== 'zip') { toast('יש לבחור קובץ ZIP (נבחר: .' + ext + ')', 'error'); return; }
 
     toast('מעלה רקעים מ-ZIP...');
     const fd = new FormData();
@@ -1623,7 +1633,8 @@ async function uploadZipBackgrounds(file) {
             toast(data.message, 'error');
         }
     } catch (e) {
-        toast('שגיאה בהעלאה', 'error');
+        console.error('ZIP upload error:', e);
+        toast('שגיאה בהעלאה: ' + e.message, 'error');
     }
 }
 
