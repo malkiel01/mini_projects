@@ -1149,6 +1149,11 @@
                 <button class="btn btn-outline" onclick="addContactManual()">➕ הוספה ידנית</button>
             </div>
 
+            <!-- למה הייבוא הישיר זמין או לא. בלי זה כישלון נראה
+                 כאילו הכפתור פשוט לא הגיב. -->
+            <div id="contactsImportStatus" style="display:none;font-size:0.85rem;padding:10px 14px;
+                 border-radius:8px;margin-bottom:16px"></div>
+
             <!-- Stats -->
             <div class="contacts-stats" id="contactsStats" style="display:none">
                 <span>סה"כ: <strong id="totalContacts">0</strong></span>
@@ -3231,6 +3236,7 @@ function switchStep(n) {
     }
     if (n === 3) {
         renderContactsList();
+        renderContactsImportStatus();
     }
     if (n === 4) {
         updateRecipientsUI();
@@ -3604,6 +3610,51 @@ function updateContactsBadge() {
  * ‏2. בכרום אנדרואיד — בורר אנשי הקשר של הדפדפן.
  * ‏3. בכל השאר — ייבוא מקובץ.
  */
+/**
+ * מצייר את מצב הייבוא הישיר. כישלון שקט הוא הבעיה האמיתית כאן:
+ * בלי השורה הזאת, אפליקציה ישנה, הרשאה חסרה והרשאה שנדחתה
+ * לצמיתות נראות כולן זהות — כפתור שלא מגיב.
+ */
+function renderContactsImportStatus() {
+    const box = document.getElementById('contactsImportStatus');
+    if (!box) return;
+    const android = window.GreetingCardsAndroid;
+    const btn = document.getElementById('phoneImportBtn');
+
+    const show = (bg, color, html) => {
+        box.style.display = 'block';
+        box.style.background = bg;
+        box.style.color = color;
+        box.innerHTML = html;
+    };
+
+    if (android && !android.readContacts) {
+        show('#fdecea', '#b3261e',
+            '⚠️ גרסת האפליקציה שמותקנת אצלך ישנה מכדי לקרוא אנשי קשר. ' +
+            'התקינו APK מעודכן, או ייבאו מקובץ.');
+        if (btn) btn.disabled = true;
+        return;
+    }
+
+    if (android?.readContacts) {
+        if (btn) btn.disabled = false;
+        if (android.hasContactsPermission()) {
+            show('#e7f5ec', '#1b5e20', '✅ הרשאה לאנשי קשר קיימת — לחצו על "ייבוא מהטלפון"');
+        } else {
+            show('#fff4e5', '#8a5a00', 'ℹ️ בלחיצה על "ייבוא מהטלפון" תתבקשו לאשר גישה לאנשי הקשר');
+        }
+        return;
+    }
+
+    // דפדפן. Contact Picker קיים רק בכרום אנדרואיד.
+    if ('contacts' in navigator && 'ContactsManager' in window) {
+        show('#e7f5ec', '#1b5e20', '✅ הדפדפן תומך בבחירת אנשי קשר');
+    } else {
+        show('#eef1f6', '#4a5568',
+            'ℹ️ ייבוא ישיר מהטלפון זמין באפליקציה. כאן אפשר לייבא מקובץ או להוסיף ידנית.');
+    }
+}
+
 async function importPhoneContacts() {
     const android = window.GreetingCardsAndroid;
 
@@ -3612,9 +3663,26 @@ async function importPhoneContacts() {
             importContactsFromAndroid();
         } else {
             // הדיאלוג אינו חוסם; MainActivity מזריק את התשובה לכאן.
-            window.onContactsPermissionResult = granted => {
-                if (granted) importContactsFromAndroid();
-                else toast('ההרשאה לאנשי קשר נדחתה', 'error');
+            window.onContactsPermissionResult = (granted, permanentlyDenied) => {
+                renderContactsImportStatus();
+                if (granted) { importContactsFromAndroid(); return; }
+                if (permanentlyDenied) {
+                    // אין יותר דיאלוג לבקש — הדרך היחידה היא ההגדרות.
+                    const box = document.getElementById('contactsImportStatus');
+                    if (box) {
+                        box.style.display = 'block';
+                        box.style.background = '#fdecea';
+                        box.style.color = '#b3261e';
+                        box.innerHTML = '⚠️ ההרשאה נחסמה. פתחו הגדרות → הרשאות → אנשי קשר ואפשרו. ' +
+                            (android.openAppSettings
+                                ? '<button class="btn btn-sm btn-outline" style="margin-right:8px" ' +
+                                  'onclick="window.GreetingCardsAndroid.openAppSettings()">פתח הגדרות</button>'
+                                : '');
+                    }
+                    toast('ההרשאה נחסמה — יש לאפשר אותה בהגדרות', 'error');
+                } else {
+                    toast('ההרשאה לאנשי קשר נדחתה', 'error');
+                }
             };
             android.requestContactsPermission();
         }
