@@ -1007,6 +1007,17 @@
                 <div class="menu-option" onclick="zoomReset()">↺ אפס גודל</div>
             </div>
         </div>
+        <div class="menu-item">
+            עיצובים ▾
+            <div class="menu-dropdown">
+                <div class="menu-option" onclick="saveCurrentDesign()">💾 שמור <span class="shortcut">Ctrl+S</span></div>
+                <div class="menu-option" onclick="saveDesignAs()">📄 שמור בשם…</div>
+                <div class="menu-sep"></div>
+                <div class="menu-option" onclick="showDesignsDialog()">📂 פתח עיצוב…</div>
+            </div>
+        </div>
+        <div style="margin-right:auto;display:flex;align-items:center;padding:0 12px;font-size:0.85rem;color:#888"
+             id="currentDesignLabel"></div>
     </div>
 
     <!-- Text templates bar -->
@@ -1354,6 +1365,7 @@ let currentUser = null;
 const state = {
     backgroundImage: null,     // data URL of background
     backgroundNatural: null,   // { width, height }
+    backgroundDirty: false,    // הרקע הוחלף ולכן צריך להישלח בשמירה הבאה
     fields: [],                // text fields on card
     selectedFieldId: null,
     clipboard: null,           // copied field data
@@ -1893,11 +1905,14 @@ function loadBackgroundFile(file) {
     reader.readAsDataURL(file);
 }
 
-function setBackground(dataUrl) {
+function setBackground(dataUrl, opts = {}) {
     const img = new Image();
     img.onload = () => {
         state.backgroundImage = dataUrl;
         state.backgroundNatural = { width: img.naturalWidth, height: img.naturalHeight };
+        // רקע שהוחלף חייב להישלח בשמירה הבאה. הטעינה מעיצוב שמור
+        // היא היוצא מן הכלל: שם הרקע כבר אצל השרת.
+        if (!opts.fromSavedDesign) state.backgroundDirty = true;
 
         // Update preview in step 1
         document.getElementById('bgPreview').style.display = 'block';
@@ -2528,6 +2543,9 @@ function setupKeyboard() {
         } else if (e.ctrlKey && e.key === 'd') {
             e.preventDefault();
             duplicateField();
+        } else if (e.ctrlKey && e.key === 's') {
+            e.preventDefault();
+            saveCurrentDesign();
         } else if (e.key === 'Escape') {
             selectField(null);
         }
@@ -3808,6 +3826,211 @@ checkAuth();
 // Handle Enter key in auth forms
 document.getElementById('loginPass')?.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
 document.getElementById('regPass')?.addEventListener('keydown', e => { if (e.key === 'Enter') doRegister(); });
+
+/* ═══════════════════════════════════════════════════
+   DESIGNS — שמירה וטעינה של רקע + שדות, לכל משתמש
+   ═══════════════════════════════════════════════════ */
+
+let currentDesign = { id: null, name: null };
+let designsCache = [];
+
+function updateDesignLabel() {
+    const label = document.getElementById('currentDesignLabel');
+    if (label) label.textContent = currentDesign.name ? '📄 ' + currentDesign.name : '';
+}
+
+function requireLoginForDesigns() {
+    if (authToken) return true;
+    toast('יש להתחבר כדי לשמור עיצובים', 'error');
+    return false;
+}
+
+async function designApi(action, options = {}) {
+    const res = await fetch(API_URL + '?action=' + action + (options.query || ''), {
+        method: options.body ? 'POST' : 'GET',
+        headers: {
+            'X-Auth-Token': authToken,
+            ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        },
+        body: options.body ? JSON.stringify(options.body) : undefined,
+        credentials: 'include',
+    });
+    const text = await res.text();
+    try {
+        return JSON.parse(text);
+    } catch (e) {
+        console.error('Design API returned non-JSON:', text);
+        return { success: false, message: 'תשובת שרת לא תקינה' };
+    }
+}
+
+/** שומר על העיצוב הפתוח; אם אין כזה, מבקש שם. */
+function saveCurrentDesign() {
+    if (!requireLoginForDesigns()) return;
+    if (currentDesign.id) return persistDesign(currentDesign.id, currentDesign.name);
+    saveDesignAs();
+}
+
+function saveDesignAs() {
+    if (!requireLoginForDesigns()) return;
+    const name = prompt('שם העיצוב:', currentDesign.name || 'עיצוב חדש');
+    if (name === null) return;
+    if (!name.trim()) { toast('נדרש שם', 'error'); return; }
+    persistDesign(null, name.trim());
+}
+
+async function persistDesign(id, name) {
+    if (state.fields.length === 0 && !state.backgroundImage) {
+        toast('אין מה לשמור — הוסיפו רקע או שדות', 'error');
+        return;
+    }
+
+    toast('שומר…');
+    const data = await designApi('save_design', {
+        body: {
+            id: id || undefined,
+            name,
+            fields: state.fields,
+            backgroundNatural: state.backgroundNatural,
+            // הרקע נשלח רק בשמירה ראשונה או כשהוחלף — אחרת השרת
+            // שומר את זה שכבר אצלו, ולא מעלים מגה־בייטים בכל שמירה.
+            background: (!id || state.backgroundDirty) ? state.backgroundImage : undefined,
+        },
+    });
+
+    if (!data.success) { toast(data.message, 'error'); return; }
+
+    currentDesign = { id: data.id, name: data.name };
+    state.backgroundDirty = false;
+    updateDesignLabel();
+    toast('נשמר: ' + data.name, 'success');
+}
+
+async function showDesignsDialog() {
+    if (!requireLoginForDesigns()) return;
+
+    showModal('<h2>📂 העיצובים שלי</h2><p style="color:#888">טוען…</p>');
+    const data = await designApi('list_designs');
+    if (!data.success) { closeModal(); toast(data.message, 'error'); return; }
+
+    // השם נשלף מכאן ולא נתחב ל-onclick: גרש בשם עיצוב היה שובר
+    // את המחרוזת בתוך התכונה.
+    designsCache = data.designs || [];
+    const designs = designsCache;
+    const rows = designs.length === 0
+        ? '<div class="empty-state"><div class="icon">📂</div><p>עדיין לא שמרתם עיצובים</p></div>'
+        : designs.map(d => `
+            <div class="contact-card" style="cursor:pointer" onclick="loadDesign('${d.id}')">
+                <div class="avatar">${d.hasBackground ? '🖼️' : '📄'}</div>
+                <div class="info">
+                    <div class="display-name">${escapeHtml(d.name)}</div>
+                    <div class="original-name">${d.fieldCount} שדות · ${formatDesignDate(d.updated)}</div>
+                </div>
+                <div class="contact-actions">
+                    <button class="delete-row-btn"
+                            onclick="event.stopPropagation();deleteDesign('${d.id}')"
+                            title="מחק">✕</button>
+                </div>
+            </div>
+        `).join('');
+
+    showModal(`
+        <h2>📂 העיצובים שלי</h2>
+        <div style="display:flex;flex-direction:column;gap:8px;margin:12px 0">${rows}</div>
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="closeModal()">סגור</button>
+        </div>
+    `);
+}
+
+function formatDesignDate(iso) {
+    if (!iso) return '';
+    try {
+        return new Date(iso).toLocaleString('he-IL', {
+            day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+        });
+    } catch (e) { return iso; }
+}
+
+async function loadDesign(id) {
+    closeModal();
+    toast('טוען עיצוב…');
+
+    const data = await designApi('get_design', { query: '&id=' + encodeURIComponent(id) });
+    if (!data.success) { toast(data.message, 'error'); return; }
+
+    const design = data.design;
+
+    // אלמנטי השדות הקודמים חייבים לרדת מה-DOM: renderAllFields רק
+    // מעדכן לפי מזהה, ושדות של העיצוב הקודם היו נשארים על הכרטיס.
+    document.querySelectorAll('.text-field').forEach(el => el.remove());
+
+    state.fields = design.fields || [];
+    state.selectedFieldId = null;
+
+    // המונה חייב לעקוף כל מזהה טעון, אחרת שדה חדש היה דורס קיים.
+    state.fields.forEach(f => {
+        const n = parseInt(String(f.id).replace('field_', ''), 10);
+        if (Number.isFinite(n) && n > fieldIdCounter) fieldIdCounter = n;
+    });
+
+    currentDesign = { id: design.id, name: design.name };
+    state.backgroundDirty = false;
+    updateDesignLabel();
+    updatePropsPanel();
+    updateRecipientsUI();
+
+    if (design.bgExt) {
+        const bg = await fetchDesignBackground(id);
+        if (bg) {
+            // setBackground מצייר את השדות מחדש כשהתמונה נטענת,
+            // ולכן אין כאן renderAllFields נוסף.
+            setBackground(bg, { fromSavedDesign: true });
+        } else {
+            renderAllFields();
+        }
+    } else {
+        renderAllFields();
+    }
+
+    updateStatusBar();
+    toast('נטען: ' + design.name, 'success');
+}
+
+/** מביא את הרקע כ-data URL — הפורמט שבו הייצוא מצייר אותו. */
+async function fetchDesignBackground(id) {
+    try {
+        const res = await fetch(API_URL + '?action=get_design_bg&id=' + encodeURIComponent(id), {
+            headers: { 'X-Auth-Token': authToken },
+            credentials: 'include',
+        });
+        if (!res.ok) return null;
+        const blob = await res.blob();
+        if (!blob.type.startsWith('image/')) return null;
+        return await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+    } catch (e) {
+        console.error('Failed to load design background', e);
+        return null;
+    }
+}
+
+async function deleteDesign(id) {
+    const name = designsCache.find(d => d.id === id)?.name || 'העיצוב';
+    if (!confirm(`למחוק את "${name}"?`)) return;
+    const data = await designApi('delete_design', { body: { id } });
+    if (!data.success) { toast(data.message, 'error'); return; }
+    if (currentDesign.id === id) {
+        currentDesign = { id: null, name: null };
+        updateDesignLabel();
+    }
+    toast('נמחק');
+    showDesignsDialog();
+}
 
 /* ═══════════════════════════════════════════════════
    WHATSAPP SEND (Android Bridge)
