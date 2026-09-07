@@ -46,6 +46,16 @@ class WhatsAppBridge(private val context: Context) {
         (context as? MainActivity)?.requestContactsPermission()
     }
 
+    /** נדרש כשההרשאה נדחתה לצמיתות — אז אין יותר דיאלוג לבקש. */
+    @JavascriptInterface
+    fun openAppSettings() {
+        (context as? MainActivity)?.openAppSettings()
+    }
+
+    /** מאפשר לדף לדעת שהוא רץ בגרסת אפליקציה שיודעת לקרוא אנשי קשר. */
+    @JavascriptInterface
+    fun appVersion(): String = BuildConfig.VERSION_NAME
+
     /**
      * ‏JSON: {"contacts":[{"name":…,"phone":…}]} או {"error":…}.
      *
@@ -119,12 +129,16 @@ class WhatsAppBridge(private val context: Context) {
         return WhatsAppSendAccessibilityService.instance != null
     }
 
+    // כמו שאר המסכים שנפתחים מהגשר — מה-UI thread, כי כאן אנחנו
+    // על thread רקע פרטי של ה-WebView.
     @JavascriptInterface
     fun openAccessibilitySettings() {
         try {
             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
+            val activity = context as? MainActivity
+            if (activity != null) activity.runOnUiThread { activity.startActivity(intent) }
+            else context.startActivity(intent)
         } catch (e: Exception) {
             Log.e(TAG, "Cannot open accessibility settings", e)
         }

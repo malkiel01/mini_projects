@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.provider.Settings
 import android.webkit.*
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -120,16 +121,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** נקראת מהגשר, כלומר מ-thread רקע — ולכן runOnUiThread. */
     fun requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
-                    NOTIFICATION_PERMISSION_REQUEST
-                )
-            }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            == PackageManager.PERMISSION_GRANTED) return
+
+        runOnUiThread {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                NOTIFICATION_PERMISSION_REQUEST
+            )
         }
     }
 
@@ -152,12 +155,29 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * ‏runOnUiThread הוא העיקר כאן: מתודות @JavascriptInterface רצות
+     * על thread רקע פרטי של ה-WebView, ו-requestPermissions שנקרא
+     * משם אינו פותח את הדיאלוג — הלחיצה פשוט לא עושה דבר.
+     */
     fun requestContactsPermission() {
-        ActivityCompat.requestPermissions(
-            this,
-            arrayOf(Manifest.permission.READ_CONTACTS),
-            CONTACTS_PERMISSION_REQUEST
-        )
+        runOnUiThread {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.READ_CONTACTS),
+                CONTACTS_PERMISSION_REQUEST
+            )
+        }
+    }
+
+    /** מסך ההגדרות של האפליקציה — היעד היחיד אחרי סירוב לצמיתות. */
+    fun openAppSettings() {
+        runOnUiThread {
+            startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                    .setData(Uri.fromParts("package", packageName, null))
+            )
+        }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -168,8 +188,16 @@ class MainActivity : AppCompatActivity() {
         if (requestCode == CONTACTS_PERMISSION_REQUEST) {
             val granted = grantResults.isNotEmpty() &&
                 grantResults[0] == PackageManager.PERMISSION_GRANTED
+
+            // סירוב עם "אל תשאל שוב" מחזיר DENIED מיד ובלי דיאלוג.
+            // בלי להבחין בו, כל לחיצה נוספת נראית כאילו כלום לא קורה;
+            // הדף צריך לדעת להפנות להגדרות במקום לבקש שוב.
+            val permanentlyDenied = !granted && !ActivityCompat
+                .shouldShowRequestPermissionRationale(this, Manifest.permission.READ_CONTACTS)
+
             binding.webView.evaluateJavascript(
-                "window.onContactsPermissionResult && window.onContactsPermissionResult($granted)",
+                "window.onContactsPermissionResult && " +
+                    "window.onContactsPermissionResult($granted, $permanentlyDenied)",
                 null
             )
         }
