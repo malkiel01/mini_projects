@@ -79,6 +79,13 @@ try {
         case 'delete_user_bg':      requireAuth($usersDir, $token); deleteUserBackground($usersDir, $token, $input); break;
         case 'get_user_bg':         requireAuth($usersDir, $token); getUserBackground($usersDir, $token); break;
 
+        // ─── Designs (per-user saved layouts) ───────
+        case 'save_design':         requireAuth($usersDir, $token); saveDesign($usersDir, $token, $input); break;
+        case 'list_designs':        requireAuth($usersDir, $token); listDesigns($usersDir, $token); break;
+        case 'get_design':          requireAuth($usersDir, $token); getDesign($usersDir, $token); break;
+        case 'get_design_bg':       requireAuth($usersDir, $token); getDesignBackground($usersDir, $token); break;
+        case 'delete_design':       requireAuth($usersDir, $token); deleteDesign($usersDir, $token, $input); break;
+
         // ─── Admin (global defaults management) ─────
         case 'admin_check':         adminCheck($dataDir, $input); break;
         case 'admin_upload_bg':     handleBackgroundUpload($backgroundsDir); break;
@@ -439,6 +446,137 @@ function deleteUserBackground($usersDir, $token, $input) {
     @unlink($bgDir . '/' . $meta['filename']);
     @unlink($metaFile);
     respond(true, 'רקע נמחק');
+}
+
+// ═══════════════════════════════════════════════════════
+// Designs (per-user saved layouts)
+//
+// עיצוב = רקע + כל השדות. הרקע נשמר כקובץ תמונה לצד ה-JSON
+// ולא בתוכו: base64 בתוך JSON תופח בשליש, וכמה עיצובים היו
+// הופכים את הקובץ לכבד מכדי לטעון אותו בכל רשימה.
+// ═══════════════════════════════════════════════════════
+
+function getDesignsDir($usersDir, $token) {
+    $userDir = getUserDir($usersDir, $token);
+    if (!$userDir) return null;
+    $dir = $userDir . '/designs';
+    if (!is_dir($dir)) mkdir($dir, 0755, true);
+    return $dir;
+}
+
+function saveDesign($usersDir, $token, $input) {
+    $dir = getDesignsDir($usersDir, $token);
+    if (!$dir) respond(false, 'משתמש לא נמצא');
+
+    $name = trim($input['name'] ?? '');
+    if ($name === '') respond(false, 'נדרש שם לעיצוב');
+
+    // מזהה קיים = שמירה על עיצוב קיים; אחרת עיצוב חדש.
+    $id = $input['id'] ?? '';
+    if ($id !== '' && !preg_match('/^dsg_[a-z0-9]+$/i', $id)) respond(false, 'מזהה לא תקין');
+    if ($id === '') $id = uniqid('dsg_');
+
+    $meta = [
+        'id' => $id,
+        'name' => $name,
+        'fields' => $input['fields'] ?? [],
+        'backgroundNatural' => $input['backgroundNatural'] ?? null,
+        'updated' => date('c'),
+    ];
+
+    // רקע חדש מגיע כ-data URL. אם לא נשלח רקע, נשמר זה שכבר קיים.
+    $background = $input['background'] ?? '';
+    if (is_string($background) && str_starts_with($background, 'data:image/')) {
+        if (!preg_match('#^data:image/([a-z0-9.+-]+);base64,#i', $background, $m)) {
+            respond(false, 'פורמט רקע לא נתמך');
+        }
+        $ext = strtolower($m[1]);
+        if ($ext === 'jpeg') $ext = 'jpg';
+        if (!in_array($ext, ['jpg', 'png', 'webp'])) respond(false, 'פורמט רקע לא נתמך: ' . $ext);
+
+        $binary = base64_decode(substr($background, strlen($m[0])), true);
+        if ($binary === false) respond(false, 'הרקע פגום');
+        if (strlen($binary) > 25 * 1024 * 1024) respond(false, 'הרקע גדול מדי');
+
+        foreach (glob("$dir/$id.{jpg,png,webp}", GLOB_BRACE) ?: [] as $old) @unlink($old);
+        file_put_contents("$dir/$id.$ext", $binary);
+        $meta['bgExt'] = $ext;
+    } else {
+        $existing = json_decode(@file_get_contents("$dir/$id.json"), true);
+        if (!empty($existing['bgExt'])) $meta['bgExt'] = $existing['bgExt'];
+    }
+
+    file_put_contents("$dir/$id.json", json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+
+    respond(true, 'העיצוב נשמר', ['id' => $id, 'name' => $name]);
+}
+
+function listDesigns($usersDir, $token) {
+    $dir = getDesignsDir($usersDir, $token);
+    if (!$dir) respond(false, 'משתמש לא נמצא');
+
+    $designs = [];
+    foreach (glob($dir . '/*.json') as $file) {
+        $d = json_decode(file_get_contents($file), true);
+        if (!$d) continue;
+        // בלי השדות: הרשימה נטענת בכל פתיחת דיאלוג, ואין בה בהם צורך.
+        $designs[] = [
+            'id' => $d['id'] ?? '',
+            'name' => $d['name'] ?? '',
+            'updated' => $d['updated'] ?? '',
+            'fieldCount' => count($d['fields'] ?? []),
+            'hasBackground' => !empty($d['bgExt']),
+        ];
+    }
+    usort($designs, fn($a, $b) => strcmp($b['updated'], $a['updated']));
+    respond(true, 'OK', ['designs' => $designs]);
+}
+
+function getDesign($usersDir, $token) {
+    $dir = getDesignsDir($usersDir, $token);
+    if (!$dir) respond(false, 'משתמש לא נמצא');
+
+    $id = $_GET['id'] ?? '';
+    if (!preg_match('/^dsg_[a-z0-9]+$/i', $id)) respond(false, 'מזהה לא תקין');
+
+    $file = "$dir/$id.json";
+    if (!file_exists($file)) respond(false, 'העיצוב לא נמצא');
+
+    respond(true, 'OK', ['design' => json_decode(file_get_contents($file), true)]);
+}
+
+/** מחזיר את קובץ הרקע עצמו, כדי שה-JSON של העיצוב יישאר קטן. */
+function getDesignBackground($usersDir, $token) {
+    $dir = getDesignsDir($usersDir, $token);
+    if (!$dir) respond(false, 'משתמש לא נמצא');
+
+    $id = $_GET['id'] ?? '';
+    if (!preg_match('/^dsg_[a-z0-9]+$/i', $id)) respond(false, 'מזהה לא תקין');
+
+    $meta = json_decode(@file_get_contents("$dir/$id.json"), true);
+    $ext = $meta['bgExt'] ?? '';
+    $path = "$dir/$id.$ext";
+    if (!$ext || !file_exists($path)) respond(false, 'לעיצוב אין רקע שמור');
+
+    $mime = ['jpg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'];
+    header('Content-Type: ' . ($mime[$ext] ?? 'application/octet-stream'));
+    header('Content-Length: ' . filesize($path));
+    readfile($path);
+    exit;
+}
+
+function deleteDesign($usersDir, $token, $input) {
+    $dir = getDesignsDir($usersDir, $token);
+    if (!$dir) respond(false, 'משתמש לא נמצא');
+
+    $id = $input['id'] ?? $_GET['id'] ?? '';
+    if (!preg_match('/^dsg_[a-z0-9]+$/i', $id)) respond(false, 'מזהה לא תקין');
+    if (!file_exists("$dir/$id.json")) respond(false, 'העיצוב לא נמצא');
+
+    @unlink("$dir/$id.json");
+    foreach (glob("$dir/$id.{jpg,png,webp}", GLOB_BRACE) ?: [] as $bg) @unlink($bg);
+
+    respond(true, 'העיצוב נמחק');
 }
 
 // ═══════════════════════════════════════════════════════
