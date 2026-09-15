@@ -31,8 +31,13 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      # ‏packages נדרש במפורש: ברירת המחדל של הפעולה מתקינה גם את
+      # החבילה 'tools', שהוסרה ממאגר ה-SDK — sdkmanager נכשל עליה
+      # ‏("Failed to find package 'tools'") לפני שהבנייה בכלל מתחילה.
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
