@@ -36,8 +36,12 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      # ‏אותה סיבה כמו ב-greeting-cards-apk.yml: החבילה 'tools'
+      # שבברירת המחדל הוסרה ממאגר ה-SDK ומפילה את השלב.
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3

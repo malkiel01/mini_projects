@@ -4,22 +4,20 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.os.Build
 import android.provider.ContactsContract
-import android.provider.Settings
 import android.util.Base64
 import android.util.Log
 import android.webkit.JavascriptInterface
-import android.widget.Toast
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
 /**
  * JavaScript bridge — injected into the WebView as `window.GreetingCardsAndroid`.
- * Reads the phone's contacts, and receives recipient data + images from the
- * web app to start the WhatsApp send queue.
+ * Reads the phone's contacts, and opens a WhatsApp chat per recipient with the
+ * rendered card attached. The queue itself lives in the web app.
  */
 class WhatsAppBridge(private val context: Context) {
 
@@ -124,99 +122,65 @@ class WhatsAppBridge(private val context: Context) {
         return org.json.JSONArray(packages.map { JSONObject(it) }).toString()
     }
 
-    @JavascriptInterface
-    fun isAccessibilityServiceEnabled(): Boolean {
-        return WhatsAppSendAccessibilityService.instance != null
-    }
-
-    // כמו שאר המסכים שנפתחים מהגשר — מה-UI thread, כי כאן אנחנו
-    // על thread רקע פרטי של ה-WebView.
-    @JavascriptInterface
-    fun openAccessibilitySettings() {
-        try {
-            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            val activity = context as? MainActivity
-            if (activity != null) activity.runOnUiThread { activity.startActivity(intent) }
-            else context.startActivity(intent)
-        } catch (e: Exception) {
-            Log.e(TAG, "Cannot open accessibility settings", e)
-        }
-    }
+    // ─── Sending ─────────────────────────────────────
+    //
+    // ‏כרטיס אחד בכל קריאה: הדף מנהל את התור, וכאן רק נפתח הצ'אט
+    // עם התמונה מצורפת. הלחיצה על "שלח" היא של המשתמש — זה מה
+    // שמאפשר לוותר על שירות הנגישות, ואיתו על החסימות שהוא גורר.
 
     /**
-     * Called from JavaScript with a JSON payload:
-     * {
-     *   "recipients": [{ "name": "...", "phone": "...", "imageBase64": "...", "imageFormat": "jpg" }],
-     *   "whatsappPackage": "com.whatsapp",
-     *   "delaySeconds": 3
-     * }
+     * ‏JSON נכנס: {"phone":…,"imageBase64":…,"imageFormat":"jpg",
+     * ‏"whatsappPackage":"com.whatsapp"}.
+     * ‏JSON חוזר: {"ok":true} או {"ok":false,"error":…}.
      */
     @JavascriptInterface
-    fun startWhatsAppSend(payloadJson: String) {
-        try {
+    fun openWhatsAppChat(payloadJson: String): String {
+        return try {
             val payload = JSONObject(payloadJson)
-            val recipients = payload.getJSONArray("recipients")
+            val phone = payload.getString("phone")
+            val base64 = payload.getString("imageBase64")
+            val format = payload.optString("imageFormat", "jpg")
             val whatsappPackage = payload.optString("whatsappPackage", "com.whatsapp")
-            val delaySec = payload.optInt("delaySeconds", 3)
 
-            // Ensure cache directory exists
+            val jid = formatPhoneForWhatsApp(phone)
+                ?: return JSONObject().put("ok", false).put("error", "bad_phone").toString()
+
             val cacheDir = File(context.cacheDir, "whatsapp_cards")
             if (!cacheDir.exists()) cacheDir.mkdirs()
 
-            // Build send items
-            val items = mutableListOf<SendQueueManager.SendItem>()
+            val imageFile = File(cacheDir, "card_${System.currentTimeMillis()}.$format")
+            imageFile.writeBytes(Base64.decode(base64, Base64.DEFAULT))
 
-            for (i in 0 until recipients.length()) {
-                val r = recipients.getJSONObject(i)
-                val name = r.getString("name")
-                val phone = r.getString("phone")
-                val base64 = r.getString("imageBase64")
-                val format = r.optString("imageFormat", "jpg")
+            val uri = FileProvider.getUriForFile(
+                context, "${context.packageName}.fileprovider", imageFile,
+            )
 
-                // Decode Base64 to file
-                val imageBytes = Base64.decode(base64, Base64.DEFAULT)
-                val imageFile = File(cacheDir, "card_${i}_${System.currentTimeMillis()}.$format")
-                imageFile.writeBytes(imageBytes)
-
-                items.add(SendQueueManager.SendItem(
-                    recipientName = name,
-                    phoneNumber = phone,
-                    imageFile = imageFile
-                ))
+            // ‏jid אינו מתועד, אבל הוא מה שפותח את הצ'אט של המספר
+            // עצמו. בלעדיו WhatsApp היה מציג בורר נמענים בכל כרטיס.
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = if (format == "png") "image/png" else "image/jpeg"
+                setPackage(whatsappPackage)
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra("jid", jid)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
 
-            if (items.isEmpty()) {
-                showToast("אין נמענים לשליחה")
-                return
-            }
-
-            // Request notification permission on Android 13+
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                if (context is MainActivity) {
-                    context.requestNotificationPermission()
-                }
-            }
-
-            // Start the foreground service
-            val serviceIntent = Intent(context, SendForegroundService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(serviceIntent)
-            } else {
-                context.startService(serviceIntent)
-            }
-
-            // Give service time to start, then begin sending
-            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                SendForegroundService.instance?.startSending(items, whatsappPackage, delaySec * 1000L)
-                    ?: showToast("שגיאה בהפעלת שירות השליחה")
-            }, 500)
-
-            showToast("מתחיל שליחה ל-${items.size} נמענים...")
-
+            context.startActivity(intent)
+            JSONObject().put("ok", true).toString()
         } catch (e: Exception) {
-            Log.e(TAG, "Error starting WhatsApp send", e)
-            showToast("שגיאה: ${e.message}")
+            Log.e(TAG, "Cannot open WhatsApp chat", e)
+            JSONObject().put("ok", false).put("error", e.message ?: "launch_failed").toString()
+        }
+    }
+
+    /** התמונות נכתבות ל-cache לפני השליחה; בסוף התור הן מיותרות. */
+    @JavascriptInterface
+    fun clearSentCards() {
+        try {
+            File(context.cacheDir, "whatsapp_cards").listFiles()?.forEach { it.delete() }
+        } catch (e: Exception) {
+            Log.w(TAG, "Cannot clear card cache", e)
         }
     }
 
@@ -229,9 +193,21 @@ class WhatsAppBridge(private val context: Context) {
         }
     }
 
-    private fun showToast(message: String) {
-        android.os.Handler(android.os.Looper.getMainLooper()).post {
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+    /**
+     * ‏מספר → JID בפורמט <מספר>@s.whatsapp.net, או null אם אינו תקין.
+     * מספר ישראלי מקומי (05x, 03 וכו') מומר לבינלאומי, כי WhatsApp
+     * מזהה רק מספרים עם קידומת מדינה.
+     */
+    private fun formatPhoneForWhatsApp(phone: String): String? {
+        var cleaned = phone.replace(Regex("[^\\d+]"), "")
+        if (cleaned.length < 7) return null
+
+        if (Regex("^0[2-9]").containsMatchIn(cleaned)) {
+            cleaned = "+972" + cleaned.substring(1)
         }
+        if (cleaned.startsWith("+")) cleaned = cleaned.substring(1)
+
+        if (cleaned.length < 7 || cleaned.length > 15) return null
+        return "$cleaned@s.whatsapp.net"
     }
 }

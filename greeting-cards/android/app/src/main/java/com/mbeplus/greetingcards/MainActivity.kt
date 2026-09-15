@@ -6,7 +6,6 @@ import android.app.DownloadManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
@@ -14,7 +13,6 @@ import android.webkit.*
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import com.mbeplus.greetingcards.databinding.ActivityMainBinding
 
 /**
@@ -35,7 +33,6 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val FILE_CHOOSER_REQUEST = 1001
         private const val CONTACTS_PERMISSION_REQUEST = 1002
-        private const val NOTIFICATION_PERMISSION_REQUEST = 1003
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -121,19 +118,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** נקראת מהגשר, כלומר מ-thread רקע — ולכן runOnUiThread. */
-    fun requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-            == PackageManager.PERMISSION_GRANTED) return
-
-        runOnUiThread {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
-                NOTIFICATION_PERMISSION_REQUEST
-            )
-        }
+    /**
+     * ‏החזרה מ-WhatsApp היא הסימן שהכרטיס טופל — נשלח או נזנח.
+     * אין דרך אחרת לדעת זאת בלי שירות נגישות, ולכן התור בדף ממתין
+     * בדיוק לרגע הזה כדי להתקדם לנמען הבא.
+     *
+     * ‏onResume רץ גם בפתיחה רגילה של האפליקציה; הדף מתעלם כשאין
+     * תור פעיל.
+     */
+    override fun onResume() {
+        super.onResume()
+        binding.webView.evaluateJavascript(
+            "window.onReturnedFromWhatsApp && window.onReturnedFromWhatsApp()", null
+        )
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

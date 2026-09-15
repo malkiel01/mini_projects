@@ -1315,7 +1315,14 @@
         <!-- WhatsApp Send (Android app only) -->
         <div id="whatsappSendSection" class="card" style="display:none;border:2px solid #25D366;background:#f0fff4">
             <h2 style="color:#25D366">📲 שליחה ב-WhatsApp</h2>
-            <p style="color:#666;margin-bottom:12px">שליחה אוטומטית של הכרטיסים ישירות ב-WhatsApp לכל נמען עם מספר טלפון.</p>
+            <p style="color:#666;margin-bottom:6px">
+                האפליקציה פותחת לכל נמען את הצ'אט שלו כשהכרטיס כבר מצורף — אתם רק לוחצים
+                <strong>שלח</strong> ואז <strong>חזרה</strong>, והיא ממשיכה לנמען הבא לבד.
+            </p>
+            <p style="color:#8a5a00;background:#fff4e5;padding:8px 10px;border-radius:6px;margin-bottom:12px;font-size:.9rem">
+                הלחיצה על "שלח" נשארת שלכם בכוונה: שליחה אוטומטית לגמרי דורשת שירות נגישות,
+                שגוגל חוסמת בהתקנה, ו-WhatsApp חוסם בגינה חשבונות.
+            </p>
 
             <div id="whatsappChecks" style="margin-bottom:12px"></div>
 
@@ -1325,7 +1332,7 @@
                     <select id="whatsappPackageSelect"></select>
                 </div>
                 <div class="form-group">
-                    <label>השהיה בין שליחות (שניות):</label>
+                    <label>השהיה בין נמענים (שניות):</label>
                     <input type="number" id="sendDelay" value="3" min="1" max="30">
                 </div>
             </div>
@@ -1340,6 +1347,10 @@
             <div id="whatsappProgress" style="display:none;margin-top:16px">
                 <div class="progress-text" id="whatsappProgressText"></div>
                 <div class="progress-bar"><div class="fill" id="whatsappProgressFill" style="width:0"></div></div>
+                <div id="whatsappSendControls" style="display:none;gap:8px;justify-content:center;margin-top:10px">
+                    <button class="btn btn-sm btn-outline" id="whatsappSkipBtn" onclick="skipCurrentCard()">דלג על הנמען</button>
+                    <button class="btn btn-sm btn-outline" onclick="stopWhatsAppSend()">עצור שליחה</button>
+                </div>
             </div>
         </div>
 
@@ -4111,32 +4122,32 @@ function isInAndroidApp() {
 function initWhatsAppSection() {
     if (!isInAndroidApp()) return;
 
-    const section = document.getElementById('whatsappSendSection');
-    section.style.display = 'block';
+    const android = window.GreetingCardsAndroid;
+    document.getElementById('whatsappSendSection').style.display = 'block';
 
-    const checks = document.getElementById('whatsappChecks');
-    const whatsappAvailable = window.GreetingCardsAndroid.isWhatsAppAvailable();
-    const accessibilityEnabled = window.GreetingCardsAndroid.isAccessibilityServiceEnabled();
+    // ‏גרסה ישנה מכדי לשלוח כרטיס בודד — התור כאן אינו מתאים לה.
+    if (!android.openWhatsAppChat) {
+        document.getElementById('whatsappChecks').innerHTML =
+            '<div style="color:#b3261e">⚠️ גרסת האפליקציה שמותקנת אצלך ישנה. התקינו APK מעודכן.</div>';
+        document.getElementById('whatsappSendBtn').disabled = true;
+        return;
+    }
+
+    const whatsappAvailable = android.isWhatsAppAvailable();
     const withPhone = getRecipientsWithPhone().length;
 
-    let html = '';
-    html += `<div style="color:${whatsappAvailable ? '#28a745' : '#dc3545'}">
-        ${whatsappAvailable ? '✅' : '❌'} WhatsApp ${whatsappAvailable ? 'מותקן' : 'אינו מותקן'}
-    </div>`;
-    html += `<div style="color:${accessibilityEnabled ? '#28a745' : '#dc3545'}">
-        ${accessibilityEnabled ? '✅' : '❌'} שירות נגישות ${accessibilityEnabled ? 'פעיל' : 'לא פעיל'}
-        ${!accessibilityEnabled ? '<button class="btn btn-sm btn-outline" onclick="window.GreetingCardsAndroid.openAccessibilitySettings()" style="margin-right:8px">הפעל</button>' : ''}
-    </div>`;
-    html += `<div style="color:${withPhone > 0 ? '#28a745' : '#dc3545'}">
-        ${withPhone > 0 ? '✅' : '⚠️'} ${withPhone} נמענים עם מספר טלפון
-    </div>`;
-    checks.innerHTML = html;
+    document.getElementById('whatsappChecks').innerHTML = `
+        <div style="color:${whatsappAvailable ? '#28a745' : '#dc3545'}">
+            ${whatsappAvailable ? '✅' : '❌'} WhatsApp ${whatsappAvailable ? 'מותקן' : 'אינו מותקן'}
+        </div>
+        <div style="color:${withPhone > 0 ? '#28a745' : '#dc3545'}">
+            ${withPhone > 0 ? '✅' : '⚠️'} ${withPhone} נמענים עם מספר טלפון
+        </div>`;
 
-    document.getElementById('whatsappSendBtn').disabled = !whatsappAvailable || !accessibilityEnabled || withPhone === 0;
+    document.getElementById('whatsappSendBtn').disabled = !whatsappAvailable || withPhone === 0;
 
-    // Populate WhatsApp package selector
     try {
-        const packages = JSON.parse(window.GreetingCardsAndroid.getWhatsAppPackages());
+        const packages = JSON.parse(android.getWhatsAppPackages());
         const select = document.getElementById('whatsappPackageSelect');
         select.innerHTML = '';
         packages.forEach(pkg => {
@@ -4159,60 +4170,163 @@ function getRecipientsWithPhone() {
     });
 }
 
+/* ─── תור השליחה ──────────────────────────────────
+ *
+ * ‏השליחה חצי-אוטומטית: האפליקציה פותחת לכל נמען את הצ'אט שלו עם
+ * הכרטיס כבר מצורף, והלחיצה על "שלח" היא של המשתמש. את הלחיצה
+ * הזאת אפשר היה לחסוך רק בשירות נגישות, ושירות כזה גורר חסימת
+ * התקנה, אזהרות Play Protect, סיכון לחסימת החשבון ב-WhatsApp,
+ * ואי-אפשרות לפרסם בחנות. לחיצה אחת לנמען היא מחיר נמוך מזה.
+ *
+ * התור יושב כאן ולא בצד הנייטיב, כי הרגע היחיד שבו אפשר לדעת
+ * שכרטיס טופל הוא החזרה לאפליקציה — onResume מזריק לכאן
+ * ‏onReturnedFromWhatsApp, והתור מתקדם. זה גם מה שמאפשר לייצר כל
+ * תמונה רק ברגע שצריך אותה, במקום להחזיק את כולן בזיכרון.
+ */
+const sendQueue = {
+    items: [],           // {name, phone, recipient}
+    index: 0,
+    active: false,
+    awaitingReturn: false,
+    countdown: null,
+    sent: 0,
+    skipped: 0,
+};
+
 async function startWhatsAppSend() {
     if (!state.backgroundImage) { toast('יש לבחור תמונת רקע', 'error'); return; }
+    if (sendQueue.active) { toast('שליחה כבר פועלת', 'error'); return; }
 
     const selectedContacts = state.contacts.filter(c => c.selected && c.phone);
     const recipients = state.recipients.length > 0 ? state.recipients : [{}];
     const listColumns = getListColumns();
-    const whatsappPackage = document.getElementById('whatsappPackageSelect').value;
-    const delay = parseInt(document.getElementById('sendDelay').value) || 3;
 
-    const sendList = [];
-    const progressDiv = document.getElementById('whatsappProgress');
-    const progressText = document.getElementById('whatsappProgressText');
-    const progressFill = document.getElementById('whatsappProgressFill');
-    progressDiv.style.display = 'block';
-
-    // Build send list — match recipients to contacts with phone numbers
-    for (let i = 0; i < recipients.length; i++) {
-        const recipient = recipients[i];
+    const items = [];
+    for (const recipient of recipients) {
         const nameValue = listColumns.length > 0 ? recipient[listColumns[0]] : '';
         const contact = selectedContacts.find(c => c.displayName === nameValue);
-
-        if (!contact || !contact.phone) continue;
-
-        progressText.textContent = `מכין תמונה ${sendList.length + 1}...`;
-        progressFill.style.width = ((i + 1) / recipients.length * 50) + '%';
-
-        const imageBlob = await generateImage(recipient, 'jpg');
-        const base64 = await blobToBase64(imageBlob);
-
-        sendList.push({
-            name: contact.displayName,
-            phone: contact.phone,
-            imageBase64: base64,
-            imageFormat: 'jpg'
-        });
+        if (contact && contact.phone) {
+            items.push({ name: contact.displayName, phone: contact.phone, recipient });
+        }
     }
 
-    if (sendList.length === 0) {
-        toast('אין נמענים עם מספר טלפון', 'error');
-        progressDiv.style.display = 'none';
+    if (items.length === 0) { toast('אין נמענים עם מספר טלפון', 'error'); return; }
+
+    Object.assign(sendQueue, {
+        items, index: 0, active: true, awaitingReturn: false,
+        countdown: null, sent: 0, skipped: 0,
+    });
+
+    document.getElementById('whatsappSendBtn').disabled = true;
+    document.getElementById('whatsappProgress').style.display = 'block';
+    sendCurrentCard();
+}
+
+async function sendCurrentCard() {
+    const item = sendQueue.items[sendQueue.index];
+    if (!item) { finishWhatsAppSend(); return; }
+
+    renderSendProgress(`מכין כרטיס ל-${item.name}...`);
+
+    let base64;
+    try {
+        base64 = await blobToBase64(await generateImage(item.recipient, 'jpg'));
+    } catch (e) {
+        console.error('Failed to render card', e);
+        sendQueue.skipped++;
+        advanceSendQueue();
         return;
     }
 
-    progressText.textContent = `שולח ${sendList.length} כרטיסים ב-WhatsApp...`;
-    progressFill.style.width = '100%';
+    const result = JSON.parse(window.GreetingCardsAndroid.openWhatsAppChat(JSON.stringify({
+        phone: item.phone,
+        imageBase64: base64,
+        imageFormat: 'jpg',
+        whatsappPackage: document.getElementById('whatsappPackageSelect').value,
+    })));
 
-    const payload = JSON.stringify({
-        recipients: sendList,
-        whatsappPackage: whatsappPackage,
-        delaySeconds: delay
-    });
+    if (!result.ok) {
+        toast(result.error === 'bad_phone'
+            ? `מספר לא תקין: ${item.name}`
+            : `לא ניתן לפתוח את WhatsApp עבור ${item.name}`, 'error');
+        sendQueue.skipped++;
+        advanceSendQueue();
+        return;
+    }
 
-    window.GreetingCardsAndroid.startWhatsAppSend(payload);
-    toast(`מתחיל שליחה ל-${sendList.length} נמענים... 📲`, 'success');
+    // ‏מכאן WhatsApp בחזית. הכרטיס ייחשב כטופל כשנחזור לאפליקציה.
+    sendQueue.awaitingReturn = true;
+    renderSendProgress(`נפתח WhatsApp עבור ${item.name} — לחצו שלח, ואז חזרה`);
+}
+
+/**
+ * ‏החזרה מ-WhatsApp. onResume רץ גם בפתיחה רגילה של האפליקציה,
+ * ולכן הבדיקה של awaitingReturn היא מה שמונע התקדמות מדומה.
+ */
+window.onReturnedFromWhatsApp = function () {
+    if (!sendQueue.active || !sendQueue.awaitingReturn) return;
+    sendQueue.awaitingReturn = false;
+    sendQueue.sent++;
+    advanceSendQueue();
+};
+
+function advanceSendQueue() {
+    sendQueue.index++;
+    if (sendQueue.index >= sendQueue.items.length) { finishWhatsAppSend(); return; }
+
+    // השהיה קצרה לפני הנמען הבא — חלון לעצור, ורווח נשימה שמרחיק
+    // מרצף שליחות שנראה אוטומטי.
+    let left = parseInt(document.getElementById('sendDelay').value) || 3;
+    const tick = () => {
+        if (!sendQueue.active) return;
+        if (left <= 0) { sendQueue.countdown = null; sendCurrentCard(); return; }
+        const next = sendQueue.items[sendQueue.index];
+        renderSendProgress(`הבא: ${next.name} — בעוד ${left}`, true);
+        left--;
+        sendQueue.countdown = setTimeout(tick, 1000);
+    };
+    tick();
+}
+
+/** דילוג על הנמען הנוכחי בזמן הספירה לאחור. */
+function skipCurrentCard() {
+    if (!sendQueue.active) return;
+    clearTimeout(sendQueue.countdown);
+    sendQueue.countdown = null;
+    sendQueue.skipped++;
+    advanceSendQueue();
+}
+
+function stopWhatsAppSend() {
+    if (!sendQueue.active) return;
+    clearTimeout(sendQueue.countdown);
+    sendQueue.skipped += sendQueue.items.length - sendQueue.index;
+    finishWhatsAppSend(true);
+}
+
+function finishWhatsAppSend(cancelled) {
+    Object.assign(sendQueue, { active: false, awaitingReturn: false, countdown: null });
+    document.getElementById('whatsappSendBtn').disabled = false;
+    document.getElementById('whatsappSendControls').style.display = 'none';
+
+    const { sent, skipped } = sendQueue;
+    document.getElementById('whatsappProgressText').textContent =
+        (cancelled ? 'השליחה הופסקה. ' : 'הסתיים. ') +
+        `${sent} נשלחו` + (skipped > 0 ? `, ${skipped} דולגו` : '');
+    document.getElementById('whatsappProgressFill').style.width = '100%';
+
+    try { window.GreetingCardsAndroid.clearSentCards(); } catch (e) {}
+    toast(cancelled ? 'השליחה הופסקה' : `הסתיים — ${sent} כרטיסים`, cancelled ? 'error' : 'success');
+}
+
+function renderSendProgress(text, showSkip) {
+    const total = sendQueue.items.length;
+    document.getElementById('whatsappProgressText').textContent =
+        `${sendQueue.index + 1} / ${total} — ${text}`;
+    document.getElementById('whatsappProgressFill').style.width =
+        (sendQueue.index / total * 100) + '%';
+    document.getElementById('whatsappSendControls').style.display = 'flex';
+    document.getElementById('whatsappSkipBtn').style.display = showSkip ? '' : 'none';
 }
 
 function blobToBase64(blob) {
