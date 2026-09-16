@@ -17,6 +17,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
+// ‏const ברמת קובץ מתבצע לפי סדר ואינו מוקדם אוטומטית, ולכן
+// ההצהרות חייבות להיות לפני ה-switch שמפעיל את ה-handlers.
+
+/** שמות הנכסים המותרים בעיצוב: שכבת הציור, ועד 100 מדבקות. */
+const DESIGN_SLOT_RE = '/^(paint|s\d{1,2})$/';
+
+/** הפורמטים המותרים לכל תמונה. SVG אינו ברשימה — הוא נושא סקריפט. */
+const DESIGN_IMAGE_EXT = ['jpg', 'png', 'webp'];
+
 $dataDir = __DIR__ . '/data';
 $usersDir = $dataDir . '/users';
 $fontsDir = __DIR__ . '/fonts';
@@ -451,9 +460,10 @@ function deleteUserBackground($usersDir, $token, $input) {
 // ═══════════════════════════════════════════════════════
 // Designs (per-user saved layouts)
 //
-// עיצוב = רקע + כל השדות. הרקע נשמר כקובץ תמונה לצד ה-JSON
-// ולא בתוכו: base64 בתוך JSON תופח בשליש, וכמה עיצובים היו
-// הופכים את הקובץ לכבד מכדי לטעון אותו בכל רשימה.
+// עיצוב = רקע + שכבת ציור + מדבקות + כל השדות. כל התמונות
+// נשמרות כקבצים לצד ה-JSON ולא בתוכו: base64 בתוך JSON תופח
+// בשליש, וכמה עיצובים היו הופכים את הקובץ לכבד מכדי לטעון אותו
+// בכל רשימה. ה-JSON מחזיק רק גאומטריה ומצביע לקבצים.
 // ═══════════════════════════════════════════════════════
 
 function getDesignsDir($usersDir, $token) {
@@ -462,6 +472,36 @@ function getDesignsDir($usersDir, $token) {
     $dir = $userDir . '/designs';
     if (!is_dir($dir)) mkdir($dir, 0755, true);
     return $dir;
+}
+
+/**
+ * מפרק data URL של תמונה לסיומת ולתוכן בינארי, או עוצר בשגיאה.
+ * ‏$label נכנס להודעה כדי שהמשתמש ידע איזו תמונה נדחתה.
+ */
+function decodeImageDataUrl($dataUrl, $label) {
+    if (!preg_match('#^data:image/([a-z0-9.+-]+);base64,#i', $dataUrl, $m)) {
+        respond(false, "פורמט $label לא נתמך");
+    }
+    $ext = strtolower($m[1]);
+    if ($ext === 'jpeg') $ext = 'jpg';
+    if (!in_array($ext, DESIGN_IMAGE_EXT)) respond(false, "פורמט $label לא נתמך: $ext");
+
+    $binary = base64_decode(substr($dataUrl, strlen($m[0])), true);
+    if ($binary === false) respond(false, "$label פגום");
+    if (strlen($binary) > 25 * 1024 * 1024) respond(false, "$label גדול מדי");
+
+    return [$ext, $binary];
+}
+
+function designAssetPath($dir, $id, $slot, $ext) {
+    return "$dir/{$id}__{$slot}.$ext";
+}
+
+/** מוחק את הקובץ של נכס בכל סיומת אפשרית. */
+function deleteDesignAsset($dir, $id, $slot) {
+    foreach (DESIGN_IMAGE_EXT as $ext) {
+        @unlink(designAssetPath($dir, $id, $slot, $ext));
+    }
 }
 
 function saveDesign($usersDir, $token, $input) {
@@ -476,34 +516,57 @@ function saveDesign($usersDir, $token, $input) {
     if ($id !== '' && !preg_match('/^dsg_[a-z0-9]+$/i', $id)) respond(false, 'מזהה לא תקין');
     if ($id === '') $id = uniqid('dsg_');
 
+    $existing = json_decode(@file_get_contents("$dir/$id.json"), true) ?: [];
+
     $meta = [
         'id' => $id,
         'name' => $name,
         'fields' => $input['fields'] ?? [],
         'backgroundNatural' => $input['backgroundNatural'] ?? null,
+        // גאומטריה בלבד; התמונה של כל מדבקה יושבת בקובץ נכס נפרד.
+        'stickers' => $input['stickers'] ?? [],
+        'adjust' => $input['adjust'] ?? null,
         'updated' => date('c'),
     ];
 
     // רקע חדש מגיע כ-data URL. אם לא נשלח רקע, נשמר זה שכבר קיים.
     $background = $input['background'] ?? '';
     if (is_string($background) && str_starts_with($background, 'data:image/')) {
-        if (!preg_match('#^data:image/([a-z0-9.+-]+);base64,#i', $background, $m)) {
-            respond(false, 'פורמט רקע לא נתמך');
-        }
-        $ext = strtolower($m[1]);
-        if ($ext === 'jpeg') $ext = 'jpg';
-        if (!in_array($ext, ['jpg', 'png', 'webp'])) respond(false, 'פורמט רקע לא נתמך: ' . $ext);
-
-        $binary = base64_decode(substr($background, strlen($m[0])), true);
-        if ($binary === false) respond(false, 'הרקע פגום');
-        if (strlen($binary) > 25 * 1024 * 1024) respond(false, 'הרקע גדול מדי');
-
+        [$ext, $binary] = decodeImageDataUrl($background, 'רקע');
         foreach (glob("$dir/$id.{jpg,png,webp}", GLOB_BRACE) ?: [] as $old) @unlink($old);
         file_put_contents("$dir/$id.$ext", $binary);
         $meta['bgExt'] = $ext;
+    } elseif (!empty($existing['bgExt'])) {
+        $meta['bgExt'] = $existing['bgExt'];
+    }
+
+    // ‏assets הוא מפה מלאה של הנכסים: כל ערך הוא data URL חדש, או
+    // המחרוזת "keep" כדי להשאיר את הקיים. נכס שאינו במפה נמחק —
+    // כך מדבקה שהוסרה מהעיצוב אינה משאירה קובץ יתום.
+    $incoming = $input['assets'] ?? null;
+    $oldAssets = $existing['assets'] ?? [];
+    if (is_array($incoming)) {
+        $assets = [];
+        foreach ($incoming as $slot => $value) {
+            if (!preg_match(DESIGN_SLOT_RE, (string)$slot)) respond(false, 'נכס לא תקין: ' . $slot);
+
+            if ($value === 'keep') {
+                if (isset($oldAssets[$slot])) $assets[$slot] = $oldAssets[$slot];
+                continue;
+            }
+            if (!is_string($value) || !str_starts_with($value, 'data:image/')) continue;
+
+            [$ext, $binary] = decodeImageDataUrl($value, 'שכבה');
+            deleteDesignAsset($dir, $id, $slot);
+            file_put_contents(designAssetPath($dir, $id, $slot, $ext), $binary);
+            $assets[$slot] = $ext;
+        }
+        foreach ($oldAssets as $slot => $ext) {
+            if (!isset($assets[$slot])) deleteDesignAsset($dir, $id, $slot);
+        }
+        $meta['assets'] = $assets;
     } else {
-        $existing = json_decode(@file_get_contents("$dir/$id.json"), true);
-        if (!empty($existing['bgExt'])) $meta['bgExt'] = $existing['bgExt'];
+        $meta['assets'] = $oldAssets;
     }
 
     file_put_contents("$dir/$id.json", json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
@@ -545,7 +608,10 @@ function getDesign($usersDir, $token) {
     respond(true, 'OK', ['design' => json_decode(file_get_contents($file), true)]);
 }
 
-/** מחזיר את קובץ הרקע עצמו, כדי שה-JSON של העיצוב יישאר קטן. */
+/**
+ * מחזיר תמונה שמורה של עיצוב, כדי שה-JSON שלו יישאר קטן.
+ * ‏slot ריק או "bg" = הרקע; אחרת שכבת הציור או מדבקה.
+ */
 function getDesignBackground($usersDir, $token) {
     $dir = getDesignsDir($usersDir, $token);
     if (!$dir) respond(false, 'משתמש לא נמצא');
@@ -554,9 +620,17 @@ function getDesignBackground($usersDir, $token) {
     if (!preg_match('/^dsg_[a-z0-9]+$/i', $id)) respond(false, 'מזהה לא תקין');
 
     $meta = json_decode(@file_get_contents("$dir/$id.json"), true);
-    $ext = $meta['bgExt'] ?? '';
-    $path = "$dir/$id.$ext";
-    if (!$ext || !file_exists($path)) respond(false, 'לעיצוב אין רקע שמור');
+    $slot = $_GET['slot'] ?? 'bg';
+
+    if ($slot === 'bg') {
+        $ext = $meta['bgExt'] ?? '';
+        $path = "$dir/$id.$ext";
+    } else {
+        if (!preg_match(DESIGN_SLOT_RE, $slot)) respond(false, 'נכס לא תקין');
+        $ext = $meta['assets'][$slot] ?? '';
+        $path = $ext ? designAssetPath($dir, $id, $slot, $ext) : '';
+    }
+    if (!$ext || !file_exists($path)) respond(false, 'הנכס לא נמצא בעיצוב');
 
     $mime = ['jpg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'];
     header('Content-Type: ' . ($mime[$ext] ?? 'application/octet-stream'));
@@ -573,8 +647,12 @@ function deleteDesign($usersDir, $token, $input) {
     if (!preg_match('/^dsg_[a-z0-9]+$/i', $id)) respond(false, 'מזהה לא תקין');
     if (!file_exists("$dir/$id.json")) respond(false, 'העיצוב לא נמצא');
 
+    $meta = json_decode(@file_get_contents("$dir/$id.json"), true) ?: [];
     @unlink("$dir/$id.json");
     foreach (glob("$dir/$id.{jpg,png,webp}", GLOB_BRACE) ?: [] as $bg) @unlink($bg);
+    foreach (array_keys($meta['assets'] ?? []) as $slot) {
+        if (preg_match(DESIGN_SLOT_RE, (string)$slot)) deleteDesignAsset($dir, $id, $slot);
+    }
 
     respond(true, 'העיצוב נמחק');
 }

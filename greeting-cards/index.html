@@ -390,6 +390,142 @@
         }
         .text-field.selected .rotation-line { display: block; }
 
+        /* ─── Paint layer ──────────────────────────
+           שכבת הציור מכסה בדיוק את התמונה ויושבת מעליה. היא מקבלת
+           אירועים רק כשכלי ציור פעיל — אחרת היא שקופה למגע, כדי
+           שאפשר יהיה לגרור שדות ומדבקות כרגיל. */
+        .paint-canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+        }
+        .paint-canvas.armed {
+            pointer-events: auto;
+            /* בלי זה הדפדפן בנייד גולל את העמוד במקום לצייר. */
+            touch-action: none;
+            cursor: crosshair;
+        }
+        /* כלי ציור פעיל — הטקסט והמדבקות לא חוטפים את המגע. */
+        .canvas-wrapper.painting .text-field,
+        .canvas-wrapper.painting .sticker { pointer-events: none; }
+
+        /* ─── Stickers (image layers) ───────────── */
+        .sticker {
+            position: absolute;
+            z-index: 8;
+            outline: 2px dashed transparent;
+            transition: outline-color 0.15s;
+            cursor: move;
+            touch-action: none;
+        }
+        .sticker img {
+            display: block;
+            width: 100%;
+            height: auto;
+            pointer-events: none;
+            -webkit-user-drag: none;
+        }
+        .sticker:hover { outline-color: rgba(74,108,247,0.4); }
+        .sticker.selected { outline: 2px solid #4a6cf7; z-index: 9; }
+        .sticker.selected .resize-handle,
+        .sticker.selected .rotation-handle,
+        .sticker.selected .rotation-line { display: block; }
+
+        /* ─── Tool strip ───────────────────────────
+           הכלים הם היעד הכי נלחץ במסך, ולכן הם רצועה אחת רחבה
+           ולא תפריט נפתח: בנייד תפריט דורש לחיצה, גלילה ודיוק. */
+        .toolstrip {
+            display: flex;
+            gap: 6px;
+            overflow-x: auto;
+            padding: 8px 16px;
+            background: white;
+            border-bottom: 1px solid #e0e0e0;
+            -webkit-overflow-scrolling: touch;
+        }
+        .tool-btn {
+            flex: 0 0 auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 2px;
+            /* ‏44px הוא יעד המגע המינימלי שאצבע פוגעת בו בביטחון. */
+            min-width: 54px;
+            min-height: 48px;
+            padding: 4px 8px;
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            background: #fafafa;
+            font-size: 0.7rem;
+            color: #555;
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.15s;
+        }
+        .tool-btn .ico { font-size: 1.15rem; line-height: 1 }
+        .tool-btn:hover { background: #f0f3ff; border-color: #c3cffb }
+        .tool-btn.active {
+            background: #4a6cf7;
+            border-color: #4a6cf7;
+            color: white;
+        }
+        .tool-btn:disabled { opacity: .4; cursor: default }
+        .tool-sep {
+            flex: 0 0 auto;
+            width: 1px;
+            background: #e8e8e8;
+            margin: 4px 2px;
+        }
+
+        /* מחוון עבה מספיק לאצבע — ברירת המחדל של הדפדפן דקה מדי. */
+        .tool-options input[type=range] {
+            flex: 1;
+            height: 28px;
+            accent-color: #4a6cf7;
+        }
+        .tool-options .prop-row { margin-bottom: 14px }
+        .tool-options .prop-row label { min-width: 74px }
+        .tool-options .val {
+            min-width: 38px;
+            text-align: left;
+            font-size: .8rem;
+            color: #777;
+            font-variant-numeric: tabular-nums;
+        }
+        /* תצוגת גודל ורכות המכחול — מראה מה האצבע עומדת לעשות. */
+        .brush-preview {
+            height: 64px;
+            border-radius: 8px;
+            background: repeating-conic-gradient(#e9e9e9 0% 25%, #fafafa 0% 50%) 50% / 12px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 12px;
+            overflow: hidden;
+        }
+        .brush-preview .dot { border-radius: 50% }
+
+
+        /* ‏ידיות בגודל עכבר הן קטנות מדי לאצבע. על מסך מגע הן
+           מוגדלות בלי לשנות את המיקום — האזור גדל סביב אותה נקודה. */
+        @media (pointer: coarse) {
+            .resize-handle { width: 18px; height: 18px }
+            .resize-handle.tl { top: -9px; right: -9px }
+            .resize-handle.tc { top: -9px; right: calc(50% - 9px) }
+            .resize-handle.tr { top: -9px; left: -9px }
+            .resize-handle.ml { top: calc(50% - 9px); right: -9px }
+            .resize-handle.mr { top: calc(50% - 9px); left: -9px }
+            .resize-handle.bl { bottom: -9px; right: -9px }
+            .resize-handle.bc { bottom: -9px; right: calc(50% - 9px) }
+            .resize-handle.br { bottom: -9px; left: -9px }
+            .rotation-handle { width: 24px; height: 24px; top: -38px; right: calc(50% - 12px) }
+            .rotation-line { top: -22px; height: 18px }
+        }
+
         /* Properties Panel */
         .props-panel {
             width: 280px;
@@ -401,8 +537,47 @@
             max-height: calc(100vh - 180px);
             flex-shrink: 0;
         }
+        .design-label {
+            margin-right: auto;
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+            font-size: 0.85rem;
+            color: #888;
+        }
+
         @media (max-width: 900px) {
             .props-panel { width: 100%; max-height: none; }
+
+            /* ‏שורת התפריטים גדלה עם כל תפריט שנוסף, וברוחב טלפון היא
+               דחפה את העמוד לגלילה אופקית. גלילה בתוך השורה אינה
+               אפשרית כאן — היא הייתה חותכת את התפריטים הנפתחים —
+               ולכן השורה נשברת, והתווית של העיצוב יורדת לשורה משלה. */
+            .menubar { flex-wrap: wrap; padding: 0 6px; }
+            .menu-item { padding: 10px 12px; }
+            .design-label {
+                margin-right: 0;
+                flex: 1 0 100%;
+                padding: 0 12px 8px;
+            }
+
+            /* ‏בנייד הפאנל יושב מתחת לקנבס, וכשנפתחות אפשרויות כלי
+               הוא דוחף את התמונה אל מחוץ למסך — בדיוק כשצריך לראות
+               אותה כדי לצייר. במצב ציור הוא הופך למגירה תחתונה
+               צפה, והקנבס נשאר במקומו. */
+            .props-panel.tool-sheet {
+                position: fixed;
+                inset: auto 0 0 0;
+                width: auto;
+                z-index: 500;
+                max-height: 44vh;
+                overflow-y: auto;
+                border-radius: 16px 16px 0 0;
+                box-shadow: 0 -6px 24px rgba(0,0,0,0.18);
+                padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+            }
+            /* מקום לנשום מתחת לקנבס, כדי שהמגירה לא תכסה אותו. */
+            body.tool-sheet-open .design-layout { padding-bottom: 46vh; }
         }
         .props-panel h3 {
             font-size: 1rem;
@@ -980,20 +1155,33 @@
                 <div class="menu-option" onclick="addField('fixed')">➕ שדה טקסט קבוע</div>
                 <div class="menu-option" onclick="addField('list')">📋 שדה מרשימה</div>
                 <div class="menu-sep"></div>
+                <div class="menu-option" onclick="pickStickerFile()">🖼️ תמונה / מדבקה</div>
+                <div class="menu-sep"></div>
                 <div class="menu-option" onclick="showTextTemplates()">📝 תבנית טקסט מוכנה</div>
             </div>
         </div>
         <div class="menu-item">
             עריכה ▾
             <div class="menu-dropdown">
+                <div class="menu-option" onclick="undo()">↶ בטל <span class="shortcut">Ctrl+Z</span></div>
+                <div class="menu-option" onclick="redo()">↷ בצע שוב <span class="shortcut">Ctrl+Y</span></div>
+                <div class="menu-sep"></div>
                 <div class="menu-option" onclick="copyField()">📋 העתק <span class="shortcut">Ctrl+C</span></div>
                 <div class="menu-option" onclick="pasteField()">📄 הדבק <span class="shortcut">Ctrl+V</span></div>
                 <div class="menu-sep"></div>
                 <div class="menu-option" onclick="duplicateField()">⧉ שכפל שדה</div>
-                <div class="menu-option" onclick="deleteSelectedField()">🗑️ מחק שדה <span class="shortcut">Del</span></div>
+                <div class="menu-option" onclick="deleteSelectedField()">🗑️ מחק <span class="shortcut">Del</span></div>
                 <div class="menu-sep"></div>
                 <div class="menu-option" onclick="centerFieldH()">↔ מרכז אופקית</div>
                 <div class="menu-option" onclick="centerFieldV()">↕ מרכז אנכית</div>
+            </div>
+        </div>
+        <div class="menu-item">
+            תמונה ▾
+            <div class="menu-dropdown">
+                <div class="menu-option" onclick="showAdjustDialog()">🎚️ בהירות / ניגודיות / רוויה</div>
+                <div class="menu-sep"></div>
+                <div class="menu-option" onclick="clearPaintLayer()">🧹 נקה את כל הציור</div>
             </div>
         </div>
         <div class="menu-item">
@@ -1016,9 +1204,13 @@
                 <div class="menu-option" onclick="showDesignsDialog()">📂 פתח עיצוב…</div>
             </div>
         </div>
-        <div style="margin-right:auto;display:flex;align-items:center;padding:0 12px;font-size:0.85rem;color:#888"
-             id="currentDesignLabel"></div>
+        <div class="design-label" id="currentDesignLabel"></div>
     </div>
+
+    <!-- Tool strip -->
+    <div class="toolstrip" id="toolStrip"></div>
+    <!-- ‏בלי accept: בחלק ממכשירי אנדרואיד סינון טיפוסים מציג בורר ריק. -->
+    <input type="file" id="stickerFileInput" multiple style="display:none">
 
     <!-- Text templates bar -->
     <div class="templates-bar" id="templatesBar">
@@ -1037,13 +1229,83 @@
                     <button class="btn btn-sm btn-outline" style="margin-top:12px" onclick="switchStep(1)">חזרו להגדרות</button>
                 </div>
                 <img id="canvasImg" style="display:none" draggable="false">
-                <!-- Text fields are added here dynamically -->
+                <canvas class="paint-canvas" id="paintCanvas"></canvas>
+                <!-- Stickers and text fields are added here dynamically -->
             </div>
         </div>
 
         <!-- Properties panel -->
         <div class="props-panel" id="propsPanel">
-            <h3>⚙️ מאפייני שדה</h3>
+            <!-- Paint tool options -->
+            <div id="toolOptions" class="tool-options" style="display:none">
+                <h3 id="toolOptionsTitle">🖌️ מכחול</h3>
+                <div class="brush-preview" id="brushPreview"><div class="dot"></div></div>
+                <div class="prop-row" id="toolColorRow">
+                    <label>צבע</label>
+                    <input type="color" id="toolColor" value="#ffffff"
+                           oninput="setBrushProp('color', this.value)">
+                </div>
+                <div class="prop-row">
+                    <label>גודל</label>
+                    <input type="range" id="toolSize" min="4" max="400" step="1"
+                           oninput="setBrushProp('size', +this.value)">
+                    <span class="val" id="toolSizeVal"></span>
+                </div>
+                <div class="prop-row" id="toolStrengthRow">
+                    <label id="toolStrengthLabel">עוצמה</label>
+                    <input type="range" id="toolStrength" min="1" max="100" step="1"
+                           oninput="setBrushProp('strength', +this.value)">
+                    <span class="val" id="toolStrengthVal"></span>
+                </div>
+                <div class="prop-row">
+                    <label>רכות קצה</label>
+                    <input type="range" id="toolHardness" min="0" max="100" step="1"
+                           oninput="setBrushProp('hardness', +this.value)">
+                    <span class="val" id="toolHardnessVal"></span>
+                </div>
+                <p style="font-size:.78rem;color:#888;line-height:1.5" id="toolHint"></p>
+                <button class="btn btn-sm btn-outline" style="width:100%" onclick="setTool('select')">
+                    ✓ סיום — חזרה לבחירה
+                </button>
+            </div>
+
+            <!-- Sticker properties -->
+            <div id="stickerProps" style="display:none">
+                <h3>🖼️ מאפייני תמונה</h3>
+                <div class="prop-row">
+                    <label>גודל</label>
+                    <input type="range" id="stickerSize" min="2" max="200" step="1"
+                           oninput="updateStickerProp('w', +this.value)">
+                    <span class="val" id="stickerSizeVal"></span>
+                </div>
+                <div class="prop-row">
+                    <label>סיבוב</label>
+                    <input type="range" id="stickerRotation" min="-180" max="180" step="1"
+                           oninput="updateStickerProp('rotation', +this.value)">
+                    <span class="val" id="stickerRotationVal"></span>
+                </div>
+                <div class="prop-row">
+                    <label>שקיפות</label>
+                    <input type="range" id="stickerOpacity" min="5" max="100" step="1"
+                           oninput="updateStickerProp('opacity', +this.value)">
+                    <span class="val" id="stickerOpacityVal"></span>
+                </div>
+                <div class="prop-row">
+                    <label>טשטוש</label>
+                    <input type="range" id="stickerBlur" min="0" max="30" step="1"
+                           oninput="updateStickerProp('blur', +this.value)">
+                    <span class="val" id="stickerBlurVal"></span>
+                </div>
+                <div class="btn-group" style="flex-wrap:wrap">
+                    <button class="btn btn-sm btn-outline" onclick="flipSticker()">⇄ היפוך</button>
+                    <button class="btn btn-sm btn-outline" onclick="moveSticker(1)">⬆ קדימה</button>
+                    <button class="btn btn-sm btn-outline" onclick="moveSticker(-1)">⬇ אחורה</button>
+                    <button class="btn btn-sm btn-outline" onclick="duplicateSticker()">⧉ שכפל</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteSticker()">🗑️ מחק</button>
+                </div>
+            </div>
+
+            <h3 id="fieldPropsTitle">⚙️ מאפייני שדה</h3>
             <div id="propsEmpty" class="empty-state" style="padding:20px 10px">
                 <div class="icon">👆</div>
                 <p>בחרו שדה לעריכה</p>
@@ -1385,6 +1647,20 @@ const state = {
     fields: [],                // text fields on card
     selectedFieldId: null,
     clipboard: null,           // copied field data
+
+    // ─── שכבות מעל הרקע ────────────────────────
+    tool: 'select',            // הכלי הפעיל; ראו TOOLS
+    brushes: {},               // הגדרות לכל כלי בנפרד, מאותחל בהמשך
+    paintDirty: false,         // יש ציור שטרם נשמר בעיצוב
+    stickers: [],              // { id, imageId, x, y, w, rotation, opacity, blur, flipX, aspect }
+    selectedStickerId: null,
+    // התמונות עצמן מוחזקות בנפרד מהגאומטריה: צילומי המצב של
+    // ה-undo מסתפקים ב-stickers, ובלי ההפרדה כל ביטול היה משכפל
+    // מגה־בייטים של base64.
+    stickerImages: {},         // imageId -> data URL
+    savedAssetSlots: {},       // imageId -> slot ששמור כבר בשרת
+    adjust: { brightness: 100, contrast: 100, saturation: 100 },
+
     contacts: [],              // array of { id, name, displayName, phone, email, selected }
     contactsFilter: '',
     recipients: [],            // array of { col1: val, col2: val }
@@ -1548,7 +1824,27 @@ document.addEventListener('DOMContentLoaded', () => {
     initDragAndDrop();
     loadServerFonts();
     setupKeyboard();
+    initPaintTools();
 });
+
+function initPaintTools() {
+    // כל כלי מחזיק את ההגדרות שלו, ולכן עותק עצמאי לכל אחד.
+    Object.entries(TOOL_DEFAULTS).forEach(([id, def]) => {
+        state.brushes[id] = { ...def };
+    });
+
+    renderToolStrip();
+    setupPaintEvents();
+    updateHistoryButtons();
+
+    const input = document.getElementById('stickerFileInput');
+    input.addEventListener('change', async e => {
+        const files = [...e.target.files];
+        // איפוס לפני העיבוד: בלעדיו בחירה חוזרת באותו קובץ שקטה.
+        e.target.value = '';
+        if (files.length) await addStickerFiles(files);
+    });
+}
 
 function initGallery() {
     const gallery = document.getElementById('bgGallery');
@@ -1861,19 +2157,28 @@ function renderUserBackgrounds(bgs) {
         label.innerHTML = escapeHtml(bg.name) + ' <span onclick="event.stopPropagation();deleteUserBg(\'' + bg.id + '\')" style="cursor:pointer;margin-right:4px" title="מחק">✕</span>';
         item.appendChild(label);
 
-        item.onclick = () => {
-            // Load full image and set as background
-            const fullImg = new Image();
-            fullImg.onload = () => {
-                const c = document.createElement('canvas');
-                c.width = fullImg.naturalWidth;
-                c.height = fullImg.naturalHeight;
-                c.getContext('2d').drawImage(fullImg, 0, 0);
-                setBackground(c.toDataURL('image/jpeg', 0.95));
+        // הקובץ נמשך כמו שהוא ולא מצויר דרך קנבס: ציור ל-canvas
+        // והמרה ל-JPEG הרסו שקיפות של PNG (השקוף הפך לשחור) וגם
+        // דחסו מחדש בלי צורך תמונה שכבר שמורה אצלנו.
+        item.onclick = async () => {
+            try {
+                const res = await fetch(
+                    API_URL + '?action=get_user_bg&id=' + bg.id + '&token=' + authToken,
+                    { credentials: 'include' });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const blob = await res.blob();
+                const dataUrl = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+                await setBackground(dataUrl);
                 toast('נבחר רקע: ' + bg.name);
-            };
-            fullImg.crossOrigin = 'anonymous';
-            fullImg.src = API_URL + '?action=get_user_bg&id=' + bg.id + '&token=' + authToken;
+            } catch (e) {
+                console.error('Failed to load background', e);
+                toast('לא ניתן לטעון את הרקע', 'error');
+            }
         };
 
         gallery.appendChild(item);
@@ -1921,8 +2226,11 @@ function loadBackgroundFile(file) {
     reader.readAsDataURL(file);
 }
 
+/** מחזירה Promise שנפתר אחרי שהרקע נטען והקנבס נבנה מולו. */
 function setBackground(dataUrl, opts = {}) {
+  return new Promise((resolve, reject) => {
     const img = new Image();
+    img.onerror = reject;
     img.onload = () => {
         state.backgroundImage = dataUrl;
         state.backgroundNatural = { width: img.naturalWidth, height: img.naturalHeight };
@@ -1938,10 +2246,11 @@ function setBackground(dataUrl, opts = {}) {
         document.querySelectorAll('.gallery-item').forEach(el => el.classList.remove('selected'));
 
         // Update canvas in step 2
-        updateCanvasBackground();
         updateStatusBar();
+        updateCanvasBackground().then(resolve, reject);
     };
     img.src = dataUrl;
+  });
 }
 
 function selectGalleryBg(bg) {
@@ -1958,32 +2267,62 @@ function selectGalleryBg(bg) {
 function clearBackground() {
     state.backgroundImage = null;
     state.backgroundNatural = null;
+    // ציור שייך לתמונה שעליה צויר; בלי רקע אין לו משמעות.
+    state.paintDirty = false;
+    setTool('select');
+    resetHistory();
+    invalidateArtwork();
     document.getElementById('bgPreview').style.display = 'none';
     document.querySelectorAll('.gallery-item').forEach(el => el.classList.remove('selected'));
     updateCanvasBackground();
 }
 
+/** מחזירה Promise שנפתר אחרי שהקנבס מצויר מול הרקע הנוכחי. */
 function updateCanvasBackground() {
+  return new Promise(resolve => {
     const img = document.getElementById('canvasImg');
     const placeholder = document.getElementById('noBgPlaceholder');
-    if (state.backgroundImage) {
-        // רוחב התצוגה ידוע רק אחרי שהתמונה נטענה, וממנו נגזר גודל
-        // הטקסט על המסך — ולכן השדות מצוירים מחדש כאן.
-        img.onload = () => { syncFontSizeRange(); renderAllFields(); };
-        img.src = state.backgroundImage;
-        img.style.display = 'block';
-        placeholder.style.display = 'none';
-        if (img.complete) { syncFontSizeRange(); renderAllFields(); }
-    } else {
+
+    if (!state.backgroundImage) {
         img.style.display = 'none';
         placeholder.style.display = 'flex';
+        paint.ready = false;
+        updateToolAvailability();
+        resolve();
+        return;
     }
+
+    // רוחב התצוגה ידוע רק אחרי שהתמונה נטענה, וממנו נגזר גודל
+    // הטקסט על המסך — ולכן השדות מצוירים מחדש כאן.
+    let done = false;
+    const ready = () => {
+        // ‏onload ומסלול ה-cache יכולים שניהם להגיע; בנייה כפולה
+        // של שכבת הציור הייתה מוחקת ציור שכבר צויר עליה.
+        if (done) return;
+        done = true;
+        syncFontSizeRange();
+        // שכבת הציור נבנית מול התמונה הטעונה, ולכן רק מכאן.
+        initPaintLayer();
+        renderAllFields();
+        renderAllStickers();
+        resolve();
+    };
+    img.onload = ready;
+    img.src = state.backgroundImage;
+    img.style.display = 'block';
+    placeholder.style.display = 'none';
+    if (img.complete) ready();
+  });
 }
 
 // שינוי גודל החלון משנה את רוחב התצוגה, ואיתו את היחס בין המסך
 // לתמונה. בלי זה הטקסט היה נשאר בגודל של הרוחב הקודם.
 window.addEventListener('resize', () => {
-    if (state.backgroundImage) renderAllFields();
+    if (!state.backgroundImage) return;
+    renderAllFields();
+    // גם טשטוש המדבקות ותצוגת גודל המכחול נמדדים ברוחב התצוגה.
+    renderAllStickers();
+    if (state.tool !== 'select') renderToolOptions();
 });
 
 /* ─── Font Management ────────────────────────────── */
@@ -2241,15 +2580,22 @@ function renderAllFields() {
 
 function selectField(id) {
     state.selectedFieldId = id;
+    if (id) {
+        // בחירת שדה מבטלת בחירת מדבקה: לפאנל אחד יש מקום אחד.
+        state.selectedStickerId = null;
+        document.querySelectorAll('.sticker').forEach(el => el.classList.remove('selected'));
+    }
     // Update CSS
     document.querySelectorAll('.text-field').forEach(el => {
         el.classList.toggle('selected', el.id === id);
     });
-    // Update props panel
-    updatePropsPanel();
+    refreshPanels();
 }
 
 function updatePropsPanel() {
+    // כלי ציור פעיל או מדבקה נבחרת — הפאנל שייך להם עכשיו.
+    if (state.tool !== 'select' || state.selectedStickerId) return;
+
     const field = state.fields.find(f => f.id === state.selectedFieldId);
     if (!field) {
         document.getElementById('propsEmpty').style.display = 'block';
@@ -2538,6 +2884,7 @@ function startRotation(e, fieldId, isTouch = false) {
 // Click on canvas area to deselect
 document.addEventListener('click', e => {
     if (e.target.id === 'canvasArea' || e.target.id === 'canvasImg') {
+        selectSticker(null);
         selectField(null);
     }
 });
@@ -2548,8 +2895,21 @@ function setupKeyboard() {
         // Don't interfere with inputs
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
 
+        // ‏Ctrl+Z לפני השאר: ביטול הוא הפעולה שרוצים הכי מהר.
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+            e.preventDefault();
+            e.shiftKey ? redo() : undo();
+            return;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+            e.preventDefault();
+            redo();
+            return;
+        }
+
         if (e.key === 'Delete' || e.key === 'Backspace') {
-            deleteSelectedField();
+            if (state.selectedStickerId) deleteSticker();
+            else deleteSelectedField();
         } else if (e.ctrlKey && e.key === 'c') {
             e.preventDefault();
             copyField();
@@ -2563,7 +2923,24 @@ function setupKeyboard() {
             e.preventDefault();
             saveCurrentDesign();
         } else if (e.key === 'Escape') {
-            selectField(null);
+            // ‏Escape בזמן ציור חוזר לבחירה — היציאה המהירה מכלי.
+            if (state.tool !== 'select') setTool('select');
+            else { selectSticker(null); selectField(null); }
+        }
+
+        const sticker = getSticker(state.selectedStickerId);
+        if (sticker && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+            e.preventDefault();
+            const step = e.shiftKey ? 0.1 : 0.5;
+            if (e.key === 'ArrowUp') sticker.y -= step;
+            if (e.key === 'ArrowDown') sticker.y += step;
+            if (e.key === 'ArrowLeft') sticker.x += step;   // RTL
+            if (e.key === 'ArrowRight') sticker.x -= step;  // RTL
+            sticker.x = clampPercent(sticker.x);
+            sticker.y = clampPercent(sticker.y);
+            renderSticker(sticker);
+            invalidateArtwork();
+            return;
         }
 
         // Arrow keys for nudging
@@ -2857,6 +3234,7 @@ function selectExportFormat(format) {
     document.querySelectorAll('.export-option').forEach(el => {
         el.classList.toggle('selected', el.dataset.format === format);
     });
+    updateExportSummary();
 }
 
 function updateExportSummary() {
@@ -2869,7 +3247,21 @@ function updateExportSummary() {
         <div>📊 <strong>${count}</strong> כרטיסים ייווצרו</div>
         <div>🔤 <strong>${fixedFields.length}</strong> שדות קבועים | <strong>${listFields.length}</strong> שדות מרשימה</div>
         <div>📐 רזולוציה: ${state.backgroundNatural ? state.backgroundNatural.width + '×' + state.backgroundNatural.height : 'לא נבחר רקע'}</div>
+        ${transparencyWarning()}
     `;
+}
+
+/**
+ * ‏JPG אינו יודע שקיפות, והיא יוצאת שחורה. כישלון שקט כזה מתגלה
+ * רק אחרי שכל הכרטיסים כבר נשלחו, ולכן הוא נאמר כאן מראש.
+ */
+function transparencyWarning() {
+    if (state.exportFormat !== 'jpg' || !paint.ready) return '';
+    if (!hasTransparency(paint.bg)) return '';
+    return `<div style="margin-top:8px;padding:8px 10px;border-radius:6px;background:#fff4e5;color:#8a5a00">
+        ⚠️ הרקע מכיל אזורים שקופים, ו-JPG אינו תומך בשקיפות — הם ייצאו שחורים.
+        בחרו PNG או PDF כדי לשמור עליהם.
+    </div>`;
 }
 
 async function startExport() {
@@ -2979,8 +3371,19 @@ async function generatePDF(recipient) {
         }
     }
 
-    // Add background image
-    pdf.addImage(state.backgroundImage, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+    // ‏רקע + ציור + מדבקות כשכבת רסטר אחת. הטקסט נוסף אחריה
+    // כטקסט וקטורי, ולכן נשאר חד בכל הגדלה.
+    //
+    // ‏JPEG אינו יודע שקיפות, ורקע PNG חלול היה יוצא שחור. לכן
+    // כשיש שקיפות עוברים ל-PNG, ובשאר המקרים נשארים ב-JPEG —
+    // ‏PNG של צילום מנפח את הקובץ פי כמה בלי להוסיף דבר.
+    const artwork = await getArtwork(nat.width, nat.height);
+    const transparent = hasTransparency(artwork);
+    pdf.addImage(
+        transparent ? artwork.toDataURL('image/png') : artwork.toDataURL('image/jpeg', 0.92),
+        transparent ? 'PNG' : 'JPEG',
+        0, 0, pdfWidth, pdfHeight
+    );
 
     // Add text fields
     for (const field of state.fields) {
@@ -3062,14 +3465,9 @@ async function generateImage(recipient, format) {
     canvas.height = nat.height;
     const ctx = canvas.getContext('2d');
 
-    // Draw background
-    const bgImg = new Image();
-    await new Promise((resolve, reject) => {
-        bgImg.onload = resolve;
-        bgImg.onerror = reject;
-        bgImg.src = state.backgroundImage;
-    });
-    ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
+    // רקע, ציור ומדבקות — שכבה אחת מוכנה, זהה לכל הנמענים ולכן
+    // מחושבת פעם אחת ונשמרת במטמון.
+    ctx.drawImage(await getArtwork(canvas.width, canvas.height), 0, 0);
 
     // Draw text fields
     for (const field of state.fields) {
@@ -3958,6 +4356,65 @@ function saveDesignAs() {
     persistDesign(null, name.trim());
 }
 
+/**
+ * בונה את מפת הנכסים לשמירה: שכבת הציור והתמונות של המדבקות.
+ *
+ * כל נכס נשלח כ-data URL רק אם השתנה; אחרת נשלח "keep" והשרת
+ * משאיר את הקובץ שכבר אצלו. בלי זה כל שמירה חוזרת הייתה מעלה
+ * מחדש את כל התמונות.
+ */
+function buildDesignAssets(isNewDesign) {
+    const assets = {};
+    const slotOf = {};
+
+    // שכבת הציור, אם יש בה משהו.
+    if (paint.ready && hasPaintPixels()) {
+        assets.paint = (isNewDesign || state.paintDirty)
+            ? paint.canvas.toDataURL('image/png') : 'keep';
+    }
+
+    // מדבקות: מזהה תמונה אחד יכול לשמש כמה מדבקות (שכפול), ולכן
+    // הרשימה ייחודית והמדבקות מצביעות לאותו נכס.
+    const used = [...new Set(state.stickers.map(s => s.imageId))];
+    used.forEach((imageId, i) => {
+        const slot = 's' + i;
+        slotOf[imageId] = slot;
+        const unchanged = !isNewDesign && state.savedAssetSlots[imageId] === slot;
+        assets[slot] = unchanged ? 'keep' : state.stickerImages[imageId];
+    });
+
+    const stickers = state.stickers.map(s => ({ ...s, slot: slotOf[s.imageId] }));
+    return { assets, stickers, slotOf };
+}
+
+/**
+ * האם בתמונה יש ולו פיקסל אחד שאינו אטום.
+ *
+ * נבדק על דגימה מוקטנת ולא על התמונה המלאה: הקטנה משמרת שקיפות
+ * (פיקסל שקוף נשאר בעל אלפא נמוכה), והקריאה זולה בהרבה. הסף 250
+ * ולא 255 כדי לסבול עיגול בעת ההקטנה.
+ */
+function hasTransparency(canvas) {
+    const w = Math.min(200, canvas.width), h = Math.min(200, canvas.height);
+    const ctx = tmpCtx(7, w, h);
+    ctx.drawImage(canvas, 0, 0, w, h);
+    const d = ctx.getImageData(0, 0, w, h).data;
+    for (let i = 3; i < d.length; i += 4) if (d[i] < 250) return true;
+    return false;
+}
+
+/** האם צוירה ולו נקודה אחת — כדי לא לשמור PNG ריק בכל עיצוב. */
+function hasPaintPixels() {
+    if (!paint.ready) return false;
+    // דגימה מוקטנת: קריאת הקנבס המלא בכל שמירה מיותרת ויקרה.
+    const w = Math.min(160, paint.w), h = Math.min(160, paint.h);
+    const ctx = tmpCtx(6, w, h);
+    ctx.drawImage(paint.canvas, 0, 0, w, h);
+    const d = ctx.getImageData(0, 0, w, h).data;
+    for (let i = 3; i < d.length; i += 4) if (d[i] !== 0) return true;
+    return false;
+}
+
 async function persistDesign(id, name) {
     if (state.fields.length === 0 && !state.backgroundImage) {
         toast('אין מה לשמור — הוסיפו רקע או שדות', 'error');
@@ -3965,11 +4422,16 @@ async function persistDesign(id, name) {
     }
 
     toast('שומר…');
+    const { assets, stickers, slotOf } = buildDesignAssets(!id);
+
     const data = await designApi('save_design', {
         body: {
             id: id || undefined,
             name,
             fields: state.fields,
+            stickers,
+            adjust: state.adjust,
+            assets,
             backgroundNatural: state.backgroundNatural,
             // הרקע נשלח רק בשמירה ראשונה או כשהוחלף — אחרת השרת
             // שומר את זה שכבר אצלו, ולא מעלים מגה־בייטים בכל שמירה.
@@ -3981,6 +4443,8 @@ async function persistDesign(id, name) {
 
     currentDesign = { id: data.id, name: data.name };
     state.backgroundDirty = false;
+    state.paintDirty = false;
+    state.savedAssetSlots = slotOf;
     updateDesignLabel();
     toast('נשמר: ' + data.name, 'success');
 }
@@ -4040,12 +4504,15 @@ async function loadDesign(id) {
 
     const design = data.design;
 
-    // אלמנטי השדות הקודמים חייבים לרדת מה-DOM: renderAllFields רק
-    // מעדכן לפי מזהה, ושדות של העיצוב הקודם היו נשארים על הכרטיס.
-    document.querySelectorAll('.text-field').forEach(el => el.remove());
+    // אלמנטי השדות והמדבקות הקודמים חייבים לרדת מה-DOM: הרינדור רק
+    // מעדכן לפי מזהה, ושכבות של העיצוב הקודם היו נשארות על הכרטיס.
+    document.querySelectorAll('.text-field, .sticker').forEach(el => el.remove());
 
+    setTool('select');
     state.fields = design.fields || [];
     state.selectedFieldId = null;
+    state.stickers = [];
+    state.selectedStickerId = null;
 
     // המונה חייב לעקוף כל מזהה טעון, אחרת שדה חדש היה דורס קיים.
     state.fields.forEach(f => {
@@ -4061,25 +4528,80 @@ async function loadDesign(id) {
 
     if (design.bgExt) {
         const bg = await fetchDesignBackground(id);
-        if (bg) {
-            // setBackground מצייר את השדות מחדש כשהתמונה נטענת,
-            // ולכן אין כאן renderAllFields נוסף.
-            setBackground(bg, { fromSavedDesign: true });
-        } else {
-            renderAllFields();
-        }
+        // ‏setBackground בונה גם את שכבת הציור ומצייר את השדות,
+        // ולכן ההמתנה כאן הכרחית לפני שמחזירים ציור ומדבקות.
+        if (bg) await setBackground(bg, { fromSavedDesign: true });
+        else renderAllFields();
     } else {
         renderAllFields();
     }
 
+    await restoreDesignLayers(id, design);
+
+    state.paintDirty = false;
     updateStatusBar();
+    refreshPanels();
     toast('נטען: ' + design.name, 'success');
 }
 
-/** מביא את הרקע כ-data URL — הפורמט שבו הייצוא מצייר אותו. */
-async function fetchDesignBackground(id) {
+/**
+ * מחזיר את שכבת הציור ואת תמונות המדבקות מהשרת. הגאומטריה כבר
+ * ב-JSON של העיצוב; כאן נמשכות רק התמונות עצמן, לפי ה-slot שנשמר.
+ */
+async function restoreDesignLayers(id, design) {
+    state.adjust = design.adjust || { brightness: 100, contrast: 100, saturation: 100 };
+    applyAdjustPreview();
+
+    const assets = design.assets || {};
+
+    if (assets.paint && paint.ready) {
+        const url = await fetchDesignBackground(id, 'paint');
+        if (url) {
+            try {
+                const img = await loadImage(url);
+                paint.ctx.clearRect(0, 0, paint.w, paint.h);
+                paint.ctx.drawImage(img, 0, 0, paint.w, paint.h);
+            } catch (e) { console.error('Paint layer failed to load', e); }
+        }
+    }
+
+    state.stickerImages = {};
+    state.savedAssetSlots = {};
+    const loaded = {};
+    for (const slot of Object.keys(assets)) {
+        if (slot === 'paint') continue;
+        loaded[slot] = await fetchDesignBackground(id, slot);
+    }
+
+    state.stickers = (design.stickers || []).map((s, i) => {
+        const imageId = 'img_' + (++stickerIdCounter);
+        const src = loaded[s.slot];
+        if (src) {
+            state.stickerImages[imageId] = src;
+            state.savedAssetSlots[imageId] = s.slot;
+        }
+        return { ...s, imageId, id: 'stk_' + (++stickerIdCounter) };
+    }).filter(s => state.stickerImages[s.imageId]);
+
+    // ‏aspect נשמר ב-JSON, אבל עיצוב ישן עלול לא להחזיק אותו.
+    for (const s of state.stickers) {
+        if (!s.aspect) {
+            const img = await loadImage(state.stickerImages[s.imageId]);
+            s.aspect = img.naturalWidth / img.naturalHeight;
+        }
+    }
+
+    selectSticker(null);
+    renderAllStickers(true);
+    resetHistory();
+    invalidateArtwork();
+}
+
+/** מביא תמונה שמורה של עיצוב כ-data URL — הפורמט שהייצוא מצייר. */
+async function fetchDesignBackground(id, slot) {
     try {
-        const res = await fetch(API_URL + '?action=get_design_bg&id=' + encodeURIComponent(id), {
+        const res = await fetch(API_URL + '?action=get_design_bg&id=' + encodeURIComponent(id) +
+            (slot ? '&slot=' + encodeURIComponent(slot) : ''), {
             headers: { 'X-Auth-Token': authToken },
             credentials: 'include',
         });
@@ -4109,6 +4631,1047 @@ async function deleteDesign(id) {
     }
     toast('נמחק');
     showDesignsDialog();
+}
+
+/* ═══════════════════════════════════════════════════
+   PAINT LAYER, TOOLS & IMAGE LAYERS
+   ═══════════════════════════════════════════════════
+
+   שלוש שכבות מעל הרקע, בסדר הזה:
+
+     רקע (img)  →  שכבת ציור (canvas)  →  מדבקות  →  טקסט
+
+   שכבת הציור היא קנבס שקוף בגודל התמונה. כל כלי הצביעה כותבים
+   רק אליה, והרקע עצמו לעולם אינו משתנה — ולכן המחק פשוט מסיר
+   פיקסלים ממנה והתמונה המקורית חוזרת מאליה, בלי לשמור עותק.
+
+   כלים כמו הבהרה והכהיה חייבים לקרוא את מה שמתחתם. הם קוראים את
+   הרכב הרקע והציור, מחשבים את התוצאה, וכותבים אותה אטומה לשכבת
+   הציור. מבחינת הצופה זו התמונה שהשתנתה; מבחינת הקובץ הרקע נשאר
+   נקי.
+*/
+
+/* ‏רזולוציית העבודה. התמונה עצמה יכולה להיות 6000px, אבל קנבס
+   כזה כפול חמישה עותקי עבודה מפיל דפדפן בנייד. 1600 מספיק:
+   משיחות מכחול רכות ממילא לא מראות פיקסלים בהגדלה לייצוא. */
+const PAINT_MAX_DIM = 1600;
+
+const TOOLS = {
+    select: { icon: '👆', label: 'בחירה' },
+    brush: {
+        icon: '🖌️', label: 'מכחול', color: true, strengthLabel: 'אטימות',
+        hint: 'צביעה חופשית בצבע שבחרתם. "רכות קצה" נמוכה נותנת קצה חד, גבוהה — מרוח ורך.',
+    },
+    marker: {
+        icon: '🖍️', label: 'מרקר', color: true, strengthLabel: 'עוצמה',
+        hint: 'מרקר שקוף: הצבע מוכפל בתמונה שמתחת, ולכן הפרטים ממשיכים להיראות דרכו.',
+    },
+    eraser: {
+        icon: '🧽', label: 'מחק', strengthLabel: 'עוצמה',
+        hint: 'מוחק ציור ומחזיר את התמונה המקורית. אינו נוגע במדבקות ובטקסט.',
+    },
+    dodge: {
+        icon: '☀️', label: 'הבהרה', strengthLabel: 'עוצמה',
+        hint: 'מבהיר בהדרגה. מעבר חוזר באותו מקום מבהיר עוד — כמו במערכות עריכה מקצועיות.',
+    },
+    burn: {
+        icon: '🌙', label: 'הכהיה', strengthLabel: 'עוצמה',
+        hint: 'מכהה בהדרגה. שימושי להוספת עומק לפינות או להנמכת רקע מתחת לטקסט.',
+    },
+    blur: {
+        icon: '💧', label: 'טשטוש', strengthLabel: 'עוצמה',
+        hint: 'מטשטש מקומית — למשל כדי להרגיע רקע עמוס מתחת לברכה.',
+    },
+};
+
+/* לכל כלי זיכרון משלו: מי שקבע מכחול דק לפרטים לא רוצה שההבהרה
+   תקבל את אותו גודל, ולהפך. */
+const TOOL_DEFAULTS = {
+    brush: { size: 24, strength: 100, hardness: 80, color: '#ffffff' },
+    marker: { size: 64, strength: 45, hardness: 90, color: '#ffe14d' },
+    eraser: { size: 40, strength: 100, hardness: 70 },
+    dodge: { size: 90, strength: 25, hardness: 20 },
+    burn: { size: 90, strength: 25, hardness: 20 },
+    blur: { size: 70, strength: 50, hardness: 30 },
+};
+
+const paint = {
+    w: 0, h: 0, ready: false,
+    canvas: null, ctx: null,      // השכבה הנראית
+    bg: null, bgCtx: null,        // הרקע ברזולוציית העבודה, לקריאה בלבד
+    mask: null, maskCtx: null,    // המשיחה הנוכחית, מצטברת
+    backup: null, backupCtx: null,// השכבה לפני תחילת המשיחה
+    tint: null, tintCtx: null,    // המסכה צבועה בצבע הכלי
+    stroke: null,
+};
+
+let activePaintPointer = null;
+let artworkCache = null;
+
+/* ─── Helpers ─────────────────────────────────────── */
+
+function loadImage(src) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = src;
+    });
+}
+
+/* קנבסי עבודה זמניים לפי גודל המלבן המטופל. מוחזקים ומוקצים
+   מחדש רק כשהגודל משתנה — הקצאה בכל פריים גורמת לגמגום. */
+const tmpCanvases = [];
+function tmpCtx(slot, w, h) {
+    let c = tmpCanvases[slot];
+    if (!c) c = tmpCanvases[slot] = document.createElement('canvas');
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.filter = 'none';
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.clearRect(0, 0, w, h);
+    return ctx;
+}
+
+function newCanvas(w, h, readFrequently) {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    return [c, c.getContext('2d', readFrequently ? { willReadFrequently: true } : undefined)];
+}
+
+function currentBrush() {
+    return state.brushes[state.tool] || TOOL_DEFAULTS.brush;
+}
+
+/** גודל המכחול בפיקסלים של שכבת העבודה. */
+function brushSizePaint() {
+    return Math.max(1, currentBrush().size);
+}
+
+/** רדיוס הריכוך של הקצה. רכות 100 = מעבר ברוחב חצי המכחול. */
+function featherPx() {
+    const b = currentBrush();
+    return Math.min(120, (b.hardness / 100) * brushSizePaint() / 2);
+}
+
+/**
+ * עד כמה הריכוך באמת מתפשט. ‏blur(N) הוא גאוסיאן עם סטיית תקן N,
+ * והזנב שלו נמשך בערך פי שלושה. תיבת הגבול חייבת להיות רחבה
+ * כמוהו — אחרת הביטול משחזר רק את הליבה ומשאיר הילה על התמונה.
+ */
+function featherSpread() {
+    return Math.ceil(featherPx() * 3);
+}
+
+function clampRect(r) {
+    if (!r) return null;
+    const x = Math.max(0, Math.floor(r.x));
+    const y = Math.max(0, Math.floor(r.y));
+    const x2 = Math.min(paint.w, Math.ceil(r.x + r.w));
+    const y2 = Math.min(paint.h, Math.ceil(r.y + r.h));
+    if (x2 <= x || y2 <= y) return null;
+    return { x, y, w: x2 - x, h: y2 - y };
+}
+
+function expandRect(r, by) {
+    return { x: r.x - by, y: r.y - by, w: r.w + by * 2, h: r.h + by * 2 };
+}
+
+function unionPoint(rect, x, y, radius) {
+    const nx = x - radius, ny = y - radius, nw = radius * 2, nh = radius * 2;
+    if (!rect) return { x: nx, y: ny, w: nw, h: nh };
+    const x2 = Math.max(rect.x + rect.w, nx + nw);
+    const y2 = Math.max(rect.y + rect.h, ny + nh);
+    rect.x = Math.min(rect.x, nx);
+    rect.y = Math.min(rect.y, ny);
+    rect.w = x2 - rect.x;
+    rect.h = y2 - rect.y;
+    return rect;
+}
+
+/* ─── Layer setup ─────────────────────────────────── */
+
+/**
+ * מקים את שכבת הציור מול הרקע הנוכחי. נקראת בכל החלפת רקע,
+ * ולכן היא גם מה שמאפס ציור קודם — ציור של תמונה אחת אינו אמור
+ * לעבור לתמונה אחרת.
+ */
+function initPaintLayer() {
+    const nat = state.backgroundNatural;
+    const el = document.getElementById('canvasImg');
+    if (!nat || !el || !el.complete || !el.naturalWidth) { paint.ready = false; return; }
+
+    const scale = Math.min(1, PAINT_MAX_DIM / Math.max(nat.width, nat.height));
+    const w = Math.max(1, Math.round(nat.width * scale));
+    const h = Math.max(1, Math.round(nat.height * scale));
+
+    paint.canvas = document.getElementById('paintCanvas');
+    paint.canvas.width = w;
+    paint.canvas.height = h;
+    paint.ctx = paint.canvas.getContext('2d', { willReadFrequently: true });
+
+    [paint.bg, paint.bgCtx] = newCanvas(w, h, true);
+    [paint.mask, paint.maskCtx] = newCanvas(w, h, true);
+    [paint.backup, paint.backupCtx] = newCanvas(w, h);
+    [paint.tint, paint.tintCtx] = newCanvas(w, h);
+
+    paint.bgCtx.drawImage(el, 0, 0, w, h);
+    paint.w = w;
+    paint.h = h;
+    paint.ready = true;
+
+    resetHistory();
+    invalidateArtwork();
+    applyAdjustPreview();
+    updateToolAvailability();
+}
+
+function clearPaintLayer() {
+    if (!paint.ready) return;
+    const r = { x: 0, y: 0, w: paint.w, h: paint.h };
+    const before = cropToDataUrl(paint.canvas, r);
+    paint.ctx.clearRect(0, 0, paint.w, paint.h);
+    pushHistory({ type: 'paint', rect: r, before, after: cropToDataUrl(paint.canvas, r) });
+    state.paintDirty = true;
+    invalidateArtwork();
+    toast('הציור נוקה');
+}
+
+function cropToDataUrl(canvas, r) {
+    const ctx = tmpCtx(5, r.w, r.h);
+    ctx.drawImage(canvas, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
+    return ctx.canvas.toDataURL('image/png');
+}
+
+/* ─── Stroke lifecycle ────────────────────────────── */
+
+function paintPoint(e) {
+    const rect = paint.canvas.getBoundingClientRect();
+    return {
+        x: (e.clientX - rect.left) / rect.width * paint.w,
+        y: (e.clientY - rect.top) / rect.height * paint.h,
+    };
+}
+
+function beginStroke(p) {
+    const size = brushSizePaint();
+    paint.backupCtx.clearRect(0, 0, paint.w, paint.h);
+    paint.backupCtx.drawImage(paint.canvas, 0, 0);
+
+    const m = paint.maskCtx;
+    m.clearRect(0, 0, paint.w, paint.h);
+    m.fillStyle = '#fff';
+    m.strokeStyle = '#fff';
+    m.lineCap = 'round';
+    m.lineJoin = 'round';
+    m.lineWidth = size;
+
+    // נקודה בתחילת המשיחה, אחרת נגיעה בודדת לא משאירה סימן.
+    m.beginPath();
+    m.arc(p.x, p.y, size / 2, 0, Math.PI * 2);
+    m.fill();
+
+    const reach = size / 2 + featherSpread() + 2;
+    paint.stroke = {
+        last: p,
+        bbox: unionPoint(null, p.x, p.y, reach),
+        dirty: unionPoint(null, p.x, p.y, reach),
+        frame: 0,
+    };
+    scheduleStrokeFrame();
+}
+
+function extendStroke(p) {
+    const s = paint.stroke;
+    if (!s) return;
+    const m = paint.maskCtx;
+    m.beginPath();
+    m.moveTo(s.last.x, s.last.y);
+    m.lineTo(p.x, p.y);
+    m.stroke();
+
+    const reach = brushSizePaint() / 2 + featherSpread() + 2;
+    unionPoint(s.bbox, p.x, p.y, reach);
+    unionPoint(s.bbox, s.last.x, s.last.y, reach);
+    s.dirty = unionPoint(s.dirty, p.x, p.y, reach);
+    unionPoint(s.dirty, s.last.x, s.last.y, reach);
+    s.last = p;
+    scheduleStrokeFrame();
+}
+
+function scheduleStrokeFrame() {
+    const s = paint.stroke;
+    if (!s || s.frame) return;
+    s.frame = requestAnimationFrame(() => {
+        if (paint.stroke) paint.stroke.frame = 0;
+        renderStrokeFrame();
+    });
+}
+
+function renderStrokeFrame() {
+    const s = paint.stroke;
+    if (!s) return;
+    const tool = state.tool;
+
+    if (tool === 'brush' || tool === 'eraser') {
+        // ציור מחדש של כל המשיחה מהעותק שלפניה. כך אטימות של 40%
+        // נשארת 40% גם במקום שבו המשיחה חוזרת על עצמה, במקום
+        // להצטבר לכתם אטום בכל הצטלבות.
+        paint.ctx.clearRect(0, 0, paint.w, paint.h);
+        paint.ctx.drawImage(paint.backup, 0, 0);
+        blitMaskStroke();
+    } else if (s.dirty) {
+        applyPixelTool(s.dirty);
+    }
+    s.dirty = null;
+}
+
+function blitMaskStroke() {
+    const b = currentBrush();
+    const f = featherPx();
+    const ctx = paint.ctx;
+
+    ctx.save();
+    ctx.globalAlpha = b.strength / 100;
+    if (f > 0) ctx.filter = `blur(${f}px)`;
+
+    if (state.tool === 'eraser') {
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.drawImage(paint.mask, 0, 0);
+    } else {
+        const t = paint.tintCtx;
+        t.save();
+        t.globalCompositeOperation = 'copy';
+        t.drawImage(paint.mask, 0, 0);
+        t.globalCompositeOperation = 'source-in';
+        t.fillStyle = b.color || '#ffffff';
+        t.fillRect(0, 0, paint.w, paint.h);
+        t.restore();
+        ctx.drawImage(paint.tint, 0, 0);
+    }
+    ctx.restore();
+}
+
+/**
+ * כלים שחייבים לקרוא את מה שמתחתיהם: מרקר, הבהרה, הכהיה וטשטוש.
+ *
+ * כל פריים מטפל רק במלבן שהשתנה מאז הפריים הקודם, ותמיד מתוך
+ * העותק שלפני המשיחה — כך שאזור שכבר טופל ונגעו בו שוב מחושב
+ * מחדש נכון במקום לקבל את הפעולה פעמיים.
+ */
+function applyPixelTool(dirty) {
+    const b = currentBrush();
+    const f = featherPx();
+    const r = clampRect(expandRect(dirty, featherSpread() + 2));
+    if (!r) return;
+    const { x, y, w, h } = r;
+
+    // ‏1. החזרת המלבן למצב שלפני המשיחה.
+    paint.ctx.clearRect(x, y, w, h);
+    paint.ctx.drawImage(paint.backup, x, y, w, h, x, y, w, h);
+
+    // ‏2. המסכה, מרוככת לפי רכות הקצה.
+    const mc = tmpCtx(0, w, h);
+    if (f > 0) mc.filter = `blur(${f}px)`;
+    mc.drawImage(paint.mask, x, y, w, h, 0, 0, w, h);
+    const mask = mc.getImageData(0, 0, w, h).data;
+
+    // ‏3. מה שרואים כרגע במלבן: הרקע עם הציור שמעליו.
+    const sc = tmpCtx(1, w, h);
+    sc.drawImage(paint.bg, x, y, w, h, 0, 0, w, h);
+    sc.drawImage(paint.canvas, x, y, w, h, 0, 0, w, h);
+    const comp = sc.getImageData(0, 0, w, h).data;
+
+    let blurred = null;
+    if (state.tool === 'blur') {
+        const bc = tmpCtx(2, w, h);
+        bc.filter = `blur(${Math.max(1, b.strength / 100 * 14)}px)`;
+        bc.drawImage(sc.canvas, 0, 0);
+        blurred = bc.getImageData(0, 0, w, h).data;
+    }
+
+    const tint = state.tool === 'marker' ? hexToRgb(b.color || '#ffffff') : null;
+    const tintArr = tint ? [tint.r, tint.g, tint.b] : null;
+    const amount = b.strength / 100;
+    const tool = state.tool;
+
+    const out = paint.ctx.getImageData(x, y, w, h);
+    const od = out.data;
+    for (let i = 0; i < od.length; i += 4) {
+        const m = mask[i + 3] / 255 * amount;
+        if (m <= 0.002) continue;
+        for (let k = 0; k < 3; k++) {
+            const v = comp[i + k];
+            let nv;
+            if (tool === 'dodge') nv = v + (255 - v) * m;
+            else if (tool === 'burn') nv = v * (1 - m);
+            else if (tool === 'blur') nv = v + (blurred[i + k] - v) * m;
+            else nv = v + (v * tintArr[k] / 255 - v) * m;   // marker: הכפלה
+            od[i + k] = nv < 0 ? 0 : nv > 255 ? 255 : nv;
+        }
+        od[i + 3] = 255;
+    }
+    paint.ctx.putImageData(out, x, y);
+}
+
+function endStroke() {
+    const s = paint.stroke;
+    if (!s) return;
+    if (s.frame) cancelAnimationFrame(s.frame);
+    if (s.dirty) renderStrokeFrame();   // הקטע האחרון, לפני שמצלמים
+    paint.stroke = null;
+
+    const r = clampRect(expandRect(s.bbox, 1));
+    if (!r) return;
+    pushHistory({
+        type: 'paint',
+        rect: r,
+        before: cropToDataUrl(paint.backup, r),
+        after: cropToDataUrl(paint.canvas, r),
+    });
+    state.paintDirty = true;
+    invalidateArtwork();
+}
+
+/** ביטול משיחה באמצע — למשל כשאצבע שנייה נגעה במסך. */
+function abortStroke() {
+    const s = paint.stroke;
+    if (!s) return;
+    if (s.frame) cancelAnimationFrame(s.frame);
+    paint.stroke = null;
+    paint.ctx.clearRect(0, 0, paint.w, paint.h);
+    paint.ctx.drawImage(paint.backup, 0, 0);
+}
+
+function setupPaintEvents() {
+    const c = document.getElementById('paintCanvas');
+
+    c.addEventListener('pointerdown', e => {
+        if (state.tool === 'select' || !paint.ready) return;
+        e.preventDefault();
+        // אצבע שנייה בזמן משיחה = ניסיון לזום, לא לצייר.
+        if (activePaintPointer !== null) { abortStroke(); activePaintPointer = null; return; }
+        activePaintPointer = e.pointerId;
+        c.setPointerCapture(e.pointerId);
+        beginStroke(paintPoint(e));
+    });
+
+    c.addEventListener('pointermove', e => {
+        if (e.pointerId !== activePaintPointer || !paint.stroke) return;
+        e.preventDefault();
+        // ‏getCoalescedEvents מחזיר את הנקודות שהדפדפן צבר בין פריימים.
+        // בלעדיו תנועה מהירה יוצאת מצולעת.
+        const points = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+        for (const pt of points) extendStroke(paintPoint(pt));
+    });
+
+    const finish = e => {
+        if (e.pointerId !== activePaintPointer) return;
+        activePaintPointer = null;
+        endStroke();
+    };
+    c.addEventListener('pointerup', finish);
+    c.addEventListener('pointercancel', e => {
+        if (e.pointerId !== activePaintPointer) return;
+        activePaintPointer = null;
+        abortStroke();
+    });
+}
+
+/* ─── History (undo / redo) ───────────────────────── */
+
+const history = { stack: [], index: -1, max: 20 };
+
+function resetHistory() {
+    history.stack = [];
+    history.index = -1;
+    updateHistoryButtons();
+}
+
+function pushHistory(entry) {
+    history.stack.length = history.index + 1;
+    history.stack.push(entry);
+    while (history.stack.length > history.max) history.stack.shift();
+    history.index = history.stack.length - 1;
+    updateHistoryButtons();
+}
+
+/** עוטף פעולה על מדבקות כדי שתהיה ניתנת לביטול. */
+function withLayerHistory(fn) {
+    const before = JSON.stringify(state.stickers);
+    fn();
+    pushHistory({ type: 'layers', before, after: JSON.stringify(state.stickers) });
+}
+
+async function undo() {
+    if (history.index < 0) { toast('אין מה לבטל'); return; }
+    await applyHistory(history.stack[history.index], 'before');
+    history.index--;
+    updateHistoryButtons();
+}
+
+async function redo() {
+    if (history.index >= history.stack.length - 1) { toast('אין מה לשחזר'); return; }
+    history.index++;
+    await applyHistory(history.stack[history.index], 'after');
+    updateHistoryButtons();
+}
+
+async function applyHistory(entry, side) {
+    if (entry.type === 'paint') {
+        const img = await loadImage(entry[side]);
+        paint.ctx.clearRect(entry.rect.x, entry.rect.y, entry.rect.w, entry.rect.h);
+        paint.ctx.drawImage(img, entry.rect.x, entry.rect.y);
+        state.paintDirty = true;
+    } else {
+        state.stickers = JSON.parse(entry[side]);
+        renderAllStickers(true);
+        if (!getSticker(state.selectedStickerId)) selectSticker(null);
+    }
+    invalidateArtwork();
+}
+
+function updateHistoryButtons() {
+    const u = document.getElementById('undoBtn');
+    const r = document.getElementById('redoBtn');
+    if (u) u.disabled = history.index < 0;
+    if (r) r.disabled = history.index >= history.stack.length - 1;
+}
+
+/* ─── Tool strip & options ────────────────────────── */
+
+function renderToolStrip() {
+    const strip = document.getElementById('toolStrip');
+    if (!strip) return;
+
+    const group = ids => ids.map(id => {
+        const t = TOOLS[id];
+        return `<button class="tool-btn${state.tool === id ? ' active' : ''}" data-tool="${id}"
+                        onclick="setTool('${id}')" title="${t.label}">
+                    <span class="ico">${t.icon}</span>${t.label}
+                </button>`;
+    }).join('');
+
+    strip.innerHTML =
+        `<button class="tool-btn" id="undoBtn" onclick="undo()" title="בטל">
+             <span class="ico">↶</span>בטל
+         </button>
+         <button class="tool-btn" id="redoBtn" onclick="redo()" title="בצע שוב">
+             <span class="ico">↷</span>שוב
+         </button>
+         <div class="tool-sep"></div>` +
+        group(['select']) +
+        '<div class="tool-sep"></div>' +
+        group(['brush', 'marker', 'eraser']) +
+        '<div class="tool-sep"></div>' +
+        group(['dodge', 'burn', 'blur']) +
+        '<div class="tool-sep"></div>' +
+        `<button class="tool-btn" onclick="pickStickerFile()" title="הוסף תמונה">
+             <span class="ico">🖼️</span>תמונה
+         </button>
+         <button class="tool-btn" onclick="showAdjustDialog()" title="תיקון תמונה">
+             <span class="ico">🎚️</span>תיקון
+         </button>`;
+
+    updateToolAvailability();
+    updateHistoryButtons();
+}
+
+/** בלי רקע אין על מה לצייר, ולכן הכלים כבויים במקום להיכשל בשקט. */
+function updateToolAvailability() {
+    document.querySelectorAll('#toolStrip .tool-btn[data-tool]').forEach(btn => {
+        if (btn.dataset.tool !== 'select') btn.disabled = !paint.ready;
+    });
+}
+
+function setTool(id) {
+    if (!TOOLS[id]) return;
+    if (id !== 'select' && !paint.ready) { toast('יש לבחור תמונת רקע קודם', 'error'); return; }
+
+    state.tool = id;
+    const painting = id !== 'select';
+    document.getElementById('paintCanvas').classList.toggle('armed', painting);
+    document.getElementById('canvasWrapper').classList.toggle('painting', painting);
+    if (painting) selectSticker(null), selectField(null);
+
+    renderToolStrip();
+    refreshPanels();
+
+    // בחירת כלי בנייד מתרחשת ברצועה שמעל הקנבס; אם התמונה גלולה
+    // מחוץ למסך, המשיחה הראשונה תיפול על כלום.
+    if (painting) {
+        document.getElementById('canvasWrapper')
+            ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+}
+
+function setBrushProp(key, value) {
+    const b = currentBrush();
+    if (!b) return;
+    b[key] = value;
+    renderToolOptions();
+}
+
+function renderToolOptions() {
+    const tool = TOOLS[state.tool];
+    if (!tool || state.tool === 'select') return;
+    const b = currentBrush();
+
+    document.getElementById('toolOptionsTitle').textContent = `${tool.icon} ${tool.label}`;
+    document.getElementById('toolHint').textContent = tool.hint || '';
+    document.getElementById('toolColorRow').style.display = tool.color ? 'flex' : 'none';
+    if (tool.color) document.getElementById('toolColor').value = b.color || '#ffffff';
+
+    document.getElementById('toolStrengthLabel').textContent = tool.strengthLabel || 'עוצמה';
+    const set = (id, val, text) => {
+        document.getElementById(id).value = val;
+        document.getElementById(id + 'Val').textContent = text;
+    };
+    set('toolSize', b.size, b.size);
+    set('toolStrength', b.strength, b.strength + '%');
+    set('toolHardness', b.hardness, b.hardness + '%');
+
+    // תצוגה מקדימה בגודל האמיתי על המסך — מה שרואים הוא מה שייצא
+    // מתחת לאצבע.
+    const dot = document.querySelector('#brushPreview .dot');
+    const rect = paint.canvas ? paint.canvas.getBoundingClientRect() : null;
+    const onScreen = rect && paint.w ? b.size * (rect.width / paint.w) : b.size;
+    const px = Math.max(4, Math.min(56, onScreen));
+    const soft = b.hardness / 100 * px / 2;
+    dot.style.width = dot.style.height = px + 'px';
+    dot.style.background = tool.color ? (b.color || '#fff') : '#555';
+    dot.style.filter = soft > 0.5 ? `blur(${soft / 2}px)` : 'none';
+    dot.style.opacity = Math.max(0.15, b.strength / 100);
+}
+
+/* ─── Stickers (image layers) ─────────────────────── */
+
+let stickerIdCounter = 0;
+let stickerGesture = null;
+
+function getSticker(id) {
+    return state.stickers.find(s => s.id === id) || null;
+}
+
+function pickStickerFile() {
+    if (!state.backgroundImage) { toast('יש לבחור תמונת רקע קודם', 'error'); return; }
+    document.getElementById('stickerFileInput').click();
+}
+
+async function addStickerFiles(files) {
+    let added = 0;
+    for (const file of files) {
+        if (!/^image\//.test(file.type) && !/\.(png|jpe?g|webp|gif|bmp)$/i.test(file.name)) continue;
+        try {
+            await addStickerFromFile(file);
+            added++;
+        } catch (e) {
+            console.error('Sticker failed', file.name, e);
+        }
+    }
+    if (added) toast(`נוספו ${added} תמונות`, 'success');
+    else toast('לא נמצאו תמונות בקבצים שנבחרו', 'error');
+}
+
+function addStickerFromFile(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = async () => {
+            try {
+                const img = await loadImage(reader.result);
+                const imageId = 'img_' + (++stickerIdCounter);
+                state.stickerImages[imageId] = reader.result;
+
+                // ‏40% מרוחב הכרטיס זה גודל שרואים מיד וקל לגרור,
+                // בלי שיכסה את הכרטיס ויסתיר את מה שמתחת.
+                withLayerHistory(() => {
+                    state.stickers.push({
+                        id: 'stk_' + stickerIdCounter,
+                        imageId,
+                        aspect: img.naturalWidth / img.naturalHeight,
+                        x: 50, y: 50, w: 40,
+                        rotation: 0, opacity: 100, blur: 0, flipX: false,
+                    });
+                });
+
+                const s = state.stickers[state.stickers.length - 1];
+                renderSticker(s);
+                setTool('select');
+                selectSticker(s.id);
+                invalidateArtwork();
+                resolve();
+            } catch (e) { reject(e); }
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+function renderSticker(s) {
+    const wrapper = document.getElementById('canvasWrapper');
+    let el = document.getElementById(s.id);
+
+    if (!el) {
+        el = document.createElement('div');
+        el.id = s.id;
+        el.className = 'sticker';
+        el.appendChild(document.createElement('img'));
+
+        ['tl', 'tr', 'bl', 'br'].forEach(pos => {
+            const h = document.createElement('div');
+            h.className = 'resize-handle ' + pos;
+            h.dataset.handle = pos;
+            el.appendChild(h);
+        });
+        const line = document.createElement('div');
+        line.className = 'rotation-line';
+        el.appendChild(line);
+        const rot = document.createElement('div');
+        rot.className = 'rotation-handle';
+        rot.dataset.handle = 'rotate';
+        el.appendChild(rot);
+
+        el.addEventListener('pointerdown', e => onStickerPointerDown(e, s.id));
+        el.addEventListener('pointermove', onStickerPointerMove);
+        el.addEventListener('pointerup', onStickerPointerUp);
+        el.addEventListener('pointercancel', onStickerPointerUp);
+        wrapper.appendChild(el);
+    }
+
+    const img = el.querySelector('img');
+    const src = state.stickerImages[s.imageId];
+    if (src && img.getAttribute('src') !== src) img.src = src;
+
+    el.style.left = s.x + '%';
+    el.style.top = s.y + '%';
+    el.style.width = s.w + '%';
+    el.style.opacity = s.opacity / 100;
+    el.style.transform =
+        `translate(-50%, -50%) rotate(${s.rotation}deg) scaleX(${s.flipX ? -1 : 1})`;
+
+    // הטשטוש נשמר ביחידות של תמונה ברוחב 1000, כדי שייראה זהה
+    // על המסך ובקובץ המיוצא בלי קשר לרזולוציה.
+    const wrapWidth = wrapper.getBoundingClientRect().width || 1000;
+    img.style.filter = s.blur ? `blur(${s.blur * wrapWidth / 1000}px)` : 'none';
+
+    el.classList.toggle('selected', s.id === state.selectedStickerId);
+    el.style.zIndex = 8 + state.stickers.indexOf(s) * 0.001;
+}
+
+function renderAllStickers(removeStale) {
+    if (removeStale) {
+        const ids = new Set(state.stickers.map(s => s.id));
+        document.querySelectorAll('.sticker').forEach(el => {
+            if (!ids.has(el.id)) el.remove();
+        });
+    }
+    state.stickers.forEach(renderSticker);
+}
+
+function selectSticker(id) {
+    state.selectedStickerId = id;
+    if (id) state.selectedFieldId = null;
+    document.querySelectorAll('.sticker').forEach(el => {
+        el.classList.toggle('selected', el.id === id);
+    });
+    document.querySelectorAll('.text-field').forEach(el => el.classList.remove('selected'));
+    refreshPanels();
+}
+
+function renderStickerProps() {
+    const s = getSticker(state.selectedStickerId);
+    if (!s) return;
+    const set = (id, val, text) => {
+        document.getElementById(id).value = val;
+        document.getElementById(id + 'Val').textContent = text;
+    };
+    set('stickerSize', Math.round(s.w), Math.round(s.w) + '%');
+    set('stickerRotation', s.rotation, s.rotation + '°');
+    set('stickerOpacity', s.opacity, s.opacity + '%');
+    set('stickerBlur', s.blur, s.blur);
+}
+
+function updateStickerProp(key, value) {
+    const s = getSticker(state.selectedStickerId);
+    if (!s) return;
+    s[key] = value;
+    renderSticker(s);
+    renderStickerProps();
+    invalidateArtwork();
+}
+
+function deleteSticker() {
+    const s = getSticker(state.selectedStickerId);
+    if (!s) return;
+    withLayerHistory(() => {
+        state.stickers = state.stickers.filter(x => x.id !== s.id);
+    });
+    document.getElementById(s.id)?.remove();
+    selectSticker(null);
+    invalidateArtwork();
+    toast('התמונה נמחקה');
+}
+
+function duplicateSticker() {
+    const s = getSticker(state.selectedStickerId);
+    if (!s) return;
+    let copy;
+    withLayerHistory(() => {
+        copy = { ...s, id: 'stk_' + (++stickerIdCounter), x: s.x + 4, y: s.y + 4 };
+        state.stickers.push(copy);
+    });
+    renderSticker(copy);
+    selectSticker(copy.id);
+    invalidateArtwork();
+}
+
+function flipSticker() {
+    const s = getSticker(state.selectedStickerId);
+    if (!s) return;
+    withLayerHistory(() => { s.flipX = !s.flipX; });
+    renderSticker(s);
+    invalidateArtwork();
+}
+
+/** מזיז את המדבקה קדימה או אחורה בסדר השכבות. */
+function moveSticker(dir) {
+    const s = getSticker(state.selectedStickerId);
+    if (!s) return;
+    const i = state.stickers.indexOf(s);
+    const j = i + dir;
+    if (j < 0 || j >= state.stickers.length) { toast('כבר בקצה'); return; }
+    withLayerHistory(() => {
+        state.stickers.splice(i, 1);
+        state.stickers.splice(j, 0, s);
+    });
+    renderAllStickers();
+    invalidateArtwork();
+}
+
+/* מגע אחד גורר, שתי אצבעות מגדילות ומסובבות. הצביטה היא התנועה
+   שמצפים לה בנייד, וידיות פינה לבדן דורשות דיוק שאין לאצבע. */
+function onStickerPointerDown(e, id) {
+    if (state.tool !== 'select') return;
+    e.preventDefault();
+    e.stopPropagation();
+    selectSticker(id);
+
+    const s = getSticker(id);
+    const el = e.currentTarget;
+    if (!s) return;
+    el.setPointerCapture(e.pointerId);
+
+    if (!stickerGesture || stickerGesture.id !== id) {
+        stickerGesture = { id, pointers: new Map(), before: JSON.stringify(state.stickers) };
+    }
+    stickerGesture.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    const rect = el.getBoundingClientRect();
+    stickerGesture.center = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    stickerGesture.snapshot = { x: s.x, y: s.y, w: s.w, rotation: s.rotation };
+
+    if (stickerGesture.pointers.size >= 2) {
+        const [a, b] = [...stickerGesture.pointers.values()];
+        stickerGesture.mode = 'pinch';
+        stickerGesture.pinch = {
+            dist: Math.hypot(b.x - a.x, b.y - a.y) || 1,
+            angle: Math.atan2(b.y - a.y, b.x - a.x),
+        };
+    } else {
+        const handle = e.target.dataset?.handle;
+        stickerGesture.mode = handle === 'rotate' ? 'rotate' : handle ? 'resize' : 'drag';
+        stickerGesture.start = { x: e.clientX, y: e.clientY };
+        stickerGesture.startDist =
+            Math.hypot(e.clientX - stickerGesture.center.x, e.clientY - stickerGesture.center.y) || 1;
+    }
+}
+
+function onStickerPointerMove(e) {
+    const g = stickerGesture;
+    if (!g || !g.pointers.has(e.pointerId)) return;
+    e.preventDefault();
+    g.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    const s = getSticker(g.id);
+    if (!s) return;
+    const wrap = document.getElementById('canvasWrapper').getBoundingClientRect();
+
+    if (g.mode === 'pinch' && g.pointers.size >= 2) {
+        const [a, b] = [...g.pointers.values()];
+        const dist = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+        const angle = Math.atan2(b.y - a.y, b.x - a.x);
+        s.w = clampStickerWidth(g.snapshot.w * (dist / g.pinch.dist));
+        s.rotation = Math.round(g.snapshot.rotation + (angle - g.pinch.angle) * 180 / Math.PI);
+    } else if (g.mode === 'drag') {
+        s.x = clampPercent(g.snapshot.x + (e.clientX - g.start.x) / wrap.width * 100);
+        s.y = clampPercent(g.snapshot.y + (e.clientY - g.start.y) / wrap.height * 100);
+    } else if (g.mode === 'resize') {
+        // המרחק מהמרכז — עובד זהה מכל פינה, גם אחרי סיבוב.
+        const d = Math.hypot(e.clientX - g.center.x, e.clientY - g.center.y);
+        s.w = clampStickerWidth(g.snapshot.w * (d / g.startDist));
+    } else if (g.mode === 'rotate') {
+        const angle = Math.atan2(e.clientY - g.center.y, e.clientX - g.center.x);
+        let deg = Math.round(angle * 180 / Math.PI + 90);
+        [0, 90, -90, 180, -180].forEach(snap => {
+            if (Math.abs(deg - snap) < 5) deg = snap;
+        });
+        s.rotation = deg;
+    }
+
+    renderSticker(s);
+    renderStickerProps();
+}
+
+function onStickerPointerUp(e) {
+    const g = stickerGesture;
+    if (!g) return;
+    g.pointers.delete(e.pointerId);
+    if (g.pointers.size > 0) return;
+
+    const after = JSON.stringify(state.stickers);
+    if (after !== g.before) pushHistory({ type: 'layers', before: g.before, after });
+    stickerGesture = null;
+    invalidateArtwork();
+}
+
+function clampPercent(v) { return Math.max(0, Math.min(100, v)); }
+function clampStickerWidth(v) { return Math.max(2, Math.min(200, Math.round(v * 10) / 10)); }
+
+/* ─── Image adjustments ───────────────────────────── */
+
+function adjustFilterString() {
+    const a = state.adjust;
+    if (!a) return 'none';
+    if (a.brightness === 100 && a.contrast === 100 && a.saturation === 100) return 'none';
+    return `brightness(${a.brightness}%) contrast(${a.contrast}%) saturate(${a.saturation}%)`;
+}
+
+/* התיקון חל על התמונה והציור בלבד. מדבקות וטקסט הם תוספות מעל
+   הצילום ולא חלק ממנו, ולכן הבהרת התמונה אינה אמורה להבהיר אותם. */
+function applyAdjustPreview() {
+    const f = adjustFilterString();
+    const img = document.getElementById('canvasImg');
+    const c = document.getElementById('paintCanvas');
+    if (img) img.style.filter = f;
+    if (c) c.style.filter = f;
+}
+
+function setAdjust(key, value) {
+    state.adjust[key] = value;
+    const el = document.getElementById('adj_' + key + 'Val');
+    if (el) el.textContent = value + '%';
+    applyAdjustPreview();
+    invalidateArtwork();
+}
+
+function resetAdjust() {
+    state.adjust = { brightness: 100, contrast: 100, saturation: 100 };
+    applyAdjustPreview();
+    invalidateArtwork();
+    showAdjustDialog();
+}
+
+function showAdjustDialog() {
+    if (!state.backgroundImage) { toast('יש לבחור תמונת רקע קודם', 'error'); return; }
+    const a = state.adjust;
+    const row = (key, label, min, max) => `
+        <div class="prop-row">
+            <label style="min-width:80px">${label}</label>
+            <input type="range" min="${min}" max="${max}" value="${a[key]}" style="flex:1;height:28px"
+                   oninput="setAdjust('${key}', +this.value)">
+            <span class="val" id="adj_${key}Val" style="min-width:46px">${a[key]}%</span>
+        </div>`;
+
+    showModal(`
+        <h2>🎚️ תיקון תמונה</h2>
+        <p style="color:#888;font-size:.85rem;margin-bottom:14px">
+            חל על הרקע ועל הציור. מדבקות וטקסט נשארים כפי שהם.
+        </p>
+        ${row('brightness', 'בהירות', 20, 200)}
+        ${row('contrast', 'ניגודיות', 20, 200)}
+        ${row('saturation', 'רוויה', 0, 200)}
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="resetAdjust()">↺ אפס</button>
+            <button class="btn btn-primary" onclick="closeModal()">סיום</button>
+        </div>
+    `);
+}
+
+/* ─── Side panel routing ──────────────────────────── */
+
+/**
+ * שלושה פאנלים חולקים את אותו מקום: אפשרויות כלי, מאפייני
+ * מדבקה ומאפייני שדה. מה שפעיל קובע מי מוצג.
+ */
+function refreshPanels() {
+    const painting = state.tool !== 'select';
+    const sticker = !painting && !!getSticker(state.selectedStickerId);
+    const show = (id, on) => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = on ? 'block' : 'none';
+    };
+
+    show('toolOptions', painting);
+    show('stickerProps', sticker);
+    show('fieldPropsTitle', !painting && !sticker);
+
+    // בנייד: אפשרויות הכלי כמגירה תחתונה, כדי שהתמונה לא תיעלם
+    // מהמסך בדיוק כשמתחילים לצייר עליה.
+    document.getElementById('propsPanel')?.classList.toggle('tool-sheet', painting);
+    document.body.classList.toggle('tool-sheet-open', painting);
+
+    if (painting) { renderToolOptions(); show('propsEmpty', false); show('propsContent', false); }
+    else if (sticker) { renderStickerProps(); show('propsEmpty', false); show('propsContent', false); }
+    else updatePropsPanel();
+}
+
+/* ─── Flattened artwork for export ────────────────── */
+
+function invalidateArtwork() { artworkCache = null; }
+
+async function getArtwork(W, H) {
+    if (artworkCache && artworkCache.w === W && artworkCache.h === H) return artworkCache.canvas;
+    const canvas = await renderArtwork(W, H);
+    artworkCache = { w: W, h: H, canvas };
+    return canvas;
+}
+
+/**
+ * מרכיב רקע + ציור + מדבקות לתמונה אחת בגודל המבוקש. הטקסט אינו
+ * נכלל — הוא משתנה מנמען לנמען, ובייצוא ל-PDF הוא נשאר וקטורי.
+ */
+async function renderArtwork(W, H) {
+    const [out, ctx] = newCanvas(W, H);
+
+    // הרקע והציור נצרבים יחד לפני התיקון, כדי שהבהירות תחול על
+    // התמונה המורכבת פעם אחת ולא על כל שכבה בנפרד.
+    const [base, bctx] = newCanvas(W, H);
+    bctx.drawImage(await loadImage(state.backgroundImage), 0, 0, W, H);
+    if (paint.ready) bctx.drawImage(paint.canvas, 0, 0, W, H);
+
+    ctx.filter = adjustFilterString();
+    ctx.drawImage(base, 0, 0);
+    ctx.filter = 'none';
+
+    for (const s of state.stickers) {
+        const src = state.stickerImages[s.imageId];
+        if (!src) continue;
+        const img = await loadImage(src);
+        const w = (s.w / 100) * W;
+        const h = w / (s.aspect || (img.naturalWidth / img.naturalHeight) || 1);
+
+        ctx.save();
+        ctx.translate((s.x / 100) * W, (s.y / 100) * H);
+        if (s.rotation) ctx.rotate(s.rotation * Math.PI / 180);
+        if (s.flipX) ctx.scale(-1, 1);
+        ctx.globalAlpha = s.opacity / 100;
+        if (s.blur) ctx.filter = `blur(${s.blur * W / 1000}px)`;
+        ctx.drawImage(img, -w / 2, -h / 2, w, h);
+        ctx.restore();
+    }
+    return out;
 }
 
 /* ═══════════════════════════════════════════════════
