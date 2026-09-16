@@ -526,6 +526,10 @@ function saveDesign($usersDir, $token, $input) {
         // גאומטריה בלבד; התמונה של כל מדבקה יושבת בקובץ נכס נפרד.
         'stickers' => $input['stickers'] ?? [],
         'adjust' => $input['adjust'] ?? null,
+        // סדר השכבות ומצב שכבת הציור; ההסתרה והנעילה של כל שכבה
+        // נוסעות בתוך fields ו-stickers עצמם.
+        'layerOrder' => $input['layerOrder'] ?? [],
+        'paintLayer' => $input['paintLayer'] ?? null,
         'updated' => date('c'),
     ];
 
