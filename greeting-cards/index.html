@@ -331,7 +331,7 @@
         .text-field:hover { outline-color: rgba(74,108,247,0.4); }
         .text-field.selected {
             outline: 2px solid #4a6cf7;
-            z-index: 20;
+            z-index: 30;
         }
         .text-field .field-text {
             pointer-events: none;
@@ -429,7 +429,10 @@
             -webkit-user-drag: none;
         }
         .sticker:hover { outline-color: rgba(74,108,247,0.4); }
-        .sticker.selected { outline: 2px solid #4a6cf7; z-index: 9; }
+        /* ‏השכבה הנבחרת עולה מעל כולן. בכרטיס הטקסט יושב מעל
+           התמונות, ולכן בלי זה תמונה שנבחרה והטקסט מכסה אותה
+           הייתה בלתי ניתנת לגרירה — הלחיצה נבלעה בשדה הטקסט. */
+        .sticker.selected { outline: 2px solid #4a6cf7; z-index: 30; }
         .sticker.selected .resize-handle,
         .sticker.selected .rotation-handle,
         .sticker.selected .rotation-line { display: block; }
@@ -2817,10 +2820,13 @@ function startDrag(e, fieldId, isTouch = false) {
     const moveEvent = isTouch ? 'touchmove' : 'mousemove';
     const endEvent = isTouch ? 'touchend' : 'mouseup';
 
+    let moved = 0;
+
     const onMove = ev => {
         const pt = isTouch ? ev.touches[0] : ev;
         const dx = pt.clientX - dragState.startX;
         const dy = pt.clientY - dragState.startY;
+        moved = Math.max(moved, Math.abs(dx) + Math.abs(dy));
         field.x = dragState.startFieldX + (dx / dragState.wrapperRect.width) * 100;
         field.y = dragState.startFieldY + (dy / dragState.wrapperRect.height) * 100;
         // Clamp
@@ -2833,10 +2839,31 @@ function startDrag(e, fieldId, isTouch = false) {
         document.removeEventListener(moveEvent, onMove);
         document.removeEventListener(endEvent, onEnd);
         dragState = null;
+        // נקישה בלי גרירה על שדה שכבר נבחר יורדת שכבה למטה, אל
+        // התמונה שמתחתיו. בלי זה תמונה שהטקסט מכסה אותה אינה
+        // ניתנת לבחירה חוזרת בכלל.
+        if (moved < 5) selectLayerBeneath(e.clientX, e.clientY, fieldId);
     };
 
     document.addEventListener(moveEvent, onMove, { passive: false });
     document.addEventListener(endEvent, onEnd);
+}
+
+/**
+ * בוחר את המדבקה שמתחת לנקודה, אם יש כזו ואם השדה שנלחץ כבר היה
+ * הנבחר. הטקסט בכרטיס יושב מעל התמונות בכוונה, וזה מה שהופך
+ * אזור חופף לבלתי נגיש — נקישה חוזרת היא הדרך לרדת שכבה.
+ */
+function selectLayerBeneath(clientX, clientY, fieldId) {
+    if (state.selectedFieldId !== fieldId) return;
+    if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
+
+    const below = document.elementsFromPoint(clientX, clientY)
+        .find(el => el.classList?.contains('sticker'));
+    if (!below) return;
+
+    selectSticker(below.id);
+    toast('נבחרה התמונה שמתחת');
 }
 
 function startResize(e, fieldId, handle, isTouch = false) {
@@ -5499,7 +5526,6 @@ function renderSticker(s) {
     img.style.filter = s.blur ? `blur(${s.blur * wrapWidth / 1000}px)` : 'none';
 
     el.classList.toggle('selected', s.id === state.selectedStickerId);
-    el.style.zIndex = 8 + state.stickers.indexOf(s) * 0.001;
 }
 
 function renderAllStickers(removeStale) {
@@ -5509,7 +5535,16 @@ function renderAllStickers(removeStale) {
             if (!ids.has(el.id)) el.remove();
         });
     }
-    state.stickers.forEach(renderSticker);
+    // סדר השכבות בין המדבקות הוא סדר ה-DOM ולא z-index: ערך שאינו
+    // שלם פשוט נפסל, וממילא היה מתנגש עם הבנד של שדות הטקסט.
+    // ‏appendChild מזיז אלמנט קיים לסוף, ולכן מעבר בסדר המערך מסדר
+    // את כולם.
+    const wrapper = document.getElementById('canvasWrapper');
+    state.stickers.forEach(s => {
+        renderSticker(s);
+        const el = document.getElementById(s.id);
+        if (el && el.parentNode === wrapper) wrapper.appendChild(el);
+    });
 }
 
 function selectSticker(id) {
@@ -5598,6 +5633,10 @@ function onStickerPointerDown(e, id) {
     if (state.tool !== 'select') return;
     e.preventDefault();
     e.stopPropagation();
+
+    // לפני הבחירה: נקישה חוזרת על מדבקה שכבר נבחרה יורדת לשכבה
+    // שמתחתיה, בדיוק כמו נקישה חוזרת על שדה טקסט.
+    const wasSelected = state.selectedStickerId === id;
     selectSticker(id);
 
     const s = getSticker(id);
@@ -5606,7 +5645,10 @@ function onStickerPointerDown(e, id) {
     el.setPointerCapture(e.pointerId);
 
     if (!stickerGesture || stickerGesture.id !== id) {
-        stickerGesture = { id, pointers: new Map(), before: JSON.stringify(state.stickers) };
+        stickerGesture = {
+            id, pointers: new Map(), before: JSON.stringify(state.stickers),
+            wasSelected, moved: 0, downX: e.clientX, downY: e.clientY,
+        };
     }
     stickerGesture.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
@@ -5635,6 +5677,8 @@ function onStickerPointerMove(e) {
     if (!g || !g.pointers.has(e.pointerId)) return;
     e.preventDefault();
     g.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    g.moved = Math.max(g.moved || 0,
+        Math.abs(e.clientX - g.downX) + Math.abs(e.clientY - g.downY));
 
     const s = getSticker(g.id);
     if (!s) return;
@@ -5676,6 +5720,16 @@ function onStickerPointerUp(e) {
     if (after !== g.before) pushHistory({ type: 'layers', before: g.before, after });
     stickerGesture = null;
     invalidateArtwork();
+
+    // נקישה בלי גרירה על מדבקה שכבר נבחרה — ירידה לשכבה שמתחת.
+    if (g.wasSelected && (g.moved || 0) < 5) {
+        const below = document.elementsFromPoint(g.downX, g.downY)
+            .find(el => el.classList?.contains('text-field'));
+        if (below) {
+            selectField(below.id);
+            toast('נבחר הטקסט שמתחת');
+        }
+    }
 }
 
 function clampPercent(v) { return Math.max(0, Math.min(100, v)); }
