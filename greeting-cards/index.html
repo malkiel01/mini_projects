@@ -2157,19 +2157,28 @@ function renderUserBackgrounds(bgs) {
         label.innerHTML = escapeHtml(bg.name) + ' <span onclick="event.stopPropagation();deleteUserBg(\'' + bg.id + '\')" style="cursor:pointer;margin-right:4px" title="מחק">✕</span>';
         item.appendChild(label);
 
-        item.onclick = () => {
-            // Load full image and set as background
-            const fullImg = new Image();
-            fullImg.onload = () => {
-                const c = document.createElement('canvas');
-                c.width = fullImg.naturalWidth;
-                c.height = fullImg.naturalHeight;
-                c.getContext('2d').drawImage(fullImg, 0, 0);
-                setBackground(c.toDataURL('image/jpeg', 0.95));
+        // הקובץ נמשך כמו שהוא ולא מצויר דרך קנבס: ציור ל-canvas
+        // והמרה ל-JPEG הרסו שקיפות של PNG (השקוף הפך לשחור) וגם
+        // דחסו מחדש בלי צורך תמונה שכבר שמורה אצלנו.
+        item.onclick = async () => {
+            try {
+                const res = await fetch(
+                    API_URL + '?action=get_user_bg&id=' + bg.id + '&token=' + authToken,
+                    { credentials: 'include' });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const blob = await res.blob();
+                const dataUrl = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+                await setBackground(dataUrl);
                 toast('נבחר רקע: ' + bg.name);
-            };
-            fullImg.crossOrigin = 'anonymous';
-            fullImg.src = API_URL + '?action=get_user_bg&id=' + bg.id + '&token=' + authToken;
+            } catch (e) {
+                console.error('Failed to load background', e);
+                toast('לא ניתן לטעון את הרקע', 'error');
+            }
         };
 
         gallery.appendChild(item);
@@ -3225,6 +3234,7 @@ function selectExportFormat(format) {
     document.querySelectorAll('.export-option').forEach(el => {
         el.classList.toggle('selected', el.dataset.format === format);
     });
+    updateExportSummary();
 }
 
 function updateExportSummary() {
@@ -3237,7 +3247,21 @@ function updateExportSummary() {
         <div>📊 <strong>${count}</strong> כרטיסים ייווצרו</div>
         <div>🔤 <strong>${fixedFields.length}</strong> שדות קבועים | <strong>${listFields.length}</strong> שדות מרשימה</div>
         <div>📐 רזולוציה: ${state.backgroundNatural ? state.backgroundNatural.width + '×' + state.backgroundNatural.height : 'לא נבחר רקע'}</div>
+        ${transparencyWarning()}
     `;
+}
+
+/**
+ * ‏JPG אינו יודע שקיפות, והיא יוצאת שחורה. כישלון שקט כזה מתגלה
+ * רק אחרי שכל הכרטיסים כבר נשלחו, ולכן הוא נאמר כאן מראש.
+ */
+function transparencyWarning() {
+    if (state.exportFormat !== 'jpg' || !paint.ready) return '';
+    if (!hasTransparency(paint.bg)) return '';
+    return `<div style="margin-top:8px;padding:8px 10px;border-radius:6px;background:#fff4e5;color:#8a5a00">
+        ⚠️ הרקע מכיל אזורים שקופים, ו-JPG אינו תומך בשקיפות — הם ייצאו שחורים.
+        בחרו PNG או PDF כדי לשמור עליהם.
+    </div>`;
 }
 
 async function startExport() {
@@ -3349,8 +3373,17 @@ async function generatePDF(recipient) {
 
     // ‏רקע + ציור + מדבקות כשכבת רסטר אחת. הטקסט נוסף אחריה
     // כטקסט וקטורי, ולכן נשאר חד בכל הגדלה.
+    //
+    // ‏JPEG אינו יודע שקיפות, ורקע PNG חלול היה יוצא שחור. לכן
+    // כשיש שקיפות עוברים ל-PNG, ובשאר המקרים נשארים ב-JPEG —
+    // ‏PNG של צילום מנפח את הקובץ פי כמה בלי להוסיף דבר.
     const artwork = await getArtwork(nat.width, nat.height);
-    pdf.addImage(artwork.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, pdfWidth, pdfHeight);
+    const transparent = hasTransparency(artwork);
+    pdf.addImage(
+        transparent ? artwork.toDataURL('image/png') : artwork.toDataURL('image/jpeg', 0.92),
+        transparent ? 'PNG' : 'JPEG',
+        0, 0, pdfWidth, pdfHeight
+    );
 
     // Add text fields
     for (const field of state.fields) {
@@ -4352,6 +4385,22 @@ function buildDesignAssets(isNewDesign) {
 
     const stickers = state.stickers.map(s => ({ ...s, slot: slotOf[s.imageId] }));
     return { assets, stickers, slotOf };
+}
+
+/**
+ * האם בתמונה יש ולו פיקסל אחד שאינו אטום.
+ *
+ * נבדק על דגימה מוקטנת ולא על התמונה המלאה: הקטנה משמרת שקיפות
+ * (פיקסל שקוף נשאר בעל אלפא נמוכה), והקריאה זולה בהרבה. הסף 250
+ * ולא 255 כדי לסבול עיגול בעת ההקטנה.
+ */
+function hasTransparency(canvas) {
+    const w = Math.min(200, canvas.width), h = Math.min(200, canvas.height);
+    const ctx = tmpCtx(7, w, h);
+    ctx.drawImage(canvas, 0, 0, w, h);
+    const d = ctx.getImageData(0, 0, w, h).data;
+    for (let i = 3; i < d.length; i += 4) if (d[i] < 250) return true;
+    return false;
 }
 
 /** האם צוירה ולו נקודה אחת — כדי לא לשמור PNG ריק בכל עיצוב. */
