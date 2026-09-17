@@ -18,7 +18,7 @@ name: Deploy to production
 
 on:
   push:
-    branches: [claude/landing-page-coordinates-0yx2p]
+    branches: [main]
   workflow_dispatch: {}
 
 # לעולם לא שתי פריסות במקביל.
@@ -52,9 +52,6 @@ jobs:
         run: |
           set -euo pipefail
           ERR=0
-          # הקבצים הם ES modules; node --check מנתח כמודול לפי הסיומת .mjs,
-          # ולכן כל קובץ נבדק דרך עותק זמני. vendor/ הוא קוד צד-שלישי מוקטן
-          # ולא נבדק.
           while IFS= read -r -d '' f; do
             cp "$f" "$RUNNER_TEMP/check.mjs"
             node --check "$RUNNER_TEMP/check.mjs" || { echo "::error file=$f::syntax error"; ERR=1; }
@@ -62,9 +59,6 @@ jobs:
           if [ "$ERR" -ne 0 ]; then echo "::error::JS syntax errors — aborting deploy"; exit 1; fi
           echo "JS lint OK"
 
-      # יעד רב-שורתי נשלח לשרת כמחרוזת אחת, וה-shell המרוחק מריץ כל שורה
-      # כפקודה. התוצאה היא עשרות שגיאות "command not found" שאינן רומזות
-      # במה מדובר. עדיף להיעצר כאן עם הודעה שאומרת איזה סוד שגוי.
       - name: Validate the deploy target
         env:
           HOST: ${{ secrets.DEPLOY_HOST }}
@@ -72,7 +66,6 @@ jobs:
           PATH_: ${{ secrets.DEPLOY_PATH }}
         run: |
           bad=0
-          # ‏printf '%s' אינו מוסיף שורה, ולכן ערך תקין בן שורה אחת נותר 0.
           [ "$(printf '%s' "$HOST"  | wc -l)" -eq 0 ] || { echo "::error::DEPLOY_HOST מכיל יותר משורה אחת"; bad=1; }
           [ "$(printf '%s' "$USER_" | wc -l)" -eq 0 ] || { echo "::error::DEPLOY_USER מכיל יותר משורה אחת"; bad=1; }
           [ "$(printf '%s' "$PATH_" | wc -l)" -eq 0 ] || { echo "::error::DEPLOY_PATH מכיל יותר משורה אחת — כנראה הודבק לשם המפתח במקום הנתיב"; bad=1; }
@@ -90,17 +83,6 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      # PreferredAuthentications=publickey חוסם נפילה לאימות סיסמה, שהופכת
-      # כישלון מפתח להודעה מטעה על ריבוי נסיונות במקום "Permission denied
-      # (publickey)" שאומר בדיוק מה קרה.
-      # מנתח את *צורת* המפתח בלבד — ספירות, אורכים וכן/לא. גיטהאב מצנזר כל
-      # מחרוזת מהסוד עצמו, ולכן הדפסת השורות אינה מלמדת דבר; מספרים נגזרים
-      # עוברים, ואינם מאפשרים לשחזר את המפתח.
-      # מפתח RSA-2048 תקין: 27 שורות, גוף base64 באורך 64, אפס שורות זרות.
-      # מפתח פתוח עובד ישירות מול ssh, בדיוק כמו ב-kadisha-vaad, והשלב
-      # הזה מדלג על עצמו. מפתח נעול אינו ניתן לפתיחה ע"י ssh ללא
-      # אינטראקציה, ולכן הוא נטען ל-ssh-agent עם הסיסמה.
-      # כך אותו workflow משרת את שני המקרים בלי לדעת מראש מה הוגדר.
       - name: Unlock the deploy key if it has a passphrase
         env:
           DEPLOY_PASS: ${{ secrets.DEPLOY_SSH_PASSPHRASE }}
@@ -112,7 +94,6 @@ jobs:
           eval "$(ssh-agent -s)"
           echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
           echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> "$GITHUB_ENV"
-          # ssh-add אינו קורא סיסמה מ-stdin; הדרך הנתמכת היא תוכנית עזר.
           cat > "$RUNNER_TEMP/askpass" <<'SH'
           #!/bin/sh
           printf '%s\n' "$DEPLOY_PASS"
@@ -123,15 +104,30 @@ jobs:
           rm -f "$RUNNER_TEMP/askpass"
           ssh-add -l
 
-      # בדיקה יחידה, אזהרה בלבד: מפרידה בין "המפתח אינו קריא" לבין
-      # "המפתח נדחה בשרת". שתי התקלות נראות זהות מצד ה-rsync.
       - name: Verify the deploy key is readable
         run: ssh-keygen -l -f ~/.ssh/deploy_key
              || echo "::warning::DEPLOY_SSH_KEY אינו מפתח פרטי קריא (נעול בסיסמה?)"
 
+      # השרת סוגר מדי פעם את חיבור ה-SSH מיד אחרי שנפתח —
+      # "Connection closed by <ip> port 22", ו-rsync יוצא עם 255 בלי
+      # שהעביר בית אחד. זה אינו כשל אימות (אין Permission denied) ואינו
+      # כשל בקוד: אותם סודות בדיוק מצליחים ונכשלים לסירוגין.
+      #
+      # ההמתנות נגזרות ממדידה ולא מניחוש. ב-17.9 נצפה:
+      #   15:19 נכשל → 15:24 הצליח, חמש דקות אחר כך, ללא שינוי בשום דבר.
+      # כלומר החסימה משתחררת תוך דקות. גרסה קודמת ניסתה 5 ו-15 שניות,
+      # כל שלושת הנסיונות נפלו בתוך אותו חלון חסימה ונכשלו זהה. לכן
+      # ההמתנות כאן נמדדות בדקות: 30ש, 90ש, 180ש — כיסוי של כ-5 דקות,
+      # בדיוק סדר הגודל שנצפה.
+      #
+      # ‏rsync כאן הוא idempotent — רץ בלי --delete ורק מעתיק — ולכן
+      # נסיון חוזר בטוח לחלוטין ואינו עלול לשכפל או להרוס דבר.
       - name: Deploy code via rsync (no --delete; never touches runtime data)
         run: |
-          rsync -rlptz \
+          set -uo pipefail
+          attempt=1
+          max=4
+          until rsync -rlptz \
             --exclude='.git' --exclude='.github' \
             --exclude='git-deploy/data/config.json' \
             --exclude='git-deploy/data/logs/' --exclude='git-deploy/data/cache/' \
@@ -146,6 +142,32 @@ jobs:
             --exclude='guarded-browser/data/*.sqlite*' \
             --exclude='*.log' --exclude='error_log' \
             --exclude='.DS_Store' --exclude='._*' \
-            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30" \
             ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/"
-          echo "Deploy complete"
+          do
+            code=$?
+            if [ "$attempt" -ge "$max" ]; then
+              echo "::error::הפריסה נכשלה ב-$max נסיונות לאורך כ-5 דקות. קוד היציאה האחרון: $code"
+              echo "::error::קוד 255 עם 0 בתים = השרת סגר את חיבור ה-SSH. ראה .claude/skills/deploy-to-cpanel/references/troubleshooting.md"
+              # כשגם חמש דקות לא הספיקו, השאלה הבאה היא *היכן* נסגר
+              # החיבור: לפני האימות (חסימה או מגבלת קצב בשרת) או אחריו
+              # (בעיה בחשבון או ב-shell). ssh מפורט עונה על זה, וללא
+              # התשובה הזו הכשל הבא יהיה עוד ניחוש. רץ פעם אחת בלבד,
+              # ורק כאן — ולכן אינו מוסיף רעש להרצה מוצלחת.
+              echo "--- אבחון: היכן נסגר החיבור ---"
+              ssh -vv -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+                -o ConnectTimeout=30 -o BatchMode=yes \
+                "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" 'echo SSH_OK' 2>&1 \
+                | tail -n 40 || true
+              exit "$code"
+            fi
+            case "$attempt" in
+              1) wait=30 ;;
+              2) wait=90 ;;
+              *) wait=180 ;;
+            esac
+            echo "::warning::נסיון $attempt מתוך $max נכשל (קוד $code). ממתין ${wait}ש ומנסה שוב"
+            sleep "$wait"
+            attempt=$(( attempt + 1 ))
+          done
+          echo "Deploy complete (נסיון $attempt מתוך $max)"

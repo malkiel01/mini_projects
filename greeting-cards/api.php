@@ -1,0 +1,899 @@
+<?php
+/**
+ * API for Greeting Cards Generator
+ * Auth, contacts, font uploads, template saving, background gallery
+ */
+
+session_start();
+
+header('Content-Type: application/json; charset=utf-8');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, X-Auth-Token');
+header('Access-Control-Allow-Credentials: true');
+
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(204);
+    exit;
+}
+
+// ‏const ברמת קובץ מתבצע לפי סדר ואינו מוקדם אוטומטית, ולכן
+// ההצהרות חייבות להיות לפני ה-switch שמפעיל את ה-handlers.
+
+/** שמות הנכסים המותרים בעיצוב: שכבת הציור, ועד 100 מדבקות. */
+const DESIGN_SLOT_RE = '/^(paint|s\d{1,2})$/';
+
+/** הפורמטים המותרים לכל תמונה. SVG אינו ברשימה — הוא נושא סקריפט. */
+const DESIGN_IMAGE_EXT = ['jpg', 'png', 'webp'];
+
+$dataDir = __DIR__ . '/data';
+$usersDir = $dataDir . '/users';
+$fontsDir = __DIR__ . '/fonts';
+$templatesDir = __DIR__ . '/templates';
+$backgroundsDir = __DIR__ . '/backgrounds';
+
+foreach ([$dataDir, $usersDir, $fontsDir, $templatesDir, $backgroundsDir] as $dir) {
+    if (!is_dir($dir)) mkdir($dir, 0755, true);
+}
+
+// Get input
+$action = $_GET['action'] ?? $_POST['action'] ?? '';
+$input = null;
+$rawBody = file_get_contents('php://input');
+if ($rawBody) $input = json_decode($rawBody, true);
+if (!$input) $input = $_POST;
+
+// Token-based auth (header or parameter)
+$token = $_SERVER['HTTP_X_AUTH_TOKEN']
+    ?? $_GET['token'] ?? $input['token'] ?? $_COOKIE['gc_token'] ?? '';
+
+try {
+    switch ($action) {
+        // ─── Auth ────────────────────────────────────
+        case 'register':    handleRegister($usersDir, $input); break;
+        case 'login':       handleLogin($usersDir, $input); break;
+        case 'logout':      handleLogout(); break;
+        case 'check_auth':  handleCheckAuth($usersDir, $token); break;
+
+        // ─── Contacts (require auth) ────────────────
+        case 'save_contacts':   requireAuth($usersDir, $token); saveContacts($usersDir, $token, $input); break;
+        case 'load_contacts':   requireAuth($usersDir, $token); loadContacts($usersDir, $token); break;
+        case 'delete_contact':  requireAuth($usersDir, $token); deleteContact($usersDir, $token, $input); break;
+
+        // ─── User Data (require auth) ───────────────
+        case 'save_user_data':  requireAuth($usersDir, $token); saveUserData($usersDir, $token, $input); break;
+        case 'load_user_data':  requireAuth($usersDir, $token); loadUserData($usersDir, $token); break;
+
+        // ─── Fonts (public) ─────────────────────────
+        case 'upload_font':     handleFontUpload($fontsDir); break;
+        case 'list_fonts':      listFonts($fontsDir); break;
+        case 'get_font':        getFont($fontsDir); break;
+        case 'delete_font':     deleteFont($fontsDir); break;
+
+        // ─── Templates ─────────────────────────────
+        case 'save_template':   saveTemplate($templatesDir); break;
+        case 'list_templates':  listTemplates($templatesDir); break;
+        case 'get_template':    getTemplate($templatesDir); break;
+        case 'delete_template': deleteTemplate($templatesDir); break;
+
+        // ─── Backgrounds (global defaults) ──────────
+        case 'upload_background':   handleBackgroundUpload($backgroundsDir); break;
+        case 'list_backgrounds':    listBackgrounds($backgroundsDir); break;
+        case 'delete_background':   deleteBackground($backgroundsDir); break;
+
+        // ─── User Backgrounds (per-user) ────────────
+        case 'upload_user_bg':      requireAuth($usersDir, $token); uploadUserBackground($usersDir, $token); break;
+        case 'upload_user_bg_zip':  requireAuth($usersDir, $token); uploadUserBackgroundZip($usersDir, $token); break;
+        case 'list_user_bgs':       requireAuth($usersDir, $token); listUserBackgrounds($usersDir, $token); break;
+        case 'delete_user_bg':      requireAuth($usersDir, $token); deleteUserBackground($usersDir, $token, $input); break;
+        case 'get_user_bg':         requireAuth($usersDir, $token); getUserBackground($usersDir, $token); break;
+
+        // ─── Designs (per-user saved layouts) ───────
+        case 'save_design':         requireAuth($usersDir, $token); saveDesign($usersDir, $token, $input); break;
+        case 'list_designs':        requireAuth($usersDir, $token); listDesigns($usersDir, $token); break;
+        case 'get_design':          requireAuth($usersDir, $token); getDesign($usersDir, $token); break;
+        case 'get_design_bg':       requireAuth($usersDir, $token); getDesignBackground($usersDir, $token); break;
+        case 'delete_design':       requireAuth($usersDir, $token); deleteDesign($usersDir, $token, $input); break;
+
+        // ─── Admin (global defaults management) ─────
+        case 'admin_check':         adminCheck($dataDir, $input); break;
+        case 'admin_upload_bg':     handleBackgroundUpload($backgroundsDir); break;
+        case 'admin_upload_bg_zip': adminUploadBgZip($backgroundsDir); break;
+        case 'admin_delete_bg':     deleteBackground($backgroundsDir); break;
+        case 'admin_upload_font':   handleFontUpload($fontsDir); break;
+        case 'admin_delete_font':   deleteFont($fontsDir); break;
+        case 'admin_list_users':    adminListUsers($usersDir, $dataDir, $input); break;
+
+        default:
+            respond(false, 'Unknown action: ' . $action);
+    }
+} catch (Exception $e) {
+    respond(false, $e->getMessage());
+}
+
+// ═══════════════════════════════════════════════════════
+// Auth Functions
+// ═══════════════════════════════════════════════════════
+
+function handleRegister($usersDir, $input) {
+    $username = trim($input['username'] ?? '');
+    $password = $input['password'] ?? '';
+    $displayName = trim($input['displayName'] ?? $username);
+
+    if (strlen($username) < 2) respond(false, 'שם משתמש חייב להיות לפחות 2 תווים');
+    if (strlen($password) < 4) respond(false, 'סיסמה חייבת להיות לפחות 4 תווים');
+    if (!preg_match('/^[a-zA-Z0-9_\-\p{Hebrew}]+$/u', $username)) {
+        respond(false, 'שם משתמש יכול להכיל אותיות, מספרים, קו תחתון ומקף בלבד');
+    }
+
+    $userDir = $usersDir . '/' . safeFilename($username);
+    if (is_dir($userDir)) respond(false, 'שם משתמש כבר קיים');
+
+    mkdir($userDir, 0755, true);
+
+    $token = bin2hex(random_bytes(32));
+
+    $profile = [
+        'username' => $username,
+        'displayName' => $displayName,
+        'passwordHash' => password_hash($password, PASSWORD_DEFAULT),
+        'token' => $token,
+        'created' => date('c'),
+        'lastLogin' => date('c'),
+    ];
+
+    file_put_contents($userDir . '/profile.json', json_encode($profile, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    file_put_contents($userDir . '/contacts.json', json_encode([], JSON_UNESCAPED_UNICODE));
+    file_put_contents($userDir . '/user_data.json', json_encode([], JSON_UNESCAPED_UNICODE));
+
+    setTokenCookie($token);
+
+    respond(true, 'נרשמת בהצלחה!', [
+        'token' => $token,
+        'username' => $username,
+        'displayName' => $displayName,
+    ]);
+}
+
+function handleLogin($usersDir, $input) {
+    $username = trim($input['username'] ?? '');
+    $password = $input['password'] ?? '';
+
+    $userDir = $usersDir . '/' . safeFilename($username);
+    $profileFile = $userDir . '/profile.json';
+
+    if (!file_exists($profileFile)) respond(false, 'שם משתמש או סיסמה שגויים');
+
+    $profile = json_decode(file_get_contents($profileFile), true);
+    if (!password_verify($password, $profile['passwordHash'])) {
+        respond(false, 'שם משתמש או סיסמה שגויים');
+    }
+
+    // Generate new token
+    $token = bin2hex(random_bytes(32));
+    $profile['token'] = $token;
+    $profile['lastLogin'] = date('c');
+    file_put_contents($profileFile, json_encode($profile, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+
+    setTokenCookie($token);
+
+    respond(true, 'התחברת בהצלחה!', [
+        'token' => $token,
+        'username' => $profile['username'],
+        'displayName' => $profile['displayName'] ?? $profile['username'],
+    ]);
+}
+
+function handleLogout() {
+    setcookie('gc_token', '', time() - 3600, '/');
+    respond(true, 'התנתקת');
+}
+
+function handleCheckAuth($usersDir, $token) {
+    if (!$token) respond(false, 'לא מחובר');
+    $profile = findUserByToken($usersDir, $token);
+    if (!$profile) respond(false, 'לא מחובר');
+    respond(true, 'מחובר', [
+        'username' => $profile['username'],
+        'displayName' => $profile['displayName'] ?? $profile['username'],
+    ]);
+}
+
+function requireAuth($usersDir, $token) {
+    if (!$token) respond(false, 'נדרשת התחברות', ['auth_required' => true]);
+    $profile = findUserByToken($usersDir, $token);
+    if (!$profile) respond(false, 'טוקן לא תקף, התחבר מחדש', ['auth_required' => true]);
+}
+
+function findUserByToken($usersDir, $token) {
+    if (!$token) return null;
+    foreach (glob($usersDir . '/*/profile.json') as $file) {
+        $profile = json_decode(file_get_contents($file), true);
+        if ($profile && ($profile['token'] ?? '') === $token) {
+            $profile['_dir'] = dirname($file);
+            return $profile;
+        }
+    }
+    return null;
+}
+
+function getUserDir($usersDir, $token) {
+    $profile = findUserByToken($usersDir, $token);
+    return $profile ? $profile['_dir'] : null;
+}
+
+function setTokenCookie($token) {
+    setcookie('gc_token', $token, [
+        'expires' => time() + 86400 * 90, // 90 days
+        'path' => '/',
+        'httponly' => false,
+        'samesite' => 'Lax',
+    ]);
+}
+
+function safeFilename($name) {
+    return preg_replace('/[^a-zA-Z0-9_\-]/', '_', $name);
+}
+
+// ═══════════════════════════════════════════════════════
+// Contacts Functions
+// ═══════════════════════════════════════════════════════
+
+function saveContacts($usersDir, $token, $input) {
+    $userDir = getUserDir($usersDir, $token);
+    if (!$userDir) respond(false, 'משתמש לא נמצא');
+
+    $contacts = $input['contacts'] ?? [];
+
+    // Validate and sanitize
+    $clean = [];
+    foreach ($contacts as $c) {
+        $clean[] = [
+            'id' => $c['id'] ?? uniqid('c_'),
+            'name' => trim($c['name'] ?? ''),
+            'displayName' => trim($c['displayName'] ?? $c['name'] ?? ''),
+            'phone' => trim($c['phone'] ?? ''),
+            'email' => trim($c['email'] ?? ''),
+            'selected' => $c['selected'] ?? true,
+        ];
+    }
+
+    file_put_contents(
+        $userDir . '/contacts.json',
+        json_encode($clean, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+    );
+
+    respond(true, 'אנשי הקשר נשמרו', ['count' => count($clean)]);
+}
+
+function loadContacts($usersDir, $token) {
+    $userDir = getUserDir($usersDir, $token);
+    if (!$userDir) respond(false, 'משתמש לא נמצא');
+
+    $file = $userDir . '/contacts.json';
+    $contacts = file_exists($file) ? json_decode(file_get_contents($file), true) : [];
+
+    respond(true, 'OK', ['contacts' => $contacts ?: []]);
+}
+
+function deleteContact($usersDir, $token, $input) {
+    $userDir = getUserDir($usersDir, $token);
+    if (!$userDir) respond(false, 'משתמש לא נמצא');
+
+    $id = $input['id'] ?? '';
+    if (!$id) respond(false, 'Missing contact ID');
+
+    $file = $userDir . '/contacts.json';
+    $contacts = file_exists($file) ? json_decode(file_get_contents($file), true) : [];
+    $contacts = array_values(array_filter($contacts, fn($c) => ($c['id'] ?? '') !== $id));
+    file_put_contents($file, json_encode($contacts, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+
+    respond(true, 'איש קשר נמחק');
+}
+
+// ═══════════════════════════════════════════════════════
+// User Data Functions (save/load card state)
+// ═══════════════════════════════════════════════════════
+
+function saveUserData($usersDir, $token, $input) {
+    $userDir = getUserDir($usersDir, $token);
+    if (!$userDir) respond(false, 'משתמש לא נמצא');
+
+    $data = $input['data'] ?? $input;
+    unset($data['action'], $data['token']);
+
+    file_put_contents(
+        $userDir . '/user_data.json',
+        json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+    );
+
+    respond(true, 'הנתונים נשמרו');
+}
+
+function loadUserData($usersDir, $token) {
+    $userDir = getUserDir($usersDir, $token);
+    if (!$userDir) respond(false, 'משתמש לא נמצא');
+
+    $file = $userDir . '/user_data.json';
+    $data = file_exists($file) ? json_decode(file_get_contents($file), true) : [];
+
+    respond(true, 'OK', ['data' => $data ?: []]);
+}
+
+// ═══════════════════════════════════════════════════════
+// User Backgrounds (per-user)
+// ═══════════════════════════════════════════════════════
+
+function getUserBgDir($usersDir, $token) {
+    $userDir = getUserDir($usersDir, $token);
+    if (!$userDir) return null;
+    $bgDir = $userDir . '/backgrounds';
+    if (!is_dir($bgDir)) mkdir($bgDir, 0755, true);
+    return $bgDir;
+}
+
+function uploadUserBackground($usersDir, $token) {
+    $bgDir = getUserBgDir($usersDir, $token);
+    if (!$bgDir) respond(false, 'משתמש לא נמצא');
+    if (empty($_FILES['background'])) respond(false, 'No file provided');
+
+    $file = $_FILES['background'];
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tiff', 'tif', 'heic', 'heif', 'svg', 'avif'])) respond(false, 'תמונה לא נתמכת');
+    if ($file['size'] > 20 * 1024 * 1024) respond(false, 'קובץ גדול מדי (20MB מקסימום)');
+
+    $id = uniqid('ubg_');
+    $filename = $id . '.' . $ext;
+    if (!move_uploaded_file($file['tmp_name'], $bgDir . '/' . $filename)) respond(false, 'שגיאה בשמירה');
+
+    $meta = [
+        'id' => $id,
+        'name' => $_POST['name'] ?? pathinfo($file['name'], PATHINFO_FILENAME),
+        'filename' => $filename,
+        'ext' => $ext,
+        'size' => $file['size'],
+        'uploaded' => date('c'),
+    ];
+    file_put_contents($bgDir . '/' . $id . '.json', json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    respond(true, 'רקע הועלה', $meta);
+}
+
+function uploadUserBackgroundZip($usersDir, $token) {
+    $bgDir = getUserBgDir($usersDir, $token);
+    if (!$bgDir) respond(false, 'משתמש לא נמצא');
+    if (empty($_FILES['zipfile'])) respond(false, 'No ZIP file provided');
+
+    $file = $_FILES['zipfile'];
+    if ($file['size'] > 100 * 1024 * 1024) respond(false, 'ZIP גדול מדי (100MB מקסימום)');
+
+    $zip = new ZipArchive();
+    if ($zip->open($file['tmp_name']) !== true) respond(false, 'שגיאה בפתיחת ה-ZIP');
+
+    $added = 0;
+    $errors = [];
+    $validExts = ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tiff', 'tif', 'heic', 'heif', 'svg', 'avif'];
+
+    for ($i = 0; $i < $zip->numFiles; $i++) {
+        $entry = $zip->getNameIndex($i);
+        // Skip directories and hidden files
+        if (substr($entry, -1) === '/' || strpos(basename($entry), '.') === 0) continue;
+
+        $ext = strtolower(pathinfo($entry, PATHINFO_EXTENSION));
+        if (!in_array($ext, $validExts)) continue;
+
+        $data = $zip->getFromIndex($i);
+        if ($data === false || strlen($data) < 100) continue;
+        if (strlen($data) > 20 * 1024 * 1024) { $errors[] = basename($entry) . ' גדול מדי'; continue; }
+
+        $id = uniqid('ubg_');
+        $filename = $id . '.' . $ext;
+        file_put_contents($bgDir . '/' . $filename, $data);
+
+        $meta = [
+            'id' => $id,
+            'name' => pathinfo(basename($entry), PATHINFO_FILENAME),
+            'filename' => $filename,
+            'ext' => $ext,
+            'size' => strlen($data),
+            'uploaded' => date('c'),
+        ];
+        file_put_contents($bgDir . '/' . $id . '.json', json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        $added++;
+    }
+    $zip->close();
+
+    respond(true, "הועלו $added רקעים מ-ZIP", ['added' => $added, 'errors' => $errors]);
+}
+
+function listUserBackgrounds($usersDir, $token) {
+    $bgDir = getUserBgDir($usersDir, $token);
+    if (!$bgDir) respond(false, 'משתמש לא נמצא');
+
+    $bgs = [];
+    foreach (glob($bgDir . '/*.json') as $f) {
+        $m = json_decode(file_get_contents($f), true);
+        if ($m) $bgs[] = $m;
+    }
+    usort($bgs, fn($a, $b) => strcmp($b['uploaded'] ?? '', $a['uploaded'] ?? ''));
+    respond(true, 'OK', ['backgrounds' => $bgs]);
+}
+
+function getUserBackground($usersDir, $token) {
+    $bgDir = getUserBgDir($usersDir, $token);
+    if (!$bgDir) respond(false, 'משתמש לא נמצא');
+
+    $id = $_GET['id'] ?? '';
+    if (!$id) respond(false, 'Missing ID');
+
+    $metaFile = $bgDir . '/' . $id . '.json';
+    if (!file_exists($metaFile)) respond(false, 'רקע לא נמצא');
+
+    $meta = json_decode(file_get_contents($metaFile), true);
+    $imgFile = $bgDir . '/' . $meta['filename'];
+    if (!file_exists($imgFile)) respond(false, 'קובץ רקע חסר');
+
+    // Return image directly
+    $mime = ['jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'bmp' => 'image/bmp', 'gif' => 'image/gif', 'tiff' => 'image/tiff', 'tif' => 'image/tiff', 'heic' => 'image/heic', 'heif' => 'image/heif', 'svg' => 'image/svg+xml', 'avif' => 'image/avif'];
+    header('Content-Type: ' . ($mime[$meta['ext']] ?? 'application/octet-stream'));
+    header('Content-Length: ' . filesize($imgFile));
+    header('Content-Disposition: inline; filename="' . $meta['filename'] . '"');
+    readfile($imgFile);
+    exit;
+}
+
+function deleteUserBackground($usersDir, $token, $input) {
+    $bgDir = getUserBgDir($usersDir, $token);
+    if (!$bgDir) respond(false, 'משתמש לא נמצא');
+
+    $id = $input['id'] ?? $_GET['id'] ?? '';
+    if (!$id) respond(false, 'Missing ID');
+
+    $metaFile = $bgDir . '/' . $id . '.json';
+    if (!file_exists($metaFile)) respond(false, 'רקע לא נמצא');
+
+    $meta = json_decode(file_get_contents($metaFile), true);
+    @unlink($bgDir . '/' . $meta['filename']);
+    @unlink($metaFile);
+    respond(true, 'רקע נמחק');
+}
+
+// ═══════════════════════════════════════════════════════
+// Designs (per-user saved layouts)
+//
+// עיצוב = רקע + שכבת ציור + מדבקות + כל השדות. כל התמונות
+// נשמרות כקבצים לצד ה-JSON ולא בתוכו: base64 בתוך JSON תופח
+// בשליש, וכמה עיצובים היו הופכים את הקובץ לכבד מכדי לטעון אותו
+// בכל רשימה. ה-JSON מחזיק רק גאומטריה ומצביע לקבצים.
+// ═══════════════════════════════════════════════════════
+
+function getDesignsDir($usersDir, $token) {
+    $userDir = getUserDir($usersDir, $token);
+    if (!$userDir) return null;
+    $dir = $userDir . '/designs';
+    if (!is_dir($dir)) mkdir($dir, 0755, true);
+    return $dir;
+}
+
+/**
+ * מפרק data URL של תמונה לסיומת ולתוכן בינארי, או עוצר בשגיאה.
+ * ‏$label נכנס להודעה כדי שהמשתמש ידע איזו תמונה נדחתה.
+ */
+function decodeImageDataUrl($dataUrl, $label) {
+    if (!preg_match('#^data:image/([a-z0-9.+-]+);base64,#i', $dataUrl, $m)) {
+        respond(false, "פורמט $label לא נתמך");
+    }
+    $ext = strtolower($m[1]);
+    if ($ext === 'jpeg') $ext = 'jpg';
+    if (!in_array($ext, DESIGN_IMAGE_EXT)) respond(false, "פורמט $label לא נתמך: $ext");
+
+    $binary = base64_decode(substr($dataUrl, strlen($m[0])), true);
+    if ($binary === false) respond(false, "$label פגום");
+    if (strlen($binary) > 25 * 1024 * 1024) respond(false, "$label גדול מדי");
+
+    return [$ext, $binary];
+}
+
+function designAssetPath($dir, $id, $slot, $ext) {
+    return "$dir/{$id}__{$slot}.$ext";
+}
+
+/** מוחק את הקובץ של נכס בכל סיומת אפשרית. */
+function deleteDesignAsset($dir, $id, $slot) {
+    foreach (DESIGN_IMAGE_EXT as $ext) {
+        @unlink(designAssetPath($dir, $id, $slot, $ext));
+    }
+}
+
+function saveDesign($usersDir, $token, $input) {
+    $dir = getDesignsDir($usersDir, $token);
+    if (!$dir) respond(false, 'משתמש לא נמצא');
+
+    $name = trim($input['name'] ?? '');
+    if ($name === '') respond(false, 'נדרש שם לעיצוב');
+
+    // מזהה קיים = שמירה על עיצוב קיים; אחרת עיצוב חדש.
+    $id = $input['id'] ?? '';
+    if ($id !== '' && !preg_match('/^dsg_[a-z0-9]+$/i', $id)) respond(false, 'מזהה לא תקין');
+    if ($id === '') $id = uniqid('dsg_');
+
+    $existing = json_decode(@file_get_contents("$dir/$id.json"), true) ?: [];
+
+    $meta = [
+        'id' => $id,
+        'name' => $name,
+        'fields' => $input['fields'] ?? [],
+        'backgroundNatural' => $input['backgroundNatural'] ?? null,
+        // גאומטריה בלבד; התמונה של כל מדבקה יושבת בקובץ נכס נפרד.
+        'stickers' => $input['stickers'] ?? [],
+        'adjust' => $input['adjust'] ?? null,
+        // סדר השכבות ומצב שכבת הציור; ההסתרה והנעילה של כל שכבה
+        // נוסעות בתוך fields ו-stickers עצמם.
+        'layerOrder' => $input['layerOrder'] ?? [],
+        'paintLayer' => $input['paintLayer'] ?? null,
+        'updated' => date('c'),
+    ];
+
+    // רקע חדש מגיע כ-data URL. אם לא נשלח רקע, נשמר זה שכבר קיים.
+    $background = $input['background'] ?? '';
+    if (is_string($background) && str_starts_with($background, 'data:image/')) {
+        [$ext, $binary] = decodeImageDataUrl($background, 'רקע');
+        foreach (glob("$dir/$id.{jpg,png,webp}", GLOB_BRACE) ?: [] as $old) @unlink($old);
+        file_put_contents("$dir/$id.$ext", $binary);
+        $meta['bgExt'] = $ext;
+    } elseif (!empty($existing['bgExt'])) {
+        $meta['bgExt'] = $existing['bgExt'];
+    }
+
+    // ‏assets הוא מפה מלאה של הנכסים: כל ערך הוא data URL חדש, או
+    // המחרוזת "keep" כדי להשאיר את הקיים. נכס שאינו במפה נמחק —
+    // כך מדבקה שהוסרה מהעיצוב אינה משאירה קובץ יתום.
+    $incoming = $input['assets'] ?? null;
+    $oldAssets = $existing['assets'] ?? [];
+    if (is_array($incoming)) {
+        $assets = [];
+        foreach ($incoming as $slot => $value) {
+            if (!preg_match(DESIGN_SLOT_RE, (string)$slot)) respond(false, 'נכס לא תקין: ' . $slot);
+
+            if ($value === 'keep') {
+                if (isset($oldAssets[$slot])) $assets[$slot] = $oldAssets[$slot];
+                continue;
+            }
+            if (!is_string($value) || !str_starts_with($value, 'data:image/')) continue;
+
+            [$ext, $binary] = decodeImageDataUrl($value, 'שכבה');
+            deleteDesignAsset($dir, $id, $slot);
+            file_put_contents(designAssetPath($dir, $id, $slot, $ext), $binary);
+            $assets[$slot] = $ext;
+        }
+        foreach ($oldAssets as $slot => $ext) {
+            if (!isset($assets[$slot])) deleteDesignAsset($dir, $id, $slot);
+        }
+        $meta['assets'] = $assets;
+    } else {
+        $meta['assets'] = $oldAssets;
+    }
+
+    file_put_contents("$dir/$id.json", json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+
+    respond(true, 'העיצוב נשמר', ['id' => $id, 'name' => $name]);
+}
+
+function listDesigns($usersDir, $token) {
+    $dir = getDesignsDir($usersDir, $token);
+    if (!$dir) respond(false, 'משתמש לא נמצא');
+
+    $designs = [];
+    foreach (glob($dir . '/*.json') as $file) {
+        $d = json_decode(file_get_contents($file), true);
+        if (!$d) continue;
+        // בלי השדות: הרשימה נטענת בכל פתיחת דיאלוג, ואין בה בהם צורך.
+        $designs[] = [
+            'id' => $d['id'] ?? '',
+            'name' => $d['name'] ?? '',
+            'updated' => $d['updated'] ?? '',
+            'fieldCount' => count($d['fields'] ?? []),
+            'hasBackground' => !empty($d['bgExt']),
+        ];
+    }
+    usort($designs, fn($a, $b) => strcmp($b['updated'], $a['updated']));
+    respond(true, 'OK', ['designs' => $designs]);
+}
+
+function getDesign($usersDir, $token) {
+    $dir = getDesignsDir($usersDir, $token);
+    if (!$dir) respond(false, 'משתמש לא נמצא');
+
+    $id = $_GET['id'] ?? '';
+    if (!preg_match('/^dsg_[a-z0-9]+$/i', $id)) respond(false, 'מזהה לא תקין');
+
+    $file = "$dir/$id.json";
+    if (!file_exists($file)) respond(false, 'העיצוב לא נמצא');
+
+    respond(true, 'OK', ['design' => json_decode(file_get_contents($file), true)]);
+}
+
+/**
+ * מחזיר תמונה שמורה של עיצוב, כדי שה-JSON שלו יישאר קטן.
+ * ‏slot ריק או "bg" = הרקע; אחרת שכבת הציור או מדבקה.
+ */
+function getDesignBackground($usersDir, $token) {
+    $dir = getDesignsDir($usersDir, $token);
+    if (!$dir) respond(false, 'משתמש לא נמצא');
+
+    $id = $_GET['id'] ?? '';
+    if (!preg_match('/^dsg_[a-z0-9]+$/i', $id)) respond(false, 'מזהה לא תקין');
+
+    $meta = json_decode(@file_get_contents("$dir/$id.json"), true);
+    $slot = $_GET['slot'] ?? 'bg';
+
+    if ($slot === 'bg') {
+        $ext = $meta['bgExt'] ?? '';
+        $path = "$dir/$id.$ext";
+    } else {
+        if (!preg_match(DESIGN_SLOT_RE, $slot)) respond(false, 'נכס לא תקין');
+        $ext = $meta['assets'][$slot] ?? '';
+        $path = $ext ? designAssetPath($dir, $id, $slot, $ext) : '';
+    }
+    if (!$ext || !file_exists($path)) respond(false, 'הנכס לא נמצא בעיצוב');
+
+    $mime = ['jpg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'];
+    header('Content-Type: ' . ($mime[$ext] ?? 'application/octet-stream'));
+    header('Content-Length: ' . filesize($path));
+    readfile($path);
+    exit;
+}
+
+function deleteDesign($usersDir, $token, $input) {
+    $dir = getDesignsDir($usersDir, $token);
+    if (!$dir) respond(false, 'משתמש לא נמצא');
+
+    $id = $input['id'] ?? $_GET['id'] ?? '';
+    if (!preg_match('/^dsg_[a-z0-9]+$/i', $id)) respond(false, 'מזהה לא תקין');
+    if (!file_exists("$dir/$id.json")) respond(false, 'העיצוב לא נמצא');
+
+    $meta = json_decode(@file_get_contents("$dir/$id.json"), true) ?: [];
+    @unlink("$dir/$id.json");
+    foreach (glob("$dir/$id.{jpg,png,webp}", GLOB_BRACE) ?: [] as $bg) @unlink($bg);
+    foreach (array_keys($meta['assets'] ?? []) as $slot) {
+        if (preg_match(DESIGN_SLOT_RE, (string)$slot)) deleteDesignAsset($dir, $id, $slot);
+    }
+
+    respond(true, 'העיצוב נמחק');
+}
+
+// ═══════════════════════════════════════════════════════
+// Font Functions
+// ═══════════════════════════════════════════════════════
+
+function handleFontUpload($dir) {
+    if (empty($_FILES['font'])) respond(false, 'No font file provided');
+    $file = $_FILES['font'];
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    if (!in_array($ext, ['ttf', 'otf', 'woff', 'woff2'])) respond(false, 'Unsupported font format');
+    if ($file['size'] > 10 * 1024 * 1024) respond(false, 'Font file too large (max 10MB)');
+
+    $displayName = $_POST['name'] ?? pathinfo($file['name'], PATHINFO_FILENAME);
+    $id = uniqid('font_');
+    $filename = $id . '.' . $ext;
+    if (!move_uploaded_file($file['tmp_name'], $dir . '/' . $filename)) respond(false, 'Failed to save font file');
+
+    $meta = ['id' => $id, 'name' => $displayName, 'filename' => $filename, 'ext' => $ext, 'size' => $file['size'], 'uploaded' => date('c')];
+    file_put_contents($dir . '/' . $id . '.json', json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    respond(true, 'Font uploaded', $meta);
+}
+
+function listFonts($dir) {
+    $fonts = [];
+    foreach (glob($dir . '/*.json') as $f) { $m = json_decode(file_get_contents($f), true); if ($m) $fonts[] = $m; }
+    usort($fonts, fn($a, $b) => strcmp($b['uploaded'] ?? '', $a['uploaded'] ?? ''));
+    respond(true, 'OK', ['fonts' => $fonts]);
+}
+
+function getFont($dir) {
+    $id = $_GET['id'] ?? '';
+    if (!$id) respond(false, 'Missing font ID');
+    $metaFile = $dir . '/' . $id . '.json';
+    if (!file_exists($metaFile)) respond(false, 'Font not found');
+    $meta = json_decode(file_get_contents($metaFile), true);
+    $fontFile = $dir . '/' . $meta['filename'];
+    if (!file_exists($fontFile)) respond(false, 'Font file missing');
+    $meta['data'] = base64_encode(file_get_contents($fontFile));
+    respond(true, 'OK', $meta);
+}
+
+function deleteFont($dir) {
+    $id = $_GET['id'] ?? $_POST['id'] ?? '';
+    if (!$id) respond(false, 'Missing font ID');
+    $metaFile = $dir . '/' . $id . '.json';
+    if (!file_exists($metaFile)) respond(false, 'Font not found');
+    $meta = json_decode(file_get_contents($metaFile), true);
+    @unlink($dir . '/' . $meta['filename']);
+    @unlink($metaFile);
+    respond(true, 'Font deleted');
+}
+
+// ═══════════════════════════════════════════════════════
+// Template Functions
+// ═══════════════════════════════════════════════════════
+
+function saveTemplate($dir) {
+    $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
+    $id = $input['id'] ?? uniqid('tmpl_');
+    $template = ['id' => $id, 'name' => $input['name'] ?? 'ללא שם', 'fields' => $input['fields'] ?? [], 'background' => $input['background'] ?? null, 'updated' => date('c')];
+    file_put_contents($dir . '/' . $id . '.json', json_encode($template, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    respond(true, 'Template saved', $template);
+}
+
+function listTemplates($dir) {
+    $t = [];
+    foreach (glob($dir . '/*.json') as $f) { $m = json_decode(file_get_contents($f), true); if ($m) { unset($m['fields']); $t[] = $m; } }
+    usort($t, fn($a, $b) => strcmp($b['updated'] ?? '', $a['updated'] ?? ''));
+    respond(true, 'OK', ['templates' => $t]);
+}
+
+function getTemplate($dir) {
+    $id = $_GET['id'] ?? '';
+    if (!$id) respond(false, 'Missing template ID');
+    $f = $dir . '/' . $id . '.json';
+    if (!file_exists($f)) respond(false, 'Template not found');
+    respond(true, 'OK', json_decode(file_get_contents($f), true));
+}
+
+function deleteTemplate($dir) {
+    $id = $_GET['id'] ?? $_POST['id'] ?? '';
+    if (!$id) respond(false, 'Missing template ID');
+    $f = $dir . '/' . $id . '.json';
+    if (!file_exists($f)) respond(false, 'Template not found');
+    @unlink($f);
+    respond(true, 'Template deleted');
+}
+
+// ═══════════════════════════════════════════════════════
+// Background Functions
+// ═══════════════════════════════════════════════════════
+
+function handleBackgroundUpload($dir) {
+    if (empty($_FILES['background'])) respond(false, 'No background file provided');
+    $file = $_FILES['background'];
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    if (!in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tiff', 'tif', 'heic', 'heif', 'svg', 'avif'])) respond(false, 'Unsupported image format');
+    if ($file['size'] > 20 * 1024 * 1024) respond(false, 'Image too large (max 20MB)');
+
+    $id = uniqid('bg_');
+    $filename = $id . '.' . $ext;
+    if (!move_uploaded_file($file['tmp_name'], $dir . '/' . $filename)) respond(false, 'Failed to save background');
+
+    $meta = ['id' => $id, 'name' => $_POST['name'] ?? pathinfo($file['name'], PATHINFO_FILENAME), 'filename' => $filename, 'ext' => $ext, 'size' => $file['size'], 'uploaded' => date('c')];
+    file_put_contents($dir . '/' . $id . '.json', json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    respond(true, 'Background uploaded', $meta);
+}
+
+function listBackgrounds($dir) {
+    $bgs = [];
+    foreach (glob($dir . '/*.json') as $f) { $m = json_decode(file_get_contents($f), true); if ($m) $bgs[] = $m; }
+    respond(true, 'OK', ['backgrounds' => $bgs]);
+}
+
+function deleteBackground($dir) {
+    $id = $_GET['id'] ?? $_POST['id'] ?? '';
+    if (!$id) respond(false, 'Missing background ID');
+    $metaFile = $dir . '/' . $id . '.json';
+    if (!file_exists($metaFile)) respond(false, 'Background not found');
+    $meta = json_decode(file_get_contents($metaFile), true);
+    @unlink($dir . '/' . $meta['filename']);
+    @unlink($metaFile);
+    respond(true, 'Background deleted');
+}
+
+// ═══════════════════════════════════════════════════════
+// Admin Functions
+// ═══════════════════════════════════════════════════════
+
+function getAdminPassword($dataDir) {
+    $configFile = $dataDir . '/admin_config.json';
+    if (file_exists($configFile)) {
+        $cfg = json_decode(file_get_contents($configFile), true);
+        return $cfg['password'] ?? 'admin123';
+    }
+    // Create default config
+    $cfg = ['password' => 'admin123'];
+    file_put_contents($configFile, json_encode($cfg, JSON_PRETTY_PRINT));
+    return 'admin123';
+}
+
+function adminCheck($dataDir, $input) {
+    $pass = $input['password'] ?? '';
+    $correct = getAdminPassword($dataDir);
+    if ($pass === $correct) {
+        respond(true, 'OK');
+    }
+    respond(false, 'סיסמה שגויה');
+}
+
+function adminUploadBgZip($backgroundsDir) {
+    if (empty($_FILES['zipfile'])) respond(false, 'No ZIP file');
+    $file = $_FILES['zipfile'];
+    if ($file['size'] > 100 * 1024 * 1024) respond(false, 'ZIP גדול מדי');
+
+    $zip = new ZipArchive();
+    if ($zip->open($file['tmp_name']) !== true) respond(false, 'שגיאה בפתיחת ZIP');
+
+    $added = 0;
+    $validExts = ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tiff', 'tif', 'heic', 'heif', 'svg', 'avif'];
+    for ($i = 0; $i < $zip->numFiles; $i++) {
+        $entry = $zip->getNameIndex($i);
+        if (substr($entry, -1) === '/' || strpos(basename($entry), '.') === 0) continue;
+        $ext = strtolower(pathinfo($entry, PATHINFO_EXTENSION));
+        if (!in_array($ext, $validExts)) continue;
+
+        $data = $zip->getFromIndex($i);
+        if ($data === false || strlen($data) < 100) continue;
+        if (strlen($data) > 20 * 1024 * 1024) continue;
+
+        $id = uniqid('bg_');
+        $filename = $id . '.' . $ext;
+        file_put_contents($backgroundsDir . '/' . $filename, $data);
+
+        $meta = [
+            'id' => $id,
+            'name' => pathinfo(basename($entry), PATHINFO_FILENAME),
+            'filename' => $filename,
+            'ext' => $ext,
+            'size' => strlen($data),
+            'uploaded' => date('c'),
+        ];
+        file_put_contents($backgroundsDir . '/' . $id . '.json', json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        $added++;
+    }
+    $zip->close();
+    respond(true, "הועלו $added רקעים", ['added' => $added]);
+}
+
+function adminListUsers($usersDir, $dataDir, $input) {
+    $pass = $input['password'] ?? '';
+    if ($pass !== getAdminPassword($dataDir)) respond(false, 'לא מורשה');
+
+    $users = [];
+    foreach (glob($usersDir . '/*/profile.json') as $file) {
+        $profile = json_decode(file_get_contents($file), true);
+        if (!$profile) continue;
+
+        $userDir = dirname($file);
+        $contactsCount = 0;
+        $contactsFile = $userDir . '/contacts.json';
+        if (file_exists($contactsFile)) {
+            $contacts = json_decode(file_get_contents($contactsFile), true);
+            $contactsCount = is_array($contacts) ? count($contacts) : 0;
+        }
+
+        $bgCount = 0;
+        $bgDir = $userDir . '/backgrounds';
+        if (is_dir($bgDir)) {
+            $bgCount = count(glob($bgDir . '/*.json'));
+        }
+
+        $users[] = [
+            'username' => $profile['username'] ?? '',
+            'displayName' => $profile['displayName'] ?? '',
+            'contactsCount' => $contactsCount,
+            'backgroundsCount' => $bgCount,
+            'created' => $profile['created'] ?? '',
+            'lastLogin' => $profile['lastLogin'] ?? '',
+        ];
+    }
+
+    usort($users, fn($a, $b) => strcmp($b['lastLogin'] ?? '', $a['lastLogin'] ?? ''));
+    respond(true, 'OK', ['users' => $users]);
+}
+
+// ═══════════════════════════════════════════════════════
+// Helpers
+// ═══════════════════════════════════════════════════════
+
+function respond($success, $message, $data = []) {
+    echo json_encode(array_merge(
+        ['success' => $success, 'message' => $message],
+        $data
+    ), JSON_UNESCAPED_UNICODE);
+    exit;
+}
