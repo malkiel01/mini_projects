@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.GreetingCards" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#4a6cf7</item>
+        <item name="colorPrimaryVariant">#3a5ce5</item>
+        <item name="colorOnPrimary">#ffffff</item>
+        <item name="colorSecondary">#28a745</item>
+        <item name="android:statusBarColor">#1a1a2e</item>
+        <item name="android:navigationBarColor">#1a1a2e</item>
+    </style>
+</resources>

@@ -393,6 +393,73 @@ function findFrameCandidates(string $html, string $base): array {
 }
 
 /**
+ * בודק מועמד יחיד — מסגרת פנימית שנמצאה בדף.
+ *
+ * ‏שלוש תוצאות, בדיוק כמו במסלול הראשי, ומאותה סיבה: "לא הצלחתי לבדוק"
+ * אינו "האתר חוסם". מועמד שמאחורי שירות הגנה, או שהשרת שלנו לא הצליח
+ * להגיע אליו, אינו אומר דבר על מה שיקרה בדפדפן — ולסמן אותו כחסום זה
+ * להסתיר מהמשתמש בדיוק את הנגן שהוא מחפש.
+ *
+ * ‏framable נשאר לתאימות: true / false / null כשאיננו יודעים.
+ */
+function checkCandidate(string $url, string $origin): array {
+    try {
+        $res = fetchHead($url, ['ua' => BROWSER_UA, 'max_bytes' => 8192]);
+        return ['url' => $url] + candidateVerdict($res, $origin);
+    } catch (InspectError $e) {
+        return ['url' => $url] + candidateFailure($e);
+    }
+}
+
+/** ההכרעה עצמה, מופרדת מהפנייה כדי שתהיה ניתנת לבדיקה בלי HTTP. */
+function candidateVerdict(array $res, string $origin): array {
+    [$ok, $why] = framingVerdict($res, $origin);
+
+    // זיהוי האתגר קודם לקריאת הכותרות: מסך "Just a moment" נושא את
+    // הכותרות של שירות ההגנה, לא של הדף.
+    if (looksLikeChallenge($res)) {
+        $verdict = 'unsure';
+        $reason  = 'שירות הגנה חסם את הבדיקה של המסגרת הזו. '
+                 . 'לא ידוע אם היא חוסמת הטמעה — בדפדפן שלכם ייתכן שתיפתח.';
+    } elseif (!$ok) {
+        $verdict = 'blocked';
+        $reason  = $why;
+    } elseif ($res['status'] >= 400) {
+        $verdict = 'unsure';
+        $reason  = "המסגרת החזירה {$res['status']} לבדיקה שלנו. ייתכן שהיא נטענת בכל זאת.";
+    } else {
+        $verdict = 'ok';
+        $reason  = '';
+    }
+
+    return ['verdict' => $verdict, 'framable' => framableOf($verdict), 'reason' => $reason,
+            'status' => $res['status'], 'title' => pageTitle($res['body'])];
+}
+
+/**
+ * כישלון בדרך למועמד.
+ *
+ * רק סירוב מדיניות משלנו הוא ודאי — כתובת שלא נפנה אליה לעולם. כישלון
+ * רשת הוא כישלון של הבדיקה, ואין להציג אותו כעמדת האתר.
+ */
+function candidateFailure(InspectError $e): array {
+    $policy  = in_array($e->kind, ['bad_url', 'bad_scheme', 'bad_port', 'private'], true);
+    $verdict = $policy ? 'blocked' : 'unsure';
+
+    return ['verdict' => $verdict, 'framable' => framableOf($verdict),
+            'reason' => $e->getMessage(), 'status' => 0, 'title' => ''];
+}
+
+/** ‏true / false / null — null כשאיננו יודעים. נשמר לתאימות הממשק. */
+function framableOf(string $verdict): ?bool {
+    return match ($verdict) {
+        'ok'      => true,
+        'blocked' => false,
+        default   => null,
+    };
+}
+
+/**
  * מריץ את כל האבחון ומחזיר דוח.
  *
  * הסדר חשוב: קודם שלוש הדרכים על הכתובת עצמה, ואז — מתוך התשובה
@@ -427,19 +494,7 @@ function deepProbe(string $url, string $origin): array {
     $candidates = [];
     if ($best && $best['body'] !== '') {
         foreach (findFrameCandidates($best['body'], $best['url']) as $cand) {
-            $entry = ['url' => $cand, 'framable' => null, 'reason' => '', 'status' => 0];
-            try {
-                $r = fetchHead($cand, ['ua' => BROWSER_UA, 'max_bytes' => 8192]);
-                [$ok, $why] = framingVerdict($r, $origin);
-                $entry['status']   = $r['status'];
-                $entry['framable'] = $ok && !looksLikeChallenge($r);
-                $entry['reason']   = looksLikeChallenge($r) ? 'שירות הגנה חסם את הבדיקה' : $why;
-                $entry['title']    = pageTitle($r['body']);
-            } catch (InspectError $e) {
-                $entry['reason'] = $e->getMessage();
-                $entry['framable'] = false;
-            }
-            $candidates[] = $entry;
+            $candidates[] = checkCandidate($cand, $origin);
         }
     }
 
@@ -449,9 +504,16 @@ function deepProbe(string $url, string $origin): array {
 
 /** המסקנה בשורה אחת — מה שהמשתמש באמת צריך לדעת מכל הטבלה. */
 function probeConclusion(array $attempts, array $candidates): string {
-    $open = array_values(array_filter($candidates, fn($c) => $c['framable'] === true));
+    $open = array_filter($candidates, fn($c) => $c['framable'] === true);
     if ($open) {
         return 'נמצאה מסגרת פנימית שכן ניתנת להטמעה. זה בדרך כלל הנגן עצמו — נסו אותה.';
+    }
+
+    // מועמד שלא הצלחנו לבדוק אינו מועמד פסול, ואסור שייעלם מהמסקנה.
+    $unsure = array_filter($candidates, fn($c) => $c['framable'] === null);
+    if ($unsure) {
+        return 'נמצאו מסגרות פנימיות שלא הצלחנו לבדוק מהשרת. '
+             . 'זה אינו אומר שהן חסומות — נסו אותן, הדפדפן שלכם יכריע.';
     }
 
     $verdicts = array_column($attempts, 'verdict');

@@ -190,5 +190,53 @@ $realRes = ['status' => 200, 'headers' => ['server' => 'nginx',
             'x-frame-options' => 'SAMEORIGIN'], 'body' => '<title>אתר</title>', 'ms' => 1];
 check('דף אמיתי עם SAMEORIGIN — חסום', probeRow('x', 'y', $realRes, 'https://x.com')['verdict'], 'blocked');
 
+echo "\n— מועמד שלא ניתן לבדיקה אינו מועמד חסום —\n";
+/*
+ * הבאג שתוקן: המסלול הראשי הבחין בין "חסום" ל"לא בטוח", אבל מסלול
+ * המסגרות הפנימיות קיפל אותם לבוליאני אחד. נגן שיושב מאחורי שירות
+ * הגנה הוצג כ"חסום" ובלי כפתור — כלומר בדיוק מה שהמשתמש חיפש נעלם.
+ */
+$org = 'https://x.com';
+
+$candChallenge = ['status' => 403, 'headers' => ['server' => 'cloudflare',
+                  'x-frame-options' => 'SAMEORIGIN'], 'body' => 'Just a moment...'];
+check('מועמד מאחורי שירות הגנה — לא ידוע',
+      candidateVerdict($candChallenge, $org)['verdict'], 'unsure');
+check('ולכן framable אינו false אלא null',
+      candidateVerdict($candChallenge, $org)['framable'], null);
+
+$candOpen = ['status' => 200, 'headers' => ['content-security-policy' => 'frame-ancestors *'],
+             'body' => '<title>Player</title>'];
+check('נגן שמרשה לכולם — פתוח', candidateVerdict($candOpen, $org)['verdict'], 'ok');
+check('ו-framable true',        candidateVerdict($candOpen, $org)['framable'], true);
+check('וגם הכותרת נקראת',       candidateVerdict($candOpen, $org)['title'], 'Player');
+
+$candDeny = ['status' => 200, 'headers' => ['x-frame-options' => 'DENY'],
+             'body' => '<title>עטיפה</title>'];
+check('כותרות מפורשות — חסום', candidateVerdict($candDeny, $org)['verdict'], 'blocked');
+check('ו-framable false',       candidateVerdict($candDeny, $org)['framable'], false);
+
+$cand404 = ['status' => 404, 'headers' => [], 'body' => ''];
+check('שגיאת HTTP אינה עמדת האתר', candidateVerdict($cand404, $org)['verdict'], 'unsure');
+
+// כישלון בדרך: רק סירוב מדיניות משלנו הוא ודאי.
+check('רשת פנימית — חסום ודאי',
+      candidateFailure(new InspectError('פנימית', 'private'))['verdict'], 'blocked');
+check('סכימה אסורה — חסום ודאי',
+      candidateFailure(new InspectError('סכימה', 'bad_scheme'))['verdict'], 'blocked');
+check('אתר שלא נענה — לא ידוע',
+      candidateFailure(new InspectError('אין תשובה', 'unreachable'))['verdict'], 'unsure');
+check('כשל DNS — לא ידוע',
+      candidateFailure(new InspectError('אין שרת', 'dns'))['verdict'], 'unsure');
+
+// והמסקנה חייבת לשקף את זה, אחרת המשתמש יקרא "כולן חסומות" ויעצור.
+check('מסקנה מזכירה מועמד שלא נבדק',
+      str_contains(probeConclusion([['verdict' => 'challenge']], [['framable' => null]]),
+                   'לא הצלחנו לבדוק'), true);
+check('מועמד פתוח עדיין גובר',
+      str_contains(probeConclusion([['verdict' => 'challenge']],
+                   [['framable' => null], ['framable' => true]]), 'מסגרת פנימית'), true);
+
+
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 exit($fail === 0 ? 0 : 1);

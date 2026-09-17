@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:layoutDirection="rtl">
+
+    <LinearLayout android:id="@+id/bar"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center_vertical"
+        android:paddingHorizontal="8dp">
+        <Button android:id="@+id/close" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:text="סגירה"
+            style="?attr/borderlessButtonStyle"/>
+        <TextView android:id="@+id/address" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:textSize="12sp"
+            android:textColor="@color/dim" android:maxLines="1" android:ellipsize="middle"
+            android:layoutDirection="ltr" android:textDirection="ltr"/>
+        <Button android:id="@+id/pip" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:text="חלון צף"
+            android:visibility="gone" style="?attr/borderlessButtonStyle"/>
+        <Button android:id="@+id/reload" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:text="רענון"
+            style="?attr/borderlessButtonStyle"/>
+    </LinearLayout>
+
+    <ProgressBar android:id="@+id/progress" style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent" android:layout_height="3dp"
+        android:max="100" android:visibility="gone"/>
+
+    <!--
+      ‏הכיסוי יושב מעל ה-WebView, ולא מחליף אותו.
+
+      האכיפה באתר עמוד-יחיד רצה אחרי שהדף כבר הוחלף, ולכן סרטון לא
+      מאושר הספיק להבהב על המסך לפני שנחסם. כיסוי אטום שעולה ברגע
+      שהכתובת משתנה — ויורד רק כשהיא אושרה — הופך את ההבזק לבלתי
+      נראה, בלי להסתמך על מהירות הבדיקה.
+    -->
+    <FrameLayout android:layout_width="match_parent" android:layout_height="match_parent">
+
+        <WebView android:id="@+id/web" android:layout_width="match_parent"
+            android:layout_height="match_parent"/>
+
+        <!--
+          מארח לווידאו במסך מלא.
+
+          ‏WebView אינו יודע לבדו להציג וידאו במסך מלא: הוא מוסר את
+          התצוגה לאפליקציה דרך onShowCustomView, ומי שאינו מממש את
+          זה מקבל כפתור מסך-מלא שאינו עושה דבר — ובחלון צף, את כל
+          הדף מוקטן במקום את הווידאו.
+        -->
+        <FrameLayout android:id="@+id/fullscreen" android:layout_width="match_parent"
+            android:layout_height="match_parent" android:background="#000"
+            android:visibility="gone"/>
+
+        <LinearLayout android:id="@+id/cover" android:layout_width="match_parent"
+            android:layout_height="match_parent" android:orientation="vertical"
+            android:gravity="center" android:visibility="gone"
+            android:background="?android:attr/colorBackground"
+            android:clickable="true" android:focusable="true">
+            <ProgressBar android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+            <TextView android:id="@+id/coverText" android:layout_width="wrap_content"
+                android:layout_height="wrap_content" android:layout_marginTop="14dp"
+                android:textSize="15sp" android:textColor="@color/dim" android:text="בודק…"/>
+        </LinearLayout>
+    </FrameLayout>
+</LinearLayout>
