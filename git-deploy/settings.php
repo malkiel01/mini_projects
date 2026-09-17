@@ -102,6 +102,10 @@ $tokenMasked = $settings['github_token'] ? '•••••••' . substr($set
     <section class="settings-section">
         <h2>IPs מורשים</h2>
         <p class="muted small">ה-IP הנוכחי שלך: <code dir="ltr"><?= htmlspecialchars($currentIp) ?></code></p>
+        <p class="small">
+            <a href="ip-admin.php">← ניהול מפורט עם תוויות והיסטוריה</a>
+            <span class="muted">(נגיש בסיסמה גם כשהכתובת שלך חסומה)</span>
+        </p>
         <form method="post">
             <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrf) ?>">
             <input type="hidden" name="action" value="change_ips">
