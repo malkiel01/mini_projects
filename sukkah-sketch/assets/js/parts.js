@@ -6,7 +6,8 @@ var M=SukkahModel.build(), K=M.K, TH=K.TH;
 var f1=function(v){return (Math.round(v*10)/10).toFixed(1);};
 var f0=function(v){return Math.round(v).toString();};
 var deg=function(v){return v<.5?'ישר':f1(v)+'°';};
-var cutKind={miter:'מיטר — נפגשת בקורה השנייה מעל העמוד',face:'על פני העמוד, במקביל לפאה',wall:'ישר, נגמרת על פלטת הקיר'};
+var cutKind={miter:'מיטר — נפגשת בקורה השנייה מעל העמוד',face:'על פני העמוד, במקביל לפאה',wall:'ישר, נגמרת על פלטת הקיר',notch:'קצה מפוצל — עוקב אחרי פני המסגרת בפינה: חצי מול קורת המזרח, חצי מול האלכסון'};
+var cutText=function(c){return c.label||deg(c.deg);},cutShort=function(c){return c.short||deg(c.deg);};
 var levelName={top:'מסגרת עליונה',low:'מפלס 70',cross:'קורה תומכת'};
 
 /* ---------- SVG ---------- */
@@ -58,11 +59,12 @@ function beamSVG(b){   // מבט מלא, קנה מידה אמיתי: האורכ�
   var X=function(x){return L-x;},Y=function(v){return -v;};   // א׳ מימין; v חיובי למעלה
   var s=svg(-mg,-mg-4*u,L+2*mg,2*mg+TH+10*u);
   s.appendChild(poly(lp.pts.map(function(p){return [X(p[0]),Y(p[1])];}),'b-'+b.mat));
-  var e01=[lp.pts[0],lp.pts[1]],e23=[lp.pts[2],lp.pts[3]];
-  var top=e01[0][1]>e23[0][1]?e01:e23, bot=top===e01?e23:e01;
-  s.appendChild(hdim(X(top[0][0]),X(top[1][0]),Y(top[0][1])-2*u,f1(M.dist(top[0],top[1])),2.2*u));
-  if(Math.abs(M.dist(top[0],top[1])-M.dist(bot[0],bot[1]))>.05)
-    s.appendChild(hdim(X(bot[0][0]),X(bot[1][0]),Y(bot[0][1])+4.5*u,f1(M.dist(bot[0],bot[1])),2.2*u));
+  // שתי הצלעות הארוכות ביותר של המצולע — אלה הצדדים; העליון לפי v
+  var edges=lp.pts.map(function(p,i){return [p,lp.pts[(i+1)%lp.pts.length]];}).sort(function(a,b){return M.dist(b[0],b[1])-M.dist(a[0],a[1]);}).slice(0,2);
+  var top=(edges[0][0][1]+edges[0][1][1])>(edges[1][0][1]+edges[1][1][1])?edges[0]:edges[1], bot=top===edges[0]?edges[1]:edges[0];
+  s.appendChild(hdim(X(top[0][0]),X(top[1][0]),Y(TH/2)-2*u,f1(Math.abs(top[1][0]-top[0][0])),2.2*u));
+  if(Math.abs(Math.abs(top[1][0]-top[0][0])-Math.abs(bot[1][0]-bot[0][0]))>.05)
+    s.appendChild(hdim(X(bot[0][0]),X(bot[1][0]),Y(-TH/2)+4.5*u,f1(Math.abs(bot[1][0]-bot[0][0])),2.2*u));
   b.tongues.forEach(function(j){s.appendChild(rect(X(j.s)-K.TONGUE/2,Y(K.TONGUE/2),K.TONGUE,K.TONGUE,'tongue'));
     s.appendChild(txt(X(j.s),Y(-TH/2)+2.6*u,j.id,'lbl-s','middle',2*u));});
   var a0=b.trim[0],b0=L-b.trim[1];
@@ -76,7 +78,7 @@ function endDetail(b,end){
   var W=36,s=svg(-8,-10,W+8,10+TH+K.TONGUE_LEN+18);
   s.appendChild(poly(lp.pts.map(function(p){return [X(p[0]),Y(p[1])];}),'b-'+b.mat));
   s.appendChild(line(0,-TH/2-1.5,0,TH/2+1.5,'axis'));
-  var c=b.cuts[end];s.appendChild(txt(.5,-TH/2-4.2,(isA?'קצה א׳ · חיתוך ':'קצה ב׳ · חיתוך ')+deg(c.deg),'lbl','end',2.4));
+  var c=b.cuts[end];s.appendChild(txt(.5,-TH/2-4.2,(isA?'קצה א׳ · חיתוך ':'קצה ב׳ · חיתוך ')+cutShort(c),'lbl','end',2.4));
   var ey=TH+7;   // מבט צד
   s.appendChild(rect(0,ey,W+8,TH,'b-'+b.mat));
   b.tongues.forEach(function(j){var d=isA?j.s-a0:b0-j.s;if(d<0||d>W)return;
@@ -203,11 +205,11 @@ function beamSlide(b){
     var side=document.createElement('div');
     var hostA=b.hosts?hostNameOf(b.hosts[0]):'',hostB=b.hosts?hostNameOf(b.hosts[b.hosts.length-1]):'';
     var rows='<div class="card"><h3>מידות</h3>'+
-      (b.len.outer-b.len.inner>.05?'אורך חוץ <b>'+f1(b.len.outer)+'</b> · פנים <b>'+f1(b.len.inner)+'</b>':'אורך <b>'+f1(b.len.outer)+'</b>')+
+      (b.cuts[0].kind==='notch'?'אורך על הציר <b>'+f1(b.len.outer)+'</b>'+b.cuts[0].parts.map(function(q){return ' · צד '+q.side+' <b>'+f1(q.len)+'</b>';}).join(''):b.len.outer-b.len.inner>.05?'אורך חוץ <b>'+f1(b.len.outer)+'</b> · פנים <b>'+f1(b.len.inner)+'</b>':'אורך <b>'+f1(b.len.outer)+'</b>')+
       '<br>פרופיל '+TH+'×'+TH+' · גובה '+f1(b.z0)+'–'+f1(b.z1)+'</div>'+
       '<div class="card"><h3>קצוות</h3><table><tr><th></th><th>חיתוך</th><th>יושבת על</th></tr>'+
-      '<tr><td>א׳</td><td>'+deg(b.cuts[0].deg)+' · '+cutKind[b.cuts[0].kind]+'</td><td>'+esc(hostA)+'</td></tr>'+
-      '<tr><td>ב׳</td><td>'+deg(b.cuts[1].deg)+' · '+cutKind[b.cuts[1].kind]+'</td><td>'+esc(hostB)+'</td></tr></table></div>'+
+      '<tr><td>א׳</td><td>'+cutText(b.cuts[0])+' · '+cutKind[b.cuts[0].kind]+'</td><td>'+esc(hostA)+'</td></tr>'+
+      '<tr><td>ב׳</td><td>'+cutText(b.cuts[1])+' · '+cutKind[b.cuts[1].kind]+'</td><td>'+esc(hostB)+'</td></tr></table></div>'+
       '<div class="card"><h3>שיניים מתחת לקורה — '+b.tongues.length+'</h3><table><tr><th>שן</th><th class="num">מקצה א׳</th><th class="num">מקצה ב׳</th><th>לשרוול על</th></tr>'+
       b.tongues.map(function(j){var a0=b.trim[0],b0=lp(b).L-b.trim[1];return '<tr><td>'+j.id+'</td><td class="num">'+f1(j.s-a0)+'</td><td class="num">'+f1(b0-j.s)+'</td><td>'+esc(j.host.name)+(j.dev>=.5?' · השרוול מסובב '+f1(j.dev)+'°':'')+'</td></tr>';}).join('')+
       '</table><div style="font-size:12.5px;color:var(--mute);margin-top:6px">המרחק נמדד על ציר הקורה, מהנקודה שבה החיתוך חוצה את הציר, עד מרכז השן. השן במרכז רוחב הקורה.</div></div>';
@@ -257,7 +259,7 @@ slide('הקיר המערבי — פלטות ושרוולים','בלי עמודי
 /* 9. רשימת חיתוך */
 slide('רשימת חיתוך','כל הקורות, העמודים והמחברים',function(sec){
   var t='<table><tr><th>חלק</th><th>כמות</th><th class="num">אורך</th><th class="num">פנים</th><th>קצה א׳</th><th>קצה ב׳</th><th>שיניים</th></tr>';
-  M.beams.forEach(function(b){t+='<tr><td><span class="tag t-'+b.level+'">'+b.id+'</span>'+esc(b.name)+'</td><td>1</td><td class="num">'+f1(b.len.outer)+'</td><td class="num">'+(b.len.outer-b.len.inner>.05?f1(b.len.inner):'—')+'</td><td>'+deg(b.cuts[0].deg)+'</td><td>'+deg(b.cuts[1].deg)+'</td><td>'+b.tongues.map(function(j){return j.id;}).join(', ')+'</td></tr>';});
+  M.beams.forEach(function(b){t+='<tr><td><span class="tag t-'+b.level+'">'+b.id+'</span>'+esc(b.name)+'</td><td>1</td><td class="num">'+f1(b.len.outer)+'</td><td class="num">'+(b.len.outer-b.len.inner>.05?f1(b.len.inner):'—')+'</td><td>'+cutShort(b.cuts[0])+'</td><td>'+cutShort(b.cuts[1])+'</td><td>'+b.tongues.map(function(j){return j.id;}).join(', ')+'</td></tr>';});
   t+='<tr><td><span class="tag t-post">עמוד</span>'+TH+'×'+TH+'</td><td>'+M.posts.length+'</td><td class="num">'+f1(M.posts[0].h)+'</td><td class="num">—</td><td>ישר</td><td>ישר</td><td></td></tr>';
   t+='<tr><td><span class="tag t-joint">שרוול</span>'+TH+'×'+TH+'</td><td>'+M.joints.length+'</td><td class="num">'+f1(K.SLEEVE_LEN)+'</td><td class="num">—</td><td>ישר</td><td>ישר</td><td></td></tr>';
   t+='<tr><td><span class="tag t-joint">שן</span>'+K.TONGUE+'×'+K.TONGUE+'</td><td>'+M.joints.length+'</td><td class="num">'+f1(K.TONGUE_LEN)+'</td><td class="num">—</td><td>ישר</td><td>ישר</td><td></td></tr>';

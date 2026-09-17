@@ -93,14 +93,33 @@ function build(){
             'מחברים: '+t+'·א, '+t+'·ב'+(i===2?' + '+t+'·ג (עמוד ביניים)':i===5?' + '+t+'·ג, '+t+'·ד (עמודי ביניים)':'')]});
   }
 
-  /* ---------- קורות תומכות ---------- */
-  [[x1,PLATE,'ק1',true],[x2,PLATE,'ק2',true],[x3,-13,'ק3',false]].forEach(function(c){   // [x, y התחלה, שם, נכנסת לקיר]
+  /* ---------- קורות תומכות ----------
+     הקצה המזרחי יושב על המסגרת מבפנים. ק1 ו-ק3 מגיעות בדיוק לפינה שבין קורת
+     המזרח לאלכסון: חצי מרוחבן פוגש את המזרח (חיתוך ישר) וחצי את האלכסון, שנסוג
+     בזווית — ולכן הקצה מפוצל ועוקב אחרי פני המסגרת. ק2 באמצע המזרח: ישר. */
+  function innerYAt(x,ci){   // y על פני המסגרת הפנימיים ליד הפינה ci: דרומית לפינה — הקטע שלפניה, צפונית — שאחריה
+    var e=x<I[ci][0]?[I[ci-1],I[ci]]:[I[ci],I[ci+1]];
+    var t=(x-e[0][0])/(e[1][0]-e[0][0]); return e[0][1]+t*(e[1][1]-e[0][1]);}
+  function edgeDeg(e){return Math.abs(Math.atan2(e[1][1]-e[0][1],e[1][0]-e[0][0])*180/Math.PI);}   // סטיית הקטע מהניצב לקורה התומכת
+  [[x1,PLATE,'ק1',true,2],[x2,PLATE,'ק2',true,0],[x3,-13,'ק3',false,3]].forEach(function(c){   // [x, y התחלה, שם, נכנסת לקיר, פינת המסגרת שהקצה פוגש]
+    var xc=c[0],y0=c[1],ci=c[4],pts,cutE,lenRow,cutRow;
+    if(ci){var yS=innerYAt(xc-TH/2,ci),yN=innerYAt(xc+TH/2,ci),dS=edgeDeg([I[ci-1],I[ci]]),dN=edgeDeg([I[ci],I[ci+1]]);
+      pts=[[xc-TH/2,y0],[xc+TH/2,y0],[xc+TH/2,yN],[I[ci][0],I[ci][1]],[xc-TH/2,yS]];
+      var f=function(v){return v<.5?'ישר':v.toFixed(1)+'°';};
+      cutE={deg:Math.max(dS,dN),kind:'notch',parts:[{side:'דרום',deg:dS,len:yS-y0},{side:'צפון',deg:dN,len:yN-y0}],
+            label:'מפוצל — צד דרום '+f(dS)+' · צד צפון '+f(dN),short:'מפוצל '+f(dS)+' / '+f(dN)};
+      lenRow='אורך על הציר '+(yE-y0).toFixed(1)+' · צד דרום '+(yS-y0).toFixed(1)+' · צד צפון '+(yN-y0).toFixed(1);
+      var vs=function(v){return v<.5?'מול קורת המזרח':'מול האלכסון';};
+      cutRow='חיתוך מזרח מפוצל: צד דרום '+f(dS)+' ('+vs(dS)+') · צד צפון '+f(dN)+' ('+vs(dN)+')';
+    } else {pts=[[xc-TH/2,y0],[xc+TH/2,y0],[xc+TH/2,yE],[xc-TH/2,yE]];cutE={deg:0,kind:'face'};
+      lenRow='אורך '+(yE-y0).toFixed(0)+' · חיתוך ישר';cutRow=null;}
+    var rows=[lenRow];if(cutRow)rows.push(cutRow);
+    rows.push('מיקום: '+xc.toFixed(1)+' מהפינה הדרומית','פרופיל '+TH+'×'+TH,'מחברים: '+c[2]+'·א (עמוד מזרח), '+c[2]+'·ב ('+(c[3]?'שרוול על הקיר':'עמוד מערב')+')');
     M.beams.push({id:c[2],level:'cross',kind:'תומכת',name:'קורה תומכת '+c[2],
-      pts:[[c[0]-TH/2,c[1]],[c[0]+TH/2,c[1]],[c[0]+TH/2,yE],[c[0]-TH/2,yE]],z0:Z_TOP-TH,z1:Z_TOP,mat:'cross',
-      len:{outer:yE-c[1],inner:yE-c[1]},cuts:[{deg:0,kind:c[3]?'wall':'face'},{deg:0,kind:'face'}],
-      axis:[[c[0],c[1]],[c[0],yE]],trim:[0,0],x:c[0],joints:[],tongues:[],
-      rows:['אורך '+(yE-c[1]).toFixed(0)+' · חיתוך ישר','מיקום: '+c[0].toFixed(1)+' מהפינה הדרומית','פרופיל '+TH+'×'+TH,
-            'מחברים: '+c[2]+'·א (עמוד מזרח), '+c[2]+'·ב ('+(c[3]?'שרוול על הקיר':'עמוד מערב')+')']});
+      pts:pts,z0:Z_TOP-TH,z1:Z_TOP,mat:'cross',
+      len:{outer:yE-y0,inner:ci?Math.min(innerYAt(xc-TH/2,ci),innerYAt(xc+TH/2,ci))-y0:yE-y0},
+      cuts:[cutE,{deg:0,kind:c[3]?'wall':'face'}],   // קצה א׳ = המזרחי, על המסגרת; קצה ב׳ = המערבי
+      axis:[[xc,yE],[xc,y0]],trim:[0,0],x:xc,joints:[],tongues:[],rows:rows});
   });
   function beamById(id){for(var j=0;j<M.beams.length;j++)if(M.beams[j].id===id)return M.beams[j];}
 

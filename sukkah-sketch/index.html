@@ -45,6 +45,8 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
   <button data-t="wall" class="on">קיר</button>
   <button data-t="joints" class="on">מחברים</button>
   <button data-t="labels" class="on">מידות</button>
+  <span class="sep"></span>
+  <button id="explode" type="button">פירוק</button>
 </div>
 <div id="stage">
   <canvas id="c"></canvas>
@@ -150,14 +152,22 @@ function prism(pts,z0,z1,mat,group,info){ // pts בתוכנית
 /* ---------- בנייה מהמודל ---------- */
 prism(MD.floor.pts,-1,0,M.floor,G.main,null);   // רצפה = הגבול החיצוני
 prism(MD.wall.pts,MD.wall.z0,MD.wall.z1,M.wall,G.wall,{name:MD.wall.name,rows:MD.wall.rows});
-MD.beams.forEach(function(b){prism(b.pts,b.z0,b.z1,M[b.mat],b.level==='low'?G.low:G.main,{name:b.name,rows:b.rows});});
+// מבט פירוק: הקורות והשיניים שלהן מורמות, השרוולים נשארים על העמודים — כך רואים
+// את השן תלויה מתחת לקורה, מעל השרוול שהיא יורדת לתוכו. lift = מה שמורם, עם גובהו המקורי
+var lift=[],EXPLODE=45;
+MD.beams.forEach(function(b){lift.push({m:prism(b.pts,b.z0,b.z1,M[b.mat],b.level==='low'?G.low:G.main,{name:b.name,rows:b.rows}),z:b.z0});});
 MD.posts.forEach(function(p){prism(p.pts,0,p.h,M.post,G.main,{name:'עמוד · '+p.name,rows:p.rows});});
 // מחברים: השרוול נראה ונבחר; השן — גוף רגיל בתוכו, נראית דרך השרוול השקוף למחצה
 MD.joints.forEach(function(j){
   prism(j.sleevePts,j.zb-K.SLEEVE_LEN,j.zb,M.sleeve,G.joints,{name:'שרוול '+j.id,rows:j.rows});
-  prism(j.tonguePts,j.zb-K.TONGUE_LEN,j.zb,M.tongue,G.joints,null);
+  lift.push({m:prism(j.tonguePts,j.zb-K.TONGUE_LEN,j.zb,M.tongue,G.joints,null),z:j.zb-K.TONGUE_LEN});
   if(j.plate)prism(j.plate.pts,j.plate.z0,j.plate.z1,M.plate,G.joints,{name:j.plate.name,rows:j.plate.rows});
 });
+var exploded=false;
+document.getElementById('explode').onclick=function(){
+  exploded=!exploded;this.classList.toggle('on',exploded);
+  lift.forEach(function(l){l.m.position.y=l.z+(exploded?EXPLODE:0);});
+  G.labels.position.y=exploded?EXPLODE:0;};
 
 /* תוויות מידה */
 function label(txt,x,y,z,size){
