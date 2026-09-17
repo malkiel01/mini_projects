@@ -329,10 +329,7 @@
             white-space: pre;
         }
         .text-field:hover { outline-color: rgba(74,108,247,0.4); }
-        .text-field.selected {
-            outline: 2px solid #4a6cf7;
-            z-index: 30;
-        }
+        .text-field.selected { outline: 2px solid #4a6cf7; }
         .text-field .field-text {
             pointer-events: none;
             text-shadow: 0 1px 3px rgba(0,0,0,0.2);
@@ -429,10 +426,114 @@
             -webkit-user-drag: none;
         }
         .sticker:hover { outline-color: rgba(74,108,247,0.4); }
-        /* ‏השכבה הנבחרת עולה מעל כולן. בכרטיס הטקסט יושב מעל
-           התמונות, ולכן בלי זה תמונה שנבחרה והטקסט מכסה אותה
-           הייתה בלתי ניתנת לגרירה — הלחיצה נבלעה בשדה הטקסט. */
-        .sticker.selected { outline: 2px solid #4a6cf7; z-index: 30; }
+        .sticker.selected { outline: 2px solid #4a6cf7; }
+
+        /* ‏קווי ההצמדה. חורגים מעט מהתמונה כדי שייראו גם כששכבה
+           יושבת בדיוק על הקצה. */
+        .snap-guide {
+            position: absolute;
+            background: #ff2d87;
+            box-shadow: 0 0 0 1px rgba(255,255,255,.55);
+            z-index: 2000;
+            pointer-events: none;
+            display: none;
+        }
+        .snap-guide.v { top: -10px; bottom: -10px; width: 1px }
+        .snap-guide.h { left: -10px; right: -10px; height: 1px }
+
+        /* סרגל היישור בפאנל — כפתורים בגודל מגע, בשורה אחת. */
+        .align-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-bottom: 12px;
+        }
+        .align-bar button {
+            flex: 1 1 0;
+            min-width: 40px;
+            min-height: 38px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            background: #fafafa;
+            cursor: pointer;
+            font-size: 1rem;
+            color: #555;
+        }
+        .align-bar button:hover { background: #f0f3ff; border-color: #c3cffb }
+
+        /* שכבה נעולה אינה נבחרת ואינה נגררת. */
+        .sticker.locked, .text-field.locked { pointer-events: none; }
+        .sticker.hidden-layer, .text-field.hidden-layer { display: none !important; }
+
+        /* ─── Layers panel ─────────────────────────
+           רשימה מלמעלה למטה, כמו שרואים את הכרטיס: השורה הראשונה
+           היא השכבה העליונה. */
+        .layers-box {
+            border: 1px solid #e8e8e8;
+            border-radius: 10px;
+            margin-bottom: 14px;
+            overflow: hidden;
+        }
+        .layers-head {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 10px;
+            background: #f7f8fb;
+            cursor: pointer;
+            user-select: none;
+            font-weight: 600;
+            font-size: .9rem;
+        }
+        .layers-head .count { color: #999; font-weight: 400; font-size: .8rem }
+        .layers-head .chev { margin-right: auto; color: #999 }
+        .layers-list { max-height: 300px; overflow-y: auto }
+
+        .layer-row {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 6px 8px;
+            border-top: 1px solid #f0f0f0;
+            cursor: pointer;
+        }
+        .layer-row.active { background: #eef2ff }
+        .layer-row.is-hidden .layer-name { opacity: .45; text-decoration: line-through }
+        .layer-row.base { background: #fafafa; cursor: default }
+        .layer-ico { font-size: 1rem; flex: 0 0 auto }
+        .layer-name {
+            flex: 1;
+            min-width: 0;
+            font-size: .82rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        /* כפתורי השורה הם יעד מגע, ולכן 32px ולא אייקון דק. */
+        .layer-btn {
+            flex: 0 0 auto;
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: .95rem;
+            line-height: 1;
+            color: #666;
+        }
+        .layer-btn:hover { background: #e9edf8 }
+        .layer-btn:disabled { opacity: .25; cursor: default }
+        .layer-btn.on { color: #4a6cf7 }
+        .layer-opacity {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 2px 10px 8px;
+            border-top: 1px dashed #f0f0f0;
+        }
+        .layer-opacity input[type=range] { flex: 1; height: 26px; accent-color: #4a6cf7 }
+        .layer-opacity span { font-size: .75rem; color: #888; min-width: 34px }
         .sticker.selected .resize-handle,
         .sticker.selected .rotation-handle,
         .sticker.selected .rotation-line { display: block; }
@@ -1175,8 +1276,9 @@
                 <div class="menu-option" onclick="duplicateField()">⧉ שכפל שדה</div>
                 <div class="menu-option" onclick="deleteSelectedField()">🗑️ מחק <span class="shortcut">Del</span></div>
                 <div class="menu-sep"></div>
-                <div class="menu-option" onclick="centerFieldH()">↔ מרכז אופקית</div>
-                <div class="menu-option" onclick="centerFieldV()">↕ מרכז אנכית</div>
+                <div class="menu-option" onclick="alignSelected('centerH')">↔ מרכז אופקית</div>
+                <div class="menu-option" onclick="alignSelected('centerV')">↕ מרכז אנכית</div>
+                <div class="menu-option" onclick="centerSelectedBoth()">✛ מרכז לגמרי</div>
             </div>
         </div>
         <div class="menu-item">
@@ -1190,6 +1292,7 @@
         <div class="menu-item">
             תצוגה ▾
             <div class="menu-dropdown">
+                <div class="menu-option" onclick="toggleSnapping()">🧲 הצמדה חכמה</div>
                 <div class="menu-option" onclick="toggleHandles()">👁️ הצג/הסתר ידיות</div>
                 <div class="menu-option" onclick="toggleGrid()">📐 הצג/הסתר רשת</div>
                 <div class="menu-sep"></div>
@@ -1239,6 +1342,26 @@
 
         <!-- Properties panel -->
         <div class="props-panel" id="propsPanel">
+            <!-- Layers -->
+            <div class="layers-box" id="layersBox">
+                <div class="layers-head" onclick="toggleLayersPanel()">
+                    🗂️ שכבות <span class="count" id="layersCount"></span>
+                    <span class="chev" id="layersChev">▾</span>
+                </div>
+                <div class="layers-list" id="layersList"></div>
+            </div>
+
+            <!-- יישור: משותף לטקסט ולתמונות, ולכן מעל שני הפאנלים. -->
+            <div id="alignBar" class="align-bar" style="display:none">
+                <button onclick="alignSelected('right')" title="הצמד לימין">⇤</button>
+                <button onclick="alignSelected('centerH')" title="מרכז לרוחב">↔</button>
+                <button onclick="alignSelected('left')" title="הצמד לשמאל">⇥</button>
+                <button onclick="alignSelected('top')" title="הצמד למעלה">⤒</button>
+                <button onclick="alignSelected('centerV')" title="מרכז לגובה">↕</button>
+                <button onclick="alignSelected('bottom')" title="הצמד למטה">⤓</button>
+                <button onclick="centerSelectedBoth()" title="מרכז לגמרי">✛</button>
+            </div>
+
             <!-- Paint tool options -->
             <div id="toolOptions" class="tool-options" style="display:none">
                 <h3 id="toolOptionsTitle">🖌️ מכחול</h3>
@@ -1351,6 +1474,12 @@
                     <label>סיבוב</label>
                     <input type="range" id="propRotation" min="-180" max="180" value="0" oninput="updateFieldProp('rotation', +this.value)">
                     <span id="propRotationVal" style="min-width:35px;font-size:0.85rem">0°</span>
+                </div>
+                <div class="prop-row">
+                    <label title="המרחק בין שורה לשורה, כיחס מגודל הפונט">מרווח שורות</label>
+                    <input type="range" id="propLineHeight" min="0.6" max="3" step="0.05" value="1.3"
+                           oninput="updateFieldProp('lineHeight', +this.value)">
+                    <span id="propLineHeightVal" style="min-width:34px;font-size:0.85rem">1.3</span>
                 </div>
                 <div class="prop-row">
                     <label title="שלילי מצמצם את המרווח בין האותיות, חיובי מרווח אותן">מרווח אותיות</label>
@@ -1677,6 +1806,16 @@ const state = {
     savedAssetSlots: {},       // imageId -> slot ששמור כבר בשרת
     adjust: { brightness: 100, contrast: 100, saturation: 100 },
 
+    // סדר השכבות מלמטה למעלה, כמפתחות של שדות ומדבקות יחד. שתי
+    // הרשימות נשארות מקורות הנתונים; כאן רק הסדר ביניהן, וזה מה
+    // שמאפשר לתמונה לשבת מעל טקסט ולהפך.
+    layerOrder: [],
+    layersCollapsed: false,
+    snapEnabled: true,
+    // שכבת הציור מוצמדת לתמונה ואינה זזה בסדר — היא חלק מהצילום
+    // ולא תוספת מעליו. מה שכן נשלט בה: הצגה, שקיפות ונעילה.
+    paintLayer: { hidden: false, locked: false, opacity: 100 },
+
     contacts: [],              // array of { id, name, displayName, phone, email, selected }
     contactsFilter: '',
     recipients: [],            // array of { col1: val, col2: val }
@@ -1852,6 +1991,7 @@ function initPaintTools() {
     renderToolStrip();
     setupPaintEvents();
     updateHistoryButtons();
+    renderLayersPanel();
 
     const input = document.getElementById('stickerFileInput');
     input.addEventListener('change', async e => {
@@ -2202,7 +2342,7 @@ function renderUserBackgrounds(bgs) {
 }
 
 async function deleteUserBg(id) {
-    if (!confirm('למחוק רקע זה?')) return;
+    if (!await askConfirm('למחוק רקע זה?', 'מחק')) return;
     try {
         const res = await fetch(API_URL + '?action=delete_user_bg', {
             method: 'POST',
@@ -2481,6 +2621,11 @@ function fieldScaleY(field) {
     return field.scaleY ?? 100;
 }
 
+/** אותו דבר לגובה השורה: שדה ישן מקבל את הערך שהייצוא הניח. */
+function fieldLineHeight(field) {
+    return field.lineHeight ?? LINE_HEIGHT;
+}
+
 /**
  * טווח מרווח האותיות נגזר מגודל הפונט ולא קבוע: מרווח של 5px הוא
  * הרבה בגופן של 40px ולא נראה בכלל בגופן של 300px.
@@ -2511,10 +2656,14 @@ function createFieldObj(type = 'fixed', text = '') {
         rotation: 0,
         bold: false,
         letterSpacing: 0,
+        // יחס גובה־שורה: 1.3 הוא מה שהייצוא השתמש בו תמיד.
+        lineHeight: LINE_HEIGHT,
         // מתיחת האותיות באחוזים, בנפרד מגודל הפונט: 100 = ללא שינוי.
         scaleX: 100,
         scaleY: 100,
         opacity: 100,
+        hidden: false,
+        locked: false,
         // רוחב הגלישה כאחוז מרוחב התמונה. 0 = בלי גלישה: שורה יורדת
         // רק במקום שבו יש ירידת שורה בטקסט עצמו.
         wrapWidth: 0,
@@ -2525,6 +2674,7 @@ function addField(type = 'fixed', text = '') {
     const field = createFieldObj(type, text);
     state.fields.push(field);
     renderField(field);
+    refreshLayers();
     selectField(field.id);
     updateRecipientsUI();
     updateStatusBar();
@@ -2595,6 +2745,10 @@ function renderField(field) {
     el.style.color = field.color;
     el.style.fontWeight = field.bold ? 'bold' : 'normal';
     el.style.letterSpacing = (field.letterSpacing * displayScale) + 'px';
+    // ‏בלי הגדרה מפורשת הדפדפן משתמש ב-normal (בערך 1.2), בעוד
+    // שהייצוא חישב 1.3 — כל טקסט רב־שורתי יצא מרווח יותר ממה
+    // שנראה על המסך. עכשיו שניהם קוראים את אותו ערך.
+    el.style.lineHeight = fieldLineHeight(field);
     el.style.opacity = field.opacity / 100;
 
     // בלי גלישה הרוחב נשאר רוחב הטקסט, כדי שגרירה תזיז את השדה
@@ -2632,6 +2786,7 @@ function selectField(id) {
     document.querySelectorAll('.text-field').forEach(el => {
         el.classList.toggle('selected', el.id === id);
     });
+    refreshLayers();
     refreshPanels();
 }
 
@@ -2662,6 +2817,8 @@ function updatePropsPanel() {
     document.getElementById('propBold').checked = field.bold;
     document.getElementById('propRotation').value = field.rotation;
     document.getElementById('propRotationVal').textContent = field.rotation + '°';
+    document.getElementById('propLineHeight').value = fieldLineHeight(field);
+    document.getElementById('propLineHeightVal').textContent = fieldLineHeight(field).toFixed(2);
     syncSpacingRange(field);
     document.getElementById('propSpacing').value = field.letterSpacing;
     document.getElementById('propSpacingVal').textContent = field.letterSpacing;
@@ -2694,6 +2851,9 @@ function updateFieldProp(prop, value) {
     if (prop === 'letterSpacing') document.getElementById('propSpacingVal').textContent = value;
     if (prop === 'scaleX') document.getElementById('propScaleXVal').textContent = value + '%';
     if (prop === 'scaleY') document.getElementById('propScaleYVal').textContent = value + '%';
+    if (prop === 'lineHeight') document.getElementById('propLineHeightVal').textContent = value.toFixed(2);
+    // שם השכבה בלוח הוא הטקסט עצמו.
+    if (prop === 'text' || prop === 'type') renderLayersPanel();
     if (prop === 'opacity') document.getElementById('propOpacityVal').textContent = value + '%';
     if (prop === 'wrapWidth') {
         document.getElementById('propWrap').checked = value > 0;
@@ -2720,9 +2880,11 @@ function deleteSelectedField() {
     if (el) el.remove();
     state.fields = state.fields.filter(f => f.id !== state.selectedFieldId);
     state.selectedFieldId = null;
+    refreshLayers();
     updatePropsPanel();
     updateRecipientsUI();
     updateStatusBar();
+    invalidateArtwork();
 }
 
 function duplicateField() {
@@ -2752,18 +2914,220 @@ function pasteField() {
     toast('שדה הודבק');
 }
 
-function centerFieldH() {
-    const field = state.fields.find(f => f.id === state.selectedFieldId);
-    if (!field) return;
-    field.x = 50;
-    renderField(field);
+/* ═══════════════════════════════════════════════════
+   ALIGNMENT & SNAPPING
+   ═══════════════════════════════════════════════════
+
+   שתי דרכים ליישר, ושתיהן על אותו מנגנון:
+
+   כפתורי היישור מזיזים את הנבחר לקו מוגדר של הכרטיס. ההצמדה
+   עושה את אותו דבר תוך כדי גרירה, אלא שהקווים מגיעים גם משאר
+   השכבות — וכשמשהו נתפס, הקו מצויר כדי שיהיה ברור למה זה קרה.
+
+   כל האלמנטים ממורכזים סביב נקודת העוגן שלהם (‏x,y הם המרכז
+   באחוזים), ולכן "יישור לשמאל" הוא מרכז בחצי הרוחב ולא אפס.
+*/
+
+/* מרחק ההצמדה בפיקסלים של המסך. נמדד במסך ולא באחוזים כדי
+   שהתחושה תהיה זהה בתמונה רחבה ובצרה. */
+const SNAP_PX = 7;
+
+/** השכבה שנבחרה כרגע, בלי קשר לסוג שלה. */
+function selectedLayer() {
+    if (state.selectedFieldId) {
+        const f = state.fields.find(x => x.id === state.selectedFieldId);
+        if (f) return { kind: 'field', key: f.id, obj: f };
+    }
+    if (state.selectedStickerId) {
+        const s = getSticker(state.selectedStickerId);
+        if (s) return { kind: 'sticker', key: s.id, obj: s };
+    }
+    return null;
 }
 
-function centerFieldV() {
-    const field = state.fields.find(f => f.id === state.selectedFieldId);
-    if (!field) return;
-    field.y = 50;
-    renderField(field);
+/**
+ * גודל השכבה כאחוז מהכרטיס. נמדד מהמסך ולא מהנתונים, כי גובה
+ * של טקסט תלוי בפונט ובמספר השורות ואינו שמור בשום מקום.
+ */
+function layerMetrics(key) {
+    const el = document.getElementById(key);
+    const wrap = document.getElementById('canvasWrapper');
+    if (!el || !wrap) return null;
+    const r = el.getBoundingClientRect();
+    const w = wrap.getBoundingClientRect();
+    if (!w.width || !w.height) return null;
+    return { w: r.width / w.width * 100, h: r.height / w.height * 100, wrap: w };
+}
+
+function renderLayer(item) {
+    if (item.kind === 'field') renderField(item.obj);
+    else renderSticker(item.obj);
+}
+
+/* ─── Explicit alignment ──────────────────────────── */
+
+/**
+ * ‏where: 'right' | 'left' | 'top' | 'bottom' | 'centerH' | 'centerV'
+ * ימין ושמאל הם ימין ושמאל של התמונה, לא של כיוון הכתיבה.
+ */
+function alignSelected(where) {
+    const item = selectedLayer();
+    if (!item) { toast('בחרו שכבה קודם', 'error'); return; }
+
+    const m = layerMetrics(item.key);
+    if (!m) return;
+
+    const o = item.obj;
+    if (where === 'centerH') o.x = 50;
+    else if (where === 'centerV') o.y = 50;
+    else if (where === 'left') o.x = m.w / 2;
+    else if (where === 'right') o.x = 100 - m.w / 2;
+    else if (where === 'top') o.y = m.h / 2;
+    else if (where === 'bottom') o.y = 100 - m.h / 2;
+
+    renderLayer(item);
+    invalidateArtwork();
+}
+
+/* השמות הישנים נשארים — הם מחוברים לתפריט "עריכה". */
+function centerFieldH() { alignSelected('centerH'); }
+function centerFieldV() { alignSelected('centerV'); }
+
+function centerSelectedBoth() {
+    alignSelected('centerH');
+    alignSelected('centerV');
+}
+
+function toggleSnapping() {
+    state.snapEnabled = !state.snapEnabled;
+    if (!state.snapEnabled) hideSnapGuides();
+    toast(state.snapEnabled ? 'הצמדה חכמה פעילה' : 'הצמדה חכמה כבויה');
+}
+
+/* ─── Snapping while dragging ─────────────────────── */
+
+/**
+ * כל הקווים שאפשר להיתפס אליהם, באחוזים.
+ *
+ * קווי הכרטיס (קצוות ומרכז) תמיד שם. שאר השכבות מוסיפות את
+ * הקצוות והמרכז שלהן, וזה מה שנותן יישור לאלמנט אחר בלי לבחור
+ * אותו מראש. שכבה מוסתרת אינה מקור ליישור — אי אפשר ליישר למשהו
+ * שלא רואים.
+ */
+function snapTargets(excludeKey) {
+    const xs = [{ pos: 0 }, { pos: 50 }, { pos: 100 }];
+    const ys = [{ pos: 0 }, { pos: 50 }, { pos: 100 }];
+
+    for (const item of orderedLayers()) {
+        if (item.key === excludeKey || item.obj.hidden) continue;
+        const m = layerMetrics(item.key);
+        if (!m) continue;
+        const o = item.obj;
+        xs.push({ pos: o.x - m.w / 2 }, { pos: o.x }, { pos: o.x + m.w / 2 });
+        ys.push({ pos: o.y - m.h / 2 }, { pos: o.y }, { pos: o.y + m.h / 2 });
+    }
+    return { xs, ys };
+}
+
+/** הקו הקרוב ביותר לאחד משלושת העוגנים, אם הוא בטווח ההצמדה. */
+function bestSnap(centre, half, lines, tolerance) {
+    let best = null;
+    // מרכז, התחלה וסוף — בדיוק מה שוורד מציע.
+    const anchors = [centre, centre - half, centre + half];
+    for (const anchor of anchors) {
+        for (const line of lines) {
+            const delta = line.pos - anchor;
+            if (Math.abs(delta) > tolerance) continue;
+            if (!best || Math.abs(delta) < Math.abs(best.delta)) {
+                best = { delta, pos: line.pos };
+            }
+        }
+    }
+    return best;
+}
+
+/* מה שנתפס כרגע בכל ציר, כדי שאפשר יהיה להשתחרר ממנו. */
+let snapHold = { x: null, y: null };
+
+function resetSnapHold() {
+    snapHold = { x: null, y: null };
+}
+
+/**
+ * הצמדה דביקה עם שחרור.
+ *
+ * הצמדה שרק "מושכת" הופכת מיקום מדויק ליד קו לבלתי אפשרי: כל
+ * ניסיון לעמוד שני פיקסלים ליד המרכז נבלע. לכן ברגע שנתפס קו,
+ * השכבה נשארת עליו עד שהאצבע עוברת מרחק שחרור גדול יותר — ואז
+ * היא משתחררת לגמרי וזזה חופשי.
+ */
+const SNAP_RELEASE = 2.6;
+
+function resolveAxis(axis, raw, half, lines, tol) {
+    const held = snapHold[axis];
+    if (held) {
+        // מרכז השכבה שבו הקו הזה נתפס.
+        const centre = held.pos - held.offset;
+        if (Math.abs(raw - centre) <= tol * SNAP_RELEASE) {
+            return { delta: centre - raw, pos: held.pos };
+        }
+        snapHold[axis] = null;
+    }
+
+    const found = bestSnap(raw, half, lines, tol);
+    if (found) snapHold[axis] = { pos: found.pos, offset: found.pos - (raw + found.delta) };
+    return found;
+}
+
+/**
+ * מצמיד את השכבה הנגררת ומצייר את הקווים שנתפסו. אם ההצמדה
+ * כבויה, המיקום נשאר כפי שהוא.
+ */
+function applySnap(key, obj) {
+    if (!state.snapEnabled) { hideSnapGuides(); return; }
+
+    const m = layerMetrics(key);
+    if (!m) return;
+
+    const tolX = SNAP_PX / m.wrap.width * 100;
+    const tolY = SNAP_PX / m.wrap.height * 100;
+    const targets = snapTargets(key);
+
+    const sx = resolveAxis('x', obj.x, m.w / 2, targets.xs, tolX);
+    const sy = resolveAxis('y', obj.y, m.h / 2, targets.ys, tolY);
+
+    if (sx) obj.x = Math.round((obj.x + sx.delta) * 100) / 100;
+    if (sy) obj.y = Math.round((obj.y + sy.delta) * 100) / 100;
+
+    showSnapGuide('x', sx ? sx.pos : null);
+    showSnapGuide('y', sy ? sy.pos : null);
+}
+
+function snapGuideEl(axis) {
+    const id = 'snapGuide' + axis.toUpperCase();
+    let el = document.getElementById(id);
+    if (!el) {
+        el = document.createElement('div');
+        el.id = id;
+        el.className = 'snap-guide ' + (axis === 'x' ? 'v' : 'h');
+        document.getElementById('canvasWrapper').appendChild(el);
+    }
+    return el;
+}
+
+function showSnapGuide(axis, pos) {
+    const el = snapGuideEl(axis);
+    if (pos === null) { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    if (axis === 'x') el.style.left = pos + '%';
+    else el.style.top = pos + '%';
+}
+
+function hideSnapGuides() {
+    ['x', 'y'].forEach(a => {
+        const el = document.getElementById('snapGuide' + a.toUpperCase());
+        if (el) el.style.display = 'none';
+    });
 }
 
 /* ─── Field Dragging & Interaction ───────────────── */
@@ -2821,6 +3185,7 @@ function startDrag(e, fieldId, isTouch = false) {
     const endEvent = isTouch ? 'touchend' : 'mouseup';
 
     let moved = 0;
+    resetSnapHold();
 
     const onMove = ev => {
         const pt = isTouch ? ev.touches[0] : ev;
@@ -2832,6 +3197,7 @@ function startDrag(e, fieldId, isTouch = false) {
         // Clamp
         field.x = Math.max(0, Math.min(100, field.x));
         field.y = Math.max(0, Math.min(100, field.y));
+        applySnap(fieldId, field);
         renderField(field);
     };
 
@@ -2839,6 +3205,8 @@ function startDrag(e, fieldId, isTouch = false) {
         document.removeEventListener(moveEvent, onMove);
         document.removeEventListener(endEvent, onEnd);
         dragState = null;
+        hideSnapGuides();
+        resetSnapHold();
         // נקישה בלי גרירה על שדה שכבר נבחר יורדת שכבה למטה, אל
         // התמונה שמתחתיו. בלי זה תמונה שהטקסט מכסה אותה אינה
         // ניתנת לבחירה חוזרת בכלל.
@@ -2987,8 +3355,10 @@ function resetFieldProportions() {
     field.scaleX = 100;
     field.scaleY = 100;
     field.letterSpacing = 0;
+    field.lineHeight = LINE_HEIGHT;
     renderField(field);
     updatePropsPanel();
+    invalidateArtwork();
 }
 
 function startRotation(e, fieldId, isTouch = false) {
@@ -3245,8 +3615,8 @@ function deleteRecipient(index) {
     renderAllFields();
 }
 
-function clearRecipients() {
-    if (!confirm('למחוק את כל הנמענים?')) return;
+async function clearRecipients() {
+    if (!await askConfirm('למחוק את כל הנמענים?', 'מחק')) return;
     state.recipients = [];
     renderRecipientsTable();
     updateRecipientsBadge();
@@ -3537,8 +3907,23 @@ async function generatePDF(recipient) {
         0, 0, pdfWidth, pdfHeight
     );
 
-    // Add text fields
-    for (const field of state.fields) {
+    // ‏מדבקות וטקסט לפי סדר השכבות: ב-PDF סדר הציור הוא סדר
+    // הקריאות, ולכן מדבקה שמעל טקסט חייבת להתווסף אחריו.
+    const pxToMm = pdfWidth / nat.width;
+
+    for (const item of orderedLayers()) {
+        if (item.obj.hidden) continue;
+
+        if (item.kind === 'sticker') {
+            const tile = await renderStickerTile(item.obj, nat.width, nat.height);
+            if (tile) {
+                pdf.addImage(tile.dataUrl, 'PNG',
+                    tile.x * pxToMm, tile.y * pxToMm, tile.w * pxToMm, tile.h * pxToMm);
+            }
+            continue;
+        }
+
+        const field = item.obj;
         let text = field.text;
         if (field.type === 'list' && recipient[field.listColumn] !== undefined) {
             text = recipient[field.listColumn];
@@ -3599,7 +3984,7 @@ async function generatePDF(recipient) {
         );
         // אותו יחס גובה־שורה כמו בייצוא לתמונה, כדי ששני הפורמטים
         // יראו זהים; fontSize כאן בנקודות ולכן חוזרים דרכן למ"מ.
-        const lineHeightMm = (fontSize / MM_TO_PT) * LINE_HEIGHT;
+        const lineHeightMm = (fontSize / MM_TO_PT) * fieldLineHeight(field);
         const totalHeight = (lines.length - 1) * lineHeightMm;
 
         lines.forEach((line, lineIdx) => {
@@ -3624,12 +4009,20 @@ async function generateImage(recipient, format) {
     canvas.height = nat.height;
     const ctx = canvas.getContext('2d');
 
-    // רקע, ציור ומדבקות — שכבה אחת מוכנה, זהה לכל הנמענים ולכן
-    // מחושבת פעם אחת ונשמרת במטמון.
+    // רקע וציור — זהים לכל הנמענים, ולכן מחושבים פעם אחת ונשמרים
+    // במטמון. מעליהם המדבקות והטקסט מצוירים בסדר השכבות עצמו,
+    // כדי שתמונה שהועלתה מעל טקסט תצא כך גם בקובץ.
     ctx.drawImage(await getArtwork(canvas.width, canvas.height), 0, 0);
 
-    // Draw text fields
-    for (const field of state.fields) {
+    for (const item of orderedLayers()) {
+        if (item.obj.hidden) continue;
+
+        if (item.kind === 'sticker') {
+            await drawSticker(ctx, item.obj, canvas.width, canvas.height);
+            continue;
+        }
+
+        const field = item.obj;
         let text = field.text;
         if (field.type === 'list' && recipient[field.listColumn] !== undefined) {
             text = recipient[field.listColumn];
@@ -3661,7 +4054,7 @@ async function generateImage(recipient, format) {
             t => ctx.measureText(t).width,
             field.wrapWidth > 0 ? (field.wrapWidth / 100) * canvas.width : 0
         );
-        const lineHeight = scaledFontSize * LINE_HEIGHT;
+        const lineHeight = scaledFontSize * fieldLineHeight(field);
         const totalTextHeight = (lines.length - 1) * lineHeight;
 
         lines.forEach((line, lineIdx) => {
@@ -3835,6 +4228,68 @@ function showModal(html) {
 
 function closeModal() {
     document.getElementById('modalOverlay').classList.remove('show');
+    // דיאלוג שנסגר בלחיצה בחוץ או ב-Escape חייב לשחרר את מי
+    // שממתין לו, אחרת הקריאה תלויה לנצח.
+    if (pendingDialog) { const r = pendingDialog; pendingDialog = null; r(null); }
+}
+
+/* ─── In-page dialogs ─────────────────────────────────
+ *
+ * ‏prompt ו-confirm של הדפדפן אינם עובדים ב-WebView של אנדרואיד:
+ * ‏WebView אינו מציג דיאלוגי JS אלא אם האפליקציה מיישמת
+ * ‏onJsPrompt/onJsConfirm, וללא זה הקריאה פשוט מוחזרת מבוטלת.
+ * מכאן ש"שמור בשם" באפליקציה קיבל null ויצא בשקט — הקובץ לא
+ * נשמר ושום הודעה לא הופיעה.
+ *
+ * הדיאלוגים כאן הם של הדף עצמו, ולכן הם עובדים גם בדפדפן וגם
+ * באפליקציה, בלי לחכות לגרסה חדשה שלה.
+ */
+let pendingDialog = null;
+
+function resolveDialog(value) {
+    const r = pendingDialog;
+    pendingDialog = null;
+    document.getElementById('modalOverlay').classList.remove('show');
+    if (r) r(value);
+}
+
+/** מחזירה את הטקסט שהוזן, או null אם בוטל. */
+function askText(title, defaultValue = '', okLabel = 'שמור') {
+    return new Promise(resolve => {
+        pendingDialog = resolve;
+        showModal(`
+            <h2>${escapeHtml(title)}</h2>
+            <input type="text" id="dialogInput" value="${escapeHtml(defaultValue)}"
+                   style="width:100%;margin:12px 0" autocomplete="off">
+            <div class="modal-actions">
+                <button class="btn btn-outline" onclick="resolveDialog(null)">ביטול</button>
+                <button class="btn btn-primary"
+                        onclick="resolveDialog(document.getElementById('dialogInput').value)">${escapeHtml(okLabel)}</button>
+            </div>
+        `);
+        const input = document.getElementById('dialogInput');
+        input.focus();
+        input.select();
+        input.addEventListener('keydown', e => {
+            if (e.key === 'Enter') resolveDialog(input.value);
+            if (e.key === 'Escape') resolveDialog(null);
+        });
+    });
+}
+
+/** מחזירה true רק אם אושר במפורש. */
+function askConfirm(message, okLabel = 'אישור', danger = true) {
+    return new Promise(resolve => {
+        pendingDialog = resolve;
+        showModal(`
+            <h2>${escapeHtml(message)}</h2>
+            <div class="modal-actions">
+                <button class="btn btn-outline" onclick="resolveDialog(false)">ביטול</button>
+                <button class="btn ${danger ? 'btn-danger' : 'btn-primary'}"
+                        onclick="resolveDialog(true)">${escapeHtml(okLabel)}</button>
+            </div>
+        `);
+    });
 }
 
 /* ─── Toast ──────────────────────────────────────── */
@@ -4086,8 +4541,8 @@ function resetAllDisplayNames() {
     toast('שמות התצוגה אופסו');
 }
 
-function addPrefixToNames() {
-    const prefix = prompt('הזינו תחילית (למשל "לכבוד "):');
+async function addPrefixToNames() {
+    const prefix = await askText('הזינו תחילית (למשל "לכבוד ")', '', 'הוסף');
     if (!prefix) return;
     state.contacts.filter(c => c.selected).forEach(c => {
         if (!c.displayName.startsWith(prefix)) c.displayName = prefix + c.displayName;
@@ -4096,8 +4551,8 @@ function addPrefixToNames() {
     toast('התחילית נוספה לנבחרים');
 }
 
-function addSuffixToNames() {
-    const suffix = prompt('הזינו סיומת (למשל " ומשפחתו"):');
+async function addSuffixToNames() {
+    const suffix = await askText('הזינו סיומת (למשל " ומשפחתו")', '', 'הוסף');
     if (!suffix) return;
     state.contacts.filter(c => c.selected).forEach(c => {
         if (!c.displayName.endsWith(suffix)) c.displayName = c.displayName + suffix;
@@ -4106,9 +4561,9 @@ function addSuffixToNames() {
     toast('הסיומת נוספה לנבחרים');
 }
 
-function deleteSelectedContacts() {
+async function deleteSelectedContacts() {
     const count = state.contacts.filter(c => c.selected).length;
-    if (!confirm(`למחוק ${count} אנשי קשר נבחרים?`)) return;
+    if (!await askConfirm(`למחוק ${count} אנשי קשר נבחרים?`, 'מחק')) return;
     state.contacts = state.contacts.filter(c => !c.selected);
     renderContactsList();
 }
@@ -4512,9 +4967,9 @@ function saveCurrentDesign() {
     saveDesignAs();
 }
 
-function saveDesignAs() {
+async function saveDesignAs() {
     if (!requireLoginForDesigns()) return;
-    const name = prompt('שם העיצוב:', currentDesign.name || 'עיצוב חדש');
+    const name = await askText('שם העיצוב', currentDesign.name || 'עיצוב חדש');
     if (name === null) return;
     if (!name.trim()) { toast('נדרש שם', 'error'); return; }
     persistDesign(null, name.trim());
@@ -4595,6 +5050,10 @@ async function persistDesign(id, name) {
             fields: state.fields,
             stickers,
             adjust: state.adjust,
+            // הסתרה ונעילה נוסעות בתוך השדות והמדבקות עצמם; כאן
+            // רק הסדר ביניהם ומצב שכבת הציור.
+            layerOrder: ensureLayerOrder(),
+            paintLayer: state.paintLayer,
             assets,
             backgroundNatural: state.backgroundNatural,
             // הרקע נשלח רק בשמירה ראשונה או כשהוחלף — אחרת השרת
@@ -4677,6 +5136,10 @@ async function loadDesign(id) {
     state.selectedFieldId = null;
     state.stickers = [];
     state.selectedStickerId = null;
+    // סדר ריק = עיצוב שנשמר לפני לוח השכבות; ensureLayerOrder
+    // ייצר לו את סדר ברירת המחדל.
+    state.layerOrder = design.layerOrder || [];
+    state.paintLayer = design.paintLayer || { hidden: false, locked: false, opacity: 100 };
 
     // המונה חייב לעקוף כל מזהה טעון, אחרת שדה חדש היה דורס קיים.
     state.fields.forEach(f => {
@@ -4737,15 +5200,23 @@ async function restoreDesignLayers(id, design) {
         loaded[slot] = await fetchDesignBackground(id, slot);
     }
 
-    state.stickers = (design.stickers || []).map((s, i) => {
+    // המזהים נוצרים מחדש כדי לא להתנגש במדבקות שכבר פתוחות
+    // בסשן, ולכן סדר השכבות השמור — שמצביע על המזהים הישנים —
+    // מתורגם כאן. בלי התרגום כל טעינה הייתה מאבדת את הסדר.
+    const idMap = {};
+    state.stickers = (design.stickers || []).map(s => {
         const imageId = 'img_' + (++stickerIdCounter);
         const src = loaded[s.slot];
         if (src) {
             state.stickerImages[imageId] = src;
             state.savedAssetSlots[imageId] = s.slot;
         }
-        return { ...s, imageId, id: 'stk_' + (++stickerIdCounter) };
+        const newId = 'stk_' + (++stickerIdCounter);
+        idMap[s.id] = newId;
+        return { ...s, imageId, id: newId };
     }).filter(s => state.stickerImages[s.imageId]);
+
+    state.layerOrder = (design.layerOrder || []).map(k => idMap[k] || k);
 
     // ‏aspect נשמר ב-JSON, אבל עיצוב ישן עלול לא להחזיק אותו.
     for (const s of state.stickers) {
@@ -4757,6 +5228,7 @@ async function restoreDesignLayers(id, design) {
 
     selectSticker(null);
     renderAllStickers(true);
+    refreshLayers();
     resetHistory();
     invalidateArtwork();
 }
@@ -4786,7 +5258,7 @@ async function fetchDesignBackground(id, slot) {
 
 async function deleteDesign(id) {
     const name = designsCache.find(d => d.id === id)?.name || 'העיצוב';
-    if (!confirm(`למחוק את "${name}"?`)) return;
+    if (!await askConfirm(`למחוק את "${name}"?`, 'מחק')) return;
     const data = await designApi('delete_design', { body: { id } });
     if (!data.success) { toast(data.message, 'error'); return; }
     if (currentDesign.id === id) {
@@ -4990,6 +5462,7 @@ function initPaintLayer() {
     invalidateArtwork();
     applyAdjustPreview();
     updateToolAvailability();
+    refreshLayers();
 }
 
 function clearPaintLayer() {
@@ -5289,6 +5762,9 @@ async function applyHistory(entry, side) {
         paint.ctx.clearRect(entry.rect.x, entry.rect.y, entry.rect.w, entry.rect.h);
         paint.ctx.drawImage(img, entry.rect.x, entry.rect.y);
         state.paintDirty = true;
+    } else if (entry.type === 'order') {
+        state.layerOrder = JSON.parse(entry[side]);
+        refreshLayers();
     } else {
         state.stickers = JSON.parse(entry[side]);
         renderAllStickers(true);
@@ -5350,14 +5826,19 @@ function renderToolStrip() {
 
 /** בלי רקע אין על מה לצייר, ולכן הכלים כבויים במקום להיכשל בשקט. */
 function updateToolAvailability() {
+    // שכבת ציור נעולה או מוסתרת אינה ניתנת לצביעה, בדיוק כמו
+    // שכבה נעולה בכל עורך.
+    const usable = paint.ready && !state.paintLayer.locked && !state.paintLayer.hidden;
     document.querySelectorAll('#toolStrip .tool-btn[data-tool]').forEach(btn => {
-        if (btn.dataset.tool !== 'select') btn.disabled = !paint.ready;
+        if (btn.dataset.tool !== 'select') btn.disabled = !usable;
     });
 }
 
 function setTool(id) {
     if (!TOOLS[id]) return;
     if (id !== 'select' && !paint.ready) { toast('יש לבחור תמונת רקע קודם', 'error'); return; }
+    if (id !== 'select' && state.paintLayer.locked) { toast('שכבת הציור נעולה', 'error'); return; }
+    if (id !== 'select' && state.paintLayer.hidden) { toast('שכבת הציור מוסתרת', 'error'); return; }
 
     state.tool = id;
     const painting = id !== 'select';
@@ -5462,11 +5943,13 @@ function addStickerFromFile(file) {
                         aspect: img.naturalWidth / img.naturalHeight,
                         x: 50, y: 50, w: 40,
                         rotation: 0, opacity: 100, blur: 0, flipX: false,
+                        hidden: false, locked: false,
                     });
                 });
 
                 const s = state.stickers[state.stickers.length - 1];
                 renderSticker(s);
+                refreshLayers();
                 setTool('select');
                 selectSticker(s.id);
                 invalidateArtwork();
@@ -5535,16 +6018,8 @@ function renderAllStickers(removeStale) {
             if (!ids.has(el.id)) el.remove();
         });
     }
-    // סדר השכבות בין המדבקות הוא סדר ה-DOM ולא z-index: ערך שאינו
-    // שלם פשוט נפסל, וממילא היה מתנגש עם הבנד של שדות הטקסט.
-    // ‏appendChild מזיז אלמנט קיים לסוף, ולכן מעבר בסדר המערך מסדר
-    // את כולם.
-    const wrapper = document.getElementById('canvasWrapper');
-    state.stickers.forEach(s => {
-        renderSticker(s);
-        const el = document.getElementById(s.id);
-        if (el && el.parentNode === wrapper) wrapper.appendChild(el);
-    });
+    state.stickers.forEach(renderSticker);
+    refreshLayers();
 }
 
 function selectSticker(id) {
@@ -5554,6 +6029,7 @@ function selectSticker(id) {
         el.classList.toggle('selected', el.id === id);
     });
     document.querySelectorAll('.text-field').forEach(el => el.classList.remove('selected'));
+    refreshLayers();
     refreshPanels();
 }
 
@@ -5587,6 +6063,7 @@ function deleteSticker() {
     });
     document.getElementById(s.id)?.remove();
     selectSticker(null);
+    refreshLayers();
     invalidateArtwork();
     toast('התמונה נמחקה');
 }
@@ -5612,19 +6089,10 @@ function flipSticker() {
     invalidateArtwork();
 }
 
-/** מזיז את המדבקה קדימה או אחורה בסדר השכבות. */
+/** קדימה/אחורה מהפאנל — אותו מנגנון של לוח השכבות. */
 function moveSticker(dir) {
-    const s = getSticker(state.selectedStickerId);
-    if (!s) return;
-    const i = state.stickers.indexOf(s);
-    const j = i + dir;
-    if (j < 0 || j >= state.stickers.length) { toast('כבר בקצה'); return; }
-    withLayerHistory(() => {
-        state.stickers.splice(i, 1);
-        state.stickers.splice(j, 0, s);
-    });
-    renderAllStickers();
-    invalidateArtwork();
+    if (!state.selectedStickerId) return;
+    moveLayer(state.selectedStickerId, dir);
 }
 
 /* מגע אחד גורר, שתי אצבעות מגדילות ומסובבות. הצביטה היא התנועה
@@ -5649,6 +6117,7 @@ function onStickerPointerDown(e, id) {
             id, pointers: new Map(), before: JSON.stringify(state.stickers),
             wasSelected, moved: 0, downX: e.clientX, downY: e.clientY,
         };
+        resetSnapHold();
     }
     stickerGesture.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
@@ -5693,6 +6162,7 @@ function onStickerPointerMove(e) {
     } else if (g.mode === 'drag') {
         s.x = clampPercent(g.snapshot.x + (e.clientX - g.start.x) / wrap.width * 100);
         s.y = clampPercent(g.snapshot.y + (e.clientY - g.start.y) / wrap.height * 100);
+        applySnap(g.id, s);
     } else if (g.mode === 'resize') {
         // המרחק מהמרכז — עובד זהה מכל פינה, גם אחרי סיבוב.
         const d = Math.hypot(e.clientX - g.center.x, e.clientY - g.center.y);
@@ -5719,6 +6189,8 @@ function onStickerPointerUp(e) {
     const after = JSON.stringify(state.stickers);
     if (after !== g.before) pushHistory({ type: 'layers', before: g.before, after });
     stickerGesture = null;
+    hideSnapGuides();
+    resetSnapHold();
     invalidateArtwork();
 
     // נקישה בלי גרירה על מדבקה שכבר נבחרה — ירידה לשכבה שמתחת.
@@ -5804,14 +6276,18 @@ function showAdjustDialog() {
 function refreshPanels() {
     const painting = state.tool !== 'select';
     const sticker = !painting && !!getSticker(state.selectedStickerId);
-    const show = (id, on) => {
+    // ‏display מוזרק כאן, ולכן הוא חייב להתאים לפריסה של האלמנט:
+    // ‏block על סרגל שהוא flex היה מפרק אותו לכפתורים מוערמים.
+    const show = (id, on, mode = 'block') => {
         const el = document.getElementById(id);
-        if (el) el.style.display = on ? 'block' : 'none';
+        if (el) el.style.display = on ? mode : 'none';
     };
 
     show('toolOptions', painting);
     show('stickerProps', sticker);
     show('fieldPropsTitle', !painting && !sticker);
+    // היישור שייך לשכבה נבחרת, ולא משנה אם היא טקסט או תמונה.
+    show('alignBar', !painting && !!selectedLayer(), 'flex');
 
     // בנייד: אפשרויות הכלי כמגירה תחתונה, כדי שהתמונה לא תיעלם
     // מהמסך בדיוק כשמתחילים לצייר עליה.
@@ -5845,29 +6321,315 @@ async function renderArtwork(W, H) {
     // התמונה המורכבת פעם אחת ולא על כל שכבה בנפרד.
     const [base, bctx] = newCanvas(W, H);
     bctx.drawImage(await loadImage(state.backgroundImage), 0, 0, W, H);
-    if (paint.ready) bctx.drawImage(paint.canvas, 0, 0, W, H);
+    if (paint.ready && !state.paintLayer.hidden) {
+        bctx.globalAlpha = state.paintLayer.opacity / 100;
+        bctx.drawImage(paint.canvas, 0, 0, W, H);
+        bctx.globalAlpha = 1;
+    }
 
     ctx.filter = adjustFilterString();
     ctx.drawImage(base, 0, 0);
     ctx.filter = 'none';
-
-    for (const s of state.stickers) {
-        const src = state.stickerImages[s.imageId];
-        if (!src) continue;
-        const img = await loadImage(src);
-        const w = (s.w / 100) * W;
-        const h = w / (s.aspect || (img.naturalWidth / img.naturalHeight) || 1);
-
-        ctx.save();
-        ctx.translate((s.x / 100) * W, (s.y / 100) * H);
-        if (s.rotation) ctx.rotate(s.rotation * Math.PI / 180);
-        if (s.flipX) ctx.scale(-1, 1);
-        ctx.globalAlpha = s.opacity / 100;
-        if (s.blur) ctx.filter = `blur(${s.blur * W / 1000}px)`;
-        ctx.drawImage(img, -w / 2, -h / 2, w, h);
-        ctx.restore();
-    }
     return out;
+}
+
+/** מצייר מדבקה אחת על קנבס היעד, באותן יחידות של התמונה. */
+async function drawSticker(ctx, s, W, H) {
+    const src = state.stickerImages[s.imageId];
+    if (!src) return;
+    const img = await loadImage(src);
+    const w = (s.w / 100) * W;
+    const h = w / (s.aspect || (img.naturalWidth / img.naturalHeight) || 1);
+
+    ctx.save();
+    ctx.translate((s.x / 100) * W, (s.y / 100) * H);
+    if (s.rotation) ctx.rotate(s.rotation * Math.PI / 180);
+    if (s.flipX) ctx.scale(-1, 1);
+    ctx.globalAlpha = (s.opacity ?? 100) / 100;
+    if (s.blur) ctx.filter = `blur(${s.blur * W / 1000}px)`;
+    ctx.drawImage(img, -w / 2, -h / 2, w, h);
+    ctx.restore();
+}
+
+/**
+ * מדבקה כאריח עצמאי, כבר מסובב ומטושטש, יחד עם המלבן שבו הוא
+ * יושב. ‏jsPDF אינו יודע לסובב תמונה סביב מרכזה, ולכן הסיבוב
+ * נעשה כאן ולעמוד נכנסת תמונה ישרה.
+ */
+async function renderStickerTile(s, W, H) {
+    const src = state.stickerImages[s.imageId];
+    if (!src) return null;
+    const img = await loadImage(src);
+    const w = (s.w / 100) * W;
+    const h = w / (s.aspect || (img.naturalWidth / img.naturalHeight) || 1);
+
+    const rad = (s.rotation || 0) * Math.PI / 180;
+    const cos = Math.abs(Math.cos(rad)), sin = Math.abs(Math.sin(rad));
+    const blur = s.blur ? s.blur * W / 1000 : 0;
+    // ‏blur גאוסיאני נמשך מעבר לרדיוס שלו, ומכאן השוליים.
+    const bw = Math.max(1, Math.ceil(w * cos + h * sin + blur * 6));
+    const bh = Math.max(1, Math.ceil(w * sin + h * cos + blur * 6));
+
+    const [tile, tctx] = newCanvas(bw, bh);
+    tctx.translate(bw / 2, bh / 2);
+    if (s.rotation) tctx.rotate(rad);
+    if (s.flipX) tctx.scale(-1, 1);
+    tctx.globalAlpha = (s.opacity ?? 100) / 100;
+    if (blur) tctx.filter = `blur(${blur}px)`;
+    tctx.drawImage(img, -w / 2, -h / 2, w, h);
+
+    return {
+        dataUrl: tile.toDataURL('image/png'),
+        x: (s.x / 100) * W - bw / 2,
+        y: (s.y / 100) * H - bh / 2,
+        w: bw, h: bh,
+    };
+}
+
+/* ═══════════════════════════════════════════════════
+   LAYERS
+   ═══════════════════════════════════════════════════
+
+   שדות טקסט ומדבקות הם שתי רשימות נפרדות, אבל על הכרטיס הם שכבה
+   אחת רציפה. state.layerOrder מחזיק את הסדר ביניהן מלמטה למעלה
+   כרשימת מפתחות, וזה מה שמאפשר לתמונה לשבת מעל טקסט ולהפך.
+
+   הרקע ושכבת הציור יושבים תמיד מתחת לכולם: הציור הוא עריכה של
+   הצילום, לא תוספת מעליו, ולכן אינו נגרר בסדר.
+*/
+
+/* ‏z-index בסיס לשכבות המנוהלות. מתחת לזה: הרקע (auto) והציור (5). */
+const LAYER_Z_BASE = 20;
+
+/* ‏השכבה הנבחרת צפה מעל השאר בזמן העריכה, אחרת שכבה שמכוסה
+   לגמרי אינה ניתנת לגרירה. הייצוא משתמש בסדר האמיתי בלבד. */
+const LAYER_Z_SELECTED = 900;
+
+function layerItem(key) {
+    const sticker = state.stickers.find(s => s.id === key);
+    if (sticker) return { kind: 'sticker', key, obj: sticker };
+    const field = state.fields.find(f => f.id === key);
+    if (field) return { kind: 'field', key, obj: field };
+    return null;
+}
+
+/**
+ * מיישר את סדר השכבות מול הנתונים: מסיר מפתחות של שכבות שנמחקו
+ * ומוסיף חדשות למעלה. נקראת לפני כל שימוש בסדר, כך שאין מצב שבו
+ * שכבה קיימת חסרה ממנו.
+ */
+function ensureLayerOrder() {
+    // מדבקות לפני שדות: זה הסדר שהכרטיס הציג לפני שהלוח קיים,
+    // והוא גם ברירת המחדל הנכונה לכרטיס ברכה — טקסט מעל תמונות.
+    const all = [...state.stickers.map(s => s.id), ...state.fields.map(f => f.id)];
+
+    if (!Array.isArray(state.layerOrder) || state.layerOrder.length === 0) {
+        state.layerOrder = all;
+        return state.layerOrder;
+    }
+
+    const known = new Set(state.layerOrder);
+    const present = new Set(all);
+    state.layerOrder = state.layerOrder.filter(k => present.has(k));
+    // שכבה חדשה נכנסת למעלה, כמו בכל עורך.
+    all.forEach(k => { if (!known.has(k)) state.layerOrder.push(k); });
+    return state.layerOrder;
+}
+
+/** כל השכבות המנוהלות, מלמטה למעלה. */
+function orderedLayers() {
+    ensureLayerOrder();
+    return state.layerOrder.map(layerItem).filter(Boolean);
+}
+
+function layerLabel(item) {
+    if (item.kind === 'field') {
+        const text = (item.obj.text || '').replace(/\s+/g, ' ').trim();
+        const name = text.slice(0, 22) || 'שדה טקסט';
+        return item.obj.type === 'list' ? name + ' (מרשימה)' : name;
+    }
+    return 'תמונה';
+}
+
+/**
+ * מחיל את הסדר, ההסתרה והנעילה על האלמנטים שעל הכרטיס.
+ * זו הנקודה היחידה שקובעת z-index לשכבות — הערכים ב-CSS הם
+ * ברירת מחדל לפני שהלוח רץ.
+ */
+function applyLayerOrder() {
+    orderedLayers().forEach((item, i) => {
+        const el = document.getElementById(item.key);
+        if (!el) return;
+        const selected = item.key === state.selectedStickerId || item.key === state.selectedFieldId;
+        el.style.zIndex = (selected ? LAYER_Z_SELECTED : LAYER_Z_BASE) + i;
+        el.classList.toggle('hidden-layer', !!item.obj.hidden);
+        el.classList.toggle('locked', !!item.obj.locked);
+    });
+
+    const canvas = document.getElementById('paintCanvas');
+    if (canvas) {
+        canvas.style.display = state.paintLayer.hidden ? 'none' : '';
+        canvas.style.opacity = state.paintLayer.opacity / 100;
+    }
+}
+
+/* ─── Panel ───────────────────────────────────────── */
+
+function toggleLayersPanel() {
+    state.layersCollapsed = !state.layersCollapsed;
+    renderLayersPanel();
+}
+
+function renderLayersPanel() {
+    const list = document.getElementById('layersList');
+    const box = document.getElementById('layersBox');
+    if (!list || !box) return;
+
+    const layers = orderedLayers();
+    const hasPaint = paint.ready;
+
+    // בלי רקע אין שכבות בכלל, והלוח רק תופס מקום.
+    box.style.display = (layers.length === 0 && !hasPaint) ? 'none' : 'block';
+    document.getElementById('layersCount').textContent =
+        layers.length ? `(${layers.length})` : '';
+    document.getElementById('layersChev').textContent = state.layersCollapsed ? '▸' : '▾';
+    list.style.display = state.layersCollapsed ? 'none' : 'block';
+    if (state.layersCollapsed) return;
+
+    const top = layers.length - 1;
+    // מוצג מלמעלה למטה, כמו שרואים את הכרטיס.
+    const rows = layers.slice().reverse().map((item, revIdx) => {
+        const i = top - revIdx;
+        const selected = item.key === state.selectedStickerId || item.key === state.selectedFieldId;
+        const o = item.obj;
+        return `
+        <div class="layer-row${selected ? ' active' : ''}${o.hidden ? ' is-hidden' : ''}"
+             onclick="selectLayer('${item.key}')">
+            <span class="layer-ico">${item.kind === 'field' ? '🔤' : '🖼️'}</span>
+            <span class="layer-name" title="${escapeHtml(layerLabel(item))}">${escapeHtml(layerLabel(item))}</span>
+            <button class="layer-btn" title="העלה" ${i === top ? 'disabled' : ''}
+                    onclick="event.stopPropagation();moveLayer('${item.key}',1)">▲</button>
+            <button class="layer-btn" title="הורד" ${i === 0 ? 'disabled' : ''}
+                    onclick="event.stopPropagation();moveLayer('${item.key}',-1)">▼</button>
+            <button class="layer-btn${o.hidden ? '' : ' on'}" title="${o.hidden ? 'הצג' : 'הסתר'}"
+                    onclick="event.stopPropagation();toggleLayerHidden('${item.key}')">${o.hidden ? '🙈' : '👁'}</button>
+            <button class="layer-btn${o.locked ? ' on' : ''}" title="${o.locked ? 'שחרר נעילה' : 'נעל'}"
+                    onclick="event.stopPropagation();toggleLayerLocked('${item.key}')">${o.locked ? '🔒' : '🔓'}</button>
+        </div>
+        ${selected ? `
+        <div class="layer-opacity">
+            <span>שקיפות</span>
+            <input type="range" min="0" max="100" value="${o.opacity ?? 100}"
+                   oninput="setLayerOpacity('${item.key}', +this.value)">
+            <span id="layerOpacityVal_${item.key}">${o.opacity ?? 100}%</span>
+        </div>` : ''}`;
+    }).join('');
+
+    // שכבת הציור והרקע בתחתית: אינן זזות בסדר, אבל כן נשלטות.
+    const paintRow = hasPaint ? `
+        <div class="layer-row base">
+            <span class="layer-ico">🎨</span>
+            <span class="layer-name">ציור על התמונה</span>
+            <button class="layer-btn${state.paintLayer.hidden ? '' : ' on'}"
+                    title="${state.paintLayer.hidden ? 'הצג' : 'הסתר'}"
+                    onclick="toggleLayerHidden('paint')">${state.paintLayer.hidden ? '🙈' : '👁'}</button>
+            <button class="layer-btn${state.paintLayer.locked ? ' on' : ''}"
+                    title="${state.paintLayer.locked ? 'שחרר נעילה' : 'נעל'}"
+                    onclick="toggleLayerLocked('paint')">${state.paintLayer.locked ? '🔒' : '🔓'}</button>
+        </div>
+        <div class="layer-opacity">
+            <span>שקיפות</span>
+            <input type="range" min="0" max="100" value="${state.paintLayer.opacity}"
+                   oninput="setLayerOpacity('paint', +this.value)">
+            <span id="layerOpacityVal_paint">${state.paintLayer.opacity}%</span>
+        </div>
+        <div class="layer-row base">
+            <span class="layer-ico">🖼️</span>
+            <span class="layer-name" style="color:#999">רקע</span>
+        </div>` : '';
+
+    list.innerHTML = rows + paintRow ||
+        '<div class="layer-row base"><span class="layer-name" style="color:#999">אין עדיין שכבות</span></div>';
+}
+
+function selectLayer(key) {
+    const item = layerItem(key);
+    if (!item) return;
+    if (item.obj.locked) { toast('השכבה נעולה — שחררו את הנעילה כדי לערוך', 'error'); return; }
+    if (item.kind === 'field') selectField(key);
+    else selectSticker(key);
+}
+
+function moveLayer(key, dir) {
+    ensureLayerOrder();
+    const i = state.layerOrder.indexOf(key);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= state.layerOrder.length) return;
+
+    const before = JSON.stringify(state.layerOrder);
+    state.layerOrder.splice(i, 1);
+    state.layerOrder.splice(j, 0, key);
+    pushHistory({ type: 'order', before, after: JSON.stringify(state.layerOrder) });
+
+    applyLayerOrder();
+    renderLayersPanel();
+    invalidateArtwork();
+}
+
+function toggleLayerHidden(key) {
+    const target = key === 'paint' ? state.paintLayer : layerItem(key)?.obj;
+    if (!target) return;
+    target.hidden = !target.hidden;
+    // שכבה מוסתרת שנשארת נבחרת מציגה פאנל מאפיינים לשדה שלא רואים.
+    if (target.hidden && (key === state.selectedFieldId || key === state.selectedStickerId)) {
+        selectField(null);
+        selectSticker(null);
+    }
+    applyLayerOrder();
+    renderLayersPanel();
+    invalidateArtwork();
+}
+
+function toggleLayerLocked(key) {
+    const target = key === 'paint' ? state.paintLayer : layerItem(key)?.obj;
+    if (!target) return;
+    target.locked = !target.locked;
+    if (target.locked && (key === state.selectedFieldId || key === state.selectedStickerId)) {
+        selectField(null);
+        selectSticker(null);
+    }
+    if (key === 'paint' && target.locked && state.tool !== 'select') setTool('select');
+    applyLayerOrder();
+    renderLayersPanel();
+    updateToolAvailability();
+}
+
+function setLayerOpacity(key, value) {
+    const target = key === 'paint' ? state.paintLayer : layerItem(key)?.obj;
+    if (!target) return;
+    target.opacity = value;
+    const label = document.getElementById('layerOpacityVal_' + key);
+    if (label) label.textContent = value + '%';
+
+    if (key === 'paint') applyLayerOrder();
+    else {
+        const item = layerItem(key);
+        if (item.kind === 'field') renderField(item.obj);
+        else renderSticker(item.obj);
+        // המחוון בפאנל המאפיינים מציג את אותו ערך.
+        if (item.kind === 'field' && key === state.selectedFieldId) {
+            document.getElementById('propOpacity').value = value;
+            document.getElementById('propOpacityVal').textContent = value + '%';
+        }
+        if (item.kind === 'sticker' && key === state.selectedStickerId) renderStickerProps();
+    }
+    invalidateArtwork();
+}
+
+/** נקראת אחרי כל שינוי במבנה השכבות. */
+function refreshLayers() {
+    applyLayerOrder();
+    renderLayersPanel();
 }
 
 /* ═══════════════════════════════════════════════════
