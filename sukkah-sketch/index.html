@@ -16,6 +16,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family
 header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px 6px;border-bottom:1px solid var(--line);background:var(--panel)}
 .back{font-size:12.5px;color:var(--mute);text-decoration:none;border:1px solid var(--line);padding:4px 9px;border-radius:3px;white-space:nowrap}
 .back:hover{color:var(--ink);border-color:var(--ink)}
+.links{display:flex;gap:6px}
 h1{margin:0;font-size:17px;font-weight:700;letter-spacing:.2px}
 h1 small{font-weight:400;color:var(--mute);font-size:12px;margin-inline-start:6px}
 .bar{display:flex;gap:6px;flex-wrap:wrap;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--line)}
@@ -33,7 +34,7 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
 </head>
 <body>
 <div id="wrap">
-<header><h1>סוכה למרפסת<small>שלד 1:1 · יחידה = 1 ס״מ</small></h1><a class="back" href="../index.html">חזרה לכלים</a></header>
+<header><h1>סוכה למרפסת<small>שלד 1:1 · יחידה = 1 ס״מ</small></h1><span class="links"><a class="back" href="parts.html">מצגת החלקים</a><a class="back" href="../index.html">חזרה לכלים</a></span></header>
 <div class="bar">
   <button data-v="iso" class="on">תלת‑ממד</button>
   <button data-v="top">מבט‑על (גרמושקה)</button>
@@ -52,36 +53,14 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
   <div id="err">לא הצלחתי לטעון את ספריית התלת‑ממד. בדוק חיבור לרשת ורענן.</div>
 </div>
 </div>
+<script src="assets/js/model.js"></script>
 <script>
 function start(){
 
-/* ---------- נתוני שטח (ס"מ) ---------- */
-var WID=248, WLEN=742, WALL=490, WALL_T=30, WALL_H=300;   // הקיר גבוה מהסוכה (מעל Z_TOP); הגובה עצמו לא נמדד
-var S=167, N=68, DS=150.5, DN=243, EAST=452;
-var GAP=1, TH=4;                 // מרווח מהגבול, עובי פרופיל
-var Z_TOP=280, Z_LOW=70;
-var PLATE=.6;                    // עובי פלטת הקיר; קורה שנכנסת לקיר נגמרת עליה
-var SLEEVE_LEN=12;               // השרוול: חתיכת 40×40 אנכית לצד העמוד — אורכו טרם הוכרע
-var TONGUE=3.5, TONGUE_LEN=10;   // השן: 3.5×3.5 מתחת לקורה, יורדת לתוך השרוול — טרם הוכרע
-var POST_FROM_WALL=93;           // עמוד באזור ללא קיר
-
-var a=Math.sqrt(DS*DS-(WID-S)*(WID-S)), b=a+EAST;
-// גבול חיצוני. באזור ללא קיר: כך שמרכז הקורה על אמצע עובי הקיר (y=-15)
-var P=[[0,0],[0,S],[a,WID],[b,WID],[WLEN,N],[WLEN,-18],[WALL,-18],[WALL,0]];
-
-function area(p){var s=0;for(var i=0;i<p.length;i++){var q=p[(i+1)%p.length];s+=p[i][0]*q[1]-q[0]*p[i][1];}return s/2;}
-function offset(P,d){var n=P.length,sg=area(P)>0?1:-1,L=[],out=[];
-  for(var i=0;i<n;i++){var p=P[i],q=P[(i+1)%n],dx=q[0]-p[0],dy=q[1]-p[1],l=Math.hypot(dx,dy);
-    L.push([[p[0]-dy/l*sg*d,p[1]+dx/l*sg*d],[dx,dy]]);}
-  for(i=0;i<n;i++){var A=L[(i+n-1)%n],B=L[i],den=A[1][0]*B[1][1]-A[1][1]*B[1][0];
-    var t=((B[0][0]-A[0][0])*B[1][1]-(B[0][1]-A[0][1])*B[1][0])/den;
-    out.push([A[0][0]+A[1][0]*t,A[0][1]+A[1][1]*t]);}
-  return out;}
-var O=offset(P,GAP), I=offset(P,GAP+TH), C=offset(P,GAP+TH/2);
-function dist(p,q){return Math.hypot(p[0]-q[0],p[1]-q[1]);}
-function cornerAngle(i){var p=P[(i+P.length-1)%P.length],q=P[i],r=P[(i+1)%P.length];
-  var v1=[p[0]-q[0],p[1]-q[1]],v2=[r[0]-q[0],r[1]-q[1]];
-  return Math.acos((v1[0]*v2[0]+v1[1]*v2[1])/(Math.hypot(v1[0],v1[1])*Math.hypot(v2[0],v2[1])))*180/Math.PI;}
+/* ---------- המודל ----------
+   כל המידות — הגבול, הקורות, העמודים והמחברים — מחושבות ב-assets/js/model.js.
+   הדף הזה רק מצייר אותן. מצגת החלקים (parts.html) קוראת מאותו מודל. */
+var MD=SukkahModel.build(), K=MD.K, WLEN=K.WLEN, WID=K.WID;
 
 /* ---------- סצנה ---------- */
 var canvas=document.getElementById('c'),stage=document.getElementById('stage');
@@ -167,130 +146,18 @@ function prism(pts,z0,z1,mat,group,info){ // pts בתוכנית
   m.add(e);group.add(m);
   if(info){m.userData=info;m.userData.mat=mat;pickables.push(m);}
   return m;}
-function rectPts(cx,cy,w,h){return [[cx-w/2,cy-h/2],[cx+w/2,cy-h/2],[cx+w/2,cy+h/2],[cx-w/2,cy+h/2]];}
 
-/* רצפה = הגבול החיצוני */
-prism(P,-1,0,M.floor,G.main,null);
-
-/* קיר */
-prism([[0,-WALL_T],[WALL,-WALL_T],[WALL,0],[0,0]],0,WALL_H,M.wall,G.wall,
- {name:'קיר מערבי',rows:['אורך '+WALL+' · עובי '+WALL_T,'גובה בהדמיה '+WALL_H+' — גבוה מהסוכה, לא נמדד','בלי עמודים לאורכו: השרוולים על פלטות מעוגנות ישירות בקיר']});
-
-/* מסגרת היקפית */
-var names=['דרום','אלכסון דרומי','מזרח','אלכסון צפוני','צפון','מערב (ללא קיר)'];
-var quads=[];
-for(var i=0;i<6;i++){
-  var o1=O[i],o2=O[i+1],i1=I[i],i2=I[i+1];
-  if(i===0)i1=[I[0][0],O[0][1]];
-  if(i===5)i2=[O[6][0],I[6][1]];
-  quads.push([o1,o2,i2,i1]);
-  var m1=(i===0)?0:90-cornerAngle(i)/2, m2=(i===5)?0:90-cornerAngle(i+1)/2;
-  var rows=['אורך חוץ '+dist(o1,o2).toFixed(1)+' · פנים '+dist(i1,i2).toFixed(1),
-            'חיתוך: קצה א׳ '+(m1?m1.toFixed(1)+'°':'ישר')+' · קצה ב׳ '+(m2?m2.toFixed(1)+'°':'ישר'),
-            'פרופיל '+TH+'×'+TH];
-  var t='ע'+(i+1);   // שם קצר: ע = מסגרת עליונה. אותו שם על הקורה ועל השרוולים שלה
-  prism(quads[i],Z_TOP-TH,Z_TOP,i%2?M.frame2:M.frame,G.main,{name:'מסגרת עליונה · '+names[i]+' ('+t+')',
-    rows:rows.concat(['מחברים: '+t+'·א, '+t+'·ב'+(i===2?' + '+t+'·ג (עמוד ביניים)':i===5?' + '+t+'·ג, '+t+'·ד (עמודי ביניים)':'')])});
-}
-var xp=WALL+POST_FROM_WALL;   // העמוד באזור ללא קיר
-/* מפלס 70 נבנה למטה, אחרי העמודים: שם הקורות נגמרות על פני העמוד ולא עוברות דרכו */
-
-/* קורות תומכות */
-var x1=I[2][0], x2=x1+225, x3=I[3][0], yE=WID-GAP-TH;
-[[x1,PLATE,'ק1',true],[x2,PLATE,'ק2',true],[x3,-13,'ק3',false]].forEach(function(c){   // [x, y התחלה, שם, נכנסת לקיר]
-  prism([[c[0]-TH/2,c[1]],[c[0]+TH/2,c[1]],[c[0]+TH/2,yE],[c[0]-TH/2,yE]],Z_TOP-TH,Z_TOP,M.cross,G.main,
-   {name:'קורה תומכת '+c[2],rows:['אורך '+(yE-c[1]).toFixed(0)+' · חיתוך ישר','מיקום: '+c[0].toFixed(1)+' מהפינה הדרומית','פרופיל '+TH+'×'+TH,'מחברים: '+c[2]+'·א (עמוד מזרח), '+c[2]+'·ב ('+(c[3]?'שרוול על הקיר':'עמוד מערב')+')']});
+/* ---------- בנייה מהמודל ---------- */
+prism(MD.floor.pts,-1,0,M.floor,G.main,null);   // רצפה = הגבול החיצוני
+prism(MD.wall.pts,MD.wall.z0,MD.wall.z1,M.wall,G.wall,{name:MD.wall.name,rows:MD.wall.rows});
+MD.beams.forEach(function(b){prism(b.pts,b.z0,b.z1,M[b.mat],b.level==='low'?G.low:G.main,{name:b.name,rows:b.rows});});
+MD.posts.forEach(function(p){prism(p.pts,0,p.h,M.post,G.main,{name:'עמוד · '+p.name,rows:p.rows});});
+// מחברים: השרוול נראה ונבחר; השן — גוף רגיל בתוכו, נראית דרך השרוול השקוף למחצה
+MD.joints.forEach(function(j){
+  prism(j.sleevePts,j.zb-K.SLEEVE_LEN,j.zb,M.sleeve,G.joints,{name:'שרוול '+j.id,rows:j.rows});
+  prism(j.tonguePts,j.zb-K.TONGUE_LEN,j.zb,M.tongue,G.joints,null);
+  if(j.plate)prism(j.plate.pts,j.plate.z0,j.plate.z1,M.plate,G.joints,{name:j.plate.name,rows:j.plate.rows});
 });
-
-/* עמודים */
-var posts=[   // [מפתח, שם, x מדרום, y מפני הקיר]. בצד הקיר אין עמודים — השרוולים שם על פלטות בקיר
- ['s1','פינה דרום / אלכסון',C[1][0],C[1][1]],
- ['e1','פינה אלכסון דרומי / מזרח (ק1)',x1,WID-GAP-TH/2],['e2','מזרח · ק2',x2,WID-GAP-TH/2],
- ['e3','פינה מזרח / אלכסון צפוני (ק3)',x3,WID-GAP-TH/2],['n1','פינה אלכסון צפוני / צפון',C[4][0],C[4][1]],
- ['nw','פינה צפון‑מערב',C[5][0],-15],['w3','מערב · תחת ק3',x3,-15],['wp','מערב · '+POST_FROM_WALL+' מהקיר',xp,-15]
-];
-var PC={};
-posts.forEach(function(p){
-  PC[p[0]]=[p[2],p[3]];
-  var rows=['חתך '+TH+'×'+TH+' · גובה '+(Z_TOP-TH),'מרכז: '+p[2].toFixed(1)+' מדרום · '+p[3].toFixed(1)+' מפני הקיר'];
-  prism(rectPts(p[2],p[3],TH,TH),0,Z_TOP-TH,M.post,G.main,{name:'עמוד · '+p[1],rows:rows});
-});
-
-/* ---------- מחברים: שרוול ושן, אנכיים ----------
-   כמו בתמונות: לצד העמוד מרותך שרוול — חתיכה קצרה מאותו פרופיל 40×40, אנכית,
-   פתוחה למעלה, וראשה בגובה תחתית הקורה. בקצה הקורה, מתחתיה, מרותכת שן מפרופיל
-   קטן יותר שיורדת לתוך השרוול. הקורה מונחת מלמעלה — חיבור קל, בלי ברגים.
-   השרוול מרותך מסובב לכיוון הקורה, ולכן אותו מחבר משמש גם בפינות האלכסון:
-   השן יורדת אנכית בכל זווית. עמוד ביניים מקבל שרוול אחד לצדו והקורה נשארת
-   רצופה — השן מרותכת מתחתיה באמצע. כל שרוול נושא את שם הקורה שלו. */
-// מארח: מפתח עמוד; '@x' = נקודה על פני הקיר (y=0), '#y' = נקודה על קצה הקיר המזרחי (x=WALL). שניהם מעבר לפלטה
-function hostAt(key){var k=key.charAt(0);return k==='@'?[+key.slice(1),PLATE]:k==='#'?[WALL+PLATE,+key.slice(1)]:PC[key];}
-function sq(c,d,h){   // ריבוע ברוחב 2h סביב c, מסובב לכיוון d
-  var n=[-d[1],d[0]];
-  return [[c[0]+d[0]*h+n[0]*h,c[1]+d[1]*h+n[1]*h],[c[0]+d[0]*h-n[0]*h,c[1]+d[1]*h-n[1]*h],
-          [c[0]-d[0]*h-n[0]*h,c[1]-d[1]*h-n[1]*h],[c[0]-d[0]*h+n[0]*h,c[1]-d[1]*h+n[1]*h]];}
-function joint(id,beam,key,toward,z,mid){
-  var k=key.charAt(0), from=hostAt(key), wall=k==='@'||k==='#';
-  var dx=toward[0]-from[0],dy=toward[1]-from[1],l=Math.hypot(dx,dy),d=[dx/l,dy/l];
-  var ang=Math.atan2(d[1],d[0])*180/Math.PI, dev=((ang%90)+90)%90; dev=Math.min(dev,90-dev);
-  // מרכז השרוול: צמוד לפני העמוד (או לפלטה) גם כשהוא מסובב לכיוון הקורה
-  var r=dev*Math.PI/180, t=wall?TH/2:TH/2*(1+Math.cos(r)+Math.sin(r))/Math.cos(r);
-  var c=[from[0]+d[0]*t,from[1]+d[1]*t], zb=z-TH;   // zb = תחתית הקורה = ראש השרוול
-  var rows=['קורה '+beam+' · '+(wall?(k==='#'?'שרוול על פלטה בקצה הקיר':'שרוול על פלטה מעוגנת לקיר'):mid?'שרוול לצד עמוד ביניים — הקורה רצופה, השן מתחתיה':'שרוול מרותך לצד העמוד'),
-            'שרוול '+TH+'×'+TH+' · אורך '+SLEEVE_LEN+' · ראשו בגובה '+zb.toFixed(1),
-            'שן '+TONGUE+'×'+TONGUE+' מתחת לקורה · נכנסת '+TONGUE_LEN,
-            'סיבוב השרוול: '+(dev<.5?(wall?'ישר על פני הקיר':'ישר על פני העמוד'):dev.toFixed(1)+'° — לכיוון הקורה')];
-  prism(sq(c,d,TH/2),zb-SLEEVE_LEN,zb,M.sleeve,G.joints,{name:'שרוול '+id,rows:rows});
-  prism(sq(c,d,TONGUE/2),zb-TONGUE_LEN,zb,M.tongue,G.joints,null);   // השן, בתוך השרוול
-  if(wall){var pw=10,ph=SLEEVE_LEN+4,x=from[0],y=from[1];
-    var pl=k==='@'?[[x-pw/2,0],[x+pw/2,0],[x+pw/2,PLATE],[x-pw/2,PLATE]]:[[WALL,y-pw/2],[WALL+PLATE,y-pw/2],[WALL+PLATE,y+pw/2],[WALL,y+pw/2]];
-    prism(pl,zb-SLEEVE_LEN-2,zb+2,M.plate,G.joints,
-      {name:'פלטת קיר · '+id,rows:[pw+'×'+ph+' · עובי 6 מ״מ · 4 ברגי עיגון (טרם הוכרע)','השרוול מרותך לפלטה; השן שבקצה הקורה יורדת לתוכו']});}
-}
-/* קורה בין שני מארחים (עמוד, או '@x' על הקיר). עמוד ביניים מקבל שרוול אחד */
-function bar(id,beam,a,b,z,mids){
-  var A=hostAt(a),B=hostAt(b);
-  joint(id+'·א',beam,a,B,z); joint(id+'·ב',beam,b,A,z);
-  (mids||[]).forEach(function(m,k){joint(id+'·'+String.fromCharCode(0x5d2+k),beam,m,B,z,true);});   // ג, ד, ...
-}
-[['ע1','דרום','@'+C[0][0],'s1'],['ע2','אלכסון דרומי','s1','e1'],['ע3','מזרח','e1','e3',['e2']],
- ['ע4','אלכסון צפוני','e3','n1'],['ע5','צפון','n1','nw'],['ע6','מערב (ללא קיר)','nw','#-15',['w3','wp']]
-].forEach(function(t){bar(t[0],t[0]+' · '+t[1],t[2],t[3],Z_TOP,t[4]);});
-/* ---------- מפלס 70 ----------
-   העמוד עובר דרך הגובה הזה, ולכן הקורה לא יכולה לעבור דרכו: היא נגמרת על פני
-   העמוד, כשהקצה חתוך במקביל לפניו — בפינת אלכסון זו חיתוך בזווית. עמוד ביניים
-   מפצל את הקורה לשני קטעים, ולכל קטע שרוול משלו. במסגרת העליונה זה לא נדרש:
-   העמוד נגמר מתחת לקורה, והקורה עוברת מעליו. */
-function faceAxis(d){return Math.abs(d[0])>=Math.abs(d[1])?[Math.sign(d[0]),0]:[0,Math.sign(d[1])];}   // הפאה שהקורה פוגשת
-function trimS(d,n,h,key){   // מרחק לאורך הציר, ממרכז המארח עד פני העמוד, בצד ±h של הקורה
-  var k=key.charAt(0); if(k==='@'||k==='#')return 0;
-  var u=faceAxis(d); return (TH/2-h*(n[0]*u[0]+n[1]*u[1]))/(d[0]*u[0]+d[1]*u[1]);}
-function cutDeg(d,key){var k=key.charAt(0); if(k==='@'||k==='#')return 0;
-  var u=faceAxis(d); return Math.acos(Math.abs(d[0]*u[0]+d[1]*u[1]))*180/Math.PI;}
-function lowBeam(name,ja,jb,ka,kb){
-  var A=hostAt(ka),B=hostAt(kb),dx=B[0]-A[0],dy=B[1]-A[1],l=Math.hypot(dx,dy),d=[dx/l,dy/l],n=[-d[1],d[0]],h=TH/2,e=[-d[0],-d[1]];
-  var a1=trimS(d,n,h,ka),a2=trimS(d,n,-h,ka),b1=trimS(e,n,h,kb),b2=trimS(e,n,-h,kb);
-  var pts=[[A[0]+d[0]*a1+n[0]*h,A[1]+d[1]*a1+n[1]*h],[B[0]-d[0]*b1+n[0]*h,B[1]-d[1]*b1+n[1]*h],
-           [B[0]-d[0]*b2-n[0]*h,B[1]-d[1]*b2-n[1]*h],[A[0]+d[0]*a2-n[0]*h,A[1]+d[1]*a2-n[1]*h]];
-  var L1=l-a1-b1,L2=l-a2-b2,ca=cutDeg(d,ka),cb=cutDeg(e,kb);
-  prism(pts,Z_LOW-TH,Z_LOW,M.low,G.low,{name:'מסגרת מפלס 70 · '+name,
-    rows:['אורך '+Math.max(L1,L2).toFixed(1)+(Math.abs(L1-L2)>.05?' · הצד הקצר '+Math.min(L1,L2).toFixed(1):''),
-          'חיתוך: קצה א׳ '+(ca<.5?'ישר':ca.toFixed(1)+'°')+' · קצה ב׳ '+(cb<.5?'ישר':cb.toFixed(1)+'°')+' — במקביל לפני העמוד',
-          'פרופיל '+TH+'×'+TH+' · נגמרת על פני העמוד, לא עוברת דרכו','מחברים: '+ja+', '+jb]});
-}
-function lowBar(id,name,hosts){   // קורה דרך רצף מארחים: קטע בין כל שניים, ושרוול בכל קצה קטע
-  var L='אבגדהו',li=0;
-  for(var k=0;k<hosts.length-1;k++){
-    var ka=hosts[k],kb=hosts[k+1],ja=id+'·'+L.charAt(li++),jb=id+'·'+L.charAt(li++);
-    lowBeam(name+' ('+id+')'+(hosts.length>2?' · קטע '+(k+1):''),ja,jb,ka,kb);
-    joint(ja,id+' · '+name,ka,hostAt(kb),Z_LOW); joint(jb,id+' · '+name,kb,hostAt(ka),Z_LOW);
-  }
-}
-[['ת1','דרום',['@'+C[0][0],'s1']],['ת2','אלכסון דרומי',['s1','e1']],['ת3','מזרח',['e1','e2','e3']],
- ['ת4','אלכסון צפוני',['e3','n1']],['ת5','צפון',['n1','nw']],['ת6','קטע ליד הקיר',['#-15','wp']]
-].forEach(function(t){lowBar(t[0],t[1],t[2]);});
-/* קורות תומכות: הקצה המזרחי על העמוד; הקצה המערבי על פלטה בקיר (ק1, ק2) או על העמוד (ק3) */
-bar('ק1','ק1','e1','@'+x1,Z_TOP); bar('ק2','ק2','e2','@'+x2,Z_TOP); bar('ק3','ק3','e3','w3',Z_TOP);
 
 /* תוויות מידה */
 function label(txt,x,y,z,size){
@@ -299,9 +166,7 @@ function label(txt,x,y,z,size){
   c.fillStyle='#1d241f';c.font='500 44px Rubik,Arial,sans-serif';c.textAlign='center';c.textBaseline='middle';c.direction='rtl';c.fillText(txt,256,50);
   var sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),depthTest:false}));
   sp.scale.set(size*5.33,size,1);sp.position.set(wx(x),z,wz(y));sp.renderOrder=9;G.labels.add(sp);}
-for(i=0;i<6;i++){var q=quads[i],mx=(q[0][0]+q[1][0])/2,my=(q[0][1]+q[1][1])/2;
-  label(dist(q[0],q[1]).toFixed(1)+' / '+dist(q[2],q[3]).toFixed(1),mx,my,Z_TOP+14,11);}
-label('ק1 · '+(yE-PLATE).toFixed(0),x1,110,Z_TOP+14,10);label('ק2 · '+(yE-PLATE).toFixed(0),x2,110,Z_TOP+14,10);label('ק3 · '+(yE+13).toFixed(0),x3,110,Z_TOP+14,10);
+MD.labels.forEach(function(l){label(l.txt,l.x,l.y,l.z,l.size);});
 
 /* ---------- מבטים ---------- */
 function fit(){var w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h,false);

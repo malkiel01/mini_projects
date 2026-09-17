@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>סוכה למרפסת · מצגת החלקים</title>
+<meta name="description" content="כל החלקים של השלד — מסגרת עליונה, מפלס 70, קורות תומכות, עמודים ומחברים — עם מידות מדויקות, חיתוכים ומיקומי השיניים. נבנה מאותו מודל כמו השרטוט.">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/parts.css">
+</head>
+<body>
+<header class="top">
+  <h1>סוכה למרפסת<small>מצגת החלקים · יחידה = 1 ס״מ</small></h1>
+  <nav class="nav">
+    <button id="prev" type="button" title="הקודם">‹</button>
+    <span id="counter" class="counter">1 / 1</span>
+    <button id="next" type="button" title="הבא">›</button>
+    <select id="toc" aria-label="קפיצה לשקופית"></select>
+    <a class="back" href="index.html">לשרטוט</a>
+    <a class="back" href="../index.html">לכלים</a>
+  </nav>
+</header>
+<!-- השקופיות נבנות ב-JS מתוך assets/js/model.js — אותו מודל שמצייר את השרטוט.
+     הדף הזה לא מכיל אף מספר משלו. -->
+<main id="deck" class="deck" tabindex="0"></main>
+<script src="assets/js/model.js"></script>
+<script src="assets/js/parts.js"></script>
+</body>
+</html>
