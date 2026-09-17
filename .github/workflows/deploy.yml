@@ -108,9 +108,21 @@ jobs:
         run: ssh-keygen -l -f ~/.ssh/deploy_key
              || echo "::warning::DEPLOY_SSH_KEY אינו מפתח פרטי קריא (נעול בסיסמה?)"
 
+      # שלוש נסיונות, לא אחד. השרת סוגר מדי פעם את חיבור ה-SSH מיד
+      # אחרי שנפתח — "Connection closed by <ip> port 22", ו-rsync יוצא
+      # עם 255 בלי שהעביר בית אחד. זה אינו כשל אימות (אין Permission
+      # denied) ואינו כשל בקוד: אותה פריסה בדיוק הצליחה חצי שעה קודם עם
+      # אותם סודות. בלי נסיון חוזר, ניתוק רגעי אחד מפיל פריסה שלמה.
+      #
+      # ‏rsync כאן הוא idempotent — רץ בלי --delete ורק מעתיק — ולכן
+      # נסיון חוזר בטוח לחלוטין ואינו עלול לשכפל או להרוס דבר.
+      # ההמתנה עולה (5 ואז 15 שניות) כדי לא לתקוף שרת עמוס.
       - name: Deploy code via rsync (no --delete; never touches runtime data)
         run: |
-          rsync -rlptz \
+          set -uo pipefail
+          attempt=1
+          max=3
+          until rsync -rlptz \
             --exclude='.git' --exclude='.github' \
             --exclude='git-deploy/data/config.json' \
             --exclude='git-deploy/data/logs/' --exclude='git-deploy/data/cache/' \
@@ -125,6 +137,18 @@ jobs:
             --exclude='guarded-browser/data/*.sqlite*' \
             --exclude='*.log' --exclude='error_log' \
             --exclude='.DS_Store' --exclude='._*' \
-            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30" \
             ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/"
-          echo "Deploy complete"
+          do
+            code=$?
+            if [ "$attempt" -ge "$max" ]; then
+              echo "::error::הפריסה נכשלה ב-$max נסיונות. קוד היציאה האחרון: $code"
+              echo "::error::קוד 255 עם 0 בתים = השרת סגר את חיבור ה-SSH. ראה .claude/skills/deploy-to-cpanel/references/troubleshooting.md"
+              exit "$code"
+            fi
+            wait=$(( attempt * 10 - 5 ))
+            echo "::warning::נסיון $attempt מתוך $max נכשל (קוד $code). ממתין ${wait}ש ומנסה שוב"
+            sleep "$wait"
+            attempt=$(( attempt + 1 ))
+          done
+          echo "Deploy complete (נסיון $attempt מתוך $max)"
