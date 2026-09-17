@@ -16,6 +16,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family
 header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px 6px;border-bottom:1px solid var(--line);background:var(--panel)}
 .back{font-size:12.5px;color:var(--mute);text-decoration:none;border:1px solid var(--line);padding:4px 9px;border-radius:3px;white-space:nowrap}
 .back:hover{color:var(--ink);border-color:var(--ink)}
+.links{display:flex;gap:6px}
 h1{margin:0;font-size:17px;font-weight:700;letter-spacing:.2px}
 h1 small{font-weight:400;color:var(--mute);font-size:12px;margin-inline-start:6px}
 .bar{display:flex;gap:6px;flex-wrap:wrap;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--line)}
@@ -33,7 +34,7 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
 </head>
 <body>
 <div id="wrap">
-<header><h1>סוכה למרפסת<small>שלד 1:1 · יחידה = 1 ס״מ</small></h1><a class="back" href="../index.html">חזרה לכלים</a></header>
+<header><h1>סוכה למרפסת<small>שלד 1:1 · יחידה = 1 ס״מ</small></h1><span class="links"><a class="back" href="parts.html">מצגת החלקים</a><a class="back" href="../index.html">חזרה לכלים</a></span></header>
 <div class="bar">
   <button data-v="iso" class="on">תלת‑ממד</button>
   <button data-v="top">מבט‑על (גרמושקה)</button>
@@ -42,43 +43,26 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
   <span class="sep"></span>
   <button data-t="low" class="on">מפלס 70</button>
   <button data-t="wall" class="on">קיר</button>
-  <button data-t="plates" class="on">מחברים</button>
+  <button data-t="joints" class="on">מחברים</button>
   <button data-t="labels" class="on">מידות</button>
+  <span class="sep"></span>
+  <button id="explode" type="button">פירוק</button>
 </div>
 <div id="stage">
   <canvas id="c"></canvas>
-  <div id="hint">גרירה = סיבוב · שתי אצבעות = הזזה וזום · הקשה על חלק = פרטים</div>
+  <div id="hint">גרירה = סיבוב · שתי אצבעות = הזזה, זום וסיבוב · הקשה על חלק = פרטים</div>
   <div id="info"><b>הקש על קורה או עמוד</b><div class="m">יוצגו השם, האורכים וזוויות החיתוך.</div></div>
   <div id="err">לא הצלחתי לטעון את ספריית התלת‑ממד. בדוק חיבור לרשת ורענן.</div>
 </div>
 </div>
+<script src="assets/js/model.js"></script>
 <script>
 function start(){
 
-/* ---------- נתוני שטח (ס"מ) ---------- */
-var WID=248, WLEN=742, WALL=490, WALL_T=30, WALL_H=100;
-var S=167, N=68, DS=150.5, DN=243, EAST=452;
-var GAP=1, TH=4;                 // מרווח מהגבול, עובי פרופיל
-var Z_TOP=280, Z_LOW=70;
-var POST_FROM_WALL=93;           // עמוד באזור ללא קיר
-
-var a=Math.sqrt(DS*DS-(WID-S)*(WID-S)), b=a+EAST;
-// גבול חיצוני. באזור ללא קיר: כך שמרכז הקורה על אמצע עובי הקיר (y=-15)
-var P=[[0,0],[0,S],[a,WID],[b,WID],[WLEN,N],[WLEN,-18],[WALL,-18],[WALL,0]];
-
-function area(p){var s=0;for(var i=0;i<p.length;i++){var q=p[(i+1)%p.length];s+=p[i][0]*q[1]-q[0]*p[i][1];}return s/2;}
-function offset(P,d){var n=P.length,sg=area(P)>0?1:-1,L=[],out=[];
-  for(var i=0;i<n;i++){var p=P[i],q=P[(i+1)%n],dx=q[0]-p[0],dy=q[1]-p[1],l=Math.hypot(dx,dy);
-    L.push([[p[0]-dy/l*sg*d,p[1]+dx/l*sg*d],[dx,dy]]);}
-  for(i=0;i<n;i++){var A=L[(i+n-1)%n],B=L[i],den=A[1][0]*B[1][1]-A[1][1]*B[1][0];
-    var t=((B[0][0]-A[0][0])*B[1][1]-(B[0][1]-A[0][1])*B[1][0])/den;
-    out.push([A[0][0]+A[1][0]*t,A[0][1]+A[1][1]*t]);}
-  return out;}
-var O=offset(P,GAP), I=offset(P,GAP+TH), C=offset(P,GAP+TH/2);
-function dist(p,q){return Math.hypot(p[0]-q[0],p[1]-q[1]);}
-function cornerAngle(i){var p=P[(i+P.length-1)%P.length],q=P[i],r=P[(i+1)%P.length];
-  var v1=[p[0]-q[0],p[1]-q[1]],v2=[r[0]-q[0],r[1]-q[1]];
-  return Math.acos((v1[0]*v2[0]+v1[1]*v2[1])/(Math.hypot(v1[0],v1[1])*Math.hypot(v2[0],v2[1])))*180/Math.PI;}
+/* ---------- המודל ----------
+   כל המידות — הגבול, הקורות, העמודים והמחברים — מחושבות ב-assets/js/model.js.
+   הדף הזה רק מצייר אותן. מצגת החלקים (parts.html) קוראת מאותו מודל. */
+var MD=SukkahModel.build(), K=MD.K, WLEN=K.WLEN, WID=K.WID;
 
 /* ---------- סצנה ---------- */
 var canvas=document.getElementById('c'),stage=document.getElementById('stage');
@@ -89,34 +73,48 @@ var CX=WLEN/2, CY=WID/2-10;      // מרכז התוכנית
 // מיפוי: תוכנית (x,y) -> עולם. צפון משמאל כמו בשרטוט: X = WLEN - x ; עומק Z = -y ; גובה Y
 function wx(x){return (WLEN-x)-CX;} function wz(y){return -(y-CY);}
 
-var persp=new THREE.PerspectiveCamera(40,1,1,8000);
+var persp=new THREE.PerspectiveCamera(40,1,.5,8000);
 var ortho=new THREE.OrthographicCamera(-1,1,1,-1,-4000,8000);
 var cam=persp;
 /* בקרת מצלמה עצמאית (בלי ספריות נוספות) */
-var ctl={target:new THREE.Vector3(0,130,0),theta:-0.6,phi:1.0,radius:1200,top:false};
+var ctl={target:new THREE.Vector3(0,130,0),theta:-0.6,phi:1.0,radius:1200,top:false,roll:0};   // roll = סיבוב התוכנית במבט־על
 function applyCam(){
-  if(ctl.top){ortho.up.set(0,0,-1);ortho.position.set(ctl.target.x,2000,ctl.target.z);ortho.lookAt(ctl.target.x,0,ctl.target.z);}
-  else{ctl.phi=Math.max(0.05,Math.min(Math.PI-0.05,ctl.phi));ctl.radius=Math.max(6,Math.min(4000,ctl.radius));
+  if(ctl.top){ortho.up.set(Math.sin(ctl.roll),0,-Math.cos(ctl.roll));ortho.position.set(ctl.target.x,2000,ctl.target.z);ortho.lookAt(ctl.target.x,0,ctl.target.z);}
+  else{ctl.phi=Math.max(0.05,Math.min(Math.PI-0.05,ctl.phi));ctl.radius=Math.max(2,Math.min(4000,ctl.radius));
     var s=Math.sin(ctl.phi);persp.position.set(ctl.target.x+ctl.radius*s*Math.sin(ctl.theta),ctl.target.y+ctl.radius*Math.cos(ctl.phi),ctl.target.z+ctl.radius*s*Math.cos(ctl.theta));
     persp.up.set(0,1,0);persp.lookAt(ctl.target);}}
 function panBy(dx,dy){var h=stage.clientHeight,w=stage.clientWidth;
-  if(ctl.top){var k=(ortho.right-ortho.left)/ortho.zoom/w;ctl.target.x-=dx*k;ctl.target.z-=dy*k;}
+  if(ctl.top){var k=(ortho.right-ortho.left)/ortho.zoom/w,c=Math.cos(ctl.roll),sn=Math.sin(ctl.roll);
+    ctl.target.x-=k*(dx*c-dy*sn);ctl.target.z-=k*(dx*sn+dy*c);}
   else{var k2=2*ctl.radius*Math.tan(persp.fov*Math.PI/360)/h;persp.updateMatrixWorld();
     var r=new THREE.Vector3().setFromMatrixColumn(persp.matrixWorld,0),u=new THREE.Vector3().setFromMatrixColumn(persp.matrixWorld,1);
     ctl.target.addScaledVector(r,-dx*k2).addScaledVector(u,dy*k2);}}
-function zoomBy(f){if(ctl.top){ortho.zoom=Math.max(.3,Math.min(80,ortho.zoom/f));ortho.updateProjectionMatrix();}else ctl.radius*=f;}
-var ptrs={},pinch=0,moved=0;
-canvas.addEventListener('pointerdown',function(e){canvas.setPointerCapture(e.pointerId);ptrs[e.pointerId]=[e.clientX,e.clientY];moved=0;pinch=0;});
+// הנקודה בעולם שמתחת לנקודת מסך: חלק של המודל אם יש, ואם לא — המישור האופקי בגובה היעד
+function worldAt(cx,cy){var r=canvas.getBoundingClientRect(),v=new THREE.Vector2((cx-r.left)/r.width*2-1,-(cy-r.top)/r.height*2+1);
+  ray.setFromCamera(v,cam);var h=ray.intersectObjects(pickables.filter(function(m){return m.parent.visible;}),false)[0];
+  if(h)return h.point;var o=new THREE.Vector3();return ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0),-ctl.target.y),o)?o:null;}
+// זום אל הנקודה שמתחת לאצבעות (או לסמן), לא אל מרכז המודל: היעד נע לעברה
+// באותו יחס שבו המרחק מתקצר, ומה שמתחת לאצבעות נשאר במקומו על המסך.
+function zoomBy(f,cx,cy){
+  if(cx!==undefined){var pt=worldAt(cx,cy);if(pt){if(ctl.top)pt.y=ctl.target.y;ctl.target.lerp(pt,1-f);}}
+  if(ctl.top){ortho.zoom=Math.max(.3,Math.min(200,ortho.zoom/f));ortho.updateProjectionMatrix();}else ctl.radius*=f;}
+var ptrs={},pinch=0,twist=null,moved=0;
+canvas.addEventListener('pointerdown',function(e){canvas.setPointerCapture(e.pointerId);ptrs[e.pointerId]=[e.clientX,e.clientY];moved=0;pinch=0;twist=null;});
 canvas.addEventListener('pointermove',function(e){var p=ptrs[e.pointerId];if(!p)return;
   var dx=e.clientX-p[0],dy=e.clientY-p[1];moved+=Math.abs(dx)+Math.abs(dy);
   var ids=Object.keys(ptrs);
   if(ids.length===1){if(e.shiftKey||e.buttons===2||ctl.top)panBy(dx,dy);else{ctl.theta-=dx*.006;ctl.phi-=dy*.006;}}
   else if(ids.length===2){p[0]=e.clientX;p[1]=e.clientY;var A=ptrs[ids[0]],B=ptrs[ids[1]],d=Math.hypot(A[0]-B[0],A[1]-B[1]);
-    if(pinch)zoomBy(pinch/d);pinch=d;panBy(dx/2,dy/2);}
+    if(pinch)zoomBy(pinch/d,(A[0]+B[0])/2,(A[1]+B[1])/2);pinch=d;panBy(dx/2,dy/2);
+    // סיבוב שתי אצבעות: השינוי בזווית שביניהן. בתלת־ממד — סביב הציר האנכי,
+    // כמו להסתובב סביב הסוכה; במבט־על — התוכנית עצמה מסתובבת על המסך.
+    var ang=Math.atan2(B[1]-A[1],B[0]-A[0]);
+    if(twist!==null){var da=Math.atan2(Math.sin(ang-twist),Math.cos(ang-twist));if(ctl.top)ctl.roll-=da;else ctl.theta+=da;}
+    twist=ang;}
   p[0]=e.clientX;p[1]=e.clientY;});
-function up(e){delete ptrs[e.pointerId];pinch=0;}
+function up(e){delete ptrs[e.pointerId];pinch=0;twist=null;}
 canvas.addEventListener('pointerup',up);canvas.addEventListener('pointercancel',up);
-canvas.addEventListener('wheel',function(e){e.preventDefault();zoomBy(e.deltaY>0?1.12:1/1.12);},{passive:false});
+canvas.addEventListener('wheel',function(e){e.preventDefault();zoomBy(e.deltaY>0?1.12:1/1.12,e.clientX,e.clientY);},{passive:false});
 canvas.addEventListener('contextmenu',function(e){e.preventDefault();});
 
 scene.add(new THREE.HemisphereLight(0xffffff,0x8a8f86,.95));
@@ -128,12 +126,16 @@ var M={
  low:new THREE.MeshLambertMaterial({color:0xc9962b}),
  cross:new THREE.MeshLambertMaterial({color:0x1f7a4d}),
  post:new THREE.MeshLambertMaterial({color:0x2a4fa3}),
- wall:new THREE.MeshLambertMaterial({color:0xe2c044}),
+ wall:new THREE.MeshLambertMaterial({color:0xe2c044,transparent:true,opacity:.45}),   // שקוף למחצה: הקיר גבוה מהסוכה ואסור שיסתיר אותה
  plate:new THREE.MeshLambertMaterial({color:0x3b3f3c}),
+ // השרוול שקוף למחצה ולא כותב עומק: השן שבתוכו — גוף רגיל, אטום — נראית דרכו בלבד,
+ // ולא מעל הקורה והעמוד. מה שמסתיר אותה במציאות מסתיר אותה גם כאן.
+ sleeve:new THREE.MeshLambertMaterial({color:0x9a5b12,transparent:true,opacity:.5,depthWrite:false}),
+ tongue:new THREE.MeshLambertMaterial({color:0xb71c1c}),
  floor:new THREE.MeshLambertMaterial({color:0xd4d7cf,side:THREE.DoubleSide}),
  hi:new THREE.MeshLambertMaterial({color:0xff9d00,emissive:0x552200})
 };
-var G={low:new THREE.Group(),wall:new THREE.Group(),plates:new THREE.Group(),labels:new THREE.Group(),main:new THREE.Group()};
+var G={low:new THREE.Group(),wall:new THREE.Group(),joints:new THREE.Group(),labels:new THREE.Group(),main:new THREE.Group()};
 for(var k in G)scene.add(G[k]);
 var pickables=[];
 
@@ -146,61 +148,26 @@ function prism(pts,z0,z1,mat,group,info){ // pts בתוכנית
   m.add(e);group.add(m);
   if(info){m.userData=info;m.userData.mat=mat;pickables.push(m);}
   return m;}
-function rectPts(cx,cy,w,h){return [[cx-w/2,cy-h/2],[cx+w/2,cy-h/2],[cx+w/2,cy+h/2],[cx-w/2,cy+h/2]];}
 
-/* רצפה = הגבול החיצוני */
-prism(P,-1,0,M.floor,G.main,null);
-
-/* קיר */
-prism([[0,-WALL_T],[WALL,-WALL_T],[WALL,0],[0,0]],0,WALL_H,M.wall,G.wall,
- {name:'קיר מערבי',rows:['אורך '+WALL+' · עובי '+WALL_T,'גובה בהדמיה '+WALL_H+' (הנחה, לא נמדד)']});
-
-/* מסגרת היקפית */
-var names=['דרום','אלכסון דרומי','מזרח','אלכסון צפוני','צפון','מערב (ללא קיר)'];
-var quads=[];
-for(var i=0;i<6;i++){
-  var o1=O[i],o2=O[i+1],i1=I[i],i2=I[i+1];
-  if(i===0)i1=[I[0][0],O[0][1]];
-  if(i===5)i2=[O[6][0],I[6][1]];
-  quads.push([o1,o2,i2,i1]);
-  var m1=(i===0)?0:90-cornerAngle(i)/2, m2=(i===5)?0:90-cornerAngle(i+1)/2;
-  var rows=['אורך חוץ '+dist(o1,o2).toFixed(1)+' · פנים '+dist(i1,i2).toFixed(1),
-            'חיתוך: קצה א׳ '+(m1?m1.toFixed(1)+'°':'ישר')+' · קצה ב׳ '+(m2?m2.toFixed(1)+'°':'ישר'),
-            'פרופיל '+TH+'×'+TH];
-  prism(quads[i],Z_TOP-TH,Z_TOP,i%2?M.frame2:M.frame,G.main,{name:'מסגרת עליונה · '+names[i],rows:rows});
-  if(i<5) prism(quads[i],Z_LOW-TH,Z_LOW,M.low,G.low,{name:'מסגרת מפלס 70 · '+names[i],rows:rows});
-}
-/* מפלס 70: קטע קצר מהעמוד עד קצה הקיר (המעבר צפונה ממנו נשאר פתוח) */
-var xp=WALL+POST_FROM_WALL;
-prism([[WALL+GAP,-17],[xp-TH/2,-17],[xp-TH/2,-13],[WALL+GAP,-13]],Z_LOW-TH,Z_LOW,M.low,G.low,
- {name:'מפלס 70 · קטע ליד הקיר',rows:['אורך '+(xp-TH/2-WALL-GAP).toFixed(1),'חיתוך ישר בשני הקצוות']});
-
-/* קורות תומכות */
-var x1=I[2][0], x2=x1+225, x3=I[3][0], yE=WID-GAP-TH;
-[[x1,0,'ק1'],[x2,0,'ק2'],[x3,-13,'ק3']].forEach(function(c){
-  prism([[c[0]-TH/2,c[1]],[c[0]+TH/2,c[1]],[c[0]+TH/2,yE],[c[0]-TH/2,yE]],Z_TOP-TH,Z_TOP,M.cross,G.main,
-   {name:'קורה תומכת '+c[2],rows:['אורך '+(yE-c[1]).toFixed(0)+' · חיתוך ישר','מיקום: '+c[0].toFixed(1)+' מהפינה הדרומית','פרופיל '+TH+'×'+TH]});
+/* ---------- בנייה מהמודל ---------- */
+prism(MD.floor.pts,-1,0,M.floor,G.main,null);   // רצפה = הגבול החיצוני
+prism(MD.wall.pts,MD.wall.z0,MD.wall.z1,M.wall,G.wall,{name:MD.wall.name,rows:MD.wall.rows});
+// מבט פירוק: הקורות והשיניים שלהן מורמות, השרוולים נשארים על העמודים — כך רואים
+// את השן תלויה מתחת לקורה, מעל השרוול שהיא יורדת לתוכו. lift = מה שמורם, עם גובהו המקורי
+var lift=[],EXPLODE=45;
+MD.beams.forEach(function(b){lift.push({m:prism(b.pts,b.z0,b.z1,M[b.mat],b.level==='low'?G.low:G.main,{name:b.name,rows:b.rows}),z:b.z0});});
+MD.posts.forEach(function(p){prism(p.pts,0,p.h,M.post,G.main,{name:'עמוד · '+p.name,rows:p.rows});});
+// מחברים: השרוול נראה ונבחר; השן — גוף רגיל בתוכו, נראית דרך השרוול השקוף למחצה
+MD.joints.forEach(function(j){
+  prism(j.sleevePts,j.zb-K.SLEEVE_LEN,j.zb,M.sleeve,G.joints,{name:'שרוול '+j.id,rows:j.rows});
+  lift.push({m:prism(j.tonguePts,j.zb-K.TONGUE_LEN,j.zb,M.tongue,G.joints,null),z:j.zb-K.TONGUE_LEN});
+  if(j.plate)prism(j.plate.pts,j.plate.z0,j.plate.z1,M.plate,G.joints,{name:j.plate.name,rows:j.plate.rows});
 });
-
-/* עמודים */
-var posts=[
- ['פינה דרום‑מערב',C[0][0],C[0][1]+0],['פינה דרום / אלכסון',C[1][0],C[1][1]],
- ['פינה אלכסון דרומי / מזרח (ק1)',x1,WID-GAP-TH/2],['מזרח · ק2',x2,WID-GAP-TH/2],
- ['פינה מזרח / אלכסון צפוני (ק3)',x3,WID-GAP-TH/2],['פינה אלכסון צפוני / צפון',C[4][0],C[4][1]],
- ['פינה צפון‑מערב',C[5][0],-15],['מערב · תחת ק3',x3,-15],['מערב · '+POST_FROM_WALL+' מהקיר',xp,-15],
- ['קצה הקיר',WALL+GAP+TH/2,-15],['צמוד לקיר · ק1',x1,TH/2],['צמוד לקיר · ק2',x2,TH/2]
-];
-posts[0][2]=GAP+TH/2;
-posts.forEach(function(p){
-  prism(rectPts(p[1],p[2],TH,TH),0,Z_TOP-TH,M.post,G.main,
-   {name:'עמוד · '+p[0],rows:['חתך '+TH+'×'+TH+' · גובה '+(Z_TOP-TH),'מרכז: '+p[1].toFixed(1)+' מדרום · '+p[2].toFixed(1)+' מפני הקיר']});
-});
-
-/* מחברים: פלטות שטוחות מעל כל חיבור (מציין מקום) */
-function plate(x,y,w,h){prism(rectPts(x,y,w,h),Z_TOP,Z_TOP+.3,M.plate,G.plates,
-  {name:'מחבר (פלטה)',rows:['מידות '+w+'×'+h+' · עובי 3 מ״מ','מציין מקום בלבד, עד שנגדיר סוג מחבר']});}
-for(i=1;i<=5;i++)plate(C[i][0],C[i][1],12,12);
-plate(x2,WID-GAP-TH/2,12,8);plate(x3,-15,12,8);plate(x1,2,8,8);plate(x2,2,8,8);
+var exploded=false;
+document.getElementById('explode').onclick=function(){
+  exploded=!exploded;this.classList.toggle('on',exploded);
+  lift.forEach(function(l){l.m.position.y=l.z+(exploded?EXPLODE:0);});
+  G.labels.position.y=exploded?EXPLODE:0;};
 
 /* תוויות מידה */
 function label(txt,x,y,z,size){
@@ -209,9 +176,7 @@ function label(txt,x,y,z,size){
   c.fillStyle='#1d241f';c.font='500 44px Rubik,Arial,sans-serif';c.textAlign='center';c.textBaseline='middle';c.direction='rtl';c.fillText(txt,256,50);
   var sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),depthTest:false}));
   sp.scale.set(size*5.33,size,1);sp.position.set(wx(x),z,wz(y));sp.renderOrder=9;G.labels.add(sp);}
-for(i=0;i<6;i++){var q=quads[i],mx=(q[0][0]+q[1][0])/2,my=(q[0][1]+q[1][1])/2;
-  label(dist(q[0],q[1]).toFixed(1)+' / '+dist(q[2],q[3]).toFixed(1),mx,my,Z_TOP+14,11);}
-label('ק1 · 243',x1,110,Z_TOP+14,10);label('ק2 · 243',x2,110,Z_TOP+14,10);label('ק3 · 256',x3,110,Z_TOP+14,10);
+MD.labels.forEach(function(l){label(l.txt,l.x,l.y,l.z,l.size);});
 
 /* ---------- מבטים ---------- */
 function fit(){var w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h,false);
@@ -222,7 +187,7 @@ function fit(){var w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h
 function view(v){
   var portrait=stage.clientHeight>stage.clientWidth, far=portrait?1500:1050;
   ctl.top=(v==='top');cam=ctl.top?ortho:persp;
-  if(ctl.top){ortho.zoom=1;ortho.updateProjectionMatrix();ctl.target.set(0,0,0);}
+  if(ctl.top){ortho.zoom=1;ortho.updateProjectionMatrix();ctl.target.set(0,0,0);ctl.roll=0;}
   else{ctl.target.set(0,130,0);ctl.radius=far;
     if(v==='iso'){ctl.theta=-0.65;ctl.phi=1.05;}
     if(v==='south'){ctl.theta=Math.PI/2;ctl.phi=1.5;}
@@ -238,7 +203,9 @@ canvas.addEventListener('pointerup',function(e){
   if(moved>8)return;
   var r=canvas.getBoundingClientRect(),v=new THREE.Vector2((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);
   ray.setFromCamera(v,cam);
-  var hit=ray.intersectObjects(pickables.filter(function(m){return m.parent.visible;}),false)[0];
+  var hits=ray.intersectObjects(pickables.filter(function(m){return m.parent.visible;}),false);
+  // השרוול קטן וצמוד לעמוד ולקורה — כשהוא בקו ההקשה, הוא שנבחר
+  var hit=hits.filter(function(h){return h.object.parent===G.joints;})[0]||hits[0];
   if(sel){sel.material=sel.userData.mat;sel=null;}
   if(hit){sel=hit.object;sel.material=M.hi;
     info.innerHTML='<b>'+sel.userData.name+'</b><div class="m">'+sel.userData.rows.join('<br>')+'</div>';}
