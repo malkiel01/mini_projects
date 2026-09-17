@@ -106,7 +106,8 @@ function build(){
     if(ci){var yS=innerYAt(xc-TH/2,ci),yN=innerYAt(xc+TH/2,ci),dS=edgeDeg([I[ci-1],I[ci]]),dN=edgeDeg([I[ci],I[ci+1]]);
       pts=[[xc-TH/2,y0],[xc+TH/2,y0],[xc+TH/2,yN],[I[ci][0],I[ci][1]],[xc-TH/2,yS]];
       var f=function(v){return v<.5?'ישר':v.toFixed(1)+'°';};
-      cutE={deg:Math.max(dS,dN),kind:'notch',parts:[{side:'דרום',deg:dS,len:yS-y0},{side:'צפון',deg:dN,len:yN-y0}],
+      cutE={deg:Math.max(dS,dN),kind:'notch',corner:I[ci],edges:[[I[ci-1],I[ci]],[I[ci],I[ci+1]]],   // מה שהקצה פוגש, לציור
+            parts:[{side:'דרום',deg:dS,len:yS-y0,setback:yE-yS},{side:'צפון',deg:dN,len:yN-y0,setback:yE-yN}],
             label:'מפוצל — צד דרום '+f(dS)+' · צד צפון '+f(dN),short:'מפוצל '+f(dS)+' / '+f(dN)};
       lenRow='אורך על הציר '+(yE-y0).toFixed(1)+' · צד דרום '+(yS-y0).toFixed(1)+' · צד צפון '+(yN-y0).toFixed(1);
       var vs=function(v){return v<.5?'מול קורת המזרח':'מול האלכסון';};
