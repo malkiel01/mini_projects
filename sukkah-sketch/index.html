@@ -132,8 +132,10 @@ var M={
  post:new THREE.MeshLambertMaterial({color:0x2a4fa3}),
  wall:new THREE.MeshLambertMaterial({color:0xe2c044,transparent:true,opacity:.45}),   // שקוף למחצה: הקיר גבוה מהסוכה ואסור שיסתיר אותה
  plate:new THREE.MeshLambertMaterial({color:0x3b3f3c}),
- sleeve:new THREE.MeshLambertMaterial({color:0x9a5b12}),
- tongue:new THREE.MeshLambertMaterial({color:0xff3d00,emissive:0x5a1200,depthTest:false,transparent:true,opacity:.92}),   // בשיקוף — השן יושבת בתוך השרוול
+ // השרוול שקוף למחצה ולא כותב עומק: השן שבתוכו — גוף רגיל, אטום — נראית דרכו בלבד,
+ // ולא מעל הקורה והעמוד. מה שמסתיר אותה במציאות מסתיר אותה גם כאן.
+ sleeve:new THREE.MeshLambertMaterial({color:0x9a5b12,transparent:true,opacity:.5,depthWrite:false}),
+ tongue:new THREE.MeshLambertMaterial({color:0xb71c1c}),
  floor:new THREE.MeshLambertMaterial({color:0xd4d7cf,side:THREE.DoubleSide}),
  hi:new THREE.MeshLambertMaterial({color:0xff9d00,emissive:0x552200})
 };
@@ -229,7 +231,7 @@ function joint(id,beam,key,toward,z,mid){
             'שן '+TONGUE+'×'+TONGUE+' מתחת לקורה · נכנסת '+TONGUE_LEN,
             'סיבוב השרוול: '+(dev<.5?'ישר על פני העמוד':dev.toFixed(1)+'° — לכיוון הקורה')];
   prism(sq(c,d,TH/2),zb-SLEEVE_LEN,zb,M.sleeve,G.joints,{name:'שרוול '+id,rows:rows});
-  prism(sq(c,d,TONGUE/2),zb-TONGUE_LEN,zb,M.tongue,G.joints,null).renderOrder=8;   // השן, בשיקוף
+  prism(sq(c,d,TONGUE/2),zb-TONGUE_LEN,zb,M.tongue,G.joints,null);   // השן, בתוך השרוול
   if(wall){var pw=10,ph=SLEEVE_LEN+4;
     prism([[from[0]-pw/2,0],[from[0]+pw/2,0],[from[0]+pw/2,.6],[from[0]-pw/2,.6]],zb-SLEEVE_LEN-2,zb+2,M.plate,G.joints,
       {name:'פלטת קיר · '+id,rows:[pw+'×'+ph+' · עובי 6 מ״מ · 4 ברגי עיגון (טרם הוכרע)','השרוול מרותך לפלטה; השן שבקצה הקורה יורדת לתוכו']});}
