@@ -48,27 +48,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $types = array_values(array_intersect(
             (array) ($_POST['types'] ?? []), array_keys(contentTypeCatalog())));
+        $adModes = array_values(array_intersect(
+            (array) ($_POST['ads'] ?? []), array_keys(adBlockCatalog())));
 
-        q('INSERT INTO policies (user_id, mode, posture, blocked_types, timezone, days_mask,
-             window_start, window_end, daily_quota_min, session_max_min, max_devices,
-             allow_downloads, block_screenshots, keep_history, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-           ON CONFLICT(user_id) DO UPDATE SET
-             mode=excluded.mode, posture=excluded.posture, blocked_types=excluded.blocked_types,
-             timezone=excluded.timezone, days_mask=excluded.days_mask,
-             window_start=excluded.window_start, window_end=excluded.window_end,
-             daily_quota_min=excluded.daily_quota_min, session_max_min=excluded.session_max_min,
-             max_devices=excluded.max_devices, allow_downloads=excluded.allow_downloads,
-             block_screenshots=excluded.block_screenshots, keep_history=excluded.keep_history,
-             updated_at=excluded.updated_at',
-          [$uid, $mode, $post, implode(',', $types), $tz, $mask, $ws, $we,
-           max(0, (int) ($_POST['daily_quota_min'] ?? 0)),
-           max(0, (int) ($_POST['session_max_min'] ?? 0)),
-           max(1, (int) ($_POST['max_devices'] ?? 1)),
-           isset($_POST['allow_downloads']) ? 1 : 0,
-           isset($_POST['block_screenshots']) ? 1 : 0,
-           isset($_POST['keep_history']) ? 1 : 0,
-           nowIso()]);
+        upsert('policies', ['user_id' => $uid], [
+            'mode' => $mode, 'posture' => $post, 'blocked_types' => implode(',', $types),
+            'ad_block' => implode(',', $adModes),
+            'timezone' => $tz, 'days_mask' => $mask,
+            'window_start' => $ws, 'window_end' => $we,
+            'daily_quota_min'   => max(0, (int) ($_POST['daily_quota_min'] ?? 0)),
+            'session_max_min'   => max(0, (int) ($_POST['session_max_min'] ?? 0)),
+            'max_devices'       => max(1, (int) ($_POST['max_devices'] ?? 1)),
+            'allow_downloads'   => isset($_POST['allow_downloads']) ? 1 : 0,
+            'block_screenshots' => isset($_POST['block_screenshots']) ? 1 : 0,
+            'keep_history'      => isset($_POST['keep_history']) ? 1 : 0,
+            'allow_pip'         => isset($_POST['allow_pip']) ? 1 : 0,
+            'allow_background'  => isset($_POST['allow_background']) ? 1 : 0,
+            'updated_at'        => nowIso(),
+        ]);
 
         q('UPDATE users SET expires_at = ?, display_name = ?, note = ? WHERE id = ?',
           [trim((string) ($_POST['expires_at'] ?? '')),
@@ -90,14 +87,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'youtube') {
         $m = in_array($_POST['yt_mode'] ?? '', ['off', 'restricted', 'full'], true)
              ? $_POST['yt_mode'] : 'off';
-        q('INSERT INTO platform_rules (user_id, platform, mode, allow_search, allow_shorts, created_at)
-           VALUES (?,?,?,?,?,?)
-           ON CONFLICT(user_id, platform) DO UPDATE SET
-             mode=excluded.mode, allow_search=excluded.allow_search,
-             allow_shorts=excluded.allow_shorts',
-          [$uid, PLATFORM_YOUTUBE, $m,
-           isset($_POST['allow_search']) ? 1 : 0,
-           isset($_POST['allow_shorts']) ? 1 : 0, nowIso()]);
+        upsert('platform_rules',
+               ['user_id' => $uid, 'platform' => PLATFORM_YOUTUBE],
+               ['mode' => $m,
+                'allow_search' => isset($_POST['allow_search']) ? 1 : 0,
+                'allow_shorts' => isset($_POST['allow_shorts']) ? 1 : 0],
+               ['created_at' => nowIso()]);
         $msg = 'הגדרות יוטיוב נשמרו';
 
     } elseif ($action === 'yt_add') {
@@ -107,13 +102,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
          * אמורה לעשות במקומו.
          */
         $paste = trim((string) ($_POST['yt_url'] ?? ''));
-        $p = parseYouTube(preg_match('#^https?://#i', $paste) ? $paste
-                          : 'https://www.youtube.com/' . ltrim($paste, '/'));
+        $p = normalizeYouTubeInput($paste);
 
         if ($p['kind'] === 'shorts') $p['kind'] = 'video';
 
         if (!in_array($p['kind'], ['video', 'channel', 'handle', 'playlist'], true) || $p['id'] === '') {
-            $msg = 'לא זיהיתי בקישור ערוץ, סרטון או פלייליסט'; $kind = 'bad';
+            $msg = 'לא זיהיתי ערוץ, סרטון או פלייליסט. אפשר להדביק קישור, '
+                 . 'או לכתוב רק @שם-הערוץ'; $kind = 'bad';
         } else {
             $label = trim((string) ($_POST['yt_label'] ?? ''));
 
@@ -128,13 +123,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $label = (string) ($owner['title'] ?? '');
             }
 
-            q('INSERT INTO platform_items (user_id, platform, kind, item_id, label, action, created_at)
-               VALUES (?,?,?,?,?,?,?)
-               ON CONFLICT(user_id, platform, kind, item_id) DO UPDATE SET
-                 action=excluded.action, label=excluded.label',
-              [$uid, PLATFORM_YOUTUBE, $p['kind'], $p['id'], mb_substr($label, 0, 120),
-               ($_POST['yt_action'] ?? 'allow') === 'deny' ? 'deny' : 'allow', nowIso()]);
-            $msg = 'נוסף לרשימת יוטיוב';
+            upsert('platform_items',
+                   ['user_id' => $uid, 'platform' => PLATFORM_YOUTUBE,
+                    'kind' => $p['kind'], 'item_id' => $p['id']],
+                   ['label' => mb_substr($label, 0, 120),
+                    'action' => ($_POST['yt_action'] ?? 'allow') === 'deny' ? 'deny' : 'allow'],
+                   ['created_at' => nowIso()]);
+
+            // אומרים מה זוהה, לא רק "נוסף": קלט מקוצר הוא ניחוש
+            // מושכל, ומי שרואה "סרטון" במקום "ערוץ" מתקן מיד.
+            $kindName = ['channel' => 'ערוץ', 'handle' => 'ערוץ', 'video' => 'סרטון',
+                         'playlist' => 'פלייליסט'][$p['kind']];
+            $msg = "נוסף כ$kindName: {$p['id']}";
         }
 
     } elseif ($action === 'yt_del') {
@@ -145,8 +145,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'add_rule') {
         $pattern = trim((string) ($_POST['pattern'] ?? ''));
         $scope   = in_array($_POST['scope'] ?? '', SCOPES, true) ? $_POST['scope'] : 'domain';
+        $parsed  = normalizeUrl($pattern);
 
-        if (!normalizeUrl($pattern)) {
+        /*
+         * כלל כתובת על יוטיוב הוא מלכודת, ולכן הוא מנותב מכאן.
+         *
+         * ‏youtu.be/ID מפנה מיד ל-youtube.com/watch — דומיין אחר,
+         * שהכלל כבר אינו חל עליו. ההכרעה נופלת אז לכללי הפלטפורמה,
+         * והמנהל רואה "חסום" על כתובת שהוא בטוח שהתיר. במקום להסביר
+         * את זה בהערה, הקלט נשמר במקום שבו הוא באמת נאכף.
+         */
+        if ($parsed && platformOf($parsed['host']) === PLATFORM_YOUTUBE) {
+            $p = normalizeYouTubeInput($pattern);
+            if ($p['kind'] === 'shorts') $p['kind'] = 'video';
+
+            if (in_array($p['kind'], ['video', 'channel', 'handle', 'playlist'], true)) {
+                upsert('platform_items',
+                       ['user_id' => $uid, 'platform' => PLATFORM_YOUTUBE,
+                        'kind' => $p['kind'], 'item_id' => $p['id']],
+                       ['label' => mb_substr(trim((string) ($_POST['label'] ?? '')), 0, 120),
+                        'action' => ($_POST['rule_action'] ?? 'allow') === 'deny' ? 'deny' : 'allow'],
+                       ['created_at' => nowIso()]);
+                $kindName = ['channel' => 'ערוץ', 'handle' => 'ערוץ', 'video' => 'סרטון',
+                             'playlist' => 'פלייליסט'][$p['kind']];
+                $msg = "זו כתובת יוטיוב, ולכן היא נוספה לרשימת יוטיוב כ$kindName — "
+                     . 'שם היא נאכפת. כלל כתובת רגיל לא היה עובד עליה.';
+            } else {
+                $msg = 'זו כתובת יוטיוב שלא זיהיתי כערוץ, סרטון או פלייליסט. '
+                     . 'נסו להוסיף אותה באזור יוטיוב.'; $kind = 'bad';
+            }
+        } elseif (!$parsed) {
             $msg = 'הכתובת אינה תקינה'; $kind = 'bad';
         } else {
             q('INSERT INTO rules (user_id, label, pattern, scope, action, show_tile, sort_order, created_at)
@@ -183,6 +211,7 @@ $rules   = all('SELECT * FROM rules WHERE user_id = ? ORDER BY sort_order, id', 
 $devices = all('SELECT * FROM devices WHERE user_id = ? ORDER BY last_seen_at DESC', [$uid]);
 $cats    = categoryRulesFor($uid);
 $types   = array_filter(explode(',', (string) $policy['blocked_types']));
+$adModes = array_filter(explode(',', (string) $policy['ad_block']));
 $yt      = platformRulesFor($uid)[PLATFORM_YOUTUBE]
            ?? ['mode' => 'off', 'allow_search' => 0, 'allow_shorts' => 0];
 $ytItems = all('SELECT * FROM platform_items WHERE user_id = ? AND platform = ? ORDER BY kind, id',
@@ -284,6 +313,26 @@ note($msg, $kind);
   <p class="hint" style="margin:14px 0 0">מסומן = חסום.</p>
 <?php secClose(); ?>
 
+<?php secOpen('חסימת פרסומות', $adModes ? '(' . count($adModes) . ')' : 'כבוי'); ?>
+  <p class="hint">
+    ציר נפרד מהקטגוריות: קטגוריה "פרסום" קובעת אם מותר <em>לנווט</em> לאתר פרסומי,
+    וזה כמעט אף פעם לא מה שקורה. פרסומת אמיתית היא משאב בתוך דף שהמשתמש כן ביקש,
+    ולכן היא נחסמת <strong>גם באתרים שהתרתם במפורש</strong>.
+  </p>
+  <div class="pick">
+    <?php foreach (adBlockCatalog() as $key => [$label, $icon, $desc]): ?>
+      <label>
+        <input type="checkbox" name="ads[]" value="<?= h($key) ?>"
+               <?= in_array($key, $adModes, true) ? 'checked' : '' ?>>
+        <span><b><?= $icon ?> <?= h($label) ?></b><small><?= h($desc) ?></small></span>
+      </label>
+    <?php endforeach; ?>
+  </div>
+  <p class="hint" style="margin:12px 0 0">
+    לסימון הכול — זו ההגדרה המקיפה ביותר, ואין סיבה לא לבחור בה אלא אם אתר מסוים נשבר.
+  </p>
+<?php secClose(); ?>
+
 <?php secOpen('זמן ומכסות'); ?>
   <p class="hint">שדה ריק או 0 פירושו "בלי הגבלה".</p>
   <p class="hint" style="margin-bottom:8px"><strong>ימים מותרים</strong></p>
@@ -332,6 +381,18 @@ note($msg, $kind);
     <?= $policy['block_screenshots'] ? 'checked' : '' ?>>לחסום צילום מסך והקלטה</label>
   <label class="switch"><input type="checkbox" name="keep_history"
     <?= $policy['keep_history'] ? 'checked' : '' ?>>לשמור היסטוריית גלישה במכשיר</label>
+
+  <hr class="sep">
+  <p class="hint" style="margin-bottom:10px"><strong>המשך צפייה מחוץ לאפליקציה</strong></p>
+  <label class="switch"><input type="checkbox" name="allow_pip"
+    <?= $policy['allow_pip'] ? 'checked' : '' ?>>חלון צף — הסרטון ממשיך בחלון קטן ביציאה מהאפליקציה</label>
+  <label class="switch"><input type="checkbox" name="allow_background"
+    <?= $policy['allow_background'] ? 'checked' : '' ?>>המשך ברקע — גם אחרי סגירת החלון הצף</label>
+  <p class="hint" style="margin:0">
+    שניהם כבויים כברירת מחדל. כשהם פעילים, <strong>מכסת הזמן ממשיכה להיספר</strong>
+    והשרת ממשיך לאכוף — סיום מכסה או השעיה עוצרים את הצפייה גם ברקע.
+    מופיעה התראה קבועה, כדי שיהיה ברור שהאפליקציה רצה.
+  </p>
   <label><span class="lbl">הערה פנימית</span>
     <textarea name="note" rows="2"><?= h($user['note']) ?></textarea></label>
 <?php secClose(); ?>
@@ -343,8 +404,16 @@ note($msg, $kind);
 
 <?php
 /* ── יוטיוב: טופס נפרד, כי הוא נשמר בנפרד ─────────────────────── */
-secOpen('יוטיוב', YT_MODE_LABELS[$yt['mode']][0] . ' ' . $countTag(count($ytItems)));
+$ytAllowed = count(array_filter($ytItems, fn($i) => $i['action'] === 'allow'));
+$ytWarn = ($yt['mode'] === 'off' && $ytAllowed > 0) ? ' ⚠ הרשימה לא נאכפת' : '';
+secOpen('יוטיוב', YT_MODE_LABELS[$yt['mode']][0] . $ytWarn . ' ' . $countTag(count($ytItems)));
 ?>
+  <?php if ($ytWarn !== ''): ?>
+    <div class="note note--bad">
+      אישרת <?= $ytAllowed ?> פריטים, אבל יוטיוב מוגדר "חסום לגמרי" — ולכן אף אחד מהם
+      לא ייפתח. בחרו <strong>"רק מה שאישרתי"</strong> ושמרו.
+    </div>
+  <?php endif; ?>
   <form method="post">
     <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
     <input type="hidden" name="action" value="youtube">
@@ -395,9 +464,13 @@ secOpen('יוטיוב', YT_MODE_LABELS[$yt['mode']][0] . ' ' . $countTag(count($
   <form method="post">
     <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
     <input type="hidden" name="action" value="yt_add">
-    <label><span class="lbl">הדביקו קישור לערוץ, סרטון או פלייליסט</span>
+    <label><span class="lbl">ערוץ, סרטון או פלייליסט</span>
       <input type="text" name="yt_url" dir="ltr" required
-             placeholder="https://youtube.com/@channel"></label>
+             placeholder="@MercazDafYomi"></label>
+    <p class="hint" style="margin:-6px 0 14px">
+      מספיק <code>@שם-הערוץ</code>. אפשר גם קישור מלא, <code>youtu.be/…</code>,
+      או מזהה חשוף — המערכת מזהה לבד ואומרת מה נקלט.
+    </p>
     <div class="grid">
       <label><span class="lbl">שם (לא חובה)</span><input type="text" name="yt_label"></label>
       <label><span class="lbl">פעולה</span>
@@ -414,7 +487,10 @@ secOpen('יוטיוב', YT_MODE_LABELS[$yt['mode']][0] . ' ' . $countTag(count($
 <?php secClose(); ?>
 
 <?php secOpen('כללי כתובות', $countTag(count($rules))); ?>
-  <p class="hint">הציר המפורש ביותר, ולכן גובר על קטגוריות ועל סוגי תוכן. איסור גובר על היתר תמיד.</p>
+  <p class="hint">
+    הציר המפורש ביותר, ולכן גובר על קטגוריות ועל סוגי תוכן. איסור גובר על היתר תמיד.
+    <br><strong>כתובת יוטיוב שתודבק כאן תנותב אוטומטית לאזור יוטיוב</strong> — שם היא נאכפת.
+  </p>
   <table>
     <thead><tr><th>שם</th><th>כתובת</th><th>גבול</th><th>פעולה</th><th></th></tr></thead>
     <tbody>

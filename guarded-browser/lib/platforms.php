@@ -64,6 +64,15 @@ function parseYouTube(string $url): array {
     if (preg_match('#^/shorts/([A-Za-z0-9_-]{6,})#', $path, $m)) {
         return ['kind' => 'shorts', 'id' => $m[1]];
     }
+    /*
+     * חיפוש בתוך דף ערוץ — /@name/search או /channel/UC.../search.
+     *
+     * חייב להיבדק לפני תבניות הערוץ, אחרת הוא נקרא "ערוץ מאושר"
+     * ועובר. יוטיוב מציג שם גם תוצאות מערוצים אחרים, ולכן חיפוש
+     * הוא חיפוש — לא משנה מאיזה דף התחילו אותו.
+     */
+    if (preg_match('#/search$#', $path)) return ['kind' => 'search', 'id' => ''];
+
     if (preg_match('#^/channel/(UC[A-Za-z0-9_-]{10,})#', $path, $m)) {
         return ['kind' => 'channel', 'id' => $m[1]];
     }
@@ -111,34 +120,103 @@ function isYouTubeAsset(string $url): bool {
  * התשובה נשמרת במטמון לצמיתות: הבעלות על סרטון אינה משתנה.
  */
 
-/** שולף את מזהה הערוץ מדף הצפייה. מחזיר '' אם לא הצליח. */
-function fetchYouTubeOwner(string $videoId): array {
-    if (!preg_match('#^[A-Za-z0-9_-]{6,20}$#', $videoId)) return ['channel' => '', 'title' => ''];
-    if (!function_exists('curl_init')) return ['channel' => '', 'title' => ''];
+/**
+ * פנייה אחת החוצה, עם ברירות מחדל שמתאימות לשרת.
+ *
+ * ‏CONSENT ו-SOCS: לפניות מדאטה-סנטר גוגל מגישה דף הסכמה לעוגיות
+ * במקום התוכן. העוגיות האלה מדלגות עליו. בלעדיהן התשובה מגיעה
+ * מהר ובהצלחה — ופשוט אין בה את מה שחיפשנו.
+ */
+function httpGet(string $url, int $maxBytes = 300000): array {
+    if (!function_exists('curl_init')) return ['status' => 0, 'body' => '', 'error' => 'אין cURL'];
 
-    $url = 'https://www.youtube.com/watch?v=' . rawurlencode($videoId);
-    $ch  = curl_init($url);
     $body = '';
-
+    $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_MAXREDIRS      => 3,
-        CURLOPT_TIMEOUT        => 8,
-        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_MAXREDIRS      => 4,
+        CURLOPT_TIMEOUT        => 10,
+        CURLOPT_CONNECTTIMEOUT => 6,
         CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
                                 . '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-        CURLOPT_HTTPHEADER     => ['Accept-Language: en-US,en;q=0.9'],
-        // הדף ענק, והמזהה יושב בראשו. 300KB מספיקים, ואין טעם למשוך יותר.
-        CURLOPT_WRITEFUNCTION  => function ($ch, $chunk) use (&$body) {
+        CURLOPT_HTTPHEADER     => ['Accept-Language: en-US,en;q=0.9',
+                                   'Accept: text/html,application/json,*/*'],
+        CURLOPT_COOKIE         => 'CONSENT=YES+cb; SOCS=CAISOAgCEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjQwNjExLjA2X3AwGgJlbiACGgYIgLC_swY',
+        CURLOPT_WRITEFUNCTION  => function ($ch, $chunk) use (&$body, $maxBytes) {
             $body .= $chunk;
-            return strlen($body) > 300000 ? 0 : strlen($chunk);
+            return strlen($body) > $maxBytes ? 0 : strlen($chunk);
         },
     ]);
     curl_exec($ch);
+    $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err    = curl_error($ch);
+    $errno  = curl_errno($ch);
     curl_close($ch);
 
-    return parseYouTubeOwnerHtml($body);
+    // ‏23 = הפסקנו את הכתיבה בכוונה אחרי maxBytes, וזו אינה שגיאה.
+    return ['status' => $status, 'body' => $body,
+            'error' => ($errno && $errno !== CURLE_WRITE_ERROR) ? $err : ''];
+}
+
+/**
+ * מי הבעלים של הסרטון.
+ *
+ * ‏oEmbed קודם, וגריפת דף הצפייה רק כגיבוי. הסיבה מעשית: oEmbed הוא
+ * נקודת קצה רשמית שמחזירה קילובייט של JSON עם author_url — ואילו דף
+ * הצפייה הוא מגה-בייט שגוגל מחליפה בדף הסכמה לפניות מדאטה-סנטר.
+ * בשרת שלנו זה בדיוק מה שקרה: התשובה חזרה מהר, ופשוט לא היה בה
+ * מזהה ערוץ.
+ */
+function fetchYouTubeOwner(string $videoId): array {
+    $none = ['channel' => '', 'handle' => '', 'title' => '', 'via' => '', 'detail' => ''];
+    if (!preg_match('#^[A-Za-z0-9_-]{6,20}$#', $videoId)) return $none;
+
+    $r = httpGet('https://www.youtube.com/oembed?format=json&url='
+                 . rawurlencode('https://www.youtube.com/watch?v=' . $videoId), 20000);
+
+    if ($r['status'] === 200) {
+        $j = json_decode($r['body'], true);
+        if (is_array($j)) {
+            $owner = parseOEmbedOwner($j);
+            if ($owner['channel'] !== '' || $owner['handle'] !== '') {
+                return $owner + ['via' => 'oembed', 'detail' => ''];
+            }
+        }
+    }
+
+    // גיבוי: דף הצפייה עצמו.
+    $r2 = httpGet('https://www.youtube.com/watch?v=' . rawurlencode($videoId));
+    $owner = parseYouTubeOwnerHtml($r2['body']);
+    if ($owner['channel'] !== '' || $owner['handle'] !== '') {
+        return $owner + ['via' => 'html', 'detail' => ''];
+    }
+
+    // ‏array_replace ולא +: איחוד מערכים אינו דורס מפתח שכבר קיים,
+    // ו-$none כבר מכיל detail ריק — הפירוט היה נבלע בשקט.
+    return array_replace($none, [
+        'detail' => "oembed: {$r['status']} " . ($r['error'] ?: '')
+                  . " · html: {$r2['status']} " . strlen($r2['body']) . 'b '
+                  . ($r2['error'] ?: ''),
+    ]);
+}
+
+/**
+ * מפענח את תשובת oEmbed.
+ *
+ * ‏author_url הוא כתובת הערוץ — בצורת @כינוי או /channel/UC..., לפי
+ * מה שיוטיוב מחזיר. שתי הצורות מטופלות, כי המנהל עשוי לאשר בכל אחת.
+ */
+function parseOEmbedOwner(array $json): array {
+    $author = (string) ($json['author_url'] ?? '');
+    $channel = '';
+    $handle  = '';
+
+    if (preg_match('#/channel/(UC[A-Za-z0-9_-]{10,})#', $author, $m)) $channel = $m[1];
+    if (preg_match('#/@([A-Za-z0-9._-]+)#', $author, $m))             $handle  = strtolower($m[1]);
+
+    return ['channel' => $channel, 'handle' => $handle,
+            'title' => mb_substr((string) ($json['title'] ?? ''), 0, 200)];
 }
 
 /**
@@ -157,6 +235,20 @@ function parseYouTubeOwnerHtml(string $html): array {
         if (preg_match($re, $html, $m)) { $channel = $m[1]; break; }
     }
 
+    /*
+     * גם הכינוי, ולא רק המזהה.
+     *
+     * מנהל שמאשר ערוץ מדביק "@Name" — זה מה שהוא מכיר. הפענוח מחזיר
+     * "UC..." בלבד, והשניים לעולם לא נפגשים: ערוץ שאושר בכינוי לא
+     * יתאים לאף סרטון. לכן שניהם נשמרים, וההתאמה נעשית מול שניהם.
+     */
+    $handle = '';
+    foreach (['#"canonicalBaseUrl"\s*:\s*"/@([A-Za-z0-9._-]+)"#',
+              '#"ownerProfileUrl"\s*:\s*"[^"]*/@([A-Za-z0-9._-]+)"#',
+              '#<link rel="canonical" href="[^"]*/@([A-Za-z0-9._-]+)"#'] as $re) {
+        if (preg_match($re, $html, $m)) { $handle = strtolower($m[1]); break; }
+    }
+
     $title = '';
     if (preg_match('#<meta name="title" content="([^"]*)"#', $html, $m)) {
         $title = html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5, 'UTF-8');
@@ -165,5 +257,98 @@ function parseYouTubeOwnerHtml(string $html): array {
                  html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5, 'UTF-8')));
     }
 
-    return ['channel' => $channel, 'title' => mb_substr($title, 0, 200)];
+    return ['channel' => $channel, 'handle' => $handle,
+            'title' => mb_substr($title, 0, 200)];
+}
+
+/**
+ * מקבל מה שהמנהל הדביק, ומחזיר סוג ומזהה.
+ *
+ * הדרישה להדביק כתובת מלאה היא עבודה שהמערכת אמורה לעשות במקומו:
+ * מי שרוצה לאשר ערוץ מכיר אותו בשם, לא ב-URL. לכן כל הצורות האלה
+ * מתקבלות:
+ *
+ *   ‏@MercazDafYomi                       כינוי
+ *   ‏MercazDafYomi                        שם בלי @
+ *   ‏youtube.com/@MercazDafYomi           בלי סכימה
+ *   ‏https://www.youtube.com/@Mercaz…     כתובת מלאה
+ *   ‏UCxxxxxxxxxxxxxxxxxxxxxx             מזהה ערוץ
+ *   ‏dQw4w9WgXcQ                          מזהה סרטון
+ *   ‏PLxxxxxxxx                           מזהה פלייליסט
+ *   ‏youtu.be/dQw4w9WgXcQ                 קישור מקוצר
+ */
+function normalizeYouTubeInput(string $raw): array {
+    $raw = trim($raw);
+    if ($raw === '') return ['kind' => 'other', 'id' => ''];
+
+    // כינוי מפורש — הצורה הנפוצה, ואין בה ספק.
+    if (str_starts_with($raw, '@')) {
+        $name = substr($raw, 1);
+        return preg_match('#^[A-Za-z0-9._-]+$#', $name)
+            ? ['kind' => 'handle', 'id' => strtolower($name)]
+            : ['kind' => 'other', 'id' => ''];
+    }
+
+    /*
+     * נראה ככתובת: יש בו נקודה או לוכסן. הסכימה מושלמת אם חסרה,
+     * אחרת "youtube.com/@x" היה הופך ל"youtube.com/youtube.com/@x".
+     */
+    if (str_contains($raw, '/') || str_contains($raw, '.')) {
+        $url = preg_match('#^[a-z][a-z0-9+.\-]*://#i', $raw) ? $raw : 'https://' . $raw;
+        return parseYouTube($url);
+    }
+
+    // מזהים חשופים, לפי הצורה שלהם. מזהה ערוץ הוא UC ועוד 22 תווים.
+    if (preg_match('#^UC[A-Za-z0-9_-]{22}$#', $raw))            return ['kind' => 'channel', 'id' => $raw];
+    if (preg_match('#^(?:PL|UU|OL|RD|LL|FL)[A-Za-z0-9_-]{10,}$#', $raw))
+                                                                return ['kind' => 'playlist', 'id' => $raw];
+    // מזהה סרטון הוא בדיוק 11 תווים; שם ערוץ באורך כזה הוא נדיר,
+    // והמנהל רואה בטבלה מה זוהה ויכול להסיר.
+    if (preg_match('#^[A-Za-z0-9_-]{11}$#', $raw))              return ['kind' => 'video', 'id' => $raw];
+
+    // מילה רגילה — שם ערוץ בלי @.
+    return preg_match('#^[A-Za-z0-9._-]+$#', $raw)
+        ? ['kind' => 'handle', 'id' => strtolower($raw)]
+        : ['kind' => 'other', 'id' => ''];
+}
+
+/**
+ * הכתובת שפותחת פריט יוטיוב מאושר.
+ *
+ * בלי זה, ערוץ שאושר אינו נגיש בכלל במצב קיוסק: האריחים נבנים
+ * מכללי כתובות, ולפריט פלטפורמה אין כתובת משלו.
+ */
+function youTubeItemUrl(string $kind, string $id): string {
+    return match ($kind) {
+        'channel'  => 'https://www.youtube.com/channel/' . $id,
+        'handle'   => 'https://www.youtube.com/@' . $id,
+        'video'    => 'https://www.youtube.com/watch?v=' . $id,
+        'playlist' => 'https://www.youtube.com/playlist?list=' . $id,
+        default    => '',
+    };
+}
+
+/** שם ברירת מחדל לאריח, כשהמנהל לא נתן אחד. */
+function youTubeItemFallbackLabel(string $kind, string $id): string {
+    return match ($kind) {
+        'channel', 'handle' => 'ערוץ: ' . ($kind === 'handle' ? '@' . $id : $id),
+        'video'             => 'סרטון',
+        'playlist'          => 'פלייליסט',
+        default             => $id,
+    };
+}
+
+/**
+ * נקודות הקצה שמזינות את החיפוש.
+ *
+ * לחסום את הכתובת /results לבדה אינו מספיק: יוטיוב הוא אתר
+ * עמוד-יחיד, והתוצאות וההצעות מגיעות בבקשות רקע. אם הן עוברות,
+ * המשתמש רואה תוצאות ותמונות ממוזערות גם כשהניווט אליהן ייחסם.
+ */
+function isYouTubeSearchEndpoint(string $path): bool {
+    foreach (['/youtubei/v1/search', '/complete/search', '/search_ajax',
+              '/youtubei/v1/get_search_suggestions'] as $prefix) {
+        if (str_starts_with($path, $prefix)) return true;
+    }
+    return false;
 }

@@ -13,6 +13,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/catalog.php';
+require_once __DIR__ . '/adblock.php';
 
 function h(?string $s): string {
     return htmlspecialchars((string) $s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
@@ -190,6 +191,11 @@ function layoutTop(string $title, ?array $admin = null): void {
   .pill--wait { background:var(--warn-bg); color:var(--warn); }
   .pill--stop { background:var(--stop-bg); color:var(--stop); }
   .pill--mute { background:var(--bg); color:var(--dim); }
+  .badge { background:var(--stop); color:#fff; border-radius:999px; padding:1px 7px;
+           font-size:12px; font-weight:700; }
+  .alarm { background:var(--stop-bg); border:1.5px solid var(--stop); color:var(--stop);
+           border-radius:var(--r); padding:14px 16px; margin-bottom:14px; }
+  .alarm a { color:var(--stop); font-weight:700; }
 
   .note { padding:12px 15px; border-radius:10px; margin-bottom:14px; font-size:14.5px; }
   .note--ok { background:var(--ok-bg); color:var(--ok); }
@@ -221,6 +227,8 @@ function layoutTop(string $title, ?array $admin = null): void {
   <nav>
     <a href="index.php">משתמשים</a>
     <a href="categories.php">קטלוג</a>
+    <a href="alerts.php">התרעות<?php $n = openAlertCount();
+      echo $n ? ' <span class="badge">' . $n . '</span>' : ''; ?></a>
     <a href="audit.php">יומן</a>
     <a href="health.php">אבחון</a>
     <a href="logout.php">יציאה</a>
@@ -229,6 +237,19 @@ function layoutTop(string $title, ?array $admin = null): void {
 </header>
 <main>
 <?php
+    /*
+     * ההתרעה מופיעה בכל דף, לא רק במסך שלה.
+     *
+     * התרעה שממתינה שהמנהל ייכנס למסך הנכון אינה התרעה. כאן היא
+     * חוסמת את המבט בכל מקום שאליו הוא ייכנס.
+     */
+    if ($admin) {
+        $open = openAlertCount();
+        if ($open > 0) {
+            echo '<div class="alarm"><strong>' . $open . ' התרעות אבטחה פתוחות</strong> — '
+               . '<a href="alerts.php">לצפייה וטיפול</a></div>';
+        }
+    }
 }
 
 function layoutEnd(): void { echo "</main>\n"; }

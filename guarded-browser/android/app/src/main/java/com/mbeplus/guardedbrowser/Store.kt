@@ -47,10 +47,13 @@ class Store(context: Context) {
         prefs.edit()
             .putString("policy", payload.optJSONObject("policy")?.toString() ?: "{}")
             .putString("rules", payload.optJSONArray("rules")?.toString() ?: "[]")
+            .putString("tiles", payload.optJSONArray("tiles")?.toString() ?: "[]")
             .putString("categories", payload.optJSONObject("categories")?.toString() ?: "{}")
             .putString("domain_map", payload.optJSONObject("domain_map")?.toString() ?: "{}")
             .putString("platforms", payload.optJSONObject("platforms")?.toString() ?: "{}")
             .putString("platform_items", payload.optJSONObject("platform_items")?.toString() ?: "{}")
+            .putString("ad_hosts", payload.optJSONArray("ad_hosts")?.toString() ?: "[]")
+            .putString("ad_css", payload.optString("ad_css"))
             .putString("name", payload.optJSONObject("user")?.optString("name") ?: "")
             .putLong("policy_at", System.currentTimeMillis())
             .apply()
@@ -64,6 +67,20 @@ class Store(context: Context) {
         PolicyEngine.rulesFrom(JSONArray(prefs.getString("rules", "[]") ?: "[]"))
     } catch (e: Exception) { emptyList() }
 
+    /**
+     * האריחים שהשרת שלח.
+     *
+     * שרת ישן אינו שולח tiles, ולכן יש נפילה חזרה לכללי הכתובות —
+     * אחרת עדכון של האפליקציה לפני עדכון השרת היה מוחק את המסך.
+     */
+    fun tiles(): List<Tile> = try {
+        val t = PolicyEngine.tilesFrom(JSONArray(prefs.getString("tiles", "[]") ?: "[]"))
+        t.ifEmpty {
+            rules().filter { it.showTile && it.action == "allow" }
+                .map { Tile(it.label.ifEmpty { it.pattern }, it.pattern, "url") }
+        }
+    } catch (e: Exception) { emptyList() }
+
     /** כל מה שהמנוע צריך, כפי שהתקבל מהשרת. */
     fun ruleSet(): RuleSet = try {
         RuleSet(
@@ -72,6 +89,9 @@ class Store(context: Context) {
             domainMap = PolicyEngine.listMap(obj("domain_map")),
             platforms = PolicyEngine.platformsFrom(obj("platforms")),
             platformItems = PolicyEngine.itemsFrom(obj("platform_items")),
+            adHosts = PolicyEngine.stringList(
+                JSONArray(prefs.getString("ad_hosts", "[]") ?: "[]")),
+            adCss = prefs.getString("ad_css", "") ?: "",
         )
     } catch (e: Exception) { RuleSet(rules = rules()) }
 

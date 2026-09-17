@@ -64,10 +64,17 @@ function migrate(PDO $pdo): void {
         return array_column($pdo->query("PRAGMA table_info($table)")->fetchAll(), 'name');
     };
 
+    if (!in_array('handle', $columns('video_owner'), true)) {
+        $pdo->exec("ALTER TABLE video_owner ADD COLUMN handle TEXT NOT NULL DEFAULT ''");
+    }
+
     $have = $columns('policies');
     $add  = [
         'posture'       => "TEXT NOT NULL DEFAULT 'deny_all'",
         'blocked_types' => "TEXT NOT NULL DEFAULT ''",
+        'ad_block'      => "TEXT NOT NULL DEFAULT ''",
+        'allow_pip'        => 'INTEGER NOT NULL DEFAULT 0',
+        'allow_background' => 'INTEGER NOT NULL DEFAULT 0',
     ];
     foreach ($add as $col => $def) {
         if (!in_array($col, $have, true)) {
@@ -145,6 +152,43 @@ function all(string $sql, array $args = []): array {
     return q($sql, $args)->fetchAll();
 }
 
+
+/**
+ * הוספה-או-עדכון שעובדת בכל גרסת SQLite.
+ *
+ * ‏"INSERT ... ON CONFLICT DO UPDATE" נוסף רק ב-SQLite 3.24 (2018),
+ * ובאחסון משותף עדיין נפוצות גרסאות ישנות יותר — שם הוא נופל על
+ * "near ON: syntax error". שתי פקודות במקומו עובדות בכל מקום:
+ * ‏INSERT OR IGNORE יוצר את השורה אם אינה קיימת, ו-UPDATE כותב את
+ * הערכים. הסדר הזה גם בטוח מפני מרוץ בין שתי בקשות, בניגוד ל-
+ * "בדוק ואז הוסף".
+ *
+ *   $key        — העמודות שמזהות את השורה
+ *   $values     — מה שנכתב גם בהוספה וגם בעדכון
+ *   $insertOnly — מה שנכתב רק בהוספה (created_at וכדומה)
+ */
+function upsert(string $table, array $key, array $values, array $insertOnly = []): void {
+    // שמות עמודות אינם ניתנים לפרמטור, ולכן נבדקים במפורש. כל
+    // הקוראים מעבירים שמות קבועים, וזו רשת ביטחון ולא הגנה יחידה.
+    foreach ([$table, ...array_keys($key), ...array_keys($values), ...array_keys($insertOnly)] as $n) {
+        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string) $n)) {
+            throw new InvalidArgumentException("שם עמודה או טבלה לא תקין: $n");
+        }
+    }
+
+    $insert = $key + $values + $insertOnly;
+    $cols   = implode(', ', array_map(fn($c) => "\"$c\"", array_keys($insert)));
+    $marks  = implode(', ', array_fill(0, count($insert), '?'));
+    q("INSERT OR IGNORE INTO \"$table\" ($cols) VALUES ($marks)", array_values($insert));
+
+    if (!$values) return;
+
+    $set   = implode(', ', array_map(fn($c) => "\"$c\" = ?", array_keys($values)));
+    $where = implode(' AND ', array_map(fn($c) => "\"$c\" = ?", array_keys($key)));
+    q("UPDATE \"$table\" SET $set WHERE $where",
+      array_merge(array_values($values), array_values($key)));
+}
+
 /* ── שליפות ─────────────────────────────────────────────────────── */
 
 /** מדיניות המשתמש, עם ברירות מחדל אם טרם נוצרה שורה. */
@@ -153,8 +197,9 @@ function policyFor(int $userId): array {
         'user_id' => $userId, 'mode' => MODE_KIOSK, 'posture' => POSTURE_DENY,
         'blocked_types' => '', 'timezone' => 'Asia/Jerusalem',
         'days_mask' => 127, 'window_start' => '', 'window_end' => '',
-        'daily_quota_min' => 0, 'session_max_min' => 0, 'max_devices' => 1,
+        'ad_block' => '', 'daily_quota_min' => 0, 'session_max_min' => 0, 'max_devices' => 1,
         'allow_downloads' => 0, 'block_screenshots' => 0, 'keep_history' => 1,
+        'allow_pip' => 0, 'allow_background' => 0,
     ];
 }
 
@@ -169,12 +214,18 @@ function usedTodaySeconds(int $userId, string $tz): int {
     return (int) ($row['seconds'] ?? 0);
 }
 
-/** צובר שניות ליום הנוכחי. UPSERT כדי שלא יידרש SELECT לפני. */
+/**
+ * צובר שניות ליום הנוכחי.
+ *
+ * כאן צריך חיבור ולא החלפה, ולכן זו אינה upsert רגילה: קודם מובטח
+ * שהשורה קיימת, ואז מוסיפים לה. שתי הפקודות עובדות בכל גרסת SQLite.
+ */
 function addUsage(int $userId, string $tz, int $seconds): void {
     if ($seconds <= 0) return;
-    q('INSERT INTO usage (user_id, day, seconds) VALUES (?, ?, ?)
-       ON CONFLICT(user_id, day) DO UPDATE SET seconds = seconds + excluded.seconds',
-      [$userId, todayIn($tz), $seconds]);
+    $day = todayIn($tz);
+    q('INSERT OR IGNORE INTO usage (user_id, day, seconds) VALUES (?, ?, 0)', [$userId, $day]);
+    q('UPDATE usage SET seconds = seconds + ? WHERE user_id = ? AND day = ?',
+      [$seconds, $userId, $day]);
 }
 
 /**
@@ -241,25 +292,27 @@ function platformItemsFor(int $userId): array {
  * ריקה נשמרת לזמן קצר — אחרת סרטון שיוטיוב לא ענה עליו היה גורר
  * פנייה חוזרת בכל לחיצה.
  */
-function youTubeOwner(string $videoId): string {
-    $row = one('SELECT channel_id, fetched_at FROM video_owner WHERE platform = ? AND video_id = ?',
-               [PLATFORM_YOUTUBE, $videoId]);
+function youTubeOwner(string $videoId): array {
+    $row = one('SELECT channel_id, handle, fetched_at FROM video_owner
+                WHERE platform = ? AND video_id = ?', [PLATFORM_YOUTUBE, $videoId]);
 
     if ($row) {
-        if ($row['channel_id'] !== '') return $row['channel_id'];
-        // כישלון נשמר לשעה בלבד: ייתכן שהיה תקלה רגעית.
-        if (strtotime($row['fetched_at']) > time() - 3600) return '';
+        if ($row['channel_id'] !== '' || $row['handle'] !== '') {
+            return ['channel' => $row['channel_id'], 'handle' => $row['handle']];
+        }
+        // כישלון נשמר לשעה בלבד: ייתכן שהייתה תקלה רגעית.
+        if (strtotime($row['fetched_at']) > time() - 3600) {
+            return ['channel' => '', 'handle' => ''];
+        }
     }
 
     $info = fetchYouTubeOwner($videoId);
-    q('INSERT INTO video_owner (platform, video_id, channel_id, title, fetched_at)
-       VALUES (?,?,?,?,?)
-       ON CONFLICT(platform, video_id) DO UPDATE SET
-         channel_id = excluded.channel_id, title = excluded.title,
-         fetched_at = excluded.fetched_at',
-      [PLATFORM_YOUTUBE, $videoId, $info['channel'], $info['title'], nowIso()]);
+    upsert('video_owner',
+           ['platform' => PLATFORM_YOUTUBE, 'video_id' => $videoId],
+           ['channel_id' => $info['channel'], 'handle' => $info['handle'],
+            'title' => $info['title'], 'fetched_at' => nowIso()]);
 
-    return $info['channel'];
+    return ['channel' => $info['channel'], 'handle' => $info['handle']];
 }
 
 /** כל מה שהמנוע צריך על משתמש, במקום אחד. */
@@ -270,6 +323,6 @@ function ruleSetFor(int $userId): array {
         'domain_map'     => domainMap(),
         'platforms'      => platformRulesFor($userId),
         'platform_items' => platformItemsFor($userId),
-        'owner_of'       => fn(string $v) => youTubeOwner($v),
+        'owner_of'       => fn(string $v) => youTubeOwner($v),   // ['channel'=>…, 'handle'=>…]
     ];
 }

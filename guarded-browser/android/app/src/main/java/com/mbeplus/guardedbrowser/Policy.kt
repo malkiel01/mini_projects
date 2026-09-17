@@ -42,6 +42,7 @@ data class Policy(
     val mode: String = MODE_KIOSK,
     val posture: String = POSTURE_DENY,
     val blockedTypes: List<String> = emptyList(),
+    val adBlock: List<String> = emptyList(),
     val timezone: String = "Asia/Jerusalem",
     val daysMask: Int = 127,
     val windowStart: String = "",
@@ -51,6 +52,8 @@ data class Policy(
     val allowDownloads: Boolean = false,
     val blockScreenshots: Boolean = false,
     val keepHistory: Boolean = true,
+    val allowPip: Boolean = false,
+    val allowBackground: Boolean = false,
 ) {
     companion object {
         const val MODE_KIOSK = "kiosk"
@@ -63,6 +66,8 @@ data class Policy(
             posture = o.optString("posture", POSTURE_DENY),
             blockedTypes = o.optString("blocked_types").split(",")
                 .map { it.trim() }.filter { it.isNotEmpty() },
+            adBlock = o.optString("ad_block").split(",")
+                .map { it.trim() }.filter { it.isNotEmpty() },
             timezone = o.optString("timezone", "Asia/Jerusalem"),
             daysMask = o.optInt("days_mask", 127),
             windowStart = o.optString("window_start"),
@@ -72,6 +77,25 @@ data class Policy(
             allowDownloads = o.optBoolean("allow_downloads"),
             blockScreenshots = o.optBoolean("block_screenshots"),
             keepHistory = o.optBoolean("keep_history", true),
+            allowPip = o.optBoolean("allow_pip"),
+            allowBackground = o.optBoolean("allow_background"),
+        )
+    }
+}
+
+/**
+ * אריח במסך הפתיחה.
+ *
+ * נפרד מ-Rule בכוונה: Rule הוא כלל אכיפה, ואריח הוא רק קיצור דרך.
+ * ערוץ יוטיוב מאושר הוא אריח בלי שיהיה כלל כתובת — ואילו ערבבנו
+ * ביניהם, הוא היה הופך להיתר גורף לכל youtube.com.
+ */
+data class Tile(val label: String, val url: String, val kind: String) {
+    companion object {
+        fun from(o: JSONObject) = Tile(
+            label = o.optString("label"),
+            url = o.optString("url"),
+            kind = o.optString("kind", "url"),
         )
     }
 }
@@ -98,6 +122,8 @@ data class RuleSet(
     val domainMap: Map<String, List<String>> = emptyMap(),
     val platforms: Map<String, PlatformRule> = emptyMap(),
     val platformItems: Map<String, Map<String, Map<String, String>>> = emptyMap(),
+    val adHosts: List<String> = emptyList(),
+    val adCss: String = "",
 )
 
 data class Verdict(
@@ -264,6 +290,12 @@ object PolicyEngine {
         if (path == "/watch" && !query["v"].isNullOrEmpty()) return YtRef("video", query["v"]!!)
         Regex("^/(?:embed|v)/([A-Za-z0-9_-]{6,})").find(path)?.let { return YtRef("video", it.groupValues[1]) }
         Regex("^/shorts/([A-Za-z0-9_-]{6,})").find(path)?.let { return YtRef("shorts", it.groupValues[1]) }
+        /*
+         * חיפוש בתוך דף ערוץ — /@name/search. חייב להיבדק לפני
+         * תבניות הערוץ, אחרת הוא נקרא "ערוץ מאושר" ועובר; יוטיוב
+         * מציג שם גם תוצאות מערוצים אחרים.
+         */
+        if (path.endsWith("/search")) return YtRef("search", "")
         Regex("^/channel/(UC[A-Za-z0-9_-]{10,})").find(path)?.let { return YtRef("channel", it.groupValues[1]) }
         Regex("^/@([A-Za-z0-9._-]+)").find(path)?.let { return YtRef("handle", it.groupValues[1].lowercase()) }
         Regex("^/(?:c|user)/([A-Za-z0-9._-]+)").find(path)?.let { return YtRef("handle", it.groupValues[1].lowercase()) }
@@ -272,6 +304,17 @@ object PolicyEngine {
         if (path == "/" || path.startsWith("/feed")) return YtRef("home", "")
         return YtRef("other", "")
     }
+
+    /**
+     * נקודות הקצה שמזינות את החיפוש.
+     *
+     * חסימת /results לבדה אינה מספיקה: התוצאות וההצעות מגיעות
+     * בבקשות רקע, ובלי לחסום אותן המשתמש רואה תוצאות ותמונות
+     * ממוזערות גם כשהניווט אליהן ייחסם.
+     */
+    fun isYouTubeSearchEndpoint(path: String): Boolean =
+        listOf("/youtubei/v1/search", "/complete/search", "/search_ajax",
+               "/youtubei/v1/get_search_suggestions").any { path.startsWith(it) }
 
     /**
      * משאבי הנגן אינם ניווט. בלי המעבר הזה, מצב מוגבל היה חוסם את
@@ -289,7 +332,18 @@ object PolicyEngine {
                        items: Map<String, Map<String, String>>, isMainFrame: Boolean): Verdict {
         if (rule.mode == "off") return Verdict(false, "yt_off", "יוטיוב חסום בחשבון שלך")
 
-        if (!isMainFrame && isYouTubeAsset(url.full)) return Verdict(true, "yt_asset")
+        if (!isMainFrame) {
+            /*
+             * נקודת הקצה של החיפוש נחסמת בנפרד: יוטיוב הוא אתר
+             * עמוד-יחיד, והחיפוש אינו ניווט אלא בקשת רקע שמחליפה
+             * את תוכן הדף. חסימת /results לבדה אינה עוצרת אותו.
+             */
+            if (rule.mode == "restricted" && !rule.allowSearch &&
+                isYouTubeSearchEndpoint(url.path)) {
+                return Verdict(false, "yt_no_search", "החיפוש ביוטיוב חסום עבורך")
+            }
+            if (isYouTubeAsset(url.full)) return Verdict(true, "yt_asset")
+        }
 
         val ref = parseYouTube(url.full)
         fun action(kind: String, id: String) = items[kind]?.get(id) ?: ""
@@ -383,6 +437,15 @@ object PolicyEngine {
         if (url.isEmpty()) return Verdict(true, "session_ok")
         val u = normalize(url) ?: return Verdict(false, "bad_url", "הכתובת אינה תקינה")
 
+        /*
+         * פרסומות לפני כללי הכתובות, ולא אחריהם: פרסומת אינה יעד
+         * שהמשתמש ביקש אלא משאב בתוך דף שכן ביקש. אילו נבדקה
+         * אחריהם, "התר את האתר הזה" היה מחזיר את כל פרסומותיו.
+         */
+        if (isAdRequest(p, set, u, isMainFrame)) {
+            return Verdict(false, "ad_blocked", "פרסומת נחסמה")
+        }
+
         when (matchUrlRules(set.rules, u, isMainFrame)) {
             "deny" -> return Verdict(false, "rule_deny", "הכתובת הזו נחסמה עבורך")
             "allow" -> return Verdict(true, "rule_allow")
@@ -415,8 +478,47 @@ object PolicyEngine {
 
     /* ── פענוח מטען ה-JSON מהשרת ────────────────────────────────── */
 
+
+    /* ── פרסומות ────────────────────────────────────────────────── */
+
+    private val AD_PATHS = listOf(
+        Regex("^/pagead/"), Regex("^/ads?/"), Regex("^/adserver"), Regex("^/adframe"),
+        Regex("^/advert"), Regex("^/banners?/"), Regex("^/sponsor"), Regex("^/ptracking"),
+        Regex("/googleads?"), Regex("/prebid"), Regex("[?&]ad_type="), Regex("[?&]adunit="),
+    )
+    private val YT_AD_PATHS = listOf(
+        Regex("^/api/stats/ads"), Regex("^/pagead/"), Regex("^/ptracking"), Regex("^/get_midroll"),
+    )
+
+    /**
+     * ניווט אמיתי נחסם רק כשחסימת חלונות קופצים הופעלה: דומיין
+     * פרסומי שהמשתמש הקליד בעצמו אינו פרסומת.
+     */
+    fun isAdRequest(p: Policy, set: RuleSet, url: Url, isMainFrame: Boolean): Boolean {
+        if (isMainFrame && "popups" !in p.adBlock) return false
+        if (!isMainFrame && "network" !in p.adBlock) return false
+
+        if (set.adHosts.any { hostMatches(url.host, it) }) return true
+
+        val full = url.path + if (url.query.isNotEmpty()) "?" + url.query else ""
+        if (AD_PATHS.any { it.containsMatchIn(full) }) return true
+
+        // יוטיוב: רק נתיבי המדידה. הווידאו מגיע מאותו מקור, וחסימתו
+        // הייתה חוסמת את הסרטון שכן אושר.
+        if (platformOf(url.host) == PLATFORM_YOUTUBE && "youtube" in p.adBlock) {
+            if (YT_AD_PATHS.any { it.containsMatchIn(url.path) }) return true
+        }
+        return false
+    }
+
+    fun stringList(arr: JSONArray?): List<String> =
+        (0 until (arr?.length() ?: 0)).map { arr!!.optString(it) }.filter { it.isNotEmpty() }
+
     fun rulesFrom(arr: JSONArray?): List<Rule> =
         (0 until (arr?.length() ?: 0)).map { Rule.from(arr!!.getJSONObject(it)) }
+
+    fun tilesFrom(arr: JSONArray?): List<Tile> =
+        (0 until (arr?.length() ?: 0)).map { Tile.from(arr!!.getJSONObject(it)) }
 
     fun stringMap(o: JSONObject?): Map<String, String> {
         if (o == null) return emptyMap()

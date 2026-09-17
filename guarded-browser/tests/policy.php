@@ -168,8 +168,14 @@ $ytUrl   = fn(string $u) => normalizeUrl($u);
 $ytItems = ['channel' => ['UCgoodChannel1234567890' => 'allow', 'UCbadChannel12345678901' => 'deny'],
             'video'   => ['vid_ok' => 'allow'],
             'handle'  => ['torah' => 'allow']];
-$owner   = fn(string $v) => ['vid_from_good' => 'UCgoodChannel1234567890', 'vid_from_bad' => 'UCbadChannel12345678901',
-                             'vid_orphan' => ''][$v] ?? 'UCotherChan1234567890z';
+$owner   = fn(string $v) => match ($v) {
+    'vid_from_good'   => ['channel' => 'UCgoodChannel1234567890', 'handle' => 'goodguy'],
+    'vid_from_bad'    => ['channel' => 'UCbadChannel12345678901', 'handle' => 'badguy'],
+    'vid_orphan'      => ['channel' => '', 'handle' => ''],
+    // סרטון שהפענוח החזיר עליו רק כינוי, בלי מזהה ערוץ.
+    'vid_handle_only' => ['channel' => '', 'handle' => 'torah'],
+    default           => ['channel' => 'UCotherChan1234567890z', 'handle' => 'someone'],
+};
 
 check('כבוי — הכול חסום',
       youTubeVerdict($ytUrl('https://youtube.com/watch?v=vid_ok'),
@@ -279,6 +285,245 @@ check('מכסה קודמת לרשימה',
                array_replace($c, ['used_today' => 600]))['code'], 'quota_spent');
 check('בקשה בלי כתובת בודקת רק את החשבון',
       evaluate($user(), $pol(), $set(), $now, ['url' => ''])['code'], 'session_ok');
+
+echo "\n— קלט מקוצר של יוטיוב —\n";
+/*
+ * הדרישה להדביק כתובת מלאה היא עבודה שהמערכת אמורה לעשות במקום
+ * המנהל: מי שרוצה לאשר ערוץ מכיר אותו בשם, לא ב-URL.
+ */
+check('כינוי בלבד',
+      normalizeYouTubeInput('@MercazDafYomi'), ['kind' => 'handle', 'id' => 'mercazdafyomi']);
+check('כינוי באות גדולה יורד לקטנה',
+      normalizeYouTubeInput('@MERCAZ')['id'], 'mercaz');
+check('שם בלי @',
+      normalizeYouTubeInput('MercazDafYomi'), ['kind' => 'handle', 'id' => 'mercazdafyomi']);
+/*
+ * הבאג שהתיקון הזה מונע: השלמה עיוורת של הקידומת הפכה
+ * "youtube.com/@x" ל-"youtube.com/youtube.com/@x".
+ */
+check('דומיין בלי סכימה',
+      normalizeYouTubeInput('youtube.com/@MercazDafYomi'),
+      ['kind' => 'handle', 'id' => 'mercazdafyomi']);
+check('עם www ובלי סכימה',
+      normalizeYouTubeInput('www.youtube.com/@Mercaz')['id'], 'mercaz');
+check('כתובת מלאה',
+      normalizeYouTubeInput('https://www.youtube.com/@Mercaz')['id'], 'mercaz');
+check('קישור מקוצר בלי סכימה',
+      normalizeYouTubeInput('youtu.be/dQw4w9WgXcQ'),
+      ['kind' => 'video', 'id' => 'dQw4w9WgXcQ']);
+check('מזהה ערוץ חשוף',
+      normalizeYouTubeInput('UCabcdefghijklmnopqrstuv'),
+      ['kind' => 'channel', 'id' => 'UCabcdefghijklmnopqrstuv']);
+check('מזהה סרטון חשוף',
+      normalizeYouTubeInput('dQw4w9WgXcQ'), ['kind' => 'video', 'id' => 'dQw4w9WgXcQ']);
+check('מזהה פלייליסט חשוף',
+      normalizeYouTubeInput('PLabcdefghij123')['kind'], 'playlist');
+check('כתובת צפייה מלאה',
+      normalizeYouTubeInput('https://youtube.com/watch?v=dQw4w9WgXcQ'),
+      ['kind' => 'video', 'id' => 'dQw4w9WgXcQ']);
+check('Shorts',
+      normalizeYouTubeInput('youtube.com/shorts/dQw4w9WgXcQ')['kind'], 'shorts');
+check('ריק אינו מזהה',   normalizeYouTubeInput('   ')['kind'], 'other');
+check('תווים פסולים',     normalizeYouTubeInput('@שלום עולם')['kind'], 'other');
+check('דומיין אחר לגמרי', normalizeYouTubeInput('vimeo.com/123')['kind'], 'other');
+
+
+echo "\n— כתובת של פריט יוטיוב —\n";
+/*
+ * בלי הכתובות האלה, ערוץ מאושר אינו נגיש בכלל במצב קיוסק: האריחים
+ * נבנים מכללי כתובות, ולפריט פלטפורמה אין כתובת משלו.
+ */
+check('ערוץ',     youTubeItemUrl('channel', 'UCabc'), 'https://www.youtube.com/channel/UCabc');
+check('כינוי',    youTubeItemUrl('handle', 'mercaz'), 'https://www.youtube.com/@mercaz');
+check('סרטון',    youTubeItemUrl('video', 'abc123'), 'https://www.youtube.com/watch?v=abc123');
+check('פלייליסט', youTubeItemUrl('playlist', 'PL1'), 'https://www.youtube.com/playlist?list=PL1');
+check('סוג לא מוכר', youTubeItemUrl('nope', 'x'), '');
+
+// הכתובות שנוצרות חייבות להיות מזוהות חזרה, אחרת האריח ייחסם.
+foreach ([['channel', 'UCabcdefghijklmnopqrstuv'], ['handle', 'mercaz'],
+          ['video', 'dQw4w9WgXcQ'], ['playlist', 'PLabcdefghij123']] as [$k, $id]) {
+    $back = parseYouTube(youTubeItemUrl($k, $id));
+    check("הלוך-חזור: $k", [$back['kind'], $back['id']], [$k, $id]);
+}
+
+/*
+ * המלכודת שהתגלתה בייצור: youtu.be/ID מפנה ל-youtube.com/watch,
+ * דומיין אחר שכלל הכתובת כבר אינו חל עליו. ההכרעה נופלת אז לכללי
+ * הפלטפורמה, והמנהל רואה "חסום" על כתובת שהוא בטוח שהתיר.
+ */
+$shortLink = [$rule('https://youtu.be/_rYPW4QzwG8', ['scope' => 'domain_plus'])];
+$ytOff = $set(['rules' => $shortLink, 'platforms' => [PLATFORM_YOUTUBE => ['mode' => 'off']]]);
+check('הקישור המקוצר עצמו מותר לפי הכלל',
+      evaluate($user(), $pol(), $ytOff, $now, ['url' => 'https://youtu.be/_rYPW4QzwG8'])['code'],
+      'rule_allow');
+check('אבל היעד שאליו הוא מפנה כבר לא',
+      evaluate($user(), $pol(), $ytOff, $now,
+               ['url' => 'https://www.youtube.com/watch?v=_rYPW4QzwG8'])['code'], 'yt_off');
+
+
+echo "\n— חיפוש באתר עמוד-יחיד —\n";
+/*
+ * יוטיוב הוא אתר עמוד-יחיד: לחיצה על תוצאת חיפוש אינה ניווט, אלא
+ * בקשת רקע שמחליפה את תוכן הדף. חסימת /results לבדה אינה עוצרת
+ * את החיפוש — צריך לחסום את הבקשה שמחזירה את התוצאות.
+ */
+$noSearch = ['mode' => 'restricted', 'allow_search' => 0];
+$yesSearch = ['mode' => 'restricted', 'allow_search' => 1];
+
+check('בקשת החיפוש נחסמת',
+      youTubeVerdict($ytUrl('https://www.youtube.com/youtubei/v1/search?key=x'),
+                     $noSearch, $ytItems, false)['code'], 'yt_no_search');
+check('וכשהחיפוש הותר — עוברת',
+      youTubeVerdict($ytUrl('https://www.youtube.com/youtubei/v1/search?key=x'),
+                     $yesSearch, $ytItems, false)['allow'], true);
+// הנגן חייב להמשיך לעבוד: חסימה גורפת של youtubei הייתה משאירה
+// מסך שחור גם על סרטון שאושר.
+check('בקשת הנגן ממשיכה לעבוד',
+      youTubeVerdict($ytUrl('https://www.youtube.com/youtubei/v1/player?key=x'),
+                     $noSearch, $ytItems, false)['code'], 'yt_asset');
+check('ובקשת דף הערוץ גם',
+      youTubeVerdict($ytUrl('https://www.youtube.com/youtubei/v1/browse?key=x'),
+                     $noSearch, $ytItems, false)['code'], 'yt_asset');
+check('במצב פתוח החיפוש אינו נחסם',
+      youTubeVerdict($ytUrl('https://www.youtube.com/youtubei/v1/search?key=x'),
+                     ['mode' => 'full'], $ytItems, false)['allow'], true);
+
+
+echo "\n— חיפוש בתוך דף ערוץ —\n";
+/*
+ * הפער שהתגלה: /@ערוץ/search נקרא "ערוץ מאושר" ועבר, בזמן שיוטיוב
+ * מציג שם גם תוצאות מערוצים אחרים. חיפוש הוא חיפוש, לא משנה מאיזה
+ * דף התחילו אותו.
+ */
+check('חיפוש בדף ערוץ מזוהה כחיפוש',
+      parseYouTube('https://www.youtube.com/@Mercaz/search?query=x')['kind'], 'search');
+check('וגם בצורת channel',
+      parseYouTube('https://www.youtube.com/channel/UCabcdefghijk/search?query=x')['kind'], 'search');
+check('ודף הערוץ עצמו נשאר ערוץ',
+      parseYouTube('https://www.youtube.com/@Mercaz')['kind'], 'handle');
+check('וגם לשוניות אחרות שלו',
+      parseYouTube('https://www.youtube.com/@Mercaz/videos')['kind'], 'handle');
+check('בפועל — חיפוש בדף ערוץ מאושר עדיין נחסם',
+      youTubeVerdict($ytUrl('https://www.youtube.com/@Torah/search?query=x'),
+                     $restricted, $ytItems, true)['code'], 'yt_no_search');
+check('וכשהחיפוש הותר — נפתח',
+      youTubeVerdict($ytUrl('https://www.youtube.com/@Torah/search?query=x'),
+                     ['mode' => 'restricted', 'allow_search' => 1], $ytItems, true)['allow'], true);
+
+
+echo "\n— נקודות הקצה של החיפוש —\n";
+/*
+ * חסימת /results לבדה אינה מספיקה: יוטיוב הוא אתר עמוד-יחיד,
+ * והתוצאות וההצעות מגיעות בבקשות רקע. אם הן עוברות, המשתמש רואה
+ * תוצאות ותמונות ממוזערות גם כשהניווט אליהן ייחסם.
+ */
+check('בקשת חיפוש',   isYouTubeSearchEndpoint('/youtubei/v1/search'), true);
+check('הצעות השלמה',  isYouTubeSearchEndpoint('/complete/search'), true);
+check('הנגן אינו חיפוש', isYouTubeSearchEndpoint('/youtubei/v1/player'), false);
+check('דף הערוץ אינו חיפוש', isYouTubeSearchEndpoint('/youtubei/v1/browse'), false);
+check('הצעות ההשלמה נחסמות בפועל',
+      youTubeVerdict($ytUrl('https://www.youtube.com/complete/search?q=x'),
+                     $noSearch, $ytItems, false)['code'], 'yt_no_search');
+
+
+echo "\n— ערוץ שאושר בכינוי —\n";
+/*
+ * המנהל מדביק "@Name" — זה מה שהוא מכיר. הפענוח מחזיר "UC..." בלבד,
+ * והשניים לעולם לא נפגשו: ערוץ שאושר בכינוי לא התאים לאף סרטון,
+ * והמשתמש קיבל "לא הצלחנו לוודא" על ערוץ שאושר לו במפורש.
+ */
+check('סרטון מותאם לפי הכינוי כשאין מזהה',
+      youTubeVerdict($ytUrl('https://youtube.com/watch?v=vid_handle_only'),
+                     $restricted, $ytItems, true, $owner)['code'], 'yt_channel_allowed');
+check('ומול מזהה הערוץ כרגיל',
+      youTubeVerdict($ytUrl('https://youtube.com/watch?v=vid_from_good'),
+                     $restricted, $ytItems, true, $owner)['code'], 'yt_channel_allowed');
+check('פענוח ריק לגמרי עדיין סוגר',
+      youTubeVerdict($ytUrl('https://youtube.com/watch?v=vid_orphan'),
+                     $restricted, $ytItems, true, $owner)['code'], 'yt_owner_unknown');
+// איסור על אחת הצורות חוסם, גם אם השנייה לא הוגדרה.
+$denyHandle = ['handle' => ['someone' => 'deny']];
+check('איסור לפי כינוי חוסם',
+      youTubeVerdict($ytUrl('https://youtube.com/watch?v=whatever'),
+                     $restricted, $denyHandle, true, $owner)['code'], 'yt_item_denied');
+
+
+echo "\n— פענוח בעלות מ-oEmbed —\n";
+/*
+ * הדף הרגיל של יוטיוב הוא מגה-בייט, וגוגל מחליפה אותו בדף הסכמה
+ * לעוגיות בפניות מדאטה-סנטר — התשובה חוזרת מהר ובהצלחה, ופשוט אין
+ * בה מזהה ערוץ. ‏oEmbed הוא קילובייט של JSON שמחזיר בדיוק את זה.
+ */
+check('כינוי מ-author_url',
+      parseOEmbedOwner(['author_url' => 'https://www.youtube.com/@MercazDafYomi'])['handle'],
+      'mercazdafyomi');
+check('מזהה ערוץ מ-author_url',
+      parseOEmbedOwner(['author_url' => 'https://www.youtube.com/channel/UCabcdefghijk'])['channel'],
+      'UCabcdefghijk');
+check('כותרת נשמרת',
+      parseOEmbedOwner(['author_url' => 'https://www.youtube.com/@x', 'title' => 'שיעור'])['title'],
+      'שיעור');
+check('תשובה ריקה אינה ממציאה',
+      parseOEmbedOwner([]), ['channel' => '', 'handle' => '', 'title' => '']);
+
+// הגיבוי: גריפת דף הצפייה, כששני הזיהויים קיימים בו.
+$html = '<meta name="title" content="שיעור יומי">'
+      . '{"channelId":"UCabcdefghijklmnop","canonicalBaseUrl":"/@MercazDafYomi"}';
+check('גיבוי HTML — מזהה', parseYouTubeOwnerHtml($html)['channel'], 'UCabcdefghijklmnop');
+check('גיבוי HTML — כינוי', parseYouTubeOwnerHtml($html)['handle'], 'mercazdafyomi');
+check('גיבוי HTML — כותרת', parseYouTubeOwnerHtml($html)['title'], 'שיעור יומי');
+check('דף הסכמה אינו מייצר זהות',
+      parseYouTubeOwnerHtml('<html><body>Before you continue to YouTube</body></html>'),
+      ['channel' => '', 'handle' => '', 'title' => '']);
+
+
+echo "\n— חסימת פרסומות —\n";
+/*
+ * פרסומת אינה יעד שהמשתמש ביקש, אלא משאב בתוך דף שכן ביקש. לכן
+ * היא נבדקת לפני כללי הכתובות: אילו נבדקה אחריהם, "התר את האתר
+ * הזה" היה מחזיר את כל הפרסומות שבו.
+ */
+$ads = $pol(['posture' => POSTURE_ALLOW, 'ad_block' => 'network,cosmetic,youtube']);
+$adUrl = fn(string $u) => normalizeUrl($u);
+
+check('דומיין פרסום נחסם',
+      isAdRequest($ads, $adUrl('https://doubleclick.net/x'), false), true);
+check('גם תת-דומיין שלו',
+      isAdRequest($ads, $adUrl('https://cdn.googlesyndication.com/a.js'), false), true);
+check('נתיב פרסומי בדומיין תמים',
+      isAdRequest($ads, $adUrl('https://news.co.il/pagead/banner.js'), false), true);
+check('משאב רגיל עובר',
+      isAdRequest($ads, $adUrl('https://news.co.il/style.css'), false), false);
+check('מדידת פרסומות של יוטיוב נחסמת',
+      isAdRequest($ads, $adUrl('https://www.youtube.com/api/stats/ads?x=1'), false), true);
+// חסימת הווידאו עצמו הייתה חוסמת את הסרטון שכן אושר.
+check('אבל הווידאו עצמו עובר',
+      isAdRequest($ads, $adUrl('https://rr1.googlevideo.com/videoplayback?x=1'), false), false);
+
+// כשהמצב כבוי — שום דבר לא נחסם.
+$noAds = $pol(['posture' => POSTURE_ALLOW]);
+check('כשהחסימה כבויה — עובר',
+      isAdRequest($noAds, $adUrl('https://doubleclick.net/x'), false), false);
+
+// ניווט אמיתי נחסם רק כשחסימת חלונות קופצים הופעלה.
+check('ניווט לדומיין פרסום — רק עם popups',
+      isAdRequest($ads, $adUrl('https://doubleclick.net/x'), true), false);
+check('ועם popups — נחסם',
+      isAdRequest($pol(['ad_block' => 'popups']), $adUrl('https://doubleclick.net/x'), true), true);
+
+/*
+ * הקדימות שהיא כל העניין: כלל שמתיר את האתר אינו מחזיר את
+ * הפרסומות שבתוכו.
+ */
+check('היתר מפורש לאתר אינו מחזיר את פרסומותיו',
+      evaluate($user(), $ads, $set(['rules' => [$rule('news.co.il', ['scope' => 'domain_plus'])]]),
+               $now, ['url' => 'https://doubleclick.net/ad.js', 'main_frame' => false])['code'],
+      'ad_blocked');
+check('והתוכן של אותו אתר כן נטען',
+      evaluate($user(), $ads, $set(['rules' => [$rule('news.co.il', ['scope' => 'domain_plus'])]]),
+               $now, ['url' => 'https://news.co.il/article', 'main_frame' => true])['code'],
+      'rule_allow');
+
 
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 exit($fail === 0 ? 0 : 1);

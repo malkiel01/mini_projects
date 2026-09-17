@@ -17,6 +17,7 @@ $tmp = sys_get_temp_dir() . '/gb-test-' . getmypid();
 putenv("GB_DATA_DIR=$tmp");
 
 require_once __DIR__ . '/../lib/auth.php';
+require_once __DIR__ . '/../lib/alerts.php';
 
 // ניקוי גם כשהבדיקה נופלת באמצע.
 register_shutdown_function(function () use ($tmp) {
@@ -128,7 +129,22 @@ check('ערוץ אחר נחסם',
 // מטמון הבעלות: תשובה ריקה נשמרת, ואינה גוררת פנייה בכל לחיצה.
 q('INSERT INTO video_owner (platform, video_id, channel_id, title, fetched_at) VALUES (?,?,?,?,?)',
   [PLATFORM_YOUTUBE, 'cachedVid1', 'UCtestChannel123456789', 'בדיקה', nowIso()]);
-check('המטמון מחזיר בלי רשת', youTubeOwner('cachedVid1'), 'UCtestChannel123456789');
+// הפענוח מחזיר מזהה וכינוי גם יחד: המנהל מאשר באחת מהצורות,
+// והפענוח מחזיר את השנייה.
+check('המטמון מחזיר בלי רשת',
+      youTubeOwner('cachedVid1')['channel'], 'UCtestChannel123456789');
+
+q('INSERT INTO video_owner (platform, video_id, channel_id, handle, title, fetched_at)
+   VALUES (?,?,?,?,?,?)',
+  [PLATFORM_YOUTUBE, 'handleOnlyV', '', 'mercazdafyomi', 'רק כינוי', nowIso()]);
+check('וגם כינוי בלבד', youTubeOwner('handleOnlyV')['handle'], 'mercazdafyomi');
+
+q('INSERT INTO platform_items (user_id, platform, kind, item_id, action, created_at)
+   VALUES (?,?,?,?,?,?)',
+  [$uid, PLATFORM_YOUTUBE, 'handle', 'mercazdafyomi', 'allow', nowIso()]);
+check('סרטון נפתח לפי ערוץ שאושר בכינוי',
+      evaluate($u, $pol, ruleSetFor($uid), $now,
+               ['url' => 'https://youtube.com/watch?v=handleOnlyV'])['code'], 'yt_channel_allowed');
 check('וסרטון מהערוץ הזה נפתח',
       evaluate($u, $pol, ruleSetFor($uid), $now,
                ['url' => 'https://youtube.com/watch?v=cachedVid1'])['code'], 'yt_channel_allowed');
@@ -156,6 +172,91 @@ migrate(db());
 $after = policyFor($uid);
 check('free הפך לדפדפן', $after['mode'], MODE_BROWSER);
 check('ולפתוח כברירת מחדל', $after['posture'], POSTURE_ALLOW);
+
+echo "\n— תאימות SQLite —\n";
+/*
+ * ‏"INSERT ... ON CONFLICT DO UPDATE" נוסף ב-SQLite 3.24 (2018).
+ * בסביבת הפיתוח יש גרסה חדשה, ולכן הוא עבר כאן — ונפל בייצור על
+ * "near ON: syntax error". הבדיקה הזו סורקת את הקוד עצמו, כי אי
+ * אפשר לבדוק את זה מול בסיס נתונים חדש.
+ */
+$offenders = [];
+foreach (glob(__DIR__ . '/../{lib,admin,api}/*.php', GLOB_BRACE) ?: [] as $file) {
+    $code = (string) file_get_contents($file);
+    // מתעלמים מהערות: הן מסבירות את האיסור ואינן מפרות אותו.
+    $code = preg_replace('#/\*.*?\*/|//[^\n]*#s', '', $code);
+    if (preg_match('/ON\s+CONFLICT/i', (string) $code)) $offenders[] = basename($file);
+}
+check('אין ON CONFLICT בשום קובץ', $offenders, []);
+
+echo "\n— upsert נייד —\n";
+upsert('platform_rules', ['user_id' => $uid, 'platform' => 'testplat'],
+       ['mode' => 'restricted'], ['created_at' => nowIso()]);
+check('הוספה יוצרת שורה',
+      one('SELECT mode FROM platform_rules WHERE user_id=? AND platform=?',
+          [$uid, 'testplat'])['mode'], 'restricted');
+
+upsert('platform_rules', ['user_id' => $uid, 'platform' => 'testplat'],
+       ['mode' => 'full'], ['created_at' => '1999-01-01T00:00:00Z']);
+$row = one('SELECT mode, created_at FROM platform_rules WHERE user_id=? AND platform=?',
+           [$uid, 'testplat']);
+check('קריאה שנייה מעדכנת', $row['mode'], 'full');
+// ‏created_at הוא insertOnly: עדכון אינו אמור לדרוס אותו, אחרת
+// "מתי נוצר" היה הופך ל"מתי נגעו בזה לאחרונה".
+check('ושדה הוספה-בלבד אינו נדרס', $row['created_at'] !== '1999-01-01T00:00:00Z', true);
+check('ואין כפילות',
+      (int) one('SELECT COUNT(*) n FROM platform_rules WHERE user_id=? AND platform=?',
+                [$uid, 'testplat'])['n'], 1);
+
+check('שם עמודה פסול נדחה', (function () use ($uid) {
+    try { upsert('policies', ['user_id' => $uid], ['mode; DROP TABLE users' => 'x']); return false; }
+    catch (InvalidArgumentException) { return true; }
+})(), true);
+
+
+echo "\n— זיהוי כשל אכיפה —\n";
+/*
+ * האכיפה כפולה, ולכן העניין הוא ברגע שהצדדים חולקים: אפליקציה
+ * שהתירה כתובת שהשרת אוסר היא אפליקציה שהאכיפה בה לא עשתה את שלה.
+ */
+q('DELETE FROM alerts');
+q("UPDATE platform_rules SET mode = 'restricted' WHERE user_id = ?", [$uid]);
+
+$deny = ['allow' => false, 'code' => 'yt_not_approved', 'reason' => ''];
+checkEnforcementGap($uid, 'https://youtube.com/watch?v=x', true, $deny, PLATFORM_YOUTUBE);
+
+check('נרשמה התרעה', openAlertCount(), 1);
+check('בחומרה גבוהה', openAlerts()[0]['severity'], 'high');
+// נעילה מיידית, לא המתנה לכך שהמנהל יסתכל.
+check('והפלטפורמה ננעלה',
+      platformRulesFor($uid)[PLATFORM_YOUTUBE]['mode'], 'off');
+// הרשימה שהמנהל בנה נשארת — פתיחה מחדש היא לחיצה, לא בנייה מחדש.
+check('אבל הפריטים המאושרים נשמרו',
+      count(platformItemsFor($uid)[PLATFORM_YOUTUBE] ?? []) > 0, true);
+
+q('DELETE FROM alerts');
+checkEnforcementGap($uid, 'https://x.com', true, ['allow' => true, 'code' => 'ok'], '');
+check('הסכמה אינה מייצרת התרעה', openAlertCount(), 0);
+// לקוח שחסם משהו שמותר הוא מחמיר מדי, לא פרוץ.
+checkEnforcementGap($uid, 'https://x.com', false, $deny, PLATFORM_YOUTUBE);
+check('וגם לקוח מחמיר מדי אינו התרעה', openAlertCount(), 0);
+
+echo "\n— ניסיונות חוזרים —\n";
+q('DELETE FROM alerts');
+q('DELETE FROM audit WHERE user_id = ?', [$uid]);
+for ($i = 0; $i < PROBE_LIMIT - 1; $i++) audit($uid, 'nav', false, "https://x$i.com", 'not_listed');
+checkProbing($uid, 'https://x.com');
+check('מתחת לסף — שקט', openAlertCount(), 0);
+
+audit($uid, 'nav', false, 'https://last.com', 'not_listed');
+checkProbing($uid, 'https://x.com');
+check('מעל הסף — התרעה', openAlertCount(), 1);
+// דפוס אינו ראיה, ולכן הוא מתריע ואינו נועל: משתמש תמים שנתקע
+// אינו אמור למצוא את עצמו חסום.
+check('אבל אינו נועל', openAlerts()[0]['severity'], 'warn');
+
+q('DELETE FROM alerts'); q('DELETE FROM audit WHERE user_id = ?', [$uid]);
+
 
 echo "\n— מכשירים —\n";
 $token = registerDevice($uid, 'Pixel 8', 'abc-123', 1);

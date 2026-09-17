@@ -75,11 +75,17 @@ class HomeActivity : AppCompatActivity() {
         return if (m > 0) "נותרו לך $m דקות צפייה היום" else "מכסת היום נוצלה"
     }
 
-    /** אריח לכל כלל שסומן להצגה. כלל אוסר אינו אריח. */
+    /**
+     * אריח לכל קיצור דרך שהשרת שלח — כללי כתובות שסומנו להצגה,
+     * וגם ערוצים וסרטונים שאושרו ביוטיוב.
+     *
+     * בלי החלק השני, ערוץ מאושר אינו נגיש בכלל במצב קיוסק: אין שורת
+     * כתובת, ואין אריח שמוביל אליו.
+     */
     private fun drawTiles(enabled: Boolean) {
         b.tiles.removeAllViews()
 
-        val tiles = store.rules().filter { it.showTile && it.action == "allow" }
+        val tiles = store.tiles()
         val policy = store.policy()
 
         // שורת הכתובת קיימת רק כשהמצב מתיר אותה. בקיוסק אין מה להקליד.
@@ -94,14 +100,14 @@ class HomeActivity : AppCompatActivity() {
         }
         b.empty.visibility = View.GONE
 
-        for (rule in tiles) {
+        for (tile in tiles) {
             val v = layoutInflater.inflate(R.layout.item_tile, b.tiles, false)
             v.findViewById<TextView>(R.id.tileLabel).text =
-                rule.label.ifEmpty { rule.pattern }
-            v.findViewById<TextView>(R.id.tileUrl).text = rule.pattern
+                (if (tile.kind == "youtube") "▶ " else "") + tile.label.ifEmpty { tile.url }
+            v.findViewById<TextView>(R.id.tileUrl).text = tile.url
             v.isEnabled = enabled
             v.alpha = if (enabled) 1f else 0.4f
-            if (enabled) v.setOnClickListener { open(rule.pattern) }
+            if (enabled) v.setOnClickListener { open(tile.url) }
             b.tiles.addView(v)
         }
     }

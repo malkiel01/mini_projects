@@ -11,6 +11,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/alerts.php';
 
 /**
  * ‏Argon2id אם קיים, ואחרת ברירת המחדל של PHP.

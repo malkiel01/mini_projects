@@ -47,6 +47,7 @@ function schemaStatements(): array {
         mode               TEXT    NOT NULL DEFAULT 'kiosk',
         posture            TEXT    NOT NULL DEFAULT 'deny_all',
         blocked_types      TEXT    NOT NULL DEFAULT '',
+        ad_block           TEXT    NOT NULL DEFAULT '',
         timezone           TEXT    NOT NULL DEFAULT 'Asia/Jerusalem',
         days_mask          INTEGER NOT NULL DEFAULT 127,
         window_start       TEXT    NOT NULL DEFAULT '',
@@ -57,6 +58,8 @@ function schemaStatements(): array {
         allow_downloads    INTEGER NOT NULL DEFAULT 0,
         block_screenshots  INTEGER NOT NULL DEFAULT 0,
         keep_history       INTEGER NOT NULL DEFAULT 1,
+        allow_pip          INTEGER NOT NULL DEFAULT 0,
+        allow_background   INTEGER NOT NULL DEFAULT 0,
         updated_at         TEXT    NOT NULL DEFAULT ''
     )",
 
@@ -182,10 +185,43 @@ function schemaStatements(): array {
         platform   TEXT NOT NULL,
         video_id   TEXT NOT NULL,
         channel_id TEXT NOT NULL DEFAULT '',
+        handle     TEXT NOT NULL DEFAULT '',
         title      TEXT NOT NULL DEFAULT '',
         fetched_at TEXT NOT NULL,
         PRIMARY KEY (platform, video_id)
     )",
+
+
+    // ── התרעות ──────────────────────────────────────────────────
+    // כשהאכיפה במכשיר נכשלת, מישהו חייב לדעת. שורה כאן היא אירוע
+    // שהמנהל צריך לראות, ולא רק שורה נוספת ביומן שאיש לא קורא.
+    "CREATE TABLE IF NOT EXISTS alerts (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id    INTEGER NOT NULL,
+        at         TEXT    NOT NULL,
+        kind       TEXT    NOT NULL,
+        severity   TEXT    NOT NULL DEFAULT 'warn',
+        title      TEXT    NOT NULL,
+        detail     TEXT    NOT NULL DEFAULT '',
+        url        TEXT    NOT NULL DEFAULT '',
+        acked_at   TEXT    NOT NULL DEFAULT ''
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_alerts_open ON alerts(acked_at, id DESC)",
+
+
+    // ── רישומי אבחון מהמכשיר ────────────────────────────────────
+    // רצף האירועים שהאפליקציה הקליטה. תקלה שנמשכת פחות משנייה אינה
+    // ניתנת לתיאור במילים, וזה המקום היחיד שבו רואים אותה.
+    "CREATE TABLE IF NOT EXISTS traces (
+        id      INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        at      TEXT    NOT NULL,
+        label   TEXT    NOT NULL DEFAULT '',
+        device  TEXT    NOT NULL DEFAULT '',
+        sdk     INTEGER NOT NULL DEFAULT 0,
+        body    TEXT    NOT NULL DEFAULT ''
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_traces ON traces(id DESC)",
 
     ];
 }

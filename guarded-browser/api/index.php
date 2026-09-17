@@ -15,6 +15,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../lib/auth.php';
+require_once __DIR__ . '/../lib/alerts.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -90,6 +91,7 @@ function policyPayload(array $user): array {
             'mode'              => $policy['mode'],
             'posture'           => $policy['posture'],
             'blocked_types'     => $policy['blocked_types'],
+            'ad_block'          => $policy['ad_block'],
             'timezone'          => $tz,
             'days_mask'         => (int) $policy['days_mask'],
             'window_start'      => $policy['window_start'],
@@ -99,6 +101,8 @@ function policyPayload(array $user): array {
             'allow_downloads'   => (bool) $policy['allow_downloads'],
             'block_screenshots' => (bool) $policy['block_screenshots'],
             'keep_history'      => (bool) $policy['keep_history'],
+            'allow_pip'         => (bool) $policy['allow_pip'],
+            'allow_background'  => (bool) $policy['allow_background'],
         ],
         'rules' => array_map(fn($r) => [
             'label'     => $r['label'],
@@ -107,6 +111,18 @@ function policyPayload(array $user): array {
             'action'    => $r['action'],
             'show_tile' => (bool) $r['show_tile'],
         ], $set['rules']),
+        /*
+         * אריחים — מה שמוצג במסך הפתיחה.
+         *
+         * נפרד מ-rules בכוונה: rules הוא רשימת אכיפה, ופריט יוטיוב
+         * מאושר אינו כלל כתובת. אילו הוזרק לשם, האפליקציה הייתה
+         * מתייחסת אליו כהיתר גורף לדומיין ועוקפת את כללי הפלטפורמה.
+         */
+        'tiles'          => tilesFor($set),
+        // הרשימות נשלחות למכשיר כדי שהחסימה תקרה שם, לפני הטעינה.
+        // חסימה שמחכה לשרת היא פרסומת שכבר ירדה.
+        'ad_hosts'       => adHosts(),
+        'ad_css'         => adCssSelectors(),
         'categories'     => $set['categories'],
         'domain_map'     => $slim,
         'platforms'      => array_map(fn($p) => [
@@ -123,6 +139,35 @@ function policyPayload(array $user): array {
             'quota_left_sec' => $quota > 0 ? max(0, $quota * 60 - $used) : -1,
         ],
     ];
+}
+
+
+/**
+ * האריחים שהמשתמש יראה: כללי כתובות שסומנו להצגה, ובנוסף כל פריט
+ * יוטיוב שאושר.
+ *
+ * בלי החלק השני, ערוץ מאושר אינו נגיש כלל במצב קיוסק — אין שורת
+ * כתובת, ואין אריח שמוביל אליו.
+ */
+function tilesFor(array $set): array {
+    $tiles = [];
+
+    foreach ($set['rules'] as $r) {
+        if ($r['action'] !== 'allow' || !$r['show_tile']) continue;
+        $tiles[] = ['label' => $r['label'] ?: $r['pattern'], 'url' => $r['pattern'],
+                    'kind' => 'url'];
+    }
+
+    foreach (($set['platform_items'][PLATFORM_YOUTUBE] ?? []) as $kind => $items) {
+        foreach ($items as $id => $action) {
+            if ($action !== 'allow') continue;
+            $url = youTubeItemUrl((string) $kind, (string) $id);
+            if ($url === '') continue;
+            $tiles[] = ['label' => youTubeItemFallbackLabel((string) $kind, (string) $id),
+                        'url' => $url, 'kind' => 'youtube'];
+        }
+    }
+    return $tiles;
 }
 
 try {
@@ -219,7 +264,40 @@ try {
         // ניווט בלבד נרשם. משאב נלווה היה מציף את היומן באלפי שורות.
         if ($main) audit($uid, 'nav', $d['allow'], $url, $d['code']);
 
+        /*
+         * מה שהאפליקציה החליטה, כדי שאפשר יהיה להשוות.
+         *
+         * ‏client_allowed מגיע מהאפליקציה עצמה, ולכן אינו ראיה —
+         * לקוח שנפרץ לגמרי פשוט לא ישלח אותו. אבל פריצה חלקית,
+         * שבה האכיפה המקומית נשברה והדיווח נשאר, נתפסת כאן מיד.
+         * וגם בלעדיו, כל ניווט עדיין נבדק בשרת.
+         */
+        if ($main) {
+            $claimed = body()['client_allowed'] ?? null;
+            if ($claimed !== null) {
+                $host = normalizeUrl($url)['host'] ?? '';
+                checkEnforcementGap($uid, $url, (bool) $claimed, $d, platformOf($host));
+            }
+            if (!$d['allow']) checkProbing($uid, $url);
+        }
+
         out(['ok' => true, 'allowed' => $d['allow'], 'code' => $d['code'], 'reason' => $d['reason']]);
+    }
+
+    /* ── רישום אבחון מהמכשיר ────────────────────────────────────
+     * נשמרים 30 האחרונים בלבד: זהו מאגר אבחון, לא יומן קבוע.
+     */
+    if ($do === 'trace') {
+        $user = requireUser();
+        $body = mb_substr((string) (body()['body'] ?? ''), 0, 60000);
+        if (trim($body) === '') bad('רישום ריק', 'empty');
+
+        q('INSERT INTO traces (user_id, at, label, device, sdk, body) VALUES (?,?,?,?,?,?)',
+          [(int) $user['id'], nowIso(), mb_substr(field('label'), 0, 40),
+           mb_substr(field('device'), 0, 80), (int) (body()['sdk'] ?? 0), $body]);
+
+        q('DELETE FROM traces WHERE id NOT IN (SELECT id FROM traces ORDER BY id DESC LIMIT 30)');
+        out(['ok' => true]);
     }
 
     /* ── פעימה ─────────────────────────────────────────────────────
