@@ -1,0 +1,145 @@
+name: Provision server target
+
+# הקמה חד-פעמית של היעד בשרת, לפני הפריסה הראשונה.
+#
+# מופעל ידנית בלבד (Actions → Provision server target → Run workflow), כי
+# הוא משנה מצב בשרת. הוא מכוון להיות בטוח להרצה חוזרת: יוצר מה שחסר,
+# ומדווח על מה שכבר קיים בלי לגעת בו.
+#
+# רץ מגיטהאב ולא מהמחשב שלך, כי לסביבת הפיתוח אין בהכרח גישת רשת לשרת —
+# ואילו הראנר של Actions כבר מתחבר אליו בכל פריסה, עם אותו מפתח.
+#
+# Secrets: DEPLOY_SSH_KEY, DEPLOY_HOST, DEPLOY_USER
+#          (DEPLOY_SSH_PASSPHRASE — רק אם המפתח נעול)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dir:
+        description: 'תיקיית היעד, יחסית ל-home. למשל public_html/my-tool'
+        required: true
+      subdomain:
+        description: 'תווית הסאב-דומיין ליצירה, למשל tool. ריק = לא ליצור'
+        required: false
+        default: ''
+      rootdomain:
+        description: 'הדומיין שתחתיו ייווצר הסאב-דומיין'
+        required: false
+        default: ''
+
+concurrency:
+  group: server-provision
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate inputs
+        env:
+          DIR: ${{ inputs.dir }}
+          SUB: ${{ inputs.subdomain }}
+          ROOT: ${{ inputs.rootdomain }}
+        run: |
+          # הקלטים נשלחים לשרת בתוך מחרוזת פקודה, ולכן תו ציטוט בודד בהם
+          # היה שובר את הציטוט ומזריק פקודה. רשימת תווים סגורה סוגרת את זה
+          # בשורש, במקום לנסות לברוח מתווים אחד-אחד.
+          ok() { printf '%s' "$2" | grep -qE "$1"; }
+
+          ok '^[A-Za-z0-9._/-]+$' "$DIR" || { echo "::error::dir מכיל תווים לא מותרים"; exit 1; }
+          case "$DIR" in
+            /*)   echo "::error::dir חייב להיות יחסי ל-home, בלי / בהתחלה"; exit 1 ;;
+            *..*) echo "::error::dir לא יכול להכיל .."; exit 1 ;;
+          esac
+
+          if [ -n "$SUB" ]; then
+            [ -n "$ROOT" ] || { echo "::error::צוין subdomain בלי rootdomain"; exit 1; }
+            ok '^[A-Za-z0-9-]+$'     "$SUB"  || { echo "::error::subdomain מכיל תווים לא מותרים"; exit 1; }
+            ok '^[A-Za-z0-9.-]+$'    "$ROOT" || { echo "::error::rootdomain מכיל תווים לא מותרים"; exit 1; }
+          fi
+          echo "קלט תקין"
+
+      - name: Prepare SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Unlock the deploy key if it has a passphrase
+        env:
+          DEPLOY_PASS: ${{ secrets.DEPLOY_SSH_PASSPHRASE }}
+        run: |
+          if [ -z "$DEPLOY_PASS" ]; then
+            echo "לא הוגדרה סיסמה — המפתח אמור להיות פתוח"
+            exit 0
+          fi
+          eval "$(ssh-agent -s)"
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> "$GITHUB_ENV"
+          cat > "$RUNNER_TEMP/askpass" <<'SH'
+          #!/bin/sh
+          printf '%s\n' "$DEPLOY_PASS"
+          SH
+          chmod +x "$RUNNER_TEMP/askpass"
+          SSH_ASKPASS="$RUNNER_TEMP/askpass" SSH_ASKPASS_REQUIRE=force \
+            ssh-add ~/.ssh/deploy_key
+          rm -f "$RUNNER_TEMP/askpass"
+
+      # מדווח מה זמין לפני שמנסים להשתמש בו. uapi אינה זמינה בכל חשבון
+      # cPanel, ועדיף לדעת זאת מהודעה מפורשת מאשר משגיאה עמומה בהמשך.
+      - name: Report what the server offers
+        env:
+          TARGET: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o BatchMode=yes \
+              "$TARGET" 'sh -s' <<'REMOTE'
+            echo "HOME=$HOME"
+            command -v rsync >/dev/null && echo "rsync: זמין" || echo "rsync: חסר"
+            if command -v uapi >/dev/null; then
+              echo "uapi: זמין — יצירת סאב-דומיין אוטומטית אפשרית"
+            else
+              echo "uapi: חסר — סאב-דומיין ייווצר ידנית ב-cPanel"
+            fi
+          REMOTE
+
+      - name: Create the target directory
+        env:
+          TARGET: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+          DIR: ${{ inputs.dir }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o BatchMode=yes \
+              "$TARGET" "sh -s -- '$DIR'" <<'REMOTE'
+            d="$1"
+            if [ -d "$HOME/$d" ]; then
+              echo "התיקייה כבר קיימת: \$HOME/$d — לא נגעתי בה"
+            else
+              mkdir -p "$HOME/$d" && echo "נוצרה: \$HOME/$d"
+            fi
+            echo "DEPLOY_PATH שיש להזין: $HOME/$d"
+          REMOTE
+
+      - name: Create the subdomain
+        if: ${{ inputs.subdomain != '' }}
+        env:
+          TARGET: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+          DIR: ${{ inputs.dir }}
+          SUB: ${{ inputs.subdomain }}
+          ROOT: ${{ inputs.rootdomain }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o BatchMode=yes \
+              "$TARGET" "sh -s -- '$SUB' '$ROOT' '$DIR'" <<'REMOTE'
+            sub="$1"; root="$2"; dir="$3"
+            if ! command -v uapi >/dev/null; then
+              echo "uapi אינה זמינה. צור ידנית ב-cPanel → Domains → Create A New Domain:"
+              echo "  דומיין:  $sub.$root"
+              echo "  תיקייה:  $dir"
+              exit 0
+            fi
+            uapi SubDomain addsubdomain domain="$sub" rootdomain="$root" dir="$dir"
+          REMOTE
+
+      - name: What to do next
+        run: |
+          echo "עדכן את DEPLOY_PATH לפי הערך שהודפס בשלב יצירת התיקייה,"
+          echo "ואז מזג לענף ההגשה כדי להפעיל את הפריסה הראשונה."
