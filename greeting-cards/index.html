@@ -1476,6 +1476,12 @@
                     <span id="propRotationVal" style="min-width:35px;font-size:0.85rem">0°</span>
                 </div>
                 <div class="prop-row">
+                    <label title="המרחק בין שורה לשורה, כיחס מגודל הפונט">מרווח שורות</label>
+                    <input type="range" id="propLineHeight" min="0.6" max="3" step="0.05" value="1.3"
+                           oninput="updateFieldProp('lineHeight', +this.value)">
+                    <span id="propLineHeightVal" style="min-width:34px;font-size:0.85rem">1.3</span>
+                </div>
+                <div class="prop-row">
                     <label title="שלילי מצמצם את המרווח בין האותיות, חיובי מרווח אותן">מרווח אותיות</label>
                     <input type="range" id="propSpacing" value="0" step="0.5" oninput="updateFieldProp('letterSpacing', +this.value)">
                     <span id="propSpacingVal" style="min-width:34px;font-size:0.85rem">0</span>
@@ -2336,7 +2342,7 @@ function renderUserBackgrounds(bgs) {
 }
 
 async function deleteUserBg(id) {
-    if (!confirm('למחוק רקע זה?')) return;
+    if (!await askConfirm('למחוק רקע זה?', 'מחק')) return;
     try {
         const res = await fetch(API_URL + '?action=delete_user_bg', {
             method: 'POST',
@@ -2615,6 +2621,11 @@ function fieldScaleY(field) {
     return field.scaleY ?? 100;
 }
 
+/** אותו דבר לגובה השורה: שדה ישן מקבל את הערך שהייצוא הניח. */
+function fieldLineHeight(field) {
+    return field.lineHeight ?? LINE_HEIGHT;
+}
+
 /**
  * טווח מרווח האותיות נגזר מגודל הפונט ולא קבוע: מרווח של 5px הוא
  * הרבה בגופן של 40px ולא נראה בכלל בגופן של 300px.
@@ -2645,6 +2656,8 @@ function createFieldObj(type = 'fixed', text = '') {
         rotation: 0,
         bold: false,
         letterSpacing: 0,
+        // יחס גובה־שורה: 1.3 הוא מה שהייצוא השתמש בו תמיד.
+        lineHeight: LINE_HEIGHT,
         // מתיחת האותיות באחוזים, בנפרד מגודל הפונט: 100 = ללא שינוי.
         scaleX: 100,
         scaleY: 100,
@@ -2732,6 +2745,10 @@ function renderField(field) {
     el.style.color = field.color;
     el.style.fontWeight = field.bold ? 'bold' : 'normal';
     el.style.letterSpacing = (field.letterSpacing * displayScale) + 'px';
+    // ‏בלי הגדרה מפורשת הדפדפן משתמש ב-normal (בערך 1.2), בעוד
+    // שהייצוא חישב 1.3 — כל טקסט רב־שורתי יצא מרווח יותר ממה
+    // שנראה על המסך. עכשיו שניהם קוראים את אותו ערך.
+    el.style.lineHeight = fieldLineHeight(field);
     el.style.opacity = field.opacity / 100;
 
     // בלי גלישה הרוחב נשאר רוחב הטקסט, כדי שגרירה תזיז את השדה
@@ -2800,6 +2817,8 @@ function updatePropsPanel() {
     document.getElementById('propBold').checked = field.bold;
     document.getElementById('propRotation').value = field.rotation;
     document.getElementById('propRotationVal').textContent = field.rotation + '°';
+    document.getElementById('propLineHeight').value = fieldLineHeight(field);
+    document.getElementById('propLineHeightVal').textContent = fieldLineHeight(field).toFixed(2);
     syncSpacingRange(field);
     document.getElementById('propSpacing').value = field.letterSpacing;
     document.getElementById('propSpacingVal').textContent = field.letterSpacing;
@@ -2832,6 +2851,7 @@ function updateFieldProp(prop, value) {
     if (prop === 'letterSpacing') document.getElementById('propSpacingVal').textContent = value;
     if (prop === 'scaleX') document.getElementById('propScaleXVal').textContent = value + '%';
     if (prop === 'scaleY') document.getElementById('propScaleYVal').textContent = value + '%';
+    if (prop === 'lineHeight') document.getElementById('propLineHeightVal').textContent = value.toFixed(2);
     // שם השכבה בלוח הוא הטקסט עצמו.
     if (prop === 'text' || prop === 'type') renderLayersPanel();
     if (prop === 'opacity') document.getElementById('propOpacityVal').textContent = value + '%';
@@ -3026,9 +3046,42 @@ function bestSnap(centre, half, lines, tolerance) {
     return best;
 }
 
+/* מה שנתפס כרגע בכל ציר, כדי שאפשר יהיה להשתחרר ממנו. */
+let snapHold = { x: null, y: null };
+
+function resetSnapHold() {
+    snapHold = { x: null, y: null };
+}
+
 /**
- * מצמיד את השכבה הנגררת ומצייר את הקווים שנתפסו. מחזירה את
- * המיקום המתוקן; אם ההצמדה כבויה, מחזירה אותו כמו שהוא.
+ * הצמדה דביקה עם שחרור.
+ *
+ * הצמדה שרק "מושכת" הופכת מיקום מדויק ליד קו לבלתי אפשרי: כל
+ * ניסיון לעמוד שני פיקסלים ליד המרכז נבלע. לכן ברגע שנתפס קו,
+ * השכבה נשארת עליו עד שהאצבע עוברת מרחק שחרור גדול יותר — ואז
+ * היא משתחררת לגמרי וזזה חופשי.
+ */
+const SNAP_RELEASE = 2.6;
+
+function resolveAxis(axis, raw, half, lines, tol) {
+    const held = snapHold[axis];
+    if (held) {
+        // מרכז השכבה שבו הקו הזה נתפס.
+        const centre = held.pos - held.offset;
+        if (Math.abs(raw - centre) <= tol * SNAP_RELEASE) {
+            return { delta: centre - raw, pos: held.pos };
+        }
+        snapHold[axis] = null;
+    }
+
+    const found = bestSnap(raw, half, lines, tol);
+    if (found) snapHold[axis] = { pos: found.pos, offset: found.pos - (raw + found.delta) };
+    return found;
+}
+
+/**
+ * מצמיד את השכבה הנגררת ומצייר את הקווים שנתפסו. אם ההצמדה
+ * כבויה, המיקום נשאר כפי שהוא.
  */
 function applySnap(key, obj) {
     if (!state.snapEnabled) { hideSnapGuides(); return; }
@@ -3040,8 +3093,8 @@ function applySnap(key, obj) {
     const tolY = SNAP_PX / m.wrap.height * 100;
     const targets = snapTargets(key);
 
-    const sx = bestSnap(obj.x, m.w / 2, targets.xs, tolX);
-    const sy = bestSnap(obj.y, m.h / 2, targets.ys, tolY);
+    const sx = resolveAxis('x', obj.x, m.w / 2, targets.xs, tolX);
+    const sy = resolveAxis('y', obj.y, m.h / 2, targets.ys, tolY);
 
     if (sx) obj.x = Math.round((obj.x + sx.delta) * 100) / 100;
     if (sy) obj.y = Math.round((obj.y + sy.delta) * 100) / 100;
@@ -3132,6 +3185,7 @@ function startDrag(e, fieldId, isTouch = false) {
     const endEvent = isTouch ? 'touchend' : 'mouseup';
 
     let moved = 0;
+    resetSnapHold();
 
     const onMove = ev => {
         const pt = isTouch ? ev.touches[0] : ev;
@@ -3152,6 +3206,7 @@ function startDrag(e, fieldId, isTouch = false) {
         document.removeEventListener(endEvent, onEnd);
         dragState = null;
         hideSnapGuides();
+        resetSnapHold();
         // נקישה בלי גרירה על שדה שכבר נבחר יורדת שכבה למטה, אל
         // התמונה שמתחתיו. בלי זה תמונה שהטקסט מכסה אותה אינה
         // ניתנת לבחירה חוזרת בכלל.
@@ -3300,8 +3355,10 @@ function resetFieldProportions() {
     field.scaleX = 100;
     field.scaleY = 100;
     field.letterSpacing = 0;
+    field.lineHeight = LINE_HEIGHT;
     renderField(field);
     updatePropsPanel();
+    invalidateArtwork();
 }
 
 function startRotation(e, fieldId, isTouch = false) {
@@ -3558,8 +3615,8 @@ function deleteRecipient(index) {
     renderAllFields();
 }
 
-function clearRecipients() {
-    if (!confirm('למחוק את כל הנמענים?')) return;
+async function clearRecipients() {
+    if (!await askConfirm('למחוק את כל הנמענים?', 'מחק')) return;
     state.recipients = [];
     renderRecipientsTable();
     updateRecipientsBadge();
@@ -3927,7 +3984,7 @@ async function generatePDF(recipient) {
         );
         // אותו יחס גובה־שורה כמו בייצוא לתמונה, כדי ששני הפורמטים
         // יראו זהים; fontSize כאן בנקודות ולכן חוזרים דרכן למ"מ.
-        const lineHeightMm = (fontSize / MM_TO_PT) * LINE_HEIGHT;
+        const lineHeightMm = (fontSize / MM_TO_PT) * fieldLineHeight(field);
         const totalHeight = (lines.length - 1) * lineHeightMm;
 
         lines.forEach((line, lineIdx) => {
@@ -3997,7 +4054,7 @@ async function generateImage(recipient, format) {
             t => ctx.measureText(t).width,
             field.wrapWidth > 0 ? (field.wrapWidth / 100) * canvas.width : 0
         );
-        const lineHeight = scaledFontSize * LINE_HEIGHT;
+        const lineHeight = scaledFontSize * fieldLineHeight(field);
         const totalTextHeight = (lines.length - 1) * lineHeight;
 
         lines.forEach((line, lineIdx) => {
@@ -4171,6 +4228,68 @@ function showModal(html) {
 
 function closeModal() {
     document.getElementById('modalOverlay').classList.remove('show');
+    // דיאלוג שנסגר בלחיצה בחוץ או ב-Escape חייב לשחרר את מי
+    // שממתין לו, אחרת הקריאה תלויה לנצח.
+    if (pendingDialog) { const r = pendingDialog; pendingDialog = null; r(null); }
+}
+
+/* ─── In-page dialogs ─────────────────────────────────
+ *
+ * ‏prompt ו-confirm של הדפדפן אינם עובדים ב-WebView של אנדרואיד:
+ * ‏WebView אינו מציג דיאלוגי JS אלא אם האפליקציה מיישמת
+ * ‏onJsPrompt/onJsConfirm, וללא זה הקריאה פשוט מוחזרת מבוטלת.
+ * מכאן ש"שמור בשם" באפליקציה קיבל null ויצא בשקט — הקובץ לא
+ * נשמר ושום הודעה לא הופיעה.
+ *
+ * הדיאלוגים כאן הם של הדף עצמו, ולכן הם עובדים גם בדפדפן וגם
+ * באפליקציה, בלי לחכות לגרסה חדשה שלה.
+ */
+let pendingDialog = null;
+
+function resolveDialog(value) {
+    const r = pendingDialog;
+    pendingDialog = null;
+    document.getElementById('modalOverlay').classList.remove('show');
+    if (r) r(value);
+}
+
+/** מחזירה את הטקסט שהוזן, או null אם בוטל. */
+function askText(title, defaultValue = '', okLabel = 'שמור') {
+    return new Promise(resolve => {
+        pendingDialog = resolve;
+        showModal(`
+            <h2>${escapeHtml(title)}</h2>
+            <input type="text" id="dialogInput" value="${escapeHtml(defaultValue)}"
+                   style="width:100%;margin:12px 0" autocomplete="off">
+            <div class="modal-actions">
+                <button class="btn btn-outline" onclick="resolveDialog(null)">ביטול</button>
+                <button class="btn btn-primary"
+                        onclick="resolveDialog(document.getElementById('dialogInput').value)">${escapeHtml(okLabel)}</button>
+            </div>
+        `);
+        const input = document.getElementById('dialogInput');
+        input.focus();
+        input.select();
+        input.addEventListener('keydown', e => {
+            if (e.key === 'Enter') resolveDialog(input.value);
+            if (e.key === 'Escape') resolveDialog(null);
+        });
+    });
+}
+
+/** מחזירה true רק אם אושר במפורש. */
+function askConfirm(message, okLabel = 'אישור', danger = true) {
+    return new Promise(resolve => {
+        pendingDialog = resolve;
+        showModal(`
+            <h2>${escapeHtml(message)}</h2>
+            <div class="modal-actions">
+                <button class="btn btn-outline" onclick="resolveDialog(false)">ביטול</button>
+                <button class="btn ${danger ? 'btn-danger' : 'btn-primary'}"
+                        onclick="resolveDialog(true)">${escapeHtml(okLabel)}</button>
+            </div>
+        `);
+    });
 }
 
 /* ─── Toast ──────────────────────────────────────── */
@@ -4422,8 +4541,8 @@ function resetAllDisplayNames() {
     toast('שמות התצוגה אופסו');
 }
 
-function addPrefixToNames() {
-    const prefix = prompt('הזינו תחילית (למשל "לכבוד "):');
+async function addPrefixToNames() {
+    const prefix = await askText('הזינו תחילית (למשל "לכבוד ")', '', 'הוסף');
     if (!prefix) return;
     state.contacts.filter(c => c.selected).forEach(c => {
         if (!c.displayName.startsWith(prefix)) c.displayName = prefix + c.displayName;
@@ -4432,8 +4551,8 @@ function addPrefixToNames() {
     toast('התחילית נוספה לנבחרים');
 }
 
-function addSuffixToNames() {
-    const suffix = prompt('הזינו סיומת (למשל " ומשפחתו"):');
+async function addSuffixToNames() {
+    const suffix = await askText('הזינו סיומת (למשל " ומשפחתו")', '', 'הוסף');
     if (!suffix) return;
     state.contacts.filter(c => c.selected).forEach(c => {
         if (!c.displayName.endsWith(suffix)) c.displayName = c.displayName + suffix;
@@ -4442,9 +4561,9 @@ function addSuffixToNames() {
     toast('הסיומת נוספה לנבחרים');
 }
 
-function deleteSelectedContacts() {
+async function deleteSelectedContacts() {
     const count = state.contacts.filter(c => c.selected).length;
-    if (!confirm(`למחוק ${count} אנשי קשר נבחרים?`)) return;
+    if (!await askConfirm(`למחוק ${count} אנשי קשר נבחרים?`, 'מחק')) return;
     state.contacts = state.contacts.filter(c => !c.selected);
     renderContactsList();
 }
@@ -4848,9 +4967,9 @@ function saveCurrentDesign() {
     saveDesignAs();
 }
 
-function saveDesignAs() {
+async function saveDesignAs() {
     if (!requireLoginForDesigns()) return;
-    const name = prompt('שם העיצוב:', currentDesign.name || 'עיצוב חדש');
+    const name = await askText('שם העיצוב', currentDesign.name || 'עיצוב חדש');
     if (name === null) return;
     if (!name.trim()) { toast('נדרש שם', 'error'); return; }
     persistDesign(null, name.trim());
@@ -5139,7 +5258,7 @@ async function fetchDesignBackground(id, slot) {
 
 async function deleteDesign(id) {
     const name = designsCache.find(d => d.id === id)?.name || 'העיצוב';
-    if (!confirm(`למחוק את "${name}"?`)) return;
+    if (!await askConfirm(`למחוק את "${name}"?`, 'מחק')) return;
     const data = await designApi('delete_design', { body: { id } });
     if (!data.success) { toast(data.message, 'error'); return; }
     if (currentDesign.id === id) {
@@ -5998,6 +6117,7 @@ function onStickerPointerDown(e, id) {
             id, pointers: new Map(), before: JSON.stringify(state.stickers),
             wasSelected, moved: 0, downX: e.clientX, downY: e.clientY,
         };
+        resetSnapHold();
     }
     stickerGesture.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
@@ -6070,6 +6190,7 @@ function onStickerPointerUp(e) {
     if (after !== g.before) pushHistory({ type: 'layers', before: g.before, after });
     stickerGesture = null;
     hideSnapGuides();
+    resetSnapHold();
     invalidateArtwork();
 
     // נקישה בלי גרירה על מדבקה שכבר נבחרה — ירידה לשכבה שמתחת.
