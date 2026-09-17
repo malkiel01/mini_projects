@@ -1,0 +1,155 @@
+name: Deploy to production
+
+# פריסה אוטומטית git -> שרת. מופעלת בכל push לענף שממנו האתר מוגש,
+# ובהפעלה ידנית. מעלה קוד בלבד ב-rsync — לא נוגעת בנתוני הריצה שבשרת
+# (data/ של git-deploy ושל renovation-punchlist מכילות אסימונים, הגדרות
+# ומדיה שהמשתמשים העלו).
+#
+# rsync רץ בלי --delete בכוונה: קבצים שקיימים רק בשרת נשארים במקומם.
+#
+# Secrets נדרשים ב-Settings → Secrets and variables → Actions:
+#   DEPLOY_SSH_KEY         מפתח SSH פרטי בעל גישה לשרת
+#   DEPLOY_SSH_PASSPHRASE  אופציונלי. נדרש רק אם המפתח נעול בסיסמה
+#                          (שורת Proc-Type: 4,ENCRYPTED בראש הקובץ).
+#                          למפתח פתוח — להשמיט, והשלב מדלג על עצמו.
+#   DEPLOY_HOST     כתובת השרת
+#   DEPLOY_USER     שם המשתמש בשרת
+#   DEPLOY_PATH     הנתיב לתיקיית האתר, למשל /home2/<user>/public_html/mini_projects
+
+# ⚠️ תבנית. שני דברים חייבים התאמה לפני שימוש:
+#   1. branches — הענף שממנו האתר מוגש בפועל. אל תניח main.
+#   2. רשימת ה-exclude בשלב ה-rsync — ראה ההערה שם.
+
+on:
+  push:
+    branches: [main]          # ← החלף בענף ההגשה בפועל
+  workflow_dispatch: {}
+
+# לעולם לא שתי פריסות במקביל.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP 8.3 (matches the server)
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+
+      - name: PHP syntax-check gate (abort deploy on any parse error)
+        run: |
+          set -euo pipefail
+          ERR=0
+          while IFS= read -r -d '' f; do
+            php -l "$f" > /dev/null || ERR=1
+          done < <(find . -name '*.php' -not -path './.git/*' -print0)
+          if [ "$ERR" -ne 0 ]; then echo "::error::PHP syntax errors — aborting deploy"; exit 1; fi
+          echo "PHP lint OK"
+
+      - name: JS syntax-check gate
+        run: |
+          set -euo pipefail
+          ERR=0
+          # הקבצים הם ES modules; node --check מנתח כמודול לפי הסיומת .mjs,
+          # ולכן כל קובץ נבדק דרך עותק זמני. vendor/ הוא קוד צד-שלישי מוקטן
+          # ולא נבדק.
+          while IFS= read -r -d '' f; do
+            cp "$f" "$RUNNER_TEMP/check.mjs"
+            node --check "$RUNNER_TEMP/check.mjs" || { echo "::error file=$f::syntax error"; ERR=1; }
+          done < <(find . -name '*.js' -not -path './.git/*' -not -path '*/vendor/*' -print0)
+          if [ "$ERR" -ne 0 ]; then echo "::error::JS syntax errors — aborting deploy"; exit 1; fi
+          echo "JS lint OK"
+
+      # יעד רב-שורתי נשלח לשרת כמחרוזת אחת, וה-shell המרוחק מריץ כל שורה
+      # כפקודה. התוצאה היא עשרות שגיאות "command not found" שאינן רומזות
+      # במה מדובר. עדיף להיעצר כאן עם הודעה שאומרת איזה סוד שגוי.
+      - name: Validate the deploy target
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER_: ${{ secrets.DEPLOY_USER }}
+          PATH_: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          bad=0
+          # ‏printf '%s' אינו מוסיף שורה, ולכן ערך תקין בן שורה אחת נותר 0.
+          [ "$(printf '%s' "$HOST"  | wc -l)" -eq 0 ] || { echo "::error::DEPLOY_HOST מכיל יותר משורה אחת"; bad=1; }
+          [ "$(printf '%s' "$USER_" | wc -l)" -eq 0 ] || { echo "::error::DEPLOY_USER מכיל יותר משורה אחת"; bad=1; }
+          [ "$(printf '%s' "$PATH_" | wc -l)" -eq 0 ] || { echo "::error::DEPLOY_PATH מכיל יותר משורה אחת — כנראה הודבק לשם המפתח במקום הנתיב"; bad=1; }
+          case "$PATH_" in
+            /*) ;;
+            *) echo "::error::DEPLOY_PATH חייב להיות נתיב מוחלט המתחיל ב-/"; bad=1 ;;
+          esac
+          [ "$bad" -eq 0 ] || exit 1
+          echo "היעד תקין: שלושת הסודות בני שורה אחת, והנתיב מוחלט"
+
+      - name: Prepare SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      # PreferredAuthentications=publickey חוסם נפילה לאימות סיסמה, שהופכת
+      # כישלון מפתח להודעה מטעה על ריבוי נסיונות במקום "Permission denied
+      # (publickey)" שאומר בדיוק מה קרה.
+      # מנתח את *צורת* המפתח בלבד — ספירות, אורכים וכן/לא. גיטהאב מצנזר כל
+      # מחרוזת מהסוד עצמו, ולכן הדפסת השורות אינה מלמדת דבר; מספרים נגזרים
+      # עוברים, ואינם מאפשרים לשחזר את המפתח.
+      # מפתח RSA-2048 תקין: 27 שורות, גוף base64 באורך 64, אפס שורות זרות.
+      # מפתח פתוח עובד ישירות מול ssh, בדיוק כמו ב-kadisha-vaad, והשלב
+      # הזה מדלג על עצמו. מפתח נעול אינו ניתן לפתיחה ע"י ssh ללא
+      # אינטראקציה, ולכן הוא נטען ל-ssh-agent עם הסיסמה.
+      # כך אותו workflow משרת את שני המקרים בלי לדעת מראש מה הוגדר.
+      - name: Unlock the deploy key if it has a passphrase
+        env:
+          DEPLOY_PASS: ${{ secrets.DEPLOY_SSH_PASSPHRASE }}
+        run: |
+          if [ -z "$DEPLOY_PASS" ]; then
+            echo "לא הוגדרה סיסמה — המפתח אמור להיות פתוח, ssh ישתמש בו ישירות"
+            exit 0
+          fi
+          eval "$(ssh-agent -s)"
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> "$GITHUB_ENV"
+          # ssh-add אינו קורא סיסמה מ-stdin; הדרך הנתמכת היא תוכנית עזר.
+          cat > "$RUNNER_TEMP/askpass" <<'SH'
+          #!/bin/sh
+          printf '%s\n' "$DEPLOY_PASS"
+          SH
+          chmod +x "$RUNNER_TEMP/askpass"
+          SSH_ASKPASS="$RUNNER_TEMP/askpass" SSH_ASKPASS_REQUIRE=force \
+            ssh-add ~/.ssh/deploy_key
+          rm -f "$RUNNER_TEMP/askpass"
+          ssh-add -l
+
+      # בדיקה יחידה, אזהרה בלבד: מפרידה בין "המפתח אינו קריא" לבין
+      # "המפתח נדחה בשרת". שתי התקלות נראות זהות מצד ה-rsync.
+      - name: Verify the deploy key is readable
+        run: ssh-keygen -l -f ~/.ssh/deploy_key
+             || echo "::warning::DEPLOY_SSH_KEY אינו מפתח פרטי קריא (נעול בסיסמה?)"
+
+      # ⚠️ ההחרגות למטה הן דוגמה מפרויקט אחר — התאם אותן.
+      #
+      # החרג: קבצי ריצה שנוצרים בשרת ואינם בריפו (הגדרות, אסימונים,
+      # העלאות משתמשים, לוגים), ותלויות שמותקנות בשרת (vendor/ של
+      # composer, node_modules/).
+      #
+      # אל תחרג: קוד שנמצא בריפו. במיוחד vendor/ — בחלק מהפרויקטים זו
+      # ספרייה שהוכנסה לריפו בכוונה, והחרגתה משביתה את הכלי.
+      #
+      # rsync רץ בלי --delete, ולכן קבצים שקיימים רק בשרת נשארים בכל מקרה.
+      - name: Deploy code via rsync (no --delete; never touches runtime data)
+        run: |
+          rsync -rlptz \
+            --exclude='.git' --exclude='.github' \
+            --exclude='node_modules/' \
+            --exclude='*.log' --exclude='error_log' \
+            --exclude='.DS_Store' --exclude='._*' \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/"
+          echo "Deploy complete"
