@@ -2342,7 +2342,7 @@ function renderUserBackgrounds(bgs) {
 }
 
 async function deleteUserBg(id) {
-    if (!confirm('למחוק רקע זה?')) return;
+    if (!await askConfirm('למחוק רקע זה?', 'מחק')) return;
     try {
         const res = await fetch(API_URL + '?action=delete_user_bg', {
             method: 'POST',
@@ -3046,9 +3046,42 @@ function bestSnap(centre, half, lines, tolerance) {
     return best;
 }
 
+/* מה שנתפס כרגע בכל ציר, כדי שאפשר יהיה להשתחרר ממנו. */
+let snapHold = { x: null, y: null };
+
+function resetSnapHold() {
+    snapHold = { x: null, y: null };
+}
+
 /**
- * מצמיד את השכבה הנגררת ומצייר את הקווים שנתפסו. מחזירה את
- * המיקום המתוקן; אם ההצמדה כבויה, מחזירה אותו כמו שהוא.
+ * הצמדה דביקה עם שחרור.
+ *
+ * הצמדה שרק "מושכת" הופכת מיקום מדויק ליד קו לבלתי אפשרי: כל
+ * ניסיון לעמוד שני פיקסלים ליד המרכז נבלע. לכן ברגע שנתפס קו,
+ * השכבה נשארת עליו עד שהאצבע עוברת מרחק שחרור גדול יותר — ואז
+ * היא משתחררת לגמרי וזזה חופשי.
+ */
+const SNAP_RELEASE = 2.6;
+
+function resolveAxis(axis, raw, half, lines, tol) {
+    const held = snapHold[axis];
+    if (held) {
+        // מרכז השכבה שבו הקו הזה נתפס.
+        const centre = held.pos - held.offset;
+        if (Math.abs(raw - centre) <= tol * SNAP_RELEASE) {
+            return { delta: centre - raw, pos: held.pos };
+        }
+        snapHold[axis] = null;
+    }
+
+    const found = bestSnap(raw, half, lines, tol);
+    if (found) snapHold[axis] = { pos: found.pos, offset: found.pos - (raw + found.delta) };
+    return found;
+}
+
+/**
+ * מצמיד את השכבה הנגררת ומצייר את הקווים שנתפסו. אם ההצמדה
+ * כבויה, המיקום נשאר כפי שהוא.
  */
 function applySnap(key, obj) {
     if (!state.snapEnabled) { hideSnapGuides(); return; }
@@ -3060,8 +3093,8 @@ function applySnap(key, obj) {
     const tolY = SNAP_PX / m.wrap.height * 100;
     const targets = snapTargets(key);
 
-    const sx = bestSnap(obj.x, m.w / 2, targets.xs, tolX);
-    const sy = bestSnap(obj.y, m.h / 2, targets.ys, tolY);
+    const sx = resolveAxis('x', obj.x, m.w / 2, targets.xs, tolX);
+    const sy = resolveAxis('y', obj.y, m.h / 2, targets.ys, tolY);
 
     if (sx) obj.x = Math.round((obj.x + sx.delta) * 100) / 100;
     if (sy) obj.y = Math.round((obj.y + sy.delta) * 100) / 100;
@@ -3152,6 +3185,7 @@ function startDrag(e, fieldId, isTouch = false) {
     const endEvent = isTouch ? 'touchend' : 'mouseup';
 
     let moved = 0;
+    resetSnapHold();
 
     const onMove = ev => {
         const pt = isTouch ? ev.touches[0] : ev;
@@ -3172,6 +3206,7 @@ function startDrag(e, fieldId, isTouch = false) {
         document.removeEventListener(endEvent, onEnd);
         dragState = null;
         hideSnapGuides();
+        resetSnapHold();
         // נקישה בלי גרירה על שדה שכבר נבחר יורדת שכבה למטה, אל
         // התמונה שמתחתיו. בלי זה תמונה שהטקסט מכסה אותה אינה
         // ניתנת לבחירה חוזרת בכלל.
@@ -3580,8 +3615,8 @@ function deleteRecipient(index) {
     renderAllFields();
 }
 
-function clearRecipients() {
-    if (!confirm('למחוק את כל הנמענים?')) return;
+async function clearRecipients() {
+    if (!await askConfirm('למחוק את כל הנמענים?', 'מחק')) return;
     state.recipients = [];
     renderRecipientsTable();
     updateRecipientsBadge();
@@ -4193,6 +4228,68 @@ function showModal(html) {
 
 function closeModal() {
     document.getElementById('modalOverlay').classList.remove('show');
+    // דיאלוג שנסגר בלחיצה בחוץ או ב-Escape חייב לשחרר את מי
+    // שממתין לו, אחרת הקריאה תלויה לנצח.
+    if (pendingDialog) { const r = pendingDialog; pendingDialog = null; r(null); }
+}
+
+/* ─── In-page dialogs ─────────────────────────────────
+ *
+ * ‏prompt ו-confirm של הדפדפן אינם עובדים ב-WebView של אנדרואיד:
+ * ‏WebView אינו מציג דיאלוגי JS אלא אם האפליקציה מיישמת
+ * ‏onJsPrompt/onJsConfirm, וללא זה הקריאה פשוט מוחזרת מבוטלת.
+ * מכאן ש"שמור בשם" באפליקציה קיבל null ויצא בשקט — הקובץ לא
+ * נשמר ושום הודעה לא הופיעה.
+ *
+ * הדיאלוגים כאן הם של הדף עצמו, ולכן הם עובדים גם בדפדפן וגם
+ * באפליקציה, בלי לחכות לגרסה חדשה שלה.
+ */
+let pendingDialog = null;
+
+function resolveDialog(value) {
+    const r = pendingDialog;
+    pendingDialog = null;
+    document.getElementById('modalOverlay').classList.remove('show');
+    if (r) r(value);
+}
+
+/** מחזירה את הטקסט שהוזן, או null אם בוטל. */
+function askText(title, defaultValue = '', okLabel = 'שמור') {
+    return new Promise(resolve => {
+        pendingDialog = resolve;
+        showModal(`
+            <h2>${escapeHtml(title)}</h2>
+            <input type="text" id="dialogInput" value="${escapeHtml(defaultValue)}"
+                   style="width:100%;margin:12px 0" autocomplete="off">
+            <div class="modal-actions">
+                <button class="btn btn-outline" onclick="resolveDialog(null)">ביטול</button>
+                <button class="btn btn-primary"
+                        onclick="resolveDialog(document.getElementById('dialogInput').value)">${escapeHtml(okLabel)}</button>
+            </div>
+        `);
+        const input = document.getElementById('dialogInput');
+        input.focus();
+        input.select();
+        input.addEventListener('keydown', e => {
+            if (e.key === 'Enter') resolveDialog(input.value);
+            if (e.key === 'Escape') resolveDialog(null);
+        });
+    });
+}
+
+/** מחזירה true רק אם אושר במפורש. */
+function askConfirm(message, okLabel = 'אישור', danger = true) {
+    return new Promise(resolve => {
+        pendingDialog = resolve;
+        showModal(`
+            <h2>${escapeHtml(message)}</h2>
+            <div class="modal-actions">
+                <button class="btn btn-outline" onclick="resolveDialog(false)">ביטול</button>
+                <button class="btn ${danger ? 'btn-danger' : 'btn-primary'}"
+                        onclick="resolveDialog(true)">${escapeHtml(okLabel)}</button>
+            </div>
+        `);
+    });
 }
 
 /* ─── Toast ──────────────────────────────────────── */
@@ -4444,8 +4541,8 @@ function resetAllDisplayNames() {
     toast('שמות התצוגה אופסו');
 }
 
-function addPrefixToNames() {
-    const prefix = prompt('הזינו תחילית (למשל "לכבוד "):');
+async function addPrefixToNames() {
+    const prefix = await askText('הזינו תחילית (למשל "לכבוד ")', '', 'הוסף');
     if (!prefix) return;
     state.contacts.filter(c => c.selected).forEach(c => {
         if (!c.displayName.startsWith(prefix)) c.displayName = prefix + c.displayName;
@@ -4454,8 +4551,8 @@ function addPrefixToNames() {
     toast('התחילית נוספה לנבחרים');
 }
 
-function addSuffixToNames() {
-    const suffix = prompt('הזינו סיומת (למשל " ומשפחתו"):');
+async function addSuffixToNames() {
+    const suffix = await askText('הזינו סיומת (למשל " ומשפחתו")', '', 'הוסף');
     if (!suffix) return;
     state.contacts.filter(c => c.selected).forEach(c => {
         if (!c.displayName.endsWith(suffix)) c.displayName = c.displayName + suffix;
@@ -4464,9 +4561,9 @@ function addSuffixToNames() {
     toast('הסיומת נוספה לנבחרים');
 }
 
-function deleteSelectedContacts() {
+async function deleteSelectedContacts() {
     const count = state.contacts.filter(c => c.selected).length;
-    if (!confirm(`למחוק ${count} אנשי קשר נבחרים?`)) return;
+    if (!await askConfirm(`למחוק ${count} אנשי קשר נבחרים?`, 'מחק')) return;
     state.contacts = state.contacts.filter(c => !c.selected);
     renderContactsList();
 }
@@ -4870,9 +4967,9 @@ function saveCurrentDesign() {
     saveDesignAs();
 }
 
-function saveDesignAs() {
+async function saveDesignAs() {
     if (!requireLoginForDesigns()) return;
-    const name = prompt('שם העיצוב:', currentDesign.name || 'עיצוב חדש');
+    const name = await askText('שם העיצוב', currentDesign.name || 'עיצוב חדש');
     if (name === null) return;
     if (!name.trim()) { toast('נדרש שם', 'error'); return; }
     persistDesign(null, name.trim());
@@ -5161,7 +5258,7 @@ async function fetchDesignBackground(id, slot) {
 
 async function deleteDesign(id) {
     const name = designsCache.find(d => d.id === id)?.name || 'העיצוב';
-    if (!confirm(`למחוק את "${name}"?`)) return;
+    if (!await askConfirm(`למחוק את "${name}"?`, 'מחק')) return;
     const data = await designApi('delete_design', { body: { id } });
     if (!data.success) { toast(data.message, 'error'); return; }
     if (currentDesign.id === id) {
@@ -6020,6 +6117,7 @@ function onStickerPointerDown(e, id) {
             id, pointers: new Map(), before: JSON.stringify(state.stickers),
             wasSelected, moved: 0, downX: e.clientX, downY: e.clientY,
         };
+        resetSnapHold();
     }
     stickerGesture.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
@@ -6092,6 +6190,7 @@ function onStickerPointerUp(e) {
     if (after !== g.before) pushHistory({ type: 'layers', before: g.before, after });
     stickerGesture = null;
     hideSnapGuides();
+    resetSnapHold();
     invalidateArtwork();
 
     // נקישה בלי גרירה על מדבקה שכבר נבחרה — ירידה לשכבה שמתחת.

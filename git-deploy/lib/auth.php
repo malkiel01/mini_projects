@@ -37,8 +37,16 @@ class Auth {
     public static function ipAllowed($ip = null) {
         if ($ip === null) $ip = self::clientIp();
         $allowed = Config::get('settings')['allowed_ips'] ?? [];
-        if (empty($allowed)) return true;
-        foreach ($allowed as $entry) {
+        return self::ipAllowedBy($ip, is_array($allowed) ? $allowed : []);
+    }
+
+    /**
+     * אותה הכרעה, מול רשימת כללים שרירותית — כדי שאפשר יהיה לבדוק "מה יקרה אם"
+     * לפני שמוחקים כלל ונועלים את עצמנו בחוץ.
+     */
+    public static function ipAllowedBy($ip, array $rules) {
+        if (empty($rules)) return true;   // רשימה ריקה = ללא הגבלה
+        foreach ($rules as $entry) {
             if (self::ipMatch($ip, $entry)) return true;
         }
         return false;
@@ -103,7 +111,20 @@ class Auth {
         }
         if (!self::ipAllowed()) {
             http_response_code(403);
-            echo '<h1>403 - IP not allowed</h1><p>Your IP <code>' . htmlspecialchars(self::clientIp()) . '</code> is not in the whitelist.</p>';
+            $ip = htmlspecialchars(self::clientIp());
+            // בלי הקישור הזה המסך הזה הוא מבוי סתום: אי אפשר לתקן את הרשימה
+            // בלי גישת FTP/SSH לשרת.
+            echo '<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="UTF-8">'
+               . '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
+               . '<title>403 · IP לא מורשה</title><link rel="stylesheet" href="assets/style.css"></head>'
+               . '<body class="page-auth"><div class="auth-card">'
+               . '<h1>403</h1><p class="subtitle">הכתובת שלך אינה ברשימת המורשים</p>'
+               . '<div class="alert alert-error">IP נוכחי: <b dir="ltr">' . $ip . '</b></div>'
+               . '<p class="muted small">אם זו כתובת דינמית שהתחלפה, אפשר להוסיף אותה לרשימה '
+               . 'דרך דף ניהול ה-IPs — הוא מוגן בסיסמה ולא ברשימת הכתובות.</p>'
+               . '<p style="text-align:center;margin-top:20px">'
+               . '<a href="ip-admin.php" class="btn btn-primary">ניהול IPs</a></p>'
+               . '</div></body></html>';
             exit;
         }
         if (!self::isLoggedIn()) {
