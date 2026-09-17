@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#0f172a"/>
+  <!-- סוכה איזומטרית: ארבע דפנות בקווי שרטוט, וסכך מעליהן -->
+  <path d="M14 26v20l18 8 18-8V26" fill="none" stroke="#fbbf24" stroke-width="2.6" stroke-linejoin="round"/>
+  <path d="M14 26l18 8 18-8" fill="none" stroke="#fbbf24" stroke-width="2.6" stroke-linejoin="round"/>
+  <path d="M32 34v20" fill="none" stroke="#fbbf24" stroke-width="2.2"/>
+  <!-- הסכך: קווים נפרדים, לא משטח אטום -->
+  <path d="M10 24l20-9M18 24l20-9M26 24l20-9M34 24l20-9" stroke="#34d399" stroke-width="2.4" stroke-linecap="round"/>
+</svg>
