@@ -1,39 +1,259 @@
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>שרטוט לסוכה</title>
-<meta name="description" content="כלי לתכנון ולשרטוט של סוכה — דפנות, מידות וסכך. השלד עלה לאוויר; הפרויקט עצמו בדרך.">
-<meta name="theme-color" content="#0f172a">
-<link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./assets/css/app.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>סוכה למרפסת · שלד תלת‑ממדי</title>
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef0ea;--panel:#fbfbf7;--ink:#1d241f;--mute:#5d6a60;--line:#c9cfc4;--accent:#b3261e;--on:#1d241f;--onink:#fbfbf7;--scene:#e6e9e1}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141815;--panel:#1d231f;--ink:#e9ede6;--mute:#9aa79d;--line:#333c35;--accent:#ff7a6e;--on:#e9ede6;--onink:#141815;--scene:#1a1f1b}}
+:root[data-theme="dark"]{--bg:#141815;--panel:#1d231f;--ink:#e9ede6;--mute:#9aa79d;--line:#333c35;--accent:#ff7a6e;--on:#e9ede6;--onink:#141815;--scene:#1a1f1b}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:Rubik,"Heebo","Arial Hebrew",Arial,sans-serif;overflow:hidden}
+#wrap{display:flex;flex-direction:column;height:100%}
+header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px 6px;border-bottom:1px solid var(--line);background:var(--panel)}
+.back{font-size:12.5px;color:var(--mute);text-decoration:none;border:1px solid var(--line);padding:4px 9px;border-radius:3px;white-space:nowrap}
+.back:hover{color:var(--ink);border-color:var(--ink)}
+h1{margin:0;font-size:17px;font-weight:700;letter-spacing:.2px}
+h1 small{font-weight:400;color:var(--mute);font-size:12px;margin-inline-start:6px}
+.bar{display:flex;gap:6px;flex-wrap:wrap;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--line)}
+button{font:inherit;font-size:13px;padding:7px 11px;border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:3px;cursor:pointer}
+button.on{background:var(--on);color:var(--onink);border-color:var(--on)}
+.sep{width:1px;background:var(--line);margin:0 3px}
+#stage{flex:1;position:relative;min-height:0;background:var(--scene)}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+#info{position:absolute;bottom:10px;inset-inline:10px;background:var(--panel);border:1px solid var(--line);border-inline-start:4px solid var(--accent);padding:9px 12px;font-size:13.5px;line-height:1.5;border-radius:3px;max-width:520px}
+#info b{font-weight:700}
+#info .m{color:var(--mute);font-size:12px}
+#hint{position:absolute;top:8px;inset-inline-start:10px;font-size:11.5px;color:var(--mute);pointer-events:none}
+#err{position:absolute;inset:0;display:none;align-items:center;justify-content:center;padding:30px;text-align:center}
+</style>
 </head>
 <body>
+<div id="wrap">
+<header><h1>סוכה למרפסת<small>שלד 1:1 · יחידה = 1 ס״מ</small></h1><a class="back" href="../index.html">חזרה לכלים</a></header>
+<div class="bar">
+  <button data-v="iso" class="on">תלת‑ממד</button>
+  <button data-v="top">מבט‑על (גרמושקה)</button>
+  <button data-v="south">מדרום</button>
+  <button data-v="east">ממזרח</button>
+  <span class="sep"></span>
+  <button data-t="low" class="on">מפלס 70</button>
+  <button data-t="wall" class="on">קיר</button>
+  <button data-t="plates" class="on">מחברים</button>
+  <button data-t="labels" class="on">מידות</button>
+</div>
+<div id="stage">
+  <canvas id="c"></canvas>
+  <div id="hint">גרירה = סיבוב · שתי אצבעות = הזזה וזום · הקשה על חלק = פרטים</div>
+  <div id="info"><b>הקש על קורה או עמוד</b><div class="m">יוצגו השם, האורכים וזוויות החיתוך.</div></div>
+  <div id="err">לא הצלחתי לטעון את ספריית התלת‑ממד. בדוק חיבור לרשת ורענן.</div>
+</div>
+</div>
+<script>
+function start(){
 
-<header class="bar">
-  <h1 class="bar__title">שרטוט לסוכה</h1>
-  <a class="btn btn--ghost" href="../index.html">חזרה לכלים</a>
-</header>
+/* ---------- נתוני שטח (ס"מ) ---------- */
+var WID=248, WLEN=742, WALL=490, WALL_T=30, WALL_H=100;
+var S=167, N=68, DS=150.5, DN=243, EAST=452;
+var GAP=1, TH=4;                 // מרווח מהגבול, עובי פרופיל
+var Z_TOP=280, Z_LOW=70;
+var POST_FROM_WALL=93;           // עמוד באזור ללא קיר
 
-<main class="stage">
-  <!-- הקנבס אינו הכלי. הוא ההוכחה שהתיקייה חיה ושהנכסים נטענים
-       מהשרת — לפני שהפרויקט עצמו נכנס לכאן. -->
-  <canvas id="stage" class="stage__canvas" aria-label="סוכה בקווי שרטוט, תצוגה מקדימה"></canvas>
+var a=Math.sqrt(DS*DS-(WID-S)*(WID-S)), b=a+EAST;
+// גבול חיצוני. באזור ללא קיר: כך שמרכז הקורה על אמצע עובי הקיר (y=-15)
+var P=[[0,0],[0,S],[a,WID],[b,WID],[WLEN,N],[WLEN,-18],[WALL,-18],[WALL,0]];
 
-  <section class="note" role="status">
-    <h2>התיקייה מוכנה. הפרויקט ייכנס לכאן.</h2>
-    <p>
-      התיקייה, הנכסים והכרטיס בדף הכלים נוצרו ונפרסו — כך שברגע שתיכנס לכאן
-      תיקיית הפרויקט, היא תעלה לשרת באותו מסלול כמו שאר הכלים, בלי הגדרה נוספת.
-    </p>
-    <p class="note__muted">
-      מה שמסתובב למעלה הוא ציור קווים על <code>&lt;canvas&gt;</code> בלי שום ספרייה —
-      דפנות וסכך, מציין מקום ולא מנוע. הוא מיועד להימחק.
-    </p>
-  </section>
-</main>
+function area(p){var s=0;for(var i=0;i<p.length;i++){var q=p[(i+1)%p.length];s+=p[i][0]*q[1]-q[0]*p[i][1];}return s/2;}
+function offset(P,d){var n=P.length,sg=area(P)>0?1:-1,L=[],out=[];
+  for(var i=0;i<n;i++){var p=P[i],q=P[(i+1)%n],dx=q[0]-p[0],dy=q[1]-p[1],l=Math.hypot(dx,dy);
+    L.push([[p[0]-dy/l*sg*d,p[1]+dx/l*sg*d],[dx,dy]]);}
+  for(i=0;i<n;i++){var A=L[(i+n-1)%n],B=L[i],den=A[1][0]*B[1][1]-A[1][1]*B[1][0];
+    var t=((B[0][0]-A[0][0])*B[1][1]-(B[0][1]-A[0][1])*B[1][0])/den;
+    out.push([A[0][0]+A[1][0]*t,A[0][1]+A[1][1]*t]);}
+  return out;}
+var O=offset(P,GAP), I=offset(P,GAP+TH), C=offset(P,GAP+TH/2);
+function dist(p,q){return Math.hypot(p[0]-q[0],p[1]-q[1]);}
+function cornerAngle(i){var p=P[(i+P.length-1)%P.length],q=P[i],r=P[(i+1)%P.length];
+  var v1=[p[0]-q[0],p[1]-q[1]],v2=[r[0]-q[0],r[1]-q[1]];
+  return Math.acos((v1[0]*v2[0]+v1[1]*v2[1])/(Math.hypot(v1[0],v1[1])*Math.hypot(v2[0],v2[1])))*180/Math.PI;}
 
-<script type="module" src="./assets/js/app.js"></script>
+/* ---------- סצנה ---------- */
+var canvas=document.getElementById('c'),stage=document.getElementById('stage');
+var renderer=new THREE.WebGLRenderer({canvas:canvas,antialias:true,alpha:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+var scene=new THREE.Scene();
+var CX=WLEN/2, CY=WID/2-10;      // מרכז התוכנית
+// מיפוי: תוכנית (x,y) -> עולם. צפון משמאל כמו בשרטוט: X = WLEN - x ; עומק Z = -y ; גובה Y
+function wx(x){return (WLEN-x)-CX;} function wz(y){return -(y-CY);}
+
+var persp=new THREE.PerspectiveCamera(40,1,1,8000);
+var ortho=new THREE.OrthographicCamera(-1,1,1,-1,-4000,8000);
+var cam=persp;
+/* בקרת מצלמה עצמאית (בלי ספריות נוספות) */
+var ctl={target:new THREE.Vector3(0,130,0),theta:-0.6,phi:1.0,radius:1200,top:false};
+function applyCam(){
+  if(ctl.top){ortho.up.set(0,0,-1);ortho.position.set(ctl.target.x,2000,ctl.target.z);ortho.lookAt(ctl.target.x,0,ctl.target.z);}
+  else{ctl.phi=Math.max(0.05,Math.min(Math.PI-0.05,ctl.phi));ctl.radius=Math.max(6,Math.min(4000,ctl.radius));
+    var s=Math.sin(ctl.phi);persp.position.set(ctl.target.x+ctl.radius*s*Math.sin(ctl.theta),ctl.target.y+ctl.radius*Math.cos(ctl.phi),ctl.target.z+ctl.radius*s*Math.cos(ctl.theta));
+    persp.up.set(0,1,0);persp.lookAt(ctl.target);}}
+function panBy(dx,dy){var h=stage.clientHeight,w=stage.clientWidth;
+  if(ctl.top){var k=(ortho.right-ortho.left)/ortho.zoom/w;ctl.target.x-=dx*k;ctl.target.z-=dy*k;}
+  else{var k2=2*ctl.radius*Math.tan(persp.fov*Math.PI/360)/h;persp.updateMatrixWorld();
+    var r=new THREE.Vector3().setFromMatrixColumn(persp.matrixWorld,0),u=new THREE.Vector3().setFromMatrixColumn(persp.matrixWorld,1);
+    ctl.target.addScaledVector(r,-dx*k2).addScaledVector(u,dy*k2);}}
+function zoomBy(f){if(ctl.top){ortho.zoom=Math.max(.3,Math.min(80,ortho.zoom/f));ortho.updateProjectionMatrix();}else ctl.radius*=f;}
+var ptrs={},pinch=0,moved=0;
+canvas.addEventListener('pointerdown',function(e){canvas.setPointerCapture(e.pointerId);ptrs[e.pointerId]=[e.clientX,e.clientY];moved=0;pinch=0;});
+canvas.addEventListener('pointermove',function(e){var p=ptrs[e.pointerId];if(!p)return;
+  var dx=e.clientX-p[0],dy=e.clientY-p[1];moved+=Math.abs(dx)+Math.abs(dy);
+  var ids=Object.keys(ptrs);
+  if(ids.length===1){if(e.shiftKey||e.buttons===2||ctl.top)panBy(dx,dy);else{ctl.theta-=dx*.006;ctl.phi-=dy*.006;}}
+  else if(ids.length===2){p[0]=e.clientX;p[1]=e.clientY;var A=ptrs[ids[0]],B=ptrs[ids[1]],d=Math.hypot(A[0]-B[0],A[1]-B[1]);
+    if(pinch)zoomBy(pinch/d);pinch=d;panBy(dx/2,dy/2);}
+  p[0]=e.clientX;p[1]=e.clientY;});
+function up(e){delete ptrs[e.pointerId];pinch=0;}
+canvas.addEventListener('pointerup',up);canvas.addEventListener('pointercancel',up);
+canvas.addEventListener('wheel',function(e){e.preventDefault();zoomBy(e.deltaY>0?1.12:1/1.12);},{passive:false});
+canvas.addEventListener('contextmenu',function(e){e.preventDefault();});
+
+scene.add(new THREE.HemisphereLight(0xffffff,0x8a8f86,.95));
+var sun=new THREE.DirectionalLight(0xffffff,.65);sun.position.set(-300,600,400);scene.add(sun);
+
+var M={
+ frame:new THREE.MeshLambertMaterial({color:0xb3261e}),
+ frame2:new THREE.MeshLambertMaterial({color:0xd9574c}),
+ low:new THREE.MeshLambertMaterial({color:0xc9962b}),
+ cross:new THREE.MeshLambertMaterial({color:0x1f7a4d}),
+ post:new THREE.MeshLambertMaterial({color:0x2a4fa3}),
+ wall:new THREE.MeshLambertMaterial({color:0xe2c044}),
+ plate:new THREE.MeshLambertMaterial({color:0x3b3f3c}),
+ floor:new THREE.MeshLambertMaterial({color:0xd4d7cf,side:THREE.DoubleSide}),
+ hi:new THREE.MeshLambertMaterial({color:0xff9d00,emissive:0x552200})
+};
+var G={low:new THREE.Group(),wall:new THREE.Group(),plates:new THREE.Group(),labels:new THREE.Group(),main:new THREE.Group()};
+for(var k in G)scene.add(G[k]);
+var pickables=[];
+
+function prism(pts,z0,z1,mat,group,info){ // pts בתוכנית
+  var sh=new THREE.Shape();
+  pts.forEach(function(p,i){var X=wx(p[0]),Y=-wz(p[1]);i?sh.lineTo(X,Y):sh.moveTo(X,Y);});
+  var g=new THREE.ExtrudeGeometry(sh,{depth:z1-z0,bevelEnabled:false});
+  var m=new THREE.Mesh(g,mat);m.rotation.x=-Math.PI/2;m.position.y=z0;
+  var e=new THREE.LineSegments(new THREE.EdgesGeometry(g,20),new THREE.LineBasicMaterial({color:0x111111,transparent:true,opacity:.55}));
+  m.add(e);group.add(m);
+  if(info){m.userData=info;m.userData.mat=mat;pickables.push(m);}
+  return m;}
+function rectPts(cx,cy,w,h){return [[cx-w/2,cy-h/2],[cx+w/2,cy-h/2],[cx+w/2,cy+h/2],[cx-w/2,cy+h/2]];}
+
+/* רצפה = הגבול החיצוני */
+prism(P,-1,0,M.floor,G.main,null);
+
+/* קיר */
+prism([[0,-WALL_T],[WALL,-WALL_T],[WALL,0],[0,0]],0,WALL_H,M.wall,G.wall,
+ {name:'קיר מערבי',rows:['אורך '+WALL+' · עובי '+WALL_T,'גובה בהדמיה '+WALL_H+' (הנחה, לא נמדד)']});
+
+/* מסגרת היקפית */
+var names=['דרום','אלכסון דרומי','מזרח','אלכסון צפוני','צפון','מערב (ללא קיר)'];
+var quads=[];
+for(var i=0;i<6;i++){
+  var o1=O[i],o2=O[i+1],i1=I[i],i2=I[i+1];
+  if(i===0)i1=[I[0][0],O[0][1]];
+  if(i===5)i2=[O[6][0],I[6][1]];
+  quads.push([o1,o2,i2,i1]);
+  var m1=(i===0)?0:90-cornerAngle(i)/2, m2=(i===5)?0:90-cornerAngle(i+1)/2;
+  var rows=['אורך חוץ '+dist(o1,o2).toFixed(1)+' · פנים '+dist(i1,i2).toFixed(1),
+            'חיתוך: קצה א׳ '+(m1?m1.toFixed(1)+'°':'ישר')+' · קצה ב׳ '+(m2?m2.toFixed(1)+'°':'ישר'),
+            'פרופיל '+TH+'×'+TH];
+  prism(quads[i],Z_TOP-TH,Z_TOP,i%2?M.frame2:M.frame,G.main,{name:'מסגרת עליונה · '+names[i],rows:rows});
+  if(i<5) prism(quads[i],Z_LOW-TH,Z_LOW,M.low,G.low,{name:'מסגרת מפלס 70 · '+names[i],rows:rows});
+}
+/* מפלס 70: קטע קצר מהעמוד עד קצה הקיר (המעבר צפונה ממנו נשאר פתוח) */
+var xp=WALL+POST_FROM_WALL;
+prism([[WALL+GAP,-17],[xp-TH/2,-17],[xp-TH/2,-13],[WALL+GAP,-13]],Z_LOW-TH,Z_LOW,M.low,G.low,
+ {name:'מפלס 70 · קטע ליד הקיר',rows:['אורך '+(xp-TH/2-WALL-GAP).toFixed(1),'חיתוך ישר בשני הקצוות']});
+
+/* קורות תומכות */
+var x1=I[2][0], x2=x1+225, x3=I[3][0], yE=WID-GAP-TH;
+[[x1,0,'ק1'],[x2,0,'ק2'],[x3,-13,'ק3']].forEach(function(c){
+  prism([[c[0]-TH/2,c[1]],[c[0]+TH/2,c[1]],[c[0]+TH/2,yE],[c[0]-TH/2,yE]],Z_TOP-TH,Z_TOP,M.cross,G.main,
+   {name:'קורה תומכת '+c[2],rows:['אורך '+(yE-c[1]).toFixed(0)+' · חיתוך ישר','מיקום: '+c[0].toFixed(1)+' מהפינה הדרומית','פרופיל '+TH+'×'+TH]});
+});
+
+/* עמודים */
+var posts=[
+ ['פינה דרום‑מערב',C[0][0],C[0][1]+0],['פינה דרום / אלכסון',C[1][0],C[1][1]],
+ ['פינה אלכסון דרומי / מזרח (ק1)',x1,WID-GAP-TH/2],['מזרח · ק2',x2,WID-GAP-TH/2],
+ ['פינה מזרח / אלכסון צפוני (ק3)',x3,WID-GAP-TH/2],['פינה אלכסון צפוני / צפון',C[4][0],C[4][1]],
+ ['פינה צפון‑מערב',C[5][0],-15],['מערב · תחת ק3',x3,-15],['מערב · '+POST_FROM_WALL+' מהקיר',xp,-15],
+ ['קצה הקיר',WALL+GAP+TH/2,-15],['צמוד לקיר · ק1',x1,TH/2],['צמוד לקיר · ק2',x2,TH/2]
+];
+posts[0][2]=GAP+TH/2;
+posts.forEach(function(p){
+  prism(rectPts(p[1],p[2],TH,TH),0,Z_TOP-TH,M.post,G.main,
+   {name:'עמוד · '+p[0],rows:['חתך '+TH+'×'+TH+' · גובה '+(Z_TOP-TH),'מרכז: '+p[1].toFixed(1)+' מדרום · '+p[2].toFixed(1)+' מפני הקיר']});
+});
+
+/* מחברים: פלטות שטוחות מעל כל חיבור (מציין מקום) */
+function plate(x,y,w,h){prism(rectPts(x,y,w,h),Z_TOP,Z_TOP+.3,M.plate,G.plates,
+  {name:'מחבר (פלטה)',rows:['מידות '+w+'×'+h+' · עובי 3 מ״מ','מציין מקום בלבד, עד שנגדיר סוג מחבר']});}
+for(i=1;i<=5;i++)plate(C[i][0],C[i][1],12,12);
+plate(x2,WID-GAP-TH/2,12,8);plate(x3,-15,12,8);plate(x1,2,8,8);plate(x2,2,8,8);
+
+/* תוויות מידה */
+function label(txt,x,y,z,size){
+  var cv=document.createElement('canvas'),c=cv.getContext('2d');cv.width=512;cv.height=96;
+  c.fillStyle='rgba(251,251,247,.92)';c.fillRect(0,0,512,96);c.strokeStyle='#1d241f';c.lineWidth=3;c.strokeRect(1.5,1.5,509,93);
+  c.fillStyle='#1d241f';c.font='500 44px Rubik,Arial,sans-serif';c.textAlign='center';c.textBaseline='middle';c.direction='rtl';c.fillText(txt,256,50);
+  var sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),depthTest:false}));
+  sp.scale.set(size*5.33,size,1);sp.position.set(wx(x),z,wz(y));sp.renderOrder=9;G.labels.add(sp);}
+for(i=0;i<6;i++){var q=quads[i],mx=(q[0][0]+q[1][0])/2,my=(q[0][1]+q[1][1])/2;
+  label(dist(q[0],q[1]).toFixed(1)+' / '+dist(q[2],q[3]).toFixed(1),mx,my,Z_TOP+14,11);}
+label('ק1 · 243',x1,110,Z_TOP+14,10);label('ק2 · 243',x2,110,Z_TOP+14,10);label('ק3 · 256',x3,110,Z_TOP+14,10);
+
+/* ---------- מבטים ---------- */
+function fit(){var w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h,false);
+  persp.aspect=w/h;persp.updateProjectionMatrix();
+  var half=470,asp=w/h;if(asp>=1){ortho.left=-half;ortho.right=half;ortho.top=half/asp;ortho.bottom=-half/asp;}
+  else{ortho.left=-half;ortho.right=half;ortho.top=half/asp;ortho.bottom=-half/asp;}
+  ortho.updateProjectionMatrix();}
+function view(v){
+  var portrait=stage.clientHeight>stage.clientWidth, far=portrait?1500:1050;
+  ctl.top=(v==='top');cam=ctl.top?ortho:persp;
+  if(ctl.top){ortho.zoom=1;ortho.updateProjectionMatrix();ctl.target.set(0,0,0);}
+  else{ctl.target.set(0,130,0);ctl.radius=far;
+    if(v==='iso'){ctl.theta=-0.65;ctl.phi=1.05;}
+    if(v==='south'){ctl.theta=Math.PI/2;ctl.phi=1.5;}
+    if(v==='east'){ctl.theta=Math.PI;ctl.phi=1.5;}}
+  document.querySelectorAll('[data-v]').forEach(function(b){b.classList.toggle('on',b.dataset.v===v);});}
+document.querySelectorAll('[data-v]').forEach(function(b){b.onclick=function(){view(b.dataset.v);};});
+document.querySelectorAll('[data-t]').forEach(function(b){b.onclick=function(){
+  var g=G[b.dataset.t];g.visible=!g.visible;b.classList.toggle('on',g.visible);};});
+
+/* ---------- בחירת חלק ---------- */
+var ray=new THREE.Raycaster(),sel=null,info=document.getElementById('info');
+canvas.addEventListener('pointerup',function(e){
+  if(moved>8)return;
+  var r=canvas.getBoundingClientRect(),v=new THREE.Vector2((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);
+  ray.setFromCamera(v,cam);
+  var hit=ray.intersectObjects(pickables.filter(function(m){return m.parent.visible;}),false)[0];
+  if(sel){sel.material=sel.userData.mat;sel=null;}
+  if(hit){sel=hit.object;sel.material=M.hi;
+    info.innerHTML='<b>'+sel.userData.name+'</b><div class="m">'+sel.userData.rows.join('<br>')+'</div>';}
+  else info.innerHTML='<b>הקש על קורה או עמוד</b><div class="m">יוצגו השם, האורכים וזוויות החיתוך.</div>';
+});
+
+window.addEventListener('resize',fit);fit();view('iso');
+(function loop(){requestAnimationFrame(loop);applyCam();renderer.render(scene,cam);})();
+}
+(function load(list){
+  if(!list.length){document.getElementById('err').style.display='flex';return;}
+  var s=document.createElement('script');s.src=list[0];
+  s.onload=function(){if(window.THREE){try{start();}catch(e){var d=document.getElementById('err');d.style.display='flex';d.textContent='שגיאה: '+e.message;}}else load(list.slice(1));};
+  s.onerror=function(){load(list.slice(1));};document.head.appendChild(s);
+})(['https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js','https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js','vendor/three.min.js']);
+</script>
 </body>
 </html>
