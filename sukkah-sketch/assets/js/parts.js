@@ -20,9 +20,9 @@ function rect(x,y,w,h,cls){return el('rect',{x:x,y:y,width:w,height:h,'class':cl
 function line(x1,y1,x2,y2,cls){return el('line',{x1:x1,y1:y1,x2:x2,y2:y2,'class':cls||'dim'});}
 function svg(x,y,w,h){return el('svg',{viewBox:x+' '+y+' '+w+' '+h,preserveAspectRatio:'xMidYMid meet'});}
 // קו מידה אופקי בין x1 ל-x2 בגובה y (התווית מעל), ואנכי בין y1 ל-y2 ב-x (התווית משמאל)
-function hdim(x1,x2,y,label,fs){var g=el('g'),t=fs*.5;
+function hdim(x1,x2,y,label,fs,below){var g=el('g'),t=fs*.5;
   g.appendChild(line(x1,y-t,x1,y+t,'dim'));g.appendChild(line(x2,y-t,x2,y+t,'dim'));g.appendChild(line(x1,y,x2,y,'dim'));
-  g.appendChild(txt((x1+x2)/2,y-fs*.75,label,'dimt','middle',fs));return g;}
+  g.appendChild(txt((x1+x2)/2,y+(below?fs*.85:-fs*.75),label,'dimt','middle',fs));return g;}
 function vdim(x,y1,y2,label,fs){var g=el('g'),t=fs*.5;
   g.appendChild(line(x-t,y1,x+t,y1,'dim'));g.appendChild(line(x-t,y2,x+t,y2,'dim'));g.appendChild(line(x,y1,x,y2,'dim'));
   var tx=txt(x-fs*.75,(y1+y2)/2,label,'dimt','middle',fs);tx.setAttribute('transform','rotate(-90 '+f1(x-fs*.75)+' '+f1((y1+y2)/2)+')');g.appendChild(tx);return g;}
@@ -88,6 +88,40 @@ function endDetail(b,end){
     s.appendChild(hdim(0,d,ey+TH+K.TONGUE_LEN+3.5,f1(d),2.2));});
   s.appendChild(txt(W/2,ey-2,'מבט צד — השן מתחת לקורה','lbl-s','middle',1.8));
   return s;}
+
+// פרט חיתוך מוגדל לקצה מפוצל: הקצה בלבד, עם פני שתי הקורות שהוא פוגש, הנסיגה, הזווית וחצאי הרוחב
+function notchDetail(b,end){
+  var c=b.cuts[end],lp=localPts(b),L=lp.L,A=b.axis[0],d=lp.d,n=lp.n,isA=end===0,e=isA?b.trim[0]:L-b.trim[1];
+  var loc=function(p){return [(p[0]-A[0])*d[0]+(p[1]-A[1])*d[1],(p[0]-A[0])*n[0]+(p[1]-A[1])*n[1]];};
+  var X=function(u){return isA?u-e:e-u;},Y=function(v){return isA?-v:v;};   // הקצה ב-0, הקורה נמשכת ימינה; צפון למעלה
+  var s=svg(-9,-8,27,16),cp=loc(c.corner);
+  // פני המסגרת שהקצה פוגש — מקווקו, מהפינה החוצה, עם שם בקצה הרחוק
+  c.edges.forEach(function(ed,k){var far=loc(k===0?ed[0]:ed[1]),dx=(far[0]-cp[0]),dy=(far[1]-cp[1]),l=Math.hypot(dx,dy),ux=dx/l,uy=dy/l;
+    s.appendChild(line(X(cp[0]),Y(cp[1]),X(cp[0]+ux*6),Y(cp[1]+uy*6),'axis'));
+    var lx=cp[0]+ux*5.2-uy*1.4,ly=cp[1]+uy*5.2+ux*1.4;   // מוזז ניצב לקו
+    s.appendChild(txt(X(lx),Y(ly),c.parts[k].deg<.5?'קורת המזרח':'האלכסון','lbl-s','middle',.85));});
+  s.appendChild(poly(lp.pts.map(function(p){return [X(p[0]),Y(p[1])];}),'b-'+b.mat));
+  s.appendChild(line(X(0),Y(0),X(16),Y(0),'axis'));
+  s.appendChild(vdim(X(14),Y(TH/2),Y(0),f1(TH/2),.8));s.appendChild(vdim(X(14),Y(0),Y(-TH/2),f1(TH/2),.8));
+  c.parts.forEach(function(q,k){var sv=k===0?-1:1;   // דרום = v שלילי, צפון = v חיובי
+    s.appendChild(txt(X(9),Y(sv*(TH/2+1.1)),'צד '+q.side+(q.deg<.5?' — ישר':''),'lbl','middle',.9));
+    if(q.deg<.5)return;
+    s.appendChild(hdim(X(0),X(q.setback),Y(sv*(TH/2+3.9)),'נסיגה '+f1(q.setback),.85,sv<0));   // בדרום התווית מתחת לקו, הרחק מהקשת
+    var a0=Math.atan2(sv,0),a1=Math.atan2(sv*TH/2,q.setback),r=2.8,pts=[];
+    for(var i=0;i<=12;i++){var a=a0+(a1-a0)*i/12;pts.push(f1(X(r*Math.cos(a)))+','+f1(Y(r*Math.sin(a))));}
+    s.appendChild(el('polyline',{points:pts.join(' '),'class':'dim'}));
+    var am=(a0+a1)/2;s.appendChild(txt(X((r+1.1)*Math.cos(am)),Y((r+1.1)*Math.sin(am)),f1(q.deg)+'°','lbl','middle',.95));});
+  s.appendChild(txt(X(4),Y(7.2),'קצה '+(isA?'א׳':'ב׳')+' של '+b.id+' — מבט־על, מוגדל. הקורה נמשכת ימינה','lbl-s','middle',.8));
+  return s;}
+function notchHowTo(b,end){
+  var c=b.cuts[end],st=c.parts.filter(function(q){return q.deg<.5;})[0],an=c.parts.filter(function(q){return q.deg>=.5;})[0];
+  return '<div class="card"><h3>איך חותכים את קצה '+(end?'ב׳':'א׳')+' של '+b.id+'</h3><ol style="margin:0;padding-inline-start:18px">'+
+    '<li>חותכים את הקורה ישר לאורך המלא — '+f1(b.len.outer)+' על הציר.</li>'+
+    '<li>מסמנים בקצה את קו האמצע של הרוחב ('+f1(TH/2)+' מכל דופן).</li>'+
+    '<li><b>צד '+st.side+'</b> נשאר ישר — הוא יושב על קורת המזרח.</li>'+
+    '<li><b>צד '+an.side+'</b>: מודדים מהקצה לאורך הדופן החיצונית <b>'+f1(an.setback)+'</b> ס״מ ומסמנים. מחברים בקו ישר מנקודת האמצע שבקצה אל הסימון, וחותכים על הקו. זו זווית <b>'+f1(an.deg)+'°</b> מהחיתוך הישר — הצד הזה יושב על האלכסון.</li>'+
+    '<li>בדיקה: הקצה נוגע בשתי הקורות בלי מרווח — הישר במזרח, המשופע באלכסון. השן נשארת במקומה: '+f1(b.tongues[end].s-(end?L0(b):b.trim[0]))+' מהקצה על הציר.</li></ol></div>';}
+function L0(b){return localPts(b).L-b.trim[1];}
 
 /* עמוד: תוכנית עם השרוולים סביבו, וחזית של ארבע הפאות */
 function postPlanSVG(p){
@@ -202,6 +236,8 @@ function beamSlide(b){
     fig(two,endDetail(b,0),'פרט קצה א׳ — החיתוך, והשן במרחקה מהקצה על הציר');
     fig(two,endDetail(b,1),'פרט קצה ב׳ — החיתוך, והשן במרחקה מהקצה על הציר');
     left.appendChild(two);g.appendChild(left);
+    var howto='';
+    if(b.cuts.some(function(c){return c.kind==='notch';}))howto='<div class="card"><h3>קצה מפוצל</h3>החיתוך המפוצל, מוגדל, עם הסבר ביצוע — בשקופית הבאה.</div>';
     var side=document.createElement('div');
     var hostA=b.hosts?hostNameOf(b.hosts[0]):'',hostB=b.hosts?hostNameOf(b.hosts[b.hosts.length-1]):'';
     var rows='<div class="card"><h3>מידות</h3>'+
@@ -213,8 +249,14 @@ function beamSlide(b){
       '<div class="card"><h3>שיניים מתחת לקורה — '+b.tongues.length+'</h3><table><tr><th>שן</th><th class="num">מקצה א׳</th><th class="num">מקצה ב׳</th><th>לשרוול על</th></tr>'+
       b.tongues.map(function(j){var a0=b.trim[0],b0=lp(b).L-b.trim[1];return '<tr><td>'+j.id+'</td><td class="num">'+f1(j.s-a0)+'</td><td class="num">'+f1(b0-j.s)+'</td><td>'+esc(j.host.name)+(j.dev>=.5?' · השרוול מסובב '+f1(j.dev)+'°':'')+'</td></tr>';}).join('')+
       '</table><div style="font-size:12.5px;color:var(--mute);margin-top:6px">המרחק נמדד על ציר הקורה, מהנקודה שבה החיתוך חוצה את הציר, עד מרכז השן. השן במרכז רוחב הקורה.</div></div>';
-    side.innerHTML=rows;g.appendChild(side);
+    side.innerHTML=(howto?howto:'')+rows;g.appendChild(side);
   });
+  [0,1].forEach(function(end){if(b.cuts[end].kind!=='notch')return;
+    slide(b.id+' — חיתוך הקצה המפוצל',(end?'קצה ב׳':'קצה א׳')+' · '+levelName[b.level],function(sec){
+      var g=grid(sec);
+      fig(g,notchDetail(b,end),'פרט חיתוך מוגדל, מבט־על. מקווקו — פני שתי הקורות שהקצה יושב עליהן; הנסיגה נמדדת על הדופן החיצונית מהקצה; הקשת — הזווית מהחיתוך הישר.').classList.add('notch');
+      var side=document.createElement('div');side.innerHTML=notchHowTo(b,end);g.appendChild(side);
+    });});
 }
 function lp(b){return localPts(b);}
 function hostNameOf(key){var k=key.charAt(0);if(k==='@')return 'פלטה על פני הקיר, '+f1(+key.slice(1))+' מדרום';if(k==='#')return 'פלטה על קצה הקיר';
@@ -225,10 +267,10 @@ topB.forEach(beamSlide);crossB.forEach(beamSlide);lowB.forEach(beamSlide);
 M.posts.forEach(function(p){
   slide('עמוד '+p.key+' — '+p.name,f1(p.x)+' מדרום · '+f1(p.y)+' מפני הקיר · גובה '+f1(p.h),function(sec){
     var g=grid(sec);
-    var left=document.createElement('div');
-    var f1el=fig(left,postPlanSVG(p),'מבט־על: העמוד באמצע, השרוולים סביבו. שרוול מסובב = פינת אלכסון.');
-    fig(left,postElevSVG(p),'חזית של כל פאה: השרוולים על הפאה, בגובהם ובהזזה הצידה. הקו — גובה ראש השרוול.').classList.add('tall');
-    g.appendChild(left);
+    var left=document.createElement('div'),two=document.createElement('div');two.className='two';
+    fig(two,postPlanSVG(p),'מבט־על: העמוד באמצע, השרוולים סביבו. שרוול מסובב = פינת אלכסון.').classList.add('plan');
+    fig(two,postElevSVG(p),'חזית של כל פאה: השרוולים על הפאה, בגובהם ובהזזה הצידה. הקו — גובה ראש השרוול.').classList.add('tall');
+    left.appendChild(two);g.appendChild(left);
     var side=document.createElement('div');
     side.innerHTML='<div class="card"><h3>שרוולים על העמוד — '+p.joints.length+'</h3><table><tr><th>שרוול</th><th>פאה</th><th class="num">ראש בגובה</th><th>סיבוב</th><th class="num">מהפאה</th><th class="num">הצידה</th></tr>'+
       p.joints.map(function(j){return '<tr><td>'+j.id+'<br><span style="color:var(--mute);font-size:12px">'+esc(j.beamName)+'</span></td><td>'+j.face.name+'</td><td class="num">'+f1(j.zb)+'</td><td>'+(j.dev<.5?'ישר':f1(j.dev)+'° לכיוון הקורה')+'</td><td class="num">'+f1(j.face.fromFace)+'</td><td class="num">'+(Math.abs(j.face.lateral)<.05?'0':f1(Math.abs(j.face.lateral))+' ל'+j.face.lateralName)+'</td></tr>';}).join('')+
