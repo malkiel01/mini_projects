@@ -235,12 +235,9 @@ function beamSlide(b){
     var two=document.createElement('div');two.className='two';
     fig(two,endDetail(b,0),'פרט קצה א׳ — החיתוך, והשן במרחקה מהקצה על הציר');
     fig(two,endDetail(b,1),'פרט קצה ב׳ — החיתוך, והשן במרחקה מהקצה על הציר');
-    left.appendChild(two);
+    left.appendChild(two);g.appendChild(left);
     var howto='';
-    [0,1].forEach(function(end){if(b.cuts[end].kind!=='notch')return;
-      fig(left,notchDetail(b,end),'פרט חיתוך מוגדל של קצה '+(end?'ב׳':'א׳')+'. מקווקו — פני שתי הקורות שהקצה יושב עליהן; הנסיגה נמדדת על הדופן החיצונית.').classList.add('notch');
-      howto+=notchHowTo(b,end);});
-    g.appendChild(left);
+    if(b.cuts.some(function(c){return c.kind==='notch';}))howto='<div class="card"><h3>קצה מפוצל</h3>החיתוך המפוצל, מוגדל, עם הסבר ביצוע — בשקופית הבאה.</div>';
     var side=document.createElement('div');
     var hostA=b.hosts?hostNameOf(b.hosts[0]):'',hostB=b.hosts?hostNameOf(b.hosts[b.hosts.length-1]):'';
     var rows='<div class="card"><h3>מידות</h3>'+
@@ -254,6 +251,12 @@ function beamSlide(b){
       '</table><div style="font-size:12.5px;color:var(--mute);margin-top:6px">המרחק נמדד על ציר הקורה, מהנקודה שבה החיתוך חוצה את הציר, עד מרכז השן. השן במרכז רוחב הקורה.</div></div>';
     side.innerHTML=(howto?howto:'')+rows;g.appendChild(side);
   });
+  [0,1].forEach(function(end){if(b.cuts[end].kind!=='notch')return;
+    slide(b.id+' — חיתוך הקצה המפוצל',(end?'קצה ב׳':'קצה א׳')+' · '+levelName[b.level],function(sec){
+      var g=grid(sec);
+      fig(g,notchDetail(b,end),'פרט חיתוך מוגדל, מבט־על. מקווקו — פני שתי הקורות שהקצה יושב עליהן; הנסיגה נמדדת על הדופן החיצונית מהקצה; הקשת — הזווית מהחיתוך הישר.').classList.add('notch');
+      var side=document.createElement('div');side.innerHTML=notchHowTo(b,end);g.appendChild(side);
+    });});
 }
 function lp(b){return localPts(b);}
 function hostNameOf(key){var k=key.charAt(0);if(k==='@')return 'פלטה על פני הקיר, '+f1(+key.slice(1))+' מדרום';if(k==='#')return 'פלטה על קצה הקיר';
@@ -264,10 +267,10 @@ topB.forEach(beamSlide);crossB.forEach(beamSlide);lowB.forEach(beamSlide);
 M.posts.forEach(function(p){
   slide('עמוד '+p.key+' — '+p.name,f1(p.x)+' מדרום · '+f1(p.y)+' מפני הקיר · גובה '+f1(p.h),function(sec){
     var g=grid(sec);
-    var left=document.createElement('div');
-    var f1el=fig(left,postPlanSVG(p),'מבט־על: העמוד באמצע, השרוולים סביבו. שרוול מסובב = פינת אלכסון.');
-    fig(left,postElevSVG(p),'חזית של כל פאה: השרוולים על הפאה, בגובהם ובהזזה הצידה. הקו — גובה ראש השרוול.').classList.add('tall');
-    g.appendChild(left);
+    var left=document.createElement('div'),two=document.createElement('div');two.className='two';
+    fig(two,postPlanSVG(p),'מבט־על: העמוד באמצע, השרוולים סביבו. שרוול מסובב = פינת אלכסון.').classList.add('plan');
+    fig(two,postElevSVG(p),'חזית של כל פאה: השרוולים על הפאה, בגובהם ובהזזה הצידה. הקו — גובה ראש השרוול.').classList.add('tall');
+    left.appendChild(two);g.appendChild(left);
     var side=document.createElement('div');
     side.innerHTML='<div class="card"><h3>שרוולים על העמוד — '+p.joints.length+'</h3><table><tr><th>שרוול</th><th>פאה</th><th class="num">ראש בגובה</th><th>סיבוב</th><th class="num">מהפאה</th><th class="num">הצידה</th></tr>'+
       p.joints.map(function(j){return '<tr><td>'+j.id+'<br><span style="color:var(--mute);font-size:12px">'+esc(j.beamName)+'</span></td><td>'+j.face.name+'</td><td class="num">'+f1(j.zb)+'</td><td>'+(j.dev<.5?'ישר':f1(j.dev)+'° לכיוון הקורה')+'</td><td class="num">'+f1(j.face.fromFace)+'</td><td class="num">'+(Math.abs(j.face.lateral)<.05?'0':f1(Math.abs(j.face.lateral))+' ל'+j.face.lateralName)+'</td></tr>';}).join('')+
