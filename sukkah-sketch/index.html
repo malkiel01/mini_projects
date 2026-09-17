@@ -60,7 +60,8 @@ var WID=248, WLEN=742, WALL=490, WALL_T=30, WALL_H=300;   // הקיר גבוה �
 var S=167, N=68, DS=150.5, DN=243, EAST=452;
 var GAP=1, TH=4;                 // מרווח מהגבול, עובי פרופיל
 var Z_TOP=280, Z_LOW=70;
-var TONGUE=3, TONGUE_LEN=12;     // הזכר: פרופיל 30×30, אורך חשוף 12 — טרם הוכרע
+var SLEEVE_LEN=12;               // השרוול: חתיכת 40×40 אנכית לצד העמוד — אורכו טרם הוכרע
+var TONGUE=3.5, TONGUE_LEN=10;   // השן: 3.5×3.5 מתחת לקורה, יורדת לתוך השרוול — טרם הוכרע
 var POST_FROM_WALL=93;           // עמוד באזור ללא קיר
 
 var a=Math.sqrt(DS*DS-(WID-S)*(WID-S)), b=a+EAST;
@@ -131,7 +132,8 @@ var M={
  post:new THREE.MeshLambertMaterial({color:0x2a4fa3}),
  wall:new THREE.MeshLambertMaterial({color:0xe2c044,transparent:true,opacity:.45}),   // שקוף למחצה: הקיר גבוה מהסוכה ואסור שיסתיר אותה
  plate:new THREE.MeshLambertMaterial({color:0x3b3f3c}),
- joint:new THREE.MeshLambertMaterial({color:0xff3d00,emissive:0x5a1200,depthTest:false,transparent:true,opacity:.92}),   // בשיקוף — הזכר יושב בתוך הקורה
+ sleeve:new THREE.MeshLambertMaterial({color:0x9a5b12}),
+ tongue:new THREE.MeshLambertMaterial({color:0xff3d00,emissive:0x5a1200,depthTest:false,transparent:true,opacity:.92}),   // בשיקוף — השן יושבת בתוך השרוול
  floor:new THREE.MeshLambertMaterial({color:0xd4d7cf,side:THREE.DoubleSide}),
  hi:new THREE.MeshLambertMaterial({color:0xff9d00,emissive:0x552200})
 };
@@ -169,11 +171,11 @@ for(var i=0;i<6;i++){
   var rows=['אורך חוץ '+dist(o1,o2).toFixed(1)+' · פנים '+dist(i1,i2).toFixed(1),
             'חיתוך: קצה א׳ '+(m1?m1.toFixed(1)+'°':'ישר')+' · קצה ב׳ '+(m2?m2.toFixed(1)+'°':'ישר'),
             'פרופיל '+TH+'×'+TH];
-  var t='ע'+(i+1), l='ת'+(i+1);   // שם קצר: ע = מסגרת עליונה, ת = מפלס 70. אותו שם על הקורה ועל הזכרים שלה
+  var t='ע'+(i+1), l='ת'+(i+1);   // שם קצר: ע = מסגרת עליונה, ת = מפלס 70. אותו שם על הקורה ועל השרוולים שלה
   prism(quads[i],Z_TOP-TH,Z_TOP,i%2?M.frame2:M.frame,G.main,{name:'מסגרת עליונה · '+names[i]+' ('+t+')',
-    rows:rows.concat(['מחברים: '+t+'·א, '+t+'·ב'+(i===2||i===5?' + כפול באמצע':'')])});
+    rows:rows.concat(['מחברים: '+t+'·א, '+t+'·ב'+(i===2?' + '+t+'·ג (עמוד ביניים)':i===5?' + '+t+'·ג, '+t+'·ד (עמודי ביניים)':'')])});
   if(i<5) prism(quads[i],Z_LOW-TH,Z_LOW,M.low,G.low,{name:'מסגרת מפלס 70 · '+names[i]+' ('+l+')',
-    rows:rows.concat(['מחברים: '+l+'·א, '+l+'·ב'+(i===2?' + כפול באמצע':'')])});
+    rows:rows.concat(['מחברים: '+l+'·א, '+l+'·ב'+(i===2?' + '+l+'·ג (עמוד ביניים)':'')])});
 }
 /* מפלס 70: קטע קצר מהעמוד עד קצה הקיר (המעבר צפונה ממנו נשאר פתוח) */
 var xp=WALL+POST_FROM_WALL;
@@ -184,7 +186,7 @@ prism([[WALL+GAP,-17],[xp-TH/2,-17],[xp-TH/2,-13],[WALL+GAP,-13]],Z_LOW-TH,Z_LOW
 var x1=I[2][0], x2=x1+225, x3=I[3][0], yE=WID-GAP-TH;
 [[x1,0,'ק1'],[x2,0,'ק2'],[x3,-13,'ק3']].forEach(function(c){
   prism([[c[0]-TH/2,c[1]],[c[0]+TH/2,c[1]],[c[0]+TH/2,yE],[c[0]-TH/2,yE]],Z_TOP-TH,Z_TOP,M.cross,G.main,
-   {name:'קורה תומכת '+c[2],rows:['אורך '+(yE-c[1]).toFixed(0)+' · חיתוך ישר','מיקום: '+c[0].toFixed(1)+' מהפינה הדרומית','פרופיל '+TH+'×'+TH,'מחברים: '+c[2]+'·א (עמוד מזרח), '+c[2]+'·ב ('+(c[1]===0?'פלטה על הקיר':'עמוד מערב')+')']});
+   {name:'קורה תומכת '+c[2],rows:['אורך '+(yE-c[1]).toFixed(0)+' · חיתוך ישר','מיקום: '+c[0].toFixed(1)+' מהפינה הדרומית','פרופיל '+TH+'×'+TH,'מחברים: '+c[2]+'·א (עמוד מזרח), '+c[2]+'·ב ('+(c[1]===0?'שרוול על הקיר':'עמוד מערב')+')']});
 });
 
 /* עמודים */
@@ -203,35 +205,40 @@ posts.forEach(function(p){
   prism(rectPts(p[2],p[3],TH,TH),0,Z_TOP-TH,M.post,G.main,{name:'עמוד · '+p[1],rows:rows});
 });
 
-/* ---------- מחברים: זכר ונקבה ----------
-   הקורה (40×40) היא הנקבה. הזכר הוא פרופיל קטן יותר, מרותך לעמוד — או לפלטה
-   שמעוגנת לקיר — ומכוון לאורך ציר הקורה. לכן בפינות האלכסון הוא יוצא מפני
-   העמוד בזווית, והזווית מוצגת בפרטי המחבר. הזכר יושב בתוך הקורה ואינו נראה
-   מבחוץ, ולכן הוא מצויר בשיקוף, דרך הקורה. כל זכר נושא את שם הקורה שלו. */
-var SPLIT='מחבר כפול באמצע קורה — מחייב פיצול הקורה לשני קטעים (טרם הוכרע)';
+/* ---------- מחברים: שרוול ושן, אנכיים ----------
+   כמו בתמונות: לצד העמוד מרותך שרוול — חתיכה קצרה מאותו פרופיל 40×40, אנכית,
+   פתוחה למעלה, וראשה בגובה תחתית הקורה. בקצה הקורה, מתחתיה, מרותכת שן מפרופיל
+   קטן יותר שיורדת לתוך השרוול. הקורה מונחת מלמעלה — חיבור קל, בלי ברגים.
+   השרוול מרותך מסובב לכיוון הקורה, ולכן אותו מחבר משמש גם בפינות האלכסון:
+   השן יורדת אנכית בכל זווית. עמוד ביניים מקבל שרוול אחד לצדו והקורה נשארת
+   רצופה — השן מרותכת מתחתיה באמצע. כל שרוול נושא את שם הקורה שלו. */
 function hostAt(key){return key.charAt(0)==='@'?[+key.slice(1),.6]:PC[key];}   // '@x' = נקודה על פני הקיר
-function tongue(id,beam,key,toward,z,extra){
+function sq(c,d,h){   // ריבוע ברוחב 2h סביב c, מסובב לכיוון d
+  var n=[-d[1],d[0]];
+  return [[c[0]+d[0]*h+n[0]*h,c[1]+d[1]*h+n[1]*h],[c[0]+d[0]*h-n[0]*h,c[1]+d[1]*h-n[1]*h],
+          [c[0]-d[0]*h-n[0]*h,c[1]-d[1]*h-n[1]*h],[c[0]-d[0]*h+n[0]*h,c[1]-d[1]*h+n[1]*h]];}
+function joint(id,beam,key,toward,z,mid){
   var from=hostAt(key), wall=key.charAt(0)==='@';
-  var dx=toward[0]-from[0],dy=toward[1]-from[1],l=Math.hypot(dx,dy),d=[dx/l,dy/l],n=[-d[1],d[0]];
-  var len=(wall?0:TH/2)+TONGUE_LEN, h=TONGUE/2, zc=z-TH/2;   // ממרכז העמוד, דרך פניו, והחוצה; zc = ציר הקורה
-  var q=[from[0]+d[0]*len,from[1]+d[1]*len];
-  var pts=[[from[0]+n[0]*h,from[1]+n[1]*h],[q[0]+n[0]*h,q[1]+n[1]*h],[q[0]-n[0]*h,q[1]-n[1]*h],[from[0]-n[0]*h,from[1]-n[1]*h]];
+  var dx=toward[0]-from[0],dy=toward[1]-from[1],l=Math.hypot(dx,dy),d=[dx/l,dy/l];
   var ang=Math.atan2(d[1],d[0])*180/Math.PI, dev=((ang%90)+90)%90; dev=Math.min(dev,90-dev);
-  var rows=['קורה '+beam+' · '+(wall?'זכר על פלטה מעוגנת לקיר':'זכר מרותך לעמוד'),
-            'זכר '+TONGUE+'×'+TONGUE+' · אורך חשוף '+TONGUE_LEN+' · נכנס לנקבה '+TH+'×'+TH,
-            'זווית יציאה: '+(dev<.5?'ניצב לפני העמוד':dev.toFixed(1)+'° מהניצב'),
-            'גובה ציר '+zc.toFixed(1)].concat(extra||[]);
-  prism(pts,zc-h,zc+h,M.joint,G.joints,{name:'מחבר '+id,rows:rows}).renderOrder=8;
-  if(wall){var pw=10;
-    prism([[from[0]-pw/2,0],[from[0]+pw/2,0],[from[0]+pw/2,.6],[from[0]-pw/2,.6]],zc-pw/2,zc+pw/2,M.plate,G.joints,
-      {name:'פלטת קיר · '+id,rows:[pw+'×'+pw+' · עובי 6 מ״מ · 4 ברגי עיגון (טרם הוכרע)','הזכר מרותך לפלטה; הקורה נכנסת עליו']});}
+  // מרכז השרוול: צמוד לפני העמוד (או לפלטה) גם כשהוא מסובב לכיוון הקורה
+  var r=dev*Math.PI/180, t=wall?TH/2:TH/2*(1+Math.cos(r)+Math.sin(r))/Math.cos(r);
+  var c=[from[0]+d[0]*t,from[1]+d[1]*t], zb=z-TH;   // zb = תחתית הקורה = ראש השרוול
+  var rows=['קורה '+beam+' · '+(wall?'שרוול על פלטה מעוגנת לקיר':mid?'שרוול לצד עמוד ביניים — הקורה רצופה, השן מתחתיה':'שרוול מרותך לצד העמוד'),
+            'שרוול '+TH+'×'+TH+' · אורך '+SLEEVE_LEN+' · ראשו בגובה '+zb.toFixed(1),
+            'שן '+TONGUE+'×'+TONGUE+' מתחת לקורה · נכנסת '+TONGUE_LEN,
+            'סיבוב השרוול: '+(dev<.5?'ישר על פני העמוד':dev.toFixed(1)+'° — לכיוון הקורה')];
+  prism(sq(c,d,TH/2),zb-SLEEVE_LEN,zb,M.sleeve,G.joints,{name:'שרוול '+id,rows:rows});
+  prism(sq(c,d,TONGUE/2),zb-TONGUE_LEN,zb,M.tongue,G.joints,null).renderOrder=8;   // השן, בשיקוף
+  if(wall){var pw=10,ph=SLEEVE_LEN+4;
+    prism([[from[0]-pw/2,0],[from[0]+pw/2,0],[from[0]+pw/2,.6],[from[0]-pw/2,.6]],zb-SLEEVE_LEN-2,zb+2,M.plate,G.joints,
+      {name:'פלטת קיר · '+id,rows:[pw+'×'+ph+' · עובי 6 מ״מ · 4 ברגי עיגון (טרם הוכרע)','השרוול מרותך לפלטה; השן שבקצה הקורה יורדת לתוכו']});}
 }
-/* קורה בין שני מארחים (עמוד, או '@x' על הקיר). עמוד ביניים מקבל זכר לכל כיוון */
+/* קורה בין שני מארחים (עמוד, או '@x' על הקיר). עמוד ביניים מקבל שרוול אחד */
 function bar(id,beam,a,b,z,mids){
   var A=hostAt(a),B=hostAt(b);
-  tongue(id+'·א',beam,a,B,z); tongue(id+'·ב',beam,b,A,z);
-  (mids||[]).forEach(function(m,k){var s=String.fromCharCode(0x5d2+k);   // ג, ד, ...
-    tongue(id+'·'+s+'1',beam,m,A,z,[SPLIT]); tongue(id+'·'+s+'2',beam,m,B,z,[SPLIT]);});
+  joint(id+'·א',beam,a,B,z); joint(id+'·ב',beam,b,A,z);
+  (mids||[]).forEach(function(m,k){joint(id+'·'+String.fromCharCode(0x5d2+k),beam,m,B,z,true);});   // ג, ד, ...
 }
 [['ע1','דרום','sw','s1'],['ע2','אלכסון דרומי','s1','e1'],['ע3','מזרח','e1','e3',['e2']],
  ['ע4','אלכסון צפוני','e3','n1'],['ע5','צפון','n1','nw'],['ע6','מערב (ללא קיר)','nw','wk',['w3','wp']]
@@ -279,7 +286,7 @@ canvas.addEventListener('pointerup',function(e){
   var r=canvas.getBoundingClientRect(),v=new THREE.Vector2((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);
   ray.setFromCamera(v,cam);
   var hits=ray.intersectObjects(pickables.filter(function(m){return m.parent.visible;}),false);
-  // המחברים מצוירים בשיקוף דרך הקורה — ולכן גם נבחרים דרכה
+  // השרוול קטן וצמוד לעמוד ולקורה — כשהוא בקו ההקשה, הוא שנבחר
   var hit=hits.filter(function(h){return h.object.parent===G.joints;})[0]||hits[0];
   if(sel){sel.material=sel.userData.mat;sel=null;}
   if(hit){sel=hit.object;sel.material=M.hi;
