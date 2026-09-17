@@ -45,8 +45,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <?php if ($ipBlocked): ?>
         <div class="alert alert-error">
             ה-IP שלך <b dir="ltr"><?= htmlspecialchars($ip) ?></b> לא מורשה.
-            צריך להוסיף אותו לרשימה ב-<code>data/config.json</code> בשרת.
         </div>
+        <p class="muted small">
+            אפשר להוסיף אותו בעצמך דרך דף ניהול ה-IPs — הוא מוגן בסיסמת הניהול ולא ברשימת הכתובות.
+        </p>
+        <p style="text-align:center;margin-top:16px">
+            <a href="ip-admin.php" class="btn btn-primary">ניהול IPs</a>
+        </p>
     <?php else: ?>
         <?php if ($error): ?>
             <div class="alert alert-error"><?= htmlspecialchars($error) ?></div>
