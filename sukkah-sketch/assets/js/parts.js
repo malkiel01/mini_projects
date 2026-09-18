@@ -170,6 +170,27 @@ function heightsSVG(){
   s.appendChild(txt(x+38,flip(K.Z_LOW-TH)+7,f1(K.Z_LOW-TH)+' — תחתית הקורה = ראש השרוול','lbl','end',6.5));
   return s;}
 
+/* דיקטים: תוכנית, ועל הפאה הפנימית של כל צלע — הלוחות ברוחב 70, עם קווי חלוקה והשארית מודגשת */
+function plySVG(){
+  var W=K.WLEN,H=K.WID,sx=function(x){return W-x;},sy=function(y){return H-y;};
+  var tp=function(pts){return pts.map(function(p){return [sx(p[0]),sy(p[1])];});};
+  var s=svg(-70,-40,W+140,H+K.WALL_T+90);
+  s.appendChild(poly(tp(M.wall.pts),'wall'));
+  M.beams.filter(function(b){return b.level==='top';}).forEach(function(b){s.appendChild(poly(tp(b.pts),'b-'+b.mat));});
+  M.posts.forEach(function(p){s.appendChild(poly(tp(p.pts),'post'));});
+  var cc=centroid(M.P);
+  M.ply.walls.forEach(function(w){var A=w.a[0],B=w.a[1],dx=B[0]-A[0],dy=B[1]-A[1],l=Math.hypot(dx,dy),d=[dx/l,dy/l],n=[-d[1],d[0]];
+    if(((A[0]+B[0])/2-cc[0])*n[0]+((A[1]+B[1])/2-cc[1])*n[1]>0){n=[-n[0],-n[1]];}   // n פונה פנימה
+    var t=K.PLY_T*4;   // עובי מוגזם פי 4, אחרת לא רואים
+    for(var i=0;i<w.n;i++){var u0=i*K.PLY_W,u1=Math.min(l,(i+1)*K.PLY_W),isRest=(u1-u0<K.PLY_W-.05);
+      var q=[[A[0]+d[0]*u0,A[1]+d[1]*u0],[A[0]+d[0]*u1,A[1]+d[1]*u1],[A[0]+d[0]*u1+n[0]*t,A[1]+d[1]*u1+n[1]*t],[A[0]+d[0]*u0+n[0]*t,A[1]+d[1]*u0+n[1]*t]];
+      s.appendChild(poly(tp(q),isRest?'ply-rest':'ply'));}
+    var mid=[A[0]+d[0]*l/2+n[0]*14,A[1]+d[1]*l/2+n[1]*14];
+    s.appendChild(txt(sx(mid[0]),sy(mid[1]),w.id+' · '+f1(w.len)+' → '+w.n,'lbl-b','middle',10));});
+  s.appendChild(txt(sx(K.WALL/2),sy(-K.WALL_T)+10,'הקיר המערבי — בלי דיקט','lbl-s','middle',9));
+  s.appendChild(txt(sx(K.WLEN)-10,-28,'← צפון','lbl-s','middle',10));s.appendChild(txt(sx(0)+10,-28,'דרום →','lbl-s','middle',10));
+  return s;}
+
 /* ---------- השקופיות ---------- */
 var deck=document.getElementById('deck'),slides=[];
 function slide(title,sub,build){var sec=document.createElement('section');sec.className='slide';
@@ -194,6 +215,7 @@ slide('סוכה למרפסת — החלקים','שלד 1:1 · כל מספר כא
    '<div class="card"><div class="n">'+M.posts.length+'</div><div class="l">עמודים · '+f0(M.posts[0].h)+' ס״מ</div></div>'+
    '<div class="card"><div class="n">'+M.joints.length+'</div><div class="l">שרוולים + '+M.joints.length+' שיניים</div></div>'+
    '<div class="card"><div class="n">'+plates.length+'</div><div class="l">פלטות קיר</div></div>'+
+   '<div class="card"><div class="n">'+M.ply.count+'</div><div class="l">לוחות דיקט '+K.PLY_W+' ס״מ</div></div>'+
    '<div class="card"><div class="n">'+f1((totalBeam+totalPost+totalSleeve)/100)+' מ׳</div><div class="l">פרופיל '+TH*10+'×'+TH*10+' סה״כ (קורות '+f1(totalBeam/100)+' · עמודים '+f1(totalPost/100)+' · שרוולים '+f1(totalSleeve/100)+')</div></div>'+
    '<div class="card"><div class="n">'+f1(M.joints.length*K.TONGUE_LEN/100)+' מ׳</div><div class="l">פרופיל '+K.TONGUE*10+'×'+K.TONGUE*10+' לשיניים</div></div>'+
    '</div>');
@@ -298,6 +320,21 @@ slide('הקיר המערבי — פלטות ושרוולים','בלי עמודי
   g.appendChild(side);
 });
 
+/* 8b. דיקטים */
+slide('דיקטים — כמה לוחות','לוח '+K.PLY_W+' ס״מ רוחב · עובי '+K.PLY_T+' · פנימי, צמוד למסגרת',function(sec){
+  var g=grid(sec);
+  fig(g,plySVG(),'הלוחות על הפאה הפנימית של כל צלע. הכהה — הלוח החלקי בסוף הצלע. הקיר המערבי בלי דיקט.');
+  var side=document.createElement('div');
+  side.innerHTML='<div class="card"><h3>'+M.ply.count+' לוחות</h3>'+M.ply.full+' שלמים + '+M.ply.restPanels.length+' לוחות שמהם נחתכות כל השאריות. היקף פנימי לכיסוי: <b>'+f1(M.ply.total)+'</b> ס״מ = '+f1(M.ply.total/K.PLY_W)+' לוחות נטו. בלי לחתוך שאריות מלוח משותף — '+M.ply.countNaive+' לוחות.</div>'+
+    '<div class="card"><h3>לפי צלע</h3><table><tr><th>צלע</th><th class="num">פנים</th><th class="num">שלמים</th><th class="num">שארית</th></tr>'+
+    M.ply.walls.map(function(w){return '<tr><td>'+w.id+' · '+esc(w.kind)+'</td><td class="num">'+f1(w.len)+'</td><td class="num">'+w.full+'</td><td class="num">'+(w.rest?f1(w.rest):'—')+'</td></tr>';}).join('')+
+    '</table></div>'+
+    '<div class="card"><h3>חיתוך השאריות</h3><table><tr><th>לוח</th><th>חתיכות</th><th class="num">סה״כ</th></tr>'+
+    M.ply.restPanels.map(function(p,i){return '<tr><td>'+(i+1)+'</td><td>'+p.parts.map(function(r){return r.id+' '+f1(r.w);}).join(' + ')+'</td><td class="num">'+f1(p.used)+' / '+K.PLY_W+'</td></tr>';}).join('')+
+    '</table><div style="font-size:12.5px;color:var(--mute);margin-top:6px">הרוחב מהמודל. גובה הלוח לא הוכרע: העמוד '+f1(M.posts[0].h)+', ראש המסגרת '+f1(K.Z_TOP)+'. לוח נמוך יותר משאיר רצועה פתוחה למעלה; אם צריך שני לוחות בגובה — הכמות מוכפלת. פתח כניסה לא במודל.</div></div>';
+  g.appendChild(side);
+});
+
 /* 9. רשימת חיתוך */
 slide('רשימת חיתוך','כל הקורות, העמודים והמחברים',function(sec){
   var t='<table><tr><th>חלק</th><th>כמות</th><th class="num">אורך</th><th class="num">פנים</th><th>קצה א׳</th><th>קצה ב׳</th><th>שיניים</th></tr>';
@@ -305,6 +342,7 @@ slide('רשימת חיתוך','כל הקורות, העמודים והמחברי�
   t+='<tr><td><span class="tag t-post">עמוד</span>'+TH+'×'+TH+'</td><td>'+M.posts.length+'</td><td class="num">'+f1(M.posts[0].h)+'</td><td class="num">—</td><td>ישר</td><td>ישר</td><td></td></tr>';
   t+='<tr><td><span class="tag t-joint">שרוול</span>'+TH+'×'+TH+'</td><td>'+M.joints.length+'</td><td class="num">'+f1(K.SLEEVE_LEN)+'</td><td class="num">—</td><td>ישר</td><td>ישר</td><td></td></tr>';
   t+='<tr><td><span class="tag t-joint">שן</span>'+K.TONGUE+'×'+K.TONGUE+'</td><td>'+M.joints.length+'</td><td class="num">'+f1(K.TONGUE_LEN)+'</td><td class="num">—</td><td>ישר</td><td>ישר</td><td></td></tr>';
+  t+='<tr><td><span class="tag" style="background:#5b4a2f">דיקט</span>'+K.PLY_W+' רוחב · '+K.PLY_T+' עובי</td><td>'+M.ply.count+'</td><td class="num">—</td><td class="num">—</td><td colspan="3">'+M.ply.full+' שלמים + '+M.ply.restPanels.length+' לשאריות · גובה טרם הוכרע</td></tr>';
   t+='<tr><td><span class="tag" style="background:var(--plate)">פלטה</span>'+K.PLATE_W+'×'+(K.SLEEVE_LEN+4)+' · 6 מ״מ</td><td>'+plates.length+'</td><td class="num">—</td><td class="num">—</td><td></td><td></td><td></td></tr>';
   t+='</table>';
   html(sec,t+'<p class="lead" style="margin-top:12px">סה״כ פרופיל '+TH*10+'×'+TH*10+': קורות '+f1(totalBeam/100)+' מ׳ + עמודים '+f1(totalPost/100)+' מ׳ + שרוולים '+f1(totalSleeve/100)+' מ׳ = <b>'+f1((totalBeam+totalPost+totalSleeve)/100)+' מ׳</b> (לפי אורך החוץ, בלי פחת חיתוך). פרופיל '+K.TONGUE*10+'×'+K.TONGUE*10+' לשיניים: <b>'+f1(M.joints.length*K.TONGUE_LEN/100)+' מ׳</b>.</p>');
