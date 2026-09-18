@@ -19,14 +19,9 @@ require_once __DIR__ . '/errors.php';
 if (!defined('DB_FILE'))   define('DB_FILE',   __DIR__ . '/../data/recipes.sqlite');
 if (!defined('MEDIA_DIR')) define('MEDIA_DIR', __DIR__ . '/../data/media');
 
-/** מקצב אחסון לחשבון, בבייטים. 200MB — הכרעה 8א.2 באפיון. */
-const STORAGE_QUOTA_BYTES = 200 * 1024 * 1024;
-
-/** תקרה לקובץ וידאו בודד. 20MB — הכרעה 3.4 באפיון. */
-const VIDEO_MAX_BYTES = 20 * 1024 * 1024;
-
-/** תקרה קשה לתמונה. הדפדפן מקטין לפני העלאה; זו רשת הביטחון. */
-const IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+// המגבלות (תקרת סרטון, מקצב, תקרת תמונה) אינן קבועים יותר. הן הגדרות
+// ב-lib/settings.php: ציבוריות בטבלת app_settings, עם דריסה לכל משתמש.
+// מי שצריך מגבלה שואל effectiveLimit() — לא קורא מספר מהקוד.
 
 /** חתימת זמן אחידה. ISO-8601 ב-UTC — נשמר כטקסט, ומסתדר לקסיקוגרפית. */
 function nowIso(): string {
@@ -71,7 +66,15 @@ function migrate(PDO $pdo): void {
             email_verified INTEGER NOT NULL DEFAULT 0,
             blocked        INTEGER NOT NULL DEFAULT 0,
             storage_used   INTEGER NOT NULL DEFAULT 0,
+            limit_video_bytes INTEGER,   -- NULL = יורש מההגדרה הציבורית
+            limit_quota_bytes INTEGER,   -- NULL = יורש מההגדרה הציבורית
             created_at     TEXT    NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key        TEXT PRIMARY KEY,
+            value      INTEGER NOT NULL,
+            updated_at TEXT    NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS user_tokens (
@@ -255,11 +258,25 @@ function migrate(PDO $pdo): void {
     ");
 
     seedTags($pdo);
+    addColumnIfMissing($pdo, 'users', 'limit_video_bytes', 'INTEGER');
+    addColumnIfMissing($pdo, 'users', 'limit_quota_bytes', 'INTEGER');
 
     // ריפוי חד־כיווני: מנהל שנוצר לפני שהמשתמש הראשון אומת אוטומטית.
     // בלי זה, אם mail() לא פעל בשרת, המנהל היחיד נעול בחוץ לתמיד.
     // העדכון אידמפוטנטי — בפריסות הבאות הוא לא משנה דבר.
     $pdo->exec("UPDATE users SET email_verified = 1 WHERE role = 'admin' AND email_verified = 0");
+}
+
+/**
+ * מוסיף עמודה לטבלה קיימת, פעם אחת. CREATE TABLE IF NOT EXISTS אינו נוגע
+ * בטבלה שכבר קיימת, ולכן עמודה חדשה חייבת מסלול משלה — אחרת מסד שנוצר
+ * לפני השינוי היה נשאר בלעדיה, והשאילתה הראשונה הייתה נופלת בשרת.
+ */
+function addColumnIfMissing(PDO $pdo, string $table, string $column, string $type): void {
+    foreach ($pdo->query("PRAGMA table_info($table)")->fetchAll() as $col) {
+        if ($col['name'] === $column) return;
+    }
+    $pdo->exec("ALTER TABLE $table ADD COLUMN $column $type");
 }
 
 /**

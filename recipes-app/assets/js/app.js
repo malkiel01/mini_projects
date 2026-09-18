@@ -214,7 +214,8 @@ function setUser(user) {
   app.hidden = !on;
   $('#who').hidden = !on;
   $('#logout').hidden = !on;
-  $('#nav-diag').hidden = !(on && user.role === 'admin');
+  $('#menu').hidden = !on;
+  $$('[data-dev]').forEach((a) => { a.hidden = !(on && user.is_developer); });
   if (on) $('#who').textContent = user.display_name || user.username;
 }
 
@@ -225,6 +226,10 @@ const go = (hash) => { location.hash = hash; };
 
 async function route() {
   if (!state.user) return;
+  // כל ניווט סוגר את התפריט — אחרת הוא נשאר פתוח מעל המסך החדש.
+  // לפני ה-try, כדי שגם ניווט שנכשל יסגור אותו.
+  const menu = $('#menu');
+  if (menu) menu.open = false;
   const h = location.hash || '#/';
   let m;
   try {
@@ -233,6 +238,9 @@ async function route() {
     else if (h === '#/new') await renderEditor(null);
     else if ((m = h.match(/^#\/edit\/(\d+)$/))) await renderEditor(+m[1]);
     else if (h === '#/diag') await renderDiag();
+    else if (h === '#/settings') await renderSettingsPrivate();
+    else if (h === '#/settings/public') await renderSettingsPublic();
+    else if (h === '#/settings/users') await renderUsers();
     else go('#/');
   } catch (err) {
     view.innerHTML = `<section class="card"><p class="note note--err">${esc(err.message)}</p>
@@ -657,6 +665,165 @@ async function renderMediaEdit(recipeId) {
   }));
 }
 
+// ───────────────────────── הגדרות ─────────────────────────
+
+const MB = 1048576;
+const toMB = (b) => (b / MB) % 1 === 0 ? String(b / MB) : (b / MB).toFixed(1);
+const fromMB = (v) => Math.round(parseFloat(v) * MB);
+
+function settingsNav(active) {
+  const items = [
+    ['#/settings', 'פרטיות', false],
+    ['#/settings/public', 'ציבוריות', true],
+    ['#/settings/users', 'משתמשים', true],
+    ['#/diag', 'פיתוח', true],
+  ];
+  return `<nav class="subnav" aria-label="הגדרות">${items
+    .filter(([, , dev]) => !dev || state.user.is_developer)
+    .map(([href, label]) => `<a href="${href}" class="${location.hash === href ? 'is-on' : ''}">${label}</a>`)
+    .join('')}</nav>`;
+}
+
+/** הגדרות פרטיות — לכל משתמש. מה שהוא קובע לעצמו, ומה שחל עליו. */
+async function renderSettingsPrivate() {
+  const { limits, display_name } = await api('settings-private');
+  view.innerHTML = `
+    <section class="card settings">
+      ${settingsNav()}
+      <h2>הגדרות פרטיות</h2>
+      <form id="priv" class="form">
+        <label>שם לתצוגה <input name="display_name" value="${esc(display_name)}" maxlength="60" required></label>
+        <button class="btn btn--primary" type="submit">שמור</button>
+        <p id="priv-msg" class="note" hidden></p>
+      </form>
+      <h3>המגבלות שחלות עליך</h3>
+      <p class="muted">נקבעות על ידי המפתח. אפשר לבקש שינוי.</p>
+      <table class="kv">
+        <tr><th>גודל מרבי לסרטון</th><td>${toMB(limits.video_max)} MB</td></tr>
+        <tr><th>גודל מרבי לתמונה</th><td>${toMB(limits.image_max)} MB</td></tr>
+        <tr><th>אחסון כולל</th><td>${toMB(limits.used)} מתוך ${toMB(limits.quota)} MB</td></tr>
+      </table>
+      <div class="quota"><div class="quota__bar"><span style="width:${Math.min(100, (limits.used / limits.quota) * 100).toFixed(1)}%"></span></div></div>
+    </section>`;
+  $('#priv').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = $('#priv-msg');
+    try {
+      await api('settings-private-save', { display_name: e.target.display_name.value });
+      state.user.display_name = e.target.display_name.value;
+      $('#who').textContent = state.user.display_name;
+      out.textContent = 'נשמר'; out.className = 'note note--ok'; out.hidden = false;
+    } catch (err) { out.textContent = err.message; out.className = 'note note--err'; out.hidden = false; }
+  });
+}
+
+/** הגדרות ציבוריות — המפתח בלבד. חלות על כל מי שאין לו דריסה אישית. */
+async function renderSettingsPublic() {
+  const { settings, is_developer } = await api('settings-public');
+  if (!is_developer) { go('#/settings'); return; }
+  view.innerHTML = `
+    <section class="card settings">
+      ${settingsNav()}
+      <h2>הגדרות ציבוריות</h2>
+      <p class="muted">חלות על כל חשבון סטנדרטי. משתמש עם ערך אישי (ב"ניהול משתמשים") מקבל אותו במקום.</p>
+      <form id="pub" class="form">
+        ${Object.entries(settings).map(([key, s]) => `
+          <label>${esc(s.label)}
+            <span class="input-unit">
+              <input name="${key}" type="number" step="0.5" min="${toMB(s.min)}" max="${toMB(s.max)}"
+                     value="${toMB(s.value)}" inputmode="decimal" required>
+              <span>MB</span>
+            </span>
+            <small class="muted">בין ${toMB(s.min)} ל-${toMB(s.max)} MB · ברירת מחדל ${toMB(s.default)}</small>
+          </label>`).join('')}
+        <button class="btn btn--primary" type="submit">שמור</button>
+        <p id="pub-msg" class="note" hidden></p>
+      </form>
+    </section>`;
+  $('#pub').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = $('#pub-msg');
+    const values = {};
+    for (const key of Object.keys(settings)) values[key] = fromMB(e.target[key].value);
+    try {
+      await api('settings-public-save', { values });
+      out.textContent = 'נשמר — חל מעכשיו על כל העלאה'; out.className = 'note note--ok'; out.hidden = false;
+    } catch (err) { out.textContent = err.message; out.className = 'note note--err'; out.hidden = false; }
+  });
+}
+
+/** ניהול משתמשים — המפתח בלבד. */
+async function renderUsers() {
+  const { users } = await api('users');
+  const draw = (list) => {
+    view.innerHTML = `
+      <section class="card settings settings--wide">
+        ${settingsNav()}
+        <h2>ניהול משתמשים <span class="muted">(${list.length})</span></h2>
+        <p class="muted">שדה ריק = ברירת המחדל הציבורית. ערך = מגבלה אישית למשתמש הזה.</p>
+        <div class="users">
+          ${list.map((u) => `
+            <article class="user ${u.blocked ? 'is-blocked' : ''}">
+              <header class="user__head">
+                <div>
+                  <strong>${esc(u.display_name)}</strong>
+                  <span class="muted">@${esc(u.username)} · ${esc(u.email)}</span>
+                </div>
+                <div class="user__badges">
+                  ${u.is_developer ? '<span class="badge badge--mine">מפתח</span>' : ''}
+                  ${u.role === 'admin' && !u.is_developer ? '<span class="badge">מנהל</span>' : ''}
+                  ${u.email_verified ? '' : '<span class="badge badge--warn">לא מאומת</span>'}
+                  ${u.blocked ? '<span class="badge badge--err">חסום</span>' : ''}
+                </div>
+              </header>
+              <div class="user__stats muted">
+                ${u.recipes} מתכונים · ${toMB(u.used)} מתוך ${toMB(u.effective_quota)} MB
+              </div>
+              <form class="user__limits" data-uid="${u.id}">
+                <label>סרטון (MB)
+                  <input name="video_max_bytes" type="number" step="0.5" inputmode="decimal"
+                         placeholder="${toMB(u.effective_video)}" value="${u.limit_video != null ? toMB(u.limit_video) : ''}">
+                </label>
+                <label>אחסון (MB)
+                  <input name="quota_bytes" type="number" step="0.5" inputmode="decimal"
+                         placeholder="${toMB(u.effective_quota)}" value="${u.limit_quota != null ? toMB(u.limit_quota) : ''}">
+                </label>
+                <button class="btn" type="submit">שמור</button>
+              </form>
+              <div class="user__actions">
+                ${!u.email_verified ? `<button class="link" type="button" data-verify="${u.id}">אמת ידנית</button>` : ''}
+                ${!u.is_developer ? `<button class="link ${u.blocked ? '' : 'link--danger'}" type="button" data-block="${u.id}" data-to="${u.blocked ? 0 : 1}">${u.blocked ? 'בטל חסימה' : 'חסום'}</button>` : ''}
+              </div>
+            </article>`).join('')}
+        </div>
+        <p id="users-msg" class="note" hidden></p>
+      </section>`;
+
+    const note = (t, k) => { const el = $('#users-msg'); el.textContent = t; el.className = 'note' + (k ? ' note--' + k : ''); el.hidden = !t; };
+    $$('.user__limits').forEach((f) => f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const uid = +f.dataset.uid;
+      try {
+        let latest;
+        for (const key of ['video_max_bytes', 'quota_bytes']) {
+          const v = f[key].value.trim();
+          ({ users: latest } = await api('user-limit', { user_id: uid, key, value: v === '' ? null : fromMB(v) }));
+        }
+        note('נשמר', 'ok'); draw(latest);
+      } catch (err) { note(err.message, 'err'); }
+    }));
+    $$('[data-block]').forEach((b) => b.addEventListener('click', async () => {
+      try { const { users: latest } = await api('user-block', { user_id: +b.dataset.block, blocked: b.dataset.to === '1' }); draw(latest); }
+      catch (err) { note(err.message, 'err'); }
+    }));
+    $$('[data-verify]').forEach((b) => b.addEventListener('click', async () => {
+      try { const { users: latest } = await api('user-verify', { user_id: +b.dataset.verify }); draw(latest); }
+      catch (err) { note(err.message, 'err'); }
+    }));
+  };
+  draw(users);
+}
+
 // ───────────────────────── אבחון ─────────────────────────
 
 async function renderDiag() {
@@ -667,9 +834,9 @@ async function renderDiag() {
   const boolRows = (obj) => rows(obj, (v) => (typeof v === 'boolean' ? yes(v) : esc(v)));
 
   view.innerHTML = `
-    <section class="card diag">
-      <a class="link" href="#/">‹ לרשימה</a>
-      <h2>אבחון — מה השרת אומר על עצמו</h2>
+    <section class="card settings settings--wide diag">
+      ${settingsNav()}
+      <h2>אזור פיתוח — מה השרת אומר על עצמו</h2>
 
       <h3>מגבלות העלאה ${d.limits.video_capped_by_server ? '<span class="badge badge--warn">השרת מגביל מתחת לאפיון</span>' : ''}</h3>
       <p class="muted">האפיון קבע 20MB לסרטון. התקרה בפועל היא המינימום בין זה לבין מה ש-PHP מרשה.</p>

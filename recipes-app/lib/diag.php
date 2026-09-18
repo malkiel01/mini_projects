@@ -12,6 +12,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/settings.php';
 
 /** ממיר "20M" של php.ini למספר בייטים. */
 function iniBytes(string $value): int {
@@ -43,7 +44,9 @@ function diagnostics(): array {
     // התקרה האמיתית היא המינימום בין מה שהאפיון קבע לבין מה שהשרת מרשה.
     // post_max_size נושא גם את שאר שדות הטופס, ולכן הוא חייב להיות גדול
     // מהקובץ — ואם אינו, הוא זה שחוסם.
-    $effectiveVideo = min(VIDEO_MAX_BYTES, $upload ?: PHP_INT_MAX, $post ?: PHP_INT_MAX);
+    $videoSpec = appSetting('video_max_bytes');
+    $quota     = appSetting('quota_bytes');
+    $effectiveVideo = min($videoSpec, $upload ?: PHP_INT_MAX, $post ?: PHP_INT_MAX);
 
     $free  = @disk_free_space($dataDir);
     $total = @disk_total_space($dataDir);
@@ -65,13 +68,13 @@ function diagnostics(): array {
             'memory_limit'        => (string) ini_get('memory_limit'),
         ],
         'limits' => [
-            'video_spec'        => humanBytes(VIDEO_MAX_BYTES),
+            'video_spec'        => humanBytes($videoSpec),
             'video_effective'   => humanBytes($effectiveVideo),
             // הדגל שבגללו המסך הזה נכתב: אם השרת מגביל יותר מהאפיון,
             // אסור שהאפליקציה תבטיח 20MB.
-            'video_capped_by_server' => $effectiveVideo < VIDEO_MAX_BYTES,
-            'image_max'         => humanBytes(IMAGE_MAX_BYTES),
-            'quota_per_user'    => humanBytes(STORAGE_QUOTA_BYTES),
+            'video_capped_by_server' => $effectiveVideo < $videoSpec,
+            'image_max'         => humanBytes(appSetting('image_max_bytes')),
+            'quota_per_user'    => humanBytes($quota),
         ],
         'disk' => [
             'free'          => is_float($free)  ? humanBytes((int) $free)  : 'לא זמין',
@@ -79,7 +82,7 @@ function diagnostics(): array {
             'media_used'    => humanBytes($mediaBytes),
             // כמה חשבונות מלאים הדיסק מחזיק — זו השאלה האמיתית מאחורי
             // "מה הנפח הפנוי", והיא חשובה כי ההרשמה חופשית.
-            'full_accounts' => is_float($free) ? (int) floor($free / STORAGE_QUOTA_BYTES) : null,
+            'full_accounts' => is_float($free) ? (int) floor($free / $quota) : null,
         ],
         'extensions' => [
             'pdo_sqlite' => extension_loaded('pdo_sqlite'),

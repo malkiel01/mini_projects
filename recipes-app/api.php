@@ -15,6 +15,7 @@ require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/lib/recipes.php';
 require_once __DIR__ . '/lib/diag.php';
 require_once __DIR__ . '/lib/media.php';
+require_once __DIR__ . '/lib/settings.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -68,6 +69,7 @@ try {
             'username'     => $user['username'],
             'display_name' => $user['display_name'],
             'role'         => $user['role'],
+            'is_developer' => isDeveloper($user),
         ] : null]);
 
     case 'register': {
@@ -179,6 +181,54 @@ try {
         // התקרות בפועל, לפני שהמשתמש בוחר קובץ — כדי שהדפדפן יגיד "עד 8MB"
         // ולא "עד 20MB" כשהשרת חוסם ב-8.
         ok(['limits' => mediaLimits($user)]);
+
+    // ───────── הגדרות ─────────
+
+    case 'settings-public':
+        // קריאה פתוחה לכל מחובר — העורך מציג "עד 20MB" ממנה. כתיבה — מפתח בלבד.
+        ok(['settings' => allAppSettings(), 'is_developer' => isDeveloper($user)]);
+
+    case 'settings-public-save': {
+        $values = is_array($in['values'] ?? null) ? $in['values'] : [];
+        foreach ($values as $key => $value) {
+            setAppSetting((string) $key, (int) $value, $user);
+        }
+        ok(['settings' => allAppSettings()]);
+    }
+
+    case 'settings-private':
+        // ההגדרות הפרטיות של המשתמש עצמו. כרגע: המגבלות שחלות עליו (לקריאה),
+        // והמקום שבו ייכנסו הגדרות שהוא קובע לעצמו.
+        ok(['limits' => mediaLimits($user), 'display_name' => $user['display_name']]);
+
+    case 'settings-private-save': {
+        $name = str_field($in, 'display_name', 60);
+        if ($name === '') fail('שם התצוגה לא יכול להיות ריק');
+        $st = db()->prepare('UPDATE users SET display_name = ? WHERE id = ?');
+        $st->execute([$name, $user['id']]);
+        ok();
+    }
+
+    // ───────── ניהול משתמשים (מפתח) ─────────
+
+    case 'users':
+        ok(['users' => listUsers($user)]);
+
+    case 'user-limit': {
+        // value=null מחזיר את המשתמש לברירת המחדל הציבורית
+        $value = array_key_exists('value', $in) && $in['value'] !== null && $in['value'] !== ''
+                 ? (int) $in['value'] : null;
+        setUserLimit((int) ($in['user_id'] ?? 0), str_field($in, 'key', 40), $value, $user);
+        ok(['users' => listUsers($user)]);
+    }
+
+    case 'user-block':
+        setUserBlocked((int) ($in['user_id'] ?? 0), !empty($in['blocked']), $user);
+        ok(['users' => listUsers($user)]);
+
+    case 'user-verify':
+        setUserVerified((int) ($in['user_id'] ?? 0), $user);
+        ok(['users' => listUsers($user)]);
 
     // ───────── אבחון ─────────
 

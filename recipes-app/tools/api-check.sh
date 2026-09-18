@@ -176,6 +176,40 @@ call logout >/dev/null
 check 'אורח אינו מעלה'                "$(up "$TMP/real.png" "$RID")" 'נדרשת התחברות'
 
 echo
+echo "8ג. הגדרות — מפתח מול מנהל מול משתמש, בגבול ה-HTTP"
+# tester הוא משתמש רגיל; owner הוא המפתח (ה-admin הראשון)
+call login '{"username":"tester","password":"sod12345"}' >/dev/null
+check 'משתמש רגיל קורא הגדרות ציבוריות (לעורך)' "$(call settings-public)" '"video_max_bytes"'
+check 'אך אינו מפתח'                     "$(call settings-public)" '"is_developer":false'
+check 'ואינו כותב אותן'                  "$(call settings-public-save '{"values":{"video_max_bytes":52428800}}')" 'מפתח'
+check 'ואינו רואה משתמשים'               "$(call users)" 'מפתח'
+check 'פרטיות — שלו'                     "$(call settings-private)" '"display_name":"בודק"'
+check 'שם תצוגה משתנה'                   "$(call settings-private-save '{"display_name":"בודק חדש"}')" '"success":true'
+check 'me משקף את זה'                    "$(call me)" '"display_name":"בודק חדש"'
+call logout >/dev/null
+call login '{"username":"owner","password":"sod12345"}' >/dev/null
+check 'המפתח מזוהה'                      "$(call me)" '"is_developer":true'
+check 'המפתח כותב הגדרה ציבורית'         "$(call settings-public-save '{"values":{"video_max_bytes":52428800}}')" '"value":52428800'
+check 'ערך מחוץ לגבולות נדחה'            "$(call settings-public-save '{"values":{"video_max_bytes":1}}')" 'בין'
+check 'רשימת משתמשים'                    "$(call users)" '"username":"tester"'
+TID=$(call users | python3 -c 'import sys,json; print([u["id"] for u in json.load(sys.stdin)["users"] if u["username"]=="tester"][0])')
+check 'דריסה אישית ל-tester'             "$(call user-limit "{\"user_id\":$TID,\"key\":\"quota_bytes\",\"value\":12582912}")" '"limit_quota":12582912'
+check 'המפתח אינו חוסם את עצמו'          "$(call user-block '{"user_id":1,"blocked":true}')" 'המפתח'
+check 'חסימת tester'                     "$(call user-block "{\"user_id\":$TID,\"blocked\":true}")" '"blocked":true'
+call logout >/dev/null
+check 'tester החסום אינו נכנס'           "$(call login '{"username":"tester","password":"sod12345"}')" 'חסום'
+call login '{"username":"owner","password":"sod12345"}' >/dev/null
+call user-block "{\"user_id\":$TID,\"blocked\":false}" >/dev/null
+call logout >/dev/null
+# tester חוזר עם המגבלה האישית — והעורך שלו רואה אותה, לא את הציבורית
+call login '{"username":"tester","password":"sod12345"}' >/dev/null
+check 'המדיה של tester מכבדת את הדריסה (12MB)' "$(call media-limits)" '"quota":12582912'
+# ההגדרה הציבורית היא 50MB, אך שרת הבדיקה מרשה 32M — והתקרה בפועל היא
+# המינימום. זו הבדיקה שההגדרה לא יכולה להבטיח יותר ממה שהשרת מקבל.
+check 'סרטון: min(ציבורי 50MB, שרת 32MB) = 32MB' "$(call media-limits)" '"video_max":33554432'
+call logout >/dev/null
+
+echo
 echo "9. אבחון למנהל"
 call login '{"username":"owner","password":"sod12345"}' >/dev/null
 D=$(call diag)

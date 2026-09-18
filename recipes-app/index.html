@@ -15,8 +15,17 @@
   <h1 class="bar__title">מתכונים</h1>
   <div class="bar__side">
     <span id="who" class="who" hidden></span>
-    <a id="nav-diag" class="btn btn--ghost" href="#/diag" hidden title="אבחון השרת">⚙</a>
-    <button id="logout" class="btn btn--ghost" type="button" hidden>יציאה</button>
+    <details id="menu" class="menu" hidden>
+      <summary class="btn btn--ghost" aria-label="תפריט">☰</summary>
+      <nav class="menu__list">
+        <a href="#/">המתכונים</a>
+        <a href="#/settings">הגדרות פרטיות</a>
+        <a href="#/settings/public" data-dev hidden>הגדרות ציבוריות</a>
+        <a href="#/settings/users"  data-dev hidden>ניהול משתמשים</a>
+        <a href="#/diag"            data-dev hidden>אזור פיתוח</a>
+        <button id="logout" type="button">יציאה</button>
+      </nav>
+    </details>
     <a class="btn btn--ghost" href="../index.html">לכלים</a>
   </div>
 </header>

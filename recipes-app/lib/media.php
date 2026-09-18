@@ -21,6 +21,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/errors.php';
 require_once __DIR__ . '/diag.php';
+require_once __DIR__ . '/settings.php';
 
 const MAX_IMAGES_PER_RECIPE = 10;
 const MAX_VIDEOS_PER_RECIPE = 3;
@@ -34,9 +35,10 @@ const MEDIA_TYPES = [
     'video/mp4'  => ['kind' => 'video', 'ext' => 'mp4'],
 ];
 
-/** התקרה בפועל לקובץ, לפי הסוג. */
-function mediaMaxBytes(string $kind): int {
-    $spec   = $kind === 'video' ? VIDEO_MAX_BYTES : IMAGE_MAX_BYTES;
+/** התקרה בפועל לקובץ, לפי הסוג ולפי המשתמש (דריסה → ציבורי → ברירת מחדל). */
+function mediaMaxBytes(string $kind, array $user): int {
+    $spec   = $kind === 'video' ? effectiveLimit($user, 'video_max_bytes')
+                                : effectiveLimit($user, 'image_max_bytes');
     $upload = iniBytes((string) ini_get('upload_max_filesize')) ?: PHP_INT_MAX;
     $post   = iniBytes((string) ini_get('post_max_size')) ?: PHP_INT_MAX;
     return min($spec, $upload, $post);
@@ -88,7 +90,7 @@ function storeUpload(int $recipeId, array $user, array $file): array {
 
     // 2. גודל — מול התקרה בפועל, לא מול המספר שבאפיון.
     $bytes = (int) filesize($file['tmp_name']);
-    $max   = mediaMaxBytes($kind);
+    $max   = mediaMaxBytes($kind, $user);
     if ($bytes > $max) {
         $hint = $kind === 'video'
             ? ' סרטון ארוך יותר אפשר להעלות ליוטיוב ולהדביק כאן קישור.'
@@ -104,9 +106,10 @@ function storeUpload(int $recipeId, array $user, array $file): array {
     }
 
     // 4. מקצב — מחושב מהמסד, לא מהשדה שבשורת המשתמש. השדה יכול להזדחל.
-    $used = storageUsedReal((int) $user['id']);
-    if ($used + $bytes > STORAGE_QUOTA_BYTES) {
-        throw new AppError('נגמר מקום האחסון שלך (' . humanBytes(STORAGE_QUOTA_BYTES) . ' לחשבון). '
+    $used  = storageUsedReal((int) $user['id']);
+    $quota = effectiveLimit($user, 'quota_bytes');
+    if ($used + $bytes > $quota) {
+        throw new AppError('נגמר מקום האחסון שלך (' . humanBytes($quota) . ' לחשבון). '
                            . 'מחיקת מתכון או מדיה משחררת מקום.', 507);
     }
 
@@ -250,13 +253,14 @@ function mediaForRecipe(int $recipeId): array {
 
 /** מה שהעורך צריך להציג לפני העלאה: תקרות בפועל ומקצב. */
 function mediaLimits(array $user): array {
-    $used = storageUsedReal((int) $user['id']);
+    $used  = storageUsedReal((int) $user['id']);
+    $quota = effectiveLimit($user, 'quota_bytes');
     return [
-        'image_max'   => mediaMaxBytes('image'),
-        'video_max'   => mediaMaxBytes('video'),
-        'quota'       => STORAGE_QUOTA_BYTES,
+        'image_max'   => mediaMaxBytes('image', $user),
+        'video_max'   => mediaMaxBytes('video', $user),
+        'quota'       => $quota,
         'used'        => $used,
-        'free'        => max(0, STORAGE_QUOTA_BYTES - $used),
+        'free'        => max(0, $quota - $used),
         'max_images'  => MAX_IMAGES_PER_RECIPE,
         'max_videos'  => MAX_VIDEOS_PER_RECIPE,
     ];

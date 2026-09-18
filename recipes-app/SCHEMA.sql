@@ -28,8 +28,19 @@ CREATE TABLE users (
                  CHECK (role IN ('user','admin')),
   email_verified INTEGER NOT NULL DEFAULT 0,
   blocked        INTEGER NOT NULL DEFAULT 0,  -- המנהל חוסם (2)
-  storage_used   INTEGER NOT NULL DEFAULT 0,  -- בייטים. מקצב 200MB (10)
+  storage_used   INTEGER NOT NULL DEFAULT 0,  -- בייטים. המקצב עצמו הוא הגדרה
+  limit_video_bytes INTEGER,   -- דריסה אישית. NULL = יורש מ-app_settings
+  limit_quota_bytes INTEGER,   -- דריסה אישית. NULL = יורש מ-app_settings
   created_at     TEXT    NOT NULL
+);
+
+-- הגדרות ציבוריות של המפתח: תקרת סרטון, מקצב, תקרת תמונה. מה שאינו כאן
+-- נופל לברירת המחדל שבקוד (lib/settings.php). המשתמש יכול לדרוס כל אחת
+-- דרך העמודות שלמעלה, והפתרון הוא: דריסה → ציבורי → ברירת מחדל.
+CREATE TABLE app_settings (
+  key        TEXT PRIMARY KEY,
+  value      INTEGER NOT NULL,
+  updated_at TEXT    NOT NULL
 );
 
 -- אסימונים חד־פעמיים: אימות דוא"ל ואיפוס סיסמה. שורה אחת לשני השימושים,
