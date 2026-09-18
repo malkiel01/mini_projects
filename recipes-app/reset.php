@@ -39,6 +39,7 @@ $esc = fn(string $s): string => htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>איפוס סיסמה · אפליקציית מתכונים</title>
+<meta name="theme-color" content="#0f8a4f">
 <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="./assets/css/app.css">
 </head>

@@ -2,16 +2,20 @@
    אין מדיה-קוורי שמצמצם: הבסיס הוא המסך הצר, וההרחבה היא התוספת. */
 
 :root {
-  --bg: #1a1207;
-  --panel: #2a1e10;
-  --panel-2: #33240f;
-  --line: #4a3722;
-  --ink: #f3ebe1;
-  --muted: #b3a08a;
-  --accent: #f97316;
-  --ok: #4ade80;
-  --warn: #fcd34d;
-  --err: #fb7185;
+  /* בהיר, עם ירוק כהה זוהר כצבע המוביל. הרקע נוטה קלות לירוק כדי
+     שהלבן של הכרטיסים יבלוט עליו, והטקסט הוא ירוק־שחור ולא שחור נקי. */
+  --bg: #f1f6f2;
+  --panel: #ffffff;
+  --panel-2: #e3efe6;
+  --line: #cfdcd3;
+  --ink: #17281d;
+  --muted: #5b6f62;
+  --accent: #0f8a4f;      /* ירוק כהה זוהר */
+  --accent-ink: #ffffff;  /* טקסט על גבי הצבע המוביל */
+  --accent-soft: #e2f3e8; /* רקע עדין בגוון המוביל */
+  --ok: #15803d;
+  --warn: #b45309;
+  --err: #c2410c;
   --radius: 12px;
 }
 
@@ -50,13 +54,13 @@ body {
   padding: 12px 16px;
   padding-top: max(12px, env(safe-area-inset-top));
   background: var(--panel);
-  border-bottom: 1px solid var(--line);
+  border-bottom: 2px solid var(--accent);
   position: sticky;
   top: 0;
   z-index: 10;
 }
 
-.bar__title { font-size: 1.1rem; font-weight: 600; }
+.bar__title { font-size: 1.1rem; font-weight: 700; color: var(--accent); }
 .bar__side { display: flex; align-items: center; gap: 8px; }
 .who { color: var(--muted); font-size: 0.9rem; }
 
@@ -79,6 +83,7 @@ body {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 24px;
+  box-shadow: 0 2px 10px rgba(23,40,29,.06);
 }
 
 .stage .card { max-width: 640px; }
@@ -91,7 +96,7 @@ body {
   display: flex;
   gap: 4px;
   margin-bottom: 20px;
-  background: var(--bg);
+  background: var(--panel-2);
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 4px;
@@ -107,7 +112,7 @@ body {
   font: inherit;
   cursor: pointer;
 }
-.tab.is-on { background: var(--panel-2); color: var(--ink); }
+.tab.is-on { background: var(--panel); color: var(--accent); box-shadow: 0 1px 3px rgba(23,40,29,.12); }
 
 /* ───────── טפסים ─────────
    44px מינימום לכל דבר שנוגעים בו: זה הגודל שאצבע פוגעת בו בלי לכעוס,
@@ -122,7 +127,7 @@ input {
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--bg);
+  background: var(--panel);
   color: var(--ink);
   /* 16px ומעלה — בפחות מזה ספארי בטלפון מקרב את המסך בכל מיקוד. */
   font-size: 16px;
@@ -150,10 +155,10 @@ input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .btn--primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #1a1207;
+  color: var(--accent-ink);
   font-weight: 600;
 }
-.btn--primary:hover { color: #1a1207; filter: brightness(1.08); }
+.btn--primary:hover { color: var(--accent-ink); filter: brightness(1.08); }
 .btn--ghost { padding: 8px 12px; min-height: 38px; font-size: 0.9rem; }
 
 .link {
@@ -214,7 +219,7 @@ select, textarea {
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--bg);
+  background: var(--panel);
   color: var(--ink);
   font-size: 16px;
   font-family: inherit;
@@ -271,6 +276,7 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 20px;
+  box-shadow: 0 2px 10px rgba(23,40,29,.06);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -282,8 +288,9 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
   font-size: 0.8rem;
   padding: 4px 10px;
   border-radius: 999px;
-  background: var(--bg);
+  background: var(--accent-soft);
   border: 1px solid var(--line);
+  color: var(--accent);
 }
 .actions { display: flex; gap: 8px; margin-top: 6px; }
 
@@ -296,6 +303,7 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 18px 20px;
+  box-shadow: 0 2px 10px rgba(23,40,29,.06);
 }
 .part h3 { font-size: 1.05rem; color: var(--accent); margin-bottom: 10px; }
 .part h4 { font-size: 0.85rem; color: var(--muted); margin: 14px 0 8px; font-weight: 500; }
@@ -332,7 +340,7 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
 
 .ing-row {
   display: flex; flex-direction: column; gap: 6px;
-  padding: 10px; background: var(--bg); border-radius: 8px; border: 1px solid var(--line);
+  padding: 10px; background: var(--accent-soft); border-radius: 8px; border: 1px solid var(--line);
 }
 .ing-free { font-weight: 500; }
 /* השכבה המחושבת: שורה אחת צפופה, וכולה רשות */
@@ -346,14 +354,14 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
 .step-no {
   flex: none; width: 28px; height: 28px; margin-top: 8px;
   display: grid; place-items: center;
-  border-radius: 50%; background: var(--accent); color: var(--bg); font-weight: 600; font-size: 0.85rem;
+  border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-weight: 600; font-size: 0.85rem;
 }
 .step-row textarea { flex: 1; }
 .step-row .btn--danger { min-height: 36px; margin-top: 4px; padding: 4px 10px; }
 
 .check { display: flex; flex-direction: row; align-items: center; gap: 8px; font-size: 0.9rem; cursor: pointer; }
 .check input { width: 20px; height: 20px; min-height: 0; accent-color: var(--accent); }
-.check--big { padding: 12px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+.check--big { padding: 12px 14px; background: var(--accent-soft); border: 1px solid var(--line); border-radius: 8px; }
 
 .tags { border: 0; display: flex; flex-direction: column; gap: 10px; }
 .tags__axis { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
