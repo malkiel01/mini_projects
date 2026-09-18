@@ -21,6 +21,7 @@ cd "$(dirname "$0")/../.."
 
 OUT=${1:-/tmp/recipes-phone.png}
 HASH=${2:-}
+SCROLL_TO=${3:-}   # בורר CSS. הדף נגלל אליו לפני הצילום — למה שמתחת לקיפול
 PORT=${PORT:-8798}
 CH=${CH:-/opt/pw-browsers/chromium-1194/chrome-linux/chrome}
 TMP=$(mktemp -d)
@@ -40,7 +41,9 @@ iframe{border:0;width:390px;height:844px;display:block}
 <script>
 const api = (a, p) => fetch('./api.php?action=' + a, { method: 'POST', credentials: 'same-origin',
   headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p || {}) }).then(r => r.json());
-const hash = new URLSearchParams(location.search).get('hash') || '';
+const qs = new URLSearchParams(location.search);
+const hash = qs.get('hash') || '';
+const scrollTo = qs.get('scroll') || '';
 (async () => {
   if (hash) {
     await api('register', { username: 'owner', email: 'o@example.com', password: 'sod12345', display_name: 'מלכיאל' });
@@ -63,6 +66,7 @@ const hash = new URLSearchParams(location.search).get('hash') || '';
   f.src = './index.html' + hash;
   setTimeout(() => {
     const d = f.contentDocument.documentElement, over = [];
+    if (scrollTo) f.contentDocument.querySelector(scrollTo)?.scrollIntoView({ block: 'start' });
     f.contentDocument.querySelectorAll('body *').forEach(el => {
       const r = el.getBoundingClientRect();
       if (r.right > d.clientWidth + 1 || r.left < -1) over.push(el.tagName + '/' + (el.id || el.className));
@@ -83,7 +87,8 @@ for _ in $(seq 1 40); do
 done
 
 Q=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$HASH")
-URL="http://127.0.0.1:$PORT/recipes-app/_shot.html?hash=$Q"
+SC=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$SCROLL_TO")
+URL="http://127.0.0.1:$PORT/recipes-app/_shot.html?hash=$Q&scroll=$SC"
 # המדידה קודמת לצילום: גלישה לרוחב היא תקלה שצריך לראות כמספר, לא לנחש מתמונה.
 "$CH" --headless=new --no-sandbox --disable-gpu --virtual-time-budget=8000 --dump-dom "$URL" \
   2>/dev/null | grep -o '<title>[^<]*</title>'
