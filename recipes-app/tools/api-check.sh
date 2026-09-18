@@ -28,6 +28,7 @@ PHPBOOT
 php -S "127.0.0.1:$PORT" -t . \
   -d auto_prepend_file="$TMP/boot.php" \
   -d sendmail_path=/bin/true \
+  -d upload_max_filesize=32M -d post_max_size=40M \
   >"$TMP/server.log" 2>&1 &
 SERVER=$!
 trap 'kill $SERVER 2>/dev/null; rm -rf "$TMP"' EXIT
@@ -43,6 +44,11 @@ call() {  # call <action> <json>
     --data "${2:-{\}}" \
     "http://127.0.0.1:$PORT/recipes-app/api.php?action=$1"
 }
+
+# ה-id של המתכון שנשמר. התשובה מכילה גם אובייקטים מקוננים עם id משלהם
+# (תגים, מדיה), ולכן "ה-id הראשון בטקסט" הוא המזהה הלא נכון. python3
+# קורא את ה-JSON ולוקח את השדה העליון.
+top_id() { printf '%s' "$1" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("id",""))'; }
 
 check() {  # check <label> <haystack> <needle>
   if printf '%s' "$2" | grep -q -- "$3"; then
@@ -120,7 +126,7 @@ S=$(call recipe-save '{"title":"עוגת גבינה","visibility":"public","serv
 check 'נשמר'                 "$S" '"success":true'
 check 'הוחזר עם החלקים'      "$S" '"name":"בצק"'
 check 'שתי השכבות ברכיב'     "$S" '"free_text":"2 כוסות".*"amount_min":300'
-ID=$(printf '%s' "$S" | sed -n 's/.*"id":\([0-9]*\).*/\1/p' | head -1)
+ID=$(top_id "$S")
 check 'חיפוש לפי רכיב'       "$(call search '{"q":"קמח"}')" '"title":"עוגת גבינה"'
 check 'השלמת מוצר'           "$(call products '{"q":"קמ"}')" '"קמח"'
 U=$(call recipe-save "{\"id\":$ID,\"title\":\"עוגת גבינה קלה\",\"visibility\":\"private\",\"sections\":[{\"ingredients\":[{\"free_text\":\"גבינה\"}],\"steps\":[{\"text\":\"לערבב\"}]}]}")
@@ -133,6 +139,41 @@ check 'הבעלים מוחק'          "$(call recipe-delete "{\"id\":$ID}")" '"
 check 'ואחרי המחיקה 404'     "$(call recipe "{\"id\":$ID}")" 'אינו זמין'
 check 'משתמש רגיל אינו רשאי לאבחון' "$(call diag)" 'אין לך הרשאה'
 call logout >/dev/null
+
+echo
+echo "8ב. מדיה — ארבע ההחלטות של סעיף 10, עם בייטים אמיתיים"
+call login '{"username":"tester","password":"sod12345"}' >/dev/null
+S=$(call recipe-save '{"title":"עם תמונות","visibility":"public","sections":[{"ingredients":[{"free_text":"משהו"}],"steps":[{"text":"משהו"}]}]}')
+RID=$(top_id "$S")
+# תמונת PNG אמיתית (1x1) — כדי ש-finfo יזהה אותה מהבייטים
+printf '\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82' > "$TMP/real.png"
+# קוד PHP שמתחזה לסרטון — הסיומת אומרת mp4, הבייטים אומרים אחרת
+printf '<?php echo "pwned"; ?>' > "$TMP/evil.mp4"
+# קובץ גדול מהתקרה לתמונה (5MB + קצת), עם כותרת PNG תקינה
+{ cat "$TMP/real.png"; head -c 5300000 /dev/zero; } > "$TMP/huge.png"
+
+up() {  # up <file> <recipe_id>
+  curl -sS -b "$JAR" -c "$JAR" -F "file=@$1" -F "recipe_id=$2" "http://127.0.0.1:$PORT/recipes-app/upload.php"
+}
+U=$(up "$TMP/real.png" "$RID")
+check 'תמונה אמיתית מתקבלת'          "$U" '"kind":"image"'
+check 'השם בדיסק מחולל, לא real.png' "$U" '"url":"data\\\?/media\\\?/[0-9a-f]\{32\}\.png"'
+check 'והיא הראשית כברירת מחדל'       "$(call recipe "{\"id\":$RID}")" '"main_media_id":[1-9]'
+check 'PHP בשם clip.mp4 נדחה לפי הבייטים' "$(up "$TMP/evil.mp4" "$RID")" 'לא נתמך'
+check 'גדול מהתקרה נדחה'              "$(up "$TMP/huge.png" "$RID")" 'גדול מדי'
+check 'קישור מתקבל'                   "$(call media-link "{\"recipe_id\":$RID,\"url\":\"https://youtu.be/abc123\"}")" '"source":"link"'
+check 'javascript: נדחה'              "$(call media-link "{\"recipe_id\":$RID,\"url\":\"javascript:alert(1)\"}")" 'אינו כתובת'
+check 'המקצב מדווח שימוש'             "$(call media-limits)" '"used":[1-9]'
+check 'תקרת תמונה = האפיון (5MB), כי השרת מרשה יותר' "$(call media-limits)" '"image_max":5242880'
+check 'תקרת וידאו = האפיון (20MB)'    "$(call media-limits)" '"video_max":20971520'
+MID=$(printf '%s' "$U" | python3 -c 'import sys,json; print(json.load(sys.stdin)["media"]["id"])')
+check 'מחיקה משחררת מקום'             "$(call media-delete "{\"id\":$MID}")" '"used":0'
+call logout >/dev/null
+# משתמש אחר לא מעלה למתכון שאינו שלו
+call login '{"username":"owner","password":"sod12345"}' >/dev/null
+check 'אחר אינו מעלה למתכון של tester' "$(up "$TMP/real.png" "$RID")" 'אינו שלך'
+call logout >/dev/null
+check 'אורח אינו מעלה'                "$(up "$TMP/real.png" "$RID")" 'נדרשת התחברות'
 
 echo
 echo "9. אבחון למנהל"

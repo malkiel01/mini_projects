@@ -14,6 +14,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/lib/recipes.php';
 require_once __DIR__ . '/lib/diag.php';
+require_once __DIR__ . '/lib/media.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -159,6 +160,25 @@ try {
         $st->execute(['%' . $q . '%']);
         ok(['products' => array_column($st->fetchAll(), 'name')]);
     }
+
+    // ───────── מדיה ─────────
+    // העלאת קובץ עצמה ב-upload.php (multipart). כאן רק מה שהוא JSON.
+
+    case 'media-link':
+        ok(['media' => storeLink((int) ($in['recipe_id'] ?? 0), $user, str_field($in, 'url', 500))]);
+
+    case 'media-delete':
+        deleteMedia((int) ($in['id'] ?? 0), $user);
+        ok(['limits' => mediaLimits($user)]);
+
+    case 'media-main':
+        setMainMedia((int) ($in['recipe_id'] ?? 0), (int) ($in['id'] ?? 0), $user);
+        ok();
+
+    case 'media-limits':
+        // התקרות בפועל, לפני שהמשתמש בוחר קובץ — כדי שהדפדפן יגיד "עד 8MB"
+        // ולא "עד 20MB" כשהשרת חוסם ב-8.
+        ok(['limits' => mediaLimits($user)]);
 
     // ───────── אבחון ─────────
 

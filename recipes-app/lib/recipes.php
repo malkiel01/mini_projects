@@ -20,6 +20,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/errors.php';
+require_once __DIR__ . '/media.php';
 
 const UNITS = ['gram','kg','ml','liter','cup','tbsp','tsp','unit','package','pinch'];
 const DIFFICULTIES = ['easy','medium','hard'];
@@ -259,6 +260,8 @@ function loadRecipe(int $recipeId, ?array $user): ?array {
             'steps'       => $s['steps'],
         ], $sections),
         'tags'          => $st->fetchAll(),
+        'media'         => mediaForRecipe($recipeId),
+        'main_media_id' => $recipe['main_media_id'] !== null ? (int) $recipe['main_media_id'] : null,
     ];
 }
 
@@ -304,8 +307,10 @@ function searchRecipes(?array $user, string $query = '', array $filters = []): a
 
     $sql = 'SELECT r.id, r.title, r.visibility, r.owner_id, r.difficulty, r.servings,
                    r.work_minutes, r.wait_minutes, r.updated_at, u.display_name AS owner_name,
+                   m.path_or_url AS main_path,
                    ' . $titleMatch . ' AS rank_title
               FROM recipes r JOIN users u ON u.id = r.owner_id
+              LEFT JOIN media m ON m.id = r.main_media_id AND m.source = \'upload\'
              WHERE ' . implode(' AND ', $where) . '
              ORDER BY rank_title, r.updated_at DESC
              LIMIT 100';
@@ -325,6 +330,7 @@ function searchRecipes(?array $user, string $query = '', array $filters = []): a
         'work_minutes' => $row['work_minutes'] !== null ? (int) $row['work_minutes'] : null,
         'wait_minutes' => $row['wait_minutes'] !== null ? (int) $row['wait_minutes'] : null,
         'updated_at'   => $row['updated_at'],
+        'thumb'        => $row['main_path'] ? 'data/media/' . basename($row['main_path']) : null,
     ], $st->fetchAll());
 }
 

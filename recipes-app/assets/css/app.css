@@ -387,3 +387,36 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
   .ing-calc [data-f="product"] { grid-column: auto; }
   .ing-calc .check, .ing-calc .btn--danger { grid-column: auto; }
 }
+
+/* ───────── מדיה ───────── */
+
+.item__thumb {
+  flex: none; width: 56px; height: 56px; border-radius: 8px; object-fit: cover;
+  background: var(--accent-soft);
+}
+.item__thumb--empty { display: grid; place-items: center; font-size: 1.4rem; }
+
+.gallery { display: flex; flex-direction: column; gap: 10px; }
+.gallery__main { width: 100%; max-height: 60vh; object-fit: cover; border-radius: var(--radius); display: block; }
+.gallery__thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 6px; }
+.gallery__thumbs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; display: block; }
+.gallery__video { width: 100%; aspect-ratio: 16 / 9; border: 0; border-radius: var(--radius); background: #000; display: block; }
+
+.media-edit { border: 0; display: flex; flex-direction: column; gap: 10px; padding: 14px; background: var(--accent-soft); border-radius: var(--radius); }
+.media-edit h4 { margin: 4px 0 0; }
+.media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.media-item { margin: 0; position: relative; border-radius: 8px; overflow: hidden; border: 2px solid transparent; background: var(--panel); }
+.media-item.is-main { border-color: var(--accent); }
+.media-item img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+.media-item figcaption { display: flex; justify-content: space-between; align-items: center; gap: 4px; padding: 4px 6px; font-size: 0.75rem; }
+.media-item .link { min-height: 28px; font-size: 0.75rem; }
+.media-item .btn--danger { min-height: 28px; padding: 2px 8px; }
+
+.media-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 10px; background: var(--panel); border-radius: 8px; font-size: 0.9rem; overflow-wrap: anywhere; }
+.media-add { display: flex; flex-direction: column; gap: 8px; }
+.media-link { display: flex; gap: 6px; }
+.media-link input { flex: 1; }
+.upload { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; cursor: pointer; }
+
+.quota__bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.quota__bar span { display: block; height: 100%; background: var(--accent); }

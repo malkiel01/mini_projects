@@ -67,6 +67,76 @@ function minutes(m) {
   return r ? `${h} ש׳ ${r} דק׳` : `${h} ש׳`;
 }
 
+// ───────────────────────── מדיה ─────────────────────────
+
+const humanBytes = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)}MB` : `${Math.round(n / 1024)}KB`);
+
+/**
+ * הקטנת תמונה בדפדפן לפני העלאה (3.4): צלע ארוכה 1600px, JPEG באיכות 0.85.
+ * תמונה מהטלפון שוקלת 4–8MB ומעלה בלי סיבה; אחרי ההקטנה — 200–400KB.
+ * GIF ו-PNG שקוף נשלחים כמו שהם, כי ההמרה ל-JPEG הורסת אותם.
+ */
+async function shrinkImage(file) {
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size < 400 * 1024) return file;
+  const bitmap = await createImageBitmap(file).catch(() => null);
+  if (!bitmap) return file;
+  const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+  if (scale === 1 && file.type === 'image/jpeg') return file;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', 0.85));
+  // אם ההקטנה לא עזרה (תמונה קטנה עם דחיסה טובה), המקור עדיף.
+  return blob && blob.size < file.size ? new File([blob], 'image.jpg', { type: 'image/jpeg' }) : file;
+}
+
+/** העלאה עם התקדמות. fetch אינו מדווח התקדמות, ולכן XHR. */
+function uploadFile(recipeId, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const fd = new FormData();
+    fd.append('recipe_id', recipeId);
+    fd.append('file', file);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', './upload.php');
+    xhr.withCredentials = true;
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+    xhr.onload = () => {
+      let data;
+      try { data = JSON.parse(xhr.responseText); } catch { return reject(new Error('השרת החזיר תשובה שאינה תקינה')); }
+      data.success ? resolve(data) : reject(new Error(data.error || 'ההעלאה נכשלה'));
+    };
+    xhr.onerror = () => reject(new Error('ההעלאה נכשלה — אין חיבור'));
+    xhr.send(fd);
+  });
+}
+
+/** קישור יוטיוב → כתובת הטמעה. כל קישור אחר נשאר קישור רגיל. */
+function embedUrl(url) {
+  const m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|shorts\/|embed\/))([\w-]{11})/);
+  return m ? `https://www.youtube-nocookie.com/embed/${m[1]}` : null;
+}
+
+function mediaGallery(r) {
+  if (!r.media.length) return '';
+  const main = r.media.find((m) => m.id === r.main_media_id) || r.media.find((m) => m.kind === 'image');
+  const images = r.media.filter((m) => m.kind === 'image' && m !== main);
+  const videos = r.media.filter((m) => m.kind === 'video');
+  return `
+    <section class="gallery">
+      ${main ? `<img class="gallery__main" src="${esc(main.url)}" alt="${esc(r.title)}" loading="lazy">` : ''}
+      ${images.length ? `<div class="gallery__thumbs">${images.map((m) =>
+        `<a href="${esc(m.url)}" target="_blank" rel="noopener"><img src="${esc(m.url)}" alt="" loading="lazy"></a>`).join('')}</div>` : ''}
+      ${videos.map((v) => {
+        if (v.source === 'upload') return `<video class="gallery__video" controls preload="metadata" src="${esc(v.url)}"></video>`;
+        const emb = embedUrl(v.url);
+        return emb
+          ? `<iframe class="gallery__video" src="${esc(emb)}" allowfullscreen loading="lazy" referrerpolicy="no-referrer" title="סרטון"></iframe>`
+          : `<a class="btn" href="${esc(v.url)}" target="_blank" rel="noopener">▶ סרטון (קישור חיצוני)</a>`;
+      }).join('')}
+    </section>`;
+}
+
 // ───────────────────────── מסך אורח ─────────────────────────
 
 const guest = $('#guest');
@@ -199,6 +269,7 @@ async function renderList() {
     }
     results.innerHTML = recipes.map((r) => `
       <a class="item" href="#/r/${r.id}">
+        ${r.thumb ? `<img class="item__thumb" src="${esc(r.thumb)}" alt="" loading="lazy">` : '<span class="item__thumb item__thumb--empty">🍲</span>'}
         <div class="item__main">
           <strong>${esc(r.title)}</strong>
           <span class="muted">${esc(r.owner_name)}${r.difficulty ? ' · ' + DIFFICULTY[r.difficulty] : ''}${
@@ -253,6 +324,8 @@ async function renderRecipe(id) {
             <button class="btn btn--danger" id="del" type="button">מחיקה</button>
           </div>` : ''}
         </header>
+
+        ${mediaGallery(r)}
 
         ${r.sections.map((s) => `
           <section class="part">
@@ -375,6 +448,9 @@ async function renderEditor(id) {
 
         <label>טיפים והערות <textarea name="tips" rows="3">${esc(model.tips)}</textarea></label>
 
+        ${id ? `<fieldset class="media-edit" id="media-edit"></fieldset>`
+             : `<p class="muted">תמונות וסרטונים אפשר להוסיף אחרי השמירה הראשונה.</p>`}
+
         <fieldset class="tags">
           ${Object.entries(AXES).map(([axis, label]) => tags[axis] ? `
             <div class="tags__axis"><span class="muted">${label}</span>
@@ -442,6 +518,8 @@ async function renderEditor(id) {
       collect(); model.sections[si].steps.splice(ki, 1); draw();
     }));
 
+    if (editId) renderMediaEdit(editId);
+
     // השלמת מוצר מהקטלוג: הקטלוג גדל מעצמו, וזו הדרך ששמות מתכנסים (3.2).
     let timer;
     $$('[data-f="product"]', f).forEach((inp) => inp.addEventListener('input', () => {
@@ -483,6 +561,100 @@ async function renderEditor(id) {
   };
 
   draw();
+}
+
+// ───────────────────────── עורך: מדיה ─────────────────────────
+
+/**
+ * אזור המדיה בעורך. עצמאי מהטופס: העלאה נשמרת מיד בשרת ואינה חלק
+ * מ"שמור שינויים" — אחרת המשתמש היה מעלה ארבע תמונות, שוכח ללחוץ שמור,
+ * ומאבד את כולן.
+ */
+async function renderMediaEdit(recipeId) {
+  const box = $('#media-edit');
+  if (!box) return;
+  const [{ recipe: r }, { limits }] = await Promise.all([api('recipe', { id: recipeId }), api('media-limits')]);
+  const images = r.media.filter((m) => m.kind === 'image');
+  const videos = r.media.filter((m) => m.kind === 'video');
+
+  box.innerHTML = `
+    <h4>תמונות <span class="muted">(${images.length}/${limits.max_images})</span></h4>
+    <div class="media-grid">
+      ${images.map((m) => `
+        <figure class="media-item ${m.id === r.main_media_id ? 'is-main' : ''}">
+          <img src="${esc(m.url)}" alt="">
+          <figcaption>
+            ${m.id === r.main_media_id ? '<span class="badge badge--mine">ראשית</span>'
+              : `<button class="link" type="button" data-main="${m.id}">קבע כראשית</button>`}
+            <button class="btn btn--ghost btn--danger" type="button" data-del-media="${m.id}">✕</button>
+          </figcaption>
+        </figure>`).join('')}
+    </div>
+    ${images.length < limits.max_images ? `
+      <label class="upload">
+        <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden data-up="image">
+        <span class="btn">+ תמונה</span>
+        <small class="muted">מוקטנת בטלפון לפני ההעלאה · עד ${humanBytes(limits.image_max)}</small>
+      </label>` : ''}
+
+    <h4>סרטונים <span class="muted">(${videos.length}/${limits.max_videos})</span></h4>
+    ${videos.map((v) => `
+      <div class="media-row">
+        <span>${v.source === 'link' ? '🔗 ' + esc(v.url) : '🎬 קובץ · ' + humanBytes(v.bytes)}</span>
+        <button class="btn btn--ghost btn--danger" type="button" data-del-media="${v.id}">✕</button>
+      </div>`).join('')}
+    ${videos.length < limits.max_videos ? `
+      <div class="media-add">
+        <form class="media-link" id="media-link">
+          <input name="url" type="url" placeholder="קישור ליוטיוב (מומלץ לסרטון ארוך)" required>
+          <button class="btn" type="submit">הוסף</button>
+        </form>
+        <label class="upload">
+          <input type="file" accept="video/mp4" hidden data-up="video">
+          <span class="btn">+ קובץ mp4</span>
+          <small class="muted">עד ${humanBytes(limits.video_max)} — כ-10–15 שניות מהטלפון</small>
+        </label>
+      </div>` : ''}
+
+    <div class="quota">
+      <div class="quota__bar"><span style="width:${Math.min(100, (limits.used / limits.quota) * 100).toFixed(1)}%"></span></div>
+      <small class="muted">אחסון: ${humanBytes(limits.used)} מתוך ${humanBytes(limits.quota)}</small>
+    </div>
+    <p id="media-msg" class="note" hidden></p>`;
+
+  const note = (t, k) => { const el = $('#media-msg'); el.textContent = t; el.className = 'note' + (k ? ' note--' + k : ''); el.hidden = !t; };
+
+  $$('[data-up]', box).forEach((inp) => inp.addEventListener('change', async () => {
+    const files = Array.from(inp.files || []);
+    for (const raw of files) {
+      try {
+        note(`מכין ${raw.name}…`);
+        const file = inp.dataset.up === 'image' ? await shrinkImage(raw) : raw;
+        // בדיקה בדפדפן לפני שליחה — חוסכת העלאה של 100MB שתידחה בסוף.
+        const cap = inp.dataset.up === 'image' ? limits.image_max : limits.video_max;
+        if (file.size > cap) throw new Error(`${raw.name} גדול מדי (${humanBytes(file.size)}, התקרה ${humanBytes(cap)})`
+          + (inp.dataset.up === 'video' ? '. סרטון ארוך — העלה ליוטיוב והדבק קישור.' : ''));
+        await uploadFile(recipeId, file, (p) => note(`מעלה ${raw.name}… ${Math.round(p * 100)}%`));
+      } catch (err) { note(err.message, 'err'); return; }
+    }
+    renderMediaEdit(recipeId);
+  }));
+
+  $('#media-link')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try { await api('media-link', { recipe_id: recipeId, url: e.target.url.value }); renderMediaEdit(recipeId); }
+    catch (err) { note(err.message, 'err'); }
+  });
+
+  $$('[data-del-media]', box).forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('למחוק?')) return;
+    try { await api('media-delete', { id: +b.dataset.delMedia }); renderMediaEdit(recipeId); }
+    catch (err) { note(err.message, 'err'); }
+  }));
+  $$('[data-main]', box).forEach((b) => b.addEventListener('click', async () => {
+    try { await api('media-main', { recipe_id: recipeId, id: +b.dataset.main }); renderMediaEdit(recipeId); }
+    catch (err) { note(err.message, 'err'); }
+  }));
 }
 
 // ───────────────────────── אבחון ─────────────────────────
