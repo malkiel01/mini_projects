@@ -1,39 +1,134 @@
+/* אפליקציית מתכונים — טלפון קודם, ומתרחב למסך גדול (הכרעה 8.1 באפיון).
+   אין מדיה-קוורי שמצמצם: הבסיס הוא המסך הצר, וההרחבה היא התוספת. */
+
 :root {
   --bg: #1a1207;
   --panel: #2a1e10;
+  --panel-2: #33240f;
   --line: #4a3722;
   --ink: #f3ebe1;
   --muted: #b3a08a;
-  --accent: #f97316;   /* הסיר והאש */
-  --steam: #fcd34d;    /* האדים */
+  --accent: #f97316;
+  --ok: #4ade80;
+  --warn: #fcd34d;
+  --err: #fb7185;
+  --radius: 12px;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* תכונת hidden מגיעה מהדפדפן כ-display:none, וכל כלל display שנכתוב
+   גובר עליה. בלי השורה הזאת `.form[hidden]` עדיין מוצג, ושלושת הטפסים
+   מופיעים יחד — וזה בדיוק מה שקרה כאן. */
+[hidden] { display: none !important; }
 
 body {
   font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
   background: var(--bg);
   color: var(--ink);
   min-height: 100vh;
+  min-height: 100dvh;   /* בטלפון, שורת הכתובת גוזלת מ-100vh */
   display: flex;
   flex-direction: column;
+  line-height: 1.6;
 }
+
+/* ───────── סרגל עליון ───────── */
 
 .bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 14px 20px;
+  gap: 12px;
+  padding: 12px 16px;
+  padding-top: max(12px, env(safe-area-inset-top));
   background: var(--panel);
   border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
-.bar__title { font-size: 1.15rem; font-weight: 600; }
+.bar__title { font-size: 1.1rem; font-weight: 600; }
+.bar__side { display: flex; align-items: center; gap: 8px; }
+.who { color: var(--muted); font-size: 0.9rem; }
+
+/* ───────── פריסה ───────── */
+
+.centered {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+}
+
+.stage { flex: 1; padding: 24px 16px; display: flex; justify-content: center; }
+
+.card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 24px;
+}
+
+.stage .card { max-width: 640px; }
+.card h1, .card h2 { font-size: 1.15rem; margin-bottom: 14px; color: var(--accent); }
+.card p + p { margin-top: 12px; }
+
+/* ───────── לשוניות ───────── */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 4px;
+}
+
+.tab {
+  flex: 1;
+  padding: 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.tab.is-on { background: var(--panel-2); color: var(--ink); }
+
+/* ───────── טפסים ─────────
+   44px מינימום לכל דבר שנוגעים בו: זה הגודל שאצבע פוגעת בו בלי לכעוס,
+   וזה מה שהכרעת "טלפון קודם" אומרת בפועל. */
+
+.form { display: flex; flex-direction: column; gap: 16px; }
+
+label { display: flex; flex-direction: column; gap: 6px; font-size: 0.92rem; }
+
+input {
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--ink);
+  /* 16px ומעלה — בפחות מזה ספארי בטלפון מקרב את המסך בכל מיקוד. */
+  font-size: 16px;
+  font-family: inherit;
+}
+input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .btn {
-  display: inline-block;
-  padding: 8px 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 10px 18px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: transparent;
@@ -43,39 +138,50 @@ body {
   cursor: pointer;
 }
 .btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn:disabled { opacity: 0.6; cursor: default; }
 
-.stage {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 28px;
-  padding: 40px 20px;
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1a1207;
+  font-weight: 600;
 }
+.btn--primary:hover { color: #1a1207; filter: brightness(1.08); }
+.btn--ghost { padding: 8px 12px; min-height: 38px; font-size: 0.9rem; }
 
-.stage__canvas {
-  width: 280px;
-  height: 280px;
-  max-width: 100%;
+.link {
+  align-self: center;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  min-height: 44px;
 }
+.link:hover { color: var(--accent); }
+
+/* ───────── הודעות ───────── */
 
 .note {
-  max-width: 560px;
-  background: var(--panel);
+  margin-top: 18px;
+  padding: 12px 14px;
   border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 24px;
-  line-height: 1.7;
+  border-inline-start: 4px solid var(--muted);
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 0.92rem;
 }
+.note--ok   { border-inline-start-color: var(--ok); }
+.note--warn { border-inline-start-color: var(--warn); }
+.note--err  { border-inline-start-color: var(--err); }
 
-.note h2 { font-size: 1.05rem; margin-bottom: 12px; color: var(--accent); }
-.note p + p { margin-top: 12px; }
-.note__muted { color: var(--muted); font-size: 0.9rem; }
+.muted { color: var(--muted); font-size: 0.85rem; }
+small.muted { font-weight: 400; }
 
 code {
   font-family: ui-monospace, Menlo, Consolas, monospace;
-  background: #120c05;
+  background: var(--bg);
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 1px 5px;
@@ -84,6 +190,9 @@ code {
   display: inline-block;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .stage__canvas { opacity: 0.9; }
+/* ───────── מסך גדול ───────── */
+
+@media (min-width: 720px) {
+  .bar { padding-inline: 32px; }
+  .card { padding: 32px; }
 }

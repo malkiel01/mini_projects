@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>אפליקציית מתכונים</title>
-<meta name="description" content="אפליקציה לניהול מתכונים — כתיבה, חיפוש ובישול לפי שלבים. השלד עלה לאוויר; האפיון בדרך.">
+<meta name="description" content="מתכונים פרטיים וציבוריים — חלקים, רכיבים, שלבים, חיפוש ורשימת קניות.">
 <meta name="theme-color" content="#1a1207">
 <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="./assets/css/app.css">
@@ -12,25 +12,74 @@
 <body>
 
 <header class="bar">
-  <h1 class="bar__title">אפליקציית מתכונים</h1>
-  <a class="btn btn--ghost" href="../index.html">חזרה לכלים</a>
+  <h1 class="bar__title">מתכונים</h1>
+  <div class="bar__side">
+    <span id="who" class="who" hidden></span>
+    <button id="logout" class="btn btn--ghost" type="button" hidden>יציאה</button>
+    <a class="btn btn--ghost" href="../index.html">לכלים</a>
+  </div>
 </header>
 
-<main class="stage">
-  <!-- הקנבס אינו האפליקציה. הוא ההוכחה שהתיקייה חיה ושהנכסים נטענים
-       מהשרת — לפני שהאפיון נכנס לכאן. -->
-  <canvas id="stage" class="stage__canvas" aria-label="סיר על אש עם אדים, תצוגה מקדימה"></canvas>
+<!-- מסך אורח: כניסה והרשמה. שני טפסים באותו כרטיס, כי בטלפון מסך
+     נפרד לכל אחד הוא ניווט מיותר. -->
+<main id="guest" class="centered" hidden>
+  <section class="card">
+    <div class="tabs" role="tablist">
+      <button class="tab is-on" data-pane="login"    role="tab" type="button">כניסה</button>
+      <button class="tab"       data-pane="register" role="tab" type="button">הרשמה</button>
+    </div>
 
-  <section class="note" role="status">
-    <h2>התיקייה מוכנה. האפליקציה תיכנס לכאן.</h2>
-    <p>
-      התיקייה, הנכסים והכרטיס בדף הכלים נוצרו ונפרסו — כך שברגע שהאפיון יוכרע,
-      הקוד ייכנס לאותו מסלול שכבר עולה לשרת, בלי הגדרה נוספת.
-    </p>
-    <p class="note__muted">
-      מה שמתבשל למעלה הוא ציור קווים על <code>&lt;canvas&gt;</code> בלי שום ספרייה —
-      מציין מקום ולא תכולה. הוא מיועד להימחק.
-    </p>
+    <form id="login-form" class="form pane" data-pane="login">
+      <label>שם משתמש או דוא"ל
+        <input name="username" required autocomplete="username" autocapitalize="off">
+      </label>
+      <label>סיסמה
+        <input name="password" type="password" required autocomplete="current-password">
+      </label>
+      <button class="btn btn--primary" type="submit">כניסה</button>
+      <button id="forgot" class="link" type="button">שכחתי סיסמה</button>
+    </form>
+
+    <form id="register-form" class="form pane" data-pane="register" hidden>
+      <label>שם משתמש
+        <input name="username" required minlength="3" maxlength="32" pattern="[A-Za-z0-9._\-]{3,32}"
+               autocomplete="username" autocapitalize="off">
+        <small class="muted">אותיות לועזיות, ספרות, נקודה, מקף או קו תחתון</small>
+      </label>
+      <label>שם לתצוגה <small class="muted">(לא חובה)</small>
+        <input name="display_name" maxlength="60" autocomplete="nickname">
+      </label>
+      <label>דוא"ל
+        <input name="email" type="email" required autocomplete="email" autocapitalize="off">
+        <small class="muted">נדרש לאימות החשבון ולאיפוס סיסמה</small>
+      </label>
+      <label>סיסמה
+        <input name="password" type="password" required minlength="8" autocomplete="new-password">
+        <small class="muted">8 תווים לפחות</small>
+      </label>
+      <button class="btn btn--primary" type="submit">הרשמה</button>
+    </form>
+
+    <form id="forgot-form" class="form pane" data-pane="forgot" hidden>
+      <label>הדוא"ל שאיתו נרשמת
+        <input name="email" type="email" required autocomplete="email" autocapitalize="off">
+      </label>
+      <button class="btn btn--primary" type="submit">שלח קישור לאיפוס</button>
+      <button class="link" type="button" data-goto="login">חזרה לכניסה</button>
+    </form>
+
+    <p id="guest-msg" class="note" hidden></p>
+  </section>
+</main>
+
+<!-- מסך מחובר. כרגע מאשר שהכניסה עובדת; המתכונים נכנסים לכאן בשלב הבא. -->
+<main id="app" class="stage" hidden>
+  <section class="card">
+    <h2>נכנסת</h2>
+    <p>שכבת החשבונות עובדת. המתכונים עצמם — יצירה, חיפוש, רשימת קניות ומצב
+       בישול — נכנסים לכאן בשלב הבא, לפי <code>SPEC.md</code>.</p>
+    <p class="muted">מה שכבר קיים מאחורי הקלעים: הסכימה המלאה, הצירים הסגורים
+       שנזרעו, ואימות דוא"ל שחוסם כניסה עד שהכתובת אושרה.</p>
   </section>
 </main>
 
