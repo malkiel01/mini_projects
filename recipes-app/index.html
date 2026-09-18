@@ -15,6 +15,7 @@
   <h1 class="bar__title">מתכונים</h1>
   <div class="bar__side">
     <span id="who" class="who" hidden></span>
+    <a id="nav-diag" class="btn btn--ghost" href="#/diag" hidden title="אבחון השרת">⚙</a>
     <button id="logout" class="btn btn--ghost" type="button" hidden>יציאה</button>
     <a class="btn btn--ghost" href="../index.html">לכלים</a>
   </div>
@@ -72,15 +73,9 @@
   </section>
 </main>
 
-<!-- מסך מחובר. כרגע מאשר שהכניסה עובדת; המתכונים נכנסים לכאן בשלב הבא. -->
+<!-- מסך מחובר. התוכן מצויר ב-app.js לפי ה-hash: רשימה, מתכון, עורך, אבחון. -->
 <main id="app" class="stage" hidden>
-  <section class="card">
-    <h2>נכנסת</h2>
-    <p>שכבת החשבונות עובדת. המתכונים עצמם — יצירה, חיפוש, רשימת קניות ומצב
-       בישול — נכנסים לכאן בשלב הבא, לפי <code>SPEC.md</code>.</p>
-    <p class="muted">מה שכבר קיים מאחורי הקלעים: הסכימה המלאה, הצירים הסגורים
-       שנזרעו, ואימות דוא"ל שחוסם כניסה עד שהכתובת אושרה.</p>
-  </section>
+  <div id="view" class="view"></div>
 </main>
 
 <script type="module" src="./assets/js/app.js"></script>

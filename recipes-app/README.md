@@ -10,9 +10,12 @@
 | [`lib/db.php`](./lib/db.php) | חיבור, מיגרציות, זריעת התגים ונירמול לחיפוש |
 | [`lib/auth.php`](./lib/auth.php) | חשבונות, כניסה, אימות דוא"ל ואיפוס סיסמה |
 | [`lib/mail.php`](./lib/mail.php) | שליחה, וידיעה מתי היא נכשלה |
+| [`lib/recipes.php`](./lib/recipes.php) | מתכונים: שמירה, טעינה, חיפוש, מחיקה, קטלוג מוצרים |
+| [`lib/diag.php`](./lib/diag.php) | אבחון למנהל — מה שהשרת אומר על עצמו |
 | [`lib/errors.php`](./lib/errors.php) | הבדלה בין שגיאה למשתמש לתקלה שלנו |
 | [`tools/schema-check.py`](./tools/schema-check.py) | מריץ את הסכימה, מוכיח שההבטחות עובדות, ומוודא ש-`SCHEMA.sql` ו-`lib/db.php` לא נפרדו |
 | [`tools/auth-check.php`](./tools/auth-check.php) | מריץ את שכבת החשבונות על מסד זמני |
+| [`tools/recipes-check.php`](./tools/recipes-check.php) | מריץ את שכבת המתכונים על מסד זמני |
 | [`tools/api-check.sh`](./tools/api-check.sh) | מריץ שרת PHP אמיתי ועובר את המסלול ב-HTTP עם עוגיית סשן |
 | [`tools/shot.sh`](./tools/shot.sh) | צילום ברוחב טלפון אמיתי, ומדידת גלישה לרוחב |
 
@@ -21,8 +24,9 @@
 ```bash
 python3 recipes-app/tools/schema-check.py    # הסכימה וההבטחות שלה
 php     recipes-app/tools/auth-check.php     # שכבת החשבונות
+php     recipes-app/tools/recipes-check.php  # שכבת המתכונים
 bash    recipes-app/tools/api-check.sh       # ה-API מקצה לקצה, על שרת אמיתי
-bash    recipes-app/tools/shot.sh out.png    # צילום ברוחב טלפון
+bash    recipes-app/tools/shot.sh out.png '#/r/1'   # צילום ברוחב טלפון, מחובר ועם מתכון בדיקה
 ```
 
 שתיהן רצות על מסד בזיכרון או בתיקייה זמנית, ואינן נוגעות בנתונים האמיתיים.
@@ -37,7 +41,13 @@ bash    recipes-app/tools/shot.sh out.png    # צילום ברוחב טלפון
 חוסמת הכול, והשנייה מגישה תמונות וסרטונים אבל מונעת הרצת קוד — כי לשם
 מעלים קבצים אנשים שאינני מכיר.
 
-## מצב נוכחי — שלד בלבד
+## מצב נוכחי
+
+עובד: חשבונות (הרשמה, אימות, כניסה, איפוס), מתכון מקצה לקצה (יצירה, תצוגה עם המרת מנות,
+עריכה, מחיקה), חיפוש בשם וברכיבים, ואבחון למנהל.
+עדיין לא: מדיה, תגובות, מועדפים, רשימת קניות, מצב בישול.
+
+### ההיסטוריה — השלד הראשון
 
 | מה | איפה |
 | --- | --- |
