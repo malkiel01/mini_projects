@@ -255,6 +255,11 @@ function migrate(PDO $pdo): void {
     ");
 
     seedTags($pdo);
+
+    // ריפוי חד־כיווני: מנהל שנוצר לפני שהמשתמש הראשון אומת אוטומטית.
+    // בלי זה, אם mail() לא פעל בשרת, המנהל היחיד נעול בחוץ לתמיד.
+    // העדכון אידמפוטנטי — בפריסות הבאות הוא לא משנה דבר.
+    $pdo->exec("UPDATE users SET email_verified = 1 WHERE role = 'admin' AND email_verified = 0");
 }
 
 /**

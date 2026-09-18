@@ -46,6 +46,9 @@ function expectError(string $label, callable $fn, string $needle = ''): void {
 echo "\n1. יצירת חשבונות\n";
 $admin = createUser('malkiel', 'a@example.com', 'sod12345', 'מלכיאל');
 check('המשתמש הראשון נעשה admin', $admin['role'], 'admin');
+check('והוא מאומת מראש — אחרת קיפאון כש-mail() לא פועל',
+      (int) db()->query("SELECT email_verified FROM users WHERE username='malkiel'")->fetch()['email_verified'], 1);
+check('הוא יכול להיכנס מיד', login('malkiel', 'sod12345')['role'], 'admin');
 $user = createUser('mali', 'm@example.com', 'sod12345');
 check('השני נעשה user', $user['role'], 'user');
 check('שם התצוגה מתמלא משם המשתמש',

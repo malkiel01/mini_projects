@@ -95,8 +95,12 @@ function createUser(string $username, string $email, string $password, string $d
     }
 
     $role = userCount() === 0 ? 'admin' : 'user';
+    // המשתמש הראשון הוא בעל האתר, והוא מאומת מראש. אימות דוא"ל נועד להגן
+    // מזרים, לא ממנו — ובלי זה, אם mail() אינו פועל בשרת, נוצר מנהל לא
+    // מאומת שאינו יכול להיכנס ואין מי שיאמת אותו. קיפאון שאין ממנו יציאה.
+    $verified = $role === 'admin' ? 1 : 0;
     $st = db()->prepare('INSERT INTO users (username, email, password_hash, display_name,
-                                            role, created_at) VALUES (?,?,?,?,?,?)');
+                                            role, email_verified, created_at) VALUES (?,?,?,?,?,?,?)');
     try {
         $st->execute([
             $username,
@@ -104,6 +108,7 @@ function createUser(string $username, string $email, string $password, string $d
             password_hash($password, PASSWORD_DEFAULT),
             trim($displayName) !== '' ? trim($displayName) : $username,
             $role,
+            $verified,
             nowIso(),
         ]);
     } catch (PDOException $e) {
@@ -118,10 +123,13 @@ function createUser(string $username, string $email, string $password, string $d
     $id    = (int) db()->lastInsertId();
     $token = issueToken($id, 'verify_email', VERIFY_TTL_HOURS);
 
+    // הדוא"ל נשלח גם למנהל שכבר מאומת: זו הבדיקה היחידה שיש לנו לשאלה
+    // אם mail() עובד בשרת, ו-mail_sent הוא מה שמדווח על כך במסך האבחון.
     return [
         'id'        => $id,
         'username'  => $username,
         'role'      => $role,
+        'verified'  => $verified === 1,
         'token'     => $token,                        // לבדיקות ולשליחה; לא לתצוגה
         'mail_sent' => sendVerifyEmail($email, $token),
     ];

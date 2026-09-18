@@ -58,10 +58,19 @@ echo "1. אורח"
 check 'me מחזיר success עם user=null' "$(call me)" '"user":null'
 
 echo
-echo "2. הרשמה"
+echo "2. הרשמה — הראשון הוא המנהל, ומאומת מראש"
+R=$(call register '{"username":"owner","email":"owner@example.com","password":"sod12345","display_name":"בעלים"}')
+check 'ההרשמה הצליחה'      "$R" '"success":true'
+check 'המנהל מאומת מראש'   "$R" '"verified":true'
+check 'נשלח דוא"ל בכל זאת' "$R" '"mail_sent":true'
+check 'המנהל נכנס מיד'     "$(call login '{"username":"owner","password":"sod12345"}')" '"role":"admin"'
+call logout >/dev/null
+
+echo
+echo "2ב. הרשמה — השני הוא זר, והאימות חל עליו"
 R=$(call register '{"username":"tester","email":"t@example.com","password":"sod12345","display_name":"בודק"}')
-check 'ההרשמה הצליחה' "$R" '"success":true'
-check 'נשלח דוא"ל'     "$R" '"mail_sent":true'
+check 'ההרשמה הצליחה'  "$R" '"success":true'
+check 'אינו מאומת'     "$R" '"verified":false'
 check 'שם תפוס נדחה'   "$(call register '{"username":"tester","email":"x@example.com","password":"sod12345"}')" 'כבר בשימוש'
 check 'סיסמה קצרה נדחית' "$(call register '{"username":"other","email":"o@example.com","password":"abc"}')" '8 תווים'
 
@@ -74,7 +83,7 @@ TOKEN=$(php -r '
   define("DB_FILE", getenv("RECIPES_TEST_DIR")."/t.sqlite");
   define("MEDIA_DIR", getenv("RECIPES_TEST_DIR")."/media");
   require "recipes-app/lib/auth.php";
-  echo issueToken(1, "verify_email", 24);
+  echo issueToken(2, "verify_email", 24);
 ')
 V=$(curl -sS "http://127.0.0.1:$PORT/recipes-app/verify.php?token=$TOKEN")
 check 'verify.php מאמת' "$V" 'החשבון אומת'
@@ -102,6 +111,39 @@ check 'כשרות קיימת'          "$(call tags)" 'פרווה'
 echo
 echo "7. פעולה מוגנת ללא התחברות"
 check 'נדחית ב-401' "$(call some-protected-thing)" 'לא מוכרת\|נדרשת התחברות'
+check 'אבחון נדחה לאורח' "$(call diag)" 'נדרשת התחברות'
+
+echo
+echo "8. מתכון מקצה לקצה דרך ה-API"
+call login '{"username":"tester","password":"sod12345"}' >/dev/null
+S=$(call recipe-save '{"title":"עוגת גבינה","visibility":"public","servings":8,"sections":[{"name":"בצק","ingredients":[{"free_text":"2 כוסות","amount_min":300,"unit":"gram","product":"קמח"}],"steps":[{"text":"לפורר"}]}]}')
+check 'נשמר'                 "$S" '"success":true'
+check 'הוחזר עם החלקים'      "$S" '"name":"בצק"'
+check 'שתי השכבות ברכיב'     "$S" '"free_text":"2 כוסות".*"amount_min":300'
+ID=$(printf '%s' "$S" | sed -n 's/.*"id":\([0-9]*\).*/\1/p' | head -1)
+check 'חיפוש לפי רכיב'       "$(call search '{"q":"קמח"}')" '"title":"עוגת גבינה"'
+check 'השלמת מוצר'           "$(call products '{"q":"קמ"}')" '"קמח"'
+U=$(call recipe-save "{\"id\":$ID,\"title\":\"עוגת גבינה קלה\",\"visibility\":\"private\",\"sections\":[{\"ingredients\":[{\"free_text\":\"גבינה\"}],\"steps\":[{\"text\":\"לערבב\"}]}]}")
+check 'עדכון'                "$U" '"title":"עוגת גבינה קלה"'
+call logout >/dev/null
+check 'אורח אינו רואה פרטי'  "$(call recipe "{\"id\":$ID}")" 'אינו זמין'
+check 'אורח אינו מוצא פרטי'  "$(call search '{"q":"גבינה"}')" '"recipes":\[\]'
+call login '{"username":"tester","password":"sod12345"}' >/dev/null
+check 'הבעלים מוחק'          "$(call recipe-delete "{\"id\":$ID}")" '"deleted_comments":0'
+check 'ואחרי המחיקה 404'     "$(call recipe "{\"id\":$ID}")" 'אינו זמין'
+check 'משתמש רגיל אינו רשאי לאבחון' "$(call diag)" 'אין לך הרשאה'
+call logout >/dev/null
+
+echo
+echo "9. אבחון למנהל"
+call login '{"username":"owner","password":"sod12345"}' >/dev/null
+D=$(call diag)
+check 'מחזיר מגבלות PHP'     "$D" '"upload_max_filesize"'
+check 'מחזיר תקרת וידאו בפועל' "$D" '"video_effective"'
+check 'מחזיר נפח פנוי'       "$D" '"free"'
+check 'מחזיר מצב mail'       "$D" '"function_exists"'
+check 'foreign_keys דלוק'    "$D" '"foreign_keys":true'
+call logout >/dev/null
 
 echo
 if [ "$FAIL" -ne 0 ]; then
