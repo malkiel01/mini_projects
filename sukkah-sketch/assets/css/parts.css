@@ -67,6 +67,8 @@ svg .dim{stroke:var(--ink);stroke-width:.5;fill:none}
 svg .dimt{fill:var(--ink)}
 svg .face{fill:none;stroke:var(--line);stroke-width:.6}
 svg .hl{fill:#ff9d00;fill-opacity:.9}
+svg .ply{fill:#c9a36b;stroke:#3b2f1e;stroke-width:.5}
+svg .ply-rest{fill:#8a6a3a;stroke:#3b2f1e;stroke-width:.5}
 
 /* ---------- הדפסה / PDF: שקופית = עמוד, וקטורי ----------
    ה-PDF (parts.pdf) נוצר מהדף הזה עצמו עם Chromium (build-pdf.js), ולכן הוא

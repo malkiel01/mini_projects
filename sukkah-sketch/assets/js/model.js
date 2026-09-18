@@ -17,7 +17,8 @@ var K={
   PLATE:.6, PLATE_W:10,   // פלטת הקיר: עובי ורוחב; קורה שנכנסת לקיר נגמרת על הפלטה
   SLEEVE_LEN:12,       // השרוול: חתיכת 40×40 אנכית לצד העמוד — אורכו טרם הוכרע
   TONGUE:3.5, TONGUE_LEN:10,   // השן: 3.5×3.5 מתחת לקורה, יורדת לתוך השרוול — טרם הוכרע
-  POST_FROM_WALL:93    // עמוד באזור ללא קיר
+  POST_FROM_WALL:93,   // עמוד באזור ללא קיר
+  PLY_W:70, PLY_T:.7   // דיקט: רוחב לוח ועוביו. הדיקט פנימי — צמוד לפני המסגרת מבפנים
 };
 
 function area(p){var s=0;for(var i=0;i<p.length;i++){var q=p[(i+1)%p.length];s+=p[i][0]*q[1]-q[0]*p[i][1];}return s/2;}
@@ -214,6 +215,29 @@ function build(){
   ].forEach(function(t){lowBar(t[0],t[1],t[2]);});
   /* קורות תומכות: הקצה המזרחי על העמוד; הקצה המערבי על פלטה בקיר (ק1, ק2) או על העמוד (ק3) */
   bar(beamById('ק1'),'e1','@'+x1,Z_TOP); bar(beamById('ק2'),'e2','@'+x2,Z_TOP); bar(beamById('ק3'),'e3','w3',Z_TOP);
+
+  /* ---------- דיקטים ----------
+     הקונסטרוקציה חיצונית והדיקט פנימי: הלוחות עומדים צמודים לפני המסגרת
+     מבפנים, לאורך כל צלע חוץ מהקיר. כל צלע נמדדת בפניה הפנימיים, ומתמלאת
+     בלוחות שלמים ברוחב PLY_W ובחתיכה אחת לשארית. השאריות מכל הצלעות נחתכות
+     יחד מכמה שפחות לוחות (first-fit decreasing). */
+  var PLY_W=K.PLY_W;
+  M.ply={walls:[],full:0,rests:[],restPanels:[],total:0};
+  M.beams.filter(function(b){return b.level==='top';}).forEach(function(b){
+    var L=b.len.inner,full=Math.floor(L/PLY_W),rest=L-full*PLY_W;
+    if(rest<.05){rest=0;}   // צלע שמתחלקת בדיוק
+    var w={id:b.id,kind:b.kind,len:L,full:full,rest:rest,n:full+(rest?1:0),
+      a:b.level==='top'&&b.pts?[b.pts[3],b.pts[2]]:null};   // הפאה הפנימית: הצלע i1→i2 של המצולע
+    M.ply.walls.push(w);M.ply.full+=full;M.ply.total+=L;if(rest)M.ply.rests.push({id:b.id,w:rest});
+  });
+  // שאריות: ממיינים מהגדולה לקטנה, וכל אחת נכנסת ללוח הראשון שיש בו מקום
+  M.ply.rests.slice().sort(function(a,b){return b.w-a.w;}).forEach(function(r){
+    var pnl=M.ply.restPanels.filter(function(p){return p.used+r.w<=PLY_W+.001;})[0];
+    if(!pnl){pnl={used:0,parts:[]};M.ply.restPanels.push(pnl);}
+    pnl.used+=r.w;pnl.parts.push(r);
+  });
+  M.ply.count=M.ply.full+M.ply.restPanels.length;
+  M.ply.countNaive=M.ply.walls.reduce(function(a,w){return a+w.n;},0);
 
   /* ---------- תוויות מידה בשרטוט ---------- */
   for(i=0;i<6;i++){var q=quads[i],mx=(q[0][0]+q[1][0])/2,my=(q[0][1]+q[1][1])/2;
