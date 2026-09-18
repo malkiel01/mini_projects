@@ -135,6 +135,8 @@ jobs:
             --exclude='renovation-punchlist/data/store.json' \
             --exclude='renovation-punchlist/data/media/' \
             --exclude='claude-tasks/data/*.sqlite*' \
+            --exclude='recipes-app/data/*.sqlite*' \
+            --exclude='recipes-app/data/media/' \
             --exclude='claude-tasks/data/config.json' \
             --exclude='claude-tasks/data/secret.key' \
             --exclude='node_modules/' \

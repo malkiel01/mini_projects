@@ -21,6 +21,36 @@ def check(label, got, want):
         fail.append(label)
 
 
+def compare_with_php():
+    """מריץ את db.php על מסד זמני ומשווה את התוצאה ל-SCHEMA.sql.
+
+    SCHEMA.sql הוא התיעוד ו-lib/db.php הוא המימוש, ולכן הם יכולים
+    להיפרד בשקט — מישהו יוסיף עמודה באחד וישכח את השני. הבדיקה הזאת
+    היא מה שיתפוס את זה, ולא הפעם הראשונה שבה שאילתה תיפול בשרת.
+    """
+    import shutil, subprocess, tempfile
+    if not shutil.which('php'):
+        return None
+
+    want = sqlite3.connect(':memory:')
+    want.executescript(io.open(SCHEMA, encoding='utf-8').read())
+
+    tmp = tempfile.mkdtemp()
+    dbf = os.path.join(tmp, 'drift.sqlite')
+    lib = os.path.abspath(os.path.join(HERE, '..', 'lib', 'db.php'))
+    runner = os.path.join(tmp, 'run.php')
+    io.open(runner, 'w', encoding='utf-8').write(
+        f"<?php define('DB_FILE','{dbf}'); define('MEDIA_DIR','{tmp}/media');"
+        f" require '{lib}'; db();")
+    subprocess.run(['php', runner], check=True, capture_output=True)
+    got = sqlite3.connect(dbf)
+
+    q = "SELECT name FROM sqlite_master WHERE type=? AND name NOT LIKE 'sqlite_%'"
+    names = lambda db, kind: set(r[0] for r in db.execute(q, (kind,)))
+    return (names(want, 'table') ^ names(got, 'table'),
+            names(want, 'index') ^ names(got, 'index'))
+
+
 def main():
     db = sqlite3.connect(':memory:')
     db.execute('PRAGMA foreign_keys = ON')
@@ -122,6 +152,15 @@ def main():
                                    (cake,)).fetchone()[0], 0)
     check('המועדף נשאר', list(c.execute("SELECT title_snapshot,recipe_id FROM favorites")),
           [('עוגת גבינה', None)])
+
+    print('\n6. SCHEMA.sql ו-lib/db.php אינם נפרדים')
+    drift = compare_with_php()
+    if drift is None:
+        print('  — אין php בסביבה, הבדיקה מדלגת')
+    else:
+        tables_diff, index_diff = drift
+        check('הפרש טבלאות', tables_diff, set())
+        check('הפרש אינדקסים', index_diff, set())
 
     print()
     if fail:

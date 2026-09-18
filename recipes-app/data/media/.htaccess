@@ -1,0 +1,29 @@
+# התיקייה הזאת כן מוגשת לדפדפן — תמונות וסרטונים נטענים ממנה ישירות.
+# ולכן היא המקום המסוכן בפרויקט: ההרשמה חופשית, כלומר כל אדם באינטרנט
+# מעלה לכאן קבצים. בדיקת הסוג ב-finfo נעשית בקוד, וזו החגורה השנייה.
+
+# 1. שום דבר כאן אינו מורץ כקוד, גם אם הצליח להיכנס בשם clip.mp4.
+<IfModule mod_php.c>
+    php_flag engine off
+</IfModule>
+php_flag engine off
+RemoveHandler .php .phtml .php3 .php4 .php5 .php7 .php8 .phps .cgi .pl .py .sh
+RemoveType .php .phtml .php3 .php4 .php5 .php7 .php8 .phps
+AddType text/plain .php .phtml .phps .cgi .pl .py .sh
+
+# 2. הדפדפן לא ינחש סוג תוכן בעצמו, ולא יריץ HTML שהתחזה לתמונה.
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set Content-Disposition "inline"
+</IfModule>
+
+# 3. רק מה שהאפיון מתיר להעלות מוגש. כל השאר נחסם, גם אם נשמר בטעות.
+<FilesMatch "\.(?!(jpe?g|png|webp|gif|mp4)$)[^.]*$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>

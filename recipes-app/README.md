@@ -7,9 +7,31 @@
 | --- | --- |
 | [`SPEC.md`](./SPEC.md) | **האפיון, מוכרע.** מקור האמת |
 | [`SCHEMA.sql`](./SCHEMA.sql) | סכימת מסד הנתונים, 18 טבלאות |
-| [`tools/schema-check.py`](./tools/schema-check.py) | בדיקה שמריצה את הסכימה ומוכיחה שההבטחות שבאפיון עובדות |
+| [`lib/db.php`](./lib/db.php) | חיבור, מיגרציות, זריעת התגים ונירמול לחיפוש |
+| [`lib/auth.php`](./lib/auth.php) | חשבונות, כניסה, אימות דוא"ל ואיפוס סיסמה |
+| [`lib/mail.php`](./lib/mail.php) | שליחה, וידיעה מתי היא נכשלה |
+| [`lib/errors.php`](./lib/errors.php) | הבדלה בין שגיאה למשתמש לתקלה שלנו |
+| [`tools/schema-check.py`](./tools/schema-check.py) | מריץ את הסכימה, מוכיח שההבטחות עובדות, ומוודא ש-`SCHEMA.sql` ו-`lib/db.php` לא נפרדו |
+| [`tools/auth-check.php`](./tools/auth-check.php) | מריץ את שכבת החשבונות על מסד זמני |
 
-להרצת הבדיקה: `python3 recipes-app/tools/schema-check.py`
+## הרצת הבדיקות
+
+```bash
+python3 recipes-app/tools/schema-check.py
+php     recipes-app/tools/auth-check.php
+```
+
+שתיהן רצות על מסד בזיכרון או בתיקייה זמנית, ואינן נוגעות בנתונים האמיתיים.
+
+## נתונים בשרת
+
+`data/recipes.sqlite` ו-`data/media/` נוצרים בשרת ואינם בגיט. **שתי שורות
+ה-`--exclude` כבר נמצאות ב-`deploy.yml`**, והן נכנסו באותה דחיפה שבה נכתב
+`db.php` — לא אחריה. בלעדיהן פריסה מוחקת מתכונים ומדיה, ואין שחזור.
+
+ל-`data/` ול-`data/media/` יש `.htaccess` משלהן, והן שונות בכוונה: הראשונה
+חוסמת הכול, והשנייה מגישה תמונות וסרטונים אבל מונעת הרצת קוד — כי לשם
+מעלים קבצים אנשים שאינני מכיר.
 
 ## מצב נוכחי — שלד בלבד
 

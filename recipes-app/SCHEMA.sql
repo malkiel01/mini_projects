@@ -9,13 +9,17 @@
 --   PRAGMA journal_mode = WAL;     קוראים במקביל לכותב
 --   PRAGMA foreign_keys = ON;      בלעדיו כל ה-CASCADE שלמטה אינו קיים
 --   PRAGMA busy_timeout = 5000;    כותב שני ממתין ולא נכשל
+--
+-- AUTOINCREMENT על כל המפתחות: בלעדיו SQLite מחזיר מזהה שהתפנה, וכתובת
+-- של מתכון שנמחק הייתה מובילה למתכון חדש אחר. באתר שמשתפים ממנו קישורים
+-- זו תקלה שקטה, ולכן המזהים כאן לעולם אינם חוזרים.
 
 -- ═══════════════════════════════════════════════════════════
 -- משתמשים  (סעיף 2)
 -- ═══════════════════════════════════════════════════════════
 
 CREATE TABLE users (
-  id             INTEGER PRIMARY KEY,
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
   username       TEXT    NOT NULL UNIQUE,
   email          TEXT    NOT NULL UNIQUE,   -- נדרש: אימות ואיפוס סיסמה
   password_hash  TEXT    NOT NULL,          -- password_hash(PASSWORD_DEFAULT)
@@ -31,7 +35,7 @@ CREATE TABLE users (
 -- אסימונים חד־פעמיים: אימות דוא"ל ואיפוס סיסמה. שורה אחת לשני השימושים,
 -- כי המחזור זהה — נוצר, נשלח, נצרך פעם אחת, פג.
 CREATE TABLE user_tokens (
-  id         INTEGER PRIMARY KEY,
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   kind       TEXT    NOT NULL CHECK (kind IN ('verify_email','reset_password')),
   token_hash TEXT    NOT NULL UNIQUE,   -- נשמר כ-hash, לא כטקסט
@@ -46,7 +50,7 @@ CREATE INDEX idx_tokens_user ON user_tokens(user_id, kind);
 -- ═══════════════════════════════════════════════════════════
 
 CREATE TABLE recipes (
-  id             INTEGER PRIMARY KEY,
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
   owner_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   title          TEXT    NOT NULL,
   visibility     TEXT    NOT NULL DEFAULT 'private'
@@ -69,7 +73,7 @@ CREATE INDEX idx_recipes_difficulty ON recipes(difficulty);
 -- חלק = תת־מתכון (3.1). מתכון פשוט הוא שורה אחת עם name = NULL,
 -- והממשק אינו מציג לו חלוקה בכלל.
 CREATE TABLE sections (
-  id        INTEGER PRIMARY KEY,
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
   recipe_id INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
   name      TEXT,                -- NULL = החלק היחיד, בלי שם
   position  INTEGER NOT NULL
@@ -78,7 +82,7 @@ CREATE INDEX idx_sections_recipe ON sections(recipe_id, position);
 
 -- קטלוג מוצרים שגדל מעצמו (3.2). המפתח שרשימת הקניות מאחדת לפיו.
 CREATE TABLE products (
-  id           INTEGER PRIMARY KEY,
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
   name         TEXT NOT NULL UNIQUE,
   name_norm    TEXT NOT NULL,      -- מנורמל להשלמה אוטומטית ולחיפוש
   grams_per_cup REAL,              -- להצעת המרה (3.2). NULL = אין הצעה
@@ -90,7 +94,7 @@ CREATE INDEX idx_products_norm ON products(name_norm);
 -- amount/unit/product_id הם מה שהאפליקציה מחשבת בו. שכבה מחושבת
 -- חסרה היא מצב תקף — הרכיב פשוט לא משתתף בחישובים.
 CREATE TABLE ingredients (
-  id         INTEGER PRIMARY KEY,
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
   section_id INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
   free_text  TEXT    NOT NULL,     -- "2 כוסות", "קצת"
   amount_min REAL,                 -- טווח: "2-3 ביצים" (3.2)
@@ -105,7 +109,7 @@ CREATE INDEX idx_ingredients_section ON ingredients(section_id, position);
 CREATE INDEX idx_ingredients_product ON ingredients(product_id);
 
 CREATE TABLE steps (
-  id         INTEGER PRIMARY KEY,
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
   section_id INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
   position   INTEGER NOT NULL,
   text       TEXT    NOT NULL,
@@ -122,7 +126,7 @@ CREATE INDEX idx_steps_section ON steps(section_id, position);
 -- ההבדל היחיד הוא מי מאחסן: source='link' שומר URL, source='upload'
 -- שומר נתיב בתוך data/media/ ותופס נפח במקצב של המעלה.
 CREATE TABLE media (
-  id          INTEGER PRIMARY KEY,
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
   recipe_id   INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
   uploader_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   kind        TEXT    NOT NULL CHECK (kind IN ('image','video')),
@@ -142,7 +146,7 @@ CREATE INDEX idx_media_uploader ON media(uploader_id);
 
 -- הצירים הסגורים. המנהל מנהל אותם מתוך האפליקציה, ולכן הם שורות ולא קוד.
 CREATE TABLE tags (
-  id       INTEGER PRIMARY KEY,
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
   axis     TEXT    NOT NULL CHECK (axis IN ('topic','method','kosher',
                                             'suitable','cuisine')),
   name     TEXT    NOT NULL,
@@ -162,7 +166,7 @@ CREATE INDEX idx_recipe_tags_tag ON recipe_tags(tag_id);
 
 -- תג חופשי — פרטי למשתמש (4). לכן user_id כאן ולא בטבלת tags.
 CREATE TABLE user_tags (
-  id      INTEGER PRIMARY KEY,
+  id      INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name    TEXT    NOT NULL,
   UNIQUE (user_id, name)
@@ -182,7 +186,7 @@ CREATE TABLE recipe_user_tags (
 -- מחיקת המתכון לא אמורה למחוק את המועדף בשקט — המשתמש צריך לראות
 -- "הוסר על ידי הכותב". לכן ה-FK עם SET NULL ושדה כותרת־צל.
 CREATE TABLE favorites (
-  id             INTEGER PRIMARY KEY,
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   recipe_id      INTEGER REFERENCES recipes(id) ON DELETE SET NULL,
   title_snapshot TEXT    NOT NULL,   -- מה שיוצג כשהמקור נעלם
@@ -198,7 +202,7 @@ CREATE INDEX idx_favorites_user ON favorites(user_id);
 -- parent_id: שתי רמות בלבד (7) — תשובה חייבת parent_id שהוא NULL־parent.
 -- העומק נאכף בקוד; SQLite אינו מגביל עומק רקורסיה באילוץ.
 CREATE TABLE comments (
-  id         INTEGER PRIMARY KEY,
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
   recipe_id  INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
   user_id    INTEGER NOT NULL REFERENCES users(id)   ON DELETE CASCADE,
   parent_id  INTEGER REFERENCES comments(id) ON DELETE CASCADE,
@@ -220,7 +224,7 @@ CREATE INDEX idx_comments_user   ON comments(user_id, visibility);
 -- ═══════════════════════════════════════════════════════════
 
 CREATE TABLE shopping_lists (
-  id         INTEGER PRIMARY KEY,
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name       TEXT,
   created_at TEXT    NOT NULL
@@ -238,7 +242,7 @@ CREATE TABLE shopping_list_recipes (
 -- נקנה, ומתכון שנערך בינתיים לא אמור לשנות רשימה שהוא כבר בסופר איתה.
 -- amount ו-unit הם NULL בשורה שלא ניתנה לאיחוד — היא מוצגת מ-free_text.
 CREATE TABLE shopping_list_items (
-  id         INTEGER PRIMARY KEY,
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
   list_id    INTEGER NOT NULL REFERENCES shopping_lists(id) ON DELETE CASCADE,
   product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
   label      TEXT    NOT NULL,     -- שם המוצר, או שורה ידנית

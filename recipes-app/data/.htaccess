@@ -1,0 +1,11 @@
+# חסימת גישה ישירה: recipes.sqlite מכיל את כל המשתמשים, הסיסמאות
+# (כ-hash) והמתכונים הפרטיים. הכול מוגש רק דרך api.php.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>
+
+# media/ כן מוגשת לדפדפן — ההגדרה שלה בתיקייה עצמה.
