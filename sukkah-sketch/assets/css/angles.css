@@ -1,0 +1,15 @@
+/* מצגת הזוויות — תוספות מעל parts.css. הצבעים והמבנה זהים למצגת החלקים. */
+svg .sq{stroke:var(--ink);stroke-width:.35;stroke-dasharray:1.2 .8;fill:none}          /* איפה היה חיתוך ישר */
+svg .arc{fill:none;stroke:var(--accent);stroke-width:.45}                                /* קשת הזווית */
+svg .miter{stroke:#ff9d00;stroke-width:1.1}                                              /* קו המיטר בפינה */
+svg .ghost{fill:var(--line);fill-opacity:.55;stroke:var(--mute);stroke-width:.3}         /* קורה שכנה, להקשר */
+svg .post-ghost{fill:none;stroke:var(--post);stroke-width:.45;stroke-dasharray:1 .7}     /* עמוד מתחת למסגרת העליונה */
+svg .ang{fill:var(--accent);font-weight:700}
+.two .fig.notch{margin-top:0}
+.two.maps{grid-template-columns:1fr}                                                    /* מפת הזוויות: שתי התוכניות זו מתחת לזו, ברוחב מלא */
+.two.maps .fig svg{max-width:1100px;margin:0 auto}
+@media print{
+  svg .arc{stroke-width:.5}
+  .two .fig svg{max-height:70mm}
+  .two.maps .fig svg{max-height:96mm;width:auto;max-width:100%}
+}
