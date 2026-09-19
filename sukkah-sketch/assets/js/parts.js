@@ -191,6 +191,80 @@ function plySVG(){
   s.appendChild(txt(sx(K.WLEN)-10,-28,'← צפון','lbl-s','middle',10));s.appendChild(txt(sx(0)+10,-28,'דרום →','lbl-s','middle',10));
   return s;}
 
+/* ---------- מאתרים: איפה החלק יושב בסוכה ----------
+   איזומטרי: כל השלד בקו, החלק המבוקש מודגש. הקיר מאחור, הצד הפתוח (מזרח) לפנים,
+   צפון לשמאל — כמו בתוכניות. סרגל גבהים בצד: רצפה, 70, 280. */
+function isoPt(x,y,z){return [(y-x)*.866,(x+y)*.5-z];}   // x צפונה, y מזרחה, z למעלה
+function isoSVG(hl){   // hl = {beam:id} או {post:key}
+  var Z=K.Z_TOP,W=K.WID,L=K.WLEN,s=svg(0,0,1,1),bb=[1e9,1e9,-1e9,-1e9];
+  var bump=function(q){bb[0]=Math.min(bb[0],q[0]);bb[1]=Math.min(bb[1],q[1]);bb[2]=Math.max(bb[2],q[0]);bb[3]=Math.max(bb[3],q[1]);};
+  var P3=function(pts,z){return pts.map(function(p){var q=isoPt(p[0],p[1],z);bump(q);return q;});};
+  var seg=function(a,b,cls,w){var A=isoPt(a[0],a[1],a[2]),B=isoPt(b[0],b[1],b[2]);bump(A);bump(B);var l=line(A[0],A[1],B[0],B[1],cls);if(w)l.setAttribute('stroke-width',w);return l;};
+  // הקיר: לוח שקוף, ראשו מעל הסוכה
+  var wp=M.wall.pts;s.appendChild(poly(P3([wp[3],wp[2]],0).concat(P3([wp[2],wp[3]],K.WALL_H)),'iso-wall'));
+  s.appendChild(poly(P3(M.P,0),'iso-floor'));
+  // עמודים
+  M.posts.forEach(function(p){var on=hl.post===p.key;s.appendChild(seg([p.x,p.y,0],[p.x,p.y,p.h],on?'iso-hl':'iso-post',on?5:2.2));});
+  // קורות: מפלס 70 לפני העליון
+  var draw=function(b){var on=hl.beam===b.id,c=b.pts,n=c.length;var mid=function(i,j){return [(c[i][0]+c[j][0])/2,(c[i][1]+c[j][1])/2];};
+    var A=b.axis[0],B=b.axis[1],z=(b.z0+b.z1)/2;s.appendChild(seg([A[0],A[1],z],[B[0],B[1],z],on?'iso-hl':'iso-'+b.level,on?6:(b.level==='low'?2.2:3)));};
+  M.beams.filter(function(b){return b.level==='low';}).forEach(draw);
+  M.beams.filter(function(b){return b.level!=='low';}).forEach(draw);
+  // סרגל גבהים ליד הפינה הצפון-מזרחית הקדמית
+  var cx=L+40,cy=W+40;[[0,'רצפה 0'],[K.Z_LOW,'מפלס 70'],[K.Z_TOP,'מסגרת עליונה 280']].forEach(function(t){
+    var p0=isoPt(cx,cy,t[0]);bump([p0[0]+150,p0[1]]);s.appendChild(line(p0[0]-8,p0[1],p0[0]+8,p0[1],'dim'));s.appendChild(txt(p0[0]+14,p0[1],t[1],'lbl','end',30));});
+  var b0=isoPt(cx,cy,0),b1=isoPt(cx,cy,K.Z_TOP);s.appendChild(line(b0[0],b0[1],b1[0],b1[1],'axis'));
+  // מצפן בפינה הדרום-מזרחית
+  var o=[-110,W+60],O=isoPt(o[0],o[1],0),len=100;
+  [[1,0,'צפון'],[-1,0,'דרום'],[0,1,'מזרח'],[0,-1,'מערב (הקיר)']].forEach(function(d){var e=isoPt(o[0]+d[0]*len,o[1]+d[1]*len,0);
+    s.appendChild(line(O[0],O[1],e[0],e[1],'compass'));var tq=[e[0]+(e[0]-O[0])*.45,e[1]+(e[1]-O[1])*.45];bump([tq[0]-60,tq[1]-16]);bump([tq[0]+60,tq[1]+16]);s.appendChild(txt(tq[0],tq[1],d[2],'lbl-b','middle',28));});
+  s.setAttribute('viewBox',f1(bb[0]-20)+' '+f1(bb[1]-20)+' '+f1(bb[2]-bb[0]+40)+' '+f1(bb[3]-bb[1]+40));
+  return s;}
+function planLocatorSVG(b){   // תוכנית: הקורה מודגשת, חץ מקצה א׳ לקצה ב׳, מצפן
+  var W=K.WLEN,H=K.WID,sx=function(x){return W-x;},sy=function(y){return H-y;};
+  var tp=function(pts){return pts.map(function(p){return [sx(p[0]),sy(p[1])];});};
+  var s=svg(-60,-60,W+120,H+K.WALL_T+110);
+  s.appendChild(poly(tp(M.wall.pts),'wall'));s.appendChild(poly(tp(M.P),'outline'));
+  M.beams.filter(function(x){return x.level===b.level||(b.level==='cross'&&x.level==='top');}).forEach(function(x){if(x.id!==b.id)s.appendChild(poly(tp(x.pts),'iso-dim'));});
+  M.posts.forEach(function(p){s.appendChild(poly(tp(p.pts),'post'));});
+  s.appendChild(poly(tp(b.pts),'hl'));
+  var A=b.axis[0],B=b.axis[1],a=[sx(A[0]),sy(A[1])],e=[sx(B[0]),sy(B[1])],dx=e[0]-a[0],dy=e[1]-a[1],l=Math.hypot(dx,dy),ux=dx/l,uy=dy/l;
+  var off=[-uy*22,ux*22],cc=centroid(tp(M.P));if(((a[0]+e[0])/2+off[0]-cc[0])*off[0]+((a[1]+e[1])/2+off[1]-cc[1])*off[1]<0)off=[-off[0],-off[1]];
+  var a2=[a[0]+off[0],a[1]+off[1]],e2=[e[0]+off[0],e[1]+off[1]];
+  s.appendChild(line(a2[0],a2[1],e2[0]-ux*14,e2[1]-uy*14,'arrow'));
+  s.appendChild(poly([[e2[0],e2[1]],[e2[0]-ux*16-uy*7,e2[1]-uy*16+ux*7],[e2[0]-ux*16+uy*7,e2[1]-uy*16-ux*7]],'arrow-head'));
+  s.appendChild(txt(a2[0]-ux*16,a2[1]-uy*16,'א׳','lbl-b','middle',20));s.appendChild(txt(e2[0]+ux*18,e2[1]+uy*18,'ב׳','lbl-b','middle',20));
+  s.appendChild(txt(sx(K.WALL/2),sy(-K.WALL_T)+14,'הקיר המערבי','lbl-s','middle',13));
+  s.appendChild(txt(sx(K.WLEN)-20,-40,'← צפון','lbl','middle',15));s.appendChild(txt(sx(0)+20,-40,'דרום →','lbl','middle',15));
+  s.appendChild(txt(sx(K.WLEN/2),-40,'מזרח ↑ (הצד הפתוח)','lbl-s','middle',13));
+  return s;}
+function planLocatorPost(p){
+  var W=K.WLEN,H=K.WID,sx=function(x){return W-x;},sy=function(y){return H-y;};
+  var tp=function(pts){return pts.map(function(q){return [sx(q[0]),sy(q[1])];});};
+  var s=svg(-60,-60,W+120,H+K.WALL_T+110);
+  s.appendChild(poly(tp(M.wall.pts),'wall'));s.appendChild(poly(tp(M.P),'outline'));
+  var mine={};p.joints.forEach(function(j){mine[j.beamId]=1;});
+  M.beams.filter(function(b){return b.level!=='low';}).forEach(function(b){s.appendChild(poly(tp(b.pts),mine[b.id]?'hl':'iso-dim'));});
+  M.posts.forEach(function(q){s.appendChild(poly(tp(q.pts),'post'));});
+  s.appendChild(el('circle',{cx:sx(p.x),cy:sy(p.y),r:22,'class':'hl-ring'}));
+  s.appendChild(txt(sx(p.x),sy(p.y)-34,'עמוד '+p.key,'lbl-b','middle',20));
+  s.appendChild(txt(sx(K.WALL/2),sy(-K.WALL_T)+14,'הקיר המערבי','lbl-s','middle',13));
+  s.appendChild(txt(sx(K.WLEN)-20,-40,'← צפון','lbl','middle',15));s.appendChild(txt(sx(0)+20,-40,'דרום →','lbl','middle',15));
+  s.appendChild(txt(sx(K.WLEN/2),-40,'מזרח ↑ (הצד הפתוח)','lbl-s','middle',13));
+  return s;}
+// שורת מאתר לראש השקופית: תג קומה, איזומטרי, ותוכנית
+var levelTag={top:['lvl-top','קומה עליונה · מסגרת עליונה · גובה '+f1(K.Z_TOP-TH)+'–'+f1(K.Z_TOP)],
+              cross:['lvl-top','קומה עליונה · קורה תומכת · גובה '+f1(K.Z_TOP-TH)+'–'+f1(K.Z_TOP)],
+              low:['lvl-low','קומה תחתונה · מפלס 70 · גובה '+f1(K.Z_LOW-TH)+'–'+f1(K.Z_LOW)],
+              post:['lvl-post','עמוד · מהרצפה עד '+f1(K.Z_TOP-TH)+' — נושא את שתי הקומות']};
+function locatorRow(sec,kind,b,p){
+  var t=levelTag[kind],row=document.createElement('div');row.className='locator';
+  var tag=document.createElement('div');tag.className='lvl '+t[0];tag.textContent=t[1];sec.querySelector('h2').appendChild(tag);
+  fig(row,isoSVG(b?{beam:b.id}:{post:p.key}),'איפה בסוכה: מבט תלת־ממדי, החלק בכתום. הקיר מאחור, מזרח לפנים, צפון לשמאל.');
+  if(b)fig(row,planLocatorSVG(b),'תוכנית: הקורה בכתום, החץ מקצה א׳ לקצה ב׳.');
+  else fig(row,planLocatorPost(p),'תוכנית: העמוד בעיגול, והקורות העליונות שיושבות עליו בכתום.');
+  sec.appendChild(row);}
+
 /* ---------- השקופיות ---------- */
 var deck=document.getElementById('deck'),slides=[];
 function slide(title,sub,build){var sec=document.createElement('section');sec.className='slide';
@@ -224,6 +298,7 @@ slide('סוכה למרפסת — החלקים','שלד 1:1 · כל מספר כא
 /* 2. מוסכמות */
 slide('איך לקרוא את המצגת','מוסכמות ומקרא',function(sec){
   html(sec,'<div class="grid"><div>'+
+   '<div class="card"><h3>שתי קומות</h3><span class="lvl lvl-top">קומה עליונה</span> המסגרת העליונה (ע) והתומכות (ק) — בגובה '+f1(K.Z_TOP-TH)+'–'+f1(K.Z_TOP)+', יושבות <b>על</b> ראשי העמודים. <span class="lvl lvl-low">קומה תחתונה</span> מפלס 70 (ת) — בגובה '+f1(K.Z_LOW-TH)+'–'+f1(K.Z_LOW)+', עובר <b>בין</b> העמודים. בכל שקופית התג בכותרת אומר באיזו קומה אתה, והציור התלת־ממדי מראה איפה.</div>'+
    '<div class="card"><h3>צירים</h3>“מדרום” = מרחק מהפינה הדרומית לאורך הקיר. “מפני הקיר” = מרחק מהקיר המערבי החוצה. גבהים מהרצפה. בתוכניות הצפון משמאל והקיר למטה — כמו בשרטוט התלת־ממדי.</div>'+
    '<div class="card"><h3>שמות</h3><span class="tag t-top">ע1–ע6</span> מסגרת עליונה, לפי הסדר דרום → אלכסון → מזרח → אלכסון → צפון → מערב פתוח. <span class="tag t-low">ת1–ת6</span> מפלס 70, אותו סדר; קורה שעוברת עמוד ביניים מתפצלת לקטעים (ת3.1, ת3.2). <span class="tag t-cross">ק1–ק3</span> תומכות. <span class="tag t-joint">·א ·ב ·ג</span> קצות הקורה — אותו שם על השרוול ועל השן.</div>'+
    '<div class="card"><h3>קצה א׳ וקצה ב׳</h3>בכל קורה קצה א׳ הוא הראשון בסדר ההיקף (במסגרות) או הקצה המזרחי (בתומכות). בשרטוט הקורה קצה א׳ מימין.</div>'+
@@ -234,10 +309,12 @@ slide('איך לקרוא את המצגת','מוסכמות ומקרא',function(s
 });
 
 /* 3–4. תוכניות */
-slide('תוכנית — מסגרת עליונה וקורות תומכות','גובה 276–280 · על העמודים',function(sec){
+slide('תוכנית — מסגרת עליונה וקורות תומכות','על העמודים',function(sec){
+  var tg=document.createElement('div');tg.className='lvl lvl-top';tg.textContent=levelTag.top[1];sec.querySelector('h2').appendChild(tg);
   fig(sec,planSVG('top'),'ליד כל קורה: שמה ואורך החוץ שלה. הריבועים הכחולים — עמודים; החומים — שרוולים; האפורים — פלטות בקיר.');
 });
-slide('תוכנית — מפלס 70','גובה 66–70 · בין העמודים',function(sec){
+slide('תוכנית — מפלס 70','בין העמודים',function(sec){
+  var tg=document.createElement('div');tg.className='lvl lvl-low';tg.textContent=levelTag.low[1];sec.querySelector('h2').appendChild(tg);
   fig(sec,planSVG('low'),'הקורות נגמרות על פני העמודים, ולכן קצרות מהמסגרת העליונה. עמוד ביניים מפצל קורה לשני קטעים, כל אחד עם שרוול משלו.');
 });
 slide('חתך גבהים','מה יושב על מה',function(sec){
@@ -250,7 +327,8 @@ slide('חתך גבהים','מה יושב על מה',function(sec){
 
 /* 6. קורות — שקופית לכל קורה */
 function beamSlide(b){
-  slide(b.name,levelName[b.level]+' · כמות 1',function(sec){
+  slide(b.name,'כמות 1',function(sec){
+    locatorRow(sec,b.level,b);
     var g=grid(sec);
     var left=document.createElement('div');
     fig(left,beamSVG(b),'מבט־על בקנה מידה אמיתי, קצה א׳ מימין. אורכי שתי הצלעות כשהן שונות (מיטר).');
@@ -274,7 +352,8 @@ function beamSlide(b){
     side.innerHTML=(howto?howto:'')+rows;g.appendChild(side);
   });
   [0,1].forEach(function(end){if(b.cuts[end].kind!=='notch')return;
-    slide(b.id+' — חיתוך הקצה המפוצל',(end?'קצה ב׳':'קצה א׳')+' · '+levelName[b.level],function(sec){
+    slide(b.id+' — חיתוך הקצה המפוצל',(end?'קצה ב׳':'קצה א׳'),function(sec){
+      locatorRow(sec,b.level,b);
       var g=grid(sec);
       fig(g,notchDetail(b,end),'פרט חיתוך מוגדל, מבט־על. מקווקו — פני שתי הקורות שהקצה יושב עליהן; הנסיגה נמדדת על הדופן החיצונית מהקצה; הקשת — הזווית מהחיתוך הישר.').classList.add('notch');
       var side=document.createElement('div');side.innerHTML=notchHowTo(b,end);g.appendChild(side);
@@ -287,7 +366,8 @@ topB.forEach(beamSlide);crossB.forEach(beamSlide);lowB.forEach(beamSlide);
 
 /* 7. עמודים — שקופית לכל עמוד: איפה בדיוק מרתכים כל שרוול */
 M.posts.forEach(function(p){
-  slide('עמוד '+p.key+' — '+p.name,f1(p.x)+' מדרום · '+f1(p.y)+' מפני הקיר · גובה '+f1(p.h),function(sec){
+  slide('עמוד '+p.key+' — '+p.name,f1(p.x)+' מדרום · '+f1(p.y)+' מפני הקיר',function(sec){
+    locatorRow(sec,'post',null,p);
     var g=grid(sec);
     var left=document.createElement('div'),two=document.createElement('div');two.className='two';
     fig(two,postPlanSVG(p),'מבט־על: העמוד באמצע, השרוולים סביבו. שרוול מסובב = פינת אלכסון.').classList.add('plan');
