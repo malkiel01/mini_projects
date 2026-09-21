@@ -65,6 +65,7 @@ check() {  # check <label> <haystack> <needle>
 echo
 echo "1. אורח"
 check 'me מחזיר success עם user=null' "$(call me)" '"user":null'
+check 'me מדווח את גרסת הנכסים שבשרת'  "$(call me)" '"assets_version":"[0-9]\{4\}-[0-9][0-9]-[0-9][0-9][a-z]*"'
 
 echo
 echo "2. הרשמה — הראשון הוא המנהל, ומאומת מראש"

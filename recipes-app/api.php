@@ -64,6 +64,12 @@ function str_field(array $in, string $key, int $max): string {
     return mb_substr(trim($v), 0, $max);
 }
 
+/** ה-?v= של app.js כפי שכתוב ב-index.html שבשרת — הדפדפן משווה לשלו. */
+function assetsVersion(): string {
+    $html = @file_get_contents(__DIR__ . '/index.html') ?: '';
+    return preg_match('/app\.js\?v=([^"\']+)/', $html, $m) ? $m[1] : '';
+}
+
 $in     = body();
 $action = $_GET['action'] ?? (is_string($in['action'] ?? null) ? $in['action'] : '');
 
@@ -92,7 +98,7 @@ try {
             'display_name' => $user['display_name'],
             'role'         => $user['role'],
             'is_developer' => isDeveloper($user),
-        ] : null]);
+        ] : null, 'assets_version' => assetsVersion()]);
 
     case 'register': {
         $res = createUser(

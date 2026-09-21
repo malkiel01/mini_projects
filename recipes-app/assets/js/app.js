@@ -34,6 +34,23 @@ const clientLog = (message, where) => {
 window.addEventListener('error', (e) => clientLog(e.message, `${e.filename || ''}:${e.lineno || 0}`));
 window.addEventListener('unhandledrejection', (e) => clientLog(e.reason?.message || e.reason, 'promise'));
 
+// הגרסה של הקוד הזה — מה-?v= שבו נטען. השרת מדווח ב-me מה הגרסה
+// שבשרת; כשהן שונות, הטאב הזה ישן (טלפון שמחזיק טאב פתוח ימים) ומוצגת
+// שורה "יש גרסה חדשה". בלי זה המשתמש רואה באגים שכבר תוקנו.
+const MY_VERSION = new URL(import.meta.url).searchParams.get('v') || '';
+function checkVersion(serverVersion) {
+  if (!serverVersion || !MY_VERSION || serverVersion === MY_VERSION) return;
+  if ($('#stale')) return;
+  const bar = document.createElement('div');
+  bar.id = 'stale'; bar.className = 'stale';
+  bar.innerHTML = '<span>יש גרסה חדשה של האפליקציה.</span> <button class="btn btn--primary" type="button">רענן</button>';
+  bar.querySelector('button').addEventListener('click', () => location.reload());
+  document.body.prepend(bar);
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') api('me').then((r) => checkVersion(r.assets_version)).catch(() => {});
+});
+
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
 ));
@@ -575,6 +592,47 @@ async function renderFavorites() {
 
 // ───────────────────────── עורך ─────────────────────────
 
+/**
+ * גרירה לשינוי סדר בתוך container, על השורות שתואמות rowSel, מהידית
+ * [data-handle]. בסיום נקרא onDrop עם סדר האינדקסים המקוריים (מ-data-<key>).
+ * הדפדפן לא גולל תוך כדי (touch-action: none על הידית ב-CSS).
+ */
+function makeSortable(container, rowSel, onDrop, key) {
+  $$(`${rowSel} > * [data-handle], ${rowSel} > [data-handle]`, container).forEach((handle) => {
+    const row = handle.closest(rowSel);
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.button !== undefined && e.button !== 0) return;
+      e.preventDefault();
+      handle.setPointerCapture(e.pointerId);
+      row.classList.add('is-dragging');
+      const rows = () => $$(rowSel, container).filter((r) => r.dataset.si === row.dataset.si);
+      const move = (ev) => {
+        const y = ev.clientY;
+        for (const other of rows()) {
+          if (other === row) continue;
+          const b = other.getBoundingClientRect();
+          const mid = b.top + b.height / 2;
+          const before = row.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING;
+          if (before && y > mid) other.after(row);
+          else if (!before && y < mid) other.before(row);
+        }
+      };
+      const up = () => {
+        handle.removeEventListener('pointermove', move);
+        handle.removeEventListener('pointerup', up);
+        handle.removeEventListener('pointercancel', up);
+        row.classList.remove('is-dragging');
+        const order = rows().map((r) => +r.dataset[key]);
+        const changed = order.some((v, i) => v !== i);
+        if (changed) onDrop(order);
+      };
+      handle.addEventListener('pointermove', move);
+      handle.addEventListener('pointerup', up);
+      handle.addEventListener('pointercancel', up);
+    });
+  });
+}
+
 const emptyIng = () => ({ free_text: '', amount_min: '', amount_max: '', unit: '', product: '', optional: false });
 const emptySection = () => ({ name: '', ingredients: [emptyIng()], steps: [''] });
 
@@ -627,13 +685,20 @@ async function renderEditor(id) {
             <div class="part part--edit" data-si="${si}">
               ${multi ? `<div class="part__head">
                 <input name="sname" data-si="${si}" placeholder="שם החלק (בצק, מלית…)" value="${esc(s.name)}">
+                <button class="btn btn--ghost btn--tiny" type="button" data-move-section="${si}:-1" title="למעלה" ${si === 0 ? 'disabled' : ''}>▲</button>
+                <button class="btn btn--ghost btn--tiny" type="button" data-move-section="${si}:1" title="למטה" ${si === model.sections.length - 1 ? 'disabled' : ''}>▼</button>
                 <button class="btn btn--ghost btn--danger" type="button" data-del-section="${si}" title="הסר חלק">✕</button>
               </div>` : ''}
 
               <h4>רכיבים</h4>
               ${s.ingredients.map((ing, ii) => `
                 <div class="ing-row" data-si="${si}" data-ii="${ii}">
-                  <input class="ing-free" placeholder="כפי שקוראים: 2 כוסות קמח" value="${esc(ing.free_text)}" data-f="free_text">
+                  <div class="row-tools">
+                    <span class="drag-handle" data-handle title="גרור לשינוי הסדר" aria-label="גרור לשינוי הסדר">⋮⋮</span>
+                    <button class="btn btn--ghost btn--tiny" type="button" data-move-ing="${si}:${ii}:-1" title="למעלה" ${ii === 0 ? 'disabled' : ''}>▲</button>
+                    <button class="btn btn--ghost btn--tiny" type="button" data-move-ing="${si}:${ii}:1" title="למטה" ${ii === s.ingredients.length - 1 ? 'disabled' : ''}>▼</button>
+                    <input class="ing-free" placeholder="כפי שקוראים: 2 כוסות קמח" value="${esc(ing.free_text)}" data-f="free_text">
+                  </div>
                   <div class="ing-calc">
                     <input type="number" step="any" min="0" placeholder="כמות" inputmode="decimal" value="${esc(ing.amount_min)}" data-f="amount_min">
                     <input type="number" step="any" min="0" placeholder="עד" inputmode="decimal" value="${esc(ing.amount_max)}" data-f="amount_max">
@@ -651,9 +716,16 @@ async function renderEditor(id) {
               <h4>שלבים</h4>
               ${s.steps.map((st, ki) => `
                 <div class="step-row" data-si="${si}" data-ki="${ki}">
-                  <span class="step-no">${ki + 1}</span>
+                  <div class="step-side">
+                    <span class="drag-handle" data-handle title="גרור לשינוי הסדר" aria-label="גרור לשינוי הסדר">⋮⋮</span>
+                    <span class="step-no">${ki + 1}</span>
+                  </div>
                   <textarea rows="2" placeholder="מה עושים בשלב הזה" data-f="step">${esc(st)}</textarea>
-                  <button class="btn btn--ghost btn--danger" type="button" data-del-step="${si}:${ki}" title="הסר">✕</button>
+                  <div class="step-side">
+                    <button class="btn btn--ghost btn--tiny" type="button" data-move-step="${si}:${ki}:-1" title="למעלה" ${ki === 0 ? 'disabled' : ''}>▲</button>
+                    <button class="btn btn--ghost btn--tiny" type="button" data-move-step="${si}:${ki}:1" title="למטה" ${ki === s.steps.length - 1 ? 'disabled' : ''}>▼</button>
+                    <button class="btn btn--ghost btn--danger" type="button" data-del-step="${si}:${ki}" title="הסר">✕</button>
+                  </div>
                 </div>`).join('')}
               <button class="btn btn--ghost" type="button" data-add-step="${si}">+ שלב</button>
             </div>`).join('')}
@@ -737,6 +809,36 @@ async function renderEditor(id) {
       const [si, ki] = b.dataset.delStep.split(':').map(Number);
       collect(); model.sections[si].steps.splice(ki, 1); draw();
     }));
+
+    // ── סדר: חצים (נגישים, עובדים בכל מקום) וגרירה בידית (עכבר ואצבע) ──
+    const moveIn = (arr, from, to) => { const [x] = arr.splice(from, 1); arr.splice(to, 0, x); };
+    $$('[data-move-ing]', f).forEach((b) => b.addEventListener('click', () => {
+      const [si, ii, d] = b.dataset.moveIng.split(':').map(Number);
+      collect(); moveIn(model.sections[si].ingredients, ii, ii + d); draw();
+      $(`.ing-row[data-si="${si}"][data-ii="${ii + d}"] .ing-free`)?.focus();
+    }));
+    $$('[data-move-step]', f).forEach((b) => b.addEventListener('click', () => {
+      const [si, ki, d] = b.dataset.moveStep.split(':').map(Number);
+      collect(); moveIn(model.sections[si].steps, ki, ki + d); draw();
+      $(`.step-row[data-si="${si}"][data-ki="${ki + d}"] textarea`)?.focus();
+    }));
+    $$('[data-move-section]', f).forEach((b) => b.addEventListener('click', () => {
+      const [si, d] = b.dataset.moveSection.split(':').map(Number);
+      collect(); moveIn(model.sections, si, si + d); draw();
+    }));
+    // גרירה: הידית תופסת את המצביע, השורה זזה ב-DOM תוך כדי, ובשחרור
+    // הסדר נקרא מה-DOM (לפי data-ii/data-ki המקוריים) אל המודל. Pointer
+    // Events ולא HTML5 drag-and-drop — כי האחרון לא עובד במגע.
+    $$('.part--edit', f).forEach((part) => {
+      makeSortable(part, '.ing-row', (order) => {
+        collect(); const sec = model.sections[+part.dataset.si];
+        sec.ingredients = order.map((i) => sec.ingredients[i]); draw();
+      }, 'ii');
+      makeSortable(part, '.step-row', (order) => {
+        collect(); const sec = model.sections[+part.dataset.si];
+        sec.steps = order.map((i) => sec.steps[i]); draw();
+      }, 'ki');
+    });
 
     if (editId) renderMediaEdit(editId);
 
@@ -1292,5 +1394,5 @@ async function renderDiag() {
 // ───────────────────────── טעינה ─────────────────────────
 
 api('me')
-  .then(({ user }) => { setUser(user); if (user) route(); })
+  .then(({ user, assets_version }) => { setUser(user); checkVersion(assets_version); if (user) route(); })
   .catch(() => { setUser(null); say('לא הצלחתי להגיע לשרת. יש לרענן את הדף.', 'err'); });

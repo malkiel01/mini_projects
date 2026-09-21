@@ -567,3 +567,32 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
   .logtable td:nth-child(6):not(:empty)::after { content: " ms"; color: var(--muted); }
   .logtable-wrap { overflow: visible; margin-inline: 0; padding-inline: 0; }
 }
+
+/* ───────── סדר בעורך: ידית גרירה וחצים ───────── */
+
+.row-tools { display: flex; align-items: center; gap: 4px; }
+.row-tools .ing-free { flex: 1; min-width: 0; }
+.drag-handle {
+  flex: none; width: 32px; min-height: 40px;
+  display: grid; place-items: center;
+  color: var(--muted); font-size: 1rem; letter-spacing: -2px;
+  cursor: grab; user-select: none; -webkit-user-select: none;
+  touch-action: none;                 /* הגרירה במקום גלילת הדף */
+  border-radius: 6px;
+}
+.drag-handle:active { cursor: grabbing; background: var(--line); }
+.btn--tiny { min-width: 32px; min-height: 32px; padding: 0 6px; font-size: 0.8rem; }
+.btn--tiny:disabled { opacity: .3; cursor: default; }
+.ing-row.is-dragging, .step-row.is-dragging { opacity: .6; outline: 2px dashed var(--accent); outline-offset: 2px; }
+.step-side { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: none; }
+.step-side .step-no { margin-top: 0; }
+.step-side .btn--danger { margin-top: 0; }
+.part__head .btn--tiny { flex: none; }
+
+/* גרסה ישנה בטאב פתוח */
+.stale {
+  position: sticky; top: 0; z-index: 30;
+  display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 16px; background: #fff4d6; color: #5a4300; border-bottom: 1px solid #e6c874;
+  font-size: 0.95rem;
+}
