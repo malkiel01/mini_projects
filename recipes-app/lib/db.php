@@ -68,6 +68,8 @@ function migrate(PDO $pdo): void {
             storage_used   INTEGER NOT NULL DEFAULT 0,
             limit_video_bytes INTEGER,   -- NULL = יורש מההגדרה הציבורית
             limit_quota_bytes INTEGER,   -- NULL = יורש מההגדרה הציבורית
+            last_mail_at   TEXT,         -- מתי נשלח לאחרונה דוא״ל למשתמש
+            last_mail_ok   INTEGER,      -- האם ה-MTA קיבל אותו. NULL = לא נשלח
             created_at     TEXT    NOT NULL
         );
 
@@ -260,6 +262,8 @@ function migrate(PDO $pdo): void {
     seedTags($pdo);
     addColumnIfMissing($pdo, 'users', 'limit_video_bytes', 'INTEGER');
     addColumnIfMissing($pdo, 'users', 'limit_quota_bytes', 'INTEGER');
+    addColumnIfMissing($pdo, 'users', 'last_mail_at', 'TEXT');
+    addColumnIfMissing($pdo, 'users', 'last_mail_ok', 'INTEGER');
 
     // ריפוי חד־כיווני: מנהל שנוצר לפני שהמשתמש הראשון אומת אוטומטית.
     // בלי זה, אם mail() לא פעל בשרת, המנהל היחיד נעול בחוץ לתמיד.

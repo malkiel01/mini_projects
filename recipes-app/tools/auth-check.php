@@ -16,8 +16,10 @@ $tmp = sys_get_temp_dir() . '/recipes-check-' . getmypid();
 define('DB_FILE', $tmp . '/t.sqlite');
 define('MEDIA_DIR', $tmp . '/media');
 
-// בסביבת הבדיקה אין MTA, ולא אמור להיות. מפנים את sendmail
-// ל-true כדי שהפלט יישאר נקי — ומסלול הכשל של mail() נבדק בסעיף 11.
+// בסביבת הבדיקה אין MTA, ולא אמור להיות. sendmail_path הוא PHP_INI_SYSTEM,
+// ולכן ini_set כאן אינו משנה אותו: mail() תיכשל, וזה בסדר — הבדיקות
+// מוכיחות שהתוצאה (כשל או הצלחה) **נרשמת**, לא שהיא הצלחה. הריצה שבה
+// ה-MTA "מקבל" (דרך -d sendmail_path=/bin/true) היא ב-api-check.sh.
 @ini_set('sendmail_path', '/bin/true');
 
 require_once __DIR__ . '/../lib/auth.php';
@@ -125,6 +127,23 @@ check('mail_sent מדווח false ולא מתיימר', $third['mail_sent'], fal
 check('והחשבון נשאר לא מאומת',
       (int) db()->query("SELECT email_verified FROM users WHERE username='third'")->fetch()['email_verified'], 0);
 @ini_set('sendmail_path', '/bin/true');
+
+echo "\n12. שליחה חוזרת של דוא\"ל האימות\n";
+$fourth = createUser('fourth', 'f@example.com', 'sod12345');
+$row = fn() => db()->query("SELECT last_mail_at, last_mail_ok FROM users WHERE username='fourth'")->fetch();
+check('ההרשמה רשמה את תוצאת ה-MTA (ולא השאירה NULL)', (int) $row()['last_mail_ok'], (int) $fourth['mail_sent']);
+check('ומתי', $row()['last_mail_at'] !== null, true);
+check('מיד אחרי ההרשמה — קירור, לא נשלח', resendVerification('fourth'), null);
+db()->exec("UPDATE users SET last_mail_at = '2000-01-01T00:00:00+00:00', last_mail_ok = NULL WHERE username='fourth'");
+$again = resendVerification('f@example.com');
+check('אחרי הקירור — נשלח (bool, לא null)', is_bool($again), true);
+check('והתוצאה נרשמה', (int) $row()['last_mail_ok'], (int) $again);
+check('והזמן התעדכן', $row()['last_mail_at'] > '2001', true);
+check('משתמש שאינו קיים — null, בלי שגיאה', resendVerification('nobody'), null);
+check('משתמש מאומת — null', resendVerification('mali'), null);
+$tok = db()->query("SELECT COUNT(*) FROM user_tokens WHERE user_id = {$fourth['id']} AND kind='verify_email' AND used_at IS NULL")->fetchColumn();
+check('רק אסימון אחד פתוח — הקישור הישן מהרשמה בוטל', (int) $tok, 1);
+expectError('ואסימון ההרשמה הישן נדחה', fn() => consumeToken($GLOBALS['fourth']['token'], 'verify_email'), 'כבר נוצל');
 
 echo "\n11. חסימה בידי המנהל\n";
 db()->exec("UPDATE users SET blocked = 1 WHERE username = 'mali'");

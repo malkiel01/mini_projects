@@ -37,16 +37,25 @@ function appBaseUrl(): string {
 function sendMail(string $to, string $subject, string $body): bool {
     if (!function_exists('mail')) return false;
 
+    $from = mailFrom();
     $headers = implode("\r\n", [
-        'From: ' . mailFrom(),
+        // שם תצוגה מקודד + כתובת על הדומיין שלנו. ספקים כמו Gmail מסננים
+        // הודעה שה-From שלה לא מיושר עם הדומיין ששלח אותה בפועל.
+        'From: =?UTF-8?B?' . base64_encode('אפליקציית מתכונים') . '?= <' . $from . '>',
+        'Reply-To: ' . $from,
         'MIME-Version: 1.0',
         'Content-Type: text/plain; charset=UTF-8',
         'Content-Transfer-Encoding: 8bit',
+        'X-Mailer: recipes-app',
     ]);
-    // הכותרת מקודדת, אחרת עברית בשורת הנושא יוצאת ג'יבריש בחלק מהלקוחות.
     $encoded = '=?UTF-8?B?' . base64_encode($subject) . '?=';
 
-    return @mail($to, $encoded, $body, $headers);
+    // הפרמטר החמישי קובע את כתובת המעטפה (Return-Path). בלעדיו sendmail
+    // שולח מ-"nobody@server" — וזו אי־התאמה ש-SPF תופס, וגם הכתובת שאליה
+    // חוזרות הודעות שגיאה. כך ה-From והמעטפה זהים, ושניהם על הדומיין.
+    $sent = @mail($to, $encoded, $body, $headers, '-f' . $from);
+    if (!$sent) $sent = @mail($to, $encoded, $body, $headers);   // שרת שחוסם -f
+    return $sent;
 }
 
 function sendVerifyEmail(string $to, string $token): bool {

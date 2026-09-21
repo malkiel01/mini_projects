@@ -84,6 +84,13 @@ echo
 echo "3. כניסה נחסמת עד אימות"
 check 'כניסה לפני אימות נדחית' "$(call login '{"username":"tester","password":"sod12345"}')" 'טרם אומת'
 
+echo
+echo "3א. שליחה חוזרת — תשובה אחידה, בלי לחשוף מי רשום"
+A=$(call resend-verification '{"username":"tester"}')
+B=$(call resend-verification '{"username":"nobody"}')
+check 'למשתמש קיים: הודעה אחידה'   "$A" 'אם החשבון קיים'
+check 'לשאינו קיים: אותה תשובה'    "$A" "$(printf '%s' "$B" | sed 's/[][\.*^$]/\\&/g')"
+
 # אימות דרך הקישור, כמו שהמשתמש עושה — האסימון נשלף מהמסד ולא מהתשובה
 TOKEN=$(php -r '
   define("DB_FILE", getenv("RECIPES_TEST_DIR")."/t.sqlite");
@@ -194,6 +201,11 @@ check 'ערך מחוץ לגבולות נדחה'            "$(call settings-publ
 check 'רשימת משתמשים'                    "$(call users)" '"username":"tester"'
 TID=$(call users | python3 -c 'import sys,json; print([u["id"] for u in json.load(sys.stdin)["users"] if u["username"]=="tester"][0])')
 check 'דריסה אישית ל-tester'             "$(call user-limit "{\"user_id\":$TID,\"key\":\"quota_bytes\",\"value\":12582912}")" '"limit_quota":12582912'
+check 'tester מאומת — אין מה לשלוח שוב'   "$(call user-resend "{\"user_id\":$TID}")" 'כבר מאומת'
+call register '{"username":"waiting","email":"w@example.com","password":"sod12345"}' >/dev/null
+WID=$(call users | python3 -c 'import sys,json; print([u["id"] for u in json.load(sys.stdin)["users"] if u["username"]=="waiting"][0])')
+check 'הרשימה מציגה שהדוא"ל נשלח'         "$(call users)" '"username":"waiting"[^}]*"last_mail_ok":true'
+check 'המפתח שולח שוב — בלי קירור'        "$(call user-resend "{\"user_id\":$WID}")" '"mail_sent":true'
 check 'המפתח אינו חוסם את עצמו'          "$(call user-block '{"user_id":1,"blocked":true}')" 'המפתח'
 check 'חסימת tester'                     "$(call user-block "{\"user_id\":$TID,\"blocked\":true}")" '"blocked":true'
 call logout >/dev/null

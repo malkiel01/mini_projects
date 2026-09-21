@@ -172,10 +172,25 @@ $('#login-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const f = e.target;
   withButton(f, async () => {
-    const { user } = await api('login', { username: f.username.value, password: f.password.value });
-    f.reset();
-    setUser(user);
-    go('#/');
+    try {
+      const { user } = await api('login', { username: f.username.value, password: f.password.value });
+      f.reset();
+      setUser(user);
+      go('#/');
+    } catch (err) {
+      // חשבון שטרם אומת: במקום שגיאה בלבד, כפתור שמאפשר לצאת מהמצב הזה.
+      // בלעדיו מי שהמייל שלו אבד תקוע בלי שום דרך להמשיך.
+      if (!/טרם אומת/.test(err.message)) throw err;
+      say(err.message, 'warn');
+      const btn = document.createElement('button');
+      btn.type = 'button'; btn.className = 'link'; btn.textContent = 'שלח שוב את דוא"ל האימות';
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try { say((await api('resend-verification', { username: f.username.value })).message, 'ok'); }
+        catch (e2) { say(e2.message, 'err'); }
+      });
+      msg.append(document.createElement('br'), btn);
+    }
   });
 });
 
@@ -778,6 +793,9 @@ async function renderUsers() {
               </header>
               <div class="user__stats muted">
                 ${u.recipes} מתכונים · ${toMB(u.used)} מתוך ${toMB(u.effective_quota)} MB
+                ${u.last_mail_ok === null ? ' · דוא"ל: לא נשלח'
+                  : u.last_mail_ok ? ` · דוא"ל: נשלח ✅ ${esc((u.last_mail_at || '').slice(0, 16).replace('T', ' '))}`
+                  : ' · דוא"ל: <span class="link--danger">השרת דחה ❌</span>'}
               </div>
               <form class="user__limits" data-uid="${u.id}">
                 <label>סרטון (MB)
@@ -791,7 +809,8 @@ async function renderUsers() {
                 <button class="btn" type="submit">שמור</button>
               </form>
               <div class="user__actions">
-                ${!u.email_verified ? `<button class="link" type="button" data-verify="${u.id}">אמת ידנית</button>` : ''}
+                ${!u.email_verified ? `<button class="link" type="button" data-resend="${u.id}">שלח אימות שוב</button>
+                                       <button class="link" type="button" data-verify="${u.id}">אמת ידנית</button>` : ''}
                 ${!u.is_developer ? `<button class="link ${u.blocked ? '' : 'link--danger'}" type="button" data-block="${u.id}" data-to="${u.blocked ? 0 : 1}">${u.blocked ? 'בטל חסימה' : 'חסום'}</button>` : ''}
               </div>
             </article>`).join('')}
@@ -815,6 +834,13 @@ async function renderUsers() {
     $$('[data-block]').forEach((b) => b.addEventListener('click', async () => {
       try { const { users: latest } = await api('user-block', { user_id: +b.dataset.block, blocked: b.dataset.to === '1' }); draw(latest); }
       catch (err) { note(err.message, 'err'); }
+    }));
+    $$('[data-resend]').forEach((b) => b.addEventListener('click', async () => {
+      try {
+        const { mail_sent, users: latest } = await api('user-resend', { user_id: +b.dataset.resend });
+        note(mail_sent ? 'נשלח — השרת קיבל את ההודעה' : 'השרת דחה את השליחה — ראה באזור הפיתוח', mail_sent ? 'ok' : 'err');
+        draw(latest);
+      } catch (err) { note(err.message, 'err'); }
     }));
     $$('[data-verify]').forEach((b) => b.addEventListener('click', async () => {
       try { const { users: latest } = await api('user-verify', { user_id: +b.dataset.verify }); draw(latest); }

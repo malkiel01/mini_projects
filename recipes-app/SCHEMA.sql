@@ -31,6 +31,8 @@ CREATE TABLE users (
   storage_used   INTEGER NOT NULL DEFAULT 0,  -- בייטים. המקצב עצמו הוא הגדרה
   limit_video_bytes INTEGER,   -- דריסה אישית. NULL = יורש מ-app_settings
   limit_quota_bytes INTEGER,   -- דריסה אישית. NULL = יורש מ-app_settings
+  last_mail_at   TEXT,         -- מתי נשלח לאחרונה דוא״ל למשתמש
+  last_mail_ok   INTEGER,      -- האם ה-MTA קיבל אותו. NULL = לא נשלח
   created_at     TEXT    NOT NULL
 );
 

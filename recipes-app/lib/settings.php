@@ -132,6 +132,7 @@ function listUsers(array $developer): array {
     $rows = db()->query('SELECT u.id, u.username, u.email, u.display_name, u.role,
                                 u.email_verified, u.blocked, u.created_at,
                                 u.limit_video_bytes, u.limit_quota_bytes,
+                                u.last_mail_at, u.last_mail_ok,
                                 (SELECT COUNT(*) FROM recipes r WHERE r.owner_id = u.id) AS recipes,
                                 (SELECT COALESCE(SUM(m.bytes),0) FROM media m
                                   WHERE m.uploader_id = u.id AND m.source = \'upload\') AS used
@@ -148,6 +149,8 @@ function listUsers(array $developer): array {
         'email_verified' => (bool) $u['email_verified'],
         'blocked'        => (bool) $u['blocked'],
         'created_at'     => $u['created_at'],
+        'last_mail_at'   => $u['last_mail_at'],
+        'last_mail_ok'   => $u['last_mail_ok'] !== null ? (bool) $u['last_mail_ok'] : null,
         'recipes'        => (int) $u['recipes'],
         'used'           => (int) $u['used'],
         // null = יורש מההגדרה הציבורית. המסך מציג את זה כ"ברירת מחדל".
@@ -193,4 +196,17 @@ function setUserVerified(int $userId, array $developer): void {
     requireDeveloper($developer);
     $st = db()->prepare('UPDATE users SET email_verified = 1 WHERE id = ?');
     $st->execute([$userId]);
+}
+
+/** המפתח שולח שוב אימות למשתמש — בלי קירור, כי זה אדם ולא טופס פתוח. */
+function resendVerificationFor(int $userId, array $developer): bool {
+    requireDeveloper($developer);
+    $st = db()->prepare('SELECT id, email, email_verified FROM users WHERE id = ?');
+    $st->execute([$userId]);
+    $u = $st->fetch();
+    if (!$u) throw new AppError('המשתמש אינו קיים', 404);
+    if ((int) $u['email_verified'] === 1) throw new AppError('המשתמש כבר מאומת', 400);
+    $sent = sendVerifyEmail($u['email'], issueToken($userId, 'verify_email', VERIFY_TTL_HOURS));
+    recordMailResult($userId, $sent);
+    return $sent;
 }

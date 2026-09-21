@@ -122,6 +122,8 @@ function createUser(string $username, string $email, string $password, string $d
 
     $id    = (int) db()->lastInsertId();
     $token = issueToken($id, 'verify_email', VERIFY_TTL_HOURS);
+    $sent  = sendVerifyEmail($email, $token);
+    recordMailResult($id, $sent);
 
     // הדוא"ל נשלח גם למנהל שכבר מאומת: זו הבדיקה היחידה שיש לנו לשאלה
     // אם mail() עובד בשרת, ו-mail_sent הוא מה שמדווח על כך במסך האבחון.
@@ -131,8 +133,42 @@ function createUser(string $username, string $email, string $password, string $d
         'role'      => $role,
         'verified'  => $verified === 1,
         'token'     => $token,                        // לבדיקות ולשליחה; לא לתצוגה
-        'mail_sent' => sendVerifyEmail($email, $token),
+        'mail_sent' => $sent,
     ];
+}
+
+/**
+ * רושם על המשתמש מה קרה לשליחה האחרונה. זה מה שמאפשר למנהל לראות
+ * "נשלח / נכשל" במסך המשתמשים במקום לנחש — ומה שחסר כשמשתמש אמר
+ * "לא קיבלתי מייל" ולא הייתה שום דרך לדעת אם המערכת בכלל ניסתה.
+ */
+function recordMailResult(int $userId, bool $ok): void {
+    $st = db()->prepare('UPDATE users SET last_mail_at = ?, last_mail_ok = ? WHERE id = ?');
+    $st->execute([nowIso(), $ok ? 1 : 0, $userId]);
+}
+
+/** לא יותר משליחה אחת בשתי דקות לאותו משתמש — אחרת הכפתור הוא כלי ספאם. */
+const RESEND_COOLDOWN_SECONDS = 120;
+
+/**
+ * שולח שוב את דוא"ל האימות. מזוהה לפי שם משתמש או כתובת.
+ * **מחזיר אותה תשובה גם כשאין משתמש כזה** — אחרת הטופס בודק מי רשום.
+ * מחזיר null כשלא נשלח מסיבה שאינה שגיאה (לא קיים / כבר מאומת / קירור),
+ * true/false לפי תוצאת ה-MTA.
+ */
+function resendVerification(string $usernameOrEmail): ?bool {
+    $id = trim($usernameOrEmail);
+    $st = db()->prepare('SELECT id, email, email_verified, last_mail_at FROM users
+                          WHERE (username = ? OR email = ?) AND blocked = 0');
+    $st->execute([$id, $id]);
+    $u = $st->fetch();
+    if (!$u || (int) $u['email_verified'] === 1) return null;
+    if ($u['last_mail_at'] !== null &&
+        strtotime($u['last_mail_at']) > time() - RESEND_COOLDOWN_SECONDS) return null;
+
+    $sent = sendVerifyEmail($u['email'], issueToken((int) $u['id'], 'verify_email', VERIFY_TTL_HOURS));
+    recordMailResult((int) $u['id'], $sent);
+    return $sent;
 }
 
 /** כניסה בשם משתמש או בכתובת דוא"ל. מחזיר null לכל כשל, בלי לפרט מה נכשל. */

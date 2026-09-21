@@ -51,7 +51,7 @@ $action = $_GET['action'] ?? (is_string($in['action'] ?? null) ? $in['action'] :
 // נקודות קצה שאינן דורשות התחברות — הן כל מה שמוביל אליה.
 // נקודות קצה שאינן דורשות התחברות — הן כל מה שמוביל אליה, ובנוסף
 // עיון במתכונים ציבוריים: אורח שמגיע מקישור צריך לראות מתכון.
-$public = ['register', 'login', 'me', 'request-reset', 'tags', 'search', 'recipe'];
+$public = ['register', 'login', 'me', 'request-reset', 'resend-verification', 'tags', 'search', 'recipe'];
 
 $user = currentUser();
 if (!in_array($action, $public, true) && !$user) {
@@ -108,6 +108,13 @@ try {
         requestPasswordReset(str_field($in, 'email', 254));
         // אותה תשובה גם לכתובת שאינה רשומה — אחרת הטופס בודק מי רשום כאן.
         ok(['message' => 'אם הכתובת רשומה אצלנו, נשלח אליה קישור לאיפוס.']);
+
+    case 'resend-verification': {
+        // אותה תשובה לכל מצב — קיים / לא קיים / כבר מאומת / קירור. הטופס הזה
+        // פתוח לאורח, ולכן אסור שיגלה מי רשום.
+        resendVerification(str_field($in, 'username', 254));
+        ok(['message' => 'אם החשבון קיים וטרם אומת, נשלח אליו דוא"ל חדש. אפשר לבקש שוב בעוד שתי דקות.']);
+    }
 
     case 'tags': {
         // הצירים הסגורים. נדרשים לטופס המתכון, ונפתחים גם לאורח כדי
@@ -225,6 +232,11 @@ try {
     case 'user-block':
         setUserBlocked((int) ($in['user_id'] ?? 0), !empty($in['blocked']), $user);
         ok(['users' => listUsers($user)]);
+
+    case 'user-resend': {
+        $sent = resendVerificationFor((int) ($in['user_id'] ?? 0), $user);
+        ok(['mail_sent' => $sent, 'users' => listUsers($user)]);
+    }
 
     case 'user-verify':
         setUserVerified((int) ($in['user_id'] ?? 0), $user);

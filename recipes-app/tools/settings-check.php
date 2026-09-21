@@ -87,6 +87,20 @@ $m = array_values(array_filter($users, fn($u) => $u['username'] === 'mali'))[0];
 check('הדריסה של מלי מוצגת', $m['limit_quota'], 12 * $MB);
 check('סרטון: null = יורש, והמופיע בפועל הוא הציבורי', [$m['limit_video'], $m['effective_video']], [null, 50 * $MB]);
 check('המפתח מסומן', array_values(array_filter($users, fn($u) => $u['username'] === 'malkiel'))[0]['is_developer'], true);
+echo "\n7. שליחה חוזרת בידי המפתח\n";
+$pending = createUser('pending', 'p@x.com', 'sod12345', 'ממתין');
+$pRow = fn() => db()->query("SELECT last_mail_at, last_mail_ok FROM users WHERE username='pending'")->fetch();
+db()->exec("UPDATE users SET last_mail_at = NULL, last_mail_ok = NULL WHERE username='pending'");
+// בלי MTA בסביבת הבדיקה — ראה auth-check. מוכיחים רישום, לא הצלחה.
+$sent = resendVerificationFor((int) $pending['id'], $devU);
+check('המפתח שולח שוב — בלי קירור (bool)', is_bool($sent), true);
+check('והתוצאה נרשמה', (int) $pRow()['last_mail_ok'], (int) $sent);
+$p = array_values(array_filter(listUsers($devU), fn($u) => $u['username'] === 'pending'))[0];
+check('הרשימה חושפת את מצב הדוא״ל', [$p['last_mail_ok'], $p['last_mail_at'] !== null], [$sent, true]);
+expectError('למאומת אין מה לשלוח', fn() => resendVerificationFor((int) $GLOBALS['mali']['id'], $GLOBALS['devU']), 'כבר מאומת');
+expectError('משתמש שאינו קיים', fn() => resendVerificationFor(9999, $GLOBALS['devU']), 'אינו קיים');
+expectError('משתמש רגיל אינו רשאי', fn() => resendVerificationFor((int) $GLOBALS['pending']['id'], $GLOBALS['maliU']), 'מפתח');
+
 setUserBlocked((int) $mali['id'], true, $devU);
 check('חסימה', (int) db()->query("SELECT blocked FROM users WHERE username='mali'")->fetchColumn(), 1);
 expectError('המפתח אינו חוסם את עצמו', fn() => setUserBlocked((int) $GLOBALS['dev']['id'], true, $GLOBALS['devU']), 'המפתח');
