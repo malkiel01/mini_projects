@@ -12,11 +12,16 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/lib/media.php';
+require_once __DIR__ . '/lib/log.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 
+$__t0 = microtime(true);
 function fail(string $message, int $code = 400): never {
+    logEvent($code >= 500 ? 'error' : 'warn', 'upload', $message,
+             ['recipe_id' => (int) ($_POST['recipe_id'] ?? 0), 'bytes' => (int) ($_FILES['file']['size'] ?? 0), 'status' => $code],
+             $GLOBALS['user'] ?? null, (int) round((microtime(true) - $GLOBALS['__t0']) * 1000));
     http_response_code($code);
     echo json_encode(['success' => false, 'error' => $message], JSON_UNESCAPED_UNICODE);
     exit;
@@ -39,11 +44,15 @@ try {
     if (empty($_FILES['file'])) fail('לא נשלח קובץ');
 
     $media = storeUpload($recipeId, $user, $_FILES['file']);
+    logEvent('info', 'upload', '', ['recipe_id' => $recipeId, 'kind' => $media['kind'] ?? null,
+             'bytes' => (int) ($_FILES['file']['size'] ?? 0)], $user, (int) round((microtime(true) - $__t0) * 1000));
     echo json_encode(['success' => true, 'media' => $media, 'limits' => mediaLimits($user)],
                      JSON_UNESCAPED_UNICODE);
 } catch (AppError $e) {
     fail($e->getMessage(), $e->status);
 } catch (Throwable $e) {
     error_log('recipes-app upload: ' . $e->getMessage());
+    logEvent('error', 'exception', get_class($e) . ': ' . $e->getMessage(),
+             ['file' => basename($e->getFile()), 'line' => $e->getLine(), 'action' => 'upload'], $user);
     fail('שגיאת שרת', 500);
 }

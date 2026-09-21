@@ -533,3 +533,37 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
 
 .item--gone { opacity: 0.85; }
 .item--gone .item__main strong { white-space: normal; }
+
+/* ───────── יומן ───────── */
+
+.logfilter { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
+.logfilter select, .logfilter input { flex: 1 1 140px; min-width: 0; }
+.logfilter .actions { flex: 1 1 100%; align-items: center; flex-wrap: wrap; }
+.logtable-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-inline: -8px; padding-inline: 8px; }
+.logtable { width: 100%; border-collapse: collapse; font-size: 0.82rem; min-width: 640px; }
+.logtable th, .logtable td { padding: 6px 6px; border-bottom: 1px solid var(--line); text-align: start; vertical-align: top; }
+.logtable th { color: var(--muted); font-weight: 500; white-space: nowrap; }
+.logtable td code { display: block; margin-top: 2px; color: var(--muted); overflow-wrap: anywhere; white-space: normal; }
+.logtable .link { min-height: 0; padding: 0; font: inherit; }
+.log--error td { background: rgba(200, 40, 40, .06); }
+.log--warn  td { background: rgba(200, 140, 0, .07); }
+.mono { font-family: ui-monospace, Menlo, monospace; }
+.logview { margin-top: 12px; }
+.tokenform { margin-top: 8px; }
+.tokenform__custom { display: flex; gap: 8px; }
+.tokenform__custom label { flex: 1; min-width: 0; }
+.tokennew { margin: 12px 0; }
+.tokennew input { width: 100%; margin: 8px 0; font-size: 0.85rem; }
+.tokens td, .tokens th { vertical-align: top; }
+.tokens tr.is-dead td { color: var(--muted); }
+
+/* בטלפון: כל שורת יומן היא בלוק — בלי טבלה ברוחב 640 שצריך לגלול לרוחב */
+@media (max-width: 640px) {
+  .logtable { min-width: 0; }
+  .logtable thead { display: none; }
+  .logtable tr { display: flex; flex-wrap: wrap; gap: 2px 8px; padding: 8px 4px; border-bottom: 1px solid var(--line); }
+  .logtable td { display: inline; padding: 0; border: 0; }
+  .logtable td:nth-child(5) { flex: 1 1 100%; }
+  .logtable td:nth-child(6):not(:empty)::after { content: " ms"; color: var(--muted); }
+  .logtable-wrap { overflow: visible; margin-inline: 0; padding-inline: 0; }
+}

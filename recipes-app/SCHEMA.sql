@@ -45,6 +45,39 @@ CREATE TABLE app_settings (
   updated_at TEXT    NOT NULL
 );
 
+-- יומן: כל בקשה ואירוע (lib/log.php). נמחק אחרי 30 יום / 50k שורות.
+-- user_id בלי FK בכוונה: היומן צריך לשרוד מחיקת משתמש.
+CREATE TABLE app_log (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  at          TEXT    NOT NULL,
+  level       TEXT    NOT NULL CHECK (level IN ('info','warn','error')),
+  request_id  TEXT,
+  user_id     INTEGER,
+  username    TEXT,
+  action      TEXT    NOT NULL,
+  message     TEXT    NOT NULL DEFAULT '',
+  meta        TEXT,                  -- JSON, שדות מרשימה סגורה בלבד
+  ip          TEXT,
+  user_agent  TEXT,
+  duration_ms INTEGER
+);
+CREATE INDEX idx_app_log_at     ON app_log(at);
+CREATE INDEX idx_app_log_level  ON app_log(level, at);
+CREATE INDEX idx_app_log_action ON app_log(action, at);
+
+-- טוקן צפייה ביומן שהמפתח מעביר למי שמפתח. נשמר רק ה-hash, עם תוקף וביטול.
+CREATE TABLE log_tokens (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  token_hash   TEXT    NOT NULL UNIQUE,
+  label        TEXT    NOT NULL,
+  created_by   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at   TEXT    NOT NULL,
+  expires_at   TEXT    NOT NULL,
+  revoked_at   TEXT,
+  last_used_at TEXT,
+  uses         INTEGER NOT NULL DEFAULT 0
+);
+
 -- אסימונים חד־פעמיים: אימות דוא"ל ואיפוס סיסמה. שורה אחת לשני השימושים,
 -- כי המחזור זהה — נוצר, נשלח, נצרך פעם אחת, פג.
 CREATE TABLE user_tokens (

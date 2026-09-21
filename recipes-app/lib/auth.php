@@ -15,6 +15,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/mail.php';
+require_once __DIR__ . '/log.php';
 require_once __DIR__ . '/errors.php';
 
 const VERIFY_TTL_HOURS = 24;
@@ -143,6 +144,7 @@ function createUser(string $username, string $email, string $password, string $d
  * "לא קיבלתי מייל" ולא הייתה שום דרך לדעת אם המערכת בכלל ניסתה.
  */
 function recordMailResult(int $userId, bool $ok): void {
+    logEvent($ok ? 'info' : 'error', 'mail', $ok ? 'ה-MTA קיבל את ההודעה' : 'ה-MTA דחה את ההודעה', ['user_id' => $userId]);
     $st = db()->prepare('UPDATE users SET last_mail_at = ?, last_mail_ok = ? WHERE id = ?');
     $st->execute([nowIso(), $ok ? 1 : 0, $userId]);
 }

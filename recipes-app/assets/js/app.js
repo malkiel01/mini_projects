@@ -20,6 +20,20 @@ const api = async (action, payload) => {
   return data;
 };
 
+// שגיאות JavaScript נרשמות ביומן השרת — כי "אצלי בטלפון זה לא עובד"
+// הוא הדיווח הכי נפוץ והכי פחות שימושי. עד 5 לטעינת דף, כדי שלולאה
+// שבורה לא תציף את היומן.
+let clientLogBudget = 5;
+const clientLog = (message, where) => {
+  if (clientLogBudget-- <= 0) return;
+  fetch('./api.php?action=client-log', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
+    body: JSON.stringify({ level: 'error', message: String(message).slice(0, 500), where: String(where || '').slice(0, 200), hash: location.hash }),
+  }).catch(() => {});
+};
+window.addEventListener('error', (e) => clientLog(e.message, `${e.filename || ''}:${e.lineno || 0}`));
+window.addEventListener('unhandledrejection', (e) => clientLog(e.reason?.message || e.reason, 'promise'));
+
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
 ));
@@ -254,6 +268,7 @@ async function route() {
     else if ((m = h.match(/^#\/edit\/(\d+)$/))) await renderEditor(+m[1]);
     else if (h === '#/favorites') await renderFavorites();
     else if (h === '#/diag') await renderDiag();
+    else if (h === '#/logs') await renderLogs();
     else if (h === '#/settings') await renderSettingsPrivate();
     else if (h === '#/settings/public') await renderSettingsPublic();
     else if (h === '#/settings/users') await renderUsers();
@@ -882,6 +897,7 @@ function settingsNav(active) {
     ['#/settings/public', 'ציבוריות', true],
     ['#/settings/users', 'משתמשים', true],
     ['#/diag', 'פיתוח', true],
+    ['#/logs', 'יומן', true],
   ];
   return `<nav class="subnav" aria-label="הגדרות">${items
     .filter(([, , dev]) => !dev || state.user.is_developer)
@@ -1046,6 +1062,187 @@ async function renderUsers() {
 }
 
 // ───────────────────────── אבחון ─────────────────────────
+
+// ───────────────────────── יומן (למפתח) ─────────────────────────
+
+const TTL_PRESETS = [[30, 'חצי שעה'], [60, 'שעה'], [1440, 'יום'], [10080, 'שבוע'], [0, 'מותאם…']];
+const fmtWhen = (iso) => (iso ? esc(iso.slice(0, 16).replace('T', ' ')) : '—');
+const fmtLeft = (iso) => {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 0) return 'פג';
+  const m = Math.round(ms / 60000);
+  if (m < 60) return `${m} דק׳`;
+  if (m < 60 * 48) return `${Math.round(m / 60)} שעות`;
+  return `${Math.round(m / 1440)} ימים`;
+};
+
+async function renderLogs() {
+  if (!state.user.is_developer) { go('#/settings'); return; }
+  const filters = { level: '', action: '', user: '', q: '' };
+  let rows = [];
+  let stats = null;
+  let autoTimer = null;
+
+  view.innerHTML = `
+    <section class="card settings settings--wide logs">
+      ${settingsNav()}
+      <h2>יומן — כל צעד במערכת</h2>
+      <p class="muted" id="log-stats">טוען…</p>
+
+      <form class="logfilter" id="log-filter">
+        <select name="level" aria-label="רמה">
+          <option value="">כל הרמות</option>
+          <option value="warn">בעיות (warn + error)</option>
+          <option value="error">שגיאות בלבד</option>
+        </select>
+        <select name="action" aria-label="פעולה"><option value="">כל הפעולות</option></select>
+        <select name="user" aria-label="משתמש"><option value="">כל המשתמשים</option></select>
+        <input type="search" name="q" placeholder="חיפוש בהודעה / בפרטים" autocomplete="off">
+        <div class="actions">
+          <button class="btn btn--primary" type="submit">סנן</button>
+          <label class="check"><input type="checkbox" id="log-auto"> רענון כל 10 שניות</label>
+        </div>
+      </form>
+
+      <div class="logtable-wrap"><table class="logtable" id="log-table">
+        <thead><tr><th>זמן</th><th>רמה</th><th>מי</th><th>פעולה</th><th>הודעה / פרטים</th><th>ms</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+      <div class="actions"><button class="btn" type="button" id="log-more" hidden>שורות ישנות יותר ›</button></div>
+
+      <h3>טוקן צפייה — להעביר למי שמפתח</h3>
+      <p class="muted">קישור שמציג את היומן בלי כניסה, קריאה בלבד, עד שהתוקף פג או שביטלת. הטוקן מוצג פעם אחת.</p>
+      <form class="form tokenform" id="token-form">
+        <label>שם (למי / למה) <input name="label" maxlength="60" placeholder="לדוגמה: קלוד, באג בהעלאה" required></label>
+        <label>תוקף
+          <select name="preset">${TTL_PRESETS.map(([m, l]) => `<option value="${m}">${l}</option>`).join('')}</select>
+        </label>
+        <div class="tokenform__custom" id="ttl-custom" hidden>
+          <label>כמה <input name="amount" type="number" min="1" max="999" value="2" inputmode="numeric"></label>
+          <label>יחידה
+            <select name="unit">
+              <option value="60">שעות</option>
+              <option value="1440">ימים</option>
+              <option value="1">דקות</option>
+            </select>
+          </label>
+        </div>
+        <button class="btn btn--primary" type="submit">צור טוקן</button>
+        <p class="note" id="token-msg" hidden></p>
+      </form>
+      <div id="token-new" hidden></div>
+      <div id="token-list"></div>
+    </section>`;
+
+  const statsEl = $('#log-stats');
+  const tbody = $('#log-table tbody');
+  const more = $('#log-more');
+
+  const rowHtml = (r) => `
+    <tr class="log--${esc(r.level)}">
+      <td class="mono" dir="ltr">${esc(r.at.slice(5, 19).replace('T', ' '))}</td>
+      <td><span class="badge badge--${r.level === 'error' ? 'err' : r.level === 'warn' ? 'warn' : 'public'}">${esc(r.level)}</span></td>
+      <td>${esc(r.username || '—')}</td>
+      <td class="mono" dir="ltr"><button class="link" type="button" data-req="${esc(r.request_id || '')}" title="כל השורות של הבקשה">${esc(r.action)}</button></td>
+      <td>${esc(r.message)}${r.meta ? ` <code class="mono small" dir="ltr">${esc(JSON.stringify(r.meta))}</code>` : ''}</td>
+      <td class="mono" dir="ltr">${r.duration_ms ?? ''}</td>
+    </tr>`;
+
+  const fillSelect = (name, values) => {
+    const sel = $(`#log-filter select[name="${name}"]`);
+    const cur = sel.value;
+    sel.innerHTML = sel.options[0].outerHTML + values.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    sel.value = cur;
+  };
+
+  const load = async (append = false) => {
+    const req = { ...filters, limit: 100 };
+    if (append && rows.length) req.before = rows[rows.length - 1].id;
+    const res = await api('log', req);
+    rows = append ? rows.concat(res.rows) : res.rows;
+    stats = res.stats;
+    statsEl.textContent = `${stats.rows} שורות מאז ${stats.oldest ? stats.oldest.slice(0, 10) : '—'} · ב-24 השעות האחרונות: ${stats.problems_24h} אזהרות, ${stats.errors_24h} שגיאות · נשמר ${stats.keep_days} יום / עד ${stats.keep_rows} שורות`;
+    fillSelect('action', stats.actions);
+    fillSelect('user', stats.users);
+    tbody.innerHTML = rows.length ? rows.map(rowHtml).join('') : '<tr><td colspan="6" class="muted">אין שורות שתואמות.</td></tr>';
+    more.hidden = res.rows.length < 100;
+    $$('[data-req]', tbody).forEach((b) => b.addEventListener('click', () => {
+      filters.request_id = b.dataset.req; $('#log-filter input[name="q"]').value = `בקשה ${b.dataset.req}`;
+      load().catch((e) => { statsEl.textContent = e.message; });
+    }));
+  };
+
+  $('#log-filter').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const f = e.target;
+    Object.assign(filters, { level: f.level.value, action: f.action.value, user: f.user.value, q: f.q.value.trim() });
+    delete filters.request_id;
+    if (/^בקשה /.test(filters.q)) { filters.request_id = filters.q.slice(5).trim(); filters.q = ''; }
+    load().catch((err) => { statsEl.textContent = err.message; });
+  });
+  more.addEventListener('click', () => load(true).catch((err) => { statsEl.textContent = err.message; }));
+  $('#log-auto').addEventListener('change', (e) => {
+    clearInterval(autoTimer);
+    if (e.target.checked) autoTimer = setInterval(() => { if (location.hash !== '#/logs') { clearInterval(autoTimer); return; } load().catch(() => {}); }, 10000);
+  });
+
+  // ── טוקנים ──
+  const tokenList = $('#token-list');
+  const drawTokens = (tokens) => {
+    tokenList.innerHTML = tokens.length ? `
+      <table class="kv tokens">
+        <thead><tr><th>שם</th><th>תוקף</th><th>שימושים</th><th></th></tr></thead>
+        <tbody>${tokens.map((t) => `
+          <tr class="${t.active ? '' : 'is-dead'}">
+            <td>${esc(t.label)}<br><span class="muted small">נוצר ${fmtWhen(t.created_at)}</span></td>
+            <td>${t.revoked_at ? 'בוטל' : t.active ? `עוד ${fmtLeft(t.expires_at)}` : 'פג'}<br><span class="muted small" dir="ltr">${fmtWhen(t.expires_at)}</span></td>
+            <td>${t.uses}${t.last_used_at ? `<br><span class="muted small">אחרון ${fmtWhen(t.last_used_at)}</span>` : ''}</td>
+            <td>${t.active ? `<button class="link link--danger" type="button" data-revoke="${t.id}">בטל</button>` : ''}</td>
+          </tr>`).join('')}</tbody>
+      </table>` : '<p class="muted">אין טוקנים.</p>';
+    $$('[data-revoke]', tokenList).forEach((b) => b.addEventListener('click', async () => {
+      if (!confirm('לבטל את הטוקן? הקישור יפסיק לעבוד מיד.')) return;
+      try { drawTokens((await api('log-token-revoke', { id: +b.dataset.revoke })).tokens); }
+      catch (err) { alert(err.message); }
+    }));
+  };
+
+  $('#token-form select[name="preset"]').addEventListener('change', (e) => { $('#ttl-custom').hidden = e.target.value !== '0'; });
+  $('#token-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const out = $('#token-msg');
+    const ttl = +f.preset.value || Math.max(1, +f.amount.value) * +f.unit.value;
+    try {
+      const { token, tokens } = await api('log-token-create', { label: f.label.value, ttl_minutes: ttl });
+      const url = new URL('./logs.php', location.href); url.searchParams.set('token', token.token);
+      const box = $('#token-new');
+      box.hidden = false;
+      box.innerHTML = `
+        <div class="note note--ok tokennew">
+          <strong>הטוקן "${esc(token.label)}" נוצר — תקף עד ${fmtWhen(token.expires_at)} UTC.</strong>
+          <p>הקישור מוצג פעם אחת. להעתיק ולהעביר:</p>
+          <input class="mono" dir="ltr" readonly value="${esc(url.href)}" id="token-url">
+          <div class="actions">
+            <button class="btn btn--primary" type="button" id="token-copy">העתק קישור</button>
+            <a class="btn" href="${esc(url.href)}" target="_blank" rel="noopener">פתח</a>
+          </div>
+          <p class="muted small">לקלוד: גם <code dir="ltr">&amp;format=text</code> — טקסט להדבקה בצ'אט.</p>
+        </div>`;
+      $('#token-copy').addEventListener('click', async () => {
+        const inp = $('#token-url'); inp.select();
+        try { await navigator.clipboard.writeText(inp.value); $('#token-copy').textContent = 'הועתק ✓'; }
+        catch { document.execCommand('copy'); $('#token-copy').textContent = 'הועתק ✓'; }
+      });
+      out.hidden = true;
+      f.label.value = '';
+      drawTokens(tokens);
+    } catch (err) { out.textContent = err.message; out.className = 'note note--err'; out.hidden = false; }
+  });
+
+  await load();
+  drawTokens((await api('log-tokens')).tokens);
+}
 
 async function renderDiag() {
   const { diag: d } = await api('diag');

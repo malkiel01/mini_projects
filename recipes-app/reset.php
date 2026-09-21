@@ -23,10 +23,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         resetPassword($token, $pass);
         $done = true;
+        logEvent('info', 'reset-password', 'סיסמה אופסה דרך הקישור');
     } catch (AppError $e) {
         $error = $e->getMessage();
+        logEvent('warn', 'reset-password', $error);
     } catch (Throwable $e) {
         error_log('recipes-app reset: ' . $e->getMessage());
+        logEvent('error', 'exception', get_class($e) . ': ' . $e->getMessage(), ['action' => 'reset-password']);
         $error = 'שגיאת שרת';
     }
 }

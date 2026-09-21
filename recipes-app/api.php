@@ -17,18 +17,36 @@ require_once __DIR__ . '/lib/social.php';
 require_once __DIR__ . '/lib/diag.php';
 require_once __DIR__ . '/lib/media.php';
 require_once __DIR__ . '/lib/settings.php';
+require_once __DIR__ . '/lib/log.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: same-origin');
 
+// כל בקשה נרשמת ביומן ביציאה — דרך ok() או fail(), שהן הדרך היחידה
+// החוצה. הרמה לפי התוצאה: הצלחה info, כשל של המשתמש (4xx) warn, תקלה
+// שלנו (5xx) error. הזמן נמדד מתחילת הקובץ.
+$GLOBALS['__t0'] = microtime(true);
+function logRequest(bool $ok, string $message, int $code): void {
+    $action = $GLOBALS['__action'] ?? '?';
+    if ($action === 'client-log') return;   // הוא רושם את עצמו, עם הרמה שהדפדפן דיווח
+    $level = $ok ? 'info' : ($code >= 500 ? 'error' : 'warn');
+    logEvent($level, $action, $ok ? '' : $message,
+             logSafeInput($GLOBALS['__in'] ?? []) + ['status' => $code],
+             $GLOBALS['__user'] ?? null,
+             (int) round((microtime(true) - $GLOBALS['__t0']) * 1000));
+    logPrune();
+}
+
 function fail(string $message, int $code = 400): never {
+    logRequest(false, $message, $code);
     http_response_code($code);
     echo json_encode(['success' => false, 'error' => $message], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
 function ok(array $payload = []): never {
+    logRequest(true, '', 200);
     echo json_encode(['success' => true] + $payload, JSON_UNESCAPED_UNICODE);
     exit;
 }
@@ -55,6 +73,9 @@ $action = $_GET['action'] ?? (is_string($in['action'] ?? null) ? $in['action'] :
 $public = ['register', 'login', 'me', 'request-reset', 'resend-verification', 'tags', 'search', 'recipe'];
 
 $user = currentUser();
+$GLOBALS['__action'] = $action;
+$GLOBALS['__in']     = $in;
+$GLOBALS['__user']   = $user;
 if (!in_array($action, $public, true) && !$user) {
     fail('נדרשת התחברות', 401);
 }
@@ -98,6 +119,7 @@ try {
     case 'login': {
         $res = login(str_field($in, 'username', 254), (string) ($in['password'] ?? ''));
         if (!$res) fail('שם משתמש או סיסמה שגויים', 401);
+        $GLOBALS['__user'] = $res;   // שורת היומן של הכניסה נושאת את מי שנכנס
         ok(['user' => $res]);
     }
 
@@ -295,6 +317,39 @@ try {
         setUserVerified((int) ($in['user_id'] ?? 0), $user);
         ok(['users' => listUsers($user)]);
 
+    // ───────── יומן (למפתח) ─────────
+
+    case 'log': {
+        requireDeveloper($user);
+        $filters = array_intersect_key($in, array_flip(['level', 'action', 'user', 'q', 'request_id', 'since', 'before']));
+        ok(['rows' => listLog($filters, (int) ($in['limit'] ?? 100)), 'stats' => logStats()]);
+    }
+
+    case 'log-tokens':
+        requireDeveloper($user);
+        ok(['tokens' => listLogTokens()]);
+
+    case 'log-token-create': {
+        requireDeveloper($user);
+        $t = createLogToken(str_field($in, 'label', 60), (int) ($in['ttl_minutes'] ?? 0), $user);
+        ok(['token' => $t, 'tokens' => listLogTokens()]);
+    }
+
+    case 'log-token-revoke': {
+        requireDeveloper($user);
+        revokeLogToken((int) ($in['id'] ?? 0), $user);
+        ok(['tokens' => listLogTokens()]);
+    }
+
+    case 'client-log': {
+        // שגיאת JavaScript מהדפדפן. הרמה מהדפדפן, ההודעה קצוצה, ולא יותר
+        // מכמה לבקשה — הדפדפן עצמו מגביל ל-5 לטעינת דף.
+        $level = in_array($in['level'] ?? '', LOG_LEVELS, true) ? $in['level'] : 'error';
+        logEvent($level, 'client-error', str_field($in, 'message', 500),
+                 ['where' => str_field($in, 'where', 200), 'hash' => str_field($in, 'hash', 80)], $user);
+        ok();
+    }
+
     // ───────── אבחון ─────────
 
     case 'diag':
@@ -310,5 +365,7 @@ try {
     // הפרטים ליומן, לא למשתמש. באתר פתוח לאינטרנט הודעת שגיאה מפורטת
     // היא מקור מידע על המערכת.
     error_log('recipes-app: ' . $e->getMessage());
+    logEvent('error', 'exception', get_class($e) . ': ' . $e->getMessage(),
+             ['file' => basename($e->getFile()), 'line' => $e->getLine(), 'action' => $action], $user);
     fail('שגיאת שרת', 500);
 }

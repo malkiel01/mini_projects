@@ -79,6 +79,38 @@ function migrate(PDO $pdo): void {
             updated_at TEXT    NOT NULL
         );
 
+        -- יומן: כל בקשה ואירוע (lib/log.php). נמחק אחרי 30 יום / 50k שורות.
+        CREATE TABLE IF NOT EXISTS app_log (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            at          TEXT    NOT NULL,
+            level       TEXT    NOT NULL CHECK (level IN ('info','warn','error')),
+            request_id  TEXT,                  -- קושר שורות מאותה בקשה
+            user_id     INTEGER,               -- בלי FK: היומן שורד מחיקת משתמש
+            username    TEXT,
+            action      TEXT    NOT NULL,
+            message     TEXT    NOT NULL DEFAULT '',
+            meta        TEXT,                  -- JSON, שדות מרשימה סגורה בלבד
+            ip          TEXT,
+            user_agent  TEXT,
+            duration_ms INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_app_log_at     ON app_log(at);
+        CREATE INDEX IF NOT EXISTS idx_app_log_level  ON app_log(level, at);
+        CREATE INDEX IF NOT EXISTS idx_app_log_action ON app_log(action, at);
+
+        -- טוקן צפייה ביומן, שהמפתח מעביר. נשמר רק ה-hash.
+        CREATE TABLE IF NOT EXISTS log_tokens (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            token_hash   TEXT    NOT NULL UNIQUE,
+            label        TEXT    NOT NULL,
+            created_by   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at   TEXT    NOT NULL,
+            expires_at   TEXT    NOT NULL,
+            revoked_at   TEXT,
+            last_used_at TEXT,
+            uses         INTEGER NOT NULL DEFAULT 0
+        );
+
         CREATE TABLE IF NOT EXISTS user_tokens (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

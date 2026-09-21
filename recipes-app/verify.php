@@ -18,10 +18,13 @@ try {
     if ($token === '') throw new AppError('הקישור חסר');
     verifyEmail($token);
     $okMsg = 'החשבון אומת. אפשר להיכנס.';
+    logEvent('info', 'verify-email', 'חשבון אומת דרך הקישור');
 } catch (AppError $e) {
     $error = $e->getMessage();
+    logEvent('warn', 'verify-email', $error);
 } catch (Throwable $e) {
     error_log('recipes-app verify: ' . $e->getMessage());
+    logEvent('error', 'exception', get_class($e) . ': ' . $e->getMessage(), ['action' => 'verify-email']);
     $error = 'שגיאת שרת';
 }
 ?>

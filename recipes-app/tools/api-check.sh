@@ -51,7 +51,10 @@ call() {  # call <action> <json>
 top_id() { printf '%s' "$1" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("id",""))'; }
 
 check() {  # check <label> <haystack> <needle>
-  if printf '%s' "$2" | grep -q -- "$3"; then
+  # grep -c ולא grep -q: עם pipefail, grep -q שסוגר את הצינור אחרי ההתאמה
+  # הראשונה משאיר את printf עם SIGPIPE — והבדיקה נכשלת דווקא על תשובה
+  # גדולה שכן מכילה את המחרוזת. נתפס על דף HTML של 128 שורות יומן.
+  if [ "$(printf '%s' "$2" | grep -c -- "$3")" -gt 0 ]; then
     printf '  \xE2\x9C\x85 %s\n' "$1"
   else
     printf '  \xE2\x9D\x8C %s\n     התקבל: %s\n' "$1" "$2"
@@ -248,6 +251,34 @@ check 'המדיה של tester מכבדת את הדריסה (12MB)' "$(call media
 # המינימום. זו הבדיקה שההגדרה לא יכולה להבטיח יותר ממה שהשרת מקבל.
 check 'סרטון: min(ציבורי 50MB, שרת 32MB) = 32MB' "$(call media-limits)" '"video_max":33554432'
 call logout >/dev/null
+
+echo
+echo "8ה. יומן — כל בקשה נרשמה, וטוקן צפייה עם תוקף"
+call login '{"username":"owner","password":"sod12345"}' >/dev/null
+L=$(call log '{"limit":500}')
+check 'הכניסה הראשונה של owner נרשמה'         "$L" '"username":"owner","action":"login"'
+check 'כשל הרשמה נרשם כ-warn עם ההודעה'         "$L" '"level":"warn"[^}]*"action":"register","message":"[^}]*כבר בשימוש'
+check 'שדה סיסמה אינו ביומן'                   "$(printf '%s' "$L" | grep -c 'sod12345')" '^0$'
+check 'סינון לפי פעולה'                        "$(call log '{"action":"recipe-save"}')" '"action":"recipe-save"'
+check 'סינון לפי רמה'                          "$(call log '{"level":"error","limit":500}')" '"rows":\['
+check 'שגיאת דפדפן נרשמת'                      "$(call client-log '{"level":"error","message":"TypeError: x is null","where":"app.js:12"}')" '"success":true'
+check 'ומופיעה ביומן'                          "$(call log '{"action":"client-error"}')" 'TypeError: x is null'
+T=$(call log-token-create '{"label":"לקלוד","ttl_minutes":60}')
+check 'טוקן נוצר'                              "$T" '"token":"[0-9a-f]\{48\}"'
+TOK=$(printf '%s' "$T" | python3 -c 'import sys,json; print(json.load(sys.stdin)["token"]["token"])')
+check 'tester (לא מפתח) אינו רואה יומן'        "$(call logout >/dev/null; call login '{"username":"tester","password":"sod12345"}' >/dev/null; call log)" 'מפתח'
+check 'ולא יוצר טוקן'                          "$(call log-token-create '{"label":"x","ttl_minutes":60}')" 'מפתח'
+call logout >/dev/null
+check 'logs.php בלי כניסה, עם הטוקן — JSON'    "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$TOK&format=json&action=login")" '"action":"login"'
+check 'ובטקסט'                                 "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$TOK&format=text&action=login")" 'INFO .* owner login'
+check 'ודף HTML'                               "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$TOK")" '<table class="logtable"'
+check 'טוקן שגוי — 403'                        "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$(printf '0%.0s' $(seq 48))")" '^403$'
+call login '{"username":"owner","password":"sod12345"}' >/dev/null
+check 'הצפייה נרשמה ביומן עם שם הטוקן'         "$(call log '{"action":"log-view"}')" 'לקלוד'
+TID2=$(call log-tokens | python3 -c 'import sys,json; print(json.load(sys.stdin)["tokens"][0]["id"])')
+check 'ביטול'                                  "$(call log-token-revoke "{\"id\":$TID2}")" '"active":false'
+check 'אחרי ביטול — 403'                       "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$TOK")" '^403$'
+check 'תוקף לא חוקי נדחה'                      "$(call log-token-create '{"label":"x","ttl_minutes":1}')" 'קצר'
 
 echo
 echo "9. אבחון למנהל"
