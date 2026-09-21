@@ -95,6 +95,9 @@ function saveRecipe(array $in, array $user, ?int $recipeId = null): int {
     $sections = is_array($in['sections'] ?? null) ? $in['sections'] : [];
     if (!$sections) throw new AppError('למתכון חייב להיות לפחות חלק אחד');
 
+    // null = לא נשלח: בהוספה פתוח, בעדכון נשאר כמו שהיה.
+    $commentsOpen = array_key_exists('comments_open', $in) ? (int) (bool) $in['comments_open'] : null;
+
     $recipe = [
         'title'    => $title,
         'tips'     => trim((string) ($in['tips'] ?? '')),
@@ -109,17 +112,19 @@ function saveRecipe(array $in, array $user, ?int $recipeId = null): int {
     try {
         if ($recipeId === null) {
             $st = $pdo->prepare('INSERT INTO recipes (owner_id, title, visibility, servings,
-                    difficulty, work_minutes, wait_minutes, tips, search_text, created_at, updated_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?)');
+                    difficulty, work_minutes, wait_minutes, tips, search_text, comments_open,
+                    created_at, updated_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
             $st->execute([$user['id'], $title, $visibility, $recipe['servings'], $difficulty,
                           $recipe['work'], $recipe['wait'], $recipe['tips'], $search,
-                          nowIso(), nowIso()]);
+                          $commentsOpen ?? 1, nowIso(), nowIso()]);
             $recipeId = (int) $pdo->lastInsertId();
         } else {
             $st = $pdo->prepare('UPDATE recipes SET title=?, visibility=?, servings=?, difficulty=?,
-                    work_minutes=?, wait_minutes=?, tips=?, search_text=?, updated_at=? WHERE id=?');
+                    work_minutes=?, wait_minutes=?, tips=?, search_text=?,
+                    comments_open=COALESCE(?, comments_open), updated_at=? WHERE id=?');
             $st->execute([$title, $visibility, $recipe['servings'], $difficulty, $recipe['work'],
-                          $recipe['wait'], $recipe['tips'], $search, nowIso(), $recipeId]);
+                          $recipe['wait'], $recipe['tips'], $search, $commentsOpen, nowIso(), $recipeId]);
             // החלפה מלאה: החלקים נמחקים, וה-CASCADE גורר איתם רכיבים
             // ושלבים. לכן אין צורך למחוק אותם בנפרד — וגם אסור לשכוח
             // ש-foreign_keys חייב להיות דלוק כדי שזה יקרה.

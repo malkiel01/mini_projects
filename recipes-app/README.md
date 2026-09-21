@@ -16,6 +16,7 @@
 | [`tools/schema-check.py`](./tools/schema-check.py) | מריץ את הסכימה, מוכיח שההבטחות עובדות, ומוודא ש-`SCHEMA.sql` ו-`lib/db.php` לא נפרדו |
 | [`tools/auth-check.php`](./tools/auth-check.php) | מריץ את שכבת החשבונות על מסד זמני |
 | [`tools/recipes-check.php`](./tools/recipes-check.php) | מריץ את שכבת המתכונים על מסד זמני |
+| [`tools/social-check.php`](./tools/social-check.php) | תגובות, פתקים פרטיים ומועדפים — על מסד זמני |
 | [`tools/api-check.sh`](./tools/api-check.sh) | מריץ שרת PHP אמיתי ועובר את המסלול ב-HTTP עם עוגיית סשן |
 | [`tools/shot.sh`](./tools/shot.sh) | צילום ברוחב טלפון אמיתי, ומדידת גלישה לרוחב |
 
@@ -25,6 +26,7 @@
 python3 recipes-app/tools/schema-check.py    # הסכימה וההבטחות שלה
 php     recipes-app/tools/auth-check.php     # שכבת החשבונות
 php     recipes-app/tools/recipes-check.php  # שכבת המתכונים
+php     recipes-app/tools/social-check.php   # תגובות, פתקים, מועדפים
 bash    recipes-app/tools/api-check.sh       # ה-API מקצה לקצה, על שרת אמיתי
 bash    recipes-app/tools/shot.sh out.png '#/r/1'   # צילום ברוחב טלפון, מחובר ועם מתכון בדיקה
 ```
@@ -49,7 +51,11 @@ no-cache` ל-HTML/JS/CSS. בלעדיו הטלפון מחזיק גרסה ישנה
 ## מצב נוכחי
 
 עובד: חשבונות (הרשמה, אימות, כניסה, איפוס), מתכון מקצה לקצה (יצירה, תצוגה עם המרת מנות,
-עריכה, מחיקה), חיפוש בשם וברכיבים, ואבחון למנהל.
+עריכה, מחיקה), חיפוש בשם וברכיבים, מדיה, הגדרות וניהול משתמשים, תגובות בשתי רמות,
+פתק פרטי על כל מתכון, מועדפים ששורדים מחיקה של המקור, ואבחון למנהל.
+
+עדיין לא: תמונה בתגובה (סעיף 7 באפיון אומר "כן, אחת" — נדחה עד שיהיה ביקוש),
+רשימת קניות, מצב בישול, הדפסה.
 עדיין לא: מדיה, תגובות, מועדפים, רשימת קניות, מצב בישול.
 
 ### ההיסטוריה — השלד הראשון

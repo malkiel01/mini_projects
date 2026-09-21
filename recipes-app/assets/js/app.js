@@ -252,6 +252,7 @@ async function route() {
     else if ((m = h.match(/^#\/r\/(\d+)$/))) await renderRecipe(+m[1]);
     else if (h === '#/new') await renderEditor(null);
     else if ((m = h.match(/^#\/edit\/(\d+)$/))) await renderEditor(+m[1]);
+    else if (h === '#/favorites') await renderFavorites();
     else if (h === '#/diag') await renderDiag();
     else if (h === '#/settings') await renderSettingsPrivate();
     else if (h === '#/settings/public') await renderSettingsPublic();
@@ -309,8 +310,10 @@ async function renderList() {
 // ───────────────────────── תצוגת מתכון ─────────────────────────
 
 async function renderRecipe(id) {
-  const { recipe: r } = await api('recipe', { id });
+  const loaded = await api('recipe', { id });
+  const r = loaded.recipe;
   let servings = r.servings;
+  const social = { comments: loaded.comments, note: loaded.note, isFavorite: loaded.is_favorite };
 
   const draw = () => {
     const factor = r.servings && servings ? servings / r.servings : 1;
@@ -345,7 +348,11 @@ async function renderRecipe(id) {
           ${r.is_mine ? `<div class="actions">
             <a class="btn" href="#/edit/${r.id}">עריכה</a>
             <button class="btn btn--danger" id="del" type="button">מחיקה</button>
-          </div>` : ''}
+          </div>` : `<div class="actions">
+            <button class="btn ${social.isFavorite ? 'btn--primary' : ''}" id="fav" type="button" aria-pressed="${social.isFavorite}">
+              ${social.isFavorite ? '♥ שמור אצלי' : '♡ שמור אצלי'}
+            </button>
+          </div>`}
         </header>
 
         ${mediaGallery(r)}
@@ -365,7 +372,13 @@ async function renderRecipe(id) {
           </section>`).join('')}
 
         ${r.tips ? `<section class="part"><h3>טיפים והערות</h3><p class="tips">${esc(r.tips)}</p></section>` : ''}
+
+        <section class="part note-box" id="note-box"></section>
+        ${r.visibility === 'public' ? '<section class="part comments" id="comments"></section>' : ''}
       </article>`;
+
+    drawNote();
+    if (r.visibility === 'public') drawComments();
 
     $$('[data-serv]').forEach((b) => b.addEventListener('click', () => {
       const d = +b.dataset.serv;
@@ -378,8 +391,171 @@ async function renderRecipe(id) {
       if (deleted_comments) alert(`נמחק, יחד עם ${deleted_comments} תגובות.`);
       go('#/');
     });
+    $('#fav')?.addEventListener('click', async () => {
+      const b = $('#fav'); b.disabled = true;
+      try { social.isFavorite = (await api('favorite-toggle', { recipe_id: r.id })).is_favorite; draw(); }
+      catch (err) { alert(err.message); b.disabled = false; }
+    });
   };
+
+  // ── פתק פרטי (7): רק כותבו רואה. מקופל כשריק, כדי לא להעמיס על הדף. ──
+  const drawNote = () => {
+    const box = $('#note-box');
+    const n = social.note;
+    box.innerHTML = `
+      <details ${n ? 'open' : ''}>
+        <summary><h3>פתק פרטי <span class="muted">— רק אתה רואה</span></h3></summary>
+        ${n ? `<p class="tips note-box__text">${esc(n.text)}</p>
+               <p class="muted small">עודכן ${esc(n.updated_at.slice(0, 10))}</p>` : ''}
+        <form class="note-form" id="note-form" ${n ? 'hidden' : ''}>
+          <textarea name="text" rows="3" maxlength="4000" placeholder="לדוגמה: אצלי 5 דקות פחות בתנור">${n ? esc(n.text) : ''}</textarea>
+          <div class="actions">
+            <button class="btn btn--primary" type="submit">שמור פתק</button>
+            ${n ? '<button class="btn btn--ghost" type="button" data-note-cancel>ביטול</button>' : ''}
+          </div>
+        </form>
+        ${n ? `<div class="actions">
+          <button class="link" type="button" data-note-edit>עריכה</button>
+          <button class="link link--danger" type="button" data-note-del>מחיקת הפתק</button>
+        </div>` : ''}
+        <p class="note" id="note-msg" hidden></p>
+      </details>`;
+    const msgEl = $('#note-msg');
+    const fail = (t) => { msgEl.textContent = t; msgEl.className = 'note note--err'; msgEl.hidden = false; };
+    $('[data-note-edit]', box)?.addEventListener('click', () => {
+      $('#note-form').hidden = false; $('.note-box__text', box).hidden = true; $('#note-form textarea').focus();
+    });
+    $('[data-note-cancel]', box)?.addEventListener('click', drawNote);
+    $('[data-note-del]', box)?.addEventListener('click', async () => {
+      if (!confirm('למחוק את הפתק?')) return;
+      try { social.note = (await api('note-save', { recipe_id: r.id, text: '' })).note; drawNote(); }
+      catch (err) { fail(err.message); }
+    });
+    $('#note-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try { social.note = (await api('note-save', { recipe_id: r.id, text: e.target.text.value })).note; drawNote(); }
+      catch (err) { fail(err.message); }
+    });
+  };
+
+  // ── תגובות (7): שתי רמות, במתכון ציבורי בלבד ──
+  const when = (iso) => esc(iso.slice(0, 16).replace('T', ' '));
+  const commentHtml = (c, isReply) => `
+    <article class="comment ${isReply ? 'comment--reply' : ''}" data-cid="${c.id}">
+      <header class="comment__head">
+        <strong>${esc(c.user_name)}</strong>
+        <span class="muted small">${when(c.created_at)}${c.edited_at ? ' · נערכה' : ''}</span>
+        ${c.before_update ? '<span class="badge badge--warn">נכתבה לפני עדכון המתכון</span>' : ''}
+      </header>
+      <p class="comment__text">${esc(c.text)}</p>
+      <div class="comment__actions">
+        ${!isReply && r.comments_open ? `<button class="link" type="button" data-reply="${c.id}">השב</button>` : ''}
+        ${c.can_edit ? `<button class="link" type="button" data-cedit="${c.id}">עריכה</button>` : ''}
+        ${c.can_delete ? `<button class="link link--danger" type="button" data-cdel="${c.id}">מחיקה</button>` : ''}
+      </div>
+      <div class="comment__slot" data-slot="${c.id}"></div>
+      ${c.replies?.length ? `<div class="comment__replies">${c.replies.map((x) => commentHtml(x, true)).join('')}</div>` : ''}
+    </article>`;
+
+  const commentForm = (parentId, initial = '', label = 'שלח') => `
+    <form class="comment-form" data-parent="${parentId || ''}">
+      <textarea name="text" rows="2" maxlength="2000" required placeholder="${parentId ? 'תשובה…' : 'מה יצא לך? מה שינית?'}">${esc(initial)}</textarea>
+      <div class="actions">
+        <button class="btn btn--primary" type="submit">${label}</button>
+        ${parentId || initial ? '<button class="btn btn--ghost" type="button" data-cancel>ביטול</button>' : ''}
+      </div>
+    </form>`;
+
+  const drawComments = () => {
+    const box = $('#comments');
+    const list = social.comments;
+    const total = list.reduce((n, c) => n + 1 + (c.replies?.length || 0), 0);
+    box.innerHTML = `
+      <div class="comments__head">
+        <h3>תגובות <span class="muted">(${total})</span></h3>
+        ${r.is_mine ? `<button class="link" type="button" id="toggle-comments">${r.comments_open ? 'סגור תגובות' : 'פתח תגובות'}</button>` : ''}
+      </div>
+      ${!r.comments_open ? '<p class="muted">הכותב סגר את התגובות במתכון הזה.</p>' : ''}
+      ${list.length ? list.map((c) => commentHtml(c, false)).join('') : (r.comments_open ? '<p class="muted">עדיין אין תגובות. מישהו צריך להיות ראשון.</p>' : '')}
+      ${r.comments_open ? `<div id="new-comment">${commentForm(null)}</div>` : ''}
+      <p class="note" id="c-msg" hidden></p>`;
+
+    const msgEl = $('#c-msg');
+    const fail = (t) => { msgEl.textContent = t; msgEl.className = 'note note--err'; msgEl.hidden = false; };
+    const refresh = (comments) => { social.comments = comments; drawComments(); };
+
+    const bindForm = (form, handler) => {
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = form.querySelector('button[type="submit"]'); btn.disabled = true;
+        try { refresh((await handler(form.text.value)).comments); }
+        catch (err) { fail(err.message); btn.disabled = false; }
+      });
+      form.querySelector('[data-cancel]')?.addEventListener('click', drawComments);
+    };
+
+    $$('#new-comment .comment-form', box).forEach((f) => bindForm(f, (text) => api('comment-add', { recipe_id: r.id, text })));
+    $$('[data-reply]', box).forEach((b) => b.addEventListener('click', () => {
+      const slot = $(`[data-slot="${b.dataset.reply}"]`, box);
+      slot.innerHTML = commentForm(+b.dataset.reply);
+      const f = slot.querySelector('form'); f.text.focus();
+      bindForm(f, (text) => api('comment-add', { recipe_id: r.id, parent_id: +b.dataset.reply, text }));
+    }));
+    $$('[data-cedit]', box).forEach((b) => b.addEventListener('click', () => {
+      const art = b.closest('.comment');
+      const slot = $(`[data-slot="${b.dataset.cedit}"]`, box);
+      slot.innerHTML = commentForm(null, art.querySelector('.comment__text').textContent, 'שמור');
+      art.querySelector('.comment__text').hidden = true;
+      bindForm(slot.querySelector('form'), (text) => api('comment-edit', { id: +b.dataset.cedit, text }));
+    }));
+    $$('[data-cdel]', box).forEach((b) => b.addEventListener('click', async () => {
+      if (!confirm('למחוק את התגובה? תשובות עליה יימחקו איתה.')) return;
+      try { refresh((await api('comment-delete', { id: +b.dataset.cdel })).comments); }
+      catch (err) { fail(err.message); }
+    }));
+    $('#toggle-comments')?.addEventListener('click', async () => {
+      try { r.comments_open = (await api('recipe-comments-open', { recipe_id: r.id, open: !r.comments_open })).comments_open; drawComments(); }
+      catch (err) { fail(err.message); }
+    });
+  };
+
   draw();
+}
+
+// ───────────────────────── מועדפים ─────────────────────────
+
+async function renderFavorites() {
+  const { favorites } = await api('favorites');
+  const draw = (items) => {
+    view.innerHTML = `
+      <section class="toolbar"><a class="link" href="#/">‹ לרשימה</a><h2>המועדפים שלי</h2></section>
+      <section class="list">
+        ${items.length ? items.map((f) => f.status === 'ok' ? `
+          <a class="item" href="#/r/${f.id}">
+            ${f.thumb ? `<img class="item__thumb" src="${esc(f.thumb)}" alt="" loading="lazy">` : '<span class="item__thumb item__thumb--empty">🍲</span>'}
+            <div class="item__main">
+              <strong>${esc(f.title)}</strong>
+              <span class="muted">${esc(f.owner_name)}${f.difficulty ? ' · ' + DIFFICULTY[f.difficulty] : ''}${
+                f.work_minutes || f.wait_minutes ? ' · ' + minutes((f.work_minutes || 0) + (f.wait_minutes || 0)) : ''}</span>
+            </div>
+            <span class="badge badge--public">♥</span>
+          </a>` : `
+          <div class="item item--gone">
+            <span class="item__thumb item__thumb--empty">${f.status === 'gone' ? '🗑' : '🔒'}</span>
+            <div class="item__main">
+              <strong>${esc(f.title)}</strong>
+              <span class="muted">${f.status === 'gone' ? 'הוסר על ידי הכותב' : 'המתכון אינו זמין כרגע — הכותב הפך אותו לפרטי'}</span>
+            </div>
+            <button class="btn btn--ghost btn--danger" type="button" data-unfav="${f.fav_id}" aria-label="הסר מהמועדפים">✕</button>
+          </div>`).join('')
+        : '<p class="muted">עדיין לא שמרת כלום. במתכון של מישהו אחר יש כפתור ♡ "שמור אצלי".</p>'}
+      </section>`;
+    $$('[data-unfav]').forEach((b) => b.addEventListener('click', async () => {
+      try { draw((await api('favorite-remove', { fav_id: +b.dataset.unfav })).favorites); }
+      catch (err) { alert(err.message); }
+    }));
+  };
+  draw(favorites);
 }
 
 // ───────────────────────── עורך ─────────────────────────
@@ -391,12 +567,13 @@ async function renderEditor(id) {
   const tags = await ensureTags();
   let r = id ? (await api('recipe', { id })).recipe : {
     title: '', visibility: 'private', servings: '', difficulty: '', work_minutes: '', wait_minutes: '',
-    tips: '', tags: [], sections: [emptySection()],
+    tips: '', tags: [], sections: [emptySection()], comments_open: true,
   };
   // הטופס עובד על עותק שאפשר לשנות בלי לגעת במה שהגיע מהשרת.
   const model = {
     title: r.title, visibility: r.visibility, servings: r.servings ?? '', difficulty: r.difficulty ?? '',
     work_minutes: r.work_minutes ?? '', wait_minutes: r.wait_minutes ?? '', tips: r.tips ?? '',
+    comments_open: r.comments_open !== false,
     tag_ids: new Set(r.tags.map((t) => t.id)),
     sections: r.sections.map((s) => ({
       name: s.name ?? '',
@@ -486,6 +663,10 @@ async function renderEditor(id) {
           <input type="checkbox" name="public" ${model.visibility === 'public' ? 'checked' : ''}>
           מתכון ציבורי — כולם רואים, ואפשר להגיב
         </label>
+        <label class="check">
+          <input type="checkbox" name="comments_open" ${model.comments_open ? 'checked' : ''}>
+          לאפשר תגובות (במתכון ציבורי)
+        </label>
 
         <button class="btn btn--primary btn--wide" type="submit">${id ? 'שמור שינויים' : 'צור מתכון'}</button>
         <p id="edit-msg" class="note" hidden></p>
@@ -505,6 +686,7 @@ async function renderEditor(id) {
     model.wait_minutes = f.wait_minutes.value;
     model.tips = f.tips.value;
     model.visibility = f.public.checked ? 'public' : 'private';
+    model.comments_open = f.comments_open.checked;
     model.tag_ids = new Set($$('[data-tag]:checked', f).map((c) => +c.dataset.tag));
     $$('input[name="sname"]', f).forEach((i) => { model.sections[+i.dataset.si].name = i.value; });
     $$('.ing-row', f).forEach((row) => {
@@ -567,7 +749,7 @@ async function renderEditor(id) {
           id: editId || undefined, title: model.title, visibility: model.visibility,
           servings: model.servings || null, difficulty: model.difficulty || null,
           work_minutes: model.work_minutes || null, wait_minutes: model.wait_minutes || null,
-          tips: model.tips, tag_ids: [...model.tag_ids],
+          tips: model.tips, tag_ids: [...model.tag_ids], comments_open: model.comments_open,
           sections: model.sections.map((s) => ({
             name: s.name,
             ingredients: s.ingredients.filter((i) => i.free_text.trim()),
@@ -628,10 +810,13 @@ async function renderMediaEdit(recipeId) {
       </div>`).join('')}
     ${videos.length < limits.max_videos ? `
       <div class="media-add">
-        <form class="media-link" id="media-link">
-          <input name="url" type="url" placeholder="קישור ליוטיוב (מומלץ לסרטון ארוך)" required>
-          <button class="btn" type="submit">הוסף</button>
-        </form>
+        <!-- לא <form>: אזור המדיה יושב בתוך טופס העורך, ודפדפן זורק תג form
+             מקונן — כך שדה הקישור הפך לשדה חובה של "שמור שינויים" וחסם אותו. -->
+        <div class="media-link" id="media-link">
+          <input name="video_url" type="text" inputmode="url" placeholder="קישור ליוטיוב (מומלץ לסרטון ארוך)"
+                 autocomplete="off" aria-label="קישור לסרטון">
+          <button class="btn" type="button" id="media-link-add">הוסף</button>
+        </div>
         <label class="upload">
           <input type="file" accept="video/mp4" hidden data-up="video">
           <span class="btn">+ קובץ mp4</span>
@@ -663,11 +848,16 @@ async function renderMediaEdit(recipeId) {
     renderMediaEdit(recipeId);
   }));
 
-  $('#media-link')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    try { await api('media-link', { recipe_id: recipeId, url: e.target.url.value }); renderMediaEdit(recipeId); }
+  const addLink = async () => {
+    const inp = $('#media-link input');
+    const url = inp.value.trim();
+    if (!url) { note('יש להדביק קישור קודם', 'warn'); inp.focus(); return; }
+    try { await api('media-link', { recipe_id: recipeId, url }); renderMediaEdit(recipeId); }
     catch (err) { note(err.message, 'err'); }
-  });
+  };
+  $('#media-link-add')?.addEventListener('click', addLink);
+  // Enter בשדה הקישור מוסיף קישור — ולא שולח את טופס המתכון כולו.
+  $('#media-link input')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addLink(); } });
 
   $$('[data-del-media]', box).forEach((b) => b.addEventListener('click', async () => {
     if (!confirm('למחוק?')) return;

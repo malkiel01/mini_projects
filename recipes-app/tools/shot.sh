@@ -67,9 +67,13 @@ const scrollTo = qs.get('scroll') || '';
   setTimeout(() => {
     const d = f.contentDocument.documentElement, over = [];
     if (scrollTo) f.contentDocument.querySelector(scrollTo)?.scrollIntoView({ block: 'start' });
+    // דף ארוך מקבל פס גלילה אנכי (15px ב-headless), וב-RTL הוא יושב בצד
+    // שמאל — כך שכל התוכן מוזז ימינה ב-15px ו-clientWidth קטן ב-15. בלי
+    // התיקון הזה כל אלמנט ברוחב מלא נראה "גולש", וזה שקר.
+    const sb = f.clientWidth - d.clientWidth;
     f.contentDocument.querySelectorAll('body *').forEach(el => {
       const r = el.getBoundingClientRect();
-      if (r.right > d.clientWidth + 1 || r.left < -1) over.push(el.tagName + '/' + (el.id || el.className));
+      if (r.right > d.clientWidth + sb + 1 || r.left < -1) over.push(el.tagName + '/' + (el.id || el.className));
     });
     document.title = 'CLIENT=' + d.clientWidth + ' SCROLL=' + d.scrollWidth +
                      ' OVER=' + (over.slice(0, 5).join(',') || 'none');

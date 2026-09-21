@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/lib/recipes.php';
+require_once __DIR__ . '/lib/social.php';
 require_once __DIR__ . '/lib/diag.php';
 require_once __DIR__ . '/lib/media.php';
 require_once __DIR__ . '/lib/settings.php';
@@ -144,7 +145,59 @@ try {
         // אותה תשובה למתכון שאינו קיים ולמתכון פרטי של אחר. הפרדה
         // ביניהם הייתה מגלה לזר אילו מזהים קיימים.
         if (!$recipe) fail('המתכון אינו קיים או שאינו זמין לך', 404);
-        ok(['recipe' => $recipe]);
+        // התגובות מגיעות עם המתכון — גם לאורח, במתכון ציבורי. הפתק
+        // והמועדף הם של המשתמש, ולכן רק כשיש כזה.
+        ok([
+            'recipe'      => $recipe,
+            'comments'    => listComments($id, $user),
+            'note'        => $user ? getNote($id, $user) : null,
+            'is_favorite' => isFavorite($id, $user),
+        ]);
+    }
+
+    // ───────── תגובות, פתק פרטי, מועדפים (6–7) ─────────
+
+    case 'comment-add': {
+        $rid = (int) ($in['recipe_id'] ?? 0);
+        $parent = isset($in['parent_id']) && (int) $in['parent_id'] > 0 ? (int) $in['parent_id'] : null;
+        $cid = addComment($rid, $parent, str_field($in, 'text', COMMENT_MAX_CHARS + 1), $user);
+        ok(['id' => $cid, 'comments' => listComments($rid, $user)]);
+    }
+
+    case 'comment-edit': {
+        $c = commentRow((int) ($in['id'] ?? 0));
+        editComment((int) $c['id'], str_field($in, 'text', COMMENT_MAX_CHARS + 1), $user);
+        ok(['comments' => listComments((int) $c['recipe_id'], $user)]);
+    }
+
+    case 'comment-delete': {
+        $c = commentRow((int) ($in['id'] ?? 0));
+        deleteComment((int) $c['id'], $user);
+        ok(['comments' => listComments((int) $c['recipe_id'], $user)]);
+    }
+
+    case 'recipe-comments-open': {
+        $rid = (int) ($in['recipe_id'] ?? 0);
+        setCommentsOpen($rid, (bool) ($in['open'] ?? true), $user);
+        ok(['comments_open' => (bool) ($in['open'] ?? true)]);
+    }
+
+    case 'note-save': {
+        $rid = (int) ($in['recipe_id'] ?? 0);
+        ok(['note' => setNote($rid, str_field($in, 'text', NOTE_MAX_CHARS + 1), $user)]);
+    }
+
+    case 'favorite-toggle': {
+        $rid = (int) ($in['recipe_id'] ?? 0);
+        ok(['is_favorite' => toggleFavorite($rid, $user)]);
+    }
+
+    case 'favorites':
+        ok(['favorites' => listFavorites($user)]);
+
+    case 'favorite-remove': {
+        removeFavorite((int) ($in['fav_id'] ?? 0), $user);
+        ok(['favorites' => listFavorites($user)]);
     }
 
     case 'recipe-save': {

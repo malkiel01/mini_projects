@@ -183,6 +183,34 @@ call logout >/dev/null
 check 'אורח אינו מעלה'                "$(up "$TMP/real.png" "$RID")" 'נדרשת התחברות'
 
 echo
+echo "8ד. תגובות, פתק ומועדף — דרך ה-API"
+# tester נכנס ויוצר מתכון ציבורי; אחר כך המנהל (owner) מגיב ושומר
+call login '{"username":"tester","password":"sod12345"}' >/dev/null
+SID=$(top_id "$(call recipe-save '{"title":"מרק ציבורי","visibility":"public","sections":[{"ingredients":[{"free_text":"מים"}],"steps":[{"text":"להרתיח"}]}]}')")
+check 'המתכון מגיע עם comments/note/is_favorite' "$(call recipe "{\"id\":$SID}")" '"comments":\[\],"note":null,"is_favorite":false'
+check 'הבעלים אינו שומר את שלו'   "$(call favorite-toggle "{\"recipe_id\":$SID}")" 'שלך'
+check 'פתק פרטי נשמר'             "$(call note-save "{\"recipe_id\":$SID,\"text\":\"פחות מלח\"}")" '"text":"פחות מלח"'
+call logout >/dev/null
+call login '{"username":"owner","password":"sod12345"}' >/dev/null
+C=$(call comment-add "{\"recipe_id\":$SID,\"text\":\"טעים\"}")
+check 'המנהל מגיב'                 "$C" '"user_name":"owner"\|"text":"טעים"'
+CID=$(top_id "$C")
+check 'תשובה'                      "$(call comment-add "{\"recipe_id\":$SID,\"parent_id\":$CID,\"text\":\"תודה\"}")" '"replies":\[{[^]]*"text":"תודה"'
+check 'המנהל אינו רואה את הפתק של tester' "$(call recipe "{\"id\":$SID}")" '"note":null'
+check 'שמירה למועדפים'             "$(call favorite-toggle "{\"recipe_id\":$SID}")" '"is_favorite":true'
+check 'ברשימת המועדפים'            "$(call favorites)" '"status":"ok","id":'"$SID"',"title":"מרק ציבורי"'
+call logout >/dev/null
+call login '{"username":"tester","password":"sod12345"}' >/dev/null
+check 'הבעלים מוחק תגובה של אחר'  "$(call comment-delete "{\"id\":$CID}")" '"comments":\[\]'
+check 'הבעלים סוגר תגובות'         "$(call recipe-comments-open "{\"recipe_id\":$SID,\"open\":false}")" '"comments_open":false'
+call recipe-delete "{\"id\":$SID}" >/dev/null
+call logout >/dev/null
+call login '{"username":"owner","password":"sod12345"}' >/dev/null
+check 'אחרי מחיקת המקור — המועדף נשאר עם השם' "$(call favorites)" '"status":"gone","id":null,"title":"מרק ציבורי"'
+call logout >/dev/null
+call login '{"username":"tester","password":"sod12345"}' >/dev/null
+
+echo
 echo "8ג. הגדרות — מפתח מול מנהל מול משתמש, בגבול ה-HTTP"
 # tester הוא משתמש רגיל; owner הוא המפתח (ה-admin הראשון)
 call login '{"username":"tester","password":"sod12345"}' >/dev/null

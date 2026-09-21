@@ -494,3 +494,42 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
   .users { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
   .diag table { display: table; white-space: normal; }
 }
+
+/* ───────── פתק פרטי, תגובות, מועדפים (6–7) ───────── */
+
+.small { font-size: 0.8rem; }
+.toolbar h2 { font-size: 1.15rem; color: var(--accent); margin: 0; }
+
+.note-box details > summary { list-style: none; cursor: pointer; }
+.note-box details > summary::-webkit-details-marker { display: none; }
+.note-box summary h3 { display: inline; }
+.note-box summary h3::before { content: "▸ "; color: var(--muted); }
+.note-box details[open] summary h3::before { content: "▾ "; }
+.note-box .note-form, .note-box .tips, .note-box > details > .actions { margin-top: 10px; }
+.note-form, .comment-form { display: flex; flex-direction: column; gap: 8px; }
+.note-form textarea, .comment-form textarea { width: 100%; }
+
+.comments__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.comments__head h3 { margin: 0; }
+.comment {
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+.comment--reply {
+  margin-inline-start: 16px;
+  padding-inline-start: 12px;
+  border-top: 0;
+  border-inline-start: 2px solid var(--accent-soft);
+}
+.comment__replies { margin-top: 6px; }
+.comment__head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.comment__head .badge { font-size: 0.7rem; }
+.comment__text { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0; }
+.comment__actions { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.comment__actions .link { min-height: 36px; }
+.comment__slot:not(:empty) { margin: 8px 0; }
+#new-comment { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+
+.item--gone { opacity: 0.85; }
+.item--gone .item__main strong { white-space: normal; }
