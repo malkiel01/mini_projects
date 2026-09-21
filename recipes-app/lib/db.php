@@ -269,6 +269,14 @@ function migrate(PDO $pdo): void {
     // בלי זה, אם mail() לא פעל בשרת, המנהל היחיד נעול בחוץ לתמיד.
     // העדכון אידמפוטנטי — בפריסות הבאות הוא לא משנה דבר.
     $pdo->exec("UPDATE users SET email_verified = 1 WHERE role = 'admin' AND email_verified = 0");
+
+    // ריפוי שני: מערכת עם משתמשים אך בלי אף מנהל. לא אמור לקרות — הראשון
+    // נוצר כמנהל — אבל אם קרה (שחזור מסד, עריכה ידנית), אין מי שיתקן.
+    // הוותיק ביותר הופך למנהל, ולכן גם למפתח. אידמפוטנטי: ברגע שיש מנהל
+    // השאילתה אינה נוגעת בדבר.
+    $pdo->exec("UPDATE users SET role = 'admin'
+                 WHERE id = (SELECT MIN(id) FROM users)
+                   AND NOT EXISTS (SELECT 1 FROM users WHERE role = 'admin')");
 }
 
 /**

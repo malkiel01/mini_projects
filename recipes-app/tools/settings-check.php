@@ -87,6 +87,16 @@ $m = array_values(array_filter($users, fn($u) => $u['username'] === 'mali'))[0];
 check('הדריסה של מלי מוצגת', $m['limit_quota'], 12 * $MB);
 check('סרטון: null = יורש, והמופיע בפועל הוא הציבורי', [$m['limit_video'], $m['effective_video']], [null, 50 * $MB]);
 check('המפתח מסומן', array_values(array_filter($users, fn($u) => $u['username'] === 'malkiel'))[0]['is_developer'], true);
+echo "\n6ב. ריפוי: מערכת בלי מנהל — הוותיק הופך למנהל ולמפתח\n";
+db()->exec("UPDATE users SET role = 'user'");
+check('לפני: אין מפתח', isDeveloper(['id' => $dev['id'], 'role' => 'user']), false);
+migrate(db());
+check('אחרי migrate: הראשון שוב מנהל', db()->query("SELECT role FROM users WHERE id={$dev['id']}")->fetchColumn(), 'admin');
+check('והוא המפתח', isDeveloper($devU), true);
+check('השני נשאר משתמש', db()->query("SELECT role FROM users WHERE id={$mali['id']}")->fetchColumn(), 'user');
+migrate(db());
+check('migrate נוסף אינו משנה דבר', (int) db()->query("SELECT COUNT(*) FROM users WHERE role='admin'")->fetchColumn(), 1);
+
 echo "\n7. שליחה חוזרת בידי המפתח\n";
 $pending = createUser('pending', 'p@x.com', 'sod12345', 'ממתין');
 $pRow = fn() => db()->query("SELECT last_mail_at, last_mail_ok FROM users WHERE username='pending'")->fetch();

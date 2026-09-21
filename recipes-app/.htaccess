@@ -1,0 +1,10 @@
+# הדף והקוד נבדקים מול השרת בכל טעינה.
+#
+# בלי זה דפדפן (ובעיקר בטלפון) מחזיק index.html ו-app.js ישנים ימים
+# שלמים — ומי שפרסנו לו תפריט חדש ממשיך לראות את המסך הישן, בלי שום
+# שגיאה שמסבירה למה. הבדיקה עולה בקשה קטנה שמסתיימת ב-304 כשלא השתנה דבר.
+<IfModule mod_headers.c>
+    <FilesMatch "\.(html|js|mjs|css|webmanifest)$">
+        Header set Cache-Control "no-cache, must-revalidate"
+    </FilesMatch>
+</IfModule>

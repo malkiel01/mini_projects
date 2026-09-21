@@ -706,6 +706,11 @@ async function renderSettingsPrivate() {
     <section class="card settings">
       ${settingsNav()}
       <h2>הגדרות פרטיות</h2>
+      <table class="kv">
+        <tr><th>שם משתמש</th><td dir="ltr">${esc(state.user.username)}</td></tr>
+        <tr><th>סוג החשבון</th><td>${state.user.is_developer ? 'מפתח — הגדרות ציבוריות, ניהול משתמשים ואזור פיתוח נמצאים בתפריט ☰'
+                                    : state.user.role === 'admin' ? 'מנהל' : 'משתמש'}</td></tr>
+      </table>
       <form id="priv" class="form">
         <label>שם לתצוגה <input name="display_name" value="${esc(display_name)}" maxlength="60" required></label>
         <button class="btn btn--primary" type="submit">שמור</button>
