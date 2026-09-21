@@ -101,7 +101,9 @@ CREATE TABLE recipes (
   title          TEXT    NOT NULL,
   visibility     TEXT    NOT NULL DEFAULT 'private'
                  CHECK (visibility IN ('private','public')),   -- מתג דו־כיווני (1)
-  servings       INTEGER,                        -- בסיס להמרה (3.3)
+  servings       INTEGER,                        -- מספר מנות, בסיס להמרה (3.3). NULL = אין
+  yield_text     TEXT,                           -- "עוגה אחת" / "תבנית 26" — כשמספר לא מתאים.
+                                                 -- שניהם NULL = השדה לא מוצג כלל
   difficulty     TEXT    CHECK (difficulty IN ('easy','medium','hard')),  -- (4)
   work_minutes   INTEGER,                        -- זמן עבודה (4)
   wait_minutes   INTEGER,                        -- זמן המתנה (4)

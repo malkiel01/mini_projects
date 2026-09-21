@@ -125,6 +125,23 @@ check('דוד אינו מוצא לפי רכיב של פרטי שאינו שלו'
 check('התאמה בשם מדורגת לפני התאמה ברכיב',
       searchRecipes($davidU, 'גבינה')[0]['title'], 'עוגת גבינה קלה');
 
+echo "\n6ב. כמות — מספר מנות, תיאור חופשי, או כלום\n";
+$cake = loadRecipe($cakeId, $maliU);
+check('מספר מנות נשמר, ובלי טקסט', [$cake['servings'], $cake['yield_text']], [8, null]);
+$yid = saveRecipe(['title' => 'עוגה שלמה', 'visibility' => 'private', 'yield_text' => '  עוגה אחת בתבנית 26  ',
+    'sections' => [['ingredients' => [['free_text' => 'קמח']], 'steps' => [['text' => 'לאפות']]]]], $maliU);
+$y = loadRecipe($yid, $maliU);
+check('תיאור חופשי נשמר מנוקה, בלי מספר', [$y['servings'], $y['yield_text']], [null, 'עוגה אחת בתבנית 26']);
+saveRecipe(['title' => 'עוגה שלמה', 'visibility' => 'private', 'servings' => 12, 'yield_text' => 'עוגה',
+    'sections' => [['ingredients' => [['free_text' => 'קמח']], 'steps' => [['text' => 'לאפות']]]]], $maliU, $yid);
+$y = loadRecipe($yid, $maliU);
+check('נשלחו שניהם — המספר גובר והטקסט נזרק', [$y['servings'], $y['yield_text']], [12, null]);
+saveRecipe(['title' => 'עוגה שלמה', 'visibility' => 'private',
+    'sections' => [['ingredients' => [['free_text' => 'קמח']], 'steps' => [['text' => 'לאפות']]]]], $maliU, $yid);
+$y = loadRecipe($yid, $maliU);
+check('בלי שניהם — השדה מוסתר (שני NULL)', [$y['servings'], $y['yield_text']], [null, null]);
+check('החיפוש מחזיר yield_text', array_key_exists('yield_text', searchRecipes($maliU, 'שלמה')[0]), true);
+
 echo "\n7. מחיקה\n";
 saveRecipe(['title' => 'למחיקה', 'visibility' => 'public', 'sections' => [
     ['ingredients' => [['free_text' => 'משהו']], 'steps' => [['text' => 'משהו']]]]], $maliU);

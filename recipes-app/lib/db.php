@@ -128,7 +128,8 @@ function migrate(PDO $pdo): void {
             title         TEXT    NOT NULL,
             visibility    TEXT    NOT NULL DEFAULT 'private'
                           CHECK (visibility IN ('private','public')),
-            servings      INTEGER,
+            servings      INTEGER,               -- מספר מנות — בסיס להמרה. NULL = אין
+            yield_text    TEXT,                  -- עוגה אחת / תבנית 26 — כשמספר לא מתאים
             difficulty    TEXT    CHECK (difficulty IN ('easy','medium','hard')),
             work_minutes  INTEGER,
             wait_minutes  INTEGER,
@@ -296,6 +297,7 @@ function migrate(PDO $pdo): void {
     addColumnIfMissing($pdo, 'users', 'limit_quota_bytes', 'INTEGER');
     addColumnIfMissing($pdo, 'users', 'last_mail_at', 'TEXT');
     addColumnIfMissing($pdo, 'users', 'last_mail_ok', 'INTEGER');
+    addColumnIfMissing($pdo, 'recipes', 'yield_text', 'TEXT');
 
     // ריפוי חד־כיווני: מנהל שנוצר לפני שהמשתמש הראשון אומת אוטומטית.
     // בלי זה, אם mail() לא פעל בשרת, המנהל היחיד נעול בחוץ לתמיד.

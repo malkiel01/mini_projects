@@ -101,29 +101,33 @@ function saveRecipe(array $in, array $user, ?int $recipeId = null): int {
     $recipe = [
         'title'    => $title,
         'tips'     => trim((string) ($in['tips'] ?? '')),
+        // כמות: מספר מנות (ניתן להמרה), או תיאור חופשי ("עוגה אחת"), או כלום.
+        // מספר גובר: אם נשלחו שניהם, הטקסט נזרק — כדי שהתצוגה לא תציג שניים.
         'servings' => positiveIntOrNull($in['servings'] ?? null),
+        'yield'    => mb_substr(trim((string) ($in['yield_text'] ?? '')), 0, 60) ?: null,
         'work'     => positiveIntOrNull($in['work_minutes'] ?? null),
         'wait'     => positiveIntOrNull($in['wait_minutes'] ?? null),
     ];
+    if ($recipe['servings'] !== null) $recipe['yield'] = null;
     $search = buildSearchText($recipe + ['title' => $title], $sections);
 
     $pdo = db();
     $pdo->beginTransaction();
     try {
         if ($recipeId === null) {
-            $st = $pdo->prepare('INSERT INTO recipes (owner_id, title, visibility, servings,
+            $st = $pdo->prepare('INSERT INTO recipes (owner_id, title, visibility, servings, yield_text,
                     difficulty, work_minutes, wait_minutes, tips, search_text, comments_open,
                     created_at, updated_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
-            $st->execute([$user['id'], $title, $visibility, $recipe['servings'], $difficulty,
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)');
+            $st->execute([$user['id'], $title, $visibility, $recipe['servings'], $recipe['yield'], $difficulty,
                           $recipe['work'], $recipe['wait'], $recipe['tips'], $search,
                           $commentsOpen ?? 1, nowIso(), nowIso()]);
             $recipeId = (int) $pdo->lastInsertId();
         } else {
-            $st = $pdo->prepare('UPDATE recipes SET title=?, visibility=?, servings=?, difficulty=?,
+            $st = $pdo->prepare('UPDATE recipes SET title=?, visibility=?, servings=?, yield_text=?, difficulty=?,
                     work_minutes=?, wait_minutes=?, tips=?, search_text=?,
                     comments_open=COALESCE(?, comments_open), updated_at=? WHERE id=?');
-            $st->execute([$title, $visibility, $recipe['servings'], $difficulty, $recipe['work'],
+            $st->execute([$title, $visibility, $recipe['servings'], $recipe['yield'], $difficulty, $recipe['work'],
                           $recipe['wait'], $recipe['tips'], $search, $commentsOpen, nowIso(), $recipeId]);
             // החלפה מלאה: החלקים נמחקים, וה-CASCADE גורר איתם רכיבים
             // ושלבים. לכן אין צורך למחוק אותם בנפרד — וגם אסור לשכוח
@@ -252,6 +256,7 @@ function loadRecipe(int $recipeId, ?array $user): ?array {
         'owner_name'    => $recipe['owner_name'],
         'is_mine'       => $user && (int) $recipe['owner_id'] === (int) $user['id'],
         'servings'      => $recipe['servings'] !== null ? (int) $recipe['servings'] : null,
+        'yield_text'    => $recipe['yield_text'],
         'difficulty'    => $recipe['difficulty'],
         'work_minutes'  => $recipe['work_minutes'] !== null ? (int) $recipe['work_minutes'] : null,
         'wait_minutes'  => $recipe['wait_minutes'] !== null ? (int) $recipe['wait_minutes'] : null,
@@ -310,7 +315,7 @@ function searchRecipes(?array $user, string $query = '', array $filters = []): a
     $titleMatch = $q !== '' ? 'CASE WHEN lower(r.title) LIKE ? THEN 0 ELSE 1 END' : '0';
     if ($q !== '') array_unshift($params, '%' . $q . '%');
 
-    $sql = 'SELECT r.id, r.title, r.visibility, r.owner_id, r.difficulty, r.servings,
+    $sql = 'SELECT r.id, r.title, r.visibility, r.owner_id, r.difficulty, r.servings, r.yield_text,
                    r.work_minutes, r.wait_minutes, r.updated_at, u.display_name AS owner_name,
                    m.path_or_url AS main_path,
                    ' . $titleMatch . ' AS rank_title
@@ -332,6 +337,7 @@ function searchRecipes(?array $user, string $query = '', array $filters = []): a
         'owner_name'   => $row['owner_name'],
         'difficulty'   => $row['difficulty'],
         'servings'     => $row['servings'] !== null ? (int) $row['servings'] : null,
+        'yield_text'   => $row['yield_text'],
         'work_minutes' => $row['work_minutes'] !== null ? (int) $row['work_minutes'] : null,
         'wait_minutes' => $row['wait_minutes'] !== null ? (int) $row['wait_minutes'] : null,
         'updated_at'   => $row['updated_at'],

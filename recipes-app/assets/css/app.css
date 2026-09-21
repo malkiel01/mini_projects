@@ -596,3 +596,6 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
   padding: 10px 16px; background: #fff4d6; color: #5a4300; border-bottom: 1px solid #e6c874;
   font-size: 0.95rem;
 }
+
+.servings .btn--tiny.is-on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.row label[hidden] { display: none; }

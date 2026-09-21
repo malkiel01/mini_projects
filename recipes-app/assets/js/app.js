@@ -345,10 +345,11 @@ async function renderRecipe(id) {
   const loaded = await api('recipe', { id });
   const r = loaded.recipe;
   let servings = r.servings;
+  let mult = 1;   // לתיאור חופשי ("עוגה אחת"): ×½ / ×2 / ×3 על הכמויות המחושבות
   const social = { comments: loaded.comments, note: loaded.note, isFavorite: loaded.is_favorite };
 
   const draw = () => {
-    const factor = r.servings && servings ? servings / r.servings : 1;
+    const factor = r.servings && servings ? servings / r.servings : mult;
     const tagsByAxis = {};
     for (const t of r.tags) (tagsByAxis[t.axis] ||= []).push(t.name);
 
@@ -376,6 +377,10 @@ async function renderRecipe(id) {
               <strong>${servings}</strong>
               <button class="btn btn--ghost" data-serv="1" type="button">+</button>
               ${servings !== r.servings ? `<button class="link" data-serv="0" type="button">אפס (${r.servings})</button>` : ''}
+            </div>` : r.yield_text ? `
+            <div class="servings">
+              <span>כמות: <strong>${esc(r.yield_text)}</strong></span>
+              ${[0.5, 1, 2, 3].map((m) => `<button class="btn btn--ghost btn--tiny ${mult === m ? 'is-on' : ''}" data-mult="${m}" type="button">×${m === 0.5 ? '½' : m}</button>`).join('')}
             </div>` : ''}
           ${r.is_mine ? `<div class="actions">
             <a class="btn" href="#/edit/${r.id}">עריכה</a>
@@ -412,6 +417,7 @@ async function renderRecipe(id) {
     drawNote();
     if (r.visibility === 'public') drawComments();
 
+    $$('[data-mult]').forEach((b) => b.addEventListener('click', () => { mult = +b.dataset.mult; draw(); }));
     $$('[data-serv]').forEach((b) => b.addEventListener('click', () => {
       const d = +b.dataset.serv;
       servings = d === 0 ? r.servings : Math.max(1, servings + d);
@@ -639,12 +645,16 @@ const emptySection = () => ({ name: '', ingredients: [emptyIng()], steps: [''] }
 async function renderEditor(id) {
   const tags = await ensureTags();
   let r = id ? (await api('recipe', { id })).recipe : {
-    title: '', visibility: 'private', servings: '', difficulty: '', work_minutes: '', wait_minutes: '',
+    title: '', visibility: 'private', servings: '', yield_text: '', difficulty: '', work_minutes: '', wait_minutes: '',
     tips: '', tags: [], sections: [emptySection()], comments_open: true,
   };
   // הטופס עובד על עותק שאפשר לשנות בלי לגעת במה שהגיע מהשרת.
   const model = {
-    title: r.title, visibility: r.visibility, servings: r.servings ?? '', difficulty: r.difficulty ?? '',
+    title: r.title, visibility: r.visibility, servings: r.servings ?? '', yield_text: r.yield_text ?? '',
+    // מצב הכמות נגזר ממה שיש: מספר → מנות, טקסט → חופשי, כלום → מוסתר.
+    // מתכון חדש מתחיל ב"מספר מנות" — הברירה הנפוצה.
+    yield_mode: r.servings ? 'servings' : r.yield_text ? 'text' : (id ? 'none' : 'servings'),
+    difficulty: r.difficulty ?? '',
     work_minutes: r.work_minutes ?? '', wait_minutes: r.wait_minutes ?? '', tips: r.tips ?? '',
     comments_open: r.comments_open !== false,
     tag_ids: new Set(r.tags.map((t) => t.id)),
@@ -669,7 +679,19 @@ async function renderEditor(id) {
         <label>שם המתכון <input name="title" value="${esc(model.title)}" required maxlength="120"></label>
 
         <div class="row">
-          <label>מנות <input name="servings" type="number" min="1" inputmode="numeric" value="${esc(model.servings)}"></label>
+          <label>כמות
+            <select name="yield_mode">
+              <option value="servings" ${model.yield_mode === 'servings' ? 'selected' : ''}>מספר מנות</option>
+              <option value="text" ${model.yield_mode === 'text' ? 'selected' : ''}>תיאור חופשי</option>
+              <option value="none" ${model.yield_mode === 'none' ? 'selected' : ''}>לא להציג</option>
+            </select>
+          </label>
+          <label ${model.yield_mode !== 'servings' ? 'hidden' : ''}>מנות
+            <input name="servings" type="number" min="1" inputmode="numeric" value="${esc(model.servings)}">
+          </label>
+          <label ${model.yield_mode !== 'text' ? 'hidden' : ''}>למשל: עוגה אחת, תבנית 26
+            <input name="yield_text" maxlength="60" value="${esc(model.yield_text)}" placeholder="עוגה אחת">
+          </label>
           <label>קושי <select name="difficulty">
             <option value="">—</option>
             ${Object.entries(DIFFICULTY).map(([k, v]) => `<option value="${k}" ${model.difficulty === k ? 'selected' : ''}>${v}</option>`).join('')}
@@ -767,7 +789,9 @@ async function renderEditor(id) {
   const collect = () => {
     const f = $('#editor');
     model.title = f.title.value;
+    model.yield_mode = f.yield_mode.value;
     model.servings = f.servings.value;
+    model.yield_text = f.yield_text.value;
     model.difficulty = f.difficulty.value;
     model.work_minutes = f.work_minutes.value;
     model.wait_minutes = f.wait_minutes.value;
@@ -791,6 +815,7 @@ async function renderEditor(id) {
     const f = $('#editor');
     const redraw = () => { collect(); draw(); };
 
+    f.yield_mode.addEventListener('change', () => { collect(); draw(); (f.yield_mode.value === 'text' ? $('#editor [name="yield_text"]') : $('#editor [name="servings"]'))?.focus(); });
     $('#add-section').addEventListener('click', () => { collect(); model.sections.push(emptySection()); draw(); });
     $$('[data-del-section]', f).forEach((b) => b.addEventListener('click', () => {
       collect(); model.sections.splice(+b.dataset.delSection, 1); draw();
@@ -864,7 +889,9 @@ async function renderEditor(id) {
       try {
         const payload = {
           id: editId || undefined, title: model.title, visibility: model.visibility,
-          servings: model.servings || null, difficulty: model.difficulty || null,
+          servings: model.yield_mode === 'servings' ? (model.servings || null) : null,
+          yield_text: model.yield_mode === 'text' ? model.yield_text.trim() : '',
+          difficulty: model.difficulty || null,
           work_minutes: model.work_minutes || null, wait_minutes: model.wait_minutes || null,
           tips: model.tips, tag_ids: [...model.tag_ids], comments_open: model.comments_open,
           sections: model.sections.map((s) => ({
