@@ -3,7 +3,8 @@ name: Deploy to production
 # פריסה אוטומטית git -> שרת. מופעלת בכל push לענף שממנו האתר מוגש,
 # ובהפעלה ידנית. מעלה קוד בלבד ב-rsync — לא נוגעת בנתוני הריצה שבשרת
 # (data/ של git-deploy ושל renovation-punchlist מכילות אסימונים, הגדרות
-# ומדיה שהמשתמשים העלו).
+# ומדיה שהמשתמשים העלו; camera-app/data/ מכילה את ההקלטות ואת תיבת ה-FTP
+# שהמצלמות מעלות אליה).
 #
 # rsync רץ בלי --delete בכוונה: קבצים שקיימים רק בשרת נשארים במקומם.
 #
@@ -139,6 +140,11 @@ jobs:
             --exclude='recipes-app/data/media/' \
             --exclude='claude-tasks/data/config.json' \
             --exclude='claude-tasks/data/secret.key' \
+            --exclude='camera-app/data/*.sqlite*' \
+            --exclude='camera-app/data/secret.key' \
+            --exclude='camera-app/data/media/' \
+            --exclude='camera-app/data/inbox/' \
+            --exclude='camera-app/data/live/' \
             --exclude='node_modules/' \
             --exclude='guarded-browser/android/' \
             --exclude='guarded-browser/data/*.sqlite*' \

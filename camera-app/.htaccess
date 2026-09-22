@@ -1,0 +1,8 @@
+# הדף והקוד נבדקים מול השרת בכל טעינה.
+# בלי זה הטלפון מחזיק index.html ו-app.js ישנים ימים שלמים, ומסך חדש
+# שנפרס פשוט לא מופיע — בלי שום שגיאה. הבדיקה מסתיימת ב-304 כשלא השתנה דבר.
+<IfModule mod_headers.c>
+    <FilesMatch "\.(html|js|mjs|css|webmanifest)$">
+        Header set Cache-Control "no-cache, must-revalidate"
+    </FilesMatch>
+</IfModule>
