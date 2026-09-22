@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>אפליקציית מצלמות</title>
+<meta name="description" content="ניהול מצלמות IP מהדפדפן — שידור חי, הקלטה, נגן עם ציר זמן, צילומי מסך וקיטלוג בתיקיות נושא.">
+<meta name="theme-color" content="#0b1220">
+<link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./assets/css/app.css?v=2026-09-22a">
+</head>
+<body>
+
+<header class="bar">
+  <h1 class="bar__title">📷 מצלמות <small id="crumb"></small></h1>
+  <div class="bar__side">
+    <span id="who" class="who"></span>
+    <button id="logout" class="btn btn--ghost btn--sm" type="button" hidden>יציאה</button>
+    <a class="btn btn--ghost btn--sm" href="../index.html">לכלים</a>
+  </div>
+</header>
+<div id="update-banner" class="update-banner" hidden>יש גרסה חדשה של הדף — לחץ לרענון</div>
+
+<nav id="nav" class="nav" hidden>
+  <a href="#/">מצלמות</a>
+  <a href="#/recordings">הקלטות</a>
+  <a href="#/topics">נושאים</a>
+  <a href="#/events">אירועים</a>
+  <a href="#/bridges" data-admin>גשרים</a>
+  <a href="#/settings" data-admin>הגדרות</a>
+</nav>
+
+<!-- מסך אורח: התקנה ראשונה או כניסה. אין הרשמה — המנהל יוצר משתמשים. -->
+<main id="guest" class="centered" hidden>
+  <section class="card card--auth">
+    <form id="setup-form" hidden autocomplete="off">
+      <h2 class="card__title">התקנה ראשונה</h2>
+      <p class="hint" style="margin-bottom:12px">אין עדיין משתמשים. המשתמש הראשון הוא המנהל.</p>
+      <div class="field"><label>שם משתמש</label><input name="username" required minlength="3" maxlength="32" autocapitalize="off"></div>
+      <div class="field"><label>שם תצוגה</label><input name="display_name" maxlength="60"></div>
+      <div class="field"><label>סיסמה (8 תווים לפחות)</label><input name="password" type="password" required minlength="8"></div>
+      <div class="actions actions--end"><button class="btn btn--primary" type="submit">צור מנהל והיכנס</button></div>
+    </form>
+    <form id="login-form" hidden autocomplete="on">
+      <h2 class="card__title">כניסה</h2>
+      <div class="field"><label>שם משתמש</label><input name="username" required autocapitalize="off" autocomplete="username"></div>
+      <div class="field"><label>סיסמה</label><input name="password" type="password" required autocomplete="current-password"></div>
+      <div class="actions actions--end"><button class="btn btn--primary" type="submit">היכנס</button></div>
+    </form>
+  </section>
+</main>
+
+<main id="app" class="wrap" hidden>
+  <div id="view"></div>
+</main>
+
+<div id="modal-root"></div>
+<div id="toast-root"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js" defer></script>
+<script type="module" src="./assets/js/main.js?v=2026-09-22a"></script>
+</body>
+</html>
