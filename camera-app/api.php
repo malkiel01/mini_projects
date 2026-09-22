@@ -52,10 +52,10 @@ function intOrNull($v): ?int {
     return ($v === null || $v === '' ) ? null : (int) $v;
 }
 
-/** ה-?v= של app.js כפי שכתוב ב-index.html — הדפדפן משווה לשלו ומרענן. */
+/** ה-?v= של main.js כפי שכתוב ב-index.html — הדפדפן משווה לשלו ומרענן. */
 function assetsVersion(): string {
     $html = @file_get_contents(__DIR__ . '/index.html') ?: '';
-    return preg_match('/app\.js\?v=([^"\']+)/', $html, $m) ? $m[1] : '';
+    return preg_match('/main\.js\?v=([^"\']+)/', $html, $m) ? $m[1] : '';
 }
 
 $in     = body();
