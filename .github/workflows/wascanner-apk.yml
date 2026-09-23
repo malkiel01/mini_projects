@@ -28,6 +28,9 @@ defaults:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # נדרש כדי לפרסם את ה-APK כ-Release (ראו השלב האחרון).
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -60,3 +63,18 @@ jobs:
           name: wascanner-bridge-apk
           path: whatsapp-ai-scanner/android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+      # ‏Artifact של Actions אינו ניתן להורדה מדפדפן בטלפון — אין שם
+      # כפתור הורדה. לקובץ ב-Release יש קישור הורדה ישיר שעובד גם
+      # בנייד. התג נייח (wascanner-apk) ומתעדכן בכל בנייה, כך שהקישור
+      # תמיד מצביע ל-APK האחרון.
+      - name: Publish APK to a GitHub Release (mobile-friendly)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: wascanner-apk
+          name: גשר סורק וואטסאפ — APK (debug)
+          body: |
+            APK בחתימת debug להתקנה ידנית בטלפון (sideload).
+            מתעדכן אוטומטית בכל בנייה של הגשר.
+          files: whatsapp-ai-scanner/android/app/build/outputs/apk/debug/*.apk
+          fail_on_unmatched_files: true
