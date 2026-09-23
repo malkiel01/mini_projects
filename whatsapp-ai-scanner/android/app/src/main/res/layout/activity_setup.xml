@@ -21,13 +21,20 @@
             android:layout_height="wrap_content" android:hint="אסימון צימוד"
             android:inputType="textPassword"/>
 
-        <EditText android:id="@+id/accountId" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:hint="מזהה חשבון (מספר)"
-            android:inputType="number"/>
-
         <Button android:id="@+id/saveBtn" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:text="שמור וחבר"
+            android:layout_height="wrap_content" android:text="שמור אסימון וטען חשבונות"
             android:layout_marginTop="8dp"/>
+
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="חשבון פעיל לסריקה (כל מה שתסרוק ייכנס אליו):"
+            android:layout_marginTop="16dp"/>
+
+        <Spinner android:id="@+id/accountSpinner" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:minHeight="48dp"/>
+
+        <Button android:id="@+id/refreshAccountsBtn" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="רענן רשימת חשבונות"
+            android:layout_marginTop="4dp"/>
 
         <Button android:id="@+id/openAccessibilityBtn" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:text="הפעל את שירות הנגישות"

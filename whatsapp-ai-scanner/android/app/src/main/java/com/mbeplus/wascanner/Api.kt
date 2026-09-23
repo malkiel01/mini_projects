@@ -77,6 +77,26 @@ class Api(private val base: String, private val token: String) {
         }
     }
 
+    data class Account(val id: Int, val label: String, val kind: String)
+
+    /** שולף את רשימת החשבונות לבורר "חשבון פעיל". ריק בכשל. */
+    fun accounts(): List<Account> {
+        val conn = open("bridge_accounts")
+        return try {
+            val (code, text) = send(conn, JSONObject())
+            if (code != 200) return emptyList()
+            val arr = JSONObject(text).optJSONArray("accounts") ?: JSONArray()
+            (0 until arr.length()).map {
+                val o = arr.getJSONObject(it)
+                Account(o.getInt("id"), o.optString("label"), o.optString("kind"))
+            }
+        } catch (e: Exception) {
+            emptyList()
+        } finally {
+            conn.disconnect()
+        }
+    }
+
     /** דוחף שורת אבחון ליומן השרת. best-effort — לא זורק. */
     fun log(tag: String, status: String, detail: String) {
         val conn = open("log")

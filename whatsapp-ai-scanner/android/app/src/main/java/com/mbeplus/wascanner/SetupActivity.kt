@@ -3,19 +3,26 @@ package com.mbeplus.wascanner
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import androidx.appcompat.app.AppCompatActivity
 import com.mbeplus.wascanner.databinding.ActivitySetupBinding
 
 /**
- * מסך ההתחברות של הגשר: כתובת שרת, אסימון צימוד, ומזהה החשבון שאליו
- * לשייך את ההודעות שייסרקו. משם — כפתור שפותח את הגדרות הנגישות של
- * המערכת, שם המשתמש מפעיל את השירות ידנית (אנדרואיד לא מאפשר לאפליקציה
- * להפעיל שירות נגישות לבד — בכוונה).
+ * מסך ההתחברות של הגשר: כתובת שרת, אסימון צימוד, ובחירת **החשבון הפעיל**
+ * מרשימה שנטענת מהשרת.
+ *
+ * החשבון הפעיל הוא הליבה של ההפרדה בין אפליקציות וואטסאפ: המשתמש בוחר
+ * לאיזה חשבון הסריקה נכנסת, פותח את אפליקציית הוואטסאפ המתאימה, וסורק.
+ * כך אין ערבוב — גם כששני עותקים (שיבוט/תיקייה מאובטחת) חולקים את אותה
+ * חבילה ואי אפשר להבדיל ביניהם אוטומטית.
  */
 class SetupActivity : AppCompatActivity() {
 
     private lateinit var b: ActivitySetupBinding
     private lateinit var store: Store
+
+    private var accounts: List<Api.Account> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -24,44 +31,79 @@ class SetupActivity : AppCompatActivity() {
         store = Store(this)
 
         b.server.setText(store.serverBase)
-        if (store.accountId > 0) b.accountId.setText(store.accountId.toString())
 
         b.saveBtn.setOnClickListener {
             store.serverBase = b.server.text.toString()
             store.pairToken = b.token.text.toString()
-            store.accountId = b.accountId.text.toString().toIntOrNull() ?: 0
+            loadAccounts()
             refreshStatus()
+        }
+
+        b.refreshAccountsBtn.setOnClickListener { loadAccounts() }
+
+        b.accountSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: android.view.View?, pos: Int, id: Long) {
+                accounts.getOrNull(pos)?.let {
+                    store.accountId = it.id
+                    b.scanStatus.text = "חשבון פעיל לסריקה: ${it.label} (#${it.id})"
+                }
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
         }
 
         b.openAccessibilityBtn.setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
-
         b.testBtn.setOnClickListener { testConnection() }
-
         b.autoScanBtn.setOnClickListener { startAutoScan() }
+
+        if (store.pairToken.isNotEmpty()) loadAccounts()
     }
 
-    /** מדליק מצב סריקה אוטומטית ופותח את וואטסאפ. הגלילה תתחיל לבד
-     *  ברגע שהמשתמש ייכנס לצ'אט (ScannerService מזהה צ'אט פתוח). */
-    private fun startAutoScan() {
-        if (!store.configured) {
-            b.scanStatus.text = "קודם הזן אסימון ומזהה חשבון, ולחץ שמור"
+    /** טוען את רשימת החשבונות מהשרת וממלא את הבורר. */
+    private fun loadAccounts() {
+        if (store.serverBase.isEmpty() || store.pairToken.isEmpty()) {
+            b.scanStatus.text = "הזן כתובת שרת ואסימון, ולחץ שמור"
             return
         }
-        // לחיצה שנייה בזמן שהמצב דלוק = ביטול (הלולאה בשירות בודקת את
-        // הדגל בכל צעד ותיעצר).
+        b.refreshAccountsBtn.isEnabled = false
+        Thread {
+            val list = Api(store.serverBase, store.pairToken).accounts()
+            runOnUiThread {
+                b.refreshAccountsBtn.isEnabled = true
+                accounts = list
+                if (list.isEmpty()) {
+                    b.accountSpinner.adapter = ArrayAdapter(
+                        this, android.R.layout.simple_spinner_dropdown_item,
+                        listOf("אין חשבונות — צור באתר או בדוק אסימון"))
+                    return@runOnUiThread
+                }
+                val labels = list.map { "${it.label} (#${it.id})" }
+                b.accountSpinner.adapter = ArrayAdapter(
+                    this, android.R.layout.simple_spinner_dropdown_item, labels)
+                // בוחר מחדש את החשבון ששמור, אם הוא עדיין קיים.
+                val idx = list.indexOfFirst { it.id == store.accountId }
+                if (idx >= 0) b.accountSpinner.setSelection(idx)
+            }
+        }.start()
+    }
+
+    /** מדליק מצב סריקה אוטומטית ופותח את וואטסאפ. */
+    private fun startAutoScan() {
+        if (!store.configured) {
+            b.scanStatus.text = "בחר חשבון פעיל קודם (שמור אסימון וטען חשבונות)"
+            return
+        }
         if (store.autoScan) {
             store.autoScan = false
             b.scanStatus.text = "מצב סריקה אוטומטית כובה"
             return
         }
         store.autoScan = true
-        b.scanStatus.text = "מצב סריקה דלוק — פותח את וואטסאפ. היכנס לצ'אט והגלילה תתחיל לבד."
-        val wa = packageManager.getLaunchIntentForPackage("com.whatsapp")
-            ?: packageManager.getLaunchIntentForPackage("com.whatsapp.w4b")
-        if (wa != null) startActivity(wa)
-        else b.scanStatus.text = "וואטסאפ לא נמצא במכשיר"
+        b.scanStatus.text = "מצב סריקה דלוק — פתח את אפליקציית הוואטסאפ הרצויה והיכנס לצ'אט. הגלילה תתחיל לבד."
+        // פותח את הוואטסאפ הרגיל כנוחות; לשיבוט/עסקי — פתח ידנית את
+        // האפליקציה הנכונה (החשבון הפעיל כבר נבחר).
+        packageManager.getLaunchIntentForPackage("com.whatsapp")?.let { startActivity(it) }
     }
 
     override fun onResume() {
@@ -70,10 +112,9 @@ class SetupActivity : AppCompatActivity() {
         b.scanStatus.text = "אבחון סריקה: " + ScannerService.lastStatus
     }
 
-    /** בודק אסימון+כתובת+רשת בנפרד מהסריקה, ומראה את התוצאה. */
     private fun testConnection() {
         if (!store.configured) {
-            b.scanStatus.text = "קודם הזן אסימון ומזהה חשבון, ולחץ שמור"
+            b.scanStatus.text = "בחר חשבון פעיל קודם"
             return
         }
         b.testBtn.isEnabled = false
@@ -94,7 +135,7 @@ class SetupActivity : AppCompatActivity() {
 
     private fun refreshStatus() {
         val parts = buildList {
-            add(if (store.configured) "מוגדר ✓" else "חסרים אסימון או מזהה חשבון")
+            add(if (store.configured) "מוגדר ✓" else "בחר חשבון פעיל")
             add(if (accessibilityOn()) "שירות הנגישות פעיל ✓" else "שירות הנגישות כבוי")
         }
         b.status.text = parts.joinToString("\n")
@@ -104,10 +145,6 @@ class SetupActivity : AppCompatActivity() {
         val enabled = Settings.Secure.getString(
             contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
         ) ?: return false
-        // אנדרואיד שומר את הרשומה בפורמט המלא
-        // (com.pkg/com.pkg.ScannerService), לא במקוצר (com.pkg/.ScannerService).
-        // הבדיקה הקודמת חיפשה רק את המקוצר, ולכן הציגה "כבוי" גם כשהשירות
-        // פעיל. משווים כאן את שני הפורמטים, לכל רשומה ברשימה.
         val short = "$packageName/.ScannerService"
         val full  = "$packageName/${ScannerService::class.java.name}"
         return enabled.split(':').any { it.equals(short, true) || it.equals(full, true) }
