@@ -60,6 +60,7 @@ class SetupActivity : AppCompatActivity() {
         }
         b.testBtn.setOnClickListener { testConnection() }
         b.autoScanBtn.setOnClickListener { startAutoScan() }
+        b.sweepBtn.setOnClickListener { startFullSweep() }
         b.scanFilesBtn.setOnClickListener { harvestFiles() }
 
         if (store.pairToken.isNotEmpty()) loadAccounts()
@@ -182,6 +183,20 @@ class SetupActivity : AppCompatActivity() {
         "webp" -> "image/webp"
         "jpg", "jpeg" -> "image/jpeg"
         else -> "application/octet-stream"
+    }
+
+    /** מדליק סריקה מלאה של כל הצ'אטים ופותח את וואטסאפ ברשימת השיחות. */
+    private fun startFullSweep() {
+        if (!store.configured) { b.scanStatus.text = "בחר חשבון פעיל קודם"; return }
+        if (store.fullSweep) {
+            store.fullSweep = false
+            b.scanStatus.text = "סריקה מלאה בוטלה"
+            return
+        }
+        store.fullSweep = true
+        store.autoScan = false   // לא לערבב עם שלב 1
+        b.scanStatus.text = "סריקה מלאה דלוקה — פותח את וואטסאפ. שים אותו במסך רשימת הצ'אטים, והוא ינווט לבד. (לחיצה שוב = ביטול)"
+        packageManager.getLaunchIntentForPackage("com.whatsapp")?.let { startActivity(it) }
     }
 
     override fun onResume() {
