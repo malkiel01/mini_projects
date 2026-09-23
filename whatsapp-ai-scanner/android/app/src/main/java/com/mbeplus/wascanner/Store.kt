@@ -33,6 +33,11 @@ class Store(context: Context) {
         get() = prefs.getInt("account", 0)
         set(v) = prefs.edit().putInt("account", v).apply()
 
+    // מצב סריקה אוטומטית: הודלק מכפתור באפליקציה, נצרך כשהגלילה מסתיימת.
+    var autoScan: Boolean
+        get() = prefs.getBoolean("autoscan", false)
+        set(v) = prefs.edit().putBoolean("autoscan", v).apply()
+
     val configured: Boolean
         get() = pairToken.isNotEmpty() && accountId > 0
 }
