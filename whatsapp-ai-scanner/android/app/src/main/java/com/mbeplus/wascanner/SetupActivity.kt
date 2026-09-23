@@ -55,6 +55,12 @@ class SetupActivity : AppCompatActivity() {
         val enabled = Settings.Secure.getString(
             contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
         ) ?: return false
-        return enabled.contains("${packageName}/.ScannerService")
+        // אנדרואיד שומר את הרשומה בפורמט המלא
+        // (com.pkg/com.pkg.ScannerService), לא במקוצר (com.pkg/.ScannerService).
+        // הבדיקה הקודמת חיפשה רק את המקוצר, ולכן הציגה "כבוי" גם כשהשירות
+        // פעיל. משווים כאן את שני הפורמטים, לכל רשומה ברשימה.
+        val short = "$packageName/.ScannerService"
+        val full  = "$packageName/${ScannerService::class.java.name}"
+        return enabled.split(':').any { it.equals(short, true) || it.equals(full, true) }
     }
 }
