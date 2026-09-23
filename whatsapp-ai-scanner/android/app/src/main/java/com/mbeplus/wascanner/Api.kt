@@ -97,6 +97,28 @@ class Api(private val base: String, private val token: String) {
         }
     }
 
+    /** מעלה קובץ מדיה (PDF/תמונה) לחילוץ בשרת. מחזיר את הסטטוס בשדה error. */
+    fun uploadMedia(accountId: Int, filename: String, mime: String, bytes: ByteArray, sentAt: Long): Result {
+        val conn = open("media")
+        conn.readTimeout = 90000   // חילוץ במודל אורך זמן
+        return try {
+            val payload = JSONObject().apply {
+                put("account_id", accountId)
+                put("filename", filename)
+                put("mime", mime)
+                put("sent_at", sentAt)
+                put("data", android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP))
+            }
+            val (code, text) = send(conn, payload)
+            if (code != 200) Result(code, 0, errorOf(text))
+            else Result(200, 1, JSONObject(text).optString("status", "processed"))
+        } catch (e: Exception) {
+            Result(-1, 0, e.message ?: "כשל רשת")
+        } finally {
+            conn.disconnect()
+        }
+    }
+
     /** דוחף שורת אבחון ליומן השרת. best-effort — לא זורק. */
     fun log(tag: String, status: String, detail: String) {
         val conn = open("log")
