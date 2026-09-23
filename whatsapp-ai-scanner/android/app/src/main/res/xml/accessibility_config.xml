@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  מצומצם בכוונה לוואטסאפ בלבד: packageNames מגביל את השירות לשתי
+  החבילות של וואטסאפ, כך שאין לו גישה לשום אפליקציה אחרת. זו הגבלה
+  מהותית לפרטיות, לא נוחות.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowContentChanged|typeWindowStateChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows"
+    android:canRetrieveWindowContent="true"
+    android:packageNames="com.whatsapp,com.whatsapp.w4b"
+    android:description="@string/accessibility_desc"
+    android:notificationTimeout="300"/>

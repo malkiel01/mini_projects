@@ -42,6 +42,7 @@ done
 | 7 | שרטוט לסוכה — הפרויקט | `claude/sukkah-sketch-tools-5su7vg` | מוזג (#59) |
 | 8 | שרטוט לסוכה — מצגת החלקים | `claude/sukkah-sketch-tools-5su7vg` | מוזג (#69) |
 | 9 | אפליקציית מתכונים | `claude/recipes-app-project-8bm7nb` | PR #60, טיוטה, ממתין למיזוג |
+| 12 | סורק וואטסאפ חכם | `claude/whatsapp-ai-scanner-app-8nt74a` | הצד השרתי עובד, הגשר בשלד; PR חדש |
 | 10 | שרטוט לסוכה — מצגת הזוויות | `claude/sukkah-sketch-tools-5su7vg` | PR פתוח |
 | 11 | אפליקציית מצלמות | `claude/camera-app-project-8rvbw3` | PR פתוח |
 

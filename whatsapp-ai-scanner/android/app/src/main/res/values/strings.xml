@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">גשר סורק וואטסאפ</string>
+    <string name="accessibility_desc">קורא את ההודעות המוצגות בוואטסאפ ומזרים אותן לשרת הסורק שלך, כדי שתוכל לשאול עליהן שאלות. פועל רק על החשבון שלך.</string>
+</resources>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:padding="20dp" android:layoutDirection="rtl">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="גשר סורק וואטסאפ" android:textSize="22sp" android:textStyle="bold"
+            android:paddingBottom="12dp"/>
+
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="הדביקו את אסימון הצימוד מהגדרות האתר, ואת מזהה החשבון שאליו לשייך את ההודעות."
+            android:paddingBottom="16dp"/>
+
+        <EditText android:id="@+id/server" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:hint="כתובת השרת"
+            android:inputType="textUri"/>
+
+        <EditText android:id="@+id/token" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:hint="אסימון צימוד"
+            android:inputType="textPassword"/>
+
+        <EditText android:id="@+id/accountId" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:hint="מזהה חשבון (מספר)"
+            android:inputType="number"/>
+
+        <Button android:id="@+id/saveBtn" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="שמור וחבר"
+            android:layout_marginTop="8dp"/>
+
+        <Button android:id="@+id/openAccessibilityBtn" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="הפעל את שירות הנגישות"
+            android:layout_marginTop="8dp"/>
+
+        <TextView android:id="@+id/status" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:paddingTop="16dp"/>
+    </LinearLayout>
+</ScrollView>
