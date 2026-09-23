@@ -7,20 +7,23 @@ import java.net.URL
 
 /**
  * הפנייה לשרת. בלי ספריות רשת חיצוניות — HttpURLConnection ו-org.json
- * מספיקים לבקשת POST/JSON אחת, ופחות תלויות פירושו בנייה שלא נשברת.
+ * מספיקים, ופחות תלויות פירושו בנייה שלא נשברת.
  *
- * ‏ext_id מחושב כאן ולא בשרת: הוא גיבוב יציב של תוכן ההודעה, כדי
- * שסריקה חוזרת של אותו מסך לא תיצור כפילות (השרת עושה INSERT OR IGNORE
- * על המזהה הזה).
+ * האסימון נשלח בשתי כותרות: Authorization ו-X-Pair-Token. שרתי
+ * Apache/cPanel רבים משמיטים את Authorization לפני PHP, וה-X-Pair-Token
+ * עוקף את זה. השרת בודק את שתיהן.
+ *
+ * ‏ext_id מחושב כאן: גיבוב יציב של תוכן ההודעה, כדי שסריקה חוזרת של אותו
+ * מסך לא תיצור כפילות (השרת עושה INSERT OR IGNORE על המזהה).
  */
 class Api(private val base: String, private val token: String) {
 
     data class Msg(
         val chatName: String,
         val sender: String,
-        val direction: String,   // "in" / "out"
+        val direction: String,
         val body: String,
-        val sentAt: Long,        // שניות
+        val sentAt: Long,
     ) {
         fun extId(): String {
             val raw = "$chatName|$sender|$direction|$sentAt|$body"
@@ -37,33 +40,62 @@ class Api(private val base: String, private val token: String) {
         }
     }
 
-    /** מזרים אצווה. מחזיר את מספר ההודעות שנקלטו, או -1 בכשל. */
-    fun ingest(accountId: Int, messages: List<Msg>): Int {
-        if (messages.isEmpty()) return 0
-        val payload = JSONObject().apply {
-            put("account_id", accountId)
-            put("messages", JSONArray().apply { messages.forEach { put(it.toJson()) } })
-        }
-        val url = URL(base + "api/index.php?action=ingest")
-        val conn = url.openConnection() as HttpURLConnection
-        return try {
-            conn.requestMethod = "POST"
-            conn.connectTimeout = 8000
-            conn.readTimeout = 15000
-            conn.doOutput = true
-            conn.setRequestProperty("Content-Type", "application/json")
-            conn.setRequestProperty("Authorization", "Bearer $token")
-            conn.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+    data class Result(val httpCode: Int, val ingested: Int, val error: String?)
 
-            val code = conn.responseCode
-            val text = (if (code in 200..299) conn.inputStream else conn.errorStream)
-                ?.bufferedReader()?.readText() ?: ""
-            if (code != 200) return -1
-            JSONObject(text).optInt("ingested", 0)
+    private fun open(action: String): HttpURLConnection {
+        val conn = URL(base + "api/index.php?action=$action").openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.connectTimeout = 8000
+        conn.readTimeout = 15000
+        conn.doOutput = true
+        conn.setRequestProperty("Content-Type", "application/json")
+        conn.setRequestProperty("Authorization", "Bearer $token")
+        conn.setRequestProperty("X-Pair-Token", token)
+        return conn
+    }
+
+    private fun send(conn: HttpURLConnection, payload: JSONObject): Pair<Int, String> {
+        conn.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+        val code = conn.responseCode
+        val text = (if (code in 200..299) conn.inputStream else conn.errorStream)
+            ?.bufferedReader()?.readText() ?: ""
+        return code to text
+    }
+
+    /** בדיקת חיבור: מאמת אסימון+כתובת+רשת בלי לגעת בהודעות. */
+    fun ping(accountId: Int): Result {
+        val conn = open("ping")
+        return try {
+            val (code, text) = send(conn, JSONObject().put("account_id", accountId))
+            if (code != 200) return Result(code, 0, errorOf(text))
+            val exists = JSONObject(text).optBoolean("account_exists", false)
+            Result(200, 0, if (exists) null else "החשבון לא קיים בשרת")
         } catch (e: Exception) {
-            -1
+            Result(-1, 0, e.message ?: "כשל רשת")
         } finally {
             conn.disconnect()
         }
     }
+
+    /** מזרים אצווה. */
+    fun ingest(accountId: Int, messages: List<Msg>): Result {
+        if (messages.isEmpty()) return Result(0, 0, null)
+        val payload = JSONObject().apply {
+            put("account_id", accountId)
+            put("messages", JSONArray().apply { messages.forEach { put(it.toJson()) } })
+        }
+        val conn = open("ingest")
+        return try {
+            val (code, text) = send(conn, payload)
+            if (code != 200) return Result(code, 0, errorOf(text))
+            Result(200, JSONObject(text).optInt("ingested", 0), null)
+        } catch (e: Exception) {
+            Result(-1, 0, e.message ?: "כשל רשת")
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    private fun errorOf(text: String): String =
+        try { JSONObject(text).optString("error", "שגיאה") } catch (e: Exception) { "שגיאת שרת" }
 }

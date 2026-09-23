@@ -1,0 +1,13 @@
+# מעביר את כותרת Authorization ל-PHP.
+#
+# שרתי Apache/cPanel רבים משמיטים אותה לפני שהיא מגיעה ל-PHP, וכך
+# אסימון הצימוד של הגשר לא נקרא והבליעה מוחזרת כ-401. הכלל למטה משכפל
+# אותה ל-REDIRECT_HTTP_AUTHORIZATION, ש-auth.php יודע לקרוא.
+#
+# עטוף ב-IfModule כדי שלא יפיל את השרת אם mod_rewrite חסר. הגשר גם
+# שולח X-Pair-Token כגיבוי, כך שגם בלי הכלל הזה האימות עובד.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+</IfModule>

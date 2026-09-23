@@ -125,6 +125,14 @@ try {
                 'truncated'  => $collected['truncated'],
             ]);
 
+        /* ── בדיקת חיבור (גשר) ──────────────────────────────────── */
+        // מאמת אסימון+כתובת+רשת בנפרד מהסריקה, כדי לבודד "בעיית חיבור"
+        // מ"בעיית קריאת מסך".
+        case 'ping':
+            requireBridge();
+            $accountId = (int) ($in['account_id'] ?? 0);
+            ok(['pong' => true, 'account_exists' => (bool) getAccount($accountId)]);
+
         /* ── בליעה (גשר) ────────────────────────────────────────── */
         case 'ingest':
             requireBridge();
