@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#075E54">
+    <title>סורק וואטסאפ חכם</title>
+    <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+    <header class="topbar">
+        <img src="assets/icon.svg" alt="" class="logo">
+        <h1>סורק וואטסאפ חכם</h1>
+        <button id="logoutBtn" class="ghost" hidden>יציאה</button>
+    </header>
+
+    <main id="app">
+        <!-- מסך התקנה / כניסה -->
+        <section id="gate" class="card" hidden>
+            <h2 id="gateTitle">כניסה</h2>
+            <p id="gateHint" class="muted"></p>
+            <input id="pw" type="password" placeholder="סיסמה" autocomplete="current-password">
+            <button id="gateBtn" class="primary">המשך</button>
+            <p id="gateMsg" class="msg" role="alert"></p>
+        </section>
+
+        <!-- שאלה ותשובה -->
+        <section id="ask" class="card" hidden>
+            <h2>שאלה על ההתכתבויות</h2>
+            <textarea id="q" rows="3" placeholder="לדוגמה: מי שלח לי אסמכתא על תשלום מעל 500 ₪? מי התכתב איתי ב-16 בחודש?"></textarea>
+            <div class="filters">
+                <label>חשבון
+                    <select id="qAccount"><option value="">כל החשבונות</option></select>
+                </label>
+                <label>מתאריך <input id="qFrom" type="date"></label>
+                <label>עד תאריך <input id="qTo" type="date"></label>
+            </div>
+            <button id="askBtn" class="primary">שאל</button>
+            <div id="answer" class="answer" hidden></div>
+        </section>
+
+        <!-- חשבונות -->
+        <section id="accounts" class="card" hidden>
+            <h2>חשבונות הוואטסאפ</h2>
+            <p class="muted">הגדר אילו חשבונות ייסרקו, והאם הם עסקיים או פרטיים. המספר <span class="accid">#N</span> שליד כל חשבון הוא "מזהה החשבון" שמזינים באפליקציית הגשר.</p>
+            <ul id="accountList" class="list"></ul>
+            <div class="row">
+                <input id="accLabel" placeholder="שם החשבון (למשל: הביזנס)">
+                <select id="accKind">
+                    <option value="personal">פרטי</option>
+                    <option value="business">עסקי</option>
+                </select>
+                <button id="addAccBtn" class="primary">הוסף</button>
+            </div>
+        </section>
+
+        <!-- הגדרות -->
+        <section id="settings" class="card" hidden>
+            <h2>הגדרות</h2>
+
+            <h3>מנוע הבינה</h3>
+            <label class="block">ספק
+                <select id="aiProvider"></select>
+            </label>
+            <label class="block">מודל
+                <input id="aiModel" placeholder="ברירת מחדל של הספק">
+            </label>
+            <label class="block">מפתח API
+                <input id="aiKey" type="password" placeholder="השאר ריק כדי לא לשנות">
+                <span id="keyTail" class="muted"></span>
+            </label>
+            <button id="saveAiBtn" class="primary">שמור</button>
+
+            <h3>חיבור אפליקציית הסריקה</h3>
+            <p class="muted">אפליקציית האנדרואיד היא הגשר שקורא את הוואטסאפ במכשיר ומזרים לכאן. הדביקו בה את אסימון הצימוד:</p>
+            <div class="token"><code id="pairToken">—</code><button id="copyTokenBtn" class="ghost">העתק</button></div>
+            <button id="rotateTokenBtn" class="ghost small">גלגל אסימון חדש (מנתק מכשירים קיימים)</button>
+
+            <p id="settingsMsg" class="msg"></p>
+        </section>
+    </main>
+
+    <nav id="tabs" class="tabs" hidden>
+        <button data-tab="ask" class="active">שאלה</button>
+        <button data-tab="accounts">חשבונות</button>
+        <button data-tab="settings">הגדרות</button>
+    </nav>
+
+    <script src="assets/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
+    <application
+        android:allowBackup="false"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="false"
+        android:theme="@style/Theme.Material3.DayNight.NoActionBar">
+
+        <activity android:name=".SetupActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <!--
+          שירות הנגישות הוא הלב של הגשר: הוא ה-API היחיד באנדרואיד שדרכו
+          אפליקציה אחת יכולה לקרוא את מה שמוצג באפליקציה אחרת. הוא קורא
+          רק את מה שגלוי על המסך — אין דרך "לפתוח" את מסד הוואטסאפ עצמו
+          בלי הרשאת root. ראו README.
+        -->
+        <service
+            android:name=".ScannerService"
+            android:exported="false"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_config"/>
+        </service>
+    </application>
+</manifest>

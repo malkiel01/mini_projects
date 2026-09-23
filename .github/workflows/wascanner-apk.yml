@@ -1,0 +1,80 @@
+name: Build WA-Scanner bridge APK
+
+# בונה את אפליקציית הגשר ומעלה אותה כ-artifact.
+#
+# הבנייה כאן ולא מקומית: סביבת הפיתוח חסומה לרשת חיצונית, ו-Gradle
+# חייב להוריד את ה-SDK ואת התלויות. אותה סיבה ואותו מבנה כמו
+# android.yml של guarded-browser.
+#
+# ה-APK יוצא בחתימת debug: מספיק להתקנה ידנית בטלפון (sideload),
+# לא לחנות. חתימת release דורשת keystore שאין להחזיק בריפו.
+
+on:
+  push:
+    paths:
+      - 'whatsapp-ai-scanner/android/**'
+      - '.github/workflows/wascanner-apk.yml'
+  workflow_dispatch:
+    inputs:
+      apiBase:
+        description: 'כתובת השרת שאליה הגשר יזרים הודעות'
+        required: false
+        default: 'https://mbe-plus.com/mini_projects/whatsapp-ai-scanner/'
+
+defaults:
+  run:
+    working-directory: whatsapp-ai-scanner/android
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # נדרש כדי לפרסם את ה-APK כ-Release (ראו השלב האחרון).
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      # הריפו אינו מכיל gradle-wrapper.jar (בינארי), ולכן ה-wrapper
+      # נוצר כאן מהגרסה שב-gradle-wrapper.properties.
+      - name: Generate the Gradle wrapper
+        run: gradle wrapper --gradle-version 8.7
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --no-daemon
+             -PapiBase="${{ github.event.inputs.apiBase || 'https://mbe-plus.com/mini_projects/whatsapp-ai-scanner/' }}"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: wascanner-bridge-apk
+          path: whatsapp-ai-scanner/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      # ‏Artifact של Actions אינו ניתן להורדה מדפדפן בטלפון — אין שם
+      # כפתור הורדה. לקובץ ב-Release יש קישור הורדה ישיר שעובד גם
+      # בנייד. התג נייח (wascanner-apk) ומתעדכן בכל בנייה, כך שהקישור
+      # תמיד מצביע ל-APK האחרון.
+      - name: Publish APK to a GitHub Release (mobile-friendly)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: wascanner-apk
+          name: גשר סורק וואטסאפ — APK (debug)
+          body: |
+            APK בחתימת debug להתקנה ידנית בטלפון (sideload).
+            מתעדכן אוטומטית בכל בנייה של הגשר.
+          files: whatsapp-ai-scanner/android/app/build/outputs/apk/debug/*.apk
+          fail_on_unmatched_files: true
