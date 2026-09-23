@@ -33,10 +33,15 @@ class Store(context: Context) {
         get() = prefs.getInt("account", 0)
         set(v) = prefs.edit().putInt("account", v).apply()
 
-    // מצב סריקה אוטומטית: הודלק מכפתור באפליקציה, נצרך כשהגלילה מסתיימת.
+    // מצב סריקה אוטומטית של הצ'אט הפתוח (שלב 1).
     var autoScan: Boolean
         get() = prefs.getBoolean("autoscan", false)
         set(v) = prefs.edit().putBoolean("autoscan", v).apply()
+
+    // מצב סריקת כל הצ'אטים (שלב 2): ניווט אוטומטי על רשימת השיחות.
+    var fullSweep: Boolean
+        get() = prefs.getBoolean("fullsweep", false)
+        set(v) = prefs.edit().putBoolean("fullsweep", v).apply()
 
     // קבצי מדיה שכבר הועלו (מפתח: נתיב+גודל) — כדי לא להעלות שוב.
     fun isMediaSeen(key: String): Boolean =
