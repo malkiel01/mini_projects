@@ -33,6 +33,10 @@ class Store(context: Context) {
         get() = prefs.getInt("account", 0)
         set(v) = prefs.edit().putInt("account", v).apply()
 
+    var accountLabel: String
+        get() = prefs.getString("account_label", "") ?: ""
+        set(v) = prefs.edit().putString("account_label", v).apply()
+
     // מצב סריקה אוטומטית של הצ'אט הפתוח (שלב 1).
     var autoScan: Boolean
         get() = prefs.getBoolean("autoscan", false)
