@@ -77,6 +77,18 @@ class Api(private val base: String, private val token: String) {
         }
     }
 
+    /** דוחף שורת אבחון ליומן השרת. best-effort — לא זורק. */
+    fun log(tag: String, status: String, detail: String) {
+        val conn = open("log")
+        try {
+            send(conn, JSONObject().put("tag", tag).put("status", status).put("detail", detail))
+        } catch (e: Exception) {
+            // אבחון לא שובר סריקה.
+        } finally {
+            conn.disconnect()
+        }
+    }
+
     /** מזרים אצווה. */
     fun ingest(accountId: Int, messages: List<Msg>): Result {
         if (messages.isEmpty()) return Result(0, 0, null)

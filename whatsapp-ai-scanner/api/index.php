@@ -37,6 +37,11 @@ function body(): array {
     $d = json_decode($raw, true);
     return is_array($d) ? $d : [];
 }
+function str_field(array $in, string $key, int $max, string $default = ''): string {
+    $v = $in[$key] ?? $default;
+    if (!is_string($v)) return $default;
+    return mb_substr(trim($v), 0, $max);
+}
 
 $action = $_GET['action'] ?? ($_POST['action'] ?? '');
 $in     = body();
@@ -72,6 +77,7 @@ try {
             ok([
                 'ai'          => aiSettingsView(),
                 'pair_token'  => owner()['pair_token'],
+                'log_token'   => ownerLogToken(),
             ]);
 
         case 'save_ai':
@@ -86,6 +92,10 @@ try {
         case 'rotate_token':
             requireOwner();
             ok(['pair_token' => rotatePairToken()]);
+
+        case 'rotate_log_token':
+            requireOwner();
+            ok(['log_token' => rotateLogToken()]);
 
         case 'list_models':
             requireOwner();
@@ -131,7 +141,25 @@ try {
         case 'ping':
             requireBridge();
             $accountId = (int) ($in['account_id'] ?? 0);
-            ok(['pong' => true, 'account_exists' => (bool) getAccount($accountId)]);
+            $exists = (bool) getAccount($accountId);
+            logEvent('bridge', 'ping', '200', ['account' => $accountId, 'exists' => $exists]);
+            ok(['pong' => true, 'account_exists' => $exists]);
+
+        // המכשיר דוחף אבחון: מה נסרק על המסך, כמה טקסטים, ודגימה.
+        case 'log':
+            requireBridge();
+            logEvent('device',
+                str_field($in, 'tag', 40, 'scan'),
+                str_field($in, 'status', 60, ''),
+                str_field($in, 'detail', 3500));
+            ok();
+
+        // קריאת היומן. מורשית באסימון יומן (כדי שאפשר יהיה למשוך מבחוץ)
+        // או בסשן בעלים (לתצוגה באתר).
+        case 'logs':
+            $token = (string) ($_GET['token'] ?? ($in['token'] ?? ''));
+            if (!isOwner() && !logTokenValid($token)) fail('אסימון יומן שגוי', 401);
+            ok(['logs' => recentLogs((int) ($_GET['limit'] ?? ($in['limit'] ?? 300)))]);
 
         /* ── בליעה (גשר) ────────────────────────────────────────── */
         case 'ingest':
@@ -140,7 +168,14 @@ try {
             if (!getAccount($accountId)) fail('חשבון לא קיים');
             $rows = is_array($in['messages'] ?? null) ? $in['messages'] : [];
             if (count($rows) > 2000) fail('אצווה גדולה מדי — עד 2000 הודעות בבקשה');
-            ok(ingestBatch($accountId, $rows));
+            $res = ingestBatch($accountId, $rows);
+            logEvent('bridge', 'ingest', '200', [
+                'account'  => $accountId,
+                'received' => count($rows),
+                'ingested' => $res['ingested'],
+                'skipped'  => $res['skipped'],
+            ]);
+            ok($res);
 
         default:
             fail('פעולה לא מוכרת: ' . $action, 404);

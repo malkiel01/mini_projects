@@ -176,7 +176,37 @@ async function loadSettings() {
 
     prov.onchange = () => populateModels(prov.value, '');
     $('pairToken').textContent = s.pair_token;
+    $('logToken').textContent = s.log_token || '—';
 }
+
+/* יומן אבחון */
+$('copyLogTokenBtn').addEventListener('click', () => {
+    navigator.clipboard?.writeText($('logToken').textContent).then(() => {
+        $('copyLogTokenBtn').textContent = 'הועתק';
+        setTimeout(() => ($('copyLogTokenBtn').textContent = 'העתק'), 1500);
+    });
+});
+
+$('rotateLogTokenBtn').addEventListener('click', async () => {
+    if (!confirm('אסימון יומן חדש יבטל את הישן. להמשיך?')) return;
+    const r = await api('rotate_log_token');
+    $('logToken').textContent = r.log_token;
+});
+
+$('viewLogsBtn').addEventListener('click', async () => {
+    const box = $('logsView');
+    show(box, true);
+    box.textContent = 'טוען…';
+    try {
+        const r = await api('logs');
+        box.textContent = (r.logs || []).map((l) => {
+            const t = new Date(l.ts * 1000).toLocaleString('he-IL');
+            return `${t} [${l.source}/${l.action}] ${l.status} ${l.detail}`;
+        }).join('\n') || '(היומן ריק)';
+    } catch (e) {
+        box.textContent = 'שגיאה: ' + e.message;
+    }
+});
 
 function providerMeta(id) {
     return (aiState?.providers || []).find((x) => x.id === id) || { models: [], default: '' };
