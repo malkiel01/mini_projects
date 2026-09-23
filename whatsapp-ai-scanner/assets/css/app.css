@@ -81,6 +81,7 @@ button:disabled { opacity: .55; cursor: default; }
 .tag.business { background: #fff3cd; color: #8a6d00; }
 .tag.personal { background: #e2e3ff; color: #3b3b8a; }
 .list .count { color: var(--muted); font-size: .82rem; margin-inline-start: auto; }
+.accid { color: var(--wa-teal); font-weight: 600; font-size: .82rem; direction: ltr; unicode-bidi: isolate; }
 .list .del { color: var(--danger); border: none; background: none; font-size: 1.1rem; }
 
 .row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; }

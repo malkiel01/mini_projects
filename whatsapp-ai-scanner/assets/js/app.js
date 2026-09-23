@@ -125,7 +125,7 @@ async function loadAccounts() {
         const kindHe = a.kind === 'business' ? 'עסקי' : 'פרטי';
         li.innerHTML =
             `<span class="tag ${a.kind}">${kindHe}</span>` +
-            `<span>${escapeHtml(a.label)}</span>` +
+            `<span>${escapeHtml(a.label)} <span class="accid" title="מזהה החשבון עבור אפליקציית הגשר">#${a.id}</span></span>` +
             `<span class="count">${a.message_count} הודעות</span>` +
             `<button class="del" title="מחק">🗑</button>`;
         li.querySelector('.del').addEventListener('click', async () => {
