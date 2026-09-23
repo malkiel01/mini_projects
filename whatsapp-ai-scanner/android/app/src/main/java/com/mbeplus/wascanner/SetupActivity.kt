@@ -38,6 +38,30 @@ class SetupActivity : AppCompatActivity() {
         }
 
         b.testBtn.setOnClickListener { testConnection() }
+
+        b.autoScanBtn.setOnClickListener { startAutoScan() }
+    }
+
+    /** מדליק מצב סריקה אוטומטית ופותח את וואטסאפ. הגלילה תתחיל לבד
+     *  ברגע שהמשתמש ייכנס לצ'אט (ScannerService מזהה צ'אט פתוח). */
+    private fun startAutoScan() {
+        if (!store.configured) {
+            b.scanStatus.text = "קודם הזן אסימון ומזהה חשבון, ולחץ שמור"
+            return
+        }
+        // לחיצה שנייה בזמן שהמצב דלוק = ביטול (הלולאה בשירות בודקת את
+        // הדגל בכל צעד ותיעצר).
+        if (store.autoScan) {
+            store.autoScan = false
+            b.scanStatus.text = "מצב סריקה אוטומטית כובה"
+            return
+        }
+        store.autoScan = true
+        b.scanStatus.text = "מצב סריקה דלוק — פותח את וואטסאפ. היכנס לצ'אט והגלילה תתחיל לבד."
+        val wa = packageManager.getLaunchIntentForPackage("com.whatsapp")
+            ?: packageManager.getLaunchIntentForPackage("com.whatsapp.w4b")
+        if (wa != null) startActivity(wa)
+        else b.scanStatus.text = "וואטסאפ לא נמצא במכשיר"
     }
 
     override fun onResume() {
