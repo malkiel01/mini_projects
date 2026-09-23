@@ -81,9 +81,25 @@ function bridgeAuthorized(): bool {
 }
 
 function bridgeTokenFromHeader(): string {
-    $h = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
-    if (stripos($h, 'Bearer ') === 0) return trim(substr($h, 7));
-    return (string) ($_SERVER['HTTP_X_PAIR_TOKEN'] ?? '');
+    // כותרת ייעודית קודם — היא החסינה ביותר. שרתי Apache/cPanel רבים
+    // משמיטים את Authorization לפני שהיא מגיעה ל-PHP, ולכן הגשר שולח
+    // גם X-Pair-Token, וכאן בודקים אותה ראשונה.
+    $x = (string) ($_SERVER['HTTP_X_PAIR_TOKEN'] ?? '');
+    if ($x !== '') return trim($x);
+
+    // Authorization — קודם מ-$_SERVER, ואם הושמטה, מ-getallheaders()
+    // (שם היא לעיתים כן נשמרת), ולבסוף מהמשתנה שהוספנו ב-.htaccess.
+    $auth = $_SERVER['HTTP_AUTHORIZATION']
+        ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION']
+        ?? '';
+    if ($auth === '' && function_exists('getallheaders')) {
+        foreach (getallheaders() as $k => $v) {
+            if (strcasecmp($k, 'Authorization') === 0) { $auth = $v; break; }
+            if (strcasecmp($k, 'X-Pair-Token') === 0 && $v !== '') return trim($v);
+        }
+    }
+    if (stripos($auth, 'Bearer ') === 0) return trim(substr($auth, 7));
+    return '';
 }
 
 function requireBridge(): void {

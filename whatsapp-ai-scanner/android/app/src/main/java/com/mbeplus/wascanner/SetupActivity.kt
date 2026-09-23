@@ -36,11 +36,36 @@ class SetupActivity : AppCompatActivity() {
         b.openAccessibilityBtn.setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
+
+        b.testBtn.setOnClickListener { testConnection() }
     }
 
     override fun onResume() {
         super.onResume()
         refreshStatus()
+        b.scanStatus.text = "אבחון סריקה: " + ScannerService.lastStatus
+    }
+
+    /** בודק אסימון+כתובת+רשת בנפרד מהסריקה, ומראה את התוצאה. */
+    private fun testConnection() {
+        if (!store.configured) {
+            b.scanStatus.text = "קודם הזן אסימון ומזהה חשבון, ולחץ שמור"
+            return
+        }
+        b.testBtn.isEnabled = false
+        b.scanStatus.text = "בודק…"
+        Thread {
+            val r = Api(store.serverBase, store.pairToken).ping(store.accountId)
+            runOnUiThread {
+                b.testBtn.isEnabled = true
+                b.scanStatus.text = when {
+                    r.httpCode == 200 && r.error == null -> "חיבור תקין ✓ — השרת מזהה את החשבון"
+                    r.httpCode == 200 -> "חובר, אך: ${r.error}"
+                    r.httpCode == -1  -> "כשל רשת: ${r.error}"
+                    else              -> "השרת דחה (${r.httpCode}): ${r.error}"
+                }
+            }
+        }.start()
     }
 
     private fun refreshStatus() {

@@ -5,79 +5,83 @@ import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.widget.Toast
 import java.util.concurrent.Executors
 
 /**
  * הגשר. שירות נגישות שקורא את מסך הוואטסאפ ומזרים הודעות לשרת.
  *
- * מה הוא כן ולא יכול לעשות — הגבלה מהותית, לא פער בקוד:
- *   שירות נגישות רואה רק את מה שמצויר על המסך כרגע. אין לו גישה למסד
- *   ההודעות של וואטסאפ. לכן "לסרוק את כל ההיסטוריה" פירושו לגלול בצ'אט
- *   ולתת לשירות לראות בועה אחרי בועה. הקוד כאן קורא את מה שגלוי; הגלילה
- *   האוטומטית עצמה מסומנת כ-TODO, כי היא הרכיב שהכי תלוי בגרסת וואטסאפ
- *   ומחייב כוונון על מכשיר אמיתי.
+ * שיטת הקריאה: **סריקת כל הטקסט הגלוי** על מסך הוואטסאפ, ולא חיפוש
+ * מזהי view ספציפיים. מזהי ה-view (message_text וכו') משתנים בין
+ * גרסאות וואטסאפ ושברו את הקריאה; סריקת כל צמתי הטקסט עמידה לכך. יש
+ * בכך מעט רעש (שם איש קשר, חותמות זמן), אבל המודל שעונה על השאלות
+ * סובל אותו, וחותמות הזמן שנקראות כטקסט אף עוזרות לשאלות "מי כתב מתי".
  *
- * מזהי ה-view (message_text, date) נכונים לגרסאות וואטסאפ רבות אך לא
- * מובטחים — וואטסאפ משנה אותם בין גרסאות. הם נקודת התחלה לכוונון, לא
- * חוזה. ראו README, פרק "אפליקציית הגשר".
+ * מגבלה שנותרה: שירות נגישות רואה רק את הגלוי כרגע, ולכן צריך לגלול
+ * כדי לאסוף היסטוריה. הבליעה מסירה כפילויות (ext_id), כך שגלילה חוזרת
+ * בטוחה.
  */
 class ScannerService : AccessibilityService() {
+
+    companion object {
+        // אבחון גלוי: מסך ההגדרות של האפליקציה מציג את השורה הזו, כדי
+        // שלא נעבוד בעיוור כשההודעות לא נקלטות.
+        @Volatile var lastStatus: String = "טרם רץ — פתח וואטסאפ וגלול"
+    }
 
     private val store by lazy { Store(this) }
     private val io = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
 
-    // מזהי הודעות שכבר נשלחו בסשן הזה — מונע שליחה חוזרת של אותו מסך
-    // בכל אירוע. השרת ממילא מסנן כפילויות, אבל זה חוסך תעבורה.
     private val seen = HashSet<String>()
     private val pending = ArrayList<Api.Msg>()
     private var flushScheduled = false
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event == null || !store.configured) return
+        if (event == null) return
+        if (!store.configured) { lastStatus = "לא מוגדר — הזן אסימון ומזהה חשבון"; return }
+
         val pkg = event.packageName?.toString() ?: return
         if (pkg != "com.whatsapp" && pkg != "com.whatsapp.w4b") return
 
         val root = rootInActiveWindow ?: return
         val chat = chatTitle(root)
-        collectMessages(root, chat)
+
+        val texts = ArrayList<String>()
+        walk(root, texts, 0)
+
+        var added = 0
+        for (body in texts) {
+            if (body.length < 1) continue
+            val msg = Api.Msg(
+                chatName = chat,
+                sender = chat,
+                direction = "in",
+                body = body,
+                sentAt = System.currentTimeMillis() / 1000,
+            )
+            if (seen.add(msg.extId())) { pending.add(msg); added++ }
+        }
+        lastStatus = "נראו ${texts.size} טקסטים, ${added} חדשים, ממתין לשליחה…"
         scheduleFlush()
     }
 
-    /** כותרת הצ'אט הפעיל — שם איש הקשר או הקבוצה. */
-    private fun chatTitle(root: AccessibilityNodeInfo): String {
-        // TODO: לכוונן מזהה לפי גרסה. toolbar → כותרת הצ'אט.
-        val nodes = root.findAccessibilityNodeInfosByViewId("com.whatsapp:id/conversation_contact_name")
-        return nodes.firstOrNull()?.text?.toString().orEmpty()
+    /** אוסף את כל צמתי הטקסט שבעץ, לפי הסדר, עד עומק סביר. */
+    private fun walk(node: AccessibilityNodeInfo?, out: ArrayList<String>, depth: Int) {
+        if (node == null || depth > 80) return
+        val t = node.text?.toString()?.trim()
+        if (!t.isNullOrEmpty()) out.add(t)
+        for (i in 0 until node.childCount) walk(node.getChild(i), out, depth + 1)
     }
 
-    /** אוסף בועות הודעה שגלויות כרגע. */
-    private fun collectMessages(root: AccessibilityNodeInfo, chat: String) {
-        val texts = root.findAccessibilityNodeInfosByViewId("com.whatsapp:id/message_text")
-        for (node in texts) {
-            val body = node.text?.toString()?.trim().orEmpty()
-            if (body.isEmpty()) continue
-
-            // כיוון ההודעה: וואטסאפ מיישר נכנסות לשמאל ויוצאות לימין.
-            // TODO: להסיק מהמיקום/מזהה במקום ברירת מחדל.
-            val direction = "in"
-
-            val msg = Api.Msg(
-                chatName = chat,
-                sender = if (direction == "out") "" else chat,
-                direction = direction,
-                body = body,
-                sentAt = System.currentTimeMillis() / 1000, // TODO: לפרסר את בועת התאריך
-            )
-            val id = msg.extId()
-            if (seen.add(id)) pending.add(msg)
-        }
+    private fun chatTitle(root: AccessibilityNodeInfo): String {
+        val nodes = root.findAccessibilityNodeInfosByViewId("com.whatsapp:id/conversation_contact_name")
+        return nodes.firstOrNull()?.text?.toString().orEmpty()
     }
 
     private fun scheduleFlush() {
         if (flushScheduled) return
         flushScheduled = true
-        // דחיית איסוף קצרה: אירועי נגישות מגיעים בצרורות בזמן גלילה.
         main.postDelayed({ flush() }, 800)
     }
 
@@ -88,10 +92,20 @@ class ScannerService : AccessibilityService() {
         pending.clear()
         val api = Api(store.serverBase, store.pairToken)
         val account = store.accountId
-        io.execute { api.ingest(account, batch) }
+        io.execute {
+            val r = api.ingest(account, batch)
+            lastStatus = when {
+                r.httpCode == 200 -> "נשלחו ${batch.size} · נקלטו ${r.ingested} חדשות · שרת 200 ✓"
+                r.httpCode == -1  -> "כשל רשת: ${r.error}"
+                else              -> "השרת דחה (${r.httpCode}): ${r.error}"
+            }
+            if (r.ingested > 0) main.post {
+                Toast.makeText(this, "נקלטו ${r.ingested} הודעות", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
-    override fun onInterrupt() { /* אין מצב מיוחד להשבתה */ }
+    override fun onInterrupt() {}
 
     override fun onDestroy() {
         super.onDestroy()
