@@ -29,18 +29,29 @@ const PROVIDERS = [
         'prefix'  => 'sk-ant-',
         'default' => 'claude-haiku-4-5-20251001',
         'hint'    => 'console.anthropic.com ← API keys',
+        // רשימה מובנית לבחירה מיידית, בלי צורך בקריאת רשת. כפתור
+        // "טען מודלים" ב-UI מרחיב אותה מ-API החי של הספק.
+        'models'  => [
+            ['id' => 'claude-haiku-4-5-20251001', 'label' => 'Haiku 4.5 — מהיר וזול'],
+            ['id' => 'claude-sonnet-5',           'label' => 'Sonnet 5 — חכם ומאוזן'],
+            ['id' => 'claude-opus-5',             'label' => 'Opus 5 — החכם ביותר (יקר)'],
+        ],
     ],
     'openai' => [
         'label'   => 'OpenAI — GPT',
         'prefix'  => 'sk-',
         'default' => '',
         'hint'    => 'platform.openai.com ← API keys',
+        // ‏OpenAI מחליפה שמות מודלים תכופות — עדיף לטעון מהספק
+        // בכפתור "טען מודלים" מאשר לקבע רשימה שתתיישן.
+        'models'  => [],
     ],
     'google' => [
         'label'   => 'Google — Gemini',
         'prefix'  => 'AIza',
         'default' => '',
         'hint'    => 'aistudio.google.com ← Get API key',
+        'models'  => [],
     ],
 ];
 
@@ -205,6 +216,110 @@ function aiHttp(string $url, array $headers, string $json): array {
 
     if ($body === false) throw new AppError('הפנייה לספק נכשלה: ' . $err);
     return ['status' => $code, 'body' => (string) $body];
+}
+
+function aiHttpGet(string $url, array $headers): array {
+    if (!function_exists('curl_init')) throw new AppError('cURL אינו זמין בשרת');
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 20,
+        CURLOPT_CONNECTTIMEOUT => 8,
+        CURLOPT_HTTPHEADER     => $headers,
+    ]);
+    $body = curl_exec($ch);
+    $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err  = curl_error($ch);
+    curl_close($ch);
+
+    if ($body === false) throw new AppError('הפנייה לספק נכשלה: ' . $err);
+    return ['status' => $code, 'body' => (string) $body];
+}
+
+/* ── רשימת מודלים חיה מהספק ─────────────────────────────────────── */
+
+/** [url, headers] לשליפת רשימת המודלים אצל הספק. */
+function providerModelsRequest(string $provider, string $key): array {
+    switch ($provider) {
+        case 'anthropic':
+            return ['https://api.anthropic.com/v1/models?limit=100',
+                    ['anthropic-version: 2023-06-01', 'x-api-key: ' . $key]];
+        case 'openai':
+            return ['https://api.openai.com/v1/models',
+                    ['Authorization: Bearer ' . $key]];
+        case 'google':
+            // המפתח בכתובת, כמו בפניית ההשלמה.
+            return ['https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' . rawurlencode($key),
+                    []];
+    }
+    throw new InvalidArgumentException('ספק לא מוכר: ' . $provider);
+}
+
+/** מוציא [id, label] מכל מודל, ומסנן מה שאינו רלוונטי לצ'אט. */
+function providerModelsParse(string $provider, array $data): array {
+    $out = [];
+    switch ($provider) {
+        case 'anthropic':
+            foreach ($data['data'] ?? [] as $m) {
+                if (!empty($m['id'])) $out[] = ['id' => $m['id'], 'label' => $m['display_name'] ?? $m['id']];
+            }
+            break;
+        case 'openai':
+            // רק מודלים שיודעים לשוחח — לא embeddings/tts/whisper/image.
+            foreach ($data['data'] ?? [] as $m) {
+                $id = (string) ($m['id'] ?? '');
+                if ($id !== '' && preg_match('/^(gpt|o[1-9]|chatgpt)/', $id)) {
+                    $out[] = ['id' => $id, 'label' => $id];
+                }
+            }
+            break;
+        case 'google':
+            foreach ($data['models'] ?? [] as $m) {
+                $name    = (string) ($m['name'] ?? '');
+                $methods = $m['supportedGenerationMethods'] ?? [];
+                if ($name !== '' && in_array('generateContent', $methods, true)) {
+                    $id = str_starts_with($name, 'models/') ? substr($name, 7) : $name;
+                    $out[] = ['id' => $id, 'label' => $m['displayName'] ?? $id];
+                }
+            }
+            break;
+    }
+    // ייחוד לפי id, סדר יציב.
+    $seen = [];
+    $uniq = [];
+    foreach ($out as $m) {
+        if (isset($seen[$m['id']])) continue;
+        $seen[$m['id']] = true;
+        $uniq[] = $m;
+    }
+    return $uniq;
+}
+
+/**
+ * שולף את רשימת המודלים מהספק. $transport מוזרק בבדיקות.
+ */
+function listProviderModels(string $provider, string $key, ?callable $transport = null): array {
+    if (!providerExists($provider)) throw new InvalidArgumentException('ספק לא מוכר');
+    if ($key === '') throw new AppError('צריך מפתח API כדי לטעון מודלים');
+
+    [$url, $headers] = providerModelsRequest($provider, $key);
+    $res = $transport ? $transport($provider, $url, $key) : aiHttpGet($url, $headers);
+
+    $data = json_decode((string) $res['body'], true);
+    $data = is_array($data) ? $data : [];
+
+    if (($res['status'] ?? 0) !== 200) {
+        throw new AppError(match ((int) ($res['status'] ?? 0)) {
+            401, 403 => 'המפתח של ' . PROVIDERS[$provider]['label'] . ' נדחה בעת טעינת המודלים',
+            429      => PROVIDERS[$provider]['label'] . ': המכסה נגמרה או שהשירות עמוס',
+            default  => 'טעינת רשימת המודלים נכשלה (' . ($res['status'] ?? 0) . ')',
+        });
+    }
+
+    $models = providerModelsParse($provider, $data);
+    if (!$models) throw new AppError('הספק לא החזיר מודלים מתאימים');
+    return $models;
 }
 
 /** מודלים נוטים לעטוף JSON בטקסט. לוקחים את הבלוק ולא את העטיפה. */

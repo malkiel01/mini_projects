@@ -26,8 +26,20 @@ function aiSettingsView(): array {
             'label'   => $m['label'],
             'default' => $m['default'],
             'hint'    => $m['hint'],
+            'models'  => $m['models'] ?? [],
         ], array_keys(PROVIDERS), PROVIDERS),
     ];
+}
+
+/**
+ * טוען את רשימת המודלים החיה מהספק, לפי המפתח השמור. משמש את כפתור
+ * "טען מודלים" ב-UI. הבחירה להשתמש במפתח השמור (ולא באחד שנשלח בבקשה)
+ * מונעת דליפה של מפתח לא-שמור ומחייבת לשמור אותו קודם — מה שגם מאמת
+ * שהוא תקין.
+ */
+function fetchProviderModels(): array {
+    $conn = ownerAiConn();   // זורק AppError אם אין מפתח
+    return listProviderModels($conn['provider'], $conn['key']);
 }
 
 function saveAiSettings(string $provider, string $model, ?string $key): void {
