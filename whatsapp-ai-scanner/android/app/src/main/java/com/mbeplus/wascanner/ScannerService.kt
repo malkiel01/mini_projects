@@ -1,10 +1,21 @@
 package com.mbeplus.wascanner
 
 import android.accessibilityservice.AccessibilityService
+import android.graphics.Color
+import android.graphics.PixelFormat
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
+import android.view.Gravity
+import android.view.MotionEvent
+import android.view.View
+import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import java.util.concurrent.Executors
 
@@ -57,6 +68,12 @@ class ScannerService : AccessibilityService() {
     private var lastListNames: Set<String> = emptySet()
     private var listNoProgress = 0
     private var sweepMisses = 0
+
+    // שכבת בקרה מרחפת
+    private var overlay: View? = null
+    private var overlayStatus: TextView? = null
+    private var overlayPauseBtn: Button? = null
+    @Volatile private var paused = false
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
@@ -124,14 +141,17 @@ class ScannerService : AccessibilityService() {
     /* ── שלב 1: גלילת הצ'אט הפתוח ────────────────────────────────── */
 
     private fun startAutoScroll() {
-        autoScrolling = true; autoIdle = 0; autoSteps = 0
+        autoScrolling = true; autoIdle = 0; autoSteps = 0; paused = false
         lastStatus = "סריקה אוטומטית התחילה…"
+        showOverlay()
         io.execute { safeLog("autoscan", "start", "") }
         main.post { autoStep() }
     }
 
     private fun autoStep() {
         if (!store.autoScan) { stopAuto("בוטל"); return }
+        updateOverlay()
+        if (paused) { main.postDelayed({ autoStep() }, 500); return }
         val root = rootInActiveWindow
         if (root == null) { main.postDelayed({ autoStep() }, STEP_MS); return }
         val added = collectFromRoot(root)
@@ -146,6 +166,7 @@ class ScannerService : AccessibilityService() {
     private fun stopAuto(reason: String) {
         autoScrolling = false; store.autoScan = false; flush()
         lastStatus = "גלילה אוטומטית $reason"
+        hideOverlay()
         io.execute { safeLog("autoscan", reason, "steps=$autoSteps") }
         main.post { Toast.makeText(this, "גלילה אוטומטית הסתיימה", Toast.LENGTH_SHORT).show() }
     }
@@ -160,13 +181,17 @@ class ScannerService : AccessibilityService() {
         doneChats.clear(); currentChat = ""
         chatIdle = 0; chatSteps = 0; chatsProcessed = 0
         lastListNames = emptySet(); listNoProgress = 0; sweepMisses = 0
+        paused = false
         lastStatus = "סריקה מלאה התחילה…"
+        showOverlay()
         io.execute { safeLog("sweep", "start", "") }
         main.postDelayed({ sweepTick() }, OPEN_MS)
     }
 
     private fun sweepTick() {
         if (!store.fullSweep) { stopSweep("בוטל ידנית"); return }
+        updateOverlay()
+        if (paused) { main.postDelayed({ sweepTick() }, 500); return }
         if (chatsProcessed >= SWEEP_MAX_CHATS) { stopSweep("תקרת צ'אטים"); return }
 
         val root = rootInActiveWindow
@@ -259,6 +284,7 @@ class ScannerService : AccessibilityService() {
     private fun stopSweep(reason: String) {
         sweepRunning = false; store.fullSweep = false; flush()
         lastStatus = "סריקה מלאה $reason"
+        hideOverlay()
         io.execute { safeLog("sweep", reason, "chats=$chatsProcessed") }
         main.post { Toast.makeText(this, "סריקה מלאה הסתיימה ($chatsProcessed צ'אטים)", Toast.LENGTH_LONG).show() }
     }
@@ -266,6 +292,77 @@ class ScannerService : AccessibilityService() {
     private fun safeLog(tag: String, status: String, detail: String) {
         try { Api(store.serverBase, store.pairToken).log(tag, status, detail) } catch (e: Exception) {}
     }
+
+    /* ── שכבת בקרה מרחפת (השהה/עצור) ─────────────────────────────── */
+
+    private fun showOverlay() {
+        if (overlay != null) return
+        if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) return  // אין הרשאה
+        val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor("#F0202124"))
+            setPadding(28, 20, 28, 20)
+        }
+        val status = TextView(this).apply {
+            setTextColor(Color.WHITE); textSize = 12f; text = "סורק…"
+        }
+        val pauseBtn = Button(this).apply { text = "⏸ השהה" }
+        val stopBtn = Button(this).apply { text = "⏹ עצור" }
+        pauseBtn.setOnClickListener {
+            paused = !paused
+            pauseBtn.text = if (paused) "▶ המשך" else "⏸ השהה"
+        }
+        stopBtn.setOnClickListener {
+            store.fullSweep = false
+            store.autoScan = false
+            paused = false
+            // הלולאות עוצרות בעצמן בבדיקת הדגל; מסירים את השכבה מיד.
+            hideOverlay()
+        }
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        row.addView(pauseBtn); row.addView(stopBtn)
+        panel.addView(status); panel.addView(row)
+
+        val type = if (Build.VERSION.SDK_INT >= 26)
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
+        val lp = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            type,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply { gravity = Gravity.TOP or Gravity.START; x = 24; y = 140 }
+
+        // גרירה, כדי שלא יסתיר תוכן.
+        panel.setOnTouchListener(object : View.OnTouchListener {
+            var dx = 0; var dy = 0; var ix = 0f; var iy = 0f
+            override fun onTouch(v: View, e: MotionEvent): Boolean {
+                when (e.action) {
+                    MotionEvent.ACTION_DOWN -> { dx = lp.x; dy = lp.y; ix = e.rawX; iy = e.rawY }
+                    MotionEvent.ACTION_MOVE -> {
+                        lp.x = dx + (e.rawX - ix).toInt()
+                        lp.y = dy + (e.rawY - iy).toInt()
+                        try { wm.updateViewLayout(panel, lp) } catch (ex: Exception) {}
+                    }
+                }
+                return false
+            }
+        })
+
+        try { wm.addView(panel, lp) } catch (e: Exception) { return }
+        overlay = panel; overlayStatus = status; overlayPauseBtn = pauseBtn
+    }
+
+    private fun hideOverlay() {
+        val o = overlay ?: return
+        try { (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(o) } catch (e: Exception) {}
+        overlay = null; overlayStatus = null; overlayPauseBtn = null
+    }
+
+    private fun updateOverlay() { overlayStatus?.text = lastStatus }
 
     /* ── שליחה ──────────────────────────────────────────────────── */
 
@@ -300,6 +397,7 @@ class ScannerService : AccessibilityService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        hideOverlay()
         io.shutdown()
     }
 }

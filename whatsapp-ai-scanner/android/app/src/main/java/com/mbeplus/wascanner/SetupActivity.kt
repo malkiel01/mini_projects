@@ -105,8 +105,9 @@ class SetupActivity : AppCompatActivity() {
             b.scanStatus.text = "מצב סריקה אוטומטית כובה"
             return
         }
+        if (!ensureOverlay()) return
         store.autoScan = true
-        b.scanStatus.text = "מצב סריקה דלוק — פתח את אפליקציית הוואטסאפ הרצויה והיכנס לצ'אט. הגלילה תתחיל לבד."
+        b.scanStatus.text = "מצב סריקה דלוק — פתח את אפליקציית הוואטסאפ הרצויה והיכנס לצ'אט. הגלילה תתחיל לבד. (עצירה: הכפתור המרחף)"
         // פותח את הוואטסאפ הרגיל כנוחות; לשיבוט/עסקי — פתח ידנית את
         // האפליקציה הנכונה (החשבון הפעיל כבר נבחר).
         packageManager.getLaunchIntentForPackage("com.whatsapp")?.let { startActivity(it) }
@@ -193,10 +194,28 @@ class SetupActivity : AppCompatActivity() {
             b.scanStatus.text = "סריקה מלאה בוטלה"
             return
         }
+        if (!ensureOverlay()) return
         store.fullSweep = true
         store.autoScan = false   // לא לערבב עם שלב 1
-        b.scanStatus.text = "סריקה מלאה דלוקה — פותח את וואטסאפ. שים אותו במסך רשימת הצ'אטים, והוא ינווט לבד. (לחיצה שוב = ביטול)"
+        b.scanStatus.text = "סריקה מלאה דלוקה — פותח את וואטסאפ. שים אותו במסך רשימת הצ'אטים, והוא ינווט לבד. עצירה/השהיה: הכפתור המרחף."
         packageManager.getLaunchIntentForPackage("com.whatsapp")?.let { startActivity(it) }
+    }
+
+    /** מוודא הרשאת "הצגה מעל אפליקציות אחרות" — נדרשת לכפתור העצירה
+     *  המרחף. בלעדיה אין דרך לעצור סריקה אוטומטית מתוך וואטסאפ. */
+    private fun ensureOverlay(): Boolean {
+        if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) {
+            b.scanStatus.text = "אשר 'הצגה מעל אפליקציות אחרות' כדי שיהיה כפתור עצירה מרחף, ואז לחץ שוב"
+            try {
+                startActivity(Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName")))
+            } catch (e: Exception) {
+                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
+            }
+            return false
+        }
+        return true
     }
 
     override fun onResume() {
