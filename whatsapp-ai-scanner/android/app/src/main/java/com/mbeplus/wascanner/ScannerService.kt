@@ -72,8 +72,22 @@ class ScannerService : AccessibilityService() {
     // שכבת בקרה מרחפת
     private var overlay: View? = null
     private var overlayStatus: TextView? = null
+    private var overlayDetail: TextView? = null
+    private var overlayBody: View? = null
     private var overlayPauseBtn: Button? = null
+    private var overlayExpanded = true
     @Volatile private var paused = false
+
+    // מוני סשן ללוח הבקרה
+    @Volatile private var sessionSent = 0
+    @Volatile private var sessionBatches = 0
+    private val refresher = object : Runnable {
+        override fun run() {
+            if (overlay == null) return
+            refreshOverlay()
+            main.postDelayed(this, 1000)
+        }
+    }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
@@ -82,6 +96,7 @@ class ScannerService : AccessibilityService() {
         val pkg = event.packageName?.toString() ?: return
         if (pkg != "com.whatsapp" && pkg != "com.whatsapp.w4b") return
 
+        showOverlay()   // מציג את לוח הבקרה כשנמצאים בוואטסאפ (idempotent)
         val root = rootInActiveWindow ?: return
         val added = collectFromRoot(root)
         if (!sweepRunning) lastStatus = "נראו הודעות · $added חדשות · בתור ${pending.size}"
@@ -166,7 +181,7 @@ class ScannerService : AccessibilityService() {
     private fun stopAuto(reason: String) {
         autoScrolling = false; store.autoScan = false; flush()
         lastStatus = "גלילה אוטומטית $reason"
-        hideOverlay()
+        refreshOverlay()   // משאירים את לוח הבקרה; רק מעדכנים
         io.execute { safeLog("autoscan", reason, "steps=$autoSteps") }
         main.post { Toast.makeText(this, "גלילה אוטומטית הסתיימה", Toast.LENGTH_SHORT).show() }
     }
@@ -284,7 +299,7 @@ class ScannerService : AccessibilityService() {
     private fun stopSweep(reason: String) {
         sweepRunning = false; store.fullSweep = false; flush()
         lastStatus = "סריקה מלאה $reason"
-        hideOverlay()
+        refreshOverlay()   // משאירים את לוח הבקרה; רק מעדכנים
         io.execute { safeLog("sweep", reason, "chats=$chatsProcessed") }
         main.post { Toast.makeText(this, "סריקה מלאה הסתיימה ($chatsProcessed צ'אטים)", Toast.LENGTH_LONG).show() }
     }
@@ -293,7 +308,11 @@ class ScannerService : AccessibilityService() {
         try { Api(store.serverBase, store.pairToken).log(tag, status, detail) } catch (e: Exception) {}
     }
 
-    /* ── שכבת בקרה מרחפת (השהה/עצור) ─────────────────────────────── */
+    /* ── לוח בקרה מרחף ───────────────────────────────────────────── */
+
+    private fun btn(label: String, onClick: () -> Unit) = Button(this).apply {
+        text = label; textSize = 12f; setPadding(18, 6, 18, 6); setOnClickListener { onClick() }
+    }
 
     private fun showOverlay() {
         if (overlay != null) return
@@ -303,27 +322,38 @@ class ScannerService : AccessibilityService() {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.parseColor("#F0202124"))
-            setPadding(28, 20, 28, 20)
+            setPadding(26, 18, 26, 18)
         }
+
+        // כותרת: שורת מצב + כפתור כווץ/הרחב + סגירה.
+        val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val status = TextView(this).apply {
-            setTextColor(Color.WHITE); textSize = 12f; text = "סורק…"
+            setTextColor(Color.WHITE); textSize = 12f; text = "לוח בקרה — סורק וואטסאפ"
+            width = 380
         }
-        val pauseBtn = Button(this).apply { text = "⏸ השהה" }
-        val stopBtn = Button(this).apply { text = "⏹ עצור" }
-        pauseBtn.setOnClickListener {
+        val toggle = btn("▾") { overlayExpanded = !overlayExpanded; applyExpanded(); refreshOverlay() }
+        val close = btn("✕") { hideOverlay() }
+        header.addView(status); header.addView(toggle); header.addView(close)
+
+        // גוף: פרטים + כפתורי הפעלה.
+        val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val detail = TextView(this).apply {
+            setTextColor(Color.parseColor("#C9D1D9")); textSize = 11f
+            setPadding(0, 10, 0, 10); text = "…"
+        }
+        val ctrl = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        ctrl.addView(btn("▶ סרוק הכל") { startSweepFromOverlay() })
+        val pauseBtn = btn("⏸ השהה") {
             paused = !paused
-            pauseBtn.text = if (paused) "▶ המשך" else "⏸ השהה"
+            overlayPauseBtn?.text = if (paused) "▶ המשך" else "⏸ השהה"
         }
-        stopBtn.setOnClickListener {
-            store.fullSweep = false
-            store.autoScan = false
-            paused = false
-            // הלולאות עוצרות בעצמן בבדיקת הדגל; מסירים את השכבה מיד.
-            hideOverlay()
-        }
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        row.addView(pauseBtn); row.addView(stopBtn)
-        panel.addView(status); panel.addView(row)
+        ctrl.addView(pauseBtn)
+        ctrl.addView(btn("⏹ עצור") {
+            store.fullSweep = false; store.autoScan = false; paused = false; refreshOverlay()
+        })
+        body.addView(detail); body.addView(ctrl)
+
+        panel.addView(header); panel.addView(body)
 
         val type = if (Build.VERSION.SDK_INT >= 26)
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -334,10 +364,10 @@ class ScannerService : AccessibilityService() {
             type,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
-        ).apply { gravity = Gravity.TOP or Gravity.START; x = 24; y = 140 }
+        ).apply { gravity = Gravity.TOP or Gravity.START; x = 24; y = 120 }
 
-        // גרירה, כדי שלא יסתיר תוכן.
-        panel.setOnTouchListener(object : View.OnTouchListener {
+        // גרירה דרך הכותרת בלבד (שלא יתנגש עם כפתורים).
+        header.setOnTouchListener(object : View.OnTouchListener {
             var dx = 0; var dy = 0; var ix = 0f; var iy = 0f
             override fun onTouch(v: View, e: MotionEvent): Boolean {
                 when (e.action) {
@@ -353,16 +383,65 @@ class ScannerService : AccessibilityService() {
         })
 
         try { wm.addView(panel, lp) } catch (e: Exception) { return }
-        overlay = panel; overlayStatus = status; overlayPauseBtn = pauseBtn
+        overlay = panel; overlayStatus = status; overlayDetail = detail
+        overlayBody = body; overlayPauseBtn = pauseBtn
+        applyExpanded(); refreshOverlay()
+        main.removeCallbacks(refresher); main.postDelayed(refresher, 1000)
+    }
+
+    private fun applyExpanded() {
+        overlayBody?.visibility = if (overlayExpanded) View.VISIBLE else View.GONE
+    }
+
+    /** מדליק סריקת הכל מהשכבה, ומביא את וואטסאפ לחזית. */
+    private fun startSweepFromOverlay() {
+        if (!store.configured) { lastStatus = "בחר חשבון פעיל באפליקציה"; refreshOverlay(); return }
+        store.autoScan = false
+        store.fullSweep = true
+        paused = false
+        try {
+            val i = packageManager.getLaunchIntentForPackage("com.whatsapp")
+                ?: packageManager.getLaunchIntentForPackage("com.whatsapp.w4b")
+            i?.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (i != null) startActivity(i)
+        } catch (e: Exception) {}
+    }
+
+    private fun refreshOverlay() {
+        overlayStatus?.text = shortStatus()
+        if (overlayExpanded) overlayDetail?.text = detailText()
+    }
+
+    private fun shortStatus(): String {
+        val mode = when {
+            sweepRunning -> "סריקת הכל"
+            autoScrolling -> "גלילת צ'אט"
+            else -> "ממתין"
+        }
+        return "לוח בקרה · $mode" + (if (paused) " · מושהה" else "")
+    }
+
+    private fun detailText(): String {
+        val acc = if (store.accountLabel.isNotEmpty()) "${store.accountLabel} (#${store.accountId})" else "#${store.accountId}"
+        return buildString {
+            append("מצב: ").append(lastStatus).append('\n')
+            append("צ'אטים שנסרקו בסבב: ").append(chatsProcessed).append('\n')
+            if (currentChat.isNotEmpty()) append("צ'אט נוכחי: ").append(currentChat).append('\n')
+            append("הודעות שנשלחו בסשן: ").append(sessionSent).append('\n')
+            append("ממתין לשליחה: ").append(pending.size).append('\n')
+            append("חשבון פעיל: ").append(acc).append('\n')
+            append("נשאר: לא ידוע מראש (וואטסאפ לא חושף כמות)")
+        }
     }
 
     private fun hideOverlay() {
+        main.removeCallbacks(refresher)
         val o = overlay ?: return
         try { (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(o) } catch (e: Exception) {}
-        overlay = null; overlayStatus = null; overlayPauseBtn = null
+        overlay = null; overlayStatus = null; overlayDetail = null; overlayBody = null; overlayPauseBtn = null
     }
 
-    private fun updateOverlay() { overlayStatus?.text = lastStatus }
+    private fun updateOverlay() { refreshOverlay() }
 
     /* ── שליחה ──────────────────────────────────────────────────── */
 
@@ -382,6 +461,7 @@ class ScannerService : AccessibilityService() {
         io.execute {
             api.log("scan", "batch=${batch.size}", batch.take(10).joinToString("  ¦  ") { it.body.take(50) })
             val r = api.ingest(account, batch)
+            if (r.ingested > 0) { sessionSent += r.ingested; sessionBatches++ }
             if (!sweepRunning) lastStatus = when {
                 r.httpCode == 200 -> "נשלחו ${batch.size} · נקלטו ${r.ingested} · שרת 200 ✓"
                 r.httpCode == -1  -> "כשל רשת: ${r.error}"
@@ -391,6 +471,12 @@ class ScannerService : AccessibilityService() {
                 Toast.makeText(this, "נקלטו ${r.ingested} הודעות", Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        // מציג את לוח הבקרה מיד אם יש הרשאת הצגה-מעל וכבר מוגדר חשבון.
+        if (store.configured) main.post { showOverlay() }
     }
 
     override fun onInterrupt() {}

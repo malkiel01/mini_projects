@@ -49,6 +49,7 @@ class SetupActivity : AppCompatActivity() {
             override fun onItemSelected(p: AdapterView<*>?, v: android.view.View?, pos: Int, id: Long) {
                 accounts.getOrNull(pos)?.let {
                     store.accountId = it.id
+                    store.accountLabel = it.label
                     b.scanStatus.text = "חשבון פעיל לסריקה: ${it.label} (#${it.id})"
                 }
             }
