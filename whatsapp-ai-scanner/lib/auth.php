@@ -52,7 +52,29 @@ function setupOwner(string $password): void {
         'password_hash' => password_hash($password, PASSWORD_DEFAULT),
         // אסימון צימוד נוצר כבר עכשיו, כדי שיהיה מה להראות לאפליקציה.
         'pair_token'    => bin2hex(random_bytes(24)),
+        'log_token'     => bin2hex(random_bytes(24)),
     ]);
+}
+
+/** אסימון קריאת היומן. נוצר בעצלתיים למסד שקדם לפיצ'ר. */
+function ownerLogToken(): string {
+    $t = owner()['log_token'] ?? '';
+    if ($t === '') {
+        $t = bin2hex(random_bytes(24));
+        updateOwner(['log_token' => $t]);
+    }
+    return $t;
+}
+
+function logTokenValid(string $t): bool {
+    $real = ownerLogToken();
+    return $t !== '' && hash_equals($real, $t);
+}
+
+function rotateLogToken(): string {
+    $t = bin2hex(random_bytes(24));
+    updateOwner(['log_token' => $t]);
+    return $t;
 }
 
 function login(string $password): bool {
@@ -104,6 +126,13 @@ function bridgeTokenFromHeader(): string {
 
 function requireBridge(): void {
     if (!bridgeAuthorized()) {
+        // רושם *אילו* כותרות הגיעו — כך מתגלה מיד אם Apache השמיט את
+        // Authorization, בלי לחשוף את האסימון עצמו.
+        logEvent('bridge', 'auth', '401', [
+            'has_authorization'          => isset($_SERVER['HTTP_AUTHORIZATION']),
+            'has_redirect_authorization' => isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION']),
+            'has_x_pair_token'           => isset($_SERVER['HTTP_X_PAIR_TOKEN']),
+        ]);
         http_response_code(401);
         echo json_encode(['success' => false, 'error' => 'אסימון צימוד שגוי'], JSON_UNESCAPED_UNICODE);
         exit;

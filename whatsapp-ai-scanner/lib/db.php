@@ -85,8 +85,59 @@ function migrate(PDO $pdo): void {
         -- טבלת חיפוש חופשי בטקסט גלוי הייתה מפרה את ההצפנה במנוחה,
         -- ולכן החיפוש נעשה על גוף מפוענח בזיכרון (query.php). idx על
         -- הזמן מספיק כדי לצמצם את החלון לפני הפענוח.
+
+        -- יומן אבחון. כדי לא לעבוד בעיוור: כל בליעה, ping, כשל אימות
+        -- ודיווח מהמכשיר נרשמים כאן. נקרא דרך אסימון יומן (ראו auth).
+        -- detail אינו מוצפן — הוא מטא-נתונים ודגימות קצרות לאבחון,
+        -- לא ההיסטוריה עצמה.
+        CREATE TABLE IF NOT EXISTS logs (
+            id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts      INTEGER NOT NULL,
+            source  TEXT NOT NULL DEFAULT '',   -- bridge / device / owner
+            action  TEXT NOT NULL DEFAULT '',
+            status  TEXT NOT NULL DEFAULT '',
+            detail  TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_logs_id ON logs(id);
     ");
+
+    // עמודת אסימון היומן נוספת למסד קיים (התקנה שכבר רצה) בלי להפיל.
+    if (!columnExists($pdo, 'owner', 'log_token')) {
+        $pdo->exec("ALTER TABLE owner ADD COLUMN log_token TEXT NOT NULL DEFAULT ''");
+    }
     ensureOwnerRow($pdo);
+}
+
+function columnExists(PDO $pdo, string $table, string $col): bool {
+    foreach ($pdo->query('PRAGMA table_info(' . $table . ')') as $r) {
+        if (($r['name'] ?? '') === $col) return true;
+    }
+    return false;
+}
+
+/** רושם שורת יומן. לעולם לא מפיל את הבקשה — אבחון לא שובר תפקוד. */
+function logEvent(string $source, string $action, string $status, $detail = ''): void {
+    try {
+        $d = is_string($detail) ? $detail : json_encode($detail, JSON_UNESCAPED_UNICODE);
+        $st = db()->prepare('INSERT INTO logs (ts, source, action, status, detail) VALUES (?, ?, ?, ?, ?)');
+        $st->execute([
+            time(),
+            mb_substr($source, 0, 20),
+            mb_substr($action, 0, 40),
+            mb_substr($status, 0, 60),
+            mb_substr((string) $d, 0, 4000),
+        ]);
+        // גיזום: שומרים בערך את 2000 האחרונים.
+        db()->exec('DELETE FROM logs WHERE id <= (SELECT MAX(id) FROM logs) - 2000');
+    } catch (Throwable $e) {
+        // בולעים בכוונה.
+    }
+}
+
+function recentLogs(int $limit = 300): array {
+    $limit = max(1, min($limit, 1000));
+    $rows = db()->query("SELECT * FROM logs ORDER BY id DESC LIMIT $limit")->fetchAll();
+    return array_reverse($rows);   // ישן→חדש, נוח לקריאה
 }
 
 /** יוצר את שורת הבעלים בפעם הראשונה. */

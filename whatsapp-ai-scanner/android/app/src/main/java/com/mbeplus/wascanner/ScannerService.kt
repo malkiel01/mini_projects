@@ -93,6 +93,11 @@ class ScannerService : AccessibilityService() {
         val api = Api(store.serverBase, store.pairToken)
         val account = store.accountId
         io.execute {
+            // דגימה של מה שנסרק בפועל — כדי לראות ביומן אם נקראו הודעות
+            // אמיתיות או רק רכיבי ממשק.
+            val sample = batch.take(10).joinToString("  ¦  ") { it.body.take(50) }
+            api.log("scan", "batch=${batch.size}", sample)
+
             val r = api.ingest(account, batch)
             lastStatus = when {
                 r.httpCode == 200 -> "נשלחו ${batch.size} · נקלטו ${r.ingested} חדשות · שרת 200 ✓"
