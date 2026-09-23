@@ -16,6 +16,7 @@ require_once __DIR__ . '/../lib/accounts.php';
 require_once __DIR__ . '/../lib/ingest.php';
 require_once __DIR__ . '/../lib/query.php';
 require_once __DIR__ . '/../lib/settings.php';
+require_once __DIR__ . '/../lib/media.php';
 require_once __DIR__ . '/../lib/errors.php';
 
 header('Content-Type: application/json; charset=utf-8');
@@ -186,6 +187,27 @@ try {
                 'skipped'  => $res['skipped'],
             ]);
             ok($res);
+
+        // קובץ מדיה יחיד (PDF/תמונה) בבסיס64. נחלץ תוכן ונשמר כהודעה.
+        case 'media':
+            requireBridge();
+            $accountId = (int) ($in['account_id'] ?? 0);
+            if (!getAccount($accountId)) fail('חשבון לא קיים');
+            $filename = str_field($in, 'filename', 200, 'file');
+            $mime     = str_field($in, 'mime', 100);
+            $b64      = (string) ($in['data'] ?? '');
+            $bytes    = base64_decode($b64, true);
+            if ($bytes === false || $bytes === '') fail('קובץ ריק או פגום');
+            if (strlen($bytes) > 16 * 1024 * 1024) fail('קובץ גדול מדי (מעל 16MB)');
+            $sentAt = (int) ($in['sent_at'] ?? 0);
+            try {
+                $r = ingestMediaFile($accountId, $filename, $mime, $bytes, $sentAt);
+                logEvent('bridge', 'media', $r['status'], ['file' => $filename, 'mime' => $mime] + $r);
+                ok($r);
+            } catch (Throwable $e) {
+                logEvent('bridge', 'media', 'error', ['file' => $filename, 'error' => $e->getMessage()]);
+                throw $e;
+            }
 
         default:
             fail('פעולה לא מוכרת: ' . $action, 404);

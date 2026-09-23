@@ -38,6 +38,16 @@ class Store(context: Context) {
         get() = prefs.getBoolean("autoscan", false)
         set(v) = prefs.edit().putBoolean("autoscan", v).apply()
 
+    // קבצי מדיה שכבר הועלו (מפתח: נתיב+גודל) — כדי לא להעלות שוב.
+    fun isMediaSeen(key: String): Boolean =
+        prefs.getStringSet("media_seen", emptySet())!!.contains(key)
+
+    fun markMediaSeen(key: String) {
+        val s = HashSet(prefs.getStringSet("media_seen", emptySet())!!)
+        s.add(key)
+        prefs.edit().putStringSet("media_seen", s).apply()
+    }
+
     val configured: Boolean
         get() = pairToken.isNotEmpty() && accountId > 0
 }

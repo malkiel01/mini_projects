@@ -6,6 +6,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
+    <!-- גישה לקבצי המדיה של וואטסאפ (מסמכים ותמונות) לצורך אינדוקס
+         תוכנם. "גישה לכל הקבצים" נדרשת כי תיקיות המדיה של וואטסאפ
+         יושבות מחוץ לאחסון הפרטי של האפליקציה. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32"/>
+
     <application
         android:allowBackup="false"
         android:label="@string/app_name"

@@ -48,6 +48,10 @@
             android:layout_height="wrap_content" android:text="סרוק צ'אט פתוח אוטומטית"
             android:layout_marginTop="8dp"/>
 
+        <Button android:id="@+id/scanFilesBtn" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="סרוק קבצים ותמונות (PDF/תמונות)"
+            android:layout_marginTop="8dp"/>
+
         <TextView android:id="@+id/status" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:paddingTop="16dp"/>
 

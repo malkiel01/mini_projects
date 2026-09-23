@@ -1,12 +1,16 @@
 package com.mbeplus.wascanner
 
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.provider.Settings
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import androidx.appcompat.app.AppCompatActivity
 import com.mbeplus.wascanner.databinding.ActivitySetupBinding
+import java.io.File
 
 /**
  * מסך ההתחברות של הגשר: כתובת שרת, אסימון צימוד, ובחירת **החשבון הפעיל**
@@ -56,6 +60,7 @@ class SetupActivity : AppCompatActivity() {
         }
         b.testBtn.setOnClickListener { testConnection() }
         b.autoScanBtn.setOnClickListener { startAutoScan() }
+        b.scanFilesBtn.setOnClickListener { harvestFiles() }
 
         if (store.pairToken.isNotEmpty()) loadAccounts()
     }
@@ -104,6 +109,79 @@ class SetupActivity : AppCompatActivity() {
         // פותח את הוואטסאפ הרגיל כנוחות; לשיבוט/עסקי — פתח ידנית את
         // האפליקציה הנכונה (החשבון הפעיל כבר נבחר).
         packageManager.getLaunchIntentForPackage("com.whatsapp")?.let { startActivity(it) }
+    }
+
+    /* ── סריקת קבצי מדיה (PDF/תמונות) ───────────────────────────── */
+
+    private fun harvestFiles() {
+        if (!store.configured) { b.scanStatus.text = "בחר חשבון פעיל קודם"; return }
+
+        // דורש "גישה לכל הקבצים" — תיקיות המדיה של וואטסאפ מחוץ לאחסון
+        // הפרטי של האפליקציה.
+        if (Build.VERSION.SDK_INT >= 30 && !Environment.isExternalStorageManager()) {
+            b.scanStatus.text = "אשר 'גישה לכל הקבצים' ואז לחץ שוב"
+            try {
+                startActivity(Intent(
+                    Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    Uri.parse("package:$packageName")))
+            } catch (e: Exception) {
+                startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+            }
+            return
+        }
+
+        b.scanFilesBtn.isEnabled = false
+        b.scanStatus.text = "מחפש קבצים…"
+        val account = store.accountId
+        Thread {
+            val api = Api(store.serverBase, store.pairToken)
+            val files = collectWhatsappFiles()
+            var processed = 0; var skipped = 0; var failed = 0; var i = 0
+            for (f in files) {
+                i++
+                val key = f.absolutePath + ":" + f.length()
+                if (store.isMediaSeen(key)) { skipped++; continue }
+                val bytes = try { f.readBytes() } catch (e: Exception) { failed++; continue }
+                if (bytes.size > 16 * 1024 * 1024) { failed++; continue }
+                val r = api.uploadMedia(account, f.name, mimeOf(f.name), bytes, f.lastModified() / 1000)
+                if (r.httpCode == 200) { processed++; store.markMediaSeen(key) } else failed++
+                val pi = i; val total = files.size
+                runOnUiThread { b.scanStatus.text = "קבצים: $pi/$total · עובדו $processed · דולגו $skipped" }
+            }
+            runOnUiThread {
+                b.scanFilesBtn.isEnabled = true
+                b.scanStatus.text = "סריקת קבצים הושלמה: עובדו $processed · דולגו $skipped · נכשלו $failed"
+            }
+        }.start()
+    }
+
+    /** אוסף קבצי PDF/תמונות מתיקיות המדיה הידועות של וואטסאפ. */
+    private fun collectWhatsappFiles(): List<File> {
+        val root = Environment.getExternalStorageDirectory()
+        val dirs = listOf(
+            "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Documents",
+            "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Images",
+            "Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Business Documents",
+            "Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Business Images",
+            "WhatsApp/Media/WhatsApp Documents",
+            "WhatsApp/Media/WhatsApp Images"
+        )
+        val exts = setOf("pdf", "jpg", "jpeg", "png", "webp")
+        val out = ArrayList<File>()
+        for (d in dirs) {
+            val dir = File(root, d)
+            if (!dir.isDirectory) continue
+            dir.walkTopDown().filter { it.isFile && it.extension.lowercase() in exts }.forEach { out.add(it) }
+        }
+        return out
+    }
+
+    private fun mimeOf(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {
+        "pdf" -> "application/pdf"
+        "png" -> "image/png"
+        "webp" -> "image/webp"
+        "jpg", "jpeg" -> "image/jpeg"
+        else -> "application/octet-stream"
     }
 
     override fun onResume() {

@@ -197,6 +197,91 @@ function aiComplete(array $conn, string $system, string $prompt,
     return $text;
 }
 
+/* ── חילוץ טקסט מקובץ (PDF/תמונה) ───────────────────────────────── */
+
+/** [url, headers, body] לחילוץ טקסט מקובץ, לפי ספק. */
+function providerFileRequest(string $provider, string $model, string $system,
+                             string $instruction, string $mime, string $b64, int $maxTokens): array {
+    $isImage = str_starts_with($mime, 'image/');
+    switch ($provider) {
+        case 'anthropic':
+            $block = $isImage
+                ? ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => $mime, 'data' => $b64]]
+                : ['type' => 'document', 'source' => ['type' => 'base64', 'media_type' => 'application/pdf', 'data' => $b64]];
+            return [
+                'https://api.anthropic.com/v1/messages',
+                ['Content-Type: application/json', 'anthropic-version: 2023-06-01'],
+                ['model' => $model, 'max_tokens' => $maxTokens, 'system' => $system,
+                 'messages' => [['role' => 'user', 'content' => [$block, ['type' => 'text', 'text' => $instruction]]]]],
+            ];
+
+        case 'google':
+            return [
+                'https://generativelanguage.googleapis.com/v1beta/models/'
+                    . rawurlencode($model) . ':generateContent',
+                ['Content-Type: application/json'],
+                ['system_instruction' => ['parts' => [['text' => $system]]],
+                 'contents' => [['role' => 'user', 'parts' => [
+                     ['inline_data' => ['mime_type' => $mime, 'data' => $b64]],
+                     ['text' => $instruction]]]],
+                 'generationConfig' => ['maxOutputTokens' => $maxTokens]],
+            ];
+
+        case 'openai':
+            if (!$isImage) {
+                throw new AppError('OpenAI: חילוץ מ-PDF אינו נתמך כאן. עבור ל-Anthropic או Google לקבצי PDF.');
+            }
+            return [
+                'https://api.openai.com/v1/chat/completions',
+                ['Content-Type: application/json'],
+                ['model' => $model, 'max_completion_tokens' => $maxTokens,
+                 'messages' => [['role' => 'system', 'content' => $system],
+                                ['role' => 'user', 'content' => [
+                                    ['type' => 'text', 'text' => $instruction],
+                                    ['type' => 'image_url', 'image_url' => ['url' => "data:$mime;base64,$b64"]]]]]],
+            ];
+    }
+    throw new InvalidArgumentException('ספק לא מוכר: ' . $provider);
+}
+
+/**
+ * מחלץ טקסט מקובץ PDF/תמונה דרך המודל. מחזיר את הטקסט שחולץ.
+ * ‏$transport מוזרק בבדיקות.
+ */
+function aiExtractFile(array $conn, string $mime, string $bytes,
+                       int $maxTokens = 1500, ?callable $transport = null): string {
+    $provider = (string) ($conn['provider'] ?? '');
+    $key      = (string) ($conn['key'] ?? '');
+    $model    = trim((string) ($conn['model'] ?? '')) ?: (PROVIDERS[$provider]['default'] ?? '');
+
+    if (!providerExists($provider)) throw new InvalidArgumentException('ספק לא מוכר: ' . $provider);
+    if ($key === '')   throw new AppError('לא הוגדר מפתח AI');
+    if ($model === '') throw new AppError('לא הוגדר מודל');
+
+    $system = 'אתה מחלץ מידע ממסמכים ותמונות. החזר את כל הטקסט הקריא, '
+        . 'ובמיוחד סכומים, תאריכים, שמות ומספרי אסמכתא/חשבונית. '
+        . 'אם זו קבלה או אסמכתת תשלום, ציין במפורש את הסכום והמטבע. ענה בעברית.';
+    $instruction = 'חלץ את כל הטקסט והנתונים מהקובץ.';
+    $b64 = base64_encode($bytes);
+
+    [$url, $headers, $body] = providerFileRequest($provider, $model, $system, $instruction, $mime, $b64, $maxTokens);
+    if ($provider === 'anthropic')   $headers[] = 'x-api-key: ' . $key;
+    elseif ($provider === 'openai')  $headers[] = 'Authorization: Bearer ' . $key;
+    elseif ($provider === 'google')  $url .= (str_contains($url, '?') ? '&' : '?') . 'key=' . rawurlencode($key);
+
+    $json = json_encode($body, JSON_UNESCAPED_UNICODE);
+    $res  = $transport ? $transport($provider, $url, (string) $json, $key) : aiHttp($url, $headers, (string) $json);
+
+    $data = json_decode((string) $res['body'], true);
+    $data = is_array($data) ? $data : [];
+    if (($res['status'] ?? 0) !== 200) {
+        throw new AppError('חילוץ מהקובץ נכשל (' . ($res['status'] ?? 0) . ') ' . providerError($provider, $data));
+    }
+    $text = providerText($provider, $data);
+    if (trim($text) === '') throw new AppError('המודל לא החזיר טקסט מהקובץ');
+    return $text;
+}
+
 function aiHttp(string $url, array $headers, string $json): array {
     if (!function_exists('curl_init')) throw new AppError('cURL אינו זמין בשרת');
 
@@ -205,7 +290,7 @@ function aiHttp(string $url, array $headers, string $json): array {
         CURLOPT_POST           => true,
         CURLOPT_POSTFIELDS     => $json,
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => 25,
+        CURLOPT_TIMEOUT        => 60,
         CURLOPT_CONNECTTIMEOUT => 8,
         CURLOPT_HTTPHEADER     => $headers,
     ]);

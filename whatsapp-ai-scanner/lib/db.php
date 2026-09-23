@@ -99,6 +99,19 @@ function migrate(PDO $pdo): void {
             detail  TEXT NOT NULL DEFAULT ''
         );
         CREATE INDEX IF NOT EXISTS idx_logs_id ON logs(id);
+
+        -- קבצי מדיה שכבר עובדו. שומרים רק גיבוב ומטא-נתונים (לא את
+        -- הקובץ עצמו), כדי לא לחלץ שוב את אותו קובץ ולא לחייב שוב את
+        -- המודל. הטקסט שחולץ נשמר כהודעה רגילה (מוצפן) וכך ניתן לחיפוש.
+        CREATE TABLE IF NOT EXISTS media (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id  INTEGER REFERENCES accounts(id) ON DELETE CASCADE,
+            hash        TEXT NOT NULL,
+            filename    TEXT NOT NULL DEFAULT '',
+            mime        TEXT NOT NULL DEFAULT '',
+            processed_at INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(account_id, hash)
+        );
     ");
 
     // עמודת אסימון היומן נוספת למסד קיים (התקנה שכבר רצה) בלי להפיל.
