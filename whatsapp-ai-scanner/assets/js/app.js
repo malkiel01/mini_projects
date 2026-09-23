@@ -157,26 +157,89 @@ $('addAccBtn').addEventListener('click', async () => {
 });
 
 /* ── הגדרות ───────────────────────────────────────────────────── */
+let aiState = null;      // ה-ai האחרון מהשרת
+let liveModels = {};     // מודלים שנטענו חי, לפי ספק
+
+const CUSTOM = '__custom__';
+
 async function loadSettings() {
     let s;
     try { s = await api('settings'); } catch (e) { return; }
-    const ai = s.ai;
+    aiState = s.ai;
 
     const prov = $('aiProvider');
-    prov.innerHTML = ai.providers.map((p) =>
-        `<option value="${p.id}"${p.id === ai.provider ? ' selected' : ''}>${p.label}</option>`).join('');
-    $('aiModel').value = ai.model || '';
-    $('aiModel').placeholder = providerDefault(ai, ai.provider) || 'ברירת מחדל של הספק';
-    $('keyTail').textContent = ai.has_key ? `מפתח נשמר (…${ai.key_tail})` : 'לא הוגדר מפתח';
+    prov.innerHTML = aiState.providers.map((p) =>
+        `<option value="${p.id}"${p.id === aiState.provider ? ' selected' : ''}>${p.label}</option>`).join('');
 
-    prov.onchange = () => { $('aiModel').placeholder = providerDefault(ai, prov.value) || 'ברירת מחדל'; };
+    populateModels(aiState.provider, aiState.model || '');
+    $('keyTail').textContent = aiState.has_key ? `מפתח נשמר (…${aiState.key_tail})` : 'לא הוגדר מפתח';
 
+    prov.onchange = () => populateModels(prov.value, '');
     $('pairToken').textContent = s.pair_token;
 }
-function providerDefault(ai, id) {
-    const p = ai.providers.find((x) => x.id === id);
-    return p ? p.default : '';
+
+function providerMeta(id) {
+    return (aiState?.providers || []).find((x) => x.id === id) || { models: [], default: '' };
 }
+
+/** בונה את רשימת המודלים הנפתחת: מובנים + נטענים-חי + הנבחר + "אחר". */
+function populateModels(provider, selected) {
+    const meta = providerMeta(provider);
+    const merged = [];
+    const seen = new Set();
+    const add = (id, label) => { if (id && !seen.has(id)) { seen.add(id); merged.push({ id, label: label || id }); } };
+
+    (liveModels[provider] || []).forEach((m) => add(m.id, m.label));
+    (meta.models || []).forEach((m) => add(m.id, m.label));
+    if (selected) add(selected, selected);           // מודל ששמור אך אינו ברשימה
+    if (meta.default) add(meta.default, meta.default);
+
+    const sel = $('aiModel');
+    sel.innerHTML =
+        merged.map((m) => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.label)}</option>`).join('') +
+        `<option value="${CUSTOM}">אחר (הקלדה ידנית)…</option>`;
+
+    sel.value = selected && seen.has(selected) ? selected : (merged[0]?.id || CUSTOM);
+    onModelSelectChange();
+    sel.onchange = onModelSelectChange;
+}
+
+function onModelSelectChange() {
+    const custom = $('aiModel').value === CUSTOM;
+    show($('aiModelCustom'), custom);
+    if (custom) $('aiModelCustom').focus();
+}
+
+function chosenModel() {
+    return $('aiModel').value === CUSTOM
+        ? $('aiModelCustom').value.trim()
+        : $('aiModel').value;
+}
+
+$('loadModelsBtn').addEventListener('click', async () => {
+    const msg = $('settingsMsg');
+    const btn = $('loadModelsBtn');
+    msg.textContent = '';
+    msg.className = 'msg';
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = 'טוען…';
+    try {
+        const r = await api('list_models');
+        const provider = $('aiProvider').value;
+        liveModels[provider] = r.models;
+        populateModels(provider, chosenModel());
+        msg.textContent = `נטענו ${r.models.length} מודלים.`;
+        msg.className = 'msg okmsg';
+    } catch (e) {
+        // הכשל הנפוץ: אין מפתח שמור. אומרים זאת במפורש.
+        msg.textContent = e.message + ' (שמור מפתח קודם, ואז טען מודלים)';
+        msg.className = 'msg err';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = orig;
+    }
+});
 
 $('saveAiBtn').addEventListener('click', async () => {
     const msg = $('settingsMsg');
@@ -185,7 +248,7 @@ $('saveAiBtn').addEventListener('click', async () => {
     try {
         await api('save_ai', {
             provider: $('aiProvider').value,
-            model: $('aiModel').value.trim(),
+            model: chosenModel(),
             key: $('aiKey').value,   // ריק = לא לשנות
         });
         $('aiKey').value = '';

@@ -87,6 +87,10 @@ try {
             requireOwner();
             ok(['pair_token' => rotatePairToken()]);
 
+        case 'list_models':
+            requireOwner();
+            ok(['models' => fetchProviderModels()]);
+
         /* ── חשבונות (בעלים) ────────────────────────────────────── */
         case 'accounts':
             requireOwner();

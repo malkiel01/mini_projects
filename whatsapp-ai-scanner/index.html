@@ -64,8 +64,10 @@
                 <select id="aiProvider"></select>
             </label>
             <label class="block">מודל
-                <input id="aiModel" placeholder="ברירת מחדל של הספק">
+                <select id="aiModel"></select>
             </label>
+            <input id="aiModelCustom" class="block" placeholder="מזהה מודל מותאם (למשל claude-...)" hidden>
+            <button id="loadModelsBtn" class="ghost small">טען מודלים מהספק</button>
             <label class="block">מפתח API
                 <input id="aiKey" type="password" placeholder="השאר ריק כדי לא לשנות">
                 <span id="keyTail" class="muted"></span>
