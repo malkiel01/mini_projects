@@ -191,6 +191,8 @@ class SetupActivity : AppCompatActivity() {
                 .sortedByDescending { it.lastModified() }
             var processed = 0; var skipped = 0; var failed = 0; var i = 0
             var stopped = false
+            val pendingSeen = ArrayList<String>()   // נשמר ב-commit כל אצווה
+            val total = files.size
             for (f in files) {
                 if (stopHarvest) { stopped = true; break }
                 i++
@@ -199,10 +201,17 @@ class SetupActivity : AppCompatActivity() {
                 val bytes = try { f.readBytes() } catch (e: Exception) { failed++; continue }
                 if (bytes.size > 16 * 1024 * 1024) { failed++; continue }
                 val r = api.uploadMedia(account, f.name, mimeOf(f.name), bytes, f.lastModified() / 1000)
-                if (r.httpCode == 200) { processed++; store.markMediaSeen(key) } else failed++
-                val pi = i; val total = files.size
-                runOnUiThread { b.scanStatus.text = "קבצים: $pi/$total · עובדו $processed · דולגו $skipped" }
+                if (r.httpCode == 200) {
+                    processed++
+                    pendingSeen.add(key)
+                    // שמירה עמידה כל 15 קבצים, כדי שהתקדמות תשרוד גם אם
+                    // התיקייה המאובטחת הורגת את האפליקציה.
+                    if (pendingSeen.size >= 15) { store.markMediaSeenBatch(pendingSeen); pendingSeen.clear() }
+                } else failed++
+                val pi = i
+                runOnUiThread { b.scanStatus.text = "קבצים: $pi/$total · חדשים $processed · כבר נסרקו $skipped" }
             }
+            store.markMediaSeenBatch(pendingSeen)   // שאריות
             harvesting = false; stopHarvest = false
             runOnUiThread {
                 b.scanFilesBtn.text = "סרוק קבצים ותמונות (PDF/תמונות)"
@@ -259,8 +268,14 @@ class SetupActivity : AppCompatActivity() {
         if (!ensureOverlay()) return
         store.fullSweep = true
         store.autoScan = false   // לא לערבב עם שלב 1
-        b.scanStatus.text = "סריקה מלאה דלוקה — פותח את וואטסאפ. שים אותו במסך רשימת הצ'אטים, והוא ינווט לבד. עצירה/השהיה: הכפתור המרחף."
-        packageManager.getLaunchIntentForPackage(store.accountPackage.ifEmpty { "com.whatsapp" })?.let { startActivity(it) }
+        val pkg = store.accountPackage.ifEmpty { "com.whatsapp" }
+        val i = packageManager.getLaunchIntentForPackage(pkg)
+        if (i != null) {
+            startActivity(i)
+            b.scanStatus.text = "סריקה מלאה דלוקה — וואטסאפ נפתח, והוא ינווט לבד. עצירה/השהיה: הכפתור המרחף."
+        } else {
+            b.scanStatus.text = "לא הצלחתי לפתוח את האפליקציה ($pkg) — פתח אותה ידנית והסריקה תתחיל לבד."
+        }
     }
 
     /** מוודא הרשאת "הצגה מעל אפליקציות אחרות" — נדרשת לכפתור העצירה
