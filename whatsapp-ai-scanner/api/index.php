@@ -128,12 +128,14 @@ try {
             $from = isset($in['from']) && $in['from'] !== '' ? (int) strtotime((string) $in['from']) : null;
             $to   = isset($in['to'])   && $in['to']   !== '' ? (int) strtotime((string) $in['to'] . ' 23:59:59') : null;
 
-            $collected = collectMessages($accountId, $from ?: null, $to ?: null);
+            $collected = collectMessages($accountId, $from ?: null, $to ?: null, $question);
             $answer = answerQuestion(ownerAiConn(), $question, $collected);
             ok([
-                'answer'     => $answer,
-                'used'       => count($collected['messages']),
-                'truncated'  => $collected['truncated'],
+                'answer'       => $answer,
+                'used'         => count($collected['messages']),
+                'scanned'      => $collected['scanned'] ?? null,
+                'by_relevance' => $collected['by_relevance'] ?? false,
+                'truncated'    => $collected['truncated'],
             ]);
 
         // רשימת החשבונות לגשר — כדי שהאפליקציה תציג בורר "חשבון פעיל"
