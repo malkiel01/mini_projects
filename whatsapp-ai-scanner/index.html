@@ -47,12 +47,15 @@
             <ul id="accountList" class="list"></ul>
             <div class="row">
                 <input id="accLabel" placeholder="שם החשבון (למשל: הביזנס)">
-                <select id="accKind">
-                    <option value="personal">פרטי</option>
-                    <option value="business">עסקי</option>
+                <select id="accApp">
+                    <option value="com.whatsapp">וואטסאפ רגיל</option>
+                    <option value="com.whatsapp.w4b">וואטסאפ עסקי</option>
+                    <option value="__custom__">חבילה אחרת…</option>
                 </select>
                 <button id="addAccBtn" class="primary">הוסף</button>
             </div>
+            <input id="accCustomPkg" placeholder="שם חבילה מותאם (למשל com.gbwhatsapp)" hidden>
+            <p class="muted">כל חשבון מקושר לאפליקציה שלו. ההפרדה מוחלטת בין אפליקציות שונות (רגיל/עסקי); שיבוט (מרחב שני) רץ תחת אותה אפליקציה ואי אפשר להפריד אותו — מגבלת אנדרואיד.</p>
         </section>
 
         <!-- הגדרות -->

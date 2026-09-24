@@ -95,8 +95,10 @@ class ScannerService : AccessibilityService() {
         if (event == null) return
         if (!store.configured) { lastStatus = "לא מוגדר — בחר חשבון פעיל"; return }
 
+        // הפרדה מוחלטת: קולטים אך ורק מהאפליקציה שהחשבון הפעיל מייצג.
         val pkg = event.packageName?.toString() ?: return
-        if (pkg != "com.whatsapp" && pkg != "com.whatsapp.w4b") return
+        val want = store.accountPackage
+        if (want.isEmpty() || pkg != want) return
 
         showOverlay()   // מציג את לוח הבקרה כשנמצאים בוואטסאפ (idempotent)
         val root = rootInActiveWindow ?: return
@@ -219,13 +221,14 @@ class ScannerService : AccessibilityService() {
         }
         sweepMisses = 0
 
-        // מחסום חבילה קשיח: אם וואטסאפ אינו בחזית — לא לגעת בכלום, לא
-        // לסרוק ולא ללחוץ. יציאה מתמשכת = עצירה, כדי שלעולם לא ננווט או
-        // נסרוק אפליקציה אחרת.
+        // מחסום חבילה קשיח + הפרדה: פועלים אך ורק כשעל המסך *האפליקציה
+        // של החשבון הפעיל*. אפליקציה אחרת (כולל וואטסאפ אחר) = לא לגעת,
+        // ויציאה מתמשכת עוצרת. כך אין ערבוב בין חשבונות.
         val pkg = root.packageName?.toString()
-        if (pkg != "com.whatsapp" && pkg != "com.whatsapp.w4b") {
-            if (++offApp > 2) { stopSweep("יצאת מוואטסאפ — נעצר לבטיחות"); return }
-            lastStatus = "ממתין לוואטסאפ בחזית…"
+        val want = store.accountPackage
+        if (want.isEmpty() || pkg != want) {
+            if (++offApp > 2) { stopSweep("האפליקציה של החשבון אינה בחזית — נעצר"); return }
+            lastStatus = "ממתין לאפליקציה של החשבון הפעיל…"
             main.postDelayed({ sweepTick() }, STEP_MS); return
         }
         offApp = 0
@@ -428,8 +431,9 @@ class ScannerService : AccessibilityService() {
         store.fullSweep = true
         paused = false
         try {
-            val i = packageManager.getLaunchIntentForPackage("com.whatsapp")
-                ?: packageManager.getLaunchIntentForPackage("com.whatsapp.w4b")
+            // פותח את האפליקציה של החשבון הפעיל (לא בהכרח הרגיל).
+            val pkg = store.accountPackage.ifEmpty { "com.whatsapp" }
+            val i = packageManager.getLaunchIntentForPackage(pkg)
             i?.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             if (i != null) startActivity(i)
         } catch (e: Exception) {}

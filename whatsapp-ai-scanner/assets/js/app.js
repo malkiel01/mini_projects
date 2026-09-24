@@ -122,9 +122,11 @@ async function loadAccounts() {
     list.innerHTML = '';
     accounts.forEach((a) => {
         const li = document.createElement('li');
-        const kindHe = a.kind === 'business' ? 'עסקי' : 'פרטי';
+        const appHe = a.wa_package === 'com.whatsapp.w4b' ? 'עסקי'
+            : a.wa_package === 'com.whatsapp' ? 'רגיל'
+            : (a.wa_package ? a.wa_package : '⚠ ללא אפליקציה');
         li.innerHTML =
-            `<span class="tag ${a.kind}">${kindHe}</span>` +
+            `<span class="tag ${a.kind}">${escapeHtml(appHe)}</span>` +
             `<span>${escapeHtml(a.label)} <span class="accid" title="מזהה החשבון עבור אפליקציית הגשר">#${a.id}</span></span>` +
             `<span class="count">${a.message_count} הודעות</span>` +
             `<button class="del" title="מחק">🗑</button>`;
@@ -144,12 +146,21 @@ async function loadAccounts() {
     sel.value = cur;
 }
 
+$('accApp').addEventListener('change', () => {
+    show($('accCustomPkg'), $('accApp').value === '__custom__');
+});
+
 $('addAccBtn').addEventListener('click', async () => {
     const label = $('accLabel').value.trim();
     if (!label) return;
+    let pkg = $('accApp').value;
+    if (pkg === '__custom__') pkg = $('accCustomPkg').value.trim();
+    if (!pkg) { alert('בחר אפליקציה לחשבון'); return; }
+    const kind = pkg === 'com.whatsapp.w4b' ? 'business' : 'personal';
     try {
-        await api('add_account', { label, kind: $('accKind').value });
+        await api('add_account', { label, kind, package: pkg });
         $('accLabel').value = '';
+        $('accCustomPkg').value = '';
         loadAccounts();
     } catch (e) {
         alert(e.message);

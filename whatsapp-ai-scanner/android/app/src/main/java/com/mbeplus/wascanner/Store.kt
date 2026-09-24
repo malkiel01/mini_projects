@@ -37,6 +37,11 @@ class Store(context: Context) {
         get() = prefs.getString("account_label", "") ?: ""
         set(v) = prefs.edit().putString("account_label", v).apply()
 
+    // חבילת האפליקציה של החשבון הפעיל — לאכיפת הפרדה מוחלטת.
+    var accountPackage: String
+        get() = prefs.getString("account_package", "") ?: ""
+        set(v) = prefs.edit().putString("account_package", v).apply()
+
     // מצב סריקה אוטומטית של הצ'אט הפתוח (שלב 1).
     var autoScan: Boolean
         get() = prefs.getBoolean("autoscan", false)

@@ -109,8 +109,17 @@ try {
 
         case 'add_account':
             requireOwner();
-            $a = createAccount((string) ($in['label'] ?? ''), (string) ($in['kind'] ?? 'personal'));
+            $a = createAccount(
+                (string) ($in['label'] ?? ''),
+                (string) ($in['kind'] ?? 'personal'),
+                (string) ($in['package'] ?? '')
+            );
             ok(['account' => $a]);
+
+        case 'set_account_package':
+            requireOwner();
+            setAccountPackage((int) ($in['id'] ?? 0), (string) ($in['package'] ?? ''));
+            ok(['accounts' => listAccounts()]);
 
         case 'delete_account':
             requireOwner();
@@ -143,9 +152,10 @@ try {
         case 'bridge_accounts':
             requireBridge();
             ok(['accounts' => array_map(fn($a) => [
-                'id'    => (int) $a['id'],
-                'label' => $a['label'],
-                'kind'  => $a['kind'],
+                'id'      => (int) $a['id'],
+                'label'   => $a['label'],
+                'kind'    => $a['kind'],
+                'package' => $a['wa_package'] ?? '',
             ], listAccounts())]);
 
         /* ── בדיקת חיבור (גשר) ──────────────────────────────────── */
