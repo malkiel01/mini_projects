@@ -47,6 +47,15 @@ class Store(context: Context) {
         get() = prefs.getBoolean("fullsweep", false)
         set(v) = prefs.edit().putBoolean("fullsweep", v).apply()
 
+    // כמה חודשים אחורה לסרוק קבצים (0 = הכל).
+    var fileMonths: Int
+        get() = prefs.getInt("file_months", 6)
+        set(v) = prefs.edit().putInt("file_months", v).apply()
+
+    fun clearMediaSeen() = prefs.edit().remove("media_seen").apply()
+
+    fun mediaSeenCount(): Int = prefs.getStringSet("media_seen", emptySet())!!.size
+
     // קבצי מדיה שכבר הועלו (מפתח: נתיב+גודל) — כדי לא להעלות שוב.
     fun isMediaSeen(key: String): Boolean =
         prefs.getStringSet("media_seen", emptySet())!!.contains(key)

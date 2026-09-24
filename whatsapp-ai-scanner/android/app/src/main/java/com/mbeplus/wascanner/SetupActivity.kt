@@ -28,6 +28,13 @@ class SetupActivity : AppCompatActivity() {
 
     private var accounts: List<Api.Account> = emptyList()
 
+    // תקופות סריקת קבצים: תווית → מספר חודשים אחורה (0 = הכל).
+    private val periodMonths = listOf(1, 3, 6, 12, 24, 0)
+    private val periodLabels = listOf("חודש אחרון", "3 חודשים", "חצי שנה", "שנה", "שנתיים", "הכל")
+
+    @Volatile private var harvesting = false
+    @Volatile private var stopHarvest = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         b = ActivitySetupBinding.inflate(layoutInflater)
@@ -63,6 +70,22 @@ class SetupActivity : AppCompatActivity() {
         b.autoScanBtn.setOnClickListener { startAutoScan() }
         b.sweepBtn.setOnClickListener { startFullSweep() }
         b.scanFilesBtn.setOnClickListener { harvestFiles() }
+        b.resetFilesBtn.setOnClickListener {
+            store.clearMediaSeen()
+            b.scanStatus.text = "זיכרון סריקת הקבצים אופס — הסריקה הבאה תסרוק מחדש הכל"
+        }
+
+        // בורר תקופת סריקת הקבצים
+        b.filePeriodSpinner.adapter = ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item, periodLabels)
+        val curIdx = periodMonths.indexOf(store.fileMonths).let { if (it >= 0) it else 2 }
+        b.filePeriodSpinner.setSelection(curIdx)
+        b.filePeriodSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: android.view.View?, pos: Int, id: Long) {
+                store.fileMonths = periodMonths[pos]
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
 
         if (store.pairToken.isNotEmpty()) loadAccounts()
     }
@@ -117,6 +140,13 @@ class SetupActivity : AppCompatActivity() {
     /* ── סריקת קבצי מדיה (PDF/תמונות) ───────────────────────────── */
 
     private fun harvestFiles() {
+        // לחיצה בזמן ריצה = עצירה. הזיכרון (media_seen) נשמר, כך שהמשך
+        // ידלג על מה שכבר נסרק.
+        if (harvesting) {
+            stopHarvest = true
+            b.scanStatus.text = "עוצר סריקת קבצים…"
+            return
+        }
         if (!store.configured) { b.scanStatus.text = "בחר חשבון פעיל קודם"; return }
 
         // דורש "גישה לכל הקבצים" — תיקיות המדיה של וואטסאפ מחוץ לאחסון
@@ -133,14 +163,25 @@ class SetupActivity : AppCompatActivity() {
             return
         }
 
-        b.scanFilesBtn.isEnabled = false
+        harvesting = true; stopHarvest = false
+        b.scanFilesBtn.text = "⏹ עצור סריקת קבצים"
         b.scanStatus.text = "מחפש קבצים…"
         val account = store.accountId
+        val months = store.fileMonths
+        // חלון הזמן: קבצים ששונו מאז cutoff. 0 = הכל.
+        val cutoff = if (months > 0) System.currentTimeMillis() - months.toLong() * 30L * 24 * 3600 * 1000 else 0L
+
         Thread {
             val api = Api(store.serverBase, store.pairToken)
+            // מהחדש לישן, כדי שהתקדמות אחורה תהיה טבעית ועצירה שומרת את
+            // החדשים שכבר נסרקו.
             val files = collectWhatsappFiles()
+                .filter { it.lastModified() >= cutoff }
+                .sortedByDescending { it.lastModified() }
             var processed = 0; var skipped = 0; var failed = 0; var i = 0
+            var stopped = false
             for (f in files) {
+                if (stopHarvest) { stopped = true; break }
                 i++
                 val key = f.absolutePath + ":" + f.length()
                 if (store.isMediaSeen(key)) { skipped++; continue }
@@ -151,9 +192,12 @@ class SetupActivity : AppCompatActivity() {
                 val pi = i; val total = files.size
                 runOnUiThread { b.scanStatus.text = "קבצים: $pi/$total · עובדו $processed · דולגו $skipped" }
             }
+            harvesting = false; stopHarvest = false
             runOnUiThread {
-                b.scanFilesBtn.isEnabled = true
-                b.scanStatus.text = "סריקת קבצים הושלמה: עובדו $processed · דולגו $skipped · נכשלו $failed"
+                b.scanFilesBtn.text = "סרוק קבצים ותמונות (PDF/תמונות)"
+                b.scanStatus.text = (if (stopped) "נעצר. " else "הושלם. ") +
+                    "עובדו $processed · דולגו $skipped · נכשלו $failed" +
+                    (if (stopped) " — לחיצה נוספת תמשיך מהמקום שנעצר." else "")
             }
         }.start()
     }
