@@ -118,6 +118,11 @@ function migrate(PDO $pdo): void {
     if (!columnExists($pdo, 'owner', 'log_token')) {
         $pdo->exec("ALTER TABLE owner ADD COLUMN log_token TEXT NOT NULL DEFAULT ''");
     }
+    // חבילת האפליקציה שהחשבון מייצג (com.whatsapp / com.whatsapp.w4b /
+    // מותאם), לצורך הפרדה מוחלטת בין חשבונות.
+    if (!columnExists($pdo, 'accounts', 'wa_package')) {
+        $pdo->exec("ALTER TABLE accounts ADD COLUMN wa_package TEXT NOT NULL DEFAULT ''");
+    }
     ensureOwnerRow($pdo);
 }
 

@@ -77,7 +77,7 @@ class Api(private val base: String, private val token: String) {
         }
     }
 
-    data class Account(val id: Int, val label: String, val kind: String)
+    data class Account(val id: Int, val label: String, val kind: String, val pkg: String)
 
     /** שולף את רשימת החשבונות לבורר "חשבון פעיל". ריק בכשל. */
     fun accounts(): List<Account> {
@@ -88,7 +88,7 @@ class Api(private val base: String, private val token: String) {
             val arr = JSONObject(text).optJSONArray("accounts") ?: JSONArray()
             (0 until arr.length()).map {
                 val o = arr.getJSONObject(it)
-                Account(o.getInt("id"), o.optString("label"), o.optString("kind"))
+                Account(o.getInt("id"), o.optString("label"), o.optString("kind"), o.optString("package"))
             }
         } catch (e: Exception) {
             emptyList()

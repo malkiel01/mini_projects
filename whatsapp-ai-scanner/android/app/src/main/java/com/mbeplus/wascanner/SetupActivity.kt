@@ -57,7 +57,12 @@ class SetupActivity : AppCompatActivity() {
                 accounts.getOrNull(pos)?.let {
                     store.accountId = it.id
                     store.accountLabel = it.label
-                    b.scanStatus.text = "חשבון פעיל לסריקה: ${it.label} (#${it.id})"
+                    store.accountPackage = it.pkg
+                    val appHe = when (it.pkg) {
+                        "com.whatsapp" -> "רגיל"; "com.whatsapp.w4b" -> "עסקי"
+                        "" -> "⚠ ללא אפליקציה — הגדר באתר"; else -> it.pkg
+                    }
+                    b.scanStatus.text = "חשבון פעיל: ${it.label} (#${it.id}) · אפליקציה: $appHe"
                 }
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
@@ -134,7 +139,7 @@ class SetupActivity : AppCompatActivity() {
         b.scanStatus.text = "מצב סריקה דלוק — פתח את אפליקציית הוואטסאפ הרצויה והיכנס לצ'אט. הגלילה תתחיל לבד. (עצירה: הכפתור המרחף)"
         // פותח את הוואטסאפ הרגיל כנוחות; לשיבוט/עסקי — פתח ידנית את
         // האפליקציה הנכונה (החשבון הפעיל כבר נבחר).
-        packageManager.getLaunchIntentForPackage("com.whatsapp")?.let { startActivity(it) }
+        packageManager.getLaunchIntentForPackage(store.accountPackage.ifEmpty { "com.whatsapp" })?.let { startActivity(it) }
     }
 
     /* ── סריקת קבצי מדיה (PDF/תמונות) ───────────────────────────── */
@@ -148,6 +153,11 @@ class SetupActivity : AppCompatActivity() {
             return
         }
         if (!store.configured) { b.scanStatus.text = "בחר חשבון פעיל קודם"; return }
+        // הפרדה מוחלטת: סורקים רק את התיקייה של האפליקציה שהחשבון מייצג.
+        if (store.accountPackage.isEmpty()) {
+            b.scanStatus.text = "לחשבון הפעיל לא הוגדרה אפליקציה — קבע אותה באתר (חשבונות)"
+            return
+        }
 
         // דורש "גישה לכל הקבצים" — תיקיות המדיה של וואטסאפ מחוץ לאחסון
         // הפרטי של האפליקציה.
@@ -171,11 +181,12 @@ class SetupActivity : AppCompatActivity() {
         // חלון הזמן: קבצים ששונו מאז cutoff. 0 = הכל.
         val cutoff = if (months > 0) System.currentTimeMillis() - months.toLong() * 30L * 24 * 3600 * 1000 else 0L
 
+        val pkg = store.accountPackage
         Thread {
             val api = Api(store.serverBase, store.pairToken)
             // מהחדש לישן, כדי שהתקדמות אחורה תהיה טבעית ועצירה שומרת את
-            // החדשים שכבר נסרקו.
-            val files = collectWhatsappFiles()
+            // החדשים שכבר נסרקו. רק התיקייה של האפליקציה הזו.
+            val files = collectWhatsappFiles(pkg)
                 .filter { it.lastModified() >= cutoff }
                 .sortedByDescending { it.lastModified() }
             var processed = 0; var skipped = 0; var failed = 0; var i = 0
@@ -202,17 +213,23 @@ class SetupActivity : AppCompatActivity() {
         }.start()
     }
 
-    /** אוסף קבצי PDF/תמונות מתיקיות המדיה הידועות של וואטסאפ. */
-    private fun collectWhatsappFiles(): List<File> {
+    /** אוסף קבצי PDF/תמונות — רק מתיקיות המדיה של האפליקציה שנבחרה,
+     *  כדי לשמור על הפרדה מוחלטת בין חשבונות. */
+    private fun collectWhatsappFiles(pkg: String): List<File> {
         val root = Environment.getExternalStorageDirectory()
-        val dirs = listOf(
-            "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Documents",
-            "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Images",
-            "Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Business Documents",
-            "Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Business Images",
-            "WhatsApp/Media/WhatsApp Documents",
-            "WhatsApp/Media/WhatsApp Images"
-        )
+        val dirs = when (pkg) {
+            "com.whatsapp" -> listOf(
+                "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Documents",
+                "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Images",
+                "WhatsApp/Media/WhatsApp Documents",
+                "WhatsApp/Media/WhatsApp Images")
+            "com.whatsapp.w4b" -> listOf(
+                "Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Business Documents",
+                "Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Business Images",
+                "WhatsApp Business/Media/WhatsApp Business Documents",
+                "WhatsApp Business/Media/WhatsApp Business Images")
+            else -> listOf("Android/media/$pkg")   // חבילה מותאמת — כל התיקייה שלה
+        }
         val exts = setOf("pdf", "jpg", "jpeg", "png", "webp")
         val out = ArrayList<File>()
         for (d in dirs) {
@@ -243,7 +260,7 @@ class SetupActivity : AppCompatActivity() {
         store.fullSweep = true
         store.autoScan = false   // לא לערבב עם שלב 1
         b.scanStatus.text = "סריקה מלאה דלוקה — פותח את וואטסאפ. שים אותו במסך רשימת הצ'אטים, והוא ינווט לבד. עצירה/השהיה: הכפתור המרחף."
-        packageManager.getLaunchIntentForPackage("com.whatsapp")?.let { startActivity(it) }
+        packageManager.getLaunchIntentForPackage(store.accountPackage.ifEmpty { "com.whatsapp" })?.let { startActivity(it) }
     }
 
     /** מוודא הרשאת "הצגה מעל אפליקציות אחרות" — נדרשת לכפתור העצירה
