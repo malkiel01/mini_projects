@@ -11,8 +11,8 @@ android {
         applicationId = "com.mbeplus.wascanner"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = 2
+        versionName = "0.2"
 
         // כתובת השרת נקבעת בזמן בנייה, כמו ב-guarded-browser.
         buildConfigField("String", "API_BASE",
@@ -22,6 +22,19 @@ android {
     buildFeatures {
         buildConfig = true
         viewBinding = true
+    }
+
+    // ה-APK יוצא בחתימת debug ל-sideload (במפתח ה-debug האוטומטי של
+    // הבנייה). כברירת מחדל, כש-minSdk >= 24, ‏AGP משמיט את חתימת v1
+    // (JAR) ומשאיר רק v2. על אנדרואיד תקני v2 מספיק, אבל מתקין
+    // החבילות של יצרנים מסוימים (Xiaomi/HyperOS) דוחה APK בלי v1 עם
+    // "החבילה פגומה / האפליקציה לא הותקנה" — גם בהתקנה נקייה. לכן
+    // מכריחים כאן v1+v2 יחד, לתאימות התקנה מרבית.
+    signingConfigs {
+        getByName("debug") {
+            enableV1Signing = true
+            enableV2Signing = true
+        }
     }
 
     buildTypes {
