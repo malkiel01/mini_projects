@@ -71,6 +71,15 @@ class Store(context: Context) {
         prefs.edit().putStringSet("media_seen", s).apply()
     }
 
+    /** מוסיף אצווה של מפתחות ומחייב מיידית (commit) — כדי שהזיכרון
+     *  ישרוד גם אם התיקייה המאובטחת הורגת את האפליקציה באמצע. */
+    fun markMediaSeenBatch(keys: Collection<String>) {
+        if (keys.isEmpty()) return
+        val s = HashSet(prefs.getStringSet("media_seen", emptySet())!!)
+        s.addAll(keys)
+        prefs.edit().putStringSet("media_seen", s).commit()
+    }
+
     val configured: Boolean
         get() = pairToken.isNotEmpty() && accountId > 0
 }
