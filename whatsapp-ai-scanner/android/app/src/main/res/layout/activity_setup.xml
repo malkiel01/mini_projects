@@ -52,9 +52,20 @@
             android:layout_height="wrap_content" android:text="סרוק את כל הצ'אטים (אוטומטי)"
             android:layout_marginTop="8dp"/>
 
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="תקופת סריקת קבצים (עד כמה אחורה):"
+            android:layout_marginTop="16dp"/>
+
+        <Spinner android:id="@+id/filePeriodSpinner" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:minHeight="48dp"/>
+
         <Button android:id="@+id/scanFilesBtn" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:text="סרוק קבצים ותמונות (PDF/תמונות)"
-            android:layout_marginTop="8dp"/>
+            android:layout_marginTop="4dp"/>
+
+        <Button android:id="@+id/resetFilesBtn" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="אפס זיכרון סריקת קבצים (סרוק מחדש הכל)"
+            android:layout_marginTop="4dp"/>
 
         <TextView android:id="@+id/status" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:paddingTop="16dp"/>
