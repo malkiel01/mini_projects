@@ -68,6 +68,8 @@ class ScannerService : AccessibilityService() {
     private var lastListNames: Set<String> = emptySet()
     private var listNoProgress = 0
     private var sweepMisses = 0
+    private var offApp = 0          // tics ברצף מחוץ לוואטסאפ
+    private var pendingOpen = 0     // tics ממתין שצ'אט שנלחץ ייפתח
 
     // שכבת בקרה מרחפת
     private var overlay: View? = null
@@ -196,6 +198,7 @@ class ScannerService : AccessibilityService() {
         doneChats.clear(); currentChat = ""
         chatIdle = 0; chatSteps = 0; chatsProcessed = 0
         lastListNames = emptySet(); listNoProgress = 0; sweepMisses = 0
+        offApp = 0; pendingOpen = 0
         paused = false
         lastStatus = "סריקה מלאה התחילה…"
         showOverlay()
@@ -216,9 +219,21 @@ class ScannerService : AccessibilityService() {
         }
         sweepMisses = 0
 
+        // מחסום חבילה קשיח: אם וואטסאפ אינו בחזית — לא לגעת בכלום, לא
+        // לסרוק ולא ללחוץ. יציאה מתמשכת = עצירה, כדי שלעולם לא ננווט או
+        // נסרוק אפליקציה אחרת.
+        val pkg = root.packageName?.toString()
+        if (pkg != "com.whatsapp" && pkg != "com.whatsapp.w4b") {
+            if (++offApp > 2) { stopSweep("יצאת מוואטסאפ — נעצר לבטיחות"); return }
+            lastStatus = "ממתין לוואטסאפ בחזית…"
+            main.postDelayed({ sweepTick() }, STEP_MS); return
+        }
+        offApp = 0
+
         if (isConversationOpen(root)) {
             // בתוך צ'אט — גוללים לסופו.
             sweepState = Sweep.CHAT
+            pendingOpen = 0
             val added = collectFromRoot(root)
             if (added == 0) chatIdle++ else chatIdle = 0
             chatSteps++; scheduleFlush()
@@ -240,13 +255,26 @@ class ScannerService : AccessibilityService() {
             return
         }
 
-        // ברשימת הצ'אטים — בוחרים את הבא שטרם נסרק.
+        // לא בתוך שיחה. אם לחצנו על צ'אט וממתינים שייפתח — לא ללחוץ על
+        // שום דבר אחר, רק לוודא שנפתח. אם לא נפתח אחרי כמה tics, סימן
+        // שהלחיצה נכשלה (יומן שיחות / טאב אחר) — מסמנים וממשיכים, בלי
+        // ללחוץ באקראי.
         sweepState = Sweep.LIST
+        if (currentChat.isNotEmpty()) {
+            if (++pendingOpen > 3) {
+                io.execute { safeLog("sweep", "open-failed", "name=$currentChat") }
+                doneChats.add(currentChat); currentChat = ""; pendingOpen = 0
+                performGlobalAction(GLOBAL_ACTION_BACK)
+            }
+            main.postDelayed({ sweepTick() }, OPEN_MS); return
+        }
+
+        // בוחרים את הצ'אט הבא שטרם נסרק.
         val rows = chatRows(root)
         val next = rows.firstOrNull { it.name.isNotEmpty() && it.name !in doneChats }
         if (next != null) {
             currentChat = next.name
-            chatIdle = 0; chatSteps = 0
+            pendingOpen = 0; chatIdle = 0; chatSteps = 0
             io.execute { safeLog("sweep", "open", "name=${next.name}") }
             lastStatus = "סריקה מלאה: פותח '${next.name}' (עובדו $chatsProcessed)"
             next.node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
@@ -256,7 +284,7 @@ class ScannerService : AccessibilityService() {
 
         // אין צ'אט חדש גלוי — גוללים את הרשימה למטה לחשוף עוד.
         val names = rows.map { it.name }.toSet()
-        if (names.isNotEmpty() && names == lastListNames) listNoProgress++ else listNoProgress = 0
+        if (names == lastListNames) listNoProgress++ else listNoProgress = 0
         lastListNames = names
         if (listNoProgress >= LIST_NOPROGRESS_STOP) { stopSweep("הושלמה — $chatsProcessed צ'אטים"); return }
         findScrollable(root)?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
