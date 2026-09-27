@@ -123,6 +123,10 @@ function migrate(PDO $pdo): void {
     if (!columnExists($pdo, 'accounts', 'wa_package')) {
         $pdo->exec("ALTER TABLE accounts ADD COLUMN wa_package TEXT NOT NULL DEFAULT ''");
     }
+    // שפת התשובות של ה-AI (קוד: he/en/ar/…/auto). ברירת מחדל עברית.
+    if (!columnExists($pdo, 'owner', 'answer_lang')) {
+        $pdo->exec("ALTER TABLE owner ADD COLUMN answer_lang TEXT NOT NULL DEFAULT 'he'");
+    }
     ensureOwnerRow($pdo);
 }
 
