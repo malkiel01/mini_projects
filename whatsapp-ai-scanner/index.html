@@ -36,7 +36,10 @@
                 <label><span data-i18n="from_date">מתאריך</span> <input id="qFrom" type="date"></label>
                 <label><span data-i18n="to_date">עד תאריך</span> <input id="qTo" type="date"></label>
             </div>
-            <button id="askBtn" class="primary" data-i18n="ask_btn">שאל</button>
+            <div class="row">
+                <button id="askBtn" class="primary" data-i18n="ask_btn">שאל</button>
+                <button id="micBtn" class="ghost" data-i18n-title="mic_title" title="שאל בקול" aria-label="mic" hidden>🎤</button>
+            </div>
             <div id="answer" class="answer" hidden></div>
         </section>
 
