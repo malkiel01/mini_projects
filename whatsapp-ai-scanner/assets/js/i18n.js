@@ -96,6 +96,9 @@ const I18N = {
         conn_err: 'שגיאת חיבור לשרת: ',
         resp_invalid: 'תשובה לא תקינה מהשרת',
         error: 'שגיאה',
+        mic_title: 'שאל בקול',
+        listening: 'מקשיב…',
+        voice_unsupported: 'הדפדפן אינו תומך בזיהוי דיבור',
     },
 
     en: {
@@ -172,6 +175,9 @@ const I18N = {
         conn_err: 'Server connection error: ',
         resp_invalid: 'Invalid response from server',
         error: 'Error',
+        mic_title: 'Ask by voice',
+        listening: 'Listening…',
+        voice_unsupported: 'This browser does not support speech recognition',
     },
 
     ar: {
@@ -248,6 +254,9 @@ const I18N = {
         conn_err: 'خطأ في الاتصال بالخادم: ',
         resp_invalid: 'استجابة غير صالحة من الخادم',
         error: 'خطأ',
+        mic_title: 'اسأل صوتياً',
+        listening: 'جارٍ الاستماع…',
+        voice_unsupported: 'هذا المتصفح لا يدعم التعرف على الكلام',
     },
 
     ru: {
@@ -324,6 +333,9 @@ const I18N = {
         conn_err: 'Ошибка подключения к серверу: ',
         resp_invalid: 'Неверный ответ сервера',
         error: 'Ошибка',
+        mic_title: 'Спросить голосом',
+        listening: 'Слушаю…',
+        voice_unsupported: 'Этот браузер не поддерживает распознавание речи',
     },
 
     fr: {
@@ -400,6 +412,9 @@ const I18N = {
         conn_err: 'Erreur de connexion au serveur : ',
         resp_invalid: 'Réponse invalide du serveur',
         error: 'Erreur',
+        mic_title: 'Demander à la voix',
+        listening: 'Écoute…',
+        voice_unsupported: 'Ce navigateur ne prend pas en charge la reconnaissance vocale',
     },
 
     es: {
@@ -476,6 +491,9 @@ const I18N = {
         conn_err: 'Error de conexión con el servidor: ',
         resp_invalid: 'Respuesta no válida del servidor',
         error: 'Error',
+        mic_title: 'Preguntar por voz',
+        listening: 'Escuchando…',
+        voice_unsupported: 'Este navegador no admite el reconocimiento de voz',
     },
 };
 

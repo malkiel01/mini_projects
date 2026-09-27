@@ -85,7 +85,7 @@ $('logoutBtn').addEventListener('click', async () => {
 });
 
 /* ── שאלה ותשובה ──────────────────────────────────────────────── */
-$('askBtn').addEventListener('click', async () => {
+async function askQuestion(speakAnswer) {
     const question = $('q').value.trim();
     const box = $('answer');
     if (!question) return;
@@ -106,13 +106,71 @@ $('askBtn').addEventListener('click', async () => {
         meta.className = 'meta';
         meta.textContent = t('scanned_n', { n: r.used, note: r.truncated ? t('truncated_note') : '' });
         box.appendChild(meta);
+        // הקראת התשובה בקול — רק כששאלנו בקול, כדי לא להפתיע בשאלת טקסט.
+        if (speakAnswer) speak(r.answer, aiState?.answer_lang || uiLang());
     } catch (e) {
         box.textContent = t('err_prefix') + e.message;
     } finally {
         btn.disabled = false;
         btn.textContent = t('ask_btn');
     }
-});
+}
+$('askBtn').addEventListener('click', () => askQuestion(false));
+
+/* ── קול: שאלה בדיבור ותשובה מוקראת ──────────────────────────────
+ * מסלול א': לחיצה על המיקרופון → זיהוי דיבור (Web Speech API) ממלא את
+ * תיבת השאלה → שליחה אוטומטית → הקראת התשובה. אין "היי רובוט" ברקע —
+ * הדפדפן אינו יכול להאזין ברקע; זה דורש נגיעה אחת לפני הדיבור. */
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+const SPEECH_LOCALES = { he: 'he-IL', en: 'en-US', ar: 'ar-SA', ru: 'ru-RU', fr: 'fr-FR', es: 'es-ES' };
+
+/** קוד שפה פנימי → קוד BCP-47 לזיהוי/הקראה. 'auto' או לא-מוכר → שפת הממשק. */
+function speechLocale(code) {
+    return SPEECH_LOCALES[code] || SPEECH_LOCALES[uiLang()] || 'he-IL';
+}
+
+/** מקריא טקסט בקול בשפה הנתונה, אם הדפדפן תומך. */
+function speak(text, langCode) {
+    try {
+        if (!('speechSynthesis' in window)) return;
+        speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = speechLocale(langCode);
+        speechSynthesis.speak(u);
+    } catch (e) { /* הקראה היא נוחות, לא נשברים אם נכשלה */ }
+}
+
+let recog = null;
+let recognizing = false;
+
+function micState(on) {
+    const b = $('micBtn');
+    b.textContent = on ? '⏺' : '🎤';
+    b.setAttribute('title', on ? t('listening') : t('mic_title'));
+}
+
+function setupVoice() {
+    const b = $('micBtn');
+    if (!SpeechRec) return;   // אין תמיכה → הכפתור נשאר מוסתר
+    show(b, true);
+    b.addEventListener('click', () => {
+        if (recognizing) { try { recog && recog.stop(); } catch (e) {} return; }
+        recog = new SpeechRec();
+        recog.lang = speechLocale(uiLang());
+        recog.interimResults = false;
+        recog.maxAlternatives = 1;
+        recognizing = true;
+        micState(true);
+        recog.onresult = (e) => { $('q').value = e.results[0][0].transcript; };
+        recog.onerror = () => {};
+        recog.onend = () => {
+            recognizing = false;
+            micState(false);
+            if ($('q').value.trim()) askQuestion(true);   // שליחה + הקראה
+        };
+        try { recog.start(); } catch (e) { recognizing = false; micState(false); }
+    });
+}
 
 /* ── חשבונות ──────────────────────────────────────────────────── */
 async function loadAccounts() {
@@ -333,6 +391,8 @@ function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) =>
         ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+
+setupVoice();   // אחרי הגדרת ה-const של זיהוי הדיבור (מניעת TDZ)
 
 boot().catch((e) => {
     $('gate').hidden = false;
