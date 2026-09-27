@@ -11,85 +11,88 @@
 <body>
     <header class="topbar">
         <img src="assets/icon.svg" alt="" class="logo">
-        <h1>סורק וואטסאפ חכם</h1>
-        <button id="logoutBtn" class="ghost" hidden>יציאה</button>
+        <h1 data-i18n="app_title">סורק וואטסאפ חכם</h1>
+        <button id="logoutBtn" class="ghost" data-i18n="logout" hidden>יציאה</button>
     </header>
 
     <main id="app">
         <!-- מסך התקנה / כניסה -->
         <section id="gate" class="card" hidden>
-            <h2 id="gateTitle">כניסה</h2>
+            <h2 id="gateTitle" data-i18n="login">כניסה</h2>
             <p id="gateHint" class="muted"></p>
-            <input id="pw" type="password" placeholder="סיסמה" autocomplete="current-password">
-            <button id="gateBtn" class="primary">המשך</button>
+            <input id="pw" type="password" data-i18n-ph="pw_ph" placeholder="סיסמה" autocomplete="current-password">
+            <button id="gateBtn" class="primary" data-i18n="continue">המשך</button>
             <p id="gateMsg" class="msg" role="alert"></p>
         </section>
 
         <!-- שאלה ותשובה -->
         <section id="ask" class="card" hidden>
-            <h2>שאלה על ההתכתבויות</h2>
-            <textarea id="q" rows="3" placeholder="לדוגמה: מי שלח לי אסמכתא על תשלום מעל 500 ₪? מי התכתב איתי ב-16 בחודש?"></textarea>
+            <h2 data-i18n="ask_title">שאלה על ההתכתבויות</h2>
+            <textarea id="q" rows="3" data-i18n-ph="ask_ph" placeholder="לדוגמה: מי שלח לי אסמכתא על תשלום מעל 500 ₪? מי התכתב איתי ב-16 בחודש?"></textarea>
             <div class="filters">
-                <label>חשבון
-                    <select id="qAccount"><option value="">כל החשבונות</option></select>
+                <label><span data-i18n="account">חשבון</span>
+                    <select id="qAccount"><option value="" data-i18n="all_accounts">כל החשבונות</option></select>
                 </label>
-                <label>מתאריך <input id="qFrom" type="date"></label>
-                <label>עד תאריך <input id="qTo" type="date"></label>
+                <label><span data-i18n="from_date">מתאריך</span> <input id="qFrom" type="date"></label>
+                <label><span data-i18n="to_date">עד תאריך</span> <input id="qTo" type="date"></label>
             </div>
-            <button id="askBtn" class="primary">שאל</button>
+            <button id="askBtn" class="primary" data-i18n="ask_btn">שאל</button>
             <div id="answer" class="answer" hidden></div>
         </section>
 
         <!-- חשבונות -->
         <section id="accounts" class="card" hidden>
-            <h2>חשבונות הוואטסאפ</h2>
-            <p class="muted">הגדר אילו חשבונות ייסרקו, והאם הם עסקיים או פרטיים. המספר <span class="accid">#N</span> שליד כל חשבון הוא "מזהה החשבון" שמזינים באפליקציית הגשר.</p>
+            <h2 data-i18n="accounts_title">חשבונות הוואטסאפ</h2>
+            <p class="muted" data-i18n="accounts_hint">הגדר אילו חשבונות ייסרקו, והאם הם עסקיים או פרטיים. המספר #N שליד כל חשבון הוא "מזהה החשבון" שמזינים באפליקציית הגשר.</p>
             <ul id="accountList" class="list"></ul>
             <div class="row">
-                <input id="accLabel" placeholder="שם החשבון (למשל: הביזנס)">
+                <input id="accLabel" data-i18n-ph="acc_label_ph" placeholder="שם החשבון (למשל: הביזנס)">
                 <select id="accApp">
-                    <option value="com.whatsapp">וואטסאפ רגיל</option>
-                    <option value="com.whatsapp.w4b">וואטסאפ עסקי</option>
-                    <option value="__custom__">חבילה אחרת…</option>
+                    <option value="com.whatsapp" data-i18n="wa_regular">וואטסאפ רגיל</option>
+                    <option value="com.whatsapp.w4b" data-i18n="wa_business">וואטסאפ עסקי</option>
+                    <option value="__custom__" data-i18n="wa_other">חבילה אחרת…</option>
                 </select>
-                <button id="addAccBtn" class="primary">הוסף</button>
+                <button id="addAccBtn" class="primary" data-i18n="add">הוסף</button>
             </div>
-            <input id="accCustomPkg" placeholder="שם חבילה מותאם (למשל com.gbwhatsapp)" hidden>
-            <p class="muted">כל חשבון מקושר לאפליקציה שלו. ההפרדה מוחלטת בין אפליקציות שונות (רגיל/עסקי); שיבוט (מרחב שני) רץ תחת אותה אפליקציה ואי אפשר להפריד אותו — מגבלת אנדרואיד.</p>
+            <input id="accCustomPkg" data-i18n-ph="acc_custom_ph" placeholder="שם חבילה מותאם (למשל com.gbwhatsapp)" hidden>
+            <p class="muted" data-i18n="accounts_note">כל חשבון מקושר לאפליקציה שלו. ההפרדה מוחלטת בין אפליקציות שונות (רגיל/עסקי); שיבוט (מרחב שני) רץ תחת אותה אפליקציה ואי אפשר להפריד אותו — מגבלת אנדרואיד.</p>
         </section>
 
         <!-- הגדרות -->
         <section id="settings" class="card" hidden>
-            <h2>הגדרות</h2>
+            <h2 data-i18n="settings_title">הגדרות</h2>
 
-            <h3>מנוע הבינה</h3>
-            <label class="block">ספק
+            <h3 data-i18n="ai_engine">מנוע הבינה</h3>
+            <label class="block"><span data-i18n="provider">ספק</span>
                 <select id="aiProvider"></select>
             </label>
-            <label class="block">מודל
+            <label class="block"><span data-i18n="model">מודל</span>
                 <select id="aiModel"></select>
             </label>
-            <input id="aiModelCustom" class="block" placeholder="מזהה מודל מותאם (למשל claude-...)" hidden>
-            <button id="loadModelsBtn" class="ghost small">טען מודלים מהספק</button>
-            <label class="block">מפתח API
-                <input id="aiKey" type="password" placeholder="השאר ריק כדי לא לשנות">
+            <input id="aiModelCustom" class="block" data-i18n-ph="model_custom_ph" placeholder="מזהה מודל מותאם (למשל claude-...)" hidden>
+            <button id="loadModelsBtn" class="ghost small" data-i18n="load_models">טען מודלים מהספק</button>
+            <label class="block"><span data-i18n="api_key">מפתח API</span>
+                <input id="aiKey" type="password" data-i18n-ph="key_ph" placeholder="השאר ריק כדי לא לשנות">
                 <span id="keyTail" class="muted"></span>
             </label>
-            <label class="block">שפת התשובות
+            <label class="block"><span data-i18n="answer_lang_label">שפת התשובות</span>
                 <select id="answerLang"></select>
             </label>
-            <button id="saveAiBtn" class="primary">שמור</button>
+            <label class="block"><span data-i18n="ui_lang_label">שפת הממשק</span>
+                <select id="uiLang"></select>
+            </label>
+            <button id="saveAiBtn" class="primary" data-i18n="save">שמור</button>
 
-            <h3>חיבור אפליקציית הסריקה</h3>
-            <p class="muted">אפליקציית האנדרואיד היא הגשר שקורא את הוואטסאפ במכשיר ומזרים לכאן. הדביקו בה את אסימון הצימוד:</p>
-            <div class="token"><code id="pairToken">—</code><button id="copyTokenBtn" class="ghost">העתק</button></div>
-            <button id="rotateTokenBtn" class="ghost small">גלגל אסימון חדש (מנתק מכשירים קיימים)</button>
+            <h3 data-i18n="bridge_conn">חיבור אפליקציית הסריקה</h3>
+            <p class="muted" data-i18n="bridge_hint">אפליקציית האנדרואיד היא הגשר שקורא את הוואטסאפ במכשיר ומזרים לכאן. הדביקו בה את אסימון הצימוד:</p>
+            <div class="token"><code id="pairToken">—</code><button id="copyTokenBtn" class="ghost" data-i18n="copy">העתק</button></div>
+            <button id="rotateTokenBtn" class="ghost small" data-i18n="rotate_token">גלגל אסימון חדש (מנתק מכשירים קיימים)</button>
 
-            <h3>יומן אבחון</h3>
-            <p class="muted">כל בליעה, בדיקת חיבור וכשל נרשמים ביומן. העתק את אסימון היומן ומסור אותו לתמיכה כדי שיוכלו לקרוא את הלוגים ולאבחן.</p>
-            <div class="token"><code id="logToken">—</code><button id="copyLogTokenBtn" class="ghost">העתק</button></div>
-            <button id="rotateLogTokenBtn" class="ghost small">גלגל אסימון יומן חדש</button>
-            <button id="viewLogsBtn" class="ghost small">הצג לוגים אחרונים</button>
+            <h3 data-i18n="diag_log">יומן אבחון</h3>
+            <p class="muted" data-i18n="diag_hint">כל בליעה, בדיקת חיבור וכשל נרשמים ביומן. העתק את אסימון היומן ומסור אותו לתמיכה כדי שיוכלו לקרוא את הלוגים ולאבחן.</p>
+            <div class="token"><code id="logToken">—</code><button id="copyLogTokenBtn" class="ghost" data-i18n="copy">העתק</button></div>
+            <button id="rotateLogTokenBtn" class="ghost small" data-i18n="rotate_log">גלגל אסימון יומן חדש</button>
+            <button id="viewLogsBtn" class="ghost small" data-i18n="view_logs">הצג לוגים אחרונים</button>
             <pre id="logsView" class="logs" hidden></pre>
 
             <p id="settingsMsg" class="msg"></p>
@@ -97,11 +100,12 @@
     </main>
 
     <nav id="tabs" class="tabs" hidden>
-        <button data-tab="ask" class="active">שאלה</button>
-        <button data-tab="accounts">חשבונות</button>
-        <button data-tab="settings">הגדרות</button>
+        <button data-tab="ask" class="active" data-i18n="tab_ask">שאלה</button>
+        <button data-tab="accounts" data-i18n="tab_accounts">חשבונות</button>
+        <button data-tab="settings" data-i18n="tab_settings">הגדרות</button>
     </nav>
 
+    <script src="assets/js/i18n.js"></script>
     <script src="assets/js/app.js"></script>
 </body>
 </html>
