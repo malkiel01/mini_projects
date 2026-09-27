@@ -47,6 +47,21 @@ $col2 = collectMessages($acc['id'], null, null, 'בוקר טוב לכולם');
 check('שאלה ללא התאמה נופלת לחלון', $col2['by_relevance'] === false);
 check('החלון אינו ריק', count($col2['messages']) > 0);
 
+// שאלה לפי שם אדם — מותאמת דרך שם השולח, לא רק גוף ההודעה, למרות
+// שאף מילה בגוף אינה תואמת.
+$col3 = collectMessages($acc['id'], null, null, 'מה דני כתב');
+check('שאלה לפי שם נבחרה לפי רלוונטיות', $col3['by_relevance'] === true);
+$foundDani = false;
+foreach ($col3['messages'] as $m) if (($m['sender'] ?? '') === 'דני') $foundDani = true;
+check('הודעת דני נמצאה דרך שם השולח', $foundDani);
+
+// נרמול עברית: השאלה "התשלומים" (תחילית + רבים) מוצאת גוף עם "תשלום".
+$col4 = collectMessages($acc['id'], null, null, 'מה עם התשלומים');
+check('נרמול תחילית+רבים מוצא את ההודעה', (function ($c) {
+    foreach ($c['messages'] as $m) if (strpos($m['body'], 'תשלום') !== false) return true;
+    return false;
+})($col4));
+
 array_map('unlink', glob($tmp . '/*'));
 @rmdir($tmp);
 echo $failed === 0 ? "\nהכול עבר\n" : "\n$failed נכשלו\n";
