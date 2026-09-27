@@ -185,6 +185,10 @@ async function loadSettings() {
     populateModels(aiState.provider, aiState.model || '');
     $('keyTail').textContent = aiState.has_key ? `מפתח נשמר (…${aiState.key_tail})` : 'לא הוגדר מפתח';
 
+    const lang = $('answerLang');
+    lang.innerHTML = (aiState.answer_langs || []).map((l) =>
+        `<option value="${l.code}"${l.code === aiState.answer_lang ? ' selected' : ''}>${l.label}</option>`).join('');
+
     prov.onchange = () => populateModels(prov.value, '');
     $('pairToken').textContent = s.pair_token;
     $('logToken').textContent = s.log_token || '—';
@@ -291,6 +295,7 @@ $('saveAiBtn').addEventListener('click', async () => {
             provider: $('aiProvider').value,
             model: chosenModel(),
             key: $('aiKey').value,   // ריק = לא לשנות
+            answer_lang: $('answerLang').value,
         });
         $('aiKey').value = '';
         msg.textContent = 'נשמר.';

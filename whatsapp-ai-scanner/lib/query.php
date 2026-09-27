@@ -208,10 +208,27 @@ function buildContext(array $messages): string {
 }
 
 /**
+ * שורת ההנחיה שקובעת באיזו שפה המודל יענה. הקודים מתאימים ל-ANSWER_LANGS
+ * ב-settings.php. 'auto' = באותה שפה של השאלה; קוד לא מוכר נופל לעברית.
+ */
+function answerLangLine(string $lang): string {
+    return match ($lang) {
+        'auto' => 'ענה באותה שפה שבה נשאלה השאלה, בקצרה וללא הקדמות.',
+        'en'   => 'ענה באנגלית, בקצרה וללא הקדמות.',
+        'ar'   => 'ענה בערבית, בקצרה וללא הקדמות.',
+        'ru'   => 'ענה ברוסית, בקצרה וללא הקדמות.',
+        'fr'   => 'ענה בצרפתית, בקצרה וללא הקדמות.',
+        'es'   => 'ענה בספרדית, בקצרה וללא הקדמות.',
+        default => 'ענה בעברית, בקצרה וללא הקדמות.',
+    };
+}
+
+/**
  * עונה על שאלה. $conn = ['provider','key','model'] כמו ב-ai.php.
+ * ‏$answerLang קובע את שפת התשובה (ראו answerLangLine).
  * ‏$transport מוזרק בבדיקות.
  */
-function answerQuestion(array $conn, string $question, array $collected, ?callable $transport = null): string {
+function answerQuestion(array $conn, string $question, array $collected, string $answerLang = 'he', ?callable $transport = null): string {
     $messages  = $collected['messages'];
     $truncated = $collected['truncated'];
 
@@ -224,7 +241,7 @@ function answerQuestion(array $conn, string $question, array $collected, ?callab
         'ענה אך ורק על סמך ההודעות שנמסרו לך. אל תמציא פרטים.',
         'אם המידע אינו נמצא בהודעות, אמור זאת במפורש.',
         'כשמזהים סכום, תאריך או שם — צטט את ההודעה שממנה הוא נלקח.',
-        'ענה בעברית, בקצרה וללא הקדמות.',
+        answerLangLine($answerLang),
     ]);
 
     $scanned = (int) ($collected['scanned'] ?? count($messages));

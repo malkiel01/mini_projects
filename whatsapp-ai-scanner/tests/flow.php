@@ -72,8 +72,22 @@ $fakeTransport = function ($provider, $url, $json, $key) {
     ])];
 };
 $conn = ['provider' => 'anthropic', 'key' => 'sk-ant-testtesttesttest', 'model' => 'claude-haiku-4-5-20251001'];
-$answer = answerQuestion($conn, 'מי שלח אסמכתא?', $col, $fakeTransport);
+$answer = answerQuestion($conn, 'מי שלח אסמכתא?', $col, 'he', $fakeTransport);
 check('התשובה נבנתה מההקשר שהכיל את האסמכתא', strpos($answer, 'אסמכתא') !== false);
+
+// שפת התשובה מוזרקת ל-system prompt: תחבורה לוכדת שהבקשה כוללת את
+// ההנחיה הנכונה לפי הקוד שנבחר.
+$capture = null;
+$sniff = function ($provider, $url, $json, $key) use (&$capture) {
+    $capture = $json;
+    return ['status' => 200, 'body' => json_encode(['content' => [['type' => 'text', 'text' => 'ok']]])];
+};
+answerQuestion($conn, 'who paid me?', $col, 'en', $sniff);
+check('שפת אנגלית מוזרקת להנחיה', strpos((string) $capture, 'ענה באנגלית') !== false);
+answerQuestion($conn, 'מי שילם לי?', $col, 'auto', $sniff);
+check('שפת אוטומטי מוזרקת להנחיה', strpos((string) $capture, 'באותה שפה שבה נשאלה') !== false);
+answerQuestion($conn, 'שאלה', $col, 'zz', $sniff);   // קוד לא מוכר → עברית
+check('קוד לא מוכר נופל לעברית', strpos((string) $capture, 'ענה בעברית') !== false);
 
 // 5. הגדרות AI — מפתח נשמר מוצפן ומוחזר רק כזנב
 saveAiSettings('anthropic', 'claude-haiku-4-5-20251001', 'sk-ant-abcd1234abcd1234abcd');

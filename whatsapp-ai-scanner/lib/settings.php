@@ -12,15 +12,40 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/crypto.php';
 require_once __DIR__ . '/ai.php';
 
+/**
+ * שפות התשובה שה-AI יכול לענות בהן. 'auto' = באותה שפה של השאלה.
+ * הרשימה משמשת גם לאימות הקלט וגם לבניית הבורר ב-UI. הקודים חייבים
+ * להתאים ל-answerLangLine ב-query.php.
+ */
+const ANSWER_LANGS = [
+    'he'   => 'עברית',
+    'en'   => 'English',
+    'ar'   => 'العربية',
+    'ru'   => 'Русский',
+    'fr'   => 'Français',
+    'es'   => 'Español',
+    'auto' => 'כשפת השאלה',
+];
+
+/** שפת התשובה השמורה של הבעלים, עם נפילה לעברית אם לא תקינה. */
+function ownerAnswerLang(): string {
+    $l = (string) (owner()['answer_lang'] ?? 'he');
+    return array_key_exists($l, ANSWER_LANGS) ? $l : 'he';
+}
+
 /** מחזיר את הגדרות ה-AI לתצוגה — בלי המפתח עצמו, רק זנב לזיהוי. */
 function aiSettingsView(): array {
     $o = owner();
     $key = decryptSecret($o['ai_key_enc'] ?? '');
     return [
-        'provider'  => $o['ai_provider'] ?? 'anthropic',
-        'model'     => $o['ai_model'] ?? '',
-        'key_tail'  => secretTail($key),
-        'has_key'   => $key !== '',
+        'provider'     => $o['ai_provider'] ?? 'anthropic',
+        'model'        => $o['ai_model'] ?? '',
+        'key_tail'     => secretTail($key),
+        'has_key'      => $key !== '',
+        'answer_lang'  => ownerAnswerLang(),
+        'answer_langs' => array_map(
+            fn($c, $l) => ['code' => $c, 'label' => $l],
+            array_keys(ANSWER_LANGS), ANSWER_LANGS),
         'providers' => array_map(fn($id, $m) => [
             'id'      => $id,
             'label'   => $m['label'],
@@ -42,12 +67,16 @@ function fetchProviderModels(): array {
     return listProviderModels($conn['provider'], $conn['key']);
 }
 
-function saveAiSettings(string $provider, string $model, ?string $key): void {
+function saveAiSettings(string $provider, string $model, ?string $key, ?string $answerLang = null): void {
     if (!providerExists($provider)) throw new InvalidArgumentException('ספק לא מוכר');
     $fields = [
         'ai_provider' => $provider,
         'ai_model'    => mb_substr(trim($model), 0, 80),
     ];
+    // שפת תשובה: null = אל תיגע; ערך לא מוכר נופל לעברית.
+    if ($answerLang !== null) {
+        $fields['answer_lang'] = array_key_exists($answerLang, ANSWER_LANGS) ? $answerLang : 'he';
+    }
     // מפתח ריק פירושו "אל תיגע במפתח הקיים". החלפה מפורשת בלבד.
     if ($key !== null && $key !== '') {
         checkProviderKey($provider, $key);   // זורק על מפתח שגוי-צורה

@@ -86,7 +86,8 @@ try {
             saveAiSettings(
                 (string) ($in['provider'] ?? 'anthropic'),
                 (string) ($in['model'] ?? ''),
-                isset($in['key']) ? (string) $in['key'] : null
+                isset($in['key']) ? (string) $in['key'] : null,
+                isset($in['answer_lang']) ? (string) $in['answer_lang'] : null
             );
             ok(['ai' => aiSettingsView()]);
 
@@ -138,7 +139,7 @@ try {
             $to   = isset($in['to'])   && $in['to']   !== '' ? (int) strtotime((string) $in['to'] . ' 23:59:59') : null;
 
             $collected = collectMessages($accountId, $from ?: null, $to ?: null, $question);
-            $answer = answerQuestion(ownerAiConn(), $question, $collected);
+            $answer = answerQuestion(ownerAiConn(), $question, $collected, ownerAnswerLang());
             ok([
                 'answer'       => $answer,
                 'used'         => count($collected['messages']),
