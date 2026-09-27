@@ -3,6 +3,8 @@ package com.mbeplus.wascanner
 import android.accessibilityservice.AccessibilityService
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -77,6 +79,8 @@ class ScannerService : AccessibilityService() {
     private var overlayDetail: TextView? = null
     private var overlayBody: View? = null
     private var overlayPauseBtn: Button? = null
+    private var overlayDot: View? = null
+    private var overlayToggle: TextView? = null
     private var overlayExpanded = true
     @Volatile private var paused = false
 
@@ -341,8 +345,35 @@ class ScannerService : AccessibilityService() {
 
     /* ── לוח בקרה מרחף ───────────────────────────────────────────── */
 
-    private fun btn(label: String, onClick: () -> Unit) = Button(this).apply {
-        text = label; textSize = 12f; setPadding(18, 6, 18, 6); setOnClickListener { onClick() }
+    /** ממיר dp לפיקסלים לפי צפיפות המסך, כדי שהמידות יֵראו אותו דבר בכל מכשיר. */
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+    /** רקע מלבני מעוגל אחיד ללוח ולכפתורים. */
+    private fun rounded(color: Int, radiusDp: Int, strokeDp: Int = 0, strokeColor: Int = 0) =
+        GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(color)
+            cornerRadius = dp(radiusDp).toFloat()
+            if (strokeDp > 0) setStroke(dp(strokeDp), strokeColor)
+        }
+
+    /** עיגול צבעוני קטן — נקודת מצב (ירוק פעיל / כתום מושהה / אפור ממתין). */
+    private fun dot(color: Int) = View(this).apply {
+        val s = dp(9)
+        layoutParams = LinearLayout.LayoutParams(s, s).apply { marginEnd = dp(8) }
+        background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(color) }
+    }
+
+    /** כפתור פעולה מעוגל וצבעוני, ברוחב שווה בשורה. */
+    private fun roundBtn(label: String, bg: Int, onClick: () -> Unit) = Button(this).apply {
+        text = label; textSize = 13f; setAllCaps(false)
+        setTextColor(Color.WHITE)
+        setPadding(dp(12), dp(7), dp(12), dp(7))
+        background = rounded(bg, 10)
+        stateListAnimator = null
+        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            .apply { marginEnd = dp(6) }
+        setOnClickListener { onClick() }
     }
 
     private fun showOverlay() {
@@ -352,34 +383,57 @@ class ScannerService : AccessibilityService() {
 
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#F0202124"))
-            setPadding(26, 18, 26, 18)
+            background = rounded(Color.parseColor("#F21B1C1F"), 18, 1, Color.parseColor("#33FFFFFF"))
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            elevation = dp(8).toFloat()
         }
 
-        // כותרת: שורת מצב + כפתור כווץ/הרחב + סגירה.
-        val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val status = TextView(this).apply {
-            setTextColor(Color.WHITE); textSize = 12f; text = "לוח בקרה — סורק וואטסאפ"
-            width = 380
+        // כותרת = גם ידית גרירה: ידית · נקודת מצב · כותרת · כווץ · סגירה.
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
         }
-        val toggle = btn("▾") { overlayExpanded = !overlayExpanded; applyExpanded(); refreshOverlay() }
-        val close = btn("✕") { hideOverlay() }
+        val grip = TextView(this).apply {
+            text = "⣿"; setTextColor(Color.parseColor("#6B7280")); textSize = 15f
+            setPadding(0, 0, dp(8), 0)
+        }
+        val statusDot = dot(Color.parseColor("#9AA0A6"))
+        val status = TextView(this).apply {
+            setTextColor(Color.WHITE); textSize = 13f; setTypeface(typeface, Typeface.BOLD)
+            text = "סורק וואטסאפ"
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val toggle = TextView(this).apply {
+            text = "▾"; setTextColor(Color.WHITE); textSize = 15f
+            setPadding(dp(8), dp(2), dp(8), dp(2))
+            setOnClickListener { overlayExpanded = !overlayExpanded; applyExpanded() }
+        }
+        val close = TextView(this).apply {
+            text = "✕"; setTextColor(Color.parseColor("#F87171")); textSize = 15f
+            setPadding(dp(8), dp(2), dp(2), dp(2))
+            setOnClickListener { hideOverlay() }
+        }
+        header.addView(grip); header.addView(statusDot)
         header.addView(status); header.addView(toggle); header.addView(close)
 
         // גוף: פרטים + כפתורי הפעלה.
-        val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val detail = TextView(this).apply {
-            setTextColor(Color.parseColor("#C9D1D9")); textSize = 11f
-            setPadding(0, 10, 0, 10); text = "…"
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(0, dp(10), 0, 0)
         }
-        val ctrl = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        ctrl.addView(btn("▶ סרוק הכל") { startSweepFromOverlay() })
-        val pauseBtn = btn("⏸ השהה") {
+        val detail = TextView(this).apply {
+            setTextColor(Color.parseColor("#C9D1D9")); textSize = 12f
+            setLineSpacing(dp(3).toFloat(), 1f); text = "…"
+        }
+        val ctrl = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(10), 0, 0)
+        }
+        val pauseBtn = roundBtn("⏸ השהה", Color.parseColor("#B8860B")) {
             paused = !paused
             overlayPauseBtn?.text = if (paused) "▶ המשך" else "⏸ השהה"
+            refreshOverlay()
         }
+        ctrl.addView(roundBtn("▶ סרוק הכל", Color.parseColor("#1F9D57")) { startSweepFromOverlay() })
         ctrl.addView(pauseBtn)
-        ctrl.addView(btn("⏹ עצור") {
+        ctrl.addView(roundBtn("⏹ עצור", Color.parseColor("#C0392B")) {
             store.fullSweep = false; store.autoScan = false; paused = false; refreshOverlay()
         })
         body.addView(detail); body.addView(ctrl)
@@ -390,38 +444,63 @@ class ScannerService : AccessibilityService() {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
         val lp = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            dp(280),
             WindowManager.LayoutParams.WRAP_CONTENT,
             type,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
-        ).apply { gravity = Gravity.TOP or Gravity.START; x = 24; y = 120 }
+        ).apply { gravity = Gravity.TOP or Gravity.START; x = dp(12); y = dp(90) }
 
-        // גרירה דרך הכותרת בלבד (שלא יתנגש עם כפתורים).
+        // גרירה דרך הכותרת: מוגבלת לגבולות המסך (שלא "תברח"), ובשחרור
+        // נצמדת לקצה הקרוב כדי לא להסתיר את מרכז המסך. תזוזה קטנה נחשבת
+        // נגיעה ולא גרירה — כדי שטאפ על כווץ/סגור עדיין יעבוד.
         header.setOnTouchListener(object : View.OnTouchListener {
-            var dx = 0; var dy = 0; var ix = 0f; var iy = 0f
+            var dx = 0; var dy = 0; var ix = 0f; var iy = 0f; var moved = false
             override fun onTouch(v: View, e: MotionEvent): Boolean {
+                val dm = resources.displayMetrics
+                val w = if (panel.width > 0) panel.width else dp(280)
+                val h = if (panel.height > 0) panel.height else dp(120)
                 when (e.action) {
-                    MotionEvent.ACTION_DOWN -> { dx = lp.x; dy = lp.y; ix = e.rawX; iy = e.rawY }
+                    MotionEvent.ACTION_DOWN -> {
+                        dx = lp.x; dy = lp.y; ix = e.rawX; iy = e.rawY; moved = false
+                    }
                     MotionEvent.ACTION_MOVE -> {
-                        lp.x = dx + (e.rawX - ix).toInt()
-                        lp.y = dy + (e.rawY - iy).toInt()
+                        if (kotlin.math.abs(e.rawX - ix) > dp(6) ||
+                            kotlin.math.abs(e.rawY - iy) > dp(6)) moved = true
+                        lp.x = (dx + (e.rawX - ix).toInt())
+                            .coerceIn(0, (dm.widthPixels - w).coerceAtLeast(0))
+                        lp.y = (dy + (e.rawY - iy).toInt())
+                            .coerceIn(0, (dm.heightPixels - h).coerceAtLeast(0))
+                        try { wm.updateViewLayout(panel, lp) } catch (ex: Exception) {}
+                    }
+                    MotionEvent.ACTION_UP -> if (moved) {
+                        lp.x = if (lp.x + w / 2 < dm.widthPixels / 2) dp(8)
+                               else (dm.widthPixels - w - dp(8)).coerceAtLeast(0)
                         try { wm.updateViewLayout(panel, lp) } catch (ex: Exception) {}
                     }
                 }
-                return false
+                return moved   // צורכים רק כשגררנו; נגיעה עוברת לכפתורים
             }
         })
 
         try { wm.addView(panel, lp) } catch (e: Exception) { return }
         overlay = panel; overlayStatus = status; overlayDetail = detail
         overlayBody = body; overlayPauseBtn = pauseBtn
+        overlayDot = statusDot; overlayToggle = toggle
         applyExpanded(); refreshOverlay()
         main.removeCallbacks(refresher); main.postDelayed(refresher, 1000)
     }
 
     private fun applyExpanded() {
         overlayBody?.visibility = if (overlayExpanded) View.VISIBLE else View.GONE
+        overlayToggle?.text = if (overlayExpanded) "▾" else "▸"
+    }
+
+    /** צבע נקודת המצב: ירוק=פעיל, כתום=מושהה, אפור=ממתין. */
+    private fun statusColor(): Int = when {
+        paused -> Color.parseColor("#F5A623")
+        sweepRunning || autoScrolling -> Color.parseColor("#2ECC71")
+        else -> Color.parseColor("#9AA0A6")
     }
 
     /** מדליק סריקת הכל מהשכבה, ומביא את וואטסאפ לחזית. */
@@ -441,6 +520,7 @@ class ScannerService : AccessibilityService() {
 
     private fun refreshOverlay() {
         overlayStatus?.text = shortStatus()
+        (overlayDot?.background as? GradientDrawable)?.setColor(statusColor())
         if (overlayExpanded) overlayDetail?.text = detailText()
     }
 
