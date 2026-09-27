@@ -6,16 +6,19 @@
  * על תשלום מעל 500 ₪?"), והמערכת עונה על סמך ההודעות שנקלטו.
  *
  * מגבלת ההקשר היא הלב של הקובץ. היסטוריית וואטסאפ שלמה גדולה מכל חלון
- * הקשר של מודל, ולכן אי אפשר לשפוך הכול לתוך הפנייה. הצמצום נעשה בשני
- * צירים לפני הפנייה למודל:
+ * הקשר של מודל, ולכן אי אפשר לשפוך הכול לתוך הפנייה. הצמצום נעשה כך:
  *
  *   1. חלון זמן — אם הבעלים ציין טווח תאריכים, נלקחות רק הודעות בתוכו.
- *   2. תקרת כמות — לכל היותר MAX_CONTEXT_MSGS הודעות, העדכניות שבחלון.
+ *   2. דירוג רלוונטיות — עד SCAN_CAP הודעות נפרשות ומפוענחות בזיכרון,
+ *      מדורגות לפי התאמה לשאלה, ורק ה-MAX_CONTEXT_MSGS המתאימות ביותר
+ *      נשלחות למודל. כך שאלה רחבה מוצאת מידע ישן, לא רק את האחרון.
  *
- * זו גישת "חלון", לא חיפוש סמנטי על כל ההיסטוריה. חיפוש על פני שנים של
- * התכתבות דורש אינדקס וקטורי (embeddings/RAG) — זה נשאר פתוח, ומתועד
- * ב-README. עד אז, שאלה רחבה בלי טווח תאריכים תתבסס על ההודעות
- * העדכניות בלבד, והתשובה אומרת זאת.
+ * הדירוג מתאים גם על שם השולח/הצ'אט (שאלת "מי") ולא רק על גוף ההודעה,
+ * ומנרמל עברית (תחיליות ורבים) כדי ש"התשלומים" ימצא "תשלום". שאלה בלי
+ * מילות מפתח שתואמות נופלת לחלון האחרון, והתשובה אומרת זאת.
+ *
+ * חיפוש סמנטי מלא על פני שנים דורש אינדקס וקטורי (embeddings/RAG) —
+ * זה נשאר פתוח ומתועד ב-README.
  */
 
 declare(strict_types=1);
@@ -42,7 +45,7 @@ const SCAN_CAP = 25000;
 const MONEY_TERMS = ['תשלום','תשלומ','שילם','שולם','לשלם','העבר','אסמכת','קבלה','חשבונית',
     'סכום','כסף','זיכוי','חיוב','₪','שקל','ש"ח','דולר','$','ביט','פייבוקס','paybox','bit'];
 
-/** מילות מפתch מהשאלה, לצורך התאמה. */
+/** מילות מפתח מהשאלה, לצורך התאמה. */
 function queryKeywords(string $q): array {
     $q = preg_replace('/[^\p{L}\p{N}₪$"]+/u', ' ', $q);
     $stop = ['מי','מה','מתי','איפה','כמה','האם','את','של','לי','עם','על','אני','זה','יש','לא',
@@ -53,6 +56,37 @@ function queryKeywords(string $q): array {
         if (mb_strlen($w) >= 2 && !in_array($w, $stop, true)) $out[] = $w;
     }
     return array_values(array_unique($out));
+}
+
+/**
+ * וריאנטים של מילה לצורך התאמה בעברית. עברית מדביקה תחיליות (ה/ו/ב/ל/
+ * מ/ש/כ/פ) ומטה לרבים (ים/ות), כך שהתאמת מחרוזת "יבשה" מפספסת:
+ * "תשלומים" לא נמצא ב"תשלום", ו"התשלום" לא נמצא ב"תשלום". לכן מחזירים
+ * לצד המילה המקורית גם צורה בלי תחילית וגם בלי סיומת רבים. השארנו את
+ * זה שמרני (מגבלות אורך) כדי לא לייצר התאמות שווא.
+ */
+function heVariants(string $w): array {
+    $w = mb_strtolower(trim($w));
+    if ($w === '') return [];
+    // בסיסים: המילה כפי שהיא, וגם בלי תחילית אחת. הסיומת מוסרת מכל
+    // בסיס בנפרד, כדי ש"התשלומים" (תחילית+רבים) יצטמצם עד "תשלום".
+    $bases = [$w];
+    $first = mb_substr($w, 0, 1);
+    if (in_array($first, ['ה','ו','ב','ל','מ','ש','כ','פ'], true) && mb_strlen($w) >= 4) {
+        $bases[] = mb_substr($w, 1);
+    }
+    $set = [];
+    foreach ($bases as $b) {
+        $set[] = $b;
+        foreach (['יות','ים','ות'] as $suf) {
+            $sl = mb_strlen($suf);
+            if (mb_strlen($b) - $sl >= 3 && mb_substr($b, -$sl) === $suf) {
+                $set[] = mb_substr($b, 0, mb_strlen($b) - $sl);
+                break;
+            }
+        }
+    }
+    return array_values(array_unique($set));
 }
 
 function isMoneyQuestion(string $q): bool {
@@ -113,12 +147,24 @@ function collectMessages(?int $accountId, ?int $from, ?int $to, string $question
     $selected = $all;
     $byRelevance = false;
     if ($keywords || $money) {
+        // וריאנטים של כל מילת מפתח, מחושבים פעם אחת מראש (לא פר-הודעה).
+        $kwVariants = array_map('heVariants', $keywords);
         $scored = [];
         foreach ($all as $i => $m) {
-            $body = $m['body'];
+            // גוף ההודעה מול שם השולח/הצ'אט מדורגים בנפרד: התאמה בשם
+            // אדם או קבוצה היא אות חזק לשאלת "מי", ולכן שוקלת יותר.
+            $bodyL = mb_strtolower($m['body']);
+            $whoL  = mb_strtolower(($m['sender'] ?? '') . ' ' . ($m['chat'] ?? ''));
             $score = 0;
-            foreach ($keywords as $kw) if (mb_stripos($body, $kw) !== false) $score++;
-            if ($money && looksMonetary($body)) $score += 2;
+            foreach ($kwVariants as $vars) {
+                $inWho = false; $inBody = false;
+                foreach ($vars as $v) {
+                    if (!$inWho  && strpos($whoL,  $v) !== false) $inWho  = true;
+                    if (!$inBody && strpos($bodyL, $v) !== false) $inBody = true;
+                }
+                if ($inWho) $score += 2; elseif ($inBody) $score += 1;
+            }
+            if ($money && looksMonetary($m['body'])) $score += 2;
             if ($score > 0) $scored[] = ['s' => $score, 'i' => $i, 't' => $m['sent_at'], 'm' => $m];
         }
         if ($scored) {
