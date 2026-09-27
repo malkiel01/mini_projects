@@ -15,12 +15,15 @@ async function api(action, payload) {
     const opts = { method: 'POST', headers: { 'Content-Type': 'application/json' } };
     opts.body = JSON.stringify(payload || {});
     const res = await fetch(`${API}?action=${encodeURIComponent(action)}`, opts);
-    const data = await res.json().catch(() => ({ success: false, error: 'תשובה לא תקינה מהשרת' }));
-    if (!data.success) throw new Error(data.error || 'שגיאה');
+    const data = await res.json().catch(() => ({ success: false, error: t('resp_invalid') }));
+    if (!data.success) throw new Error(data.error || t('error'));
     return data;
 }
 
 const $ = (id) => document.getElementById(id);
+
+// החלת שפת הממשק על הטקסט הסטטי מיד עם הטעינה (i18n.js נטען קודם).
+applyI18n();
 const show = (el, on) => { el.hidden = !on; };
 
 /* ── ניווט בין המסכים ─────────────────────────────────────────── */
@@ -42,10 +45,8 @@ async function boot() {
     configured = state.configured;
     if (state.owner) return enterApp();
     show($('gate'), true);
-    $('gateTitle').textContent = configured ? 'כניסה' : 'התקנה ראשונה';
-    $('gateHint').textContent = configured
-        ? 'הזן את סיסמת הבעלים.'
-        : 'קבע סיסמה שתגן על ההתכתבויות. זו הכניסה היחידה למערכת.';
+    $('gateTitle').textContent = configured ? t('login') : t('first_setup');
+    $('gateHint').textContent = configured ? t('login_hint') : t('setup_hint');
     $('pw').setAttribute('autocomplete', configured ? 'current-password' : 'new-password');
 }
 
@@ -58,7 +59,7 @@ $('gateBtn').addEventListener('click', async () => {
         if (configured) {
             await api('login', { password: pw });
         } else {
-            if (pw.length < 8) throw new Error('הסיסמה חייבת להיות באורך 8 תווים לפחות');
+            if (pw.length < 8) throw new Error(t('pw_min'));
             await api('setup', { password: pw });
         }
         $('pw').value = '';
@@ -90,7 +91,7 @@ $('askBtn').addEventListener('click', async () => {
     if (!question) return;
     const btn = $('askBtn');
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span>חושב…';
+    btn.innerHTML = '<span class="spinner"></span>' + t('thinking');
     show(box, true);
     box.textContent = '';
     try {
@@ -103,13 +104,13 @@ $('askBtn').addEventListener('click', async () => {
         box.textContent = r.answer;
         const meta = document.createElement('span');
         meta.className = 'meta';
-        meta.textContent = `נסרקו ${r.used} הודעות${r.truncated ? ' (חלון עדכני בלבד — צמצם תאריכים לדיוק רב יותר)' : ''}.`;
+        meta.textContent = t('scanned_n', { n: r.used, note: r.truncated ? t('truncated_note') : '' });
         box.appendChild(meta);
     } catch (e) {
-        box.textContent = 'שגיאה: ' + e.message;
+        box.textContent = t('err_prefix') + e.message;
     } finally {
         btn.disabled = false;
-        btn.textContent = 'שאל';
+        btn.textContent = t('ask_btn');
     }
 });
 
@@ -122,16 +123,16 @@ async function loadAccounts() {
     list.innerHTML = '';
     accounts.forEach((a) => {
         const li = document.createElement('li');
-        const appHe = a.wa_package === 'com.whatsapp.w4b' ? 'עסקי'
-            : a.wa_package === 'com.whatsapp' ? 'רגיל'
-            : (a.wa_package ? a.wa_package : '⚠ ללא אפליקציה');
+        const appLabel = a.wa_package === 'com.whatsapp.w4b' ? t('biz')
+            : a.wa_package === 'com.whatsapp' ? t('regular')
+            : (a.wa_package ? a.wa_package : t('no_app'));
         li.innerHTML =
-            `<span class="tag ${a.kind}">${escapeHtml(appHe)}</span>` +
-            `<span>${escapeHtml(a.label)} <span class="accid" title="מזהה החשבון עבור אפליקציית הגשר">#${a.id}</span></span>` +
-            `<span class="count">${a.message_count} הודעות</span>` +
-            `<button class="del" title="מחק">🗑</button>`;
+            `<span class="tag ${a.kind}">${escapeHtml(appLabel)}</span>` +
+            `<span>${escapeHtml(a.label)} <span class="accid" title="${escapeHtml(t('accid_title'))}">#${a.id}</span></span>` +
+            `<span class="count">${t('n_messages', { n: a.message_count })}</span>` +
+            `<button class="del" title="${escapeHtml(t('del_title'))}">🗑</button>`;
         li.querySelector('.del').addEventListener('click', async () => {
-            if (!confirm(`למחוק את "${a.label}" ואת כל ההודעות שנקלטו תחתיו?`)) return;
+            if (!confirm(t('del_confirm', { label: a.label }))) return;
             await api('delete_account', { id: a.id });
             loadAccounts();
         });
@@ -141,7 +142,7 @@ async function loadAccounts() {
     // בורר החשבונות במסך השאלה
     const sel = $('qAccount');
     const cur = sel.value;
-    sel.innerHTML = '<option value="">כל החשבונות</option>' +
+    sel.innerHTML = `<option value="">${escapeHtml(t('all_accounts'))}</option>` +
         accounts.map((a) => `<option value="${a.id}">${escapeHtml(a.label)}</option>`).join('');
     sel.value = cur;
 }
@@ -155,7 +156,7 @@ $('addAccBtn').addEventListener('click', async () => {
     if (!label) return;
     let pkg = $('accApp').value;
     if (pkg === '__custom__') pkg = $('accCustomPkg').value.trim();
-    if (!pkg) { alert('בחר אפליקציה לחשבון'); return; }
+    if (!pkg) { alert(t('pick_app')); return; }
     const kind = pkg === 'com.whatsapp.w4b' ? 'business' : 'personal';
     try {
         await api('add_account', { label, kind, package: pkg });
@@ -183,11 +184,18 @@ async function loadSettings() {
         `<option value="${p.id}"${p.id === aiState.provider ? ' selected' : ''}>${p.label}</option>`).join('');
 
     populateModels(aiState.provider, aiState.model || '');
-    $('keyTail').textContent = aiState.has_key ? `מפתח נשמר (…${aiState.key_tail})` : 'לא הוגדר מפתח';
+    $('keyTail').textContent = aiState.has_key
+        ? t('key_saved', { tail: aiState.key_tail }) : t('key_none');
 
     const lang = $('answerLang');
     lang.innerHTML = (aiState.answer_langs || []).map((l) =>
-        `<option value="${l.code}"${l.code === aiState.answer_lang ? ' selected' : ''}>${l.label}</option>`).join('');
+        `<option value="${l.code}"${l.code === aiState.answer_lang ? ' selected' : ''}>${escapeHtml(l.label)}</option>`).join('');
+
+    // בורר שפת הממשק — נשמר מקומית (i18n.js), החלפה חיה בלי סבב שרת.
+    const ui = $('uiLang');
+    ui.innerHTML = I18N_LANGS.map((l) =>
+        `<option value="${l.code}"${l.code === uiLang() ? ' selected' : ''}>${escapeHtml(l.label)}</option>`).join('');
+    ui.onchange = () => { setUiLang(ui.value); applyI18n(); loadSettings(); loadAccounts(); };
 
     prov.onchange = () => populateModels(prov.value, '');
     $('pairToken').textContent = s.pair_token;
@@ -197,13 +205,13 @@ async function loadSettings() {
 /* יומן אבחון */
 $('copyLogTokenBtn').addEventListener('click', () => {
     navigator.clipboard?.writeText($('logToken').textContent).then(() => {
-        $('copyLogTokenBtn').textContent = 'הועתק';
-        setTimeout(() => ($('copyLogTokenBtn').textContent = 'העתק'), 1500);
+        $('copyLogTokenBtn').textContent = t('copied');
+        setTimeout(() => ($('copyLogTokenBtn').textContent = t('copy')), 1500);
     });
 });
 
 $('rotateLogTokenBtn').addEventListener('click', async () => {
-    if (!confirm('אסימון יומן חדש יבטל את הישן. להמשיך?')) return;
+    if (!confirm(t('rotate_log_confirm'))) return;
     const r = await api('rotate_log_token');
     $('logToken').textContent = r.log_token;
 });
@@ -211,15 +219,15 @@ $('rotateLogTokenBtn').addEventListener('click', async () => {
 $('viewLogsBtn').addEventListener('click', async () => {
     const box = $('logsView');
     show(box, true);
-    box.textContent = 'טוען…';
+    box.textContent = t('loading');
     try {
         const r = await api('logs');
         box.textContent = (r.logs || []).map((l) => {
-            const t = new Date(l.ts * 1000).toLocaleString('he-IL');
-            return `${t} [${l.source}/${l.action}] ${l.status} ${l.detail}`;
-        }).join('\n') || '(היומן ריק)';
+            const ts = new Date(l.ts * 1000).toLocaleString();
+            return `${ts} [${l.source}/${l.action}] ${l.status} ${l.detail}`;
+        }).join('\n') || t('log_empty');
     } catch (e) {
-        box.textContent = 'שגיאה: ' + e.message;
+        box.textContent = t('err_prefix') + e.message;
     }
 });
 
@@ -242,7 +250,7 @@ function populateModels(provider, selected) {
     const sel = $('aiModel');
     sel.innerHTML =
         merged.map((m) => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.label)}</option>`).join('') +
-        `<option value="${CUSTOM}">אחר (הקלדה ידנית)…</option>`;
+        `<option value="${CUSTOM}">${escapeHtml(t('model_other'))}</option>`;
 
     sel.value = selected && seen.has(selected) ? selected : (merged[0]?.id || CUSTOM);
     onModelSelectChange();
@@ -268,17 +276,17 @@ $('loadModelsBtn').addEventListener('click', async () => {
     msg.className = 'msg';
     btn.disabled = true;
     const orig = btn.textContent;
-    btn.textContent = 'טוען…';
+    btn.textContent = t('loading');
     try {
         const r = await api('list_models');
         const provider = $('aiProvider').value;
         liveModels[provider] = r.models;
         populateModels(provider, chosenModel());
-        msg.textContent = `נטענו ${r.models.length} מודלים.`;
+        msg.textContent = t('models_loaded', { n: r.models.length });
         msg.className = 'msg okmsg';
     } catch (e) {
         // הכשל הנפוץ: אין מפתח שמור. אומרים זאת במפורש.
-        msg.textContent = e.message + ' (שמור מפתח קודם, ואז טען מודלים)';
+        msg.textContent = e.message + t('load_models_needkey');
         msg.className = 'msg err';
     } finally {
         btn.disabled = false;
@@ -298,7 +306,7 @@ $('saveAiBtn').addEventListener('click', async () => {
             answer_lang: $('answerLang').value,
         });
         $('aiKey').value = '';
-        msg.textContent = 'נשמר.';
+        msg.textContent = t('saved');
         msg.className = 'msg okmsg';
         loadSettings();
     } catch (e) {
@@ -309,13 +317,13 @@ $('saveAiBtn').addEventListener('click', async () => {
 
 $('copyTokenBtn').addEventListener('click', () => {
     navigator.clipboard?.writeText($('pairToken').textContent).then(() => {
-        $('copyTokenBtn').textContent = 'הועתק';
-        setTimeout(() => ($('copyTokenBtn').textContent = 'העתק'), 1500);
+        $('copyTokenBtn').textContent = t('copied');
+        setTimeout(() => ($('copyTokenBtn').textContent = t('copy')), 1500);
     });
 });
 
 $('rotateTokenBtn').addEventListener('click', async () => {
-    if (!confirm('אסימון חדש ינתק כל מכשיר שמחובר כעת. להמשיך?')) return;
+    if (!confirm(t('rotate_token_confirm'))) return;
     const r = await api('rotate_token');
     $('pairToken').textContent = r.pair_token;
 });
@@ -328,6 +336,6 @@ function escapeHtml(s) {
 
 boot().catch((e) => {
     $('gate').hidden = false;
-    $('gateMsg').textContent = 'שגיאת חיבור לשרת: ' + e.message;
+    $('gateMsg').textContent = t('conn_err') + e.message;
     $('gateMsg').className = 'msg err';
 });
