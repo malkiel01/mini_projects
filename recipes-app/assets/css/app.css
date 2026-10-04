@@ -617,3 +617,18 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
 .import-help summary { cursor: pointer; color: var(--accent); min-height: 44px; display: flex; align-items: center; }
 .import-help p { margin-top: 8px; font-size: 0.9rem; }
 .gallery__thumbs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; }
+
+/* ───────── ניסוח מחדש, תיעוד פרטי, מפתחות ───────── */
+
+.rewrite { padding: 10px 12px; border: 1px dashed var(--line); border-radius: 8px; }
+.rewrite .actions { flex-wrap: wrap; align-items: center; }
+.snapshot details > summary { list-style: none; cursor: pointer; }
+.snapshot details > summary::-webkit-details-marker { display: none; }
+.snapshot summary h3 { display: inline; }
+.snapshot summary h3::before { content: "▸ "; color: var(--muted); }
+.snapshot details[open] summary h3::before { content: "▾ "; }
+.snapshot__body { margin-top: 10px; }
+.snapshot__body h4 { margin: 12px 0 6px; }
+.secret { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.secret label .badge { margin-inline-start: 6px; }
+.secret label .badge { align-self: flex-start; width: auto; }

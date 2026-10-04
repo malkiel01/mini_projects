@@ -62,6 +62,8 @@ function logEvent(string $level, string $action, string $message = '', array $me
 /** הקלט של הבקשה, מסונן לרשימה הסגורה. */
 function logSafeInput(array $in): array {
     $out = [];
+    // secret-set: value הוא המפתח עצמו — לעולם לא ליומן.
+    if (($GLOBALS['__action'] ?? '') === 'secret-set') unset($in['value']);
     foreach (LOG_SAFE_FIELDS as $k) {
         if (!array_key_exists($k, $in)) continue;
         $v = $in[$k];

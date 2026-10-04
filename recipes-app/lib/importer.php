@@ -460,12 +460,49 @@ function importToDraft(array $raw): array {
             'videos' => array_slice($raw['videos'], 0, IMPORT_MAX_VIDEOS),
         ],
         'extracted_by'  => $raw['method'],
+        // התיעוד הפרטי: מה חולץ, כלשונו. נשמר עם המתכון (import_snapshots) ורואה
+        // אותו רק המייבא. בלי ה-HTML — רק הנתונים, כמה קילובייט.
+        'snapshot'      => [
+            'title' => $raw['title'], 'description' => $raw['description'],
+            'ingredients' => $raw['ingredients'], 'sections' => $raw['sections'],
+            'yield' => $raw['yield'], 'prep_minutes' => $raw['prep_minutes'], 'cook_minutes' => $raw['cook_minutes'],
+            'total_minutes' => $raw['total_minutes'], 'images' => $raw['images'], 'videos' => $raw['videos'],
+            'author' => $raw['author'], 'publisher' => $raw['publisher'], 'published' => $raw['published'],
+            'categories' => $raw['categories'], 'url' => $raw['url'], 'method' => $raw['method'],
+        ],
         'warnings'      => array_values(array_filter([
             !$raw['ingredients'] ? 'לא נמצאו רכיבים — יש להוסיף ידנית' : null,
             !$raw['sections'] ? 'לא נמצאו שלבי הכנה — יש להוסיף ידנית' : null,
             $raw['method'] === 'headings' ? 'הדף לא מסומן כמתכון; החילוץ לפי כותרות עלול להיות חלקי' : null,
             !$raw['images'] ? 'לא נמצאה תמונה' : null,
         ])),
+    ];
+}
+
+/** שומר את התיעוד הפרטי למתכון שנוצר מייבוא. שורה אחת למתכון; חוזרת — מחליפה. */
+function importSaveSnapshot(int $recipeId, array $snapshot, array $user): void {
+    $url = (string) ($snapshot['url'] ?? '');
+    if (!preg_match('~^https?://~i', $url)) return;
+    $st = db()->prepare('INSERT INTO import_snapshots (recipe_id, user_id, source_url, extracted_by, raw, fetched_at)
+                         VALUES (?,?,?,?,?,?)
+                         ON CONFLICT(recipe_id) DO UPDATE SET raw = excluded.raw, extracted_by = excluded.extracted_by,
+                                                             fetched_at = excluded.fetched_at');
+    $st->execute([$recipeId, $user['id'], $url, (string) ($snapshot['method'] ?? '?'),
+                  json_encode($snapshot, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), nowIso()]);
+}
+
+/** התיעוד — לבעל המתכון בלבד. null כשאין (מתכון שלא יובא). */
+function importGetSnapshot(int $recipeId, array $user): ?array {
+    $st = db()->prepare('SELECT s.*, r.owner_id FROM import_snapshots s JOIN recipes r ON r.id = s.recipe_id WHERE s.recipe_id = ?');
+    $st->execute([$recipeId]);
+    $row = $st->fetch();
+    if (!$row) return null;
+    if ((int) $row['owner_id'] !== (int) $user['id']) throw new AppError('התיעוד זמין רק למי שייבא את המתכון', 403);
+    return [
+        'source_url'   => $row['source_url'],
+        'extracted_by' => $row['extracted_by'],
+        'fetched_at'   => $row['fetched_at'],
+        'raw'          => json_decode($row['raw'], true) ?: [],
     ];
 }
 

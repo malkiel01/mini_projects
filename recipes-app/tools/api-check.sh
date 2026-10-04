@@ -21,6 +21,8 @@ cat > "$TMP/boot.php" <<PHPBOOT
 define('DB_FILE', '$TMP/t.sqlite');
 define('MEDIA_DIR', '$TMP/media');
 define('IMPORT_ALLOW_LOCAL', true);   // הייבוא מביא מ-127.0.0.1 — רק כאן
+define('SECRETS_FILE', '$TMP/secrets.json');
+define('AI_ENDPOINT', 'http://127.0.0.1:$((PORT + 1))/ai-mock.php');   // מדמה את Anthropic
 PHPBOOT
 
 # sendmail_path הוא PHP_INI_SYSTEM: ini_set בזמן ריצה אינו משנה אותו, ולכן
@@ -276,6 +278,33 @@ check 'תמונה כקישור'                "$(call media-link "{\"recipe_id\
 check 'הרשימה: thumb חיצוני ושם האתר' "$(call search '{"q":"בית מלון"}')" '"thumb":"https:\\/\\/www.10dakot.co.il\\/x.jpg","source_name":"'
 check 'סינון מהרשת'                 "$(call search '{"from_web":true}')" '"title":"עוגת גבינה של בית מלון"'
 check 'הייבוא נרשם ביומן'           "$(call logout >/dev/null; call login '{"username":"owner","password":"sod12345"}' >/dev/null; call log '{"action":"import-preview"}')" 'json-ld'
+call logout >/dev/null
+
+echo
+echo "8ז. תיעוד פרטי של הייבוא, מפתח API, וניסוח מחדש בבינה (דרך מדמה)"
+call login '{"username":"tester","password":"sod12345"}' >/dev/null
+check 'התיעוד נשמר עם המתכון המיובא'   "$(call import-snapshot "{\"recipe_id\":$IID}")" '"extracted_by":"json-ld"[^}]*"raw":{"title":"עוגת גבינה של בית מלון"'
+check 'מתכון רגיל — בלי תיעוד'          "$(call import-snapshot "{\"recipe_id\":$RID}")" '"snapshot":null'
+check 'בלי מפתח — הודעה ברורה'           "$(call import-rewrite '{"title":"x","sections":[{"name":"","steps":["מערבבים."]}]}')" 'אינו מופעל'
+check 'משתמש רגיל אינו רואה סודות'      "$(call secrets)" 'מפתח'
+call logout >/dev/null
+call login '{"username":"owner","password":"sod12345"}' >/dev/null
+check 'מפתח בצורה לא נכונה נדחה'        "$(call secret-set '{"key":"anthropic_api_key","value":"abc"}')" 'לא נראה'
+check 'קידומת לא נכונה נדחית'           "$(call secret-set '{"key":"anthropic_api_key","value":"xx-1234567890123456789012345"}')" 'sk-ant-'
+check 'מפתח נשמר — מוצג רק כסיומת'      "$(call secret-set '{"key":"anthropic_api_key","value":"sk-ant-test-0000000000000000wxyz"}')" '"set":true,"hint":"…wxyz"'
+check 'המפתח עצמו אינו ביומן'           "$(call log '{"action":"secret-set"}' | grep -c 'wxyz')" '^0$'
+check 'קובץ הסודות לא קריא לאחרים'      "$(stat -c '%a' "$TMP/secrets.json")" '^600$'
+call logout >/dev/null
+check 'לא מחובר — אין ניסוח'             "$(call import-rewrite '{"sections":[]}')" 'נדרשת התחברות'
+call login '{"username":"tester","password":"sod12345"}' >/dev/null
+check 'ai-status: זמין'                  "$(call ai-status)" '"available":true'
+check 'התיעוד של אחר נדחה'              "$(call logout >/dev/null; call login '{"username":"owner","password":"sod12345"}' >/dev/null; call import-snapshot "{\"recipe_id\":$IID}")" 'רק למי שייבא'
+R=$(call import-rewrite '{"title":"עוגה","sections":[{"name":"","steps":["מחממים תנור ל-180 מעלות.","מערבבים קמח וסוכר בקערה גדולה."]},{"name":"ציפוי","steps":["ממיסים שוקולד."]}]}')
+check 'נוסח מחדש — שני חלקים, הסדר נשמר' "$R" '"sections":\[{"name":"","steps":\["בשלב 1[^]]*"בשלב 2[^]]*\]},{"name":"ציפוי"'
+check 'דמיון נמוך, ניסיון אחד'           "$R" '"similarity":0,"too_close":false,"model":"claude-opus-5-5","attempts":1'
+check 'הניסוח נרשם ביומן עם טוקנים'     "$(call log '{"action":"ai-rewrite"}')" '"in_tokens":300,"out_tokens":200'
+call logout >/dev/null; call login '{"username":"tester","password":"sod12345"}' >/dev/null
+check 'שמירה כ"מבוסס על"'               "$(call recipe-save "{\"id\":$IID,\"title\":\"עוגת גבינה של בית מלון\",\"source_rewritten\":true,\"sections\":[{\"ingredients\":[{\"free_text\":\"4 ביצים\"}],\"steps\":[{\"text\":\"בשלב 1: מחממים.\"}]}]}")" '"rewritten":true'
 call logout >/dev/null
 
 echo

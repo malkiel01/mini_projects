@@ -19,6 +19,8 @@ require_once __DIR__ . '/lib/media.php';
 require_once __DIR__ . '/lib/settings.php';
 require_once __DIR__ . '/lib/log.php';
 require_once __DIR__ . '/lib/importer.php';
+require_once __DIR__ . '/lib/secrets.php';
+require_once __DIR__ . '/lib/ai.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -234,6 +236,8 @@ try {
         $id = (int) ($in['id'] ?? 0);
         if ($id > 0) requireOwnRecipe($id, $user);
         $saved = saveRecipe($in, $user, $id > 0 ? $id : null);
+        // ייבוא: התיעוד הפרטי נשמר יחד עם המתכון החדש
+        if ($id === 0 && is_array($in['snapshot'] ?? null)) importSaveSnapshot($saved, $in['snapshot'], $user);
         ok(['id' => $saved, 'recipe' => loadRecipe($saved, $user)]);
     }
 
@@ -268,7 +272,35 @@ try {
         if ($url === '') fail('חסרה כתובת');
         $draft = importPreview($url);
         logEvent('info', 'import-preview', 'חולץ ב-' . $draft['extracted_by'], ['host' => parse_url($draft['source_url'], PHP_URL_HOST)], $user);
-        ok(['draft' => $draft]);
+        ok(['draft' => $draft, 'ai_available' => aiAvailable()]);
+    }
+
+    case 'import-snapshot':
+        ok(['snapshot' => importGetSnapshot((int) ($in['recipe_id'] ?? 0), $user)]);
+
+    case 'import-rewrite': {
+        // ניסוח מחדש של שלבים בבינה. הקלט: [{name, steps[]}] מהעורך; הפלט באותו מבנה.
+        $sections = is_array($in['sections'] ?? null) ? $in['sections'] : [];
+        ok(aiRewriteSteps($sections, str_field($in, 'title', 120), $user));
+    }
+
+    case 'ai-status':
+        ok(['available' => aiAvailable()]);
+
+    // ───────── סודות (מפתח) ─────────
+
+    case 'secrets':
+        requireDeveloper($user);
+        ok(['secrets' => secretsStatus()]);
+
+    case 'secret-set': {
+        secretSet(str_field($in, 'key', 40), (string) ($in['value'] ?? ''), $user);
+        ok(['secrets' => secretsStatus()]);
+    }
+
+    case 'secret-remove': {
+        secretRemove(str_field($in, 'key', 40), $user);
+        ok(['secrets' => secretsStatus()]);
     }
 
     case 'media-delete':

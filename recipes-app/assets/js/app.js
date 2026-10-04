@@ -380,7 +380,7 @@ async function renderRecipe(id) {
           </p>
           ${r.source ? `
           <p class="credit">
-            🌐 <strong>מקור:</strong> <a href="${esc(r.source.url)}" target="_blank" rel="noopener nofollow">${esc(r.source.name || r.source.url)}</a>${
+            🌐 <strong>${r.source.rewritten ? 'מבוסס על המתכון של' : 'מקור:'}</strong> <a href="${esc(r.source.url)}" target="_blank" rel="noopener nofollow">${esc(r.source.name || r.source.url)}</a>${
               r.source.author ? ` · מאת ${esc(r.source.author)}` : ''}${
               r.source.imported_at ? ` · יובא ${esc(r.source.imported_at.slice(0, 10))}` : ''}
             <span class="muted small">— המתכון, התמונות והסרטונים שייכים למקור. הגרסה המקורית והמלאה שם.</span>
@@ -433,12 +433,14 @@ async function renderRecipe(id) {
 
         ${r.tips ? `<section class="part"><h3>טיפים והערות</h3><p class="tips">${esc(r.tips)}</p></section>` : ''}
 
+        ${r.source && r.is_mine ? '<section class="part snapshot" id="snapshot"></section>' : ''}
         <section class="part note-box" id="note-box"></section>
         ${r.visibility === 'public' ? '<section class="part comments" id="comments"></section>' : ''}
       </article>`;
 
     drawNote();
     if (r.visibility === 'public') drawComments();
+    if (r.source && r.is_mine) drawSnapshot();
 
     $$('[data-mult]').forEach((b) => b.addEventListener('click', () => { mult = +b.dataset.mult; draw(); }));
     $$('[data-serv]').forEach((b) => b.addEventListener('click', () => {
@@ -456,6 +458,34 @@ async function renderRecipe(id) {
       const b = $('#fav'); b.disabled = true;
       try { social.isFavorite = (await api('favorite-toggle', { recipe_id: r.id })).is_favorite; draw(); }
       catch (err) { alert(err.message); b.disabled = false; }
+    });
+  };
+
+  // ── התיעוד הפרטי של הייבוא: מה חולץ מהמקור, כלשונו. רק המייבא. ──
+  const drawSnapshot = () => {
+    const box = $('#snapshot');
+    box.innerHTML = `
+      <details>
+        <summary><h3>המקור כפי שיובא <span class="muted">— רק אתה רואה</span></h3></summary>
+        <div class="snapshot__body muted">טוען…</div>
+      </details>`;
+    $('details', box).addEventListener('toggle', async (e) => {
+      if (!e.target.open || box.dataset.loaded) return;
+      const body = $('.snapshot__body', box);
+      try {
+        const { snapshot: s } = await api('import-snapshot', { recipe_id: r.id });
+        box.dataset.loaded = '1';
+        if (!s) { body.textContent = 'אין תיעוד למתכון הזה.'; return; }
+        const raw = s.raw || {};
+        body.className = 'snapshot__body';
+        body.innerHTML = `
+          <p class="muted small">חולץ ב-${esc(s.fetched_at.slice(0, 16).replace('T', ' '))} (${esc(s.extracted_by)}) מ-<a href="${esc(s.source_url)}" target="_blank" rel="noopener nofollow">${esc(raw.publisher || s.source_url)}</a>${raw.author ? ` · מאת ${esc(raw.author)}` : ''}. תיעוד פרטי — לא מוצג לאיש מלבדך.</p>
+          ${raw.title ? `<p><strong>${esc(raw.title)}</strong></p>` : ''}
+          ${raw.description ? `<p class="tips">${esc(raw.description)}</p>` : ''}
+          ${raw.ingredients?.length ? `<h4>רכיבים במקור</h4><ul class="ings">${raw.ingredients.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : ''}
+          ${(raw.sections || []).map((sec) => `${sec.name ? `<h4>${esc(sec.name)}</h4>` : '<h4>שלבים במקור</h4>'}<ol class="steps">${sec.steps.map((st) => `<li>${esc(st)}</li>`).join('')}</ol>`).join('')}
+          ${raw.yield ? `<p class="muted small">כמות במקור: ${esc(raw.yield)}</p>` : ''}`;
+      } catch (err) { body.textContent = err.message; }
     });
   };
 
@@ -685,7 +715,9 @@ async function renderEditor(id, draft = null) {
     difficulty: r.difficulty ?? '',
     work_minutes: r.work_minutes ?? '', wait_minutes: r.wait_minutes ?? '', tips: r.tips ?? '',
     comments_open: r.comments_open !== false,
-    source: draft ? { url: draft.source_url, name: draft.source_name, author: draft.source_author } : (r.source || null),
+    source: draft ? { url: draft.source_url, name: draft.source_name, author: draft.source_author, rewritten: false } : (r.source || null),
+    snapshot: draft ? draft.snapshot : null,
+    ai_available: draft ? !!draft.ai_available : null,
     pending_media: draft ? draft.pending_media : null,
     tag_ids: new Set(r.tags.map((t) => t.id)),
     sections: r.sections.map((s) => ({
@@ -740,6 +772,18 @@ async function renderEditor(id, draft = null) {
           <label>זמן המתנה (דק׳) <input name="wait_minutes" type="number" min="0" inputmode="numeric" value="${esc(model.wait_minutes)}"></label>
         </div>
 
+        ${model.source ? `
+          <div class="rewrite" id="rewrite">
+            <p class="muted small">${model.source.rewritten
+              ? '✅ השלבים נוסחו מחדש — הקרדיט הוא "מבוסס על המתכון של…".'
+              : 'השלבים עדיין בניסוח המקור. ניסוח מחדש במילים אחרות שומר את הכמויות, הזמנים והסדר, ומוריד את החשיפה המשפטית.'}</p>
+            <div class="actions">
+              <button class="btn ${model.source.rewritten ? '' : 'btn--primary'}" type="button" id="rewrite-btn">✨ נסח מחדש בבינה</button>
+              <button class="btn btn--ghost" type="button" id="rewrite-undo" hidden>בטל ניסוח</button>
+              <label class="check"><input type="checkbox" name="rewritten_manual" ${model.source.rewritten ? 'checked' : ''}> ניסחתי בעצמי</label>
+            </div>
+            <p class="note" id="rewrite-msg" hidden></p>
+          </div>` : ''}
         <fieldset class="parts">
           ${model.sections.map((s, si) => `
             <div class="part part--edit" data-si="${si}">
@@ -837,6 +881,7 @@ async function renderEditor(id, draft = null) {
     model.tips = f.tips.value;
     model.visibility = f.public.checked ? 'public' : 'private';
     model.comments_open = f.comments_open.checked;
+    if (model.source && f.rewritten_manual) model.source.rewritten = f.rewritten_manual.checked;
     model.tag_ids = new Set($$('[data-tag]:checked', f).map((c) => +c.dataset.tag));
     $$('input[name="sname"]', f).forEach((i) => { model.sections[+i.dataset.si].name = i.value; });
     $$('.ing-row', f).forEach((row) => {
@@ -855,6 +900,37 @@ async function renderEditor(id, draft = null) {
     const redraw = () => { collect(); draw(); };
 
     f.yield_mode.addEventListener('change', () => { collect(); draw(); (f.yield_mode.value === 'text' ? $('#editor [name="yield_text"]') : $('#editor [name="servings"]'))?.focus(); });
+
+    // ── ניסוח מחדש בבינה: השלבים בלבד, הרכיבים נשארים. הקודם נשמר לביטול. ──
+    $('#rewrite-btn')?.addEventListener('click', async () => {
+      collect();
+      const btn = $('#rewrite-btn'), out = $('#rewrite-msg');
+      const note2 = (t, k) => { out.textContent = t; out.className = 'note' + (k ? ' note--' + k : ''); out.hidden = false; };
+      btn.disabled = true; note2('מנסח מחדש… (עד דקה)');
+      try {
+        const res = await api('import-rewrite', {
+          title: model.title,
+          sections: model.sections.map((s) => ({ name: s.name, steps: s.steps.filter((t) => t.trim()) })),
+        });
+        model.prev_steps = model.sections.map((s) => [...s.steps]);
+        // התאמה לפי מיקום: הבינה מחזירה חלק לכל חלק. חלק חסר — נשאר כמו שהיה.
+        res.sections.forEach((s, i) => { if (model.sections[i]) model.sections[i].steps = s.steps; });
+        model.source.rewritten = !res.too_close;
+        draw();
+        const out2 = $('#rewrite-msg');
+        out2.textContent = res.too_close
+          ? `הניסוח יצא קרוב מדי למקור (${Math.round(res.similarity * 100)}% זהה). לערוך ידנית, או לנסות שוב.`
+          : `נוסח מחדש · ${Math.round(res.similarity * 100)}% מהמשפטים זהים למקור · ${res.model}`;
+        out2.className = 'note note--' + (res.too_close ? 'warn' : 'ok'); out2.hidden = false;
+        $('#rewrite-undo').hidden = false;
+      } catch (err) { note2(err.message, 'err'); btn.disabled = false; }
+    });
+    $('#rewrite-undo')?.addEventListener('click', () => {
+      if (!model.prev_steps) return;
+      collect();
+      model.prev_steps.forEach((steps, i) => { if (model.sections[i]) model.sections[i].steps = steps; });
+      model.prev_steps = null; model.source.rewritten = false; draw();
+    });
     $('#add-section').addEventListener('click', () => { collect(); model.sections.push(emptySection()); draw(); });
     $$('[data-del-section]', f).forEach((b) => b.addEventListener('click', () => {
       collect(); model.sections.splice(+b.dataset.delSection, 1); draw();
@@ -934,6 +1010,8 @@ async function renderEditor(id, draft = null) {
           work_minutes: model.work_minutes || null, wait_minutes: model.wait_minutes || null,
           tips: model.tips, tag_ids: [...model.tag_ids], comments_open: model.comments_open,
           ...(model.source && !editId ? { source_url: model.source.url, source_name: model.source.name, source_author: model.source.author } : {}),
+          ...(model.source ? { source_rewritten: !!model.source.rewritten } : {}),
+          ...(model.snapshot && !editId ? { snapshot: model.snapshot } : {}),
           sections: model.sections.map((s) => ({
             name: s.name,
             ingredients: s.ingredients.filter((i) => i.free_text.trim()),
@@ -992,7 +1070,8 @@ async function renderImport(presetUrl = '') {
     const btn = form.querySelector('button'); btn.disabled = true;
     note('מביא את הדף ומחלץ… (עד 15 שניות)');
     try {
-      const { draft } = await api('import-preview', { url: form.url.value.trim() });
+      const { draft, ai_available } = await api('import-preview', { url: form.url.value.trim() });
+      draft.ai_available = ai_available;
       await renderEditor(null, draft);
       window.scrollTo(0, 0);
     } catch (err) { note(err.message, 'err'); btn.disabled = false; }
@@ -1182,7 +1261,40 @@ async function renderSettingsPublic() {
         <button class="btn btn--primary" type="submit">שמור</button>
         <p id="pub-msg" class="note" hidden></p>
       </form>
+
+      <h3>מפתחות API</h3>
+      <p class="muted">נשמרים בקובץ בשרת, מחוץ לגיט ומחוץ לפריסה. המפתח עצמו לא מוצג שוב אחרי השמירה — רק סיומת לזיהוי.</p>
+      <div id="secrets"></div>
     </section>`;
+  const drawSecrets = (secrets) => {
+    $('#secrets').innerHTML = Object.entries(secrets).map(([key, s]) => `
+      <form class="form secret" data-key="${key}">
+        <label>${esc(s.label)}
+          ${s.set ? `<span class="badge badge--public">מוגדר ${esc(s.hint || '')}</span>` : '<span class="badge">לא מוגדר</span>'}
+          <input name="value" type="password" autocomplete="off" dir="ltr" placeholder="${esc(s.prefix)}…" ${s.set ? '' : 'required'}>
+        </label>
+        <div class="actions">
+          <button class="btn btn--primary" type="submit">${s.set ? 'החלף' : 'שמור'}</button>
+          ${s.set ? '<button class="btn btn--ghost btn--danger" type="button" data-remove>הסר</button>' : ''}
+        </div>
+        <p class="note" hidden></p>
+      </form>`).join('');
+    $$('.secret').forEach((f) => {
+      const out = $('.note', f);
+      const say2 = (t, k) => { out.textContent = t; out.className = 'note note--' + k; out.hidden = false; };
+      f.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try { drawSecrets((await api('secret-set', { key: f.dataset.key, value: f.value.value })).secrets); }
+        catch (err) { say2(err.message, 'err'); }
+      });
+      $('[data-remove]', f)?.addEventListener('click', async () => {
+        if (!confirm('להסיר את המפתח? הניסוח בבינה יפסיק לעבוד.')) return;
+        try { drawSecrets((await api('secret-remove', { key: f.dataset.key })).secrets); }
+        catch (err) { say2(err.message, 'err'); }
+      });
+    });
+  };
+  api('secrets').then(({ secrets }) => drawSecrets(secrets)).catch((err) => { $('#secrets').innerHTML = `<p class="note note--err">${esc(err.message)}</p>`; });
   $('#pub').addEventListener('submit', async (e) => {
     e.preventDefault();
     const out = $('#pub-msg');

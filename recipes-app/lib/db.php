@@ -111,6 +111,18 @@ function migrate(PDO $pdo): void {
             uses         INTEGER NOT NULL DEFAULT 0
         );
 
+        -- תיעוד פרטי של ייבוא: מה בדיוק חולץ מהמקור ברגע הייבוא. רואה רק
+        -- המייבא. לא מוצג לציבור לעולם, ולא נספר במקצב. נמחק עם המתכון.
+        CREATE TABLE IF NOT EXISTS import_snapshots (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            recipe_id    INTEGER NOT NULL UNIQUE REFERENCES recipes(id) ON DELETE CASCADE,
+            user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            source_url   TEXT    NOT NULL,
+            extracted_by TEXT    NOT NULL,   -- json-ld / microdata / headings
+            raw          TEXT    NOT NULL,   -- JSON: title, ingredients[], sections[], yield, times, images, author…
+            fetched_at   TEXT    NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS user_tokens (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -139,6 +151,7 @@ function migrate(PDO $pdo): void {
             source_name   TEXT,                  -- שם האתר
             source_author TEXT,                  -- שם הכותב במקור
             imported_at   TEXT,
+            source_rewritten INTEGER NOT NULL DEFAULT 0,   -- השלבים נוסחו מחדש: הקרדיט הוא ״מבוסס על״
             main_media_id INTEGER,
             search_text   TEXT,
             created_at    TEXT    NOT NULL,
@@ -305,6 +318,7 @@ function migrate(PDO $pdo): void {
     foreach (['source_url', 'source_name', 'source_author', 'imported_at'] as $col) {
         addColumnIfMissing($pdo, 'recipes', $col, 'TEXT');
     }
+    addColumnIfMissing($pdo, 'recipes', 'source_rewritten', 'INTEGER NOT NULL DEFAULT 0');
 
     // ריפוי חד־כיווני: מנהל שנוצר לפני שהמשתמש הראשון אומת אוטומטית.
     // בלי זה, אם mail() לא פעל בשרת, המנהל היחיד נעול בחוץ לתמיד.

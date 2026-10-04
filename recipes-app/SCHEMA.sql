@@ -78,6 +78,18 @@ CREATE TABLE log_tokens (
   uses         INTEGER NOT NULL DEFAULT 0
 );
 
+-- תיעוד פרטי של ייבוא (11ב): מה חולץ מהמקור ברגע הייבוא. רואה רק המייבא,
+-- לא מוצג לציבור, נמחק עם המתכון.
+CREATE TABLE import_snapshots (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  recipe_id    INTEGER NOT NULL UNIQUE REFERENCES recipes(id) ON DELETE CASCADE,
+  user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  source_url   TEXT    NOT NULL,
+  extracted_by TEXT    NOT NULL,
+  raw          TEXT    NOT NULL,
+  fetched_at   TEXT    NOT NULL
+);
+
 -- אסימונים חד־פעמיים: אימות דוא"ל ואיפוס סיסמה. שורה אחת לשני השימושים,
 -- כי המחזור זהה — נוצר, נשלח, נצרך פעם אחת, פג.
 CREATE TABLE user_tokens (
@@ -113,6 +125,7 @@ CREATE TABLE recipes (
   source_name    TEXT,                           -- שם האתר
   source_author  TEXT,                           -- הכותב במקור
   imported_at    TEXT,
+  source_rewritten INTEGER NOT NULL DEFAULT 0,   -- השלבים נוסחו מחדש → הקרדיט "מבוסס על" (11ב)
   main_media_id  INTEGER,                        -- תמונה ראשית (3.4). FK נוסף למטה
   search_text    TEXT,                           -- מנורמל לחיפוש (5)
   created_at     TEXT    NOT NULL,

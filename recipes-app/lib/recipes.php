@@ -97,6 +97,8 @@ function saveRecipe(array $in, array $user, ?int $recipeId = null): int {
 
     // null = לא נשלח: בהוספה פתוח, בעדכון נשאר כמו שהיה.
     $commentsOpen = array_key_exists('comments_open', $in) ? (int) (bool) $in['comments_open'] : null;
+    // "מבוסס על": השלבים נוסחו מחדש (בבינה או ידנית). null = לא נשלח, נשאר.
+    $rewritten = array_key_exists('source_rewritten', $in) ? (int) (bool) $in['source_rewritten'] : null;
 
     $recipe = [
         'title'    => $title,
@@ -126,13 +128,13 @@ function saveRecipe(array $in, array $user, ?int $recipeId = null): int {
         if ($recipeId === null) {
             $st = $pdo->prepare('INSERT INTO recipes (owner_id, title, visibility, servings, yield_text,
                     difficulty, work_minutes, wait_minutes, tips, search_text, comments_open,
-                    source_url, source_name, source_author, imported_at, created_at, updated_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+                    source_url, source_name, source_author, imported_at, source_rewritten, created_at, updated_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
             $st->execute([$user['id'], $title, $visibility, $recipe['servings'], $recipe['yield'], $difficulty,
                           $recipe['work'], $recipe['wait'], $recipe['tips'], $search,
                           $commentsOpen ?? 1,
                           $source['url'] ?? null, $source['name'] ?? null, $source['author'] ?? null,
-                          $source ? nowIso() : null, nowIso(), nowIso()]);
+                          $source ? nowIso() : null, $rewritten ?? 0, nowIso(), nowIso()]);
             $recipeId = (int) $pdo->lastInsertId();
         } else {
             // המקור אינו משתנה בעריכה (COALESCE): פעם אחת מיובא — תמיד עם קרדיט.
@@ -141,11 +143,12 @@ function saveRecipe(array $in, array $user, ?int $recipeId = null): int {
                     comments_open=COALESCE(?, comments_open),
                     source_url=COALESCE(source_url, ?), source_name=COALESCE(source_name, ?),
                     source_author=COALESCE(source_author, ?), imported_at=COALESCE(imported_at, ?),
+                    source_rewritten=COALESCE(?, source_rewritten),
                     updated_at=? WHERE id=?');
             $st->execute([$title, $visibility, $recipe['servings'], $recipe['yield'], $difficulty, $recipe['work'],
                           $recipe['wait'], $recipe['tips'], $search, $commentsOpen,
                           $source['url'] ?? null, $source['name'] ?? null, $source['author'] ?? null,
-                          $source ? nowIso() : null, nowIso(), $recipeId]);
+                          $source ? nowIso() : null, $rewritten, nowIso(), $recipeId]);
             // החלפה מלאה: החלקים נמחקים, וה-CASCADE גורר איתם רכיבים
             // ושלבים. לכן אין צורך למחוק אותם בנפרד — וגם אסור לשכוח
             // ש-foreign_keys חייב להיות דלוק כדי שזה יקרה.
@@ -277,6 +280,7 @@ function loadRecipe(int $recipeId, ?array $user): ?array {
         'source'        => $recipe['source_url'] ? [
             'url' => $recipe['source_url'], 'name' => $recipe['source_name'],
             'author' => $recipe['source_author'], 'imported_at' => $recipe['imported_at'],
+            'rewritten' => (bool) $recipe['source_rewritten'],
         ] : null,
         'difficulty'    => $recipe['difficulty'],
         'work_minutes'  => $recipe['work_minutes'] !== null ? (int) $recipe['work_minutes'] : null,
