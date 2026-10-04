@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>איחוד PDF ותמונות</title>
+    <link rel="stylesheet" href="assets/css/app.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+    <div class="topbar">
+        <div class="wrap topbar-inner">
+            <div class="brand">
+                <svg class="brand-icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+                איחוד PDF ותמונות
+            </div>
+            <p class="brand-note">מאחדים קבצי PDF ותמונות לקובץ אחד — הכול בדפדפן, בלי שרת</p>
+        </div>
+    </div>
+
+    <div class="wrap">
+        <!-- Steps Indicator -->
+        <div class="steps">
+            <div class="step-item active" id="step-indicator-1">
+                <div class="step-circle">1</div>
+                <span class="step-label">העלאת קבצים</span>
+            </div>
+            <div class="step-line" id="step-line-1"></div>
+            <div class="step-item" id="step-indicator-2">
+                <div class="step-circle">2</div>
+                <span class="step-label">הגדרות</span>
+            </div>
+            <div class="step-line" id="step-line-2"></div>
+            <div class="step-item" id="step-indicator-3">
+                <div class="step-circle">3</div>
+                <span class="step-label">יצוא</span>
+            </div>
+        </div>
+
+        <!-- Step 1: Upload -->
+        <div class="panel visible" id="step-1">
+            <div class="upload-area" id="drop-zone">
+                <svg class="upload-icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <p class="upload-title">גררו קבצים לכאן</p>
+                <p class="upload-hint">או לחצו לבחירת קבצים · PDF · JPG · PNG · WEBP</p>
+                <input type="file" class="upload-input" id="file-input" multiple accept=".pdf,.jpg,.jpeg,.png,.webp">
+            </div>
+
+            <div id="file-stats" style="display:none" class="text-center text-muted text-sm mb-1">
+                <strong id="total-files">0</strong> קבצים · <strong id="total-pages">0</strong> דפים
+            </div>
+
+            <div class="file-list-wrap">
+                <ul class="file-list" id="file-list"></ul>
+            </div>
+
+            <div class="btn-row end" id="step-1-actions" style="display:none">
+                <button class="btn btn-primary" id="btn-to-step-2">
+                    המשך להגדרות
+                    <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Step 2: Settings -->
+        <div class="panel" id="step-2">
+            <div class="settings-grid">
+                <div class="setting-group">
+                    <label class="setting-label">גודל דף</label>
+                    <div class="radio-group">
+                        <div class="radio-option">
+                            <input type="radio" name="page-size" id="size-original" value="original" checked>
+                            <label for="size-original">לפי המקור</label>
+                        </div>
+                        <div class="radio-option">
+                            <input type="radio" name="page-size" id="size-a4" value="a4">
+                            <label for="size-a4">A4</label>
+                        </div>
+                        <div class="radio-option">
+                            <input type="radio" name="page-size" id="size-letter" value="letter">
+                            <label for="size-letter">Letter</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="setting-group">
+                    <label class="setting-label">כיוון</label>
+                    <div class="radio-group">
+                        <div class="radio-option">
+                            <input type="radio" name="orientation" id="orient-auto" value="auto" checked>
+                            <label for="orient-auto">אוטומטי</label>
+                        </div>
+                        <div class="radio-option">
+                            <input type="radio" name="orientation" id="orient-portrait" value="portrait">
+                            <label for="orient-portrait">לאורך</label>
+                        </div>
+                        <div class="radio-option">
+                            <input type="radio" name="orientation" id="orient-landscape" value="landscape">
+                            <label for="orient-landscape">לרוחב</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="setting-group">
+                    <label class="setting-label">איכות תמונות</label>
+                    <div class="radio-group">
+                        <div class="radio-option">
+                            <input type="radio" name="image-quality" id="quality-high" value="high" checked>
+                            <label for="quality-high">גבוהה</label>
+                        </div>
+                        <div class="radio-option">
+                            <input type="radio" name="image-quality" id="quality-medium" value="medium">
+                            <label for="quality-medium">בינונית</label>
+                        </div>
+                        <div class="radio-option">
+                            <input type="radio" name="image-quality" id="quality-low" value="low">
+                            <label for="quality-low">נמוכה</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="setting-group">
+                    <label class="setting-label" for="output-filename">שם קובץ הפלט</label>
+                    <input type="text" class="text-input" id="output-filename" value="merged" placeholder="שם הקובץ">
+                    <span class="text-sm text-muted">.pdf</span>
+                </div>
+            </div>
+
+            <div class="btn-row end mt-2">
+                <button class="btn btn-secondary" id="btn-to-step-1">
+                    <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+                    חזרה לקבצים
+                </button>
+                <button class="btn btn-primary" id="btn-merge">
+                    <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    אחד והורד
+                </button>
+            </div>
+        </div>
+
+        <!-- Step 3: Export / Progress -->
+        <div class="panel" id="step-3">
+            <div class="progress-wrap" id="progress-container">
+                <div class="progress-header">
+                    <span class="progress-text" id="progress-message">מתחיל עיבוד...</span>
+                    <span class="progress-pct" id="progress-text">0%</span>
+                </div>
+                <div class="progress-track">
+                    <div class="progress-fill animated" id="progress-bar"></div>
+                </div>
+            </div>
+
+            <div id="export-success" style="display:none" class="text-center mt-2">
+                <p style="font-size:2.5rem">✅</p>
+                <p style="font-weight:700;font-size:1.1rem;margin:.5rem 0">הקובץ מוכן!</p>
+                <div class="btn-row center">
+                    <button class="btn btn-primary" id="btn-download-again">
+                        <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        הורד שוב
+                    </button>
+                    <button class="btn btn-secondary" id="btn-new-merge">התחל מחדש</button>
+                </div>
+            </div>
+
+            <div class="btn-row mt-2" id="back-to-settings-row">
+                <button class="btn btn-secondary" id="btn-to-step-2-back">
+                    <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+                    חזרה להגדרות
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preview Modal -->
+    <div class="modal-overlay" id="preview-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title" id="preview-title">תצוגה מקדימה</h3>
+                <button class="modal-close" id="preview-close">
+                    <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="modal-body" id="preview-content"></div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <script src="assets/js/app.js"></script>
+</body>
+</html>
