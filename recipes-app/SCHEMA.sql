@@ -109,6 +109,10 @@ CREATE TABLE recipes (
   wait_minutes   INTEGER,                        -- זמן המתנה (4)
   tips           TEXT,                           -- אזור טיפים והערות
   comments_open  INTEGER NOT NULL DEFAULT 1,     -- הכותב סוגר תגובות (7)
+  source_url     TEXT,                           -- יובא מהרשת: קישור למקור, מוצג תמיד (קרדיט)
+  source_name    TEXT,                           -- שם האתר
+  source_author  TEXT,                           -- הכותב במקור
+  imported_at    TEXT,
   main_media_id  INTEGER,                        -- תמונה ראשית (3.4). FK נוסף למטה
   search_text    TEXT,                           -- מנורמל לחיפוש (5)
   created_at     TEXT    NOT NULL,

@@ -135,6 +135,10 @@ function migrate(PDO $pdo): void {
             wait_minutes  INTEGER,
             tips          TEXT,
             comments_open INTEGER NOT NULL DEFAULT 1,
+            source_url    TEXT,                  -- מתכון שיובא מהרשת: הקישור למקור (קרדיט)
+            source_name   TEXT,                  -- שם האתר
+            source_author TEXT,                  -- שם הכותב במקור
+            imported_at   TEXT,
             main_media_id INTEGER,
             search_text   TEXT,
             created_at    TEXT    NOT NULL,
@@ -298,6 +302,9 @@ function migrate(PDO $pdo): void {
     addColumnIfMissing($pdo, 'users', 'last_mail_at', 'TEXT');
     addColumnIfMissing($pdo, 'users', 'last_mail_ok', 'INTEGER');
     addColumnIfMissing($pdo, 'recipes', 'yield_text', 'TEXT');
+    foreach (['source_url', 'source_name', 'source_author', 'imported_at'] as $col) {
+        addColumnIfMissing($pdo, 'recipes', $col, 'TEXT');
+    }
 
     // ריפוי חד־כיווני: מנהל שנוצר לפני שהמשתמש הראשון אומת אוטומטית.
     // בלי זה, אם mail() לא פעל בשרת, המנהל היחיד נעול בחוץ לתמיד.

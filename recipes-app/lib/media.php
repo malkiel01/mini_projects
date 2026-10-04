@@ -158,24 +158,35 @@ function storeUpload(int $recipeId, array $user, array $file): array {
  * מצרף קישור לסרטון. http/https בלבד — הערך נכתב לתוך src/href, ו-javascript:
  * שם הוא הרצת קוד אצל מי שצופה.
  */
-function storeLink(int $recipeId, array $user, string $url): array {
-    requireOwnedRecipe($recipeId, $user);
+/**
+ * מדיה כקישור: סרטון (יוטיוב וכו'), או תמונה — בייבוא מהרשת התמונה נשארת
+ * אצל בעליה ואנחנו רק מצביעים עליה. קישור אינו נספר במקצב האחסון.
+ */
+function storeLink(int $recipeId, array $user, string $url, string $kind = 'video'): array {
+    $recipe = requireOwnedRecipe($recipeId, $user);
     $url = trim($url);
     if (!preg_match('~^https?://[^\s<>"\']{8,500}$~', $url)) {
         throw new AppError('הקישור אינו כתובת http/https תקינה');
     }
-    if (mediaCount($recipeId, 'video') >= MAX_VIDEOS_PER_RECIPE) {
-        throw new AppError('עד ' . MAX_VIDEOS_PER_RECIPE . ' סרטונים למתכון', 409);
+    if (!in_array($kind, ['video', 'image'], true)) throw new AppError('סוג מדיה לא מוכר');
+    $max = $kind === 'video' ? MAX_VIDEOS_PER_RECIPE : MAX_IMAGES_PER_RECIPE;
+    if (mediaCount($recipeId, $kind) >= $max) {
+        throw new AppError('עד ' . $max . ($kind === 'video' ? ' סרטונים' : ' תמונות') . ' למתכון', 409);
     }
-    $st = db()->prepare('SELECT COALESCE(MAX(position),0)+1 p FROM media WHERE recipe_id = ?');
+    $pdo = db();
+    $st = $pdo->prepare('SELECT COALESCE(MAX(position),0)+1 p FROM media WHERE recipe_id = ?');
     $st->execute([$recipeId]);
     $pos = (int) $st->fetch()['p'];
 
-    $st = db()->prepare('INSERT INTO media (recipe_id, uploader_id, kind, source, path_or_url,
+    $st = $pdo->prepare('INSERT INTO media (recipe_id, uploader_id, kind, source, path_or_url,
                                             mime, bytes, position, created_at)
                          VALUES (?,?,?,?,?,?,?,?,?)');
-    $st->execute([$recipeId, $user['id'], 'video', 'link', $url, null, 0, $pos, nowIso()]);
-    return mediaRow((int) db()->lastInsertId());
+    $st->execute([$recipeId, $user['id'], $kind, 'link', $url, null, 0, $pos, nowIso()]);
+    $id = (int) $pdo->lastInsertId();
+    if ($kind === 'image' && $recipe['main_media_id'] === null) {
+        $pdo->prepare('UPDATE recipes SET main_media_id = ? WHERE id = ?')->execute([$id, $recipeId]);
+    }
+    return mediaRow($id);
 }
 
 /** מוחק מדיה — קובץ, שורה, ומשחרר מקום. הבעלים או המנהל. */

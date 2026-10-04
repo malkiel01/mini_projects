@@ -18,6 +18,7 @@ require_once __DIR__ . '/lib/diag.php';
 require_once __DIR__ . '/lib/media.php';
 require_once __DIR__ . '/lib/settings.php';
 require_once __DIR__ . '/lib/log.php';
+require_once __DIR__ . '/lib/importer.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -161,6 +162,7 @@ try {
     case 'search': {
         // תיבה אחת לשלי ולציבורי יחד, עם סימון לכל תוצאה (סעיף 5).
         ok(['recipes' => searchRecipes($user, str_field($in, 'q', 120), [
+            'from_web'    => !empty($in['from_web']),
             'difficulty'  => $in['difficulty'] ?? null,
             'max_minutes' => $in['max_minutes'] ?? null,
             'tag_ids'     => $in['tag_ids'] ?? null,
@@ -255,7 +257,19 @@ try {
     // העלאת קובץ עצמה ב-upload.php (multipart). כאן רק מה שהוא JSON.
 
     case 'media-link':
-        ok(['media' => storeLink((int) ($in['recipe_id'] ?? 0), $user, str_field($in, 'url', 500))]);
+        ok(['media' => storeLink((int) ($in['recipe_id'] ?? 0), $user, str_field($in, 'url', 500),
+                                 ($in['kind'] ?? 'video') === 'image' ? 'image' : 'video')]);
+
+    // ───────── ייבוא מהרשת ─────────
+
+    case 'import-preview': {
+        // כתובת → טיוטה לעורך. לא נשמר דבר: המשתמש בודק, מתקן, ושומר.
+        $url = str_field($in, 'url', 500);
+        if ($url === '') fail('חסרה כתובת');
+        $draft = importPreview($url);
+        logEvent('info', 'import-preview', 'חולץ ב-' . $draft['extracted_by'], ['host' => parse_url($draft['source_url'], PHP_URL_HOST)], $user);
+        ok(['draft' => $draft]);
+    }
 
     case 'media-delete':
         deleteMedia((int) ($in['id'] ?? 0), $user);

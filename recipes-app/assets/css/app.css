@@ -599,3 +599,21 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
 
 .servings .btn--tiny.is-on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .row label[hidden] { display: none; }
+
+/* ───────── ייבוא מהרשת וקרדיט ───────── */
+
+.toolbar__row { display: flex; gap: 8px; }
+.toolbar__row .btn { flex: 1; }
+.subnav--list { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
+.credit {
+  font-size: 0.9rem; line-height: 1.5;
+  padding: 8px 12px; border-radius: 8px;
+  background: var(--accent-soft); border: 1px solid var(--line);
+}
+.credit a { color: var(--accent); overflow-wrap: anywhere; }
+.import-warn { list-style: disc inside; }
+.import-warn li + li { margin-top: 4px; }
+.import-help { margin-top: 16px; }
+.import-help summary { cursor: pointer; color: var(--accent); min-height: 44px; display: flex; align-items: center; }
+.import-help p { margin-top: 8px; font-size: 0.9rem; }
+.gallery__thumbs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; }

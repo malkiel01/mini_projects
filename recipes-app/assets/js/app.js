@@ -282,6 +282,7 @@ async function route() {
     if (h === '#/' || h === '') await renderList();
     else if ((m = h.match(/^#\/r\/(\d+)$/))) await renderRecipe(+m[1]);
     else if (h === '#/new') await renderEditor(null);
+    else if (h === '#/import' || h.startsWith('#/import?')) await renderImport(new URLSearchParams(h.split('?')[1] || '').get('url') || '');
     else if ((m = h.match(/^#\/edit\/(\d+)$/))) await renderEditor(+m[1]);
     else if (h === '#/favorites') await renderFavorites();
     else if (h === '#/diag') await renderDiag();
@@ -311,16 +312,25 @@ async function renderList() {
         <input name="q" type="search" placeholder="חיפוש בשם או ברכיב…" autocomplete="off">
         <button class="btn btn--primary" type="submit">חפש</button>
       </form>
-      <a class="btn btn--primary btn--wide" href="#/new">+ מתכון חדש</a>
+      <div class="toolbar__row">
+        <a class="btn btn--primary" href="#/new">+ מתכון חדש</a>
+        <a class="btn" href="#/import">🌐 ייבוא מהרשת</a>
+      </div>
+      <nav class="subnav subnav--list" aria-label="סינון">
+        <a href="#/" class="is-on" data-scope="all">הכול</a>
+        <a href="#/" data-scope="web">מהרשת</a>
+      </nav>
     </section>
     <section id="results" class="list"></section>`;
 
   const results = $('#results');
+  let scope = 'all';
   const run = async (q) => {
     results.innerHTML = '<p class="muted">טוען…</p>';
-    const { recipes } = await api('search', { q });
+    const { recipes } = await api('search', { q, from_web: scope === 'web' });
     if (!recipes.length) {
-      results.innerHTML = `<p class="muted">${q ? 'לא נמצא כלום.' : 'עדיין אין מתכונים. זה הרגע.'}</p>`;
+      results.innerHTML = `<p class="muted">${q ? 'לא נמצא כלום.' : scope === 'web'
+        ? 'עדיין לא יובא כלום מהרשת. "🌐 ייבוא מהרשת" — מדביקים קישור למתכון.' : 'עדיין אין מתכונים. זה הרגע.'}</p>`;
       return;
     }
     results.innerHTML = recipes.map((r) => `
@@ -328,13 +338,19 @@ async function renderList() {
         ${r.thumb ? `<img class="item__thumb" src="${esc(r.thumb)}" alt="" loading="lazy">` : '<span class="item__thumb item__thumb--empty">🍲</span>'}
         <div class="item__main">
           <strong>${esc(r.title)}</strong>
-          <span class="muted">${esc(r.owner_name)}${r.difficulty ? ' · ' + DIFFICULTY[r.difficulty] : ''}${
+          <span class="muted">${esc(r.owner_name)}${r.source_name ? ` · 🌐 ${esc(r.source_name)}` : ''}${r.difficulty ? ' · ' + DIFFICULTY[r.difficulty] : ''}${
             r.work_minutes || r.wait_minutes ? ' · ' + minutes((r.work_minutes || 0) + (r.wait_minutes || 0)) : ''}</span>
         </div>
         <span class="badge ${r.is_mine ? 'badge--mine' : 'badge--public'}">${r.is_mine ? 'שלי' : 'ציבורי'}</span>
       </a>`).join('');
   };
 
+  $$('[data-scope]').forEach((a) => a.addEventListener('click', (e) => {
+    e.preventDefault();
+    scope = a.dataset.scope;
+    $$('[data-scope]').forEach((x) => x.classList.toggle('is-on', x === a));
+    run($('#search').q.value.trim());
+  }));
   $('#search').addEventListener('submit', (e) => { e.preventDefault(); run(e.target.q.value.trim()); });
   await run('');
 }
@@ -362,6 +378,13 @@ async function renderRecipe(id) {
             <span class="badge ${r.is_mine ? 'badge--mine' : 'badge--public'}">${r.visibility === 'public' ? 'ציבורי' : 'פרטי'}</span>
             ${r.updated_at !== r.created_at ? ` · עודכן ${esc(r.updated_at.slice(0, 10))}` : ''}
           </p>
+          ${r.source ? `
+          <p class="credit">
+            🌐 <strong>מקור:</strong> <a href="${esc(r.source.url)}" target="_blank" rel="noopener nofollow">${esc(r.source.name || r.source.url)}</a>${
+              r.source.author ? ` · מאת ${esc(r.source.author)}` : ''}${
+              r.source.imported_at ? ` · יובא ${esc(r.source.imported_at.slice(0, 10))}` : ''}
+            <span class="muted small">— המתכון, התמונות והסרטונים שייכים למקור. הגרסה המקורית והמלאה שם.</span>
+          </p>` : ''}
           <div class="meta">
             ${r.difficulty ? `<span>קושי: ${DIFFICULTY[r.difficulty]}</span>` : ''}
             ${r.work_minutes ? `<span>עבודה: ${minutes(r.work_minutes)}</span>` : ''}
@@ -642,9 +665,14 @@ function makeSortable(container, rowSel, onDrop, key) {
 const emptyIng = () => ({ free_text: '', amount_min: '', amount_max: '', unit: '', product: '', optional: false });
 const emptySection = () => ({ name: '', ingredients: [emptyIng()], steps: [''] });
 
-async function renderEditor(id) {
+async function renderEditor(id, draft = null) {
   const tags = await ensureTags();
-  let r = id ? (await api('recipe', { id })).recipe : {
+  // draft: טיוטה מהייבוא — כבר בצורת המודל, עם מקור ומדיה שממתינה לשמירה
+  let r = draft ? {
+    ...draft, tags: draft.tag_ids.map((tid) => ({ id: tid })),
+    servings: draft.servings ?? '', yield_text: draft.yield_text ?? '',
+    sections: draft.sections.map((s) => ({ ...s, steps: s.steps.map((st) => st.text) })),
+  } : id ? (await api('recipe', { id })).recipe : {
     title: '', visibility: 'private', servings: '', yield_text: '', difficulty: '', work_minutes: '', wait_minutes: '',
     tips: '', tags: [], sections: [emptySection()], comments_open: true,
   };
@@ -657,6 +685,8 @@ async function renderEditor(id) {
     difficulty: r.difficulty ?? '',
     work_minutes: r.work_minutes ?? '', wait_minutes: r.wait_minutes ?? '', tips: r.tips ?? '',
     comments_open: r.comments_open !== false,
+    source: draft ? { url: draft.source_url, name: draft.source_name, author: draft.source_author } : (r.source || null),
+    pending_media: draft ? draft.pending_media : null,
     tag_ids: new Set(r.tags.map((t) => t.id)),
     sections: r.sections.map((s) => ({
       name: s.name ?? '',
@@ -674,7 +704,15 @@ async function renderEditor(id) {
     view.innerHTML = `
       <form id="editor" class="form editor">
         <a class="link" href="${id ? `#/r/${id}` : '#/'}">‹ ביטול</a>
-        <h2>${id ? 'עריכת מתכון' : 'מתכון חדש'}</h2>
+        <h2>${id ? 'עריכת מתכון' : draft ? 'ייבוא מהרשת — בדיקה לפני שמירה' : 'מתכון חדש'}</h2>
+        ${model.source ? `
+          <p class="credit">🌐 מקור: <a href="${esc(model.source.url)}" target="_blank" rel="noopener nofollow">${esc(model.source.name || model.source.url)}</a>${
+            model.source.author ? ` · מאת ${esc(model.source.author)}` : ''}
+            <span class="muted small">— הקרדיט מוצג תמיד ואינו ניתן להסרה.</span></p>` : ''}
+        ${draft && draft.warnings.length ? `<ul class="note note--warn import-warn">${draft.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
+        ${draft && (model.pending_media.images.length || model.pending_media.videos.length) ? `
+          <p class="muted">יצורפו אחרי השמירה: ${model.pending_media.images.length} תמונות, ${model.pending_media.videos.length} סרטונים — כקישורים לאתר המקורי.</p>
+          <div class="gallery__thumbs">${model.pending_media.images.map((u) => `<img src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer">`).join('')}</div>` : ''}
 
         <label>שם המתכון <input name="title" value="${esc(model.title)}" required maxlength="120"></label>
 
@@ -772,6 +810,7 @@ async function renderEditor(id) {
           <input type="checkbox" name="public" ${model.visibility === 'public' ? 'checked' : ''}>
           מתכון ציבורי — כולם רואים, ואפשר להגיב
         </label>
+        ${model.source ? '<p class="muted small">מתכון שיובא מהרשת: הקרדיט והקישור למקור מוצגים תמיד. פרסום ציבורי של תוכן שאינו שלך — על אחריותך.</p>' : ''}
         <label class="check">
           <input type="checkbox" name="comments_open" ${model.comments_open ? 'checked' : ''}>
           לאפשר תגובות (במתכון ציבורי)
@@ -894,6 +933,7 @@ async function renderEditor(id) {
           difficulty: model.difficulty || null,
           work_minutes: model.work_minutes || null, wait_minutes: model.wait_minutes || null,
           tips: model.tips, tag_ids: [...model.tag_ids], comments_open: model.comments_open,
+          ...(model.source && !editId ? { source_url: model.source.url, source_name: model.source.name, source_author: model.source.author } : {}),
           sections: model.sections.map((s) => ({
             name: s.name,
             ingredients: s.ingredients.filter((i) => i.free_text.trim()),
@@ -901,6 +941,13 @@ async function renderEditor(id) {
           })),
         };
         const { id: savedId } = await api('recipe-save', payload);
+        // ייבוא: התמונות והסרטונים מצורפים כקישורים אחרי שיש מזהה. כשל
+        // באחד מהם לא מפיל את השמירה — המתכון כבר קיים, והמדיה היא תוספת.
+        if (model.pending_media && !editId) {
+          out.textContent = 'מצרף תמונות וסרטונים…'; out.className = 'note'; out.hidden = false;
+          for (const u of model.pending_media.images) { try { await api('media-link', { recipe_id: savedId, url: u, kind: 'image' }); } catch { /* ממשיכים */ } }
+          for (const u of model.pending_media.videos) { try { await api('media-link', { recipe_id: savedId, url: u, kind: 'video' }); } catch { /* ממשיכים */ } }
+        }
         go(`#/r/${savedId}`);
       } catch (err) {
         out.textContent = err.message; out.className = 'note note--err'; out.hidden = false;
@@ -910,6 +957,47 @@ async function renderEditor(id) {
   };
 
   draw();
+}
+
+// ───────────────────────── ייבוא מהרשת ─────────────────────────
+
+async function renderImport(presetUrl = '') {
+  view.innerHTML = `
+    <section class="card settings">
+      <a class="link" href="#/">‹ לרשימה</a>
+      <h2>🌐 ייבוא מתכון מהרשת</h2>
+      <p class="muted">מדביקים קישור לדף של מתכון. האפליקציה מחלצת את השם, הרכיבים, השלבים, הזמנים, התמונות והסרטון,
+        ופותחת אותם בעורך לבדיקה — שום דבר לא נשמר עד שלוחצים "צור מתכון".</p>
+      <form id="import-form" class="form">
+        <label>קישור למתכון
+          <input name="url" type="url" inputmode="url" dir="ltr" placeholder="https://…" required autocomplete="off" value="${esc(presetUrl)}">
+        </label>
+        <button class="btn btn--primary btn--wide" type="submit">חלץ מתכון</button>
+        <p class="note" id="import-msg" hidden></p>
+      </form>
+      <details class="import-help">
+        <summary>איך זה עובד, ומה עם זכויות יוצרים</summary>
+        <p>רוב אתרי המתכונים מסמנים את המתכון בפורמט שגוגל קורא (schema.org/Recipe). האפליקציה קוראת את אותו סימון.
+           כשאין סימון כזה, היא מנחשת לפי כותרות כמו "מצרכים" ו"אופן ההכנה" — ואז כדאי לבדוק היטב.</p>
+        <p><strong>קרדיט:</strong> שם האתר, שם הכותב וקישור למקור נשמרים עם המתכון ומוצגים תמיד. אי אפשר למחוק אותם.
+           התמונות והסרטונים אינם מועתקים לשרת — הם נשארים אצל בעליהם, ואנחנו רק מצביעים עליהם.</p>
+        <p>מתכון מיובא נוצר <strong>פרטי</strong>. לפרסם אותו לציבור זו החלטה שלך, ועל אחריותך.</p>
+      </details>
+    </section>`;
+  const form = $('#import-form');
+  const out = $('#import-msg');
+  const note = (t, k) => { out.textContent = t; out.className = 'note' + (k ? ' note--' + k : ''); out.hidden = !t; };
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector('button'); btn.disabled = true;
+    note('מביא את הדף ומחלץ… (עד 15 שניות)');
+    try {
+      const { draft } = await api('import-preview', { url: form.url.value.trim() });
+      await renderEditor(null, draft);
+      window.scrollTo(0, 0);
+    } catch (err) { note(err.message, 'err'); btn.disabled = false; }
+  });
+  if (presetUrl) form.requestSubmit();
 }
 
 // ───────────────────────── עורך: מדיה ─────────────────────────

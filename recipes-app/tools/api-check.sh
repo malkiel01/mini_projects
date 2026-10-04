@@ -20,6 +20,7 @@ cat > "$TMP/boot.php" <<PHPBOOT
 <?php
 define('DB_FILE', '$TMP/t.sqlite');
 define('MEDIA_DIR', '$TMP/media');
+define('IMPORT_ALLOW_LOCAL', true);   // הייבוא מביא מ-127.0.0.1 — רק כאן
 PHPBOOT
 
 # sendmail_path הוא PHP_INI_SYSTEM: ini_set בזמן ריצה אינו משנה אותו, ולכן
@@ -31,7 +32,12 @@ php -S "127.0.0.1:$PORT" -t . \
   -d upload_max_filesize=32M -d post_max_size=40M \
   >"$TMP/server.log" 2>&1 &
 SERVER=$!
-trap 'kill $SERVER 2>/dev/null; rm -rf "$TMP"' EXIT
+# שרת שני לקבצי הדוגמה של הייבוא: השרת המובנה של PHP הוא חד-חוטי, ובקשה
+# שמביאה דף מאותו שרת הייתה נתקעת עד timeout.
+FXPORT=$((PORT + 1))
+php -S "127.0.0.1:$FXPORT" -t recipes-app/tools/fixtures >"$TMP/fixtures.log" 2>&1 &
+FXSERVER=$!
+trap 'kill $SERVER $FXSERVER 2>/dev/null; rm -rf "$TMP"' EXIT
 
 for _ in $(seq 1 40); do
   curl -fsS "http://127.0.0.1:$PORT/recipes-app/api.php?action=me" >/dev/null 2>&1 && break
@@ -251,6 +257,25 @@ check 'המדיה של tester מכבדת את הדריסה (12MB)' "$(call media
 # ההגדרה הציבורית היא 50MB, אך שרת הבדיקה מרשה 32M — והתקרה בפועל היא
 # המינימום. זו הבדיקה שההגדרה לא יכולה להבטיח יותר ממה שהשרת מקבל.
 check 'סרטון: min(ציבורי 50MB, שרת 32MB) = 32MB' "$(call media-limits)" '"video_max":33554432'
+call logout >/dev/null
+
+echo
+echo "8ו. ייבוא מהרשת — דף אמיתי שמוגש מהשרת המקומי, ואז שמירה עם קרדיט"
+call login '{"username":"tester","password":"sod12345"}' >/dev/null
+FX="http://127.0.0.1:$FXPORT/jsonld-10dakot.html"
+D=$(call import-preview "{\"url\":\"$FX\"}")
+check 'חולץ: שם, מקור, רכיבים'      "$D" '"title":"עוגת גבינה של בית מלון"[^}]*"visibility":"private"'
+check 'המקור בטיוטה'                "$D" '"source_url":"http:\\/\\/127.0.0.1'
+check 'תמונה ממתינה'                "$D" '"images":\["https:\\/\\/www.10dakot.co.il'
+check 'כתובת פנימית נדחית בייצור'   "$(call import-preview '{"url":"ftp://x/y"}')" 'http'
+check 'דף בלי מתכון'                "$(call import-preview "{\"url\":\"http://127.0.0.1:$FXPORT/norecipe.html\"}")" 'לא מצאתי'
+IMP=$(printf '%s' "$D" | python3 -c 'import sys,json; d=json.load(sys.stdin)["draft"]; d.pop("pending_media"); d.pop("warnings"); print(json.dumps(d,ensure_ascii=False))')
+IID=$(top_id "$(call recipe-save "$IMP")")
+check 'נשמר עם קרדיט'               "$(call recipe "{\"id\":$IID}")" '"source":{"url":"http:\\/\\/127.0.0.1'
+check 'תמונה כקישור'                "$(call media-link "{\"recipe_id\":$IID,\"url\":\"https://www.10dakot.co.il/x.jpg\",\"kind\":\"image\"}")" '"kind":"image","source":"link"'
+check 'הרשימה: thumb חיצוני ושם האתר' "$(call search '{"q":"בית מלון"}')" '"thumb":"https:\\/\\/www.10dakot.co.il\\/x.jpg","source_name":"'
+check 'סינון מהרשת'                 "$(call search '{"from_web":true}')" '"title":"עוגת גבינה של בית מלון"'
+check 'הייבוא נרשם ביומן'           "$(call logout >/dev/null; call login '{"username":"owner","password":"sod12345"}' >/dev/null; call log '{"action":"import-preview"}')" 'json-ld'
 call logout >/dev/null
 
 echo

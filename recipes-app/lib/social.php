@@ -226,11 +226,11 @@ function toggleFavorite(int $recipeId, array $user): bool {
 function listFavorites(array $user): array {
     $st = db()->prepare('SELECT f.id AS fav_id, f.recipe_id, f.title_snapshot, f.created_at AS saved_at,
                                 r.title, r.visibility, r.owner_id, r.difficulty, r.work_minutes, r.wait_minutes,
-                                u.display_name AS owner_name, m.path_or_url AS main_path
+                                u.display_name AS owner_name, m.path_or_url AS main_path, m.source AS main_source
                            FROM favorites f
                            LEFT JOIN recipes r ON r.id = f.recipe_id
                            LEFT JOIN users u ON u.id = r.owner_id
-                           LEFT JOIN media m ON m.id = r.main_media_id AND m.source = \'upload\'
+                           LEFT JOIN media m ON m.id = r.main_media_id AND m.kind = \'image\'
                           WHERE f.user_id = ?
                           ORDER BY f.created_at DESC');
     $st->execute([$user['id']]);
@@ -248,7 +248,7 @@ function listFavorites(array $user): array {
             'difficulty'   => $status === 'ok' ? $row['difficulty'] : null,
             'work_minutes' => $status === 'ok' && $row['work_minutes'] !== null ? (int) $row['work_minutes'] : null,
             'wait_minutes' => $status === 'ok' && $row['wait_minutes'] !== null ? (int) $row['wait_minutes'] : null,
-            'thumb'        => $status === 'ok' && $row['main_path'] ? 'data/media/' . basename($row['main_path']) : null,
+            'thumb'        => $status === 'ok' ? mediaThumbUrl($row['main_path'], $row['main_source']) : null,
             'saved_at'     => $row['saved_at'],
         ];
     }, $st->fetchAll());

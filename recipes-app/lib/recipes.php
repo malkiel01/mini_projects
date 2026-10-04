@@ -109,6 +109,15 @@ function saveRecipe(array $in, array $user, ?int $recipeId = null): int {
         'wait'     => positiveIntOrNull($in['wait_minutes'] ?? null),
     ];
     if ($recipe['servings'] !== null) $recipe['yield'] = null;
+
+    // מקור (ייבוא מהרשת): נשמר רק כשיש קישור תקין. הקרדיט הוא חלק מהמתכון
+    // ואי אפשר למחוק אותו בעריכה — רק את המתכון כולו.
+    $srcUrl = trim((string) ($in['source_url'] ?? ''));
+    $source = preg_match('~^https?://[^\s<>"\']{8,500}$~', $srcUrl) ? [
+        'url'    => $srcUrl,
+        'name'   => mb_substr(trim((string) ($in['source_name'] ?? '')), 0, 80) ?: (parse_url($srcUrl, PHP_URL_HOST) ?: ''),
+        'author' => mb_substr(trim((string) ($in['source_author'] ?? '')), 0, 80) ?: null,
+    ] : null;
     $search = buildSearchText($recipe + ['title' => $title], $sections);
 
     $pdo = db();
@@ -117,18 +126,26 @@ function saveRecipe(array $in, array $user, ?int $recipeId = null): int {
         if ($recipeId === null) {
             $st = $pdo->prepare('INSERT INTO recipes (owner_id, title, visibility, servings, yield_text,
                     difficulty, work_minutes, wait_minutes, tips, search_text, comments_open,
-                    created_at, updated_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)');
+                    source_url, source_name, source_author, imported_at, created_at, updated_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
             $st->execute([$user['id'], $title, $visibility, $recipe['servings'], $recipe['yield'], $difficulty,
                           $recipe['work'], $recipe['wait'], $recipe['tips'], $search,
-                          $commentsOpen ?? 1, nowIso(), nowIso()]);
+                          $commentsOpen ?? 1,
+                          $source['url'] ?? null, $source['name'] ?? null, $source['author'] ?? null,
+                          $source ? nowIso() : null, nowIso(), nowIso()]);
             $recipeId = (int) $pdo->lastInsertId();
         } else {
+            // המקור אינו משתנה בעריכה (COALESCE): פעם אחת מיובא — תמיד עם קרדיט.
             $st = $pdo->prepare('UPDATE recipes SET title=?, visibility=?, servings=?, yield_text=?, difficulty=?,
                     work_minutes=?, wait_minutes=?, tips=?, search_text=?,
-                    comments_open=COALESCE(?, comments_open), updated_at=? WHERE id=?');
+                    comments_open=COALESCE(?, comments_open),
+                    source_url=COALESCE(source_url, ?), source_name=COALESCE(source_name, ?),
+                    source_author=COALESCE(source_author, ?), imported_at=COALESCE(imported_at, ?),
+                    updated_at=? WHERE id=?');
             $st->execute([$title, $visibility, $recipe['servings'], $recipe['yield'], $difficulty, $recipe['work'],
-                          $recipe['wait'], $recipe['tips'], $search, $commentsOpen, nowIso(), $recipeId]);
+                          $recipe['wait'], $recipe['tips'], $search, $commentsOpen,
+                          $source['url'] ?? null, $source['name'] ?? null, $source['author'] ?? null,
+                          $source ? nowIso() : null, nowIso(), $recipeId]);
             // החלפה מלאה: החלקים נמחקים, וה-CASCADE גורר איתם רכיבים
             // ושלבים. לכן אין צורך למחוק אותם בנפרד — וגם אסור לשכוח
             // ש-foreign_keys חייב להיות דלוק כדי שזה יקרה.
@@ -257,6 +274,10 @@ function loadRecipe(int $recipeId, ?array $user): ?array {
         'is_mine'       => $user && (int) $recipe['owner_id'] === (int) $user['id'],
         'servings'      => $recipe['servings'] !== null ? (int) $recipe['servings'] : null,
         'yield_text'    => $recipe['yield_text'],
+        'source'        => $recipe['source_url'] ? [
+            'url' => $recipe['source_url'], 'name' => $recipe['source_name'],
+            'author' => $recipe['source_author'], 'imported_at' => $recipe['imported_at'],
+        ] : null,
         'difficulty'    => $recipe['difficulty'],
         'work_minutes'  => $recipe['work_minutes'] !== null ? (int) $recipe['work_minutes'] : null,
         'wait_minutes'  => $recipe['wait_minutes'] !== null ? (int) $recipe['wait_minutes'] : null,
@@ -293,6 +314,7 @@ function searchRecipes(?array $user, string $query = '', array $filters = []): a
         $where[]  = 'r.difficulty = ?';
         $params[] = $filters['difficulty'];
     }
+    if (!empty($filters['from_web'])) $where[] = 'r.source_url IS NOT NULL';
     if (!empty($filters['max_minutes'])) {
         $where[]  = '(COALESCE(r.work_minutes,0) + COALESCE(r.wait_minutes,0)) <= ?';
         $params[] = (int) $filters['max_minutes'];
@@ -316,11 +338,12 @@ function searchRecipes(?array $user, string $query = '', array $filters = []): a
     if ($q !== '') array_unshift($params, '%' . $q . '%');
 
     $sql = 'SELECT r.id, r.title, r.visibility, r.owner_id, r.difficulty, r.servings, r.yield_text,
-                   r.work_minutes, r.wait_minutes, r.updated_at, u.display_name AS owner_name,
-                   m.path_or_url AS main_path,
+                   r.work_minutes, r.wait_minutes, r.updated_at, r.source_url, r.source_name,
+                   u.display_name AS owner_name,
+                   m.path_or_url AS main_path, m.source AS main_source,
                    ' . $titleMatch . ' AS rank_title
               FROM recipes r JOIN users u ON u.id = r.owner_id
-              LEFT JOIN media m ON m.id = r.main_media_id AND m.source = \'upload\'
+              LEFT JOIN media m ON m.id = r.main_media_id AND m.kind = \'image\'
              WHERE ' . implode(' AND ', $where) . '
              ORDER BY rank_title, r.updated_at DESC
              LIMIT 100';
@@ -341,8 +364,15 @@ function searchRecipes(?array $user, string $query = '', array $filters = []): a
         'work_minutes' => $row['work_minutes'] !== null ? (int) $row['work_minutes'] : null,
         'wait_minutes' => $row['wait_minutes'] !== null ? (int) $row['wait_minutes'] : null,
         'updated_at'   => $row['updated_at'],
-        'thumb'        => $row['main_path'] ? 'data/media/' . basename($row['main_path']) : null,
+        'thumb'        => mediaThumbUrl($row['main_path'], $row['main_source']),
+        'source_name'  => $row['source_url'] ? ($row['source_name'] ?: parse_url($row['source_url'], PHP_URL_HOST)) : null,
     ], $st->fetchAll());
+}
+
+/** תמונה ראשית לרשימה: קובץ שהועלה או קישור חיצוני (ייבוא). */
+function mediaThumbUrl(?string $path, ?string $source): ?string {
+    if (!$path) return null;
+    return $source === 'link' ? $path : 'data/media/' . basename($path);
 }
 
 function deleteRecipe(int $recipeId, array $user): int {
