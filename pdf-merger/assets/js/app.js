@@ -123,11 +123,13 @@
   }
 
   // ── Thumbnails ─────────────────────────────────────
-  function generatePdfThumbnail(arrayBuffer, pageIndex) {
-    var data = new Uint8Array(arrayBuffer);
-    return pdfjsLib.getDocument({ data: data }).promise.then(function (pdf) {
-      return pdf.getPage((pageIndex || 0) + 1);
-    }).then(function (page) {
+  // pdf.js מעביר את ה-buffer ל-worker ומרוקן אותו, לכן תמיד מעבירים עותק
+  function openPdfJs(arrayBuffer) {
+    return pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer.slice(0)) }).promise;
+  }
+
+  function generatePdfThumbnail(pdf, pageIndex) {
+    return pdf.getPage((pageIndex || 0) + 1).then(function (page) {
       var vp = page.getViewport({ scale: 1 });
       var scale = 150 / Math.max(vp.width, vp.height);
       var scaled = page.getViewport({ scale: scale });
@@ -162,6 +164,7 @@
 
   // ── Add / remove files ─────────────────────────────
   async function addFiles(fileList) {
+    fileList = Array.from(fileList);
     for (var i = 0; i < fileList.length; i++) {
       var file = fileList[i];
       if (ACCEPTED_TYPES.indexOf(file.type) === -1) {
@@ -181,16 +184,17 @@
         };
 
         if (entry.type === 'application/pdf') {
-          var pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+          var pdfDoc = await openPdfJs(buf);
           entry.pageCount = pdfDoc.numPages;
           entry.rotation = new Array(pdfDoc.numPages).fill(0);
-          entry.thumbnail = await generatePdfThumbnail(buf, 0);
+          entry.thumbnail = await generatePdfThumbnail(pdfDoc, 0);
+          pdfDoc.destroy();
         } else {
           entry.thumbnail = await generateImageThumbnail(buf, file.type);
         }
         files.push(entry);
       } catch (err) {
-        showToast('שגיאה בקריאת ' + file.name, 'error');
+        showToast('שגיאה בקריאת ' + file.name + ': ' + err.message, 'error');
       }
     }
     updateTotalPageCount();
@@ -405,7 +409,7 @@
 
     try {
       if (isPdfEntry(f)) {
-        var pdf = await pdfjsLib.getDocument({ data: new Uint8Array(f.data) }).promise;
+        var pdf = await openPdfJs(f.data);
         $previewContent.innerHTML = '';
         var grid = document.createElement('div');
         grid.className = 'page-grid';
