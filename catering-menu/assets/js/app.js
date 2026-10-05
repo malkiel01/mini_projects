@@ -209,7 +209,7 @@
             const res = await fetch('api.php?action=order', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...d, deliveryAt: deliveryLabel(d), items: [...selected] }),
+                body: JSON.stringify({ ...d, items: [...selected] }),
             });
             const json = await res.json().catch(() => ({}));
             if (!res.ok || !json.success) throw new Error(json.error || 'השליחה נכשלה');

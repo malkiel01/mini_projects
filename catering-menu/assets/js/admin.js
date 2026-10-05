@@ -124,6 +124,7 @@
         renderFilters();
         renderTodo();
         renderGroups();
+        renderCalendar();
     }
 
     function renderFilters() {
@@ -226,6 +227,8 @@
         renderOrder();
         const o = current();
         $('#oAdminNotes').value = o.adminNotes || '';
+        $('#oDate').value = eventDate(o);
+        $('#oTime').value = eventTime(o);
         $('#orderSheet').showModal();
     }
 
@@ -335,6 +338,217 @@
         }
     }
 
+    /* ── יומן ─────────────────────────────────────────────────────── */
+
+    const DAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+    const MONTH_NAMES = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי',
+                         'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
+    const STATUS_SHORT = { pending: 'טרם', in_progress: 'בתהליך', done: 'מוכן' };
+
+    let view = 'list';
+    let calMode = 'month';
+    let cursor = new Date();        // היום שהיומן ממוקד בו
+
+    const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+    const sameDay = (a, b) => ymd(a) === ymd(b);
+    const heb = d => HebCal.hebrew(d.getFullYear(), d.getMonth() + 1, d.getDate());
+    const hols = d => HebCal.holidays(d.getFullYear(), d.getMonth() + 1, d.getDate());
+
+    /** מועד האירוע כ-YYYY-MM-DD. הזמנות ישנות שמרו רק "20/10/2026 19:00". */
+    function eventDate(o) {
+        const c = o.customer;
+        if (c.deliveryDate) return c.deliveryDate;
+        const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(c.deliveryAt || '');
+        return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : '';
+    }
+    function eventTime(o) {
+        const c = o.customer;
+        return c.deliveryTime || (/(\d{1,2}:\d{2})/.exec(c.deliveryAt || '') || [])[1] || '';
+    }
+
+    /** אירועים לפי יום, ממוינים לפי שעה. */
+    function eventsByDay() {
+        const map = new Map();
+        for (const o of orders) {
+            const d = eventDate(o);
+            if (!d) continue;
+            if (!map.has(d)) map.set(d, []);
+            map.get(d).push(o);
+        }
+        for (const list of map.values()) list.sort((a, b) => eventTime(a).localeCompare(eventTime(b)));
+        return map;
+    }
+
+    function setView(v) {
+        view = v;
+        try { localStorage.setItem('catering-menu:view', JSON.stringify({ view, calMode })); } catch { /* */ }
+        document.querySelectorAll('.view-switch [data-view]').forEach(b =>
+            b.setAttribute('aria-selected', String(b.dataset.view === v)));
+        $('#cal').hidden = v !== 'calendar';
+        $('#listView').hidden = v !== 'list';
+        if (v === 'calendar') renderCalendar();
+    }
+
+    function setMode(mode, date) {
+        calMode = mode;
+        if (date) cursor = date;
+        setView('calendar');
+    }
+
+    function move(dir) {
+        if (calMode === 'month') cursor = new Date(cursor.getFullYear(), cursor.getMonth() + dir, 1);
+        else cursor = addDays(cursor, dir * (calMode === 'week' ? 7 : 1));
+        renderCalendar();
+    }
+
+    /** הטווח המוצג: [התחלה, סוף] כולל. */
+    function range() {
+        if (calMode === 'day') return [cursor, cursor];
+        if (calMode === 'week') {
+            const start = addDays(cursor, -cursor.getDay());
+            return [start, addDays(start, 6)];
+        }
+        const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+        const last = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+        return [first, last];
+    }
+
+    /** "תשרי – חשוון תשפ״ז" — החודשים העבריים שבטווח. */
+    function hebRange(a, b) {
+        const ha = heb(a), hb = heb(b);
+        if (ha.month === hb.month && ha.year === hb.year) return `${ha.monthHe} ${ha.yearHe}`;
+        if (ha.year === hb.year) return `${ha.monthHe} – ${hb.monthHe} ${hb.yearHe}`;
+        return `${ha.monthHe} ${ha.yearHe} – ${hb.monthHe} ${hb.yearHe}`;
+    }
+
+    function renderCalendar() {
+        if (view !== 'calendar') return;
+        document.querySelectorAll('.cal-modes [data-mode]').forEach(b =>
+            b.setAttribute('aria-checked', String(b.dataset.mode === calMode)));
+
+        const [a, b] = range();
+        const byDay = eventsByDay();
+
+        if (calMode === 'month') {
+            $('#calTitle').textContent = `${MONTH_NAMES[a.getMonth()]} ${a.getFullYear()}`;
+        } else if (calMode === 'week') {
+            $('#calTitle').textContent = `${a.getDate()}.${a.getMonth() + 1} – ${b.getDate()}.${b.getMonth() + 1}.${b.getFullYear()}`;
+        } else {
+            $('#calTitle').textContent = `יום ${DAY_NAMES[a.getDay()]}, ${a.getDate()} ב${MONTH_NAMES[a.getMonth()]} ${a.getFullYear()}`;
+        }
+        $('#calSub').textContent = calMode === 'day' ? heb(a).full : hebRange(a, b);
+
+        // סיכום הטווח: כמה אירועים, וכמה בכל מצב
+        const inRange = [];
+        for (let d = a; d <= b; d = addDays(d, 1)) inRange.push(...(byDay.get(ymd(d)) || []));
+        const stats = $('#calStats');
+        stats.textContent = '';
+        if (inRange.length) {
+            stats.append(`${inRange.length} אירועים`);
+            for (const st of ['done', 'in_progress', 'pending']) {
+                const n = inRange.filter(o => o.status === st).length;
+                if (n) stats.append(' · ', el('i', { class: 'dot ' + st }), ` ${n} ${STATUS_SHORT[st]}`);
+            }
+        } else {
+            stats.textContent = 'אין אירועים בטווח הזה';
+        }
+
+        const undated = orders.filter(o => !eventDate(o)).length;
+        $('#calUndated').hidden = !undated;
+        $('#calUndated').textContent = `${undated} הזמנות בלי תאריך — לא מופיעות ביומן. אפשר לקבוע תאריך מתוך ההזמנה ברשימה.`;
+
+        const body = $('#calBody');
+        body.textContent = '';
+        body.append(calMode === 'month' ? monthGrid(a, byDay) : agenda(a, b, byDay));
+    }
+
+    function holidayTags(d, short = false) {
+        const list = hols(d);
+        if (d.getDay() === 6 && !list.some(h => h.type === 'yomtov')) list.push({ name: 'שבת', type: 'shabbat' });
+        return list.map(h => el('span', { class: 'hol ' + h.type, title: h.name },
+            short ? h.name.replace(/ · .*/, '') : h.name));
+    }
+
+    function eventChip(o) {
+        const t = eventTime(o);
+        return el('button', {
+            type: 'button', class: 'chip ' + o.status,
+            title: `${o.customer.name} · ${STATUS[o.status]}`,
+            onclick: e => { e.stopPropagation(); openOrder(o.id); },
+        }, t ? el('b', {}, t) : null, ' ', o.customer.name);
+    }
+
+    function monthGrid(first, byDay) {
+        const grid = el('div', { class: 'month' });
+        for (const n of ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']) grid.append(el('div', { class: 'month-dow' }, n));
+
+        const start = addDays(first, -first.getDay());
+        const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
+        const end = addDays(last, 6 - last.getDay());
+        const today = new Date();
+
+        for (let d = start; d <= end; d = addDays(d, 1)) {
+            const events = byDay.get(ymd(d)) || [];
+            const h = heb(d);
+            const cls = ['day'];
+            if (d.getMonth() !== first.getMonth()) cls.push('out');
+            if (sameDay(d, today)) cls.push('today');
+            if (d.getDay() === 6 || hols(d).some(x => x.type === 'yomtov')) cls.push('rest');
+            if (events.length) cls.push('busy');
+
+            const cell = el('div', {
+                class: cls.join(' '), role: 'button', tabindex: '0',
+                'aria-label': `${d.getDate()} ${MONTH_NAMES[d.getMonth()]}, ${h.label}, ${events.length} אירועים`,
+                onclick: () => setMode('day', d),
+                onkeydown: e => { if (e.key === 'Enter') setMode('day', d); },
+            },
+            el('div', { class: 'day-nums' },
+                el('span', { class: 'g' }, String(d.getDate())),
+                el('span', { class: 'h' }, h.day === 1 ? h.label : h.dayHe)),
+            el('div', { class: 'day-hols' }, ...holidayTags(d, true)));
+
+            const shown = events.slice(0, 3);
+            cell.append(el('div', { class: 'day-events' }, ...shown.map(eventChip),
+                events.length > 3 ? el('span', { class: 'more' }, `+${events.length - 3}`) : null));
+            // בטלפון הצ׳יפים מתכווצים לנקודות צבע
+            cell.append(el('div', { class: 'day-dots' }, ...events.slice(0, 5).map(o => el('i', { class: 'dot ' + o.status }))));
+            grid.append(cell);
+        }
+        return grid;
+    }
+
+    /** שבוע או יום: רשימה לפי ימים, עם כרטיס מלא לכל אירוע. */
+    function agenda(a, b, byDay) {
+        const box = el('div', { class: 'agenda' });
+        const today = new Date();
+        for (let d = a; d <= b; d = addDays(d, 1)) {
+            const events = byDay.get(ymd(d)) || [];
+            const head = el('button', {
+                type: 'button', class: 'ag-head' + (sameDay(d, today) ? ' today' : ''),
+                onclick: () => setMode('day', d), disabled: calMode === 'day',
+            },
+            el('span', { class: 'ag-date' }, `${DAY_NAMES[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}`),
+            el('span', { class: 'ag-heb' }, heb(d).label),
+            el('span', { class: 'ag-hols' }, ...holidayTags(d)));
+            const list = events.length
+                ? el('div', { class: 'ag-events' }, ...events.map(eventCard))
+                : el('p', { class: 'ag-empty' }, calMode === 'day' ? 'אין אירועים ביום הזה' : '—');
+            box.append(el('section', { class: 'ag-day' + (events.length ? ' busy' : '') }, head, list));
+        }
+        return box;
+    }
+
+    function eventCard(o) {
+        const sub = [`${o.items.length} מנות`];
+        if (o.customer.guests) sub.push(`${o.customer.guests} סועדים`);
+        return el('button', { type: 'button', class: 'order-card ' + o.status, onclick: () => openOrder(o.id) },
+            el('span', { class: 'when' }, (eventTime(o) ? eventTime(o) + ' · ' : '') + o.customer.name),
+            el('span', { class: 'pill ' + o.status }, STATUS[o.status]),
+            el('span', { class: 'sub' }, sub.join(' · ')),
+            progressBar(o));
+    }
+
     /* ── אתחול ───────────────────────────────────────────────────── */
 
     async function init() {
@@ -350,6 +564,20 @@
         $('#noneReady').addEventListener('click', () => setAll(false));
         $('#deleteOrder').addEventListener('click', deleteOrder);
         $('#oAdminNotes').addEventListener('change', e => update({ adminNotes: e.target.value }));
+        $('#oDate').addEventListener('change', e => update({ deliveryDate: e.target.value }));
+        $('#oTime').addEventListener('change', e => update({ deliveryTime: e.target.value }));
+        document.querySelectorAll('.view-switch [data-view]').forEach(b =>
+            b.addEventListener('click', () => setView(b.dataset.view)));
+        document.querySelectorAll('.cal-modes [data-mode]').forEach(b =>
+            b.addEventListener('click', () => setMode(b.dataset.mode)));
+        $('#calPrev').addEventListener('click', () => move(-1));
+        $('#calNext').addEventListener('click', () => move(1));
+        $('#calToday').addEventListener('click', () => { cursor = new Date(); renderCalendar(); });
+        try {
+            const saved = JSON.parse(localStorage.getItem('catering-menu:view'));
+            if (saved?.calMode) calMode = saved.calMode;
+            if (saved?.view) setView(saved.view);
+        } catch { /* */ }
         document.querySelectorAll('[data-close]').forEach(b =>
             b.addEventListener('click', () => b.closest('dialog').close()));
         const sheet = $('#orderSheet');

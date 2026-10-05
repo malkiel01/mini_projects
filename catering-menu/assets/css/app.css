@@ -318,7 +318,7 @@ button { cursor: pointer; }
 .hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
 .form-error { color: var(--danger); font-weight: 500; }
 
-.done { text-align: center; align-items: center; padding-top: 28px; }
+.done-body { text-align: center; align-items: center; padding-top: 28px; }
 .done-mark {
     width: 72px;
     height: 72px;
@@ -330,7 +330,7 @@ button { cursor: pointer; }
     display: grid;
     place-items: center;
 }
-.done p { color: var(--muted); }
+.done-body p { color: var(--muted); }
 
 .toast {
     position: fixed;

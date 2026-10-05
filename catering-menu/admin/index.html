@@ -41,6 +41,44 @@
 
     <!-- הלוח -->
     <main class="board" id="board" hidden>
+        <div class="view-switch" role="tablist" aria-label="תצוגה">
+            <button type="button" role="tab" data-view="list" aria-selected="true">📋 רשימה</button>
+            <button type="button" role="tab" data-view="calendar" aria-selected="false">📅 יומן</button>
+        </div>
+
+        <!-- יומן: חודש / שבוע / יום, לועזי ועברי, עם חגים ומועדים -->
+        <section class="cal" id="cal" hidden>
+            <div class="cal-bar">
+                <div class="cal-nav">
+                    <button type="button" class="icon-btn" id="calPrev" aria-label="הקודם">→</button>
+                    <button type="button" class="btn btn-ghost cal-today" id="calToday">היום</button>
+                    <button type="button" class="icon-btn" id="calNext" aria-label="הבא">←</button>
+                </div>
+                <div class="cal-modes" role="radiogroup" aria-label="טווח">
+                    <button type="button" role="radio" data-mode="month">חודש</button>
+                    <button type="button" role="radio" data-mode="week">שבוע</button>
+                    <button type="button" role="radio" data-mode="day">יום</button>
+                </div>
+            </div>
+            <header class="cal-head">
+                <h2 id="calTitle"></h2>
+                <p id="calSub"></p>
+                <p class="cal-stats" id="calStats"></p>
+            </header>
+            <div id="calBody"></div>
+            <p class="cal-undated" id="calUndated" hidden></p>
+            <div class="cal-legend">
+                <span><i class="dot pending"></i> טרם</span>
+                <span><i class="dot in_progress"></i> בתהליך</span>
+                <span><i class="dot done"></i> מוכן</span>
+                <span><i class="hol-key yomtov"></i> חג</span>
+                <span><i class="hol-key erev"></i> ערב חג</span>
+                <span><i class="hol-key holiday"></i> מועד</span>
+                <span><i class="hol-key fast"></i> צום / זיכרון</span>
+            </div>
+        </section>
+
+        <div class="list-view" id="listView">
         <div class="toolbar">
             <div class="filters" id="filters" role="tablist"></div>
             <div class="search-row">
@@ -58,6 +96,7 @@
         </details>
 
         <div id="groups"></div>
+        </div>
     </main>
 
     <!-- פרטי הזמנה -->
@@ -72,6 +111,15 @@
             </header>
 
             <div class="o-actions" id="oContact"></div>
+
+            <div class="o-when fields">
+                <label>תאריך האירוע
+                    <input type="date" id="oDate">
+                </label>
+                <label>שעה
+                    <input type="time" id="oTime">
+                </label>
+            </div>
 
             <div class="status-seg" id="oStatus" role="radiogroup" aria-label="מצב ההזמנה"></div>
 
@@ -97,6 +145,7 @@
         </div>
     </dialog>
 
+    <script src="../assets/js/hebcal.js"></script>
     <script src="../assets/js/admin.js"></script>
 </body>
 </html>

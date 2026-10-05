@@ -97,6 +97,21 @@ function menuIndex(): array {
     return $index;
 }
 
+/** תאריך YYYY-MM-DD ושעה HH:MM — או מחרוזת ריקה, אם הערך לא תקין. */
+function cleanDate(mixed $v): string {
+    return (is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $v)) ? $v : '';
+}
+function cleanTime(mixed $v): string {
+    return (is_string($v) && preg_match('/^\d{2}:\d{2}$/', $v)) ? $v : '';
+}
+
+/** "20/10/2026 19:00" — התצוגה של מועד האירוע, נגזרת מהתאריך והשעה. */
+function deliveryLabel(string $date, string $time): string {
+    if ($date === '') return $time;
+    [$y, $m, $d] = explode('-', $date);
+    return trim("$d/$m/$y $time");
+}
+
 /** המצב נגזר מהפריטים: אף אחד לא מוכן, חלק, או כולם. */
 function derivedStatus(array $items): string {
     $ready = count(array_filter($items, fn($i) => !empty($i['ready'])));
@@ -172,7 +187,9 @@ switch ($action) {
             'customer'  => [
                 'name'       => $name,
                 'phone'      => $phone,
-                'deliveryAt' => text($in, 'deliveryAt', 40),
+                'deliveryDate' => cleanDate($in['deliveryDate'] ?? ''),
+                'deliveryTime' => cleanTime($in['deliveryTime'] ?? ''),
+                'deliveryAt' => deliveryLabel(cleanDate($in['deliveryDate'] ?? ''), cleanTime($in['deliveryTime'] ?? '')),
                 'guests'     => is_numeric($guests) ? max(0, min(100000, (int) $guests)) : 0,
                 'notes'      => text($in, 'notes', 2000),
             ],
@@ -261,6 +278,14 @@ switch ($action) {
         // שינוי מצב ידני גובר, עד הסימון הבא.
         if (isset($in['status']) && in_array($in['status'], ['pending', 'in_progress', 'done'], true)) {
             $order['status'] = $in['status'];
+        }
+        // המנהל יכול לקבוע או לתקן את מועד האירוע — זה מה שממקם אותו ביומן.
+        if (array_key_exists('deliveryDate', $in) || array_key_exists('deliveryTime', $in)) {
+            $c = &$order['customer'];
+            if (array_key_exists('deliveryDate', $in)) $c['deliveryDate'] = cleanDate($in['deliveryDate']);
+            if (array_key_exists('deliveryTime', $in)) $c['deliveryTime'] = cleanTime($in['deliveryTime']);
+            $c['deliveryAt'] = deliveryLabel($c['deliveryDate'] ?? '', $c['deliveryTime'] ?? '');
+            unset($c);
         }
         if (isset($in['adminNotes'])) {
             $order['adminNotes'] = text($in, 'adminNotes', 2000);
