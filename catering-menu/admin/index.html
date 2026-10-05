@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#27282a">
+    <meta name="robots" content="noindex, nofollow">
+    <title>ניחוחות — ניהול הזמנות</title>
+    <link rel="icon" href="../assets/icon.svg" type="image/svg+xml">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amatic+SC:wght@700&family=Heebo:wght@400;500;700&display=swap">
+    <link rel="stylesheet" href="../assets/css/app.css">
+    <link rel="stylesheet" href="../assets/css/admin.css">
+</head>
+<!--
+    ממשק המנהל. כמו התפריט הציבורי, אין כאן קישור לדף הכלים הראשי — הקישור
+    הישיר לכאן הוא הכניסה היחידה.
+-->
+<body class="admin">
+    <header class="brand compact">
+        <img class="brand-logo" src="../assets/logo.jpg" alt="ניחוחות" width="900" height="450">
+        <button type="button" class="logout" id="logout" hidden>יציאה</button>
+    </header>
+
+    <!-- כניסה / קביעת סיסמה -->
+    <section class="auth" id="auth" hidden>
+        <form class="auth-card fields" id="authForm">
+            <h1 id="authTitle">כניסת מנהל</h1>
+            <p class="auth-hint" id="authHint" hidden>זו הכניסה הראשונה — קבעו סיסמה לממשק. רק מי שיודע אותה יוכל לראות את ההזמנות.</p>
+            <label>סיסמה
+                <input type="password" name="password" autocomplete="current-password" required minlength="6">
+            </label>
+            <label id="confirmWrap" hidden>אימות סיסמה
+                <input type="password" name="confirm" autocomplete="new-password" minlength="6">
+            </label>
+            <p class="form-error" id="authError" role="alert" hidden></p>
+            <button type="submit" class="btn btn-gold btn-wide" id="authSubmit">כניסה</button>
+        </form>
+    </section>
+
+    <!-- הלוח -->
+    <main class="board" id="board" hidden>
+        <div class="toolbar">
+            <div class="filters" id="filters" role="tablist"></div>
+            <div class="search-row">
+                <input type="search" id="search" placeholder="חיפוש לפי שם לקוח…" aria-label="חיפוש לפי שם לקוח">
+                <button type="button" class="icon-btn" id="refresh" aria-label="רענון">⟳</button>
+            </div>
+        </div>
+
+        <details class="todo" id="todo">
+            <summary>
+                <span>מה עוד לא מוכן</span>
+                <span class="todo-count" id="todoCount"></span>
+            </summary>
+            <ul class="todo-list" id="todoList"></ul>
+        </details>
+
+        <div id="groups"></div>
+    </main>
+
+    <!-- פרטי הזמנה -->
+    <dialog class="sheet order-sheet" id="orderSheet" aria-labelledby="oTitle">
+        <div class="sheet-body">
+            <header class="sheet-head">
+                <div>
+                    <h2 id="oTitle"></h2>
+                    <p class="o-meta" id="oMeta"></p>
+                </div>
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+            </header>
+
+            <div class="o-actions" id="oContact"></div>
+
+            <div class="status-seg" id="oStatus" role="radiogroup" aria-label="מצב ההזמנה"></div>
+
+            <div class="progress-wrap">
+                <div class="progress"><span id="oBar"></span></div>
+                <span class="progress-text" id="oProgress"></span>
+            </div>
+
+            <p class="o-notes" id="oNotes" hidden></p>
+
+            <div class="o-items" id="oItems"></div>
+
+            <div class="o-bulk">
+                <button type="button" class="btn btn-ghost" id="allReady">הכול קיים</button>
+                <button type="button" class="btn btn-ghost" id="noneReady">איפוס סימונים</button>
+            </div>
+
+            <label class="fields">הערות פנימיות
+                <textarea id="oAdminNotes" rows="2" maxlength="2000" placeholder="לא נראות ללקוח"></textarea>
+            </label>
+
+            <button type="button" class="btn btn-danger btn-wide" id="deleteOrder">מחיקת ההזמנה</button>
+        </div>
+    </dialog>
+
+    <script src="../assets/js/admin.js"></script>
+</body>
+</html>
