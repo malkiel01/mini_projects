@@ -304,6 +304,8 @@ button { cursor: pointer; }
     border-radius: 22px 22px 0 0;
     background: var(--card);
     color: var(--ink);
+    overflow-x: hidden;      /* גיליון לעולם לא נגלל הצידה */
+    overscroll-behavior: contain;
 }
 .sheet::backdrop { background: rgba(20, 20, 22, .55); }
 .sheet[open] { animation: rise .22s ease-out; }
@@ -351,9 +353,22 @@ button { cursor: pointer; }
 }
 .fields input:focus, .fields textarea:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px rgba(233, 180, 90, .2); }
 .fields input[type="tel"], .fields input[type="email"] { text-align: right; }
-.fields .opt { font-weight: 400; color: var(--muted); font-size: .82rem; }
-.row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+.fields .optional { font-weight: 400; color: var(--muted); font-size: .82rem; }
+.row-2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.fields input, .fields textarea, .fields select { min-width: 0; }
+/* מלכודת הבוטים מוסתרת במקום — לא נדחפת אל מחוץ למסך. דחיפה ל-left:-9999px
+   יצרה בדף מימין לשמאל 10,000 פיקסלים של גלילה הצידה בתוך חלון ההזמנה. */
+.hp {
+    position: absolute;
+    inset-inline-start: 0;
+    top: 0;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    opacity: 0;
+    pointer-events: none;
+}
 .form-error { color: var(--danger); font-weight: 500; }
 
 .done-body { text-align: center; align-items: center; padding-top: 28px; }
