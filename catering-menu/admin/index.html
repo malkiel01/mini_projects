@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#27282a">
+    <meta name="robots" content="noindex, nofollow">
+    <title>ניחוחות — ניהול הזמנות</title>
+    <link rel="icon" href="../assets/icon.svg" type="image/svg+xml">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amatic+SC:wght@700&family=Heebo:wght@400;500;700&display=swap">
+    <link rel="stylesheet" href="../assets/css/app.css">
+    <link rel="stylesheet" href="../assets/css/admin.css">
+</head>
+<!--
+    ממשק המנהל. כמו התפריט הציבורי, אין כאן קישור לדף הכלים הראשי — הקישור
+    הישיר לכאן הוא הכניסה היחידה.
+-->
+<body class="admin">
+    <header class="brand compact">
+        <div class="top-actions" id="topActions" hidden>
+            <button type="button" class="top-btn bell" id="bell" aria-label="התראות">🔔<span class="bell-badge" id="bellBadge" hidden></span></button>
+            <button type="button" class="top-btn" id="gear" aria-label="הגדרות">⚙️</button>
+            <button type="button" class="top-btn" id="logout">יציאה</button>
+        </div>
+        <img class="brand-logo" src="../assets/logo.jpg" alt="ניחוחות" width="900" height="450">
+    </header>
+
+    <!-- כניסה / קביעת סיסמה -->
+    <section class="auth" id="auth" hidden>
+        <form class="auth-card fields" id="authForm">
+            <h1 id="authTitle">כניסת מנהל</h1>
+            <p class="auth-hint" id="authHint" hidden>זו הכניסה הראשונה — קבעו סיסמה לממשק. רק מי שיודע אותה יוכל לראות את ההזמנות.</p>
+            <label>סיסמה
+                <input type="password" name="password" autocomplete="current-password" required minlength="6">
+            </label>
+            <label id="confirmWrap" hidden>אימות סיסמה
+                <input type="password" name="confirm" autocomplete="new-password" minlength="6">
+            </label>
+            <p class="form-error" id="authError" role="alert" hidden></p>
+            <button type="submit" class="btn btn-gold btn-wide" id="authSubmit">כניסה</button>
+        </form>
+    </section>
+
+    <!-- הלוח -->
+    <main class="board" id="board" hidden>
+        <div class="view-switch" role="tablist" aria-label="תצוגה">
+            <button type="button" role="tab" data-view="list" aria-selected="true">📋 רשימה</button>
+            <button type="button" role="tab" data-view="calendar" aria-selected="false">📅 יומן</button>
+        </div>
+
+        <!-- יומן: חודש / שבוע / יום, לועזי ועברי, עם חגים ומועדים -->
+        <section class="cal" id="cal" hidden>
+            <div class="cal-bar">
+                <div class="cal-nav">
+                    <button type="button" class="icon-btn" id="calPrev" aria-label="הקודם">→</button>
+                    <button type="button" class="btn btn-ghost cal-today" id="calToday">היום</button>
+                    <button type="button" class="icon-btn" id="calNext" aria-label="הבא">←</button>
+                </div>
+                <div class="cal-modes" role="radiogroup" aria-label="טווח">
+                    <button type="button" role="radio" data-mode="month">חודש</button>
+                    <button type="button" role="radio" data-mode="week">שבוע</button>
+                    <button type="button" role="radio" data-mode="day">יום</button>
+                </div>
+            </div>
+            <header class="cal-head">
+                <h2 id="calTitle"></h2>
+                <p id="calSub"></p>
+                <p class="cal-stats" id="calStats"></p>
+                <p class="cal-place" id="calPlace"></p>
+            </header>
+            <div id="calBody"></div>
+            <p class="cal-undated" id="calUndated" hidden></p>
+            <div class="cal-legend">
+                <span><i class="dot pending"></i> טרם</span>
+                <span><i class="dot in_progress"></i> בתהליך</span>
+                <span><i class="dot done"></i> מוכן</span>
+                <span><i class="hol-key yomtov"></i> חג</span>
+                <span><i class="hol-key erev"></i> ערב חג</span>
+                <span><i class="hol-key holiday"></i> מועד</span>
+                <span><i class="hol-key fast"></i> צום / זיכרון</span>
+                <span id="legendCandles"> הדלקת נרות</span>
+                <span id="legendStars"> צאת שבת / חג</span>
+            </div>
+        </section>
+
+        <div class="list-view" id="listView">
+        <div class="toolbar">
+            <div class="filters" id="filters" role="tablist"></div>
+            <div class="search-row">
+                <input type="search" id="search" placeholder="חיפוש לפי שם לקוח…" aria-label="חיפוש לפי שם לקוח">
+                <button type="button" class="icon-btn" id="refresh" aria-label="רענון">⟳</button>
+            </div>
+        </div>
+
+        <details class="todo" id="todo">
+            <summary>
+                <span>מה עוד לא מוכן</span>
+                <span class="todo-count" id="todoCount"></span>
+            </summary>
+            <ul class="todo-list" id="todoList"></ul>
+        </details>
+
+        <div id="groups"></div>
+        </div>
+    </main>
+
+    <!-- פרטי הזמנה -->
+    <dialog class="sheet order-sheet" id="orderSheet" aria-labelledby="oTitle">
+        <div class="sheet-body">
+            <header class="sheet-head">
+                <div>
+                    <h2 id="oTitle"></h2>
+                    <p class="o-meta" id="oMeta"></p>
+                </div>
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+            </header>
+
+            <div class="approval" id="oApproval"></div>
+
+            <div class="o-actions" id="oContact"></div>
+
+            <div class="o-when fields">
+                <label>תאריך האירוע
+                    <input type="date" id="oDate">
+                </label>
+                <label>שעה
+                    <input type="time" id="oTime">
+                </label>
+            </div>
+
+            <div class="status-seg" id="oStatus" role="radiogroup" aria-label="מצב ההזמנה"></div>
+
+            <div class="progress-wrap">
+                <div class="progress"><span id="oBar"></span></div>
+                <span class="progress-text" id="oProgress"></span>
+            </div>
+
+            <p class="o-notes" id="oNotes" hidden></p>
+
+            <div class="o-items" id="oItems"></div>
+
+            <div class="o-bulk">
+                <button type="button" class="btn btn-ghost" id="allReady">הכול קיים</button>
+                <button type="button" class="btn btn-ghost" id="noneReady">איפוס סימונים</button>
+            </div>
+
+            <label class="fields">הערות פנימיות
+                <textarea id="oAdminNotes" rows="2" maxlength="2000" placeholder="לא נראות ללקוח"></textarea>
+            </label>
+
+            <button type="button" class="btn btn-danger btn-wide" id="deleteOrder">מחיקת ההזמנה</button>
+        </div>
+    </dialog>
+
+    <!-- התראות: הזמנות שלא נקראו ושנקראו -->
+    <dialog class="sheet" id="notesSheet" aria-labelledby="notesTitle">
+        <div class="sheet-body">
+            <header class="sheet-head">
+                <h2 id="notesTitle">התראות</h2>
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+            </header>
+            <div class="notes-tools">
+                <button type="button" class="btn btn-ghost" id="markAllRead">סימון הכול כנקרא</button>
+                <button type="button" class="btn btn-ghost" id="enablePush">🔔 התראות בדפדפן</button>
+            </div>
+            <h3 class="notes-h">לא נקראו <span id="unreadCount"></span></h3>
+            <div class="notes-list" id="unreadList"></div>
+            <h3 class="notes-h">נקראו</h3>
+            <div class="notes-list read" id="readList"></div>
+        </div>
+    </dialog>
+
+    <!-- אישור / סירוב הזמנה -->
+    <dialog class="sheet" id="decideSheet" aria-labelledby="decideTitle">
+        <form class="sheet-body fields" id="decideForm" method="dialog">
+            <header class="sheet-head">
+                <h2 id="decideTitle"></h2>
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+            </header>
+            <p id="decideText"></p>
+            <label id="reasonWrap">סיבה (תופיע במייל ללקוח)
+                <textarea id="decideReason" rows="3" maxlength="1000" placeholder="למשל: התאריך כבר תפוס"></textarea>
+            </label>
+            <label class="check"><input type="checkbox" id="decideNotify"> <span id="decideNotifyLabel"></span></label>
+            <button type="submit" class="btn btn-wide" id="decideSubmit"></button>
+        </form>
+    </dialog>
+
+    <!-- הגדרות -->
+    <dialog class="sheet" id="settingsSheet" aria-labelledby="setTitle">
+        <form class="sheet-body fields" id="settingsForm">
+            <header class="sheet-head">
+                <h2 id="setTitle">הגדרות</h2>
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+            </header>
+
+            <h3 class="set-h">📍 אזור לזמני היום</h3>
+            <label>עיר
+                <select id="setPlace"></select>
+            </label>
+            <div class="row-2" id="setCoords">
+                <label>קו רוחב <input id="setLat" type="number" step="0.0001" dir="ltr"></label>
+                <label>קו אורך <input id="setLon" type="number" step="0.0001" dir="ltr"></label>
+            </div>
+            <label>הדלקת נרות — דקות לפני השקיעה
+                <input id="setCandle" type="number" min="0" max="90" inputmode="numeric">
+            </label>
+            <label>צאת שבת וחג
+                <select id="setHavdalahMode">
+                    <option value="tzeit">צאת הכוכבים (8.5° מתחת לאופק)</option>
+                    <option value="minutes">מספר דקות קבוע אחרי השקיעה</option>
+                </select>
+            </label>
+            <label id="setHavdalahMinWrap">דקות אחרי השקיעה
+                <input id="setHavdalahMin" type="number" min="10" max="120" inputmode="numeric">
+            </label>
+            <p class="set-preview" id="setPreview"></p>
+
+            <h3 class="set-h">🍽️ מגבלת בחירה לכל קטגוריה</h3>
+            <p class="set-hint">חל על כל הלקוחות. ריק = ללא הגבלה.</p>
+            <div class="limits" id="setLimits"></div>
+
+            <h3 class="set-h">✉️ מיילים</h3>
+            <label>מייל למנהל — התראה על כל הזמנה חדשה
+                <input id="setAdminMail" type="email" dir="ltr" placeholder="לא חובה">
+            </label>
+            <label>מייל לתשובות הלקוחות (Reply-To)
+                <input id="setReplyTo" type="email" dir="ltr" placeholder="לא חובה">
+            </label>
+            <label>כתובת השולח (From)
+                <input id="setFrom" type="email" dir="ltr" placeholder="ריק = noreply@הדומיין">
+            </label>
+
+            <p class="form-error" id="setError" hidden></p>
+            <button type="submit" class="btn btn-gold btn-wide">שמירה</button>
+        </form>
+    </dialog>
+
+    <script src="../assets/js/hebcal.js"></script>
+    <script src="../assets/js/admin.js"></script>
+</body>
+</html>

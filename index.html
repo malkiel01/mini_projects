@@ -58,6 +58,33 @@
             color: #666;
             line-height: 1.6;
         }
+        /* כרטיס עם כמה כניסות: הכרטיס עצמו אינו קישור, וליד כל כניסה כפתור העתקה */
+        .project-card.multi:hover { transform: none; }
+        .entry-links { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+        .entry-link { display: flex; gap: 8px; }
+        .entry-link a {
+            flex: 1;
+            text-decoration: none;
+            color: #1a1a2e;
+            background: #f6f3ec;
+            border: 1px solid #ece4d3;
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+        .entry-link a:hover { background: #fdf3df; border-color: #e9b45a; }
+        .entry-link button {
+            border: 1px solid #ece4d3;
+            background: white;
+            border-radius: 8px;
+            padding: 0 12px;
+            cursor: pointer;
+            font: inherit;
+            font-size: 0.85rem;
+            white-space: nowrap;
+        }
+        .entry-link button.copied { background: #ddf3e5; border-color: #9fd9b4; }
     </style>
 </head>
 <body>
@@ -142,10 +169,43 @@
                 <h2>איחוד PDF ותמונות</h2>
                 <p>מאחדים קבצי PDF ותמונות (JPG, PNG, WEBP) לקובץ PDF אחד — גרירה לשינוי סדר, תצוגה מקדימה, סיבוב דפים ופיצול PDF לדפים בודדים. הכול רץ בדפדפן, בלי שרת.</p>
             </a>
+            <div class="project-card multi">
+                <div class="icon">🍽️</div>
+                <h2>תפריט קייטרינג ניחוחות</h2>
+                <p>תפריט ללקוחות שמסמנים בו מנות בטלפון ושולחים הזמנה, וממשק מנהל לכל ההזמנות לפי לקוח — עם מעקב "קיים / לא קיים" לכל מנה.</p>
+                <div class="entry-links">
+                    <div class="entry-link">
+                        <a href="catering-menu/">🧾 תפריט ציבורי</a>
+                        <button type="button" data-copy="catering-menu/">📋 העתקת קישור</button>
+                    </div>
+                    <div class="entry-link">
+                        <a href="catering-menu/admin/">🔐 ממשק מנהל</a>
+                        <button type="button" data-copy="catering-menu/admin/">📋 העתקת קישור</button>
+                    </div>
+                </div>
+            </div>
         </div>
         <p style="text-align:center;margin-top:40px;color:#888;font-size:0.85rem">
-            גרסה 13 · נוסף כלי: איחוד PDF ותמונות 📑
+            גרסה 14 · נוסף כלי: תפריט קייטרינג ניחוחות 🍽️
         </p>
     </div>
+    <script>
+        // העתקת קישור ישיר לכניסה — הכתובת נבנית מהדף הנוכחי, כך שהיא נכונה בכל דומיין.
+        document.querySelectorAll('[data-copy]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const url = new URL(btn.dataset.copy, location.href).href;
+                try {
+                    await navigator.clipboard.writeText(url);
+                } catch {
+                    window.prompt('העתיקו את הקישור:', url);
+                    return;
+                }
+                const label = btn.textContent;
+                btn.textContent = '✓ הועתק';
+                btn.classList.add('copied');
+                setTimeout(() => { btn.textContent = label; btn.classList.remove('copied'); }, 1800);
+            });
+        });
+    </script>
 </body>
 </html>

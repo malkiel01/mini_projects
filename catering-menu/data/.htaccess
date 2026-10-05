@@ -1,0 +1,9 @@
+# חסימת גישה ישירה לתיקייה: ההזמנות (שמות וטלפונים של לקוחות) וגיבוב הסיסמה
+# מוגשים רק דרך api.php, אחרי התחברות מנהל.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>

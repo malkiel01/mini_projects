@@ -151,6 +151,9 @@ jobs:
             --exclude='whatsapp-ai-scanner/data/scanner.sqlite*' \
             --exclude='whatsapp-ai-scanner/data/secret.key' \
             --exclude='guarded-browser/data/*.sqlite*' \
+            --exclude='catering-menu/data/orders/' \
+            --exclude='catering-menu/data/config.json' \
+            --exclude='catering-menu/data/settings.json' \
             --exclude='*.log' --exclude='error_log' \
             --exclude='.DS_Store' --exclude='._*' \
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30" \

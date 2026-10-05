@@ -1,0 +1,387 @@
+/* ניחוחות — עיצוב משותף לתפריט הציבורי ולממשק המנהל.
+   הצבעים נלקחו מהלוגו: רקע פחם, זהב, ונייר בהיר כמו בתפריט המודפס. */
+
+:root {
+    --coal: #27282a;
+    --coal-2: #34353a;
+    --gold: #e9b45a;
+    --gold-light: #f6cf7d;
+    --gold-dark: #c98f2e;
+    --paper: #faf7f1;
+    --card: #ffffff;
+    --ink: #232326;
+    --muted: #77736b;
+    --line: #ebe5d9;
+    --ok: #2f9e5b;
+    --warn: #e08a1e;
+    --idle: #9a968e;
+    --danger: #c0392b;
+    --radius: 14px;
+    --bar-h: 76px;
+    --safe-b: env(safe-area-inset-bottom, 0px);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-padding-top: 64px; }
+body {
+    font-family: 'Heebo', 'Segoe UI', Tahoma, Arial, sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    min-height: 100vh;
+    line-height: 1.45;
+}
+button, input, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+[hidden] { display: none !important; }
+
+/* ── כותרת ממותגת ─────────────────────────────────────────────── */
+
+.brand {
+    background: var(--coal);
+    color: var(--gold);
+    text-align: center;
+    padding: 12px 16px 30px;
+    position: relative;
+    z-index: 6;   /* מעל סרגל הקטגוריות, כדי שהשוליים המסולסלים יראו */
+}
+/* השוליים המסולסלים שבתחתית הכותרת — כמו בתפריט המודפס */
+.brand::after {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    bottom: -13px;
+    height: 14px;
+    background: radial-gradient(circle at 50% 0, var(--coal) 13px, transparent 14px) 0 0 / 28px 14px repeat-x;
+}
+.brand-logo {
+    display: block;
+    width: min(100%, 420px);
+    height: auto;
+    margin: 0 auto;
+}
+.brand-contact {
+    font-weight: 700;
+    font-size: .95rem;
+    letter-spacing: .02em;
+}
+.brand-contact a { color: var(--gold-light); text-decoration: none; white-space: nowrap; }
+.brand.compact { padding: 8px 16px 22px; }
+.brand.compact .brand-logo { width: min(60%, 220px); }
+
+/* ── ניווט קטגוריות ───────────────────────────────────────────── */
+
+.cat-nav {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 22px 16px 10px;
+    background: linear-gradient(var(--paper) 85%, rgba(250, 247, 241, 0));
+    scrollbar-width: none;
+}
+.cat-nav::-webkit-scrollbar { display: none; }
+.cat-chip {
+    flex: none;
+    border: 1.5px solid var(--line);
+    background: var(--card);
+    border-radius: 999px;
+    padding: 7px 14px;
+    font-weight: 500;
+    font-size: .92rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    text-decoration: none;
+    color: var(--ink);
+}
+.cat-chip.active { border-color: var(--gold); background: #fff6e4; }
+.cat-chip .badge {
+    background: var(--gold);
+    color: var(--coal);
+    border-radius: 999px;
+    min-width: 20px;
+    padding: 0 6px;
+    font-size: .78rem;
+    font-weight: 700;
+    text-align: center;
+}
+
+/* ── התפריט ───────────────────────────────────────────────────── */
+
+.menu {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 4px 16px calc(var(--bar-h) + 40px + var(--safe-b));
+}
+.loading, .empty { text-align: center; color: var(--muted); padding: 40px 0; }
+
+.cat { margin-top: 22px; }
+.cat-title {
+    font-family: 'Amatic SC', 'Heebo', cursive;
+    font-size: 2.3rem;
+    line-height: 1;
+    color: var(--gold-dark);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+.cat-title::after {
+    content: '';
+    flex: 1;
+    height: 2px;
+    background: linear-gradient(to left, var(--gold), transparent);
+}
+.cat-sub {
+    font-family: 'Heebo', sans-serif;
+    font-size: .85rem;
+    color: var(--muted);
+    font-weight: 500;
+    background: #f2eee6;
+    border-radius: 999px;
+    padding: 2px 10px;
+    white-space: nowrap;
+}
+.cat-sub.full { background: var(--gold); color: var(--coal); }
+/* קטגוריה שהגיעה למגבלה: המנות שלא נבחרו נראות כבויות (אבל עדיין לחיצות — כדי להסביר) */
+.cat.full .item-btn[aria-pressed="false"] { opacity: .45; }
+
+.items {
+    list-style: none;
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 4px 16px rgba(39, 40, 42, .06);
+    overflow: hidden;
+}
+.item + .item { border-top: 1px solid var(--line); }
+.item-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    min-height: 56px;
+    border: 0;
+    background: none;
+    text-align: start;
+    -webkit-tap-highlight-color: transparent;
+    transition: background .15s;
+}
+.item-btn:active { background: #fbf3e2; }
+.item-btn[aria-pressed="true"] { background: #fff7e8; }
+.tick {
+    flex: none;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 2px solid #bdb6a8;
+    display: grid;
+    place-items: center;
+    font-size: 15px;
+    font-weight: 700;
+    color: transparent;
+    transition: background .15s, border-color .15s, transform .15s;
+}
+.item-btn[aria-pressed="true"] .tick {
+    background: var(--gold);
+    border-color: var(--gold);
+    color: var(--coal);
+    transform: scale(1.06);
+}
+.item-name { flex: 1; font-size: 1.05rem; }
+.item-btn[aria-pressed="true"] .item-name { font-weight: 500; }
+.extra-tag {
+    flex: none;
+    font-size: .72rem;
+    color: var(--gold-dark);
+    border: 1px solid #f0d9ab;
+    background: #fffaf0;
+    border-radius: 999px;
+    padding: 2px 8px;
+}
+
+/* בחירת אפשרות למנה (סוג הדג) — נפתחת מתחת למנה כשהיא מסומנת */
+.opts {
+    display: none;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 0 16px 14px 16px;
+    padding-inline-start: 56px;
+    background: #fff7e8;
+}
+.item.on .opts { display: flex; }
+.opts-label { font-size: .88rem; color: var(--muted); }
+.opt {
+    border: 1.5px solid #e6d4ae;
+    background: #fff;
+    border-radius: 999px;
+    padding: 7px 16px;
+    font-weight: 500;
+    min-height: 38px;
+}
+.opt[aria-checked="true"] { background: var(--gold); border-color: var(--gold); color: var(--coal); font-weight: 700; }
+.item.missing .opts { box-shadow: inset 0 0 0 2px var(--danger); }
+.item.missing .opts-label { color: var(--danger); font-weight: 700; }
+.summary-cat li.missing { background: #fdeceb; border-color: #f2c4bf; color: var(--danger); }
+
+.extra-note {
+    text-align: center;
+    color: var(--muted);
+    font-size: .85rem;
+    margin-top: -40px;
+    padding-bottom: calc(var(--bar-h) + 30px + var(--safe-b));
+}
+
+/* ── סרגל ההזמנה ──────────────────────────────────────────────── */
+
+.order-bar {
+    position: fixed;
+    inset-inline: 12px;
+    bottom: calc(12px + var(--safe-b));
+    z-index: 10;
+    max-width: 616px;
+    margin: 0 auto;
+    background: var(--coal);
+    color: #fff;
+    border-radius: 18px;
+    padding: 10px 10px 10px 18px;
+    padding-inline-start: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .25);
+    animation: rise .25s ease-out;
+}
+.order-bar-count { font-weight: 500; }
+.order-bar-count b { color: var(--gold-light); font-size: 1.15rem; }
+@keyframes rise { from { transform: translateY(20px); opacity: 0; } }
+
+/* ── כפתורים ──────────────────────────────────────────────────── */
+
+.btn {
+    border: 0;
+    border-radius: 12px;
+    padding: 12px 18px;
+    font-weight: 700;
+    font-size: 1rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    text-decoration: none;
+    min-height: 48px;
+}
+.btn-gold { background: linear-gradient(135deg, var(--gold-light), var(--gold)); color: var(--coal); }
+.btn-gold:disabled { opacity: .6; }
+.btn-whatsapp { background: #25d366; color: #fff; }
+.btn-ghost { background: transparent; color: var(--ink); border: 1.5px solid var(--line); }
+.btn-danger { background: transparent; color: var(--danger); border: 1.5px solid #f0c9c4; }
+.btn-wide { width: 100%; }
+.icon-btn {
+    border: 0;
+    background: #f2eee6;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    font-size: 1rem;
+    display: grid;
+    place-items: center;
+}
+
+/* ── גיליון (dialog) ─────────────────────────────────────────── */
+
+.sheet {
+    border: 0;
+    padding: 0;
+    width: 100%;
+    max-width: 560px;
+    max-height: 100dvh;
+    margin: auto auto 0;
+    border-radius: 22px 22px 0 0;
+    background: var(--card);
+    color: var(--ink);
+}
+.sheet::backdrop { background: rgba(20, 20, 22, .55); }
+.sheet[open] { animation: rise .22s ease-out; }
+@media (min-width: 600px) {
+    .sheet { margin: auto; border-radius: 22px; max-height: 90vh; }
+}
+.sheet-body { display: flex; flex-direction: column; gap: 14px; padding: 18px 18px calc(18px + var(--safe-b)); }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sheet-head h2 { font-size: 1.3rem; }
+.sheet-foot { position: sticky; bottom: 0; background: var(--card); padding-top: 6px; }
+
+.summary { display: flex; flex-direction: column; gap: 10px; }
+.summary-cat h3 { font-size: .9rem; color: var(--gold-dark); margin-bottom: 4px; }
+.summary-cat ul { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+.summary-cat li {
+    background: #fff6e4;
+    border: 1px solid #f3dfb6;
+    border-radius: 999px;
+    padding: 4px 6px 4px 12px;
+    padding-inline-start: 12px;
+    padding-inline-end: 6px;
+    font-size: .9rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.summary-cat li button {
+    border: 0;
+    background: rgba(0, 0, 0, .07);
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    font-size: .7rem;
+}
+
+.fields { border: 0; display: flex; flex-direction: column; gap: 12px; }
+.fields label { display: flex; flex-direction: column; gap: 4px; font-size: .9rem; font-weight: 500; }
+.fields input, .fields textarea, .fields select {
+    border: 1.5px solid var(--line);
+    border-radius: 10px;
+    padding: 11px 12px;
+    font-size: 1rem;
+    background: #fff;
+    width: 100%;
+}
+.fields input:focus, .fields textarea:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px rgba(233, 180, 90, .2); }
+.fields input[type="tel"], .fields input[type="email"] { text-align: right; }
+.fields .opt { font-weight: 400; color: var(--muted); font-size: .82rem; }
+.row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+.form-error { color: var(--danger); font-weight: 500; }
+
+.done-body { text-align: center; align-items: center; padding-top: 28px; }
+.done-mark {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--gold-light), var(--gold));
+    color: var(--coal);
+    font-size: 2.2rem;
+    font-weight: 700;
+    display: grid;
+    place-items: center;
+}
+.done-body p { color: var(--muted); }
+
+.toast {
+    position: fixed;
+    bottom: calc(100px + var(--safe-b));
+    inset-inline: 0;
+    margin: 0 auto;
+    width: max-content;
+    max-width: 90vw;
+    background: var(--coal);
+    color: #fff;
+    padding: 10px 18px;
+    border-radius: 999px;
+    z-index: 50;
+    font-size: .95rem;
+    animation: rise .2s ease-out;
+}
