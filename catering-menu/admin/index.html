@@ -48,7 +48,43 @@
         <div class="view-switch" role="tablist" aria-label="תצוגה">
             <button type="button" role="tab" data-view="list" aria-selected="true">📋 רשימה</button>
             <button type="button" role="tab" data-view="calendar" aria-selected="false">📅 יומן</button>
+            <button type="button" role="tab" data-view="menu" aria-selected="false">🍽️ תפריט</button>
         </div>
+
+        <!-- עריכת התפריט: קטגוריות, מנות, אפשרויות בחירה, ופרטי העסק -->
+        <section class="editor" id="menuEditor" hidden>
+            <p class="editor-hint">
+                השינויים נכנסים לתפריט הציבורי מיד אחרי השמירה. מנה <b>מוסתרת</b> לא מוצגת ללקוחות
+                (למשל כשנגמרה), אבל נשארת כאן ואפשר להחזיר אותה בלחיצה.
+            </p>
+            <p class="editor-legend">
+                <span><b>* תוספת</b> — תוספת תשלום</span>
+                <span><b>👁</b> מוצגת / <b>🙈</b> מוסתרת</span>
+                <span><b>☰</b> אפשרויות בחירה (כמו סוג הדג)</span>
+                <span><b>↑ ↓</b> סדר</span>
+            </p>
+            <div id="editorBody"><p class="loading">טוען…</p></div>
+            <button type="button" class="btn btn-ghost btn-wide" id="addCategory">+ קטגוריה חדשה</button>
+
+            <details class="biz">
+                <summary>פרטי העסק בראש התפריט</summary>
+                <div class="fields">
+                    <label>שם בעל העסק <input id="bizOwner" maxlength="60"></label>
+                    <label>טלפונים (מופרדים בפסיק) <input id="bizPhones" maxlength="130" dir="ltr"></label>
+                    <label>וואטסאפ לקבלת הזמנות (מספר בינלאומי, למשל 972552423846)
+                        <input id="bizWhatsapp" maxlength="20" dir="ltr" inputmode="numeric"></label>
+                    <label>הסבר לכוכבית <input id="bizExtraNote" maxlength="40"></label>
+                </div>
+            </details>
+
+            <button type="button" class="link-btn" id="resetMenu" hidden>שחזור התפריט המקורי (מחיקת כל העריכות)</button>
+
+            <div class="save-bar" id="saveBar" hidden>
+                <span>יש שינויים שלא נשמרו</span>
+                <button type="button" class="btn btn-ghost" id="discardMenu">ביטול</button>
+                <button type="button" class="btn btn-gold" id="saveMenu">שמירה</button>
+            </div>
+        </section>
 
         <!-- יומן: חודש / שבוע / יום, לועזי ועברי, עם חגים ומועדים -->
         <section class="cal" id="cal" hidden>

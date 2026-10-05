@@ -11,6 +11,8 @@
  * לאיפוס: למחוק את הקובץ מהשרת (מנהל הקבצים של cPanel) ולקבוע סיסמה מחדש.
  *
  * הגדרות המנהל (מיקום לזמני היום, מגבלות בחירה, מיילים) — data/settings.json.
+ * התפריט: כל עוד המנהל לא ערך אותו — assets/menu.json מהריפו. אחרי עריכה הוא
+ * נשמר ב-data/menu.json, ומשם והלאה זה התפריט (הפריסה לא נוגעת בו).
  * מיילים יוצאים דרך mail() של PHP, שעובד בשרתי cPanel בלי הגדרה נוספת.
  */
 
@@ -20,7 +22,8 @@ const DATA_DIR    = __DIR__ . '/data';
 const ORDERS_DIR  = DATA_DIR . '/orders';
 const CONFIG_FILE = DATA_DIR . '/config.json';
 const SETTINGS_FILE = DATA_DIR . '/settings.json';
-const MENU_FILE   = __DIR__ . '/assets/menu.json';
+const MENU_DEFAULT = __DIR__ . '/assets/menu.json';   // התפריט המקורי, בריפו
+const MENU_FILE   = DATA_DIR . '/menu.json';             // התפריט שהמנהל ערך (מוחרג מהפריסה)
 const MAX_ITEMS   = 200;
 
 header('Content-Type: application/json; charset=utf-8');
@@ -87,15 +90,86 @@ function readJson(string $path): ?array {
 /** מפת מזהה → מנה, מתוך התפריט שבריפו. ההזמנה נבדקת מולה. */
 function menu(): array {
     static $menu = null;
-    $menu ??= readJson(MENU_FILE);
+    $menu ??= readJson(MENU_FILE) ?? readJson(MENU_DEFAULT);
     if (!$menu) fail('קובץ התפריט חסר בשרת', 500);
     return $menu;
+}
+
+/** התפריט כפי שהלקוח רואה אותו — בלי מנות ובלי קטגוריות מוסתרות. */
+function publicMenu(): array {
+    $menu = menu();
+    $cats = [];
+    foreach ($menu['categories'] as $cat) {
+        $cat['items'] = array_values(array_filter($cat['items'], fn($i) => empty($i['hidden'])));
+        if ($cat['items']) $cats[] = $cat;
+    }
+    $menu['categories'] = $cats;
+    return $menu;
+}
+
+/**
+ * מנקה תפריט שהגיע מהמנהל: רק שדות מוכרים, אורכים סבירים, ומזהים יציבים.
+ * מזהה קיים נשמר (הזמנות וטיוטות של לקוחות נשענות עליו); למנה חדשה נוצר מזהה.
+ */
+function cleanMenu(array $in): array {
+    $str = fn($v, $max) => is_string($v) ? mb_substr(trim($v), 0, $max) : '';
+    $validId = fn($v) => is_string($v) && preg_match('/^[a-z0-9-]{1,40}$/', $v) === 1;
+    $seen = [];
+    $newId = function (string $prefix) use (&$seen) {
+        do { $id = $prefix . '-' . bin2hex(random_bytes(3)); } while (isset($seen[$id]));
+        return $id;
+    };
+
+    $b = is_array($in['business'] ?? null) ? $in['business'] : [];
+    $phones = array_values(array_filter(array_map(fn($p) => $str($p, 30), (array) ($b['phones'] ?? [])), 'strlen'));
+    $out = [
+        'business' => [
+            'name'     => $str($b['name'] ?? '', 60) ?: 'ניחוחות',
+            'tagline'  => $str($b['tagline'] ?? '', 120),
+            'owner'    => $str($b['owner'] ?? '', 60),
+            'phones'   => array_slice($phones, 0, 4),
+            'whatsapp' => preg_replace('/\D/', '', $str($b['whatsapp'] ?? '', 20)),
+        ],
+        'extraNote'  => $str($in['extraNote'] ?? '', 40) ?: 'תוספת תשלום',
+        'categories' => [],
+    ];
+
+    foreach (array_slice((array) ($in['categories'] ?? []), 0, 30) as $cat) {
+        if (!is_array($cat)) continue;
+        $name = $str($cat['name'] ?? '', 60);
+        if ($name === '') fail('לכל קטגוריה צריך שם');
+        $cid = $validId($cat['id'] ?? null) && !isset($seen[$cat['id']]) ? $cat['id'] : $newId('cat');
+        $seen[$cid] = true;
+
+        $items = [];
+        foreach (array_slice((array) ($cat['items'] ?? []), 0, 200) as $item) {
+            if (!is_array($item)) continue;
+            $iname = $str($item['name'] ?? '', 120);
+            if ($iname === '') continue;                     // שורה ריקה — מדלגים
+            $iid = $validId($item['id'] ?? null) && !isset($seen[$item['id']]) ? $item['id'] : $newId($cid);
+            $seen[$iid] = true;
+            $row = ['id' => $iid, 'name' => $iname];
+            if (!empty($item['extra']))  $row['extra'] = true;
+            if (!empty($item['hidden'])) $row['hidden'] = true;
+            $opts = array_values(array_unique(array_filter(
+                array_map(fn($o) => $str($o, 40), array_slice((array) ($item['options'] ?? []), 0, 10)), 'strlen')));
+            if (count($opts) >= 2) {
+                $row['optionLabel'] = $str($item['optionLabel'] ?? '', 40) ?: 'בחירה';
+                $row['options'] = $opts;
+            }
+            $items[] = $row;
+        }
+        $out['categories'][] = ['id' => $cid, 'name' => $name, 'items' => $items];
+    }
+    if (!$out['categories']) fail('התפריט ריק');
+    return $out;
 }
 
 function menuIndex(): array {
     $index = [];
     foreach (menu()['categories'] as $cat) {
         foreach ($cat['items'] as $item) {
+            if (!empty($item['hidden'])) continue;           // מנה מוסתרת אי אפשר להזמין
             $index[$item['id']] = [
                 'itemId'   => $item['id'],
                 'name'     => $item['name'],
@@ -375,6 +449,31 @@ switch ($action) {
                 . orderItemsHtml($order));
         }
         ok(['id' => $order['id']]);
+    }
+
+    case 'menu': {
+        // ציבורי: התפריט ללקוחות, בלי מנות מוסתרות
+        ok(['menu' => publicMenu()]);
+    }
+
+    case 'menuAdmin': {
+        requireAdmin();
+        ok(['menu' => menu(), 'custom' => is_file(MENU_FILE)]);
+    }
+
+    case 'saveMenu': {
+        if ($method !== 'POST') fail('שיטה לא נתמכת', 405);
+        requireAdmin();
+        $menu = cleanMenu(body());
+        writeJson(MENU_FILE, $menu);
+        ok(['menu' => $menu, 'custom' => true]);
+    }
+
+    case 'resetMenu': {
+        if ($method !== 'POST') fail('שיטה לא נתמכת', 405);
+        requireAdmin();
+        @unlink(MENU_FILE);
+        ok(['menu' => readJson(MENU_DEFAULT), 'custom' => false]);
     }
 
     case 'config': {
