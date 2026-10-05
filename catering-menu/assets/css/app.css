@@ -134,7 +134,19 @@ button { cursor: pointer; }
     height: 2px;
     background: linear-gradient(to left, var(--gold), transparent);
 }
-.cat-sub { font-family: 'Heebo', sans-serif; font-size: .85rem; color: var(--muted); font-weight: 400; }
+.cat-sub {
+    font-family: 'Heebo', sans-serif;
+    font-size: .85rem;
+    color: var(--muted);
+    font-weight: 500;
+    background: #f2eee6;
+    border-radius: 999px;
+    padding: 2px 10px;
+    white-space: nowrap;
+}
+.cat-sub.full { background: var(--gold); color: var(--coal); }
+/* קטגוריה שהגיעה למגבלה: המנות שלא נבחרו נראות כבויות (אבל עדיין לחיצות — כדי להסביר) */
+.cat.full .item-btn[aria-pressed="false"] { opacity: .45; }
 
 .items {
     list-style: none;
@@ -313,7 +325,8 @@ button { cursor: pointer; }
     width: 100%;
 }
 .fields input:focus, .fields textarea:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px rgba(233, 180, 90, .2); }
-.fields input[type="tel"] { text-align: right; }
+.fields input[type="tel"], .fields input[type="email"] { text-align: right; }
+.fields .opt { font-weight: 400; color: var(--muted); font-size: .82rem; }
 .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
 .form-error { color: var(--danger); font-weight: 500; }

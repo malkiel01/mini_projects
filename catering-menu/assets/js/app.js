@@ -9,6 +9,7 @@
     let menu = null;
     const byId = new Map();          // מזהה מנה → { item, cat }
     let selected = new Set();
+    let limits = {};                 // מזהה קטגוריה → כמה מותר לבחור (מהגדרות המנהל)
 
     /* ── אחסון מקומי (עלול להיחסם במצב פרטי — לכן try) ─────────── */
 
@@ -81,7 +82,8 @@
                     item.extra ? el('span', { class: 'extra-tag' }, '* ' + menu.extraNote) : null)));
             }
             main.append(el('section', { class: 'cat', id: 'cat-' + cat.id },
-                el('h2', { class: 'cat-title' }, cat.name), list));
+                el('h2', { class: 'cat-title' }, cat.name,
+                    limits[cat.id] ? el('span', { class: 'cat-sub', 'data-limit': cat.id }) : null), list));
         }
 
         main.addEventListener('click', e => {
@@ -94,6 +96,15 @@
     }
 
     function toggle(id) {
+        if (!selected.has(id)) {
+            const { cat } = byId.get(id);
+            const max = limits[cat.id];
+            if (max && cat.items.filter(i => selected.has(i.id)).length >= max) {
+                toast(`ב${cat.name} אפשר לבחור עד ${max}. כדי להחליף — בטלו קודם מנה אחרת.`);
+                if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
+                return;
+            }
+        }
         if (selected.has(id)) selected.delete(id); else selected.add(id);
         const btn = $(`.item-btn[data-id="${CSS.escape(id)}"]`);
         if (btn) btn.setAttribute('aria-pressed', String(selected.has(id)));
@@ -106,8 +117,15 @@
         for (const cat of menu.categories) {
             const n = cat.items.filter(i => selected.has(i.id)).length;
             const badge = $(`.cat-chip[data-cat="${cat.id}"] .badge`);
-            badge.textContent = n;
+            badge.textContent = limits[cat.id] ? `${n}/${limits[cat.id]}` : n;
             badge.hidden = n === 0;
+            const sub = $(`[data-limit="${cat.id}"]`);
+            if (sub) {
+                const full = n >= limits[cat.id];
+                sub.textContent = `בחרו עד ${limits[cat.id]} · נבחרו ${n}`;
+                sub.classList.toggle('full', full);
+                $('#cat-' + cat.id).classList.toggle('full', full);
+            }
         }
         const total = selected.size;
         $('#orderBar').hidden = total === 0;
@@ -152,7 +170,7 @@
         renderSummary();
         const form = $('#orderForm');
         const draft = loadDraft();
-        for (const name of ['name', 'phone', 'deliveryDate', 'deliveryTime', 'guests', 'notes']) {
+        for (const name of ['name', 'phone', 'email', 'deliveryDate', 'deliveryTime', 'guests', 'notes']) {
             if (draft[name] && !form.elements[name].value) form.elements[name].value = draft[name];
         }
         $('#formError').hidden = true;
@@ -164,6 +182,7 @@
         return {
             name: f.name.value.trim(),
             phone: f.phone.value.trim(),
+            email: f.email.value.trim(),
             deliveryDate: f.deliveryDate.value,
             deliveryTime: f.deliveryTime.value,
             guests: f.guests.value,
@@ -200,6 +219,7 @@
 
         if (!d.name) return fail('נא למלא שם');
         if (d.phone.replace(/\D/g, '').length < 9) return fail('נא למלא מספר טלפון תקין');
+        if (d.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)) return fail('כתובת המייל אינה תקינה');
         if (!selected.size) return fail('לא נבחרו מנות');
 
         const btn = $('#submitOrder');
@@ -228,14 +248,15 @@
     }
 
     function showDone(d, orderId) {
-        $('#doneText').textContent = `תודה ${d.name}! קיבלנו ${selected.size} מנות. נחזור אליך לטלפון ${d.phone} לאישור.`;
+        $('#doneText').textContent = `תודה ${d.name}! קיבלנו ${selected.size} מנות. ההזמנה ממתינה לאישור` +
+            (d.email ? ` — האישור יישלח למייל ${d.email}.` : `, ונחזור אליך לטלפון ${d.phone}.`);
         $('#doneWhatsapp').href = `https://wa.me/${menu.business.whatsapp}?text=${encodeURIComponent(whatsappText(d, orderId))}`;
         $('#orderSheet').close();
         $('#doneSheet').showModal();
         // פרטי הלקוח נשמרים להזמנה הבאה; המנות מתאפסות.
         selected = new Set();
         clearDraft();
-        saveDraft({ name: d.name, phone: d.phone });
+        saveDraft({ name: d.name, phone: d.phone, email: d.email });
         document.querySelectorAll('.item-btn').forEach(b => b.setAttribute('aria-pressed', 'false'));
         refreshCounts();
     }
@@ -250,6 +271,11 @@
             $('#menu').innerHTML = '<p class="empty">לא הצלחנו לטעון את התפריט. נסו לרענן את הדף.</p>';
             return;
         }
+        try {
+            const res = await fetch('api.php?action=config', { cache: 'no-cache' });
+            limits = (await res.json()).limits || {};
+        } catch { /* בלי שרת (או בלי הגדרות) — אין מגבלות; השרת יאכוף בשליחה */ }
+
         const known = new Set(menu.categories.flatMap(c => c.items.map(i => i.id)));
         selected = new Set((loadDraft().items || []).filter(id => known.has(id)));
 

@@ -1,17 +1,41 @@
 /* ממשק המנהל — נבנה על app.css ומוסיף את הלוח, הקבוצות ומסך ההזמנה. */
 
 .brand.compact { position: relative; }
-.logout {
-    position: absolute;
-    top: 12px;
-    inset-inline-start: 12px;
+/* הכפתורים בשורה משלהם מעל הלוגו — כך שבטלפון הם לא עולים עליו */
+.top-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+.top-btn {
+    position: relative;
     background: rgba(255, 255, 255, .08);
     color: var(--gold-light);
     border: 1px solid rgba(233, 180, 90, .35);
     border-radius: 999px;
-    padding: 5px 12px;
+    min-width: 36px;
+    height: 34px;
+    padding: 0 10px;
     font-size: .85rem;
 }
+.bell-badge {
+    position: absolute;
+    top: -6px;
+    inset-inline-end: -6px;
+    background: #e5484d;
+    color: #fff;
+    font-size: .7rem;
+    font-weight: 700;
+    border-radius: 999px;
+    min-width: 19px;
+    height: 19px;
+    padding: 0 5px;
+    display: grid;
+    place-items: center;
+    animation: pop .3s ease-out;
+}
+@keyframes pop { from { transform: scale(.4); } }
 
 /* ── כניסה ───────────────────────────────────────────────────── */
 
@@ -414,3 +438,95 @@
 .ag-day:not(.busy) .ag-empty { padding-top: 2px; }
 
 .o-when { display: grid; grid-template-columns: 1.4fr 1fr; gap: 10px; }
+
+/* ── אישור / סירוב ─────────────────────────────────────────────── */
+
+.pill.appr-new { background: #e8eefc; color: #2d4fa3; }
+.pill.appr-rejected { background: #fbe5e2; color: #a3261b; }
+.dot.new { background: #4b74d8; }
+.new-dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #e5484d;
+    margin-inline-end: 6px;
+    vertical-align: middle;
+}
+.order-card.appr-new { border-inline-start-color: #4b74d8; border-inline-start-style: dashed; }
+.order-card.appr-rejected { opacity: .55; border-inline-start-color: var(--danger); }
+.order-card.unread { box-shadow: 0 0 0 2px #f6c3c5, 0 3px 12px rgba(39, 40, 42, .05); }
+.chip.appr-new { border-inline-start-style: dashed; border-color: #4b74d8; background: #eef2fd; }
+
+.approval { border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.approval p { font-weight: 700; }
+.approval .reason { font-weight: 400; color: var(--muted); }
+.approval.appr-new { background: #eef2fd; border: 1.5px dashed #9fb4ec; }
+.approval.appr-approved { background: #eaf7ef; }
+.approval.appr-rejected { background: #fdeceb; }
+.approval-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.btn-ok { background: var(--ok); color: #fff; }
+.btn-danger-solid { background: var(--danger); color: #fff; }
+.link-btn {
+    align-self: flex-start;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    text-decoration: underline;
+    font-size: .85rem;
+    padding: 0;
+}
+.fields .check { flex-direction: row; align-items: center; gap: 8px; font-weight: 400; }
+.fields .check input { width: auto; }
+
+/* ── התראות ───────────────────────────────────────────────────── */
+
+.notes-tools { display: flex; gap: 8px; flex-wrap: wrap; }
+.notes-tools .btn { min-height: 38px; padding: 6px 12px; font-size: .88rem; }
+.notes-h { font-size: .95rem; color: var(--gold-dark); margin-top: 4px; }
+.notes-list { display: flex; flex-direction: column; gap: 6px; }
+.note {
+    width: 100%;
+    border: 1px solid var(--line);
+    background: #fff;
+    border-radius: 10px;
+    padding: 10px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    text-align: start;
+}
+.note.unread { border-color: #f6c3c5; background: #fff7f7; }
+.note.unread .note-main b::before { content: '● '; color: #e5484d; }
+.note-main { font-size: .92rem; min-width: 0; }
+.note-main span { color: var(--muted); }
+.note-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; }
+.note-side small { color: var(--muted); font-size: .75rem; }
+.notes-list.read .note { opacity: .75; }
+
+/* ── הגדרות ───────────────────────────────────────────────────── */
+
+.set-h { font-size: 1rem; margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+.set-h:first-of-type { border-top: 0; padding-top: 0; }
+.set-hint { color: var(--muted); font-size: .85rem; margin-top: -6px; }
+.set-preview {
+    background: #fff8ea;
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-size: .88rem;
+}
+.limits { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+
+/* ── זמני היום ביומן ───────────────────────────────────────────── */
+
+.hol.parasha { --hc: #1d5e55; --hb: #e2f3f0; }
+.zmanim { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: .82rem; color: var(--muted); width: 100%; }
+.zmanim .candles, .zmanim .havdalah { color: var(--gold-dark); font-weight: 500; }
+.zmanim.compact { font-size: .62rem; gap: 0 4px; line-height: 1.3; }
+.zmanim.compact .sunset { opacity: .75; }
+.cal-head .cal-place { font-size: .78rem; color: var(--muted); font-weight: 400; }
+@media (max-width: 560px) {
+    .zmanim.compact .sunset { display: none; }
+    .zmanim.compact { font-size: .56rem; }
+}

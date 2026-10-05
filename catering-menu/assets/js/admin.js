@@ -1,4 +1,5 @@
-/* ממשק המנהל: כניסה, רשימת הזמנות לפי לקוח, ומעקב "קיים / לא קיים" לכל פריט. */
+/* ממשק המנהל: כניסה, התראות, אישור/סירוב, רשימת הזמנות לפי לקוח, מעקב "קיים / לא
+   קיים" לכל פריט, יומן עם זמני היום, והגדרות. */
 (() => {
     'use strict';
 
@@ -8,9 +9,16 @@
         in_progress: 'בתהליך',
         done:        'בוצעה',
     };
+    const APPROVAL = {
+        new:      'ממתינה לאישור',
+        approved: 'אושרה',
+        rejected: 'נדחתה',
+    };
     const $ = (sel, root = document) => root.querySelector(sel);
 
     let orders = [];
+    let settings = null;            // הגדרות המנהל מהשרת (מיקום, מגבלות, מיילים)
+    let knownUnread = null;         // מזהי ההזמנות שלא נקראו בטעינה הקודמת
     let filter = 'open';            // ברירת מחדל: מה שעוד דורש עבודה
     let openId = null;              // ההזמנה שפתוחה כרגע במסך
     let configured = true;
@@ -55,7 +63,7 @@
 
     function showAuth() {
         $('#board').hidden = true;
-        $('#logout').hidden = true;
+        $('#topActions').hidden = true;
         $('#auth').hidden = false;
         $('#authTitle').textContent = configured ? 'כניסת מנהל' : 'קביעת סיסמה';
         $('#authHint').hidden = configured;
@@ -86,7 +94,8 @@
     async function showBoard() {
         $('#auth').hidden = true;
         $('#board').hidden = false;
-        $('#logout').hidden = false;
+        $('#topActions').hidden = false;
+        try { settings = (await api('settings')).settings; } catch { /* נטען שוב בפתיחת ההגדרות */ }
         await load();
     }
 
@@ -95,6 +104,11 @@
     async function load(quiet = false) {
         try {
             orders = (await api('orders')).orders;
+            for (const o of orders) {
+                o.approval ??= 'new';
+                o.read ??= false;
+            }
+            announceNew();
             render();
             if (openId) renderOrder();
         } catch (ex) {
@@ -111,9 +125,13 @@
                d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
     }
 
+    const isOpen = o => o.approval !== 'rejected' && o.status !== 'done';
+
     function matches(o) {
-        if (filter === 'open' && o.status === 'done') return false;
-        if (STATUS[filter] && o.status !== filter) return false;
+        if (filter === 'open' && !isOpen(o)) return false;
+        if (filter === 'new' && o.approval !== 'new') return false;
+        if (filter === 'rejected' && o.approval !== 'rejected') return false;
+        if (STATUS[filter] && (o.status !== filter || o.approval === 'rejected')) return false;
         const q = keyName($('#search').value);
         return !q || o.customer.name.includes(q) || o.customer.phone.includes(q);
     }
@@ -121,6 +139,7 @@
     /* ── ציור הלוח ───────────────────────────────────────────────── */
 
     function render() {
+        renderBell();
         renderFilters();
         renderTodo();
         renderGroups();
@@ -128,12 +147,15 @@
     }
 
     function renderFilters() {
-        const count = s => orders.filter(o => o.status === s).length;
+        const live = orders.filter(o => o.approval !== 'rejected');
+        const count = s => live.filter(o => o.status === s).length;
         const tabs = [
-            ['open', 'פתוחות', orders.length - count('done')],
+            ['open', 'פתוחות', orders.filter(isOpen).length],
+            ['new', 'ממתינות לאישור', orders.filter(o => o.approval === 'new').length],
             ['pending', STATUS.pending, count('pending')],
             ['in_progress', STATUS.in_progress, count('in_progress')],
             ['done', STATUS.done, count('done')],
+            ['rejected', 'נדחו', orders.filter(o => o.approval === 'rejected').length],
             ['all', 'הכול', orders.length],
         ];
         const box = $('#filters');
@@ -150,7 +172,8 @@
     function renderTodo() {
         const map = new Map();
         for (const o of orders) {
-            if (o.status === 'done') continue;
+            // רק הזמנות שאושרו נכנסות לתכנון המטבח
+            if (o.status === 'done' || o.approval !== 'approved') continue;
             for (const i of o.items) {
                 if (i.ready) continue;
                 const row = map.get(i.name) || { name: i.name, who: [] };
@@ -211,9 +234,10 @@
         const sub = [`${o.items.length} מנות`];
         if (o.customer.guests) sub.push(`${o.customer.guests} סועדים`);
         sub.push(`התקבלה ${fmtCreated(o.createdAt)}`);
-        return el('button', { type: 'button', class: 'order-card ' + o.status, onclick: () => openOrder(o.id) },
-            el('span', { class: 'when' }, o.customer.deliveryAt ? '📅 ' + o.customer.deliveryAt : 'ללא מועד'),
-            el('span', { class: 'pill ' + o.status }, STATUS[o.status]),
+        return el('button', { type: 'button', class: `order-card ${o.status} appr-${o.approval}${o.read ? '' : ' unread'}`, onclick: () => openOrder(o.id) },
+            el('span', { class: 'when' }, o.read ? null : el('i', { class: 'new-dot', title: 'לא נקראה' }),
+                o.customer.deliveryAt ? '📅 ' + o.customer.deliveryAt : 'ללא מועד'),
+            approvalPill(o),
             el('span', { class: 'sub' }, sub.join(' · ')),
             progressBar(o));
     }
@@ -222,10 +246,18 @@
 
     const current = () => orders.find(o => o.id === openId);
 
+    function approvalPill(o) {
+        return o.approval === 'approved'
+            ? el('span', { class: 'pill ' + o.status }, STATUS[o.status])
+            : el('span', { class: 'pill appr-' + o.approval }, APPROVAL[o.approval]);
+    }
+
     function openOrder(id) {
         openId = id;
+        $('#notesSheet').close();
         renderOrder();
         const o = current();
+        if (!o.read) update({ read: true });
         $('#oAdminNotes').value = o.adminNotes || '';
         $('#oDate').value = eventDate(o);
         $('#oTime').value = eventTime(o);
@@ -238,10 +270,11 @@
         const c = o.customer;
 
         $('#oTitle').textContent = c.name;
+        renderApproval(o);
         const meta = [];
         if (c.deliveryAt) meta.push('📅 ' + c.deliveryAt);
         if (c.guests) meta.push(`${c.guests} סועדים`);
-        meta.push('#' + o.id);
+        meta.push('\u2066#' + o.id + '\u2069');   // בידוד כיווני — שהמזהה לא יתהפך בעברית
         $('#oMeta').textContent = meta.join(' · ');
 
         const digits = c.phone.replace(/\D/g, '');
@@ -250,6 +283,7 @@
         contact.textContent = '';
         contact.append(
             el('a', { class: 'btn btn-ghost', href: 'tel:' + digits }, '📞 ' + c.phone),
+            c.email ? el('a', { class: 'btn btn-ghost', href: 'mailto:' + c.email }, '✉️ מייל') : null,
             el('a', { class: 'btn btn-whatsapp', href: 'https://wa.me/' + intl, target: '_blank', rel: 'noopener' }, 'וואטסאפ'));
 
         const seg = $('#oStatus');
@@ -302,17 +336,22 @@
             o.status = r === 0 ? 'pending' : r === o.items.length ? 'done' : 'in_progress';
         }
         if (change.status) o.status = change.status;
-        renderOrder();
+        if ('read' in change) o.read = change.read;
+        if (change.approval) { o.approval = change.approval; o.read = true; }
+        if (openId === o.id) renderOrder();
         render();
 
         try {
             const res = await api('update', { id: o.id, ...change });
             Object.assign(o, res.order);
-            renderOrder();
+            if (openId === o.id) renderOrder();
             render();
+            if (res.mail === 'sent') toast('✉️ המייל נשלח ללקוח');
+            if (res.mail === 'failed') toast('שליחת המייל נכשלה — כדאי לעדכן את הלקוח בטלפון או בוואטסאפ');
+            return res;
         } catch (ex) {
             Object.assign(o, before);
-            renderOrder();
+            if (openId === o.id) renderOrder();
             render();
             toast('השמירה נכשלה: ' + ex.message);
         }
@@ -335,6 +374,244 @@
             toast('ההזמנה נמחקה');
         } catch (ex) {
             toast(ex.message);
+        }
+    }
+
+    /* ── אישור / סירוב ───────────────────────────────────────────── */
+
+    function renderApproval(o) {
+        const box = $('#oApproval');
+        box.textContent = '';
+        box.className = 'approval appr-' + o.approval;
+        if (o.approval === 'new') {
+            box.append(
+                el('p', {}, '⏳ ההזמנה ממתינה לאישור שלך'),
+                el('div', { class: 'approval-btns' },
+                    el('button', { type: 'button', class: 'btn btn-ok', onclick: () => decide('approved') }, '✓ אישור'),
+                    el('button', { type: 'button', class: 'btn btn-danger', onclick: () => decide('rejected') }, '✕ סירוב')));
+        } else {
+            const when = o.decidedAt ? ' · ' + fmtCreated(o.decidedAt) : '';
+            const last = (o.mailLog || []).at(-1);
+            const mail = last ? (last.result === 'sent' ? ' · ✉️ נשלח מייל' : last.result === 'failed' ? ' · ⚠️ המייל נכשל' : '') : '';
+            box.append(
+                el('p', {}, (o.approval === 'approved' ? '✓ ההזמנה אושרה' : '✕ ההזמנה נדחתה') + when + mail));
+            if (o.rejectReason) box.append(el('p', { class: 'reason' }, 'סיבה: ' + o.rejectReason));
+            box.append(
+                el('button', { type: 'button', class: 'link-btn', onclick: () => update({ approval: 'new' }) }, 'ביטול ההחלטה'));
+        }
+    }
+
+    let deciding = null;
+
+    function decide(approval) {
+        const o = current();
+        if (!o) return;
+        deciding = approval;
+        const ok = approval === 'approved';
+        const hasMail = !!o.customer.email;
+        $('#decideTitle').textContent = ok ? `אישור ההזמנה של ${o.customer.name}` : `סירוב להזמנה של ${o.customer.name}`;
+        $('#decideText').textContent = ok
+            ? 'ההזמנה תיכנס ליומן ולתכנון המטבח.'
+            : 'ההזמנה תוסר מהיומן ומהרשימה הפתוחה (היא נשמרת תחת "נדחו", ואפשר גם למחוק אותה).';
+        $('#reasonWrap').hidden = ok;
+        $('#decideReason').value = '';
+        $('#decideNotify').checked = hasMail;
+        $('#decideNotify').disabled = !hasMail;
+        $('#decideNotifyLabel').textContent = hasMail
+            ? `לשלוח מייל ללקוח (${o.customer.email})`
+            : 'הלקוח לא השאיר מייל — אפשר לעדכן אותו בוואטסאפ אחרי השמירה';
+        $('#decideSubmit').textContent = ok ? '✓ אישור' : '✕ סירוב';
+        $('#decideSubmit').className = 'btn btn-wide ' + (ok ? 'btn-ok' : 'btn-danger-solid');
+        $('#decideSheet').showModal();
+    }
+
+    async function submitDecision(e) {
+        e.preventDefault();
+        const o = current();
+        $('#decideSheet').close();
+        if (!o || !deciding) return;
+        const res = await update({
+            approval: deciding,
+            reason: $('#decideReason').value.trim(),
+            notify: $('#decideNotify').checked,
+        });
+        // בלי מייל — הודעת וואטסאפ מוכנה
+        if (res && !o.customer.email) {
+            const text = deciding === 'approved'
+                ? `שלום ${o.customer.name}, ההזמנה שלך${o.customer.deliveryAt ? ' ל-' + o.customer.deliveryAt : ''} אושרה. תודה, ניחוחות`
+                : `שלום ${o.customer.name}, לצערנו לא נוכל לקבל את ההזמנה${o.customer.deliveryAt ? ' ל-' + o.customer.deliveryAt : ''}.` +
+                  ($('#decideReason').value.trim() ? ' ' + $('#decideReason').value.trim() : '');
+            const digits = o.customer.phone.replace(/\D/g, '');
+            const intl = digits.startsWith('0') ? '972' + digits.slice(1) : digits;
+            window.open(`https://wa.me/${intl}?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
+        }
+        deciding = null;
+    }
+
+    /* ── התראות ──────────────────────────────────────────────────── */
+
+    function renderBell() {
+        const unread = orders.filter(o => !o.read).length;
+        $('#bellBadge').hidden = !unread;
+        $('#bellBadge').textContent = unread > 99 ? '99+' : unread;
+        document.title = (unread ? `(${unread}) ` : '') + 'ניחוחות — ניהול הזמנות';
+        if ($('#notesSheet').open) renderNotes();
+    }
+
+    function noteRow(o) {
+        return el('button', { type: 'button', class: 'note' + (o.read ? '' : ' unread'), onclick: () => openOrder(o.id) },
+            el('span', { class: 'note-main' },
+                el('b', {}, o.customer.name),
+                el('span', {}, ` · ${o.items.length} מנות` + (o.customer.deliveryAt ? ` · 📅 ${o.customer.deliveryAt}` : ''))),
+            el('span', { class: 'note-side' },
+                el('span', { class: 'pill appr-' + o.approval }, APPROVAL[o.approval]),
+                el('small', {}, fmtCreated(o.createdAt))));
+    }
+
+    function renderNotes() {
+        const unread = orders.filter(o => !o.read);
+        const read = orders.filter(o => o.read).slice(0, 30);
+        $('#unreadCount').textContent = unread.length ? `(${unread.length})` : '';
+        const ul = $('#unreadList');
+        ul.textContent = '';
+        ul.append(...(unread.length ? unread.map(noteRow) : [el('p', { class: 'empty' }, 'אין התראות חדשות 🎉')]));
+        const rl = $('#readList');
+        rl.textContent = '';
+        rl.append(...(read.length ? read.map(noteRow) : [el('p', { class: 'empty' }, '—')]));
+        $('#markAllRead').hidden = !unread.length;
+        $('#enablePush').hidden = !('Notification' in window) || Notification.permission === 'granted';
+    }
+
+    /** הזמנה חדשה שהגיעה בזמן שהממשק פתוח: צליל, הודעה, והתראת דפדפן. */
+    function announceNew() {
+        const unread = new Set(orders.filter(o => !o.read).map(o => o.id));
+        if (knownUnread) {
+            const fresh = orders.filter(o => unread.has(o.id) && !knownUnread.has(o.id));
+            if (fresh.length) {
+                chime();
+                const text = fresh.length === 1 ? `הזמנה חדשה מ${fresh[0].customer.name}` : `${fresh.length} הזמנות חדשות`;
+                toast('🔔 ' + text);
+                if ('Notification' in window && Notification.permission === 'granted') {
+                    try { new Notification('ניחוחות', { body: text, icon: '../assets/icon.svg', tag: 'catering-new' }); } catch { /* */ }
+                }
+            }
+        }
+        knownUnread = unread;
+    }
+
+    function chime() {
+        try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            [660, 880].forEach((f, i) => {
+                const o = ctx.createOscillator(), g = ctx.createGain();
+                o.frequency.value = f;
+                g.gain.setValueAtTime(0.0001, ctx.currentTime + i * 0.18);
+                g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + i * 0.18 + 0.02);
+                g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + i * 0.18 + 0.3);
+                o.connect(g).connect(ctx.destination);
+                o.start(ctx.currentTime + i * 0.18);
+                o.stop(ctx.currentTime + i * 0.18 + 0.32);
+            });
+        } catch { /* אין שמע — לא נורא */ }
+    }
+
+    async function markAllRead() {
+        const unread = orders.filter(o => !o.read);
+        unread.forEach(o => { o.read = true; });
+        render();
+        await Promise.all(unread.map(o => api('update', { id: o.id, read: true }).catch(() => {})));
+    }
+
+    /* ── הגדרות ──────────────────────────────────────────────────── */
+
+    const loc = () => {
+        const l = settings?.location || { lat: 31.778, lon: 35.235, candleOffset: 40, name: 'ירושלים' };
+        return { ...l, havdalah: { mode: l.havdalahMode, minutes: l.havdalahMinutes } };
+    };
+
+    async function openSettings() {
+        try { settings = (await api('settings')).settings; } catch (ex) { toast(ex.message); return; }
+        const l = settings.location;
+        const sel = $('#setPlace');
+        sel.textContent = '';
+        for (const p of HebCal.PLACES) sel.append(el('option', { value: p.id }, p.name));
+        sel.append(el('option', { value: 'custom' }, 'מיקום אחר (קואורדינטות)'));
+        sel.value = HebCal.PLACES.some(p => p.id === l.id) ? l.id : 'custom';
+        $('#setLat').value = l.lat;
+        $('#setLon').value = l.lon;
+        $('#setCandle').value = l.candleOffset;
+        $('#setHavdalahMode').value = l.havdalahMode;
+        $('#setHavdalahMin').value = l.havdalahMinutes;
+
+        const box = $('#setLimits');
+        box.textContent = '';
+        const menu = await fetch('../assets/menu.json', { cache: 'no-cache' }).then(r => r.json());
+        for (const c of menu.categories) {
+            box.append(el('label', {}, `${c.name} (${c.items.length})`,
+                el('input', { type: 'number', min: '1', max: '99', inputmode: 'numeric', 'data-cat': c.id,
+                    placeholder: 'ללא', value: settings.limits[c.id] ?? '' })));
+        }
+        $('#setAdminMail').value = settings.email.adminNotify;
+        $('#setReplyTo').value = settings.email.replyTo;
+        $('#setFrom').value = settings.email.from;
+        $('#setError').hidden = true;
+        syncSettingsForm();
+        $('#settingsSheet').showModal();
+    }
+
+    /** מעדכן שדות תלויים ותצוגה מקדימה של זמני השבת הקרובה. */
+    function syncSettingsForm(e) {
+        const sel = $('#setPlace');
+        const place = HebCal.PLACES.find(p => p.id === sel.value);
+        if (e?.target === sel && place) {
+            $('#setLat').value = place.lat;
+            $('#setLon').value = place.lon;
+            $('#setCandle').value = place.candleOffset;
+        }
+        $('#setCoords').hidden = !!place;
+        $('#setHavdalahMinWrap').hidden = $('#setHavdalahMode').value !== 'minutes';
+
+        const l = formLocation();
+        let fri = new Date();
+        while (fri.getDay() !== 5) fri = addDays(fri, 1);
+        const sat = addDays(fri, 1);
+        const zf = HebCal.zmanim(fri.getFullYear(), fri.getMonth() + 1, fri.getDate(), { ...l, havdalah: { mode: l.havdalahMode, minutes: l.havdalahMinutes } });
+        const zs = HebCal.zmanim(sat.getFullYear(), sat.getMonth() + 1, sat.getDate(), { ...l, havdalah: { mode: l.havdalahMode, minutes: l.havdalahMinutes } });
+        const par = HebCal.parasha(sat.getFullYear(), sat.getMonth() + 1, sat.getDate());
+        $('#setPreview').textContent = `השבת הקרובה ב${l.name}${par ? ' (פרשת ' + par + ')' : ''}: ` +
+            `🕯️ ${zf.candles || '—'} · ✨ ${zs.havdalah || '—'} · 🌅 שקיעה ביום שישי ${zf.sunset}`;
+    }
+
+    function formLocation() {
+        const sel = $('#setPlace');
+        const place = HebCal.PLACES.find(p => p.id === sel.value);
+        return {
+            id: sel.value,
+            name: place ? place.name : 'מיקום מותאם',
+            lat: Number($('#setLat').value) || 31.778,
+            lon: Number($('#setLon').value) || 35.235,
+            candleOffset: Number($('#setCandle').value) || 0,
+            havdalahMode: $('#setHavdalahMode').value,
+            havdalahMinutes: Number($('#setHavdalahMin').value) || 40,
+        };
+    }
+
+    async function saveSettings(e) {
+        e.preventDefault();
+        const limits = {};
+        document.querySelectorAll('#setLimits input').forEach(i => { if (Number(i.value) > 0) limits[i.dataset.cat] = Number(i.value); });
+        try {
+            settings = (await api('saveSettings', {
+                location: formLocation(),
+                limits,
+                email: { adminNotify: $('#setAdminMail').value.trim(), replyTo: $('#setReplyTo').value.trim(), from: $('#setFrom').value.trim() },
+            })).settings;
+            $('#settingsSheet').close();
+            toast('ההגדרות נשמרו');
+            renderCalendar();
+        } catch (ex) {
+            $('#setError').textContent = ex.message;
+            $('#setError').hidden = false;
         }
     }
 
@@ -372,7 +649,7 @@
         const map = new Map();
         for (const o of orders) {
             const d = eventDate(o);
-            if (!d) continue;
+            if (!d || o.approval === 'rejected') continue;
             if (!map.has(d)) map.set(d, []);
             map.get(d).push(o);
         }
@@ -437,7 +714,8 @@
         } else {
             $('#calTitle').textContent = `יום ${DAY_NAMES[a.getDay()]}, ${a.getDate()} ב${MONTH_NAMES[a.getMonth()]} ${a.getFullYear()}`;
         }
-        $('#calSub').textContent = calMode === 'day' ? heb(a).full : hebRange(a, b);
+        $('#calSub').textContent = (calMode === 'day' ? heb(a).full : hebRange(a, b));
+        $('#calPlace').textContent = `זמני היום לפי ${loc().name} · שינוי בהגדרות ⚙️`;
 
         // סיכום הטווח: כמה אירועים, וכמה בכל מצב
         const inRange = [];
@@ -447,14 +725,16 @@
         if (inRange.length) {
             stats.append(`${inRange.length} אירועים`);
             for (const st of ['done', 'in_progress', 'pending']) {
-                const n = inRange.filter(o => o.status === st).length;
+                const n = inRange.filter(o => o.status === st && o.approval === 'approved').length;
                 if (n) stats.append(' · ', el('i', { class: 'dot ' + st }), ` ${n} ${STATUS_SHORT[st]}`);
             }
+            const waiting = inRange.filter(o => o.approval === 'new').length;
+            if (waiting) stats.append(' · ', el('i', { class: 'dot new' }), ` ${waiting} ממתינות לאישור`);
         } else {
             stats.textContent = 'אין אירועים בטווח הזה';
         }
 
-        const undated = orders.filter(o => !eventDate(o)).length;
+        const undated = orders.filter(o => !eventDate(o) && o.approval !== 'rejected').length;
         $('#calUndated').hidden = !undated;
         $('#calUndated').textContent = `${undated} הזמנות בלי תאריך — לא מופיעות ביומן. אפשר לקבוע תאריך מתוך ההזמנה ברשימה.`;
 
@@ -465,16 +745,28 @@
 
     function holidayTags(d, short = false) {
         const list = hols(d);
-        if (d.getDay() === 6 && !list.some(h => h.type === 'yomtov')) list.push({ name: 'שבת', type: 'shabbat' });
+        const par = HebCal.parasha(d.getFullYear(), d.getMonth() + 1, d.getDate());
+        if (par) list.push({ name: 'פרשת ' + par, type: 'parasha' });
+        else if (d.getDay() === 6 && !list.some(h => h.type === 'yomtov')) list.push({ name: 'שבת', type: 'shabbat' });
         return list.map(h => el('span', { class: 'hol ' + h.type, title: h.name },
             short ? h.name.replace(/ · .*/, '') : h.name));
+    }
+
+    /** שקיעה בכל יום; הדלקת נרות בערב שבת/חג; צאת במוצאי שבת/חג. */
+    function zmanLine(d, compact) {
+        const z = HebCal.zmanim(d.getFullYear(), d.getMonth() + 1, d.getDate(), loc());
+        const parts = [];
+        if (z.candles) parts.push(el('span', { class: 'z candles', title: 'הדלקת נרות' }, compact ? `🕯️${z.candles}` : `🕯️ הדלקת נרות ${z.candles}`));
+        if (z.havdalah) parts.push(el('span', { class: 'z havdalah', title: z.havdalahLabel }, compact ? `✨${z.havdalah}` : `✨ ${z.havdalahLabel} ${z.havdalah}`));
+        parts.push(el('span', { class: 'z sunset', title: 'שקיעה' }, compact ? `🌅${z.sunset}` : `🌅 שקיעה ${z.sunset}`));
+        return el('div', { class: 'zmanim' + (compact ? ' compact' : '') }, ...parts);
     }
 
     function eventChip(o) {
         const t = eventTime(o);
         return el('button', {
-            type: 'button', class: 'chip ' + o.status,
-            title: `${o.customer.name} · ${STATUS[o.status]}`,
+            type: 'button', class: `chip ${o.status} appr-${o.approval}`,
+            title: `${o.customer.name} · ${o.approval === 'approved' ? STATUS[o.status] : APPROVAL[o.approval]}`,
             onclick: e => { e.stopPropagation(); openOrder(o.id); },
         }, t ? el('b', {}, t) : null, ' ', o.customer.name);
     }
@@ -506,7 +798,8 @@
             el('div', { class: 'day-nums' },
                 el('span', { class: 'g' }, String(d.getDate())),
                 el('span', { class: 'h' }, h.day === 1 ? h.label : h.dayHe)),
-            el('div', { class: 'day-hols' }, ...holidayTags(d, true)));
+            el('div', { class: 'day-hols' }, ...holidayTags(d, true)),
+            zmanLine(d, true));
 
             const shown = events.slice(0, 3);
             cell.append(el('div', { class: 'day-events' }, ...shown.map(eventChip),
@@ -530,7 +823,8 @@
             },
             el('span', { class: 'ag-date' }, `${DAY_NAMES[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}`),
             el('span', { class: 'ag-heb' }, heb(d).label),
-            el('span', { class: 'ag-hols' }, ...holidayTags(d)));
+            el('span', { class: 'ag-hols' }, ...holidayTags(d)),
+            zmanLine(d, false));
             const list = events.length
                 ? el('div', { class: 'ag-events' }, ...events.map(eventCard))
                 : el('p', { class: 'ag-empty' }, calMode === 'day' ? 'אין אירועים ביום הזה' : '—');
@@ -542,9 +836,9 @@
     function eventCard(o) {
         const sub = [`${o.items.length} מנות`];
         if (o.customer.guests) sub.push(`${o.customer.guests} סועדים`);
-        return el('button', { type: 'button', class: 'order-card ' + o.status, onclick: () => openOrder(o.id) },
+        return el('button', { type: 'button', class: `order-card ${o.status} appr-${o.approval}`, onclick: () => openOrder(o.id) },
             el('span', { class: 'when' }, (eventTime(o) ? eventTime(o) + ' · ' : '') + o.customer.name),
-            el('span', { class: 'pill ' + o.status }, STATUS[o.status]),
+            approvalPill(o),
             el('span', { class: 'sub' }, sub.join(' · ')),
             progressBar(o));
     }
@@ -553,9 +847,22 @@
 
     async function init() {
         $('#authForm').addEventListener('submit', submitAuth);
+        $('#bell').addEventListener('click', () => { renderNotes(); $('#notesSheet').showModal(); });
+        $('#gear').addEventListener('click', openSettings);
+        $('#markAllRead').addEventListener('click', markAllRead);
+        $('#enablePush').addEventListener('click', async () => {
+            const p = await Notification.requestPermission();
+            toast(p === 'granted' ? 'התראות הדפדפן הופעלו — כל עוד הממשק פתוח בלשונית' : 'הדפדפן לא אישר התראות');
+            renderNotes();
+        });
+        $('#decideForm').addEventListener('submit', submitDecision);
+        $('#settingsForm').addEventListener('submit', saveSettings);
+        $('#settingsForm').addEventListener('input', syncSettingsForm);
+        $('#setPlace').addEventListener('change', syncSettingsForm);
         $('#logout').addEventListener('click', async () => {
             await api('logout', {}).catch(() => {});
             orders = [];
+            knownUnread = null;
             showAuth();
         });
         $('#search').addEventListener('input', renderGroups);
@@ -580,6 +887,8 @@
         } catch { /* */ }
         document.querySelectorAll('[data-close]').forEach(b =>
             b.addEventListener('click', () => b.closest('dialog').close()));
+        document.querySelectorAll('dialog:not(#orderSheet)').forEach(dlg =>
+            dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); }));
         const sheet = $('#orderSheet');
         sheet.addEventListener('close', () => { openId = null; });
         sheet.addEventListener('click', e => { if (e.target === sheet) sheet.close(); });

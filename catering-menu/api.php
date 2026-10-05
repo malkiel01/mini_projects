@@ -2,12 +2,16 @@
 /**
  * השרת של "תפריט קייטרינג ניחוחות".
  *
- * פעולה ציבורית אחת — order (לקוח שולח הזמנה). כל השאר דורש התחברות מנהל.
+ * פעולות ציבוריות: order (לקוח שולח הזמנה) ו-config (מגבלות הבחירה לתפריט).
+ * כל השאר דורש התחברות מנהל.
  * האחסון: קובץ JSON לכל הזמנה ב-data/orders/, כך ששתי הזמנות שנשלחות באותו
  * רגע לא דורסות זו את זו. data/ מוחרגת מהפריסה ב-deploy.yml.
  *
  * הסיסמה נקבעת בכניסה הראשונה לממשק המנהל ונשמרת כגיבוב ב-data/config.json.
  * לאיפוס: למחוק את הקובץ מהשרת (מנהל הקבצים של cPanel) ולקבוע סיסמה מחדש.
+ *
+ * הגדרות המנהל (מיקום לזמני היום, מגבלות בחירה, מיילים) — data/settings.json.
+ * מיילים יוצאים דרך mail() של PHP, שעובד בשרתי cPanel בלי הגדרה נוספת.
  */
 
 declare(strict_types=1);
@@ -15,6 +19,7 @@ declare(strict_types=1);
 const DATA_DIR    = __DIR__ . '/data';
 const ORDERS_DIR  = DATA_DIR . '/orders';
 const CONFIG_FILE = DATA_DIR . '/config.json';
+const SETTINGS_FILE = DATA_DIR . '/settings.json';
 const MENU_FILE   = __DIR__ . '/assets/menu.json';
 const MAX_ITEMS   = 200;
 
@@ -80,21 +85,157 @@ function readJson(string $path): ?array {
 }
 
 /** מפת מזהה → מנה, מתוך התפריט שבריפו. ההזמנה נבדקת מולה. */
-function menuIndex(): array {
-    $menu = readJson(MENU_FILE);
+function menu(): array {
+    static $menu = null;
+    $menu ??= readJson(MENU_FILE);
     if (!$menu) fail('קובץ התפריט חסר בשרת', 500);
+    return $menu;
+}
+
+function menuIndex(): array {
     $index = [];
-    foreach ($menu['categories'] as $cat) {
+    foreach (menu()['categories'] as $cat) {
         foreach ($cat['items'] as $item) {
             $index[$item['id']] = [
                 'itemId'   => $item['id'],
                 'name'     => $item['name'],
                 'category' => $cat['name'],
+                'catId'    => $cat['id'],
                 'extra'    => !empty($item['extra']),
             ];
         }
     }
     return $index;
+}
+
+/* ── הגדרות המנהל ─────────────────────────────────────────────────── */
+
+function defaultSettings(): array {
+    return [
+        // ברירת מחדל: ירושלים — הדלקה 40 דקות לפני השקיעה, צאת ב-8.5° מתחת לאופק
+        'location' => [
+            'id' => 'jerusalem', 'name' => 'ירושלים', 'lat' => 31.778, 'lon' => 35.235,
+            'candleOffset' => 40, 'havdalahMode' => 'tzeit', 'havdalahMinutes' => 40,
+        ],
+        'limits' => [],          // מזהה קטגוריה → כמה מותר לבחור (אין מפתח = ללא הגבלה)
+        'email'  => ['from' => '', 'replyTo' => '', 'adminNotify' => ''],
+    ];
+}
+
+function loadSettings(): array {
+    $saved = readJson(SETTINGS_FILE) ?? [];
+    $def = defaultSettings();
+    return [
+        'location' => ($saved['location'] ?? []) + $def['location'],
+        'limits'   => $saved['limits'] ?? [],
+        'email'    => ($saved['email'] ?? []) + $def['email'],
+    ];
+}
+
+function cleanEmail(mixed $v): string {
+    $v = is_string($v) ? trim($v) : '';
+    return ($v !== '' && filter_var($v, FILTER_VALIDATE_EMAIL)) ? mb_substr($v, 0, 120) : '';
+}
+
+function cleanSettings(array $in): array {
+    $loc = is_array($in['location'] ?? null) ? $in['location'] : [];
+    $num = fn($v, $min, $max, $def) => is_numeric($v) ? max($min, min($max, (float) $v)) : $def;
+    $def = defaultSettings()['location'];
+
+    $catIds = array_column(menu()['categories'], 'id');
+    $limits = [];
+    foreach ((array) ($in['limits'] ?? []) as $cat => $n) {
+        if (in_array($cat, $catIds, true) && is_numeric($n) && (int) $n > 0) $limits[$cat] = min(99, (int) $n);
+    }
+    $email = is_array($in['email'] ?? null) ? $in['email'] : [];
+
+    return [
+        'location' => [
+            'id'              => text($loc, 'id', 40),
+            'name'            => text($loc, 'name', 60) ?: $def['name'],
+            'lat'             => round($num($loc['lat'] ?? null, -66, 66, $def['lat']), 4),
+            'lon'             => round($num($loc['lon'] ?? null, -180, 180, $def['lon']), 4),
+            'candleOffset'    => (int) $num($loc['candleOffset'] ?? null, 0, 90, 20),
+            'havdalahMode'    => ($loc['havdalahMode'] ?? '') === 'minutes' ? 'minutes' : 'tzeit',
+            'havdalahMinutes' => (int) $num($loc['havdalahMinutes'] ?? null, 10, 120, 40),
+        ],
+        'limits' => $limits,
+        'email'  => [
+            'from'        => cleanEmail($email['from'] ?? ''),
+            'replyTo'     => cleanEmail($email['replyTo'] ?? ''),
+            'adminNotify' => cleanEmail($email['adminNotify'] ?? ''),
+        ],
+    ];
+}
+
+/* ── מיילים ───────────────────────────────────────────────────────── */
+
+function h(string $s): string {
+    return htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
+}
+
+/** שולח מייל HTML בעברית. מחזיר true אם mail() קיבל אותו. */
+function sendMail(string $to, string $subject, string $bodyHtml): bool {
+    if ($to === '') return false;
+    $settings = loadSettings();
+    $business = menu()['business']['name'] ?? 'קייטרינג';
+    $host = preg_replace('/^www\./', '', preg_replace('/:\d+$/', '', $_SERVER['HTTP_HOST'] ?? 'localhost'));
+    $from = $settings['email']['from'] ?: 'noreply@' . $host;
+
+    $headers = [
+        'MIME-Version: 1.0',
+        'Content-Type: text/html; charset=UTF-8',
+        'From: ' . mb_encode_mimeheader($business, 'UTF-8') . " <$from>",
+    ];
+    if ($settings['email']['replyTo']) $headers[] = 'Reply-To: ' . $settings['email']['replyTo'];
+
+    $html = '<!DOCTYPE html><html lang="he" dir="rtl"><body style="margin:0;background:#faf7f1;'
+          . 'font-family:Arial,sans-serif;color:#232326"><div style="max-width:560px;margin:0 auto;'
+          . 'background:#fff;padding:24px;direction:rtl;text-align:right">'
+          . '<div style="background:#27282a;color:#e9b45a;font-size:26px;font-weight:bold;padding:14px;'
+          . 'text-align:center;border-radius:10px">' . h($business) . '</div>'
+          . $bodyHtml . '</div></body></html>';
+
+    return @mail($to, mb_encode_mimeheader($subject, 'UTF-8'), $html, implode("\r\n", $headers), '-f' . $from);
+}
+
+function orderItemsHtml(array $order): string {
+    $byCat = [];
+    foreach ($order['items'] as $i) $byCat[$i['category']][] = $i['name'] . (!empty($i['extra']) ? ' *' : '');
+    $out = '';
+    foreach ($byCat as $cat => $names) {
+        $out .= '<p style="margin:12px 0 4px;color:#c98f2e;font-weight:bold">' . h($cat) . '</p><ul style="margin:0;padding-right:18px">';
+        foreach ($names as $n) $out .= '<li>' . h($n) . '</li>';
+        $out .= '</ul>';
+    }
+    return $out;
+}
+
+function businessFooter(): string {
+    $b = menu()['business'] ?? [];
+    $phones = implode(' / ', $b['phones'] ?? []);
+    return '<p style="margin-top:20px;color:#77736b;font-size:14px">' . h(($b['owner'] ?? '') . ' · ' . $phones) . '</p>';
+}
+
+/** מייל ללקוח על החלטת המנהל. מחזיר 'sent' / 'failed' / 'none' (אין מייל). */
+function mailDecision(array $order): string {
+    $to = $order['customer']['email'] ?? '';
+    if ($to === '') return 'none';
+    $c = $order['customer'];
+    $when = $c['deliveryAt'] ? ' לתאריך ' . $c['deliveryAt'] : '';
+
+    if ($order['approval'] === 'approved') {
+        $subject = 'הזמנתך אושרה';
+        $body = '<h2>שלום ' . h($c['name']) . ',</h2><p>שמחים לעדכן: <b>ההזמנה שלך' . h($when) . ' אושרה</b>.</p>'
+              . ($c['guests'] ? '<p>מספר סועדים: ' . (int) $c['guests'] . '</p>' : '')
+              . orderItemsHtml($order) . businessFooter();
+    } else {
+        $subject = 'עדכון לגבי הזמנתך';
+        $body = '<h2>שלום ' . h($c['name']) . ',</h2><p>לצערנו לא נוכל לקבל את ההזמנה' . h($when) . '.</p>'
+              . (!empty($order['rejectReason']) ? '<p>' . nl2br(h($order['rejectReason'])) . '</p>' : '')
+              . '<p>נשמח לעזור בתאריך אחר — אפשר ליצור איתנו קשר.</p>' . businessFooter();
+    }
+    return sendMail($to, $subject, $body) ? 'sent' : 'failed';
 }
 
 /** תאריך YYYY-MM-DD ושעה HH:MM — או מחרוזת ריקה, אם הערך לא תקין. */
@@ -173,12 +314,27 @@ switch ($action) {
         if (!is_array($ids) || !$ids) fail('לא נבחרו מנות');
         if (count($ids) > MAX_ITEMS) fail('יותר מדי פריטים');
 
+        $email = cleanEmail($in['email'] ?? '');
+        if (text($in, 'email', 120) !== '' && $email === '') fail('כתובת המייל אינה תקינה');
+
         $menu = menuIndex();
         $items = [];
+        $perCat = [];
         foreach (array_unique(array_filter($ids, 'is_string')) as $id) {
-            if (isset($menu[$id])) $items[] = $menu[$id] + ['ready' => false];
+            if (!isset($menu[$id])) continue;
+            $perCat[$menu[$id]['catId']] = ($perCat[$menu[$id]['catId']] ?? 0) + 1;
+            $item = $menu[$id];
+            unset($item['catId']);
+            $items[] = $item + ['ready' => false];
         }
         if (!$items) fail('לא נבחרו מנות');
+
+        // מגבלות הבחירה נבדקות גם כאן — התפריט בדפדפן הוא נוחות, לא אכיפה
+        $limits = loadSettings()['limits'];
+        foreach (menu()['categories'] as $cat) {
+            $max = $limits[$cat['id']] ?? 0;
+            if ($max && ($perCat[$cat['id']] ?? 0) > $max) fail("ב{$cat['name']} אפשר לבחור עד $max");
+        }
 
         $guests = $in['guests'] ?? 0;
         $order = [
@@ -187,6 +343,7 @@ switch ($action) {
             'customer'  => [
                 'name'       => $name,
                 'phone'      => $phone,
+                'email'      => $email,
                 'deliveryDate' => cleanDate($in['deliveryDate'] ?? ''),
                 'deliveryTime' => cleanTime($in['deliveryTime'] ?? ''),
                 'deliveryAt' => deliveryLabel(cleanDate($in['deliveryDate'] ?? ''), cleanTime($in['deliveryTime'] ?? '')),
@@ -195,10 +352,38 @@ switch ($action) {
             ],
             'items'     => $items,
             'status'    => 'pending',
+            'approval'  => 'new',      // new → approved / rejected (החלטת המנהל)
+            'read'      => false,      // האם המנהל כבר פתח את ההזמנה
             'updatedAt' => date('c'),
         ];
         writeJson(orderPath($order['id']), $order);
+
+        $notify = loadSettings()['email']['adminNotify'];
+        if ($notify) {
+            sendMail($notify, 'הזמנה חדשה מ' . $name,
+                '<h2>הזמנה חדשה</h2><p><b>' . h($name) . '</b> · ' . h($phone)
+                . ($order['customer']['deliveryAt'] ? ' · ' . h($order['customer']['deliveryAt']) : '') . '</p>'
+                . orderItemsHtml($order));
+        }
         ok(['id' => $order['id']]);
+    }
+
+    case 'config': {
+        // ציבורי: רק מה שהתפריט צריך כדי לאכוף את מגבלות הבחירה
+        ok(['limits' => (object) loadSettings()['limits']]);
+    }
+
+    case 'settings': {
+        requireAdmin();
+        ok(['settings' => loadSettings()]);
+    }
+
+    case 'saveSettings': {
+        if ($method !== 'POST') fail('שיטה לא נתמכת', 405);
+        requireAdmin();
+        $settings = cleanSettings(body());
+        writeJson(SETTINGS_FILE, $settings);
+        ok(['settings' => $settings]);
     }
 
     case 'state': {
@@ -287,6 +472,21 @@ switch ($action) {
             $c['deliveryAt'] = deliveryLabel($c['deliveryDate'] ?? '', $c['deliveryTime'] ?? '');
             unset($c);
         }
+        if (isset($in['read'])) {
+            $order['read'] = (bool) $in['read'];
+        }
+        // אישור או סירוב — ומייל ללקוח, אם השאיר כתובת
+        $mail = null;
+        if (isset($in['approval']) && in_array($in['approval'], ['new', 'approved', 'rejected'], true)) {
+            $order['approval'] = $in['approval'];
+            $order['rejectReason'] = $in['approval'] === 'rejected' ? text($in, 'reason', 1000) : '';
+            $order['decidedAt'] = date('c');
+            $order['read'] = true;
+            if ($in['approval'] !== 'new' && !empty($in['notify'])) {
+                $mail = mailDecision($order);
+                $order['mailLog'][] = ['at' => date('c'), 'approval' => $in['approval'], 'result' => $mail];
+            }
+        }
         if (isset($in['adminNotes'])) {
             $order['adminNotes'] = text($in, 'adminNotes', 2000);
         }
@@ -294,7 +494,7 @@ switch ($action) {
         writeJson($path, $order);
         flock($lock, LOCK_UN);
         fclose($lock);
-        ok(['order' => $order]);
+        ok(['order' => $order, 'mail' => $mail]);
     }
 
     case 'delete': {
