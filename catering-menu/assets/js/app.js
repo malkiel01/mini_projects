@@ -316,8 +316,12 @@
 
     async function init() {
         try {
-            const res = await fetch('assets/menu.json', { cache: 'no-cache' });
-            menu = await res.json();
+            // התפריט מהשרת (כולל עריכות המנהל); בלי שרת — הקובץ המקורי
+            try {
+                const res = await fetch('api.php?action=menu', { cache: 'no-cache' });
+                menu = (await res.json()).menu;
+            } catch { /* נופלים לקובץ */ }
+            if (!menu?.categories) menu = await (await fetch('assets/menu.json', { cache: 'no-cache' })).json();
         } catch {
             $('#menu').innerHTML = '<p class="empty">לא הצלחנו לטעון את התפריט. נסו לרענן את הדף.</p>';
             return;

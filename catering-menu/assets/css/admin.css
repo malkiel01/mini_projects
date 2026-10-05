@@ -259,7 +259,7 @@
 
 .view-switch {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
     background: #ece7dc;
     border-radius: 12px;
     padding: 4px;
@@ -538,3 +538,131 @@
 .zmanim.compact .ico { width: 1.15em; height: 1.15em; }
 .zmanim .havdalah { color: #3f4f9a; }
 .cal-legend .ico { width: 1.3em; height: 1.3em; }
+
+/* ── עריכת התפריט ─────────────────────────────────────────────── */
+
+.editor { padding-bottom: 90px; }
+.editor-hint { color: var(--muted); font-size: .88rem; margin-bottom: 12px; }
+.ed-cat {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 4px 16px rgba(39, 40, 42, .06);
+    margin-bottom: 14px;
+    overflow: hidden;
+}
+.ed-cat-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 12px;
+    background: #fbf6ec;
+    border-bottom: 1px solid var(--line);
+}
+.ed-cat-name {
+    flex: 1;
+    min-width: 0;
+    border: 1.5px solid transparent;
+    background: transparent;
+    border-radius: 8px;
+    padding: 6px 8px;
+    font-family: 'Amatic SC', 'Heebo', cursive;
+    font-size: 1.7rem;
+    font-weight: 700;
+    color: var(--gold-dark);
+}
+.ed-cat-name:hover, .ed-cat-name:focus { border-color: var(--line); background: #fff; outline: none; }
+.ed-count { font-size: .78rem; color: var(--muted); white-space: nowrap; }
+.ed-items { list-style: none; }
+.ed-item { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.ed-item + .ed-item { border-top: 1px solid var(--line); }
+.ed-item.is-hidden { background: #f5f3ef; }
+.ed-item.is-hidden .ed-name { color: var(--muted); text-decoration: line-through; }
+.ed-name {
+    width: 100%;
+    border: 1.5px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 1rem;
+    background: #fff;
+}
+.ed-name:focus { outline: none; border-color: var(--gold); }
+.ed-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.ed-tools .spacer { flex: 1; }
+.mini {
+    border: 1px solid var(--line);
+    background: #fff;
+    border-radius: 8px;
+    min-width: 32px;
+    height: 32px;
+    padding: 0 8px;
+    font-size: .82rem;
+}
+.mini.danger { color: var(--danger); border-color: #f0c9c4; }
+.mini.tog-btn.on { background: #fff1d6; border-color: #f0d9ab; }
+.mini.tog-btn.off { background: #efede9; color: #6d6961; }
+.tog {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: .82rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    height: 32px;
+    padding: 0 8px;
+    cursor: pointer;
+}
+.tog.on { background: #fffaf0; border-color: #f0d9ab; color: var(--gold-dark); font-weight: 500; }
+.ed-opts {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 8px;
+    background: #fff8ea;
+    border-radius: 8px;
+    padding: 8px;
+}
+.ed-opts[hidden] { display: none; }
+.ed-opts label { display: flex; flex-direction: column; gap: 3px; font-size: .78rem; color: var(--muted); }
+.ed-opts input { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font-size: .9rem; }
+@media (max-width: 560px) { .ed-opts { grid-template-columns: 1fr; } }
+.ed-add {
+    width: 100%;
+    border: 0;
+    border-top: 1px dashed var(--line);
+    background: transparent;
+    padding: 10px;
+    color: var(--gold-dark);
+    font-weight: 500;
+}
+.biz { background: var(--card); border-radius: var(--radius); margin: 14px 0; padding: 0 14px; }
+.biz summary { padding: 12px 0; font-weight: 700; cursor: pointer; }
+.biz .fields { padding-bottom: 14px; }
+.save-bar {
+    position: fixed;
+    inset-inline: 12px;
+    bottom: calc(12px + var(--safe-b));
+    max-width: 736px;
+    margin: 0 auto;
+    background: var(--coal);
+    color: #fff;
+    border-radius: 16px;
+    padding: 8px 8px 8px 14px;
+    padding-inline-start: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 20;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .25);
+    animation: rise .2s ease-out;
+}
+.save-bar span { flex: 1; font-size: .92rem; }
+.save-bar .btn { min-height: 40px; padding: 8px 14px; }
+.save-bar .btn-ghost { color: #fff; border-color: rgba(255, 255, 255, .25); }
+
+.editor-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    font-size: .8rem;
+    color: var(--muted);
+    margin: -4px 0 12px;
+}

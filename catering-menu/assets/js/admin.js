@@ -545,7 +545,7 @@
 
         const box = $('#setLimits');
         box.textContent = '';
-        const menu = await fetch('../assets/menu.json', { cache: 'no-cache' }).then(r => r.json());
+        const { menu } = await api('menuAdmin');
         for (const c of menu.categories) {
             box.append(el('label', {}, `${c.name} (${c.items.length})`,
                 el('input', { type: 'number', min: '1', max: '99', inputmode: 'numeric', 'data-cat': c.id,
@@ -617,6 +617,180 @@
         }
     }
 
+    /* ── עריכת התפריט ────────────────────────────────────────────── */
+
+    let edit = null;                // עותק העבודה של התפריט
+    let savedJson = '';             // התפריט כפי שנשמר — להשוואה (יש שינויים?)
+    let customMenu = false;         // האם יש בשרת תפריט ערוך (ולא המקורי)
+
+    const dirty = () => edit && JSON.stringify(edit) !== savedJson;
+
+    async function loadMenuEditor() {
+        try {
+            const res = await api('menuAdmin');
+            setEdit(res.menu, res.custom);
+        } catch (ex) {
+            $('#editorBody').textContent = ex.message;
+        }
+    }
+
+    function setEdit(menu, custom) {
+        edit = JSON.parse(JSON.stringify(menu));
+        savedJson = JSON.stringify(edit);
+        customMenu = custom;
+        renderEditor();
+    }
+
+    function markDirty() {
+        $('#saveBar').hidden = !dirty();
+    }
+
+    function moveIn(list, i, dir) {
+        const j = i + dir;
+        if (j < 0 || j >= list.length) return;
+        [list[i], list[j]] = [list[j], list[i]];
+        renderEditor();
+    }
+
+    function smallBtn(label, title, onclick, cls = '') {
+        return el('button', { type: 'button', class: 'mini ' + cls, title, 'aria-label': title, onclick }, label);
+    }
+
+    function renderEditor() {
+        const body = $('#editorBody');
+        const y = window.scrollY;
+        body.textContent = '';
+
+        edit.categories.forEach((cat, ci) => {
+            const list = el('ul', { class: 'ed-items' });
+            cat.items.forEach((item, ii) => list.append(editorItem(cat, item, ii)));
+
+            const nameInput = el('input', { class: 'ed-cat-name', value: cat.name, maxlength: '60', 'aria-label': 'שם הקטגוריה' });
+            nameInput.addEventListener('input', () => { cat.name = nameInput.value; markDirty(); });
+
+            body.append(el('section', { class: 'ed-cat' },
+                el('header', { class: 'ed-cat-head' },
+                    nameInput,
+                    el('span', { class: 'ed-count' }, `${cat.items.filter(i => !i.hidden).length}/${cat.items.length}`),
+                    smallBtn('↑', 'הזזת הקטגוריה למעלה', () => moveIn(edit.categories, ci, -1)),
+                    smallBtn('↓', 'הזזת הקטגוריה למטה', () => moveIn(edit.categories, ci, 1)),
+                    smallBtn('✕', 'מחיקת הקטגוריה', () => {
+                        if (cat.items.length && !confirm(`למחוק את "${cat.name}" ואת ${cat.items.length} המנות שבה?`)) return;
+                        edit.categories.splice(ci, 1);
+                        renderEditor();
+                    }, 'danger')),
+                list,
+                el('button', {
+                    type: 'button', class: 'ed-add', onclick: () => {
+                        cat.items.push({ name: '' });
+                        renderEditor();
+                        const inputs = document.querySelectorAll(`.ed-cat:nth-of-type(${ci + 1}) .ed-name`);
+                        inputs[inputs.length - 1]?.focus();
+                    },
+                }, '+ מנה חדשה ב' + (cat.name || 'קטגוריה'))));
+        });
+
+        $('#bizOwner').value = edit.business.owner || '';
+        $('#bizPhones').value = (edit.business.phones || []).join(', ');
+        $('#bizWhatsapp').value = edit.business.whatsapp || '';
+        $('#bizExtraNote').value = edit.extraNote || '';
+        $('#resetMenu').hidden = !customMenu;
+        markDirty();
+        window.scrollTo(0, y);
+    }
+
+    function editorItem(cat, item, ii) {
+        const name = el('input', { class: 'ed-name', value: item.name, maxlength: '120', placeholder: 'שם המנה', 'aria-label': 'שם המנה' });
+        name.addEventListener('input', () => { item.name = name.value; markDirty(); });
+
+        const extra = el('label', { class: 'tog' + (item.extra ? ' on' : '') },
+            el('input', { type: 'checkbox', checked: item.extra ? true : null }), '* תוספת');
+        extra.querySelector('input').addEventListener('change', e => {
+            item.extra = e.target.checked || undefined;
+            extra.classList.toggle('on', e.target.checked);
+            markDirty();
+        });
+
+        const hasOpts = !!item.options?.length;
+        const optsPanel = el('div', { class: 'ed-opts', hidden: hasOpts ? null : true });
+        const optLabel = el('input', { value: item.optionLabel || '', placeholder: 'כותרת, למשל: סוג הדג', maxlength: '40' });
+        const optList = el('input', { value: (item.options || []).join(', '), placeholder: 'אפשרויות מופרדות בפסיק: דניס, מושט, בורי', maxlength: '300' });
+        const syncOpts = () => {
+            const opts = optList.value.split(/[,،]/).map(x => x.trim()).filter(Boolean);
+            if (opts.length) { item.options = opts; item.optionLabel = optLabel.value.trim() || undefined; }
+            else { delete item.options; delete item.optionLabel; }
+            markDirty();
+        };
+        optLabel.addEventListener('input', syncOpts);
+        optList.addEventListener('input', syncOpts);
+        optsPanel.append(
+            el('label', {}, 'כותרת הבחירה', optLabel),
+            el('label', {}, 'אפשרויות (לפחות 2) — הלקוח יחויב לבחור אחת', optList));
+
+        return el('li', { class: 'ed-item' + (item.hidden ? ' is-hidden' : '') },
+            name,
+            el('div', { class: 'ed-tools' },
+                extra,
+                smallBtn(item.hidden ? '🙈 מוסתרת' : '👁', item.hidden ? 'מוסתרת — לחצו כדי להציג ללקוחות' : 'מוצגת — לחצו כדי להסתיר מהלקוחות', () => {
+                    item.hidden = !item.hidden || undefined;
+                    renderEditor();
+                }, 'tog-btn' + (item.hidden ? ' off' : '')),
+                smallBtn(hasOpts ? `☰ ${item.options.length}` : '☰', 'אפשרויות בחירה למנה (למשל סוג הדג)', () => {
+                    optsPanel.hidden = !optsPanel.hidden;
+                    if (!optsPanel.hidden) optList.focus();
+                }, hasOpts ? 'tog-btn on' : 'tog-btn'),
+                el('span', { class: 'spacer' }),
+                smallBtn('↑', 'למעלה', () => moveIn(cat.items, ii, -1)),
+                smallBtn('↓', 'למטה', () => moveIn(cat.items, ii, 1)),
+                smallBtn('✕', 'מחיקת המנה', () => {
+                    if (item.name && !confirm(`למחוק את "${item.name}"?`)) return;
+                    cat.items.splice(ii, 1);
+                    renderEditor();
+                }, 'danger')),
+            optsPanel);
+    }
+
+    async function saveMenu() {
+        const btn = $('#saveMenu');
+        btn.disabled = true;
+        try {
+            const res = await api('saveMenu', edit);
+            setEdit(res.menu, res.custom);
+            toast('✓ התפריט נשמר — הלקוחות כבר רואים את הגרסה החדשה');
+        } catch (ex) {
+            toast('השמירה נכשלה: ' + ex.message);
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    function wireMenuEditor() {
+        $('#addCategory').addEventListener('click', () => {
+            edit.categories.push({ name: 'קטגוריה חדשה', items: [{ name: '' }] });
+            renderEditor();
+            const names = document.querySelectorAll('.ed-cat-name');
+            names[names.length - 1].select();
+        });
+        const biz = (id, fn) => $(id).addEventListener('input', e => { fn(e.target.value); markDirty(); });
+        biz('#bizOwner', v => { edit.business.owner = v; });
+        biz('#bizPhones', v => { edit.business.phones = v.split(',').map(x => x.trim()).filter(Boolean); });
+        biz('#bizWhatsapp', v => { edit.business.whatsapp = v.replace(/\D/g, ''); });
+        biz('#bizExtraNote', v => { edit.extraNote = v; });
+        $('#saveMenu').addEventListener('click', saveMenu);
+        $('#discardMenu').addEventListener('click', () => {
+            if (confirm('לבטל את כל השינויים שלא נשמרו?')) setEdit(JSON.parse(savedJson), customMenu);
+        });
+        $('#resetMenu').addEventListener('click', async () => {
+            if (!confirm('לחזור לתפריט המקורי? כל העריכות יימחקו.')) return;
+            try {
+                const res = await api('resetMenu', {});
+                setEdit(res.menu, res.custom);
+                toast('התפריט חזר למקור');
+            } catch (ex) { toast(ex.message); }
+        });
+        window.addEventListener('beforeunload', e => { if (dirty()) { e.preventDefault(); e.returnValue = ''; } });
+    }
+
     /* ── יומן ─────────────────────────────────────────────────────── */
 
     const DAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
@@ -666,7 +840,9 @@
             b.setAttribute('aria-selected', String(b.dataset.view === v)));
         $('#cal').hidden = v !== 'calendar';
         $('#listView').hidden = v !== 'list';
+        $('#menuEditor').hidden = v !== 'menu';
         if (v === 'calendar') renderCalendar();
+        if (v === 'menu' && !edit) loadMenuEditor();
     }
 
     function setMode(mode, date) {
@@ -870,6 +1046,7 @@
 
     async function init() {
         $('#authForm').addEventListener('submit', submitAuth);
+        wireMenuEditor();
         $('#bell').addEventListener('click', () => { renderNotes(); $('#notesSheet').showModal(); });
         $('#gear').addEventListener('click', openSettings);
         $('#markAllRead').addEventListener('click', markAllRead);
