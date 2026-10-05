@@ -287,6 +287,7 @@ async function route() {
     else if (h === '#/favorites') await renderFavorites();
     else if (h === '#/diag') await renderDiag();
     else if (h === '#/logs') await renderLogs();
+    else if (h === '#/scout') await renderScout();
     else if (h === '#/settings') await renderSettingsPrivate();
     else if (h === '#/settings/public') await renderSettingsPublic();
     else if (h === '#/settings/users') await renderUsers();
@@ -1223,6 +1224,7 @@ function settingsNav(active) {
     ['#/settings/users', 'משתמשים', true],
     ['#/diag', 'פיתוח', true],
     ['#/logs', 'יומן', true],
+    ['#/scout', 'סורק', true],
   ];
   return `<nav class="subnav" aria-label="הגדרות">${items
     .filter(([, , dev]) => !dev || state.user.is_developer)
@@ -1600,6 +1602,155 @@ async function renderLogs() {
 
   await load();
   drawTokens((await api('log-tokens')).tokens);
+}
+
+// ───────────────────────── סורק אתרים (מפתח) ─────────────────────────
+
+const SCOUT_LABEL = { new: 'חדש', wanted: 'לייבוא', skipped: 'דילוג', imported: 'יובא', error: 'שגיאה' };
+
+async function renderScout() {
+  if (!state.user.is_developer) { go('#/settings'); return; }
+  const filters = { status: 'new', site: '', q: '' };
+  let data = { items: [], counts: {}, sites: [] };
+  let running = false;
+  let stop = false;
+
+  view.innerHTML = `
+    <section class="card settings settings--wide scout">
+      ${settingsNav()}
+      <h2>🔎 סורק אתרים <span class="muted">— כלי פרטי</span></h2>
+      <p class="muted">מדביקים דף קטגוריה, דף בית, או sitemap של אתר מתכונים. הסורק מציע מועמדים; אתה מסמן מה כן ומה לא;
+        המסומנים מיובאים אחד-אחד עם מרווח בין הבאות, בכבוד ל-robots.txt, פרטיים ועם קרדיט. לא סריקה המונית — בכוונה.</p>
+      <form id="scout-form" class="form">
+        <label>דף רשימה או sitemap
+          <input name="url" type="url" inputmode="url" dir="ltr" placeholder="https://www.example.co.il/recipes/  או  …/recipe-sitemap.xml" required autocomplete="off">
+        </label>
+        <button class="btn btn--primary" type="submit">מצא מתכונים</button>
+        <p class="note" id="scout-msg" hidden></p>
+      </form>
+
+      <div class="scout__bar">
+        <nav class="subnav" id="scout-tabs" aria-label="מצב"></nav>
+        <div class="logfilter">
+          <select name="site" aria-label="אתר"><option value="">כל האתרים</option></select>
+          <input type="search" name="q" placeholder="חיפוש בשם" autocomplete="off">
+        </div>
+      </div>
+      <div class="actions scout__bulk">
+        <button class="btn" type="button" data-bulk="wanted">סמן הכול לייבוא</button>
+        <button class="btn btn--ghost" type="button" data-bulk="skipped">דלג על הכול</button>
+        <button class="btn btn--ghost btn--danger" type="button" data-bulk="remove">מחק מהרשימה</button>
+      </div>
+      <div id="scout-list" class="scout__list"></div>
+
+      <div class="scout__run" id="scout-run">
+        <h3>ייבוא המסומנים</h3>
+        <div class="row">
+          <label>מרווח בין פריטים (שניות) <input type="number" name="gap" min="3" max="60" value="8" inputmode="numeric"></label>
+          <label class="check check--big"><input type="checkbox" name="rewrite" id="scout-rewrite"> לנסח מחדש בבינה</label>
+        </div>
+        <div class="actions">
+          <button class="btn btn--primary" type="button" id="scout-go">ייבא את המסומנים</button>
+          <button class="btn btn--danger" type="button" id="scout-stop" hidden>עצור</button>
+        </div>
+        <ol class="scout__progress" id="scout-progress"></ol>
+      </div>
+    </section>`;
+
+  const listEl = $('#scout-list');
+  const msgEl = $('#scout-msg');
+  const note = (t, k) => { msgEl.textContent = t; msgEl.className = 'note' + (k ? ' note--' + k : ''); msgEl.hidden = !t; };
+  api('ai-status').then(({ available }) => { const cb = $('#scout-rewrite'); cb.checked = available; cb.disabled = !available; if (!available) cb.parentElement.append(' (אין מפתח API)'); }).catch(() => {});
+
+  const drawTabs = () => {
+    $('#scout-tabs').innerHTML = ['new', 'wanted', 'skipped', 'imported', 'error'].map((s) =>
+      `<a href="#/scout" data-status="${s}" class="${filters.status === s ? 'is-on' : ''}">${SCOUT_LABEL[s]} (${data.counts[s] || 0})</a>`).join('');
+    $$('[data-status]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); filters.status = a.dataset.status; load(); }));
+    const sel = $('select[name="site"]'); const cur = sel.value;
+    sel.innerHTML = '<option value="">כל האתרים</option>' + data.sites.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+    sel.value = cur;
+  };
+  const drawList = () => {
+    listEl.innerHTML = data.items.length ? data.items.map((it) => `
+      <article class="scout-item scout-item--${it.status}" data-id="${it.id}">
+        <div class="scout-item__main">
+          <strong>${esc(it.title || '(בלי שם)')}</strong>
+          <a class="muted small" dir="ltr" href="${esc(it.url)}" target="_blank" rel="noopener nofollow">${esc(it.url.replace(/^https?:\/\//, '').slice(0, 80))}</a>
+          ${it.error ? `<span class="note note--${it.status === 'error' ? 'err' : 'warn'} small">${esc(it.error)}</span>` : ''}
+          ${it.recipe_id ? `<a class="link" href="#/r/${it.recipe_id}">למתכון שיובא ›</a>` : ''}
+        </div>
+        <div class="scout-item__actions">
+          ${it.status !== 'imported' ? `
+            <button class="btn ${it.status === 'wanted' ? 'btn--primary' : ''}" type="button" data-mark="wanted" title="לייבא">✓ כן</button>
+            <button class="btn ${it.status === 'skipped' ? 'btn--ghost' : ''}" type="button" data-mark="skipped" title="לא">✕ לא</button>` : '<span class="badge badge--public">יובא</span>'}
+        </div>
+      </article>`).join('') : '<p class="muted">אין פריטים במצב הזה.</p>';
+    $$('[data-mark]', listEl).forEach((b) => b.addEventListener('click', async () => {
+      const id = +b.closest('.scout-item').dataset.id;
+      try { data = await api('scout-mark', { ids: [id], status: b.dataset.mark, ...filters }); drawTabs(); drawList(); }
+      catch (err) { note(err.message, 'err'); }
+    }));
+  };
+  const load = async () => {
+    try { data = await api('scout-list', filters); drawTabs(); drawList(); }
+    catch (err) { note(err.message, 'err'); }
+  };
+
+  $('#scout-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button'); btn.disabled = true;
+    note('מביא את הדף… (robots.txt + מרווח)');
+    try {
+      const res = await api('scout-page', { url: e.target.url.value.trim() });
+      note(`נמצאו ${res.found} מועמדים ב-${res.site}, ${res.new} חדשים.${res.is_sitemap_index ? ' זה אינדקס של sitemaps — להדביק אחד מהם.' : ''}`, 'ok');
+      filters.status = 'new'; filters.site = ''; await load();
+    } catch (err) { note(err.message, 'err'); }
+    btn.disabled = false;
+  });
+  $('select[name="site"]').addEventListener('change', (e) => { filters.site = e.target.value; load(); });
+  $('input[name="q"]').addEventListener('input', (e) => { filters.q = e.target.value.trim(); clearTimeout(load._t); load._t = setTimeout(load, 300); });
+  $$('[data-bulk]').forEach((b) => b.addEventListener('click', async () => {
+    const ids = data.items.filter((it) => it.status !== 'imported').map((it) => it.id);
+    if (!ids.length) return;
+    if (b.dataset.bulk === 'remove') {
+      if (!confirm(`למחוק ${ids.length} פריטים מהרשימה? (המתכונים שיובאו נשארים)`)) return;
+      try { await api('scout-remove', { ids }); await load(); } catch (err) { note(err.message, 'err'); }
+      return;
+    }
+    try { data = await api('scout-mark', { ids, status: b.dataset.bulk, ...filters }); drawTabs(); drawList(); } catch (err) { note(err.message, 'err'); }
+  }));
+
+  // ── הריצה: פריט-פריט, מרווח ביניהם, אפשר לעצור. הדפדפן הוא המתזמן —
+  //    כך הקצב נראה, נשלט, ונעצר כשסוגרים את הדף. ──
+  $('#scout-go').addEventListener('click', async () => {
+    if (running) return;
+    const wanted = (await api('scout-list', { status: 'wanted' })).items;
+    if (!wanted.length) { note('אין פריטים מסומנים לייבוא. סמן "✓ כן" ליד מה שרוצים.', 'warn'); return; }
+    running = true; stop = false;
+    $('#scout-go').disabled = true; $('#scout-stop').hidden = false;
+    const gap = Math.max(3, +$('input[name="gap"]').value || 8) * 1000;
+    const rewrite = $('#scout-rewrite').checked;
+    const prog = $('#scout-progress'); prog.innerHTML = '';
+    for (let i = 0; i < wanted.length; i++) {
+      if (stop) { prog.insertAdjacentHTML('beforeend', '<li class="muted">נעצר.</li>'); break; }
+      const it = wanted[i];
+      const li = document.createElement('li'); li.textContent = `${it.title || it.url} — מייבא…`; prog.append(li);
+      try {
+        const r = await api('scout-import', { id: it.id, rewrite });
+        li.innerHTML = `<a href="#/r/${r.recipe_id}">${esc(r.title || it.title)}</a> ✅${r.rewritten ? ' נוסח מחדש' : rewrite ? ' <span class="muted">(לא נוסח' + (r.ai_error ? ': ' + esc(r.ai_error) : r.similarity != null ? ', קרוב מדי' : '') + ')</span>' : ''}${r.warnings?.length ? ` <span class="muted small">${esc(r.warnings.join(' · '))}</span>` : ''}`;
+      } catch (err) { li.innerHTML = `${esc(it.title || it.url)} ❌ ${esc(err.message)}`; }
+      if (i < wanted.length - 1 && !stop) {
+        const jitter = gap + Math.random() * gap * 0.5;   // לא קצב מכונה קבוע
+        li.insertAdjacentHTML('beforeend', ` <span class="muted small">ממתין ${Math.round(jitter / 1000)} שנ׳</span>`);
+        await new Promise((res) => setTimeout(res, jitter));
+      }
+    }
+    running = false; $('#scout-go').disabled = false; $('#scout-stop').hidden = true;
+    await load();
+  });
+  $('#scout-stop').addEventListener('click', () => { stop = true; });
+
+  await load();
 }
 
 async function renderDiag() {

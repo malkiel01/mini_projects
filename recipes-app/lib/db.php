@@ -123,6 +123,23 @@ function migrate(PDO $pdo): void {
             fetched_at   TEXT    NOT NULL
         );
 
+        -- סורק אתרים (כלי פרטי של המפתח): מועמדים שנמצאו בדפי רשימה / sitemap,
+        -- מה סומן לייבוא ומה לדילוג, ומה כבר יובא (lib/scout.php).
+        CREATE TABLE IF NOT EXISTS scout_items (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            url        TEXT    NOT NULL UNIQUE,
+            title      TEXT    NOT NULL DEFAULT '',
+            site       TEXT    NOT NULL,
+            found_on   TEXT    NOT NULL,     -- הדף שבו נמצא הקישור
+            status     TEXT    NOT NULL DEFAULT 'new'
+                       CHECK (status IN ('new','wanted','skipped','imported','error')),
+            recipe_id  INTEGER REFERENCES recipes(id) ON DELETE SET NULL,
+            error      TEXT,
+            created_at TEXT    NOT NULL,
+            decided_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_scout_status ON scout_items(status, site);
+
         CREATE TABLE IF NOT EXISTS user_tokens (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

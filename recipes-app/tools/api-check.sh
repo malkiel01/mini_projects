@@ -23,6 +23,7 @@ define('MEDIA_DIR', '$TMP/media');
 define('IMPORT_ALLOW_LOCAL', true);   // הייבוא מביא מ-127.0.0.1 — רק כאן
 define('SECRETS_FILE', '$TMP/secrets.json');
 define('AI_ENDPOINT', 'http://127.0.0.1:$((PORT + 1))/ai-mock.php');   // מדמה את Anthropic
+define('SCOUT_TEST_ROBOTS', true);   // גם בשרת המקומי — לבדוק את robots.txt של קבצי הדוגמה
 PHPBOOT
 
 # sendmail_path הוא PHP_INI_SYSTEM: ini_set בזמן ריצה אינו משנה אותו, ולכן
@@ -307,6 +308,29 @@ check 'דמיון נמוך, ניסיון אחד'           "$R" '"similarity":0,
 check 'הניסוח נרשם ביומן עם טוקנים'     "$(call log '{"action":"ai-rewrite"}')" '"in_tokens":300,"out_tokens":200'
 call logout >/dev/null; call login '{"username":"tester","password":"sod12345"}' >/dev/null
 check 'שמירה כ"מבוסס על"'               "$(call recipe-save "{\"id\":$IID,\"title\":\"עוגת גבינה של בית מלון\",\"source_rewritten\":true,\"sections\":[{\"ingredients\":[{\"free_text\":\"4 ביצים\"}],\"steps\":[{\"text\":\"בשלב 1: מחממים.\"}]}]}")" '"rewritten":true'
+call logout >/dev/null
+
+echo
+echo "8ח. סורק אתרים — דף רשימה, סימון, ייבוא אחד-אחד, robots.txt"
+FXB="http://127.0.0.1:$FXPORT"
+call login '{"username":"tester","password":"sod12345"}' >/dev/null
+check 'משתמש רגיל אינו רואה את הסורק'   "$(call scout-list)" 'מפתח'
+call logout >/dev/null
+call login '{"username":"owner","password":"sod12345"}' >/dev/null
+P=$(call scout-page "{\"url\":\"$FXB/listing.html\"}")
+check 'נמצאו ארבעה מועמדים (לא ניווט, לא אתר אחר)' "$P" '"found":4'
+check 'זה שכבר יובא ידנית מסומן "יובא" מראש'     "$P" '"url":"http:\\/\\/127.0.0.1:'"$FXPORT"'\\/jsonld-10dakot.html"[^}]*"status":"imported"'
+check 'קריאה חוזרת — אפס חדשים'                 "$(call scout-page "{\"url\":\"$FXB/listing.html\"}")" '"new":0'
+check 'sitemap נקרא'                             "$(call scout-page "{\"url\":\"$FXB/sitemap.xml\"}")" '"found":3'
+SC=$(call scout-list '{"status":"new"}' | python3 -c 'import sys,json; d=json.load(sys.stdin); print([i["id"] for i in d["items"] if i["url"].endswith("jsonld-carine.html") and "127.0.0.1:" in i["url"]][0])')
+check 'סימון לייבוא'                             "$(call scout-mark "{\"ids\":[$SC],\"status\":\"wanted\",\"status\":\"wanted\"}")" '"counts":{[^}]*"wanted":1'
+R=$(call scout-import "{\"id\":$SC,\"rewrite\":true}")
+check 'יובא: מתכון פרטי עם קרדיט, נוסח מחדש'     "$R" '"recipe_id":[0-9]*,"title":"קרין גורן מכינה[^}]*"rewritten":true'
+check 'ובסורק מסומן יובא'                        "$(call scout-list '{"status":"imported"}')" 'jsonld-carine.html'
+SN=$(call scout-list '{"status":"new"}' | python3 -c 'import sys,json; d=json.load(sys.stdin); print([i["id"] for i in d["items"] if i["url"].endswith("norecipe.html") and "127.0.0.1:" in i["url"]][0])')
+check 'robots.txt אוסר → לא מובא, מסומן שגיאה'   "$(call scout-import "{\"id\":$SN}")" 'robots.txt'
+check 'הפריט במצב שגיאה'                         "$(call scout-list '{"status":"error"}')" 'norecipe.html'
+check 'הסריקה והייבוא ביומן'                     "$(call log '{"action":"scout-import"}')" '"rewritten":true'
 call logout >/dev/null
 
 echo
