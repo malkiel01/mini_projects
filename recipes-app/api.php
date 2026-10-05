@@ -22,6 +22,7 @@ require_once __DIR__ . '/lib/importer.php';
 require_once __DIR__ . '/lib/secrets.php';
 require_once __DIR__ . '/lib/ai.php';
 require_once __DIR__ . '/lib/scout.php';
+require_once __DIR__ . '/lib/pantry.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -287,6 +288,28 @@ try {
         $sections = is_array($in['sections'] ?? null) ? $in['sections'] : [];
         ok(aiRewriteSteps($sections, str_field($in, 'title', 120), $user));
     }
+
+    // ───────── מה יש לי בבית ─────────
+
+    case 'pantry':
+        ok(pantryList($user));
+
+    case 'pantry-add': {
+        $names = is_array($in['names'] ?? null) ? $in['names'] : [str_field($in, 'name', 60)];
+        ok(pantryAdd($names, (string) ($in['source'] ?? 'text'), $user));
+    }
+
+    case 'pantry-remove':
+        ok(pantryRemove((int) ($in['id'] ?? 0), $user));
+
+    case 'pantry-clear':
+        ok(pantryClear($user));
+
+    case 'pantry-staple':
+        ok(pantryStapleToggle(str_field($in, 'name', 40), !empty($in['on']), $user));
+
+    case 'pantry-match':
+        ok(pantryMatch($user, max(0, min(5, (int) ($in['max_missing'] ?? 2)))));
 
     // ───────── סורק אתרים (מפתח) ─────────
 

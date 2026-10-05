@@ -285,6 +285,7 @@ async function route() {
     else if (h === '#/import' || h.startsWith('#/import?')) await renderImport(new URLSearchParams(h.split('?')[1] || '').get('url') || '');
     else if ((m = h.match(/^#\/edit\/(\d+)$/))) await renderEditor(+m[1]);
     else if (h === '#/favorites') await renderFavorites();
+    else if (h === '#/pantry') await renderPantry();
     else if (h === '#/diag') await renderDiag();
     else if (h === '#/logs') await renderLogs();
     else if (h === '#/scout') await renderScout();
@@ -317,6 +318,7 @@ async function renderList() {
         <a class="btn btn--primary" href="#/new">+ מתכון חדש</a>
         <a class="btn" href="#/import">🌐 ייבוא מהרשת</a>
       </div>
+      <a class="btn btn--wide" href="#/pantry">🥕 מה אפשר להכין ממה שיש לי בבית?</a>
       <nav class="subnav subnav--list" aria-label="סינון">
         <a href="#/" class="is-on" data-scope="all">הכול</a>
         <a href="#/" data-scope="web">מהרשת</a>
@@ -1065,6 +1067,139 @@ async function renderEditor(id, draft = null) {
   };
 
   draw();
+}
+
+// ───────────────────────── מה יש לי בבית ─────────────────────────
+
+async function renderPantry() {
+  let pantry = await api('pantry');
+  let maxMissing = 2;
+  let aiOk = false;
+  api('ai-status').then((r) => { aiOk = r.available; $('#photo-hint').textContent = aiOk ? 'מצלמים את המקרר, המזווה או שקית הקניות — הבינה מזהה את המוצרים ואתה מאשר.' : 'זיהוי בתמונה דורש מפתח API (המפתח מגדיר). בינתיים — להקליד.'; }).catch(() => {});
+
+  view.innerHTML = `
+    <section class="card settings pantry">
+      <a class="link" href="#/">‹ לרשימה</a>
+      <h2>🥕 מה יש לי בבית</h2>
+      <p class="muted">מזינים את המוצרים שיש — בהקלדה או בצילום — ומקבלים את המתכונים שאפשר להכין מהם, עם "חסר: …" למה שכמעט.</p>
+
+      <form id="pantry-add" class="pantry__add">
+        <input name="name" placeholder="מוצר, למשל: עגבניות, גבינה צהובה" autocomplete="off" maxlength="60" required>
+        <button class="btn btn--primary" type="submit">הוסף</button>
+      </form>
+      <label class="upload pantry__photo">
+        <input type="file" accept="image/*" capture="environment" hidden id="pantry-file">
+        <span class="btn">📷 צלם מוצרים</span>
+        <small class="muted" id="photo-hint"></small>
+      </label>
+      <p class="note" id="pantry-msg" hidden></p>
+      <div id="pantry-confirm" hidden></div>
+
+      <h3>במזווה <span class="muted" id="pantry-count"></span></h3>
+      <div class="chips" id="pantry-chips"></div>
+      <div class="actions"><button class="link link--danger" type="button" id="pantry-clear">נקה הכול</button></div>
+
+      <h3>יש לי תמיד <span class="muted">— מוצרי יסוד, נחשבים קיימים</span></h3>
+      <div class="chips" id="pantry-staples"></div>
+
+      <h3>מה אפשר להכין</h3>
+      <div class="logfilter">
+        <select id="pantry-miss" aria-label="חסרים">
+          <option value="0">רק מה שאפשר להכין עכשיו</option>
+          <option value="1">חסר עד מוצר אחד</option>
+          <option value="2" selected>חסרים עד 2 מוצרים</option>
+          <option value="3">חסרים עד 3 מוצרים</option>
+        </select>
+      </div>
+      <div id="pantry-results" class="list"></div>
+    </section>`;
+
+  const msgEl = $('#pantry-msg');
+  const note = (t, k) => { msgEl.textContent = t; msgEl.className = 'note' + (k ? ' note--' + k : ''); msgEl.hidden = !t; };
+
+  const drawPantry = () => {
+    $('#pantry-count').textContent = pantry.items.length ? `(${pantry.items.length})` : '';
+    $('#pantry-chips').innerHTML = pantry.items.length
+      ? pantry.items.map((it) => `<span class="chip chip--item">${it.source === 'photo' ? '📷 ' : ''}${esc(it.name)} <button type="button" data-rm="${it.id}" aria-label="הסר">✕</button></span>`).join('')
+      : '<p class="muted">עדיין ריק. מוסיפים מוצר למעלה.</p>';
+    $$('[data-rm]').forEach((b) => b.addEventListener('click', async () => {
+      try { pantry = await api('pantry-remove', { id: +b.dataset.rm }); drawPantry(); match(); } catch (err) { note(err.message, 'err'); }
+    }));
+    $('#pantry-staples').innerHTML = pantry.staples.map((s) => `
+      <label class="chip chip--pick"><input type="checkbox" data-staple="${esc(s.name)}" ${s.on ? 'checked' : ''}> ${esc(s.name)}</label>`).join('');
+    $$('[data-staple]').forEach((c) => c.addEventListener('change', async () => {
+      try { pantry = await api('pantry-staple', { name: c.dataset.staple, on: c.checked }); match(); } catch (err) { note(err.message, 'err'); }
+    }));
+  };
+
+  const match = async () => {
+    const box = $('#pantry-results');
+    if (!pantry.items.length) { box.innerHTML = '<p class="muted">כשיהיו מוצרים במזווה — המתכונים יופיעו כאן.</p>'; return; }
+    box.innerHTML = '<p class="muted">מחפש…</p>';
+    try {
+      const { recipes } = await api('pantry-match', { max_missing: maxMissing });
+      box.innerHTML = recipes.length ? recipes.map((r) => `
+        <a class="item item--pantry" href="#/r/${r.id}">
+          ${r.thumb ? `<img class="item__thumb" src="${esc(r.thumb)}" alt="" loading="lazy">` : '<span class="item__thumb item__thumb--empty">🍲</span>'}
+          <div class="item__main">
+            <strong>${esc(r.title)}</strong>
+            <span class="muted">${esc(r.owner_name)}${r.source_name ? ` · 🌐 ${esc(r.source_name)}` : ''}${r.work_minutes || r.wait_minutes ? ' · ' + minutes((r.work_minutes || 0) + (r.wait_minutes || 0)) : ''}</span>
+            <span class="coverage"><span class="coverage__bar"><span style="width:${Math.round(r.coverage * 100)}%"></span></span> ${r.have}/${r.need} רכיבים</span>
+            ${r.missing.length ? `<span class="muted small">חסר: ${r.missing.map(esc).join(', ')}</span>` : '<span class="badge badge--public">אפשר להכין עכשיו ✓</span>'}
+          </div>
+        </a>`).join('')
+      : '<p class="muted">אין מתכון שמתאים. אפשר להרחיב ל"חסרים עד 3 מוצרים", או להוסיף עוד מוצרים.</p>';
+    } catch (err) { box.innerHTML = `<p class="note note--err">${esc(err.message)}</p>`; }
+  };
+
+  $('#pantry-add').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const names = e.target.name.value.split(/[,،\n]+/).map((s) => s.trim()).filter(Boolean);
+    if (!names.length) return;
+    try { pantry = await api('pantry-add', { names, source: 'text' }); e.target.reset(); e.target.name.focus(); drawPantry(); match(); }
+    catch (err) { note(err.message, 'err'); }
+  });
+  $('#pantry-clear').addEventListener('click', async () => {
+    if (!pantry.items.length || !confirm('לרוקן את המזווה?')) return;
+    try { pantry = await api('pantry-clear'); drawPantry(); match(); } catch (err) { note(err.message, 'err'); }
+  });
+  $('#pantry-miss').addEventListener('change', (e) => { maxMissing = +e.target.value; match(); });
+
+  // ── צילום: מכווצים בדפדפן, שולחים לזיהוי, ומאשרים מה להוסיף ──
+  $('#pantry-file').addEventListener('change', async (e) => {
+    const raw = e.target.files?.[0]; if (!raw) return;
+    note('מזהה מוצרים בתמונה… (עד חצי דקה)');
+    try {
+      const file = await shrinkImage(raw);
+      const fd = new FormData(); fd.append('file', file);
+      const res = await fetch('./pantry.php', { method: 'POST', body: fd, credentials: 'same-origin' });
+      const data = await res.json().catch(() => ({}));
+      if (!data.success) throw new Error(data.error || 'הזיהוי נכשל');
+      note('');
+      const box = $('#pantry-confirm');
+      if (!data.products.length) { note('לא זוהו מוצרי מזון בתמונה. לנסות צילום קרוב יותר, או להקליד.', 'warn'); return; }
+      box.hidden = false;
+      box.innerHTML = `
+        <div class="note note--ok pantry__confirm">
+          <strong>זוהו ${data.products.length} מוצרים — סמן מה להוסיף:</strong>
+          <div class="chips">${data.products.map((p, i) => `<label class="chip chip--pick"><input type="checkbox" value="${esc(p)}" checked> ${esc(p)}</label>`).join('')}</div>
+          <div class="actions">
+            <button class="btn btn--primary" type="button" id="confirm-add">הוסף למזווה</button>
+            <button class="btn btn--ghost" type="button" id="confirm-cancel">ביטול</button>
+          </div>
+        </div>`;
+      $('#confirm-add').addEventListener('click', async () => {
+        const names = $$('#pantry-confirm input:checked').map((c) => c.value);
+        try { pantry = await api('pantry-add', { names, source: 'photo' }); box.hidden = true; drawPantry(); match(); note(`נוספו ${names.length} מוצרים`, 'ok'); }
+        catch (err) { note(err.message, 'err'); }
+      });
+      $('#confirm-cancel').addEventListener('click', () => { box.hidden = true; });
+    } catch (err) { note(err.message, 'err'); }
+    e.target.value = '';
+  });
+
+  drawPantry();
+  match();
 }
 
 // ───────────────────────── ייבוא מהרשת ─────────────────────────

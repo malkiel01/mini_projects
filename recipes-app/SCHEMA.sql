@@ -107,6 +107,22 @@ CREATE TABLE scout_items (
 );
 CREATE INDEX idx_scout_status ON scout_items(status, site);
 
+-- "מה יש לי בבית" (סעיף 13): המזווה של כל משתמש, ומוצרי יסוד שכיבה.
+CREATE TABLE pantry_items (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name       TEXT    NOT NULL,
+  norm       TEXT    NOT NULL,
+  source     TEXT    NOT NULL DEFAULT 'text' CHECK (source IN ('text','photo')),
+  created_at TEXT    NOT NULL,
+  UNIQUE (user_id, norm)
+);
+CREATE TABLE pantry_staples_off (
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name       TEXT    NOT NULL,
+  PRIMARY KEY (user_id, name)
+);
+
 -- אסימונים חד־פעמיים: אימות דוא"ל ואיפוס סיסמה. שורה אחת לשני השימושים,
 -- כי המחזור זהה — נוצר, נשלח, נצרך פעם אחת, פג.
 CREATE TABLE user_tokens (
