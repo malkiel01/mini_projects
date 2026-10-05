@@ -9,6 +9,7 @@
     let menu = null;
     const byId = new Map();          // מזהה מנה → { item, cat }
     let selected = new Set();
+    let choices = {};                // מזהה מנה → האפשרות שנבחרה (למשל סוג הדג)
     let limits = {};                 // מזהה קטגוריה → כמה מותר לבחור (מהגדרות המנהל)
 
     /* ── אחסון מקומי (עלול להיחסם במצב פרטי — לכן try) ─────────── */
@@ -19,7 +20,7 @@
     function saveDraft(extra = {}) {
         try {
             const prev = loadDraft();
-            localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...prev, ...extra, items: [...selected] }));
+            localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...prev, ...extra, items: [...selected], choices }));
         } catch { /* לא נורא — רק נוחות */ }
     }
     function clearDraft() {
@@ -72,14 +73,15 @@
             const list = el('ul', { class: 'items' });
             for (const item of cat.items) {
                 byId.set(item.id, { item, cat });
-                list.append(el('li', { class: 'item' },
+                list.append(el('li', { class: 'item' + (selected.has(item.id) ? ' on' : ''), 'data-item': item.id },
                     el('button', {
                         type: 'button', class: 'item-btn', 'data-id': item.id,
                         'aria-pressed': String(selected.has(item.id)),
                     },
                     el('span', { class: 'tick', 'aria-hidden': 'true' }, '✓'),
                     el('span', { class: 'item-name' }, item.name),
-                    item.extra ? el('span', { class: 'extra-tag' }, '* ' + menu.extraNote) : null)));
+                    item.extra ? el('span', { class: 'extra-tag' }, '* ' + menu.extraNote) : null),
+                    item.options ? optionPicker(item) : null));
             }
             main.append(el('section', { class: 'cat', id: 'cat-' + cat.id },
                 el('h2', { class: 'cat-title' }, cat.name,
@@ -87,6 +89,8 @@
         }
 
         main.addEventListener('click', e => {
+            const opt = e.target.closest('.opt');
+            if (opt) return choose(opt.dataset.item, opt.dataset.value);
             const btn = e.target.closest('.item-btn');
             if (!btn) return;
             toggle(btn.dataset.id);
@@ -94,6 +98,29 @@
         refreshCounts();
         watchActiveCategory();
     }
+
+    /** כפתורי בחירה שנפתחים מתחת למנה כשמסמנים אותה (למשל דניס / מושט / בורי). */
+    function optionPicker(item) {
+        return el('div', { class: 'opts', role: 'radiogroup', 'aria-label': item.optionLabel || 'בחירה' },
+            el('span', { class: 'opts-label' }, (item.optionLabel || 'בחירה') + ':'),
+            ...item.options.map(v => el('button', {
+                type: 'button', class: 'opt', role: 'radio', 'data-item': item.id, 'data-value': v,
+                'aria-checked': String(choices[item.id] === v),
+            }, v)));
+    }
+
+    function choose(id, value) {
+        if (!selected.has(id)) toggle(id);
+        choices[id] = value;
+        document.querySelectorAll(`.opt[data-item="${CSS.escape(id)}"]`).forEach(b =>
+            b.setAttribute('aria-checked', String(b.dataset.value === value)));
+        $(`[data-item="${CSS.escape(id)}"].item`)?.classList.remove('missing');
+        saveDraft();
+        if ($('#orderSheet').open) renderSummary();
+    }
+
+    /** שם המנה כפי שיופיע בהזמנה — כולל האפשרות שנבחרה. */
+    const label = i => i.name + (choices[i.id] ? ' — ' + choices[i.id] : '');
 
     function toggle(id) {
         if (!selected.has(id)) {
@@ -105,9 +132,15 @@
                 return;
             }
         }
-        if (selected.has(id)) selected.delete(id); else selected.add(id);
+        if (selected.has(id)) { selected.delete(id); delete choices[id]; } else selected.add(id);
         const btn = $(`.item-btn[data-id="${CSS.escape(id)}"]`);
         if (btn) btn.setAttribute('aria-pressed', String(selected.has(id)));
+        const li = $(`.item[data-item="${CSS.escape(id)}"]`);
+        if (li) {
+            li.classList.toggle('on', selected.has(id));
+            li.classList.remove('missing');
+            li.querySelectorAll('.opt').forEach(b => b.setAttribute('aria-checked', String(choices[id] === b.dataset.value)));
+        }
         if (navigator.vibrate) navigator.vibrate(8);
         saveDraft();
         refreshCounts();
@@ -157,8 +190,8 @@
             if (!picked.length) continue;
             box.append(el('div', { class: 'summary-cat' },
                 el('h3', {}, `${cat.name} (${picked.length})`),
-                el('ul', {}, ...picked.map(i => el('li', {},
-                    i.name + (i.extra ? ' *' : ''),
+                el('ul', {}, ...picked.map(i => el('li', { class: i.options && !choices[i.id] ? 'missing' : '' },
+                    label(i) + (i.options && !choices[i.id] ? ` — בחרו ${i.optionLabel || 'אפשרות'}` : '') + (i.extra ? ' *' : ''),
                     el('button', {
                         type: 'button', 'aria-label': 'הסרת ' + i.name,
                         onclick: () => { toggle(i.id); selected.size ? renderSummary() : $('#orderSheet').close(); },
@@ -205,7 +238,7 @@
         for (const cat of menu.categories) {
             const picked = cat.items.filter(i => selected.has(i.id));
             if (!picked.length) continue;
-            lines.push('', `*${cat.name}*`, ...picked.map(i => '• ' + i.name + (i.extra ? ' (' + menu.extraNote + ')' : '')));
+            lines.push('', `*${cat.name}*`, ...picked.map(i => '• ' + label(i) + (i.extra ? ' (' + menu.extraNote + ')' : '')));
         }
         if (d.notes) lines.push('', 'הערות: ' + d.notes);
         return lines.join('\n');
@@ -221,6 +254,15 @@
         if (d.phone.replace(/\D/g, '').length < 9) return fail('נא למלא מספר טלפון תקין');
         if (d.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)) return fail('כתובת המייל אינה תקינה');
         if (!selected.size) return fail('לא נבחרו מנות');
+        const missing = [...selected].map(id => byId.get(id).item).find(i => i.options && !choices[i.id]);
+        if (missing) {
+            $('#orderSheet').close();
+            const li = $(`.item[data-item="${CSS.escape(missing.id)}"]`);
+            li.classList.add('missing');
+            li.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            toast(`נא לבחור ${missing.optionLabel || 'אפשרות'}: ${missing.options.join(' / ')}`);
+            return;
+        }
 
         const btn = $('#submitOrder');
         btn.disabled = true;
@@ -229,7 +271,7 @@
             const res = await fetch('api.php?action=order', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...d, items: [...selected] }),
+                body: JSON.stringify({ ...d, items: [...selected], options: choices }),
             });
             const json = await res.json().catch(() => ({}));
             if (!res.ok || !json.success) throw new Error(json.error || 'השליחה נכשלה');
@@ -255,9 +297,12 @@
         $('#doneSheet').showModal();
         // פרטי הלקוח נשמרים להזמנה הבאה; המנות מתאפסות.
         selected = new Set();
+        choices = {};
         clearDraft();
         saveDraft({ name: d.name, phone: d.phone, email: d.email });
         document.querySelectorAll('.item-btn').forEach(b => b.setAttribute('aria-pressed', 'false'));
+        document.querySelectorAll('.item.on').forEach(li => li.classList.remove('on'));
+        document.querySelectorAll('.opt').forEach(b => b.setAttribute('aria-checked', 'false'));
         refreshCounts();
     }
 
@@ -278,6 +323,7 @@
 
         const known = new Set(menu.categories.flatMap(c => c.items.map(i => i.id)));
         selected = new Set((loadDraft().items || []).filter(id => known.has(id)));
+        choices = Object.fromEntries(Object.entries(loadDraft().choices || {}).filter(([id]) => selected.has(id)));
 
         renderBrand();
         renderMenu();

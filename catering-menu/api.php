@@ -102,6 +102,7 @@ function menuIndex(): array {
                 'category' => $cat['name'],
                 'catId'    => $cat['id'],
                 'extra'    => !empty($item['extra']),
+                'options'  => $item['options'] ?? [],
             ];
         }
     }
@@ -318,13 +319,21 @@ switch ($action) {
         if (text($in, 'email', 120) !== '' && $email === '') fail('כתובת המייל אינה תקינה');
 
         $menu = menuIndex();
+        $chosen = is_array($in['options'] ?? null) ? $in['options'] : [];
         $items = [];
         $perCat = [];
         foreach (array_unique(array_filter($ids, 'is_string')) as $id) {
             if (!isset($menu[$id])) continue;
             $perCat[$menu[$id]['catId']] = ($perCat[$menu[$id]['catId']] ?? 0) + 1;
             $item = $menu[$id];
-            unset($item['catId']);
+            // מנה עם אפשרויות (למשל סוג הדג) — הבחירה חובה, ונכנסת לשם המנה
+            if ($item['options']) {
+                $option = $chosen[$id] ?? '';
+                if (!in_array($option, $item['options'], true)) fail('נא לבחור ' . $item['name'] . ': ' . implode(' / ', $item['options']));
+                $item['option'] = $option;
+                $item['name'] .= ' — ' . $option;
+            }
+            unset($item['catId'], $item['options']);
             $items[] = $item + ['ready' => false];
         }
         if (!$items) fail('לא נבחרו מנות');

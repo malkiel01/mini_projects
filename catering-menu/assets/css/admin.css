@@ -530,3 +530,11 @@
     .zmanim.compact .sunset { display: none; }
     .zmanim.compact { font-size: .56rem; }
 }
+
+/* סמלי הזמנים */
+.ico { display: inline-block; width: 1.5em; height: 1.5em; vertical-align: -.25em; flex: none; }
+.ico svg { width: 100%; height: 100%; display: block; }
+.zmanim .z { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.zmanim.compact .ico { width: 1.15em; height: 1.15em; }
+.zmanim .havdalah { color: #3f4f9a; }
+.cal-legend .ico { width: 1.3em; height: 1.3em; }

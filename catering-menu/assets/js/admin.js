@@ -578,8 +578,10 @@
         const zf = HebCal.zmanim(fri.getFullYear(), fri.getMonth() + 1, fri.getDate(), { ...l, havdalah: { mode: l.havdalahMode, minutes: l.havdalahMinutes } });
         const zs = HebCal.zmanim(sat.getFullYear(), sat.getMonth() + 1, sat.getDate(), { ...l, havdalah: { mode: l.havdalahMode, minutes: l.havdalahMinutes } });
         const par = HebCal.parasha(sat.getFullYear(), sat.getMonth() + 1, sat.getDate());
-        $('#setPreview').textContent = `השבת הקרובה ב${l.name}${par ? ' (פרשת ' + par + ')' : ''}: ` +
-            `🕯️ ${zf.candles || '—'} · ✨ ${zs.havdalah || '—'} · 🌅 שקיעה ביום שישי ${zf.sunset}`;
+        const prev = $('#setPreview');
+        prev.textContent = `השבת הקרובה ב${l.name}${par ? ' (פרשת ' + par + ')' : ''}: `;
+        prev.append(icon('candles'), ` הדלקה ${zf.candles || '—'} · `, icon('stars'), ` צאת ${zs.havdalah || '—'} · `,
+            icon('sunset'), ` שקיעה ביום שישי ${zf.sunset}`);
     }
 
     function formLocation() {
@@ -752,13 +754,34 @@
             short ? h.name.replace(/ · .*/, '') : h.name));
     }
 
+    /* סמלים: שני נרות שבת להדלקה, שלושה כוכבים קטנים לצאת שבת, ושמש שוקעת.
+       SVG ולא אימוג׳י — כדי שייראו אותו דבר בכל טלפון. */
+    const ICONS = {
+        candles: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 2.2c1.3 1.5 1.6 2.6.9 3.5a1.2 1.2 0 0 1-1.8 0c-.7-.9-.4-2 .9-3.5z" fill="#f2a83b"/>' +
+                 '<path d="M16.5 2.2c1.3 1.5 1.6 2.6.9 3.5a1.2 1.2 0 0 1-1.8 0c-.7-.9-.4-2 .9-3.5z" fill="#f2a83b"/>' +
+                 '<rect x="6" y="7.5" width="3" height="11" rx=".8" fill="#fbf3df" stroke="#c98f2e" stroke-width=".9"/>' +
+                 '<rect x="15" y="7.5" width="3" height="11" rx=".8" fill="#fbf3df" stroke="#c98f2e" stroke-width=".9"/>' +
+                 '<path d="M3.5 19.2h17v1.6a1.2 1.2 0 0 1-1.2 1.2H4.7a1.2 1.2 0 0 1-1.2-1.2z" fill="#c98f2e"/></svg>',
+        stars:   '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+                 '<path d="M8 3l1.3 3.4L12.8 7.7 9.3 9 8 12.4 6.7 9 3.2 7.7 6.7 6.4z" fill="#4b5fb0"/>' +
+                 '<path d="M17.5 9l.9 2.3 2.3.9-2.3.9-.9 2.3-.9-2.3-2.3-.9 2.3-.9z" fill="#6f83d6"/>' +
+                 '<path d="M10 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" fill="#8c9de0"/></svg>',
+        sunset:  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 16a7 7 0 0 1 14 0z" fill="#f0a24a"/>' +
+                 '<path d="M2.5 16.5h19M6 19.5h12" stroke="#c98f2e" stroke-width="1.6" stroke-linecap="round"/></svg>',
+    };
+    function icon(name) {
+        const i = el('i', { class: 'ico ico-' + name });
+        i.innerHTML = ICONS[name];      // מחרוזת קבועה מהקוד — לא קלט משתמש
+        return i;
+    }
+
     /** שקיעה בכל יום; הדלקת נרות בערב שבת/חג; צאת במוצאי שבת/חג. */
     function zmanLine(d, compact) {
         const z = HebCal.zmanim(d.getFullYear(), d.getMonth() + 1, d.getDate(), loc());
         const parts = [];
-        if (z.candles) parts.push(el('span', { class: 'z candles', title: 'הדלקת נרות' }, compact ? `🕯️${z.candles}` : `🕯️ הדלקת נרות ${z.candles}`));
-        if (z.havdalah) parts.push(el('span', { class: 'z havdalah', title: z.havdalahLabel }, compact ? `✨${z.havdalah}` : `✨ ${z.havdalahLabel} ${z.havdalah}`));
-        parts.push(el('span', { class: 'z sunset', title: 'שקיעה' }, compact ? `🌅${z.sunset}` : `🌅 שקיעה ${z.sunset}`));
+        if (z.candles) parts.push(el('span', { class: 'z candles', title: 'הדלקת נרות ' + z.candles }, icon('candles'), compact ? z.candles : `הדלקת נרות ${z.candles}`));
+        if (z.havdalah) parts.push(el('span', { class: 'z havdalah', title: `${z.havdalahLabel} ${z.havdalah}` }, icon('stars'), compact ? z.havdalah : `${z.havdalahLabel} ${z.havdalah}`));
+        parts.push(el('span', { class: 'z sunset', title: 'שקיעה ' + z.sunset }, icon('sunset'), compact ? z.sunset : `שקיעה ${z.sunset}`));
         return el('div', { class: 'zmanim' + (compact ? ' compact' : '') }, ...parts);
     }
 
@@ -877,6 +900,8 @@
             b.addEventListener('click', () => setView(b.dataset.view)));
         document.querySelectorAll('.cal-modes [data-mode]').forEach(b =>
             b.addEventListener('click', () => setMode(b.dataset.mode)));
+        $('#legendCandles').prepend(icon('candles'));
+        $('#legendStars').prepend(icon('stars'));
         $('#calPrev').addEventListener('click', () => move(-1));
         $('#calNext').addEventListener('click', () => move(1));
         $('#calToday').addEventListener('click', () => { cursor = new Date(); renderCalendar(); });
