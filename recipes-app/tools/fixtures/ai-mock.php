@@ -11,6 +11,14 @@ $mode = $_GET['mode'] ?? 'ok';
 if ($mode === '401') { http_response_code(401); echo json_encode(['type' => 'error', 'error' => ['type' => 'authentication_error', 'message' => 'invalid x-api-key']]); exit; }
 if (($_SERVER['HTTP_X_API_KEY'] ?? '') === '') { http_response_code(401); echo json_encode(['error' => ['message' => 'missing key']]); exit; }
 $body = json_decode((string) file_get_contents('php://input'), true);
+// בקשת זיהוי תמונה (תוכן עם בלוק image) → רשימת מוצרים קבועה
+$content = $body['messages'][0]['content'] ?? '';
+if (is_array($content) && array_filter($content, fn($b) => ($b['type'] ?? '') === 'image')) {
+    echo json_encode(['id' => 'msg_mock', 'type' => 'message', 'model' => $body['model'] ?? 'mock', 'stop_reason' => 'end_turn',
+        'content' => [['type' => 'text', 'text' => json_encode(['products' => ['עגבנייה', 'גבינה צהובה', 'ביצה', 'עגבנייה']], JSON_UNESCAPED_UNICODE)]],
+        'usage' => ['input_tokens' => 1500, 'output_tokens' => 40]], JSON_UNESCAPED_UNICODE);
+    exit;
+}
 $text = (string) ($body['messages'][0]['content'] ?? '');
 $json = substr($text, (int) strpos($text, '['));
 $json = substr($json, 0, (int) strrpos($json, ']') + 1);

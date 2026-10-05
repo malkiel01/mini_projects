@@ -649,3 +649,19 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
 .scout-item--error { border-color: var(--err); }
 .scout__run { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
 .scout__progress { margin-top: 10px; padding-inline-start: 20px; display: flex; flex-direction: column; gap: 6px; }
+
+/* ───────── מה יש לי בבית ───────── */
+
+.pantry__add { display: flex; gap: 8px; margin-top: 8px; }
+.pantry__add input { flex: 1; min-width: 0; }
+.pantry__photo { margin-top: 10px; }
+.chip--item { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; }
+.chip--item button { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 1rem; min-width: 28px; min-height: 28px; padding: 0; }
+.chip--item button:hover { color: var(--err); }
+.pantry__confirm .chips { margin: 8px 0; }
+.coverage { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; }
+.coverage__bar { flex: 1; max-width: 140px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.coverage__bar > span { display: block; height: 100%; background: var(--accent); }
+.item--pantry { align-items: flex-start; }
+.item--pantry .item__main { gap: 4px; }
+.item--pantry .item__main strong { white-space: normal; }

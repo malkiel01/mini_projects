@@ -334,6 +334,23 @@ check 'הסריקה והייבוא ביומן'                     "$(call log '
 call logout >/dev/null
 
 echo
+echo "8ט. מה יש לי בבית — מזווה, התאמה, וזיהוי בתמונה (מדמה)"
+check 'אורח — נדרשת התחברות'            "$(call pantry)" 'נדרשת התחברות'
+call login '{"username":"tester","password":"sod12345"}' >/dev/null
+check 'מזווה ריק עם מוצרי יסוד'          "$(call pantry)" '"items":\[\],"staples":\[{"name":"מלח","on":true'
+check 'הוספה בהקלדה, כפילות נבלעת'       "$(call pantry-add '{"names":["קמח","  ביצים ","קמח"],"source":"text"}')" '"added":2'
+check 'התאמה: המתכון המיובא (רכיב יחיד: ביצים) מכוסה' "$(call pantry-match '{"max_missing":5}')" '"title":"עוגת גבינה של בית מלון"[^}]*"need":1,"have":1,"coverage":1,"missing":\[\]'
+check 'סינון 0 חסרים — רק המכוסים'        "$(call pantry-match '{"max_missing":0}')" '"pantry_count":2'
+check 'כיבוי מוצר יסוד'                  "$(call pantry-staple '{"name":"מלח","on":false}')" '"name":"מלח","on":false'
+PH=$(curl -sS -b "$JAR" -c "$JAR" -F "file=@$TMP/real.png" "http://127.0.0.1:$PORT/recipes-app/pantry.php")
+check 'זיהוי בתמונה (מדמה): שלושה מוצרים, בלי כפילות' "$PH" '"products":\["עגבנייה","גבינה צהובה","ביצה"\]'
+check 'הוספה מהזיהוי כ-photo'            "$(call pantry-add '{"names":["עגבנייה","גבינה צהובה"],"source":"photo"}')" '"source":"photo"'
+PID=$(call pantry | python3 -c 'import sys,json; print(json.load(sys.stdin)["items"][0]["id"])')
+check 'הסרה'                             "$(call pantry-remove "{\"id\":$PID}")" '"success":true'
+check 'הזיהוי ביומן עם טוקנים'           "$(call logout >/dev/null; call login '{"username":"owner","password":"sod12345"}' >/dev/null; call log '{"action":"pantry-photo"}')" '"in_tokens":1500'
+call logout >/dev/null
+
+echo
 echo "8ה. יומן — כל בקשה נרשמה, וטוקן צפייה עם תוקף"
 call login '{"username":"owner","password":"sod12345"}' >/dev/null
 L=$(call log '{"limit":500}')

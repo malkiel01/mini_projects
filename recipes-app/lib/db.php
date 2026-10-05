@@ -140,6 +140,22 @@ function migrate(PDO $pdo): void {
         );
         CREATE INDEX IF NOT EXISTS idx_scout_status ON scout_items(status, site);
 
+        -- מה יש לי בבית: המזווה של כל משתמש, ומוצרי היסוד שכיבה (lib/pantry.php)
+        CREATE TABLE IF NOT EXISTS pantry_items (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name       TEXT    NOT NULL,
+            norm       TEXT    NOT NULL,     -- מנורמל, להשוואה ולמניעת כפילות
+            source     TEXT    NOT NULL DEFAULT 'text' CHECK (source IN ('text','photo')),
+            created_at TEXT    NOT NULL,
+            UNIQUE (user_id, norm)
+        );
+        CREATE TABLE IF NOT EXISTS pantry_staples_off (
+            user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name       TEXT    NOT NULL,
+            PRIMARY KEY (user_id, name)
+        );
+
         CREATE TABLE IF NOT EXISTS user_tokens (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
