@@ -23,6 +23,7 @@ require_once __DIR__ . '/lib/secrets.php';
 require_once __DIR__ . '/lib/ai.php';
 require_once __DIR__ . '/lib/scout.php';
 require_once __DIR__ . '/lib/pantry.php';
+require_once __DIR__ . '/lib/shopping.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -288,6 +289,60 @@ try {
         $sections = is_array($in['sections'] ?? null) ? $in['sections'] : [];
         ok(aiRewriteSteps($sections, str_field($in, 'title', 120), $user));
     }
+
+    // ───────── רשימת קניות ומצב בישול (8) ─────────
+
+    case 'shopping-lists':
+        ok(['lists' => shoppingLists($user)]);
+
+    case 'shopping-create': {
+        $recipes = is_array($in['recipes'] ?? null) ? $in['recipes'] : [];   // {id: factor}
+        ok(['list' => shoppingCreate($recipes, isset($in['name']) ? (string) $in['name'] : null, $user), 'lists' => shoppingLists($user)]);
+    }
+
+    case 'shopping-get':
+        ok(['list' => shoppingGet((int) ($in['id'] ?? 0), $user)]);
+
+    case 'shopping-add-recipes':
+        ok(['list' => shoppingAddRecipes((int) ($in['id'] ?? 0), is_array($in['recipes'] ?? null) ? $in['recipes'] : [], $user)]);
+
+    case 'shopping-remove-recipe':
+        ok(['list' => shoppingRemoveRecipe((int) ($in['id'] ?? 0), (int) ($in['recipe_id'] ?? 0), $user)]);
+
+    case 'shopping-check':
+        shoppingCheck((int) ($in['item_id'] ?? 0), !empty($in['checked']), $user);
+        ok();
+
+    case 'shopping-add-item':
+        ok(['list' => shoppingAddManual((int) ($in['id'] ?? 0), str_field($in, 'label', 80), $user)]);
+
+    case 'shopping-remove-item':
+        shoppingRemoveItem((int) ($in['item_id'] ?? 0), $user);
+        ok();
+
+    case 'shopping-clear-checked':
+        ok(['list' => shoppingClearChecked((int) ($in['id'] ?? 0), $user)]);
+
+    case 'shopping-rename':
+        ok(['list' => shoppingRename((int) ($in['id'] ?? 0), str_field($in, 'name', 60), $user)]);
+
+    case 'shopping-delete':
+        shoppingDelete((int) ($in['id'] ?? 0), $user);
+        ok(['lists' => shoppingLists($user)]);
+
+    case 'shopping-text':
+        ok(['text' => shoppingAsText((int) ($in['id'] ?? 0), $user)]);
+
+    case 'cook-progress':
+        ok(['done' => cookingProgress((int) ($in['recipe_id'] ?? 0), $user)]);
+
+    case 'cook-done':
+        cookingSetDone((int) ($in['step_id'] ?? 0), !empty($in['done']), $user);
+        ok();
+
+    case 'cook-reset':
+        cookingReset((int) ($in['recipe_id'] ?? 0), $user);
+        ok();
 
     // ───────── מה יש לי בבית ─────────
 

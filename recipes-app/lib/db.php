@@ -316,6 +316,7 @@ function migrate(PDO $pdo): void {
         CREATE TABLE IF NOT EXISTS shopping_list_recipes (
             list_id   INTEGER NOT NULL REFERENCES shopping_lists(id) ON DELETE CASCADE,
             recipe_id INTEGER REFERENCES recipes(id) ON DELETE SET NULL,
+            factor    REAL    NOT NULL DEFAULT 1,   -- המרת מנות של המתכון ברשימה הזאת
             PRIMARY KEY (list_id, recipe_id)
         );
 
@@ -330,7 +331,9 @@ function migrate(PDO $pdo): void {
             optional   INTEGER NOT NULL DEFAULT 0,
             manual     INTEGER NOT NULL DEFAULT 0,
             checked    INTEGER NOT NULL DEFAULT 0,
-            position   INTEGER NOT NULL DEFAULT 0
+            position   INTEGER NOT NULL DEFAULT 0,
+            amount_max REAL,                        -- טווח: 300–400
+            recipe_count INTEGER NOT NULL DEFAULT 1 -- מכמה מתכונים הגיעה השורה
         );
         CREATE INDEX IF NOT EXISTS idx_list_items ON shopping_list_items(list_id, position);
 
@@ -352,6 +355,9 @@ function migrate(PDO $pdo): void {
         addColumnIfMissing($pdo, 'recipes', $col, 'TEXT');
     }
     addColumnIfMissing($pdo, 'recipes', 'source_rewritten', 'INTEGER NOT NULL DEFAULT 0');
+    addColumnIfMissing($pdo, 'shopping_list_recipes', 'factor', 'REAL NOT NULL DEFAULT 1');
+    addColumnIfMissing($pdo, 'shopping_list_items', 'amount_max', 'REAL');
+    addColumnIfMissing($pdo, 'shopping_list_items', 'recipe_count', 'INTEGER NOT NULL DEFAULT 1');
 
     // ריפוי חד־כיווני: מנהל שנוצר לפני שהמשתמש הראשון אומת אוטומטית.
     // בלי זה, אם mail() לא פעל בשרת, המנהל היחיד נעול בחוץ לתמיד.

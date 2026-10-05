@@ -351,6 +351,25 @@ check 'הזיהוי ביומן עם טוקנים'           "$(call logout >/dev
 call logout >/dev/null
 
 echo
+echo "8י. רשימת קניות ומצב בישול"
+call login '{"username":"tester","password":"sod12345"}' >/dev/null
+SL=$(call shopping-create "{\"recipes\":{\"$RID\":2},\"name\":\"שבת\"}")
+check 'רשימה ממתכון ×2'                 "$SL" '"name":"שבת"[^}]*"recipes":\[{"id":'"$RID"',"title":"[^"]*","factor":2}'
+LID=$(printf '%s' "$SL" | python3 -c 'import sys,json; print(json.load(sys.stdin)["list"]["id"])')
+IT=$(printf '%s' "$SL" | python3 -c 'import sys,json; print(json.load(sys.stdin)["list"]["items"][0]["id"])')
+check 'סימון שורה'                      "$(call shopping-check "{\"item_id\":$IT,\"checked\":true}")" '"success":true'
+check 'שורה ידנית'                      "$(call shopping-add-item "{\"id\":$LID,\"label\":\"חלב\"}")" '"label":"חלב"[^}]*"manual":true'
+check 'טקסט לשיתוף'                     "$(call shopping-text "{\"id\":$LID}")" '🛒 שבת'
+check 'רשימת הרשימות'                   "$(call shopping-lists)" '"name":"שבת"[^}]*"recipes":1'
+check 'של אחר — לא'                     "$(call logout >/dev/null; call login '{"username":"owner","password":"sod12345"}' >/dev/null; call shopping-get "{\"id\":$LID}")" 'אינה קיימת'
+call logout >/dev/null; call login '{"username":"tester","password":"sod12345"}' >/dev/null
+STEP=$(call recipe "{\"id\":$RID}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["recipe"]["sections"][0]["steps"][0]["id"])')
+check 'בישול: בוצע'                     "$(call cook-done "{\"step_id\":$STEP,\"done\":true}"; call cook-progress "{\"recipe_id\":$RID}")" '"done":\['"$STEP"'\]'
+check 'איפוס'                           "$(call cook-reset "{\"recipe_id\":$RID}"; call cook-progress "{\"recipe_id\":$RID}")" '"done":\[\]'
+check 'מחיקת רשימה'                     "$(call shopping-delete "{\"id\":$LID}")" '"lists":\[\]'
+call logout >/dev/null
+
+echo
 echo "8ה. יומן — כל בקשה נרשמה, וטוקן צפייה עם תוקף"
 call login '{"username":"owner","password":"sod12345"}' >/dev/null
 L=$(call log '{"limit":500}')

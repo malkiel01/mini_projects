@@ -286,6 +286,9 @@ async function route() {
     else if ((m = h.match(/^#\/edit\/(\d+)$/))) await renderEditor(+m[1]);
     else if (h === '#/favorites') await renderFavorites();
     else if (h === '#/pantry') await renderPantry();
+    else if (h === '#/shopping') await renderShoppingLists();
+    else if ((m = h.match(/^#\/shopping\/(\d+)$/))) await renderShoppingList(+m[1]);
+    else if ((m = h.match(/^#\/cook\/(\d+)$/))) await renderCook(+m[1]);
     else if (h === '#/diag') await renderDiag();
     else if (h === '#/logs') await renderLogs();
     else if (h === '#/scout') await renderScout();
@@ -408,6 +411,12 @@ async function renderRecipe(id) {
               <span>כמות: <strong>${esc(r.yield_text)}</strong></span>
               ${[0.5, 1, 2, 3].map((m) => `<button class="btn btn--ghost btn--tiny ${mult === m ? 'is-on' : ''}" data-mult="${m}" type="button">×${m === 0.5 ? '½' : m}</button>`).join('')}
             </div>` : ''}
+          <div class="actions actions--wrap">
+            <a class="btn btn--primary" href="#/cook/${r.id}">🍳 מצב בישול</a>
+            <button class="btn" id="to-shopping" type="button">🛒 לרשימת קניות</button>
+            <button class="btn btn--ghost" id="print" type="button">🖨 הדפסה</button>
+          </div>
+          <div id="shopping-pick" hidden></div>
           ${r.is_mine ? `<div class="actions">
             <a class="btn" href="#/edit/${r.id}">עריכה</a>
             <button class="btn btn--danger" id="del" type="button">מחיקה</button>
@@ -456,6 +465,35 @@ async function renderRecipe(id) {
       const { deleted_comments } = await api('recipe-delete', { id: r.id });
       if (deleted_comments) alert(`נמחק, יחד עם ${deleted_comments} תגובות.`);
       go('#/');
+    });
+    $('#print').addEventListener('click', () => window.print());
+    // לרשימת קניות: בוחרים רשימה קיימת או חדשה. ה-factor הוא המרת המנות
+    // שמוצגת כרגע — מי שהכפיל ל-16 מנות רוצה לקנות ל-16.
+    $('#to-shopping').addEventListener('click', async () => {
+      const box = $('#shopping-pick');
+      if (!box.hidden) { box.hidden = true; return; }
+      const factor = r.servings && servings ? servings / r.servings : mult;
+      try {
+        const { lists } = await api('shopping-lists');
+        box.hidden = false;
+        box.innerHTML = `
+          <div class="note pick">
+            <strong>להוסיף "${esc(r.title)}"${factor !== 1 ? ` (×${fmtAmount(factor)})` : ''} אל:</strong>
+            <div class="actions actions--wrap">
+              ${lists.slice(0, 6).map((l) => `<button class="btn" type="button" data-list="${l.id}">${esc(l.name || 'רשימה ' + l.id)} <span class="muted">(${l.items})</span></button>`).join('')}
+              <button class="btn btn--primary" type="button" data-list="new">+ רשימה חדשה</button>
+            </div>
+          </div>`;
+        $$('[data-list]', box).forEach((b) => b.addEventListener('click', async () => {
+          b.disabled = true;
+          try {
+            const res = b.dataset.list === 'new'
+              ? await api('shopping-create', { recipes: { [r.id]: factor }, name: r.title })
+              : await api('shopping-add-recipes', { id: +b.dataset.list, recipes: { [r.id]: factor } });
+            go(`#/shopping/${res.list.id}`);
+          } catch (err) { box.innerHTML = `<p class="note note--err">${esc(err.message)}</p>`; }
+        }));
+      } catch (err) { alert(err.message); }
     });
     $('#fav')?.addEventListener('click', async () => {
       const b = $('#fav'); b.disabled = true;
@@ -1066,6 +1104,234 @@ async function renderEditor(id, draft = null) {
     });
   };
 
+  draw();
+}
+
+// ───────────────────────── רשימות קניות ─────────────────────────
+
+const qtyText = (i) => i.amount != null
+  ? `${fmtAmount(i.amount)}${i.amount_max != null ? '–' + fmtAmount(i.amount_max) : ''} ${UNITS[i.unit] || i.unit}`
+  : (i.free_text || '');
+
+async function renderShoppingLists() {
+  const { lists } = await api('shopping-lists');
+  view.innerHTML = `
+    <section class="card settings">
+      <a class="link" href="#/">‹ לרשימה</a>
+      <h2>🛒 רשימות קניות</h2>
+      <p class="muted">רשימה נבנית ממתכונים — בכפתור "לרשימת קניות" בכל מתכון — ורכיבים זהים מתאחדים. אפשר להוסיף שורות ידנית.</p>
+      <form id="list-new" class="pantry__add">
+        <input name="name" placeholder="שם לרשימה חדשה (לא חובה)" maxlength="60" autocomplete="off">
+        <button class="btn btn--primary" type="submit">+ רשימה</button>
+      </form>
+      <section class="list" id="lists">
+        ${lists.length ? lists.map((l) => `
+          <a class="item" href="#/shopping/${l.id}">
+            <span class="item__thumb item__thumb--empty">🛒</span>
+            <div class="item__main">
+              <strong>${esc(l.name || 'רשימה ' + l.id)}</strong>
+              <span class="muted">${l.recipes} מתכונים · ${l.checked}/${l.items} נקנו · ${esc(l.created_at.slice(0, 10))}</span>
+            </div>
+          </a>`).join('') : '<p class="muted">עדיין אין רשימות.</p>'}
+      </section>
+    </section>`;
+  $('#list-new').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try { const { list } = await api('shopping-create', { recipes: {}, name: e.target.name.value }); go(`#/shopping/${list.id}`); }
+    catch (err) { alert(err.message); }
+  });
+}
+
+async function renderShoppingList(id) {
+  let { list } = await api('shopping-get', { id });
+  const draw = () => {
+    const open = list.items.filter((i) => !i.checked), done = list.items.filter((i) => i.checked);
+    const row = (i) => `
+      <li class="shop-item ${i.checked ? 'is-done' : ''} ${i.optional ? 'is-optional' : ''}" data-id="${i.id}">
+        <label class="shop-item__check">
+          <input type="checkbox" ${i.checked ? 'checked' : ''}>
+          <span class="shop-item__text">
+            <strong>${esc(i.label)}</strong>${qtyText(i) ? ` — ${esc(qtyText(i))}` : ''}
+            ${i.recipe_count > 1 ? `<span class="muted small">(מ-${i.recipe_count} מתכונים)</span>` : ''}
+            ${i.optional ? '<span class="muted small">(לא חובה)</span>' : ''}
+            ${i.manual ? '<span class="muted small">✍</span>' : ''}
+          </span>
+        </label>
+        <button class="btn btn--ghost btn--tiny" type="button" data-rm="${i.id}" aria-label="הסר">✕</button>
+      </li>`;
+    view.innerHTML = `
+      <section class="card settings shopping">
+        <a class="link" href="#/shopping">‹ כל הרשימות</a>
+        <h2 class="shopping__title">🛒 <span id="list-name" contenteditable="true" spellcheck="false">${esc(list.name || 'רשימה ' + list.id)}</span></h2>
+        <p class="muted small">${list.recipes.length ? 'מתכונים: ' + list.recipes.map((r) => r.id
+          ? `<a href="#/r/${r.id}">${esc(r.title)}</a>${r.factor !== 1 ? ` ×${fmtAmount(r.factor)}` : ''} <button class="link link--danger" type="button" data-rm-recipe="${r.id}" aria-label="הסר מתכון">✕</button>`
+          : esc(r.title)).join(' · ') : 'בלי מתכונים — רשימה ידנית.'}</p>
+        <form id="item-add" class="pantry__add">
+          <input name="label" placeholder="שורה ידנית: שקיות אשפה, חלב…" maxlength="80" autocomplete="off" required>
+          <button class="btn" type="submit">הוסף</button>
+        </form>
+        <ul class="shop-list">${open.map(row).join('') || '<li class="muted">הכול נקנה 🎉</li>'}</ul>
+        ${done.length ? `<h3 class="muted">נקנה (${done.length})</h3><ul class="shop-list">${done.map(row).join('')}</ul>` : ''}
+        <div class="actions actions--wrap">
+          <button class="btn" type="button" id="share">📤 שתף</button>
+          <button class="btn btn--ghost" type="button" id="clear-checked" ${done.length ? '' : 'disabled'}>נקה מסומנים</button>
+          <button class="btn btn--ghost btn--danger" type="button" id="del-list">מחק רשימה</button>
+        </div>
+        <p class="note" id="shop-msg" hidden></p>
+      </section>`;
+    const msg = $('#shop-msg');
+    const note = (t, k) => { msg.textContent = t; msg.className = 'note' + (k ? ' note--' + k : ''); msg.hidden = !t; };
+    $$('.shop-item input').forEach((c) => c.addEventListener('change', async () => {
+      const li = c.closest('.shop-item'); const it = list.items.find((i) => i.id === +li.dataset.id);
+      it.checked = c.checked;
+      try { await api('shopping-check', { item_id: it.id, checked: c.checked }); draw(); } catch (err) { note(err.message, 'err'); }
+    }));
+    $$('[data-rm]').forEach((b) => b.addEventListener('click', async () => {
+      try { await api('shopping-remove-item', { item_id: +b.dataset.rm }); list.items = list.items.filter((i) => i.id !== +b.dataset.rm); draw(); }
+      catch (err) { note(err.message, 'err'); }
+    }));
+    $$('[data-rm-recipe]').forEach((b) => b.addEventListener('click', async () => {
+      if (!confirm('להסיר את המתכון מהרשימה? הרכיבים שלו יוסרו (ידני וסימונים נשארים).')) return;
+      try { ({ list } = await api('shopping-remove-recipe', { id, recipe_id: +b.dataset.rmRecipe })); draw(); } catch (err) { note(err.message, 'err'); }
+    }));
+    $('#item-add').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try { ({ list } = await api('shopping-add-item', { id, label: e.target.label.value })); draw(); $('#item-add input').focus(); }
+      catch (err) { note(err.message, 'err'); }
+    });
+    $('#clear-checked').addEventListener('click', async () => {
+      try { ({ list } = await api('shopping-clear-checked', { id })); draw(); } catch (err) { note(err.message, 'err'); }
+    });
+    $('#del-list').addEventListener('click', async () => {
+      if (!confirm('למחוק את הרשימה?')) return;
+      try { await api('shopping-delete', { id }); go('#/shopping'); } catch (err) { note(err.message, 'err'); }
+    });
+    $('#share').addEventListener('click', async () => {
+      try {
+        const { text } = await api('shopping-text', { id });
+        if (navigator.share) { await navigator.share({ title: list.name || 'רשימת קניות', text }); return; }
+        await navigator.clipboard.writeText(text);
+        note('הרשימה הועתקה — אפשר להדביק בוואטסאפ', 'ok');
+      } catch (err) { if (err.name !== 'AbortError') note(err.message, 'err'); }
+    });
+    const nameEl = $('#list-name');
+    nameEl.addEventListener('blur', async () => {
+      const name = nameEl.textContent.trim();
+      if (name === (list.name || 'רשימה ' + list.id)) return;
+      try { ({ list } = await api('shopping-rename', { id, name })); } catch (err) { note(err.message, 'err'); }
+    });
+    nameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); nameEl.blur(); } });
+  };
+  draw();
+}
+
+// ───────────────────────── מצב בישול ─────────────────────────
+
+/** "10 דקות", "כ-30 דק׳", "שעה", "שעה וחצי" בטקסט של שלב → דקות לטיימרים. */
+function timersIn(text) {
+  const out = [];
+  const re = /(\d+(?:[.,]\d+)?)\s*(?:-|–)?\s*(\d+)?\s*(דקות|דקה|דק׳|דק'|שעות|שעה|שניות)/g;
+  let m;
+  while ((m = re.exec(text))) {
+    const n = parseFloat((m[2] || m[1]).replace(',', '.'));
+    const unit = m[3];
+    const mins = unit.startsWith('שע') ? n * 60 : unit.startsWith('שנ') ? n / 60 : n;
+    if (mins >= 0.5 && mins <= 24 * 60) out.push({ label: m[0].trim(), minutes: mins });
+  }
+  if (/שעה וחצי/.test(text)) out.push({ label: 'שעה וחצי', minutes: 90 });
+  else if (/חצי שעה/.test(text)) out.push({ label: 'חצי שעה', minutes: 30 });
+  else if (/רבע שעה/.test(text)) out.push({ label: 'רבע שעה', minutes: 15 });
+  else if (/(^|[^\d])שעה(?![\d])/.test(text) && !out.some((t) => t.minutes === 60)) out.push({ label: 'שעה', minutes: 60 });
+  return out.slice(0, 3);
+}
+
+const cookTimers = [];   // {id, label, end, timer, el}
+function cookTick() {
+  for (const t of cookTimers) {
+    const left = Math.max(0, Math.round((t.end - Date.now()) / 1000));
+    const mm = String(Math.floor(left / 60)).padStart(2, '0'), ss = String(left % 60).padStart(2, '0');
+    if (t.el) t.el.querySelector('.timer__left').textContent = `${mm}:${ss}`;
+    if (left === 0 && !t.fired) {
+      t.fired = true; t.el?.classList.add('is-done');
+      try { navigator.vibrate?.([300, 150, 300, 150, 600]); } catch {}
+      try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const o = ctx.createOscillator(); o.frequency.value = 880; o.connect(ctx.destination); o.start(); setTimeout(() => { o.stop(); ctx.close(); }, 900); } catch {}
+    }
+  }
+}
+setInterval(cookTick, 500);
+
+async function renderCook(id) {
+  const [{ recipe: r }, { done }] = await Promise.all([api('recipe', { id }), api('cook-progress', { recipe_id: id })]);
+  const steps = [];
+  r.sections.forEach((s, si) => s.steps.forEach((st, ki) => steps.push({ ...st, si, ki, section: s.name, ingredients: s.ingredients })));
+  if (!steps.length) { view.innerHTML = '<section class="card"><p class="note note--warn">למתכון הזה אין שלבים.</p><a class="btn" href="#/r/' + id + '">למתכון</a></section>'; return; }
+  const doneSet = new Set(done);
+  let idx = Math.max(0, steps.findIndex((s) => !doneSet.has(s.id)));
+  if (idx === -1 || steps.every((s) => doneSet.has(s.id))) idx = 0;
+
+  // המסך לא נכבה בזמן הבישול (Wake Lock; דורש HTTPS, ובדפדפן ישן פשוט אין)
+  let lock = null;
+  const acquire = async () => { try { lock = await navigator.wakeLock?.request('screen'); } catch { lock = null; } };
+  acquire();
+  const onVis = () => { if (document.visibilityState === 'visible' && !lock) acquire(); };
+  document.addEventListener('visibilitychange', onVis);
+  const release = () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('hashchange', release); try { lock?.release(); } catch {} };
+  window.addEventListener('hashchange', release);
+
+  const draw = () => {
+    const s = steps[idx];
+    const multi = r.sections.length > 1;
+    const doneCount = steps.filter((x) => doneSet.has(x.id)).length;
+    view.innerHTML = `
+      <section class="cook">
+        <header class="cook__head">
+          <a class="link" href="#/r/${r.id}">‹ ${esc(r.title)}</a>
+          <span class="muted">${doneCount}/${steps.length} בוצעו</span>
+        </header>
+        ${multi ? `<nav class="subnav cook__parts" aria-label="חלקים">${r.sections.map((sec, si) => `
+          <a href="#/cook/${r.id}" data-part="${si}" class="${si === s.si ? 'is-on' : ''}">${esc(sec.name || 'חלק ' + (si + 1))}</a>`).join('')}</nav>` : ''}
+        <div class="cook__timers" id="timers"></div>
+        <article class="cook__step ${doneSet.has(s.id) ? 'is-done' : ''}">
+          <div class="cook__no">שלב ${s.ki + 1}${multi ? ` · ${esc(s.section || 'חלק ' + (s.si + 1))}` : ''}</div>
+          <p class="cook__text">${esc(s.text)}</p>
+          ${timersIn(s.text).length ? `<div class="actions actions--wrap">${timersIn(s.text).map((t, i) => `<button class="btn btn--ghost" type="button" data-timer="${t.minutes}">⏱ ${esc(t.label)}</button>`).join('')}</div>` : ''}
+        </article>
+        <div class="cook__nav">
+          <button class="btn btn--big" type="button" id="prev" ${idx === 0 ? 'disabled' : ''}>‹ הקודם</button>
+          <button class="btn btn--big btn--primary" type="button" id="done">${doneSet.has(s.id) ? (idx < steps.length - 1 ? 'הבא ›' : 'סיימתי 🎉') : '✓ בוצע' + (idx < steps.length - 1 ? ', הבא ›' : '')}</button>
+        </div>
+        <details class="cook__ings" ${s.ki === 0 ? 'open' : ''}>
+          <summary>רכיבים${multi ? ' של החלק' : ''} (${s.ingredients.length})</summary>
+          <ul class="ings">${s.ingredients.map((i) => `<li class="${i.optional ? 'is-optional' : ''}"><span class="ing__free">${esc(i.free_text)}</span>${scaled(i, 1) ? `<span class="ing__calc">${esc(scaled(i, 1))}</span>` : ''}</li>`).join('')}</ul>
+        </details>
+        <div class="actions"><button class="link" type="button" id="reset">התחל מחדש</button></div>
+      </section>`;
+    drawTimers();
+    $$('[data-part]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); idx = steps.findIndex((x) => x.si === +a.dataset.part); draw(); }));
+    $('#prev').addEventListener('click', () => { idx--; draw(); });
+    $('#done').addEventListener('click', async () => {
+      if (!doneSet.has(s.id)) { doneSet.add(s.id); api('cook-done', { step_id: s.id, done: true }).catch(() => {}); }
+      if (idx < steps.length - 1) { idx++; draw(); }
+      else { draw(); }
+    });
+    $('#reset').addEventListener('click', async () => {
+      if (!confirm('לאפס את הסימונים?')) return;
+      await api('cook-reset', { recipe_id: r.id }).catch(() => {});
+      doneSet.clear(); idx = 0; draw();
+    });
+    $$('[data-timer]').forEach((b) => b.addEventListener('click', () => {
+      const mins = +b.dataset.timer;
+      cookTimers.push({ id: Date.now(), label: `${esc(s.text.slice(0, 24))}…`, end: Date.now() + mins * 60000, fired: false });
+      drawTimers();
+    }));
+  };
+  const drawTimers = () => {
+    const box = $('#timers'); if (!box) return;
+    box.innerHTML = cookTimers.map((t) => `<div class="timer ${t.fired ? 'is-done' : ''}" data-tid="${t.id}"><span class="timer__left">--:--</span> <span class="muted small">${t.label}</span> <button class="btn btn--ghost btn--tiny" type="button" data-tkill="${t.id}">✕</button></div>`).join('');
+    cookTimers.forEach((t) => { t.el = box.querySelector(`[data-tid="${t.id}"]`); });
+    $$('[data-tkill]').forEach((b) => b.addEventListener('click', () => { const i = cookTimers.findIndex((t) => t.id === +b.dataset.tkill); if (i >= 0) cookTimers.splice(i, 1); drawTimers(); }));
+    cookTick();
+  };
   draw();
 }
 
@@ -1819,13 +2085,17 @@ async function renderScout() {
         </div>
         <div class="scout-item__actions">
           ${it.status !== 'imported' ? `
-            <button class="btn ${it.status === 'wanted' ? 'btn--primary' : ''}" type="button" data-mark="wanted" title="לייבא">✓ כן</button>
-            <button class="btn ${it.status === 'skipped' ? 'btn--ghost' : ''}" type="button" data-mark="skipped" title="לא">✕ לא</button>` : '<span class="badge badge--public">יובא</span>'}
+            <label class="switch" title="${it.status === 'wanted' ? 'מסומן לייבוא' : 'לא לייבוא'}">
+              <input type="checkbox" data-want ${it.status === 'wanted' ? 'checked' : ''}>
+              <span class="switch__track"></span>
+              <span class="switch__label">${it.status === 'wanted' ? 'לייבוא' : it.status === 'skipped' ? 'דילוג' : 'לא נבחר'}</span>
+            </label>` : '<span class="badge badge--public">יובא</span>'}
         </div>
       </article>`).join('') : '<p class="muted">אין פריטים במצב הזה.</p>';
-    $$('[data-mark]', listEl).forEach((b) => b.addEventListener('click', async () => {
-      const id = +b.closest('.scout-item').dataset.id;
-      try { data = await api('scout-mark', { ids: [id], status: b.dataset.mark, ...filters }); drawTabs(); drawList(); }
+    // מתג אחד: דולק = לייבוא, כבוי = דילוג. (היו שני כפתורים כן/לא — מיותר.)
+    $$('[data-want]', listEl).forEach((c) => c.addEventListener('change', async () => {
+      const id = +c.closest('.scout-item').dataset.id;
+      try { data = await api('scout-mark', { ids: [id], status: c.checked ? 'wanted' : 'skipped', ...filters }); drawTabs(); drawList(); }
       catch (err) { note(err.message, 'err'); }
     }));
   };

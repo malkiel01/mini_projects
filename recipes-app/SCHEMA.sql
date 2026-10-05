@@ -333,6 +333,7 @@ CREATE INDEX idx_lists_user ON shopping_lists(user_id, created_at);
 CREATE TABLE shopping_list_recipes (
   list_id   INTEGER NOT NULL REFERENCES shopping_lists(id) ON DELETE CASCADE,
   recipe_id INTEGER REFERENCES recipes(id) ON DELETE SET NULL,
+  factor    REAL    NOT NULL DEFAULT 1,   -- המרת מנות של המתכון ברשימה הזאת
   PRIMARY KEY (list_id, recipe_id)
 );
 
@@ -350,7 +351,9 @@ CREATE TABLE shopping_list_items (
   optional   INTEGER NOT NULL DEFAULT 0,
   manual     INTEGER NOT NULL DEFAULT 0,   -- הוספה ידנית (8)
   checked    INTEGER NOT NULL DEFAULT 0,
-  position   INTEGER NOT NULL DEFAULT 0
+  position   INTEGER NOT NULL DEFAULT 0,
+  amount_max REAL,                        -- טווח: 300–400
+  recipe_count INTEGER NOT NULL DEFAULT 1 -- מכמה מתכונים הגיעה השורה
 );
 CREATE INDEX idx_list_items ON shopping_list_items(list_id, position);
 
