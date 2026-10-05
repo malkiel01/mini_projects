@@ -179,7 +179,9 @@ function importFromJsonLd(DOMDocument $doc): ?array {
         $sections = [];
         $flat = [];
         $instr = $r['recipeInstructions'] ?? [];
-        if (is_string($instr)) $instr = preg_split('/\r?\n+|(?<=\.)\s+(?=[א-ת])/u', $instr) ?: [];
+        // מחרוזת אחת (לא רשימת HowToStep): מפצלים לפי שורות, ולפי נקודה שאחריה
+        // אות עברית — גם בלי רווח, כי אתרים מדביקים פסקאות ("…להתייצב.רוצים לרכוש").
+        if (is_string($instr)) $instr = preg_split('/\r?\n+|(?<=[.!?])\s*(?=[א-ת])/u', $instr) ?: [];
         foreach ((array) $instr as $it) {
             if (is_array($it) && ($it['@type'] ?? '') === 'HowToSection') {
                 $steps = [];
@@ -189,7 +191,9 @@ function importFromJsonLd(DOMDocument $doc): ?array {
                 $flat[] = $str($it);
             }
         }
-        $flat = array_values(array_filter($flat));
+        $flat = importCleanSteps(array_values(array_filter($flat)));
+        foreach ($sections as &$sec) $sec['steps'] = importCleanSteps($sec['steps']);
+        unset($sec);
         if ($flat) array_unshift($sections, ['name' => '', 'steps' => $flat]);
 
         $author = $r['author'] ?? null;
@@ -222,6 +226,29 @@ function importFromJsonLd(DOMDocument $doc): ?array {
         ];
     }
     return null;
+}
+
+/**
+ * ניקוי שלבים: כותרת שנדבקה לשלב הראשון ("אופן הכנה טורפים…"), ושורות
+ * פרסומת שאתרים מדביקים לסוף הטקסט ("לפרטים נוספים לחצו כאן").
+ */
+function importCleanSteps(array $steps): array {
+    $out = [];
+    foreach ($steps as $st) {
+        $st = trim((string) $st);
+        $st = preg_replace('/^(אופן ההכנה|אופן הכנה|הוראות הכנה|הוראות|דרך ההכנה|instructions?|directions?|method)\s*[:\-–—]?\s*/iu', '', $st) ?? $st;
+        if ($st === '') continue;
+        // פרסומת — ומה שאחריה כבר לא שלבים: הזנב הזה תמיד בסוף.
+        if (preg_match('/לחצו כאן|לפרטים נוספים|לרכישה|רוצים לרכוש|קנו עכשיו|הירשמו|רב המכר|https?:\/\/|www\./iu', $st)) break;
+        // "מארחים?" — שאלה של שתי מילים אינה שלב
+        if (str_ends_with($st, '?') && str_word_count_u2($st) <= 3) break;
+        $out[] = $st;
+    }
+    return $out;
+}
+
+function str_word_count_u2(string $s): int {
+    return count(preg_split('/\s+/u', trim($s), -1, PREG_SPLIT_NO_EMPTY) ?: []);
 }
 
 /** שכבה 2: Microdata. */
@@ -489,6 +516,19 @@ function importSaveSnapshot(int $recipeId, array $snapshot, array $user): void {
                                                              fetched_at = excluded.fetched_at');
     $st->execute([$recipeId, $user['id'], $url, (string) ($snapshot['method'] ?? '?'),
                   json_encode($snapshot, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), nowIso()]);
+}
+
+/** מתכון שיובא לפני שהיה תיעוד: מביאים את המקור שוב ושומרים. הבעלים בלבד. */
+function importRefreshSnapshot(int $recipeId, array $user): array {
+    $st = db()->prepare('SELECT owner_id, source_url FROM recipes WHERE id = ?');
+    $st->execute([$recipeId]);
+    $r = $st->fetch();
+    if (!$r) throw new AppError('המתכון אינו קיים', 404);
+    if ((int) $r['owner_id'] !== (int) $user['id']) throw new AppError('רק מי שייבא את המתכון יכול למשוך את המקור', 403);
+    if (!$r['source_url']) throw new AppError('למתכון הזה אין מקור ברשת');
+    $draft = importPreview($r['source_url']);
+    importSaveSnapshot($recipeId, $draft['snapshot'], $user);
+    return importGetSnapshot($recipeId, $user);
 }
 
 /** התיעוד — לבעל המתכון בלבד. null כשאין (מתכון שלא יובא). */

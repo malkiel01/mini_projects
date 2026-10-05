@@ -278,6 +278,9 @@ try {
     case 'import-snapshot':
         ok(['snapshot' => importGetSnapshot((int) ($in['recipe_id'] ?? 0), $user)]);
 
+    case 'import-snapshot-refresh':
+        ok(['snapshot' => importRefreshSnapshot((int) ($in['recipe_id'] ?? 0), $user)]);
+
     case 'import-rewrite': {
         // ניסוח מחדש של שלבים בבינה. הקלט: [{name, steps[]}] מהעורך; הפלט באותו מבנה.
         $sections = is_array($in['sections'] ?? null) ? $in['sections'] : [];

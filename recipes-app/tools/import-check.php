@@ -102,6 +102,17 @@ check('תגים נוחשו: עוגות, חלבי', count(array_intersect(
 check('pending_media: תמונה אחת, בלי סרטון', [count($draft['pending_media']['images']), count($draft['pending_media']['videos'])], [1, 0]);
 check('התיאור הפך לטיפים', str_contains($draft['tips'], 'עוגת גבינה'), true);
 
+echo "\n4ב. JSON-LD עם הוראות כמחרוזת אחת (carine.co.il)\n";
+$raw = importParse($fx('jsonld-carine.html'), 'https://www.carine.co.il/foody_recipe/x/');
+$steps = $raw['sections'][0]['steps'];
+check('חמישה שלבים מתוך מחרוזת אחת', count($steps), 5);
+check('"אופן הכנה" הוסר מהראשון', str_starts_with($steps[0], 'טורפים'), true);
+check('הפרסומת שנדבקה לסוף נחתכה', str_ends_with($steps[4], 'להתייצב.'), true);
+check('ואינה שלב בפני עצמה', count(array_filter($steps, fn($s) => str_contains($s, 'לרכוש'))), 0);
+check('זמנים: cook בלבד, total לא דורס', [$raw['prep_minutes'], $raw['cook_minutes']], [null, 15]);
+check('"1" כמנה → מספר', importToDraft($raw)['servings'], 1);
+check('הניקוי: מפרסומת והלאה נחתך, כותרת דבוקה מוסרת', importCleanSteps(['הוראות: מערבבים.', 'אופים.', 'לפרטים נוספים לחצו כאן', 'עוד פרסומת']), ['מערבבים.', 'אופים.']);
+
 echo "\n5. Microdata\n";
 $raw = importParse($fx('microdata.html'), 'https://example.org/recipes/salad');
 check('זוהה', $raw['method'], 'microdata');
@@ -122,6 +133,24 @@ check('אתר וכותבת מה-meta', [$raw['publisher'], $raw['author']], ['ה
 $draft = importToDraft($raw);
 check('אזהרה על חילוץ לפי כותרות', count(array_filter($draft['warnings'], fn($w) => str_contains($w, 'כותרות'))), 1);
 expectError('דף בלי מתכון', fn() => importParse($GLOBALS['fx']('norecipe.html'), 'https://example.org/'), 'לא מצאתי מתכון');
+
+echo "\n6ב. תיעוד — שמירה, קריאה, ומשיכה חוזרת\n";
+$raw = importParse($fx('jsonld-10dakot.html'), 'https://www.10dakot.co.il/recipe/x/');
+$draftS = importToDraft($raw);
+$sid = saveRecipe($draftS, $maliU);
+check('לפני: אין תיעוד', importGetSnapshot($sid, $maliU), null);
+importSaveSnapshot($sid, $draftS['snapshot'], $maliU);
+$snap = importGetSnapshot($sid, $maliU);
+check('נשמר: שיטה, כתובת, שלבים כלשונם', [$snap['extracted_by'], $snap['source_url'], count($snap['raw']['sections'][0]['steps']) >= 5], ['json-ld', 'https://www.10dakot.co.il/recipe/x/', true]);
+$noa = createUser('noa', 'n@x.com', 'sod12345', 'נועה'); verifyEmail($noa['token']);
+expectError('רק המייבא רואה', fn() => importGetSnapshot($GLOBALS['sid'], ['id' => $GLOBALS['noa']['id'], 'role' => 'admin']), 'רק למי שייבא');
+importSaveSnapshot($sid, $draftS['snapshot'], $maliU);
+check('שמירה חוזרת מחליפה ולא מכפילה', (int) db()->query("SELECT COUNT(*) FROM import_snapshots WHERE recipe_id = $sid")->fetchColumn(), 1);
+$plain = saveRecipe(['title' => 'בלי מקור', 'visibility' => 'private', 'sections' => $draftS['sections']], $maliU);
+expectError('משיכה למתכון בלי מקור', fn() => importRefreshSnapshot($GLOBALS['plain'], $GLOBALS['maliU']), 'אין מקור');
+expectError('משיכה בידי מי שאינו הבעלים', fn() => importRefreshSnapshot($GLOBALS['sid'], ['id' => $GLOBALS['noa']['id'], 'role' => 'user']), 'רק מי שייבא');
+deleteRecipe($sid, $maliU);
+check('נמחק עם המתכון', (int) db()->query("SELECT COUNT(*) FROM import_snapshots WHERE recipe_id = $sid")->fetchColumn(), 0);
 
 echo "\n7. שמירה — המקור נשמר, מוצג, ואינו נמחק בעריכה\n";
 $raw = importParse($fx('jsonld-10dakot.html'), 'https://www.10dakot.co.il/recipe/x/');

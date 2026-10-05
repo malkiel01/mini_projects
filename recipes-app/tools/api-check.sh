@@ -285,6 +285,8 @@ echo "8ז. תיעוד פרטי של הייבוא, מפתח API, וניסוח מ�
 call login '{"username":"tester","password":"sod12345"}' >/dev/null
 check 'התיעוד נשמר עם המתכון המיובא'   "$(call import-snapshot "{\"recipe_id\":$IID}")" '"extracted_by":"json-ld"[^}]*"raw":{"title":"עוגת גבינה של בית מלון"'
 check 'מתכון רגיל — בלי תיעוד'          "$(call import-snapshot "{\"recipe_id\":$RID}")" '"snapshot":null'
+check 'משיכה חוזרת מהמקור מחליפה את התיעוד' "$(call import-snapshot-refresh "{\"recipe_id\":$IID}")" '"extracted_by":"json-ld"'
+check 'משיכה למתכון בלי מקור נדחית'       "$(call import-snapshot-refresh "{\"recipe_id\":$RID}")" 'אין מקור'
 check 'בלי מפתח — הודעה ברורה'           "$(call import-rewrite '{"title":"x","sections":[{"name":"","steps":["מערבבים."]}]}')" 'אינו מופעל'
 check 'משתמש רגיל אינו רואה סודות'      "$(call secrets)" 'מפתח'
 call logout >/dev/null

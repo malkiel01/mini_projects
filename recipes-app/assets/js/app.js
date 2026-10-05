@@ -475,7 +475,17 @@ async function renderRecipe(id) {
       try {
         const { snapshot: s } = await api('import-snapshot', { recipe_id: r.id });
         box.dataset.loaded = '1';
-        if (!s) { body.textContent = 'אין תיעוד למתכון הזה.'; return; }
+        if (!s) {
+          box.dataset.loaded = '';
+          body.innerHTML = `<p>אין תיעוד למתכון הזה — יובא לפני שהתיעוד נבנה.</p>
+            <button class="btn" type="button" id="snap-refresh">משוך מהמקור עכשיו</button>`;
+          $('#snap-refresh', box).addEventListener('click', async () => {
+            $('#snap-refresh', box).disabled = true; body.append(' מביא…');
+            try { await api('import-snapshot-refresh', { recipe_id: r.id }); $('details', box).open = false; $('details', box).open = true; }
+            catch (err) { body.textContent = err.message; }
+          });
+          return;
+        }
         const raw = s.raw || {};
         body.className = 'snapshot__body';
         body.innerHTML = `
@@ -701,7 +711,10 @@ async function renderEditor(id, draft = null) {
   let r = draft ? {
     ...draft, tags: draft.tag_ids.map((tid) => ({ id: tid })),
     servings: draft.servings ?? '', yield_text: draft.yield_text ?? '',
-    sections: draft.sections.map((s) => ({ ...s, steps: s.steps.map((st) => st.text) })),
+    // השלבים נשארים {text} — המודל למטה קורא st.text, כמו במתכון שנטען מהשרת.
+    // (הבאג שהיה כאן: המרה למחרוזות כבר פה, ואז .text על מחרוזת = undefined,
+    // וכל השלבים של מתכון מיובא נעלמו בשמירה.)
+    sections: draft.sections,
   } : id ? (await api('recipe', { id })).recipe : {
     title: '', visibility: 'private', servings: '', yield_text: '', difficulty: '', work_minutes: '', wait_minutes: '',
     tips: '', tags: [], sections: [emptySection()], comments_open: true,
@@ -780,6 +793,7 @@ async function renderEditor(id, draft = null) {
             <div class="actions">
               <button class="btn ${model.source.rewritten ? '' : 'btn--primary'}" type="button" id="rewrite-btn">✨ נסח מחדש בבינה</button>
               <button class="btn btn--ghost" type="button" id="rewrite-undo" hidden>בטל ניסוח</button>
+              ${id && !model.sections.some((s) => s.steps.some((t) => t.trim())) ? '<button class="btn btn--ghost" type="button" id="steps-from-snapshot">מלא שלבים מהמקור</button>' : ''}
               <label class="check"><input type="checkbox" name="rewritten_manual" ${model.source.rewritten ? 'checked' : ''}> ניסחתי בעצמי</label>
             </div>
             <p class="note" id="rewrite-msg" hidden></p>
@@ -924,6 +938,21 @@ async function renderEditor(id, draft = null) {
         out2.className = 'note note--' + (res.too_close ? 'warn' : 'ok'); out2.hidden = false;
         $('#rewrite-undo').hidden = false;
       } catch (err) { note2(err.message, 'err'); btn.disabled = false; }
+    });
+    $('#steps-from-snapshot')?.addEventListener('click', async () => {
+      const out = $('#rewrite-msg');
+      try {
+        let { snapshot } = await api('import-snapshot', { recipe_id: editId });
+        if (!snapshot) ({ snapshot } = await api('import-snapshot-refresh', { recipe_id: editId }));
+        const secs = snapshot?.raw?.sections || [];
+        if (!secs.length) throw new Error('גם במקור לא נמצאו שלבים');
+        collect();
+        secs.forEach((s, i) => {
+          if (!model.sections[i]) model.sections.push({ name: s.name || '', ingredients: [], steps: [] });
+          model.sections[i].steps = [...s.steps];
+        });
+        draw();
+      } catch (err) { out.textContent = err.message; out.className = 'note note--err'; out.hidden = false; }
     });
     $('#rewrite-undo')?.addEventListener('click', () => {
       if (!model.prev_steps) return;
