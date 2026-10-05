@@ -318,7 +318,7 @@ check 'משתמש רגיל אינו רואה את הסורק'   "$(call scout-li
 call logout >/dev/null
 call login '{"username":"owner","password":"sod12345"}' >/dev/null
 P=$(call scout-page "{\"url\":\"$FXB/listing.html\"}")
-check 'נמצאו ארבעה מועמדים (לא ניווט, לא אתר אחר)' "$P" '"found":4'
+check 'נמצאו שישה מועמדים (לא ניווט, לא אתר אחר)' "$P" '"found":6'
 check 'זה שכבר יובא ידנית מסומן "יובא" מראש'     "$P" '"url":"http:\\/\\/127.0.0.1:'"$FXPORT"'\\/jsonld-10dakot.html"[^}]*"status":"imported"'
 check 'קריאה חוזרת — אפס חדשים'                 "$(call scout-page "{\"url\":\"$FXB/listing.html\"}")" '"new":0'
 check 'sitemap נקרא'                             "$(call scout-page "{\"url\":\"$FXB/sitemap.xml\"}")" '"found":3'

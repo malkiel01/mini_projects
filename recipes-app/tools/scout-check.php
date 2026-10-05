@@ -68,7 +68,11 @@ check('טקסט ניווט — לא', scoutLooksLikeRecipe('https://a.co.il/x/',
 
 echo "\n3. מועמדים מדף רשימה\n";
 $c = scoutExtractCandidates($fx('listing.html'), 'https://example.co.il/category/x/');
-check('ארבעה: שניים לפי נתיב, אחד לפי alt של תמונה, אחד לפי טקסט', count($c), 4);
+check('שישה: לפי נתיב, לפי alt של תמונה, לפי טקסט, ושני סרטונים', count($c), 6);
+$byUrl = array_column($c, 'title', 'url');
+check('"8:44" על התמונה אינו שם — הקישור השני באותו דף נותן את השם', $byUrl['https://example.co.il/foody_recipe/%d7%a9%d7%95%d7%a7%d7%95%d7%a4%d7%90%d7%99/'] ?? null, 'שוקופאי אפוי');
+check('"12:11" בלי שם אחר → השם מהכתובת, בעברית', $byUrl['https://example.co.il/foody_recipe/%d7%91%d7%a8%d7%90%d7%95%d7%a0%d7%99%d7%96/'] ?? null, 'בראוניז');
+check('scoutGoodTitle', [scoutGoodTitle('8:44'), scoutGoodTitle('1:02:33'), scoutGoodTitle(''), scoutGoodTitle('עוגה'), scoutGoodTitle('x')], [false, false, false, true, false]);
 check('כתובות יחסיות → מוחלטות, אותו דומיין', $c[0]['url'], 'https://example.co.il/jsonld-10dakot.html');
 check('שם מתוך alt של תמונה', $c[1]['title'], 'עוגת יומולדת שילדים אוהבים');
 check('#comments אינו כפילות', count(array_filter($c, fn($x) => str_contains($x['url'], 'soup-1'))), 1);
@@ -78,7 +82,7 @@ check('ניווט לא נכנס', count(array_filter($c, fn($x) => str_contains(
 echo "\n4. מועמדים מ-sitemap\n";
 $c = scoutExtractCandidates($fx('sitemap.xml'), 'http://127.0.0.1/sitemap.xml');
 check('שלוש כתובות', count($c), 3);
-check('שם מהסלאג', $c[0]['title'], 'jsonld 10dakot.html');
+check('שם מהסלאג (בלי .html)', $c[0]['title'], 'jsonld 10dakot');
 $idx = scoutExtractCandidates('<?xml version="1.0"?><sitemapindex><sitemap><loc>http://127.0.0.1/recipe-sitemap.xml</loc></sitemap></sitemapindex>', 'http://127.0.0.1/sitemap_index.xml');
 check('אינדקס: ה-sitemaps עצמם כמועמדים, מסומנים', $idx[0]['title'], '(sitemap) recipe-sitemap.xml');
 

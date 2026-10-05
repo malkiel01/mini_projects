@@ -1741,6 +1741,9 @@ async function renderLogs() {
 
 // ───────────────────────── סורק אתרים (מפתח) ─────────────────────────
 
+// כתובת לקריאה: בלי https://, ועם העברית מפוענחת במקום %d7%a2…
+const prettyUrl = (u) => { try { return decodeURIComponent(u).replace(/^https?:\/\//, '').slice(0, 90); } catch { return u.slice(0, 90); } };
+
 const SCOUT_LABEL = { new: 'חדש', wanted: 'לייבוא', skipped: 'דילוג', imported: 'יובא', error: 'שגיאה' };
 
 async function renderScout() {
@@ -1810,7 +1813,7 @@ async function renderScout() {
       <article class="scout-item scout-item--${it.status}" data-id="${it.id}">
         <div class="scout-item__main">
           <strong>${esc(it.title || '(בלי שם)')}</strong>
-          <a class="muted small" dir="ltr" href="${esc(it.url)}" target="_blank" rel="noopener nofollow">${esc(it.url.replace(/^https?:\/\//, '').slice(0, 80))}</a>
+          <a class="muted small" dir="auto" href="${esc(it.url)}" target="_blank" rel="noopener nofollow">${esc(prettyUrl(it.url))}</a>
           ${it.error ? `<span class="note note--${it.status === 'error' ? 'err' : 'warn'} small">${esc(it.error)}</span>` : ''}
           ${it.recipe_id ? `<a class="link" href="#/r/${it.recipe_id}">למתכון שיובא ›</a>` : ''}
         </div>

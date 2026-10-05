@@ -140,15 +140,27 @@ function scoutFromSitemap(string $xml): array {
 function scoutExtractCandidates(string $body, string $pageUrl): array {
     $host = strtolower(parse_url($pageUrl, PHP_URL_HOST) ?: '');
     $out = [];
-    $seen = [];
+    $seen = [];   // url → אינדקס ב-$out, כדי שקישור שני לאותו דף עם שם טוב יותר ישפר את השם
     $add = function (string $u, string $title) use (&$out, &$seen, $host) {
         $u = trim(preg_replace('/#.*$/', '', $u) ?? $u);
         if ($u === '' || !preg_match('~^https?://~i', $u)) return;
         if (strtolower(parse_url($u, PHP_URL_HOST) ?: '') !== $host) return;
         $key = rtrim($u, '/');
-        if (isset($seen[$key]) || count($out) >= SCOUT_MAX_CANDIDATES) return;
-        $seen[$key] = true;
-        $out[] = ['url' => $u, 'title' => mb_substr(trim($title), 0, 120)];
+        $title = mb_substr(trim($title), 0, 120);
+        if (isset($seen[$key])) {
+            // כבר יש — אבל קישור שני לאותו דף יכול לתת שם טוב יותר: כשהראשון
+            // היה "8:44" מהתמונה ונפל לסלאג, או כשהחדש הוא הארכה של הקיים
+            // ("פיצה" מה-alt → "פיצה רמאות מהירה" מהכותרת)
+            $i = $seen[$key];
+            if (scoutGoodTitle($title) && ($out[$i]['from_slug'] || (mb_strlen($title) > mb_strlen($out[$i]['title']) && str_starts_with($title, $out[$i]['title'])))) {
+                $out[$i]['title'] = $title; $out[$i]['from_slug'] = false;
+            }
+            return;
+        }
+        if (count($out) >= SCOUT_MAX_CANDIDATES) return;
+        $seen[$key] = count($out);
+        $good = scoutGoodTitle($title);
+        $out[] = ['url' => $u, 'title' => $good ? $title : scoutTitleFromUrl($u), 'from_slug' => !$good];
     };
 
     if (preg_match('~^\s*(<\?xml|<urlset|<sitemapindex)~i', $body)) {
@@ -184,15 +196,33 @@ function scoutExtractCandidates(string $body, string $pageUrl): array {
     foreach ($xp->query('//a[@href]') as $a) {
         $href = importAbsolute((string) $a->getAttribute('href'), $pageUrl);
         $text = importText($a->textContent);
-        if ($text === '') { $img = $xp->query('.//img[@alt]', $a)->item(0); $text = $img ? importText($img->getAttribute('alt')) : ''; }
-        if (scoutLooksLikeRecipe($href, $text)) $add($href, $text !== '' ? $text : scoutTitleFromUrl($href));
+        // קישור על תמונה: הטקסט הוא לעתים משך הסרטון ("8:44") או ריק —
+        // אז alt של התמונה, title או aria-label של הקישור עדיפים
+        if (!scoutGoodTitle($text)) {
+            foreach ([$a->getAttribute('title'), $a->getAttribute('aria-label')] as $alt) {
+                if (scoutGoodTitle(importText($alt))) { $text = importText($alt); break; }
+            }
+        }
+        if (!scoutGoodTitle($text)) {
+            $img = $xp->query('.//img[@alt]', $a)->item(0);
+            if ($img && scoutGoodTitle(importText($img->getAttribute('alt')))) $text = importText($img->getAttribute('alt'));
+        }
+        if (scoutLooksLikeRecipe($href, $text)) $add($href, $text);
     }
     return $out;
 }
 
+/** שם שאפשר להציג: לפחות שתי אותיות, ולא משך סרטון כמו "8:44". */
+function scoutGoodTitle(string $t): bool {
+    $t = trim($t);
+    if ($t === '' || preg_match('/^\d{1,2}:\d{2}(:\d{2})?$/', $t)) return false;
+    return preg_match_all('/\p{L}/u', $t) >= 2;
+}
+
 function scoutTitleFromUrl(string $u): string {
-    $slug = basename(urldecode(parse_url($u, PHP_URL_PATH) ?: ''));
-    return mb_substr(str_replace(['-', '_'], ' ', $slug), 0, 120);
+    $slug = basename(rtrim(urldecode(parse_url($u, PHP_URL_PATH) ?: ''), '/'));
+    $slug = preg_replace('/\.(html?|php)$/i', '', $slug) ?? $slug;
+    return mb_substr(trim(str_replace(['-', '_'], ' ', $slug)), 0, 120);
 }
 
 // ─────────────────────────────────────────────────────────────
