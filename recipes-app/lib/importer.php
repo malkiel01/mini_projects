@@ -364,7 +364,7 @@ function importAbsolute(string $u, string $base): string {
     if ($u === '' || preg_match('~^https?://~i', $u)) return $u;
     if (str_starts_with($u, '//')) return 'https:' . $u;
     $b = parse_url($base);
-    $root = ($b['scheme'] ?? 'https') . '://' . ($b['host'] ?? '');
+    $root = ($b['scheme'] ?? 'https') . '://' . ($b['host'] ?? '') . (isset($b['port']) ? ':' . $b['port'] : '');
     if (str_starts_with($u, '/')) return $root . $u;
     return $root . rtrim(dirname($b['path'] ?? '/'), '/') . '/' . $u;
 }

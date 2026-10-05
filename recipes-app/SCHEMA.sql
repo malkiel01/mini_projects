@@ -90,6 +90,23 @@ CREATE TABLE import_snapshots (
   fetched_at   TEXT    NOT NULL
 );
 
+-- סורק אתרים — כלי פרטי של המפתח (11ב): מועמדים מדפי רשימה / sitemap,
+-- סימון לייבוא או דילוג, ומה יובא.
+CREATE TABLE scout_items (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  url        TEXT    NOT NULL UNIQUE,
+  title      TEXT    NOT NULL DEFAULT '',
+  site       TEXT    NOT NULL,
+  found_on   TEXT    NOT NULL,
+  status     TEXT    NOT NULL DEFAULT 'new'
+             CHECK (status IN ('new','wanted','skipped','imported','error')),
+  recipe_id  INTEGER REFERENCES recipes(id) ON DELETE SET NULL,
+  error      TEXT,
+  created_at TEXT    NOT NULL,
+  decided_at TEXT
+);
+CREATE INDEX idx_scout_status ON scout_items(status, site);
+
 -- אסימונים חד־פעמיים: אימות דוא"ל ואיפוס סיסמה. שורה אחת לשני השימושים,
 -- כי המחזור זהה — נוצר, נשלח, נצרך פעם אחת, פג.
 CREATE TABLE user_tokens (

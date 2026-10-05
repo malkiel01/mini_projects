@@ -21,6 +21,7 @@ require_once __DIR__ . '/lib/log.php';
 require_once __DIR__ . '/lib/importer.php';
 require_once __DIR__ . '/lib/secrets.php';
 require_once __DIR__ . '/lib/ai.php';
+require_once __DIR__ . '/lib/scout.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -286,6 +287,27 @@ try {
         $sections = is_array($in['sections'] ?? null) ? $in['sections'] : [];
         ok(aiRewriteSteps($sections, str_field($in, 'title', 120), $user));
     }
+
+    // ───────── סורק אתרים (מפתח) ─────────
+
+    case 'scout-page':
+        ok(scoutPage(str_field($in, 'url', 500), $user) + scoutList([], $user));
+
+    case 'scout-list':
+        ok(scoutList(array_intersect_key($in, array_flip(['status', 'site', 'q'])), $user));
+
+    case 'scout-mark': {
+        scoutMark(is_array($in['ids'] ?? null) ? $in['ids'] : [], str_field($in, 'status', 20), $user);
+        ok(scoutList(array_intersect_key($in, array_flip(['status', 'site', 'q'])), $user));
+    }
+
+    case 'scout-remove': {
+        scoutRemove(is_array($in['ids'] ?? null) ? $in['ids'] : [], $user);
+        ok(scoutList([], $user));
+    }
+
+    case 'scout-import':
+        ok(scoutImportOne((int) ($in['id'] ?? 0), $user, !empty($in['rewrite'])));
 
     case 'ai-status':
         ok(['available' => aiAvailable()]);

@@ -119,6 +119,8 @@ check('זוהה', $raw['method'], 'microdata');
 check('שם, כותבת, מנות', [$raw['title'], $raw['author'], $raw['yield']], ['סלט עגבניות של סבתא', 'סבתא רחל', '4 מנות']);
 check('רכיבים ושלבים', [count($raw['ingredients']), count($raw['sections'][0]['steps'])], [3, 2]);
 check('תמונה יחסית → מוחלטת', $raw['images'][0], 'https://example.org/img/salad.jpg');
+check('כתובת יחסית שומרת פורט', importAbsolute('/a.jpg', 'http://127.0.0.1:8080/x/y'), 'http://127.0.0.1:8080/a.jpg');
+check('כתובת יחסית בלי לוכסן — מהתיקייה', importAbsolute('b.jpg', 'https://e.org/x/y'), 'https://e.org/x/b.jpg');
 check('זמן הכנה מ-meta content', $raw['prep_minutes'], 15);
 $draft = importToDraft($raw);
 check('מנות כמספר', [$draft['servings'], $draft['yield_text']], [4, '']);

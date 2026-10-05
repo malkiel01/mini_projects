@@ -632,3 +632,20 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
 .secret { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
 .secret label .badge { margin-inline-start: 6px; }
 .secret label .badge { align-self: flex-start; width: auto; }
+
+/* ───────── סורק אתרים ───────── */
+
+.scout__bar { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.scout__bulk { flex-wrap: wrap; margin: 8px 0; }
+.scout__list { display: flex; flex-direction: column; gap: 8px; }
+.scout-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.scout-item__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.scout-item__main a[dir="ltr"] { overflow-wrap: anywhere; display: block; text-align: left; }
+.scout-item__main .note { padding: 4px 8px; margin: 0; }
+.scout-item__actions { display: flex; flex-direction: column; gap: 6px; flex: none; }
+.scout-item--wanted { border-color: var(--accent); background: var(--accent-soft); }
+.scout-item--skipped { opacity: .6; }
+.scout-item--imported { border-color: var(--ok); }
+.scout-item--error { border-color: var(--err); }
+.scout__run { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.scout__progress { margin-top: 10px; padding-inline-start: 20px; display: flex; flex-direction: column; gap: 6px; }
