@@ -173,8 +173,14 @@
                 if (!e.isIntersecting) continue;
                 const id = e.target.id.replace('cat-', '');
                 chips.forEach(c => c.classList.toggle('active', c.dataset.cat === id));
+                // גוללים רק את סרגל הקטגוריות לרוחב. לא scrollIntoView: על אלמנט
+                // sticky הוא גולל גם את הדף לאחור, וזה יצר לולאה בין קטגוריות.
                 const active = chips.find(c => c.dataset.cat === id);
-                active?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+                if (active) {
+                    const nav = $('#catNav');
+                    const a = active.getBoundingClientRect(), n = nav.getBoundingClientRect();
+                    nav.scrollBy({ left: (a.left + a.width / 2) - (n.left + n.width / 2), behavior: 'smooth' });
+                }
             }
         }, { rootMargin: '-40% 0px -55% 0px' });
         document.querySelectorAll('.cat').forEach(s => obs.observe(s));
