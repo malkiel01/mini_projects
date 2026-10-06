@@ -54,11 +54,6 @@
             if (i) contact.append(' / ');
             contact.append(el('a', { href: 'tel:' + p.replace(/\D/g, '') }, p));
         });
-        if (menu.categories.some(c => c.items.some(i => i.extra))) {
-            const note = $('#extraNote');
-            note.textContent = '* ' + menu.extraNote;
-            note.hidden = false;
-        }
     }
 
     function renderMenu() {
@@ -168,22 +163,34 @@
     /** מדגיש בניווט את הקטגוריה שנמצאת כרגע במסך. */
     function watchActiveCategory() {
         const chips = [...document.querySelectorAll('.cat-chip')];
-        const obs = new IntersectionObserver(entries => {
-            for (const e of entries) {
-                if (!e.isIntersecting) continue;
-                const id = e.target.id.replace('cat-', '');
-                chips.forEach(c => c.classList.toggle('active', c.dataset.cat === id));
-                // גוללים רק את סרגל הקטגוריות לרוחב. לא scrollIntoView: על אלמנט
-                // sticky הוא גולל גם את הדף לאחור, וזה יצר לולאה בין קטגוריות.
-                const active = chips.find(c => c.dataset.cat === id);
-                if (active) {
-                    const nav = $('#catNav');
-                    const a = active.getBoundingClientRect(), n = nav.getBoundingClientRect();
-                    nav.scrollBy({ left: (a.left + a.width / 2) - (n.left + n.width / 2), behavior: 'smooth' });
-                }
+        const sections = [...document.querySelectorAll('.cat')];
+        let current = null;
+
+        function activate(id) {
+            if (id === current) return;
+            current = id;
+            chips.forEach(c => c.classList.toggle('active', c.dataset.cat === id));
+            // גוללים רק את סרגל הקטגוריות לרוחב. לא scrollIntoView: על אלמנט
+            // sticky הוא גולל גם את הדף לאחור, וזה יצר לולאה בין קטגוריות.
+            const active = chips.find(c => c.dataset.cat === id);
+            if (active) {
+                const nav = $('#catNav');
+                const a = active.getBoundingClientRect(), n = nav.getBoundingClientRect();
+                nav.scrollBy({ left: (a.left + a.width / 2) - (n.left + n.width / 2), behavior: 'smooth' });
             }
+        }
+
+        const atBottom = () => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 4;
+        const obs = new IntersectionObserver(entries => {
+            if (atBottom()) return;
+            for (const e of entries) if (e.isIntersecting) activate(e.target.id.replace('cat-', ''));
         }, { rootMargin: '-40% 0px -55% 0px' });
-        document.querySelectorAll('.cat').forEach(s => obs.observe(s));
+        sections.forEach(s => obs.observe(s));
+
+        // בתחתית הדף הקטגוריה האחרונה לא מגיעה לאמצע המסך — מסמנים אותה ידנית
+        window.addEventListener('scroll', () => {
+            if (atBottom() && sections.length) activate(sections.at(-1).id.replace('cat-', ''));
+        }, { passive: true });
     }
 
     /* ── גיליון ההזמנה ───────────────────────────────────────────── */
