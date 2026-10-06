@@ -323,12 +323,18 @@ check 'זה שכבר יובא ידנית מסומן "יובא" מראש'     "$P
 check 'קריאה חוזרת — אפס חדשים'                 "$(call scout-page "{\"url\":\"$FXB/listing.html\"}")" '"new":0'
 check 'sitemap נקרא'                             "$(call scout-page "{\"url\":\"$FXB/sitemap.xml\"}")" '"found":3'
 SC=$(call scout-list '{"status":"new"}' | python3 -c 'import sys,json; d=json.load(sys.stdin); print([i["id"] for i in d["items"] if i["url"].endswith("jsonld-carine.html") and "127.0.0.1:" in i["url"]][0])')
+check 'תצוגה מקדימה של מועמד — הטיוטה בלי שמירה' "$(call scout-preview "{\"id\":$SC}")" '"title":"קרין גורן מכינה.*"extracted_by":"json-ld"'
+check 'אחרי התצוגה המקדימה — עדיין "חדש"'        "$(call scout-list '{"status":"new"}')" 'jsonld-carine.html'
 check 'סימון לייבוא'                             "$(call scout-mark "{\"ids\":[$SC],\"status\":\"wanted\",\"status\":\"wanted\"}")" '"counts":{[^}]*"wanted":1'
 R=$(call scout-import "{\"id\":$SC,\"rewrite\":true}")
 check 'יובא: מתכון פרטי עם קרדיט, נוסח מחדש'     "$R" '"recipe_id":[0-9]*,"title":"קרין גורן מכינה[^}]*"rewritten":true'
 check 'ובסורק מסומן יובא'                        "$(call scout-list '{"status":"imported"}')" 'jsonld-carine.html'
 SN=$(call scout-list '{"status":"new"}' | python3 -c 'import sys,json; d=json.load(sys.stdin); print([i["id"] for i in d["items"] if i["url"].endswith("norecipe.html") and "127.0.0.1:" in i["url"]][0])')
 check 'robots.txt אוסר → לא מובא, מסומן שגיאה'   "$(call scout-import "{\"id\":$SN}")" 'robots.txt'
+# שמירה בעורך של טיוטה עם source_url של מועמד → המועמד מסומן יובא (הקישור האוטומטי)
+MID=$(top_id "$(call recipe-save "{\"title\":\"סלט מהעורך\",\"visibility\":\"private\",\"source_url\":\"$FXB/recipe/soup-1/\",\"sections\":[{\"ingredients\":[{\"free_text\":\"מים\"}],\"steps\":[{\"text\":\"להרתיח\"}]}]}")")
+check 'שמירה בעורך עם source_url של מועמד → "יובא"' "$(call scout-list '{"status":"imported"}')" '"url":"http:\\/\\/127.0.0.1:'"$FXPORT"'\\/recipe\\/soup-1\\/"[^}]*"status":"imported","recipe_id":'"$MID"
+
 check 'הפריט במצב שגיאה'                         "$(call scout-list '{"status":"error"}')" 'norecipe.html'
 check 'הסריקה והייבוא ביומן'                     "$(call log '{"action":"scout-import"}')" '"rewritten":true'
 call logout >/dev/null

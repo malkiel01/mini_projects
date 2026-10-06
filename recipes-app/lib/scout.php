@@ -302,6 +302,29 @@ function scoutRemove(array $ids, array $developer): void {
  * עם קרדיט ותיעוד → תמונות/סרטון כקישורים → ניסוח מחדש בבינה (אם ביקשו
  * ויש מפתח). שגיאה נרשמת על הפריט ואינה עוצרת את השאר — הדפדפן ממשיך לבא.
  */
+/** תצוגה מקדימה של מועמד: הבאה (robots + מרווח) → הטיוטה, בלי לשמור. להשוואה מול המקור ולתיקון בעורך. */
+function scoutPreview(int $id, array $developer): array {
+    requireDeveloper($developer);
+    $st = db()->prepare('SELECT * FROM scout_items WHERE id = ?');
+    $st->execute([$id]);
+    $item = $st->fetch();
+    if (!$item) throw new AppError('הפריט אינו קיים', 404);
+    if (!scoutRobotsAllowed($item['url'])) throw new AppError('האתר אוסר על הבאה אוטומטית של הדף (robots.txt)');
+    scoutThrottle($item['url']);
+    $draft = importPreview($item['url']);
+    if (!scoutGoodTitle((string) $item['title']) || $item['title'] !== $draft['title']) {
+        db()->prepare('UPDATE scout_items SET title = ? WHERE id = ?')->execute([mb_substr($draft['title'], 0, 120), $id]);
+    }
+    return $draft;
+}
+
+/** מתכון שנשמר עם source_url של מועמד → המועמד מסומן "יובא". נקרא מ-recipe-save. */
+function scoutLinkSaved(string $sourceUrl, int $recipeId): void {
+    if ($sourceUrl === '') return;
+    db()->prepare("UPDATE scout_items SET status = 'imported', recipe_id = ?, error = NULL, decided_at = ? WHERE url = ? AND status != 'imported'")
+        ->execute([$recipeId, nowIso(), $sourceUrl]);
+}
+
 function scoutImportOne(int $id, array $developer, bool $rewrite): array {
     requireDeveloper($developer);
     $st = db()->prepare('SELECT * FROM scout_items WHERE id = ?');

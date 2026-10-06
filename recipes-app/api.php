@@ -241,6 +241,7 @@ try {
         $saved = saveRecipe($in, $user, $id > 0 ? $id : null);
         // ייבוא: התיעוד הפרטי נשמר יחד עם המתכון החדש
         if ($id === 0 && is_array($in['snapshot'] ?? null)) importSaveSnapshot($saved, $in['snapshot'], $user);
+        if ($id === 0 && is_string($in['source_url'] ?? null)) scoutLinkSaved(trim($in['source_url']), $saved);
         ok(['id' => $saved, 'recipe' => loadRecipe($saved, $user)]);
     }
 
@@ -383,6 +384,9 @@ try {
         scoutRemove(is_array($in['ids'] ?? null) ? $in['ids'] : [], $user);
         ok(scoutList([], $user));
     }
+
+    case 'scout-preview':
+        ok(['draft' => scoutPreview((int) ($in['id'] ?? 0), $user), 'ai_available' => aiAvailable()]);
 
     case 'scout-import':
         ok(scoutImportOne((int) ($in['id'] ?? 0), $user, !empty($in['rewrite'])));

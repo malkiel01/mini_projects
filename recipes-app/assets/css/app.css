@@ -720,3 +720,14 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
 .switch input:focus-visible + .switch__track { outline: 2px solid var(--accent); outline-offset: 2px; }
 .switch__label { font-size: 0.75rem; color: var(--muted); }
 .scout-item--wanted .switch__label { color: var(--accent); font-weight: 600; }
+
+/* סורק: גלישה והרחבה */
+.scout-item { min-width: 0; overflow: hidden; }
+.scout-item__url { word-break: break-all; overflow-wrap: anywhere; max-width: 100%; }
+.scout-item__preview { margin-top: 8px; }
+.preview { border-top: 1px dashed var(--line); padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.preview h4 { margin: 8px 0 2px; color: var(--accent); }
+.preview h5 { margin: 6px 0 2px; font-size: 0.85rem; color: var(--muted); font-weight: 500; }
+.preview__imgs { grid-template-columns: repeat(3, 1fr); max-width: 300px; }
+.ings--compact li, .steps--compact li { padding: 4px 0; font-size: 0.92rem; }
+.ings--compact { border: 0; }

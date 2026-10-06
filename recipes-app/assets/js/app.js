@@ -2079,9 +2079,11 @@ async function renderScout() {
       <article class="scout-item scout-item--${it.status}" data-id="${it.id}">
         <div class="scout-item__main">
           <strong>${esc(it.title || '(בלי שם)')}</strong>
-          <a class="muted small" dir="auto" href="${esc(it.url)}" target="_blank" rel="noopener nofollow">${esc(prettyUrl(it.url))}</a>
+          <a class="muted small scout-item__url" dir="auto" href="${esc(it.url)}" target="_blank" rel="noopener nofollow">${esc(prettyUrl(it.url))}</a>
           ${it.error ? `<span class="note note--${it.status === 'error' ? 'err' : 'warn'} small">${esc(it.error)}</span>` : ''}
-          ${it.recipe_id ? `<a class="link" href="#/r/${it.recipe_id}">למתכון שיובא ›</a>` : ''}
+          ${it.recipe_id ? `<a class="link" href="#/r/${it.recipe_id}">למתכון שיובא ›</a>`
+            : `<button class="link" type="button" data-expand="${it.id}">▾ הצג מה יחולץ</button>`}
+          <div class="scout-item__preview" data-preview="${it.id}" hidden></div>
         </div>
         <div class="scout-item__actions">
           ${it.status !== 'imported' ? `
@@ -2092,11 +2094,63 @@ async function renderScout() {
             </label>` : '<span class="badge badge--public">יובא</span>'}
         </div>
       </article>`).join('') : '<p class="muted">אין פריטים במצב הזה.</p>';
-    // מתג אחד: דולק = לייבוא, כבוי = דילוג. (היו שני כפתורים כן/לא — מיותר.)
+    // מתג אחד: דולק = לייבוא, כבוי = דילוג. הפריט נשאר במקומו ברשימה אחרי
+    // הסימון — אחרת, בלשונית "חדש", הוא נעלם ברגע שסימנו אותו ונראה כאילו
+    // הבחירה התבטלה. הרשימה מסתננת מחדש רק כשעוברים לשונית.
     $$('[data-want]', listEl).forEach((c) => c.addEventListener('change', async () => {
-      const id = +c.closest('.scout-item').dataset.id;
-      try { data = await api('scout-mark', { ids: [id], status: c.checked ? 'wanted' : 'skipped', ...filters }); drawTabs(); drawList(); }
-      catch (err) { note(err.message, 'err'); }
+      const art = c.closest('.scout-item'); const id = +art.dataset.id;
+      const status = c.checked ? 'wanted' : 'skipped';
+      try {
+        const res = await api('scout-mark', { ids: [id], status });
+        const it = data.items.find((x) => x.id === id);
+        if (it) it.status = status;
+        data.counts = res.counts;
+        art.className = `scout-item scout-item--${status}`;
+        art.querySelector('.switch__label').textContent = status === 'wanted' ? 'לייבוא' : 'דילוג';
+        drawTabs();
+      } catch (err) { c.checked = !c.checked; note(err.message, 'err'); }
+    }));
+    // הרחבה: מה בדיוק יחולץ מהדף — להשוואה מול המקור, ולתיקון בעורך לפני שמירה
+    $$('[data-expand]', listEl).forEach((b) => b.addEventListener('click', async () => {
+      const id = +b.dataset.expand;
+      const box = $(`[data-preview="${id}"]`, listEl);
+      const it = data.items.find((x) => x.id === id);
+      if (!box.hidden) { box.hidden = true; b.textContent = '▾ הצג מה יחולץ'; return; }
+      box.hidden = false; b.textContent = '▴ הסתר';
+      if (!it._draft) {
+        box.innerHTML = '<p class="muted">מביא את הדף ומחלץ…</p>';
+        try { const res = await api('scout-preview', { id }); it._draft = res.draft; it._ai = res.ai_available; if (res.draft.title) it.title = res.draft.title; }
+        catch (err) { box.innerHTML = `<p class="note note--err">${esc(err.message)}</p>`; return; }
+      }
+      const d = it._draft;
+      const sec = d.sections || [];
+      box.innerHTML = `
+        <div class="preview">
+          <p><strong>${esc(d.title)}</strong> <span class="muted small">· ${esc(d.extracted_by)}${d.servings ? ` · ${d.servings} מנות` : d.yield_text ? ` · ${esc(d.yield_text)}` : ''}${d.work_minutes ? ` · עבודה ${d.work_minutes} דק׳` : ''}${d.wait_minutes ? ` · המתנה ${d.wait_minutes} דק׳` : ''}</span></p>
+          ${d.warnings?.length ? `<p class="note note--warn small">${d.warnings.map(esc).join(' · ')}</p>` : ''}
+          ${d.pending_media?.images?.length ? `<div class="gallery__thumbs preview__imgs">${d.pending_media.images.slice(0, 3).map((u) => `<img src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer">`).join('')}</div>` : ''}
+          ${sec.map((s) => `
+            ${s.name ? `<h4>${esc(s.name)}</h4>` : ''}
+            ${s.ingredients?.length ? `<h5>רכיבים (${s.ingredients.length})</h5><ul class="ings ings--compact">${s.ingredients.map((i) => `<li>${esc(i.free_text)}${i.product ? ` <span class="muted small">→ ${esc(i.product)}${i.amount_min != null ? ` ${fmtAmount(i.amount_min)} ${UNITS[i.unit] || ''}` : ''}</span>` : ''}</li>`).join('')}</ul>` : ''}
+            ${s.steps?.length ? `<h5>שלבים (${s.steps.length})</h5><ol class="steps steps--compact">${s.steps.map((st) => `<li>${esc(st.text)}</li>`).join('')}</ol>` : '<p class="muted small">לא חולצו שלבים</p>'}`).join('')}
+          <div class="actions actions--wrap">
+            <a class="btn btn--ghost" href="${esc(it.url)}" target="_blank" rel="noopener nofollow">↗ המקור להשוואה</a>
+            <button class="btn btn--primary" type="button" data-edit="${id}">✏️ פתח בעורך לתיקון</button>
+            <button class="btn" type="button" data-import-one="${id}">ייבא כמו שזה</button>
+          </div>
+        </div>`;
+      $('[data-edit]', box).addEventListener('click', async () => {
+        d.ai_available = it._ai;
+        await renderEditor(null, d);   // השמירה בעורך מסמנת את הפריט "יובא" לפי source_url
+        window.scrollTo(0, 0);
+      });
+      $('[data-import-one]', box).addEventListener('click', async (e) => {
+        e.target.disabled = true;
+        try {
+          const r = await api('scout-import', { id, rewrite: $('#scout-rewrite').checked });
+          it.status = 'imported'; it.recipe_id = r.recipe_id; drawList(); await load();
+        } catch (err) { box.insertAdjacentHTML('beforeend', `<p class="note note--err">${esc(err.message)}</p>`); }
+      });
     }));
   };
   const load = async () => {
