@@ -227,13 +227,6 @@ button { cursor: pointer; }
 .item.missing .opts-label { color: var(--danger); font-weight: 700; }
 .summary-cat li.missing { background: #fdeceb; border-color: #f2c4bf; color: var(--danger); }
 
-.extra-note {
-    text-align: center;
-    color: var(--muted);
-    font-size: .85rem;
-    margin-top: -40px;
-    padding-bottom: calc(var(--bar-h) + 30px + var(--safe-b));
-}
 
 /* ── סרגל ההזמנה ──────────────────────────────────────────────── */
 
