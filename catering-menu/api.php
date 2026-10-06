@@ -249,7 +249,13 @@ function h(string $s): string {
     return htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
 }
 
-/** שולח מייל HTML בעברית. מחזיר true אם mail() קיבל אותו. */
+/**
+ * שולח מייל HTML בעברית. מחזיר true אם mail() קיבל אותו.
+ *
+ * הלוגו מוטמע בתוך המייל (multipart/related + Content-ID) ולא כקישור לאתר:
+ * תוכנות מייל רבות (Outlook במיוחד) חוסמות תמונות מקישור עד שהקורא מאשר,
+ * ותמונה מוטמעת מוצגת מיד.
+ */
 function sendMail(string $to, string $subject, string $bodyHtml): bool {
     if ($to === '') return false;
     $settings = loadSettings();
@@ -257,26 +263,51 @@ function sendMail(string $to, string $subject, string $bodyHtml): bool {
     $host = preg_replace('/^www\./', '', preg_replace('/:\d+$/', '', $_SERVER['HTTP_HOST'] ?? 'localhost'));
     $from = $settings['email']['from'] ?: 'noreply@' . $host;
 
-    $headers = [
-        'MIME-Version: 1.0',
-        'Content-Type: text/html; charset=UTF-8',
-        'From: ' . mb_encode_mimeheader($business, 'UTF-8') . " <$from>",
-    ];
-    if ($settings['email']['replyTo']) $headers[] = 'Reply-To: ' . $settings['email']['replyTo'];
+    $logoFile = __DIR__ . '/assets/logo.jpg';
+    $logo = is_file($logoFile) ? file_get_contents($logoFile) : false;
+    $header = $logo !== false
+        ? '<img src="cid:logo@catering" alt="' . h($business) . '" width="300" '
+          . 'style="display:block;margin:0 auto;width:300px;max-width:100%;height:auto;border:0">'
+        : '<div style="color:#e9b45a;font-size:26px;font-weight:bold">' . h($business) . '</div>';
 
     $html = '<!DOCTYPE html><html lang="he" dir="rtl"><body style="margin:0;background:#faf7f1;'
           . 'font-family:Arial,sans-serif;color:#232326"><div style="max-width:560px;margin:0 auto;'
           . 'background:#fff;padding:24px;direction:rtl;text-align:right">'
-          . '<div style="background:#27282a;color:#e9b45a;font-size:26px;font-weight:bold;padding:14px;'
-          . 'text-align:center;border-radius:10px">' . h($business) . '</div>'
+          . '<div style="background:#27282a;padding:10px;text-align:center;border-radius:10px">' . $header . '</div>'
           . $bodyHtml . '</div></body></html>';
 
-    return @mail($to, mb_encode_mimeheader($subject, 'UTF-8'), $html, implode("\r\n", $headers), '-f' . $from);
+    $boundary = 'catering-' . bin2hex(random_bytes(8));
+    $headers = [
+        'MIME-Version: 1.0',
+        'From: ' . mb_encode_mimeheader($business, 'UTF-8') . " <$from>",
+    ];
+    if ($settings['email']['replyTo']) $headers[] = 'Reply-To: ' . $settings['email']['replyTo'];
+
+    if ($logo === false) {
+        $headers[] = 'Content-Type: text/html; charset=UTF-8';
+        $body = $html;
+    } else {
+        $headers[] = 'Content-Type: multipart/related; boundary="' . $boundary . '"; type="text/html"';
+        $body = "--$boundary\r\n"
+              . "Content-Type: text/html; charset=UTF-8\r\n"
+              . "Content-Transfer-Encoding: base64\r\n\r\n"
+              . chunk_split(base64_encode($html)) . "\r\n"
+              . "--$boundary\r\n"
+              . "Content-Type: image/jpeg; name=\"logo.jpg\"\r\n"
+              . "Content-Transfer-Encoding: base64\r\n"
+              . "Content-ID: <logo@catering>\r\n"
+              . "Content-Disposition: inline; filename=\"logo.jpg\"\r\n\r\n"
+              . chunk_split(base64_encode($logo)) . "\r\n"
+              . "--$boundary--\r\n";
+    }
+
+    return @mail($to, mb_encode_mimeheader($subject, 'UTF-8'), $body, implode("\r\n", $headers), '-f' . $from);
 }
 
 function orderItemsHtml(array $order): string {
     $byCat = [];
-    foreach ($order['items'] as $i) $byCat[$i['category']][] = $i['name'] . (!empty($i['extra']) ? ' *' : '');
+    $extra = menu()['extraNote'] ?? 'תוספת תשלום';
+    foreach ($order['items'] as $i) $byCat[$i['category']][] = $i['name'] . (!empty($i['extra']) ? " ($extra)" : '');
     $out = '';
     foreach ($byCat as $cat => $names) {
         $out .= '<p style="margin:12px 0 4px;color:#c98f2e;font-weight:bold">' . h($cat) . '</p><ul style="margin:0;padding-right:18px">';
