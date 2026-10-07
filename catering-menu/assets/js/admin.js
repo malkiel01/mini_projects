@@ -1173,6 +1173,7 @@
     }
 
     function resetPdfStyle() {
+        if (!confirm('לאפס את עיצוב הכתב לברירת המחדל (כמו בקובץ המקורי)? הגופנים שהועלו נשארים ברשימה.')) return;
         pdfStyle = MenuPdf.cleanStyle(JSON.parse(JSON.stringify(MenuPdf.DEFAULT_STYLE)));
         fillStyleForm();
         schedulePdf();
@@ -1201,6 +1202,8 @@
         e.target.value = '';
         if (!file) return;
         if (file.size > 8 * 1024 * 1024) { toast('קובץ הגופן גדול מדי (עד 8MB)'); return; }
+        // בורר הקבצים פתוח לכל הקבצים (באנדרואיד סינון לפי סוג מסתיר גופנים), אז בודקים כאן
+        if (!/\.(ttf|otf|woff2?)$/i.test(file.name)) { toast('זה לא קובץ גופן. בוחרים קובץ שמסתיים ב-ttf, otf, woff או woff2'); return; }
         const name = $('#fontName').value.trim() || file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ');
         try {
             const data = await new Promise((resolve, reject) => {
