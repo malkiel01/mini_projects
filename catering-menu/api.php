@@ -18,7 +18,7 @@
  * התחברות המנהל נשמרת 4 חודשים, ומתחדשת בכל שימוש. קובצי ההתחברות נשמרים
  * ב-data/sessions/ ולא בתיקיית ברירת המחדל של השרת — שם cPanel מוחק אותם
  * אחרי 24 דקות בלי פעילות.
- * התראות לטלפון (Web Push) — push.php.
+ * התראות לטלפון (Web Push) — push.php. תזכורות לפני אירועים — reminders.php.
  */
 
 declare(strict_types=1);
@@ -34,6 +34,7 @@ const SESSIONS_DIR = DATA_DIR . '/sessions';
 const LOGIN_TTL   = 60 * 60 * 24 * 120;   // 4 חודשים
 
 require __DIR__ . '/push.php';
+require __DIR__ . '/reminders.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -207,6 +208,8 @@ function defaultSettings(): array {
         'calendar' => ['showShabbat' => true, 'showParasha' => true, 'showSunset' => true, 'showRc' => true],
         // התראה על הזמנה נשארת על המסך עד שנוגעים בה
         'notify' => ['sticky' => true],
+        // תזכורות לפני אירועים, סיכום יומי וממתינות לאישור — reminders.php
+        'reminders' => defaultReminders(),
     ];
 }
 
@@ -219,6 +222,7 @@ function loadSettings(): array {
         'email'    => ($saved['email'] ?? []) + $def['email'],
         'calendar' => ($saved['calendar'] ?? []) + $def['calendar'],
         'notify'   => ($saved['notify'] ?? []) + $def['notify'],
+        'reminders' => isset($saved['reminders']) ? cleanReminders($saved['reminders']) : $def['reminders'],
     ];
 }
 
@@ -265,6 +269,7 @@ function cleanSettings(array $in): array {
             'showRc'      => $bool($cal, 'showRc', true),
         ],
         'notify' => ['sticky' => $bool($notify, 'sticky', true)],
+        'reminders' => cleanReminders($in['reminders'] ?? null),
     ];
 }
 
@@ -590,7 +595,33 @@ switch ($action) {
 
     case 'menu': {
         // ציבורי: התפריט ללקוחות, בלי מנות מוסתרות
-        ok(['menu' => publicMenu()]);
+        respondThenContinue(['menu' => publicMenu()]);
+        maybeTick('visit');          // כל כניסה לתפריט היא גם הזדמנות לשלוח תזכורות
+        exit;
+    }
+
+    case 'tick': {
+        // ציבורי: ה-cron של cPanel קורא לזה. שולח רק מה שהגיע זמנו, ולא פעמיים.
+        respondThenContinue([]);
+        maybeTick('cron');
+        exit;
+    }
+
+    case 'reminders': {
+        requireAdmin();
+        ok(upcomingReminders(time()));
+    }
+
+    case 'reminderTest': {
+        if ($method !== 'POST') fail('שיטה לא נתמכת', 405);
+        requireAdmin();
+        [$sent, $failed] = pushToAll([
+            'title' => '⏰ תזכורת לדוגמה — ניחוחות',
+            'body'  => 'כך תיראה תזכורת לפני אירוע: שם הלקוח, מתי, וכמה מנות כבר מוכנות.',
+            'url'   => 'admin/',
+            'tag'   => 'test',
+        ]);
+        ok(['sent' => $sent, 'failed' => $failed]);
     }
 
     case 'menuAdmin': {
@@ -713,7 +744,9 @@ switch ($action) {
             if ($order) $orders[] = $order;
         }
         usort($orders, fn($a, $b) => strcmp($b['createdAt'], $a['createdAt']));
-        ok(['orders' => $orders]);
+        respondThenContinue(['orders' => $orders]);
+        maybeTick('admin');          // הממשק פתוח ומרענן כל 30 שניות — גם זה שעון לתזכורות
+        exit;
     }
 
     case 'update': {
@@ -765,6 +798,9 @@ switch ($action) {
                 $mail = mailDecision($order);
                 $order['mailLog'][] = ['at' => date('c'), 'approval' => $in['approval'], 'result' => $mail];
             }
+        }
+        if (isset($in['remindersOff'])) {
+            $order['remindersOff'] = (bool) $in['remindersOff'];
         }
         if (isset($in['adminNotes'])) {
             $order['adminNotes'] = text($in, 'adminNotes', 2000);

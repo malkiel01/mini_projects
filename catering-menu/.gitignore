@@ -4,3 +4,6 @@ data/settings.json
 data/menu.json
 data/sessions/
 data/push.json
+data/reminders.json
+data/reminders.json.lock
+data/reminders.json.cron
