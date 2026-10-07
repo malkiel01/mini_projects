@@ -97,6 +97,11 @@
         $('#topActions').hidden = false;
         try { settings = (await api('settings')).settings; } catch { /* נטען שוב בפתיחת ההגדרות */ }
         await load();
+        refreshPushState();
+        // לחיצה על התראה פותחת את הממשק עם ?order=… — פותחים את ההזמנה
+        const wanted = new URLSearchParams(location.search).get('order');
+        if (wanted && orders.some(o => o.id === wanted)) openOrder(wanted);
+        if (wanted) history.replaceState(null, '', location.pathname);
     }
 
     /* ── נתונים ──────────────────────────────────────────────────── */
@@ -479,7 +484,7 @@
         rl.textContent = '';
         rl.append(...(read.length ? read.map(noteRow) : [el('p', { class: 'empty' }, '—')]));
         $('#markAllRead').hidden = !unread.length;
-        $('#enablePush').hidden = !('Notification' in window) || Notification.permission === 'granted';
+        renderPushCard();
     }
 
     /** הזמנה חדשה שהגיעה בזמן שהממשק פתוח: צליל, הודעה, והתראת דפדפן. */
@@ -520,6 +525,157 @@
         unread.forEach(o => { o.read = true; });
         render();
         await Promise.all(unread.map(o => api('update', { id: o.id, read: true }).catch(() => {})));
+    }
+
+    /* ── התראות לטלפון (Web Push) ────────────────────────────────── */
+
+    // כל מכשיר מקבל הסבר לפי מה שהוא באמת יכול:
+    // אנדרואיד/מחשב — הפעלה ישירה. אייפון — רק מאפליקציה במסך הבית (דרישה של אפל).
+    const ua = navigator.userAgent;
+    const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isAndroid = /Android/.test(ua);
+    const isStandalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    const pushSupported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+    const deviceName = isIOS ? 'אייפון' : isAndroid ? 'אנדרואיד' : /Windows/.test(ua) ? 'מחשב Windows' : /Mac/.test(ua) ? 'מק' : 'מכשיר';
+
+    let swReg = null;
+    let pushSub = null;            // ההרשמה של המכשיר הזה, אם יש
+    let installPrompt = null;      // אנדרואיד/מחשב: אפשרות "התקנה כאפליקציה"
+
+    async function initPush() {
+        window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; renderPushCard(); });
+        if (!('serviceWorker' in navigator)) return;
+        try {
+            swReg = await navigator.serviceWorker.register('sw.js');
+            navigator.serviceWorker.addEventListener('message', e => {
+                if (e.data?.type !== 'open-order') return;
+                const id = new URL(e.data.url).searchParams.get('order');
+                if (id) load(true).then(() => { if (orders.some(o => o.id === id)) openOrder(id); });
+            });
+        } catch { /* בלי service worker — אין התראות ברקע, השאר עובד */ }
+        refreshPushState();
+    }
+
+    async function refreshPushState() {
+        try {
+            if (swReg && 'PushManager' in window) pushSub = await swReg.pushManager.getSubscription();
+        } catch { pushSub = null; }
+        renderPushCard();
+    }
+
+    const pushOn = () => !!pushSub && Notification.permission === 'granted';
+
+    function renderPushCard() {
+        const card = $('#pushCard');
+        if (!card) return;
+        card.textContent = '';
+        let banner = false;
+
+        // המספר בעיגול, והטקסט בבלוק אחד — אחרת כל חלק מודגש נהיה עמודה נפרדת
+        const step = (n, html) => {
+            const text = el('span');
+            text.innerHTML = html;       // מחרוזות קבועות מהקוד — לא קלט משתמש
+            return el('li', {}, el('b', {}, n), text);
+        };
+
+        if (pushOn()) {
+            card.className = 'push-card on';
+            card.append(
+                el('p', { class: 'push-title' }, `✓ ההתראות פעילות ב${deviceName} הזה`),
+                el('p', { class: 'push-text' }, isIOS
+                    ? 'כל הזמנה חדשה תופיע כהתראה עם צליל, גם כשהאפליקציה סגורה.'
+                    : 'כל הזמנה חדשה תופיע כהתראה עם צליל ורטט, גם כשהדפדפן סגור.'),
+                el('div', { class: 'push-btns' },
+                    el('button', { type: 'button', class: 'btn btn-gold', onclick: testPush }, 'שליחת התראת בדיקה'),
+                    el('button', { type: 'button', class: 'btn btn-ghost', onclick: disablePush }, 'כיבוי')));
+        } else if (isIOS && !isStandalone) {
+            // באייפון אפל מאפשרת התראות רק לאתר שהותקן למסך הבית
+            banner = true;
+            card.className = 'push-card ios';
+            card.append(
+                el('p', { class: 'push-title' }, '📱 התראות באייפון — הגדרה חד־פעמית'),
+                el('p', { class: 'push-text' }, 'באייפון ההתראות עובדות רק מאפליקציה במסך הבית (כך אפל קבעה):'),
+                el('ol', { class: 'push-steps' },
+                    step('1', 'לחצו על כפתור <b>השיתוף</b> <span class="ios-share">⬆️</span> בתחתית ספארי'),
+                    step('2', 'בחרו <b>"הוסף למסך הבית"</b> ← <b>"הוסף"</b>'),
+                    step('3', 'פתחו את <b>"ניחוחות"</b> ממסך הבית, היכנסו עם הסיסמה'),
+                    step('4', 'פתחו שוב את 🔔 ולחצו <b>"הפעלת התראות"</b>')),
+                el('p', { class: 'push-note' }, 'דרוש iOS 16.4 ומעלה. ההתחברות באפליקציה נשמרת 4 חודשים.'));
+        } else if (!pushSupported) {
+            card.className = 'push-card off';
+            card.append(
+                el('p', { class: 'push-title' }, 'הדפדפן הזה לא תומך בהתראות ברקע'),
+                el('p', { class: 'push-text' }, isAndroid
+                    ? 'פתחו את ממשק המנהל ב-Chrome — שם ההתראות עובדות גם כשהדפדפן סגור.'
+                    : 'מומלץ Chrome, Edge או Firefox. ההתראות בתוך הממשק (צליל כשהוא פתוח) ממשיכות לעבוד.'));
+        } else if (Notification.permission === 'denied') {
+            card.className = 'push-card off';
+            card.append(
+                el('p', { class: 'push-title' }, '🔕 ההתראות חסומות במכשיר הזה'),
+                el('p', { class: 'push-text' }, isIOS
+                    ? 'כדי לאפשר: הגדרות הטלפון ← התראות ← ניחוחות ← לאפשר התראות. ואז לחזור לכאן.'
+                    : isAndroid
+                        ? 'כדי לאפשר: בכרום לוחצים על הסמל שליד הכתובת ← הרשאות ← התראות ← לאפשר. ואז לרענן.'
+                        : 'כדי לאפשר: לוחצים על המנעול שליד הכתובת ← התראות ← לאפשר. ואז לרענן.'));
+        } else {
+            banner = true;
+            card.className = 'push-card';
+            card.append(
+                el('p', { class: 'push-title' }, '🔔 התראות על הזמנות חדשות'),
+                el('p', { class: 'push-text' }, isIOS
+                    ? 'הפעילו כדי לקבל התראה עם צליל על כל הזמנה — גם כשהאפליקציה סגורה.'
+                    : isAndroid
+                        ? 'הפעילו כדי לקבל התראה עם צליל ורטט על כל הזמנה — גם כשכרום סגור.'
+                        : 'הפעילו כדי לקבל התראה על כל הזמנה — גם כשהלשונית סגורה (כל עוד הדפדפן פועל).'),
+                el('button', { type: 'button', class: 'btn btn-gold btn-wide', onclick: enablePush }, `🔔 הפעלת התראות ב${deviceName} הזה`));
+        }
+
+        if (installPrompt && !isStandalone) {
+            card.append(el('button', {
+                type: 'button', class: 'btn btn-ghost btn-wide push-install',
+                onclick: async () => { installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; renderPushCard(); },
+            }, '📲 התקנה כאפליקציה במסך הבית'));
+        }
+
+        let dismissed = false;
+        try { dismissed = localStorage.getItem('catering-menu:push-banner') === 'no'; } catch { /* */ }
+        $('#pushBanner').hidden = !banner || dismissed || $('#board').hidden;
+    }
+
+    async function enablePush() {
+        try {
+            const perm = await Notification.requestPermission();
+            if (perm !== 'granted') { renderPushCard(); return toast('לא אושרו התראות'); }
+            swReg ??= await navigator.serviceWorker.register('sw.js');
+            await navigator.serviceWorker.ready;
+            const { key } = await api('pushKey');
+            const raw = Uint8Array.from(atob(key.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+            pushSub = await swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: raw });
+            await api('pushSubscribe', { subscription: pushSub.toJSON(), device: deviceName });
+            renderPushCard();
+            toast('✓ ההתראות הופעלו — שולחים התראת בדיקה…');
+            testPush();
+        } catch (ex) {
+            toast('הפעלת ההתראות נכשלה: ' + ex.message);
+            refreshPushState();
+        }
+    }
+
+    async function testPush() {
+        try {
+            const r = await api('pushTest', {});
+            toast(r.sent ? `נשלחה התראת בדיקה ל-${r.sent} מכשירים — אמורה להגיע תוך שניות` : 'אין מכשירים רשומים להתראות');
+        } catch (ex) { toast(ex.message); }
+    }
+
+    async function disablePush() {
+        if (!pushSub) return;
+        const endpoint = pushSub.endpoint;
+        try { await pushSub.unsubscribe(); } catch { /* */ }
+        try { await api('pushUnsubscribe', { endpoint }); } catch { /* */ }
+        pushSub = null;
+        renderPushCard();
+        toast('ההתראות כובו במכשיר הזה');
     }
 
     /* ── הגדרות ──────────────────────────────────────────────────── */
@@ -1050,11 +1206,16 @@
         $('#bell').addEventListener('click', () => { renderNotes(); $('#notesSheet').showModal(); });
         $('#gear').addEventListener('click', openSettings);
         $('#markAllRead').addEventListener('click', markAllRead);
-        $('#enablePush').addEventListener('click', async () => {
-            const p = await Notification.requestPermission();
-            toast(p === 'granted' ? 'התראות הדפדפן הופעלו — כל עוד הממשק פתוח בלשונית' : 'הדפדפן לא אישר התראות');
+        $('#pushBanner').addEventListener('click', e => {
+            if (e.target.id === 'pushBannerX') {
+                try { localStorage.setItem('catering-menu:push-banner', 'no'); } catch { /* */ }
+                $('#pushBanner').hidden = true;
+                return;
+            }
             renderNotes();
+            $('#notesSheet').showModal();
         });
+        initPush();
         $('#decideForm').addEventListener('submit', submitDecision);
         $('#settingsForm').addEventListener('submit', saveSettings);
         $('#settingsForm').addEventListener('input', syncSettingsForm);

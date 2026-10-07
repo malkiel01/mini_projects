@@ -14,6 +14,11 @@
  * התפריט: כל עוד המנהל לא ערך אותו — assets/menu.json מהריפו. אחרי עריכה הוא
  * נשמר ב-data/menu.json, ומשם והלאה זה התפריט (הפריסה לא נוגעת בו).
  * מיילים יוצאים דרך mail() של PHP, שעובד בשרתי cPanel בלי הגדרה נוספת.
+ *
+ * התחברות המנהל נשמרת 4 חודשים, ומתחדשת בכל שימוש. קובצי ההתחברות נשמרים
+ * ב-data/sessions/ ולא בתיקיית ברירת המחדל של השרת — שם cPanel מוחק אותם
+ * אחרי 24 דקות בלי פעילות.
+ * התראות לטלפון (Web Push) — push.php.
  */
 
 declare(strict_types=1);
@@ -25,6 +30,10 @@ const SETTINGS_FILE = DATA_DIR . '/settings.json';
 const MENU_DEFAULT = __DIR__ . '/assets/menu.json';   // התפריט המקורי, בריפו
 const MENU_FILE   = DATA_DIR . '/menu.json';             // התפריט שהמנהל ערך (מוחרג מהפריסה)
 const MAX_ITEMS   = 200;
+const SESSIONS_DIR = DATA_DIR . '/sessions';
+const LOGIN_TTL   = 60 * 60 * 24 * 120;   // 4 חודשים
+
+require __DIR__ . '/push.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -368,18 +377,36 @@ function derivedStatus(array $items): string {
 
 /* ── התחברות ─────────────────────────────────────────────────────── */
 
-function startSession(): void {
-    $path = rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/'), '/') . '/';
-    session_name('catering_admin');
-    session_set_cookie_params([
-        'lifetime' => 60 * 60 * 24 * 30,
-        'path'     => $path,
+function cookieOptions(): array {
+    return [
+        'expires'  => time() + LOGIN_TTL,
+        'path'     => rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/'), '/') . '/',
         'secure'   => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
         'httponly' => true,
-        'samesite' => 'Strict',
-    ]);
-    ini_set('session.gc_maxlifetime', (string) (60 * 60 * 24 * 30));
+        // Lax ולא Strict: כשהמנהל לוחץ על התראה בטלפון, הממשק נפתח "מבחוץ",
+        // ו-Strict היה שולח אותו לכניסה מחדש. ההגנה מ-CSRF היא דרישת JSON (למטה).
+        'samesite' => 'Lax',
+    ];
+}
+
+function startSession(): void {
+    if (!is_dir(SESSIONS_DIR)) @mkdir(SESSIONS_DIR, 0700, true);
+    session_save_path(SESSIONS_DIR);
+    ini_set('session.gc_maxlifetime', (string) LOGIN_TTL);
+    ini_set('session.gc_probability', '1');          // ניקוי קבצים ישנים, מדי פעם
+    ini_set('session.gc_divisor', '200');
+    $opts = cookieOptions();
+    session_name('catering_admin');
+    session_set_cookie_params(['lifetime' => LOGIN_TTL] + array_diff_key($opts, ['expires' => 1]));
     session_start();
+}
+
+/** מאריך את ההתחברות עוד 4 חודשים מהיום — בכל פעם שהמנהל משתמש בממשק. */
+function renewLogin(): void {
+    if (empty($_SESSION['admin'])) return;
+    setcookie(session_name(), session_id(), cookieOptions());
+    // הקובץ נכתב מחדש פעם ביום, כדי שהניקוי האוטומטי לא ימחק כניסה פעילה
+    if (($_SESSION['touched'] ?? 0) < time() - 86400) $_SESSION['touched'] = time();
 }
 
 function config(): ?array {
@@ -390,6 +417,7 @@ function config(): ?array {
 function requireAdmin(): void {
     startSession();
     if (empty($_SESSION['admin'])) fail('נדרשת התחברות', 401);
+    renewLogin();
     session_write_close();
 }
 
@@ -472,14 +500,60 @@ switch ($action) {
         ];
         writeJson(orderPath($order['id']), $order);
 
+        // הלקוח מקבל תשובה מיד; ההתראות למנהל יוצאות אחרי זה, ברקע
+        respondThenContinue(['id' => $order['id']]);
+
+        $when = $order['customer']['deliveryAt'];
+        try {
+            pushToAll([
+                'title' => '🔔 הזמנה חדשה — ' . $name,
+                'body'  => count($items) . ' מנות' . ($when ? ' · 📅 ' . $when : '')
+                         . ($order['customer']['guests'] ? ' · ' . $order['customer']['guests'] . ' סועדים' : ''),
+                'url'   => 'admin/?order=' . $order['id'],
+                'tag'   => 'order-' . $order['id'],
+            ]);
+        } catch (Throwable $e) { /* התראה שנכשלה לא מבטלת הזמנה */ }
+
         $notify = loadSettings()['email']['adminNotify'];
         if ($notify) {
             sendMail($notify, 'הזמנה חדשה מ' . $name,
                 '<h2>הזמנה חדשה</h2><p><b>' . h($name) . '</b> · ' . h($phone)
-                . ($order['customer']['deliveryAt'] ? ' · ' . h($order['customer']['deliveryAt']) : '') . '</p>'
+                . ($when ? ' · ' . h($when) : '') . '</p>'
                 . orderItemsHtml($order));
         }
-        ok(['id' => $order['id']]);
+        exit;
+    }
+
+    case 'pushKey': {
+        requireAdmin();
+        ok(['key' => pushStore()['vapid']['public']]);
+    }
+
+    case 'pushSubscribe': {
+        if ($method !== 'POST') fail('שיטה לא נתמכת', 405);
+        requireAdmin();
+        $in = body();
+        pushSubscribe((array) ($in['subscription'] ?? []), text($in, 'device', 80));
+        ok(['devices' => count(pushStore()['subs'])]);
+    }
+
+    case 'pushUnsubscribe': {
+        if ($method !== 'POST') fail('שיטה לא נתמכת', 405);
+        requireAdmin();
+        pushUnsubscribe(text(body(), 'endpoint', 1000));
+        ok();
+    }
+
+    case 'pushTest': {
+        if ($method !== 'POST') fail('שיטה לא נתמכת', 405);
+        requireAdmin();
+        [$sent, $failed] = pushToAll([
+            'title' => '🔔 בדיקת התראות — ניחוחות',
+            'body'  => 'אם רואים את זה, ההתראות עובדות. כך תגיע כל הזמנה חדשה.',
+            'url'   => 'admin/',
+            'tag'   => 'test',
+        ]);
+        ok(['sent' => $sent, 'failed' => $failed]);
     }
 
     case 'menu': {
@@ -527,6 +601,7 @@ switch ($action) {
 
     case 'state': {
         startSession();
+        renewLogin();
         ok(['configured' => config() !== null, 'loggedIn' => !empty($_SESSION['admin'])]);
     }
 
@@ -540,6 +615,7 @@ switch ($action) {
         startSession();
         session_regenerate_id(true);
         $_SESSION['admin'] = true;
+        renewLogin();
         ok();
     }
 
@@ -555,6 +631,7 @@ switch ($action) {
         startSession();
         session_regenerate_id(true);
         $_SESSION['admin'] = true;
+        renewLogin();
         ok();
     }
 
@@ -562,6 +639,7 @@ switch ($action) {
         startSession();
         $_SESSION = [];
         session_destroy();
+        setcookie(session_name(), '', ['expires' => time() - 3600] + array_diff_key(cookieOptions(), ['expires' => 1]));
         ok();
     }
 

@@ -1,0 +1,9 @@
+# קובץ האפליקציה (manifest) — Apache לא תמיד מכיר את הסיומת
+AddType application/manifest+json .webmanifest
+
+# ה-service worker של ההתראות: תמיד הגרסה העדכנית, בלי מטמון
+<IfModule mod_headers.c>
+    <Files "sw.js">
+        Header set Cache-Control "no-cache"
+    </Files>
+</IfModule>

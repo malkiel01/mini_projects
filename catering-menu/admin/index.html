@@ -7,6 +7,13 @@
     <meta name="robots" content="noindex, nofollow">
     <title>ניחוחות — ניהול הזמנות</title>
     <link rel="icon" href="../assets/icon.svg" type="image/svg+xml">
+    <!-- אפליקציה במסך הבית (חובה באייפון כדי לקבל התראות), ואייקון לאנדרואיד ולאייפון -->
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="ניחוחות">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amatic+SC:wght@700&family=Heebo:wght@400;500;700&display=swap">
@@ -45,6 +52,11 @@
 
     <!-- הלוח -->
     <main class="board" id="board" hidden>
+        <button type="button" class="push-banner" id="pushBanner" hidden>
+            🔔 <span>הפעילו התראות בטלפון — כדי לשמוע כל הזמנה חדשה, גם כשהדפדפן סגור</span>
+            <b>הפעלה ←</b>
+            <i class="push-banner-x" id="pushBannerX" role="button" aria-label="לא עכשיו">✕</i>
+        </button>
         <div class="view-switch" role="tablist" aria-label="תצוגה">
             <button type="button" role="tab" data-view="list" aria-selected="true">📋 רשימה</button>
             <button type="button" role="tab" data-view="calendar" aria-selected="false">📅 יומן</button>
@@ -197,9 +209,10 @@
                 <h2 id="notesTitle">התראות</h2>
                 <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
             </header>
+            <!-- התראות לטלפון (Web Push) — התוכן נבנה לפי סוג המכשיר -->
+            <section class="push-card" id="pushCard"></section>
             <div class="notes-tools">
                 <button type="button" class="btn btn-ghost" id="markAllRead">סימון הכול כנקרא</button>
-                <button type="button" class="btn btn-ghost" id="enablePush">🔔 התראות בדפדפן</button>
             </div>
             <h3 class="notes-h">לא נקראו <span id="unreadCount"></span></h3>
             <div class="notes-list" id="unreadList"></div>
