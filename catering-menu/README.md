@@ -226,6 +226,19 @@
 - **כתב גדול יותר** מגדיל גם את המרווח בין השורות. אם צריך, הדף מתארך.
 - **"חזרה לעיצוב המקורי"** מחזיר את העיצוב של הקובץ.
 
+**⭐ גופנים מותאמים** (באותו חלון):
+- **העלאה:** מעלים קובץ TTF, OTF, WOFF או WOFF2, עד 8MB ועד 20 גופנים. הגופן מצטרף
+  לרשימה, לכותרות ולמנות.
+- **בדיקת הקובץ:** השרת מזהה את סוג הקובץ לפי החתימה שבתחילתו, לא לפי השם. קובץ
+  שאינו גופן נדחה.
+- **אחרי ההעלאה:** הדפדפן בודק שהוא מצליח לפתוח את הגופן, ואז הגופן מוחל על
+  הכותרות.
+- **עובי:** בגופן מותאם אפשר לבחור את כל הטווח. בגופן משתנה העובי משתנה, ובגופן
+  רגיל כל העוביים נראים אותו דבר.
+- **מחיקה:** גופן שבשימוש מוחלף בגופן המקורי.
+- **אחסון:** הקבצים נשמרים ב‑`data/fonts/` (מוחרג מהפריסה). מגישים אותם דרך
+  `api.php?action=font`.
+
 החלוקה לשתי עמודות נשמרת לפי הסדר: הקטגוריה הראשונה מימין, והשאר משמאל, כך
 שהדף יוצא הכי קצר. המרווח בין השורות מתרחב עד שהעמודה מתמלאת, כמו במקור.
 **תפריט ארוך מ‑A4 לא נדחס.** הדף מתארך, והמסגרת והקו האמצעי נמתחים איתו. שם
@@ -291,9 +304,9 @@ curl -s "https://mbe-plus.com/mini_projects/catering-menu/api.php?action=tick" >
 catering-menu/
   index.html              התפריט הציבורי
   admin/index.html        ממשק המנהל
-  api.php                 השרת: order, menu, config, tick, logo (ציבורי) · state/setup/login/logout ·
+  api.php                 השרת: order, menu, config, tick, logo, font (ציבורי) · state/setup/login/logout ·
                           orders/update/delete · settings/saveSettings ·
-                          menuAdmin/saveMenu/resetMenu · reminders/reminderTest · saveLogo/resetLogo/savePrint · saveLogo/resetLogo
+                          menuAdmin/saveMenu/resetMenu · reminders/reminderTest · saveLogo/resetLogo/savePrint · fonts/saveFont/deleteFont · saveLogo/resetLogo
   push.php                Web Push בלי ספריות
   reminders.php           תזכורות: חישוב, שליחה, ומה כבר נשלח
   assets/js/menu-pdf.js   התפריט להדפסה (PDF)
@@ -313,6 +326,7 @@ catering-menu/
     menu.json             התפריט אחרי עריכת המנהל (מוחרג מהפריסה)
     reminders.json*       מה כבר נשלח, ומתי ה-cron תקתק (מוחרג מהפריסה)
     logo.<png|jpg|webp>   לוגו שהמנהל העלה (מוחרג מהפריסה); בלעדיו assets/logo.jpg
+    fonts/                גופנים שהמנהל העלה + fonts.json (מוחרג מהפריסה)
 ```
 
 השרת בודק כל הזמנה מול `menu.json` ומעתיק לתוכה את שם המנה ואת הקטגוריה. לכן
@@ -337,6 +351,7 @@ catering-menu/
 --exclude='catering-menu/data/push.json'
 --exclude='catering-menu/data/reminders.json*'
 --exclude='catering-menu/data/logo.*'
+--exclude='catering-menu/data/fonts/'
 ```
 
 **מיילים** יוצאים דרך `mail()` של PHP, שעובד בשרתי cPanel בלי הגדרה. ברירת

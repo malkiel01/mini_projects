@@ -1106,9 +1106,10 @@
         $('#pdfStyleSaved').hidden = true;
         $('#pdfSheet').showModal();
         try {
-            const [{ menu }, res, logo] = await Promise.all([
+            const [{ menu }, res, { fonts }, logo] = await Promise.all([
                 api('menuAdmin'),
                 api('settings'),
+                api('fonts'),
                 new Promise(resolve => {
                     const i = new Image();
                     i.onload = () => resolve(i);
@@ -1117,6 +1118,7 @@
                 }),
             ]);
             pdfData = { menu, logo };
+            setFonts(fonts);
             pdfStyle = MenuPdf.cleanStyle(res.settings.print);
             fillStyleForm();
             await refreshPdf();
@@ -1130,7 +1132,8 @@
         for (const box of document.querySelectorAll('.pdf-part')) {
             const s = pdfStyle[box.dataset.part];
             const font = box.querySelector('[data-k=font]');
-            if (!font.options.length) {
+            if (font.options.length !== Object.keys(MenuPdf.FONTS).length) {
+                font.textContent = '';
                 for (const [id, f] of Object.entries(MenuPdf.FONTS)) font.append(el('option', { value: id }, f.name));
             }
             font.value = s.font;
@@ -1174,6 +1177,68 @@
         fillStyleForm();
         schedulePdf();
         savePdfStyle();
+    }
+
+    /* ── גופנים מותאמים ─────────────────────────────────────────── */
+
+    let customFonts = [];
+
+    function setFonts(list) {
+        customFonts = list;
+        MenuPdf.setCustomFonts(list.map(f => ({ id: f.id, name: f.name, url: '../api.php?action=font&id=' + f.id })));
+        const ul = $('#fontList');
+        ul.textContent = '';
+        if (!list.length) ul.append(el('li', { class: 'rem-empty' }, 'עוד לא הועלו גופנים.'));
+        for (const f of list) {
+            ul.append(el('li', {},
+                el('span', {}, '⭐ ' + f.name, el('small', {}, ` · ${f.ext.toUpperCase()} · ${Math.round(f.size / 1024)}KB`)),
+                smallBtn('🗑', 'מחיקת הגופן', () => deleteFont(f))));
+        }
+    }
+
+    async function uploadFont(e) {
+        const file = e.target.files[0];
+        e.target.value = '';
+        if (!file) return;
+        if (file.size > 8 * 1024 * 1024) { toast('קובץ הגופן גדול מדי (עד 8MB)'); return; }
+        const name = $('#fontName').value.trim() || file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ');
+        try {
+            const data = await new Promise((resolve, reject) => {
+                const fr = new FileReader();
+                fr.onload = () => resolve(fr.result);
+                fr.onerror = () => reject(new Error('קריאת הקובץ נכשלה'));
+                fr.readAsDataURL(file);
+            });
+            const res = await api('saveFont', { name, data });
+            $('#fontName').value = '';
+            setFonts(res.fonts);
+            // בדיקה שהדפדפן מצליח לפתוח את הגופן — ורק אז הוא נבחר לכותרות
+            try {
+                await new FontFace('test-' + res.font.id, `url(../api.php?action=font&id=${res.font.id})`).load();
+            } catch {
+                toast('הגופן הועלה, אבל הדפדפן לא מצליח לפתוח אותו — כדאי לנסות קובץ אחר');
+                fillStyleForm();
+                return;
+            }
+            pdfStyle.title.font = res.font.id;
+            pdfStyle = MenuPdf.cleanStyle(pdfStyle);
+            fillStyleForm();
+            schedulePdf();
+            clearTimeout(saveTimer);
+            saveTimer = setTimeout(savePdfStyle, 300);
+            toast(`✓ הגופן "${res.font.name}" הועלה, והוחל על הכותרות`);
+        } catch (ex) { toast(ex.message); }
+    }
+
+    async function deleteFont(f) {
+        const inUse = ['title', 'item'].some(p => pdfStyle[p].font === f.id);
+        if (!confirm(`למחוק את הגופן "${f.name}"?` + (inUse ? ' הוא בשימוש בתפריט, ובמקומו יחזור הגופן המקורי.' : ''))) return;
+        try {
+            setFonts((await api('deleteFont', { id: f.id })).fonts);
+            pdfStyle = MenuPdf.cleanStyle(pdfStyle);
+            fillStyleForm();
+            if (inUse) { schedulePdf(); savePdfStyle(); }
+        } catch (ex) { toast(ex.message); }
     }
 
     /** תצוגה מקדימה מהירה מיד, והקובץ המלא (300dpi) כשמפסיקים לכוונן. */
@@ -1866,6 +1931,7 @@
         $('#pdfShare').addEventListener('click', sharePdf);
         $('#pdfStyle').addEventListener('input', readStyleForm);
         $('#pdfStyleReset').addEventListener('click', resetPdfStyle);
+        $('#fontFile').addEventListener('change', uploadFont);
         document.querySelectorAll('.view-switch [data-view]').forEach(b =>
             b.addEventListener('click', () => setView(b.dataset.view)));
         document.querySelectorAll('.cal-modes [data-mode]').forEach(b =>

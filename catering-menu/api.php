@@ -12,6 +12,7 @@
  *
  * הגדרות המנהל (מיקום לזמני היום, מגבלות בחירה, מיילים, פרטי העסק) — data/settings.json.
  * לוגו שהמנהל העלה — data/logo.<png|jpg|webp>; בלעדיו assets/logo.jpg.
+ * גופנים שהמנהל העלה (לתפריט להדפסה) — data/fonts/, והרשימה ב-data/fonts/fonts.json.
  * התפריט: כל עוד המנהל לא ערך אותו — assets/menu.json מהריפו. אחרי עריכה הוא
  * נשמר ב-data/menu.json, ומשם והלאה זה התפריט (הפריסה לא נוגעת בו).
  * מיילים יוצאים דרך mail() של PHP, שעובד בשרתי cPanel בלי הגדרה נוספת.
@@ -35,6 +36,10 @@ const SESSIONS_DIR = DATA_DIR . '/sessions';
 const LOGIN_TTL   = 60 * 60 * 24 * 120;   // 4 חודשים
 const LOGO_DEFAULT = __DIR__ . '/assets/logo.jpg';      // הלוגו המקורי, בריפו
 const LOGO_TYPES  = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'webp' => 'image/webp'];
+const FONTS_DIR   = DATA_DIR . '/fonts';                 // גופנים שהמנהל העלה (מוחרג מהפריסה)
+const FONTS_FILE  = FONTS_DIR . '/fonts.json';
+const FONT_TYPES  = ['ttf' => 'font/ttf', 'otf' => 'font/otf', 'woff' => 'font/woff', 'woff2' => 'font/woff2'];
+const MAX_FONTS   = 20;
 
 require __DIR__ . '/push.php';
 require __DIR__ . '/reminders.php';
@@ -119,9 +124,27 @@ function menu(): array {
     return $menu;
 }
 
+/** הגופנים שהמנהל העלה: [{id, name, ext, size, at}]. */
+function customFonts(): array {
+    return readJson(FONTS_FILE) ?? [];
+}
+
+/** סוג קובץ הגופן לפי החתימה שבתחילתו — לא לפי השם. */
+function fontType(string $bin): ?string {
+    $sig = substr($bin, 0, 4);
+    return match (true) {
+        $sig === "\x00\x01\x00\x00", $sig === 'true' => 'ttf',
+        $sig === 'OTTO' => 'otf',
+        $sig === 'wOFF' => 'woff',
+        $sig === 'wOF2' => 'woff2',
+        default => null,
+    };
+}
+
 /** עיצוב הכתב בתפריט להדפסה: גופן מהרשימה, עובי, גודל ורוחב (באחוזים). */
 function cleanPrint(mixed $in): array {
-    $fonts = ['noto-serif', 'frank-ruhl', 'david', 'suez', 'secular', 'rubik', 'heebo', 'assistant', 'noto-sans'];
+    $fonts = array_merge(['noto-serif', 'frank-ruhl', 'david', 'suez', 'secular', 'rubik', 'heebo', 'assistant', 'noto-sans'],
+                         array_column(customFonts(), 'id'));
     $def = defaultSettings()['print'];
     $out = [];
     foreach (['title', 'item'] as $part) {
@@ -726,6 +749,58 @@ switch ($action) {
         $all['print'] = cleanPrint(body());
         writeJson(SETTINGS_FILE, $all);
         ok(['print' => $all['print']]);
+    }
+
+    case 'fonts': {
+        requireAdmin();
+        ok(['fonts' => customFonts()]);
+    }
+
+    case 'font': {
+        // ציבורי: קובץ גופן שהועלה (המזהה ייחודי, אז מותר לשמור במטמון לתמיד)
+        $id = $_GET['id'] ?? '';
+        $font = current(array_filter(customFonts(), fn($f) => $f['id'] === $id));
+        $file = $font ? FONTS_DIR . "/{$font['id']}.{$font['ext']}" : '';
+        if (!$font || !is_file($file)) fail('הגופן לא נמצא', 404);
+        header('Content-Type: ' . FONT_TYPES[$font['ext']]);
+        header('Cache-Control: public, max-age=31536000, immutable');
+        header('Content-Length: ' . filesize($file));
+        readfile($file);
+        exit;
+    }
+
+    case 'saveFont': {
+        if ($method !== 'POST') fail('שיטה לא נתמכת', 405);
+        requireAdmin();
+        $in = body();
+        $data = is_string($in['data'] ?? null) ? $in['data'] : '';
+        $bin = base64_decode(substr($data, (int) strpos($data, ',') + 1), true);
+        if ($bin === false || $bin === '') fail('הקובץ לא הגיע');
+        if (strlen($bin) > 8 * 1024 * 1024) fail('קובץ הגופן גדול מדי (עד 8MB)');
+        $ext = fontType($bin);
+        if (!$ext) fail('זה לא קובץ גופן. אפשר להעלות TTF, OTF, WOFF או WOFF2');
+        $list = customFonts();
+        if (count($list) >= MAX_FONTS) fail('אפשר עד ' . MAX_FONTS . ' גופנים — מחקו אחד קודם');
+        $name = text($in, 'name', 60) ?: 'גופן מותאם';
+        if (!is_dir(FONTS_DIR) && !@mkdir(FONTS_DIR, 0755, true)) fail('תיקיית הגופנים אינה ניתנת ליצירה', 500);
+        $font = ['id' => 'c-' . bin2hex(random_bytes(4)), 'name' => $name, 'ext' => $ext, 'size' => strlen($bin), 'at' => date('c')];
+        file_put_contents(FONTS_DIR . "/{$font['id']}.$ext", $bin, LOCK_EX);
+        $list[] = $font;
+        writeJson(FONTS_FILE, $list);
+        ok(['font' => $font, 'fonts' => $list]);
+    }
+
+    case 'deleteFont': {
+        if ($method !== 'POST') fail('שיטה לא נתמכת', 405);
+        requireAdmin();
+        $id = body()['id'] ?? '';
+        $list = customFonts();
+        foreach ($list as $f) {
+            if ($f['id'] === $id) @unlink(FONTS_DIR . "/{$f['id']}.{$f['ext']}");
+        }
+        $list = array_values(array_filter($list, fn($f) => $f['id'] !== $id));
+        writeJson(FONTS_FILE, $list);
+        ok(['fonts' => $list]);
     }
 
     case 'logo': {

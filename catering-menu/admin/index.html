@@ -482,6 +482,15 @@
                     כתב גדול יותר יכול להאריך את הדף.</p>
                 <p class="set-saved" id="pdfStyleSaved" hidden>✓ העיצוב נשמר</p>
                 <button type="button" class="link-btn" id="pdfStyleReset">חזרה לעיצוב המקורי</button>
+
+                <h3 class="set-h">⭐ גופנים מותאמים</h3>
+                <p class="set-hint">העלו קובץ גופן (TTF, OTF, WOFF או WOFF2, עד 8MB) — והוא יופיע ברשימת הגופנים,
+                    לכותרות ולמנות. ודאו שהגופן תומך בעברית.</p>
+                <ul class="font-list" id="fontList"></ul>
+                <label>שם לגופן (לא חובה — אחרת שם הקובץ)
+                    <input id="fontName" maxlength="60" placeholder="למשל: הגופן של המיתוג"></label>
+                <label class="btn btn-ghost file-btn">📁 העלאת גופן
+                    <input type="file" id="fontFile" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"></label>
             </details>
         </div>
     </dialog>
