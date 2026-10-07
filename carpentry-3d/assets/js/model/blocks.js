@@ -187,7 +187,7 @@ export function door({ id, name, x0, x1, y0, y1, zFront, type, t, frameW = 60, m
  * `x0..x1` רוחב הפתח שהחזית מכסה, `y0..y1` גובה החזית, `zFront` חזית הגוף.
  */
 export function drawer({ id, name, x0, x1, y0, y1, zFront, depth, frontT, boxT = 18, bottomT = 6, slideGap = 13,
-  frontMaterial, boxMaterial, bottomMaterial, slide, handle, gap = 2 }) {
+  boxX0, boxX1, boxY0, boxY1, frontMaterial, boxMaterial, bottomMaterial, slide, handle, gap = 2 }) {
   const parts = [];
   const hardware = [];
   const edgesAll = { front: true, top: true, bottom: true, left: true, right: true };
@@ -196,9 +196,10 @@ export function drawer({ id, name, x0, x1, y0, y1, zFront, depth, frontT, boxT =
     { axis: 'z', grain: 'x', material: frontMaterial, qtyKey: `drawer-front-${Math.round(fw)}x${Math.round(fh)}`, edges: edgesAll, note: name }));
 
   // הארגז: בתוך הפתח, פחות מרווח המסילות; נמוך מהחזית ב-30; עמוק פחות מהגוף.
-  const bx0 = x0 + slideGap, bx1 = x1 - slideGap;
-  const bh = Math.max(60, fh - 30);
-  const by = y0 + 15;
+  // כשהחזית מכסה גם את הדפנות (x0..x1 חיצוניים), הפתח עצמו נמסר ב-boxX0..boxX1.
+  const bx0 = (boxX0 ?? x0) + slideGap, bx1 = (boxX1 ?? x1) - slideGap;
+  const by = (boxY0 ?? y0) + 15;
+  const bh = Math.max(60, (boxY1 ?? y1) - by - 15);
   const bd = depth;
   const bz = zFront - bd;
   parts.push(part(`${id}-side-L`, 'דופן מגירה', { x: bx0, y: by, z: bz, w: boxT, h: bh, d: bd },

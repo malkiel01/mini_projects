@@ -150,46 +150,84 @@ function wireUi() {
 }
 
 // ---------- פרויקטים ----------
+// ---------- מסך הפתיחה: הפרויקטים, ופרויקט חדש ----------
+const TEMPLATE_META = {
+  bookcase: { icon: '📚', blurb: 'עמודות ומדפים, דלתות עץ או ויטרינה' },
+  wardrobe: { icon: '🚪', blurb: 'תלייה ומדפים, מגירות, דלתות הזזה' },
+  dresser:  { icon: '🗄️', blurb: 'שורות ועמודות של מגירות' },
+  kitchen:  { icon: '🍳', blurb: 'קו ישר או פינתי, משטח, עליונים' },
+  table:    { icon: '🪵', blurb: 'פלטה, רגליים ומסגרת' },
+  bed:      { icon: '🛏️', blurb: 'מסגרת, ראש מיטה ולטות' },
+};
+
 async function showProjects() {
   const box = $('#projects');
   box.classList.add('is-open');
+  box.querySelector('[data-close]').hidden = !state.project;   // בלי פרויקט פתוח אין לאן לסגור
   const body = $('#projects-body');
   body.innerHTML = '<p class="muted">טוען…</p>';
   try {
     const r = await api('projects-list');
     const canEdit = state.user.role !== 'viewer';
-    const typesHtml = state.types.length
-      ? state.types.map((t) => `<button type="button" class="btn btn--accent" data-new-type="${t.id}">+ ${esc(t.name)}</button>`).join(' ')
-      : '';
+    const first = r.projects.length === 0;
+    const admin = state.user.role === 'admin';
+
+    // כרטיסי סוגי המוצרים: התבניות מהקוד, ומתחת לכל אחת — הסוגים שהמנהל הגדיר עליה
+    const typeCards = Object.values(TEMPLATES).map((t) => {
+      const m = TEMPLATE_META[t.key] || { icon: '🪚', blurb: '' };
+      const presets = state.types.filter((x) => x.template_key === t.key);
+      return `<button type="button" class="tcard" data-new-tpl="${t.key}">
+        <span class="tcard__icon">${m.icon}</span>
+        <span class="tcard__name">${esc(t.name)}</span>
+        <span class="tcard__blurb">${esc(m.blurb)}</span>
+        ${presets.length ? `<span class="tcard__presets">${presets.map((x) => `<span class="tcard__preset" data-new-type="${x.id}">${esc(x.name)}</span>`).join('')}</span>` : ''}
+      </button>`;
+    }).join('');
+
+    const projCards = r.projects.map((p) => {
+      const m = TEMPLATE_META[p.template_key] || { icon: '🪚' };
+      return `<article class="pcard" data-id="${p.id}">
+        <button type="button" class="pcard__main" data-open="${p.id}">
+          <span class="pcard__icon">${m.icon}</span>
+          <span class="pcard__text">
+            <b>${esc(p.name)}</b>
+            <span class="muted">${[p.client, template(p.template_key)?.name, admin ? p.owner_name : ''].filter(Boolean).map(esc).join(' · ')}</span>
+          </span>
+          <span class="pcard__meta"><span class="tag tag--${p.status}">${statusName(p.status)}</span>${p.shared ? ' <span title="משותף עם לקוח">🔗</span>' : ''}<span class="muted">${fmtDate(p.updated_at)}</span></span>
+        </button>
+        ${canEdit ? `<span class="pcard__actions"><button type="button" class="btn btn--small" data-dup="${p.id}">שכפול</button><button type="button" class="btn btn--small" data-del="${p.id}">מחיקה</button></span>` : ''}
+      </article>`;
+    }).join('');
+
     body.innerHTML = `
-      ${canEdit ? `<div class="projects__new">
-        <span class="muted">פרויקט חדש:</span>
-        ${typesHtml}
-        ${Object.values(TEMPLATES).map((t) => `<button type="button" class="btn" data-new-tpl="${t.key}">+ ${esc(t.name)} (תבנית בסיסית)</button>`).join(' ')}
+      ${first ? `<div class="welcome">
+        <h2>שלום, ${esc(state.user.name)} 👋</h2>
+        <p>בוחרים סוג מוצר, ממלאים מידות וחומרים, ומקבלים מודל תלת־ממדי, רשימת חיתוך, שרטוטים ומחיר. הכול נשמר לבד.</p>
       </div>` : ''}
-      ${r.projects.length ? `<table class="list"><thead><tr><th>שם</th><th>לקוח</th><th>סטטוס</th>${state.user.role === 'admin' ? '<th>נגר</th>' : ''}<th>עודכן</th><th></th></tr></thead><tbody>
-        ${r.projects.map((p) => `<tr data-id="${p.id}">
-          <td><a href="#" data-open="${p.id}"><b>${esc(p.name)}</b></a> ${p.shared ? '<span title="משותף עם לקוח">🔗</span>' : ''}</td>
-          <td>${esc(p.client)}</td><td>${statusName(p.status)}</td>
-          ${state.user.role === 'admin' ? `<td>${esc(p.owner_name)}</td>` : ''}
-          <td class="muted">${fmtDate(p.updated_at)}</td>
-          <td class="list__actions">${canEdit ? `<button type="button" class="btn btn--small" data-dup="${p.id}">שכפול</button> <button type="button" class="btn btn--small" data-del="${p.id}">מחיקה</button>` : ''}</td>
-        </tr>`).join('')}</tbody></table>`
-        : '<p class="muted">אין עדיין פרויקטים.</p>'}`;
+      ${canEdit ? `<section class="start-section">
+        <h3>${first ? 'במה מתחילים?' : 'פרויקט חדש'}</h3>
+        <div class="tgrid">${typeCards}</div>
+      </section>` : ''}
+      ${r.projects.length ? `<section class="start-section">
+        <h3>הפרויקטים ${admin ? 'של כולם' : 'שלי'} <small class="muted">${r.projects.length}</small></h3>
+        <div class="pgrid">${projCards}</div>
+      </section>` : ''}`;
+
     body.onclick = async (e) => {
       const t = e.target.closest('[data-open],[data-dup],[data-del],[data-new-type],[data-new-tpl]');
       if (!t) return;
-      e.preventDefault();
+      e.preventDefault(); e.stopPropagation();
       try {
         if (t.dataset.open) { await openProject(Number(t.dataset.open)); box.classList.remove('is-open'); }
-        if (t.dataset.dup) { await api('project-duplicate', { id: Number(t.dataset.dup) }); showProjects(); }
-        if (t.dataset.del && confirm('למחוק את הפרויקט? אין שחזור.')) {
+        else if (t.dataset.dup) { await api('project-duplicate', { id: Number(t.dataset.dup) }); showProjects(); }
+        else if (t.dataset.del) {
+          if (!confirm('למחוק את הפרויקט? אין שחזור.')) return;
           await api('project-delete', { id: Number(t.dataset.del) });
           if (state.project?.id === Number(t.dataset.del)) { state.project = null; saveLast({}); }
           showProjects();
         }
-        if (t.dataset.newType) { await newProject(state.types.find((x) => x.id === Number(t.dataset.newType))); box.classList.remove('is-open'); }
-        if (t.dataset.newTpl) { await newProject(null, t.dataset.newTpl); box.classList.remove('is-open'); }
+        else if (t.dataset.newType) newProjectDialog(state.types.find((x) => x.id === Number(t.dataset.newType)));
+        else if (t.dataset.newTpl) newProjectDialog(null, t.dataset.newTpl);
       } catch (err) { onError(err); }
     };
   } catch (err) { onError(err); }
@@ -203,14 +241,36 @@ function typeDefaults(typeId, templateKey) {
   return v;
 }
 
-async function newProject(type, templateKey) {
-  await flush();
+/** חלון "פרויקט חדש": שם ולקוח, במקום prompt של הדפדפן. */
+function newProjectDialog(type, templateKey) {
   const key = type ? type.template_key : templateKey;
-  const name = prompt('שם הפרויקט (למשל "ספרייה לסלון — משפחת כהן"):', type ? type.name : template(key).name);
-  if (name === null) return;
-  const r = await api('project-save', { name, template_key: key, product_type_id: type ? type.id : null, values: typeDefaults(type?.id, key) });
+  const tpl = template(key);
+  const m = TEMPLATE_META[key] || { icon: '🪚' };
+  const dlg = $('#newproj');
+  $('#newproj-title').textContent = `${m.icon} ${type ? `${type.name} (${tpl.name})` : tpl.name}`;
+  const f = $('#newproj-form');
+  f.name.value = type ? type.name : tpl.name;
+  f.client.value = '';
+  dlg.classList.add('is-open');
+  setTimeout(() => { f.name.focus(); f.name.select(); }, 50);
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const submit = f.querySelector('button[type=submit]');
+    submit.disabled = true;
+    try {
+      await newProject(type, key, f.name.value.trim() || tpl.name, f.client.value.trim());
+      dlg.classList.remove('is-open');
+      $('#projects').classList.remove('is-open');
+    } catch (err) { onError(err); } finally { submit.disabled = false; }
+  };
+}
+
+async function newProject(type, templateKey, name, client = '') {
+  await flush();
+  const r = await api('project-save', { name, client, template_key: templateKey, product_type_id: type ? type.id : null, values: typeDefaults(type?.id, templateKey) });
   loadProject(r.project);
-  toast('הפרויקט נוצר');
+  document.body.dataset.tab = 'form';
+  toast('הפרויקט נוצר — אפשר להתחיל למלא מידות');
 }
 
 async function openProject(id) {
