@@ -618,7 +618,23 @@ body {
 .colsedit__row button:disabled { opacity: 0.4; cursor: default; }
 .colsedit__reset { width: auto !important; padding: 0 10px; font-size: 0.8rem; color: var(--muted); }
 .colsedit__gaps { display: flex; flex-direction: column; gap: 4px; padding-bottom: 6px; }
-.colsedit__gaps label { display: grid; grid-template-columns: 1fr 90px auto; align-items: center; gap: 8px; font-size: 0.82rem; }
+.colsedit__gaps label { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px; font-size: 0.82rem; }
 .colsedit__gaps label > span { color: var(--muted); }
 .colsedit__gaps input { padding: 5px 8px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel); font: inherit; font-size: 0.85rem; direction: ltr; text-align: right; }
 .colsedit__gaps i { color: var(--muted); font-style: normal; font-size: 0.75rem; }
+
+/* ---- שדות מספר: חיצים משלנו במקום הספינר של הדפדפן ---- */
+input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.num { display: inline-flex; align-items: stretch; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel); overflow: hidden; max-width: 100%; }
+.num input[type=number] { border: 0; border-radius: 0; min-width: 0; width: 5.5em; flex: 1; text-align: center; background: transparent; padding: 7px 4px; }
+.num input[type=number]:focus { outline: none; box-shadow: inset 0 0 0 2px var(--accent, #c8862e); }
+.num input[type=number]::selection { background: var(--accent, #c8862e); color: #fff; }
+.num__btn { width: 34px; border: 0; background: var(--panel-2); color: var(--ink); font: inherit; font-size: 1.1rem; line-height: 1; cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+.num__btn:first-child { border-inline-end: 1px solid var(--line); }
+.num__btn:last-child { border-inline-start: 1px solid var(--line); }
+.num__btn:active { background: var(--line); }
+.field .num { width: 100%; }
+.colsedit__gaps .num { width: auto; }
+.colsedit__gaps .num input[type=number] { width: 4.5em; }
+.mcard .num input[type=number] { width: 4.5em; }

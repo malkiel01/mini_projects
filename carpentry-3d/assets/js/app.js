@@ -15,6 +15,9 @@ import { renderForm } from './form.js';
 import { createViewer } from './viewer.js';
 import { createMaterialsUI } from './materials-ui.js';
 import { api, loadLast, saveLast } from './store.js';
+import { watchNumbers } from './numfield.js';
+
+watchNumbers();   // חיצים וסימון בכל שדות המספר, גם במסכים שנבנים מאוחר יותר
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
