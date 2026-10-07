@@ -927,3 +927,13 @@ html.big-text { font-size: 112.5%; }
     box-shadow: 0 2px 12px rgba(0, 0, 0, .18);
 }
 .pdf-preview img:not([src]) { display: none; }
+
+/* עיצוב הכתב בתפריט להדפסה */
+.pdf-style { margin-top: 12px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.pdf-style summary { font-weight: 700; cursor: pointer; }
+.pdf-part { border: 0; padding: 0; margin: 12px 0 14px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 10px; }
+.pdf-part legend { font-weight: 700; color: var(--gold-dark, #9d6b16); padding: 0; margin-bottom: 6px; }
+.pdf-part label:first-of-type { grid-column: 1 / -1; }
+.range-row { display: flex; align-items: center; gap: 8px; }
+.range-row input { flex: 1; min-width: 0; padding: 0; }
+.range-row output { min-width: 3.2em; font-size: .85rem; color: var(--muted); text-align: center; }

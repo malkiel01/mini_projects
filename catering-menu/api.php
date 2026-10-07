@@ -119,6 +119,25 @@ function menu(): array {
     return $menu;
 }
 
+/** עיצוב הכתב בתפריט להדפסה: גופן מהרשימה, עובי, גודל ורוחב (באחוזים). */
+function cleanPrint(mixed $in): array {
+    $fonts = ['noto-serif', 'frank-ruhl', 'david', 'suez', 'secular', 'rubik', 'heebo', 'assistant', 'noto-sans'];
+    $def = defaultSettings()['print'];
+    $out = [];
+    foreach (['title', 'item'] as $part) {
+        $p = is_array($in[$part] ?? null) ? $in[$part] : [];
+        $d = $def[$part];
+        $num = fn($v, $min, $max, $dv) => is_numeric($v) ? (int) max($min, min($max, (int) round((float) $v))) : $dv;
+        $out[$part] = [
+            'font'   => in_array($p['font'] ?? '', $fonts, true) ? $p['font'] : $d['font'],
+            'weight' => (int) (round($num($p['weight'] ?? null, 100, 900, $d['weight']) / 100) * 100),
+            'size'   => $num($p['size'] ?? null, 60, 150, $d['size']),
+            'width'  => $num($p['width'] ?? null, 70, 130, $d['width']),
+        ];
+    }
+    return $out;
+}
+
 /** פרטי העסק כפי שהגיעו מהמנהל — מנוקים. */
 function cleanBusiness(array $b, string $extraNote = ''): array {
     $str = fn($v, $max) => is_string($v) ? mb_substr(trim($v), 0, $max) : '';
@@ -240,6 +259,11 @@ function defaultSettings(): array {
         'notify' => ['sticky' => true],
         // פרטי העסק — null: עדיין לא נשמרו בהגדרות, ונלקחים מהתפריט
         'business' => null,
+        // עיצוב הכתב בתפריט להדפסה — כמו בקובץ המקורי
+        'print' => [
+            'title' => ['font' => 'noto-serif', 'weight' => 700, 'size' => 100, 'width' => 100],
+            'item'  => ['font' => 'rubik', 'weight' => 400, 'size' => 100, 'width' => 100],
+        ],
         // תזכורות לפני אירועים, סיכום יומי וממתינות לאישור — reminders.php
         'reminders' => defaultReminders(),
     ];
@@ -256,6 +280,7 @@ function loadSettings(): array {
         'notify'   => ($saved['notify'] ?? []) + $def['notify'],
         'reminders' => isset($saved['reminders']) ? cleanReminders($saved['reminders']) : $def['reminders'],
         'business' => is_array($saved['business'] ?? null) ? cleanBusiness($saved['business']) : null,
+        'print'    => cleanPrint($saved['print'] ?? null),
     ];
 }
 
@@ -304,6 +329,7 @@ function cleanSettings(array $in): array {
         'notify' => ['sticky' => $bool($notify, 'sticky', true)],
         'reminders' => cleanReminders($in['reminders'] ?? null),
         'business' => is_array($in['business'] ?? null) ? cleanBusiness($in['business']) : (loadSettings()['business']),
+        'print'    => array_key_exists('print', $in) ? cleanPrint($in['print']) : loadSettings()['print'],
     ];
 }
 
@@ -690,6 +716,16 @@ switch ($action) {
         $settings['business'] ??= cleanBusiness(menu()['business'], menu()['extraNote']);
         [$file] = logoFile();
         ok(['settings' => $settings, 'logo' => ['custom' => $file !== LOGO_DEFAULT, 'version' => (int) @filemtime($file)]]);
+    }
+
+    case 'savePrint': {
+        // עיצוב הכתב בתפריט להדפסה — נשמר לבד, בלי לגעת בשאר ההגדרות
+        if ($method !== 'POST') fail('שיטה לא נתמכת', 405);
+        requireAdmin();
+        $all = loadSettings();
+        $all['print'] = cleanPrint(body());
+        writeJson(SETTINGS_FILE, $all);
+        ok(['print' => $all['print']]);
     }
 
     case 'logo': {

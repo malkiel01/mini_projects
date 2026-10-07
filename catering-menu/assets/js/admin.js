@@ -1086,7 +1086,11 @@
 
     /* ── התפריט להדפסה ──────────────────────────────────────────────── */
 
-    let pdfOut = null;
+    let pdfData = null;             // { menu, logo } — נטען בפתיחת החלון
+    let pdfStyle = null;            // עיצוב הכתב הנוכחי
+    let pdfOut = null;              // הקובץ המוכן להורדה / שיתוף
+    let pdfVersion = 0;             // מונה שינויים — כדי שציור ישן לא ידרוס חדש
+    let previewTimer = 0, fullTimer = 0, saveTimer = 0;
 
     async function openPdf() {
         if (dirty()) {
@@ -1099,10 +1103,12 @@
         $('#pdfImg').removeAttribute('src');
         $('#pdfDownload').disabled = true;
         $('#pdfShare').hidden = true;
+        $('#pdfStyleSaved').hidden = true;
         $('#pdfSheet').showModal();
         try {
-            const [{ menu }, logo] = await Promise.all([
+            const [{ menu }, res, logo] = await Promise.all([
                 api('menuAdmin'),
+                api('settings'),
                 new Promise(resolve => {
                     const i = new Image();
                     i.onload = () => resolve(i);
@@ -1110,21 +1116,103 @@
                     i.src = '../api.php?action=logo&t=' + Date.now();
                 }),
             ]);
-            const out = await MenuPdf.render(menu, logo, '../assets/');
-            const blob = await MenuPdf.toPdf(out, 'תפריט ' + (menu.business?.name || ''));
-            // שם באנגלית: דפדפנים מסוימים (כרום) מחליפים שם קובץ בעברית ב-"download"
-            const name = `menu-${new Date().toISOString().slice(0, 10)}.pdf`;
-            pdfOut = { blob, file: new File([blob], name, { type: 'application/pdf' }) };
-            $('#pdfImg').src = out.canvas.toDataURL('image/jpeg', 0.8);
-            const cm = Math.round(out.height / MenuPdf.A4 * 29.7 * 10) / 10;
-            $('#pdfInfo').textContent = out.height > MenuPdf.A4
-                ? `התפריט ארוך מ-A4, ולכן הדף הוארך: 21 × ${cm} ס"מ. שום דבר לא נדחס.`
-                : 'דף A4 אחד (21 × 29.7 ס"מ). מתעדכן לבד לפי התפריט, הלוגו ופרטי הקשר.';
-            $('#pdfDownload').disabled = false;
-            $('#pdfShare').hidden = !(navigator.canShare && navigator.canShare({ files: [pdfOut.file] }));
+            pdfData = { menu, logo };
+            pdfStyle = MenuPdf.cleanStyle(res.settings.print);
+            fillStyleForm();
+            await refreshPdf();
         } catch (ex) {
             $('#pdfInfo').textContent = 'יצירת התפריט נכשלה: ' + ex.message;
         }
+    }
+
+    /** הטופס של עיצוב הכתב, לפי pdfStyle. */
+    function fillStyleForm() {
+        for (const box of document.querySelectorAll('.pdf-part')) {
+            const s = pdfStyle[box.dataset.part];
+            const font = box.querySelector('[data-k=font]');
+            if (!font.options.length) {
+                for (const [id, f] of Object.entries(MenuPdf.FONTS)) font.append(el('option', { value: id }, f.name));
+            }
+            font.value = s.font;
+            const weight = box.querySelector('[data-k=weight]');
+            weight.textContent = '';
+            const ws = MenuPdf.weightsOf(s.font);
+            for (const w of ws) weight.append(el('option', { value: w }, MenuPdf.WEIGHT_NAMES[w] || String(w)));
+            weight.value = s.weight;
+            weight.disabled = ws.length < 2;
+            for (const k of ['size', 'width']) {
+                const r = box.querySelector(`[data-k=${k}]`);
+                r.value = s[k];
+                r.nextElementSibling.textContent = s[k] + '%';
+            }
+        }
+    }
+
+    function readStyleForm(e) {
+        const box = e.target.closest('.pdf-part');
+        if (!box || !e.target.dataset.k) return;
+        const s = pdfStyle[box.dataset.part];
+        const k = e.target.dataset.k;
+        s[k] = k === 'font' ? e.target.value : Number(e.target.value);
+        pdfStyle = MenuPdf.cleanStyle(pdfStyle);   // גופן חדש — העובי הקרוב שקיים בו
+        fillStyleForm();
+        $('#pdfStyleSaved').hidden = true;
+        schedulePdf();
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(savePdfStyle, 800);
+    }
+
+    async function savePdfStyle() {
+        try {
+            pdfStyle = MenuPdf.cleanStyle((await api('savePrint', pdfStyle)).print);
+            $('#pdfStyleSaved').hidden = false;
+        } catch (ex) { toast('שמירת העיצוב נכשלה: ' + ex.message); }
+    }
+
+    function resetPdfStyle() {
+        pdfStyle = MenuPdf.cleanStyle(JSON.parse(JSON.stringify(MenuPdf.DEFAULT_STYLE)));
+        fillStyleForm();
+        schedulePdf();
+        savePdfStyle();
+    }
+
+    /** תצוגה מקדימה מהירה מיד, והקובץ המלא (300dpi) כשמפסיקים לכוונן. */
+    function schedulePdf() {
+        const v = ++pdfVersion;
+        pdfOut = null;
+        $('#pdfDownload').disabled = true;
+        clearTimeout(previewTimer);
+        clearTimeout(fullTimer);
+        previewTimer = setTimeout(() => renderPreview(v), 120);
+        fullTimer = setTimeout(() => buildPdf(v), 1200);
+    }
+
+    async function refreshPdf() {
+        const v = ++pdfVersion;
+        await renderPreview(v);
+        await buildPdf(v);
+    }
+
+    async function renderPreview(v) {
+        const out = await MenuPdf.render(pdfData.menu, pdfData.logo, '../assets/', pdfStyle, true);
+        if (v !== pdfVersion) return;
+        $('#pdfImg').src = out.canvas.toDataURL('image/jpeg', 0.85);
+        const cm = Math.round(out.height / MenuPdf.A4 * 29.7 * 10) / 10;
+        $('#pdfInfo').textContent = out.height > MenuPdf.A4
+            ? `התפריט ארוך מ-A4, ולכן הדף הוארך: 21 × ${cm} ס"מ. שום דבר לא נדחס.`
+            : 'דף A4 אחד (21 × 29.7 ס"מ). מתעדכן לבד לפי התפריט, הלוגו ופרטי הקשר.';
+    }
+
+    async function buildPdf(v) {
+        const out = await MenuPdf.render(pdfData.menu, pdfData.logo, '../assets/', pdfStyle);
+        if (v !== pdfVersion) return;
+        const blob = await MenuPdf.toPdf(out, 'תפריט ' + (pdfData.menu.business?.name || ''));
+        if (v !== pdfVersion) return;
+        // שם באנגלית: דפדפנים מסוימים (כרום) מחליפים שם קובץ בעברית ב-"download"
+        const name = `menu-${new Date().toISOString().slice(0, 10)}.pdf`;
+        pdfOut = { blob, file: new File([blob], name, { type: 'application/pdf' }) };
+        $('#pdfDownload').disabled = false;
+        $('#pdfShare').hidden = !(navigator.canShare && navigator.canShare({ files: [pdfOut.file] }));
     }
 
     function downloadPdf() {
@@ -1776,6 +1864,8 @@
         document.querySelectorAll('[data-panel="business"] input:not([type=file])').forEach(i => i.addEventListener('input', previewContact));
         $('#pdfDownload').addEventListener('click', downloadPdf);
         $('#pdfShare').addEventListener('click', sharePdf);
+        $('#pdfStyle').addEventListener('input', readStyleForm);
+        $('#pdfStyleReset').addEventListener('click', resetPdfStyle);
         document.querySelectorAll('.view-switch [data-view]').forEach(b =>
             b.addEventListener('click', () => setView(b.dataset.view)));
         document.querySelectorAll('.cal-modes [data-mode]').forEach(b =>
