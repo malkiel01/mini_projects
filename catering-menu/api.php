@@ -547,13 +547,13 @@ switch ($action) {
     case 'pushTest': {
         if ($method !== 'POST') fail('שיטה לא נתמכת', 405);
         requireAdmin();
-        [$sent, $failed] = pushToAll([
+        [$sent, $failed, $details] = pushToAll([
             'title' => '🔔 בדיקת התראות — ניחוחות',
             'body'  => 'אם רואים את זה, ההתראות עובדות. כך תגיע כל הזמנה חדשה.',
             'url'   => 'admin/',
             'tag'   => 'test',
         ]);
-        ok(['sent' => $sent, 'failed' => $failed]);
+        ok(['sent' => $sent, 'failed' => $failed, 'details' => $details]);
     }
 
     case 'menu': {

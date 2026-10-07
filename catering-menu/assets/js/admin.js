@@ -556,10 +556,18 @@
         refreshPushState();
     }
 
+    let pushReport = null;         // תוצאת הבדיקה האחרונה — מוצגת בכרטיס, לאבחון
+    let resynced = false;
+
     async function refreshPushState() {
         try {
             if (swReg && 'PushManager' in window) pushSub = await swReg.pushManager.getSubscription();
         } catch { pushSub = null; }
+        // המכשיר רשום אצלו — מוודאים שגם השרת מכיר אותו (אם נמחק שם, נרשם מחדש)
+        if (pushSub && Notification.permission === 'granted' && !resynced && !$('#board').hidden) {
+            resynced = true;
+            api('pushSubscribe', { subscription: pushSub.toJSON(), device: deviceName }).catch(() => { resynced = false; });
+        }
         renderPushCard();
     }
 
@@ -587,7 +595,9 @@
                     : 'כל הזמנה חדשה תופיע כהתראה עם צליל ורטט, גם כשהדפדפן סגור.'),
                 el('div', { class: 'push-btns' },
                     el('button', { type: 'button', class: 'btn btn-gold', onclick: testPush }, 'שליחת התראת בדיקה'),
+                    el('button', { type: 'button', class: 'btn btn-ghost', onclick: localTest }, 'בדיקה בלי שרת'),
                     el('button', { type: 'button', class: 'btn btn-ghost', onclick: disablePush }, 'כיבוי')));
+            if (pushReport) card.append(pushReport);
         } else if (isIOS && !isStandalone) {
             // באייפון אפל מאפשרת התראות רק לאתר שהותקן למסך הבית
             banner = true;
@@ -661,11 +671,52 @@
         }
     }
 
+    /** מה ענה שירות ההתראות (גוגל/אפל/מוזילה) לכל מכשיר — בעברית, עם הקוד המקורי. */
+    function explainPush(d) {
+        const svc = /apple/.test(d.service) ? 'אפל' : /google|fcm/.test(d.service) ? 'גוגל' : /mozilla/.test(d.service) ? 'מוזילה' : d.service;
+        if (d.code >= 200 && d.code < 300) return [true, `${svc} קיבל את ההתראה (${d.code}) — היא בדרך לטלפון`];
+        const why = {
+            0: 'השרת לא הצליח להתחבר לשירות ההתראות',
+            400: 'הבקשה נדחתה כפגומה',
+            401: 'האימות (VAPID) נדחה',
+            403: 'האימות (VAPID) נדחה — מפתח לא תואם או אסימון לא תקין',
+            404: 'ההרשמה של המכשיר כבר לא קיימת — צריך להפעיל מחדש',
+            410: 'ההרשמה של המכשיר בוטלה — צריך להפעיל מחדש',
+            413: 'ההודעה גדולה מדי',
+            429: 'יותר מדי בקשות — לנסות שוב בעוד דקה',
+        }[d.code] || 'שגיאה בשירות ההתראות';
+        return [false, `${svc}: ${why} (${d.code}${d.info ? ' · ' + d.info : ''})`];
+    }
+
     async function testPush() {
         try {
             const r = await api('pushTest', {});
-            toast(r.sent ? `נשלחה התראת בדיקה ל-${r.sent} מכשירים — אמורה להגיע תוך שניות` : 'אין מכשירים רשומים להתראות');
+            const box = el('div', { class: 'push-report' });
+            if (!r.details?.length) {
+                box.append(el('p', {}, '⚠️ השרת לא מכיר אף מכשיר רשום. לחצו "כיבוי" ואז הפעילו שוב.'));
+            }
+            for (const d of r.details || []) {
+                const [ok, text] = explainPush(d);
+                box.append(el('p', { class: ok ? 'ok' : 'bad' }, `${ok ? '✓' : '✕'} ${d.device || 'מכשיר'}: ${text}`));
+            }
+            if (r.sent) box.append(el('p', { class: 'hint' },
+                'אם ההתראה לא הופיעה תוך דקה — לחצו "בדיקה בלי שרת". אם גם היא לא מופיעה, ההתראות חסומות בהגדרות הטלפון.'));
+            pushReport = box;
+            renderPushCard();
         } catch (ex) { toast(ex.message); }
+    }
+
+    /** מציג התראה ישירות מהטלפון, בלי שרת ובלי גוגל/אפל — בודק רק שהטלפון מציג התראות. */
+    async function localTest() {
+        try {
+            const reg = swReg || await navigator.serviceWorker.ready;
+            await reg.showNotification('🔔 בדיקה מקומית — ניחוחות', {
+                body: 'אם רואים את זה — הטלפון מציג התראות של האתר.',
+                icon: '../assets/icon-192.png', badge: '../assets/badge-96.png',
+                tag: 'local-test', renotify: true, vibrate: [200, 100, 200], lang: 'he', dir: 'rtl',
+            });
+            toast('נשלחה התראה מקומית — אמורה להופיע עכשיו');
+        } catch (ex) { toast('התראה מקומית נכשלה: ' + ex.message); }
     }
 
     async function disablePush() {

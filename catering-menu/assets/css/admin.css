@@ -717,3 +717,17 @@
 }
 .ios-share { white-space: nowrap; }
 .push-install { min-height: 40px; }
+.push-report {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: .85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    word-break: break-word;
+}
+.push-report .ok { color: #1f7a43; }
+.push-report .bad { color: var(--danger); }
+.push-report .hint { color: var(--muted); }
