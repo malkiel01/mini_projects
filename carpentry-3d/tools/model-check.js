@@ -153,6 +153,7 @@ console.log('כל התבניות: ברירת מחדל ותצורות');
     dresser: [{}, { drawerColumns: 2, drawerRows: 3, topRowH: 150 }, { backMode: 'overlay', plinthH: 0 }],
     table: [{}, { apronH: 0 }, { stretcher: 'h', length: 2400 }],
     bed: [{}, { headboardH: 0, legs: '4', mattressW: 900 }, { mattressW: 2000, mattressL: 2200 }],
+    cladding: [{}, { walls: 2, turn2: 'left', baseH: 100, crownH: 60 }, { walls: 3, turn2: 'right', turn3: 'right', style: 'panels', slatW: 300, slatGap: 8 }, { style: 'flat', len1: 5000, height: 1000, fromFloor: 0 }, { walls: 2, turn2: 'right', style: 'slats' }],
     kitchen: [{}, { uppers: 'no', drawerCabinets: 0 }, { cabinets: 8, length: 4800, drawerCabinets: 3, backMode: 'overlay' },
       { shape: 'L' }, { shape: 'L', cornerType: 'l-carousel', cornerSide: 'right', drawerCabinetsB: 1 }, { shape: 'L', cornerType: 'blind', uppers: 'no' }, { shape: 'L', cornerSize: 1200, lengthB: 4000, cabinetsB: 4, backMode: 'overlay' }],
   };
@@ -250,6 +251,37 @@ console.log('רכיבי תנועה');
   check(dAr.angle === -dA.angle && Math.abs(dAr.pivot[0] - (3000 - dA.pivot[0])) < 0.01, 'שיקוף: הציר משתקף וכיוון הסיבוב מתהפך');
   const drB = build('kitchen', { shape: 'L', drawerCabinetsB: 1 }).parts.find((p) => p.id === 'ב1-drawer-1').motion;
   check(drB.vec[0] > 0 && drB.vec[2] === 0, 'מגירה בקיר השני נשלפת לכיוון +X');
+}
+
+console.log('חיפוי קיר');
+{
+  const overlaps = (parts) => {
+    const out = [];
+    for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
+      const a = parts[i].box, b = parts[j].box, e = 0.5;
+      if (a.x + e < b.x + b.w && b.x + e < a.x + a.w && a.y + e < b.y + b.h && b.y + e < a.y + a.h && a.z + e < b.z + b.d && b.z + e < a.z + a.d) out.push(`${parts[i].id} × ${parts[j].id}`);
+    }
+    return out;
+  };
+  const c1 = build('cladding', {});
+  check(c1.parts.filter((p) => p.name === 'סטריפ').length === 50, `3000 מ"מ ב-40+20 → 50 סטריפים (${c1.parts.filter((p) => p.name === 'סטריפ').length})`);
+  check(c1.parts.filter((p) => p.name === 'לטת רוחב').length === 3 && c1.bounds.w === 3000 && c1.bounds.d === 38, 'קיר אחד: 3 לטות, עומק = לטה + סטריפ');
+  for (const vals of [{ walls: 2, turn2: 'left' }, { walls: 2, turn2: 'right' }, { walls: 3, turn2: 'left', turn3: 'left' }, { walls: 3, turn2: 'right', turn3: 'left', style: 'flat' }]) {
+    const r = build('cladding', vals);
+    const o = overlaps(r.parts);
+    check(o.length === 0, `${JSON.stringify(vals)}: אין חפיפות בפינה (${o.slice(0, 3).join('; ')})`);
+    check(within(r.parts, r.bounds) && allFinite(r.parts), `${JSON.stringify(vals)}: בתוך הגבולות`);
+  }
+  const R = build('cladding', { walls: 2, turn2: 'right', len1: 3000, len2: 2000 });
+  check(R.bounds.w === 3000 && R.bounds.d === 2000, 'פנייה ימינה = פינה פנימית (פינת חדר): 3000 × 2000');
+  const w2 = R.parts.find((p) => p.id === 'w2-batten-1');
+  check(w2 && w2.box.d > w2.box.w && w2.box.x + w2.box.w <= 3000, 'לטות הקיר השני ניצבות, בתוך הגבולות');
+  const L = build('cladding', { walls: 2, turn2: 'left', len1: 3000, len2: 2000 });
+  check(L.bounds.w === 3038 && L.bounds.d === 2038, 'פנייה שמאלה = פינה חיצונית (עוטף בליטה): החיפוי יוצא מעבר לקירות');
+  const corner = L.parts.some((p) => p.box.x <= 3019 && p.box.x + p.box.w >= 3019 && p.box.z <= 19 && p.box.z + p.box.d >= 19 && p.box.y <= 1200 && p.box.y + p.box.h >= 1200);
+  check(corner, 'פינה חיצונית: הקצה מכוסה (אין חור בפינה)');
+  const flat = build('cladding', { style: 'flat', len1: 5000 });
+  check(flat.parts.filter((p) => p.name === 'לוח חיפוי').length === 5, 'לוחות רצופים: 5000 → 5 לוחות עד 1200');
 }
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }
