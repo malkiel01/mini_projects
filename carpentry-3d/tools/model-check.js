@@ -323,7 +323,7 @@ console.log('ספרייה: גוף פנימי/חיצוני, דפנות לפי צ�
   const g0 = ys[0] - (inner.box.y + inner.box.h), g1 = ys[1] - ys[0] - 18;
   check(Math.abs(g0 / g1 - 7) < 0.05 && Math.abs(ys[2] - ys[1] - 18 - g1) < 0.01, `תא תחתון פי 7 מהאחרים (${g0.toFixed(0)} / ${g1.toFixed(0)})`);
   const space = template('bookcase').columnSpace(r3.values);
-  check(space.columns === 3 && Math.abs(space.innerH - (r3.parts.find((p) => p.id === 'top').box.y - inner.box.y - inner.box.h)) < 0.01, 'columnSpace: הגובה הפנוי תואם את הגוף');
+  check(space.columns === 3 && Math.abs(space.cols[0].innerH - (r3.parts.find((p) => p.id === 'top').box.y - inner.box.y - inner.box.h)) < 0.01, 'columnSpace: הגובה הפנוי תואם את הגוף');
   const w = build('wardrobe', { innerMaterial: 'board:melamine-white-18', sideLeftFinish: 'fluted-fine', doorType: 'wood', doorFinish: 'fluted-fine' });
   check(w.parts.find((p) => p.id === 'partition-1').material === 'board:melamine-white-18' && w.parts.some((p) => p.id.startsWith('side-L-strip')) && w.parts.some((p) => p.id.includes('door') && p.id.includes('-strip-')) && w.parts.every((p) => p.box.x >= -0.01), 'ארון: פנימי נפרד, סטריפים בדופן ובדלתות');
   const sh = build('bookcase', { led: 'shelves' });
@@ -372,7 +372,18 @@ console.log('פריסה: נעוץ ואוטומטי, עריכה בשלושה מצ
   check(Math.abs(g0 - 600) < 0.01 && gs.every((g) => Math.abs(g - gs[0]) < 0.01), `תא תחתון נעוץ 600, השאר אוטומטיים ושווים (${gs[0].toFixed(0)})`);
   const r2 = build('bookcase', { ...base, width: 2400, columnsLayout: { widths: [800, null, null] } });
   check(Math.abs(r2.parts.find((p) => p.id === 'shelf-1-1').box.w - 800) < 0.01, 'שינוי רוחב הספרייה לא נוגע בעמודה הנעוצה');
-  check(r.warnings.some((w) => w.includes('800')) === false || true, 'אזהרת מפתח לפי העמודה הרחבה');
+  // ארון בגדים: אותו עורך — רוחב לכל עמודה, תאים בעמודת מדפים (מעל המגירות), תלייה רק רוחב
+  const wb = { width: 2400, height: 2400, columns: 3, hangingColumns: 1, shelvesPerColumn: 4, drawersPerColumn: 2, drawerH: 200 };
+  const w = build('wardrobe', { ...wb, columnsLayout: { widths: [1000, null, null], cols: { 2: { shelves: 3, gaps: [500, null, null, null] } } } });
+  const rod = w.hardware.find((h) => h.id === 'rod-1');
+  const over2 = w.parts.find((p) => p.id === 'over-drawers-shelf-3-1');
+  const s3 = [1, 2, 3].map((i) => w.parts.find((p) => p.id === `shelf-3-${i}`));
+  check(Math.abs(w.parts.find((p) => p.id === 'partition-1').box.x - (18 + 1000)) < 0.01 && s3.every(Boolean) && !w.parts.some((p) => p.id === 'shelf-3-4'), 'ארון: עמודת תלייה ברוחב 1000, עמודה 3 עם 3 מדפים');
+  const y0 = 80 + 18 + 2 * 200 + 18;   // סוקל + רצפה + מגירות + המדף שמעליהן
+  check(Math.abs(s3[0].box.y - y0 - 500) < 0.01 && Math.abs((s3[2].box.y - s3[1].box.y) - (s3[1].box.y - s3[0].box.y)) < 0.01, 'ארון: התא התחתון מעל המגירות 500, השאר שווים');
+  const wsp = template('wardrobe').columnSpace(w.values);
+  check(wsp.cols[0].editable === false && wsp.cols[2].editable === true && Math.abs(wsp.cols[2].innerH - (w.parts.find((p) => p.id === 'top').box.y - y0)) < 0.01, 'ארון columnSpace: תלייה לא נערכת, גובה פנוי מעל המגירות תואם');
+  check(Boolean(rod) && Math.abs(rod.pos ? rod.pos[0] : 0) >= 0, 'ארון: המוט קיים');
 }
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }

@@ -74,14 +74,15 @@ export default {
     return v;
   },
 
-  /** לעורך העמודות בטופס: כמה עמודות, הרוחב הפנוי לחלוקה ביניהן, הגובה הפנוי בכל אחת, ועובי מדף. */
+  /** לעורך העמודות בטופס: כמה עמודות, הרוחב הפנוי לחלוקה ביניהן, ולכל עמודה הגובה הפנוי לתאים. */
   columnSpace(v) {
     const sideT = v.sideT ?? 18, shelfT = v.shelfT ?? 18, columns = v.columns ?? 1;
     const bottomY = Math.max(v.plinthH ?? 0, 0) + shelfT, topY = (v.height ?? 2000) - (v.crownH ?? 0);
     const innerH = topY - shelfT - bottomY;
     const innerW = (v.width ?? 1200) - 2 * sideT - (columns - 1) * sideT;
     const split = (v.lowerH ?? 0) > 0 && v.lowerH < topY - bottomY - 100;
-    return { columns, innerW, innerH, shelfT, split, defaultShelves: v.shelvesPerColumn ?? 0 };
+    const cols = Array.from({ length: columns }, () => ({ innerH, defaultShelves: v.shelvesPerColumn ?? 0, editable: !split, note: split ? 'העמודה מפוצלת — הגבהים מתחלקים לפי הפיצול' : '' }));
+    return { columns, innerW, shelfT, cols };
   },
 
   // ספי האזהרות. יושבים בתבנית ואפשר לדרוס אותם בסוג המוצר.

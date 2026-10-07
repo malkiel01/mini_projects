@@ -6,6 +6,7 @@
 
 import { carcass, partitions, shelves, back, plinth, crown, door, drawer, rod, slidingDoors } from '../blocks.js';
 import { material } from '../materials.js';
+import { resolveShares, normalizeLayout } from '../layout.js';
 import { materialParams, doorParams, drawerParams, joineryParams, boardT, bodyWarnings, LIMITS, FINISHES_NO_GLASS, applyFinish, sameOrMaterial, resolveSame } from './common.js';
 
 export default {
@@ -25,6 +26,7 @@ export default {
     { key: 'topShelf', label: 'מדף עליון בעמודת תלייה', type: 'enum', default: 'yes', group: 'חלוקה', options: [{ id: 'yes', name: 'כן' }, { id: 'no', name: 'לא' }] },
     { key: 'drawersPerColumn', label: 'מגירות בתחתית כל עמודה', type: 'int', min: 0, max: 4, default: 0, group: 'חלוקה' },
     { key: 'drawerH', label: 'גובה מגירה', type: 'mm', min: 120, max: 400, default: 200, group: 'חלוקה', showIf: { drawersPerColumn: [1, 2, 3, 4] } },
+    { key: 'columnsLayout', label: 'עריכת עמודות', type: 'json', default: null, group: 'חלוקה', editor: 'columns', hint: 'רוחב לכל עמודה; בעמודת מדפים גם מספר המדפים וגובה כל תא' },
 
     ...materialParams(),
     sameOrMaterial('innerMaterial', 'הגוף הפנימי (מחיצות ומדפים)', 'חומרים'),
@@ -44,6 +46,19 @@ export default {
   ],
   joinery: joineryParams(),
   limits: LIMITS,
+
+  /** לעורך העמודות: רוחב פנוי לחלוקה, ולכל עמודה — תלייה (רק רוחב) או מדפים (גם תאים, מעל המגירות). */
+  columnSpace(v) {
+    const sideT = v.sideT ?? 18, shelfT = v.shelfT ?? 18, columns = v.columns ?? 1;
+    const bottomY = (v.plinthH ?? 80) + shelfT, topY = (v.height ?? 2400) - (v.crownH ?? 0);
+    const drawersH = (v.drawersPerColumn ?? 0) > 0 ? v.drawersPerColumn * (v.drawerH ?? 200) + shelfT : 0;
+    const innerH = topY - shelfT - bottomY - drawersH;
+    const innerW = (v.width ?? 2400) - 2 * sideT - (columns - 1) * sideT;
+    const cols = Array.from({ length: columns }, (_, i) => (i < (v.hangingColumns ?? 0)
+      ? { innerH, defaultShelves: 0, editable: false, note: 'עמודת תלייה — מוט ומדף עליון; אין תאים לעריכה' }
+      : { innerH, defaultShelves: v.shelvesPerColumn ?? 0, editable: true, note: '' }));
+    return { columns, innerW, shelfT, cols };
+  },
 
   build(v) {
     const parts = [], hardware = [], warnings = [];
@@ -68,8 +83,17 @@ export default {
       parts.push(...applyFinish(s, finish, { material: s.material, normal: side === 'L' ? '-x' : '+x' }));
     }
     const inner = body.inner;
-    const cols = partitions({ inner, columns: v.columns, t: sideT, material: innerMat });
+    // פריסת עמודות: רוחב לכל עמודה (נעוץ או אוטומטי); בעמודת מדפים גם מספר מדפים וגבהי תאים.
+    const layout = normalizeLayout(v.columnsLayout, v.columns);
+    const widths = resolveShares(inner.x1 - inner.x0 - (v.columns - 1) * sideT, layout.widths);
+    const cols = partitions({ inner, columns: v.columns, t: sideT, material: innerMat, widths });
     parts.push(...cols.parts);
+    const colShelves = (i) => { const c = layout.cols[i]; return c && Number.isInteger(c.shelves) ? c.shelves : v.shelvesPerColumn; };
+    const colGaps = (i, free) => {
+      const c = layout.cols[i], n = colShelves(i);
+      if (!c || !Array.isArray(c.gaps) || c.gaps.length !== n + 1 || c.gaps.every((g) => g === null)) return null;
+      return resolveShares(free, c.gaps);
+    };
     const z0 = inner.z0 + (v.backMode === 'groove' ? v.backInset + backT : 0), z1 = inner.z1;
     const adjustable = v.shelvesMode === 'adjustable';
 
@@ -103,7 +127,8 @@ export default {
         hardware.push(...rod({ id: `rod-${i + 1}`, x0: col.x0, x1: col.x1, y: rodY, z: (z0 + z1) / 2, material: v.rodMaterial }).hardware);
         if (rodY - y0 < 1000) warnings.push(`עמודה ${i + 1}: גובה תלייה ${Math.round(rodY - y0)} מ"מ — פחות מ-1000, קצר לחולצות`);
       } else {
-        const s = shelves({ col, y0, y1: inner.y1, z0, z1, count: v.shelvesPerColumn, t: shelfT, material: shelfMat, setback: adjustable ? 5 : 0, adjustable, colIndex: i });
+        const n = colShelves(i);
+        const s = shelves({ col, y0, y1: inner.y1, z0, z1, count: n, t: shelfT, material: shelfMat, setback: adjustable ? 5 : 0, adjustable, colIndex: i, gaps: colGaps(i, inner.y1 - y0 - n * shelfT) });
         parts.push(...s.parts);
         if (adjustable) s.parts.forEach((p) => hardware.push({ id: `${p.id}-pins`, kind: 'shelf-pin', material: 'hw:shelf-pin', qty: 4, for: p.id }));
       }

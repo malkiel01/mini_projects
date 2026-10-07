@@ -115,23 +115,26 @@ function renderColumnsEditor(box, tpl, values, key, onChange) {
   const html = [];
   html.push(radio('colsedit-cmode', colMode, { title: 'שינוי רוחב עמודה נלקח:', items: [['even', 'מכל העמודות בשווה'], ['next', 'מהעמודה שמימין'], ['prev', 'מהעמודה שמשמאל']] }));
   html.push(radio('colsedit-gmode', gapMode, { title: 'שינוי גובה תא נלקח:', items: [['even', 'מכל התאים בשווה'], ['next', 'מהתא שמעליו'], ['prev', 'מהתא שמתחתיו']] }));
+  const colInfo = (i) => space.cols[i];
+  const shelfCount = (i) => { const c = layout.cols[i]; return c && Number.isInteger(c.shelves) ? c.shelves : colInfo(i).defaultShelves; };
+  const colPins = (i, n) => { const c = layout.cols[i]; return c && Array.isArray(c.gaps) && c.gaps.length === n + 1 ? c.gaps : Array.from({ length: n + 1 }, () => null); };
   for (let i = 0; i < space.columns; i++) {
-    const c = layout.cols[i] || {};
-    const n = Number.isInteger(c.shelves) ? c.shelves : space.defaultShelves;
-    const free = space.innerH - n * space.shelfT;
-    const pins = Array.isArray(c.gaps) && c.gaps.length === n + 1 ? c.gaps : Array.from({ length: n + 1 }, () => null);
+    const info = colInfo(i), c = layout.cols[i] || {};
+    const n = shelfCount(i);
+    const free = info.innerH - n * space.shelfT;
+    const pins = colPins(i, n);
     const gaps = resolveShares(free, pins);
     const wPinned = layout.widths[i] !== null;
     const custom = wPinned || Number.isInteger(c.shelves) || pins.some((g) => g !== null);
     html.push(`<details class="colsedit__col" ${openCols.has(i) ? 'open' : ''} data-col="${i}">
-      <summary>עמודה ${i + 1} <span class="muted">· ${Math.round(widths[i])} מ"מ · ${n} מדפים${custom ? ' · מותאם' : ''}</span></summary>
+      <summary>עמודה ${i + 1} <span class="muted">· ${Math.round(widths[i])} מ"מ${info.editable ? ` · ${n} מדפים` : ''}${custom ? ' · מותאם' : ''}</span></summary>
       <div class="colsedit__row"><span>רוחב</span>
         <input type="number" step="10" min="${MIN_SHARE}" data-col="${i}" data-width="1" value="${Math.round(widths[i])}"><i>מ"מ</i>
         ${wPinned ? reset(`data-col="${i}" data-reset="width"`) : auto}</div>
-      <div class="colsedit__row"><span>מדפים</span>
+      ${!info.editable ? `<small class="muted">${info.note}</small>` : `<div class="colsedit__row"><span>מדפים</span>
         <button type="button" data-col="${i}" data-shelves="${n - 1}" ${n <= 0 ? 'disabled' : ''}>−</button><b>${n}</b><button type="button" data-col="${i}" data-shelves="${n + 1}" ${n >= 15 ? 'disabled' : ''}>+</button>
         ${Number.isInteger(c.shelves) || pins.some((g) => g !== null) ? reset(`data-col="${i}" data-reset="shelves"`) : ''}</div>
-      ${space.split ? '<small class="muted">העמודה מפוצלת — הגבהים מתחלקים לפי הפיצול</small>' : `<div class="colsedit__gaps">${gaps.map((g, gi) => `<label><span>תא ${gi + 1}${gi === gaps.length - 1 ? ' (עליון)' : gi === 0 ? ' (תחתון)' : ''}</span><input type="number" step="10" min="${MIN_SHARE}" data-col="${i}" data-gap="${gi}" value="${Math.round(g)}"><i>מ"מ</i>${pins[gi] !== null ? reset(`data-col="${i}" data-reset="gap" data-gap="${gi}"`) : auto}</label>`).reverse().join('')}</div>`}
+      <div class="colsedit__gaps">${gaps.map((g, gi) => `<label><span>תא ${gi + 1}${gi === gaps.length - 1 ? ' (עליון)' : gi === 0 ? ' (תחתון)' : ''}</span><input type="number" step="10" min="${MIN_SHARE}" data-col="${i}" data-gap="${gi}" value="${Math.round(g)}"><i>מ"מ</i>${pins[gi] !== null ? reset(`data-col="${i}" data-reset="gap" data-gap="${gi}"`) : auto}</label>`).reverse().join('')}</div>`}
     </details>`);
   }
   box.innerHTML = html.join('');
@@ -151,10 +154,9 @@ function renderColumnsEditor(box, tpl, values, key, onChange) {
       commit(next);
     } else if (t.dataset.gap !== undefined) {
       const gi = Number(t.dataset.gap);
-      const c = layout.cols[i] || {};
-      const n = Number.isInteger(c.shelves) ? c.shelves : space.defaultShelves;
-      const free = space.innerH - n * space.shelfT;
-      const pins = Array.isArray(c.gaps) && c.gaps.length === n + 1 ? c.gaps : Array.from({ length: n + 1 }, () => null);
+      const n = shelfCount(i);
+      const free = colInfo(i).innerH - n * space.shelfT;
+      const pins = colPins(i, n);
       const cur = resolveShares(free, pins);
       const next = { ...layout, cols: { ...layout.cols, [i]: { shelves: n, gaps: editShare(free, pins, gi, Number(t.value) || cur[gi], box.dataset.gapMode || 'even') } } };
       commit(next);
