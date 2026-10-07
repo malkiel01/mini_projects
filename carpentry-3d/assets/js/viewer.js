@@ -140,6 +140,76 @@ export function createViewer(canvas, { onPick } = {}) {
   // קווי מתאר דקים לכל לוח: בלעדיהם שני לוחות באותו חומר נבלעים זה בזה.
   const edgeMat = new THREE.LineBasicMaterial({ color: cssColor('--edge-line', '#4a3a2c'), transparent: true, opacity: 0.3 });
 
+  // ---- רכיבי תנועה ושקיפות ----
+  // כל חלק יושב בצומת (Group) משלו במרכזו; חלק עם `motion` מוזז/מסובב דרך
+  // הצומת. ידיות וצירים ששייכים לדלת או למגירה (hardware.for) נכנסים לאותו
+  // צומת ונעים איתה. המצבים (פתוח, שקוף) נשמרים לפי מזהה — ושורדים בנייה
+  // מחדש של המודל כשהטופס משתנה.
+  const partNodes = new Map();      // part id → { node, mesh, lines, part }
+  const openGroups = new Set();     // קבוצות תנועה פתוחות (יעד)
+  const amounts = new Map();        // קבוצה → כמה פתוחה כרגע (0..1), לאנימציה
+  const ghostIds = new Set();       // חלקים שקופים
+  let lastT = performance.now();
+
+  function applyMotion(entry, a) {
+    const { node, part: p } = entry;
+    const m = p.motion;
+    const cx = p.box.x + p.box.w / 2, cy = p.box.y + p.box.h / 2, cz = p.box.z + p.box.d / 2;
+    if (m.kind === 'slide') {
+      node.position.set(cx + m.vec[0] * a, cy + m.vec[1] * a, cz + m.vec[2] * a);
+    } else if (m.kind === 'hinge') {
+      const th = (m.angle * Math.PI / 180) * a;
+      const rx = cx - m.pivot[0], rz = cz - m.pivot[2];
+      node.position.set(m.pivot[0] + rx * Math.cos(th) + rz * Math.sin(th), cy, m.pivot[2] - rx * Math.sin(th) + rz * Math.cos(th));
+      node.rotation.y = th;
+    }
+  }
+  function animate() {
+    const now = performance.now(), dt = Math.min(0.1, (now - lastT) / 1000); lastT = now;
+    for (const entry of partNodes.values()) {
+      const m = entry.part.motion; if (!m) continue;
+      const target = openGroups.has(m.group) ? 1 : 0;
+      const cur = amounts.get(m.group) ?? 0;
+      if (cur === target) continue;
+      const next = cur < target ? Math.min(target, cur + dt * 2.5) : Math.max(target, cur - dt * 2.5);
+      amounts.set(m.group, next);
+    }
+    for (const entry of partNodes.values()) if (entry.part.motion) applyMotion(entry, amounts.get(entry.part.motion.group) ?? 0);
+  }
+  function setGhost(entry, on) {
+    const mat = entry.mesh.material;
+    const glass = material(entry.part.material).kind === 'glass';
+    mat.transparent = on || glass;
+    mat.opacity = on ? 0.18 : (glass ? (material(entry.part.material).opacity ?? 0.4) : 1);
+    mat.depthWrite = !on;
+    mat.needsUpdate = true;
+    entry.lines.material = on ? ghostEdgeMat : edgeMat;
+  }
+  const ghostEdgeMat = new THREE.LineBasicMaterial({ color: cssColor('--edge-line', '#4a3a2c'), transparent: true, opacity: 0.12 });
+
+  /** פתיחה/סגירה של קבוצת תנועה (דלת, מגירה). מחזיר את המצב החדש. */
+  function toggleOpen(groupId) {
+    if (openGroups.has(groupId)) openGroups.delete(groupId); else openGroups.add(groupId);
+    return openGroups.has(groupId);
+  }
+  const isOpen = (groupId) => openGroups.has(groupId);
+  function toggleGhost(partId) {
+    if (ghostIds.has(partId)) ghostIds.delete(partId); else ghostIds.add(partId);
+    const e = partNodes.get(partId); if (e) setGhost(e, ghostIds.has(partId));
+    return ghostIds.has(partId);
+  }
+  const isGhost = (partId) => ghostIds.has(partId);
+  /** כל רכיבי התנועה בבת אחת. */
+  function openAll(on) {
+    for (const e of partNodes.values()) if (e.part.motion) { if (on) openGroups.add(e.part.motion.group); else openGroups.delete(e.part.motion.group); }
+  }
+  const anyOpen = () => openGroups.size > 0;
+  /** כל החזיתות (מה שזז) שקופות — כדי לראות מה יש מאחור. */
+  function ghostFronts(on) {
+    for (const e of partNodes.values()) if (e.part.motion) { if (on) ghostIds.add(e.part.id); else ghostIds.delete(e.part.id); setGhost(e, on); }
+  }
+  const anyGhost = () => ghostIds.size > 0;
+
   function setModel(model) {
     if (libraryVersion() !== libVersion) { clearTextures(); libVersion = libraryVersion(); }
     while (group.children.length) {
@@ -148,18 +218,26 @@ export function createViewer(canvas, { onPick } = {}) {
     }
     pickables = [];
     selected = null;
+    partNodes.clear();
+    const ids = new Set(model.parts.map((p) => p.id));
+    for (const id of [...ghostIds]) if (!ids.has(id)) ghostIds.delete(id);
     for (const p of model.parts) {
       const geo = new THREE.BoxGeometry(p.box.w, p.box.h, p.box.d);
       const mesh = new THREE.Mesh(geo, threeMaterial(p));
-      mesh.position.set(p.box.x + p.box.w / 2, p.box.y + p.box.h / 2, p.box.z + p.box.d / 2);
       mesh.userData.part = p;
-      group.add(mesh);
-      pickables.push(mesh);
       const lines = new THREE.LineSegments(new THREE.EdgesGeometry(geo), edgeMat);
-      lines.position.copy(mesh.position);
-      group.add(lines);
+      const node = new THREE.Group();
+      node.position.set(p.box.x + p.box.w / 2, p.box.y + p.box.h / 2, p.box.z + p.box.d / 2);
+      node.add(mesh); node.add(lines);
+      node.userData.part = p;
+      group.add(node);
+      pickables.push(mesh);
+      const entry = { node, mesh, lines, part: p };
+      partNodes.set(p.id, entry);
+      if (ghostIds.has(p.id)) setGhost(entry, true);
+      if (p.motion) applyMotion(entry, amounts.get(p.motion.group) ?? 0);
     }
-    // פרזול: צירים וידיות כגופים קטנים, כדי שיראו איפה הם יושבים.
+    // פרזול: צירים וידיות כגופים קטנים. מה ששייך לדלת/מגירה נע איתה.
     for (const h of model.hardware) {
       if (!h.pos) continue;
       let mesh;
@@ -180,7 +258,14 @@ export function createViewer(canvas, { onPick } = {}) {
         mesh.rotation.z = Math.PI / 2;
         mesh.position.set(h.pos[0] + h.len / 2, h.pos[1], h.pos[2]);
       }
-      if (mesh) group.add(mesh);
+      if (!mesh) continue;
+      const owner = h.for && partNodes.get(h.for);
+      if (owner && owner.part.motion && h.kind !== 'hinge') {
+        // ידית על דלת/מגירה: לתוך הצומת של החלק, בקואורדינטות יחסיות למרכזו
+        const p = owner.part;
+        mesh.position.sub(new THREE.Vector3(p.box.x + p.box.w / 2, p.box.y + p.box.h / 2, p.box.z + p.box.d / 2));
+        owner.node.add(mesh);
+      } else group.add(mesh);
     }
     if (onPick) onPick(null);
   }
@@ -210,7 +295,7 @@ export function createViewer(canvas, { onPick } = {}) {
   window.addEventListener('resize', fit);
   new ResizeObserver(fit).observe(canvas);
   fit();
-  (function loop() { requestAnimationFrame(loop); applyCam(); renderer.render(scene, camera); })();
+  (function loop() { requestAnimationFrame(loop); animate(); applyCam(); renderer.render(scene, camera); })();
 
-  return { setModel, frame, view, fit, select, debug: () => ({ theta: ctl.theta, phi: ctl.phi, radius: ctl.radius, target: ctl.target.toArray(), w: canvas.clientWidth, h: canvas.clientHeight, aspect: camera.aspect, fov: camera.fov }) };
+  return { setModel, frame, view, fit, select, toggleOpen, isOpen, toggleGhost, isGhost, openAll, anyOpen, ghostFronts, anyGhost, debug: () => ({ open: openGroups.size, motionParts: [...partNodes.values()].filter((e) => e.part.motion).length, amounts: [...amounts.entries()].slice(0, 4), theta: ctl.theta, phi: ctl.phi, radius: ctl.radius, target: ctl.target.toArray(), w: canvas.clientWidth, h: canvas.clientHeight, aspect: camera.aspect, fov: camera.fov }) };
 }

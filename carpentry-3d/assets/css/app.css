@@ -595,3 +595,11 @@ body {
   .pcard__actions { flex-direction: row; align-items: center; }
   .welcome h2 { font-size: 1.2rem; }
 }
+
+/* ---- רכיבי תנועה ושקיפות ---- */
+.part__actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.views--toggles button.is-on { background: var(--accent-soft); color: var(--accent-deep); font-weight: 600; }
+@media (max-width: 860px) {
+  .views--toggles { margin-inline-start: auto; }
+  .views button { padding: 6px 9px; font-size: 0.8rem; }
+}

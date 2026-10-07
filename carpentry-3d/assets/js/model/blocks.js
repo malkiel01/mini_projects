@@ -138,11 +138,15 @@ export function crown({ w, y, h, t, d, material, prefix = '' }) {
  * עץ — לוח אחד. ויטרינה — מסגרת (שני זקפים ושני קושרות) ושמשה.
  * `hingeSide` — 'left' או 'right'; הידית בצד הנגדי.
  */
-export function door({ id, name, x0, x1, y0, y1, zFront, type, t, frameW = 60, material, glass, handle, hinge, hingeSide, gap = 2 }) {
+export function door({ id, name, x0, x1, y0, y1, zFront, type, t, frameW = 60, material, glass, handle, hinge, hingeSide, gap = 2, openAngle = 100 }) {
   const parts = [];
   const hardware = [];
   const x = x0 + gap / 2, w = x1 - x0 - gap, y = y0 + gap / 2, h = y1 - y0 - gap;
   const edgesAll = { front: true, top: true, bottom: true, left: true, right: true };
+  // תנועה: סיבוב סביב הקו האנכי שבקצה הציר, על פני הגוף. ציר משמאל — הקצה
+  // החופשי (מימין) יוצא החוצה (+z) בסיבוב שלילי סביב Y; ציר מימין — חיובי.
+  // כל חלקי הדלת (זקפים, קושרות, שמשה) נושאים אותה תנועה ואותה קבוצה.
+  const motion = { kind: 'hinge', group: id, pivot: [hingeSide === 'left' ? x : x + w, y, zFront], angle: hingeSide === 'left' ? -openAngle : openAngle };
 
   if (type === 'wood') {
     parts.push(part(id, 'דלת עץ', { x, y, z: zFront, w, h, d: t },
@@ -163,6 +167,8 @@ export function door({ id, name, x0, x1, y0, y1, zFront, type, t, frameW = 60, m
       { x: x + frameW - rebate, y: y + frameW - rebate, z: zFront + t / 2 - 2, w: w - 2 * frameW + 2 * rebate, h: h - 2 * frameW + 2 * rebate, d: 4 },
       { axis: 'z', grain: 'y', material: glass, qtyKey: `glass-${Math.round(w - 2 * frameW + 2 * rebate)}x${Math.round(h - 2 * frameW + 2 * rebate)}`, note: name }));
   }
+
+  for (const p of parts) p.motion = motion;
 
   // צירים: לפי גובה הדלת, כמקובל אצל יצרני הפרזול.
   const hinges = h <= 900 ? 2 : h <= 1600 ? 3 : h <= 2100 ? 4 : 5;
@@ -216,6 +222,10 @@ export function drawer({ id, name, x0, x1, y0, y1, zFront, depth, frontT, boxT =
   parts.push(part(`${id}-bottom`, 'תחתית מגירה', { x: bx0 + boxT - g, y: by + 10, z: bz + boxT - g, w: innerW + 2 * g, h: bottomT, d: bd - 2 * boxT + 2 * g },
     { axis: 'y', grain: 'x', material: bottomMaterial, qtyKey: `drawer-bottom-${Math.round(innerW + 2 * g)}x${Math.round(bd - 2 * boxT + 2 * g)}`, note: `${name} — חריץ ${g}` }));
 
+  // תנועה: שליפה קדימה (+z) של כל החלקים יחד — החזית, הארגז והתחתית.
+  const motion = { kind: 'slide', group: id, vec: [0, 0, Math.round(bd * 0.75)] };
+  for (const p of parts) p.motion = motion;
+
   hardware.push({ id: `${id}-slides`, kind: 'slide', material: slide, qty: 1, for: id, note: `זוג, אורך ${Math.round(bd / 50) * 50}` });
   if (handle) hardware.push({ id: `${id}-handle`, kind: 'handle', material: handle, pos: [fx + fw / 2, fy + fh / 2, zFront + frontT], qty: 1, for: id, horizontal: true });
   return { parts, hardware };
@@ -238,8 +248,11 @@ export function slidingDoors({ id, x0, x1, y0, y1, zFront, leaves, t, overlap = 
   for (let i = 0; i < leaves; i++) {
     const lx = x0 + i * (lw - overlap);
     const z = zFront + (i % 2 === 0 ? 0 : t + 4);   // המסילה האחורית צמודה לגוף, הקדמית לפניה
-    parts.push(part(`${id}-${i + 1}`, 'דלת הזזה', { x: lx, y: y0 + 2, z, w: lw, h: y1 - y0 - 4, d: t },
-      { axis: 'z', grain: 'y', material, qtyKey: `slide-door-${Math.round(lw)}x${Math.round(y1 - y0 - 4)}`, edges: { front: true, top: true, bottom: true, left: true, right: true }, note: `כנף ${i + 1}` }));
+    const leaf = part(`${id}-${i + 1}`, 'דלת הזזה', { x: lx, y: y0 + 2, z, w: lw, h: y1 - y0 - 4, d: t },
+      { axis: 'z', grain: 'y', material, qtyKey: `slide-door-${Math.round(lw)}x${Math.round(y1 - y0 - 4)}`, edges: { front: true, top: true, bottom: true, left: true, right: true }, note: `כנף ${i + 1}` });
+    // תנועה: הכנף מחליקה על הכנף השכנה — הראשונה ימינה, השנייה שמאלה, וכן הלאה.
+    leaf.motion = { kind: 'slide', group: leaf.id, vec: [(i % 2 === 0 ? 1 : -1) * (lw - overlap), 0, 0] };
+    parts.push(leaf);
   }
   hardware.push({ id: `${id}-track`, kind: 'track', material: track, qty: 1, note: `מסילה כפולה ${Math.round(W)}` });
   return { parts, hardware, leafWidth: lw };

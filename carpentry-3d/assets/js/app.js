@@ -117,6 +117,8 @@ function currentTemplate() { return template(state.project?.template_key || 'boo
 
 function wireUi() {
   document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => viewer.view(b.dataset.view)));
+  $('#btn-open-all').addEventListener('click', () => { viewer.openAll(!viewer.anyOpen()); syncViewToggles(); if (shownPart) showPart(shownPart); });
+  $('#btn-ghost-fronts').addEventListener('click', () => { viewer.ghostFronts(!viewer.anyGhost()); syncViewToggles(); if (shownPart) showPart(shownPart); });
   $('#btn-reset').addEventListener('click', () => {
     if (!state.project) return;
     Object.assign(state.values, typeDefaults(state.project.product_type_id, state.project.template_key));
@@ -390,8 +392,10 @@ function renderSummary(m) {
     <span>${m.hardware.reduce((n, h) => n + (h.qty || 1), 0)} פריטי פרזול</span>`;
 }
 
+let shownPart = null;
 function showPart(p) {
   const box = $('#part');
+  shownPart = p;
   if (!p) { box.innerHTML = '<p class="muted">הקשה על לוח מציגה את מידותיו. גרירה מסובבת; שתי אצבעות או גלגלת מזמנות.</p>'; return; }
   const c = cutSize(p);
   const m = M.material(p.material);
@@ -406,7 +410,32 @@ function showPart(p) {
       <dt>קנט</dt><dd>${edges}</dd>
       <dt>מיקום</dt><dd>x ${Math.round(p.box.x)} · y ${Math.round(p.box.y)} · z ${Math.round(p.box.z)}</dd>
       ${p.note ? `<dt>הערה</dt><dd>${esc(p.note)}</dd>` : ''}
-    </dl>`;
+    </dl>
+    ${partButtons(p)}`;
+}
+
+/** כפתורי הפעולה של חלק: תנועה (אם יש לו), ושקיפות. */
+function partButtons(p) {
+  const m = p.motion;
+  const open = m && viewer.isOpen(m.group);
+  const ghost = viewer.isGhost(p.id);
+  const verb = m ? (m.kind === 'hinge' ? (open ? 'סגירת הדלת' : 'פתיחת הדלת') : m.vec && Math.abs(m.vec[0]) > 0 && !p.id.includes('drawer') ? (open ? 'החזרת הכנף' : 'הזזת הכנף') : (open ? 'סגירת המגירה' : 'שליפת המגירה')) : '';
+  return `<div class="part__actions">
+    ${m ? `<button type="button" class="btn btn--small ${open ? 'is-on' : ''}" data-part-open="${esc(m.group)}">${m.kind === 'hinge' ? '🚪' : '↔️'} ${verb}</button>` : ''}
+    <button type="button" class="btn btn--small ${ghost ? 'is-on' : ''}" data-part-ghost="${esc(p.id)}">👁 ${ghost ? 'אטום' : 'שקוף'}</button>
+  </div>`;
+}
+$('#part').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-part-open],[data-part-ghost]');
+  if (!b || !shownPart) return;
+  if (b.dataset.partOpen) viewer.toggleOpen(b.dataset.partOpen);
+  if (b.dataset.partGhost) viewer.toggleGhost(b.dataset.partGhost);
+  showPart(shownPart);
+  syncViewToggles();
+});
+function syncViewToggles() {
+  $('#btn-open-all').classList.toggle('is-on', viewer.anyOpen());
+  $('#btn-ghost-fronts').classList.toggle('is-on', viewer.anyGhost());
 }
 
 // ---------- פלט ייצור ----------
