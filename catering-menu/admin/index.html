@@ -210,7 +210,7 @@
                 <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
             </header>
             <!-- התראות לטלפון (Web Push) — התוכן נבנה לפי סוג המכשיר -->
-            <section class="push-card" id="pushCard"></section>
+            <section class="push-card push-slot" id="pushCard"></section>
             <div class="notes-tools">
                 <button type="button" class="btn btn-ghost" id="markAllRead">סימון הכול כנקרא</button>
             </div>
@@ -238,52 +238,137 @@
     </dialog>
 
     <!-- הגדרות -->
-    <dialog class="sheet" id="settingsSheet" aria-labelledby="setTitle">
+    <dialog class="sheet settings-sheet" id="settingsSheet" aria-labelledby="setTitle">
         <form class="sheet-body fields" id="settingsForm">
             <header class="sheet-head">
                 <h2 id="setTitle">הגדרות</h2>
                 <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
             </header>
 
-            <h3 class="set-h">📍 אזור לזמני היום</h3>
-            <label>עיר
-                <select id="setPlace"></select>
-            </label>
-            <div class="row-2" id="setCoords">
-                <label>קו רוחב <input id="setLat" type="number" step="0.0001" dir="ltr"></label>
-                <label>קו אורך <input id="setLon" type="number" step="0.0001" dir="ltr"></label>
-            </div>
-            <label>הדלקת נרות — דקות לפני השקיעה
-                <input id="setCandle" type="number" min="0" max="90" inputmode="numeric">
-            </label>
-            <label>צאת שבת וחג
-                <select id="setHavdalahMode">
-                    <option value="tzeit">צאת הכוכבים (8.5° מתחת לאופק)</option>
-                    <option value="minutes">מספר דקות קבוע אחרי השקיעה</option>
-                </select>
-            </label>
-            <label id="setHavdalahMinWrap">דקות אחרי השקיעה
-                <input id="setHavdalahMin" type="number" min="10" max="120" inputmode="numeric">
-            </label>
-            <p class="set-preview" id="setPreview"></p>
+            <nav class="set-tabs" role="tablist" aria-label="קטגוריות הגדרות">
+                <button type="button" role="tab" data-tab="calendar">📅 יומן וזמנים</button>
+                <button type="button" role="tab" data-tab="app">📲 אפליקציה והתראות</button>
+                <button type="button" role="tab" data-tab="orders">🍽️ הזמנות</button>
+                <button type="button" role="tab" data-tab="mail">✉️ מיילים</button>
+                <button type="button" role="tab" data-tab="personal">👤 אישי</button>
+                <button type="button" role="tab" data-tab="security">🔒 אבטחה</button>
+            </nav>
 
-            <h3 class="set-h">🍽️ מגבלת בחירה לכל קטגוריה</h3>
-            <p class="set-hint">חל על כל הלקוחות. ריק = ללא הגבלה.</p>
-            <div class="limits" id="setLimits"></div>
+            <!-- יומן וזמנים: לכל המנהלים -->
+            <section class="set-panel" data-panel="calendar">
+                <h3 class="set-h">📍 אזור לזמני היום</h3>
+                <label>עיר
+                    <select id="setPlace"></select>
+                </label>
+                <div class="row-2" id="setCoords">
+                    <label>קו רוחב <input id="setLat" type="number" step="0.0001" dir="ltr"></label>
+                    <label>קו אורך <input id="setLon" type="number" step="0.0001" dir="ltr"></label>
+                </div>
+                <label>הדלקת נרות — דקות לפני השקיעה
+                    <input id="setCandle" type="number" min="0" max="90" inputmode="numeric">
+                </label>
+                <label>צאת שבת וחג
+                    <select id="setHavdalahMode">
+                        <option value="tzeit">צאת הכוכבים (8.5° מתחת לאופק)</option>
+                        <option value="minutes">מספר דקות קבוע אחרי השקיעה</option>
+                    </select>
+                </label>
+                <label id="setHavdalahMinWrap">דקות אחרי השקיעה
+                    <input id="setHavdalahMin" type="number" min="10" max="120" inputmode="numeric">
+                </label>
+                <p class="set-preview" id="setPreview"></p>
 
-            <h3 class="set-h">✉️ מיילים</h3>
-            <label>מייל למנהל — התראה על כל הזמנה חדשה
-                <input id="setAdminMail" type="email" dir="ltr" placeholder="לא חובה">
-            </label>
-            <label>מייל לתשובות הלקוחות (Reply-To)
-                <input id="setReplyTo" type="email" dir="ltr" placeholder="לא חובה">
-            </label>
-            <label>כתובת השולח (From)
-                <input id="setFrom" type="email" dir="ltr" placeholder="ריק = noreply@הדומיין">
-            </label>
+                <h3 class="set-h">🗓️ מה מוצג ביומן</h3>
+                <label class="switch"><input type="checkbox" id="setShabbat"> <span>הדלקת נרות וצאת שבת/חג</span></label>
+                <label class="switch"><input type="checkbox" id="setParasha"> <span>פרשת השבוע</span></label>
+                <label class="switch"><input type="checkbox" id="setSunset"> <span>שקיעה בכל יום</span></label>
+                <label class="switch"><input type="checkbox" id="setRc"> <span>ראש חודש</span></label>
+            </section>
+
+            <!-- אפליקציה והתראות: התקנה, התראות, צליל -->
+            <section class="set-panel" data-panel="app">
+                <h3 class="set-h">📲 אפליקציה במסך הבית</h3>
+                <div class="install-box" id="installBox"></div>
+
+                <h3 class="set-h">🔔 התראות על הזמנות חדשות</h3>
+                <section class="push-card push-slot"></section>
+                <label class="switch"><input type="checkbox" id="setSticky">
+                    <span>התראה על הזמנה נשארת על המסך עד שנוגעים בה</span></label>
+
+                <h3 class="set-h">🔊 צליל להתראות</h3>
+                <div class="sound-help" id="soundHelp"></div>
+            </section>
+
+            <section class="set-panel" data-panel="orders">
+                <h3 class="set-h">🍽️ מגבלת בחירה לכל קטגוריה</h3>
+                <p class="set-hint">חל על כל הלקוחות. ריק = ללא הגבלה.</p>
+                <div class="limits" id="setLimits"></div>
+            </section>
+
+            <section class="set-panel" data-panel="mail">
+                <h3 class="set-h">✉️ מיילים</h3>
+                <label>מייל למנהל — התראה על כל הזמנה חדשה
+                    <input id="setAdminMail" type="email" dir="ltr" placeholder="לא חובה">
+                </label>
+                <label>מייל לתשובות הלקוחות (Reply-To)
+                    <input id="setReplyTo" type="email" dir="ltr" placeholder="לא חובה">
+                </label>
+                <label>כתובת השולח (From)
+                    <input id="setFrom" type="email" dir="ltr" placeholder="ריק = noreply@הדומיין">
+                </label>
+                <p class="set-hint">כדי שהמיילים לא יגיעו לספאם, עדיף כתובת שולח שקיימת באמת בדומיין.</p>
+            </section>
+
+            <!-- אישי: נשמר רק במכשיר הזה, ומיד -->
+            <section class="set-panel" data-panel="personal">
+                <p class="set-hint">ההעדפות כאן נשמרות רק במכשיר הזה — כל מנהל מסדר לעצמו.</p>
+                <label>מסך הפתיחה
+                    <select id="prefStart">
+                        <option value="last">המסך האחרון שהייתי בו</option>
+                        <option value="list">📋 רשימת ההזמנות</option>
+                        <option value="calendar">📅 היומן</option>
+                    </select>
+                </label>
+                <label>תצוגת היומן בפתיחה
+                    <select id="prefCalMode">
+                        <option value="month">חודש</option>
+                        <option value="week">שבוע</option>
+                        <option value="day">יום</option>
+                    </select>
+                </label>
+                <label>סינון ברירת המחדל ברשימה
+                    <select id="prefFilter">
+                        <option value="open">פתוחות</option>
+                        <option value="new">ממתינות לאישור</option>
+                        <option value="all">הכול</option>
+                    </select>
+                </label>
+                <label class="switch"><input type="checkbox" id="prefChime">
+                    <span>צליל כשמגיעה הזמנה בזמן שהממשק פתוח</span></label>
+                <label class="switch"><input type="checkbox" id="prefBigText">
+                    <span>טקסט גדול</span></label>
+                <p class="set-saved" id="prefSaved" hidden>✓ נשמר במכשיר הזה</p>
+            </section>
+
+            <section class="set-panel" data-panel="security">
+                <h3 class="set-h">🔑 שינוי סיסמה</h3>
+                <label>הסיסמה הנוכחית <input type="password" id="pwCurrent" autocomplete="current-password"></label>
+                <label>סיסמה חדשה <input type="password" id="pwNew" autocomplete="new-password" minlength="6"></label>
+                <label>אימות הסיסמה החדשה <input type="password" id="pwConfirm" autocomplete="new-password" minlength="6"></label>
+                <label class="switch"><input type="checkbox" id="pwLogoutOthers" checked>
+                    <span>לנתק את כל שאר המכשירים</span></label>
+                <button type="button" class="btn btn-gold btn-wide" id="pwSave">שינוי הסיסמה</button>
+
+                <h3 class="set-h">📵 מכשירים מחוברים</h3>
+                <p class="set-hint">ההתחברות נשמרת 4 חודשים בכל מכשיר. אם טלפון אבד או הוחלף — מנתקים את כולם (המכשיר הזה נשאר מחובר).</p>
+                <button type="button" class="btn btn-danger btn-wide" id="logoutOthers">התנתקות מכל המכשירים האחרים</button>
+                <p class="form-error" id="secError" hidden></p>
+            </section>
 
             <p class="form-error" id="setError" hidden></p>
-            <button type="submit" class="btn btn-gold btn-wide">שמירה</button>
+            <div class="set-save" id="setSaveBar">
+                <button type="submit" class="btn btn-gold btn-wide">שמירת ההגדרות</button>
+            </div>
         </form>
     </dialog>
 

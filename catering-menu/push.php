@@ -143,6 +143,7 @@ function pushToAll(array $message): array {
     $settings = loadSettings();
     $mail = $settings['email']['replyTo'] ?: $settings['email']['adminNotify'];
     $subject = $mail ? "mailto:$mail" : "https://$host";
+    $message += ['sticky' => (bool) $settings['notify']['sticky']];
     $json = json_encode($message, JSON_UNESCAPED_UNICODE);
 
     $sent = $failed = 0;

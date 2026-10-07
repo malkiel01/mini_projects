@@ -731,3 +731,95 @@
 .push-report .ok { color: #1f7a43; }
 .push-report .bad { color: var(--danger); }
 .push-report .hint { color: var(--muted); }
+
+/* ── הגדרות בלשוניות ───────────────────────────────────────────── */
+
+.settings-sheet { max-width: 640px; }
+.settings-sheet .sheet-body { padding-bottom: 0; }
+.set-tabs {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin: 0 -18px;
+    padding: 2px 18px 8px;
+    border-bottom: 1px solid var(--line);
+}
+.set-tabs::-webkit-scrollbar { display: none; }
+.set-tabs button {
+    flex: none;
+    border: 1.5px solid var(--line);
+    background: #fff;
+    border-radius: 999px;
+    padding: 7px 12px;
+    font-size: .88rem;
+    font-weight: 500;
+}
+.set-tabs button[aria-selected="true"] { background: var(--coal); color: var(--gold-light); border-color: var(--coal); }
+.set-panel { display: flex; flex-direction: column; gap: 12px; }
+.set-panel[hidden] { display: none; }
+.set-panel .set-h:first-child { border-top: 0; padding-top: 0; margin-top: 4px; }
+.set-save {
+    position: sticky;
+    bottom: 0;
+    background: var(--card);
+    padding: 10px 0 calc(14px + var(--safe-b));
+    border-top: 1px solid var(--line);
+    margin-top: 4px;
+}
+.set-save[hidden] { display: none; }
+.set-saved { color: #1f7a43; font-weight: 500; font-size: .9rem; }
+.settings-sheet .set-panel:last-of-type { padding-bottom: 14px; }
+
+/* מתג (checkbox בצורת מתג) */
+.fields .switch {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    font-weight: 400;
+    cursor: pointer;
+}
+.fields .switch input {
+    appearance: none;
+    -webkit-appearance: none;
+    flex: none;
+    width: 42px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: #d9d4ca;
+    position: relative;
+    transition: background .15s;
+    cursor: pointer;
+}
+.fields .switch input::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    inset-inline-start: 3px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .2);
+    transition: inset-inline-start .15s;
+}
+.fields .switch input:checked { background: var(--ok); }
+.fields .switch input:checked::after { inset-inline-start: 21px; }
+
+.install-box {
+    border-radius: 12px;
+    padding: 12px 14px;
+    background: #fff8ea;
+    border: 1px solid #f1ddb3;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.install-box.done { background: #eaf7ef; border-color: #b9e3c8; }
+.install-title { font-weight: 700; }
+.sound-help { display: flex; flex-direction: column; gap: 8px; }
+
+/* טקסט גדול — העדפה אישית */
+html.big-text { font-size: 112.5%; }

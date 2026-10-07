@@ -17,6 +17,7 @@ self.addEventListener('push', event => {
         badge: '../assets/badge-96.png',
         tag: data.tag || 'catering',
         renotify: true,                       // גם אם יש כבר התראה — שוב צליל ורטט
+        requireInteraction: data.sticky !== false && data.tag !== 'test',   // הזמנה נשארת עד שנוגעים בה
         vibrate: [200, 100, 200, 100, 300],
         lang: 'he',
         dir: 'rtl',

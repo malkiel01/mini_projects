@@ -19,7 +19,17 @@
     let orders = [];
     let settings = null;            // הגדרות המנהל מהשרת (מיקום, מגבלות, מיילים)
     let knownUnread = null;         // מזהי ההזמנות שלא נקראו בטעינה הקודמת
-    let filter = 'open';            // ברירת מחדל: מה שעוד דורש עבודה
+    /* העדפות אישיות — נשמרות רק במכשיר הזה (localStorage), כל מנהל לעצמו */
+    const PREFS_KEY = 'catering-menu:prefs';
+    const prefs = (() => {
+        const def = { start: 'last', calMode: '', filter: 'open', chime: true, bigText: false };
+        try { return { ...def, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') }; } catch { return def; }
+    })();
+    function savePrefs() {
+        try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* מצב פרטי — לא נורא */ }
+    }
+
+    let filter = prefs.filter || 'open';   // ברירת מחדל: מה שעוד דורש עבודה
     let openId = null;              // ההזמנה שפתוחה כרגע במסך
     let configured = true;
 
@@ -505,6 +515,7 @@
     }
 
     function chime() {
+        if (prefs.chime === false) return;
         try {
             const ctx = new (window.AudioContext || window.webkitAudioContext)();
             [660, 880].forEach((f, i) => {
@@ -544,6 +555,8 @@
 
     async function initPush() {
         window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; renderPushCard(); });
+        window.addEventListener('appinstalled', () => { markInstalled(); installPrompt = null; renderPushCard(); });
+        if (isStandalone) markInstalled();
         if (!('serviceWorker' in navigator)) return;
         try {
             swReg = await navigator.serviceWorker.register('sw.js');
@@ -574,8 +587,17 @@
     const pushOn = () => !!pushSub && Notification.permission === 'granted';
 
     function renderPushCard() {
-        const card = $('#pushCard');
-        if (!card) return;
+        let banner = false;
+        document.querySelectorAll('.push-slot').forEach(card => { banner = fillPushCard(card) || banner; });
+        renderInstallBox();
+        renderSoundHelp();
+        let dismissed = false;
+        try { dismissed = localStorage.getItem('catering-menu:push-banner') === 'no'; } catch { /* */ }
+        $('#pushBanner').hidden = !banner || dismissed || $('#board').hidden;
+    }
+
+    /** ממלא כרטיס התראות אחד. מחזיר true אם כדאי להציג את פס התזכורת. */
+    function fillPushCard(card) {
         card.textContent = '';
         let banner = false;
 
@@ -587,7 +609,7 @@
         };
 
         if (pushOn()) {
-            card.className = 'push-card on';
+            card.className = 'push-card push-slot on';
             card.append(
                 el('p', { class: 'push-title' }, `✓ ההתראות פעילות ב${deviceName} הזה`),
                 el('p', { class: 'push-text' }, isIOS
@@ -597,11 +619,19 @@
                     el('button', { type: 'button', class: 'btn btn-gold', onclick: testPush }, 'שליחת התראת בדיקה'),
                     el('button', { type: 'button', class: 'btn btn-ghost', onclick: localTest }, 'בדיקה בלי שרת'),
                     el('button', { type: 'button', class: 'btn btn-ghost', onclick: disablePush }, 'כיבוי')));
-            if (pushReport) card.append(pushReport);
+            if (pushReport) card.append(pushReport.cloneNode(true));   // עותק לכל כרטיס — אלמנט אחד לא יכול לשבת בשני מקומות
         } else if (isIOS && !isStandalone) {
             // באייפון אפל מאפשרת התראות רק לאתר שהותקן למסך הבית
             banner = true;
-            card.className = 'push-card ios';
+            card.className = 'push-card push-slot ios';
+            if (card.closest('.set-panel')) {
+                // בהגדרות ההוראות כבר מופיעות למעלה, ב"אפליקציה במסך הבית"
+                card.append(
+                    el('p', { class: 'push-title' }, '📱 באייפון — קודם מתקינים את האפליקציה'),
+                    el('p', { class: 'push-text' },
+                        'אפל מאפשרת התראות רק מאפליקציה במסך הבית. התקינו לפי ההוראות שלמעלה, פתחו את "ניחוחות" ממסך הבית — ושם יופיע כאן כפתור "הפעלת התראות".'));
+                return banner;
+            }
             card.append(
                 el('p', { class: 'push-title' }, '📱 התראות באייפון — הגדרה חד־פעמית'),
                 el('p', { class: 'push-text' }, 'באייפון ההתראות עובדות רק מאפליקציה במסך הבית (כך אפל קבעה):'),
@@ -612,14 +642,14 @@
                     step('4', 'פתחו שוב את 🔔 ולחצו <b>"הפעלת התראות"</b>')),
                 el('p', { class: 'push-note' }, 'דרוש iOS 16.4 ומעלה. ההתחברות באפליקציה נשמרת 4 חודשים.'));
         } else if (!pushSupported) {
-            card.className = 'push-card off';
+            card.className = 'push-card push-slot off';
             card.append(
                 el('p', { class: 'push-title' }, 'הדפדפן הזה לא תומך בהתראות ברקע'),
                 el('p', { class: 'push-text' }, isAndroid
                     ? 'פתחו את ממשק המנהל ב-Chrome — שם ההתראות עובדות גם כשהדפדפן סגור.'
                     : 'מומלץ Chrome, Edge או Firefox. ההתראות בתוך הממשק (צליל כשהוא פתוח) ממשיכות לעבוד.'));
         } else if (Notification.permission === 'denied') {
-            card.className = 'push-card off';
+            card.className = 'push-card push-slot off';
             card.append(
                 el('p', { class: 'push-title' }, '🔕 ההתראות חסומות במכשיר הזה'),
                 el('p', { class: 'push-text' }, isIOS
@@ -629,7 +659,7 @@
                         : 'כדי לאפשר: לוחצים על המנעול שליד הכתובת ← התראות ← לאפשר. ואז לרענן.'));
         } else {
             banner = true;
-            card.className = 'push-card';
+            card.className = 'push-card push-slot';
             card.append(
                 el('p', { class: 'push-title' }, '🔔 התראות על הזמנות חדשות'),
                 el('p', { class: 'push-text' }, isIOS
@@ -640,16 +670,90 @@
                 el('button', { type: 'button', class: 'btn btn-gold btn-wide', onclick: enablePush }, `🔔 הפעלת התראות ב${deviceName} הזה`));
         }
 
-        if (installPrompt && !isStandalone) {
-            card.append(el('button', {
-                type: 'button', class: 'btn btn-ghost btn-wide push-install',
-                onclick: async () => { installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; renderPushCard(); },
-            }, '📲 התקנה כאפליקציה במסך הבית'));
-        }
+        return banner;
+    }
 
-        let dismissed = false;
-        try { dismissed = localStorage.getItem('catering-menu:push-banner') === 'no'; } catch { /* */ }
-        $('#pushBanner').hidden = !banner || dismissed || $('#board').hidden;
+    /* ── התקנה כאפליקציה: מסומן כשהותקנה ─────────────────────────── */
+
+    const INSTALLED_KEY = 'catering-menu:installed';
+    function markInstalled() {
+        try { localStorage.setItem(INSTALLED_KEY, new Date().toISOString()); } catch { /* */ }
+    }
+    function installedAt() {
+        try { return localStorage.getItem(INSTALLED_KEY); } catch { return null; }
+    }
+
+    async function installApp() {
+        if (!installPrompt) return;
+        installPrompt.prompt();
+        const { outcome } = await installPrompt.userChoice;
+        installPrompt = null;
+        if (outcome === 'accepted') { markInstalled(); toast('✓ האפליקציה הותקנה — "ניחוחות" במסך הבית'); }
+        renderPushCard();
+    }
+
+    function renderInstallBox() {
+        const box = $('#installBox');
+        if (!box) return;
+        box.textContent = '';
+        const line = (cls, title, text) => box.append(el('p', { class: 'install-title ' + cls }, title), text ? el('p', { class: 'push-text' }, text) : '');
+
+        if (isStandalone) {
+            box.className = 'install-box done';
+            line('', '✓ פתוח עכשיו כאפליקציה', 'ההתחברות נשמרת 4 חודשים, וההתראות מגיעות גם כשהאפליקציה סגורה.');
+        } else if (installedAt()) {
+            box.className = 'install-box done';
+            line('', `✓ האפליקציה הותקנה ב${deviceName} הזה`,
+                `הותקנה ב-${new Date(installedAt()).toLocaleDateString('he-IL')}. פתחו את "ניחוחות" ממסך הבית.`);
+        } else if (installPrompt) {
+            box.className = 'install-box';
+            line('', 'אפשר להתקין את ממשק המנהל כאפליקציה', 'אייקון במסך הבית, נפתח במסך מלא, ובאנדרואיד אפשר לבחור לו צליל התראות משלו.');
+            box.append(el('button', { type: 'button', class: 'btn btn-gold btn-wide', onclick: installApp }, '📲 התקנה כאפליקציה'));
+        } else if (isIOS) {
+            box.className = 'install-box';
+            line('', 'התקנה באייפון — דרך ספארי', '');
+            box.append(el('ol', { class: 'push-steps' },
+                el('li', {}, el('b', {}, '1'), el('span', {}, 'לחצו על כפתור השיתוף ⬆️ בתחתית ספארי')),
+                el('li', {}, el('b', {}, '2'), el('span', {}, 'בחרו "הוסף למסך הבית" ← "הוסף"')),
+                el('li', {}, el('b', {}, '3'), el('span', {}, 'פתחו את "ניחוחות" ממסך הבית'))));
+        } else {
+            box.className = 'install-box';
+            line('', 'התקנה כאפליקציה', isAndroid
+                ? 'בכרום: תפריט ⋮ (למעלה) ← "התקנת אפליקציה" או "הוספה למסך הבית". אם האפשרות לא מופיעה — כנראה שהאפליקציה כבר מותקנת.'
+                : 'בכרום או Edge: לוחצים על סמל ההתקנה בשורת הכתובת (מסך עם חץ).');
+            box.append(el('button', { type: 'button', class: 'btn btn-ghost btn-wide', onclick: () => { markInstalled(); renderPushCard(); } },
+                'כבר התקנתי — לסמן'));
+        }
+    }
+
+    /** איך מפעילים צליל — לכל סוג מכשיר, כי הצליל נקבע בהגדרות הטלפון ולא באתר. */
+    function renderSoundHelp() {
+        const box = $('#soundHelp');
+        if (!box) return;
+        box.textContent = '';
+        const steps = list => el('ol', { class: 'push-steps' },
+            ...list.map((t, i) => el('li', {}, el('b', {}, String(i + 1)), el('span', {}, t))));
+        const app = isStandalone || installedAt();
+        if (isIOS) {
+            box.append(el('p', { class: 'push-text' }, 'באייפון הצליל נקבע בהגדרות הטלפון:'), steps([
+                'הגדרות ← התראות ← ניחוחות',
+                'להפעיל "צלילים" ו"באנרים" (ומומלץ "מסך נעילה")',
+                'לוודא שמתג השקט בצד הטלפון כבוי, ושמצב "ריכוז" / "נא לא להפריע" כבוי',
+            ]));
+        } else if (isAndroid) {
+            box.append(el('p', { class: 'push-text' }, 'באנדרואיד הצליל נקבע בהגדרות הטלפון:'), steps(app ? [
+                'הגדרות ← אפליקציות ← ניחוחות ← התראות',
+                'לבחור את הקטגוריה של ההתראות ← "צליל" (אפשר לבחור צליל משלה) ו"הצגה במסך"',
+            ] : [
+                'הגדרות ← אפליקציות ← Chrome ← התראות',
+                'לחפש את האתר (mbe-plus.com) ← "צליל" ו"הצגה במסך"',
+                'טיפ: אחרי התקנה כאפליקציה (למעלה) — "ניחוחות" מופיעה כאפליקציה נפרדת עם צליל משלה',
+            ]));
+        } else {
+            box.append(el('p', { class: 'push-text' },
+                'במחשב: בהגדרות ההתראות של מערכת ההפעלה — לאפשר צליל להתראות של הדפדפן.'));
+        }
+        box.append(el('p', { class: 'push-note' }, 'לבדיקה: "בדיקה בלי שרת" בכרטיס ההתראות שלמעלה מקפיצה התראה מיד.'));
     }
 
     async function enablePush() {
@@ -736,7 +840,16 @@
         return { ...l, havdalah: { mode: l.havdalahMode, minutes: l.havdalahMinutes } };
     };
 
-    async function openSettings() {
+    function setSettingsTab(tab) {
+        document.querySelectorAll('.set-tabs [data-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+        document.querySelectorAll('.set-panel').forEach(p => { p.hidden = p.dataset.panel !== tab; });
+        // העדפות אישיות ואבטחה נשמרות בפני עצמן — בלי כפתור "שמירת ההגדרות"
+        $('#setSaveBar').hidden = tab === 'personal' || tab === 'security';
+        $('#setError').hidden = true;
+        $('.set-tabs [aria-selected="true"]')?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+    }
+
+    async function openSettings(tab = 'calendar') {
         try { settings = (await api('settings')).settings; } catch (ex) { toast(ex.message); return; }
         const l = settings.location;
         const sel = $('#setPlace');
@@ -761,9 +874,60 @@
         $('#setAdminMail').value = settings.email.adminNotify;
         $('#setReplyTo').value = settings.email.replyTo;
         $('#setFrom').value = settings.email.from;
-        $('#setError').hidden = true;
+        for (const k of ['showShabbat', 'showParasha', 'showSunset', 'showRc']) {
+            $('#set' + k.slice(4)).checked = settings.calendar[k] !== false;
+        }
+        $('#setSticky').checked = settings.notify.sticky !== false;
+        // אישי
+        $('#prefStart').value = prefs.start;
+        $('#prefCalMode').value = prefs.calMode || calMode;
+        $('#prefFilter').value = prefs.filter;
+        $('#prefChime').checked = prefs.chime !== false;
+        $('#prefBigText').checked = !!prefs.bigText;
+        $('#prefSaved').hidden = true;
+        // אבטחה
+        for (const id of ['#pwCurrent', '#pwNew', '#pwConfirm']) $(id).value = '';
+        $('#secError').hidden = true;
+        renderPushCard();
         syncSettingsForm();
+        setSettingsTab(tab);
         $('#settingsSheet').showModal();
+    }
+
+    function savePersonal() {
+        prefs.start = $('#prefStart').value;
+        prefs.calMode = $('#prefCalMode').value;
+        prefs.filter = $('#prefFilter').value;
+        prefs.chime = $('#prefChime').checked;
+        prefs.bigText = $('#prefBigText').checked;
+        savePrefs();
+        applyPrefs();
+        $('#prefSaved').hidden = false;
+    }
+
+    function applyPrefs() {
+        document.documentElement.classList.toggle('big-text', !!prefs.bigText);
+    }
+
+    async function changePassword() {
+        const err = $('#secError');
+        err.hidden = true;
+        const fail = m => { err.textContent = m; err.hidden = false; };
+        if ($('#pwNew').value.length < 6) return fail('הסיסמה החדשה צריכה לפחות 6 תווים');
+        if ($('#pwNew').value !== $('#pwConfirm').value) return fail('הסיסמאות החדשות אינן תואמות');
+        try {
+            await api('changePassword', { current: $('#pwCurrent').value, password: $('#pwNew').value, logoutOthers: $('#pwLogoutOthers').checked });
+            for (const id of ['#pwCurrent', '#pwNew', '#pwConfirm']) $(id).value = '';
+            toast($('#pwLogoutOthers').checked ? '✓ הסיסמה שונתה, ושאר המכשירים נותקו' : '✓ הסיסמה שונתה');
+        } catch (ex) { fail(ex.message); }
+    }
+
+    async function logoutOthers() {
+        if (!confirm('לנתק את כל שאר המכשירים? הם יצטרכו להיכנס שוב עם הסיסמה. המכשיר הזה נשאר מחובר.')) return;
+        try {
+            await api('logoutOthers', {});
+            toast('✓ כל שאר המכשירים נותקו');
+        } catch (ex) { $('#secError').textContent = ex.message; $('#secError').hidden = false; }
     }
 
     /** מעדכן שדות תלויים ותצוגה מקדימה של זמני השבת הקרובה. */
@@ -814,6 +978,11 @@
                 location: formLocation(),
                 limits,
                 email: { adminNotify: $('#setAdminMail').value.trim(), replyTo: $('#setReplyTo').value.trim(), from: $('#setFrom').value.trim() },
+                calendar: {
+                    showShabbat: $('#setShabbat').checked, showParasha: $('#setParasha').checked,
+                    showSunset: $('#setSunset').checked, showRc: $('#setRc').checked,
+                },
+                notify: { sticky: $('#setSticky').checked },
             })).settings;
             $('#settingsSheet').close();
             toast('ההגדרות נשמרו');
@@ -1128,9 +1297,11 @@
         body.append(calMode === 'month' ? monthGrid(a, byDay) : agenda(a, b, byDay));
     }
 
+    const calShow = k => settings?.calendar?.[k] !== false;
+
     function holidayTags(d, short = false) {
-        const list = hols(d);
-        const par = HebCal.parasha(d.getFullYear(), d.getMonth() + 1, d.getDate());
+        const list = hols(d).filter(h => h.type !== 'rc' || calShow('showRc'));
+        const par = calShow('showParasha') ? HebCal.parasha(d.getFullYear(), d.getMonth() + 1, d.getDate()) : null;
         if (par) list.push({ name: 'פרשת ' + par, type: 'parasha' });
         else if (d.getDay() === 6 && !list.some(h => h.type === 'yomtov')) list.push({ name: 'שבת', type: 'shabbat' });
         return list.map(h => el('span', { class: 'hol ' + h.type, title: h.name },
@@ -1162,10 +1333,11 @@
     function zmanLine(d, compact) {
         const z = HebCal.zmanim(d.getFullYear(), d.getMonth() + 1, d.getDate(), loc());
         const parts = [];
-        if (z.candles) parts.push(el('span', { class: 'z candles', title: 'הדלקת נרות ' + z.candles }, icon('candles'), compact ? z.candles : `הדלקת נרות ${z.candles}`));
-        if (z.havdalah) parts.push(el('span', { class: 'z havdalah', title: `${z.havdalahLabel} ${z.havdalah}` }, icon('stars'), compact ? z.havdalah : `${z.havdalahLabel} ${z.havdalah}`));
-        parts.push(el('span', { class: 'z sunset', title: 'שקיעה ' + z.sunset }, icon('sunset'), compact ? z.sunset : `שקיעה ${z.sunset}`));
-        return el('div', { class: 'zmanim' + (compact ? ' compact' : '') }, ...parts);
+        const shabbat = calShow('showShabbat');
+        if (shabbat && z.candles) parts.push(el('span', { class: 'z candles', title: 'הדלקת נרות ' + z.candles }, icon('candles'), compact ? z.candles : `הדלקת נרות ${z.candles}`));
+        if (shabbat && z.havdalah) parts.push(el('span', { class: 'z havdalah', title: `${z.havdalahLabel} ${z.havdalah}` }, icon('stars'), compact ? z.havdalah : `${z.havdalahLabel} ${z.havdalah}`));
+        if (calShow('showSunset')) parts.push(el('span', { class: 'z sunset', title: 'שקיעה ' + z.sunset }, icon('sunset'), compact ? z.sunset : `שקיעה ${z.sunset}`));
+        return parts.length ? el('div', { class: 'zmanim' + (compact ? ' compact' : '') }, ...parts) : null;
     }
 
     function eventChip(o) {
@@ -1255,7 +1427,12 @@
         $('#authForm').addEventListener('submit', submitAuth);
         wireMenuEditor();
         $('#bell').addEventListener('click', () => { renderNotes(); $('#notesSheet').showModal(); });
-        $('#gear').addEventListener('click', openSettings);
+        $('#gear').addEventListener('click', () => openSettings());
+        document.querySelectorAll('.set-tabs [data-tab]').forEach(b => b.addEventListener('click', () => setSettingsTab(b.dataset.tab)));
+        document.querySelectorAll('[data-panel="personal"] select, [data-panel="personal"] input').forEach(i => i.addEventListener('change', savePersonal));
+        $('#pwSave').addEventListener('click', changePassword);
+        $('#logoutOthers').addEventListener('click', logoutOthers);
+        applyPrefs();
         $('#markAllRead').addEventListener('click', markAllRead);
         $('#pushBanner').addEventListener('click', e => {
             if (e.target.id === 'pushBannerX') {
@@ -1263,8 +1440,7 @@
                 $('#pushBanner').hidden = true;
                 return;
             }
-            renderNotes();
-            $('#notesSheet').showModal();
+            openSettings('app');
         });
         initPush();
         $('#decideForm').addEventListener('submit', submitDecision);
@@ -1295,9 +1471,12 @@
         $('#calNext').addEventListener('click', () => move(1));
         $('#calToday').addEventListener('click', () => { cursor = new Date(); renderCalendar(); });
         try {
-            const saved = JSON.parse(localStorage.getItem('catering-menu:view'));
+            // מסך הפתיחה: לפי ההעדפה האישית, או המסך האחרון
+            const saved = JSON.parse(localStorage.getItem('catering-menu:view') || 'null');
             if (saved?.calMode) calMode = saved.calMode;
-            if (saved?.view) setView(saved.view);
+            if (prefs.calMode) calMode = prefs.calMode;
+            const start = prefs.start === 'last' ? saved?.view : prefs.start;
+            if (start) setView(start);
         } catch { /* */ }
         document.querySelectorAll('[data-close]').forEach(b =>
             b.addEventListener('click', () => b.closest('dialog').close()));

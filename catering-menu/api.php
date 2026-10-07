@@ -203,6 +203,10 @@ function defaultSettings(): array {
         ],
         'limits' => [],          // מזהה קטגוריה → כמה מותר לבחור (אין מפתח = ללא הגבלה)
         'email'  => ['from' => '', 'replyTo' => '', 'adminNotify' => ''],
+        // מה מוצג ביומן
+        'calendar' => ['showShabbat' => true, 'showParasha' => true, 'showSunset' => true, 'showRc' => true],
+        // התראה על הזמנה נשארת על המסך עד שנוגעים בה
+        'notify' => ['sticky' => true],
     ];
 }
 
@@ -213,6 +217,8 @@ function loadSettings(): array {
         'location' => ($saved['location'] ?? []) + $def['location'],
         'limits'   => $saved['limits'] ?? [],
         'email'    => ($saved['email'] ?? []) + $def['email'],
+        'calendar' => ($saved['calendar'] ?? []) + $def['calendar'],
+        'notify'   => ($saved['notify'] ?? []) + $def['notify'],
     ];
 }
 
@@ -232,6 +238,9 @@ function cleanSettings(array $in): array {
         if (in_array($cat, $catIds, true) && is_numeric($n) && (int) $n > 0) $limits[$cat] = min(99, (int) $n);
     }
     $email = is_array($in['email'] ?? null) ? $in['email'] : [];
+    $cal = is_array($in['calendar'] ?? null) ? $in['calendar'] : [];
+    $notify = is_array($in['notify'] ?? null) ? $in['notify'] : [];
+    $bool = fn(array $a, string $k, bool $def) => array_key_exists($k, $a) ? (bool) $a[$k] : $def;
 
     return [
         'location' => [
@@ -249,6 +258,13 @@ function cleanSettings(array $in): array {
             'replyTo'     => cleanEmail($email['replyTo'] ?? ''),
             'adminNotify' => cleanEmail($email['adminNotify'] ?? ''),
         ],
+        'calendar' => [
+            'showShabbat' => $bool($cal, 'showShabbat', true),
+            'showParasha' => $bool($cal, 'showParasha', true),
+            'showSunset'  => $bool($cal, 'showSunset', true),
+            'showRc'      => $bool($cal, 'showRc', true),
+        ],
+        'notify' => ['sticky' => $bool($notify, 'sticky', true)],
     ];
 }
 
@@ -403,7 +419,7 @@ function startSession(): void {
 
 /** מאריך את ההתחברות עוד 4 חודשים מהיום — בכל פעם שהמנהל משתמש בממשק. */
 function renewLogin(): void {
-    if (empty($_SESSION['admin'])) return;
+    if (!isAdmin()) return;
     setcookie(session_name(), session_id(), cookieOptions());
     // הקובץ נכתב מחדש פעם ביום, כדי שהניקוי האוטומטי לא ימחק כניסה פעילה
     if (($_SESSION['touched'] ?? 0) < time() - 86400) $_SESSION['touched'] = time();
@@ -414,9 +430,25 @@ function config(): ?array {
     return ($config && !empty($config['passwordHash'])) ? $config : null;
 }
 
+/** גרסת ההתחברות: עולה בשינוי סיסמה או ב"ניתוק כל המכשירים", ומנתקת סשנים ישנים. */
+function loginVersion(): int {
+    return (int) (config()['version'] ?? 0);
+}
+
+function isAdmin(): bool {
+    return !empty($_SESSION['admin']) && (int) ($_SESSION['pv'] ?? 0) === loginVersion();
+}
+
+function bumpLoginVersion(): void {
+    $config = config();
+    $config['version'] = ($config['version'] ?? 0) + 1;
+    writeJson(CONFIG_FILE, $config);
+    $_SESSION['pv'] = $config['version'];
+}
+
 function requireAdmin(): void {
     startSession();
-    if (empty($_SESSION['admin'])) fail('נדרשת התחברות', 401);
+    if (!isAdmin()) fail('נדרשת התחברות', 401);
     renewLogin();
     session_write_close();
 }
@@ -602,7 +634,7 @@ switch ($action) {
     case 'state': {
         startSession();
         renewLogin();
-        ok(['configured' => config() !== null, 'loggedIn' => !empty($_SESSION['admin'])]);
+        ok(['configured' => config() !== null, 'loggedIn' => isAdmin()]);
     }
 
     case 'setup': {
@@ -615,6 +647,7 @@ switch ($action) {
         startSession();
         session_regenerate_id(true);
         $_SESSION['admin'] = true;
+        $_SESSION['pv'] = loginVersion();
         renewLogin();
         ok();
     }
@@ -631,6 +664,35 @@ switch ($action) {
         startSession();
         session_regenerate_id(true);
         $_SESSION['admin'] = true;
+        $_SESSION['pv'] = loginVersion();
+        renewLogin();
+        ok();
+    }
+
+    case 'changePassword': {
+        if ($method !== 'POST') fail('שיטה לא נתמכת', 405);
+        startSession();
+        if (!isAdmin()) fail('נדרשת התחברות', 401);
+        $in = body();
+        $config = config();
+        if (!password_verify((string) ($in['current'] ?? ''), $config['passwordHash'])) {
+            sleep(1);
+            fail('הסיסמה הנוכחית שגויה');
+        }
+        $new = (string) ($in['password'] ?? '');
+        if (mb_strlen($new) < 6) fail('הסיסמה החדשה צריכה לפחות 6 תווים');
+        $config['passwordHash'] = password_hash($new, PASSWORD_DEFAULT);
+        writeJson(CONFIG_FILE, $config);
+        if (!empty($in['logoutOthers'])) bumpLoginVersion();
+        renewLogin();
+        ok();
+    }
+
+    case 'logoutOthers': {
+        if ($method !== 'POST') fail('שיטה לא נתמכת', 405);
+        startSession();
+        if (!isAdmin()) fail('נדרשת התחברות', 401);
+        bumpLoginVersion();          // כל הסשנים הישנים לא תקפים; הסשן הזה מקבל את הגרסה החדשה
         renewLogin();
         ok();
     }
