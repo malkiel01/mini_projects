@@ -1,93 +1,124 @@
-// תצוגה מקדימה: ספרייה סכמטית בקווים, הטלה בפרספקטיבה, בלי שום ספרייה.
-// מציין מקום למנוע three.js של שלב 1. הקובץ הזה נועד להיות מוחלף.
+// חיבור הכול: טופס → מודל → תלת מימד, רשימת חיתוך ואזהרות.
 //
-// גם כאן, כבר בשלד, הקווים נגזרים מפרמטרים — רוחב, גובה, עומק, עמודות
-// ומדפים — ולא מצוירים ביד. זה הרעיון של הכלי כולו, בזעיר אנפין.
+// שלב 1–2 מהאפיון: תבנית ספרייה, טופס שנבנה מהפרמטרים, תלת מימד עם
+// הקשה על חלק, אזהרות, ורשימת חיתוך ראשונית. אין עדיין שרת — הערכים
+// נשמרים ב-localStorage כדי שרענון לא ימחק את העבודה.
 
-const canvas = document.getElementById('stage');
-const ctx = canvas.getContext('2d');
+import { TEMPLATES, template, defaults, build, cutList, hardwareList } from './model/index.js';
+import { cutSize } from './model/blocks.js';
+import { material } from './model/materials.js';
+import { renderForm } from './form.js';
+import { createViewer } from './viewer.js';
 
-// מידות הספרייה בסכמה, ביחידות מודל (היחסים הם מה שחשוב, לא המספרים).
-const BOOKCASE = { width: 1.6, height: 2.0, depth: 0.5, columns: 3, shelves: 4 };
+const STORE = 'carpentry-3d:draft';
+const $ = (s) => document.querySelector(s);
 
-// בונה את רשימת הקטעים (זוגות נקודות תלת־ממדיות) של הספרייה סביב הראשית.
-function buildEdges({ width, height, depth, columns, shelves }) {
-  const x0 = -width / 2, x1 = width / 2;
-  const y0 = -height / 2, y1 = height / 2;
-  const z0 = -depth / 2, z1 = depth / 2;
-  const edges = [];
-  const seg = (a, b) => edges.push([a, b]);
+const state = { templateKey: 'bookcase', values: null };
+try {
+  const saved = JSON.parse(localStorage.getItem(STORE) || 'null');
+  if (saved && TEMPLATES[saved.templateKey]) Object.assign(state, saved);
+} catch { /* אחסון חסום — עובדים בלי זיכרון */ }
+if (!state.values) state.values = defaults(template(state.templateKey));
 
-  // התיבה החיצונית: שתי מסגרות (קדמית ואחורית) והקשרים ביניהן.
-  for (const z of [z0, z1]) {
-    seg([x0, y0, z], [x1, y0, z]); seg([x1, y0, z], [x1, y1, z]);
-    seg([x1, y1, z], [x0, y1, z]); seg([x0, y1, z], [x0, y0, z]);
-  }
-  for (const [x, y] of [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]) seg([x, y, z0], [x, y, z1]);
+let viewer = null;
+let form = null;
+let model = null;
 
-  // מחיצות בין העמודות, ומדפים בכל עמודה — מלבן קדמי וקו עומק בכל קצה.
-  const colW = width / columns;
-  for (let c = 1; c < columns; c++) {
-    const x = x0 + c * colW;
-    seg([x, y0, z1], [x, y1, z1]); seg([x, y0, z0], [x, y1, z0]);
-  }
-  const gap = height / (shelves + 1);
-  for (let c = 0; c < columns; c++) {
-    const xa = x0 + c * colW, xb = xa + colW;
-    for (let s = 1; s <= shelves; s++) {
-      const y = y0 + s * gap;
-      seg([xa, y, z1], [xb, y, z1]);
-      seg([xa, y, z0], [xa, y, z1]); seg([xb, y, z0], [xb, y, z1]);
-    }
-  }
-  return edges;
+function init() {
+  const tpl = template(state.templateKey);
+  $('#template-name').textContent = tpl.name;
+  $('#template-desc').textContent = tpl.description;
+
+  form = renderForm($('#form'), tpl, state.values, () => rebuild());
+
+  viewer = createViewer($('#stage'), { onPick: showPart });
+  document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => viewer.view(b.dataset.view)));
+  $('#btn-reset').addEventListener('click', () => {
+    state.values = defaults(tpl);
+    form = renderForm($('#form'), tpl, state.values, () => rebuild());
+    rebuild(true);
+  });
+  document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => {
+    document.body.dataset.tab = b.dataset.tab;
+    document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('is-active', x === b));
+    viewer.fit();
+  }));
+  $('#btn-output').addEventListener('click', () => $('#output').classList.toggle('is-open'));
+  $('#btn-output-close').addEventListener('click', () => $('#output').classList.remove('is-open'));
+
+  rebuild(true);
 }
 
-const EDGES = buildEdges(BOOKCASE);
+function rebuild(reframe = false) {
+  model = build(state.templateKey, state.values);
+  // הטופס מחזיק את אותו אובייקט ערכים — מעדכנים בתוכו, לא מחליפים אותו.
+  Object.assign(state.values, model.values);
+  form.sync(model.values);
+  try { localStorage.setItem(STORE, JSON.stringify(state)); } catch { /* ראו למעלה */ }
 
-const DISTANCE = 4.2;  // מרחק הצופה מהראשית, ביחידות המודל
-const SCALE = 95;      // פיקסלים ליחידה במישור ההטלה
+  viewer.setModel(model);
+  if (reframe) viewer.frame(model.bounds);
 
-// הקנבס מוצג ב-CSS ביחידות לוגיות; ללא כפל ב-devicePixelRatio
-// הקווים יוצאים מטושטשים במסכים צפופים.
-function resize() {
-  const dpr = window.devicePixelRatio || 1;
-  const size = canvas.clientWidth;
-  canvas.width = canvas.height = Math.round(size * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  return size;
+  renderWarnings(model.warnings);
+  renderSummary(model);
+  renderOutput(model);
 }
 
-// סיבוב סביב Y (הצגה מכל הצדדים) ונטייה קלה סביב X (מבט מעט מלמעלה).
-function rotate([x, y, z], ay, ax) {
-  const cy = Math.cos(ay), sy = Math.sin(ay);
-  const x1 = x * cy + z * sy, z1 = -x * sy + z * cy;
-  const cx = Math.cos(ax), sx = Math.sin(ax);
-  const y2 = y * cx - z1 * sx, z2 = y * sx + z1 * cx;
-  return [x1, y2, z2];
+function renderWarnings(list) {
+  const box = $('#warnings');
+  box.hidden = list.length === 0;
+  box.innerHTML = list.map((w) => `<div class="warn">⚠ ${w}</div>`).join('');
+  $('#tab-warn-count').textContent = list.length ? `(${list.length})` : '';
 }
 
-function project([x, y, z], size) {
-  const f = DISTANCE / (DISTANCE + z);
-  return [size / 2 + x * f * SCALE, size / 2 - y * f * SCALE];
+function renderSummary(m) {
+  const b = m.bounds;
+  $('#summary').innerHTML = `
+    <span>${b.w} × ${b.h} × ${b.d} מ"מ</span>
+    <span>${m.parts.length} חלקים</span>
+    <span>${m.hardware.reduce((n, h) => n + (h.qty || 1), 0)} פריטי פרזול</span>`;
 }
 
-function frame(t) {
-  const size = resize();
-  ctx.clearRect(0, 0, size, size);
-  ctx.strokeStyle = '#d6a35c';
-  ctx.lineWidth = 1.6;
-  ctx.lineJoin = 'round';
-  const ay = t / 2600, ax = 0.28;
-  ctx.beginPath();
-  for (const [a, b] of EDGES) {
-    const [ax1, ay1] = project(rotate(a, ay, ax), size);
-    const [bx1, by1] = project(rotate(b, ay, ax), size);
-    ctx.moveTo(ax1, ay1);
-    ctx.lineTo(bx1, by1);
-  }
-  ctx.stroke();
-  requestAnimationFrame(frame);
+function showPart(p) {
+  const box = $('#part');
+  if (!p) { box.innerHTML = '<p class="muted">הקשה על לוח מציגה את מידותיו. גרירה מסובבת; שתי אצבעות או גלגלת מזמנות.</p>'; return; }
+  const c = cutSize(p);
+  const m = material(p.material);
+  const edges = Object.entries(p.edges || {}).filter(([, v]) => v).map(([k]) => ({ front: 'חזית', back: 'אחור', top: 'עליון', bottom: 'תחתון', left: 'שמאל', right: 'ימין' }[k])).join(', ') || 'ללא';
+  const grain = { x: 'לרוחב', y: 'לגובה', z: 'לעומק' }[p.grain];
+  box.innerHTML = `
+    <h3>${p.name}</h3>
+    <dl>
+      <dt>חיתוך</dt><dd><b>${c.l} × ${c.w}</b> × ${c.t} מ"מ</dd>
+      <dt>חומר</dt><dd>${m.name}</dd>
+      <dt>סיבים</dt><dd>${grain}</dd>
+      <dt>קנט</dt><dd>${edges}</dd>
+      <dt>מיקום</dt><dd>x ${Math.round(p.box.x)} · y ${Math.round(p.box.y)} · z ${Math.round(p.box.z)}</dd>
+      ${p.note ? `<dt>הערה</dt><dd>${p.note}</dd>` : ''}
+    </dl>`;
 }
 
-requestAnimationFrame(frame);
+function renderOutput(m) {
+  const cl = cutList(m);
+  const hw = hardwareList(m);
+  const rows = cl.boards
+    .sort((a, b) => b.l * b.w - a.l * a.w)
+    .map((r) => `<tr><td>${r.name}</td><td>${r.qty}</td><td dir="ltr">${r.l} × ${r.w}</td><td>${r.t}</td><td>${r.material}</td><td>${r.edges}</td><td>${r.note || ''}</td></tr>`)
+    .join('');
+  const glass = cl.glass.map((g) => `<tr><td>${g.name}</td><td>${g.qty}</td><td dir="ltr">${g.l} × ${g.w}</td><td>${g.t}</td></tr>`).join('');
+  const hwRows = hw.map((h) => `<tr><td>${h.name}</td><td>${h.qty}</td></tr>`).join('');
+  const area = cl.boards.reduce((s, r) => s + r.qty * r.l * r.w, 0) / 1e6;
+
+  $('#output-body').innerHTML = `
+    <h3>רשימת חיתוך <small>${cl.boards.reduce((s, r) => s + r.qty, 0)} לוחות · ${area.toFixed(2)} מ"ר נטו</small></h3>
+    <table><thead><tr><th>חלק</th><th>כמות</th><th>אורך × רוחב</th><th>עובי</th><th>חומר</th><th>קנט</th><th>הערה</th></tr></thead><tbody>${rows}</tbody></table>
+    ${glass ? `<h3>זכוכית</h3><table><thead><tr><th>סוג</th><th>כמות</th><th>מידה</th><th>עובי</th></tr></thead><tbody>${glass}</tbody></table>` : ''}
+    ${hwRows ? `<h3>פרזול</h3><table><thead><tr><th>פריט</th><th>כמות</th></tr></thead><tbody>${hwRows}</tbody></table>` : ''}
+    <p class="muted">האורך הוא בכיוון הסיבים. מידות אחרי הורדת הקנט כשנבחר "יורדת מהמידה".</p>`;
+}
+
+// three.js נטען בדף לפני המודול; אם אף מקור לא נענה — הודעה במקום קנבס ריק.
+if (window.THREE) init();
+else {
+  $('#stage-error').hidden = false;
+}

@@ -4,37 +4,81 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>נגרות בתלת מימד</title>
-<meta name="description" content="סוגי מוצרים פרמטריים לנגרים: מידות וחומרים נכנסים, מודל תלת־ממדי, הדמיה, רשימת חיתוך ומחיר יוצאים. האפיון נכתב; הבנייה בהמתנה לאישור.">
+<meta name="description" content="סוגי מוצרים פרמטריים לנגרים: מידות וחומרים נכנסים, מודל תלת־ממדי, הדמיה, רשימת חיתוך ומחיר יוצאים.">
 <meta name="theme-color" content="#1c1917">
 <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="./assets/css/app.css">
 </head>
-<body>
+<body data-tab="form">
 
 <header class="bar">
-  <h1 class="bar__title">נגרות בתלת מימד</h1>
-  <a class="btn btn--ghost" href="../index.html">חזרה לכלים</a>
+  <div class="bar__titles">
+    <h1 class="bar__title">נגרות בתלת מימד</h1>
+    <span class="bar__sub"><b id="template-name"></b> · <span id="template-desc"></span></span>
+  </div>
+  <div class="bar__actions">
+    <button type="button" class="btn" id="btn-reset">איפוס לברירת המחדל</button>
+    <a class="btn btn--ghost" href="../index.html">חזרה לכלים</a>
+  </div>
 </header>
 
-<main class="stage">
-  <!-- הציור אינו הכלי. ספרייה סכמטית בקווים, כדי שהכרטיס בדף הראשי יוביל
-       לדף חי — לפני שיש קוד שאפשר להראות. -->
-  <canvas id="stage" class="stage__canvas" aria-label="ספרייה סכמטית מסתובבת, תצוגה מקדימה"></canvas>
+<main class="layout">
+  <!-- הטופס נבנה מרשימת הפרמטרים של התבנית — ראו form.js -->
+  <aside class="panel panel--form">
+    <form id="form" autocomplete="off" onsubmit="return false"></form>
+  </aside>
 
-  <section class="note" role="status">
-    <h2>האפיון נכתב. הבנייה ממתינה לאישור.</h2>
-    <p>
-      שתי שכבות: <strong>סוג מוצר</strong> (ספרייה, ארון, שידה — פרמטרים וברירות
-      מחדל) ו<strong>מופע</strong> שהנגר ממלא. מהמופע נגזרת רשימת חלקים אחת,
-      וממנה התלת מימד, ההדמיה, רשימת החיתוך, המחיר והשרטוטים.
-    </p>
-    <p class="note__muted">
-      האפיון המלא ב-<code>README.md</code> שבתיקייה. הציור למעלה הוא קווים על
-      <code>&lt;canvas&gt;</code> בלי ספרייה — מציין מקום למנוע three.js שייכנס בשלב 1.
-    </p>
+  <section class="panel panel--view">
+    <div class="viewbar">
+      <div class="views">
+        <button type="button" data-view="iso">איזומטרי</button>
+        <button type="button" data-view="front">חזית</button>
+        <button type="button" data-view="side">צד</button>
+        <button type="button" data-view="top">מבט על</button>
+      </div>
+      <div class="summary" id="summary"></div>
+      <button type="button" class="btn btn--accent" id="btn-output">רשימת חיתוך</button>
+    </div>
+    <div class="stage-wrap">
+      <canvas id="stage" class="stage"></canvas>
+      <div id="stage-error" class="stage-error" hidden>
+        לא הצלחתי לטעון את מנוע התלת מימד (three.js) — לא מהרשת ולא מהעותק המקומי.
+        בדקו את החיבור ורעננו.
+      </div>
+      <div id="warnings" class="warnings" hidden></div>
+    </div>
+    <div class="part" id="part"></div>
+
+    <!-- מגירת הפלט: רשימת חיתוך, זכוכית ופרזול, מאותה רשימת חלקים שבתלת מימד -->
+    <div class="output" id="output">
+      <div class="output__bar">
+        <strong>פלט ייצור</strong>
+        <button type="button" class="btn" id="btn-output-close">סגירה</button>
+      </div>
+      <div class="output__body" id="output-body"></div>
+    </div>
   </section>
 </main>
 
-<script type="module" src="./assets/js/app.js"></script>
+<!-- בטלפון: לשוניות במקום שני פאנלים זה לצד זה -->
+<nav class="tabs">
+  <button type="button" data-tab="form" class="is-active">טופס</button>
+  <button type="button" data-tab="view">תלת מימד <span id="tab-warn-count"></span></button>
+</nav>
+
+<!-- three.js: cdnjs, ואז jsdelivr, ולבסוף העותק המקומי ב-vendor/. רק אחרי
+     שאחד מהם נענה נטען המודול של הכלי, שמצפה ל-THREE גלובלי. -->
+<script>
+(function load(list) {
+  function app() { var s = document.createElement('script'); s.type = 'module'; s.src = './assets/js/app.js'; document.body.appendChild(s); }
+  if (!list.length) { app(); return; }
+  var s = document.createElement('script'); s.src = list[0];
+  s.onload = function () { if (window.THREE) app(); else load(list.slice(1)); };
+  s.onerror = function () { load(list.slice(1)); };
+  document.head.appendChild(s);
+})(['https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
+    'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js',
+    './vendor/three.min.js']);
+</script>
 </body>
 </html>
