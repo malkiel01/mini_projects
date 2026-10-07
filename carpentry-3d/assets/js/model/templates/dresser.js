@@ -5,6 +5,7 @@
 
 import { carcass, partitions, shelves, back, plinth, drawer, part } from '../blocks.js';
 import { materialParams, drawerParams, joineryParams, boardT, bodyWarnings, LIMITS } from './common.js';
+import { resolveShares, sectionLayout, effectivePins } from '../layout.js';
 
 export default {
   key: 'dresser',
@@ -21,6 +22,7 @@ export default {
     { key: 'drawerColumns', label: 'עמודות מגירות', type: 'int', min: 1, max: 4, default: 1, group: 'חלוקה' },
     { key: 'topRowH', label: 'גובה השורה העליונה', type: 'mm', min: 0, max: 400, default: 0, group: 'חלוקה', hint: '0 = כל השורות שוות' },
     { key: 'topOverhang', label: 'הבלטת הגג', type: 'mm', min: 0, max: 60, default: 20, group: 'חלוקה', hint: 'קדימה ולצדדים' },
+    { key: 'columnsLayout', label: 'עריכת החלוקה', type: 'json', default: null, group: 'חלוקה', editor: 'columns', hint: 'רוחב לכל עמודה וגובה לכל שורה' },
 
     ...materialParams({ shelves: false }),
     { key: 'frontMaterial', label: 'חזיתות המגירות', type: 'material', kind: 'board', back: false, solid: false, top: false, default: 'board:mdf-paint-18', group: 'חומרים' },
@@ -33,6 +35,20 @@ export default {
   ],
   joinery: joineryParams({ shelves: false }),
   limits: LIMITS,
+
+  /** לעורך החלוקה: שתי קבוצות — רוחבי העמודות וגבהי השורות (השורה העליונה לפי "גובה השורה העליונה" כברירת מחדל). */
+  columnSpace(v) {
+    const sideT = v.sideT ?? 18, shelfT = v.shelfT ?? 18, oh = v.topOverhang ?? 20;
+    const cols = v.drawerColumns ?? 1, rows = v.drawerRows ?? 1;
+    const innerW = (v.width ?? 1000) - 2 * oh - 2 * sideT - (cols - 1) * sideT;
+    const innerH = (v.height ?? 850) - shelfT - ((v.plinthH ?? 70) + shelfT);
+    return { sections: [
+      { key: 'cols', title: 'עמודות', total: innerW, sizeLabel: 'רוחב', allLabel: 'העמודות', modes: { next: 'מהעמודה שמימין', prev: 'מהעמודה שמשמאל' },
+        items: Array.from({ length: cols }, (_, i) => ({ label: `עמודה ${i + 1}`, editable: false, note: '' })) },
+      { key: 'rows', title: 'שורות מגירות', total: innerH, sizeLabel: 'גובה', allLabel: 'השורות', reverse: true, modes: { next: 'מהשורה שמעליה', prev: 'מהשורה שמתחתיה' },
+        items: Array.from({ length: rows }, (_, i) => ({ label: `שורה ${i + 1}${i === rows - 1 ? ' (עליונה)' : i === 0 ? ' (תחתונה)' : ''}`, editable: false, note: '', defaultPin: i === rows - 1 && rows > 1 && (v.topRowH ?? 0) > 0 ? v.topRowH : null })) },
+    ] };
+  },
 
   build(v) {
     const parts = [], hardware = [], warnings = [];
@@ -53,19 +69,23 @@ export default {
     parts.push(part('top-plate', 'גג בולט', { x: 0, y: topY, z: bodyZ, w: W, h: shelfT, d: D - bodyZ },
       { axis: 'y', grain: 'x', material: v.bodyMaterial, edges: { front: true, left: true, right: true } }));
 
-    const cols = partitions({ inner, columns: v.drawerColumns, t: sideT, material: v.bodyMaterial });
+    // חלוקה: רוחבי עמודות וגבהי שורות — נעוץ או אוטומטי; השורה העליונה לפי "גובה השורה העליונה" כשלא נעוצה.
+    const spec = this.columnSpace(v);
+    const colLay = sectionLayout(v.columnsLayout, 'cols', v.drawerColumns);
+    const widths = resolveShares(inner.x1 - inner.x0 - (v.drawerColumns - 1) * sideT, colLay.widths);
+    const cols = partitions({ inner, columns: v.drawerColumns, t: sideT, material: v.bodyMaterial, widths });
     parts.push(...cols.parts);
     const z1 = inner.z1, z0 = inner.z0 + (v.backMode === 'groove' ? v.backInset + backT : 0);
 
-    // חלוקת הגובה לשורות: השורה העליונה בגובה נתון (אם 0 — שוות).
     const innerH = inner.y1 - inner.y0;
     const rows = v.drawerRows;
-    const topH = v.topRowH > 0 && rows > 1 ? Math.min(v.topRowH, innerH - (rows - 1) * 100) : innerH / rows;
-    const restH = rows > 1 ? (innerH - topH) / (rows - 1) : 0;
+    const rowLay = sectionLayout(v.columnsLayout, 'rows', rows);
+    const rowHs = resolveShares(innerH, effectivePins(rowLay.widths, spec.sections[1].items), 100);
+    const restH = Math.min(...rowHs);
     cols.cols.forEach((col, c) => {
       let y = inner.y0;
       for (let r = 0; r < rows; r++) {
-        const rowH = r === rows - 1 ? topH : restH;   // העליונה אחרונה מלמטה
+        const rowH = rowHs[r];   // מלמטה למעלה
         const d = drawer({
           id: `drawer-${c + 1}-${r + 1}`, name: `מגירה ${c + 1}.${r + 1}`, x0: col.x0, x1: col.x1, y0: y, y1: y + rowH,
           zFront: z1, depth: Math.min(z1 - z0 - 20, 550), frontT, boxT: boardT(v.drawerBoxMaterial), bottomT: boardT(v.drawerBottomMaterial),

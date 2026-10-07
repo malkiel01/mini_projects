@@ -9,7 +9,13 @@
 // הפורמט שנשמר בפרויקט (`columnsLayout`):
 //   { widths: [מ"מ | null, …],                      // לכל עמודה: רוחב נעוץ או null = אוטומטי
 //     cols: { i: { shelves?: n, gaps?: [מ"מ | null, …] } } }   // לכל עמודה: מספר מדפים, וגבהי התאים (מלמטה למעלה)
-// `gaps` באורך shelves+1. פורמט ישן ({ i: { shelves, gaps:[מספרים] } }) מוסב בטעינה.
+// `gaps` באורך shelves+1 (או כמספר המגירות בארון מגירות). פורמט ישן
+// ({ i: { shelves, gaps:[מספרים] } }) מוסב בטעינה.
+//
+// מוצר עם כמה קבוצות של חלוקה (מטבח: תחתונים ועליונים בכל קיר; שידה: עמודות
+// ושורות) שומר `{ sections: { <key>: { widths, cols } } }`; ספרייה וארון
+// שנשמרו בלי `sections` נקראים כקבוצה 'main'. התבנית מתארת את הקבוצות
+// לעורך ב-`columnSpace(v).sections`, והעורך כותב באותו מבנה.
 
 export const MIN_SHARE = 50;
 
@@ -74,6 +80,7 @@ export function normalizeLayout(raw, columns) {
     const col = {};
     if (Number.isInteger(c.shelves)) col.shelves = Math.max(0, Math.min(15, c.shelves));
     if (Array.isArray(c.gaps)) col.gaps = c.gaps.map(pin);
+    if (typeof c.kind === 'string') col.kind = c.kind;
     if (col.gaps && col.shelves === undefined) col.shelves = col.gaps.length - 1;
     if (Object.keys(col).length) out.cols[i] = col;
   }
@@ -85,3 +92,21 @@ const pin = (x) => (Number.isFinite(x) && x > 0 ? x : null);
 export function layoutIsEmpty(layout) {
   return !layout || (layout.widths.every((w) => w === null) && Object.keys(layout.cols).length === 0);
 }
+
+/** הקבוצה `key` מתוך הערך השמור (פורמט קבוצות, או הפורמט הישן = 'main'). */
+export function sectionLayout(raw, key, columns) {
+  if (!raw || typeof raw !== 'object') return normalizeLayout(null, columns);
+  if (raw.sections && typeof raw.sections === 'object') return normalizeLayout(raw.sections[key], columns);
+  return key === 'main' ? normalizeLayout(raw, columns) : normalizeLayout(null, columns);
+}
+
+/** מספר הפריטים של עמודה: מדפים → תאים = מדפים+1; מגירות → תאים = מגירות. הגובה הפנוי בהתאם. */
+export function cellsOf(item, count) {
+  const n = Math.max(0, count);
+  return item.cellsOf === 'drawers'
+    ? { cells: n, free: item.innerH }
+    : { cells: n + 1, free: item.innerH - n * (item.shelfT || 18) };
+}
+
+/** הנעיצות בפועל: מה שנשמר, ובלעדיו ברירת המחדל של הפריט (למשל "השורה העליונה בגובה נתון"). */
+export const effectivePins = (pins, items) => pins.map((p, i) => (p !== null && p !== undefined ? p : items[i]?.defaultPin ?? null));
