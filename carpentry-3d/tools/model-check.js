@@ -148,8 +148,8 @@ console.log('לוחות וסידור');
 console.log('כל התבניות: ברירת מחדל ותצורות');
 {
   const variants = {
-    bookcase: [{}, { doorType: 'wood', crownH: 60 }, { lowerH: 900, lowerDoors: 'wood', doorType: 'glass', doorFinish: 'fluted', glassColumns: 'first', glassSides: 'left', led: 'sides' }, { glassColumns: 'all', glassSides: 'both', led: 'shelves', shelvesMode: 'fixed' }],
-    wardrobe: [{}, { doorType: 'wood', drawersPerColumn: 2 }, { doorType: 'sliding', slidingLeaves: 3, hangingColumns: 3, columns: 3 }, { columns: 1, hangingColumns: 0, shelvesPerColumn: 6 }],
+    bookcase: [{}, { doorType: 'wood', crownH: 60 }, { lowerH: 900, lowerDoors: 'wood', doorType: 'glass', doorFinish: 'fluted-fine', glassColumns: 'first', sideLeftFinish: 'glass', led: 'sides' }, { glassColumns: 'all', sideLeftFinish: 'glass', sideRightFinish: 'glass', led: 'shelves', shelvesMode: 'fixed' }, { sideLeftFinish: 'fluted-wide', sideRightFinish: 'grooved', innerMaterial: 'board:melamine-white-18', columnsLayout: { 0: { shelves: 2 }, 2: { shelves: 3, gaps: [600, 200, 200, 200] } } }],
+    wardrobe: [{}, { doorType: 'wood', drawersPerColumn: 2, doorFinish: 'fluted-fine', sideLeftFinish: 'fluted-wide', innerMaterial: 'board:melamine-white-18' }, { doorType: 'sliding', slidingLeaves: 3, hangingColumns: 3, columns: 3 }, { columns: 1, hangingColumns: 0, shelvesPerColumn: 6 }],
     dresser: [{}, { drawerColumns: 2, drawerRows: 3, topRowH: 150 }, { backMode: 'overlay', plinthH: 0 }],
     table: [{}, { apronH: 0 }, { stretcher: 'h', length: 2400 }],
     bed: [{}, { headboardH: 0, legs: '4', mattressW: 900 }, { mattressW: 2000, mattressL: 2200 }],
@@ -286,17 +286,45 @@ console.log('חיפוי קיר');
 
 console.log('ספרייה: פיצול, ויטרינות, דפנות זכוכית, לד');
 {
-  const r = build('bookcase', { width: 1500, columns: 3, lowerH: 900, lowerDoors: 'wood', doorType: 'glass', doorFinish: 'fluted', glassColumns: 'first', glassSides: 'left', led: 'sides' });
+  const r = build('bookcase', { width: 1500, columns: 3, lowerH: 900, lowerDoors: 'wood', doorType: 'glass', doorFinish: 'fluted', glassColumns: 'first', glassSides: 'left', led: 'sides' });   // מפתחות ישנים — בודק גם את ההסבה
   const ids = r.parts.map((p) => p.id);
   check(ids.includes('door-1-stile-L') && ids.includes('door-1-glass') && !ids.some((x) => x.startsWith('door-1-lo')), 'עמודה 1: ויטרינה מלאה (בלי פיצול)');
   check(ids.includes('door-2-lo') && ids.includes('door-2-up-stile-L'), 'עמודה 2: דלת עץ למטה, ויטרינה למעלה');
   check(ids.includes('split-shelf-2-1') && !ids.includes('split-shelf-1-1'), 'מדף קבוע בפיצול — רק בעמודות המפוצלות');
-  const flutes = r.parts.filter((p) => p.id.startsWith('door-2-lo-flute'));
+  const flutes = r.parts.filter((p) => p.id.startsWith('door-2-lo-strip'));
   check(flutes.length > 10 && flutes.every((p) => p.motion === r.parts.find((q) => q.id === 'door-2-lo').motion), `סטריפים על דלת העץ, נעים איתה (${flutes.length})`);
   check(ids.includes('side-L-glass') && ids.includes('side-L-stile-F') && !ids.includes('side-L') && ids.includes('side-R'), 'דופן שמאל: זכוכית בין זקפים; ימין לוח');
   check(r.hardware.filter((h) => h.kind === 'led').length === 6 && r.hardware.find((h) => h.kind === 'led').qty > 1, '6 פסי לד אנכיים, במטרים');
   const lo = r.parts.find((p) => p.id === 'door-2-lo'), up = r.parts.find((p) => p.id === 'door-2-up-stile-L');
   check(Math.abs(lo.box.y + lo.box.h + 2 - up.box.y) < 0.01, 'הדלת העליונה מתחילה איפה שהתחתונה נגמרת');
+  check(r.values.sideLeftFinish === 'glass' && r.values.doorFinish === 'fluted-fine' && r.values.glassSides === undefined, 'הסבה: glassSides/fluted ישנים → המפתחות החדשים');
+}
+
+console.log('ספרייה: גוף פנימי/חיצוני, דפנות לפי צד, פריסת עמודות');
+{
+  const base = { width: 1800, height: 2000, columns: 3, shelvesPerColumn: 4, bodyMaterial: 'board:melamine-oak-18', shelfMaterial: 'board:melamine-oak-18' };
+  const r0 = build('bookcase', base);
+  check(r0.parts.every((p) => ['side-L', 'side-R', 'partition-1', 'shelf-1-1'].includes(p.id) ? p.material === 'board:melamine-oak-18' : true), 'ברירת מחדל: פנימי וחיצוני אותו חומר');
+  const r1 = build('bookcase', { ...base, innerMaterial: 'board:melamine-white-18', sideRightMaterial: 'board:veneer-walnut-18' });
+  const m = (id) => r1.parts.find((p) => p.id === id).material;
+  check(m('side-L') === 'board:melamine-oak-18' && m('side-R') === 'board:veneer-walnut-18' && m('partition-1') === 'board:melamine-white-18' && m('shelf-1-1') === 'board:melamine-white-18', 'פנימי לבן, דופן ימין אגוז, שמאל כמו הגוף');
+  const r2 = build('bookcase', { ...base, sideLeftFinish: 'fluted-wide', sideRightFinish: 'grooved' });
+  const stripsL = r2.parts.filter((p) => p.id.startsWith('side-L-strip'));
+  const sideL = r2.parts.find((p) => p.id === 'side-L');
+  check(stripsL.length > 5 && stripsL.every((p) => Math.abs(p.box.x + p.box.w - sideL.box.x) < 0.01) && sideL.box.x === 10, `סטריפים רחבים על דופן שמאל, כלפי חוץ (${stripsL.length}) והמודל מוזז פנימה`);
+  check(r2.parts.find((p) => p.id === 'side-R').surface === 'grooved' && r2.bounds.w === 1810, 'דופן ימין: חריצים (סימון), הגבולות כוללים את הסטריפים');
+  check(r2.parts.every((p) => p.box.x >= -0.01), 'אחרי ההזזה אין חלק ב-x שלילי');
+  const r3 = build('bookcase', { ...base, columnsLayout: { 0: { shelves: 2 }, 2: { shelves: 3, gaps: [700, 100, 100, 100] } } });
+  const n = (c) => r3.parts.filter((p) => p.id.startsWith(`shelf-${c}-`)).length;
+  check(n(1) === 2 && n(2) === 4 && n(3) === 3, `מדפים לפי עמודה: ${n(1)}/${n(2)}/${n(3)}`);
+  const ys = [1, 2, 3].map((i) => r3.parts.find((p) => p.id === `shelf-3-${i}`).box.y);
+  const inner = r3.parts.find((p) => p.id === 'bottom');
+  const g0 = ys[0] - (inner.box.y + inner.box.h), g1 = ys[1] - ys[0] - 18;
+  check(Math.abs(g0 / g1 - 7) < 0.05 && Math.abs(ys[2] - ys[1] - 18 - g1) < 0.01, `תא תחתון פי 7 מהאחרים (${g0.toFixed(0)} / ${g1.toFixed(0)})`);
+  const space = template('bookcase').columnSpace(r3.values);
+  check(space.columns === 3 && Math.abs(space.innerH - (r3.parts.find((p) => p.id === 'top').box.y - inner.box.y - inner.box.h)) < 0.01, 'columnSpace: הגובה הפנוי תואם את הגוף');
+  const w = build('wardrobe', { innerMaterial: 'board:melamine-white-18', sideLeftFinish: 'fluted-fine', doorType: 'wood', doorFinish: 'fluted-fine' });
+  check(w.parts.find((p) => p.id === 'partition-1').material === 'board:melamine-white-18' && w.parts.some((p) => p.id.startsWith('side-L-strip')) && w.parts.some((p) => p.id.includes('door') && p.id.includes('-strip-')) && w.parts.every((p) => p.box.x >= -0.01), 'ארון: פנימי נפרד, סטריפים בדופן ובדלתות');
   const sh = build('bookcase', { led: 'shelves' });
   check(sh.hardware.filter((h) => h.kind === 'led' && h.horizontal).length === 12, 'לד מתחת לכל מדף: 12');
   check(build('bookcase', { lowerH: 5000 }).warnings.some((w) => w.includes('הפיצול בוטל')), 'פיצול גבוה מדי — אזהרה וביטול');

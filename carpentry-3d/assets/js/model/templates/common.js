@@ -2,6 +2,7 @@
 // ספי האזהרות, ועזרים קטנים. תבנית מרכיבה מהן את הרשימה שלה.
 
 import { material } from '../materials.js';
+import { part } from '../blocks.js';
 
 export const boardT = (id) => material(id).t || 18;
 
@@ -73,3 +74,49 @@ export function bodyWarnings({ H, colW, shelfT, hasShelves }, L = LIMITS) {
   if (H > L.heightUnanchored) w.push(`גובה ${H} מ"מ — מעל ${L.heightUnanchored} מומלץ עיגון לקיר`);
   return w;
 }
+
+/** גימורי משטח: לדלתות ולדפנות חיצוניות. */
+export const FINISHES = [
+  { id: 'flat', name: 'חלק' },
+  { id: 'fluted-fine', name: 'סטריפים דקים (16/8)' },
+  { id: 'fluted-wide', name: 'סטריפים רחבים (40/20)' },
+  { id: 'grooved', name: 'חריצים (V) אנכיים' },
+  { id: 'glass', name: 'זכוכית (ויטרינה)' },
+];
+export const FINISHES_NO_GLASS = FINISHES.filter((f) => f.id !== 'glass');
+
+/**
+ * מחיל גימור על לוח חזיתי: סטריפים — חלקים אמיתיים על פני הלוח, בכיוון
+ * `dir` ('y' אנכי) ועם התנועה של הלוח; חריצים — סימון על החלק (`surface`),
+ * והתצוגה מציירת אותם; חלק/זכוכית — כלום. `normal` — הפאה הפונה החוצה:
+ * '+z' (חזית), '-x' (דופן שמאל), '+x' (דופן ימין).
+ */
+export function applyFinish(face, finish, { material, normal = '+z', idPrefix }) {
+  const out = [];
+  if (finish === 'grooved') { face.surface = 'grooved'; face.note = [face.note, 'חריצים V'].filter(Boolean).join(' — '); return out; }
+  if (!finish || !finish.startsWith('fluted')) return out;
+  const [sw, gap, st] = finish === 'fluted-wide' ? [40, 20, 10] : [16, 8, 8];
+  const b = face.box;
+  // הסטריפים אנכיים: רצים לאורך הפאה (x לחזית, z לדופן) בגובה הלוח.
+  const along = normal === '+z' ? 'x' : 'z';
+  const len = along === 'x' ? b.w : b.d;
+  const n = Math.max(1, Math.floor((len + gap) / (sw + gap)));
+  const start = (len - (n * (sw + gap) - gap)) / 2;
+  for (let s = 0; s < n; s++) {
+    const off = start + s * (sw + gap);
+    let box;
+    if (normal === '+z') box = { x: b.x + off, y: b.y, z: b.z + b.d, w: sw, h: b.h, d: st };
+    else if (normal === '-x') box = { x: b.x - st, y: b.y, z: b.z + off, w: st, h: b.h, d: sw };
+    else box = { x: b.x + b.w, y: b.y, z: b.z + off, w: st, h: b.h, d: sw };
+    const strip = part(`${idPrefix || face.id}-strip-${s + 1}`, 'סטריפ', box, { axis: normal === '+z' ? 'z' : 'x', grain: 'y', material: material || face.material, qtyKey: `strip-${sw}x${Math.round(b.h)}`, note: face.note });
+    if (face.motion) strip.motion = face.motion;
+    out.push(strip);
+  }
+  return out;
+}
+
+/** פרמטרי חומר עם האפשרות "כמו הגוף". */
+export function sameOrMaterial(key, label, group, extra = {}) {
+  return { key, label, type: 'material', kind: 'board', back: false, solid: false, top: false, allowSame: true, default: 'same', group, ...extra };
+}
+export const resolveSame = (value, fallback) => (value === 'same' || !value ? fallback : value);

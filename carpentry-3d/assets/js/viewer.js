@@ -77,11 +77,11 @@ export function createViewer(canvas, { onPick } = {}) {
   }
 
   const ptrs = {};
-  let pinch = 0, moved = 0;
+  let pinch = 0, moved = 0, twist = null;
   canvas.addEventListener('pointerdown', (e) => {
     canvas.setPointerCapture(e.pointerId);
     ptrs[e.pointerId] = [e.clientX, e.clientY];
-    moved = 0; pinch = 0;
+    moved = 0; pinch = 0; twist = null;
   });
   canvas.addEventListener('pointermove', (e) => {
     const p = ptrs[e.pointerId]; if (!p) return;
@@ -98,16 +98,20 @@ export function createViewer(canvas, { onPick } = {}) {
       if (pinch) zoomBy(pinch / d, (A[0] + B[0]) / 2, (A[1] + B[1]) / 2);
       pinch = d;
       panBy(dx / 2, dy / 2);
+      // סיבוב שתי אצבעות: השינוי בזווית שביניהן מסובב את המודל סביב הציר האנכי.
+      const ang = Math.atan2(B[1] - A[1], B[0] - A[0]);
+      if (twist !== null) { const da = Math.atan2(Math.sin(ang - twist), Math.cos(ang - twist)); ctl.theta += da; }
+      twist = ang;
     }
     p[0] = e.clientX; p[1] = e.clientY;
   });
   function up(e) {
     // הקשה בלי גרירה = בחירת חלק.
     if (ptrs[e.pointerId] && moved < 6 && Object.keys(ptrs).length === 1) pick(e.clientX, e.clientY);
-    delete ptrs[e.pointerId]; pinch = 0;
+    delete ptrs[e.pointerId]; pinch = 0; twist = null;
   }
   canvas.addEventListener('pointerup', up);
-  canvas.addEventListener('pointercancel', (e) => { delete ptrs[e.pointerId]; pinch = 0; });
+  canvas.addEventListener('pointercancel', (e) => { delete ptrs[e.pointerId]; pinch = 0; twist = null; });
   canvas.addEventListener('wheel', (e) => { e.preventDefault(); zoomBy(e.deltaY > 0 ? 1.12 : 1 / 1.12, e.clientX, e.clientY); }, { passive: false });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 

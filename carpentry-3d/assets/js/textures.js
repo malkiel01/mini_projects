@@ -118,8 +118,10 @@ function hash(s) { let h = 2166136261; for (const ch of s) h = Math.imul(h ^ ch.
  * V לאורך y; פאת ±y — U לאורך x, V לאורך z.
  */
 export function textureForPart(m, part, cut) {
-  const { tex, mm } = baseTexture(m);
-  const t = tex.clone();
+  const base = baseTexture(m);
+  const src = part.surface === 'grooved' ? groovedTexture(m, base) : base.tex;
+  const mm = base.mm;
+  const t = src.clone();
   t.needsUpdate = true;
   const face = part.axis;
   const vAxis = face === 'y' ? 'z' : 'y';           // ציר ה-V על הפאה הראשית
@@ -130,6 +132,26 @@ export function textureForPart(m, part, cut) {
   const along = cut.l / mm, across = cut.w / mm;
   if (grainOnV) t.repeat.set(across, along); else t.repeat.set(along, across);
   return t;
+}
+
+// חריצים V: קווים כהים אנכיים על הטקסטורה הבסיסית, כל 60 מ"מ (ביחס ל-grainMm).
+const groovedCache = new Map();
+function groovedTexture(m, base) {
+  const key = m.id + '|' + base.sig;
+  if (groovedCache.has(key)) return groovedCache.get(key);
+  const THREE = T();
+  const c = document.createElement('canvas');
+  c.width = c.height = SIZE;
+  const ctx = c.getContext('2d');
+  const img = base.tex.image;
+  if (img && img.width) ctx.drawImage(img, 0, 0, SIZE, SIZE);
+  const pitch = SIZE * (60 / base.mm);
+  ctx.fillStyle = 'rgba(40,25,10,0.55)';
+  for (let x = pitch / 2; x < SIZE; x += pitch) { ctx.fillRect(Math.round(x) - 2, 0, 3, SIZE); ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(Math.round(x) + 1, 0, 1, SIZE); ctx.fillStyle = 'rgba(40,25,10,0.55)'; }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  groovedCache.set(key, tex);
+  return tex;
 }
 
 /** דוגמית לחומר למסך הספרייה: אותה טקסטורה, כ-data URL קטן. */
@@ -158,6 +180,8 @@ export function swatchDataUrl(m) {
 export function clearTextures() {
   for (const e of baseCache.values()) e.tex.dispose();
   baseCache.clear();
+  for (const t of groovedCache.values()) t.dispose();
+  groovedCache.clear();
 }
 
 /** מקטין תמונה שהועלתה ל-1024 לכל היותר ומחזיר data URL (JPEG) — לאחסון ולטקסטורה. */
