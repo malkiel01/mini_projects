@@ -9,7 +9,7 @@
 const KEEP_SELECTION_MS = 400;
 
 function enhance(input) {
-  if (input.dataset.num || input.closest('.num')) return;
+  if (input.dataset.num || input.closest('.num') || !input.isConnected || !input.parentNode) return;
   input.dataset.num = '1';
   const wrap = document.createElement('span');
   wrap.className = 'num';

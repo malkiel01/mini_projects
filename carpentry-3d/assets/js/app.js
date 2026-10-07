@@ -192,7 +192,7 @@ const TEMPLATE_META = {
   kitchen:  { icon: '🍳', blurb: 'קו ישר או פינתי, משטח, עליונים' },
   table:    { icon: '🍽️', blurb: 'פלטה, רגליים ומסגרת' },
   bed:      { icon: '🛏️', blurb: 'מסגרת, ראש מיטה ולטות' },
-  cladding: { icon: '🪵', blurb: 'סטריפים או לוחות על קיר, עם פינות' },
+  cladding: { icon: '🪵', blurb: 'סטריפים, ריבועים, לבנים, מסגרות ועוד — שדות על קיר, עם פינות' },
 };
 
 async function showProjects(fromPop = false) {

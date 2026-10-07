@@ -160,6 +160,8 @@ function renderColumnsEditor(box, tpl, values, key, onChange) {
     }
     html.push('</div>');
   }
+  // שדה שבפוקוס בתוך העורך: לשחרר לפני ההחלפה, אחרת ה-blur באמצע ההחלפה מבלבל את ה-DOM
+  if (box.contains(document.activeElement)) document.activeElement.blur();
   box.innerHTML = html.join('');
   box.querySelectorAll('details.colsedit__col').forEach((d) => d.addEventListener('toggle', () => {
     const set = new Set((box.dataset.open || '').split(',').filter(Boolean));
