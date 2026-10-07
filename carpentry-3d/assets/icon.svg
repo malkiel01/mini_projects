@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#f4efe7"/>
+  <!-- ספרייה בפרספקטיבה קלה: מסגרת, מחיצה ושני מדפים, בצבע אלון -->
+  <path d="M44 14l8-5v38l-8 5z" fill="#e8d3b5"/>
+  <path d="M14 14l8-5h30l-8 5z" fill="#f1e1c9"/>
+  <path d="M14 14h30v38H14z" fill="#fff" stroke="#b9772f" stroke-width="2.6" stroke-linejoin="round"/>
+  <path d="M44 14l8-5v38l-8 5M14 14l8-5h30" fill="none" stroke="#b9772f" stroke-width="2.6" stroke-linejoin="round"/>
+  <path d="M29 14v38M14 27h30M14 40h30" fill="none" stroke="#b9772f" stroke-width="2.2"/>
+  <path d="M44 27l8-5M44 40l8-5" fill="none" stroke="#b9772f" stroke-width="2.2"/>
+</svg>

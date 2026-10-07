@@ -1,0 +1,117 @@
+<?php
+/**
+ * שכבת האחסון — SQLite דרך PDO.
+ *
+ * אותה בחירה כמו ב-recipes-app וב-claude-tasks: אין פרטי התחברות לנהל,
+ * והקובץ נוסע עם התיקייה. המיגרציות הן CREATE TABLE IF NOT EXISTS בכוונה:
+ * פריסה על מסד קיים אינה נופלת ואינה דורסת, ואין שלב התקנה נפרד.
+ *
+ * data/carpentry.sqlite ו-data/media/ אינם בגיט, ו-deploy.yml מחריג אותם
+ * — ראו README. בלי ההחרגה פריסה הייתה דורסת את הפרויקטים.
+ */
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/errors.php';
+
+// ניתן לדריסה לפני הטעינה — כך הבדיקות רצות על מסד זמני.
+if (!defined('DB_FILE'))   define('DB_FILE',   __DIR__ . '/../data/carpentry.sqlite');
+if (!defined('MEDIA_DIR')) define('MEDIA_DIR', __DIR__ . '/../data/media');
+
+/** חתימת זמן אחידה. ISO-8601 ב-UTC — נשמר כטקסט, ומסתדר לקסיקוגרפית. */
+function nowIso(): string {
+    return gmdate('Y-m-d\TH:i:s\Z');
+}
+
+function db(): PDO {
+    static $pdo = null;
+    if ($pdo instanceof PDO) return $pdo;
+
+    $dir = dirname(DB_FILE);
+    if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
+        throw new AppError('לא ניתן ליצור את תיקיית הנתונים', 500);
+    }
+
+    $pdo = new PDO('sqlite:' . DB_FILE, null, null, [
+        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+    ]);
+    $pdo->exec('PRAGMA journal_mode = WAL');
+    $pdo->exec('PRAGMA foreign_keys = ON');
+    $pdo->exec('PRAGMA busy_timeout = 5000');
+
+    migrate($pdo);
+    return $pdo;
+}
+
+function migrate(PDO $pdo): void {
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS users (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            email         TEXT    NOT NULL UNIQUE,
+            name          TEXT    NOT NULL,
+            role          TEXT    NOT NULL DEFAULT 'carpenter'
+                          CHECK (role IN ('admin','carpenter','viewer')),
+            password_hash TEXT    NOT NULL,
+            blocked       INTEGER NOT NULL DEFAULT 0,
+            created_at    TEXT    NOT NULL
+        );
+
+        -- סוג מוצר = תבנית בקוד + שם + ברירות מחדל משלו (JSON של ערכים).
+        CREATE TABLE IF NOT EXISTS product_types (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            template_key TEXT    NOT NULL,
+            name         TEXT    NOT NULL,
+            description  TEXT    NOT NULL DEFAULT '',
+            defaults     TEXT    NOT NULL DEFAULT '{}',
+            active       INTEGER NOT NULL DEFAULT 1,
+            created_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at   TEXT    NOT NULL,
+            updated_at   TEXT    NOT NULL
+        );
+
+        -- ספריית החומרים: רק מה ששונה מהזריעה שבקוד (diff), שורה לחומר.
+        CREATE TABLE IF NOT EXISTS materials (
+            id         TEXT PRIMARY KEY,
+            data       TEXT NOT NULL,
+            image_mm   INTEGER,
+            has_image  INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL
+        );
+
+        -- תעריפי הנגר: labor_hour, markup, או material:<id> (מחיר שדורס).
+        CREATE TABLE IF NOT EXISTS rates (
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            key     TEXT    NOT NULL,
+            value   REAL    NOT NULL,
+            PRIMARY KEY (user_id, key)
+        );
+
+        CREATE TABLE IF NOT EXISTS projects (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            product_type_id INTEGER REFERENCES product_types(id) ON DELETE SET NULL,
+            template_key    TEXT    NOT NULL,
+            name            TEXT    NOT NULL,
+            client          TEXT    NOT NULL DEFAULT '',
+            values_json     TEXT    NOT NULL DEFAULT '{}',
+            status          TEXT    NOT NULL DEFAULT 'draft'
+                            CHECK (status IN ('draft','quoted','approved','done')),
+            share_token     TEXT    UNIQUE,
+            created_at      TEXT    NOT NULL,
+            updated_at      TEXT    NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS projects_owner ON projects(owner_id, updated_at);
+    ");
+}
+
+/** JSON שמור → מערך; טקסט שבור → מערך ריק, לא קריסה. */
+function jsonArr(?string $s): array {
+    if ($s === null || $s === '') return [];
+    $v = json_decode($s, true);
+    return is_array($v) ? $v : [];
+}
+
+function jsonStr(array $a): string {
+    return json_encode($a, JSON_UNESCAPED_UNICODE) ?: '{}';
+}

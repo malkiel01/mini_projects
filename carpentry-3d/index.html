@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>נגרות בתלת מימד</title>
+<meta name="description" content="סוגי מוצרים פרמטריים לנגרים: מידות וחומרים נכנסים, מודל תלת־ממדי, הדמיה, רשימת חיתוך ומחיר יוצאים.">
+<meta name="theme-color" content="#ffffff">
+<link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
+<!-- Heebo: גופן עברי נעים; אם הרשת חסומה — נופלים לגופן המערכת, בלי שבירה -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="./assets/css/app.css">
+</head>
+<body data-tab="form">
+
+<!-- כניסה / הקמה. אין הרשמה חופשית: המנהל יוצר נגרים. -->
+<div class="auth" id="auth" hidden>
+  <form class="auth__card" id="auth-form" autocomplete="on">
+    <h1>🪚 נגרות בתלת מימד</h1>
+    <h2 id="auth-title">כניסה</h2>
+    <p class="muted" id="auth-hint"></p>
+    <label id="auth-name-row" hidden><span>שם</span><input name="name" autocomplete="name"></label>
+    <label><span>דוא"ל</span><input name="email" type="email" required autocomplete="username" dir="ltr"></label>
+    <label><span>סיסמה</span><input name="password" type="password" required minlength="8" autocomplete="current-password" dir="ltr"></label>
+    <p class="auth__error" id="auth-error"></p>
+    <button type="submit" class="btn btn--accent" id="auth-submit">כניסה</button>
+    <a class="auth__back" href="../index.html">חזרה לכלים</a>
+  </form>
+</div>
+
+<div id="app" hidden class="app">
+<header class="bar">
+  <div class="bar__titles">
+    <h1 class="bar__title"><span id="template-name">נגרות בתלת מימד</span></h1>
+    <span class="bar__sub"><span id="template-desc"></span> <span class="save-state" id="save-state"></span></span>
+  </div>
+  <div class="bar__actions">
+    <button type="button" class="btn" id="btn-projects">📁 פרויקטים</button>
+    <button type="button" class="btn" id="btn-materials">🎨 חומרים</button>
+    <button type="button" class="btn" id="btn-types" hidden>🧩 סוגי מוצרים</button>
+    <button type="button" class="btn" id="btn-users" hidden>👥 משתמשים</button>
+    <div class="menu">
+      <button type="button" class="btn btn--ghost menu__btn"><span id="user-name"></span> ▾</button>
+      <div class="menu__list">
+        <button type="button" id="btn-password">החלפת סיסמה</button>
+        <button type="button" id="btn-logout">יציאה</button>
+        <a href="../index.html">חזרה לכלים</a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="panel panel--form">
+    <!-- כרטיס הפרויקט: שם, לקוח, סטטוס, שמירה ושיתוף -->
+    <div class="group project-card" id="project-card" hidden>
+      <div class="field"><span class="field__label">שם הפרויקט</span><input id="proj-name" maxlength="80"></div>
+      <div class="field"><span class="field__label">לקוח</span><input id="proj-client" maxlength="80"></div>
+      <div class="field"><span class="field__label">סטטוס</span>
+        <select id="proj-status"><option value="draft">טיוטה</option><option value="quoted">הצעת מחיר</option><option value="approved">אושר</option><option value="done">בוצע</option></select>
+      </div>
+      <div class="project-card__actions">
+        <button type="button" class="btn btn--small" id="btn-save">💾 שמירה</button>
+        <button type="button" class="btn btn--small" id="btn-share">🔗 קישור ללקוח</button>
+        <button type="button" class="btn btn--small" id="btn-reset">איפוס לברירת המחדל</button>
+      </div>
+    </div>
+    <p class="muted no-project" id="no-project">אין פרויקט פתוח — בחרו אחד מ"פרויקטים" או צרו חדש.</p>
+    <!-- הטופס נבנה מרשימת הפרמטרים של התבנית — ראו form.js -->
+    <form id="form" autocomplete="off" onsubmit="return false" hidden></form>
+  </aside>
+
+  <section class="panel panel--view">
+    <div class="viewbar">
+      <div class="views">
+        <button type="button" data-view="iso">איזומטרי</button>
+        <button type="button" data-view="front">חזית</button>
+        <button type="button" data-view="side">צד</button>
+        <button type="button" data-view="top">מבט על</button>
+      </div>
+      <div class="summary" id="summary"></div>
+      <button type="button" class="btn btn--accent" id="btn-output">פלט ייצור</button>
+    </div>
+    <div class="stage-wrap">
+      <canvas id="stage" class="stage"></canvas>
+      <div id="warnings" class="warnings" hidden></div>
+    </div>
+    <div class="part" id="part"></div>
+
+    <!-- מגירת הפלט: רשימת חיתוך, זכוכית ופרזול, מאותה רשימת חלקים שבתלת מימד -->
+    <div class="output" id="output">
+      <div class="output__bar">
+        <strong>פלט ייצור</strong>
+        <nav class="output__tabs" id="output-tabs">
+          <button type="button" data-out="cut" class="is-active">רשימת חיתוך</button>
+          <button type="button" data-out="drawings">שרטוטים</button>
+          <button type="button" data-out="price">מחיר</button>
+          <button type="button" data-out="sheets">לוחות</button>
+        </nav>
+        <div class="output__actions">
+          <button type="button" class="btn btn--small" id="btn-csv">CSV</button>
+          <button type="button" class="btn btn--small btn--accent" id="btn-print">🖨 הדפסה / PDF</button>
+          <button type="button" class="btn btn--small" id="btn-output-close">סגירה</button>
+        </div>
+      </div>
+      <div class="output__body" id="output-body"></div>
+    </div>
+  </section>
+</main>
+
+<!-- מגירות: פרויקטים, משתמשים (מנהל), סוגי מוצרים (מנהל), ספריית חומרים, קישור -->
+<div class="drawer" id="projects">
+  <div class="drawer__bar"><strong>📁 פרויקטים</strong><button type="button" class="btn" data-close="#projects">סגירה</button></div>
+  <div class="drawer__body" id="projects-body"></div>
+</div>
+<div class="drawer" id="users">
+  <div class="drawer__bar"><strong>👥 משתמשים</strong><button type="button" class="btn" data-close="#users">סגירה</button></div>
+  <div class="drawer__body" id="users-body"></div>
+</div>
+<div class="drawer" id="types">
+  <div class="drawer__bar"><strong>🧩 סוגי מוצרים</strong><button type="button" class="btn" data-close="#types">סגירה</button></div>
+  <div class="drawer__body" id="types-body"></div>
+</div>
+<div class="mlib" id="mlib"></div>
+<div class="modal" id="share">
+  <div class="modal__card">
+    <h3>קישור צפייה ללקוח</h3>
+    <p class="muted">מי שמחזיק את הקישור רואה את המודל וההדמיה בלבד — בלי מחירים ובלי רשימת חיתוך. ביטול: לחיצה נוספת על "קישור ללקוח".</p>
+    <input id="share-url" readonly dir="ltr">
+    <div class="modal__actions">
+      <button type="button" class="btn btn--accent" id="share-copy">העתקה</button>
+      <button type="button" class="btn" data-close="#share">סגירה</button>
+    </div>
+  </div>
+</div>
+
+<!-- בטלפון: לשוניות במקום שני פאנלים זה לצד זה -->
+<nav class="tabs">
+  <button type="button" data-tab="projects">פרויקטים</button>
+  <button type="button" data-tab="form" class="is-active">טופס</button>
+  <button type="button" data-tab="view">תלת מימד <span id="tab-warn-count"></span></button>
+  <button type="button" data-tab="materials">חומרים</button>
+</nav>
+</div>
+
+<div class="toast" id="toast"></div>
+<!-- עמוד ההדפסה: מתמלא בלחיצה על "הדפסה / PDF", ומוצג רק במדיה print -->
+<div id="print" class="print"></div>
+<div id="stage-error" class="stage-error stage-error--page" hidden>
+  לא הצלחתי לטעון את מנוע התלת מימד (three.js) — לא מהרשת ולא מהעותק המקומי. בדקו את החיבור ורעננו.
+</div>
+
+<!-- three.js: cdnjs, ואז jsdelivr, ולבסוף העותק המקומי ב-vendor/. רק אחרי
+     שאחד מהם נענה נטען המודול של הכלי, שמצפה ל-THREE גלובלי. -->
+<script>
+(function load(list) {
+  function app() { var s = document.createElement('script'); s.type = 'module'; s.src = './assets/js/app.js'; document.body.appendChild(s); }
+  if (!list.length) { app(); return; }
+  var s = document.createElement('script'); s.src = list[0];
+  s.onload = function () { if (window.THREE) app(); else load(list.slice(1)); };
+  s.onerror = function () { load(list.slice(1)); };
+  document.head.appendChild(s);
+})(['https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
+    'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js',
+    './vendor/three.min.js']);
+</script>
+</body>
+</html>
