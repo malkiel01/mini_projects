@@ -81,9 +81,24 @@
         return out;
     }
 
+    /**
+     * גופנים שהמנהל העלה: [{id, name, url}]. נכנסים לרשימה אחרי הגופנים המובנים.
+     * העובי: כל הטווח — בגופן משתנה הוא עובד, ובגופן רגיל כל העוביים נראים אותו דבר.
+     */
+    function setCustomFonts(list) {
+        for (const id of Object.keys(FONTS)) if (FONTS[id].url) delete FONTS[id];
+        for (const f of list) FONTS[f.id] = { name: '⭐ ' + f.name, w: [100, 900], url: f.url };
+    }
+
     const loadedFonts = new Map();
     /** טוען גופן (עברית + ספרות ולטינית) — פעם אחת לכל גופן. */
     function loadFont(base, id) {
+        if (!loadedFonts.has(id) && FONTS[id].url) {
+            const face = new FontFace('MP-' + id, `url(${FONTS[id].url})`, { weight: '100 900' });
+            const p = face.load().then(f => document.fonts.add(f));
+            p.catch(() => loadedFonts.delete(id));        // ננסה שוב בפעם הבאה
+            loadedFonts.set(id, p);
+        }
         if (!loadedFonts.has(id)) {
             const f = FONTS[id];
             const files = f.perWeight
@@ -431,5 +446,5 @@
         return new Blob(parts, { type: 'application/pdf' });
     }
 
-    window.MenuPdf = { render, toPdf, A4, FONTS, WEIGHT_NAMES, DEFAULT_STYLE, weightsOf, cleanStyle };
+    window.MenuPdf = { render, toPdf, A4, FONTS, WEIGHT_NAMES, DEFAULT_STYLE, weightsOf, cleanStyle, setCustomFonts };
 })();
