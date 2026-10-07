@@ -461,6 +461,28 @@
                 <button type="button" class="btn btn-gold" id="pdfDownload" disabled>⬇️ הורדת PDF</button>
                 <button type="button" class="btn btn-ghost" id="pdfShare" hidden>📤 שיתוף</button>
             </div>
+
+            <details class="pdf-style fields" id="pdfStyle">
+                <summary>🎨 עיצוב הכתב</summary>
+                <fieldset class="pdf-part" data-part="title">
+                    <legend>כותרות הקטגוריות</legend>
+                    <label>גופן <select data-k="font"></select></label>
+                    <label>עובי <select data-k="weight"></select></label>
+                    <label>גודל <span class="range-row"><input type="range" data-k="size" min="60" max="150" step="5"><output></output></span></label>
+                    <label>רוחב <span class="range-row"><input type="range" data-k="width" min="70" max="130" step="5"><output></output></span></label>
+                </fieldset>
+                <fieldset class="pdf-part" data-part="item">
+                    <legend>המנות</legend>
+                    <label>גופן <select data-k="font"></select></label>
+                    <label>עובי <select data-k="weight"></select></label>
+                    <label>גודל <span class="range-row"><input type="range" data-k="size" min="60" max="150" step="5"><output></output></span></label>
+                    <label>רוחב <span class="range-row"><input type="range" data-k="width" min="70" max="130" step="5"><output></output></span></label>
+                </fieldset>
+                <p class="set-hint">התצוגה מתעדכנת מיד, והעיצוב נשמר לבד — לכל המנהלים ולכל הדפסה הבאה.
+                    כתב גדול יותר יכול להאריך את הדף.</p>
+                <p class="set-saved" id="pdfStyleSaved" hidden>✓ העיצוב נשמר</p>
+                <button type="button" class="link-btn" id="pdfStyleReset">חזרה לעיצוב המקורי</button>
+            </details>
         </div>
     </dialog>
 

@@ -7,6 +7,7 @@
    - העלים והסלסולים בפינות — וקטורים מהמקור (assets/print/corners.json).
    - הלוגו, איש הקשר והטלפונים — מהגדרות המערכת.
    - הקטגוריות והמנות — מהתפריט, בלי מנות מוסתרות.
+   - עיצוב הכתב (גופן, עובי, גודל, רוחב) — לכותרות ולמנות בנפרד, מהגדרות המערכת.
    תפריט ארוך מ-A4 לא נדחס: הדף מתארך. */
 (() => {
     'use strict';
@@ -31,10 +32,75 @@
         { from: 557, to: 993, circle: 983, text: 963, mid: 778, bottom: 118.8 },
         { from: 62,  to: 497, circle: 478, text: 458, mid: 283, bottom: 33.6 },
     ];
-    const PITCH_MAX = 32.4;         // מרווח שורות כשיש מקום (כמו בסלטים במקור)
+    const PITCH_MAX = 32.4;         // מרווח שורות כשיש מקום (כמו בסלטים במקור), בגודל כתב 100%
     const PITCH_MIN = 27;           // צפוף מזה — מאריכים את הדף
     const ITEM_FONT = 23, TITLE_FONT = 42;
     const MAX_TEXT = 396;           // רוחב מרבי לשם מנה; ארוך יותר — יורד שורה
+
+    /* הגופנים לבחירה. עובי: טווח (גופן משתנה) או רשימה. הקבצים ב-assets/fonts/. */
+    const FONTS = {
+        'noto-serif': { name: 'נוטו סריף — הכותרות המקוריות', w: [100, 900] },
+        'frank-ruhl': { name: 'פרנק רוהל — קלאסי', w: [300, 900] },
+        'david':      { name: 'דוד — קלאסי מעוגל', w: [400, 500, 700], perWeight: true },
+        'suez':       { name: 'סואץ — מודגש וחגיגי', w: [400, 400] },
+        'secular':    { name: 'סקולר — מודרני מודגש', w: [400, 400] },
+        'rubik':      { name: 'רוביק — המנות המקוריות', w: [300, 900] },
+        'heebo':      { name: 'היבו — נקי ומודרני', w: [100, 900] },
+        'assistant':  { name: 'אסיסטנט — עדין', w: [200, 800] },
+        'noto-sans':  { name: 'נוטו סאנס — פשוט', w: [100, 900] },
+    };
+    const WEIGHT_NAMES = { 100: 'דק מאוד', 200: 'דק', 300: 'קל', 400: 'רגיל', 500: 'בינוני', 600: 'חצי מודגש', 700: 'מודגש', 800: 'מודגש מאוד', 900: 'שחור' };
+    /** העיצוב המקורי — כמו בקובץ. size ו-width באחוזים. */
+    const DEFAULT_STYLE = {
+        title: { font: 'noto-serif', weight: 700, size: 100, width: 100 },
+        item:  { font: 'rubik', weight: 400, size: 100, width: 100 },
+    };
+    const RANGES = { hebrew: 'U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F', latin: 'U+0000-00FF, U+2000-206F' };
+
+    /** העוביים שיש לגופן: [400, 500, 700] או 100…900. */
+    function weightsOf(id) {
+        const f = FONTS[id];
+        if (f.perWeight) return f.w;
+        const out = [];
+        for (let w = f.w[0]; w <= f.w[1]; w += 100) out.push(w);
+        return out;
+    }
+
+    /** עיצוב תקין: גופן מוכר, העובי הקרוב שקיים בגופן, וגבולות לגודל ולרוחב. */
+    function cleanStyle(style) {
+        const out = {};
+        for (const part of ['title', 'item']) {
+            const s = { ...DEFAULT_STYLE[part], ...(style?.[part] || {}) };
+            if (!FONTS[s.font]) s.font = DEFAULT_STYLE[part].font;
+            const ws = weightsOf(s.font);
+            s.weight = ws.reduce((a, b) => Math.abs(b - s.weight) < Math.abs(a - s.weight) ? b : a);
+            s.size = Math.min(150, Math.max(60, Number(s.size) || 100));
+            s.width = Math.min(130, Math.max(70, Number(s.width) || 100));
+            out[part] = s;
+        }
+        return out;
+    }
+
+    const loadedFonts = new Map();
+    /** טוען גופן (עברית + ספרות ולטינית) — פעם אחת לכל גופן. */
+    function loadFont(base, id) {
+        if (!loadedFonts.has(id)) {
+            const f = FONTS[id];
+            const files = f.perWeight
+                ? f.w.flatMap(w => ['hebrew', 'latin'].map(sub => [`${id}-${sub}-${w}.woff2`, String(w), sub]))
+                : ['hebrew', 'latin'].map(sub => [`${id}-${sub}.woff2`, f.w[0] === f.w[1] ? String(f.w[0]) : `${f.w[0]} ${f.w[1]}`, sub]);
+            loadedFonts.set(id, Promise.all(files.map(async ([file, weight, sub]) => {
+                const face = new FontFace('MP-' + id, `url(${base}fonts/${file})`, { weight, unicodeRange: RANGES[sub] });
+                document.fonts.add(await face.load());
+            })));
+        }
+        return loadedFonts.get(id);
+    }
+
+    let st = cleanStyle(null);      // העיצוב של הציור הנוכחי
+    const titleSize = () => TITLE_FONT * st.title.size / 100;
+    const itemSize = () => ITEM_FONT * st.item.size / 100;
+    const itemK = () => st.item.size / 100;
 
     let assets = null;
 
@@ -48,16 +114,7 @@
     /** תמונות, וקטורים וגופנים — פעם אחת. base: תיקיית assets/ ביחס לדף. */
     async function loadAssets(base) {
         if (assets) return assets;
-        const fonts = [
-            ['MenuRubik', 'rubik-hebrew.woff2', '400 700', 'U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F'],
-            ['MenuRubik', 'rubik-latin.woff2', '400 700', 'U+0000-00FF, U+2000-206F'],
-            ['MenuSerif', 'noto-serif-hebrew-bold-hebrew.woff2', '700', 'U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F'],
-            ['MenuSerif', 'noto-serif-hebrew-bold-latin.woff2', '700', 'U+0000-00FF, U+2000-206F'],
-        ];
-        await Promise.all(fonts.map(async ([family, file, weight, range]) => {
-            const face = new FontFace(family, `url(${base}fonts/${file})`, { weight, unicodeRange: range });
-            document.fonts.add(await face.load());
-        }));
+        await loadFont(base, 'rubik');          // שורת איש הקשר והטלפונים
         const [header, side, bottom, corners] = await Promise.all([
             loadImage(base + 'print/header.jpg'),
             loadImage(base + 'print/side.jpg'),
@@ -71,21 +128,35 @@
     /* ── פריסה ───────────────────────────────────────────────────── */
 
     let measureCtx = null;
-    function measure(text, size, family = 'MenuRubik', weight = 400) {
+    /** רוחב טקסט בגופן, בעובי, בגודל וברוחב (מתיחה אופקית) שנבחרו. */
+    function measure(text, size, spec) {
         measureCtx ??= document.createElement('canvas').getContext('2d');
-        measureCtx.font = `${weight} ${size}px ${family}`;
+        measureCtx.font = `${spec.weight} ${size}px MP-${spec.font}`;
         measureCtx.direction = 'rtl';
-        return measureCtx.measureText(text).width;
+        return measureCtx.measureText(text).width * spec.width / 100;
+    }
+
+    /** טקסט עם מתיחה אופקית: align = 'right' / 'center'. */
+    function drawText(ctx, text, x, y, size, spec, color, align) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.scale(spec.width / 100, 1);
+        ctx.font = `${spec.weight} ${size}px MP-${spec.font}`;
+        ctx.direction = 'rtl';
+        ctx.textAlign = align;
+        ctx.fillStyle = color;
+        ctx.fillText(text, 0, 0);
+        ctx.restore();
     }
 
     /** שם ארוך מדי — מתפצל בין מילים לכמה שורות. */
     function wrap(text) {
-        if (measure(text, ITEM_FONT) <= MAX_TEXT) return [text];
+        if (measure(text, itemSize(), st.item) <= MAX_TEXT) return [text];
         const lines = [];
         let line = '';
         for (const word of text.split(' ')) {
             const next = line ? line + ' ' + word : word;
-            if (line && measure(next, ITEM_FONT) > MAX_TEXT) { lines.push(line); line = word; } else line = next;
+            if (line && measure(next, itemSize(), st.item) > MAX_TEXT) { lines.push(line); line = word; } else line = next;
         }
         if (line) lines.push(line);
         return lines;
@@ -103,12 +174,21 @@
         return out;
     }
 
+    /* מרווחים קבועים, מותאמים לגודל הכתב: כותרת גדולה יותר צריכה יותר מקום
+       מעליה (ושורת המנה הראשונה — מתחתיה). */
+    const GAP = {
+        top:   () => TOP + 0.75 * (titleSize() - TITLE_FONT),
+        first: i => (i ? 31 : 34) + 0.25 * (titleSize() - TITLE_FONT) + 0.75 * (itemSize() - ITEM_FONT),
+        sep:   () => 23 + 0.25 * (itemSize() - ITEM_FONT),
+        title: () => 51 + 0.75 * (titleSize() - TITLE_FONT),
+    };
+
     /** הגובה הקבוע של עמודה (בלי מרווחי השורות), ומספר מרווחי השורות. */
     function columnShape(cats) {
         let fixed = 0, gaps = 0;
         cats.forEach((cat, i) => {
-            if (i) fixed += 23 + 51;            // קו מפריד, ואז הכותרת הבאה
-            fixed += i ? 31 : 34;               // מהכותרת לשורה הראשונה
+            if (i) fixed += GAP.sep() + GAP.title();    // קו מפריד, ואז הכותרת הבאה
+            fixed += GAP.first(i);                       // מהכותרת לשורה הראשונה
             gaps += cat.lines.length - 1;
         });
         return { fixed, gaps };
@@ -116,7 +196,7 @@
 
     /** כמה גובה צריך עמודה במרווח נתון (עד קו הבסיס האחרון + השוליים שלה). */
     function needed(shape, col, pitch) {
-        return TOP + shape.fixed + shape.gaps * pitch + col.bottom;
+        return GAP.top() + shape.fixed + shape.gaps * pitch + col.bottom;
     }
 
     /**
@@ -131,14 +211,15 @@
         const splits = cats.length > 1 ? [...Array(cats.length - 1).keys()].map(k => k + 1) : [cats.length];
         for (const k of splits) {
             const parts = [cats.slice(0, k), cats.slice(k)];
-            const h = Math.max(...parts.map((p, i) => p.length ? needed(columnShape(p), COLS[i], PITCH_MIN) : 0));
+            const h = Math.max(...parts.map((p, i) => p.length ? needed(columnShape(p), COLS[i], PITCH_MIN * itemK()) : 0));
             if (!best || h < best.h) best = { h, parts };
         }
         const height = Math.max(A4, Math.ceil(best?.h ?? A4));
         const columns = (best?.parts ?? [[], []]).map((p, i) => {
             const shape = columnShape(p);
-            const room = height - COLS[i].bottom - TOP - shape.fixed;
-            const pitch = shape.gaps ? Math.min(PITCH_MAX, Math.max(PITCH_MIN, room / shape.gaps)) : PITCH_MAX;
+            const room = height - COLS[i].bottom - GAP.top() - shape.fixed;
+            const k = itemK();
+            const pitch = shape.gaps ? Math.min(PITCH_MAX * k, Math.max(PITCH_MIN * k, room / shape.gaps)) : PITCH_MAX * k;
             return { cats: p, pitch };
         });
         return { height, columns, hasExtra: menu.categories.some(c => c.items.some(i => i.extra && !i.hidden)) };
@@ -159,16 +240,11 @@
         ctx.lineWidth = w; ctx.strokeStyle = C.gold; ctx.stroke();
     }
 
-    function setFont(ctx, size, family = 'MenuRubik', weight = 400) {
-        ctx.font = `${weight} ${size}px ${family}`;
-        ctx.direction = 'rtl';
-    }
-
     /** "◆ —— כותרת —— ◆" במרכז העמודה. */
     function drawTitle(ctx, col, text, y) {
-        let size = TITLE_FONT;
-        while (size > 26 && measure(text, size, 'MenuSerif', 700) > col.to - col.from - 110) size -= 1;
-        const w = measure(text, size, 'MenuSerif', 700);
+        let size = titleSize();
+        while (size > 20 && measure(text, size, st.title) > col.to - col.from - 110) size -= 1;
+        const w = measure(text, size, st.title);
         const center = (col.from + col.to) / 2;
         const lineY = y - 12.5;
         const l = center - w / 2 - 18, r = center + w / 2 + 18;
@@ -176,10 +252,7 @@
         hline(ctx, r + 14, col.to, lineY);
         diamond(ctx, l, lineY, 4.55, 6.5);
         diamond(ctx, r, lineY, 4.55, 6.5);
-        setFont(ctx, size, 'MenuSerif', 700);
-        ctx.fillStyle = C.title;
-        ctx.textAlign = 'center';
-        ctx.fillText(text, center, y);
+        drawText(ctx, text, center, y, size, st.title, C.title, 'center');
     }
 
     /** "—— • ◇ • ——" בין קטגוריות. */
@@ -193,24 +266,22 @@
     }
 
     function drawColumn(ctx, col, { cats, pitch }) {
-        let y = TOP;
+        let y = GAP.top();
+        const k = itemK();
         cats.forEach((cat, i) => {
             if (i) {
-                drawSeparator(ctx, col, y + 23);
-                y += 23 + 51;
+                drawSeparator(ctx, col, y + GAP.sep());
+                y += GAP.sep() + GAP.title();
             }
             drawTitle(ctx, col, cat.name, y);
-            y += i ? 31 : 34;
+            y += GAP.first(i);
             cat.lines.forEach((line, j) => {
                 if (j) y += pitch;
                 if (line.circle) {
-                    ctx.beginPath(); ctx.arc(col.circle, y - 7.2, 9.5, 0, Math.PI * 2);
+                    ctx.beginPath(); ctx.arc(col.circle, y - 7.2 * k, 9.5 * Math.min(1.2, Math.max(0.8, k)), 0, Math.PI * 2);
                     ctx.lineWidth = 1.25; ctx.strokeStyle = C.gold; ctx.stroke();
                 }
-                setFont(ctx, ITEM_FONT);
-                ctx.fillStyle = C.text;
-                ctx.textAlign = 'right';
-                ctx.fillText(line.text, col.text, y);
+                drawText(ctx, line.text, col.text, y, itemSize(), st.item, C.text, 'right');
             });
         });
     }
@@ -267,23 +338,19 @@
         const phones = (business.phones || []).join(' / ');
         const text = [business.owner ? business.owner + '.' : '', phones].filter(Boolean).join(' ');
         if (!text) return;
+        const spec = { font: 'rubik', weight: 700, width: 100 };
         let size = 22;
-        while (size > 14 && measure(text, size, 'MenuRubik', 700) > 560) size -= 1;
-        setFont(ctx, size, 'MenuRubik', 700);
-        ctx.fillStyle = C.phone;
-        ctx.textAlign = 'center';
-        ctx.fillText(text, W / 2, 183.5);
+        while (size > 14 && measure(text, size, spec) > 560) size -= 1;
+        drawText(ctx, text, W / 2, 183.5, size, spec, C.phone, 'center');
     }
 
     function drawFootnote(ctx, note, height) {
         const y = height - 45;
         const text = '* ' + note;
-        setFont(ctx, 19);
-        const w = measure(text, 19);
+        const size = 19 * itemK();
+        const w = measure(text, size, st.item);
         const x = 686;                       // מרכז ההערה, כמו במקור
-        ctx.fillStyle = C.text;
-        ctx.textAlign = 'center';
-        ctx.fillText(text, x, y);
+        drawText(ctx, text, x, y, size, st.item, C.text, 'center');
         const l = x - w / 2, r = x + w / 2;
         hline(ctx, l - 64, l - 28, y - 8, 0.8);
         hline(ctx, r + 27, r + 65, y - 8, 0.8);
@@ -292,15 +359,19 @@
     }
 
     /**
-     * מצייר את התפריט. menu: התפריט מהמערכת; logo: תמונה טעונה.
+     * מצייר את התפריט. menu: התפריט מהמערכת; logo: תמונה טעונה; style: עיצוב הכתב;
+     * preview: ציור מהיר ברזולוציה נמוכה (לתצוגה מקדימה בזמן כיוונון).
      * מחזיר { canvas, height } — height ביחידות המקור (A4 = 1495).
      */
-    async function render(menu, logo, base = '../assets/') {
+    async function render(menu, logo, base = '../assets/', style = null, preview = false) {
+        const s = cleanStyle(style);
         const a = await loadAssets(base);
+        await Promise.all([loadFont(base, s.title.font), loadFont(base, s.item.font)]);
+        st = s;
         const plan = layout(menu);
         const H = plan.height;
         // 300dpi; בדף ארוך מאוד — פחות, כדי לא לעבור את גבול הקנבס של ספארי (16 מיליון פיקסלים)
-        const S = Math.min(2480 / W, Math.sqrt(16e6 / (W * H)));
+        const S = preview ? 1 : Math.min(2480 / W, Math.sqrt(16e6 / (W * H)));
         const canvas = document.createElement('canvas');
         canvas.width = Math.round(W * S);
         canvas.height = Math.round(H * S);
@@ -360,5 +431,5 @@
         return new Blob(parts, { type: 'application/pdf' });
     }
 
-    window.MenuPdf = { render, toPdf, layout, A4 };
+    window.MenuPdf = { render, toPdf, A4, FONTS, WEIGHT_NAMES, DEFAULT_STYLE, weightsOf, cleanStyle };
 })();
