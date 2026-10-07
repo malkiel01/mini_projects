@@ -154,7 +154,7 @@ console.log('כל התבניות: ברירת מחדל ותצורות');
     dresser: [{}, { drawerColumns: 2, drawerRows: 3, topRowH: 150 }, { backMode: 'overlay', plinthH: 0 }],
     table: [{}, { apronH: 0 }, { stretcher: 'h', length: 2400 }],
     bed: [{}, { headboardH: 0, legs: '4', mattressW: 900 }, { mattressW: 2000, mattressL: 2200 }],
-    cladding: [{}, { walls: 2, turn2: 'left', baseH: 100, crownH: 60 }, { walls: 3, turn2: 'right', turn3: 'right', style: 'panels', slatW: 300, slatGap: 8 }, { style: 'flat', len1: 5000, height: 1000, fromFloor: 0 }, { walls: 2, turn2: 'right', style: 'slats' }],
+    cladding: [{}, { walls: 2, turn2: 'left', baseH: 100, crownH: 60 }, { walls: 3, turn2: 'right', turn3: 'right', style: 'panels', slatW: 300, slatGap: 8 }, { style: 'flat', len1: 5000, height: 1000, fromFloor: 0 }, { walls: 2, turn2: 'right', style: 'slats' }, { style: 'squares' }, { style: 'bricks' }, { style: 'checker' }, { style: 'relief' }, { style: 'frames' }, { style: 'hslats' }, { walls: 2, turn2: 'left', fields: 3, columnsLayout: { sections: { wall1: { widths: [800, null, null], cols: { 0: { kind: 'squares' }, 2: { kind: 'frames' } } }, wall2: { cols: { 1: { kind: 'bricks' } } } } } }],
     kitchen: [{}, { uppers: 'no', drawerCabinets: 0 }, { cabinets: 8, length: 4800, drawerCabinets: 3, backMode: 'overlay' },
       { shape: 'L' }, { shape: 'L', cornerType: 'l-carousel', cornerSide: 'right', drawerCabinetsB: 1 }, { shape: 'L', cornerType: 'blind', uppers: 'no' }, { shape: 'L', cornerSize: 1200, lengthB: 4000, cabinetsB: 4, backMode: 'overlay' }],
   };
@@ -277,6 +277,44 @@ console.log('חיפוי קיר');
   check(R.bounds.w === 3000 && R.bounds.d === 2000, 'פנייה ימינה = פינה פנימית (פינת חדר): 3000 × 2000');
   const w2 = R.parts.find((p) => p.id === 'w2-batten-1');
   check(w2 && w2.box.d > w2.box.w && w2.box.x + w2.box.w <= 3000, 'לטות הקיר השני ניצבות, בתוך הגבולות');
+}
+
+console.log('חיפוי: דוגמאות ושדות');
+{
+  const overlaps = (parts) => {
+    let n = 0;
+    for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
+      const a = parts[i].box, b = parts[j].box, e = 0.5;
+      if (a.x + e < b.x + b.w && b.x + e < a.x + a.w && a.y + e < b.y + b.h && b.y + e < a.y + a.h && a.z + e < b.z + b.d && b.z + e < a.z + a.d) n++;
+    }
+    return n;
+  };
+  const base = { len1: 2000, height: 1200, tileS: 200, slatW: 40, slatGap: 20 };
+  const names = {};
+  for (const style of ['slats', 'hslats', 'panels', 'flat', 'squares', 'bricks', 'checker', 'relief', 'frames']) {
+    const r = build('cladding', { ...base, style });
+    const clad = r.parts.filter((p) => !p.id.includes('batten'));
+    names[style] = clad.length;
+    check(clad.length > 0 && within(r.parts, r.bounds) && allFinite(r.parts) && overlaps(r.parts) === 0, `${style}: ${clad.length} חלקים, בתוך הגבולות, בלי חפיפות`);
+  }
+  check(names.hslats === Math.floor((1200 + 20) / 60) && names.squares === 9 * 5 && names.checker > names.squares, `אופקיים ${names.hslats}, ריבועים ${names.squares} (9×5), שחמט ${names.checker}`);
+  const rel = build('cladding', { ...base, style: 'relief' });
+  const depths = new Set(rel.parts.filter((p) => p.name === 'אריח תבליט').map((p) => p.box.d));
+  check(depths.size === 3, `תבליט: שלושה עומקים (${[...depths].join(',')})`);
+  const br = build('cladding', { ...base, style: 'bricks' });
+  const row1 = br.parts.filter((p) => p.id.startsWith('w1-f1-brick-1-')), row2 = br.parts.filter((p) => p.id.startsWith('w1-f1-brick-2-'));
+  check(row1.length > 0 && row2.length === row1.length + 1 && Math.abs(row2[0].box.w - 90) < 0.01 && Math.abs(row2[0].box.x) < 0.01, 'לבנים: השורה השנייה מוזזת בחצי, עם חצי לבנה בקצה');
+  const fr = build('cladding', { ...base, style: 'frames', tileS: 600 });
+  check(fr.parts.filter((p) => p.name === 'לוח רקע').length === 2 && fr.parts.filter((p) => p.name === 'פס מסגרת').length === 3 * 2 * 4 && !fr.warnings.some((w) => w.includes('מסגרות')), 'מסגרות: לוח רקע + 3×2 מסגרות × 4 פסים');
+  // שדות: רוחב נעוץ ודוגמה לכל שדה, בשני קירות
+  const f = build('cladding', { ...base, walls: 2, turn2: 'left', len2: 1500, fields: 3, columnsLayout: { sections: { wall1: { widths: [800, null, null], cols: { 0: { kind: 'squares' }, 2: { kind: 'hslats' } } }, wall2: { cols: { 1: { kind: 'bricks' } } } } } });
+  const f1 = f.parts.filter((p) => p.id.startsWith('w1-f1-')), f2 = f.parts.filter((p) => p.id.startsWith('w1-f2-')), f3 = f.parts.filter((p) => p.id.startsWith('w1-f3-'));
+  check(f1.every((p) => p.name === 'אריח עץ') && f2.every((p) => p.name === 'סטריפ') && f3.every((p) => p.name === 'סטריפ אופקי'), 'קיר 1: שדה 1 ריבועים, שדה 2 ברירת המחדל (סטריפים), שדה 3 אופקיים');
+  const xs1 = f1.map((p) => p.box.x + p.box.w), xs2 = f2.map((p) => p.box.x);
+  check(Math.max(...xs1) <= 800 + 0.01 && Math.min(...xs2) >= 800 - 0.01 && Math.abs(f3[0].box.w - 600) < 0.01, 'שדה 1 ברוחב 800, השאר 600 כל אחד');
+  check(f.parts.some((p) => p.id.startsWith('w2-f2-brick')) && overlaps(f.parts) === 0 && within(f.parts, f.bounds), 'קיר 2: שדה 2 לבנים; בלי חפיפות ובתוך הגבולות');
+  const sp = template('cladding').columnSpace({ ...defaults(template('cladding')), ...base, walls: 2, turn2: 'right', len2: 1500, fields: 3 });
+  check(sp.sections.length === 2 && sp.sections[0].total === 2000 && sp.sections[1].total === 1500 - 38 && sp.sections[0].items[0].kinds.length === 9, 'columnSpace: קבוצה לקיר, הקיר השני פחות עובי החיפוי בפינה פנימית, 9 דוגמאות');
   const L = build('cladding', { walls: 2, turn2: 'left', len1: 3000, len2: 2000 });
   check(L.bounds.w === 3038 && L.bounds.d === 2038, 'פנייה שמאלה = פינה חיצונית (עוטף בליטה): החיפוי יוצא מעבר לקירות');
   const corner = L.parts.some((p) => p.box.x <= 3019 && p.box.x + p.box.w >= 3019 && p.box.z <= 19 && p.box.z + p.box.d >= 19 && p.box.y <= 1200 && p.box.y + p.box.h >= 1200);
