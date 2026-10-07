@@ -6,6 +6,7 @@
 
 import { allParams, visible, optionsFor } from './model/index.js';
 import { material } from './model/materials.js';
+import { resolveShares, editShare, normalizeLayout, layoutIsEmpty, MIN_SHARE } from './model/layout.js';
 
 export function renderForm(root, tpl, values, onChange) {
   root.innerHTML = '';
@@ -94,72 +95,85 @@ export function renderForm(root, tpl, values, onChange) {
 }
 
 /**
- * עורך העמודות: לכל עמודה מספר מדפים, ומתחתיו גבהי התאים (מלמטה למעלה).
- * שינוי גובה של תא אחד נלקח או מכל שאר התאים בשווה, או מהתא השכן (מעליו)
- * — לפי המתג. הסכום תמיד שווה לגובה הפנוי של העמודה. עמודה שלא נגעו בה
- * (אין רשומה) עוקבת אחרי "מדפים בכל עמודה" ומחולקת שווה.
+ * עורך העמודות: רוחב לכל עמודה, מספר מדפים לכל עמודה, וגובה כל תא.
+ *
+ * כל מספר הוא או "אוטומטי" (מתחלק בשווה במה שנשאר) או "נעוץ" (המשתמש קבע;
+ * שינוי אוטומטי לא נוגע בו עד "איפוס"). שינוי של פריט אחד נלקח לפי המתג:
+ * מכל השאר בשווה, מהשכן הבא (העמודה שמימין / התא שמעליו) או מהשכן הקודם;
+ * בקצה, בלי שכן כזה, נופל לבד ל"בשווה". הלוגיקה עצמה ב-model/layout.js.
  */
 function renderColumnsEditor(box, tpl, values, key, onChange) {
   if (!tpl.columnSpace) { box.textContent = ''; return; }
   const space = tpl.columnSpace(values);
-  const layout = values[key] && typeof values[key] === 'object' ? values[key] : {};
-  const mode = box.dataset.mode || 'even';
-  const openCol = box.dataset.open != null ? Number(box.dataset.open) : null;
+  const layout = normalizeLayout(values[key], space.columns);
+  const colMode = box.dataset.colMode || 'even', gapMode = box.dataset.gapMode || 'even';
+  const openCols = new Set((box.dataset.open || '').split(',').filter(Boolean).map(Number));
+  const widths = resolveShares(space.innerW, layout.widths);
+  const radio = (name, cur, opts) => `<div class="colsedit__mode"><span class="muted">${opts.title}</span>${opts.items.map(([v, t]) => `<label><input type="radio" name="${name}-${key}" value="${v}" ${cur === v ? 'checked' : ''}> ${t}</label>`).join('')}</div>`;
+  const auto = '<i class="colsedit__auto" title="אוטומטי — מתחלק בשווה במה שנשאר">אוטו</i>';
+  const reset = (attrs) => `<button type="button" class="colsedit__reset" ${attrs} title="חזרה לאוטומטי">איפוס</button>`;
   const html = [];
-  html.push(`<div class="colsedit__mode"><span class="muted">שינוי גובה של תא נלקח:</span>
-    <label><input type="radio" name="colsedit-mode-${key}" value="even" ${mode === 'even' ? 'checked' : ''}> מכל התאים בשווה</label>
-    <label><input type="radio" name="colsedit-mode-${key}" value="next" ${mode === 'next' ? 'checked' : ''}> מהתא שמעליו</label></div>`);
+  html.push(radio('colsedit-cmode', colMode, { title: 'שינוי רוחב עמודה נלקח:', items: [['even', 'מכל העמודות בשווה'], ['next', 'מהעמודה שמימין'], ['prev', 'מהעמודה שמשמאל']] }));
+  html.push(radio('colsedit-gmode', gapMode, { title: 'שינוי גובה תא נלקח:', items: [['even', 'מכל התאים בשווה'], ['next', 'מהתא שמעליו'], ['prev', 'מהתא שמתחתיו']] }));
   for (let i = 0; i < space.columns; i++) {
-    const c = layout[i] || {};
+    const c = layout.cols[i] || {};
     const n = Number.isInteger(c.shelves) ? c.shelves : space.defaultShelves;
     const free = space.innerH - n * space.shelfT;
-    const gaps = Array.isArray(c.gaps) && c.gaps.length === n + 1 ? normalize(c.gaps, free) : Array.from({ length: n + 1 }, () => free / (n + 1));
-    const custom = Number.isInteger(c.shelves) || Array.isArray(c.gaps);
-    html.push(`<details class="colsedit__col" ${openCol === i ? 'open' : ''} data-col="${i}">
-      <summary>עמודה ${i + 1} <span class="muted">· ${n} מדפים${custom ? ' · מותאם' : ''}</span></summary>
+    const pins = Array.isArray(c.gaps) && c.gaps.length === n + 1 ? c.gaps : Array.from({ length: n + 1 }, () => null);
+    const gaps = resolveShares(free, pins);
+    const wPinned = layout.widths[i] !== null;
+    const custom = wPinned || Number.isInteger(c.shelves) || pins.some((g) => g !== null);
+    html.push(`<details class="colsedit__col" ${openCols.has(i) ? 'open' : ''} data-col="${i}">
+      <summary>עמודה ${i + 1} <span class="muted">· ${Math.round(widths[i])} מ"מ · ${n} מדפים${custom ? ' · מותאם' : ''}</span></summary>
+      <div class="colsedit__row"><span>רוחב</span>
+        <input type="number" step="10" min="${MIN_SHARE}" data-col="${i}" data-width="1" value="${Math.round(widths[i])}"><i>מ"מ</i>
+        ${wPinned ? reset(`data-col="${i}" data-reset="width"`) : auto}</div>
       <div class="colsedit__row"><span>מדפים</span>
         <button type="button" data-col="${i}" data-shelves="${n - 1}" ${n <= 0 ? 'disabled' : ''}>−</button><b>${n}</b><button type="button" data-col="${i}" data-shelves="${n + 1}" ${n >= 15 ? 'disabled' : ''}>+</button>
-        ${custom ? `<button type="button" class="colsedit__reset" data-col="${i}" data-reset="1">איפוס</button>` : ''}</div>
-      ${space.split ? '<small class="muted">העמודה מפוצלת — הגבהים מתחלקים לפי הפיצול</small>' : `<div class="colsedit__gaps">${gaps.map((g, gi) => `<label><span>תא ${gi + 1}${gi === gaps.length - 1 ? ' (עליון)' : gi === 0 ? ' (תחתון)' : ''}</span><input type="number" step="10" min="50" data-col="${i}" data-gap="${gi}" value="${Math.round(g)}"><i>מ"מ</i></label>`).reverse().join('')}</div>`}
+        ${Number.isInteger(c.shelves) || pins.some((g) => g !== null) ? reset(`data-col="${i}" data-reset="shelves"`) : ''}</div>
+      ${space.split ? '<small class="muted">העמודה מפוצלת — הגבהים מתחלקים לפי הפיצול</small>' : `<div class="colsedit__gaps">${gaps.map((g, gi) => `<label><span>תא ${gi + 1}${gi === gaps.length - 1 ? ' (עליון)' : gi === 0 ? ' (תחתון)' : ''}</span><input type="number" step="10" min="${MIN_SHARE}" data-col="${i}" data-gap="${gi}" value="${Math.round(g)}"><i>מ"מ</i>${pins[gi] !== null ? reset(`data-col="${i}" data-reset="gap" data-gap="${gi}"`) : auto}</label>`).reverse().join('')}</div>`}
     </details>`);
   }
   box.innerHTML = html.join('');
+  box.querySelectorAll('details.colsedit__col').forEach((d) => d.addEventListener('toggle', () => {
+    const set = new Set((box.dataset.open || '').split(',').filter(Boolean).map(Number));
+    d.open ? set.add(Number(d.dataset.col)) : set.delete(Number(d.dataset.col));
+    box.dataset.open = [...set].join(',');
+  }));
+  const commit = (next) => { values[key] = layoutIsEmpty(next) ? null : next; onChange(); };
   box.onchange = (e) => {
     const t = e.target;
-    if (t.name === `colsedit-mode-${key}`) { box.dataset.mode = t.value; return; }
-    if (t.dataset.gap !== undefined) {
-      const i = Number(t.dataset.col), gi = Number(t.dataset.gap);
-      const c = layout[i] || {};
+    if (t.name === `colsedit-cmode-${key}`) { box.dataset.colMode = t.value; return; }
+    if (t.name === `colsedit-gmode-${key}`) { box.dataset.gapMode = t.value; return; }
+    const i = Number(t.dataset.col);
+    if (t.dataset.width) {
+      const next = { ...layout, widths: editShare(space.innerW, layout.widths, i, Number(t.value) || widths[i], box.dataset.colMode || 'even') };
+      commit(next);
+    } else if (t.dataset.gap !== undefined) {
+      const gi = Number(t.dataset.gap);
+      const c = layout.cols[i] || {};
       const n = Number.isInteger(c.shelves) ? c.shelves : space.defaultShelves;
       const free = space.innerH - n * space.shelfT;
-      const gaps = Array.isArray(c.gaps) && c.gaps.length === n + 1 ? normalize(c.gaps, free) : Array.from({ length: n + 1 }, () => free / (n + 1));
-      const want = Math.max(50, Math.min(free - 50 * n, Number(t.value) || gaps[gi]));
-      const delta = want - gaps[gi];
-      const next = gaps.slice();
-      next[gi] = want;
-      if ((box.dataset.mode || 'even') === 'next' && gi + 1 < next.length) {
-        next[gi + 1] = Math.max(50, next[gi + 1] - delta);
-      } else {
-        const others = next.map((_, k) => k).filter((k) => k !== gi);
-        const share = delta / others.length;
-        for (const k of others) next[k] = Math.max(50, next[k] - share);
-      }
-      values[key] = { ...layout, [i]: { shelves: n, gaps: normalize(next, free).map((g) => Math.round(g)) } };
-      box.dataset.open = i;
-      onChange();
+      const pins = Array.isArray(c.gaps) && c.gaps.length === n + 1 ? c.gaps : Array.from({ length: n + 1 }, () => null);
+      const cur = resolveShares(free, pins);
+      const next = { ...layout, cols: { ...layout.cols, [i]: { shelves: n, gaps: editShare(free, pins, gi, Number(t.value) || cur[gi], box.dataset.gapMode || 'even') } } };
+      commit(next);
     }
   };
   box.onclick = (e) => {
     const b = e.target.closest('button[data-col]');
     if (!b) return;
     const i = Number(b.dataset.col);
-    if (b.dataset.reset) { const l = { ...layout }; delete l[i]; values[key] = Object.keys(l).length ? l : null; }
-    else values[key] = { ...layout, [i]: { shelves: Number(b.dataset.shelves) } };   // ספירה חדשה — חלוקה שווה
-    box.dataset.open = i;
-    onChange();
+    const next = { ...layout, widths: layout.widths.slice(), cols: { ...layout.cols } };
+    if (b.dataset.reset === 'width') next.widths[i] = null;
+    else if (b.dataset.reset === 'shelves') delete next.cols[i];
+    else if (b.dataset.reset === 'gap') {
+      const c = { ...next.cols[i], gaps: next.cols[i].gaps.slice() };
+      c.gaps[Number(b.dataset.gap)] = null;
+      if (c.gaps.every((g) => g === null)) delete c.gaps;
+      next.cols[i] = c;
+    } else if (b.dataset.shelves !== undefined) next.cols[i] = { shelves: Number(b.dataset.shelves) };   // ספירה חדשה — התאים חוזרים לאוטומטי
+    else return;
+    commit(next);
   };
-}
-function normalize(gaps, free) {
-  const sum = gaps.reduce((a, b) => a + b, 0) || 1;
-  return gaps.map((g) => (g * free) / sum);
 }

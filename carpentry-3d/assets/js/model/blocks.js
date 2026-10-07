@@ -63,22 +63,29 @@ export function carcass({ w, d, z = 0, y0 = 0, bottomY, topY, sideT, panelT, sid
   };
 }
 
-/** מחיצות אנכיות שמחלקות את הפנים ל-`columns` עמודות שוות. מחזיר גם את גבולות העמודות. */
-export function partitions({ inner, columns, t, material, prefix = '' }) {
+/**
+ * מחיצות אנכיות שמחלקות את הפנים ל-`columns` עמודות — שוות, או לפי `widths`
+ * (רוחבי העמודות משמאל לימין, סכומם = הרוחב הפנוי). מחזיר את גבולות העמודות
+ * ו-`colW` = העמודה הרחבה ביותר (לאזהרת המפתח).
+ */
+export function partitions({ inner, columns, t, material, prefix = '', widths = null }) {
   const parts = [];
   const innerW = inner.x1 - inner.x0;
-  const colW = (innerW - (columns - 1) * t) / columns;
+  const free = innerW - (columns - 1) * t;
+  const ws = Array.isArray(widths) && widths.length === columns ? widths : Array.from({ length: columns }, () => free / columns);
   const cols = [];
+  let x0 = inner.x0;
   for (let c = 0; c < columns; c++) {
-    const x0 = inner.x0 + c * (colW + t);
-    cols.push({ x0, x1: x0 + colW });
+    const w = ws[c];
+    cols.push({ x0, x1: x0 + w });
     if (c < columns - 1) {
       parts.push(part(`${prefix}partition-${c + 1}`, `מחיצה ${c + 1}`,
-        { x: x0 + colW, y: inner.y0, z: inner.z0, w: t, h: inner.y1 - inner.y0, d: inner.z1 - inner.z0 },
+        { x: x0 + w, y: inner.y0, z: inner.z0, w: t, h: inner.y1 - inner.y0, d: inner.z1 - inner.z0 },
         { axis: 'x', grain: 'y', material, qtyKey: `${prefix}partition`, edges: { front: true } }));
     }
+    x0 += w + t;
   }
-  return { parts, cols, colW };
+  return { parts, cols, colW: Math.max(...ws), free };
 }
 
 /**

@@ -11,6 +11,7 @@
 
 import { carcass, partitions, shelves, back, plinth, crown, door, part } from '../blocks.js';
 import { material } from '../materials.js';
+import { resolveShares, normalizeLayout } from '../layout.js';
 import { materialParams, joineryParams, FINISHES, FINISHES_NO_GLASS, applyFinish, sameOrMaterial, resolveSame } from './common.js';
 
 const DOOR_OPTIONS = [{ id: 'none', name: 'ללא' }, { id: 'wood', name: 'עץ' }, { id: 'glass', name: 'ויטרינה' }];
@@ -73,13 +74,14 @@ export default {
     return v;
   },
 
-  /** לעורך העמודות בטופס: כמה עמודות, מה הגובה הפנוי בכל אחת, ועובי מדף. */
+  /** לעורך העמודות בטופס: כמה עמודות, הרוחב הפנוי לחלוקה ביניהן, הגובה הפנוי בכל אחת, ועובי מדף. */
   columnSpace(v) {
-    const sideT = v.sideT ?? 18, shelfT = v.shelfT ?? 18;
+    const sideT = v.sideT ?? 18, shelfT = v.shelfT ?? 18, columns = v.columns ?? 1;
     const bottomY = Math.max(v.plinthH ?? 0, 0) + shelfT, topY = (v.height ?? 2000) - (v.crownH ?? 0);
     const innerH = topY - shelfT - bottomY;
+    const innerW = (v.width ?? 1200) - 2 * sideT - (columns - 1) * sideT;
     const split = (v.lowerH ?? 0) > 0 && v.lowerH < topY - bottomY - 100;
-    return { columns: v.columns ?? 1, innerH, shelfT, split, defaultShelves: v.shelvesPerColumn ?? 0 };
+    return { columns, innerW, innerH, shelfT, split, defaultShelves: v.shelvesPerColumn ?? 0 };
   },
 
   // ספי האזהרות. יושבים בתבנית ואפשר לדרוס אותם בסוג המוצר.
@@ -131,12 +133,17 @@ export default {
       );
     }
 
-    const cols = partitions({ inner, columns: v.columns, t: sideT, material: innerMat });
+    // פריסת עמודות: רוחב לכל עמודה (נעוץ או אוטומטי), מספר מדפים לכל עמודה, וגבהי התאים (מלמטה למעלה).
+    const layout = normalizeLayout(v.columnsLayout, v.columns);
+    const widths = resolveShares(inner.x1 - inner.x0 - (v.columns - 1) * sideT, layout.widths);
+    const cols = partitions({ inner, columns: v.columns, t: sideT, material: innerMat, widths });
     parts.push(...cols.parts);
-    // פריסת עמודות: לכל עמודה מספר מדפים משלה, ואופציונלית גבהי התאים (מלמטה למעלה).
-    const layout = v.columnsLayout && typeof v.columnsLayout === 'object' ? v.columnsLayout : {};
-    const colShelves = (i) => { const c = layout[i]; return c && Number.isInteger(c.shelves) ? Math.max(0, Math.min(15, c.shelves)) : v.shelvesPerColumn; };
-    const colGaps = (i) => { const c = layout[i]; return c && Array.isArray(c.gaps) ? c.gaps : null; };
+    const colShelves = (i) => { const c = layout.cols[i]; return c && Number.isInteger(c.shelves) ? c.shelves : v.shelvesPerColumn; };
+    const colGaps = (i, free) => {
+      const c = layout.cols[i], n = colShelves(i);
+      if (!c || !Array.isArray(c.gaps) || c.gaps.length !== n + 1 || c.gaps.every((g) => g === null)) return null;
+      return resolveShares(free, c.gaps);
+    };
 
     const adjustable = v.shelvesMode === 'adjustable';
     const z0 = inner.z0 + (v.backMode === 'groove' ? v.backInset + backT : 0), z1 = inner.z1;
@@ -158,7 +165,7 @@ export default {
           if (adjustable) s.parts.forEach((p) => hardware.push({ id: `${p.id}-pins`, kind: 'shelf-pin', material: 'hw:shelf-pin', qty: 4, for: p.id }));
         }
       } else {
-        const s = shelves({ col, y0: inner.y0, y1: inner.y1, z0, z1, count: colShelves(i), t: shelfT, material: shelfMat, setback: adjustable ? 5 : 0, adjustable, colIndex: i, gaps: colGaps(i) });
+        const s = shelves({ col, y0: inner.y0, y1: inner.y1, z0, z1, count: colShelves(i), t: shelfT, material: shelfMat, setback: adjustable ? 5 : 0, adjustable, colIndex: i, gaps: colGaps(i, inner.y1 - inner.y0 - colShelves(i) * shelfT) });
         parts.push(...s.parts);
         if (adjustable) s.parts.forEach((p) => hardware.push({ id: `${p.id}-pins`, kind: 'shelf-pin', material: 'hw:shelf-pin', qty: 4, for: p.id }));
       }
