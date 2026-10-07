@@ -616,9 +616,11 @@ body {
 .colsedit__row { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 0.85rem; }
 .colsedit__row button { width: 28px; height: 28px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel); font: inherit; cursor: pointer; }
 .colsedit__row button:disabled { opacity: 0.4; cursor: default; }
-.colsedit__reset { width: auto !important; padding: 0 10px; font-size: 0.8rem; color: var(--muted); }
+.colsedit__reset { width: auto !important; height: 26px; padding: 0 8px; font-size: 0.75rem; color: var(--muted); border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel); font-family: inherit; cursor: pointer; }
+.colsedit__auto { font-style: normal; font-size: 0.72rem; color: var(--muted); border: 1px dashed var(--line-strong); border-radius: 8px; padding: 2px 6px; }
+.colsedit__row .num input[type=number] { width: 4.5em; }
 .colsedit__gaps { display: flex; flex-direction: column; gap: 4px; padding-bottom: 6px; }
-.colsedit__gaps label { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px; font-size: 0.82rem; }
+.colsedit__gaps label { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 8px; font-size: 0.82rem; }
 .colsedit__gaps label > span { color: var(--muted); }
 .colsedit__gaps input { padding: 5px 8px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel); font: inherit; font-size: 0.85rem; direction: ltr; text-align: right; }
 .colsedit__gaps i { color: var(--muted); font-style: normal; font-size: 0.75rem; }

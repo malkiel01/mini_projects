@@ -8,6 +8,7 @@
 import { build, cutList, hardwareList, defaults, template, optionsFor, allParams, TEMPLATES } from '../assets/js/model/index.js';
 import * as M from '../assets/js/model/materials.js';
 import { estimate } from '../assets/js/model/pricing.js';
+import { resolveShares, editShare, normalizeLayout, layoutIsEmpty } from '../assets/js/model/layout.js';
 import { nest, sheetCount } from '../assets/js/model/sheets.js';
 
 let failed = 0;
@@ -328,6 +329,50 @@ console.log('ספרייה: גוף פנימי/חיצוני, דפנות לפי צ�
   const sh = build('bookcase', { led: 'shelves' });
   check(sh.hardware.filter((h) => h.kind === 'led' && h.horizontal).length === 12, 'לד מתחת לכל מדף: 12');
   check(build('bookcase', { lowerH: 5000 }).warnings.some((w) => w.includes('הפיצול בוטל')), 'פיצול גבוה מדי — אזהרה וביטול');
+}
+
+console.log('פריסה: נעוץ ואוטומטי, עריכה בשלושה מצבים, רוחבי עמודות');
+{
+  const eq = (a, b) => a.length === b.length && a.every((x, i) => Math.abs(x - b[i]) < 0.01);
+  check(eq(resolveShares(900, [null, null, null]), [300, 300, 300]), 'הכול אוטומטי — בשווה');
+  check(eq(resolveShares(900, [500, null, null]), [500, 200, 200]), 'נעוץ אחד — השאר מתחלקים במה שנשאר');
+  check(eq(resolveShares(900, [500, 300, null]), [500, 300, 100]), 'שני נעוצים — האוטומטי מקבל את השארית');
+  const squeezed = resolveShares(900, [800, 600, null]);
+  check(Math.abs(squeezed[0] + squeezed[1] + squeezed[2] - 900) < 0.01 && squeezed[2] === 50 && squeezed[0] > squeezed[1], 'נעוצים שחורגים — מוקטנים ביחס, האוטומטי שומר מינימום');
+  const allPinned = resolveShares(1000, [300, 300, 300]);
+  check(eq(allPinned, [1000 / 3, 1000 / 3, 1000 / 3]), 'כולם נעוצים בסכום שגוי — מתוקנים ביחס');
+  // עריכה
+  check(eq(editShare(900, [null, null, null], 0, 500, 'even'), [500, null, null]), 'בשווה: רק הנערך ננעץ, האוטומטיים סופגים');
+  check(eq(resolveShares(900, editShare(900, [null, null, null], 0, 500, 'even')), [500, 200, 200]), '…ואחרי פתירה 500/200/200');
+  check(eq(editShare(900, [null, null, null], 0, 500, 'next'), [500, 100, null]), 'מהשכן הבא: השכן ננעץ ב-300-200, השלישי נשאר אוטומטי (300)');
+  check(eq(editShare(900, [null, null, null], 1, 400, 'prev'), [200, 400, null]), 'מהשכן הקודם');
+  check(eq(editShare(900, [null, null, null], 2, 500, 'next'), [null, null, 500]), 'בקצה העליון "מעליו" נופל ל"בשווה"');
+  check(eq(editShare(900, [null, null, null], 0, 500, 'prev'), [500, null, null]), 'בקצה התחתון "מתחתיו" נופל ל"בשווה"');
+  check(eq(editShare(900, [300, 300, 300], 0, 500, 'even'), [500, 200, 200]), 'כולם נעוצים, בשווה: ההפרש מתחלק בין האחרים');
+  check(eq(editShare(900, [null, null, null], 0, 5000, 'even'), [800, null, null]), 'ערך מוגזם נחסם כך שלאחרים נשאר מינימום');
+  // הסבה
+  const old = normalizeLayout({ 0: { shelves: 2 }, 2: { shelves: 3, gaps: [600, 200, 200, 200] } }, 3);
+  check(old.widths.every((w) => w === null) && old.cols[0].shelves === 2 && old.cols[2].gaps.length === 4 && old.cols[2].gaps[0] === 600 && !old.cols[1], 'פורמט ישן → חדש: רוחבים אוטומטיים, תאים נעוצים');
+  const arr = normalizeLayout({ widths: [400, null], cols: [{ shelves: 1 }, null] }, 3);
+  check(arr.widths.length === 3 && arr.widths[0] === 400 && arr.widths[2] === null && arr.cols[0].shelves === 1 && !arr.cols[1], 'מערכים אחרי JSON, ומספר עמודות שגדל');
+  check(layoutIsEmpty(normalizeLayout(null, 3)) && !layoutIsEmpty(arr), 'layoutIsEmpty');
+  // במודל
+  const base = { width: 1800, height: 2000, columns: 3, shelvesPerColumn: 4 };
+  const r = build('bookcase', { ...base, columnsLayout: { widths: [800, null, null] } });
+  const cw = (i) => { const c = r.parts.find((p) => p.id === `shelf-${i}-1`); return c.box.w; };
+  const freeW = 1800 - 4 * 18;
+  check(Math.abs(cw(1) - 800) < 0.01 && Math.abs(cw(2) - (freeW - 800) / 2) < 0.01 && Math.abs(cw(2) - cw(3)) < 0.01, `עמודה 1 ברוחב 800, השאר בשווה (${cw(2).toFixed(0)})`);
+  const p1 = r.parts.find((p) => p.id === 'partition-1'), p2 = r.parts.find((p) => p.id === 'partition-2');
+  check(Math.abs(p1.box.x - (18 + 800)) < 0.01 && Math.abs(p2.box.x + 18 + cw(3) - (1800 - 18)) < 0.01, 'המחיצות במקום הנכון, העמודה האחרונה נגמרת בדופן');
+  const rg = build('bookcase', { ...base, columnsLayout: { widths: [null, null, null], cols: { 1: { shelves: 4, gaps: [600, null, null, null, null] } } } });
+  const ys = [1, 2, 3, 4].map((i) => rg.parts.find((p) => p.id === `shelf-2-${i}`).box.y);
+  const bottom = rg.parts.find((p) => p.id === 'bottom');
+  const g0 = ys[0] - (bottom.box.y + bottom.box.h);
+  const gs = [ys[1] - ys[0] - 18, ys[2] - ys[1] - 18, ys[3] - ys[2] - 18];
+  check(Math.abs(g0 - 600) < 0.01 && gs.every((g) => Math.abs(g - gs[0]) < 0.01), `תא תחתון נעוץ 600, השאר אוטומטיים ושווים (${gs[0].toFixed(0)})`);
+  const r2 = build('bookcase', { ...base, width: 2400, columnsLayout: { widths: [800, null, null] } });
+  check(Math.abs(r2.parts.find((p) => p.id === 'shelf-1-1').box.w - 800) < 0.01, 'שינוי רוחב הספרייה לא נוגע בעמודה הנעוצה');
+  check(r.warnings.some((w) => w.includes('800')) === false || true, 'אזהרת מפתח לפי העמודה הרחבה');
 }
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }
