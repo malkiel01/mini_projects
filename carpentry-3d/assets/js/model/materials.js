@@ -53,6 +53,8 @@ export const SEED = [
   { id: 'hw:rod-chrome',           kind: 'hardware', name: 'מוט תלייה כרום', price: 40, priceUnit: 'unit' },
   { id: 'hw:track-sliding',        kind: 'hardware', name: 'מסילה כפולה לדלתות הזזה', price: 250, priceUnit: 'unit' },
   { id: 'hw:leg-adjust',           kind: 'hardware', name: 'רגלית מתכווננת', price: 6, priceUnit: 'unit' },
+  { id: 'hw:hinge-bifold',         kind: 'hardware', name: 'ציר קיפול לדלת פינה', price: 18, priceUnit: 'unit' },
+  { id: 'hw:carousel',             kind: 'hardware', name: 'קרוסלה לארון פינתי', price: 650, priceUnit: 'unit' },
 ];
 
 export const KINDS = [

@@ -124,6 +124,17 @@
   <div class="drawer__body" id="types-body"></div>
 </div>
 <div class="mlib" id="mlib"></div>
+<div class="modal" id="newproj">
+  <form class="modal__card" id="newproj-form" autocomplete="off">
+    <h3 id="newproj-title">פרויקט חדש</h3>
+    <label class="modal__field"><span>שם הפרויקט</span><input name="name" maxlength="80" required placeholder="למשל: ספרייה לסלון — משפחת כהן"></label>
+    <label class="modal__field"><span>לקוח</span><input name="client" maxlength="80" placeholder="לא חובה"></label>
+    <div class="modal__actions">
+      <button type="submit" class="btn btn--accent">יצירת הפרויקט</button>
+      <button type="button" class="btn" data-close="#newproj">ביטול</button>
+    </div>
+  </form>
+</div>
 <div class="modal" id="share">
   <div class="modal__card">
     <h3>קישור צפייה ללקוח</h3>

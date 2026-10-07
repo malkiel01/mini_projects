@@ -153,7 +153,8 @@ console.log('כל התבניות: ברירת מחדל ותצורות');
     dresser: [{}, { drawerColumns: 2, drawerRows: 3, topRowH: 150 }, { backMode: 'overlay', plinthH: 0 }],
     table: [{}, { apronH: 0 }, { stretcher: 'h', length: 2400 }],
     bed: [{}, { headboardH: 0, legs: '4', mattressW: 900 }, { mattressW: 2000, mattressL: 2200 }],
-    kitchen: [{}, { uppers: 'no', drawerCabinets: 0 }, { cabinets: 8, length: 4800, drawerCabinets: 3, backMode: 'overlay' }],
+    kitchen: [{}, { uppers: 'no', drawerCabinets: 0 }, { cabinets: 8, length: 4800, drawerCabinets: 3, backMode: 'overlay' },
+      { shape: 'L' }, { shape: 'L', cornerType: 'l-carousel', cornerSide: 'right', drawerCabinetsB: 1 }, { shape: 'L', cornerType: 'blind', uppers: 'no' }, { shape: 'L', cornerSize: 1200, lengthB: 4000, cabinetsB: 4, backMode: 'overlay' }],
   };
   for (const key of Object.keys(TEMPLATES)) {
     const t = template(key);
@@ -186,8 +187,44 @@ console.log('כל התבניות: ברירת מחדל ותצורות');
   check(bd.parts.filter((p) => p.name === 'לטה').length >= 14 && bd.parts.find((p) => p.id === 'headboard'), `מיטה: לטות (${bd.parts.filter((p) => p.name === 'לטה').length}) וראש מיטה`);
   check(bd.bounds.w === 1600 + 20 + 50, 'מיטה: רוחב = מזרן + מרווח + דפנות');
   const k = build('kitchen', {});
-  check(k.parts.find((p) => p.id === 'countertop') && k.parts.filter((p) => p.id.startsWith('ע')).length > 0, 'מטבח: משטח ועליונים');
+  check(k.parts.find((p) => p.id === 'countertop-A') && k.parts.filter((p) => p.id.startsWith('ע')).length > 0, 'מטבח: משטח ועליונים');
   check(k.warnings.length === 0, `מטבח ברירת מחדל בלי אזהרות (${k.warnings.join('; ')})`);
+}
+
+console.log("מטבח בצורת ר'");
+{
+  // חפיפות: בגב מולבש (לא בחריץ) אף שני לוחות לא צריכים לחדור זה לזה —
+  // חוץ ממה שיושב בחריץ בכוונה (תחתית מגירה), שמסומן כך בהערה.
+  const overlaps = (all) => {
+    const parts = all.filter((p) => !/חריץ/.test(p.note || ''));
+    const out = [];
+    for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
+      const a = parts[i].box, b = parts[j].box, e = 0.5;
+      if (a.x + e < b.x + b.w && b.x + e < a.x + a.w && a.y + e < b.y + b.h && b.y + e < a.y + a.h && a.z + e < b.z + b.d && b.z + e < a.z + a.d) out.push(`${parts[i].id} × ${parts[j].id}`);
+    }
+    return out;
+  };
+  for (const vals of [{ shape: 'L', backMode: 'overlay' }, { shape: 'L', cornerType: 'blind', backMode: 'overlay' }, { shape: 'L', cornerSide: 'right', backMode: 'overlay', drawerCabinetsB: 1 }, { shape: 'line', backMode: 'overlay' }]) {
+    const r = build('kitchen', vals);
+    const o = overlaps(r.parts);
+    check(o.length === 0, `${JSON.stringify(vals)}: אין חפיפות (${o.slice(0, 4).join('; ')})`);
+    check(within(r.parts, r.bounds), `${JSON.stringify(vals)}: בתוך הגבולות`);
+  }
+  const L = build('kitchen', { shape: 'L' });
+  check(L.bounds.d === 2400 && L.bounds.w === 3000, "ר': הגבולות הם שני הקירות");
+  check(L.warnings.length === 0, `ר' ברירת מחדל בלי אזהרות (${L.warnings.join('; ')})`);
+  check(L.parts.some((p) => p.id === 'פינה-door-A') && L.parts.some((p) => p.id === 'פינה-door-B'), 'ארון פינתי: שתי דלתות');
+  const dB = L.parts.find((p) => p.id === 'פינה-door-B');
+  check(dB.axis === 'x' && dB.box.x === 560 && dB.box.z > 560, 'דלת ב על הפאה x=D, לאורך z');
+  check(L.parts.filter((p) => p.id.startsWith('ב1-')).every((p) => p.box.x < 560 + 1) && L.parts.some((p) => p.id === 'ב1-door' || p.id === 'ב1-doora'), 'ארונות הקיר השני בתוך עומק הקיר, עם דלת');
+  check(L.parts.some((p) => p.id === 'countertop-B') && L.parts.some((p) => p.id === 'plinth-B'), 'משטח וסוקל לקיר השני');
+  const R = build('kitchen', { shape: 'L', cornerSide: 'right' });
+  const dAr = R.parts.find((p) => p.id === 'פינה-door-A');
+  check(Math.abs(dAr.box.x - (3000 - 1000)) < 3 && dAr.box.x + dAr.box.w < 3000 - 560, 'פינה מימין: דלת א בין הפינה הימנית לעומק הקיר השני');
+  const car = build('kitchen', { shape: 'L', cornerType: 'l-carousel' });
+  check(car.hardware.some((h) => h.material === 'hw:carousel') && car.hardware.some((h) => h.material === 'hw:hinge-bifold'), 'קרוסלה וצירי קיפול בפרזול');
+  const narrow = build('kitchen', { shape: 'L', cornerSize: 800, baseD: 650 });
+  check(narrow.warnings.some((w) => w.includes('פינה')), 'אזהרה על פינה קטנה מדי');
 }
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }
