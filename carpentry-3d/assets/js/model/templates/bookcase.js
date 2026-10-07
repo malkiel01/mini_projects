@@ -6,6 +6,7 @@
 
 import { carcass, partitions, shelves, back, plinth, crown, door } from '../blocks.js';
 import { material } from '../materials.js';
+import { materialParams, doorParams, joineryParams } from './common.js';
 
 // פרמטר מסוג 'material' לא מחזיק רשימה: הוא מצביע על סוג (וסינון), והרשימה
 // נפתרת ברגע בניית הטופס מהספרייה החיה — כך חומר שנוסף במסך מופיע מיד.
@@ -25,41 +26,17 @@ export default {
     { key: 'columns', label: 'עמודות', type: 'int', min: 1, max: 8, default: 3, group: 'חלוקה' },
     { key: 'shelvesPerColumn', label: 'מדפים בכל עמודה', type: 'int', min: 0, max: 15, default: 4, group: 'חלוקה' },
 
-    { key: 'bodyMaterial', label: 'חומר הגוף', type: 'material', kind: 'board', back: false, default: 'board:melamine-oak-18', group: 'חומרים' },
-    { key: 'shelfMaterial', label: 'חומר המדפים', type: 'material', kind: 'board', back: false, default: 'board:melamine-oak-18', group: 'חומרים' },
-    { key: 'backMaterial', label: 'חומר הגב', type: 'material', kind: 'board', back: true, default: 'board:back-hdf-6', group: 'חומרים' },
-    { key: 'edgeMaterial', label: 'קנט', type: 'material', kind: 'edge', default: 'edge:pvc-1', group: 'חומרים' },
+    ...materialParams(),
 
     { key: 'plinthH', label: 'סוקל — גובה', type: 'mm', min: 0, max: 200, default: 80, group: 'סיומות', hint: '0 = ללא סוקל' },
     { key: 'plinthSetback', label: 'סוקל — נסיגה', type: 'mm', min: 0, max: 100, default: 30, group: 'סיומות' },
     { key: 'crownH', label: 'כרכוב — גובה', type: 'mm', min: 0, max: 200, default: 0, group: 'סיומות', hint: '0 = ללא כרכוב' },
 
-    { key: 'doorType', label: 'דלתות', type: 'enum', default: 'none', group: 'דלתות',
-      options: [{ id: 'none', name: 'ללא' }, { id: 'wood', name: 'עץ' }, { id: 'glass', name: 'ויטרינה' }] },
-    { key: 'doorHeight', label: 'גובה הדלתות', type: 'mm', min: 0, max: 3000, default: 0, group: 'דלתות', hint: '0 = לכל הגובה', showIf: { doorType: ['wood', 'glass'] } },
-    { key: 'doorMaterial', label: 'חומר הדלתות', type: 'material', kind: 'board', back: false, default: 'board:mdf-paint-18', group: 'דלתות', showIf: { doorType: ['wood', 'glass'] } },
-    { key: 'glassType', label: 'זכוכית', type: 'material', kind: 'glass', default: 'glass:clear-4', group: 'דלתות', showIf: { doorType: ['glass'] } },
-    { key: 'hinge', label: 'צירים', type: 'enum', default: 'hw:hinge-110', group: 'דלתות', showIf: { doorType: ['wood', 'glass'] },
-      options: [{ id: 'hw:hinge-110', name: '110°' }, { id: 'hw:hinge-165', name: '165°' }, { id: 'hw:hinge-glass', name: 'לוויטרינה' }] },
-    { key: 'handle', label: 'ידיות', type: 'enum', default: 'hw:handle-bar-128', group: 'דלתות', showIf: { doorType: ['wood', 'glass'] },
-      options: [{ id: 'none', name: 'ללא (לחיצה)' }, { id: 'hw:handle-bar-128', name: 'מוט 128' }, { id: 'hw:handle-knob', name: 'כפתור' }] },
+    ...doorParams(),
   ],
 
   // החלטות החיבור — נשאלות בכל מופע, עם ברירת מחדל מהתבנית.
-  joinery: [
-    { key: 'sideT', label: 'עובי הדפנות', type: 'mm', min: 12, max: 40, default: 18, group: 'חיבורים' },
-    { key: 'shelfT', label: 'עובי המדפים', type: 'mm', min: 12, max: 40, default: 18, group: 'חיבורים' },
-    { key: 'sidesOverTop', label: 'דפנות ↔ גג', type: 'enum', default: 'sides', group: 'חיבורים',
-      options: [{ id: 'sides', name: 'הדפנות עוברות' }, { id: 'top', name: 'הגג עובר' }] },
-    { key: 'backMode', label: 'גב', type: 'enum', default: 'groove', group: 'חיבורים',
-      options: [{ id: 'groove', name: 'בחריץ' }, { id: 'overlay', name: 'מולבש מאחור' }, { id: 'none', name: 'ללא' }] },
-    { key: 'backGrooveDepth', label: 'עומק החריץ', type: 'mm', min: 4, max: 15, default: 8, group: 'חיבורים', showIf: { backMode: ['groove'] } },
-    { key: 'backInset', label: 'החריץ מהקצה האחורי', type: 'mm', min: 5, max: 50, default: 10, group: 'חיבורים', showIf: { backMode: ['groove'] } },
-    { key: 'shelvesMode', label: 'מדפים', type: 'enum', default: 'adjustable', group: 'חיבורים',
-      options: [{ id: 'adjustable', name: 'מתכווננים (פינים)' }, { id: 'fixed', name: 'קבועים (בחריץ)' }] },
-    { key: 'edgeMode', label: 'מידת הקנט', type: 'enum', default: 'subtract', group: 'חיבורים',
-      options: [{ id: 'subtract', name: 'יורדת מהמידה' }, { id: 'add', name: 'נוספת למידה' }] },
-  ],
+  joinery: joineryParams(),
 
   // ספי האזהרות. יושבים בתבנית ואפשר לדרוס אותם בסוג המוצר.
   limits: { shelfSpan18: 800, shelfSpan25: 1000, doorWidth: 600, heightUnanchored: 2200, glassMinDepth: 250 },

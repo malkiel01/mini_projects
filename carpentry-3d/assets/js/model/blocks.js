@@ -35,9 +35,10 @@ function round1(v) { return Math.round(v * 10) / 10; }
  * עוברים והדפנות ביניהם. `bottomY` הוא גובה פני הרצפה מהרצפה האמיתית
  * (מעל הסוקל), ו-`topY` הוא גובה פני הגג העליונים.
  */
-export function carcass({ w, d, z = 0, bottomY, topY, sideT, panelT, sidesOverTop, material, prefix = '' }) {
+export function carcass({ w, d, z = 0, y0 = 0, bottomY, topY, sideT, panelT, sidesOverTop, material, prefix = '' }) {
   const parts = [];
-  const sideY0 = sidesOverTop ? 0 : bottomY;
+  // `y0` — תחתית הדפנות כשהן עוברות: הרצפה (0) לגוף עומד, או תחתית התיבה לגוף תלוי.
+  const sideY0 = sidesOverTop ? y0 : bottomY;
   const sideY1 = sidesOverTop ? topY : topY - panelT;
   const panelX0 = sidesOverTop ? sideT : 0;
   const panelW = sidesOverTop ? w - 2 * sideT : w;
@@ -178,4 +179,73 @@ export function door({ id, name, x0, x1, y0, y1, zFront, type, t, frameW = 60, m
     hardware.push({ id: `${id}-handle`, kind: 'handle', material: handle, pos: [kx, ky, zFront + t], qty: 1, for: id });
   }
   return { parts, hardware };
+}
+
+/**
+ * מגירה: חזית מולבשת, וארגז (שתי דפנות, גב, תחתית בחריץ). המסילות
+ * דורשות מרווח (`slideGap`) בכל צד — זה מה שקובע את רוחב הארגז.
+ * `x0..x1` רוחב הפתח שהחזית מכסה, `y0..y1` גובה החזית, `zFront` חזית הגוף.
+ */
+export function drawer({ id, name, x0, x1, y0, y1, zFront, depth, frontT, boxT = 18, bottomT = 6, slideGap = 13,
+  frontMaterial, boxMaterial, bottomMaterial, slide, handle, gap = 2 }) {
+  const parts = [];
+  const hardware = [];
+  const edgesAll = { front: true, top: true, bottom: true, left: true, right: true };
+  const fx = x0 + gap / 2, fw = x1 - x0 - gap, fy = y0 + gap / 2, fh = y1 - y0 - gap;
+  parts.push(part(id, 'חזית מגירה', { x: fx, y: fy, z: zFront, w: fw, h: fh, d: frontT },
+    { axis: 'z', grain: 'x', material: frontMaterial, qtyKey: `drawer-front-${Math.round(fw)}x${Math.round(fh)}`, edges: edgesAll, note: name }));
+
+  // הארגז: בתוך הפתח, פחות מרווח המסילות; נמוך מהחזית ב-30; עמוק פחות מהגוף.
+  const bx0 = x0 + slideGap, bx1 = x1 - slideGap;
+  const bh = Math.max(60, fh - 30);
+  const by = y0 + 15;
+  const bd = depth;
+  const bz = zFront - bd;
+  parts.push(part(`${id}-side-L`, 'דופן מגירה', { x: bx0, y: by, z: bz, w: boxT, h: bh, d: bd },
+    { axis: 'x', grain: 'z', material: boxMaterial, qtyKey: `drawer-side-${Math.round(bd)}x${Math.round(bh)}`, edges: { top: true }, note: name }));
+  parts.push(part(`${id}-side-R`, 'דופן מגירה', { x: bx1 - boxT, y: by, z: bz, w: boxT, h: bh, d: bd },
+    { axis: 'x', grain: 'z', material: boxMaterial, qtyKey: `drawer-side-${Math.round(bd)}x${Math.round(bh)}`, edges: { top: true }, note: name }));
+  const innerW = bx1 - bx0 - 2 * boxT;
+  parts.push(part(`${id}-back`, 'גב מגירה', { x: bx0 + boxT, y: by, z: bz, w: innerW, h: bh, d: boxT },
+    { axis: 'z', grain: 'x', material: boxMaterial, qtyKey: `drawer-back-${Math.round(innerW)}x${Math.round(bh)}`, edges: { top: true }, note: name }));
+  parts.push(part(`${id}-front-in`, 'חזית פנימית', { x: bx0 + boxT, y: by, z: zFront - boxT, w: innerW, h: bh, d: boxT },
+    { axis: 'z', grain: 'x', material: boxMaterial, qtyKey: `drawer-back-${Math.round(innerW)}x${Math.round(bh)}`, edges: { top: true }, note: name }));
+  // תחתית בחריץ 8 מ"מ, 10 מ"מ מהקצה התחתון.
+  const g = 8;
+  parts.push(part(`${id}-bottom`, 'תחתית מגירה', { x: bx0 + boxT - g, y: by + 10, z: bz + boxT - g, w: innerW + 2 * g, h: bottomT, d: bd - 2 * boxT + 2 * g },
+    { axis: 'y', grain: 'x', material: bottomMaterial, qtyKey: `drawer-bottom-${Math.round(innerW + 2 * g)}x${Math.round(bd - 2 * boxT + 2 * g)}`, note: `${name} — חריץ ${g}` }));
+
+  hardware.push({ id: `${id}-slides`, kind: 'slide', material: slide, qty: 1, for: id, note: `זוג, אורך ${Math.round(bd / 50) * 50}` });
+  if (handle) hardware.push({ id: `${id}-handle`, kind: 'handle', material: handle, pos: [fx + fw / 2, fy + fh / 2, zFront + frontT], qty: 1, for: id, horizontal: true });
+  return { parts, hardware };
+}
+
+/** מוט תלייה: פרזול לרוחב העמודה, בגובה נתון. */
+export function rod({ id, x0, x1, y, z, material }) {
+  return { hardware: [{ id, kind: 'rod', material, qty: 1, pos: [x0, y, z], len: x1 - x0, note: `אורך ${Math.round(x1 - x0)}` }] };
+}
+
+/**
+ * דלתות הזזה: שתיים או שלוש כנפיים חופפות על שתי מסילות, בחזית הגוף.
+ * כל כנף רחבה ב-`overlap` מחלקה; הכנפיים לסירוגין במסילה הקדמית/האחורית.
+ */
+export function slidingDoors({ id, x0, x1, y0, y1, zFront, leaves, t, overlap = 40, material, track }) {
+  const parts = [];
+  const hardware = [];
+  const W = x1 - x0;
+  const lw = (W + (leaves - 1) * overlap) / leaves;
+  for (let i = 0; i < leaves; i++) {
+    const lx = x0 + i * (lw - overlap);
+    const z = zFront + (i % 2 === 0 ? 0 : t + 4);   // המסילה האחורית צמודה לגוף, הקדמית לפניה
+    parts.push(part(`${id}-${i + 1}`, 'דלת הזזה', { x: lx, y: y0 + 2, z, w: lw, h: y1 - y0 - 4, d: t },
+      { axis: 'z', grain: 'y', material, qtyKey: `slide-door-${Math.round(lw)}x${Math.round(y1 - y0 - 4)}`, edges: { front: true, top: true, bottom: true, left: true, right: true }, note: `כנף ${i + 1}` }));
+  }
+  hardware.push({ id: `${id}-track`, kind: 'track', material: track, qty: 1, note: `מסילה כפולה ${Math.round(W)}` });
+  return { parts, hardware, leafWidth: lw };
+}
+
+/** רגל: קורה אנכית מרובעת. */
+export function leg({ id, x, z, y0, y1, size, material, note }) {
+  return part(id, 'רגל', { x, y: y0, z, w: size, h: y1 - y0, d: size },
+    { axis: 'x', grain: 'y', material, qtyKey: `leg-${Math.round(y1 - y0)}`, note });
 }

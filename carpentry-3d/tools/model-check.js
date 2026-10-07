@@ -5,7 +5,7 @@
 //
 //   node carpentry-3d/tools/model-check.js
 
-import { build, cutList, hardwareList, defaults, template, optionsFor, allParams } from '../assets/js/model/index.js';
+import { build, cutList, hardwareList, defaults, template, optionsFor, allParams, TEMPLATES } from '../assets/js/model/index.js';
 import * as M from '../assets/js/model/materials.js';
 import { estimate } from '../assets/js/model/pricing.js';
 import { nest, sheetCount } from '../assets/js/model/sheets.js';
@@ -143,6 +143,51 @@ console.log('לוחות וסידור');
   const huge = build('bookcase', { width: 4000, columns: 1, shelvesPerColumn: 0, sidesOverTop: 'top' });
   const hn = nest(cutList(huge), huge.parts);
   check(hn.some((g) => g.tooBig.length > 0), 'גג 4000 ארוך מלוח 2800 — מדווח, לא נעלם');
+}
+
+console.log('כל התבניות: ברירת מחדל ותצורות');
+{
+  const variants = {
+    bookcase: [{}, { doorType: 'wood', crownH: 60 }],
+    wardrobe: [{}, { doorType: 'wood', drawersPerColumn: 2 }, { doorType: 'sliding', slidingLeaves: 3, hangingColumns: 3, columns: 3 }, { columns: 1, hangingColumns: 0, shelvesPerColumn: 6 }],
+    dresser: [{}, { drawerColumns: 2, drawerRows: 3, topRowH: 150 }, { backMode: 'overlay', plinthH: 0 }],
+    table: [{}, { apronH: 0 }, { stretcher: 'h', length: 2400 }],
+    bed: [{}, { headboardH: 0, legs: '4', mattressW: 900 }, { mattressW: 2000, mattressL: 2200 }],
+    kitchen: [{}, { uppers: 'no', drawerCabinets: 0 }, { cabinets: 8, length: 4800, drawerCabinets: 3, backMode: 'overlay' }],
+  };
+  for (const key of Object.keys(TEMPLATES)) {
+    const t = template(key);
+    check(Object.keys(defaults(t)).length === allParams(t).length, `${t.name}: ברירות מחדל לכל פרמטר`);
+    for (const p of allParams(t)) if (p.type === 'material' || p.type === 'enum') {
+      check(optionsFor(p).some((o) => o.id === p.default), `${t.name}: ברירת המחדל של ${p.key} קיימת ברשימה`);
+    }
+    for (const vals of variants[key] || [{}]) {
+      const r = build(key, vals);
+      const label = `${t.name} ${JSON.stringify(vals)}`;
+      check(allFinite(r.parts), `${label}: מידות סופיות וחיוביות`);
+      check(within(r.parts, r.bounds), `${label}: בתוך הגבולות`);
+      check(r.parts.length > 3, `${label}: יש חלקים (${r.parts.length})`);
+      const ids = new Set(r.parts.map((p) => p.id));
+      check(ids.size === r.parts.length, `${label}: מזהי חלקים ייחודיים`);
+      const cl = cutList(r);
+      check(cl.boards.every((row) => row.l > 0 && row.w > 0 && row.t > 0), `${label}: רשימת חיתוך תקינה`);
+      check(Array.isArray(r.warnings), `${label}: אזהרות`);
+    }
+  }
+  const w = build('wardrobe', { drawersPerColumn: 2, doorType: 'wood' });
+  check(w.hardware.filter((h) => h.kind === 'rod').length === 2 && w.hardware.filter((h) => h.kind === 'slide').length === 6, 'ארון: 2 מוטות, 6 זוגות מסילות');
+  check(w.parts.filter((p) => p.id.startsWith('drawer-')).length === 6 * 6, 'כל מגירה = 6 חלקים');
+  const d = build('dresser', { drawerRows: 4, drawerColumns: 2 });
+  check(d.parts.filter((p) => p.name === 'חזית מגירה').length === 8, 'שידה: 8 חזיתות');
+  check(d.parts.find((p) => p.id === 'top-plate').box.w === 1000 && d.parts.find((p) => p.id === 'side-L').box.x === 20, 'שידה: הגג בולט 20 מכל צד');
+  const tb = build('table', {});
+  check(tb.parts.filter((p) => p.name === 'רגל').length === 4 && tb.parts.filter((p) => p.id.startsWith('apron')).length === 4, 'שולחן: 4 רגליים, 4 מסגרות');
+  const bd = build('bed', {});
+  check(bd.parts.filter((p) => p.name === 'לטה').length >= 14 && bd.parts.find((p) => p.id === 'headboard'), `מיטה: לטות (${bd.parts.filter((p) => p.name === 'לטה').length}) וראש מיטה`);
+  check(bd.bounds.w === 1600 + 20 + 50, 'מיטה: רוחב = מזרן + מרווח + דפנות');
+  const k = build('kitchen', {});
+  check(k.parts.find((p) => p.id === 'countertop') && k.parts.filter((p) => p.id.startsWith('ע')).length > 0, 'מטבח: משטח ועליונים');
+  check(k.warnings.length === 0, `מטבח ברירת מחדל בלי אזהרות (${k.warnings.join('; ')})`);
 }
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }

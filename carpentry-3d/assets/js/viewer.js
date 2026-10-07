@@ -168,12 +168,17 @@ export function createViewer(canvas, { onPick } = {}) {
         mesh.rotation.x = Math.PI / 2;
         mesh.position.set(h.pos[0], h.pos[1], h.pos[2] - 6);
       } else if (h.kind === 'handle') {
-        const bar = h.material === 'hw:handle-knob';
+        const knob = h.material === 'hw:handle-knob';
         mesh = new THREE.Mesh(
-          bar ? new THREE.SphereGeometry(12, 16, 12) : new THREE.BoxGeometry(12, 140, 12),
+          knob ? new THREE.SphereGeometry(12, 16, 12) : (h.horizontal ? new THREE.BoxGeometry(140, 12, 12) : new THREE.BoxGeometry(12, 140, 12)),
           new THREE.MeshStandardMaterial({ color: 0x374151, metalness: 0.7, roughness: 0.3 }),
         );
-        mesh.position.set(h.pos[0], h.pos[1], h.pos[2] + (bar ? 12 : 20));
+        mesh.position.set(h.pos[0], h.pos[1], h.pos[2] + (knob ? 12 : 20));
+      } else if (h.kind === 'rod') {
+        // מוט תלייה: גליל לרוחב העמודה
+        mesh = new THREE.Mesh(new THREE.CylinderGeometry(12, 12, h.len, 16), new THREE.MeshStandardMaterial({ color: 0xc0c4c8, metalness: 0.8, roughness: 0.25 }));
+        mesh.rotation.z = Math.PI / 2;
+        mesh.position.set(h.pos[0] + h.len / 2, h.pos[1], h.pos[2]);
       }
       if (mesh) group.add(mesh);
     }
@@ -183,8 +188,9 @@ export function createViewer(canvas, { onPick } = {}) {
   /** ממקם את המצלמה כך שכל הגוף נראה, ממבט איזומטרי מהחזית. */
   function frame(bounds) {
     ctl.target.set(bounds.w / 2, bounds.h / 2, bounds.d / 2);
-    const size = Math.max(bounds.w, bounds.h, bounds.d * 2);
-    ctl.radius = size / Math.tan(camera.fov * Math.PI / 360) * 0.62 + bounds.d;
+    // המרחק לפי המידה הגדולה, ועוד קצת עבור העומק — כך גם מיטה ארוכה וגם ספרייה גבוהה נכנסות למסך.
+    const size = Math.max(bounds.w, bounds.h, bounds.d) * 1.05;
+    ctl.radius = size / Math.tan(camera.fov * Math.PI / 360) * 0.62 + bounds.d * 0.5;
     ctl.theta = 0.55; ctl.phi = 1.2;
   }
   function view(name) {

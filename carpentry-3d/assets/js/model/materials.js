@@ -32,6 +32,10 @@ export const SEED = [
   { id: 'board:mdf-paint-navy',    kind: 'board', name: 'MDF צבע בתנור — כחול כהה', t: 18, color: 0x34405a, finish: 'paint', sheet: [2800, 2070], price: 260, priceUnit: 'm2' },
   { id: 'board:back-hdf-6',        kind: 'board', name: 'גב HDF 6', t: 6, color: 0xd9cdb8, finish: 'paint', sheet: [2800, 2070], price: 40, priceUnit: 'm2', back: true },
   { id: 'board:back-mdf-8',        kind: 'board', name: 'גב MDF 8', t: 8, color: 0xdcd2bf, finish: 'paint', sheet: [2800, 2070], price: 55, priceUnit: 'm2', back: true },
+  { id: 'board:solid-oak',         kind: 'board', name: 'עץ מלא אלון (רגליים, מסגרות)', t: 40, color: 0xc8a26a, finish: 'wood', grainMm: 500, price: 900, priceUnit: 'm2', solid: true },
+  { id: 'board:solid-beech',       kind: 'board', name: 'עץ מלא אשור', t: 40, color: 0xe0c49c, finish: 'wood', grainMm: 500, price: 700, priceUnit: 'm2', solid: true },
+  { id: 'board:countertop-38',     kind: 'board', name: 'משטח עבודה למינציה 38', t: 38, color: 0x6b6560, finish: 'paint', sheet: [4100, 600], price: 350, priceUnit: 'm2', top: true },
+  { id: 'board:countertop-quartz', kind: 'board', name: 'משטח קוורץ 20', t: 20, color: 0xe9e6e0, finish: 'paint', sheet: [3000, 1400], price: 1600, priceUnit: 'm2', top: true },
   { id: 'edge:pvc-1',              kind: 'edge', name: 'קנט PVC 1 מ"מ', t: 1, price: 4, priceUnit: 'm' },
   { id: 'edge:pvc-2',              kind: 'edge', name: 'קנט PVC 2 מ"מ', t: 2, price: 6, priceUnit: 'm' },
   { id: 'edge:veneer-0.5',         kind: 'edge', name: 'קנט פורניר 0.5', t: 0.5, price: 7, priceUnit: 'm' },
@@ -44,6 +48,11 @@ export const SEED = [
   { id: 'hw:handle-bar-128',       kind: 'hardware', name: 'ידית מוט 128', price: 25, priceUnit: 'unit' },
   { id: 'hw:handle-knob',          kind: 'hardware', name: 'ידית כפתור', price: 15, priceUnit: 'unit' },
   { id: 'hw:shelf-pin',            kind: 'hardware', name: 'פין מדף', price: 0.5, priceUnit: 'unit' },
+  { id: 'hw:slide-std',            kind: 'hardware', name: 'מסילות למגירה — רגילות (זוג)', price: 35, priceUnit: 'unit' },
+  { id: 'hw:slide-tandem',         kind: 'hardware', name: 'מסילות טנדם בטריקה שקטה (זוג)', price: 120, priceUnit: 'unit' },
+  { id: 'hw:rod-chrome',           kind: 'hardware', name: 'מוט תלייה כרום', price: 40, priceUnit: 'unit' },
+  { id: 'hw:track-sliding',        kind: 'hardware', name: 'מסילה כפולה לדלתות הזזה', price: 250, priceUnit: 'unit' },
+  { id: 'hw:leg-adjust',           kind: 'hardware', name: 'רגלית מתכווננת', price: 6, priceUnit: 'unit' },
 ];
 
 export const KINDS = [
@@ -122,8 +131,11 @@ export function libraryVersion() { return version; }
 export function all() { return [...library.values()]; }
 
 /** החומרים הפעילים מסוג נתון, לרשימות בחירה. `back` מסנן לוחות גב (true / false / undefined = הכול). */
-export function materialsOfKind(kind, { back } = {}) {
-  return all().filter((m) => m.kind === kind && m.active && (back === undefined || !!m.back === back));
+export function materialsOfKind(kind, { back, solid, top } = {}) {
+  return all().filter((m) => m.kind === kind && m.active
+    && (back === undefined || !!m.back === back)
+    && (solid === undefined || !!m.solid === solid)
+    && (top === undefined || !!m.top === top));
 }
 
 export function material(id) {

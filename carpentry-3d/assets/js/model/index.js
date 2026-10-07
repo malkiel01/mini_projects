@@ -5,10 +5,15 @@
 // וזה מה שמאפשר ל-tools/model-check.js לבדוק את המודל בלי דפדפן.
 
 import bookcase from './templates/bookcase.js';
+import wardrobe from './templates/wardrobe.js';
+import dresser from './templates/dresser.js';
+import kitchen from './templates/kitchen.js';
+import table from './templates/table.js';
+import bed from './templates/bed.js';
 import { cutSize } from './blocks.js';
 import { material, materialsOfKind } from './materials.js';
 
-export const TEMPLATES = { bookcase };
+export const TEMPLATES = { bookcase, wardrobe, dresser, kitchen, table, bed };
 
 export function template(key) {
   const t = TEMPLATES[key];
@@ -30,7 +35,7 @@ export function defaults(t) {
 
 /** אפשרויות הבחירה של פרמטר: לרשימה קבועה (enum) או מהספרייה החיה (material). */
 export function optionsFor(p) {
-  if (p.type === 'material') return materialsOfKind(p.kind, { back: p.back }).map((m) => ({ id: m.id, name: m.name }));
+  if (p.type === 'material') return materialsOfKind(p.kind, { back: p.back, solid: p.solid, top: p.top }).map((m) => ({ id: m.id, name: m.name }));
   return p.options || [];
 }
 
