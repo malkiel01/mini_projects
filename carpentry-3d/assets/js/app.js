@@ -1,30 +1,35 @@
 // חיבור הכול: טופס → מודל → תלת מימד, רשימת חיתוך ואזהרות.
 //
-// שלב 1–2 מהאפיון: תבנית ספרייה, טופס שנבנה מהפרמטרים, תלת מימד עם
-// הקשה על חלק, אזהרות, ורשימת חיתוך ראשונית. אין עדיין שרת — הערכים
-// נשמרים ב-localStorage כדי שרענון לא ימחק את העבודה.
+// שלבים 1–3 מהאפיון: תבנית ספרייה, טופס שנבנה מהפרמטרים, תלת מימד עם
+// הקשה על חלק, אזהרות, רשימת חיתוך ראשונית, וספריית חומרים דינמית עם
+// טקסטורות ותמונות. אין עדיין שרת — הכול נשמר בדפדפן (store.js).
 
 import { TEMPLATES, template, defaults, build, cutList, hardwareList } from './model/index.js';
 import { cutSize } from './model/blocks.js';
-import { material } from './model/materials.js';
+import * as M from './model/materials.js';
 import { renderForm } from './form.js';
 import { createViewer } from './viewer.js';
+import { createMaterialsUI } from './materials-ui.js';
+import { loadDraft, saveDraft, loadMaterialsDiff, loadImages } from './store.js';
 
-const STORE = 'carpentry-3d:draft';
 const $ = (s) => document.querySelector(s);
 
 const state = { templateKey: 'bookcase', values: null };
-try {
-  const saved = JSON.parse(localStorage.getItem(STORE) || 'null');
-  if (saved && TEMPLATES[saved.templateKey]) Object.assign(state, saved);
-} catch { /* אחסון חסום — עובדים בלי זיכרון */ }
+const saved = loadDraft();
+if (saved && TEMPLATES[saved.templateKey]) Object.assign(state, saved);
 if (!state.values) state.values = defaults(template(state.templateKey));
 
 let viewer = null;
 let form = null;
 let model = null;
+let materialsUI = null;
 
-function init() {
+async function init() {
+  // הספרייה: הזריעה, מעליה השינויים שנשמרו, ומעליהם התמונות.
+  M.load(loadMaterialsDiff());
+  const images = await loadImages();
+  for (const [id, v] of Object.entries(images || {})) M.setImage(id, v.image, v.imageMm);
+
   const tpl = template(state.templateKey);
   $('#template-name').textContent = tpl.name;
   $('#template-desc').textContent = tpl.description;
@@ -32,6 +37,14 @@ function init() {
   form = renderForm($('#form'), tpl, state.values, () => rebuild());
 
   viewer = createViewer($('#stage'), { onPick: showPart });
+  materialsUI = createMaterialsUI($('#mlib'), {
+    onChange() {
+      // הספרייה השתנתה: הטופס נבנה מחדש (רשימות הבחירה), והמודל מצויר מחדש (טקסטורות).
+      form = renderForm($('#form'), tpl, state.values, () => rebuild());
+      rebuild();
+    },
+  });
+  $('#btn-materials').addEventListener('click', () => materialsUI.open());
   document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => viewer.view(b.dataset.view)));
   $('#btn-reset').addEventListener('click', () => {
     state.values = defaults(tpl);
@@ -39,6 +52,7 @@ function init() {
     rebuild(true);
   });
   document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => {
+    if (b.dataset.tab === 'materials') { materialsUI.open(); return; }
     document.body.dataset.tab = b.dataset.tab;
     document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('is-active', x === b));
     viewer.fit();
@@ -54,7 +68,7 @@ function rebuild(reframe = false) {
   // הטופס מחזיק את אותו אובייקט ערכים — מעדכנים בתוכו, לא מחליפים אותו.
   Object.assign(state.values, model.values);
   form.sync(model.values);
-  try { localStorage.setItem(STORE, JSON.stringify(state)); } catch { /* ראו למעלה */ }
+  saveDraft(state);
 
   viewer.setModel(model);
   if (reframe) viewer.frame(model.bounds);
@@ -83,7 +97,7 @@ function showPart(p) {
   const box = $('#part');
   if (!p) { box.innerHTML = '<p class="muted">הקשה על לוח מציגה את מידותיו. גרירה מסובבת; שתי אצבעות או גלגלת מזמנות.</p>'; return; }
   const c = cutSize(p);
-  const m = material(p.material);
+  const m = M.material(p.material);
   const edges = Object.entries(p.edges || {}).filter(([, v]) => v).map(([k]) => ({ front: 'חזית', back: 'אחור', top: 'עליון', bottom: 'תחתון', left: 'שמאל', right: 'ימין' }[k])).join(', ') || 'ללא';
   const grain = { x: 'לרוחב', y: 'לגובה', z: 'לעומק' }[p.grain];
   box.innerHTML = `

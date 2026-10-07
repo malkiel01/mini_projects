@@ -5,7 +5,9 @@
 //
 // `THREE` גלובלי — נטען בדף (CDN ואז עותק מקומי) לפני שהמודול הזה רץ.
 
-import { material } from './model/materials.js';
+import { material, libraryVersion } from './model/materials.js';
+import { cutSize } from './model/blocks.js';
+import { textureForPart, clearTextures } from './textures.js';
 
 const T = () => window.THREE;
 
@@ -121,32 +123,34 @@ export function createViewer(canvas, { onPick } = {}) {
     if (onPick) onPick(selected ? selected.userData.part : null);
   }
 
-  // חומר three.js לכל מזהה חומר במודל, נוצר פעם אחת ומשותף לכל החלקים שלו.
-  // כל חלק מקבל עותק (clone) כדי שהדגשת הבחירה לא תצבע את כל החלקים מאותו חומר.
-  const matCache = new Map();
-  function threeMaterial(id) {
-    if (!matCache.has(id)) {
-      const m = material(id);
-      const opts = { color: m.color ?? 0xcccccc, roughness: m.kind === 'glass' ? 0.1 : 0.75, metalness: 0 };
-      if (m.kind === 'glass') { opts.transparent = true; opts.opacity = m.opacity ?? 0.4; }
-      matCache.set(id, new THREE.MeshStandardMaterial(opts));
+  // חומר three.js לכל חלק: טקסטורה (פרוצדורלית או תמונה) בקנה מידה פיזי,
+  // מסובבת לכיוון הסיבים של החלק. המטמון מתנקה כשספריית החומרים משתנה.
+  let libVersion = libraryVersion();
+  function threeMaterial(p) {
+    const m = material(p.material);
+    const opts = { roughness: m.kind === 'glass' ? 0.08 : m.finish === 'paint' ? 0.55 : 0.7, metalness: 0 };
+    if (m.kind === 'glass') {
+      opts.color = m.color ?? 0xbfe0ea; opts.transparent = true; opts.opacity = m.opacity ?? 0.4;
+    } else {
+      opts.map = textureForPart(m, p, cutSize(p));
     }
-    return matCache.get(id).clone();
+    return new THREE.MeshStandardMaterial(opts);
   }
 
   // קווי מתאר דקים לכל לוח: בלעדיהם שני לוחות באותו חומר נבלעים זה בזה.
   const edgeMat = new THREE.LineBasicMaterial({ color: cssColor('--edge-line', '#4a3a2c'), transparent: true, opacity: 0.3 });
 
   function setModel(model) {
+    if (libraryVersion() !== libVersion) { clearTextures(); libVersion = libraryVersion(); }
     while (group.children.length) {
       const c = group.children.pop();
-      c.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+      c.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material && o.material.map) o.material.map.dispose(); });
     }
     pickables = [];
     selected = null;
     for (const p of model.parts) {
       const geo = new THREE.BoxGeometry(p.box.w, p.box.h, p.box.d);
-      const mesh = new THREE.Mesh(geo, threeMaterial(p.material));
+      const mesh = new THREE.Mesh(geo, threeMaterial(p));
       mesh.position.set(p.box.x + p.box.w / 2, p.box.y + p.box.h / 2, p.box.z + p.box.d / 2);
       mesh.userData.part = p;
       group.add(mesh);

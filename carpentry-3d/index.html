@@ -21,6 +21,7 @@
     <span class="bar__sub"><b id="template-name"></b> · <span id="template-desc"></span></span>
   </div>
   <div class="bar__actions">
+    <button type="button" class="btn" id="btn-materials">🎨 ספריית חומרים</button>
     <button type="button" class="btn" id="btn-reset">איפוס לברירת המחדל</button>
     <a class="btn btn--ghost" href="../index.html">חזרה לכלים</a>
   </div>
@@ -64,10 +65,14 @@
   </section>
 </main>
 
+<!-- ספריית החומרים: מגירה על כל המסך, נבנית ב-materials-ui.js -->
+<div class="mlib" id="mlib"></div>
+
 <!-- בטלפון: לשוניות במקום שני פאנלים זה לצד זה -->
 <nav class="tabs">
   <button type="button" data-tab="form" class="is-active">טופס</button>
   <button type="button" data-tab="view">תלת מימד <span id="tab-warn-count"></span></button>
+  <button type="button" data-tab="materials">חומרים</button>
 </nav>
 
 <!-- three.js: cdnjs, ואז jsdelivr, ולבסוף העותק המקומי ב-vendor/. רק אחרי

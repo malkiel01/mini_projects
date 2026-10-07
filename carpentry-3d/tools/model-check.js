@@ -5,7 +5,8 @@
 //
 //   node carpentry-3d/tools/model-check.js
 
-import { build, cutList, hardwareList, defaults, template } from '../assets/js/model/index.js';
+import { build, cutList, hardwareList, defaults, template, optionsFor, allParams } from '../assets/js/model/index.js';
+import * as M from '../assets/js/model/materials.js';
 
 let failed = 0;
 function check(cond, msg) {
@@ -79,6 +80,28 @@ console.log('הצמדה לטווח');
   check(r.values.width === 4000 && r.values.columns === 1 && r.values.doorType === 'none', 'ערכים מחוץ לטווח מוצמדים');
   const t = template('bookcase');
   check(Object.keys(defaults(t)).length === t.params.length + t.joinery.length, 'ברירות מחדל לכל פרמטר');
+}
+
+console.log('ספריית חומרים דינמית');
+{
+  const t = template('bookcase');
+  const p = allParams(t).find((x) => x.key === 'bodyMaterial');
+  const before = optionsFor(p).length;
+  check(before > 0 && optionsFor(p).every((o) => !o.id.startsWith('board:back')), 'חומר הגוף: לוחות שאינם גב');
+  M.upsert({ id: M.newId('board', 'Test Oak'), kind: 'board', name: 'אלון בדיקה', t: 25, color: 0xaa8855, finish: 'wood', active: true });
+  check(optionsFor(p).length === before + 1, 'חומר חדש מופיע ברשימה');
+  const r = build('bookcase', { bodyMaterial: 'board:test-oak' });
+  check(r.values.bodyMaterial === 'board:test-oak' && r.parts[0].material === 'board:test-oak', 'המודל משתמש בחומר החדש');
+  M.remove('board:melamine-oak-18');
+  check(M.material('board:melamine-oak-18').active === false, 'חומר מהזריעה מושבת, לא נמחק');
+  check(build('bookcase', { bodyMaterial: 'board:melamine-oak-18' }).values.bodyMaterial === 'board:melamine-oak-18', 'פרויקט עם חומר מושבת ממשיך לעבוד');
+  check(build('bookcase', { bodyMaterial: 'board:nope' }).values.bodyMaterial === p.default, 'מזהה לא קיים חוזר לברירת המחדל');
+  const d = M.diff();
+  check(d.length === 2 && d.some((x) => x.id === 'board:test-oak') && d.some((x) => x.id === 'board:melamine-oak-18' && x.active === false), `נשמר רק מה ששונה מהזריעה (${d.length})`);
+  M.load(d);
+  check(M.material('board:test-oak').t === 25 && M.material('board:melamine-oak-18').active === false, 'טעינה מחזירה את אותו מצב');
+  M.reset();
+  check(optionsFor(p).length === before, 'איפוס מחזיר לזריעה');
 }
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }

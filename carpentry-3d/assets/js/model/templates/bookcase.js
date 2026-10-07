@@ -5,12 +5,10 @@
 // ומחזיר רשימת חלקים, פרזול ואזהרות; הוא לא יודע שקיים מסך.
 
 import { carcass, partitions, shelves, back, plinth, crown, door } from '../blocks.js';
-import { materialsOfKind, material } from '../materials.js';
+import { material } from '../materials.js';
 
-const boards = materialsOfKind('board').filter((m) => !m.id.startsWith('board:back'));
-const backs = materialsOfKind('board').filter((m) => m.id.startsWith('board:back'));
-const glasses = materialsOfKind('glass');
-const edges = materialsOfKind('edge');
+// פרמטר מסוג 'material' לא מחזיק רשימה: הוא מצביע על סוג (וסינון), והרשימה
+// נפתרת ברגע בניית הטופס מהספרייה החיה — כך חומר שנוסף במסך מופיע מיד.
 
 export default {
   key: 'bookcase',
@@ -27,10 +25,10 @@ export default {
     { key: 'columns', label: 'עמודות', type: 'int', min: 1, max: 8, default: 3, group: 'חלוקה' },
     { key: 'shelvesPerColumn', label: 'מדפים בכל עמודה', type: 'int', min: 0, max: 15, default: 4, group: 'חלוקה' },
 
-    { key: 'bodyMaterial', label: 'חומר הגוף', type: 'material', options: boards, default: 'board:melamine-oak-18', group: 'חומרים' },
-    { key: 'shelfMaterial', label: 'חומר המדפים', type: 'material', options: boards, default: 'board:melamine-oak-18', group: 'חומרים' },
-    { key: 'backMaterial', label: 'חומר הגב', type: 'material', options: backs, default: 'board:back-hdf-6', group: 'חומרים' },
-    { key: 'edgeMaterial', label: 'קנט', type: 'material', options: edges, default: 'edge:pvc-1', group: 'חומרים' },
+    { key: 'bodyMaterial', label: 'חומר הגוף', type: 'material', kind: 'board', back: false, default: 'board:melamine-oak-18', group: 'חומרים' },
+    { key: 'shelfMaterial', label: 'חומר המדפים', type: 'material', kind: 'board', back: false, default: 'board:melamine-oak-18', group: 'חומרים' },
+    { key: 'backMaterial', label: 'חומר הגב', type: 'material', kind: 'board', back: true, default: 'board:back-hdf-6', group: 'חומרים' },
+    { key: 'edgeMaterial', label: 'קנט', type: 'material', kind: 'edge', default: 'edge:pvc-1', group: 'חומרים' },
 
     { key: 'plinthH', label: 'סוקל — גובה', type: 'mm', min: 0, max: 200, default: 80, group: 'סיומות', hint: '0 = ללא סוקל' },
     { key: 'plinthSetback', label: 'סוקל — נסיגה', type: 'mm', min: 0, max: 100, default: 30, group: 'סיומות' },
@@ -39,8 +37,8 @@ export default {
     { key: 'doorType', label: 'דלתות', type: 'enum', default: 'none', group: 'דלתות',
       options: [{ id: 'none', name: 'ללא' }, { id: 'wood', name: 'עץ' }, { id: 'glass', name: 'ויטרינה' }] },
     { key: 'doorHeight', label: 'גובה הדלתות', type: 'mm', min: 0, max: 3000, default: 0, group: 'דלתות', hint: '0 = לכל הגובה', showIf: { doorType: ['wood', 'glass'] } },
-    { key: 'doorMaterial', label: 'חומר הדלתות', type: 'material', options: boards, default: 'board:mdf-paint-18', group: 'דלתות', showIf: { doorType: ['wood', 'glass'] } },
-    { key: 'glassType', label: 'זכוכית', type: 'material', options: glasses, default: 'glass:clear-4', group: 'דלתות', showIf: { doorType: ['glass'] } },
+    { key: 'doorMaterial', label: 'חומר הדלתות', type: 'material', kind: 'board', back: false, default: 'board:mdf-paint-18', group: 'דלתות', showIf: { doorType: ['wood', 'glass'] } },
+    { key: 'glassType', label: 'זכוכית', type: 'material', kind: 'glass', default: 'glass:clear-4', group: 'דלתות', showIf: { doorType: ['glass'] } },
     { key: 'hinge', label: 'צירים', type: 'enum', default: 'hw:hinge-110', group: 'דלתות', showIf: { doorType: ['wood', 'glass'] },
       options: [{ id: 'hw:hinge-110', name: '110°' }, { id: 'hw:hinge-165', name: '165°' }, { id: 'hw:hinge-glass', name: 'לוויטרינה' }] },
     { key: 'handle', label: 'ידיות', type: 'enum', default: 'hw:handle-bar-128', group: 'דלתות', showIf: { doorType: ['wood', 'glass'] },

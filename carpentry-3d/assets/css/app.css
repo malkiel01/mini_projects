@@ -294,3 +294,76 @@ body {
   .summary { display: none; }
   .part { margin: 10px; font-size: 0.85rem; }
 }
+
+/* ---- ספריית החומרים ---- */
+.mlib {
+  position: fixed; inset: 0;
+  background: var(--bg);
+  display: flex; flex-direction: column;
+  transform: translateX(-100%);
+  transition: transform .22s ease-out;
+  z-index: 20;
+}
+.mlib.is-open { transform: none; }
+.mlib__bar {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.mlib__bar strong { font-size: 1.05rem; color: var(--accent-deep); }
+.mlib__kinds { display: flex; gap: 2px; background: var(--bg); border-radius: 999px; padding: 3px; border: 1px solid var(--line); }
+.mlib__kinds button {
+  padding: 6px 14px; border: 0; border-radius: 999px; background: transparent;
+  color: var(--muted); font: inherit; font-size: 0.9rem; cursor: pointer;
+}
+.mlib__kinds button.is-active { background: var(--panel); color: var(--accent-deep); font-weight: 600; box-shadow: var(--shadow); }
+.mlib__actions { display: flex; gap: 8px; margin-inline-start: auto; }
+.mlib__body {
+  overflow: auto; padding: 14px 16px 32px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 12px;
+  align-content: start;
+}
+.mcard {
+  display: grid; grid-template-columns: 96px 1fr auto; gap: 12px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 12px;
+}
+.mcard.is-off { opacity: 0.55; }
+.mcard__swatch {
+  width: 96px; height: 96px; border-radius: 10px; border: 1px solid var(--line);
+  background-size: cover; background-position: center;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.4);
+}
+.mcard__swatch--none { display: flex; align-items: center; justify-content: center; font-size: 2rem; background: var(--panel-2); }
+.mcard__fields { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.mcard__fields label { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; flex-wrap: wrap; }
+.mcard__fields label > span { color: var(--muted); min-width: 92px; }
+.mcard__fields label > i { color: var(--muted); font-style: normal; font-size: 0.78rem; }
+.mcard__fields input:not([type=checkbox]):not([type=color]):not([type=range]):not([type=file]), .mcard__fields select {
+  padding: 5px 8px; border: 1px solid var(--line-strong); border-radius: 8px;
+  background: var(--panel-2); color: var(--ink); font: inherit; font-size: 0.88rem;
+  width: 110px;
+}
+.mcard__fields input[name=name] { width: auto; flex: 1; }
+.mcard__fields input[type=color] { width: 40px; height: 28px; border: 1px solid var(--line-strong); border-radius: 6px; padding: 0; background: none; }
+.mcard__fields input[type=file] { font-size: 0.8rem; max-width: 220px; }
+.mcard__image { border-top: 1px dashed var(--line); padding-top: 6px; margin-top: 3px; }
+.mcard__check { gap: 6px !important; }
+.mcard__check > span { min-width: 0 !important; color: var(--ink) !important; }
+.mcard__side { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.btn--small { padding: 4px 10px; font-size: 0.8rem; }
+
+@media (max-width: 860px) {
+  .tabs button[data-tab="materials"]::before { content: '🎨'; }
+  .mlib__body { grid-template-columns: 1fr; padding: 10px; }
+  .mcard { grid-template-columns: 64px 1fr; }
+  .mcard__swatch { width: 64px; height: 64px; }
+  .mcard__side { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; }
+  .mcard__fields label > span { min-width: 80px; }
+  .mlib__actions { width: 100%; }
+}
+@media (max-width: 860px) {
+  .mcard__fields input:not([type=checkbox]):not([type=color]):not([type=range]):not([type=file]), .mcard__fields select { width: 96px; }
+  .mcard__fields input[name=sheet0], .mcard__fields input[name=sheet1] { width: 78px; }
+}

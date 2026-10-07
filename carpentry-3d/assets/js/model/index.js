@@ -6,7 +6,7 @@
 
 import bookcase from './templates/bookcase.js';
 import { cutSize } from './blocks.js';
-import { material } from './materials.js';
+import { material, materialsOfKind } from './materials.js';
 
 export const TEMPLATES = { bookcase };
 
@@ -28,6 +28,12 @@ export function defaults(t) {
   return v;
 }
 
+/** אפשרויות הבחירה של פרמטר: לרשימה קבועה (enum) או מהספרייה החיה (material). */
+export function optionsFor(p) {
+  if (p.type === 'material') return materialsOfKind(p.kind, { back: p.back }).map((m) => ({ id: m.id, name: m.name }));
+  return p.options || [];
+}
+
 /** מצמיד ערך לטווח הפרמטר. ערך לא חוקי חוזר לברירת המחדל. */
 export function clamp(p, value) {
   if (p.type === 'mm' || p.type === 'int') {
@@ -36,8 +42,14 @@ export function clamp(p, value) {
     if (p.type === 'int') n = Math.round(n);
     return Math.min(p.max, Math.max(p.min, n));
   }
-  if (p.type === 'enum' || p.type === 'material') {
-    return p.options.some((o) => o.id === value) ? value : p.default;
+  if (p.type === 'enum') return p.options.some((o) => o.id === value) ? value : p.default;
+  if (p.type === 'material') {
+    // חומר שהושבת אחרי שנבחר ממשיך לעבוד — פרויקט ישן לא נשבר. רק מזהה
+    // שאינו קיים כלל חוזר לברירת המחדל (או לראשון הפעיל, אם גם היא נמחקה).
+    if (material(value).kind !== 'unknown') return value;
+    if (material(p.default).kind !== 'unknown') return p.default;
+    const first = optionsFor(p)[0];
+    return first ? first.id : p.default;
   }
   return value;
 }

@@ -4,7 +4,8 @@
 // לרשימת בחירה. השדות מקובצים לפי `group`, ושדה עם `showIf` מוצג רק כשהתנאי
 // מתקיים. שינוי בכל שדה קורא ל-onChange עם הערכים המעודכנים.
 
-import { allParams, visible } from './model/index.js';
+import { allParams, visible, optionsFor } from './model/index.js';
+import { material } from './model/materials.js';
 
 export function renderForm(root, tpl, values, onChange) {
   root.innerHTML = '';
@@ -35,7 +36,12 @@ export function renderForm(root, tpl, values, onChange) {
         input.value = values[p.key];
       } else {
         input = document.createElement('select');
-        for (const o of p.options) {
+        const opts = optionsFor(p);
+        // חומר שנבחר ואחר כך הושבת: נשאר ברשימה, מסומן, כדי שהפרויקט לא יקפוץ לחומר אחר בשקט.
+        if (p.type === 'material' && !opts.some((o) => o.id === values[p.key])) {
+          opts.push({ id: values[p.key], name: `${material(values[p.key]).name} (מושבת)` });
+        }
+        for (const o of opts) {
           const opt = document.createElement('option');
           opt.value = o.id; opt.textContent = o.name;
           opt.selected = values[p.key] === o.id;
