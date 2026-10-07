@@ -405,7 +405,10 @@ function rebuild(reframe = false) {
   Object.assign(state.values, model.values);
   form.sync(model.values);
   viewer.setModel(model);
-  if (reframe) viewer.frame(model.bounds);
+  // ממסגרים מחדש בטעינה, וגם כשהמידות השתנו בהרבה (למשל גובה 2000 → 2600) — אחרת המודל יוצא מהמסך.
+  const b = model.bounds, lb = rebuild.lastBounds;
+  const big = !lb || Math.max(b.w / lb.w, lb.w / b.w, b.h / lb.h, lb.h / b.h, b.d / lb.d, lb.d / b.d) > 1.25;
+  if (reframe || big) { viewer.frame(b); rebuild.lastBounds = { ...b }; }
   renderWarnings(model.warnings);
   renderSummary(model);
   renderOutput(model);

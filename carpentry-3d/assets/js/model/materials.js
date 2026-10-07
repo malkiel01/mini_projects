@@ -55,6 +55,7 @@ export const SEED = [
   { id: 'hw:leg-adjust',           kind: 'hardware', name: 'רגלית מתכווננת', price: 6, priceUnit: 'unit' },
   { id: 'hw:hinge-bifold',         kind: 'hardware', name: 'ציר קיפול לדלת פינה', price: 18, priceUnit: 'unit' },
   { id: 'hw:carousel',             kind: 'hardware', name: 'קרוסלה לארון פינתי', price: 650, priceUnit: 'unit' },
+  { id: 'hw:led-strip',            kind: 'hardware', name: 'פס לד (כולל פרופיל ושנאי יחסי)', price: 90, priceUnit: 'm' },
 ];
 
 export const KINDS = [

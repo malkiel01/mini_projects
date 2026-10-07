@@ -252,6 +252,11 @@ export function createViewer(canvas, { onPick } = {}) {
           new THREE.MeshStandardMaterial({ color: 0x374151, metalness: 0.7, roughness: 0.3 }),
         );
         mesh.position.set(h.pos[0], h.pos[1], h.pos[2] + (knob ? 12 : 20));
+      } else if (h.kind === 'led') {
+        // פס לד: תיבה דקה עם חומר זוהר (emissive), אנכית לאורך הדופן או אופקית מתחת למדף
+        const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff4d6, emissiveIntensity: 1.6, roughness: 0.4 });
+        mesh = new THREE.Mesh(h.horizontal ? new THREE.BoxGeometry(h.len, 4, 8) : new THREE.BoxGeometry(6, h.len, 8), mat);
+        mesh.position.set(h.pos[0] + (h.horizontal ? h.len / 2 : 3), h.pos[1] + (h.horizontal ? 0 : h.len / 2), h.pos[2]);
       } else if (h.kind === 'rod') {
         // מוט תלייה: גליל לרוחב העמודה
         mesh = new THREE.Mesh(new THREE.CylinderGeometry(12, 12, h.len, 16), new THREE.MeshStandardMaterial({ color: 0xc0c4c8, metalness: 0.8, roughness: 0.25 }));
