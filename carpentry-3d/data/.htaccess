@@ -1,0 +1,11 @@
+# חסימת גישה ישירה: carpentry.sqlite יכיל את המשתמשים, הסיסמאות (כ-hash),
+# הפרויקטים והתעריפים של כל נגר. הכול יוגש רק דרך api.php.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>
+
+# media/ (תמונות חומרים) כן תוגש לדפדפן — ההגדרה שלה תהיה בתיקייה עצמה.

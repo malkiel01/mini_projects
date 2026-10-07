@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>נגרות בתלת מימד</title>
+<meta name="description" content="סוגי מוצרים פרמטריים לנגרים: מידות וחומרים נכנסים, מודל תלת־ממדי, הדמיה, רשימת חיתוך ומחיר יוצאים. האפיון נכתב; הבנייה בהמתנה לאישור.">
+<meta name="theme-color" content="#1c1917">
+<link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./assets/css/app.css">
+</head>
+<body>
+
+<header class="bar">
+  <h1 class="bar__title">נגרות בתלת מימד</h1>
+  <a class="btn btn--ghost" href="../index.html">חזרה לכלים</a>
+</header>
+
+<main class="stage">
+  <!-- הציור אינו הכלי. ספרייה סכמטית בקווים, כדי שהכרטיס בדף הראשי יוביל
+       לדף חי — לפני שיש קוד שאפשר להראות. -->
+  <canvas id="stage" class="stage__canvas" aria-label="ספרייה סכמטית מסתובבת, תצוגה מקדימה"></canvas>
+
+  <section class="note" role="status">
+    <h2>האפיון נכתב. הבנייה ממתינה לאישור.</h2>
+    <p>
+      שתי שכבות: <strong>סוג מוצר</strong> (ספרייה, ארון, שידה — פרמטרים וברירות
+      מחדל) ו<strong>מופע</strong> שהנגר ממלא. מהמופע נגזרת רשימת חלקים אחת,
+      וממנה התלת מימד, ההדמיה, רשימת החיתוך, המחיר והשרטוטים.
+    </p>
+    <p class="note__muted">
+      האפיון המלא ב-<code>README.md</code> שבתיקייה. הציור למעלה הוא קווים על
+      <code>&lt;canvas&gt;</code> בלי ספרייה — מציין מקום למנוע three.js שייכנס בשלב 1.
+    </p>
+  </section>
+</main>
+
+<script type="module" src="./assets/js/app.js"></script>
+</body>
+</html>
