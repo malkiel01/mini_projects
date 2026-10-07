@@ -823,3 +823,74 @@
 
 /* טקסט גדול — העדפה אישית */
 html.big-text { font-size: 112.5%; }
+
+/* ── תזכורות ───────────────────────────────────────────────────── */
+
+.rem-box { display: flex; flex-direction: column; gap: 12px; }
+.rem-box[hidden] { display: none; }
+.rem-rules { display: flex; flex-direction: column; gap: 8px; }
+.rem-rule {
+    display: grid;
+    grid-template-columns: auto 4.2em minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #fffdf8;
+    font-size: .92rem;
+}
+.rem-rule select, .rem-rule input { width: 100%; min-width: 0; padding: 7px 8px; font-size: .92rem; }
+.rem-rule input[type="number"] { text-align: center; }
+.rem-rule input[type="time"] { width: 8.6em; }
+.rem-rule.no-time select { grid-column: 3 / 5; }
+/* מסך צר: השעה יורדת לשורה שנייה, מתחת לבחירה */
+@media (max-width: 420px) {
+    .rem-rule { grid-template-columns: auto 4.2em minmax(0, 1fr) auto; }
+    .rem-rule input[type="time"] { grid-column: 3; grid-row: 2; width: 100%; }
+    .rem-rule .rem-del { grid-column: 4; grid-row: 1; }
+    .rem-rule.no-time select { grid-column: 3; }
+}
+.rem-empty { color: var(--muted); font-size: .9rem; }
+.rem-line { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.rem-line input[type="time"] { width: auto; }
+.rem-num { display: inline-flex; align-items: center; gap: 6px; font-size: .92rem; }
+.rem-num input[type="number"] { width: 4.2em; text-align: center; }
+.rem-upcoming { display: flex; flex-direction: column; gap: 6px; font-size: .9rem; }
+.rem-upcoming .rem-item {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 10px;
+    border-radius: 10px;
+    background: #f7f4ee;
+    cursor: pointer;
+    text-align: start;
+    border: 0;
+    font: inherit;
+    color: inherit;
+}
+.rem-upcoming .rem-item small { color: var(--muted); flex: none; }
+.rem-clock {
+    border-radius: 12px;
+    padding: 10px 12px;
+    background: #fff8ea;
+    border: 1px solid #f1ddb3;
+    font-size: .88rem;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.rem-clock.ok { background: #eaf7ef; border-color: #b9e3c8; }
+.rem-clock code {
+    direction: ltr;
+    display: block;
+    font-size: .74rem;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 6px 8px;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+.o-mute { margin: 4px 0 2px; }

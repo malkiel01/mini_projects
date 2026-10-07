@@ -276,6 +276,7 @@
         $('#oAdminNotes').value = o.adminNotes || '';
         $('#oDate').value = eventDate(o);
         $('#oTime').value = eventTime(o);
+        $('#oRemOff').checked = !!o.remindersOff;
         $('#orderSheet').showModal();
     }
 
@@ -296,10 +297,11 @@
         const intl = digits.startsWith('0') ? '972' + digits.slice(1) : digits;
         const contact = $('#oContact');
         contact.textContent = '';
-        contact.append(
+        contact.append(...[       // append(null) היה כותב "null" — מסננים
             el('a', { class: 'btn btn-ghost', href: 'tel:' + digits }, '📞 ' + c.phone),
             c.email ? el('a', { class: 'btn btn-ghost', href: 'mailto:' + c.email }, '✉️ מייל') : null,
-            el('a', { class: 'btn btn-whatsapp', href: 'https://wa.me/' + intl, target: '_blank', rel: 'noopener' }, 'וואטסאפ'));
+            el('a', { class: 'btn btn-whatsapp', href: 'https://wa.me/' + intl, target: '_blank', rel: 'noopener' }, 'וואטסאפ'),
+        ].filter(Boolean));
 
         const seg = $('#oStatus');
         seg.textContent = '';
@@ -847,6 +849,7 @@
         $('#setSaveBar').hidden = tab === 'personal' || tab === 'security';
         $('#setError').hidden = true;
         $('.set-tabs [aria-selected="true"]')?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+        if (tab === 'reminders') loadUpcoming();
     }
 
     async function openSettings(tab = 'calendar') {
@@ -878,6 +881,7 @@
             $('#set' + k.slice(4)).checked = settings.calendar[k] !== false;
         }
         $('#setSticky').checked = settings.notify.sticky !== false;
+        fillReminders(settings.reminders);
         // אישי
         $('#prefStart').value = prefs.start;
         $('#prefCalMode').value = prefs.calMode || calMode;
@@ -983,6 +987,7 @@
                     showSunset: $('#setSunset').checked, showRc: $('#setRc').checked,
                 },
                 notify: { sticky: $('#setSticky').checked },
+                reminders: formReminders(),
             })).settings;
             $('#settingsSheet').close();
             toast('ההגדרות נשמרו');
@@ -991,6 +996,172 @@
             $('#setError').textContent = ex.message;
             $('#setError').hidden = false;
         }
+    }
+
+    /* ── תזכורות ─────────────────────────────────────────────────── */
+
+    const TICK_URL = new URL('../api.php?action=tick', location.href).href;
+    const MAX_RULES = 6;
+    let remRules = [];              // עותק העבודה של רשימת התזכורות
+
+    /** "יומיים לפני ב-09:00", "3 שעות לפני" — כדי שכל שורה תיקרא כמשפט. */
+    function ruleText(r) {
+        if (r.type === 'hours') return r.hours === 1 ? 'שעה לפני האירוע' : `${r.hours} שעות לפני האירוע`;
+        const day = { 0: 'ביום האירוע', 1: 'יום לפני', 2: 'יומיים לפני' }[r.days] ?? `${r.days} ימים לפני`;
+        return `${day} ב-${r.time}`;
+    }
+
+    function renderRemRules() {
+        const box = $('#remRules');
+        box.textContent = '';
+        if (!remRules.length) box.append(el('p', { class: 'rem-empty' }, 'אין תזכורות לפני אירועים — הוסיפו אחת.'));
+        remRules.forEach((r, i) => {
+            const num = el('input', {
+                type: 'number', inputmode: 'numeric', 'aria-label': r.type === 'hours' ? 'שעות' : 'ימים',
+                min: r.type === 'hours' ? '1' : '0', max: r.type === 'hours' ? '72' : '30',
+                value: r.type === 'hours' ? r.hours : r.days,
+                oninput: e => {
+                    const v = Math.round(Number(e.target.value));
+                    if (Number.isFinite(v) && e.target.value !== '') r[r.type === 'hours' ? 'hours' : 'days'] = v;
+                    row.title = ruleText(r);
+                },
+            });
+            const kind = el('select', {
+                'aria-label': 'סוג התזכורת',
+                onchange: e => {
+                    remRules[i] = e.target.value === 'hours' ? { type: 'hours', hours: 3 } : { type: 'days', days: 1, time: '09:00' };
+                    renderRemRules();
+                },
+            }, el('option', { value: 'days' }, 'ימים לפני'), el('option', { value: 'hours' }, 'שעות לפני'));
+            kind.value = r.type;
+            const time = r.type === 'days' ? el('input', {
+                type: 'time', value: r.time, 'aria-label': 'שעה',
+                oninput: e => { if (e.target.value) r.time = e.target.value; row.title = ruleText(r); },
+            }) : null;
+            const row = el('div', { class: 'rem-rule' + (time ? '' : ' no-time'), title: ruleText(r) }, el('span', { class: 'rem-bell' }, '🔔'), num, kind, time,
+                smallBtn('✕', 'הסרת התזכורת', () => { remRules.splice(i, 1); renderRemRules(); }, 'rem-del'));
+            box.append(row);
+        });
+        $('#remAdd').hidden = remRules.length >= MAX_RULES;
+    }
+
+    function fillReminders(r) {
+        remRules = r.rules.map(x => ({ ...x }));
+        $('#remOn').checked = r.on;
+        $('#remWho').value = r.who;
+        $('#remSkipDone').checked = r.skipDone;
+        $('#remMail').checked = r.mail;
+        $('#remDigestOn').checked = r.digest.on;
+        $('#remDigestTime').value = r.digest.time;
+        $('#remNagOn').checked = r.nag.on;
+        $('#remNagHours').value = r.nag.hours;
+        $('#remQuietOn').checked = r.quiet.on;
+        $('#remQuietFrom').value = r.quiet.from;
+        $('#remQuietTo').value = r.quiet.to;
+        renderRemRules();
+        syncReminders();
+    }
+
+    /** חלקים שתלויים במתג — מוסתרים או מושבתים כשהמתג כבוי. */
+    function syncReminders() {
+        $('#remBox').hidden = !$('#remOn').checked;
+        $('#remDigestTime').disabled = !$('#remDigestOn').checked;
+        $('#remNagHours').disabled = !$('#remNagOn').checked;
+        $('#remQuietFrom').disabled = $('#remQuietTo').disabled = !$('#remQuietOn').checked;
+    }
+
+    function formReminders() {
+        return {
+            on: $('#remOn').checked,
+            rules: remRules,
+            who: $('#remWho').value,
+            skipDone: $('#remSkipDone').checked,
+            mail: $('#remMail').checked,
+            digest: { on: $('#remDigestOn').checked, time: $('#remDigestTime').value || '08:00' },
+            nag: { on: $('#remNagOn').checked, hours: Number($('#remNagHours').value) || 3 },
+            quiet: { on: $('#remQuietOn').checked, from: $('#remQuietFrom').value || '22:00', to: $('#remQuietTo').value || '07:00' },
+        };
+    }
+
+    /** "מחר 09:00" — תמיד בשעון ישראל, כמו שהשרת מתזמן, גם בטלפון שמכוון לחו"ל. */
+    function fmtWhen(iso) {
+        const TZ = 'Asia/Jerusalem';
+        const ymd = d => d.toLocaleDateString('en-CA', { timeZone: TZ });
+        const d = new Date(iso);
+        const days = Math.round((Date.parse(ymd(d)) - Date.parse(ymd(new Date()))) / 864e5);
+        const hm = d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', timeZone: TZ });
+        const day = { 0: 'היום', 1: 'מחר', 2: 'מחרתיים' }[days]
+            ?? d.toLocaleDateString('he-IL', { weekday: 'short', day: 'numeric', month: 'numeric', timeZone: TZ });
+        return `${day} ${hm}`;
+    }
+
+    function ago(iso) {
+        const min = Math.round((Date.now() - new Date(iso)) / 60000);
+        if (min < 1) return 'עכשיו';
+        if (min < 60) return `לפני ${min} דק׳`;
+        if (min < 48 * 60) return `לפני ${Math.round(min / 60)} שע׳`;
+        return `לפני ${Math.round(min / 1440)} ימים`;
+    }
+
+    /** מה ייצא בקרוב, ומצב "השעון" — האם cron של השרת מתקתק. */
+    async function loadUpcoming() {
+        const box = $('#remUpcoming');
+        box.textContent = 'טוען…';
+        let data;
+        try { data = await api('reminders'); } catch (ex) { box.textContent = ex.message; return; }
+        box.textContent = '';
+        if (!data.list.length) {
+            box.append(el('p', { class: 'rem-empty' }, 'אין תזכורות מתוכננות ב-14 הימים הקרובים.'));
+        }
+        for (const r of data.list) {
+            box.append(el('button', {
+                type: 'button', class: 'rem-item',
+                onclick: () => { $('#settingsSheet').close(); openOrder(r.order); },
+            }, el('span', {}, `⏰ ${r.name}`, el('small', {}, ` · האירוע ${fmtWhen(r.event)}`)),
+               el('small', {}, fmtWhen(r.at) + (r.quiet ? ' 🌙' : ''))));
+        }
+        if (data.list.length) box.append(el('p', { class: 'set-hint' }, 'לפי ההגדרות השמורות. שיניתם משהו? שמרו כדי לראות את הרשימה המעודכנת.'));
+
+        const clock = $('#remClock');
+        clock.textContent = '';
+        const cronOk = data.lastCron && Date.now() - new Date(data.lastCron) < 30 * 60000;
+        clock.classList.toggle('ok', !!cronOk);
+        if (cronOk) {
+            clock.append(el('b', {}, '✓ השעון האוטומטי של השרת פועל'),
+                el('span', {}, `בדיקה אחרונה ${ago(data.lastCron)}. התזכורות ייצאו בזמן גם כשאף אחד לא נכנס לאתר.`));
+            return;
+        }
+        clock.append(
+            el('b', {}, '⚠️ כדי שהתזכורות ייצאו בדיוק בזמן — צריך להפעיל פעם אחת שעון בשרת'),
+            el('span', {}, 'בינתיים התזכורות נבדקות כשהממשק הזה פתוח או כשלקוח נכנס לתפריט'
+                + (data.lastTick ? ` (בדיקה אחרונה ${ago(data.lastTick)})` : '') + '. אם אף אחד לא נכנס — התזכורת תתעכב עד הכניסה הבאה.'),
+            el('span', {}, 'ב-cPanel: Cron Jobs ← Common Settings: Once Per Five Minutes ← בשדה Command להדביק:'),
+            el('code', {}, `curl -s "${TICK_URL}" >/dev/null`),
+            el('button', {
+                type: 'button', class: 'btn btn-ghost',
+                onclick: async e => {
+                    try { await navigator.clipboard.writeText(`curl -s "${TICK_URL}" >/dev/null`); e.target.textContent = '✓ הועתק'; }
+                    catch { e.target.textContent = 'סמנו והעתיקו ידנית'; }
+                },
+            }, '📋 העתקת הפקודה'),
+            el('span', { class: 'set-hint' }, 'אחרי ההוספה, תוך כמה דקות יופיע כאן ✓.'));
+    }
+
+    async function testReminder() {
+        try {
+            const r = await api('reminderTest', {});
+            toast(r.sent ? `✓ נשלחה ל-${r.sent} מכשירים` : 'אין מכשיר רשום להתראות — מפעילים בלשונית "אפליקציה והתראות"');
+        } catch (ex) { toast(ex.message); }
+    }
+
+    function wireReminders() {
+        $('#remAdd').addEventListener('click', () => {
+            if (remRules.length >= MAX_RULES) return;
+            remRules.push({ type: 'days', days: 1, time: '09:00' });
+            renderRemRules();
+        });
+        for (const id of ['#remOn', '#remDigestOn', '#remNagOn', '#remQuietOn']) $(id).addEventListener('change', syncReminders);
+        $('#remTest').addEventListener('click', testReminder);
     }
 
     /* ── עריכת התפריט ────────────────────────────────────────────── */
@@ -1461,6 +1632,8 @@
         $('#oAdminNotes').addEventListener('change', e => update({ adminNotes: e.target.value }));
         $('#oDate').addEventListener('change', e => update({ deliveryDate: e.target.value }));
         $('#oTime').addEventListener('change', e => update({ deliveryTime: e.target.value }));
+        $('#oRemOff').addEventListener('change', e => update({ remindersOff: e.target.checked }));
+        wireReminders();
         document.querySelectorAll('.view-switch [data-view]').forEach(b =>
             b.addEventListener('click', () => setView(b.dataset.view)));
         document.querySelectorAll('.cal-modes [data-mode]').forEach(b =>

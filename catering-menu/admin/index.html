@@ -194,6 +194,11 @@
                 <button type="button" class="btn btn-ghost" id="noneReady">איפוס סימונים</button>
             </div>
 
+            <div class="fields o-mute">
+                <label class="switch"><input type="checkbox" id="oRemOff">
+                    <span>🔕 בלי תזכורות לאירוע הזה</span></label>
+            </div>
+
             <label class="fields">הערות פנימיות
                 <textarea id="oAdminNotes" rows="2" maxlength="2000" placeholder="לא נראות ללקוח"></textarea>
             </label>
@@ -248,6 +253,7 @@
             <nav class="set-tabs" role="tablist" aria-label="קטגוריות הגדרות">
                 <button type="button" role="tab" data-tab="calendar">📅 יומן וזמנים</button>
                 <button type="button" role="tab" data-tab="app">📲 אפליקציה והתראות</button>
+                <button type="button" role="tab" data-tab="reminders">⏰ תזכורות</button>
                 <button type="button" role="tab" data-tab="orders">🍽️ הזמנות</button>
                 <button type="button" role="tab" data-tab="mail">✉️ מיילים</button>
                 <button type="button" role="tab" data-tab="personal">👤 אישי</button>
@@ -297,6 +303,54 @@
 
                 <h3 class="set-h">🔊 צליל להתראות</h3>
                 <div class="sound-help" id="soundHelp"></div>
+            </section>
+
+            <!-- תזכורות: לפני כל אירוע, סיכום יומי, ממתינות לאישור, שעות שקט -->
+            <section class="set-panel" data-panel="reminders">
+                <h3 class="set-h">⏰ תזכורות לפני כל אירוע</h3>
+                <label class="switch"><input type="checkbox" id="remOn"> <span>לשלוח תזכורות לפני אירועים</span></label>
+                <div class="rem-box" id="remBox">
+                    <div class="rem-rules" id="remRules"></div>
+                    <button type="button" class="btn btn-ghost btn-wide" id="remAdd">＋ עוד תזכורת</button>
+                    <label>על אילו אירועים
+                        <select id="remWho">
+                            <option value="approved">רק הזמנות שאושרו</option>
+                            <option value="all">גם הזמנות שעדיין ממתינות לאישור</option>
+                        </select>
+                    </label>
+                    <label class="switch"><input type="checkbox" id="remSkipDone">
+                        <span>לא להזכיר על אירוע שכל המנות בו כבר מוכנות</span></label>
+                    <label class="switch"><input type="checkbox" id="remMail">
+                        <span>גם במייל למנהל (הכתובת שבלשונית "מיילים")</span></label>
+                    <p class="set-hint">אפשר לכבות תזכורות לאירוע מסוים מתוך ההזמנה עצמה. אם מועד האירוע משתנה — התזכורות זזות איתו.</p>
+                </div>
+
+                <h3 class="set-h">📋 סיכום יומי</h3>
+                <div class="rem-line">
+                    <label class="switch"><input type="checkbox" id="remDigestOn"> <span>כל בוקר: האירועים של היום ושל מחר</span></label>
+                    <input type="time" id="remDigestTime" aria-label="שעת הסיכום היומי">
+                </div>
+                <p class="set-hint">ביום בלי אירועים — לא נשלח כלום.</p>
+
+                <h3 class="set-h">⏳ הזמנות שממתינות לאישור</h3>
+                <div class="rem-line">
+                    <label class="switch"><input type="checkbox" id="remNagOn"> <span>להזכיר על הזמנה שלא טופלה אחרי</span></label>
+                    <span class="rem-num"><input type="number" id="remNagHours" min="1" max="72" inputmode="numeric" aria-label="שעות"> שעות</span>
+                </div>
+
+                <h3 class="set-h">🌙 שעות שקט</h3>
+                <div class="rem-line">
+                    <label class="switch"><input type="checkbox" id="remQuietOn"> <span>בלי תזכורות בין</span></label>
+                    <span class="rem-num"><input type="time" id="remQuietFrom" aria-label="משעה"> ל־<input type="time" id="remQuietTo" aria-label="עד שעה"></span>
+                </div>
+                <p class="set-hint">תזכורת שנופלת בשעות השקט יוצאת כשהן נגמרות. הזמנות חדשות מצלצלות תמיד.</p>
+
+                <h3 class="set-h">📆 מה ייצא בקרוב</h3>
+                <div class="rem-upcoming" id="remUpcoming"></div>
+                <button type="button" class="btn btn-ghost btn-wide" id="remTest">שליחת תזכורת לדוגמה לטלפונים</button>
+
+                <h3 class="set-h">🕒 השעון של התזכורות</h3>
+                <div class="rem-clock" id="remClock"></div>
             </section>
 
             <section class="set-panel" data-panel="orders">
