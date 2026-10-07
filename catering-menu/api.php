@@ -10,7 +10,8 @@
  * הסיסמה נקבעת בכניסה הראשונה לממשק המנהל ונשמרת כגיבוב ב-data/config.json.
  * לאיפוס: למחוק את הקובץ מהשרת (מנהל הקבצים של cPanel) ולקבוע סיסמה מחדש.
  *
- * הגדרות המנהל (מיקום לזמני היום, מגבלות בחירה, מיילים) — data/settings.json.
+ * הגדרות המנהל (מיקום לזמני היום, מגבלות בחירה, מיילים, פרטי העסק) — data/settings.json.
+ * לוגו שהמנהל העלה — data/logo.<png|jpg|webp>; בלעדיו assets/logo.jpg.
  * התפריט: כל עוד המנהל לא ערך אותו — assets/menu.json מהריפו. אחרי עריכה הוא
  * נשמר ב-data/menu.json, ומשם והלאה זה התפריט (הפריסה לא נוגעת בו).
  * מיילים יוצאים דרך mail() של PHP, שעובד בשרתי cPanel בלי הגדרה נוספת.
@@ -32,6 +33,8 @@ const MENU_FILE   = DATA_DIR . '/menu.json';             // התפריט שהמ�
 const MAX_ITEMS   = 200;
 const SESSIONS_DIR = DATA_DIR . '/sessions';
 const LOGIN_TTL   = 60 * 60 * 24 * 120;   // 4 חודשים
+const LOGO_DEFAULT = __DIR__ . '/assets/logo.jpg';      // הלוגו המקורי, בריפו
+const LOGO_TYPES  = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'webp' => 'image/webp'];
 
 require __DIR__ . '/push.php';
 require __DIR__ . '/reminders.php';
@@ -97,12 +100,45 @@ function readJson(string $path): ?array {
     return is_array($data) ? $data : null;
 }
 
-/** מפת מזהה → מנה, מתוך התפריט שבריפו. ההזמנה נבדקת מולה. */
+/**
+ * התפריט: הערוך (data/menu.json) או המקורי. פרטי העסק (שם, טלפונים, וואטסאפ,
+ * הסבר לכוכבית) נלקחים מהגדרות המנהל — ואם עוד לא נשמרו שם, מהתפריט עצמו.
+ */
 function menu(): array {
     static $menu = null;
-    $menu ??= readJson(MENU_FILE) ?? readJson(MENU_DEFAULT);
-    if (!$menu) fail('קובץ התפריט חסר בשרת', 500);
+    if ($menu === null) {
+        $menu = readJson(MENU_FILE) ?? readJson(MENU_DEFAULT);
+        if (!$menu) fail('קובץ התפריט חסר בשרת', 500);
+        $biz = loadSettings()['business'];
+        if ($biz) {
+            $menu['extraNote'] = $biz['extraNote'];
+            unset($biz['extraNote']);
+            $menu['business'] = $biz;
+        }
+    }
     return $menu;
+}
+
+/** פרטי העסק כפי שהגיעו מהמנהל — מנוקים. */
+function cleanBusiness(array $b, string $extraNote = ''): array {
+    $str = fn($v, $max) => is_string($v) ? mb_substr(trim($v), 0, $max) : '';
+    $phones = array_values(array_filter(array_map(fn($p) => $str($p, 30), (array) ($b['phones'] ?? [])), 'strlen'));
+    return [
+        'name'      => $str($b['name'] ?? '', 60) ?: 'ניחוחות',
+        'tagline'   => $str($b['tagline'] ?? '', 120),
+        'owner'     => $str($b['owner'] ?? '', 60),
+        'phones'    => array_slice($phones, 0, 4),
+        'whatsapp'  => preg_replace('/\D/', '', $str($b['whatsapp'] ?? '', 20)),
+        'extraNote' => $str($b['extraNote'] ?? $extraNote, 40) ?: 'תוספת תשלום',
+    ];
+}
+
+/** קובץ הלוגו הנוכחי: [נתיב, סוג]. */
+function logoFile(): array {
+    foreach (LOGO_TYPES as $ext => $mime) {
+        if (is_file(DATA_DIR . "/logo.$ext")) return [DATA_DIR . "/logo.$ext", $mime];
+    }
+    return [LOGO_DEFAULT, 'image/jpeg'];
 }
 
 /** התפריט כפי שהלקוח רואה אותו — בלי מנות ובלי קטגוריות מוסתרות. */
@@ -130,19 +166,13 @@ function cleanMenu(array $in): array {
         return $id;
     };
 
-    $b = is_array($in['business'] ?? null) ? $in['business'] : [];
-    $phones = array_values(array_filter(array_map(fn($p) => $str($p, 30), (array) ($b['phones'] ?? [])), 'strlen'));
+    $biz = cleanBusiness(is_array($in['business'] ?? null) ? $in['business'] : [], $str($in['extraNote'] ?? '', 40));
     $out = [
-        'business' => [
-            'name'     => $str($b['name'] ?? '', 60) ?: 'ניחוחות',
-            'tagline'  => $str($b['tagline'] ?? '', 120),
-            'owner'    => $str($b['owner'] ?? '', 60),
-            'phones'   => array_slice($phones, 0, 4),
-            'whatsapp' => preg_replace('/\D/', '', $str($b['whatsapp'] ?? '', 20)),
-        ],
-        'extraNote'  => $str($in['extraNote'] ?? '', 40) ?: 'תוספת תשלום',
+        'extraNote'  => $biz['extraNote'],
         'categories' => [],
     ];
+    unset($biz['extraNote']);
+    $out = ['business' => $biz] + $out;
 
     foreach (array_slice((array) ($in['categories'] ?? []), 0, 30) as $cat) {
         if (!is_array($cat)) continue;
@@ -208,6 +238,8 @@ function defaultSettings(): array {
         'calendar' => ['showShabbat' => true, 'showParasha' => true, 'showSunset' => true, 'showRc' => true],
         // התראה על הזמנה נשארת על המסך עד שנוגעים בה
         'notify' => ['sticky' => true],
+        // פרטי העסק — null: עדיין לא נשמרו בהגדרות, ונלקחים מהתפריט
+        'business' => null,
         // תזכורות לפני אירועים, סיכום יומי וממתינות לאישור — reminders.php
         'reminders' => defaultReminders(),
     ];
@@ -223,6 +255,7 @@ function loadSettings(): array {
         'calendar' => ($saved['calendar'] ?? []) + $def['calendar'],
         'notify'   => ($saved['notify'] ?? []) + $def['notify'],
         'reminders' => isset($saved['reminders']) ? cleanReminders($saved['reminders']) : $def['reminders'],
+        'business' => is_array($saved['business'] ?? null) ? cleanBusiness($saved['business']) : null,
     ];
 }
 
@@ -270,6 +303,7 @@ function cleanSettings(array $in): array {
         ],
         'notify' => ['sticky' => $bool($notify, 'sticky', true)],
         'reminders' => cleanReminders($in['reminders'] ?? null),
+        'business' => is_array($in['business'] ?? null) ? cleanBusiness($in['business']) : (loadSettings()['business']),
     ];
 }
 
@@ -293,7 +327,8 @@ function sendMail(string $to, string $subject, string $bodyHtml): bool {
     $host = preg_replace('/^www\./', '', preg_replace('/:\d+$/', '', $_SERVER['HTTP_HOST'] ?? 'localhost'));
     $from = $settings['email']['from'] ?: 'noreply@' . $host;
 
-    $logoFile = __DIR__ . '/assets/logo.jpg';
+    [$logoFile, $logoMime] = logoFile();
+    $logoName = 'logo.' . array_search($logoMime, LOGO_TYPES, true);
     $logo = is_file($logoFile) ? file_get_contents($logoFile) : false;
     $header = $logo !== false
         ? '<img src="cid:logo@catering" alt="' . h($business) . '" width="300" '
@@ -323,10 +358,10 @@ function sendMail(string $to, string $subject, string $bodyHtml): bool {
               . "Content-Transfer-Encoding: base64\r\n\r\n"
               . chunk_split(base64_encode($html)) . "\r\n"
               . "--$boundary\r\n"
-              . "Content-Type: image/jpeg; name=\"logo.jpg\"\r\n"
+              . "Content-Type: $logoMime; name=\"$logoName\"\r\n"
               . "Content-Transfer-Encoding: base64\r\n"
               . "Content-ID: <logo@catering>\r\n"
-              . "Content-Disposition: inline; filename=\"logo.jpg\"\r\n\r\n"
+              . "Content-Disposition: inline; filename=\"$logoName\"\r\n\r\n"
               . chunk_split(base64_encode($logo)) . "\r\n"
               . "--$boundary--\r\n";
     }
@@ -651,7 +686,46 @@ switch ($action) {
 
     case 'settings': {
         requireAdmin();
-        ok(['settings' => loadSettings()]);
+        $settings = loadSettings();
+        $settings['business'] ??= cleanBusiness(menu()['business'], menu()['extraNote']);
+        [$file] = logoFile();
+        ok(['settings' => $settings, 'logo' => ['custom' => $file !== LOGO_DEFAULT, 'version' => (int) @filemtime($file)]]);
+    }
+
+    case 'logo': {
+        // ציבורי: הלוגו של העסק — בתפריט, בממשק, במיילים ובתפריט להדפסה
+        [$file, $mime] = logoFile();
+        $etag = '"' . md5($file . filemtime($file)) . '"';
+        header('Content-Type: ' . $mime);
+        header('Cache-Control: no-cache');            // הדפדפן שומר, אבל בודק אם הלוגו הוחלף
+        header('ETag: ' . $etag);
+        if (($_SERVER['HTTP_IF_NONE_MATCH'] ?? '') === $etag) { http_response_code(304); exit; }
+        header('Content-Length: ' . filesize($file));
+        readfile($file);
+        exit;
+    }
+
+    case 'saveLogo': {
+        if ($method !== 'POST') fail('שיטה לא נתמכת', 405);
+        requireAdmin();
+        $data = body()['data'] ?? '';
+        if (!is_string($data) || !preg_match('#^data:image/(png|jpeg|webp);base64,#', $data)) fail('אפשר להעלות PNG, JPG או WEBP');
+        $bin = base64_decode(substr($data, strpos($data, ',') + 1), true);
+        if ($bin === false || strlen($bin) > 3 * 1024 * 1024) fail('הקובץ גדול מדי (עד 3MB)');
+        $info = @getimagesizefromstring($bin);
+        $ext = array_search($info['mime'] ?? '', LOGO_TYPES, true);
+        if (!$info || $ext === false) fail('הקובץ אינו תמונה תקינה');
+        if ($info[0] < 200) fail('הלוגו קטן מדי — צריך לפחות 200 פיקסלים ברוחב');
+        foreach (array_keys(LOGO_TYPES) as $old) @unlink(DATA_DIR . "/logo.$old");
+        file_put_contents(DATA_DIR . "/logo.$ext", $bin, LOCK_EX);
+        ok(['logo' => ['custom' => true, 'version' => time()]]);
+    }
+
+    case 'resetLogo': {
+        if ($method !== 'POST') fail('שיטה לא נתמכת', 405);
+        requireAdmin();
+        foreach (array_keys(LOGO_TYPES) as $old) @unlink(DATA_DIR . "/logo.$old");
+        ok(['logo' => ['custom' => false, 'version' => (int) filemtime(LOGO_DEFAULT)]]);
     }
 
     case 'saveSettings': {

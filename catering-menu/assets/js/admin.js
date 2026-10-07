@@ -853,7 +853,11 @@
     }
 
     async function openSettings(tab = 'calendar') {
-        try { settings = (await api('settings')).settings; } catch (ex) { toast(ex.message); return; }
+        try {
+            const res = await api('settings');
+            settings = res.settings;
+            logoInfo = res.logo;
+        } catch (ex) { toast(ex.message); return; }
         const l = settings.location;
         const sel = $('#setPlace');
         sel.textContent = '';
@@ -882,6 +886,7 @@
         }
         $('#setSticky').checked = settings.notify.sticky !== false;
         fillReminders(settings.reminders);
+        fillBusiness(settings.business);
         // אישי
         $('#prefStart').value = prefs.start;
         $('#prefCalMode').value = prefs.calMode || calMode;
@@ -988,6 +993,7 @@
                 },
                 notify: { sticky: $('#setSticky').checked },
                 reminders: formReminders(),
+                business: formBusiness(),
             })).settings;
             $('#settingsSheet').close();
             toast('ההגדרות נשמרו');
@@ -996,6 +1002,144 @@
             $('#setError').textContent = ex.message;
             $('#setError').hidden = false;
         }
+    }
+
+    /* ── עסק: לוגו ופרטי קשר ─────────────────────────────────────── */
+
+    let logoInfo = { custom: false, version: 0 };
+    const logoUrl = () => '../api.php?action=logo&v=' + logoInfo.version;
+
+    function fillBusiness(b) {
+        $('#bizName').value = b.name || '';
+        $('#bizOwner').value = b.owner || '';
+        ['#bizPhone1', '#bizPhone2', '#bizPhone3'].forEach((id, i) => { $(id).value = b.phones?.[i] || ''; });
+        $('#bizWhatsapp').value = b.whatsapp || '';
+        $('#bizExtraNote').value = b.extraNote || '';
+        renderLogoBox();
+        previewContact();
+    }
+
+    function formBusiness() {
+        return {
+            name: $('#bizName').value.trim(),
+            tagline: settings.business?.tagline || '',
+            owner: $('#bizOwner').value.trim(),
+            phones: ['#bizPhone1', '#bizPhone2', '#bizPhone3'].map(id => $(id).value.trim()).filter(Boolean),
+            whatsapp: $('#bizWhatsapp').value.replace(/\D/g, ''),
+            extraNote: $('#bizExtraNote').value.trim(),
+        };
+    }
+
+    /** כך תיראה השורה שמתחת ללוגו בתפריט להדפסה. */
+    function previewContact() {
+        const b = formBusiness();
+        const line = [b.owner ? b.owner + '.' : '', b.phones.join(' / ')].filter(Boolean).join(' ');
+        $('#bizPreview').textContent = line ? 'בתפריט להדפסה: ' + line : 'אין פרטי קשר — השורה שמתחת ללוגו תישאר ריקה.';
+    }
+
+    function renderLogoBox() {
+        $('#bizLogo').src = logoUrl();
+        $('#bizLogoState').textContent = logoInfo.custom ? 'לוגו שהועלה' : 'הלוגו המקורי';
+        $('#bizLogoReset').hidden = !logoInfo.custom;
+        for (const img of document.querySelectorAll('.brand-logo')) img.src = logoUrl();
+    }
+
+    /** תמונה גדולה מוקטנת בדפדפן (עד 1600 פיקסלים לרוחב) — כדי שההעלאה תהיה קלה. */
+    async function shrinkImage(file) {
+        const img = await new Promise((resolve, reject) => {
+            const i = new Image();
+            i.onload = () => resolve(i);
+            i.onerror = () => reject(new Error('הקובץ אינו תמונה שאפשר לפתוח'));
+            i.src = URL.createObjectURL(file);
+        });
+        const k = Math.min(1, 1600 / img.naturalWidth);
+        if (k === 1 && file.size < 2.5 * 1024 * 1024) {
+            return new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(file); });
+        }
+        const c = el('canvas');
+        c.width = Math.round(img.naturalWidth * k);
+        c.height = Math.round(img.naturalHeight * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        return file.type === 'image/jpeg' ? c.toDataURL('image/jpeg', 0.9) : c.toDataURL('image/png');
+    }
+
+    async function uploadLogo(e) {
+        const file = e.target.files[0];
+        e.target.value = '';
+        if (!file) return;
+        try {
+            const data = await shrinkImage(file);
+            logoInfo = (await api('saveLogo', { data })).logo;
+            renderLogoBox();
+            toast('✓ הלוגו הוחלף');
+        } catch (ex) { toast(ex.message); }
+    }
+
+    async function resetLogo() {
+        if (!confirm('לחזור ללוגו המקורי? הלוגו שהועלה יימחק.')) return;
+        try {
+            logoInfo = (await api('resetLogo', {})).logo;
+            renderLogoBox();
+            toast('✓ חזרנו ללוגו המקורי');
+        } catch (ex) { toast(ex.message); }
+    }
+
+    /* ── התפריט להדפסה ──────────────────────────────────────────────── */
+
+    let pdfOut = null;
+
+    async function openPdf() {
+        if (dirty()) {
+            if (!confirm('יש בתפריט שינויים שלא נשמרו. לשמור אותם עכשיו? (ה-PDF נוצר מהתפריט השמור)')) return;
+            await saveMenu();
+            if (dirty()) return;           // השמירה נכשלה
+        }
+        pdfOut = null;
+        $('#pdfInfo').textContent = 'מכין את התפריט…';
+        $('#pdfImg').removeAttribute('src');
+        $('#pdfDownload').disabled = true;
+        $('#pdfShare').hidden = true;
+        $('#pdfSheet').showModal();
+        try {
+            const [{ menu }, logo] = await Promise.all([
+                api('menuAdmin'),
+                new Promise(resolve => {
+                    const i = new Image();
+                    i.onload = () => resolve(i);
+                    i.onerror = () => resolve(null);
+                    i.src = '../api.php?action=logo&t=' + Date.now();
+                }),
+            ]);
+            const out = await MenuPdf.render(menu, logo, '../assets/');
+            const blob = await MenuPdf.toPdf(out, 'תפריט ' + (menu.business?.name || ''));
+            // שם באנגלית: דפדפנים מסוימים (כרום) מחליפים שם קובץ בעברית ב-"download"
+            const name = `menu-${new Date().toISOString().slice(0, 10)}.pdf`;
+            pdfOut = { blob, file: new File([blob], name, { type: 'application/pdf' }) };
+            $('#pdfImg').src = out.canvas.toDataURL('image/jpeg', 0.8);
+            const cm = Math.round(out.height / MenuPdf.A4 * 29.7 * 10) / 10;
+            $('#pdfInfo').textContent = out.height > MenuPdf.A4
+                ? `התפריט ארוך מ-A4, ולכן הדף הוארך: 21 × ${cm} ס"מ. שום דבר לא נדחס.`
+                : 'דף A4 אחד (21 × 29.7 ס"מ). מתעדכן לבד לפי התפריט, הלוגו ופרטי הקשר.';
+            $('#pdfDownload').disabled = false;
+            $('#pdfShare').hidden = !(navigator.canShare && navigator.canShare({ files: [pdfOut.file] }));
+        } catch (ex) {
+            $('#pdfInfo').textContent = 'יצירת התפריט נכשלה: ' + ex.message;
+        }
+    }
+
+    function downloadPdf() {
+        if (!pdfOut) return;
+        const a = el('a', { href: URL.createObjectURL(pdfOut.blob), download: pdfOut.file.name });
+        document.body.append(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    }
+
+    async function sharePdf() {
+        if (!pdfOut) return;
+        try { await navigator.share({ files: [pdfOut.file], title: pdfOut.file.name }); }
+        catch (ex) { if (ex.name !== 'AbortError') toast('השיתוף נכשל — אפשר להוריד את הקובץ'); }
     }
 
     /* ── תזכורות ─────────────────────────────────────────────────── */
@@ -1237,10 +1381,6 @@
                 }, '+ מנה חדשה ב' + (cat.name || 'קטגוריה'))));
         });
 
-        $('#bizOwner').value = edit.business.owner || '';
-        $('#bizPhones').value = (edit.business.phones || []).join(', ');
-        $('#bizWhatsapp').value = edit.business.whatsapp || '';
-        $('#bizExtraNote').value = edit.extraNote || '';
         $('#resetMenu').hidden = !customMenu;
         markDirty();
         window.scrollTo(0, y);
@@ -1318,11 +1458,8 @@
             const names = document.querySelectorAll('.ed-cat-name');
             names[names.length - 1].select();
         });
-        const biz = (id, fn) => $(id).addEventListener('input', e => { fn(e.target.value); markDirty(); });
-        biz('#bizOwner', v => { edit.business.owner = v; });
-        biz('#bizPhones', v => { edit.business.phones = v.split(',').map(x => x.trim()).filter(Boolean); });
-        biz('#bizWhatsapp', v => { edit.business.whatsapp = v.replace(/\D/g, ''); });
-        biz('#bizExtraNote', v => { edit.extraNote = v; });
+        $('#bizLink').addEventListener('click', () => openSettings('business'));
+        $('#openPdf').addEventListener('click', openPdf);
         $('#saveMenu').addEventListener('click', saveMenu);
         $('#discardMenu').addEventListener('click', () => {
             if (confirm('לבטל את כל השינויים שלא נשמרו?')) setEdit(JSON.parse(savedJson), customMenu);
@@ -1634,6 +1771,11 @@
         $('#oTime').addEventListener('change', e => update({ deliveryTime: e.target.value }));
         $('#oRemOff').addEventListener('change', e => update({ remindersOff: e.target.checked }));
         wireReminders();
+        $('#bizLogoFile').addEventListener('change', uploadLogo);
+        $('#bizLogoReset').addEventListener('click', resetLogo);
+        document.querySelectorAll('[data-panel="business"] input:not([type=file])').forEach(i => i.addEventListener('input', previewContact));
+        $('#pdfDownload').addEventListener('click', downloadPdf);
+        $('#pdfShare').addEventListener('click', sharePdf);
         document.querySelectorAll('.view-switch [data-view]').forEach(b =>
             b.addEventListener('click', () => setView(b.dataset.view)));
         document.querySelectorAll('.cal-modes [data-mode]').forEach(b =>

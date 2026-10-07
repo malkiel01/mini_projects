@@ -31,7 +31,7 @@
             <button type="button" class="top-btn" id="gear" aria-label="הגדרות">⚙️</button>
             <button type="button" class="top-btn" id="logout">יציאה</button>
         </div>
-        <img class="brand-logo" src="../assets/logo.jpg" alt="ניחוחות" width="900" height="450">
+        <img class="brand-logo" src="../api.php?action=logo" alt="ניחוחות" width="900" height="450">
     </header>
 
     <!-- כניסה / קביעת סיסמה -->
@@ -65,6 +65,7 @@
 
         <!-- עריכת התפריט: קטגוריות, מנות, אפשרויות בחירה, ופרטי העסק -->
         <section class="editor" id="menuEditor" hidden>
+            <button type="button" class="btn btn-gold btn-wide pdf-btn" id="openPdf">📄 תפריט להדפסה (PDF)</button>
             <p class="editor-hint">
                 השינויים נכנסים לתפריט הציבורי מיד אחרי השמירה. מנה <b>מוסתרת</b> לא מוצגת ללקוחות
                 (למשל כשנגמרה), אבל נשארת כאן ואפשר להחזיר אותה בלחיצה.
@@ -78,16 +79,7 @@
             <div id="editorBody"><p class="loading">טוען…</p></div>
             <button type="button" class="btn btn-ghost btn-wide" id="addCategory">+ קטגוריה חדשה</button>
 
-            <details class="biz">
-                <summary>פרטי העסק בראש התפריט</summary>
-                <div class="fields">
-                    <label>שם בעל העסק <input id="bizOwner" maxlength="60"></label>
-                    <label>טלפונים (מופרדים בפסיק) <input id="bizPhones" maxlength="130" dir="ltr"></label>
-                    <label>וואטסאפ לקבלת הזמנות (מספר בינלאומי, למשל 972552423846)
-                        <input id="bizWhatsapp" maxlength="20" dir="ltr" inputmode="numeric"></label>
-                    <label>הסבר לכוכבית <input id="bizExtraNote" maxlength="40"></label>
-                </div>
-            </details>
+            <button type="button" class="link-btn" id="bizLink">🏷️ הלוגו, איש הקשר והטלפונים — בהגדרות ← עסק</button>
 
             <button type="button" class="link-btn" id="resetMenu" hidden>שחזור התפריט המקורי (מחיקת כל העריכות)</button>
 
@@ -255,6 +247,7 @@
                 <button type="button" role="tab" data-tab="app">📲 אפליקציה והתראות</button>
                 <button type="button" role="tab" data-tab="reminders">⏰ תזכורות</button>
                 <button type="button" role="tab" data-tab="orders">🍽️ הזמנות</button>
+                <button type="button" role="tab" data-tab="business">🏷️ עסק</button>
                 <button type="button" role="tab" data-tab="mail">✉️ מיילים</button>
                 <button type="button" role="tab" data-tab="personal">👤 אישי</button>
                 <button type="button" role="tab" data-tab="security">🔒 אבטחה</button>
@@ -359,6 +352,35 @@
                 <div class="limits" id="setLimits"></div>
             </section>
 
+            <!-- עסק: לוגו ופרטי קשר — בתפריט, במיילים ובתפריט להדפסה -->
+            <section class="set-panel" data-panel="business">
+                <h3 class="set-h">🖼️ לוגו</h3>
+                <div class="logo-box">
+                    <img id="bizLogo" alt="הלוגו הנוכחי">
+                    <span class="logo-state" id="bizLogoState"></span>
+                </div>
+                <div class="row-2">
+                    <label class="btn btn-ghost file-btn">החלפת הלוגו
+                        <input type="file" id="bizLogoFile" accept="image/png,image/jpeg,image/webp"></label>
+                    <button type="button" class="btn btn-ghost" id="bizLogoReset">חזרה ללוגו המקורי</button>
+                </div>
+                <p class="set-hint">הלוגו מופיע בתפריט ללקוחות, בממשק, במיילים ובתפריט להדפסה — על רקע כהה.
+                    מומלץ PNG שקוף, או לוגו על רקע כהה. הלוגו נשמר מיד.</p>
+
+                <h3 class="set-h">📇 פרטי הקשר</h3>
+                <label>איש הקשר <input id="bizOwner" maxlength="60" placeholder="למשל: חמדי בן עזרא"></label>
+                <label>טלפון ראשי <input id="bizPhone1" maxlength="30" dir="ltr" inputmode="tel"></label>
+                <label>טלפון נוסף <input id="bizPhone2" maxlength="30" dir="ltr" inputmode="tel" placeholder="לא חובה"></label>
+                <label>טלפון שלישי <input id="bizPhone3" maxlength="30" dir="ltr" inputmode="tel" placeholder="לא חובה"></label>
+                <p class="set-preview" id="bizPreview"></p>
+                <label>וואטסאפ לקבלת הזמנות (מספר בינלאומי, למשל 972552423846)
+                    <input id="bizWhatsapp" maxlength="20" dir="ltr" inputmode="numeric"></label>
+
+                <h3 class="set-h">🏷️ העסק</h3>
+                <label>שם העסק <input id="bizName" maxlength="60"></label>
+                <label>הסבר לכוכבית <input id="bizExtraNote" maxlength="40" placeholder="תוספת תשלום"></label>
+            </section>
+
             <section class="set-panel" data-panel="mail">
                 <h3 class="set-h">✉️ מיילים</h3>
                 <label>מייל למנהל — התראה על כל הזמנה חדשה
@@ -426,7 +448,24 @@
         </form>
     </dialog>
 
+    <!-- התפריט להדפסה -->
+    <dialog class="sheet pdf-sheet" id="pdfSheet" aria-labelledby="pdfTitle">
+        <div class="sheet-body">
+            <header class="sheet-head">
+                <h2 id="pdfTitle">📄 תפריט להדפסה</h2>
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+            </header>
+            <p class="set-hint" id="pdfInfo">מכין…</p>
+            <div class="pdf-preview"><img id="pdfImg" alt="תצוגה מקדימה של התפריט להדפסה"></div>
+            <div class="row-2">
+                <button type="button" class="btn btn-gold" id="pdfDownload" disabled>⬇️ הורדת PDF</button>
+                <button type="button" class="btn btn-ghost" id="pdfShare" hidden>📤 שיתוף</button>
+            </div>
+        </div>
+    </dialog>
+
     <script src="../assets/js/hebcal.js"></script>
+    <script src="../assets/js/menu-pdf.js"></script>
     <script src="../assets/js/admin.js"></script>
 </body>
 </html>
