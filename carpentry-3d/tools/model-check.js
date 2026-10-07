@@ -323,7 +323,7 @@ console.log('ספרייה: גוף פנימי/חיצוני, דפנות לפי צ�
   const g0 = ys[0] - (inner.box.y + inner.box.h), g1 = ys[1] - ys[0] - 18;
   check(Math.abs(g0 / g1 - 7) < 0.05 && Math.abs(ys[2] - ys[1] - 18 - g1) < 0.01, `תא תחתון פי 7 מהאחרים (${g0.toFixed(0)} / ${g1.toFixed(0)})`);
   const space = template('bookcase').columnSpace(r3.values);
-  check(space.columns === 3 && Math.abs(space.cols[0].innerH - (r3.parts.find((p) => p.id === 'top').box.y - inner.box.y - inner.box.h)) < 0.01, 'columnSpace: הגובה הפנוי תואם את הגוף');
+  check(space.sections[0].items.length === 3 && Math.abs(space.sections[0].items[0].innerH - (r3.parts.find((p) => p.id === 'top').box.y - inner.box.y - inner.box.h)) < 0.01, 'columnSpace: הגובה הפנוי תואם את הגוף');
   const w = build('wardrobe', { innerMaterial: 'board:melamine-white-18', sideLeftFinish: 'fluted-fine', doorType: 'wood', doorFinish: 'fluted-fine' });
   check(w.parts.find((p) => p.id === 'partition-1').material === 'board:melamine-white-18' && w.parts.some((p) => p.id.startsWith('side-L-strip')) && w.parts.some((p) => p.id.includes('door') && p.id.includes('-strip-')) && w.parts.every((p) => p.box.x >= -0.01), 'ארון: פנימי נפרד, סטריפים בדופן ובדלתות');
   const sh = build('bookcase', { led: 'shelves' });
@@ -382,9 +382,48 @@ console.log('פריסה: נעוץ ואוטומטי, עריכה בשלושה מצ
   const y0 = 80 + 18 + 2 * 200 + 18;   // סוקל + רצפה + מגירות + המדף שמעליהן
   check(Math.abs(s3[0].box.y - y0 - 500) < 0.01 && Math.abs((s3[2].box.y - s3[1].box.y) - (s3[1].box.y - s3[0].box.y)) < 0.01, 'ארון: התא התחתון מעל המגירות 500, השאר שווים');
   const wsp = template('wardrobe').columnSpace(w.values);
-  check(wsp.cols[0].editable === false && wsp.cols[2].editable === true && Math.abs(wsp.cols[2].innerH - (w.parts.find((p) => p.id === 'top').box.y - y0)) < 0.01, 'ארון columnSpace: תלייה לא נערכת, גובה פנוי מעל המגירות תואם');
+  check(wsp.sections[0].items[0].editable === false && wsp.sections[0].items[2].editable === true && Math.abs(wsp.sections[0].items[2].innerH - (w.parts.find((p) => p.id === 'top').box.y - y0)) < 0.01, 'ארון columnSpace: תלייה לא נערכת, גובה פנוי מעל המגירות תואם');
   check(Boolean(rod) && Math.abs(rod.pos ? rod.pos[0] : 0) >= 0, 'ארון: המוט קיים');
+  // פורמט הקבוצות: אותה ספרייה דרך { sections: { main } }
+  const rs = build('bookcase', { ...base, columnsLayout: { sections: { main: { widths: [800, null, null] } } } });
+  check(Math.abs(rs.parts.find((p) => p.id === 'shelf-1-1').box.w - 800) < 0.01, 'ספרייה: פורמט הקבוצות (sections.main) נקרא');
 }
+
+console.log('מטבח ושידה: אותו עיקרון — רוחב לכל ארון, סוג, מגירות ותאים; שורות ועמודות בשידה');
+{
+  const kv = { shape: 'line', length: 3000, cabinets: 4, drawerCabinets: 1, drawersPerCabinet: 3, shelvesPerCabinet: 1, uppers: 'yes' };
+  const sp = template('kitchen').columnSpace({ ...defaults(template('kitchen')), ...kv });
+  check(sp.sections.map((x) => x.key).join(',') === 'baseA,upperA' && sp.sections[0].items[0].kind === 'drawers' && sp.sections[0].items[1].kind === 'doors' && sp.sections[0].total === 3000, 'מטבח קו ישר: שתי קבוצות, הראשון מגירות');
+  const k = build('kitchen', { ...kv, columnsLayout: { sections: { baseA: { widths: [1000, null, null, null], cols: { 1: { kind: 'drawers', shelves: 4, gaps: [300, null, null, null] }, 3: { shelves: 2 } } }, upperA: { widths: [null, 400, null, null] } } } });
+  const span = (r, pre, ax = 'x', sz = 'w') => { const L = r.parts.find((p) => p.id === `${pre}-side-L`).box, R = r.parts.find((p) => p.id === `${pre}-side-R`).box; return { x: L[ax], w: R[ax] + R[sz] - L[ax] }; };
+  check(Math.abs(span(k, 'ת1').w - 1000) < 0.01 && Math.abs(span(k, 'ת2').w - 2000 / 3) < 0.01 && Math.abs(span(k, 'ת2').x - 1000) < 0.01, `מטבח: ארון 1 ברוחב 1000, השאר בשווה (${span(k, 'ת2').w.toFixed(0)}), צמודים`);
+  const d2 = [1, 2, 3, 4].map((r) => k.parts.find((p) => p.id === `ת2-drawer-${r}`));
+  check(d2.every(Boolean) && !k.parts.some((p) => p.id === 'ת2-drawer-5') && !k.parts.some((p) => p.id.startsWith('ת2-shelf')), 'מטבח: ארון 2 הפך למגירות (4), בלי מדפים');
+  const boxes = [1, 2, 3, 4].map((r) => k.parts.find((p) => p.id === `ת2-drawer-${r}-side-L`));
+  const hs = boxes.map((b, i) => (i < 3 ? boxes[i + 1].box.y - b.box.y : null)).filter((x) => x !== null);
+  check(Math.abs(hs[0] - 300) < 0.01 && Math.abs(hs[1] - hs[2]) < 0.01, `מטבח: המגירה התחתונה 300, השאר שוות (${hs[1].toFixed(0)})`);
+  check(k.parts.filter((p) => p.id.startsWith('ת4-shelf-')).length === 2 && k.parts.filter((p) => p.id.startsWith('ת3-shelf-')).length === 1, 'מטבח: ארון 4 עם 2 מדפים, ארון 3 ברירת מחדל');
+  check(Math.abs(span(k, 'ע2').w - 400) < 0.01 && Math.abs(span(k, 'ע1').w - 2600 / 3) < 0.01, 'מטבח: עליון 2 ברוחב 400, השאר בשווה');
+  const kl = build('kitchen', { shape: 'L', length: 3000, lengthB: 2400, cabinets: 2, cabinetsB: 2, cornerSize: 1000, columnsLayout: { sections: { baseB: { widths: [500, null] } } } });
+  const b1 = span(kl, 'ב1', 'z', 'd'), b2 = span(kl, 'ב2', 'z', 'd');
+  check(Math.abs(b1.w - 500) < 0.01 && Math.abs(b2.w - 900) < 0.01 && Math.abs(b2.x - 1500) < 0.01, "מטבח ר': הקיר השני — ארון 1 ברוחב 500 (לאורך Z), השני משלים");
+  // שידה
+  const dv = { width: 1000, height: 850, drawerRows: 4, drawerColumns: 2, topRowH: 150 };
+  const d0 = build('dresser', dv);
+  const rowY = (c, r) => d0.parts.find((p) => p.id === `drawer-${c}-${r}`).box.y;
+  check(Math.abs((rowY(1, 2) - rowY(1, 1)) - (rowY(1, 3) - rowY(1, 2))) < 0.01, 'שידה: בלי פריסה — השורות התחתונות שוות');
+  const dsp = template('dresser').columnSpace({ ...defaults(template('dresser')), ...dv });
+  check(dsp.sections[0].key === 'cols' && dsp.sections[1].key === 'rows' && dsp.sections[1].items[3].defaultPin === 150 && dsp.sections[1].items[0].defaultPin === null, 'שידה columnSpace: עמודות ושורות, השורה העליונה נעוצה כברירת מחדל ל-150');
+  const d1 = build('dresser', { ...dv, columnsLayout: { sections: { cols: { widths: [300, null] }, rows: { widths: [null, 250, null, null] } } } });
+  const c1 = d1.parts.find((p) => p.id === 'drawer-1-1').box, c2 = d1.parts.find((p) => p.id === 'drawer-2-1').box;
+  const ry = (r) => d1.parts.find((p) => p.id === `drawer-1-${r}`).box.y;
+  const part1 = d1.parts.find((p) => p.id === 'partition-1').box, sideL = d1.parts.find((p) => p.id === 'side-L').box;
+  check(Math.abs(part1.x - (sideL.x + sideL.w) - 300) < 0.01 && c2.w > c1.w + 200, `שידה: עמודה 1 ברוחב 300 (המחיצה במקום), עמודה 2 מקבלת את השאר (${c2.w.toFixed(0)})`);
+  check(Math.abs((ry(3) - ry(2)) - 250) < 0.01 && Math.abs(ry(2) - ry(1) - (ry(4) - ry(3))) < 0.01, 'שידה: שורה 2 נעוצה 250, שורות 1 ו-3 שוות; העליונה 150 מברירת המחדל');
+  const top = d1.parts.find((p) => p.id === 'drawer-1-4').box;
+  check(Math.abs(top.h - 150) < 20, `שידה: חזית השורה העליונה ${top.h.toFixed(0)} ≈ 150`);
+}
+
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }
 console.log('\nהכול עבר ✓');

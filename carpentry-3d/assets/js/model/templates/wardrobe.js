@@ -6,7 +6,7 @@
 
 import { carcass, partitions, shelves, back, plinth, crown, door, drawer, rod, slidingDoors } from '../blocks.js';
 import { material } from '../materials.js';
-import { resolveShares, normalizeLayout } from '../layout.js';
+import { resolveShares, sectionLayout } from '../layout.js';
 import { materialParams, doorParams, drawerParams, joineryParams, boardT, bodyWarnings, LIMITS, FINISHES_NO_GLASS, applyFinish, sameOrMaterial, resolveSame } from './common.js';
 
 export default {
@@ -47,17 +47,19 @@ export default {
   joinery: joineryParams(),
   limits: LIMITS,
 
-  /** לעורך העמודות: רוחב פנוי לחלוקה, ולכל עמודה — תלייה (רק רוחב) או מדפים (גם תאים, מעל המגירות). */
+  /** לעורך החלוקה: קבוצה אחת — העמודות; תלייה = רוחב בלבד, מדפים = גם תאים מעל המגירות. */
   columnSpace(v) {
     const sideT = v.sideT ?? 18, shelfT = v.shelfT ?? 18, columns = v.columns ?? 1;
     const bottomY = (v.plinthH ?? 80) + shelfT, topY = (v.height ?? 2400) - (v.crownH ?? 0);
     const drawersH = (v.drawersPerColumn ?? 0) > 0 ? v.drawersPerColumn * (v.drawerH ?? 200) + shelfT : 0;
     const innerH = topY - shelfT - bottomY - drawersH;
     const innerW = (v.width ?? 2400) - 2 * sideT - (columns - 1) * sideT;
-    const cols = Array.from({ length: columns }, (_, i) => (i < (v.hangingColumns ?? 0)
-      ? { innerH, defaultShelves: 0, editable: false, note: 'עמודת תלייה — מוט ומדף עליון; אין תאים לעריכה' }
-      : { innerH, defaultShelves: v.shelvesPerColumn ?? 0, editable: true, note: '' }));
-    return { columns, innerW, shelfT, cols };
+    return { sections: [{
+      key: 'main', title: '', total: innerW, sizeLabel: 'רוחב', allLabel: 'העמודות', modes: { next: 'מהעמודה שמימין', prev: 'מהעמודה שמשמאל' },
+      items: Array.from({ length: columns }, (_, i) => (i < (v.hangingColumns ?? 0)
+        ? { label: `עמודה ${i + 1}`, innerH, shelfT, cellsOf: 'shelves', defaultCount: 0, editable: false, note: 'עמודת תלייה — מוט ומדף עליון; אין תאים לעריכה' }
+        : { label: `עמודה ${i + 1}`, innerH, shelfT, cellsOf: 'shelves', defaultCount: v.shelvesPerColumn ?? 0, countMax: 12, editable: true, note: '' })),
+    }] };
   },
 
   build(v) {
@@ -84,7 +86,7 @@ export default {
     }
     const inner = body.inner;
     // פריסת עמודות: רוחב לכל עמודה (נעוץ או אוטומטי); בעמודת מדפים גם מספר מדפים וגבהי תאים.
-    const layout = normalizeLayout(v.columnsLayout, v.columns);
+    const layout = sectionLayout(v.columnsLayout, 'main', v.columns);
     const widths = resolveShares(inner.x1 - inner.x0 - (v.columns - 1) * sideT, layout.widths);
     const cols = partitions({ inner, columns: v.columns, t: sideT, material: innerMat, widths });
     parts.push(...cols.parts);

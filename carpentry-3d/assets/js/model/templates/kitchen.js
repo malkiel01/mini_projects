@@ -12,6 +12,7 @@
 
 import { carcass, shelves, back, door, drawer, part } from '../blocks.js';
 import { materialParams, drawerParams, joineryParams, boardT, LIMITS } from './common.js';
+import { resolveShares, sectionLayout, cellsOf } from '../layout.js';
 
 const N = (n) => Array.from({ length: n }, (_, i) => i + 1);
 
@@ -83,6 +84,7 @@ export default {
     { key: 'drawerCabinetsB', label: 'ארונות מגירות (קיר שני)', type: 'int', min: 0, max: 12, default: 0, group: 'חלוקה', showIf: { shape: ['L'] } },
     { key: 'drawersPerCabinet', label: 'מגירות בארון מגירות', type: 'int', min: 2, max: 5, default: 3, group: 'חלוקה' },
     { key: 'shelvesPerCabinet', label: 'מדפים בארון דלתות', type: 'int', min: 0, max: 3, default: 1, group: 'חלוקה' },
+    { key: 'columnsLayout', label: 'עריכת הארונות', type: 'json', default: null, group: 'חלוקה', editor: 'columns', hint: 'רוחב לכל ארון, סוג (דלתות/מגירות), מספר מדפים או מגירות וגובה כל תא' },
 
     { key: 'uppers', label: 'ארונות עליונים', type: 'enum', default: 'yes', group: 'עליונים', options: [{ id: 'yes', name: 'כן' }, { id: 'no', name: 'לא' }] },
     { key: 'upperH', label: 'גובה עליון', type: 'mm', min: 400, max: 1000, default: 720, group: 'עליונים', showIf: { uppers: ['yes'] } },
@@ -100,6 +102,33 @@ export default {
   ],
   joinery: joineryParams(),
   limits: LIMITS,
+
+  /**
+   * לעורך החלוקה: קבוצה לכל שורת ארונות — תחתונים ועליונים בכל קיר. לכל ארון
+   * רוחב; בתחתונים גם סוג (דלתות עם מדפים / מגירות) ולפי הסוג מספר מדפים או
+   * מגירות וגובה כל תא; בעליונים מדפים.
+   */
+  columnSpace(v) {
+    const shelfT = v.shelfT ?? 18, isL = v.shape === 'L';
+    const C = isL ? v.cornerSize ?? 1000 : 0, Cu = isL && v.uppers === 'yes' ? v.cornerUpperSize ?? 650 : 0;
+    const baseInner = (v.baseH ?? 720) - 2 * shelfT, upperInner = (v.upperH ?? 720) - 2 * shelfT;
+    const kinds = [{ id: 'doors', name: 'דלתות ומדפים', cellsOf: 'shelves', defaultCount: v.shelvesPerCabinet ?? 1 }, { id: 'drawers', name: 'מגירות', cellsOf: 'drawers', defaultCount: v.drawersPerCabinet ?? 3 }];
+    const baseRun = (key, title, total, n, drawerN, prefix) => ({
+      key, title, total, sizeLabel: 'רוחב', allLabel: 'הארונות', modes: { next: 'מהארון הבא', prev: 'מהארון הקודם' },
+      items: Array.from({ length: n }, (_, i) => ({ label: `ארון ${prefix}${i + 1}`, innerH: baseInner, shelfT, kinds, kind: i < drawerN ? 'drawers' : 'doors', countMax: 5, editable: true, note: '' })),
+    });
+    const upperRun = (key, title, total, n, prefix) => ({
+      key, title, total, sizeLabel: 'רוחב', allLabel: 'הארונות', modes: { next: 'מהארון הבא', prev: 'מהארון הקודם' },
+      items: Array.from({ length: n }, (_, i) => ({ label: `ארון ${prefix}${i + 1}`, innerH: upperInner, shelfT, cellsOf: 'shelves', defaultCount: Math.max(1, v.shelvesPerCabinet ?? 1), countMax: 4, editable: true, note: '' })),
+    });
+    const sections = [baseRun('baseA', isL ? 'תחתונים — הקיר האחורי' : 'ארונות תחתונים', (v.length ?? 3000) - C, v.cabinets ?? 1, v.drawerCabinets ?? 0, isL ? 'א' : 'ת')];
+    if (isL) sections.push(baseRun('baseB', 'תחתונים — הקיר השני', (v.lengthB ?? 2400) - C, v.cabinetsB ?? 1, v.drawerCabinetsB ?? 0, 'ב'));
+    if (v.uppers === 'yes') {
+      sections.push(upperRun('upperA', isL ? 'עליונים — הקיר האחורי' : 'ארונות עליונים', (v.length ?? 3000) - Cu, v.cabinets ?? 1, 'ע'));
+      if (isL) sections.push(upperRun('upperB', 'עליונים — הקיר השני', (v.lengthB ?? 2400) - Cu, v.cabinetsB ?? 1, 'עב'));
+    }
+    return { sections };
+  },
 
   build(v) {
     const parts = [], hardware = [], warnings = [];
@@ -122,7 +151,7 @@ export default {
      * תיבה רגילה לאורך X: x מהפינה, רוחב w. מחזירה { parts, hardware } בלי
      * להוסיף — כדי שאפשר יהיה להחליף צירים לפני ההוספה.
      */
-    const box = (prefix, x, w, y, h, d, { drawers, shelvesN, doorsOn, hingeDefault = 'left' }) => {
+    const box = (prefix, x, w, y, h, d, { drawers, shelvesN, doorsOn, hingeDefault = 'left', drawerHs = null, gaps = null }) => {
       const out = { parts: [], hardware: [] };
       const body = carcass({ w, d: d - bodyZ, z: bodyZ, y0: y, bottomY: y + shelfT, topY: y + h, sideT, panelT: shelfT, sidesOverTop: v.sidesOverTop === 'sides', material: v.bodyMaterial });
       const shift = (p) => ({ ...p, id: `${prefix}-${p.id}`, box: { ...p.box, x: p.box.x + x }, note: p.note || prefix });
@@ -132,18 +161,20 @@ export default {
       out.parts.push(...back({ mode: v.backMode, outer: { w, y0: y, y1: y + h }, inner, t: backT, grooveDepth: v.backGrooveDepth, inset: v.backInset, material: v.backMaterial }).parts
         .map((p) => ({ ...p, id: `${prefix}-${p.id}`, box: { ...p.box, x: v.backMode === 'overlay' ? p.box.x + x : p.box.x } })));
       if (drawers) {
-        const rowH = (inner.y1 - inner.y0) / drawers;
+        const hs = Array.isArray(drawerHs) && drawerHs.length === drawers ? drawerHs : Array.from({ length: drawers }, () => (inner.y1 - inner.y0) / drawers);
+        let ry = inner.y0;
         for (let r = 0; r < drawers; r++) {
+          const ry0 = ry, ry1 = ry + hs[r]; ry = ry1;
           const d2 = drawer({ id: `${prefix}-drawer-${r + 1}`, name: `${prefix} מגירה ${r + 1}`, x0: x, x1: x + w,
-            y0: inner.y0 + r * rowH - (r === 0 ? shelfT : 0), y1: inner.y0 + (r + 1) * rowH + (r === drawers - 1 ? shelfT : 0),
-            boxX0: inner.x0, boxX1: inner.x1, boxY0: inner.y0 + r * rowH, boxY1: inner.y0 + (r + 1) * rowH,
+            y0: ry0 - (r === 0 ? shelfT : 0), y1: ry1 + (r === drawers - 1 ? shelfT : 0),
+            boxX0: inner.x0, boxX1: inner.x1, boxY0: ry0, boxY1: ry1,
             zFront: z1, depth: Math.min(z1 - z0 - 20, 500), frontT, boxT: boardT(v.drawerBoxMaterial), bottomT: boardT(v.drawerBottomMaterial),
             frontMaterial: v.frontMaterial, boxMaterial: v.drawerBoxMaterial, bottomMaterial: v.drawerBottomMaterial, slide: v.slide, handle });
           out.parts.push(...d2.parts); out.hardware.push(...d2.hardware);
         }
       } else {
         const col = { x0: inner.x0, x1: inner.x1 };
-        const s = shelves({ col, y0: inner.y0, y1: inner.y1, z0, z1, count: shelvesN, t: shelfT, material: v.shelfMaterial, setback: adjustable ? 5 : 0, adjustable, colIndex: 0, prefix: `${prefix}-` });
+        const s = shelves({ col, y0: inner.y0, y1: inner.y1, z0, z1, count: shelvesN, t: shelfT, material: v.shelfMaterial, setback: adjustable ? 5 : 0, adjustable, colIndex: 0, prefix: `${prefix}-`, gaps });
         out.parts.push(...s.parts);
         if (adjustable) s.parts.forEach((p) => out.hardware.push({ id: `${p.id}-pins`, kind: 'shelf-pin', material: 'hw:shelf-pin', qty: 4, for: p.id }));
         if (doorsOn) {
@@ -219,21 +250,41 @@ export default {
         ? cornerBlind('פינה', v.plinthH, v.baseH, C, D, { shelvesN: v.shelvesPerCabinet })
         : cornerL('פינה', v.plinthH, v.baseH, C, D, { bifold: kind !== 'l-doors', carousel: kind === 'l-carousel', shelvesN: Math.max(1, v.shelvesPerCabinet) }));
     }
-    const runA = Lx - C, wA = runA / v.cabinets;
+    // החלוקה של כל שורת ארונות: רוחבים נעוצים/אוטומטיים, ולכל ארון סוג, מספר וגבהי תאים.
+    const spec = this.columnSpace(v);
+    const secOf = (key) => spec.sections.find((x) => x.key === key);
+    const runOf = (key, n) => {
+      const sec = secOf(key), lay = sectionLayout(v.columnsLayout, key, n);
+      const widths = resolveShares(sec.total, lay.widths);
+      const items = sec.items.map((it, i) => {
+        const c = lay.cols[i] || {};
+        const kind = it.kinds ? (c.kind || it.kind) : 'doors';
+        const kindObj = it.kinds?.find((k) => k.id === kind);
+        const count = Number.isInteger(c.shelves) ? c.shelves : (kindObj?.defaultCount ?? it.defaultCount ?? 0);
+        const { cells, free } = cellsOf({ ...it, cellsOf: kindObj?.cellsOf || it.cellsOf }, count);
+        const pinned = Array.isArray(c.gaps) && c.gaps.length === cells && c.gaps.some((g) => g !== null);
+        const sizes = pinned ? resolveShares(free, c.gaps) : null;
+        return kind === 'drawers' ? { drawers: Math.max(1, count), shelvesN: 0, drawerHs: sizes, gaps: null } : { drawers: 0, shelvesN: count, drawerHs: null, gaps: sizes };
+      });
+      return { widths, items };
+    };
+    const wAll = [];
+    const runA = runOf('baseA', v.cabinets);
+    let xA = C;
     for (const i of N(v.cabinets)) {
-      const prefix = isL ? `א${i}` : `ת${i}`;
-      const drawers = i <= v.drawerCabinets ? v.drawersPerCabinet : 0;
-      add(box(prefix, C + (i - 1) * wA, wA, v.plinthH, v.baseH, D, { drawers, shelvesN: v.shelvesPerCabinet, doorsOn: true, hingeDefault: 'left' }));
-      if (drawers && wA > LIMITS.drawerMaxWidth) warnings.push(`${prefix}: מגירה ברוחב ${Math.round(wA)} — מעבר ל-${LIMITS.drawerMaxWidth}`);
+      const prefix = isL ? `א${i}` : `ת${i}`, w = runA.widths[i - 1], it = runA.items[i - 1];
+      add(box(prefix, xA, w, v.plinthH, v.baseH, D, { ...it, doorsOn: true, hingeDefault: 'left' }));
+      if (it.drawers && w > LIMITS.drawerMaxWidth) warnings.push(`${prefix}: מגירה ברוחב ${Math.round(w)} — מעבר ל-${LIMITS.drawerMaxWidth}`);
+      wAll.push(w); xA += w;
     }
-    let wB = 0;
     if (isL) {
-      const runB = Lz - C; wB = runB / v.cabinetsB;
+      const runB = runOf('baseB', v.cabinetsB);
+      let xB = C;
       for (const i of N(v.cabinetsB)) {
-        const prefix = `ב${i}`;
-        const drawers = i <= v.drawerCabinetsB ? v.drawersPerCabinet : 0;
-        add(swapXZ(box(prefix, C + (i - 1) * wB, wB, v.plinthH, v.baseH, D, { drawers, shelvesN: v.shelvesPerCabinet, doorsOn: true, hingeDefault: 'right' })));
-        if (drawers && wB > LIMITS.drawerMaxWidth) warnings.push(`${prefix}: מגירה ברוחב ${Math.round(wB)} — מעבר ל-${LIMITS.drawerMaxWidth}`);
+        const prefix = `ב${i}`, w = runB.widths[i - 1], it = runB.items[i - 1];
+        add(swapXZ(box(prefix, xB, w, v.plinthH, v.baseH, D, { ...it, doorsOn: true, hingeDefault: 'right' })));
+        if (it.drawers && w > LIMITS.drawerMaxWidth) warnings.push(`${prefix}: מגירה ברוחב ${Math.round(w)} — מעבר ל-${LIMITS.drawerMaxWidth}`);
+        wAll.push(w); xB += w;
       }
     }
     // סוקל: רצועה לכל קיר
@@ -250,20 +301,22 @@ export default {
     if (v.uppers === 'yes') {
       const uy = baseTop + topT + v.upperGap, Cu = isL ? v.cornerUpperSize : 0, Du = v.upperD;
       if (isL) add(cornerL('פינה-ע', uy, v.upperH, Cu, Du, { bifold: v.cornerType !== 'l-doors' && v.cornerType !== 'blind', carousel: false, shelvesN: 1 }));
-      const uwA = (Lx - Cu) / v.cabinets;
-      for (const i of N(v.cabinets)) add(box(`ע${i}`, Cu + (i - 1) * uwA, uwA, uy, v.upperH, Du, { drawers: 0, shelvesN: Math.max(1, v.shelvesPerCabinet), doorsOn: true, hingeDefault: 'left' }));
+      const upA = runOf('upperA', v.cabinets);
+      let ux = Cu;
+      for (const i of N(v.cabinets)) { const w = upA.widths[i - 1], it = upA.items[i - 1]; add(box(`ע${i}`, ux, w, uy, v.upperH, Du, { drawers: 0, shelvesN: Math.max(1, it.shelvesN), gaps: it.shelvesN >= 1 ? it.gaps : null, doorsOn: true, hingeDefault: 'left' })); ux += w; }
       if (isL) {
-        const uwB = (Lz - Cu) / v.cabinetsB;
-        for (const i of N(v.cabinetsB)) add(swapXZ(box(`עב${i}`, Cu + (i - 1) * uwB, uwB, uy, v.upperH, Du, { drawers: 0, shelvesN: Math.max(1, v.shelvesPerCabinet), doorsOn: true, hingeDefault: 'right' })));
+        const upB = runOf('upperB', v.cabinetsB);
+        let uxB = Cu;
+        for (const i of N(v.cabinetsB)) { const w = upB.widths[i - 1], it = upB.items[i - 1]; add(swapXZ(box(`עב${i}`, uxB, w, uy, v.upperH, Du, { drawers: 0, shelvesN: Math.max(1, it.shelvesN), gaps: it.shelvesN >= 1 ? it.gaps : null, doorsOn: true, hingeDefault: 'right' }))); uxB += w; }
       }
       H = uy + v.upperH;
     }
 
     if (isL && v.cornerSide === 'right') mirrorX(all, Lx);
 
-    const minW = Math.min(wA, isL ? wB : wA);
+    const minW = Math.min(...wAll), maxW = Math.max(...wAll);
     if (minW < 300) warnings.push(`ארון ברוחב ${Math.round(minW)} מ"מ — צר מ-300`);
-    if (Math.max(wA, isL ? wB : 0) > 1000) warnings.push('ארונות רחבים מ-1000 — דלתות כפולות ומדפים ארוכים; כדאי יותר ארונות');
+    if (maxW > 1000) warnings.push('ארונות רחבים מ-1000 — דלתות כפולות ומדפים ארוכים; כדאי יותר ארונות');
     if (isL && C < D + 300) warnings.push(`מידת הפינה ${C} קטנה מעומק הארון + 300 — הדלתות ייצאו צרות`);
     if (v.uppers === 'yes' && H > 2300) warnings.push(`גובה כולל ${Math.round(H)} מ"מ — מעל 2300 קשה להגיע למדף העליון`);
     return { parts, hardware, warnings, bounds: { w: Lx, h: H, d: Math.max(isL ? Lz : 0, topD, D + frontT) } };

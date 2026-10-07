@@ -11,7 +11,7 @@
 
 import { carcass, partitions, shelves, back, plinth, crown, door, part } from '../blocks.js';
 import { material } from '../materials.js';
-import { resolveShares, normalizeLayout } from '../layout.js';
+import { resolveShares, sectionLayout, cellsOf } from '../layout.js';
 import { materialParams, joineryParams, FINISHES, FINISHES_NO_GLASS, applyFinish, sameOrMaterial, resolveSame } from './common.js';
 
 const DOOR_OPTIONS = [{ id: 'none', name: 'ללא' }, { id: 'wood', name: 'עץ' }, { id: 'glass', name: 'ויטרינה' }];
@@ -74,15 +74,17 @@ export default {
     return v;
   },
 
-  /** לעורך העמודות בטופס: כמה עמודות, הרוחב הפנוי לחלוקה ביניהן, ולכל עמודה הגובה הפנוי לתאים. */
+  /** לעורך החלוקה: קבוצה אחת — העמודות; לכל עמודה הגובה הפנוי לתאים (עמודה מפוצלת לא נערכת). */
   columnSpace(v) {
     const sideT = v.sideT ?? 18, shelfT = v.shelfT ?? 18, columns = v.columns ?? 1;
     const bottomY = Math.max(v.plinthH ?? 0, 0) + shelfT, topY = (v.height ?? 2000) - (v.crownH ?? 0);
     const innerH = topY - shelfT - bottomY;
     const innerW = (v.width ?? 1200) - 2 * sideT - (columns - 1) * sideT;
     const split = (v.lowerH ?? 0) > 0 && v.lowerH < topY - bottomY - 100;
-    const cols = Array.from({ length: columns }, () => ({ innerH, defaultShelves: v.shelvesPerColumn ?? 0, editable: !split, note: split ? 'העמודה מפוצלת — הגבהים מתחלקים לפי הפיצול' : '' }));
-    return { columns, innerW, shelfT, cols };
+    return { sections: [{
+      key: 'main', title: '', total: innerW, sizeLabel: 'רוחב', allLabel: 'העמודות', modes: { next: 'מהעמודה שמימין', prev: 'מהעמודה שמשמאל' },
+      items: Array.from({ length: columns }, (_, i) => ({ label: `עמודה ${i + 1}`, innerH, shelfT, cellsOf: 'shelves', defaultCount: v.shelvesPerColumn ?? 0, countMax: 15, editable: !split, note: split ? 'העמודה מפוצלת — הגבהים מתחלקים לפי הפיצול' : '' })),
+    }] };
   },
 
   // ספי האזהרות. יושבים בתבנית ואפשר לדרוס אותם בסוג המוצר.
@@ -135,7 +137,7 @@ export default {
     }
 
     // פריסת עמודות: רוחב לכל עמודה (נעוץ או אוטומטי), מספר מדפים לכל עמודה, וגבהי התאים (מלמטה למעלה).
-    const layout = normalizeLayout(v.columnsLayout, v.columns);
+    const layout = sectionLayout(v.columnsLayout, 'main', v.columns);
     const widths = resolveShares(inner.x1 - inner.x0 - (v.columns - 1) * sideT, layout.widths);
     const cols = partitions({ inner, columns: v.columns, t: sideT, material: innerMat, widths });
     parts.push(...cols.parts);
