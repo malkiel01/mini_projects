@@ -17,13 +17,17 @@ export function createViewer(canvas, { onPick } = {}) {
   const camera = new THREE.PerspectiveCamera(38, 1, 5, 40000);
   const ray = new THREE.Raycaster();
 
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x6b6560, 0.9));
-  const sun = new THREE.DirectionalLight(0xffffff, 0.6);
+  // צבעי הרשת וקווי המתאר באים מערכת הנושא ב-CSS, לא מכאן.
+  const css = getComputedStyle(document.documentElement);
+  const cssColor = (name, fallback) => new THREE.Color(css.getPropertyValue(name).trim() || fallback);
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0xcdbfa9, 0.95));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.55);
   sun.position.set(-1500, 3000, 2500);
   scene.add(sun);
 
   // הרצפה: רשת עדינה שנותנת קנה מידה ותחושת כובד.
-  const grid = new THREE.GridHelper(6000, 60, 0x57534e, 0x3f3b37);
+  const grid = new THREE.GridHelper(6000, 60, cssColor('--grid-major', '#cdbfa9'), cssColor('--grid-minor', '#e2d8c8'));
   grid.position.y = -0.5;
   scene.add(grid);
 
@@ -131,7 +135,7 @@ export function createViewer(canvas, { onPick } = {}) {
   }
 
   // קווי מתאר דקים לכל לוח: בלעדיהם שני לוחות באותו חומר נבלעים זה בזה.
-  const edgeMat = new THREE.LineBasicMaterial({ color: 0x1c1917, transparent: true, opacity: 0.35 });
+  const edgeMat = new THREE.LineBasicMaterial({ color: cssColor('--edge-line', '#4a3a2c'), transparent: true, opacity: 0.3 });
 
   function setModel(model) {
     while (group.children.length) {
