@@ -80,10 +80,10 @@ export function estimate(model, rates = {}) {
     hwBy.set(h.material, r);
   }
   for (const r of hwBy.values()) {
-    const { price, mine, name } = priceOf(r.id);
+    const { price, mine, name, unit } = priceOf(r.id);
     const total = r.qty * price;
     hardwareTotal += total;
-    lines.push({ group: 'פרזול', name, qty: r.qty, unit: 'יח׳', unitPrice: price, total: round(total), mine });
+    lines.push({ group: 'פרזול', name, qty: round(r.qty), unit: unit === 'm' ? 'מ׳' : 'יח׳', unitPrice: price, total: round(total), mine });
   }
 
   const laborHours = template.laborHours || 0;

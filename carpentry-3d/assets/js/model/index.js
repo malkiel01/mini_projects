@@ -63,7 +63,8 @@ export function clamp(p, value) {
 /** האם פרמטר מוצג לפי הערכים הנוכחיים (showIf). */
 export function visible(p, values) {
   if (!p.showIf) return true;
-  return Object.entries(p.showIf).every(([k, allowed]) => allowed.includes(values[k]));
+  // 'gt0' — מוצג כשהערך המספרי גדול מאפס (למשל "דלתות החלק התחתון" רק כשיש פיצול)
+  return Object.entries(p.showIf).every(([k, allowed]) => allowed === 'gt0' ? Number(values[k]) > 0 : allowed.includes(values[k]));
 }
 
 /** בונה מופע: תבנית + ערכים → חלקים, פרזול, אזהרות. הערכים מוצמדים לטווחים קודם. */

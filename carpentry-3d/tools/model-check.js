@@ -148,7 +148,7 @@ console.log('לוחות וסידור');
 console.log('כל התבניות: ברירת מחדל ותצורות');
 {
   const variants = {
-    bookcase: [{}, { doorType: 'wood', crownH: 60 }],
+    bookcase: [{}, { doorType: 'wood', crownH: 60 }, { lowerH: 900, lowerDoors: 'wood', doorType: 'glass', doorFinish: 'fluted', glassColumns: 'first', glassSides: 'left', led: 'sides' }, { glassColumns: 'all', glassSides: 'both', led: 'shelves', shelvesMode: 'fixed' }],
     wardrobe: [{}, { doorType: 'wood', drawersPerColumn: 2 }, { doorType: 'sliding', slidingLeaves: 3, hangingColumns: 3, columns: 3 }, { columns: 1, hangingColumns: 0, shelvesPerColumn: 6 }],
     dresser: [{}, { drawerColumns: 2, drawerRows: 3, topRowH: 150 }, { backMode: 'overlay', plinthH: 0 }],
     table: [{}, { apronH: 0 }, { stretcher: 'h', length: 2400 }],
@@ -282,6 +282,24 @@ console.log('חיפוי קיר');
   check(corner, 'פינה חיצונית: הקצה מכוסה (אין חור בפינה)');
   const flat = build('cladding', { style: 'flat', len1: 5000 });
   check(flat.parts.filter((p) => p.name === 'לוח חיפוי').length === 5, 'לוחות רצופים: 5000 → 5 לוחות עד 1200');
+}
+
+console.log('ספרייה: פיצול, ויטרינות, דפנות זכוכית, לד');
+{
+  const r = build('bookcase', { width: 1500, columns: 3, lowerH: 900, lowerDoors: 'wood', doorType: 'glass', doorFinish: 'fluted', glassColumns: 'first', glassSides: 'left', led: 'sides' });
+  const ids = r.parts.map((p) => p.id);
+  check(ids.includes('door-1-stile-L') && ids.includes('door-1-glass') && !ids.some((x) => x.startsWith('door-1-lo')), 'עמודה 1: ויטרינה מלאה (בלי פיצול)');
+  check(ids.includes('door-2-lo') && ids.includes('door-2-up-stile-L'), 'עמודה 2: דלת עץ למטה, ויטרינה למעלה');
+  check(ids.includes('split-shelf-2-1') && !ids.includes('split-shelf-1-1'), 'מדף קבוע בפיצול — רק בעמודות המפוצלות');
+  const flutes = r.parts.filter((p) => p.id.startsWith('door-2-lo-flute'));
+  check(flutes.length > 10 && flutes.every((p) => p.motion === r.parts.find((q) => q.id === 'door-2-lo').motion), `סטריפים על דלת העץ, נעים איתה (${flutes.length})`);
+  check(ids.includes('side-L-glass') && ids.includes('side-L-stile-F') && !ids.includes('side-L') && ids.includes('side-R'), 'דופן שמאל: זכוכית בין זקפים; ימין לוח');
+  check(r.hardware.filter((h) => h.kind === 'led').length === 6 && r.hardware.find((h) => h.kind === 'led').qty > 1, '6 פסי לד אנכיים, במטרים');
+  const lo = r.parts.find((p) => p.id === 'door-2-lo'), up = r.parts.find((p) => p.id === 'door-2-up-stile-L');
+  check(Math.abs(lo.box.y + lo.box.h + 2 - up.box.y) < 0.01, 'הדלת העליונה מתחילה איפה שהתחתונה נגמרת');
+  const sh = build('bookcase', { led: 'shelves' });
+  check(sh.hardware.filter((h) => h.kind === 'led' && h.horizontal).length === 12, 'לד מתחת לכל מדף: 12');
+  check(build('bookcase', { lowerH: 5000 }).warnings.some((w) => w.includes('הפיצול בוטל')), 'פיצול גבוה מדי — אזהרה וביטול');
 }
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }
