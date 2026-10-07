@@ -7,7 +7,7 @@
 import { carcass, partitions, shelves, back, plinth, crown, door, drawer, rod, slidingDoors } from '../blocks.js';
 import { material } from '../materials.js';
 import { resolveShares, sectionLayout } from '../layout.js';
-import { materialParams, doorParams, drawerParams, joineryParams, boardT, bodyWarnings, LIMITS, FINISHES_NO_GLASS, applyFinish, sameOrMaterial, resolveSame } from './common.js';
+import { wheelsParam, addWheels, materialParams, doorParams, drawerParams, joineryParams, boardT, bodyWarnings, LIMITS, FINISHES_NO_GLASS, applyFinish, sameOrMaterial, resolveSame } from './common.js';
 
 export default {
   key: 'wardrobe',
@@ -40,6 +40,7 @@ export default {
     { key: 'plinthH', label: 'סוקל — גובה', type: 'mm', min: 0, max: 200, default: 80, group: 'סיומות' },
     { key: 'plinthSetback', label: 'סוקל — נסיגה', type: 'mm', min: 0, max: 100, default: 30, group: 'סיומות' },
     { key: 'crownH', label: 'כרכוב — גובה', type: 'mm', min: 0, max: 200, default: 0, group: 'סיומות' },
+    wheelsParam(),
 
     ...doorParams({ sliding: true, glass: false, height: false }),
     { key: 'rodMaterial', label: 'מוט תלייה', type: 'enum', default: 'hw:rod-chrome', group: 'מגירות', options: [{ id: 'hw:rod-chrome', name: 'כרום' }] },
@@ -166,6 +167,7 @@ export default {
     const shift = sideExtra(v.sideLeftFinish);
     if (shift) { for (const p of parts) p.box = { ...p.box, x: p.box.x + shift }; for (const h of hardware) if (h.pos) h.pos = [h.pos[0] + shift, h.pos[1], h.pos[2]]; for (const p of parts) if (p.motion && p.motion.kind === 'hinge' && !p.motion.shifted) p.motion = { ...p.motion, pivot: [p.motion.pivot[0] + shift, p.motion.pivot[1], p.motion.pivot[2]], shifted: true }; }
     const extraD = (sliding ? 2 * doorT + 4 : doorT) + (v.doorType === 'wood' && v.doorFinish.startsWith('fluted') ? 10 : 0);
-    return { parts, hardware, warnings, bounds: { w: W + shift + sideExtra(v.sideRightFinish), h: H, d: D + extraD } };
+    const lift = addWheels(parts, hardware, v, { x0: shift, x1: shift + W, y0: 0, z0: bodyZ, z1: bodyZ + bodyD });
+    return { parts, hardware, warnings, bounds: { w: W + shift + sideExtra(v.sideRightFinish), h: H + lift, d: D + extraD } };
   },
 };

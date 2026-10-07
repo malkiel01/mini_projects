@@ -2,6 +2,7 @@
 // ספי האזהרות, ועזרים קטנים. תבנית מרכיבה מהן את הרשימה שלה.
 
 import { material } from '../materials.js';
+import { wheelHeight } from '../accessories.js';
 import { part } from '../blocks.js';
 
 export const boardT = (id) => material(id).t || 18;
@@ -29,12 +30,54 @@ export function doorParams({ sliding = false, glass = true, height = true } = {}
   if (height) out.push({ key: 'doorHeight', label: 'גובה הדלתות', type: 'mm', min: 0, max: 3000, default: 0, group: 'דלתות', hint: '0 = לכל הגובה', showIf: { doorType: ['wood', 'glass'] } });
   out.push({ key: 'doorMaterial', label: 'חומר הדלתות', type: 'material', kind: 'board', back: false, solid: false, top: false, default: 'board:mdf-paint-18', group: 'דלתות', showIf: show });
   if (glass) out.push({ key: 'glassType', label: 'זכוכית', type: 'material', kind: 'glass', default: 'glass:clear-4', group: 'דלתות', showIf: { doorType: ['glass'] } });
-  out.push({ key: 'hinge', label: 'צירים', type: 'enum', default: 'hw:hinge-110', group: 'דלתות', showIf: { doorType: ['wood', 'glass'] },
-    options: [{ id: 'hw:hinge-110', name: '110°' }, { id: 'hw:hinge-165', name: '165°' }, { id: 'hw:hinge-glass', name: 'לוויטרינה' }] });
+  out.push(hingeParam({ showIf: { doorType: ['wood', 'glass'] } }));
   if (sliding) out.push({ key: 'slidingLeaves', label: 'כנפי הזזה', type: 'int', min: 2, max: 4, default: 2, group: 'דלתות', showIf: { doorType: ['sliding'] } });
-  out.push({ key: 'handle', label: 'ידיות', type: 'enum', default: 'hw:handle-bar-128', group: 'דלתות', showIf: show,
-    options: [{ id: 'none', name: 'ללא (לחיצה)' }, { id: 'hw:handle-bar-128', name: 'מוט 128' }, { id: 'hw:handle-knob', name: 'כפתור' }] });
+  out.push(handleParam({ showIf: show }));
   return out;
+}
+
+/** ידיות וכפתורים — מהאביזרים שבספרייה (מסך "אביזרים"). */
+export function handleParam(extra = {}) {
+  return { key: 'handle', label: 'ידיות', type: 'material', kind: 'hardware', role: 'handle', allowNone: true, noneLabel: 'ללא (לחיצה)', default: 'hw:handle-bar-128', group: 'דלתות', ...extra };
+}
+/** צירים — מהאביזרים שבספרייה. */
+export function hingeParam(extra = {}) {
+  return { key: 'hinge', label: 'צירים', type: 'material', kind: 'hardware', role: 'hinge', default: 'hw:hinge-110', group: 'דלתות', ...extra };
+}
+/** גלגלים — אופציונלי; המודל מורם בגובה הגלגל. */
+export function wheelsParam(extra = {}) {
+  return { key: 'wheels', label: 'גלגלים', type: 'material', kind: 'hardware', role: 'wheel', allowNone: true, noneLabel: 'ללא', default: 'none', group: 'סיומות', hint: 'ארבעה גלגלים בפינות התחתית; המודל מורם בגובהם', ...extra };
+}
+
+/**
+ * גלגלים: ארבעה בפינות התחתית של הגוף (x0..x1 × z0..z1, בגובה y0), וכל
+ * המודל מורם בגובה הגלגל. מחזיר את ההרמה (0 בלי גלגלים).
+ */
+export function addWheels(parts, hardware, v, { x0, x1, y0, z0, z1, inset = 60 }) {
+  if (!v.wheels || v.wheels === 'none') return 0;
+  const m = material(v.wheels);
+  const lift = wheelHeight(m);
+  if (!lift) return 0;
+  liftAll(parts, hardware, lift);
+  const ins = Math.min(inset, (x1 - x0) / 4, (z1 - z0) / 4);
+  let k = 1;
+  for (const x of [x0 + ins, x1 - ins]) for (const z of [z0 + ins, z1 - ins]) {
+    hardware.push({ id: `wheel-${k++}`, kind: 'wheel', material: v.wheels, pos: [x, y0 + lift, z], qty: 1 });
+  }
+  return lift;
+}
+/** מרים את כל החלקים, הפרזול וצירי התנועה ב-dy. */
+export function liftAll(parts, hardware, dy) {
+  if (!dy) return;
+  const seen = new Map();
+  for (const p of parts) {
+    p.box = { ...p.box, y: p.box.y + dy };
+    if (p.motion && p.motion.kind === 'hinge') {
+      if (!seen.has(p.motion)) seen.set(p.motion, { ...p.motion, pivot: [p.motion.pivot[0], p.motion.pivot[1] + dy, p.motion.pivot[2]] });
+      p.motion = seen.get(p.motion);
+    }
+  }
+  for (const h of hardware) if (h.pos) h.pos = [h.pos[0], h.pos[1] + dy, h.pos[2]];
 }
 
 /** מגירות: ארגז, תחתית, מסילות. */

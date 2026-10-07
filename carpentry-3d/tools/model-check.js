@@ -10,6 +10,7 @@ import * as M from '../assets/js/model/materials.js';
 import { estimate } from '../assets/js/model/pricing.js';
 import { resolveShares, editShare, normalizeLayout, layoutIsEmpty } from '../assets/js/model/layout.js';
 import { placeModel, combine, snapTo } from '../assets/js/model/assembly.js';
+import { TYPES, buildAccessory, paramsOf, faceOf, wheelHeight, FINISHES as ACC_FINISHES } from '../assets/js/model/accessories.js';
 import { nest, sheetCount } from '../assets/js/model/sheets.js';
 
 let failed = 0;
@@ -506,6 +507,42 @@ console.log('הרכבה: הנחה, סיבוב, איחוד, הצמדה');
   check(hidden.parts.length === low.parts.length && hidden.items.length === 2 && !hidden.items[1].visible, 'אלמנט מוסתר: לא בחלקים, כן ברשימת הפריטים');
   const e = estimate(c, {});
   check(e.total > estimate(low, {}).total && e.labor.hours === c.template.laborHours, 'מחיר ההרכבה גדול ממחיר המזווה לבדו');
+}
+
+console.log('אביזרים: ידיות, כפתורים, צירים, גלגלים');
+{
+  const finite = (prims) => prims.every((pr) => pr.pos.every(Number.isFinite) && pr.size.every((x) => Number.isFinite(x) && x > 0) && pr.finish && pr.finish.color !== undefined);
+  for (const t of TYPES) {
+    const a = buildAccessory({ accessory: { type: t.id, params: {}, finish: 'chrome' } }, { side: 'right' });
+    const lo = buildAccessory({ accessory: { type: t.id, params: Object.fromEntries(t.params.map((p) => [p.key, p.min])), finish: 'black' } });
+    const hi = buildAccessory({ accessory: { type: t.id, params: Object.fromEntries(t.params.map((p) => [p.key, p.max])), finish: 'brass' } });
+    check(a && a.prims.length > 0 && finite(a.prims) && finite(lo.prims) && finite(hi.prims) && a.type.kind === t.kind, `${t.id} (${t.name}): ${a ? a.prims.length : 0} גופים, גם בקצוות הטווח`);
+  }
+  check(paramsOf(TYPES[0], { length: 5000, diameter: 'x' }).length === 1200 && paramsOf(TYPES[0], {}).diameter === 10, 'paramsOf: הצמדה לטווח וברירות מחדל');
+  check(buildAccessory({ accessory: { type: 'no-such' } }) === null && buildAccessory({}) === null, 'חומר בלי מתכון → null');
+  const conc = buildAccessory(M.material('hw:hinge-110'), { side: 'left' });
+  check(conc.prims.filter((p) => p.moving).length === 2 && conc.prims.filter((p) => !p.moving).length === 2 && conc.prims.find((p) => !p.moving).pos[0] < 0, 'ציר נסתר: כוס וזרוע נעים עם הדלת, גוף ופלטה בצד הציר (שמאל = -x)');
+  const b = { x: 100, y: 0, z: 50, w: 400, h: 700, d: 18 };
+  check(faceOf(b, [300, 350, 68]) === '+z' && faceOf(b, [300, 350, 50]) === '-z' && faceOf({ x: 0, y: 0, z: 0, w: 18, h: 700, d: 400 }, [18, 300, 200]) === '+x' && faceOf(b, [300, 0, 60]) === '-y', 'faceOf: חזית, אחור, צד ימין, תחתית');
+  check(M.materialsOfRole('handle').length >= 12 && M.materialsOfRole('hinge').length >= 4 && M.materialsOfRole('wheel').length >= 4 && M.materialsOfRole('handle').every((m) => m.accessory), 'הספרייה: תפקידים לפי סוג האביזר');
+  const opts = optionsFor({ type: 'material', kind: 'hardware', role: 'handle', allowNone: true });
+  check(opts[0].id === 'none' && opts.some((o) => o.id === 'hw:handle-bar-320-brass'), 'אפשרויות ידית: "ללא" + האביזרים');
+  check(wheelHeight(M.material('hw:caster-swivel-50')) === 62 && wheelHeight(M.material('hw:caster-brake-75')) > wheelHeight(M.material('hw:caster-swivel-50')) && wheelHeight(M.material('hw:handle-knob')) === 0, `גובה גלגל 50: ${wheelHeight(M.material('hw:caster-swivel-50'))}; לא-גלגל = 0`);
+  // גלגלים על שידה: הכול מורם, 4 גלגלים בפינות, הגבולות גדלים
+  const d0 = build('dresser', { width: 1000, height: 850 }), d1 = build('dresser', { width: 1000, height: 850, wheels: 'hw:caster-swivel-50' });
+  const lift = wheelHeight(M.material('hw:caster-swivel-50'));
+  const wheels = d1.hardware.filter((h) => h.kind === 'wheel');
+  check(wheels.length === 4 && wheels.every((h) => h.pos[1] === lift) && d1.bounds.h === d0.bounds.h + lift, 'שידה על גלגלים: 4 גלגלים בגובה ההרמה, הגבולות גדלים');
+  check(d1.parts.find((p) => p.id === 'side-L').box.y === d0.parts.find((p) => p.id === 'side-L').box.y + lift && d1.parts.every((p) => p.box.y >= lift - 0.01), 'כל החלקים מורמים');
+  const h0 = d0.hardware.find((h) => h.kind === 'handle'), h1 = d1.hardware.find((h) => h.kind === 'handle');
+  check(h1.pos[1] === h0.pos[1] + lift, 'הידיות מורמות עם המגירות');
+  const bk = build('bookcase', { doorType: 'wood', handle: 'hw:handle-bar-320-brass', hinge: 'hw:hinge-butt', wheels: 'hw:caster-brake-75' });
+  check(bk.values.handle === 'hw:handle-bar-320-brass' && bk.values.hinge === 'hw:hinge-butt' && bk.hardware.some((h) => h.material === 'hw:handle-bar-320-brass') && bk.hardware.filter((h) => h.kind === 'wheel').length === 4, 'ספרייה: ידית, ציר וגלגלים מהאביזרים');
+  const none = build('bookcase', { doorType: 'wood', handle: 'none', wheels: 'none' });
+  check(none.values.handle === 'none' && !none.hardware.some((h) => h.kind === 'handle') && none.values.wheels === 'none', '"ללא" לידיות ולגלגלים');
+  const tb = build('table', { wheels: 'hw:caster-fixed-50' });
+  check(tb.hardware.filter((h) => h.kind === 'wheel').length === 4 && tb.bounds.h === 750 + wheelHeight(M.material('hw:caster-fixed-50')), 'שולחן על גלגלים');
+  check(ACC_FINISHES.length >= 6, 'גימורים');
 }
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }

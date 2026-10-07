@@ -8,6 +8,8 @@
 import { material, libraryVersion } from './model/materials.js';
 import { cutSize } from './model/blocks.js';
 import { textureForPart, clearTextures } from './textures.js';
+import { buildAccessory, faceOf, rotationForNormal, localXOf } from './model/accessories.js';
+import { accessoryGroup } from './accessory-mesh.js';
 
 const T = () => window.THREE;
 
@@ -245,17 +247,41 @@ export function createViewer(canvas, { onPick } = {}) {
     for (const h of model.hardware) {
       if (!h.pos) continue;
       let mesh;
-      if (h.kind === 'hinge') {
+      const owner = h.for && partNodes.get(h.for);
+      const acc = ['hinge', 'handle', 'wheel'].includes(h.kind) ? buildAccessory(material(h.material), { side: hingeSideOf(h, owner) }) : null;
+      if (acc) {
+        // אביזר אמיתי: קבוצת גופים במערכת מקומית, מסובבת אל הפאה שהוא יושב עליה.
+        // ידית אנכית על דלת: המוט מסתובב 90° סביב הנורמל. מה שנע עם הדלת נכנס לצומת שלה.
+        const normal = h.kind === 'wheel' ? '-y' : ownerFace(h, owner);
+        const place = (g) => {
+          g.position.set(h.pos[0], h.pos[1], h.pos[2]);
+          const r = rotationForNormal(normal);
+          g.rotation.set(r[0], r[1], r[2]);
+          if (h.kind === 'handle' && !h.horizontal && acc.type.kind === 'handle') g.rotateZ(Math.PI / 2);
+          if (h.kind === 'handle' && acc.type.id === 'edge-profile' && owner) {
+            // פרופיל קצה: יושב על הקצה העליון של הדלת/המגירה, לא באמצעה
+            const b = owner.part.box;
+            g.position.set(b.x + b.w / 2, b.y + b.h - acc.params.height / 2, h.pos[2]);
+            g.rotation.set(r[0], r[1], r[2]);
+          }
+          return g;
+        };
+        if (h.kind === 'hinge' && owner && owner.part.motion) {
+          const moving = place(accessoryGroup(THREE, acc, (pr) => pr.moving));
+          const p = owner.part;
+          moving.position.sub(new THREE.Vector3(p.box.x + p.box.w / 2, p.box.y + p.box.h / 2, p.box.z + p.box.d / 2));
+          owner.node.add(moving);
+          group.add(place(accessoryGroup(THREE, acc, (pr) => !pr.moving)));
+          continue;
+        }
+        mesh = place(accessoryGroup(THREE, acc));
+      } else if (h.kind === 'hinge') {
         mesh = new THREE.Mesh(new THREE.CylinderGeometry(17, 17, 12, 20), new THREE.MeshStandardMaterial({ color: 0x9ca3af, metalness: 0.6, roughness: 0.4 }));
         mesh.rotation.x = Math.PI / 2;
         mesh.position.set(h.pos[0], h.pos[1], h.pos[2] - 6);
       } else if (h.kind === 'handle') {
-        const knob = h.material === 'hw:handle-knob';
-        mesh = new THREE.Mesh(
-          knob ? new THREE.SphereGeometry(12, 16, 12) : (h.horizontal ? new THREE.BoxGeometry(140, 12, 12) : new THREE.BoxGeometry(12, 140, 12)),
-          new THREE.MeshStandardMaterial({ color: 0x374151, metalness: 0.7, roughness: 0.3 }),
-        );
-        mesh.position.set(h.pos[0], h.pos[1], h.pos[2] + (knob ? 12 : 20));
+        mesh = new THREE.Mesh(h.horizontal ? new THREE.BoxGeometry(140, 12, 12) : new THREE.BoxGeometry(12, 140, 12), new THREE.MeshStandardMaterial({ color: 0x374151, metalness: 0.7, roughness: 0.3 }));
+        mesh.position.set(h.pos[0], h.pos[1], h.pos[2] + 20);
       } else if (h.kind === 'led') {
         // פס לד: תיבה דקה עם חומר זוהר (emissive), אנכית לאורך הדופן או אופקית מתחת למדף
         const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff4d6, emissiveIntensity: 1.6, roughness: 0.4 });
@@ -268,7 +294,6 @@ export function createViewer(canvas, { onPick } = {}) {
         mesh.position.set(h.pos[0] + h.len / 2, h.pos[1], h.pos[2]);
       }
       if (!mesh) continue;
-      const owner = h.for && partNodes.get(h.for);
       if (owner && owner.part.motion && h.kind !== 'hinge') {
         // ידית על דלת/מגירה: לתוך הצומת של החלק, בקואורדינטות יחסיות למרכזו
         const p = owner.part;
@@ -277,6 +302,23 @@ export function createViewer(canvas, { onPick } = {}) {
       } else group.add(mesh);
     }
     if (onPick) onPick(null);
+  }
+
+  /** הפאה של הדלת/המגירה שהאביזר יושב עליה; ציר יושב על הפאה האחורית — הנורמל שלו הוא ההפך. */
+  function ownerFace(h, owner) {
+    if (!owner) return '+z';
+    const f = faceOf(owner.part.box, h.pos);
+    if (h.kind !== 'hinge') return f;
+    return { '+z': '-z', '-z': '+z', '+x': '-x', '-x': '+x', '+y': '-y', '-y': '+y' }[f];
+  }
+  /** מאיזה צד של הדלת הציר (במערכת המקומית של האביזר): לפי מיקומו ביחס למרכז הדלת. */
+  function hingeSideOf(h, owner) {
+    if (h.kind !== 'hinge' || !owner) return 'left';
+    const b = owner.part.box;
+    const n = { '+z': '-z', '-z': '+z', '+x': '-x', '-x': '+x', '+y': '-y', '-y': '+y' }[faceOf(b, h.pos)];
+    const lx = localXOf(n);
+    const dx = h.pos[0] - (b.x + b.w / 2), dz = h.pos[2] - (b.z + b.d / 2);
+    return dx * lx[0] + dz * lx[2] < 0 ? 'left' : 'right';
   }
 
   /** ממקם את המצלמה כך שכל הגוף נראה, ממבט איזומטרי מהחזית. */

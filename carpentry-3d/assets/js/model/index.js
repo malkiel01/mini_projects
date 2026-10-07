@@ -12,7 +12,7 @@ import table from './templates/table.js';
 import bed from './templates/bed.js';
 import cladding from './templates/cladding.js';
 import { cutSize } from './blocks.js';
-import { material, materialsOfKind } from './materials.js';
+import { material, materialsOfKind, materialsOfRole } from './materials.js';
 
 export const TEMPLATES = { bookcase, wardrobe, dresser, kitchen, table, bed, cladding };
 
@@ -37,7 +37,8 @@ export function defaults(t) {
 /** אפשרויות הבחירה של פרמטר: לרשימה קבועה (enum) או מהספרייה החיה (material). */
 export function optionsFor(p) {
   if (p.type === 'material') {
-    const list = materialsOfKind(p.kind, { back: p.back, solid: p.solid, top: p.top }).map((m) => ({ id: m.id, name: m.name }));
+    const list = (p.role ? materialsOfRole(p.role) : materialsOfKind(p.kind, { back: p.back, solid: p.solid, top: p.top })).map((m) => ({ id: m.id, name: m.name }));
+    if (p.allowNone) list.unshift({ id: 'none', name: p.noneLabel || 'ללא' });
     return p.allowSame ? [{ id: 'same', name: 'כמו הגוף' }, ...list] : list;
   }
   return p.options || [];
@@ -55,6 +56,7 @@ export function clamp(p, value) {
   if (p.type === 'json') return value && typeof value === 'object' ? value : (p.default ?? null);
   if (p.type === 'material') {
     if (p.allowSame && (value === 'same' || value === undefined)) return 'same';
+    if (p.allowNone && (value === 'none' || value === null)) return 'none';
     // חומר שהושבת אחרי שנבחר ממשיך לעבוד — פרויקט ישן לא נשבר. רק מזהה
     // שאינו קיים כלל חוזר לברירת המחדל (או לראשון הפעיל, אם גם היא נמחקה).
     if (material(value).kind !== 'unknown') return value;
