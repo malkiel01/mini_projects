@@ -1,0 +1,17 @@
+{
+  "name": "ניחוחות — ניהול הזמנות",
+  "short_name": "ניחוחות",
+  "description": "ממשק המנהל של ניחוחות — הזמנות, יומן והתראות",
+  "lang": "he",
+  "dir": "rtl",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#27282a",
+  "theme_color": "#27282a",
+  "icons": [
+    { "src": "../assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "../assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "../assets/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
