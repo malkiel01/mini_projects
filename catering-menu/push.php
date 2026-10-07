@@ -79,7 +79,8 @@ function vapidHeader(string $endpoint, array $vapid, string $subject): string {
     $parts = parse_url($endpoint);
     $aud = $parts['scheme'] . '://' . $parts['host'] . (isset($parts['port']) ? ':' . $parts['port'] : '');
     $head = b64u(json_encode(['typ' => 'JWT', 'alg' => 'ES256']));
-    $body = b64u(json_encode(['aud' => $aud, 'exp' => time() + 12 * 3600, 'sub' => $subject]));
+    // תוקף של שעה: אפל וגוגל דוחים אסימון ארוך מדי, ושעה מקובלת על שניהם
+    $body = b64u(json_encode(['aud' => $aud, 'exp' => time() + 3600, 'sub' => $subject], JSON_UNESCAPED_SLASHES));
     openssl_sign("$head.$body", $sig, openssl_pkey_get_private($vapid['private']), OPENSSL_ALGO_SHA256);
     return 'vapid t=' . "$head.$body." . b64u(derToRaw($sig)) . ', k=' . $vapid['public'];
 }
@@ -102,13 +103,41 @@ function encryptPayload(string $payload, string $p256dh, string $auth): string {
     return $salt . pack('N', 4096) . chr(strlen($asPublic)) . $asPublic . $cipher . $tag;
 }
 
+/** שליחת בקשה אחת לשירות ההתראות. מחזיר [קוד HTTP, גוף התשובה, שגיאת רשת]. */
+function pushPost(string $url, string $body, array $headers): array {
+    if (function_exists('curl_init')) {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $body,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 10,
+            CURLOPT_HTTPHEADER     => $headers,
+        ]);
+        $resp = (string) curl_exec($ch);
+        $code = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        $err = curl_error($ch);
+        curl_close($ch);
+        return [$code, $resp, $err];
+    }
+    // בלי curl — דרך stream של PHP
+    $ctx = stream_context_create(['http' => [
+        'method' => 'POST', 'header' => implode("\r\n", $headers), 'content' => $body,
+        'timeout' => 10, 'ignore_errors' => true,
+    ]]);
+    $resp = @file_get_contents($url, false, $ctx);
+    $code = 0;
+    foreach ($http_response_header ?? [] as $h) if (preg_match('#^HTTP/\S+ (\d{3})#', $h, $m)) $code = (int) $m[1];
+    return [$code, (string) $resp, $resp === false ? 'stream failed' : ''];
+}
+
 /**
  * שולח התראה לכל המכשירים הרשומים. מנוי שהדפדפן ביטל (404/410) נמחק.
- * מחזיר [נשלחו, נכשלו].
+ * מחזיר [נשלחו, נכשלו, פירוט לכל מכשיר] — הפירוט מוצג למנהל באבחון.
  */
 function pushToAll(array $message): array {
     $store = pushStore();
-    if (!$store['subs']) return [0, 0];
+    if (!$store['subs']) return [0, 0, []];
 
     $host = preg_replace('/:\d+$/', '', $_SERVER['HTTP_HOST'] ?? 'localhost');
     $settings = loadSettings();
@@ -117,34 +146,32 @@ function pushToAll(array $message): array {
     $json = json_encode($message, JSON_UNESCAPED_UNICODE);
 
     $sent = $failed = 0;
-    $keep = [];
+    $keep = $details = [];
     foreach ($store['subs'] as $sub) {
-        $body = encryptPayload($json, $sub['keys']['p256dh'], $sub['keys']['auth']);
-        $ch = curl_init($sub['endpoint']);
-        curl_setopt_array($ch, [
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => $body,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 8,
-            CURLOPT_HTTPHEADER     => [
+        $service = parse_url($sub['endpoint'], PHP_URL_HOST);
+        try {
+            $body = encryptPayload($json, $sub['keys']['p256dh'], $sub['keys']['auth']);
+            [$code, $resp, $err] = pushPost($sub['endpoint'], $body, [
                 'Content-Type: application/octet-stream',
                 'Content-Encoding: aes128gcm',
                 'TTL: 86400',
                 'Urgency: high',
                 'Authorization: ' . vapidHeader($sub['endpoint'], $store['vapid'], $subject),
-            ],
-        ]);
-        curl_exec($ch);
-        $code = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-        curl_close($ch);
+            ]);
+        } catch (Throwable $e) {
+            [$code, $resp, $err] = [0, '', $e->getMessage()];
+        }
+        $info = mb_substr(trim($err ?: strip_tags($resp)), 0, 200);
+        $details[] = ['device' => $sub['device'] ?? '', 'service' => $service, 'code' => $code, 'info' => $info];
 
+        unset($sub['lastOk'], $sub['lastError']);
         if ($code >= 200 && $code < 300) { $sent++; $keep[] = $sub + ['lastOk' => date('c')]; }
         elseif ($code === 404 || $code === 410) { $failed++; }          // המנוי בוטל — לא שומרים
-        else { $failed++; $keep[] = $sub + ['lastError' => $code]; }
+        else { $failed++; $keep[] = $sub + ['lastError' => "$code $info"]; }
     }
     $store['subs'] = array_values($keep);
     writeJson(PUSH_FILE, $store);
-    return [$sent, $failed];
+    return [$sent, $failed, $details];
 }
 
 /** רישום מכשיר (או עדכון, אם כבר רשום). */
