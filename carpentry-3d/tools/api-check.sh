@@ -70,7 +70,7 @@ ok 'נגר לא יוצר סוג' "$(call "$C" '{"action":"type-save","template_k
 
 echo "פרויקטים"
 P=$(call "$C" '{"action":"project-save","name":"ספרייה למשפחת כהן","client":"כהן","template_key":"bookcase","product_type_id":1,"values":{"width":1800,"columns":4}}')
-ok 'נגר שומר פרויקט' "$P" "d['project']['id']==1 and d['project']['values']['width']==1800"
+ok 'נגר שומר פרויקט' "$P" "d['project']['id']==1 and d['project']['values']['width']==1800 and d['project']['client_id']==1"
 ok 'עדכון' "$(call "$C" '{"action":"project-save","id":1,"name":"ספרייה לכהן","values":{"width":1900}}')" "d['project']['name']=='ספרייה לכהן' and d['project']['values']['width']==1900"
 ok 'נגר אחר לא רואה' "$(call "$C2" '{"action":"project-get","id":1}')" "d['success']==False"
 ok 'נגר אחר לא מעדכן' "$(call "$C2" '{"action":"project-save","id":1,"name":"גנוב"}')" "d['success']==False"
@@ -88,6 +88,38 @@ ok 'ביטול שיתוף' "$(call "$C" '{"action":"project-share","id":1,"on":f
 ok 'אחרי הביטול הקישור מת' "$(get "$X" "action=view&t=$TOKEN")" "d['success']==False"
 ok 'מחיקה' "$(call "$C" '{"action":"project-delete","id":2}')" "d['success']"
 ok 'נשאר אחד' "$(call "$C" '{"action":"projects-list"}')" "len(d['projects'])==1"
+
+echo "לקוחות"
+ok 'שם חופשי בפרויקט יצר לקוח' "$(call "$C" '{"action":"clients-list"}')" "len(d['clients'])==1 and d['clients'][0]['name']=='כהן' and d['clients'][0]['projects']==1"
+ok 'לקוח חדש עם פרטים' "$(call "$C" '{"action":"client-save","name":"לוי","phone":"050-1234567","email":"levi@x.il","address":"רחוב 1","notes":"מרפסת"}')" "d['client']['id']==2 and d['client']['phone']=='050-1234567'"
+ok 'לקוח בלי שם נדחה' "$(call "$C" '{"action":"client-save","name":"  "}')" "d['success']==False"
+ok 'צופה לא יוצר לקוח' "$(call "$V" '{"action":"client-save","name":"x"}')" "d['success']==False"
+ok 'שיוך פרויקט ללקוח לפי id' "$(call "$C" '{"action":"project-save","id":1,"client_id":2}')" "d['project']['client_id']==2 and d['project']['client']=='לוי'"
+ok 'שינוי שם לקוח מתעדכן בפרויקט' "$(call "$C" '{"action":"client-save","id":2,"name":"לוי-כץ"}')" "d['client']['name']=='לוי-כץ'"
+ok '…והפרויקט מציג את השם החדש' "$(call "$C" '{"action":"project-get","id":1}')" "d['project']['client']=='לוי-כץ'"
+ok 'רשימת פרויקטים לפי לקוח' "$(call "$C" '{"action":"projects-list","client_id":2}')" "len(d['projects'])==1"
+ok 'ניתוק לקוח (null)' "$(call "$C" '{"action":"project-save","id":1,"client_id":null}')" "d['project']['client_id'] is None and d['project']['client']==''"
+ok 'שיוך חזרה' "$(call "$C" '{"action":"project-save","id":1,"client_id":2}')" "d['project']['client_id']==2"
+
+echo "הרכבות"
+P2=$(call "$C" '{"action":"project-save","name":"ארונית","client_id":2,"template_key":"bookcase","values":{"width":900,"height":600}}')
+ok 'פרויקט שני' "$P2" "d['project']['id']==3"
+AS=$(call "$C" '{"action":"assembly-save","name":"מזווה וארונית","client_id":2,"items":[{"project_id":1,"pos":[0,0,0],"rot":0},{"project_id":3,"pos":[0,2000,0],"rot":90,"visible":true}],"joined":false}')
+ok 'יצירת הרכבה עם הפרויקטים' "$AS" "d['assembly']['id']==1 and len(d['assembly']['items'])==2 and d['assembly']['items'][1]['rot']==90 and len(d['assembly']['projects'])==2 and d['assembly']['client_name']=='לוי-כץ'"
+ok 'סיבוב לא חוקי → 0' "$(call "$C" '{"action":"assembly-save","id":1,"name":"מזווה וארונית","client_id":2,"items":[{"project_id":1,"rot":45}],"joined":true}')" "d['assembly']['items'][0]['rot']==0 and d['assembly']['joined']==True and len(d['assembly']['projects'])==1"
+ok 'רשימת הרכבות של הלקוח' "$(call "$C" '{"action":"assemblies-list","client_id":2}')" "len(d['assemblies'])==1 and d['assemblies'][0]['joined']==True"
+ok 'נגר אחר לא רואה' "$(call "$C2" '{"action":"assembly-get","id":1}')" "d['success']==False"
+ok 'מנהל רואה' "$(call "$A" '{"action":"assembly-get","id":1}')" "d['assembly']['owner_name']=='דן'"
+ok 'מונה ההרכבות בלקוח' "$(call "$C" '{"action":"clients-list"}')" "[c for c in d['clients'] if c['id']==2][0]['assemblies']==1"
+AST=$(call "$C" '{"action":"assembly-share","id":1,"on":true}')
+ok 'שיתוף הרכבה' "$AST" "len(d['assembly']['share_token'])==32"
+ATOKEN=$(printf '%s' "$AST" | python3 -c "import sys,json; print(json.load(sys.stdin)['assembly']['share_token'])")
+ok 'צפיית לקוח בהרכבה' "$(get "$X" "action=view-assembly&t=$ATOKEN")" "d['assembly']['name']=='מזווה וארונית' and len(d['assembly']['projects'])==1 and 'share_token' not in d['assembly'] and 'materials' in d"
+ok 'ביטול שיתוף הרכבה' "$(call "$C" '{"action":"assembly-share","id":1,"on":false}')" "d['assembly']['shared']==False"
+ok 'מחיקת הרכבה' "$(call "$C" '{"action":"assembly-delete","id":1}')" "d['success']"
+ok 'מחיקת לקוח — הפרויקט נשאר בלי שיוך' "$(call "$C" '{"action":"client-delete","id":2}')" "d['success']"
+ok '…הפרויקט קיים' "$(call "$C" '{"action":"project-get","id":3}')" "d['project']['client_id'] is None"
+ok 'מחיקת הפרויקט השני' "$(call "$C" '{"action":"project-delete","id":3}')" "d['success']"
 
 echo "ספריית חומרים"
 ok 'ספרייה ריקה בהתחלה' "$(call "$C" '{"action":"materials-get"}')" "d['diff']==[] and d['images']=={}"

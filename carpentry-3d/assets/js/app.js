@@ -16,6 +16,7 @@ import { createViewer } from './viewer.js';
 import { createMaterialsUI } from './materials-ui.js';
 import { api, loadLast, saveLast } from './store.js';
 import { watchNumbers } from './numfield.js';
+import { placeModel, combine, snapTo } from './model/assembly.js';
 
 watchNumbers();   // חיצים וסימון בכל שדות המספר, גם במסכים שנבנים מאוחר יותר
 
@@ -25,8 +26,10 @@ const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').
 const state = {
   user: null,
   types: [],
-  project: null,       // { id, name, client, status, template_key, product_type_id, values, share_token }
+  project: null,       // { id, name, client, client_id, status, template_key, product_type_id, values, share_token }
   values: {},
+  clients: [],         // רשימת הלקוחות (משותפת לכל הנגרים)
+  assembly: null,      // הרכבה פתוחה: { id, name, client_id, joined, items: [{project_id,pos,rot,visible}], projects: [...], share_token }
   rates: { laborHour: null, markup: null, materials: {} },
   dirty: false,
 };
@@ -38,7 +41,7 @@ let saveTimer = null;
 // חוזר למסך הפתיחה. פתיחת פרויקט מתוך מגירה מחליפה את רשומת המגירה
 // ברשומת הפרויקט (לא דוחפת), כך שה"אחורה" הבא מחזיר לרשימה ולא למגירה.
 // סגירה מכפתור "סגירה" חוזרת צעד אחורה בהיסטוריה — וה-popstate שלה מדולג.
-const DRAWERS = ['#projects', '#users', '#types', '#mlib', '#share', '#newproj'];
+const DRAWERS = ['#projects', '#clients', '#users', '#types', '#mlib', '#share', '#newproj', '#clientdlg'];
 let suppressPops = 0;
 function pushNav(kind) { history.pushState({ app: 'carpentry', kind }, ''); }
 function openDrawer(sel, fromPop = false) {
@@ -59,7 +62,7 @@ window.addEventListener('popstate', () => {
   const open = DRAWERS.filter((d) => $(d).classList.contains('is-open'));
   if (open.length) { $(open[open.length - 1]).classList.remove('is-open'); return; }
   if ($('#output').classList.contains('is-open')) { $('#output').classList.remove('is-open'); return; }
-  if (state.project && state.user) showProjects(true);
+  if ((state.project || state.assembly) && state.user) showProjects(true);
 });
 
 // ---------- הודעות ----------
@@ -121,7 +124,8 @@ async function enter() {
   $('#btn-types').hidden = u.role !== 'admin';
   $('#app').hidden = false;
 
-  const [lib, types, rates] = await Promise.all([api('materials-get'), api('types-list'), u.role === 'viewer' ? null : api('rates-get')]);
+  const [lib, types, rates, clients] = await Promise.all([api('materials-get'), api('types-list'), u.role === 'viewer' ? null : api('rates-get'), api('clients-list')]);
+  state.clients = clients.clients;
   M.load(lib.diff);
   for (const [id, v] of Object.entries(lib.images || {})) M.setImage(id, v.url, v.imageMm);
   state.types = types.types;
@@ -141,6 +145,9 @@ async function enter() {
   const last = loadLast();
   if (last?.projectId) {
     try { await openProject(last.projectId); return; } catch { /* נמחק — לרשימה */ }
+  }
+  if (last?.assemblyId) {
+    try { await openAssembly(last.assemblyId); return; } catch { /* נמחקה — לרשימה */ }
   }
   await showProjects();
 }
@@ -168,6 +175,10 @@ function wireUi() {
   $('#btn-output-close').addEventListener('click', () => closeDrawer('#output'));
   $('#btn-materials').addEventListener('click', () => { materialsUI.open(); pushNav('drawer'); });
   $('#btn-projects').addEventListener('click', () => showProjects());
+  $('#btn-clients').addEventListener('click', () => showClients());
+  $('#btn-client-new').addEventListener('click', () => clientDialog(null, (c) => { if (state.project) { state.project.client_id = c.id; state.project.client = c.name; fillClientSelect($('#proj-client'), c.id); markDirty(); } }));
+  $('#newproj-client-new').addEventListener('click', () => clientDialog(null, (c) => fillClientSelect($('#newproj-form').client_id, c.id)));
+  wireAssemblyUi();
   $('#btn-users').addEventListener('click', () => showUsers());
   $('#btn-types').addEventListener('click', () => showTypes());
   $('#btn-save').addEventListener('click', () => flush(true));
@@ -177,7 +188,13 @@ function wireUi() {
 
   // שם, לקוח וסטטוס — בכרטיס "פרויקט" שמעל הטופס
   $('#proj-name').addEventListener('input', (e) => { state.project.name = e.target.value; markDirty(); $('#template-name').textContent = state.project.name; });
-  $('#proj-client').addEventListener('input', (e) => { state.project.client = e.target.value; markDirty(); });
+  $('#proj-client').addEventListener('change', (e) => {
+    const id = e.target.value ? Number(e.target.value) : null;
+    state.project.client_id = id;
+    state.project.client = state.clients.find((c) => c.id === id)?.name || '';
+    $('#template-desc').textContent = (state.project.client ? `${state.project.client} · ` : '') + currentTemplate().name;
+    markDirty();
+  });
   $('#proj-status').addEventListener('change', (e) => { state.project.status = e.target.value; markDirty(); });
 
   window.addEventListener('beforeunload', (e) => { if (state.dirty) { flush(); e.preventDefault(); e.returnValue = ''; } });
@@ -202,7 +219,7 @@ async function showProjects(fromPop = false) {
   const body = $('#projects-body');
   body.innerHTML = '<p class="muted">טוען…</p>';
   try {
-    const r = await api('projects-list');
+    const [r, ra] = await Promise.all([api('projects-list'), api('assemblies-list')]);
     const canEdit = state.user.role !== 'viewer';
     const first = r.projects.length === 0;
     const admin = state.user.role === 'admin';
@@ -246,14 +263,25 @@ async function showProjects(fromPop = false) {
       ${r.projects.length ? `<section class="start-section">
         <h3>הפרויקטים ${admin ? 'של כולם' : 'שלי'} <small class="muted">${r.projects.length}</small></h3>
         <div class="pgrid">${projCards}</div>
-      </section>` : ''}`;
+      </section>` : ''}
+      ${ra.assemblies.length || canEdit ? `<section class="start-section">
+        <h3>הרכבות <small class="muted">כמה אלמנטים של לקוח יחד — מזווה ומעליו ארונית, תחתונים ועליונים, ספרייה בשני חלקים</small></h3>
+        <div class="pgrid">
+          ${ra.assemblies.map((a) => `<button type="button" class="acard" data-open-asm="${a.id}"><b>🧩 ${esc(a.name)}</b><span class="muted">${[a.client_name, a.joined ? 'אלמנט מאוחד' : 'אלמנטים נפרדים', admin ? a.owner_name : ''].filter(Boolean).map(esc).join(' · ')}</span><span class="muted">${fmtDate(a.updated_at)}</span></button>`).join('')}
+          ${canEdit ? `<button type="button" class="acard" data-new-asm="1"><b>＋ הרכבה חדשה</b><span class="muted">בוחרים לקוח ומוסיפים את הפרויקטים שלו</span></button>` : ''}
+        </div>
+      </section>` : ''}
+      <section class="start-section"><button type="button" class="btn" data-clients="1">👤 ניהול לקוחות <small class="muted">${state.clients.length}</small></button></section>`;
 
     body.onclick = async (e) => {
-      const t = e.target.closest('[data-open],[data-dup],[data-del],[data-new-type],[data-new-tpl]');
+      const t = e.target.closest('[data-open],[data-dup],[data-del],[data-new-type],[data-new-tpl],[data-open-asm],[data-new-asm],[data-clients]');
       if (!t) return;
       e.preventDefault(); e.stopPropagation();
       try {
         if (t.dataset.open) { closeDrawer('#projects', true); await openProject(Number(t.dataset.open)); }
+        else if (t.dataset.openAsm) { closeDrawer('#projects', true); await openAssembly(Number(t.dataset.openAsm)); }
+        else if (t.dataset.newAsm) { await newAssembly(); }
+        else if (t.dataset.clients) { showClients(); }
         else if (t.dataset.dup) { await api('project-duplicate', { id: Number(t.dataset.dup) }); showProjects(); }
         else if (t.dataset.del) {
           if (!confirm('למחוק את הפרויקט? אין שחזור.')) return;
@@ -286,23 +314,23 @@ function newProjectDialog(type, templateKey) {
   $('#newproj-title').textContent = `${m.icon} ${type ? `${type.name} (${tpl.name})` : tpl.name}`;
   const f = $('#newproj-form');
   f.name.value = type ? type.name : tpl.name;
-  f.client.value = '';
+  fillClientSelect(f.client_id, state.project?.client_id || null);
   setTimeout(() => { f.name.focus(); f.name.select(); }, 50);
   f.onsubmit = async (e) => {
     e.preventDefault();
     const submit = f.querySelector('button[type=submit]');
     submit.disabled = true;
     try {
-      await newProject(type, key, f.name.value.trim() || tpl.name, f.client.value.trim());
+      await newProject(type, key, f.name.value.trim() || tpl.name, f.client_id.value ? Number(f.client_id.value) : null);
       closeDrawer('#newproj', true);
       closeDrawer('#projects', true);
     } catch (err) { onError(err); } finally { submit.disabled = false; }
   };
 }
 
-async function newProject(type, templateKey, name, client = '') {
+async function newProject(type, templateKey, name, clientId = null) {
   await flush();
-  const r = await api('project-save', { name, client, template_key: templateKey, product_type_id: type ? type.id : null, values: typeDefaults(type?.id, templateKey) });
+  const r = await api('project-save', { name, client_id: clientId, template_key: templateKey, product_type_id: type ? type.id : null, values: typeDefaults(type?.id, templateKey) });
   loadProject(r.project);
   document.body.dataset.tab = 'form';
   toast('הפרויקט נוצר — אפשר להתחיל למלא מידות');
@@ -315,7 +343,8 @@ async function openProject(id) {
 }
 
 function loadProject(p) {
-  const wasOpen = !!state.project;
+  const wasOpen = !!state.project || !!state.assembly;
+  leaveAssembly();
   state.project = p;
   // מתוך מגירה: רשומת המגירה הופכת לרשומת הפרויקט. אחרת (למשל בטעינה) — דוחפים.
   if (history.state?.app === 'carpentry' && history.state.kind === 'drawer') history.replaceState({ app: 'carpentry', kind: 'project' }, '');
@@ -327,13 +356,13 @@ function loadProject(p) {
   $('#template-name').textContent = p.name;
   $('#template-desc').textContent = (p.client ? `${p.client} · ` : '') + currentTemplate().name;
   $('#proj-name').value = p.name;
-  $('#proj-client').value = p.client;
+  fillClientSelect($('#proj-client'), p.client_id);
   $('#proj-status').value = p.status;
   $('#project-card').hidden = false;
   $('#no-project').hidden = true;
   $('#form').hidden = false;
   const ro = state.user.role === 'viewer';
-  $('#project-card').querySelectorAll('input,select').forEach((i) => { i.disabled = ro; });
+  $('#project-card').querySelectorAll('input,select,button').forEach((i) => { if (i.id !== 'btn-share') i.disabled = ro; });
   form = renderForm($('#form'), currentTemplate(), state.values, onFormChange);
   if (ro) $('#form').querySelectorAll('input,select').forEach((i) => { i.disabled = true; });
   rebuild(true);
@@ -343,7 +372,7 @@ function loadProject(p) {
 function onFormChange() { rebuild(); markDirty(); }
 
 function markDirty() {
-  if (!state.project || state.user.role === 'viewer') return;
+  if ((!state.project && !state.assembly) || state.user.role === 'viewer') return;
   state.dirty = true;
   $('#save-state').textContent = 'שינויים לא שמורים';
   clearTimeout(saveTimer);
@@ -353,13 +382,14 @@ function markDirty() {
 /** שומר אם יש מה לשמור. `loud` — להודיע גם כשאין שינוי. */
 async function flush(loud = false) {
   clearTimeout(saveTimer);
+  if (state.assembly) return flushAssembly(loud);
   if (!state.project || !state.dirty) { if (loud) toast('הכול שמור'); return; }
   const p = state.project;
   // מנקים את הדגל לפני הבקשה: שינוי שיגיע בזמן שהיא באוויר ידליק אותו שוב
   // ויזמן שמירה נוספת, במקום להיבלע כשהבקשה הראשונה חוזרת.
   state.dirty = false;
   try {
-    const r = await api('project-save', { id: p.id, name: p.name, client: p.client, status: p.status, template_key: p.template_key, product_type_id: p.product_type_id, values: model ? model.values : state.values });
+    const r = await api('project-save', { id: p.id, name: p.name, client_id: p.client_id ?? null, status: p.status, template_key: p.template_key, product_type_id: p.product_type_id, values: model ? model.values : state.values });
     if (state.project === p) state.project.updated_at = r.project.updated_at;
     $('#save-state').textContent = `נשמר ${fmtTime(r.project.updated_at)}`;
     if (loud) toast('נשמר');
@@ -385,7 +415,7 @@ async function shareProject() {
   } catch (err) { onError(err); }
 }
 function shareUrl() {
-  return new URL(`view.html?t=${state.project.share_token}`, location.href).href;
+  return state.assembly ? new URL(`view.html?a=${state.assembly.share_token}`, location.href).href : new URL(`view.html?t=${state.project.share_token}`, location.href).href;
 }
 function showShareLink() {
   const url = shareUrl();
@@ -403,6 +433,7 @@ function updateShareUi() {
 
 // ---------- בנייה ותצוגות ----------
 function rebuild(reframe = false) {
+  if (state.assembly) return rebuildAssembly(reframe);
   if (!state.project) return;
   model = build(state.project.template_key, state.values);
   Object.assign(state.values, model.values);
@@ -497,7 +528,16 @@ $('#btn-csv').addEventListener('click', () => model && downloadCsv(model));
 $('#btn-print').addEventListener('click', () => model && printAll(model));
 $('#output-body').addEventListener('change', (e) => { if (e.target.id === 'nest-on') { nestOn = e.target.checked; renderOutput(model); } });
 
-function cutListHtml(m) {
+/** הרכבה לא מאוחדת: הפלט לכל אלמנט בנפרד, באותה פונקציה. */
+function perItem(m, fn) {
+  if (!m.items || m.joined) return fn(m);
+  return m.items.filter((it) => it.visible).map((it) => `<section class="out-item"><h2 class="out-item__title">🧩 ${esc(it.name)}</h2>${fn({ ...it.model, parts: it.parts, hardware: it.hardware, bounds: it.model.bounds })}</section>`).join('');
+}
+function cutListHtml(m) { return perItem(m, cutListOne); }
+function priceHtml(m) { return perItem(m, priceOne); }
+function sheetsHtml(m) { return perItem(m, sheetsOne); }
+
+function cutListOne(m) {
   const cl = cutList(m);
   const hw = hardwareList(m);
   const rows = cl.boards
@@ -521,7 +561,7 @@ function drawingsHtml(m) {
 }
 
 const ils = (v) => `₪${Number(v).toLocaleString('he-IL', { maximumFractionDigits: 0 })}`;
-function priceHtml(m) {
+function priceOne(m) {
   const e = estimate(m, state.rates);
   const groups = ['לוחות', 'זכוכית', 'קנט', 'פרזול'];
   const rows = groups.flatMap((g) => e.lines.filter((l) => l.group === g).map((l) =>
@@ -542,7 +582,7 @@ function priceHtml(m) {
     <p class="muted">לוחות: שטח נטו × ${PRICING_DEFAULTS.waste} פחת. שעת עבודה ורווח נקבעים ב"חומרים" למעלה; "המחיר שלי" לכל חומר — שם, בכרטיס החומר. המחירים בספרייה הם מצייני מקום עד שתעדכן אותם.</p>`;
 }
 
-function sheetsHtml(m) {
+function sheetsOne(m) {
   const cl = cutList(m);
   const sc = sheetCount(cl, m.parts);
   const rows = sc.map((g) => `<tr><td>${esc(g.name)}</td><td dir="ltr">${g.sheet[0]} × ${g.sheet[1]}</td><td>${g.area} מ"ר</td><td><b>${g.count}</b></td></tr>`).join('');
@@ -561,26 +601,31 @@ function sheetsHtml(m) {
 }
 
 function downloadCsv(m) {
-  const cl = cutList(m);
-  const lines = [['חלק', 'כמות', 'אורך', 'רוחב', 'עובי', 'חומר', 'קנט', 'הערה']];
-  for (const r of cl.boards) lines.push([r.name, r.qty, r.l, r.w, r.t, r.material, r.edges, r.note || '']);
-  for (const g of cl.glass) lines.push([g.name, g.qty, g.l, g.w, g.t, 'זכוכית', '', '']);
-  for (const h of hardwareList(m)) lines.push([h.name, h.qty, '', '', '', 'פרזול', '', '']);
+  const lines = [['חלק', 'כמות', 'אורך', 'רוחב', 'עובי', 'חומר', 'קנט', 'הערה', 'אלמנט']];
+  const sets = m.items && !m.joined ? m.items.filter((it) => it.visible).map((it) => [{ ...it.model, parts: it.parts, hardware: it.hardware }, it.name]) : [[m, '']];
+  for (const [mm, label] of sets) {
+    const cl = cutList(mm);
+    for (const r of cl.boards) lines.push([r.name, r.qty, r.l, r.w, r.t, r.material, r.edges, r.note || '', label]);
+    for (const g of cl.glass) lines.push([g.name, g.qty, g.l, g.w, g.t, 'זכוכית', '', '', label]);
+    for (const h of hardwareList(mm)) lines.push([h.name, h.qty, '', '', '', 'פרזול', '', '', label]);
+  }
   const csv = '\ufeff' + lines.map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-  a.download = `${(state.project?.name || 'cutlist').replace(/[\\/:*?"<>|]/g, '-')}.csv`;
+  a.download = `${(state.project?.name || state.assembly?.name || 'cutlist').replace(/[\\/:*?"<>|]/g, '-')}.csv`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
 /** עמוד הדפסה: כותרת, שלושת המבטים, רשימת חיתוך, מחיר (לא לצופה), לוחות. הדפדפן עושה PDF. */
 function printAll(m) {
-  const p = state.project;
+  const p = state.project || state.assembly;
   const box = $('#print');
   const viewer = state.user.role === 'viewer';
+  const client = state.project ? p.client : clientName(state.assembly.client_id);
+  const kind = state.project ? currentTemplate().name : `הרכבה · ${state.assembly.joined ? 'אלמנט מאוחד' : 'אלמנטים נפרדים'}`;
   box.innerHTML = `
-    <header class="print__head"><h1>${esc(p.name)}</h1><div>${p.client ? `לקוח: ${esc(p.client)} · ` : ''}${esc(currentTemplate().name)} · ${m.bounds.w} × ${m.bounds.h} × ${m.bounds.d} מ"מ · ${new Date().toLocaleDateString('he-IL')}</div></header>
+    <header class="print__head"><h1>${esc(p.name)}</h1><div>${client ? `לקוח: ${esc(client)} · ` : ''}${esc(kind)} · ${m.bounds.w} × ${m.bounds.h} × ${m.bounds.d} מ"מ · ${new Date().toLocaleDateString('he-IL')}</div></header>
     <section class="print__drawings">${drawAll(m).map((v) => `<figure><figcaption>${v.name}</figcaption>${v.svg}</figure>`).join('')}</section>
     <section class="print__page">${cutListHtml(m)}</section>
     ${viewer ? '' : `<section class="print__page">${priceHtml(m)}</section>`}
@@ -693,6 +738,296 @@ async function showTypes() {
       } catch (err) { onError(err); }
     };
   } catch (err) { onError(err); }
+}
+
+// ---------- לקוחות ----------
+function clientName(id) { return state.clients.find((c) => c.id === id)?.name || ''; }
+function fillClientSelect(sel, selectedId) {
+  if (!sel) return;
+  sel.innerHTML = `<option value="">ללא לקוח</option>${state.clients.map((c) => `<option value="${c.id}" ${c.id === selectedId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}`;
+  sel.value = selectedId ? String(selectedId) : '';
+}
+async function reloadClients() {
+  const r = await api('clients-list');
+  state.clients = r.clients;
+  if (state.project) fillClientSelect($('#proj-client'), state.project.client_id);
+  if (state.assembly) fillClientSelect($('#asm-client'), state.assembly.client_id);
+}
+/** חלון לקוח: חדש או עריכה. `onSaved(client)` אחרי השמירה. */
+function clientDialog(client, onSaved) {
+  const f = $('#client-form');
+  $('#client-title').textContent = client ? `עריכת לקוח — ${client.name}` : 'לקוח חדש';
+  for (const k of ['name', 'phone', 'email', 'address', 'notes']) f[k].value = client ? client[k] || '' : '';
+  openDrawer('#clientdlg');
+  setTimeout(() => f.name.focus(), 50);
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const submit = f.querySelector('button[type=submit]');
+    submit.disabled = true;
+    try {
+      const r = await api('client-save', { id: client?.id, name: f.name.value, phone: f.phone.value, email: f.email.value, address: f.address.value, notes: f.notes.value });
+      await reloadClients();
+      closeDrawer('#clientdlg');
+      toast(client ? 'הלקוח עודכן' : 'הלקוח נוצר');
+      onSaved?.(r.client);
+    } catch (err) { onError(err); } finally { submit.disabled = false; }
+  };
+}
+async function showClients() {
+  openDrawer('#clients');
+  const body = $('#clients-body');
+  body.innerHTML = '<p class="muted">טוען…</p>';
+  try {
+    const [rc, rp, ra] = await Promise.all([api('clients-list'), api('projects-list'), api('assemblies-list')]);
+    state.clients = rc.clients;
+    const canEdit = state.user.role !== 'viewer';
+    const cards = rc.clients.map((c) => {
+      const projects = rp.projects.filter((p) => p.client_id === c.id);
+      const asms = ra.assemblies.filter((a) => a.client_id === c.id);
+      return `<article class="ccard" data-id="${c.id}">
+        <div class="ccard__head">
+          <h4>${esc(c.name)}</h4>
+          <span class="ccard__meta">${[c.phone, c.email, c.address].filter(Boolean).map(esc).join(' · ')}</span>
+          ${canEdit ? `<span class="ccard__actions">
+            <button type="button" class="btn btn--small" data-cedit="${c.id}">עריכה</button>
+            <button type="button" class="btn btn--small" data-cproj="${c.id}">＋ פרויקט</button>
+            <button type="button" class="btn btn--small" data-casm="${c.id}">＋ הרכבה</button>
+            <button type="button" class="btn btn--small" data-cdel="${c.id}">מחיקה</button>
+          </span>` : ''}
+        </div>
+        ${c.notes ? `<div class="ccard__notes">${esc(c.notes)}</div>` : ''}
+        <div class="ccard__lists">
+          <div><h5>פרויקטים <small class="muted">${projects.length}</small></h5><ul>${projects.map((p) => `<li><button type="button" data-open="${p.id}">${TEMPLATE_META[p.template_key]?.icon || '🪚'} ${esc(p.name)} <span class="muted">· ${esc(template(p.template_key)?.name || '')} · ${statusName(p.status)}</span></button></li>`).join('') || '<li class="muted">אין</li>'}</ul></div>
+          <div><h5>הרכבות <small class="muted">${asms.length}</small></h5><ul>${asms.map((a) => `<li><button type="button" data-open-asm="${a.id}">🧩 ${esc(a.name)} <span class="muted">· ${a.joined ? 'מאוחד' : 'נפרד'}</span></button></li>`).join('') || '<li class="muted">אין</li>'}</ul></div>
+        </div>
+      </article>`;
+    }).join('');
+    const orphans = rp.projects.filter((p) => !p.client_id);
+    body.innerHTML = `
+      ${canEdit ? `<p><button type="button" class="btn btn--accent" data-cnew="1">＋ לקוח חדש</button></p>` : ''}
+      ${cards || '<p class="muted">עדיין אין לקוחות. לקוח מקבל פרויקטים והרכבות; גם פרויקט שנשמר עם שם לקוח יוצר אותו.</p>'}
+      ${orphans.length ? `<article class="ccard"><div class="ccard__head"><h4 class="muted">פרויקטים בלי לקוח</h4></div><div class="ccard__lists"><div><ul>${orphans.map((p) => `<li><button type="button" data-open="${p.id}">${TEMPLATE_META[p.template_key]?.icon || '🪚'} ${esc(p.name)}</button></li>`).join('')}</ul></div></div></article>` : ''}`;
+    body.onclick = async (e) => {
+      const t = e.target.closest('[data-open],[data-open-asm],[data-cedit],[data-cproj],[data-casm],[data-cdel],[data-cnew]');
+      if (!t) return;
+      try {
+        if (t.dataset.open) { closeDrawer('#clients', true); await openProject(Number(t.dataset.open)); }
+        else if (t.dataset.openAsm) { closeDrawer('#clients', true); await openAssembly(Number(t.dataset.openAsm)); }
+        else if (t.dataset.cnew) clientDialog(null, () => showClients());
+        else if (t.dataset.cedit) clientDialog(state.clients.find((c) => c.id === Number(t.dataset.cedit)), () => showClients());
+        else if (t.dataset.cproj) { const c = state.clients.find((x) => x.id === Number(t.dataset.cproj)); closeDrawer('#clients', true); await showProjects(); const f = $('#newproj-form'); newProjectDialog(null, 'bookcase'); fillClientSelect(f.client_id, c.id); }
+        else if (t.dataset.casm) { closeDrawer('#clients', true); await newAssembly(Number(t.dataset.casm)); }
+        else if (t.dataset.cdel) {
+          if (!confirm('למחוק את הלקוח? הפרויקטים שלו נשארים (בלי שיוך), ההרכבות שלו נמחקות.')) return;
+          await api('client-delete', { id: Number(t.dataset.cdel) });
+          await reloadClients();
+          showClients();
+        }
+      } catch (err) { onError(err); }
+    };
+  } catch (err) { onError(err); }
+}
+
+// ---------- הרכבות: כמה אלמנטים יחד ----------
+const modelCache = new Map();   // project.id → { stamp, model }
+function modelFor(p) {
+  const stamp = `${p.updated_at}|${JSON.stringify(p.values)}`;
+  const c = modelCache.get(p.id);
+  if (c && c.stamp === stamp) return c.model;
+  const m = build(p.template_key, p.values);
+  modelCache.set(p.id, { stamp, model: m });
+  return m;
+}
+function wireAssemblyUi() {
+  $('#asm-name').addEventListener('input', (e) => { state.assembly.name = e.target.value; $('#template-name').textContent = e.target.value; markDirty(); });
+  $('#asm-client').addEventListener('change', async (e) => { state.assembly.client_id = e.target.value ? Number(e.target.value) : null; markDirty(); await fillAddSelect(); });
+  $('#asm-joined').addEventListener('change', (e) => { state.assembly.joined = e.target.checked; markDirty(); rebuildAssembly(); });
+  $('#asm-save').addEventListener('click', () => flushAssembly(true));
+  $('#asm-share').addEventListener('click', shareAssembly);
+  $('#asm-delete').addEventListener('click', async () => {
+    if (!confirm('למחוק את ההרכבה? הפרויקטים עצמם נשארים.')) return;
+    try { await api('assembly-delete', { id: state.assembly.id }); saveLast({}); leaveAssembly(); showProjects(); } catch (err) { onError(err); }
+  });
+  $('#asm-add').addEventListener('click', async () => {
+    const id = Number($('#asm-add-select').value);
+    if (!id) return;
+    try {
+      let p = state.assembly.projects.find((x) => x.id === id);
+      if (!p) { p = (await api('project-get', { id })).project; state.assembly.projects.push(p); }
+      // האלמנט החדש מונח מימין לכל מה שיש (ולא עליו)
+      const right = Math.max(0, ...itemBounds().map((b) => b.x + b.w));
+      state.assembly.items.push({ project_id: id, pos: [right, 0, 0], rot: 0, visible: true });
+      markDirty(); renderItems(); rebuildAssembly(true);
+    } catch (err) { onError(err); }
+  });
+  const items = $('#asm-items');
+  items.addEventListener('input', (e) => {
+    const row = e.target.closest('[data-i]'); if (!row) return;
+    const it = state.assembly.items[Number(row.dataset.i)];
+    if (e.target.dataset.axis !== undefined) { it.pos[Number(e.target.dataset.axis)] = Number(e.target.value) || 0; markDirty(); rebuildAssembly(); }
+  });
+  items.addEventListener('change', (e) => {
+    const row = e.target.closest('[data-i]'); if (!row) return;
+    const it = state.assembly.items[Number(row.dataset.i)];
+    if (e.target.name === 'rot') { it.rot = Number(e.target.value); markDirty(); renderItems(); rebuildAssembly(); }
+    else if (e.target.name === 'visible') { it.visible = e.target.checked; markDirty(); renderItems(); rebuildAssembly(); }
+  });
+  items.addEventListener('click', async (e) => {
+    const b = e.target.closest('button[data-act]'); if (!b) return;
+    const row = b.closest('[data-i]'); const i = Number(row.dataset.i); const it = state.assembly.items[i];
+    const act = b.dataset.act;
+    if (act === 'remove') { state.assembly.items.splice(i, 1); markDirty(); renderItems(); rebuildAssembly(true); }
+    else if (act === 'edit') { closeDrawer('#projects', true); await openProject(it.project_id); }
+    else if (act === 'floor') { it.pos[1] = 0; markDirty(); renderItems(); rebuildAssembly(); }
+    else {
+      const ref = Number(row.querySelector('[name=ref]').value);
+      const bs = itemBounds();
+      if (!bs[ref] || ref === i) return;
+      it.pos = snapTo(bs[i], bs[ref], act).map((v) => Math.round(v));
+      markDirty(); renderItems(); rebuildAssembly(true);
+    }
+  });
+}
+/** גבולות כל פריט בקואורדינטות ההרכבה (לפני הנירמול): המיקום + המידות אחרי הסיבוב. */
+function itemBounds() {
+  return state.assembly.items.map((it) => {
+    const p = state.assembly.projects.find((x) => x.id === it.project_id);
+    if (!p) return { x: it.pos[0], y: it.pos[1], z: it.pos[2], w: 0, h: 0, d: 0 };
+    const b = placeModel(modelFor(p), { pos: it.pos, rot: it.rot }).bounds;
+    return b;
+  });
+}
+async function newAssembly(clientId = null) {
+  await flush();
+  const cid = clientId ?? state.project?.client_id ?? null;
+  const r = await api('assembly-save', { name: cid ? `הרכבה — ${clientName(cid)}` : 'הרכבה חדשה', client_id: cid, items: [], joined: false });
+  loadAssembly(r.assembly);
+  document.body.dataset.tab = 'form';
+  toast('ההרכבה נוצרה — מוסיפים אלמנטים מהרשימה');
+}
+async function openAssembly(id) {
+  await flush();
+  const r = await api('assembly-get', { id });
+  loadAssembly(r.assembly);
+}
+function loadAssembly(a) {
+  const wasOpen = !!state.project || !!state.assembly;
+  state.project = null;
+  state.assembly = a;
+  state.dirty = false;
+  if (history.state?.app === 'carpentry' && history.state.kind === 'drawer') history.replaceState({ app: 'carpentry', kind: 'project' }, '');
+  else if (!wasOpen) pushNav('project');
+  saveLast({ assemblyId: a.id });
+  $('#template-name').textContent = a.name;
+  $('#template-desc').textContent = (a.client_name ? `${a.client_name} · ` : '') + 'הרכבה';
+  $('#project-card').hidden = true;
+  $('#form').hidden = true;
+  $('#no-project').hidden = true;
+  $('#assembly-card').hidden = false;
+  $('#asm-name').value = a.name;
+  fillClientSelect($('#asm-client'), a.client_id);
+  $('#asm-joined').checked = !!a.joined;
+  const ro = state.user.role === 'viewer';
+  $('#assembly-card').querySelectorAll('input,select,button').forEach((i) => { if (i.id !== 'asm-share') i.disabled = ro; });
+  fillAddSelect();
+  renderItems();
+  rebuildAssembly(true);
+  updateAsmShareUi();
+}
+function leaveAssembly() {
+  if (!state.assembly) return;
+  state.assembly = null;
+  $('#assembly-card').hidden = true;
+  $('#project-card').hidden = false;
+  $('#form').hidden = false;
+}
+async function fillAddSelect() {
+  const sel = $('#asm-add-select');
+  try {
+    const r = await api('projects-list', state.assembly.client_id ? { client_id: state.assembly.client_id } : {});
+    const list = r.projects;
+    sel.innerHTML = `<option value="">${list.length ? 'הוספת אלמנט…' : (state.assembly.client_id ? 'ללקוח אין פרויקטים עדיין' : 'אין פרויקטים')}</option>${list.map((p) => `<option value="${p.id}">${esc(p.name)} · ${esc(template(p.template_key)?.name || '')}</option>`).join('')}`;
+  } catch (err) { onError(err); }
+}
+function renderItems() {
+  const a = state.assembly;
+  const box = $('#asm-items');
+  const bs = itemBounds();
+  box.innerHTML = a.items.map((it, i) => {
+    const p = a.projects.find((x) => x.id === it.project_id);
+    const b = bs[i];
+    const others = a.items.map((o, k) => k).filter((k) => k !== i);
+    return `<div class="asm-item ${it.visible === false ? 'is-hidden' : ''}" data-i="${i}">
+      <div class="asm-item__head">
+        <label title="הצגה בתלת מימד"><input type="checkbox" name="visible" ${it.visible !== false ? 'checked' : ''}></label>
+        <b>${p ? `${TEMPLATE_META[p.template_key]?.icon || '🪚'} ${esc(p.name)}` : `פרויקט ${it.project_id} (נמחק)`}</b>
+        <span class="muted">${Math.round(b.w)} × ${Math.round(b.h)} × ${Math.round(b.d)}</span>
+        <button type="button" class="btn btn--small" data-act="edit" title="פתיחת הפרויקט לעריכה">✏️</button>
+        <button type="button" class="btn btn--small" data-act="remove" title="הסרה מההרכבה">✕</button>
+      </div>
+      <div class="asm-item__pos">
+        <label>X (רוחב)<input type="number" step="1" data-step="10" data-axis="0" value="${Math.round(it.pos[0])}"></label>
+        <label>Y (גובה)<input type="number" step="1" data-step="10" data-axis="1" value="${Math.round(it.pos[1])}"></label>
+        <label>Z (עומק)<input type="number" step="1" data-step="10" data-axis="2" value="${Math.round(it.pos[2])}"></label>
+      </div>
+      <div class="asm-item__row">
+        <span>סיבוב</span><select name="rot">${[0, 90, 180, 270].map((r) => `<option value="${r}" ${it.rot === r ? 'selected' : ''}>${r}°</option>`).join('')}</select>
+        ${others.length ? `<span>הצמדה ביחס ל</span><select name="ref">${others.map((k) => `<option value="${k}">${esc(a.projects.find((x) => x.id === a.items[k].project_id)?.name || `אלמנט ${k + 1}`)}</option>`).join('')}</select>
+        <button type="button" class="btn" data-act="above">מעל</button><button type="button" class="btn" data-act="right">מימין</button><button type="button" class="btn" data-act="left">משמאל</button><button type="button" class="btn" data-act="front">לפני</button><button type="button" class="btn" data-act="back">מאחור</button><button type="button" class="btn" data-act="center">מרכוז</button>` : ''}
+        <button type="button" class="btn" data-act="floor">לרצפה</button>
+      </div>
+    </div>`;
+  }).join('') || '<p class="muted">אין אלמנטים עדיין — בוחרים פרויקט למעלה ולוחצים "הוספה".</p>';
+}
+function rebuildAssembly(reframe = false) {
+  const a = state.assembly;
+  if (!a) return;
+  const items = a.items.map((it, i) => {
+    const p = a.projects.find((x) => x.id === it.project_id);
+    return p ? { model: modelFor(p), pos: it.pos, rot: it.rot, visible: it.visible !== false, name: p.name, key: i + 1 } : null;
+  }).filter(Boolean);
+  model = combine(items, { joined: !!a.joined, name: a.name });
+  viewer.setModel(model);
+  const b = model.bounds, lb = rebuild.lastBounds;
+  const big = !lb || !b.w || !lb.w || Math.max(b.w / lb.w, lb.w / b.w, b.h / lb.h, lb.h / b.h, b.d / lb.d, lb.d / b.d) > 1.25;
+  if ((reframe || big) && b.w) { viewer.frame(b); rebuild.lastBounds = { ...b }; }
+  renderWarnings(model.warnings);
+  renderSummary(model);
+  renderOutput(model);
+}
+async function flushAssembly(loud = false) {
+  const a = state.assembly;
+  if (!a || !state.dirty) { if (loud) toast('הכול שמור'); return; }
+  state.dirty = false;
+  try {
+    const r = await api('assembly-save', { id: a.id, name: a.name, client_id: a.client_id ?? null, items: a.items, joined: !!a.joined });
+    if (state.assembly === a) { a.updated_at = r.assembly.updated_at; a.client_name = r.assembly.client_name; $('#template-desc').textContent = (a.client_name ? `${a.client_name} · ` : '') + 'הרכבה'; }
+    $('#save-state').textContent = `נשמר ${fmtTime(r.assembly.updated_at)}`;
+    if (loud) toast('נשמר');
+  } catch (err) { state.dirty = true; onError(err); }
+}
+async function shareAssembly() {
+  const a = state.assembly;
+  if (!a) return;
+  await flushAssembly();
+  try {
+    if (a.share_token) {
+      if (!confirm('לבטל את קישור הצפייה? הלקוח לא יוכל לפתוח אותו יותר.')) { showShareLink(); return; }
+      const r = await api('assembly-share', { id: a.id, on: false });
+      a.share_token = r.assembly.share_token;
+      toast('הקישור בוטל');
+    } else {
+      const r = await api('assembly-share', { id: a.id, on: true });
+      a.share_token = r.assembly.share_token;
+      showShareLink();
+    }
+    updateAsmShareUi();
+  } catch (err) { onError(err); }
+}
+function updateAsmShareUi() {
+  const on = !!state.assembly?.share_token;
+  $('#asm-share').textContent = on ? '🔗 קישור ללקוח (פעיל)' : '🔗 קישור ללקוח';
+  $('#asm-share').classList.toggle('is-on', on);
 }
 
 // ---------- עזר ----------

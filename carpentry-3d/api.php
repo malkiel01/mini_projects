@@ -15,6 +15,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/lib/library.php';
 require_once __DIR__ . '/lib/projects.php';
+require_once __DIR__ . '/lib/clients.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -119,7 +120,7 @@ try {
 
         // ---- פרויקטים ----
         case 'projects-list':
-            ok(['projects' => projectsList(requireUser())]);
+            ok(['projects' => projectsList(requireUser(), isset($in['client_id']) ? (int) $in['client_id'] : null)]);
         case 'project-get':
             ok(['project' => projectRow(projectGet(requireUser(), (int) ($in['id'] ?? 0)), true)]);
         case 'project-save':
@@ -131,6 +132,38 @@ try {
             ok(['project' => projectDuplicate(requireEditor(), (int) ($in['id'] ?? 0))]);
         case 'project-share':
             ok(['project' => projectShare(requireEditor(), (int) ($in['id'] ?? 0), (bool) ($in['on'] ?? true))]);
+
+        // ---- לקוחות ----
+        case 'clients-list':
+            requireUser();
+            ok(['clients' => clientsList()]);
+        case 'client-save':
+            ok(['client' => clientSave(requireEditor(), $in)]);
+        case 'client-delete':
+            requireEditor();
+            clientDelete((int) ($in['id'] ?? 0));
+            ok();
+
+        // ---- הרכבות: כמה אלמנטים של לקוח יחד ----
+        case 'assemblies-list':
+            ok(['assemblies' => assembliesList(requireUser(), isset($in['client_id']) ? (int) $in['client_id'] : null)]);
+        case 'assembly-get': {
+            $u = requireUser();
+            ok(['assembly' => assemblyFull($u, assemblyGet($u, (int) ($in['id'] ?? 0)))]);
+        }
+        case 'assembly-save':
+            ok(['assembly' => assemblySave(requireEditor(), $in)]);
+        case 'assembly-delete':
+            assemblyDelete(requireEditor(), (int) ($in['id'] ?? 0));
+            ok();
+        case 'assembly-share':
+            ok(['assembly' => assemblyShare(requireEditor(), (int) ($in['id'] ?? 0), (bool) ($in['on'] ?? true))]);
+        case 'view-assembly': {
+            $a = assemblyByToken((string) ($_GET['t'] ?? $in['t'] ?? ''));
+            $lib = materialsGet();
+            foreach ($lib['diff'] as &$m) unset($m['price'], $m['priceUnit']);
+            ok(['assembly' => $a, 'materials' => $lib]);
+        }
 
         // ---- צפיית לקוח: בלי כניסה, לפי אסימון. מחזיר גם את הספרייה (בלי מחירים) ----
         case 'view': {

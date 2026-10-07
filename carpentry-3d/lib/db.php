@@ -102,7 +102,52 @@ function migrate(PDO $pdo): void {
             updated_at      TEXT    NOT NULL
         );
         CREATE INDEX IF NOT EXISTS projects_owner ON projects(owner_id, updated_at);
+
+        -- לקוחות: רשומה, לא רק שם. משותפת לכל הנגרים.
+        CREATE TABLE IF NOT EXISTS clients (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT    NOT NULL,
+            phone      TEXT    NOT NULL DEFAULT '',
+            email      TEXT    NOT NULL DEFAULT '',
+            address    TEXT    NOT NULL DEFAULT '',
+            notes      TEXT    NOT NULL DEFAULT '',
+            created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at TEXT    NOT NULL,
+            updated_at TEXT    NOT NULL
+        );
+
+        -- הרכבה: כמה פרויקטים של לקוח יחד, כל אחד עם מיקום וסיבוב (items_json).
+        CREATE TABLE IF NOT EXISTS assemblies (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            client_id   INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+            name        TEXT    NOT NULL,
+            items_json  TEXT    NOT NULL DEFAULT '[]',
+            joined      INTEGER NOT NULL DEFAULT 0,
+            share_token TEXT    UNIQUE,
+            created_at  TEXT    NOT NULL,
+            updated_at  TEXT    NOT NULL
+        );
     ");
+
+    // עמודה שנוספה אחרי שהטבלה כבר הייתה בשרת: מוסיפים רק אם חסרה.
+    $cols = array_column($pdo->query('PRAGMA table_info(projects)')->fetchAll(), 'name');
+    if (!in_array('client_id', $cols, true)) {
+        $pdo->exec('ALTER TABLE projects ADD COLUMN client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL');
+    }
+    // הסבה: פרויקטים ישנים עם שם לקוח כטקסט מקבלים רשומת לקוח (אותו שם = אותו לקוח).
+    $orphans = $pdo->query("SELECT id, owner_id, client FROM projects WHERE client_id IS NULL AND client <> ''")->fetchAll();
+    foreach ($orphans as $o) {
+        $st = $pdo->prepare('SELECT id FROM clients WHERE name = ? COLLATE NOCASE');
+        $st->execute([$o['client']]);
+        $cid = $st->fetchColumn();
+        if (!$cid) {
+            $now = nowIso();
+            $pdo->prepare('INSERT INTO clients (name, created_by, created_at, updated_at) VALUES (?,?,?,?)')->execute([$o['client'], $o['owner_id'], $now, $now]);
+            $cid = $pdo->lastInsertId();
+        }
+        $pdo->prepare('UPDATE projects SET client_id = ? WHERE id = ?')->execute([(int) $cid, $o['id']]);
+    }
 }
 
 /** JSON שמור → מערך; טקסט שבור → מערך ריק, לא קריסה. */

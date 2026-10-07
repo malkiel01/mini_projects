@@ -5,24 +5,27 @@ import { build } from './model/index.js';
 import { cutSize } from './model/blocks.js';
 import * as M from './model/materials.js';
 import { createViewer } from './viewer.js';
-import { viewByToken } from './store.js';
+import { viewByToken, viewAssemblyByToken } from './store.js';
+import { combine } from './model/assembly.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
 async function main() {
   if (!window.THREE) { showError('לא הצלחתי לטעון את מנוע התלת מימד. בדקו את החיבור ורעננו.'); return; }
-  const token = new URLSearchParams(location.search).get('t') || '';
+  const qs = new URLSearchParams(location.search);
+  const asmToken = qs.get('a') || '';
+  const token = qs.get('t') || '';
   let data;
-  try { data = await viewByToken(token); } catch (err) { showError(err.message); return; }
+  try { data = asmToken ? await viewAssemblyByToken(asmToken) : await viewByToken(token); } catch (err) { showError(err.message); return; }
 
   M.load(data.materials.diff);
   for (const [id, v] of Object.entries(data.materials.images || {})) M.setImage(id, v.url, v.imageMm);
 
-  const p = data.project;
+  const p = data.project || data.assembly;
   document.title = `${p.name} — הדמיה`;
   $('#view-name').textContent = p.name;
-  $('#view-sub').textContent = [p.client, p.owner_name ? `נגר: ${p.owner_name}` : ''].filter(Boolean).join(' · ');
+  $('#view-sub').textContent = [p.client || p.client_name, p.owner_name ? `נגר: ${p.owner_name}` : '', data.assembly ? 'הרכבה' : ''].filter(Boolean).join(' · ');
 
   const viewer = createViewer($('#stage'), { onPick: (p) => showPart(p, viewer) });
   document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => viewer.view(b.dataset.view)));
@@ -37,7 +40,12 @@ async function main() {
     showPart(shown, viewer); sync();
   });
   let model;
-  try { model = build(p.template_key, p.values); } catch (err) { showError(`תבנית לא מוכרת: ${p.template_key}`); return; }
+  try {
+    if (data.assembly) {
+      const a = data.assembly;
+      model = combine(a.items.map((it, i) => { const pr = a.projects.find((x) => x.id === it.project_id); return pr ? { model: build(pr.template_key, pr.values), pos: it.pos, rot: it.rot, visible: it.visible !== false, name: pr.name, key: i + 1 } : null; }).filter(Boolean), { joined: a.joined, name: a.name });
+    } else model = build(p.template_key, p.values);
+  } catch (err) { showError(`תבנית לא מוכרת: ${p.template_key || ''}`); return; }
   viewer.setModel(model);
   viewer.frame(model.bounds);
 }

@@ -38,6 +38,14 @@ export async function viewByToken(token) {
   return body;
 }
 
+/** צפיית לקוח בהרכבה: GET לפי אסימון. */
+export async function viewAssemblyByToken(token) {
+  const res = await fetch(`${API}?action=view-assembly&t=${encodeURIComponent(token)}`, { credentials: 'omit' });
+  const body = await res.json().catch(() => null);
+  if (!body || !body.success) throw new ApiError(body?.error || 'הקישור אינו תקף', res.status);
+  return body;
+}
+
 export function loadLast() {
   try { return JSON.parse(localStorage.getItem(LS_LAST) || 'null'); } catch { return null; }
 }
