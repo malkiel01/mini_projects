@@ -15,22 +15,61 @@
 </head>
 <body data-tab="form">
 
+<!-- כניסה / הקמה. אין הרשמה חופשית: המנהל יוצר נגרים. -->
+<div class="auth" id="auth" hidden>
+  <form class="auth__card" id="auth-form" autocomplete="on">
+    <h1>🪚 נגרות בתלת מימד</h1>
+    <h2 id="auth-title">כניסה</h2>
+    <p class="muted" id="auth-hint"></p>
+    <label id="auth-name-row" hidden><span>שם</span><input name="name" autocomplete="name"></label>
+    <label><span>דוא"ל</span><input name="email" type="email" required autocomplete="username" dir="ltr"></label>
+    <label><span>סיסמה</span><input name="password" type="password" required minlength="8" autocomplete="current-password" dir="ltr"></label>
+    <p class="auth__error" id="auth-error"></p>
+    <button type="submit" class="btn btn--accent" id="auth-submit">כניסה</button>
+    <a class="auth__back" href="../index.html">חזרה לכלים</a>
+  </form>
+</div>
+
+<div id="app" hidden class="app">
 <header class="bar">
   <div class="bar__titles">
-    <h1 class="bar__title">נגרות בתלת מימד</h1>
-    <span class="bar__sub"><b id="template-name"></b> · <span id="template-desc"></span></span>
+    <h1 class="bar__title"><span id="template-name">נגרות בתלת מימד</span></h1>
+    <span class="bar__sub"><span id="template-desc"></span> <span class="save-state" id="save-state"></span></span>
   </div>
   <div class="bar__actions">
-    <button type="button" class="btn" id="btn-materials">🎨 ספריית חומרים</button>
-    <button type="button" class="btn" id="btn-reset">איפוס לברירת המחדל</button>
-    <a class="btn btn--ghost" href="../index.html">חזרה לכלים</a>
+    <button type="button" class="btn" id="btn-projects">📁 פרויקטים</button>
+    <button type="button" class="btn" id="btn-materials">🎨 חומרים</button>
+    <button type="button" class="btn" id="btn-types" hidden>🧩 סוגי מוצרים</button>
+    <button type="button" class="btn" id="btn-users" hidden>👥 משתמשים</button>
+    <div class="menu">
+      <button type="button" class="btn btn--ghost menu__btn"><span id="user-name"></span> ▾</button>
+      <div class="menu__list">
+        <button type="button" id="btn-password">החלפת סיסמה</button>
+        <button type="button" id="btn-logout">יציאה</button>
+        <a href="../index.html">חזרה לכלים</a>
+      </div>
+    </div>
   </div>
 </header>
 
 <main class="layout">
-  <!-- הטופס נבנה מרשימת הפרמטרים של התבנית — ראו form.js -->
   <aside class="panel panel--form">
-    <form id="form" autocomplete="off" onsubmit="return false"></form>
+    <!-- כרטיס הפרויקט: שם, לקוח, סטטוס, שמירה ושיתוף -->
+    <div class="group project-card" id="project-card" hidden>
+      <div class="field"><span class="field__label">שם הפרויקט</span><input id="proj-name" maxlength="80"></div>
+      <div class="field"><span class="field__label">לקוח</span><input id="proj-client" maxlength="80"></div>
+      <div class="field"><span class="field__label">סטטוס</span>
+        <select id="proj-status"><option value="draft">טיוטה</option><option value="quoted">הצעת מחיר</option><option value="approved">אושר</option><option value="done">בוצע</option></select>
+      </div>
+      <div class="project-card__actions">
+        <button type="button" class="btn btn--small" id="btn-save">💾 שמירה</button>
+        <button type="button" class="btn btn--small" id="btn-share">🔗 קישור ללקוח</button>
+        <button type="button" class="btn btn--small" id="btn-reset">איפוס לברירת המחדל</button>
+      </div>
+    </div>
+    <p class="muted no-project" id="no-project">אין פרויקט פתוח — בחרו אחד מ"פרויקטים" או צרו חדש.</p>
+    <!-- הטופס נבנה מרשימת הפרמטרים של התבנית — ראו form.js -->
+    <form id="form" autocomplete="off" onsubmit="return false" hidden></form>
   </aside>
 
   <section class="panel panel--view">
@@ -46,10 +85,6 @@
     </div>
     <div class="stage-wrap">
       <canvas id="stage" class="stage"></canvas>
-      <div id="stage-error" class="stage-error" hidden>
-        לא הצלחתי לטעון את מנוע התלת מימד (three.js) — לא מהרשת ולא מהעותק המקומי.
-        בדקו את החיבור ורעננו.
-      </div>
       <div id="warnings" class="warnings" hidden></div>
     </div>
     <div class="part" id="part"></div>
@@ -65,15 +100,45 @@
   </section>
 </main>
 
-<!-- ספריית החומרים: מגירה על כל המסך, נבנית ב-materials-ui.js -->
+<!-- מגירות: פרויקטים, משתמשים (מנהל), סוגי מוצרים (מנהל), ספריית חומרים, קישור -->
+<div class="drawer" id="projects">
+  <div class="drawer__bar"><strong>📁 פרויקטים</strong><button type="button" class="btn" data-close="#projects">סגירה</button></div>
+  <div class="drawer__body" id="projects-body"></div>
+</div>
+<div class="drawer" id="users">
+  <div class="drawer__bar"><strong>👥 משתמשים</strong><button type="button" class="btn" data-close="#users">סגירה</button></div>
+  <div class="drawer__body" id="users-body"></div>
+</div>
+<div class="drawer" id="types">
+  <div class="drawer__bar"><strong>🧩 סוגי מוצרים</strong><button type="button" class="btn" data-close="#types">סגירה</button></div>
+  <div class="drawer__body" id="types-body"></div>
+</div>
 <div class="mlib" id="mlib"></div>
+<div class="modal" id="share">
+  <div class="modal__card">
+    <h3>קישור צפייה ללקוח</h3>
+    <p class="muted">מי שמחזיק את הקישור רואה את המודל וההדמיה בלבד — בלי מחירים ובלי רשימת חיתוך. ביטול: לחיצה נוספת על "קישור ללקוח".</p>
+    <input id="share-url" readonly dir="ltr">
+    <div class="modal__actions">
+      <button type="button" class="btn btn--accent" id="share-copy">העתקה</button>
+      <button type="button" class="btn" data-close="#share">סגירה</button>
+    </div>
+  </div>
+</div>
 
 <!-- בטלפון: לשוניות במקום שני פאנלים זה לצד זה -->
 <nav class="tabs">
+  <button type="button" data-tab="projects">פרויקטים</button>
   <button type="button" data-tab="form" class="is-active">טופס</button>
   <button type="button" data-tab="view">תלת מימד <span id="tab-warn-count"></span></button>
   <button type="button" data-tab="materials">חומרים</button>
 </nav>
+</div>
+
+<div class="toast" id="toast"></div>
+<div id="stage-error" class="stage-error stage-error--page" hidden>
+  לא הצלחתי לטעון את מנוע התלת מימד (three.js) — לא מהרשת ולא מהעותק המקומי. בדקו את החיבור ורעננו.
+</div>
 
 <!-- three.js: cdnjs, ואז jsdelivr, ולבסוף העותק המקומי ב-vendor/. רק אחרי
      שאחד מהם נענה נטען המודול של הכלי, שמצפה ל-THREE גלובלי. -->

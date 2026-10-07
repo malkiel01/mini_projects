@@ -1,0 +1,14 @@
+# הדף והקוד נבדקים מול השרת בכל טעינה.
+#
+# בלי זה דפדפן (ובעיקר בטלפון) מחזיק index.html ו-app.js ישנים ימים שלמים,
+# ותכונה שנפרסה פשוט לא מופיעה — בלי שום שגיאה. הבדיקה עולה בקשה קטנה
+# שמסתיימת ב-304 כשלא השתנה דבר. three.min.js שב-vendor/ גדול ואינו משתנה
+# — הוא פטור, ונשמר במטמון.
+<IfModule mod_headers.c>
+    <FilesMatch "\.(html|js|mjs|css)$">
+        Header set Cache-Control "no-cache, must-revalidate"
+    </FilesMatch>
+    <FilesMatch "three\.min\.js$">
+        Header set Cache-Control "public, max-age=2592000"
+    </FilesMatch>
+</IfModule>

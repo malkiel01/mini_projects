@@ -206,5 +206,5 @@ export function createViewer(canvas, { onPick } = {}) {
   fit();
   (function loop() { requestAnimationFrame(loop); applyCam(); renderer.render(scene, camera); })();
 
-  return { setModel, frame, view, fit, select };
+  return { setModel, frame, view, fit, select, debug: () => ({ theta: ctl.theta, phi: ctl.phi, radius: ctl.radius, target: ctl.target.toArray(), w: canvas.clientWidth, h: canvas.clientHeight, aspect: camera.aspect, fov: camera.fov }) };
 }

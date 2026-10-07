@@ -1,55 +1,46 @@
-// אחסון בדפדפן, עד שיש שרת (שלב 4).
+// הגישה לשרת (api.php). כל קריאה היא POST עם JSON; התשובה { success, ... }
+// או { success: false, error }. כשל הופך לשגיאה עם ההודעה למשתמש.
 //
-// ההגדרות הקטנות (טיוטת הפרויקט, שינויים בספריית החומרים) ב-localStorage.
-// תמונות החומרים — גדולות — ב-IndexedDB, מפתח = מזהה החומר. בשלב 4 אותו
-// ממשק (load/save) מקבל מימוש מול api.php, והשאר לא משתנה.
+// עד שלב 3 הקובץ הזה אחסן בדפדפן; עכשיו הכול בשרת, ובדפדפן נשאר רק מה
+// שנוח לזכור מקומית: הפרויקט האחרון שנפתח והלשונית.
 
-const LS_DRAFT = 'carpentry-3d:draft';
-const LS_MATERIALS = 'carpentry-3d:materials';
-const DB = 'carpentry-3d';
-const STORE = 'images';
+const API = './api.php';
+const LS_LAST = 'carpentry-3d:last';
 
-export function loadDraft() {
-  try { return JSON.parse(localStorage.getItem(LS_DRAFT) || 'null'); } catch { return null; }
-}
-export function saveDraft(draft) {
-  try { localStorage.setItem(LS_DRAFT, JSON.stringify(draft)); } catch { /* אחסון חסום — עובדים בלי זיכרון */ }
+export class ApiError extends Error {
+  constructor(message, status) { super(message); this.status = status; }
 }
 
-export function loadMaterialsDiff() {
-  try { return JSON.parse(localStorage.getItem(LS_MATERIALS) || '[]'); } catch { return []; }
-}
-export function saveMaterialsDiff(list) {
-  try { localStorage.setItem(LS_MATERIALS, JSON.stringify(list)); } catch { /* ראו למעלה */ }
-}
-
-function db() {
-  return new Promise((resolve, reject) => {
-    if (!('indexedDB' in window)) { reject(new Error('אין IndexedDB')); return; }
-    const req = indexedDB.open(DB, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-function tx(mode, fn) {
-  return db().then((d) => new Promise((resolve, reject) => {
-    const t = d.transaction(STORE, mode);
-    const req = fn(t.objectStore(STORE));
-    t.oncomplete = () => resolve(req && req.result);
-    t.onerror = () => reject(t.error);
-  })).catch(() => undefined);   // בלי IndexedDB (מצב פרטי וכו') — פשוט בלי תמונות
+export async function api(action, data = {}) {
+  let res;
+  try {
+    res = await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ action, ...data }),
+    });
+  } catch {
+    throw new ApiError('אין חיבור לשרת', 0);
+  }
+  let body = null;
+  try { body = await res.json(); } catch { /* תשובה שאינה JSON — כנראה שגיאת שרת גולמית */ }
+  if (!body) throw new ApiError(`השרת החזיר תשובה לא תקינה (${res.status})`, res.status);
+  if (!body.success) throw new ApiError(body.error || 'שגיאה', res.status);
+  return body;
 }
 
-/** כל התמונות: { id → { image, imageMm } } */
-export async function loadImages() {
-  const out = {};
-  await tx('readonly', (s) => {
-    const req = s.openCursor();
-    req.onsuccess = () => { const c = req.result; if (c) { out[c.key] = c.value; c.continue(); } };
-    return null;
-  });
-  return out;
+/** צפיית לקוח: GET לפי אסימון, בלי עוגייה. */
+export async function viewByToken(token) {
+  const res = await fetch(`${API}?action=view&t=${encodeURIComponent(token)}`, { credentials: 'omit' });
+  const body = await res.json().catch(() => null);
+  if (!body || !body.success) throw new ApiError(body?.error || 'הקישור אינו תקף', res.status);
+  return body;
 }
-export function saveImage(id, image, imageMm) { return tx('readwrite', (s) => s.put({ image, imageMm }, id)); }
-export function deleteImage(id) { return tx('readwrite', (s) => s.delete(id)); }
+
+export function loadLast() {
+  try { return JSON.parse(localStorage.getItem(LS_LAST) || 'null'); } catch { return null; }
+}
+export function saveLast(v) {
+  try { localStorage.setItem(LS_LAST, JSON.stringify(v)); } catch { /* אחסון חסום — לא נורא */ }
+}
