@@ -4,7 +4,7 @@
 // אבן בניין חדשה: רגל. אין גוף, אין גב, אין מדפים — ולכן גם החיבורים שונים.
 
 import { part, leg } from '../blocks.js';
-import { boardT } from './common.js';
+import { boardT, wheelsParam, addWheels } from './common.js';
 
 export default {
   key: 'table',
@@ -23,6 +23,7 @@ export default {
     { key: 'edgeMaterial', label: 'קנט לפלטה', type: 'material', kind: 'edge', default: 'edge:veneer-0.5', group: 'חומרים' },
 
     { key: 'legSize', label: 'חתך הרגל', type: 'mm', min: 40, max: 120, default: 70, group: 'מבנה' },
+    wheelsParam({ group: 'מבנה', hint: 'גלגל מתחת לכל רגל; השולחן מורם בגובהו' }),
     { key: 'legInset', label: 'הרגל מקצה הפלטה', type: 'mm', min: 0, max: 400, default: 60, group: 'מבנה' },
     { key: 'apronH', label: 'גובה המסגרת', type: 'mm', min: 0, max: 200, default: 80, group: 'מבנה', hint: '0 = ללא מסגרת' },
     { key: 'apronT', label: 'עובי המסגרת', type: 'mm', min: 18, max: 50, default: 25, group: 'מבנה' },
@@ -68,6 +69,7 @@ export default {
     hardware.push({ id: 'leg-bolts', kind: 'misc', material: 'hw:leg-adjust', qty: 4, note: 'רגליות / פלטות חיבור' });
     if (L / topT > 60) warnings.push(`פלטה באורך ${L} ובעובי ${topT} — יחס גדול מ-60, מומלץ לעבות`);
     if (H - topT - v.apronH < 600 && H > 650) warnings.push('מתחת למסגרת נשארים פחות מ-600 מ"מ — צפוף לברכיים');
-    return { parts, hardware, warnings, bounds: { w: L, h: H, d: W } };
+    const lift = addWheels(parts, hardware, v, { x0: 0, x1: L, y0: 0, z0: 0, z1: W, inset: v.legSize / 2 + (v.legInset ?? 0) });
+    return { parts, hardware, warnings, bounds: { w: L, h: H + lift, d: W } };
   },
 };

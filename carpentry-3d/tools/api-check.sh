@@ -137,6 +137,13 @@ ok 'diff חדש בלי החומר — התמונה נשארת' "$(call "$A" '{"a
 ok 'מחיקת תמונה' "$(call "$A" '{"action":"material-image-delete","id":"board:custom-x"}')" "d['success']"
 ok 'ואז השורה נעלמת' "$(call "$C" '{"action":"materials-get"}')" "d['images']=={} and len(d['diff'])==1"
 
+echo "אביזרים"
+ok 'נגר שומר אביזרים (hw: בלבד)' "$(call "$C" '{"action":"accessories-save","diff":[{"id":"hw:handle-bar-128","price":30},{"id":"hw:my-bar","kind":"hardware","name":"ידית שלי","price":40,"priceUnit":"unit","active":true,"accessory":{"type":"bar","params":{"length":224},"finish":"brass"}},{"id":"board:hack","kind":"board","name":"x"}]}')" "len([m for m in d['diff'] if m['id'].startswith('hw:')])==2 and not any(m['id']=='board:hack' for m in d['diff']) and [m for m in d['diff'] if m['id']=='hw:my-bar'][0]['accessory']['params']['length']==224"
+ok 'שורות הלוחות נשארו' "$(call "$C" '{"action":"materials-get"}')" "any(m['id']=='board:melamine-oak-18' for m in d['diff'])"
+ok 'אביזר שהוסר מהרשימה נמחק' "$(call "$C" '{"action":"accessories-save","diff":[{"id":"hw:my-bar","kind":"hardware","name":"ידית שלי","price":40,"priceUnit":"unit","active":true,"accessory":{"type":"bar","params":{"length":224},"finish":"brass"}}]}')" "len([m for m in d['diff'] if m['id'].startswith('hw:')])==1"
+ok 'צופה לא שומר אביזרים' "$(call "$V" '{"action":"accessories-save","diff":[]}')" "d['success']==False"
+ok 'ניקוי' "$(call "$C" '{"action":"accessories-save","diff":[]}')" "len([m for m in d['diff'] if m['id'].startswith('hw:')])==0"
+
 echo "תעריפים"
 ok 'ברירת מחדל ריקה' "$(call "$C" '{"action":"rates-get"}')" "d['rates']['laborHour'] is None"
 ok 'שמירה' "$(call "$C" '{"action":"rates-save","rates":{"laborHour":180,"markup":0.25,"materials":{"board:melamine-oak-18":135}}}')" "d['rates']['laborHour']==180 and d['rates']['materials']['board:melamine-oak-18']==135"

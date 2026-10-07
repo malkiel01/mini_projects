@@ -12,7 +12,7 @@
 import { carcass, partitions, shelves, back, plinth, crown, door, part } from '../blocks.js';
 import { material } from '../materials.js';
 import { resolveShares, sectionLayout, cellsOf } from '../layout.js';
-import { materialParams, joineryParams, FINISHES, FINISHES_NO_GLASS, applyFinish, sameOrMaterial, resolveSame } from './common.js';
+import { handleParam, hingeParam, wheelsParam, addWheels, materialParams, joineryParams, FINISHES, FINISHES_NO_GLASS, applyFinish, sameOrMaterial, resolveSame } from './common.js';
 
 const DOOR_OPTIONS = [{ id: 'none', name: 'ללא' }, { id: 'wood', name: 'עץ' }, { id: 'glass', name: 'ויטרינה' }];
 const WITH_DOORS = ['wood', 'glass'];
@@ -38,6 +38,7 @@ export default {
     { key: 'plinthH', label: 'סוקל — גובה', type: 'mm', min: 0, max: 200, default: 80, group: 'סיומות', hint: '0 = ללא סוקל' },
     { key: 'plinthSetback', label: 'סוקל — נסיגה', type: 'mm', min: 0, max: 100, default: 30, group: 'סיומות' },
     { key: 'crownH', label: 'כרכוב — גובה', type: 'mm', min: 0, max: 200, default: 0, group: 'סיומות', hint: '0 = ללא כרכוב' },
+    wheelsParam(),
 
     { key: 'lowerH', label: 'פיצול העמודה — גובה החלק התחתון', type: 'mm', min: 0, max: 2500, default: 0, group: 'דלתות', hint: '0 = בלי פיצול. עם פיצול: מדף קבוע בגובה הזה, ודלתות שונות למטה ולמעלה' },
     { key: 'lowerDoors', label: 'דלתות — חלק תחתון', type: 'enum', default: 'wood', group: 'דלתות', options: DOOR_OPTIONS, showIf: { lowerH: 'gt0' } },
@@ -47,10 +48,7 @@ export default {
     { key: 'doorFinish', label: 'גימור דלתות העץ', type: 'enum', default: 'flat', group: 'דלתות', options: FINISHES_NO_GLASS },
     { key: 'doorMaterial', label: 'חומר הדלתות', type: 'material', kind: 'board', back: false, solid: false, top: false, default: 'board:mdf-paint-18', group: 'דלתות' },
     { key: 'glassType', label: 'זכוכית', type: 'material', kind: 'glass', default: 'glass:clear-4', group: 'דלתות' },
-    { key: 'hinge', label: 'צירים', type: 'enum', default: 'hw:hinge-110', group: 'דלתות',
-      options: [{ id: 'hw:hinge-110', name: '110°' }, { id: 'hw:hinge-165', name: '165°' }, { id: 'hw:hinge-glass', name: 'לוויטרינה' }] },
-    { key: 'handle', label: 'ידיות', type: 'enum', default: 'hw:handle-bar-128', group: 'דלתות',
-      options: [{ id: 'none', name: 'ללא (לחיצה)' }, { id: 'hw:handle-bar-128', name: 'מוט 128' }, { id: 'hw:handle-knob', name: 'כפתור' }] },
+    hingeParam(), handleParam(),
 
     { key: 'sideLeftFinish', label: 'דופן שמאל — סוג', type: 'enum', default: 'flat', group: 'דפנות ותאורה', options: FINISHES },
     sameOrMaterial('sideLeftMaterial', 'דופן שמאל — חומר', 'דפנות ותאורה', { showIf: { sideLeftFinish: ['flat', 'fluted-fine', 'fluted-wide', 'grooved'] } }),
@@ -250,6 +248,8 @@ export default {
     // סטריפים על דופן שמאל יוצאים ל-x שלילי — מזיזים הכול ימינה כדי שהגבולות יתחילו ב-0
     const shift = sideExtra(v.sideLeftFinish);
     if (shift) { for (const p of parts) p.box = { ...p.box, x: p.box.x + shift }; for (const h of hardware) if (h.pos) h.pos = [h.pos[0] + shift, h.pos[1], h.pos[2]]; for (const p of parts) if (p.motion && p.motion.kind === 'hinge' && !p.motion.shifted) { p.motion = { ...p.motion, pivot: [p.motion.pivot[0] + shift, p.motion.pivot[1], p.motion.pivot[2]], shifted: true }; } }
+    const lift = addWheels(parts, hardware, v, { x0: shift, x1: shift + W, y0: 0, z0: bodyZ, z1: bodyZ + bodyD });
+    bounds.h += lift;
     return { parts, hardware, warnings, bounds };
   },
 };

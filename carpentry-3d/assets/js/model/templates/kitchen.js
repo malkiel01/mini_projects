@@ -11,7 +11,7 @@
 // "פינה מימין" היא שיקוף של "פינה משמאל" (mirrorX).
 
 import { carcass, shelves, back, door, drawer, part } from '../blocks.js';
-import { materialParams, drawerParams, joineryParams, boardT, LIMITS } from './common.js';
+import { materialParams, drawerParams, joineryParams, boardT, LIMITS, hingeParam, handleParam } from './common.js';
 import { resolveShares, sectionLayout, cellsOf } from '../layout.js';
 
 const N = (n) => Array.from({ length: n }, (_, i) => i + 1);
@@ -96,9 +96,7 @@ export default {
     { key: 'topMaterial', label: 'משטח עבודה', type: 'material', kind: 'board', top: true, default: 'board:countertop-38', group: 'חומרים' },
     { key: 'topOverhang', label: 'הבלטת המשטח קדימה', type: 'mm', min: 0, max: 60, default: 40, group: 'חומרים' },
     ...drawerParams(),
-    { key: 'hinge', label: 'צירים', type: 'enum', default: 'hw:hinge-110', group: 'חומרים', options: [{ id: 'hw:hinge-110', name: '110°' }, { id: 'hw:hinge-165', name: '165°' }] },
-    { key: 'handle', label: 'ידיות', type: 'enum', default: 'hw:handle-bar-128', group: 'חומרים',
-      options: [{ id: 'none', name: 'ללא (לחיצה)' }, { id: 'hw:handle-bar-128', name: 'מוט 128' }, { id: 'hw:handle-knob', name: 'כפתור' }] },
+    hingeParam({ group: 'חומרים' }), handleParam({ group: 'חומרים' }),
   ],
   joinery: joineryParams(),
   limits: LIMITS,

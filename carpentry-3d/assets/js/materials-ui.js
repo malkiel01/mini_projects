@@ -102,8 +102,9 @@ export function createMaterialsUI(root, { onChange, onError, getUser, rates }) {
     renderRates();
     const body = $('.mlib__body', root);
     body.innerHTML = '';
-    const list = M.all().filter((m) => m.kind === kind && (admin || m.active));
-    if (!list.length) { body.innerHTML = '<p class="muted">אין חומרים מהסוג הזה.</p>'; return; }
+    const list = M.all().filter((m) => m.kind === kind && (admin || m.active) && !m.accessory);
+    if (kind === 'hardware') body.insertAdjacentHTML('beforeend', '<p class="muted">ידיות, כפתורים, צירים וגלגלים — עם הצורה התלת־ממדית והמחיר שלהם — מנוהלים במסך "🔩 אביזרים".</p>');
+    if (!list.length) { body.insertAdjacentHTML('beforeend', '<p class="muted">אין חומרים מהסוג הזה.</p>'); return; }
     for (const m of list) body.appendChild(card(m, admin));
   }
 

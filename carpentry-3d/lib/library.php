@@ -53,6 +53,34 @@ function materialsSave(array $diff): void {
     }
 }
 
+/**
+ * אביזרים: מחליף רק את שורות הפרזול (hw:) ב-diff — ידיות, כפתורים, צירים
+ * וגלגלים שהנגר מנהל במסך "אביזרים". שאר הספרייה לא נגועה, ולכן נגר (לא רק
+ * מנהל) רשאי. שורות hw: שאינן ברשימה נמחקות (לפרזול אין תמונות).
+ */
+function accessoriesSave(array $diff): void {
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        $keep = [];
+        $up = $pdo->prepare('INSERT INTO materials (id, data, updated_at) VALUES (?,?,?)
+                             ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at');
+        foreach ($diff as $m) {
+            if (!is_array($m) || !isset($m['id']) || !is_string($m['id']) || !preg_match('/^hw:[a-z0-9._-]+$/', $m['id'])) continue;
+            $id = $m['id'];
+            unset($m['id'], $m['image'], $m['seed']);
+            $up->execute([$id, jsonStr($m), nowIso()]);
+            $keep[] = $id;
+        }
+        $notIn = $keep ? ' AND id NOT IN (' . implode(',', array_fill(0, count($keep), '?')) . ')' : '';
+        $pdo->prepare("DELETE FROM materials WHERE id LIKE 'hw:%'" . $notIn)->execute($keep);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+}
+
 function imageFile(string $id): string {
     return preg_replace('/[^a-z0-9._-]/', '_', $id) . '.jpg';
 }

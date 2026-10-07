@@ -42,11 +42,30 @@ export const SEED = [
   { id: 'glass:clear-4',           kind: 'glass', name: 'זכוכית שקופה 4', t: 4, color: 0xbfe0ea, finish: 'glass', opacity: 0.3, price: 180, priceUnit: 'm2' },
   { id: 'glass:frosted-4',         kind: 'glass', name: 'זכוכית חלבית 4', t: 4, color: 0xe9eff0, finish: 'glass', opacity: 0.75, price: 220, priceUnit: 'm2' },
   { id: 'glass:smoked-4',          kind: 'glass', name: 'זכוכית מעושנת 4', t: 4, color: 0x5a5e62, finish: 'glass', opacity: 0.5, price: 240, priceUnit: 'm2' },
-  { id: 'hw:hinge-110',            kind: 'hardware', name: 'ציר 110°', price: 12, priceUnit: 'unit' },
-  { id: 'hw:hinge-165',            kind: 'hardware', name: 'ציר 165°', price: 22, priceUnit: 'unit' },
-  { id: 'hw:hinge-glass',          kind: 'hardware', name: 'ציר לוויטרינה', price: 28, priceUnit: 'unit' },
-  { id: 'hw:handle-bar-128',       kind: 'hardware', name: 'ידית מוט 128', price: 25, priceUnit: 'unit' },
-  { id: 'hw:handle-knob',          kind: 'hardware', name: 'ידית כפתור', price: 15, priceUnit: 'unit' },
+  // אביזרים: פרזול עם מתכון תלת־ממדי (accessories.js). הנגר מוסיף ועורך במסך "אביזרים".
+  { id: 'hw:hinge-110',            kind: 'hardware', name: 'ציר נסתר 110°', price: 12, priceUnit: 'unit', accessory: { type: 'concealed', params: { angle: 110 }, finish: 'nickel' } },
+  { id: 'hw:hinge-165',            kind: 'hardware', name: 'ציר נסתר 165°', price: 22, priceUnit: 'unit', accessory: { type: 'concealed', params: { angle: 165 }, finish: 'nickel' } },
+  { id: 'hw:hinge-soft',           kind: 'hardware', name: 'ציר נסתר 110° בטריקה שקטה', price: 24, priceUnit: 'unit', accessory: { type: 'concealed', params: { angle: 110 }, finish: 'nickel' } },
+  { id: 'hw:hinge-glass',          kind: 'hardware', name: 'ציר לוויטרינה (כוס 26)', price: 28, priceUnit: 'unit', accessory: { type: 'concealed', params: { angle: 110, cup: 26 }, finish: 'chrome' } },
+  { id: 'hw:hinge-butt',           kind: 'hardware', name: 'ציר פרפר פליז 60', price: 9, priceUnit: 'unit', accessory: { type: 'butt', params: { length: 60, width: 20 }, finish: 'brass' } },
+  { id: 'hw:handle-bar-128',       kind: 'hardware', name: 'ידית מוט 128 ניקל', price: 25, priceUnit: 'unit', accessory: { type: 'bar', params: { length: 128 }, finish: 'nickel' } },
+  { id: 'hw:handle-bar-160-black', kind: 'hardware', name: 'ידית מוט 160 שחור', price: 28, priceUnit: 'unit', accessory: { type: 'bar', params: { length: 160, diameter: 12 }, finish: 'black' } },
+  { id: 'hw:handle-bar-320-brass', kind: 'hardware', name: 'ידית מוט 320 פליז', price: 55, priceUnit: 'unit', accessory: { type: 'bar', params: { length: 320, diameter: 12 }, finish: 'brass' } },
+  { id: 'hw:handle-flat-160',      kind: 'hardware', name: 'ידית פס שטוח 160 שחור', price: 32, priceUnit: 'unit', accessory: { type: 'bar-flat', params: { length: 160 }, finish: 'black' } },
+  { id: 'hw:handle-bow-96',        kind: 'hardware', name: 'ידית קשת 96 כרום', price: 22, priceUnit: 'unit', accessory: { type: 'bow', params: { length: 96 }, finish: 'chrome' } },
+  { id: 'hw:handle-tbar',          kind: 'hardware', name: 'ידית T 60 ניקל', price: 18, priceUnit: 'unit', accessory: { type: 't-bar', params: { length: 60 }, finish: 'nickel' } },
+  { id: 'hw:handle-edge',          kind: 'hardware', name: 'ידית פרופיל קצה 200 שחור', price: 30, priceUnit: 'unit', accessory: { type: 'edge-profile', params: { length: 200 }, finish: 'black' } },
+  { id: 'hw:handle-shell',         kind: 'hardware', name: 'ידית קונכייה שקועה', price: 26, priceUnit: 'unit', accessory: { type: 'shell', params: {}, finish: 'nickel' } },
+  { id: 'hw:handle-leather',       kind: 'hardware', name: 'ידית רצועת עור', price: 35, priceUnit: 'unit', accessory: { type: 'leather', params: {}, finish: 'bronze' } },
+  { id: 'hw:handle-knob',          kind: 'hardware', name: 'כפתור כדור 28 ניקל', price: 15, priceUnit: 'unit', accessory: { type: 'knob-round', params: { diameter: 28 }, finish: 'nickel' } },
+  { id: 'hw:knob-mushroom-brass',  kind: 'hardware', name: 'כפתור פטרייה 32 פליז', price: 19, priceUnit: 'unit', accessory: { type: 'knob-mushroom', params: { diameter: 32 }, finish: 'brass' } },
+  { id: 'hw:knob-cylinder-black',  kind: 'hardware', name: 'כפתור גליל 20 שחור', price: 16, priceUnit: 'unit', accessory: { type: 'knob-cylinder', params: {}, finish: 'black' } },
+  { id: 'hw:knob-square-wood',     kind: 'hardware', name: 'כפתור מרובע עץ', price: 14, priceUnit: 'unit', accessory: { type: 'knob-square', params: {}, finish: 'wood' } },
+  { id: 'hw:knob-ring',            kind: 'hardware', name: 'כפתור טבעת ברונזה', price: 21, priceUnit: 'unit', accessory: { type: 'knob-ring', params: {}, finish: 'bronze' } },
+  { id: 'hw:caster-swivel-50',     kind: 'hardware', name: 'גלגל מסתובב 50', price: 14, priceUnit: 'unit', accessory: { type: 'caster-swivel', params: { diameter: 50 }, finish: 'nickel' } },
+  { id: 'hw:caster-brake-75',      kind: 'hardware', name: 'גלגל מסתובב 75 עם בלם', price: 24, priceUnit: 'unit', accessory: { type: 'caster-swivel', params: { diameter: 75, width: 25, brake: 1 }, finish: 'black' } },
+  { id: 'hw:caster-fixed-50',      kind: 'hardware', name: 'גלגל קבוע 50', price: 11, priceUnit: 'unit', accessory: { type: 'caster-fixed', params: { diameter: 50 }, finish: 'nickel' } },
+  { id: 'hw:caster-ball-30',       kind: 'hardware', name: 'גלגל כדורי 30', price: 9, priceUnit: 'unit', accessory: { type: 'ball-caster', params: {}, finish: 'chrome' } },
   { id: 'hw:shelf-pin',            kind: 'hardware', name: 'פין מדף', price: 0.5, priceUnit: 'unit' },
   { id: 'hw:slide-std',            kind: 'hardware', name: 'מסילות למגירה — רגילות (זוג)', price: 35, priceUnit: 'unit' },
   { id: 'hw:slide-tandem',         kind: 'hardware', name: 'מסילות טנדם בטריקה שקטה (זוג)', price: 120, priceUnit: 'unit' },
@@ -140,6 +159,14 @@ export function materialsOfKind(kind, { back, solid, top } = {}) {
     && (solid === undefined || !!m.solid === solid)
     && (top === undefined || !!m.top === top));
 }
+
+/** אביזרים לפי תפקיד: 'handle' (ידיות וכפתורים), 'hinge', 'wheel'. */
+export function materialsOfRole(role) {
+  const kinds = role === 'handle' ? ['handle', 'knob'] : [role];
+  return all().filter((m) => m.kind === 'hardware' && m.active && m.accessory && kinds.includes(accessoryKind(m.accessory.type)));
+}
+const ACCESSORY_KINDS = { bar: 'handle', 'bar-flat': 'handle', bow: 'handle', 't-bar': 'handle', 'edge-profile': 'handle', shell: 'handle', leather: 'handle', 'knob-round': 'knob', 'knob-mushroom': 'knob', 'knob-cylinder': 'knob', 'knob-square': 'knob', 'knob-ring': 'knob', concealed: 'hinge', butt: 'hinge', pivot: 'hinge', 'caster-swivel': 'wheel', 'caster-fixed': 'wheel', 'ball-caster': 'wheel' };
+export const accessoryKind = (type) => ACCESSORY_KINDS[type] || null;
 
 export function material(id) {
   return library.get(id) || { id, kind: 'unknown', name: id, color: 0xff00ff, finish: 'paint' };

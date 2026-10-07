@@ -14,6 +14,7 @@ import * as M from './model/materials.js';
 import { renderForm } from './form.js';
 import { createViewer } from './viewer.js';
 import { createMaterialsUI } from './materials-ui.js';
+import { createAccessoriesUI } from './accessories-ui.js';
 import { api, loadLast, saveLast } from './store.js';
 import { watchNumbers } from './numfield.js';
 import { placeModel, combine, snapTo } from './model/assembly.js';
@@ -33,7 +34,7 @@ const state = {
   rates: { laborHour: null, markup: null, materials: {} },
   dirty: false,
 };
-let viewer = null, form = null, model = null, materialsUI = null;
+let viewer = null, form = null, model = null, materialsUI = null, accessoriesUI = null;
 let saveTimer = null;
 
 // ---------- היסטוריית הדפדפן: "אחורה" נשאר בתוך האפליקציה ----------
@@ -41,7 +42,7 @@ let saveTimer = null;
 // חוזר למסך הפתיחה. פתיחת פרויקט מתוך מגירה מחליפה את רשומת המגירה
 // ברשומת הפרויקט (לא דוחפת), כך שה"אחורה" הבא מחזיר לרשימה ולא למגירה.
 // סגירה מכפתור "סגירה" חוזרת צעד אחורה בהיסטוריה — וה-popstate שלה מדולג.
-const DRAWERS = ['#projects', '#clients', '#users', '#types', '#mlib', '#share', '#newproj', '#clientdlg'];
+const DRAWERS = ['#projects', '#clients', '#users', '#types', '#mlib', '#accessories', '#share', '#newproj', '#clientdlg'];
 let suppressPops = 0;
 function pushNav(kind) { history.pushState({ app: 'carpentry', kind }, ''); }
 function openDrawer(sel, fromPop = false) {
@@ -138,6 +139,10 @@ async function enter() {
       onError, getUser: () => state.user,
       rates: { get: () => state.rates, set: (p) => Object.assign(state.rates, p) },
     });
+    accessoriesUI = createAccessoriesUI($('#accessories'), {
+      onChange: () => { materialsUI.render(); if (state.project) { form = renderForm($('#form'), currentTemplate(), state.values, onFormChange); rebuild(); } else if (state.assembly) { modelCache.clear(); rebuildAssembly(); } },
+      onError, getUser: () => state.user,
+    });
     wireUi();
   }
 
@@ -174,6 +179,7 @@ function wireUi() {
   $('#btn-output').addEventListener('click', () => { if ($('#output').classList.contains('is-open')) closeDrawer('#output'); else { $('#output').classList.add('is-open'); pushNav('output'); } });
   $('#btn-output-close').addEventListener('click', () => closeDrawer('#output'));
   $('#btn-materials').addEventListener('click', () => { materialsUI.open(); pushNav('drawer'); });
+  $('#btn-accessories').addEventListener('click', () => { accessoriesUI.open(); pushNav('drawer'); });
   $('#btn-projects').addEventListener('click', () => showProjects());
   $('#btn-clients').addEventListener('click', () => showClients());
   $('#btn-client-new').addEventListener('click', () => clientDialog(null, (c) => { if (state.project) { state.project.client_id = c.id; state.project.client = c.name; fillClientSelect($('#proj-client'), c.id); markDirty(); } }));

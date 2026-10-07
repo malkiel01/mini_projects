@@ -4,7 +4,7 @@
 // אבן הבניין המלאה: חזית, ארגז, תחתית ומסילות.
 
 import { carcass, partitions, shelves, back, plinth, drawer, part } from '../blocks.js';
-import { materialParams, drawerParams, joineryParams, boardT, bodyWarnings, LIMITS } from './common.js';
+import { materialParams, drawerParams, joineryParams, boardT, bodyWarnings, LIMITS, handleParam, wheelsParam, addWheels } from './common.js';
 import { resolveShares, sectionLayout, effectivePins } from '../layout.js';
 
 export default {
@@ -27,11 +27,11 @@ export default {
     ...materialParams({ shelves: false }),
     { key: 'frontMaterial', label: 'חזיתות המגירות', type: 'material', kind: 'board', back: false, solid: false, top: false, default: 'board:mdf-paint-18', group: 'חומרים' },
     ...drawerParams(),
-    { key: 'handle', label: 'ידיות', type: 'enum', default: 'hw:handle-bar-128', group: 'מגירות',
-      options: [{ id: 'none', name: 'ללא (לחיצה)' }, { id: 'hw:handle-bar-128', name: 'מוט 128' }, { id: 'hw:handle-knob', name: 'כפתור' }] },
+    handleParam({ group: 'מגירות' }),
 
     { key: 'plinthH', label: 'סוקל — גובה', type: 'mm', min: 0, max: 200, default: 70, group: 'סיומות' },
     { key: 'plinthSetback', label: 'סוקל — נסיגה', type: 'mm', min: 0, max: 100, default: 25, group: 'סיומות' },
+    wheelsParam(),
   ],
   joinery: joineryParams({ shelves: false }),
   limits: LIMITS,
@@ -105,6 +105,7 @@ export default {
     parts.push(...plinth({ inner, h: v.plinthH, setback: v.plinthSetback, t: sideT, d: D - oh, material: v.bodyMaterial }).parts);
 
     warnings.push(...bodyWarnings({ H, colW: cols.colW, shelfT, hasShelves: false }));
-    return { parts, hardware, warnings, bounds: { w: W, h: H, d: D + frontT } };
+    const lift = addWheels(parts, hardware, v, { x0: oh, x1: W - oh, y0: 0, z0: bodyZ, z1: bodyZ + bodyD });
+    return { parts, hardware, warnings, bounds: { w: W, h: H + lift, d: D + frontT } };
   },
 };

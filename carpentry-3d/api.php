@@ -100,6 +100,10 @@ try {
             requireAdmin();
             materialsSave(is_array($in['diff'] ?? null) ? $in['diff'] : []);
             ok(materialsGet());
+        case 'accessories-save':
+            requireEditor();
+            accessoriesSave(is_array($in['diff'] ?? null) ? $in['diff'] : []);
+            ok(materialsGet());
         case 'material-image':
             requireAdmin();
             ok(['image' => materialImageSave(s($in, 'id', 80), (string) ($in['image'] ?? ''), (int) ($in['imageMm'] ?? 600))]);

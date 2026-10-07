@@ -687,3 +687,27 @@ input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner
 .acard b { font-size: 1rem; }
 .out-item + .out-item { margin-top: 18px; padding-top: 14px; border-top: 2px dashed var(--line-strong); }
 .out-item__title { font-size: 1.05rem; color: var(--accent-deep); margin: 0 0 8px; }
+
+/* ---- אביזרים ---- */
+.acc .drawer__bar { gap: 10px; flex-wrap: wrap; }
+.acc__kinds { display: flex; gap: 4px; flex-wrap: wrap; }
+.acc__kinds button { padding: 6px 12px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--panel); font: inherit; font-size: 0.85rem; cursor: pointer; }
+.acc__kinds button.is-active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-deep); font-weight: 600; }
+.acc__body { display: grid; grid-template-columns: 300px 1fr; gap: 14px; padding: 14px 16px 32px; overflow: auto; flex: 1; min-height: 0; }
+.acc__list { display: flex; flex-direction: column; gap: 6px; align-content: start; }
+.acc__new { margin-bottom: 4px; }
+.acc__card { text-align: right; padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); font: inherit; cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
+.acc__card:hover { border-color: var(--accent); }
+.acc__card.is-active { border-color: var(--accent); background: var(--accent-soft); }
+.acc__card.is-off { opacity: 0.55; }
+.acc__card .muted { font-size: 0.78rem; }
+.acc__editor { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(280px, 1fr); gap: 14px; align-content: start; }
+.acc__preview { width: 100%; aspect-ratio: 1; max-height: 420px; border-radius: 14px; background: linear-gradient(180deg, #f7f2ea, #e9dfd0); border: 1px solid var(--line); touch-action: none; cursor: grab; }
+.acc__form { display: flex; flex-direction: column; gap: 8px; }
+.acc__field { display: grid; grid-template-columns: 120px 1fr auto; align-items: center; gap: 8px; font-size: 0.88rem; }
+.acc__field input, .acc__field select { padding: 7px 9px; border: 1px solid var(--line-strong); border-radius: 10px; font: inherit; font-size: 0.9rem; background: var(--panel-2); min-width: 0; }
+.acc__field i { color: var(--muted); font-style: normal; font-size: 0.78rem; }
+.acc__check { grid-template-columns: auto 1fr; }
+.acc__actions { display: flex; gap: 6px; padding-top: 4px; }
+.acc__hint { font-size: 0.78rem; }
+@media (max-width: 860px) { .acc__body { grid-template-columns: 1fr; } .acc__editor { grid-template-columns: 1fr; } .acc__preview { max-height: 260px; } }
