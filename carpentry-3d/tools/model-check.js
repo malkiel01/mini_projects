@@ -7,6 +7,8 @@
 
 import { build, cutList, hardwareList, defaults, template, optionsFor, allParams } from '../assets/js/model/index.js';
 import * as M from '../assets/js/model/materials.js';
+import { estimate } from '../assets/js/model/pricing.js';
+import { nest, sheetCount } from '../assets/js/model/sheets.js';
 
 let failed = 0;
 function check(cond, msg) {
@@ -102,6 +104,45 @@ console.log('ספריית חומרים דינמית');
   check(M.material('board:test-oak').t === 25 && M.material('board:melamine-oak-18').active === false, 'טעינה מחזירה את אותו מצב');
   M.reset();
   check(optionsFor(p).length === before, 'איפוס מחזיר לזריעה');
+}
+
+console.log('מחיר');
+{
+  const r = build('bookcase', { doorType: 'glass' });
+  const e = estimate(r, {});
+  check(e.total > 0 && e.materials > 0 && e.hardware > 0 && e.labor.total === 6 * 150, `הערכה עם ברירות מחדל (סה"כ ${e.total})`);
+  check(e.lines.some((l) => l.group === 'קנט') && e.edgeMeters > 0, 'קנט נספר במטרים');
+  check(e.lines.some((l) => l.group === 'זכוכית'), 'זכוכית בשורה משלה');
+  const mine = estimate(r, { laborHour: 200, markup: 0, materials: { 'board:melamine-oak-18': 1000 } });
+  check(mine.labor.rate === 200 && mine.labor.mine && mine.markup.total === 0, 'תעריפי הנגר דורסים');
+  check(mine.lines.find((l) => l.name === 'מלמין אלון 18').mine && mine.materials > e.materials, '"המחיר שלי" לחומר');
+  check(Math.abs(e.total - (e.subtotal * 1.2)) < 0.05, 'רווח 20% על הכול');
+}
+
+console.log('לוחות וסידור');
+{
+  const r = build('bookcase', { width: 2400, columns: 4, doorType: 'wood' });
+  const cl = cutList(r);
+  const sc = sheetCount(cl, r.parts);
+  check(sc.length >= 2 && sc.every((g) => g.count >= 1), `ספירה לכל חומר (${sc.map((g) => `${g.name}: ${g.count}`).join(', ')})`);
+  const n = nest(cl, r.parts);
+  const placed = n.reduce((s, g) => s + g.sheets.reduce((t, sh) => t + sh.places.length, 0), 0);
+  const total = cl.boards.filter((row) => M.material(r.parts.find((p) => p.id === row.ids[0]).material).sheet).reduce((s, row) => s + row.qty, 0);
+  check(placed === total && n.every((g) => g.tooBig.length === 0), `כל החלקים הונחו (${placed}/${total})`);
+  let overlap = false, outside = false;
+  for (const g of n) for (const sh of g.sheets) {
+    for (const a of sh.places) {
+      if (a.x < 0 || a.y < 0 || a.x + a.w > sh.L + 0.01 || a.y + a.h > sh.W + 0.01) outside = true;
+      for (const b of sh.places) if (a !== b && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) overlap = true;
+    }
+  }
+  check(!overlap && !outside, 'אין חפיפות ואין חריגה מהלוח');
+  const oak = n.find((g) => g.id === 'board:melamine-oak-18');
+  check(oak && oak.sheets.every((sh) => sh.places.every((pl) => !pl.rotated)), 'מלמין: לא מסובבים (סיבים)');
+  check(n.every((g) => g.waste >= 0 && g.waste < 1), 'פחת בין 0 ל-1');
+  const huge = build('bookcase', { width: 4000, columns: 1, shelvesPerColumn: 0, sidesOverTop: 'top' });
+  const hn = nest(cutList(huge), huge.parts);
+  check(hn.some((g) => g.tooBig.length > 0), 'גג 4000 ארוך מלוח 2800 — מדווח, לא נעלם');
 }
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }

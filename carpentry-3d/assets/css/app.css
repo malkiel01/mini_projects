@@ -504,3 +504,48 @@ body {
   .users__new input, .users__new select { min-width: 0; flex: 1 1 45%; }
   .view-page .bar { flex-wrap: wrap; }
 }
+
+/* ---- פלט ייצור: לשוניות, שרטוטים, מחיר, לוחות ---- */
+.output__bar { flex-wrap: wrap; gap: 10px; }
+.output__tabs { display: flex; gap: 2px; background: var(--bg); border-radius: 999px; padding: 3px; border: 1px solid var(--line); }
+.output__tabs button { padding: 6px 12px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font: inherit; font-size: 0.85rem; cursor: pointer; }
+.output__tabs button.is-active { background: var(--panel); color: var(--accent-deep); font-weight: 600; box-shadow: var(--shadow); }
+.output__actions { display: flex; gap: 6px; margin-inline-start: auto; }
+.drawings { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.drawings figure, .sheets figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px; box-shadow: var(--shadow); }
+.drawings figcaption, .sheets figcaption { color: var(--accent-deep); font-weight: 600; font-size: 0.9rem; margin-bottom: 4px; }
+.drawing { width: 100%; height: auto; max-height: 70vh; display: block; margin: 0 auto; }
+.sheets { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin-top: 8px; }
+.price-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 12px 0; }
+.price-totals div { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; display: flex; flex-direction: column; gap: 2px; }
+.price-totals span { color: var(--muted); font-size: 0.8rem; }
+.price-totals b { font-size: 1.05rem; }
+.price-totals__final { background: var(--accent-soft) !important; border-color: var(--accent) !important; }
+.price-totals__final b { color: var(--accent-deep); font-size: 1.25rem; }
+.nest-toggle { display: flex; align-items: center; gap: 8px; margin: 14px 0 6px; font-size: 0.9rem; }
+
+/* ---- הדפסה ---- */
+.print { display: none; }
+@media print {
+  @page { size: A4 landscape; margin: 12mm; }
+  body { overflow: visible; height: auto; background: #fff; }
+  body.is-printing > :not(#print) { display: none !important; }
+  .print { display: block; color: #000; font-size: 11pt; }
+  .print__head { border-bottom: 2px solid #9a6124; padding-bottom: 6px; margin-bottom: 10px; }
+  .print__head h1 { font-size: 18pt; }
+  .print__drawings { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; page-break-after: always; }
+  .print__drawings figure { margin: 0; }
+  .print__drawings figcaption { font-weight: 600; color: #9a6124; }
+  .print__page { page-break-before: always; }
+  .print h3 { color: #9a6124; margin: 8px 0 4px; font-size: 13pt; }
+  .print table { border-collapse: collapse; width: 100%; font-size: 10pt; }
+  .print th, .print td { border: 1px solid #bbb; padding: 3px 6px; text-align: right; }
+  .print .muted { color: #555; font-size: 9pt; }
+  .print .tag { border: 1px solid #999; border-radius: 6px; padding: 0 4px; font-size: 8pt; }
+  .print .price-totals { display: flex; flex-wrap: wrap; gap: 8px; }
+  .print .price-totals div { border: 1px solid #bbb; padding: 4px 8px; }
+  .print .nest-toggle input { display: none; }
+  .print .sheets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .print figure, .print table { break-inside: avoid; page-break-inside: avoid; }
+  .print .drawing { width: 100%; height: auto; }
+}

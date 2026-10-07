@@ -81,7 +81,7 @@
         <button type="button" data-view="top">מבט על</button>
       </div>
       <div class="summary" id="summary"></div>
-      <button type="button" class="btn btn--accent" id="btn-output">רשימת חיתוך</button>
+      <button type="button" class="btn btn--accent" id="btn-output">פלט ייצור</button>
     </div>
     <div class="stage-wrap">
       <canvas id="stage" class="stage"></canvas>
@@ -93,7 +93,17 @@
     <div class="output" id="output">
       <div class="output__bar">
         <strong>פלט ייצור</strong>
-        <button type="button" class="btn" id="btn-output-close">סגירה</button>
+        <nav class="output__tabs" id="output-tabs">
+          <button type="button" data-out="cut" class="is-active">רשימת חיתוך</button>
+          <button type="button" data-out="drawings">שרטוטים</button>
+          <button type="button" data-out="price">מחיר</button>
+          <button type="button" data-out="sheets">לוחות</button>
+        </nav>
+        <div class="output__actions">
+          <button type="button" class="btn btn--small" id="btn-csv">CSV</button>
+          <button type="button" class="btn btn--small btn--accent" id="btn-print">🖨 הדפסה / PDF</button>
+          <button type="button" class="btn btn--small" id="btn-output-close">סגירה</button>
+        </div>
       </div>
       <div class="output__body" id="output-body"></div>
     </div>
@@ -136,6 +146,8 @@
 </div>
 
 <div class="toast" id="toast"></div>
+<!-- עמוד ההדפסה: מתמלא בלחיצה על "הדפסה / PDF", ומוצג רק במדיה print -->
+<div id="print" class="print"></div>
 <div id="stage-error" class="stage-error stage-error--page" hidden>
   לא הצלחתי לטעון את מנוע התלת מימד (three.js) — לא מהרשת ולא מהעותק המקומי. בדקו את החיבור ורעננו.
 </div>

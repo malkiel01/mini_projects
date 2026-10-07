@@ -7,6 +7,9 @@
 
 import { TEMPLATES, template, defaults, build, cutList, hardwareList, allParams, clamp } from './model/index.js';
 import { cutSize } from './model/blocks.js';
+import { estimate, PRICING_DEFAULTS } from './model/pricing.js';
+import { nest, sheetCount } from './model/sheets.js';
+import { drawAll, drawSheet } from './drawings.js';
 import * as M from './model/materials.js';
 import { renderForm } from './form.js';
 import { createViewer } from './viewer.js';
@@ -346,7 +349,26 @@ function showPart(p) {
     </dl>`;
 }
 
+// ---------- פלט ייצור ----------
+let outputTab = 'cut';
+let nestOn = false;
+
 function renderOutput(m) {
+  const body = $('#output-body');
+  const tabs = $('#output-tabs');
+  tabs.querySelectorAll('button').forEach((b) => b.classList.toggle('is-active', b.dataset.out === outputTab));
+  const viewer = state.user.role === 'viewer';
+  if (outputTab === 'cut') body.innerHTML = cutListHtml(m);
+  else if (outputTab === 'drawings') body.innerHTML = drawingsHtml(m);
+  else if (outputTab === 'price') body.innerHTML = viewer ? '<p class="muted">המחיר אינו מוצג לחשבון צפייה.</p>' : priceHtml(m);
+  else if (outputTab === 'sheets') body.innerHTML = sheetsHtml(m);
+}
+document.querySelectorAll('#output-tabs button').forEach((b) => b.addEventListener('click', () => { outputTab = b.dataset.out; if (model) renderOutput(model); }));
+$('#btn-csv').addEventListener('click', () => model && downloadCsv(model));
+$('#btn-print').addEventListener('click', () => model && printAll(model));
+$('#output-body').addEventListener('change', (e) => { if (e.target.id === 'nest-on') { nestOn = e.target.checked; renderOutput(model); } });
+
+function cutListHtml(m) {
   const cl = cutList(m);
   const hw = hardwareList(m);
   const rows = cl.boards
@@ -356,13 +378,88 @@ function renderOutput(m) {
   const glass = cl.glass.map((g) => `<tr><td>${esc(g.name)}</td><td>${g.qty}</td><td dir="ltr">${g.l} × ${g.w}</td><td>${g.t}</td></tr>`).join('');
   const hwRows = hw.map((h) => `<tr><td>${esc(h.name)}</td><td>${h.qty}</td></tr>`).join('');
   const area = cl.boards.reduce((s, r) => s + r.qty * r.l * r.w, 0) / 1e6;
-
-  $('#output-body').innerHTML = `
+  return `
     <h3>רשימת חיתוך <small>${cl.boards.reduce((s, r) => s + r.qty, 0)} לוחות · ${area.toFixed(2)} מ"ר נטו</small></h3>
     <table><thead><tr><th>חלק</th><th>כמות</th><th>אורך × רוחב</th><th>עובי</th><th>חומר</th><th>קנט</th><th>הערה</th></tr></thead><tbody>${rows}</tbody></table>
     ${glass ? `<h3>זכוכית</h3><table><thead><tr><th>סוג</th><th>כמות</th><th>מידה</th><th>עובי</th></tr></thead><tbody>${glass}</tbody></table>` : ''}
     ${hwRows ? `<h3>פרזול</h3><table><thead><tr><th>פריט</th><th>כמות</th></tr></thead><tbody>${hwRows}</tbody></table>` : ''}
     <p class="muted">האורך הוא בכיוון הסיבים. מידות אחרי הורדת הקנט כשנבחר "יורדת מהמידה".</p>`;
+}
+
+function drawingsHtml(m) {
+  return `<div class="drawings">${drawAll(m).map((v) => `<figure><figcaption>${v.name}</figcaption>${v.svg}</figure>`).join('')}</div>
+    <p class="muted">מידות במ"מ. בחזית: רוחבי העמודות הפנויים למטה, ומרווחי המדפים בעמודה הראשונה משמאל. "הדפסה / PDF" נותן את שלושת המבטים עם רשימת החיתוך.</p>`;
+}
+
+const ils = (v) => `₪${Number(v).toLocaleString('he-IL', { maximumFractionDigits: 0 })}`;
+function priceHtml(m) {
+  const e = estimate(m, state.rates);
+  const groups = ['לוחות', 'זכוכית', 'קנט', 'פרזול'];
+  const rows = groups.flatMap((g) => e.lines.filter((l) => l.group === g).map((l) =>
+    `<tr><td>${g}</td><td>${esc(l.name)}${l.mine ? ' <span class="tag">המחיר שלי</span>' : ''}</td><td dir="ltr">${l.qty} ${l.unit}</td><td>${ils(l.unitPrice)}</td><td>${ils(l.total)}</td><td class="muted">${esc(l.note || '')}</td></tr>`)).join('');
+  return `
+    <h3>הערכת מחיר <small>המלצה — לפי הספרייה והתעריפים שלך</small></h3>
+    <table><thead><tr><th>קבוצה</th><th>פריט</th><th>כמות</th><th>מחיר יח׳</th><th>סה"כ</th><th></th></tr></thead><tbody>${rows}
+      <tr><td>עבודה</td><td>${e.labor.hours} שעות × ${ils(e.labor.rate)}${e.labor.mine ? ' <span class="tag">התעריף שלי</span>' : ' <span class="tag tag--off">ברירת מחדל</span>'}</td><td></td><td></td><td>${ils(e.labor.total)}</td><td></td></tr>
+    </tbody></table>
+    <div class="price-totals">
+      <div><span>חומרים</span><b>${ils(e.materials)}</b></div>
+      <div><span>פרזול</span><b>${ils(e.hardware)}</b></div>
+      <div><span>עבודה</span><b>${ils(e.labor.total)}</b></div>
+      <div><span>ביניים</span><b>${ils(e.subtotal)}</b></div>
+      <div><span>רווח ${Math.round(e.markup.rate * 100)}%${e.markup.mine ? '' : ' (ברירת מחדל)'}</span><b>${ils(e.markup.total)}</b></div>
+      <div class="price-totals__final"><span>סה"כ מומלץ</span><b>${ils(e.total)}</b></div>
+    </div>
+    <p class="muted">לוחות: שטח נטו × ${PRICING_DEFAULTS.waste} פחת. שעת עבודה ורווח נקבעים ב"חומרים" למעלה; "המחיר שלי" לכל חומר — שם, בכרטיס החומר. המחירים בספרייה הם מצייני מקום עד שתעדכן אותם.</p>`;
+}
+
+function sheetsHtml(m) {
+  const cl = cutList(m);
+  const sc = sheetCount(cl, m.parts);
+  const rows = sc.map((g) => `<tr><td>${esc(g.name)}</td><td dir="ltr">${g.sheet[0]} × ${g.sheet[1]}</td><td>${g.area} מ"ר</td><td><b>${g.count}</b></td></tr>`).join('');
+  let nestHtml = '';
+  if (nestOn) {
+    const n = nest(cl, m.parts);
+    nestHtml = n.map((g) => `
+      <h3>${esc(g.name)} <small>${g.count} לוחות · פחת ${Math.round(g.waste * 100)}%${g.tooBig.length ? ` · <span class="tag tag--off">גדול מהלוח: ${esc(g.tooBig.join(', '))}</span>` : ''}</small></h3>
+      <div class="sheets">${g.sheets.map((sh, i) => `<figure><figcaption>לוח ${i + 1}</figcaption>${drawSheet(sh)}</figure>`).join('')}</div>`).join('');
+  }
+  return `
+    <h3>כמות לוחות <small>הערכה: שטח נטו × ${PRICING_DEFAULTS.waste} פחת, חלקי מידת הלוח</small></h3>
+    <table><thead><tr><th>חומר</th><th>מידת לוח</th><th>שטח נטו</th><th>לוחות</th></tr></thead><tbody>${rows}</tbody></table>
+    <label class="nest-toggle"><input type="checkbox" id="nest-on" ${nestOn ? 'checked' : ''}> סידור חיתוך על הלוחות <span class="muted">(גיליוטינה בשורות; הסיבים לאורך הלוח; חיתוך ${PRICING_DEFAULTS.kerf} מ"מ)</span></label>
+    ${nestHtml}`;
+}
+
+function downloadCsv(m) {
+  const cl = cutList(m);
+  const lines = [['חלק', 'כמות', 'אורך', 'רוחב', 'עובי', 'חומר', 'קנט', 'הערה']];
+  for (const r of cl.boards) lines.push([r.name, r.qty, r.l, r.w, r.t, r.material, r.edges, r.note || '']);
+  for (const g of cl.glass) lines.push([g.name, g.qty, g.l, g.w, g.t, 'זכוכית', '', '']);
+  for (const h of hardwareList(m)) lines.push([h.name, h.qty, '', '', '', 'פרזול', '', '']);
+  const csv = '\ufeff' + lines.map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = `${(state.project?.name || 'cutlist').replace(/[\\/:*?"<>|]/g, '-')}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+/** עמוד הדפסה: כותרת, שלושת המבטים, רשימת חיתוך, מחיר (לא לצופה), לוחות. הדפדפן עושה PDF. */
+function printAll(m) {
+  const p = state.project;
+  const box = $('#print');
+  const viewer = state.user.role === 'viewer';
+  box.innerHTML = `
+    <header class="print__head"><h1>${esc(p.name)}</h1><div>${p.client ? `לקוח: ${esc(p.client)} · ` : ''}${esc(currentTemplate().name)} · ${m.bounds.w} × ${m.bounds.h} × ${m.bounds.d} מ"מ · ${new Date().toLocaleDateString('he-IL')}</div></header>
+    <section class="print__drawings">${drawAll(m).map((v) => `<figure><figcaption>${v.name}</figcaption>${v.svg}</figure>`).join('')}</section>
+    <section class="print__page">${cutListHtml(m)}</section>
+    ${viewer ? '' : `<section class="print__page">${priceHtml(m)}</section>`}
+    <section class="print__page">${sheetsHtml(m)}</section>`;
+  document.body.classList.add('is-printing');
+  const done = () => { document.body.classList.remove('is-printing'); window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  setTimeout(() => window.print(), 50);
 }
 
 // ---------- מנהל: משתמשים ----------
