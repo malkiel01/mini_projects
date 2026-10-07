@@ -7,6 +7,13 @@
 <meta name="description" content="סוגי מוצרים פרמטריים לנגרים: מידות וחומרים נכנסים, מודל תלת־ממדי, הדמיה, רשימת חיתוך ומחיר יוצאים.">
 <meta name="theme-color" content="#ffffff">
 <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
+<!-- אפליקציה: מתקינים למסך הבית, נפתח בלי סרגל דפדפן -->
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="נגרות">
+<link rel="apple-touch-icon" href="./assets/icons/icon-192.png">
 <!-- Heebo: גופן עברי נעים; אם הרשת חסומה — נופלים לגופן המערכת, בלי שבירה -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,7 +33,6 @@
     <label><span>סיסמה</span><input name="password" type="password" required minlength="8" autocomplete="current-password" dir="ltr"></label>
     <p class="auth__error" id="auth-error"></p>
     <button type="submit" class="btn btn--accent" id="auth-submit">כניסה</button>
-    <a class="auth__back" href="../index.html">חזרה לכלים</a>
   </form>
 </div>
 
@@ -46,7 +52,6 @@
       <div class="menu__list">
         <button type="button" id="btn-password">החלפת סיסמה</button>
         <button type="button" id="btn-logout">יציאה</button>
-        <a href="../index.html">חזרה לכלים</a>
       </div>
     </div>
   </div>
@@ -170,6 +175,9 @@
 <!-- three.js: cdnjs, ואז jsdelivr, ולבסוף העותק המקומי ב-vendor/. רק אחרי
      שאחד מהם נענה נטען המודול של הכלי, שמצפה ל-THREE גלובלי. -->
 <script>
+// service worker: עותק של השלד (ובעיקר three.js) כדי שהאפליקציה תיפתח גם
+// בלי רשת. התוכן עצמו תמיד מהשרת (network-first) — לא נתקעים על גרסה ישנה.
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js').catch(function () {});
 (function load(list) {
   function app() { var s = document.createElement('script'); s.type = 'module'; s.src = './assets/js/app.js'; document.body.appendChild(s); }
   if (!list.length) { app(); return; }

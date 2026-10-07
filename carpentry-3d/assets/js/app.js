@@ -30,6 +30,35 @@ const state = {
 let viewer = null, form = null, model = null, materialsUI = null;
 let saveTimer = null;
 
+// ---------- היסטוריית הדפדפן: "אחורה" נשאר בתוך האפליקציה ----------
+// מגירה שנפתחת דוחפת רשומה; "אחורה" סוגר את המגירה העליונה, ואם אין —
+// חוזר למסך הפתיחה. פתיחת פרויקט מתוך מגירה מחליפה את רשומת המגירה
+// ברשומת הפרויקט (לא דוחפת), כך שה"אחורה" הבא מחזיר לרשימה ולא למגירה.
+// סגירה מכפתור "סגירה" חוזרת צעד אחורה בהיסטוריה — וה-popstate שלה מדולג.
+const DRAWERS = ['#projects', '#users', '#types', '#mlib', '#share', '#newproj'];
+let suppressPops = 0;
+function pushNav(kind) { history.pushState({ app: 'carpentry', kind }, ''); }
+function openDrawer(sel, fromPop = false) {
+  const el = $(sel);
+  if (el.classList.contains('is-open')) return;
+  el.classList.add('is-open');
+  if (!fromPop) pushNav('drawer');
+}
+/** `silent` — רק סוגר, בלי לגעת בהיסטוריה (כשמיד אחרי זה נפתח משהו אחר). */
+function closeDrawer(sel, silent = false) {
+  const el = $(sel);
+  if (!el.classList.contains('is-open')) return;
+  el.classList.remove('is-open');
+  if (!silent && history.state?.app === 'carpentry' && history.state.kind !== 'project') { suppressPops += 1; history.back(); }
+}
+window.addEventListener('popstate', () => {
+  if (suppressPops > 0) { suppressPops -= 1; return; }
+  const open = DRAWERS.filter((d) => $(d).classList.contains('is-open'));
+  if (open.length) { $(open[open.length - 1]).classList.remove('is-open'); return; }
+  if ($('#output').classList.contains('is-open')) { $('#output').classList.remove('is-open'); return; }
+  if (state.project && state.user) showProjects(true);
+});
+
 // ---------- הודעות ----------
 function toast(msg, kind = 'info') {
   const el = $('#toast');
@@ -126,22 +155,22 @@ function wireUi() {
     rebuild(true); markDirty();
   });
   document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => {
-    if (b.dataset.tab === 'materials') { materialsUI.open(); return; }
+    if (b.dataset.tab === 'materials') { materialsUI.open(); pushNav('drawer'); return; }
     if (b.dataset.tab === 'projects') { showProjects(); return; }
     document.body.dataset.tab = b.dataset.tab;
     document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('is-active', x === b));
     viewer.fit();
   }));
-  $('#btn-output').addEventListener('click', () => $('#output').classList.toggle('is-open'));
-  $('#btn-output-close').addEventListener('click', () => $('#output').classList.remove('is-open'));
-  $('#btn-materials').addEventListener('click', () => materialsUI.open());
+  $('#btn-output').addEventListener('click', () => { if ($('#output').classList.contains('is-open')) closeDrawer('#output'); else { $('#output').classList.add('is-open'); pushNav('output'); } });
+  $('#btn-output-close').addEventListener('click', () => closeDrawer('#output'));
+  $('#btn-materials').addEventListener('click', () => { materialsUI.open(); pushNav('drawer'); });
   $('#btn-projects').addEventListener('click', () => showProjects());
   $('#btn-users').addEventListener('click', () => showUsers());
   $('#btn-types').addEventListener('click', () => showTypes());
   $('#btn-save').addEventListener('click', () => flush(true));
   $('#btn-share').addEventListener('click', shareProject);
   $('#btn-password').addEventListener('click', changePassword);
-  document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => $(b.dataset.close).classList.remove('is-open')));
+  document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => closeDrawer(b.dataset.close)));
 
   // שם, לקוח וסטטוס — בכרטיס "פרויקט" שמעל הטופס
   $('#proj-name').addEventListener('input', (e) => { state.project.name = e.target.value; markDirty(); $('#template-name').textContent = state.project.name; });
@@ -158,13 +187,14 @@ const TEMPLATE_META = {
   wardrobe: { icon: '🚪', blurb: 'תלייה ומדפים, מגירות, דלתות הזזה' },
   dresser:  { icon: '🗄️', blurb: 'שורות ועמודות של מגירות' },
   kitchen:  { icon: '🍳', blurb: 'קו ישר או פינתי, משטח, עליונים' },
-  table:    { icon: '🪵', blurb: 'פלטה, רגליים ומסגרת' },
+  table:    { icon: '🍽️', blurb: 'פלטה, רגליים ומסגרת' },
   bed:      { icon: '🛏️', blurb: 'מסגרת, ראש מיטה ולטות' },
+  cladding: { icon: '🪵', blurb: 'סטריפים או לוחות על קיר, עם פינות' },
 };
 
-async function showProjects() {
+async function showProjects(fromPop = false) {
   const box = $('#projects');
-  box.classList.add('is-open');
+  openDrawer('#projects', fromPop);
   box.querySelector('[data-close]').hidden = !state.project;   // בלי פרויקט פתוח אין לאן לסגור
   const body = $('#projects-body');
   body.innerHTML = '<p class="muted">טוען…</p>';
@@ -220,7 +250,7 @@ async function showProjects() {
       if (!t) return;
       e.preventDefault(); e.stopPropagation();
       try {
-        if (t.dataset.open) { await openProject(Number(t.dataset.open)); box.classList.remove('is-open'); }
+        if (t.dataset.open) { closeDrawer('#projects', true); await openProject(Number(t.dataset.open)); }
         else if (t.dataset.dup) { await api('project-duplicate', { id: Number(t.dataset.dup) }); showProjects(); }
         else if (t.dataset.del) {
           if (!confirm('למחוק את הפרויקט? אין שחזור.')) return;
@@ -249,11 +279,11 @@ function newProjectDialog(type, templateKey) {
   const tpl = template(key);
   const m = TEMPLATE_META[key] || { icon: '🪚' };
   const dlg = $('#newproj');
+  openDrawer('#newproj');
   $('#newproj-title').textContent = `${m.icon} ${type ? `${type.name} (${tpl.name})` : tpl.name}`;
   const f = $('#newproj-form');
   f.name.value = type ? type.name : tpl.name;
   f.client.value = '';
-  dlg.classList.add('is-open');
   setTimeout(() => { f.name.focus(); f.name.select(); }, 50);
   f.onsubmit = async (e) => {
     e.preventDefault();
@@ -261,8 +291,8 @@ function newProjectDialog(type, templateKey) {
     submit.disabled = true;
     try {
       await newProject(type, key, f.name.value.trim() || tpl.name, f.client.value.trim());
-      dlg.classList.remove('is-open');
-      $('#projects').classList.remove('is-open');
+      closeDrawer('#newproj', true);
+      closeDrawer('#projects', true);
     } catch (err) { onError(err); } finally { submit.disabled = false; }
   };
 }
@@ -282,7 +312,11 @@ async function openProject(id) {
 }
 
 function loadProject(p) {
+  const wasOpen = !!state.project;
   state.project = p;
+  // מתוך מגירה: רשומת המגירה הופכת לרשומת הפרויקט. אחרת (למשל בטעינה) — דוחפים.
+  if (history.state?.app === 'carpentry' && history.state.kind === 'drawer') history.replaceState({ app: 'carpentry', kind: 'project' }, '');
+  else if (!wasOpen) pushNav('project');
   if (!TEMPLATES[p.template_key]) { toast(`תבנית לא מוכרת: ${p.template_key}`, 'error'); return; }
   state.values = { ...defaults(currentTemplate()), ...p.values };
   state.dirty = false;
@@ -353,7 +387,7 @@ function shareUrl() {
 function showShareLink() {
   const url = shareUrl();
   $('#share-url').value = url;
-  $('#share').classList.add('is-open');
+  openDrawer('#share');
   $('#share-copy').onclick = async () => {
     try { await navigator.clipboard.writeText(url); toast('הקישור הועתק'); } catch { $('#share-url').select(); }
   };
@@ -554,7 +588,7 @@ function printAll(m) {
 // ---------- מנהל: משתמשים ----------
 async function showUsers() {
   const box = $('#users');
-  box.classList.add('is-open');
+  openDrawer('#users');
   const body = $('#users-body');
   try {
     const r = await api('users-list');
@@ -610,7 +644,7 @@ async function changePassword() {
 // ---------- מנהל: סוגי מוצרים ----------
 async function showTypes() {
   const box = $('#types');
-  box.classList.add('is-open');
+  openDrawer('#types');
   const body = $('#types-body');
   try {
     const r = await api('types-list');
@@ -661,6 +695,6 @@ function fmtDate(iso) { try { return new Date(iso).toLocaleDateString('he-IL', {
 function fmtTime(iso) { try { return new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }); } catch { return ''; } }
 
 // three.js נטען בדף לפני המודול; אם אף מקור לא נענה — הודעה במקום קנבס ריק.
-window.__carpentry = { state, get viewer() { return viewer; }, get model() { return model; } };   // לבדיקות מהקונסול
+window.__carpentry = { state, closeDrawer, get viewer() { return viewer; }, get model() { return model; } };   // לבדיקות מהקונסול
 if (window.THREE) boot();
 else $('#stage-error').hidden = false;

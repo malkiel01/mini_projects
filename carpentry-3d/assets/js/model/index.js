@@ -10,10 +10,11 @@ import dresser from './templates/dresser.js';
 import kitchen from './templates/kitchen.js';
 import table from './templates/table.js';
 import bed from './templates/bed.js';
+import cladding from './templates/cladding.js';
 import { cutSize } from './blocks.js';
 import { material, materialsOfKind } from './materials.js';
 
-export const TEMPLATES = { bookcase, wardrobe, dresser, kitchen, table, bed };
+export const TEMPLATES = { bookcase, wardrobe, dresser, kitchen, table, bed, cladding };
 
 export function template(key) {
   const t = TEMPLATES[key];

@@ -40,7 +40,7 @@ export function createMaterialsUI(root, { onChange, onError, getUser, rates }) {
   }
   root.addEventListener('click', async (e) => {
     const act = e.target.closest('[data-act]')?.dataset.act;
-    if (act === 'close') root.classList.remove('is-open');
+    if (act === 'close') { if (window.__carpentry?.closeDrawer) window.__carpentry.closeDrawer('#mlib'); else root.classList.remove('is-open'); }
     if (act === 'add') addNew();
     if (act === 'reset' && confirm('להחזיר את הספרייה לזריעה מהקוד? התוספות והשינויים יימחקו (התמונות יישארו).')) {
       M.load([]); await persist(); render();
