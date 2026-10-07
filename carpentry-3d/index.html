@@ -44,6 +44,7 @@
   </div>
   <div class="bar__actions">
     <button type="button" class="btn" id="btn-projects">📁 פרויקטים</button>
+    <button type="button" class="btn" id="btn-clients">👤 לקוחות</button>
     <button type="button" class="btn" id="btn-materials">🎨 חומרים</button>
     <button type="button" class="btn" id="btn-types" hidden>🧩 סוגי מוצרים</button>
     <button type="button" class="btn" id="btn-users" hidden>👥 משתמשים</button>
@@ -62,7 +63,9 @@
     <!-- כרטיס הפרויקט: שם, לקוח, סטטוס, שמירה ושיתוף -->
     <div class="group project-card" id="project-card" hidden>
       <div class="field"><span class="field__label">שם הפרויקט</span><input id="proj-name" maxlength="80"></div>
-      <div class="field"><span class="field__label">לקוח</span><input id="proj-client" maxlength="80"></div>
+      <div class="field"><span class="field__label">לקוח</span>
+        <span class="client-pick"><select id="proj-client"><option value="">ללא לקוח</option></select><button type="button" class="btn btn--small" id="btn-client-new" title="לקוח חדש">＋</button></span>
+      </div>
       <div class="field"><span class="field__label">סטטוס</span>
         <select id="proj-status"><option value="draft">טיוטה</option><option value="quoted">הצעת מחיר</option><option value="approved">אושר</option><option value="done">בוצע</option></select>
       </div>
@@ -71,6 +74,23 @@
         <button type="button" class="btn btn--small" id="btn-share">🔗 קישור ללקוח</button>
         <button type="button" class="btn btn--small" id="btn-reset">איפוס לברירת המחדל</button>
       </div>
+    </div>
+    <!-- כרטיס ההרכבה: כמה אלמנטים של לקוח יחד — מיקום וסיבוב לכל אחד -->
+    <div class="group project-card assembly-card" id="assembly-card" hidden>
+      <div class="field"><span class="field__label">שם ההרכבה</span><input id="asm-name" maxlength="80"></div>
+      <div class="field"><span class="field__label">לקוח</span><select id="asm-client"><option value="">ללא לקוח</option></select></div>
+      <label class="asm-joined"><input type="checkbox" id="asm-joined"> <b>אלמנט מאוחד</b> <span class="muted">— מוצר אחד בפלט: חלקים זהים מתקבצים, שעות העבודה מצטברות</span></label>
+      <div class="project-card__actions">
+        <button type="button" class="btn btn--small" id="asm-save">💾 שמירה</button>
+        <button type="button" class="btn btn--small" id="asm-share">🔗 קישור ללקוח</button>
+        <button type="button" class="btn btn--small" id="asm-delete">מחיקת ההרכבה</button>
+      </div>
+      <div class="asm-add">
+        <select id="asm-add-select"><option value="">הוספת אלמנט…</option></select>
+        <button type="button" class="btn btn--small btn--accent" id="asm-add">＋ הוספה</button>
+      </div>
+      <p class="muted asm-hint">כל אלמנט הוא פרויקט של הלקוח. מיקום במ"מ מהפינה השמאלית-האחורית-התחתונה; "הצמדה" מניחה אלמנט ביחס לאחר.</p>
+      <div id="asm-items" class="asm-items"></div>
     </div>
     <p class="muted no-project" id="no-project">אין פרויקט פתוח — בחרו אחד מ"פרויקטים" או צרו חדש.</p>
     <!-- הטופס נבנה מרשימת הפרמטרים של התבנית — ראו form.js -->
@@ -137,10 +157,28 @@
   <form class="modal__card" id="newproj-form" autocomplete="off">
     <h3 id="newproj-title">פרויקט חדש</h3>
     <label class="modal__field"><span>שם הפרויקט</span><input name="name" maxlength="80" required placeholder="למשל: ספרייה לסלון — משפחת כהן"></label>
-    <label class="modal__field"><span>לקוח</span><input name="client" maxlength="80" placeholder="לא חובה"></label>
+    <label class="modal__field"><span>לקוח</span><span class="client-pick"><select name="client_id"><option value="">ללא לקוח</option></select><button type="button" class="btn btn--small" id="newproj-client-new" title="לקוח חדש">＋</button></span></label>
     <div class="modal__actions">
       <button type="submit" class="btn btn--accent">יצירת הפרויקט</button>
       <button type="button" class="btn" data-close="#newproj">ביטול</button>
+    </div>
+  </form>
+</div>
+<div class="drawer" id="clients">
+  <div class="drawer__bar"><strong>👤 לקוחות</strong><button type="button" class="btn" data-close="#clients">סגירה</button></div>
+  <div class="drawer__body" id="clients-body"></div>
+</div>
+<div class="modal" id="clientdlg">
+  <form class="modal__card" id="client-form" autocomplete="off">
+    <h3 id="client-title">לקוח חדש</h3>
+    <label class="modal__field"><span>שם</span><input name="name" maxlength="80" required placeholder="משפחת כהן"></label>
+    <label class="modal__field"><span>טלפון</span><input name="phone" maxlength="40" dir="ltr"></label>
+    <label class="modal__field"><span>דוא"ל</span><input name="email" type="email" maxlength="120" dir="ltr"></label>
+    <label class="modal__field"><span>כתובת</span><input name="address" maxlength="200"></label>
+    <label class="modal__field"><span>הערות</span><input name="notes" maxlength="2000"></label>
+    <div class="modal__actions">
+      <button type="submit" class="btn btn--accent">שמירה</button>
+      <button type="button" class="btn" data-close="#clientdlg">ביטול</button>
     </div>
   </form>
 </div>

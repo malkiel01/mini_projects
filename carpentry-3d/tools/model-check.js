@@ -9,6 +9,7 @@ import { build, cutList, hardwareList, defaults, template, optionsFor, allParams
 import * as M from '../assets/js/model/materials.js';
 import { estimate } from '../assets/js/model/pricing.js';
 import { resolveShares, editShare, normalizeLayout, layoutIsEmpty } from '../assets/js/model/layout.js';
+import { placeModel, combine, snapTo } from '../assets/js/model/assembly.js';
 import { nest, sheetCount } from '../assets/js/model/sheets.js';
 
 let failed = 0;
@@ -462,6 +463,50 @@ console.log('מטבח ושידה: אותו עיקרון — רוחב לכל אר
   check(Math.abs(top.h - 150) < 20, `שידה: חזית השורה העליונה ${top.h.toFixed(0)} ≈ 150`);
 }
 
+
+console.log('הרכבה: הנחה, סיבוב, איחוד, הצמדה');
+{
+  const low = build('bookcase', { width: 1800, height: 900, depth: 400, columns: 3, doorType: 'wood' });
+  const up = build('bookcase', { width: 1200, height: 1100, depth: 300, columns: 2 });
+  const pl = placeModel(up, { pos: [300, 900, 100], rot: 0, prefix: 'e1:' });
+  check(pl.parts.every((p) => p.id.startsWith('e1:')) && pl.bounds.x === 300 && pl.bounds.y === 900 && pl.bounds.w === 1200, 'הנחה: קידומת ו-גבולות במקום החדש');
+  const sideL = pl.parts.find((p) => p.id === 'e1:side-L');
+  check(sideL.box.x === 300 && sideL.box.y === 900 && sideL.box.z === 100, 'הדופן השמאלית זזה עם המודל');
+  check(up.parts.find((p) => p.id === 'side-L').box.x === 0, 'המקור לא השתנה');
+  const r90 = placeModel(low, { pos: [0, 0, 0], rot: 90, prefix: 'r:' });
+  check(r90.bounds.w === low.bounds.d && r90.bounds.d === 1800 && within(r90.parts, r90.bounds) && allFinite(r90.parts), 'סיבוב 90: הרוחב והעומק מתחלפים, הכול בתוך הגבולות');
+  const sL = r90.parts.find((p) => p.id === 'r:side-L');
+  check(sL.axis === 'z' && sL.grain === 'y' && sL.box.d === 18 && sL.box.w === 400, 'דופן מסובבת: ציר העובי z, הסיבים נשארים לגובה');
+  const door = low.parts.find((p) => p.motion && p.motion.kind === 'hinge');
+  const doorR = r90.parts.find((p) => p.id === 'r:' + door.id);
+  check(doorR.motion.group === 'r:' + door.motion.group && doorR.motion.angle === door.motion.angle && Math.abs(doorR.motion.pivot[1] - door.motion.pivot[1]) < 0.01, 'תנועה: קבוצה עם קידומת, הזווית נשמרת (סיבוב, לא שיקוף)');
+  const pv = door.motion.pivot, pr = doorR.motion.pivot;
+  check(Math.abs(pr[0] - pv[2]) < 0.01 && Math.abs(pr[2] - (1800 - pv[0])) < 0.01, 'הציר מסתובב כנקודה');
+  const r180 = placeModel(low, { rot: 180 }), r270 = placeModel(low, { rot: 270 });
+  check(r180.bounds.w === 1800 && r270.bounds.w === low.bounds.d && within(r180.parts, r180.bounds) && within(r270.parts, r270.bounds), '180 ו-270 בתוך הגבולות');
+  const hw = r90.hardware.filter((h) => h.pos);
+  check(hw.length > 0 && hw.every((h) => h.pos[0] >= -30 && h.pos[0] <= r90.bounds.w + 30 && h.pos[2] >= -1 && h.pos[2] <= 1801), 'פרזול מסתובב יחד');
+  // איחוד: ארונית מעל מזווה, ממורכזת
+  const a = { model: low, pos: [0, 0, 0], rot: 0, name: 'מזווה', key: 1 };
+  const b = { model: up, pos: snapTo({ ...placeModel(up).bounds }, { x: 0, y: 0, z: 0, w: 1800, h: 900, d: 400 }, 'above'), rot: 0, name: 'ארונית', key: 2 };
+  b.pos = snapTo({ x: b.pos[0], y: b.pos[1], z: b.pos[2], w: 1200, h: 1100, d: 300 }, { x: 0, y: 0, z: 0, w: 1800, h: 900, d: 400 }, 'center');
+  check(b.pos[1] === 900 && b.pos[0] === 300 && b.pos[2] === 50, `הצמדה: מעל ואז מרכוז → ${b.pos.join(',')}`);
+  const c = combine([a, b], { joined: true, name: 'מזווה וארונית' });
+  check(c.parts.length === low.parts.length + up.parts.length && c.bounds.w === 1800 && c.bounds.h === 2000 && c.bounds.d === low.bounds.d, 'איחוד: כל החלקים, גבולות עוטפים');
+  check(c.items.length === 2 && c.items[1].bounds.y === 900 && c.template.laborHours === low.template.laborHours + up.template.laborHours && c.joined, 'items עם גבולות, שעות עבודה מצטברות');
+  check(c.warnings.every((w) => !w.includes('חופפים')), 'בלי חפיפה כשמונח מעל');
+  const cl = cutList(c);
+  const sameShelf = cl.boards.find((r) => r.ids.some((id) => id.startsWith('e1:shelf')) && r.ids.some((id) => id.startsWith('e2:shelf')));
+  check(cl.boards.length > 0 && (sameShelf ? sameShelf.qty > 1 : true), 'רשימת חיתוך של ההרכבה עובדת (חלקים זהים משני האלמנטים מתקבצים)');
+  const overlap = combine([a, { ...b, pos: [0, 500, 0] }]);
+  check(overlap.warnings.some((w) => w.includes('חופפים')), 'אזהרת חפיפה כשארונית נכנסת למזווה');
+  const neg = combine([a, { ...b, pos: [-500, 0, 0] }]);
+  check(neg.bounds.w === 2300 && neg.parts.every((p) => p.box.x >= -0.01) && neg.items[0].bounds.x === 500, 'מיקום שלילי: הכול מוזז כך שהמינימום 0');
+  const hidden = combine([a, { ...b, visible: false }]);
+  check(hidden.parts.length === low.parts.length && hidden.items.length === 2 && !hidden.items[1].visible, 'אלמנט מוסתר: לא בחלקים, כן ברשימת הפריטים');
+  const e = estimate(c, {});
+  check(e.total > estimate(low, {}).total && e.labor.hours === c.template.laborHours, 'מחיר ההרכבה גדול ממחיר המזווה לבדו');
+}
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }
 console.log('\nהכול עבר ✓');

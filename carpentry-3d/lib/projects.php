@@ -8,12 +8,14 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/clients.php';
 
 function projectRow(array $p, bool $full = false): array {
     $out = [
         'id' => (int) $p['id'], 'owner_id' => (int) $p['owner_id'], 'owner_name' => $p['owner_name'] ?? null,
         'product_type_id' => $p['product_type_id'] !== null ? (int) $p['product_type_id'] : null,
         'template_key' => $p['template_key'], 'name' => $p['name'], 'client' => $p['client'],
+        'client_id' => $p['client_id'] !== null ? (int) $p['client_id'] : null,
         'status' => $p['status'], 'shared' => $p['share_token'] !== null,
         'created_at' => $p['created_at'], 'updated_at' => $p['updated_at'],
     ];
@@ -24,10 +26,12 @@ function projectRow(array $p, bool $full = false): array {
     return $out;
 }
 
-function projectsList(array $user): array {
+function projectsList(array $user, ?int $clientId = null): array {
     $sql = 'SELECT p.*, u.name AS owner_name FROM projects p JOIN users u ON u.id = p.owner_id';
-    $args = [];
-    if ($user['role'] !== 'admin') { $sql .= ' WHERE p.owner_id = ?'; $args[] = $user['id']; }
+    $where = []; $args = [];
+    if ($user['role'] !== 'admin') { $where[] = 'p.owner_id = ?'; $args[] = $user['id']; }
+    if ($clientId) { $where[] = 'p.client_id = ?'; $args[] = $clientId; }
+    if ($where) $sql .= ' WHERE ' . implode(' AND ', $where);
     $sql .= ' ORDER BY p.updated_at DESC';
     $st = db()->prepare($sql);
     $st->execute($args);
@@ -47,7 +51,13 @@ function projectSave(array $user, array $in): array {
     $id = (int) ($in['id'] ?? 0);
     $name = mb_substr(trim((string) ($in['name'] ?? '')), 0, 80);
     if ($name === '') $name = 'פרויקט ללא שם';
-    $client = mb_substr(trim((string) ($in['client'] ?? '')), 0, 80);
+    // הלקוח: לפי client_id (רשומה), או לפי שם חופשי — שמקבל רשומה (קיימת או חדשה).
+    $clientId = null;
+    if (array_key_exists('client_id', $in)) $clientId = $in['client_id'] !== null && (int) $in['client_id'] > 0 ? (int) $in['client_id'] : null;
+    elseif (isset($in['client']) && is_string($in['client'])) $clientId = clientByName($in['client'], (int) $user['id']);
+    elseif ($id) { $cur = projectGet($user, $id); $clientId = $cur['client_id'] !== null ? (int) $cur['client_id'] : null; }
+    if ($clientId) clientGet($clientId);
+    $client = $clientId ? clientGet($clientId)['name'] : '';
     $values = is_array($in['values'] ?? null) ? $in['values'] : [];
     $status = in_array($in['status'] ?? '', ['draft', 'quoted', 'approved', 'done'], true) ? $in['status'] : 'draft';
     $typeId = isset($in['product_type_id']) && $in['product_type_id'] !== null ? (int) $in['product_type_id'] : null;
@@ -55,11 +65,11 @@ function projectSave(array $user, array $in): array {
     $now = nowIso();
     if ($id) {
         projectGet($user, $id);   // בעלות
-        db()->prepare('UPDATE projects SET name=?, client=?, values_json=?, status=?, product_type_id=?, template_key=?, updated_at=? WHERE id=?')
-            ->execute([$name, $client, jsonStr($values), $status, $typeId, $key, $now, $id]);
+        db()->prepare('UPDATE projects SET name=?, client=?, client_id=?, values_json=?, status=?, product_type_id=?, template_key=?, updated_at=? WHERE id=?')
+            ->execute([$name, $client, $clientId, jsonStr($values), $status, $typeId, $key, $now, $id]);
     } else {
-        db()->prepare('INSERT INTO projects (owner_id, product_type_id, template_key, name, client, values_json, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)')
-            ->execute([$user['id'], $typeId, $key, $name, $client, jsonStr($values), $status, $now, $now]);
+        db()->prepare('INSERT INTO projects (owner_id, product_type_id, template_key, name, client, client_id, values_json, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
+            ->execute([$user['id'], $typeId, $key, $name, $client, $clientId, jsonStr($values), $status, $now, $now]);
         $id = (int) db()->lastInsertId();
     }
     return projectRow(projectGet($user, $id), true);
@@ -73,8 +83,8 @@ function projectDelete(array $user, int $id): void {
 function projectDuplicate(array $user, int $id): array {
     $p = projectGet($user, $id);
     $now = nowIso();
-    db()->prepare('INSERT INTO projects (owner_id, product_type_id, template_key, name, client, values_json, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)')
-        ->execute([$user['id'], $p['product_type_id'], $p['template_key'], $p['name'] . ' (עותק)', $p['client'], $p['values_json'], 'draft', $now, $now]);
+    db()->prepare('INSERT INTO projects (owner_id, product_type_id, template_key, name, client, client_id, values_json, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
+        ->execute([$user['id'], $p['product_type_id'], $p['template_key'], $p['name'] . ' (עותק)', $p['client'], $p['client_id'], $p['values_json'], 'draft', $now, $now]);
     return projectRow(projectGet($user, (int) db()->lastInsertId()), true);
 }
 

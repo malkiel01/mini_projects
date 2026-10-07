@@ -644,3 +644,46 @@ input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner
 .colsedit__gaps .num { width: auto; }
 .colsedit__gaps .num input[type=number] { width: 4.5em; }
 .mcard .num input[type=number] { width: 4.5em; }
+
+/* ---- לקוחות ---- */
+.client-pick { display: flex; gap: 6px; align-items: stretch; }
+.client-pick select { flex: 1; min-width: 0; }
+.modal__field .client-pick select { padding: 9px 10px; border: 1px solid var(--line-strong); border-radius: 10px; font: inherit; font-size: 0.9rem; background: var(--panel-2); }
+.ccard { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 12px 14px; margin-bottom: 12px; }
+.ccard__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.ccard__head h4 { font-size: 1.05rem; margin: 0; }
+.ccard__meta { color: var(--muted); font-size: 0.85rem; }
+.ccard__actions { margin-inline-start: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+.ccard__lists { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.ccard__lists h5 { font-size: 0.85rem; color: var(--accent-deep); margin: 0 0 4px; }
+.ccard__lists ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.ccard__lists li button { width: 100%; text-align: right; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); font: inherit; font-size: 0.85rem; cursor: pointer; }
+.ccard__lists li button:hover { border-color: var(--accent); }
+.ccard__notes { color: var(--muted); font-size: 0.82rem; margin-top: 6px; }
+@media (max-width: 860px) { .ccard__lists { grid-template-columns: 1fr; } }
+
+/* ---- הרכבה ---- */
+.assembly-card[hidden] { display: none; }
+.asm-joined { display: block; font-size: 0.85rem; padding: 6px 0; }
+.asm-add { display: flex; gap: 6px; padding-top: 8px; }
+.asm-add select { flex: 1; min-width: 0; padding: 7px 8px; border: 1px solid var(--line-strong); border-radius: 10px; font: inherit; font-size: 0.88rem; background: var(--panel-2); }
+.asm-hint { font-size: 0.78rem; padding: 6px 0 2px; }
+.asm-items { display: flex; flex-direction: column; gap: 8px; }
+.asm-item { border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); padding: 8px 10px; }
+.asm-item__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.asm-item__head b { flex: 1; }
+.asm-item__head .muted { font-size: 0.78rem; }
+.asm-item__pos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; }
+.asm-item__pos label { display: flex; flex-direction: column; gap: 2px; font-size: 0.75rem; color: var(--muted); }
+.asm-item__pos .num { width: 100%; }
+.asm-item__pos .num input[type=number] { width: 2.6em; padding: 6px 2px; font-size: 0.85rem; }
+.asm-item__pos .num__btn { width: 24px; font-size: 0.95rem; }
+.asm-item__row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; font-size: 0.8rem; }
+.asm-item__row select { padding: 4px 6px; border: 1px solid var(--line-strong); border-radius: 8px; font: inherit; font-size: 0.8rem; background: var(--panel); }
+.asm-item__row .btn { padding: 3px 8px; font-size: 0.76rem; }
+.asm-item.is-hidden { opacity: 0.55; }
+.acard { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; cursor: pointer; text-align: right; font: inherit; }
+.acard:hover { border-color: var(--accent); }
+.acard b { font-size: 1rem; }
+.out-item + .out-item { margin-top: 18px; padding-top: 14px; border-top: 2px dashed var(--line-strong); }
+.out-item__title { font-size: 1.05rem; color: var(--accent-deep); margin: 0 0 8px; }
