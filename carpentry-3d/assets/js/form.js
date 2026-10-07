@@ -45,6 +45,7 @@ export function renderForm(root, tpl, values, onChange) {
         input.type = 'number';
         input.inputMode = 'numeric';
         input.min = p.min; input.max = p.max; input.step = 1;
+        input.dataset.step = p.type === 'mm' ? 10 : 1;   // החיצים קופצים ב-10 מ"מ; בהקלדה כל מספר שלם
         input.value = values[p.key];
       } else {
         input = document.createElement('select');
