@@ -85,11 +85,18 @@ export function partitions({ inner, columns, t, material, prefix = '' }) {
  * מדפים בעמודה: `count` מדפים במרווחים שווים בין y0 ל-y1.
  * `setback` — נסיגה מהחזית (מדף מתכוונן נסוג מעט כדי לא לבלוט).
  */
-export function shelves({ col, y0, y1, z0, z1, count, t, material, setback = 0, adjustable, prefix = '', colIndex }) {
+export function shelves({ col, y0, y1, z0, z1, count, t, material, setback = 0, adjustable, prefix = '', colIndex, gaps }) {
   const parts = [];
   const gap = (y1 - y0 - count * t) / (count + 1);
+  // `gaps` — גבהי התאים מלמטה למעלה (count+1 ערכים); מנורמלים כך שסכומם ימלא את הגובה הפנוי.
+  let ys = null;
+  if (Array.isArray(gaps) && gaps.length === count + 1 && gaps.every((g) => Number.isFinite(g) && g > 0)) {
+    const free = y1 - y0 - count * t, sum = gaps.reduce((a, b) => a + b, 0), k = free / sum;
+    ys = []; let y = y0;
+    for (let s = 1; s <= count; s++) { y += gaps[s - 1] * k; ys.push(y); y += t; }
+  }
   for (let s = 1; s <= count; s++) {
-    const y = y0 + s * gap + (s - 1) * t;
+    const y = ys ? ys[s - 1] : y0 + s * gap + (s - 1) * t;
     parts.push(part(`${prefix}shelf-${colIndex + 1}-${s}`, `מדף ${colIndex + 1}.${s}`,
       { x: col.x0, y, z: z0, w: col.x1 - col.x0, h: t, d: z1 - z0 - setback },
       { axis: 'y', grain: 'x', material, qtyKey: `${prefix}shelf-w${Math.round(col.x1 - col.x0)}`,

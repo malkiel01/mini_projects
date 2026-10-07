@@ -11,7 +11,7 @@
 
 import { carcass, partitions, shelves, back, plinth, crown, door, part } from '../blocks.js';
 import { material } from '../materials.js';
-import { materialParams, joineryParams } from './common.js';
+import { materialParams, joineryParams, FINISHES, FINISHES_NO_GLASS, applyFinish, sameOrMaterial, resolveSame } from './common.js';
 
 const DOOR_OPTIONS = [{ id: 'none', name: 'ללא' }, { id: 'wood', name: 'עץ' }, { id: 'glass', name: 'ויטרינה' }];
 const WITH_DOORS = ['wood', 'glass'];
@@ -28,9 +28,11 @@ export default {
     { key: 'depth', label: 'עומק', type: 'mm', min: 150, max: 800, default: 350, group: 'מידות' },
 
     { key: 'columns', label: 'עמודות', type: 'int', min: 1, max: 8, default: 3, group: 'חלוקה' },
-    { key: 'shelvesPerColumn', label: 'מדפים בכל עמודה', type: 'int', min: 0, max: 15, default: 4, group: 'חלוקה' },
+    { key: 'shelvesPerColumn', label: 'מדפים בכל עמודה', type: 'int', min: 0, max: 15, default: 4, group: 'חלוקה', hint: 'ברירת המחדל; אפשר לשנות לכל עמודה ולכל תא למטה' },
+    { key: 'columnsLayout', label: 'עריכת עמודות', type: 'json', default: null, group: 'חלוקה', editor: 'columns' },
 
     ...materialParams(),
+    sameOrMaterial('innerMaterial', 'הגוף הפנימי (מחיצות ומדפים)', 'חומרים', { hint: '"כמו הגוף" = אותו חומר כמו הדפנות החיצוניות' }),
 
     { key: 'plinthH', label: 'סוקל — גובה', type: 'mm', min: 0, max: 200, default: 80, group: 'סיומות', hint: '0 = ללא סוקל' },
     { key: 'plinthSetback', label: 'סוקל — נסיגה', type: 'mm', min: 0, max: 100, default: 30, group: 'סיומות' },
@@ -41,8 +43,7 @@ export default {
     { key: 'doorType', label: 'דלתות — חלק עליון / כל הגובה', type: 'enum', default: 'none', group: 'דלתות', options: DOOR_OPTIONS },
     { key: 'glassColumns', label: 'עמודות ויטרינה מלאה', type: 'enum', default: 'none', group: 'דלתות', hint: 'עמודה שלמה בדלת ויטרינה, בלי פיצול',
       options: [{ id: 'none', name: 'ללא' }, { id: 'first', name: 'הראשונה' }, { id: 'last', name: 'האחרונה' }, { id: 'ends', name: 'שתי הקיצוניות' }, { id: 'all', name: 'כולן' }] },
-    { key: 'doorFinish', label: 'גימור דלתות העץ', type: 'enum', default: 'flat', group: 'דלתות',
-      options: [{ id: 'flat', name: 'חלק' }, { id: 'fluted', name: 'סטריפים אנכיים' }] },
+    { key: 'doorFinish', label: 'גימור דלתות העץ', type: 'enum', default: 'flat', group: 'דלתות', options: FINISHES_NO_GLASS },
     { key: 'doorMaterial', label: 'חומר הדלתות', type: 'material', kind: 'board', back: false, solid: false, top: false, default: 'board:mdf-paint-18', group: 'דלתות' },
     { key: 'glassType', label: 'זכוכית', type: 'material', kind: 'glass', default: 'glass:clear-4', group: 'דלתות' },
     { key: 'hinge', label: 'צירים', type: 'enum', default: 'hw:hinge-110', group: 'דלתות',
@@ -50,14 +51,36 @@ export default {
     { key: 'handle', label: 'ידיות', type: 'enum', default: 'hw:handle-bar-128', group: 'דלתות',
       options: [{ id: 'none', name: 'ללא (לחיצה)' }, { id: 'hw:handle-bar-128', name: 'מוט 128' }, { id: 'hw:handle-knob', name: 'כפתור' }] },
 
-    { key: 'glassSides', label: 'דפנות זכוכית', type: 'enum', default: 'none', group: 'דפנות ותאורה', hint: 'הדופן החיצונית — שמשה במסגרת, במקום לוח',
-      options: [{ id: 'none', name: 'ללא' }, { id: 'left', name: 'שמאל' }, { id: 'right', name: 'ימין' }, { id: 'both', name: 'שתיהן' }] },
+    { key: 'sideLeftFinish', label: 'דופן שמאל — סוג', type: 'enum', default: 'flat', group: 'דפנות ותאורה', options: FINISHES },
+    sameOrMaterial('sideLeftMaterial', 'דופן שמאל — חומר', 'דפנות ותאורה', { showIf: { sideLeftFinish: ['flat', 'fluted-fine', 'fluted-wide', 'grooved'] } }),
+    { key: 'sideRightFinish', label: 'דופן ימין — סוג', type: 'enum', default: 'flat', group: 'דפנות ותאורה', options: FINISHES },
+    sameOrMaterial('sideRightMaterial', 'דופן ימין — חומר', 'דפנות ותאורה', { showIf: { sideRightFinish: ['flat', 'fluted-fine', 'fluted-wide', 'grooved'] } }),
     { key: 'led', label: 'פסי לד', type: 'enum', default: 'none', group: 'דפנות ותאורה',
       options: [{ id: 'none', name: 'ללא' }, { id: 'sides', name: 'אנכיים, בדפנות של כל עמודה' }, { id: 'shelves', name: 'מתחת לכל מדף' }] },
   ],
 
   // החלטות החיבור — נשאלות בכל מופע, עם ברירת מחדל מהתבנית.
   joinery: joineryParams(),
+
+  /** פרויקטים שנשמרו לפני הפרדת הדפנות: glassSides → סוג דופן, 'fluted' → סטריפים דקים. */
+  migrate(v) {
+    if (v.glassSides && v.glassSides !== 'none') {
+      if (v.glassSides !== 'right') v.sideLeftFinish ??= 'glass';
+      if (v.glassSides !== 'left') v.sideRightFinish ??= 'glass';
+    }
+    delete v.glassSides;
+    if (v.doorFinish === 'fluted') v.doorFinish = 'fluted-fine';
+    return v;
+  },
+
+  /** לעורך העמודות בטופס: כמה עמודות, מה הגובה הפנוי בכל אחת, ועובי מדף. */
+  columnSpace(v) {
+    const sideT = v.sideT ?? 18, shelfT = v.shelfT ?? 18;
+    const bottomY = Math.max(v.plinthH ?? 0, 0) + shelfT, topY = (v.height ?? 2000) - (v.crownH ?? 0);
+    const innerH = topY - shelfT - bottomY;
+    const split = (v.lowerH ?? 0) > 0 && v.lowerH < topY - bottomY - 100;
+    return { columns: v.columns ?? 1, innerH, shelfT, split, defaultShelves: v.shelvesPerColumn ?? 0 };
+  },
 
   // ספי האזהרות. יושבים בתבנית ואפשר לדרוס אותם בסוג המוצר.
   limits: { shelfSpan18: 800, shelfSpan25: 1000, doorWidth: 600, heightUnanchored: 2200, glassMinDepth: 250 },
@@ -76,6 +99,8 @@ export default {
     const bottomY = Math.max(v.plinthH, 0) + shelfT;      // פני הרצפה העליונים
     const topY = H - v.crownH;                            // פני הגג העליונים
 
+    const innerMat = resolveSame(v.innerMaterial, v.bodyMaterial);
+    const shelfMat = v.shelfMaterial === v.bodyMaterial ? innerMat : v.shelfMaterial;   // "חומר המדפים" שלא שונה — עוקב אחרי הפנימי
     const body = carcass({
       w: W, d: bodyD, z: bodyZ, bottomY, topY, sideT, panelT: shelfT,
       sidesOverTop: v.sidesOverTop === 'sides', material: v.bodyMaterial,
@@ -83,13 +108,20 @@ export default {
     parts.push(...body.parts);
     const inner = body.inner;
 
-    // דפנות זכוכית: הדופן הופכת לשמשה בין שני זקפים (חזית ואחור) מחומר הגוף.
+    // הדפנות החיצוניות: סוג (חלק / סטריפים / חריצים / זכוכית) וחומר לכל צד בנפרד.
     const glassT = material(v.glassType).t || 4;
+    let anyGlassSide = false;
     for (const side of ['L', 'R']) {
-      const on = v.glassSides === 'both' || (v.glassSides === 'left' && side === 'L') || (v.glassSides === 'right' && side === 'R');
-      if (!on) continue;
+      const finish = side === 'L' ? v.sideLeftFinish : v.sideRightFinish;
+      const mat = resolveSame(side === 'L' ? v.sideLeftMaterial : v.sideRightMaterial, v.bodyMaterial);
       const i = parts.findIndex((p) => p.id === `side-${side}`);
       const s = parts[i];
+      if (finish !== 'glass') {
+        s.material = mat;
+        parts.push(...applyFinish(s, finish, { material: mat, normal: side === 'L' ? '-x' : '+x' }));
+        continue;
+      }
+      anyGlassSide = true;
       const stile = 40;
       const b = s.box;
       parts.splice(i, 1,
@@ -99,8 +131,12 @@ export default {
       );
     }
 
-    const cols = partitions({ inner, columns: v.columns, t: sideT, material: v.bodyMaterial });
+    const cols = partitions({ inner, columns: v.columns, t: sideT, material: innerMat });
     parts.push(...cols.parts);
+    // פריסת עמודות: לכל עמודה מספר מדפים משלה, ואופציונלית גבהי התאים (מלמטה למעלה).
+    const layout = v.columnsLayout && typeof v.columnsLayout === 'object' ? v.columnsLayout : {};
+    const colShelves = (i) => { const c = layout[i]; return c && Number.isInteger(c.shelves) ? Math.max(0, Math.min(15, c.shelves)) : v.shelvesPerColumn; };
+    const colGaps = (i) => { const c = layout[i]; return c && Array.isArray(c.gaps) ? c.gaps : null; };
 
     const adjustable = v.shelvesMode === 'adjustable';
     const z0 = inner.z0 + (v.backMode === 'groove' ? v.backInset + backT : 0), z1 = inner.z1;
@@ -112,17 +148,17 @@ export default {
       const fullGlass = isGlassCol(i);
       if (split && !fullGlass) {
         // מדף קבוע בגובה הפיצול, ומדפים מתכווננים בכל חלק לפי חלקו בגובה
-        parts.push(...shelves({ col, y0: splitY - shelfT, y1: splitY + shelfT, z0, z1, count: 1, t: shelfT, material: v.shelfMaterial, adjustable: false, colIndex: i, prefix: 'split-' }).parts);
-        const total = v.shelvesPerColumn;
+        parts.push(...shelves({ col, y0: splitY - shelfT, y1: splitY + shelfT, z0, z1, count: 1, t: shelfT, material: shelfMat, adjustable: false, colIndex: i, prefix: 'split-' }).parts);
+        const total = colShelves(i);
         const lowerN = Math.round(total * (v.lowerH / (inner.y1 - inner.y0)));
         const upperN = total - lowerN;
         for (const [n, a, b, pre] of [[lowerN, inner.y0, splitY - shelfT, 'lo-'], [upperN, splitY, inner.y1, 'up-']]) {
-          const s = shelves({ col, y0: a, y1: b, z0, z1, count: n, t: shelfT, material: v.shelfMaterial, setback: adjustable ? 5 : 0, adjustable, colIndex: i, prefix: pre });
+          const s = shelves({ col, y0: a, y1: b, z0, z1, count: n, t: shelfT, material: shelfMat, setback: adjustable ? 5 : 0, adjustable, colIndex: i, prefix: pre });
           parts.push(...s.parts);
           if (adjustable) s.parts.forEach((p) => hardware.push({ id: `${p.id}-pins`, kind: 'shelf-pin', material: 'hw:shelf-pin', qty: 4, for: p.id }));
         }
       } else {
-        const s = shelves({ col, y0: inner.y0, y1: inner.y1, z0, z1, count: v.shelvesPerColumn, t: shelfT, material: v.shelfMaterial, setback: adjustable ? 5 : 0, adjustable, colIndex: i });
+        const s = shelves({ col, y0: inner.y0, y1: inner.y1, z0, z1, count: colShelves(i), t: shelfT, material: shelfMat, setback: adjustable ? 5 : 0, adjustable, colIndex: i, gaps: colGaps(i) });
         parts.push(...s.parts);
         if (adjustable) s.parts.forEach((p) => hardware.push({ id: `${p.id}-pins`, kind: 'shelf-pin', material: 'hw:shelf-pin', qty: 4, for: p.id }));
       }
@@ -175,19 +211,8 @@ export default {
           });
           parts.push(...d.parts);
           hardware.push(...d.hardware);
-          // סטריפים על דלת עץ: פסים אנכיים דקים, נעים עם הדלת
-          if (type === 'wood' && v.doorFinish === 'fluted') {
-            const face = d.parts[0];
-            const sw = 16, gap = 8, st = 8;
-            const n = Math.floor((face.box.w + gap) / (sw + gap));
-            const start = face.box.x + (face.box.w - (n * (sw + gap) - gap)) / 2;
-            for (let s = 0; s < n; s++) {
-              const strip = part(`${id}-flute-${s + 1}`, 'סטריפ דלת', { x: start + s * (sw + gap), y: face.box.y, z: face.box.z + face.box.d, w: sw, h: face.box.h, d: st },
-                { axis: 'z', grain: 'y', material: v.doorMaterial, qtyKey: `flute-${Math.round(face.box.h)}`, note: face.note });
-              strip.motion = face.motion;
-              parts.push(strip);
-            }
-          }
+          // גימור דלת עץ: סטריפים (חלקים שנעים עם הדלת) או חריצים (סימון לתצוגה)
+          if (type === 'wood') parts.push(...applyFinish(d.parts[0], v.doorFinish, { material: v.doorMaterial, normal: '+z' }));
         }
       });
       if (leaves === 1 && colW > L.doorWidth) warnings.push(`דלת ${i + 1} ברוחב ${Math.round(colW)} מ"מ — מעבר ל-${L.doorWidth} המומלצים לדלת אחת`);
@@ -197,7 +222,7 @@ export default {
       warnings.push(`עומק ${D} מ"מ קטן מדי לוויטרינה — נדרשים לפחות ${L.glassMinDepth + doorT}`);
     }
     if (v.lowerH > 0 && !split) warnings.push(`גובה החלק התחתון ${v.lowerH} גדול מדי לגובה הספרייה — הפיצול בוטל`);
-    if (v.glassSides !== 'none' && adjustable) warnings.push('דופן זכוכית: מדפים מתכווננים נשענים על הזקפים בלבד — עדיף מדפים קבועים או מסגרת פנימית');
+    if (anyGlassSide && adjustable) warnings.push('דופן זכוכית: מדפים מתכווננים נשענים על הזקפים בלבד — עדיף מדפים קבועים או מסגרת פנימית');
 
     // אזהרות על מפתחים וגבהים. אזהרה בלבד — הנגר מחליט.
     const spanLimit = shelfT >= 25 ? L.shelfSpan25 : L.shelfSpan18;
@@ -209,8 +234,13 @@ export default {
       warnings.push('החריץ לגב רחוק מהקצה יותר מהמקובל — לבדוק מול הנגר');
     }
 
-    const extraD = anyDoor ? doorT + (v.doorFinish === 'fluted' ? 8 : 0) : 0;
-    return { parts, hardware, warnings, bounds: { w: W, h: H, d: D + extraD } };
+    const extraD = anyDoor ? doorT + (v.doorFinish.startsWith('fluted') ? (v.doorFinish === 'fluted-wide' ? 10 : 8) : 0) : 0;
+    const sideExtra = (f) => (f === 'fluted-wide' ? 10 : f.startsWith('fluted') ? 8 : 0);
+    const bounds = { w: W + sideExtra(v.sideLeftFinish) + sideExtra(v.sideRightFinish), h: H, d: D + extraD };
+    // סטריפים על דופן שמאל יוצאים ל-x שלילי — מזיזים הכול ימינה כדי שהגבולות יתחילו ב-0
+    const shift = sideExtra(v.sideLeftFinish);
+    if (shift) { for (const p of parts) p.box = { ...p.box, x: p.box.x + shift }; for (const h of hardware) if (h.pos) h.pos = [h.pos[0] + shift, h.pos[1], h.pos[2]]; for (const p of parts) if (p.motion && p.motion.kind === 'hinge' && !p.motion.shifted) { p.motion = { ...p.motion, pivot: [p.motion.pivot[0] + shift, p.motion.pivot[1], p.motion.pivot[2]], shifted: true }; } }
+    return { parts, hardware, warnings, bounds };
   },
 };
 

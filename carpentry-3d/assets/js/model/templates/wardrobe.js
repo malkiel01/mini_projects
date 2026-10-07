@@ -6,7 +6,7 @@
 
 import { carcass, partitions, shelves, back, plinth, crown, door, drawer, rod, slidingDoors } from '../blocks.js';
 import { material } from '../materials.js';
-import { materialParams, doorParams, drawerParams, joineryParams, boardT, bodyWarnings, LIMITS } from './common.js';
+import { materialParams, doorParams, drawerParams, joineryParams, boardT, bodyWarnings, LIMITS, FINISHES_NO_GLASS, applyFinish, sameOrMaterial, resolveSame } from './common.js';
 
 export default {
   key: 'wardrobe',
@@ -27,6 +27,12 @@ export default {
     { key: 'drawerH', label: 'גובה מגירה', type: 'mm', min: 120, max: 400, default: 200, group: 'חלוקה', showIf: { drawersPerColumn: [1, 2, 3, 4] } },
 
     ...materialParams(),
+    sameOrMaterial('innerMaterial', 'הגוף הפנימי (מחיצות ומדפים)', 'חומרים'),
+    { key: 'sideLeftFinish', label: 'דופן שמאל — סוג', type: 'enum', default: 'flat', group: 'חומרים', options: FINISHES_NO_GLASS },
+    sameOrMaterial('sideLeftMaterial', 'דופן שמאל — חומר', 'חומרים'),
+    { key: 'sideRightFinish', label: 'דופן ימין — סוג', type: 'enum', default: 'flat', group: 'חומרים', options: FINISHES_NO_GLASS },
+    sameOrMaterial('sideRightMaterial', 'דופן ימין — חומר', 'חומרים'),
+    { key: 'doorFinish', label: 'גימור דלתות העץ', type: 'enum', default: 'flat', group: 'דלתות', options: FINISHES_NO_GLASS, showIf: { doorType: ['wood'] } },
     ...drawerParams(),
 
     { key: 'plinthH', label: 'סוקל — גובה', type: 'mm', min: 0, max: 200, default: 80, group: 'סיומות' },
@@ -51,10 +57,18 @@ export default {
     const sliding = v.doorType === 'sliding';
     const doorT = v.doorType === 'none' ? 0 : boardT(v.doorMaterial);
 
+    const innerMat = resolveSame(v.innerMaterial, v.bodyMaterial);
+    const shelfMat = v.shelfMaterial === v.bodyMaterial ? innerMat : v.shelfMaterial;
     const body = carcass({ w: W, d: bodyD, z: bodyZ, bottomY, topY, sideT, panelT: shelfT, sidesOverTop: v.sidesOverTop === 'sides', material: v.bodyMaterial });
     parts.push(...body.parts);
+    for (const side of ['L', 'R']) {
+      const s = parts.find((p) => p.id === `side-${side}`);
+      const finish = side === 'L' ? v.sideLeftFinish : v.sideRightFinish;
+      s.material = resolveSame(side === 'L' ? v.sideLeftMaterial : v.sideRightMaterial, v.bodyMaterial);
+      parts.push(...applyFinish(s, finish, { material: s.material, normal: side === 'L' ? '-x' : '+x' }));
+    }
     const inner = body.inner;
-    const cols = partitions({ inner, columns: v.columns, t: sideT, material: v.bodyMaterial });
+    const cols = partitions({ inner, columns: v.columns, t: sideT, material: innerMat });
     parts.push(...cols.parts);
     const z0 = inner.z0 + (v.backMode === 'groove' ? v.backInset + backT : 0), z1 = inner.z1;
     const adjustable = v.shelvesMode === 'adjustable';
@@ -74,7 +88,7 @@ export default {
           parts.push(...d.parts); hardware.push(...d.hardware);
         }
         y0 += v.drawersPerColumn * v.drawerH;
-        parts.push(...shelves({ col, y0: y0 - shelfT, y1: y0 + shelfT, z0, z1, count: 1, t: shelfT, material: v.shelfMaterial, adjustable: false, colIndex: i, prefix: 'over-drawers-' }).parts);
+        parts.push(...shelves({ col, y0: y0 - shelfT, y1: y0 + shelfT, z0, z1, count: 1, t: shelfT, material: shelfMat, adjustable: false, colIndex: i, prefix: 'over-drawers-' }).parts);
         y0 += shelfT;
         if (col.x1 - col.x0 > LIMITS.drawerMaxWidth) warnings.push(`מגירה ברוחב ${Math.round(col.x1 - col.x0)} מ"מ — מעבר ל-${LIMITS.drawerMaxWidth} המומלצים`);
       }
@@ -82,14 +96,14 @@ export default {
         // תלייה: מוט 40 מתחת למדף העליון (או לגג), באמצע העומק.
         let rodY = inner.y1 - 40;
         if (v.topShelf === 'yes' && inner.y1 - y0 > 1800) {
-          const s = shelves({ col, y0: inner.y1 - 400 - shelfT, y1: inner.y1 - 400 + shelfT, z0, z1, count: 1, t: shelfT, material: v.shelfMaterial, adjustable, colIndex: i, prefix: 'top-' });
+          const s = shelves({ col, y0: inner.y1 - 400 - shelfT, y1: inner.y1 - 400 + shelfT, z0, z1, count: 1, t: shelfT, material: shelfMat, adjustable, colIndex: i, prefix: 'top-' });
           parts.push(...s.parts);
           rodY = inner.y1 - 400 - 40;
         }
         hardware.push(...rod({ id: `rod-${i + 1}`, x0: col.x0, x1: col.x1, y: rodY, z: (z0 + z1) / 2, material: v.rodMaterial }).hardware);
         if (rodY - y0 < 1000) warnings.push(`עמודה ${i + 1}: גובה תלייה ${Math.round(rodY - y0)} מ"מ — פחות מ-1000, קצר לחולצות`);
       } else {
-        const s = shelves({ col, y0, y1: inner.y1, z0, z1, count: v.shelvesPerColumn, t: shelfT, material: v.shelfMaterial, setback: adjustable ? 5 : 0, adjustable, colIndex: i });
+        const s = shelves({ col, y0, y1: inner.y1, z0, z1, count: v.shelvesPerColumn, t: shelfT, material: shelfMat, setback: adjustable ? 5 : 0, adjustable, colIndex: i });
         parts.push(...s.parts);
         if (adjustable) s.parts.forEach((p) => hardware.push({ id: `${p.id}-pins`, kind: 'shelf-pin', material: 'hw:shelf-pin', qty: 4, for: p.id }));
       }
@@ -115,12 +129,16 @@ export default {
             x0: lx0, x1: lx1, y0: doorY0, y1: topY, zFront: D, type: 'wood', t: doorT, material: v.doorMaterial,
             handle: v.handle === 'none' ? null : v.handle, hinge: v.hinge, hingeSide: leaves === 2 ? (k === 0 ? 'left' : 'right') : (i < cols.cols.length / 2 ? 'left' : 'right') });
           parts.push(...d.parts); hardware.push(...d.hardware);
+          parts.push(...applyFinish(d.parts[0], v.doorFinish, { material: v.doorMaterial, normal: '+z' }));
         }
       });
     }
 
     warnings.push(...bodyWarnings({ H, colW: cols.colW, shelfT, hasShelves: v.hangingColumns < v.columns && v.shelvesPerColumn > 0 }));
-    const extraD = sliding ? 2 * doorT + 4 : doorT;
-    return { parts, hardware, warnings, bounds: { w: W, h: H, d: D + extraD } };
+    const sideExtra = (f) => (f === 'fluted-wide' ? 10 : f.startsWith('fluted') ? 8 : 0);
+    const shift = sideExtra(v.sideLeftFinish);
+    if (shift) { for (const p of parts) p.box = { ...p.box, x: p.box.x + shift }; for (const h of hardware) if (h.pos) h.pos = [h.pos[0] + shift, h.pos[1], h.pos[2]]; for (const p of parts) if (p.motion && p.motion.kind === 'hinge' && !p.motion.shifted) p.motion = { ...p.motion, pivot: [p.motion.pivot[0] + shift, p.motion.pivot[1], p.motion.pivot[2]], shifted: true }; }
+    const extraD = (sliding ? 2 * doorT + 4 : doorT) + (v.doorType === 'wood' && v.doorFinish.startsWith('fluted') ? 10 : 0);
+    return { parts, hardware, warnings, bounds: { w: W + shift + sideExtra(v.sideRightFinish), h: H, d: D + extraD } };
   },
 };
