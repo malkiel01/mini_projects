@@ -24,9 +24,18 @@ function swapXZ(items) {
     p.grain = p.grain === 'x' ? 'z' : p.grain === 'z' ? 'x' : p.grain;
     const e = p.edges || {};
     p.edges = { front: e.right, back: e.left, left: e.back, right: e.front, top: e.top, bottom: e.bottom };
+    // תנועה: החלפת X↔Z היא שיקוף, ולכן כיוון הסיבוב מתהפך.
+    if (p.motion) p.motion = swapMotion(p.motion);
   }
   for (const h of items.hardware) if (h.pos) h.pos = [h.pos[2], h.pos[1], h.pos[0]];
   return items;
+}
+const swapCache = new Map();
+function swapMotion(m) {
+  if (!swapCache.has(m)) swapCache.set(m, m.kind === 'hinge'
+    ? { ...m, pivot: [m.pivot[2], m.pivot[1], m.pivot[0]], angle: -m.angle }
+    : { ...m, vec: [m.vec[2], m.vec[1], m.vec[0]] });
+  return swapCache.get(m);
 }
 
 /** שיקוף ב-X סביב Lx: פינה מימין. */
@@ -35,9 +44,17 @@ function mirrorX(items, Lx) {
     p.box = { ...p.box, x: Lx - p.box.x - p.box.w };
     const e = p.edges || {};
     p.edges = { ...e, left: e.right, right: e.left };
+    if (p.motion) p.motion = mirrorMotion(p.motion, Lx);
   }
   for (const h of items.hardware) if (h.pos) h.pos = [Lx - h.pos[0], h.pos[1], h.pos[2]];
   return items;
+}
+const mirrorCache = new Map();
+function mirrorMotion(m, Lx) {
+  if (!mirrorCache.has(m)) mirrorCache.set(m, m.kind === 'hinge'
+    ? { ...m, pivot: [Lx - m.pivot[0], m.pivot[1], m.pivot[2]], angle: -m.angle }
+    : { ...m, vec: [-m.vec[0], m.vec[1], m.vec[2]] });
+  return mirrorCache.get(m);
 }
 
 export default {

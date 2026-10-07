@@ -227,5 +227,30 @@ console.log("מטבח בצורת ר'");
   check(narrow.warnings.some((w) => w.includes('פינה')), 'אזהרה על פינה קטנה מדי');
 }
 
+console.log('רכיבי תנועה');
+{
+  const bc = build('bookcase', { doorType: 'glass', columns: 2, width: 1000 });
+  const doorParts = bc.parts.filter((p) => p.id.startsWith('door-1'));
+  check(doorParts.length === 5 && doorParts.every((p) => p.motion && p.motion.kind === 'hinge' && p.motion.group === 'door-1'), 'ויטרינה: כל 5 חלקי הדלת באותה קבוצת סיבוב');
+  check(doorParts[0].motion.pivot[0] === doorParts[0].box.x && doorParts[0].motion.angle < 0, 'ציר משמאל: הציר בקצה השמאלי, סיבוב שלילי');
+  const d2 = bc.parts.find((p) => p.id === 'door-2-stile-L').motion;
+  check(d2.angle > 0 && Math.abs(d2.pivot[0] - (bc.parts.find((p) => p.id === 'door-2-stile-R').box.x + 60)) < 0.01, 'ציר מימין: הציר בקצה הימני, סיבוב חיובי');
+  check(bc.parts.filter((p) => !p.id.startsWith('door')).every((p) => !p.motion), 'לגוף אין תנועה');
+  const wd = build('wardrobe', { doorType: 'sliding', slidingLeaves: 2, drawersPerColumn: 1 });
+  const s1 = wd.parts.find((p) => p.id === 'sliding-1').motion, s2 = wd.parts.find((p) => p.id === 'sliding-2').motion;
+  check(s1.kind === 'slide' && s1.vec[0] > 0 && s2.vec[0] < 0, 'הזזה: כנף 1 ימינה, כנף 2 שמאלה');
+  const dr = wd.parts.filter((p) => p.id.startsWith('drawer-1-1'));
+  check(dr.length === 6 && dr.every((p) => p.motion && p.motion.kind === 'slide' && p.motion.group === 'drawer-1-1' && p.motion.vec[2] > 0), 'מגירה: 6 חלקים נשלפים יחד קדימה');
+  const kl = build('kitchen', { shape: 'L' });
+  const dA = kl.parts.find((p) => p.id === 'פינה-door-A').motion, dB = kl.parts.find((p) => p.id === 'פינה-door-B').motion;
+  check(dA.angle > 0 && dB.angle < 0 && dB.pivot[2] > dB.pivot[0], 'פינה: דלת ב מסובבת (X↔Z) — הציר בקצה הרחוק וכיוון הפוך');
+  const b1 = kl.parts.find((p) => p.id.startsWith('ב1-drawer') || p.id === 'ב1-doora' || p.id === 'ב1-door');
+  const kr = build('kitchen', { shape: 'L', cornerSide: 'right' });
+  const dAr = kr.parts.find((p) => p.id === 'פינה-door-A').motion;
+  check(dAr.angle === -dA.angle && Math.abs(dAr.pivot[0] - (3000 - dA.pivot[0])) < 0.01, 'שיקוף: הציר משתקף וכיוון הסיבוב מתהפך');
+  const drB = build('kitchen', { shape: 'L', drawerCabinetsB: 1 }).parts.find((p) => p.id === 'ב1-drawer-1').motion;
+  check(drB.vec[0] > 0 && drB.vec[2] === 0, 'מגירה בקיר השני נשלפת לכיוון +X');
+}
+
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }
 console.log('\nהכול עבר ✓');
