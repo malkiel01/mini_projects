@@ -20,28 +20,28 @@
 //   active    חומר מושבת לא מוצע בטופס, אך פרויקט שכבר משתמש בו ממשיך לעבוד
 
 export const SEED = [
-  { id: 'board:melamine-white-18', kind: 'board', name: 'מלמין לבן 18', t: 18, color: 0xf2f0ea, finish: 'paint', sheet: [2800, 2070], price: 120, priceUnit: 'm2' },
-  { id: 'board:melamine-oak-18',   kind: 'board', name: 'מלמין אלון 18', t: 18, color: 0xc9a46c, finish: 'melamine', grainMm: 600, sheet: [2800, 2070], price: 140, priceUnit: 'm2' },
-  { id: 'board:melamine-grey-18',  kind: 'board', name: 'מלמין אפור 18', t: 18, color: 0xb8b4ae, finish: 'paint', sheet: [2800, 2070], price: 130, priceUnit: 'm2' },
-  { id: 'board:veneer-oak-18',     kind: 'board', name: 'פורניר אלון 18', t: 18, color: 0xd1a86e, finish: 'wood', grainMm: 700, sheet: [2500, 1250], price: 320, priceUnit: 'm2' },
-  { id: 'board:veneer-walnut-18',  kind: 'board', name: 'פורניר אגוז 18', t: 18, color: 0x6e4b33, finish: 'wood', grainMm: 700, sheet: [2500, 1250], price: 380, priceUnit: 'm2' },
-  { id: 'board:veneer-ash-18',     kind: 'board', name: 'פורניר מייפל 18', t: 18, color: 0xe4cfae, finish: 'wood', grainMm: 800, sheet: [2500, 1250], price: 340, priceUnit: 'm2' },
-  { id: 'board:mdf-paint-18',      kind: 'board', name: 'MDF לצבע בתנור 18', t: 18, color: 0xeeeae2, finish: 'paint', sheet: [2800, 2070], price: 260, priceUnit: 'm2' },
-  { id: 'board:mdf-paint-22',      kind: 'board', name: 'MDF לצבע בתנור 22', t: 22, color: 0xeeeae2, finish: 'paint', sheet: [2800, 2070], price: 290, priceUnit: 'm2' },
-  { id: 'board:mdf-paint-sage',    kind: 'board', name: 'MDF צבע בתנור — ירוק מרווה', t: 18, color: 0x9fae95, finish: 'paint', sheet: [2800, 2070], price: 260, priceUnit: 'm2' },
-  { id: 'board:mdf-paint-navy',    kind: 'board', name: 'MDF צבע בתנור — כחול כהה', t: 18, color: 0x34405a, finish: 'paint', sheet: [2800, 2070], price: 260, priceUnit: 'm2' },
-  { id: 'board:back-hdf-6',        kind: 'board', name: 'גב HDF 6', t: 6, color: 0xd9cdb8, finish: 'paint', sheet: [2800, 2070], price: 40, priceUnit: 'm2', back: true },
-  { id: 'board:back-mdf-8',        kind: 'board', name: 'גב MDF 8', t: 8, color: 0xdcd2bf, finish: 'paint', sheet: [2800, 2070], price: 55, priceUnit: 'm2', back: true },
-  { id: 'board:solid-oak',         kind: 'board', name: 'עץ מלא אלון (רגליים, מסגרות)', t: 40, color: 0xc8a26a, finish: 'wood', grainMm: 500, price: 900, priceUnit: 'm2', solid: true },
-  { id: 'board:solid-beech',       kind: 'board', name: 'עץ מלא אשור', t: 40, color: 0xe0c49c, finish: 'wood', grainMm: 500, price: 700, priceUnit: 'm2', solid: true },
-  { id: 'board:countertop-38',     kind: 'board', name: 'משטח עבודה למינציה 38', t: 38, color: 0x6b6560, finish: 'paint', sheet: [4100, 600], price: 350, priceUnit: 'm2', top: true },
-  { id: 'board:countertop-quartz', kind: 'board', name: 'משטח קוורץ 20', t: 20, color: 0xe9e6e0, finish: 'paint', sheet: [3000, 1400], price: 1600, priceUnit: 'm2', top: true },
+  { id: 'board:melamine-white-18', kind: 'board', name: 'מלמין לבן 18', t: 18, color: 0xf2f0ea, finish: 'paint', sheet: [2800, 2070], price: 120, priceUnit: 'm2', density: 680 },
+  { id: 'board:melamine-oak-18',   kind: 'board', name: 'מלמין אלון 18', t: 18, color: 0xc9a46c, finish: 'melamine', grainMm: 600, sheet: [2800, 2070], price: 140, priceUnit: 'm2', density: 680 },
+  { id: 'board:melamine-grey-18',  kind: 'board', name: 'מלמין אפור 18', t: 18, color: 0xb8b4ae, finish: 'paint', sheet: [2800, 2070], price: 130, priceUnit: 'm2', density: 680 },
+  { id: 'board:veneer-oak-18',     kind: 'board', name: 'פורניר אלון 18', t: 18, color: 0xd1a86e, finish: 'wood', grainMm: 700, sheet: [2500, 1250], price: 320, priceUnit: 'm2', density: 560 },
+  { id: 'board:veneer-walnut-18',  kind: 'board', name: 'פורניר אגוז 18', t: 18, color: 0x6e4b33, finish: 'wood', grainMm: 700, sheet: [2500, 1250], price: 380, priceUnit: 'm2', density: 560 },
+  { id: 'board:veneer-ash-18',     kind: 'board', name: 'פורניר מייפל 18', t: 18, color: 0xe4cfae, finish: 'wood', grainMm: 800, sheet: [2500, 1250], price: 340, priceUnit: 'm2', density: 560 },
+  { id: 'board:mdf-paint-18',      kind: 'board', name: 'MDF לצבע בתנור 18', t: 18, color: 0xeeeae2, finish: 'paint', sheet: [2800, 2070], price: 260, priceUnit: 'm2', density: 740 },
+  { id: 'board:mdf-paint-22',      kind: 'board', name: 'MDF לצבע בתנור 22', t: 22, color: 0xeeeae2, finish: 'paint', sheet: [2800, 2070], price: 290, priceUnit: 'm2', density: 740 },
+  { id: 'board:mdf-paint-sage',    kind: 'board', name: 'MDF צבע בתנור — ירוק מרווה', t: 18, color: 0x9fae95, finish: 'paint', sheet: [2800, 2070], price: 260, priceUnit: 'm2', density: 740 },
+  { id: 'board:mdf-paint-navy',    kind: 'board', name: 'MDF צבע בתנור — כחול כהה', t: 18, color: 0x34405a, finish: 'paint', sheet: [2800, 2070], price: 260, priceUnit: 'm2', density: 740 },
+  { id: 'board:back-hdf-6',        kind: 'board', name: 'גב HDF 6', t: 6, color: 0xd9cdb8, finish: 'paint', sheet: [2800, 2070], price: 40, priceUnit: 'm2', density: 850, back: true },
+  { id: 'board:back-mdf-8',        kind: 'board', name: 'גב MDF 8', t: 8, color: 0xdcd2bf, finish: 'paint', sheet: [2800, 2070], price: 55, priceUnit: 'm2', density: 850, back: true },
+  { id: 'board:solid-oak',         kind: 'board', name: 'עץ מלא אלון (רגליים, מסגרות)', t: 40, color: 0xc8a26a, finish: 'wood', grainMm: 500, price: 900, priceUnit: 'm2', density: 720, solid: true },
+  { id: 'board:solid-beech',       kind: 'board', name: 'עץ מלא אשור', t: 40, color: 0xe0c49c, finish: 'wood', grainMm: 500, price: 700, priceUnit: 'm2', density: 700, solid: true },
+  { id: 'board:countertop-38',     kind: 'board', name: 'משטח עבודה למינציה 38', t: 38, color: 0x6b6560, finish: 'paint', sheet: [4100, 600], price: 350, priceUnit: 'm2', density: 700, top: true },
+  { id: 'board:countertop-quartz', kind: 'board', name: 'משטח קוורץ 20', t: 20, color: 0xe9e6e0, finish: 'paint', sheet: [3000, 1400], price: 1600, priceUnit: 'm2', density: 2300, top: true },
   { id: 'edge:pvc-1',              kind: 'edge', name: 'קנט PVC 1 מ"מ', t: 1, price: 4, priceUnit: 'm' },
   { id: 'edge:pvc-2',              kind: 'edge', name: 'קנט PVC 2 מ"מ', t: 2, price: 6, priceUnit: 'm' },
   { id: 'edge:veneer-0.5',         kind: 'edge', name: 'קנט פורניר 0.5', t: 0.5, price: 7, priceUnit: 'm' },
-  { id: 'glass:clear-4',           kind: 'glass', name: 'זכוכית שקופה 4', t: 4, color: 0xbfe0ea, finish: 'glass', opacity: 0.3, price: 180, priceUnit: 'm2' },
-  { id: 'glass:frosted-4',         kind: 'glass', name: 'זכוכית חלבית 4', t: 4, color: 0xe9eff0, finish: 'glass', opacity: 0.75, price: 220, priceUnit: 'm2' },
-  { id: 'glass:smoked-4',          kind: 'glass', name: 'זכוכית מעושנת 4', t: 4, color: 0x5a5e62, finish: 'glass', opacity: 0.5, price: 240, priceUnit: 'm2' },
+  { id: 'glass:clear-4',           kind: 'glass', name: 'זכוכית שקופה 4', t: 4, color: 0xbfe0ea, finish: 'glass', opacity: 0.3, price: 180, priceUnit: 'm2', density: 2500 },
+  { id: 'glass:frosted-4',         kind: 'glass', name: 'זכוכית חלבית 4', t: 4, color: 0xe9eff0, finish: 'glass', opacity: 0.75, price: 220, priceUnit: 'm2', density: 2500 },
+  { id: 'glass:smoked-4',          kind: 'glass', name: 'זכוכית מעושנת 4', t: 4, color: 0x5a5e62, finish: 'glass', opacity: 0.5, price: 240, priceUnit: 'm2', density: 2500 },
   // אביזרים: פרזול עם מתכון תלת־ממדי (accessories.js). הנגר מוסיף ועורך במסך "אביזרים".
   { id: 'hw:hinge-110',            kind: 'hardware', name: 'ציר נסתר 110°', price: 12, priceUnit: 'unit', accessory: { type: 'concealed', params: { angle: 110 }, finish: 'nickel' } },
   { id: 'hw:hinge-165',            kind: 'hardware', name: 'ציר נסתר 165°', price: 22, priceUnit: 'unit', accessory: { type: 'concealed', params: { angle: 165 }, finish: 'nickel' } },
@@ -67,10 +67,13 @@ export const SEED = [
   { id: 'hw:caster-fixed-50',      kind: 'hardware', name: 'גלגל קבוע 50', price: 11, priceUnit: 'unit', accessory: { type: 'caster-fixed', params: { diameter: 50 }, finish: 'nickel' } },
   { id: 'hw:caster-ball-30',       kind: 'hardware', name: 'גלגל כדורי 30', price: 9, priceUnit: 'unit', accessory: { type: 'ball-caster', params: {}, finish: 'chrome' } },
   { id: 'hw:shelf-pin',            kind: 'hardware', name: 'פין מדף', price: 0.5, priceUnit: 'unit' },
-  { id: 'hw:slide-std',            kind: 'hardware', name: 'מסילות למגירה — רגילות (זוג)', price: 35, priceUnit: 'unit' },
-  { id: 'hw:slide-tandem',         kind: 'hardware', name: 'מסילות טנדם בטריקה שקטה (זוג)', price: 120, priceUnit: 'unit' },
+  { id: 'hw:slide-std',            kind: 'hardware', name: 'מסילות למגירה — רגילות (זוג), 25 ק"ג', price: 35, priceUnit: 'unit', load: 25 },
+  { id: 'hw:slide-tandem',         kind: 'hardware', name: 'מסילות טנדם בטריקה שקטה (זוג), 40 ק"ג', price: 120, priceUnit: 'unit', load: 40 },
+  { id: 'hw:slide-heavy',          kind: 'hardware', name: 'מסילות כבדות (זוג), 70 ק"ג', price: 160, priceUnit: 'unit', load: 70 },
   { id: 'hw:rod-chrome',           kind: 'hardware', name: 'מוט תלייה כרום', price: 40, priceUnit: 'unit' },
-  { id: 'hw:track-sliding',        kind: 'hardware', name: 'מסילה כפולה לדלתות הזזה', price: 250, priceUnit: 'unit' },
+  // מערכות הזזה: `system` מפנה ל-SLIDING_SYSTEMS ב-physics.js (גובה הכנף, גררות, עומס)
+  { id: 'hw:track-sliding',        kind: 'hardware', name: 'הזזה תלויה — מסילה עליונה כפולה (40 ק"ג לכנף)', price: 250, priceUnit: 'unit', system: 'top-hung' },
+  { id: 'hw:track-bottom',         kind: 'hardware', name: 'הזזה על גלגלים — פס תחתון ומוליך (60 ק"ג לכנף)', price: 320, priceUnit: 'unit', system: 'bottom-rolling' },
   { id: 'hw:leg-adjust',           kind: 'hardware', name: 'רגלית מתכווננת', price: 6, priceUnit: 'unit' },
   { id: 'hw:hinge-bifold',         kind: 'hardware', name: 'ציר קיפול לדלת פינה', price: 18, priceUnit: 'unit' },
   { id: 'hw:carousel',             kind: 'hardware', name: 'קרוסלה לארון פינתי', price: 650, priceUnit: 'unit' },
@@ -162,6 +165,8 @@ export function materialsOfKind(kind, { back, solid, top } = {}) {
 
 /** אביזרים לפי תפקיד: 'handle' (ידיות וכפתורים), 'hinge', 'wheel'. */
 export function materialsOfRole(role) {
+  if (role === 'sliding') return all().filter((m) => m.kind === 'hardware' && m.active && m.system);
+  if (role === 'slide') return all().filter((m) => m.kind === 'hardware' && m.active && Number.isFinite(m.load));
   const kinds = role === 'handle' ? ['handle', 'knob'] : [role];
   return all().filter((m) => m.kind === 'hardware' && m.active && m.accessory && kinds.includes(accessoryKind(m.accessory.type)));
 }

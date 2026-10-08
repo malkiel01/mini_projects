@@ -127,6 +127,8 @@ export function createMaterialsUI(root, { onChange, onError, getUser, rates }) {
         ${m.kind === 'board' && admin ? `<label><span>קנה מידה סיבים</span><input name="grainMm" type="number" step="50" value="${m.grainMm ?? 600}"><i>מ"מ</i></label>` : ''}
         ${m.kind === 'board' ? `<label><span>לוח</span><input name="sheet0" type="number" value="${m.sheet?.[0] ?? ''}" ${ro}> × <input name="sheet1" type="number" value="${m.sheet?.[1] ?? ''}" ${ro}></label>` : ''}
         ${m.kind === 'board' && admin ? `<label class="mcard__check"><input name="back" type="checkbox" ${m.back ? 'checked' : ''}><span>לוח גב</span></label>` : ''}
+        ${hasVisual ? `<label title="למשקל החלקים, הצירים והמסילות"><span>צפיפות</span><input name="density" type="number" step="10" min="50" value="${m.density ?? ''}" placeholder="לפי הסוג" ${ro}><i>ק"ג/מ"ק</i></label>` : ''}
+        ${m.kind === 'hardware' && Number.isFinite(m.load) ? `<label title="עומס המסילה — נבדק מול משקל המגירה + תכולה"><span>עומס</span><input name="load" type="number" step="5" min="5" value="${m.load}" ${ro}><i>ק"ג</i></label>` : ''}
         ${m.kind === 'glass' && admin ? `<label><span>שקיפות</span><input name="opacity" type="range" min="0.1" max="0.95" step="0.05" value="${m.opacity ?? 0.4}"></label>` : ''}
         <label><span>${admin ? 'מחיר מומלץ' : 'מחיר מומלץ'}</span><input name="price" type="number" step="0.5" value="${m.price ?? 0}" ${ro}><i>₪ ${unitName[m.priceUnit] || ''}</i></label>
         ${getUser()?.role !== 'viewer' ? `<label class="mcard__mine"><span>המחיר שלי</span><input name="myPrice" type="number" step="0.5" value="${myPrice ?? ''}" placeholder="כמו המומלץ"><i>₪ ${unitName[m.priceUnit] || ''}</i></label>` : ''}
@@ -181,6 +183,8 @@ export function createMaterialsUI(root, { onChange, onError, getUser, rates }) {
       if (inp.name === 'back') patch.back = inp.checked;
       if (inp.name === 'opacity') patch.opacity = Number(inp.value);
       if (inp.name === 'price') patch.price = Number(inp.value) || 0;
+      if (inp.name === 'density') patch.density = Number(inp.value) || 0;
+      if (inp.name === 'load') patch.load = Number(inp.value) || m.load;
       if (inp.name === 'active') patch.active = inp.checked;
       M.upsert(patch);
       await persist();

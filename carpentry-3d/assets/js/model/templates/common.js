@@ -31,7 +31,10 @@ export function doorParams({ sliding = false, glass = true, height = true } = {}
   out.push({ key: 'doorMaterial', label: 'חומר הדלתות', type: 'material', kind: 'board', back: false, solid: false, top: false, default: 'board:mdf-paint-18', group: 'דלתות', showIf: show });
   if (glass) out.push({ key: 'glassType', label: 'זכוכית', type: 'material', kind: 'glass', default: 'glass:clear-4', group: 'דלתות', showIf: { doorType: ['glass'] } });
   out.push(hingeParam({ showIf: { doorType: ['wood', 'glass'] } }));
-  if (sliding) out.push({ key: 'slidingLeaves', label: 'כנפי הזזה', type: 'int', min: 2, max: 4, default: 2, group: 'דלתות', showIf: { doorType: ['sliding'] } });
+  if (sliding) {
+    out.push({ key: 'slidingLeaves', label: 'כנפי הזזה', type: 'int', min: 2, max: 4, default: 2, group: 'דלתות', showIf: { doorType: ['sliding'] } });
+    out.push({ key: 'slidingSystem', label: 'מערכת ההזזה', type: 'material', kind: 'hardware', role: 'sliding', default: 'hw:track-sliding', group: 'דלתות', showIf: { doorType: ['sliding'] }, hint: 'גובה הכנף, הגררות והעומס המותר נגזרים מהמערכת' });
+  }
   out.push(handleParam({ showIf: show }));
   return out;
 }
@@ -81,12 +84,11 @@ export function liftAll(parts, hardware, dy) {
 }
 
 /** מגירות: ארגז, תחתית, מסילות. */
-export function drawerParams() {
+export function drawerParams({ slide = 'hw:slide-std' } = {}) {
   return [
     { key: 'drawerBoxMaterial', label: 'ארגז המגירה', type: 'material', kind: 'board', back: false, solid: false, top: false, default: 'board:melamine-white-18', group: 'מגירות' },
     { key: 'drawerBottomMaterial', label: 'תחתית המגירה', type: 'material', kind: 'board', back: true, default: 'board:back-hdf-6', group: 'מגירות' },
-    { key: 'slide', label: 'מסילות', type: 'enum', default: 'hw:slide-std', group: 'מגירות',
-      options: [{ id: 'hw:slide-std', name: 'רגילות' }, { id: 'hw:slide-tandem', name: 'טנדם, טריקה שקטה' }] },
+    { key: 'slide', label: 'מסילות', type: 'material', kind: 'hardware', role: 'slide', default: slide, group: 'מגירות', hint: 'העומס המותר נבדק מול משקל המגירה + 15 ק"ג תכולה' },
   ];
 }
 

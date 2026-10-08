@@ -91,6 +91,7 @@ export default {
           zFront: z1, depth: Math.min(z1 - z0 - 20, 550), frontT, boxT: boardT(v.drawerBoxMaterial), bottomT: boardT(v.drawerBottomMaterial),
           frontMaterial: v.frontMaterial, boxMaterial: v.drawerBoxMaterial, bottomMaterial: v.drawerBottomMaterial,
           slide: v.slide, handle: v.handle === 'none' ? null : v.handle,
+          mountIds: [c === 0 ? 'side-L' : `partition-${c}`, c === cols.cols.length - 1 ? 'side-R' : `partition-${c + 1}`], mountBottom: inner.y0,
         });
         parts.push(...d.parts); hardware.push(...d.hardware);
         y += rowH;

@@ -753,3 +753,8 @@ input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner
 .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
 .stat span { color: var(--muted); font-size: 0.8rem; }
 .stat b { font-size: 1.3rem; color: var(--accent-deep); }
+
+/* ייצוא STL: בחירת קנה מידה צמודה לכפתור */
+.stl-pick { display: inline-flex; align-items: center; gap: 4px; }
+.stl-pick select { padding: 4px 6px; border: 1px solid var(--line, #d6d3cd); border-radius: 6px; background: var(--bg, #fff); font: inherit; }
+.output__body h4 { margin: 14px 0 4px; font-size: 0.95rem; }

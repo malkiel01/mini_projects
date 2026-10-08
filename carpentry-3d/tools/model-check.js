@@ -12,6 +12,8 @@ import { resolveShares, editShare, normalizeLayout, layoutIsEmpty } from '../ass
 import { placeModel, combine, snapTo } from '../assets/js/model/assembly.js';
 import { TYPES, buildAccessory, paramsOf, faceOf, wheelHeight, FINISHES as ACC_FINISHES } from '../assets/js/model/accessories.js';
 import { nest, sheetCount } from '../assets/js/model/sheets.js';
+import { partWeight, totalWeight, boardWeight, hingeCount, hingeYs, hingeDrilling, slidingLeaf, SLIDING_SYSTEMS, slideLoad, drillingList, physicsWarnings, densityOf } from '../assets/js/model/physics.js';
+import { toSTL, printSize } from '../assets/js/model/stl.js';
 
 let failed = 0;
 function check(cond, msg) {
@@ -543,6 +545,74 @@ console.log('אביזרים: ידיות, כפתורים, צירים, גלגלי�
   const tb = build('table', { wheels: 'hw:caster-fixed-50' });
   check(tb.hardware.filter((h) => h.kind === 'wheel').length === 4 && tb.bounds.h === 750 + wheelHeight(M.material('hw:caster-fixed-50')), 'שולחן על גלגלים');
   check(ACC_FINISHES.length >= 6, 'גימורים');
+}
+
+// ---- פיזיקה: משקלים, צירים לפי גובה ומשקל, מערכות הזזה, קידוחים ----
+{
+  console.log('\nפיזיקה ופרזול');
+  check(densityOf(M.material('glass:clear-4')) === 2500 && densityOf(M.material('board:melamine-white-18')) === 680 && densityOf(M.material('board:mdf-paint-18')) === 740, 'צפיפויות מהספרייה');
+  // לוח 1000×1000×18 מלמין 680 → 12.24 ק"ג
+  check(boardWeight(1000, 1000, 18, 'board:melamine-white-18') === 12.24, `משקל לוח מ"ר (${boardWeight(1000, 1000, 18, 'board:melamine-white-18')})`);
+  M.upsert({ id: 'board:melamine-white-18', density: 1000 });
+  check(boardWeight(1000, 1000, 18, 'board:melamine-white-18') === 18, 'צפיפות שהוגדרה בספרייה גוברת');
+  M.upsert({ id: 'board:melamine-white-18', density: 0 });
+  // צירים: 2 עד 900, 3 עד 1600, 4 עד 2100, 5 עד 2400, 6 מעל; ולפי משקל — הגבוה
+  check(hingeCount(700, 3) === 2 && hingeCount(1500, 5) === 3 && hingeCount(2000, 10) === 4 && hingeCount(2300, 10) === 5 && hingeCount(2600, 10) === 6, 'צירים לפי גובה');
+  check(hingeCount(700, 7) === 3 && hingeCount(700, 14) === 4 && hingeCount(700, 19) === 5 && hingeCount(700, 30) === 6, 'צירים לפי משקל גוברים על הגובה');
+  check(JSON.stringify(hingeYs(1000, 3)) === '[100,500,900]' && hingeYs(300, 2)[0] === 75, 'גבהי צירים: 100 מהקצוות, שווה באמצע; דלת נמוכה — רבע');
+  const hd = hingeDrilling({ doorId: 'd', mountId: 'm', ys: [100, 900], doorBottomOffset: 50 });
+  const cups = hd.filter((h) => h.purpose === 'כוס ציר');
+  check(cups.length === 2 && cups[0].dia === 35 && cups[0].depth === 13 && cups[0].x === 22.5 && cups[0].face === 'back', 'כוס Ø35 עומק 13, מרכז 22.5 מקצה הציר');
+  check(hd.filter((h) => h.part === 'd' && h.dia === 2.5).length === 4 && hd.filter((h) => h.part === 'm').length === 4 && hd.find((h) => h.part === 'm').x === 37 && hd.filter((h) => h.part === 'm').map((h) => h.y).join() === '134,166,934,966', 'ברגי ציר ופלטות בדופן: 37 מהחזית, 32 ביניהם, מוזזות בגובה הדלת');
+  // דלת ארון: צירים אמיתיים עם קידוח בדלת ובדופן
+  const wd = build('wardrobe', { doorType: 'wood', columns: 2 });
+  const door1 = wd.parts.find((p) => p.id === 'door-1a');
+  const hinges1 = wd.hardware.filter((h) => h.kind === 'hinge' && h.for === 'door-1a');
+  const info1 = wd.hardware.find((h) => h.kind === 'info' && h.door === 'door-1a');
+  check(info1 && info1.kg > 5 && hinges1.length === info1.hinges && hinges1.length === hingeCount(door1.box.h, info1.kg), `דלת ארון: ${hinges1.length} צירים לפי ${door1.box.h} מ"מ ו-${info1 && info1.kg} ק"ג`);
+  check(hinges1.every((h) => Math.abs(h.pos[0] - (door1.box.x + 22.5)) < 0.01) && hinges1[0].pos[1] === door1.box.y + 100 && hinges1[hinges1.length - 1].pos[1] === door1.box.y + door1.box.h - 100, 'הצירים במרכז הכוס, 100 מהקצוות');
+  const dl = drillingList(wd);
+  const doorHoles = dl.find((g) => g.id === 'door-1a'), sideHoles = dl.find((g) => g.id === 'side-L');
+  check(doorHoles && doorHoles.holes.length === hinges1.length * 3 && sideHoles && sideHoles.holes.length === hinges1.length * 2, 'רשימת הקידוחים: 3 לכל ציר בדלת, 2 בדופן');
+  check(sideHoles.holes.every((h) => h.y >= 0 && h.y <= wd.parts.find((p) => p.id === 'side-L').box.h), 'קידוחי הדופן בתוך גובה הדופן');
+  check(hardwareList(wd).every((r) => r.kind !== 'info') && !estimate(wd, {}).lines.some((l) => /ק"ג/.test(l.name)), 'רשומות המידע אינן פרזול ברשימות ובמחיר');
+  // דלת הזזה: יושבת על המסילה, לא מרחפת
+  for (const key of Object.keys(SLIDING_SYSTEMS)) {
+    const sys = key === 'top-hung' ? 'hw:track-sliding' : 'hw:track-bottom';
+    const w = build('wardrobe', { doorType: 'sliding', slidingLeaves: 2, slidingSystem: sys });
+    const leaves = w.parts.filter((p) => /^sliding-\d$/.test(p.id));
+    const lf = slidingLeaf(key, w.values.plinthH, w.parts.find((p) => p.id === 'top').box.y + w.parts.find((p) => p.id === 'top').box.h);
+    const s = SLIDING_SYSTEMS[key];
+    check(leaves.length === 2 && leaves.every((p) => p.box.y === lf.bottom && p.box.h === lf.h) && lf.h < lf.openH, `${key}: גובה הכנף ${lf.h} מתוך פתח ${lf.openH}`);
+    const expectBottom = key === 'top-hung' ? w.values.plinthH + s.guideH + s.bottomClear : w.values.plinthH + s.trackH + s.rollerLift;
+    check(leaves[0].box.y === expectBottom, `${key}: תחתית הכנף ${leaves[0].box.y} = סוקל + פרופיל`);
+    const tracks = w.hardware.filter((h) => h.kind === 'track'), carriers = w.hardware.filter((h) => h.kind === 'carrier');
+    check(tracks.length === 2 && tracks.every((t) => t.len === w.values.width && t.pos) && carriers.length === 4 && carriers.every((c) => c.drill.length === 1 && c.for), `${key}: 2 פרופילים לרוחב, 4 גררות עם קידוח`);
+    const track = tracks.find((t) => t.id === 'sliding-track');
+    check(key === 'top-hung' ? track.pos[1] === leaves[0].box.y + leaves[0].box.h + s.topClear : track.pos[1] + s.trackH + s.rollerLift === leaves[0].box.y, `${key}: הכנף צמודה לפרופיל (מרווח ${s.topClear || s.rollerLift})`);
+    check(Math.abs(leaves[1].box.z - leaves[0].box.z - (leaves[0].box.d + s.laneGap)) < 0.01 && leaves[0].box.z === w.parts.find((p) => p.id === 'side-L').box.z + w.parts.find((p) => p.id === 'side-L').box.d, `${key}: נתיב פנימי צמוד לגוף, חיצוני לפניו במרווח ${s.laneGap}`);
+    check(within(w.parts, w.bounds) && w.bounds.d === w.values.depth + 2 * leaves[0].box.d + s.laneGap, `${key}: הגבולות כוללים את שני הנתיבים`);
+    check(w.hardware.some((h) => h.kind === 'info' && Number.isFinite(h.maxKg) && h.maxKg === s.maxKgPerLeaf), `${key}: משקל הכנף מול ${s.maxKgPerLeaf} ק"ג`);
+  }
+  const heavy = build('wardrobe', { doorType: 'sliding', slidingLeaves: 2, width: 3000, height: 2400, doorMaterial: 'board:mdf-paint-22' });
+  check(heavy.warnings.some((w) => /מעל 40 ק"ג/.test(w)), `כנף MDF 22 ברוחב 1500 — אזהרת עומס (${heavy.warnings.find((w) => /מעל 40/.test(w)) || 'אין'})`);
+  // מגירות: עומס המסילה מול משקל + תכולה, וקידוחי סיסטם 32 בדפנות
+  check(slideLoad('hw:slide-std') === 25 && slideLoad('hw:slide-tandem') === 40 && slideLoad('hw:slide-heavy') === 70, 'עומסי מסילות');
+  const dr = build('dresser', {});
+  const drHoles = drillingList(dr).find((g) => g.id === 'side-L');
+  check(drHoles && drHoles.holes.every((h) => h.dia === 5 && h.purpose === 'מסילת מגירה') && drHoles.holes.some((h) => h.x === 37) && drHoles.holes.some((h) => h.x === 261), 'מסילות: קידוחים 37 ו-261 מהחזית בדופן');
+  check(!dr.warnings.some((w) => /עומס המסילה/.test(w)), 'שידה רגילה בלי אזהרת עומס');
+  check(physicsWarnings([{ kind: 'info', door: 'x', kg: 12, load: 25 }]).length === 1 && physicsWarnings([{ kind: 'info', door: 'x', kg: 9, load: 25 }]).length === 0 && physicsWarnings([{ kind: 'info', door: 'd', kg: 23, hinges: 6 }]).length === 1, 'אזהרות: מגירה מעל העומס, דלת מעל 22 ק"ג');
+  check(totalWeight(dr.parts) > 20 && Math.abs(totalWeight(dr.parts) - dr.parts.reduce((s, p) => s + partWeight(p), 0)) < 0.1, `שידה: ${totalWeight(dr.parts)} ק"ג`);
+  // STL: 12 משולשים לחלק, קנה מידה, עיבוי למינימום
+  const bc = build('bookcase', {});
+  const stl = toSTL(bc.parts, { scale: 20, minT: 1 });
+  check(stl.triangles === bc.parts.length * 12 && stl.buffer.byteLength === 84 + stl.triangles * 50 && new DataView(stl.buffer).getUint32(80, true) === stl.triangles, 'STL בינארי: 12 משולשים לחלק, כותרת נכונה');
+  check(stl.thickened > 0 && toSTL(bc.parts, { scale: 10, minT: 1 }).thickened < stl.thickened, 'לוח 18 ב-1:20 (0.9) מעובה ל-1; ב-1:10 פחות עיבויים');
+  const ps = printSize(bc.bounds, 20);
+  check(ps.w === Math.round(bc.bounds.w / 20 * 10) / 10 && ps.h === Math.round(bc.bounds.h / 20 * 10) / 10, 'מידות הדפסה');
+  const first = new Float32Array(toSTL(bc.parts, { scale: 10, minT: 1 }).buffer.slice(84 + 12, 84 + 12 + 36));
+  check(Math.abs(first[0] - bc.parts[0].box.x / 10) < 1e-4 && Math.abs(first[1] - bc.parts[0].box.y / 10) < 1e-4, 'קואורדינטות מחולקות בקנה המידה');
 }
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }

@@ -111,6 +111,7 @@ export default {
             zFront: z1, depth: Math.min(z1 - z0 - 20, 500), frontT: doorT || sideT, boxT: boardT(v.drawerBoxMaterial), bottomT: boardT(v.drawerBottomMaterial),
             frontMaterial: v.doorType === 'none' ? v.bodyMaterial : v.doorMaterial, boxMaterial: v.drawerBoxMaterial, bottomMaterial: v.drawerBottomMaterial,
             slide: v.slide, handle: v.handle === 'none' ? null : v.handle,
+            mountIds: [i === 0 ? 'side-L' : `partition-${i}`, i === cols.cols.length - 1 ? 'side-R' : `partition-${i + 1}`], mountBottom: inner.y0,
           });
           parts.push(...d.parts); hardware.push(...d.hardware);
         }
@@ -143,9 +144,16 @@ export default {
 
     // דלתות: מעל המגירות (אם יש) או מהסוקל; הזזה מכסה הכול.
     const doorY0 = v.plinthH + (v.drawersPerColumn > 0 && !sliding ? shelfT + v.drawersPerColumn * v.drawerH + shelfT : 0);
+    let slidingExtraD = 0;
+    const mountFor = (i, side) => {
+      const id = side === 'left' ? (i === 0 ? 'side-L' : `partition-${i}`) : (i === cols.cols.length - 1 ? 'side-R' : `partition-${i + 1}`);
+      const p = parts.find((q) => q.id === id);
+      return p ? { id, y: p.box.y } : null;
+    };
     if (sliding) {
-      const sd = slidingDoors({ id: 'sliding', x0: 0, x1: W, y0: v.plinthH, y1: topY, zFront: D, leaves: v.slidingLeaves, t: doorT, material: v.doorMaterial, track: 'hw:track-sliding' });
+      const sd = slidingDoors({ id: 'sliding', x0: 0, x1: W, y0: v.plinthH, y1: topY, zFront: D, leaves: v.slidingLeaves, t: doorT, material: v.doorMaterial, track: v.slidingSystem });
       parts.push(...sd.parts); hardware.push(...sd.hardware);
+      slidingExtraD = sd.extraD;
       if (sd.leafWidth > 1200) warnings.push(`כנף הזזה ברוחב ${Math.round(sd.leafWidth)} מ"מ — כבדה; מומלץ עד 1200`);
     } else if (v.doorType === 'wood') {
       cols.cols.forEach((col, i) => {
@@ -155,7 +163,9 @@ export default {
           const lx0 = x0 + (colW / leaves) * k, lx1 = lx0 + colW / leaves;
           const d = door({ id: `door-${i + 1}${leaves === 2 ? 'ab'[k] : ''}`, name: `דלת ${i + 1}${leaves === 2 ? (k === 0 ? ' שמאל' : ' ימין') : ''}`,
             x0: lx0, x1: lx1, y0: doorY0, y1: topY, zFront: D, type: 'wood', t: doorT, material: v.doorMaterial,
-            handle: v.handle === 'none' ? null : v.handle, hinge: v.hinge, hingeSide: leaves === 2 ? (k === 0 ? 'left' : 'right') : (i < cols.cols.length / 2 ? 'left' : 'right') });
+            handle: v.handle === 'none' ? null : v.handle, hinge: v.hinge, hingeSide: leaves === 2 ? (k === 0 ? 'left' : 'right') : (i < cols.cols.length / 2 ? 'left' : 'right'),
+            mountId: (mountFor(i, leaves === 2 ? (k === 0 ? 'left' : 'right') : (i < cols.cols.length / 2 ? 'left' : 'right')) || {}).id || null,
+            mountBottom: (mountFor(i, leaves === 2 ? (k === 0 ? 'left' : 'right') : (i < cols.cols.length / 2 ? 'left' : 'right')) || {}).y ?? null });
           parts.push(...d.parts); hardware.push(...d.hardware);
           parts.push(...applyFinish(d.parts[0], v.doorFinish, { material: v.doorMaterial, normal: '+z' }));
         }
@@ -166,7 +176,7 @@ export default {
     const sideExtra = (f) => (f === 'fluted-wide' ? 10 : f.startsWith('fluted') ? 8 : 0);
     const shift = sideExtra(v.sideLeftFinish);
     if (shift) { for (const p of parts) p.box = { ...p.box, x: p.box.x + shift }; for (const h of hardware) if (h.pos) h.pos = [h.pos[0] + shift, h.pos[1], h.pos[2]]; for (const p of parts) if (p.motion && p.motion.kind === 'hinge' && !p.motion.shifted) p.motion = { ...p.motion, pivot: [p.motion.pivot[0] + shift, p.motion.pivot[1], p.motion.pivot[2]], shifted: true }; }
-    const extraD = (sliding ? 2 * doorT + 4 : doorT) + (v.doorType === 'wood' && v.doorFinish.startsWith('fluted') ? 10 : 0);
+    const extraD = (sliding ? slidingExtraD : doorT) + (v.doorType === 'wood' && v.doorFinish.startsWith('fluted') ? 10 : 0);
     const lift = addWheels(parts, hardware, v, { x0: shift, x1: shift + W, y0: 0, z0: bodyZ, z1: bodyZ + bodyD });
     return { parts, hardware, warnings, bounds: { w: W + shift + sideExtra(v.sideRightFinish), h: H + lift, d: D + extraD } };
   },

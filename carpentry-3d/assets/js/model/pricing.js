@@ -75,6 +75,7 @@ export function estimate(model, rates = {}) {
   let hardwareTotal = 0;
   const hwBy = new Map();
   for (const h of hardware) {
+    if (h.kind === 'info' || !h.material) continue;
     const r = hwBy.get(h.material) || { id: h.material, qty: 0 };
     r.qty += h.qty || 1;
     hwBy.set(h.material, r);

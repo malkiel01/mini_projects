@@ -16,6 +16,8 @@ import { material, materialsOfKind, materialsOfRole } from './materials.js';
 
 export const TEMPLATES = { bookcase, wardrobe, dresser, kitchen, table, bed, cladding };
 
+import { physicsWarnings } from './physics.js';
+
 export function template(key) {
   const t = TEMPLATES[key];
   if (!t) throw new Error(`תבנית לא מוכרת: ${key}`);
@@ -81,6 +83,7 @@ export function build(key, values) {
   if (t.migrate) values = t.migrate({ ...values });   // ערכים ישנים שנשמרו בפרויקטים → המפתחות הנוכחיים
   for (const p of allParams(t)) if (values[p.key] !== undefined) v[p.key] = clamp(p, values[p.key]);
   const out = t.build(v);
+  out.warnings = [...(out.warnings || []), ...physicsWarnings(out.hardware || [])];
   return { ...out, values: v, template: t };
 }
 
@@ -148,6 +151,7 @@ function edgeSides(p) {
 export function hardwareList({ hardware }) {
   const rows = new Map();
   for (const h of hardware) {
+    if (h.kind === 'info' || !h.material) continue;   // רשומות מידע (משקל, עומס) אינן פריטי פרזול
     const m = material(h.material);
     const row = rows.get(h.material) || { name: m.name, kind: h.kind, qty: 0 };
     row.qty += h.qty || 1;
