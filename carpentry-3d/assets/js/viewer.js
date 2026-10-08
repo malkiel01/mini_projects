@@ -249,6 +249,8 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
       opts.color = m.color ?? 0xbfe0ea; opts.transparent = true; opts.opacity = m.opacity ?? 0.4;
     } else {
       opts.map = textureForPart(m, p, cutSize(p));
+      // שיש/אבן: מעט מעומעם כדי שפאה מוארת לא תישרף ללבן ותבליע את העורקים; ומלוטש — מבריק יותר
+      if (m.finish === 'stone') { opts.color = 0xcfcfcf; opts.roughness = 0.38; }
     }
     return new THREE.MeshStandardMaterial(opts);
   }

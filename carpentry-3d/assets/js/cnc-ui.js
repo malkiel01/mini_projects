@@ -17,14 +17,15 @@ const SAMPLES = [
   { id: 'drawer', name: 'חזית מגירה 600 × 200', U: 600, V: 200 },
   { id: 'side', name: 'דופן 350 × 2000', U: 350, V: 2000 },
 ];
+// [מפתח, תווית, מינימום, מקסימום, יחידה, הסבר בשורה נפרדת]
 const FIELDS = {
   flutes: [
-    ['groove', 'רוחב חריץ', 2, 40, 'מ"מ'], ['rib', 'רוחב צלע', 3, 80, 'מ"מ — מינימום; השארית מתחלקת שווה'],
-    ['depth', 'עומק', 1, 15, 'מ"מ'], ['margin', 'שוליים בקצה', 0, 150, 'מ"מ — 0 = צלע בקצה'],
+    ['groove', 'רוחב חריץ', 2, 40, 'מ"מ', ''], ['rib', 'רוחב צלע', 3, 80, 'מ"מ', 'מינימום — השארית מתחלקת שווה בין הצלעות'],
+    ['depth', 'עומק', 1, 15, 'מ"מ', ''], ['margin', 'שוליים בקצה', 0, 150, 'מ"מ', '0 = צלע בקצה הלוח'],
   ],
   frames: [
-    ['groove', 'רוחב חריץ', 2, 30, 'מ"מ'], ['depth', 'עומק', 1, 12, 'מ"מ'], ['inset', 'מרחק מהקצה', 20, 250, 'מ"מ'],
-    ['rings', 'מספר קווים', 1, 4, ''], ['ringGap', 'מרווח בין קווים', 4, 120, 'מ"מ'], ['split', 'גובה הפנל העליון', 40, 85, '% — בשני פנלים'],
+    ['groove', 'רוחב חריץ', 2, 30, 'מ"מ', ''], ['depth', 'עומק', 1, 12, 'מ"מ', ''], ['inset', 'מרחק מהקצה', 20, 250, 'מ"מ', ''],
+    ['rings', 'מספר קווים', 1, 4, '', ''], ['ringGap', 'מרווח בין קווים', 4, 120, 'מ"מ', ''], ['split', 'גובה הפנל העליון', 40, 85, '%', 'בשני פנלים — מגובה הלוח'],
   ],
 };
 
@@ -84,7 +85,7 @@ export function createCncUI(root, { onChange, onError, getUser }) {
     form.innerHTML = `
       <label class="acc__field"><span>שם</span><input name="name" value="${esc(m.name)}" ${ro}><i></i></label>
       <label class="acc__field"><span>מחיר עיבוד</span><input name="price" type="number" step="5" min="0" value="${m.price ?? 0}" ${ro}><i>₪ למ"ר</i></label>
-      ${FIELDS[kind].map(([k, label, min, max, unit]) => `<label class="acc__field"><span>${label}</span><input name="m:${k}" type="number" step="1" min="${min}" max="${max}" value="${mill[k]}" ${ro}><i>${unit}</i></label>`).join('')}
+      ${FIELDS[kind].map(([k, label, min, max, unit, hint]) => `<label class="acc__field"><span>${label}</span><input name="m:${k}" type="number" step="1" min="${min}" max="${max}" value="${mill[k]}" ${ro}><i>${unit}</i>${hint ? `<small class="acc__hint">${hint}</small>` : ''}</label>`).join('')}
       ${kind === 'frames' ? `<label class="acc__field"><span>פנלים</span><select name="m:panels" ${ro}><option value="1" ${mill.panels !== 2 ? 'selected' : ''}>פנל אחד</option><option value="2" ${mill.panels === 2 ? 'selected' : ''}>שניים — עליון ותחתון (בלוח גבוה מ-900)</option></select><i></i></label>` : ''}
       <label class="acc__field acc__check"><input name="active" type="checkbox" ${m.active ? 'checked' : ''} ${ro}><span>פעיל — מוצע בטופס</span></label>
       <label class="acc__field"><span>תצוגה על</span><select name="sample">${SAMPLES.map((s) => `<option value="${s.id}" ${s.id === sample ? 'selected' : ''}>${s.name}</option>`).join('')}</select><i></i></label>

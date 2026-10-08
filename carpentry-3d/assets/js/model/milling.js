@@ -138,7 +138,8 @@ export function millWarnings(parts) {
     const m = material(p.material);
     const t = Math.min(p.box.w, p.box.h, p.box.d);
     if (t - p.mill.depth < 10) out.add(`${p.name}: עובי ${t} מ"מ דק לחירוץ בעומק ${p.mill.depth} — נשארים פחות מ-10 מ"מ`);
-    if (m.kind === 'board' && m.finish !== 'paint') out.add(`${p.name}: חירוץ CNC בלוח ${m.name} חושף את הליבה — לחרץ ב-MDF לצבע`);
+    if (m.kind === 'board' && m.finish === 'stone') out.add(`${p.name}: חירוץ ב${m.name} — במכונת CNC לאבן (מים, כלי יהלום), לא במכונת העץ`);
+    else if (m.kind === 'board' && m.finish !== 'paint') out.add(`${p.name}: חירוץ CNC בלוח ${m.name} חושף את הליבה — לחרץ ב-MDF לצבע`);
   }
   return [...out];
 }

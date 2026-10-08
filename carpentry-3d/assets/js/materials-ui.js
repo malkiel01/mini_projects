@@ -123,6 +123,7 @@ export function createMaterialsUI(root, { onChange, onError, getUser, rates }) {
         <label><span>שם</span><input name="name" value="${esc(m.name)}" ${ro}></label>
         ${m.kind !== 'hardware' ? `<label><span>עובי</span><input name="t" type="number" step="0.5" value="${m.t ?? ''}" ${ro}><i>מ"מ</i></label>` : ''}
         ${hasVisual && admin ? `<label><span>צבע</span><input name="color" type="color" value="${hex(m.color)}"></label>` : ''}
+        ${m.finish === 'stone' && admin ? `<label><span>צבע העורקים</span><input name="vein" type="color" value="${hex(m.vein ?? 0x8f969c)}"></label>` : ''}
         ${m.kind === 'board' && admin ? `<label><span>גימור</span><select name="finish">${M.FINISHES.filter((f) => f.id !== 'glass').map((f) => `<option value="${f.id}" ${m.finish === f.id ? 'selected' : ''}>${f.name}</option>`).join('')}</select></label>` : ''}
         ${m.kind === 'board' && admin ? `<label><span>קנה מידה סיבים</span><input name="grainMm" type="number" step="50" value="${m.grainMm ?? 600}"><i>מ"מ</i></label>` : ''}
         ${m.kind === 'board' ? `<label><span>לוח</span><input name="sheet0" type="number" value="${m.sheet?.[0] ?? ''}" ${ro}> × <input name="sheet1" type="number" value="${m.sheet?.[1] ?? ''}" ${ro}></label>` : ''}
@@ -175,6 +176,7 @@ export function createMaterialsUI(root, { onChange, onError, getUser, rates }) {
       if (inp.name === 'name') patch.name = inp.value.trim() || m.name;
       if (inp.name === 't') patch.t = Number(inp.value) || m.t;
       if (inp.name === 'color') patch.color = parseInt(inp.value.slice(1), 16);
+      if (inp.name === 'vein') patch.vein = parseInt(inp.value.slice(1), 16);
       if (inp.name === 'finish') patch.finish = inp.value;
       if (inp.name === 'grainMm') patch.grainMm = Number(inp.value) || 600;
       if (inp.name === 'sheet0' || inp.name === 'sheet1') {
