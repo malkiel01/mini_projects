@@ -89,6 +89,10 @@ body {
   min-height: 0;
 }
 .panel { min-height: 0; min-width: 0; }
+/* שום דבר לא גולש לרוחב: אלמנט שחורג (תפריט, טבלה) נחתך ולא פותח גלילה אופקית של כל הדף */
+html, body, .app { overflow-x: hidden; max-width: 100%; }
+.layout { min-width: 0; }
+.panel--form { overflow-x: hidden; }
 .panel--form {
   overflow-y: auto;
   background: var(--bg);
@@ -402,7 +406,7 @@ body {
 /* ---- תפריט משתמש ---- */
 .menu { position: relative; }
 .menu__list {
-  display: none; position: absolute; top: calc(100% + 6px); inset-inline-start: 0;
+  display: none; position: absolute; top: calc(100% + 6px); inset-inline-end: 0;
   background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
   box-shadow: var(--shadow); min-width: 170px; padding: 6px; z-index: 30;
   flex-direction: column;
@@ -503,7 +507,13 @@ body {
   .list th:nth-child(n+4):not(:last-child), .list td:nth-child(n+4):not(:last-child) { display: none; }
   .users__new input, .users__new select { min-width: 0; flex: 1 1 45%; }
   .view-page .bar { flex-wrap: wrap; }
+  .output__body table { display: block; overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
+  .output__body { overflow-x: hidden; }
+  .menu__mobile { display: block !important; }
+  .bar__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar__titles { min-width: 0; }
 }
+.menu__mobile { display: none; }
 
 /* ---- פלט ייצור: לשוניות, שרטוטים, מחיר, לוחות ---- */
 .output__bar { flex-wrap: wrap; gap: 10px; }
@@ -613,7 +623,7 @@ body {
 .colsedit__col { border: 1px solid var(--line); border-radius: 10px; padding: 4px 10px; background: var(--panel-2); }
 .colsedit__col > summary { cursor: pointer; font-size: 0.9rem; font-weight: 600; padding: 4px 0; list-style: none; }
 .colsedit__col > summary::-webkit-details-marker { display: none; }
-.colsedit__row { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 0.85rem; }
+.colsedit__row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; font-size: 0.85rem; }
 .colsedit__row button { width: 28px; height: 28px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel); font: inherit; cursor: pointer; }
 .colsedit__row button:disabled { opacity: 0.4; cursor: default; }
 .colsedit__reset { width: auto !important; height: 26px; padding: 0 8px; font-size: 0.75rem; color: var(--muted); border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel); font-family: inherit; cursor: pointer; }
@@ -622,9 +632,10 @@ body {
 .colsedit__title { font-size: 0.88rem; font-weight: 700; color: var(--accent-deep); }
 .colsedit__row select { padding: 4px 8px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel); font: inherit; font-size: 0.85rem; }
 .colsedit__auto { font-style: normal; font-size: 0.72rem; color: var(--muted); border: 1px dashed var(--line-strong); border-radius: 8px; padding: 2px 6px; }
-.colsedit__row .num input[type=number] { width: 4.5em; }
+.colsedit__row .num input[type=number] { width: 5.5em; }
 .colsedit__gaps { display: flex; flex-direction: column; gap: 4px; padding-bottom: 6px; }
-.colsedit__gaps label { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 8px; font-size: 0.82rem; }
+.colsedit__gaps label { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 0.82rem; }
+.colsedit__gaps label > span { flex: 1 1 60px; min-width: 0; }
 .colsedit__gaps label > span { color: var(--muted); }
 .colsedit__gaps input { padding: 5px 8px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel); font: inherit; font-size: 0.85rem; direction: ltr; text-align: right; }
 .colsedit__gaps i { color: var(--muted); font-style: normal; font-size: 0.75rem; }
@@ -633,7 +644,7 @@ body {
 input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .num { display: inline-flex; align-items: stretch; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel); overflow: hidden; max-width: 100%; }
-.num input[type=number] { border: 0; border-radius: 0; min-width: 0; width: 5.5em; flex: 1; text-align: center; background: transparent; padding: 7px 4px; }
+.num input[type=number] { border: 0; border-radius: 0; min-width: 0; width: 5.5em; max-width: 100%; flex: 1; text-align: center; background: transparent; padding: 7px 4px; }
 .num input[type=number]:focus { outline: none; box-shadow: inset 0 0 0 2px var(--accent, #c8862e); }
 .num input[type=number]::selection { background: var(--accent, #c8862e); color: #fff; }
 .num__btn { width: 34px; border: 0; background: var(--panel-2); color: var(--ink); font: inherit; font-size: 1.1rem; line-height: 1; cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
@@ -642,11 +653,11 @@ input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner
 .num__btn:active { background: var(--line); }
 .field .num { width: 100%; }
 .colsedit__gaps .num { width: auto; }
-.colsedit__gaps .num input[type=number] { width: 4.5em; }
+.colsedit__gaps .num input[type=number] { width: 5.5em; }
 .mcard .num input[type=number] { width: 4.5em; }
 
 /* ---- לקוחות ---- */
-.client-pick { display: flex; gap: 6px; align-items: stretch; }
+.client-pick { display: flex; gap: 6px; align-items: stretch; min-width: 0; }
 .client-pick select { flex: 1; min-width: 0; }
 .modal__field .client-pick select { padding: 9px 10px; border: 1px solid var(--line-strong); border-radius: 10px; font: inherit; font-size: 0.9rem; background: var(--panel-2); }
 .ccard { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 12px 14px; margin-bottom: 12px; }
@@ -665,18 +676,19 @@ input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner
 /* ---- הרכבה ---- */
 .assembly-card[hidden] { display: none; }
 .asm-joined { display: block; font-size: 0.85rem; padding: 6px 0; }
-.asm-add { display: flex; gap: 6px; padding-top: 8px; }
+.asm-add { display: flex; gap: 6px; padding-top: 8px; min-width: 0; }
 .asm-add select { flex: 1; min-width: 0; padding: 7px 8px; border: 1px solid var(--line-strong); border-radius: 10px; font: inherit; font-size: 0.88rem; background: var(--panel-2); }
 .asm-hint { font-size: 0.78rem; padding: 6px 0 2px; }
 .asm-items { display: flex; flex-direction: column; gap: 8px; }
 .asm-item { border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); padding: 8px 10px; }
 .asm-item__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.asm-item__head b { flex: 1; }
+.asm-item__head b { flex: 1 1 120px; min-width: 0; }
 .asm-item__head .muted { font-size: 0.78rem; }
-.asm-item__pos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; }
+.asm-item__pos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
+.asm-item__pos label { min-width: 0; }
 .asm-item__pos label { display: flex; flex-direction: column; gap: 2px; font-size: 0.75rem; color: var(--muted); }
-.asm-item__pos .num { width: 100%; }
-.asm-item__pos .num input[type=number] { width: 2.6em; padding: 6px 2px; font-size: 0.85rem; }
+.asm-item__pos .num { width: 100%; min-width: 0; }
+.asm-item__pos .num input[type=number] { width: 2.6em; min-width: 0; flex: 1; padding: 6px 2px; font-size: 0.85rem; }
 .asm-item__pos .num__btn { width: 24px; font-size: 0.95rem; }
 .asm-item__row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; font-size: 0.8rem; }
 .asm-item__row select { padding: 4px 6px; border: 1px solid var(--line-strong); border-radius: 8px; font: inherit; font-size: 0.8rem; background: var(--panel); }
@@ -691,7 +703,7 @@ input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner
 /* ---- אביזרים ---- */
 .acc .drawer__bar { gap: 10px; flex-wrap: wrap; }
 .acc__kinds { display: flex; gap: 4px; flex-wrap: wrap; }
-.acc__kinds button { padding: 6px 12px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--panel); font: inherit; font-size: 0.85rem; cursor: pointer; }
+.acc__kinds button { padding: 5px 10px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--panel); font: inherit; font-size: 0.85rem; cursor: pointer; }
 .acc__kinds button.is-active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-deep); font-weight: 600; }
 .acc__body { display: grid; grid-template-columns: 300px 1fr; gap: 14px; padding: 14px 16px 32px; overflow: auto; flex: 1; min-height: 0; }
 .acc__list { display: flex; flex-direction: column; gap: 6px; align-content: start; }

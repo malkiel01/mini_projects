@@ -123,6 +123,8 @@ async function enter() {
   document.body.dataset.role = u.role;
   $('#btn-users').hidden = u.role !== 'admin';
   $('#btn-types').hidden = u.role !== 'admin';
+  $('#btn-users-m').hidden = u.role !== 'admin';
+  $('#btn-types-m').hidden = u.role !== 'admin';
   $('#app').hidden = false;
 
   const [lib, types, rates, clients] = await Promise.all([api('materials-get'), api('types-list'), u.role === 'viewer' ? null : api('rates-get'), api('clients-list')]);
@@ -180,6 +182,12 @@ function wireUi() {
   $('#btn-output-close').addEventListener('click', () => closeDrawer('#output'));
   $('#btn-materials').addEventListener('click', () => { materialsUI.open(); pushNav('drawer'); });
   $('#btn-accessories').addEventListener('click', () => { accessoriesUI.open(); pushNav('drawer'); });
+  // בטלפון כפתורי הסרגל מוסתרים — אותן פעולות מתוך תפריט המשתמש
+  const blur = () => document.activeElement?.blur();
+  $('#btn-clients-m').addEventListener('click', () => { blur(); showClients(); });
+  $('#btn-accessories-m').addEventListener('click', () => { blur(); accessoriesUI.open(); pushNav('drawer'); });
+  $('#btn-types-m').addEventListener('click', () => { blur(); showTypes(); });
+  $('#btn-users-m').addEventListener('click', () => { blur(); showUsers(); });
   $('#btn-projects').addEventListener('click', () => showProjects());
   $('#btn-clients').addEventListener('click', () => showClients());
   $('#btn-client-new').addEventListener('click', () => clientDialog(null, (c) => { if (state.project) { state.project.client_id = c.id; state.project.client = c.name; fillClientSelect($('#proj-client'), c.id); markDirty(); } }));
@@ -286,7 +294,7 @@ async function showProjects(fromPop = false) {
       try {
         if (t.dataset.open) { closeDrawer('#projects', true); await openProject(Number(t.dataset.open)); }
         else if (t.dataset.openAsm) { closeDrawer('#projects', true); await openAssembly(Number(t.dataset.openAsm)); }
-        else if (t.dataset.newAsm) { await newAssembly(); }
+        else if (t.dataset.newAsm) { closeDrawer('#projects', true); await newAssembly(); }
         else if (t.dataset.clients) { showClients(); }
         else if (t.dataset.dup) { await api('project-duplicate', { id: Number(t.dataset.dup) }); showProjects(); }
         else if (t.dataset.del) {
