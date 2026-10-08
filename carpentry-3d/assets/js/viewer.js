@@ -19,6 +19,8 @@ const T = () => window.THREE;
  *   keyOf(partId)       מפתח האלמנט שהחלק שייך אליו, או null
  *   constrain(k,dx,dz)  הצמדה: מחזיר [dx, dz] מתוקנים
  *   end(k,dx,dz)        סוף הגרירה — האפליקציה מעדכנת את המיקום ובונה מחדש
+ *   rotate(k,deg)       סיבוב בגרירה (שתי אצבעות, או גרירה ימנית/Shift בעכבר) —
+ *                       התצוגה מסתובבת חופשי, ובשחרור נצמדת ל-90° (deg = ±90/180)
  */
 export function createViewer(canvas, { onPick, drag = null } = {}) {
   const THREE = T();
@@ -104,17 +106,59 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
     dragging.objs.forEach((o, i) => o.position.copy(dragging.orig[i]));
     dragging = null;
   }
+  // סיבוב אלמנט: תצוגה מקדימה חופשית סביב מרכז האלמנט, ובשחרור — הצמדה ל-90°
+  let rotating = null;
+  const yAxis = new THREE.Vector3(0, 1, 0);
+  function rotateStart(d) {
+    const box = new THREE.Box3();
+    d.objs.forEach((o) => box.expandByObject(o));
+    const c = box.getCenter(new THREE.Vector3());
+    return { key: d.key, objs: d.objs, orig: d.objs.map((o) => o.position.clone()), quat: d.objs.map((o) => o.quaternion.clone()), center: c, angle: 0 };
+  }
+  function rotatePreview(r) {
+    const q = new THREE.Quaternion().setFromAxisAngle(yAxis, r.angle);
+    r.objs.forEach((o, i) => {
+      o.position.copy(r.orig[i]).sub(r.center).applyQuaternion(q).add(r.center);
+      o.quaternion.copy(r.quat[i]).premultiply(q);
+    });
+  }
+  function rotateEnd(r, apply) {
+    const steps = Math.round(r.angle / (Math.PI / 2));
+    if (apply && steps % 4 !== 0) { drag.rotate(r.key, (((steps % 4) + 4) % 4) * 90); return; }
+    r.angle = 0; rotatePreview(r);
+  }
   canvas.addEventListener('pointerdown', (e) => {
     try { canvas.setPointerCapture(e.pointerId); } catch { /* מצביע שכבר לא פעיל — ממשיכים בלי לכידה */ }
     ptrs[e.pointerId] = [e.clientX, e.clientY];
     moved = 0; pinch = 0; twist = null;
-    if (Object.keys(ptrs).length > 1) dragCancel();
-    else if (drag && drag.active()) dragging = dragStart(e.clientX, e.clientY);
+    if (Object.keys(ptrs).length > 1) {
+      // אצבע שנייה כשהראשונה על אלמנט (במצב הזזה) — סיבוב האלמנט במקום סיבוב המצלמה
+      if (dragging && drag.rotate) { const d = dragging; dragCancel(); rotating = rotateStart(d); } else dragCancel();
+    } else if (drag && drag.active()) {
+      dragging = dragStart(e.clientX, e.clientY);
+      if (dragging && drag.rotate && (e.button === 2 || e.shiftKey)) { const d = dragging; dragging = null; rotating = rotateStart(d); rotating.mouse = true; }
+    }
   });
   canvas.addEventListener('pointermove', (e) => {
     const p = ptrs[e.pointerId]; if (!p) return;
     const dx = e.clientX - p[0], dy = e.clientY - p[1];
     moved += Math.abs(dx) + Math.abs(dy);
+    if (rotating) {
+      if (rotating.mouse) rotating.angle -= dx * 0.008;
+      else {
+        const ids2 = Object.keys(ptrs);
+        if (ids2.length === 2) {
+          const A = ptrs[ids2[0]], B = ptrs[ids2[1]];
+          const before = Math.atan2(B[1] - A[1], B[0] - A[0]);
+          p[0] = e.clientX; p[1] = e.clientY;
+          const after = Math.atan2(B[1] - A[1], B[0] - A[0]);
+          rotating.angle -= Math.atan2(Math.sin(after - before), Math.cos(after - before));
+        }
+      }
+      p[0] = e.clientX; p[1] = e.clientY;
+      rotatePreview(rotating);
+      return;
+    }
     if (dragging) {
       p[0] = e.clientX; p[1] = e.clientY;
       ray.setFromCamera(screenToNdc(e.clientX, e.clientY), camera);
@@ -144,6 +188,14 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
     p[0] = e.clientX; p[1] = e.clientY;
   });
   function up(e) {
+    if (rotating) {
+      const r = rotating; rotating = null;
+      delete ptrs[e.pointerId]; pinch = 0; twist = null;
+      // האצבע השנייה נשארת על המסך — לא תתחיל גרירה או סיבוב מצלמה מהמקום הישן
+      for (const k of Object.keys(ptrs)) delete ptrs[k];
+      rotateEnd(r, true);
+      return;
+    }
     if (dragging) {
       const d = dragging; dragging = null;
       if (moved >= 6 && (d.dx || d.dz)) { delete ptrs[e.pointerId]; drag.end(d.key, d.dx, d.dz); return; }
@@ -154,7 +206,7 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
     delete ptrs[e.pointerId]; pinch = 0; twist = null;
   }
   canvas.addEventListener('pointerup', up);
-  canvas.addEventListener('pointercancel', (e) => { dragCancel(); delete ptrs[e.pointerId]; pinch = 0; twist = null; });
+  canvas.addEventListener('pointercancel', (e) => { dragCancel(); if (rotating) { rotateEnd(rotating, false); rotating = null; } delete ptrs[e.pointerId]; pinch = 0; twist = null; });
   canvas.addEventListener('wheel', (e) => { e.preventDefault(); zoomBy(e.deltaY > 0 ? 1.12 : 1 / 1.12, e.clientX, e.clientY); }, { passive: false });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -289,7 +341,7 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
       if (!h.pos) continue;
       let mesh;
       const owner = h.for && partNodes.get(h.for);
-      const acc = ['hinge', 'handle', 'wheel'].includes(h.kind) ? buildAccessory(material(h.material), { side: hingeSideOf(h, owner) }) : null;
+      const acc = ['hinge', 'handle', 'wheel'].includes(h.kind) ? buildAccessory(material(h.material), { side: hingeSideOf(h, owner), reach: hingeReach(h, owner) }) : null;
       if (acc) {
         // אביזר אמיתי: קבוצת גופים במערכת מקומית, מסובבת אל הפאה שהוא יושב עליה.
         // ידית אנכית על דלת: המוט מסתובב 90° סביב הנורמל. מה שנע עם הדלת נכנס לצומת שלה.
@@ -381,6 +433,26 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
     return dx * lx[0] + dz * lx[2] < 0 ? 'left' : 'right';
   }
 
+  /**
+   * כמה רחוק הפאה הפנימית של הדופן/המחיצה שהציר מורכב עליה, ממרכז הכוס,
+   * לכיוון קצה הציר. הפאה הפנימית היא זו שפונה אל מרכז הדלת.
+   */
+  function hingeReach(h, owner) {
+    if (h.kind !== 'hinge' || !owner) return undefined;
+    const mount = h.mount && partNodes.get(h.mount);
+    if (!mount) return undefined;
+    const b = owner.part.box;
+    const n = { '+z': '-z', '-z': '+z', '+x': '-x', '-x': '+x', '+y': '-y', '-y': '+y' }[faceOf(b, h.pos)];
+    const lx = localXOf(n);
+    const s = hingeSideOf(h, owner) === 'left' ? -1 : 1;
+    const d = [lx[0] * s, lx[1] * s, lx[2] * s];
+    const m = mount.part.box;
+    const lo = Math.min(m.x * d[0], (m.x + m.w) * d[0]) + Math.min(m.z * d[2], (m.z + m.d) * d[2]);
+    const at = h.pos[0] * d[0] + h.pos[2] * d[2];
+    const r = lo - at;
+    return r > -40 && r < 60 ? r : undefined;
+  }
+
   /** ממקם את המצלמה כך שכל הגוף נראה, ממבט איזומטרי מהחזית. */
   function frame(bounds) {
     ctl.target.set(bounds.w / 2, bounds.h / 2, bounds.d / 2);
@@ -410,5 +482,5 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
 
   /** הזזת יעד המצלמה (כשההרכבה מנורמלת מחדש אחרי הזזה — כדי שהתמונה לא תקפוץ). */
   function nudgeTarget(dx, dy, dz) { ctl.target.x += dx; ctl.target.y += dy; ctl.target.z += dz; applyCam(); }
-  return { setModel, frame, view, fit, select, nudgeTarget, toggleOpen, isOpen, toggleGhost, isGhost, openAll, anyOpen, ghostFronts, anyGhost, debug: () => ({ open: openGroups.size, motionParts: [...partNodes.values()].filter((e) => e.part.motion).length, amounts: [...amounts.entries()].slice(0, 4), theta: ctl.theta, phi: ctl.phi, radius: ctl.radius, target: ctl.target.toArray(), w: canvas.clientWidth, h: canvas.clientHeight, aspect: camera.aspect, fov: camera.fov }) };
+  return { setModel, frame, view, fit, select, nudgeTarget, toggleOpen, isOpen, toggleGhost, isGhost, openAll, anyOpen, ghostFronts, anyGhost, debug: () => ({ group, camera, open: openGroups.size, motionParts: [...partNodes.values()].filter((e) => e.part.motion).length, amounts: [...amounts.entries()].slice(0, 4), theta: ctl.theta, phi: ctl.phi, radius: ctl.radius, target: ctl.target.toArray(), w: canvas.clientWidth, h: canvas.clientHeight, aspect: camera.aspect, fov: camera.fov }) };
 }

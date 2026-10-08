@@ -523,7 +523,7 @@ console.log('אביזרים: ידיות, כפתורים, צירים, גלגלי�
   check(paramsOf(TYPES[0], { length: 5000, diameter: 'x' }).length === 1200 && paramsOf(TYPES[0], {}).diameter === 10, 'paramsOf: הצמדה לטווח וברירות מחדל');
   check(buildAccessory({ accessory: { type: 'no-such' } }) === null && buildAccessory({}) === null, 'חומר בלי מתכון → null');
   const conc = buildAccessory(M.material('hw:hinge-110'), { side: 'left' });
-  check(conc.prims.filter((p) => p.moving).length === 2 && conc.prims.filter((p) => !p.moving).length === 2 && conc.prims.find((p) => !p.moving).pos[0] < 0, 'ציר נסתר: כוס וזרוע נעים עם הדלת, גוף ופלטה בצד הציר (שמאל = -x)');
+  check(conc.prims.filter((p) => p.moving).length === 2 && conc.prims.filter((p) => !p.moving).length === 2 && Math.min(...conc.prims.filter((p) => !p.moving).map((p) => p.pos[0] - p.size[0] / 2)) >= -4.5 - 1e-9, 'ציר נסתר: כוס וזרוע נעים עם הדלת; גוף ופלטה לא חוצים את הפאה הפנימית של הדופן (שמאל: עד −4.5)');
   const b = { x: 100, y: 0, z: 50, w: 400, h: 700, d: 18 };
   check(faceOf(b, [300, 350, 68]) === '+z' && faceOf(b, [300, 350, 50]) === '-z' && faceOf({ x: 0, y: 0, z: 0, w: 18, h: 700, d: 400 }, [18, 300, 200]) === '+x' && faceOf(b, [300, 0, 60]) === '-y', 'faceOf: חזית, אחור, צד ימין, תחתית');
   check(M.materialsOfRole('handle').length >= 12 && M.materialsOfRole('hinge').length >= 4 && M.materialsOfRole('wheel').length >= 4 && M.materialsOfRole('handle').every((m) => m.accessory), 'הספרייה: תפקידים לפי סוג האביזר');
@@ -545,6 +545,27 @@ console.log('אביזרים: ידיות, כפתורים, צירים, גלגלי�
   const tb = build('table', { wheels: 'hw:caster-fixed-50' });
   check(tb.hardware.filter((h) => h.kind === 'wheel').length === 4 && tb.bounds.h === 750 + wheelHeight(M.material('hw:caster-fixed-50')), 'שולחן על גלגלים');
   check(ACC_FINISHES.length >= 6, 'גימורים');
+}
+
+// ---- ציר נסתר: הפלטה על הפאה הפנימית של הדופן, לא מחוץ לארון ----
+{
+  console.log('\nציר נסתר בתוך הארון');
+  const conc = { accessory: { type: 'concealed' } };
+  for (const [side, reach] of [['left', 4.5], ['right', 4.5], ['left', 13.5]]) {
+    const s = side === 'left' ? -1 : 1;
+    const a = buildAccessory(conc, { side, reach });
+    const fixed = a.prims.filter((pr) => !pr.moving);
+    // מקומית: +x לכיוון קצה הציר כש-s=1. הפאה הפנימית ב-s*reach; כל מה שקבוע חייב להיות בצד הפנימי שלה
+    const outward = Math.max(...fixed.map((pr) => s * pr.pos[0] + pr.size[0] / 2));
+    check(Math.abs(outward - reach) < 0.01, `${side}, reach ${reach}: הפלטה נוגעת בפאה הפנימית ולא חוצה אותה (${outward})`);
+    const plate = fixed.find((pr) => pr.finish.id === 'nickel');
+    check(plate && plate.pos[2] === -37, 'הפלטה 37 מ"מ מאחורי חזית הדופן — כמו בקידוח');
+  }
+  const wd = build('wardrobe', { doorType: 'wood', columns: 2 });
+  const hg = wd.hardware.filter((h) => h.kind === 'hinge');
+  check(hg.length && hg.every((h) => h.mount && wd.parts.some((p) => p.id === h.mount)), 'לכל ציר יש דופן הרכבה קיימת');
+  const placed = placeModel(wd, { pos: [0, 0, 0], prefix: 'e1:' });
+  check(placed.hardware.filter((h) => h.kind === 'hinge').every((h) => h.mount.startsWith('e1:')) && placed.hardware.flatMap((h) => h.drill || []).every((d) => d.part.startsWith('e1:') && placed.parts.some((p) => p.id === d.part)), 'בהרכבה: הדופן והקידוחים מקבלים את קידומת האלמנט');
 }
 
 // ---- הרכבה: גרירה על הרצפה עם הצמדה ----

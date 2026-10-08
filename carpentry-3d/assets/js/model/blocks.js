@@ -195,7 +195,7 @@ export function door({ id, name, x0, x1, y0, y1, zFront, type, t, frameW = 60, m
   const hx = hingeSide === 'left' ? x + cupX : x + w - cupX;
   const drill = hingeDrilling({ doorId: parts[0].id, mountId, ys, doorBottomOffset: mountBottom != null ? y - mountBottom : 0 });
   ys.forEach((dy, i) => {
-    hardware.push({ id: `${id}-hinge-${i + 1}`, kind: 'hinge', material: hinge, pos: [hx, y + dy, zFront], qty: 1, for: id, drill: i === 0 ? drill : [] });
+    hardware.push({ id: `${id}-hinge-${i + 1}`, kind: 'hinge', material: hinge, pos: [hx, y + dy, zFront], qty: 1, for: id, mount: mountId, drill: i === 0 ? drill : [] });
   });
   hardware.push({ id: `${id}-weight`, kind: 'info', door: id, kg: Math.round(kg * 100) / 100, hinges, note: `${name}: ${Math.round(kg * 10) / 10} ק"ג, ${hinges} צירים` });
   if (handle) {

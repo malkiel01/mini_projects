@@ -142,6 +142,7 @@ async function enter() {
       keyOf: (id) => { const m = /^e(\d+):/.exec(id); return m ? Number(m[1]) - 1 : null; },
       constrain: (i, dx, dz) => dragSnap(itemBounds(), i, dx, dz, { skip: state.assembly.items.map((it, k) => (it.visible === false ? k : -1)).filter((k) => k >= 0) }),
       end: (i, dx, dz) => moveItemBy(i, dx, dz),
+      rotate: (i, deg) => rotateItemBy(i, deg),
     } });
     materialsUI = createMaterialsUI($('#mlib'), {
       onChange: () => { if (state.project) { form = renderForm($('#form'), currentTemplate(), state.values, onFormChange); rebuild(); } },
@@ -970,7 +971,7 @@ function modelFor(p) {
 function wireAssemblyUi() {
   $('#btn-move-items').addEventListener('click', () => {
     setMoveItems(!moveItems);
-    if (moveItems) toast('גוררים אלמנט על הרצפה — נצמד כל 10 מ"מ ולקצוות של אלמנטים אחרים. גרירה על הרקע מסובבת');
+    if (moveItems) toast('גוררים אלמנט על הרצפה (נצמד כל 10 מ"מ ולקצוות). לסיבוב: שתי אצבעות על האלמנט, או גרירה ימנית / Shift בעכבר — נצמד ל-90°');
   });
   $('#btn-back-asm').addEventListener('click', async () => {
     if (!returnAssembly) return;
@@ -1034,25 +1035,42 @@ function setMoveItems(on) {
   $('#btn-move-items').classList.toggle('is-on', moveItems);
   $('#stage').classList.toggle('is-moving', moveItems && !!state.assembly);
 }
+/** ההזזה שהנירמול של combine הוסיף: גבולות אלמנט גלוי במודל המאוחד פחות גבולותיו המקוריים (לפי המפתח, לא האינדקס). */
+function moveShift() {
+  const bs = itemBounds();
+  for (const mi of model?.items || []) {
+    const b = bs[mi.key - 1];
+    if (mi.visible && b && b.w) return [mi.bounds.x - b.x, mi.bounds.y - b.y, mi.bounds.z - b.z];
+  }
+  return [0, 0, 0];
+}
 /** סוף גרירה: מעדכן את המיקום, ובונה מחדש בלי שהתמונה תקפוץ (הנירמול של combine יכול להזיז הכול). */
 function moveItemBy(i, dx, dz) {
   const it = state.assembly.items[i];
   if (!it) return;
-  // ההזזה שהנירמול הוסיף: גבולות אלמנט גלוי במודל המאוחד פחות גבולותיו המקוריים (לפי המפתח, לא האינדקס)
-  const shiftOf = () => {
-    const bs = itemBounds();
-    for (const mi of model?.items || []) {
-      const b = bs[mi.key - 1];
-      if (mi.visible && b && b.w) return [mi.bounds.x - b.x, mi.bounds.y - b.y, mi.bounds.z - b.z];
-    }
-    return [0, 0, 0];
-  };
-  const before = shiftOf();
+  const before = moveShift();
   it.pos = [Math.round(it.pos[0] + dx), it.pos[1], Math.round(it.pos[2] + dz)];
   markDirty(); renderItems(); rebuildAssembly();
-  const after = shiftOf();
+  const after = moveShift();
   viewer.nudgeTarget(after[0] - before[0], after[1] - before[1], after[2] - before[2]);
   highlightItem(i);
+}
+/** סיבוב בגרירה: הסיבוב החדש, והאלמנט נשאר במקומו — המרכז שלו לא זז. */
+function rotateItemBy(i, deg) {
+  const it = state.assembly.items[i];
+  const p = it && state.assembly.projects.find((x) => x.id === it.project_id);
+  if (!p) return;
+  const b0 = itemBounds()[i];
+  const rot = (((it.rot || 0) + deg) % 360 + 360) % 360;
+  const b1 = placeModel(modelFor(p), { pos: it.pos, rot }).bounds;
+  const before = moveShift();
+  it.rot = rot;
+  it.pos = [Math.round(it.pos[0] + (b0.x + b0.w / 2) - (b1.x + b1.w / 2)), it.pos[1], Math.round(it.pos[2] + (b0.z + b0.d / 2) - (b1.z + b1.d / 2))];
+  markDirty(); renderItems(); rebuildAssembly();
+  const after = moveShift();
+  viewer.nudgeTarget(after[0] - before[0], after[1] - before[1], after[2] - before[2]);
+  highlightItem(i);
+  toast(`סובב ל-${rot}°`);
 }
 function highlightItem(i) {
   document.querySelectorAll('#asm-items .asm-item').forEach((el) => el.classList.toggle('is-selected', Number(el.dataset.i) === i));
