@@ -199,12 +199,44 @@ html, body, .app { overflow-x: hidden; max-width: 100%; }
   padding: 24px; text-align: center; color: var(--warn);
 }
 .stage-error[hidden] { display: none; }
-.warnings {
-  position: absolute;
-  top: 12px; inset-inline-start: 12px;
-  display: flex; flex-direction: column; gap: 6px;
-  max-width: min(440px, calc(100% - 24px));
+/* תמרור האזהרות: עיגול קטן בפינה עם המספר; הרשימה נפתחת מתחתיו */
+.warn-badge {
+  position: absolute; top: 12px; inset-inline-start: 12px; z-index: 3;
+  display: inline-flex; align-items: center; gap: 4px;
+  min-height: 40px; padding: 0 12px; border-radius: 999px;
+  background: var(--warn-soft); color: #8a4b05; border: 1px solid #f5c98a;
+  font: inherit; font-size: 1rem; cursor: pointer; box-shadow: var(--shadow);
 }
+.warn-badge[hidden] { display: none; }
+.warn-badge b { font-size: 0.9rem; }
+.warn-badge.is-open { background: #f5c98a; }
+.warn-badge.is-new { animation: warn-pulse 0.9s ease-out 2; }
+@keyframes warn-pulse { 0% { box-shadow: 0 0 0 0 rgba(245, 160, 60, 0.7); } 100% { box-shadow: 0 0 0 14px rgba(245, 160, 60, 0); } }
+@media (prefers-reduced-motion: reduce) { .warn-badge.is-new { animation: none; } }
+.warnings {
+  position: absolute; z-index: 3;
+  top: 60px; inset-inline-start: 12px;
+  display: flex; flex-direction: column; gap: 6px;
+  max-width: min(440px, calc(100% - 24px)); max-height: calc(100% - 80px); overflow-y: auto;
+  background: var(--panel); border: 1px solid #f5c98a; border-radius: 12px; padding: 8px; box-shadow: var(--shadow);
+}
+.warnings__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #8a4b05; padding: 2px 4px; }
+.warnings__close { border: 0; background: none; font: inherit; font-size: 1.1rem; cursor: pointer; color: #8a4b05; min-width: 32px; min-height: 32px; }
+
+/* מסך מלא: כפתור בפינה הנגדית לתמרור */
+.stage-fs {
+  position: absolute; top: 12px; inset-inline-end: 12px; z-index: 3;
+  width: 40px; height: 40px; border-radius: 10px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow);
+  font-size: 1.15rem; line-height: 1; cursor: pointer; color: var(--ink, #3a2c20);
+}
+.stage-fs.is-on { background: var(--accent-soft); border-color: var(--accent); }
+.panel--view.is-fs, .view-main.is-fs { position: fixed; inset: 0; z-index: 15; background: var(--bg-deep); }
+.panel--view.is-fs #summary, .panel--view.is-fs #btn-output { display: none; }
+/* במסך מלא פאנל החלק צף מעל התלת מימד — ומוסתר כשלא נבחר חלק */
+.is-fs .part { position: absolute; inset-inline: 12px; bottom: 12px; margin: 0; max-height: 38%; overflow: auto; z-index: 4; }
+.is-fs .part:has(> p.muted:only-child) { display: none; }
+body.has-fs { overflow: hidden; }
 .warnings[hidden] { display: none; }
 .warn {
   background: var(--warn-soft);

@@ -20,8 +20,15 @@ import { watchNumbers } from './numfield.js';
 import { placeModel, combine, snapTo, dragSnap, dragSnapY } from './model/assembly.js';
 import { totalWeight, partWeight, drillingList } from './model/physics.js';
 import { toSTL, printSize } from './model/stl.js';
+import { wireFullscreen } from './fullscreen.js';
 
-watchNumbers();   // חיצים וסימון בכל שדות המספר, גם במסכים שנבנים מאוחר יותר
+watchNumbers();
+
+// מסך מלא לתלת מימד. ההודעות (toast) עוברות לתוך המכל, אחרת לא רואים אותן במסך מלא אמיתי.
+const fullscreen = wireFullscreen(document.querySelector('.panel--view'), document.querySelector('#btn-fullscreen'), (on) => {
+  const t = document.querySelector('#toast');
+  if (t) (on ? document.querySelector('.panel--view') : document.body).appendChild(t);
+});   // חיצים וסימון בכל שדות המספר, גם במסכים שנבנים מאוחר יותר
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -61,6 +68,7 @@ function closeDrawer(sel, silent = false) {
   if (!silent && history.state?.app === 'carpentry' && history.state.kind !== 'project') { suppressPops += 1; history.back(); }
 }
 window.addEventListener('popstate', () => {
+  if (fullscreen?.handlePop()) return;   // צעד אחורה של המסך המלא (כשאין Fullscreen API) — לא של מגירה
   if (suppressPops > 0) { suppressPops -= 1; return; }
   const open = DRAWERS.filter((d) => $(d).classList.contains('is-open'));
   if (open.length) { $(open[open.length - 1]).classList.remove('is-open'); return; }
@@ -495,12 +503,32 @@ function rebuild(reframe = false) {
   renderOutput(model);
 }
 
+// אזהרות: תמרור עם מספר בפינת התלת מימד. הרשימה נפתחת ונסגרת בהקשה עליו,
+// וכשמופיעה אזהרה חדשה התמרור מהבהב — בלי לכסות את המודל.
+let warnOpen = false;
+let warnSeen = '';
 function renderWarnings(list) {
-  const box = $('#warnings');
-  box.hidden = list.length === 0;
-  box.innerHTML = list.map((w) => `<div class="warn">⚠ ${esc(w)}</div>`).join('');
+  const box = $('#warnings'), badge = $('#warn-badge');
+  badge.hidden = list.length === 0;
+  $('#warn-count').textContent = list.length || '';
+  badge.title = list.length ? `${list.length} אזהרות — הקשה ${warnOpen ? 'סוגרת' : 'פותחת'}` : '';
+  box.innerHTML = `<div class="warnings__head"><b>⚠ אזהרות (${list.length})</b><button type="button" class="warnings__close" aria-label="סגירה">✕</button></div>${list.map((w) => `<div class="warn">${esc(w)}</div>`).join('')}`;
+  box.hidden = !(warnOpen && list.length);
+  badge.setAttribute('aria-expanded', String(!box.hidden));
+  badge.classList.toggle('is-open', !box.hidden);
+  const key = list.join('|');
+  if (key && key !== warnSeen && list.some((w) => !warnSeen.split('|').includes(w))) {
+    badge.classList.remove('is-new'); void badge.offsetWidth; badge.classList.add('is-new');
+  }
+  warnSeen = key;
   $('#tab-warn-count').textContent = list.length ? `(${list.length})` : '';
 }
+function toggleWarnings(open = !warnOpen) {
+  warnOpen = open;
+  renderWarnings(model?.warnings || []);
+}
+$('#warn-badge').addEventListener('click', () => toggleWarnings());
+$('#warnings').addEventListener('click', (e) => { if (e.target.closest('.warnings__close')) toggleWarnings(false); });
 
 function renderSummary(m) {
   const b = m.bounds;

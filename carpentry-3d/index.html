@@ -122,7 +122,10 @@
     </div>
     <div class="stage-wrap">
       <canvas id="stage" class="stage"></canvas>
-      <div id="warnings" class="warnings" hidden></div>
+      <!-- תמרור אזהרה: מספר האזהרות; הקשה פותחת את הרשימה, הקשה נוספת סוגרת -->
+      <button type="button" id="warn-badge" class="warn-badge" aria-expanded="false" aria-controls="warnings" hidden>⚠ <b id="warn-count"></b></button>
+      <div id="warnings" class="warnings" role="region" aria-label="אזהרות" hidden></div>
+      <button type="button" id="btn-fullscreen" class="stage-fs" title="מסך מלא">⛶</button>
     </div>
     <div class="part" id="part"></div>
 

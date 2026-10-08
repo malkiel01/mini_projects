@@ -7,6 +7,10 @@ import * as M from './model/materials.js';
 import { createViewer } from './viewer.js';
 import { viewByToken, viewAssemblyByToken } from './store.js';
 import { combine } from './model/assembly.js';
+import { wireFullscreen } from './fullscreen.js';
+
+const fs = wireFullscreen(document.querySelector('.view-main'), document.querySelector('#btn-fullscreen'));
+window.addEventListener('popstate', () => fs.handlePop());
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
