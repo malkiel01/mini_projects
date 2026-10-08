@@ -59,6 +59,55 @@ function drawWood(ctx, color, { strength = 1, rings = 9, seed = 7 } = {}) {
 }
 
 /** צבע: אחיד, עם רעש זעיר כדי שלא ייראה פלסטיק. */
+/**
+ * שיש / אבן: בסיס מנומר עדין, ועליו עורקים — מסלולים גליים בעובי ובשקיפות
+ * משתנים, עם הסתעפויות דקות. כל מסלול מצויר גם מוזז ב-±SIZE, כך שהטקסטורה
+ * חוזרת על עצמה בלי תפר בולט. אותו `seed` — אותו שיש תמיד.
+ */
+function drawStone(ctx, color, vein, seed) {
+  const [r, g, b] = hexToRgb(color);
+  const n = noise2(seed % 97 + 5);
+  const img = ctx.createImageData(SIZE, SIZE);
+  const d = img.data;
+  for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
+    const shade = 1 + (n(x / 40, y / 40) - 0.5) * 0.07 + (n(x / 7, y / 7) - 0.5) * 0.025;
+    const i = (y * SIZE + x) * 4;
+    d[i] = r * shade; d[i + 1] = g * shade; d[i + 2] = b * shade; d[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  let s = seed || 1;
+  const rnd = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+  const [vr, vg, vb] = hexToRgb(vein);
+  // קודם מחשבים את כל המסלולים (כולל הסתעפויות), ורק אחר כך מציירים — כך ההילה
+  // והעורק החד של אותו מסלול חופפים בדיוק
+  const strokes = [];
+  const gen = (x, y, ang, len, width, alpha, depth) => {
+    const pts = [[x, y]];
+    for (let k = 0; k < len; k++) {
+      ang += (rnd() - 0.5) * 0.55;
+      x += Math.cos(ang) * 6; y += Math.sin(ang) * 6;
+      pts.push([x, y]);
+      if (depth < 2 && rnd() < 0.025) gen(x, y, ang + (rnd() < 0.5 ? 0.8 : -0.8), len * 0.35, width * 0.45, alpha * 0.8, depth + 1);
+    }
+    strokes.push({ pts, width, alpha, main: depth === 0 && width > 1.5 });
+  };
+  for (let k = 0; k < 7; k++) gen(rnd() * SIZE, rnd() * SIZE, 0.6 + (rnd() - 0.5) * 0.9, 60 + rnd() * 50, 2 + rnd() * 3, 0.45 + rnd() * 0.3, 0);
+  for (let k = 0; k < 10; k++) gen(rnd() * SIZE, rnd() * SIZE, rnd() * Math.PI * 2, 25 + rnd() * 35, 0.6 + rnd() * 0.8, 0.22 + rnd() * 0.2, 1);
+  const draw = (pts, width, alpha) => {
+    for (const ox of [-SIZE, 0, SIZE]) for (const oy of [-SIZE, 0, SIZE]) {
+      ctx.beginPath();
+      pts.forEach(([px, py], k) => (k ? ctx.lineTo(px + ox, py + oy) : ctx.moveTo(px + ox, py + oy)));
+      ctx.strokeStyle = `rgba(${vr},${vg},${vb},${alpha})`;
+      ctx.lineWidth = width;
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      ctx.stroke();
+    }
+  };
+  // עורק ראשי: הילה רכה ורחבה מתחתיו — כך הוא נראה גם מרחוק, כשהמרקם מוקטן
+  for (const st of strokes) if (st.main) draw(st.pts, st.width * 3.2, st.alpha * 0.22);
+  for (const st of strokes) draw(st.pts, st.width, st.alpha);
+}
+
 function drawPaint(ctx, color) {
   const [r, g, b] = hexToRgb(color);
   const n = noise2(3);
@@ -78,7 +127,7 @@ const baseCache = new Map();   // material id → { tex, mm, version }
 function baseTexture(m) {
   const THREE = T();
   const key = m.id;
-  const sig = `${m.image ? m.image.length : ''}|${m.color}|${m.finish}|${m.grainMm}|${m.imageMm}`;
+  const sig = `${m.image ? m.image.length : ''}|${m.color}|${m.vein}|${m.finish}|${m.grainMm}|${m.imageMm}`;
   const hit = baseCache.get(key);
   if (hit && hit.sig === sig) return hit;
 
@@ -94,6 +143,12 @@ function baseTexture(m) {
       : { strength: 0.45, rings: 11, seed: hash(m.id) });
     tex = new THREE.CanvasTexture(c);
     mm = m.grainMm || 600;
+  } else if (m.finish === 'stone') {
+    const c = document.createElement('canvas');
+    c.width = c.height = SIZE;
+    drawStone(c.getContext('2d'), m.color ?? 0xf0eeea, m.vein ?? 0x8f969c, hash(m.id));
+    tex = new THREE.CanvasTexture(c);
+    mm = m.grainMm || 1400;
   } else {
     const c = document.createElement('canvas');
     c.width = c.height = SIZE;
@@ -130,7 +185,16 @@ export function textureForPart(m, part, cut) {
   t.rotation = grainOnV ? 0 : Math.PI / 2;
   t.center.set(0.5, 0.5);
   const along = cut.l / mm, across = cut.w / mm;
-  if (grainOnV) t.repeat.set(across, along); else t.repeat.set(along, across);
+  // ב-three.js הסיבוב מוחל לפני ה-repeat (uv' = S·R·uv): אחרי סיבוב של 90° ציר ה-U של
+  // המרקם יושב על ציר ה-V של הפאה. לכן תמיד (רוחב, אורך) — אחרת המרקם נמתח פי l/w לאורך הלוח
+  t.repeat.set(across, along);
+  if (m.finish === 'stone') {
+    // שיש: כל לוח מקבל את האזור שלו במרקם לפי מיקומו — לוחות סמוכים ממשיכים זה את זה,
+    // במקום שכל לוח יחזור על אותם עורקים
+    const b = part.box;
+    const u = (face === 'x' ? b.z : b.x) / mm, v = (face === 'y' ? b.z : b.y) / mm;
+    t.offset.set(grainOnV ? u : v, grainOnV ? v : u);
+  }
   return t;
 }
 
@@ -158,7 +222,7 @@ function groovedTexture(m, base) {
 const swatchCache = new Map();
 export function swatchDataUrl(m) {
   if (m.image) return m.image;
-  const sig = `${m.color}|${m.finish}`;
+  const sig = `${m.color}|${m.vein}|${m.finish}`;
   const hit = swatchCache.get(m.id);
   if (hit && hit.sig === sig) return hit.url;
   const c = document.createElement('canvas');
@@ -166,7 +230,8 @@ export function swatchDataUrl(m) {
   const ctx = c.getContext('2d');
   if (m.finish === 'wood' || m.finish === 'melamine') {
     drawWood(ctx, m.color ?? 0xc9a46c, m.finish === 'wood' ? { strength: 1, rings: 7, seed: hash(m.id) } : { strength: 0.45, rings: 11, seed: hash(m.id) });
-  } else drawPaint(ctx, m.color ?? 0xcccccc);
+  } else if (m.finish === 'stone') drawStone(ctx, m.color ?? 0xf0eeea, m.vein ?? 0x8f969c, hash(m.id));
+  else drawPaint(ctx, m.color ?? 0xcccccc);
   // דוגמית קטנה: מקטינים ל-128 כדי לא להחזיק 512² לכל כרטיס
   const small = document.createElement('canvas');
   small.width = small.height = 128;

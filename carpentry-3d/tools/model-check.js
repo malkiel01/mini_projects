@@ -548,6 +548,22 @@ console.log('אביזרים: ידיות, כפתורים, צירים, גלגלי�
   check(ACC_FINISHES.length >= 6, 'גימורים');
 }
 
+// ---- שיש ואבן ----
+{
+  console.log('\nשיש ואבן');
+  const general = M.materialsOfKind('board', { back: false, solid: false, top: false }).map((m) => m.id);
+  const tops = M.materialsOfKind('board', { top: true }).map((m) => m.id);
+  check(general.includes('board:marble-carrara-20') && tops.includes('board:marble-carrara-20') && tops.includes('board:countertop-quartz') && !general.includes('board:countertop-quartz'), 'שיש מוצע גם כלוח רגיל וגם כמשטח; משטח קוורץ — רק כמשטח');
+  check(M.all().filter((m) => m.finish === 'stone').length >= 6, 'שישה סוגי שיש ואבן');
+  check(densityOf(M.material('board:marble-nero-20')) === 2700 && boardWeight(1000, 1000, 20, 'board:marble-nero-20') === 54, 'שיש: 2700 ק"ג/מ"ק — מ"ר ב-20 מ"מ = 54 ק"ג');
+  const k = build('kitchen', { topMaterial: 'board:marble-calacatta-20' });
+  check(k.values.topMaterial === 'board:marble-calacatta-20' && k.parts.some((p) => /countertop/.test(p.id) && p.material === 'board:marble-calacatta-20' && p.box.h === 20), 'מטבח עם משטח שיש קלקטה 20');
+  const c = build('cladding', { slatMaterial: 'board:marble-carrara-20', style: 'flat' });
+  check(c.parts.some((p) => p.material === 'board:marble-carrara-20'), 'חיפוי קיר בלוחות שיש');
+  const w = build('bookcase', { doorType: 'wood', doorMaterial: 'board:marble-nero-20', doorFinish: 'cnc:milled-wide' });
+  check(w.warnings.some((x) => /CNC לאבן/.test(x)) && !w.warnings.some((x) => /חושף את הליבה/.test(x)), 'חירוץ בשיש: אזהרת מכונת אבן (לא "חושף את הליבה")');
+}
+
 // ---- פיצול דלת לכל עמודה ----
 {
   console.log('\nפיצול דלת לכל עמודה');

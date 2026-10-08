@@ -834,3 +834,4 @@ input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner
 .cnc__section text { direction: rtl; unicode-bidi: plaintext; }   /* הסרטוט משמאל לימין, הטקסט עברי */
 .cnc__section .cnc__depth { text-anchor: end; }   /* ב-rtl: end = הקצה השמאלי — הטקסט נמשך ימינה, מחוץ ללוח */
 .cnc__section .cnc__cap { text-anchor: start; }   /* ב-rtl: start = הקצה הימני, מ-x אל שמאל */
+.acc__hint { grid-column: 1 / -1; color: var(--muted); font-size: 0.76rem; margin-top: -4px; }   /* הסבר מתחת לשדה — לא דוחק את השדה */

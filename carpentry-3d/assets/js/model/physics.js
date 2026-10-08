@@ -17,6 +17,7 @@ export function densityOf(m) {
   if (m.kind === 'glass') return 2500;
   if (m.kind === 'board') {
     if (m.solid) return 700;            // עץ מלא (אלון ~720, אשור ~700)
+    if (m.finish === 'stone') return 2700; // שיש / אבן
     if (m.finish === 'paint') return 740; // MDF
     if (m.finish === 'wood') return 560;  // פורניר על סנדוויץ'
     return 680;                           // סיבית מצופה מלמין

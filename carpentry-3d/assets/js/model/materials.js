@@ -36,6 +36,13 @@ export const SEED = [
   { id: 'board:solid-beech',       kind: 'board', name: 'עץ מלא אשור', t: 40, color: 0xe0c49c, finish: 'wood', grainMm: 500, price: 700, priceUnit: 'm2', density: 700, solid: true },
   { id: 'board:countertop-38',     kind: 'board', name: 'משטח עבודה למינציה 38', t: 38, color: 0x6b6560, finish: 'paint', sheet: [4100, 600], price: 350, priceUnit: 'm2', density: 700, top: true },
   { id: 'board:countertop-quartz', kind: 'board', name: 'משטח קוורץ 20', t: 20, color: 0xe9e6e0, finish: 'paint', sheet: [3000, 1400], price: 1600, priceUnit: 'm2', density: 2300, top: true },
+  // שיש ואבן: גימור 'stone' (עורקים בצבע `vein`). `anyUse` — מוצע גם כלוח רגיל (חיפוי, מדפים, חזיתות) וגם כמשטח
+  { id: 'board:marble-carrara-20',   kind: 'board', name: 'שיש קררה 20', t: 20, color: 0xf2f0eb, vein: 0x7f878e, finish: 'stone', grainMm: 1000, sheet: [3000, 1500], price: 1500, priceUnit: 'm2', density: 2700, anyUse: true },
+  { id: 'board:marble-calacatta-20', kind: 'board', name: 'שיש קלקטה 20', t: 20, color: 0xf6f3ec, vein: 0x9c7c4c, finish: 'stone', grainMm: 1100, sheet: [3000, 1500], price: 2400, priceUnit: 'm2', density: 2700, anyUse: true },
+  { id: 'board:marble-nero-20',      kind: 'board', name: 'שיש נרו מרקינה 20', t: 20, color: 0x1e1e21, vein: 0xe6e4df, finish: 'stone', grainMm: 1400, sheet: [3000, 1500], price: 1900, priceUnit: 'm2', density: 2700, anyUse: true },
+  { id: 'board:marble-emperador-20', kind: 'board', name: 'שיש אמפרדור 20', t: 20, color: 0x5e4130, vein: 0xd8c0a0, finish: 'stone', grainMm: 1000, sheet: [3000, 1500], price: 1700, priceUnit: 'm2', density: 2700, anyUse: true },
+  { id: 'board:granite-black-30',    kind: 'board', name: 'גרניט שחור 30', t: 30, color: 0x232326, vein: 0x55565a, finish: 'stone', grainMm: 400, sheet: [3000, 1500], price: 1300, priceUnit: 'm2', density: 2750, anyUse: true },
+  { id: 'board:sintered-white-12',   kind: 'board', name: 'אבן סינטר לבנה 12', t: 12, color: 0xf4f3f0, vein: 0xa9a7a1, finish: 'stone', grainMm: 1300, sheet: [3200, 1600], price: 1100, priceUnit: 'm2', density: 2400, anyUse: true },
   { id: 'edge:pvc-1',              kind: 'edge', name: 'קנט PVC 1 מ"מ', t: 1, price: 4, priceUnit: 'm' },
   { id: 'edge:pvc-2',              kind: 'edge', name: 'קנט PVC 2 מ"מ', t: 2, price: 6, priceUnit: 'm' },
   { id: 'edge:veneer-0.5',         kind: 'edge', name: 'קנט פורניר 0.5', t: 0.5, price: 7, priceUnit: 'm' },
@@ -97,6 +104,7 @@ export const FINISHES = [
   { id: 'wood', name: 'עץ (סיבים)' },
   { id: 'melamine', name: 'מלמין (סיבים עדינים)' },
   { id: 'paint', name: 'צבע / חלק' },
+  { id: 'stone', name: 'שיש / אבן (עורקים)' },
   { id: 'glass', name: 'זכוכית' },
 ];
 
@@ -166,7 +174,7 @@ export function materialsOfKind(kind, { back, solid, top } = {}) {
   return all().filter((m) => m.kind === kind && m.active
     && (back === undefined || !!m.back === back)
     && (solid === undefined || !!m.solid === solid)
-    && (top === undefined || !!m.top === top));
+    && (top === undefined || m.anyUse || !!m.top === top));   // anyUse (שיש, אבן) — גם לוח רגיל וגם משטח
 }
 
 /** אביזרים לפי תפקיד: 'handle' (ידיות וכפתורים), 'hinge', 'wheel'. */
