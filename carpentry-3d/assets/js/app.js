@@ -632,6 +632,12 @@ function partEditor(p) {
   if (p.motion?.kind === 'hinge') {
     const id = p.motion.group, cur = state.values.doorOpen?.[id];
     out.push(row('כיוון פתיחה', `<select data-door-open="${esc(id)}"><option value="">אוטומטי</option>${DOOR_OPEN_OPTIONS.map((o) => `<option value="${o.id}" ${cur === o.id ? 'selected' : ''}>${o.name}</option>`).join('')}</select>`));
+    // דלת גב אל גב עם השכנה: הפיכה בלחיצה — הציר עובר לצד החיצוני והן נפתחות כזוג
+    const clash = (model.doorClashes || []).find((pr) => pr.includes(id));
+    if (clash) {
+      const other = clash.find((g) => g !== id);
+      out.push(`<div class="pedit__clash"><span>⚠ נתלית גב אל גב עם ${esc(other)} על אותה מחיצה — פתוחות יחד הן נתקלות זו בזו.</span><button type="button" class="btn btn--small" data-door-flip="${esc(id)}" data-side="${p.motion.angle < 0 ? 'right' : 'left'}">↔ פתיחה כזוג</button></div>`);
+    }
     const ang = Math.abs(p.motion.angle);
     out.push(row('זווית פתיחה', `${num('data-pe="open" min="10" max="180" data-step="5"', Math.round(ang))}<span class="presets">${[90, 110, 165].map((r) => `<button type="button" data-pe-preset="open" data-v="${r}" class="${Math.round(ang) === r ? 'is-on' : ''}">${r}°</button>`).join('')}</span>`));
   } else if (p.motion?.kind === 'slide') {
@@ -737,6 +743,8 @@ function partButtons(p) {
   </div>`;
 }
 $('#part').addEventListener('click', (e) => {
+  const flip = e.target.closest('[data-door-flip]');
+  if (flip) { e.preventDefault(); setPartChoice('doorOpen', flip.dataset.doorFlip, flip.dataset.side); toast('כיוון הפתיחה הוחלף — הצירים בצד החיצוני'); return; }
   const pe = e.target.closest('[data-pe-preset],[data-pe-hide],[data-pe-reset],[data-rp-preset]');
   if (pe && shownPart) {
     e.preventDefault();

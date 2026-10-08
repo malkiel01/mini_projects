@@ -863,3 +863,5 @@ input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner
   .pedit__trio { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .pedit__trio > span { grid-column: 1 / -1; }
 }
+
+.pedit__clash { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 6px 0; padding: 8px 10px; border-radius: 10px; background: var(--accent-soft); font-size: 0.84rem; }
