@@ -810,3 +810,4 @@ input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner
 }
 .viewcube__home:hover { border-color: var(--accent); }
 @media (max-width: 860px) { .viewcube__canvas { width: 80px; height: 80px; } }
+.btn[hidden] { display: none; }   /* .btn קובע display — בלי זה hidden לא מסתיר (כפתור "חזרה להרכבה") */

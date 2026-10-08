@@ -12,7 +12,7 @@
 import { carcass, partitions, shelves, back, plinth, crown, door, part } from '../blocks.js';
 import { material } from '../materials.js';
 import { resolveShares, sectionLayout, cellsOf } from '../layout.js';
-import { handleParam, hingeParam, wheelsParam, addWheels, materialParams, joineryParams, FINISHES, FINISHES_NO_GLASS, applyFinish, sameOrMaterial, resolveSame, columnHeights, fitSides, stepTops, steppedBack, steppedCrown } from './common.js';
+import { handleParam, hingeParam, wheelsParam, addWheels, materialParams, joineryParams, FINISHES, FINISHES_NO_GLASS, applyFinish, sameOrMaterial, resolveSame, columnHeights, fitSides, stepTops, steppedBack, steppedCrown, FINISH_IDS_SOLID } from './common.js';
 
 const DOOR_OPTIONS = [{ id: 'none', name: 'ללא' }, { id: 'wood', name: 'עץ' }, { id: 'glass', name: 'ויטרינה' }];
 const WITH_DOORS = ['wood', 'glass'];
@@ -51,9 +51,9 @@ export default {
     hingeParam(), handleParam(),
 
     { key: 'sideLeftFinish', label: 'דופן שמאל — סוג', type: 'enum', default: 'flat', group: 'דפנות ותאורה', options: FINISHES },
-    sameOrMaterial('sideLeftMaterial', 'דופן שמאל — חומר', 'דפנות ותאורה', { showIf: { sideLeftFinish: ['flat', 'fluted-fine', 'fluted-wide', 'grooved'] } }),
+    sameOrMaterial('sideLeftMaterial', 'דופן שמאל — חומר', 'דפנות ותאורה', { showIf: { sideLeftFinish: FINISH_IDS_SOLID } }),
     { key: 'sideRightFinish', label: 'דופן ימין — סוג', type: 'enum', default: 'flat', group: 'דפנות ותאורה', options: FINISHES },
-    sameOrMaterial('sideRightMaterial', 'דופן ימין — חומר', 'דפנות ותאורה', { showIf: { sideRightFinish: ['flat', 'fluted-fine', 'fluted-wide', 'grooved'] } }),
+    sameOrMaterial('sideRightMaterial', 'דופן ימין — חומר', 'דפנות ותאורה', { showIf: { sideRightFinish: FINISH_IDS_SOLID } }),
     { key: 'led', label: 'פסי לד', type: 'enum', default: 'none', group: 'דפנות ותאורה',
       options: [{ id: 'none', name: 'ללא' }, { id: 'sides', name: 'אנכיים, בדפנות של כל עמודה' }, { id: 'shelves', name: 'מתחת לכל מדף' }] },
   ],

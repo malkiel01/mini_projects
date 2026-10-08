@@ -7,6 +7,7 @@
 
 import { material, libraryVersion } from './model/materials.js';
 import { createViewCube, anglesFor } from './viewcube.js';
+import { millFace, millRects, millSolids } from './model/milling.js';
 import { cutSize } from './model/blocks.js';
 import { textureForPart, clearTextures } from './textures.js';
 import { buildAccessory, faceOf, rotationForNormal, localXOf } from './model/accessories.js';
@@ -326,6 +327,68 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
   const anyGhost = () => ghostIds.size > 0;
 
   let currentModel = null;
+  /**
+   * לוח מחורץ (CNC): לוח גב בעובי פחות העומק, ועליו החומר שנשאר בפאה — צלעות
+   * או מסגרות בולטות — כגוף אחד, מרוכז סביב מרכז החלק. הקווים: מתאר הלוח
+   * ומתאר כל חריץ, בלי התפרים הפנימיים בין התאים.
+   */
+  function milledGeometry(p) {
+    const { w, h, d } = p.box, m = p.mill, dep = m.depth;
+    const { U, V } = millFace(p);
+    const rects = millRects(U, V, m);
+    const solids = millSolids(U, V, rects);
+    const boxes = [];
+    // מקומי: u,v על הפאה → x/y/z, ועובי השכבה החיצונית
+    const toBox = (u0, u1, v0, v1, layer) => {
+      const y0 = -h / 2 + v0, y1 = -h / 2 + v1;
+      if (m.normal === '+z') return { x0: -w / 2 + u0, x1: -w / 2 + u1, y0, y1, z0: layer ? d / 2 - dep : -d / 2, z1: layer ? d / 2 : d / 2 - dep };
+      const z0 = -d / 2 + u0, z1 = -d / 2 + u1;
+      if (m.normal === '-x') return { x0: layer ? -w / 2 : -w / 2 + dep, x1: layer ? -w / 2 + dep : w / 2, y0, y1, z0, z1 };
+      return { x0: layer ? w / 2 - dep : -w / 2, x1: layer ? w / 2 : w / 2 - dep, y0, y1, z0, z1 };
+    };
+    boxes.push(toBox(0, U, 0, V, false));
+    for (const r of solids) boxes.push(toBox(r[0], r[1], r[2], r[3], true));
+    const geos = boxes.map((b) => new THREE.BoxGeometry(b.x1 - b.x0, b.y1 - b.y0, b.z1 - b.z0).translate((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, (b.z0 + b.z1) / 2));
+    const geo = mergeGeometries(geos);
+    geos.forEach((g) => g.dispose());
+    // קווים: מתאר הלוח, ומתאר כל חריץ על פני הפאה ובתחתיתו
+    const pts = [];
+    const outline = new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, d));
+    const op = outline.getAttribute('position');
+    for (let i = 0; i < op.count; i++) pts.push(op.getX(i), op.getY(i), op.getZ(i));
+    const at = (u, v, depth) => {
+      const y = -h / 2 + v;
+      if (m.normal === '+z') return [-w / 2 + u, y, d / 2 - depth];
+      if (m.normal === '-x') return [-w / 2 + depth, y, -d / 2 + u];
+      return [w / 2 - depth, y, -d / 2 + u];
+    };
+    for (const r of rects) for (const depth of [0, dep]) {
+      const c = [[r[0], r[2]], [r[1], r[2]], [r[1], r[3]], [r[0], r[3]]];
+      for (let k = 0; k < 4; k++) pts.push(...at(c[k][0], c[k][1], depth), ...at(c[(k + 1) % 4][0], c[(k + 1) % 4][1], depth));
+    }
+    const lines = new THREE.BufferGeometry();
+    lines.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    return { geo, lines };
+  }
+  /** איחוד גאומטריות (תיבות) לאחת — עם position, normal, uv ואינדקסים. */
+  function mergeGeometries(list) {
+    const pos = [], nor = [], uv = [], idx = [];
+    let base = 0;
+    for (const g of list) {
+      const P = g.getAttribute('position'), N = g.getAttribute('normal'), T = g.getAttribute('uv');
+      for (let i = 0; i < P.count; i++) { pos.push(P.getX(i), P.getY(i), P.getZ(i)); nor.push(N.getX(i), N.getY(i), N.getZ(i)); uv.push(T.getX(i), T.getY(i)); }
+      const I = g.getIndex();
+      for (let i = 0; i < I.count; i++) idx.push(I.getX(i) + base);
+      base += P.count;
+    }
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    out.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    out.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    out.setIndex(idx);
+    return out;
+  }
+
   function setModel(model) {
     currentModel = model;
     if (libraryVersion() !== libVersion) { clearTextures(); libVersion = libraryVersion(); }
@@ -339,10 +402,11 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
     const ids = new Set(model.parts.map((p) => p.id));
     for (const id of [...ghostIds]) if (!ids.has(id)) ghostIds.delete(id);
     for (const p of model.parts) {
-      const geo = new THREE.BoxGeometry(p.box.w, p.box.h, p.box.d);
+      const milled = p.mill ? milledGeometry(p) : null;
+      const geo = milled ? milled.geo : new THREE.BoxGeometry(p.box.w, p.box.h, p.box.d);
       const mesh = new THREE.Mesh(geo, threeMaterial(p));
       mesh.userData.part = p;
-      const lines = new THREE.LineSegments(new THREE.EdgesGeometry(geo), edgeMat);
+      const lines = new THREE.LineSegments(milled ? milled.lines : new THREE.EdgesGeometry(geo), edgeMat);
       const node = new THREE.Group();
       node.position.set(p.box.x + p.box.w / 2, p.box.y + p.box.h / 2, p.box.z + p.box.d / 2);
       node.add(mesh); node.add(lines);

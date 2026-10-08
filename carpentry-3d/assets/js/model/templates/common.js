@@ -4,6 +4,7 @@
 import { material } from '../materials.js';
 import { wheelHeight } from '../accessories.js';
 import { part, back, crown } from '../blocks.js';
+import { MILL_PATTERNS, millText } from '../milling.js';
 
 export const boardT = (id) => material(id).t || 18;
 
@@ -126,9 +127,14 @@ export const FINISHES = [
   { id: 'fluted-fine', name: 'סטריפים דקים (16/8)' },
   { id: 'fluted-wide', name: 'סטריפים רחבים (40/20)' },
   { id: 'grooved', name: 'חריצים (V) אנכיים' },
+  ...Object.entries(MILL_PATTERNS).map(([id, m]) => ({ id, name: m.name })),
   { id: 'glass', name: 'זכוכית (ויטרינה)' },
 ];
 export const FINISHES_NO_GLASS = FINISHES.filter((f) => f.id !== 'glass');
+/** גימורים שלא מוסיפים עובי (חזיתות מטבח ומגירות): חלק, חריצי V וחירוץ CNC. */
+export const FINISHES_FLUSH = FINISHES.filter((f) => f.id === 'flat' || f.id === 'grooved' || MILL_PATTERNS[f.id]);
+/** הגימורים שהלוח נשאר חלק אחד בהם (לא זכוכית ולא סטריפים מודבקים) — לתנאי "חומר הדופן". */
+export const FINISH_IDS_SOLID = FINISHES.filter((f) => f.id !== 'glass').map((f) => f.id);
 
 /**
  * מחיל גימור על לוח חזיתי: סטריפים — חלקים אמיתיים על פני הלוח, בכיוון
@@ -138,6 +144,12 @@ export const FINISHES_NO_GLASS = FINISHES.filter((f) => f.id !== 'glass');
  */
 export function applyFinish(face, finish, { material, normal = '+z', idPrefix }) {
   const out = [];
+  if (MILL_PATTERNS[finish]) {
+    // חירוץ CNC: הלוח נשאר חלק אחד; הצופה בונה את הצלעות/המסגרות, והפלט מפרט את ההוראה
+    face.mill = { pattern: finish, normal, ...MILL_PATTERNS[finish] };
+    face.note = [face.note, millText(face)].filter(Boolean).join(' — ');
+    return out;
+  }
   if (finish === 'grooved') { face.surface = 'grooved'; face.note = [face.note, 'חריצים V'].filter(Boolean).join(' — '); return out; }
   if (!finish || !finish.startsWith('fluted')) return out;
   const [sw, gap, st] = finish === 'fluted-wide' ? [40, 20, 10] : [16, 8, 8];
