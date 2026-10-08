@@ -723,3 +723,33 @@ input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner
 .acc__actions { display: flex; gap: 6px; padding-top: 4px; }
 .acc__hint { font-size: 0.78rem; }
 @media (max-width: 860px) { .acc__body { grid-template-columns: 1fr; } .acc__editor { grid-template-columns: 1fr; } .acc__preview { max-height: 260px; } }
+
+/* ---- ניהול ---- */
+.admin__tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.admin__tabs button { padding: 6px 12px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--panel); font: inherit; font-size: 0.85rem; cursor: pointer; }
+.admin__tabs button.is-active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-deep); font-weight: 600; }
+#users .drawer__bar { gap: 10px; flex-wrap: wrap; }
+.ugrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.ucard { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.ucard.is-off { opacity: 0.6; }
+.ucard__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ucard__head input[name=name] { flex: 1 1 120px; min-width: 0; font-weight: 700; font-size: 1rem; padding: 5px 8px; border: 1px solid transparent; border-radius: 8px; background: transparent; font-family: inherit; }
+.ucard__head input[name=name]:hover, .ucard__head input[name=name]:focus { border-color: var(--line-strong); background: var(--panel-2); outline: none; }
+.ucard__email { color: var(--muted); font-size: 0.82rem; direction: ltr; text-align: right; }
+.ucard__row { display: grid; grid-template-columns: 90px 1fr; align-items: center; gap: 6px 8px; font-size: 0.85rem; }
+.ucard__row > span { color: var(--muted); }
+.ucard__row select, .ucard__row input[type=date] { padding: 6px 8px; border: 1px solid var(--line-strong); border-radius: 8px; font: inherit; font-size: 0.85rem; background: var(--panel-2); min-width: 0; max-width: 100%; }
+.ucard__period { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.ucard__period input[type=date] { flex: 1 1 120px; }
+.ucard__meta { color: var(--muted); font-size: 0.78rem; display: flex; gap: 10px; flex-wrap: wrap; }
+.ucard__actions { display: flex; gap: 6px; flex-wrap: wrap; padding-top: 4px; }
+.tag--warn { background: #fff3d6; color: #8a5a00; }
+.tag--info { background: #e8eef9; color: #2b4a8f; }
+.unew { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin-bottom: 14px; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; align-items: end; }
+.unew label { display: flex; flex-direction: column; gap: 3px; font-size: 0.78rem; color: var(--muted); min-width: 0; }
+.unew input, .unew select { padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 10px; font: inherit; font-size: 0.9rem; background: var(--panel-2); min-width: 0; }
+.unew h4 { grid-column: 1 / -1; margin: 0; font-size: 0.95rem; color: var(--accent-deep); }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.stat span { color: var(--muted); font-size: 0.8rem; }
+.stat b { font-size: 1.3rem; color: var(--accent-deep); }

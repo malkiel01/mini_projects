@@ -42,7 +42,7 @@ let saveTimer = null;
 // חוזר למסך הפתיחה. פתיחת פרויקט מתוך מגירה מחליפה את רשומת המגירה
 // ברשומת הפרויקט (לא דוחפת), כך שה"אחורה" הבא מחזיר לרשימה ולא למגירה.
 // סגירה מכפתור "סגירה" חוזרת צעד אחורה בהיסטוריה — וה-popstate שלה מדולג.
-const DRAWERS = ['#projects', '#clients', '#users', '#types', '#mlib', '#accessories', '#share', '#newproj', '#clientdlg'];
+const DRAWERS = ['#projects', '#clients', '#users', '#mlib', '#accessories', '#share', '#newproj', '#clientdlg'];
 let suppressPops = 0;
 function pushNav(kind) { history.pushState({ app: 'carpentry', kind }, ''); }
 function openDrawer(sel, fromPop = false) {
@@ -650,54 +650,100 @@ function printAll(m) {
   setTimeout(() => window.print(), 50);
 }
 
-// ---------- מנהל: משתמשים ----------
-async function showUsers() {
-  const box = $('#users');
+// ---------- מנהל: אזור הניהול — משתמשים, סוגי מוצרים, מצב המערכת ----------
+let adminTab = 'users';
+const roleNames = { admin: 'מנהל', carpenter: 'נגר', viewer: 'צופה' };
+function userStatus(u) {
+  const today = new Date().toISOString().slice(0, 10);
+  if (u.blocked) return { tag: 'tag--off', text: 'חסום' };
+  if (u.valid_from && today < u.valid_from) return { tag: 'tag--info', text: `יתחיל ב-${fmtDate(u.valid_from)}` };
+  if (u.valid_until && today > u.valid_until) return { tag: 'tag--off', text: `פג תוקף ${fmtDate(u.valid_until)}` };
+  if (u.valid_until) {
+    const days = Math.ceil((new Date(u.valid_until) - new Date(today)) / 86400000);
+    return { tag: days <= 14 ? 'tag--warn' : '', text: days <= 14 ? `פעיל — נשארו ${days} ימים` : `פעיל עד ${fmtDate(u.valid_until)}` };
+  }
+  return { tag: '', text: 'פעיל' };
+}
+async function showUsers(tab) {
+  if (tab) adminTab = tab;
   openDrawer('#users');
+  document.querySelectorAll('#admin-tabs button').forEach((b) => b.classList.toggle('is-active', b.dataset.atab === adminTab));
   const body = $('#users-body');
+  body.innerHTML = '<p class="muted">טוען…</p>';
   try {
+    if (adminTab === 'types') { await renderTypesInto(body); return; }
+    if (adminTab === 'system') { await renderSystemInto(body); return; }
     const r = await api('users-list');
-    const roles = { admin: 'מנהל', carpenter: 'נגר', viewer: 'צופה' };
     body.innerHTML = `
-      <form class="users__new" id="user-new">
-        <input name="name" placeholder="שם" required>
-        <input name="email" type="email" placeholder="דוא&quot;ל" required>
-        <input name="password" type="text" placeholder="סיסמה (8+ תווים)" minlength="8" required>
-        <select name="role"><option value="carpenter">נגר</option><option value="viewer">צופה</option><option value="admin">מנהל</option></select>
-        <button type="submit" class="btn btn--accent">+ משתמש</button>
+      <form class="unew" id="user-new">
+        <h4>＋ משתמש חדש</h4>
+        <label>שם<input name="name" placeholder="שם" required></label>
+        <label>דוא"ל<input name="email" type="email" placeholder="name@example.com" required dir="ltr"></label>
+        <label>סיסמה (8+ תווים)<input name="password" type="text" minlength="8" required dir="ltr"></label>
+        <label>תפקיד<select name="role"><option value="carpenter">נגר</option><option value="viewer">צופה</option><option value="admin">מנהל</option></select></label>
+        <label>בתוקף עד (לא חובה)<input name="valid_until" type="date"></label>
+        <button type="submit" class="btn btn--accent">יצירה</button>
       </form>
-      <table class="list"><thead><tr><th>שם</th><th>דוא"ל</th><th>תפקיד</th><th>מצב</th><th></th></tr></thead><tbody>
-      ${r.users.map((u) => `<tr data-id="${u.id}">
-        <td><input name="name" value="${esc(u.name)}" class="inline"></td>
-        <td dir="ltr">${esc(u.email)}</td>
-        <td><select name="role" class="inline" ${u.id === state.user.id ? 'disabled' : ''}>${Object.entries(roles).map(([k, v]) => `<option value="${k}" ${u.role === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
-        <td>${u.blocked ? '<span class="tag tag--off">חסום</span>' : '<span class="tag">פעיל</span>'}</td>
-        <td class="list__actions">
-          ${u.id !== state.user.id ? `<button type="button" class="btn btn--small" data-block="${u.blocked ? 0 : 1}">${u.blocked ? 'שחרור' : 'חסימה'}</button>` : ''}
-          <button type="button" class="btn btn--small" data-pw="1">סיסמה חדשה</button>
-        </td></tr>`).join('')}</tbody></table>`;
+      <p class="muted">תקופה: החשבון עובד רק בין התאריכים (כולל). חשבון שפג או נחסם מתנתק מיד, גם אם היה מחובר. מחיקת משתמש מעבירה את הפרויקטים וההרכבות שלו אליך.</p>
+      <div class="ugrid">${r.users.map((u) => {
+        const st = userStatus(u);
+        const self = u.id === state.user.id;
+        return `<article class="ucard ${u.blocked || !u.in_period ? 'is-off' : ''}" data-id="${u.id}">
+          <div class="ucard__head"><input name="name" value="${esc(u.name)}"><span class="tag ${st.tag}">${esc(st.text)}</span>${self ? '<span class="muted">(אתה)</span>' : ''}</div>
+          <div class="ucard__email">${esc(u.email)}</div>
+          <div class="ucard__row"><span>תפקיד</span><select name="role" ${self ? 'disabled' : ''}>${Object.entries(roleNames).map(([k, v]) => `<option value="${k}" ${u.role === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+          <div class="ucard__row"><span>תקופה</span><span class="ucard__period"><input type="date" name="valid_from" value="${esc(u.valid_from || '')}" title="מתאריך"> <small class="muted">עד</small> <input type="date" name="valid_until" value="${esc(u.valid_until || '')}" title="עד תאריך"></span></div>
+          <div class="ucard__meta"><span>פרויקטים: ${u.projects ?? 0}</span><span>כניסה אחרונה: ${u.last_login_at ? `${fmtDate(u.last_login_at)} ${fmtTime(u.last_login_at)}` : 'אף פעם'}</span><span>נוצר ${fmtDate(u.created_at)}</span></div>
+          <div class="ucard__actions">
+            ${!self ? `<button type="button" class="btn btn--small" data-block="${u.blocked ? 0 : 1}">${u.blocked ? 'שחרור חסימה' : 'חסימה'}</button>` : ''}
+            <button type="button" class="btn btn--small" data-pw="1">סיסמה חדשה</button>
+            ${!self ? `<button type="button" class="btn btn--small" data-udel="1">מחיקה</button>` : ''}
+          </div>
+        </article>`;
+      }).join('')}</div>`;
     $('#user-new').onsubmit = async (e) => {
       e.preventDefault();
       const f = e.target;
-      try { await api('user-create', { name: f.name.value, email: f.email.value, password: f.password.value, role: f.role.value }); toast('המשתמש נוצר'); showUsers(); } catch (err) { onError(err); }
+      try { await api('user-create', { name: f.name.value, email: f.email.value, password: f.password.value, role: f.role.value, valid_until: f.valid_until.value || null }); toast('המשתמש נוצר'); showUsers(); } catch (err) { onError(err); }
     };
     body.onchange = async (e) => {
-      const tr = e.target.closest('tr[data-id]'); if (!tr) return;
-      const patch = {}; patch[e.target.name] = e.target.value;
-      try { await api('user-update', { id: Number(tr.dataset.id), patch }); toast('עודכן'); } catch (err) { onError(err); showUsers(); }
+      const card = e.target.closest('.ucard[data-id]'); if (!card) return;
+      const patch = {}; patch[e.target.name] = e.target.type === 'date' ? (e.target.value || null) : e.target.value;
+      try { await api('user-update', { id: Number(card.dataset.id), patch }); toast('עודכן'); showUsers(); } catch (err) { onError(err); showUsers(); }
     };
     body.onclick = async (e) => {
-      const tr = e.target.closest('tr[data-id]'); if (!tr) return;
-      const id = Number(tr.dataset.id);
+      const card = e.target.closest('.ucard[data-id]'); if (!card) return;
+      const id = Number(card.dataset.id), t = e.target;
       try {
-        if (e.target.dataset.block !== undefined) { await api('user-update', { id, patch: { blocked: e.target.dataset.block === '1' } }); showUsers(); }
-        if (e.target.dataset.pw) {
-          const pw = prompt('סיסמה חדשה (8+ תווים):'); if (!pw) return;
-          await api('user-update', { id, patch: { password: pw } }); toast('הסיסמה הוחלפה');
+        if (t.dataset.block !== undefined) { await api('user-update', { id, patch: { blocked: t.dataset.block === '1' } }); showUsers(); }
+        else if (t.dataset.pw) { const pw = prompt('סיסמה חדשה (8+ תווים):'); if (!pw) return; await api('user-update', { id, patch: { password: pw } }); toast('הסיסמה הוחלפה'); }
+        else if (t.dataset.udel) {
+          const u = r.users.find((x) => x.id === id);
+          if (!confirm(`למחוק את ${u.name}? ${u.projects ? `${u.projects} הפרויקטים שלו יעברו אליך. ` : ''}אין שחזור.`)) return;
+          await api('user-delete', { id }); toast('המשתמש נמחק'); showUsers();
         }
       } catch (err) { onError(err); }
     };
   } catch (err) { onError(err); }
+}
+document.querySelectorAll('#admin-tabs button').forEach((b) => b.addEventListener('click', () => showUsers(b.dataset.atab)));
+
+const fmtBytes = (n) => (n > 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.round(n / 1e3)} KB`);
+async function renderSystemInto(body) {
+  const r = await api('admin-stats');
+  const s = r.stats;
+  body.innerHTML = `
+    <div class="stats">
+      <div class="stat"><span>משתמשים</span><b>${s.users.admin + s.users.carpenter + s.users.viewer}</b><span>${s.users.admin} מנהלים · ${s.users.carpenter} נגרים · ${s.users.viewer} צופים${s.users.blocked ? ` · ${s.users.blocked} חסומים` : ''}</span></div>
+      <div class="stat"><span>פרויקטים</span><b>${s.projects}</b><span>${s.shared} משותפים עם לקוח</span></div>
+      <div class="stat"><span>לקוחות</span><b>${s.clients}</b></div>
+      <div class="stat"><span>הרכבות</span><b>${s.assemblies}</b></div>
+      <div class="stat"><span>סוגי מוצרים</span><b>${s.types}</b></div>
+      <div class="stat"><span>חומרים ואביזרים שנערכו</span><b>${s.materials}</b><span>${s.media_files} תמונות</span></div>
+      <div class="stat"><span>מסד הנתונים</span><b>${fmtBytes(s.db_bytes)}</b><span>SQLite · PHP ${esc(s.php)}</span></div>
+      <div class="stat"><span>פעילות אחרונה</span><b>${s.last_project_at ? fmtDate(s.last_project_at) : '—'}</b><span>${s.last_project_at ? fmtTime(s.last_project_at) : ''}</span></div>
+    </div>
+    <p class="muted">הגיבוי: הקובץ <code>data/carpentry.sqlite</code> והתיקייה <code>data/media/</code> בשרת — הם אינם בגיט והפריסה אינה נוגעת בהם. הספרייה המשותפת והתעריפים נמצאים ב"חומרים"; הידיות, הצירים והגלגלים ב"אביזרים".</p>`;
 }
 
 async function changePassword() {
@@ -707,10 +753,8 @@ async function changePassword() {
 }
 
 // ---------- מנהל: סוגי מוצרים ----------
-async function showTypes() {
-  const box = $('#types');
-  openDrawer('#types');
-  const body = $('#types-body');
+async function showTypes() { showUsers('types'); }
+async function renderTypesInto(body) {
   try {
     const r = await api('types-list');
     state.types = r.types.filter((t) => t.active);
