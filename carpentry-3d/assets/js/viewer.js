@@ -7,7 +7,7 @@
 
 import { material, libraryVersion } from './model/materials.js';
 import { createViewCube, anglesFor } from './viewcube.js';
-import { millFace, millRects, millSolids } from './model/milling.js';
+import { millFace, millRects, millSolids, millEdges } from './model/milling.js';
 import { cutSize } from './model/blocks.js';
 import { textureForPart, clearTextures } from './textures.js';
 import { buildAccessory, faceOf, rotationForNormal, localXOf } from './model/accessories.js';
@@ -351,21 +351,18 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
     const geos = boxes.map((b) => new THREE.BoxGeometry(b.x1 - b.x0, b.y1 - b.y0, b.z1 - b.z0).translate((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, (b.z0 + b.z1) / 2));
     const geo = mergeGeometries(geos);
     geos.forEach((g) => g.dispose());
-    // קווים: מתאר הלוח, ומתאר כל חריץ על פני הפאה ובתחתיתו
+    // קווים — רק איפה שיש חומר (millEdges): שפת הפאה ומתארי החריצים; ועוד הפאה האחורית ופינות העובי
     const pts = [];
-    const outline = new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, d));
-    const op = outline.getAttribute('position');
-    for (let i = 0; i < op.count; i++) pts.push(op.getX(i), op.getY(i), op.getZ(i));
-    const at = (u, v, depth) => {
+    const at = (u, v, l) => {   // l: 0 פני הפאה, 1 תחתית החריץ, 2 הפאה האחורית
+      const depth = l === 2 ? (m.normal === '+z' ? d : w) : l * dep;
       const y = -h / 2 + v;
       if (m.normal === '+z') return [-w / 2 + u, y, d / 2 - depth];
       if (m.normal === '-x') return [-w / 2 + depth, y, -d / 2 + u];
       return [w / 2 - depth, y, -d / 2 + u];
     };
-    for (const r of rects) for (const depth of [0, dep]) {
-      const c = [[r[0], r[2]], [r[1], r[2]], [r[1], r[3]], [r[0], r[3]]];
-      for (let k = 0; k < 4; k++) pts.push(...at(c[k][0], c[k][1], depth), ...at(c[(k + 1) % 4][0], c[(k + 1) % 4][1], depth));
-    }
+    for (const [a, b] of millEdges(U, V, m)) pts.push(...at(...a), ...at(...b));
+    for (const [u0, v0, u1, v1] of [[0, 0, U, 0], [U, 0, U, V], [U, V, 0, V], [0, V, 0, 0]]) pts.push(...at(u0, v0, 2), ...at(u1, v1, 2));
+    for (const [u, v] of [[0, 0], [U, 0], [0, V], [U, V]]) pts.push(...at(u, v, 0), ...at(u, v, 2));
     const lines = new THREE.BufferGeometry();
     lines.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
     return { geo, lines };
