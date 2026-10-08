@@ -265,6 +265,8 @@ body.has-fs { overflow: hidden; }
   padding: 12px 16px;
   min-height: 64px;
   font-size: 0.9rem;
+  /* כרטיס ארוך (עריכת רכיב) נגלל בתוכו — התלת מימד נשאר גלוי */
+  max-height: 46%; overflow: auto; flex-shrink: 0; overscroll-behavior: contain;
 }
 .part h3 { font-size: 1rem; color: var(--accent-deep); margin-bottom: 6px; }
 .part dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; }
@@ -842,3 +844,22 @@ input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner
 .cnc__section .cnc__depth { text-anchor: end; }   /* ב-rtl: end = הקצה השמאלי — הטקסט נמשך ימינה, מחוץ ללוח */
 .cnc__section .cnc__cap { text-anchor: start; }   /* ב-rtl: start = הקצה הימני, מ-x אל שמאל */
 .acc__hint { grid-column: 1 / -1; color: var(--muted); font-size: 0.76rem; margin-top: -4px; }   /* הסבר מתחת לשדה — לא דוחק את השדה */
+
+/* עריכת רכיב מתוך התלת מימד: שני קטעים מתקפלים בכרטיס הרכיב */
+.pedit { margin-top: 10px; border-top: 1px dashed var(--line); padding-top: 8px; }
+.pedit > summary { cursor: pointer; font-weight: 700; color: var(--accent-deep); padding: 4px 0; }
+.pedit__note { font-size: 0.78rem; margin: 2px 0 6px; }
+.pedit__row { display: grid; grid-template-columns: 7.5em 1fr; align-items: center; gap: 4px 10px; margin: 6px 0; }
+.pedit__row > span:first-child { color: var(--muted); font-size: 0.86rem; }
+.pedit__row select, .pedit__row input[type=number] { width: 100%; min-width: 0; }
+.pedit__row .presets { grid-column: 2; }
+.pedit__trio { display: grid; grid-template-columns: 7.5em repeat(3, minmax(0, 1fr)); align-items: end; gap: 4px 8px; margin: 6px 0; }
+.pedit__trio > span { color: var(--muted); font-size: 0.86rem; align-self: center; }
+.pedit__trio label { display: flex; flex-direction: column; font-size: 0.74rem; color: var(--muted); gap: 2px; }
+.pedit__trio input { width: 100%; min-width: 0; }
+.pedit__edges { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 6px 0; font-size: 0.86rem; }
+.pedit__edges > span { color: var(--muted); width: 7.5em; }
+@media (max-width: 420px) {
+  .pedit__trio { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pedit__trio > span { grid-column: 1 / -1; }
+}

@@ -5,7 +5,8 @@
 // ספרייה ותעריפים; הדפדפן מחזיק רק את הפרויקט הפתוח, ושומר אותו אוטומטית
 // שנייה אחרי כל שינוי.
 
-import { TEMPLATES, template, defaults, build, cutList, hardwareList, allParams, clamp } from './model/index.js';
+import { TEMPLATES, template, defaults, build, cutList, hardwareList, allParams, clamp, visible, optionsFor } from './model/index.js';
+import { cutAxes, edgeSides, relatedParams, getLayoutProp, setLayoutProp, editSummary } from './model/partEdits.js';
 import { cutSize, DOOR_OPEN_OPTIONS } from './model/blocks.js';
 import { FINISHES_NO_GLASS, partNormal } from './model/templates/common.js';
 import { estimate, PRICING_DEFAULTS } from './model/pricing.js';
@@ -551,14 +552,29 @@ function renderSummary(m) {
     <span>${Math.round(b.w)} × ${Math.round(b.h)} × ${Math.round(b.d)} מ"מ</span>
     <span>${m.parts.length} חלקים</span>
     <span>${m.hardware.reduce((n, h) => n + (h.kind === 'info' ? 0 : h.qty || 1), 0)} פריטי פרזול</span>
-    <span title="נפח × צפיפות החומר, לכל חלק">⚖ ${totalWeight(m.parts)} ק"ג</span>`;
+    <span title="נפח × צפיפות החומר, לכל חלק">⚖ ${totalWeight(m.parts)} ק"ג</span>
+    ${hiddenCount() ? `<button type="button" class="btn btn--small" data-show-hidden>🙉 הצגת ${hiddenCount()} רכיבים מוסתרים</button>` : ''}`;
 }
+const hiddenCount = () => (state.project ? Object.values(state.values.partEdits || {}).filter((e) => e.hidden).length : 0);
+function onShowHidden(e) {
+  if (!e.target.closest('[data-show-hidden]')) return;
+  const all = { ...(state.values.partEdits || {}) };
+  for (const [id, ed] of Object.entries(all)) { const { hidden, ...rest } = ed; if (Object.keys(rest).length) all[id] = rest; else delete all[id]; }
+  state.values.partEdits = Object.keys(all).length ? all : undefined;
+  rebuild(); markDirty();
+  if (!shownPart) showPart(null);
+}
+$('#summary').addEventListener('click', onShowHidden);
+$('#part').addEventListener('click', onShowHidden);
 
 let shownPart = null;
 function showPart(p) {
   const box = $('#part');
   shownPart = p;
-  if (!p) { box.innerHTML = '<p class="muted">הקשה על לוח מציגה את מידותיו. גרירה מסובבת; שתי אצבעות או גלגלת מזמנות.</p>'; return; }
+  if (!p) {
+    box.innerHTML = `<p class="muted">הקשה על רכיב מציגה את מידותיו ומאפשרת לערוך אותו. גרירה מסובבת; שתי אצבעות או גלגלת מזמנות.</p>${hiddenCount() ? `<div class="part__actions"><button type="button" class="btn btn--small" data-show-hidden>🙉 הצגת ${hiddenCount()} רכיבים מוסתרים</button></div>` : ''}`;
+    return;
+  }
   const c = cutSize(p);
   const m = M.material(p.material);
   const edges = Object.entries(p.edges || {}).filter(([, v]) => v).map(([k]) => ({ front: 'חזית', back: 'אחור', top: 'עליון', bottom: 'תחתון', left: 'שמאל', right: 'ימין' }[k])).join(', ') || 'ללא';
@@ -574,30 +590,79 @@ function showPart(p) {
       <dt>מיקום</dt><dd>x ${Math.round(p.box.x)} · y ${Math.round(p.box.y)} · z ${Math.round(p.box.z)}</dd>${p.xf ? `<dt>סיבוב</dt><dd>${Math.round(p.xf.yaw * 10) / 10}° (מיקום במערכת של הקיר / האלמנט)</dd>` : ''}
       <dt>משקל</dt><dd>${partWeight(p)} ק"ג</dd>
       ${p.note ? `<dt>הערה</dt><dd>${esc(p.note)}</dd>` : ''}
-      ${partControls(p)}
       ${holes.length ? `<dt>קידוחים</dt><dd>${holes.length} — ${esc([...new Set(holes.map((h) => h.purpose))].join(', '))}; הפירוט בלשונית "קידוחים" בפלט</dd>` : ''}
     </dl>
-    ${partButtons(p)}`;
+    ${partButtons(p)}
+    ${partEditor(p)}`;
 }
 
 /**
- * בחירות לחלק מסוים, בפרויקט פתוח: גימור ללוח אנכי (דופן, מחיצה, חזית, לוח
- * חיפוי — חירוץ CNC, סטריפים, חריצים), וכיוון פתיחה לדלת. נשמר בערכי הפרויקט
- * (partFinishes / doorOpen) לפי ה-id, עם "כמו בתבנית" לביטול.
+ * עריכת הרכיב שהוקש בתלת מימד, בפרויקט פתוח. שני חלקים:
+ * 1. "עריכת הרכיב" — רק הרכיב הזה: חומר, גימור, מידות, הזזה, סיבוב, קנטים,
+ *    כיוון וזווית פתיחה (דלת) / שליפה (מגירה), הסתרה. נשמר ב-partEdits
+ *    (ובגימור/כיוון — partFinishes / doorOpen), לפי ה-id.
+ * 2. "הגדרות המוצר שנוגעות לרכיב" — הפרמטרים של התבנית (relatedParams): סוג
+ *    החיפוי בשדה, גובה השדה, זווית הפינה, חומר הגוף… שינוי שם משנה את כל המוצר.
  */
-function partControls(p) {
+const EDGE_NAMES = { front: 'חזית', back: 'אחור', top: 'עליון', bottom: 'תחתון', left: 'שמאל', right: 'ימין' };
+function partEditor(p) {
   if (!state.project || state.user.role === 'viewer' || !model) return '';
+  const e = state.values.partEdits?.[p.id] || {};
+  const c = cutSize(p);
+  const num = (attr, val, extra = '') => `<input type="number" ${attr} value="${val}" step="1" ${extra}>`;
+  const row = (label, html) => `<label class="pedit__row"><span>${label}</span>${html}</label>`;
   const out = [];
+  // חומר — מאותו סוג (לוח / זכוכית)
+  const kind = M.material(p.material).kind === 'glass' ? 'glass' : 'board';
+  const mats = M.materialsOfKind(kind);
+  out.push(row('חומר', `<select data-pe="material"><option value="">כמו בתבנית</option>${mats.map((m) => `<option value="${m.id}" ${e.material === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select>`));
   if (partNormal(p, model.bounds)) {
     const cur = state.values.partFinishes?.[p.id];
     const opts = FINISHES_NO_GLASS();
-    out.push(`<dt>גימור הלוח</dt><dd><select data-part-finish="${esc(p.id)}"><option value="">כמו בתבנית${cur ? '' : ` (${esc(currentFinishName(p, opts))})`}</option>${opts.map((f) => `<option value="${f.id}" ${cur === f.id ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select></dd>`);
+    out.push(row('גימור', `<select data-part-finish="${esc(p.id)}"><option value="">כמו בתבנית${cur ? '' : ` (${esc(currentFinishName(p, opts))})`}</option>${opts.map((f) => `<option value="${f.id}" ${cur === f.id ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select>`));
   }
+  out.push(`<div class="pedit__trio"><span>מידות (מ"מ)</span>
+    <label>אורך${num('data-pe-size="l" min="1"', c.l)}</label><label>רוחב${num('data-pe-size="w" min="1"', c.w)}</label><label>עובי${num('data-pe-size="t" min="1"', c.t)}</label></div>`);
+  const mv = e.move || {};
+  out.push(`<div class="pedit__trio"><span>הזזה (מ"מ)</span>
+    <label>X ↔${num('data-pe-move="x" data-step="10"', mv.x || 0)}</label><label>Y ↕${num('data-pe-move="y" data-step="10"', mv.y || 0)}</label><label>Z ⤢${num('data-pe-move="z" data-step="10"', mv.z || 0)}</label></div>`);
+  out.push(row('סיבוב', `${num('data-pe="yaw" data-step="5"', e.yaw || 0)}<span class="presets">${[0, 90, 180, 270].map((r) => `<button type="button" data-pe-preset="yaw" data-v="${r}" class="${(e.yaw || 0) === r ? 'is-on' : ''}">${r}°</button>`).join('')}</span>`));
+  const ed = p.edges || {};
+  out.push(`<div class="pedit__edges"><span>קנט</span>${edgeSides(p).map((k) => `<label><input type="checkbox" data-pe-edge="${k}" ${ed[k] ? 'checked' : ''}> ${EDGE_NAMES[k]}</label>`).join('')}</div>`);
   if (p.motion?.kind === 'hinge') {
     const id = p.motion.group, cur = state.values.doorOpen?.[id];
-    out.push(`<dt>כיוון פתיחה</dt><dd><select data-door-open="${esc(id)}"><option value="">אוטומטי</option>${DOOR_OPEN_OPTIONS.map((o) => `<option value="${o.id}" ${cur === o.id ? 'selected' : ''}>${o.name}</option>`).join('')}</select></dd>`);
+    out.push(row('כיוון פתיחה', `<select data-door-open="${esc(id)}"><option value="">אוטומטי</option>${DOOR_OPEN_OPTIONS.map((o) => `<option value="${o.id}" ${cur === o.id ? 'selected' : ''}>${o.name}</option>`).join('')}</select>`));
+    const ang = Math.abs(p.motion.angle);
+    out.push(row('זווית פתיחה', `${num('data-pe="open" min="10" max="180" data-step="5"', Math.round(ang))}<span class="presets">${[90, 110, 165].map((r) => `<button type="button" data-pe-preset="open" data-v="${r}" class="${Math.round(ang) === r ? 'is-on' : ''}">${r}°</button>`).join('')}</span>`));
+  } else if (p.motion?.kind === 'slide') {
+    out.push(row('מרחק שליפה / הזזה (מ"מ)', num('data-pe="travel" min="10" data-step="10"', Math.round(Math.hypot(...p.motion.vec)))));
   }
-  return out.join('');
+  const edited = editSummary(e);
+  out.push(`<div class="part__actions"><button type="button" class="btn btn--small" data-pe-hide>🙈 הסתרת הרכיב</button>${edited ? `<button type="button" class="btn btn--small" data-pe-reset>↺ איפוס הרכיב (${esc(edited)})</button>` : ''}</div>`);
+  // הגדרות המוצר שנוגעות לרכיב
+  const t = currentTemplate();
+  const params = Object.fromEntries(allParams(t).map((q) => [q.key, q]));
+  const rel = relatedParams(t, p, state.values).map((it) => {
+    if (typeof it === 'string') {
+      const q = params[it];
+      if (!q || !visible(q, state.values)) return '';
+      return row(esc(q.label) + (q.type === 'mm' ? ' <small>מ"מ</small>' : ''), paramControl(q, state.values[q.key], `data-rp="${q.key}"`));
+    }
+    const v = getLayoutProp(state.values.columnsLayout, it.layout, it.col, it.prop) ?? it.fallback;
+    const attr = `data-rl="${esc(JSON.stringify({ layout: it.layout, col: it.col, prop: it.prop, type: it.type }))}"`;
+    return row(esc(it.label), paramControl({ type: it.type, options: it.options, min: it.min, max: it.max }, v, attr));
+  }).filter(Boolean);
+  return `<details class="pedit" ${partEditor.open ? 'open' : ''} data-pedit="own"><summary>✏️ עריכת הרכיב הזה</summary>${out.join('')}</details>
+    ${rel.length ? `<details class="pedit" ${partEditor.openRel ? 'open' : ''} data-pedit="rel"><summary>⚙️ הגדרות המוצר שנוגעות לרכיב</summary><p class="muted pedit__note">שינוי כאן חל על כל המוצר (או על כל השדה / העמודה), כמו בטופס.</p>${rel.join('')}</details>` : ''}`;
+}
+partEditor.open = true; partEditor.openRel = false;
+/** שדה לפרמטר של התבנית — מספר (עם קיצורים, אם יש) או רשימה. */
+function paramControl(q, value, attr) {
+  if (q.type === 'mm' || q.type === 'int' || q.type === 'deg') {
+    return `<input type="number" ${attr} value="${value ?? ''}" ${q.min !== undefined ? `min="${q.min}"` : ''} ${q.max !== undefined ? `max="${q.max}"` : ''} step="1" data-step="${q.type === 'mm' ? 10 : q.type === 'deg' ? 5 : 1}">${q.presets ? `<span class="presets">${q.presets.map((v) => `<button type="button" data-rp-preset data-v="${v}" class="${Number(value) === v ? 'is-on' : ''}">${v}${q.type === 'deg' ? '°' : ''}</button>`).join('')}</span>` : ''}`;
+  }
+  const opts = typeof q.options === 'function' || q.type === 'material' ? optionsFor(q) : (q.options || []);
+  return `<select ${attr}>${opts.map((o) => `<option value="${esc(o.id)}" ${String(value) === String(o.id) ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}</select>`;
 }
 const currentFinishName = (p, opts) => (p.mill ? opts.find((f) => f.id === p.mill.pattern)?.name : p.surface === 'grooved' ? 'חריצים (V)' : null) || 'חלק';
 /** שינוי בחירה לחלק: שומר בערכי הפרויקט, בונה מחדש, ומשאיר את החלק מסומן. */
@@ -609,10 +674,55 @@ function setPartChoice(kind, id, value) {
   rebuild(); markDirty();
   if (keep) viewer.selectById(keep);
 }
+/** עריכה לרכיב: patch מתמזג לעריכה הקיימת; ערך null מוחק שדה; edit=null מאפס את הרכיב. */
+function setPartEdit(id, patch) {
+  const all = { ...(state.values.partEdits || {}) };
+  let e = patch === null ? {} : { ...(all[id] || {}), ...patch };
+  for (const [k, v] of Object.entries(e)) if (v === null || v === undefined || v === '' || (typeof v === 'object' && !Object.keys(v).length)) delete e[k];
+  if (Object.keys(e).length) all[id] = e; else delete all[id];
+  state.values.partEdits = Object.keys(all).length ? all : undefined;
+  const keep = e.hidden ? null : id;
+  rebuild(); markDirty();
+  if (keep) viewer.selectById(keep); else showPart(null);
+}
+/** שינוי פרמטר של התבנית מהכרטיס: כמו בטופס — הטופס מתעדכן והמוצר נבנה מחדש. */
+function setTemplateValue(key, value) {
+  state.values[key] = value;
+  const keep = shownPart?.id;
+  form = renderForm($('#form'), currentTemplate(), state.values, onFormChange);
+  rebuild(); markDirty();
+  if (keep) viewer.selectById(keep);
+}
+$('#part').addEventListener('toggle', (e) => {
+  const d = e.target.closest?.('[data-pedit]');
+  if (d) { if (d.dataset.pedit === 'own') partEditor.open = d.open; else partEditor.openRel = d.open; }
+}, true);
 $('#part').addEventListener('change', (e) => {
-  const t = e.target;
-  if (t.dataset.partFinish) setPartChoice('partFinishes', t.dataset.partFinish, t.value);
-  else if (t.dataset.doorOpen) setPartChoice('doorOpen', t.dataset.doorOpen, t.value);
+  const t = e.target, p = shownPart;
+  if (t.dataset.partFinish) return setPartChoice('partFinishes', t.dataset.partFinish, t.value);
+  if (t.dataset.doorOpen) return setPartChoice('doorOpen', t.dataset.doorOpen, t.value);
+  if (!p) return;
+  const cur = state.values.partEdits?.[p.id] || {};
+  if (t.dataset.pe === 'material') return setPartEdit(p.id, { material: t.value || null });
+  if (t.dataset.pe === 'yaw') return setPartEdit(p.id, { yaw: snapRot(Number(t.value) || 0) || null });
+  if (t.dataset.pe === 'open') return setPartEdit(p.id, { open: Math.max(10, Math.min(180, Number(t.value) || 0)) || null });
+  if (t.dataset.pe === 'travel') return setPartEdit(p.id, { travel: Math.max(10, Number(t.value) || 0) || null });
+  if (t.dataset.peSize) {
+    const v = Number(t.value);
+    if (!(v > 0)) return;
+    return setPartEdit(p.id, { size: { ...(cur.size || {}), [t.dataset.peSize]: v } });
+  }
+  if (t.dataset.peMove) return setPartEdit(p.id, { move: { ...(cur.move || {}), [t.dataset.peMove]: Number(t.value) || 0 } });
+  if (t.dataset.peEdge) return setPartEdit(p.id, { edges: { ...(cur.edges || {}), [t.dataset.peEdge]: t.checked } });
+  if (t.dataset.rp) {
+    const q = allParams(currentTemplate()).find((x) => x.key === t.dataset.rp);
+    return setTemplateValue(q.key, q.type === 'mm' || q.type === 'int' || q.type === 'deg' ? clamp(q, Number(t.value)) : t.value);
+  }
+  if (t.dataset.rl) {
+    const l = JSON.parse(t.dataset.rl);
+    const v = l.type === 'mm' ? (Number(t.value) > 0 ? Math.round(Number(t.value)) : null) : t.value || null;
+    return setTemplateValue('columnsLayout', setLayoutProp(state.values.columnsLayout, l.layout, l.col, l.prop, v));
+  }
 });
 
 /** כפתורי הפעולה של חלק: תנועה (אם יש לו), ושקיפות. */
@@ -627,6 +737,19 @@ function partButtons(p) {
   </div>`;
 }
 $('#part').addEventListener('click', (e) => {
+  const pe = e.target.closest('[data-pe-preset],[data-pe-hide],[data-pe-reset],[data-rp-preset]');
+  if (pe && shownPart) {
+    e.preventDefault();
+    if (pe.dataset.pePreset === 'yaw') return setPartEdit(shownPart.id, { yaw: Number(pe.dataset.v) || null });
+    if (pe.dataset.pePreset === 'open') return setPartEdit(shownPart.id, { open: Number(pe.dataset.v) });
+    if (pe.dataset.peHide !== undefined) { setPartEdit(shownPart.id, { hidden: true }); toast('הרכיב הוסתר — "הצגת רכיבים מוסתרים" למעלה מחזיר'); return; }
+    if (pe.dataset.peReset !== undefined) return setPartEdit(shownPart.id, null);
+    if (pe.dataset.rpPreset !== undefined) {
+      const input = pe.closest('.pedit__row').querySelector('input');
+      input.value = pe.dataset.v; input.dispatchEvent(new Event('change', { bubbles: true }));
+      return;
+    }
+  }
   const b = e.target.closest('[data-part-open],[data-part-ghost]');
   if (!b || !shownPart) return;
   if (b.dataset.partOpen) viewer.toggleOpen(b.dataset.partOpen);
