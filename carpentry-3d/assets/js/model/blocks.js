@@ -185,7 +185,9 @@ export function door({ id, name, x0, x1, y0, y1, zFront, type, t, frameW = 60, m
   // כל חלקי הדלת (זקפים, קושרות, שמשה) נושאים אותה תנועה ואותה קבוצה.
   const motion = flap
     ? { kind: 'hinge', group: id, axis: [1, 0, 0], pivot: [x, hingeSide === 'top' ? y + h : y, zFront], angle: hingeSide === 'top' ? -95 : 90 }
-    : { kind: 'hinge', group: id, pivot: [hingeSide === 'left' ? x : x + w, y, zFront], angle: hingeSide === 'left' ? -openAngle : openAngle };
+    // ציר אנכי: הסיבוב סביב הפינה הקדמית של הקצה (כמו ציר כוס במבט־על) — כך שתי דלתות
+    // על אותה מחיצה לא חודרות זו לזו עד 90°
+    : { kind: 'hinge', group: id, pivot: [hingeSide === 'left' ? x : x + w, y, zFront + t], angle: hingeSide === 'left' ? -openAngle : openAngle };
 
   if (type === 'wood') {
     parts.push(part(id, 'דלת עץ', { x, y, z: zFront, w, h, d: t },
