@@ -74,7 +74,13 @@ try {
             ok(['users' => listUsers()]);
         case 'user-create':
             requireAdmin();
-            ok(['user' => createUser(s($in, 'email'), (string) ($in['password'] ?? ''), s($in, 'name', 60), s($in, 'role', 20) ?: 'carpenter')]);
+            ok(['user' => createUser(s($in, 'email'), (string) ($in['password'] ?? ''), s($in, 'name', 60), s($in, 'role', 20) ?: 'carpenter', s($in, 'valid_from', 10) ?: null, s($in, 'valid_until', 10) ?: null)]);
+        case 'user-delete':
+            deleteUser(requireAdmin(), (int) ($in['id'] ?? 0));
+            ok();
+        case 'admin-stats':
+            requireAdmin();
+            ok(['stats' => adminStats()]);
         case 'user-update': {
             $admin = requireAdmin();
             ok(['user' => adminUpdateUser($admin, (int) ($in['id'] ?? 0), is_array($in['patch'] ?? null) ? $in['patch'] : [])]);

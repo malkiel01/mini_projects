@@ -135,6 +135,11 @@ function migrate(PDO $pdo): void {
     if (!in_array('client_id', $cols, true)) {
         $pdo->exec('ALTER TABLE projects ADD COLUMN client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL');
     }
+    // תוקף חשבון (תאריכים YYYY-MM-DD, ריק = בלי הגבלה) וכניסה אחרונה — נוספו אחרי שהטבלה הייתה בשרת.
+    $ucols = array_column($pdo->query('PRAGMA table_info(users)')->fetchAll(), 'name');
+    foreach (['valid_from', 'valid_until', 'last_login_at'] as $c) {
+        if (!in_array($c, $ucols, true)) $pdo->exec("ALTER TABLE users ADD COLUMN $c TEXT");
+    }
     // הסבה: פרויקטים ישנים עם שם לקוח כטקסט מקבלים רשומת לקוח (אותו שם = אותו לקוח).
     $orphans = $pdo->query("SELECT id, owner_id, client FROM projects WHERE client_id IS NULL AND client <> ''")->fetchAll();
     foreach ($orphans as $o) {

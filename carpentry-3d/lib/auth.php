@@ -37,7 +37,25 @@ function userCount(): int {
 
 function publicUser(array $u): array {
     return ['id' => (int) $u['id'], 'email' => $u['email'], 'name' => $u['name'],
-            'role' => $u['role'], 'blocked' => (int) $u['blocked'] === 1, 'created_at' => $u['created_at']];
+            'role' => $u['role'], 'blocked' => (int) $u['blocked'] === 1, 'created_at' => $u['created_at'],
+            'valid_from' => $u['valid_from'] ?? null, 'valid_until' => $u['valid_until'] ?? null,
+            'last_login_at' => $u['last_login_at'] ?? null, 'in_period' => userInPeriod($u),
+            'projects' => isset($u['projects']) ? (int) $u['projects'] : null];
+}
+
+/** האם החשבון בתוקף היום: בין valid_from ל-valid_until (כולל), כשהם מוגדרים. */
+function userInPeriod(array $u, ?string $today = null): bool {
+    $today = $today ?? gmdate('Y-m-d');
+    $from = $u['valid_from'] ?? null; $until = $u['valid_until'] ?? null;
+    if ($from && $today < $from) return false;
+    if ($until && $today > $until) return false;
+    return true;
+}
+
+function validDate(?string $d): ?string {
+    if ($d === null || trim($d) === '') return null;
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) || !checkdate((int) substr($d, 5, 2), (int) substr($d, 8, 2), (int) substr($d, 0, 4))) throw new AppError('תאריך לא תקין (YYYY-MM-DD)');
+    return $d;
 }
 
 function currentUser(): ?array {
@@ -46,8 +64,8 @@ function currentUser(): ?array {
     $st = db()->prepare('SELECT * FROM users WHERE id = ?');
     $st->execute([$_SESSION['uid']]);
     $u = $st->fetch();
-    // חסימה מנתקת סשן קיים, לא רק מונעת כניסה חדשה.
-    if (!$u || (int) $u['blocked'] === 1) { logout(); return null; }
+    // חסימה או פקיעת תוקף מנתקות סשן קיים, לא רק מונעות כניסה חדשה.
+    if (!$u || (int) $u['blocked'] === 1 || !userInPeriod($u)) { logout(); return null; }
     return $u;
 }
 
@@ -81,14 +99,16 @@ function validatePassword(string $password): void {
 }
 
 /** יצירת משתמש. `$role` נבדק מול הרשימה; השם — אם ריק, החלק שלפני ה-@. */
-function createUser(string $email, string $password, string $name, string $role): array {
+function createUser(string $email, string $password, string $name, string $role, ?string $validFrom = null, ?string $validUntil = null): array {
     $email = validateEmail($email);
     validatePassword($password);
     if (!in_array($role, ['admin', 'carpenter', 'viewer'], true)) throw new AppError('תפקיד לא מוכר');
     $name = trim($name) !== '' ? mb_substr(trim($name), 0, 60) : explode('@', $email)[0];
-    $st = db()->prepare('INSERT INTO users (email, name, role, password_hash, created_at) VALUES (?,?,?,?,?)');
+    $validFrom = validDate($validFrom); $validUntil = validDate($validUntil);
+    if ($validFrom && $validUntil && $validFrom > $validUntil) throw new AppError('תאריך ההתחלה אחרי תאריך הסיום');
+    $st = db()->prepare('INSERT INTO users (email, name, role, password_hash, created_at, valid_from, valid_until) VALUES (?,?,?,?,?,?,?)');
     try {
-        $st->execute([$email, $name, $role, password_hash($password, PASSWORD_DEFAULT), nowIso()]);
+        $st->execute([$email, $name, $role, password_hash($password, PASSWORD_DEFAULT), nowIso(), $validFrom, $validUntil]);
     } catch (PDOException $e) {
         if (str_contains($e->getMessage(), 'UNIQUE')) throw new AppError('כתובת הדוא"ל כבר בשימוש');
         throw $e;
@@ -120,9 +140,12 @@ function login(string $email, string $password): array {
     // אותה הודעה לכתובת לא קיימת ולסיסמה שגויה — כדי שהטופס לא יגלה מי רשום.
     if (!$u || !password_verify($password, $u['password_hash'])) throw new AppError('דוא"ל או סיסמה שגויים', 401);
     if ((int) $u['blocked'] === 1) throw new AppError('החשבון חסום — פנו למנהל', 403);
+    if (!userInPeriod($u)) throw new AppError('החשבון אינו בתוקף — פנו למנהל', 403);
     sessionStart();
     session_regenerate_id(true);
     $_SESSION['uid'] = (int) $u['id'];
+    db()->prepare('UPDATE users SET last_login_at = ? WHERE id = ?')->execute([nowIso(), $u['id']]);
+    $u['last_login_at'] = nowIso();
     return publicUser($u);
 }
 
@@ -142,7 +165,40 @@ function changePassword(array $user, string $current, string $new): void {
 }
 
 function listUsers(): array {
-    return array_map('publicUser', db()->query('SELECT * FROM users ORDER BY created_at')->fetchAll());
+    return array_map('publicUser', db()->query('SELECT u.*, (SELECT COUNT(*) FROM projects p WHERE p.owner_id = u.id) AS projects FROM users u ORDER BY u.created_at')->fetchAll());
+}
+
+/**
+ * מחיקת משתמש בידי המנהל. הפרויקטים וההרכבות שלו עוברים למנהל שמוחק
+ * (לא נמחקים — FK היה מוחק אותם). מנהל אינו מוחק את עצמו.
+ */
+function deleteUser(array $admin, int $id): void {
+    if ((int) $admin['id'] === $id) throw new AppError('מנהל אינו יכול למחוק את עצמו');
+    getUser($id);
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare('UPDATE projects SET owner_id = ? WHERE owner_id = ?')->execute([$admin['id'], $id]);
+        $pdo->prepare('UPDATE assemblies SET owner_id = ? WHERE owner_id = ?')->execute([$admin['id'], $id]);
+        $pdo->prepare('DELETE FROM users WHERE id = ?')->execute([$id]);
+        $pdo->commit();
+    } catch (Throwable $e) { $pdo->rollBack(); throw $e; }
+}
+
+/** מצב המערכת למסך הניהול: מונים וגודל המסד. */
+function adminStats(): array {
+    $pdo = db();
+    $c = fn (string $sql) => (int) $pdo->query($sql)->fetchColumn();
+    return [
+        'users' => ['admin' => $c("SELECT COUNT(*) FROM users WHERE role='admin'"), 'carpenter' => $c("SELECT COUNT(*) FROM users WHERE role='carpenter'"), 'viewer' => $c("SELECT COUNT(*) FROM users WHERE role='viewer'"), 'blocked' => $c('SELECT COUNT(*) FROM users WHERE blocked=1')],
+        'projects' => $c('SELECT COUNT(*) FROM projects'), 'shared' => $c('SELECT COUNT(*) FROM projects WHERE share_token IS NOT NULL'),
+        'clients' => $c('SELECT COUNT(*) FROM clients'), 'assemblies' => $c('SELECT COUNT(*) FROM assemblies'),
+        'types' => $c('SELECT COUNT(*) FROM product_types'), 'materials' => $c('SELECT COUNT(*) FROM materials'),
+        'db_bytes' => is_file(DB_FILE) ? (int) filesize(DB_FILE) : 0,
+        'media_files' => is_dir(MEDIA_DIR) ? count(glob(MEDIA_DIR . '/*.jpg') ?: []) : 0,
+        'last_project_at' => $pdo->query('SELECT MAX(updated_at) FROM projects')->fetchColumn() ?: null,
+        'php' => PHP_VERSION,
+    ];
 }
 
 /**
@@ -169,6 +225,15 @@ function adminUpdateUser(array $admin, int $id, array $patch): array {
         validatePassword($patch['password']);
         $sets[] = 'password_hash = ?'; $vals[] = password_hash($patch['password'], PASSWORD_DEFAULT);
     }
+    // תוקף: תאריך או ריק. מנהל לא קובע לעצמו תקופה שמוציאה אותו עכשיו — אחרת ננעל בחוץ.
+    $period = $u;
+    foreach (['valid_from', 'valid_until'] as $k) {
+        if (!array_key_exists($k, $patch)) continue;
+        $d = validDate(is_string($patch[$k]) ? $patch[$k] : null);
+        $sets[] = "$k = ?"; $vals[] = $d; $period[$k] = $d;
+    }
+    if ($self && !userInPeriod($period)) throw new AppError('מנהל אינו יכול לקבוע לעצמו תקופה שאינה בתוקף עכשיו');
+    if (isset($period['valid_from'], $period['valid_until']) && $period['valid_from'] && $period['valid_until'] && $period['valid_from'] > $period['valid_until']) throw new AppError('תאריך ההתחלה אחרי תאריך הסיום');
     if ($sets) {
         $vals[] = $id;
         db()->prepare('UPDATE users SET ' . implode(', ', $sets) . ' WHERE id = ?')->execute($vals);
