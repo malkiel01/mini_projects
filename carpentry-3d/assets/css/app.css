@@ -865,3 +865,4 @@ input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner
 }
 
 .pedit__clash { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 6px 0; padding: 8px 10px; border-radius: 10px; background: var(--accent-soft); font-size: 0.84rem; }
+.pedit__sub { margin: 10px 0 2px; font-weight: 700; color: var(--accent-deep); font-size: 0.86rem; }

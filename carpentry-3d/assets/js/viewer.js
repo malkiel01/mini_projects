@@ -515,9 +515,11 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
           if (h.kind === 'handle' && !h.horizontal && acc.type.kind === 'handle') g.rotateZ(Math.PI / 2);
           if (h.kind === 'handle' && acc.type.id === 'edge-profile' && owner) {
             // פרופיל קצה: יושב על הקצה העליון של הדלת/המגירה, לא באמצעה
-            const b = owner.part.box;
-            g.position.set(b.x + b.w / 2, b.y + b.h - acc.params.height / 2, h.pos[2]);
+            // בקצה הקרוב לידית: למעלה בדלת נמוכה, למטה בדלת עליונה (שמעל גובה היד)
+            const b = owner.part.box, low = h.pos[1] < b.y + b.h / 2;
+            g.position.set(b.x + b.w / 2, low ? b.y + acc.params.height / 2 : b.y + b.h - acc.params.height / 2, h.pos[2]);
             g.rotation.set(r[0], r[1], r[2]);
+            if (low) g.rotateZ(Math.PI);
           }
           return g;
         };
