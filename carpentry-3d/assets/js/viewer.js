@@ -514,12 +514,23 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
           g.rotation.set(r[0], r[1], r[2]);
           if (h.kind === 'handle' && !h.horizontal && acc.type.kind === 'handle') g.rotateZ(Math.PI / 2);
           if (h.kind === 'handle' && acc.type.id === 'edge-profile' && owner) {
-            // פרופיל קצה: יושב על הקצה העליון של הדלת/המגירה, לא באמצעה
-            // בקצה הקרוב לידית: למעלה בדלת נמוכה, למטה בדלת עליונה (שמעל גובה היד)
-            const b = owner.part.box, low = h.pos[1] < b.y + b.h / 2;
-            g.position.set(b.x + b.w / 2, low ? b.y + acc.params.height / 2 : b.y + b.h - acc.params.height / 2, h.pos[2]);
+            // פרופיל קצה: יושב על קצה הדלת/המגירה, לא באמצעה. בדלת (ידית אנכית) — לאורך הקצה
+            // הפתוח, בצד, בגובה הידית; במגירה / ידית אופקית — על הקצה העליון או התחתון,
+            // הקרוב לידית. הסיבוב במערכת המקומית: +x לרוחב הדלת, +y למעלה.
+            const b = owner.part.box, hp = acc.params.height / 2;
             g.rotation.set(r[0], r[1], r[2]);
-            if (low) g.rotateZ(Math.PI);
+            if (h.horizontal) {
+              const low = h.pos[1] < b.y + b.h / 2;
+              g.position.set(b.x + b.w / 2, low ? b.y + hp : b.y + b.h - hp, h.pos[2]);
+              if (low) g.rotateZ(Math.PI);
+            } else {
+              const ax = localXOf(normal), cx = b.x + b.w / 2, cz = b.z + b.d / 2;
+              const side = (h.pos[0] - cx) * ax[0] + (h.pos[2] - cz) * ax[2] >= 0 ? 1 : -1;
+              const half = Math.abs(ax[0]) * b.w / 2 + Math.abs(ax[2]) * b.d / 2;
+              const off = side * (half - hp);
+              g.position.set(ax[0] ? cx + ax[0] * off : h.pos[0], h.pos[1], ax[2] ? cz + ax[2] * off : h.pos[2]);
+              g.rotateZ(side > 0 ? -Math.PI / 2 : Math.PI / 2);
+            }
           }
           return g;
         };
