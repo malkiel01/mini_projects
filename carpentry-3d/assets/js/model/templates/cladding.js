@@ -13,7 +13,7 @@
 // דוגמאות אלכסוניות (אדרה, שברון) אינן כאן.
 
 import { part } from '../blocks.js';
-import { boardT } from './common.js';
+import { boardT, applyFinish, FINISHES_FLUSH } from './common.js';
 import { resolveShares, sectionLayout } from '../layout.js';
 
 export const PATTERNS = [
@@ -70,6 +70,7 @@ export default {
     { key: 'fromFloor', label: 'התחלה מהרצפה', type: 'mm', min: 0, max: 1500, default: 0, group: 'מידות', hint: '0 = מהרצפה' },
 
     { key: 'style', label: 'דוגמה (ברירת מחדל לכל השדות)', type: 'enum', default: 'slats', group: 'עיצוב', options: PATTERNS },
+    { key: 'panelFinish', label: 'גימור הלוחות', type: 'enum', default: 'flat', group: 'עיצוב', options: FINISHES_FLUSH, showIf: { style: ['flat'] }, hint: 'בדוגמת "לוחות" — חירוץ CNC על כל לוח (גם בשדה שבחרת לו לוחות)' },
     { key: 'fields', label: 'שדות בכל קיר', type: 'int', min: 1, max: 6, default: 1, group: 'עיצוב', hint: 'חלוקה לאורך הקיר; לכל שדה רוחב ודוגמה משלו — למטה' },
     { key: 'columnsLayout', label: 'עריכת השדות', type: 'json', default: null, group: 'עיצוב', editor: 'columns', hint: 'רוחב ודוגמה לכל שדה בכל קיר' },
     { key: 'slatW', label: 'רוחב סטריפ / לוח', type: 'mm', min: 20, max: 1200, default: 40, group: 'עיצוב' },
@@ -155,7 +156,12 @@ export default {
         for (let i = 0; i < n; i++) slat(`${pre}-slat-${i + 1}`, 'סטריפ אופקי', u0, yA + start + i * (sw + g), yA + start + i * (sw + g) + sw, fw, st, `hslat-${Math.round(sw)}x${Math.round(fw)}`, true);
       } else if (pattern === 'flat') {
         const n = Math.ceil(fw / 1200), pw = fw / n;
-        for (let i = 0; i < n; i++) parts.push(place(w, `${pre}-panel-${i + 1}`, 'לוח חיפוי', u0 + i * pw, yA, yB, pw, bt, st, { material: v.slatMaterial, qtyKey: `panel-${Math.round(pw)}x${Math.round(fh)}`, edges: { top: true, bottom: true }, note }));
+        for (let i = 0; i < n; i++) {
+          const pnl = place(w, `${pre}-panel-${i + 1}`, 'לוח חיפוי', u0 + i * pw, yA, yB, pw, bt, st, { material: v.slatMaterial, qtyKey: `panel-${Math.round(pw)}x${Math.round(fh)}`, edges: { top: true, bottom: true }, note });
+          parts.push(pnl);
+          // גימור (חירוץ CNC וכו') על הפאה שפונה אל החדר — לפי כיוון הקיר
+          if (v.panelFinish && v.panelFinish !== 'flat') parts.push(...applyFinish(pnl, v.panelFinish, { material: v.slatMaterial, normal: ROOM_FACE[w.dir] }));
+        }
       } else if (pattern === 'squares' || pattern === 'relief' || pattern === 'checker') {
         const [su, nx] = centered(fw, S, g), [sy, ny] = centered(fh, S, g);
         for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
@@ -250,3 +256,6 @@ export default {
 
 /** הגובה הנמוך ביותר לשדה: פנל תחתון, קרניז ו-100 של דוגמה. */
 function minFieldH(v) { return (v.baseH ?? 0) + (v.crownH ?? 0) + 100; }
+
+/** הפאה של לוח החיפוי שפונה אל החדר, לפי כיוון הקיר (ראו place). */
+const ROOM_FACE = { '+x': '+z', '-x': '-z', '+z': '-x', '-z': '+x' };

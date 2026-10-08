@@ -6,7 +6,8 @@
 // שנייה אחרי כל שינוי.
 
 import { TEMPLATES, template, defaults, build, cutList, hardwareList, allParams, clamp } from './model/index.js';
-import { cutSize } from './model/blocks.js';
+import { cutSize, DOOR_OPEN_OPTIONS } from './model/blocks.js';
+import { FINISHES_NO_GLASS, partNormal } from './model/templates/common.js';
 import { estimate, PRICING_DEFAULTS } from './model/pricing.js';
 import { nest, sheetCount } from './model/sheets.js';
 import { drawAll, drawSheet } from './drawings.js';
@@ -568,10 +569,46 @@ function showPart(p) {
       <dt>מיקום</dt><dd>x ${Math.round(p.box.x)} · y ${Math.round(p.box.y)} · z ${Math.round(p.box.z)}</dd>
       <dt>משקל</dt><dd>${partWeight(p)} ק"ג</dd>
       ${p.note ? `<dt>הערה</dt><dd>${esc(p.note)}</dd>` : ''}
+      ${partControls(p)}
       ${holes.length ? `<dt>קידוחים</dt><dd>${holes.length} — ${esc([...new Set(holes.map((h) => h.purpose))].join(', '))}; הפירוט בלשונית "קידוחים" בפלט</dd>` : ''}
     </dl>
     ${partButtons(p)}`;
 }
+
+/**
+ * בחירות לחלק מסוים, בפרויקט פתוח: גימור ללוח אנכי (דופן, מחיצה, חזית, לוח
+ * חיפוי — חירוץ CNC, סטריפים, חריצים), וכיוון פתיחה לדלת. נשמר בערכי הפרויקט
+ * (partFinishes / doorOpen) לפי ה-id, עם "כמו בתבנית" לביטול.
+ */
+function partControls(p) {
+  if (!state.project || state.user.role === 'viewer' || !model) return '';
+  const out = [];
+  if (partNormal(p, model.bounds)) {
+    const cur = state.values.partFinishes?.[p.id];
+    const opts = FINISHES_NO_GLASS();
+    out.push(`<dt>גימור הלוח</dt><dd><select data-part-finish="${esc(p.id)}"><option value="">כמו בתבנית${cur ? '' : ` (${esc(currentFinishName(p, opts))})`}</option>${opts.map((f) => `<option value="${f.id}" ${cur === f.id ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select></dd>`);
+  }
+  if (p.motion?.kind === 'hinge') {
+    const id = p.motion.group, cur = state.values.doorOpen?.[id];
+    out.push(`<dt>כיוון פתיחה</dt><dd><select data-door-open="${esc(id)}"><option value="">אוטומטי</option>${DOOR_OPEN_OPTIONS.map((o) => `<option value="${o.id}" ${cur === o.id ? 'selected' : ''}>${o.name}</option>`).join('')}</select></dd>`);
+  }
+  return out.join('');
+}
+const currentFinishName = (p, opts) => (p.mill ? opts.find((f) => f.id === p.mill.pattern)?.name : p.surface === 'grooved' ? 'חריצים (V)' : null) || 'חלק';
+/** שינוי בחירה לחלק: שומר בערכי הפרויקט, בונה מחדש, ומשאיר את החלק מסומן. */
+function setPartChoice(kind, id, value) {
+  const map = { ...(state.values[kind] || {}) };
+  if (value) map[id] = value; else delete map[id];
+  state.values[kind] = Object.keys(map).length ? map : undefined;
+  const keep = shownPart?.id;
+  rebuild(); markDirty();
+  if (keep) viewer.selectById(keep);
+}
+$('#part').addEventListener('change', (e) => {
+  const t = e.target;
+  if (t.dataset.partFinish) setPartChoice('partFinishes', t.dataset.partFinish, t.value);
+  else if (t.dataset.doorOpen) setPartChoice('doorOpen', t.dataset.doorOpen, t.value);
+});
 
 /** כפתורי הפעולה של חלק: תנועה (אם יש לו), ושקיפות. */
 function partButtons(p) {

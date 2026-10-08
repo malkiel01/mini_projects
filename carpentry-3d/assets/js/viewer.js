@@ -275,6 +275,13 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
     const cx = p.box.x + p.box.w / 2, cy = p.box.y + p.box.h / 2, cz = p.box.z + p.box.d / 2;
     if (m.kind === 'slide') {
       node.position.set(cx + m.vec[0] * a, cy + m.vec[1] * a, cz + m.vec[2] * a);
+    } else if (m.kind === 'hinge' && m.axis) {
+      // ציר אופקי (קלפה / נפתחת מטה): סיבוב סביב הקו שעובר ב-pivot בכיוון axis
+      const th = (m.angle * Math.PI / 180) * a;
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(m.axis[0], m.axis[1], m.axis[2]).normalize(), th);
+      const pv = new THREE.Vector3(m.pivot[0], m.pivot[1], m.pivot[2]);
+      node.position.set(cx, cy, cz).sub(pv).applyQuaternion(q).add(pv);
+      node.quaternion.copy(q);
     } else if (m.kind === 'hinge') {
       const th = (m.angle * Math.PI / 180) * a;
       const rx = cx - m.pivot[0], rz = cz - m.pivot[2];
@@ -344,6 +351,7 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
     const toBox = (u0, u1, v0, v1, layer) => {
       const y0 = -h / 2 + v0, y1 = -h / 2 + v1;
       if (m.normal === '+z') return { x0: -w / 2 + u0, x1: -w / 2 + u1, y0, y1, z0: layer ? d / 2 - dep : -d / 2, z1: layer ? d / 2 : d / 2 - dep };
+      if (m.normal === '-z') return { x0: -w / 2 + u0, x1: -w / 2 + u1, y0, y1, z0: layer ? -d / 2 : -d / 2 + dep, z1: layer ? -d / 2 + dep : d / 2 };
       const z0 = -d / 2 + u0, z1 = -d / 2 + u1;
       if (m.normal === '-x') return { x0: layer ? -w / 2 : -w / 2 + dep, x1: layer ? -w / 2 + dep : w / 2, y0, y1, z0, z1 };
       return { x0: layer ? w / 2 - dep : -w / 2, x1: layer ? w / 2 : w / 2 - dep, y0, y1, z0, z1 };
@@ -356,9 +364,10 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
     // קווים — רק איפה שיש חומר (millEdges): שפת הפאה ומתארי החריצים; ועוד הפאה האחורית ופינות העובי
     const pts = [];
     const at = (u, v, l) => {   // l: 0 פני הפאה, 1 תחתית החריץ, 2 הפאה האחורית
-      const depth = l === 2 ? (m.normal === '+z' ? d : w) : l * dep;
+      const depth = l === 2 ? (m.normal === '+z' || m.normal === '-z' ? d : w) : l * dep;
       const y = -h / 2 + v;
       if (m.normal === '+z') return [-w / 2 + u, y, d / 2 - depth];
+      if (m.normal === '-z') return [-w / 2 + u, y, -d / 2 + depth];
       if (m.normal === '-x') return [-w / 2 + depth, y, -d / 2 + u];
       return [w / 2 - depth, y, -d / 2 + u];
     };
@@ -422,7 +431,7 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
       if (!h.pos) continue;
       let mesh;
       const owner = h.for && partNodes.get(h.for);
-      const acc = ['hinge', 'handle', 'wheel'].includes(h.kind) ? buildAccessory(material(h.material), { side: hingeSideOf(h, owner), reach: hingeReach(h, owner) }) : null;
+      const acc = ['hinge', 'handle', 'wheel'].includes(h.kind) && !h.edge ? buildAccessory(material(h.material), { side: hingeSideOf(h, owner), reach: hingeReach(h, owner) }) : null;
       if (acc) {
         // אביזר אמיתי: קבוצת גופים במערכת מקומית, מסובבת אל הפאה שהוא יושב עליה.
         // ידית אנכית על דלת: המוט מסתובב 90° סביב הנורמל. מה שנע עם הדלת נכנס לצומת שלה.
@@ -618,5 +627,7 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
 
   /** הזזת יעד המצלמה (כשההרכבה מנורמלת מחדש אחרי הזזה — כדי שהתמונה לא תקפוץ). */
   function nudgeTarget(dx, dy, dz) { ctl.target.x += dx; ctl.target.y += dy; ctl.target.z += dz; applyCam(); }
-  return { setModel, frame, view, fit, select, nudgeTarget, lookFrom, home, toggleOpen, isOpen, toggleGhost, isGhost, openAll, anyOpen, ghostFronts, anyGhost, debug: () => ({ group, camera, open: openGroups.size, motionParts: [...partNodes.values()].filter((e) => e.part.motion).length, amounts: [...amounts.entries()].slice(0, 4), theta: ctl.theta, phi: ctl.phi, radius: ctl.radius, target: ctl.target.toArray(), w: canvas.clientWidth, h: canvas.clientHeight, aspect: camera.aspect, fov: camera.fov }) };
+  /** בחירת חלק לפי id (אחרי בנייה מחדש — כדי שהכרטיס שלו יישאר פתוח). */
+  function selectById(id) { const e = partNodes.get(id); if (e) select(e.mesh); }
+  return { setModel, frame, view, fit, select, selectById, nudgeTarget, lookFrom, home, toggleOpen, isOpen, toggleGhost, isGhost, openAll, anyOpen, ghostFronts, anyGhost, debug: () => ({ group, camera, open: openGroups.size, motionParts: [...partNodes.values()].filter((e) => e.part.motion).length, amounts: [...amounts.entries()].slice(0, 4), theta: ctl.theta, phi: ctl.phi, radius: ctl.radius, target: ctl.target.toArray(), w: canvas.clientWidth, h: canvas.clientHeight, aspect: camera.aspect, fov: camera.fov }) };
 }

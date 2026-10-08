@@ -210,6 +210,12 @@ export default {
     else parts.push(...crown({ w: W, y: topY, h: v.crownH, t: sideT, d: D, material: v.bodyMaterial }).parts);
 
     // ---- דלתות: לכל עמודה רשימת "קומות" — [y0, y1, סוג] ----
+    // הדופן/המחיצה בכל צד של עמודה — לקידוחי הצירים, גם אם הנגר הופך את כיוון הפתיחה
+    const mountOf = (i, side) => {
+      const mid = side === 'left' ? (i === 0 ? 'side-L' : `partition-${i}`) : (i === v.columns - 1 ? 'side-R' : `partition-${i + 1}`);
+      const mp = parts.find((q) => q.id === mid);
+      return mp ? { id: mid, y: mp.box.y } : null;
+    };
     const doorT = boardThickness(v.doorMaterial);
     let anyDoor = false;
     cols.cols.forEach((col, i) => {
@@ -240,6 +246,7 @@ export default {
             material: v.doorMaterial, glass: v.glassType, handle: v.handle === 'none' ? null : v.handle,
             hinge: type === 'glass' && v.hinge === 'hw:hinge-110' ? 'hw:hinge-glass' : v.hinge, hingeSide,
             mountId: mount ? mountId : null, mountBottom: mount ? mount.box.y : null,
+            mounts: leaves === 2 ? (k === 0 ? { left: mountOf(i, 'left') } : { right: mountOf(i, 'right') }) : { left: mountOf(i, 'left'), right: mountOf(i, 'right') },
           });
           parts.push(...d.parts);
           hardware.push(...d.hardware);

@@ -148,6 +148,17 @@ export const FINISHES_FLUSH = finishList({ glass: false, fluted: false });
  * והתצוגה מציירת אותם; חלק/זכוכית — כלום. `normal` — הפאה הפונה החוצה:
  * '+z' (חזית), '-x' (דופן שמאל), '+x' (דופן ימין).
  */
+/**
+ * הפאה החיצונית של לוח אנכי: חזית/גב (ציר z) — לפי מצד איזה חצי של העומק הוא
+ * יושב; דופן (ציר x) — לפי צד הרוחב. לוח אופקי (מדף, גג) — null (אין גימור).
+ */
+export function partNormal(p, bounds) {
+  const b = p.box;
+  if (p.axis === 'z') return b.z + b.d / 2 < (bounds?.d ?? 0) * 0.3 ? '-z' : '+z';
+  if (p.axis === 'x') return b.x + b.w / 2 < (bounds?.w ?? 0) / 2 ? '-x' : '+x';
+  return null;
+}
+
 export function applyFinish(face, finish, { material, normal = '+z', idPrefix }) {
   const out = [];
   const spec = millSpec(finish);
@@ -162,7 +173,7 @@ export function applyFinish(face, finish, { material, normal = '+z', idPrefix })
   const [sw, gap, st] = finish === 'fluted-wide' ? [40, 20, 10] : [16, 8, 8];
   const b = face.box;
   // הסטריפים אנכיים: רצים לאורך הפאה (x לחזית, z לדופן) בגובה הלוח.
-  const along = normal === '+z' ? 'x' : 'z';
+  const along = normal === '+z' || normal === '-z' ? 'x' : 'z';
   const len = along === 'x' ? b.w : b.d;
   const n = Math.max(1, Math.floor((len + gap) / (sw + gap)));
   const start = (len - (n * (sw + gap) - gap)) / 2;
@@ -170,9 +181,10 @@ export function applyFinish(face, finish, { material, normal = '+z', idPrefix })
     const off = start + s * (sw + gap);
     let box;
     if (normal === '+z') box = { x: b.x + off, y: b.y, z: b.z + b.d, w: sw, h: b.h, d: st };
+    else if (normal === '-z') box = { x: b.x + off, y: b.y, z: b.z - st, w: sw, h: b.h, d: st };
     else if (normal === '-x') box = { x: b.x - st, y: b.y, z: b.z + off, w: st, h: b.h, d: sw };
     else box = { x: b.x + b.w, y: b.y, z: b.z + off, w: st, h: b.h, d: sw };
-    const strip = part(`${idPrefix || face.id}-strip-${s + 1}`, 'סטריפ', box, { axis: normal === '+z' ? 'z' : 'x', grain: 'y', material: material || face.material, qtyKey: `strip-${sw}x${Math.round(b.h)}`, note: face.note });
+    const strip = part(`${idPrefix || face.id}-strip-${s + 1}`, 'סטריפ', box, { axis: normal === '+z' || normal === '-z' ? 'z' : 'x', grain: 'y', material: material || face.material, qtyKey: `strip-${sw}x${Math.round(b.h)}`, note: face.note });
     if (face.motion) strip.motion = face.motion;
     out.push(strip);
   }

@@ -61,7 +61,7 @@ export function placeModel(model, { pos = [0, 0, 0], rot = 0, prefix = '' } = {}
     if (!motions.has(m)) {
       if (m.kind === 'hinge') {
         const [x, z] = rotPoint(m.pivot[0], m.pivot[2], r, w, d);
-        motions.set(m, { ...m, group: prefix + m.group, pivot: [x + px, m.pivot[1] + py, z + pz] });
+        motions.set(m, { ...m, group: prefix + m.group, pivot: [x + px, m.pivot[1] + py, z + pz], ...(m.axis ? { axis: rotVec(m.axis, r) } : {}) });
       } else motions.set(m, { ...m, group: prefix + m.group, vec: rotVec(m.vec, r) });
     }
     return motions.get(m);

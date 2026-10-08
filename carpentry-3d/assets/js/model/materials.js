@@ -78,6 +78,9 @@ export const SEED = [
   { id: 'hw:slide-tandem',         kind: 'hardware', name: 'מסילות טנדם בטריקה שקטה (זוג), 40 ק"ג', price: 120, priceUnit: 'unit', load: 40 },
   { id: 'hw:slide-heavy',          kind: 'hardware', name: 'מסילות כבדות (זוג), 70 ק"ג', price: 160, priceUnit: 'unit', load: 70 },
   { id: 'hw:rod-chrome',           kind: 'hardware', name: 'מוט תלייה כרום', price: 40, priceUnit: 'unit' },
+  // דלת שנפתחת למעלה (קלפה) או למטה
+  { id: 'hw:flap-lift',            kind: 'hardware', name: 'מנגנון הרמה לקלפה (זוג)', price: 180, priceUnit: 'unit' },
+  { id: 'hw:flap-stay',            kind: 'hardware', name: 'זרוע / מעצור לדלת נפתחת מטה', price: 35, priceUnit: 'unit' },
   // מערכות הזזה: `system` מפנה ל-SLIDING_SYSTEMS ב-physics.js (גובה הכנף, גררות, עומס)
   { id: 'hw:track-sliding',        kind: 'hardware', name: 'הזזה תלויה — מסילה עליונה כפולה (40 ק"ג לכנף)', price: 250, priceUnit: 'unit', system: 'top-hung' },
   { id: 'hw:track-bottom',         kind: 'hardware', name: 'הזזה על גלגלים — פס תחתון ומוליך (60 ק"ג לכנף)', price: 320, priceUnit: 'unit', system: 'bottom-rolling' },

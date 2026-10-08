@@ -548,6 +548,46 @@ console.log('אביזרים: ידיות, כפתורים, צירים, גלגלי�
   check(ACC_FINISHES.length >= 6, 'גימורים');
 }
 
+// ---- כיוון פתיחה לדלת, וגימור לכל לוח ----
+{
+  console.log('\nכיוון פתיחה וגימור ללוח');
+  const base = build('bookcase', { columns: 3, doorType: 'wood' });
+  const auto = base.hardware.filter((h) => h.kind === 'hinge' && h.for === 'door-1');
+  check(auto.every((h) => h.mount === 'side-L'), 'אוטומטי: דלת 1 על הדופן השמאלית');
+  const flip = build('bookcase', { columns: 3, doorType: 'wood', doorOpen: { 'door-1': 'right' } });
+  const fh = flip.hardware.filter((h) => h.kind === 'hinge' && h.for === 'door-1');
+  const d1 = flip.parts.find((p) => p.id === 'door-1');
+  check(fh.every((h) => h.mount === 'partition-1' && Math.abs(h.pos[0] - (d1.box.x + d1.box.w - 22.5)) < 0.01) && d1.motion.angle > 0, 'ציר מימין: הצירים בצד ימין, נקדחים במחיצה 1, הסיבוב הפוך');
+  const kx = flip.hardware.find((h) => h.id === 'door-1-handle');
+  check(!kx || kx.pos[0] < d1.box.x + d1.box.w / 2, 'הידית עוברת לצד הנגדי לציר');
+  const up = build('bookcase', { columns: 3, doorType: 'wood', handle: 'hw:handle-bar-128', doorOpen: { 'door-2': 'top' } });
+  const d2 = up.parts.find((p) => p.id === 'door-2');
+  const uh = up.hardware.filter((h) => h.kind === 'hinge' && h.for === 'door-2');
+  check(d2.motion.axis && d2.motion.axis[0] === 1 && d2.motion.angle < 0 && Math.abs(d2.motion.pivot[1] - (d2.box.y + d2.box.h)) < 0.01, 'קלפה: סיבוב סביב הקצה העליון (ציר X), כלפי מעלה');
+  check(uh.length >= 2 && uh.every((h) => h.edge === 'top' && Math.abs(h.pos[1] - (d2.box.y + d2.box.h - 22.5)) < 0.01), `קלפה: ${uh.length} צירים לאורך הקצה העליון`);
+  check(up.hardware.some((h) => h.material === 'hw:flap-lift' && h.for === 'door-2') && up.hardware.find((h) => h.id === 'door-2-handle').horizontal && up.hardware.find((h) => h.id === 'door-2-handle').pos[1] < d2.box.y + 60, 'קלפה: מנגנון הרמה, וידית אופקית בקצה התחתון');
+  check(uh[0].drill.length === uh.length * 3 && uh[0].drill.every((d) => d.part === 'door-2'), 'קלפה: קידוחי כוס וברגים בקצה העליון');
+  const down = build('bookcase', { columns: 3, doorType: 'wood', doorOpen: { 'door-3': 'bottom' } });
+  const d3 = down.parts.find((p) => p.id === 'door-3');
+  check(d3.motion.angle > 0 && Math.abs(d3.motion.pivot[1] - d3.box.y) < 0.01 && down.hardware.some((h) => h.material === 'hw:flap-stay'), 'נפתחת מטה: סביב הקצה התחתון, עם זרועות');
+  const asm = placeModel(up, { pos: [0, 0, 0], rot: 90, prefix: 'e1:' });
+  check(JSON.stringify(asm.parts.find((p) => p.id === 'e1:door-2').motion.axis) === JSON.stringify([0, 0, -1]), 'בהרכבה מסובבת 90° — ציר הקלפה מסתובב איתה');
+  // גימור לכל לוח
+  const pf = build('bookcase', { columns: 3, partFinishes: { 'side-R': 'cnc:milled-fine', 'partition-1': 'cnc:milled-frame' } });
+  check(pf.parts.find((p) => p.id === 'side-R').mill?.normal === '+x' && pf.parts.find((p) => p.id === 'partition-1').mill?.normal === '-x', 'דופן ימין ומחיצה — חירוץ בפאה החיצונית');
+  const dr = build('dresser', { partFinishes: { 'side-L': 'cnc:milled-wide' } });
+  check(dr.parts.find((p) => p.id === 'side-L').mill?.normal === '-x' && /חירוץ CNC/.test(dr.parts.find((p) => p.id === 'side-L').note), 'שידה: דופן שמאל מחורצת');
+  const fl = build('bookcase', { partFinishes: { 'side-L': 'fluted-fine' } });
+  check(fl.parts.filter((p) => p.id.startsWith('side-L-strip')).length > 10 && fl.parts.filter((p) => p.id.startsWith('side-L-strip')).every((p) => p.box.x + p.box.w <= 0.01), 'סטריפים מודבקים על דופן שמאל — מחוץ לדופן');
+  const clear = build('bookcase', { doorType: 'wood', doorFinish: 'cnc:milled-wide', partFinishes: { 'door-1': 'flat' } });
+  check(!clear.parts.find((p) => p.id === 'door-1').mill && clear.parts.find((p) => p.id === 'door-2').mill, '"חלק" מבטל את הגימור של התבנית רק בלוח הזה');
+  check(!build('bookcase', { partFinishes: { 'top': 'cnc:milled-fine' } }).parts.find((p) => p.id === 'top').mill, 'לוח אופקי (גג) — בלי גימור');
+  const cl = build('cladding', { style: 'flat', panelFinish: 'cnc:milled-frame-double', walls: 2, turn2: 'left' });
+  const pnls = cl.parts.filter((p) => p.name === 'לוח חיפוי');
+  check(pnls.length && pnls.every((p) => p.mill) && new Set(pnls.map((p) => p.mill.normal)).size === 2, 'חיפוי: כל הלוחות מחורצים, בפאה שפונה לחדר בכל קיר');
+  check(within(cl.parts, cl.bounds), 'חיפוי מחורץ בגבולות');
+}
+
 // ---- שיש ואבן ----
 {
   console.log('\nשיש ואבן');
