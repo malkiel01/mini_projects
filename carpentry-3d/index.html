@@ -115,6 +115,7 @@
       </div>
       <div class="views views--toggles">
         <button type="button" id="btn-open-all" title="פתיחה וסגירה של כל הדלתות והמגירות" aria-label="פתיחת הכול">🚪<span class="lbl"> פתיחת הכול</span></button>
+        <button type="button" id="btn-focus" title="מיקוד — בחירת רכיב (דלת, מדף, ציר, ידית…) והתמקדות בו" aria-label="מיקוד" aria-expanded="false" aria-controls="focus">🎯<span class="lbl"> מיקוד</span></button>
         <button type="button" id="btn-ghost-fronts" title="חזיתות שקופות — לראות מה יש מאחור" aria-label="חזיתות שקופות">👁<span class="lbl"> חזיתות</span></button>
         <button type="button" id="btn-move-items" title="גרירת אלמנט על הרצפה; שתי אצבעות על אלמנט (או גרירה ימנית / Shift) מסובבות אותו; גרירה על הרקע מסובבת את התצוגה" hidden aria-label="הזזת אלמנטים">✋<span class="lbl"> הזזת אלמנטים</span></button>
         <button type="button" id="btn-move-height" title="גרירת אלמנט למעלה ולמטה — נצמד לרצפה ולגג או לתחתית של אלמנט אחר" hidden aria-label="גובה">↕<span class="lbl"> גובה</span></button>
@@ -127,6 +128,11 @@
       <!-- תמרור אזהרה: מספר האזהרות; הקשה פותחת את הרשימה, הקשה נוספת סוגרת -->
       <button type="button" id="warn-badge" class="warn-badge" aria-expanded="false" aria-controls="warnings" hidden>⚠ <b id="warn-count"></b></button>
       <div id="warnings" class="warnings" role="region" aria-label="אזהרות" hidden></div>
+      <!-- מיקוד: רשימת כל הרכיבים (דלתות, מדפים, צירים, ידיות…) עם חיפוש; בחירה מעבירה את המצלמה אליו -->
+      <div id="focus" class="focus" role="dialog" aria-label="מיקוד ברכיב" hidden>
+        <div class="focus__head"><input type="search" id="focus-q" placeholder="חיפוש: דלת 3, ציר 2, מדף…" autocomplete="off"><button type="button" class="focus__close" aria-label="סגירה">✕</button></div>
+        <div class="focus__list" id="focus-list"></div>
+      </div>
       <button type="button" id="btn-fullscreen" class="stage-fs" title="מסך מלא">⛶</button>
     </div>
     <div class="part" id="part"></div>

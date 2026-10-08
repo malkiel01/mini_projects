@@ -887,3 +887,14 @@ input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner
   .views--toggles button { font-size: 1.1rem; padding: 6px 12px; line-height: 1.2; }
   #btn-output { margin-inline-start: auto; padding: 7px 16px; font-size: 1.1rem; }
 }
+
+/* ---- מיקוד ברכיב ---- */
+.focus { position: absolute; top: 10px; inset-inline: 10px; max-width: 420px; margin-inline-start: auto; max-height: 70%; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); z-index: 6; overflow: hidden; }
+.focus[hidden] { display: none; }
+.focus__head { display: flex; gap: 6px; padding: 8px; border-bottom: 1px solid var(--line); }
+.focus__head input { flex: 1; min-width: 0; font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.focus__close { border: 0; background: none; font-size: 1.1rem; cursor: pointer; color: var(--muted); padding: 0 8px; }
+.focus__list { overflow: auto; padding: 4px 8px 10px; overscroll-behavior: contain; }
+.focus__cat { font-size: 0.78rem; color: var(--muted); font-weight: 700; margin: 10px 4px 4px; }
+.focus__item { display: block; width: 100%; text-align: start; border: 0; background: none; font: inherit; font-size: 0.92rem; padding: 8px 10px; border-radius: 8px; cursor: pointer; color: var(--ink, inherit); }
+.focus__item:hover, .focus__item:focus-visible { background: var(--accent-soft); color: var(--accent-deep); }
