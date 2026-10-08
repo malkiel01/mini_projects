@@ -98,7 +98,7 @@ function scoutRobotsCheck(string $robots, string $path): bool {
     return $best !== 'disallow';
 }
 
-const SCOUT_MIN_GAP = 3;   // שניות בין שתי הבאות מאותו דומיין, בצד השרת
+const SCOUT_MIN_GAP = 10;  // שניות בין שתי הבאות מאותו דומיין, בצד השרת. 3 היה מהר מדי: carine חסם אחרי ~6 הבאות בדקה
 
 /** מרווח מינימלי בין הבאות לאותו מארח — ישן (sleep) עד שהמרווח מלא. */
 function scoutThrottle(string $url): void {
@@ -386,7 +386,10 @@ function scoutImportOne(int $id, array $developer, bool $rewrite): array {
         return ['recipe_id' => $rid, 'title' => $draft['title'], 'rewritten' => $rewritten, 'similarity' => $sim, 'ai_error' => $aiError,
                 'warnings' => $draft['warnings']];
     } catch (AppError $e) {
-        db()->prepare("UPDATE scout_items SET status='error', error=?, decided_at=? WHERE id=?")->execute([$e->getMessage(), nowIso(), $id]);
+        // חסימה של האתר אינה תקלה בפריט — הוא נשאר "לייבוא", לנסות אחרי ההמתנה
+        $blocked = $e->status === 429;
+        db()->prepare("UPDATE scout_items SET status=?, error=?, decided_at=? WHERE id=?")
+            ->execute([$blocked ? 'wanted' : 'error', $e->getMessage(), nowIso(), $id]);
         throw $e;
     }
 }

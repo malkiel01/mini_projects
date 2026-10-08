@@ -16,7 +16,7 @@ const api = async (action, payload) => {
   let data;
   try { data = await res.json(); }
   catch { throw new Error('השרת החזיר תשובה שאינה תקינה'); }
-  if (!data.success) throw new Error(data.error || 'שגיאה לא מזוהה');
+  if (!data.success) { const e = new Error(data.error || 'שגיאה לא מזוהה'); e.status = res.status; throw e; }
   return data;
 };
 
@@ -2148,7 +2148,7 @@ async function renderScout() {
       <div class="scout__run" id="scout-run">
         <h3>ייבוא המסומנים</h3>
         <div class="row">
-          <label>מרווח בין פריטים (שניות) <input type="number" name="gap" min="3" max="60" value="8" inputmode="numeric"></label>
+          <label>מרווח בין פריטים (שניות) <input type="number" name="gap" min="10" max="120" value="25" inputmode="numeric"></label>
           <label class="check check--big"><input type="checkbox" name="rewrite" id="scout-rewrite"> לנסח מחדש בבינה</label>
         </div>
         <div class="actions scout__go">
@@ -2293,7 +2293,7 @@ async function renderScout() {
     if (!wanted.length) { note('אין פריטים מסומנים לייבוא. להדליק את המתג ליד מה שרוצים.', 'warn'); return; }
     running = true; stop = false;
     $('#scout-go').disabled = true; $('#scout-stop').hidden = false;
-    const gap = Math.max(3, +$('input[name="gap"]').value || 8) * 1000;
+    const gap = Math.max(10, +$('input[name="gap"]').value || 25) * 1000;
     const rewrite = $('#scout-rewrite').checked;
     const prog = $('#scout-progress'); prog.innerHTML = '';
     for (let i = 0; i < wanted.length; i++) {
@@ -2303,7 +2303,14 @@ async function renderScout() {
       try {
         const r = await api('scout-import', { id: it.id, rewrite });
         li.innerHTML = `<a href="#/r/${r.recipe_id}">${esc(r.title || it.title)}</a> ✅${r.rewritten ? ' נוסח מחדש' : rewrite ? ' <span class="muted">(לא נוסח' + (r.ai_error ? ': ' + esc(r.ai_error) : r.similarity != null ? ', קרוב מדי' : '') + ')</span>' : ''}${r.warnings?.length ? ` <span class="muted small">${esc(r.warnings.join(' · '))}</span>` : ''}`;
-      } catch (err) { li.innerHTML = `${esc(it.title || it.url)} ❌ ${esc(err.message)}`; }
+      } catch (err) {
+        li.innerHTML = `${esc(it.title || it.url)} ❌ ${esc(err.message)}`;
+        // האתר חסם (429): כל המשך ייתקל באותו קיר ורק יחמיר. עוצרים; הפריטים נשארו "לייבוא".
+        if (err.status === 429) {
+          prog.insertAdjacentHTML('beforeend', `<li class="note note--warn">⏸ נעצר: האתר חסם זמנית. ${wanted.length - i - 1} פריטים נשארו מסומנים "לייבוא" — אפשר להמשיך אחרי ההמתנה, עם מרווח גדול יותר.</li>`);
+          break;
+        }
+      }
       if (i < wanted.length - 1 && !stop) {
         const jitter = gap + Math.random() * gap * 0.5;   // לא קצב מכונה קבוע
         li.insertAdjacentHTML('beforeend', ` <span class="muted small">ממתין ${Math.round(jitter / 1000)} שנ׳</span>`);

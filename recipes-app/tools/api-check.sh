@@ -281,7 +281,7 @@ check 'סינון מהרשת'                 "$(call search '{"from_web":true}'
 check 'הייבוא נרשם ביומן'           "$(call logout >/dev/null; call login '{"username":"owner","password":"sod12345"}' >/dev/null; call log '{"action":"import-preview"}')" 'json-ld'
 IL=$(call import-log '{}')
 check 'יומן ייבוא: ההבאה, הכשל, והשמירה מהעורך' "$IL" '"kind":"editor-save"[^}]*"recipe_id":'"$IID"
-check 'יומן ייבוא: הכשל עם האבחון'   "$IL" '"ok":false,"error":"לא מצאתי[^}]*"diag":{"html_bytes"'
+check 'יומן ייבוא: הכשל עם האבחון'   "$IL" '"ok":false,"error":"לא מצאתי[^}]*"diag":{"http_status":200,"html_bytes"'
 check 'יומן ייבוא: ההצלחה עם הטקסט'  "$IL" '"kind":"preview"[^}]*"method":"json-ld"'
 check 'יומן ייבוא: סינון לפי תוצאה'  "$(call import-log '{"ok":"0"}' | grep -c '"ok":true')" '^0$'
 call logout >/dev/null

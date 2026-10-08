@@ -125,6 +125,15 @@ scoutRemove([$ids[2]], $devU);
 check('מחיקה', count(scoutList([], $devU)['items']), 2);
 expectError('ייבוא של פריט שאינו קיים', fn() => scoutImportOne(9999, $GLOBALS['devU'], false), 'אינו קיים');
 
+echo "\n6. אתר שחסם — הפריט נשאר \"לייבוא\", לא \"שגיאה\"\n";
+$pdo->prepare("INSERT INTO scout_items (url, title, site, found_on, status, created_at) VALUES (?,?,?,?,'wanted',?)")
+    ->execute(['https://waf.example/recipe/x/', 'עוגה', 'waf.example', 'x', nowIso()]);
+$wid = (int) $pdo->lastInsertId();
+importMarkHostBlocked('waf.example');
+expectError('הייבוא נעצר בחסימה', fn() => scoutImportOne($GLOBALS['wid'], $GLOBALS['devU'], false), 'חסם זמנית');
+$w = $pdo->query("SELECT status, error FROM scout_items WHERE id = $wid")->fetch();
+check('עדיין "לייבוא", עם ההסבר', [$w['status'], str_contains((string) $w['error'], 'חסם זמנית')], ['wanted', true]);
+
 foreach (glob($tmp . '/scout/*') ?: [] as $f) @unlink($f); @rmdir($tmp . '/scout');
 foreach (glob($tmp . '/*') ?: [] as $f) @unlink($f);
 @rmdir($tmp . '/media'); @rmdir($tmp);

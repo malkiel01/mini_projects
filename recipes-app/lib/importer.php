@@ -65,15 +65,80 @@ function importCheckUrl(string $url): array {
     return $p;
 }
 
-/** מביא דף. מחזיר [html, finalUrl]. */
-function importFetch(string $url): array {
+// ─────────────────────────────────────────────────────────────
+// חסימה: האתר מגיש "הוכח שאתה אדם" במקום הדף
+// ─────────────────────────────────────────────────────────────
+
+const IMPORT_BLOCK_COOLDOWN = 45 * 60;   // אחרי חסימה — לא פונים לאתר 45 דקות
+const IMPORT_CACHE_TTL      = 15 * 60;   // דף שהובא — נשמר רבע שעה, כדי שייבוא אחרי תצוגה מקדימה לא יביא שוב
+
+function importStateDir(string $sub): string {
+    $d = dirname(DB_FILE) . '/' . $sub;
+    if (!is_dir($d)) @mkdir($d, 0775, true);
+    return $d;
+}
+
+/**
+ * דף אתגר של חומת אש במקום התוכן: AWS WAF (202 + "JavaScript is disabled"),
+ * Cloudflare ("Just a moment…", cf-mitigated), ודומיהם. האתר אומר בזה "אתם
+ * בוט, עצרו". לא מנסים לעקוף — עוצרים ומכבדים.
+ * מחזיר שם קצר של המנגנון, או null.
+ */
+function importDetectBlock(int $status, array $headers, string $body): ?string {
+    if (($headers['x-amzn-waf-action'] ?? '') !== '') return 'AWS WAF';
+    if (($headers['cf-mitigated'] ?? '') !== '') return 'Cloudflare';
+    if (strlen($body) > 30000) return null;   // דף אתגר הוא קטן; דף אמיתי גדול
+    if (preg_match('/awsWafCookieDomainList|AwsWafIntegration|challenge\.js/i', $body)) return 'AWS WAF';
+    if (preg_match('/cf-chl-|challenge-platform|<title>Just a moment/i', $body)) return 'Cloudflare';
+    if (preg_match('/sgcaptcha|captcha-delivery|px-captcha|_Incapsula_Resource|Request unsuccessful\. Incapsula/i', $body)) return 'captcha';
+    if (preg_match('/JavaScript is disabled|enable JavaScript and cookies to continue|verify (that )?you(\'re| are) (not a robot|human)/i', $body)) return 'challenge';
+    if ($status === 202 && strlen($body) < 10000) return 'challenge (202)';
+    if ($status === 429) return 'rate limit (429)';
+    return null;
+}
+
+/** האתר חסם — עד מתי ממתינים. null כשאין חסימה פעילה. */
+function importHostBlockedUntil(string $host): ?int {
+    $f = importStateDir('fetch-blocks') . '/' . md5(strtolower($host));
+    if (!is_file($f)) return null;
+    $until = (int) @file_get_contents($f);
+    return $until > time() ? $until : null;
+}
+
+function importMarkHostBlocked(string $host): int {
+    $until = time() + IMPORT_BLOCK_COOLDOWN;
+    @file_put_contents(importStateDir('fetch-blocks') . '/' . md5(strtolower($host)), (string) $until);
+    return $until;
+}
+
+function importBlockedMessage(string $host, int $until, string $how = ''): string {
+    $tz = new DateTimeZone('Asia/Jerusalem');
+    $at = (new DateTimeImmutable('@' . $until))->setTimezone($tz)->format('H:i');
+    return "האתר $host חסם זמנית את ההבאות מהשרת" . ($how !== '' ? " ($how)" : '') .
+           " — במקום המתכון הוא מגיש דף \"הוכח שאתה אדם\". לא מנסים לעקוף: ממתינים עד $at, ואז אפשר להמשיך לאט יותר.";
+}
+
+/** מביא דף. מחזיר [html, finalUrl, status]. $useCache — דף שהובא ברבע השעה האחרונה לא מובא שוב. */
+function importFetch(string $url, bool $useCache = false): array {
     if (!function_exists('curl_init')) throw new AppError('בשרת אין cURL — אי אפשר להביא דפים', 500);
+    $host0 = strtolower(parse_url($url, PHP_URL_HOST) ?: '');
+    if ($host0 !== '' && ($until = importHostBlockedUntil($host0))) throw new AppError(importBlockedMessage($host0, $until), 429);
+    $cacheFile = importStateDir('fetch-cache') . '/' . md5($url);
+    if ($useCache && is_file($cacheFile) && filemtime($cacheFile) > time() - IMPORT_CACHE_TTL) {
+        $c = json_decode((string) @file_get_contents($cacheFile), true);
+        if (is_array($c) && isset($c['body'], $c['final'])) return [$c['body'], $c['final'], 200];
+    }
     $current = $url;
     for ($hop = 0; $hop <= IMPORT_MAX_REDIRECTS; $hop++) {
         importCheckUrl($current);
         $ch = curl_init($current);
         $body = '';
+        $headers = [];
         curl_setopt_array($ch, [
+            CURLOPT_HEADERFUNCTION => function ($ch, $line) use (&$headers) {
+                if (str_contains($line, ':')) { [$k, $v] = explode(':', $line, 2); $headers[strtolower(trim($k))] = trim($v); }
+                return strlen($line);
+            },
             CURLOPT_RETURNTRANSFER => false,
             CURLOPT_FOLLOWLOCATION => false,          // הפניות ידניות — כל יעד נבדק מחדש
             CURLOPT_CONNECTTIMEOUT => 8,
@@ -98,9 +163,15 @@ function importFetch(string $url): array {
         if (strlen($body) > IMPORT_MAX_BYTES) throw new AppError('הדף גדול מדי (מעל 3MB)');
         if ($status >= 300 && $status < 400 && $location !== '') { $current = $location; continue; }
         if ($err !== 0 && $body === '') throw new AppError('לא הצלחתי להביא את הדף (האתר לא ענה)');
+        if ($how = importDetectBlock($status, $headers, $body)) {
+            $h = strtolower(parse_url($current, PHP_URL_HOST) ?: $host0);
+            throw new AppError(importBlockedMessage($h, importMarkHostBlocked($h), $how), 429);
+        }
         if ($status === 403 || $status === 401) throw new AppError('האתר חוסם הבאה אוטומטית של הדף (' . $status . '). אפשר להעתיק את המתכון ידנית');
         if ($status >= 400) throw new AppError('האתר החזיר שגיאה ' . $status);
-        return [$body, $current];
+        @file_put_contents($cacheFile, json_encode(['body' => $body, 'final' => $current]));
+        if (random_int(1, 30) === 1) foreach (glob(importStateDir('fetch-cache') . '/*') ?: [] as $f) if (filemtime($f) < time() - IMPORT_CACHE_TTL) @unlink($f);
+        return [$body, $current, $status];
     }
     throw new AppError('יותר מדי הפניות');
 }
@@ -563,9 +634,10 @@ function importPreview(string $url, string $kind = 'preview', ?array $user = nul
     $t0 = microtime(true);
     $diag = null;
     try {
-        [$html, $final] = importFetch($url);
+        // תצוגה מקדימה ואחריה ייבוא של אותו דף — הבאה אחת, לא שתיים
+        [$html, $final, $status] = importFetch($url, in_array($kind, ['scout-preview', 'scout-import', 'preview'], true));
         $doc = importDom($html);
-        try { $diag = importDiagnose($doc, $html); } catch (Throwable $e) { $diag = ['error' => $e->getMessage()]; }
+        try { $diag = ['http_status' => $status] + importDiagnose($doc, $html); } catch (Throwable $e) { $diag = ['error' => $e->getMessage()]; }
         $draft = importToDraft(importParseDoc($doc, $final));
         $draft['import_log_id'] = importLogDraft($kind, $url, $draft, $user, $diag, (int) ((microtime(true) - $t0) * 1000), $ctx);
         return $draft;

@@ -190,6 +190,25 @@ check('סטטיסטיקה', [importLogStats()['rows'], importLogStats()['hosts']
 deleteRecipe($sid2, $maliU);
 check('היומן שורד מחיקת המתכון', count(importLogList(['recipe_id' => $sid2])), 2);
 
+echo "\n6ד. חסימה — דף \"הוכח שאתה אדם\" אינו מתכון, והאתר מקבל מנוחה\n";
+// הדף שהשרת קיבל מ-carine.co.il ב-2026-10-08, אחרי ~6 הבאות בדקה: 2,415 בתים, 202
+$waf = '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title></title><script>window.awsWafCookieDomainList = [];window.gokuProps = {};</script><script src="https://x.token.awswaf.com/x/challenge.js"></script></head><body><noscript><h1>JavaScript is disabled</h1>In order to continue, we need to verify that you\'re not a robot.</noscript></body></html>';
+check('AWS WAF לפי הכותרת', importDetectBlock(202, ['x-amzn-waf-action' => 'challenge'], ''), 'AWS WAF');
+check('AWS WAF לפי הגוף', importDetectBlock(202, [], $waf), 'AWS WAF');
+check('Cloudflare', importDetectBlock(403, [], '<title>Just a moment...</title><div id="challenge-platform">'), 'Cloudflare');
+check('"JavaScript is disabled" לבד', importDetectBlock(200, [], '<h1>JavaScript is disabled</h1>'), 'challenge');
+check('429', importDetectBlock(429, [], 'slow down'), 'rate limit (429)');
+check('דף מתכון אמיתי — לא חסימה', importDetectBlock(200, [], $fx('jsonld-carine.html')), null);
+check('דף גדול שמזכיר JavaScript — לא חסימה', importDetectBlock(200, [], str_repeat('x', 40000) . 'JavaScript is disabled'), null);
+check('לפני: אין חסימה', importHostBlockedUntil('blocked.example'), null);
+$until = importMarkHostBlocked('blocked.example');
+check('אחרי: 45 דקות מנוחה', $until - time() >= 44 * 60 && importHostBlockedUntil('blocked.example') === $until, true);
+expectError('הבאה לאתר חסום — נעצרת לפני הרשת, 429', function () {
+    try { importFetch('https://blocked.example/recipe/x/'); }
+    catch (AppError $e) { if ($e->status !== 429) throw new AppError('status ' . $e->status); throw $e; }
+}, 'חסם זמנית');
+check('אתר אחר אינו מושפע', importHostBlockedUntil('other.example'), null);
+
 echo "\n7. שמירה — המקור נשמר, מוצג, ואינו נמחק בעריכה\n";
 $raw = importParse($fx('jsonld-10dakot.html'), 'https://www.10dakot.co.il/recipe/x/');
 $draft = importToDraft($raw);

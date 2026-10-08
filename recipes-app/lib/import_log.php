@@ -278,8 +278,8 @@ function importLogEntryText(array $r): string {
     }
     if ($d = $r['diag']) {
         $ld = $d['jsonld'] ?? [];
-        $o[] = sprintf('בדף: %s בתים · JSON-LD: %d בלוקים%s, @type=[%s]%s · Microdata: %d/%d/%d · כותרות: %d · רשימות: ol %d, ul %d · og:title="%s"',
-                       number_format((int) ($d['html_bytes'] ?? 0)), (int) ($ld['blocks'] ?? 0),
+        $o[] = sprintf('בדף: HTTP %s · %s בתים · JSON-LD: %d בלוקים%s, @type=[%s]%s · Microdata: %d/%d/%d · כותרות: %d · רשימות: ol %d, ul %d · og:title="%s"',
+                       $d['http_status'] ?? '?', number_format((int) ($d['html_bytes'] ?? 0)), (int) ($ld['blocks'] ?? 0),
                        !empty($ld['invalid']) ? ' (' . $ld['invalid'] . ' לא תקינים)' : '',
                        implode(', ', $ld['types'] ?? []),
                        !empty($ld['recipe']) ? sprintf(', Recipe: instructions=%s, ingredients=%d', $ld['instructions'] ?? '?', (int) ($ld['ingredients'] ?? 0)) : ', בלי Recipe',
