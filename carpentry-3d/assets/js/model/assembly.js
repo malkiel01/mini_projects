@@ -169,3 +169,21 @@ export function dragSnap(bs, i, dx, dz, { grid = 10, magnet = 40, skip = [] } = 
   };
   return [axis(dx, 'x', 'w'), axis(dz, 'z', 'd')];
 }
+
+/**
+ * הצמדה בגרירה בגובה: עיגול ל-`grid` מ"מ, והתחתית נצמדת (עד `magnet` מ"מ)
+ * לרצפה, לגג של אלמנט אחר (עליו), לתחתית שלו (מיושר), או כך שהגג מתיישר
+ * עם הגג שלו / נוגע בתחתיתו (מתחתיו). אלמנט לא יורד מתחת לרצפה.
+ */
+export function dragSnapY(bs, i, dy, { grid = 10, magnet = 40, skip = [] } = {}) {
+  const b = bs[i];
+  let best = Math.round(dy / grid) * grid, dist = Infinity;
+  const at = b.y + dy;
+  const targets = [0];
+  bs.forEach((o, k) => { if (k !== i && !skip.includes(k) && o) targets.push(o.y + o.h, o.y, o.y + o.h - b.h, o.y - b.h); });
+  for (const t of targets) {
+    const gap = Math.abs(at - t);
+    if (gap <= magnet && gap < dist) { dist = gap; best = t - b.y; }
+  }
+  return Math.max(best, -b.y);
+}

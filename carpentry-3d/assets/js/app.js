@@ -17,7 +17,7 @@ import { createMaterialsUI } from './materials-ui.js';
 import { createAccessoriesUI } from './accessories-ui.js';
 import { api, loadLast, saveLast } from './store.js';
 import { watchNumbers } from './numfield.js';
-import { placeModel, combine, snapTo, dragSnap } from './model/assembly.js';
+import { placeModel, combine, snapTo, dragSnap, dragSnapY } from './model/assembly.js';
 import { totalWeight, partWeight, drillingList } from './model/physics.js';
 import { toSTL, printSize } from './model/stl.js';
 
@@ -140,8 +140,10 @@ async function enter() {
     viewer = createViewer($('#stage'), { onPick: onViewerPick, drag: {
       active: () => !!state.assembly && moveItems && state.user.role !== 'viewer',
       keyOf: (id) => { const m = /^e(\d+):/.exec(id); return m ? Number(m[1]) - 1 : null; },
-      constrain: (i, dx, dz) => dragSnap(itemBounds(), i, dx, dz, { skip: state.assembly.items.map((it, k) => (it.visible === false ? k : -1)).filter((k) => k >= 0) }),
-      end: (i, dx, dz) => moveItemBy(i, dx, dz),
+      axis: (e) => (moveAxis === 'y' || e.ctrlKey || e.altKey ? 'y' : 'xz'),
+      constrain: (i, dx, dz) => dragSnap(itemBounds(), i, dx, dz, { skip: hiddenItems() }),
+      constrainY: (i, dy) => dragSnapY(itemBounds(), i, dy, { skip: hiddenItems() }),
+      end: (i, dx, dz, dy) => moveItemBy(i, dx, dz, dy),
       rotate: (i, deg) => rotateItemBy(i, deg),
     } });
     materialsUI = createMaterialsUI($('#mlib'), {
@@ -970,8 +972,14 @@ function modelFor(p) {
 }
 function wireAssemblyUi() {
   $('#btn-move-items').addEventListener('click', () => {
-    setMoveItems(!moveItems);
-    if (moveItems) toast('גוררים אלמנט על הרצפה (נצמד כל 10 מ"מ ולקצוות). לסיבוב: שתי אצבעות על האלמנט, או גרירה ימנית / Shift בעכבר — נצמד ל-90°');
+    const on = !(moveItems && moveAxis === 'xz');
+    moveAxis = 'xz'; setMoveItems(on);
+    if (on) toast('גוררים אלמנט על הרצפה (נצמד כל 10 מ"מ ולקצוות). לסיבוב: שתי אצבעות על האלמנט, או גרירה ימנית / Shift בעכבר — נצמד ל-90°. Ctrl או Alt בעכבר — בגובה');
+  });
+  $('#btn-move-height').addEventListener('click', () => {
+    const on = !(moveItems && moveAxis === 'y');
+    moveAxis = 'y'; setMoveItems(on);
+    if (on) toast('גוררים אלמנט למעלה ולמטה — נצמד כל 10 מ"מ, לרצפה, ולגג או לתחתית של אלמנט אחר');
   });
   $('#btn-back-asm').addEventListener('click', async () => {
     if (!returnAssembly) return;
@@ -1029,10 +1037,14 @@ function wireAssemblyUi() {
 }
 // ---- הזזה בתלת מימד, בחירת אלמנט בהקשה, וחזרה להרכבה אחרי עריכת אלמנט ----
 let moveItems = false;
+let moveAxis = 'xz';   // 'xz' — על הרצפה, 'y' — בגובה
+const hiddenItems = () => state.assembly.items.map((it, k) => (it.visible === false ? k : -1)).filter((k) => k >= 0);
 let returnAssembly = null;   // { id, name } — כשפרויקט נפתח מכפתור ✏️ של אלמנט בהרכבה
 function setMoveItems(on) {
   moveItems = !!on;
-  $('#btn-move-items').classList.toggle('is-on', moveItems);
+  $('#btn-move-items').classList.toggle('is-on', moveItems && moveAxis === 'xz');
+  $('#btn-move-height').classList.toggle('is-on', moveItems && moveAxis === 'y');
+  $('#stage').classList.toggle('is-moving-y', moveItems && moveAxis === 'y' && !!state.assembly);
   $('#stage').classList.toggle('is-moving', moveItems && !!state.assembly);
 }
 /** ההזזה שהנירמול של combine הוסיף: גבולות אלמנט גלוי במודל המאוחד פחות גבולותיו המקוריים (לפי המפתח, לא האינדקס). */
@@ -1045,11 +1057,11 @@ function moveShift() {
   return [0, 0, 0];
 }
 /** סוף גרירה: מעדכן את המיקום, ובונה מחדש בלי שהתמונה תקפוץ (הנירמול של combine יכול להזיז הכול). */
-function moveItemBy(i, dx, dz) {
+function moveItemBy(i, dx, dz, dy = 0) {
   const it = state.assembly.items[i];
   if (!it) return;
   const before = moveShift();
-  it.pos = [Math.round(it.pos[0] + dx), it.pos[1], Math.round(it.pos[2] + dz)];
+  it.pos = [Math.round(it.pos[0] + dx), Math.max(0, Math.round(it.pos[1] + dy)), Math.round(it.pos[2] + dz)];
   markDirty(); renderItems(); rebuildAssembly();
   const after = moveShift();
   viewer.nudgeTarget(after[0] - before[0], after[1] - before[1], after[2] - before[2]);
@@ -1162,12 +1174,15 @@ function loadAssembly(a) {
   rebuildAssembly(true);
   updateAsmShareUi();
   $('#btn-move-items').hidden = ro;
+  $('#btn-move-height').hidden = ro;
   setMoveItems(moveItems);
 }
 function leaveAssembly() {
   if (!state.assembly) return;
   state.assembly = null;
   $('#btn-move-items').hidden = true;
+  $('#btn-move-height').hidden = true;
+  $('#stage').classList.remove('is-moving-y');
   $('#stage').classList.remove('is-moving');
   $('#assembly-card').hidden = true;
   $('#project-card').hidden = false;

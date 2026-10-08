@@ -18,7 +18,9 @@ const T = () => window.THREE;
  *   active()            האם מצב ההזזה דלוק
  *   keyOf(partId)       מפתח האלמנט שהחלק שייך אליו, או null
  *   constrain(k,dx,dz)  הצמדה: מחזיר [dx, dz] מתוקנים
- *   end(k,dx,dz)        סוף הגרירה — האפליקציה מעדכנת את המיקום ובונה מחדש
+ *   axis(e)             'xz' (על הרצפה) או 'y' (בגובה) — לפי המצב, או Ctrl/Alt בעכבר
+ *   constrainY(k,dy)    הצמדה בגובה: מחזיר dy מתוקן
+ *   end(k,dx,dz,dy)     סוף הגרירה — האפליקציה מעדכנת את המיקום ובונה מחדש
  *   rotate(k,deg)       סיבוב בגרירה (שתי אצבעות, או גרירה ימנית/Shift בעכבר) —
  *                       התצוגה מסתובבת חופשי, ובשחרור נצמדת ל-90° (deg = ±90/180)
  */
@@ -92,14 +94,21 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
   // גרירת אלמנט: כל הגופים שלו (חלקים ופרזול) זזים יחד על מישור אופקי בגובה נקודת המגע
   let dragging = null;
   const itemOf = (o) => { const id = o.userData.part?.id || o.userData.hwId; return id && drag ? drag.keyOf(id) : null; };
-  function dragStart(cx, cy) {
+  function dragStart(cx, cy, axis = 'xz') {
     ray.setFromCamera(screenToNdc(cx, cy), camera);
     const h = ray.intersectObjects(pickables, false)[0];
     if (!h) return null;
     const key = drag.keyOf(h.object.userData.part.id);
     if (key == null) return null;
     const objs = group.children.filter((o) => itemOf(o) === key);
-    return { key, plane: new THREE.Plane(new THREE.Vector3(0, 1, 0), -h.point.y), start: h.point.clone(), objs, orig: objs.map((o) => o.position.clone()), dx: 0, dz: 0 };
+    // בגובה: מישור אנכי דרך נקודת המגע, שפונה אל המצלמה (במבט־על — מישור החזית)
+    let plane;
+    if (axis === 'y') {
+      const n = camera.getWorldDirection(new THREE.Vector3()).setY(0);
+      if (n.lengthSq() < 1e-6) n.set(0, 0, 1);
+      plane = new THREE.Plane().setFromNormalAndCoplanarPoint(n.normalize(), h.point);
+    } else plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -h.point.y);
+    return { key, axis, plane, start: h.point.clone(), objs, orig: objs.map((o) => o.position.clone()), dx: 0, dz: 0, dy: 0 };
   }
   function dragCancel() {
     if (!dragging) return;
@@ -135,7 +144,7 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
       // אצבע שנייה כשהראשונה על אלמנט (במצב הזזה) — סיבוב האלמנט במקום סיבוב המצלמה
       if (dragging && drag.rotate) { const d = dragging; dragCancel(); rotating = rotateStart(d); } else dragCancel();
     } else if (drag && drag.active()) {
-      dragging = dragStart(e.clientX, e.clientY);
+      dragging = dragStart(e.clientX, e.clientY, drag.axis ? drag.axis(e) : 'xz');
       if (dragging && drag.rotate && (e.button === 2 || e.shiftKey)) { const d = dragging; dragging = null; rotating = rotateStart(d); rotating.mouse = true; }
     }
   });
@@ -164,6 +173,12 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
       ray.setFromCamera(screenToNdc(e.clientX, e.clientY), camera);
       const pt = new THREE.Vector3();
       if (!ray.ray.intersectPlane(dragging.plane, pt)) return;
+      if (dragging.axis === 'y') {
+        const my = drag.constrainY(dragging.key, pt.y - dragging.start.y);
+        dragging.dy = my;
+        dragging.objs.forEach((o, i) => o.position.set(dragging.orig[i].x, dragging.orig[i].y + my, dragging.orig[i].z));
+        return;
+      }
       const [mx, mz] = drag.constrain(dragging.key, pt.x - dragging.start.x, pt.z - dragging.start.z);
       dragging.dx = mx; dragging.dz = mz;
       dragging.objs.forEach((o, i) => o.position.set(dragging.orig[i].x + mx, dragging.orig[i].y, dragging.orig[i].z + mz));
@@ -198,7 +213,7 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
     }
     if (dragging) {
       const d = dragging; dragging = null;
-      if (moved >= 6 && (d.dx || d.dz)) { delete ptrs[e.pointerId]; drag.end(d.key, d.dx, d.dz); return; }
+      if (moved >= 6 && (d.dx || d.dz || d.dy)) { delete ptrs[e.pointerId]; drag.end(d.key, d.dx, d.dz, d.dy); return; }
       d.objs.forEach((o, i) => o.position.copy(d.orig[i]));
     }
     // הקשה בלי גרירה = בחירת חלק.
