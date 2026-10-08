@@ -170,14 +170,16 @@ export function physicsWarnings(hardware) {
  * דלתות "גב אל גב": שתי דלתות סמוכות שהצירים של שתיהן על אותה מחיצה (אחת
  * ציר מימין, השנייה ציר משמאל). כשהן נפתחות יחד מעבר ל-90° הקצוות החופשיים
  * שלהן עוברים זה את זה — בפועל הן נתקלות זו בזו. לכן הפתיחה של שתיהן מוגבלת
- * ל-90° (אלא אם הנגר קבע לדלת זווית פתיחה בעצמו). כשהסידור נוצר מבחירה של
+ * ל-85°: פתוחות יחד הן יוצרות "V" — שתי דלתות נפרדות, לא אחת בתוך השנייה
+ * (ב-90° בדיוק הן עומדות צמודות ונראות כדלת אחת עבה). זווית שהנגר קבע ביד נשמרת. כשהסידור נוצר מבחירה של
  * הנגר ("כיוון פתיחה") — גם אזהרה; בסידור של התבנית (למשל ארונות מטבח סמוכים)
  * זה רגיל, ורק ההדמיה מוגבלת.
  * משנה את התנועה במקום (כל חלקי הדלת), ומחזיר את האזהרות.
  * @param keep    קבוצות תנועה שהזווית שלהן נקבעה ביד — לא נוגעים בהן
  * @param chosen  קבוצות שכיוון הפתיחה שלהן נבחר ביד
  */
-export function doorClashes(parts, keep = new Set(), chosen = new Set()) {
+export const CLASH_ANGLE = 85;
+export function doorClashes(parts, keep = new Set(), chosen = new Set(), pairs = []) {
   const doors = new Map();
   for (const p of parts) {
     const m = p.motion;
@@ -200,12 +202,13 @@ export function doorClashes(parts, keep = new Set(), chosen = new Set()) {
     const facing = a.dir[0] * b.dir[0] + a.dir[1] * b.dir[1] < -0.5;
     if (gap > 60 || !facing || a.y1 <= b.y0 + 1 || b.y1 <= a.y0 + 1) continue;
     for (const d of [a, b]) {
-      if (keep.has(d.g) || capped.has(d.g) || Math.abs(d.m.angle) <= 90) continue;
-      const m = { ...d.m, angle: Math.sign(d.m.angle) * 90 };
+      if (keep.has(d.g) || capped.has(d.g) || Math.abs(d.m.angle) <= CLASH_ANGLE) continue;
+      const m = { ...d.m, angle: Math.sign(d.m.angle) * CLASH_ANGLE };
       for (const p of d.parts) p.motion = m;
       capped.add(d.g);
     }
-    if (chosen.has(a.g) || chosen.has(b.g)) out.push(`${a.g} ו-${b.g} נתלות גב אל גב על אותה מחיצה — פתוחות יחד הן נתקלות זו בזו, ולכן הפתיחה מוגבלת ל-90°. להפוך את כיוון הפתיחה של אחת מהן ("כיוון פתיחה" בכרטיס הדלת) כדי שייפתחו כזוג`);
+    pairs.push([a.g, b.g]);
+    if (chosen.has(a.g) || chosen.has(b.g)) out.push(`${a.g} ו-${b.g} נתלות גב אל גב על אותה מחיצה — פתוחות יחד הן נתקלות זו בזו (הפתיחה מוגבלת ל-${CLASH_ANGLE}°). כדי שייפתחו כזוג — "↔ פתיחה כזוג" בכרטיס הדלת`);
   }
   return out;
 }

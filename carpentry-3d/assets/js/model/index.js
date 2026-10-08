@@ -108,7 +108,9 @@ export function build(key, values) {
   applyPartEdits(out, values.partEdits);
   // דלתות גב אל גב על אותה מחיצה: פתיחה עד 90° (חוץ ממה שהנגר קבע ביד)
   const manual = new Set(Object.entries(values.partEdits || {}).filter(([, e]) => e && e.open).map(([id]) => out.parts.find((p) => p.id === id)?.motion?.group).filter(Boolean));
-  const clashWarnings = doorClashes(out.parts, manual, new Set(Object.keys(values.doorOpen || {})));
+  const clashPairs = [];
+  const clashWarnings = doorClashes(out.parts, manual, new Set(Object.keys(values.doorOpen || {})), clashPairs);
+  out.doorClashes = clashPairs;
   applyPartFinishes(out, values.partFinishes, t);
   out.warnings = [...(out.warnings || []), ...physicsWarnings(out.hardware || []), ...clashWarnings, ...millWarnings(out.parts || [])];
   return { ...out, values: { ...v, partFinishes: values.partFinishes || undefined, doorOpen: values.doorOpen || undefined, partEdits: values.partEdits || undefined }, template: t };
