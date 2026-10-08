@@ -238,12 +238,19 @@ export function door({ id, name, x0, x1, y0, y1, zFront, type, t, frameW = 60, m
   hardware.push({ id: `${id}-weight`, kind: 'info', door: id, kg: Math.round(kg * 100) / 100, hinges, note: `${name}: ${Math.round(kg * 10) / 10} ק"ג, ${hinges} צירים` });
   if (handle) {
     const kx = hingeSide === 'left' ? x + w - 40 : x + 40;
-    // ידית: בדלת נמוכה — בשני שלישים מגובהה; בדלת גבוהה — בגובה 1000 מהרצפה
-    // (גובה יד), ולא יותר מ-100 מתחת לקצה העליון.
-    const ky = h > 1200 ? Math.min(y + h - 100, 1000) : y + h * 0.66;
+    // ידית: בגובה יד (1000 מהרצפה), אבל תמיד על הדלת ובמקום נגיש — דלת עליונה (שמתחילה
+    // מעל גובה היד) מקבלת אותה ליד הקצה התחתון, דלת נמוכה — ליד הקצה העליון.
+    const ky = handleHeight(y, h);
     hardware.push({ id: `${id}-handle`, kind: 'handle', material: handle, pos: [kx, ky, zFront + t], qty: 1, for: id });
   }
   return { parts, hardware, hingeSide };
+}
+
+/** גובה הידית בדלת שבין y ל-y+h: גובה יד (1000), מוצמד לתוך הדלת עם שוליים. */
+export const HAND_HEIGHT = 1000;
+export function handleHeight(y, h) {
+  const m = Math.min(120, h / 2);
+  return Math.min(y + h - m, Math.max(y + m, HAND_HEIGHT));
 }
 
 /**

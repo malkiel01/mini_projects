@@ -41,6 +41,8 @@ export function applyPartEdits(out, edits) {
   if (!edits || typeof edits !== 'object') return;
   for (const [id, e] of Object.entries(edits)) {
     if (!e || typeof e !== 'object') continue;
+    // ידית: נשמרת לפי הדלת/המגירה (קבוצת התנועה), כי דלת מסגרת בנויה מכמה חלקים
+    if (e.handle) placeHandle(out, id, e.handle);
     const i = out.parts.findIndex((p) => p.id === id);
     if (i < 0) continue;
     if (e.hidden) {
@@ -108,6 +110,27 @@ export function applyPartEdits(out, edits) {
   }
 }
 
+/**
+ * מיקום הידית של דלת/מגירה `group`: y — גובה מהרצפה (מוצמד לתוך הדלת), x — 'edge'
+ * (ליד הקצה הפתוח, ברירת המחדל) או 'center', orient — 'v' / 'h'.
+ */
+export function placeHandle(out, group, hd) {
+  const parts = out.parts.filter((p) => p.motion?.group === group || p.id === group);
+  const handles = (out.hardware || []).filter((h) => h.kind === 'handle' && h.pos && h.for === group);
+  if (!parts.length || !handles.length) return;
+  let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+  for (const { box: b } of parts) { x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y); z0 = Math.min(z0, b.z); x1 = Math.max(x1, b.x + b.w); y1 = Math.max(y1, b.y + b.h); z1 = Math.max(z1, b.z + b.d); }
+  const alongX = x1 - x0 >= z1 - z0;   // דלת בקיר השני של מטבח ר' — לאורך z
+  for (const h of handles) {
+    const pos = [...h.pos];
+    const y = Number(hd.y);
+    if (Number.isFinite(y) && y > 0) pos[1] = Math.min(y1 - 30, Math.max(y0 + 30, y));
+    if (hd.x === 'center') { if (alongX) pos[0] = (x0 + x1) / 2; else pos[2] = (z0 + z1) / 2; }
+    h.pos = pos;
+    if (hd.orient === 'h') h.horizontal = true; else if (hd.orient === 'v') h.horizontal = false;
+  }
+}
+
 /** תיאור קצר של מה שנערך ברכיב — לכרטיס ולהערה. */
 export function editSummary(e) {
   if (!e) return '';
@@ -119,6 +142,7 @@ export function editSummary(e) {
   if (e.edges) out.push('קנטים');
   if (e.open) out.push(`פתיחה ${e.open}°`);
   if (e.travel) out.push(`שליפה ${e.travel}`);
+  if (e.handle) out.push('ידית');
   return out.join(', ');
 }
 

@@ -551,6 +551,31 @@ console.log('אביזרים: ידיות, כפתורים, צירים, גלגלי�
   check(ACC_FINISHES.length >= 6, 'גימורים');
 }
 
+// ---- מיקום הידית ----
+{
+  console.log('\nמיקום הידית');
+  const split = build('bookcase', { columns: 3, height: 2600, doorType: 'glass', lowerH: 850, lowerDoors: 'wood', handle: 'hw:handle-bar-128' });
+  const grp = (g) => split.parts.filter((p) => p.motion?.group === g);
+  const span = (g) => [Math.min(...grp(g).map((p) => p.box.y)), Math.max(...grp(g).map((p) => p.box.y + p.box.h))];
+  for (const g of ['door-1-up', 'door-1-lo']) {
+    const h = split.hardware.find((x) => x.kind === 'handle' && x.for === g), [lo, hi] = span(g);
+    check(h.pos[1] >= lo + 60 && h.pos[1] <= hi - 60, `${g}: הידית על הדלת (${Math.round(h.pos[1])} בין ${Math.round(lo)} ל-${Math.round(hi)})`);
+    check(h.pos[1] <= 1200, `${g}: בגובה נגיש (${Math.round(h.pos[1])})`);
+  }
+  const tall = build('bookcase', { columns: 3, doorType: 'wood', handle: 'hw:handle-bar-128' });
+  check(tall.hardware.find((x) => x.kind === 'handle').pos[1] === 1000, 'דלת גבוהה: גובה יד 1000');
+  const kit = build('kitchen', { handle: 'hw:handle-bar-128' });
+  check(kit.hardware.filter((h) => h.kind === 'handle' && /^ע/.test(h.for)).every((h) => { const ps = kit.parts.filter((p) => p.motion?.group === h.for); return h.pos[1] < Math.min(...ps.map((p) => p.box.y)) + 200; }), 'מטבח: ארונות עליונים — הידית ליד הקצה התחתון');
+  // עריכה: גובה, אמצע, כיוון — לכל חלקי הדלת
+  const ed = build('bookcase', { columns: 3, height: 2600, doorType: 'glass', lowerH: 850, lowerDoors: 'wood', handle: 'hw:handle-bar-128', partEdits: { 'door-1-up': { handle: { y: 1500, x: 'center', orient: 'h' } } } });
+  const eh = ed.hardware.find((x) => x.kind === 'handle' && x.for === 'door-1-up');
+  const ups = ed.parts.filter((p) => p.motion?.group === 'door-1-up');
+  const cx = (Math.min(...ups.map((p) => p.box.x)) + Math.max(...ups.map((p) => p.box.x + p.box.w))) / 2;
+  check(eh.pos[1] === 1500 && Math.abs(eh.pos[0] - cx) < 0.01 && eh.horizontal === true, 'עריכת ידית: 1500 מהרצפה, באמצע, אופקית');
+  const clampEd = build('bookcase', { columns: 3, height: 2600, doorType: 'glass', lowerH: 850, lowerDoors: 'wood', handle: 'hw:handle-bar-128', partEdits: { 'door-1-up': { handle: { y: 100 } } } });
+  check(clampEd.hardware.find((x) => x.kind === 'handle' && x.for === 'door-1-up').pos[1] >= span('door-1-up')[0], 'גובה מחוץ לדלת — מוצמד אליה');
+}
+
 // ---- דלתות גב אל גב על אותה מחיצה ----
 {
   console.log('\nדלתות גב אל גב');

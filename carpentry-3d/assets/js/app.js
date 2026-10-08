@@ -643,6 +643,20 @@ function partEditor(p) {
   } else if (p.motion?.kind === 'slide') {
     out.push(row('מרחק שליפה / הזזה (מ"מ)', num('data-pe="travel" min="10" data-step="10"', Math.round(Math.hypot(...p.motion.vec)))));
   }
+  // ידית: גובה מהרצפה, מיקום לרוחב וכיוון — לכל הדלת/המגירה (לפי קבוצת התנועה)
+  const hg = p.motion?.group || p.id;
+  const handle = (model.hardware || []).find((h) => h.kind === 'handle' && h.pos && h.for === hg);
+  if (handle) {
+    const he = state.values.partEdits?.[hg]?.handle || {};
+    const ps = model.parts.filter((q) => q.motion?.group === hg || q.id === hg);
+    const lo = Math.min(...ps.map((q) => q.box.y)), hi = Math.max(...ps.map((q) => q.box.y + q.box.h));
+    const pre = [['גובה יד', Math.round(Math.min(hi - 120, Math.max(lo + 120, 1000)))], ['למעלה', Math.round(hi - 120)], ['באמצע', Math.round((lo + hi) / 2)], ['למטה', Math.round(lo + 120)]];
+    out.push(`<div class="pedit__sub">ידית</div>`);
+    out.push(row('גובה מהרצפה', `${num(`data-pe-handle="y" data-group="${esc(hg)}" data-step="10"`, Math.round(handle.pos[1]))}<span class="presets">${pre.map(([n, v]) => `<button type="button" data-pe-handle-preset="${v}" data-group="${esc(hg)}" class="${Math.round(handle.pos[1]) === v ? 'is-on' : ''}">${n}</button>`).join('')}</span>`));
+    out.push(row('לרוחב', `<select data-pe-handle="x" data-group="${esc(hg)}"><option value="">ליד הקצה הפתוח</option><option value="center" ${he.x === 'center' ? 'selected' : ''}>באמצע</option></select>`));
+    out.push(row('כיוון', `<select data-pe-handle="orient" data-group="${esc(hg)}"><option value="">כמו בתבנית</option><option value="v" ${he.orient === 'v' ? 'selected' : ''}>אנכית</option><option value="h" ${he.orient === 'h' ? 'selected' : ''}>אופקית</option></select>`));
+    if (Object.keys(he).length) out.push(`<div class="part__actions"><button type="button" class="btn btn--small" data-pe-handle-reset data-group="${esc(hg)}">↺ ידית כמו בתבנית</button></div>`);
+  }
   const edited = editSummary(e);
   out.push(`<div class="part__actions"><button type="button" class="btn btn--small" data-pe-hide>🙈 הסתרת הרכיב</button>${edited ? `<button type="button" class="btn btn--small" data-pe-reset>↺ איפוס הרכיב (${esc(edited)})</button>` : ''}</div>`);
   // הגדרות המוצר שנוגעות לרכיב
@@ -681,13 +695,13 @@ function setPartChoice(kind, id, value) {
   if (keep) viewer.selectById(keep);
 }
 /** עריכה לרכיב: patch מתמזג לעריכה הקיימת; ערך null מוחק שדה; edit=null מאפס את הרכיב. */
-function setPartEdit(id, patch) {
+function setPartEdit(id, patch, keepId = id) {
   const all = { ...(state.values.partEdits || {}) };
   let e = patch === null ? {} : { ...(all[id] || {}), ...patch };
   for (const [k, v] of Object.entries(e)) if (v === null || v === undefined || v === '' || (typeof v === 'object' && !Object.keys(v).length)) delete e[k];
   if (Object.keys(e).length) all[id] = e; else delete all[id];
   state.values.partEdits = Object.keys(all).length ? all : undefined;
-  const keep = e.hidden ? null : id;
+  const keep = e.hidden ? null : keepId;
   rebuild(); markDirty();
   if (keep) viewer.selectById(keep); else showPart(null);
 }
@@ -719,6 +733,13 @@ $('#part').addEventListener('change', (e) => {
     return setPartEdit(p.id, { size: { ...(cur.size || {}), [t.dataset.peSize]: v } });
   }
   if (t.dataset.peMove) return setPartEdit(p.id, { move: { ...(cur.move || {}), [t.dataset.peMove]: Number(t.value) || 0 } });
+  if (t.dataset.peHandle) {
+    const g = t.dataset.group, curH = state.values.partEdits?.[g]?.handle || {};
+    const v = t.dataset.peHandle === 'y' ? (Number(t.value) > 0 ? Math.round(Number(t.value)) : null) : t.value || null;
+    const next = { ...curH, [t.dataset.peHandle]: v };
+    for (const k of Object.keys(next)) if (next[k] === null) delete next[k];
+    return setPartEdit(g, { handle: Object.keys(next).length ? next : null }, p.id);
+  }
   if (t.dataset.peEdge) return setPartEdit(p.id, { edges: { ...(cur.edges || {}), [t.dataset.peEdge]: t.checked } });
   if (t.dataset.rp) {
     const q = allParams(currentTemplate()).find((x) => x.key === t.dataset.rp);
@@ -745,6 +766,13 @@ function partButtons(p) {
 $('#part').addEventListener('click', (e) => {
   const flip = e.target.closest('[data-door-flip]');
   if (flip) { e.preventDefault(); setPartChoice('doorOpen', flip.dataset.doorFlip, flip.dataset.side); toast('כיוון הפתיחה הוחלף — הצירים בצד החיצוני'); return; }
+  const hb = e.target.closest('[data-pe-handle-preset],[data-pe-handle-reset]');
+  if (hb && shownPart) {
+    e.preventDefault();
+    const g = hb.dataset.group, curH = state.values.partEdits?.[g]?.handle || {};
+    if (hb.dataset.peHandleReset !== undefined) return setPartEdit(g, { handle: null }, shownPart.id);
+    return setPartEdit(g, { handle: { ...curH, y: Number(hb.dataset.peHandlePreset) } }, shownPart.id);
+  }
   const pe = e.target.closest('[data-pe-preset],[data-pe-hide],[data-pe-reset],[data-rp-preset]');
   if (pe && shownPart) {
     e.preventDefault();
