@@ -118,3 +118,39 @@ export function millWarnings(parts) {
   }
   return [...out];
 }
+
+/**
+ * קווי המתאר של פאה מחורצת, כקטעים [[u, v, l], [u, v, l]] — l=0 על פני
+ * הפאה, l=1 בתחתית החריץ. רק במקום שיש חומר: שפת הפאה לא נמתחת מעל פתח של
+ * חריץ, וקצה פתוח של חריץ מצויר כ-U (בלי קו שסוגר אותו). במסגרת — הקו
+ * החיצוני והפנימי של כל טבעת, בלי תפרים בין ארבעת חלקיה.
+ */
+export function millEdges(U, V, spec) {
+  const segs = [];
+  const seg = (u0, v0, l0, u1, v1, l1) => segs.push([[u0, v0, l0], [u1, v1, l1]]);
+  const rect = (u0, u1, v0, v1, l) => { seg(u0, v0, l, u1, v0, l); seg(u1, v0, l, u1, v1, l); seg(u1, v1, l, u0, v1, l); seg(u0, v1, l, u0, v0, l); };
+  if (spec.kind === 'flutes') {
+    const gs = fluteGrooves(U, spec);
+    // שפת הפאה: הצדדים שלמים; למעלה ולמטה — רק על הצלעות והשוליים
+    seg(0, 0, 0, 0, V, 0); seg(U, 0, 0, U, V, 0);
+    const solid = [];
+    let at = 0;
+    for (const [a, b] of gs) { if (a > at) solid.push([at, a]); at = b; }
+    if (at < U) solid.push([at, U]);
+    for (const v of [0, V]) for (const [a, b] of solid) seg(a, v, 0, b, v, 0);
+    for (const [a, b] of gs) {
+      for (const u of [a, b]) { seg(u, 0, 0, u, V, 0); seg(u, 0, 1, u, V, 1); }
+      for (const v of [0, V]) { seg(a, v, 0, a, v, 1); seg(a, v, 1, b, v, 1); seg(b, v, 1, b, v, 0); }
+    }
+    return segs;
+  }
+  rect(0, U, 0, V, 0);
+  const rs = millRects(U, V, spec);
+  for (let k = 0; k + 3 < rs.length; k += 4) {
+    // ארבעה מלבנים לטבעת: [עליון…] → הקו החיצוני מהמלבן התחתון והעליון, הפנימי פנימה בעובי החריץ
+    const [bot, top] = [rs[k], rs[k + 1]];
+    const u0 = bot[0], u1 = bot[1], v0 = bot[2], v1 = top[3], g = spec.groove;
+    for (const l of [0, 1]) { rect(u0, u1, v0, v1, l); rect(u0 + g, u1 - g, v0 + g, v1 - g, l); }
+  }
+  return segs;
+}

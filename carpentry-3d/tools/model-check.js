@@ -14,7 +14,7 @@ import { TYPES, buildAccessory, paramsOf, faceOf, wheelHeight, FINISHES as ACC_F
 import { nest, sheetCount } from '../assets/js/model/sheets.js';
 import { partWeight, totalWeight, boardWeight, hingeCount, hingeYs, hingeDrilling, slidingLeaf, SLIDING_SYSTEMS, slideLoad, drillingList, physicsWarnings, densityOf } from '../assets/js/model/physics.js';
 import { toSTL, printSize } from '../assets/js/model/stl.js';
-import { MILL_PATTERNS, fluteGrooves, millRects, millSolids, millRemoved, millText } from '../assets/js/model/milling.js';
+import { MILL_PATTERNS, fluteGrooves, millRects, millSolids, millRemoved, millText, millEdges } from '../assets/js/model/milling.js';
 
 let failed = 0;
 function check(cond, msg) {
@@ -595,6 +595,13 @@ console.log('אביזרים: ידיות, כפתורים, צירים, גלגלי�
   check(k.parts.some((p) => /door/.test(p.id) && p.mill) && k.parts.some((p) => /drawer-\d+$/.test(p.id) && p.mill) && within(k.parts, k.bounds), 'מטבח: גימור חזיתות על דלתות ומגירות, בתוך הגבולות');
   check(build('dresser', { frontFinish: 'milled-wide' }).parts.filter((p) => p.mill).length > 0, 'שידה: חזיתות מחורצות');
   check(/מסגרות/.test(millText(d1)) && /חריץ 6×4/.test(millText(d1)), `הוראה: ${millText(d1)}`);
+  // קווי מתאר רק על חומר: שום קו על פני הפאה לא חוצה פתח של חריץ (זה נראה כמו "מכסה שקוף")
+  const E = millEdges(400, 2000, fine), G = fluteGrooves(400, fine);
+  const crosses = E.filter(([p0, p1]) => p0[2] === 0 && p1[2] === 0 && p0[1] === p1[1] && G.some(([ga, gb]) => Math.min(p0[0], p1[0]) < ga + 0.01 && Math.max(p0[0], p1[0]) > gb - 0.01));
+  check(crosses.length === 0, `דמוי סטריפים: אין קו שסוגר את פתח החריץ (${crosses.length})`);
+  check(E.filter(([p0, p1]) => p0[1] === 2000 && p1[1] === 2000 && p0[2] !== p1[2]).length === G.length * 2, 'בקצה הפתוח של כל חריץ — צורת U (שתי דפנות ותחתית)');
+  const FE = millEdges(500, 2000, dbl);
+  check(FE.length === 4 + 2 * 2 * 2 * 4, 'מסגרת כפולה: שפת הפאה + לכל טבעת קו חיצוני ופנימי, בפני הפאה ובתחתית — בלי תפרים');
   const w = build('wardrobe', { doorType: 'wood', sideLeftFinish: 'milled-wide' });
   check(w.parts.find((p) => p.id === 'side-L').mill?.normal === '-x', 'דופן שמאל מחורצת בפאה החיצונית (-x)');
 }
