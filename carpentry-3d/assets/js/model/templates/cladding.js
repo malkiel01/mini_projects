@@ -2,7 +2,9 @@
 //
 // קיר אחד או כמה קירות ברצף (עד שלושה), כל פנייה ב-90° שמאלה או ימינה —
 // כך החיפוי "מסתובב" סביב פינה. על כל קיר: לטות רוחב (מסד), ועליהן
-// החיפוי. כל קיר מחולק ל"שדות" לאורכו (ברירת מחדל שדה אחד), ולכל שדה
+// החיפוי — או הדבקה/הברגה ישירה לקיר, בלי לטות. בפינה: חיבור ישר (קיר אחד
+// מכסה את קצה השני) או גרונג 45° — שני הלוחות נחתכים באלכסון ונפגשים בקו
+// הפינה. כל קיר מחולק ל"שדות" לאורכו (ברירת מחדל שדה אחד), ולכל שדה
 // רוחב ודוגמה משלו — בעורך החלוקה: רוחב נעוץ/אוטומטי, ודוגמה מתוך
 // PATTERNS (סטריפים אנכיים/אופקיים, לוחות, ריבועים, לבנים, שחמט, תבליט,
 // מסגרות). לפי בחירה פנל תחתון וקרניז עליון, וגובה חלקי.
@@ -29,9 +31,16 @@ export const PATTERNS = [
 ];
 const PATTERN_NAME = Object.fromEntries(PATTERNS.map((p) => [p.id, p.name]));
 
-/** מסלול הקירות: כל קיר = { x, z, len, dir, inside, inset } — משותף לבנייה ולעורך. */
+/** עובי שכבת הלטות: 0 כשהחיפוי מודבק/מוברג ישר לקיר. */
+const battenDepth = (v) => (v.mount === 'direct' ? 0 : (v.battenT ?? 18));
+
+/**
+ * מסלול הקירות: כל קיר = { x, z, len, dir, inside, inset, a, b } — משותף לבנייה ולעורך.
+ * [a, b] — הקטע לאורך הקיר שהחיפוי עצמו תופס (בגרונג: עד קו הפינה, בצד הארוך).
+ */
 function wallPath(v) {
-  const bt = v.battenT ?? 18, st = v.slatT ?? 20, totalT = bt + st;
+  const bt = battenDepth(v), st = v.slatT ?? 20, totalT = bt + st;
+  const miter = v.corner === 'miter';
   const walls = [];
   let x = 0, z = 0, dir = '+x';
   const lens = [v.len1 ?? 3000, v.len2 ?? 2000, v.len3 ?? 2000], turns = [null, v.turn2 ?? 'left', v.turn3 ?? 'left'];
@@ -47,16 +56,22 @@ function wallPath(v) {
     const inside = i > 0 ? dir === normal[walls[i - 1].dir] : null;
     // בפינה פנימית הקיר מתחיל אחרי עובי החיפוי של הקודם; בחיצונית — לפניו, ומכסה את קצהו.
     const inset = i > 0 ? (inside ? totalT : -totalT) : 0;
-    walls.push({ x, z, len: lens[i], dir, i, inside, inset, free: lens[i] - inset });
+    walls.push({ x, z, len: lens[i], dir, i, inside, inset, a: miter && i > 0 ? (inside ? bt : -totalT) : inset, b: lens[i] });
     if (dir === '+x') x += lens[i]; else if (dir === '-x') x -= lens[i]; else if (dir === '+z') z += lens[i]; else z -= lens[i];
   }
-  return { walls, totalT };
+  // בגרונג גם הקיר הקודם מגיע עד קו הפינה: בפינה פנימית — עד הלטות של הקיר הבא; בחיצונית — מעבר לקצה
+  for (const w of walls) {
+    const next = walls[w.i + 1];
+    if (miter && next) w.b = w.len + (next.inside ? -bt : totalT);
+    w.free = w.b - w.a;
+  }
+  return { walls, totalT, bt, st };
 }
 
 export default {
   key: 'cladding',
   name: 'חיפוי קיר',
-  description: 'סטריפים, לוחות, ריבועים ועוד על לטות — קיר אחד או כמה עם פינות; שדות עם דוגמאות שונות.',
+  description: 'סטריפים, לוחות, ריבועים ועוד — על לטות או ישר על הקיר; קיר אחד או כמה, עם פינה ישרה או בגרונג; שדות עם דוגמאות שונות.',
   laborHours: 10,
 
   params: [
@@ -66,6 +81,7 @@ export default {
     { key: 'len2', label: 'אורך קיר 2', type: 'mm', min: 300, max: 12000, default: 2000, group: 'מידות', showIf: { walls: [2, 3] } },
     { key: 'turn3', label: 'פנייה לקיר 3', type: 'enum', default: 'left', group: 'מידות', showIf: { walls: [3] }, options: [{ id: 'left', name: 'שמאלה' }, { id: 'right', name: 'ימינה' }] },
     { key: 'len3', label: 'אורך קיר 3', type: 'mm', min: 300, max: 12000, default: 2000, group: 'מידות', showIf: { walls: [3] } },
+    { key: 'corner', label: 'חיבור בפינה', type: 'enum', default: 'butt', group: 'מידות', showIf: { walls: [2, 3] }, options: [{ id: 'butt', name: 'ישר — קיר אחד מכסה את קצה השני' }, { id: 'miter', name: 'גרונג 45° — חיתוך אלכסוני' }] },
     { key: 'height', label: 'גובה החיפוי', type: 'mm', min: 300, max: 3500, default: 2500, group: 'מידות', hint: 'עד התקרה, או חלקי (למשל 1000)' },
     { key: 'fromFloor', label: 'התחלה מהרצפה', type: 'mm', min: 0, max: 1500, default: 0, group: 'מידות', hint: '0 = מהרצפה' },
 
@@ -78,13 +94,14 @@ export default {
     { key: 'slatT', label: 'עובי', type: 'mm', min: 6, max: 60, default: 20, group: 'עיצוב' },
     { key: 'tileS', label: 'מידת ריבוע / לבנה', type: 'mm', min: 60, max: 1200, default: 200, group: 'עיצוב', hint: 'לריבועים, לבנים, שחמט, תבליט ומסגרות' },
     { key: 'frameW', label: 'רוחב פס מסגרת', type: 'mm', min: 15, max: 120, default: 40, group: 'עיצוב', hint: 'לדוגמת המסגרות' },
-    { key: 'battenRows', label: 'שורות לטות רוחב', type: 'int', min: 2, max: 8, default: 3, group: 'עיצוב' },
-    { key: 'battenT', label: 'עובי הלטות', type: 'mm', min: 12, max: 40, default: 18, group: 'עיצוב' },
+    { key: 'mount', label: 'התקנה', type: 'enum', default: 'battens', group: 'עיצוב', options: [{ id: 'battens', name: 'על לטות' }, { id: 'direct', name: 'ישר על הקיר (הדבקה / הברגה)' }] },
+    { key: 'battenRows', label: 'שורות לטות רוחב', type: 'int', min: 2, max: 8, default: 3, group: 'עיצוב', showIf: { mount: ['battens'] } },
+    { key: 'battenT', label: 'עובי הלטות', type: 'mm', min: 12, max: 40, default: 18, group: 'עיצוב', showIf: { mount: ['battens'] } },
     { key: 'baseH', label: 'פנל תחתון — גובה', type: 'mm', min: 0, max: 300, default: 0, group: 'סיומות', hint: '0 = ללא' },
     { key: 'crownH', label: 'קרניז עליון — גובה', type: 'mm', min: 0, max: 200, default: 0, group: 'סיומות', hint: '0 = ללא' },
 
     { key: 'slatMaterial', label: 'הסטריפים / הלוחות', type: 'material', kind: 'board', back: false, top: false, default: 'board:solid-oak', group: 'חומרים' },
-    { key: 'battenMaterial', label: 'הלטות', type: 'material', kind: 'board', back: false, top: false, default: 'board:melamine-white-18', group: 'חומרים' },
+    { key: 'battenMaterial', label: 'הלטות', type: 'material', kind: 'board', back: false, top: false, default: 'board:melamine-white-18', group: 'חומרים', showIf: { mount: ['battens'] } },
     { key: 'trimMaterial', label: 'פנל וקרניז', type: 'material', kind: 'board', back: false, top: false, default: 'board:solid-oak', group: 'חומרים' },
   ],
   joinery: [
@@ -108,8 +125,8 @@ export default {
   build(v) {
     const parts = [], hardware = [], warnings = [];
     const H = v.height, y0 = v.fromFloor, y1 = y0 + H;
-    const bt = v.battenT, st = v.slatT;
-    const { walls, totalT } = wallPath(v);
+    const { walls, totalT, bt, st } = wallPath(v);
+    const direct = bt === 0;
     // נירמול: מזיזים הכול כך שהמינימום יהיה 0 (הגבולות חייבים להיות חיוביים)
     let minX = 0, minZ = 0, maxX = 0, maxZ = 0;
     const extent = (w) => {
@@ -130,8 +147,16 @@ export default {
       else if (w.dir === '+z') box = { x: w.x - depth - t, y: yA, z: w.z + u, w: t, h, d: len };
       else box = { x: w.x + depth, y: yA, z: w.z - u - len, w: t, h, d: len };
       const alongX = w.dir[1] === 'x';
-      return part(id, name, box, { axis: alongX ? 'z' : 'x', grain: opts.grainAlong ? (alongX ? 'x' : 'z') : 'y', ...opts });
+      return part(id, name, box, { axis: alongX ? 'z' : 'x', grain: opts.grainAlong ? (alongX ? 'x' : 'z') : 'y', face: ROOM_FACE[w.dir], ...opts });
     };
+    /** הקטע של תיבה לאורך הקיר [u0, u1] ומרחקה מהקיר [d0, d1] — ההפך של place. */
+    const span = (w, b) => {
+      if (w.dir === '+x') return [b.x - w.x, b.x + b.w - w.x, b.z - w.z, b.z + b.d - w.z];
+      if (w.dir === '-x') return [w.x - b.x - b.w, w.x - b.x, w.z - b.z - b.d, w.z - b.z];
+      if (w.dir === '+z') return [b.z - w.z, b.z + b.d - w.z, w.x - b.x - b.w, w.x - b.x];
+      return [w.z - b.z - b.d, w.z - b.z, b.x - w.x, b.x + b.w - w.x];
+    };
+    const OPP = { '+x': '-x', '-x': '+x', '+z': '-z', '-z': '+z' };
 
     const S = v.tileS, g = v.slatGap, sw = v.slatW;
     /** פריסה ממורכזת של n פריטים ברוחב `size` עם מרווח `gap` בתוך `total`: מחזירה [התחלה, n]. */
@@ -218,7 +243,8 @@ export default {
 
     for (const w of walls) {
       const k = w.i + 1;
-      const startInset = w.inset, len = w.free;
+      const startInset = w.a, len = w.free;
+      const first = parts.length;
       // השדות: רוחב נעוץ/אוטומטי, דוגמה וגובה לכל שדה (ברירת מחדל — גובה החיפוי)
       const lay = sectionLayout(v.columnsLayout, `wall${k}`, v.fields);
       const widths = resolveShares(len, lay.widths);
@@ -231,22 +257,49 @@ export default {
         }
       };
       // לטות רוחב: לכל הקיר; כשהשדות בגבהים שונים — לכל שדה, בגובה שלו
-      if (!stepped) battens(`w${k}-batten`, startInset, len, H, `קיר ${k}`);
+      // הלטות על הקיר עצמו: בגרונג — מהפינה (בפנימית אחרי שכבת הקיר הקודם), עד סוף הקיר
+      const bA = v.corner === 'miter' && w.i > 0 ? (w.inside ? totalT : 0) : w.inset;
+      const bLen = w.len - bA;
+      if (!direct && !stepped) battens(`w${k}-batten`, bA, bLen, H, `קיר ${k}`);
       let u = startInset;
       for (let f = 0; f < v.fields; f++) {
         const pattern = PATTERN_NAME[lay.cols[f]?.kind] ? lay.cols[f].kind : v.style;
         const fTop = y0 + fieldH[f];
-        if (stepped) battens(`w${k}-f${f + 1}-batten`, u, widths[f], fieldH[f], `קיר ${k} · שדה ${f + 1}`);
+        if (!direct && stepped) {
+          // לטות השדה — רק על הקיר עצמו (לא מעבר לפינה)
+          const la = Math.max(u, bA), lb = Math.min(u + widths[f], w.len);
+          if (lb - la > 60) battens(`w${k}-f${f + 1}-batten`, la, lb - la, fieldH[f], `קיר ${k} · שדה ${f + 1}`);
+        }
         fillField(w, k, f + 1, u, widths[f], y0 + v.baseH, fTop - v.crownH, pattern);
         if (stepped && v.crownH > 0) parts.push(place(w, `w${k}-f${f + 1}-crown`, 'קרניז עליון', u, fTop - v.crownH, fTop, widths[f], bt, st, { material: v.trimMaterial, grainAlong: true, qtyKey: `crown-${Math.round(widths[f])}`, note: `קיר ${k} · שדה ${f + 1}` }));
         u += widths[f];
       }
       if (v.baseH > 0) parts.push(place(w, `w${k}-base`, 'פנל תחתון', startInset, y0, y0 + v.baseH, len, bt, st, { material: v.trimMaterial, grainAlong: true, qtyKey: `base-${Math.round(len)}`, note: `קיר ${k}` }));
       if (!stepped && v.crownH > 0) parts.push(place(w, `w${k}-crown`, 'קרניז עליון', startInset, y1 - v.crownH, y1, len, bt, st, { material: v.trimMaterial, grainAlong: true, qtyKey: `crown-${Math.round(len)}`, note: `קיר ${k}` }));
+      // גרונג: כל חלק בשכבת החיפוי שמגיע לקצה הפינתי נחתך ב-45° — בפינה פנימית הפאה שאל החדר
+      // קצרה יותר, בחיצונית הפאה שאל הקיר
+      if (v.corner === 'miter') {
+        const ends = [];
+        if (w.i > 0) ends.push({ at: w.a, end: OPP[w.dir], inside: w.inside });
+        if (walls[w.i + 1]) ends.push({ at: w.b, end: w.dir, inside: walls[w.i + 1].inside });
+        for (let q = first; q < parts.length; q++) {
+          const p = parts[q];
+          if (/batten/.test(p.id)) continue;
+          const [u0, u1, d0, d1] = span(w, p.box);
+          for (const e of ends) {
+            const atStart = e.end === OPP[w.dir];
+            if (Math.abs((atStart ? u0 : u1) - e.at) > 0.5) continue;
+            (p.miter ||= []).push({ end: e.end, short: e.inside ? ROOM_FACE[w.dir] : OPP[ROOM_FACE[w.dir]], cut: Math.round((d1 - d0) * 10) / 10 });
+            if (!/גרונג/.test(p.note || '')) p.note = [p.note, 'גרונג 45° בקצה הפינה'].filter(Boolean).join(' — ');
+          }
+        }
+      }
     }
-    hardware.push({ id: 'screws', kind: 'misc', material: 'hw:leg-adjust', qty: 0, note: `ברגים ודיבלים: ~${Math.round(walls.reduce((s, w) => s + w.len, 0) / 400) * v.battenRows} לקיבוע הלטות` });
+    if (direct) hardware.push({ id: 'glue', kind: 'misc', material: 'hw:leg-adjust', qty: 0, note: 'התקנה ישירה: דבק פוליאוריתן/MS לקיר, ולפי הצורך מסמרי פנאומטיקה או ברגים נסתרים. הקיר חייב להיות ישר — סטייה של מעל 3 מ"מ למטר דורשת לטות' });
+    else hardware.push({ id: 'screws', kind: 'misc', material: 'hw:leg-adjust', qty: 0, note: `ברגים ודיבלים: ~${Math.round(walls.reduce((s, w) => s + w.len, 0) / 400) * v.battenRows} לקיבוע הלטות` });
     if (sw / st > 4 && parts.some((p) => p.name === 'סטריפ')) warnings.push(`סטריפ ברוחב ${sw} ובעובי ${st} — דק ליחס; נוטה להתעקם`);
-    if (H > 2800) warnings.push(`חיפוי בגובה ${H} — מעל 2800 הסטריפים מתחלקים לשניים (חיבור באמצע הלטה)`);
+    if (H > 2800) warnings.push(`חיפוי בגובה ${H} — מעל 2800 הסטריפים מתחלקים לשניים${direct ? '' : ' (חיבור באמצע הלטה)'}`);
+    if (v.corner === 'miter' && walls.length > 1 && st < 12) warnings.push(`גרונג בעובי ${st} — דק לחיתוך 45°; קצה הגרונג נשבר בקלות`);
     if (parts.length > 1500) warnings.push(`${parts.length} חלקים — דוגמה צפופה; רשימת החיתוך מקבצת זהים, אבל ההדמיה תהיה כבדה`);
 
     const maxT = Math.max(...parts.map((p) => (p.axis === 'z' ? p.box.z + p.box.d : 0)), 0);

@@ -16,8 +16,10 @@
 import { material } from './materials.js';
 import { boardWeight, hingeCount, hingeYs, hingeDrilling, hingeDrillingH, slidingLeaf, slideLoad, slideDrilling, DRAWER_CONTENT_KG, partWeight } from './physics.js';
 
-export function part(id, name, box, { axis, grain, material, qtyKey, edges = {}, note } = {}) {
-  return { id, name, qtyKey: qtyKey || id, box, axis, grain, material, edges, note };
+export function part(id, name, box, { axis, grain, material, qtyKey, edges = {}, note, face } = {}) {
+  const p = { id, name, qtyKey: qtyKey || id, box, axis, grain, material, edges, note };
+  if (face) p.face = face;   // הפאה הגלויה ('+z', '-x'…) — כשהתבנית יודעת אותה טוב מהניחוש של partNormal
+  return p;
 }
 
 /** מידות החיתוך של חלק: אורך בכיוון הסיבים, רוחב בציר השלישי, עובי בציר העובי. */
