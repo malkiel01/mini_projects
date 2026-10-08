@@ -548,6 +548,28 @@ console.log('אביזרים: ידיות, כפתורים, צירים, גלגלי�
   check(ACC_FINISHES.length >= 6, 'גימורים');
 }
 
+// ---- פיצול דלת לכל עמודה ----
+{
+  console.log('\nפיצול דלת לכל עמודה');
+  const L = (cols) => ({ sections: { main: { widths: [null, null, null], cols } } });
+  const doorsOf = (r, i) => r.parts.filter((p) => new RegExp(`^door-${i}(-|a|b|$)`).test(p.id) && !/strip|glass|frame/.test(p.id) && p.name.startsWith('דלת'));
+  // רק עמודה 2 מפוצלת ב-700
+  const a = build('bookcase', { columns: 3, doorType: 'wood', columnsLayout: L({ 1: { split: 700 } }) });
+  check(doorsOf(a, 2).some((p) => /lo/.test(p.id)) && doorsOf(a, 2).some((p) => /up/.test(p.id)) && !doorsOf(a, 1).some((p) => /lo|up/.test(p.id)) && !doorsOf(a, 3).some((p) => /lo|up/.test(p.id)), 'רק עמודה 2 מפוצלת: דלת עליונה ותחתונה בה, דלת אחת בשאר');
+  const lo2 = a.parts.find((p) => /^door-2-lo/.test(p.id));
+  check(Math.abs(lo2.box.y + lo2.box.h - (a.values.plinthH + a.values.shelfT + 700)) < 2, `הדלת התחתונה עד גובה הפיצול (${Math.round(lo2.box.y + lo2.box.h)})`);
+  check(a.parts.filter((p) => p.id.startsWith('split-')).length === 1, 'מדף קבוע אחד — רק בעמודה המפוצלת');
+  // ברירת מחדל מפוצלת, עמודה 3 בלי (0), עמודה 1 בגובה אחר
+  const b = build('bookcase', { columns: 3, doorType: 'wood', lowerH: 800, columnsLayout: L({ 0: { split: 500 }, 2: { split: 0 } }) });
+  const y = (id) => { const p = b.parts.find((q) => q.id === id); return p && Math.round(p.box.y + p.box.h); };
+  check(y('door-1-lo') < y('door-2-lo') && !b.parts.some((p) => /^door-3-(lo|up)/.test(p.id)) && b.parts.filter((p) => p.id.startsWith('split-')).length === 2, 'ברירת מחדל 800, עמודה 1 ב-500, עמודה 3 בלי פיצול');
+  // פיצול שלא נכנס בעמודה נמוכה — בוטל עם אזהרה, לעמודה הזו בלבד
+  const c = build('bookcase', { columns: 3, height: 2000, doorType: 'wood', lowerH: 1500, columnsLayout: L({ 1: { height: 1200 } }) });
+  check(c.warnings.some((w) => /עמודה 2: גובה החלק התחתון 1500/.test(w)) && c.parts.some((p) => /^door-1-lo/.test(p.id)) && !c.parts.some((p) => /^door-2-(lo|up)/.test(p.id)), 'פיצול גבוה מעמודה נמוכה — בוטל רק בה, עם אזהרה');
+  check(within(b.parts, b.bounds) && within(c.parts, c.bounds), 'בגבולות');
+  check(normalizeLayout({ cols: { 0: { split: 0 } } }, 2).cols[0].split === 0, 'הפריסה שומרת פיצול 0 (בלי פיצול בעמודה)');
+}
+
 // ---- חירוץ CNC: לוח אחד מחורץ (דמוי סטריפים, מסגרות) ----
 {
   console.log('\nחירוץ CNC');

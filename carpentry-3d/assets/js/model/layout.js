@@ -82,6 +82,7 @@ export function normalizeLayout(raw, columns) {
     if (Array.isArray(c.gaps)) col.gaps = c.gaps.map(pin);
     if (typeof c.kind === 'string') col.kind = c.kind;
     if (pin(c.height)) col.height = Math.round(c.height);   // גובה עמודה/שדה נעוץ (בלעדיו — גובה המוצר)
+    if (Number.isFinite(c.split) && c.split >= 0) col.split = Math.round(c.split);   // פיצול דלת לעמודה (0 = בלי; בלעדיו — ברירת המחדל של המוצר)
     if (col.gaps && col.shelves === undefined) col.shelves = col.gaps.length - 1;
     if (Object.keys(col).length) out.cols[i] = col;
   }
