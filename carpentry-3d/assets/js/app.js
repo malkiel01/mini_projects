@@ -17,7 +17,7 @@ import { createMaterialsUI } from './materials-ui.js';
 import { createAccessoriesUI } from './accessories-ui.js';
 import { api, loadLast, saveLast } from './store.js';
 import { watchNumbers } from './numfield.js';
-import { placeModel, combine, snapTo } from './model/assembly.js';
+import { placeModel, combine, snapTo, dragSnap } from './model/assembly.js';
 import { totalWeight, partWeight, drillingList } from './model/physics.js';
 import { toSTL, printSize } from './model/stl.js';
 
@@ -137,7 +137,12 @@ async function enter() {
   if (rates) state.rates = rates.rates;
 
   if (!viewer) {
-    viewer = createViewer($('#stage'), { onPick: showPart });
+    viewer = createViewer($('#stage'), { onPick: onViewerPick, drag: {
+      active: () => !!state.assembly && moveItems && state.user.role !== 'viewer',
+      keyOf: (id) => { const m = /^e(\d+):/.exec(id); return m ? Number(m[1]) - 1 : null; },
+      constrain: (i, dx, dz) => dragSnap(itemBounds(), i, dx, dz, { skip: state.assembly.items.map((it, k) => (it.visible === false ? k : -1)).filter((k) => k >= 0) }),
+      end: (i, dx, dz) => moveItemBy(i, dx, dz),
+    } });
     materialsUI = createMaterialsUI($('#mlib'), {
       onChange: () => { if (state.project) { form = renderForm($('#form'), currentTemplate(), state.values, onFormChange); rebuild(); } },
       onError, getUser: () => state.user,
@@ -276,21 +281,28 @@ async function showProjects(fromPop = false) {
         <h3>${first ? 'במה מתחילים?' : 'פרויקט חדש'}</h3>
         <div class="tgrid">${typeCards}</div>
       </section>` : ''}
+      ${ra.assemblies.length || canEdit ? `<section class="start-section">
+        <h3>הרכבות <small class="muted">${ra.assemblies.length} · כמה אלמנטים של לקוח יחד — מזווה ומעליו ארונית, תחתונים ועליונים, ספרייה בשני חלקים</small></h3>
+        <div class="pgrid">
+          ${ra.assemblies.map((a) => `<article class="pcard" data-asm="${a.id}">
+            <button type="button" class="pcard__main" data-open-asm="${a.id}">
+              <span class="pcard__icon">🧩</span>
+              <span class="pcard__text"><b>${esc(a.name)}</b><span class="muted">${[a.client_name, a.joined ? 'אלמנט מאוחד' : 'אלמנטים נפרדים', admin ? a.owner_name : ''].filter(Boolean).map(esc).join(' · ')}</span></span>
+              <span class="pcard__meta">${a.shared ? '<span title="משותף עם לקוח">🔗</span>' : ''}<span class="muted">${fmtDate(a.updated_at)}</span></span>
+            </button>
+            ${canEdit ? `<span class="pcard__actions"><button type="button" class="btn btn--small" data-asm-ren="${a.id}">שינוי שם</button><button type="button" class="btn btn--small" data-asm-dup="${a.id}">שכפול</button><button type="button" class="btn btn--small" data-asm-del="${a.id}">מחיקה</button></span>` : ''}
+          </article>`).join('')}
+          ${canEdit ? `<button type="button" class="acard" data-new-asm="1"><b>＋ הרכבה חדשה</b><span class="muted">בוחרים לקוח ומוסיפים את הפרויקטים שלו</span></button>` : ''}
+        </div>
+      </section>` : ''}
       ${r.projects.length ? `<section class="start-section">
         <h3>הפרויקטים ${admin ? 'של כולם' : 'שלי'} <small class="muted">${r.projects.length}</small></h3>
         <div class="pgrid">${projCards}</div>
       </section>` : ''}
-      ${ra.assemblies.length || canEdit ? `<section class="start-section">
-        <h3>הרכבות <small class="muted">כמה אלמנטים של לקוח יחד — מזווה ומעליו ארונית, תחתונים ועליונים, ספרייה בשני חלקים</small></h3>
-        <div class="pgrid">
-          ${ra.assemblies.map((a) => `<button type="button" class="acard" data-open-asm="${a.id}"><b>🧩 ${esc(a.name)}</b><span class="muted">${[a.client_name, a.joined ? 'אלמנט מאוחד' : 'אלמנטים נפרדים', admin ? a.owner_name : ''].filter(Boolean).map(esc).join(' · ')}</span><span class="muted">${fmtDate(a.updated_at)}</span></button>`).join('')}
-          ${canEdit ? `<button type="button" class="acard" data-new-asm="1"><b>＋ הרכבה חדשה</b><span class="muted">בוחרים לקוח ומוסיפים את הפרויקטים שלו</span></button>` : ''}
-        </div>
-      </section>` : ''}
       <section class="start-section"><button type="button" class="btn" data-clients="1">👤 ניהול לקוחות <small class="muted">${state.clients.length}</small></button></section>`;
 
     body.onclick = async (e) => {
-      const t = e.target.closest('[data-open],[data-dup],[data-del],[data-new-type],[data-new-tpl],[data-open-asm],[data-new-asm],[data-clients]');
+      const t = e.target.closest('[data-open],[data-dup],[data-del],[data-new-type],[data-new-tpl],[data-open-asm],[data-new-asm],[data-clients],[data-asm-ren],[data-asm-dup],[data-asm-del]');
       if (!t) return;
       e.preventDefault(); e.stopPropagation();
       try {
@@ -298,6 +310,19 @@ async function showProjects(fromPop = false) {
         else if (t.dataset.openAsm) { closeDrawer('#projects', true); await openAssembly(Number(t.dataset.openAsm)); }
         else if (t.dataset.newAsm) { closeDrawer('#projects', true); await newAssembly(); }
         else if (t.dataset.clients) { showClients(); }
+        else if (t.dataset.asmRen) renameAssemblyInline(Number(t.dataset.asmRen));
+        else if (t.dataset.asmDup) {
+          const a = (await api('assembly-get', { id: Number(t.dataset.asmDup) })).assembly;
+          await api('assembly-save', { name: `${a.name} (עותק)`, client_id: a.client_id, items: a.items, joined: a.joined });
+          toast('ההרכבה שוכפלה'); showProjects();
+        }
+        else if (t.dataset.asmDel) {
+          const id = Number(t.dataset.asmDel);
+          if (!confirm('למחוק את ההרכבה? הפרויקטים עצמם נשארים.')) return;
+          await api('assembly-delete', { id });
+          if (state.assembly?.id === id) { saveLast({}); leaveAssembly(); }
+          showProjects();
+        }
         else if (t.dataset.dup) { await api('project-duplicate', { id: Number(t.dataset.dup) }); showProjects(); }
         else if (t.dataset.del) {
           if (!confirm('למחוק את הפרויקט? אין שחזור.')) return;
@@ -352,15 +377,18 @@ async function newProject(type, templateKey, name, clientId = null) {
   toast('הפרויקט נוצר — אפשר להתחיל למלא מידות');
 }
 
-async function openProject(id) {
+async function openProject(id, opts = {}) {
   await flush();
   const r = await api('project-get', { id });
-  loadProject(r.project);
+  loadProject(r.project, opts);
 }
 
-function loadProject(p) {
+function loadProject(p, { fromAssembly = null } = {}) {
   const wasOpen = !!state.project || !!state.assembly;
   leaveAssembly();
+  returnAssembly = fromAssembly;
+  $('#btn-back-asm').hidden = !fromAssembly;
+  if (fromAssembly) $('#btn-back-asm').textContent = `↩ חזרה להרכבה "${fromAssembly.name}"`;
   state.project = p;
   // מתוך מגירה: רשומת המגירה הופכת לרשומת הפרויקט. אחרת (למשל בטעינה) — דוחפים.
   if (history.state?.app === 'carpentry' && history.state.kind === 'drawer') history.replaceState({ app: 'carpentry', kind: 'project' }, '');
@@ -940,6 +968,15 @@ function modelFor(p) {
   return m;
 }
 function wireAssemblyUi() {
+  $('#btn-move-items').addEventListener('click', () => {
+    setMoveItems(!moveItems);
+    if (moveItems) toast('גוררים אלמנט על הרצפה — נצמד כל 10 מ"מ ולקצוות של אלמנטים אחרים. גרירה על הרקע מסובבת');
+  });
+  $('#btn-back-asm').addEventListener('click', async () => {
+    if (!returnAssembly) return;
+    const id = returnAssembly.id;
+    try { await openAssembly(id); } catch (err) { onError(err); }
+  });
   $('#asm-name').addEventListener('input', (e) => { state.assembly.name = e.target.value; $('#template-name').textContent = e.target.value; markDirty(); });
   $('#asm-client').addEventListener('change', async (e) => { state.assembly.client_id = e.target.value ? Number(e.target.value) : null; markDirty(); await fillAddSelect(); });
   $('#asm-joined').addEventListener('change', (e) => { state.assembly.joined = e.target.checked; markDirty(); rebuildAssembly(); });
@@ -978,7 +1015,7 @@ function wireAssemblyUi() {
     const row = b.closest('[data-i]'); const i = Number(row.dataset.i); const it = state.assembly.items[i];
     const act = b.dataset.act;
     if (act === 'remove') { state.assembly.items.splice(i, 1); markDirty(); renderItems(); rebuildAssembly(true); }
-    else if (act === 'edit') { closeDrawer('#projects', true); await openProject(it.project_id); }
+    else if (act === 'edit') { const back = { id: state.assembly.id, name: state.assembly.name }; closeDrawer('#projects', true); await openProject(it.project_id, { fromAssembly: back }); toast('עורכים את האלמנט; "↩ חזרה להרכבה" בכרטיס הפרויקט'); }
     else if (act === 'floor') { it.pos[1] = 0; markDirty(); renderItems(); rebuildAssembly(); }
     else {
       const ref = Number(row.querySelector('[name=ref]').value);
@@ -989,6 +1026,78 @@ function wireAssemblyUi() {
     }
   });
 }
+// ---- הזזה בתלת מימד, בחירת אלמנט בהקשה, וחזרה להרכבה אחרי עריכת אלמנט ----
+let moveItems = false;
+let returnAssembly = null;   // { id, name } — כשפרויקט נפתח מכפתור ✏️ של אלמנט בהרכבה
+function setMoveItems(on) {
+  moveItems = !!on;
+  $('#btn-move-items').classList.toggle('is-on', moveItems);
+  $('#stage').classList.toggle('is-moving', moveItems && !!state.assembly);
+}
+/** סוף גרירה: מעדכן את המיקום, ובונה מחדש בלי שהתמונה תקפוץ (הנירמול של combine יכול להזיז הכול). */
+function moveItemBy(i, dx, dz) {
+  const it = state.assembly.items[i];
+  if (!it) return;
+  // ההזזה שהנירמול הוסיף: גבולות אלמנט גלוי במודל המאוחד פחות גבולותיו המקוריים (לפי המפתח, לא האינדקס)
+  const shiftOf = () => {
+    const bs = itemBounds();
+    for (const mi of model?.items || []) {
+      const b = bs[mi.key - 1];
+      if (mi.visible && b && b.w) return [mi.bounds.x - b.x, mi.bounds.y - b.y, mi.bounds.z - b.z];
+    }
+    return [0, 0, 0];
+  };
+  const before = shiftOf();
+  it.pos = [Math.round(it.pos[0] + dx), it.pos[1], Math.round(it.pos[2] + dz)];
+  markDirty(); renderItems(); rebuildAssembly();
+  const after = shiftOf();
+  viewer.nudgeTarget(after[0] - before[0], after[1] - before[1], after[2] - before[2]);
+  highlightItem(i);
+}
+function highlightItem(i) {
+  document.querySelectorAll('#asm-items .asm-item').forEach((el) => el.classList.toggle('is-selected', Number(el.dataset.i) === i));
+  const el = document.querySelector(`#asm-items .asm-item[data-i="${i}"]`);
+  if (el && document.body.dataset.tab !== 'view') el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+function onViewerPick(p) {
+  showPart(p);
+  if (!state.assembly) return;
+  const m = p && /^e(\d+):/.exec(p.id);
+  if (m) highlightItem(Number(m[1]) - 1);
+  else highlightItem(-1);
+}
+/** שינוי שם של הרכבה ישר מהרשימה: השם הופך לשדה; Enter או יציאה שומרים. */
+function renameAssemblyInline(id) {
+  const card = document.querySelector(`[data-asm="${id}"]`);
+  const b = card?.querySelector('.pcard__text b');
+  if (!b || card.querySelector('.pcard__rename')) return;
+  const inp = document.createElement('input');
+  inp.className = 'pcard__rename'; inp.value = b.textContent; inp.maxLength = 80;
+  inp.setAttribute('aria-label', 'שם ההרכבה');
+  const wrap = document.createElement('div');
+  wrap.className = 'pcard__main pcard__main--edit';
+  wrap.appendChild(inp);
+  card.querySelector('.pcard__main').replaceWith(wrap);
+  inp.addEventListener('click', (e) => e.stopPropagation());
+  inp.focus(); inp.select();
+  let done = false;
+  const save = async () => {
+    if (done) return; done = true;
+    const name = inp.value.trim();
+    try {
+      if (name && name !== b.textContent) {
+        const a = (await api('assembly-get', { id })).assembly;
+        await api('assembly-save', { id, name, client_id: a.client_id, items: a.items, joined: a.joined });
+        if (state.assembly?.id === id) { state.assembly.name = name; $('#asm-name').value = name; $('#template-name').textContent = name; }
+        toast('השם נשמר');
+      }
+    } catch (err) { onError(err); }
+    showProjects();
+  };
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } if (e.key === 'Escape') { done = true; showProjects(); } });
+  inp.addEventListener('blur', save);
+}
+
 /** גבולות כל פריט בקואורדינטות ההרכבה (לפני הנירמול): המיקום + המידות אחרי הסיבוב. */
 function itemBounds() {
   return state.assembly.items.map((it) => {
@@ -1034,10 +1143,14 @@ function loadAssembly(a) {
   renderItems();
   rebuildAssembly(true);
   updateAsmShareUi();
+  $('#btn-move-items').hidden = ro;
+  setMoveItems(moveItems);
 }
 function leaveAssembly() {
   if (!state.assembly) return;
   state.assembly = null;
+  $('#btn-move-items').hidden = true;
+  $('#stage').classList.remove('is-moving');
   $('#assembly-card').hidden = true;
   $('#project-card').hidden = false;
   $('#form').hidden = false;

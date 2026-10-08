@@ -143,3 +143,27 @@ export function snapTo(a, b, where) {
   if (where === 'floor') return [a.x, 0, a.z];
   return pos;
 }
+
+/**
+ * הצמדה בזמן גרירה על הרצפה: התזוזה מתעגלת ל-`grid` מ"מ, וקצה שמתקרב
+ * לקצה של אלמנט אחר (עד `magnet` מ"מ) נצמד אליו — צמוד מבחוץ (קצה מול קצה)
+ * או מיושר (שמאל לשמאל, ימין לימין). בכל ציר בנפרד: X ו-Z.
+ * @param bs  גבולות כל האלמנטים (itemBounds), @param i האלמנט הנגרר
+ * @param skip אינדקסים שלא נצמדים אליהם (מוסתרים)
+ */
+export function dragSnap(bs, i, dx, dz, { grid = 10, magnet = 40, skip = [] } = {}) {
+  const b = bs[i];
+  const axis = (d, lo, size) => {
+    let best = Math.round(d / grid) * grid, dist = Infinity;
+    const at = b[lo] + d;
+    bs.forEach((o, k) => {
+      if (k === i || skip.includes(k) || !o) return;
+      for (const target of [o[lo] + o[size], o[lo] - b[size], o[lo], o[lo] + o[size] - b[size]]) {
+        const gap = Math.abs(at - target);
+        if (gap <= magnet && gap < dist) { dist = gap; best = target - b[lo]; }
+      }
+    });
+    return best;
+  };
+  return [axis(dx, 'x', 'w'), axis(dz, 'z', 'd')];
+}

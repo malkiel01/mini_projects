@@ -9,7 +9,7 @@ import { build, cutList, hardwareList, defaults, template, optionsFor, allParams
 import * as M from '../assets/js/model/materials.js';
 import { estimate } from '../assets/js/model/pricing.js';
 import { resolveShares, editShare, normalizeLayout, layoutIsEmpty } from '../assets/js/model/layout.js';
-import { placeModel, combine, snapTo } from '../assets/js/model/assembly.js';
+import { placeModel, combine, snapTo, dragSnap } from '../assets/js/model/assembly.js';
 import { TYPES, buildAccessory, paramsOf, faceOf, wheelHeight, FINISHES as ACC_FINISHES } from '../assets/js/model/accessories.js';
 import { nest, sheetCount } from '../assets/js/model/sheets.js';
 import { partWeight, totalWeight, boardWeight, hingeCount, hingeYs, hingeDrilling, slidingLeaf, SLIDING_SYSTEMS, slideLoad, drillingList, physicsWarnings, densityOf } from '../assets/js/model/physics.js';
@@ -545,6 +545,18 @@ console.log('אביזרים: ידיות, כפתורים, צירים, גלגלי�
   const tb = build('table', { wheels: 'hw:caster-fixed-50' });
   check(tb.hardware.filter((h) => h.kind === 'wheel').length === 4 && tb.bounds.h === 750 + wheelHeight(M.material('hw:caster-fixed-50')), 'שולחן על גלגלים');
   check(ACC_FINISHES.length >= 6, 'גימורים');
+}
+
+// ---- הרכבה: גרירה על הרצפה עם הצמדה ----
+{
+  console.log('\nגרירת אלמנט בהרכבה');
+  const bs = [{ x: 0, y: 0, z: 0, w: 600, h: 2000, d: 600 }, { x: 1000, y: 0, z: 0, w: 800, h: 900, d: 560 }];
+  check(JSON.stringify(dragSnap(bs, 1, 123, 297)) === '[120,300]', 'בלי קצה קרוב: עיגול ל-10 מ"מ');
+  check(dragSnap(bs, 1, -385, 0)[0] === -400, 'קצה שמאל נצמד לקצה ימין של השכן (צמוד)');
+  check(dragSnap(bs, 1, -1010, 0)[0] === -1000, 'קצה שמאל מתיישר עם קצה שמאל של השכן');
+  check(dragSnap(bs, 1, 0, 30)[1] === 40, 'Z: חזית מתיישרת עם חזית השכן (600−560)');
+  check(dragSnap(bs, 1, -384, 0, { skip: [0] })[0] === -380, 'אלמנט מוסתר לא מושך');
+  check(dragSnap(bs, 1, -300, 0)[0] === -300, 'רחוק מכל קצה — בלי הצמדה');
 }
 
 // ---- פיזיקה: משקלים, צירים לפי גובה ומשקל, מערכות הזזה, קידוחים ----

@@ -758,3 +758,11 @@ input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner
 .stl-pick { display: inline-flex; align-items: center; gap: 4px; }
 .stl-pick select { padding: 4px 6px; border: 1px solid var(--line, #d6d3cd); border-radius: 6px; background: var(--bg, #fff); font: inherit; }
 .output__body h4 { margin: 14px 0 4px; font-size: 0.95rem; }
+
+/* הרכבה: מצב הזזה בתלת מימד, אלמנט מסומן, ושינוי שם ברשימה */
+#stage.is-moving { cursor: grab; }
+#stage.is-moving:active { cursor: grabbing; }
+.asm-item.is-selected { border-color: var(--accent, #b8742a); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #b8742a) 35%, transparent); }
+.pcard__rename { width: 100%; font: inherit; font-weight: 700; padding: 4px 8px; border: 1px solid var(--accent, #b8742a); border-radius: 6px; background: var(--bg, #fff); }
+.pcard__main--edit { display: flex; align-items: center; padding: 10px 14px; }
+.asm-item__pos input { direction: ltr; text-align: center; }
