@@ -766,3 +766,4 @@ input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner
 .pcard__rename { width: 100%; font: inherit; font-weight: 700; padding: 4px 8px; border: 1px solid var(--accent, #b8742a); border-radius: 6px; background: var(--bg, #fff); }
 .pcard__main--edit { display: flex; align-items: center; padding: 10px 14px; }
 .asm-item__pos input { direction: ltr; text-align: center; }
+#stage.is-moving-y { cursor: ns-resize; }

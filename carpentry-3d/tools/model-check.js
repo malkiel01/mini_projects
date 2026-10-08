@@ -9,7 +9,7 @@ import { build, cutList, hardwareList, defaults, template, optionsFor, allParams
 import * as M from '../assets/js/model/materials.js';
 import { estimate } from '../assets/js/model/pricing.js';
 import { resolveShares, editShare, normalizeLayout, layoutIsEmpty } from '../assets/js/model/layout.js';
-import { placeModel, combine, snapTo, dragSnap } from '../assets/js/model/assembly.js';
+import { placeModel, combine, snapTo, dragSnap, dragSnapY } from '../assets/js/model/assembly.js';
 import { TYPES, buildAccessory, paramsOf, faceOf, wheelHeight, FINISHES as ACC_FINISHES } from '../assets/js/model/accessories.js';
 import { nest, sheetCount } from '../assets/js/model/sheets.js';
 import { partWeight, totalWeight, boardWeight, hingeCount, hingeYs, hingeDrilling, slidingLeaf, SLIDING_SYSTEMS, slideLoad, drillingList, physicsWarnings, densityOf } from '../assets/js/model/physics.js';
@@ -578,6 +578,12 @@ console.log('אביזרים: ידיות, כפתורים, צירים, גלגלי�
   check(dragSnap(bs, 1, 0, 30)[1] === 40, 'Z: חזית מתיישרת עם חזית השכן (600−560)');
   check(dragSnap(bs, 1, -384, 0, { skip: [0] })[0] === -380, 'אלמנט מוסתר לא מושך');
   check(dragSnap(bs, 1, -300, 0)[0] === -300, 'רחוק מכל קצה — בלי הצמדה');
+  // בגובה: bs[0] גבוה 2000, bs[1] גבוה 900
+  check(dragSnapY(bs, 1, 1234) === 1230, 'גובה: עיגול ל-10 מ"מ');
+  check(dragSnapY(bs, 1, 1985) === 2000, 'גובה: התחתית נצמדת לגג של השכן (עליו)');
+  check(dragSnapY(bs, 1, 1080) === 1100, 'גובה: הגג מתיישר עם גג השכן (2000 − 900)');
+  check(dragSnapY(bs, 1, -500) === 0 && dragSnapY([{ ...bs[0] }, { ...bs[1], y: 300 }], 1, -280) === -300, 'גובה: לא מתחת לרצפה, ונצמד אליה');
+  check(dragSnapY(bs, 1, 1985, { skip: [0] }) === 1990, 'גובה: אלמנט מוסתר לא מושך');
 }
 
 // ---- פיזיקה: משקלים, צירים לפי גובה ומשקל, מערכות הזזה, קידוחים ----
