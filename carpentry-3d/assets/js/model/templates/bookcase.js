@@ -40,8 +40,8 @@ export default {
     { key: 'crownH', label: 'כרכוב — גובה', type: 'mm', min: 0, max: 200, default: 0, group: 'סיומות', hint: '0 = ללא כרכוב' },
     wheelsParam(),
 
-    { key: 'lowerH', label: 'פיצול העמודה — גובה החלק התחתון', type: 'mm', min: 0, max: 2500, default: 0, group: 'דלתות', hint: '0 = בלי פיצול. עם פיצול: מדף קבוע בגובה הזה, ודלתות שונות למטה ולמעלה' },
-    { key: 'lowerDoors', label: 'דלתות — חלק תחתון', type: 'enum', default: 'wood', group: 'דלתות', options: DOOR_OPTIONS, showIf: { lowerH: 'gt0' } },
+    { key: 'lowerH', label: 'פיצול העמודות — גובה החלק התחתון', type: 'mm', min: 0, max: 2500, default: 0, group: 'דלתות', hint: '0 = בלי פיצול. ברירת מחדל לכל העמודות — לכל עמודה אפשר אחרת ב"עריכת עמודות". עם פיצול: מדף קבוע בגובה הזה, ודלתות שונות למטה ולמעלה' },
+    { key: 'lowerDoors', label: 'דלתות — חלק תחתון (בעמודה מפוצלת)', type: 'enum', default: 'wood', group: 'דלתות', options: DOOR_OPTIONS },
     { key: 'doorType', label: 'דלתות — חלק עליון / כל הגובה', type: 'enum', default: 'none', group: 'דלתות', options: DOOR_OPTIONS },
     { key: 'glassColumns', label: 'עמודות ויטרינה מלאה', type: 'enum', default: 'none', group: 'דלתות', hint: 'עמודה שלמה בדלת ויטרינה, בלי פיצול',
       options: [{ id: 'none', name: 'ללא' }, { id: 'first', name: 'הראשונה' }, { id: 'last', name: 'האחרונה' }, { id: 'ends', name: 'שתי הקיצוניות' }, { id: 'all', name: 'כולן' }] },
@@ -78,13 +78,15 @@ export default {
     const bottomY = Math.max(v.plinthH ?? 0, 0) + shelfT, topY = (v.height ?? 2000) - (v.crownH ?? 0);
     const innerH = topY - shelfT - bottomY;
     const innerW = (v.width ?? 1200) - 2 * sideT - (columns - 1) * sideT;
-    const split = (v.lowerH ?? 0) > 0 && v.lowerH < topY - bottomY - 100;
     const H = v.height ?? 2000;
-    const heights = columnHeights(sectionLayout(v.columnsLayout, 'main', columns), columns, H, minColumnH(v));
+    const lay = sectionLayout(v.columnsLayout, 'main', columns);
+    const heights = columnHeights(lay, columns, H, minColumnH(v));
+    const splitOf = (i) => splitFor(lay, i, v.lowerH ?? 0, heights[i] - (v.crownH ?? 0) - bottomY);
     return { sections: [{
       key: 'main', title: '', total: innerW, sizeLabel: 'רוחב', allLabel: 'העמודות', modes: { next: 'מהעמודה שמימין', prev: 'מהעמודה שמשמאל' },
-      items: Array.from({ length: columns }, (_, i) => ({ label: `עמודה ${i + 1}`, innerH: innerH - (H - heights[i]), shelfT, cellsOf: 'shelves', defaultCount: v.shelvesPerColumn ?? 0, countMax: 15, editable: !split, note: split ? 'העמודה מפוצלת — הגבהים מתחלקים לפי הפיצול' : '',
-        height: { full: H, min: minColumnH(v) } })),
+      items: Array.from({ length: columns }, (_, i) => ({ label: `עמודה ${i + 1}`, innerH: innerH - (H - heights[i]), shelfT, cellsOf: 'shelves', defaultCount: v.shelvesPerColumn ?? 0, countMax: 15, editable: !splitOf(i), note: splitOf(i) ? 'העמודה מפוצלת — המדפים מתחלקים בין החלקים לפי הפיצול' : '',
+        height: { full: H, min: minColumnH(v) },
+        split: { default: v.lowerH ?? 0, max: Math.max(0, heights[i] - (v.crownH ?? 0) - bottomY - 100) } })),
     }] };
   },
 
@@ -161,17 +163,19 @@ export default {
     const adjustable = v.shelvesMode === 'adjustable';
     const z0 = inner.z0 + (v.backMode === 'groove' ? v.backInset + backT : 0), z1 = inner.z1;
     const isGlassCol = (i) => v.glassColumns === 'all' || (v.glassColumns === 'first' && i === 0) || (v.glassColumns === 'last' && i === cols.cols.length - 1) || (v.glassColumns === 'ends' && (i === 0 || i === cols.cols.length - 1));
-    const split = v.lowerH > 0 && v.lowerH < topY - bottomY - 100;
-    const splitY = bottomY + v.lowerH;   // פני המדף הקבוע של הפיצול (העליונים)
+    // פיצול לכל עמודה: גובה החלק התחתון (0 = בלי), ברירת מחדל — הגדרת המוצר
+    const lowerOf = (i) => splitFor(layout, i, v.lowerH, (stepped ? tops[i] : topY) - bottomY);
+    const splitYOf = (i) => bottomY + lowerOf(i);   // פני המדף הקבוע של הפיצול (העליונים)
 
     cols.cols.forEach((col, i) => {
       const fullGlass = isGlassCol(i);
       const y1c = colY1(i);
-      if (split && !fullGlass && splitY < y1c - 100) {
+      const splitY = splitYOf(i);
+      if (lowerOf(i) && !fullGlass) {
         // מדף קבוע בגובה הפיצול, ומדפים מתכווננים בכל חלק לפי חלקו בגובה
         parts.push(...shelves({ col, y0: splitY - shelfT, y1: splitY + shelfT, z0, z1, count: 1, t: shelfT, material: shelfMat, adjustable: false, colIndex: i, prefix: 'split-' }).parts);
         const total = colShelves(i);
-        const lowerN = Math.round(total * (v.lowerH / (y1c - inner.y0)));
+        const lowerN = Math.round(total * (lowerOf(i) / (y1c - inner.y0)));
         const upperN = total - lowerN;
         for (const [n, a, b, pre] of [[lowerN, inner.y0, splitY - shelfT, 'lo-'], [upperN, splitY, y1c, 'up-']]) {
           const s = shelves({ col, y0: a, y1: b, z0, z1, count: n, t: shelfT, material: shelfMat, setback: adjustable ? 5 : 0, adjustable, colIndex: i, prefix: pre });
@@ -212,7 +216,7 @@ export default {
       const zones = [];
       const colTop = stepped ? tops[i] : topY;
       if (isGlassCol(i)) zones.push([v.plinthH, colTop, 'glass']);
-      else if (split && splitY < colTop - shelfT - 100) { zones.push([v.plinthH, splitY, v.lowerDoors]); zones.push([splitY, colTop, v.doorType]); }
+      else if (lowerOf(i)) { zones.push([v.plinthH, splitYOf(i), v.lowerDoors]); zones.push([splitYOf(i), colTop, v.doorType]); }
       else zones.push([v.plinthH, colTop, v.doorType]);
       // הדלת מכסה את העמודה וחצי מחיצה מכל צד (ובדפנות החיצוניות — את כל הדופן).
       const x0 = i === 0 ? 0 : col.x0 - sideT / 2;
@@ -245,11 +249,15 @@ export default {
       });
       if (leaves === 1 && colW > L.doorWidth) warnings.push(`דלת ${i + 1} ברוחב ${Math.round(colW)} מ"מ — מעבר ל-${L.doorWidth} המומלצים לדלת אחת`);
     });
-    const anyGlassDoor = anyDoor && (v.doorType === 'glass' || (split && v.lowerDoors === 'glass') || v.glassColumns !== 'none');
+    const anySplit = cols.cols.some((_, i) => lowerOf(i) > 0);
+    const anyGlassDoor = anyDoor && (v.doorType === 'glass' || (anySplit && v.lowerDoors === 'glass') || v.glassColumns !== 'none');
     if (anyGlassDoor && D - doorT < L.glassMinDepth) {
       warnings.push(`עומק ${D} מ"מ קטן מדי לוויטרינה — נדרשים לפחות ${L.glassMinDepth + doorT}`);
     }
-    if (v.lowerH > 0 && !split) warnings.push(`גובה החלק התחתון ${v.lowerH} גדול מדי לגובה הספרייה — הפיצול בוטל`);
+    cols.cols.forEach((_, i) => {
+      const want = rawSplit(layout, i, v.lowerH);
+      if (want > 0 && !lowerOf(i)) warnings.push(`עמודה ${i + 1}: גובה החלק התחתון ${want} גדול מדי לגובה העמודה — הפיצול בוטל`);
+    });
     if (anyGlassSide && adjustable) warnings.push('דופן זכוכית: מדפים מתכווננים נשענים על הזקפים בלבד — עדיף מדפים קבועים או מסגרת פנימית');
 
     // אזהרות על מפתחים וגבהים. אזהרה בלבד — הנגר מחליט.
@@ -275,6 +283,10 @@ export default {
 };
 
 function boardThickness(id) { return material(id).t || 18; }
+/** הפיצול שנבחר לעמודה (לפני בדיקת התאמה): של העמודה אם נקבע, אחרת ברירת המחדל. */
+function rawSplit(layout, i, dflt) { const s = layout?.cols?.[i]?.split; return Number.isFinite(s) && s >= 0 ? s : (dflt ?? 0); }
+/** גובה החלק התחתון בעמודה, או 0 אם אין פיצול או שהוא לא נכנס (`room` — מהרצפה עד הגג). */
+function splitFor(layout, i, dflt, room) { const s = rawSplit(layout, i, dflt); return s > 0 && s < room - 100 ? s : 0; }
 /** הגובה הנמוך ביותר שעמודה יכולה לקבל: סוקל, רצפה, גג, כרכוב ותא של 100. */
 function minColumnH(v) { return (v.plinthH ?? 0) + 2 * (v.shelfT ?? 18) + (v.crownH ?? 0) + 100; }
 function backThickness(id) { return material(id).t || 6; }
