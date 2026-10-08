@@ -63,6 +63,40 @@ function accessoriesSave(array $diff): void { prefixSave($diff, 'hw'); }
 /** דוגמאות חירוץ CNC (מסך "🛠 CNC"): כמו האביזרים — רק שורות cnc:, ונגר רשאי. */
 function cncSave(array $diff): void { prefixSave($diff, 'cnc'); }
 
+// ---- מעבדת המוצרים: התאמות לתבניות ----
+
+/** כל ההתאמות: { templateKey: {...}, _limits: {...} } (אובייקט ריק אם אין). */
+function rulesGet(): object {
+    $out = [];
+    foreach (db()->query('SELECT key, data FROM template_rules')->fetchAll() as $r) {
+        $d = jsonArr($r['data']);
+        if ($d) $out[$r['key']] = $d;
+    }
+    return (object) $out;
+}
+
+/**
+ * מחליף את כל ההתאמות. מפתח: אותיות קטנות וקו תחתון (מפתח תבנית או '_limits');
+ * ערך: אובייקט. מפתח שאינו ברשימה — נמחק (= חזרה לתבנית שבקוד). עד 200KB.
+ */
+function rulesSave(array $rules): void {
+    if (strlen(json_encode($rules)) > 200000) throw new AppError('ההתאמות גדולות מדי', 400);
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        $pdo->exec('DELETE FROM template_rules');
+        $up = $pdo->prepare('INSERT INTO template_rules (key, data, updated_at) VALUES (?,?,?)');
+        foreach ($rules as $k => $v) {
+            if (!is_string($k) || !preg_match('/^[a-z_]{1,40}$/', $k) || !is_array($v) || !$v) continue;
+            $up->execute([$k, jsonStr($v), nowIso()]);
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+}
+
 /** מחליף רק את שורות הספרייה עם הקידומת `$prefix:` (שאינן ב-diff — נמחקות). */
 function prefixSave(array $diff, string $prefix): void {
     if (!preg_match('/^[a-z]+$/', $prefix)) throw new AppError('קידומת לא חוקית', 400);

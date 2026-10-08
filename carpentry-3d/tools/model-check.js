@@ -17,6 +17,8 @@ import { TYPES, buildAccessory, paramsOf, faceOf, wheelHeight, FINISHES as ACC_F
 import { nest, sheetCount } from '../assets/js/model/sheets.js';
 import { partWeight, totalWeight, boardWeight, hingeCount, hingeYs, hingeDrilling, slidingLeaf, SLIDING_SYSTEMS, slideLoad, drillingList, physicsWarnings, densityOf } from '../assets/js/model/physics.js';
 import { toSTL, printSize } from '../assets/js/model/stl.js';
+import { applyRules, originalOf, describeShowIf, LIMIT_INFO } from '../assets/js/model/rules.js';
+import { LIMITS } from '../assets/js/model/templates/common.js';
 import { millSpec, fluteGrooves, fluteRib, millRects, millSolids, millRemoved, millText, millEdges, cncPatterns } from '../assets/js/model/milling.js';
 
 let failed = 0;
@@ -1044,6 +1046,30 @@ console.log('אביזרים: ידיות, כפתורים, צירים, גלגלי�
   check(ps.w === Math.round(bc.bounds.w / 20 * 10) / 10 && ps.h === Math.round(bc.bounds.h / 20 * 10) / 10, 'מידות הדפסה');
   const first = new Float32Array(toSTL(bc.parts, { scale: 10, minT: 1 }).buffer.slice(84 + 12, 84 + 12 + 36));
   check(Math.abs(first[0] - bc.parts[0].box.x / 10) < 1e-4 && Math.abs(first[1] - bc.parts[0].box.y / 10) < 1e-4, 'קואורדינטות מחולקות בקנה המידה');
+}
+
+console.log('מעבדת המוצרים: התאמות מעל התבניות');
+{
+  applyRules({});
+  const bc = TEMPLATES.bookcase, w = allParams(bc).find((p) => p.key === 'width');
+  const orig = { def: w.default, max: w.max, label: w.label, hours: bc.laborHours, door: LIMITS.doorWidth };
+  applyRules({ bookcase: { laborHours: 9, params: { width: { default: 1500, max: 3000, label: 'רוחב כולל', hidden: false } } }, _limits: { doorWidth: 450 } });
+  check(w.default === 1500 && w.max === 3000 && w.label === 'רוחב כולל' && bc.laborHours === 9, 'ברירת מחדל, גבול, שם ושעות עבודה הוחלפו');
+  check(LIMITS.doorWidth === 450 && build('bookcase', {}).bounds.w === 1500, 'גבול כללי חל, ובנייה חדשה מקבלת את ברירת המחדל החדשה');
+  check(TEMPLATES.bookcase.limits === LIMITS, 'הספרייה קוראת את הגבולות המשותפים');
+  applyRules({ _limits: { shelfSpan18: 300 } });
+  check(build('bookcase', {}).warnings.some((w) => /מדף|שקיע|מוטה/.test(w)), 'מוטת מדף קטנה במעבדה — אזהרה בספרייה');
+  applyRules({ bookcase: { params: { width: { default: 99999 } } } });
+  check(w.default === w.max && LIMITS.doorWidth === orig.door && bc.laborHours === orig.hours, 'ברירת מחדל מחוץ לטווח מוצמדת; מה שלא בהתאמות חוזר למקור');
+  applyRules({ bookcase: { params: { width: { min: 3000, max: 500 } } } });
+  check(w.min < w.max, 'מינימום מעל מקסימום — נדחה');
+  applyRules({ bookcase: { params: { width: { hidden: true } } } });
+  check(build('bookcase', { width: 1234 }).bounds.w === orig.def, 'פרמטר מוסתר — תמיד ברירת המחדל');
+  applyRules([]);   // PHP מחזיר [] לאובייקט ריק
+  check(w.default === orig.def && w.max === orig.max && w.label === orig.label && !w.hidden && originalOf('bookcase').params.width.default === orig.def, 'איפוס מלא חוזר לקוד');
+  check(Object.keys(LIMITS).every((k) => LIMIT_INFO[k]), 'לכל גבול יש הסבר');
+  const withIf = Object.values(TEMPLATES).flatMap((t) => allParams(t).filter((p) => p.showIf).map((p) => describeShowIf(p, t)));
+  check(withIf.length > 0 && withIf.every((d) => typeof d === 'string' && d.length > 3 && !/undefined/.test(d)), 'תיאור התנאים קריא');
 }
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }

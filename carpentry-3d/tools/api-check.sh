@@ -163,6 +163,13 @@ ok 'צופה לא שומר אביזרים' "$(call "$V" '{"action":"accessories-
 ok 'נגר שומר דוגמת CNC (cnc: בלבד), האביזרים לא נגועים' "$(call "$C" '{"action":"cnc-save","diff":[{"id":"cnc:milled-fine","price":120},{"id":"cnc:my-flutes","kind":"cnc","name":"שלי","price":70,"priceUnit":"m2","active":true,"mill":{"kind":"flutes","groove":8,"rib":12,"depth":5,"margin":0}},{"id":"hw:hack","kind":"hardware","name":"x"}]}')" "len([m for m in d['diff'] if m['id'].startswith('cnc:')])==2 and any(m['id']=='hw:my-bar' for m in d['diff']) and not any(m['id']=='hw:hack' for m in d['diff']) and [m for m in d['diff'] if m['id']=='cnc:my-flutes'][0]['mill']['rib']==12"
 ok 'דוגמת CNC שהוסרה מהרשימה נמחקת' "$(call "$C" '{"action":"cnc-save","diff":[{"id":"cnc:milled-fine","price":120}]}')" "len([m for m in d['diff'] if m['id'].startswith('cnc:')])==1"
 ok 'צופה לא שומר CNC' "$(call "$V" '{"action":"cnc-save","diff":[]}')" "d['success']==False"
+echo "מעבדת המוצרים (התאמות לתבניות)"
+ok 'בהתחלה אין התאמות' "$(call "$C" '{"action":"rules-get"}')" "d['rules']=={}"
+ok 'נגר לא שומר התאמות' "$(call "$C" '{"action":"rules-save","rules":{"bookcase":{"laborHours":9}}}')" "d['success']==False"
+R=$(call "$A" '{"action":"rules-save","rules":{"bookcase":{"laborHours":9,"params":{"width":{"default":1500,"label":"רוחב כולל"}}},"_limits":{"doorWidth":550},"Bad-Key":{"x":1},"table":[]}}')
+ok 'מנהל שומר; מפתח לא חוקי וערך ריק נבלעים' "$R" "d['rules']['bookcase']['params']['width']['default']==1500 and d['rules']['_limits']['doorWidth']==550 and 'Bad-Key' not in d['rules'] and 'table' not in d['rules']"
+ok 'נגר רואה את ההתאמות' "$(call "$C" '{"action":"rules-get"}')" "d['rules']['bookcase']['laborHours']==9"
+ok 'שמירה מחליפה הכול (מה שלא נשלח — נמחק)' "$(call "$A" '{"action":"rules-save","rules":{"_limits":{"doorWidth":580}}}')" "'bookcase' not in d['rules'] and d['rules']['_limits']['doorWidth']==580"
 ok 'ניקוי' "$(call "$C" '{"action":"accessories-save","diff":[]}')" "len([m for m in d['diff'] if m['id'].startswith('hw:')])==0"
 
 echo "תעריפים"

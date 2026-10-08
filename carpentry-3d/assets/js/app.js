@@ -18,6 +18,8 @@ import { createViewer } from './viewer.js';
 import { createMaterialsUI } from './materials-ui.js';
 import { createAccessoriesUI } from './accessories-ui.js';
 import { createCncUI } from './cnc-ui.js';
+import { createLabUI } from './lab-ui.js';
+import { applyRules } from './model/rules.js';
 import { api, loadLast, saveLast } from './store.js';
 import { watchNumbers } from './numfield.js';
 import { placeModel, combine, snapTo, dragSnap, dragSnapY, snapRot } from './model/assembly.js';
@@ -47,7 +49,7 @@ const state = {
   rates: { laborHour: null, markup: null, materials: {} },
   dirty: false,
 };
-let viewer = null, form = null, model = null, materialsUI = null, accessoriesUI = null, cncUI = null;
+let viewer = null, form = null, model = null, materialsUI = null, accessoriesUI = null, cncUI = null, labUI = null;
 let saveTimer = null;
 
 // ---------- היסטוריית הדפדפן: "אחורה" נשאר בתוך האפליקציה ----------
@@ -55,7 +57,7 @@ let saveTimer = null;
 // חוזר למסך הפתיחה. פתיחת פרויקט מתוך מגירה מחליפה את רשומת המגירה
 // ברשומת הפרויקט (לא דוחפת), כך שה"אחורה" הבא מחזיר לרשימה ולא למגירה.
 // סגירה מכפתור "סגירה" חוזרת צעד אחורה בהיסטוריה — וה-popstate שלה מדולג.
-const DRAWERS = ['#projects', '#clients', '#users', '#mlib', '#accessories', '#cnc', '#share', '#newproj', '#clientdlg'];
+const DRAWERS = ['#projects', '#clients', '#users', '#mlib', '#accessories', '#cnc', '#lab', '#share', '#newproj', '#clientdlg'];
 let suppressPops = 0;
 function pushNav(kind) { history.pushState({ app: 'carpentry', kind }, ''); }
 function openDrawer(sel, fromPop = false) {
@@ -139,10 +141,13 @@ async function enter() {
   $('#btn-types').hidden = u.role !== 'admin';
   $('#btn-users-m').hidden = u.role !== 'admin';
   $('#btn-types-m').hidden = u.role !== 'admin';
+  $('#btn-lab').hidden = u.role !== 'admin';
+  $('#btn-lab-m').hidden = u.role !== 'admin';
   $('#btn-log').hidden = u.role !== 'admin';
   $('#app').hidden = false;
 
-  const [lib, types, rates, clients] = await Promise.all([api('materials-get'), api('types-list'), u.role === 'viewer' ? null : api('rates-get'), api('clients-list')]);
+  const [lib, types, rates, clients, rules] = await Promise.all([api('materials-get'), api('types-list'), u.role === 'viewer' ? null : api('rates-get'), api('clients-list'), api('rules-get')]);
+  applyRules(rules.rules);   // מעבדת המוצרים: ההתאמות של המנהל מעל התבניות
   state.clients = clients.clients;
   M.load(lib.diff);
   for (const [id, v] of Object.entries(lib.images || {})) M.setImage(id, v.url, v.imageMm);
@@ -175,6 +180,10 @@ async function enter() {
     cncUI = createCncUI($('#cnc'), {
       onChange: () => { if (state.project) { form = renderForm($('#form'), currentTemplate(), state.values, onFormChange); rebuild(); } else if (state.assembly) { modelCache.clear(); rebuildAssembly(); } },
       onError, getUser: () => state.user,
+    });
+    labUI = createLabUI($('#lab'), {
+      onChange: () => { if (state.project) { form = renderForm($('#form'), currentTemplate(), state.values, onFormChange); rebuild(); } else if (state.assembly) { modelCache.clear(); rebuildAssembly(); } },
+      onError, toast, requestClose: () => closeDrawer('#lab'),
     });
     wireUi();
   }
@@ -221,6 +230,8 @@ function wireUi() {
   $('#btn-accessories-m').addEventListener('click', () => { blur(); accessoriesUI.open(); pushNav('drawer'); });
   $('#btn-cnc-m').addEventListener('click', () => { blur(); cncUI.open(); pushNav('drawer'); });
   $('#btn-types-m').addEventListener('click', () => { blur(); showTypes(); });
+  $('#btn-lab-m').addEventListener('click', () => { blur(); showLab(); });
+  $('#btn-lab').addEventListener('click', () => showLab());
   $('#btn-users-m').addEventListener('click', () => { blur(); showUsers(); });
   $('#btn-projects').addEventListener('click', () => showProjects());
   $('#btn-clients').addEventListener('click', () => showClients());
@@ -1167,6 +1178,7 @@ async function changePassword() {
 
 // ---------- מנהל: סוגי מוצרים ----------
 async function showTypes() { showUsers('types'); }
+function showLab() { openDrawer('#lab'); labUI.open(); }
 async function renderTypesInto(body) {
   try {
     const r = await api('types-list');

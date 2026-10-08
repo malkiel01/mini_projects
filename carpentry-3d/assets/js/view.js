@@ -2,6 +2,7 @@
 // אין רשימת חיתוך. אותו מודל ואותו צופה כמו בכלי — רק בלי הטופס.
 
 import { build } from './model/index.js';
+import { applyRules } from './model/rules.js';
 import { cutSize } from './model/blocks.js';
 import * as M from './model/materials.js';
 import { createViewer } from './viewer.js';
@@ -43,6 +44,7 @@ async function main() {
     if (b.dataset.partGhost) viewer.toggleGhost(b.dataset.partGhost);
     showPart(shown, viewer); sync();
   });
+  applyRules(data.rules);   // התאמות מעבדת המוצרים — אותו מודל כמו אצל הנגר
   let model;
   try {
     if (data.assembly) {

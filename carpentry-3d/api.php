@@ -122,6 +122,15 @@ try {
             materialImageDelete(s($in, 'id', 80));
             ok();
 
+        // ---- מעבדת המוצרים (התאמות לתבניות) ----
+        case 'rules-get':
+            requireUser();
+            ok(['rules' => rulesGet()]);
+        case 'rules-save':
+            requireAdmin();
+            rulesSave(is_array($in['rules'] ?? null) ? $in['rules'] : []);
+            ok(['rules' => rulesGet()]);
+
         // ---- תעריפים ----
         case 'rates-get': {
             $u = requireEditor();
@@ -176,7 +185,7 @@ try {
             $a = assemblyByToken((string) ($_GET['t'] ?? $in['t'] ?? ''));
             $lib = materialsGet();
             foreach ($lib['diff'] as &$m) unset($m['price'], $m['priceUnit']);
-            ok(['assembly' => $a, 'materials' => $lib]);
+            ok(['assembly' => $a, 'materials' => $lib, 'rules' => rulesGet()]);
         }
 
         // ---- צפיית לקוח: בלי כניסה, לפי אסימון. מחזיר גם את הספרייה (בלי מחירים) ----
@@ -184,7 +193,7 @@ try {
             $p = projectByToken((string) ($_GET['t'] ?? $in['t'] ?? ''));
             $lib = materialsGet();
             foreach ($lib['diff'] as &$m) unset($m['price'], $m['priceUnit']);
-            ok(['project' => $p, 'materials' => $lib]);
+            ok(['project' => $p, 'materials' => $lib, 'rules' => rulesGet()]);
         }
 
         default:
