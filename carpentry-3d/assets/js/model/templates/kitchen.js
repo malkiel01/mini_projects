@@ -11,7 +11,7 @@
 // "פינה מימין" היא שיקוף של "פינה משמאל" (mirrorX).
 
 import { carcass, shelves, back, door, drawer, part } from '../blocks.js';
-import { materialParams, drawerParams, joineryParams, boardT, LIMITS, hingeParam, handleParam } from './common.js';
+import { materialParams, drawerParams, joineryParams, boardT, LIMITS, hingeParam, handleParam, FINISHES_FLUSH, applyFinish } from './common.js';
 import { resolveShares, sectionLayout, cellsOf } from '../layout.js';
 
 const N = (n) => Array.from({ length: n }, (_, i) => i + 1);
@@ -93,6 +93,7 @@ export default {
 
     ...materialParams({ body: 'board:melamine-white-18' }),
     { key: 'frontMaterial', label: 'חזיתות (דלתות ומגירות)', type: 'material', kind: 'board', back: false, solid: false, top: false, default: 'board:mdf-paint-18', group: 'חומרים' },
+    { key: 'frontFinish', label: 'גימור החזיתות', type: 'enum', default: 'flat', group: 'חומרים', options: FINISHES_FLUSH, hint: 'חירוץ CNC — בלוח אחד, בלי להוסיף עובי' },
     { key: 'topMaterial', label: 'משטח עבודה', type: 'material', kind: 'board', top: true, default: 'board:countertop-38', group: 'חומרים' },
     { key: 'topOverhang', label: 'הבלטת המשטח קדימה', type: 'mm', min: 0, max: 60, default: 40, group: 'חומרים' },
     ...drawerParams({ slide: 'hw:slide-tandem' }),   // מגירות מטבח רחבות וכבדות: טנדם 40 ק"ג כברירת מחדל
@@ -169,6 +170,7 @@ export default {
             zFront: z1, depth: Math.min(z1 - z0 - 20, 500), frontT, boxT: boardT(v.drawerBoxMaterial), bottomT: boardT(v.drawerBottomMaterial),
             frontMaterial: v.frontMaterial, boxMaterial: v.drawerBoxMaterial, bottomMaterial: v.drawerBottomMaterial, slide: v.slide, handle,
             mountIds: [`${prefix}-side-L`, `${prefix}-side-R`], mountBottom: body.parts.find((p) => p.id === 'side-L').box.y });
+          applyFinish(d2.parts[0], v.frontFinish, { material: v.frontMaterial, normal: '+z' });
           out.parts.push(...d2.parts); out.hardware.push(...d2.hardware);
         }
       } else {
@@ -184,6 +186,7 @@ export default {
               x0: lx0, x1: lx1, y0: y, y1: y + h, zFront: z1, type: 'wood', t: frontT, material: v.frontMaterial, handle, hinge: v.hinge,
               hingeSide: leaves === 2 ? (k === 0 ? 'left' : 'right') : hingeDefault,
               mountId: `${prefix}-side-${(leaves === 2 ? (k === 0 ? 'left' : 'right') : hingeDefault) === 'left' ? 'L' : 'R'}`, mountBottom: body.parts.find((p) => p.id === 'side-L').box.y });
+            applyFinish(dd.parts[0], v.frontFinish, { material: v.frontMaterial, normal: '+z' });
             out.parts.push(...dd.parts); out.hardware.push(...dd.hardware);
           }
         }
@@ -222,6 +225,8 @@ export default {
         handle: bifold ? null : handle, hinge: bifold ? 'hw:hinge-165' : v.hinge, hingeSide: 'right' });
       const dB = swapXZ(door({ id: `${prefix}-door-B`, name: `${prefix} דלת פינה ב`, x0: Dd, x1: Cc, y0: y, y1: y + h, zFront: Dd, type: 'wood', t: frontT, material: v.frontMaterial,
         handle, hinge: bifold ? 'hw:hinge-165' : v.hinge, hingeSide: 'right' }));
+      applyFinish(dA.parts[0], v.frontFinish, { material: v.frontMaterial, normal: '+z' });
+      applyFinish(dB.parts[0], v.frontFinish, { material: v.frontMaterial, normal: '+x' });
       out.parts.push(...dA.parts, ...dB.parts); out.hardware.push(...dA.hardware, ...dB.hardware);
       if (bifold) out.hardware.push({ id: `${prefix}-bifold`, kind: 'misc', material: 'hw:hinge-bifold', qty: 3, note: 'צירי קיפול בין שתי הדלתות' });
       if (carousel) out.hardware.push({ id: `${prefix}-carousel`, kind: 'misc', material: 'hw:carousel', qty: 1, note: `קרוסלה לפינה ${Cc}` });
@@ -236,6 +241,7 @@ export default {
       const x0 = Dd + filler;
       mk2(out, `${prefix}-filler`, 'מילוי פינה', { x: Dd, y, z: Dd, w: filler, h, d: frontT }, { axis: 'z', grain: 'y', material: v.frontMaterial, note: `${prefix} — פס חזית קבוע ליד הקיר השני` });
       const dd = door({ id: `${prefix}-door`, name: `${prefix} דלת`, x0, x1: Cc, y0: y, y1: y + h, zFront: Dd, type: 'wood', t: frontT, material: v.frontMaterial, handle, hinge: v.hinge, hingeSide: 'right' });
+      applyFinish(dd.parts[0], v.frontFinish, { material: v.frontMaterial, normal: '+z' });
       out.parts.push(...dd.parts); out.hardware.push(...dd.hardware);
       if (Cc - x0 < 300) warnings.push(`${prefix}: הדלת הגלויה ברוחב ${Cc - x0} מ"מ — צרה מ-300`);
       return out;

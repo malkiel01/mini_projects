@@ -17,6 +17,7 @@ import { material, materialsOfKind, materialsOfRole } from './materials.js';
 export const TEMPLATES = { bookcase, wardrobe, dresser, kitchen, table, bed, cladding };
 
 import { physicsWarnings } from './physics.js';
+import { millWarnings } from './milling.js';
 
 export function template(key) {
   const t = TEMPLATES[key];
@@ -83,7 +84,7 @@ export function build(key, values) {
   if (t.migrate) values = t.migrate({ ...values });   // ערכים ישנים שנשמרו בפרויקטים → המפתחות הנוכחיים
   for (const p of allParams(t)) if (values[p.key] !== undefined) v[p.key] = clamp(p, values[p.key]);
   const out = t.build(v);
-  out.warnings = [...(out.warnings || []), ...physicsWarnings(out.hardware || [])];
+  out.warnings = [...(out.warnings || []), ...physicsWarnings(out.hardware || []), ...millWarnings(out.parts || [])];
   return { ...out, values: v, template: t };
 }
 

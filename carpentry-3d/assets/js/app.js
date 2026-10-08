@@ -20,6 +20,7 @@ import { watchNumbers } from './numfield.js';
 import { placeModel, combine, snapTo, dragSnap, dragSnapY } from './model/assembly.js';
 import { totalWeight, partWeight, drillingList } from './model/physics.js';
 import { toSTL, printSize } from './model/stl.js';
+import { millText } from './model/milling.js';
 import { wireFullscreen } from './fullscreen.js';
 
 watchNumbers();
@@ -621,11 +622,29 @@ function drillHtml(m) { return perItem(m, drillOne); }
 
 const faceNames = { back: 'אחורית (פנים הדלת)', inner: 'פנימית', top: 'עליונה (קצה)', bottom: 'תחתונה (קצה)', front: 'קדמית' };
 /** קידוחים לפי חלק: פאה, מרחקים מקצה החלק, קוטר, עומק ולמה — מה שמכונה או נגר עם שבלונה צריכים. */
+/** עיבודי CNC (חירוץ) לפי חלק — חלקים זהים מקובצים. */
+function millRows(m) {
+  const rows = new Map();
+  for (const p of m.parts) {
+    if (!p.mill) continue;
+    const c = cutSize(p), text = millText(p);
+    const key = `${p.name}|${c.l}x${c.w}|${text}`;
+    const r = rows.get(key) || { name: p.name, size: `${c.l} × ${c.w}`, text, qty: 0 };
+    r.qty += 1; rows.set(key, r);
+  }
+  return [...rows.values()];
+}
+function millHtml(m) {
+  const rows = millRows(m);
+  if (!rows.length) return '';
+  return `<h3>עיבודי CNC <small>חירוץ בפאה החיצונית — הלוח נשאר חלק אחד</small></h3>
+    <table><thead><tr><th>חלק</th><th>כמות</th><th>מידה</th><th>הוראה</th></tr></thead><tbody>${rows.map((r) => `<tr><td>${esc(r.name)}</td><td>${r.qty}</td><td dir="ltr">${r.size}</td><td>${esc(r.text)}</td></tr>`).join('')}</tbody></table>`;
+}
 function drillOne(m) {
   const list = drillingList(m);
   const info = (m.hardware || []).filter((h) => h.kind === 'info');
   const infoRows = info.map((h) => `<tr><td>${esc(h.note)}</td><td>${Number.isFinite(h.hinges) ? `${h.hinges} צירים` : Number.isFinite(h.maxKg) ? `עד ${h.maxKg} ק"ג` : Number.isFinite(h.load) ? `מסילה ${h.load} ק"ג` : ''}</td></tr>`).join('');
-  if (!list.length) return `<h3>קידוחים</h3><p class="muted">אין פרזול שדורש קידוח במודל הזה.</p>${infoRows ? `<table><tbody>${infoRows}</tbody></table>` : ''}`;
+  if (!list.length) return `<h3>קידוחים</h3><p class="muted">אין פרזול שדורש קידוח במודל הזה.</p>${millHtml(m)}${infoRows ? `<table><tbody>${infoRows}</tbody></table>` : ''}`;
   const blocks = list.map((g) => `
     <h4>${esc(g.name)} <small class="muted">${esc(g.id)} · ${g.holes.length} קידוחים</small></h4>
     <table><thead><tr><th>פאה</th><th>מהקצה (x)</th><th>מהתחתית (y)</th><th>Ø</th><th>עומק</th><th>למה</th></tr></thead>
@@ -634,6 +653,7 @@ function drillOne(m) {
     <h3>קידוחים <small>${list.reduce((n, g) => n + g.holes.length, 0)} קידוחים ב-${list.length} חלקים · מ"מ</small></h3>
     <p class="muted">בדלת: x מקצה הציר, y מתחתית הדלת, בפאה האחורית. בדופן: x מהקצה הקדמי, y מתחתית הדופן, בפאה הפנימית (סיסטם 32). גררות הזזה: מקצה הכנף, במרכז העובי.</p>
     ${blocks}
+    ${millHtml(m)}
     ${infoRows ? `<h3>משקלים ועומסים</h3><table><thead><tr><th>פריט</th><th>פרזול</th></tr></thead><tbody>${infoRows}</tbody></table>` : ''}`;
 }
 
@@ -724,6 +744,8 @@ function downloadCsv(m) {
   }
   lines.push([]); lines.push(['קידוחים: חלק', 'פאה', 'x מהקצה', 'y מהתחתית', 'קוטר', 'עומק', 'למה', '', 'אלמנט']);
   for (const [mm, label] of sets) for (const g of drillingList(mm)) for (const h of g.holes) lines.push([g.name, faceNames[h.face] || h.face, h.x, h.y, h.dia, h.depth, h.purpose, '', label]);
+  const cnc = sets.flatMap(([mm, label]) => millRows(mm).map((r) => [r.name, r.qty, r.size, r.text, '', '', '', '', label]));
+  if (cnc.length) { lines.push([]); lines.push(['עיבודי CNC: חלק', 'כמות', 'מידה', 'הוראה', '', '', '', '', 'אלמנט']); lines.push(...cnc); }
   const csv = '\ufeff' + lines.map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));

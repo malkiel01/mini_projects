@@ -14,6 +14,7 @@ import { TYPES, buildAccessory, paramsOf, faceOf, wheelHeight, FINISHES as ACC_F
 import { nest, sheetCount } from '../assets/js/model/sheets.js';
 import { partWeight, totalWeight, boardWeight, hingeCount, hingeYs, hingeDrilling, slidingLeaf, SLIDING_SYSTEMS, slideLoad, drillingList, physicsWarnings, densityOf } from '../assets/js/model/physics.js';
 import { toSTL, printSize } from '../assets/js/model/stl.js';
+import { MILL_PATTERNS, fluteGrooves, millRects, millSolids, millRemoved, millText } from '../assets/js/model/milling.js';
 
 let failed = 0;
 function check(cond, msg) {
@@ -545,6 +546,35 @@ console.log('אביזרים: ידיות, כפתורים, צירים, גלגלי�
   const tb = build('table', { wheels: 'hw:caster-fixed-50' });
   check(tb.hardware.filter((h) => h.kind === 'wheel').length === 4 && tb.bounds.h === 750 + wheelHeight(M.material('hw:caster-fixed-50')), 'שולחן על גלגלים');
   check(ACC_FINISHES.length >= 6, 'גימורים');
+}
+
+// ---- חירוץ CNC: לוח אחד מחורץ (דמוי סטריפים, מסגרות) ----
+{
+  console.log('\nחירוץ CNC');
+  const fine = MILL_PATTERNS['milled-fine'];
+  const gs = fluteGrooves(400, fine);
+  check(gs.length > 15 && gs[0][0] >= fine.margin + fine.rib - 0.01 && 400 - gs[gs.length - 1][1] >= fine.margin + fine.rib - 0.01 && gs.every(([a, b]) => Math.abs(b - a - 6) < 1e-9), `דמוי סטריפים: ${gs.length} חריצים 6, שוליים וצלע בקצוות`);
+  check(gs.every((g, i) => i === 0 || Math.abs(g[0] - gs[i - 1][1] - fine.rib) < 1e-9), 'צלע 10 בין חריצים');
+  const dbl = MILL_PATTERNS['milled-frame-double'];
+  const rects = millRects(500, 2000, dbl);
+  check(rects.length === 8, 'מסגרת כפולה: שתי טבעות × 4 צלעות');
+  check(millRects(500, 2000, MILL_PATTERNS['milled-frame-2']).length === 16 && millRects(500, 700, MILL_PATTERNS['milled-frame-2']).length === 8, 'שני פנלים בדלת גבוהה; בחזית נמוכה — פנל אחד');
+  check(millRects(150, 140, dbl).length <= 4, 'חזית מגירה קטנה: טבעת שלא נכנסת נשמטת');
+  const area = (rs) => rs.reduce((s, r) => s + (r[1] - r[0]) * (r[3] - r[2]), 0);
+  check(Math.abs(area(millSolids(500, 2000, rects)) + area(rects) - 500 * 2000) < 1, 'התאים המלאים + החריצים = כל הפאה (אין חפיפה בין מלבני הטבעות)');
+  const b = build('bookcase', { doorType: 'wood', doorFinish: 'milled-frame-double', doorMaterial: 'board:mdf-paint-18' });
+  const d1 = b.parts.find((p) => p.id === 'door-1');
+  check(d1.mill && d1.mill.pattern === 'milled-frame-double' && !b.parts.some((p) => /strip/.test(p.id)) && /חירוץ CNC/.test(d1.note), 'דלת מחורצת: חלק אחד, עם הוראה בהערה, בלי סטריפים');
+  check(partWeight(d1) < Math.round(d1.box.w * d1.box.h * d1.box.d / 1e9 * 740 * 100) / 100 && millRemoved(d1) > 0, 'המשקל מחסיר את החריצים');
+  check(!b.warnings.some((w) => /חירוץ/.test(w)), 'MDF לצבע 18: בלי אזהרת חירוץ');
+  const mel = build('bookcase', { doorType: 'wood', doorFinish: 'milled-fine', doorMaterial: 'board:melamine-oak-18' });
+  check(mel.warnings.some((w) => /חושף את הליבה/.test(w)), 'חירוץ במלמין — אזהרה');
+  const k = build('kitchen', { frontFinish: 'milled-frame' });
+  check(k.parts.some((p) => /door/.test(p.id) && p.mill) && k.parts.some((p) => /drawer-\d+$/.test(p.id) && p.mill) && within(k.parts, k.bounds), 'מטבח: גימור חזיתות על דלתות ומגירות, בתוך הגבולות');
+  check(build('dresser', { frontFinish: 'milled-wide' }).parts.filter((p) => p.mill).length > 0, 'שידה: חזיתות מחורצות');
+  check(/מסגרות/.test(millText(d1)) && /חריץ 6×4/.test(millText(d1)), `הוראה: ${millText(d1)}`);
+  const w = build('wardrobe', { doorType: 'wood', sideLeftFinish: 'milled-wide' });
+  check(w.parts.find((p) => p.id === 'side-L').mill?.normal === '-x', 'דופן שמאל מחורצת בפאה החיצונית (-x)');
 }
 
 // ---- עמודות ושדות בגבהים שונים ----

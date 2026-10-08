@@ -7,6 +7,7 @@
 // החלק — מה שמכונת CNC צריכה.
 
 import { material } from './materials.js';
+import { millRemoved } from './milling.js';
 
 // ---- משקל ----
 /** צפיפות בק"ג/מ"ק: מהספרייה אם הוגדרה, אחרת לפי סוג החומר. */
@@ -25,7 +26,7 @@ export function densityOf(m) {
 /** משקל חלק בק"ג (2 ספרות). */
 export function partWeight(p) {
   const m = material(p.material);
-  const kg = (p.box.w * p.box.h * p.box.d) / 1e9 * densityOf(m);
+  const kg = (p.box.w * p.box.h * p.box.d - millRemoved(p)) / 1e9 * densityOf(m);   // חירוץ CNC מסיר חומר
   return Math.round(kg * 100) / 100;
 }
 export function totalWeight(parts) {

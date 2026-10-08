@@ -4,7 +4,7 @@
 // אבן הבניין המלאה: חזית, ארגז, תחתית ומסילות.
 
 import { carcass, partitions, shelves, back, plinth, drawer, part } from '../blocks.js';
-import { materialParams, drawerParams, joineryParams, boardT, bodyWarnings, LIMITS, handleParam, wheelsParam, addWheels } from './common.js';
+import { materialParams, drawerParams, joineryParams, boardT, bodyWarnings, LIMITS, handleParam, wheelsParam, addWheels, FINISHES_FLUSH, applyFinish } from './common.js';
 import { resolveShares, sectionLayout, effectivePins } from '../layout.js';
 
 export default {
@@ -26,6 +26,7 @@ export default {
 
     ...materialParams({ shelves: false }),
     { key: 'frontMaterial', label: 'חזיתות המגירות', type: 'material', kind: 'board', back: false, solid: false, top: false, default: 'board:mdf-paint-18', group: 'חומרים' },
+    { key: 'frontFinish', label: 'גימור החזיתות', type: 'enum', default: 'flat', group: 'חומרים', options: FINISHES_FLUSH, hint: 'חירוץ CNC — בלוח אחד, בלי להוסיף עובי' },
     ...drawerParams(),
     handleParam({ group: 'מגירות' }),
 
@@ -93,6 +94,7 @@ export default {
           slide: v.slide, handle: v.handle === 'none' ? null : v.handle,
           mountIds: [c === 0 ? 'side-L' : `partition-${c}`, c === cols.cols.length - 1 ? 'side-R' : `partition-${c + 1}`], mountBottom: inner.y0,
         });
+        applyFinish(d.parts[0], v.frontFinish, { material: v.frontMaterial, normal: '+z' });
         parts.push(...d.parts); hardware.push(...d.hardware);
         y += rowH;
       }
