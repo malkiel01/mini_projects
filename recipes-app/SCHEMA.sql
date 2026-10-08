@@ -90,6 +90,36 @@ CREATE TABLE import_snapshots (
   fetched_at   TEXT    NOT NULL
 );
 
+-- יומן ייבוא (11ג): כל הבאה של דף מהרשת — מה היה בדף (אבחון) ומה חולץ ממנו,
+-- עם קישור למקור. לאבחון החילוץ. בלי FK: שורד מחיקת משתמש ומתכון.
+CREATE TABLE import_log (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  at            TEXT    NOT NULL,
+  user_id       INTEGER,
+  username      TEXT,
+  kind          TEXT    NOT NULL,
+  source_url    TEXT    NOT NULL,
+  final_url     TEXT,
+  host          TEXT    NOT NULL,
+  ok            INTEGER NOT NULL DEFAULT 1,
+  error         TEXT,
+  method        TEXT,
+  title         TEXT,
+  ingredients_n INTEGER NOT NULL DEFAULT 0,
+  steps_n       INTEGER NOT NULL DEFAULT 0,
+  sections_n    INTEGER NOT NULL DEFAULT 0,
+  images_n      INTEGER NOT NULL DEFAULT 0,
+  videos_n      INTEGER NOT NULL DEFAULT 0,
+  warnings      TEXT,
+  diag          TEXT,
+  extract       TEXT,
+  duration_ms   INTEGER,
+  recipe_id     INTEGER,
+  scout_id      INTEGER
+);
+CREATE INDEX idx_import_log_at   ON import_log(at);
+CREATE INDEX idx_import_log_host ON import_log(host, at);
+
 -- סורק אתרים — כלי פרטי של המפתח (11ב): מועמדים מדפי רשימה / sitemap,
 -- סימון לייבוא או דילוג, ומה יובא.
 CREATE TABLE scout_items (

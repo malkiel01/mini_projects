@@ -636,7 +636,11 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
 /* ───────── סורק אתרים ───────── */
 
 .scout__bar { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
-.scout__bulk { flex-wrap: wrap; margin: 8px 0; }
+.scout__bulk { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 8px 0; }
+.scout__bulk-label { grid-column: 1 / -1; }
+.scout__bulk .btn { padding-inline: 6px; font-size: 0.9rem; white-space: nowrap; min-width: 0; }
+.scout__go { flex-wrap: wrap; }
+.scout__go #scout-go { flex: 1; }
 .scout__list { display: flex; flex-direction: column; gap: 8px; }
 .scout-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 .scout-item__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
@@ -731,3 +735,17 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
 .preview__imgs { grid-template-columns: repeat(3, 1fr); max-width: 300px; }
 .ings--compact li, .steps--compact li { padding: 4px 0; font-size: 0.92rem; }
 .ings--compact { border: 0; }
+
+/* יומן ייבוא */
+.subnav--logs { margin: 4px 0 10px; }
+.importlog__list { display: flex; flex-direction: column; gap: 10px; }
+.ilog { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); min-width: 0; overflow: hidden; }
+.ilog--err { border-color: var(--err); }
+.ilog__head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; margin-bottom: 4px; }
+.ilog p { margin: 4px 0; }
+.ilog__links { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; }
+.ilog__links .scout-item__url { flex: 1 1 100%; }
+.ilog details { margin-top: 6px; }
+.ilog summary { cursor: pointer; color: var(--accent); }
+.ilog__text { margin: 6px 0 0; padding: 8px; background: var(--bg); border-radius: 6px; font-size: 0.78rem; line-height: 1.5;
+  white-space: pre-wrap; overflow-wrap: anywhere; max-height: 70vh; overflow: auto; text-align: start; }

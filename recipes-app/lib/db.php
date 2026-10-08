@@ -123,6 +123,37 @@ function migrate(PDO $pdo): void {
             fetched_at   TEXT    NOT NULL
         );
 
+        -- יומן ייבוא (lib/import_log.php): כל הבאה של דף מהרשת — מה היה בדף
+        -- (אבחון) ומה חולץ ממנו (כלשונו), עם קישור למקור. לאבחון החילוץ.
+        -- user_id בלי FK: היומן שורד מחיקת משתמש. נמחק אחרי 60 יום / 3000 שורות.
+        CREATE TABLE IF NOT EXISTS import_log (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            at            TEXT    NOT NULL,
+            user_id       INTEGER,
+            username      TEXT,
+            kind          TEXT    NOT NULL,   -- preview / scout-preview / scout-import / refresh / editor-save
+            source_url    TEXT    NOT NULL,
+            final_url     TEXT,               -- אחרי הפניות, כשהשתנתה
+            host          TEXT    NOT NULL,
+            ok            INTEGER NOT NULL DEFAULT 1,
+            error         TEXT,
+            method        TEXT,               -- json-ld / microdata / headings
+            title         TEXT,
+            ingredients_n INTEGER NOT NULL DEFAULT 0,
+            steps_n       INTEGER NOT NULL DEFAULT 0,
+            sections_n    INTEGER NOT NULL DEFAULT 0,
+            images_n      INTEGER NOT NULL DEFAULT 0,
+            videos_n      INTEGER NOT NULL DEFAULT 0,
+            warnings      TEXT,               -- JSON
+            diag          TEXT,               -- JSON: מה היה בדף
+            extract       TEXT,               -- JSON: מה חולץ, כלשונו, והפענוח
+            duration_ms   INTEGER,
+            recipe_id     INTEGER,            -- בלי FK: הרשומה נשארת גם אחרי מחיקת המתכון
+            scout_id      INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_import_log_at   ON import_log(at);
+        CREATE INDEX IF NOT EXISTS idx_import_log_host ON import_log(host, at);
+
         -- סורק אתרים (כלי פרטי של המפתח): מועמדים שנמצאו בדפי רשימה / sitemap,
         -- מה סומן לייבוא ומה לדילוג, ומה כבר יובא (lib/scout.php).
         CREATE TABLE IF NOT EXISTS scout_items (

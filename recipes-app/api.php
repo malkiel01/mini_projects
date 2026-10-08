@@ -241,7 +241,11 @@ try {
         $saved = saveRecipe($in, $user, $id > 0 ? $id : null);
         // ייבוא: התיעוד הפרטי נשמר יחד עם המתכון החדש
         if ($id === 0 && is_array($in['snapshot'] ?? null)) importSaveSnapshot($saved, $in['snapshot'], $user);
-        if ($id === 0 && is_string($in['source_url'] ?? null)) scoutLinkSaved(trim($in['source_url']), $saved);
+        if ($id === 0 && is_string($in['source_url'] ?? null) && trim($in['source_url']) !== '') {
+            scoutLinkSaved(trim($in['source_url']), $saved);
+            importLogSaved(trim($in['source_url']), $saved, $in, $user);
+            if (!empty($in['import_log_id'])) importLogSetRecipe((int) $in['import_log_id'], $saved);
+        }
         ok(['id' => $saved, 'recipe' => loadRecipe($saved, $user)]);
     }
 
@@ -274,8 +278,8 @@ try {
         // כתובת → טיוטה לעורך. לא נשמר דבר: המשתמש בודק, מתקן, ושומר.
         $url = str_field($in, 'url', 500);
         if ($url === '') fail('חסרה כתובת');
-        $draft = importPreview($url);
-        logEvent('info', 'import-preview', 'חולץ ב-' . $draft['extracted_by'], ['host' => parse_url($draft['source_url'], PHP_URL_HOST)], $user);
+        $draft = importPreview($url, 'preview', $user);
+        logEvent('info', 'import-preview', 'חולץ ב-' . $draft['extracted_by'], ['host' => parse_url($draft['source_url'], PHP_URL_HOST), 'import_log_id' => $draft['import_log_id']], $user);
         ok(['draft' => $draft, 'ai_available' => aiAvailable()]);
     }
 
@@ -482,6 +486,13 @@ try {
         requireDeveloper($user);
         $filters = array_intersect_key($in, array_flip(['level', 'action', 'user', 'q', 'request_id', 'since', 'before']));
         ok(['rows' => listLog($filters, (int) ($in['limit'] ?? 100)), 'stats' => logStats()]);
+    }
+
+    case 'import-log': {
+        // יומן הייבוא: מה היה בכל דף ומה חולץ ממנו, עם קישור למקור (lib/import_log.php)
+        requireDeveloper($user);
+        $filters = array_intersect_key($in, array_flip(['host', 'kind', 'ok', 'q', 'before', 'since', 'recipe_id']));
+        ok(['rows' => importLogList($filters, (int) ($in['limit'] ?? 50)), 'stats' => importLogStats()]);
     }
 
     case 'log-tokens':

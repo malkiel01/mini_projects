@@ -28,6 +28,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/errors.php';
 require_once __DIR__ . '/recipes.php';
+require_once __DIR__ . '/import_log.php';
 
 const IMPORT_MAX_BYTES     = 3 * 1024 * 1024;
 const IMPORT_TIMEOUT       = 15;
@@ -344,7 +345,11 @@ function importFromHeadings(DOMDocument $doc): ?array {
 
 /** html + כתובת → חילוץ גולמי (או זריקה אם לא נמצא מתכון). */
 function importParse(string $html, string $url): array {
-    $doc = importDom($html);
+    return importParseDoc(importDom($html), $url);
+}
+
+/** כמו importParse, על DOM שכבר נבנה — כדי שהאבחון ליומן ישתמש באותו עץ. */
+function importParseDoc(DOMDocument $doc, string $url): array {
     $raw = importFromJsonLd($doc) ?? importFromMicrodata($doc) ?? importFromHeadings($doc);
     if (!$raw || (!$raw['ingredients'] && !$raw['sections'])) {
         throw new AppError('לא מצאתי מתכון בדף הזה. אולי זה דף של כמה מתכונים, או דף שלא מסומן כמתכון — אפשר להעתיק ידנית');
@@ -382,7 +387,7 @@ const IMPORT_UNIT_WORDS = [
     'tbsp' => ['כף', 'כפות', 'tbsp', 'tablespoon', 'tablespoons'],
     'tsp'  => ['כפית', 'כפיות', 'tsp', 'teaspoon', 'teaspoons'],
     'unit' => ['יחידה', 'יחידות', 'יח\'', 'יח', 'unit', 'units'],
-    'package' => ['חבילה', 'חבילות', 'אריזה', 'שקית', 'package', 'pack'],
+    'package' => ['חבילה', 'חבילות', 'אריזה', 'שקית', 'מיכל', 'מיכלים', 'גביע', 'גביעים', 'קופסה', 'קופסא', 'פחית', 'package', 'pack'],
     'pinch' => ['קורט', 'קמצוץ', 'pinch'],
 ];
 
@@ -406,8 +411,10 @@ function importParseIngredient(string $text): array {
         }
         if ($unit === '') $unit = 'unit';
     }
-    // "(200 ג')" בסוגריים אחרי היחידה — ניקוי מהמוצר
+    // "(200 ג')" בסוגריים אחרי היחידה — ניקוי מהמוצר; וגם "1 כוס או 240 מ"ל שמן"
+    // — המידה החלופית אחרי "או" אינה חלק משם המוצר (היומן הראה את זה ב-carine)
     $product = trim(preg_replace('/\([^)]*\)/u', '', $rest) ?? '');
+    $product = preg_replace('/^(?:או|or)\s+[\d½¼¾⅓⅔⅛.,\/]+\s*\S+\s+/u', '', $product) ?? $product;
     $product = preg_replace('/^(של|מ-|מ)\s+/u', '', $product) ?? $product;
     $product = trim(explode(',', $product)[0]);
     $product = mb_substr($product, 0, 60);
@@ -526,7 +533,7 @@ function importRefreshSnapshot(int $recipeId, array $user): array {
     if (!$r) throw new AppError('המתכון אינו קיים', 404);
     if ((int) $r['owner_id'] !== (int) $user['id']) throw new AppError('רק מי שייבא את המתכון יכול למשוך את המקור', 403);
     if (!$r['source_url']) throw new AppError('למתכון הזה אין מקור ברשת');
-    $draft = importPreview($r['source_url']);
+    $draft = importPreview($r['source_url'], 'refresh', $user, ['recipe_id' => $recipeId]);
     importSaveSnapshot($recipeId, $draft['snapshot'], $user);
     return importGetSnapshot($recipeId, $user);
 }
@@ -546,8 +553,24 @@ function importGetSnapshot(int $recipeId, array $user): ?array {
     ];
 }
 
-/** הכול יחד: כתובת → טיוטה. */
-function importPreview(string $url): array {
-    [$html, $final] = importFetch($url);
-    return importToDraft(importParse($html, $final));
+/**
+ * הכול יחד: כתובת → טיוטה. כל קריאה נרשמת ביומן הייבוא (lib/import_log.php) —
+ * גם כשנכשלה: עם האבחון של הדף אם הובא, ועם השגיאה. $kind אומר מאיפה
+ * הגיעה הקריאה; $ctx — scout_id / recipe_id לקישור. הטיוטה חוזרת עם
+ * import_log_id, כדי שמי ששומר אותה יקשר את השורה למתכון.
+ */
+function importPreview(string $url, string $kind = 'preview', ?array $user = null, array $ctx = []): array {
+    $t0 = microtime(true);
+    $diag = null;
+    try {
+        [$html, $final] = importFetch($url);
+        $doc = importDom($html);
+        try { $diag = importDiagnose($doc, $html); } catch (Throwable $e) { $diag = ['error' => $e->getMessage()]; }
+        $draft = importToDraft(importParseDoc($doc, $final));
+        $draft['import_log_id'] = importLogDraft($kind, $url, $draft, $user, $diag, (int) ((microtime(true) - $t0) * 1000), $ctx);
+        return $draft;
+    } catch (AppError $e) {
+        importLogFailure($kind, $url, $e->getMessage(), $user, $diag, (int) ((microtime(true) - $t0) * 1000), $ctx);
+        throw $e;
+    }
 }

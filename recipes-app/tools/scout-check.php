@@ -79,6 +79,21 @@ check('#comments אינו כפילות', count(array_filter($c, fn($x) => str_co
 check('אתר אחר לא נכנס', count(array_filter($c, fn($x) => str_contains($x['url'], 'other.example'))), 0);
 check('ניווט לא נכנס', count(array_filter($c, fn($x) => str_contains($x['url'], '/contact') || str_contains($x['url'], '/page/'))), 0);
 
+echo "\n3ב. לכלוך שנראה כמו קישור — תבניות JS, whatsapp מקונן, ודף הרשימה עצמו\n";
+$dirty = '<html><body>
+  <a href="/foody_recipe/\' + product_url + \'">\' + title + \'</a>
+  <a href="/foody_recipe/whatsapp://send?text=עוגת שוקולד https://x">send</a>
+  <a href="/foody_recipe/">foody recipe</a>
+  <a href="https://www.carine.co.il/foody_recipe/">foody recipe</a>
+  <a href="/foody_recipe/%d7%a2%d7%95%d7%92%d7%aa-%d7%a9%d7%a7%d7%93%d7%99%d7%9d/">עוגת שקדים נימוחה</a>
+  <a href="/foody_recipe/{{slug}}/">{{title}}</a>
+</body></html>';
+$c = scoutExtractCandidates($dirty, 'https://www.carine.co.il/foody_recipe/');
+check('רק המתכון האמיתי נשאר', array_column($c, 'title'), ['עוגת שקדים נימוחה']);
+check('scoutCleanUrl', [scoutCleanUrl("https://a.co.il/x/' + u + '"), scoutCleanUrl('https://a.co.il/r/whatsapp://send?text=x'),
+                        scoutCleanUrl('https://a.co.il/r/{{slug}}/'), scoutCleanUrl('https://a.co.il/r/%d7%a2/?x=1')], [false, false, false, true]);
+check('ספריית המתכונים לבדה אינה מתכון', [scoutLooksLikeRecipe('https://a.co.il/recipes/', ''), scoutLooksLikeRecipe('https://a.co.il/recipes/x', '')], [false, true]);
+
 echo "\n4. מועמדים מ-sitemap\n";
 $c = scoutExtractCandidates($fx('sitemap.xml'), 'http://127.0.0.1/sitemap.xml');
 check('שלוש כתובות', count($c), 3);

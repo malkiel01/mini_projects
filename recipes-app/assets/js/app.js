@@ -291,6 +291,7 @@ async function route() {
     else if ((m = h.match(/^#\/cook\/(\d+)$/))) await renderCook(+m[1]);
     else if (h === '#/diag') await renderDiag();
     else if (h === '#/logs') await renderLogs();
+    else if (h === '#/logs/import') await renderImportLog();
     else if (h === '#/scout') await renderScout();
     else if (h === '#/settings') await renderSettingsPrivate();
     else if (h === '#/settings/public') await renderSettingsPublic();
@@ -771,6 +772,7 @@ async function renderEditor(id, draft = null) {
     comments_open: r.comments_open !== false,
     source: draft ? { url: draft.source_url, name: draft.source_name, author: draft.source_author, rewritten: false } : (r.source || null),
     snapshot: draft ? draft.snapshot : null,
+    import_log_id: draft ? draft.import_log_id || null : null,   // השורה ביומן הייבוא — תקושר למתכון בשמירה
     ai_available: draft ? !!draft.ai_available : null,
     pending_media: draft ? draft.pending_media : null,
     tag_ids: new Set(r.tags.map((t) => t.id)),
@@ -1082,6 +1084,7 @@ async function renderEditor(id, draft = null) {
           ...(model.source && !editId ? { source_url: model.source.url, source_name: model.source.name, source_author: model.source.author } : {}),
           ...(model.source ? { source_rewritten: !!model.source.rewritten } : {}),
           ...(model.snapshot && !editId ? { snapshot: model.snapshot } : {}),
+          ...(model.import_log_id && !editId ? { import_log_id: model.import_log_id } : {}),
           sections: model.sections.map((s) => ({
             name: s.name,
             ingredients: s.ingredients.filter((i) => i.free_text.trim()),
@@ -1848,6 +1851,7 @@ async function renderLogs() {
     <section class="card settings settings--wide logs">
       ${settingsNav()}
       <h2>יומן — כל צעד במערכת</h2>
+      ${logsNav('system')}
       <p class="muted" id="log-stats">טוען…</p>
 
       <form class="logfilter" id="log-filter">
@@ -1988,7 +1992,7 @@ async function renderLogs() {
             <button class="btn btn--primary" type="button" id="token-copy">העתק קישור</button>
             <a class="btn" href="${esc(url.href)}" target="_blank" rel="noopener">פתח</a>
           </div>
-          <p class="muted small">לקלוד: גם <code dir="ltr">&amp;format=text</code> — טקסט להדבקה בצ'אט.</p>
+          <p class="muted small">לקלוד: <code dir="ltr">&amp;format=text</code> — טקסט להדבקה בצ'אט; <code dir="ltr">&amp;view=import&amp;format=text</code> — יומן הייבוא, עם מה שהיה בכל דף ומה שחולץ.</p>
         </div>`;
       $('#token-copy').addEventListener('click', async () => {
         const inp = $('#token-url'); inp.select();
@@ -2003,6 +2007,99 @@ async function renderLogs() {
 
   await load();
   drawTokens((await api('log-tokens')).tokens);
+}
+
+const logsNav = (active) => `
+  <nav class="subnav subnav--logs" aria-label="יומנים">
+    <a href="#/logs" class="${active === 'system' ? 'is-on' : ''}">יומן המערכת</a>
+    <a href="#/logs/import" class="${active === 'import' ? 'is-on' : ''}">יומן ייבוא</a>
+  </nav>`;
+
+const IMPORT_KIND_HE = { preview: 'ייבוא מהעורך', 'scout-preview': 'תצוגה מקדימה בסורק', 'scout-import': 'ייבוא בסורק', refresh: 'משיכה חוזרת', 'editor-save': 'שמירה מהעורך' };
+
+// ───────────────────────── יומן ייבוא (מפתח) ─────────────────────────
+// כל הבאה של דף: מה היה בדף ומה חולץ ממנו, עם קישור למקור. כאן רואים, ובטקסט
+// מעתיקים — זה מה שמדביקים בצ'אט כדי לאבחן למה דף מסוים לא חולץ נכון.
+async function renderImportLog() {
+  if (!state.user.is_developer) { go('#/settings'); return; }
+  const filters = { host: '', kind: '', ok: '', q: '' };
+  let rows = [];
+
+  view.innerHTML = `
+    <section class="card settings settings--wide logs importlog">
+      ${settingsNav()}
+      <h2>יומן ייבוא</h2>
+      ${logsNav('import')}
+      <p class="muted">כל הבאה של דף מהרשת — ייבוא מהעורך, תצוגה מקדימה וייבוא בסורק — עם מה שהיה בדף (JSON-LD, כותרות, Microdata)
+        ומה שחולץ ממנו כלשונו, וקישור למקור להשוואה. "העתק כטקסט" נותן את הכול להדבקה בצ'אט.</p>
+      <p class="muted" id="ilog-stats">טוען…</p>
+      <form class="logfilter" id="ilog-filter">
+        <select name="host" aria-label="אתר"><option value="">כל האתרים</option></select>
+        <select name="kind" aria-label="סוג"><option value="">כל הסוגים</option>${Object.entries(IMPORT_KIND_HE).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
+        <select name="ok" aria-label="תוצאה"><option value="">הצליח ונכשל</option><option value="0">נכשל בלבד</option><option value="1">הצליח בלבד</option></select>
+        <input type="search" name="q" placeholder="חיפוש בשם / בכתובת / בשגיאה" autocomplete="off">
+        <div class="actions">
+          <button class="btn btn--primary" type="submit">סנן</button>
+          <button class="btn" type="button" id="ilog-copy">העתק כטקסט</button>
+        </div>
+      </form>
+      <div id="ilog-list" class="importlog__list"></div>
+      <div class="actions"><button class="btn" type="button" id="ilog-more" hidden>ישנים יותר ›</button></div>
+    </section>`;
+
+  const statsEl = $('#ilog-stats');
+  const listEl = $('#ilog-list');
+  const more = $('#ilog-more');
+  const entryHtml = (r) => `
+    <article class="ilog ilog--${r.ok ? 'ok' : 'err'}">
+      <header class="ilog__head">
+        <span class="badge badge--${r.ok ? 'public' : 'err'}">${r.ok ? 'הצליח' : 'נכשל'}</span>
+        <span>${esc(IMPORT_KIND_HE[r.kind] || r.kind)}</span>
+        <span class="muted small" dir="ltr">${esc(r.at.slice(5, 16).replace('T', ' '))}</span>
+        <span class="muted small">${esc(r.username || '—')}${r.duration_ms != null ? ` · ${r.duration_ms}ms` : ''}</span>
+      </header>
+      <strong>${esc(r.title || (r.ok ? '(בלי שם)' : 'ההבאה נכשלה — ' + r.host))}</strong>
+      ${r.ok && r.kind !== 'editor-save' ? `<p class="muted small">חולץ ב-${esc(r.method || '?')} · ${r.ingredients_n} רכיבים · ${r.steps_n} שלבים ב-${r.sections_n} חלקים · ${r.images_n} תמונות${r.videos_n ? ` · ${r.videos_n} סרטונים` : ''}</p>` : ''}
+      ${r.kind === 'editor-save' ? `<p class="muted small">נשמר אחרי תיקון: ${r.ingredients_n} רכיבים · ${r.steps_n} שלבים ב-${r.sections_n} חלקים</p>` : ''}
+      ${!r.ok ? `<p class="note note--err small">${esc(r.error || '')}</p>` : ''}
+      ${r.warnings?.length ? `<p class="note note--warn small">${r.warnings.map(esc).join(' · ')}</p>` : ''}
+      <p class="ilog__links">
+        <a href="${esc(r.source_url)}" target="_blank" rel="noopener nofollow">↗ המקור</a>
+        <span class="muted small scout-item__url" dir="auto">${esc(prettyUrl(r.source_url))}</span>
+        ${r.recipe_id ? `· <a href="#/r/${r.recipe_id}">למתכון #${r.recipe_id} ›</a>` : ''}
+        ${r.scout_id ? `· <span class="muted small">מועמד בסורק #${r.scout_id}</span>` : ''}
+      </p>
+      <details><summary class="link">הטקסט המלא — מה היה בדף ומה חולץ</summary><pre class="ilog__text" dir="auto">${esc(r.text)}</pre></details>
+    </article>`;
+
+  const load = async (append = false) => {
+    const req = { ...filters, limit: 50 };
+    if (append && rows.length) req.before = rows[rows.length - 1].id;
+    const res = await api('import-log', req);
+    rows = append ? rows.concat(res.rows) : res.rows;
+    const st = res.stats;
+    statsEl.textContent = `${st.rows} הבאות · ${st.failed_24h} נכשלו ב-24 השעות האחרונות · נשמר ${st.keep_days} יום / עד ${st.keep_rows} שורות`;
+    const sel = $('#ilog-filter select[name="host"]'); const cur = sel.value;
+    sel.innerHTML = '<option value="">כל האתרים</option>' + st.hosts.map((h) => `<option value="${esc(h)}">${esc(h)}</option>`).join('');
+    sel.value = cur;
+    listEl.innerHTML = rows.length ? rows.map(entryHtml).join('') : '<p class="muted">עדיין אין הבאות שתואמות. כל ייבוא מהעורך או מהסורק יופיע כאן.</p>';
+    more.hidden = res.rows.length < 50;
+  };
+  $('#ilog-filter').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const f = e.target;
+    Object.assign(filters, { host: f.host.value, kind: f.kind.value, ok: f.ok.value, q: f.q.value.trim() });
+    load().catch((err) => { statsEl.textContent = err.message; });
+  });
+  more.addEventListener('click', () => load(true).catch((err) => { statsEl.textContent = err.message; }));
+  $('#ilog-copy').addEventListener('click', async () => {
+    const text = rows.slice().reverse().map((r) => r.text).join('\n');
+    const b = $('#ilog-copy');
+    try { await navigator.clipboard.writeText(text); b.textContent = `הועתק ✓ (${rows.length})`; }
+    catch { const ta = document.createElement('textarea'); ta.value = text; document.body.append(ta); ta.select(); document.execCommand('copy'); ta.remove(); b.textContent = 'הועתק ✓'; }
+    setTimeout(() => { b.textContent = 'העתק כטקסט'; }, 2500);
+  });
+  await load().catch((err) => { statsEl.textContent = err.message; });
 }
 
 // ───────────────────────── סורק אתרים (מפתח) ─────────────────────────
@@ -2040,10 +2137,11 @@ async function renderScout() {
           <input type="search" name="q" placeholder="חיפוש בשם" autocomplete="off">
         </div>
       </div>
-      <div class="actions scout__bulk">
-        <button class="btn" type="button" data-bulk="wanted">סמן הכול לייבוא</button>
+      <div class="scout__bulk" id="scout-bulk">
+        <span class="muted small scout__bulk-label">על כל מה שברשימה:</span>
+        <button class="btn" type="button" data-bulk="wanted">הכול לייבוא</button>
         <button class="btn btn--ghost" type="button" data-bulk="skipped">דלג על הכול</button>
-        <button class="btn btn--ghost btn--danger" type="button" data-bulk="remove">מחק מהרשימה</button>
+        <button class="btn btn--ghost btn--danger" type="button" data-bulk="remove">מחק הכול</button>
       </div>
       <div id="scout-list" class="scout__list"></div>
 
@@ -2053,10 +2151,11 @@ async function renderScout() {
           <label>מרווח בין פריטים (שניות) <input type="number" name="gap" min="3" max="60" value="8" inputmode="numeric"></label>
           <label class="check check--big"><input type="checkbox" name="rewrite" id="scout-rewrite"> לנסח מחדש בבינה</label>
         </div>
-        <div class="actions">
+        <div class="actions scout__go">
           <button class="btn btn--primary" type="button" id="scout-go">ייבא את המסומנים</button>
           <button class="btn btn--danger" type="button" id="scout-stop" hidden>עצור</button>
         </div>
+        <p class="muted small">כל הבאה נרשמת ב<a href="#/logs/import">יומן הייבוא</a> — מה היה בדף ומה חולץ, עם קישור למקור.</p>
         <ol class="scout__progress" id="scout-progress"></ol>
       </div>
     </section>`;
@@ -2070,6 +2169,9 @@ async function renderScout() {
     $('#scout-tabs').innerHTML = ['new', 'wanted', 'skipped', 'imported', 'error'].map((s) =>
       `<a href="#/scout" data-status="${s}" class="${filters.status === s ? 'is-on' : ''}">${SCOUT_LABEL[s]} (${data.counts[s] || 0})</a>`).join('');
     $$('[data-status]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); filters.status = a.dataset.status; load(); }));
+    const n = data.counts.wanted || 0;
+    $('#scout-go').textContent = n ? `ייבא את המסומנים (${n})` : 'ייבא את המסומנים';
+    $('#scout-bulk').hidden = !data.items.some((it) => it.status !== 'imported');
     const sel = $('select[name="site"]'); const cur = sel.value;
     sel.innerHTML = '<option value="">כל האתרים</option>' + data.sites.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
     sel.value = cur;
@@ -2179,7 +2281,8 @@ async function renderScout() {
       try { await api('scout-remove', { ids }); await load(); } catch (err) { note(err.message, 'err'); }
       return;
     }
-    try { data = await api('scout-mark', { ids, status: b.dataset.bulk, ...filters }); drawTabs(); drawList(); } catch (err) { note(err.message, 'err'); }
+    // אחרי סימון כולם — עוברים ללשונית של המצב החדש, שם הם עכשיו
+    try { await api('scout-mark', { ids, status: b.dataset.bulk }); filters.status = b.dataset.bulk; await load(); } catch (err) { note(err.message, 'err'); }
   }));
 
   // ── הריצה: פריט-פריט, מרווח ביניהם, אפשר לעצור. הדפדפן הוא המתזמן —
@@ -2187,7 +2290,7 @@ async function renderScout() {
   $('#scout-go').addEventListener('click', async () => {
     if (running) return;
     const wanted = (await api('scout-list', { status: 'wanted' })).items;
-    if (!wanted.length) { note('אין פריטים מסומנים לייבוא. סמן "✓ כן" ליד מה שרוצים.', 'warn'); return; }
+    if (!wanted.length) { note('אין פריטים מסומנים לייבוא. להדליק את המתג ליד מה שרוצים.', 'warn'); return; }
     running = true; stop = false;
     $('#scout-go').disabled = true; $('#scout-stop').hidden = false;
     const gap = Math.max(3, +$('input[name="gap"]').value || 8) * 1000;

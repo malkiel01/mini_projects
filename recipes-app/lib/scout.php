@@ -118,7 +118,8 @@ function scoutThrottle(string $url): void {
 /** קישור שנראה כמו דף מתכון — לפי הנתיב או לפי טקסט הקישור. */
 function scoutLooksLikeRecipe(string $url, string $text): bool {
     $path = strtolower(urldecode(parse_url($url, PHP_URL_PATH) ?: ''));
-    if (preg_match('~/(recipe|recipes|foody_recipe|מתכון|מתכונים)(/|$)~u', $path)) return true;
+    // ספריית המתכונים עצמה (/recipes/) היא דף רשימה, לא מתכון — נדרש משהו אחריה
+    if (preg_match('~/(recipe|recipes|foody_recipe|מתכון|מתכונים)/[^/]+~u', $path)) return true;
     if (preg_match('~/(category|tag|author|page|feed|wp-|login|cart|search)(/|$)~', $path)) return false;
     // טקסט קישור שנראה כמו שם מנה (לא "המשך קריאה", לא "צור קשר")
     $t = trim($text);
@@ -141,11 +142,14 @@ function scoutExtractCandidates(string $body, string $pageUrl): array {
     $host = strtolower(parse_url($pageUrl, PHP_URL_HOST) ?: '');
     $out = [];
     $seen = [];   // url → אינדקס ב-$out, כדי שקישור שני לאותו דף עם שם טוב יותר ישפר את השם
-    $add = function (string $u, string $title) use (&$out, &$seen, $host) {
+    $pageKey = rtrim(preg_replace('/[#?].*$/', '', $pageUrl) ?? $pageUrl, '/');
+    $add = function (string $u, string $title) use (&$out, &$seen, $host, $pageKey) {
         $u = trim(preg_replace('/#.*$/', '', $u) ?? $u);
         if ($u === '' || !preg_match('~^https?://~i', $u)) return;
+        if (!scoutCleanUrl($u)) return;   // תבנית JS שנשארה ב-HTML, whatsapp://… וכדומה
         if (strtolower(parse_url($u, PHP_URL_HOST) ?: '') !== $host) return;
         $key = rtrim($u, '/');
+        if ($key === $pageKey) return;    // דף הרשימה עצמו אינו מועמד
         $title = mb_substr(trim($title), 0, 120);
         if (isset($seen[$key])) {
             // כבר יש — אבל קישור שני לאותו דף יכול לתת שם טוב יותר: כשהראשון
@@ -210,6 +214,20 @@ function scoutExtractCandidates(string $body, string $pageUrl): array {
         if (scoutLooksLikeRecipe($href, $text)) $add($href, $text);
     }
     return $out;
+}
+
+/**
+ * כתובת נקייה. אתרים משאירים ב-HTML תבניות JavaScript שלא רונדרו —
+ * href="/foody_recipe/' + product_url + '" — וקישורי שיתוף שמקננים כתובת
+ * אחרת (…/whatsapp://send?text=…). אלה נראים כמו קישורים ואינם דפים.
+ */
+function scoutCleanUrl(string $u): bool {
+    // רווח, גרשיים, סוגריים מסולסלים, backslash — או המקודדים שלהם
+    if (preg_match('/[\s\x27"<>`{}|\\\\]/', $u) || preg_match('/%27|%22|%7B|%3C/i', $u)) return false;
+    $path = (string) parse_url($u, PHP_URL_PATH);
+    if (preg_match('~[a-z][a-z0-9+.-]*:/~i', ltrim($path, '/')) || str_contains($path, '//')) return false;   // סכמה מקוננת בנתיב
+    if (preg_match('~/(whatsapp|mailto|tel|javascript)\b~i', $path)) return false;
+    return true;
 }
 
 /** שם שאפשר להציג: לפחות שתי אותיות, ולא משך סרטון כמו "8:44". */
@@ -311,7 +329,7 @@ function scoutPreview(int $id, array $developer): array {
     if (!$item) throw new AppError('הפריט אינו קיים', 404);
     if (!scoutRobotsAllowed($item['url'])) throw new AppError('האתר אוסר על הבאה אוטומטית של הדף (robots.txt)');
     scoutThrottle($item['url']);
-    $draft = importPreview($item['url']);
+    $draft = importPreview($item['url'], 'scout-preview', $developer, ['scout_id' => $id]);
     if (!scoutGoodTitle((string) $item['title']) || $item['title'] !== $draft['title']) {
         db()->prepare('UPDATE scout_items SET title = ? WHERE id = ?')->execute([mb_substr($draft['title'], 0, 120), $id]);
     }
@@ -336,8 +354,9 @@ function scoutImportOne(int $id, array $developer, bool $rewrite): array {
     try {
         if (!scoutRobotsAllowed($item['url'])) throw new AppError('האתר אוסר על הבאה אוטומטית של הדף (robots.txt)');
         scoutThrottle($item['url']);
-        $draft = importPreview($item['url']);
+        $draft = importPreview($item['url'], 'scout-import', $developer, ['scout_id' => $id]);
         $rid = saveRecipe($draft, $developer);
+        importLogSetRecipe((int) ($draft['import_log_id'] ?? 0), $rid);
         importSaveSnapshot($rid, $draft['snapshot'], $developer);
         foreach ($draft['pending_media']['images'] as $u) { try { storeLink($rid, $developer, $u, 'image'); } catch (Throwable $e) {} }
         foreach ($draft['pending_media']['videos'] as $u) { try { storeLink($rid, $developer, $u, 'video'); } catch (Throwable $e) {} }

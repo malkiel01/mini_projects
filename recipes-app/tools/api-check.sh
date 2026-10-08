@@ -279,6 +279,11 @@ check 'תמונה כקישור'                "$(call media-link "{\"recipe_id\
 check 'הרשימה: thumb חיצוני ושם האתר' "$(call search '{"q":"בית מלון"}')" '"thumb":"https:\\/\\/www.10dakot.co.il\\/x.jpg","source_name":"'
 check 'סינון מהרשת'                 "$(call search '{"from_web":true}')" '"title":"עוגת גבינה של בית מלון"'
 check 'הייבוא נרשם ביומן'           "$(call logout >/dev/null; call login '{"username":"owner","password":"sod12345"}' >/dev/null; call log '{"action":"import-preview"}')" 'json-ld'
+IL=$(call import-log '{}')
+check 'יומן ייבוא: ההבאה, הכשל, והשמירה מהעורך' "$IL" '"kind":"editor-save"[^}]*"recipe_id":'"$IID"
+check 'יומן ייבוא: הכשל עם האבחון'   "$IL" '"ok":false,"error":"לא מצאתי[^}]*"diag":{"html_bytes"'
+check 'יומן ייבוא: ההצלחה עם הטקסט'  "$IL" '"kind":"preview"[^}]*"method":"json-ld"'
+check 'יומן ייבוא: סינון לפי תוצאה'  "$(call import-log '{"ok":"0"}' | grep -c '"ok":true')" '^0$'
 call logout >/dev/null
 
 echo
@@ -395,6 +400,8 @@ call logout >/dev/null
 check 'logs.php בלי כניסה, עם הטוקן — JSON'    "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$TOK&format=json&action=login")" '"action":"login"'
 check 'ובטקסט'                                 "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$TOK&format=text&action=login")" 'INFO .* owner login'
 check 'ודף HTML'                               "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$TOK")" '<table class="logtable"'
+check 'יומן הייבוא דרך הטוקן — טקסט עם המקור'  "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$TOK&view=import&format=text")" 'מקור: http://127.0.0.1:'"$FXPORT"'/jsonld-10dakot.html'
+check 'יומן הייבוא — HTML'                      "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$TOK&view=import&ok=0")" 'class="ilog ilog--err"'
 check 'טוקן שגוי — 403'                        "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$(printf '0%.0s' $(seq 48))")" '^403$'
 call login '{"username":"owner","password":"sod12345"}' >/dev/null
 check 'הצפייה נרשמה ביומן עם שם הטוקן'         "$(call log '{"action":"log-view"}')" 'לקלוד'

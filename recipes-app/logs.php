@@ -10,11 +10,17 @@
  *   logs.php?token=…&format=text     טקסט, שורה לאירוע, כרונולוגי
  *   logs.php?token=…&format=json     JSON, החדש ראשון
  * מסננים בשלושתם: level, action, user, q, request_id, since, before, limit.
+ *
+ *   logs.php?token=…&view=import     יומן הייבוא (lib/import_log.php): מה היה
+ *                                    בכל דף ומה חולץ ממנו, עם קישור למקור.
+ *                                    גם &format=text|json. מסננים: host, kind,
+ *                                    ok, q, since, before, limit.
  */
 
 declare(strict_types=1);
 
 require_once __DIR__ . '/lib/log.php';
+require_once __DIR__ . '/lib/import_log.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
@@ -30,9 +36,111 @@ if (!$token) {
     exit;
 }
 
+$format  = (string) ($_GET['format'] ?? 'html');
+$view    = (string) ($_GET['view'] ?? 'system');
+$esc     = fn($s): string => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+
+if ($view === 'import') {
+    $filters = array_intersect_key($_GET, array_flip(['host', 'kind', 'ok', 'q', 'since', 'before']));
+    $limit   = (int) ($_GET['limit'] ?? 50);
+    $rows    = importLogList($filters, $limit);
+    logEvent('info', 'log-view', 'צפייה ביומן הייבוא דרך טוקן "' . $token['label'] . '"',
+             ['token_id' => (int) $token['id'], 'format' => $format, 'rows' => count($rows)]);
+    if ($format === 'json') {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['success' => true, 'rows' => $rows, 'stats' => importLogStats()], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($format === 'text') {
+        header('Content-Type: text/plain; charset=utf-8');
+        echo importLogAsText($rows);
+        exit;
+    }
+    $stats = importLogStats();
+    $self  = './logs.php?token=' . $esc($raw) . '&view=import';
+    $qs    = fn(array $extra) => $self . '&' . http_build_query(array_filter($filters + $extra, fn($v) => $v !== '' && $v !== null));
+    ?>
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>יומן ייבוא · אפליקציית מתכונים</title>
+<meta name="theme-color" content="#0f8a4f">
+<link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-08a">
+</head>
+<body>
+<header class="bar">
+  <span class="bar__title">יומן ייבוא — <?= $esc($token['label']) ?></span>
+  <a class="btn btn--ghost" href="./logs.php?token=<?= $esc($raw) ?>">יומן המערכת</a>
+</header>
+<main class="stage">
+<section class="card settings--wide logview importlog">
+  <p class="muted">
+    <?= (int) $stats['rows'] ?> הבאות · <?= (int) $stats['failed_24h'] ?> נכשלו ב-24 השעות האחרונות ·
+    <a href="<?= $qs(['format' => 'text', 'limit' => 100]) ?>">טקסט</a> ·
+    <a href="<?= $qs(['format' => 'json', 'limit' => 100]) ?>">JSON</a>
+  </p>
+  <form class="logfilter" method="get">
+    <input type="hidden" name="token" value="<?= $esc($raw) ?>">
+    <input type="hidden" name="view" value="import">
+    <select name="host" aria-label="אתר">
+      <option value="">כל האתרים</option>
+      <?php foreach ($stats['hosts'] as $h): ?>
+        <option value="<?= $esc($h) ?>" <?= ($filters['host'] ?? '') === $h ? 'selected' : '' ?>><?= $esc($h) ?></option>
+      <?php endforeach; ?>
+    </select>
+    <select name="kind" aria-label="סוג">
+      <option value="">כל הסוגים</option>
+      <?php foreach (IMPORT_LOG_KIND_HE as $k => $l): ?>
+        <option value="<?= $esc($k) ?>" <?= ($filters['kind'] ?? '') === $k ? 'selected' : '' ?>><?= $esc($l) ?></option>
+      <?php endforeach; ?>
+    </select>
+    <select name="ok" aria-label="תוצאה">
+      <option value="">הצליח ונכשל</option>
+      <option value="0" <?= ($filters['ok'] ?? '') === '0' ? 'selected' : '' ?>>נכשל בלבד</option>
+      <option value="1" <?= ($filters['ok'] ?? '') === '1' ? 'selected' : '' ?>>הצליח בלבד</option>
+    </select>
+    <input type="search" name="q" value="<?= $esc($filters['q'] ?? '') ?>" placeholder="חיפוש בשם / בכתובת / בשגיאה">
+    <button class="btn btn--primary" type="submit">סנן</button>
+  </form>
+  <?php if (!$rows): ?>
+    <p class="muted">אין הבאות שתואמות.</p>
+  <?php else: ?>
+  <div class="importlog__list">
+  <?php foreach ($rows as $r): ?>
+    <article class="ilog ilog--<?= $r['ok'] ? 'ok' : 'err' ?>">
+      <header class="ilog__head">
+        <span class="badge badge--<?= $r['ok'] ? 'public' : 'err' ?>"><?= $r['ok'] ? 'הצליח' : 'נכשל' ?></span>
+        <span><?= $esc(IMPORT_LOG_KIND_HE[$r['kind']] ?? $r['kind']) ?></span>
+        <span class="muted small" dir="ltr"><?= $esc(str_replace('T', ' ', substr($r['at'], 5, 11))) ?></span>
+        <span class="muted small"><?= $esc($r['username'] ?? '—') ?></span>
+      </header>
+      <strong><?= $esc($r['title'] ?: ($r['ok'] ? '(בלי שם)' : 'ההבאה נכשלה — ' . $r['host'])) ?></strong>
+      <?php if (!$r['ok']): ?><p class="note note--err small"><?= $esc($r['error']) ?></p><?php endif; ?>
+      <p class="ilog__links">
+        <a href="<?= $esc($r['source_url']) ?>" target="_blank" rel="noopener nofollow">↗ המקור</a>
+        <span class="muted small scout-item__url" dir="ltr"><?= $esc(mb_substr($r['source_url'], 0, 100)) ?></span>
+        <?php if ($r['recipe_id']): ?>· <span class="muted small">מתכון #<?= (int) $r['recipe_id'] ?></span><?php endif; ?>
+      </p>
+      <details><summary class="link">הטקסט המלא — מה היה בדף ומה חולץ</summary><pre class="ilog__text" dir="auto"><?= $esc($r['text']) ?></pre></details>
+    </article>
+  <?php endforeach; ?>
+  </div>
+  <p><a class="btn" href="<?= $qs(['before' => end($rows)['id']]) ?>">ישנים יותר ›</a></p>
+  <?php endif; ?>
+</section>
+</main>
+</body>
+</html>
+<?php
+    exit;
+}
+
 $filters = array_intersect_key($_GET, array_flip(['level', 'action', 'user', 'q', 'request_id', 'since', 'before']));
 $limit   = (int) ($_GET['limit'] ?? 200);
-$format  = (string) ($_GET['format'] ?? 'html');
 $rows    = listLog($filters, $limit);
 logEvent('info', 'log-view', 'צפייה ביומן דרך טוקן "' . $token['label'] . '"',
          ['token_id' => (int) $token['id'], 'format' => $format, 'rows' => count($rows)] + logSafeInput($filters));
@@ -48,7 +156,6 @@ if ($format === 'text') {
     exit;
 }
 
-$esc   = fn($s): string => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
 $stats = logStats();
 $self  = './logs.php?token=' . $esc($raw);
 $qs    = fn(array $extra) => $self . '&' . http_build_query(array_filter($filters + $extra, fn($v) => $v !== '' && $v !== null));
@@ -62,7 +169,7 @@ $qs    = fn(array $extra) => $self . '&' . http_build_query(array_filter($filter
 <title>יומן · אפליקציית מתכונים</title>
 <meta name="theme-color" content="#0f8a4f">
 <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-06c">
+<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-08a">
 </head>
 <body>
 <header class="bar">
@@ -75,7 +182,8 @@ $qs    = fn(array $extra) => $self . '&' . http_build_query(array_filter($filter
     <?= (int) $stats['rows'] ?> שורות מאז <?= $esc($stats['oldest'] ? substr($stats['oldest'], 0, 10) : '—') ?> ·
     ב-24 השעות האחרונות: <?= (int) $stats['problems_24h'] ?> אזהרות, <?= (int) $stats['errors_24h'] ?> שגיאות ·
     <a href="<?= $qs(['format' => 'text', 'limit' => 500]) ?>">טקסט</a> ·
-    <a href="<?= $qs(['format' => 'json', 'limit' => 500]) ?>">JSON</a>
+    <a href="<?= $qs(['format' => 'json', 'limit' => 500]) ?>">JSON</a> ·
+    <a href="./logs.php?token=<?= $esc($raw) ?>&amp;view=import">יומן ייבוא</a>
   </p>
   <form class="logfilter" method="get">
     <input type="hidden" name="token" value="<?= $esc($raw) ?>">

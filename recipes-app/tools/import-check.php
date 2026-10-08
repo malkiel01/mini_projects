@@ -62,6 +62,11 @@ $i = importParseIngredient('500 g bread flour, sifted');
 check('אנגלית, ופסיק חותך תיאור', [$i['amount_min'], $i['unit'], $i['product']], [500.0, 'gram', 'bread flour']);
 check('הטקסט החופשי נשמר כמו שהוא', importParseIngredient(" \t4 ביצים")['free_text'], '4 ביצים');
 
+$i = importParseIngredient('1 כוס או 240 מ"ל שמן קנולה');
+check('מידה חלופית אחרי "או" אינה שם המוצר', [$i['amount_min'], $i['unit'], $i['product']], [1.0, 'cup', 'שמן קנולה']);
+$i = importParseIngredient('1 מיכל או 200 מ"ל שמנת חמוצה 15%');
+check('"1 מיכל או 200 מ"ל" → המיכל הוא היחידה (אריזה)', [$i['unit'], $i['product']], ['package', 'שמנת חמוצה 15%']);
+
 echo "\n2. זמנים ומנות\n";
 check('PT1H30M', importDurationMinutes('PT1H30M'), 90);
 check('PT45M', importDurationMinutes('PT45M'), 45);
@@ -153,6 +158,37 @@ expectError('משיכה למתכון בלי מקור', fn() => importRefreshSnap
 expectError('משיכה בידי מי שאינו הבעלים', fn() => importRefreshSnapshot($GLOBALS['sid'], ['id' => $GLOBALS['noa']['id'], 'role' => 'user']), 'רק מי שייבא');
 deleteRecipe($sid, $maliU);
 check('נמחק עם המתכון', (int) db()->query("SELECT COUNT(*) FROM import_snapshots WHERE recipe_id = $sid")->fetchColumn(), 0);
+
+echo "\n6ג. יומן ייבוא — אבחון הדף, מה חולץ, טקסט להדבקה\n";
+$diag = importDiagnose(importDom($fx('jsonld-carine.html')), $fx('jsonld-carine.html'));
+check('JSON-LD: יש Recipe, ההוראות מחרוזת אחת', [$diag['jsonld']['recipe'], str_starts_with($diag['jsonld']['instructions'], 'string(')], [true, true]);
+check('קטע מההוראות במקור', mb_strlen($diag['jsonld']['instructions_excerpt']) > 20, true);
+$diag = importDiagnose(importDom($fx('headings.html')), $fx('headings.html'));
+check('בלוג בלי סימון: אין JSON-LD, יש כותרות', [$diag['jsonld']['blocks'], count($diag['headings']) >= 2, $diag['microdata']['scopes']], [0, true, 0]);
+$diagN = importDiagnose(importDom($fx('norecipe.html')), $fx('norecipe.html'));
+$draftL = importToDraft(importParse($fx('jsonld-10dakot.html'), 'https://www.10dakot.co.il/recipe/x/'));
+$lid = importLogDraft('scout-preview', 'https://www.10dakot.co.il/recipe/x/', $draftL, $maliU, $diag, 123, ['scout_id' => 7]);
+$fid = importLogFailure('preview', 'https://blog.example/no', 'לא מצאתי מתכון בדף הזה', $maliU, $diagN, 45);
+$sid2 = saveRecipe($draftL, $maliU);
+importLogSetRecipe($lid, $sid2);
+importLogSaved('https://www.10dakot.co.il/recipe/x/', $sid2, ['title' => 'מתוקן', 'sections' => [['ingredients' => [['free_text' => 'א'], ['free_text' => 'ב']], 'steps' => [['text' => 'x']]]]], $maliU);
+$rows = importLogList();
+check('שלוש שורות, החדשה ראשונה', [count($rows), $rows[0]['kind'], $rows[1]['kind'], $rows[2]['kind']], [3, 'editor-save', 'preview', 'scout-preview']);
+check('ההצלחה: שיטה, ספירות, מקור, מועמד, מתכון', [$rows[2]['method'], $rows[2]['ingredients_n'] > 5, $rows[2]['steps_n'] >= 5, $rows[2]['host'], $rows[2]['scout_id'], $rows[2]['recipe_id']],
+      ['json-ld', true, true, 'www.10dakot.co.il', 7, $sid2]);
+check('הכשל: השגיאה והאבחון נשמרו', [$rows[1]['ok'], $rows[1]['error'], is_array($rows[1]['diag'])], [false, 'לא מצאתי מתכון בדף הזה', true]);
+check('השמירה: מה נשמר בסוף', [$rows[0]['ingredients_n'], $rows[0]['steps_n'], $rows[0]['recipe_id']], [2, 1, $sid2]);
+$txt = importLogAsText($rows);
+check('טקסט: כרונולוגי, מקור, רכיבים כלשונם עם פענוח, שלבים, אבחון', [
+    strpos($txt, 'תצוגה מקדימה בסורק') < strpos($txt, 'שמירה מהעורך'),
+    str_contains($txt, 'מקור: https://www.10dakot.co.il/recipe/x/'),
+    str_contains($txt, 'רכיבים (כלשונם → הפענוח):'), str_contains($txt, 'שלבים (כלשונם):'),
+    str_contains($txt, 'בדף:') && str_contains($txt, 'JSON-LD:'), str_contains($txt, 'שגיאה: לא מצאתי'),
+], [true, true, true, true, true, true]);
+check('סינון: לפי אתר, לפי תוצאה, לפי סוג', [count(importLogList(['host' => 'blog.example'])), count(importLogList(['ok' => '0'])), count(importLogList(['kind' => 'editor-save']))], [1, 1, 1]);
+check('סטטיסטיקה', [importLogStats()['rows'], importLogStats()['hosts']], [3, ['blog.example', 'www.10dakot.co.il']]);
+deleteRecipe($sid2, $maliU);
+check('היומן שורד מחיקת המתכון', count(importLogList(['recipe_id' => $sid2])), 2);
 
 echo "\n7. שמירה — המקור נשמר, מוצג, ואינו נמחק בעריכה\n";
 $raw = importParse($fx('jsonld-10dakot.html'), 'https://www.10dakot.co.il/recipe/x/');
