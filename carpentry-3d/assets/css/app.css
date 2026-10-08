@@ -799,3 +799,14 @@ input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner
 .pcard__main--edit { display: flex; align-items: center; padding: 10px 14px; }
 .asm-item__pos input { direction: ltr; text-align: center; }
 #stage.is-moving-y { cursor: ns-resize; }
+
+/* קוביית ניווט: מתחת לכפתור המסך המלא, ו-⌂ (חזרה לתצוגה ההתחלתית) צמוד אליה */
+.viewcube { position: absolute; top: 60px; inset-inline-end: 8px; z-index: 3; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.viewcube__canvas { width: 96px; height: 96px; display: block; touch-action: none; cursor: pointer; }
+.viewcube__home {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow);
+  font-size: 1.1rem; line-height: 1; cursor: pointer; color: var(--ink, #3a2c20);
+}
+.viewcube__home:hover { border-color: var(--accent); }
+@media (max-width: 860px) { .viewcube__canvas { width: 80px; height: 80px; } }

@@ -6,6 +6,7 @@
 // `THREE` גלובלי — נטען בדף (CDN ואז עותק מקומי) לפני שהמודול הזה רץ.
 
 import { material, libraryVersion } from './model/materials.js';
+import { createViewCube, anglesFor } from './viewcube.js';
 import { cutSize } from './model/blocks.js';
 import { textureForPart, clearTextures } from './textures.js';
 import { buildAccessory, faceOf, rotationForNormal, localXOf } from './model/accessories.js';
@@ -139,7 +140,7 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
   canvas.addEventListener('pointerdown', (e) => {
     try { canvas.setPointerCapture(e.pointerId); } catch { /* מצביע שכבר לא פעיל — ממשיכים בלי לכידה */ }
     ptrs[e.pointerId] = [e.clientX, e.clientY];
-    moved = 0; pinch = 0; twist = null;
+    moved = 0; pinch = 0; twist = null; anim = null;
     if (Object.keys(ptrs).length > 1) {
       // אצבע שנייה כשהראשונה על אלמנט (במצב הזזה) — סיבוב האלמנט במקום סיבוב המצלמה
       if (dragging && drag.rotate) { const d = dragging; dragCancel(); rotating = rotateStart(d); } else dragCancel();
@@ -222,7 +223,7 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
   }
   canvas.addEventListener('pointerup', up);
   canvas.addEventListener('pointercancel', (e) => { dragCancel(); if (rotating) { rotateEnd(rotating, false); rotating = null; } delete ptrs[e.pointerId]; pinch = 0; twist = null; });
-  canvas.addEventListener('wheel', (e) => { e.preventDefault(); zoomBy(e.deltaY > 0 ? 1.12 : 1 / 1.12, e.clientX, e.clientY); }, { passive: false });
+  canvas.addEventListener('wheel', (e) => { e.preventDefault(); anim = null; zoomBy(e.deltaY > 0 ? 1.12 : 1 / 1.12, e.clientX, e.clientY); }, { passive: false });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
   function pick(cx, cy) {
@@ -324,7 +325,9 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
   }
   const anyGhost = () => ghostIds.size > 0;
 
+  let currentModel = null;
   function setModel(model) {
+    currentModel = model;
     if (libraryVersion() !== libVersion) { clearTextures(); libVersion = libraryVersion(); }
     while (group.children.length) {
       const c = group.children.pop();
@@ -469,19 +472,74 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
   }
 
   /** ממקם את המצלמה כך שכל הגוף נראה, ממבט איזומטרי מהחזית. */
+  // המרחק לפי המידה הגדולה, ועוד קצת עבור העומק — כך גם מיטה ארוכה וגם ספרייה גבוהה נכנסות למסך.
+  const radiusFor = (w, h, d) => Math.max(w, h, d) * 1.05 / Math.tan(camera.fov * Math.PI / 360) * 0.62 + d * 0.5;
+  let homeBounds = null;
   function frame(bounds) {
+    homeBounds = { ...bounds };
+    anim = null;
     ctl.target.set(bounds.w / 2, bounds.h / 2, bounds.d / 2);
-    // המרחק לפי המידה הגדולה, ועוד קצת עבור העומק — כך גם מיטה ארוכה וגם ספרייה גבוהה נכנסות למסך.
-    const size = Math.max(bounds.w, bounds.h, bounds.d) * 1.05;
-    ctl.radius = size / Math.tan(camera.fov * Math.PI / 360) * 0.62 + bounds.d * 0.5;
+    ctl.radius = radiusFor(bounds.w, bounds.h, bounds.d);
     ctl.theta = 0.55; ctl.phi = 1.2;
   }
   function view(name) {
-    if (name === 'front') { ctl.theta = 0; ctl.phi = Math.PI / 2; }
-    if (name === 'side') { ctl.theta = Math.PI / 2; ctl.phi = Math.PI / 2; }
-    if (name === 'top') { ctl.theta = 0; ctl.phi = 0.06; }
-    if (name === 'iso') { ctl.theta = 0.55; ctl.phi = 1.2; }
+    if (name === 'front') animTo({ theta: 0, phi: Math.PI / 2 });
+    if (name === 'side') animTo({ theta: Math.PI / 2, phi: Math.PI / 2 });
+    if (name === 'top') animTo({ theta: 0, phi: 0.06 });
+    if (name === 'iso') animTo({ theta: 0.55, phi: 1.2 });
   }
+
+  // ---- מעברי מצלמה חלקים (קוביית הניווט, ⌂, כפתורי המבט) ----
+  let anim = null;
+  function animTo({ theta = ctl.theta, phi = ctl.phi, radius = ctl.radius, target = ctl.target }, ms = 450) {
+    // סיבוב בדרך הקצרה
+    let dt = theta - ctl.theta; dt = Math.atan2(Math.sin(dt), Math.cos(dt));
+    anim = { t0: performance.now(), ms, from: { theta: ctl.theta, phi: ctl.phi, radius: ctl.radius, target: ctl.target.clone() }, to: { theta: ctl.theta + dt, phi, radius, target: new THREE.Vector3().copy(target) } };
+  }
+  function stepAnim() {
+    if (!anim) return;
+    const k = Math.min(1, (performance.now() - anim.t0) / anim.ms);
+    const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;   // ease-in-out
+    const { from: f, to } = anim;
+    ctl.theta = f.theta + (to.theta - f.theta) * e;
+    ctl.phi = f.phi + (to.phi - f.phi) * e;
+    ctl.radius = f.radius + (to.radius - f.radius) * e;
+    ctl.target.lerpVectors(f.target, to.target, e);
+    if (k >= 1) anim = null;
+  }
+  /**
+   * מבט מכיוון: על החלק המסומן (הלוח והפרזול שעליו) אם יש, אחרת על כל המודל.
+   * `dir` — מאיזה צד מביטים, [x,y,z] ב-{-1,0,1}.
+   */
+  function lookFrom(dir) {
+    const a = anglesFor(dir, ctl.theta);
+    const p = selected && selected.userData.part;
+    if (p) {
+      const b = p.box;
+      const owned = currentModel ? currentModel.hardware.filter((h) => h.for === p.id && h.pos) : [];
+      let x0 = b.x, y0 = b.y, z0 = b.z, x1 = b.x + b.w, y1 = b.y + b.h, z1 = b.z + b.d;
+      for (const h of owned) { x0 = Math.min(x0, h.pos[0] - 40); x1 = Math.max(x1, h.pos[0] + 40); y0 = Math.min(y0, h.pos[1] - 40); y1 = Math.max(y1, h.pos[1] + 40); z0 = Math.min(z0, h.pos[2] - 40); z1 = Math.max(z1, h.pos[2] + 40); }
+      // מרכז החלק כפי שהוא עכשיו (דלת פתוחה / מגירה שלופה זזה מהקופסה המקורית)
+      const node = partNodes.get(p.id)?.node;
+      const c = node ? node.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+      animTo({ ...a, target: c, radius: Math.max(350, radiusFor(x1 - x0, y1 - y0, z1 - z0) * 1.15) });
+    } else if (homeBounds) {
+      const b = homeBounds;
+      animTo({ ...a, target: new THREE.Vector3(b.w / 2, b.h / 2, b.d / 2), radius: radiusFor(b.w, b.h, b.d) });
+    } else animTo(a);
+  }
+  /** חזרה לתצוגה ההתחלתית: כל המודל, ממבט איזומטרי, בלי חלק מסומן. */
+  function home() {
+    select(null);
+    if (!homeBounds) return animTo({ theta: 0.55, phi: 1.2 });
+    const b = homeBounds;
+    animTo({ theta: 0.55, phi: 1.2, target: new THREE.Vector3(b.w / 2, b.h / 2, b.d / 2), radius: radiusFor(b.w, b.h, b.d) });
+  }
+  const cube = canvas.parentElement ? createViewCube(canvas.parentElement, {
+    onPick: (dir) => lookFrom(dir),
+    onOrbit: (dx, dy) => { anim = null; ctl.theta -= dx * 0.012; ctl.phi -= dy * 0.012; },
+    onHome: () => home(),
+  }) : null;
 
   function fit() {
     const w = canvas.clientWidth, h = canvas.clientHeight;
@@ -493,9 +551,9 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
   window.addEventListener('resize', fit);
   new ResizeObserver(fit).observe(canvas);
   fit();
-  (function loop() { requestAnimationFrame(loop); animate(); applyCam(); renderer.render(scene, camera); })();
+  (function loop() { requestAnimationFrame(loop); animate(); stepAnim(); applyCam(); renderer.render(scene, camera); if (cube) cube.render(ctl.theta, ctl.phi); })();
 
   /** הזזת יעד המצלמה (כשההרכבה מנורמלת מחדש אחרי הזזה — כדי שהתמונה לא תקפוץ). */
   function nudgeTarget(dx, dy, dz) { ctl.target.x += dx; ctl.target.y += dy; ctl.target.z += dz; applyCam(); }
-  return { setModel, frame, view, fit, select, nudgeTarget, toggleOpen, isOpen, toggleGhost, isGhost, openAll, anyOpen, ghostFronts, anyGhost, debug: () => ({ group, camera, open: openGroups.size, motionParts: [...partNodes.values()].filter((e) => e.part.motion).length, amounts: [...amounts.entries()].slice(0, 4), theta: ctl.theta, phi: ctl.phi, radius: ctl.radius, target: ctl.target.toArray(), w: canvas.clientWidth, h: canvas.clientHeight, aspect: camera.aspect, fov: camera.fov }) };
+  return { setModel, frame, view, fit, select, nudgeTarget, lookFrom, home, toggleOpen, isOpen, toggleGhost, isGhost, openAll, anyOpen, ghostFronts, anyGhost, debug: () => ({ group, camera, open: openGroups.size, motionParts: [...partNodes.values()].filter((e) => e.part.motion).length, amounts: [...amounts.entries()].slice(0, 4), theta: ctl.theta, phi: ctl.phi, radius: ctl.radius, target: ctl.target.toArray(), w: canvas.clientWidth, h: canvas.clientHeight, aspect: camera.aspect, fov: camera.fov }) };
 }
