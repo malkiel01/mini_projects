@@ -195,6 +195,7 @@ function currentTemplate() { return template(state.project?.template_key || 'boo
 function wireUi() {
   document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => viewer.view(b.dataset.view)));
   $('#btn-open-all').addEventListener('click', () => { viewer.openAll(!viewer.anyOpen()); syncViewToggles(); if (shownPart) showPart(shownPart); });
+  $('#btn-focus').addEventListener('click', () => toggleFocus());
   $('#btn-ghost-fronts').addEventListener('click', () => { viewer.ghostFronts(!viewer.anyGhost()); syncViewToggles(); if (shownPart) showPart(shownPart); });
   $('#btn-reset').addEventListener('click', () => {
     if (!state.project) return;
@@ -1406,6 +1407,88 @@ function moveItemBy(i, dx, dz, dy = 0) {
   viewer.nudgeTarget(after[0] - before[0], after[1] - before[1], after[2] - before[2]);
   highlightItem(i);
 }
+// ---- מיקוד: בחירת רכיב מרשימה, והמצלמה עוברת אליו ----
+/**
+ * הרשימה נבנית מהמודל: דלתות ומגירות (כל חלקי הדלת יחד), מדפים, דפנות
+ * ומחיצות, שאר החלקים, צירים ("ציר 2 — דלת 3 עליונה") וידיות. בהרכבה —
+ * עם שם האלמנט. בחירה: המצלמה מתמקדת, החלק מסומן והכרטיס שלו נפתח.
+ */
+function focusItems(m) {
+  const elem = (id) => { const k = /^e(\d+):/.exec(id); if (!k || !m.items) return ''; const it = m.items.find((x) => String(x.key) === k[1]); return it ? ` · ${it.name || `אלמנט ${k[1]}`}` : ''; };
+  const label = (p) => (p.note ? p.note.split(' — ')[0] : p.name);
+  const groups = new Map();
+  const items = [];
+  for (const p of m.parts) {
+    const g = p.motion?.group;
+    if (g) {
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(p);
+      continue;
+    }
+    const cat = /מדף/.test(p.name) ? 'מדפים' : /דופן|מחיצה|זקף דופן/.test(p.name) ? 'דפנות ומחיצות' : 'חלקים';
+    items.push({ cat, text: `${p.name}${p.note && !p.note.startsWith(p.name) && p.note.length < 40 ? ` (${p.note.split(' — ')[0]})` : ''}${elem(p.id)}`, partIds: [p.id], selectId: p.id });
+  }
+  const doorLabel = new Map();
+  for (const [g, ps] of groups) {
+    const main = ps.find((p) => p.mill || /דלת|מגירה|חזית|כנף/.test(p.name)) || ps[0];
+    const text = label(main);
+    doorLabel.set(g, text);
+    items.unshift({ cat: 'דלתות ומגירות', text: `${text}${elem(main.id)}`, partIds: ps.map((p) => p.id), selectId: main.id });
+  }
+  for (const h of m.hardware) {
+    if (!h.pos || !h.for) continue;
+    const owner = doorLabel.get(h.for) || m.parts.find((p) => p.id === h.for)?.name || h.for;
+    const ownerParts = groups.get(h.for) || [];
+    const sel = (ownerParts.find((p) => p.mill || /דלת|מגירה|חזית|כנף/.test(p.name)) || ownerParts[0])?.id;
+    if (h.kind === 'hinge') { const n = /-hinge-(\d+)$/.exec(h.id)?.[1] || ''; items.push({ cat: 'צירים', text: `ציר ${n} — ${owner}${elem(h.id)}`, hwId: h.id, selectId: sel }); }
+    else if (h.kind === 'handle') items.push({ cat: 'ידיות', text: `ידית — ${owner}${elem(h.id)}`, hwId: h.id, selectId: sel });
+  }
+  const order = ['דלתות ומגירות', 'מדפים', 'דפנות ומחיצות', 'צירים', 'ידיות', 'חלקים'];
+  const collator = new Intl.Collator('he', { numeric: true });
+  return items.sort((a, b) => order.indexOf(a.cat) - order.indexOf(b.cat) || collator.compare(a.text, b.text));
+}
+let focusList = [];
+function toggleFocus(show = $('#focus').hidden) {
+  const box = $('#focus');
+  box.hidden = !show;
+  $('#btn-focus').setAttribute('aria-expanded', String(show));
+  $('#btn-focus').classList.toggle('is-on', show);
+  if (show) { $('#focus-q').value = ''; renderFocus(); }
+}
+function renderFocus() {
+  if (!model) return;
+  focusList = focusItems(model);
+  // "ציר 2 דלת 3": מילה ומספר שאחריה הם ביטוי אחד — כך "ציר 2" לא נתפס ב"דלת 2"
+  const toks = $('#focus-q').value.trim().split(/\s+/).filter(Boolean);
+  const words = [];
+  for (const t of toks) { if (/^[\d.]+$/.test(t) && words.length && !/^[\d.]+$/.test(words[words.length - 1])) words[words.length - 1] += ' ' + t; else words.push(t); }
+  const shown = focusList.map((it, i) => [it, i]).filter(([it]) => words.every((w) => it.text.includes(w) || it.cat.includes(w)));
+  let cat = '';
+  $('#focus-list').innerHTML = shown.map(([it, i]) => `${it.cat !== cat ? `<div class="focus__cat">${esc((cat = it.cat))}</div>` : ''}<button type="button" class="focus__item" data-focus="${i}">${esc(it.text)}</button>`).join('') || '<p class="muted">לא נמצא רכיב כזה</p>';
+}
+$('#focus-q').addEventListener('input', renderFocus);
+$('#focus').addEventListener('click', (e) => {
+  if (e.target.closest('.focus__close')) return toggleFocus(false);
+  const b = e.target.closest('[data-focus]');
+  if (!b) return;
+  let it = focusList[Number(b.dataset.focus)];
+  if (!it) return;
+  toggleFocus(false);
+  // מה שמסתיר את הרכיב — מפנים: ציר → הדלת שלו נפתחת; חלק פנימי (מדף, מחיצה…) → החזיתות שקופות
+  let wait = 0;
+  if (it.hwId && /-hinge-/.test(it.hwId)) {
+    const g = model.hardware.find((h) => h.id === it.hwId)?.for;
+    if (g && !viewer.isOpen(g)) { viewer.toggleOpen(g); wait = 650; }
+    // מבט מצד הפתח של הדלת (לא מאחורי הדלת הפתוחה), מעט מלמעלה
+    const ang = model.parts.find((p) => p.motion?.group === g)?.motion?.angle || 0;
+    it = { ...it, view: { theta: ang > 0 ? -0.75 : 0.75, phi: 1.2, radius: 520 } };
+  } else if (!it.hwId && !model.parts.find((p) => p.id === it.selectId)?.motion && model.parts.some((p) => p.motion) && !viewer.anyGhost()) {
+    viewer.ghostFronts(true);
+  }
+  syncViewToggles();
+  setTimeout(() => viewer.focus(it), wait);
+});
+
 /** תווית הזווית על הבמה בזמן סיבוב בגרירה (null — מסתירה). */
 function rotLabel(deg) {
   let el = document.querySelector('.rot-label');

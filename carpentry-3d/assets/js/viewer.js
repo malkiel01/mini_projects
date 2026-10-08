@@ -745,5 +745,29 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
   function nudgeTarget(dx, dy, dz) { ctl.target.x += dx; ctl.target.y += dy; ctl.target.z += dz; applyCam(); }
   /** בחירת חלק לפי id (אחרי בנייה מחדש — כדי שהכרטיס שלו יישאר פתוח). */
   function selectById(id) { const e = partNodes.get(id); if (e) select(e.mesh); }
-  return { setModel, frame, view, fit, select, selectById, nudgeTarget, lookFrom, home, toggleOpen, isOpen, toggleGhost, isGhost, openAll, anyOpen, ghostFronts, anyGhost, debug: () => ({ group, camera, ctl, open: openGroups.size, motionParts: [...partNodes.values()].filter((e) => e.part.motion).length, amounts: [...amounts.entries()].slice(0, 4), theta: ctl.theta, phi: ctl.phi, radius: ctl.radius, target: ctl.target.toArray(), w: canvas.clientWidth, h: canvas.clientHeight, aspect: camera.aspect, fov: camera.fov }) };
+  /**
+   * מיקוד: המצלמה עוברת אל רכיב — חלקים (למשל כל חלקי דלת) או פריט פרזול (ציר, ידית) —
+   * בלי לשנות את זווית ההסתכלות. `selectId` — החלק שמסומן (והכרטיס שלו נפתח).
+   * פרזול מקבל מסגרת מהבהבת לרגע, כדי שיהיה ברור במה מדובר.
+   */
+  let focusMark = null;
+  function focus({ partIds = [], hwId = null, selectId = null, view: v = null } = {}) {
+    group.updateMatrixWorld(true);
+    const box = new THREE.Box3();
+    for (const id of partIds) { const e = partNodes.get(id); if (e) box.expandByObject(e.node); }
+    let hw = null;
+    if (hwId) group.traverse((o) => { if (!hw && o.userData.hwId === hwId && o.type !== 'Object3D') hw = o; });
+    if (hw) { box.makeEmpty(); box.expandByObject(hw); }
+    if (box.isEmpty()) return false;
+    if (selectId) selectById(selectId);
+    const c = box.getCenter(new THREE.Vector3()), sz = box.getSize(new THREE.Vector3());
+    animTo({ target: c, radius: hw ? Math.max(260, radiusFor(sz.x, sz.y, sz.z) * 3) : Math.max(350, radiusFor(sz.x, sz.y, sz.z) * 1.25), ...(v || {}) });
+    if (focusMark) { scene.remove(focusMark); focusMark = null; }
+    const pad = hw ? 25 : 6;
+    const mark = new THREE.Box3Helper(box.clone().expandByScalar(pad), new THREE.Color(cssColor('--accent', '#b8742a')));
+    scene.add(mark); focusMark = mark;
+    setTimeout(() => { if (focusMark === mark) { scene.remove(mark); focusMark = null; } }, hw ? 2600 : 1400);
+    return true;
+  }
+  return { setModel, frame, view, fit, select, selectById, focus, nudgeTarget, lookFrom, home, toggleOpen, isOpen, toggleGhost, isGhost, openAll, anyOpen, ghostFronts, anyGhost, debug: () => ({ group, camera, ctl, open: openGroups.size, motionParts: [...partNodes.values()].filter((e) => e.part.motion).length, amounts: [...amounts.entries()].slice(0, 4), theta: ctl.theta, phi: ctl.phi, radius: ctl.radius, target: ctl.target.toArray(), w: canvas.clientWidth, h: canvas.clientHeight, aspect: camera.aspect, fov: camera.fov }) };
 }
