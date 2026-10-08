@@ -321,6 +321,32 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
       amounts.set(m.group, next);
     }
     for (const entry of partNodes.values()) if (entry.part.motion) applyMotion(entry, amounts.get(entry.part.motion.group) ?? 0);
+    updateLinks();
+  }
+
+  // ---- חוליות: חלק של אביזר שמחבר צד קבוע (בארון) לצד נע (בדלת) — זרוע הציר ----
+  // החוליה נמתחת בכל פריים בין שתי נקודות עוגן: אחת בתוך הקבוצה הקבועה ואחת
+  // בתוך הקבוצה שנעה עם הדלת — כך הזרוע מחוברת לפלטה ולכוס בכל זווית.
+  let links = [];
+  const _va = new THREE.Vector3(), _vb = new THREE.Vector3(), _zAxis = new THREE.Vector3(0, 0, 1);
+  function addLink(pr, fixed, moving, h) {
+    const a = new THREE.Object3D(); a.position.set(...pr.link.from); fixed.add(a);
+    const b = new THREE.Object3D(); b.position.set(...pr.link.to); moving.add(b);
+    // גוף החוליה: התיבה של הפרימיטיב, באורך 1 לאורך z — נמתחת ב-scale.z
+    const obj = accessoryGroup(THREE, { prims: [{ ...pr, link: undefined, pos: [0, 0, 0], size: [pr.size[0], pr.size[1], 1] }] });
+    obj.userData.hwId = h.id;
+    group.add(obj);
+    links.push({ a, b, obj });
+  }
+  function updateLinks() {
+    for (const L of links) {
+      L.a.updateWorldMatrix(true, false); L.b.updateWorldMatrix(true, false);
+      group.worldToLocal(L.a.getWorldPosition(_va)); group.worldToLocal(L.b.getWorldPosition(_vb));
+      L.obj.position.copy(_va).add(_vb).multiplyScalar(0.5);
+      const len = _va.distanceTo(_vb);
+      L.obj.scale.set(1, 1, Math.max(len, 0.1));
+      if (len > 1e-6) L.obj.quaternion.setFromUnitVectors(_zAxis, _vb.sub(_va).normalize());
+    }
   }
   function setGhost(entry, on) {
     const mat = entry.mesh.material;
@@ -450,6 +476,7 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
     pickables = [];
     selected = null;
     partNodes.clear();
+    links = [];
     const ids = new Set(model.parts.map((p) => p.id));
     for (const id of [...ghostIds]) if (!ids.has(id)) ghostIds.delete(id);
     for (const p of model.parts) {
@@ -499,8 +526,9 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
           const a = owner.anchor;
           moving.position.sub(new THREE.Vector3(a.x + a.w / 2, a.y + a.h / 2, a.z + a.d / 2));
           owner.node.add(moving);
-          const fixed = place(accessoryGroup(THREE, acc, (pr) => !pr.moving));
+          const fixed = place(accessoryGroup(THREE, acc, (pr) => !pr.moving && !pr.link));
           group.add(hwWorld(fixed, h));
+          for (const pr of acc.prims) if (pr.link) addLink(pr, fixed, moving, h);
           continue;
         }
         mesh = place(accessoryGroup(THREE, acc));
@@ -544,9 +572,11 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
         // ידית על דלת/מגירה: לתוך הצומת של החלק, בקואורדינטות יחסיות למרכזו
         const a = owner.anchor;
         mesh.position.sub(new THREE.Vector3(a.x + a.w / 2, a.y + a.h / 2, a.z + a.d / 2));
+        mesh.userData.hwId = h.id;
         owner.node.add(mesh);
       } else group.add(hwWorld(mesh, h));
     }
+    updateLinks();
     if (onPick) onPick(null);
   }
 
@@ -702,5 +732,5 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
   function nudgeTarget(dx, dy, dz) { ctl.target.x += dx; ctl.target.y += dy; ctl.target.z += dz; applyCam(); }
   /** בחירת חלק לפי id (אחרי בנייה מחדש — כדי שהכרטיס שלו יישאר פתוח). */
   function selectById(id) { const e = partNodes.get(id); if (e) select(e.mesh); }
-  return { setModel, frame, view, fit, select, selectById, nudgeTarget, lookFrom, home, toggleOpen, isOpen, toggleGhost, isGhost, openAll, anyOpen, ghostFronts, anyGhost, debug: () => ({ group, camera, open: openGroups.size, motionParts: [...partNodes.values()].filter((e) => e.part.motion).length, amounts: [...amounts.entries()].slice(0, 4), theta: ctl.theta, phi: ctl.phi, radius: ctl.radius, target: ctl.target.toArray(), w: canvas.clientWidth, h: canvas.clientHeight, aspect: camera.aspect, fov: camera.fov }) };
+  return { setModel, frame, view, fit, select, selectById, nudgeTarget, lookFrom, home, toggleOpen, isOpen, toggleGhost, isGhost, openAll, anyOpen, ghostFronts, anyGhost, debug: () => ({ group, camera, ctl, open: openGroups.size, motionParts: [...partNodes.values()].filter((e) => e.part.motion).length, amounts: [...amounts.entries()].slice(0, 4), theta: ctl.theta, phi: ctl.phi, radius: ctl.radius, target: ctl.target.toArray(), w: canvas.clientWidth, h: canvas.clientHeight, aspect: camera.aspect, fov: camera.fov }) };
 }
