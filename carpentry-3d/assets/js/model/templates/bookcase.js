@@ -12,7 +12,7 @@
 import { carcass, partitions, shelves, back, plinth, crown, door, part } from '../blocks.js';
 import { material } from '../materials.js';
 import { resolveShares, sectionLayout, cellsOf } from '../layout.js';
-import { handleParam, hingeParam, wheelsParam, addWheels, materialParams, joineryParams, FINISHES, FINISHES_NO_GLASS, applyFinish, sameOrMaterial, resolveSame, columnHeights, fitSides, stepTops, steppedBack, steppedCrown } from './common.js';
+import { handleParam, hingeParam, wheelsParam, addWheels, materialParams, joineryParams, FINISHES, FINISHES_NO_GLASS, applyFinish, sameOrMaterial, resolveSame, columnHeights, fitSides, stepTops, steppedBack, steppedCrown, LIMITS } from './common.js';
 
 const DOOR_OPTIONS = [{ id: 'none', name: 'ללא' }, { id: 'wood', name: 'עץ' }, { id: 'glass', name: 'ויטרינה' }];
 const WITH_DOORS = ['wood', 'glass'];
@@ -90,8 +90,8 @@ export default {
     }] };
   },
 
-  // ספי האזהרות. יושבים בתבנית ואפשר לדרוס אותם בסוג המוצר.
-  limits: { shelfSpan18: 800, shelfSpan25: 1000, doorWidth: 600, heightUnanchored: 2200, glassMinDepth: 250 },
+  // ספי האזהרות — המשותפים (common.js), שהמנהל עורך במעבדת המוצרים.
+  limits: LIMITS,
 
   build(v) {
     const parts = [];

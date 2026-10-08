@@ -128,6 +128,14 @@ function migrate(PDO $pdo): void {
             created_at  TEXT    NOT NULL,
             updated_at  TEXT    NOT NULL
         );
+
+        -- מעבדת המוצרים: התאמות של המנהל מעל התבניות שבקוד — לכל תבנית (key = מפתח
+        -- התבנית) פרמטרים ושעות עבודה, ו-'_limits' לגבולות הכלליים. data = JSON.
+        CREATE TABLE IF NOT EXISTS template_rules (
+            key        TEXT PRIMARY KEY,
+            data       TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
     ");
 
     // עמודה שנוספה אחרי שהטבלה כבר הייתה בשרת: מוסיפים רק אם חסרה.

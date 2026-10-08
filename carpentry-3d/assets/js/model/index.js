@@ -87,6 +87,7 @@ export function clamp(p, value) {
 
 /** האם פרמטר מוצג לפי הערכים הנוכחיים (showIf). */
 export function visible(p, values) {
+  if (p.hidden) return false;   // הוסתר במעבדת המוצרים — תמיד ברירת המחדל
   if (!p.showIf) return true;
   // 'gt0' — מוצג כשהערך המספרי גדול מאפס (למשל "דלתות החלק התחתון" רק כשיש פיצול)
   // { not: [...] } — מוצג כשהערך אינו באחד מהם
@@ -98,7 +99,7 @@ export function build(key, values) {
   const t = template(key);
   const v = defaults(t);
   if (t.migrate) values = t.migrate({ ...values });   // ערכים ישנים שנשמרו בפרויקטים → המפתחות הנוכחיים
-  for (const p of allParams(t)) if (values[p.key] !== undefined) v[p.key] = clamp(p, values[p.key]);
+  for (const p of allParams(t)) if (values[p.key] !== undefined && !p.hidden) v[p.key] = clamp(p, values[p.key]);
   // כיוון פתיחה לדלת מסוימת (values.doorOpen = { doorId: 'left'|'right'|'top'|'bottom' }) — door() קורא אותו בזמן הבנייה
   setDoorOpen(values.doorOpen);
   let out;
