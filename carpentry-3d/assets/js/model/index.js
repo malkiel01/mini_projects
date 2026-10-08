@@ -17,7 +17,7 @@ import { material, materialsOfKind, materialsOfRole } from './materials.js';
 export const TEMPLATES = { bookcase, wardrobe, dresser, kitchen, table, bed, cladding };
 
 import { physicsWarnings } from './physics.js';
-import { millWarnings } from './milling.js';
+import { millWarnings, cncId } from './milling.js';
 
 export function template(key) {
   const t = TEMPLATES[key];
@@ -44,7 +44,7 @@ export function optionsFor(p) {
     if (p.allowNone) list.unshift({ id: 'none', name: p.noneLabel || 'ללא' });
     return p.allowSame ? [{ id: 'same', name: 'כמו הגוף' }, ...list] : list;
   }
-  return p.options || [];
+  return (typeof p.options === 'function' ? p.options() : p.options) || [];
 }
 
 /** מצמיד ערך לטווח הפרמטר. ערך לא חוקי חוזר לברירת המחדל. */
@@ -55,7 +55,15 @@ export function clamp(p, value) {
     if (p.type === 'int') n = Math.round(n);
     return Math.min(p.max, Math.max(p.min, n));
   }
-  if (p.type === 'enum') return p.options.some((o) => o.id === value) ? value : p.default;
+  if (p.type === 'enum') {
+    const opts = optionsFor(p);
+    if (opts.some((o) => o.id === value)) return value;
+    const alias = cncId(value);   // שם ישן של דוגמת חירוץ ('milled-fine') → המזהה בספרייה
+    if (alias !== value && opts.some((o) => o.id === alias)) return alias;
+    // ערך שאינו ברשימה כרגע (למשל דוגמת CNC שהושבתה) נשמר אם הוא עדיין קיים בספרייה — פרויקט ישן ממשיך לעבוד
+    if (typeof value === 'string' && value.startsWith('cnc:') && material(value).kind === 'cnc') return value;
+    return p.default;
+  }
   if (p.type === 'json') return value && typeof value === 'object' ? value : (p.default ?? null);
   if (p.type === 'material') {
     if (p.allowSame && (value === 'same' || value === undefined)) return 'same';
@@ -74,7 +82,8 @@ export function clamp(p, value) {
 export function visible(p, values) {
   if (!p.showIf) return true;
   // 'gt0' — מוצג כשהערך המספרי גדול מאפס (למשל "דלתות החלק התחתון" רק כשיש פיצול)
-  return Object.entries(p.showIf).every(([k, allowed]) => allowed === 'gt0' ? Number(values[k]) > 0 : allowed.includes(values[k]));
+  // { not: [...] } — מוצג כשהערך אינו באחד מהם
+  return Object.entries(p.showIf).every(([k, allowed]) => allowed === 'gt0' ? Number(values[k]) > 0 : allowed.not ? !allowed.not.includes(values[k]) : allowed.includes(values[k]));
 }
 
 /** בונה מופע: תבנית + ערכים → חלקים, פרזול, אזהרות. הערכים מוצמדים לטווחים קודם. */

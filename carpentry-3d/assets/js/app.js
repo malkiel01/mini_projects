@@ -15,6 +15,7 @@ import { renderForm } from './form.js';
 import { createViewer } from './viewer.js';
 import { createMaterialsUI } from './materials-ui.js';
 import { createAccessoriesUI } from './accessories-ui.js';
+import { createCncUI } from './cnc-ui.js';
 import { api, loadLast, saveLast } from './store.js';
 import { watchNumbers } from './numfield.js';
 import { placeModel, combine, snapTo, dragSnap, dragSnapY } from './model/assembly.js';
@@ -44,7 +45,7 @@ const state = {
   rates: { laborHour: null, markup: null, materials: {} },
   dirty: false,
 };
-let viewer = null, form = null, model = null, materialsUI = null, accessoriesUI = null;
+let viewer = null, form = null, model = null, materialsUI = null, accessoriesUI = null, cncUI = null;
 let saveTimer = null;
 
 // ---------- היסטוריית הדפדפן: "אחורה" נשאר בתוך האפליקציה ----------
@@ -52,7 +53,7 @@ let saveTimer = null;
 // חוזר למסך הפתיחה. פתיחת פרויקט מתוך מגירה מחליפה את רשומת המגירה
 // ברשומת הפרויקט (לא דוחפת), כך שה"אחורה" הבא מחזיר לרשימה ולא למגירה.
 // סגירה מכפתור "סגירה" חוזרת צעד אחורה בהיסטוריה — וה-popstate שלה מדולג.
-const DRAWERS = ['#projects', '#clients', '#users', '#mlib', '#accessories', '#share', '#newproj', '#clientdlg'];
+const DRAWERS = ['#projects', '#clients', '#users', '#mlib', '#accessories', '#cnc', '#share', '#newproj', '#clientdlg'];
 let suppressPops = 0;
 function pushNav(kind) { history.pushState({ app: 'carpentry', kind }, ''); }
 function openDrawer(sel, fromPop = false) {
@@ -164,6 +165,11 @@ async function enter() {
       onChange: () => { materialsUI.render(); if (state.project) { form = renderForm($('#form'), currentTemplate(), state.values, onFormChange); rebuild(); } else if (state.assembly) { modelCache.clear(); rebuildAssembly(); } },
       onError, getUser: () => state.user,
     });
+    // דוגמאות CNC: שינוי בדוגמה בונה מחדש את המודל הפתוח (הדלתות המחורצות מתעדכנות)
+    cncUI = createCncUI($('#cnc'), {
+      onChange: () => { if (state.project) { form = renderForm($('#form'), currentTemplate(), state.values, onFormChange); rebuild(); } else if (state.assembly) { modelCache.clear(); rebuildAssembly(); } },
+      onError, getUser: () => state.user,
+    });
     wireUi();
   }
 
@@ -201,10 +207,12 @@ function wireUi() {
   $('#btn-output-close').addEventListener('click', () => closeDrawer('#output'));
   $('#btn-materials').addEventListener('click', () => { materialsUI.open(); pushNav('drawer'); });
   $('#btn-accessories').addEventListener('click', () => { accessoriesUI.open(); pushNav('drawer'); });
+  $('#btn-cnc').addEventListener('click', () => { cncUI.open(); pushNav('drawer'); });
   // בטלפון כפתורי הסרגל מוסתרים — אותן פעולות מתוך תפריט המשתמש
   const blur = () => document.activeElement?.blur();
   $('#btn-clients-m').addEventListener('click', () => { blur(); showClients(); });
   $('#btn-accessories-m').addEventListener('click', () => { blur(); accessoriesUI.open(); pushNav('drawer'); });
+  $('#btn-cnc-m').addEventListener('click', () => { blur(); cncUI.open(); pushNav('drawer'); });
   $('#btn-types-m').addEventListener('click', () => { blur(); showTypes(); });
   $('#btn-users-m').addEventListener('click', () => { blur(); showUsers(); });
   $('#btn-projects').addEventListener('click', () => showProjects());
@@ -696,7 +704,7 @@ function drawingsHtml(m) {
 const ils = (v) => `₪${Number(v).toLocaleString('he-IL', { maximumFractionDigits: 0 })}`;
 function priceOne(m) {
   const e = estimate(m, state.rates);
-  const groups = ['לוחות', 'זכוכית', 'קנט', 'פרזול'];
+  const groups = ['לוחות', 'זכוכית', 'קנט', 'פרזול', 'עיבוד CNC'];
   const rows = groups.flatMap((g) => e.lines.filter((l) => l.group === g).map((l) =>
     `<tr><td>${g}</td><td>${esc(l.name)}${l.mine ? ' <span class="tag">המחיר שלי</span>' : ''}</td><td dir="ltr">${l.qty} ${l.unit}</td><td>${ils(l.unitPrice)}</td><td>${ils(l.total)}</td><td class="muted">${esc(l.note || '')}</td></tr>`)).join('');
   return `
