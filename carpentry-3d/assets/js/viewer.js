@@ -287,6 +287,23 @@ export function createViewer(canvas, { onPick } = {}) {
         const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff4d6, emissiveIntensity: 1.6, roughness: 0.4 });
         mesh = new THREE.Mesh(h.horizontal ? new THREE.BoxGeometry(h.len, 4, 8) : new THREE.BoxGeometry(6, h.len, 8), mat);
         mesh.position.set(h.pos[0] + (h.horizontal ? h.len / 2 : 3), h.pos[1] + (h.horizontal ? 0 : h.len / 2), h.pos[2]);
+      } else if (h.kind === 'track') {
+        // מסילה/מוליך להזזה: פרופיל אלומיניום לרוחב הפתח, בעומק שני הנתיבים
+        mesh = new THREE.Mesh(new THREE.BoxGeometry(h.len, h.h, h.d), new THREE.MeshStandardMaterial({ color: 0xb8bcc2, metalness: 0.55, roughness: 0.35 }));
+        mesh.position.set(h.pos[0] + h.len / 2, h.pos[1] + h.h / 2, h.pos[2] + h.d / 2);
+      } else if (h.kind === 'carrier') {
+        // גררה/גלגל: גוף קטן ושני גלגלים; נע עם הכנף
+        const s = h.size || { w: 60, h: 24, d: 20 };
+        const g = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.BoxGeometry(s.w, s.h * 0.5, s.d * 0.6), new THREE.MeshStandardMaterial({ color: 0x6b7280, metalness: 0.5, roughness: 0.4 }));
+        g.add(body);
+        for (const dx of [-s.w / 3, s.w / 3]) {
+          const wheel = new THREE.Mesh(new THREE.CylinderGeometry(s.h * 0.45, s.h * 0.45, 8, 18), new THREE.MeshStandardMaterial({ color: 0xd1d5db, metalness: 0.3, roughness: 0.5 }));
+          wheel.rotation.x = Math.PI / 2; wheel.position.set(dx, 0, 0);
+          g.add(wheel);
+        }
+        g.position.set(h.pos[0], h.pos[1], h.pos[2]);
+        mesh = g;
       } else if (h.kind === 'rod') {
         // מוט תלייה: גליל לרוחב העמודה
         mesh = new THREE.Mesh(new THREE.CylinderGeometry(12, 12, h.len, 16), new THREE.MeshStandardMaterial({ color: 0xc0c4c8, metalness: 0.8, roughness: 0.25 }));

@@ -18,6 +18,8 @@ import { createAccessoriesUI } from './accessories-ui.js';
 import { api, loadLast, saveLast } from './store.js';
 import { watchNumbers } from './numfield.js';
 import { placeModel, combine, snapTo } from './model/assembly.js';
+import { totalWeight, partWeight, drillingList } from './model/physics.js';
+import { toSTL, printSize } from './model/stl.js';
 
 watchNumbers();   // חיצים וסימון בכל שדות המספר, גם במסכים שנבנים מאוחר יותר
 
@@ -474,7 +476,8 @@ function renderSummary(m) {
   $('#summary').innerHTML = `
     <span>${b.w} × ${b.h} × ${b.d} מ"מ</span>
     <span>${m.parts.length} חלקים</span>
-    <span>${m.hardware.reduce((n, h) => n + (h.qty || 1), 0)} פריטי פרזול</span>`;
+    <span>${m.hardware.reduce((n, h) => n + (h.kind === 'info' ? 0 : h.qty || 1), 0)} פריטי פרזול</span>
+    <span title="נפח × צפיפות החומר, לכל חלק">⚖ ${totalWeight(m.parts)} ק"ג</span>`;
 }
 
 let shownPart = null;
@@ -486,6 +489,7 @@ function showPart(p) {
   const m = M.material(p.material);
   const edges = Object.entries(p.edges || {}).filter(([, v]) => v).map(([k]) => ({ front: 'חזית', back: 'אחור', top: 'עליון', bottom: 'תחתון', left: 'שמאל', right: 'ימין' }[k])).join(', ') || 'ללא';
   const grain = { x: 'לרוחב', y: 'לגובה', z: 'לעומק' }[p.grain];
+  const holes = model ? (model.hardware || []).flatMap((h) => (h.drill || []).filter((d) => d.part === p.id)) : [];
   box.innerHTML = `
     <h3>${esc(p.name)}</h3>
     <dl>
@@ -494,7 +498,9 @@ function showPart(p) {
       <dt>סיבים</dt><dd>${grain}</dd>
       <dt>קנט</dt><dd>${edges}</dd>
       <dt>מיקום</dt><dd>x ${Math.round(p.box.x)} · y ${Math.round(p.box.y)} · z ${Math.round(p.box.z)}</dd>
+      <dt>משקל</dt><dd>${partWeight(p)} ק"ג</dd>
       ${p.note ? `<dt>הערה</dt><dd>${esc(p.note)}</dd>` : ''}
+      ${holes.length ? `<dt>קידוחים</dt><dd>${holes.length} — ${esc([...new Set(holes.map((h) => h.purpose))].join(', '))}; הפירוט בלשונית "קידוחים" בפלט</dd>` : ''}
     </dl>
     ${partButtons(p)}`;
 }
@@ -536,10 +542,12 @@ function renderOutput(m) {
   else if (outputTab === 'drawings') body.innerHTML = drawingsHtml(m);
   else if (outputTab === 'price') body.innerHTML = viewer ? '<p class="muted">המחיר אינו מוצג לחשבון צפייה.</p>' : priceHtml(m);
   else if (outputTab === 'sheets') body.innerHTML = sheetsHtml(m);
+  else if (outputTab === 'drill') body.innerHTML = drillHtml(m);
 }
 document.querySelectorAll('#output-tabs button').forEach((b) => b.addEventListener('click', () => { outputTab = b.dataset.out; if (model) renderOutput(model); }));
 $('#btn-csv').addEventListener('click', () => model && downloadCsv(model));
 $('#btn-print').addEventListener('click', () => model && printAll(model));
+$('#btn-stl').addEventListener('click', () => model && downloadStl(model));
 $('#output-body').addEventListener('change', (e) => { if (e.target.id === 'nest-on') { nestOn = e.target.checked; renderOutput(model); } });
 
 /** הרכבה לא מאוחדת: הפלט לכל אלמנט בנפרד, באותה פונקציה. */
@@ -550,6 +558,38 @@ function perItem(m, fn) {
 function cutListHtml(m) { return perItem(m, cutListOne); }
 function priceHtml(m) { return perItem(m, priceOne); }
 function sheetsHtml(m) { return perItem(m, sheetsOne); }
+function drillHtml(m) { return perItem(m, drillOne); }
+
+const faceNames = { back: 'אחורית (פנים הדלת)', inner: 'פנימית', top: 'עליונה (קצה)', bottom: 'תחתונה (קצה)', front: 'קדמית' };
+/** קידוחים לפי חלק: פאה, מרחקים מקצה החלק, קוטר, עומק ולמה — מה שמכונה או נגר עם שבלונה צריכים. */
+function drillOne(m) {
+  const list = drillingList(m);
+  const info = (m.hardware || []).filter((h) => h.kind === 'info');
+  const infoRows = info.map((h) => `<tr><td>${esc(h.note)}</td><td>${Number.isFinite(h.hinges) ? `${h.hinges} צירים` : Number.isFinite(h.maxKg) ? `עד ${h.maxKg} ק"ג` : Number.isFinite(h.load) ? `מסילה ${h.load} ק"ג` : ''}</td></tr>`).join('');
+  if (!list.length) return `<h3>קידוחים</h3><p class="muted">אין פרזול שדורש קידוח במודל הזה.</p>${infoRows ? `<table><tbody>${infoRows}</tbody></table>` : ''}`;
+  const blocks = list.map((g) => `
+    <h4>${esc(g.name)} <small class="muted">${esc(g.id)} · ${g.holes.length} קידוחים</small></h4>
+    <table><thead><tr><th>פאה</th><th>מהקצה (x)</th><th>מהתחתית (y)</th><th>Ø</th><th>עומק</th><th>למה</th></tr></thead>
+    <tbody>${g.holes.map((h) => `<tr><td>${faceNames[h.face] || esc(h.face)}</td><td dir="ltr">${h.x}</td><td dir="ltr">${h.y}</td><td dir="ltr">${h.dia}</td><td dir="ltr">${h.depth}</td><td>${esc(h.purpose)}${h.ref ? ` <span class="muted">(${esc(h.ref)})</span>` : ''}</td></tr>`).join('')}</tbody></table>`).join('');
+  return `
+    <h3>קידוחים <small>${list.reduce((n, g) => n + g.holes.length, 0)} קידוחים ב-${list.length} חלקים · מ"מ</small></h3>
+    <p class="muted">בדלת: x מקצה הציר, y מתחתית הדלת, בפאה האחורית. בדופן: x מהקצה הקדמי, y מתחתית הדופן, בפאה הפנימית (סיסטם 32). גררות הזזה: מקצה הכנף, במרכז העובי.</p>
+    ${blocks}
+    ${infoRows ? `<h3>משקלים ועומסים</h3><table><thead><tr><th>פריט</th><th>פרזול</th></tr></thead><tbody>${infoRows}</tbody></table>` : ''}`;
+}
+
+/** STL להדפסה בתלת מימד: כל החלקים (גם הרכבה), בקנה המידה שנבחר, עם עובי מינימלי 1 מ"מ. */
+function downloadStl(m) {
+  const scale = Number($('#stl-scale').value) || 20;
+  const { buffer, triangles, thickened } = toSTL(m.parts, { scale, minT: 1.0 });
+  const size = printSize(m.bounds, scale);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([buffer], { type: 'model/stl' }));
+  a.download = `${(state.project?.name || state.assembly?.name || 'model').replace(/[\\/:*?"<>|]/g, '-')}-1-${scale}.stl`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast(`STL 1:${scale} — ${size.w} × ${size.h} × ${size.d} מ"מ, ${triangles} משולשים${thickened ? `, ${thickened} מידות עובו ל-1 מ"מ` : ''}`);
+}
 
 function cutListOne(m) {
   const cl = cutList(m);
@@ -623,11 +663,13 @@ function downloadCsv(m) {
     for (const g of cl.glass) lines.push([g.name, g.qty, g.l, g.w, g.t, 'זכוכית', '', '', label]);
     for (const h of hardwareList(mm)) lines.push([h.name, h.qty, '', '', '', 'פרזול', '', '', label]);
   }
+  lines.push([]); lines.push(['קידוחים: חלק', 'פאה', 'x מהקצה', 'y מהתחתית', 'קוטר', 'עומק', 'למה', '', 'אלמנט']);
+  for (const [mm, label] of sets) for (const g of drillingList(mm)) for (const h of g.holes) lines.push([g.name, faceNames[h.face] || h.face, h.x, h.y, h.dia, h.depth, h.purpose, '', label]);
   const csv = '\ufeff' + lines.map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
   a.download = `${(state.project?.name || state.assembly?.name || 'cutlist').replace(/[\\/:*?"<>|]/g, '-')}.csv`;
-  a.click();
+  document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
@@ -643,7 +685,8 @@ function printAll(m) {
     <section class="print__drawings">${drawAll(m).map((v) => `<figure><figcaption>${v.name}</figcaption>${v.svg}</figure>`).join('')}</section>
     <section class="print__page">${cutListHtml(m)}</section>
     ${viewer ? '' : `<section class="print__page">${priceHtml(m)}</section>`}
-    <section class="print__page">${sheetsHtml(m)}</section>`;
+    <section class="print__page">${sheetsHtml(m)}</section>
+    <section class="print__page">${drillHtml(m)}</section>`;
   document.body.classList.add('is-printing');
   const done = () => { document.body.classList.remove('is-printing'); window.removeEventListener('afterprint', done); };
   window.addEventListener('afterprint', done);

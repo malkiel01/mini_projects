@@ -211,11 +211,15 @@ export default {
           const lx0 = x0 + (colW / leaves) * k, lx1 = lx0 + colW / leaves;
           const hingeSide = leaves === 2 ? (k === 0 ? 'left' : 'right') : (i < cols.cols.length / 2 ? 'left' : 'right');
           const id = `door-${i + 1}${zoneTag ? '-' + zoneTag : ''}${leaves === 2 ? 'ab'[k] : ''}`;
+          // הדופן שהציר נקדח בה: דופן הגוף בקצוות, מחיצה באמצע
+          const mountId = hingeSide === 'left' ? (i === 0 ? 'side-L' : `partition-${i}`) : (i === cols.cols.length - 1 ? 'side-R' : `partition-${i + 1}`);
+          const mount = parts.find((p) => p.id === mountId);
           const d = door({
             id, name: `דלת ${i + 1}${zoneTag ? (zi === 0 ? ' תחתונה' : ' עליונה') : ''}${leaves === 2 ? (k === 0 ? ' שמאל' : ' ימין') : ''}`,
             x0: lx0, x1: lx1, y0, y1, zFront: D, type, t: doorT,
             material: v.doorMaterial, glass: v.glassType, handle: v.handle === 'none' ? null : v.handle,
             hinge: type === 'glass' && v.hinge === 'hw:hinge-110' ? 'hw:hinge-glass' : v.hinge, hingeSide,
+            mountId: mount ? mountId : null, mountBottom: mount ? mount.box.y : null,
           });
           parts.push(...d.parts);
           hardware.push(...d.hardware);

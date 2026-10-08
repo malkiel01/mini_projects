@@ -95,7 +95,7 @@ export default {
     { key: 'frontMaterial', label: 'חזיתות (דלתות ומגירות)', type: 'material', kind: 'board', back: false, solid: false, top: false, default: 'board:mdf-paint-18', group: 'חומרים' },
     { key: 'topMaterial', label: 'משטח עבודה', type: 'material', kind: 'board', top: true, default: 'board:countertop-38', group: 'חומרים' },
     { key: 'topOverhang', label: 'הבלטת המשטח קדימה', type: 'mm', min: 0, max: 60, default: 40, group: 'חומרים' },
-    ...drawerParams(),
+    ...drawerParams({ slide: 'hw:slide-tandem' }),   // מגירות מטבח רחבות וכבדות: טנדם 40 ק"ג כברירת מחדל
     hingeParam({ group: 'חומרים' }), handleParam({ group: 'חומרים' }),
   ],
   joinery: joineryParams(),
@@ -167,7 +167,8 @@ export default {
             y0: ry0 - (r === 0 ? shelfT : 0), y1: ry1 + (r === drawers - 1 ? shelfT : 0),
             boxX0: inner.x0, boxX1: inner.x1, boxY0: ry0, boxY1: ry1,
             zFront: z1, depth: Math.min(z1 - z0 - 20, 500), frontT, boxT: boardT(v.drawerBoxMaterial), bottomT: boardT(v.drawerBottomMaterial),
-            frontMaterial: v.frontMaterial, boxMaterial: v.drawerBoxMaterial, bottomMaterial: v.drawerBottomMaterial, slide: v.slide, handle });
+            frontMaterial: v.frontMaterial, boxMaterial: v.drawerBoxMaterial, bottomMaterial: v.drawerBottomMaterial, slide: v.slide, handle,
+            mountIds: [`${prefix}-side-L`, `${prefix}-side-R`], mountBottom: body.parts.find((p) => p.id === 'side-L').box.y });
           out.parts.push(...d2.parts); out.hardware.push(...d2.hardware);
         }
       } else {
@@ -181,7 +182,8 @@ export default {
             const lx0 = x + (w / leaves) * k, lx1 = lx0 + w / leaves;
             const dd = door({ id: `${prefix}-door${leaves === 2 ? 'ab'[k] : ''}`, name: `${prefix} דלת${leaves === 2 ? (k === 0 ? ' שמאל' : ' ימין') : ''}`,
               x0: lx0, x1: lx1, y0: y, y1: y + h, zFront: z1, type: 'wood', t: frontT, material: v.frontMaterial, handle, hinge: v.hinge,
-              hingeSide: leaves === 2 ? (k === 0 ? 'left' : 'right') : hingeDefault });
+              hingeSide: leaves === 2 ? (k === 0 ? 'left' : 'right') : hingeDefault,
+              mountId: `${prefix}-side-${(leaves === 2 ? (k === 0 ? 'left' : 'right') : hingeDefault) === 'left' ? 'L' : 'R'}`, mountBottom: body.parts.find((p) => p.id === 'side-L').box.y });
             out.parts.push(...dd.parts); out.hardware.push(...dd.hardware);
           }
         }

@@ -13,6 +13,9 @@
 // רשימת החיתוך והתלת מימד קוראים את אותו חלק ולעולם לא יסתרו זה את זה.
 
 /** יוצר חלק. `box` הוא פינת המינימום + מידות. */
+import { material } from './materials.js';
+import { boardWeight, hingeCount, hingeYs, hingeDrilling, slidingLeaf, slideLoad, slideDrilling, DRAWER_CONTENT_KG, partWeight } from './physics.js';
+
 export function part(id, name, box, { axis, grain, material, qtyKey, edges = {}, note } = {}) {
   return { id, name, qtyKey: qtyKey || id, box, axis, grain, material, edges, note };
 }
@@ -152,7 +155,7 @@ export function crown({ w, y, h, t, d, material, prefix = '' }) {
  * עץ — לוח אחד. ויטרינה — מסגרת (שני זקפים ושני קושרות) ושמשה.
  * `hingeSide` — 'left' או 'right'; הידית בצד הנגדי.
  */
-export function door({ id, name, x0, x1, y0, y1, zFront, type, t, frameW = 60, material, glass, handle, hinge, hingeSide, gap = 2, openAngle = 100 }) {
+export function door({ id, name, x0, x1, y0, y1, zFront, type, t, frameW = 60, material, glass, handle, hinge, hingeSide, gap = 2, openAngle = 100, mountId = null, mountBottom = null }) {
   const parts = [];
   const hardware = [];
   const x = x0 + gap / 2, w = x1 - x0 - gap, y = y0 + gap / 2, h = y1 - y0 - gap;
@@ -184,13 +187,17 @@ export function door({ id, name, x0, x1, y0, y1, zFront, type, t, frameW = 60, m
 
   for (const p of parts) p.motion = motion;
 
-  // צירים: לפי גובה הדלת, כמקובל אצל יצרני הפרזול.
-  const hinges = h <= 900 ? 2 : h <= 1600 ? 3 : h <= 2100 ? 4 : 5;
-  const hx = hingeSide === 'left' ? x + 22 : x + w - 22;
-  for (let i = 0; i < hinges; i++) {
-    const hy = y + 100 + (h - 200) * (hinges === 1 ? 0.5 : i / (hinges - 1));
-    hardware.push({ id: `${id}-hinge-${i + 1}`, kind: 'hinge', material: hinge, pos: [hx, hy, zFront], qty: 1, for: id });
-  }
+  // צירים: לפי גובה הדלת *ומשקלה* — הגבוה מביניהם (physics.js). מרכז הכוס 22.5 מקצה הציר.
+  const kg = type === 'wood' ? boardWeight(w, h, t, material) : parts.reduce((sum, p) => sum + partWeight(p), 0);
+  const hinges = hingeCount(h, kg);
+  const ys = hingeYs(h, hinges);
+  const cupX = 22.5;
+  const hx = hingeSide === 'left' ? x + cupX : x + w - cupX;
+  const drill = hingeDrilling({ doorId: parts[0].id, mountId, ys, doorBottomOffset: mountBottom != null ? y - mountBottom : 0 });
+  ys.forEach((dy, i) => {
+    hardware.push({ id: `${id}-hinge-${i + 1}`, kind: 'hinge', material: hinge, pos: [hx, y + dy, zFront], qty: 1, for: id, drill: i === 0 ? drill : [] });
+  });
+  hardware.push({ id: `${id}-weight`, kind: 'info', door: id, kg: Math.round(kg * 100) / 100, hinges, note: `${name}: ${Math.round(kg * 10) / 10} ק"ג, ${hinges} צירים` });
   if (handle) {
     const kx = hingeSide === 'left' ? x + w - 40 : x + 40;
     // ידית: בדלת נמוכה — בשני שלישים מגובהה; בדלת גבוהה — בגובה 1000 מהרצפה
@@ -207,7 +214,7 @@ export function door({ id, name, x0, x1, y0, y1, zFront, type, t, frameW = 60, m
  * `x0..x1` רוחב הפתח שהחזית מכסה, `y0..y1` גובה החזית, `zFront` חזית הגוף.
  */
 export function drawer({ id, name, x0, x1, y0, y1, zFront, depth, frontT, boxT = 18, bottomT = 6, slideGap = 13,
-  boxX0, boxX1, boxY0, boxY1, frontMaterial, boxMaterial, bottomMaterial, slide, handle, gap = 2 }) {
+  boxX0, boxX1, boxY0, boxY1, frontMaterial, boxMaterial, bottomMaterial, slide, handle, gap = 2, mountIds = null, mountBottom = null }) {
   const parts = [];
   const hardware = [];
   const edgesAll = { front: true, top: true, bottom: true, left: true, right: true };
@@ -240,7 +247,11 @@ export function drawer({ id, name, x0, x1, y0, y1, zFront, depth, frontT, boxT =
   const motion = { kind: 'slide', group: id, vec: [0, 0, Math.round(bd * 0.75)] };
   for (const p of parts) p.motion = motion;
 
-  hardware.push({ id: `${id}-slides`, kind: 'slide', material: slide, qty: 1, for: id, note: `זוג, אורך ${Math.round(bd / 50) * 50}` });
+  const kg = Math.round(parts.reduce((sum, p) => sum + partWeight(p), 0) * 100) / 100;
+  const load = slideLoad(slide);
+  hardware.push({ id: `${id}-slides`, kind: 'slide', material: slide, qty: 1, for: id, note: `זוג, אורך ${Math.round(bd / 50) * 50}`, kg, load,
+    drill: mountIds ? slideDrilling({ mountIds, depth: bd, yFromBottom: (boxY0 ?? y0) - (mountBottom ?? 0) + 12 }) : [] });
+  hardware.push({ id: `${id}-weight`, kind: 'info', door: id, kg, load, note: `${name}: ${Math.round(kg * 10) / 10} ק"ג + ${DRAWER_CONTENT_KG} תכולה, מסילה ${load}` });
   if (handle) hardware.push({ id: `${id}-handle`, kind: 'handle', material: handle, pos: [fx + fw / 2, fy + fh / 2, zFront + frontT], qty: 1, for: id, horizontal: true });
   return { parts, hardware };
 }
@@ -254,22 +265,48 @@ export function rod({ id, x0, x1, y, z, material }) {
  * דלתות הזזה: שתיים או שלוש כנפיים חופפות על שתי מסילות, בחזית הגוף.
  * כל כנף רחבה ב-`overlap` מחלקה; הכנפיים לסירוגין במסילה הקדמית/האחורית.
  */
-export function slidingDoors({ id, x0, x1, y0, y1, zFront, leaves, t, overlap = 40, material, track }) {
+/**
+ * דלתות הזזה על מערכת אמיתית (physics.js: SLIDING_SYSTEMS): מסילה עליונה
+ * כפולה עם גררות, או פס תחתון עם גלגלים ומוליך עליון. גובה הכנף נגזר
+ * מהפרופילים — הכנף אינה מרחפת. הנתיב הפנימי צמוד לגוף, החיצוני לפניו.
+ * `track` — מזהה מערכת ההזזה בספרייה (hardware עם `system`).
+ */
+export function slidingDoors({ id, x0, x1, y0, y1, zFront, leaves, t, overlap = 40, material: mat, track }) {
   const parts = [];
   const hardware = [];
   const W = x1 - x0;
+  const sysKey = material(track).system || 'top-hung';
+  const leaf = slidingLeaf(sysKey, y0, y1);
+  const s = leaf.system;
   const lw = (W + (leaves - 1) * overlap) / leaves;
+  const laneZ = (i) => zFront + (i % 2 === 0 ? 0 : t + s.laneGap);
   for (let i = 0; i < leaves; i++) {
     const lx = x0 + i * (lw - overlap);
-    const z = zFront + (i % 2 === 0 ? 0 : t + 4);   // המסילה האחורית צמודה לגוף, הקדמית לפניה
-    const leaf = part(`${id}-${i + 1}`, 'דלת הזזה', { x: lx, y: y0 + 2, z, w: lw, h: y1 - y0 - 4, d: t },
-      { axis: 'z', grain: 'y', material, qtyKey: `slide-door-${Math.round(lw)}x${Math.round(y1 - y0 - 4)}`, edges: { front: true, top: true, bottom: true, left: true, right: true }, note: `כנף ${i + 1}` });
-    // תנועה: הכנף מחליקה על הכנף השכנה — הראשונה ימינה, השנייה שמאלה, וכן הלאה.
-    leaf.motion = { kind: 'slide', group: leaf.id, vec: [(i % 2 === 0 ? 1 : -1) * (lw - overlap), 0, 0] };
-    parts.push(leaf);
+    const z = laneZ(i);
+    const lf = part(`${id}-${i + 1}`, 'דלת הזזה', { x: lx, y: leaf.bottom, z, w: lw, h: leaf.h, d: t },
+      { axis: 'z', grain: 'y', material: mat, qtyKey: `slide-door-${Math.round(lw)}x${leaf.h}`, edges: { front: true, top: true, bottom: true, left: true, right: true }, note: `כנף ${i + 1} · ${sysKey === 'top-hung' ? 'חריץ מוליך בתחתית' : 'גלגלים בתחתית'}` });
+    lf.motion = { kind: 'slide', group: lf.id, vec: [(i % 2 === 0 ? 1 : -1) * (lw - overlap), 0, 0] };
+    parts.push(lf);
+    const kg = partWeight(lf);
+    // גררות / גלגלים: שניים לכנף, 60 מהקצוות; נעים עם הכנף
+    const carrierY = sysKey === 'top-hung' ? leaf.bottom + leaf.h + s.carrier.h / 2 : leaf.bottom - s.carrier.h / 2;
+    for (const [k, cx] of [[1, lx + s.carrierFromEdge], [2, lx + lw - s.carrierFromEdge]]) {
+      hardware.push({ id: `${id}-${i + 1}-carrier-${k}`, kind: 'carrier', material: track, pos: [cx, carrierY, z + t / 2], size: s.carrier, qty: 1, for: lf.id,
+        drill: [{ part: lf.id, face: sysKey === 'top-hung' ? 'top' : 'bottom', ref: 'מקצה הכנף / ממרכז העובי', x: Math.round(cx - lx), y: 0, dia: 8, depth: 20, purpose: sysKey === 'top-hung' ? 'גררה' : 'גלגל' }] });
+    }
+    hardware.push({ id: `${id}-${i + 1}-weight`, kind: 'info', door: lf.id, kg: Math.round(kg * 100) / 100, maxKg: s.maxKgPerLeaf, note: `כנף ${i + 1}: ${Math.round(kg * 10) / 10} ק"ג (מותר ${s.maxKgPerLeaf})` });
   }
-  hardware.push({ id: `${id}-track`, kind: 'track', material: track, qty: 1, note: `מסילה כפולה ${Math.round(W)}` });
-  return { parts, hardware, leafWidth: lw };
+  // הפרופילים: מסילה (למעלה או למטה) ומוליך — לכל רוחב הפתח, בעומק שני הנתיבים
+  const laneD = 2 * t + s.laneGap;
+  const lanes = [zFront + t / 2, laneZ(1) + t / 2];
+  if (sysKey === 'top-hung') {
+    hardware.push({ id: `${id}-track`, kind: 'track', material: track, qty: 1, pos: [x0, y1 - s.trackH, zFront - 4], len: W, h: s.trackH, d: laneD + 8, lanes, note: `מסילה עליונה כפולה ${Math.round(W)}` });
+    hardware.push({ id: `${id}-guide`, kind: 'track', material: track, qty: 1, pos: [x0, y0, zFront - 4], len: W, h: s.guideH, d: laneD + 8, lanes, note: `מוליך תחתון ${Math.round(W)}` });
+  } else {
+    hardware.push({ id: `${id}-track`, kind: 'track', material: track, qty: 1, pos: [x0, y0, zFront - 4], len: W, h: s.trackH, d: laneD + 8, lanes, note: `פס תחתון כפול ${Math.round(W)}` });
+    hardware.push({ id: `${id}-guide`, kind: 'track', material: track, qty: 1, pos: [x0, y1 - s.guideH, zFront - 4], len: W, h: s.guideH, d: laneD + 8, lanes, note: `מוליך עליון ${Math.round(W)}` });
+  }
+  return { parts, hardware, leafWidth: lw, leafH: leaf.h, system: sysKey, extraD: laneD };
 }
 
 /** רגל: קורה אנכית מרובעת. */
