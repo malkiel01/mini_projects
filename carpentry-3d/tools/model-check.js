@@ -559,6 +559,18 @@ console.log('אביזרים: ידיות, כפתורים, צירים, גלגלי�
   check(!m.warnings.some((w) => /shelf-1-1/.test(w)), 'שינוי חומר בלבד — בלי אזהרה');
 }
 
+// ---- הזזת דלת מסגרת: כל הדלת זזה יחד ----
+{
+  console.log('\nהזזת דלת מסגרת');
+  const base = build('bookcase', { columns: 3, doorType: 'glass' });
+  const mv = build('bookcase', { columns: 3, doorType: 'glass', partEdits: { 'door-1-stile-L': { move: { x: 20, z: -5 } } } });
+  const grp = (m) => m.parts.filter((p) => p.motion?.group === 'door-1');
+  check(grp(mv).every((p) => { const b = grp(base).find((q) => q.id === p.id).box; return Math.abs(p.box.x - b.x - 20) < 1e-9 && Math.abs(p.box.z - b.z + 5) < 1e-9; }), 'הזזת זקף: כל חלקי הדלת זזים יחד (X ו-Z)');
+  check(grp(mv).every((p) => Math.abs(p.motion.pivot[0] - grp(base)[0].motion.pivot[0] - 20) < 1e-9), 'ציר הסיבוב זז עם הדלת — לכל החלקים אותו ציר');
+  const hb = base.hardware.find((h) => h.kind === 'handle' && h.for === 'door-1'), hm = mv.hardware.find((h) => h.kind === 'handle' && h.for === 'door-1');
+  check(hb && Math.abs(hm.pos[0] - hb.pos[0] - 20) < 1e-9, 'גם הידית');
+}
+
 // ---- מיקום הידית ----
 {
   console.log('\nמיקום הידית');

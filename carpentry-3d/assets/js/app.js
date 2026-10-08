@@ -554,8 +554,31 @@ function renderSummary(m) {
     <span>${m.parts.length} חלקים</span>
     <span>${m.hardware.reduce((n, h) => n + (h.kind === 'info' ? 0 : h.qty || 1), 0)} פריטי פרזול</span>
     <span title="נפח × צפיפות החומר, לכל חלק">⚖ ${totalWeight(m.parts)} ק"ג</span>
-    ${hiddenCount() ? `<button type="button" class="btn btn--small" data-show-hidden>🙉 הצגת ${hiddenCount()} רכיבים מוסתרים</button>` : ''}`;
+    ${resetButtons(true)}`;
 }
+/** כפתורי איפוס כלליים: רכיבים מוסתרים, כל עריכות הרכיבים, כל כיווני הפתיחה שנבחרו ביד. */
+function resetButtons(inline = false) {
+  if (!state.project || state.user.role === 'viewer') return '';
+  const edits = Object.keys(state.values.partEdits || {}).length, opens = Object.keys(state.values.doorOpen || {}).length;
+  const b = [
+    hiddenCount() ? `<button type="button" class="btn btn--small" data-show-hidden>🙉 הצגת ${hiddenCount()} רכיבים מוסתרים</button>` : '',
+    edits ? `<button type="button" class="btn btn--small" data-reset-all="partEdits">↺ איפוס עריכות הרכיבים (${edits})</button>` : '',
+    opens ? `<button type="button" class="btn btn--small" data-reset-all="doorOpen">↺ כיווני פתיחה אוטומטיים (${opens})</button>` : '',
+  ].join('');
+  return b ? (inline ? b : `<div class="part__actions">${b}</div>`) : '';
+}
+function onResetAll(e) {
+  const b = e.target.closest('[data-reset-all]');
+  if (!b) return;
+  const kind = b.dataset.resetAll;
+  if (!confirm(kind === 'partEdits' ? 'לאפס את כל העריכות שנעשו לרכיבים בודדים (מיקום, מידות, חומר, ידיות…)? הרכיבים יחזרו למה שהתבנית קובעת.' : 'להחזיר את כל הדלתות לכיוון הפתיחה האוטומטי?')) return;
+  state.values[kind] = undefined;
+  rebuild(); markDirty();
+  if (!shownPart) showPart(null);
+  toast(kind === 'partEdits' ? 'כל הרכיבים חזרו לתבנית' : 'כיווני הפתיחה חזרו לאוטומטי');
+}
+$('#summary').addEventListener('click', onResetAll);
+$('#part').addEventListener('click', onResetAll);
 const hiddenCount = () => (state.project ? Object.values(state.values.partEdits || {}).filter((e) => e.hidden).length : 0);
 function onShowHidden(e) {
   if (!e.target.closest('[data-show-hidden]')) return;
@@ -573,7 +596,7 @@ function showPart(p) {
   const box = $('#part');
   shownPart = p;
   if (!p) {
-    box.innerHTML = `<p class="muted">הקשה על רכיב מציגה את מידותיו ומאפשרת לערוך אותו. גרירה מסובבת; שתי אצבעות או גלגלת מזמנות.</p>${hiddenCount() ? `<div class="part__actions"><button type="button" class="btn btn--small" data-show-hidden>🙉 הצגת ${hiddenCount()} רכיבים מוסתרים</button></div>` : ''}`;
+    box.innerHTML = `<p class="muted">הקשה על רכיב מציגה את מידותיו ומאפשרת לערוך אותו. גרירה מסובבת; שתי אצבעות או גלגלת מזמנות.</p>${resetButtons()}`;
     return;
   }
   const c = cutSize(p);
