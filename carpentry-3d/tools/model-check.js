@@ -551,6 +551,14 @@ console.log('אביזרים: ידיות, כפתורים, צירים, גלגלי�
   check(ACC_FINISHES.length >= 6, 'גימורים');
 }
 
+// ---- אזהרה על רכיב שנערך ביד ----
+{
+  console.log('\nאזהרת עריכה');
+  const m = build('bookcase', { columns: 3, doorType: 'wood', partEdits: { 'door-2': { move: { x: 10 } }, 'shelf-1-1': { material: 'board:solid-oak' } } });
+  check(m.warnings.some((w) => /door-2\) נערך ביד — מיקום/.test(w)), 'דלת שהוזזה ביד — אזהרה (מרווח לא יפתיע)');
+  check(!m.warnings.some((w) => /shelf-1-1/.test(w)), 'שינוי חומר בלבד — בלי אזהרה');
+}
+
 // ---- מיקום הידית ----
 {
   console.log('\nמיקום הידית');
