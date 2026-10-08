@@ -71,6 +71,17 @@ function str_field(array $in, string $key, int $max): string {
 }
 
 /** ה-?v= של app.js כפי שכתוב ב-index.html שבשרת — הדפדפן משווה לשלו. */
+/** המשתמש כפי שהדפדפן מקבל אותו — אותה צורה ב-me וב-login. */
+function clientUser(array $u): array {
+    return [
+        'id'           => (int) $u['id'],
+        'username'     => $u['username'],
+        'display_name' => $u['display_name'] ?? null,
+        'role'         => $u['role'],
+        'is_developer' => isDeveloper($u),
+    ];
+}
+
 function assetsVersion(): string {
     $html = @file_get_contents(__DIR__ . '/index.html') ?: '';
     return preg_match('/app\.js\?v=([^"\']+)/', $html, $m) ? $m[1] : '';
@@ -98,13 +109,7 @@ try {
     case 'me':
         // הדף שואל את זה בטעינה כדי לדעת אם להציג כניסה או את האפליקציה.
         // מחזיר success גם לאורח — "אינך מחובר" אינו שגיאה.
-        ok(['user' => $user ? [
-            'id'           => (int) $user['id'],
-            'username'     => $user['username'],
-            'display_name' => $user['display_name'],
-            'role'         => $user['role'],
-            'is_developer' => isDeveloper($user),
-        ] : null, 'assets_version' => assetsVersion()]);
+        ok(['user' => $user ? clientUser($user) : null, 'assets_version' => assetsVersion()]);
 
     case 'register': {
         $res = createUser(
@@ -132,7 +137,9 @@ try {
         $res = login(str_field($in, 'username', 254), (string) ($in['password'] ?? ''));
         if (!$res) fail('שם משתמש או סיסמה שגויים', 401);
         $GLOBALS['__user'] = $res;   // שורת היומן של הכניסה נושאת את מי שנכנס
-        ok(['user' => $res]);
+        // אותה צורה כמו ב-me. קודם הוחזר המשתמש כמו שהוא, בלי is_developer —
+        // ולכן מיד אחרי כניסה התפריט הסתיר את פריטי המפתח, עד רענון.
+        ok(['user' => clientUser($res)]);
     }
 
     case 'logout':

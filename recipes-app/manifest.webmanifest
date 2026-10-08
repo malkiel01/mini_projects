@@ -1,0 +1,20 @@
+{
+  "name": "אפליקציית מתכונים",
+  "short_name": "מתכונים",
+  "description": "מתכונים פרטיים וציבוריים — חלקים, רכיבים, שלבים, חיפוש, רשימת קניות ומצב בישול.",
+  "lang": "he",
+  "dir": "rtl",
+  "id": "./",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f8f5",
+  "theme_color": "#0f8a4f",
+  "icons": [
+    { "src": "./assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./assets/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "./assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

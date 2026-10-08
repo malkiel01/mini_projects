@@ -82,7 +82,10 @@ R=$(call register '{"username":"owner","email":"owner@example.com","password":"s
 check 'ההרשמה הצליחה'      "$R" '"success":true'
 check 'המנהל מאומת מראש'   "$R" '"verified":true'
 check 'נשלח דוא"ל בכל זאת' "$R" '"mail_sent":true'
-check 'המנהל נכנס מיד'     "$(call login '{"username":"owner","password":"sod12345"}')" '"role":"admin"'
+L=$(call login '{"username":"owner","password":"sod12345"}')
+check 'המנהל נכנס מיד'     "$L" '"role":"admin"'
+# באג שתוקן: הכניסה החזירה משתמש בלי is_developer, והתפריט הסתיר את פריטי המפתח עד רענון
+check 'הכניסה מחזירה is_developer, כמו me' "$L" '"is_developer":true'
 call logout >/dev/null
 
 echo
@@ -400,6 +403,9 @@ call logout >/dev/null
 check 'logs.php בלי כניסה, עם הטוקן — JSON'    "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$TOK&format=json&action=login")" '"action":"login"'
 check 'ובטקסט'                                 "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$TOK&format=text&action=login")" 'INFO .* owner login'
 check 'ודף HTML'                               "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$TOK")" '<table class="logtable"'
+check 'אפליקציה להתקנה: manifest'            "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/manifest.webmanifest")" '"display": "standalone"'
+check 'ו-service worker'                       "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/recipes-app/service-worker.js")" '^200$'
+check 'בלי קישור חזרה לדף הכלים'              "$(grep -c '\.\./index.html' recipes-app/index.html)" '^0$'
 check 'יומן הייבוא דרך הטוקן — טקסט עם המקור'  "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$TOK&view=import&format=text")" 'מקור: http://127.0.0.1:'"$FXPORT"'/jsonld-10dakot.html'
 check 'יומן הייבוא — HTML'                      "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$TOK&view=import&ok=0")" 'class="ilog ilog--err"'
 check 'טוקן שגוי — 403'                        "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$(printf '0%.0s' $(seq 48))")" '^403$'

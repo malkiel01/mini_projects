@@ -1661,7 +1661,10 @@ async function renderSettingsPrivate() {
         <tr><th>אחסון כולל</th><td>${toMB(limits.used)} מתוך ${toMB(limits.quota)} MB</td></tr>
       </table>
       <div class="quota"><div class="quota__bar"><span style="width:${Math.min(100, (limits.used / limits.quota) * 100).toFixed(1)}%"></span></div></div>
+      <h3>📲 אפליקציה בטלפון</h3>
+      <div id="install-box" class="install"></div>
     </section>`;
+  drawInstall($('#install-box'));
   $('#priv').addEventListener('submit', async (e) => {
     e.preventDefault();
     const out = $('#priv-msg');
@@ -1672,6 +1675,50 @@ async function renderSettingsPrivate() {
       out.textContent = 'נשמר'; out.className = 'note note--ok'; out.hidden = false;
     } catch (err) { out.textContent = err.message; out.className = 'note note--err'; out.hidden = false; }
   });
+}
+
+// ───────────────────────── התקנה כאפליקציה ─────────────────────────
+// Chrome/Edge/Samsung באנדרואיד שולחים beforeinstallprompt — שומרים אותו,
+// וכפתור בהגדרות מפעיל אותו. באייפון אין אירוע כזה: ההתקנה היא רק דרך
+// "שיתוף" → "הוספה למסך הבית" בספארי, ולכן שם מוצגת הוראה במקום כפתור.
+let installPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; const box = $('#install-box'); if (box) drawInstall(box); });
+window.addEventListener('appinstalled', () => { installPrompt = null; const box = $('#install-box'); if (box) drawInstall(box, true); });
+const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+
+function drawInstall(box, justInstalled = false) {
+  const ua = navigator.userAgent;
+  const ios = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (isStandalone() || justInstalled) {
+    box.innerHTML = '<p class="note note--ok">האפליקציה מותקנת ופתוחה כאפליקציה. ✓</p>';
+    return;
+  }
+  if (installPrompt) {
+    box.innerHTML = `
+      <p class="muted">אייקון במסך הבית, מסך מלא בלי שורת הכתובת, ונפתח ישר למתכונים.</p>
+      <button class="btn btn--primary" type="button" id="install-btn">📲 התקן את האפליקציה</button>`;
+    $('#install-btn', box).addEventListener('click', async () => {
+      const p = installPrompt; installPrompt = null;
+      p.prompt();
+      const { outcome } = await p.userChoice.catch(() => ({ outcome: 'dismissed' }));
+      box.innerHTML = outcome === 'accepted' ? '<p class="note note--ok">מותקנת. האייקון במסך הבית. ✓</p>'
+        : '<p class="muted">ההתקנה בוטלה. אפשר גם מתפריט הדפדפן ⋮ → "התקנת אפליקציה" / "הוספה למסך הבית".</p>';
+    });
+    return;
+  }
+  box.innerHTML = ios ? `
+      <p class="muted">באייפון ההתקנה היא דרך ספארי:</p>
+      <ol class="install__steps">
+        <li>לפתוח את הדף הזה ב<strong>ספארי</strong> (לא בכרום ולא מתוך וואטסאפ).</li>
+        <li>ללחוץ על כפתור <strong>השיתוף</strong> ⬆️ בתחתית המסך.</li>
+        <li>לבחור <strong>"הוספה למסך הבית"</strong>, ואז "הוסף".</li>
+      </ol>` : `
+      <p class="muted">הדפדפן עוד לא הציע התקנה. אפשר להתקין מהתפריט שלו:</p>
+      <ol class="install__steps">
+        <li>בכרום: תפריט <strong>⋮</strong> למעלה.</li>
+        <li><strong>"התקנת אפליקציה"</strong> או <strong>"הוספה למסך הבית"</strong>.</li>
+      </ol>
+      <p class="muted small">אם נפתח מתוך וואטסאפ או פייסבוק — קודם "פתח בכרום".</p>`;
 }
 
 /** הגדרות ציבוריות — המפתח בלבד. חלות על כל מי שאין לו דריסה אישית. */
@@ -2375,3 +2422,6 @@ async function renderDiag() {
 api('me')
   .then(({ user, assets_version }) => { setUser(user); checkVersion(assets_version); if (user) route(); })
   .catch(() => { setUser(null); say('לא הצלחתי להגיע לשרת. יש לרענן את הדף.', 'err'); });
+
+// התקנה כאפליקציה + שלד בלי רשת (service-worker.js). כשל ברישום אינו מפריע לאפליקציה.
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js').catch(() => {});
