@@ -242,7 +242,7 @@ html, body, .app { overflow-x: hidden; max-width: 100%; }
 .panel--view.is-fs #summary, .panel--view.is-fs #btn-output { display: none; }
 /* במסך מלא פאנל החלק צף מעל התלת מימד — ומוסתר כשלא נבחר חלק */
 .is-fs .part { position: absolute; inset-inline: 12px; bottom: 12px; margin: 0; max-height: 38%; overflow: auto; z-index: 4; }
-.is-fs .part:has(> p.muted:only-child) { display: none; }
+.is-fs .part:not(:has(h3)) { display: none; }
 body.has-fs { overflow: hidden; }
 .warnings[hidden] { display: none; }
 .warn {
@@ -866,3 +866,24 @@ input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner
 
 .pedit__clash { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 6px 0; padding: 8px 10px; border-radius: 10px; background: var(--accent-soft); font-size: 0.84rem; }
 .pedit__sub { margin: 10px 0 2px; font-weight: 700; color: var(--accent-deep); font-size: 0.86rem; }
+
+/* ---- מקסימום תצוגה: כרטיס הרכיב ממוזער, וסרגל התצוגה בשורה אחת ---- */
+.part { position: relative; }
+.part__min { display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 0; background: none; font: inherit; color: var(--muted); padding: 0; cursor: pointer; }
+.part:not(.is-min) .part__min { position: absolute; top: 6px; inset-inline-end: 8px; z-index: 1; padding: 2px 8px; border-radius: 999px; }
+.part:not(.is-min) .part__min:hover { background: var(--accent-soft); }
+.part__mintitle { display: none; }
+.part__chev { font-size: 0.9rem; }
+.part.is-min { padding: 6px 14px; min-height: 0; }
+.part.is-min > :not(.part__min) { display: none; }
+.part.is-min .part__min { width: 100%; }
+.part.is-min .part__mintitle { display: inline; font-weight: 700; color: var(--accent-deep); }
+@media (max-width: 860px) {
+  /* קוביית הניווט בתלת מימד מחליפה את כפתורי המבט — הסרגל נשאר בשורה אחת */
+  .viewbar { flex-wrap: nowrap; gap: 6px; padding: 6px 10px; }
+  .viewbar > .views:not(.views--toggles) { display: none; }
+  .views--toggles .lbl, #btn-output .lbl { display: none; }
+  .views--toggles { margin-inline-start: 0; }
+  .views--toggles button { font-size: 1.1rem; padding: 6px 12px; line-height: 1.2; }
+  #btn-output { margin-inline-start: auto; padding: 7px 16px; font-size: 1.1rem; }
+}
