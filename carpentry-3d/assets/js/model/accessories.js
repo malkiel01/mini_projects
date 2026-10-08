@@ -81,10 +81,16 @@ export const TYPES = [
     build: ({ diameter, wire }) => [cyl([0, 0, 4], wire * 1.6, 8, ALONG_Z), sphere([0, 0, 8], wire * 1.4), torus([0, -diameter / 2, 8], diameter / 2, wire / 2, [0, 0, 0])] },
   // ---- צירים ---- (הראשית: הפאה האחורית של הדלת, 22 מ"מ מקצה הציר; +z לתוך הדלת; `side` בא מהצופה)
   { id: 'concealed', kind: 'hinge', name: 'ציר נסתר (כוס 35)', params: [P('angle', 'זווית פתיחה', 110, 90, 180, 5), P('cup', 'קוטר הכוס', 35, 26, 40)],
-    build: ({ cup }, { side = 'left' } = {}) => {
+    // `reach` — המרחק ממרכז הכוס אל הפאה הפנימית של הדופן/המחיצה, לכיוון קצה הציר
+    // (דלת חופה מלאה על דופן 18: 22.5 − 18 = 4.5). הפלטה יושבת על הפאה הזו, 37 מ"מ
+    // מהקצה הקדמי — כמו בקידוחים (physics.js); הזרוע מחברת את הכוס אל הפלטה, בתוך הארון.
+    build: ({ cup }, { side = 'left', reach = 4.5 } = {}) => {
       const s = side === 'left' ? -1 : 1;
+      const plateT = 10, armW = 14;
+      const plateX = s * (reach - plateT / 2), armX = s * (reach - plateT - armW / 2);
       return [cyl([0, 0, 6], cup / 2, 12, ALONG_Z, { moving: true }), box([0, 0, -2], [cup + 12, 10, 4], { moving: true }),   // כוס וזרוע בדלת — נעים איתה
-        box([s * 30, 0, -14], [40, 12, 28]), box([s * 45, 0, -30], [12, 60, 36], { finish: 'nickel' })];    // גוף הציר והפלטה על הדופן
+        box([armX, 0, -24], [armW, 14, 44]),                                    // גוף הציר: מהכוס אל הפלטה, לאורך הדופן
+        box([plateX, 0, -37], [plateT, 50, 34], { finish: 'nickel' })];        // פלטת ההרכבה על הפאה הפנימית
     } },
   { id: 'butt', kind: 'hinge', name: 'ציר פרפר (כנפיים גלויות)', params: [P('length', 'אורך', 60, 30, 120, 5), P('width', 'רוחב כנף', 20, 12, 40)],
     build: ({ length, width }, { side = 'left' } = {}) => {

@@ -72,6 +72,8 @@ export function placeModel(model, { pos = [0, 0, 0], rot = 0, prefix = '' } = {}
   });
   const hardware = model.hardware.map((h) => {
     const out = { ...h, id: prefix + h.id, for: h.for ? prefix + h.for : h.for };
+    if (h.mount) out.mount = prefix + h.mount;
+    if (h.drill && prefix) out.drill = h.drill.map((d) => ({ ...d, part: prefix + d.part }));
     if (h.pos) { const [x, z] = rotPoint(h.pos[0], h.pos[2], r, w, d); out.pos = [x + px, h.pos[1] + py, z + pz]; }
     if (h.horizontal !== undefined && (r === 90 || r === 270)) out.horizontal = !h.horizontal;
     return out;
