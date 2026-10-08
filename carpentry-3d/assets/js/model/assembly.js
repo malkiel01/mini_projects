@@ -43,6 +43,14 @@ function rotVec(v, rot) {
     default: return v;
   }
 }
+/** כיוון כמחרוזת ('+x', '-z'…) אחרי סיבוב — לפאה החיצונית, לחירוץ ולגרונג. */
+function rotDir(dir, rot) {
+  if (!dir || !rot) return dir;
+  const i = 'xyz'.indexOf(dir[1]), v = [0, 0, 0];
+  v[i] = dir[0] === '-' ? -1 : 1;
+  const r = rotVec(v, rot), j = r.findIndex((c) => c !== 0);
+  return (r[j] < 0 ? '-' : '+') + 'xyz'[j];
+}
 
 /**
  * מניח מודל במקום: מחזיר חלקים ופרזול חדשים (המקור לא משתנה).
@@ -68,7 +76,10 @@ export function placeModel(model, { pos = [0, 0, 0], rot = 0, prefix = '' } = {}
   };
   const parts = model.parts.map((p) => {
     const b = rotBox(p.box, r, w, d);
-    return { ...p, id: prefix + p.id, box: { ...b, x: b.x + px, y: b.y + py, z: b.z + pz }, axis: swapAxis(p.axis, r), grain: swapAxis(p.grain, r), edges: rotEdges(p.edges, r), motion: moveMotion(p.motion) };
+    return { ...p, id: prefix + p.id, box: { ...b, x: b.x + px, y: b.y + py, z: b.z + pz }, axis: swapAxis(p.axis, r), grain: swapAxis(p.grain, r), edges: rotEdges(p.edges, r), motion: moveMotion(p.motion),
+      ...(p.face ? { face: rotDir(p.face, r) } : {}),
+      ...(p.mill ? { mill: { ...p.mill, normal: rotDir(p.mill.normal, r) } } : {}),
+      ...(p.miter ? { miter: p.miter.map((m) => ({ ...m, end: rotDir(m.end, r), short: rotDir(m.short, r) })) } : {}) };
   });
   const hardware = model.hardware.map((h) => {
     const out = { ...h, id: prefix + h.id, for: h.for ? prefix + h.for : h.for };

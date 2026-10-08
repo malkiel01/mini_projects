@@ -378,6 +378,28 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
     lines.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
     return { geo, lines };
   }
+  /**
+   * גרונג (חיתוך 45° בקצה): כל קודקוד שחורג מהמישור המשופע נמשך אליו. המישור
+   * עובר בקצה `end` — בפאה `short` הוא מקוצר ב-`cut`, ובפאה שמולה במלוא האורך.
+   * עובד גם על לוח מחורץ (התיבות הממוזגות) וגם על קווי המתאר.
+   */
+  function clampMiter(attr, p) {
+    if (!p.miter || !attr) return;
+    const half = [p.box.w / 2, p.box.h / 2, p.box.d / 2];
+    for (const m of p.miter) {
+      const a = 'xyz'.indexOf(m.end[1]), s = m.end[0] === '-' ? -1 : 1;
+      const b = 'xyz'.indexOf(m.short[1]), t = m.short[0] === '-' ? -1 : 1;
+      if (a < 0 || b < 0 || a === b) continue;
+      for (let i = 0; i < attr.count; i++) {
+        const v = [attr.getX(i), attr.getY(i), attr.getZ(i)];
+        const dist = (t * v[b] + half[b]) / (2 * half[b]);   // 0 בפאה הארוכה, 1 בפאה המקוצרת
+        const lim = half[a] - m.cut * dist;
+        if (s * v[a] > lim + 1e-6) { v[a] = s * lim; attr.setXYZ(i, v[0], v[1], v[2]); }
+      }
+    }
+    attr.needsUpdate = true;
+  }
+
   /** איחוד גאומטריות (תיבות) לאחת — עם position, normal, uv ואינדקסים. */
   function mergeGeometries(list) {
     const pos = [], nor = [], uv = [], idx = [];
@@ -412,6 +434,7 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
     for (const p of model.parts) {
       const milled = p.mill ? milledGeometry(p) : null;
       const geo = milled ? milled.geo : new THREE.BoxGeometry(p.box.w, p.box.h, p.box.d);
+      if (p.miter) { clampMiter(geo.getAttribute('position'), p); geo.computeVertexNormals(); if (milled) clampMiter(milled.lines.getAttribute('position'), p); }
       const mesh = new THREE.Mesh(geo, threeMaterial(p));
       mesh.userData.part = p;
       const lines = new THREE.LineSegments(milled ? milled.lines : new THREE.EdgesGeometry(geo), edgeMat);

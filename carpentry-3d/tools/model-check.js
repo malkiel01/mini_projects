@@ -548,6 +548,49 @@ console.log('אביזרים: ידיות, כפתורים, צירים, גלגלי�
   check(ACC_FINISHES.length >= 6, 'גימורים');
 }
 
+// ---- חיפוי: צד החירוץ, התקנה בלי לטות, גרונג בפינה ----
+{
+  console.log('\nחיפוי: צד, ישר על הקיר, גרונג');
+  const twoWalls = { walls: 2, turn2: 'right', style: 'flat', len1: 1000, len2: 800 };
+  const fin = build('cladding', { ...twoWalls, partFinishes: { 'w1-f1-panel-1': 'cnc:milled-fine', 'w2-f1-panel-1': 'cnc:milled-fine' } });
+  const n = Object.fromEntries(fin.parts.filter((p) => p.mill).map((p) => [p.id, p.mill.normal]));
+  check(n['w1-f1-panel-1'] === '+z' && n['w2-f1-panel-1'] === '-x', `גימור מכרטיס הלוח בפינה פנימית — אל החדר בשני הקירות (${JSON.stringify(n)})`);
+  const left = build('cladding', { ...twoWalls, turn2: 'left', partFinishes: { 'w1-f1-panel-1': 'cnc:milled-fine', 'w2-f1-panel-1': 'cnc:milled-fine' } });
+  check(left.parts.filter((p) => p.mill).map((p) => p.mill.normal).join() === '+z,+x', 'בפינה חיצונית — גם אל החדר');
+  const direct = build('cladding', { ...twoWalls, mount: 'direct' });
+  check(!direct.parts.some((p) => /batten/.test(p.id)) && direct.parts.every((p) => p.name !== 'לטת רוחב'), 'ישר על הקיר: אין לטות');
+  check(direct.parts.find((p) => p.id === 'w1-f1-panel-1').box.z === 0 && direct.bounds.d === 800, 'ישר על הקיר: הלוח צמוד לקיר');
+  check(direct.hardware.some((h) => h.id === 'glue') && !direct.hardware.some((h) => h.id === 'screws'), 'ישר על הקיר: דבק במקום ברגים ללטות');
+  check(allParams(template('cladding')).filter((p) => /^batten/.test(p.key)).every((p) => p.showIf?.mount?.[0] === 'battens'), 'שדות הלטות מוסתרים כשאין לטות');
+  // גרונג: שני הלוחות נפגשים בקו אחד — פינה פנימית (ימינה) וחיצונית (שמאלה)
+  const meet = (turn, mount) => {
+    const m = build('cladding', { ...twoWalls, turn2: turn, mount, corner: 'miter' });
+    const a = m.parts.find((p) => p.id === 'w1-f1-panel-1'), b = m.parts.find((p) => p.id === 'w2-f1-panel-1');
+    return { m, a, b };
+  };
+  {
+    const { a, b } = meet('right', 'battens');
+    // פנימית: הפאה שאל החדר קצרה; בקיר 1 הקצה x, בקיר 2 התחלה ב-z
+    check(a.miter?.[0]?.end === '+x' && a.miter[0].short === '+z' && a.miter[0].cut === 20 && a.box.x + a.box.w === 982, 'גרונג פנימי: קיר 1 עד הלטות של קיר 2, הפאה הקדמית קצרה ב-20');
+    check(b.miter?.[0]?.end === '-z' && b.miter[0].short === '-x' && b.box.z === 18 && b.box.x === 962, 'גרונג פנימי: קיר 2 מתחיל אחרי הלטות של קיר 1');
+    check(/גרונג/.test(a.note) && /גרונג/.test(b.note), 'גרונג מופיע בהערה (לרשימת החיתוך)');
+  }
+  {
+    const { a, b } = meet('left', 'battens');
+    check(a.miter?.[0]?.short === '-z' && a.box.x + a.box.w === 1038 && b.miter?.[0]?.end === '+z' && b.box.z + b.box.d === a.box.z + a.box.d, 'גרונג חיצוני: שניהם עד הפינה החיצונית, הפאה האחורית קצרה');
+  }
+  {
+    const { a, b, m } = meet('right', 'direct');
+    check(a.box.w === 1000 && b.box.z === 0 && !m.parts.some((p) => /batten/.test(p.id)), 'גרונג בלי לטות: מהקיר עד הקיר');
+  }
+  const butt = build('cladding', twoWalls);
+  check(!butt.parts.some((p) => p.miter), 'חיבור ישר (ברירת מחדל): בלי גרונג');
+  // הרכבה מסובבת: הפאה, החירוץ והגרונג מסתובבים עם החלק
+  const placed = placeModel(build('cladding', { ...twoWalls, corner: 'miter', partFinishes: { 'w1-f1-panel-1': 'cnc:milled-fine' } }), { rot: 90 });
+  const pp = placed.parts.find((p) => p.id === 'w1-f1-panel-1');
+  check(pp.face === '+x' && pp.mill.normal === '+x' && pp.miter[0].end === '-z' && pp.miter[0].short === '+x', 'הרכבה 90°: פאה, חירוץ וגרונג מסתובבים');
+}
+
 // ---- כיוון פתיחה לדלת, וגימור לכל לוח ----
 {
   console.log('\nכיוון פתיחה וגימור ללוח');

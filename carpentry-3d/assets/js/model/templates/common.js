@@ -153,6 +153,7 @@ export const FINISHES_FLUSH = finishList({ glass: false, fluted: false });
  * יושב; דופן (ציר x) — לפי צד הרוחב. לוח אופקי (מדף, גג) — null (אין גימור).
  */
 export function partNormal(p, bounds) {
+  if (p.face) return p.face;   // התבנית יודעת איזו פאה פונה החוצה (למשל חיפוי: אל החדר)
   const b = p.box;
   if (p.axis === 'z') return b.z + b.d / 2 < (bounds?.d ?? 0) * 0.3 ? '-z' : '+z';
   if (p.axis === 'x') return b.x + b.w / 2 < (bounds?.w ?? 0) / 2 ? '-x' : '+x';
