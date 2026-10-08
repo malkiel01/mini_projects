@@ -2,8 +2,9 @@
 // תחתונים ועליונים של מטבח כשני אלמנטים, ספרייה שחלקה התחתון רחב יותר.
 //
 // כל פריט הוא מודל שנבנה מהתבנית שלו, ומונח במיקום (x,y,z במ"מ) ובסיבוב
-// סביב הציר האנכי (0/90/180/270). הזזה וסיבוב הם על התיבות עצמן — כך
-// אותם חלקים משמשים לתלת מימד, לרשימת החיתוך ולמחיר של ההרכבה כולה.
+// סביב הציר האנכי — בכל זווית. ברבעים (0/90/180/270) הסיבוב נאפה לתוך
+// התיבות עצמן; בשאר הזוויות החלקים מקבלים xf (xform.js) — כך אותם חלקים
+// משמשים לתלת מימד, לרשימת החיתוך ולמחיר של ההרכבה כולה.
 // ה-ids וקבוצות התנועה מקבלים קידומת של הפריט, כדי ששתי ספריות לא יחלקו
 // "door-1". הסיבוב הוא סיבוב טהור (לא שיקוף), ולכן כיוון פתיחת הדלתות
 // נשמר; רק ציר העובי וכיוון הסיבים מתחלפים ב-90°/270°.
@@ -11,6 +12,8 @@
 // "מאוחד" (joined): ההרכבה נחשבת מוצר אחד — חלקים זהים מכל האלמנטים
 // מתקבצים ברשימת החיתוך ושעות העבודה מצטברות. לא מאוחד: כל אלמנט נשאר
 // פריט ייצור בפני עצמו, והפלט מפורט לפי אלמנט.
+
+import { normYaw, aroundXf, applyXf, aabbOf, compose, xfPart, xfHardware, xfMotion, shiftPart } from './xform.js';
 
 /** סיבוב נקודה (x,z) בתוך תיבת גבולות w×d סביב הציר האנכי, ב-90° נגד כיוון השעון במבט־על. */
 function rotPoint(x, z, rot, w, d) {
@@ -21,75 +24,65 @@ function rotPoint(x, z, rot, w, d) {
     default: return [x, z];
   }
 }
-/** תיבה אחרי סיבוב: שני הקצוות המנוגדים מסתובבים, והתיבה החדשה נמתחת ביניהם. */
-function rotBox(b, rot, w, d) {
-  const [x0, z0] = rotPoint(b.x, b.z, rot, w, d), [x1, z1] = rotPoint(b.x + b.w, b.z + b.d, rot, w, d);
-  return { x: Math.min(x0, x1), y: b.y, z: Math.min(z0, z1), w: Math.abs(x1 - x0), h: b.h, d: Math.abs(z1 - z0) };
-}
-const swapAxis = (a, rot) => (rot === 90 || rot === 270 ? (a === 'x' ? 'z' : a === 'z' ? 'x' : a) : a);
-function rotEdges(e, rot) {
-  if (!e) return e;
-  if (rot === 90) return { front: e.right, back: e.left, left: e.front, right: e.back, top: e.top, bottom: e.bottom };
-  if (rot === 180) return { front: e.back, back: e.front, left: e.right, right: e.left, top: e.top, bottom: e.bottom };
-  if (rot === 270) return { front: e.left, back: e.right, left: e.back, right: e.front, top: e.top, bottom: e.bottom };
-  return e;
-}
-function rotVec(v, rot) {
-  const [x, y, z] = v;
-  switch (rot) {
-    case 90: return [z, y, -x];
-    case 180: return [-x, y, -z];
-    case 270: return [-z, y, x];
-    default: return v;
-  }
-}
-/** כיוון כמחרוזת ('+x', '-z'…) אחרי סיבוב — לפאה החיצונית, לחירוץ ולגרונג. */
-function rotDir(dir, rot) {
-  if (!dir || !rot) return dir;
-  const i = 'xyz'.indexOf(dir[1]), v = [0, 0, 0];
-  v[i] = dir[0] === '-' ? -1 : 1;
-  const r = rotVec(v, rot), j = r.findIndex((c) => c !== 0);
-  return (r[j] < 0 ? '-' : '+') + 'xyz'[j];
+/**
+ * זווית סיבוב לאלמנט: כל זווית (מעוגלת למעלה שלמה), אבל ליד רבע — עד `snap`
+ * מעלות מ-0/90/180/270 — נצמדת אליו. הזוויות האלה הן הנפוצות, ובהן החלקים
+ * נשארים מקבילים לצירים.
+ */
+export function snapRot(rot, snap = 6) {
+  const r = normYaw(Number(rot) || 0);
+  const q = Math.round(r / 90) * 90;
+  return Math.abs(r - q) <= snap ? normYaw(q) : normYaw(Math.round(r));
 }
 
 /**
  * מניח מודל במקום: מחזיר חלקים ופרזול חדשים (המקור לא משתנה).
  * @param model  תוצאת build
  * @param pos    [x, y, z] — פינת הגבולות התחתונה-השמאלית-האחורית אחרי הסיבוב
- * @param rot    0 | 90 | 180 | 270
+ * @param rot    זווית במעלות, כל זווית. הרבע הקרוב (0/90/180/270) נאפה לתוך
+ *               התיבות כמו תמיד; השארית (עד ±45°) היא סיבוב סביב מרכז המודל,
+ *               והחלקים מקבלים xf (ראו xform.js). הגבולות — התיבה העוטפת.
  * @param prefix קידומת ל-ids ולקבוצות תנועה (למשל "e1:")
  */
 export function placeModel(model, { pos = [0, 0, 0], rot = 0, prefix = '' } = {}) {
   const { w, d } = model.bounds;
-  const r = [0, 90, 180, 270].includes(rot) ? rot : 0;
+  const r = normYaw(Number(rot) || 0);
+  const q = (Math.round(r / 90) * 90) % 360, rho = r - (Math.round(r / 90) * 90);
   const [px, py, pz] = pos;
+  const [qx, qz] = rotPoint(0, 0, q, w, d);
+  let X = { yaw: q, x: qx, z: qz };
+  let bw = q % 180 === 90 ? d : w, bd = q % 180 === 90 ? w : d;
+  if (Math.abs(rho) > 1e-9) {
+    const R = aroundXf(rho, bw / 2, bd / 2);
+    const box = aabbOf([[0, 0], [bw, 0], [0, bd], [bw, bd]].map(([x, z]) => applyXf(R, [x, 0, z])));
+    X = compose({ yaw: 0, x: -box.x, z: -box.z }, compose(R, X));
+    bw = box.w; bd = box.d;
+  }
+  X = compose({ yaw: 0, x: px, z: pz }, X);
   const motions = new Map();   // אותו אובייקט תנועה → אותו אובייקט מסובב (הצופה מזהה קבוצה לפי group)
-  const moveMotion = (m) => {
+  const motionOf = (m, total, baked) => {
     if (!m) return m;
-    if (!motions.has(m)) {
-      if (m.kind === 'hinge') {
-        const [x, z] = rotPoint(m.pivot[0], m.pivot[2], r, w, d);
-        motions.set(m, { ...m, group: prefix + m.group, pivot: [x + px, m.pivot[1] + py, z + pz], ...(m.axis ? { axis: rotVec(m.axis, r) } : {}) });
-      } else motions.set(m, { ...m, group: prefix + m.group, vec: rotVec(m.vec, r) });
+    const key = baked ? 'b' : 'l';
+    if (!motions.has(m)) motions.set(m, {});
+    const c = motions.get(m);
+    if (!c[key]) {
+      const t = baked ? xfMotion(m, total) : { ...m };
+      if (t.kind === 'hinge') t.pivot = [t.pivot[0], t.pivot[1] + py, t.pivot[2]];
+      c[key] = { ...t, group: prefix + m.group };
     }
-    return motions.get(m);
+    return c[key];
   };
   const parts = model.parts.map((p) => {
-    const b = rotBox(p.box, r, w, d);
-    return { ...p, id: prefix + p.id, box: { ...b, x: b.x + px, y: b.y + py, z: b.z + pz }, axis: swapAxis(p.axis, r), grain: swapAxis(p.grain, r), edges: rotEdges(p.edges, r), motion: moveMotion(p.motion),
-      ...(p.face ? { face: rotDir(p.face, r) } : {}),
-      ...(p.mill ? { mill: { ...p.mill, normal: rotDir(p.mill.normal, r) } } : {}),
-      ...(p.miter ? { miter: p.miter.map((m) => ({ ...m, end: rotDir(m.end, r), short: rotDir(m.short, r) })) } : {}) };
+    const out = xfPart(p, X, motionOf);
+    return { ...out, id: prefix + p.id, box: { ...out.box, y: out.box.y + py } };
   });
   const hardware = model.hardware.map((h) => {
-    const out = { ...h, id: prefix + h.id, for: h.for ? prefix + h.for : h.for };
+    const out = { ...xfHardware(h, X), id: prefix + h.id, for: h.for ? prefix + h.for : h.for };
+    if (out.pos) out.pos = [out.pos[0], out.pos[1] + py, out.pos[2]];
     if (h.mount) out.mount = prefix + h.mount;
-    if (h.drill && prefix) out.drill = h.drill.map((d) => ({ ...d, part: prefix + d.part }));
-    if (h.pos) { const [x, z] = rotPoint(h.pos[0], h.pos[2], r, w, d); out.pos = [x + px, h.pos[1] + py, z + pz]; }
-    if (h.horizontal !== undefined && (r === 90 || r === 270)) out.horizontal = !h.horizontal;
+    if (h.drill && prefix) out.drill = h.drill.map((dd) => ({ ...dd, part: prefix + dd.part }));
     return out;
   });
-  const bw = r === 90 || r === 270 ? d : w, bd = r === 90 || r === 270 ? w : d;
   return { parts, hardware, bounds: { x: px, y: py, z: pz, w: bw, h: model.bounds.h, d: bd } };
 }
 
@@ -111,8 +104,13 @@ export function combine(items, { joined = false, name = 'הרכבה' } = {}) {
   const shift = [-minX, -minY, -minZ];
   const parts = [], hardware = [], warnings = [];
   for (const it of shown) {
-    for (const p of it.placed.parts) parts.push(shift.some(Boolean) ? { ...p, box: { ...p.box, x: p.box.x + shift[0], y: p.box.y + shift[1], z: p.box.z + shift[2] }, motion: shiftMotion(p.motion, shift) } : p);
-    for (const h of it.placed.hardware) hardware.push(h.pos && shift.some(Boolean) ? { ...h, pos: [h.pos[0] + shift[0], h.pos[1] + shift[1], h.pos[2] + shift[2]] } : h);
+    // חלק עם xf: ההזזה נכנסת ל-xf, והתנועה שלו מקומית (לא זזה)
+    for (const p of it.placed.parts) parts.push(shift.some(Boolean) ? { ...shiftPart(p, shift), motion: p.xf ? (shift[1] ? shiftMotion(p.motion, [0, shift[1], 0]) : p.motion) : shiftMotion(p.motion, shift) } : p);
+    for (const h of it.placed.hardware) {
+      if (!shift.some(Boolean)) hardware.push(h);
+      else if (h.xf) hardware.push({ ...h, xf: { ...h.xf, x: h.xf.x + shift[0], z: h.xf.z + shift[2] }, ...(h.pos ? { pos: [h.pos[0], h.pos[1] + shift[1], h.pos[2]] } : {}) });
+      else hardware.push(h.pos ? { ...h, pos: [h.pos[0] + shift[0], h.pos[1] + shift[1], h.pos[2] + shift[2]] } : h);
+    }
     for (const wtxt of it.model.warnings || []) warnings.push(`${it.name || `אלמנט ${it.key}`}: ${wtxt}`);
   }
   // חפיפה בין אלמנטים — אזהרה, לא חסימה (הנגר אולי מתכוון לחיתוך באתר)

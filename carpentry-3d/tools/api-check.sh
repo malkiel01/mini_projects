@@ -123,7 +123,8 @@ P2=$(call "$C" '{"action":"project-save","name":"ארונית","client_id":2,"te
 ok 'פרויקט שני' "$P2" "d['project']['id']==3"
 AS=$(call "$C" '{"action":"assembly-save","name":"מזווה וארונית","client_id":2,"items":[{"project_id":1,"pos":[0,0,0],"rot":0},{"project_id":3,"pos":[0,2000,0],"rot":90,"visible":true}],"joined":false}')
 ok 'יצירת הרכבה עם הפרויקטים' "$AS" "d['assembly']['id']==1 and len(d['assembly']['items'])==2 and d['assembly']['items'][1]['rot']==90 and len(d['assembly']['projects'])==2 and d['assembly']['client_name']=='לוי-כץ'"
-ok 'סיבוב לא חוקי → 0' "$(call "$C" '{"action":"assembly-save","id":1,"name":"מזווה וארונית","client_id":2,"items":[{"project_id":1,"rot":45}],"joined":true}')" "d['assembly']['items'][0]['rot']==0 and d['assembly']['joined']==True and len(d['assembly']['projects'])==1"
+ok 'סיבוב חופשי נשמר (37.5°), ומחוץ לטווח מנורמל' "$(call "$C" '{"action":"assembly-save","id":1,"name":"מזווה וארונית","client_id":2,"items":[{"project_id":1,"rot":37.5},{"project_id":1,"rot":-90},{"project_id":1,"rot":"x"}],"joined":true}')" "[i['rot'] for i in d['assembly']['items']]==[37.5,270,0] and d['assembly']['joined']==True"
+ok 'חזרה לפריט אחד' "$(call "$C" '{"action":"assembly-save","id":1,"name":"מזווה וארונית","client_id":2,"items":[{"project_id":1,"rot":0}],"joined":true}')" "len(d['assembly']['projects'])==1"
 ok 'רשימת הרכבות של הלקוח' "$(call "$C" '{"action":"assemblies-list","client_id":2}')" "len(d['assemblies'])==1 and d['assemblies'][0]['joined']==True"
 ok 'נגר אחר לא רואה' "$(call "$C2" '{"action":"assembly-get","id":1}')" "d['success']==False"
 ok 'מנהל רואה' "$(call "$A" '{"action":"assembly-get","id":1}')" "d['assembly']['owner_name']=='דן'"

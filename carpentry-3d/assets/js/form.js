@@ -41,12 +41,12 @@ export function renderForm(root, tpl, values, onChange) {
         fields.set(p.key, { p, row, input: null, widget: () => renderColumnsEditor(box, tpl, values, p.key, () => { refresh(); onChange(values); }) });
         continue;
       }
-      if (p.type === 'mm' || p.type === 'int') {
+      if (p.type === 'mm' || p.type === 'int' || p.type === 'deg') {
         input = document.createElement('input');
         input.type = 'number';
         input.inputMode = 'numeric';
         input.min = p.min; input.max = p.max; input.step = 1;
-        input.dataset.step = p.type === 'mm' ? 10 : 1;   // החיצים קופצים ב-10 מ"מ; בהקלדה כל מספר שלם
+        input.dataset.step = p.type === 'mm' ? 10 : p.type === 'deg' ? 5 : 1;   // החיצים קופצים ב-10 מ"מ; בהקלדה כל מספר שלם
         input.value = values[p.key];
       } else {
         input = document.createElement('select');
@@ -64,6 +64,20 @@ export function renderForm(root, tpl, values, onChange) {
       }
       input.name = p.key;
       row.appendChild(input);
+      // זוויות מועדפות (למשל 90/180/270): לחצנים שממלאים את השדה בהקשה
+      if (p.presets) {
+        const chips = document.createElement('span');
+        chips.className = 'presets';
+        chips.innerHTML = p.presets.map((v) => `<button type="button" data-preset="${v}">${v}${p.type === 'deg' ? '°' : ''}</button>`).join('');
+        chips.addEventListener('click', (e) => {
+          const b = e.target.closest('[data-preset]');
+          if (!b) return;
+          e.preventDefault();
+          input.value = b.dataset.preset;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        row.appendChild(chips);
+      }
       if (p.hint) row.insertAdjacentHTML('beforeend', `<small class="hint">${p.hint}</small>`);
       sec.appendChild(row);
       fields.set(p.key, { p, row, input });
@@ -80,7 +94,11 @@ export function renderForm(root, tpl, values, onChange) {
   }
 
   function refresh() {
-    for (const { p, row, widget } of fields.values()) { row.hidden = !visible(p, values); if (widget && !row.hidden) widget(); }
+    for (const { p, row, widget } of fields.values()) {
+      row.hidden = !visible(p, values);
+      if (widget && !row.hidden) widget();
+      if (p.presets) row.querySelectorAll('[data-preset]').forEach((b) => b.classList.toggle('is-on', Number(b.dataset.preset) === Number(values[p.key])));
+    }
   }
   /** מציג בשדות את הערכים כפי שהמודל הצמיד אותם (אחרי clamp). */
   function sync(clamped) {

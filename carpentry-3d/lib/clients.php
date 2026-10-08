@@ -132,15 +132,17 @@ function assemblyGet(array $user, int $id): array {
     return $a;
 }
 
-/** פריטי ההרכבה: project_id, pos [x,y,z], rot (0/90/180/270), visible. */
+/** פריטי ההרכבה: project_id, pos [x,y,z], rot (מעלות, כל זווית ב-[0,360) — עד עשירית), visible. */
 function cleanItems(array $items): array {
     $out = [];
     foreach ($items as $it) {
         if (!is_array($it) || !isset($it['project_id'])) continue;
         $pos = is_array($it['pos'] ?? null) ? array_values($it['pos']) : [0, 0, 0];
         $pos = [ (float) ($pos[0] ?? 0), (float) ($pos[1] ?? 0), (float) ($pos[2] ?? 0) ];
-        $rot = (int) ($it['rot'] ?? 0);
-        $out[] = ['project_id' => (int) $it['project_id'], 'pos' => $pos, 'rot' => in_array($rot, [0, 90, 180, 270], true) ? $rot : 0, 'visible' => !isset($it['visible']) || (bool) $it['visible']];
+        $rot = is_numeric($it['rot'] ?? null) ? fmod(round((float) $it['rot'], 1), 360.0) : 0.0;
+        if ($rot < 0) $rot += 360.0;
+        $rot = $rot == floor($rot) ? (int) $rot : $rot;
+        $out[] = ['project_id' => (int) $it['project_id'], 'pos' => $pos, 'rot' => $rot, 'visible' => !isset($it['visible']) || (bool) $it['visible']];
         if (count($out) >= 40) break;
     }
     return $out;

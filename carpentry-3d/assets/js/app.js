@@ -19,7 +19,7 @@ import { createAccessoriesUI } from './accessories-ui.js';
 import { createCncUI } from './cnc-ui.js';
 import { api, loadLast, saveLast } from './store.js';
 import { watchNumbers } from './numfield.js';
-import { placeModel, combine, snapTo, dragSnap, dragSnapY } from './model/assembly.js';
+import { placeModel, combine, snapTo, dragSnap, dragSnapY, snapRot } from './model/assembly.js';
 import { totalWeight, partWeight, drillingList } from './model/physics.js';
 import { toSTL, printSize } from './model/stl.js';
 import { millText } from './model/milling.js';
@@ -156,6 +156,9 @@ async function enter() {
       constrainY: (i, dy) => dragSnapY(itemBounds(), i, dy, { skip: hiddenItems() }),
       end: (i, dx, dz, dy) => moveItemBy(i, dx, dz, dy),
       rotate: (i, deg) => rotateItemBy(i, deg),
+      // תוך כדי הסיבוב: ההצמדה לרבעים (0/90/180/270) כבר בתצוגה, והזווית בתווית על הבמה
+      snapRotate: (i, deg) => { const cur = state.assembly.items[i]?.rot || 0; return ((snapRot(cur + deg) - cur) % 360 + 540) % 360 - 180; },
+      rotating: (i, deg) => rotLabel(deg === null ? null : snapRot((state.assembly.items[i]?.rot || 0) + deg)),
     } });
     materialsUI = createMaterialsUI($('#mlib'), {
       onChange: () => { if (state.project) { form = renderForm($('#form'), currentTemplate(), state.values, onFormChange); rebuild(); } },
@@ -415,7 +418,9 @@ function loadProject(p, { fromAssembly = null } = {}) {
   if (history.state?.app === 'carpentry' && history.state.kind === 'drawer') history.replaceState({ app: 'carpentry', kind: 'project' }, '');
   else if (!wasOpen) pushNav('project');
   if (!TEMPLATES[p.template_key]) { toast(`תבנית לא מוכרת: ${p.template_key}`, 'error'); return; }
-  state.values = { ...defaults(currentTemplate()), ...p.values };
+  // ערכים ישנים → המפתחות הנוכחיים, לפני המיזוג עם ברירות המחדל (כדי שהטופס יציג את מה שנבנה)
+  const tpl = currentTemplate();
+  state.values = { ...defaults(tpl), ...(tpl.migrate ? tpl.migrate({ ...p.values }) : p.values) };
   state.dirty = false;
   saveLast({ projectId: p.id });
   $('#template-name').textContent = p.name;
@@ -543,7 +548,7 @@ $('#warnings').addEventListener('click', (e) => { if (e.target.closest('.warning
 function renderSummary(m) {
   const b = m.bounds;
   $('#summary').innerHTML = `
-    <span>${b.w} × ${b.h} × ${b.d} מ"מ</span>
+    <span>${Math.round(b.w)} × ${Math.round(b.h)} × ${Math.round(b.d)} מ"מ</span>
     <span>${m.parts.length} חלקים</span>
     <span>${m.hardware.reduce((n, h) => n + (h.kind === 'info' ? 0 : h.qty || 1), 0)} פריטי פרזול</span>
     <span title="נפח × צפיפות החומר, לכל חלק">⚖ ${totalWeight(m.parts)} ק"ג</span>`;
@@ -566,7 +571,7 @@ function showPart(p) {
       <dt>חומר</dt><dd>${esc(m.name)}</dd>
       <dt>סיבים</dt><dd>${grain}</dd>
       <dt>קנט</dt><dd>${edges}</dd>
-      <dt>מיקום</dt><dd>x ${Math.round(p.box.x)} · y ${Math.round(p.box.y)} · z ${Math.round(p.box.z)}</dd>
+      <dt>מיקום</dt><dd>x ${Math.round(p.box.x)} · y ${Math.round(p.box.y)} · z ${Math.round(p.box.z)}</dd>${p.xf ? `<dt>סיבוב</dt><dd>${Math.round(p.xf.yaw * 10) / 10}° (מיקום במערכת של הקיר / האלמנט)</dd>` : ''}
       <dt>משקל</dt><dd>${partWeight(p)} ק"ג</dd>
       ${p.note ? `<dt>הערה</dt><dd>${esc(p.note)}</dd>` : ''}
       ${partControls(p)}
@@ -807,7 +812,7 @@ function printAll(m) {
   const client = state.project ? p.client : clientName(state.assembly.client_id);
   const kind = state.project ? currentTemplate().name : `הרכבה · ${state.assembly.joined ? 'אלמנט מאוחד' : 'אלמנטים נפרדים'}`;
   box.innerHTML = `
-    <header class="print__head"><h1>${esc(p.name)}</h1><div>${client ? `לקוח: ${esc(client)} · ` : ''}${esc(kind)} · ${m.bounds.w} × ${m.bounds.h} × ${m.bounds.d} מ"מ · ${new Date().toLocaleDateString('he-IL')}</div></header>
+    <header class="print__head"><h1>${esc(p.name)}</h1><div>${client ? `לקוח: ${esc(client)} · ` : ''}${esc(kind)} · ${Math.round(m.bounds.w)} × ${Math.round(m.bounds.h)} × ${Math.round(m.bounds.d)} מ"מ · ${new Date().toLocaleDateString('he-IL')}</div></header>
     <section class="print__drawings">${drawAll(m).map((v) => `<figure><figcaption>${v.name}</figcaption>${v.svg}</figure>`).join('')}</section>
     <section class="print__page">${cutListHtml(m)}</section>
     ${viewer ? '' : `<section class="print__page">${priceHtml(m)}</section>`}
@@ -1111,13 +1116,14 @@ function wireAssemblyUi() {
   items.addEventListener('change', (e) => {
     const row = e.target.closest('[data-i]'); if (!row) return;
     const it = state.assembly.items[Number(row.dataset.i)];
-    if (e.target.name === 'rot') { it.rot = Number(e.target.value); markDirty(); renderItems(); rebuildAssembly(); }
+    if (e.target.name === 'rot') setItemRot(Number(row.dataset.i), Number(e.target.value) || 0);
     else if (e.target.name === 'visible') { it.visible = e.target.checked; markDirty(); renderItems(); rebuildAssembly(); }
   });
   items.addEventListener('click', async (e) => {
     const b = e.target.closest('button[data-act]'); if (!b) return;
     const row = b.closest('[data-i]'); const i = Number(row.dataset.i); const it = state.assembly.items[i];
     const act = b.dataset.act;
+    if (act === 'rot') { setItemRot(i, Number(b.dataset.rot)); return; }
     if (act === 'remove') { state.assembly.items.splice(i, 1); markDirty(); renderItems(); rebuildAssembly(true); }
     else if (act === 'edit') { const back = { id: state.assembly.id, name: state.assembly.name }; closeDrawer('#projects', true); await openProject(it.project_id, { fromAssembly: back }); toast('עורכים את האלמנט; "↩ חזרה להרכבה" בכרטיס הפרויקט'); }
     else if (act === 'floor') { it.pos[1] = 0; markDirty(); renderItems(); rebuildAssembly(); }
@@ -1162,13 +1168,21 @@ function moveItemBy(i, dx, dz, dy = 0) {
   viewer.nudgeTarget(after[0] - before[0], after[1] - before[1], after[2] - before[2]);
   highlightItem(i);
 }
-/** סיבוב בגרירה: הסיבוב החדש, והאלמנט נשאר במקומו — המרכז שלו לא זז. */
-function rotateItemBy(i, deg) {
+/** תווית הזווית על הבמה בזמן סיבוב בגרירה (null — מסתירה). */
+function rotLabel(deg) {
+  let el = document.querySelector('.rot-label');
+  if (!el) { el = document.createElement('div'); el.className = 'rot-label'; $('#stage').parentElement.appendChild(el); }
+  el.hidden = deg === null;
+  if (deg !== null) { el.textContent = `${deg}°`; el.classList.toggle('is-snap', deg % 90 === 0); }
+}
+/** סיבוב בגרירה: הסיבוב החדש (בכל זווית; ליד רבע — נצמד), והאלמנט נשאר במקומו — המרכז שלו לא זז. */
+function rotateItemBy(i, deg) { setItemRot(i, (state.assembly.items[i]?.rot || 0) + deg); }
+function setItemRot(i, value) {
   const it = state.assembly.items[i];
   const p = it && state.assembly.projects.find((x) => x.id === it.project_id);
   if (!p) return;
   const b0 = itemBounds()[i];
-  const rot = (((it.rot || 0) + deg) % 360 + 360) % 360;
+  const rot = snapRot(value);
   const b1 = placeModel(modelFor(p), { pos: it.pos, rot }).bounds;
   const before = moveShift();
   it.rot = rot;
@@ -1313,7 +1327,8 @@ function renderItems() {
         <label>Z (עומק)<input type="number" step="1" data-step="10" data-axis="2" value="${Math.round(it.pos[2])}"></label>
       </div>
       <div class="asm-item__row">
-        <span>סיבוב</span><select name="rot">${[0, 90, 180, 270].map((r) => `<option value="${r}" ${it.rot === r ? 'selected' : ''}>${r}°</option>`).join('')}</select>
+        <span>סיבוב</span><input type="number" name="rot" class="asm-item__rot" step="1" data-step="5" value="${it.rot || 0}"><span class="unit">°</span>
+        <span class="presets">${[0, 90, 180, 270].map((r) => `<button type="button" data-act="rot" data-rot="${r}" class="${(it.rot || 0) === r ? 'is-on' : ''}">${r}°</button>`).join('')}</span>
         ${others.length ? `<span>הצמדה ביחס ל</span><select name="ref">${others.map((k) => `<option value="${k}">${esc(a.projects.find((x) => x.id === a.items[k].project_id)?.name || `אלמנט ${k + 1}`)}</option>`).join('')}</select>
         <button type="button" class="btn" data-act="above">מעל</button><button type="button" class="btn" data-act="right">מימין</button><button type="button" class="btn" data-act="left">משמאל</button><button type="button" class="btn" data-act="front">לפני</button><button type="button" class="btn" data-act="back">מאחור</button><button type="button" class="btn" data-act="center">מרכוז</button>` : ''}
         <button type="button" class="btn" data-act="floor">לרצפה</button>

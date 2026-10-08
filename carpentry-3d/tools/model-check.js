@@ -9,7 +9,8 @@ import { build, cutList, hardwareList, defaults, template, optionsFor, allParams
 import * as M from '../assets/js/model/materials.js';
 import { estimate } from '../assets/js/model/pricing.js';
 import { resolveShares, editShare, normalizeLayout, layoutIsEmpty } from '../assets/js/model/layout.js';
-import { placeModel, combine, snapTo, dragSnap, dragSnapY } from '../assets/js/model/assembly.js';
+import { placeModel, combine, snapTo, dragSnap, dragSnapY, snapRot } from '../assets/js/model/assembly.js';
+import { applyXf, partAabb, partCorners, xfPart, compose } from '../assets/js/model/xform.js';
 import { TYPES, buildAccessory, paramsOf, faceOf, wheelHeight, FINISHES as ACC_FINISHES } from '../assets/js/model/accessories.js';
 import { nest, sheetCount } from '../assets/js/model/sheets.js';
 import { partWeight, totalWeight, boardWeight, hingeCount, hingeYs, hingeDrilling, slidingLeaf, SLIDING_SYSTEMS, slideLoad, drillingList, physicsWarnings, densityOf } from '../assets/js/model/physics.js';
@@ -546,6 +547,73 @@ console.log('אביזרים: ידיות, כפתורים, צירים, גלגלי�
   const tb = build('table', { wheels: 'hw:caster-fixed-50' });
   check(tb.hardware.filter((h) => h.kind === 'wheel').length === 4 && tb.bounds.h === 750 + wheelHeight(M.material('hw:caster-fixed-50')), 'שולחן על גלגלים');
   check(ACC_FINISHES.length >= 6, 'גימורים');
+}
+
+// ---- זוויות חופשיות: הרכבה וקירות חיפוי ----
+{
+  console.log('\nזוויות חופשיות');
+  check(snapRot(93) === 90 && snapRot(84) === 90 && snapRot(37.4) === 37 && snapRot(-90) === 270 && snapRot(357) === 0 && snapRot(185) === 180, 'הצמדה לרבעים בטווח 6°, אחרת מעלה שלמה');
+  // xf: הלוך-חזור וקומפוזיציה
+  const A = { yaw: 30, x: 100, z: -50 }, B = { yaw: 45, x: 10, z: 20 };
+  const pt = [7, 3, 11], ab = applyXf(compose(A, B), pt), seq = applyXf(A, applyXf(B, pt));
+  check(ab.every((v, i) => Math.abs(v - seq[i]) < 1e-6), 'compose(A,B) = A∘B');
+  const q = xfPart({ id: 't', box: { x: 0, y: 0, z: 0, w: 600, h: 100, d: 18 }, axis: 'z', grain: 'x', edges: { front: true }, face: '+z' }, { yaw: 90, x: 0, z: 600 });
+  check(!q.xf && q.box.w === 18 && q.box.d === 600 && q.axis === 'x' && q.grain === 'z' && q.face === '+x', 'רבע נאפה לתיבה מקבילה (צירים ופאה מסתובבים)');
+  // הרכבה ב-30°: אותה רשימת חיתוך, חלקים עם xf, הגבולות עוטפים את כל הקודקודים
+  const bc = build('bookcase', { columns: 2, doorType: 'wood' });
+  const pl = placeModel(bc, { pos: [100, 0, 200], rot: 30 });
+  check(pl.parts.every((p) => p.xf && Math.abs(p.xf.yaw - 30) < 1e-9), 'הרכבה 30°: כל החלקים עם xf');
+  const corners = pl.parts.flatMap(partCorners);
+  const minx = Math.min(...corners.map((c) => c[0])), maxx = Math.max(...corners.map((c) => c[0])), minz = Math.min(...corners.map((c) => c[2])), maxz = Math.max(...corners.map((c) => c[2]));
+  // (החלקים עצמם יכולים להיות מעט בתוך גבולות המוצר — מרווחי דלתות)
+  check(minx >= 100 - 0.01 && minz >= 200 - 0.01 && maxx <= 100 + pl.bounds.w + 0.01 && maxz <= 200 + pl.bounds.d + 0.01 && minx - 100 < 3 && minz - 200 < 3, `הגבולות עוטפים את כל הקודקודים (${Math.round(pl.bounds.w)}×${Math.round(pl.bounds.d)})`);
+  const ex = (b) => (b.width ?? bc.bounds.w) * Math.cos(Math.PI / 6) + bc.bounds.d * Math.sin(Math.PI / 6);
+  check(Math.abs(pl.bounds.w - ex({})) < 0.5, 'רוחב עוטף = w·cos30 + d·sin30');
+  const cl = (m) => JSON.stringify(cutList(m).boards);
+  check(cl({ ...bc, parts: pl.parts }) === cl(bc), 'רשימת החיתוך לא משתנה בסיבוב חופשי');
+  const comb = combine([{ model: bc, pos: [0, 0, 0], rot: 0 }, { model: bc, pos: [2000, 0, 0], rot: 30 }]);
+  check(comb.parts.filter((p) => p.xf).length === bc.parts.length && Math.abs(comb.bounds.w - (2000 + pl.bounds.w)) < 0.5, 'combine: חלקים מסובבים נשארים עם xf, הגבולות כוללים אותם');
+  const doorM = pl.parts.find((p) => p.motion && p.motion.kind === 'hinge').motion;
+  check(doorM.group.length > 0 && doorM.pivot && pl.parts.filter((p) => p.motion === doorM).length >= 1, 'דלת בהרכבה מסובבת: התנועה מקומית (הצופה מסובב את הצומת)');
+  const stl = toSTL(pl.parts, { scale: 10, minT: 0 });
+  const f = new Float32Array(stl.buffer.slice(84, 84 + 48));
+  check(Math.abs(Math.hypot(f[0], f[1], f[2]) - 1) < 1e-5 && Math.abs(f[0]) > 0.1 && Math.abs(f[2]) > 0.1, 'STL: הנורמל של פאה מסובבת מסתובב');
+
+  // חיפוי: זווית פינה חופשית — פרויקט ישן ("ימינה/שמאלה") עובר לזווית
+  const tpl = template('cladding');
+  const mig = tpl.migrate({ walls: 3, turn2: 'right', turn3: 'left' });
+  check(mig.angle2 === 90 && mig.angle3 === 270 && mig.turn2 === undefined, 'פרויקט ישן: ימינה → 90°, שמאלה → 270°');
+  check(allParams(tpl).find((p) => p.key === 'angle2').presets.join() === '90,180,270', 'קיצורים לזוויות 90/180/270');
+  const legacy = build('cladding', { walls: 2, turn2: 'right', style: 'flat', len1: 1000, len2: 800 });
+  const now = build('cladding', { walls: 2, angle2: 90, style: 'flat', len1: 1000, len2: 800 });
+  check(JSON.stringify(legacy.parts.map((p) => p.box)) === JSON.stringify(now.parts.map((p) => p.box)), 'ימינה = 90° (אותן תיבות)');
+  const straight = build('cladding', { walls: 2, angle2: 180, style: 'flat', len1: 1000, len2: 800 });
+  check(straight.bounds.w === 1800 && !straight.parts.some((p) => p.miter || p.xf), '180°: קיר ישר באורך 1800, בלי גרונג');
+  for (const ang of [60, 135, 225, 300]) {
+    const m = build('cladding', { walls: 2, angle2: ang, style: 'flat', len1: 1000, len2: 800 });
+    const a = m.parts.find((p) => p.id === 'w1-f1-panel-1'), b = m.parts.find((p) => p.id === 'w2-f1-panel-1');
+    // קו הגרונג: הקודקודים המשופעים של שני הלוחות נפגשים
+    const mit = (p) => {
+      const bx = p.box, half = [bx.w / 2, bx.h / 2, bx.d / 2], c = [bx.x + half[0], bx.y + half[1], bx.z + half[2]];
+      return [-1, 1].flatMap((sx) => [-1, 1].map((sz) => {
+        const v = [sx * half[0], -half[1], sz * half[2]];
+        for (const mm of p.miter || []) {
+          const ai = 'xyz'.indexOf(mm.end[1]), s1 = mm.end[0] === '-' ? -1 : 1, bi = 'xyz'.indexOf(mm.short[1]), t1 = mm.short[0] === '-' ? -1 : 1;
+          const lim = half[ai] - mm.cut * (t1 * v[bi] + half[bi]) / (2 * half[bi]);
+          if (s1 * v[ai] > lim + 1e-6) v[ai] = s1 * lim;
+        }
+        return applyXf(p.xf, [c[0] + v[0], c[1] + v[1], c[2] + v[2]]).map((n) => Math.round(n * 10) / 10).join();
+      }));
+    };
+    const shared = mit(a).filter((x) => mit(b).includes(x)).length;
+    check(b.xf && a.miter && b.miter && shared === 2, `${ang}°: קיר 2 מסובב, שני הלוחות נפגשים בקו הגרונג (${shared} קודקודים)`);
+    check(m.warnings.some((w) => new RegExp(`${ang}°.*גרונג ${Math.abs(180 - ang) / 2}°`).test(w)) && new RegExp(`גרונג ${Math.abs(180 - ang) / 2}°`).test(a.note), `${ang}°: גרונג ${Math.abs(180 - ang) / 2}° באזהרה ובהערה`);
+    const bb = m.parts.reduce((acc, p) => { const x = partAabb(p); return [Math.min(acc[0], x.x), Math.min(acc[1], x.z)]; }, [Infinity, Infinity]);
+    check(Math.abs(bb[0]) < 1e-6 && Math.abs(bb[1]) < 1e-6, `${ang}°: המודל מנורמל לראשית`);
+  }
+  const acute = build('cladding', { walls: 2, angle2: 60, style: 'flat', len1: 1000, len2: 800 });
+  const bat = acute.parts.filter((p) => /^w1-batten/.test(p.id))[0];
+  check(Math.abs(bat.box.w - (1000 - 18 / Math.tan(Math.PI / 3))) < 0.01, 'זווית חדה: הלטות של קיר 1 נעצרות לפני קיר 2');
 }
 
 // ---- חיפוי: צד החירוץ, התקנה בלי לטות, גרונג בפינה ----

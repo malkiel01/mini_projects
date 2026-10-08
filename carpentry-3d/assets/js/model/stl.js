@@ -5,6 +5,8 @@
 // (המודל כפי שנבנה), בלי פרזול (קטן מדי בקנה מידה). הגופים חופפים מעט
 // במקומות שבהם לוחות נפגשים — כל פורס (slicer) מאחד גופים כאלה.
 
+import { applyXf, rotVecYaw } from './xform.js';
+
 /**
  * @param parts   רשימת החלקים של המודל (או ההרכבה)
  * @param scale   מחלק: 10 ל-1:10
@@ -19,7 +21,9 @@ export function toSTL(parts, { scale = 10, minT = 1.0 } = {}) {
     const dims = [b.w / scale, b.h / scale, b.d / scale];
     const pos = [b.x / scale, b.y / scale, b.z / scale];
     for (let i = 0; i < 3; i++) if (dims[i] < minT) { pos[i] -= (minT - dims[i]) / 2; dims[i] = minT; thickened += 1; }
-    boxes.push({ pos, dims });
+    // חלק מסובב בזווית (xf): התיבה מקומית, והקודקודים והנורמלים מסתובבים לעולם
+    const xf = p.xf ? { yaw: p.xf.yaw, x: p.xf.x / scale, z: p.xf.z / scale } : null;
+    boxes.push({ pos, dims, xf });
   }
   const n = boxes.length * 12;
   const buf = new ArrayBuffer(84 + n * 50);
@@ -28,11 +32,12 @@ export function toSTL(parts, { scale = 10, minT = 1.0 } = {}) {
   for (let i = 0; i < 80; i++) dv.setUint8(i, i < header.length ? header.charCodeAt(i) : 0);
   dv.setUint32(80, n, true);
   let off = 84;
-  const tri = (nrm, a, b, c) => {
-    for (const v of [nrm, a, b, c]) for (let i = 0; i < 3; i++) { dv.setFloat32(off, v[i], true); off += 4; }
-    dv.setUint16(off, 0, true); off += 2;
-  };
-  for (const { pos: [x, y, z], dims: [w, h, d] } of boxes) {
+  for (const { pos: [x, y, z], dims: [w, h, d], xf } of boxes) {
+    const P = (v) => applyXf(xf, v), N = (v) => (xf ? rotVecYaw(v, xf.yaw) : v);
+    const tri = (nrm, a, b, c) => {
+      for (const v of [N(nrm), P(a), P(b), P(c)]) for (let i = 0; i < 3; i++) { dv.setFloat32(off, v[i], true); off += 4; }
+      dv.setUint16(off, 0, true); off += 2;
+    };
     const X = x + w, Y = y + h, Z = z + d;
     // שש פאות, כל אחת שני משולשים, נגד כיוון השעון כשמביטים מבחוץ
     tri([0, 0, -1], [x, y, z], [x, Y, z], [X, Y, z]); tri([0, 0, -1], [x, y, z], [X, Y, z], [X, y, z]);          // אחור

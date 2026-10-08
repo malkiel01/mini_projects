@@ -187,6 +187,7 @@ export function applyFinish(face, finish, { material, normal = '+z', idPrefix })
     else box = { x: b.x + b.w, y: b.y, z: b.z + off, w: st, h: b.h, d: sw };
     const strip = part(`${idPrefix || face.id}-strip-${s + 1}`, 'סטריפ', box, { axis: normal === '+z' || normal === '-z' ? 'z' : 'x', grain: 'y', material: material || face.material, qtyKey: `strip-${sw}x${Math.round(b.h)}`, note: face.note });
     if (face.motion) strip.motion = face.motion;
+    if (face.xf) strip.xf = face.xf;   // לוח מסובב בזווית — הסטריפים באותה מערכת מקומית
     out.push(strip);
   }
   return out;
