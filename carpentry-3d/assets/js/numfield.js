@@ -24,15 +24,27 @@ function makeBtn(input, dir) {
   b.tabIndex = -1;
   b.textContent = dir > 0 ? '+' : '−';
   b.setAttribute('aria-label', dir > 0 ? 'הגדלה' : 'הקטנה');
-  let timer = null, interval = null;
+  // הצעד קורה רק בהקשה אמיתית: אצבע שירדה על החץ כדי לגלול את הכרטיס (זזה, או שהדפדפן
+  // ביטל אותה לטובת גלילה) לא משנה כלום. קודם הצעד קרה כבר ב-pointerdown — וגלילה בטלפון
+  // שהתחילה על חץ הזיזה בטעות דלת ב-10 מ"מ. לחיצה ארוכה (בלי תזוזה) ממשיכה לקפוץ.
+  let timer = null, interval = null, start = null, repeated = false;
   const stop = () => { clearTimeout(timer); clearInterval(interval); timer = interval = null; };
   b.addEventListener('pointerdown', (e) => {
-    e.preventDefault();                       // לא לגנוב פוקוס מהשדה ולא להקפיץ מקלדת
+    if (e.pointerType === 'mouse') e.preventDefault();   // לא לגנוב פוקוס מהשדה
     if (input.disabled || input.readOnly) return;
-    step(input, dir);
-    timer = setTimeout(() => { interval = setInterval(() => step(input, dir), 80); }, 450);
+    start = [e.clientX, e.clientY]; repeated = false;
+    timer = setTimeout(() => { repeated = true; step(input, dir); interval = setInterval(() => step(input, dir), 80); }, 450);
   });
-  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, stop);
+  b.addEventListener('pointermove', (e) => {
+    if (start && Math.hypot(e.clientX - start[0], e.clientY - start[1]) > 8) { start = null; stop(); }
+  });
+  b.addEventListener('pointerup', () => {
+    const tap = start && !repeated;
+    stop(); start = null;
+    if (tap) step(input, dir);
+  });
+  for (const ev of ['pointerleave', 'pointercancel']) b.addEventListener(ev, () => { start = null; stop(); });
+  b.addEventListener('contextmenu', (e) => e.preventDefault());
   return b;
 }
 

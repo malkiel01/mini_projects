@@ -19,7 +19,7 @@ export const TEMPLATES = { bookcase, wardrobe, dresser, kitchen, table, bed, cla
 
 import { physicsWarnings, doorClashes } from './physics.js';
 import { millWarnings, cncId } from './milling.js';
-import { applyPartEdits } from './partEdits.js';
+import { applyPartEdits, editSummary } from './partEdits.js';
 
 export function template(key) {
   const t = TEMPLATES[key];
@@ -112,7 +112,10 @@ export function build(key, values) {
   const clashWarnings = doorClashes(out.parts, manual, new Set(Object.keys(values.doorOpen || {})), clashPairs);
   out.doorClashes = clashPairs;
   applyPartFinishes(out, values.partFinishes, t);
-  out.warnings = [...(out.warnings || []), ...physicsWarnings(out.hardware || []), ...clashWarnings, ...millWarnings(out.parts || [])];
+  // רכיב שהוזז / שמידותיו / זוויתו שונו ביד — אזהרה, כדי שמרווח או חפיפה לא יפתיעו
+  const editWarnings = Object.entries(values.partEdits || {}).filter(([id, e]) => e && (e.size || (e.move && Object.values(e.move).some(Number)) || Number(e.yaw)) && out.parts.some((p) => p.id === id))
+    .map(([id, e]) => `${out.parts.find((p) => p.id === id).name} (${id}) נערך ביד — ${editSummary(e)}; "↺ איפוס הרכיב" בכרטיס שלו מחזיר לתבנית`);
+  out.warnings = [...(out.warnings || []), ...physicsWarnings(out.hardware || []), ...clashWarnings, ...editWarnings, ...millWarnings(out.parts || [])];
   return { ...out, values: { ...v, partFinishes: values.partFinishes || undefined, doorOpen: values.doorOpen || undefined, partEdits: values.partEdits || undefined }, template: t };
 }
 
