@@ -166,6 +166,50 @@ export function physicsWarnings(hardware) {
   return out;
 }
 
+/**
+ * דלתות "גב אל גב": שתי דלתות סמוכות שהצירים של שתיהן על אותה מחיצה (אחת
+ * ציר מימין, השנייה ציר משמאל). כשהן נפתחות יחד מעבר ל-90° הקצוות החופשיים
+ * שלהן עוברים זה את זה — בפועל הן נתקלות זו בזו. לכן הפתיחה של שתיהן מוגבלת
+ * ל-90° (אלא אם הנגר קבע לדלת זווית פתיחה בעצמו). כשהסידור נוצר מבחירה של
+ * הנגר ("כיוון פתיחה") — גם אזהרה; בסידור של התבנית (למשל ארונות מטבח סמוכים)
+ * זה רגיל, ורק ההדמיה מוגבלת.
+ * משנה את התנועה במקום (כל חלקי הדלת), ומחזיר את האזהרות.
+ * @param keep    קבוצות תנועה שהזווית שלהן נקבעה ביד — לא נוגעים בהן
+ * @param chosen  קבוצות שכיוון הפתיחה שלהן נבחר ביד
+ */
+export function doorClashes(parts, keep = new Set(), chosen = new Set()) {
+  const doors = new Map();
+  for (const p of parts) {
+    const m = p.motion;
+    if (!m || m.kind !== 'hinge' || m.axis) continue;
+    if (!doors.has(m.group)) doors.set(m.group, { m, parts: [], cx: 0, cz: 0, y0: Infinity, y1: -Infinity });
+    const d = doors.get(m.group);
+    d.parts.push(p);
+    d.cx += p.box.x + p.box.w / 2; d.cz += p.box.z + p.box.d / 2;
+    d.y0 = Math.min(d.y0, p.box.y); d.y1 = Math.max(d.y1, p.box.y + p.box.h);
+  }
+  const list = [...doors.entries()].map(([g, d]) => {
+    const n = d.parts.length, cx = d.cx / n, cz = d.cz / n;
+    const dx = cx - d.m.pivot[0], dz = cz - d.m.pivot[2], len = Math.hypot(dx, dz) || 1;
+    return { g, ...d, dir: [dx / len, dz / len] };
+  });
+  const capped = new Set(), out = [];
+  for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+    const a = list[i], b = list[j];
+    const gap = Math.hypot(a.m.pivot[0] - b.m.pivot[0], a.m.pivot[2] - b.m.pivot[2]);
+    const facing = a.dir[0] * b.dir[0] + a.dir[1] * b.dir[1] < -0.5;
+    if (gap > 60 || !facing || a.y1 <= b.y0 + 1 || b.y1 <= a.y0 + 1) continue;
+    for (const d of [a, b]) {
+      if (keep.has(d.g) || capped.has(d.g) || Math.abs(d.m.angle) <= 90) continue;
+      const m = { ...d.m, angle: Math.sign(d.m.angle) * 90 };
+      for (const p of d.parts) p.motion = m;
+      capped.add(d.g);
+    }
+    if (chosen.has(a.g) || chosen.has(b.g)) out.push(`${a.g} ו-${b.g} נתלות גב אל גב על אותה מחיצה — פתוחות יחד הן נתקלות זו בזו, ולכן הפתיחה מוגבלת ל-90°. להפוך את כיוון הפתיחה של אחת מהן ("כיוון פתיחה" בכרטיס הדלת) כדי שייפתחו כזוג`);
+  }
+  return out;
+}
+
 /** רשימת הקידוחים של מודל, מקובצת לפי חלק. */
 export function drillingList(model) {
   const byPart = new Map();

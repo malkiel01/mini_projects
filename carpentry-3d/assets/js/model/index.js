@@ -17,7 +17,7 @@ import { material, materialsOfKind, materialsOfRole } from './materials.js';
 
 export const TEMPLATES = { bookcase, wardrobe, dresser, kitchen, table, bed, cladding };
 
-import { physicsWarnings } from './physics.js';
+import { physicsWarnings, doorClashes } from './physics.js';
 import { millWarnings, cncId } from './milling.js';
 import { applyPartEdits } from './partEdits.js';
 
@@ -106,8 +106,11 @@ export function build(key, values) {
   // עריכות לרכיב בודד מהתלת מימד (חומר, מידות, מיקום, סיבוב, קנטים, פתיחה, הסתרה) — לפני הגימור,
   // כדי שסטריפים של גימור ייבנו על הלוח במידותיו החדשות
   applyPartEdits(out, values.partEdits);
+  // דלתות גב אל גב על אותה מחיצה: פתיחה עד 90° (חוץ ממה שהנגר קבע ביד)
+  const manual = new Set(Object.entries(values.partEdits || {}).filter(([, e]) => e && e.open).map(([id]) => out.parts.find((p) => p.id === id)?.motion?.group).filter(Boolean));
+  const clashWarnings = doorClashes(out.parts, manual, new Set(Object.keys(values.doorOpen || {})));
   applyPartFinishes(out, values.partFinishes, t);
-  out.warnings = [...(out.warnings || []), ...physicsWarnings(out.hardware || []), ...millWarnings(out.parts || [])];
+  out.warnings = [...(out.warnings || []), ...physicsWarnings(out.hardware || []), ...clashWarnings, ...millWarnings(out.parts || [])];
   return { ...out, values: { ...v, partFinishes: values.partFinishes || undefined, doorOpen: values.doorOpen || undefined, partEdits: values.partEdits || undefined }, template: t };
 }
 

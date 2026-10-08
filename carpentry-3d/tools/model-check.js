@@ -551,6 +551,28 @@ console.log('אביזרים: ידיות, כפתורים, צירים, גלגלי�
   check(ACC_FINISHES.length >= 6, 'גימורים');
 }
 
+// ---- דלתות גב אל גב על אותה מחיצה ----
+{
+  console.log('\nדלתות גב אל גב');
+  const auto = build('bookcase', { columns: 4, doorType: 'glass' });
+  check(auto.parts.filter((p) => p.motion?.kind === 'hinge').every((p) => Math.abs(p.motion.angle) === 100) && !auto.warnings.some((w) => /גב אל גב/.test(w)), 'ברירת מחדל (ציר משמאל בחצי השמאלי, מימין בימני): אין דלתות גב אל גב');
+  const d1 = auto.parts.find((p) => p.id === 'door-1-stile-L');
+  check(Math.abs(d1.motion.pivot[2] - (d1.box.z + d1.box.d)) < 0.01, 'ציר אנכי: הסיבוב סביב הפינה הקדמית של הדלת');
+  const bb = build('bookcase', { columns: 4, doorType: 'glass', doorOpen: { 'door-1': 'right' } });
+  const a1 = bb.parts.find((p) => p.id === 'door-1-stile-L').motion, a2 = bb.parts.find((p) => p.id === 'door-2-stile-L').motion;
+  check(a1.angle === 90 && a2.angle === -90 && bb.parts.filter((p) => p.motion?.group === 'door-1').every((p) => p.motion.angle === 90), 'דלת 1 מימין + דלת 2 משמאל על מחיצה 1: שתיהן נפתחות עד 90° (לא עוברות זו את זו)');
+  check(bb.warnings.some((w) => /door-1 ו-door-2 נתלות גב אל גב/.test(w)), 'ואזהרה עם ההצעה להפוך כיוון');
+  check(bb.parts.find((p) => p.id === 'door-3-stile-L').motion.angle === 100, 'דלתות אחרות — בלי שינוי');
+  // נקודה על הקצה החופשי של כל דלת בזווית הפתיחה: דלת 1 נשארת משמאל לדלת 2
+  const tip = (m, x, z) => { const th = m.angle * Math.PI / 180, rx = x - m.pivot[0], rz = z - m.pivot[2]; return m.pivot[0] + rx * Math.cos(th) + rz * Math.sin(th); };
+  const s1 = bb.parts.find((p) => p.id === 'door-1-stile-L').box, s2 = bb.parts.find((p) => p.id === 'door-2-stile-R').box;
+  check(tip(a1, s1.x, s1.z) <= tip(a2, s2.x + s2.w, s2.z) + 0.01, 'בזווית הפתיחה הקצוות החופשיים לא מתחלפים');
+  const man = build('bookcase', { columns: 4, doorType: 'glass', doorOpen: { 'door-1': 'right' }, partEdits: { 'door-1-stile-L': { open: 120 } } });
+  check(man.parts.find((p) => p.id === 'door-1-stile-L').motion.angle === 120 && man.parts.find((p) => p.id === 'door-2-stile-L').motion.angle === -90, 'זווית שנקבעה ביד נשמרת; השכנה מוגבלת');
+  const kit = build('kitchen', {});
+  check(!kit.warnings.some((w) => /גב אל גב/.test(w)) && kit.parts.some((p) => p.motion?.kind === 'hinge' && Math.abs(p.motion.angle) === 90), 'מטבח: ארונות סמוכים — ההדמיה מוגבלת בלי אזהרה');
+}
+
 // ---- עריכת רכיב בודד מהתלת מימד ----
 {
   console.log('\nעריכת רכיב');
