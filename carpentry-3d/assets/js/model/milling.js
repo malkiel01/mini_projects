@@ -14,15 +14,31 @@
 //
 // החלק נושא `mill = { pattern, normal, ...פרמטרי הדוגמה }`.
 
-import { material } from './materials.js';
+import { material, all } from './materials.js';
 
-export const MILL_PATTERNS = {
-  'milled-fine': { name: 'חירוץ CNC — דמוי סטריפים דק (6/10)', kind: 'flutes', groove: 6, rib: 10, depth: 5, margin: 20 },
-  'milled-wide': { name: 'חירוץ CNC — דמוי סטריפים רחב (10/20)', kind: 'flutes', groove: 10, rib: 20, depth: 6, margin: 30 },
-  'milled-frame': { name: 'חירוץ CNC — מסגרת', kind: 'frames', groove: 6, depth: 4, inset: 70, rings: 1, ringGap: 0, panels: 1 },
-  'milled-frame-double': { name: 'חירוץ CNC — מסגרת כפולה', kind: 'frames', groove: 6, depth: 4, inset: 60, rings: 2, ringGap: 20, panels: 1 },
-  'milled-frame-2': { name: 'חירוץ CNC — שני פנלים, מסגרת כפולה', kind: 'frames', groove: 6, depth: 4, inset: 60, rings: 2, ringGap: 20, panels: 2, split: 0.62 },
+// הדוגמאות עצמן בספרייה: חומר מסוג 'cnc' (`cnc:…`) עם `mill = { kind, … }` —
+// נערכות במסך "🛠 CNC" (cnc-ui.js), עם מחיר למ"ר. ערכי ברירת מחדל לכל משפחה:
+export const MILL_DEFAULTS = {
+  flutes: { groove: 6, rib: 10, depth: 5, margin: 0 },
+  frames: { groove: 6, depth: 4, inset: 70, rings: 1, ringGap: 20, panels: 1, split: 62 },
 };
+/** מזהה הדוגמה בספרייה — גם לשמות הישנים ('milled-fine' → 'cnc:milled-fine'). */
+export const cncId = (finish) => (typeof finish === 'string' && finish.startsWith('milled-') ? `cnc:${finish}` : finish);
+/** פרמטרי הדוגמה (עם ברירות מחדל), או null אם זה לא חירוץ. */
+export function millSpec(finish) {
+  const id = cncId(finish);
+  if (typeof id !== 'string' || !id.startsWith('cnc:')) return null;
+  const m = material(id);
+  if (m.kind !== 'cnc' || !m.mill) return null;
+  const kind = m.mill.kind === 'frames' ? 'frames' : 'flutes';
+  const spec = { ...MILL_DEFAULTS[kind], ...m.mill, kind, name: m.name, id };
+  if (spec.split > 1) spec.split /= 100;   // נשמר באחוזים (62), מחושב כשבר
+  return spec;
+}
+/** דוגמאות החירוץ הפעילות — לרשימות הגימור בטופס. */
+export function cncPatterns() {
+  return all().filter((m) => m.kind === 'cnc' && m.active && m.mill);
+}
 
 /** רוחב הפאה (u) וגובהה (v) של חלק מחורץ. */
 export function millFace(part) {
@@ -30,14 +46,22 @@ export function millFace(part) {
   return { U: part.mill.normal === '+z' ? b.w : b.d, V: b.h };
 }
 
-/** מיקומי החריצים הישרים לאורך `len`: [[a, b], …], ממורכזים בין השוליים. */
+/**
+ * מיקומי החריצים הישרים לאורך `len`: [[a, b], …]. השוליים בדיוק כפי שנקבעו
+ * (0 = החריצים מתחילים מצלע בקצה), ומה שנשאר מתחלק שווה בין הצלעות — לא
+ * מצטבר בקצוות. כך כל הצלעות זהות, ברוחב שקרוב לרוחב שנקבע.
+ */
 export function fluteGrooves(len, { groove, rib, margin }) {
   const avail = len - 2 * margin;
   const n = Math.max(0, Math.floor((avail - rib) / (groove + rib)));
   if (!n) return [];
-  const used = n * groove + (n + 1) * rib;
-  const start = margin + (avail - used) / 2 + rib;
-  return Array.from({ length: n }, (_, i) => { const a = start + i * (groove + rib); return [a, a + groove]; });
+  const r = (avail - n * groove) / (n + 1);   // רוחב הצלע בפועל
+  return Array.from({ length: n }, (_, i) => { const a = margin + r + i * (groove + r); return [a, a + groove]; });
+}
+/** רוחב הצלע בפועל (אחרי חלוקת השארית). */
+export function fluteRib(len, spec) {
+  const n = fluteGrooves(len, spec).length;
+  return n ? (len - 2 * spec.margin - n * spec.groove) / (n + 1) : 0;
 }
 
 /**
@@ -99,11 +123,11 @@ export function millText(part) {
   const { U, V } = millFace(part);
   if (m.kind === 'flutes') {
     const n = fluteGrooves(U, m).length;
-    return `חירוץ CNC בפאה החיצונית: ${n} חריצים ${m.groove}×${m.depth} לכל הגובה (${Math.round(V)}), צלע ${m.rib}, שוליים ${m.margin}`;
+    return `חירוץ CNC בפאה החיצונית (${m.name || 'דמוי סטריפים'}): ${n} חריצים ${m.groove}×${m.depth} לכל הגובה (${Math.round(V)}), צלע ${Math.round(fluteRib(U, m) * 10) / 10}, שוליים ${m.margin}`;
   }
   const rings = millRects(U, V, m).length / 4;
   const inset = Math.round(Math.min(m.inset, Math.min(U, V) * 0.14));
-  return `חירוץ CNC בפאה החיצונית: ${rings} מסגרות${m.panels === 2 && V > 900 ? ' בשני פנלים' : ''}, חריץ ${m.groove}×${m.depth}, ${inset} מהקצה${m.rings > 1 ? `, ${m.ringGap} בין הקווים` : ''}`;
+  return `חירוץ CNC בפאה החיצונית (${m.name || 'מסגרות'}): ${rings} מסגרות${m.panels === 2 && V > 900 ? ' בשני פנלים' : ''}, חריץ ${m.groove}×${m.depth}, ${inset} מהקצה${m.rings > 1 ? `, ${m.ringGap} בין הקווים` : ''}`;
 }
 
 /** אזהרות: עובי שלא מחזיק את העומק, וחירוץ בלוח מצופה (חושף את הליבה). */
@@ -153,4 +177,11 @@ export function millEdges(U, V, spec) {
     for (const l of [0, 1]) { rect(u0, u1, v0, v1, l); rect(u0 + g, u1 - g, v0 + g, v1 - g, l); }
   }
   return segs;
+}
+
+/** שטח הפאה המחורצת (מ"ר) — למחיר העיבוד. */
+export function millArea(part) {
+  if (!part.mill) return 0;
+  const { U, V } = millFace(part);
+  return U * V / 1e6;
 }

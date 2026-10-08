@@ -14,7 +14,7 @@ import { TYPES, buildAccessory, paramsOf, faceOf, wheelHeight, FINISHES as ACC_F
 import { nest, sheetCount } from '../assets/js/model/sheets.js';
 import { partWeight, totalWeight, boardWeight, hingeCount, hingeYs, hingeDrilling, slidingLeaf, SLIDING_SYSTEMS, slideLoad, drillingList, physicsWarnings, densityOf } from '../assets/js/model/physics.js';
 import { toSTL, printSize } from '../assets/js/model/stl.js';
-import { MILL_PATTERNS, fluteGrooves, millRects, millSolids, millRemoved, millText, millEdges } from '../assets/js/model/milling.js';
+import { millSpec, fluteGrooves, fluteRib, millRects, millSolids, millRemoved, millText, millEdges, cncPatterns } from '../assets/js/model/milling.js';
 
 let failed = 0;
 function check(cond, msg) {
@@ -573,27 +573,38 @@ console.log('אביזרים: ידיות, כפתורים, צירים, גלגלי�
 // ---- חירוץ CNC: לוח אחד מחורץ (דמוי סטריפים, מסגרות) ----
 {
   console.log('\nחירוץ CNC');
-  const fine = MILL_PATTERNS['milled-fine'];
+  const fine = millSpec('cnc:milled-fine');
   const gs = fluteGrooves(400, fine);
   check(gs.length > 15 && gs[0][0] >= fine.margin + fine.rib - 0.01 && 400 - gs[gs.length - 1][1] >= fine.margin + fine.rib - 0.01 && gs.every(([a, b]) => Math.abs(b - a - 6) < 1e-9), `דמוי סטריפים: ${gs.length} חריצים 6, שוליים וצלע בקצוות`);
-  check(gs.every((g, i) => i === 0 || Math.abs(g[0] - gs[i - 1][1] - fine.rib) < 1e-9), 'צלע 10 בין חריצים');
-  const dbl = MILL_PATTERNS['milled-frame-double'];
+  const rib = fluteRib(400, fine);
+  check(gs.every((g, i) => i === 0 || Math.abs(g[0] - gs[i - 1][1] - rib) < 1e-9) && Math.abs(gs[0][0] - fine.margin - rib) < 1e-9 && Math.abs(400 - gs[gs.length - 1][1] - fine.margin - rib) < 1e-9 && rib >= fine.rib && rib < fine.rib + fine.groove, `כל הצלעות שוות (${rib.toFixed(2)}), גם בקצוות — השארית לא מצטברת בשוליים`);
+  const m30 = { ...fine, margin: 30 }, g30 = fluteGrooves(400, m30), r30 = fluteRib(400, m30);
+  check(Math.abs(g30[0][0] - 30 - r30) < 1e-9, 'שוליים 30 — בדיוק 30 ואז צלע');
+  check(cncPatterns().length === 5 && millSpec('milled-fine').id === 'cnc:milled-fine' && millSpec('flat') === null, 'הדוגמאות בספרייה; שם ישן מתורגם');
+  check(build('bookcase', { doorType: 'wood', doorFinish: 'milled-wide' }).values.doorFinish === 'cnc:milled-wide', 'פרויקט שנשמר עם השם הישן — עובר לדוגמה בספרייה');
+  M.upsert({ id: 'cnc:test-x', kind: 'cnc', name: 'בדיקה', price: 10, priceUnit: 'm2', mill: { kind: 'flutes', groove: 8, rib: 8, depth: 4, margin: 15 } });
+  const tx = build('wardrobe', { doorType: 'wood', doorFinish: 'cnc:test-x' });
+  check(tx.values.doorFinish === 'cnc:test-x' && tx.parts.find((p) => p.id === 'door-1a').mill.groove === 8, 'דוגמה חדשה מהספרייה מופיעה בטופס ונבנית');
+  M.upsert({ id: 'cnc:test-x', active: false });
+  check(build('wardrobe', { doorType: 'wood', doorFinish: 'cnc:test-x' }).values.doorFinish === 'cnc:test-x', 'דוגמה שהושבתה — פרויקט שכבר משתמש בה ממשיך לעבוד');
+  M.remove('cnc:test-x');
+  const dbl = millSpec('cnc:milled-frame-double');
   const rects = millRects(500, 2000, dbl);
   check(rects.length === 8, 'מסגרת כפולה: שתי טבעות × 4 צלעות');
-  check(millRects(500, 2000, MILL_PATTERNS['milled-frame-2']).length === 16 && millRects(500, 700, MILL_PATTERNS['milled-frame-2']).length === 8, 'שני פנלים בדלת גבוהה; בחזית נמוכה — פנל אחד');
+  check(millRects(500, 2000, millSpec('cnc:milled-frame-2')).length === 16 && millRects(500, 700, millSpec('cnc:milled-frame-2')).length === 8, 'שני פנלים בדלת גבוהה; בחזית נמוכה — פנל אחד');
   check(millRects(150, 140, dbl).length <= 4, 'חזית מגירה קטנה: טבעת שלא נכנסת נשמטת');
   const area = (rs) => rs.reduce((s, r) => s + (r[1] - r[0]) * (r[3] - r[2]), 0);
   check(Math.abs(area(millSolids(500, 2000, rects)) + area(rects) - 500 * 2000) < 1, 'התאים המלאים + החריצים = כל הפאה (אין חפיפה בין מלבני הטבעות)');
-  const b = build('bookcase', { doorType: 'wood', doorFinish: 'milled-frame-double', doorMaterial: 'board:mdf-paint-18' });
+  const b = build('bookcase', { doorType: 'wood', doorFinish: 'cnc:milled-frame-double', doorMaterial: 'board:mdf-paint-18' });
   const d1 = b.parts.find((p) => p.id === 'door-1');
-  check(d1.mill && d1.mill.pattern === 'milled-frame-double' && !b.parts.some((p) => /strip/.test(p.id)) && /חירוץ CNC/.test(d1.note), 'דלת מחורצת: חלק אחד, עם הוראה בהערה, בלי סטריפים');
+  check(d1.mill && d1.mill.pattern === 'cnc:milled-frame-double' && !b.parts.some((p) => /strip/.test(p.id)) && /חירוץ CNC/.test(d1.note), 'דלת מחורצת: חלק אחד, עם הוראה בהערה, בלי סטריפים');
   check(partWeight(d1) < Math.round(d1.box.w * d1.box.h * d1.box.d / 1e9 * 740 * 100) / 100 && millRemoved(d1) > 0, 'המשקל מחסיר את החריצים');
   check(!b.warnings.some((w) => /חירוץ/.test(w)), 'MDF לצבע 18: בלי אזהרת חירוץ');
-  const mel = build('bookcase', { doorType: 'wood', doorFinish: 'milled-fine', doorMaterial: 'board:melamine-oak-18' });
+  const mel = build('bookcase', { doorType: 'wood', doorFinish: 'cnc:milled-fine', doorMaterial: 'board:melamine-oak-18' });
   check(mel.warnings.some((w) => /חושף את הליבה/.test(w)), 'חירוץ במלמין — אזהרה');
-  const k = build('kitchen', { frontFinish: 'milled-frame' });
+  const k = build('kitchen', { frontFinish: 'cnc:milled-frame' });
   check(k.parts.some((p) => /door/.test(p.id) && p.mill) && k.parts.some((p) => /drawer-\d+$/.test(p.id) && p.mill) && within(k.parts, k.bounds), 'מטבח: גימור חזיתות על דלתות ומגירות, בתוך הגבולות');
-  check(build('dresser', { frontFinish: 'milled-wide' }).parts.filter((p) => p.mill).length > 0, 'שידה: חזיתות מחורצות');
+  check(build('dresser', { frontFinish: 'cnc:milled-wide' }).parts.filter((p) => p.mill).length > 0, 'שידה: חזיתות מחורצות');
   check(/מסגרות/.test(millText(d1)) && /חריץ 6×4/.test(millText(d1)), `הוראה: ${millText(d1)}`);
   // קווי מתאר רק על חומר: שום קו על פני הפאה לא חוצה פתח של חריץ (זה נראה כמו "מכסה שקוף")
   const E = millEdges(400, 2000, fine), G = fluteGrooves(400, fine);
@@ -602,7 +613,7 @@ console.log('אביזרים: ידיות, כפתורים, צירים, גלגלי�
   check(E.filter(([p0, p1]) => p0[1] === 2000 && p1[1] === 2000 && p0[2] !== p1[2]).length === G.length * 2, 'בקצה הפתוח של כל חריץ — צורת U (שתי דפנות ותחתית)');
   const FE = millEdges(500, 2000, dbl);
   check(FE.length === 4 + 2 * 2 * 2 * 4, 'מסגרת כפולה: שפת הפאה + לכל טבעת קו חיצוני ופנימי, בפני הפאה ובתחתית — בלי תפרים');
-  const w = build('wardrobe', { doorType: 'wood', sideLeftFinish: 'milled-wide' });
+  const w = build('wardrobe', { doorType: 'wood', sideLeftFinish: 'cnc:milled-wide' });
   check(w.parts.find((p) => p.id === 'side-L').mill?.normal === '-x', 'דופן שמאל מחורצת בפאה החיצונית (-x)');
 }
 

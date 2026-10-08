@@ -811,3 +811,26 @@ input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner
 .viewcube__home:hover { border-color: var(--accent); }
 @media (max-width: 860px) { .viewcube__canvas { width: 80px; height: 80px; } }
 .btn[hidden] { display: none; }   /* .btn קובע display — בלי זה hidden לא מסתיר (כפתור "חזרה להרכבה") */
+
+/* מסך דוגמאות CNC: מבט חזית וחתך בקצה (SVG) */
+.cnc .drawer__bar { gap: 10px; flex-wrap: wrap; }
+.cnc__hint { font-size: 0.82rem; }
+.cnc__new { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+.cnc__preview { border-radius: 14px; background: linear-gradient(180deg, #f7f2ea, #e9dfd0); border: 1px solid var(--line); padding: 12px; }
+.cnc__views { display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: center; }
+.cnc__views figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.cnc__views figcaption { font-size: 0.78rem; color: var(--muted); }
+.cnc__front { width: auto; max-width: 100%; height: 300px; }
+.cnc__section { width: 100%; height: auto; max-height: 220px; direction: ltr; }
+.cnc__board { fill: #fbf7f0; stroke: #8a7a66; stroke-width: 1; }
+.cnc__groove { fill: #b9ab96; }
+.cnc__profile { fill: #efe6d8; stroke: #6f5d48; stroke-width: 1.2; }
+.cnc__dim line { stroke: var(--accent, #b8742a); stroke-width: 0.8; }
+.cnc__dim text, .cnc__depth, .cnc__cap { font: 9px Heebo, Arial, sans-serif; fill: var(--accent-deep, #7a4a17); text-anchor: middle; }
+.cnc__depth { text-anchor: start; }
+.cnc__cap { text-anchor: start; fill: var(--muted, #8a7a66); }
+.cnc__stats { margin: 0; font-size: 0.85rem; }
+@media (max-width: 860px) { .cnc__views { grid-template-columns: 1fr; } .cnc__front { height: 220px; } }
+.cnc__section text { direction: rtl; unicode-bidi: plaintext; }   /* הסרטוט משמאל לימין, הטקסט עברי */
+.cnc__section .cnc__depth { text-anchor: end; }   /* ב-rtl: end = הקצה השמאלי — הטקסט נמשך ימינה, מחוץ ללוח */
+.cnc__section .cnc__cap { text-anchor: start; }   /* ב-rtl: start = הקצה הימני, מ-x אל שמאל */

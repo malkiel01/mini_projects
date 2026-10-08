@@ -9,6 +9,7 @@
 // בלי DOM — רץ גם ב-node.
 
 import { material } from './materials.js';
+import { millArea } from './milling.js';
 import { cutSize } from './blocks.js';
 
 export const PRICING_DEFAULTS = {
@@ -85,6 +86,16 @@ export function estimate(model, rates = {}) {
     const total = r.qty * price;
     hardwareTotal += total;
     lines.push({ group: 'פרזול', name, qty: round(r.qty), unit: unit === 'm' ? 'מ׳' : 'יח׳', unitPrice: price, total: round(total), mine });
+  }
+
+  // עיבוד CNC (חירוץ) — לפי שטח הפאה המחורצת, במחיר של הדוגמה בספרייה. נספר יחד עם הפרזול.
+  const cncBy = new Map();
+  for (const p of parts) if (p.mill && p.mill.pattern) cncBy.set(p.mill.pattern, (cncBy.get(p.mill.pattern) || 0) + millArea(p));
+  for (const [id, area] of cncBy) {
+    const { price, mine, name } = priceOf(id);
+    const total = area * price;
+    hardwareTotal += total;
+    lines.push({ group: 'עיבוד CNC', name: `חירוץ — ${name}`, qty: round(area), unit: 'מ"ר', unitPrice: price, total: round(total), mine });
   }
 
   const laborHours = template.laborHours || 0;

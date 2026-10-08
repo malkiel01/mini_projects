@@ -78,6 +78,12 @@ export const SEED = [
   { id: 'hw:hinge-bifold',         kind: 'hardware', name: 'ציר קיפול לדלת פינה', price: 18, priceUnit: 'unit' },
   { id: 'hw:carousel',             kind: 'hardware', name: 'קרוסלה לארון פינתי', price: 650, priceUnit: 'unit' },
   { id: 'hw:led-strip',            kind: 'hardware', name: 'פס לד (כולל פרופיל ושנאי יחסי)', price: 90, priceUnit: 'm' },
+  // דוגמאות חירוץ CNC (model/milling.js) — מנוהלות במסך "🛠 CNC". המחיר: למ"ר של פאה מחורצת.
+  { id: 'cnc:milled-fine',         kind: 'cnc', name: 'דמוי סטריפים דק', price: 90, priceUnit: 'm2', mill: { kind: 'flutes', groove: 6, rib: 10, depth: 5, margin: 0 } },
+  { id: 'cnc:milled-wide',         kind: 'cnc', name: 'דמוי סטריפים רחב', price: 80, priceUnit: 'm2', mill: { kind: 'flutes', groove: 10, rib: 20, depth: 6, margin: 0 } },
+  { id: 'cnc:milled-frame',        kind: 'cnc', name: 'מסגרת', price: 60, priceUnit: 'm2', mill: { kind: 'frames', groove: 6, depth: 4, inset: 70, rings: 1, ringGap: 20, panels: 1, split: 62 } },
+  { id: 'cnc:milled-frame-double', kind: 'cnc', name: 'מסגרת כפולה', price: 75, priceUnit: 'm2', mill: { kind: 'frames', groove: 6, depth: 4, inset: 60, rings: 2, ringGap: 20, panels: 1, split: 62 } },
+  { id: 'cnc:milled-frame-2',      kind: 'cnc', name: 'שני פנלים, מסגרת כפולה', price: 95, priceUnit: 'm2', mill: { kind: 'frames', groove: 6, depth: 4, inset: 60, rings: 2, ringGap: 20, panels: 2, split: 62 } },
 ];
 
 export const KINDS = [
