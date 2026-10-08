@@ -142,15 +142,20 @@ function renderColumnsEditor(box, tpl, values, key, onChange) {
       const { cells, free } = cellsOf(itemFor, count);
       const cpins = Array.isArray(c.gaps) && c.gaps.length === cells ? c.gaps : Array.from({ length: cells }, () => null);
       const gaps = resolveShares(free, cpins);
-      const custom = pinned || Number.isInteger(c.shelves) || cpins.some((g) => g !== null) || (c.kind && c.kind !== it.kind);
+      const hPinned = !!it.height && Number.isFinite(c.height);
+      const hValue = it.height ? Math.round(hPinned ? Math.max(it.height.min, Math.min(it.height.full, c.height)) : it.height.full) : 0;
+      const custom = pinned || hPinned || Number.isInteger(c.shelves) || cpins.some((g) => g !== null) || (c.kind && c.kind !== it.kind);
       const countLabel = cellsOfKind === 'drawers' ? 'מגירות' : 'מדפים';
       const cellLabel = cellsOfKind === 'drawers' ? 'מגירה' : 'תא';
       const countMin = cellsOfKind === 'drawers' ? 1 : 0, countMax = it.countMax ?? 15;
       html.push(`<details class="colsedit__col" ${openSet.has(id) ? 'open' : ''} data-id="${id}">
-        <summary>${it.label} <span class="muted">· ${Math.round(sizes[i])} מ"מ${kindObj ? ` · ${kindObj.name}` : ''}${editable ? ` · ${count} ${countLabel}` : ''}${custom ? ' · מותאם' : ''}</span></summary>
+        <summary>${it.label} <span class="muted">· ${Math.round(sizes[i])} מ"מ${hPinned ? ` · גובה ${hValue}` : ''}${kindObj ? ` · ${kindObj.name}` : ''}${editable ? ` · ${count} ${countLabel}` : ''}${custom ? ' · מותאם' : ''}</span></summary>
         <div class="colsedit__row"><span>${sec.sizeLabel || 'רוחב'}</span>
           <input type="number" step="10" min="${MIN_SHARE}" data-sec="${sec.key}" data-col="${i}" data-width="1" value="${Math.round(sizes[i])}"><i>מ"מ</i>
           ${pinned ? reset(`data-sec="${sec.key}" data-col="${i}" data-reset="width"`) : auto}</div>
+        ${it.height ? `<div class="colsedit__row"><span>גובה</span>
+          <input type="number" step="10" min="${it.height.min}" max="${it.height.full}" data-sec="${sec.key}" data-col="${i}" data-height="1" value="${hValue}"><i>מ"מ</i>
+          ${hPinned ? reset(`data-sec="${sec.key}" data-col="${i}" data-reset="height"`) : `<i class="colsedit__auto" title="כגובה המוצר — משתנה איתו">מלא</i>`}</div>` : ''}
         ${it.kinds ? `<div class="colsedit__row"><span>סוג</span><select data-sec="${sec.key}" data-col="${i}" data-kind="1">${it.kinds.map((k) => `<option value="${k.id}" ${k.id === kind ? 'selected' : ''}>${k.name}</option>`).join('')}</select>${c.kind && c.kind !== it.kind ? reset(`data-sec="${sec.key}" data-col="${i}" data-reset="kind"`) : ''}</div>` : ''}
         ${!editable ? (it.note ? `<small class="muted">${it.note}</small>` : '') : `<div class="colsedit__row"><span>${countLabel}</span>
           <button type="button" data-sec="${sec.key}" data-col="${i}" data-shelves="${count - 1}" ${count <= countMin ? 'disabled' : ''}>−</button><b>${count}</b><button type="button" data-sec="${sec.key}" data-col="${i}" data-shelves="${count + 1}" ${count >= countMax ? 'disabled' : ''}>+</button>
@@ -203,8 +208,17 @@ function renderColumnsEditor(box, tpl, values, key, onChange) {
       // נעיצה שנובעת רק מברירת מחדל של פריט אחר נשארת ברירת מחדל (לא נכתבת)
       const widths = next.map((w, k) => (w === pins[k] && lay.widths[k] === null ? null : w));
       commit(secKey, { ...lay, widths });
+    } else if (t.dataset.height) {
+      // גובה משלו: בין המינימום לגובה המוצר; גובה מלא = חזרה לברירת המחדל (עוקב אחרי גובה המוצר)
+      const hs = sec.items[i].height, c = { ...(lay.cols[i] || {}) };
+      const want = Math.round(Math.max(hs.min, Math.min(hs.full, Number(t.value) || hs.full)));
+      if (want >= hs.full) delete c.height; else c.height = want;
+      const cols = { ...lay.cols };
+      if (Object.keys(c).length) cols[i] = c; else delete cols[i];
+      commit(secKey, { ...lay, cols });
     } else if (t.dataset.kind) {
-      commit(secKey, { ...lay, cols: { ...lay.cols, [i]: { kind: t.value } } });   // סוג חדש — מספר ותאים חוזרים לברירת המחדל
+      const h = lay.cols[i]?.height;
+      commit(secKey, { ...lay, cols: { ...lay.cols, [i]: { kind: t.value, ...(h ? { height: h } : {}) } } });   // סוג חדש — מספר ותאים חוזרים לברירת המחדל; הגובה נשאר
     } else if (t.dataset.gap !== undefined) {
       const gi = Number(t.dataset.gap);
       const { c, count, free, cpins } = cellCtx(secKey, i);
@@ -220,8 +234,9 @@ function renderColumnsEditor(box, tpl, values, key, onChange) {
     const next = { ...lay, widths: lay.widths.slice(), cols: { ...lay.cols } };
     const c = { ...(next.cols[i] || {}) };
     if (b.dataset.reset === 'width') next.widths[i] = null;
-    else if (b.dataset.reset === 'kind') { delete c.kind; delete c.shelves; delete c.gaps; }
+    else if (b.dataset.reset === 'kind') { const h = c.height; delete c.kind; delete c.shelves; delete c.gaps; if (h) c.height = h; }
     else if (b.dataset.reset === 'shelves') { delete c.shelves; delete c.gaps; }
+    else if (b.dataset.reset === 'height') delete c.height;
     else if (b.dataset.reset === 'gap') {
       c.gaps = (c.gaps || []).slice();
       c.gaps[Number(b.dataset.gap)] = null;

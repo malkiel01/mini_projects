@@ -99,7 +99,8 @@ export default {
     return { sections: walls.map((w) => ({
       key: `wall${w.i + 1}`, title: walls.length > 1 ? `קיר ${w.i + 1}` : 'שדות החיפוי', total: w.free, sizeLabel: 'רוחב', allLabel: 'השדות',
       modes: { next: 'מהשדה הבא', prev: 'מהשדה הקודם' },
-      items: Array.from({ length: n }, (_, f) => ({ label: `שדה ${f + 1}`, kinds: PATTERNS, kind: v.style ?? 'slats', editable: false, note: '' })),
+      items: Array.from({ length: n }, (_, f) => ({ label: `שדה ${f + 1}`, kinds: PATTERNS, kind: v.style ?? 'slats', editable: false, note: '',
+        height: { full: v.height ?? 2400, min: minFieldH(v) } })),
     })) };
   },
 
@@ -212,23 +213,30 @@ export default {
     for (const w of walls) {
       const k = w.i + 1;
       const startInset = w.inset, len = w.free;
-      // לטות רוחב
-      for (let r = 0; r < v.battenRows; r++) {
-        const by = y0 + (H - 60) * (v.battenRows === 1 ? 0.5 : r / (v.battenRows - 1));
-        parts.push(place(w, `w${k}-batten-${r + 1}`, 'לטת רוחב', startInset, by, by + 60, len, 0, bt, { material: v.battenMaterial, grainAlong: true, qtyKey: `batten-${Math.round(len)}`, note: `קיר ${k}` }));
-      }
-      // השדות: רוחב נעוץ/אוטומטי ודוגמה לכל שדה
-      const yA = y0 + v.baseH, yB = y1 - v.crownH;
+      // השדות: רוחב נעוץ/אוטומטי, דוגמה וגובה לכל שדה (ברירת מחדל — גובה החיפוי)
       const lay = sectionLayout(v.columnsLayout, `wall${k}`, v.fields);
       const widths = resolveShares(len, lay.widths);
+      const fieldH = Array.from({ length: v.fields }, (_, f) => { const h = lay.cols[f]?.height; return Number.isFinite(h) && h > 0 ? Math.round(Math.max(minFieldH(v), Math.min(H, h))) : H; });
+      const stepped = fieldH.some((h) => h !== H);
+      const battens = (id, uA, ln, hh, note) => {
+        for (let r = 0; r < v.battenRows; r++) {
+          const by = y0 + (hh - 60) * (v.battenRows === 1 ? 0.5 : r / (v.battenRows - 1));
+          parts.push(place(w, `${id}-${r + 1}`, 'לטת רוחב', uA, by, by + 60, ln, 0, bt, { material: v.battenMaterial, grainAlong: true, qtyKey: `batten-${Math.round(ln)}`, note }));
+        }
+      };
+      // לטות רוחב: לכל הקיר; כשהשדות בגבהים שונים — לכל שדה, בגובה שלו
+      if (!stepped) battens(`w${k}-batten`, startInset, len, H, `קיר ${k}`);
       let u = startInset;
       for (let f = 0; f < v.fields; f++) {
         const pattern = PATTERN_NAME[lay.cols[f]?.kind] ? lay.cols[f].kind : v.style;
-        fillField(w, k, f + 1, u, widths[f], yA, yB, pattern);
+        const fTop = y0 + fieldH[f];
+        if (stepped) battens(`w${k}-f${f + 1}-batten`, u, widths[f], fieldH[f], `קיר ${k} · שדה ${f + 1}`);
+        fillField(w, k, f + 1, u, widths[f], y0 + v.baseH, fTop - v.crownH, pattern);
+        if (stepped && v.crownH > 0) parts.push(place(w, `w${k}-f${f + 1}-crown`, 'קרניז עליון', u, fTop - v.crownH, fTop, widths[f], bt, st, { material: v.trimMaterial, grainAlong: true, qtyKey: `crown-${Math.round(widths[f])}`, note: `קיר ${k} · שדה ${f + 1}` }));
         u += widths[f];
       }
       if (v.baseH > 0) parts.push(place(w, `w${k}-base`, 'פנל תחתון', startInset, y0, y0 + v.baseH, len, bt, st, { material: v.trimMaterial, grainAlong: true, qtyKey: `base-${Math.round(len)}`, note: `קיר ${k}` }));
-      if (v.crownH > 0) parts.push(place(w, `w${k}-crown`, 'קרניז עליון', startInset, y1 - v.crownH, y1, len, bt, st, { material: v.trimMaterial, grainAlong: true, qtyKey: `crown-${Math.round(len)}`, note: `קיר ${k}` }));
+      if (!stepped && v.crownH > 0) parts.push(place(w, `w${k}-crown`, 'קרניז עליון', startInset, y1 - v.crownH, y1, len, bt, st, { material: v.trimMaterial, grainAlong: true, qtyKey: `crown-${Math.round(len)}`, note: `קיר ${k}` }));
     }
     hardware.push({ id: 'screws', kind: 'misc', material: 'hw:leg-adjust', qty: 0, note: `ברגים ודיבלים: ~${Math.round(walls.reduce((s, w) => s + w.len, 0) / 400) * v.battenRows} לקיבוע הלטות` });
     if (sw / st > 4 && parts.some((p) => p.name === 'סטריפ')) warnings.push(`סטריפ ברוחב ${sw} ובעובי ${st} — דק ליחס; נוטה להתעקם`);
@@ -239,3 +247,6 @@ export default {
     return { parts, hardware, warnings, bounds: { w: maxX - minX, h: y1, d: Math.max(maxZ - minZ, maxT) } };
   },
 };
+
+/** הגובה הנמוך ביותר לשדה: פנל תחתון, קרניז ו-100 של דוגמה. */
+function minFieldH(v) { return (v.baseH ?? 0) + (v.crownH ?? 0) + 100; }
