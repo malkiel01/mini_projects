@@ -1,12 +1,14 @@
 // שרטוטי מבטים: חזית, צד ומבט־על, כ-SVG, מאותה רשימת חלקים שבתלת מימד.
 //
-// כל חלק הוא תיבה מקבילה לצירים, ולכן כל מבט הוא הטלה של מלבנים: החלקים
+// כל חלק הוא תיבה, ולכן כל מבט הוא הטלה של מלבנים (חלק מסובב בזווית — xf —
+// הוא מלבן בחזית ובצד, ומצולע משופע במבט־על): החלקים
 // ממוינים לפי העומק במבט (הרחוק קודם, הקרוב מעליו). מידות: הכוללות בכל
 // מבט, ובחזית גם רוחבי העמודות הפנויים ומרווחי המדפים בעמודה הראשונה —
 // נגזרים מהלוחות עצמם, לא מהפרמטרים, כך שהם נכונים לכל תבנית.
 // הפלט הוא מחרוזת SVG; אין כאן DOM ולכן אפשר להשתמש בזה גם להדפסה.
 
 import { material } from './model/materials.js';
+import { partAabb, partCorners } from './model/xform.js';
 
 const VIEWS = {
   front: { name: 'חזית', u: 'x', v: 'y', depth: 'z', near: +1 },
@@ -24,12 +26,19 @@ function lighten(c, k = 0.35) {
 
 /** מלבן החלק במבט: [u0, v0, uw, vh] במ"מ, ו-depth לסידור. */
 function rect(p, view, bounds) {
-  const b = p.box;
+  const b = partAabb(p);
   const u0 = b[view.u], uw = b[SIZE[view.u]];
   let v0 = b[view.v], vh = b[SIZE[view.v]];
   if (view.flipV) v0 = bounds[SIZE[view.v]] - v0 - vh;   // במבט־על: החזית למטה
   const depth = b[view.depth] + b[SIZE[view.depth]];      // הקצה הקרוב לצופה
-  return { u0, v0, uw, vh, depth };
+  // חלק מסובב במבט־על: ארבע הפינות של הטביעה שלו
+  let poly = null;
+  if (p.xf && view.v === 'z') {
+    const c8 = partCorners(p);
+    const ring = [0, 4, 5, 1].map((i) => c8[i]);   // הקודקודים בתחתית: (x0,z0) (x1,z0) (x1,z1) (x0,z1)
+    poly = ring.map((c) => [c[0], view.flipV ? bounds.d - c[2] : c[2]]);
+  }
+  return { u0, v0, uw, vh, depth, poly };
 }
 
 /**
@@ -50,7 +59,9 @@ export function drawView(model, viewKey, opts = {}) {
   out.push(`<rect x="${-M}" y="${-M}" width="${U + 2 * M}" height="${V + 2 * M}" fill="#fff"/>`);
   for (const { r, m, p } of rects) {
     const fill = m.kind === 'glass' ? 'rgba(191,224,234,0.6)' : lighten(m.color ?? 0xcccccc, 0.45);
-    out.push(`<rect x="${r.u0}" y="${Y(r.v0 + r.vh)}" width="${r.uw}" height="${r.vh}" fill="${fill}" stroke="#3b3027" stroke-width="${Math.max(1, Math.max(U, V) / 800)}" data-id="${p.id}"><title>${esc(p.name)}</title></rect>`);
+    const stroke = `stroke="#3b3027" stroke-width="${Math.max(1, Math.max(U, V) / 800)}" data-id="${p.id}"`;
+    if (r.poly) out.push(`<polygon points="${r.poly.map(([u, v]) => `${u},${Y(v)}`).join(' ')}" fill="${fill}" ${stroke}><title>${esc(p.name)}</title></polygon>`);
+    else out.push(`<rect x="${r.u0}" y="${Y(r.v0 + r.vh)}" width="${r.uw}" height="${r.vh}" fill="${fill}" ${stroke}><title>${esc(p.name)}</title></rect>`);
   }
 
   // מידות

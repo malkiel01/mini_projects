@@ -9,12 +9,16 @@
 // PATTERNS (סטריפים אנכיים/אופקיים, לוחות, ריבועים, לבנים, שחמט, תבליט,
 // מסגרות). לפי בחירה פנל תחתון וקרניז עליון, וגובה חלקי.
 //
-// הצירים: הקיר הראשון לאורך X והחזית ל-+z (אל החדר). פנייה שמאלה: הקיר
-// הבא ממשיך לאורך -Z מהקצה; ימינה: לאורך +Z. פניות שאינן 90° (זוויות
-// אחרות, קירות מעוגלים) אינן נתמכות — החלקים מקבילים לצירים, ולכן גם
-// דוגמאות אלכסוניות (אדרה, שברון) אינן כאן.
+// הצירים: הקיר הראשון לאורך X והחזית ל-+z (אל החדר). כל פינה מוגדרת
+// בזווית שבין שני הקירות, נמדדת בצד החיפוי: 90° פינת חדר (פנימית), 270°
+// עמוד או בליטה (חיצונית), 180° המשך ישר — וכל זווית אחרת. כל קיר נבנה
+// במערכת מקומית (לאורך x, החדר ב-+z) ומוצב בעולם בסיבוב — ברבעים התיבות
+// נשארות מקבילות לצירים, ובשאר הזוויות החלקים נושאים xf (xform.js).
+// בפינה שאינה 90°/270° החיבור תמיד בגרונג, בחצי הזווית. קירות מעוגלים
+// ודוגמאות אלכסוניות (אדרה, שברון) אינם כאן.
 
 import { part } from '../blocks.js';
+import { xfPart, partsAabb, shiftPart, normYaw } from '../xform.js';
 import { boardT, applyFinish, FINISHES_FLUSH } from './common.js';
 import { resolveShares, sectionLayout } from '../layout.js';
 
@@ -34,39 +38,42 @@ const PATTERN_NAME = Object.fromEntries(PATTERNS.map((p) => [p.id, p.name]));
 /** עובי שכבת הלטות: 0 כשהחיפוי מודבק/מוברג ישר לקיר. */
 const battenDepth = (v) => (v.mount === 'direct' ? 0 : (v.battenT ?? 18));
 
+/** זווית הפינה (בצד החיפוי) — מוגבלת, כדי שהחיתוך לא יתפוצץ. */
+const cornerAngle = (a) => Math.min(340, Math.max(20, Number.isFinite(Number(a)) ? Number(a) : 90));
+const isRight = (a) => a === 90 || a === 270;
+const RAD = Math.PI / 180;
+
 /**
- * מסלול הקירות: כל קיר = { x, z, len, dir, inside, inset, a, b } — משותף לבנייה ולעורך.
- * [a, b] — הקטע לאורך הקיר שהחיפוי עצמו תופס (בגרונג: עד קו הפינה, בצד הארוך).
+ * מסלול הקירות — משותף לבנייה ולעורך. כל קיר = { i, len, yaw, ox, oz, alpha, k, mit, a, b, free }:
+ * yaw — כיוון הקיר (0 = +x), ox/oz — תחילתו; alpha — זווית הפינה בתחילתו, k = cot(alpha/2):
+ * בעומק d מהקיר, קו הגרונג נמצא d·k לאורך הקיר מהפינה (חיובי בפינה פנימית, שלילי בחיצונית).
+ * mit — הפינה בתחילת הקיר בגרונג. [a, b] — הקטע לאורך הקיר שהחיפוי עצמו תופס.
  */
 function wallPath(v) {
   const bt = battenDepth(v), st = v.slatT ?? 20, totalT = bt + st;
-  const miter = v.corner === 'miter';
+  const lens = [v.len1 ?? 3000, v.len2 ?? 2000, v.len3 ?? 2000], angles = [null, cornerAngle(v.angle2 ?? 90), cornerAngle(v.angle3 ?? 90)];
   const walls = [];
-  let x = 0, z = 0, dir = '+x';
-  const lens = [v.len1 ?? 3000, v.len2 ?? 2000, v.len3 ?? 2000], turns = [null, v.turn2 ?? 'left', v.turn3 ?? 'left'];
-  const normal = { '+x': '+z', '-z': '+x', '-x': '-z', '+z': '-x' };
+  let x = 0, z = 0, h = 0;
   for (let i = 0; i < (v.walls ?? 1); i++) {
-    if (i > 0) {
-      // פנייה: שמאלה (מהחדר) = סיבוב נגד כיוון השעון במבט־על. +x → -z → -x → +z → +x
-      const cw = ['+x', '+z', '-x', '-z'], ccw = ['+x', '-z', '-x', '+z'];
-      const seq = turns[i] === 'left' ? ccw : cw;
-      dir = seq[(seq.indexOf(dir) + 1) % 4];
-    }
-    // פינה פנימית (פינת חדר) כשהכיוון החדש הוא כיוון החזית של הקיר הקודם; אחרת חיצונית (עוטף עמוד).
-    const inside = i > 0 ? dir === normal[walls[i - 1].dir] : null;
-    // בפינה פנימית הקיר מתחיל אחרי עובי החיפוי של הקודם; בחיצונית — לפניו, ומכסה את קצהו.
-    const inset = i > 0 ? (inside ? totalT : -totalT) : 0;
-    walls.push({ x, z, len: lens[i], dir, i, inside, inset, a: miter && i > 0 ? (inside ? bt : -totalT) : inset, b: lens[i] });
-    if (dir === '+x') x += lens[i]; else if (dir === '-x') x -= lens[i]; else if (dir === '+z') z += lens[i]; else z -= lens[i];
+    const alpha = i > 0 ? angles[i] : null;
+    if (i > 0) h += alpha - 180;   // 90 = פנייה אל החדר (ימינה), 270 = הרחק ממנו (שמאלה)
+    const k = i > 0 ? clean(1 / Math.tan(alpha / 2 * RAD)) : 0;
+    const mit = i > 0 && alpha !== 180 && (v.corner === 'miter' || !isRight(alpha));
+    walls.push({ i, len: lens[i], yaw: normYaw(h), ox: x, oz: z, alpha, k, mit, inside: i > 0 ? alpha < 180 : null });
+    x += lens[i] * Math.cos(h * RAD); z -= lens[i] * Math.sin(h * RAD);
+    x = clean(x); z = clean(z);
   }
-  // בגרונג גם הקיר הקודם מגיע עד קו הפינה: בפינה פנימית — עד הלטות של הקיר הבא; בחיצונית — מעבר לקצה
   for (const w of walls) {
     const next = walls[w.i + 1];
-    if (miter && next) w.b = w.len + (next.inside ? -bt : totalT);
+    // התחלה: בגרונג — קו הגרונג (הנקודה הקרובה ביותר בשכבת החיפוי); בחיבור ישר — אחרי/לפני עובי הקודם
+    w.a = w.i === 0 ? 0 : w.mit ? Math.min(bt * w.k, totalT * w.k) : totalT * w.k;
+    w.inset = w.i === 0 ? 0 : totalT * w.k;
+    w.b = next && next.mit ? w.len - Math.min(bt * next.k, totalT * next.k) : w.len;
     w.free = w.b - w.a;
   }
   return { walls, totalT, bt, st };
 }
+const clean = (n) => Math.round(n * 1e9) / 1e9;
 
 export default {
   key: 'cladding',
@@ -77,11 +84,11 @@ export default {
   params: [
     { key: 'walls', label: 'מספר קירות', type: 'int', min: 1, max: 3, default: 1, group: 'מידות' },
     { key: 'len1', label: 'אורך קיר 1', type: 'mm', min: 300, max: 12000, default: 3000, group: 'מידות' },
-    { key: 'turn2', label: 'פנייה לקיר 2', type: 'enum', default: 'left', group: 'מידות', showIf: { walls: [2, 3] }, options: [{ id: 'left', name: 'שמאלה' }, { id: 'right', name: 'ימינה' }] },
+    { key: 'angle2', label: 'זווית הפינה בין קיר 1 לקיר 2', type: 'deg', min: 20, max: 340, default: 90, presets: [90, 180, 270], group: 'מידות', showIf: { walls: [2, 3] }, hint: 'נמדדת בצד החיפוי: 90° פינת חדר, 270° עמוד/בליטה, 180° ישר — או כל זווית' },
     { key: 'len2', label: 'אורך קיר 2', type: 'mm', min: 300, max: 12000, default: 2000, group: 'מידות', showIf: { walls: [2, 3] } },
-    { key: 'turn3', label: 'פנייה לקיר 3', type: 'enum', default: 'left', group: 'מידות', showIf: { walls: [3] }, options: [{ id: 'left', name: 'שמאלה' }, { id: 'right', name: 'ימינה' }] },
+    { key: 'angle3', label: 'זווית הפינה בין קיר 2 לקיר 3', type: 'deg', min: 20, max: 340, default: 90, presets: [90, 180, 270], group: 'מידות', showIf: { walls: [3] } },
     { key: 'len3', label: 'אורך קיר 3', type: 'mm', min: 300, max: 12000, default: 2000, group: 'מידות', showIf: { walls: [3] } },
-    { key: 'corner', label: 'חיבור בפינה', type: 'enum', default: 'butt', group: 'מידות', showIf: { walls: [2, 3] }, options: [{ id: 'butt', name: 'ישר — קיר אחד מכסה את קצה השני' }, { id: 'miter', name: 'גרונג 45° — חיתוך אלכסוני' }] },
+    { key: 'corner', label: 'חיבור בפינה', type: 'enum', default: 'butt', group: 'מידות', showIf: { walls: [2, 3] }, options: [{ id: 'butt', name: 'ישר — קיר אחד מכסה את קצה השני' }, { id: 'miter', name: 'גרונג — חיתוך אלכסוני בחצי הזווית' }], hint: 'בזווית שאינה 90° או 270° — תמיד גרונג' },
     { key: 'height', label: 'גובה החיפוי', type: 'mm', min: 300, max: 3500, default: 2500, group: 'מידות', hint: 'עד התקרה, או חלקי (למשל 1000)' },
     { key: 'fromFloor', label: 'התחלה מהרצפה', type: 'mm', min: 0, max: 1500, default: 0, group: 'מידות', hint: '0 = מהרצפה' },
 
@@ -110,6 +117,14 @@ export default {
       options: [{ id: 'subtract', name: 'יורדת מהמידה' }, { id: 'add', name: 'נוספת למידה' }] },
   ],
 
+  /** פרויקטים ישנים: "פנייה שמאלה/ימינה" → זווית הפינה (שמאלה = חיצונית 270°, ימינה = פנימית 90°). */
+  migrate(v) {
+    for (const [t, a] of [['turn2', 'angle2'], ['turn3', 'angle3']]) {
+      if (v[t] !== undefined) { if (v[a] === undefined || v[a] === null) v[a] = v[t] === 'right' ? 90 : 270; delete v[t]; }
+    }
+    return v;
+  },
+
   /** לעורך החלוקה: קבוצה לכל קיר, פריט לכל שדה — רוחב ודוגמה (אין תאים). */
   columnSpace(v) {
     const { walls } = wallPath(v);
@@ -123,40 +138,16 @@ export default {
   },
 
   build(v) {
-    const parts = [], hardware = [], warnings = [];
+    const all = [], hardware = [], warnings = [];
+    let parts = [];   // החלקים של הקיר הנבנה — במערכת המקומית שלו
     const H = v.height, y0 = v.fromFloor, y1 = y0 + H;
     const { walls, totalT, bt, st } = wallPath(v);
     const direct = bt === 0;
-    // נירמול: מזיזים הכול כך שהמינימום יהיה 0 (הגבולות חייבים להיות חיוביים)
-    let minX = 0, minZ = 0, maxX = 0, maxZ = 0;
-    const extent = (w) => {
-      const along = w.dir[1], sign = w.dir[0] === '+' ? 1 : -1;
-      const ex = along === 'x' ? [w.x, w.x + sign * w.len] : [w.x, w.x + (w.dir === '+z' ? -totalT : totalT)];
-      const ez = along === 'z' ? [w.z, w.z + sign * w.len] : [w.z, w.z + (w.dir === '+x' ? totalT : -totalT)];
-      return { x0: Math.min(...ex), x1: Math.max(...ex), z0: Math.min(...ez), z1: Math.max(...ez) };
-    };
-    for (const w of walls) { const e = extent(w); minX = Math.min(minX, e.x0); maxX = Math.max(maxX, e.x1); minZ = Math.min(minZ, e.z0); maxZ = Math.max(maxZ, e.z1); }
-    for (const w of walls) { w.x -= minX; w.z -= minZ; }
-
-    /** מציב תיבה על קיר: `u` לאורך הקיר (מתחילתו), `depth` מרחק מהקיר (0 = צמוד), `len` אורך לאורך הקיר, `t` עובי. */
-    const place = (w, id, name, u, yA, yB, len, depth, t, opts) => {
-      const h = yB - yA;
-      let box;
-      if (w.dir === '+x') box = { x: w.x + u, y: yA, z: w.z + depth, w: len, h, d: t };
-      else if (w.dir === '-x') box = { x: w.x - u - len, y: yA, z: w.z - depth - t, w: len, h, d: t };
-      else if (w.dir === '+z') box = { x: w.x - depth - t, y: yA, z: w.z + u, w: t, h, d: len };
-      else box = { x: w.x + depth, y: yA, z: w.z - u - len, w: t, h, d: len };
-      const alongX = w.dir[1] === 'x';
-      return part(id, name, box, { axis: alongX ? 'z' : 'x', grain: opts.grainAlong ? (alongX ? 'x' : 'z') : 'y', face: ROOM_FACE[w.dir], ...opts });
-    };
-    /** הקטע של תיבה לאורך הקיר [u0, u1] ומרחקה מהקיר [d0, d1] — ההפך של place. */
-    const span = (w, b) => {
-      if (w.dir === '+x') return [b.x - w.x, b.x + b.w - w.x, b.z - w.z, b.z + b.d - w.z];
-      if (w.dir === '-x') return [w.x - b.x - b.w, w.x - b.x, w.z - b.z - b.d, w.z - b.z];
-      if (w.dir === '+z') return [b.z - w.z, b.z + b.d - w.z, w.x - b.x - b.w, w.x - b.x];
-      return [w.z - b.z - b.d, w.z - b.z, b.x - w.x, b.x + b.w - w.x];
-    };
-    const OPP = { '+x': '-x', '-x': '+x', '+z': '-z', '-z': '+z' };
+    /**
+     * מציב תיבה על קיר, במערכת המקומית של הקיר: `u` לאורך הקיר (מתחילתו, x), `depth` מרחק
+     * מהקיר (z, 0 = צמוד, החדר ב-+z), `len` אורך לאורך הקיר, `t` עובי. ההצבה בעולם — בסוף הקיר.
+     */
+    const place = (w, id, name, u, yA, yB, len, depth, t, opts) => part(id, name, { x: u, y: yA, z: depth, w: len, h: yB - yA, d: t }, { axis: 'z', grain: opts.grainAlong ? 'x' : 'y', face: '+z', ...opts });
 
     const S = v.tileS, g = v.slatGap, sw = v.slatW;
     /** פריסה ממורכזת של n פריטים ברוחב `size` עם מרווח `gap` בתוך `total`: מחזירה [התחלה, n]. */
@@ -185,7 +176,7 @@ export default {
           const pnl = place(w, `${pre}-panel-${i + 1}`, 'לוח חיפוי', u0 + i * pw, yA, yB, pw, bt, st, { material: v.slatMaterial, qtyKey: `panel-${Math.round(pw)}x${Math.round(fh)}`, edges: { top: true, bottom: true }, note });
           parts.push(pnl);
           // גימור (חירוץ CNC וכו') על הפאה שפונה אל החדר — לפי כיוון הקיר
-          if (v.panelFinish && v.panelFinish !== 'flat') parts.push(...applyFinish(pnl, v.panelFinish, { material: v.slatMaterial, normal: ROOM_FACE[w.dir] }));
+          if (v.panelFinish && v.panelFinish !== 'flat') parts.push(...applyFinish(pnl, v.panelFinish, { material: v.slatMaterial, normal: '+z' }));
         }
       } else if (pattern === 'squares' || pattern === 'relief' || pattern === 'checker') {
         const [su, nx] = centered(fw, S, g), [sy, ny] = centered(fh, S, g);
@@ -244,7 +235,8 @@ export default {
     for (const w of walls) {
       const k = w.i + 1;
       const startInset = w.a, len = w.free;
-      const first = parts.length;
+      parts = [];
+      const next = walls[w.i + 1];
       // השדות: רוחב נעוץ/אוטומטי, דוגמה וגובה לכל שדה (ברירת מחדל — גובה החיפוי)
       const lay = sectionLayout(v.columnsLayout, `wall${k}`, v.fields);
       const widths = resolveShares(len, lay.widths);
@@ -258,8 +250,10 @@ export default {
       };
       // לטות רוחב: לכל הקיר; כשהשדות בגבהים שונים — לכל שדה, בגובה שלו
       // הלטות על הקיר עצמו: בגרונג — מהפינה (בפנימית אחרי שכבת הקיר הקודם), עד סוף הקיר
-      const bA = v.corner === 'miter' && w.i > 0 ? (w.inside ? totalT : 0) : w.inset;
-      const bLen = w.len - bA;
+      // ובזווית חדה הן נעצרות לפני הקיר הבא, כדי לא לחדור אליו
+      const bA = w.mit ? Math.max(0, totalT * w.k) : w.inset;
+      const bB = next && next.alpha < 90 ? w.len - bt / Math.tan(next.alpha * RAD) : w.len;
+      const bLen = bB - bA;
       if (!direct && !stepped) battens(`w${k}-batten`, bA, bLen, H, `קיר ${k}`);
       let u = startInset;
       for (let f = 0; f < v.fields; f++) {
@@ -267,7 +261,7 @@ export default {
         const fTop = y0 + fieldH[f];
         if (!direct && stepped) {
           // לטות השדה — רק על הקיר עצמו (לא מעבר לפינה)
-          const la = Math.max(u, bA), lb = Math.min(u + widths[f], w.len);
+          const la = Math.max(u, bA), lb = Math.min(u + widths[f], bB);
           if (lb - la > 60) battens(`w${k}-f${f + 1}-batten`, la, lb - la, fieldH[f], `קיר ${k} · שדה ${f + 1}`);
         }
         fillField(w, k, f + 1, u, widths[f], y0 + v.baseH, fTop - v.crownH, pattern);
@@ -276,25 +270,31 @@ export default {
       }
       if (v.baseH > 0) parts.push(place(w, `w${k}-base`, 'פנל תחתון', startInset, y0, y0 + v.baseH, len, bt, st, { material: v.trimMaterial, grainAlong: true, qtyKey: `base-${Math.round(len)}`, note: `קיר ${k}` }));
       if (!stepped && v.crownH > 0) parts.push(place(w, `w${k}-crown`, 'קרניז עליון', startInset, y1 - v.crownH, y1, len, bt, st, { material: v.trimMaterial, grainAlong: true, qtyKey: `crown-${Math.round(len)}`, note: `קיר ${k}` }));
-      // גרונג: כל חלק בשכבת החיפוי שמגיע לקצה הפינתי נחתך ב-45° — בפינה פנימית הפאה שאל החדר
-      // קצרה יותר, בחיצונית הפאה שאל הקיר
-      if (v.corner === 'miter') {
-        const ends = [];
-        if (w.i > 0) ends.push({ at: w.a, end: OPP[w.dir], inside: w.inside });
-        if (walls[w.i + 1]) ends.push({ at: w.b, end: w.dir, inside: walls[w.i + 1].inside });
-        for (let q = first; q < parts.length; q++) {
-          const p = parts[q];
-          if (/batten/.test(p.id)) continue;
-          const [u0, u1, d0, d1] = span(w, p.box);
-          for (const e of ends) {
-            const atStart = e.end === OPP[w.dir];
-            if (Math.abs((atStart ? u0 : u1) - e.at) > 0.5) continue;
-            (p.miter ||= []).push({ end: e.end, short: e.inside ? ROOM_FACE[w.dir] : OPP[ROOM_FACE[w.dir]], cut: Math.round((d1 - d0) * 10) / 10 });
-            if (!/גרונג/.test(p.note || '')) p.note = [p.note, 'גרונג 45° בקצה הפינה'].filter(Boolean).join(' — ');
-          }
+      // גרונג: כל חלק בשכבת החיפוי שמגיע לקצה הפינתי נחתך בקו הגרונג — בפינה פנימית הפאה שאל
+      // החדר קצרה יותר, בחיצונית הפאה שאל הקיר. במערכת המקומית: התחלה = '-x', סוף = '+x'.
+      const ends = [];
+      if (w.mit) ends.push({ at: w.a, end: '-x', k: w.k, alpha: w.alpha });
+      if (next && next.mit) ends.push({ at: w.b, end: '+x', k: next.k, alpha: next.alpha });
+      for (const p of parts) {
+        if (/batten/.test(p.id)) continue;
+        const u0 = p.box.x, u1 = p.box.x + p.box.w, depth = p.box.d;
+        for (const e of ends) {
+          if (Math.abs((e.end === '-x' ? u0 : u1) - e.at) > 0.5) continue;
+          const cut = Math.round(depth * Math.abs(e.k) * 1000) / 1000;
+          if (cut < 0.1) continue;
+          (p.miter ||= []).push({ end: e.end, short: e.k > 0 ? '+z' : '-z', cut });
+          const deg = Math.round(Math.abs(180 - e.alpha) / 2 * 10) / 10;
+          p.note = [p.note, `גרונג ${deg}° בקצה הפינה`].filter(Boolean).join(' — ');
         }
       }
+      // הצבה בעולם: סיבוב הקיר סביב תחילתו (ברבעים — נאפה לתיבה מקבילה)
+      const xf = { yaw: w.yaw, x: w.ox, z: w.oz };
+      for (const p of parts) all.push(xfPart(p, xf));
+      if (w.i > 0 && !isRight(w.alpha) && w.alpha !== 180) warnings.push(`פינה ${k - 1}–${k} בזווית ${w.alpha}° — החיבור בגרונג ${Math.round(Math.abs(180 - w.alpha) / 2 * 10) / 10}°`);
     }
+    // נירמול: מזיזים הכול כך שהמינימום יהיה 0 (הגבולות חייבים להיות חיוביים)
+    const box = partsAabb(all);
+    parts = all.map((p) => shiftPart(p, [-box.x, 0, -box.z]));
     if (direct) hardware.push({ id: 'glue', kind: 'misc', material: 'hw:leg-adjust', qty: 0, note: 'התקנה ישירה: דבק פוליאוריתן/MS לקיר, ולפי הצורך מסמרי פנאומטיקה או ברגים נסתרים. הקיר חייב להיות ישר — סטייה של מעל 3 מ"מ למטר דורשת לטות' });
     else hardware.push({ id: 'screws', kind: 'misc', material: 'hw:leg-adjust', qty: 0, note: `ברגים ודיבלים: ~${Math.round(walls.reduce((s, w) => s + w.len, 0) / 400) * v.battenRows} לקיבוע הלטות` });
     if (sw / st > 4 && parts.some((p) => p.name === 'סטריפ')) warnings.push(`סטריפ ברוחב ${sw} ובעובי ${st} — דק ליחס; נוטה להתעקם`);
@@ -302,13 +302,10 @@ export default {
     if (v.corner === 'miter' && walls.length > 1 && st < 12) warnings.push(`גרונג בעובי ${st} — דק לחיתוך 45°; קצה הגרונג נשבר בקלות`);
     if (parts.length > 1500) warnings.push(`${parts.length} חלקים — דוגמה צפופה; רשימת החיתוך מקבצת זהים, אבל ההדמיה תהיה כבדה`);
 
-    const maxT = Math.max(...parts.map((p) => (p.axis === 'z' ? p.box.z + p.box.d : 0)), 0);
-    return { parts, hardware, warnings, bounds: { w: maxX - minX, h: y1, d: Math.max(maxZ - minZ, maxT) } };
+    return { parts, hardware, warnings, bounds: { w: box.w, h: y1, d: box.d } };
   },
 };
 
 /** הגובה הנמוך ביותר לשדה: פנל תחתון, קרניז ו-100 של דוגמה. */
 function minFieldH(v) { return (v.baseH ?? 0) + (v.crownH ?? 0) + 100; }
 
-/** הפאה של לוח החיפוי שפונה אל החדר, לפי כיוון הקיר (ראו place). */
-const ROOM_FACE = { '+x': '+z', '-x': '-z', '+z': '-x', '-z': '+x' };

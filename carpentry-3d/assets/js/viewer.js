@@ -24,7 +24,9 @@ const T = () => window.THREE;
  *   constrainY(k,dy)    הצמדה בגובה: מחזיר dy מתוקן
  *   end(k,dx,dz,dy)     סוף הגרירה — האפליקציה מעדכנת את המיקום ובונה מחדש
  *   rotate(k,deg)       סיבוב בגרירה (שתי אצבעות, או גרירה ימנית/Shift בעכבר) —
- *                       התצוגה מסתובבת חופשי, ובשחרור נצמדת ל-90° (deg = ±90/180)
+ *                       בכל זווית; deg = השינוי במעלות אחרי הצמדה
+ *   snapRotate(k,deg)   (רשות) השינוי אחרי הצמדה — למשל לרבעים כשמתקרבים אליהם
+ *   rotating(k,deg)     (רשות) תוך כדי סיבוב: הזווית המוצגת (null בסוף) — לתווית
  */
 export function createViewer(canvas, { onPick, drag = null } = {}) {
   const THREE = T();
@@ -117,7 +119,8 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
     dragging.objs.forEach((o, i) => o.position.copy(dragging.orig[i]));
     dragging = null;
   }
-  // סיבוב אלמנט: תצוגה מקדימה חופשית סביב מרכז האלמנט, ובשחרור — הצמדה ל-90°
+  // סיבוב אלמנט: תצוגה מקדימה סביב מרכז האלמנט, בכל זווית; ליד רבע (0/90/180/270 ביחס
+  // לזווית ההתחלתית ± הסיבוב שכבר יש) — נצמד. בשחרור האפליקציה מקבלת את השינוי במעלות.
   let rotating = null;
   const yAxis = new THREE.Vector3(0, 1, 0);
   function rotateStart(d) {
@@ -127,16 +130,21 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
     return { key: d.key, objs: d.objs, orig: d.objs.map((o) => o.position.clone()), quat: d.objs.map((o) => o.quaternion.clone()), center: c, angle: 0 };
   }
   function rotatePreview(r) {
-    const q = new THREE.Quaternion().setFromAxisAngle(yAxis, r.angle);
+    // הזווית שמוצגת: הצמדה כמו בשחרור (drag.snapRotate מחזירה את השינוי אחרי הצמדה)
+    r.shown = drag.snapRotate ? drag.snapRotate(r.key, r.angle * 180 / Math.PI) : Math.round(r.angle * 180 / Math.PI);
+    if (drag.rotating) drag.rotating(r.key, r.shown);
+    const q = new THREE.Quaternion().setFromAxisAngle(yAxis, r.shown * Math.PI / 180);
     r.objs.forEach((o, i) => {
       o.position.copy(r.orig[i]).sub(r.center).applyQuaternion(q).add(r.center);
       o.quaternion.copy(r.quat[i]).premultiply(q);
     });
   }
   function rotateEnd(r, apply) {
-    const steps = Math.round(r.angle / (Math.PI / 2));
-    if (apply && steps % 4 !== 0) { drag.rotate(r.key, (((steps % 4) + 4) % 4) * 90); return; }
+    const deg = r.shown ?? 0;
+    if (drag.rotating) drag.rotating(r.key, null);
+    if (apply && Math.abs(deg) >= 0.5) { drag.rotate(r.key, deg); return; }
     r.angle = 0; rotatePreview(r);
+    if (drag.rotating) drag.rotating(r.key, null);
   }
   canvas.addEventListener('pointerdown', (e) => {
     try { canvas.setPointerCapture(e.pointerId); } catch { /* מצביע שכבר לא פעיל — ממשיכים בלי לכידה */ }
@@ -269,8 +277,21 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
   const ghostIds = new Set();       // חלקים שקופים
   let lastT = performance.now();
 
+  /** חלק מסובב בזווית (xf): המיקום והסיבוב שחושבו במערכת המקומית שלו → עולם. */
+  function toWorld(node, p) {
+    if (!p.xf) return;
+    const yaw = p.xf.yaw * Math.PI / 180, c = Math.cos(yaw), s = Math.sin(yaw);
+    const { x, z } = node.position;
+    node.position.set(x * c + z * s + p.xf.x, node.position.y, -x * s + z * c + p.xf.z);
+    node.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw));
+  }
   function applyMotion(entry, a) {
     const { node, part: p } = entry;
+    node.quaternion.identity();
+    applyMotionLocal(node, p, a);
+    toWorld(node, p);
+  }
+  function applyMotionLocal(node, p, a) {
     const m = p.motion;
     const cx = p.box.x + p.box.w / 2, cy = p.box.y + p.box.h / 2, cz = p.box.z + p.box.d / 2;
     if (m.kind === 'slide') {
@@ -286,7 +307,7 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
       const th = (m.angle * Math.PI / 180) * a;
       const rx = cx - m.pivot[0], rz = cz - m.pivot[2];
       node.position.set(m.pivot[0] + rx * Math.cos(th) + rz * Math.sin(th), cy, m.pivot[2] - rx * Math.sin(th) + rz * Math.cos(th));
-      node.rotation.y = th;
+      node.rotation.set(0, th, 0);
     }
   }
   function animate() {
@@ -440,6 +461,7 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
       const lines = new THREE.LineSegments(milled ? milled.lines : new THREE.EdgesGeometry(geo), edgeMat);
       const node = new THREE.Group();
       node.position.set(p.box.x + p.box.w / 2, p.box.y + p.box.h / 2, p.box.z + p.box.d / 2);
+      toWorld(node, p);
       node.add(mesh); node.add(lines);
       node.userData.part = p;
       group.add(node);
@@ -478,8 +500,7 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
           moving.position.sub(new THREE.Vector3(p.box.x + p.box.w / 2, p.box.y + p.box.h / 2, p.box.z + p.box.d / 2));
           owner.node.add(moving);
           const fixed = place(accessoryGroup(THREE, acc, (pr) => !pr.moving));
-          fixed.userData.hwId = h.id;
-          group.add(fixed);
+          group.add(hwWorld(fixed, h));
           continue;
         }
         mesh = place(accessoryGroup(THREE, acc));
@@ -524,11 +545,22 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
         const p = owner.part;
         mesh.position.sub(new THREE.Vector3(p.box.x + p.box.w / 2, p.box.y + p.box.h / 2, p.box.z + p.box.d / 2));
         owner.node.add(mesh);
-      } else { mesh.userData.hwId = h.id; group.add(mesh); }
+      } else group.add(hwWorld(mesh, h));
     }
     if (onPick) onPick(null);
   }
 
+  /** פרזול שאינו נע עם חלק: לסצנה, ואם הוא של אלמנט מסובב בזווית (xf) — בתוך עטיפה מסובבת. */
+  function hwWorld(obj, h) {
+    obj.userData.hwId = h.id;
+    if (!h.xf) return obj;
+    const wrap = new THREE.Group();
+    wrap.position.set(h.xf.x, 0, h.xf.z);
+    wrap.rotation.y = h.xf.yaw * Math.PI / 180;
+    wrap.add(obj);
+    wrap.userData.hwId = h.id;
+    return wrap;
+  }
   /** הפאה של הדלת/המגירה שהאביזר יושב עליה; ציר יושב על הפאה האחורית — הנורמל שלו הוא ההפך. */
   function ownerFace(h, owner) {
     if (!owner) return '+z';

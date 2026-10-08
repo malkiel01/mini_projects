@@ -162,6 +162,13 @@ html, body, .app { overflow-x: hidden; max-width: 100%; }
   box-shadow: 0 0 0 3px var(--accent-soft);
   background: var(--panel);
 }
+.rot-label { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 4px 14px; font-weight: 700; color: var(--accent-deep); direction: ltr; pointer-events: none; z-index: 5; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+.rot-label.is-snap { background: var(--accent); color: #fff; border-color: var(--accent); }
+.asm-item__rot { width: 5.5em; }
+.presets button.is-on { background: var(--accent); color: #fff; border-color: var(--accent); }
+.presets { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; }
+.presets button { font: inherit; font-size: 0.78rem; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--accent-deep); cursor: pointer; direction: ltr; }
+.presets button:hover { border-color: var(--accent); }
 .hint { grid-column: 1 / -1; color: var(--muted); font-size: 0.76rem; margin-top: -2px; }
 
 /* ---- התצוגה ---- */

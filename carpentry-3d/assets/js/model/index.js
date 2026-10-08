@@ -50,6 +50,11 @@ export function optionsFor(p) {
 
 /** מצמיד ערך לטווח הפרמטר. ערך לא חוקי חוזר לברירת המחדל. */
 export function clamp(p, value) {
+  if (p.type === 'deg') {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return p.default;
+    return Math.min(p.max, Math.max(p.min, Math.round(n * 10) / 10));
+  }
   if (p.type === 'mm' || p.type === 'int') {
     let n = Number(value);
     if (!Number.isFinite(n)) return p.default;
