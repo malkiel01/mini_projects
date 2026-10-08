@@ -3,7 +3,7 @@
 
 import { material } from '../materials.js';
 import { wheelHeight } from '../accessories.js';
-import { part } from '../blocks.js';
+import { part, back, crown } from '../blocks.js';
 
 export const boardT = (id) => material(id).t || 18;
 
@@ -165,3 +165,84 @@ export function sameOrMaterial(key, label, group, extra = {}) {
   return { key, label, type: 'material', kind: 'board', back: false, solid: false, top: false, allowSame: true, default: 'same', group, ...extra };
 }
 export const resolveSame = (value, fallback) => (value === 'same' || !value ? fallback : value);
+
+// ---- עמודות בגבהים שונים (ספרייה, ארון בגדים) ----
+// ברירת המחדל: כל העמודות בגובה המוצר. עמודה שקיבלה גובה משלה בעורך
+// (`columnsLayout…cols[i].height`) מקבלת גג משלה בגובה הזה. עמודות סמוכות
+// באותו גובה חולקות גג אחד ("ריצה"). המחיצה בין שתי ריצות עולה עד גג
+// הגבוהה מביניהן; דופן חיצונית — עד גג העמודה שלה. הגב והכרכוב — לכל ריצה.
+
+/** גובה כל עמודה (מ"מ, מהרצפה): הנעוץ בעורך, בין `min` לגובה המוצר; אחרת גובה המוצר. */
+export function columnHeights(layout, n, H, min) {
+  return Array.from({ length: n }, (_, i) => {
+    const h = layout?.cols?.[i]?.height;
+    return Number.isFinite(h) && h > 0 ? Math.round(Math.max(min, Math.min(H, h))) : H;
+  });
+}
+/** ריצות של עמודות סמוכות עם אותו גג: [{ a, b, top }] (a..b כולל). */
+export function topRuns(tops) {
+  const out = [];
+  tops.forEach((t, i) => { const r = out[out.length - 1]; if (r && r.top === t) r.b = i; else out.push({ a: i, b: i, top: t }); });
+  return out;
+}
+/** הדפנות החיצוניות בגובה העמודה הצמודה להן. לקרוא לפני גימורי הדפנות. */
+export function fitSides(parts, tops, { panelT, sidesOverTop }) {
+  for (const [id, t] of [['side-L', tops[0]], ['side-R', tops[tops.length - 1]]]) {
+    const s = parts.find((p) => p.id === id);
+    if (s) s.box = { ...s.box, h: (sidesOverTop ? t : t - panelT) - s.box.y };
+  }
+}
+/**
+ * גג לכל ריצה במקום הגג האחד, ומחיצות בגובה המתאים. `cols` — רוחבי העמודות
+ * (מ-partitions). כשהגג מונח על הדפנות, גג של ריצה בקצה ממשיך מעל הדופן.
+ */
+export function stepTops(parts, cols, tops, { W, panelT, sidesOverTop }) {
+  const i = parts.findIndex((p) => p.id === 'top');
+  if (i < 0) return;
+  const top = parts[i];
+  const runs = topRuns(tops), last = cols.length - 1;
+  const pieces = runs.map((r) => {
+    let x0 = cols[r.a].x0, x1 = cols[r.b].x1;
+    if (!sidesOverTop && r.a === 0) x0 = 0;
+    if (!sidesOverTop && r.b === last) x1 = W;
+    const id = runs.length === 1 ? 'top' : `top-${r.a + 1}${r.b > r.a ? `-${r.b + 1}` : ''}`;
+    return { ...top, id, name: runs.length === 1 ? top.name : `גג עמודות ${r.a + 1}${r.b > r.a ? `–${r.b + 1}` : ''}`, qtyKey: undefined, box: { ...top.box, x: x0, y: r.top - panelT, w: x1 - x0 } };
+  });
+  parts.splice(i, 1, ...pieces);
+  for (let c = 0; c < last; c++) {
+    const p = parts.find((q) => q.id === `partition-${c + 1}`);
+    if (!p) continue;
+    const boundary = tops[c] !== tops[c + 1];
+    const y1 = boundary ? Math.max(tops[c], tops[c + 1]) : tops[c] - panelT;
+    p.box = { ...p.box, h: y1 - p.box.y };
+    if (boundary) { p.edges = { ...(p.edges || {}), top: true }; p.note = p.note || 'מחיצה בין עמודות בגבהים שונים — עולה עד הגג הגבוה'; }
+  }
+}
+/** קצות ריצה לגב מולבש ולכרכוב: מחצי המחיצה (או מקצה הארון). */
+function runSpan(r, cols, sideT, W) {
+  return [r.a === 0 ? 0 : cols[r.a].x0 - sideT / 2, r.b === cols.length - 1 ? W : cols[r.b].x1 + sideT / 2];
+}
+/** גב לכל ריצה: מולבש — עד הגג שלה; בחריץ — בין המחיצות של הריצה, עד מתחת לגג. */
+export function steppedBack({ mode, outer, inner, cols, tops, t, grooveDepth, inset, material, sideT, W, panelT }) {
+  const runs = topRuns(tops);
+  return runs.flatMap((r, k) => {
+    const prefix = `r${k + 1}-`;
+    if (mode === 'overlay') {
+      const [x0, x1] = runSpan(r, cols, sideT, W);
+      return back({ mode, outer: { w: x1 - x0, y0: outer.y0, y1: r.top }, inner, t, grooveDepth, inset, material, prefix }).parts.map((p) => ({ ...p, box: { ...p.box, x: p.box.x + x0 } }));
+    }
+    return back({ mode, outer, inner: { ...inner, x0: cols[r.a].x0, x1: cols[r.b].x1, y1: r.top - panelT }, t, grooveDepth, inset, material, prefix }).parts;
+  });
+}
+/**
+ * כרכוב לכל ריצה, בגובה הגג שלה. ליד ריצה גבוהה יותר המחיצה עולה מעל הגג —
+ * הכרכוב נעצר בפאה שלה; ליד ריצה נמוכה יותר הוא עובר מעל כל עובי המחיצה.
+ */
+export function steppedCrown({ cols, tops, h, t, d, material, sideT, W }) {
+  const last = cols.length - 1;
+  return topRuns(tops).flatMap((r, k) => {
+    const x0 = r.a === 0 ? 0 : (tops[r.a - 1] > r.top ? cols[r.a].x0 : cols[r.a].x0 - sideT);
+    const x1 = r.b === last ? W : (tops[r.b + 1] > r.top ? cols[r.b].x1 : cols[r.b].x1 + sideT);
+    return crown({ w: x1 - x0, y: r.top, h, t, d, material, prefix: `r${k + 1}-` }).parts.map((p) => ({ ...p, box: { ...p.box, x: p.box.x + x0 } }));
+  });
+}

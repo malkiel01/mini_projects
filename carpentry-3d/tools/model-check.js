@@ -547,6 +547,44 @@ console.log('אביזרים: ידיות, כפתורים, צירים, גלגלי�
   check(ACC_FINISHES.length >= 6, 'גימורים');
 }
 
+// ---- עמודות ושדות בגבהים שונים ----
+{
+  console.log('\nגובה לכל עמודה / שדה');
+  const ov = (ps) => { const out = []; for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) { const a = ps[i].box, b = ps[j].box, e = 0.5; if (a.x + e < b.x + b.w && b.x + e < a.x + a.w && a.y + e < b.y + b.h && b.y + e < a.y + a.h && a.z + e < b.z + b.d && b.z + e < a.z + a.d) out.push(`${ps[i].id}×${ps[j].id}`); } return out; };
+  const lay = (hs) => ({ sections: { main: { widths: hs.map(() => null), cols: Object.fromEntries(hs.map((h, i) => [i, h ? { height: h } : null]).filter(([, c]) => c)) } } });
+  // ספרייה 3 עמודות: אמצעית 1200 (גובה 2000)
+  for (const extra of [{}, { sidesOverTop: 'top' }, { backMode: 'overlay' }, { crownH: 60 }, { doorType: 'wood' }]) {
+    const b = build('bookcase', { columns: 3, height: 2000, columnsLayout: lay([null, 1200, null]), ...extra });
+    const solid = b.parts.filter((p) => !/חריץ/.test(p.note || '') && p.material && M.material(p.material).kind !== 'glass');
+    const o = ov(solid.filter((p) => !p.motion));
+    check(o.length === 0, `ספרייה ${JSON.stringify(extra)}: אין חפיפות (${o.slice(0, 3).join('; ')})`);
+    check(within(b.parts, b.bounds) && b.bounds.h === 2000, `ספרייה ${JSON.stringify(extra)}: בגבולות, גובה 2000`);
+    const tops = b.parts.filter((p) => /^top(-\d+)*$/.test(p.id));
+    check(tops.length === 3 && tops.some((p) => Math.abs(p.box.y + p.box.h - (1200 - (extra.crownH || 0))) < 0.01), `ספרייה ${JSON.stringify(extra)}: גג לכל ריצה, האמצעי ב-${1200 - (extra.crownH || 0)}`);
+    const p1 = b.parts.find((p) => p.id === 'partition-1');
+    check(Math.abs(p1.box.y + p1.box.h - (2000 - (extra.crownH || 0))) < 0.01, 'המחיצה בין עמודה גבוהה לנמוכה עולה עד הגג הגבוה');
+    const mid = b.parts.filter((p) => /shelf/.test(p.id) && p.box.x > p1.box.x && p.box.x < b.parts.find((q) => q.id === 'partition-2').box.x);
+    check(mid.every((p) => p.box.y + p.box.h <= 1200 - (extra.crownH || 0) - 18 + 0.01), 'מדפי העמודה הנמוכה מתחת לגג שלה');
+    if (extra.doorType) { const d2 = b.parts.filter((p) => /^door-2/.test(p.id)); check(d2.length && d2.every((p) => p.box.y + p.box.h <= 1200 + 0.01), 'הדלת של העמודה הנמוכה בגובה שלה'); }
+  }
+  const eq = build('bookcase', { columns: 3, height: 2000, columnsLayout: lay([2000, 2000, null]) });
+  check(eq.parts.filter((p) => /^top(-\d+)*$/.test(p.id)).length === 1, 'גובה שווה לגובה הספרייה — גג אחד, כמו בלי גובה');
+  const clampLow = build('bookcase', { columns: 2, height: 2000, columnsLayout: lay([10, null]) });
+  check(clampLow.parts.find((p) => p.id === 'side-L').box.h > 100, 'גובה קטן מדי מוצמד למינימום');
+  // ארון: עמודת מדפים נמוכה ליד תלייה
+  const w = build('wardrobe', { columns: 3, hangingColumns: 2, doorType: 'wood', columnsLayout: lay([null, null, 1600]) });
+  check(ov(w.parts.filter((p) => !p.motion && !/חריץ/.test(p.note || ''))).length === 0 && within(w.parts, w.bounds), 'ארון: אין חפיפות, בגבולות');
+  check(w.parts.find((p) => p.id === 'side-R').box.y + w.parts.find((p) => p.id === 'side-R').box.h <= 1600 + 0.01 && w.parts.filter((p) => /^door-3/.test(p.id)).every((p) => p.box.y + p.box.h <= 1600 + 0.01), 'ארון: הדופן והדלת של העמודה הנמוכה ב-1600');
+  const ws = build('wardrobe', { columns: 3, doorType: 'sliding', columnsLayout: lay([null, null, 1600]) });
+  check(ws.warnings.some((x) => /גובה אחיד/.test(x)) && ws.parts.filter((p) => /^top(-\d+)*$/.test(p.id)).length === 1, 'הזזה: גובה אחיד ואזהרה');
+  // חיפוי: שדה שני נמוך
+  const c = build('cladding', { fields: 3, crownH: 40, columnsLayout: { sections: { wall1: { widths: [null, null, null], cols: { 1: { height: 1200 } } } } } });
+  const f2 = c.parts.filter((p) => /^w1-f2-/.test(p.id) && !/batten/.test(p.id));
+  check(f2.length && f2.every((p) => p.box.y + p.box.h <= c.values.fromFloor + 1200 + 0.01), 'חיפוי: השדה הנמוך עד הגובה שלו, כולל הקרניז');
+  check(c.parts.some((p) => p.id === 'w1-f2-crown') && !c.parts.some((p) => p.id === 'w1-crown') && c.parts.filter((p) => /^w1-f2-batten/.test(p.id)).every((p) => p.box.y + p.box.h <= c.values.fromFloor + 1200 + 0.01), 'חיפוי: לטות וקרניז לכל שדה, בגובה שלו');
+  check(normalizeLayout({ cols: { 0: { height: 900 } } }, 2).cols[0].height === 900 && !layoutIsEmpty(normalizeLayout({ cols: { 0: { height: 900 } } }, 2)), 'הפריסה שומרת גובה');
+}
+
 // ---- ציר נסתר: הפלטה על הפאה הפנימית של הדופן, לא מחוץ לארון ----
 {
   console.log('\nציר נסתר בתוך הארון');

@@ -7,7 +7,7 @@
 import { carcass, partitions, shelves, back, plinth, crown, door, drawer, rod, slidingDoors } from '../blocks.js';
 import { material } from '../materials.js';
 import { resolveShares, sectionLayout } from '../layout.js';
-import { wheelsParam, addWheels, materialParams, doorParams, drawerParams, joineryParams, boardT, bodyWarnings, LIMITS, FINISHES_NO_GLASS, applyFinish, sameOrMaterial, resolveSame } from './common.js';
+import { wheelsParam, addWheels, materialParams, doorParams, drawerParams, joineryParams, boardT, bodyWarnings, LIMITS, FINISHES_NO_GLASS, applyFinish, sameOrMaterial, resolveSame, columnHeights, fitSides, stepTops, steppedBack, steppedCrown } from './common.js';
 
 export default {
   key: 'wardrobe',
@@ -55,11 +55,14 @@ export default {
     const drawersH = (v.drawersPerColumn ?? 0) > 0 ? v.drawersPerColumn * (v.drawerH ?? 200) + shelfT : 0;
     const innerH = topY - shelfT - bottomY - drawersH;
     const innerW = (v.width ?? 2400) - 2 * sideT - (columns - 1) * sideT;
+    const H = v.height ?? 2400, sliding = v.doorType === 'sliding';
+    const heights = sliding ? Array.from({ length: columns }, () => H) : columnHeights(sectionLayout(v.columnsLayout, 'main', columns), columns, H, minColumnH(v));
+    const height = sliding ? null : { full: H, min: minColumnH(v) };
     return { sections: [{
       key: 'main', title: '', total: innerW, sizeLabel: 'רוחב', allLabel: 'העמודות', modes: { next: 'מהעמודה שמימין', prev: 'מהעמודה שמשמאל' },
       items: Array.from({ length: columns }, (_, i) => (i < (v.hangingColumns ?? 0)
-        ? { label: `עמודה ${i + 1}`, innerH, shelfT, cellsOf: 'shelves', defaultCount: 0, editable: false, note: 'עמודת תלייה — מוט ומדף עליון; אין תאים לעריכה' }
-        : { label: `עמודה ${i + 1}`, innerH, shelfT, cellsOf: 'shelves', defaultCount: v.shelvesPerColumn ?? 0, countMax: 12, editable: true, note: '' })),
+        ? { label: `עמודה ${i + 1}`, innerH: innerH - (H - heights[i]), shelfT, cellsOf: 'shelves', defaultCount: 0, editable: false, note: 'עמודת תלייה — מוט ומדף עליון; אין תאים לעריכה', height }
+        : { label: `עמודה ${i + 1}`, innerH: innerH - (H - heights[i]), shelfT, cellsOf: 'shelves', defaultCount: v.shelvesPerColumn ?? 0, countMax: 12, editable: true, note: '', height })),
     }] };
   },
 
@@ -79,6 +82,15 @@ export default {
     const shelfMat = v.shelfMaterial === v.bodyMaterial ? innerMat : v.shelfMaterial;
     const body = carcass({ w: W, d: bodyD, z: bodyZ, bottomY, topY, sideT, panelT: shelfT, sidesOverTop: v.sidesOverTop === 'sides', material: v.bodyMaterial });
     parts.push(...body.parts);
+    // גובה לכל עמודה (ברירת מחדל — גובה הארון). דלתות הזזה מכסות את כל הרוחב — שם הגובה אחיד.
+    const layout = sectionLayout(v.columnsLayout, 'main', v.columns);
+    const pinnedHeights = columnHeights(layout, v.columns, H, minColumnH(v));
+    const heights = sliding ? pinnedHeights.map(() => H) : pinnedHeights;
+    if (sliding && pinnedHeights.some((h) => h !== H)) warnings.push('דלתות הזזה דורשות גובה אחיד — גבהי העמודות שנקבעו לא חלים כאן');
+    const tops = heights.map((h) => h - v.crownH);
+    const stepped = tops.some((t) => t !== topY);
+    const sidesOverTop = v.sidesOverTop === 'sides';
+    if (stepped) fitSides(parts, tops, { panelT: shelfT, sidesOverTop });
     for (const side of ['L', 'R']) {
       const s = parts.find((p) => p.id === `side-${side}`);
       const finish = side === 'L' ? v.sideLeftFinish : v.sideRightFinish;
@@ -87,10 +99,10 @@ export default {
     }
     const inner = body.inner;
     // פריסת עמודות: רוחב לכל עמודה (נעוץ או אוטומטי); בעמודת מדפים גם מספר מדפים וגבהי תאים.
-    const layout = sectionLayout(v.columnsLayout, 'main', v.columns);
     const widths = resolveShares(inner.x1 - inner.x0 - (v.columns - 1) * sideT, layout.widths);
     const cols = partitions({ inner, columns: v.columns, t: sideT, material: innerMat, widths });
     parts.push(...cols.parts);
+    if (stepped) stepTops(parts, cols.cols, tops, { W, panelT: shelfT, sidesOverTop });
     const colShelves = (i) => { const c = layout.cols[i]; return c && Number.isInteger(c.shelves) ? c.shelves : v.shelvesPerColumn; };
     const colGaps = (i, free) => {
       const c = layout.cols[i], n = colShelves(i);
@@ -101,6 +113,7 @@ export default {
     const adjustable = v.shelvesMode === 'adjustable';
 
     cols.cols.forEach((col, i) => {
+      const y1c = stepped ? tops[i] - shelfT : inner.y1;   // תקרת הפנים של העמודה
       // מגירות בתחתית: תופסות גובה, ומעליהן מדף קבוע שסוגר אותן.
       let y0 = inner.y0;
       if (v.drawersPerColumn > 0) {
@@ -122,25 +135,27 @@ export default {
       }
       if (i < v.hangingColumns) {
         // תלייה: מוט 40 מתחת למדף העליון (או לגג), באמצע העומק.
-        let rodY = inner.y1 - 40;
-        if (v.topShelf === 'yes' && inner.y1 - y0 > 1800) {
-          const s = shelves({ col, y0: inner.y1 - 400 - shelfT, y1: inner.y1 - 400 + shelfT, z0, z1, count: 1, t: shelfT, material: shelfMat, adjustable, colIndex: i, prefix: 'top-' });
+        let rodY = y1c - 40;
+        if (v.topShelf === 'yes' && y1c - y0 > 1800) {
+          const s = shelves({ col, y0: y1c - 400 - shelfT, y1: y1c - 400 + shelfT, z0, z1, count: 1, t: shelfT, material: shelfMat, adjustable, colIndex: i, prefix: 'top-' });
           parts.push(...s.parts);
-          rodY = inner.y1 - 400 - 40;
+          rodY = y1c - 400 - 40;
         }
         hardware.push(...rod({ id: `rod-${i + 1}`, x0: col.x0, x1: col.x1, y: rodY, z: (z0 + z1) / 2, material: v.rodMaterial }).hardware);
         if (rodY - y0 < 1000) warnings.push(`עמודה ${i + 1}: גובה תלייה ${Math.round(rodY - y0)} מ"מ — פחות מ-1000, קצר לחולצות`);
       } else {
         const n = colShelves(i);
-        const s = shelves({ col, y0, y1: inner.y1, z0, z1, count: n, t: shelfT, material: shelfMat, setback: adjustable ? 5 : 0, adjustable, colIndex: i, gaps: colGaps(i, inner.y1 - y0 - n * shelfT) });
+        const s = shelves({ col, y0, y1: y1c, z0, z1, count: n, t: shelfT, material: shelfMat, setback: adjustable ? 5 : 0, adjustable, colIndex: i, gaps: colGaps(i, y1c - y0 - n * shelfT) });
         parts.push(...s.parts);
         if (adjustable) s.parts.forEach((p) => hardware.push({ id: `${p.id}-pins`, kind: 'shelf-pin', material: 'hw:shelf-pin', qty: 4, for: p.id }));
       }
     });
 
-    parts.push(...back({ mode: v.backMode, outer: { w: W, y0: bottomY - shelfT, y1: topY }, inner, t: backT, grooveDepth: v.backGrooveDepth, inset: v.backInset, material: v.backMaterial }).parts);
+    if (stepped) parts.push(...steppedBack({ mode: v.backMode, outer: { w: W, y0: bottomY - shelfT, y1: topY }, inner, cols: cols.cols, tops, t: backT, grooveDepth: v.backGrooveDepth, inset: v.backInset, material: v.backMaterial, sideT, W, panelT: shelfT }));
+    else parts.push(...back({ mode: v.backMode, outer: { w: W, y0: bottomY - shelfT, y1: topY }, inner, t: backT, grooveDepth: v.backGrooveDepth, inset: v.backInset, material: v.backMaterial }).parts);
     parts.push(...plinth({ inner, h: v.plinthH, setback: v.plinthSetback, t: sideT, d: D, material: v.bodyMaterial }).parts);
-    parts.push(...crown({ w: W, y: topY, h: v.crownH, t: sideT, d: D, material: v.bodyMaterial }).parts);
+    if (stepped) parts.push(...steppedCrown({ cols: cols.cols, tops, h: v.crownH, t: sideT, d: D, material: v.bodyMaterial, sideT, W }));
+    else parts.push(...crown({ w: W, y: topY, h: v.crownH, t: sideT, d: D, material: v.bodyMaterial }).parts);
 
     // דלתות: מעל המגירות (אם יש) או מהסוקל; הזזה מכסה הכול.
     const doorY0 = v.plinthH + (v.drawersPerColumn > 0 && !sliding ? shelfT + v.drawersPerColumn * v.drawerH + shelfT : 0);
@@ -162,7 +177,7 @@ export default {
         for (let k = 0; k < leaves; k++) {
           const lx0 = x0 + (colW / leaves) * k, lx1 = lx0 + colW / leaves;
           const d = door({ id: `door-${i + 1}${leaves === 2 ? 'ab'[k] : ''}`, name: `דלת ${i + 1}${leaves === 2 ? (k === 0 ? ' שמאל' : ' ימין') : ''}`,
-            x0: lx0, x1: lx1, y0: doorY0, y1: topY, zFront: D, type: 'wood', t: doorT, material: v.doorMaterial,
+            x0: lx0, x1: lx1, y0: doorY0, y1: stepped ? tops[i] : topY, zFront: D, type: 'wood', t: doorT, material: v.doorMaterial,
             handle: v.handle === 'none' ? null : v.handle, hinge: v.hinge, hingeSide: leaves === 2 ? (k === 0 ? 'left' : 'right') : (i < cols.cols.length / 2 ? 'left' : 'right'),
             mountId: (mountFor(i, leaves === 2 ? (k === 0 ? 'left' : 'right') : (i < cols.cols.length / 2 ? 'left' : 'right')) || {}).id || null,
             mountBottom: (mountFor(i, leaves === 2 ? (k === 0 ? 'left' : 'right') : (i < cols.cols.length / 2 ? 'left' : 'right')) || {}).y ?? null });
@@ -178,6 +193,13 @@ export default {
     if (shift) { for (const p of parts) p.box = { ...p.box, x: p.box.x + shift }; for (const h of hardware) if (h.pos) h.pos = [h.pos[0] + shift, h.pos[1], h.pos[2]]; for (const p of parts) if (p.motion && p.motion.kind === 'hinge' && !p.motion.shifted) p.motion = { ...p.motion, pivot: [p.motion.pivot[0] + shift, p.motion.pivot[1], p.motion.pivot[2]], shifted: true }; }
     const extraD = (sliding ? slidingExtraD : doorT) + (v.doorType === 'wood' && v.doorFinish.startsWith('fluted') ? 10 : 0);
     const lift = addWheels(parts, hardware, v, { x0: shift, x1: shift + W, y0: 0, z0: bodyZ, z1: bodyZ + bodyD });
-    return { parts, hardware, warnings, bounds: { w: W + shift + sideExtra(v.sideRightFinish), h: H + lift, d: D + extraD } };
+    return { parts, hardware, warnings, bounds: { w: W + shift + sideExtra(v.sideRightFinish), h: Math.max(...heights) + lift, d: D + extraD } };
   },
 };
+
+/** הגובה הנמוך ביותר לעמודה: סוקל, רצפה, מגירות ומדף מעליהן, גג, כרכוב ותא של 100. */
+function minColumnH(v) {
+  const shelfT = v.shelfT ?? 18;
+  const drawersH = (v.drawersPerColumn ?? 0) > 0 ? v.drawersPerColumn * (v.drawerH ?? 200) + shelfT : 0;
+  return (v.plinthH ?? 80) + 2 * shelfT + drawersH + (v.crownH ?? 0) + 100;
+}

@@ -8,7 +8,7 @@
 //
 // הפורמט שנשמר בפרויקט (`columnsLayout`):
 //   { widths: [מ"מ | null, …],                      // לכל עמודה: רוחב נעוץ או null = אוטומטי
-//     cols: { i: { shelves?: n, gaps?: [מ"מ | null, …] } } }   // לכל עמודה: מספר מדפים, וגבהי התאים (מלמטה למעלה)
+//     cols: { i: { shelves?: n, gaps?: [מ"מ | null, …], height?: מ"מ } } }   // לכל עמודה: מספר מדפים, גבהי התאים (מלמטה למעלה), וגובה משלה
 // `gaps` באורך shelves+1 (או כמספר המגירות בארון מגירות). פורמט ישן
 // ({ i: { shelves, gaps:[מספרים] } }) מוסב בטעינה.
 //
@@ -81,6 +81,7 @@ export function normalizeLayout(raw, columns) {
     if (Number.isInteger(c.shelves)) col.shelves = Math.max(0, Math.min(15, c.shelves));
     if (Array.isArray(c.gaps)) col.gaps = c.gaps.map(pin);
     if (typeof c.kind === 'string') col.kind = c.kind;
+    if (pin(c.height)) col.height = Math.round(c.height);   // גובה עמודה/שדה נעוץ (בלעדיו — גובה המוצר)
     if (col.gaps && col.shelves === undefined) col.shelves = col.gaps.length - 1;
     if (Object.keys(col).length) out.cols[i] = col;
   }
