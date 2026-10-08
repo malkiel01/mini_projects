@@ -185,7 +185,8 @@ export default {
             const dd = door({ id: `${prefix}-door${leaves === 2 ? 'ab'[k] : ''}`, name: `${prefix} דלת${leaves === 2 ? (k === 0 ? ' שמאל' : ' ימין') : ''}`,
               x0: lx0, x1: lx1, y0: y, y1: y + h, zFront: z1, type: 'wood', t: frontT, material: v.frontMaterial, handle, hinge: v.hinge,
               hingeSide: leaves === 2 ? (k === 0 ? 'left' : 'right') : hingeDefault,
-              mountId: `${prefix}-side-${(leaves === 2 ? (k === 0 ? 'left' : 'right') : hingeDefault) === 'left' ? 'L' : 'R'}`, mountBottom: body.parts.find((p) => p.id === 'side-L').box.y });
+              mountId: `${prefix}-side-${(leaves === 2 ? (k === 0 ? 'left' : 'right') : hingeDefault) === 'left' ? 'L' : 'R'}`, mountBottom: body.parts.find((p) => p.id === 'side-L').box.y,
+              mounts: (() => { const yb = body.parts.find((p) => p.id === 'side-L').box.y, L = { id: `${prefix}-side-L`, y: yb }, R = { id: `${prefix}-side-R`, y: yb }; return leaves === 2 ? (k === 0 ? { left: L } : { right: R }) : { left: L, right: R }; })() });
             applyFinish(dd.parts[0], v.frontFinish, { material: v.frontMaterial, normal: '+z' });
             out.parts.push(...dd.parts); out.hardware.push(...dd.hardware);
           }

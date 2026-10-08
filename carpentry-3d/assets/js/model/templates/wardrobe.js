@@ -180,7 +180,8 @@ export default {
             x0: lx0, x1: lx1, y0: doorY0, y1: stepped ? tops[i] : topY, zFront: D, type: 'wood', t: doorT, material: v.doorMaterial,
             handle: v.handle === 'none' ? null : v.handle, hinge: v.hinge, hingeSide: leaves === 2 ? (k === 0 ? 'left' : 'right') : (i < cols.cols.length / 2 ? 'left' : 'right'),
             mountId: (mountFor(i, leaves === 2 ? (k === 0 ? 'left' : 'right') : (i < cols.cols.length / 2 ? 'left' : 'right')) || {}).id || null,
-            mountBottom: (mountFor(i, leaves === 2 ? (k === 0 ? 'left' : 'right') : (i < cols.cols.length / 2 ? 'left' : 'right')) || {}).y ?? null });
+            mountBottom: (mountFor(i, leaves === 2 ? (k === 0 ? 'left' : 'right') : (i < cols.cols.length / 2 ? 'left' : 'right')) || {}).y ?? null,
+            mounts: leaves === 2 ? (k === 0 ? { left: mountFor(i, 'left') } : { right: mountFor(i, 'right') }) : { left: mountFor(i, 'left'), right: mountFor(i, 'right') } });
           parts.push(...d.parts); hardware.push(...d.hardware);
           parts.push(...applyFinish(d.parts[0], v.doorFinish, { material: v.doorMaterial, normal: '+z' }));
         }

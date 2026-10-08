@@ -11,7 +11,8 @@ import kitchen from './templates/kitchen.js';
 import table from './templates/table.js';
 import bed from './templates/bed.js';
 import cladding from './templates/cladding.js';
-import { cutSize } from './blocks.js';
+import { cutSize, setDoorOpen } from './blocks.js';
+import { applyFinish, partNormal } from './templates/common.js';
 import { material, materialsOfKind, materialsOfRole } from './materials.js';
 
 export const TEMPLATES = { bookcase, wardrobe, dresser, kitchen, table, bed, cladding };
@@ -92,9 +93,33 @@ export function build(key, values) {
   const v = defaults(t);
   if (t.migrate) values = t.migrate({ ...values });   // ערכים ישנים שנשמרו בפרויקטים → המפתחות הנוכחיים
   for (const p of allParams(t)) if (values[p.key] !== undefined) v[p.key] = clamp(p, values[p.key]);
-  const out = t.build(v);
+  // כיוון פתיחה לדלת מסוימת (values.doorOpen = { doorId: 'left'|'right'|'top'|'bottom' }) — door() קורא אותו בזמן הבנייה
+  setDoorOpen(values.doorOpen);
+  let out;
+  try { out = t.build(v); } finally { setDoorOpen(null); }
+  applyPartFinishes(out, values.partFinishes, t);
   out.warnings = [...(out.warnings || []), ...physicsWarnings(out.hardware || []), ...millWarnings(out.parts || [])];
-  return { ...out, values: v, template: t };
+  return { ...out, values: { ...v, partFinishes: values.partFinishes || undefined, doorOpen: values.doorOpen || undefined }, template: t };
+}
+
+/**
+ * גימור ללוח מסוים, שהנגר בחר בהקשה עליו (values.partFinishes = { partId: finishId }):
+ * כל לוח אנכי — דופן, מחיצה, חזית, לוח חיפוי — לא רק מה שהתבנית מציעה. הפאה
+ * המחורצת היא החיצונית (partNormal). 'flat' מנקה גימור שהתבנית נתנה.
+ */
+function applyPartFinishes(out, map, t) {
+  if (!map || typeof map !== 'object') return;
+  const extra = [];
+  for (const [id, finish] of Object.entries(map)) {
+    const p = out.parts.find((q) => q.id === id);
+    if (!p || typeof finish !== 'string') continue;
+    const normal = partNormal(p, out.bounds);
+    if (!normal) continue;
+    delete p.mill; delete p.surface;
+    if (finish === 'flat') continue;
+    extra.push(...applyFinish(p, finish, { material: p.material, normal }));
+  }
+  out.parts.push(...extra);
 }
 
 /**

@@ -14,7 +14,7 @@
 
 /** יוצר חלק. `box` הוא פינת המינימום + מידות. */
 import { material } from './materials.js';
-import { boardWeight, hingeCount, hingeYs, hingeDrilling, slidingLeaf, slideLoad, slideDrilling, DRAWER_CONTENT_KG, partWeight } from './physics.js';
+import { boardWeight, hingeCount, hingeYs, hingeDrilling, hingeDrillingH, slidingLeaf, slideLoad, slideDrilling, DRAWER_CONTENT_KG, partWeight } from './physics.js';
 
 export function part(id, name, box, { axis, grain, material, qtyKey, edges = {}, note } = {}) {
   return { id, name, qtyKey: qtyKey || id, box, axis, grain, material, edges, note };
@@ -155,15 +155,35 @@ export function crown({ w, y, h, t, d, material, prefix = '' }) {
  * עץ — לוח אחד. ויטרינה — מסגרת (שני זקפים ושני קושרות) ושמשה.
  * `hingeSide` — 'left' או 'right'; הידית בצד הנגדי.
  */
-export function door({ id, name, x0, x1, y0, y1, zFront, type, t, frameW = 60, material, glass, handle, hinge, hingeSide, gap = 2, openAngle = 100, mountId = null, mountBottom = null }) {
+// כיוון פתיחה שהנגר בחר לדלת מסוימת (לפי ה-id שלה): 'left' | 'right' | 'top' | 'bottom'.
+// נקבע ב-build (index.js) לפני בניית התבנית, ומתאפס אחריה — כך התבניות לא צריכות להכיר אותו.
+let DOOR_OPEN = {};
+export function setDoorOpen(map) { DOOR_OPEN = map && typeof map === 'object' ? map : {}; }
+export const DOOR_OPEN_OPTIONS = [
+  { id: 'left', name: 'ציר משמאל (נפתחת ימינה)' }, { id: 'right', name: 'ציר מימין (נפתחת שמאלה)' },
+  { id: 'top', name: 'נפתחת למעלה (קלפה)' }, { id: 'bottom', name: 'נפתחת למטה' },
+];
+
+/**
+ * `mounts` (רשות) — { left: { id, y }, right: { id, y } }: הדופן/המחיצה בכל צד, כדי
+ * שגם כשהנגר הופך את כיוון הפתיחה הקידוחים ייכנסו לדופן הנכונה.
+ */
+export function door({ id, name, x0, x1, y0, y1, zFront, type, t, frameW = 60, material, glass, handle, hinge, hingeSide: autoSide, gap = 2, openAngle = 100, mountId = null, mountBottom = null, mounts = null }) {
   const parts = [];
   const hardware = [];
   const x = x0 + gap / 2, w = x1 - x0 - gap, y = y0 + gap / 2, h = y1 - y0 - gap;
   const edgesAll = { front: true, top: true, bottom: true, left: true, right: true };
-  // תנועה: סיבוב סביב הקו האנכי שבקצה הציר, על פני הגוף. ציר משמאל — הקצה
-  // החופשי (מימין) יוצא החוצה (+z) בסיבוב שלילי סביב Y; ציר מימין — חיובי.
+  const hingeSide = ['left', 'right', 'top', 'bottom'].includes(DOOR_OPEN[id]) ? DOOR_OPEN[id] : autoSide;
+  const flap = hingeSide === 'top' || hingeSide === 'bottom';
+  if (mounts && !flap && mounts[hingeSide]) { mountId = mounts[hingeSide].id; mountBottom = mounts[hingeSide].y; }
+  if (flap) { mountId = null; mountBottom = null; }
+  // תנועה: סיבוב סביב קו הציר, על פני הגוף. ציר משמאל — הקצה החופשי (מימין) יוצא
+  // החוצה (+z) בסיבוב שלילי סביב Y; ציר מימין — חיובי. קלפה — סביב הקצה העליון
+  // (ציר X, סיבוב שלילי מרים אותה החוצה ולמעלה); נפתחת מטה — סביב הקצה התחתון.
   // כל חלקי הדלת (זקפים, קושרות, שמשה) נושאים אותה תנועה ואותה קבוצה.
-  const motion = { kind: 'hinge', group: id, pivot: [hingeSide === 'left' ? x : x + w, y, zFront], angle: hingeSide === 'left' ? -openAngle : openAngle };
+  const motion = flap
+    ? { kind: 'hinge', group: id, axis: [1, 0, 0], pivot: [x, hingeSide === 'top' ? y + h : y, zFront], angle: hingeSide === 'top' ? -95 : 90 }
+    : { kind: 'hinge', group: id, pivot: [hingeSide === 'left' ? x : x + w, y, zFront], angle: hingeSide === 'left' ? -openAngle : openAngle };
 
   if (type === 'wood') {
     parts.push(part(id, 'דלת עץ', { x, y, z: zFront, w, h, d: t },
@@ -187,8 +207,22 @@ export function door({ id, name, x0, x1, y0, y1, zFront, type, t, frameW = 60, m
 
   for (const p of parts) p.motion = motion;
 
-  // צירים: לפי גובה הדלת *ומשקלה* — הגבוה מביניהם (physics.js). מרכז הכוס 22.5 מקצה הציר.
+  // צירים: לפי אורך קצה הציר ולפי משקל הדלת — הגבוה מביניהם (physics.js). מרכז הכוס 22.5 מקצה הציר.
   const kg = type === 'wood' ? boardWeight(w, h, t, material) : parts.reduce((sum, p) => sum + partWeight(p), 0);
+  if (flap) {
+    // קלפה / נפתחת מטה: הצירים לאורך הקצה העליון/התחתון, ומנגנון שמחזיק את הדלת פתוחה
+    const n = Math.max(2, hingeCount(w, kg));
+    const xs = hingeYs(w, n);
+    const edgeY = hingeSide === 'top' ? h - 22.5 : 22.5;
+    const drill = hingeDrillingH({ doorId: parts[0].id, xs, edgeY, inward: hingeSide === 'top' ? -1 : 1 });
+    xs.forEach((dx, i) => hardware.push({ id: `${id}-hinge-${i + 1}`, kind: 'hinge', edge: hingeSide, material: hinge, pos: [x + dx, y + edgeY, zFront], qty: 1, for: id, drill: i === 0 ? drill : [] }));
+    hardware.push(hingeSide === 'top'
+      ? { id: `${id}-lift`, kind: 'misc', material: 'hw:flap-lift', qty: 1, for: id, note: `${name}: מנגנון הרמה (זוג) — לפי משקל ${Math.round(kg * 10) / 10} ק"ג` }
+      : { id: `${id}-stay`, kind: 'misc', material: 'hw:flap-stay', qty: 2, for: id, note: `${name}: זרועות שמחזיקות את הדלת פתוחה` });
+    hardware.push({ id: `${id}-weight`, kind: 'info', door: id, kg: Math.round(kg * 100) / 100, hinges: n, note: `${name}: ${Math.round(kg * 10) / 10} ק"ג, ${n} צירים בקצה ה${hingeSide === 'top' ? 'עליון' : 'תחתון'}` });
+    if (handle) hardware.push({ id: `${id}-handle`, kind: 'handle', material: handle, pos: [x + w / 2, hingeSide === 'top' ? y + 45 : y + h - 45, zFront + t], horizontal: true, qty: 1, for: id });
+    return { parts, hardware, hingeSide };
+  }
   const hinges = hingeCount(h, kg);
   const ys = hingeYs(h, hinges);
   const cupX = 22.5;
@@ -205,7 +239,7 @@ export function door({ id, name, x0, x1, y0, y1, zFront, type, t, frameW = 60, m
     const ky = h > 1200 ? Math.min(y + h - 100, 1000) : y + h * 0.66;
     hardware.push({ id: `${id}-handle`, kind: 'handle', material: handle, pos: [kx, ky, zFront + t], qty: 1, for: id });
   }
-  return { parts, hardware };
+  return { parts, hardware, hingeSide };
 }
 
 /**

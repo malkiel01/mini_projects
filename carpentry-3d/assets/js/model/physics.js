@@ -74,6 +74,20 @@ export function hingeDrilling({ doorId, mountId, ys, cup = 35, K = 5, doorBottom
   return out;
 }
 
+/**
+ * קידוחי ציר לדלת שנפתחת למעלה (קלפה) או למטה: הצירים בקצה העליון/התחתון.
+ * `xs` — מרכזי הכוסות מקצה הדלת השמאלי; `edgeY` — מרכז הכוס מתחתית הדלת.
+ * הברגים 9.5 פנימה מהכוס (לכיוון מרכז הדלת), 22.5 לכל צד.
+ */
+export function hingeDrillingH({ doorId, xs, edgeY, inward, cup = 35 }) {
+  const out = [];
+  for (const x of xs) {
+    out.push({ part: doorId, face: 'back', ref: 'מהקצה השמאלי / מהתחתית', x, y: edgeY, dia: cup, depth: 13, purpose: 'כוס ציר (קלפה)' });
+    for (const dx of [-22.5, 22.5]) out.push({ part: doorId, face: 'back', ref: 'מהקצה השמאלי / מהתחתית', x: x + dx, y: edgeY + inward * 9.5, dia: 2.5, depth: 10, purpose: 'בורג ציר (45/9.5)' });
+  }
+  return out;
+}
+
 // ---- מסילות הזזה ----
 // הכנף אינה מרחפת: גובהה נגזר מהפרופילים. בשני הסוגים — שני נתיבים, הכנף
 // החיצונית לפני הפנימית. מספרים אופייניים ליצרנים (הקל 40 ק"ג, הכבד 60–80).

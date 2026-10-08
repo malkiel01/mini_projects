@@ -43,7 +43,7 @@ export function cncPatterns() {
 /** רוחב הפאה (u) וגובהה (v) של חלק מחורץ. */
 export function millFace(part) {
   const b = part.box;
-  return { U: part.mill.normal === '+z' ? b.w : b.d, V: b.h };
+  return { U: part.mill.normal === '+z' || part.mill.normal === '-z' ? b.w : b.d, V: b.h };
 }
 
 /**
