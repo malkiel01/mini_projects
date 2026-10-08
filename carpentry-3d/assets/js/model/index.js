@@ -19,6 +19,7 @@ export const TEMPLATES = { bookcase, wardrobe, dresser, kitchen, table, bed, cla
 
 import { physicsWarnings } from './physics.js';
 import { millWarnings, cncId } from './milling.js';
+import { applyPartEdits } from './partEdits.js';
 
 export function template(key) {
   const t = TEMPLATES[key];
@@ -102,9 +103,12 @@ export function build(key, values) {
   setDoorOpen(values.doorOpen);
   let out;
   try { out = t.build(v); } finally { setDoorOpen(null); }
+  // עריכות לרכיב בודד מהתלת מימד (חומר, מידות, מיקום, סיבוב, קנטים, פתיחה, הסתרה) — לפני הגימור,
+  // כדי שסטריפים של גימור ייבנו על הלוח במידותיו החדשות
+  applyPartEdits(out, values.partEdits);
   applyPartFinishes(out, values.partFinishes, t);
   out.warnings = [...(out.warnings || []), ...physicsWarnings(out.hardware || []), ...millWarnings(out.parts || [])];
-  return { ...out, values: { ...v, partFinishes: values.partFinishes || undefined, doorOpen: values.doorOpen || undefined }, template: t };
+  return { ...out, values: { ...v, partFinishes: values.partFinishes || undefined, doorOpen: values.doorOpen || undefined, partEdits: values.partEdits || undefined }, template: t };
 }
 
 /**

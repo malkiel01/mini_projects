@@ -125,6 +125,27 @@ export default {
     return v;
   },
 
+  /**
+   * ההגדרות שנוגעות לרכיב שהוקש בתלת מימד: לוח בשדה — סוג החיפוי וגובה השדה
+   * (בעורך החלוקה), החומר והמידות של הדוגמה, אורך הקיר וזוויות הפינות שלו.
+   */
+  partParams(p, v) {
+    const m = /^w(\d+)-(?:f(\d+)-)?/.exec(p.id);
+    if (!m) return null;
+    const k = Number(m[1]), f = m[2] ? Number(m[2]) : null;
+    const corners = [k > 1 ? `angle${k}` : null, k < (v.walls ?? 1) ? `angle${k + 1}` : null].filter(Boolean);
+    if (/batten/.test(p.id)) return ['mount', 'battenT', 'battenRows', 'battenMaterial', `len${k}`, ...corners, 'height'];
+    if (/-base$/.test(p.id)) return ['baseH', 'trimMaterial', `len${k}`, ...corners];
+    if (/crown/.test(p.id)) return ['crownH', 'trimMaterial', `len${k}`, ...corners];
+    const out = [];
+    if (f) {
+      out.push({ layout: `wall${k}`, col: f - 1, prop: 'kind', label: `סוג החיפוי (שדה ${f})`, type: 'enum', options: PATTERNS, fallback: v.style });
+      out.push({ layout: `wall${k}`, col: f - 1, prop: 'height', label: `גובה השדה ${f}`, type: 'mm', fallback: v.height, min: minFieldH(v), max: v.height });
+    }
+    out.push('slatMaterial', 'panelFinish', 'slatW', 'slatGap', 'slatT', 'tileS', 'frameW', `len${k}`, ...corners, 'height', 'fromFloor', 'mount', 'corner');
+    return out;
+  },
+
   /** לעורך החלוקה: קבוצה לכל קיר, פריט לכל שדה — רוחב ודוגמה (אין תאים). */
   columnSpace(v) {
     const { walls } = wallPath(v);

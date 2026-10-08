@@ -7,10 +7,12 @@
 
 import { build, cutList, hardwareList, defaults, template, optionsFor, allParams, TEMPLATES } from '../assets/js/model/index.js';
 import * as M from '../assets/js/model/materials.js';
+import { cutSize } from '../assets/js/model/blocks.js';
 import { estimate } from '../assets/js/model/pricing.js';
 import { resolveShares, editShare, normalizeLayout, layoutIsEmpty } from '../assets/js/model/layout.js';
 import { placeModel, combine, snapTo, dragSnap, dragSnapY, snapRot } from '../assets/js/model/assembly.js';
 import { applyXf, partAabb, partCorners, xfPart, compose } from '../assets/js/model/xform.js';
+import { relatedParams, setLayoutProp, getLayoutProp, cutAxes } from '../assets/js/model/partEdits.js';
 import { TYPES, buildAccessory, paramsOf, faceOf, wheelHeight, FINISHES as ACC_FINISHES } from '../assets/js/model/accessories.js';
 import { nest, sheetCount } from '../assets/js/model/sheets.js';
 import { partWeight, totalWeight, boardWeight, hingeCount, hingeYs, hingeDrilling, slidingLeaf, SLIDING_SYSTEMS, slideLoad, drillingList, physicsWarnings, densityOf } from '../assets/js/model/physics.js';
@@ -547,6 +549,52 @@ console.log('אביזרים: ידיות, כפתורים, צירים, גלגלי�
   const tb = build('table', { wheels: 'hw:caster-fixed-50' });
   check(tb.hardware.filter((h) => h.kind === 'wheel').length === 4 && tb.bounds.h === 750 + wheelHeight(M.material('hw:caster-fixed-50')), 'שולחן על גלגלים');
   check(ACC_FINISHES.length >= 6, 'גימורים');
+}
+
+// ---- עריכת רכיב בודד מהתלת מימד ----
+{
+  console.log('\nעריכת רכיב');
+  const base = build('bookcase', { columns: 2, doorType: 'wood' });
+  const shelf = base.parts.find((p) => p.id.startsWith('shelf'));
+  const c0 = cutSize(shelf);
+  const ed = build('bookcase', { columns: 2, doorType: 'wood', partEdits: { [shelf.id]: { material: 'board:solid-oak', size: { l: c0.l - 100, t: 25 }, move: { y: 50 }, edges: { back: true } } } });
+  const s2 = ed.parts.find((p) => p.id === shelf.id), c1 = cutSize(s2);
+  check(s2.material === 'board:solid-oak' && c1.l === c0.l - 100 && c1.t === 25 && c1.w === c0.w, `מדף: חומר, אורך ${c1.l} ועובי ${c1.t} — רק הוא`);
+  check(s2.box.y === shelf.box.y + 50 && s2.edges.back === true, 'מדף: הזזה ב-Y וקנט אחורי');
+  check(ed.parts.filter((p) => p.id.startsWith('shelf') && p.id !== shelf.id).every((p) => p.material === shelf.material), 'שאר המדפים בלי שינוי');
+  check(cutList(ed).boards.some((r) => r.material === 'board:solid-oak' || /אלון/.test(r.material || '')) || cutList(ed).boards.length > cutList(base).boards.length, 'רשימת החיתוך מפרידה את המדף הערוך');
+  // הסתרה: החלק והפרזול/הקידוחים שלו נעלמים
+  const door = base.parts.find((p) => p.motion?.kind === 'hinge');
+  const hid = build('bookcase', { columns: 2, doorType: 'wood', partEdits: { [door.id]: { hidden: true } } });
+  check(!hid.parts.some((p) => p.id === door.id) && !hid.hardware.some((h) => h.for === door.id) && hid.parts.length === base.parts.length - 1, 'הסתרת דלת: היא והצירים/ידית שלה נעלמים');
+  // זווית פתיחה: לכל חלקי הדלת, עם אותו כיוון
+  const op = build('bookcase', { columns: 2, doorType: 'wood', partEdits: { [door.id]: { open: 165 } } });
+  const d2 = op.parts.find((p) => p.id === door.id);
+  check(Math.abs(d2.motion.angle) === 165 && Math.sign(d2.motion.angle) === Math.sign(door.motion.angle), `זווית פתיחה 165° (היה ${Math.abs(door.motion.angle)}°), אותו כיוון`);
+  // הרחבת דלת עם ציר בצד הרחוק: הציר זז עם הקצה
+  const wide = build('bookcase', { columns: 2, doorType: 'wood', doorOpen: { [door.motion.group]: 'right' }, partEdits: { [door.id]: { size: { w: cutSize(door).w + 40 } } } });
+  const dw = wide.parts.find((p) => p.id === door.id);
+  const axes = cutAxes(door);
+  check(axes.w === 'x' ? Math.abs(dw.motion.pivot[0] - (dw.box.x + dw.box.w)) < 3 : true, 'דלת שהורחבה עם ציר מימין: הציר נשאר בקצה');
+  // סיבוב רכיב: xf סביב מרכזו
+  const rot = build('bookcase', { columns: 2, partEdits: { 'side-L': { yaw: 30 } } });
+  const sl = rot.parts.find((p) => p.id === 'side-L');
+  check(sl.xf && Math.abs(sl.xf.yaw - 30) < 1e-9 && cutSize(sl).l === cutSize(base.parts.find((p) => p.id === 'side-L')).l, 'סיבוב דופן ב-30°: xf, אותן מידות חיתוך');
+  // id שכבר לא קיים — לא מפיל
+  check(build('bookcase', { partEdits: { nope: { hidden: true } } }).parts.length === build('bookcase', {}).parts.length, 'עריכה לרכיב שלא קיים — נבלעת');
+  // הגדרות קשורות: בחיפוי — סוג החיפוי וגובה השדה בעורך החלוקה, זוויות הפינות של הקיר
+  const cl = build('cladding', { walls: 3, fields: 2 });
+  const panel = cl.parts.find((p) => /^w2-f2-/.test(p.id));
+  const rel = relatedParams(template('cladding'), panel, cl.values);
+  check(rel.some((r) => r.layout === 'wall2' && r.col === 1 && r.prop === 'kind') && rel.includes('angle2') && rel.includes('angle3') && rel.includes('len2'), 'חיפוי: סוג החיפוי בשדה, אורך הקיר ושתי הפינות שלו');
+  const lay = setLayoutProp(null, 'wall2', 1, 'kind', 'bricks');
+  const cl2 = build('cladding', { walls: 3, fields: 2, columnsLayout: lay });
+  check(getLayoutProp(lay, 'wall2', 1, 'kind') === 'bricks' && cl2.parts.some((p) => /^w2-f2-brick/.test(p.id)) && !cl2.parts.some((p) => /^w1-f2-brick/.test(p.id)), 'שינוי סוג החיפוי לשדה אחד מהכרטיס');
+  check(getLayoutProp(setLayoutProp(lay, 'wall2', 1, 'kind', null), 'wall2', 1, 'kind') === undefined, 'ערך ריק מחזיר לברירת המחדל');
+  const relB = relatedParams(template('bookcase'), door, base.values);
+  check(relB.includes('doorFinish') && relB.includes('hinge') && relB.includes('width'), `ספרייה: לדלת — ${relB.slice(0, 6).join(', ')}…`);
+  const relS = relatedParams(template('bookcase'), shelf, base.values);
+  check(relS.includes('shelfMaterial') && relS.includes('shelvesPerColumn'), 'ספרייה: למדף — חומר המדפים ומספר המדפים');
 }
 
 // ---- זוויות חופשיות: הרכבה וקירות חיפוי ----
