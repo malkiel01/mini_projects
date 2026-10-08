@@ -475,7 +475,7 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
     for (const h of model.hardware) {
       if (!h.pos) continue;
       let mesh;
-      const owner = h.for && partNodes.get(h.for);
+      const owner = h.for ? ownerOf(h.for) : null;
       const acc = ['hinge', 'handle', 'wheel'].includes(h.kind) && !h.edge ? buildAccessory(material(h.material), { side: hingeSideOf(h, owner), reach: hingeReach(h, owner) }) : null;
       if (acc) {
         // אביזר אמיתי: קבוצת גופים במערכת מקומית, מסובבת אל הפאה שהוא יושב עליה.
@@ -496,8 +496,8 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
         };
         if (h.kind === 'hinge' && owner && owner.part.motion) {
           const moving = place(accessoryGroup(THREE, acc, (pr) => pr.moving));
-          const p = owner.part;
-          moving.position.sub(new THREE.Vector3(p.box.x + p.box.w / 2, p.box.y + p.box.h / 2, p.box.z + p.box.d / 2));
+          const a = owner.anchor;
+          moving.position.sub(new THREE.Vector3(a.x + a.w / 2, a.y + a.h / 2, a.z + a.d / 2));
           owner.node.add(moving);
           const fixed = place(accessoryGroup(THREE, acc, (pr) => !pr.moving));
           group.add(hwWorld(fixed, h));
@@ -542,14 +542,32 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
       if (!mesh) continue;
       if (owner && owner.part.motion && h.kind !== 'hinge') {
         // ידית על דלת/מגירה: לתוך הצומת של החלק, בקואורדינטות יחסיות למרכזו
-        const p = owner.part;
-        mesh.position.sub(new THREE.Vector3(p.box.x + p.box.w / 2, p.box.y + p.box.h / 2, p.box.z + p.box.d / 2));
+        const a = owner.anchor;
+        mesh.position.sub(new THREE.Vector3(a.x + a.w / 2, a.y + a.h / 2, a.z + a.d / 2));
         owner.node.add(mesh);
       } else group.add(hwWorld(mesh, h));
     }
     if (onPick) onPick(null);
   }
 
+  /**
+   * הבעלים של פרט פרזול (h.for): החלק עצמו, או — בדלת מסגרת/ויטרינה, שבנויה מכמה
+   * חלקים (זקפים, קושרות, זכוכית) — כל הדלת לפי קבוצת התנועה שלה. part.box הוא
+   * התיבה העוטפת של כל הדלת (לפאה, לצד הציר ולקצה העליון), ו-anchor הוא התיבה של
+   * החלק שהפרזול נתלה על הצומת שלו — כך הידית והצירים נעים יחד עם הדלת.
+   */
+  function ownerOf(id) {
+    const direct = partNodes.get(id);
+    if (direct) return { ...direct, anchor: direct.part.box };
+    const all = [...partNodes.values()];
+    let group = all.filter((e) => e.part.motion?.group === id);
+    if (!group.length) group = all.filter((e) => e.part.id.startsWith(id + '-'));
+    if (!group.length) return null;
+    const main = group.find((e) => e.part.motion) || group[0];
+    let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+    for (const { part: { box: b } } of group) { x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y); z0 = Math.min(z0, b.z); x1 = Math.max(x1, b.x + b.w); y1 = Math.max(y1, b.y + b.h); z1 = Math.max(z1, b.z + b.d); }
+    return { ...main, part: { ...main.part, box: { x: x0, y: y0, z: z0, w: x1 - x0, h: y1 - y0, d: z1 - z0 } }, anchor: main.part.box };
+  }
   /** פרזול שאינו נע עם חלק: לסצנה, ואם הוא של אלמנט מסובב בזווית (xf) — בתוך עטיפה מסובבת. */
   function hwWorld(obj, h) {
     obj.userData.hwId = h.id;
