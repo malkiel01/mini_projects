@@ -139,6 +139,7 @@ async function enter() {
   $('#btn-types').hidden = u.role !== 'admin';
   $('#btn-users-m').hidden = u.role !== 'admin';
   $('#btn-types-m').hidden = u.role !== 'admin';
+  $('#btn-log').hidden = u.role !== 'admin';
   $('#app').hidden = false;
 
   const [lib, types, rates, clients] = await Promise.all([api('materials-get'), api('types-list'), u.role === 'viewer' ? null : api('rates-get'), api('clients-list')]);
@@ -815,6 +816,7 @@ function renderOutput(m) {
 }
 document.querySelectorAll('#output-tabs button').forEach((b) => b.addEventListener('click', () => { outputTab = b.dataset.out; if (model) renderOutput(model); }));
 $('#btn-csv').addEventListener('click', () => model && downloadCsv(model));
+$('#btn-log').addEventListener('click', () => model && state.user.role === 'admin' && downloadLog(model));
 $('#btn-print').addEventListener('click', () => model && printAll(model));
 $('#btn-stl').addEventListener('click', () => model && downloadStl(model));
 $('#output-body').addEventListener('change', (e) => { if (e.target.id === 'nest-on') { nestOn = e.target.checked; renderOutput(model); } });
@@ -940,6 +942,38 @@ function sheetsOne(m) {
     <table><thead><tr><th>חומר</th><th>מידת לוח</th><th>שטח נטו</th><th>לוחות</th></tr></thead><tbody>${rows}</tbody></table>
     <label class="nest-toggle"><input type="checkbox" id="nest-on" ${nestOn ? 'checked' : ''}> סידור חיתוך על הלוחות <span class="muted">(גיליוטינה בשורות; הסיבים לאורך הלוח; חיתוך ${PRICING_DEFAULTS.kerf} מ"מ)</span></label>
     ${nestHtml}`;
+}
+
+/**
+ * למנהל: לוג לניתוח — כל מה שנדרש כדי לשחזר ולבדוק את המוצר כפי שנבנה אצלו:
+ * הערכים (כולל עריכות לרכיבים, כיווני פתיחה וגימורים), החלקים במלואם (תיבה,
+ * צירים, חומר, חירוץ, גרונג, תנועה, xf), הפרזול עם מיקומיו, האזהרות, מצב
+ * התצוגה (מה פתוח / שקוף) והסביבה (דפדפן, מסך). קובץ JSON אחד — לצרף לשיחה.
+ */
+function downloadLog(m) {
+  const v = viewer.debug();
+  const round = (x) => (typeof x === 'number' ? Math.round(x * 100) / 100 : x);
+  const box = (b) => b && { x: round(b.x), y: round(b.y), z: round(b.z), w: round(b.w), h: round(b.h), d: round(b.d) };
+  const log = {
+    kind: 'carpentry-3d-log', version: 1, at: new Date().toISOString(),
+    env: { ua: navigator.userAgent, screen: [screen.width, screen.height, devicePixelRatio], viewport: [innerWidth, innerHeight], url: location.href },
+    user: { role: state.user.role },
+    project: state.project ? { id: state.project.id, name: state.project.name, template: state.project.template_key, values: state.values } : null,
+    assembly: state.assembly ? { id: state.assembly.id, name: state.assembly.name, joined: !!state.assembly.joined, items: state.assembly.items, projects: state.assembly.projects.map((p) => ({ id: p.id, name: p.name, template: p.template_key, values: p.values })) } : null,
+    bounds: m.bounds, warnings: m.warnings,
+    view: { open: v.open, theta: round(v.theta), phi: round(v.phi), radius: round(v.radius), target: v.target.map(round) },
+    parts: m.parts.map((p) => ({ id: p.id, name: p.name, box: box(p.box), axis: p.axis, grain: p.grain, material: p.material, edges: p.edges, face: p.face, note: p.note,
+      ...(p.mill ? { mill: p.mill } : {}), ...(p.miter ? { miter: p.miter } : {}), ...(p.xf ? { xf: p.xf } : {}), ...(p.motion ? { motion: p.motion } : {}), ...(p.edited ? { edited: true } : {}) })),
+    hardware: m.hardware.map((h) => ({ ...h, ...(h.pos ? { pos: h.pos.map(round) } : {}) })),
+    doorClashes: m.doorClashes || [],
+  };
+  const name = (state.project?.name || state.assembly?.name || 'model').replace(/[\\/:*?"<>|]/g, '-');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(log, null, 1)], { type: 'application/json' }));
+  a.download = `${name}-log-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast('הלוג ירד — אפשר לצרף אותו לשיחה לניתוח');
 }
 
 function downloadCsv(m) {
