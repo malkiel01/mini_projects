@@ -2160,8 +2160,8 @@ async function renderScout() {
   if (!state.user.is_developer) { go('#/settings'); return; }
   const filters = { status: 'new', site: '', q: '' };
   let data = { items: [], counts: {}, sites: [] };
-  let running = false;
-  let stop = false;
+  let job = null;
+  let jobTimer = null;
 
   view.innerHTML = `
     <section class="card settings settings--wide scout">
@@ -2193,17 +2193,27 @@ async function renderScout() {
       <div id="scout-list" class="scout__list"></div>
 
       <div class="scout__run" id="scout-run">
-        <h3>ייבוא המסומנים</h3>
+        <h3>ייבוא המסומנים — ברקע</h3>
+        <p class="muted small">הייבוא רץ בשרת: אפשר לסגור את הדף, את הדפדפן, או לכבות את הטלפון — הוא ממשיך עד שהרשימה נגמרת או שעוצרים.
+          אם האתר חוסם, הוא ממתין לסוף ההמתנה, מאט, וממשיך לבד.</p>
         <div class="row">
-          <label>מרווח בין פריטים (שניות) <input type="number" name="gap" min="10" max="120" value="25" inputmode="numeric"></label>
+          <label>מרווח בין פריטים (שניות) <input type="number" name="gap" min="10" max="180" value="25" inputmode="numeric"></label>
           <label class="check check--big"><input type="checkbox" name="rewrite" id="scout-rewrite"> לנסח מחדש בבינה</label>
         </div>
         <div class="actions scout__go">
-          <button class="btn btn--primary" type="button" id="scout-go">ייבא את המסומנים</button>
-          <button class="btn btn--danger" type="button" id="scout-stop" hidden>עצור</button>
+          <button class="btn btn--primary" type="button" id="scout-go">התחל ייבוא ברקע</button>
+          <button class="btn btn--danger" type="button" id="scout-stop" hidden>⏹ עצור</button>
         </div>
+        <div id="scout-job" class="scout__job" hidden></div>
         <p class="muted small">כל הבאה נרשמת ב<a href="#/logs/import">יומן הייבוא</a> — מה היה בדף ומה חולץ, עם קישור למקור.</p>
-        <ol class="scout__progress" id="scout-progress"></ol>
+        <details class="scout__cron" id="scout-cron" hidden>
+          <summary class="link">לאמינות מלאה: cron ב-cPanel (לא חובה)</summary>
+          <p class="muted small">הייבוא ממשיך לבד גם בלי זה. ה-cron רק מבטיח שאם השרת עצר את העובד באמצע, הוא יחזור תוך 5 דקות גם כשאף אחד לא נכנס לאפליקציה.
+            ב-cPanel → Cron Jobs → כל 5 דקות (<code dir="ltr">*/5 * * * *</code>), עם הפקודה:</p>
+          <input class="mono" dir="ltr" readonly id="cron-cmd">
+          <button class="btn btn--ghost" type="button" id="cron-copy">העתק פקודה</button>
+          <p class="muted small">הכתובת מכילה מפתח — לא לשתף.</p>
+        </details>
       </div>
     </section>`;
 
@@ -2217,7 +2227,7 @@ async function renderScout() {
       `<a href="#/scout" data-status="${s}" class="${filters.status === s ? 'is-on' : ''}">${SCOUT_LABEL[s]} (${data.counts[s] || 0})</a>`).join('');
     $$('[data-status]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); filters.status = a.dataset.status; load(); }));
     const n = data.counts.wanted || 0;
-    $('#scout-go').textContent = n ? `ייבא את המסומנים (${n})` : 'ייבא את המסומנים';
+    if (!job || job.state !== 'running') $('#scout-go').textContent = n ? `התחל ייבוא ברקע (${n})` : 'התחל ייבוא ברקע';
     $('#scout-bulk').hidden = !data.items.some((it) => it.status !== 'imported');
     const sel = $('select[name="site"]'); const cur = sel.value;
     sel.innerHTML = '<option value="">כל האתרים</option>' + data.sites.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
@@ -2332,42 +2342,59 @@ async function renderScout() {
     try { await api('scout-mark', { ids, status: b.dataset.bulk }); filters.status = b.dataset.bulk; await load(); } catch (err) { note(err.message, 'err'); }
   }));
 
-  // ── הריצה: פריט-פריט, מרווח ביניהם, אפשר לעצור. הדפדפן הוא המתזמן —
-  //    כך הקצב נראה, נשלט, ונעצר כשסוגרים את הדף. ──
+  // ── הייבוא ברקע: השרת הוא המתזמן (lib/scout_job.php). הדף רק מפעיל,
+  //    עוצר ומציג. כשהדף פתוח — רענון מצב כל 5 שניות; כשנסגר — העבודה ממשיכה. ──
+  const fmtWait = (s) => s >= 120 ? `${Math.round(s / 60)} דק׳` : `${s} שנ׳`;
+  const drawJob = (j) => {
+    job = j;
+    const box = $('#scout-job');
+    const run = j.state === 'running';
+    $('#scout-go').hidden = run;
+    $('#scout-stop').hidden = !run;
+    if (!run) $('#scout-go').textContent = j.left ? `התחל ייבוא ברקע (${j.left})` : 'התחל ייבוא ברקע';
+    if (j.cron_url) { $('#scout-cron').hidden = false; $('#cron-cmd').value = `curl -s "${j.cron_url}" >/dev/null 2>&1`; }
+    if (j.state === 'idle') { box.hidden = true; return; }
+    box.hidden = false;
+    const head = run
+      ? `<strong>▶ רץ ברקע</strong> · יובאו ${j.done_n}${j.fail_n ? ` · נכשלו ${j.fail_n}` : ''}${j.blocks_n ? ` · חסימות ${j.blocks_n}` : ''} · נשארו ${j.left}
+         <br><span class="muted small">מרווח ${j.gap_sec} שנ׳ · ${j.next_in > 0 ? `הפריט הבא בעוד ${fmtWait(j.next_in)}` : 'מייבא עכשיו…'}${!j.alive ? ' · ⚠️ העובד שתק — מעיר אותו' : ''}</span>`
+      : `<strong>${j.state === 'done' ? '✅ הסתיים' : '⏹ נעצר'}</strong> · יובאו ${j.done_n}${j.fail_n ? ` · נכשלו ${j.fail_n}` : ''}${j.left ? ` · נשארו ${j.left} לייבוא` : ''}`;
+    box.className = `scout__job note ${run ? '' : j.state === 'done' ? 'note--ok' : 'note--warn'}`;
+    box.innerHTML = `
+      <p>${head}</p>
+      ${j.message ? `<p class="small">${esc(j.message)}</p>` : ''}
+      ${j.recent.length ? `<ol class="scout__progress">${j.recent.map((r) => `<li>${r.ok
+        ? `<a href="#/r/${r.recipe_id}">${esc(r.title)}</a> ✅${r.rewritten ? ' <span class="muted small">נוסח מחדש</span>' : ''}${r.note ? ` <span class="muted small">${esc(r.note)}</span>` : ''}`
+        : `${esc(r.title)} ${r.blocked ? '⏸' : '❌'} <span class="muted small">${esc(r.note || '')}</span>`}</li>`).join('')}</ol>` : ''}`;
+  };
+  const pollJob = async () => {
+    if (location.hash !== '#/scout') { clearInterval(jobTimer); return; }
+    try {
+      const was = job?.done_n;
+      const { job: j } = await api('scout-job');
+      drawJob(j);
+      if (was != null && j.done_n !== was) load();   // יובא משהו — לרענן את הלשוניות
+    } catch {}
+  };
   $('#scout-go').addEventListener('click', async () => {
-    if (running) return;
-    const wanted = (await api('scout-list', { status: 'wanted' })).items;
-    if (!wanted.length) { note('אין פריטים מסומנים לייבוא. להדליק את המתג ליד מה שרוצים.', 'warn'); return; }
-    running = true; stop = false;
-    $('#scout-go').disabled = true; $('#scout-stop').hidden = false;
-    const gap = Math.max(10, +$('input[name="gap"]').value || 25) * 1000;
-    const rewrite = $('#scout-rewrite').checked;
-    const prog = $('#scout-progress'); prog.innerHTML = '';
-    for (let i = 0; i < wanted.length; i++) {
-      if (stop) { prog.insertAdjacentHTML('beforeend', '<li class="muted">נעצר.</li>'); break; }
-      const it = wanted[i];
-      const li = document.createElement('li'); li.textContent = `${it.title || it.url} — מייבא…`; prog.append(li);
-      try {
-        const r = await api('scout-import', { id: it.id, rewrite });
-        li.innerHTML = `<a href="#/r/${r.recipe_id}">${esc(r.title || it.title)}</a> ✅${r.rewritten ? ' נוסח מחדש' : rewrite ? ' <span class="muted">(לא נוסח' + (r.ai_error ? ': ' + esc(r.ai_error) : r.similarity != null ? ', קרוב מדי' : '') + ')</span>' : ''}${r.warnings?.length ? ` <span class="muted small">${esc(r.warnings.join(' · '))}</span>` : ''}`;
-      } catch (err) {
-        li.innerHTML = `${esc(it.title || it.url)} ❌ ${esc(err.message)}`;
-        // האתר חסם (429): כל המשך ייתקל באותו קיר ורק יחמיר. עוצרים; הפריטים נשארו "לייבוא".
-        if (err.status === 429) {
-          prog.insertAdjacentHTML('beforeend', `<li class="note note--warn">⏸ נעצר: האתר חסם זמנית. ${wanted.length - i - 1} פריטים נשארו מסומנים "לייבוא" — אפשר להמשיך אחרי ההמתנה, עם מרווח גדול יותר.</li>`);
-          break;
-        }
-      }
-      if (i < wanted.length - 1 && !stop) {
-        const jitter = gap + Math.random() * gap * 0.5;   // לא קצב מכונה קבוע
-        li.insertAdjacentHTML('beforeend', ` <span class="muted small">ממתין ${Math.round(jitter / 1000)} שנ׳</span>`);
-        await new Promise((res) => setTimeout(res, jitter));
-      }
-    }
-    running = false; $('#scout-go').disabled = false; $('#scout-stop').hidden = true;
-    await load();
+    const b = $('#scout-go'); b.disabled = true;
+    try {
+      const { job: j } = await api('scout-job-start', { gap: Math.max(10, +$('input[name="gap"]').value || 25), rewrite: $('#scout-rewrite').checked });
+      drawJob(j); note('');
+    } catch (err) { note(err.message, 'warn'); }
+    b.disabled = false;
   });
-  $('#scout-stop').addEventListener('click', () => { stop = true; });
+  $('#scout-stop').addEventListener('click', async () => {
+    if (!confirm('לעצור את הייבוא ברקע? מה שלא יובא נשאר מסומן "לייבוא".')) return;
+    try { drawJob((await api('scout-job-stop')).job); await load(); } catch (err) { note(err.message, 'err'); }
+  });
+  $('#cron-copy').addEventListener('click', async () => {
+    const inp = $('#cron-cmd'); inp.select();
+    try { await navigator.clipboard.writeText(inp.value); } catch { document.execCommand('copy'); }
+    $('#cron-copy').textContent = 'הועתק ✓';
+  });
+  api('scout-job').then(({ job: j }) => { drawJob(j); $('input[name="gap"]').value = j.gap_sec; }).catch(() => {});
+  jobTimer = setInterval(pollJob, 5000);
 
   await load();
 }

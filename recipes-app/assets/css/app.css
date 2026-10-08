@@ -755,3 +755,10 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
 .install__steps { margin: 0; padding-inline-start: 22px; display: flex; flex-direction: column; gap: 4px; }
 /* באפליקציה מותקנת אין שורת כתובת — מרווח לאזור הבטוח של המסך (חריץ) */
 @media (display-mode: standalone) { .bar { padding-top: max(10px, env(safe-area-inset-top)); } }
+
+/* ייבוא ברקע */
+.scout__job { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }
+.scout__job p { margin: 0; }
+.scout__job .scout__progress { max-height: 320px; overflow: auto; }
+.scout__cron { margin-top: 8px; }
+.scout__cron input { width: 100%; font-size: 0.75rem; margin: 6px 0; }

@@ -22,6 +22,7 @@ require_once __DIR__ . '/lib/importer.php';
 require_once __DIR__ . '/lib/secrets.php';
 require_once __DIR__ . '/lib/ai.php';
 require_once __DIR__ . '/lib/scout.php';
+require_once __DIR__ . '/lib/scout_job.php';
 require_once __DIR__ . '/lib/pantry.php';
 require_once __DIR__ . '/lib/shopping.php';
 
@@ -96,6 +97,8 @@ $action = $_GET['action'] ?? (is_string($in['action'] ?? null) ? $in['action'] :
 $public = ['register', 'login', 'me', 'request-reset', 'resend-verification', 'tags', 'search', 'recipe'];
 
 $user = currentUser();
+// ייבוא ברקע: אם העובד אמור לרוץ ושתק — מעירים אותו (lib/scout_job.php)
+if ($user) scoutJobWatchdog();
 $GLOBALS['__action'] = $action;
 $GLOBALS['__in']     = $in;
 $GLOBALS['__user']   = $user;
@@ -398,6 +401,15 @@ try {
 
     case 'scout-preview':
         ok(['draft' => scoutPreview((int) ($in['id'] ?? 0), $user), 'ai_available' => aiAvailable()]);
+
+    case 'scout-job':
+        ok(['job' => scoutJobStatus($user)]);
+
+    case 'scout-job-start':
+        ok(['job' => scoutJobStart($user, (int) ($in['gap'] ?? 25), !empty($in['rewrite']))]);
+
+    case 'scout-job-stop':
+        ok(['job' => scoutJobStop($user)]);
 
     case 'scout-import':
         ok(scoutImportOne((int) ($in['id'] ?? 0), $user, !empty($in['rewrite'])));

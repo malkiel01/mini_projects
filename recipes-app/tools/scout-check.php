@@ -18,7 +18,7 @@ define('SECRETS_FILE', $tmp . '/secrets.json');
 @ini_set('sendmail_path', '/bin/true');
 
 require_once __DIR__ . '/../lib/auth.php';
-require_once __DIR__ . '/../lib/scout.php';
+require_once __DIR__ . '/../lib/scout_job.php';
 
 $fail = [];
 function check(string $label, $got, $want): void {
@@ -134,7 +134,38 @@ expectError('הייבוא נעצר בחסימה', fn() => scoutImportOne($GLOBAL
 $w = $pdo->query("SELECT status, error FROM scout_items WHERE id = $wid")->fetch();
 check('עדיין "לייבוא", עם ההסבר', [$w['status'], str_contains((string) $w['error'], 'חסם זמנית')], ['wanted', true]);
 
-foreach (glob($tmp . '/scout/*') ?: [] as $f) @unlink($f); @rmdir($tmp . '/scout');
+echo "\n7. ייבוא ברקע — מצבי העובד (בלי רשת: האתר היחיד ברשימה חסום)\n";
+scoutMark([$ids[1]], 'skipped', $devU);   // a.co.il אמיתי — לא להביא ממנו בבדיקה
+expectError('משתמש רגיל אינו מפעיל', fn() => scoutJobStart($GLOBALS['maliU'], 25, false), 'מפתח');
+check('בהתחלה: idle, מפתח עובד קבוע', [scoutJobStatus($devU)['state'], strlen(scoutJobRow()['worker_key'])], ['idle', 40]);
+check('צעד כשאין ריצה — idle', scoutJobTick(), 'idle');
+$key = scoutJobRow()['worker_key'];
+$st = scoutJobStart($devU, 5, false);
+check('הופעל: running, מרווח לפחות 10, נשאר 1', [$st['state'], $st['gap_sec'], $st['left']], ['running', 10, 1]);
+check('המפתח לא מתחלף בהפעלה (כדי שה-cron ימשיך לעבוד)', scoutJobRow()['worker_key'], $key);
+check('צעד: האתר חסום → blocked', scoutJobTick(), 'blocked');
+$j = scoutJobRow();
+check('ממתין לסוף החסימה ומאט ×1.5', [(int) $j['next_at'] >= (importHostBlockedUntil('waf.example') ?? 0) + 60, (int) $j['gap_sec'], (int) $j['blocks_n']], [true, 15, 1]);
+check('הפריט עדיין "לייבוא"', $pdo->query("SELECT status FROM scout_items WHERE id = $wid")->fetchColumn(), 'wanted');
+check('עוד לא הגיע הזמן — wait', scoutJobTick(), 'wait');
+$st = scoutJobStatus($devU);
+check('המצב: חי, ההמתנה ארוכה, הרשומה האחרונה מסומנת חסימה', [$st['alive'], $st['next_in'] > 40 * 60, $st['recent'][0]['blocked']], [true, true, true]);
+scoutJobStop($devU);
+check('עצירה', [scoutJobStatus($devU)['state'], scoutJobTick()], ['stopped', 'idle']);
+scoutMark([$wid], 'skipped', $devU);
+expectError('הפעלה בלי מסומנים', fn() => scoutJobStart($GLOBALS['devU'], 25, false), 'אין פריטים');
+scoutMark([$wid], 'wanted', $devU);
+scoutJobStart($devU, 25, false);
+check('הפעלה מחדש: המונים מתאפסים', scoutJobStatus($devU)['blocks_n'], 0);
+scoutMark([$wid], 'skipped', $devU);
+db()->exec('UPDATE scout_job SET next_at = 0');
+check('הרשימה נגמרה — done', [scoutJobTick(), scoutJobStatus($devU)['state']], ['done', 'done']);
+check('run כשאין מה לעשות יוצא נקי', scoutWorkerRun(true), 'idle');
+$held = fopen(scoutStateDir() . '/worker.lock', 'c'); flock($held, LOCK_EX);
+check('עובד אחד בכל פעם: כשאחר מחזיק את הנעילה — busy', scoutWorkerRun(true), 'busy');
+flock($held, LOCK_UN); fclose($held);
+
+foreach (['scout', 'fetch-blocks', 'fetch-cache'] as $d) { foreach (glob("$tmp/$d/*") ?: [] as $f) @unlink($f); @rmdir("$tmp/$d"); }
 foreach (glob($tmp . '/*') ?: [] as $f) @unlink($f);
 @rmdir($tmp . '/media'); @rmdir($tmp);
 echo "\n";

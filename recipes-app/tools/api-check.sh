@@ -29,7 +29,9 @@ PHPBOOT
 # sendmail_path הוא PHP_INI_SYSTEM: ini_set בזמן ריצה אינו משנה אותו, ולכן
 # הוא נמסר לשרת בשורת הפקודה. /bin/true מדמה MTA שמקבל — כדי שהבדיקה
 # תבחן את מסלול ההצלחה; מסלול הכשל נבדק ב-auth-check.php.
-php -S "127.0.0.1:$PORT" -t . \
+# כמה תהליכים: הייבוא ברקע (8ח2) מעיר עובד בבקשת HTTP לאותו שרת, והעובד ישן
+# בין פריטים — בשרת חד-תהליכי הוא היה תוקע את כל שאר הבדיקות.
+PHP_CLI_SERVER_WORKERS=4 php -S "127.0.0.1:$PORT" -t . \
   -d auto_prepend_file="$TMP/boot.php" \
   -d sendmail_path=/bin/true \
   -d upload_max_filesize=32M -d post_max_size=40M \
@@ -345,6 +347,30 @@ check 'שמירה בעורך עם source_url של מועמד → "יובא"' "$(
 
 check 'הפריט במצב שגיאה'                         "$(call scout-list '{"status":"error"}')" 'norecipe.html'
 check 'הסריקה והייבוא ביומן'                     "$(call log '{"action":"scout-import"}')" '"rewritten":true'
+call logout >/dev/null
+
+echo
+echo "8ח2. ייבוא ברקע — העובד בשרת ממשיך בלי הדפדפן, ונעצר כשעוצרים"
+call login '{"username":"owner","password":"sod12345"}' >/dev/null
+call scout-page "{\"url\":\"$FXB/listing-bg.html\"}" >/dev/null
+BG=$(call scout-list '{"status":"new"}' | python3 -c 'import sys,json; print(",".join(str(i["id"]) for i in json.load(sys.stdin)["items"] if ":'"$FXPORT"'/" in i["url"] and i["url"].endswith(("/microdata.html","/headings.html"))))')
+check 'שני מועמדים חדשים'               "$BG" '^[0-9][0-9]*,[0-9][0-9]*$'
+call scout-mark "{\"ids\":[$BG],\"status\":\"wanted\"}" >/dev/null
+J=$(call scout-job-start '{"gap":10,"rewrite":false}')
+check 'הופעל ברקע: running, נשארו 2'      "$J" '"state":"running"[^}]*"left":2'
+check 'כתובת ל-cron, עם מפתח'            "$J" '"cron_url":"http:\\/\\/127.0.0.1:'"$PORT"'\\/recipes-app\\/scout-worker.php?key=[0-9a-f]\{40\}"'
+# הדפדפן לא עושה כלום מכאן — רק מסתכל. העובד בשרת מייבא בעצמו.
+for _ in $(seq 1 40); do
+  DONE=$(call scout-job | python3 -c 'import sys,json; print(json.load(sys.stdin)["job"]["done_n"])')
+  [ "$DONE" -ge 1 ] && break; sleep 0.5
+done
+check 'העובד ייבא בלי שהדפדפן ביקש'      "$(call scout-job)" '"done_n":[12][^}]*"recent":\[{"title":"[^"]*","id":[0-9]*,"at":"[^"]*","ok":true,"recipe_id":[0-9]'
+check 'וזה נרשם ביומן הייבוא כייבוא בסורק' "$(call import-log '{"kind":"scout-import"}')" '"kind":"scout-import"'
+check 'עצירה'                             "$(call scout-job-stop)" '"state":"stopped"'
+KEY=$(call scout-job | python3 -c 'import sys,json; print(json.load(sys.stdin)["job"]["cron_url"].split("key=")[1])')
+check 'העובד בלי מפתח — 403'              "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/recipes-app/scout-worker.php?key=nope")" '^403$'
+check 'העובד אחרי עצירה — לא מייבא (או שהקודם עוד ישן)'   "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/scout-worker.php?key=$KEY&once=1")" 'idle\|busy'
+check 'משתמש רגיל אינו מפעיל'             "$(call logout >/dev/null; call login '{"username":"tester","password":"sod12345"}' >/dev/null; call scout-job-start '{}')" 'מפתח'
 call logout >/dev/null
 
 echo

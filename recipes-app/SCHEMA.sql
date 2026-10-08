@@ -137,6 +137,28 @@ CREATE TABLE scout_items (
 );
 CREATE INDEX idx_scout_status ON scout_items(status, site);
 
+-- ייבוא ברקע מהסורק (11ב): שורה אחת. העובד בשרת ממשיך גם כשהדפדפן סגור,
+-- עד שהרשימה נגמרת או שעוצרים אותו.
+CREATE TABLE scout_job (
+  id           INTEGER PRIMARY KEY CHECK (id = 1),
+  state        TEXT    NOT NULL DEFAULT 'idle'
+               CHECK (state IN ('idle','running','stopped','done')),
+  user_id      INTEGER,
+  gap_sec      INTEGER NOT NULL DEFAULT 25,
+  rewrite      INTEGER NOT NULL DEFAULT 0,
+  started_at   TEXT,
+  ended_at     TEXT,
+  next_at      INTEGER NOT NULL DEFAULT 0,
+  last_tick_at INTEGER NOT NULL DEFAULT 0,
+  done_n       INTEGER NOT NULL DEFAULT 0,
+  fail_n       INTEGER NOT NULL DEFAULT 0,
+  blocks_n     INTEGER NOT NULL DEFAULT 0,
+  message      TEXT,
+  recent       TEXT,
+  worker_key   TEXT    NOT NULL,
+  base_url     TEXT
+);
+
 -- "מה יש לי בבית" (סעיף 13): המזווה של כל משתמש, ומוצרי יסוד שכיבה.
 CREATE TABLE pantry_items (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,

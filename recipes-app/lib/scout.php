@@ -268,7 +268,9 @@ function scoutPage(string $url, array $developer): array {
             $new++;
             // כבר יובא בעבר (ידנית) — מסומן כך מראש
             $already->execute([$c['url']]);
-            if ($rid = $already->fetchColumn()) {
+            $rid = $already->fetchColumn();
+            $already->closeCursor();   // קריאה פתוחה + כתיבה = "database is locked" כשהעובד כותב במקביל
+            if ($rid) {
                 $pdo->prepare("UPDATE scout_items SET status='imported', recipe_id=? WHERE url=?")->execute([(int) $rid, $c['url']]);
             }
         }
@@ -326,6 +328,7 @@ function scoutPreview(int $id, array $developer): array {
     $st = db()->prepare('SELECT * FROM scout_items WHERE id = ?');
     $st->execute([$id]);
     $item = $st->fetch();
+    $st->closeCursor();   // לא להחזיק קריאה פתוחה בזמן הייבוא (כתיבות) — ראו AppPDO ב-db.php
     if (!$item) throw new AppError('הפריט אינו קיים', 404);
     if (!scoutRobotsAllowed($item['url'])) throw new AppError('האתר אוסר על הבאה אוטומטית של הדף (robots.txt)');
     scoutThrottle($item['url']);
@@ -348,6 +351,7 @@ function scoutImportOne(int $id, array $developer, bool $rewrite): array {
     $st = db()->prepare('SELECT * FROM scout_items WHERE id = ?');
     $st->execute([$id]);
     $item = $st->fetch();
+    $st->closeCursor();   // לא להחזיק קריאה פתוחה בזמן הייבוא (כתיבות) — ראו AppPDO ב-db.php
     if (!$item) throw new AppError('הפריט אינו קיים', 404);
     if ($item['status'] === 'imported' && $item['recipe_id']) return ['recipe_id' => (int) $item['recipe_id'], 'skipped' => true];
 

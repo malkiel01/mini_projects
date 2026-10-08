@@ -28,6 +28,25 @@ function nowIso(): string {
     return gmdate('Y-m-d\TH:i:s\Z');
 }
 
+/**
+ * PDO שבו כל טרנזקציה של כתיבה היא BEGIN IMMEDIATE.
+ *
+ * למה: BEGIN רגיל (DEFERRED) לוקח את נעילת הכתיבה רק בכתיבה הראשונה. אם
+ * בינתיים תהליך אחר כתב — SQLite מחזיר "database is locked" מיד, בלי
+ * busy_timeout, כי תמונת המסד שהטרנזקציה ראתה כבר ישנה. זה קרה כשהייבוא
+ * ברקע (scout-worker.php) כתב במקביל לבקשות מהדפדפן. IMMEDIATE לוקח את
+ * הנעילה בהתחלה, ושם busy_timeout כן ממתין.
+ *
+ * commit/rollBack ממומשים כאן ולא ב-PDO, כי PDO לא יודע על BEGIN שלא הוא שלח.
+ */
+final class AppPDO extends PDO {
+    private bool $inTx = false;
+    public function beginTransaction(): bool { $this->exec('BEGIN IMMEDIATE'); return $this->inTx = true; }
+    public function commit(): bool { $this->exec('COMMIT'); $this->inTx = false; return true; }
+    public function rollBack(): bool { if ($this->inTx) { $this->inTx = false; $this->exec('ROLLBACK'); } return true; }
+    public function inTransaction(): bool { return $this->inTx; }
+}
+
 function db(): PDO {
     static $pdo = null;
     if ($pdo instanceof PDO) return $pdo;
@@ -37,7 +56,7 @@ function db(): PDO {
         throw new AppError('לא ניתן ליצור את תיקיית הנתונים', 500);
     }
 
-    $pdo = new PDO('sqlite:' . DB_FILE, null, null, [
+    $pdo = new AppPDO('sqlite:' . DB_FILE, null, null, [
         PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     ]);
@@ -170,6 +189,28 @@ function migrate(PDO $pdo): void {
             decided_at TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_scout_status ON scout_items(status, site);
+
+        -- ייבוא ברקע מהסורק (lib/scout_job.php): שורה אחת. העובד בשרת רץ גם
+        -- כשהדפדפן סגור, עד שהרשימה נגמרת או שעוצרים אותו.
+        CREATE TABLE IF NOT EXISTS scout_job (
+            id           INTEGER PRIMARY KEY CHECK (id = 1),
+            state        TEXT    NOT NULL DEFAULT 'idle'
+                         CHECK (state IN ('idle','running','stopped','done')),
+            user_id      INTEGER,
+            gap_sec      INTEGER NOT NULL DEFAULT 25,
+            rewrite      INTEGER NOT NULL DEFAULT 0,
+            started_at   TEXT,
+            ended_at     TEXT,
+            next_at      INTEGER NOT NULL DEFAULT 0,   -- unix: לא לפני — מרווח, או המתנה לסוף חסימה
+            last_tick_at INTEGER NOT NULL DEFAULT 0,   -- unix: העובד חי? (שומר-סף מעיר אותו)
+            done_n       INTEGER NOT NULL DEFAULT 0,
+            fail_n       INTEGER NOT NULL DEFAULT 0,
+            blocks_n     INTEGER NOT NULL DEFAULT 0,
+            message      TEXT,
+            recent       TEXT,                         -- JSON: 30 התוצאות האחרונות
+            worker_key   TEXT    NOT NULL,             -- לקריאה לעובד (ומ-cron); קבוע
+            base_url     TEXT                          -- הכתובת של האפליקציה, כדי שהעובד יעיר את עצמו
+        );
 
         -- מה יש לי בבית: המזווה של כל משתמש, ומוצרי היסוד שכיבה (lib/pantry.php)
         CREATE TABLE IF NOT EXISTS pantry_items (
