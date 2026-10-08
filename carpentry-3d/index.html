@@ -78,6 +78,7 @@
         <button type="button" class="btn btn--small" id="btn-save">💾 שמירה</button>
         <button type="button" class="btn btn--small" id="btn-share">🔗 קישור ללקוח</button>
         <button type="button" class="btn btn--small" id="btn-reset">איפוס לברירת המחדל</button>
+        <button type="button" class="btn btn--small btn--accent" id="btn-back-asm" hidden>↩ חזרה להרכבה</button>
       </div>
     </div>
     <!-- כרטיס ההרכבה: כמה אלמנטים של לקוח יחד — מיקום וסיבוב לכל אחד -->
@@ -94,7 +95,7 @@
         <select id="asm-add-select"><option value="">הוספת אלמנט…</option></select>
         <button type="button" class="btn btn--small btn--accent" id="asm-add">＋ הוספה</button>
       </div>
-      <p class="muted asm-hint">כל אלמנט הוא פרויקט של הלקוח. מיקום במ"מ מהפינה השמאלית-האחורית-התחתונה; "הצמדה" מניחה אלמנט ביחס לאחר.</p>
+      <p class="muted asm-hint">כל אלמנט הוא פרויקט של הלקוח. מזיזים בגרירה בתלת מימד (כפתור "✋ הזזת אלמנטים"), בשדות המיקום במ"מ, או ב"הצמדה" ביחס לאלמנט אחר. הקשה על אלמנט בתלת מימד מסמנת את הכרטיס שלו.</p>
       <div id="asm-items" class="asm-items"></div>
     </div>
     <p class="muted no-project" id="no-project">אין פרויקט פתוח — בחרו אחד מ"פרויקטים" או צרו חדש.</p>
@@ -113,6 +114,7 @@
       <div class="views views--toggles">
         <button type="button" id="btn-open-all" title="פתיחה וסגירה של כל הדלתות והמגירות">🚪 פתיחת הכול</button>
         <button type="button" id="btn-ghost-fronts" title="חזיתות שקופות — לראות מה יש מאחור">👁 חזיתות</button>
+        <button type="button" id="btn-move-items" title="גרירת אלמנט על הרצפה; גרירה על הרקע עדיין מסובבת" hidden>✋ הזזת אלמנטים</button>
       </div>
       <div class="summary" id="summary"></div>
       <button type="button" class="btn btn--accent" id="btn-output">פלט ייצור</button>

@@ -13,7 +13,14 @@ import { accessoryGroup } from './accessory-mesh.js';
 
 const T = () => window.THREE;
 
-export function createViewer(canvas, { onPick } = {}) {
+/**
+ * `drag` (רשות) — גרירת אלמנט שלם על הרצפה, למסך ההרכבה:
+ *   active()            האם מצב ההזזה דלוק
+ *   keyOf(partId)       מפתח האלמנט שהחלק שייך אליו, או null
+ *   constrain(k,dx,dz)  הצמדה: מחזיר [dx, dz] מתוקנים
+ *   end(k,dx,dz)        סוף הגרירה — האפליקציה מעדכנת את המיקום ובונה מחדש
+ */
+export function createViewer(canvas, { onPick, drag = null } = {}) {
   const THREE = T();
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -80,15 +87,44 @@ export function createViewer(canvas, { onPick } = {}) {
 
   const ptrs = {};
   let pinch = 0, moved = 0, twist = null;
+  // גרירת אלמנט: כל הגופים שלו (חלקים ופרזול) זזים יחד על מישור אופקי בגובה נקודת המגע
+  let dragging = null;
+  const itemOf = (o) => { const id = o.userData.part?.id || o.userData.hwId; return id && drag ? drag.keyOf(id) : null; };
+  function dragStart(cx, cy) {
+    ray.setFromCamera(screenToNdc(cx, cy), camera);
+    const h = ray.intersectObjects(pickables, false)[0];
+    if (!h) return null;
+    const key = drag.keyOf(h.object.userData.part.id);
+    if (key == null) return null;
+    const objs = group.children.filter((o) => itemOf(o) === key);
+    return { key, plane: new THREE.Plane(new THREE.Vector3(0, 1, 0), -h.point.y), start: h.point.clone(), objs, orig: objs.map((o) => o.position.clone()), dx: 0, dz: 0 };
+  }
+  function dragCancel() {
+    if (!dragging) return;
+    dragging.objs.forEach((o, i) => o.position.copy(dragging.orig[i]));
+    dragging = null;
+  }
   canvas.addEventListener('pointerdown', (e) => {
-    canvas.setPointerCapture(e.pointerId);
+    try { canvas.setPointerCapture(e.pointerId); } catch { /* מצביע שכבר לא פעיל — ממשיכים בלי לכידה */ }
     ptrs[e.pointerId] = [e.clientX, e.clientY];
     moved = 0; pinch = 0; twist = null;
+    if (Object.keys(ptrs).length > 1) dragCancel();
+    else if (drag && drag.active()) dragging = dragStart(e.clientX, e.clientY);
   });
   canvas.addEventListener('pointermove', (e) => {
     const p = ptrs[e.pointerId]; if (!p) return;
     const dx = e.clientX - p[0], dy = e.clientY - p[1];
     moved += Math.abs(dx) + Math.abs(dy);
+    if (dragging) {
+      p[0] = e.clientX; p[1] = e.clientY;
+      ray.setFromCamera(screenToNdc(e.clientX, e.clientY), camera);
+      const pt = new THREE.Vector3();
+      if (!ray.ray.intersectPlane(dragging.plane, pt)) return;
+      const [mx, mz] = drag.constrain(dragging.key, pt.x - dragging.start.x, pt.z - dragging.start.z);
+      dragging.dx = mx; dragging.dz = mz;
+      dragging.objs.forEach((o, i) => o.position.set(dragging.orig[i].x + mx, dragging.orig[i].y, dragging.orig[i].z + mz));
+      return;
+    }
     const ids = Object.keys(ptrs);
     if (ids.length === 1) {
       if (e.shiftKey || e.buttons === 2) panBy(dx, dy);
@@ -108,12 +144,17 @@ export function createViewer(canvas, { onPick } = {}) {
     p[0] = e.clientX; p[1] = e.clientY;
   });
   function up(e) {
+    if (dragging) {
+      const d = dragging; dragging = null;
+      if (moved >= 6 && (d.dx || d.dz)) { delete ptrs[e.pointerId]; drag.end(d.key, d.dx, d.dz); return; }
+      d.objs.forEach((o, i) => o.position.copy(d.orig[i]));
+    }
     // הקשה בלי גרירה = בחירת חלק.
     if (ptrs[e.pointerId] && moved < 6 && Object.keys(ptrs).length === 1) pick(e.clientX, e.clientY);
     delete ptrs[e.pointerId]; pinch = 0; twist = null;
   }
   canvas.addEventListener('pointerup', up);
-  canvas.addEventListener('pointercancel', (e) => { delete ptrs[e.pointerId]; pinch = 0; twist = null; });
+  canvas.addEventListener('pointercancel', (e) => { dragCancel(); delete ptrs[e.pointerId]; pinch = 0; twist = null; });
   canvas.addEventListener('wheel', (e) => { e.preventDefault(); zoomBy(e.deltaY > 0 ? 1.12 : 1 / 1.12, e.clientX, e.clientY); }, { passive: false });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -271,7 +312,9 @@ export function createViewer(canvas, { onPick } = {}) {
           const p = owner.part;
           moving.position.sub(new THREE.Vector3(p.box.x + p.box.w / 2, p.box.y + p.box.h / 2, p.box.z + p.box.d / 2));
           owner.node.add(moving);
-          group.add(place(accessoryGroup(THREE, acc, (pr) => !pr.moving)));
+          const fixed = place(accessoryGroup(THREE, acc, (pr) => !pr.moving));
+          fixed.userData.hwId = h.id;
+          group.add(fixed);
           continue;
         }
         mesh = place(accessoryGroup(THREE, acc));
@@ -316,7 +359,7 @@ export function createViewer(canvas, { onPick } = {}) {
         const p = owner.part;
         mesh.position.sub(new THREE.Vector3(p.box.x + p.box.w / 2, p.box.y + p.box.h / 2, p.box.z + p.box.d / 2));
         owner.node.add(mesh);
-      } else group.add(mesh);
+      } else { mesh.userData.hwId = h.id; group.add(mesh); }
     }
     if (onPick) onPick(null);
   }
@@ -365,5 +408,7 @@ export function createViewer(canvas, { onPick } = {}) {
   fit();
   (function loop() { requestAnimationFrame(loop); animate(); applyCam(); renderer.render(scene, camera); })();
 
-  return { setModel, frame, view, fit, select, toggleOpen, isOpen, toggleGhost, isGhost, openAll, anyOpen, ghostFronts, anyGhost, debug: () => ({ open: openGroups.size, motionParts: [...partNodes.values()].filter((e) => e.part.motion).length, amounts: [...amounts.entries()].slice(0, 4), theta: ctl.theta, phi: ctl.phi, radius: ctl.radius, target: ctl.target.toArray(), w: canvas.clientWidth, h: canvas.clientHeight, aspect: camera.aspect, fov: camera.fov }) };
+  /** הזזת יעד המצלמה (כשההרכבה מנורמלת מחדש אחרי הזזה — כדי שהתמונה לא תקפוץ). */
+  function nudgeTarget(dx, dy, dz) { ctl.target.x += dx; ctl.target.y += dy; ctl.target.z += dz; applyCam(); }
+  return { setModel, frame, view, fit, select, nudgeTarget, toggleOpen, isOpen, toggleGhost, isGhost, openAll, anyOpen, ghostFronts, anyGhost, debug: () => ({ open: openGroups.size, motionParts: [...partNodes.values()].filter((e) => e.part.motion).length, amounts: [...amounts.entries()].slice(0, 4), theta: ctl.theta, phi: ctl.phi, radius: ctl.radius, target: ctl.target.toArray(), w: canvas.clientWidth, h: canvas.clientHeight, aspect: camera.aspect, fov: camera.fov }) };
 }
