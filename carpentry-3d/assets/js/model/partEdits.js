@@ -72,13 +72,23 @@ export function applyPartEdits(out, edits) {
       }
     }
     // הזזה
+    // הזזה. בדלת/מגירה שבנויה מכמה חלקים (זקפים, קושרות, זכוכית) — כל הדלת זזה יחד,
+    // עם הצירים, הידית וציר הסיבוב: הזזת זקף אחד לבד פירקה את הדלת והזיזה את ציר
+    // הסיבוב של כולה
     if (e.move) {
+      const g = p.motion?.group;
+      const mates = g ? out.parts.map((q, j) => [q, j]).filter(([q, j]) => j !== i && q.motion?.group === g) : [];
+      const groupHw = g ? (out.hardware || []).filter((h) => h.for === g && h.for !== id && h.pos) : [];
       AX.forEach((ax, k) => {
         const d = Number(e.move[ax]) || 0;
         if (!d) return;
         p.box[ax] += d;
         if (motion?.pivot) motion.pivot[k] += d;
-        for (const h of own) h.pos = h.pos.map((v, j) => (j === k ? v + d : v));
+        for (const h of [...own, ...groupHw]) h.pos = h.pos.map((v, j) => (j === k ? v + d : v));
+        for (const [, j] of mates) {
+          const q = out.parts[j];
+          out.parts[j] = { ...q, box: { ...q.box, [ax]: q.box[ax] + d }, ...(q.motion?.pivot ? { motion: { ...q.motion, pivot: q.motion.pivot.map((v, n) => (n === k ? v + d : v)) } } : {}) };
+        }
       });
     }
     // סיבוב סביב מרכז הרכיב (סביב הציר האנכי)

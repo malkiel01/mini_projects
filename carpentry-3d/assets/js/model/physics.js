@@ -203,8 +203,8 @@ export function doorClashes(parts, keep = new Set(), chosen = new Set(), pairs =
     if (gap > 60 || !facing || a.y1 <= b.y0 + 1 || b.y1 <= a.y0 + 1) continue;
     for (const d of [a, b]) {
       if (keep.has(d.g) || capped.has(d.g) || Math.abs(d.m.angle) <= CLASH_ANGLE) continue;
-      const m = { ...d.m, angle: Math.sign(d.m.angle) * CLASH_ANGLE };
-      for (const p of d.parts) p.motion = m;
+      // כל חלק שומר את התנועה שלו (ציר הסיבוב שלו) — רק הזווית מוגבלת
+      for (const p of d.parts) p.motion = { ...p.motion, angle: Math.sign(p.motion.angle) * CLASH_ANGLE };
       capped.add(d.g);
     }
     pairs.push([a.g, b.g]);
