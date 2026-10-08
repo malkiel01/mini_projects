@@ -114,13 +114,13 @@
         <button type="button" data-view="top">מבט על</button>
       </div>
       <div class="views views--toggles">
-        <button type="button" id="btn-open-all" title="פתיחה וסגירה של כל הדלתות והמגירות">🚪 פתיחת הכול</button>
-        <button type="button" id="btn-ghost-fronts" title="חזיתות שקופות — לראות מה יש מאחור">👁 חזיתות</button>
-        <button type="button" id="btn-move-items" title="גרירת אלמנט על הרצפה; שתי אצבעות על אלמנט (או גרירה ימנית / Shift) מסובבות אותו; גרירה על הרקע מסובבת את התצוגה" hidden>✋ הזזת אלמנטים</button>
-        <button type="button" id="btn-move-height" title="גרירת אלמנט למעלה ולמטה — נצמד לרצפה ולגג או לתחתית של אלמנט אחר" hidden>↕ גובה</button>
+        <button type="button" id="btn-open-all" title="פתיחה וסגירה של כל הדלתות והמגירות" aria-label="פתיחת הכול">🚪<span class="lbl"> פתיחת הכול</span></button>
+        <button type="button" id="btn-ghost-fronts" title="חזיתות שקופות — לראות מה יש מאחור" aria-label="חזיתות שקופות">👁<span class="lbl"> חזיתות</span></button>
+        <button type="button" id="btn-move-items" title="גרירת אלמנט על הרצפה; שתי אצבעות על אלמנט (או גרירה ימנית / Shift) מסובבות אותו; גרירה על הרקע מסובבת את התצוגה" hidden aria-label="הזזת אלמנטים">✋<span class="lbl"> הזזת אלמנטים</span></button>
+        <button type="button" id="btn-move-height" title="גרירת אלמנט למעלה ולמטה — נצמד לרצפה ולגג או לתחתית של אלמנט אחר" hidden aria-label="גובה">↕<span class="lbl"> גובה</span></button>
       </div>
       <div class="summary" id="summary"></div>
-      <button type="button" class="btn btn--accent" id="btn-output">פלט ייצור</button>
+      <button type="button" class="btn btn--accent" id="btn-output" aria-label="פלט ייצור">📋<span class="lbl"> פלט ייצור</span></button>
     </div>
     <div class="stage-wrap">
       <canvas id="stage" class="stage"></canvas>

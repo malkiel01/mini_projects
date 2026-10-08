@@ -592,11 +592,32 @@ $('#summary').addEventListener('click', onShowHidden);
 $('#part').addEventListener('click', onShowHidden);
 
 let shownPart = null;
+/**
+ * מזעור כרטיס הרכיב (כמו תמרור האזהרות): פס אחד דק — שם הרכיב המסומן — כדי
+ * שהתלת מימד יקבל את כל המסך. הקשה על הפס פותחת שוב. נזכר בדפדפן.
+ */
+let partMin = (() => { try { return localStorage.getItem('carpentry.partMin') === '1'; } catch { return false; } })();
+function partHead(title) {
+  return `<button type="button" class="part__min" data-part-min aria-expanded="${!partMin}" title="${partMin ? 'פתיחת הכרטיס' : 'מזעור הכרטיס'}"><span class="part__mintitle">${esc(title)}</span><span class="part__chev">${partMin ? '▴' : '▾'}</span></button>`;
+}
+function applyPartMin() {
+  const box = $('#part');
+  box.classList.toggle('is-min', partMin);
+  const b = box.querySelector('[data-part-min]');
+  if (b) { b.setAttribute('aria-expanded', String(!partMin)); b.title = partMin ? 'פתיחת הכרטיס' : 'מזעור הכרטיס'; b.querySelector('.part__chev').textContent = partMin ? '▴' : '▾'; }
+}
+$('#part').addEventListener('click', (e) => {
+  if (!e.target.closest('[data-part-min]')) return;
+  partMin = !partMin;
+  try { localStorage.setItem('carpentry.partMin', partMin ? '1' : '0'); } catch { /* בלי זיכרון */ }
+  applyPartMin();
+});
 function showPart(p) {
   const box = $('#part');
   shownPart = p;
   if (!p) {
-    box.innerHTML = `<p class="muted">הקשה על רכיב מציגה את מידותיו ומאפשרת לערוך אותו. גרירה מסובבת; שתי אצבעות או גלגלת מזמנות.</p>${resetButtons()}`;
+    box.innerHTML = `${partHead('כרטיס הרכיב')}<p class="muted">הקשה על רכיב מציגה את מידותיו ומאפשרת לערוך אותו. גרירה מסובבת; שתי אצבעות או גלגלת מזמנות.</p>${resetButtons()}`;
+    applyPartMin();
     return;
   }
   const c = cutSize(p);
@@ -604,7 +625,7 @@ function showPart(p) {
   const edges = Object.entries(p.edges || {}).filter(([, v]) => v).map(([k]) => ({ front: 'חזית', back: 'אחור', top: 'עליון', bottom: 'תחתון', left: 'שמאל', right: 'ימין' }[k])).join(', ') || 'ללא';
   const grain = { x: 'לרוחב', y: 'לגובה', z: 'לעומק' }[p.grain];
   const holes = model ? (model.hardware || []).flatMap((h) => (h.drill || []).filter((d) => d.part === p.id)) : [];
-  box.innerHTML = `
+  box.innerHTML = `${partHead(p.name)}
     <h3>${esc(p.name)}</h3>
     <dl>
       <dt>חיתוך</dt><dd><b>${c.l} × ${c.w}</b> × ${c.t} מ"מ</dd>
@@ -618,6 +639,7 @@ function showPart(p) {
     </dl>
     ${partButtons(p)}
     ${partEditor(p)}`;
+  applyPartMin();
 }
 
 /**
