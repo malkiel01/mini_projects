@@ -34,6 +34,7 @@ const INDEX_MAX_SITEMAPS   = 40;    // חלקים לאתר — מעבר לזה �
 const INDEX_RETRY_HOURS    = 6;     // אחרי כשל — מנסים שוב בעוד
 const INDEX_WORKER_BUDGET  = 200;
 const WEB_CACHE_DAYS       = 7;
+const INDEX_TITLE_GAP      = 20;    // שניות בין שתי הבאות של שם מאותו אתר — לאט, כי זה דף שלם ולא רשימה
 if (!defined('WEB_DAILY_LIMIT')) define('WEB_DAILY_LIMIT', 20);   // פתיחות חדשות ליום למשתמש רגיל
 
 // חלקי sitemap שאינם מתכונים — דפים, תגיות, כותבים, רכיבים, מוצרים
@@ -48,23 +49,29 @@ const INDEX_SKIP_URL = '~/(category|tag|author|page|feed|search|cart|login|wp-|[
 function indexSites(): array {
     $rows = db()->query('SELECT * FROM index_sites ORDER BY name')->fetchAll();
     $now = time();
-    return array_map(function ($r) use ($now) {
+    $counts = [];
+    foreach (db()->query("SELECT site_id, SUM(needs_title = 1 AND skip = 0) pending, SUM(skip) skipped, SUM(skip = 0 AND title != '' AND needs_title = 0) ready FROM index_entries GROUP BY site_id")->fetchAll() as $c) {
+        $counts[(int) $c['site_id']] = ['pending' => (int) $c['pending'], 'skipped' => (int) $c['skipped'], 'ready' => (int) $c['ready']];
+    }
+    return array_map(function ($r) use ($now, $counts) {
         $st = $r['crawl_state'] ? (json_decode($r['crawl_state'], true) ?: []) : null;
         return [
             'id' => (int) $r['id'], 'host' => $r['host'], 'name' => $r['name'], 'start_url' => $r['start_url'],
             'enabled' => (bool) $r['enabled'], 'added_at' => $r['added_at'], 'last_crawl_at' => $r['last_crawl_at'],
-            'last_error' => $r['last_error'], 'entries_n' => (int) $r['entries_n'],
+            'last_error' => $r['last_error'], 'entries_n' => $counts[(int) $r['id']]['ready'] ?? 0,   // בחיפוש עכשיו, עם שם
             'next_in' => max(0, (int) $r['next_crawl_at'] - $now),
             'crawling' => $st !== null,
             'progress' => $st ? ['done' => (int) ($st['done'] ?? 0), 'total' => (int) ($st['total'] ?? 0)] : null,
+            'titles_pending' => $counts[(int) $r['id']]['pending'] ?? 0,
+            'not_recipes'    => $counts[(int) $r['id']]['skipped'] ?? 0,
         ];
     }, $rows);
 }
 
 function indexSitesStatus(array $developer): array {
     requireDeveloper($developer);
-    $total = (int) db()->query('SELECT COUNT(*) FROM index_entries e JOIN index_sites s ON s.id = e.site_id WHERE s.enabled = 1')->fetchColumn();
-    return ['sites' => indexSites(), 'total' => $total, 'refresh_days' => INDEX_REFRESH_DAYS];
+    $total = (int) db()->query("SELECT COUNT(*) FROM index_entries e JOIN index_sites s ON s.id = e.site_id WHERE s.enabled = 1 AND e.skip = 0 AND e.title != ''")->fetchColumn();
+    return ['sites' => indexSites(), 'total' => $total, 'refresh_days' => INDEX_REFRESH_DAYS, 'title_gap' => INDEX_TITLE_GAP];
 }
 
 function indexAddSite(string $url, string $name, array $developer): array {
@@ -165,6 +172,51 @@ function indexTitleFromUrl(string $url): string {
     return preg_match_all('/\p{L}/u', $t) >= 3 ? mb_substr($t, 0, 140) : '';
 }
 
+function indexHasHebrew(string $t): bool {
+    return preg_match_all('/\p{Hebrew}/u', $t) >= 2;
+}
+
+/**
+ * שם מתכון מהדף → [שם להצגה, הטקסט המלא לחיפוש].
+ *
+ * דפים מוסיפים לשם סיומת של האתר ("… - עוגיו.נט", "… | ניקי ב") וזנב לגוגל
+ * ("לבבות עוף עם בצל - הרוטב מעלף הכי מתאים ליד חלת השבת"). להצגה — החלק
+ * הראשון, עד המפריד הראשון, כשיש בו לפחות שתי מילים. לחיפוש — הכול חוץ משם
+ * האתר, כך שגם מילה מהזנב מוצאת את המתכון.
+ */
+function indexCleanTitle(string $t, array $siteNames = []): array {
+    $t = importText($t);
+    $t = trim(preg_replace('/[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}\x{FE0F}]/u', '', $t) ?? $t);   // אימוג'י
+    $parts = preg_split('/\s+[|–—\-:]\s+|\s*\|\s*/u', $t) ?: [$t];
+    // חלק הוא "שם האתר" רק כשהוא קצר — כמעט רק השם. "קרין גורן מכינה עוגת יומולדת" אינו
+    // שם האתר רק כי המוציא לאור הוא "קרין גורן" (זה קרה, והמתכון סומן "לא מתכון").
+    $isSite = function (string $p) use ($siteNames): bool {
+        $p = trim($p);
+        if ($p === '') return true;
+        if (str_word_count_u2($p) <= 3 && preg_match('/\.(net|com|co\.il|org)\b|www\./iu', $p)) return true;   // "עוגיו.נט", "nikib.co.il"
+        foreach ($siteNames as $n) {
+            $n = trim($n);
+            if ($n === '') continue;
+            if ((str_contains($p, $n) && mb_strlen($p) <= mb_strlen($n) + 6) || (mb_strlen($p) >= 2 && str_contains($n, $p))) return true;
+        }
+        return false;
+    };
+    // החלק הראשון הוא השם — לא נזרק, אלא אם יש אחריו משהו אחר
+    $kept = [];
+    foreach ($parts as $i => $p) if (!$isSite($p)) $kept[] = $p;
+    if (!$kept && $parts) $kept = [$parts[0]];
+    $parts = $kept;
+    if (!$parts) return ['', ''];
+    $full = trim(implode(' ', $parts));
+    $show = trim($parts[0]);
+    if (str_word_count_u2($show) < 2 && count($parts) > 1) $show = trim($parts[0] . ' ' . $parts[1]);   // "שוקופאי - אפוי" → שניהם
+    $show = preg_replace('/^(מתכון\s+ל|מתכון:\s*)/u', '', $show) ?? $show;
+    // "פשטידת פטריות חלבית מתכון פגז לאירוח" — "מתכון" באמצע פותח את הזנב לגוגל
+    if (preg_match('/^(\S+(?:\s+\S+){1,})\s+מתכון(\s|$)/u', $show, $m) && str_word_count_u2($m[1]) >= 2) $show = $m[1];
+    $show = trim(preg_replace('/[!?.,]+$/u', '', $show) ?? $show);
+    return [mb_substr($show, 0, 120), mb_substr($full, 0, 300)];
+}
+
 /** גזעים לחיפוש — " גזע גזע " (רווח בהתחלה ובסוף, כדי לחפש לפי תחילת מילה). */
 function indexStems(string $title): string {
     $out = [];
@@ -244,7 +296,7 @@ function indexCrawlStep(array $site): string {
             if (!$state['failed']) {
                 db()->prepare('DELETE FROM index_entries WHERE site_id = ? AND seen_at < ?')->execute([$id, (int) $state['started']]);
             }
-            $n = (int) db()->query("SELECT COUNT(*) FROM index_entries WHERE site_id = $id")->fetchColumn();
+            $n = (int) db()->query("SELECT COUNT(*) FROM index_entries WHERE site_id = $id AND skip = 0")->fetchColumn();
             indexSaveState($id, null, ['entries_n' => $n, 'last_crawl_at' => nowIso(),
                 'next_crawl_at' => time() + INDEX_REFRESH_DAYS * 86400,
                 'last_error' => $state['failed'] ? $state['failed'] . ' חלקים נכשלו — מה שהיה בהם נשאר מהעדכון הקודם' : null]);
@@ -291,17 +343,21 @@ function indexCrawlStep(array $site): string {
                            ON CONFLICT(site_id, url) DO UPDATE SET lastmod = excluded.lastmod, fetched_at = excluded.fetched_at')
                 ->execute([$id, $url, $lastmod, nowIso()]);
             $smId = (int) $pdo->query('SELECT id FROM index_sitemaps WHERE site_id = ' . $id . ' AND url = ' . $pdo->quote($url))->fetchColumn();
-            $up = $pdo->prepare('INSERT INTO index_entries (site_id, sitemap_id, url, title, stems, lastmod, seen_at) VALUES (?,?,?,?,?,?,?)
+            // שם מהדף (title_fixed) לא נדרס; "ממתין לשם" נשאר כך עד שהשם יובא; "לא מתכון" (skip) נשאר מסומן
+            $up = $pdo->prepare('INSERT INTO index_entries (site_id, sitemap_id, url, title, stems, lastmod, seen_at, needs_title) VALUES (?,?,?,?,?,?,?,?)
                                  ON CONFLICT(url) DO UPDATE SET sitemap_id = excluded.sitemap_id, lastmod = excluded.lastmod, seen_at = excluded.seen_at,
                                    title = CASE WHEN index_entries.title_fixed THEN index_entries.title ELSE excluded.title END,
-                                   stems = CASE WHEN index_entries.title_fixed THEN index_entries.stems ELSE excluded.stems END');
+                                   stems = CASE WHEN index_entries.title_fixed THEN index_entries.stems ELSE excluded.stems END,
+                                   needs_title = CASE WHEN index_entries.title_fixed OR index_entries.skip THEN 0 ELSE excluded.needs_title END');
             $n = 0;
             foreach (indexParseUrlset($xml) as [$u, $lm]) {
                 if (!indexSameHost($u, $site['host'])) continue;
                 if (!scoutCleanUrl($u) || preg_match(INDEX_SKIP_URL, urldecode((string) parse_url($u, PHP_URL_PATH)))) continue;
                 $title = indexTitleFromUrl($u);
-                if ($title === '') continue;   // בלי שם אין מה לחפש
-                $up->execute([$id, $smId, $u, $title, indexStems($title), $lm, (int) $state['started']]);
+                // בלי שם עברי בכתובת (ניקי ב׳: /main-course/41767/, אוגיו: apple_dessert) — השם יובא מהדף,
+                // ברקע. עד אז: השם האנגלי מהכתובת אם יש (נמצא בחיפוש באנגלית), אחרת לא בחיפוש.
+                $needs = !indexHasHebrew($title);
+                $up->execute([$id, $smId, $u, $title, indexStems($title), $lm, (int) $state['started'], $needs ? 1 : 0]);
                 $n++;
             }
             $pdo->prepare('UPDATE index_sitemaps SET entries_n = ? WHERE id = ?')->execute([$n, $smId]);
@@ -330,6 +386,77 @@ function indexDueSite(): ?array {
     return $r ?: null;
 }
 
+// ─────────────────────────────────────────────────────────────
+// שמות מהדף — למתכונים שבכתובת שלהם אין שם עברי
+// ─────────────────────────────────────────────────────────────
+
+function indexTitleNextFile(string $host): string { return scoutStateDir() . '/title-next-' . md5(strtolower($host)); }
+
+/** אתרים שיש בהם מתכונים שממתינים לשם, עם הזמן שבו מותר להביא את הבא. */
+function indexTitleHosts(): array {
+    $rows = db()->query('SELECT s.host, s.name, COUNT(*) n FROM index_entries e JOIN index_sites s ON s.id = e.site_id
+                         WHERE s.enabled = 1 AND s.crawl_state IS NULL AND e.needs_title = 1 AND e.skip = 0 GROUP BY s.id')->fetchAll();
+    $out = [];
+    foreach ($rows as $r) {
+        $ready = (int) @file_get_contents(indexTitleNextFile($r['host']));
+        if ($blocked = importHostBlockedUntil($r['host'])) $ready = max($ready, $blocked);
+        $out[] = ['host' => $r['host'], 'name' => $r['name'], 'pending' => (int) $r['n'], 'ready_at' => $ready];
+    }
+    return $out;
+}
+
+/**
+ * צעד אחד: מתכון אחד שממתין לשם, מהאתר שתורו הגיע. מביא את הדף, ומחלץ
+ * כמו בייבוא: יש מתכון — השם שלו; אין מתכון בדף — "לא מתכון" (skip), ולא
+ * יחזור. מחזיר 'titled' / 'not-recipe' / 'failed' / 'blocked' / 'wait:N' / 'none'.
+ */
+function indexTitleStep(): string {
+    $hosts = indexTitleHosts();
+    if (!$hosts) return 'none';
+    usort($hosts, fn($a, $b) => $a['ready_at'] <=> $b['ready_at']);
+    $h = $hosts[0];
+    $now = time();
+    if ($h['ready_at'] > $now) return 'wait:' . ($h['ready_at'] - $now);
+
+    $st = db()->prepare('SELECT e.id, e.url, e.title FROM index_entries e JOIN index_sites s ON s.id = e.site_id
+                         WHERE s.host = ? AND e.needs_title = 1 AND e.skip = 0 ORDER BY e.lastmod DESC, e.id DESC LIMIT 1');
+    $st->execute([$h['host']]);
+    $e = $st->fetch();
+    $st->closeCursor();
+    if (!$e) return 'none';
+    $local = in_array($h['host'], ['127.0.0.1', 'localhost'], true);
+    @file_put_contents(indexTitleNextFile($h['host']), (string) ($now + ($local ? 0 : INDEX_TITLE_GAP + random_int(0, 10))));
+
+    $done = function (array $f) use ($e) {
+        $sets = implode(', ', array_map(fn($k) => "$k = ?", array_keys($f)));
+        db()->prepare("UPDATE index_entries SET $sets WHERE id = ?")->execute([...array_values($f), (int) $e['id']]);
+    };
+    try {
+        if (!scoutRobotsAllowed($e['url'])) { $done(['needs_title' => 0, 'skip' => 1]); return 'not-recipe'; }
+        scoutThrottle($e['url']);
+        [$html, $final] = importFetch($e['url'], true);   // במטמון רבע שעה — פתיחה מיד אחר כך לא תביא שוב
+        $doc = importDom($html);
+        try { $raw = importParseDoc($doc, $final); }
+        catch (AppError $ex) { $done(['needs_title' => 0, 'skip' => 1]); return 'not-recipe'; }   // אין מתכון בדף
+        [$title, $full] = indexCleanTitle((string) ($raw['title'] ?? ''), [$h['name'], (string) ($raw['publisher'] ?? '')]);
+        if (!indexHasHebrew($title) && preg_match_all('/\p{L}/u', $title) < 3) { $done(['needs_title' => 0, 'skip' => 1]); return 'not-recipe'; }
+        // הגזעים: השם המלא מהדף, ועוד השם מהכתובת אם היה (כך "apple dessert" עדיין נמצא גם באנגלית)
+        $done(['title' => $title, 'stems' => indexStems($full . ' ' . $e['title']), 'title_fixed' => 1, 'needs_title' => 0]);
+        return 'titled';
+    } catch (AppError $ex) {
+        if ($ex->status === 429) return 'blocked';            // האתר חסם — השעה נשמרה; ממתינים
+        if (preg_match('/שגיאה (404|410)/u', $ex->getMessage())) { db()->prepare('DELETE FROM index_entries WHERE id = ?')->execute([(int) $e['id']]); return 'failed'; }
+        return 'failed';                                      // תקלה זמנית — ננסה שוב בתורו הבא
+    }
+}
+
+/** יש עבודה לעובד עכשיו: אתר שהגיע זמנו, או שם שאפשר להביא. */
+function indexWorkReady(): bool {
+    if (indexDueSite()) return true;
+    foreach (indexTitleHosts() as $h) if ($h['ready_at'] <= time()) return true;
+    return false;
+}
+
 /** גוף העובד: צעדים עד שנגמר התקציב, ואז שרשור. $once — צעד אחד (בדיקות). */
 function indexWorkerRun(bool $once = false): string {
     $lock = fopen(scoutStateDir() . '/index.lock', 'c');
@@ -339,21 +466,33 @@ function indexWorkerRun(bool $once = false): string {
     try {
         while (time() - $t0 < INDEX_WORKER_BUDGET) {
             $site = indexDueSite();
-            if (!$site) { $last = 'idle'; break; }
-            try { $last = indexCrawlStep($site); }
-            catch (Throwable $e) {
-                error_log('recipes-app index worker: ' . $e->getMessage());
-                logEvent('warn', 'index-crawl-retry', get_class($e) . ': ' . mb_substr($e->getMessage(), 0, 200), ['host' => $site['host']]);
-                indexSaveState((int) $site['id'], null, ['next_crawl_at' => time() + 3600, 'last_error' => 'תקלה זמנית — ננסה שוב בעוד שעה']);
-                $last = 'retry';
+            if ($site) {
+                // קודם עדכון האינדקס — הוא מה שמכניס מתכונים לחיפוש
+                try { $last = indexCrawlStep($site); }
+                catch (Throwable $e) {
+                    error_log('recipes-app index worker: ' . $e->getMessage());
+                    logEvent('warn', 'index-crawl-retry', get_class($e) . ': ' . mb_substr($e->getMessage(), 0, 200), ['host' => $site['host']]);
+                    indexSaveState((int) $site['id'], null, ['next_crawl_at' => time() + 3600, 'last_error' => 'תקלה זמנית — ננסה שוב בעוד שעה']);
+                    $last = 'retry';
+                }
+                if ($once) break;
+                continue;
             }
-            if ($once) break;
+            // אחר כך שמות מהדף — לאט, אתר אחר אתר
+            try { $last = indexTitleStep(); }
+            catch (Throwable $e) { error_log('recipes-app index titles: ' . $e->getMessage()); $last = 'retry'; sleep(5); }
+            if ($last === 'none' || $once) break;
+            if (str_starts_with($last, 'wait:')) {
+                $w = (int) substr($last, 5);
+                if ($w > INDEX_WORKER_BUDGET - (time() - $t0) - 5) break;   // ההמתנה ארוכה — שומר-הסף יעיר כשיגיע הזמן
+                sleep(max(1, $w));
+            }
         }
     } finally {
         flock($lock, LOCK_UN);
         fclose($lock);
     }
-    if (!$once && $last !== 'idle' && indexDueSite()) indexKick(true);
+    if (!$once && $last !== 'none' && indexWorkReady()) indexKick(true);
     return $last;
 }
 
@@ -384,7 +523,7 @@ function indexKick(bool $force = false): void {
 
 /** שומר-סף: נקרא מ-api.php. יש אתר שהגיע זמנו — מעירים (לכל היותר פעם בשתי דקות). */
 function indexWatchdog(): void {
-    try { if (indexDueSite()) indexKick(); }
+    try { if (indexWorkReady()) indexKick(); }
     catch (Throwable $e) { error_log('recipes-app index watchdog: ' . $e->getMessage()); }
 }
 
@@ -400,10 +539,10 @@ function indexSearch(string $q, int $offset = 0): array {
         $stems[] = pantryStem($w);
     }
     $sites = (int) db()->query('SELECT COUNT(*) FROM index_sites WHERE enabled = 1')->fetchColumn();
-    $all = (int) db()->query('SELECT COUNT(*) FROM index_entries e JOIN index_sites s ON s.id = e.site_id WHERE s.enabled = 1')->fetchColumn();
+    $all = (int) db()->query("SELECT COUNT(*) FROM index_entries e JOIN index_sites s ON s.id = e.site_id WHERE s.enabled = 1 AND e.skip = 0 AND e.title != ''")->fetchColumn();
     if (!$stems) return ['results' => [], 'total' => 0, 'indexed' => $all, 'sites' => $sites];
 
-    $where = ['s.enabled = 1'];
+    $where = ['s.enabled = 1', 'e.skip = 0', "e.title != ''"];
     $params = [];
     foreach (array_unique($stems) as $s) { $where[] = 'e.stems LIKE ?'; $params[] = '% ' . str_replace(['%', '_'], ['\\%', '\\_'], $s) . '%'; }
     $w = implode(' AND ', $where);
@@ -484,7 +623,7 @@ function webOpen(int $id, array $user): array {
 
     // השם האמיתי מהדף — טוב מהשם מהכתובת. ונשאר גם בעדכונים הבאים.
     if ($draft['title'] !== '' && $draft['title'] !== $e['title']) {
-        db()->prepare('UPDATE index_entries SET title = ?, stems = ?, title_fixed = 1 WHERE id = ?')
+        db()->prepare('UPDATE index_entries SET title = ?, stems = ?, title_fixed = 1, needs_title = 0 WHERE id = ?')
             ->execute([mb_substr($draft['title'], 0, 140), indexStems($draft['title'] . ' ' . $e['title']), (int) $e['id']]);
     }
     db()->prepare('INSERT INTO web_cache (url, draft, rewritten, created_at) VALUES (?,?,?,?)

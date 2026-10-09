@@ -386,13 +386,17 @@ check 'אותו אתר פעמיים — נדחה'            "$(call index-site-
 # העובד בשרת מעדכן לבד: גילוי ה-sitemap, חלק המתכונים, סיום
 wait_crawl() {
   for _ in $(seq 1 60); do
-    call index-sites | python3 -c 'import sys,json; s=json.load(sys.stdin)["sites"][0]; sys.exit(0 if (not s["crawling"] and s["last_crawl_at"] and s["next_in"]>0) else 1)' && return 0
+    call index-sites | python3 -c 'import sys,json; s=json.load(sys.stdin)["sites"][0]; sys.exit(0 if (not s["crawling"] and s["last_crawl_at"] and s["next_in"]>0 and s["titles_pending"]==0) else 1)' && return 0
     sleep 0.5
   done; return 1
 }
 wait_crawl
 IS=$(call index-sites)
-check 'האינדקס נבנה ברקע: 4 מתכונים (בלי זבל, בלי דף רכיב, בלי __trashed)' "$IS" '"entries_n":4[^}]*"next_in":[0-9]\{6\}'
+check 'האינדקס נבנה ברקע: 5 מתכונים (בלי זבל, בלי דף רכיב)' "$IS" '"entries_n":5[^}]*"next_in":[0-9]\{6\}'
+check 'שמות מהדף: אין ממתינים, דף הרשימה "לא מתכון"' "$IS" '"titles_pending":0,"not_recipes":1'
+check 'בלוג בלי עברית בכתובת — נמצא לפי השם מהדף' "$(call web-search '{"q":"לחם מחמצת"}')" '"title":"לחם מחמצת ביתי"'
+check 'השם מהדף, בלי שם האתר'            "$(call web-search '{"q":"קרין גורן"}')" '"title":"קרין גורן מכינה עוגת יומולדת שילדים אוהבים"'
+check '__trashed בלי דף (404) — נמחק'     "$(call web-search '{"q":"trashed"}')" '"total":0'
 check 'רק חלק המתכונים נקרא, לא הדפים'      "$(grep -c 'sm-pages.php' "$TMP/fixtures.log")" '^0$'
 call logout >/dev/null
 call login '{"username":"tester","password":"sod12345"}' >/dev/null
@@ -419,13 +423,13 @@ echo 2 > "$TMP/fxgen"
 HITS=$(grep -c 'sm-recipes.php' "$TMP/fixtures.log")
 call index-site-refresh "{\"id\":$(printf '%s' "$IS" | python3 -c 'import sys,json; print(json.load(sys.stdin)["sites"][0]["id"])')}" >/dev/null
 sleep 1; wait_crawl
-check 'דור 2: המתכון שהוסר יצא מהאינדקס'    "$(call index-sites)" '"entries_n":3'
+check 'דור 2: המתכון שהוסר יצא מהאינדקס'    "$(call index-sites)" '"entries_n":4'
 check 'וחלק המתכונים נקרא שוב (lastmod השתנה)' "$(( $(grep -c 'sm-recipes.php' "$TMP/fixtures.log") - HITS ))" '^1$'
 HITS=$(grep -c 'sm-recipes.php' "$TMP/fixtures.log")
 call index-site-refresh "{\"id\":$(printf '%s' "$IS" | python3 -c 'import sys,json; print(json.load(sys.stdin)["sites"][0]["id"])')}" >/dev/null
 sleep 1; wait_crawl
 check 'עדכון בלי שינוי: חלק המתכונים לא מובא שוב' "$(( $(grep -c 'sm-recipes.php' "$TMP/fixtures.log") - HITS ))" '^0$'
-check 'והמתכונים נשארו'                    "$(call index-sites)" '"entries_n":3'
+check 'והמתכונים נשארו, ו"לא מתכון" לא חזר'  "$(call index-sites)" '"entries_n":4,"next_in":[0-9]*,"crawling":false,"progress":null,"titles_pending":0,"not_recipes":1'
 check 'השם האמיתי שרד את העדכון'           "$(call web-search '{"q":"קרין גורן"}')" '"total":1'
 check 'עובד האינדקס בלי מפתח — 403'        "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/recipes-app/index-worker.php?key=x")" '^403$'
 call logout >/dev/null

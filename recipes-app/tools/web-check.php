@@ -74,6 +74,17 @@ check('סלאג עברי', indexTitleFromUrl('https://a.co.il/recipe/%d7%a2%d7%9
 check('__trashed ומספרים — בלי שם', [indexTitleFromUrl('https://c.co.il/foody_recipe/__trashed-3/'), indexTitleFromUrl('https://c.co.il/r/12345/')], ['', '']);
 check('גזעים: עוגות→עוג, גבינה→גבינ', indexStems('עוגות גבינה'), ' עוג גבינ ');
 
+echo "\n2ב. שמות מהדף — למתכונים בלי שם עברי בכתובת\n";
+check('עברית?', [indexHasHebrew('עוגה'), indexHasHebrew('apple dessert'), indexHasHebrew('')], [true, false, false]);
+check('סיומת האתר נחתכת, גם כשהאתר קורא לעצמו אחרת', indexCleanTitle('עוגת קפה, קוקוס ושוקולד - עוגיו.נט', ['אוגיו'])[0], 'עוגת קפה, קוקוס ושוקולד');
+$ct = indexCleanTitle('לבבות עוף עם בצל - הרוטב מעלף הכי מתאים ליד חלת השבת', ['ניקי ב']);
+check('זנב לגוגל: להצגה — החלק הראשון; לחיפוש — הכול', $ct, ['לבבות עוף עם בצל', 'לבבות עוף עם בצל הרוטב מעלף הכי מתאים ליד חלת השבת']);
+check('"מתכון" באמצע פותח זנב', indexCleanTitle('פשטידת פטריות חלבית מתכון פגז לאירוח', [])[0], 'פשטידת פטריות חלבית');
+check('שם של מילה אחת לפני מפריד — שני החלקים', indexCleanTitle('שוקופאי - אפוי', [])[0], 'שוקופאי אפוי');
+check('אימוג׳י וסימני קריאה', indexCleanTitle('מאפה גבינות מלוח! ✨', [])[0], 'מאפה גבינות מלוח');
+check('| שם האתר', indexCleanTitle('עוגת שוקולד | ניקי ב', ['ניקי ב'])[0], 'עוגת שוקולד');
+check('שם שמכיל את המוציא לאור אינו "שם האתר" (באג שנמצא)', indexCleanTitle('קרין גורן מכינה עוגת יומולדת שילדים אוהבים', ['אתר', 'קרין גורן'])[0], 'קרין גורן מכינה עוגת יומולדת שילדים אוהבים');
+
 echo "\n3. הרשאות — רק המפתח מנהל את האינדקס\n";
 expectError('משתמש רגיל אינו מוסיף אתר', fn() => indexAddSite('https://a.co.il/', '', $GLOBALS['noaU']), 'מפתח');
 expectError('ואינו רואה את הרשימה', fn() => indexSitesStatus($GLOBALS['noaU']), 'מפתח');
@@ -97,6 +108,21 @@ check('מילים בלי משמעות ("מתכון של") לא מצמצמות', 
 check('ספירות האינדקס: 4 מתכונים באתר אחד פעיל', [$r['indexed'], $r['sites']], [4, 1]);
 check('חיפוש ריק — אפס', indexSearch('  ')['total'], 0);
 check('% בחיפוש אינו תו כללי', indexSearch('%')['total'], 0);
+$ins->execute([$sa, 'https://a.co.il/r/41767/', '', ' ']);
+$pdo->exec("UPDATE index_entries SET needs_title = 1 WHERE url = 'https://a.co.il/r/41767/'");
+$ins->execute([$sa, 'https://a.co.il/apple_dessert/', 'apple dessert', indexStems('apple dessert')]);
+$pdo->exec("UPDATE index_entries SET needs_title = 1 WHERE url = 'https://a.co.il/apple_dessert/'");
+$ins->execute([$sa, 'https://a.co.il/guide/', 'עוגות מדריך', indexStems('עוגות מדריך')]);
+$pdo->exec("UPDATE index_entries SET skip = 1 WHERE url = 'https://a.co.il/guide/'");
+check('ממתין לשם בלי שם — לא בחיפוש; עם שם אנגלי — נמצא באנגלית', [indexSearch('apple')['total'], indexSearch('עוגות')['total']], [1, 3]);
+check('"לא מתכון" — לא בחיפוש ולא בספירה', indexSearch('מדריך')['total'], 0);
+$sites = indexSites();
+check('ספירות לאתר: 4 בחיפוש, 2 ממתינים לשם, 1 לא מתכון', [$sites[0]['entries_n'], $sites[0]['titles_pending'], $sites[0]['not_recipes']], [4, 2, 1]);
+importMarkHostBlocked('a.co.il');
+check('אתר חסום — העובד ממתין, לא מביא', str_starts_with(indexTitleStep(), 'wait:'), true);
+check('ושומר-הסף לא מעיר בשבילו', indexWorkReady(), false);
+@unlink(importStateDir('fetch-blocks') . '/' . md5('a.co.il'));
+$pdo->exec("DELETE FROM index_entries WHERE url IN ('https://a.co.il/r/41767/', 'https://a.co.il/apple_dessert/', 'https://a.co.il/guide/')");
 
 echo "\n5. פתיחה מהמטמון, מכסה יומית, שמירה בלי כפילות\n";
 $fx = fn(string $f) => file_get_contents(__DIR__ . '/fixtures/' . $f);

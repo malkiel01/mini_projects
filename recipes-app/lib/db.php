@@ -243,6 +243,8 @@ function migrate(PDO $pdo): void {
             url        TEXT    NOT NULL UNIQUE,
             title      TEXT    NOT NULL,
             title_fixed INTEGER NOT NULL DEFAULT 0,    -- השם האמיתי מהדף (אחרי פתיחה) — העדכון השבועי לא דורס
+            needs_title INTEGER NOT NULL DEFAULT 0,    -- בכתובת אין שם עברי (מספר, אנגלית) — שם יובא מהדף, ברקע
+            skip       INTEGER NOT NULL DEFAULT 0,     -- הדף נבדק ואינו מתכון — לא בחיפוש, ולא חוזר בעדכון
             stems      TEXT    NOT NULL,             -- גזעים מופרדים ברווח, לחיפוש לפי תחילת מילה
             lastmod    TEXT,
             seen_at    INTEGER NOT NULL DEFAULT 0    -- unix: העדכון האחרון שראה אותו
@@ -468,6 +470,8 @@ function migrate(PDO $pdo): void {
     addColumnIfMissing($pdo, 'users', 'last_mail_at', 'TEXT');
     addColumnIfMissing($pdo, 'users', 'last_mail_ok', 'INTEGER');
     addColumnIfMissing($pdo, 'recipes', 'yield_text', 'TEXT');
+    addColumnIfMissing($pdo, 'index_entries', 'needs_title', 'INTEGER NOT NULL DEFAULT 0');
+    addColumnIfMissing($pdo, 'index_entries', 'skip', 'INTEGER NOT NULL DEFAULT 0');
     foreach (['source_url', 'source_name', 'source_author', 'imported_at'] as $col) {
         addColumnIfMissing($pdo, 'recipes', $col, 'TEXT');
     }

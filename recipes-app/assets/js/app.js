@@ -2278,6 +2278,10 @@ async function renderWebRecipe(id) {
 
 // ───────────────────────── אינדקס החיפוש (מפתח) ─────────────────────────
 
+const fmtDuration = (sec) => sec < 3600 ? `${Math.max(1, Math.round(sec / 60))} דק׳` : sec < 86400 ? `${Math.round(sec / 360) / 10} שעות` : `${Math.round(sec / 8640) / 10} ימים`;
+// בזמן עדכון — כל 5 שניות; כשרק שמות ממתינים (שעות) — כל 30
+const s_poll = (d) => (d.sites.some((s) => s.crawling || (s.enabled && s.next_in === 0)) ? 5000 : 30000);
+
 async function renderIndexSites() {
   if (!state.user.is_developer) { go('#/settings'); return; }
   let timer = null;
@@ -2308,9 +2312,12 @@ async function renderIndexSites() {
         <div class="scout-item__main">
           <strong>${esc(s.name)}</strong>
           <span class="muted small" dir="ltr">${esc(s.host)}</span>
-          <span class="small">${s.entries_n.toLocaleString('he-IL')} מתכונים · ${s.crawling
+          <span class="small">${s.entries_n.toLocaleString('he-IL')} מתכונים בחיפוש · ${s.crawling
             ? `<strong>מתעדכן…</strong> ${s.progress.total ? `(${s.progress.done}/${s.progress.total} חלקים)` : '(מחפש את ה-sitemap)'}`
             : `עודכן: ${ago(s.last_crawl_at)}${s.enabled ? ` · הבא בעוד ${s.next_in > 86400 ? Math.round(s.next_in / 86400) + ' ימים' : s.next_in > 3600 ? Math.round(s.next_in / 3600) + ' שעות' : s.next_in > 0 ? Math.round(s.next_in / 60) + ' דק׳' : 'עכשיו'}` : ''}`}</span>
+          ${s.titles_pending ? `<span class="small">🏷 ${s.titles_pending.toLocaleString('he-IL')} ממתינים לשם — בכתובת שלהם אין שם בעברית, אז השם מובא מהדף עצמו, ברקע, דף כל ${d.title_gap}–${d.title_gap + 10} שניות
+            (עוד ${fmtDuration(s.titles_pending * (d.title_gap + 5))}).</span>` : ''}
+          ${s.not_recipes ? `<span class="muted small">${s.not_recipes.toLocaleString('he-IL')} דפים נבדקו ואינם מתכונים — לא בחיפוש.</span>` : ''}
           ${s.last_error ? `<span class="note note--warn small">${esc(s.last_error)}</span>` : ''}
           <div class="actions actions--wrap">
             <button class="btn btn--ghost" type="button" data-refresh="${s.id}">רענן עכשיו</button>
@@ -2328,7 +2335,7 @@ async function renderIndexSites() {
     }));
     $$('[data-toggle]').forEach((c) => c.addEventListener('change', () => act('index-site-toggle', { id: +c.dataset.toggle, on: c.checked })));
     clearTimeout(timer);
-    if (d.sites.some((s) => s.crawling || (s.enabled && s.next_in === 0))) timer = setTimeout(load, 5000);   // מתעדכן — מרעננים
+    if (d.sites.some((s) => s.crawling || (s.enabled && s.next_in === 0) || s.titles_pending)) timer = setTimeout(load, s_poll(d));   // מתעדכן — מרעננים
   };
   const act = async (action, payload) => { try { draw(await api(action, payload)); } catch (err) { note(err.message, 'err'); } };
   const load = async () => { if (location.hash !== '#/index') return; try { draw(await api('index-sites')); } catch (err) { note(err.message, 'err'); } };

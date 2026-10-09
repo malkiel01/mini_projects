@@ -5,8 +5,10 @@ $base = 'http://' . $_SERVER['HTTP_HOST'];
 $urls = [
     '/recipe/' . rawurlencode('עוגת-גבינה-אפויה') . '/',
     '/recipe/' . rawurlencode('עוגות-גבינה-קרות-2') . '/',
-    '/jsonld-carine.html',
-    '/recipe/__trashed-3/',                         // בלי שם — לא נכנס
+    '/jsonld-carine.html',                          // שם באנגלית בכתובת — השם יובא מהדף
+    '/headings.html',                               // בלוג בלי סימון — השם מהדף (og:title)
+    '/listing.html',                                // דף רשימה — יימצא "לא מתכון"
+    '/recipe/__trashed-3/',                         // בלי שם בכתובת; הדף לא קיים (404) — יימחק
     "/recipe/' + product_url + '",                  // תבנית שלא רונדרה — לא נכנס
     '/foody_ingredient/' . rawurlencode('קמח') . '/',   // דף רכיב — לא נכנס
 ];
