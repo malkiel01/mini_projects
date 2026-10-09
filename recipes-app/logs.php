@@ -90,7 +90,7 @@ if ($view === 'import') {
 <title>יומן ייבוא · אפליקציית מתכונים</title>
 <meta name="theme-color" content="#0f8a4f">
 <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-09h">
+<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-09i">
 </head>
 <body>
 <header class="bar">
@@ -190,7 +190,7 @@ $qs    = fn(array $extra) => $self . '&' . http_build_query(array_filter($filter
 <title>יומן · אפליקציית מתכונים</title>
 <meta name="theme-color" content="#0f8a4f">
 <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-09h">
+<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-09i">
 </head>
 <body>
 <header class="bar">

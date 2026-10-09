@@ -143,6 +143,15 @@ check('ממתין לשם בלי שם — לא בחיפוש; עם שם אנגלי
 check('"לא מתכון" — לא בחיפוש ולא בספירה', indexSearch('מדריך')['total'], 0);
 $sites = indexSites();
 check('ספירות לאתר: 4 בחיפוש, 2 ממתינים לשם, 1 לא מתכון', [$sites[0]['entries_n'], $sites[0]['titles_pending'], $sites[0]['not_recipes']], [4, 2, 1]);
+check('ממתינים לתמונה: רק כאלה שיש להם שם ולא נבדקו (לא "לא מתכון")', $sites[0]['images_pending'],
+      (int) $pdo->query("SELECT COUNT(*) FROM index_entries WHERE site_id = $sa AND skip = 0 AND needs_title = 0 AND image IS NULL")->fetchColumn());
+check('og:image מהדף — יחסי הופך למלא; content לפני property; secure_url קודם', [
+    indexPageImage('<head><meta property="og:image" content="/wp/1.jpg"></head>', 'https://a.co.il/r/1/'),
+    indexPageImage('<meta content="https://a.co.il/2.jpg" property="og:image" />', 'https://a.co.il/'),
+    indexPageImage('<meta property="og:image" content="http://a.co.il/3.jpg"><meta property="og:image:secure_url" content="https://a.co.il/3.jpg">', 'https://a.co.il/'),
+    indexPageImage('<meta name="twitter:image" content="https://a.co.il/4.jpg">', 'https://a.co.il/'),
+    indexPageImage('<p>אין תמונה</p>', 'https://a.co.il/')],
+    ['https://a.co.il/wp/1.jpg', 'https://a.co.il/2.jpg', 'https://a.co.il/3.jpg', 'https://a.co.il/4.jpg', null]);
 importMarkHostBlocked('a.co.il');
 check('אתר חסום — העובד ממתין, לא מביא', str_starts_with(indexTitleStep(), 'wait:'), true);
 check('ושומר-הסף לא מעיר בשבילו', indexWorkReady(), false);

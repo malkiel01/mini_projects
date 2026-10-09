@@ -401,6 +401,9 @@ check '__trashed בלי דף (404) — נמחק'     "$(call web-search '{"q":"t
 check 'תמונה מה-sitemap בתוצאה'          "$(call web-search '{"q":"עוגת גבינה אפויה"}')" '"title":"עוגת גבינה אפויה"[^}]*"image":"http:[^"]*img\\/cheesecake.jpg"'
 check 'תמונה מהדף (og:image) כשאין ב-sitemap' "$(call web-search '{"q":"לחם מחמצת"}')" '"image":"https:[^"]*example.org\\/bread.jpg"'
 check 'בלי תמונה — null'                   "$(call web-search '{"q":"עוגות גבינה קרות"}')" '"title":"עוגות גבינה קרות[^}]*"image":null'
+# תמונה מהדף, ברקע, למי שב-sitemap שלו אין: דף שלא נמצא (404) — מסומן "אין", ולא נמחק
+for _ in $(seq 1 40); do call index-sites | grep -q '"images_pending":0' && break; sleep 0.5; done
+check 'תמונות: אין ממתינים; דף בלי תמונה לא נמחק' "$(call index-sites)$(call web-search '{"q":"עוגות גבינה קרות"}')" '"images_pending":0.*"title":"עוגות גבינה קרות[^}]*"image":null'
 check 'רק חלק המתכונים נקרא, לא הדפים'      "$(grep -c 'sm-pages.php' "$TMP/fixtures.log")" '^0$'
 call logout >/dev/null
 call login '{"username":"tester","password":"sod12345"}' >/dev/null

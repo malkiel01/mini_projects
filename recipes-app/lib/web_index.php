@@ -51,8 +51,9 @@ function indexSites(): array {
     $now = time();
     $counts = [];
     foreach (db()->query("SELECT site_id, SUM(needs_title = 1 AND skip = 0) pending, SUM(skip) skipped, SUM(skip = 0 AND title != '' AND needs_title = 0) ready,
-                                  SUM(skip = 0 AND image IS NOT NULL) images FROM index_entries GROUP BY site_id")->fetchAll() as $c) {
-        $counts[(int) $c['site_id']] = ['pending' => (int) $c['pending'], 'skipped' => (int) $c['skipped'], 'ready' => (int) $c['ready'], 'images' => (int) $c['images']];
+                                  SUM(skip = 0 AND image IS NOT NULL AND image != '') images,
+                                  SUM(skip = 0 AND needs_title = 0 AND image IS NULL) images_pending FROM index_entries GROUP BY site_id")->fetchAll() as $c) {
+        $counts[(int) $c['site_id']] = ['pending' => (int) $c['pending'], 'skipped' => (int) $c['skipped'], 'ready' => (int) $c['ready'], 'images' => (int) $c['images'], 'images_pending' => (int) $c['images_pending']];
     }
     return array_map(function ($r) use ($now, $counts) {
         $st = $r['crawl_state'] ? (json_decode($r['crawl_state'], true) ?: []) : null;
@@ -66,6 +67,7 @@ function indexSites(): array {
             'titles_pending' => $counts[(int) $r['id']]['pending'] ?? 0,
             'not_recipes'    => $counts[(int) $r['id']]['skipped'] ?? 0,
             'with_image'     => $counts[(int) $r['id']]['images'] ?? 0,
+            'images_pending' => $counts[(int) $r['id']]['images_pending'] ?? 0,
         ];
     }, $rows);
 }
@@ -473,10 +475,13 @@ function indexDueSite(): ?array {
 
 function indexTitleNextFile(string $host): string { return scoutStateDir() . '/title-next-' . md5(strtolower($host)); }
 
-/** אתרים שיש בהם מתכונים שממתינים לשם, עם הזמן שבו מותר להביא את הבא. */
+/**
+ * אתרים שיש בהם מתכונים שממתינים לשם או לתמונה (image IS NULL — לא נבדק; '' — נבדק ואין),
+ * עם הזמן שבו מותר להביא את הדף הבא.
+ */
 function indexTitleHosts(): array {
     $rows = db()->query('SELECT s.host, s.name, COUNT(*) n FROM index_entries e JOIN index_sites s ON s.id = e.site_id
-                         WHERE s.enabled = 1 AND s.crawl_state IS NULL AND e.needs_title = 1 AND e.skip = 0 GROUP BY s.id')->fetchAll();
+                         WHERE s.enabled = 1 AND s.crawl_state IS NULL AND e.skip = 0 AND (e.needs_title = 1 OR e.image IS NULL) GROUP BY s.id')->fetchAll();
     $out = [];
     foreach ($rows as $r) {
         $ready = (int) @file_get_contents(indexTitleNextFile($r['host']));
@@ -499,8 +504,10 @@ function indexTitleStep(): string {
     $now = time();
     if ($h['ready_at'] > $now) return 'wait:' . ($h['ready_at'] - $now);
 
-    $st = db()->prepare('SELECT e.id, e.url, e.title, e.image FROM index_entries e JOIN index_sites s ON s.id = e.site_id
-                         WHERE s.host = ? AND e.needs_title = 1 AND e.skip = 0 ORDER BY e.lastmod DESC, e.id DESC LIMIT 1');
+    // קודם שמות (בלי שם המתכון לא בחיפוש), אחר כך תמונות
+    $st = db()->prepare('SELECT e.id, e.url, e.title, e.image, e.needs_title FROM index_entries e JOIN index_sites s ON s.id = e.site_id
+                         WHERE s.host = ? AND e.skip = 0 AND (e.needs_title = 1 OR e.image IS NULL)
+                         ORDER BY e.needs_title DESC, e.lastmod DESC, e.id DESC LIMIT 1');
     $st->execute([$h['host']]);
     $e = $st->fetch();
     $st->closeCursor();
@@ -512,6 +519,7 @@ function indexTitleStep(): string {
         $sets = implode(', ', array_map(fn($k) => "$k = ?", array_keys($f)));
         db()->prepare("UPDATE index_entries SET $sets WHERE id = ?")->execute([...array_values($f), (int) $e['id']]);
     };
+    if (!$e['needs_title']) return indexImageStep($e, $done);
     try {
         if (!scoutRobotsAllowed($e['url'])) { $done(['needs_title' => 0, 'skip' => 1]); return 'not-recipe'; }
         scoutThrottle($e['url']);
@@ -523,7 +531,7 @@ function indexTitleStep(): string {
         if (!indexHasHebrew($title) && preg_match_all('/\p{L}/u', $title) < 3) { $done(['needs_title' => 0, 'skip' => 1]); return 'not-recipe'; }
         // הגזעים: השם המלא מהדף, ועוד השם מהכתובת אם היה (כך "apple dessert" עדיין נמצא גם באנגלית)
         $f = ['title' => $title, 'stems' => indexStems($full . ' ' . $e['title']), 'title_fixed' => 1, 'needs_title' => 0];
-        if (!$e['image'] && ($img = indexImageUrl((string) ($raw['images'][0] ?? '')))) $f['image'] = $img;   // הדף כבר כאן
+        if ($e['image'] === null) $f['image'] = indexImageUrl((string) ($raw['images'][0] ?? '')) ?? '';   // הדף כבר כאן; '' — אין, לא לחזור
         $done($f);
         return 'titled';
     } catch (AppError $ex) {
@@ -533,7 +541,41 @@ function indexTitleStep(): string {
     }
 }
 
-/** יש עבודה לעובד עכשיו: אתר שהגיע זמנו, או שם שאפשר להביא. */
+/**
+ * תמונה למתכון שיש לו שם אבל ב-sitemap לא הייתה תמונה (10 דקות, פודיס, קרין):
+ * מביאים את הדף ולוקחים את og:image. בכל מקרה מסמנים — קישור, או '' (נבדק ואין;
+ * גם בתקלה, כדי לא להיתקע על אותו דף). הדף לא נמחק כאן: מה שהוסר מהאתר יוצא
+ * מה-sitemap בעדכון השבועי.
+ */
+function indexImageStep(array $e, callable $done): string {
+    try {
+        if (!scoutRobotsAllowed($e['url'])) { $done(['image' => '']); return 'no-image'; }
+        scoutThrottle($e['url']);
+        [$html, $final] = importFetch($e['url'], true);
+        $img = indexPageImage($html, $final);
+        $done(['image' => $img ?? '']);
+        return $img ? 'imaged' : 'no-image';
+    } catch (AppError $ex) {
+        if ($ex->status === 429) return 'blocked';
+        $done(['image' => '']);
+        return 'failed';
+    }
+}
+
+/** og:image (או twitter:image) מתוך HTML, כקישור מלא. null כשאין. */
+function indexPageImage(string $html, string $base): ?string {
+    $head = substr($html, 0, 200000);
+    foreach (['og:image:secure_url', 'og:image', 'twitter:image'] as $p) {
+        $q = preg_quote($p, '~');
+        if (preg_match('~<meta\b[^>]*?(?:property|name)\s*=\s*["\']' . $q . '["\'][^>]*?content\s*=\s*["\']([^"\']+)~i', $head, $m)
+            || preg_match('~<meta\b[^>]*?content\s*=\s*["\']([^"\']+)["\'][^>]*?(?:property|name)\s*=\s*["\']' . $q . '["\']~i', $head, $m)) {
+            if ($u = indexImageUrl(importAbsolute(html_entity_decode($m[1]), $base))) return $u;
+        }
+    }
+    return null;
+}
+
+/** יש עבודה לעובד עכשיו: אתר שהגיע זמנו, או שם/תמונה שאפשר להביא. */
 function indexWorkReady(): bool {
     if (indexDueSite()) return true;
     foreach (indexTitleHosts() as $h) if ($h['ready_at'] <= time()) return true;
@@ -630,7 +672,7 @@ function indexSearch(string $q, int $offset = 0): array {
     $st = db()->prepare("SELECT e.id, e.title, e.url, e.image, s.name AS site, s.host FROM index_entries e JOIN index_sites s ON s.id = e.site_id
                          WHERE $w ORDER BY (e.title LIKE ?) DESC, length(e.title), e.id DESC LIMIT 30 OFFSET " . max(0, $offset));
     $st->execute([...$params, '%' . $q . '%']);
-    return ['results' => array_map(fn($r) => ['id' => (int) $r['id'], 'title' => $r['title'], 'url' => $r['url'], 'site' => $r['site'], 'host' => $r['host'], 'image' => $r['image']],
+    return ['results' => array_map(fn($r) => ['id' => (int) $r['id'], 'title' => $r['title'], 'url' => $r['url'], 'site' => $r['site'], 'host' => $r['host'], 'image' => $r['image'] ?: null],
                                    $st->fetchAll()),
             'total' => $total, 'indexed' => $all, 'sites' => $sites];
 }
@@ -721,7 +763,7 @@ function webOpen(int $id, array $user): array {
             ->execute([mb_substr($draft['title'], 0, 140), indexStems($draft['title'] . ' ' . $e['title']), (int) $e['id']]);
     }
     // התמונה — לתוצאות החיפוש הבאות (מתכון שב-sitemap שלו אין תמונות: פודיס, קרין)
-    if (!$e['image'] && ($img = indexImageUrl((string) ($draft['pending_media']['images'][0] ?? '')))) {
+    if (!$e['image'] && ($img = indexImageUrl((string) ($draft['pending_media']['images'][0] ?? '')))) {   // NULL או ''
         db()->prepare('UPDATE index_entries SET image = ? WHERE id = ?')->execute([$img, (int) $e['id']]);
     }
     db()->prepare('INSERT INTO web_cache (url, draft, rewritten, created_at) VALUES (?,?,?,?)

@@ -2390,6 +2390,8 @@ www.kipa.co.il כיפה — אוכל"></textarea>
             : `עודכן: ${ago(s.last_crawl_at)}${s.enabled ? ` · הבא בעוד ${s.next_in > 86400 ? Math.round(s.next_in / 86400) + ' ימים' : s.next_in > 3600 ? Math.round(s.next_in / 3600) + ' שעות' : s.next_in > 0 ? Math.round(s.next_in / 60) + ' דק׳' : 'עכשיו'}` : ''}`}</span>
           ${s.titles_pending ? `<span class="small">🏷 ${s.titles_pending.toLocaleString('he-IL')} ממתינים לשם — בכתובת שלהם אין שם בעברית, אז השם מובא מהדף עצמו, ברקע, דף כל ${d.title_gap}–${d.title_gap + 10} שניות
             (עוד ${fmtDuration(s.titles_pending * (d.title_gap + 5))}).</span>` : ''}
+          ${s.images_pending ? `<span class="small">🖼 ${s.images_pending.toLocaleString('he-IL')} ממתינים לתמונה — ב-sitemap שלהם אין תמונה, אז היא מובאת מהדף, ברקע, אחרי השמות
+            (עוד ${fmtDuration((s.titles_pending + s.images_pending) * (d.title_gap + 5))}).</span>` : ''}
           ${s.not_recipes ? `<span class="muted small">${s.not_recipes.toLocaleString('he-IL')} דפים נבדקו ואינם מתכונים — לא בחיפוש.</span>` : ''}
           ${s.last_error ? `<span class="note note--warn small">${esc(s.last_error)}</span>` : ''}
           <div class="actions actions--wrap">
@@ -2408,7 +2410,7 @@ www.kipa.co.il כיפה — אוכל"></textarea>
     }));
     $$('[data-toggle]').forEach((c) => c.addEventListener('change', () => act('index-site-toggle', { id: +c.dataset.toggle, on: c.checked })));
     clearTimeout(timer);
-    if (d.sites.some((s) => s.crawling || (s.enabled && s.next_in === 0) || s.titles_pending)) timer = setTimeout(load, s_poll(d));   // מתעדכן — מרעננים
+    if (d.sites.some((s) => s.crawling || (s.enabled && s.next_in === 0) || s.titles_pending || s.images_pending)) timer = setTimeout(load, s_poll(d));   // מתעדכן — מרעננים
   };
   const act = async (action, payload) => { try { draw(await api(action, payload)); } catch (err) { note(err.message, 'err'); } };
   const load = async () => { if (location.hash !== '#/index') return; try { draw(await api('index-sites')); } catch (err) { note(err.message, 'err'); } };
