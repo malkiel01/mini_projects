@@ -2292,12 +2292,15 @@ async function renderIndexSites() {
       <p class="muted">המשתמשים מחפשים רק באתרים שכאן. לכל אתר נקראת רשימת המתכונים שהוא מפרסם (sitemap) — שם וקישור לכל מתכון.
         העדכון רץ ברקע, פעם בשבוע, ומביא רק חלקים שהשתנו. מתכון שנעלם מהאתר — יוצא מהאינדקס.</p>
       <form id="site-form" class="form">
-        <label>כתובת האתר, או ה-sitemap שלו
-          <input name="url" type="text" inputmode="url" dir="ltr" placeholder="www.10dakot.co.il" required autocomplete="off">
+        <label>אתרים להוספה — אתר בכל שורה: כתובת, ואם רוצים שם בעברית
+          <textarea name="text" rows="5" dir="auto" required autocomplete="off" placeholder="www.10dakot.co.il 10 דקות
+www.carine.co.il קרין גורן
+www.kipa.co.il כיפה — אוכל"></textarea>
         </label>
-        <label>שם להצגה <small class="muted">(לא חובה)</small><input name="name" maxlength="60" placeholder="10 דקות"></label>
+        <p class="muted small">אפשר גם את כתובת ה-sitemap עצמה. אתר שכבר באינדקס ונכתב לו שם — השם מתעדכן.</p>
         <button class="btn btn--primary" type="submit">הוסף לאינדקס</button>
         <p class="note" id="site-msg" hidden></p>
+        <ul class="site-results" id="site-results" hidden></ul>
       </form>
       <p class="muted" id="index-total"></p>
       <div id="site-list" class="scout__list"></div>
@@ -2342,8 +2345,18 @@ async function renderIndexSites() {
   $('#site-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = e.target; const b = f.querySelector('button'); b.disabled = true;
-    try { draw(await api('index-site-add', { url: f.url.value.trim(), name: f.name.value.trim() })); f.reset(); note('נוסף. העדכון הראשון רץ ברקע — כמה דקות, לפי גודל האתר.', 'ok'); }
-    catch (err) { note(err.message, 'err'); }
+    try {
+      const d = await api('index-sites-add', { text: f.text.value });
+      draw(d);
+      const icon = { added: '✅', renamed: '✏️', exists: '•', error: '❌' };
+      const ul = $('#site-results');
+      ul.innerHTML = d.results.map((r) => `<li class="${r.status === 'error' ? 'is-err' : ''}">${icon[r.status]} <span dir="ltr">${esc(r.host || r.line)}</span>${r.name ? ` — ${esc(r.name)}` : ''} <span class="muted small">${esc(r.message)}</span></li>`).join('');
+      ul.hidden = false;
+      const n = d.results.filter((r) => r.status === 'added').length;
+      const bad = d.results.filter((r) => r.status === 'error');
+      if (!bad.length) f.reset(); else f.text.value = bad.map((r) => r.line).join('\n');   // נשארות רק השורות שנכשלו
+      note(n ? `נוספו ${n}. העדכון הראשון רץ ברקע — כמה דקות לכל אתר.` : bad.length ? 'לא נוסף דבר — ראה למטה.' : 'עודכן.', n ? 'ok' : bad.length ? 'err' : 'ok');
+    } catch (err) { note(err.message, 'err'); }
     b.disabled = false;
   });
   await load();

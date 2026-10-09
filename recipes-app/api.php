@@ -420,6 +420,9 @@ try {
     case 'index-site-add':
         ok(indexAddSite(str_field($in, 'url', 500), str_field($in, 'name', 60), $user));
 
+    case 'index-sites-add':
+        ok(indexAddSites((string) ($in['text'] ?? ''), $user));
+
     case 'index-site-remove':
         ok(indexRemoveSite((int) ($in['id'] ?? 0), $user));
 

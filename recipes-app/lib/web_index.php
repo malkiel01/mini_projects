@@ -92,6 +92,67 @@ function indexAddSite(string $url, string $name, array $developer): array {
     return indexSitesStatus($developer);
 }
 
+/**
+ * שורה מהרשימה → [כתובת, שם]. הכתובת היא המילה שנראית כמו דומיין או קישור;
+ * כל השאר — השם. כך כל הצורות עובדות: "www.10dakot.co.il 10 דקות",
+ * "10 דקות — www.10dakot.co.il", "קרין גורן | https://www.carine.co.il/".
+ */
+function indexParseSiteLine(string $line): ?array {
+    $line = trim($line);
+    if ($line === '' || str_starts_with($line, '#')) return null;
+    if (!preg_match('~(?:https?://)?(?:(?:[a-z0-9-]+\.)+[a-z]{2,}|\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?(?:/[^\s|,]*)?~i', $line, $m)) return ['', $line];
+    $name = trim(str_replace($m[0], ' ', $line));
+    $name = trim(preg_replace('/^[\s|,:;–—\-]+|[\s|,:;–—\-]+$/u', '', $name) ?? $name);
+    return [$m[0], mb_substr(preg_replace('/\s+/u', ' ', $name) ?? $name, 0, 60)];
+}
+
+/**
+ * הוספה של כמה אתרים בבת אחת — שורה לכל אתר, עם שם בעברית אם רוצים. אתר שכבר
+ * באינדקס ונכתב לו שם — השם מתעדכן. מחזיר תוצאה לכל שורה, ומעיר את העובד פעם אחת.
+ */
+function indexAddSites(string $text, array $developer): array {
+    requireDeveloper($developer);
+    $results = [];
+    $added = 0;
+    foreach (array_slice(preg_split('/\r?\n/', $text) ?: [], 0, 100) as $line) {
+        $p = indexParseSiteLine($line);
+        if ($p === null) continue;
+        [$url, $name] = $p;
+        $r = ['line' => mb_substr(trim($line), 0, 120), 'name' => $name];
+        if ($url === '') { $results[] = $r + ['status' => 'error', 'message' => 'לא מצאתי כתובת בשורה']; continue; }
+        try {
+            $u = preg_match('~^[a-z][a-z0-9+.-]*://~i', $url) ? $url : 'https://' . $url;
+            importCheckUrl($u);
+            $host = strtolower((string) parse_url($u, PHP_URL_HOST));
+            $r['host'] = $host;
+            $st = db()->prepare('SELECT id, name FROM index_sites WHERE host = ? OR host = ? OR host = ?');
+            $st->execute([$host, 'www.' . preg_replace('/^www\./', '', $host), preg_replace('/^www\./', '', $host)]);
+            $ex = $st->fetch();
+            $st->closeCursor();
+            if ($ex) {
+                if ($name !== '' && $name !== $ex['name']) {
+                    db()->prepare('UPDATE index_sites SET name = ? WHERE id = ?')->execute([$name, (int) $ex['id']]);
+                    $results[] = $r + ['status' => 'renamed', 'message' => 'כבר באינדקס — השם עודכן'];
+                } else $results[] = $r + ['status' => 'exists', 'message' => 'כבר באינדקס'];
+                continue;
+            }
+            db()->prepare('INSERT INTO index_sites (host, name, start_url, added_at, next_crawl_at) VALUES (?,?,?,?,0)')
+                ->execute([$host, $name !== '' ? $name : preg_replace('/^www\./', '', $host), $u, nowIso()]);
+            $added++;
+            $results[] = $r + ['status' => 'added', 'message' => 'נוסף'];
+        } catch (AppError $e) {
+            $results[] = $r + ['status' => 'error', 'message' => $e->getMessage()];
+        }
+    }
+    if (!$results) throw new AppError('הרשימה ריקה — כתובת בכל שורה, ואפשר שם בעברית לידה');
+    if ($added) {
+        indexRememberBase();
+        logEvent('info', 'index-site-add', "נוספו $added אתרים", ['count' => $added], $developer);
+        indexKick(true);
+    }
+    return indexSitesStatus($developer) + ['results' => $results];
+}
+
 function indexRemoveSite(int $id, array $developer): array {
     requireDeveloper($developer);
     db()->prepare('DELETE FROM index_sites WHERE id = ?')->execute([$id]);   // CASCADE: החלקים והמתכונים

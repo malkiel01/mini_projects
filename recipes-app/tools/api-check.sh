@@ -383,6 +383,7 @@ call logout >/dev/null
 call login '{"username":"owner","password":"sod12345"}' >/dev/null
 check 'הוספת אתר (ה-sitemap שלו)'         "$(call index-site-add "{\"url\":\"$FXB/sm-index.php\",\"name\":\"אתר הדוגמה\"}")" '"host":"127.0.0.1","name":"אתר הדוגמה"'
 check 'אותו אתר פעמיים — נדחה'            "$(call index-site-add "{\"url\":\"$FXB/\"}")" 'כבר באינדקס'
+check 'הוספה מרובה: קיים מקבל שם בעברית, שורה בלי כתובת — שגיאה' "$(call index-sites-add "{\"text\":\"$FXB/ אתר הדוגמה המעודכן\\nשורה בלי כתובת\"}")" '"status":"renamed".*"status":"error"'
 # העובד בשרת מעדכן לבד: גילוי ה-sitemap, חלק המתכונים, סיום
 wait_crawl() {
   for _ in $(seq 1 60); do

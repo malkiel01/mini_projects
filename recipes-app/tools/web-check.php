@@ -16,6 +16,7 @@ define('DB_FILE', $tmp . '/t.sqlite');
 define('MEDIA_DIR', $tmp . '/media');
 define('SECRETS_FILE', $tmp . '/secrets.json');
 define('WEB_DAILY_LIMIT', 1);
+define('IMPORT_ALLOW_LOCAL', true);   // הוספת אתרים בלי DNS — בלי רשת
 @ini_set('sendmail_path', '/bin/true');
 
 require_once __DIR__ . '/../lib/auth.php';
@@ -84,6 +85,24 @@ check('שם של מילה אחת לפני מפריד — שני החלקים', i
 check('אימוג׳י וסימני קריאה', indexCleanTitle('מאפה גבינות מלוח! ✨', [])[0], 'מאפה גבינות מלוח');
 check('| שם האתר', indexCleanTitle('עוגת שוקולד | ניקי ב', ['ניקי ב'])[0], 'עוגת שוקולד');
 check('שם שמכיל את המוציא לאור אינו "שם האתר" (באג שנמצא)', indexCleanTitle('קרין גורן מכינה עוגת יומולדת שילדים אוהבים', ['אתר', 'קרין גורן'])[0], 'קרין גורן מכינה עוגת יומולדת שילדים אוהבים');
+
+echo "\n2ג. רשימת אתרים — כתובת ושם בכל שורה\n";
+check('כתובת ואחריה שם', indexParseSiteLine('www.10dakot.co.il 10 דקות'), ['www.10dakot.co.il', '10 דקות']);
+check('שם ואחריו כתובת, עם מפריד', indexParseSiteLine('קרין גורן — https://www.carine.co.il/'), ['https://www.carine.co.il/', 'קרין גורן']);
+check('עם | ', indexParseSiteLine('כיפה — אוכל | www.kipa.co.il'), ['www.kipa.co.il', 'כיפה — אוכל']);
+check('כתובת לבד', indexParseSiteLine('  www.gad-dairy.co.il  '), ['www.gad-dairy.co.il', '']);
+check('שם עם נקודה בעברית אינו כתובת', indexParseSiteLine('www.oogio.net עוגיו.נט'), ['www.oogio.net', 'עוגיו.נט']);
+check('שורה ריקה / הערה', [indexParseSiteLine('   '), indexParseSiteLine('# אתרים')], [null, null]);
+check('בלי כתובת', indexParseSiteLine('סתם שם'), ['', 'סתם שם']);
+check('כתובת IP עם פורט', indexParseSiteLine('http://127.0.0.1:8792/ אתר מקומי'), ['http://127.0.0.1:8792/', 'אתר מקומי']);
+$bulk = indexAddSites("www.bulk-a.co.il אתר א׳\nאתר ב׳ www.bulk-b.co.il\n\nסתם שורה\nwww.bulk-a.co.il", $devU);
+check('הוספה מרובה: שניים נוספו, שגיאה לשורה בלי כתובת, כפילות', array_column($bulk['results'], 'status'), ['added', 'added', 'error', 'exists']);
+check('השמות בעברית נשמרו', array_column(array_filter($bulk['sites'], fn($x) => str_starts_with($x['host'], 'www.bulk-')), 'name'), ['אתר א׳', 'אתר ב׳']);
+$bulk = indexAddSites('bulk-a.co.il אתר אלף', $devU);
+check('אתר קיים (גם בלי www) עם שם חדש — השם מתעדכן', [$bulk['results'][0]['status'], array_values(array_filter($bulk['sites'], fn($x) => $x['host'] === 'www.bulk-a.co.il'))[0]['name']], ['renamed', 'אתר אלף']);
+expectError('משתמש רגיל אינו מוסיף', fn() => indexAddSites('www.x.co.il', $GLOBALS['noaU']), 'מפתח');
+expectError('רשימה ריקה', fn() => indexAddSites("\n  \n", $GLOBALS['devU']), 'ריקה');
+db()->exec("DELETE FROM index_sites WHERE host LIKE 'www.bulk-%'");
 
 echo "\n3. הרשאות — רק המפתח מנהל את האינדקס\n";
 expectError('משתמש רגיל אינו מוסיף אתר', fn() => indexAddSite('https://a.co.il/', '', $GLOBALS['noaU']), 'מפתח');

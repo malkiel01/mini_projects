@@ -365,10 +365,12 @@ function importFromHeadings(DOMDocument $doc): ?array {
     $xp = new DOMXPath($doc);
     $meta = fn(string $p) => ($n = $xp->query('//meta[@property="' . $p . '" or @name="' . $p . '"]')->item(0)) ? $n->getAttribute('content') : '';
 
-    $ingHead  = '/^(מצרכים|רכיבים|חומרים|מרכיבים|ingredients?)\b/iu';
-    $stepHead = '/^(אופן ההכנה|אופן הכנה|הוראות הכנה|הוראות|הכנה|דרך ההכנה|instructions?|directions?|method|preparation)\b/iu';
+    // גם "המצרכים", "מה צריך", "הכנות:" (ניקי ב׳), "שלבי הכנה", "איך מכינים"
+    $ingHead  = '/^(ה?מצרכים|ה?רכיבים|ה?חומרים|ה?מרכיבים|מה צריך|ingredients?)(\b|:|$)/iu';
+    $stepHead = '/^(אופן ה?הכנה|הוראות( ה?הכנה)?|ה?הכנה|הכנות|דרך ה?הכנה|שלבי ה?הכנה|איך מכינים|instructions?|directions?|method|preparation)(\b|:|$)/iu';
     $ingredients = [];
     $steps = [];
+    $stepsHead = null;
     foreach ($xp->query('//h1|//h2|//h3|//h4|//strong|//b|//p[strong]') as $h) {
         $t = importText($h->textContent);
         if ($t === '' || mb_strlen($t) > 40) continue;
@@ -384,14 +386,42 @@ function importFromHeadings(DOMDocument $doc): ?array {
                 foreach ($n->getElementsByTagName('li') as $li) $items[] = importText($li->textContent);
                 if ($items) break;
             } elseif ($n->tagName === 'p' || $n->tagName === 'div') {
-                $t2 = importText($n->textContent);
-                if ($t2 !== '' && mb_strlen($t2) < 600) $items[] = $t2;
+                // פסקה של שורות מופרדות ב-<br> (ניקי ב׳: "מרכיבים:" ואחריה <p>שורה<br>שורה…) — שורה לכל רכיב
+                if ($n->getElementsByTagName('br')->length >= 2) {
+                    foreach (importBrLines($n) as $line) $items[] = $line;
+                } else {
+                    $t2 = importText($n->textContent);
+                    if ($t2 !== '' && mb_strlen($t2) < 600) $items[] = $t2;
+                }
                 if ($n->tagName === 'div' && $items) break;
             }
         }
+        // כותרת בתוך שורה — "<p><strong>מצרכים למתכון</strong><br>שורה<br>שורה…" (נפוץ בבלוגים
+        // ישראליים, למשל קרן אגם). אין אחריה רשימה או פסקה — השורות הן הטקסט שבין ה-<br>.
+        if (!array_filter($items) && in_array($h->tagName, ['strong', 'b'], true)) {
+            $items = importInlineLines($h, $isIng ? $stepHead : '/^(תגובות|שתפו|הערות|טיפים|בתאבון|לסיכום)/u', $isIng ? $ingHead : $stepHead);
+        }
         $items = array_values(array_filter($items));
         if ($isIng && !$ingredients) $ingredients = $items;
-        if ($isStep && !$steps) $steps = $items;
+        if ($isStep && !$steps) { $steps = $items; $stepsHead = $h; }
+    }
+    // אין כותרת למצרכים (אוגיו: שם המתכון, ואז "לשזיפים:<br>…", "לבלילה:<br>…", "להגשה:<br>…",
+    // ואז "אופן ההכנה") — כל בלוקי השורות הקצרות שבין הכותרת הקודמת לשלבים, לפי הסדר
+    if (!$ingredients && $steps && $stepsHead) {
+        $blocks = [];
+        for ($n = $stepsHead->previousSibling, $k = 0; $n && $k < 12; $n = $n->previousSibling) {
+            if (!$n instanceof DOMElement) continue;
+            $k++;
+            if (in_array($n->tagName, ['h1', 'h2', 'h3'], true)) break;
+            $lines = in_array($n->tagName, ['ul', 'ol'], true)
+                ? array_map(fn($li) => importText($li->textContent), iterator_to_array($n->getElementsByTagName('li')))
+                : ($n->getElementsByTagName('br')->length >= 1 ? importBrLines($n) : []);
+            $short = array_filter($lines, fn($l) => mb_strlen($l) <= 90);
+            if (count($lines) >= 2 && count($short) >= count($lines) * 0.8) array_unshift($blocks, $lines);
+        }
+        $ingredients = $blocks ? array_values(array_merge(...$blocks)) : [];
+        // שורת תת-כותרת ("לבלילה", "להגשה") אינה רכיב
+        $ingredients = array_values(array_filter($ingredients, fn($l) => !preg_match('/^ל\S+$/u', $l) || mb_strlen($l) > 12));
     }
     if (!$ingredients && !$steps) return null;
 
@@ -412,6 +442,61 @@ function importFromHeadings(DOMDocument $doc): ?array {
         'categories'    => [],
         'published'     => $meta('article:published_time') ?: null,
     ];
+}
+
+/**
+ * השורות שאחרי כותרת בתוך שורה: טקסט מופרד ב-<br>, עד כותרת שעוצרת ($stopRe —
+ * למשל "אופן הכנה" אחרי המצרכים). ממשיך לבלוקים הבאים (p/div) כל עוד אין בהם
+ * כותרת אחרת. תת-כותרת קצרה עם נקודתיים ("להגשה:") אינה שורה.
+ */
+function importInlineLines(DOMElement $h, string $stopRe, string $selfRe): array {
+    $lines = [];
+    $cur = '';
+    $stopped = false;
+    $flush = function () use (&$lines, &$cur) {
+        $t = trim(importText($cur), " :\t");
+        if ($t !== '' && mb_strlen($t) < 400 && !preg_match('/^(בתאבון|בהצלחה|שיהיה בתאבון)\W*$/u', $t)) $lines[] = $t;
+        $cur = '';
+    };
+    $walk = function (?DOMNode $n) use (&$walk, &$cur, &$stopped, $flush, $stopRe, $selfRe) {
+        for (; $n && !$stopped; $n = $n->nextSibling) {
+            if ($n instanceof DOMText) { $cur .= $n->textContent; continue; }
+            if (!$n instanceof DOMElement) continue;
+            $tag = strtolower($n->tagName);
+            if ($tag === 'br') { $flush(); continue; }
+            if (in_array($tag, ['script', 'style', 'img', 'figure', 'button', 'form'], true)) continue;
+            if (in_array($tag, ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'], true)) { $flush(); $stopped = true; return; }
+            $tt = importText($n->textContent);
+            if (in_array($tag, ['strong', 'b'], true) && $tt !== '' && mb_strlen($tt) <= 40) {
+                if (preg_match($stopRe, $tt) || preg_match($selfRe, $tt)) { $flush(); $stopped = true; return; }
+                if (str_ends_with($tt, ':')) { $flush(); continue; }   // "להגשה:" — תת-כותרת
+            }
+            if (in_array($tag, ['p', 'div', 'ul', 'ol', 'li'], true)) { $flush(); $walk($n->firstChild); $flush(); continue; }
+            $cur .= $n->textContent;
+        }
+    };
+    $walk($h->nextSibling);
+    $flush();
+    // הבלוקים שאחרי — עד כותרת אחרת, ולכל היותר חמישה
+    for ($b = $h->parentNode?->nextSibling, $k = 0; $b && !$stopped && $k < 5; $b = $b->nextSibling) {
+        if (!$b instanceof DOMElement) continue;
+        $k++;
+        $walk($b->firstChild);
+        $flush();
+    }
+    return $lines;
+}
+
+/** אלמנט עם שורות מופרדות ב-<br> → השורות, נקיות. */
+function importBrLines(DOMElement $el): array {
+    $html = '';
+    foreach ($el->childNodes as $c) $html .= $el->ownerDocument->saveHTML($c);
+    $out = [];
+    foreach (preg_split('~<br\s*/?>~i', $html) ?: [] as $part) {
+        $t = trim(importText($part), " :\t");
+        if ($t !== '' && mb_strlen($t) < 400 && !preg_match('/^(בתאבון|בהצלחה)\W*$/u', $t)) $out[] = $t;
+    }
+    return $out;
 }
 
 /** html + כתובת → חילוץ גולמי (או זריקה אם לא נמצא מתכון). */

@@ -141,6 +141,17 @@ $draft = importToDraft($raw);
 check('אזהרה על חילוץ לפי כותרות', count(array_filter($draft['warnings'], fn($w) => str_contains($w, 'כותרות'))), 1);
 expectError('דף בלי מתכון', fn() => importParse($GLOBALS['fx']('norecipe.html'), 'https://example.org/'), 'לא מצאתי מתכון');
 
+echo "\n6א. בלוגים בלי סימון — שלוש צורות שנמצאו באתרים אמיתיים\n";
+$r = importParse($fx('inline-strong.html'), 'https://www.kerenagam.co.il/x/');
+check('קרן אגם: כותרת מודגשת ושורות ב-<br>', [$r['ingredients'], $r['sections'][0]['steps']],
+      [['מיכל (250 מ״ל) שמנת להקצפה', '1 כוס חלב', 'חבילת פודינג וניל', '1 כף אבקת סוכר'], ['בקערת הגשה מפוררים חצי מהעלים.', 'מקציפים את הקרם ומעבירים מעל.']]);
+$r = importParse($fx('br-noheading.html'), 'https://www.oogio.net/x/');
+check('אוגיו: בלי כותרת מצרכים — הבלוקים שלפני השלבים, בלי תת-הכותרות', $r['ingredients'],
+      ['3 כפות רום', '6 שזיפים בשלים', '150 גרם חמאה רכה', '2 ביצים', '250 גרם קמח', 'אבקת סוכר']);
+check('ושלושת השלבים', count($r['sections'][0]['steps']), 3);
+$r = importParse($fx('br-paragraph.html'), 'https://www.nikib.co.il/x/');
+check('ניקי ב׳: פסקה של שורות = רכיב לכל שורה; "הכנות:" = שלבים', [count($r['ingredients']), $r['ingredients'][1], count($r['sections'][0]['steps'])], [4, 'כרובית קטנה', 2]);
+
 echo "\n6ב. תיעוד — שמירה, קריאה, ומשיכה חוזרת\n";
 $raw = importParse($fx('jsonld-10dakot.html'), 'https://www.10dakot.co.il/recipe/x/');
 $draftS = importToDraft($raw);
