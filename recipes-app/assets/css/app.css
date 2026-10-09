@@ -254,7 +254,7 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
   text-decoration: none;
 }
 .item:hover { border-color: var(--accent); }
-.item__main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.item__main { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }   /* ממלא את האמצע — הכיתוב צמוד לתמונה, התג בקצה */
 .item__main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .badge {
