@@ -636,31 +636,13 @@ function webOpensLeft(array $user): ?int {
 }
 
 /**
- * פתיחת תוצאה: מהמטמון, או הבאה + חילוץ + ניסוח מחדש. מחזיר את הטיוטה
- * כפי שהיא תישמר. מתכון שלא חולץ — שגיאה עם הקישור למקור.
+ * ניסוח מחדש של שלבי הטיוטה — העקרונות נשארים, הנוסח שלנו. משנה את הטיוטה
+ * במקום; מסמן source_rewritten, rewrite_note ומתי ניסינו. מחזיר אם נוסח.
  */
-function webOpen(int $id, array $user): array {
-    $e = webEntry($id);
-    // מנוסח — שבוע. לא מנוסח (הבינה נכשלה, למשל נגמר הקרדיט) — רק שעה, ואז מנסים לנסח שוב
-    $st = db()->prepare('SELECT * FROM web_cache WHERE url = ? AND created_at > ? AND (rewritten = 1 OR created_at > ?)');
-    $st->execute([$e['url'], time() - WEB_CACHE_DAYS * 86400, time() - 3600]);
-    $c = $st->fetch();
-    $st->closeCursor();
-    if ($c) {
-        $draft = json_decode($c['draft'], true);
-        return ['draft' => $draft, 'rewritten' => (bool) $c['rewritten'], 'cached' => true, 'opens_left' => webOpensLeft($user),
-                'entry' => ['id' => (int) $e['id'], 'url' => $e['url'], 'site' => $e['site']]];
-    }
-
-    $left = webOpensLeft($user);
-    if ($left === 0) throw new AppError('הגעת למכסת הפתיחות של היום (' . WEB_DAILY_LIMIT . '). מתכונים שכבר נפתחו — עדיין נפתחים. אפשר גם לפתוח באתר המקור.', 429);
-    if (!scoutRobotsAllowed($e['url'])) throw new AppError('האתר לא מאפשר ייבוא אוטומטי של הדף הזה. אפשר לפתוח אותו באתר המקור.', 403);
-    scoutThrottle($e['url']);
-    $draft = importPreview($e['url'], 'web-open', $user, []);
-
-    // ניסוח מחדש: העקרונות נשארים, הנוסח שלנו
+function webRewriteDraft(array &$draft, ?array $user): bool {
     $rewritten = false;
     $note = null;
+    $draft['rewrite_tried_at'] = time();
     if (aiAvailable()) {
         try {
             $secs = array_map(fn($s) => ['name' => $s['name'], 'steps' => array_column($s['steps'], 'text')], $draft['sections']);
@@ -675,6 +657,40 @@ function webOpen(int $id, array $user): array {
     } else $note = 'ניסוח מחדש בבינה אינו מופעל';
     $draft['source_rewritten'] = $rewritten;
     $draft['rewrite_note'] = $note;
+    return $rewritten;
+}
+
+/**
+ * פתיחת תוצאה: מהמטמון, או הבאה + חילוץ + ניסוח מחדש. מחזיר את הטיוטה
+ * כפי שהיא תישמר. מתכון שלא חולץ — שגיאה עם הקישור למקור.
+ */
+function webOpen(int $id, array $user): array {
+    $e = webEntry($id);
+    $st = db()->prepare('SELECT * FROM web_cache WHERE url = ? AND created_at > ?');
+    $st->execute([$e['url'], time() - WEB_CACHE_DAYS * 86400]);
+    $c = $st->fetch();
+    $st->closeCursor();
+    if ($c) {
+        $draft = json_decode($c['draft'], true);
+        $rewritten = (bool) $c['rewritten'];
+        // לא נוסח (הבינה נכשלה — למשל נגמר הקרדיט): מנסים שוב, לכל היותר פעם בשעה, על
+        // העותק שבמטמון — בלי להביא שוב מהאתר. או שהמפתח ניסח ידנית (rewriteApply).
+        if (!$rewritten && aiAvailable() && time() - (int) ($draft['rewrite_tried_at'] ?? $c['created_at']) > 3600) {
+            $rewritten = webRewriteDraft($draft, $user);
+            db()->prepare('UPDATE web_cache SET draft = ?, rewritten = ? WHERE url = ?')
+                ->execute([json_encode($draft, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $rewritten ? 1 : 0, $e['url']]);
+        }
+        return ['draft' => $draft, 'rewritten' => $rewritten, 'cached' => true, 'opens_left' => webOpensLeft($user),
+                'entry' => ['id' => (int) $e['id'], 'url' => $e['url'], 'site' => $e['site']]];
+    }
+
+    $left = webOpensLeft($user);
+    if ($left === 0) throw new AppError('הגעת למכסת הפתיחות של היום (' . WEB_DAILY_LIMIT . '). מתכונים שכבר נפתחו — עדיין נפתחים. אפשר גם לפתוח באתר המקור.', 429);
+    if (!scoutRobotsAllowed($e['url'])) throw new AppError('האתר לא מאפשר ייבוא אוטומטי של הדף הזה. אפשר לפתוח אותו באתר המקור.', 403);
+    scoutThrottle($e['url']);
+    $draft = importPreview($e['url'], 'web-open', $user, []);
+
+    $rewritten = webRewriteDraft($draft, $user);
     unset($draft['import_log_id']);
 
     // השם האמיתי מהדף — טוב מהשם מהכתובת. ונשאר גם בעדכונים הבאים.
@@ -685,7 +701,9 @@ function webOpen(int $id, array $user): array {
     db()->prepare('INSERT INTO web_cache (url, draft, rewritten, created_at) VALUES (?,?,?,?)
                    ON CONFLICT(url) DO UPDATE SET draft = excluded.draft, rewritten = excluded.rewritten, created_at = excluded.created_at')
         ->execute([$e['url'], json_encode($draft, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $rewritten ? 1 : 0, time()]);
-    if (random_int(1, 50) === 1) db()->prepare('DELETE FROM web_cache WHERE created_at < ?')->execute([time() - WEB_CACHE_DAYS * 86400]);
+    // ניקוי: מנוסח — אחרי שבוע; לא מנוסח — אחרי חודש (מחכה לניסוח ידני, rewrite_queue)
+    if (random_int(1, 50) === 1) db()->prepare('DELETE FROM web_cache WHERE (rewritten = 1 AND created_at < ?) OR created_at < ?')
+        ->execute([time() - WEB_CACHE_DAYS * 86400, time() - 30 * 86400]);
 
     return ['draft' => $draft, 'rewritten' => $rewritten, 'cached' => false, 'opens_left' => webOpensLeft($user),
             'entry' => ['id' => (int) $e['id'], 'url' => $e['url'], 'site' => $e['site']]];

@@ -24,6 +24,7 @@ require_once __DIR__ . '/lib/ai.php';
 require_once __DIR__ . '/lib/scout.php';
 require_once __DIR__ . '/lib/scout_job.php';
 require_once __DIR__ . '/lib/web_index.php';
+require_once __DIR__ . '/lib/rewrite_queue.php';
 require_once __DIR__ . '/lib/pantry.php';
 require_once __DIR__ . '/lib/shopping.php';
 
@@ -413,6 +414,17 @@ try {
 
     case 'web-save':
         ok(webSave((int) ($in['id'] ?? 0), $user));
+
+    // ───────── ניסוח ידני (lib/rewrite_queue.php) ─────────
+
+    case 'rewrite-export':
+        ok(rewriteExport($user, (int) ($in['limit'] ?? REWRITE_BATCH)));
+
+    case 'rewrite-apply': {
+        $data = is_array($in['data'] ?? null) ? $in['data'] : json_decode((string) ($in['text'] ?? ''), true);
+        if (!is_array($data)) fail('הקובץ אינו JSON תקין');
+        ok(rewriteApply($data, $user));
+    }
 
     case 'index-sites':
         ok(indexSitesStatus($user));

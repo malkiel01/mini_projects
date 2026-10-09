@@ -432,6 +432,9 @@ sleep 1; wait_crawl
 check 'עדכון בלי שינוי: חלק המתכונים לא מובא שוב' "$(( $(grep -c 'sm-recipes.php' "$TMP/fixtures.log") - HITS ))" '^0$'
 check 'והמתכונים נשארו, ו"לא מתכון" לא חזר'  "$(call index-sites)" '"entries_n":4,"next_in":[0-9]*,"crawling":false,"progress":null,"titles_pending":0,"not_recipes":1'
 check 'השם האמיתי שרד את העדכון'           "$(call web-search '{"q":"קרין גורן"}')" '"total":1'
+check 'תור הניסוח: שני המתכונים שיובאו ברקע בלי ניסוח (8ח2)' "$(call rewrite-export)" '"format":"recipes-rewrite-1"[^}]*"total_waiting":2,"items":\[{"id":"r:'
+check 'החלת קובץ לא תקין — נדחית'           "$(call rewrite-apply '{"text":"not json"}')" 'JSON'
+check 'תור הניסוח דרך הטוקן של היומן'       "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$(call log-token-create '{"label":"rw","ttl_minutes":30}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["token"]["token"])')&view=rewrite")" '"format": "recipes-rewrite-1"'
 check 'עובד האינדקס בלי מפתח — 403'        "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/recipes-app/index-worker.php?key=x")" '^403$'
 call logout >/dev/null
 

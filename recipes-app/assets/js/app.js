@@ -294,6 +294,7 @@ async function route() {
     else if (h === '#/logs/import') await renderImportLog();
     else if (h === '#/scout') await renderScout();
     else if (h === '#/index') await renderIndexSites();
+    else if (h === '#/rewrite') await renderRewrite();
     else if (h === '#/web' || h.startsWith('#/web?')) await renderWebSearch(new URLSearchParams(h.split('?')[1] || '').get('q') || '');
     else if ((m = h.match(/^#\/web\/(\d+)$/))) await renderWebRecipe(+m[1]);
     else if (h === '#/settings') await renderSettingsPrivate();
@@ -1633,6 +1634,7 @@ function settingsNav(active) {
     ['#/logs', 'יומן', true],
     ['#/scout', 'סורק', true],
     ['#/index', 'אינדקס', true],
+    ['#/rewrite', 'ניסוח', true],
   ];
   return `<nav class="subnav" aria-label="הגדרות">${items
     .filter(([, , dev]) => !dev || state.user.is_developer)
@@ -2274,6 +2276,68 @@ async function renderWebRecipe(id) {
     await renderEditor(null, structuredClone(d));   // השמירה בעורך — פרטית, עם המקור והקרדיט
     window.scrollTo(0, 0);
   });
+}
+
+// ───────────────────────── ניסוח ידני (מפתח) ─────────────────────────
+// כשאין קרדיט לבינה: מורידים את התור, מנסחים בחוץ (בצ'אט), ומעלים את הקובץ
+// המנוסח. השרת בודק כל פריט לפני שהוא מחליף משהו (lib/rewrite_queue.php).
+
+async function renderRewrite() {
+  if (!state.user.is_developer) { go('#/settings'); return; }
+  view.innerHTML = `
+    <section class="card settings settings--wide rewrite-page">
+      ${settingsNav()}
+      <h2>✍️ ניסוח ידני</h2>
+      <p class="muted">כשהבינה לא זמינה (נגמר הקרדיט), מתכונים מהרשת נשמרים בלי ניסוח מחדש. כאן מורידים אותם לקובץ, מנסחים בחוץ —
+        למשל שולחים לקלוד — ומעלים את הקובץ המנוסח. כל פריט נבדק: אותו מבנה, ולא קרוב מדי למקור.</p>
+      <p id="rw-count" class="muted">טוען…</p>
+      <div class="actions actions--wrap">
+        <button class="btn btn--primary" type="button" id="rw-download">⬇️ הורד קובץ לניסוח</button>
+      </div>
+      <p class="muted small">לקלוד אפשר גם בלי קובץ: הטוקן של היומן עם <code dir="ltr">&amp;view=rewrite</code>.</p>
+      <h3>העלאת קובץ מנוסח</h3>
+      <form id="rw-form" class="form">
+        <label>קובץ <input type="file" name="file" accept=".json,application/json,text/plain"></label>
+        <label>או הדבקה <textarea name="text" rows="5" dir="ltr" placeholder='{"format":"recipes-rewrite-1","items":[…]}'></textarea></label>
+        <button class="btn btn--primary" type="submit">החל את הניסוח</button>
+        <p class="note" id="rw-msg" hidden></p>
+      </form>
+      <ul class="site-results" id="rw-results" hidden></ul>
+    </section>`;
+  const msg = $('#rw-msg');
+  const note = (t, k) => { msg.textContent = t; msg.className = 'note' + (k ? ' note--' + k : ''); msg.hidden = !t; };
+  const count = async () => {
+    try { const d = await api('rewrite-export', { limit: 1 }); $('#rw-count').textContent = d.total_waiting ? `${d.total_waiting} מתכונים ממתינים לניסוח.` : 'אין מתכונים שממתינים לניסוח. ✓'; }
+    catch (err) { $('#rw-count').textContent = err.message; }
+  };
+  $('#rw-download').addEventListener('click', async () => {
+    try {
+      const d = await api('rewrite-export', { limit: 40 });
+      delete d.success;
+      if (!d.items.length) { note('אין מה לנסח.', 'ok'); return; }
+      const blob = new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = `rewrite-${d.exported_at.slice(0, 10)}.json`;
+      document.body.append(a); a.click(); a.remove();
+      note(`הורדו ${d.items.length} מתכונים${d.total_waiting > d.items.length ? ` (מתוך ${d.total_waiting} — השאר בפעם הבאה)` : ''}.`, 'ok');
+    } catch (err) { note(err.message, 'err'); }
+  });
+  $('#rw-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const text = f.file.files[0] ? await f.file.files[0].text() : f.text.value.trim();
+    if (!text) { note('בחר קובץ או הדבק את התוכן.', 'warn'); return; }
+    try {
+      const d = await api('rewrite-apply', { text });
+      const icon = { applied: '✅', too_close: '⚠️', mismatch: '❌', missing: '❌', empty: '❌' };
+      const ul = $('#rw-results');
+      ul.innerHTML = d.results.map((r) => `<li class="${r.status === 'applied' ? '' : 'is-err'}">${icon[r.status] || '•'} ${esc(r.title || r.id)} <span class="muted small">${esc(r.message)}</span></li>`).join('');
+      ul.hidden = false;
+      note(`נוסחו ${d.applied} מתוך ${d.results.length}. נשארו ${d.waiting} בתור.`, d.applied ? 'ok' : 'warn');
+      f.reset();
+    } catch (err) { note(err.message, 'err'); }
+  });
+  await count();
 }
 
 // ───────────────────────── אינדקס החיפוש (מפתח) ─────────────────────────

@@ -21,6 +21,8 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/lib/log.php';
 require_once __DIR__ . '/lib/import_log.php';
+require_once __DIR__ . '/lib/settings.php';
+require_once __DIR__ . '/lib/rewrite_queue.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
@@ -39,6 +41,17 @@ if (!$token) {
 $format  = (string) ($_GET['format'] ?? 'html');
 $view    = (string) ($_GET['view'] ?? 'system');
 $esc     = fn($s): string => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+
+// ניסוח ידני: התור לניסוח, כ-JSON — כך קלוד קורא אותו ומחזיר קובץ מנוסח (lib/rewrite_queue.php).
+// קריאה בלבד; ההחלה — רק מהאפליקציה, בידי המפתח.
+if ($view === 'rewrite') {
+    $dev = db()->query("SELECT id, username, role FROM users WHERE role = 'admin' ORDER BY id LIMIT 1")->fetch();
+    logEvent('info', 'log-view', 'תור הניסוח דרך טוקן "' . $token['label'] . '"', ['token_id' => (int) $token['id']]);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($dev ? rewriteExport($dev, (int) ($_GET['limit'] ?? REWRITE_BATCH)) : ['items' => []],
+                     JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+    exit;
+}
 
 if ($view === 'import') {
     $filters = array_intersect_key($_GET, array_flip(['host', 'kind', 'ok', 'q', 'since', 'before']));
@@ -69,7 +82,7 @@ if ($view === 'import') {
 <title>יומן ייבוא · אפליקציית מתכונים</title>
 <meta name="theme-color" content="#0f8a4f">
 <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-09c">
+<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-09d">
 </head>
 <body>
 <header class="bar">
@@ -169,7 +182,7 @@ $qs    = fn(array $extra) => $self . '&' . http_build_query(array_filter($filter
 <title>יומן · אפליקציית מתכונים</title>
 <meta name="theme-color" content="#0f8a4f">
 <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-09c">
+<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-09d">
 </head>
 <body>
 <header class="bar">

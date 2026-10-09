@@ -22,6 +22,7 @@ define('IMPORT_ALLOW_LOCAL', true);   // הוספת אתרים בלי DNS — ב
 require_once __DIR__ . '/../lib/auth.php';
 require_once __DIR__ . '/../lib/settings.php';
 require_once __DIR__ . '/../lib/web_index.php';
+require_once __DIR__ . '/../lib/rewrite_queue.php';
 
 $fail = [];
 function check(string $label, $got, $want): void {
@@ -158,9 +159,8 @@ expectError('המכסה נגמרה — פתיחה חדשה נחסמת', fn() => 
 check('אבל מהמטמון — עדיין נפתח', webOpen($e1, $noaU)['cached'], true);
 check('למפתח אין מכסה', webOpensLeft($devU), null);
 $pdo->prepare('INSERT INTO web_cache (url, draft, rewritten, created_at) VALUES (?,?,0,?)')->execute(['https://a.co.il/r/3/', json_encode($draft, JSON_UNESCAPED_UNICODE), time() - 7200]);
-expectError('לא מנוסח וישן משעה — לא מהמטמון (ינסה לנסח שוב)', fn() => webOpen($GLOBALS['e3'], $GLOBALS['noaU']), 'מכסת');
-$pdo->exec("UPDATE web_cache SET created_at = " . (time() - 60) . " WHERE url = 'https://a.co.il/r/3/'");
-check('לא מנוסח וטרי — מהמטמון', webOpen($e3, $noaU)['cached'], true);
+$o3 = webOpen($e3, $noaU);
+check('לא מנוסח וישן משעה — מהמטמון, בלי להביא שוב מהאתר (ובלי בינה — בלי ניסיון ניסוח)', [$o3['cached'], $o3['rewritten']], [true, false]);
 $s1 = webSave($e1, $noaU);
 $rec = loadRecipe($s1['recipe_id'], $noaU);
 check('נשמר: פרטי, עם קרדיט, מנוסח, עם הרכיבים', [$rec['visibility'], $rec['source']['url'], $rec['source']['rewritten'], count($rec['sections'][0]['ingredients']) > 3],
@@ -168,6 +168,40 @@ check('נשמר: פרטי, עם קרדיט, מנוסח, עם הרכיבים', [$
 check('שמירה שנייה — אותו מתכון, בלי כפילות', webSave($e1, $noaU), ['recipe_id' => $s1['recipe_id'], 'existing' => true]);
 check('נרשם ביומן הייבוא כשמירה מהחיפוש', importLogList(['kind' => 'web-save'])[0]['recipe_id'], $s1['recipe_id']);
 expectError('מתכון מאתר כבוי אינו נפתח', fn() => webOpen((int) $GLOBALS['pdo']->query("SELECT id FROM index_entries WHERE site_id = {$GLOBALS['so']}")->fetchColumn(), $GLOBALS['noaU']), 'אינו באינדקס');
+
+echo "\n5ב. ניסוח ידני — תור, ייצוא, החלה\n";
+// במטמון: מתכון שנפתח ולא נוסח (נגמר הקרדיט)
+$plain = importToDraft(importParse($fx('jsonld-carine.html'), 'https://a.co.il/r/4/'));
+$plain['source_rewritten'] = false;
+$pdo->prepare('INSERT INTO web_cache (url, draft, rewritten, created_at) VALUES (?,?,0,?)')->execute(['https://a.co.il/r/4/', json_encode($plain, JSON_UNESCAPED_UNICODE), time()]);
+// ומתכון של המפתח שיובא בלי ניסוח
+$devRid = saveRecipe($plain, $devU);
+expectError('משתמש רגיל אינו רואה את התור', fn() => rewriteExport($GLOBALS['noaU']), 'מפתח');
+$ex = rewriteExport($devU);
+$ids = array_column($ex['items'], 'id');
+// במטמון שניים לא מנוסחים: r/3 (מהבדיקה הקודמת) ו-r/4; r/1 מנוסח — לא בתור
+check('בתור: מהמטמון ומהמתכון של המפתח (ולא מתכון מנוסח, ולא של נועה)', [count(array_filter($ids, fn($i) => str_starts_with($i, 'w:'))), in_array('r:' . $devRid, $ids, true), $ex['format']], [2, true, 'recipes-rewrite-1']);
+$w = array_values(array_filter($ex['items'], fn($i) => $i['source'] === 'https://a.co.il/r/4/'))[0];
+check('השלבים כלשונם, בלי שאר הטיוטה', [count($w['sections'][0]['steps']) >= 4, isset($w['sections'][0]['ingredients'])], [true, false]);
+
+$same = $ex; $same['items'] = [$w];
+check('החזרה בלי שינוי — "קרוב מדי", לא מוחל', rewriteApply($same, $devU)['results'][0]['status'], 'too_close');
+$bad = $ex; $bad['items'] = [['id' => $w['id'], 'sections' => [['name' => '', 'steps' => ['א']], ['name' => 'ב', 'steps' => ['ב']]]]];
+check('מספר חלקים אחר — נדחה', rewriteApply($bad, $devU)['results'][0]['status'], 'mismatch');
+$new = $ex;
+$new['items'] = array_map(fn($it) => ['id' => $it['id'], 'title' => $it['title'], 'sections' => array_map(fn($sec) => ['name' => $sec['name'],
+    'steps' => array_map(fn($k) => "בשלב $k עושים את מה שצריך, בניסוח שלנו לגמרי", array_keys($sec['steps']))], $it['sections'])], $ex['items']);
+$new['items'][] = ['id' => 'w:999999', 'sections' => [['name' => '', 'steps' => ['x']]]];
+$ap = rewriteApply($new, $devU);
+check('הוחל על שלושתם; פריט שלא קיים — מסומן', [$ap['applied'], end($ap['results'])['status']], [3, 'missing']);
+$c = json_decode($pdo->query("SELECT draft FROM web_cache WHERE url = 'https://a.co.il/r/4/'")->fetchColumn(), true);
+check('במטמון: מנוסח, והרכיבים לא נגעו', [(int) $pdo->query("SELECT rewritten FROM web_cache WHERE url = 'https://a.co.il/r/4/'")->fetchColumn(), $c['source_rewritten'], str_starts_with($c['sections'][0]['steps'][0]['text'], 'בשלב 0'), count($c['sections'][0]['ingredients'])],
+      [1, true, true, count($plain['sections'][0]['ingredients'])]);
+$rr = loadRecipe($devRid, $devU);
+check('המתכון: מנוסח, "מבוסס על", הרכיבים והמקור נשארו', [$rr['source']['rewritten'], str_starts_with($rr['sections'][0]['steps'][0]['text'], 'בשלב 0'), count($rr['sections'][0]['ingredients']), $rr['source']['url']],
+      [true, true, count($plain['sections'][0]['ingredients']), 'https://a.co.il/r/4/']);
+check('התור התרוקן', rewriteQueue($devU)['total'], 0);
+expectError('קובץ לא שלנו', fn() => rewriteApply(['items' => []], $GLOBALS['devU']), 'format');
 
 echo "\n6. הסרת אתר מוחקת את המתכונים שלו מהאינדקס\n";
 indexRemoveSite($sa, $devU);
