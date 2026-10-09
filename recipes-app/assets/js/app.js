@@ -383,7 +383,10 @@ async function renderRecipe(id) {
     view.innerHTML = `
       <article class="recipe">
         <header class="recipe__head">
-          <a class="link" href="#/">‹ לרשימה</a>
+          <div class="recipe__top">
+            <a class="link" href="#/">‹ לרשימה</a>
+            <button class="icon-btn" id="print" type="button" aria-label="הדפסה" title="הדפסה">🖨</button>
+          </div>
           <h2>${esc(r.title)}</h2>
           <p class="muted">${esc(r.owner_name)} ·
             <span class="badge ${r.is_mine ? 'badge--mine' : 'badge--public'}">${r.visibility === 'public' ? 'ציבורי' : 'פרטי'}</span>
@@ -419,7 +422,6 @@ async function renderRecipe(id) {
           <div class="actions actions--wrap">
             <a class="btn btn--primary" href="#/cook/${r.id}">🍳 מצב בישול</a>
             <button class="btn" id="to-shopping" type="button">🛒 לרשימת קניות</button>
-            <button class="btn btn--ghost" id="print" type="button">🖨 הדפסה</button>
           </div>
           <div id="shopping-pick" hidden></div>
           ${r.is_mine ? `<div class="actions">

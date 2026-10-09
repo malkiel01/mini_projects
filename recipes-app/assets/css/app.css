@@ -281,6 +281,14 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
   flex-direction: column;
   gap: 10px;
 }
+/* שורה עליונה: "לרשימה" צמוד לימין (תחילת השורה ב-RTL), אייקון ההדפסה לשמאל */
+.recipe__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.recipe__top .link { align-self: auto; }
+.icon-btn {
+  min-width: 44px; min-height: 44px; padding: 0; border: 1px solid var(--line); border-radius: 8px;
+  background: none; font-size: 1.25rem; line-height: 1; cursor: pointer;
+}
+.icon-btn:hover { background: var(--accent-soft); }
 .recipe__head h2 { font-size: 1.4rem; color: var(--ink); margin: 0; }
 .meta { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.9rem; color: var(--muted); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -711,7 +719,7 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
 /* ───────── הדפסה: המתכון בלבד ───────── */
 
 @media print {
-  .bar, .menu, .actions, .stale, .comments, .note-box, .snapshot, #shopping-pick, .servings .btn, .servings .link, .gallery__video, .credit .small { display: none !important; }
+  .bar, .menu, .recipe__top, .actions, .stale, .comments, .note-box, .snapshot, #shopping-pick, .servings .btn, .servings .link, .gallery__video, .credit .small { display: none !important; }
   body { background: #fff; color: #000; }
   .stage { padding: 0; }
   .recipe__head, .part { border: 0; box-shadow: none; padding: 0 0 12px; }
