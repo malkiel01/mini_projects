@@ -118,16 +118,52 @@ function scoutJobStop(array $developer): array {
  */
 function scoutJobKick(): void {
     $j = scoutJobRow();
-    if ($j['state'] !== 'running' || !$j['base_url'] || !function_exists('curl_init')) return;
-    $url = rtrim($j['base_url'], '/') . '/scout-worker.php?key=' . $j['worker_key'];
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT_MS => 1500, CURLOPT_CONNECTTIMEOUT_MS => 1500,
-        CURLOPT_NOSIGNAL => true, CURLOPT_NOPROXY => '127.0.0.1,localhost',
-        CURLOPT_USERAGENT => 'recipes-app/scout-worker',
-    ]);
-    curl_exec($ch);   // timeout צפוי — העובד עונה ואז עובד; לא מחכים לו
-    curl_close($ch);
+    if ($j['state'] !== 'running' || !$j['base_url']) return;
+    workerKick(rtrim($j['base_url'], '/') . '/scout-worker.php?key=' . $j['worker_key'], 'recipes-app/scout-worker');
+}
+
+/**
+ * בקשה שמעירה עובד בשרת שלנו (scout-worker.php / index-worker.php).
+ *
+ * האחסון מפעיל לפעמים בדיקת "אתה אדם?" גם על בקשות לאתר שלנו עצמו: במקום
+ * העובד חוזר דף קטן עם document.cookie = "humans_21909=1" (קוד 409), והעובד
+ * לא רץ — השרשרת נקטעת. זה האתר שלנו והקריאה הפנימית שלנו, אז עונים לבדיקה:
+ * שומרים את העוגייה ושולחים אותה מעכשיו בכל הערה. כל תקלה נרשמת ביומן
+ * (worker-kick), כדי שנדע אם השרשרת נקטעה ולמה.
+ */
+function workerKick(string $url, string $ua): string {
+    if (!function_exists('curl_init')) return 'no-curl';
+    $cookieFile = scoutStateDir() . '/kick-cookie';
+    $saved = trim((string) @file_get_contents($cookieFile));
+    $do = function (string $cookie) use ($url, $ua): array {
+        $ch = curl_init($url);
+        $opts = [
+            CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT_MS => 3000, CURLOPT_CONNECTTIMEOUT_MS => 2000,
+            CURLOPT_NOSIGNAL => true, CURLOPT_NOPROXY => '127.0.0.1,localhost', CURLOPT_USERAGENT => $ua,
+        ];
+        if ($cookie !== '') $opts[CURLOPT_COOKIE] = $cookie;
+        curl_setopt_array($ch, $opts);
+        $body = (string) curl_exec($ch);
+        $res = [(int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE), $body, curl_errno($ch)];
+        curl_close($ch);
+        return $res;
+    };
+    [$code, $body, $err] = $do($saved);
+    if (preg_match('/document\.cookie\s*=\s*"([A-Za-z0-9_\-]+)=([^";]*)/', $body, $m)) {
+        $saved = $m[1] . '=' . $m[2];
+        @file_put_contents($cookieFile, $saved);
+        [$code, $body, $err] = $do($saved);
+        $status = str_contains($body, 'document.cookie') ? 'challenge-failed' : 'challenge-passed';
+    } elseif ($err === 28) {
+        $status = 'timeout';   // העובד כנראה כבר רץ — הוא עונה רק אחרי שהתחיל
+    } else {
+        $status = $code >= 200 && $code < 300 ? 'ok' : 'http-' . $code;
+    }
+    if ($status !== 'ok') {
+        logEvent(in_array($status, ['challenge-passed', 'timeout'], true) ? 'info' : 'warn', 'worker-kick', $status,
+                 ['worker' => basename((string) parse_url($url, PHP_URL_PATH)), 'code' => $code]);
+    }
+    return $status;
 }
 
 /** שומר-סף: נקרא מ-api.php. עובד שאמור לרוץ ושתק — מעירים. זול: קריאה של שורה אחת. */

@@ -572,14 +572,8 @@ function indexKick(bool $force = false): void {
     if (!$force && is_file($mark) && filemtime($mark) > time() - 120) return;   // לא יותר מפעם בשתי דקות
     @touch($mark);
     $j = scoutJobRow();
-    if (!$j['base_url'] || !function_exists('curl_init')) return;
-    $ch = curl_init(rtrim($j['base_url'], '/') . '/index-worker.php?key=' . $j['worker_key']);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT_MS => 1500, CURLOPT_CONNECTTIMEOUT_MS => 1500,
-        CURLOPT_NOSIGNAL => true, CURLOPT_NOPROXY => '127.0.0.1,localhost', CURLOPT_USERAGENT => 'recipes-app/index-worker',
-    ]);
-    curl_exec($ch);
-    curl_close($ch);
+    if (!$j['base_url']) return;
+    workerKick(rtrim($j['base_url'], '/') . '/index-worker.php?key=' . $j['worker_key'], 'recipes-app/index-worker');
 }
 
 /** שומר-סף: נקרא מ-api.php. יש אתר שהגיע זמנו — מעירים (לכל היותר פעם בשתי דקות). */

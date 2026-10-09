@@ -165,6 +165,17 @@ $held = fopen(scoutStateDir() . '/worker.lock', 'c'); flock($held, LOCK_EX);
 check('עובד אחד בכל פעם: כשאחר מחזיק את הנעילה — busy', scoutWorkerRun(true), 'busy');
 flock($held, LOCK_UN); fclose($held);
 
+echo "\n8. הערת עובד מול בדיקת \"אתה אדם?\" של האחסון\n";
+$port = 8870 + getmypid() % 100;
+$srv = proc_open([PHP_BINARY, '-S', "127.0.0.1:$port", '-t', __DIR__ . '/fixtures'], [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes);
+for ($i = 0; $i < 40 && !@fsockopen('127.0.0.1', $port); $i++) usleep(100000);
+check('פעם ראשונה: דף הבדיקה, עונים, והעובד מקבל את הבקשה', workerKick("http://127.0.0.1:$port/challenge.php", 'test'), 'challenge-passed');
+check('העוגייה נשמרה', trim((string) @file_get_contents(scoutStateDir() . '/kick-cookie')), 'humans_21909=1');
+check('מעכשיו — ישר, בלי בדיקה', workerKick("http://127.0.0.1:$port/challenge.php", 'test'), 'ok');
+check('נרשם ביומן', (int) db()->query("SELECT COUNT(*) FROM app_log WHERE action = 'worker-kick' AND message = 'challenge-passed'")->fetchColumn(), 1);
+check('עובד שלא קיים — נרשם כשגיאה', workerKick("http://127.0.0.1:$port/nope.php", 'test'), 'http-404');
+proc_terminate($srv); proc_close($srv);
+
 foreach (['scout', 'fetch-blocks', 'fetch-cache'] as $d) { foreach (glob("$tmp/$d/*") ?: [] as $f) @unlink($f); @rmdir("$tmp/$d"); }
 foreach (glob($tmp . '/*') ?: [] as $f) @unlink($f);
 @rmdir($tmp . '/media'); @rmdir($tmp);
