@@ -465,6 +465,9 @@ body.has-fs { overflow: hidden; }
 .project-card[hidden] { display: none; }
 .project-card .field { grid-template-columns: 90px 1fr; }
 .project-card__actions { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 8px; }
+/* שמירה · ללקוח · איפוס — שורה אחת, ברוחב שווה */
+.project-card__actions > .btn:not([hidden]) { flex: 1 1 0; min-width: 0; white-space: nowrap; justify-content: center; }
+.project-card__actions > #btn-back-asm { flex-basis: 100%; }
 .btn.is-on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-deep); }
 .no-project { padding: 14px 6px; }
 .no-project[hidden], #form[hidden] { display: none; }

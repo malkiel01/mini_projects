@@ -513,7 +513,8 @@ function showShareLink() {
 }
 function updateShareUi() {
   const on = !!state.project?.share_token;
-  $('#btn-share').textContent = on ? '🔗 קישור ללקוח (פעיל)' : '🔗 קישור ללקוח';
+  $('#btn-share').textContent = on ? '🔗 ללקוח ✓' : '🔗 ללקוח';   // קצר — שלושת הכפתורים בשורה אחת גם בטלפון
+  $('#btn-share').title = on ? 'קישור צפייה ללקוח (פעיל)' : 'קישור צפייה ללקוח';
   $('#btn-share').classList.toggle('is-on', on);
 }
 
