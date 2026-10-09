@@ -33,6 +33,9 @@ const MEDIA_TYPES = [
     'image/webp' => ['kind' => 'image', 'ext' => 'webp'],
     'image/gif'  => ['kind' => 'image', 'ext' => 'gif'],
     'video/mp4'  => ['kind' => 'video', 'ext' => 'mp4'],
+    // אייפון מצלם mov, וחלק מהאנדרואידים ו-Chrome מקליטים webm
+    'video/quicktime' => ['kind' => 'video', 'ext' => 'mov'],
+    'video/webm' => ['kind' => 'video', 'ext' => 'webm'],
 ];
 
 /** התקרה בפועל לקובץ, לפי הסוג ולפי המשתמש (דריסה → ציבורי → ברירת מחדל). */

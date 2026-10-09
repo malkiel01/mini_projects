@@ -189,6 +189,15 @@ check 'PHP בשם clip.mp4 נדחה לפי הבייטים' "$(up "$TMP/evil.mp4"
 check 'גדול מהתקרה נדחה'              "$(up "$TMP/huge.png" "$RID")" 'גדול מדי'
 check 'קישור מתקבל'                   "$(call media-link "{\"recipe_id\":$RID,\"url\":\"https://youtu.be/abc123\"}")" '"source":"link"'
 check 'javascript: נדחה'              "$(call media-link "{\"recipe_id\":$RID,\"url\":\"javascript:alert(1)\"}")" 'אינו כתובת'
+# סרטון מהאייפון (mov) ומ-Chrome/אנדרואיד (webm) — לפי הבייטים, לא לפי הסיומת
+printf '\x00\x00\x00\x14ftypqt  \x00\x00\x00\x00qt  \x00\x00\x00\x08free' > "$TMP/iphone.MOV"
+printf '\x1a\x45\xdf\xa3\x9f\x42\x86\x81\x01\x42\xf7\x81\x01\x42\xf2\x81\x04\x42\xf3\x81\x08\x42\x82\x84webm\x42\x87\x81\x02\x42\x85\x81\x02' > "$TMP/clip.webm"
+VM=$(up "$TMP/iphone.MOV" "$RID")
+check 'סרטון אייפון (mov) מתקבל'      "$VM" '"kind":"video".*"url":"data\\\?/media\\\?/[0-9a-f]\{32\}\.mov"'
+VW=$(up "$TMP/clip.webm" "$RID")
+check 'וגם webm'                      "$VW" '"kind":"video".*\.webm"'
+check 'ברשימה: למתכון יש סרטון'        "$(call search '{"q":""}')" '"id":'"$RID"',[^}]*"has_video":true'
+for J in "$VM" "$VW"; do call media-delete "{\"id\":$(printf '%s' "$J" | python3 -c 'import sys,json; print(json.load(sys.stdin)["media"]["id"])')}" >/dev/null; done
 check 'המקצב מדווח שימוש'             "$(call media-limits)" '"used":[1-9]'
 check 'תקרת תמונה = האפיון (5MB), כי השרת מרשה יותר' "$(call media-limits)" '"image_max":5242880'
 check 'תקרת וידאו = האפיון (20MB)'    "$(call media-limits)" '"video_max":20971520'

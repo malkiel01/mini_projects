@@ -144,8 +144,21 @@ function uploadFile(recipeId, file, onProgress) {
 
 /** קישור יוטיוב → כתובת הטמעה. כל קישור אחר נשאר קישור רגיל. */
 function embedUrl(url) {
-  const m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|shorts\/|embed\/))([\w-]{11})/);
-  return m ? `https://www.youtube-nocookie.com/embed/${m[1]}` : null;
+  const m = url.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/))([\w-]{11})/);
+  if (m) return `https://www.youtube-nocookie.com/embed/${m[1]}`;
+  const v = url.match(/vimeo\.com\/(?:video\/)?(\d{6,12})/);
+  return v ? `https://player.vimeo.com/video/${v[1]}?dnt=1` : null;
+}
+
+/** סרטון אחד לתצוגה: קובץ שלנו או קישור ישיר לקובץ — נגן; יוטיוב/וימאו — מוטמע; אחר — קישור. */
+function videoHtml(url, uploaded = false) {
+  if (uploaded || /\.(mp4|webm|mov)(\?|$)/i.test(url)) {
+    return `<video class="gallery__video" controls playsinline preload="metadata" src="${esc(url)}"></video>`;
+  }
+  const emb = embedUrl(url);
+  return emb
+    ? `<iframe class="gallery__video" src="${esc(emb)}" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen loading="lazy" referrerpolicy="strict-origin-when-cross-origin" title="סרטון"></iframe>`
+    : `<a class="btn" href="${esc(url)}" target="_blank" rel="noopener">▶ סרטון (קישור חיצוני)</a>`;
 }
 
 function mediaGallery(r) {
@@ -158,13 +171,7 @@ function mediaGallery(r) {
       ${main ? `<img class="gallery__main" src="${esc(main.url)}" alt="${esc(r.title)}" loading="lazy">` : ''}
       ${images.length ? `<div class="gallery__thumbs">${images.map((m) =>
         `<a href="${esc(m.url)}" target="_blank" rel="noopener"><img src="${esc(m.url)}" alt="" loading="lazy"></a>`).join('')}</div>` : ''}
-      ${videos.map((v) => {
-        if (v.source === 'upload') return `<video class="gallery__video" controls preload="metadata" src="${esc(v.url)}"></video>`;
-        const emb = embedUrl(v.url);
-        return emb
-          ? `<iframe class="gallery__video" src="${esc(emb)}" allowfullscreen loading="lazy" referrerpolicy="no-referrer" title="סרטון"></iframe>`
-          : `<a class="btn" href="${esc(v.url)}" target="_blank" rel="noopener">▶ סרטון (קישור חיצוני)</a>`;
-      }).join('')}
+      ${videos.map((v) => videoHtml(v.url, v.source === 'upload')).join('')}
     </section>`;
 }
 
@@ -348,7 +355,8 @@ async function renderList() {
     }
     results.innerHTML = recipes.map((r) => `
       <a class="item" href="#/r/${r.id}">
-        ${r.thumb ? `<img class="item__thumb" src="${esc(r.thumb)}" alt="" loading="lazy">` : '<span class="item__thumb item__thumb--empty">🍲</span>'}
+        <span class="item__media">${r.thumb ? `<img class="item__thumb" src="${esc(r.thumb)}" alt="" loading="lazy">` : '<span class="item__thumb item__thumb--empty">🍲</span>'}${
+          r.has_video ? '<span class="item__play" title="יש סרטון" aria-label="יש סרטון">▶</span>' : ''}</span>
         <div class="item__main">
           <strong>${esc(r.title)}</strong>
           <span class="muted">${esc(r.owner_name)}${r.source_name ? ` · 🌐 ${esc(r.source_name)}` : ''}${r.difficulty ? ' · ' + DIFFICULTY[r.difficulty] : ''}${
@@ -795,6 +803,76 @@ async function renderEditor(id, draft = null) {
     })),
   };
 
+  // מתכון חדש: תמונות, סרטונים וקישורים נבחרים כבר עכשיו, ועולים מיד אחרי השמירה
+  // הראשונה (לפני שיש מזהה אין לאן להעלות). נשמרים כאן — מחוץ ל-draw — כדי לשרוד ציור מחדש.
+  const newMedia = { images: [], videos: [], links: [] };
+  let limitsCache = null;
+  const drawNewMedia = () => {
+    const box = $('#media-new');
+    if (!box) return;
+    const row = (label, key, i) => `<div class="media-row"><span>${label}</span>
+      <button class="btn btn--ghost btn--danger" type="button" data-nm-del="${key}:${i}" aria-label="הסרה">✕</button></div>`;
+    box.innerHTML = `
+      <h4>תמונות וסרטונים</h4>
+      ${newMedia.images.length ? `<div class="media-grid">${newMedia.images.map((it, i) => `
+        <figure class="media-item"><img src="${it.url}" alt=""><figcaption>${i === 0 ? '<span class="badge badge--mine">ראשית</span>' : ''}
+          <button class="btn btn--ghost btn--danger" type="button" data-nm-del="images:${i}" aria-label="הסרה">✕</button></figcaption></figure>`).join('')}</div>` : ''}
+      ${newMedia.videos.map((it, i) => row(`🎬 ${esc(it.file.name)} · ${humanBytes(it.file.size)}`, 'videos', i)).join('')}
+      ${newMedia.links.map((u, i) => row(`🔗 ${esc(u)}`, 'links', i)).join('')}
+      <div class="scan-pick">
+        <label class="btn">📷 תמונות<input type="file" accept="image/*" multiple hidden data-nm="images"></label>
+        <label class="btn">🎥 צילום סרטון<input type="file" accept="video/*" capture="environment" hidden data-nm="videos"></label>
+        <label class="btn">🎞 סרטון מהגלריה<input type="file" accept="video/mp4,video/quicktime,video/webm" hidden data-nm="videos"></label>
+      </div>
+      <div class="media-link">
+        <input id="nm-link" type="text" inputmode="url" placeholder="קישור ליוטיוב או וימאו" autocomplete="off" aria-label="קישור לסרטון">
+        <button class="btn" type="button" id="nm-link-add">הוסף</button>
+      </div>
+      <small class="muted">יעלו מיד אחרי השמירה. התמונה הראשונה תהיה הראשית.</small>
+      <p class="note" id="nm-msg" hidden></p>`;
+    const note = (t, k) => { const el = $('#nm-msg'); el.textContent = t; el.className = 'note' + (k ? ' note--' + k : ''); el.hidden = !t; };
+    $$('[data-nm]', box).forEach((inp) => inp.addEventListener('change', async () => {
+      const key = inp.dataset.nm;
+      limitsCache ||= (await api('media-limits')).limits;
+      for (const file of inp.files) {
+        if (key === 'videos' && file.size > limitsCache.video_max) { note(`${file.name} גדול מדי (${humanBytes(file.size)}, התקרה ${humanBytes(limitsCache.video_max)}). סרטון ארוך — העלה ליוטיוב והדבק קישור.`, 'err'); continue; }
+        if (key === 'videos' && newMedia.videos.length + newMedia.links.length >= limitsCache.max_videos) { note(`עד ${limitsCache.max_videos} סרטונים למתכון.`, 'warn'); break; }
+        if (key === 'images' && newMedia.images.length >= limitsCache.max_images) { note(`עד ${limitsCache.max_images} תמונות למתכון.`, 'warn'); break; }
+        newMedia[key].push({ file, url: key === 'images' ? URL.createObjectURL(file) : null });
+      }
+      drawNewMedia();
+    }));
+    box.addEventListener('click', (e) => {
+      const d = e.target.dataset.nmDel;
+      if (!d) return;
+      const [key, i] = d.split(':');
+      const [gone] = newMedia[key].splice(+i, 1);
+      if (gone?.url) URL.revokeObjectURL(gone.url);
+      drawNewMedia();
+    });
+    $('#nm-link-add').addEventListener('click', () => {
+      const u = $('#nm-link').value.trim();
+      if (!/^https?:\/\/\S{6,}$/i.test(u)) { note('זה לא קישור תקין (http/https)', 'warn'); return; }
+      newMedia.links.push(u);
+      drawNewMedia();
+    });
+  };
+  /** אחרי השמירה הראשונה: מעלה את מה שנבחר. מחזיר את השגיאות (המתכון כבר שמור בכל מקרה). */
+  const uploadNewMedia = async (rid, out) => {
+    const errs = [];
+    const say = (t) => { out.textContent = t; out.className = 'note'; out.hidden = false; };
+    for (const it of newMedia.images) {
+      try { await uploadFile(rid, await shrinkImage(it.file), (p) => say(`מעלה תמונה… ${Math.round(p * 100)}%`)); } catch (e) { errs.push(e.message); }
+    }
+    for (const it of newMedia.videos) {
+      try { await uploadFile(rid, it.file, (p) => say(`מעלה ${it.file.name}… ${Math.round(p * 100)}%`)); } catch (e) { errs.push(`${it.file.name}: ${e.message}`); }
+    }
+    for (const u of newMedia.links) {
+      try { await api('media-link', { recipe_id: rid, url: u }); } catch (e) { errs.push(`${u}: ${e.message}`); }
+    }
+    return errs;
+  };
+
   const draw = () => {
     // מתכון פשוט = חלק אחד: שדה השם שלו מוסתר, והחלוקה לא נראית (3.1).
     const multi = model.sections.length > 1;
@@ -906,7 +984,7 @@ async function renderEditor(id, draft = null) {
         <label>טיפים והערות <textarea name="tips" rows="3">${esc(model.tips)}</textarea></label>
 
         ${id ? `<fieldset class="media-edit" id="media-edit"></fieldset>`
-             : `<p class="muted">תמונות וסרטונים אפשר להוסיף אחרי השמירה הראשונה.</p>`}
+             : `<fieldset class="media-edit" id="media-new"></fieldset>`}
 
         <fieldset class="tags">
           ${Object.entries(AXES).map(([axis, label]) => tags[axis] ? `
@@ -1061,7 +1139,7 @@ async function renderEditor(id, draft = null) {
       }, 'ki');
     });
 
-    if (editId) renderMediaEdit(editId);
+    if (editId) renderMediaEdit(editId); else drawNewMedia();
 
     // השלמת מוצר מהקטלוג: הקטלוג גדל מעצמו, וזו הדרך ששמות מתכנסים (3.2).
     let timer;
@@ -1107,6 +1185,11 @@ async function renderEditor(id, draft = null) {
           out.textContent = 'מצרף תמונות וסרטונים…'; out.className = 'note'; out.hidden = false;
           for (const u of model.pending_media.images) { try { await api('media-link', { recipe_id: savedId, url: u, kind: 'image' }); } catch { /* ממשיכים */ } }
           for (const u of model.pending_media.videos) { try { await api('media-link', { recipe_id: savedId, url: u, kind: 'video' }); } catch { /* ממשיכים */ } }
+        }
+        if (!editId) {
+          const errs = await uploadNewMedia(savedId, out);
+          // המתכון נשמר; מה שלא עלה — לעורך, כדי לנסות שוב משם
+          if (errs.length) { alert('המתכון נשמר, אבל חלק מהמדיה לא עלה:\n' + errs.join('\n')); go(`#/edit/${savedId}`); return; }
         }
         go(`#/r/${savedId}`);
       } catch (err) {
@@ -1558,8 +1641,8 @@ async function renderMediaEdit(recipeId) {
 
     <h4>סרטונים <span class="muted">(${videos.length}/${limits.max_videos})</span></h4>
     ${videos.map((v) => `
-      <div class="media-row">
-        <span>${v.source === 'link' ? '🔗 ' + esc(v.url) : '🎬 קובץ · ' + humanBytes(v.bytes)}</span>
+      <div class="media-row media-row--video">
+        ${v.source === 'upload' ? `<video src="${esc(v.url)}" controls playsinline preload="metadata"></video>` : `<span>🔗 ${esc(v.url)}</span>`}
         <button class="btn btn--ghost btn--danger" type="button" data-del-media="${v.id}">✕</button>
       </div>`).join('')}
     ${videos.length < limits.max_videos ? `
@@ -1567,15 +1650,15 @@ async function renderMediaEdit(recipeId) {
         <!-- לא <form>: אזור המדיה יושב בתוך טופס העורך, ודפדפן זורק תג form
              מקונן — כך שדה הקישור הפך לשדה חובה של "שמור שינויים" וחסם אותו. -->
         <div class="media-link" id="media-link">
-          <input name="video_url" type="text" inputmode="url" placeholder="קישור ליוטיוב (מומלץ לסרטון ארוך)"
+          <input name="video_url" type="text" inputmode="url" placeholder="קישור ליוטיוב או וימאו (מומלץ לסרטון ארוך)"
                  autocomplete="off" aria-label="קישור לסרטון">
           <button class="btn" type="button" id="media-link-add">הוסף</button>
         </div>
-        <label class="upload">
-          <input type="file" accept="video/mp4" hidden data-up="video">
-          <span class="btn">+ קובץ mp4</span>
-          <small class="muted">עד ${humanBytes(limits.video_max)} — כ-10–15 שניות מהטלפון</small>
-        </label>
+        <div class="scan-pick">
+          <label class="btn">🎥 צילום סרטון<input type="file" accept="video/*" capture="environment" hidden data-up="video"></label>
+          <label class="btn">🎞 סרטון מהגלריה<input type="file" accept="video/mp4,video/quicktime,video/webm" hidden data-up="video"></label>
+        </div>
+        <small class="muted">עד ${humanBytes(limits.video_max)} — כ-10–15 שניות מהטלפון. סרטון ארוך — ביוטיוב, והקישור כאן.</small>
       </div>` : ''}
 
     <div class="quota">
@@ -2276,6 +2359,8 @@ async function renderWebRecipe(id) {
         ${res.opens_left != null ? `<p class="muted small">נשארו לך היום ${res.opens_left} פתיחות חדשות. מתכונים שכבר נפתחו — בלי הגבלה.</p>` : ''}
       </header>
       ${img ? `<figure class="webrecipe__img"><img src="${esc(img)}" alt="" loading="lazy" referrerpolicy="no-referrer"><figcaption class="muted small">תמונה: ${esc(d.source_name || res.entry.site)}</figcaption></figure>` : ''}
+      ${(d.pending_media?.videos || []).length ? `<section class="gallery">${d.pending_media.videos.map((u) => videoHtml(u)).join('')}
+        <p class="muted small">סרטון: ${esc(d.source_name || res.entry.site)}</p></section>` : ''}
       ${d.sections.map((s) => `
         <section class="part">
           ${s.name ? `<h3>${esc(s.name)}</h3>` : ''}

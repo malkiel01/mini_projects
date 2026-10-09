@@ -105,6 +105,13 @@ check('תגים נוחשו: עוגות, חלבי', count(array_intersect(
     array_column(array_filter(db()->query('SELECT id, name FROM tags')->fetchAll(), fn($t) => in_array($t['name'], ['עוגות', 'חלבי'], true)), 'id'),
     $draft['tag_ids'])), 2);
 check('pending_media: תמונה אחת, בלי סרטון', [count($draft['pending_media']['images']), count($draft['pending_media']['videos'])], [1, 0]);
+$vraw = importParse($fx('video-embed.html'), 'https://a.co.il/r/v/');
+check('סרטונים: מה-JSON-LD ומגוף הכתבה, בלי כפילות (embed ו-nocookie הם אותו סרטון), בלי הצד ובלי מפה', $vraw['videos'],
+      ['https://www.youtube.com/watch?v=AbCdEfGhIjK', 'https://vimeo.com/123456789', 'https://a.co.il/media/clip.mp4']);
+check('כתובת אחידה לסרטון', [importVideoUrl('https://youtu.be/AbCdEfGhIjK'), importVideoUrl('https://www.youtube.com/shorts/AbCdEfGhIjK'),
+      importVideoUrl('https://www.youtube.com/watch?feature=x&v=AbCdEfGhIjK'), importVideoUrl('javascript:alert(1)')],
+      ['https://www.youtube.com/watch?v=AbCdEfGhIjK', 'https://www.youtube.com/watch?v=AbCdEfGhIjK', 'https://www.youtube.com/watch?v=AbCdEfGhIjK', '']);
+check('הסרטונים עוברים לטיוטה, לצירוף אחרי השמירה', count(importToDraft($vraw)['pending_media']['videos']), 3);
 check('התיאור הפך לטיפים', str_contains($draft['tips'], 'עוגת גבינה'), true);
 
 echo "\n4ב. JSON-LD עם הוראות כמחרוזת אחת (carine.co.il)\n";

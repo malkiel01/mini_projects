@@ -35,7 +35,7 @@ const IMPORT_TIMEOUT       = 15;
 const IMPORT_MAX_REDIRECTS = 5;
 const IMPORT_USER_AGENT    = 'Mozilla/5.0 (compatible; recipes-app/1.0; +https://github.com/malkiel01/mini_projects) recipe-import';
 const IMPORT_MAX_IMAGES    = 5;
-const IMPORT_MAX_VIDEOS    = 2;
+const IMPORT_MAX_VIDEOS    = 3;   // כמו MAX_VIDEOS_PER_RECIPE
 
 // ─────────────────────────────────────────────────────────────
 // הבאה — בטוחה
@@ -235,13 +235,16 @@ function importFromJsonLd(DOMDocument $doc): ?array {
             return is_scalar($v) ? importText((string) $v) : '';
         };
 
+        // אובייקט יחיד ({"@type":"VideoObject",…}) ולא רשימה — עוטפים; אחרת (array) מפרק
+        // אותו לשדות, ו-"VideoObject" / "ImageObject" נכנסים ככתובת
+        $one = fn($v) => is_array($v) && !array_is_list($v) ? [$v] : (array) $v;
         $images = [];
-        foreach ((array) ($r['image'] ?? []) as $img) {
+        foreach ($one($r['image'] ?? []) as $img) {
             $u = is_array($img) ? ($img['url'] ?? $img['contentUrl'] ?? '') : $img;
             if (is_string($u) && $u !== '') $images[] = $u;
         }
         $videos = [];
-        foreach ((array) ($r['video'] ?? []) as $v) {
+        foreach ($one($r['video'] ?? []) as $v) {
             if (!is_array($v)) { if (is_string($v)) $videos[] = $v; continue; }
             $u = $v['embedUrl'] ?? $v['contentUrl'] ?? $v['url'] ?? '';
             if (is_string($u) && $u !== '') $videos[] = $u;
@@ -516,8 +519,46 @@ function importParseDoc(DOMDocument $doc, string $url): array {
     $raw['url'] = $url;
     // כתובות יחסיות → מוחלטות
     $raw['images'] = array_values(array_unique(array_map(fn($u) => importAbsolute($u, $url), $raw['images'])));
-    $raw['videos'] = array_values(array_unique(array_map(fn($u) => importAbsolute($u, $url), $raw['videos'])));
+    // אותו סרטון מגיע לפעמים פעמיים (embed ב-JSON-LD, נגן בגוף הכתבה) — כתובת אחידה, ובלי כפילות
+    $raw['videos'] = array_values(array_unique(array_filter(array_map(fn($u) => importVideoUrl(importAbsolute($u, $url)),
+                                                          array_merge($raw['videos'], importFindVideos($doc))))));
     return $raw;
+}
+
+/**
+ * סרטונים שמוטמעים בגוף הכתבה — לא רק מה שמסומן ב-JSON-LD. רוב אתרי המתכונים
+ * שמים נגן יוטיוב בתוך הטקסט, ולא מצהירים עליו. מחפשים בתוך הכתבה (article /
+ * entry-content) כדי לא לאסוף סרטוני קידום מהצד; בלי כתבה — בכל הדף.
+ * מזוהים: יוטיוב, וימאו, ותגית video (קובץ ישיר). כולל טעינה עצלה (data-src).
+ */
+function importFindVideos(DOMDocument $doc): array {
+    $xp = new DOMXPath($doc);
+    $root = $xp->query('//article | //*[contains(concat(" ", normalize-space(@class), " "), " entry-content ")] | //*[contains(@class, "recipe-content")]')->item(0) ?? $doc;
+    $out = [];
+    $srcs = [];
+    foreach ($xp->query('.//iframe | .//video | .//video/source | .//*[@data-video-id]', $root) as $el) {
+        /** @var DOMElement $el */
+        foreach (['src', 'data-src', 'data-lazy-src', 'data-litespeed-src'] as $a) if ($el->getAttribute($a) !== '') $srcs[] = [$el->tagName, $el->getAttribute($a)];
+        if ($el->getAttribute('data-video-id') !== '' && preg_match('/^[\w-]{11}$/', $el->getAttribute('data-video-id'))) $srcs[] = ['yt', 'https://www.youtube.com/watch?v=' . $el->getAttribute('data-video-id')];
+    }
+    foreach ($srcs as [$tag, $u]) {
+        $u = html_entity_decode(trim($u));
+        if (str_starts_with($u, '//')) $u = 'https:' . $u;
+        // קובץ ישיר — רק מתגית video, וכמו שהוא (יחסי הופך למלא אחר כך, ב-importParseDoc)
+        if (in_array($tag, ['video', 'source'], true) && preg_match('~\.(mp4|webm|mov)(\?|$)~i', $u)) { $out[] = $u; continue; }
+        // iframe: רק יוטיוב / וימאו — מפה, טופס או פרסומת אינם סרטון
+        $v = importVideoUrl($u);
+        if ($v !== '' && $v !== $u) $out[] = $v;
+    }
+    return array_slice(array_values(array_unique($out)), 0, IMPORT_MAX_VIDEOS);
+}
+
+/** כתובת אחידה לסרטון: יוטיוב (embed / shorts / youtu.be) → watch?v=, וימאו (player) → vimeo.com/ID. אחר — כמו שהוא. */
+function importVideoUrl(string $u): string {
+    $u = trim($u);
+    if (preg_match('~(?:youtube(?:-nocookie)?\.com/(?:embed/|watch\?(?:.*&)?v=|shorts/|v/)|youtu\.be/)([\w-]{11})~', $u, $m)) return 'https://www.youtube.com/watch?v=' . $m[1];
+    if (preg_match('~(?:player\.)?vimeo\.com/(?:video/)?(\d{6,12})~', $u, $m)) return 'https://vimeo.com/' . $m[1];
+    return preg_match('~^https?://~i', $u) ? $u : '';
 }
 
 function importAbsolute(string $u, string $base): string {

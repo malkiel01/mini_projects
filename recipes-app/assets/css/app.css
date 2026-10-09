@@ -406,6 +406,9 @@ a.icon-btn { display: inline-grid; place-items: center; text-decoration: none; }
   flex: none; width: 56px; height: 56px; border-radius: 8px; object-fit: cover;
   background: var(--accent-soft);
 }
+.item__media { position: relative; flex: none; display: block; }
+.item__play { position: absolute; inset-inline-start: 4px; bottom: 4px; width: 22px; height: 22px; border-radius: 50%;
+  background: rgba(0,0,0,.65); color: #fff; font-size: .65rem; display: grid; place-items: center; padding-inline-start: 2px; }
 .item__thumb--empty { display: grid; place-items: center; font-size: 1.4rem; }
 
 .gallery { display: flex; flex-direction: column; gap: 10px; }
@@ -797,6 +800,7 @@ a.icon-btn { display: inline-grid; place-items: center; text-decoration: none; }
 .web-item__here, .web-item__saves { color: var(--accent); font-weight: 600; }
 /* סריקת מתכון מתמונה */
 .scan-pick { display: flex; gap: 8px; flex-wrap: wrap; }
+.media-row--video video { width: 100%; max-width: 280px; max-height: 200px; border-radius: 8px; background: #000; }
 .scan-page > .note { margin-bottom: 10px; }
 .scan-vis { display: flex; flex-wrap: wrap; gap: 8px 20px; border: 0; padding: 0; margin: 0; }
 .scan-pick .btn { cursor: pointer; }

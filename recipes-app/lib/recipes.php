@@ -345,6 +345,7 @@ function searchRecipes(?array $user, string $query = '', array $filters = []): a
                    r.work_minutes, r.wait_minutes, r.updated_at, r.source_url, r.source_name,
                    u.display_name AS owner_name,
                    m.path_or_url AS main_path, m.source AS main_source,
+                   EXISTS (SELECT 1 FROM media mv WHERE mv.recipe_id = r.id AND mv.kind = \'video\') AS has_video,
                    ' . $titleMatch . ' AS rank_title
               FROM recipes r JOIN users u ON u.id = r.owner_id
               LEFT JOIN media m ON m.id = r.main_media_id AND m.kind = \'image\'
@@ -371,6 +372,7 @@ function searchRecipes(?array $user, string $query = '', array $filters = []): a
         'thumb'        => mediaThumbUrl($row['main_path'], $row['main_source']),
         'source_name'  => $row['source_url'] ? ($row['source_name'] ?: parse_url($row['source_url'], PHP_URL_HOST)) : null,
         'source_url'   => $row['source_url'],
+        'has_video'    => (bool) $row['has_video'],
     ], $st->fetchAll());
 }
 
