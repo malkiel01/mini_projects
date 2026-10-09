@@ -11,6 +11,7 @@
  *   logs.php?token=…&format=json     JSON, החדש ראשון
  * מסננים בשלושתם: level, action, user, q, request_id, since, before, limit.
  *
+ *   logs.php?token=…&view=scans      סריקות שממתינות (JSON), עם קישור לכל תמונה (&view=scan-image)
  *   logs.php?token=…&view=index      מצב האינדקס (JSON): לכל אתר — מתכונים, תמונות, התקדמות העדכון
  *   logs.php?token=…&view=import     יומן הייבוא (lib/import_log.php): מה היה
  *                                    בכל דף ומה חולץ ממנו, עם קישור למקור.
@@ -24,6 +25,7 @@ require_once __DIR__ . '/lib/log.php';
 require_once __DIR__ . '/lib/import_log.php';
 require_once __DIR__ . '/lib/settings.php';
 require_once __DIR__ . '/lib/rewrite_queue.php';
+require_once __DIR__ . '/lib/scan.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
@@ -50,6 +52,29 @@ if ($view === 'rewrite') {
     logEvent('info', 'log-view', 'תור הניסוח דרך טוקן "' . $token['label'] . '"', ['token_id' => (int) $token['id']]);
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode($dev ? rewriteExport($dev, (int) ($_GET['limit'] ?? REWRITE_BATCH)) : ['items' => []],
+                     JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+    exit;
+}
+
+// סריקות שממתינות: כמו הקובץ שהמפתח מוריד, אבל עם קישור לכל תמונה (דרך הטוקן) במקום
+// התמונה עצמה — כך קלוד קורא אותן ומחזיר קובץ מתכונים. ההחלה — רק מהאפליקציה.
+if ($view === 'scans' || $view === 'scan-image') {
+    $dev = db()->query("SELECT id, username, role FROM users WHERE role = 'admin' ORDER BY id LIMIT 1")->fetch();
+    if (!$dev) { http_response_code(404); exit; }
+    if ($view === 'scan-image') {
+        try {
+            [$path, $mime] = scanImagePath(scanFor((int) ($_GET['id'] ?? 0), $dev), (int) ($_GET['i'] ?? 0));
+        } catch (AppError $e) { http_response_code($e->status); exit; }
+        header('Content-Type: ' . $mime);
+        header('Content-Length: ' . filesize($path));
+        readfile($path);
+        exit;
+    }
+    logEvent('info', 'log-view', 'סריקות ממתינות דרך טוקן "' . $token['label'] . '"', ['token_id' => (int) $token['id']]);
+    $base = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost')
+          . strtok((string) ($_SERVER['REQUEST_URI'] ?? '/logs.php'), '?');
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(scanExport($dev, false, fn(int $id, int $i) => $base . '?token=' . rawurlencode($raw) . "&view=scan-image&id=$id&i=$i"),
                      JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
     exit;
 }
@@ -90,7 +115,7 @@ if ($view === 'import') {
 <title>יומן ייבוא · אפליקציית מתכונים</title>
 <meta name="theme-color" content="#0f8a4f">
 <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-09j">
+<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-09l">
 </head>
 <body>
 <header class="bar">
@@ -190,7 +215,7 @@ $qs    = fn(array $extra) => $self . '&' . http_build_query(array_filter($filter
 <title>יומן · אפליקציית מתכונים</title>
 <meta name="theme-color" content="#0f8a4f">
 <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-09j">
+<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-09l">
 </head>
 <body>
 <header class="bar">

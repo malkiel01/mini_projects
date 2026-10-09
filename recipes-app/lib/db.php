@@ -252,6 +252,25 @@ function migrate(PDO $pdo): void {
             seen_at    INTEGER NOT NULL DEFAULT 0    -- unix: העדכון האחרון שראה אותו
         );
         CREATE INDEX IF NOT EXISTS idx_index_entries_site ON index_entries(site_id, seen_at);
+        -- סריקת מתכון מתמונה (lib/scan.php): ממתינה לאישור המפתח, עד שתהיה טעינת קרדיטים.
+        -- התמונות ב-data/scans/; נמחקות כשהסריקה טופלה.
+        CREATE TABLE IF NOT EXISTS scans (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            status     TEXT    NOT NULL DEFAULT 'pending',   -- pending / done / rejected
+            visibility TEXT    NOT NULL DEFAULT 'private',   -- מה שמי שסרק בחר
+            note       TEXT,                                 -- הערה של מי שסרק
+            attach     INTEGER NOT NULL DEFAULT 1,           -- לצרף את התמונות למתכון
+            images     TEXT    NOT NULL,                     -- JSON: שמות הקבצים, לפי הסדר
+            recipe_id  INTEGER REFERENCES recipes(id) ON DELETE SET NULL,
+            recipe_ids TEXT,                                 -- JSON: כשנוצרו כמה מתכונים
+            message    TEXT,                                 -- סיבת דחייה
+            method     TEXT,                                 -- ai / manual
+            created_at TEXT    NOT NULL,
+            done_at    TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_scans_user ON scans(user_id, id);
+        CREATE INDEX IF NOT EXISTS idx_scans_status ON scans(status, id);
         -- מתכון שנפתח מהחיפוש, אחרי חילוץ וניסוח מחדש — שבוע, כדי שפתיחה שנייה
         -- (של אותו משתמש או של אחר) לא תביא את הדף ולא תנסח שוב.
         CREATE TABLE IF NOT EXISTS web_cache (

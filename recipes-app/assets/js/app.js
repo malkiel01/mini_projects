@@ -107,11 +107,11 @@ const humanBytes = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)}MB` : `${M
  * תמונה מהטלפון שוקלת 4–8MB ומעלה בלי סיבה; אחרי ההקטנה — 200–400KB.
  * GIF ו-PNG שקוף נשלחים כמו שהם, כי ההמרה ל-JPEG הורסת אותם.
  */
-async function shrinkImage(file) {
+async function shrinkImage(file, maxSide = 1600) {
   if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size < 400 * 1024) return file;
   const bitmap = await createImageBitmap(file).catch(() => null);
   if (!bitmap) return file;
-  const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
   if (scale === 1 && file.type === 'image/jpeg') return file;
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(bitmap.width * scale);
@@ -295,6 +295,8 @@ async function route() {
     else if (h === '#/scout') await renderScout();
     else if (h === '#/index') await renderIndexSites();
     else if (h === '#/rewrite') await renderRewrite();
+    else if (h === '#/scan') await renderScan();
+    else if (h === '#/scans') await renderScansDev();
     else if (h === '#/web' || h.startsWith('#/web?')) await renderWebSearch(new URLSearchParams(h.split('?')[1] || '').get('q') || '');
     else if ((m = h.match(/^#\/web\/(\d+)$/))) await renderWebRecipe(+m[1]);
     else if (h === '#/settings') await renderSettingsPrivate();
@@ -1637,6 +1639,7 @@ function settingsNav(active) {
     ['#/scout', 'סורק', true],
     ['#/index', 'אינדקס', true],
     ['#/rewrite', 'ניסוח', true],
+    ['#/scans', 'סריקות', true],
   ];
   return `<nav class="subnav" aria-label="הגדרות">${items
     .filter(([, , dev]) => !dev || state.user.is_developer)
@@ -2355,6 +2358,218 @@ async function renderRewrite() {
     } catch (err) { note(err.message, 'err'); }
   });
   await count();
+}
+
+// ───────────────────────── סריקת מתכון מתמונה ─────────────────────────
+
+/** שליחת סריקה: כמה תמונות בבקשה אחת, עם התקדמות. */
+function uploadScan(files, fields, onProgress) {
+  return new Promise((resolve, reject) => {
+    const fd = new FormData();
+    files.forEach((f, i) => fd.append('files[]', f, `scan-${i + 1}.jpg`));
+    Object.entries(fields).forEach(([k, v]) => fd.append(k, v));
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', './scan.php');
+    xhr.withCredentials = true;
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+    xhr.onload = () => {
+      let data;
+      try { data = JSON.parse(xhr.responseText); } catch { return reject(new Error('השרת החזיר תשובה שאינה תקינה')); }
+      data.success ? resolve(data) : reject(new Error(data.error || 'השליחה נכשלה'));
+    };
+    xhr.onerror = () => reject(new Error('השליחה נכשלה — אין חיבור'));
+    xhr.send(fd);
+  });
+}
+
+const scanImg = (id, i) => `./scan.php?id=${id}&i=${i}`;
+const SCAN_STATUS = { pending: '⏳ ממתינה לאישור', done: '✅ המתכון נוצר', rejected: '✖ לא נוצר מתכון' };
+
+function scanCard(s, { dev = false } = {}) {
+  const recipes = (s.recipe_ids || []).map((id, k) => `<a class="btn btn--small" href="#/r/${id}">פתח מתכון${s.recipe_ids.length > 1 ? ' ' + (k + 1) : ''} ›</a>`).join('');
+  return `
+    <article class="scan-card scan-card--${s.status}" data-id="${s.id}">
+      <div class="scan-card__head">
+        <strong>${SCAN_STATUS[s.status] || s.status}</strong>
+        <span class="muted small">${dev && s.user ? esc(s.user.display_name || s.user.username) + ' · ' : ''}${s.visibility === 'public' ? 'ציבורי' : 'פרטי'} · ${s.images} תמונות · ${fmtWhen(s.created_at)}</span>
+      </div>
+      ${s.note ? `<p class="small">📝 ${esc(s.note)}</p>` : ''}
+      ${s.status === 'pending' ? `<div class="scan-card__thumbs">${Array.from({ length: s.images }, (_, i) =>
+        `<a href="${scanImg(s.id, i)}" target="_blank" rel="noopener"><img src="${scanImg(s.id, i)}" alt="תמונה ${i + 1}" loading="lazy"></a>`).join('')}</div>` : ''}
+      ${s.status === 'rejected' && s.message ? `<p class="note note--warn small">${esc(s.message)}</p>` : ''}
+      <div class="actions actions--wrap">
+        ${recipes}
+        ${s.status === 'pending' && !dev ? '<button class="btn btn--small btn--ghost" type="button" data-cancel>ביטול</button>' : ''}
+        ${s.status === 'pending' && dev ? `<button class="btn btn--small btn--primary" type="button" data-ai>🤖 סרוק בבינה</button>
+          <button class="btn btn--small btn--danger" type="button" data-reject>דחה</button>` : ''}
+      </div>
+    </article>`;
+}
+
+async function renderScan() {
+  const picked = [];   // { file, url }
+  view.innerHTML = `
+    <section class="card settings settings--wide scan-page">
+      <a class="link" href="#/">‹ לרשימה</a>
+      <h2>📷 סריקת מתכון מתמונה</h2>
+      <p class="muted">צלמו פתק בכתב יד, דף מודפס או גזיר — והמתכון ייבנה מהתמונה: שם, רכיבים ושלבים.
+        <strong>כל התמונות בשליחה אחת הן מתכון אחד</strong> (למשל פתק עם המשך מאחור). למתכון אחר — שליחה נפרדת.</p>
+      <p class="note small">💳 טעינת קרדיטים לסריקה בבינה — בפיתוח. בינתיים כל סריקה ממתינה לאישור מנהל האפליקציה, והמתכון יופיע אצלך כשתאושר.</p>
+      <form id="scan-form" class="form">
+        <div class="scan-pick">
+          <label class="btn btn--primary">📷 צילום<input type="file" accept="image/*" capture="environment" hidden data-pick></label>
+          <label class="btn">🖼 בחירת תמונות<input type="file" accept="image/*" multiple hidden data-pick></label>
+        </div>
+        <div id="scan-thumbs" class="scan-thumbs"></div>
+        <label>הערה (לא חובה)
+          <textarea name="note" rows="2" maxlength="1000" placeholder="למשל: העוגה של סבתא. התמונה השנייה היא ההמשך"></textarea></label>
+        <fieldset class="scan-vis">
+          <label class="check"><input type="radio" name="visibility" value="private" checked> פרטי — רק אני</label>
+          <label class="check"><input type="radio" name="visibility" value="public"> ציבורי — לכולם</label>
+        </fieldset>
+        <label class="check"><input type="checkbox" name="attach" checked> לצרף את התמונות למתכון (נספר במקום האחסון שלך)</label>
+        <button class="btn btn--primary" type="submit" id="scan-send" disabled>שליחה לסריקה</button>
+        <p class="note" id="scan-msg" hidden></p>
+      </form>
+      <h3>הסריקות שלי</h3>
+      <div id="scan-list" class="scan-list"><p class="muted">טוען…</p></div>
+    </section>`;
+  const msg = $('#scan-msg');
+  const note = (t, k) => { msg.textContent = t; msg.className = 'note' + (k ? ' note--' + k : ''); msg.hidden = !t; };
+  let maxImages = 6;
+  const drawPicked = () => {
+    $('#scan-thumbs').innerHTML = picked.map((p, i) => `
+      <figure class="scan-thumb"><img src="${p.url}" alt=""><figcaption>${i + 1}</figcaption>
+        <button type="button" class="scan-thumb__x" data-remove="${i}" aria-label="הסרה">×</button></figure>`).join('');
+    $('#scan-send').disabled = !picked.length;
+  };
+  $$('[data-pick]').forEach((inp) => inp.addEventListener('change', () => {
+    for (const file of inp.files) {
+      if (picked.length >= maxImages) { note(`עד ${maxImages} תמונות למתכון אחד.`, 'warn'); break; }
+      picked.push({ file, url: URL.createObjectURL(file) });
+    }
+    inp.value = '';
+    drawPicked();
+  }));
+  $('#scan-thumbs').addEventListener('click', (e) => {
+    const i = e.target.dataset.remove;
+    if (i === undefined) return;
+    URL.revokeObjectURL(picked[+i].url);
+    picked.splice(+i, 1);
+    drawPicked();
+  });
+  const list = $('#scan-list');
+  const load = async () => {
+    try {
+      const d = await api('scans-mine');
+      maxImages = d.max_images;
+      list.innerHTML = d.scans.length ? d.scans.map((s) => scanCard(s)).join('') : '<p class="muted">עוד לא נשלחו סריקות.</p>';
+    } catch (err) { list.innerHTML = `<p class="note note--err">${esc(err.message)}</p>`; }
+  };
+  list.addEventListener('click', async (e) => {
+    if (!e.target.matches('[data-cancel]')) return;
+    if (!confirm('לבטל את הסריקה? התמונות יימחקו.')) return;
+    try { await api('scan-cancel', { id: +e.target.closest('[data-id]').dataset.id }); load(); }
+    catch (err) { alert(err.message); }
+  });
+  $('#scan-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const btn = $('#scan-send');
+    btn.disabled = true;
+    try {
+      note('מכין את התמונות…');
+      // כתב יד צריך פרטים — צלע ארוכה 2200px (ולא 1600 כמו בתמונות מתכון)
+      const files = await Promise.all(picked.map((p) => shrinkImage(p.file, 2200)));
+      await uploadScan(files, { note: f.note.value, visibility: f.visibility.value, attach: f.attach.checked ? '1' : '0' },
+        (p) => note(`שולח… ${Math.round(p * 100)}%`));
+      picked.splice(0).forEach((p) => URL.revokeObjectURL(p.url));
+      f.reset(); drawPicked();
+      note('נשלח ✓ הסריקה ממתינה לאישור. המתכון יופיע ברשימה שלך כשתאושר.', 'ok');
+      load();
+    } catch (err) { note(err.message, 'err'); btn.disabled = !picked.length; }
+  });
+  await load();
+}
+
+/** המפתח: הסריקות שממתינות — בבינה, ידנית (קובץ לקלוד וחזרה), או דחייה. */
+async function renderScansDev() {
+  if (!state.user.is_developer) { go('#/scan'); return; }
+  view.innerHTML = `
+    <section class="card settings settings--wide scan-page">
+      ${settingsNav()}
+      <h2>📷 סריקות ממתינות</h2>
+      <p class="muted">סריקות שמשתמשים שלחו. "סרוק בבינה" — כשיש קרדיט. בלי קרדיט: מורידים קובץ (התמונות בתוכו), שולחים לקלוד בצ'אט,
+        ומעלים את הקובץ שחזר. המתכון נוצר אצל מי שסרק, בפרטיות שבחר.</p>
+      <div id="sd-pending" class="scan-list"><p class="muted">טוען…</p></div>
+      <h3>ידנית — דרך קלוד</h3>
+      <div class="actions actions--wrap"><button class="btn btn--primary" type="button" id="sd-download">⬇️ הורד קובץ סריקות</button></div>
+      <p class="muted small">לקלוד אפשר גם בלי קובץ: הטוקן של היומן עם <code dir="ltr">&amp;view=scans</code>.</p>
+      <form id="sd-form" class="form">
+        <label>קובץ מתכונים שחזר <input type="file" name="file" accept=".json,application/json,text/plain"></label>
+        <label>או הדבקה <textarea name="text" rows="5" dir="ltr" placeholder='{"format":"recipes-scan-1","items":[…]}'></textarea></label>
+        <button class="btn btn--primary" type="submit">צור את המתכונים</button>
+        <p class="note" id="sd-msg" hidden></p>
+      </form>
+      <ul class="site-results" id="sd-results" hidden></ul>
+      <h3>טופלו לאחרונה</h3>
+      <div id="sd-recent" class="scan-list"></div>
+    </section>`;
+  const msg = $('#sd-msg');
+  const note = (t, k) => { msg.textContent = t; msg.className = 'note' + (k ? ' note--' + k : ''); msg.hidden = !t; };
+  const load = async () => {
+    const d = await api('scans-pending');
+    $('#sd-pending').innerHTML = d.pending.length ? d.pending.map((s) => scanCard(s, { dev: true })).join('') : '<p class="muted">אין סריקות שממתינות. ✓</p>';
+    if (!d.ai_available) $$('#sd-pending [data-ai]').forEach((b) => { b.disabled = true; b.title = 'אין מפתח API לבינה'; });
+    $('#sd-recent').innerHTML = d.recent.map((s) => scanCard(s, { dev: true })).join('') || '<p class="muted">—</p>';
+  };
+  $('#sd-pending').addEventListener('click', async (e) => {
+    const card = e.target.closest('[data-id]');
+    if (!card) return;
+    const id = +card.dataset.id;
+    try {
+      if (e.target.matches('[data-ai]')) {
+        e.target.disabled = true; e.target.textContent = 'קורא…';
+        const r = await api('scan-ai', { id });
+        note(r.status === 'done' ? 'המתכון נוצר ✓' : 'הבינה לא מצאה מתכון — הסריקה נדחתה', r.status === 'done' ? 'ok' : 'warn');
+      } else if (e.target.matches('[data-reject]')) {
+        const reason = prompt('סיבת הדחייה (תוצג למשתמש):', 'לא הצלחנו לקרוא את הכתב בתמונה — כדאי לצלם שוב, קרוב ובאור טוב');
+        if (reason === null) return;
+        await api('scan-reject', { id, reason });
+      } else return;
+    } catch (err) { note(err.message, 'err'); }
+    load();
+  });
+  $('#sd-download').addEventListener('click', async () => {
+    try {
+      const d = await api('scan-export');
+      delete d.success;
+      if (!d.items.length) { note('אין סריקות שממתינות.', 'ok'); return; }
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(d)], { type: 'application/json' }));
+      a.download = `scans-${d.exported_at.slice(0, 10)}.json`;
+      document.body.append(a); a.click(); a.remove();
+      note(`הורדו ${d.items.length} סריקות${d.total_waiting > d.items.length ? ` (מתוך ${d.total_waiting} — השאר בפעם הבאה)` : ''}. לשלוח את הקובץ לקלוד בצ'אט.`, 'ok');
+    } catch (err) { note(err.message, 'err'); }
+  });
+  $('#sd-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const text = f.file.files[0] ? await f.file.files[0].text() : f.text.value.trim();
+    if (!text) { note('בחר קובץ או הדבק את התוכן.', 'warn'); return; }
+    try {
+      const d = await api('scan-apply', { text });
+      const icon = { applied: '✅', rejected: '✖', error: '❌', missing: '❌' };
+      const ul = $('#sd-results');
+      ul.innerHTML = d.results.map((r) => `<li class="${r.status === 'error' || r.status === 'missing' ? 'is-err' : ''}">${icon[r.status] || '•'} ${esc(r.id)} ${esc(r.title || '')}
+        <span class="muted small">${esc(r.message)}</span>${(r.recipe_ids || []).map((id) => ` <a href="#/r/${id}">›</a>`).join('')}</li>`).join('');
+      ul.hidden = false;
+      note(`נוצרו מתכונים ל-${d.applied} סריקות מתוך ${d.results.length}. נשארו ${d.waiting} ממתינות.`, d.applied ? 'ok' : 'warn');
+      f.reset();
+      load();
+    } catch (err) { note(err.message, 'err'); }
+  });
+  await load();
 }
 
 // ───────────────────────── אינדקס החיפוש (מפתח) ─────────────────────────

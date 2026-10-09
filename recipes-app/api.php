@@ -27,6 +27,7 @@ require_once __DIR__ . '/lib/web_index.php';
 require_once __DIR__ . '/lib/rewrite_queue.php';
 require_once __DIR__ . '/lib/pantry.php';
 require_once __DIR__ . '/lib/shopping.php';
+require_once __DIR__ . '/lib/scan.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -424,6 +425,32 @@ try {
         $data = is_array($in['data'] ?? null) ? $in['data'] : json_decode((string) ($in['text'] ?? ''), true);
         if (!is_array($data)) fail('הקובץ אינו JSON תקין');
         ok(rewriteApply($data, $user));
+    }
+
+    // סריקת מתכון מתמונה (lib/scan.php). ההעלאה עצמה — scan.php (multipart).
+    case 'scans-mine':
+        ok(scansMine($user));
+
+    case 'scan-cancel':
+        scanCancel((int) ($in['id'] ?? 0), $user);
+        ok(scansMine($user));
+
+    case 'scans-pending':
+        ok(scansPending($user));
+
+    case 'scan-reject':
+        ok(['scan' => scanReject((int) ($in['id'] ?? 0), str_field($in, 'reason', 300), $user)]);
+
+    case 'scan-ai':
+        ok(scanRunAi((int) ($in['id'] ?? 0), $user));
+
+    case 'scan-export':
+        ok(scanExport($user));
+
+    case 'scan-apply': {
+        $data = is_array($in['data'] ?? null) ? $in['data'] : json_decode((string) ($in['text'] ?? ''), true);
+        if (!is_array($data)) fail('הקובץ אינו JSON תקין');
+        ok(scanApply($data, $user));
     }
 
     case 'index-sites':

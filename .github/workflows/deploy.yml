@@ -138,6 +138,7 @@ jobs:
             --exclude='claude-tasks/data/*.sqlite*' \
             --exclude='recipes-app/data/*.sqlite*' \
             --exclude='recipes-app/data/media/' \
+            --exclude='recipes-app/data/scans/' \
             --exclude='claude-tasks/data/config.json' \
             --exclude='claude-tasks/data/secret.key' \
             --exclude='camera-app/data/*.sqlite*' \

@@ -792,6 +792,22 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
 .web-item--local { border-color: var(--accent); background: var(--accent-soft); }
 .web-item--local .web-item__thumb { background: var(--panel); }
 .web-item__here, .web-item__saves { color: var(--accent); font-weight: 600; }
+/* סריקת מתכון מתמונה */
+.scan-pick { display: flex; gap: 8px; flex-wrap: wrap; }
+.scan-page > .note { margin-bottom: 10px; }
+.scan-vis { display: flex; flex-wrap: wrap; gap: 8px 20px; border: 0; padding: 0; margin: 0; }
+.scan-pick .btn { cursor: pointer; }
+.scan-thumbs, .scan-card__thumbs { display: flex; gap: 8px; flex-wrap: wrap; }
+.scan-thumb { position: relative; margin: 0; width: 84px; height: 84px; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
+.scan-thumb img, .scan-card__thumbs img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.scan-thumb figcaption { position: absolute; bottom: 2px; inset-inline-start: 4px; font-size: .75rem; font-weight: 700; color: #fff; text-shadow: 0 0 3px #000; }
+.scan-thumb__x { position: absolute; top: 2px; inset-inline-end: 2px; width: 26px; height: 26px; border-radius: 50%; border: 0;
+  background: rgba(0,0,0,.6); color: #fff; font-size: 1rem; line-height: 1; cursor: pointer; }
+.scan-list { display: flex; flex-direction: column; gap: 8px; }
+.scan-card { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; background: var(--panel); }
+.scan-card--pending { border-color: var(--accent); }
+.scan-card__head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.scan-card__thumbs a { width: 72px; height: 72px; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); }
 .btn--small { padding: 6px 12px; min-height: 36px; font-size: .9rem; }
 .web-item__title { color: inherit; text-decoration: none; }
 .web-item__title:hover strong { text-decoration: underline; }

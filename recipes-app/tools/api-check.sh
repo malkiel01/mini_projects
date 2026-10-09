@@ -516,6 +516,38 @@ check 'אחרי ביטול — 403'                       "$(curl -sS -o /dev/nu
 check 'תוקף לא חוקי נדחה'                      "$(call log-token-create '{"label":"x","ttl_minutes":1}')" 'קצר'
 
 echo
+echo "8כ. סריקת מתכון מתמונה — העלאה, הרשאות, ותור המפתח"
+python3 -c 'import base64,sys; open(sys.argv[1],"wb").write(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="))' "$TMP/note.png"
+call logout >/dev/null
+call login '{"username":"tester","password":"sod12345"}' >/dev/null
+SCN=$(curl -sS -b "$JAR" -c "$JAR" -F "files[]=@$TMP/note.png" -F "files[]=@$TMP/note.png" -F "note=פתק של סבתא" -F "visibility=public" -F "attach=1" "http://127.0.0.1:$PORT/recipes-app/scan.php")
+check 'העלאה: שתי תמונות, ממתינה'            "$SCN" '"status":"pending","visibility":"public","note":"פתק של סבתא","attach":true,"images":2'
+SID=$(printf '%s' "$SCN" | python3 -c 'import sys,json; print(json.load(sys.stdin)["scan"]["id"])')
+check 'הבעלים רואה את התמונה'                "$(curl -sS -b "$JAR" -o /dev/null -w '%{http_code} %{content_type}' "http://127.0.0.1:$PORT/recipes-app/scan.php?id=$SID&i=1")" '^200 image/png'
+check 'ישירות מהתיקייה — חסום'               "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/recipes-app/data/scans/")" '^40[34]$'
+check 'הסריקות שלי'                          "$(call scans-mine)" '"scans":\[{"id":'"$SID"',"status":"pending"'
+check 'לא מפתח — אין תור'                    "$(call scans-pending)" 'מפתח'
+check 'טקסט במקום תמונה — נדחה'              "$(curl -sS -b "$JAR" -F "files[]=@recipes-app/tools/fixtures/robots.txt" "http://127.0.0.1:$PORT/recipes-app/scan.php")" 'רק תמונות'
+call logout >/dev/null
+call login '{"username":"owner","password":"sod12345"}' >/dev/null
+TOK=$(call log-token-create '{"label":"סריקות","ttl_minutes":60}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["token"]["token"])')
+call logout >/dev/null
+check 'בלי כניסה — אין תמונה'                "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/recipes-app/scan.php?id=$SID&i=0")" '^401$'
+check 'דרך טוקן היומן — קישור לכל תמונה'      "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$TOK&view=scans")" '"id": "s:'"$SID"'"'
+check 'והתמונה עצמה דרך הטוקן'               "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$TOK&view=scan-image&id=$SID&i=1")" '^200$'
+call login '{"username":"owner","password":"sod12345"}' >/dev/null
+check 'המפתח: בתור, עם מי ששלח'              "$(call scans-pending)" '"pending":\[{"id":'"$SID"'.*"user":{"id":[0-9]*,"username":"tester"'
+check 'קובץ לקלוד — עם התמונות'              "$(call scan-export)" '"format":"recipes-scan-1".*"images":\[{"mime":"image\\/png","data":"iVBOR'
+AP=$(call scan-apply '{"data":{"format":"recipes-scan-1","items":[{"id":"s:'"$SID"'","recipes":[{"title":"סלט אבוקדו","sections":[{"name":"","ingredients":["2 אבוקדו"],"steps":[]},{"name":"תיבול","ingredients":["2 כפות מיץ לימון"],"steps":[]}]}]}]}}')
+check 'הקובץ שחזר — המתכון נוצר'             "$AP" '"status":"applied","recipe_ids":\[[0-9]*\]'
+SRID=$(printf '%s' "$AP" | python3 -c 'import sys,json; print(json.load(sys.stdin)["results"][0]["recipe_ids"][0])')
+call logout >/dev/null
+call login '{"username":"tester","password":"sod12345"}' >/dev/null
+check 'אצל מי שסרק, ציבורי, עם התמונות'      "$(call recipe "{\"id\":$SRID}")" '"title":"סלט אבוקדו","visibility":"public".*"is_mine":true'
+check 'הסריקה: נוצר מתכון'                   "$(call scans-mine)" '"status":"done"'
+call logout >/dev/null
+
+echo
 echo "9. אבחון למנהל"
 call login '{"username":"owner","password":"sod12345"}' >/dev/null
 D=$(call diag)

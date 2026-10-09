@@ -207,6 +207,26 @@ CREATE TABLE web_cache (
   created_at INTEGER NOT NULL
 );
 
+-- סריקת מתכון מתמונה (lib/scan.php): ממתינה לאישור המפתח, עד שתהיה טעינת קרדיטים.
+-- התמונות ב-data/scans/; נמחקות כשהסריקה טופלה.
+CREATE TABLE scans (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status     TEXT    NOT NULL DEFAULT 'pending',   -- pending / done / rejected
+  visibility TEXT    NOT NULL DEFAULT 'private',
+  note       TEXT,
+  attach     INTEGER NOT NULL DEFAULT 1,
+  images     TEXT    NOT NULL,                     -- JSON: שמות הקבצים
+  recipe_id  INTEGER REFERENCES recipes(id) ON DELETE SET NULL,
+  recipe_ids TEXT,                                 -- JSON
+  message    TEXT,
+  method     TEXT,                                 -- ai / manual
+  created_at TEXT    NOT NULL,
+  done_at    TEXT
+);
+CREATE INDEX idx_scans_user ON scans(user_id, id);
+CREATE INDEX idx_scans_status ON scans(status, id);
+
 -- "מה יש לי בבית" (סעיף 13): המזווה של כל משתמש, ומוצרי יסוד שכיבה.
 CREATE TABLE pantry_items (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
