@@ -20,6 +20,7 @@ import { createAccessoriesUI } from './accessories-ui.js';
 import { createCncUI } from './cnc-ui.js';
 import { createLabUI } from './lab-ui.js';
 import { applyRules } from './model/rules.js';
+import { registerRecipes } from './model/recipe.js';
 import { api, loadLast, saveLast } from './store.js';
 import { watchNumbers } from './numfield.js';
 import { placeModel, combine, snapTo, dragSnap, dragSnapY, snapRot } from './model/assembly.js';
@@ -147,7 +148,8 @@ async function enter() {
   $('#app').hidden = false;
 
   const [lib, types, rates, clients, rules] = await Promise.all([api('materials-get'), api('types-list'), u.role === 'viewer' ? null : api('rates-get'), api('clients-list'), api('rules-get')]);
-  applyRules(rules.rules);   // מעבדת המוצרים: ההתאמות של המנהל מעל התבניות
+  registerRecipes(rules.recipes);   // מעבדת המוצרים: מוצרים שהוגדרו בנוסחאות — תבניות לכל דבר
+  applyRules(rules.rules);          // וההתאמות של המנהל מעל התבניות
   state.clients = clients.clients;
   M.load(lib.diff);
   for (const [id, v] of Object.entries(lib.images || {})) M.setImage(id, v.url, v.imageMm);
@@ -284,8 +286,8 @@ async function showProjects(fromPop = false) {
     const admin = state.user.role === 'admin';
 
     // כרטיסי סוגי המוצרים: התבניות מהקוד, ומתחת לכל אחת — הסוגים שהמנהל הגדיר עליה
-    const typeCards = Object.values(TEMPLATES).map((t) => {
-      const m = TEMPLATE_META[t.key] || { icon: '🪚', blurb: '' };
+    const typeCards = Object.values(TEMPLATES).filter((t) => !t.recipe || t.recipe.active !== false).map((t) => {
+      const m = TEMPLATE_META[t.key] || (t.recipe ? { icon: '🧪', blurb: t.description } : { icon: '🪚', blurb: '' });
       const presets = state.types.filter((x) => x.template_key === t.key);
       return `<button type="button" class="tcard" data-new-tpl="${t.key}">
         <span class="tcard__icon">${m.icon}</span>
@@ -296,13 +298,13 @@ async function showProjects(fromPop = false) {
     }).join('');
 
     const projCards = r.projects.map((p) => {
-      const m = TEMPLATE_META[p.template_key] || { icon: '🪚' };
+      const m = TEMPLATE_META[p.template_key] || { icon: p.template_key?.startsWith('r-') ? '🧪' : '🪚' };
       return `<article class="pcard" data-id="${p.id}">
         <button type="button" class="pcard__main" data-open="${p.id}">
           <span class="pcard__icon">${m.icon}</span>
           <span class="pcard__text">
             <b>${esc(p.name)}</b>
-            <span class="muted">${[p.client, template(p.template_key)?.name, admin ? p.owner_name : ''].filter(Boolean).map(esc).join(' · ')}</span>
+            <span class="muted">${[p.client, TEMPLATES[p.template_key]?.name, admin ? p.owner_name : ''].filter(Boolean).map(esc).join(' · ')}</span>
           </span>
           <span class="pcard__meta"><span class="tag tag--${p.status}">${statusName(p.status)}</span>${p.shared ? ' <span title="משותף עם לקוח">🔗</span>' : ''}<span class="muted">${fmtDate(p.updated_at)}</span></span>
         </button>
@@ -1187,14 +1189,14 @@ async function renderTypesInto(body) {
       <p class="muted">סוג מוצר = תבנית מהקוד + שם + ברירות מחדל משלו. "שמירת הערכים הנוכחיים" לוקחת את מה שבטופס של הפרויקט הפתוח כברירת המחדל של הסוג.</p>
       <form class="users__new" id="type-new">
         <input name="name" placeholder="שם הסוג (למשל: ספריית סלון)" required>
-        <select name="template_key">${Object.values(TEMPLATES).map((t) => `<option value="${t.key}">${esc(t.name)}</option>`).join('')}</select>
+        <select name="template_key">${Object.values(TEMPLATES).filter((t) => !t.recipe || t.recipe.active !== false).map((t) => `<option value="${t.key}">${esc(t.name)}</option>`).join('')}</select>
         <input name="description" placeholder="תיאור קצר">
         <button type="submit" class="btn btn--accent">+ סוג מוצר</button>
       </form>
       <table class="list"><thead><tr><th>שם</th><th>תבנית</th><th>תיאור</th><th>ברירות מחדל</th><th>פעיל</th><th></th></tr></thead><tbody>
       ${r.types.map((t) => `<tr data-id="${t.id}">
         <td><input name="name" value="${esc(t.name)}" class="inline"></td>
-        <td>${esc(template(t.template_key)?.name || t.template_key)}</td>
+        <td>${esc(TEMPLATES[t.template_key]?.name || t.template_key)}</td>
         <td><input name="description" value="${esc(t.description)}" class="inline"></td>
         <td class="muted">${Object.keys(t.defaults).length} ערכים</td>
         <td><input type="checkbox" name="active" ${t.active ? 'checked' : ''}></td>
@@ -1280,7 +1282,7 @@ async function showClients() {
         </div>
         ${c.notes ? `<div class="ccard__notes">${esc(c.notes)}</div>` : ''}
         <div class="ccard__lists">
-          <div><h5>פרויקטים <small class="muted">${projects.length}</small></h5><ul>${projects.map((p) => `<li><button type="button" data-open="${p.id}">${TEMPLATE_META[p.template_key]?.icon || '🪚'} ${esc(p.name)} <span class="muted">· ${esc(template(p.template_key)?.name || '')} · ${statusName(p.status)}</span></button></li>`).join('') || '<li class="muted">אין</li>'}</ul></div>
+          <div><h5>פרויקטים <small class="muted">${projects.length}</small></h5><ul>${projects.map((p) => `<li><button type="button" data-open="${p.id}">${TEMPLATE_META[p.template_key]?.icon || '🪚'} ${esc(p.name)} <span class="muted">· ${esc(TEMPLATES[p.template_key]?.name || '')} · ${statusName(p.status)}</span></button></li>`).join('') || '<li class="muted">אין</li>'}</ul></div>
           <div><h5>הרכבות <small class="muted">${asms.length}</small></h5><ul>${asms.map((a) => `<li><button type="button" data-open-asm="${a.id}">🧩 ${esc(a.name)} <span class="muted">· ${a.joined ? 'מאוחד' : 'נפרד'}</span></button></li>`).join('') || '<li class="muted">אין</li>'}</ul></div>
         </div>
       </article>`;
@@ -1635,7 +1637,7 @@ async function fillAddSelect() {
   try {
     const r = await api('projects-list', state.assembly.client_id ? { client_id: state.assembly.client_id } : {});
     const list = r.projects;
-    sel.innerHTML = `<option value="">${list.length ? 'הוספת אלמנט…' : (state.assembly.client_id ? 'ללקוח אין פרויקטים עדיין' : 'אין פרויקטים')}</option>${list.map((p) => `<option value="${p.id}">${esc(p.name)} · ${esc(template(p.template_key)?.name || '')}</option>`).join('')}`;
+    sel.innerHTML = `<option value="">${list.length ? 'הוספת אלמנט…' : (state.assembly.client_id ? 'ללקוח אין פרויקטים עדיין' : 'אין פרויקטים')}</option>${list.map((p) => `<option value="${p.id}">${esc(p.name)} · ${esc(TEMPLATES[p.template_key]?.name || '')}</option>`).join('')}`;
   } catch (err) { onError(err); }
 }
 function renderItems() {

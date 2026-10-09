@@ -97,6 +97,47 @@ function rulesSave(array $rules): void {
     }
 }
 
+// ---- מתכונים (מעבדת המוצרים, שלב 2) ----
+
+/** כל המתכונים: [{ ...data, key, active }]. */
+function recipesList(): array {
+    $out = [];
+    foreach (db()->query('SELECT key, data, active FROM recipes ORDER BY key')->fetchAll() as $r) {
+        $d = jsonArr($r['data']);
+        if (!$d) continue;
+        $out[] = ['key' => $r['key'], 'active' => (bool) $r['active']] + $d;
+    }
+    return $out;
+}
+
+/**
+ * שומר מתכון אחד (חדש או קיים). המבנה נבדק בדפדפן (recipe.js) — כאן רק
+ * מזהה, שם, גודל ומבנה בסיסי, כדי שזבל לא ייכנס למסד.
+ */
+function recipeSave(array $r): array {
+    $key = is_string($r['key'] ?? null) ? $r['key'] : '';
+    if (!preg_match('/^r-[a-z0-9]{2,20}$/', $key)) throw new AppError('מזהה מתכון לא חוקי', 400);
+    $name = trim((string) ($r['name'] ?? ''));
+    if ($name === '' || mb_strlen($name) > 80) throw new AppError('למתכון צריך שם (עד 80 תווים)', 400);
+    foreach (['params', 'vars', 'components', 'hardware', 'warnings'] as $k) {
+        if (isset($r[$k]) && !is_array($r[$k])) throw new AppError("$k חייב להיות רשימה", 400);
+    }
+    $active = !array_key_exists('active', $r) || (bool) $r['active'];
+    unset($r['key'], $r['active']);
+    $r['name'] = $name;
+    $json = jsonStr($r);
+    if (strlen($json) > 200000) throw new AppError('המתכון גדול מדי', 400);
+    db()->prepare('INSERT INTO recipes (key, data, active, updated_at) VALUES (?,?,?,?)
+                   ON CONFLICT(key) DO UPDATE SET data = excluded.data, active = excluded.active, updated_at = excluded.updated_at')
+        ->execute([$key, $json, $active ? 1 : 0, nowIso()]);
+    return ['key' => $key, 'active' => $active] + $r;
+}
+
+/** מוחק מתכון. פרויקטים שנבנו ממנו נשארים — אבל לא ייפתחו עד שיוחזר (השבתה עדיפה). */
+function recipeDelete(string $key): void {
+    db()->prepare('DELETE FROM recipes WHERE key = ?')->execute([$key]);
+}
+
 /** מחליף רק את שורות הספרייה עם הקידומת `$prefix:` (שאינן ב-diff — נמחקות). */
 function prefixSave(array $diff, string $prefix): void {
     if (!preg_match('/^[a-z]+$/', $prefix)) throw new AppError('קידומת לא חוקית', 400);

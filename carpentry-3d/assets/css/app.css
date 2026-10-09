@@ -945,3 +945,43 @@ input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner
   .lab__rows { grid-template-columns: 1fr; }
   .lab__hint { display: none; }
 }
+
+/* מתכונים (מוצרים מנוסחאות) */
+.lab__lhead { margin: 8px 0 0; font-size: 0.8rem; color: var(--muted); font-weight: 600; }
+.lab__new { justify-content: center; }
+.rsec { display: flex; flex-direction: column; gap: 6px; }
+.rsec .lab__group { display: flex; align-items: center; gap: 8px; }
+.rsec .lab__group .btn { margin-inline-start: auto; }
+.rhelp { margin: 0; font-size: 0.78rem; }
+.rlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 8px; }
+.rlist--tight { grid-template-columns: 1fr; }
+.rcard { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; font-size: 0.82rem; min-width: 0; }
+.rcard--door { box-shadow: inset 3px 0 0 #7a9cc6; }
+.rcard--line { flex-direction: row; flex-wrap: wrap; align-items: end; }
+.rhead, .rrow { display: flex; gap: 6px; flex-wrap: wrap; align-items: end; }
+.rhead input:not(.rkey) { flex: 1; font-weight: 600; }
+.rf { display: flex; flex-direction: column; gap: 2px; font-size: 0.72rem; color: var(--muted); flex: 1 1 90px; min-width: 0; }
+.rf.rwide { flex: 2 1 180px; }
+.rgrid6 { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.rcard input:not([type=checkbox]), .rcard select, .lab__side .rf input, .lab__side .rf select { padding: 5px 7px; border: 1px solid var(--line-strong); border-radius: 8px; font: inherit; font-size: 0.84rem; background: var(--panel-2); min-width: 0; width: 100%; box-sizing: border-box; color: var(--ink, inherit); }
+.rcard .rkey { width: 110px; flex: 0 0 110px; font-family: ui-monospace, monospace; }
+.rcard .rshort { max-width: 90px; }
+.rcard .rgrow { flex: 1 1 200px; width: auto; }
+.rcard input.rx { font-family: ui-monospace, monospace; font-size: 0.8rem; }
+.rcard input.is-bad, .lab__side input.is-bad { border-color: #d92d20; background: #fff1f0; }
+.rtools { display: inline-flex; gap: 2px; margin-inline-start: auto; }
+.rtools button { border: 1px solid var(--line-strong); background: var(--panel); border-radius: 7px; cursor: pointer; padding: 2px 7px; font: inherit; font-size: 0.8rem; }
+.rcard--line > b { padding-bottom: 6px; }
+.lab__side > .rf, .lab__side > .rrow > .rf { flex: none; }
+.lab__side > .rrow { align-items: center; }
+.rbtns { display: flex; gap: 6px; flex-wrap: wrap; }
+.rcheat { font-size: 0.8rem; }
+.rcheat summary { cursor: pointer; color: var(--accent-deep); font-weight: 600; }
+.rcheat p { line-height: 1.7; margin: 6px 0; }
+.rcheat code { background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px; padding: 0 4px; direction: ltr; unicode-bidi: isolate; }
+@media (max-width: 860px) {
+  .rlist { grid-template-columns: 1fr; }
+  .rgrid6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .lab__lhead { align-self: center; white-space: nowrap; }
+  .lab__new { flex: 0 0 auto; white-space: nowrap; }
+}

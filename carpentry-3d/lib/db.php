@@ -136,6 +136,14 @@ function migrate(PDO $pdo): void {
             data       TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+        -- מתכונים: מוצרים שהמנהל הגדיר במעבדה (רכיבים ונוסחאות), key = 'r-…' —
+        -- נרשמים בדפדפן כתבניות לכל דבר. data = המתכון כולו (JSON).
+        CREATE TABLE IF NOT EXISTS recipes (
+            key        TEXT PRIMARY KEY,
+            data       TEXT NOT NULL,
+            active     INTEGER NOT NULL DEFAULT 1,
+            updated_at TEXT NOT NULL
+        );
     ");
 
     // עמודה שנוספה אחרי שהטבלה כבר הייתה בשרת: מוסיפים רק אם חסרה.

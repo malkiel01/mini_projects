@@ -89,6 +89,7 @@ export function clamp(p, value) {
 export function visible(p, values) {
   if (p.hidden) return false;   // הוסתר במעבדת המוצרים — תמיד ברירת המחדל
   if (!p.showIf) return true;
+  if (typeof p.showIf === 'function') return p.showIf(values);   // מתכון: נוסחת "מתי מוצג"
   // 'gt0' — מוצג כשהערך המספרי גדול מאפס (למשל "דלתות החלק התחתון" רק כשיש פיצול)
   // { not: [...] } — מוצג כשהערך אינו באחד מהם
   return Object.entries(p.showIf).every(([k, allowed]) => allowed === 'gt0' ? Number(values[k]) > 0 : allowed.not ? !allowed.not.includes(values[k]) : allowed.includes(values[k]));
