@@ -34,6 +34,7 @@ const INDEX_MAX_SITEMAPS   = 40;    // חלקים לאתר — מעבר לזה �
 const INDEX_RETRY_HOURS    = 6;     // אחרי כשל — מנסים שוב בעוד
 const INDEX_WORKER_BUDGET  = 200;
 const WEB_CACHE_DAYS       = 7;
+const WEB_LOCAL_MAX        = 10;   // מתכונים מהאפליקציה בראש החיפוש ברשת
 const INDEX_TITLE_GAP      = 20;    // שניות בין שתי הבאות של שם מאותו אתר — לאט, כי זה דף שלם ולא רשימה
 if (!defined('WEB_DAILY_LIMIT')) define('WEB_DAILY_LIMIT', 20);   // פתיחות חדשות ליום למשתמש רגיל
 
@@ -650,7 +651,15 @@ function indexWatchdog(): void {
 // חיפוש
 // ─────────────────────────────────────────────────────────────
 
-function indexSearch(string $q, int $offset = 0): array {
+/**
+ * חיפוש ברשת. סדר התוצאות:
+ *   1. מתכונים מתוך האפליקציה (שלי וציבוריים) — 'local', רק בעמוד הראשון.
+ *   2. מהאינדקס: מה שמשתמשים שלנו הורידו (שמרו/ייבאו) — יותר משתמשים קודם.
+ *   3. אחר כך מה שנפתח יותר אצלנו, ואז התאמה: הביטוי המדויק בשם, שם קצר.
+ * דירוג מהאתרים עצמם לא נלקח: רק אחד מעשרה מפרסם, ושם הוא זהה בכל המתכונים.
+ * $user — למתכונים מהאפליקציה; null (בדיקות) — בלי.
+ */
+function indexSearch(string $q, int $offset = 0, ?array $user = null): array {
     $q = trim(mb_substr($q, 0, 100));
     $stems = [];
     foreach (preg_split('/\s+/u', normalizeText($q)) ?: [] as $w) {
@@ -659,20 +668,29 @@ function indexSearch(string $q, int $offset = 0): array {
     }
     $sites = (int) db()->query('SELECT COUNT(*) FROM index_sites WHERE enabled = 1')->fetchColumn();
     $all = (int) db()->query("SELECT COUNT(*) FROM index_entries e JOIN index_sites s ON s.id = e.site_id WHERE s.enabled = 1 AND e.skip = 0 AND e.title != ''")->fetchColumn();
-    if (!$stems) return ['results' => [], 'total' => 0, 'indexed' => $all, 'sites' => $sites];
+    if (!$stems) return ['local' => [], 'results' => [], 'total' => 0, 'indexed' => $all, 'sites' => $sites];
 
+    // גם בעמודים הבאים — כדי שההחרגה שלמטה תהיה זהה וההיסט לא יזוז
+    $local = $user ? array_slice(searchRecipes($user, $q), 0, WEB_LOCAL_MAX) : [];
     $where = ['s.enabled = 1', 'e.skip = 0', "e.title != ''"];
     $params = [];
+    // מה שכבר מוצג מהאפליקציה (מתכון שיובא מאותו דף) — לא פעמיים
+    $mine = array_values(array_filter(array_column($local, 'source_url')));
+    if ($mine) { $where[] = 'e.url NOT IN (' . implode(',', array_fill(0, count($mine), '?')) . ')'; array_push($params, ...$mine); }
     foreach (array_unique($stems) as $s) { $where[] = 'e.stems LIKE ?'; $params[] = '% ' . str_replace(['%', '_'], ['\\%', '\\_'], $s) . '%'; }
     $w = implode(' AND ', $where);
     $count = db()->prepare("SELECT COUNT(*) FROM index_entries e JOIN index_sites s ON s.id = e.site_id WHERE $w");
     $count->execute($params);
     $total = (int) $count->fetchColumn();
-    // קודם שם שמכיל את הביטוי כמו שהוקלד, אחר כך שמות קצרים (מדויקים יותר)
-    $st = db()->prepare("SELECT e.id, e.title, e.url, e.image, s.name AS site, s.host FROM index_entries e JOIN index_sites s ON s.id = e.site_id
-                         WHERE $w ORDER BY (e.title LIKE ?) DESC, length(e.title), e.id DESC LIMIT 30 OFFSET " . max(0, $offset));
+    // הורדות: כמה משתמשים שונים שמרו או ייבאו את הדף (מתכון שנמחק — כבר לא נספר)
+    $st = db()->prepare("SELECT e.id, e.title, e.url, e.image, e.opens, s.name AS site, s.host, COALESCE(sv.n, 0) AS saves
+                           FROM index_entries e JOIN index_sites s ON s.id = e.site_id
+                           LEFT JOIN (SELECT source_url, COUNT(DISTINCT owner_id) n FROM recipes WHERE source_url IS NOT NULL GROUP BY source_url) sv ON sv.source_url = e.url
+                         WHERE $w ORDER BY saves DESC, e.opens DESC, (e.title LIKE ?) DESC, length(e.title), e.id DESC LIMIT 30 OFFSET " . max(0, $offset));
     $st->execute([...$params, '%' . $q . '%']);
-    return ['results' => array_map(fn($r) => ['id' => (int) $r['id'], 'title' => $r['title'], 'url' => $r['url'], 'site' => $r['site'], 'host' => $r['host'], 'image' => $r['image'] ?: null],
+    return ['local' => $offset === 0 ? $local : [],
+            'results' => array_map(fn($r) => ['id' => (int) $r['id'], 'title' => $r['title'], 'url' => $r['url'], 'site' => $r['site'], 'host' => $r['host'],
+                                              'image' => $r['image'] ?: null, 'saves' => (int) $r['saves']],
                                    $st->fetchAll()),
             'total' => $total, 'indexed' => $all, 'sites' => $sites];
 }
@@ -730,6 +748,7 @@ function webRewriteDraft(array &$draft, ?array $user): bool {
  */
 function webOpen(int $id, array $user): array {
     $e = webEntry($id);
+    db()->prepare('UPDATE index_entries SET opens = opens + 1 WHERE id = ?')->execute([(int) $e['id']]);   // לסדר בחיפוש
     $st = db()->prepare('SELECT * FROM web_cache WHERE url = ? AND created_at > ?');
     $st->execute([$e['url'], time() - WEB_CACHE_DAYS * 86400]);
     $c = $st->fetch();

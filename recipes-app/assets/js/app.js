@@ -2182,16 +2182,27 @@ async function renderWebSearch(q = '') {
   const stats = $('#web-stats');
   const draw = () => {
     const d = webState.data;
-    stats.textContent = d.total ? `${d.total} תוצאות · מתוך ${d.indexed.toLocaleString('he-IL')} מתכונים ב-${d.sites} אתרים`
+    const local = d.local || [];
+    stats.textContent = d.total || local.length ? `${local.length ? `${local.length} מהאפליקציה · ` : ''}${d.total} ברשת · מתוך ${d.indexed.toLocaleString('he-IL')} מתכונים ב-${d.sites} אתרים`
       : d.indexed ? `לא נמצא. מחפשים בשם המתכון — כדאי לנסות מילה אחת או שתיים. (${d.indexed.toLocaleString('he-IL')} מתכונים ב-${d.sites} אתרים)`
       : 'האינדקס עדיין ריק — המפתח מוסיף אתרים ב"אינדקס".';
-    resEl.innerHTML = d.results.map((r) => `
+    // קודם מה שכבר באפליקציה, אחר כך מהרשת (השרת מסדר: הורדות, פתיחות, התאמה)
+    resEl.innerHTML = local.map((r) => `
+      <article class="scout-item web-item web-item--local">
+        <a class="web-item__thumb" href="#/r/${r.id}" tabindex="-1" aria-hidden="true">${r.thumb
+          ? `<img src="${esc(r.thumb)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : ''}</a>
+        <div class="scout-item__main">
+          <a class="web-item__title" href="#/r/${r.id}"><strong>${esc(r.title)}</strong></a>
+          <span class="muted small"><span class="web-item__here">📗 באפליקציה</span> · ${esc(r.owner_name)}${r.is_mine ? ' · שלי' : ''}</span>
+        </div>
+        <div class="scout-item__actions"><a class="btn btn--primary btn--small" href="#/r/${r.id}">פתח</a></div>
+      </article>`).join('') + d.results.map((r) => `
       <article class="scout-item web-item">
         <a class="web-item__thumb" href="#/web/${r.id}" tabindex="-1" aria-hidden="true">${r.image
           ? `<img src="${esc(r.image)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : ''}</a>
         <div class="scout-item__main">
           <a class="web-item__title" href="#/web/${r.id}"><strong>${esc(r.title)}</strong></a>
-          <span class="muted small">${esc(r.site)}</span>
+          <span class="muted small">${esc(r.site)}${r.saves ? ` · <span class="web-item__saves">⬇ ${r.saves === 1 ? 'משתמש אחד שמר' : `${r.saves} משתמשים שמרו`}</span>` : ''}</span>
           <a class="muted small scout-item__url" dir="auto" href="${esc(r.url)}" target="_blank" rel="noopener nofollow">${esc(prettyUrl(r.url))}</a>
         </div>
         <div class="scout-item__actions"><a class="btn btn--primary btn--small" href="#/web/${r.id}">פתח</a></div>
@@ -2202,7 +2213,7 @@ async function renderWebSearch(q = '') {
     webState.offset = append ? webState.data.results.length : 0;
     try {
       const d = await api('web-search', { q: webState.q, offset: webState.offset });
-      webState.data = append ? { ...d, results: webState.data.results.concat(d.results) } : d;
+      webState.data = append ? { ...d, local: webState.data.local, results: webState.data.results.concat(d.results) } : d;
       draw();
     } catch (err) { stats.textContent = err.message; }
   };

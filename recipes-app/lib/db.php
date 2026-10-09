@@ -247,6 +247,7 @@ function migrate(PDO $pdo): void {
             skip       INTEGER NOT NULL DEFAULT 0,     -- הדף נבדק ואינו מתכון — לא בחיפוש, ולא חוזר בעדכון
             stems      TEXT    NOT NULL,             -- גזעים מופרדים ברווח, לחיפוש לפי תחילת מילה
             image      TEXT,                         -- קישור לתמונה באתר המקור (מה-sitemap או מהדף); לא עותק
+            opens      INTEGER NOT NULL DEFAULT 0,   -- כמה פעמים נפתח אצלנו — לסדר בחיפוש
             lastmod    TEXT,
             seen_at    INTEGER NOT NULL DEFAULT 0    -- unix: העדכון האחרון שראה אותו
         );
@@ -479,10 +480,13 @@ function migrate(PDO $pdo): void {
         $pdo->exec('UPDATE index_sitemaps SET lastmod = NULL');
         $pdo->exec('UPDATE index_sites SET next_crawl_at = 0 WHERE crawl_state IS NULL');
     }
+    addColumnIfMissing($pdo, 'index_entries', 'opens', 'INTEGER NOT NULL DEFAULT 0');
     foreach (['source_url', 'source_name', 'source_author', 'imported_at'] as $col) {
         addColumnIfMissing($pdo, 'recipes', $col, 'TEXT');
     }
     addColumnIfMissing($pdo, 'recipes', 'source_rewritten', 'INTEGER NOT NULL DEFAULT 0');
+    // הורדות לחיפוש ברשת: כמה משתמשים שמרו את אותו דף (recipes.source_url)
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_recipes_source ON recipes(source_url)');
     addColumnIfMissing($pdo, 'shopping_list_recipes', 'factor', 'REAL NOT NULL DEFAULT 1');
     addColumnIfMissing($pdo, 'shopping_list_items', 'amount_max', 'REAL');
     addColumnIfMissing($pdo, 'shopping_list_items', 'recipe_count', 'INTEGER NOT NULL DEFAULT 1');

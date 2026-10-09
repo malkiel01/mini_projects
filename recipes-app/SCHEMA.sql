@@ -194,6 +194,7 @@ CREATE TABLE index_entries (
   skip       INTEGER NOT NULL DEFAULT 0,    -- נבדק ואינו מתכון
   stems      TEXT    NOT NULL,
   image      TEXT,                          -- קישור לתמונה באתר המקור; לא עותק
+  opens      INTEGER NOT NULL DEFAULT 0,    -- כמה פעמים נפתח אצלנו — לסדר בחיפוש
   lastmod    TEXT,
   seen_at    INTEGER NOT NULL DEFAULT 0
 );
@@ -266,6 +267,7 @@ CREATE TABLE recipes (
 CREATE INDEX idx_recipes_owner      ON recipes(owner_id);
 CREATE INDEX idx_recipes_public     ON recipes(visibility, updated_at);
 CREATE INDEX idx_recipes_difficulty ON recipes(difficulty);
+CREATE INDEX idx_recipes_source     ON recipes(source_url);
 
 -- חלק = תת־מתכון (3.1). מתכון פשוט הוא שורה אחת עם name = NULL,
 -- והממשק אינו מציג לו חלוקה בכלל.

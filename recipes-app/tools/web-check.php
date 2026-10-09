@@ -217,6 +217,26 @@ check('המתכון: מנוסח, "מבוסס על", הרכיבים והמקור 
 check('התור התרוקן', rewriteQueue($devU)['total'], 0);
 expectError('קובץ לא שלנו', fn() => rewriteApply(['items' => []], $GLOBALS['devU']), 'format');
 
+echo "\n5ג. סדר התוצאות: מהאפליקציה, הורדות, פתיחות, התאמה\n";
+$ins->execute([$sa, 'https://a.co.il/q/1/', 'פשטידת תרד', indexStems('פשטידת תרד')]);
+$ins->execute([$sa, 'https://a.co.il/q/2/', 'פשטידת תרד וגבינה', indexStems('פשטידת תרד וגבינה')]);
+$ins->execute([$sa, 'https://a.co.il/q/3/', 'פשטידת תרד מהירה', indexStems('פשטידת תרד מהירה')]);
+$ins->execute([$sa, 'https://a.co.il/q/4/', 'פשטידת תרד של שבת', indexStems('פשטידת תרד של שבת')]);
+$order = fn(?array $u = null) => array_column(indexSearch('פשטידת תרד', 0, $u)['results'], 'url');
+check('בלי אותות — הקצר ראשון', $order()[0], 'https://a.co.il/q/1/');
+$pdo->exec("UPDATE index_entries SET opens = 3 WHERE url = 'https://a.co.il/q/3/'");
+check('נפתח אצלנו — עולה מעל התאמה', $order()[0], 'https://a.co.il/q/3/');
+$sec = [['ingredients' => [['free_text' => 'תרד']], 'steps' => [['text' => 'לאפות']]]];
+saveRecipe(['title' => 'הפשטידה של נועה', 'sections' => $sec, 'source_url' => 'https://a.co.il/q/2/'], $noaU);
+check('הורדה (נשמר אצל משתמש) — מעל פתיחות', $order(), ['https://a.co.il/q/2/', 'https://a.co.il/q/3/', 'https://a.co.il/q/1/', 'https://a.co.il/q/4/']);
+check('מספר המורידים בתוצאה', indexSearch('פשטידת תרד')['results'][0]['saves'], 1);
+saveRecipe(['title' => 'פשטידת תרד של סבתא', 'visibility' => 'public', 'sections' => $sec, 'source_url' => 'https://a.co.il/q/4/'], $devU);
+saveRecipe(['title' => 'פשטידת תרד פרטית של נועה', 'sections' => $sec], $noaU);
+$r = indexSearch('פשטידת תרד', 0, $noaU);
+check('מהאפליקציה קודם: הציבורי של אחר והפרטי שלי (לא פרטי של אחר)', (function ($t) { sort($t); return $t; })(array_column($r['local'], 'title')), ['פשטידת תרד פרטית של נועה', 'פשטידת תרד של סבתא']);
+check('דף שכבר מוצג מהאפליקציה — לא שוב ברשת', [in_array('https://a.co.il/q/4/', array_column($r['results'], 'url')), $r['total']], [false, 3]);
+check('עמוד שני — בלי "מהאפליקציה"', indexSearch('פשטידת תרד', 30, $noaU)['local'], []);
+
 echo "\n6. הסרת אתר מוחקת את המתכונים שלו מהאינדקס\n";
 indexRemoveSite($sa, $devU);
 check('האינדקס ריק מאתר א', (int) $pdo->query("SELECT COUNT(*) FROM index_entries WHERE site_id = $sa")->fetchColumn(), 0);

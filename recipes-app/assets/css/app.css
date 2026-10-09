@@ -789,6 +789,9 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
 .web-item__thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 /* הכתובת בשורה אחת, מקוצרת — היא קישור למקור, לא תוכן */
 .web-item .scout-item__url { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; word-break: normal; }
+.web-item--local { border-color: var(--accent); background: var(--accent-soft); }
+.web-item--local .web-item__thumb { background: var(--panel); }
+.web-item__here, .web-item__saves { color: var(--accent); font-weight: 600; }
 .btn--small { padding: 6px 12px; min-height: 36px; font-size: .9rem; }
 .web-item__title { color: inherit; text-decoration: none; }
 .web-item__title:hover strong { text-decoration: underline; }

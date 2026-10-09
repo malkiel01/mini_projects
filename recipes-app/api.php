@@ -407,7 +407,7 @@ try {
     // ───────── חיפוש מתכונים ברשת (lib/web_index.php) ─────────
 
     case 'web-search':
-        ok(indexSearch(str_field($in, 'q', 100), (int) ($in['offset'] ?? 0)));
+        ok(indexSearch(str_field($in, 'q', 100), (int) ($in['offset'] ?? 0), $user));
 
     case 'web-open':
         ok(webOpen((int) ($in['id'] ?? 0), $user) + ['ai_available' => aiAvailable()]);

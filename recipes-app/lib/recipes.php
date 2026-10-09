@@ -370,6 +370,7 @@ function searchRecipes(?array $user, string $query = '', array $filters = []): a
         'updated_at'   => $row['updated_at'],
         'thumb'        => mediaThumbUrl($row['main_path'], $row['main_source']),
         'source_name'  => $row['source_url'] ? ($row['source_name'] ?: parse_url($row['source_url'], PHP_URL_HOST)) : null,
+        'source_url'   => $row['source_url'],
     ], $st->fetchAll());
 }
 
