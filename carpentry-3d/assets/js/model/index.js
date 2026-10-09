@@ -8,14 +8,16 @@ import bookcase from './templates/bookcase.js';
 import wardrobe from './templates/wardrobe.js';
 import dresser from './templates/dresser.js';
 import kitchen from './templates/kitchen.js';
-import table from './templates/table.js';
-import bed from './templates/bed.js';
 import cladding from './templates/cladding.js';
 import { cutSize, setDoorOpen } from './blocks.js';
 import { applyFinish, partNormal } from './templates/common.js';
 import { material, materialsOfKind, materialsOfRole } from './materials.js';
 
-export const TEMPLATES = { bookcase, wardrobe, dresser, kitchen, table, bed, cladding };
+import { builtinTemplate, setRegistry } from './recipe.js';
+
+// שולחן ומיטה הם מתכונים מובנים (recipes/) — אותו מפתח, אותם פרמטרים, נבנים מנוסחאות
+export const TEMPLATES = { bookcase, wardrobe, dresser, kitchen, table: builtinTemplate('table'), bed: builtinTemplate('bed'), cladding };
+setRegistry(TEMPLATES);
 
 import { physicsWarnings, doorClashes } from './physics.js';
 import { millWarnings, cncId } from './milling.js';
