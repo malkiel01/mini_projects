@@ -40,7 +40,8 @@ SERVER=$!
 # שרת שני לקבצי הדוגמה של הייבוא: השרת המובנה של PHP הוא חד-חוטי, ובקשה
 # שמביאה דף מאותו שרת הייתה נתקעת עד timeout.
 FXPORT=$((PORT + 1))
-php -S "127.0.0.1:$FXPORT" -t recipes-app/tools/fixtures >"$TMP/fixtures.log" 2>&1 &
+echo 1 > "$TMP/fxgen"   # "דור" של אתר הדוגמה לאינדקס (8יא) — הבדיקה מעלה אותו כדי לדמות עדכון שבועי
+FX_STATE="$TMP/fxgen" php -S "127.0.0.1:$FXPORT" -t recipes-app/tools/fixtures >"$TMP/fixtures.log" 2>&1 &
 FXSERVER=$!
 trap 'kill $SERVER $FXSERVER 2>/dev/null; rm -rf "$TMP"' EXIT
 
@@ -371,6 +372,62 @@ KEY=$(call scout-job | python3 -c 'import sys,json; print(json.load(sys.stdin)["
 check 'העובד בלי מפתח — 403'              "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/recipes-app/scout-worker.php?key=nope")" '^403$'
 check 'העובד אחרי עצירה — לא מייבא (או שהקודם עוד ישן)'   "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/scout-worker.php?key=$KEY&once=1")" 'idle\|busy'
 check 'משתמש רגיל אינו מפעיל'             "$(call logout >/dev/null; call login '{"username":"tester","password":"sod12345"}' >/dev/null; call scout-job-start '{}')" 'מפתח'
+call logout >/dev/null
+
+echo
+echo "8יא. חיפוש מתכונים ברשת — אינדקס משלנו מ-sitemap, עדכון ברקע, פתיחה מנוסחת, שמירה"
+call login '{"username":"tester","password":"sod12345"}' >/dev/null
+check 'משתמש רגיל אינו מנהל את האינדקס'  "$(call index-sites)" 'מפתח'
+check 'חיפוש באינדקס ריק'                 "$(call web-search '{"q":"עוגה"}')" '"total":0,"indexed":0,"sites":0'
+call logout >/dev/null
+call login '{"username":"owner","password":"sod12345"}' >/dev/null
+check 'הוספת אתר (ה-sitemap שלו)'         "$(call index-site-add "{\"url\":\"$FXB/sm-index.php\",\"name\":\"אתר הדוגמה\"}")" '"host":"127.0.0.1","name":"אתר הדוגמה"'
+check 'אותו אתר פעמיים — נדחה'            "$(call index-site-add "{\"url\":\"$FXB/\"}")" 'כבר באינדקס'
+# העובד בשרת מעדכן לבד: גילוי ה-sitemap, חלק המתכונים, סיום
+wait_crawl() {
+  for _ in $(seq 1 60); do
+    call index-sites | python3 -c 'import sys,json; s=json.load(sys.stdin)["sites"][0]; sys.exit(0 if (not s["crawling"] and s["last_crawl_at"] and s["next_in"]>0) else 1)' && return 0
+    sleep 0.5
+  done; return 1
+}
+wait_crawl
+IS=$(call index-sites)
+check 'האינדקס נבנה ברקע: 4 מתכונים (בלי זבל, בלי דף רכיב, בלי __trashed)' "$IS" '"entries_n":4[^}]*"next_in":[0-9]\{6\}'
+check 'רק חלק המתכונים נקרא, לא הדפים'      "$(grep -c 'sm-pages.php' "$TMP/fixtures.log")" '^0$'
+call logout >/dev/null
+call login '{"username":"tester","password":"sod12345"}' >/dev/null
+S=$(call web-search '{"q":"עוגות גבינה"}')
+check 'חיפוש "עוגות גבינה" — שתיים, לפי גזעים'  "$S" '"total":2'
+check 'הביטוי המדויק ראשון'               "$S" '"results":\[{"id":[0-9]*,"title":"עוגות גבינה קרות"'
+WID=$(call web-search '{"q":"carine"}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["results"][0]["id"])')
+O=$(call web-open "{\"id\":$WID}")
+check 'פתיחה: חולץ ונוסח מחדש (מדמה), עם מקור'  "$O" '"title":"קרין גורן מכינה[^"]*".*"source_rewritten":true'
+check 'השלבים מנוסחים'                     "$O" '"steps":\[{"text":"בשלב 1'
+check 'מכסה: נשארו 19'                     "$O" '"cached":false,"opens_left":19'
+check 'פתיחה שנייה — מהמטמון, בלי מכסה'    "$(call web-open "{\"id\":$WID}")" '"cached":true,"opens_left":19'
+check 'השם האמיתי נכנס לאינדקס'            "$(call web-search '{"q":"קרין גורן"}')" '"total":1'
+SV=$(call web-save "{\"id\":$WID}")
+check 'נשמר אצלי'                          "$SV" '"existing":false'
+SRID=$(printf '%s' "$SV" | python3 -c 'import sys,json; print(json.load(sys.stdin)["recipe_id"])')
+check 'פרטי, "מבוסס על", עם קרדיט'          "$(call recipe "{\"id\":$SRID}")" '"visibility":"private".*"source":{"url":"http:\\/\\/127.0.0.1:'"$FXPORT"'\\/jsonld-carine.html"[^}]*"rewritten":true'
+check 'שמירה שנייה — בלי כפילות'           "$(call web-save "{\"id\":$WID}")" '"recipe_id":'"$SRID"',"existing":true'
+call logout >/dev/null
+call login '{"username":"owner","password":"sod12345"}' >/dev/null
+check 'יומן הייבוא: פתיחה ושמירה מהחיפוש'   "$(call import-log '{"kind":"web-save"}')" '"kind":"web-save"'
+# עדכון "שבועי": האתר הוריד מתכון ושינה lastmod → נקרא שוב, והמתכון יוצא מהאינדקס
+echo 2 > "$TMP/fxgen"
+HITS=$(grep -c 'sm-recipes.php' "$TMP/fixtures.log")
+call index-site-refresh "{\"id\":$(printf '%s' "$IS" | python3 -c 'import sys,json; print(json.load(sys.stdin)["sites"][0]["id"])')}" >/dev/null
+sleep 1; wait_crawl
+check 'דור 2: המתכון שהוסר יצא מהאינדקס'    "$(call index-sites)" '"entries_n":3'
+check 'וחלק המתכונים נקרא שוב (lastmod השתנה)' "$(( $(grep -c 'sm-recipes.php' "$TMP/fixtures.log") - HITS ))" '^1$'
+HITS=$(grep -c 'sm-recipes.php' "$TMP/fixtures.log")
+call index-site-refresh "{\"id\":$(printf '%s' "$IS" | python3 -c 'import sys,json; print(json.load(sys.stdin)["sites"][0]["id"])')}" >/dev/null
+sleep 1; wait_crawl
+check 'עדכון בלי שינוי: חלק המתכונים לא מובא שוב' "$(( $(grep -c 'sm-recipes.php' "$TMP/fixtures.log") - HITS ))" '^0$'
+check 'והמתכונים נשארו'                    "$(call index-sites)" '"entries_n":3'
+check 'השם האמיתי שרד את העדכון'           "$(call web-search '{"q":"קרין גורן"}')" '"total":1'
+check 'עובד האינדקס בלי מפתח — 403'        "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/recipes-app/index-worker.php?key=x")" '^403$'
 call logout >/dev/null
 
 echo

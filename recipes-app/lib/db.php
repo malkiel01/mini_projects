@@ -212,6 +212,51 @@ function migrate(PDO $pdo): void {
             base_url     TEXT                          -- הכתובת של האפליקציה, כדי שהעובד יעיר את עצמו
         );
 
+        -- חיפוש מתכונים ברשת (lib/web_index.php): אינדקס משלנו של אתרים שהמפתח
+        -- בחר. נבנה מקובצי ה-sitemap שלהם, מתעדכן פעם בשבוע — ורק חלקים שהשתנו.
+        CREATE TABLE IF NOT EXISTS index_sites (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            host          TEXT    NOT NULL UNIQUE,
+            name          TEXT    NOT NULL,
+            start_url     TEXT    NOT NULL,      -- דף הבית או ה-sitemap שהמפתח הדביק
+            enabled       INTEGER NOT NULL DEFAULT 1,
+            added_at      TEXT    NOT NULL,
+            last_crawl_at TEXT,
+            last_error    TEXT,
+            entries_n     INTEGER NOT NULL DEFAULT 0,
+            next_crawl_at INTEGER NOT NULL DEFAULT 0,  -- unix
+            crawl_state   TEXT                       -- JSON בזמן עדכון: התור, מתי התחיל
+        );
+        CREATE TABLE IF NOT EXISTS index_sitemaps (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            site_id    INTEGER NOT NULL REFERENCES index_sites(id) ON DELETE CASCADE,
+            url        TEXT    NOT NULL,
+            lastmod    TEXT,                         -- כפי שהאינדקס של האתר מדווח; לא השתנה — לא מביאים
+            fetched_at TEXT,
+            entries_n  INTEGER NOT NULL DEFAULT 0,
+            UNIQUE (site_id, url)
+        );
+        CREATE TABLE IF NOT EXISTS index_entries (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            site_id    INTEGER NOT NULL REFERENCES index_sites(id) ON DELETE CASCADE,
+            sitemap_id INTEGER,
+            url        TEXT    NOT NULL UNIQUE,
+            title      TEXT    NOT NULL,
+            title_fixed INTEGER NOT NULL DEFAULT 0,    -- השם האמיתי מהדף (אחרי פתיחה) — העדכון השבועי לא דורס
+            stems      TEXT    NOT NULL,             -- גזעים מופרדים ברווח, לחיפוש לפי תחילת מילה
+            lastmod    TEXT,
+            seen_at    INTEGER NOT NULL DEFAULT 0    -- unix: העדכון האחרון שראה אותו
+        );
+        CREATE INDEX IF NOT EXISTS idx_index_entries_site ON index_entries(site_id, seen_at);
+        -- מתכון שנפתח מהחיפוש, אחרי חילוץ וניסוח מחדש — שבוע, כדי שפתיחה שנייה
+        -- (של אותו משתמש או של אחר) לא תביא את הדף ולא תנסח שוב.
+        CREATE TABLE IF NOT EXISTS web_cache (
+            url        TEXT    PRIMARY KEY,
+            draft      TEXT    NOT NULL,
+            rewritten  INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL
+        );
+
         -- מה יש לי בבית: המזווה של כל משתמש, ומוצרי היסוד שכיבה (lib/pantry.php)
         CREATE TABLE IF NOT EXISTS pantry_items (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,

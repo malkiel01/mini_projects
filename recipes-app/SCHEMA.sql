@@ -159,6 +159,50 @@ CREATE TABLE scout_job (
   base_url     TEXT
 );
 
+-- חיפוש מתכונים ברשת (11ד): אינדקס משלנו של אתרים שהמפתח בחר, מקובצי ה-sitemap
+-- שלהם. מתעדכן פעם בשבוע, ורק חלקים שהשתנו (lastmod).
+CREATE TABLE index_sites (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  host          TEXT    NOT NULL UNIQUE,
+  name          TEXT    NOT NULL,
+  start_url     TEXT    NOT NULL,
+  enabled       INTEGER NOT NULL DEFAULT 1,
+  added_at      TEXT    NOT NULL,
+  last_crawl_at TEXT,
+  last_error    TEXT,
+  entries_n     INTEGER NOT NULL DEFAULT 0,
+  next_crawl_at INTEGER NOT NULL DEFAULT 0,
+  crawl_state   TEXT
+);
+CREATE TABLE index_sitemaps (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  site_id    INTEGER NOT NULL REFERENCES index_sites(id) ON DELETE CASCADE,
+  url        TEXT    NOT NULL,
+  lastmod    TEXT,
+  fetched_at TEXT,
+  entries_n  INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (site_id, url)
+);
+CREATE TABLE index_entries (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  site_id    INTEGER NOT NULL REFERENCES index_sites(id) ON DELETE CASCADE,
+  sitemap_id INTEGER,
+  url        TEXT    NOT NULL UNIQUE,
+  title      TEXT    NOT NULL,
+  title_fixed INTEGER NOT NULL DEFAULT 0,
+  stems      TEXT    NOT NULL,
+  lastmod    TEXT,
+  seen_at    INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_index_entries_site ON index_entries(site_id, seen_at);
+-- מתכון שנפתח מהחיפוש, אחרי חילוץ וניסוח — שבוע, לכל המשתמשים.
+CREATE TABLE web_cache (
+  url        TEXT    PRIMARY KEY,
+  draft      TEXT    NOT NULL,
+  rewritten  INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+
 -- "מה יש לי בבית" (סעיף 13): המזווה של כל משתמש, ומוצרי יסוד שכיבה.
 CREATE TABLE pantry_items (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,

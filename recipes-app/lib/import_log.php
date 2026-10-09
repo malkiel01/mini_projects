@@ -22,7 +22,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/errors.php';
 
-const IMPORT_LOG_KINDS     = ['preview', 'scout-preview', 'scout-import', 'refresh', 'editor-save'];
+const IMPORT_LOG_KINDS     = ['preview', 'scout-preview', 'scout-import', 'refresh', 'editor-save', 'web-open', 'web-save'];
 const IMPORT_LOG_KEEP_DAYS = 60;
 const IMPORT_LOG_KEEP_ROWS = 3000;
 const IMPORT_LOG_MAX_JSON  = 200000;   // תקרה לשדה אחד — דף חריג לא ינפח את המסד
@@ -167,9 +167,9 @@ function importLogFailure(string $kind, string $url, string $error, ?array $user
 }
 
 /** שמירה מהעורך של טיוטה שיובאה: מה נשמר בסוף (אחרי תיקוני המשתמש). */
-function importLogSaved(string $url, int $recipeId, array $in, array $user): int {
+function importLogSaved(string $url, int $recipeId, array $in, array $user, string $kind = 'editor-save'): int {
     $sections = is_array($in['sections'] ?? null) ? $in['sections'] : [];
-    return importLogWrite(['kind' => 'editor-save', 'source_url' => $url, 'user' => $user, 'ok' => true,
+    return importLogWrite(['kind' => $kind, 'source_url' => $url, 'user' => $user, 'ok' => true,
                            'title' => (string) ($in['title'] ?? ''), 'recipe_id' => $recipeId,
                            'method' => is_array($in['snapshot'] ?? null) ? ($in['snapshot']['method'] ?? null) : null]
                           + importLogCounts($sections));
@@ -251,7 +251,8 @@ function importLogStats(): array {
 // ─────────────────────────────────────────────────────────────
 
 const IMPORT_LOG_KIND_HE = ['preview' => 'ייבוא מהעורך', 'scout-preview' => 'תצוגה מקדימה בסורק', 'scout-import' => 'ייבוא בסורק',
-                            'refresh' => 'משיכה חוזרת', 'editor-save' => 'שמירה מהעורך'];
+                            'refresh' => 'משיכה חוזרת', 'editor-save' => 'שמירה מהעורך',
+                            'web-open' => 'פתיחה מהחיפוש', 'web-save' => 'שמירה מהחיפוש'];
 
 /** שורה אחת ביומן → בלוק טקסט: כותרת, מקור, אבחון, ואז הרכיבים והשלבים כלשונם. */
 function importLogEntryText(array $r): string {
@@ -264,7 +265,7 @@ function importLogEntryText(array $r): string {
     if (!$r['ok']) $o[] = 'שגיאה: ' . $r['error'];
     if ($r['recipe_id']) $o[] = 'מתכון: #' . $r['recipe_id'] . ($r['scout_id'] ? '  (מועמד בסורק #' . $r['scout_id'] . ')' : '');
     elseif ($r['scout_id']) $o[] = 'מועמד בסורק: #' . $r['scout_id'];
-    if ($r['kind'] === 'editor-save') {
+    if (in_array($r['kind'], ['editor-save', 'web-save'], true)) {
         $o[] = sprintf('נשמר: "%s" · %d רכיבים · %d שלבים ב-%d חלקים', $r['title'], $r['ingredients_n'], $r['steps_n'], $r['sections_n']);
         return implode("\n", $o) . "\n";
     }

@@ -293,6 +293,9 @@ async function route() {
     else if (h === '#/logs') await renderLogs();
     else if (h === '#/logs/import') await renderImportLog();
     else if (h === '#/scout') await renderScout();
+    else if (h === '#/index') await renderIndexSites();
+    else if (h === '#/web' || h.startsWith('#/web?')) await renderWebSearch(new URLSearchParams(h.split('?')[1] || '').get('q') || '');
+    else if ((m = h.match(/^#\/web\/(\d+)$/))) await renderWebRecipe(+m[1]);
     else if (h === '#/settings') await renderSettingsPrivate();
     else if (h === '#/settings/public') await renderSettingsPublic();
     else if (h === '#/settings/users') await renderUsers();
@@ -320,7 +323,7 @@ async function renderList() {
       </form>
       <div class="toolbar__row">
         <a class="btn btn--primary" href="#/new">+ מתכון חדש</a>
-        <a class="btn" href="#/import">🌐 ייבוא מהרשת</a>
+        <a class="btn" href="#/web">🔎 חיפוש ברשת</a>
       </div>
       <a class="btn btn--wide" href="#/pantry">🥕 מה אפשר להכין ממה שיש לי בבית?</a>
       <nav class="subnav subnav--list" aria-label="סינון">
@@ -770,7 +773,7 @@ async function renderEditor(id, draft = null) {
     difficulty: r.difficulty ?? '',
     work_minutes: r.work_minutes ?? '', wait_minutes: r.wait_minutes ?? '', tips: r.tips ?? '',
     comments_open: r.comments_open !== false,
-    source: draft ? { url: draft.source_url, name: draft.source_name, author: draft.source_author, rewritten: false } : (r.source || null),
+    source: draft ? { url: draft.source_url, name: draft.source_name, author: draft.source_author, rewritten: !!draft.source_rewritten } : (r.source || null),
     snapshot: draft ? draft.snapshot : null,
     import_log_id: draft ? draft.import_log_id || null : null,   // השורה ביומן הייבוא — תקושר למתכון בשמירה
     ai_available: draft ? !!draft.ai_available : null,
@@ -1629,6 +1632,7 @@ function settingsNav(active) {
     ['#/diag', 'פיתוח', true],
     ['#/logs', 'יומן', true],
     ['#/scout', 'סורק', true],
+    ['#/index', 'אינדקס', true],
   ];
   return `<nav class="subnav" aria-label="הגדרות">${items
     .filter(([, , dev]) => !dev || state.user.is_developer)
@@ -2062,7 +2066,7 @@ const logsNav = (active) => `
     <a href="#/logs/import" class="${active === 'import' ? 'is-on' : ''}">יומן ייבוא</a>
   </nav>`;
 
-const IMPORT_KIND_HE = { preview: 'ייבוא מהעורך', 'scout-preview': 'תצוגה מקדימה בסורק', 'scout-import': 'ייבוא בסורק', refresh: 'משיכה חוזרת', 'editor-save': 'שמירה מהעורך' };
+const IMPORT_KIND_HE = { preview: 'ייבוא מהעורך', 'scout-preview': 'תצוגה מקדימה בסורק', 'scout-import': 'ייבוא בסורק', refresh: 'משיכה חוזרת', 'editor-save': 'שמירה מהעורך', 'web-open': 'פתיחה מהחיפוש', 'web-save': 'שמירה מהחיפוש' };
 
 // ───────────────────────── יומן ייבוא (מפתח) ─────────────────────────
 // כל הבאה של דף: מה היה בדף ומה חולץ ממנו, עם קישור למקור. כאן רואים, ובטקסט
@@ -2106,8 +2110,8 @@ async function renderImportLog() {
         <span class="muted small">${esc(r.username || '—')}${r.duration_ms != null ? ` · ${r.duration_ms}ms` : ''}</span>
       </header>
       <strong>${esc(r.title || (r.ok ? '(בלי שם)' : 'ההבאה נכשלה — ' + r.host))}</strong>
-      ${r.ok && r.kind !== 'editor-save' ? `<p class="muted small">חולץ ב-${esc(r.method || '?')} · ${r.ingredients_n} רכיבים · ${r.steps_n} שלבים ב-${r.sections_n} חלקים · ${r.images_n} תמונות${r.videos_n ? ` · ${r.videos_n} סרטונים` : ''}</p>` : ''}
-      ${r.kind === 'editor-save' ? `<p class="muted small">נשמר אחרי תיקון: ${r.ingredients_n} רכיבים · ${r.steps_n} שלבים ב-${r.sections_n} חלקים</p>` : ''}
+      ${r.ok && !['editor-save', 'web-save'].includes(r.kind) ? `<p class="muted small">חולץ ב-${esc(r.method || '?')} · ${r.ingredients_n} רכיבים · ${r.steps_n} שלבים ב-${r.sections_n} חלקים · ${r.images_n} תמונות${r.videos_n ? ` · ${r.videos_n} סרטונים` : ''}</p>` : ''}
+      ${['editor-save', 'web-save'].includes(r.kind) ? `<p class="muted small">נשמר: ${r.ingredients_n} רכיבים · ${r.steps_n} שלבים ב-${r.sections_n} חלקים</p>` : ''}
       ${!r.ok ? `<p class="note note--err small">${esc(r.error || '')}</p>` : ''}
       ${r.warnings?.length ? `<p class="note note--warn small">${r.warnings.map(esc).join(' · ')}</p>` : ''}
       <p class="ilog__links">
@@ -2147,6 +2151,195 @@ async function renderImportLog() {
     setTimeout(() => { b.textContent = 'העתק כטקסט'; }, 2500);
   });
   await load().catch((err) => { statsEl.textContent = err.message; });
+}
+
+// ───────────────────────── חיפוש מתכונים ברשת ─────────────────────────
+// באינדקס משלנו (lib/web_index.php): האתרים שהמפתח בחר. התוצאות — שם, אתר
+// וקישור, כמו מנוע חיפוש. פתיחה מביאה, מחלצת ומנסחת מחדש; שמירה — אצלך, פרטי.
+
+const webState = { q: '', data: null, offset: 0 };
+
+async function renderWebSearch(q = '') {
+  view.innerHTML = `
+    <section class="card settings settings--wide websearch">
+      <a class="link" href="#/">‹ לרשימה</a>
+      <h2>🔎 חיפוש מתכונים ברשת</h2>
+      <form id="web-form" class="search" role="search">
+        <input name="q" type="search" placeholder="למשל: עוגת גבינה אפויה" autocomplete="off" value="${esc(q || webState.q)}" required>
+        <button class="btn btn--primary" type="submit">חפש</button>
+      </form>
+      <p class="muted small" id="web-stats"></p>
+      <div id="web-results" class="scout__list"></div>
+      <div class="actions"><button class="btn" type="button" id="web-more" hidden>עוד תוצאות ›</button></div>
+      <p class="muted small">פתיחת מתכון מביאה אותו מהאתר, מסדרת אותו במבנה שלנו ומנסחת את אופן ההכנה מחדש בבינה.
+        שמירה — אצלך, פרטי, עם קרדיט וקישור למקור. <a href="#/import">יש לך קישור? ייבוא מקישור ›</a></p>
+    </section>`;
+  const resEl = $('#web-results');
+  const stats = $('#web-stats');
+  const draw = () => {
+    const d = webState.data;
+    stats.textContent = d.total ? `${d.total} תוצאות · מתוך ${d.indexed.toLocaleString('he-IL')} מתכונים ב-${d.sites} אתרים`
+      : d.indexed ? `לא נמצא. מחפשים בשם המתכון — כדאי לנסות מילה אחת או שתיים. (${d.indexed.toLocaleString('he-IL')} מתכונים ב-${d.sites} אתרים)`
+      : 'האינדקס עדיין ריק — המפתח מוסיף אתרים ב"אינדקס".';
+    resEl.innerHTML = d.results.map((r) => `
+      <article class="scout-item web-item">
+        <div class="scout-item__main">
+          <a class="web-item__title" href="#/web/${r.id}"><strong>${esc(r.title)}</strong></a>
+          <span class="muted small">${esc(r.site)}</span>
+          <a class="muted small scout-item__url" dir="auto" href="${esc(r.url)}" target="_blank" rel="noopener nofollow">${esc(prettyUrl(r.url))}</a>
+        </div>
+        <div class="scout-item__actions"><a class="btn btn--primary" href="#/web/${r.id}">פתח</a></div>
+      </article>`).join('');
+    $('#web-more').hidden = d.results.length >= d.total;
+  };
+  const search = async (append = false) => {
+    webState.offset = append ? webState.data.results.length : 0;
+    try {
+      const d = await api('web-search', { q: webState.q, offset: webState.offset });
+      webState.data = append ? { ...d, results: webState.data.results.concat(d.results) } : d;
+      draw();
+    } catch (err) { stats.textContent = err.message; }
+  };
+  $('#web-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    webState.q = e.target.q.value.trim();
+    history.replaceState(null, '', '#/web?q=' + encodeURIComponent(webState.q));
+    search();
+  });
+  $('#web-more').addEventListener('click', () => search(true));
+  if (q && q !== webState.q) { webState.q = q; webState.data = null; }
+  if (webState.q && webState.data) draw();               // חזרה מפתיחה — בלי לחפש שוב
+  else if (webState.q) search();
+  else $('#web-form input').focus();
+}
+
+async function renderWebRecipe(id) {
+  view.innerHTML = `<section class="card"><p class="muted">מביא את המתכון מהאתר, מסדר ומנסח מחדש… (עד חצי דקה בפעם הראשונה)</p></section>`;
+  let res;
+  try { res = await api('web-open', { id }); }
+  catch (err) {
+    const hit = webState.data?.results.find((r) => r.id === id);
+    view.innerHTML = `<section class="card settings">
+      <a class="link" href="#/web${webState.q ? '?q=' + encodeURIComponent(webState.q) : ''}">‹ לתוצאות</a>
+      <p class="note note--err">${esc(err.message)}</p>
+      ${hit ? `<a class="btn" href="${esc(hit.url)}" target="_blank" rel="noopener nofollow">↗ לפתוח באתר המקור</a>` : ''}
+    </section>`;
+    return;
+  }
+  const d = res.draft;
+  const img = d.pending_media?.images?.[0];
+  view.innerHTML = `
+    <article class="recipe webrecipe">
+      <header class="recipe__head">
+        <a class="link" href="#/web${webState.q ? '?q=' + encodeURIComponent(webState.q) : ''}">‹ לתוצאות</a>
+        <h2>${esc(d.title)}</h2>
+        <p class="credit">
+          🌐 <strong>${res.rewritten ? 'מבוסס על המתכון של' : 'מקור:'}</strong>
+          <a href="${esc(d.source_url)}" target="_blank" rel="noopener nofollow">${esc(d.source_name || res.entry.site)}</a>${d.source_author ? ` · מאת ${esc(d.source_author)}` : ''}
+          <span class="muted small">— ${res.rewritten ? 'אופן ההכנה נוסח מחדש; ' : ''}המתכון המקורי, התמונות והפרטים המלאים — באתר המקור.</span>
+        </p>
+        ${!res.rewritten && d.rewrite_note ? `<p class="note note--warn small">לא נוסח מחדש: ${esc(d.rewrite_note)}</p>` : ''}
+        <div class="meta">
+          ${d.servings ? `<span>מנות: ${d.servings}</span>` : d.yield_text ? `<span>כמות: ${esc(d.yield_text)}</span>` : ''}
+          ${d.work_minutes ? `<span>עבודה: ${minutes(d.work_minutes)}</span>` : ''}
+          ${d.wait_minutes ? `<span>המתנה: ${minutes(d.wait_minutes)}</span>` : ''}
+        </div>
+        <div class="actions actions--wrap">
+          <button class="btn btn--primary" type="button" id="web-save">💾 שמור אצלי</button>
+          <button class="btn" type="button" id="web-edit">✏️ ערוך לפני שמירה</button>
+          <a class="btn btn--ghost" href="${esc(d.source_url)}" target="_blank" rel="noopener nofollow">↗ באתר המקור</a>
+        </div>
+        <p class="note" id="web-msg" hidden></p>
+        ${res.opens_left != null ? `<p class="muted small">נשארו לך היום ${res.opens_left} פתיחות חדשות. מתכונים שכבר נפתחו — בלי הגבלה.</p>` : ''}
+      </header>
+      ${img ? `<figure class="webrecipe__img"><img src="${esc(img)}" alt="" loading="lazy" referrerpolicy="no-referrer"><figcaption class="muted small">תמונה: ${esc(d.source_name || res.entry.site)}</figcaption></figure>` : ''}
+      ${d.sections.map((s) => `
+        <section class="part">
+          ${s.name ? `<h3>${esc(s.name)}</h3>` : ''}
+          ${s.ingredients.length ? `<h4>רכיבים</h4><ul class="ings">${s.ingredients.map((i) => `<li class="${i.optional ? 'is-optional' : ''}"><span class="ing__free">${esc(i.free_text)}</span></li>`).join('')}</ul>` : ''}
+          ${s.steps.length ? `<h4>אופן ההכנה</h4><ol class="steps">${s.steps.map((st) => `<li>${esc(st.text)}</li>`).join('')}</ol>` : '<p class="muted">לא נמצאו שלבי הכנה — הם באתר המקור.</p>'}
+        </section>`).join('')}
+      ${d.tips ? `<section class="part"><h3>על המתכון</h3><p class="tips">${esc(d.tips)}</p></section>` : ''}
+    </article>`;
+  const msg = $('#web-msg');
+  $('#web-save').addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    try {
+      const r = await api('web-save', { id });
+      go(`#/r/${r.recipe_id}`);
+    } catch (err) { msg.textContent = err.message; msg.className = 'note note--err'; msg.hidden = false; e.target.disabled = false; }
+  });
+  $('#web-edit').addEventListener('click', async () => {
+    d.ai_available = res.ai_available;
+    await renderEditor(null, structuredClone(d));   // השמירה בעורך — פרטית, עם המקור והקרדיט
+    window.scrollTo(0, 0);
+  });
+}
+
+// ───────────────────────── אינדקס החיפוש (מפתח) ─────────────────────────
+
+async function renderIndexSites() {
+  if (!state.user.is_developer) { go('#/settings'); return; }
+  let timer = null;
+  view.innerHTML = `
+    <section class="card settings settings--wide indexsites">
+      ${settingsNav()}
+      <h2>🗂 אינדקס החיפוש</h2>
+      <p class="muted">המשתמשים מחפשים רק באתרים שכאן. לכל אתר נקראת רשימת המתכונים שהוא מפרסם (sitemap) — שם וקישור לכל מתכון.
+        העדכון רץ ברקע, פעם בשבוע, ומביא רק חלקים שהשתנו. מתכון שנעלם מהאתר — יוצא מהאינדקס.</p>
+      <form id="site-form" class="form">
+        <label>כתובת האתר, או ה-sitemap שלו
+          <input name="url" type="text" inputmode="url" dir="ltr" placeholder="www.10dakot.co.il" required autocomplete="off">
+        </label>
+        <label>שם להצגה <small class="muted">(לא חובה)</small><input name="name" maxlength="60" placeholder="10 דקות"></label>
+        <button class="btn btn--primary" type="submit">הוסף לאינדקס</button>
+        <p class="note" id="site-msg" hidden></p>
+      </form>
+      <p class="muted" id="index-total"></p>
+      <div id="site-list" class="scout__list"></div>
+    </section>`;
+  const msg = $('#site-msg');
+  const note = (t, k) => { msg.textContent = t; msg.className = 'note' + (k ? ' note--' + k : ''); msg.hidden = !t; };
+  const ago = (iso) => iso ? fmtWhen(iso) : 'עוד לא';
+  const draw = (d) => {
+    $('#index-total').textContent = d.sites.length ? `${d.total.toLocaleString('he-IL')} מתכונים באינדקס, מ-${d.sites.filter((s) => s.enabled).length} אתרים פעילים.` : '';
+    $('#site-list').innerHTML = d.sites.length ? d.sites.map((s) => `
+      <article class="scout-item ${s.enabled ? '' : 'scout-item--skipped'}" data-id="${s.id}">
+        <div class="scout-item__main">
+          <strong>${esc(s.name)}</strong>
+          <span class="muted small" dir="ltr">${esc(s.host)}</span>
+          <span class="small">${s.entries_n.toLocaleString('he-IL')} מתכונים · ${s.crawling
+            ? `<strong>מתעדכן…</strong> ${s.progress.total ? `(${s.progress.done}/${s.progress.total} חלקים)` : '(מחפש את ה-sitemap)'}`
+            : `עודכן: ${ago(s.last_crawl_at)}${s.enabled ? ` · הבא בעוד ${s.next_in > 86400 ? Math.round(s.next_in / 86400) + ' ימים' : s.next_in > 3600 ? Math.round(s.next_in / 3600) + ' שעות' : s.next_in > 0 ? Math.round(s.next_in / 60) + ' דק׳' : 'עכשיו'}` : ''}`}</span>
+          ${s.last_error ? `<span class="note note--warn small">${esc(s.last_error)}</span>` : ''}
+          <div class="actions actions--wrap">
+            <button class="btn btn--ghost" type="button" data-refresh="${s.id}">רענן עכשיו</button>
+            <button class="btn btn--ghost btn--danger" type="button" data-remove="${s.id}">הסר</button>
+          </div>
+        </div>
+        <div class="scout-item__actions">
+          <label class="switch"><input type="checkbox" data-toggle="${s.id}" ${s.enabled ? 'checked' : ''}><span class="switch__track"></span>
+            <span class="switch__label">${s.enabled ? 'בחיפוש' : 'מושבת'}</span></label>
+        </div>
+      </article>`).join('') : '<p class="muted">עוד אין אתרים. מוסיפים כתובת של אתר מתכונים — למשל www.10dakot.co.il.</p>';
+    $$('[data-refresh]').forEach((b) => b.addEventListener('click', () => act('index-site-refresh', { id: +b.dataset.refresh })));
+    $$('[data-remove]').forEach((b) => b.addEventListener('click', () => {
+      if (confirm('להסיר את האתר מהאינדקס? המתכונים שלו ייצאו מהחיפוש. מתכונים שמשתמשים כבר שמרו — נשארים אצלם.')) act('index-site-remove', { id: +b.dataset.remove });
+    }));
+    $$('[data-toggle]').forEach((c) => c.addEventListener('change', () => act('index-site-toggle', { id: +c.dataset.toggle, on: c.checked })));
+    clearTimeout(timer);
+    if (d.sites.some((s) => s.crawling || (s.enabled && s.next_in === 0))) timer = setTimeout(load, 5000);   // מתעדכן — מרעננים
+  };
+  const act = async (action, payload) => { try { draw(await api(action, payload)); } catch (err) { note(err.message, 'err'); } };
+  const load = async () => { if (location.hash !== '#/index') return; try { draw(await api('index-sites')); } catch (err) { note(err.message, 'err'); } };
+  $('#site-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.target; const b = f.querySelector('button'); b.disabled = true;
+    try { draw(await api('index-site-add', { url: f.url.value.trim(), name: f.name.value.trim() })); f.reset(); note('נוסף. העדכון הראשון רץ ברקע — כמה דקות, לפי גודל האתר.', 'ok'); }
+    catch (err) { note(err.message, 'err'); }
+    b.disabled = false;
+  });
+  await load();
 }
 
 // ───────────────────────── סורק אתרים (מפתח) ─────────────────────────

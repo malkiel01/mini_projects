@@ -23,6 +23,7 @@ require_once __DIR__ . '/lib/secrets.php';
 require_once __DIR__ . '/lib/ai.php';
 require_once __DIR__ . '/lib/scout.php';
 require_once __DIR__ . '/lib/scout_job.php';
+require_once __DIR__ . '/lib/web_index.php';
 require_once __DIR__ . '/lib/pantry.php';
 require_once __DIR__ . '/lib/shopping.php';
 
@@ -98,7 +99,7 @@ $public = ['register', 'login', 'me', 'request-reset', 'resend-verification', 't
 
 $user = currentUser();
 // ייבוא ברקע: אם העובד אמור לרוץ ושתק — מעירים אותו (lib/scout_job.php)
-if ($user) scoutJobWatchdog();
+if ($user) { scoutJobWatchdog(); indexWatchdog(); }   // וכך גם עדכון האינדקס השבועי
 $GLOBALS['__action'] = $action;
 $GLOBALS['__in']     = $in;
 $GLOBALS['__user']   = $user;
@@ -401,6 +402,32 @@ try {
 
     case 'scout-preview':
         ok(['draft' => scoutPreview((int) ($in['id'] ?? 0), $user), 'ai_available' => aiAvailable()]);
+
+    // ───────── חיפוש מתכונים ברשת (lib/web_index.php) ─────────
+
+    case 'web-search':
+        ok(indexSearch(str_field($in, 'q', 100), (int) ($in['offset'] ?? 0)));
+
+    case 'web-open':
+        ok(webOpen((int) ($in['id'] ?? 0), $user) + ['ai_available' => aiAvailable()]);
+
+    case 'web-save':
+        ok(webSave((int) ($in['id'] ?? 0), $user));
+
+    case 'index-sites':
+        ok(indexSitesStatus($user));
+
+    case 'index-site-add':
+        ok(indexAddSite(str_field($in, 'url', 500), str_field($in, 'name', 60), $user));
+
+    case 'index-site-remove':
+        ok(indexRemoveSite((int) ($in['id'] ?? 0), $user));
+
+    case 'index-site-toggle':
+        ok(indexToggleSite((int) ($in['id'] ?? 0), !empty($in['on']), $user));
+
+    case 'index-site-refresh':
+        ok(indexRefreshNow((int) ($in['id'] ?? 0), $user));
 
     case 'scout-job':
         ok(['job' => scoutJobStatus($user)]);
