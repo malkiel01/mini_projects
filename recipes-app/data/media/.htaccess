@@ -17,6 +17,19 @@ AddType text/plain .php .phtml .phps .cgi .pl .py .sh
     Header set Content-Disposition "inline"
 </IfModule>
 
+# 0. היתר מפורש. ה-.htaccess של data/ (התיקייה שמעל) חוסם הכול, והחסימה הזאת
+#    עוברת בירושה לכאן — בלי השורות האלה כל תמונה שהועלתה מחזירה 403 (כך היה
+#    בשרת עד 2026-10-09: רק תמונות מקושרות מהרשת הוצגו). ההיתר — רק לסוגי המדיה.
+<FilesMatch "\.(jpe?g|png|webp|gif|mp4)$">
+    <IfModule mod_authz_core.c>
+        Require all granted
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Allow from all
+    </IfModule>
+</FilesMatch>
+
 # 3. רק מה שהאפיון מתיר להעלות מוגש. כל השאר נחסם, גם אם נשמר בטעות.
 <FilesMatch "\.(?!(jpe?g|png|webp|gif|mp4)$)[^.]*$">
     <IfModule mod_authz_core.c>
