@@ -387,7 +387,11 @@ async function renderRecipe(id) {
         <header class="recipe__head">
           <div class="recipe__top">
             <a class="link" href="#/">‹ לרשימה</a>
-            <button class="icon-btn" id="print" type="button" aria-label="הדפסה" title="הדפסה">🖨</button>
+            <span class="recipe__icons">
+              ${r.is_mine ? `<a class="icon-btn" href="#/edit/${r.id}" aria-label="עריכה" title="עריכה">✏️</a>
+              <button class="icon-btn icon-btn--danger" id="del" type="button" aria-label="מחיקה" title="מחיקה">🗑</button>` : ''}
+              <button class="icon-btn" id="print" type="button" aria-label="הדפסה" title="הדפסה">🖨</button>
+            </span>
           </div>
           <h2>${esc(r.title)}</h2>
           <p class="muted">${esc(r.owner_name)} ·
@@ -426,10 +430,7 @@ async function renderRecipe(id) {
             <button class="btn" id="to-shopping" type="button">🛒 לרשימת קניות</button>
           </div>
           <div id="shopping-pick" hidden></div>
-          ${r.is_mine ? `<div class="actions">
-            <a class="btn" href="#/edit/${r.id}">עריכה</a>
-            <button class="btn btn--danger" id="del" type="button">מחיקה</button>
-          </div>` : `<div class="actions">
+          ${r.is_mine ? '' : `<div class="actions">
             <button class="btn ${social.isFavorite ? 'btn--primary' : ''}" id="fav" type="button" aria-pressed="${social.isFavorite}">
               ${social.isFavorite ? '♥ שמור אצלי' : '♡ שמור אצלי'}
             </button>

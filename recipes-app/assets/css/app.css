@@ -290,6 +290,9 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
   background: none; font-size: 1.25rem; line-height: 1; cursor: pointer;
 }
 .icon-btn:hover { background: var(--accent-soft); }
+a.icon-btn { display: inline-grid; place-items: center; text-decoration: none; }
+.icon-btn--danger:hover { background: #fde8e4; border-color: var(--err); }
+.recipe__icons { display: flex; gap: 8px; }
 .recipe__head h2 { font-size: 1.4rem; color: var(--ink); margin: 0; }
 .meta { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.9rem; color: var(--muted); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
