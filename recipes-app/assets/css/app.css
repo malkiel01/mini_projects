@@ -431,7 +431,13 @@ select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset:
   min-width: 200px; display: flex; flex-direction: column;
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
   box-shadow: 0 8px 24px rgba(23,40,29,.14); padding: 6px; gap: 2px;
+  /* נגלל בתוך עצמו עד תחתית המסך; dvh — כדי שסרגל הדפדפן בטלפון לא יסתיר את הסוף */
+  max-height: calc(100vh - 90px); max-height: calc(100dvh - 90px);
+  overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
 }
+.menu__group { display: flex; flex-direction: column; gap: 2px; }
+.menu__group + .menu__group { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; }
+.menu__label { padding: 6px 14px 2px; font-size: .78rem; font-weight: 700; color: var(--muted); }
 .menu__list a, .menu__list button {
   display: block; padding: 11px 14px; min-height: 44px; border-radius: 8px;
   color: var(--ink); text-decoration: none; background: none; border: 0;

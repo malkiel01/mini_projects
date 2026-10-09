@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-title" content="מתכונים">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="apple-touch-icon" href="./assets/icons/icon-192.png">
-<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-09d">
+<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-09e">
 </head>
 <body>
 
@@ -23,21 +23,40 @@
     <span id="who" class="who" hidden></span>
     <details id="menu" class="menu" hidden>
       <summary class="btn btn--ghost" aria-label="תפריט">☰</summary>
+      <!-- התפריט בקבוצות, והרשימה נגללת בתוך עצמה: הסרגל דביק (sticky), כך
+           שגלילת הדף לא מזיזה אותו, ובטלפון התפריט ארוך מגובה המסך. -->
       <nav class="menu__list">
-        <a href="#/">המתכונים</a>
-        <a href="#/web">חיפוש מתכונים ברשת</a>
-        <a href="#/import">ייבוא מקישור</a>
-        <a href="#/shopping">רשימות קניות</a>
-        <a href="#/pantry">מה יש לי בבית</a>
-        <a href="#/favorites">המועדפים שלי</a>
-        <a href="#/settings">הגדרות פרטיות</a>
-        <a href="#/settings/public" data-dev hidden>הגדרות ציבוריות</a>
-        <a href="#/settings/users"  data-dev hidden>ניהול משתמשים</a>
-        <a href="#/diag"            data-dev hidden>אזור פיתוח</a>
-        <a href="#/logs"            data-dev hidden>יומן</a>
-        <a href="#/scout"           data-dev hidden>סורק אתרים</a>
-        <a href="#/index"           data-dev hidden>אינדקס חיפוש</a>
-        <a href="#/rewrite"         data-dev hidden>ניסוח ידני</a>
+        <div class="menu__group">
+          <a href="#/">המתכונים</a>
+          <a href="#/favorites">המועדפים שלי</a>
+        </div>
+        <div class="menu__group">
+          <span class="menu__label">מתכונים חדשים</span>
+          <a href="#/web">חיפוש מתכונים ברשת</a>
+          <a href="#/import">ייבוא מקישור</a>
+        </div>
+        <div class="menu__group">
+          <span class="menu__label">במטבח</span>
+          <a href="#/shopping">רשימות קניות</a>
+          <a href="#/pantry">מה יש לי בבית</a>
+        </div>
+        <div class="menu__group">
+          <span class="menu__label">החשבון שלי</span>
+          <a href="#/settings">הגדרות פרטיות</a>
+        </div>
+        <div class="menu__group" data-dev hidden>
+          <span class="menu__label">ניהול</span>
+          <a href="#/settings/public">הגדרות ציבוריות</a>
+          <a href="#/settings/users">ניהול משתמשים</a>
+          <a href="#/logs">יומן</a>
+        </div>
+        <div class="menu__group" data-dev hidden>
+          <span class="menu__label">כלי פיתוח</span>
+          <a href="#/scout">סורק אתרים</a>
+          <a href="#/index">אינדקס חיפוש</a>
+          <a href="#/rewrite">ניסוח ידני</a>
+          <a href="#/diag">אזור פיתוח</a>
+        </div>
         <button id="logout" type="button">יציאה</button>
       </nav>
     </details>
@@ -101,6 +120,6 @@
   <div id="view" class="view"></div>
 </main>
 
-<script type="module" src="./assets/js/app.js?v=2026-10-09d"></script>
+<script type="module" src="./assets/js/app.js?v=2026-10-09e"></script>
 </body>
 </html>
