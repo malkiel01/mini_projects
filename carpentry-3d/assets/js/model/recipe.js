@@ -23,8 +23,10 @@
 
 import bedRecipe from './recipes/bed.js';
 import tableRecipe from './recipes/table.js';
-import { part, door } from './blocks.js';
-import { addWheels } from './templates/common.js';
+import dresserRecipe from './recipes/dresser.js';
+import { part, door, carcass, partitions, drawer, back, plinth } from './blocks.js';
+import { addWheels, applyFinish, LIMITS, FINISHES, FINISHES_NO_GLASS, FINISHES_FLUSH } from './templates/common.js';
+import { resolveShares, sectionLayout, effectivePins } from './layout.js';
 import { material } from './materials.js';
 import { evaluate, evalNum, evalBool, interpolate, compile, ExprError } from './expr.js';
 
@@ -34,6 +36,7 @@ const MAX_REPEAT = 200;
 /** סוגי חומר לפרמטר — מה שהטופס יציע. */
 export const MATERIAL_USES = {
   board: { name: 'לוח', p: { kind: 'board', back: false } },
+  body: { name: 'לוח גוף (לא עץ מלא, לא משטח)', p: { kind: 'board', back: false, solid: false, top: false } },
   panel: { name: 'לוח (לא משטח)', p: { kind: 'board', back: false, top: false } },
   solid: { name: 'עץ מלא', p: { kind: 'board', solid: true } },
   back: { name: 'לוח גב', p: { kind: 'board', back: true } },
@@ -42,6 +45,13 @@ export const MATERIAL_USES = {
   handle: { name: 'ידית', p: { kind: 'hardware', role: 'handle', allowNone: true, noneLabel: 'ללא (לחיצה)' } },
   hinge: { name: 'ציר', p: { kind: 'hardware', role: 'hinge' } },
   wheel: { name: 'גלגל', p: { kind: 'hardware', role: 'wheel', allowNone: true, noneLabel: 'ללא' } },
+  slide: { name: 'מסילת מגירה', p: { kind: 'hardware', role: 'slide' } },
+};
+/** רשימות בחירה חיות (מתעדכנות מהספרייה — למשל דוגמאות CNC). */
+export const OPTION_SOURCES = {
+  finishes: { name: 'גימורי חזית (כולל זכוכית)', list: FINISHES },
+  finishesNoGlass: { name: 'גימורי חזית (בלי זכוכית)', list: FINISHES_NO_GLASS },
+  finishFlush: { name: 'גימורים בלוח אחד (בלי עובי נוסף)', list: FINISHES_FLUSH },
 };
 
 function paramOf(rp) {
@@ -51,6 +61,8 @@ function paramOf(rp) {
     base.showIf = (values) => { try { return evalBool(src, values); } catch { return true; } };
     base.showIfText = src;
   }
+  if (rp.type === 'json') return { ...base, type: 'json', editor: rp.editor || undefined, default: rp.default ?? null };
+  if (rp.type === 'enum' && OPTION_SOURCES[rp.source]) return { ...base, type: 'enum', options: OPTION_SOURCES[rp.source].list, default: rp.default };
   if (rp.type === 'enum') {
     const options = (rp.options || []).filter((o) => o && o.id !== undefined && o.id !== '').map((o) => ({ id: String(o.id), name: o.name || String(o.id) }));
     return { ...base, type: 'enum', options, default: options.some((o) => o.id === String(rp.default)) ? String(rp.default) : options[0]?.id };
@@ -89,6 +101,106 @@ function edgesOf(e) {
   return out;
 }
 
+// ---- אבני בניין: רכיבים שקוראים לקוד הבדוק של blocks.js עם ארגומנטים מנוסחאות ----
+// כל אבן: שדות (נוסחה 'fx', חומר/פרמטר 'mat', טקסט 'text') ב-c.a, והפעלה. אבן
+// יכולה גם להחזיר תוצאות למשתנים (<מזהה>_x0…) שהרכיבים הבאים רואים.
+const F = (k, label, kind = 'fx') => ({ k, label, kind });
+export const BLOCKS = {
+  carcass: {
+    name: 'גוף (2 דפנות, גג, רצפה)', out: 'פנים הגוף: <מזהה>_x0 _x1 _y0 _y1 _z0 _z1',
+    fields: [F('w', 'רוחב'), F('d', 'עומק'), F('z', 'z'), F('y0', 'תחתית הדפנות'), F('bottomY', 'פני הרצפה'), F('topY', 'פני הגג'), F('sideT', 'עובי דופן'), F('panelT', 'עובי גג/רצפה'), F('sidesOverTop', 'הדפנות עוברות (תנאי)'), F('material', 'חומר', 'mat'), F('dx', 'הזזה ב-x'), F('prefix', 'קידומת מזהים', 'text')],
+    run(a, ctx) {
+      const dx = a.num('dx', 0);
+      const res = carcass({ w: a.num('w'), d: a.num('d'), z: a.num('z', 0), y0: a.num('y0', 0), bottomY: a.num('bottomY'), topY: a.num('topY'), sideT: a.num('sideT'), panelT: a.num('panelT'), sidesOverTop: a.bool('sidesOverTop'), material: a.mat('material'), prefix: a.text('prefix') });
+      ctx.parts.push(...res.parts.map((p) => (dx ? { ...p, box: { ...p.box, x: p.box.x + dx } } : p)));
+      const i = res.inner;
+      ctx.out({ x0: i.x0 + dx, x1: i.x1 + dx, y0: i.y0, y1: i.y1, z0: i.z0, z1: i.z1 });
+    },
+  },
+  partitions: {
+    name: 'מחיצות (חלוקה לעמודות)', out: '<מזהה>_colW (הרחבה), _free, _x0s _x1s (רשימות)',
+    fields: [F('x0', 'פנים x0'), F('x1', 'פנים x1'), F('y0', 'פנים y0'), F('y1', 'פנים y1'), F('z0', 'פנים z0'), F('z1', 'פנים z1'), F('columns', 'עמודות'), F('t', 'עובי'), F('widths', 'רוחבים (רשימה, רשות)'), F('material', 'חומר', 'mat'), F('prefix', 'קידומת מזהים', 'text')],
+    run(a, ctx) {
+      const widths = a.has('widths') ? a.val('widths') : null;
+      const res = partitions({ inner: { x0: a.num('x0'), x1: a.num('x1'), y0: a.num('y0'), y1: a.num('y1'), z0: a.num('z0'), z1: a.num('z1') }, columns: Math.round(a.num('columns')), t: a.num('t'), material: a.mat('material'), prefix: a.text('prefix'), widths: Array.isArray(widths) ? widths : null });
+      ctx.parts.push(...res.parts);
+      ctx.out({ colW: res.colW, free: res.free, x0s: res.cols.map((c) => c.x0), x1s: res.cols.map((c) => c.x1) });
+    },
+  },
+  drawer: {
+    name: 'מגירה (חזית, ארגז, תחתית, מסילות)', out: '',
+    fields: [F('x0', 'x0'), F('x1', 'x1'), F('y0', 'y0'), F('y1', 'y1'), F('zFront', 'z החזית'), F('depth', 'עומק הארגז'), F('frontT', 'עובי החזית'), F('boxT', 'עובי הארגז'), F('bottomT', 'עובי התחתית'),
+      F('frontMaterial', 'חומר החזית', 'mat'), F('boxMaterial', 'חומר הארגז', 'mat'), F('bottomMaterial', 'חומר התחתית', 'mat'), F('slide', 'מסילות', 'mat'), F('handle', 'ידית', 'mat'), F('finish', 'גימור החזית', 'mat'),
+      F('mountL', 'הדופן משמאל (מזהה)'), F('mountR', 'הדופן מימין (מזהה)'), F('mountBottom', 'תחתית הדופן')],
+    run(a, ctx) {
+      const handle = a.mat('handle');
+      const d = drawer({
+        id: ctx.id, name: ctx.name, x0: a.num('x0'), x1: a.num('x1'), y0: a.num('y0'), y1: a.num('y1'), zFront: a.num('zFront'), depth: a.num('depth'),
+        frontT: a.num('frontT'), boxT: a.num('boxT', 18), bottomT: a.num('bottomT', 6),
+        frontMaterial: a.mat('frontMaterial'), boxMaterial: a.mat('boxMaterial'), bottomMaterial: a.mat('bottomMaterial'), slide: a.mat('slide'), handle: handle && handle !== 'none' ? handle : null,
+        mountIds: a.has('mountL') ? [String(a.val('mountL')), String(a.val('mountR'))] : null, mountBottom: a.has('mountBottom') ? a.num('mountBottom') : null,
+      });
+      if (a.has('finish')) applyFinish(d.parts[0], a.mat('finish'), { material: a.mat('frontMaterial'), normal: '+z' });
+      ctx.parts.push(...d.parts); ctx.hardware.push(...d.hardware);
+    },
+  },
+  back: {
+    name: 'גב (בחריץ / מולבש / ללא)', out: '',
+    fields: [F('mode', "שיטה ('groove' / 'overlay' / 'none')"), F('w', 'רוחב חיצוני'), F('y0', 'תחתית חיצונית'), F('y1', 'ראש חיצוני'), F('ix0', 'פנים x0'), F('ix1', 'פנים x1'), F('iy0', 'פנים y0'), F('iy1', 'פנים y1'), F('t', 'עובי'), F('grooveDepth', 'עומק החריץ'), F('inset', 'החריץ מהקצה'), F('material', 'חומר', 'mat'), F('dx', 'הזזה ב-x'), F('prefix', 'קידומת מזהים', 'text')],
+    run(a, ctx) {
+      const dx = a.num('dx', 0);
+      const res = back({ mode: String(a.val('mode')), outer: { w: a.num('w'), y0: a.num('y0'), y1: a.num('y1') }, inner: { x0: a.num('ix0'), x1: a.num('ix1'), y0: a.num('iy0'), y1: a.num('iy1') }, t: a.num('t'), grooveDepth: a.num('grooveDepth', 8), inset: a.num('inset', 10), material: a.mat('material'), prefix: a.text('prefix') });
+      ctx.parts.push(...res.parts.map((p) => (dx ? { ...p, box: { ...p.box, x: p.box.x + dx } } : p)));
+    },
+  },
+  plinth: {
+    name: 'סוקל', out: '',
+    fields: [F('x0', 'x0'), F('x1', 'x1'), F('h', 'גובה'), F('setback', 'נסיגה'), F('t', 'עובי'), F('d', 'עומק הגוף'), F('material', 'חומר', 'mat'), F('prefix', 'קידומת מזהים', 'text')],
+    run(a, ctx) {
+      ctx.parts.push(...plinth({ inner: { x0: a.num('x0'), x1: a.num('x1') }, h: a.num('h'), setback: a.num('setback'), t: a.num('t'), d: a.num('d'), material: a.mat('material'), prefix: a.text('prefix') }).parts);
+    },
+  },
+};
+/** קורא ארגומנטים של אבן מתוך c.a מול המשתנים. */
+function blockArgs(c, s, matOf) {
+  const A = c.a || {};
+  const has = (k) => A[k] !== undefined && A[k] !== null && String(A[k]).trim() !== '';
+  return {
+    has,
+    val: (k) => evaluate(A[k], s),
+    num: (k, def) => { if (!has(k)) { if (def === undefined) throw new ExprError(`חסר: ${k}`); return def; } return evalNum(A[k], s); },
+    bool: (k) => (has(k) ? evalBool(A[k], s) : false),
+    mat: (k) => (has(k) ? matOf(String(A[k]).trim()) : null),
+    text: (k) => (has(k) ? interpolate(A[k], s) : ''),
+  };
+}
+const outName = (id) => String(id).replace(/[^A-Za-z0-9_]/g, '_');
+
+/** חלוקה (עמודות / שורות) מתוך פרמטר העריכה (json): רוחב לכל פריט, נעוץ או אוטומטי. */
+function layoutList(L, s, v) {
+  const n = Math.max(0, Math.round(evalNum(L.count, s)));
+  const lay = sectionLayout(v[L.param], L.section || 'main', n);
+  let pins = lay.widths;
+  if (L.lastPin && String(L.lastPin).trim()) { const lp = evalNum(L.lastPin, s); pins = effectivePins(pins, Array.from({ length: n }, (_, i) => ({ defaultPin: i === n - 1 && n > 1 && lp > 0 ? lp : null }))); }
+  return L.min !== undefined && L.min !== '' ? resolveShares(evalNum(L.total, s), pins, evalNum(L.min, s)) : resolveShares(evalNum(L.total, s), pins);
+}
+
+/** המשתנים (פרמטרים, עוביים, גבולות, משתנים, חלוקות) — לבנייה ולעורך החלוקה. */
+function baseScope(r, v, fail) {
+  const scope = { ...v };
+  for (const p of r.params || []) if (p.type === 'material') scope[`${p.key}_t`] = Number(material(v[p.key]).t) || 18;
+  for (const [k, val] of Object.entries(LIMITS)) scope[`lim_${k}`] = val;
+  for (const [k, x] of (r.vars || []).entries()) {
+    if (!x || !x.name) continue;
+    try { scope[x.name] = evaluate(x.expr, scope); } catch (e) { fail(`משתנה ${x.name || k + 1}`, e); scope[x.name] = 0; }
+  }
+  for (const L of r.layouts || []) {
+    if (!L || !L.name) continue;
+    try { scope[L.name] = layoutList(L, scope, v); } catch (e) { fail(`חלוקה ${L.name}`, e); scope[L.name] = []; }
+  }
+  return scope;
+}
+
 /**
  * בונה מתכון מול ערכים. מחזיר כמו build של תבנית, ובנוסף `errors` —
  * [{ where, message }] לכל נוסחה שנכשלה (הרכיב מדולג, השאר נבנה).
@@ -96,12 +208,7 @@ function edgesOf(e) {
 export function runRecipe(r, v) {
   const parts = [], hardware = [], warnings = [], errors = [];
   const fail = (where, e) => errors.push({ where, message: e instanceof ExprError ? e.message : String(e?.message || e) });
-  const scope = { ...v };
-  for (const p of r.params || []) if (p.type === 'material') scope[`${p.key}_t`] = Number(material(v[p.key]).t) || 0;
-  for (const [k, x] of (r.vars || []).entries()) {
-    if (!x || !x.name) continue;
-    try { scope[x.name] = evaluate(x.expr, scope); } catch (e) { fail(`משתנה ${x.name || k + 1}`, e); scope[x.name] = 0; }
-  }
+  const scope = baseScope(r, v, fail);
   const matOf = (m) => (m && Object.prototype.hasOwnProperty.call(v, m) ? v[m] : m);
   const ids = new Set();
   for (const [ci, c] of (r.components || []).entries()) {
@@ -118,10 +225,15 @@ export function runRecipe(r, v) {
       const s = { ...scope, [idx]: i, n: count };
       try {
         if (c.when && String(c.when).trim() && !evalBool(c.when, s)) continue;
-        let id = count > 1 || c.repeat ? `${baseId}-${i + 1}` : baseId;
+        // מזהה: תבנית {נוסחה} אם יש ("drawer-{c+1}-{r+1}"), אחרת <מזהה>-<מספר> בלולאה
+        let id = c.idt && String(c.idt).trim() ? interpolate(c.idt, s) : (count > 1 || c.repeat ? `${baseId}-${i + 1}` : baseId);
         while (ids.has(id)) id += '_';
         ids.add(id);
         const name = interpolate(c.name || baseId, s);
+        if (BLOCKS[c.kind]) {
+          BLOCKS[c.kind].run(blockArgs(c, s, matOf), { parts, hardware, id, name, out: (o) => { for (const [k, val] of Object.entries(o)) scope[`${outName(baseId)}_${k}`] = val; } });
+          continue;
+        }
         const box = { x: evalNum(c.x || 0, s), y: evalNum(c.y || 0, s), z: evalNum(c.z || 0, s), w: evalNum(c.w || 0, s), h: evalNum(c.h || 0, s), d: evalNum(c.d || 0, s) };
         if (!(box.w > 0 && box.h > 0 && box.d > 0)) throw new ExprError(`מידה לא חיובית (${Math.round(box.w)}×${Math.round(box.h)}×${Math.round(box.d)})`);
         if (c.kind === 'door') {
@@ -164,7 +276,15 @@ export function runRecipe(r, v) {
   }
   for (const [k, w] of (r.warnings || []).entries()) {
     if (!w) continue;
-    try { if (evalBool(w.when, scope)) warnings.push(interpolate(w.text || 'אזהרה', scope)); } catch (e) { fail(`אזהרה ${k + 1}`, e); }
+    try {
+      // אזהרה בלולאה (למשל לכל עמודה): חזרות + מונה, כמו ברכיב
+      const count = w.repeat && String(w.repeat).trim() ? Math.min(MAX_REPEAT, Math.floor(evalNum(w.repeat, scope))) : 1;
+      const idx = w.index && /^[A-Za-z_][A-Za-z0-9_]*$/.test(w.index) ? w.index : 'i';
+      for (let i = 0; i < count; i += 1) {
+        const s = w.repeat ? { ...scope, [idx]: i, n: count } : scope;
+        if (evalBool(w.when, s)) warnings.push(interpolate(w.text || 'אזהרה', s));
+      }
+    } catch (e) { fail(`אזהרה ${k + 1}`, e); }
   }
   let w = 0, h = 0, d = 0;
   for (const p of parts) { w = Math.max(w, p.box.x + p.box.w); h = Math.max(h, p.box.y + p.box.h); d = Math.max(d, p.box.z + p.box.d); }
@@ -178,18 +298,42 @@ export function runRecipe(r, v) {
 /** מתכון → תבנית רגילה. */
 export function recipeTemplate(r) {
   const params = (r.params || []).filter((p) => p && /^[A-Za-z_][A-Za-z0-9_]*$/.test(p.key || '')).map(paramOf);
-  return {
+  const t = {
     key: r.key, name: r.name || 'מוצר ללא שם', description: r.description || '', laborHours: Number(r.laborHours) || 0,
     recipe: r, params,
     build(v) { const { scope, ...out } = runRecipe(r, v); return out; },
   };
+  // עורך החלוקה (form.js): לכל חלוקה עם כותרת — קבוצה עם הסכום והפריטים
+  const eds = (r.layouts || []).filter((L) => L && L.title);
+  if (eds.length) {
+    t.columnSpace = (values) => {
+      const v = { ...Object.fromEntries(params.map((p) => [p.key, p.default])), ...values };
+      const s = baseScope({ ...r, layouts: [] }, v, () => {});
+      return { sections: eds.map((L) => {
+        let n = 0, lp = null;
+        try { n = Math.max(0, Math.round(evalNum(L.count, s))); } catch { /* 0 */ }
+        if (L.lastPin && String(L.lastPin).trim()) { try { lp = evalNum(L.lastPin, s); } catch { lp = 0; } }
+        let total = 0;
+        try { total = evalNum(L.editorTotal && String(L.editorTotal).trim() ? L.editorTotal : L.total, s); } catch { /* 0 */ }
+        const sec = { key: L.section || 'main', title: L.title, total, sizeLabel: L.sizeLabel || 'רוחב', allLabel: L.allLabel || 'הפריטים', modes: { next: L.next || 'מהבא', prev: L.prev || 'מהקודם' } };
+        if (L.reverse) sec.reverse = true;
+        sec.items = Array.from({ length: n }, (_, i) => {
+          const it = { label: interpolate(L.item || 'פריט {i+1}', { ...s, i, n }), editable: false, note: '' };
+          if (lp !== null) it.defaultPin = i === n - 1 && n > 1 && lp > 0 ? lp : null;
+          return it;
+        });
+        return sec;
+      }) };
+    };
+  }
+  return t;
 }
 
 // ---- מתכונים מובנים (שלב 3): מוצרים שעברו מקוד למתכון, באותו מפתח ----
 // פרויקט קיים ('bed', 'table') נפתח כרגיל — הפרמטרים זהים. המנהל יכול לפתוח
 // אותם במעבדה ולערוך: הגרסה הערוכה נשמרת בשרת באותו מפתח ודורסת את המובנה;
 // מחיקתה = חזרה למתכון שבקוד.
-export const BUILTIN_RECIPES = { bed: bedRecipe, table: tableRecipe };
+export const BUILTIN_RECIPES = { bed: bedRecipe, table: tableRecipe, dresser: dresserRecipe };
 export const isBuiltinKey = (k) => Object.prototype.hasOwnProperty.call(BUILTIN_RECIPES, k);
 /** תבנית ממתכון מובנה (או מהגרסה הערוכה שלו). */
 export function builtinTemplate(key, override = null) {
@@ -227,8 +371,12 @@ export function recipeSyntax(r) {
   const chk = (where, src) => { if (src === undefined || src === null || String(src).trim() === '') return; try { compile(String(src)); } catch (e) { out.push({ where, message: e.message }); } };
   (r.params || []).forEach((p) => chk(`פרמטר ${p.key} — מתי מוצג`, p.when));
   (r.vars || []).forEach((x) => chk(`משתנה ${x.name}`, x.expr));
-  (r.components || []).forEach((c) => ['x', 'y', 'z', 'w', 'h', 'd', 'repeat', 'when', 'side'].forEach((f) => chk(`רכיב ${c.name || c.id} — ${f}`, c[f])));
-  (r.warnings || []).forEach((w, i) => chk(`אזהרה ${i + 1}`, w.when));
+  (r.layouts || []).forEach((L) => ['count', 'total', 'min', 'lastPin', 'editorTotal'].forEach((f) => chk(`חלוקה ${L.name} — ${f}`, L[f])));
+  (r.components || []).forEach((c) => {
+    ['x', 'y', 'z', 'w', 'h', 'd', 'repeat', 'when', 'side'].forEach((f) => chk(`רכיב ${c.name || c.id} — ${f}`, c[f]));
+    if (BLOCKS[c.kind]) BLOCKS[c.kind].fields.filter((f) => f.kind === 'fx').forEach((f) => chk(`רכיב ${c.name || c.id} — ${f.label}`, c.a?.[f.k]));
+  });
+  (r.warnings || []).forEach((w, i) => { chk(`אזהרה ${i + 1}`, w.when); chk(`אזהרה ${i + 1} — חזרות`, w.repeat); });
   return out;
 }
 

@@ -23,6 +23,7 @@ import { evaluate, evalNum, interpolate, syntaxError } from '../assets/js/model/
 import { registerRecipes, starterRecipe, runRecipe, recipeSyntax, BUILTIN_RECIPES } from '../assets/js/model/recipe.js';
 import legacyBed from '../assets/js/model/templates/bed.js';
 import legacyTable from '../assets/js/model/templates/table.js';
+import legacyDresser from '../assets/js/model/templates/dresser.js';
 import { visible } from '../assets/js/model/index.js';
 import { millSpec, fluteGrooves, fluteRib, millRects, millSolids, millRemoved, millText, millEdges, cncPatterns } from '../assets/js/model/milling.js';
 
@@ -1130,7 +1131,8 @@ console.log('שלב 3: מתכונים מובנים זהים לקוד הישן');
   const pick = (r) => sortKeys(norm({ parts: r.parts, hardware: r.hardware, warnings: r.warnings, bounds: r.bounds }));
   let seed = 7;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  for (const [key, legacy] of [['bed', legacyBed], ['table', legacyTable]]) {
+  check(Object.values(BUILTIN_RECIPES).every((r) => recipeSyntax(r).length === 0), 'כל המתכונים המובנים תקינים תחבירית');
+  for (const [key, legacy] of [['bed', legacyBed], ['table', legacyTable], ['dresser', legacyDresser]]) {
     TEMPLATES[`legacy-${key}`] = { ...legacy, key: `legacy-${key}` };
     const t = TEMPLATES[key];
     check(t.recipe === BUILTIN_RECIPES[key] && t.builtin, `${key}: נבנה ממתכון מובנה`);
@@ -1145,6 +1147,12 @@ console.log('שלב 3: מתכונים מובנים זהים לקוד הישן');
       }
       if (n % 3 === 0) v.apronH = 0;
       if (n % 5 === 0) v.headboardH = 0;
+      if (n % 4 === 0) v.topRowH = 0;
+      // חלוקה נעוצה בחלק מהתצורות: רוחב לעמודה / גובה לשורה (וחלק אוטומטיים)
+      if (key === 'dresser' && n % 2 === 1) {
+        const pin = () => (rnd() < 0.5 ? null : Math.round(80 + rnd() * 400));
+        v.columnsLayout = { sections: { cols: { widths: Array.from({ length: v.drawerColumns }, pin) }, rows: { widths: Array.from({ length: v.drawerRows }, pin) } } };
+      }
       const a = build(`legacy-${key}`, v), b = build(key, v);
       if (!a.parts.every((p) => p.box.w > 0 && p.box.h > 0 && p.box.d > 0)) continue;   // מידות קיצוניות שהקוד הישן בנה שלילי
       if (JSON.stringify(pick(a)) === JSON.stringify(pick(b))) same += 1;
@@ -1156,6 +1164,10 @@ console.log('שלב 3: מתכונים מובנים זהים לקוד הישן');
       console.error(`    ${key} שונה ב: …${A.slice(Math.max(0, i - 120), i + 80)}\n    מול: …${B.slice(Math.max(0, i - 120), i + 80)}`);
     }
     check(!diff && same > 300, `${key}: ${same} תצורות אקראיות זהות לחלוטין (חלקים, פרזול, אזהרות, גבולות)`);
+    if (legacy.columnSpace) {
+      const vals = [{}, { drawerColumns: 3, drawerRows: 5, topRowH: 160 }, { width: 1730, topOverhang: 0, sideT: 25 }];
+      check(vals.every((x) => { const full = { ...build(key, x).values }; return JSON.stringify(sortKeys(norm(legacy.columnSpace(full)))) === JSON.stringify(sortKeys(norm(t.columnSpace(full)))); }), `${key}: עורך החלוקה מקבל אותן קבוצות, סכומים ופריטים`);
+    }
     const ra = build(`legacy-${key}`, {}), rb = build(key, {});
     check(JSON.stringify(cutList(ra)) === JSON.stringify(cutList(rb)) && JSON.stringify(hardwareList(ra)) === JSON.stringify(hardwareList(rb)), `${key}: רשימת חיתוך ופרזול זהות`);
     delete TEMPLATES[`legacy-${key}`];
