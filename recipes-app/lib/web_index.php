@@ -641,8 +641,9 @@ function webOpensLeft(array $user): ?int {
  */
 function webOpen(int $id, array $user): array {
     $e = webEntry($id);
-    $st = db()->prepare('SELECT * FROM web_cache WHERE url = ? AND created_at > ?');
-    $st->execute([$e['url'], time() - WEB_CACHE_DAYS * 86400]);
+    // מנוסח — שבוע. לא מנוסח (הבינה נכשלה, למשל נגמר הקרדיט) — רק שעה, ואז מנסים לנסח שוב
+    $st = db()->prepare('SELECT * FROM web_cache WHERE url = ? AND created_at > ? AND (rewritten = 1 OR created_at > ?)');
+    $st->execute([$e['url'], time() - WEB_CACHE_DAYS * 86400, time() - 3600]);
     $c = $st->fetch();
     $st->closeCursor();
     if ($c) {

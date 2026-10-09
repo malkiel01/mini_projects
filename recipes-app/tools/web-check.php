@@ -157,6 +157,10 @@ $e3 = (int) $pdo->query("SELECT id FROM index_entries WHERE url = 'https://a.co.
 expectError('המכסה נגמרה — פתיחה חדשה נחסמת', fn() => webOpen($GLOBALS['e3'], $GLOBALS['noaU']), 'מכסת');
 check('אבל מהמטמון — עדיין נפתח', webOpen($e1, $noaU)['cached'], true);
 check('למפתח אין מכסה', webOpensLeft($devU), null);
+$pdo->prepare('INSERT INTO web_cache (url, draft, rewritten, created_at) VALUES (?,?,0,?)')->execute(['https://a.co.il/r/3/', json_encode($draft, JSON_UNESCAPED_UNICODE), time() - 7200]);
+expectError('לא מנוסח וישן משעה — לא מהמטמון (ינסה לנסח שוב)', fn() => webOpen($GLOBALS['e3'], $GLOBALS['noaU']), 'מכסת');
+$pdo->exec("UPDATE web_cache SET created_at = " . (time() - 60) . " WHERE url = 'https://a.co.il/r/3/'");
+check('לא מנוסח וטרי — מהמטמון', webOpen($e3, $noaU)['cached'], true);
 $s1 = webSave($e1, $noaU);
 $rec = loadRecipe($s1['recipe_id'], $noaU);
 check('נשמר: פרטי, עם קרדיט, מנוסח, עם הרכיבים', [$rec['visibility'], $rec['source']['url'], $rec['source']['rewritten'], count($rec['sections'][0]['ingredients']) > 3],
