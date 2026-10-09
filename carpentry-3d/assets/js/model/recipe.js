@@ -21,8 +21,10 @@
 // התלת מימד, רשימת החיתוך, המחיר והשיתוף עובדים עליו בלי לדעת שהוא מתכון.
 // משתנים אוטומטיים: לכל פרמטר חומר — <מפתח>_t, עובי החומר שנבחר.
 
-import { TEMPLATES } from './index.js';
+import bedRecipe from './recipes/bed.js';
+import tableRecipe from './recipes/table.js';
 import { part, door } from './blocks.js';
+import { addWheels } from './templates/common.js';
 import { material } from './materials.js';
 import { evaluate, evalNum, evalBool, interpolate, compile, ExprError } from './expr.js';
 
@@ -32,12 +34,14 @@ const MAX_REPEAT = 200;
 /** סוגי חומר לפרמטר — מה שהטופס יציע. */
 export const MATERIAL_USES = {
   board: { name: 'לוח', p: { kind: 'board', back: false } },
+  panel: { name: 'לוח (לא משטח)', p: { kind: 'board', back: false, top: false } },
   solid: { name: 'עץ מלא', p: { kind: 'board', solid: true } },
   back: { name: 'לוח גב', p: { kind: 'board', back: true } },
   edge: { name: 'קנט', p: { kind: 'edge' } },
   glass: { name: 'זכוכית', p: { kind: 'glass' } },
   handle: { name: 'ידית', p: { kind: 'hardware', role: 'handle', allowNone: true, noneLabel: 'ללא (לחיצה)' } },
   hinge: { name: 'ציר', p: { kind: 'hardware', role: 'hinge' } },
+  wheel: { name: 'גלגל', p: { kind: 'hardware', role: 'wheel', allowNone: true, noneLabel: 'ללא' } },
 };
 
 function paramOf(rp) {
@@ -63,9 +67,9 @@ function paramOf(rp) {
 }
 
 /** סדר עדיפויות לכיוון סיבים: הארוך מבין שני צירי המישור. */
-function axesOf(box, grain) {
+function axesOf(box, grain, forcedAxis) {
   const dims = { x: box.w, y: box.h, z: box.d };
-  const axis = ['x', 'y', 'z'].reduce((a, b) => (dims[b] < dims[a] ? b : a));
+  const axis = forcedAxis || ['x', 'y', 'z'].reduce((a, b) => (dims[b] < dims[a] ? b : a));
   const other = ['x', 'y', 'z'].filter((a) => a !== axis);
   const g = other.includes(grain) ? grain : (dims[other[0]] >= dims[other[1]] ? other[0] : other[1]);
   return { axis, grain: g };
@@ -75,6 +79,15 @@ const EDGES = {
   all: { front: true, back: true, left: true, right: true, top: true, bottom: true },
   none: {},
 };
+export const EDGE_SIDES = { front: 'חזית', back: 'גב', top: 'עליון', bottom: 'תחתון', left: 'שמאל', right: 'ימין' };
+/** קנטים: 'front' / 'all' / 'none', או רשימת צדדים 'top,front'. */
+function edgesOf(e) {
+  if (e === undefined || e === null || e === '') return { ...EDGES.front };
+  if (EDGES[e]) return { ...EDGES[e] };
+  const out = {};
+  for (const k of String(e).split(',').map((x) => x.trim())) if (EDGE_SIDES[k]) out[k] = true;
+  return out;
+}
 
 /**
  * בונה מתכון מול ערכים. מחזיר כמו build של תבנית, ובנוסף `errors` —
@@ -121,8 +134,14 @@ export function runRecipe(r, v) {
           });
           parts.push(...dd.parts); hardware.push(...dd.hardware);
         } else {
-          const { axis, grain } = axesOf(box, c.grain);
-          parts.push(part(id, name, box, { axis, grain, material: matOf(c.material), qtyKey: `${baseId}-${Math.round(box.w)}x${Math.round(box.h)}x${Math.round(box.d)}`, edges: { ...(EDGES[c.edges] || EDGES.front) } }));
+          const auto = axesOf(box, c.grain);
+          const axis = ['x', 'y', 'z'].includes(c.axis) ? c.axis : auto.axis;
+          const grain = ['x', 'y', 'z'].includes(c.grain) && c.grain !== axis ? c.grain : axesOf(box, null, axis).grain;
+          // מפתח קיבוץ ברשימת החיתוך והערה — טקסט עם {נוסחה}; box_w/h/d = מידות הרכיב
+          const bs = { ...s, box_w: box.w, box_h: box.h, box_d: box.d };
+          const qtyKey = c.qtyKey && String(c.qtyKey).trim() ? interpolate(c.qtyKey, bs) : `${baseId}-${Math.round(box.w)}x${Math.round(box.h)}x${Math.round(box.d)}`;
+          const note = c.note && String(c.note).trim() ? interpolate(c.note, bs) : undefined;
+          parts.push(part(id, name, box, { axis, grain, material: matOf(c.material), qtyKey, edges: edgesOf(c.edges), note }));
         }
       } catch (e) { fail(count > 1 ? `${label} (${idx}=${i})` : label, e); }
     }
@@ -132,17 +151,28 @@ export function runRecipe(r, v) {
     try {
       if (h.when && String(h.when).trim() && !evalBool(h.when, scope)) continue;
       const qty = Math.round(evalNum(h.qty ?? 1, scope));
-      if (qty > 0) hardware.push({ id: `rhw-${k + 1}`, kind: 'misc', material: matOf(h.material), qty, note: interpolate(h.name || '', scope) });
+      if (qty > 0) hardware.push({ id: h.id && String(h.id).trim() ? String(h.id) : `rhw-${k + 1}`, kind: 'misc', material: matOf(h.material), qty, note: interpolate(h.name || '', scope) });
     } catch (e) { fail(`פרזול ${h.name || k + 1}`, e); }
+  }
+  // גלגלים: ארבעה בפינות התחתית, והמוצר מורם בגובהם (addWheels של הקוד)
+  scope.lift = 0;
+  if (r.wheels && r.wheels.param) {
+    try {
+      const wv = { wheels: v[r.wheels.param] };
+      scope.lift = addWheels(parts, hardware, wv, { x0: evalNum(r.wheels.x0 || 0, scope), x1: evalNum(r.wheels.x1, scope), y0: evalNum(r.wheels.y0 || 0, scope), z0: evalNum(r.wheels.z0 || 0, scope), z1: evalNum(r.wheels.z1, scope), inset: evalNum(r.wheels.inset ?? 60, scope) });
+    } catch (e) { fail('גלגלים', e); }
   }
   for (const [k, w] of (r.warnings || []).entries()) {
     if (!w) continue;
     try { if (evalBool(w.when, scope)) warnings.push(interpolate(w.text || 'אזהרה', scope)); } catch (e) { fail(`אזהרה ${k + 1}`, e); }
   }
-  for (const e of errors) warnings.push(`שגיאה במתכון — ${e.where}: ${e.message}`);
   let w = 0, h = 0, d = 0;
   for (const p of parts) { w = Math.max(w, p.box.x + p.box.w); h = Math.max(h, p.box.y + p.box.h); d = Math.max(d, p.box.z + p.box.d); }
-  return { parts, hardware, warnings, errors, bounds: { w: w || 1, h: h || 1, d: d || 1 }, scope };
+  const bounds = { w: w || 1, h: h || 1, d: d || 1 };
+  // גבולות מפורשים (רשות) — כשהמוצר "תופס" יותר מהחלקים (למשל מזרן)
+  if (r.bounds) for (const k of ['w', 'h', 'd']) if (r.bounds[k] && String(r.bounds[k]).trim()) { try { bounds[k] = evalNum(r.bounds[k], scope); } catch (e) { fail(`גבולות ${k}`, e); } }
+  for (const e of errors) warnings.push(`שגיאה במתכון — ${e.where}: ${e.message}`);
+  return { parts, hardware, warnings, errors, bounds, scope };
 }
 
 /** מתכון → תבנית רגילה. */
@@ -155,12 +185,39 @@ export function recipeTemplate(r) {
   };
 }
 
-/** מחליף את כל המתכונים הרשומים ברשימה חדשה. מתכון פגום — מדולג (ולא מפיל את השאר). */
+// ---- מתכונים מובנים (שלב 3): מוצרים שעברו מקוד למתכון, באותו מפתח ----
+// פרויקט קיים ('bed', 'table') נפתח כרגיל — הפרמטרים זהים. המנהל יכול לפתוח
+// אותם במעבדה ולערוך: הגרסה הערוכה נשמרת בשרת באותו מפתח ודורסת את המובנה;
+// מחיקתה = חזרה למתכון שבקוד.
+export const BUILTIN_RECIPES = { bed: bedRecipe, table: tableRecipe };
+export const isBuiltinKey = (k) => Object.prototype.hasOwnProperty.call(BUILTIN_RECIPES, k);
+/** תבנית ממתכון מובנה (או מהגרסה הערוכה שלו). */
+export function builtinTemplate(key, override = null) {
+  const t = recipeTemplate(override ? { ...override, key } : BUILTIN_RECIPES[key]);
+  t.builtin = true;
+  if (override) t.overridden = true;
+  return t;
+}
+
+// רישום התבניות (index.js) — מוזרק, כדי שהמודול הזה לא ייבא את index.js (מעגל)
+let REG = null;
+export function setRegistry(templates) { REG = templates; }
+
+/**
+ * מחליף את כל המתכונים הרשומים ברשימה חדשה: מתכוני 'r-…', וגרסאות ערוכות של
+ * המובנים. מובנה שאין לו גרסה ברשימה — חוזר למקור. מתכון פגום — מדולג.
+ */
 export function registerRecipes(list) {
-  for (const [k, t] of Object.entries(TEMPLATES)) if (t.recipe) delete TEMPLATES[k];
+  for (const [k, t] of Object.entries(REG)) if (t.recipe && !t.builtin) delete REG[k];
+  const over = {};
   for (const r of Array.isArray(list) ? list : []) {
-    if (!r || typeof r.key !== 'string' || !r.key.startsWith(RECIPE_PREFIX)) continue;
-    try { TEMPLATES[r.key] = recipeTemplate(r); } catch { /* מתכון פגום */ }
+    if (!r || typeof r.key !== 'string') continue;
+    if (isBuiltinKey(r.key)) { over[r.key] = r; continue; }
+    if (!r.key.startsWith(RECIPE_PREFIX)) continue;
+    try { REG[r.key] = recipeTemplate(r); } catch { /* מתכון פגום */ }
+  }
+  for (const k of Object.keys(BUILTIN_RECIPES)) {
+    try { REG[k] = builtinTemplate(k, over[k] || null); } catch { REG[k] = builtinTemplate(k); }
   }
 }
 
@@ -178,7 +235,7 @@ export function recipeSyntax(r) {
 /** מזהה פנוי למתכון חדש. */
 export function newRecipeKey() {
   let k;
-  do k = RECIPE_PREFIX + Math.random().toString(36).slice(2, 8); while (TEMPLATES[k]);
+  do k = RECIPE_PREFIX + Math.random().toString(36).slice(2, 8); while (REG[k]);
   return k;
 }
 

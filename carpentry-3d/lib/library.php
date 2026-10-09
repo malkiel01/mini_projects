@@ -116,7 +116,8 @@ function recipesList(): array {
  */
 function recipeSave(array $r): array {
     $key = is_string($r['key'] ?? null) ? $r['key'] : '';
-    if (!preg_match('/^r-[a-z0-9]{2,20}$/', $key)) throw new AppError('מזהה מתכון לא חוקי', 400);
+    // 'r-…' = מוצר חדש; מילה באותיות קטנות = גרסה ערוכה של מוצר מובנה ('table', 'bed')
+    if (!preg_match('/^(r-[a-z0-9]{2,20}|[a-z]{2,20})$/', $key)) throw new AppError('מזהה מתכון לא חוקי', 400);
     $name = trim((string) ($r['name'] ?? ''));
     if ($name === '' || mb_strlen($name) > 80) throw new AppError('למתכון צריך שם (עד 80 תווים)', 400);
     foreach (['params', 'vars', 'components', 'hardware', 'warnings'] as $k) {

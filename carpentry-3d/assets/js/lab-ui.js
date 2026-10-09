@@ -16,7 +16,7 @@ import { applyRules, activeRules, originalOf, originalLimits, describeShowIf, LI
 import { LIMITS } from './model/templates/common.js';
 import { createViewer } from './viewer.js';
 import { api } from './store.js';
-import { registerRecipes, recipeTemplate, starterRecipe, newRecipeKey, RECIPE_PREFIX } from './model/recipe.js';
+import { registerRecipes, recipeTemplate, starterRecipe, newRecipeKey, RECIPE_PREFIX, isBuiltinKey, builtinTemplate, BUILTIN_RECIPES } from './model/recipe.js';
 import { createRecipeEditor } from './recipe-ui.js';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -33,7 +33,12 @@ export function createLabUI(root, { onChange, onError, toast, requestClose }) {
   let savedRecipes = [];  // המתכונים כפי שבשרת
   let rdraft = null;      // המתכון שבעריכה (עותק)
   let rdirty = false;
-  const isRecipe = (k) => typeof k === 'string' && k.startsWith(RECIPE_PREFIX);
+  // sel: מפתח תבנית, '_limits', מתכון 'r-…', או '@table' — עריכת המתכון של מוצר מובנה
+  const isRecipe = (k) => typeof k === 'string' && (k.startsWith(RECIPE_PREFIX) || k.startsWith('@'));
+  const tplOf = (k) => (typeof k === 'string' && k.startsWith('@') ? k.slice(1) : k);
+  const selOf = (key) => (isBuiltinKey(key) ? `@${key}` : key);
+  const templateFor = (r) => (isBuiltinKey(r.key) ? builtinTemplate(r.key, r) : recipeTemplate(r));
+  const savedOf = (key) => savedRecipes.find((r) => r.key === key) || (isBuiltinKey(key) ? BUILTIN_RECIPES[key] : null);
 
   root.innerHTML = `
     <div class="drawer__bar"><strong>🧪 מעבדת מוצרים</strong><span class="muted lab__hint">מה שהמערכת יודעת על כל מוצר — גלוי וניתן לעריכה</span>
@@ -57,9 +62,10 @@ export function createLabUI(root, { onChange, onError, toast, requestClose }) {
     saved = clone(activeRules());
     draft = clone(saved);
     dirty = false;
-    savedRecipes = Object.values(TEMPLATES).filter((t) => t.recipe).map((t) => clone(t.recipe));
-    if (isRecipe(sel) && !savedRecipes.some((r) => r.key === sel)) sel = 'bookcase';
-    rdraft = isRecipe(sel) ? clone(savedRecipes.find((r) => r.key === sel)) : null;
+    // מה שבשרת: מתכוני 'r-…' וגרסאות ערוכות של מובנים
+    savedRecipes = Object.values(TEMPLATES).filter((t) => t.recipe && (!t.builtin || t.overridden)).map((t) => clone(t.recipe));
+    if (isRecipe(sel) && !savedOf(tplOf(sel))) sel = 'bookcase';
+    rdraft = isRecipe(sel) ? clone(savedOf(tplOf(sel))) : null;
     rdirty = false;
     render();
   }
@@ -80,7 +86,7 @@ export function createLabUI(root, { onChange, onError, toast, requestClose }) {
   const recipeEd = createRecipeEditor($('.lab__side'), $('.lab__table'), {
     onChange: (r) => {
       rdirty = true;
-      TEMPLATES[r.key] = recipeTemplate(r);   // התצוגה בונה מהטיוטה
+      TEMPLATES[r.key] = templateFor(r);   // התצוגה בונה מהטיוטה
       applyRules(draft);
       $('.lab__state').textContent = '● מתכון שטרם נשמר';
       renderList(); renderPreview();
@@ -90,10 +96,10 @@ export function createLabUI(root, { onChange, onError, toast, requestClose }) {
         const res = await api('recipe-save', { recipe: r });
         savedRecipes = res.recipes;
         registerRecipes(savedRecipes); applyRules(draft);
-        rdraft = clone(savedRecipes.find((x) => x.key === r.key));
+        rdraft = clone(savedOf(r.key));
         rdirty = false;
         onChange();
-        toast('המתכון נשמר — זמין ביצירת פרויקט');
+        toast(isBuiltinKey(r.key) ? 'המתכון נשמר — חל על כל הפרויקטים מסוג זה' : 'המתכון נשמר — זמין ביצירת פרויקט');
         render();
       } catch (err) { onError(err); }
     },
@@ -103,7 +109,19 @@ export function createLabUI(root, { onChange, onError, toast, requestClose }) {
       openRecipe(copy, true);
     },
     onDelete: async (r) => {
-      if (!savedRecipes.some((x) => x.key === r.key)) { rdirty = false; registerRecipes(savedRecipes); sel = 'bookcase'; render(); return; }
+      const back = isBuiltinKey(r.key) ? r.key : 'bookcase';
+      if (!savedRecipes.some((x) => x.key === r.key)) { rdirty = false; registerRecipes(savedRecipes); applyRules(draft); rdraft = null; sel = back; render(); return; }
+      if (isBuiltinKey(r.key)) {
+        if (!confirm(`להחזיר את "${BUILTIN_RECIPES[r.key].name}" למתכון המקורי שבקוד? העריכות במתכון יימחקו.`)) return;
+        try {
+          const res = await api('recipe-delete', { key: r.key });
+          savedRecipes = res.recipes;
+          registerRecipes(savedRecipes); applyRules(draft);
+          rdirty = false; rdraft = null; sel = back;
+          onChange(); toast('חזר למתכון המקורי'); render();
+        } catch (err) { onError(err); }
+        return;
+      }
       if (!confirm(`למחוק את "${r.name}"? פרויקטים שנבנו ממנו לא ייפתחו יותר. (השבתה — הסרת "פעיל" — מסתירה אותו בלי לשבור.)`)) return;
       try {
         const res = await api('recipe-delete', { key: r.key });
@@ -123,8 +141,8 @@ export function createLabUI(root, { onChange, onError, toast, requestClose }) {
     return true;
   }
   function openRecipe(r, fresh = false) {
-    rdraft = r; sel = r.key; rdirty = fresh;
-    if (fresh) { TEMPLATES[r.key] = recipeTemplate(r); applyRules(draft); }
+    rdraft = r; sel = selOf(r.key); rdirty = fresh;
+    if (fresh) { TEMPLATES[r.key] = templateFor(r); applyRules(draft); }
     render();
   }
 
@@ -195,12 +213,14 @@ export function createLabUI(root, { onChange, onError, toast, requestClose }) {
   function renderList() {
     const card = (key, title, sub) => {
       const n = changes(key);
-      return `<button type="button" class="acc__card ${sel === key ? 'is-active' : ''}" data-sel="${key}"><strong>${esc(title)}</strong><span class="muted">${esc(sub)}${n ? ` · <b class="lab__n">${n} שינויים</b>` : ''}</span></button>`;
+      return `<button type="button" class="acc__card ${sel === key || sel === `@${key}` ? 'is-active' : ''}" data-sel="${key}"><strong>${esc(title)}</strong><span class="muted">${esc(sub)}${n ? ` · <b class="lab__n">${n} שינויים</b>` : ''}</span></button>`;
     };
     const rcard = (r) => `<button type="button" class="acc__card ${sel === r.key ? 'is-active' : ''} ${r.active === false ? 'is-off' : ''}" data-sel="${r.key}"><strong>🧪 ${esc(r.name)}</strong><span class="muted">${(r.components || []).length} רכיבים · ${(r.params || []).length} פרמטרים${r.active === false ? ' · מושבת' : ''}${sel === r.key && rdirty ? ' · <b class="lab__n">לא נשמר</b>' : ''}</span></button>`;
-    const shown = [...savedRecipes.map((r) => (rdraft && r.key === rdraft.key ? rdraft : r)), ...(rdraft && !savedRecipes.some((r) => r.key === rdraft.key) ? [rdraft] : [])];
-    $('.lab__list').innerHTML = '<h4 class="lab__lhead">מוצרים מהקוד</h4>'
-      + Object.entries(TEMPLATES).filter(([, t]) => !t.recipe).map(([k, t]) => card(k, t.name, `${allParams(t).length} פרמטרים · ${t.laborHours} ש׳ עבודה`)).join('')
+    const mine = savedRecipes.filter((r) => !isBuiltinKey(r.key));
+    const shown = [...mine.map((r) => (rdraft && r.key === rdraft.key ? rdraft : r)), ...(rdraft && !isBuiltinKey(rdraft.key) && !mine.some((r) => r.key === rdraft.key) ? [rdraft] : [])];
+    const tsub = (k, t) => `${allParams(t).length} פרמטרים · ${t.laborHours} ש׳ עבודה${t.builtin ? (t.overridden ? ' · 🧪 מתכון ערוך' : ' · 🧪 מתכון') : ''}`;
+    $('.lab__list').innerHTML = '<h4 class="lab__lhead">מוצרי המערכת</h4>'
+      + Object.entries(TEMPLATES).filter(([, t]) => !t.recipe || t.builtin).map(([k, t]) => card(k, t.name, tsub(k, t))).join('')
       + card('_limits', '⚖️ גבולות ואזהרות', `${Object.keys(LIMITS).length} גבולות לכל המוצרים`)
       + '<h4 class="lab__lhead">מוצרים מנוסחאות</h4>'
       + shown.map(rcard).join('')
@@ -225,7 +245,7 @@ export function createLabUI(root, { onChange, onError, toast, requestClose }) {
     if (!b || b.dataset.sel === sel) return;
     if (!leaveRecipe()) return;
     sel = b.dataset.sel;
-    rdraft = isRecipe(sel) ? clone(savedRecipes.find((r) => r.key === sel)) : null;
+    rdraft = isRecipe(sel) ? clone(savedOf(tplOf(sel))) : null;
     render();
   });
 
@@ -249,7 +269,8 @@ export function createLabUI(root, { onChange, onError, toast, requestClose }) {
       <label class="acc__field"><span>שעות עבודה</span><input type="number" min="0" step="0.5" data-hours value="${t.laborHours}" class="${r.laborHours !== undefined ? 'is-changed' : ''}"><i>בקוד: ${o.laborHours}</i></label>
       <p class="muted">שעות העבודה נכנסות להצעת המחיר (כפול תעריף השעה) ולסיכום ההרכבה.</p>
       <div class="lab__warns"></div>
-      <button type="button" class="btn btn--small" data-reset-tpl ${changes(sel) ? '' : 'disabled'}>↺ כל ${esc(t.name)} — חזרה לקוד</button>`;
+      <button type="button" class="btn btn--small" data-reset-tpl ${changes(sel) ? '' : 'disabled'}>↺ כל ${esc(t.name)} — חזרה לקוד</button>
+      ${t.builtin ? `<p class="muted">המוצר הזה בנוי ממתכון — רכיבים ונוסחאות. אפשר לפתוח אותו ולשנות את המבנה עצמו.${t.overridden ? ' <b>המתכון נערך.</b>' : ''}</p><button type="button" class="btn btn--accent" data-open-recipe="${t.key}">🧪 פתיחת המתכון</button>` : ''}`;
     // פרמטרים לפי קבוצה, בסדר הופעתם בטופס
     const groups = [];
     for (const p of allParams(t)) {
@@ -307,7 +328,7 @@ export function createLabUI(root, { onChange, onError, toast, requestClose }) {
       </div>`).join('')}</div>`;
   }
   let prevTpl = 'bookcase';
-  const lastTpl = () => (sel === '_limits' ? prevTpl : (prevTpl = sel));
+  const lastTpl = () => (sel === '_limits' ? prevTpl : (prevTpl = tplOf(sel)));
 
   // ---- עריכה ----
   root.addEventListener('change', (e) => {
@@ -335,6 +356,10 @@ export function createLabUI(root, { onChange, onError, toast, requestClose }) {
     } else if (b.dataset.resetTpl !== undefined) {
       if (!confirm(`להחזיר את כל ההגדרות של "${TEMPLATES[sel].name}" לערכים שבקוד?`)) return;
       delete draft[sel]; touch();
+    } else if (b.dataset.openRecipe) {
+      const k = b.dataset.openRecipe;
+      rdraft = clone(savedOf(k)); rdraft.key = k; sel = `@${k}`; rdirty = false;
+      render();
     } else if (b.dataset.resetLim !== undefined) {
       delete draft._limits; touch();
     }

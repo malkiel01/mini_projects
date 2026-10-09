@@ -20,7 +20,9 @@ import { toSTL, printSize } from '../assets/js/model/stl.js';
 import { applyRules, originalOf, describeShowIf, LIMIT_INFO } from '../assets/js/model/rules.js';
 import { LIMITS } from '../assets/js/model/templates/common.js';
 import { evaluate, evalNum, interpolate, syntaxError } from '../assets/js/model/expr.js';
-import { registerRecipes, starterRecipe, runRecipe, recipeSyntax } from '../assets/js/model/recipe.js';
+import { registerRecipes, starterRecipe, runRecipe, recipeSyntax, BUILTIN_RECIPES } from '../assets/js/model/recipe.js';
+import legacyBed from '../assets/js/model/templates/bed.js';
+import legacyTable from '../assets/js/model/templates/table.js';
 import { visible } from '../assets/js/model/index.js';
 import { millSpec, fluteGrooves, fluteRib, millRects, millSolids, millRemoved, millText, millEdges, cncPatterns } from '../assets/js/model/milling.js';
 
@@ -1118,6 +1120,51 @@ console.log('מתכונים: מוצר מנתונים');
   check(many.parts.length === 200 && many.errors.length === 1, 'תקרת חזרות');
   registerRecipes([]);
   check(!TEMPLATES['r-test01'] && TEMPLATES.bookcase, 'הסרה — רק המתכונים יוצאים');
+}
+
+console.log('שלב 3: מתכונים מובנים זהים לקוד הישן');
+{
+  // הקוד הישן נשאר בקובץ רק כקנה מידה לבדיקה הזו
+  const norm = (o) => JSON.parse(JSON.stringify(o, (k, val) => (typeof val === 'number' ? Math.round(val * 1e6) / 1e6 : val)));
+  const sortKeys = (o) => (Array.isArray(o) ? o.map(sortKeys) : o && typeof o === 'object' ? Object.fromEntries(Object.keys(o).sort().filter((k) => o[k] !== undefined).map((k) => [k, sortKeys(o[k])])) : o);
+  const pick = (r) => sortKeys(norm({ parts: r.parts, hardware: r.hardware, warnings: r.warnings, bounds: r.bounds }));
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (const [key, legacy] of [['bed', legacyBed], ['table', legacyTable]]) {
+    TEMPLATES[`legacy-${key}`] = { ...legacy, key: `legacy-${key}` };
+    const t = TEMPLATES[key];
+    check(t.recipe === BUILTIN_RECIPES[key] && t.builtin, `${key}: נבנה ממתכון מובנה`);
+    check(JSON.stringify(allParams(t).map((p) => [p.key, p.type, p.default, p.min, p.max, p.group])) === JSON.stringify(allParams(legacy).map((p) => [p.key, p.type, p.default, p.min, p.max, p.group])), `${key}: אותם פרמטרים, טווחים וברירות מחדל`);
+    check(allParams(t).every((p) => { const q = allParams(legacy).find((x) => x.key === p.key); return JSON.stringify(optionsFor(p)) === JSON.stringify(optionsFor(q)); }), `${key}: אותן אפשרויות בחירה (כולל חומרים)`);
+    let same = 0, diff = null;
+    for (let n = 0; n < 400; n += 1) {
+      const v = {};
+      for (const p of allParams(legacy)) {
+        if (['mm', 'int', 'deg'].includes(p.type)) v[p.key] = n === 0 ? p.default : Math.round(p.min + rnd() * (p.max - p.min));
+        else { const o = optionsFor(p); if (o.length) v[p.key] = o[Math.floor(rnd() * o.length)].id; }
+      }
+      if (n % 3 === 0) v.apronH = 0;
+      if (n % 5 === 0) v.headboardH = 0;
+      const a = build(`legacy-${key}`, v), b = build(key, v);
+      if (!a.parts.every((p) => p.box.w > 0 && p.box.h > 0 && p.box.d > 0)) continue;   // מידות קיצוניות שהקוד הישן בנה שלילי
+      if (JSON.stringify(pick(a)) === JSON.stringify(pick(b))) same += 1;
+      else if (!diff) diff = { v, a: pick(a), b: pick(b) };
+    }
+    if (diff) {
+      const A = JSON.stringify(diff.a), B = JSON.stringify(diff.b);
+      let i = 0; while (A[i] === B[i]) i += 1;
+      console.error(`    ${key} שונה ב: …${A.slice(Math.max(0, i - 120), i + 80)}\n    מול: …${B.slice(Math.max(0, i - 120), i + 80)}`);
+    }
+    check(!diff && same > 300, `${key}: ${same} תצורות אקראיות זהות לחלוטין (חלקים, פרזול, אזהרות, גבולות)`);
+    const ra = build(`legacy-${key}`, {}), rb = build(key, {});
+    check(JSON.stringify(cutList(ra)) === JSON.stringify(cutList(rb)) && JSON.stringify(hardwareList(ra)) === JSON.stringify(hardwareList(rb)), `${key}: רשימת חיתוך ופרזול זהות`);
+    delete TEMPLATES[`legacy-${key}`];
+  }
+  // גרסה ערוכה של מובנה דורסת אותו, ומחיקתה מחזירה
+  registerRecipes([{ ...BUILTIN_RECIPES.table, name: 'שולחן ערוך', laborHours: 11 }]);
+  check(TEMPLATES.table.overridden && TEMPLATES.table.name === 'שולחן ערוך' && TEMPLATES.table.laborHours === 11, 'דריסה של מתכון מובנה');
+  registerRecipes([]);
+  check(!TEMPLATES.table.overridden && TEMPLATES.table.name === 'שולחן' && TEMPLATES.bookcase && !TEMPLATES.bookcase.recipe, 'בלי דריסה — חזרה למובנה; תבניות הקוד לא נגעו');
 }
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }

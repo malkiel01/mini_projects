@@ -175,7 +175,9 @@ ok 'ניקוי' "$(call "$C" '{"action":"accessories-save","diff":[]}')" "len([m
 echo "מתכונים (מעבדת המוצרים, שלב 2)"
 ok 'בהתחלה אין מתכונים' "$(call "$C" '{"action":"recipes-get"}')" "d['recipes']==[]"
 ok 'נגר לא שומר מתכון' "$(call "$C" '{"action":"recipe-save","recipe":{"key":"r-abc1","name":"x"}}')" "d['success']==False"
-ok 'מזהה לא חוקי נדחה' "$(call "$A" '{"action":"recipe-save","recipe":{"key":"bookcase","name":"x"}}')" "d['success']==False"
+ok 'מזהה לא חוקי נדחה' "$(call "$A" '{"action":"recipe-save","recipe":{"key":"Table-1","name":"x"}}')" "d['success']==False"
+ok 'גרסה ערוכה של מוצר מובנה (מפתח קיים) — נשמרת ונמחקת' "$(call "$A" '{"action":"recipe-save","recipe":{"key":"table","name":"שולחן ערוך","components":[]}}')" "d['recipe']['key']=='table'"
+ok '…ומחיקה = חזרה למובנה' "$(call "$A" '{"action":"recipe-delete","key":"table"}')" "d['recipes']==[]"
 ok 'בלי שם נדחה' "$(call "$A" '{"action":"recipe-save","recipe":{"key":"r-abc1","name":"  "}}')" "d['success']==False"
 ok 'רכיבים חייבים להיות רשימה' "$(call "$A" '{"action":"recipe-save","recipe":{"key":"r-abc1","name":"x","components":"oops"}}')" "d['success']==False"
 R=$(call "$A" '{"action":"recipe-save","recipe":{"key":"r-abc1","name":"ארון בדיקה","params":[{"key":"W","type":"mm","default":800}],"components":[{"id":"top","w":"W","h":"18","d":"400"}]}}')

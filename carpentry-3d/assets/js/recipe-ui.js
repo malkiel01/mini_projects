@@ -5,9 +5,16 @@
 // ההודעה). שינוי ערך לא מצייר מחדש (הפוקוס נשאר) — רק מודיע ל-onChange
 // שבונה את התצוגה. הוספה, מחיקה, הזזה וסוג — מציירים מחדש.
 
-import { MATERIAL_USES } from './model/recipe.js';
+import { MATERIAL_USES, EDGE_SIDES, isBuiltinKey } from './model/recipe.js';
 import { syntaxError } from './model/expr.js';
 
+// קנטים: 'front' / 'all' / 'none' או רשימה 'top,front' → קבוצת צדדים
+function edgeSet(e) {
+  if (e === undefined || e === null || e === '' || e === 'front') return new Set(['front']);
+  if (e === 'all') return new Set(Object.keys(EDGE_SIDES));
+  if (e === 'none') return new Set();
+  return new Set(String(e).split(',').map((x) => x.trim()));
+}
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const TYPES = { mm: 'מ"מ', int: 'מספר שלם', deg: 'מעלות', enum: 'בחירה מרשימה', material: 'חומר' };
 const BLANK = {
@@ -42,6 +49,7 @@ export function createRecipeEditor(side, table, { onChange, onSave, onDelete, on
     if (path) (side.querySelector(`[data-path="${path}"]`) || table.querySelector(`[data-path="${path}"]`))?.focus();
   }
   function drawAll() {
+    const builtin = isBuiltinKey(r.key);
     const matParams = (r.params || []).filter((p) => p.type === 'material');
     const matOpts = (use) => ({ '': '— בחירה —', ...Object.fromEntries(matParams.filter((p) => !use || use.includes(p.use || 'board')).map((p) => [p.key, p.label || p.key])) });
     const names = [...(r.params || []).map((p) => p.key), ...matParams.map((p) => `${p.key}_t`), ...(r.vars || []).map((x) => x.name)].filter(Boolean);
@@ -51,12 +59,14 @@ export function createRecipeEditor(side, table, { onChange, onSave, onDelete, on
       ${lbl('שם המוצר', tx('name', r.name))}
       ${lbl('תיאור', tx('description', r.description || ''))}
       <div class="rrow">${lbl('שעות עבודה', `<input type="number" data-num="1" min="0" step="0.5" data-path="laborHours" value="${esc(r.laborHours ?? 0)}">`)}
-      <label class="lab__vis"><input type="checkbox" data-path="active" ${r.active !== false ? 'checked' : ''}> פעיל (מופיע ביצירת פרויקט)</label></div>
+      ${builtin ? '' : `<label class="lab__vis"><input type="checkbox" data-path="active" ${r.active !== false ? 'checked' : ''}> פעיל (מופיע ביצירת פרויקט)</label>`}</div>
+      ${builtin ? '<p class="muted">מוצר מערכת: השמירה חלה על כל הפרויקטים מסוג זה. "חזרה למקור" מוחקת את העריכות.</p>' : ''}
+      ${r.wheels || r.bounds ? `<p class="muted">ממאפייני המתכון (נשמרים כמו שהם): ${[r.wheels ? `גלגלים לפי הפרמטר <code>${esc(r.wheels.param)}</code>` : '', r.bounds ? 'גבולות מפורשים' : ''].filter(Boolean).join(' · ')}</p>` : ''}
       <div class="lab__warns"></div>
       <div class="rbtns">
         <button type="button" class="btn btn--accent" data-act="save">💾 שמירת המתכון</button>
         <button type="button" class="btn btn--small" data-act="dup">שכפול</button>
-        <button type="button" class="btn btn--small" data-act="del">מחיקה</button>
+        <button type="button" class="btn btn--small" data-act="del">${builtin ? '↺ חזרה למקור' : 'מחיקה'}</button>
       </div>
       <details class="rcheat"><summary>איך כותבים נוסחה</summary>
         <p>חשבון <code>+ - * / %</code> וסוגריים · השוואה <code>== != &lt; &gt; &lt;= &gt;=</code> · וגם <code>&amp;&amp;</code> · או <code>||</code> · לא <code>!</code><br>
@@ -92,7 +102,9 @@ export function createRecipeEditor(side, table, { onChange, onSave, onDelete, on
           <div class="rgrid6">${['x', 'y', 'z', 'w', 'h', 'd'].map((k) => lbl({ x: 'x מיקום', y: 'y מיקום', z: 'z מיקום', w: 'w רוחב', h: 'h גובה', d: 'd עומק' }[k], fx(`components.${i}.${k}`, c[k] ?? '', '0'))).join('')}</div>
           <div class="rrow">${c.kind === 'door'
             ? lbl('צד הציר (נוסחה)', fx(`components.${i}.side`, c.side || '', "'left'"), 'rwide') + lbl('ידית', sel(`components.${i}.handle`, c.handle || '', { '': 'ללא', ...matOpts(['handle']) })) + lbl('ציר', sel(`components.${i}.hinge`, c.hinge || '', { '': 'ציר 110° (ברירת מחדל)', ...matOpts(['hinge']) }))
-            : lbl('סיבים', sel(`components.${i}.grain`, c.grain || 'auto', { auto: 'אוטומטי (הצד הארוך)', x: 'לרוחב (x)', y: 'לגובה (y)', z: 'לעומק (z)' })) + lbl('קנט', sel(`components.${i}.edges`, c.edges || 'front', { front: 'חזית', all: 'מסביב', none: 'ללא' }))}</div>
+            : lbl('סיבים', sel(`components.${i}.grain`, c.grain || 'auto', { auto: 'אוטומטי (הצד הארוך)', x: 'לרוחב (x)', y: 'לגובה (y)', z: 'לעומק (z)' })) + lbl('ציר העובי', sel(`components.${i}.axis`, c.axis || 'auto', { auto: 'אוטומטי (המידה הקטנה)', x: 'x', y: 'y', z: 'z' }))}</div>
+          ${c.kind === 'door' ? '' : `<div class="rrow"><span class="rf rwide"><span>קנט</span><span class="redges">${Object.entries(EDGE_SIDES).map(([k, n]) => `<label><input type="checkbox" data-edge="components.${i}.edges" value="${k}" ${edgeSet(c.edges).has(k) ? 'checked' : ''}>${n}</label>`).join('')}</span></span>
+          ${lbl('מפתח קיבוץ (רשות)', tx(`components.${i}.qtyKey`, c.qtyKey || '', 'אוטומטי — לפי המידות', 'dir="ltr"'))}${lbl('הערה (רשות)', tx(`components.${i}.note`, c.note || ''))}</div>`}
         </div>`).join('')}</div>`),
       section('hardware', 'פרזול נוסף', 'מעבר לצירים ולידיות של הדלתות. חומר = מזהה מהספרייה (hw:…) או פרמטר חומר.',
         `<div class="rlist rlist--tight">${(r.hardware || []).map((h, i) => `<div class="rcard rcard--line">${tx(`hardware.${i}.name`, h.name, 'שם')}${tx(`hardware.${i}.material`, h.material, 'hw:…', 'dir="ltr"')}${lbl('כמות', fx(`hardware.${i}.qty`, h.qty ?? '1', '1', 'rshort'))}${lbl('תנאי', fx(`hardware.${i}.when`, h.when || '', 'ריק = תמיד'))}${tools('hardware', i)}</div>`).join('')}</div>`),
@@ -111,6 +123,13 @@ export function createRecipeEditor(side, table, { onChange, onSave, onDelete, on
   const NUMERIC = /^(params\.\d+\.(min|max)|laborHours)$/;
   function onInput(e) {
     const el = e.target;
+    if (el.dataset.edge) {
+      const boxes = [...el.closest('.redges').querySelectorAll('input')];
+      const on = boxes.filter((b) => b.checked).map((b) => b.value);
+      setPath(el.dataset.edge, on.length ? on.join(',') : 'none');
+      if (e.type === 'change') onChange(r);
+      return;
+    }
     if (!el.dataset.path) return;
     const path = el.dataset.path;
     let v = el.type === 'checkbox' ? el.checked : el.value;
