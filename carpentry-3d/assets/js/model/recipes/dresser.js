@@ -1,0 +1,97 @@
+// מתכון מובנה: שידת מגירות (שלב 3 — הועבר מ-templates/dresser.js).
+//
+// גוף, שורות × עמודות של מגירות, גג בולט קדימה ולצדדים, סוקל. הגוף צר
+// ב-2×הבלטה והגג (לוח נפרד) מכסה את כולו. החלוקה — רוחב לכל עמודה וגובה לכל
+// שורה — מעורך החלוקה (columnsLayout), והשורה העליונה לפי "גובה השורה העליונה".
+// המגירה, הגוף, המחיצות, הגב והסוקל הם אבני בניין (blocks.js) עם ארגומנטים
+// מנוסחאות. tools/model-check.js מוודא שהמתכון בונה בדיוק מה שהקוד הישן בנה.
+
+export default {
+  key: 'dresser',
+  name: 'שידת מגירות',
+  description: 'שורות ועמודות של מגירות, גג בולט, סוקל.',
+  laborHours: 8,
+  params: [
+    { key: 'width', label: 'רוחב', type: 'mm', min: 400, max: 2400, default: 1000, group: 'מידות' },
+    { key: 'height', label: 'גובה', type: 'mm', min: 400, max: 1400, default: 850, group: 'מידות' },
+    { key: 'depth', label: 'עומק', type: 'mm', min: 350, max: 700, default: 480, group: 'מידות' },
+    { key: 'drawerRows', label: 'שורות מגירות', type: 'int', min: 1, max: 8, default: 4, group: 'חלוקה' },
+    { key: 'drawerColumns', label: 'עמודות מגירות', type: 'int', min: 1, max: 4, default: 1, group: 'חלוקה' },
+    { key: 'topRowH', label: 'גובה השורה העליונה', type: 'mm', min: 0, max: 400, default: 0, group: 'חלוקה', hint: '0 = כל השורות שוות' },
+    { key: 'topOverhang', label: 'הבלטת הגג', type: 'mm', min: 0, max: 60, default: 20, group: 'חלוקה', hint: 'קדימה ולצדדים' },
+    { key: 'columnsLayout', label: 'עריכת החלוקה', type: 'json', default: null, group: 'חלוקה', editor: 'columns', hint: 'רוחב לכל עמודה וגובה לכל שורה' },
+    { key: 'bodyMaterial', label: 'חומר הגוף', type: 'material', use: 'body', default: 'board:melamine-oak-18', group: 'חומרים' },
+    { key: 'backMaterial', label: 'חומר הגב', type: 'material', use: 'back', default: 'board:back-hdf-6', group: 'חומרים' },
+    { key: 'edgeMaterial', label: 'קנט', type: 'material', use: 'edge', default: 'edge:pvc-1', group: 'חומרים' },
+    { key: 'frontMaterial', label: 'חזיתות המגירות', type: 'material', use: 'body', default: 'board:mdf-paint-18', group: 'חומרים' },
+    { key: 'frontFinish', label: 'גימור החזיתות', type: 'enum', source: 'finishFlush', default: 'flat', group: 'חומרים', hint: 'חירוץ CNC — בלוח אחד, בלי להוסיף עובי' },
+    { key: 'drawerBoxMaterial', label: 'ארגז המגירה', type: 'material', use: 'body', default: 'board:melamine-white-18', group: 'מגירות' },
+    { key: 'drawerBottomMaterial', label: 'תחתית המגירה', type: 'material', use: 'back', default: 'board:back-hdf-6', group: 'מגירות' },
+    { key: 'slide', label: 'מסילות', type: 'material', use: 'slide', default: 'hw:slide-std', group: 'מגירות', hint: 'העומס המותר נבדק מול משקל המגירה + 15 ק"ג תכולה' },
+    { key: 'handle', label: 'ידיות', type: 'material', use: 'handle', default: 'hw:handle-bar-128', group: 'מגירות' },
+    { key: 'plinthH', label: 'סוקל — גובה', type: 'mm', min: 0, max: 200, default: 70, group: 'סיומות' },
+    { key: 'plinthSetback', label: 'סוקל — נסיגה', type: 'mm', min: 0, max: 100, default: 25, group: 'סיומות' },
+    { key: 'wheels', label: 'גלגלים', type: 'material', use: 'wheel', default: 'none', group: 'סיומות', hint: 'ארבעה גלגלים בפינות התחתית; המודל מורם בגובהם' },
+    // חיבורים
+    { key: 'sideT', label: 'עובי הדפנות', type: 'mm', min: 12, max: 40, default: 18, group: 'חיבורים' },
+    { key: 'shelfT', label: 'עובי המדפים', type: 'mm', min: 12, max: 40, default: 18, group: 'חיבורים' },
+    { key: 'sidesOverTop', label: 'דפנות ↔ גג', type: 'enum', default: 'sides', group: 'חיבורים', options: [{ id: 'sides', name: 'הדפנות עוברות' }, { id: 'top', name: 'הגג עובר' }] },
+    { key: 'backMode', label: 'גב', type: 'enum', default: 'groove', group: 'חיבורים', options: [{ id: 'groove', name: 'בחריץ' }, { id: 'overlay', name: 'מולבש מאחור' }, { id: 'none', name: 'ללא' }] },
+    { key: 'backGrooveDepth', label: 'עומק החריץ', type: 'mm', min: 4, max: 15, default: 8, group: 'חיבורים', when: "backMode == 'groove'" },
+    { key: 'backInset', label: 'החריץ מהקצה האחורי', type: 'mm', min: 5, max: 50, default: 10, group: 'חיבורים', when: "backMode == 'groove'" },
+    { key: 'edgeMode', label: 'מידת הקנט', type: 'enum', default: 'subtract', group: 'חיבורים', options: [{ id: 'subtract', name: 'יורדת מהמידה' }, { id: 'add', name: 'נוספת למידה' }] },
+  ],
+  vars: [
+    { name: 'W', expr: 'width' },
+    { name: 'H', expr: 'height' },
+    { name: 'D', expr: 'depth' },
+    { name: 'cols', expr: 'drawerColumns' },
+    { name: 'rows', expr: 'drawerRows' },
+    { name: 'backT', expr: "backMode == 'none' ? 0 : backMaterial_t" },
+    { name: 'bodyZ', expr: "backMode == 'overlay' ? backT : 0" },
+    { name: 'frontT', expr: 'frontMaterial_t' },
+    { name: 'oh', expr: 'topOverhang' },
+    { name: 'bw', expr: 'W - 2 * oh' },
+    { name: 'bodyD', expr: 'D - bodyZ - oh' },
+    { name: 'bottomY', expr: 'plinthH + shelfT' },
+    { name: 'topY', expr: 'H - shelfT' },
+    // פנים הגוף (כמו inner של carcass, מוזז בהבלטה)
+    { name: 'ix0', expr: 'sideT + oh' },
+    { name: 'ix1', expr: 'bw - sideT + oh' },
+    { name: 'iy0', expr: 'bottomY' },
+    { name: 'iy1', expr: 'topY - shelfT' },
+    { name: 'iz0', expr: 'bodyZ' },
+    { name: 'iz1', expr: 'bodyZ + bodyD' },
+    { name: 'z0', expr: "iz0 + (backMode == 'groove' ? backInset + backT : 0)" },
+    { name: 'innerH', expr: 'iy1 - iy0' },
+    { name: 'drawerDepth', expr: 'min(iz1 - z0 - 20, 550)' },
+  ],
+  layouts: [
+    { name: 'colWs', param: 'columnsLayout', section: 'cols', count: 'cols', total: 'ix1 - ix0 - (cols - 1) * sideT',
+      title: 'עמודות', editorTotal: 'width - 2 * oh - 2 * sideT - (cols - 1) * sideT', sizeLabel: 'רוחב', allLabel: 'העמודות', next: 'מהעמודה שמימין', prev: 'מהעמודה שמשמאל', item: 'עמודה {i+1}' },
+    { name: 'rowHs', param: 'columnsLayout', section: 'rows', count: 'rows', total: 'innerH', min: '100', lastPin: 'topRowH',
+      title: 'שורות מגירות', editorTotal: 'height - shelfT - (plinthH + shelfT)', sizeLabel: 'גובה', allLabel: 'השורות', reverse: true, next: 'מהשורה שמעליה', prev: 'מהשורה שמתחתיה',
+      item: "שורה {i+1}{i == n - 1 ? ' (עליונה)' : (i == 0 ? ' (תחתונה)' : '')}" },
+  ],
+  components: [
+    { id: 'body', name: 'גוף', kind: 'carcass', a: { w: 'bw', d: 'bodyD', z: 'bodyZ', bottomY: 'bottomY', topY: 'topY', sideT: 'sideT', panelT: 'shelfT', sidesOverTop: "sidesOverTop == 'sides'", material: 'bodyMaterial', dx: 'oh' } },
+    { id: 'top-plate', name: 'גג בולט', material: 'bodyMaterial', x: '0', y: 'topY', z: 'bodyZ', w: 'W', h: 'shelfT', d: 'D - bodyZ', axis: 'y', grain: 'x', qtyKey: 'top-plate', edges: 'front,left,right' },
+    { id: 'grid', name: 'מחיצות', kind: 'partitions', a: { x0: 'ix0', x1: 'ix1', y0: 'iy0', y1: 'iy1', z0: 'iz0', z1: 'iz1', columns: 'cols', t: 'sideT', widths: 'colWs', material: 'bodyMaterial' } },
+    // מגירות: k רץ על העמודות ובתוכן על השורות (מלמטה למעלה)
+    { id: 'drawer', name: 'מגירה {floor(k / rows) + 1}.{k % rows + 1}', kind: 'drawer', repeat: 'cols * rows', index: 'k', idt: 'drawer-{floor(k / rows) + 1}-{k % rows + 1}',
+      a: { x0: 'grid_x0s[floor(k / rows)]', x1: 'grid_x1s[floor(k / rows)]', y0: 'sum(rowHs, k % rows, iy0)', y1: 'sum(rowHs, k % rows, iy0) + rowHs[k % rows]',
+        zFront: 'iz1', depth: 'drawerDepth', frontT: 'frontT', boxT: 'drawerBoxMaterial_t', bottomT: 'drawerBottomMaterial_t',
+        frontMaterial: 'frontMaterial', boxMaterial: 'drawerBoxMaterial', bottomMaterial: 'drawerBottomMaterial', slide: 'slide', handle: 'handle', finish: 'frontFinish',
+        mountL: "floor(k / rows) == 0 ? 'side-L' : 'partition-' + floor(k / rows)", mountR: "floor(k / rows) == cols - 1 ? 'side-R' : 'partition-' + (floor(k / rows) + 1)", mountBottom: 'iy0' } },
+    { id: 'back', name: 'גב', kind: 'back', a: { mode: 'backMode', w: 'bw', y0: 'bottomY - shelfT', y1: 'topY', ix0: 'ix0', ix1: 'ix1', iy0: 'iy0', iy1: 'iy1', t: 'backT', grooveDepth: 'backGrooveDepth', inset: 'backInset', material: 'backMaterial', dx: "backMode == 'overlay' ? oh : 0" } },
+    { id: 'plinth', name: 'סוקל', kind: 'plinth', a: { x0: 'ix0', x1: 'ix1', h: 'plinthH', setback: 'plinthSetback', t: 'sideT', d: 'D - oh', material: 'bodyMaterial' } },
+  ],
+  hardware: [],
+  wheels: { param: 'wheels', x0: 'oh', x1: 'W - oh', y0: '0', z0: 'bodyZ', z1: 'bodyZ + bodyD' },
+  warnings: [
+    { repeat: 'cols', index: 'c', when: 'grid_x1s[c] - grid_x0s[c] > lim_drawerMaxWidth', text: 'מגירה ברוחב {round(grid_x1s[c] - grid_x0s[c])} מ"מ — מעבר ל-{lim_drawerMaxWidth} המומלצים' },
+    { when: 'amin(rowHs) && amin(rowHs) < 120', text: 'שורת מגירה בגובה {round(amin(rowHs))} מ"מ — נמוך מ-120' },
+    { when: 'H > lim_heightUnanchored', text: 'גובה {H} מ"מ — מעל {lim_heightUnanchored} מומלץ עיגון לקיר' },
+  ],
+  bounds: { w: 'W', h: 'H + lift', d: 'D + frontT' },
+};

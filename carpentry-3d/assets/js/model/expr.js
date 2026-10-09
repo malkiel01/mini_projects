@@ -2,14 +2,24 @@
 //
 //   W - 2*T                    חשבון: + - * / % וסוגריים
 //   cols > 1 && doors == 'wood' השוואות (== != < <= > >=), וגם (&&), או (||), לא (!)
-//   i % 2 == 0 ? 'left' : 'right'   תנאי מקוצר
+//   i % 2 == 0 ? 'left' : 'right'   תנאי מקוצר; 'partition-' + (i+1) — שרשור טקסט
 //   min(a, b) max round floor ceil abs sqrt clamp(x, lo, hi) if(c, a, b)
+//   רשימות (חלוקת עמודות/שורות): ws[i], sum(ws, n, מ) — סכום n הראשונים (מצטבר מ-מ), amin(ws) amax(ws) len(ws)
 //
 // משתנה שלא קיים — שגיאה עם שמו (לא 0 שקט), כדי שטעות הקלדה תיראה מיד במסך.
 // הנוסחה מהודרת פעם אחת לפונקציה, ואז מחושבת בכל בנייה מול טבלת המשתנים.
 
 export class ExprError extends Error {}
 
+// פונקציות על רשימה (הארגומנט הראשון רשימה)
+const LIST_FUNCS = {
+  // sum(ws, n, start) — מצטבר משמאל מ-start (כמו לולאה y += …), כדי שגם העיגול יהיה זהה
+  sum: (a, n, start) => list(a).slice(0, n === undefined ? undefined : Math.max(0, num(n))).reduce((x, y) => x + num(y), start === undefined ? 0 : num(start)),
+  amin: (a) => Math.min(...list(a).map(num)),
+  amax: (a) => Math.max(...list(a).map(num)),
+  len: (a) => list(a).length,
+};
+function list(a) { if (!Array.isArray(a)) throw new ExprError('צפויה רשימה'); return a; }
 const FUNCS = {
   min: Math.min, max: Math.max, round: Math.round, floor: Math.floor, ceil: Math.ceil, abs: Math.abs, sqrt: Math.sqrt,
   clamp: (x, lo, hi) => Math.min(hi, Math.max(lo, x)),
@@ -37,7 +47,7 @@ function tokenize(src) {
     }
     const two = src.slice(i, i + 2);
     if (['==', '!=', '<=', '>=', '&&', '||'].includes(two)) { out.push({ t: 'op', v: two }); i += 2; continue; }
-    if ('+-*/%()<>!?:,'.includes(c)) { out.push({ t: 'op', v: c }); i += 1; continue; }
+    if ('+-*/%()<>!?:,[]'.includes(c)) { out.push({ t: 'op', v: c }); i += 1; continue; }
     if (c === '=') throw new ExprError('להשוואה כותבים == (שני סימני שוויון)');
     throw new ExprError(`תו לא מוכר: "${c}"`);
   }
@@ -70,7 +80,7 @@ function parse(src) {
   }
   function add() {
     let l = mul();
-    while (isOp('+') || isOp('-')) { const op = toks[k++].v, a = l, b = mul(); l = op === '+' ? (s) => num(a(s)) + num(b(s)) : (s) => num(a(s)) - num(b(s)); }
+    while (isOp('+') || isOp('-')) { const op = toks[k++].v, a = l, b = mul(); l = op === '+' ? (s) => plus(a(s), b(s)) : (s) => num(a(s)) - num(b(s)); }
     return l;
   }
   function mul() {
@@ -81,11 +91,20 @@ function parse(src) {
     }
     return l;
   }
+  function postfix() {
+    let a = atom();
+    while (isOp('[')) {
+      k += 1; const ix = ternary(); expect(']');
+      const base = a;
+      a = (s) => { const arr = list(base(s)); const i = Math.floor(num(ix(s))); if (i < 0 || i >= arr.length) throw new ExprError(`אינדקס ${i} מחוץ לרשימה (${arr.length})`); return arr[i]; };
+    }
+    return a;
+  }
   function unary() {
     if (isOp('-')) { k += 1; const a = unary(); return (s) => -num(a(s)); }
     if (isOp('+')) { k += 1; return unary(); }
     if (isOp('!')) { k += 1; const a = unary(); return (s) => (truthy(a(s)) ? 0 : 1); }
-    return atom();
+    return postfix();
   }
   function atom() {
     const t = toks[k];
@@ -105,6 +124,7 @@ function parse(src) {
           const [c, a, b] = args;
           return (s) => (truthy(c(s)) ? a(s) : b(s));
         }
+        if (LIST_FUNCS[t.v]) { const lf = LIST_FUNCS[t.v]; return (s) => lf(...args.map((a) => a(s))); }
         const f = FUNCS[t.v];
         if (!f) throw new ExprError(`פונקציה לא מוכרת: ${t.v}`);
         return (s) => f(...args.map((a) => num(a(s))));
@@ -121,6 +141,12 @@ function parse(src) {
   const fn = ternary();
   if (k < toks.length) throw new ExprError(`מיותר בסוף: "${toks[k].v}"`);
   return fn;
+}
+// חיבור: מספרים — חשבון; טקסט שאינו מספר — שרשור ('partition-' + 2 → 'partition-2')
+function plus(x, y) {
+  const isText = (v) => typeof v === 'string' && !Number.isFinite(Number(v));
+  if (isText(x) || isText(y)) return `${typeof x === 'number' ? Math.round(x * 1e6) / 1e6 : x}${typeof y === 'number' ? Math.round(y * 1e6) / 1e6 : y}`;
+  return num(x) + num(y);
 }
 const truthy = (v) => (typeof v === 'string' ? v !== '' && v !== 'none' && v !== '0' : !!v);
 function num(v) {

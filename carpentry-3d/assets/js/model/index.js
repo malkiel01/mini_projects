@@ -6,7 +6,6 @@
 
 import bookcase from './templates/bookcase.js';
 import wardrobe from './templates/wardrobe.js';
-import dresser from './templates/dresser.js';
 import kitchen from './templates/kitchen.js';
 import cladding from './templates/cladding.js';
 import { cutSize, setDoorOpen } from './blocks.js';
@@ -15,8 +14,8 @@ import { material, materialsOfKind, materialsOfRole } from './materials.js';
 
 import { builtinTemplate, setRegistry } from './recipe.js';
 
-// שולחן ומיטה הם מתכונים מובנים (recipes/) — אותו מפתח, אותם פרמטרים, נבנים מנוסחאות
-export const TEMPLATES = { bookcase, wardrobe, dresser, kitchen, table: builtinTemplate('table'), bed: builtinTemplate('bed'), cladding };
+// שידה, שולחן ומיטה הם מתכונים מובנים (recipes/) — אותו מפתח, אותם פרמטרים, נבנים מנוסחאות
+export const TEMPLATES = { bookcase, wardrobe, dresser: builtinTemplate('dresser'), kitchen, table: builtinTemplate('table'), bed: builtinTemplate('bed'), cladding };
 setRegistry(TEMPLATES);
 
 import { physicsWarnings, doorClashes } from './physics.js';

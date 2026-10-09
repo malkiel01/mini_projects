@@ -5,7 +5,7 @@
 // ההודעה). שינוי ערך לא מצייר מחדש (הפוקוס נשאר) — רק מודיע ל-onChange
 // שבונה את התצוגה. הוספה, מחיקה, הזזה וסוג — מציירים מחדש.
 
-import { MATERIAL_USES, EDGE_SIDES, isBuiltinKey } from './model/recipe.js';
+import { MATERIAL_USES, EDGE_SIDES, isBuiltinKey, BLOCKS, OPTION_SOURCES } from './model/recipe.js';
 import { syntaxError } from './model/expr.js';
 
 // קנטים: 'front' / 'all' / 'none' או רשימה 'top,front' → קבוצת צדדים
@@ -16,13 +16,15 @@ function edgeSet(e) {
   return new Set(String(e).split(',').map((x) => x.trim()));
 }
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-const TYPES = { mm: 'מ"מ', int: 'מספר שלם', deg: 'מעלות', enum: 'בחירה מרשימה', material: 'חומר' };
+const TYPES = { mm: 'מ"מ', int: 'מספר שלם', deg: 'מעלות', enum: 'בחירה מרשימה', material: 'חומר', json: 'עריכת חלוקה (עמודות/שורות)' };
+const KINDS = { board: 'לוח', door: 'דלת (עם צירים)', ...Object.fromEntries(Object.entries(BLOCKS).map(([k, b]) => [k, `אבן: ${b.name}`])) };
 const BLANK = {
   params: () => ({ key: 'p' + Math.random().toString(36).slice(2, 5), label: 'פרמטר חדש', type: 'mm', default: 100, min: 0, max: 1000, group: 'כללי' }),
   vars: () => ({ name: 'v' + Math.random().toString(36).slice(2, 5), expr: '0' }),
   components: () => ({ id: 'part' + Math.random().toString(36).slice(2, 5), name: 'רכיב חדש', kind: 'board', material: '', x: '0', y: '0', z: '0', w: '500', h: '18', d: '300', edges: 'front', grain: 'auto' }),
   hardware: () => ({ name: 'פרזול', material: '', qty: '1' }),
   warnings: () => ({ when: '0', text: 'אזהרה' }),
+  layouts: () => ({ name: 'ws' + Math.random().toString(36).slice(2, 4), param: '', section: 'cols', count: '2', total: '1000', title: 'עמודות', item: 'עמודה {i+1}' }),
 };
 
 export function createRecipeEditor(side, table, { onChange, onSave, onDelete, onDuplicate }) {
@@ -41,6 +43,18 @@ export function createRecipeEditor(side, table, { onChange, onSave, onDelete, on
   const tools = (list, i) => `<span class="rtools"><button type="button" data-up="${list}.${i}" title="למעלה">↑</button><button type="button" data-down="${list}.${i}" title="למטה">↓</button><button type="button" data-del="${list}.${i}" title="מחיקה">✕</button></span>`;
   const section = (list, title, help, body) => `<section class="rsec" data-sec="${list}"><h4 class="lab__group">${title} <small class="muted">${(r[list] || []).length}</small><button type="button" class="btn btn--small" data-add="${list}">＋ הוספה</button></h4><p class="muted rhelp">${help}</p>${body}</section>`;
 
+  // רכיב "אבן בניין": השדות מוגדרים ב-BLOCKS (recipe.js) — נוסחה, חומר/פרמטר, או טקסט
+  function blockCard(c, i, paramOpts) {
+    const B = BLOCKS[c.kind], A = c.a || {};
+    return `<div class="rrow">${lbl('סוג', sel(`components.${i}.kind`, c.kind, KINDS))}
+      ${lbl('חזרות', fx(`components.${i}.repeat`, c.repeat || '', 'ריק = 1', 'rshort'))}${lbl('מונה', tx(`components.${i}.index`, c.index || '', 'i', 'dir="ltr" class="rshort"'))}
+      ${lbl('תנאי', fx(`components.${i}.when`, c.when || '', 'ריק = תמיד'), 'rwide')}</div>
+      <div class="rgrid6 rgrid--block">${B.fields.map((f) => lbl(f.label, f.kind === 'mat'
+        ? sel(`components.${i}.a.${f.k}`, A[f.k] || '', { ...paramOpts, ...(A[f.k] && !(A[f.k] in paramOpts) ? { [A[f.k]]: A[f.k] } : {}) })
+        : f.kind === 'text' ? tx(`components.${i}.a.${f.k}`, A[f.k] || '', '', 'dir="ltr"') : fx(`components.${i}.a.${f.k}`, A[f.k] ?? '', ''))).join('')}</div>
+      ${B.out ? `<p class="muted rhelp">תוצאות למשתנים: ${esc(B.out.replace('<מזהה>', String(c.id).replace(/[^A-Za-z0-9_]/g, '_')))}</p>` : ''}`;
+  }
+
   // ציור מחדש בלי לאבד את השדה שבפוקוס
   function draw() {
     const a = document.activeElement;
@@ -52,7 +66,10 @@ export function createRecipeEditor(side, table, { onChange, onSave, onDelete, on
     const builtin = isBuiltinKey(r.key);
     const matParams = (r.params || []).filter((p) => p.type === 'material');
     const matOpts = (use) => ({ '': '— בחירה —', ...Object.fromEntries(matParams.filter((p) => !use || use.includes(p.use || 'board')).map((p) => [p.key, p.label || p.key])) });
-    const names = [...(r.params || []).map((p) => p.key), ...matParams.map((p) => `${p.key}_t`), ...(r.vars || []).map((x) => x.name)].filter(Boolean);
+    const names = [...(r.params || []).map((p) => p.key), ...matParams.map((p) => `${p.key}_t`), ...(r.vars || []).map((x) => x.name), ...(r.layouts || []).map((L) => `${L.name}[i]`),
+      ...(r.components || []).filter((c) => c.kind === 'carcass').map((c) => `${String(c.id).replace(/[^A-Za-z0-9_]/g, '_')}_x0…`), ...(r.components || []).filter((c) => c.kind === 'partitions').map((c) => `${String(c.id).replace(/[^A-Za-z0-9_]/g, '_')}_x0s[i]`), 'lim_…'].filter(Boolean);
+    const allParamOpts = { '': '—', ...Object.fromEntries((r.params || []).map((p) => [p.key, p.label || p.key])) };
+    const jsonParams = { '': '—', ...Object.fromEntries((r.params || []).filter((p) => p.type === 'json').map((p) => [p.key, p.label || p.key])) };
 
     side.innerHTML = `
       <h3>🧪 ${esc(r.name)}</h3>
@@ -72,6 +89,8 @@ export function createRecipeEditor(side, table, { onChange, onSave, onDelete, on
         <p>חשבון <code>+ - * / %</code> וסוגריים · השוואה <code>== != &lt; &gt; &lt;= &gt;=</code> · וגם <code>&amp;&amp;</code> · או <code>||</code> · לא <code>!</code><br>
         תנאי: <code>i == 0 ? 0 : T</code> · טקסט במרכאות: <code>doors == 'wood'</code><br>
         פונקציות: <code>min max round floor ceil abs sqrt clamp(x,מ,עד) if(תנאי,כן,לא)</code><br>
+        רשימות (חלוקות): <code>ws[i]</code> · <code>sum(ws, n, מ)</code> — סכום n הראשונים מ-מ · <code>amin(ws) amax(ws) len(ws)</code> · טקסט: <code>'partition-' + (i+1)</code><br>
+        גבולות המערכת: <code>lim_drawerMaxWidth</code>, <code>lim_heightUnanchored</code>…<br>
         בשם של רכיב: <code>מדף {i+1}</code>. בלולאה: המונה (<code>i</code>) מתחיל ב-0, ו-<code>n</code> = מספר החזרות.<br>
         צירים: x שמאל→ימין, y רצפה→מעלה, z אחור→חזית. x,y,z = הפינה; w,h,d = רוחב, גובה, עומק.</p>
         <p>משתנים זמינים: ${names.map((n) => `<code>${esc(n)}</code>`).join(' ') || '—'}</p>
@@ -84,10 +103,11 @@ export function createRecipeEditor(side, table, { onChange, onSave, onDelete, on
           <div class="rrow">${lbl('סוג', sel(`params.${i}.type`, p.type, TYPES))}
           ${p.type === 'material' ? lbl('סוג חומר', sel(`params.${i}.use`, p.use || 'board', Object.fromEntries(Object.entries(MATERIAL_USES).map(([k, u]) => [k, u.name]))))
             + lbl('ברירת מחדל (מזהה)', tx(`params.${i}.default`, p.default, 'board:…', 'dir="ltr"'))
-          : p.type === 'enum' ? lbl('ברירת מחדל', tx(`params.${i}.default`, p.default, 'id', 'dir="ltr"'))
+          : p.type === 'json' ? '<span class="muted rf">רוחב/גובה לכל פריט — נערך בעורך החלוקה; מוגדר ב"חלוקות"</span>'
+          : p.type === 'enum' ? lbl('ברירת מחדל', tx(`params.${i}.default`, p.default, 'id', 'dir="ltr"')) + lbl('רשימה', sel(`params.${i}.source`, p.source || '', { '': 'קבועה (למטה)', ...Object.fromEntries(Object.entries(OPTION_SOURCES).map(([k, o]) => [k, o.name])) }))
           : lbl('ברירת מחדל', `<input type="number" data-num="1" data-path="params.${i}.default" value="${esc(p.default)}">`) + lbl('מינ׳', `<input type="number" data-num="1" data-path="params.${i}.min" value="${esc(p.min)}">`) + lbl('מקס׳', `<input type="number" data-num="1" data-path="params.${i}.max" value="${esc(p.max)}">`)}
           ${lbl('קבוצה', tx(`params.${i}.group`, p.group || ''))}</div>
-          ${p.type === 'enum' ? lbl('אפשרויות (מזהה=שם, מופרדות בפסיק)', `<input data-path="params.${i}.options" data-opts="1" value="${esc((p.options || []).map((o) => `${o.id}=${o.name}`).join(', '))}" placeholder="none=ללא, wood=עץ">`, 'rwide') : ''}
+          ${p.type === 'enum' && !p.source ? lbl('אפשרויות (מזהה=שם, מופרדות בפסיק)', `<input data-path="params.${i}.options" data-opts="1" value="${esc((p.options || []).map((o) => `${o.id}=${o.name}`).join(', '))}" placeholder="none=ללא, wood=עץ">`, 'rwide') : ''}
           <div class="rrow">${lbl('מתי מוצג (נוסחה, ריק = תמיד)', fx(`params.${i}.when`, p.when || '', 'ריק = תמיד'), 'rwide')}${lbl('הסבר', tx(`params.${i}.hint`, p.hint || ''), 'rwide')}</div>
         </div>`).join('')}</div>`),
       section('vars', 'משתנים מחושבים', 'שם = נוסחה. לפי הסדר — כל משתנה רואה את הפרמטרים ואת המשתנים שמעליו. לכל פרמטר חומר יש גם <code>&lt;מפתח&gt;_t</code> — העובי שלו.',
@@ -95,7 +115,7 @@ export function createRecipeEditor(side, table, { onChange, onSave, onDelete, on
       section('components', 'רכיבים', 'כל לוח או דלת. "חזרות" — לולאה: הרכיב נבנה כמספר הזה, והמונה זמין בנוסחאות. "תנאי" — נבנה רק כשהנוסחה אמת.',
         `<div class="rlist">${(r.components || []).map((c, i) => `<div class="rcard ${c.kind === 'door' ? 'rcard--door' : ''}">
           <div class="rhead">${tx(`components.${i}.id`, c.id, 'מזהה', 'dir="ltr" class="rkey"')}${tx(`components.${i}.name`, c.name, 'שם (אפשר {i+1})')}${tools('components', i)}</div>
-          <div class="rrow">${lbl('סוג', sel(`components.${i}.kind`, c.kind || 'board', { board: 'לוח', door: 'דלת (עם צירים)' }))}
+          ${BLOCKS[c.kind] ? blockCard(c, i, allParamOpts) : `<div class="rrow">${lbl('סוג', sel(`components.${i}.kind`, c.kind || 'board', KINDS))}
           ${lbl('חומר', sel(`components.${i}.material`, c.material, { ...matOpts(c.kind === 'door' ? null : null), ...(c.material && !matParams.some((p) => p.key === c.material) ? { [c.material]: c.material } : {}) }))}
           ${lbl('חזרות', fx(`components.${i}.repeat`, c.repeat || '', 'ריק = 1', 'rshort'))}${lbl('מונה', tx(`components.${i}.index`, c.index || '', 'i', 'dir="ltr" class="rshort"'))}
           ${lbl('תנאי', fx(`components.${i}.when`, c.when || '', 'ריק = תמיד'), 'rwide')}</div>
@@ -104,12 +124,20 @@ export function createRecipeEditor(side, table, { onChange, onSave, onDelete, on
             ? lbl('צד הציר (נוסחה)', fx(`components.${i}.side`, c.side || '', "'left'"), 'rwide') + lbl('ידית', sel(`components.${i}.handle`, c.handle || '', { '': 'ללא', ...matOpts(['handle']) })) + lbl('ציר', sel(`components.${i}.hinge`, c.hinge || '', { '': 'ציר 110° (ברירת מחדל)', ...matOpts(['hinge']) }))
             : lbl('סיבים', sel(`components.${i}.grain`, c.grain || 'auto', { auto: 'אוטומטי (הצד הארוך)', x: 'לרוחב (x)', y: 'לגובה (y)', z: 'לעומק (z)' })) + lbl('ציר העובי', sel(`components.${i}.axis`, c.axis || 'auto', { auto: 'אוטומטי (המידה הקטנה)', x: 'x', y: 'y', z: 'z' }))}</div>
           ${c.kind === 'door' ? '' : `<div class="rrow"><span class="rf rwide"><span>קנט</span><span class="redges">${Object.entries(EDGE_SIDES).map(([k, n]) => `<label><input type="checkbox" data-edge="components.${i}.edges" value="${k}" ${edgeSet(c.edges).has(k) ? 'checked' : ''}>${n}</label>`).join('')}</span></span>
-          ${lbl('מפתח קיבוץ (רשות)', tx(`components.${i}.qtyKey`, c.qtyKey || '', 'אוטומטי — לפי המידות', 'dir="ltr"'))}${lbl('הערה (רשות)', tx(`components.${i}.note`, c.note || ''))}</div>`}
+          ${lbl('מפתח קיבוץ (רשות)', tx(`components.${i}.qtyKey`, c.qtyKey || '', 'אוטומטי — לפי המידות', 'dir="ltr"'))}${lbl('הערה (רשות)', tx(`components.${i}.note`, c.note || ''))}</div>`}`}
+          <div class="rrow">${lbl('מזהה לכל חזרה (רשות)', tx(`components.${i}.idt`, c.idt || '', 'drawer-{i+1}', 'dir="ltr"'), 'rwide')}</div>
         </div>`).join('')}</div>`),
       section('hardware', 'פרזול נוסף', 'מעבר לצירים ולידיות של הדלתות. חומר = מזהה מהספרייה (hw:…) או פרמטר חומר.',
         `<div class="rlist rlist--tight">${(r.hardware || []).map((h, i) => `<div class="rcard rcard--line">${tx(`hardware.${i}.name`, h.name, 'שם')}${tx(`hardware.${i}.material`, h.material, 'hw:…', 'dir="ltr"')}${lbl('כמות', fx(`hardware.${i}.qty`, h.qty ?? '1', '1', 'rshort'))}${lbl('תנאי', fx(`hardware.${i}.when`, h.when || '', 'ריק = תמיד'))}${tools('hardware', i)}</div>`).join('')}</div>`),
+      section('layouts', 'חלוקות', 'רשימת רוחבים (או גבהים) מעורך החלוקה: נעוץ — כפי שהנגר קבע, אוטומטי — מתחלק בשווה במה שנשאר. בנוסחאות: <code>ws[i]</code>, <code>sum(ws, i, start)</code>. עם כותרת — מופיעה בעורך החלוקה בטופס.',
+        `<div class="rlist">${(r.layouts || []).map((L, i) => `<div class="rcard">
+          <div class="rhead">${tx(`layouts.${i}.name`, L.name, 'שם', 'dir="ltr" class="rkey"')}${tx(`layouts.${i}.title`, L.title || '', 'כותרת בעורך (ריק = בלי עורך)')}${tools('layouts', i)}</div>
+          <div class="rrow">${lbl('פרמטר העריכה', sel(`layouts.${i}.param`, L.param || '', jsonParams))}${lbl('קבוצה', tx(`layouts.${i}.section`, L.section || '', 'cols', 'dir="ltr" class="rshort"'))}
+          ${lbl('כמות', fx(`layouts.${i}.count`, L.count || '', 'cols', 'rshort'))}${lbl('סכום', fx(`layouts.${i}.total`, L.total || '', 'inner'), 'rwide')}${lbl('מינימום', fx(`layouts.${i}.min`, L.min ?? '', '50', 'rshort'))}</div>
+          <div class="rrow">${lbl('ברירת מחדל לאחרון (רשות)', fx(`layouts.${i}.lastPin`, L.lastPin || '', 'topRowH'))}${lbl('שם פריט בעורך', tx(`layouts.${i}.item`, L.item || '', 'עמודה {i+1}'), 'rwide')}${lbl('סכום בעורך (רשות)', fx(`layouts.${i}.editorTotal`, L.editorTotal || '', 'כמו הסכום'), 'rwide')}</div>
+        </div>`).join('')}</div>`),
       section('warnings', 'אזהרות', 'כשהנוסחה אמת — האזהרה מופיעה לנגר. בטקסט אפשר {נוסחה}: "עמודה ברוחב {colW}".',
-        `<div class="rlist rlist--tight">${(r.warnings || []).map((w, i) => `<div class="rcard rcard--line">${lbl('כאשר', fx(`warnings.${i}.when`, w.when || '', 'colW > 800'))}${tx(`warnings.${i}.text`, w.text, 'הטקסט', 'class="rgrow"')}${tools('warnings', i)}</div>`).join('')}</div>`),
+        `<div class="rlist rlist--tight">${(r.warnings || []).map((w, i) => `<div class="rcard rcard--line">${lbl('חזרות', fx(`warnings.${i}.repeat`, w.repeat || '', 'ריק = 1', 'rshort'))}${lbl('מונה', tx(`warnings.${i}.index`, w.index || '', 'i', 'dir="ltr" class="rshort"'))}${lbl('כאשר', fx(`warnings.${i}.when`, w.when || '', 'colW > 800'))}${tx(`warnings.${i}.text`, w.text, 'הטקסט', 'class="rgrow"')}${tools('warnings', i)}</div>`).join('')}</div>`),
     ].join('');
   }
 
@@ -117,7 +145,7 @@ export function createRecipeEditor(side, table, { onChange, onSave, onDelete, on
   function setPath(path, value) {
     const keys = path.split('.');
     let o = r;
-    for (const k of keys.slice(0, -1)) o = o[k];
+    for (const k of keys.slice(0, -1)) o = (o[k] = o[k] && typeof o[k] === 'object' ? o[k] : {});
     o[keys[keys.length - 1]] = value;
   }
   const NUMERIC = /^(params\.\d+\.(min|max)|laborHours)$/;
