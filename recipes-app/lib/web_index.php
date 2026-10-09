@@ -111,6 +111,12 @@ function indexRefreshNow(int $id, array $developer): array {
 // sitemap: גילוי, בחירת חלקים, קריאה
 // ─────────────────────────────────────────────────────────────
 
+/** אותו אתר — עם www או בלי (gad-dairy רשום כ-www, וה-sitemap שלו בלי). */
+function indexSameHost(string $url, string $host): bool {
+    $strip = fn(string $h) => preg_replace('/^www\./', '', strtolower($h));
+    return $strip((string) parse_url($url, PHP_URL_HOST)) === $strip($host);
+}
+
 /** <sitemapindex> → [[url, lastmod]] ; <urlset> → null. */
 function indexParseSitemapIndex(string $xml): ?array {
     if (stripos($xml, '<sitemapindex') === false) return null;
@@ -193,7 +199,7 @@ function indexDiscover(array $site): array {
     scoutRobotsAllowed($base . '/');
     $robots = (string) @file_get_contents(scoutStateDir() . '/robots-' . md5($site['host']) . '.txt');
     if (preg_match_all('~^\s*sitemap:\s*(\S+)~im', $robots, $m)) {
-        foreach ($m[1] as $u) if (strtolower((string) parse_url($u, PHP_URL_HOST)) === $site['host']) $cands[] = $u;
+        foreach ($m[1] as $u) if (indexSameHost($u, $site['host'])) $cands[] = $u;
     }
     foreach (['/sitemap_index.xml', '/wp-sitemap.xml', '/sitemap.xml'] as $p) $cands[] = $base . $p;
 
@@ -291,7 +297,7 @@ function indexCrawlStep(array $site): string {
                                    stems = CASE WHEN index_entries.title_fixed THEN index_entries.stems ELSE excluded.stems END');
             $n = 0;
             foreach (indexParseUrlset($xml) as [$u, $lm]) {
-                if (strtolower((string) parse_url($u, PHP_URL_HOST)) !== $site['host']) continue;
+                if (!indexSameHost($u, $site['host'])) continue;
                 if (!scoutCleanUrl($u) || preg_match(INDEX_SKIP_URL, urldecode((string) parse_url($u, PHP_URL_PATH)))) continue;
                 $title = indexTitleFromUrl($u);
                 if ($title === '') continue;   // בלי שם אין מה לחפש

@@ -66,6 +66,9 @@ check('urlset אינו אינדקס', indexParseSitemapIndex('<urlset><url><loc>
 $urls = indexParseUrlset('<urlset><url><loc>https://a.co.il/recipe/%d7%a2%d7%95%d7%92%d7%aa-%d7%92%d7%91%d7%99%d7%a0%d7%94/</loc><lastmod>2026-09-28T11:19:45+00:00</lastmod><image:image><image:loc>https://a.co.il/x.jpg</image:loc></image:image></url><url><loc>https://a.co.il/recipe/b/</loc></url></urlset>');
 check('urlset: כתובת ו-lastmod (תמונה לא מתבלבלת עם loc)', [count($urls), $urls[0][1], $urls[1][1]], [2, '2026-09-28T11:19:45+00:00', null]);
 
+check('אותו אתר עם www ובלי', [indexSameHost('https://gad-dairy.co.il/recipe/x/', 'www.gad-dairy.co.il'), indexSameHost('https://www.a.co.il/x', 'a.co.il'),
+                               indexSameHost('https://foody.co.il/x', 'www.carine.co.il')], [true, true, false]);
+
 echo "\n2. שם מהכתובת, וגזעים\n";
 check('סלאג עברי', indexTitleFromUrl('https://a.co.il/recipe/%d7%a2%d7%95%d7%92%d7%aa-%d7%92%d7%91%d7%99%d7%a0%d7%94-%d7%90%d7%a4%d7%95%d7%99%d7%94-2/'), 'עוגת גבינה אפויה');
 check('__trashed ומספרים — בלי שם', [indexTitleFromUrl('https://c.co.il/foody_recipe/__trashed-3/'), indexTitleFromUrl('https://c.co.il/r/12345/')], ['', '']);
