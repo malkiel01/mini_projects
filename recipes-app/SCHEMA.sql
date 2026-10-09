@@ -193,6 +193,7 @@ CREATE TABLE index_entries (
   needs_title INTEGER NOT NULL DEFAULT 0,   -- אין שם עברי בכתובת — השם יובא מהדף ברקע
   skip       INTEGER NOT NULL DEFAULT 0,    -- נבדק ואינו מתכון
   stems      TEXT    NOT NULL,
+  image      TEXT,                          -- קישור לתמונה באתר המקור; לא עותק
   lastmod    TEXT,
   seen_at    INTEGER NOT NULL DEFAULT 0
 );

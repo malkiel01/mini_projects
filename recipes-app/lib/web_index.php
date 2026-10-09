@@ -201,15 +201,31 @@ function indexParseSitemapIndex(string $xml): ?array {
 
 /** <urlset> → [[url, lastmod]]. */
 function indexParseUrlset(string $xml): array {
-    $out = [];
+    $rows = [];
+    $seen = [];   // כמה דפים מצביעים על כל תמונה
     if (preg_match_all('~<url>(.*?)</url>~is', $xml, $m)) {
         foreach ($m[1] as $block) {
             if (!preg_match('~<loc>\s*([^<\s]+)\s*</loc>~i', $block, $l)) continue;
             $lm = preg_match('~<lastmod>\s*([^<\s]+)\s*</lastmod>~i', $block, $x) ? $x[1] : null;
-            $out[] = [html_entity_decode($l[1]), $lm];
+            $imgs = [];
+            if (preg_match_all('~<image:loc>\s*(?:<!\[CDATA\[)?\s*([^<\]\s]+)~i', $block, $im)) {
+                foreach ($im[1] as $u) if ($u = indexImageUrl(html_entity_decode($u))) $imgs[$u] = true;
+            }
+            foreach (array_keys($imgs) as $u) $seen[$u] = ($seen[$u] ?? 0) + 1;
+            $rows[] = [html_entity_decode($l[1]), $lm, array_keys($imgs)];
         }
     }
-    return $out;
+    // התמונה של המתכון: הראשונה שאינה משותפת לכמה דפים (אייקון, באנר, "הערה למתכון")
+    return array_map(function ($r) use ($seen) {
+        foreach ($r[2] as $u) if ($seen[$u] <= 2) return [$r[0], $r[1], $u];
+        return [$r[0], $r[1], null];
+    }, $rows);
+}
+
+/** קישור לתמונה שמותר לשמור: http/https מלא, לא ארוך מדי. אחרת null. */
+function indexImageUrl(string $u): ?string {
+    $u = trim($u);
+    return preg_match('~^https?://[^\s<>"\']{4,490}$~i', $u) ? $u : null;
 }
 
 /**
@@ -405,20 +421,22 @@ function indexCrawlStep(array $site): string {
                 ->execute([$id, $url, $lastmod, nowIso()]);
             $smId = (int) $pdo->query('SELECT id FROM index_sitemaps WHERE site_id = ' . $id . ' AND url = ' . $pdo->quote($url))->fetchColumn();
             // שם מהדף (title_fixed) לא נדרס; "ממתין לשם" נשאר כך עד שהשם יובא; "לא מתכון" (skip) נשאר מסומן
-            $up = $pdo->prepare('INSERT INTO index_entries (site_id, sitemap_id, url, title, stems, lastmod, seen_at, needs_title) VALUES (?,?,?,?,?,?,?,?)
+            // תמונה: מה-sitemap כשיש; אחרת נשארת זו שנשמרה (מהדף, בשם או בפתיחה)
+            $up = $pdo->prepare('INSERT INTO index_entries (site_id, sitemap_id, url, title, stems, lastmod, seen_at, needs_title, image) VALUES (?,?,?,?,?,?,?,?,?)
                                  ON CONFLICT(url) DO UPDATE SET sitemap_id = excluded.sitemap_id, lastmod = excluded.lastmod, seen_at = excluded.seen_at,
+                                   image = COALESCE(excluded.image, index_entries.image),
                                    title = CASE WHEN index_entries.title_fixed THEN index_entries.title ELSE excluded.title END,
                                    stems = CASE WHEN index_entries.title_fixed THEN index_entries.stems ELSE excluded.stems END,
                                    needs_title = CASE WHEN index_entries.title_fixed OR index_entries.skip THEN 0 ELSE excluded.needs_title END');
             $n = 0;
-            foreach (indexParseUrlset($xml) as [$u, $lm]) {
+            foreach (indexParseUrlset($xml) as [$u, $lm, $img]) {
                 if (!indexSameHost($u, $site['host'])) continue;
                 if (!scoutCleanUrl($u) || preg_match(INDEX_SKIP_URL, urldecode((string) parse_url($u, PHP_URL_PATH)))) continue;
                 $title = indexTitleFromUrl($u);
                 // בלי שם עברי בכתובת (ניקי ב׳: /main-course/41767/, אוגיו: apple_dessert) — השם יובא מהדף,
                 // ברקע. עד אז: השם האנגלי מהכתובת אם יש (נמצא בחיפוש באנגלית), אחרת לא בחיפוש.
                 $needs = !indexHasHebrew($title);
-                $up->execute([$id, $smId, $u, $title, indexStems($title), $lm, (int) $state['started'], $needs ? 1 : 0]);
+                $up->execute([$id, $smId, $u, $title, indexStems($title), $lm, (int) $state['started'], $needs ? 1 : 0, $img]);
                 $n++;
             }
             $pdo->prepare('UPDATE index_sitemaps SET entries_n = ? WHERE id = ?')->execute([$n, $smId]);
@@ -479,7 +497,7 @@ function indexTitleStep(): string {
     $now = time();
     if ($h['ready_at'] > $now) return 'wait:' . ($h['ready_at'] - $now);
 
-    $st = db()->prepare('SELECT e.id, e.url, e.title FROM index_entries e JOIN index_sites s ON s.id = e.site_id
+    $st = db()->prepare('SELECT e.id, e.url, e.title, e.image FROM index_entries e JOIN index_sites s ON s.id = e.site_id
                          WHERE s.host = ? AND e.needs_title = 1 AND e.skip = 0 ORDER BY e.lastmod DESC, e.id DESC LIMIT 1');
     $st->execute([$h['host']]);
     $e = $st->fetch();
@@ -502,7 +520,9 @@ function indexTitleStep(): string {
         [$title, $full] = indexCleanTitle((string) ($raw['title'] ?? ''), [$h['name'], (string) ($raw['publisher'] ?? '')]);
         if (!indexHasHebrew($title) && preg_match_all('/\p{L}/u', $title) < 3) { $done(['needs_title' => 0, 'skip' => 1]); return 'not-recipe'; }
         // הגזעים: השם המלא מהדף, ועוד השם מהכתובת אם היה (כך "apple dessert" עדיין נמצא גם באנגלית)
-        $done(['title' => $title, 'stems' => indexStems($full . ' ' . $e['title']), 'title_fixed' => 1, 'needs_title' => 0]);
+        $f = ['title' => $title, 'stems' => indexStems($full . ' ' . $e['title']), 'title_fixed' => 1, 'needs_title' => 0];
+        if (!$e['image'] && ($img = indexImageUrl((string) ($raw['images'][0] ?? '')))) $f['image'] = $img;   // הדף כבר כאן
+        $done($f);
         return 'titled';
     } catch (AppError $ex) {
         if ($ex->status === 429) return 'blocked';            // האתר חסם — השעה נשמרה; ממתינים
@@ -605,10 +625,10 @@ function indexSearch(string $q, int $offset = 0): array {
     $count->execute($params);
     $total = (int) $count->fetchColumn();
     // קודם שם שמכיל את הביטוי כמו שהוקלד, אחר כך שמות קצרים (מדויקים יותר)
-    $st = db()->prepare("SELECT e.id, e.title, e.url, s.name AS site, s.host FROM index_entries e JOIN index_sites s ON s.id = e.site_id
+    $st = db()->prepare("SELECT e.id, e.title, e.url, e.image, s.name AS site, s.host FROM index_entries e JOIN index_sites s ON s.id = e.site_id
                          WHERE $w ORDER BY (e.title LIKE ?) DESC, length(e.title), e.id DESC LIMIT 30 OFFSET " . max(0, $offset));
     $st->execute([...$params, '%' . $q . '%']);
-    return ['results' => array_map(fn($r) => ['id' => (int) $r['id'], 'title' => $r['title'], 'url' => $r['url'], 'site' => $r['site'], 'host' => $r['host']],
+    return ['results' => array_map(fn($r) => ['id' => (int) $r['id'], 'title' => $r['title'], 'url' => $r['url'], 'site' => $r['site'], 'host' => $r['host'], 'image' => $r['image']],
                                    $st->fetchAll()),
             'total' => $total, 'indexed' => $all, 'sites' => $sites];
 }
@@ -697,6 +717,10 @@ function webOpen(int $id, array $user): array {
     if ($draft['title'] !== '' && $draft['title'] !== $e['title']) {
         db()->prepare('UPDATE index_entries SET title = ?, stems = ?, title_fixed = 1, needs_title = 0 WHERE id = ?')
             ->execute([mb_substr($draft['title'], 0, 140), indexStems($draft['title'] . ' ' . $e['title']), (int) $e['id']]);
+    }
+    // התמונה — לתוצאות החיפוש הבאות (מתכון שב-sitemap שלו אין תמונות: פודיס, קרין)
+    if (!$e['image'] && ($img = indexImageUrl((string) ($draft['pending_media']['images'][0] ?? '')))) {
+        db()->prepare('UPDATE index_entries SET image = ? WHERE id = ?')->execute([$img, (int) $e['id']]);
     }
     db()->prepare('INSERT INTO web_cache (url, draft, rewritten, created_at) VALUES (?,?,?,?)
                    ON CONFLICT(url) DO UPDATE SET draft = excluded.draft, rewritten = excluded.rewritten, created_at = excluded.created_at')

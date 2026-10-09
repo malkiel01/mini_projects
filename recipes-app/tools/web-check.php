@@ -67,6 +67,11 @@ check('בלוג בלי "recipe": פוסטים, לא דפים/קטגוריות/כ
 check('urlset אינו אינדקס', indexParseSitemapIndex('<urlset><url><loc>x</loc></url></urlset>'), null);
 $urls = indexParseUrlset('<urlset><url><loc>https://a.co.il/recipe/%d7%a2%d7%95%d7%92%d7%aa-%d7%92%d7%91%d7%99%d7%a0%d7%94/</loc><lastmod>2026-09-28T11:19:45+00:00</lastmod><image:image><image:loc>https://a.co.il/x.jpg</image:loc></image:image></url><url><loc>https://a.co.il/recipe/b/</loc></url></urlset>');
 check('urlset: כתובת ו-lastmod (תמונה לא מתבלבלת עם loc)', [count($urls), $urls[0][1], $urls[1][1]], [2, '2026-09-28T11:19:45+00:00', null]);
+check('urlset: תמונה מה-sitemap, ובלי תמונה — null', [$urls[0][2], $urls[1][2]], ['https://a.co.il/x.jpg', null]);
+$u = fn($i, $imgs) => "<url><loc>https://a.co.il/r/$i/</loc>" . implode('', array_map(fn($x) => "<image:image><image:loc><![CDATA[ $x ]]></image:loc></image:image>", $imgs)) . '</url>';
+$urls = indexParseUrlset('<urlset>' . $u(1, ['https://a.co.il/note.png', 'https://a.co.il/1.jpg']) . $u(2, ['https://a.co.il/note.png', 'https://a.co.il/2.jpg'])
+                         . $u(3, ['https://a.co.il/note.png']) . $u(4, ['javascript:alert(1)']) . '</urlset>');
+check('תמונה משותפת לכמה דפים (אייקון) מדולגת; CDATA; לא-http נדחה', array_column($urls, 2), ['https://a.co.il/1.jpg', 'https://a.co.il/2.jpg', null, null]);
 
 check('אותו אתר עם www ובלי', [indexSameHost('https://gad-dairy.co.il/recipe/x/', 'www.gad-dairy.co.il'), indexSameHost('https://www.a.co.il/x', 'a.co.il'),
                                indexSameHost('https://foody.co.il/x', 'www.carine.co.il')], [true, true, false]);

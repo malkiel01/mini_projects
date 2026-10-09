@@ -246,6 +246,7 @@ function migrate(PDO $pdo): void {
             needs_title INTEGER NOT NULL DEFAULT 0,    -- בכתובת אין שם עברי (מספר, אנגלית) — שם יובא מהדף, ברקע
             skip       INTEGER NOT NULL DEFAULT 0,     -- הדף נבדק ואינו מתכון — לא בחיפוש, ולא חוזר בעדכון
             stems      TEXT    NOT NULL,             -- גזעים מופרדים ברווח, לחיפוש לפי תחילת מילה
+            image      TEXT,                         -- קישור לתמונה באתר המקור (מה-sitemap או מהדף); לא עותק
             lastmod    TEXT,
             seen_at    INTEGER NOT NULL DEFAULT 0    -- unix: העדכון האחרון שראה אותו
         );
@@ -472,6 +473,12 @@ function migrate(PDO $pdo): void {
     addColumnIfMissing($pdo, 'recipes', 'yield_text', 'TEXT');
     addColumnIfMissing($pdo, 'index_entries', 'needs_title', 'INTEGER NOT NULL DEFAULT 0');
     addColumnIfMissing($pdo, 'index_entries', 'skip', 'INTEGER NOT NULL DEFAULT 0');
+    // תמונה לתוצאות החיפוש. כשהעמודה נוספת — כל חלקי ה-sitemap נקראים מחדש
+    // פעם אחת (בלי זה חלק שלא השתנה מדולג, והמתכונים שבו נשארים בלי תמונה).
+    if (addColumnIfMissing($pdo, 'index_entries', 'image', 'TEXT')) {
+        $pdo->exec('UPDATE index_sitemaps SET lastmod = NULL');
+        $pdo->exec('UPDATE index_sites SET next_crawl_at = 0 WHERE crawl_state IS NULL');
+    }
     foreach (['source_url', 'source_name', 'source_author', 'imported_at'] as $col) {
         addColumnIfMissing($pdo, 'recipes', $col, 'TEXT');
     }
@@ -499,11 +506,12 @@ function migrate(PDO $pdo): void {
  * בטבלה שכבר קיימת, ולכן עמודה חדשה חייבת מסלול משלה — אחרת מסד שנוצר
  * לפני השינוי היה נשאר בלעדיה, והשאילתה הראשונה הייתה נופלת בשרת.
  */
-function addColumnIfMissing(PDO $pdo, string $table, string $column, string $type): void {
+function addColumnIfMissing(PDO $pdo, string $table, string $column, string $type): bool {
     foreach ($pdo->query("PRAGMA table_info($table)")->fetchAll() as $col) {
-        if ($col['name'] === $column) return;
+        if ($col['name'] === $column) return false;
     }
     $pdo->exec("ALTER TABLE $table ADD COLUMN $column $type");
+    return true;
 }
 
 /**

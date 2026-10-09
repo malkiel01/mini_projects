@@ -398,6 +398,9 @@ check 'שמות מהדף: אין ממתינים, דף הרשימה "לא מתכ�
 check 'בלוג בלי עברית בכתובת — נמצא לפי השם מהדף' "$(call web-search '{"q":"לחם מחמצת"}')" '"title":"לחם מחמצת ביתי"'
 check 'השם מהדף, בלי שם האתר'            "$(call web-search '{"q":"קרין גורן"}')" '"title":"קרין גורן מכינה עוגת יומולדת שילדים אוהבים"'
 check '__trashed בלי דף (404) — נמחק'     "$(call web-search '{"q":"trashed"}')" '"total":0'
+check 'תמונה מה-sitemap בתוצאה'          "$(call web-search '{"q":"עוגת גבינה אפויה"}')" '"title":"עוגת גבינה אפויה"[^}]*"image":"http:[^"]*img\\/cheesecake.jpg"'
+check 'תמונה מהדף (og:image) כשאין ב-sitemap' "$(call web-search '{"q":"לחם מחמצת"}')" '"image":"https:[^"]*example.org\\/bread.jpg"'
+check 'בלי תמונה — null'                   "$(call web-search '{"q":"עוגות גבינה קרות"}')" '"title":"עוגות גבינה קרות[^}]*"image":null'
 check 'רק חלק המתכונים נקרא, לא הדפים'      "$(grep -c 'sm-pages.php' "$TMP/fixtures.log")" '^0$'
 call logout >/dev/null
 call login '{"username":"tester","password":"sod12345"}' >/dev/null

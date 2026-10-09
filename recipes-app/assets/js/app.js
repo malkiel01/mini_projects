@@ -320,7 +320,7 @@ async function renderList() {
     <section class="toolbar">
       <form id="search" class="search" role="search">
         <input name="q" type="search" placeholder="חיפוש בשם או ברכיב…" autocomplete="off">
-        <button class="btn btn--primary" type="submit">חפש</button>
+        <button class="btn btn--primary search__go" type="submit" aria-label="חפש" title="חפש">🔍</button>
       </form>
       <div class="toolbar__row">
         <a class="btn btn--primary" href="#/new">+ מתכון חדש</a>
@@ -2170,7 +2170,7 @@ async function renderWebSearch(q = '') {
       <h2>🔎 חיפוש מתכונים ברשת</h2>
       <form id="web-form" class="search" role="search">
         <input name="q" type="search" placeholder="למשל: עוגת גבינה אפויה" autocomplete="off" value="${esc(q || webState.q)}" required>
-        <button class="btn btn--primary" type="submit">חפש</button>
+        <button class="btn btn--primary search__go" type="submit" aria-label="חפש" title="חפש">🔍</button>
       </form>
       <p class="muted small" id="web-stats"></p>
       <div id="web-results" class="scout__list"></div>
@@ -2187,12 +2187,14 @@ async function renderWebSearch(q = '') {
       : 'האינדקס עדיין ריק — המפתח מוסיף אתרים ב"אינדקס".';
     resEl.innerHTML = d.results.map((r) => `
       <article class="scout-item web-item">
+        <a class="web-item__thumb" href="#/web/${r.id}" tabindex="-1" aria-hidden="true">${r.image
+          ? `<img src="${esc(r.image)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : ''}</a>
         <div class="scout-item__main">
           <a class="web-item__title" href="#/web/${r.id}"><strong>${esc(r.title)}</strong></a>
           <span class="muted small">${esc(r.site)}</span>
           <a class="muted small scout-item__url" dir="auto" href="${esc(r.url)}" target="_blank" rel="noopener nofollow">${esc(prettyUrl(r.url))}</a>
         </div>
-        <div class="scout-item__actions"><a class="btn btn--primary" href="#/web/${r.id}">פתח</a></div>
+        <div class="scout-item__actions"><a class="btn btn--primary btn--small" href="#/web/${r.id}">פתח</a></div>
       </article>`).join('');
     $('#web-more').hidden = d.results.length >= d.total;
   };
@@ -2211,6 +2213,8 @@ async function renderWebSearch(q = '') {
     search();
   });
   $('#web-more').addEventListener('click', () => search(true));
+  // תמונה שלא נטענה (נמחקה באתר, חסימת קישור חיצוני) — חוזרים לסמל, בלי אייקון שבור
+  resEl.addEventListener('error', (e) => { if (e.target.tagName === 'IMG') e.target.remove(); }, true);
   if (q && q !== webState.q) { webState.q = q; webState.data = null; }
   if (webState.q && webState.data) draw();               // חזרה מפתיחה — בלי לחפש שוב
   else if (webState.q) search();

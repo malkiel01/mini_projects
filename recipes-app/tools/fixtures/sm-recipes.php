@@ -15,5 +15,7 @@ $urls = [
 if ($gen < 2) $urls[] = '/recipe/' . rawurlencode('עוגת-שוקולד-של-סבתא') . '/';   // בדור 2 הוסר מהאתר
 header('Content-Type: application/xml; charset=utf-8');
 echo '<?xml version="1.0" encoding="UTF-8"?>', "\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n";
-foreach ($urls as $u) echo '  <url><loc>', htmlspecialchars($base . $u, ENT_XML1), "</loc><lastmod>2026-09-28T11:19:45+00:00</lastmod></url>\n";
+// לראשון יש תמונה ב-sitemap (כמו רוב אתרי וורדפרס עם Yoast)
+foreach ($urls as $i => $u) echo '  <url><loc>', htmlspecialchars($base . $u, ENT_XML1), '</loc><lastmod>2026-09-28T11:19:45+00:00</lastmod>',
+    $i === 0 ? "<image:image><image:loc>$base/img/cheesecake.jpg</image:loc></image:image>" : '', "</url>\n";
 echo "</urlset>\n";
