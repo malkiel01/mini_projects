@@ -50,8 +50,9 @@ function indexSites(): array {
     $rows = db()->query('SELECT * FROM index_sites ORDER BY name')->fetchAll();
     $now = time();
     $counts = [];
-    foreach (db()->query("SELECT site_id, SUM(needs_title = 1 AND skip = 0) pending, SUM(skip) skipped, SUM(skip = 0 AND title != '' AND needs_title = 0) ready FROM index_entries GROUP BY site_id")->fetchAll() as $c) {
-        $counts[(int) $c['site_id']] = ['pending' => (int) $c['pending'], 'skipped' => (int) $c['skipped'], 'ready' => (int) $c['ready']];
+    foreach (db()->query("SELECT site_id, SUM(needs_title = 1 AND skip = 0) pending, SUM(skip) skipped, SUM(skip = 0 AND title != '' AND needs_title = 0) ready,
+                                  SUM(skip = 0 AND image IS NOT NULL) images FROM index_entries GROUP BY site_id")->fetchAll() as $c) {
+        $counts[(int) $c['site_id']] = ['pending' => (int) $c['pending'], 'skipped' => (int) $c['skipped'], 'ready' => (int) $c['ready'], 'images' => (int) $c['images']];
     }
     return array_map(function ($r) use ($now, $counts) {
         $st = $r['crawl_state'] ? (json_decode($r['crawl_state'], true) ?: []) : null;
@@ -64,6 +65,7 @@ function indexSites(): array {
             'progress' => $st ? ['done' => (int) ($st['done'] ?? 0), 'total' => (int) ($st['total'] ?? 0)] : null,
             'titles_pending' => $counts[(int) $r['id']]['pending'] ?? 0,
             'not_recipes'    => $counts[(int) $r['id']]['skipped'] ?? 0,
+            'with_image'     => $counts[(int) $r['id']]['images'] ?? 0,
         ];
     }, $rows);
 }

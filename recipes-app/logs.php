@@ -11,6 +11,7 @@
  *   logs.php?token=…&format=json     JSON, החדש ראשון
  * מסננים בשלושתם: level, action, user, q, request_id, since, before, limit.
  *
+ *   logs.php?token=…&view=index      מצב האינדקס (JSON): לכל אתר — מתכונים, תמונות, התקדמות העדכון
  *   logs.php?token=…&view=import     יומן הייבוא (lib/import_log.php): מה היה
  *                                    בכל דף ומה חולץ ממנו, עם קישור למקור.
  *                                    גם &format=text|json. מסננים: host, kind,
@@ -53,6 +54,13 @@ if ($view === 'rewrite') {
     exit;
 }
 
+// מצב האינדקס: לכל אתר — מתכונים, תמונות, האם מתעדכן ועד כמה. קריאה בלבד.
+if ($view === 'index') {
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['now' => nowIso(), 'sites' => indexSites()], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+    exit;
+}
+
 if ($view === 'import') {
     $filters = array_intersect_key($_GET, array_flip(['host', 'kind', 'ok', 'q', 'since', 'before']));
     $limit   = (int) ($_GET['limit'] ?? 50);
@@ -82,7 +90,7 @@ if ($view === 'import') {
 <title>יומן ייבוא · אפליקציית מתכונים</title>
 <meta name="theme-color" content="#0f8a4f">
 <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-09g">
+<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-09h">
 </head>
 <body>
 <header class="bar">
@@ -182,7 +190,7 @@ $qs    = fn(array $extra) => $self . '&' . http_build_query(array_filter($filter
 <title>יומן · אפליקציית מתכונים</title>
 <meta name="theme-color" content="#0f8a4f">
 <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-09g">
+<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-09h">
 </head>
 <body>
 <header class="bar">

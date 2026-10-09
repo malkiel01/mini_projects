@@ -2385,7 +2385,7 @@ www.kipa.co.il כיפה — אוכל"></textarea>
         <div class="scout-item__main">
           <strong>${esc(s.name)}</strong>
           <span class="muted small" dir="ltr">${esc(s.host)}</span>
-          <span class="small">${s.entries_n.toLocaleString('he-IL')} מתכונים בחיפוש · ${s.crawling
+          <span class="small">${s.entries_n.toLocaleString('he-IL')} מתכונים בחיפוש (🖼 ${s.with_image.toLocaleString('he-IL')} עם תמונה) · ${s.crawling
             ? `<strong>מתעדכן…</strong> ${s.progress.total ? `(${s.progress.done}/${s.progress.total} חלקים)` : '(מחפש את ה-sitemap)'}`
             : `עודכן: ${ago(s.last_crawl_at)}${s.enabled ? ` · הבא בעוד ${s.next_in > 86400 ? Math.round(s.next_in / 86400) + ' ימים' : s.next_in > 3600 ? Math.round(s.next_in / 3600) + ' שעות' : s.next_in > 0 ? Math.round(s.next_in / 60) + ' דק׳' : 'עכשיו'}` : ''}`}</span>
           ${s.titles_pending ? `<span class="small">🏷 ${s.titles_pending.toLocaleString('he-IL')} ממתינים לשם — בכתובת שלהם אין שם בעברית, אז השם מובא מהדף עצמו, ברקע, דף כל ${d.title_gap}–${d.title_gap + 10} שניות
