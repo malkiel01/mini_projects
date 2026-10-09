@@ -28,10 +28,13 @@ export const LIMIT_INFO = {
 
 // ---- תמונת המקור ----
 let original = null;
+// תבניות נוספות (מתכונים) נרשמות אחרי הטעינה ומוחלפות בכל שמירה — לכן
+// התמונה נלקחת לכל תבנית בנפרד, ומחדש כשהאובייקט שלה התחלף
 function snapshot() {
-  if (original) return;
-  original = { limits: { ...LIMITS }, templates: {} };
+  if (!original) original = { limits: { ...LIMITS }, templates: {}, objs: {} };
   for (const [key, t] of Object.entries(TEMPLATES)) {
+    if (original.objs[key] === t) continue;
+    original.objs[key] = t;
     // עותק לכל פרמטר: תבניות שונות עלולות לחלוק אובייקט פרמטר (ידית, חומר…),
     // והתאמה לתבנית אחת לא אמורה לדלוף לאחרת
     t.params = t.params.map((p) => ({ ...p }));
@@ -63,6 +66,7 @@ export function applyRules(rules) {
   // תבניות
   for (const [key, t] of Object.entries(TEMPLATES)) {
     const o = original.templates[key];
+    if (!o) continue;
     t.laborHours = o.laborHours;
     for (const p of allParams(t)) Object.assign(p, o.params[p.key]);
     const r = obj(current[key]);
@@ -91,6 +95,7 @@ const obj = (x) => (x && typeof x === 'object' && !Array.isArray(x) ? x : {});
 /** תיאור קריא של מתי פרמטר מוצג (showIf) — למסך המעבדה. */
 export function describeShowIf(p, t) {
   if (!p.showIf) return 'תמיד';
+  if (typeof p.showIf === 'function') return p.showIfText || 'לפי נוסחה';
   const byKey = Object.fromEntries(allParams(t).map((q) => [q.key, q]));
   const name = (k) => byKey[k]?.label || k;
   const opt = (k, v) => {

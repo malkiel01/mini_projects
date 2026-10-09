@@ -125,11 +125,21 @@ try {
         // ---- מעבדת המוצרים (התאמות לתבניות) ----
         case 'rules-get':
             requireUser();
-            ok(['rules' => rulesGet()]);
+            ok(['rules' => rulesGet(), 'recipes' => recipesList()]);
         case 'rules-save':
             requireAdmin();
             rulesSave(is_array($in['rules'] ?? null) ? $in['rules'] : []);
-            ok(['rules' => rulesGet()]);
+            ok(['rules' => rulesGet(), 'recipes' => recipesList()]);
+        case 'recipes-get':
+            requireUser();
+            ok(['recipes' => recipesList()]);
+        case 'recipe-save':
+            requireAdmin();
+            ok(['recipe' => recipeSave(is_array($in['recipe'] ?? null) ? $in['recipe'] : []), 'recipes' => recipesList()]);
+        case 'recipe-delete':
+            requireAdmin();
+            recipeDelete((string) ($in['key'] ?? ''));
+            ok(['recipes' => recipesList()]);
 
         // ---- תעריפים ----
         case 'rates-get': {
@@ -185,7 +195,7 @@ try {
             $a = assemblyByToken((string) ($_GET['t'] ?? $in['t'] ?? ''));
             $lib = materialsGet();
             foreach ($lib['diff'] as &$m) unset($m['price'], $m['priceUnit']);
-            ok(['assembly' => $a, 'materials' => $lib, 'rules' => rulesGet()]);
+            ok(['assembly' => $a, 'materials' => $lib, 'rules' => rulesGet(), 'recipes' => recipesList()]);
         }
 
         // ---- צפיית לקוח: בלי כניסה, לפי אסימון. מחזיר גם את הספרייה (בלי מחירים) ----
@@ -193,7 +203,7 @@ try {
             $p = projectByToken((string) ($_GET['t'] ?? $in['t'] ?? ''));
             $lib = materialsGet();
             foreach ($lib['diff'] as &$m) unset($m['price'], $m['priceUnit']);
-            ok(['project' => $p, 'materials' => $lib, 'rules' => rulesGet()]);
+            ok(['project' => $p, 'materials' => $lib, 'rules' => rulesGet(), 'recipes' => recipesList()]);
         }
 
         default:

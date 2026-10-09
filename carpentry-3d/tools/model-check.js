@@ -19,6 +19,9 @@ import { partWeight, totalWeight, boardWeight, hingeCount, hingeYs, hingeDrillin
 import { toSTL, printSize } from '../assets/js/model/stl.js';
 import { applyRules, originalOf, describeShowIf, LIMIT_INFO } from '../assets/js/model/rules.js';
 import { LIMITS } from '../assets/js/model/templates/common.js';
+import { evaluate, evalNum, interpolate, syntaxError } from '../assets/js/model/expr.js';
+import { registerRecipes, starterRecipe, runRecipe, recipeSyntax } from '../assets/js/model/recipe.js';
+import { visible } from '../assets/js/model/index.js';
 import { millSpec, fluteGrooves, fluteRib, millRects, millSolids, millRemoved, millText, millEdges, cncPatterns } from '../assets/js/model/milling.js';
 
 let failed = 0;
@@ -1070,6 +1073,51 @@ console.log('מעבדת המוצרים: התאמות מעל התבניות');
   check(Object.keys(LIMITS).every((k) => LIMIT_INFO[k]), 'לכל גבול יש הסבר');
   const withIf = Object.values(TEMPLATES).flatMap((t) => allParams(t).filter((p) => p.showIf).map((p) => describeShowIf(p, t)));
   check(withIf.length > 0 && withIf.every((d) => typeof d === 'string' && d.length > 3 && !/undefined/.test(d)), 'תיאור התנאים קריא');
+}
+
+console.log('נוסחאות (expr)');
+{
+  const s = { W: 1200, T: 18, cols: 3, doors: 'wood', i: 1 };
+  check(evalNum('W - 2*T', s) === 1164 && evalNum('(W - 2*T - (cols-1)*T) / cols', s) === 376, 'חשבון וסוגריים');
+  check(evaluate("doors == 'wood' && cols > 1", s) === 1 && evaluate('!(cols > 1) || W < 100', s) === 0, 'השוואות, וגם/או/לא');
+  check(evaluate("i % 2 == 0 ? 'left' : 'right'", s) === 'right' && evalNum('min(W, 500) + max(1, 2) + round(2.6) + clamp(50, 0, 10) + if(cols > 2, 1, 0)', s) === 500 + 2 + 3 + 10 + 1, 'תנאי מקוצר ופונקציות');
+  check(interpolate('מדף {i+1} ב-{W/7}', s) === 'מדף 2 ב-171.4', 'טקסט עם נוסחה');
+  let msg = '';
+  try { evalNum('W + Wx', s); } catch (e) { msg = e.message; }
+  check(/Wx/.test(msg), 'משתנה לא מוכר — שגיאה עם השם');
+  check(syntaxError('W = 3') && syntaxError('(W + 1') && syntaxError('W +') && !syntaxError('W + 1'), 'שגיאות תחביר נתפסות');
+  let hostile = '';
+  try { evaluate('constructor', {}); } catch (e) { hostile = e.message; }
+  check(/לא מוכר/.test(hostile), 'אין גישה למאפיינים של JS');
+}
+
+console.log('מתכונים: מוצר מנתונים');
+{
+  const r = starterRecipe('r-test01');
+  check(recipeSyntax(r).length === 0, `מתכון הדוגמה תקין תחבירית: ${JSON.stringify(recipeSyntax(r))}`);
+  registerRecipes([r]);
+  check(TEMPLATES['r-test01'] && TEMPLATES['r-test01'].recipe === r, 'נרשם כתבנית');
+  const b = build('r-test01', {});
+  check(allFinite(b.parts), 'גאומטריה סופית');
+  check(b.parts.filter((p) => p.id.startsWith('partition')).length === 1 && b.parts.filter((p) => p.id.startsWith('shelf')).length === 6, `לולאות: מחיצה 1 ומדפים 2×3 (קיבלתי ${b.parts.map((p) => p.id).join(',')})`);
+  check(!b.parts.some((p) => p.id.startsWith('door')) && b.warnings.length === 0, 'דלתות בתנאי — כבויות; בלי אזהרות');
+  check(b.bounds.w === 1200 && b.bounds.h === 1800 && b.bounds.d === 400, 'גבולות מהחלקים');
+  const sh = b.parts.find((p) => p.id === 'shelf-1');
+  check(sh.axis === 'y' && Math.abs(sh.box.w - (1200 - 36 - 18) / 2) < 0.01, 'ציר העובי נגזר מהמידה הקטנה; רוחב עמודה מהמשתנים');
+  const d = build('r-test01', { doors: 'wood', cols: 3, W: 2700 });
+  const doors = d.parts.filter((p) => p.motion);
+  check(doors.length === 3 && d.hardware.some((h) => h.kind === 'hinge') && d.hardware.some((h) => h.kind === 'handle'), 'דלתות: 3, עם צירים וידיות');
+  check(Math.abs(doors[0].box.x - 1) < 0.01 && Math.abs(doors[2].box.x + doors[2].box.w - 2699) < 0.01, 'הדלתות מכסות את כל הרוחב (מרווח 2)');
+  check(doors[0].motion.angle < 0 && doors[2].motion.angle > 0, 'צד הציר מחושב: שמאל/ימין');
+  check(d.warnings.some((w) => /עמודה ברוחב 876/.test(w)), `אזהרה עם ערך מחושב: ${d.warnings.join('; ')}`);
+  check(cutList(d).boards.length > 0 && hardwareList(d).some((h) => h.name === 'פין מדף' && h.qty === 36), 'רשימת חיתוך ופרזול עובדות על מתכון');
+  check(!visible(allParams(TEMPLATES['r-test01']).find((p) => p.key === 'handle'), { doors: 'none' }) && visible(allParams(TEMPLATES['r-test01']).find((p) => p.key === 'handle'), { doors: 'wood' }), 'נוסחת "מתי מוצג"');
+  const bad = runRecipe({ ...r, components: [...r.components, { id: 'oops', name: 'שבור', x: '0', y: '0', z: '0', w: 'Wxx', h: '1', d: '1' }] }, build('r-test01', {}).values);
+  check(bad.errors.length === 1 && /Wxx/.test(bad.errors[0].message) && bad.parts.length === b.parts.length, 'רכיב עם שגיאה מדולג, השאר נבנה');
+  const many = runRecipe({ params: [], components: [{ id: 'x', repeat: '100000', w: '1', h: '1', d: '1' }] }, {});
+  check(many.parts.length === 200 && many.errors.length === 1, 'תקרת חזרות');
+  registerRecipes([]);
+  check(!TEMPLATES['r-test01'] && TEMPLATES.bookcase, 'הסרה — רק המתכונים יוצאים');
 }
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }

@@ -7,12 +7,17 @@
 // מה שנערך כאן הוא טיוטה: התצוגה בתלת מימד והאזהרות מתעדכנות מיד, אבל רק
 // "שמירה" כותבת לשרת (rules-save) ומחילה על כולם. סגירה בלי שמירה — חזרה
 // למה שנשמר. כל שדה ששונה מסומן, ו-↺ מחזיר אותו לערך שבקוד.
+//
+// "מוצרים מנוסחאות" (שלב 2) — מתכונים: מוצר שכולו נתונים, נערך ב-recipe-ui.js.
+// כל מתכון נשמר לבד (recipe-save) ונרשם מיד כתבנית לכל דבר.
 
 import { TEMPLATES, allParams, optionsFor, build } from './model/index.js';
 import { applyRules, activeRules, originalOf, originalLimits, describeShowIf, LIMIT_INFO } from './model/rules.js';
 import { LIMITS } from './model/templates/common.js';
 import { createViewer } from './viewer.js';
 import { api } from './store.js';
+import { registerRecipes, recipeTemplate, starterRecipe, newRecipeKey, RECIPE_PREFIX } from './model/recipe.js';
+import { createRecipeEditor } from './recipe-ui.js';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const clone = (x) => JSON.parse(JSON.stringify(x || {}));
@@ -25,6 +30,10 @@ export function createLabUI(root, { onChange, onError, toast, requestClose }) {
   let sel = 'bookcase';  // תבנית, או '_limits'
   let viewer = null;
   let dirty = false;
+  let savedRecipes = [];  // המתכונים כפי שבשרת
+  let rdraft = null;      // המתכון שבעריכה (עותק)
+  let rdirty = false;
+  const isRecipe = (k) => typeof k === 'string' && k.startsWith(RECIPE_PREFIX);
 
   root.innerHTML = `
     <div class="drawer__bar"><strong>🧪 מעבדת מוצרים</strong><span class="muted lab__hint">מה שהמערכת יודעת על כל מוצר — גלוי וניתן לעריכה</span>
@@ -48,19 +57,76 @@ export function createLabUI(root, { onChange, onError, toast, requestClose }) {
     saved = clone(activeRules());
     draft = clone(saved);
     dirty = false;
+    savedRecipes = Object.values(TEMPLATES).filter((t) => t.recipe).map((t) => clone(t.recipe));
+    if (isRecipe(sel) && !savedRecipes.some((r) => r.key === sel)) sel = 'bookcase';
+    rdraft = isRecipe(sel) ? clone(savedRecipes.find((r) => r.key === sel)) : null;
+    rdirty = false;
     render();
   }
   $('.lab__close').addEventListener('click', () => {
-    if (dirty && !confirm('יש שינויים שלא נשמרו. לסגור בלי לשמור?')) return;
+    if ((dirty || rdirty) && !confirm('יש שינויים שלא נשמרו. לסגור בלי לשמור?')) return;
     requestClose();
   });
   // המגירה נסגרה (כפתור, "אחורה" בטלפון) — טיוטה שלא נשמרה חוזרת למה שנשמר
   new MutationObserver(() => {
-    if (root.classList.contains('is-open') || !dirty) return;
+    if (root.classList.contains('is-open') || !(dirty || rdirty)) return;
+    if (rdirty) { registerRecipes(savedRecipes); rdirty = false; }
     dirty = false;
     applyRules(saved);
     onChange();
   }).observe(root, { attributes: true, attributeFilter: ['class'] });
+
+  // ---- מתכונים ----
+  const recipeEd = createRecipeEditor($('.lab__side'), $('.lab__table'), {
+    onChange: (r) => {
+      rdirty = true;
+      TEMPLATES[r.key] = recipeTemplate(r);   // התצוגה בונה מהטיוטה
+      applyRules(draft);
+      $('.lab__state').textContent = '● מתכון שטרם נשמר';
+      renderList(); renderPreview();
+    },
+    onSave: async (r) => {
+      try {
+        const res = await api('recipe-save', { recipe: r });
+        savedRecipes = res.recipes;
+        registerRecipes(savedRecipes); applyRules(draft);
+        rdraft = clone(savedRecipes.find((x) => x.key === r.key));
+        rdirty = false;
+        onChange();
+        toast('המתכון נשמר — זמין ביצירת פרויקט');
+        render();
+      } catch (err) { onError(err); }
+    },
+    onDuplicate: (r) => {
+      if (!leaveRecipe()) return;
+      const copy = { ...clone(r), key: newRecipeKey(), name: `${r.name} (עותק)` };
+      openRecipe(copy, true);
+    },
+    onDelete: async (r) => {
+      if (!savedRecipes.some((x) => x.key === r.key)) { rdirty = false; registerRecipes(savedRecipes); sel = 'bookcase'; render(); return; }
+      if (!confirm(`למחוק את "${r.name}"? פרויקטים שנבנו ממנו לא ייפתחו יותר. (השבתה — הסרת "פעיל" — מסתירה אותו בלי לשבור.)`)) return;
+      try {
+        const res = await api('recipe-delete', { key: r.key });
+        savedRecipes = res.recipes;
+        registerRecipes(savedRecipes); applyRules(draft);
+        rdirty = false; rdraft = null; sel = 'bookcase';
+        onChange(); toast('המתכון נמחק'); render();
+      } catch (err) { onError(err); }
+    },
+  });
+  /** עוזבים מתכון שבעריכה — אם יש שינויים, שואלים, ומחזירים למה שנשמר. */
+  function leaveRecipe() {
+    if (!rdirty) return true;
+    if (!confirm('המתכון לא נשמר. לעזוב בלי לשמור?')) return false;
+    rdirty = false;
+    registerRecipes(savedRecipes); applyRules(draft);
+    return true;
+  }
+  function openRecipe(r, fresh = false) {
+    rdraft = r; sel = r.key; rdirty = fresh;
+    if (fresh) { TEMPLATES[r.key] = recipeTemplate(r); applyRules(draft); }
+    render();
+  }
 
   // ---- טיוטה: רק מה ששונה מהקוד נשמר ----
   const tplRules = (key) => (draft[key] = draft[key] && typeof draft[key] === 'object' && !Array.isArray(draft[key]) ? draft[key] : {});
@@ -121,7 +187,7 @@ export function createLabUI(root, { onChange, onError, toast, requestClose }) {
   function render() {
     applyRules(draft);
     $('.lab__save').disabled = !dirty;
-    $('.lab__state').textContent = dirty ? '● שינויים שטרם נשמרו' : '';
+    $('.lab__state').textContent = rdirty ? '● מתכון שטרם נשמר' : dirty ? '● שינויים שטרם נשמרו' : '';
     renderList();
     renderEditor();
     renderPreview();
@@ -131,19 +197,41 @@ export function createLabUI(root, { onChange, onError, toast, requestClose }) {
       const n = changes(key);
       return `<button type="button" class="acc__card ${sel === key ? 'is-active' : ''}" data-sel="${key}"><strong>${esc(title)}</strong><span class="muted">${esc(sub)}${n ? ` · <b class="lab__n">${n} שינויים</b>` : ''}</span></button>`;
     };
-    $('.lab__list').innerHTML = Object.entries(TEMPLATES).map(([k, t]) => card(k, t.name, `${allParams(t).length} פרמטרים · ${t.laborHours} ש׳ עבודה`)).join('')
+    const rcard = (r) => `<button type="button" class="acc__card ${sel === r.key ? 'is-active' : ''} ${r.active === false ? 'is-off' : ''}" data-sel="${r.key}"><strong>🧪 ${esc(r.name)}</strong><span class="muted">${(r.components || []).length} רכיבים · ${(r.params || []).length} פרמטרים${r.active === false ? ' · מושבת' : ''}${sel === r.key && rdirty ? ' · <b class="lab__n">לא נשמר</b>' : ''}</span></button>`;
+    const shown = [...savedRecipes.map((r) => (rdraft && r.key === rdraft.key ? rdraft : r)), ...(rdraft && !savedRecipes.some((r) => r.key === rdraft.key) ? [rdraft] : [])];
+    $('.lab__list').innerHTML = '<h4 class="lab__lhead">מוצרים מהקוד</h4>'
+      + Object.entries(TEMPLATES).filter(([, t]) => !t.recipe).map(([k, t]) => card(k, t.name, `${allParams(t).length} פרמטרים · ${t.laborHours} ש׳ עבודה`)).join('')
       + card('_limits', '⚖️ גבולות ואזהרות', `${Object.keys(LIMITS).length} גבולות לכל המוצרים`)
+      + '<h4 class="lab__lhead">מוצרים מנוסחאות</h4>'
+      + shown.map(rcard).join('')
+      + '<button type="button" class="btn btn--small lab__new" data-new-recipe="starter">＋ מוצר חדש (מדוגמה)</button>'
+      + '<button type="button" class="btn btn--small lab__new" data-new-recipe="blank">＋ מוצר ריק</button>'
       + '<p class="muted lab__note">שינוי חל על פרויקטים חדשים ועל ברירות המחדל. פרויקט קיים שומר את הערכים שלו. "מוסתר" — הנגר לא רואה את השדה, והמוצר תמיד נבנה עם ברירת המחדל.</p>';
   }
   $('.lab__list').addEventListener('click', (e) => {
+    const nb = e.target.closest('[data-new-recipe]');
+    if (nb) {
+      if (!leaveRecipe()) return;
+      const key = newRecipeKey();
+      openRecipe(nb.dataset.newRecipe === 'starter' ? starterRecipe(key) : {
+        key, name: 'מוצר חדש', description: '', laborHours: 2, active: true,
+        params: [{ key: 'W', label: 'רוחב', type: 'mm', default: 600, min: 100, max: 3000, group: 'מידות' }, { key: 'D', label: 'עומק', type: 'mm', default: 400, min: 100, max: 1000, group: 'מידות' },
+          { key: 'body', label: 'חומר', type: 'material', use: 'board', default: 'board:melamine-white-18', group: 'חומרים' }],
+        vars: [], components: [{ id: 'panel', name: 'לוח', kind: 'board', material: 'body', x: '0', y: '0', z: '0', w: 'W', h: 'body_t', d: 'D', edges: 'front', grain: 'auto' }], hardware: [], warnings: [],
+      }, true);
+      return;
+    }
     const b = e.target.closest('[data-sel]');
-    if (!b) return;
+    if (!b || b.dataset.sel === sel) return;
+    if (!leaveRecipe()) return;
     sel = b.dataset.sel;
-    renderList(); renderEditor(); renderPreview();
+    rdraft = isRecipe(sel) ? clone(savedRecipes.find((r) => r.key === sel)) : null;
+    render();
   });
 
   // ציור מחדש אחרי כל שינוי — בלי לאבד את השדה שהמנהל עבר אליו (Tab)
   function renderEditor() {
+    if (isRecipe(sel)) return drawEditor();
     const a = document.activeElement, row = a && root.contains(a) ? a.closest('[data-p],[data-lim]') : null;
     const sig = row ? [row.dataset.p || row.dataset.lim, a.dataset.f || a.dataset.l || ''] : a && a.dataset?.hours !== undefined ? ['', 'hours'] : null;
     drawEditor();
@@ -154,6 +242,7 @@ export function createLabUI(root, { onChange, onError, toast, requestClose }) {
   }
   function drawEditor() {
     if (sel === '_limits') return renderLimits();
+    if (isRecipe(sel) && rdraft) return recipeEd.show(rdraft);
     const t = TEMPLATES[sel], o = originalOf(sel), r = draft[sel] || {};
     $('.lab__side').innerHTML = `
       <h3>${esc(t.name)}</h3>
@@ -258,7 +347,8 @@ export function createLabUI(root, { onChange, onError, toast, requestClose }) {
     try { model = build(key, {}); } catch (err) { $('.lab__warns').innerHTML = `<p class="lab__err">שגיאה בבנייה: ${esc(err.message)}</p>`; return; }
     const w = model.warnings || [];
     const box = $('.lab__warns');
-    if (box) box.innerHTML = w.length ? `<details open><summary>⚠ ${w.length} אזהרות בברירת המחדל</summary><ul>${w.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>` : '<p class="lab__ok">✓ ברירת המחדל בונה מוצר בלי אזהרות</p>';
+    if (box && !model.parts.length) w.push('אין רכיבים — הוסיפו רכיב, או בדקו את התנאים');
+    if (box) box.innerHTML = w.length ? `<details open><summary>⚠ ${w.length} ${model.errors?.length ? 'אזהרות ושגיאות' : 'אזהרות'} בברירת המחדל</summary><ul>${w.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>` : '<p class="lab__ok">✓ ברירת המחדל בונה מוצר בלי אזהרות</p>';
     if (!window.THREE) return;
     if (!viewer) viewer = createViewer($('.lab__preview'), {});
     const first = !viewer._shown || viewer._shown !== key;
