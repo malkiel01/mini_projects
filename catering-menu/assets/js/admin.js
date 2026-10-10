@@ -413,6 +413,10 @@
             box.append(
                 el('p', {}, (o.approval === 'approved' ? '✓ ההזמנה אושרה' : '✕ ההזמנה נדחתה') + when + mail));
             if (o.rejectReason) box.append(el('p', { class: 'reason' }, 'סיבה: ' + o.rejectReason));
+            if (o.approval === 'approved') {
+                box.append(el('a', { class: 'btn btn-whatsapp', href: customerWhatsapp(o, approvalMessage(o)), target: '_blank', rel: 'noopener' },
+                    '📲 שליחת האישור בוואטסאפ'));
+            }
             box.append(
                 el('button', { type: 'button', class: 'link-btn', onclick: () => update({ approval: 'new' }) }, 'ביטול ההחלטה'));
         }
@@ -437,9 +441,33 @@
         $('#decideNotifyLabel').textContent = hasMail
             ? `לשלוח מייל ללקוח (${o.customer.email})`
             : 'הלקוח לא השאיר מייל — אפשר לעדכן אותו בוואטסאפ אחרי השמירה';
-        $('#decideSubmit').textContent = ok ? '✓ אישור' : '✕ סירוב';
+        $('#decideWaHint').hidden = !ok;
+        $('#decideSubmit').textContent = ok ? '✓ אישור ושליחה בוואטסאפ' : '✕ סירוב';
         $('#decideSubmit').className = 'btn btn-wide ' + (ok ? 'btn-ok' : 'btn-danger-solid');
         $('#decideSheet').showModal();
+    }
+
+    /** קישור וואטסאפ ללקוח, עם הודעה מוכנה. */
+    function customerWhatsapp(o, text) {
+        const digits = o.customer.phone.replace(/\D/g, '');
+        const intl = digits.startsWith('0') ? '972' + digits.slice(1) : digits;
+        return `https://wa.me/${intl}?text=${encodeURIComponent(text)}`;
+    }
+
+    /** הודעת האישור ללקוח: מתי, כמה סועדים, והמנות לפי קטגוריה. */
+    function approvalMessage(o) {
+        const c = o.customer;
+        const biz = settings?.business || {};
+        const lines = [`שלום ${c.name},`, `שמחים לעדכן: ההזמנה שלך${c.deliveryAt ? ' ל-' + c.deliveryAt : ''} *אושרה* ✅`];
+        if (c.guests) lines.push(`מספר סועדים: ${c.guests}`);
+        const cats = new Map();
+        for (const i of o.items) {
+            if (!cats.has(i.category)) cats.set(i.category, []);
+            cats.get(i.category).push(i.name);
+        }
+        for (const [cat, names] of cats) lines.push('', `*${cat}*`, ...names.map(n => '• ' + n));
+        lines.push('', 'תודה שבחרת בנו!', [biz.name || 'ניחוחות', biz.owner, (biz.phones || [])[0]].filter(Boolean).join(' · '));
+        return lines.join('\n');
     }
 
     async function submitDecision(e) {
@@ -447,20 +475,18 @@
         const o = current();
         $('#decideSheet').close();
         if (!o || !deciding) return;
-        const res = await update({
-            approval: deciding,
-            reason: $('#decideReason').value.trim(),
-            notify: $('#decideNotify').checked,
-        });
-        // בלי מייל — הודעת וואטסאפ מוכנה
-        if (res && !o.customer.email) {
-            const text = deciding === 'approved'
-                ? `שלום ${o.customer.name}, ההזמנה שלך${o.customer.deliveryAt ? ' ל-' + o.customer.deliveryAt : ''} אושרה. תודה, ניחוחות`
-                : `שלום ${o.customer.name}, לצערנו לא נוכל לקבל את ההזמנה${o.customer.deliveryAt ? ' ל-' + o.customer.deliveryAt : ''}.` +
-                  ($('#decideReason').value.trim() ? ' ' + $('#decideReason').value.trim() : '');
-            const digits = o.customer.phone.replace(/\D/g, '');
-            const intl = digits.startsWith('0') ? '972' + digits.slice(1) : digits;
-            window.open(`https://wa.me/${intl}?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
+        const approval = deciding;
+        const reason = $('#decideReason').value.trim();
+        // אישור — וואטסאפ ללקוח עם הודעה מוכנה. נפתח מיד, עוד בתוך הלחיצה:
+        // אחרי המתנה לשרת, דפדפני טלפון חוסמים פתיחת חלון.
+        if (approval === 'approved') window.open(customerWhatsapp(o, approvalMessage(o)), '_blank', 'noopener');
+        const res = await update({ approval, reason, notify: $('#decideNotify').checked });
+        if (!res && approval === 'approved') toast('⚠️ האישור לא נשמר במערכת — נסו שוב');
+        // סירוב ללקוח בלי מייל (הזמנות ישנות) — הודעת וואטסאפ מוכנה
+        if (res && approval === 'rejected' && !o.customer.email) {
+            const text = `שלום ${o.customer.name}, לצערנו לא נוכל לקבל את ההזמנה${o.customer.deliveryAt ? ' ל-' + o.customer.deliveryAt : ''}.` +
+                (reason ? ' ' + reason : '');
+            window.open(customerWhatsapp(o, text), '_blank', 'noopener');
         }
         deciding = null;
     }

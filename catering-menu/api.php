@@ -570,7 +570,8 @@ switch ($action) {
         if (count($ids) > MAX_ITEMS) fail('יותר מדי פריטים');
 
         $email = cleanEmail($in['email'] ?? '');
-        if (text($in, 'email', 120) !== '' && $email === '') fail('כתובת המייל אינה תקינה');
+        if (text($in, 'email', 120) === '') fail('נא למלא מייל — אליו נשלח אישור ההזמנה');
+        if ($email === '') fail('כתובת המייל אינה תקינה');
 
         $menu = menuIndex();
         $chosen = is_array($in['options'] ?? null) ? $in['options'] : [];
