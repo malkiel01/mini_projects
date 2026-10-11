@@ -670,9 +670,10 @@ console.log('אביזרים: ידיות, כפתורים, צירים, גלגלי�
   check(getLayoutProp(lay, 'wall2', 1, 'kind') === 'bricks' && cl2.parts.some((p) => /^w2-f2-brick/.test(p.id)) && !cl2.parts.some((p) => /^w1-f2-brick/.test(p.id)), 'שינוי סוג החיפוי לשדה אחד מהכרטיס');
   check(getLayoutProp(setLayoutProp(lay, 'wall2', 1, 'kind', null), 'wall2', 1, 'kind') === undefined, 'ערך ריק מחזיר לברירת המחדל');
   const relB = relatedParams(template('bookcase'), door, base.values);
-  check(relB.includes('doorFinish') && relB.includes('hinge') && relB.includes('width'), `ספרייה: לדלת — ${relB.slice(0, 6).join(', ')}…`);
+  // הגדרות הדלת/המדפים עברו לכרטיס הקומה — בכרטיס הרכיב רק מידות וחומרים כלליים, וקישור לקומה (locate)
+  check(!relB.includes('doorFinish') && !relB.includes('hinge') && relB.includes('width') && template('bookcase').locate(door.id, base.units)?.unit === 0, `ספרייה: לדלת — בלי שדות ישנים, ועם מיקום בעמודה (${relB.slice(0, 6).join(', ')})`);
   const relS = relatedParams(template('bookcase'), shelf, base.values);
-  check(relS.includes('shelfMaterial') && relS.includes('shelvesPerColumn'), 'ספרייה: למדף — חומר המדפים ומספר המדפים');
+  check(relS.includes('shelfMaterial') && !relS.includes('shelvesPerColumn') && template('bookcase').locate(shelf.id, base.units) !== null, 'ספרייה: למדף — חומר המדפים; המספר בכרטיס הקומה');
 }
 
 // ---- זוויות חופשיות: הרכבה וקירות חיפוי ----
@@ -1204,7 +1205,7 @@ console.log('ויטרינה: מסגרת, צדדים, פרופיל, צבע, שפ�
   const mix = build('bookcase', { columns: 3, glassColumns: 'first', vitrineShelves: 'glass' });
   check(mix.parts.filter((p) => /^shelf-1-/.test(p.id)).every((p) => p.material === 'glass:shelf-8') && mix.parts.filter((p) => /^shelf-2-/.test(p.id)).every((p) => p.material !== 'glass:shelf-8'), 'מדפי זכוכית רק בעמודת הוויטרינה');
   const vp = allParams(TEMPLATES.bookcase).find((p) => p.key === 'vitrineFrame');
-  check(!visible(vp, { doorType: 'wood', lowerDoors: 'wood', glassColumns: 'none' }) && visible(vp, { doorType: 'none', lowerDoors: 'wood', glassColumns: 'last' }), 'שאלות הוויטרינה מופיעות רק כשיש דלת זכוכית');
+  check(!visible(vp, { doorType: 'glass', glassColumns: 'last' }), 'שאלות הוויטרינה הכלליות לא בטופס — בכרטיס הקומה');
 }
 
 console.log('ספרייה לפי עמודה וקומה (שלב 1): המרה זהה לבנייה הישנה');
@@ -1309,6 +1310,18 @@ console.log('שלב 2: קומות ללא הגבלה, ויטרינה לקומה, 
   check(joined['side-L'].finish === 'fluted-fine' && joined['door-1'].hingeSide === 'left' && JSON.stringify(splitOverrides({ overrides: joined })) === JSON.stringify(splitOverrides(legacy)), 'overrides ⇄ partEdits/partFinishes/doorOpen');
   const bo = build('bookcase', { ...base, doorType: 'wood', overrides: joined }), bl = build('bookcase', { ...base, doorType: 'wood', ...legacy });
   check(JSON.stringify(bo.parts) === JSON.stringify(bl.parts) && JSON.stringify(bo.hardware) === JSON.stringify(bl.hardware), 'בנייה עם overrides = בנייה עם המבנים הישנים');
+}
+
+console.log('שלב 3: כרטיס עמודה/קומה — מודל');
+{
+  const t = template('bookcase');
+  const units = build('bookcase', { columns: 3, lowerH: 800, doorType: 'glass' }).units;
+  check(JSON.stringify(t.locate('door-2-up', units)) === '{"unit":1,"floor":1}' && JSON.stringify(t.locate('door-1-lo', units)) === '{"unit":0,"floor":0}' && JSON.stringify(t.locate('up-shelf-3-2', units)) === '{"unit":2,"floor":1}' && JSON.stringify(t.locate('drawer-2-3-1', units)) === '{"unit":1,"floor":2}' && JSON.stringify(t.locate('door-1-f3a-glass', units)) === '{"unit":0,"floor":2}' && t.locate('side-L', units) === null, 'מרכיב לעמודה וקומה');
+  // שינוי מספר העמודות כשיש units: נוספת עמודה — העתק של האחרונה; יורדת — נחתכת
+  const r = build('bookcase', { columns: 4, units });
+  check(r.units.length === 4 && r.units[3].floors.length === 2 && r.units[3].floors[1].front.type === 'glass' && build('bookcase', { columns: 2, units }).units.length === 2, 'מספר עמודות השתנה — units מתאימים את עצמם');
+  check(r.unitGeo.length === 4 && r.unitGeo.every((g) => g.width > 0 && g.floors.length === 2 && Math.abs(g.floors[0] - 800) < 0.01), 'unitGeo — רוחב וגבהי הקומות לתצוגה');
+  check(allParams(t).filter((p) => p.legacy).every((p) => !visible(p, {})) && allParams(t).find((p) => p.key === 'units').editor === 'units', 'השדות הישנים לא בטופס; units — עורך משלו');
 }
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }

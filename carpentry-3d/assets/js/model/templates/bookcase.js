@@ -31,10 +31,10 @@ export default {
     { key: 'depth', label: 'עומק', type: 'mm', min: 150, max: 800, default: 350, group: 'מידות' },
 
     { key: 'columns', label: 'עמודות', type: 'int', min: 1, max: 8, default: 3, group: 'חלוקה' },
-    { key: 'shelvesPerColumn', label: 'מדפים בכל עמודה', type: 'int', min: 0, max: 15, default: 4, group: 'חלוקה', hint: 'ברירת המחדל; אפשר לשנות לכל עמודה ולכל תא למטה' },
+    { legacy: true, key: 'shelvesPerColumn', label: 'מדפים בכל עמודה', type: 'int', min: 0, max: 15, default: 4, group: 'חלוקה', hint: 'ברירת המחדל; אפשר לשנות לכל עמודה ולכל תא למטה' },
     // המבנה לפי עמודה וקומה (docs/elements-spec.md). ריק — נגזר מההגדרות הישנות בכל בנייה.
     { key: 'units', label: 'עמודות וקומות', type: 'json', default: null, group: 'חלוקה', editor: 'units' },
-    { key: 'columnsLayout', label: 'עריכת עמודות', type: 'json', default: null, group: 'חלוקה', editor: 'columns' },
+    { legacy: true, key: 'columnsLayout', label: 'עריכת עמודות', type: 'json', default: null, group: 'חלוקה', editor: 'columns' },
 
     ...materialParams(),
     sameOrMaterial('innerMaterial', 'הגוף הפנימי (מחיצות ומדפים)', 'חומרים', { hint: '"כמו הגוף" = אותו חומר כמו הדפנות החיצוניות' }),
@@ -44,34 +44,34 @@ export default {
     { key: 'crownH', label: 'כרכוב — גובה', type: 'mm', min: 0, max: 200, default: 0, group: 'סיומות', hint: '0 = ללא כרכוב' },
     wheelsParam(),
 
-    { key: 'lowerH', label: 'פיצול העמודות — גובה החלק התחתון', type: 'mm', min: 0, max: 2500, default: 0, group: 'דלתות', hint: '0 = בלי פיצול. ברירת מחדל לכל העמודות — לכל עמודה אפשר אחרת ב"עריכת עמודות". עם פיצול: מדף קבוע בגובה הזה, ודלתות שונות למטה ולמעלה' },
-    { key: 'lowerDoors', label: 'דלתות — חלק תחתון (בעמודה מפוצלת)', type: 'enum', default: 'wood', group: 'דלתות', options: DOOR_OPTIONS },
-    { key: 'doorType', label: 'דלתות — חלק עליון / כל הגובה', type: 'enum', default: 'none', group: 'דלתות', options: DOOR_OPTIONS },
-    { key: 'glassColumns', label: 'עמודות ויטרינה מלאה', type: 'enum', default: 'none', group: 'דלתות', hint: 'עמודה שלמה בדלת ויטרינה, בלי פיצול',
+    { legacy: true, key: 'lowerH', label: 'פיצול העמודות — גובה החלק התחתון', type: 'mm', min: 0, max: 2500, default: 0, group: 'דלתות', hint: '0 = בלי פיצול. ברירת מחדל לכל העמודות — לכל עמודה אפשר אחרת ב"עריכת עמודות". עם פיצול: מדף קבוע בגובה הזה, ודלתות שונות למטה ולמעלה' },
+    { legacy: true, key: 'lowerDoors', label: 'דלתות — חלק תחתון (בעמודה מפוצלת)', type: 'enum', default: 'wood', group: 'דלתות', options: DOOR_OPTIONS },
+    { legacy: true, key: 'doorType', label: 'דלתות — חלק עליון / כל הגובה', type: 'enum', default: 'none', group: 'דלתות', options: DOOR_OPTIONS },
+    { legacy: true, key: 'glassColumns', label: 'עמודות ויטרינה מלאה', type: 'enum', default: 'none', group: 'דלתות', hint: 'עמודה שלמה בדלת ויטרינה, בלי פיצול',
       options: [{ id: 'none', name: 'ללא' }, { id: 'first', name: 'הראשונה' }, { id: 'last', name: 'האחרונה' }, { id: 'ends', name: 'שתי הקיצוניות' }, { id: 'all', name: 'כולן' }] },
-    { key: 'doorFinish', label: 'גימור דלתות העץ', type: 'enum', default: 'flat', group: 'דלתות', options: FINISHES_NO_GLASS },
-    { key: 'doorMaterial', label: 'חומר הדלתות', type: 'material', kind: 'board', back: false, solid: false, top: false, default: 'board:mdf-paint-18', group: 'דלתות' },
-    { key: 'glassType', label: 'זכוכית', type: 'material', kind: 'glass', default: 'glass:clear-4', group: 'דלתות' },
-    hingeParam(), handleParam(),
+    { legacy: true, key: 'doorFinish', label: 'גימור דלתות העץ', type: 'enum', default: 'flat', group: 'דלתות', options: FINISHES_NO_GLASS },
+    { legacy: true, key: 'doorMaterial', label: 'חומר הדלתות', type: 'material', kind: 'board', back: false, solid: false, top: false, default: 'board:mdf-paint-18', group: 'דלתות' },
+    { legacy: true, key: 'glassType', label: 'זכוכית', type: 'material', kind: 'glass', default: 'glass:clear-4', group: 'דלתות' },
+    hingeParam({ legacy: true }), handleParam({ legacy: true }),
 
     // ויטרינה — מוצג רק כשיש דלת זכוכית כלשהי (למעלה, למטה, או עמודת ויטרינה מלאה)
-    { key: 'vitrineFrame', label: 'מסגרת הוויטרינה', type: 'enum', default: 'wood', group: 'ויטרינה', showIf: anyGlass, showIfText: 'יש דלת ויטרינה',
+    { legacy: true, key: 'vitrineFrame', label: 'מסגרת הוויטרינה', type: 'enum', default: 'wood', group: 'ויטרינה', showIf: anyGlass, showIfText: 'יש דלת ויטרינה',
       options: [{ id: 'wood', name: 'מסגרת עץ / MDF' }, { id: 'alu', name: 'פרופיל אלומיניום' }, { id: 'none', name: 'זכוכית בלבד (בלי מסגרת)' }],
       hint: 'בלי מסגרת — זכוכית מחוסמת 6 לפחות, וצירי זכוכית' },
-    { key: 'vitrineSides', label: 'כמה צדדים למסגרת', type: 'enum', default: '4', group: 'ויטרינה', showIf: (v) => anyGlass(v) && v.vitrineFrame !== 'none', showIfText: 'יש ויטרינה עם מסגרת',
+    { legacy: true, key: 'vitrineSides', label: 'כמה צדדים למסגרת', type: 'enum', default: '4', group: 'ויטרינה', showIf: (v) => anyGlass(v) && v.vitrineFrame !== 'none', showIfText: 'יש ויטרינה עם מסגרת',
       options: [{ id: '4', name: '4 צדדים — מסגרת מלאה' }, { id: '2v', name: '2 צדדים — ימין ושמאל (זקפים)' }, { id: '2h', name: '2 צדדים — למעלה ולמטה (קושרות)' }],
       hint: 'בצד בלי מסגרת הזכוכית מגיעה עד הקצה, מלוטשת. בלי זקף בצד הציר — צירי זכוכית' },
-    { key: 'vitrineFrameW', label: 'רוחב פס המסגרת', type: 'mm', min: 10, max: 120, default: 60, group: 'ויטרינה', showIf: (v) => anyGlass(v) && v.vitrineFrame !== 'none', showIfText: 'יש ויטרינה עם מסגרת',
+    { legacy: true, key: 'vitrineFrameW', label: 'רוחב פס המסגרת', type: 'mm', min: 10, max: 120, default: 60, group: 'ויטרינה', showIf: (v) => anyGlass(v) && v.vitrineFrame !== 'none', showIfText: 'יש ויטרינה עם מסגרת',
       hint: 'הרוחב שנראה מלפנים. אלומיניום דק — 20; עץ קלאסי — 60' },
-    { key: 'vitrineProfile', label: 'פרופיל המסגרת', type: 'enum', default: 'flat', group: 'ויטרינה', showIf: (v) => anyGlass(v) && v.vitrineFrame === 'wood', showIfText: 'מסגרת עץ',
+    { legacy: true, key: 'vitrineProfile', label: 'פרופיל המסגרת', type: 'enum', default: 'flat', group: 'ויטרינה', showIf: (v) => anyGlass(v) && v.vitrineFrame === 'wood', showIfText: 'מסגרת עץ',
       options: [{ id: 'flat', name: 'ישר' }, { id: 'shaker', name: 'שייקר — פס פנימי מדורג' }, { id: 'bevel', name: 'פאזה פנימית 45°' }, { id: 'round', name: 'קנט פנימי מעוגל' }] },
-    sameOrMaterial('vitrineFrameMaterial', 'חומר / צבע המסגרת', 'ויטרינה', { showIf: (v) => anyGlass(v) && v.vitrineFrame === 'wood', showIfText: 'מסגרת עץ', hint: '"כמו הגוף" = כמו חומר הדלתות' }),
-    { key: 'vitrineAlu', label: 'צבע הפרופיל', type: 'material', kind: 'profile', default: 'profile:alu-black', group: 'ויטרינה', showIf: (v) => anyGlass(v) && v.vitrineFrame === 'alu', showIfText: 'פרופיל אלומיניום' },
-    { key: 'vitrineMullions', label: 'חלוקת הזכוכית (שפרוסים)', type: 'enum', default: 'none', group: 'ויטרינה', showIf: (v) => anyGlass(v) && v.vitrineFrame !== 'none', showIfText: 'יש ויטרינה עם מסגרת',
+    sameOrMaterial('vitrineFrameMaterial', 'חומר / צבע המסגרת', 'ויטרינה', { legacy: true, showIf: (v) => anyGlass(v) && v.vitrineFrame === 'wood', showIfText: 'מסגרת עץ', hint: '"כמו הגוף" = כמו חומר הדלתות' }),
+    { legacy: true, key: 'vitrineAlu', label: 'צבע הפרופיל', type: 'material', kind: 'profile', default: 'profile:alu-black', group: 'ויטרינה', showIf: (v) => anyGlass(v) && v.vitrineFrame === 'alu', showIfText: 'פרופיל אלומיניום' },
+    { legacy: true, key: 'vitrineMullions', label: 'חלוקת הזכוכית (שפרוסים)', type: 'enum', default: 'none', group: 'ויטרינה', showIf: (v) => anyGlass(v) && v.vitrineFrame !== 'none', showIfText: 'יש ויטרינה עם מסגרת',
       options: [{ id: 'none', name: 'ללא — שמשה אחת' }, { id: 'v2', name: 'פס אנכי באמצע' }, { id: 'h2', name: 'פס אופקי באמצע' }, { id: 'h3', name: 'שני פסים אופקיים (3 שמשות)' }, { id: 'grid4', name: 'שתי וערב (4 שמשות)' }, { id: 'grid6', name: '6 שמשות' }] },
-    { key: 'vitrineShelves', label: 'מדפים בוויטרינה', type: 'enum', default: 'same', group: 'ויטרינה', showIf: anyGlass, showIfText: 'יש דלת ויטרינה',
+    { legacy: true, key: 'vitrineShelves', label: 'מדפים בוויטרינה', type: 'enum', default: 'same', group: 'ויטרינה', showIf: anyGlass, showIfText: 'יש דלת ויטרינה',
       options: [{ id: 'same', name: 'כמו שאר המדפים' }, { id: 'glass', name: 'מדפי זכוכית' }] },
-    { key: 'vitrineShelfGlass', label: 'זכוכית המדפים', type: 'material', kind: 'glass', default: 'glass:shelf-8', group: 'ויטרינה', showIf: (v) => anyGlass(v) && v.vitrineShelves === 'glass', showIfText: 'מדפי זכוכית' },
+    { legacy: true, key: 'vitrineShelfGlass', label: 'זכוכית המדפים', type: 'material', kind: 'glass', default: 'glass:shelf-8', group: 'ויטרינה', showIf: (v) => anyGlass(v) && v.vitrineShelves === 'glass', showIfText: 'מדפי זכוכית' },
 
     { key: 'sideLeftFinish', label: 'דופן שמאל — סוג', type: 'enum', default: 'flat', group: 'דפנות ותאורה', options: FINISHES },
     sameOrMaterial('sideLeftMaterial', 'דופן שמאל — חומר', 'דפנות ותאורה', { showIf: { sideLeftFinish: { not: ['glass'] } } }),
@@ -82,7 +82,8 @@ export default {
   ],
 
   // החלטות החיבור — נשאלות בכל מופע, עם ברירת מחדל מהתבנית.
-  joinery: joineryParams(),
+  // מדפים קבועים/מתכווננים — לכל קומה בכרטיס העמודה (ההגדרה הכללית רק לפרויקטים שעוד לא הומרו)
+  joinery: joineryParams().map((p) => (p.key === 'shelvesMode' ? { ...p, legacy: true } : p)),
 
   /** פרויקטים שנשמרו לפני הפרדת הדפנות: glassSides → סוג דופן, 'fluted' → סטריפים דקים. */
   migrate(v) {
@@ -111,6 +112,25 @@ export default {
         height: { full: H, min: minColumnH(v) },
         split: { default: v.lowerH ?? 0, max: Math.max(0, heights[i] - (v.crownH ?? 0) - bottomY - 100) } })),
     }] };
+  },
+
+  /**
+   * לאיזו עמודה וקומה שייך רכיב (לפתיחת כרטיס הקומה מהתלת מימד). null — רכיב של המוצר
+   * כולו (דופן, גב, סוקל…). `n` — מספר הקומות בכל עמודה (units).
+   */
+  locate(id, units) {
+    const nOf = (i) => units?.[i]?.floors?.length || 1;
+    let m = /^drawer-(\d+)-(\d+)-\d+/.exec(id);
+    if (m) return { unit: +m[1] - 1, floor: +m[2] - 1 };
+    m = /^door-(\d+)(?:-(lo|up|f\d+))?[ab]?(?:-|$)/.exec(id);
+    if (m) { const i = +m[1] - 1, tag = m[2]; return { unit: i, floor: !tag ? 0 : tag === 'lo' ? 0 : tag === 'up' ? nOf(i) - 1 : +tag.slice(1) - 1 }; }
+    m = /^(?:(lo|up|f\d+)-)?shelf-(\d+)-\d+/.exec(id);
+    if (m) { const i = +m[2] - 1, tag = m[1]; return { unit: i, floor: !tag ? 0 : tag === 'lo' ? 0 : tag === 'up' ? nOf(i) - 1 : +tag.slice(1) - 1 }; }
+    m = /^split(\d*)-shelf-(\d+)-/.exec(id);
+    if (m) return { unit: +m[2] - 1, floor: m[1] ? +m[1] : 1 };
+    m = /^partition-(\d+)/.exec(id);
+    if (m) return { unit: +m[1] - 1, floor: null };
+    return null;
   },
 
   // ספי האזהרות — המשותפים (common.js), שהמנהל עורך במעבדת המוצרים.
@@ -359,7 +379,8 @@ export default {
     if (shift) { for (const p of parts) p.box = { ...p.box, x: p.box.x + shift }; for (const h of hardware) if (h.pos) h.pos = [h.pos[0] + shift, h.pos[1], h.pos[2]]; for (const p of parts) if (p.motion && p.motion.kind === 'hinge' && !p.motion.shifted) { p.motion = { ...p.motion, pivot: [p.motion.pivot[0] + shift, p.motion.pivot[1], p.motion.pivot[2]], shifted: true }; } }
     const lift = addWheels(parts, hardware, v, { x0: shift, x1: shift + W, y0: 0, z0: bodyZ, z1: bodyZ + bodyD });
     bounds.h += lift;
-    return { parts, hardware, warnings, bounds, units, inactive: inactiveOf(units, saved ? null : layout, v, (i) => floorsOf(i)) };
+    const unitGeo = cols.cols.map((c, i) => { const { fl, b } = floorsOf(i); const top = (stepped ? tops[i] : topY); return { width: c.x1 - c.x0, height: heights[i], floors: fl.map((_, j) => (j === fl.length - 1 ? top : b[j + 1]) - b[j]) }; });
+    return { parts, hardware, warnings, bounds, units, unitGeo, inactive: inactiveOf(units, saved ? null : layout, v, (i) => floorsOf(i)) };
   },
 };
 
@@ -424,7 +445,12 @@ function inactiveOf(units, legacyLayout, v, floorsOf) {
 
 /** units שנשמרו בפרויקט — רק אם הם במבנה תקין ובמספר העמודות הנוכחי. */
 function validUnits(u, n) {
-  return Array.isArray(u) && u.length === n && u.every((c) => c && Array.isArray(c.floors) && c.floors.length > 0) ? u : null;
+  if (!Array.isArray(u) || !u.length || !u.every((c) => c && Array.isArray(c.floors) && c.floors.length > 0)) return null;
+  if (u.length === n) return u;
+  // מספר העמודות השתנה: עמודות שנוספו — העתק של האחרונה (ברוחב אוטומטי); שירדו — נחתכות
+  const out = u.slice(0, n);
+  while (out.length < n) out.push({ ...JSON.parse(JSON.stringify(u[u.length - 1])), width: null });
+  return out;
 }
 
 /** חזית קומה מההגדרות הישנות (כלליות) — אותו דבר לכל עמודה. */
