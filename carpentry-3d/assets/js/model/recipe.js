@@ -343,7 +343,7 @@ export function recipeTemplate(r) {
   };
   // אבן "עמודות וקומות": כפתור "⚙️ הגדרות הקומה" מהתלת מימד — אותם מזהים כמו בספרייה
   // בכרטיס: בלי גובה לעמודה (האבן בונה גובה אחיד) ובלי "＋ עמודה" (מספר העמודות — פרמטר של המתכון, בכל שם)
-  if ((r.components || []).some((c) => c && c.kind === 'units')) { t.locate = locateUnitPart; t.unitsSpec = { unitHeight: false, addColumns: false }; }
+  if ((r.components || []).some((c) => c && c.kind === 'units')) { t.locate = locateUnitPart; t.unitsSpec = { unitHeight: false, addColumns: false, columnBody: false }; }
   // עורך החלוקה (form.js): לכל חלוקה עם כותרת — קבוצה עם הסכום והפריטים
   const eds = (r.layouts || []).filter((L) => L && L.title);
   if (eds.length) {

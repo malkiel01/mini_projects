@@ -1581,5 +1581,43 @@ console.log('שלב 7: אבן "עמודות וקומות" במתכונים');
   check(more.units.length === 5 && more.units[4].floors.length === more.units[3].floors.length, 'עמודה נוספת — העתק של האחרונה');
 }
 
+console.log('הכול לפי עמודה: מחיצות, גב, כרכוב, דפנות, תאורה ועובי מדפים');
+{
+  const base = { columns: 3, width: 1500, height: 2000, depth: 350, backMode: 'groove', crownH: 0, led: 'none' };
+  const u0 = build('bookcase', base).units;
+  const U = () => JSON.parse(JSON.stringify(u0));
+  const get = (r, id) => r.parts.find((p) => p.id === id);
+  // מחיצה בעובי וחומר משלה
+  const up = U(); up[0].partitionR = { t: 25, material: 'board:veneer-oak-18' };
+  const rp = build('bookcase', { ...base, units: up });
+  const p1 = get(rp, 'partition-1'), p2 = get(rp, 'partition-2');
+  check(p1.box.w === 25 && p1.material === 'board:veneer-oak-18' && p2.box.w === 18, 'מחיצה 1 — 25 מ"מ אלון; מחיצה 2 — של המוצר');
+  check(Math.abs(get(rp, 'side-R').box.x - get(build('bookcase', base), 'side-R').box.x) < 0.01 && allFinite(rp.parts), 'הרוחב הכולל לא משתנה');
+  // עובי מדפים לקומה: הוקלד / מהחומר
+  const us = U(); us[1].floors[0].interior.shelves = { ...us[1].floors[0].interior.shelves, t: 25 }; us[2].floors[0].interior.shelves = { ...us[2].floors[0].interior.shelves, material: 'board:mdf-paint-22' };
+  const rs = build('bookcase', { ...base, units: us });
+  check(get(rs, 'shelf-2-1').box.h === 25 && get(rs, 'shelf-3-1').box.h === 22 && get(rs, 'shelf-1-1').box.h === 18, 'מדפים: 25 שהוקלד, 22 מהחומר, 18 של המוצר');
+  // תאורה לקומה
+  const ul = U(); ul[0].floors[0].led = 'sides';
+  const rl = build('bookcase', { ...base, units: ul });
+  check(rl.hardware.some((h) => h.id === 'led-1-f1-L') && !rl.hardware.some((h) => /^led-2/.test(h.id)), 'לד רק בעמודה 1');
+  // גב לעמודה
+  const ub = U(); ub[1].back = { mode: 'none' }; ub[2].back = { mode: 'overlay', material: 'board:back-mdf-8' };
+  const rb = build('bookcase', { ...base, units: ub });
+  const backs = rb.parts.filter((p) => /back/.test(p.id) && !/drawer/.test(p.id));
+  check(backs.length === 2 && backs.some((p) => p.material === 'board:back-mdf-8' && p.box.d === 8) && backs.some((p) => p.material !== 'board:back-mdf-8'), 'גב: עמודה 1 בחריץ, 2 בלי, 3 מולבש MDF 8');
+  // כרכוב לעמודה
+  const uc = U(); uc[2].crownH = 60;
+  const rc = build('bookcase', { ...base, units: uc });
+  const cr = rc.parts.filter((p) => /crown/.test(p.id));
+  check(cr.length === 1 && cr[0].box.h === 60 && allFinite(rc.parts) && rc.parts.some((p) => /^top-3/.test(p.id)), 'כרכוב 60 רק מעל עמודה 3, והגג שלה יורד');
+  // דופן חיצונית מהכרטיס של העמודה הקיצונית
+  const ud = U(); ud[0].sideL = { finish: 'glass' }; ud[2].sideR = { material: 'board:veneer-walnut-18' };
+  const rd = build('bookcase', { ...base, units: ud });
+  check(rd.parts.some((p) => p.id === 'side-L-glass') && get(rd, 'side-R').material === 'board:veneer-walnut-18', 'דופן שמאל זכוכית (עמודה 1), דופן ימין אגוז (עמודה 3)');
+  // ברירת מחדל — זהה
+  check(JSON.stringify(build('bookcase', { ...base, units: U() }).parts) === JSON.stringify(build('bookcase', base).parts), 'בלי הגדרות לעמודות — אותה בנייה');
+}
+
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }
 console.log('\nהכול עבר ✓');

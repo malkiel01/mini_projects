@@ -12,7 +12,7 @@
 import { carcass, back, plinth, crown, part } from '../blocks.js';
 import { material } from '../materials.js';
 import { sectionLayout, cellsOf } from '../layout.js';
-import { unitsInterior, unitsFronts, locateUnitPart } from '../units-engine.js';
+import { unitsInterior, unitsFronts, locateUnitPart, partT } from '../units-engine.js';
 import { handleParam, hingeParam, wheelsParam, addWheels, materialParams, joineryParams, FINISHES, FINISHES_NO_GLASS, applyFinish, sameOrMaterial, resolveSame, columnHeights, fitSides, stepTops, steppedBack, steppedCrown, LIMITS } from './common.js';
 
 const DOOR_OPTIONS = [{ id: 'none', name: 'ללא' }, { id: 'wood', name: 'עץ' }, { id: 'glass', name: 'ויטרינה' }];
@@ -157,7 +157,9 @@ export default {
     const layout = sectionLayout(v.columnsLayout, 'main', v.columns);
     const saved = validUnits(v.units, v.columns, v);
     const heights = columnHeights(saved ? { cols: Object.fromEntries(saved.map((u, i) => [i, { height: u.height }])) } : layout, v.columns, H, minColumnH(v));
-    const tops = heights.map((h) => h - v.crownH);
+    // כרכוב לכל עמודה (units[i].crownH; ריק — של המוצר): הגג של העמודה יורד בגובה הכרכוב שלה
+    const crownOf = (i) => (saved && Number.isFinite(saved[i]?.crownH) && saved[i].crownH >= 0 ? saved[i].crownH : v.crownH);
+    const tops = heights.map((h, i) => h - crownOf(i));
     const stepped = tops.some((t) => t !== topY);
     const sidesOverTop = v.sidesOverTop === 'sides';
     if (stepped) fitSides(parts, tops, { panelT: shelfT, sidesOverTop });
@@ -166,9 +168,12 @@ export default {
     // הדפנות החיצוניות: סוג (חלק / סטריפים / חריצים / זכוכית) וחומר לכל צד בנפרד.
     const glassT = material(v.glassType).t || 4;
     let anyGlassSide = false;
+    // הדופן החיצונית — בכרטיס של העמודה הקיצונית (units[0].sideL / units[n-1].sideR), ובלעדיו — של המוצר
+    const edge = (side) => (side === 'L' ? saved?.[0]?.sideL : saved?.[v.columns - 1]?.sideR) || {};
+    const sideFinish = (side) => sameOr(edge(side).finish, side === 'L' ? v.sideLeftFinish : v.sideRightFinish);
     for (const side of ['L', 'R']) {
-      const finish = side === 'L' ? v.sideLeftFinish : v.sideRightFinish;
-      const mat = resolveSame(side === 'L' ? v.sideLeftMaterial : v.sideRightMaterial, v.bodyMaterial);
+      const finish = sideFinish(side);
+      const mat = resolveSame(sameOr(edge(side).material, side === 'L' ? v.sideLeftMaterial : v.sideRightMaterial), v.bodyMaterial);
       const i = parts.findIndex((p) => p.id === `side-${side}`);
       const s = parts[i];
       if (finish !== 'glass') {
@@ -195,14 +200,19 @@ export default {
     const ctx = { parts, hardware, warnings };
     const { cols, floorsOf } = unitsInterior(ctx, eng);
 
-    if (stepped) parts.push(...steppedBack({ mode: v.backMode, outer: { w: W, y0: bottomY - shelfT, y1: topY }, inner, cols: cols.cols, tops, t: backT, grooveDepth: v.backGrooveDepth, inset: v.backInset, material: v.backMaterial, sideT, W, panelT: shelfT }));
+    // גב לכל עמודה (units[i].back: שיטה וחומר); כשאין הגדרות לעמודות — הגב של המוצר, כמו קודם
+    const backOf = (i) => ({ mode: sameOr(units[i]?.back?.mode, v.backMode), material: sameOr(units[i]?.back?.material, v.backMaterial) });
+    const perBack = units.some((u, i) => backOf(i).mode !== v.backMode || backOf(i).material !== v.backMaterial);
+    if (perBack) parts.push(...columnBacks({ cols: cols.cols, units, backOf, tops, W, sideT, shelfT, bottomY, inner, grooveDepth: v.backGrooveDepth, inset: v.backInset }));
+    else if (stepped) parts.push(...steppedBack({ mode: v.backMode, outer: { w: W, y0: bottomY - shelfT, y1: topY }, inner, cols: cols.cols, tops, t: backT, grooveDepth: v.backGrooveDepth, inset: v.backInset, material: v.backMaterial, sideT, W, panelT: shelfT }));
     else parts.push(...back({
       mode: v.backMode, outer: { w: W, y0: bottomY - shelfT, y1: topY }, inner, t: backT,
       grooveDepth: v.backGrooveDepth, inset: v.backInset, material: v.backMaterial,
     }).parts);
 
     parts.push(...plinth({ inner, h: v.plinthH, setback: v.plinthSetback, t: sideT, d: D, material: v.bodyMaterial }).parts);
-    if (stepped) parts.push(...steppedCrown({ cols: cols.cols, tops, h: v.crownH, t: sideT, d: D, material: v.bodyMaterial, sideT, W }));
+    if (units.some((u, i) => crownOf(i) !== v.crownH)) parts.push(...columnCrowns({ cols: cols.cols, tops, crownOf, t: sideT, d: D, material: v.bodyMaterial, sideT, W }));
+    else if (stepped) parts.push(...steppedCrown({ cols: cols.cols, tops, h: v.crownH, t: sideT, d: D, material: v.bodyMaterial, sideT, W }));
     else parts.push(...crown({ w: W, y: topY, h: v.crownH, t: sideT, d: D, material: v.bodyMaterial }).parts);
 
     // ---- מגירות ודלתות: לכל קומה בכל עמודה — לפי החזית שלה (units-engine.js) ----
@@ -223,9 +233,9 @@ export default {
 
     const extraD = maxFront;
     const sideExtra = (f) => (f === 'fluted-wide' ? 10 : f.startsWith('fluted') ? 8 : 0);
-    const bounds = { w: W + sideExtra(v.sideLeftFinish) + sideExtra(v.sideRightFinish), h: Math.max(...heights), d: D + extraD };
+    const bounds = { w: W + sideExtra(sideFinish('L')) + sideExtra(sideFinish('R')), h: Math.max(...heights), d: D + extraD };
     // סטריפים על דופן שמאל יוצאים ל-x שלילי — מזיזים הכול ימינה כדי שהגבולות יתחילו ב-0
-    const shift = sideExtra(v.sideLeftFinish);
+    const shift = sideExtra(sideFinish('L'));
     if (shift) { for (const p of parts) p.box = { ...p.box, x: p.box.x + shift }; for (const h of hardware) if (h.pos) h.pos = [h.pos[0] + shift, h.pos[1], h.pos[2]]; for (const p of parts) if (p.motion && p.motion.kind === 'hinge' && !p.motion.shifted) { p.motion = { ...p.motion, pivot: [p.motion.pivot[0] + shift, p.motion.pivot[1], p.motion.pivot[2]], shifted: true }; } }
     const lift = addWheels(parts, hardware, v, { x0: shift, x1: shift + W, y0: 0, z0: bodyZ, z1: bodyZ + bodyD });
     bounds.h += lift;
@@ -351,3 +361,39 @@ function splitFor(layout, i, dflt, room) { const s = rawSplit(layout, i, dflt); 
 /** הגובה הנמוך ביותר שעמודה יכולה לקבל: סוקל, רצפה, גג, כרכוב ותא של 100. */
 function minColumnH(v) { return (v.plinthH ?? 0) + 2 * (v.shelfT ?? 18) + (v.crownH ?? 0) + 100; }
 function backThickness(id) { return material(id).t || 6; }
+
+const sameOr = (x, dflt) => (!x || x === 'same' ? dflt : x);
+/** ריצות של עמודות סמוכות עם אותו מפתח (גג, שיטה, חומר…): [{ a, b }]. */
+function runsBy(keys) {
+  const out = [];
+  keys.forEach((k, i) => { const r = out[out.length - 1]; if (r && r.key === k) r.b = i; else out.push({ a: i, b: i, key: k }); });
+  return out;
+}
+/**
+ * גב לכל ריצה של עמודות עם אותו גג, שיטה וחומר: מולבש — מחצי המחיצה עד חצי המחיצה
+ * (בקצוות — עד קצה הארון); בחריץ — בין המחיצות של הריצה, עד מתחת לגג; ללא — כלום.
+ */
+function columnBacks({ cols, units, backOf, tops, W, sideT, shelfT, bottomY, inner, grooveDepth, inset }) {
+  const last = cols.length - 1;
+  return runsBy(cols.map((c, i) => `${tops[i]}|${backOf(i).mode}|${backOf(i).material}`)).flatMap((r, k) => {
+    const { mode, material: mat } = backOf(r.a), top = tops[r.a], t = mode === 'none' ? 0 : material(mat).t || 6;
+    if (mode === 'none') return [];
+    const prefix = `c${r.a + 1}${r.b > r.a ? `-${r.b + 1}` : ''}-`;
+    if (mode === 'overlay') {
+      const x0 = r.a === 0 ? 0 : cols[r.a].x0 - partT(units, r.a - 1, sideT) / 2, x1 = r.b === last ? W : cols[r.b].x1 + partT(units, r.b, sideT) / 2;
+      return back({ mode, outer: { w: x1 - x0, y0: bottomY - shelfT, y1: top }, inner, t, material: mat, prefix }).parts.map((p) => ({ ...p, box: { ...p.box, x: p.box.x + x0 } }));
+    }
+    return back({ mode, outer: { w: W, y0: bottomY - shelfT, y1: top }, inner: { ...inner, x0: cols[r.a].x0, x1: cols[r.b].x1, y1: top - shelfT }, t, grooveDepth, inset, material: mat, prefix }).parts;
+  });
+}
+/** כרכוב לכל ריצה של עמודות עם אותו גג ואותו גובה כרכוב (כמו steppedCrown, בגובה של הריצה). */
+function columnCrowns({ cols, tops, crownOf, t, d, material: mat, sideT, W }) {
+  const last = cols.length - 1;
+  return runsBy(cols.map((c, i) => `${tops[i]}|${crownOf(i)}`)).flatMap((r) => {
+    const top = tops[r.a], h = crownOf(r.a);
+    const x0 = r.a === 0 ? 0 : (tops[r.a - 1] > top ? cols[r.a].x0 : cols[r.a].x0 - sideT);
+    const x1 = r.b === last ? W : (tops[r.b + 1] > top ? cols[r.b].x1 : cols[r.b].x1 + sideT);
+    return crown({ w: x1 - x0, y: top, h, t, d, material: mat, prefix: `c${r.a + 1}${r.b > r.a ? `-${r.b + 1}` : ''}-` }).parts.map((p) => ({ ...p, box: { ...p.box, x: p.box.x + x0 } }));
+  });
+}
+

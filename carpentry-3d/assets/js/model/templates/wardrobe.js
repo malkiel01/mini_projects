@@ -73,6 +73,7 @@ export default {
 
   /** מה כרטיס העמודה מציע בארון בגדים (units-ui.js). */
   unitsSpec: {
+    columnBody: false,   // מחיצות / גב / כרכוב לפי עמודה — בשלב הבא לארון
     fronts: { none: 'ללא', wood: 'דלת עץ' },
     interiors: { hanging: 'תלייה', shelves: 'מדפים', drawers: 'מגירות', empty: 'ריק' },
     newUnit: (last, kind, v) => newUnitOf(last, kind, v),

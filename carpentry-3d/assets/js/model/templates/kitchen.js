@@ -126,6 +126,7 @@ export default {
 
   /** מה כרטיס הארון מציע במטבח (units-ui.js). */
   unitsSpec: {
+    columnBody: false,
     fronts: { none: 'פתוח', wood: 'דלת' },
     interiors: { shelves: 'מדפים', drawers: 'מגירות', empty: 'ריק' },
     same: 'כמו המטבח',
