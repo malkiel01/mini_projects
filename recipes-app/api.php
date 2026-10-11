@@ -218,14 +218,23 @@ try {
 
     case 'search': {
         // תיבה אחת לשלי ולציבורי יחד, עם סימון לכל תוצאה (סעיף 5).
-        ok(['recipes' => searchRecipes($user, str_field($in, 'q', 120), [
+        $q = str_field($in, 'q', 120);
+        $found = searchRecipes($user, $q, [
             'from_web'    => !empty($in['from_web']),
             'following'   => !empty($in['following']),
             'shared'      => !empty($in['shared']),
             'difficulty'  => $in['difficulty'] ?? null,
             'max_minutes' => $in['max_minutes'] ?? null,
             'tag_ids'     => $in['tag_ids'] ?? null,
-        ])]);
+        ]);
+        // יומן השימוש: מה חיפש ובאיזו קטגוריה דפדף (לא הבית הריק), וכמה מצא
+        $tagIds = array_values(array_filter(array_map('intval', is_array($in['tag_ids'] ?? null) ? $in['tag_ids'] : [])));
+        if ($user && (trim($q) !== '' || $tagIds || !empty($in['difficulty']) || !empty($in['max_minutes']))) {
+            $names = $tagIds ? db()->query('SELECT name FROM tags WHERE id IN (' . implode(',', $tagIds) . ')')->fetchAll(PDO::FETCH_COLUMN) : [];
+            fyTrack($user, 'search', null, null, array_filter(['q' => trim($q), 'tags' => $names, 'd' => $in['difficulty'] ?? null,
+                                                               'm' => $in['max_minutes'] ?? null, 'n' => count($found)], fn($v) => $v !== null && $v !== '' && $v !== []));
+        }
+        ok(['recipes' => $found]);
     }
 
     case 'recipe': {
@@ -455,14 +464,26 @@ try {
 
     // ───────── חיפוש מתכונים ברשת (lib/web_index.php) ─────────
 
-    case 'web-search':
-        ok(indexSearch(str_field($in, 'q', 100), (int) ($in['offset'] ?? 0), $user, str_field($in, 'topic', 40)));
+    case 'web-search': {
+        $q = str_field($in, 'q', 100);
+        $topic = str_field($in, 'topic', 40);
+        $res = indexSearch($q, (int) ($in['offset'] ?? 0), $user, $topic);
+        if ((int) ($in['offset'] ?? 0) === 0 && (trim($q) !== '' || $topic !== ''))   // יומן השימוש — בלי "עוד תוצאות"
+            fyTrack($user, 'web_search', null, null, array_filter(['q' => trim($q), 'topic' => $topic, 'n' => (int) ($res['total'] ?? 0)], fn($v) => $v !== ''));
+        ok($res);
+    }
 
-    case 'web-open':
-        ok(webOpen((int) ($in['id'] ?? 0), $user) + ['ai_available' => aiAvailable()]);
+    case 'web-open': {
+        $res = webOpen((int) ($in['id'] ?? 0), $user) + ['ai_available' => aiAvailable()];
+        fyTrack($user, 'web_open', null, (int) ($in['id'] ?? 0));
+        ok($res);
+    }
 
-    case 'web-save':
-        ok(webSave((int) ($in['id'] ?? 0), $user));
+    case 'web-save': {
+        $res = webSave((int) ($in['id'] ?? 0), $user);
+        if (empty($res['existing'])) fyTrack($user, 'save', (int) $res['recipe_id'], (int) ($in['id'] ?? 0), ['to' => 'מתכון אצלי']);
+        ok($res);
+    }
 
     // ───────── ניסוח ידני (lib/rewrite_queue.php) ─────────
 

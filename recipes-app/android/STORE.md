@@ -143,12 +143,13 @@ GitHub → **Actions** → **Build Recipes app (Google Play)** → **Run workflo
 | Personal info → **Name** (שם תצוגה) | כן | לא | App functionality, Account management | חובה |
 | Photos and videos → **Photos** | כן | לא | App functionality (תמונות מתכונים, סריקת פתק) | רשות |
 | App activity → **Other user-generated content** (מתכונים, תגובות) | כן | לא | App functionality | רשות |
-| App activity → **App interactions** (פתיחה, בישול — ל"בשבילך") | כן | לא | Personalization | רשות — מתג "התאמה אישית" בהגדרות |
+| App activity → **App interactions** (פתיחה, שמירה, הסרה, בישול — ל"בשבילך") | כן | לא | Personalization | רשות — מתג "התאמה אישית" בהגדרות |
+| App activity → **In-app search history** (מה חיפש — ל"בשבילך") | כן | לא | Personalization | רשות — אותו מתג |
 | App info and performance → **Diagnostics** (יומן בקשות) | כן | לא | App functionality, Analytics | חובה |
 
 - **Encrypted in transit:** Yes (HTTPS).
 - **Users can request deletion:** Yes.
-- סריקה וניסוח מחדש בבינה עוברים ל-Anthropic כ**ספק שירות** שמעבד בשמנו — לפי הגדרות גוגל זה אינו "שיתוף".
+- סריקה, ניסוח מחדש וניתוח הטעם היומי (מזהה מספרי בלבד) עוברים ל-Anthropic כ**ספק שירות** שמעבד בשמנו — לפי הגדרות גוגל זה אינו "שיתוף".
 
 ### 4. בדיקה סגורה (חובה בחשבון פרטי)
 

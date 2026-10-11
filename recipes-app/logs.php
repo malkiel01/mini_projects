@@ -81,6 +81,32 @@ if ($view === 'scans' || $view === 'scan-image') {
 }
 
 // מצב האינדקס: לכל אתר — מתכונים, תמונות, האם מתעדכן ועד כמה. קריאה בלבד.
+// הניתוח היומי של הטעם (lib/taste_job.php, tools/daily-taste.md): הצ'אט עם השעון קורא את יומן
+// השימוש של הלקוחות, ומחזיר לכל אחד תקציר, משקלות ובחירות. זה המקום היחיד שכותב דרך טוקן —
+// ורק לטבלת ai_taste, אחרי בדיקה של כל שדה. לא דרך גיט: הריפו ציבורי, וטעם של לקוח הוא אישי.
+if ($view === 'taste' || $view === 'taste-import') {
+    require_once __DIR__ . '/lib/taste_job.php';
+    header('Content-Type: application/json; charset=utf-8');
+    $json = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT;
+    if ($view === 'taste') {
+        $out = ['token_expires_at' => $token['expires_at']] + tasteExport();
+        logEvent('info', 'log-view', 'יצוא לניתוח הטעם דרך טוקן "' . $token['label'] . '"', ['token_id' => (int) $token['id'], 'users' => count($out['users'])]);
+        echo json_encode($out, $json);
+        exit;
+    }
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') { http_response_code(405); echo json_encode(['success' => false, 'error' => 'POST בלבד']); exit; }
+    $body = (string) file_get_contents('php://input', false, null, 0, 2_000_000);
+    $data = json_decode($body, true);
+    try {
+        if (!is_array($data)) throw new AppError('הגוף אינו JSON תקין');
+        echo json_encode(['success' => true] + tasteImport($data), $json);
+    } catch (AppError $e) {
+        http_response_code($e->status);
+        echo json_encode(['success' => false, 'error' => $e->getMessage()], $json);
+    }
+    exit;
+}
+
 if ($view === 'foryou') {
     // בשבילך: כמה לחצו על המלצות, וכמה מהן נשמרו / בושלו — לכוונון המשקלות
     require_once __DIR__ . '/lib/foryou.php';
@@ -124,7 +150,7 @@ if ($view === 'import') {
 <title>יומן ייבוא · אפליקציית מתכונים</title>
 <meta name="theme-color" content="#0f8a4f">
 <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-11q">
+<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-11s">
 </head>
 <body>
 <header class="bar">
@@ -224,7 +250,7 @@ $qs    = fn(array $extra) => $self . '&' . http_build_query(array_filter($filter
 <title>יומן · אפליקציית מתכונים</title>
 <meta name="theme-color" content="#0f8a4f">
 <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-11q">
+<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-11s">
 </head>
 <body>
 <header class="bar">

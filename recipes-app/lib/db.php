@@ -593,6 +593,16 @@ function migrate(PDO $pdo): void {
             updated_at TEXT    NOT NULL
         );
 
+        -- טעם מהניתוח היומי (lib/taste_job.php): צ'אט עם שעון קורא את יומן השימוש פעם ביום
+        -- וכותב לכל לקוח תקציר, משקלות ובחירות. רק כשהתאמה אישית דלוקה; כיבוי מוחק.
+        CREATE TABLE IF NOT EXISTS ai_taste (
+            user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            summary    TEXT    NOT NULL DEFAULT '',
+            profile    TEXT    NOT NULL DEFAULT '{}',
+            picks      TEXT    NOT NULL DEFAULT '[]',
+            updated_at TEXT    NOT NULL
+        );
+
         -- מרכז פעילות (SPEC 15.6, lib/activity.php): מתי פתחתי אותו לאחרונה — מה שאחרי זה חדש.
         -- הפעילות עצמה נגזרת מהטבלאות הקיימות (שיתופים, המלצות, מעקב, מתכונים, תגובות).
         CREATE TABLE IF NOT EXISTS activity_seen (

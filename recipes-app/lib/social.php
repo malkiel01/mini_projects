@@ -237,7 +237,14 @@ function listFavorites(array $user): array {
 }
 
 function removeFavorite(int $favId, array $user): void {
+    $st = db()->prepare('SELECT recipe_id, entry_id, title FROM collection_items WHERE id = ?');
+    $st->execute([$favId]);
+    $it = $st->fetch() ?: [];
+    $st->closeCursor();
     $st = db()->prepare('DELETE FROM collection_items WHERE id = ? AND collection_id IN (SELECT id FROM collections WHERE owner_id = ? AND is_saved = 1)');
     $st->execute([$favId, $user['id']]);
     if ($st->rowCount() === 0) throw new AppError('המועדף אינו קיים', 404);
+    require_once __DIR__ . '/foryou.php';
+    fyTrack($user, 'unsave', isset($it['recipe_id']) ? (int) $it['recipe_id'] : null, isset($it['entry_id']) ? (int) $it['entry_id'] : null,
+            ['from' => 'שמורים', 'title' => $it['title'] ?? '']);
 }

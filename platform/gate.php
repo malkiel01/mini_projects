@@ -1,0 +1,112 @@
+<?php
+/**
+ * מגיש קובץ סטטי מתוך תיקיית כלי, אחרי בדיקת השער.
+ *
+ * ה-.htaccess של כלי שהשער פעיל בו מפנה לכאן כל בקשה לקובץ שאינו PHP
+ * (ראו build-gate.php): gate.php?__gate_app=<כלי>&__gate_path=<נתיב בתוך הכלי>.
+ * קובצי PHP אינם מגיעים לכאן — עליהם שומר gate-prepend.php.
+ */
+
+declare(strict_types=1);
+
+require __DIR__ . '/lib/gate.php';
+
+use function Platform\Gate\{decide, deny, base_url};
+
+const TYPES = [
+    'html' => 'text/html; charset=utf-8', 'htm' => 'text/html; charset=utf-8',
+    'js' => 'text/javascript; charset=utf-8', 'mjs' => 'text/javascript; charset=utf-8',
+    'css' => 'text/css; charset=utf-8', 'json' => 'application/json; charset=utf-8',
+    'webmanifest' => 'application/manifest+json', 'map' => 'application/json',
+    'svg' => 'image/svg+xml', 'png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg',
+    'gif' => 'image/gif', 'webp' => 'image/webp', 'ico' => 'image/x-icon',
+    'woff' => 'font/woff', 'woff2' => 'font/woff2', 'ttf' => 'font/ttf', 'otf' => 'font/otf',
+    'pdf' => 'application/pdf', 'zip' => 'application/zip', 'txt' => 'text/plain; charset=utf-8',
+    'mp4' => 'video/mp4', 'webm' => 'video/webm', 'mov' => 'video/quicktime', 'mp3' => 'audio/mpeg',
+    'm3u8' => 'application/vnd.apple.mpegurl', 'ts' => 'video/mp2t', 'wasm' => 'application/wasm',
+    'glb' => 'model/gltf-binary', 'gltf' => 'model/gltf+json', 'csv' => 'text/csv; charset=utf-8',
+];
+
+function not_found(): never
+{
+    http_response_code(404);
+    header('Content-Type: text/plain; charset=utf-8');
+    exit('Not found');
+}
+
+$app  = (string)($_GET['__gate_app'] ?? '');
+$path = ltrim((string)($_GET['__gate_path'] ?? ''), '/');
+$root = realpath(__DIR__ . '/..');
+
+// הנתיב חייב להישאר בתוך תיקיית הכלי, ולא לגעת בקבצים נסתרים.
+$appDir = $root ? realpath("$root/$app") : false;
+$file = $appDir ? realpath("$appDir/$path") : false;
+if (!preg_match('/^[a-z0-9][a-z0-9-]*$/', $app) || !$appDir || dirname($appDir) !== $root
+    || !$file || !is_file($file) || !str_starts_with($file, $appDir . '/')
+    || preg_match('#(^|/)\.#', substr($file, strlen($appDir) + 1))) {
+    not_found();
+}
+$ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+if (!isset(TYPES[$ext])) not_found();
+
+// תיקייה שה-.htaccess שלה חוסם הכול (data/ של כלים) נשארת חסומה גם דרכנו.
+for ($dir = dirname($file); strlen($dir) >= strlen($appDir); $dir = dirname($dir)) {
+    $ht = "$dir/.htaccess";
+    // חסימה בתוך <Files…> חלה רק על קבצים מסוימים (כמו .user.ini) — לא על התיקייה.
+    $rules = preg_replace('#<Files(Match)?\b.*?</Files(Match)?>#si', '', is_file($ht) ? (string)file_get_contents($ht) : '');
+    if (preg_match('/Require\s+all\s+denied|Deny\s+from\s+all/i', $rules)) {
+        not_found();
+    }
+    if ($dir === $appDir) break;
+}
+
+$rel = substr($file, strlen($appDir) + 1);
+$verdict = decide($app, $rel, array_diff_key($_GET, ['__gate_app' => 1, '__gate_path' => 1]));
+if ($verdict !== null) {
+    deny($verdict, base_url($_SERVER['SCRIPT_NAME'] ?? '/platform/gate.php', 'platform/gate.php'));
+}
+
+// ---- הגשה ----
+$size  = filesize($file);
+$mtime = filemtime($file);
+$etag  = '"' . dechex($mtime) . '-' . dechex($size) . '"';
+header('Content-Type: ' . TYPES[$ext]);
+header('ETag: ' . $etag);
+header('Last-Modified: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
+// הקוד נבדק מול השרת בכל טעינה (כמו ב-.htaccess של הכלים); מדיה נשמרת שעה.
+// private: התשובה תלויה במשתמש, אסור למטמון משותף לשמור אותה.
+header(in_array($ext, ['html', 'htm', 'js', 'mjs', 'css', 'json', 'webmanifest'], true)
+    ? 'Cache-Control: private, no-cache' : 'Cache-Control: private, max-age=3600');
+header('Accept-Ranges: bytes');
+
+if (trim($_SERVER['HTTP_IF_NONE_MATCH'] ?? '') === $etag) {
+    http_response_code(304);
+    exit;
+}
+
+// Range — וידאו בדפדפן מבקש חלקים.
+$start = 0;
+$end = $size - 1;
+if (preg_match('/^bytes=(\d*)-(\d*)$/', $_SERVER['HTTP_RANGE'] ?? '', $m) && ($m[1] !== '' || $m[2] !== '')) {
+    if ($m[1] === '') { $start = max(0, $size - (int)$m[2]); }
+    else { $start = (int)$m[1]; if ($m[2] !== '') $end = min($end, (int)$m[2]); }
+    if ($start > $end || $start >= $size) {
+        http_response_code(416);
+        header("Content-Range: bytes */$size");
+        exit;
+    }
+    http_response_code(206);
+    header("Content-Range: bytes $start-$end/$size");
+}
+header('Content-Length: ' . ($end - $start + 1));
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'HEAD') exit;
+
+$fh = fopen($file, 'rb');
+fseek($fh, $start);
+$left = $end - $start + 1;
+while ($left > 0 && !feof($fh)) {
+    $chunk = fread($fh, min(65536, $left));
+    echo $chunk;
+    $left -= strlen($chunk);
+}
+fclose($fh);

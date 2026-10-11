@@ -212,6 +212,17 @@ async function showApps() {
 
 // ---------- ניתוב ----------
 
+// השער מפנה לכאן עם ?next=<הכתובת שבוקשה>. אחרי כניסה — חוזרים אליה, רק אם
+// היא נתיב באותו אתר (לא //אתר-אחר ולא https://…).
+function goNext() {
+    const next = new URLSearchParams(location.search).get('next');
+    if (next && next.startsWith('/') && !next.startsWith('//')) {
+        location.replace(next);
+        return true;
+    }
+    return false;
+}
+
 async function start() {
     try {
         const me = await api('me');
@@ -223,6 +234,7 @@ async function start() {
             return showMessage('החשבון ממתין לאישור',
                 'נרשמתם בהצלחה. המנהל צריך לאשר את החשבון ולבחור אילו אפליקציות יוצגו לכם.');
         }
+        if (goNext()) return;
         if (location.hash === '#admin' && me.user.role === 'admin') {
             return await window.PlatformAdmin.show(view);
         }
