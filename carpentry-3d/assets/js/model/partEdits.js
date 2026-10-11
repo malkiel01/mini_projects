@@ -204,7 +204,7 @@ export function relatedParams(t, p, values) {
     const own = t.partParams(p, values);
     if (own) return own;
   }
-  const params = allParams(t).filter((q) => q.type !== 'json');
+  const params = allParams(t).filter((q) => q.type !== 'json' && !q.legacy);
   const keys = new Set();
   // הפרמטר שקובע את החומר של הרכיב (חומר הגוף, המדפים, החזיתות…)
   for (const q of params) if (q.type === 'material' && values[q.key] === p.material) keys.add(q.key);

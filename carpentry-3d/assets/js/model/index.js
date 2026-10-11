@@ -89,6 +89,7 @@ export function clamp(p, value) {
 /** האם פרמטר מוצג לפי הערכים הנוכחיים (showIf). */
 export function visible(p, values) {
   if (p.hidden) return false;   // הוסתר במעבדת המוצרים — תמיד ברירת המחדל
+  if (p.legacy) return false;   // הוחלף בכרטיס העמודה/הקומה (docs/elements-spec.md) — נשאר רק להמרת פרויקטים ישנים
   if (!p.showIf) return true;
   if (typeof p.showIf === 'function') return p.showIf(values);   // מתכון: נוסחת "מתי מוצג"
   // 'gt0' — מוצג כשהערך המספרי גדול מאפס (למשל "דלתות החלק התחתון" רק כשיש פיצול)

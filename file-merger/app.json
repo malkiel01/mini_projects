@@ -1,0 +1,8 @@
+{
+  "id": "file-merger",
+  "name": "איחוד ופיצול קבצים",
+  "icon": "🗂️",
+  "description": "איחוד תמונות וקבצי PDF לקובץ PDF אחד בסדר שבוחרים, ופיצול PDF לתמונות בתוך ZIP. רץ כולו בדפדפן — הקבצים לא עולים לשרת.",
+  "category": "documents",
+  "entry": "index.html"
+}

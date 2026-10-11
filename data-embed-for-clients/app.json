@@ -1,0 +1,8 @@
+{
+  "id": "data-embed-for-clients",
+  "name": "הטמעת נתונים לריכוז לקוחות",
+  "icon": "📄",
+  "description": "העלאת תמונה, בחירת פונט ומיקום, והפקת קבצי PDF מרובים עם טקסט מותאם אישית לכל לקוח.",
+  "category": "documents",
+  "entry": "index.html"
+}
