@@ -102,6 +102,9 @@ export function build(key, values) {
   const v = defaults(t);
   if (t.migrate) values = t.migrate({ ...values });   // ערכים ישנים שנשמרו בפרויקטים → המפתחות הנוכחיים
   for (const p of allParams(t)) if (values[p.key] !== undefined && !p.hidden) v[p.key] = clamp(p, values[p.key]);
+  // חריגות לרכיב: values.overrides (המבנה האחד — docs/elements-spec.md) מתמזג עם שלושת המבנים
+  // הישנים (partEdits / partFinishes / doorOpen). כשיש שניהם לאותו רכיב — overrides גובר.
+  values = { ...values, ...splitOverrides(values) };
   // כיוון פתיחה לדלת מסוימת (values.doorOpen = { doorId: 'left'|'right'|'top'|'bottom' }) — door() קורא אותו בזמן הבנייה
   setDoorOpen(values.doorOpen);
   let out;
@@ -119,7 +122,33 @@ export function build(key, values) {
   const editWarnings = Object.entries(values.partEdits || {}).filter(([id, e]) => e && (e.size || (e.move && Object.values(e.move).some(Number)) || Number(e.yaw)) && out.parts.some((p) => p.id === id))
     .map(([id, e]) => `${out.parts.find((p) => p.id === id).name} (${id}) נערך ביד — ${editSummary(e)}; "↺ איפוס הרכיב" בכרטיס שלו מחזיר לתבנית`);
   out.warnings = [...(out.warnings || []), ...physicsWarnings(out.hardware || []), ...clashWarnings, ...editWarnings, ...millWarnings(out.parts || [])];
-  return { ...out, values: { ...v, partFinishes: values.partFinishes || undefined, doorOpen: values.doorOpen || undefined, partEdits: values.partEdits || undefined }, template: t };
+  return { ...out, values: { ...v, partFinishes: values.partFinishes || undefined, doorOpen: values.doorOpen || undefined, partEdits: values.partEdits || undefined, overrides: values.overrides || undefined }, template: t };
+}
+
+/**
+ * חריגות לרכיב, מבנה אחד: { [id]: { material, size, move, yaw, edges, open, travel, handle, hidden,
+ * finish, hingeSide } } → שלושת המבנים שהבנייה מפעילה. finish → partFinishes, hingeSide →
+ * doorOpen (לפי מזהה הדלת), השאר → partEdits.
+ */
+export function splitOverrides(values) {
+  const pe = { ...(values.partEdits || {}) }, pf = { ...(values.partFinishes || {}) }, dop = { ...(values.doorOpen || {}) };
+  for (const [id, o] of Object.entries(values.overrides && typeof values.overrides === 'object' ? values.overrides : {})) {
+    if (!o || typeof o !== 'object') continue;
+    const { finish, hingeSide, ...rest } = o;
+    if (Object.keys(rest).length) pe[id] = { ...(pe[id] || {}), ...rest };
+    if (finish) pf[id] = finish;
+    if (hingeSide) dop[id] = hingeSide;
+  }
+  const nz = (m) => (Object.keys(m).length ? m : undefined);
+  return { partEdits: nz(pe), partFinishes: nz(pf), doorOpen: nz(dop) };
+}
+/** ההפך: שלושת המבנים הישנים → overrides אחד (להמרת פרויקט קיים). */
+export function joinOverrides(values) {
+  const out = {};
+  for (const [id, e] of Object.entries(values.partEdits || {})) if (e && typeof e === 'object') out[id] = { ...e };
+  for (const [id, f] of Object.entries(values.partFinishes || {})) out[id] = { ...(out[id] || {}), finish: f };
+  for (const [id, h] of Object.entries(values.doorOpen || {})) out[id] = { ...(out[id] || {}), hingeSide: h };
+  return Object.keys(out).length ? out : undefined;
 }
 
 /**
