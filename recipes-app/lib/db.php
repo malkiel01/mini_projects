@@ -580,6 +580,13 @@ function migrate(PDO $pdo): void {
             updated_at TEXT    NOT NULL
         );
 
+        -- מרכז פעילות (SPEC 15.6, lib/activity.php): מתי פתחתי אותו לאחרונה — מה שאחרי זה חדש.
+        -- הפעילות עצמה נגזרת מהטבלאות הקיימות (שיתופים, המלצות, מעקב, מתכונים, תגובות).
+        CREATE TABLE IF NOT EXISTS activity_seen (
+            user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            seen_at TEXT    NOT NULL
+        );
+
         -- מיגרציות חד־פעמיות על נתונים: שם ומתי רצה. מה שרשום כאן — לא ירוץ שוב,
         -- גם אם המצב שהוא תיקן חזר (משתמש שהסיר נושא לא יקבל אותו בחזרה).
         CREATE TABLE IF NOT EXISTS migrations (

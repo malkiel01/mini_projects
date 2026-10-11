@@ -33,6 +33,7 @@ require_once __DIR__ . '/lib/privacy.php';
 require_once __DIR__ . '/lib/collections.php';
 require_once __DIR__ . '/lib/circles.php';
 require_once __DIR__ . '/lib/foryou.php';
+require_once __DIR__ . '/lib/activity.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -173,6 +174,16 @@ try {
 
     case 'heartbeat':
         ok([]);
+
+    // מרכז פעילות (lib/activity.php, SPEC 15.6). פתיחת הדף — הכול נקרא; ה"חדש" מחושב לפני
+    case 'activity': {
+        $feed = activityFeed($user);
+        activityMarkSeen($user);
+        ok($feed);
+    }
+
+    case 'activity-count':
+        ok(['unread' => activityUnread($user)]);
 
     // בשבילך (lib/foryou.php, SPEC 15.5)
     case 'foryou':

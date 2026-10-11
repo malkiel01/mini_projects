@@ -576,6 +576,13 @@ CREATE TABLE user_taste (
   updated_at TEXT    NOT NULL
 );
 
+-- מרכז פעילות (SPEC 15.6, lib/activity.php): מתי פתחתי אותו לאחרונה. הפעילות עצמה
+-- נגזרת מהטבלאות הקיימות — שיתופים, המלצות, מעקב, מתכונים, תגובות.
+CREATE TABLE activity_seen (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  seen_at TEXT    NOT NULL
+);
+
 -- מיגרציות חד־פעמיות על נתונים (runOnce ב-lib/db.php): מה שרשום — לא ירוץ שוב.
 CREATE TABLE migrations (
   name    TEXT PRIMARY KEY,

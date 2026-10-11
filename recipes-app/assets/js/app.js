@@ -268,8 +268,9 @@ function setUser(user) {
   $('#who').hidden = !on;
   $('#logout').hidden = !on;
   $('#menu').hidden = !on;
+  $('#bell').hidden = !on;
   $$('[data-dev]').forEach((a) => { a.hidden = !(on && user.is_developer); });
-  if (on) $('#who').textContent = user.display_name || user.username;
+  if (on) { $('#who').textContent = user.display_name || user.username; refreshBell(); }
 }
 
 // ───────────────────────── ניתוב ─────────────────────────
@@ -294,6 +295,7 @@ async function route() {
     else if (h === '#/favorites') await renderFavorites();
     else if (h === '#/collections') await renderCollections();
     else if (h === '#/foryou') await renderForYou();
+    else if (h === '#/activity') await renderActivity();
     else if ((m = h.match(/^#\/c\/(\d+)$/))) await renderCollection(+m[1]);
     else if (h === '#/pantry') await renderPantry();
     else if (h === '#/shopping') await renderShoppingLists();
@@ -324,6 +326,53 @@ async function route() {
   }
 }
 window.addEventListener('hashchange', route);
+
+/** 🔔 — כמה חדש במרכז הפעילות. בכל ניווט (וכשחוזרים ללשונית); כשל — פשוט לא מתעדכן. */
+async function refreshBell() {
+  if (!state.user) return;
+  try {
+    const { unread } = await api('activity-count');
+    const b = $('#bell-n');
+    b.textContent = unread > 9 ? '9+' : unread;
+    b.hidden = !unread;
+  } catch { /* לא חשוב */ }
+}
+window.addEventListener('hashchange', () => { if (location.hash !== '#/activity') refreshBell(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshBell(); });
+
+/** "לפני 5 דקות" / "אתמול" / תאריך. */
+function ago(iso) {
+  const s = (Date.now() - Date.parse(iso)) / 1000;
+  if (s < 60) return 'עכשיו';
+  if (s < 3600) return `לפני ${Math.floor(s / 60)} דק׳`;
+  if (s < 86400) return `לפני ${Math.floor(s / 3600)} ש׳`;
+  if (s < 2 * 86400) return 'אתמול';
+  if (s < 7 * 86400) return `לפני ${Math.floor(s / 86400)} ימים`;
+  return iso.slice(0, 10).split('-').reverse().join('.');
+}
+
+const ACTIVITY_ICON = { share: '👥', collection: '📁', reco: '📨', follow: '➕', published: '🆕', comment: '💬', reply: '↩️' };
+
+async function renderActivity() {
+  const d = await api('activity');
+  const b = $('#bell-n'); b.hidden = true; b.textContent = '';
+  view.innerHTML = `
+    <section class="card activity">
+      <a class="link link--back" href="#/">‹ לרשימה</a>
+      <h2>🔔 פעילות</h2>
+      ${d.items.length ? `<ul class="act-list">${d.items.map((it) => `
+        <li class="act ${it.new ? 'act--new' : ''}">
+          <a class="act__who" href="#/u/${it.actor.id}" aria-label="${esc(it.actor.name)}"><span class="avatar" aria-hidden="true">${esc((it.actor.name || '?').charAt(0))}</span>
+            <span class="act__icon" aria-hidden="true">${ACTIVITY_ICON[it.kind] || '•'}</span></a>
+          <a class="act__main" href="${esc(it.link)}">
+            <span><strong>${esc(it.actor.name)}</strong> ${esc(it.text)}${it.title ? `: <strong>${esc(it.title)}</strong>` : ''}</span>
+            ${it.snippet ? `<span class="act__snippet">“${esc(it.snippet)}”</span>` : ''}
+            <span class="muted small">${ago(it.at)}</span>
+          </a>
+        </li>`).join('')}</ul>`
+        : '<p class="muted">אין עדיין פעילות. כשמישהו ישתף איתך, ימליץ, יעקוב אחריך או יגיב על מתכון שלך — זה יופיע כאן.</p>'}
+    </section>`;
+}
 
 async function ensureTags() {
   if (!state.tags) state.tags = (await api('tags')).tags;
