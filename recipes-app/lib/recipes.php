@@ -79,7 +79,22 @@ function canView(array $recipe, ?array $user): bool {
     if ($recipe['visibility'] === 'public') return true;
     if (!$user) return false;
     if ((int) $recipe['owner_id'] === (int) $user['id']) return true;
-    return isSharedWith((int) $recipe['id'], (int) $user['id']);   // פרטי ששותף איתו (lib/network.php)
+    return isSharedWith((int) $recipe['id'], (int) $user['id'])     // פרטי ששותף איתו (lib/network.php)
+        || sharedViaCollection((int) $recipe['id'], (int) $user['id']);   // בתוך אוסף ששותף איתו (lib/collections.php)
+}
+
+/**
+ * מתכון פרטי בתוך אוסף ששותף איתי — גלוי לי, אם הוא של בעל האוסף (SPEC 15.3,
+ * החלטה 3). מתכון פרטי של אחר באותו אוסף — לא: שיתוף אוסף משתף את *שלי*.
+ */
+function sharedViaCollection(int $recipeId, int $userId): bool {
+    $st = db()->prepare('SELECT 1 FROM collection_items ci JOIN collections c ON c.id = ci.collection_id
+                           JOIN collection_shares cs ON cs.collection_id = c.id JOIN recipes r ON r.id = ci.recipe_id
+                          WHERE ci.recipe_id = ? AND cs.user_id = ? AND c.owner_id = r.owner_id LIMIT 1');
+    $st->execute([$recipeId, $userId]);
+    $ok = (bool) $st->fetchColumn();
+    $st->closeCursor();
+    return $ok;
 }
 
 function isSharedWith(int $recipeId, int $userId): bool {
@@ -337,6 +352,8 @@ function searchRecipes(?array $user, string $query = '', array $filters = []): a
     if (!empty($filters['following']) && $user) { $where[] = 'r.owner_id IN (SELECT followee_id FROM follows WHERE follower_id = ?)'; $params[] = $uid0; }
     if (!empty($filters['shared']) && $user)    { $where[] = 'EXISTS (SELECT 1 FROM recipe_shares sh2 WHERE sh2.recipe_id = r.id AND sh2.user_id = ?)'; $params[] = $uid0; }
     if (!empty($filters['owner_id']))            { $where[] = 'r.owner_id = ?'; $params[] = (int) $filters['owner_id']; }
+    // חסימה (lib/privacy.php): מתכונים של מי שחסמתי או שחסם אותי — לא ברשימות
+    if ($user) { $where[] = 'r.owner_id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = ? UNION SELECT blocker_id FROM blocks WHERE blocked_id = ?)'; array_push($params, $uid0, $uid0); }
 
     $q = normalizeText($query);
     if ($q !== '') {
@@ -350,7 +367,9 @@ function searchRecipes(?array $user, string $query = '', array $filters = []): a
     }
     if (!empty($filters['from_web'])) $where[] = 'r.source_url IS NOT NULL';
     if (!empty($filters['max_minutes'])) {
-        $where[]  = '(COALESCE(r.work_minutes,0) + COALESCE(r.wait_minutes,0)) <= ?';
+        // CAST: execute() קושר הכול כטקסט, וב-SQLite כל מספר "קטן" מכל טקסט — בלעדיו הסינון לא סינן כלום
+        // מתכון בלי זמן כלל — לא "0 דקות": זמן לא ידוע לא עונה על "עד חצי שעה"
+        $where[]  = '(r.work_minutes IS NOT NULL OR r.wait_minutes IS NOT NULL) AND (COALESCE(r.work_minutes,0) + COALESCE(r.wait_minutes,0)) <= CAST(? AS INTEGER)';
         $params[] = (int) $filters['max_minutes'];
     }
     if (!empty($filters['tag_ids']) && is_array($filters['tag_ids'])) {

@@ -101,9 +101,9 @@ $draft = importToDraft($raw);
 check('הטיוטה: פרטי, עם מקור', [$draft['visibility'], $draft['source_url']], ['private', 'https://www.10dakot.co.il/recipe/x/']);
 check('שם האתר מ-og:site_name', $draft['source_name'] !== '', true);
 check('הרכיבים בחלק הראשון, עם שכבה מחושבת', $draft['sections'][0]['ingredients'][1]['amount_min'], 4.0);
-check('תגים נוחשו: עוגות, חלבי', count(array_intersect(
-    array_column(array_filter(db()->query('SELECT id, name FROM tags')->fetchAll(), fn($t) => in_array($t['name'], ['עוגות', 'חלבי'], true)), 'id'),
-    $draft['tag_ids'])), 2);
+$tagName = db()->query('SELECT id, name FROM tags')->fetchAll(PDO::FETCH_KEY_PAIR);
+check('תגים נוחשו: עוגות — וכשרות רק כהצעה, לא בתגים', [in_array('עוגות', array_map(fn($i) => $tagName[$i], $draft['tag_ids']), true),
+      in_array('חלבי', array_map(fn($i) => $tagName[$i], $draft['tag_ids']), true), $draft['kosher_suggestion']['name'] ?? null], [true, false, 'חלבי']);
 check('pending_media: תמונה אחת, בלי סרטון', [count($draft['pending_media']['images']), count($draft['pending_media']['videos'])], [1, 0]);
 $vraw = importParse($fx('video-embed.html'), 'https://a.co.il/r/v/');
 check('סרטונים: מה-JSON-LD ומגוף הכתבה, בלי כפילות (embed ו-nocookie הם אותו סרטון), בלי הצד ובלי מפה', $vraw['videos'],
@@ -158,6 +158,11 @@ check('אוגיו: בלי כותרת מצרכים — הבלוקים שלפני 
 check('ושלושת השלבים', count($r['sections'][0]['steps']), 3);
 $r = importParse($fx('br-paragraph.html'), 'https://www.nikib.co.il/x/');
 check('ניקי ב׳: פסקה של שורות = רכיב לכל שורה; "הכנות:" = שלבים', [count($r['ingredients']), $r['ingredients'][1], count($r['sections'][0]['steps'])], [4, 'כרובית קטנה', 2]);
+$r = importParse($fx('inline-label.html'), 'https://www.krutit.co.il/x/');
+check('קרוטית: "מצרכים לבצק (…):" — כותרת עם מילים אחריה (\\b לא רואה עברית)', $r['ingredients'],
+      ['2 כוסות (280 גרם) קמח לבן', '1/3 כוס אבקת סוכר', '1 ביצה M', '100 גרם חמאה, בטמפרטורת החדר', '1/3 כוס (65 גרם) סוכר', '250 גרם פרג טרי, טחון במקום']);
+check('והשלבים: בלי המקף בתחילה, בלי כיתוב התמונה ובלי "הערות"', $r['sections'][0]['steps'],
+      ['בקערת מיקסר שמים את כל מצרכי הבצק ולשים 8 דקות.', 'מביאים לרתיחה סוכר, חלב ודבש.', 'אופים 30 דקות ב-180 מעלות.']);
 
 echo "\n6ב. תיעוד — שמירה, קריאה, ומשיכה חוזרת\n";
 $raw = importParse($fx('jsonld-10dakot.html'), 'https://www.10dakot.co.il/recipe/x/');

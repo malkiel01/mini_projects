@@ -24,7 +24,8 @@ import { registerRecipes, starterRecipe, runRecipe, recipeSyntax, BUILTIN_RECIPE
 import legacyBed from '../assets/js/model/templates/bed.js';
 import legacyTable from '../assets/js/model/templates/table.js';
 import legacyDresser from '../assets/js/model/templates/dresser.js';
-import { visible } from '../assets/js/model/index.js';
+import legacyBookcase from '../assets/js/model/templates/legacy/bookcase-v1.js';
+import { visible, splitOverrides, joinOverrides } from '../assets/js/model/index.js';
 import { millSpec, fluteGrooves, fluteRib, millRects, millSolids, millRemoved, millText, millEdges, cncPatterns } from '../assets/js/model/milling.js';
 
 let failed = 0;
@@ -669,9 +670,10 @@ console.log('אביזרים: ידיות, כפתורים, צירים, גלגלי�
   check(getLayoutProp(lay, 'wall2', 1, 'kind') === 'bricks' && cl2.parts.some((p) => /^w2-f2-brick/.test(p.id)) && !cl2.parts.some((p) => /^w1-f2-brick/.test(p.id)), 'שינוי סוג החיפוי לשדה אחד מהכרטיס');
   check(getLayoutProp(setLayoutProp(lay, 'wall2', 1, 'kind', null), 'wall2', 1, 'kind') === undefined, 'ערך ריק מחזיר לברירת המחדל');
   const relB = relatedParams(template('bookcase'), door, base.values);
-  check(relB.includes('doorFinish') && relB.includes('hinge') && relB.includes('width'), `ספרייה: לדלת — ${relB.slice(0, 6).join(', ')}…`);
+  // הגדרות הדלת/המדפים עברו לכרטיס הקומה — בכרטיס הרכיב רק מידות וחומרים כלליים, וקישור לקומה (locate)
+  check(!relB.includes('doorFinish') && !relB.includes('hinge') && relB.includes('width') && template('bookcase').locate(door.id, base.units)?.unit === 0, `ספרייה: לדלת — בלי שדות ישנים, ועם מיקום בעמודה (${relB.slice(0, 6).join(', ')})`);
   const relS = relatedParams(template('bookcase'), shelf, base.values);
-  check(relS.includes('shelfMaterial') && relS.includes('shelvesPerColumn'), 'ספרייה: למדף — חומר המדפים ומספר המדפים');
+  check(relS.includes('shelfMaterial') && !relS.includes('shelvesPerColumn') && template('bookcase').locate(shelf.id, base.units) !== null, 'ספרייה: למדף — חומר המדפים; המספר בכרטיס הקומה');
 }
 
 // ---- זוויות חופשיות: הרכבה וקירות חיפוי ----
@@ -1177,6 +1179,149 @@ console.log('שלב 3: מתכונים מובנים זהים לקוד הישן');
   check(TEMPLATES.table.overridden && TEMPLATES.table.name === 'שולחן ערוך' && TEMPLATES.table.laborHours === 11, 'דריסה של מתכון מובנה');
   registerRecipes([]);
   check(!TEMPLATES.table.overridden && TEMPLATES.table.name === 'שולחן' && TEMPLATES.bookcase && !TEMPLATES.bookcase.recipe, 'בלי דריסה — חזרה למובנה; תבניות הקוד לא נגעו');
+}
+
+console.log('ויטרינה: מסגרת, צדדים, פרופיל, צבע, שפרוסים, מדפי זכוכית');
+{
+  const ids = (r) => r.parts.filter((p) => p.id.startsWith('door-1')).map((p) => p.id.slice(6));
+  const base = { doorType: 'glass', columns: 3 };
+  const def = build('bookcase', base);
+  check(JSON.stringify(ids(def)) === JSON.stringify(['-stile-L', '-stile-R', '-rail-T', '-rail-B', '-glass']) && def.parts.find((p) => p.id === 'door-1-stile-L').box.w === 60, 'ברירת מחדל — כמו קודם: עץ 4 צדדים, 60');
+  const v2 = build('bookcase', { ...base, vitrineSides: '2v' });
+  const g2 = v2.parts.find((p) => p.id === 'door-1-glass'), d2 = v2.parts.find((p) => p.id === 'door-1-stile-L');
+  check(!ids(v2).some((x) => x.includes('rail')) && Math.abs(g2.box.h - d2.box.h) < 0.01 && /מלוטשים/.test(g2.note), '2 צדדים (זקפים): בלי קושרות, הזכוכית לכל הגובה ומלוטשת');
+  const h2 = build('bookcase', { ...base, vitrineSides: '2h' });
+  check(!ids(h2).some((x) => x.includes('stile')) && h2.hardware.some((h) => h.kind === 'hinge' && h.material === 'hw:hinge-glass-clamp') && !drillingList(h2).some((g) => /door-1-glass/.test(g.id)), '2 צדדים (קושרות): בלי זקפים, צירי זכוכית ובלי קידוח בזכוכית');
+  const fl = build('bookcase', { ...base, vitrineFrame: 'none' });
+  check(JSON.stringify(ids(fl)) === JSON.stringify(['-glass']) && fl.warnings.some((w) => /מחוסמת 6/.test(w)) && !build('bookcase', { ...base, vitrineFrame: 'none', glassType: 'glass:tempered-6' }).warnings.some((w) => /מחוסמת 6/.test(w)), 'בלי מסגרת: זכוכית בלבד, ואזהרה כשהזכוכית דקה מ-6');
+  const alu = build('bookcase', { ...base, vitrineFrame: 'alu', vitrineFrameW: 20, vitrineAlu: 'profile:alu-gold' });
+  const cl = cutList(alu);
+  check(alu.parts.find((p) => p.id === 'door-1-stile-L').material === 'profile:alu-gold' && cl.profiles.length > 0 && !cl.boards.some((r) => /פרופיל/.test(r.name)), 'אלומיניום: צבע מהספרייה, ברשימת פרופילים ולא בלוחות');
+  check(estimate(alu, {}).lines.some((l) => l.group === 'פרופילים' && l.unit === 'מ׳'), 'אלומיניום במחיר — לפי מטר');
+  const sh = build('bookcase', { ...base, vitrineProfile: 'shaker', vitrineMullions: 'grid6', vitrineFrameMaterial: 'board:veneer-oak-18' });
+  check(ids(sh).filter((x) => x.includes('bead')).length === 4 && ids(sh).filter((x) => x.includes('mullion')).length === 3 && sh.parts.find((p) => p.id === 'door-1-stile-L').material === 'board:veneer-oak-18', 'שייקר (4 פסים), 6 שמשות (3 שפרוסים), צבע מסגרת משלה');
+  const gs = build('bookcase', { ...base, vitrineShelves: 'glass' });
+  check(gs.parts.filter((p) => /shelf-/.test(p.id)).every((p) => p.material === 'glass:shelf-8' && p.box.h === 8), 'מדפי זכוכית 8 מאחורי הוויטרינה');
+  const mix = build('bookcase', { columns: 3, glassColumns: 'first', vitrineShelves: 'glass' });
+  check(mix.parts.filter((p) => /^shelf-1-/.test(p.id)).every((p) => p.material === 'glass:shelf-8') && mix.parts.filter((p) => /^shelf-2-/.test(p.id)).every((p) => p.material !== 'glass:shelf-8'), 'מדפי זכוכית רק בעמודת הוויטרינה');
+  const vp = allParams(TEMPLATES.bookcase).find((p) => p.key === 'vitrineFrame');
+  check(!visible(vp, { doorType: 'glass', glassColumns: 'last' }), 'שאלות הוויטרינה הכלליות לא בטופס — בכרטיס הקומה');
+}
+
+console.log('ספרייה לפי עמודה וקומה (שלב 1): המרה זהה לבנייה הישנה');
+{
+  const norm = (o) => JSON.parse(JSON.stringify(o, (k, val) => (typeof val === 'number' ? Math.round(val * 1e6) / 1e6 : val)));
+  const sortKeys = (o) => (Array.isArray(o) ? o.map(sortKeys) : o && typeof o === 'object' ? Object.fromEntries(Object.keys(o).sort().filter((k) => o[k] !== undefined).map((k) => [k, sortKeys(o[k])])) : o);
+  const span = (w) => /^מדף ברוחב/.test(w);
+  const pick = (r, dropSpan) => sortKeys(norm({ parts: r.parts, hardware: r.hardware, warnings: dropSpan ? r.warnings.filter((w) => !span(w)) : r.warnings, bounds: r.bounds }));
+  TEMPLATES['legacy-bookcase'] = { ...legacyBookcase, key: 'legacy-bookcase' };
+  let seed = 11;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const one = (arr) => arr[Math.floor(rnd() * arr.length)];
+  let same = 0, roundtrip = 0, diff = null, rdiff = null, spanOnly = 0;
+  for (let n = 0; n < 500; n += 1) {
+    const v = {};
+    for (const p of allParams(legacyBookcase)) {
+      if (p.type === 'json') continue;
+      if (['mm', 'int', 'deg'].includes(p.type)) v[p.key] = n === 0 ? p.default : Math.round(p.min + rnd() * (p.max - p.min));
+      else { const o = optionsFor(p); if (o.length) v[p.key] = o[Math.floor(rnd() * o.length)].id; }
+    }
+    // מידות סבירות יותר, ופיצול/דלתות בתדירות גבוהה
+    v.columns = 1 + Math.floor(rnd() * 5); v.width = 600 + Math.round(rnd() * 2400); v.height = 900 + Math.round(rnd() * 1800); v.depth = 250 + Math.round(rnd() * 400);
+    v.shelvesPerColumn = Math.floor(rnd() * 7); v.lowerH = rnd() < 0.5 ? 0 : Math.round(300 + rnd() * 900);
+    v.doorType = one(['none', 'wood', 'glass']); v.lowerDoors = one(['none', 'wood', 'glass']);
+    v.glassColumns = one(['none', 'none', 'first', 'last', 'ends', 'all']);
+    if (n % 2) {
+      const pin = (lo, hi) => (rnd() < 0.5 ? null : Math.round(lo + rnd() * (hi - lo)));
+      const cols = {};
+      for (let i = 0; i < v.columns; i++) {
+        const c = {};
+        if (rnd() < 0.4) c.shelves = Math.floor(rnd() * 6);
+        if (rnd() < 0.3) c.height = Math.round(v.height * (0.5 + rnd() * 0.5));
+        if (rnd() < 0.3) c.split = rnd() < 0.2 ? 0 : Math.round(200 + rnd() * 1000);
+        if (rnd() < 0.3) { const k = (c.shelves ?? v.shelvesPerColumn) + 1; c.gaps = Array.from({ length: k }, () => pin(100, 400)); }
+        if (Object.keys(c).length) cols[i] = c;
+      }
+      v.columnsLayout = { widths: Array.from({ length: v.columns }, () => pin(250, 700)), cols };
+    }
+    const a = build('legacy-bookcase', v), b = build('bookcase', v);
+    if (!a.parts.every((p) => p.box.w > 0 && p.box.h > 0 && p.box.d > 0)) continue;
+    const exact = JSON.stringify(pick(a)) === JSON.stringify(pick(b));
+    if (exact) same += 1;
+    else if (JSON.stringify(pick(a, true)) === JSON.stringify(pick(b, true))) spanOnly += 1;   // רק אזהרת מפתח המדף — בכוונה (ראו למטה)
+    else if (!diff) diff = { a: pick(a), b: pick(b), v };
+    // הלוך-חזור: units שנשמרו בפרויקט בונים בדיוק את אותו דבר
+    const c = build('bookcase', { ...v, units: b.units });
+    if (JSON.stringify(pick(c)) === JSON.stringify(pick(b))) roundtrip += 1; else if (!rdiff) rdiff = { b: pick(b), c: pick(c) };
+  }
+  for (const [d, x, y] of [[diff, 'a', 'b'], [rdiff, 'b', 'c']]) {
+    if (!d) continue;
+    const A = JSON.stringify(d[x]), B = JSON.stringify(d[y]);
+    let i = 0; while (A[i] === B[i]) i += 1;
+    console.error(`    שונה ב: …${A.slice(Math.max(0, i - 160), i + 80)}\n    מול: …${B.slice(Math.max(0, i - 160), i + 80)}`);
+    if (d.v) console.error('    ערכים:', JSON.stringify(d.v).slice(0, 600));
+  }
+  check(!diff && same + spanOnly > 400, `${same} תצורות זהות לחלוטין, ${spanOnly} שונות רק באזהרת מפתח המדף (מכוון), בלי הבדל אחר`);
+  check(!rdiff && roundtrip > 400, `הלוך-חזור: ${roundtrip} — units שמורים בונים אותו דבר`);
+  delete TEMPLATES['legacy-bookcase'];
+  // אזהרת מפתח המדף: לפי המדפים שבאמת יש, לא לפי "מדפים בכל עמודה" הכללי
+  const w = build('bookcase', { columns: 1, width: 1400, shelvesPerColumn: 0, columnsLayout: { cols: { 0: { shelves: 3 } } } }).warnings;
+  check(w.some(span), 'מפתח מדף רחב — אזהרה גם כשהמדפים נקבעו לעמודה בלבד');
+  // הפרויקט מהצילום: ויטרינה מלאה בעמודה 1 + פיצול 850 בשאר — המבנה מבטא בדיוק מה שנבנה
+  const u = build('bookcase', { columns: 5, width: 2590, height: 2560, depth: 340, lowerH: 850, lowerDoors: 'wood', doorType: 'glass', glassColumns: 'first' }).units;
+  check(u[0].floors.length === 1 && u[0].floors[0].front.type === 'glass' && u.slice(1).every((c) => c.floors.length === 2 && c.floors[0].height === 850 && c.floors[0].front.type === 'wood' && c.floors[1].front.type === 'glass'), 'עמודה 1 — קומה אחת ויטרינה; 2–5 — עץ 850 ומעליו ויטרינה');
+}
+
+console.log('שלב 2: קומות ללא הגבלה, ויטרינה לקומה, מגירות, חריגות, "לא בתוקף"');
+{
+  const base = { columns: 3, width: 1500, height: 2200, depth: 400 };   // עמודות צרות — כנף אחת לכל דלת
+  const u0 = build('bookcase', base).units;
+  const mk = (floors) => u0.map((u) => ({ ...u, floors: floors.map((f) => ({ ...f, front: { ...u.floors[0].front, ...(f.front || {}) }, interior: f.interior })) }));
+  // 3 קומות: מגירות גלויות למטה, דלת עץ באמצע, ויטרינת אלומיניום למעלה
+  const three = mk([
+    { height: 500, front: { type: 'none' }, interior: { type: 'drawers', drawers: { count: 3, handle: 'hw:handle-bar-128' } } },
+    { height: 800, front: { type: 'wood' }, interior: { type: 'shelves', shelves: { count: 1, material: 'same', mode: 'adjustable' } } },
+    { height: null, front: { type: 'glass', vitrine: { frame: 'alu', sides: '4', frameW: 20, alu: 'profile:alu-black' } }, interior: { type: 'shelves', shelves: { count: 2, material: 'glass:shelf-8', mode: 'adjustable' } } },
+  ]);
+  const r = build('bookcase', { ...base, units: three });
+  const ids = r.parts.map((p) => p.id);
+  check(allFinite(r.parts), 'גאומטריה סופית');
+  check(ids.filter((x) => /^drawer-1-1-\d$/.test(x)).length === 3 && ids.includes('door-1-f2') && ids.includes('door-1-f3-stile-L') && ids.includes('split1-shelf-1-1') && ids.includes('split2-shelf-1-1'), 'מזהים: מגירות drawer-1-1-k, דלתות door-1-f2/f3, מדפי גבול');
+  check(r.parts.find((p) => p.id === 'door-1-f3-stile-L').material === 'profile:alu-black' && r.parts.find((p) => p.id === 'door-1-f2').material !== 'profile:alu-black', 'ויטרינה לכל קומה בנפרד');
+  check(r.parts.filter((p) => /^f3-shelf-/.test(p.id)).every((p) => p.material === 'glass:shelf-8') && r.parts.filter((p) => /^f2-shelf-/.test(p.id)).every((p) => p.material !== 'glass:shelf-8'), 'מדפי זכוכית רק בקומה שבחרה בהם');
+  const d1 = r.parts.find((p) => p.id === 'drawer-1-1-1'), door2 = r.parts.find((p) => p.id === 'door-1-f2');
+  check(d1.box.z === base.depth && r.hardware.some((h) => h.id === 'drawer-1-1-1-handle'), 'מגירה גלויה: חזית בחזית הגוף, עם ידית');
+  check(d1.box.y + d1.box.h <= door2.box.y + 0.01, 'המגירות מתחת לדלת האמצעית');
+  // מגירות מאחורי דלת ויטרינה — פנימיות
+  const inner = build('bookcase', { ...base, units: mk([{ height: null, front: { type: 'glass' }, interior: { type: 'drawers', drawers: { count: 2, handle: 'hw:handle-bar-128' } } }]) });
+  const f = inner.parts.find((p) => p.id === 'drawer-1-1-1'), dg = inner.parts.find((p) => p.id === 'door-1-stile-L');
+  check(f && f.box.z + f.box.d < dg.box.z && !inner.hardware.some((h) => h.id === 'drawer-1-1-1-handle') && /פנימית/.test(f.note), 'מגירות פנימיות: מאחורי הדלת, בלי ידית');
+  check(inner.inactive.some((x) => x.path === 'units.0.floors.0.interior.drawers.handle'), '"לא בתוקף": ידית למגירה פנימית');
+  // "לא בתוקף": המקרה מהצילום — ויטרינה מלאה ופיצול
+  const shot = build('bookcase', { columns: 5, width: 2590, height: 2560, depth: 340, lowerH: 850, lowerDoors: 'wood', doorType: 'glass', glassColumns: 'first', columnsLayout: { cols: { 0: { split: 850 } } } });
+  check(shot.inactive.some((x) => x.path === 'columnsLayout.cols.0.split' && /ויטרינה מלאה/.test(x.reason)) && !shot.inactive.some((x) => x.column === 1), '"לא בתוקף": פיצול בעמודת ויטרינה מלאה — רק בעמודה 1');
+  const nf = build('bookcase', { ...base, units: mk([{ height: 900, front: { type: 'glass', vitrine: { frame: 'none', mullions: 'grid4' } }, interior: { type: 'shelves', shelves: { count: 2 } } }]) });
+  check(nf.inactive.some((x) => x.path.endsWith('vitrine.mullions')) && nf.inactive.some((x) => x.path === 'units.0.floors.0.height'), '"לא בתוקף": שפרוסים בלי מסגרת; גובה לקומה יחידה');
+  const over = build('bookcase', { ...base, units: mk([{ height: 1500 }, { height: 1500 }, { height: null }].map((x) => ({ ...x, front: { type: 'wood' }, interior: { type: 'shelves', shelves: { count: 1 } } }))) });
+  check(over.inactive.filter((x) => /הוקטן/.test(x.reason)).length >= 2, '"לא בתוקף": קומות שלא נכנסות — מוקטנות ומסומנות');
+  // חריגות לרכיב: מבנה אחד ⇄ שלושת הישנים
+  const legacy = { partEdits: { 'shelf-1-1': { material: 'board:veneer-oak-18' } }, partFinishes: { 'side-L': 'fluted-fine' }, doorOpen: { 'door-1': 'left' } };
+  const joined = joinOverrides(legacy);
+  check(joined['side-L'].finish === 'fluted-fine' && joined['door-1'].hingeSide === 'left' && JSON.stringify(splitOverrides({ overrides: joined })) === JSON.stringify(splitOverrides(legacy)), 'overrides ⇄ partEdits/partFinishes/doorOpen');
+  const bo = build('bookcase', { ...base, doorType: 'wood', overrides: joined }), bl = build('bookcase', { ...base, doorType: 'wood', ...legacy });
+  check(JSON.stringify(bo.parts) === JSON.stringify(bl.parts) && JSON.stringify(bo.hardware) === JSON.stringify(bl.hardware), 'בנייה עם overrides = בנייה עם המבנים הישנים');
+}
+
+console.log('שלב 3: כרטיס עמודה/קומה — מודל');
+{
+  const t = template('bookcase');
+  const units = build('bookcase', { columns: 3, lowerH: 800, doorType: 'glass' }).units;
+  check(JSON.stringify(t.locate('door-2-up', units)) === '{"unit":1,"floor":1}' && JSON.stringify(t.locate('door-1-lo', units)) === '{"unit":0,"floor":0}' && JSON.stringify(t.locate('up-shelf-3-2', units)) === '{"unit":2,"floor":1}' && JSON.stringify(t.locate('drawer-2-3-1', units)) === '{"unit":1,"floor":2}' && JSON.stringify(t.locate('door-1-f3a-glass', units)) === '{"unit":0,"floor":2}' && t.locate('side-L', units) === null, 'מרכיב לעמודה וקומה');
+  // שינוי מספר העמודות כשיש units: נוספת עמודה — העתק של האחרונה; יורדת — נחתכת
+  const r = build('bookcase', { columns: 4, units });
+  check(r.units.length === 4 && r.units[3].floors.length === 2 && r.units[3].floors[1].front.type === 'glass' && build('bookcase', { columns: 2, units }).units.length === 2, 'מספר עמודות השתנה — units מתאימים את עצמם');
+  check(r.unitGeo.length === 4 && r.unitGeo.every((g) => g.width > 0 && g.floors.length === 2 && Math.abs(g.floors[0] - 800) < 0.01), 'unitGeo — רוחב וגבהי הקומות לתצוגה');
+  check(allParams(t).filter((p) => p.legacy).every((p) => !visible(p, {})) && allParams(t).find((p) => p.key === 'units').editor === 'units', 'השדות הישנים לא בטופס; units — עורך משלו');
 }
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }

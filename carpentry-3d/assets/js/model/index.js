@@ -89,6 +89,7 @@ export function clamp(p, value) {
 /** האם פרמטר מוצג לפי הערכים הנוכחיים (showIf). */
 export function visible(p, values) {
   if (p.hidden) return false;   // הוסתר במעבדת המוצרים — תמיד ברירת המחדל
+  if (p.legacy) return false;   // הוחלף בכרטיס העמודה/הקומה (docs/elements-spec.md) — נשאר רק להמרת פרויקטים ישנים
   if (!p.showIf) return true;
   if (typeof p.showIf === 'function') return p.showIf(values);   // מתכון: נוסחת "מתי מוצג"
   // 'gt0' — מוצג כשהערך המספרי גדול מאפס (למשל "דלתות החלק התחתון" רק כשיש פיצול)
@@ -102,6 +103,9 @@ export function build(key, values) {
   const v = defaults(t);
   if (t.migrate) values = t.migrate({ ...values });   // ערכים ישנים שנשמרו בפרויקטים → המפתחות הנוכחיים
   for (const p of allParams(t)) if (values[p.key] !== undefined && !p.hidden) v[p.key] = clamp(p, values[p.key]);
+  // חריגות לרכיב: values.overrides (המבנה האחד — docs/elements-spec.md) מתמזג עם שלושת המבנים
+  // הישנים (partEdits / partFinishes / doorOpen). כשיש שניהם לאותו רכיב — overrides גובר.
+  values = { ...values, ...splitOverrides(values) };
   // כיוון פתיחה לדלת מסוימת (values.doorOpen = { doorId: 'left'|'right'|'top'|'bottom' }) — door() קורא אותו בזמן הבנייה
   setDoorOpen(values.doorOpen);
   let out;
@@ -119,7 +123,33 @@ export function build(key, values) {
   const editWarnings = Object.entries(values.partEdits || {}).filter(([id, e]) => e && (e.size || (e.move && Object.values(e.move).some(Number)) || Number(e.yaw)) && out.parts.some((p) => p.id === id))
     .map(([id, e]) => `${out.parts.find((p) => p.id === id).name} (${id}) נערך ביד — ${editSummary(e)}; "↺ איפוס הרכיב" בכרטיס שלו מחזיר לתבנית`);
   out.warnings = [...(out.warnings || []), ...physicsWarnings(out.hardware || []), ...clashWarnings, ...editWarnings, ...millWarnings(out.parts || [])];
-  return { ...out, values: { ...v, partFinishes: values.partFinishes || undefined, doorOpen: values.doorOpen || undefined, partEdits: values.partEdits || undefined }, template: t };
+  return { ...out, values: { ...v, partFinishes: values.partFinishes || undefined, doorOpen: values.doorOpen || undefined, partEdits: values.partEdits || undefined, overrides: values.overrides || undefined }, template: t };
+}
+
+/**
+ * חריגות לרכיב, מבנה אחד: { [id]: { material, size, move, yaw, edges, open, travel, handle, hidden,
+ * finish, hingeSide } } → שלושת המבנים שהבנייה מפעילה. finish → partFinishes, hingeSide →
+ * doorOpen (לפי מזהה הדלת), השאר → partEdits.
+ */
+export function splitOverrides(values) {
+  const pe = { ...(values.partEdits || {}) }, pf = { ...(values.partFinishes || {}) }, dop = { ...(values.doorOpen || {}) };
+  for (const [id, o] of Object.entries(values.overrides && typeof values.overrides === 'object' ? values.overrides : {})) {
+    if (!o || typeof o !== 'object') continue;
+    const { finish, hingeSide, ...rest } = o;
+    if (Object.keys(rest).length) pe[id] = { ...(pe[id] || {}), ...rest };
+    if (finish) pf[id] = finish;
+    if (hingeSide) dop[id] = hingeSide;
+  }
+  const nz = (m) => (Object.keys(m).length ? m : undefined);
+  return { partEdits: nz(pe), partFinishes: nz(pf), doorOpen: nz(dop) };
+}
+/** ההפך: שלושת המבנים הישנים → overrides אחד (להמרת פרויקט קיים). */
+export function joinOverrides(values) {
+  const out = {};
+  for (const [id, e] of Object.entries(values.partEdits || {})) if (e && typeof e === 'object') out[id] = { ...e };
+  for (const [id, f] of Object.entries(values.partFinishes || {})) out[id] = { ...(out[id] || {}), finish: f };
+  for (const [id, h] of Object.entries(values.doorOpen || {})) out[id] = { ...(out[id] || {}), hingeSide: h };
+  return Object.keys(out).length ? out : undefined;
 }
 
 /**
@@ -154,7 +184,7 @@ export function cutList({ parts, values }) {
   const rows = new Map();
   for (const p of parts) {
     const m = material(p.material);
-    if (m.kind === 'glass') continue;           // זכוכית מוזמנת, לא נחתכת — ברשימה נפרדת
+    if (m.kind === 'glass' || m.kind === 'profile') continue;   // זכוכית ופרופילים — ברשימות נפרדות
     const c = cutSize(p);
     const e = edgeSides(p);
     let l = c.l, w = c.w;
@@ -178,7 +208,17 @@ export function cutList({ parts, values }) {
     const g = glass.find((r) => r.key === key) || (glass.push({ key, name: m.name, qty: 0, l: c.l, w: c.w, t: m.t }), glass[glass.length - 1]);
     g.qty += 1;
   }
-  return { boards: [...rows.values()], glass };
+  // פרופילים (אלומיניום לוויטרינה): לפי אורך, בחיתוך 45° בפינות
+  const profiles = [];
+  for (const p of parts) {
+    const m = material(p.material);
+    if (m.kind !== 'profile') continue;
+    const c = cutSize(p);
+    const key = [p.name, c.l, p.material].join('|');
+    const r = profiles.find((x) => x.key === key) || (profiles.push({ key, name: p.name, material: m.name, qty: 0, l: c.l, w: c.w }), profiles[profiles.length - 1]);
+    r.qty += 1;
+  }
+  return { boards: [...rows.values()], glass, profiles };
 }
 
 /**

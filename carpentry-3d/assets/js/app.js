@@ -19,6 +19,7 @@ import { createMaterialsUI } from './materials-ui.js';
 import { createAccessoriesUI } from './accessories-ui.js';
 import { createCncUI } from './cnc-ui.js';
 import { createLabUI } from './lab-ui.js';
+import { setUnitsModel, openUnit } from './units-ui.js';
 import { applyRules } from './model/rules.js';
 import { registerRecipes } from './model/recipe.js';
 import { api, loadLast, saveLast } from './store.js';
@@ -524,6 +525,7 @@ function rebuild(reframe = false) {
   if (!state.project) return;
   model = build(state.project.template_key, state.values);
   Object.assign(state.values, model.values);
+  setUnitsModel(model);   // כרטיסי העמודות מציגים רוחב/גובה מחושבים ו"לא בתוקף"
   form.sync(model.values);
   viewer.setModel(model);
   // ממסגרים מחדש בטעינה, וגם כשהמידות השתנו בהרבה (למשל גובה 2000 → 2600) — אחרת המודל יוצא מהמסך.
@@ -605,6 +607,14 @@ function onShowHidden(e) {
 }
 $('#summary').addEventListener('click', onShowHidden);
 $('#part').addEventListener('click', onShowHidden);
+// "⚙️ הגדרות הקומה" — עוברים לטופס (בטלפון: ללשונית) ופותחים את כרטיס העמודה/הקומה
+$('#part').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-open-unit]');
+  if (!b) return;
+  const i = Number(b.dataset.openUnit), j = b.dataset.openFloor === '' ? null : Number(b.dataset.openFloor);
+  if (window.matchMedia('(max-width: 860px)').matches) document.querySelector('.tabs button[data-tab="form"]')?.click();
+  setTimeout(() => openUnit(i, j), 60);
+});
 
 let shownPart = null;
 /**
@@ -733,7 +743,10 @@ function partEditor(p) {
     const attr = `data-rl="${esc(JSON.stringify({ layout: it.layout, col: it.col, prop: it.prop, type: it.type }))}"`;
     return row(esc(it.label), paramControl({ type: it.type, options: it.options, min: it.min, max: it.max }, v, attr));
   }).filter(Boolean);
-  return `<details class="pedit" ${partEditor.open ? 'open' : ''} data-pedit="own"><summary>✏️ עריכת הרכיב הזה</summary>${out.join('')}</details>
+  // הרכיב שייך לעמודה/קומה — אותו כרטיס כמו בטופס (units-ui): חזית, תוכן, גובה…
+  const t0 = currentTemplate(), loc = t0.locate ? t0.locate(p.id, model.units) : null;
+  const unitBtn = loc && model.units ? `<button type="button" class="btn btn--small pedit__unit" data-open-unit="${loc.unit}" data-open-floor="${loc.floor ?? ''}">⚙️ הגדרות ${loc.floor !== null ? `הקומה — עמודה ${loc.unit + 1}${model.units[loc.unit]?.floors.length > 1 ? `, קומה ${loc.floor + 1}` : ''}` : `עמודה ${loc.unit + 1}`}</button>` : '';
+  return `${unitBtn}<details class="pedit" ${partEditor.open ? 'open' : ''} data-pedit="own"><summary>✏️ עריכת הרכיב הזה</summary>${out.join('')}</details>
     ${rel.length ? `<details class="pedit" ${partEditor.openRel ? 'open' : ''} data-pedit="rel"><summary>⚙️ הגדרות המוצר שנוגעות לרכיב</summary><p class="muted pedit__note">שינוי כאן חל על כל המוצר (או על כל השדה / העמודה), כמו בטופס.</p>${rel.join('')}</details>` : ''}`;
 }
 partEditor.open = true; partEditor.openRel = false;
@@ -949,11 +962,13 @@ function cutListOne(m) {
     .map((r) => `<tr><td>${esc(r.name)}</td><td>${r.qty}</td><td dir="ltr">${r.l} × ${r.w}</td><td>${r.t}</td><td>${esc(r.material)}</td><td>${esc(r.edges)}</td><td>${esc(r.note || '')}</td></tr>`)
     .join('');
   const glass = cl.glass.map((g) => `<tr><td>${esc(g.name)}</td><td>${g.qty}</td><td dir="ltr">${g.l} × ${g.w}</td><td>${g.t}</td></tr>`).join('');
+  const profiles = (cl.profiles || []).map((g) => `<tr><td>${esc(g.name)}</td><td>${esc(g.material)}</td><td>${g.qty}</td><td dir="ltr">${g.l}</td><td dir="ltr">${g.w}</td></tr>`).join('');
   const hwRows = hw.map((h) => `<tr><td>${esc(h.name)}</td><td>${h.qty}</td></tr>`).join('');
   const area = cl.boards.reduce((s, r) => s + r.qty * r.l * r.w, 0) / 1e6;
   return `
     <h3>רשימת חיתוך <small>${cl.boards.reduce((s, r) => s + r.qty, 0)} לוחות · ${area.toFixed(2)} מ"ר נטו</small></h3>
     <table><thead><tr><th>חלק</th><th>כמות</th><th>אורך × רוחב</th><th>עובי</th><th>חומר</th><th>קנט</th><th>הערה</th></tr></thead><tbody>${rows}</tbody></table>
+    ${profiles ? `<h3>פרופילים</h3><table><thead><tr><th>חלק</th><th>פרופיל</th><th>כמות</th><th>אורך</th><th>רוחב נראה</th></tr></thead><tbody>${profiles}</tbody></table><p class="muted">אורך חיצוני; בפינות — חיתוך 45°.</p>` : ''}
     ${glass ? `<h3>זכוכית</h3><table><thead><tr><th>סוג</th><th>כמות</th><th>מידה</th><th>עובי</th></tr></thead><tbody>${glass}</tbody></table>` : ''}
     ${hwRows ? `<h3>פרזול</h3><table><thead><tr><th>פריט</th><th>כמות</th></tr></thead><tbody>${hwRows}</tbody></table>` : ''}
     <p class="muted">האורך הוא בכיוון הסיבים. מידות אחרי הורדת הקנט כשנבחר "יורדת מהמידה".</p>`;
@@ -967,7 +982,7 @@ function drawingsHtml(m) {
 const ils = (v) => `₪${Number(v).toLocaleString('he-IL', { maximumFractionDigits: 0 })}`;
 function priceOne(m) {
   const e = estimate(m, state.rates);
-  const groups = ['לוחות', 'זכוכית', 'קנט', 'פרזול', 'עיבוד CNC'];
+  const groups = ['לוחות', 'זכוכית', 'פרופילים', 'קנט', 'פרזול', 'עיבוד CNC'];
   const rows = groups.flatMap((g) => e.lines.filter((l) => l.group === g).map((l) =>
     `<tr><td>${g}</td><td>${esc(l.name)}${l.mine ? ' <span class="tag">המחיר שלי</span>' : ''}</td><td dir="ltr">${l.qty} ${l.unit}</td><td>${ils(l.unitPrice)}</td><td>${ils(l.total)}</td><td class="muted">${esc(l.note || '')}</td></tr>`)).join('');
   return `
@@ -1043,6 +1058,7 @@ function downloadCsv(m) {
     const cl = cutList(mm);
     for (const r of cl.boards) lines.push([r.name, r.qty, r.l, r.w, r.t, r.material, r.edges, r.note || '', label]);
     for (const g of cl.glass) lines.push([g.name, g.qty, g.l, g.w, g.t, 'זכוכית', '', '', label]);
+    for (const g of cl.profiles || []) lines.push([g.name, g.qty, g.l, g.w, '', g.material, '', 'בפינות 45°', label]);
     for (const h of hardwareList(mm)) lines.push([h.name, h.qty, '', '', '', 'פרזול', '', '', label]);
   }
   lines.push([]); lines.push(['קידוחים: חלק', 'פאה', 'x מהקצה', 'y מהתחתית', 'קוטר', 'עומק', 'למה', '', 'אלמנט']);

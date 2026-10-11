@@ -259,6 +259,7 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
       opts.map = textureForPart(m, p, cutSize(p));
       // שיש/אבן: מעט מעומעם כדי שפאה מוארת לא תישרף ללבן ותבליע את העורקים; ומלוטש — מבריק יותר
       if (m.finish === 'stone') { opts.color = 0xcfcfcf; opts.roughness = 0.38; }
+      if (m.finish === 'metal') { opts.metalness = 0.6; opts.roughness = 0.35; }   // פרופיל אלומיניום
     }
     return new THREE.MeshStandardMaterial(opts);
   }

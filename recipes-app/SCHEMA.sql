@@ -190,6 +190,7 @@ CREATE TABLE index_entries (
   url        TEXT    NOT NULL UNIQUE,
   title      TEXT    NOT NULL,
   title_fixed INTEGER NOT NULL DEFAULT 0,
+  verified    INTEGER,                              -- 1: נבדק ויש בדף מתכון; NULL: עוד לא (לא מתכון — skip)
   needs_title INTEGER NOT NULL DEFAULT 0,   -- אין שם עברי בכתובת — השם יובא מהדף ברקע
   skip       INTEGER NOT NULL DEFAULT 0,    -- נבדק ואינו מתכון
   stems      TEXT    NOT NULL,
@@ -213,6 +214,7 @@ CREATE TABLE recipe_shares (
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_at TEXT    NOT NULL,
   seen_at    TEXT,                                  -- הנמען פתח אותו
+  direct     INTEGER NOT NULL DEFAULT 1,            -- 1 ישיר; 0 — רק דרך מעגל (circles.php)
   PRIMARY KEY (recipe_id, user_id)
 );
 CREATE INDEX idx_shares_user ON recipe_shares(user_id, created_at);
@@ -239,6 +241,38 @@ CREATE TABLE recommendations (
   seen_at    TEXT
 );
 CREATE INDEX idx_reco_to ON recommendations(to_user, id);
+
+-- פרטיות ושליטה (lib/privacy.php, SPEC 15.7)
+CREATE TABLE user_prefs (
+  user_id      INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  discoverable INTEGER NOT NULL DEFAULT 1,       -- מופיע בחיפוש אנשים
+  share_from   TEXT    NOT NULL DEFAULT 'all',   -- all / following / none
+  personalize  INTEGER NOT NULL DEFAULT 1,
+  updated_at   TEXT
+);
+CREATE TABLE blocks (
+  blocker_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  blocked_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT    NOT NULL,
+  PRIMARY KEY (blocker_id, blocked_id)
+);
+CREATE INDEX idx_blocks_blocked ON blocks(blocked_id);
+CREATE TABLE reports (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  reporter_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  kind         TEXT    NOT NULL,                 -- recipe / comment / user
+  target_id    INTEGER NOT NULL,
+  target_owner INTEGER,
+  reason       TEXT    NOT NULL,
+  note         TEXT,
+  snapshot     TEXT,
+  status       TEXT    NOT NULL DEFAULT 'open',  -- open / handled / dismissed
+  resolution   TEXT,
+  created_at   TEXT    NOT NULL,
+  resolved_at  TEXT,
+  resolved_by  INTEGER
+);
+CREATE INDEX idx_reports_status ON reports(status, id);
 
 -- סריקת מתכון מתמונה (lib/scan.php): ממתינה לאישור המפתח, עד שתהיה טעינת קרדיטים.
 -- התמונות ב-data/scans/; נמחקות כשהסריקה טופלה.
@@ -416,18 +450,143 @@ CREATE INDEX idx_recipe_tags_tag ON recipe_tags(tag_id);
 -- לבטא "לכל היותר תג אחד מציר X" באילוץ, וזו אכיפה שכן צריכה להתריע
 -- למשתמש בהודעה ולא ליפול בשגיאת מסד.
 
--- תג חופשי — פרטי למשתמש (4). לכן user_id כאן ולא בטבלת tags.
-CREATE TABLE user_tags (
-  id      INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  name    TEXT    NOT NULL,
-  UNIQUE (user_id, name)
+-- תוויות אישיות (תג חופשי, סעיף 4) — לא ייבנו: אוספים במקומן (SPEC 15.10, החלטה 1).
+
+-- ═══════════════════════════════════════════════════════════
+-- אוספים  (SPEC 15.3, lib/collections.php)
+-- ═══════════════════════════════════════════════════════════
+
+-- רשימה בעלת שם, ממתכונים מכל מקור. "שמורים" (is_saved) — אחד למשתמש, לא
+-- נמחק, ♡ מוסיף אליו; המועדפים הישנים עברו אליו (החלטה 2).
+CREATE TABLE collections (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name        TEXT    NOT NULL,
+  icon        TEXT    NOT NULL DEFAULT '📁',
+  description TEXT    NOT NULL DEFAULT '',
+  visibility  TEXT    NOT NULL DEFAULT 'private' CHECK (visibility IN ('private', 'public')),
+  is_saved    INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT    NOT NULL,
+  updated_at  TEXT    NOT NULL
+);
+CREATE INDEX idx_collections_owner ON collections(owner_id);
+CREATE UNIQUE INDEX idx_collections_saved ON collections(owner_id) WHERE is_saved = 1;
+
+-- מתכון באפליקציה — הפניה, לא העתק (נמחק: recipe_id ריק, השם נשאר). מתכון
+-- מהרשת בלי לייבא — קישור, שם ותמונה, כמו המלצה.
+CREATE TABLE collection_items (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+  kind          TEXT    NOT NULL CHECK (kind IN ('recipe', 'web')),
+  recipe_id     INTEGER REFERENCES recipes(id) ON DELETE SET NULL,
+  entry_id      INTEGER REFERENCES index_entries(id) ON DELETE SET NULL,
+  url           TEXT,
+  title         TEXT    NOT NULL,
+  image         TEXT,
+  site          TEXT,
+  position      INTEGER NOT NULL,
+  added_at      TEXT    NOT NULL
+);
+CREATE INDEX idx_collection_items ON collection_items(collection_id, position);
+CREATE INDEX idx_collection_items_recipe ON collection_items(recipe_id);
+CREATE UNIQUE INDEX idx_collection_items_r ON collection_items(collection_id, recipe_id) WHERE recipe_id IS NOT NULL;
+CREATE UNIQUE INDEX idx_collection_items_w ON collection_items(collection_id, url) WHERE kind = 'web';
+
+-- שיתוף אוסף: הנמען רואה את המתכונים הפרטיים של בעל האוסף שבתוכו (החלטה 3).
+-- של אחרים — לעולם לא.
+CREATE TABLE collection_shares (
+  collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+  user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at    TEXT    NOT NULL,
+  seen_at       TEXT,
+  direct        INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (collection_id, user_id)
+);
+CREATE INDEX idx_collection_shares_user ON collection_shares(user_id);
+
+-- ═══════════════════════════════════════════════════════════
+-- מעגלים  (SPEC 15.4, lib/circles.php)
+-- ═══════════════════════════════════════════════════════════
+
+-- רשימת אנשים בעלת שם שרק הבעלים רואה. שיתוף עם מעגל = עם מי שבו עכשיו
+-- (החלטה 4): הקישור נשמר כאן, ולכל חבר נכתבת שורת שיתוף רגילה (direct = 0)
+-- שמתעדכנת כשהמעגל משתנה — כך הקריאה של שיתופים לא השתנתה בשום מקום.
+CREATE TABLE circles (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name       TEXT    NOT NULL,
+  icon       TEXT    NOT NULL DEFAULT '👥',
+  created_at TEXT    NOT NULL,
+  updated_at TEXT    NOT NULL
+);
+CREATE INDEX idx_circles_owner ON circles(owner_id);
+CREATE TABLE circle_members (
+  circle_id INTEGER NOT NULL REFERENCES circles(id) ON DELETE CASCADE,
+  user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  added_at  TEXT    NOT NULL,
+  PRIMARY KEY (circle_id, user_id)
+);
+CREATE INDEX idx_circle_members_user ON circle_members(user_id);
+CREATE TABLE recipe_circles (
+  recipe_id  INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+  circle_id  INTEGER NOT NULL REFERENCES circles(id) ON DELETE CASCADE,
+  created_at TEXT    NOT NULL,
+  PRIMARY KEY (recipe_id, circle_id)
+);
+CREATE INDEX idx_recipe_circles_circle ON recipe_circles(circle_id);
+CREATE TABLE collection_circles (
+  collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+  circle_id     INTEGER NOT NULL REFERENCES circles(id) ON DELETE CASCADE,
+  created_at    TEXT    NOT NULL,
+  PRIMARY KEY (collection_id, circle_id)
+);
+CREATE INDEX idx_collection_circles_circle ON collection_circles(circle_id);
+-- מי שהסיר את עצמו משיתוף — לא חוזר דרך מעגל. שיתוף ישיר חדש מבטל.
+CREATE TABLE share_optouts (
+  kind       TEXT    NOT NULL CHECK (kind IN ('recipe', 'collection')),
+  target_id  INTEGER NOT NULL,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT    NOT NULL,
+  PRIMARY KEY (kind, target_id, user_id)
 );
 
-CREATE TABLE recipe_user_tags (
-  recipe_id   INTEGER NOT NULL REFERENCES recipes(id)    ON DELETE CASCADE,
-  user_tag_id INTEGER NOT NULL REFERENCES user_tags(id)  ON DELETE CASCADE,
-  PRIMARY KEY (recipe_id, user_tag_id)
+-- ═══════════════════════════════════════════════════════════
+-- בשבילך  (SPEC 15.5, lib/foryou.php)
+-- ═══════════════════════════════════════════════════════════
+
+-- מה המשתמש עשה — רק בשביל ההמלצות. נרשם רק כשהתאמה אישית דלוקה; נמחק אחרי
+-- 180 יום ועם החשבון. kind: open / cook / shop / foryou_click / not_interested /
+-- less_topic (value = מזהה תג נושא).
+CREATE TABLE user_events (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind       TEXT    NOT NULL,
+  recipe_id  INTEGER REFERENCES recipes(id) ON DELETE CASCADE,
+  entry_id   INTEGER REFERENCES index_entries(id) ON DELETE CASCADE,
+  value      TEXT,
+  created_at TEXT    NOT NULL
+);
+CREATE INDEX idx_user_events ON user_events(user_id, kind, created_at);
+
+-- "מה אני אוהב" (התחלה קרה): נושאים — מעדיפים; תזונה — מסננת (החלטה 6).
+CREATE TABLE user_taste (
+  user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  topics     TEXT    NOT NULL DEFAULT '[]',
+  diet       TEXT    NOT NULL DEFAULT '[]',
+  updated_at TEXT    NOT NULL
+);
+
+-- מרכז פעילות (SPEC 15.6, lib/activity.php): מתי פתחתי אותו לאחרונה. הפעילות עצמה
+-- נגזרת מהטבלאות הקיימות — שיתופים, המלצות, מעקב, מתכונים, תגובות.
+CREATE TABLE activity_seen (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  seen_at TEXT    NOT NULL
+);
+
+-- מיגרציות חד־פעמיות על נתונים (runOnce ב-lib/db.php): מה שרשום — לא ירוץ שוב.
+CREATE TABLE migrations (
+  name    TEXT PRIMARY KEY,
+  done_at TEXT NOT NULL
 );
 
 -- ═══════════════════════════════════════════════════════════

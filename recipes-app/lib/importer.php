@@ -312,6 +312,7 @@ function importCleanSteps(array $steps): array {
     foreach ($steps as $st) {
         $st = trim((string) $st);
         $st = preg_replace('/^(אופן ההכנה|אופן הכנה|הוראות הכנה|הוראות|דרך ההכנה|instructions?|directions?|method)\s*[:\-–—]?\s*/iu', '', $st) ?? $st;
+        $st = preg_replace('/^[\-–—•*·]+\s*/u', '', $st) ?? $st;   // "– בקערה…" (קרוטית): מקף כתבליט
         if ($st === '') continue;
         // פרסומת — ומה שאחריה כבר לא שלבים: הזנב הזה תמיד בסוף.
         if (preg_match('/לחצו כאן|לפרטים נוספים|לרכישה|רוצים לרכוש|קנו עכשיו|הירשמו|רב המכר|https?:\/\/|www\./iu', $st)) break;
@@ -369,8 +370,10 @@ function importFromHeadings(DOMDocument $doc): ?array {
     $meta = fn(string $p) => ($n = $xp->query('//meta[@property="' . $p . '" or @name="' . $p . '"]')->item(0)) ? $n->getAttribute('content') : '';
 
     // גם "המצרכים", "מה צריך", "הכנות:" (ניקי ב׳), "שלבי הכנה", "איך מכינים"
-    $ingHead  = '/^(ה?מצרכים|ה?רכיבים|ה?חומרים|ה?מרכיבים|מה צריך|ingredients?)(\b|:|$)/iu';
-    $stepHead = '/^(אופן ה?הכנה|הוראות( ה?הכנה)?|ה?הכנה|הכנות|דרך ה?הכנה|שלבי ה?הכנה|איך מכינים|instructions?|directions?|method|preparation)(\b|:|$)/iu';
+    // סוף המילה: רווח, נקודתיים או סוף — לא \b, שבלי UCP לא רואה אותיות עבריות כמילה,
+    // ולכן "מצרכים לבצק:" (קרוטית) לא נתפס, רק "מצרכים:" לבדו
+    $ingHead  = '/^(ה?מצרכים|ה?רכיבים|ה?חומרים|ה?מרכיבים|מה צריך|ingredients?)(?=[\s:(]|$)/iu';
+    $stepHead = '/^(אופן ה?הכנה|הוראות( ה?הכנה)?|ה?הכנה|הכנות|דרך ה?הכנה|שלבי ה?הכנה|איך מכינים|instructions?|directions?|method|preparation)(?=[\s:(]|$)/iu';
     $ingredients = [];
     $steps = [];
     $stepsHead = null;
@@ -404,7 +407,8 @@ function importFromHeadings(DOMDocument $doc): ?array {
         if (!array_filter($items) && in_array($h->tagName, ['strong', 'b'], true)) {
             $items = importInlineLines($h, $isIng ? $stepHead : '/^(תגובות|שתפו|הערות|טיפים|בתאבון|לסיכום)/u', $isIng ? $ingHead : $stepHead);
         }
-        $items = array_values(array_filter($items));
+        $items = array_values(array_filter(array_map(fn($i) => preg_replace('/^[\-–—•*·]+\s*/u', '', $i) ?? $i, $items)));
+        if ($isStep) $items = importCleanSteps($items);
         if ($isIng && !$ingredients) $ingredients = $items;
         if ($isStep && !$steps) { $steps = $items; $stepsHead = $h; }
     }
@@ -467,7 +471,8 @@ function importInlineLines(DOMElement $h, string $stopRe, string $selfRe): array
             if (!$n instanceof DOMElement) continue;
             $tag = strtolower($n->tagName);
             if ($tag === 'br') { $flush(); continue; }
-            if (in_array($tag, ['script', 'style', 'img', 'figure', 'button', 'form'], true)) continue;
+            if (in_array($tag, ['script', 'style', 'img', 'figure', 'figcaption', 'button', 'form'], true)) continue;
+            if (preg_match('/caption|share|related|ad-/i', $n->getAttribute('class'))) continue;   // כיתוב לתמונה ("ולחשוב שפעם…") אינו שלב
             if (in_array($tag, ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'], true)) { $flush(); $stopped = true; return; }
             $tt = importText($n->textContent);
             if (in_array($tag, ['strong', 'b'], true) && $tt !== '' && mb_strlen($tt) <= 40) {
@@ -635,18 +640,38 @@ function importParseYield(string $y): array {
     return ['servings' => null, 'yield_text' => mb_substr($y, 0, 60)];
 }
 
-/** תגים מהצירים הסגורים לפי קטגוריות/מילות מפתח של המקור. */
-function importGuessTags(array $categories): array {
+/**
+ * תגים מהצירים הסגורים: לפי קטגוריות/מילות מפתח של המקור, ונושא לפי השם
+ * (lib/catalog.php). **בלי כשרות** — היא רק הצעה (importGuessKosher), כי טעות
+ * בה היא לא טעות תצוגה.
+ */
+function importGuessTags(array $categories, string $title = ''): array {
+    require_once __DIR__ . '/catalog.php';
+    $ids = $title !== '' ? catalogGuessTopics($title) : [];
     $hay = mb_strtolower(implode(' | ', $categories));
-    if ($hay === '') return [];
-    $ids = [];
-    foreach (db()->query('SELECT id, name FROM tags')->fetchAll() as $tag) {
+    if ($hay === '') return $ids;
+    foreach (db()->query("SELECT id, name FROM tags WHERE axis != 'kosher'")->fetchAll() as $tag) {
         $name = mb_strtolower($tag['name']);
         // "עוגות" נמצא ב"מתכונים לעוגות"; "חלבי" ב"מתכונים חלביים" לא — ולכן גם הגזע
         $stem = mb_substr($name, 0, max(3, mb_strlen($name) - 1));
         if (str_contains($hay, $name) || (mb_strlen($stem) >= 4 && str_contains($hay, $stem))) $ids[] = (int) $tag['id'];
     }
-    return $ids;
+    return array_values(array_unique($ids));
+}
+
+/**
+ * הצעת כשרות לעורך: מה שהמקור הצהיר בקטגוריות, ואם לא — מהרכיבים. מזהה תג
+ * ושמו, או null. לא נשמרת לבד: העורך שואל "נראה חלבי — לסמן?".
+ */
+function importGuessKosher(array $categories, array $ingredients): ?array {
+    require_once __DIR__ . '/catalog.php';
+    $byName = catalogTagIds('kosher');
+    $hay = implode(' | ', $categories);
+    $name = null;
+    // "חלביים" מכיל "חלבי"; שתי כשרויות בקטגוריות — סתירה, נשארים עם הרכיבים
+    foreach (array_keys($byName) as $n) if ($hay !== '' && str_contains($hay, (string) $n)) $name = $name === null ? $n : false;
+    if (!$name) $name = catalogGuessKosher($ingredients);
+    return $name && isset($byName[$name]) ? ['id' => $byName[$name], 'name' => $name] : null;
 }
 
 /** החילוץ הגולמי → המודל שהעורך מצייר, עם pending_media לקישורים אחרי השמירה. */
@@ -680,7 +705,8 @@ function importToDraft(array $raw): array {
         'work_minutes'  => $prep,
         'wait_minutes'  => $cook,
         'tips'          => mb_substr($raw['description'], 0, 2000),
-        'tag_ids'       => importGuessTags($raw['categories']),
+        'tag_ids'       => importGuessTags($raw['categories'], (string) $raw['title']),
+        'kosher_suggestion' => importGuessKosher($raw['categories'], $raw['ingredients']),
         'sections'      => $sections,
         'comments_open' => true,
         'source_url'    => $raw['url'],

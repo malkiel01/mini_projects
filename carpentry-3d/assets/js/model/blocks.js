@@ -13,7 +13,7 @@
 // רשימת החיתוך והתלת מימד קוראים את אותו חלק ולעולם לא יסתרו זה את זה.
 
 /** יוצר חלק. `box` הוא פינת המינימום + מידות. */
-import { material } from './materials.js';
+import { material, material as libMaterial } from './materials.js';
 import { boardWeight, hingeCount, hingeYs, hingeDrilling, hingeDrillingH, slidingLeaf, slideLoad, slideDrilling, DRAWER_CONTENT_KG, partWeight } from './physics.js';
 
 export function part(id, name, box, { axis, grain, material, qtyKey, edges = {}, note, face } = {}) {
@@ -170,7 +170,7 @@ export const DOOR_OPEN_OPTIONS = [
  * `mounts` (רשות) — { left: { id, y }, right: { id, y } }: הדופן/המחיצה בכל צד, כדי
  * שגם כשהנגר הופך את כיוון הפתיחה הקידוחים ייכנסו לדופן הנכונה.
  */
-export function door({ id, name, x0, x1, y0, y1, zFront, type, t, frameW = 60, material, glass, handle, hinge, hingeSide: autoSide, gap = 2, openAngle = 100, mountId = null, mountBottom = null, mounts = null }) {
+export function door({ id, name, x0, x1, y0, y1, zFront, type, t, frameW = 60, material, glass, handle, hinge, hingeSide: autoSide, gap = 2, openAngle = 100, mountId = null, mountBottom = null, mounts = null, vitrine = null }) {
   const parts = [];
   const hardware = [];
   const x = x0 + gap / 2, w = x1 - x0 - gap, y = y0 + gap / 2, h = y1 - y0 - gap;
@@ -193,20 +193,69 @@ export function door({ id, name, x0, x1, y0, y1, zFront, type, t, frameW = 60, m
     parts.push(part(id, 'דלת עץ', { x, y, z: zFront, w, h, d: t },
       { axis: 'z', grain: 'y', material, qtyKey: `door-${Math.round(w)}x${Math.round(h)}`, edges: edgesAll, note: name }));
   } else {
-    parts.push(part(`${id}-stile-L`, 'זקף דלת', { x, y, z: zFront, w: frameW, h, d: t },
-      { axis: 'z', grain: 'y', material, qtyKey: `door-stile-${Math.round(h)}`, edges: edgesAll, note: name }));
-    parts.push(part(`${id}-stile-R`, 'זקף דלת', { x: x + w - frameW, y, z: zFront, w: frameW, h, d: t },
-      { axis: 'z', grain: 'y', material, qtyKey: `door-stile-${Math.round(h)}`, edges: edgesAll, note: name }));
-    const railW = w - 2 * frameW;
-    parts.push(part(`${id}-rail-T`, 'קושרת דלת', { x: x + frameW, y: y + h - frameW, z: zFront, w: railW, h: frameW, d: t },
-      { axis: 'z', grain: 'x', material, qtyKey: `door-rail-${Math.round(railW)}`, edges: edgesAll, note: name }));
-    parts.push(part(`${id}-rail-B`, 'קושרת דלת', { x: x + frameW, y, z: zFront, w: railW, h: frameW, d: t },
-      { axis: 'z', grain: 'x', material, qtyKey: `door-rail-${Math.round(railW)}`, edges: edgesAll, note: name }));
-    // השמשה נכנסת 10 מ"מ לתוך המסגרת מכל צד (פלץ).
+    // ויטרינה. `vitrine` (רשות) — { frame: 'wood'|'alu'|'none', sides: '4'|'2v'|'2h', frameW,
+    // profile: 'flat'|'shaker'|'bevel'|'round', frameMaterial, mullions: 'none'|'v2'|'h2'|'h3'|'grid4'|'grid6' }.
+    // בלעדיו — כמו תמיד: מסגרת עץ 4 צדדים ברוחב frameW, שמשה אחת.
+    const vt = vitrine || {};
+    const frame = ['wood', 'alu', 'none'].includes(vt.frame) ? vt.frame : 'wood';
+    const sides = frame === 'none' ? '0' : (['4', '2v', '2h'].includes(vt.sides) ? vt.sides : '4');
+    const fw = frame === 'none' ? 0 : Math.max(10, Math.min(Number(vt.frameW) || frameW, Math.min(w, h) / 3));
+    const fm = vt.frameMaterial || material;
+    const prof = frame === 'wood' ? (vt.profile || 'flat') : null;
+    const profNote = { bevel: 'פאזה פנימית 45°', round: 'קנט פנימי מעוגל R6', shaker: 'פרופיל שייקר (פס פנימי מדורג)' }[prof];
+    const frameNote = [name, frame === 'alu' ? 'פרופיל אלומיניום' : '', profNote].filter(Boolean).join(' — ');
+    const stiles = sides === '4' || sides === '2v', rails = sides === '4' || sides === '2h';
+    const kindOf = frame === 'alu' ? 'פרופיל' : 'זקף דלת';
+    if (stiles) {
+      parts.push(part(`${id}-stile-L`, frame === 'alu' ? 'פרופיל אנכי' : kindOf, { x, y, z: zFront, w: fw, h, d: t },
+        { axis: 'z', grain: 'y', material: fm, qtyKey: `door-stile-${Math.round(h)}`, edges: edgesAll, note: frameNote }));
+      parts.push(part(`${id}-stile-R`, frame === 'alu' ? 'פרופיל אנכי' : kindOf, { x: x + w - fw, y, z: zFront, w: fw, h, d: t },
+        { axis: 'z', grain: 'y', material: fm, qtyKey: `door-stile-${Math.round(h)}`, edges: edgesAll, note: frameNote }));
+    }
+    if (rails) {
+      // קושרות: בין הזקפים (4 צדדים), או לכל הרוחב (2 צדדים — רק למעלה ולמטה)
+      const rx = stiles ? x + fw : x, railW = stiles ? w - 2 * fw : w;
+      parts.push(part(`${id}-rail-T`, frame === 'alu' ? 'פרופיל אופקי' : 'קושרת דלת', { x: rx, y: y + h - fw, z: zFront, w: railW, h: fw, d: t },
+        { axis: 'z', grain: 'x', material: fm, qtyKey: `door-rail-${Math.round(railW)}`, edges: edgesAll, note: frameNote }));
+      parts.push(part(`${id}-rail-B`, frame === 'alu' ? 'פרופיל אופקי' : 'קושרת דלת', { x: rx, y, z: zFront, w: railW, h: fw, d: t },
+        { axis: 'z', grain: 'x', material: fm, qtyKey: `door-rail-${Math.round(railW)}`, edges: edgesAll, note: frameNote }));
+    }
+    // השמשה: נכנסת 10 מ"מ (פלץ) לכל צד שיש בו מסגרת; בצד בלי מסגרת — עד הקצה, מלוטשת.
+    // בלי מסגרת בכלל — הזכוכית היא הדלת (מחוסמת, בעובי החומר).
     const rebate = 10;
-    parts.push(part(`${id}-glass`, 'זכוכית דלת',
-      { x: x + frameW - rebate, y: y + frameW - rebate, z: zFront + t / 2 - 2, w: w - 2 * frameW + 2 * rebate, h: h - 2 * frameW + 2 * rebate, d: 4 },
-      { axis: 'z', grain: 'y', material: glass, qtyKey: `glass-${Math.round(w - 2 * frameW + 2 * rebate)}x${Math.round(h - 2 * frameW + 2 * rebate)}`, note: name }));
+    const gx0 = stiles ? x + fw - rebate : x, gx1 = stiles ? x + w - fw + rebate : x + w;
+    const gy0 = rails ? y + fw - rebate : y, gy1 = rails ? y + h - fw + rebate : y + h;
+    const gt = frame === 'none' ? (Number(libMaterial(glass).t) || 6) : 4;
+    const gz = frame === 'none' ? zFront : zFront + t / 2 - 2;
+    const polished = [!stiles && 'צדדים', !rails && 'למעלה ולמטה'].filter(Boolean);
+    parts.push(part(`${id}-glass`, frame === 'none' ? 'דלת זכוכית' : 'זכוכית דלת',
+      { x: gx0, y: gy0, z: gz, w: gx1 - gx0, h: gy1 - gy0, d: gt },
+      { axis: 'z', grain: 'y', material: glass, qtyKey: `glass-${Math.round(gx1 - gx0)}x${Math.round(gy1 - gy0)}`,
+        note: [name, frame === 'none' ? 'מחוסמת, קצוות מלוטשים, קידוחים לצירי זכוכית' : polished.length ? `קצוות מלוטשים (${polished.join(', ')})` : ''].filter(Boolean).join(' — ') }));
+    // שייקר: פס פנימי דק ומדורג סביב השמשה (נראה מלפנים)
+    if (prof === 'shaker' && stiles && rails) {
+      const bw = 10, bd = Math.max(4, t / 3), bz = zFront + t;
+      const ix0 = x + fw, ix1 = x + w - fw, iy0 = y + fw, iy1 = y + h - fw;
+      parts.push(part(`${id}-bead-L`, 'פס שייקר', { x: ix0, y: iy0, z: bz - bd, w: bw, h: iy1 - iy0, d: bd }, { axis: 'z', grain: 'y', material: fm, note: name }));
+      parts.push(part(`${id}-bead-R`, 'פס שייקר', { x: ix1 - bw, y: iy0, z: bz - bd, w: bw, h: iy1 - iy0, d: bd }, { axis: 'z', grain: 'y', material: fm, note: name }));
+      parts.push(part(`${id}-bead-T`, 'פס שייקר', { x: ix0 + bw, y: iy1 - bw, z: bz - bd, w: ix1 - ix0 - 2 * bw, h: bw, d: bd }, { axis: 'z', grain: 'x', material: fm, note: name }));
+      parts.push(part(`${id}-bead-B`, 'פס שייקר', { x: ix0 + bw, y: iy0, z: bz - bd, w: ix1 - ix0 - 2 * bw, h: bw, d: bd }, { axis: 'z', grain: 'x', material: fm, note: name }));
+    }
+    // שפרוסים: פסים לפני הזכוכית שמחלקים אותה לשמשות
+    const mul = frame === 'none' ? 'none' : vt.mullions || 'none';
+    const [nv, nh] = { v2: [1, 0], h2: [0, 1], h3: [0, 2], grid4: [1, 1], grid6: [1, 2] }[mul] || [0, 0];
+    if (nv || nh) {
+      const mw = frame === 'alu' ? 12 : 20, md = Math.max(6, Math.round(t / 2));
+      const ox0 = stiles ? x + fw : x, ox1 = stiles ? x + w - fw : x + w, oy0 = rails ? y + fw : y, oy1 = rails ? y + h - fw : y + h;
+      for (let k = 1; k <= nv; k++) {
+        const cx = ox0 + ((ox1 - ox0) * k) / (nv + 1);
+        parts.push(part(`${id}-mullion-v${k}`, 'שפרוס אנכי', { x: cx - mw / 2, y: oy0, z: zFront + t - md, w: mw, h: oy1 - oy0, d: md }, { axis: 'z', grain: 'y', material: fm, note: name }));
+      }
+      for (let k = 1; k <= nh; k++) {
+        const cy = oy0 + ((oy1 - oy0) * k) / (nh + 1);
+        parts.push(part(`${id}-mullion-h${k}`, 'שפרוס אופקי', { x: ox0, y: cy - mw / 2, z: zFront + t - md, w: ox1 - ox0, h: mw, d: md }, { axis: 'z', grain: 'x', material: fm, note: name }));
+      }
+    }
   }
 
   for (const p of parts) p.motion = motion;
@@ -231,7 +280,11 @@ export function door({ id, name, x0, x1, y0, y1, zFront, type, t, frameW = 60, m
   const ys = hingeYs(h, hinges);
   const cupX = 22.5;
   const hx = hingeSide === 'left' ? x + cupX : x + w - cupX;
-  const drill = hingeDrilling({ doorId: parts[0].id, mountId, ys, doorBottomOffset: mountBottom != null ? y - mountBottom : 0 });
+  // הכוס נקדחת בחלק שבצד הציר: הדלת עצמה, או הזקף שבאותו צד. בלי זקף (ויטרינה 2 צדדים
+  // למעלה/למטה, או זכוכית בלבד) — ציר זכוכית (קלאמפ), בלי קידוח בדלת.
+  const hingePart = type === 'wood' ? parts[0] : parts.find((p) => p.id === `${id}-stile-${hingeSide === 'left' ? 'L' : 'R'}`);
+  let drill = hingeDrilling({ doorId: (hingePart || parts[0]).id, mountId, ys, doorBottomOffset: mountBottom != null ? y - mountBottom : 0 });
+  if (!hingePart) { drill = drill.filter((d) => d.part !== parts[0].id); if (!hinge || hinge === 'hw:hinge-glass' || hinge === 'hw:hinge-110') hinge = 'hw:hinge-glass-clamp'; }
   ys.forEach((dy, i) => {
     hardware.push({ id: `${id}-hinge-${i + 1}`, kind: 'hinge', material: hinge, pos: [hx, y + dy, zFront], qty: 1, for: id, mount: mountId, drill: i === 0 ? drill : [] });
   });

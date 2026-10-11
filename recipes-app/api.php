@@ -29,6 +29,11 @@ require_once __DIR__ . '/lib/pantry.php';
 require_once __DIR__ . '/lib/shopping.php';
 require_once __DIR__ . '/lib/scan.php';
 require_once __DIR__ . '/lib/network.php';
+require_once __DIR__ . '/lib/privacy.php';
+require_once __DIR__ . '/lib/collections.php';
+require_once __DIR__ . '/lib/circles.php';
+require_once __DIR__ . '/lib/foryou.php';
+require_once __DIR__ . '/lib/activity.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -98,11 +103,13 @@ $action = $_GET['action'] ?? (is_string($in['action'] ?? null) ? $in['action'] :
 // נקודות קצה שאינן דורשות התחברות — הן כל מה שמוביל אליה.
 // נקודות קצה שאינן דורשות התחברות — הן כל מה שמוביל אליה, ובנוסף
 // עיון במתכונים ציבוריים: אורח שמגיע מקישור צריך לראות מתכון.
-$public = ['register', 'login', 'me', 'request-reset', 'resend-verification', 'tags', 'search', 'recipe'];
+$public = ['register', 'login', 'me', 'request-reset', 'resend-verification', 'tags', 'search', 'recipe', 'heartbeat'];
 
 $user = currentUser();
-// ייבוא ברקע: אם העובד אמור לרוץ ושתק — מעירים אותו (lib/scout_job.php)
-if ($user) { scoutJobWatchdog(); indexWatchdog(); }   // וכך גם עדכון האינדקס השבועי
+// ייבוא ברקע: אם העובד אמור לרוץ ושתק — מעירים אותו (lib/scout_job.php). וכך גם עובד האינדקס.
+// heartbeat — אותו דבר בלי התחברות: מתזמן חיצוני (או המפתח) מחזיק את העובדים ערים גם
+// כשאף אחד לא באפליקציה. אין בו מידע, וההערה עצמה מוגבלת לפעם בשתי דקות.
+if ($user || $action === 'heartbeat') { scoutJobWatchdog(); indexWatchdog(); }
 $GLOBALS['__action'] = $action;
 $GLOBALS['__in']     = $in;
 $GLOBALS['__user']   = $user;
@@ -165,6 +172,30 @@ try {
         ok(['message' => 'אם החשבון קיים וטרם אומת, נשלח אליו דוא"ל חדש. אפשר לבקש שוב בעוד שתי דקות.']);
     }
 
+    case 'heartbeat':
+        ok([]);
+
+    // מרכז פעילות (lib/activity.php, SPEC 15.6). פתיחת הדף — הכול נקרא; ה"חדש" מחושב לפני
+    case 'activity': {
+        $feed = activityFeed($user);
+        activityMarkSeen($user);
+        ok($feed);
+    }
+
+    case 'activity-count':
+        ok(['unread' => activityUnread($user)]);
+
+    // בשבילך (lib/foryou.php, SPEC 15.5)
+    case 'foryou':
+        ok(forYou($user, max(1, min(30, (int) ($in['limit'] ?? 10)))));
+
+    case 'foryou-taste':
+        ok(['taste' => fySetTaste($in, $user)]);
+
+    case 'event':
+        fyClientEvent($in, $user);
+        ok([]);
+
     case 'tags': {
         // הצירים הסגורים. נדרשים לטופס המתכון, ונפתחים גם לאורח כדי
         // שדף ציבורי יוכל להציג סינון לפני התחברות.
@@ -174,6 +205,13 @@ try {
             $byAxis[$row['axis']][] = ['id' => (int) $row['id'], 'name' => $row['name']];
         }
         ok(['tags' => $byAxis]);
+    }
+
+    case 'tag-counts': {
+        // כמה מתכונים גלויים לי בכל תג — לשורת הנושאים ולגיליון הסינון (SPEC 15.1).
+        // נפרד מ-tags כי הוא משתנה עם כל מתכון, והצירים כמעט לא.
+        require_once __DIR__ . '/lib/catalog.php';
+        ok(['counts' => (object) catalogCounts($user), 'icons' => CATALOG_TOPIC_ICONS]);
     }
 
     // ───────── מתכונים ─────────
@@ -201,13 +239,14 @@ try {
         // רשת: למי ששותף איתו — מסומן כנפתח; לבעלים — עם כמה אנשים הוא משותף
         $shared = $user && !$recipe['is_mine'] && isSharedWith($id, (int) $user['id']);
         if ($shared) markShareSeen($id, $user);
+        if ($user && !$recipe['is_mine']) fyEvent($user, 'open', $id);   // בשבילך — רק כשהתאמה אישית דלוקה
         ok([
             'recipe'      => $recipe,
             'comments'    => listComments($id, $user),
             'note'        => $user ? getNote($id, $user) : null,
             'is_favorite' => isFavorite($id, $user),
             'shared_with_me' => $shared,
-            'share_count' => $user && $recipe['is_mine'] ? count(recipeShares($id, $user)) : 0,
+            'share_count' => $user && $recipe['is_mine'] ? recipeShareReach($id) : 0,   // ישירות ודרך מעגלים
         ]);
     }
 
@@ -416,7 +455,7 @@ try {
     // ───────── חיפוש מתכונים ברשת (lib/web_index.php) ─────────
 
     case 'web-search':
-        ok(indexSearch(str_field($in, 'q', 100), (int) ($in['offset'] ?? 0), $user));
+        ok(indexSearch(str_field($in, 'q', 100), (int) ($in['offset'] ?? 0), $user, str_field($in, 'topic', 40)));
 
     case 'web-open':
         ok(webOpen((int) ($in['id'] ?? 0), $user) + ['ai_available' => aiAvailable()]);
@@ -443,7 +482,7 @@ try {
         ok(myNetwork($user));
 
     case 'person':
-        ok(personProfile((int) ($in['id'] ?? 0), $user));
+        ok(personProfile((int) ($in['id'] ?? 0), $user) + ['collections' => personCollections((int) ($in['id'] ?? 0), $user)]);
 
     case 'follow':
         ok(['person' => followUser((int) ($in['id'] ?? 0), $user)]);
@@ -452,7 +491,7 @@ try {
         ok(['person' => unfollowUser((int) ($in['id'] ?? 0), $user)]);
 
     case 'recipe-shares':
-        ok(['shares' => recipeShares((int) ($in['recipe_id'] ?? 0), $user)]);
+        ok(['shares' => recipeShares((int) ($in['recipe_id'] ?? 0), $user), 'circles' => targetCircles('recipe', (int) ($in['recipe_id'] ?? 0), $user)]);
 
     case 'recipe-share':
         ok(['shares' => shareRecipe((int) ($in['recipe_id'] ?? 0), (array) ($in['user_ids'] ?? []), $user)]);
@@ -460,12 +499,74 @@ try {
     case 'recipe-unshare':
         ok(['shares' => unshareRecipe((int) ($in['recipe_id'] ?? 0), (int) ($in['user_id'] ?? 0), $user)]);
 
+    // פרטיות ושליטה (lib/privacy.php)
+    case 'privacy':
+        ok(['prefs' => userPrefs((int) $user['id']), 'blocks' => myBlocks($user)]);
+
+    case 'privacy-save':
+        ok(['prefs' => setUserPrefs($in, $user)]);
+
+    case 'block':
+        blockUser((int) ($in['id'] ?? 0), $user);
+        ok(['blocks' => myBlocks($user)]);
+
+    case 'unblock':
+        unblockUser((int) ($in['id'] ?? 0), $user);
+        ok(['blocks' => myBlocks($user)]);
+
+    case 'report':
+        reportContent(str_field($in, 'kind', 20), (int) ($in['id'] ?? 0), str_field($in, 'reason', 20), str_field($in, 'note', 500), $user);
+        ok([]);
+
+    case 'reports':
+        ok(['reports' => reportsList($user, str_field($in, 'status', 10) ?: 'open'), 'reasons' => REPORT_REASONS]);
+
+    case 'report-resolve':
+        ok(['reports' => reportResolve((int) ($in['id'] ?? 0), str_field($in, 'action', 20), $user)]);
+
+    case 'account-delete':
+        deleteAccount($user, (string) ($in['password'] ?? ''));
+        logout();
+        ok(['deleted' => true]);
+
     case 'recommend':
+        // מעגל בהמלצה — לחברים שבו עכשיו (הודעה, לא גישה); מי שלא מקבל ממני — מדולג
         ok(recommend(['entry_id' => (int) ($in['entry_id'] ?? 0), 'recipe_id' => (int) ($in['recipe_id'] ?? 0)],
-                     (array) ($in['user_ids'] ?? []), str_field($in, 'note', 300), $user));
+                     array_merge((array) ($in['user_ids'] ?? []), circleMemberIds((array) ($in['circle_ids'] ?? []), $user)),
+                     str_field($in, 'note', 300), $user));
+
+    // מעגלים (lib/circles.php, SPEC 15.4). kind: recipe / collection
+    case 'circles':
+        ok(['circles' => circlesMine($user)]);
+
+    case 'circle':
+        ok(circleView((int) ($in['id'] ?? 0), $user));
+
+    case 'circle-create':
+        ok(circleCreate($in, $user));
+
+    case 'circle-update':
+        ok(circleUpdate((int) ($in['id'] ?? 0), $in, $user));
+
+    case 'circle-delete':
+        circleDelete((int) ($in['id'] ?? 0), $user);
+        ok([]);
+
+    case 'circle-add':
+        ok(circleAddMembers((int) ($in['id'] ?? 0), (array) ($in['user_ids'] ?? []), $user));
+
+    case 'circle-remove':
+        ok(circleRemoveMember((int) ($in['id'] ?? 0), (int) ($in['user_id'] ?? 0), $user));
+
+    case 'circle-share':
+        ok(['circles' => shareWithCircle(str_field($in, 'kind', 20), (int) ($in['target_id'] ?? 0), (int) ($in['circle_id'] ?? 0), $user)]);
+
+    case 'circle-unshare':
+        ok(['circles' => unshareWithCircle(str_field($in, 'kind', 20), (int) ($in['target_id'] ?? 0), (int) ($in['circle_id'] ?? 0), $user)]);
 
     case 'recommendations':
-        ok(recommendationsInbox($user));
+        // ועוד כמה אוספים ששותפו איתי ועוד לא נפתחו — לתג "שותפו איתי" בבית
+        ok(recommendationsInbox($user) + ['collections_unseen' => collectionSharesUnseen($user)]);
 
     case 'recommendation-seen':
         recommendationSeen((int) ($in['id'] ?? 0), $user);
@@ -477,6 +578,50 @@ try {
 
     case 'recipe-leave-share':
         leaveShare((int) ($in['recipe_id'] ?? 0), $user);
+        ok([]);
+
+    // אוספים (lib/collections.php, SPEC 15.3). מה מוסיפים: recipe_id או entry_id
+    case 'collections':
+        ok(collectionsMine($user) + ['unseen' => collectionSharesUnseen($user)]);
+
+    case 'collection':
+        ok(collectionView((int) ($in['id'] ?? 0), $user));
+
+    case 'collection-create':
+        ok(['collection' => collectionCreate($in, $user)]);
+
+    case 'collection-update':
+        ok(['collection' => collectionUpdate((int) ($in['id'] ?? 0), $in, $user)]);
+
+    case 'collection-delete':
+        collectionDelete((int) ($in['id'] ?? 0), $user);
+        ok([]);
+
+    case 'collections-for':
+        ok(['collections' => collectionsFor($in, $user)]);
+
+    case 'collection-toggle':
+        ok(['has' => collectionToggle((int) ($in['id'] ?? 0), $in, !empty($in['on']), $user)]);
+
+    case 'collection-item-remove':
+        collectionRemoveItem((int) ($in['item_id'] ?? 0), $user);
+        ok([]);
+
+    case 'collection-item-move':
+        collectionMoveItem((int) ($in['item_id'] ?? 0), (int) ($in['dir'] ?? 0) < 0 ? -1 : 1, $user);
+        ok([]);
+
+    case 'collection-shares':
+        ok(['shares' => collectionShares((int) ($in['id'] ?? 0), $user), 'circles' => targetCircles('collection', (int) ($in['id'] ?? 0), $user)]);
+
+    case 'collection-share':
+        ok(['shares' => shareCollection((int) ($in['id'] ?? 0), (array) ($in['user_ids'] ?? []), $user)]);
+
+    case 'collection-unshare':
+        ok(['shares' => unshareCollection((int) ($in['id'] ?? 0), (int) ($in['user_id'] ?? 0), $user)]);
+
+    case 'collection-leave':
+        leaveCollectionShare((int) ($in['id'] ?? 0), $user);
         ok([]);
 
     // סריקת מתכון מתמונה (lib/scan.php). ההעלאה עצמה — scan.php (multipart).

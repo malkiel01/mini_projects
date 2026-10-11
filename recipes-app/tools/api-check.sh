@@ -41,7 +41,7 @@ SERVER=$!
 # שמביאה דף מאותו שרת הייתה נתקעת עד timeout.
 FXPORT=$((PORT + 1))
 echo 1 > "$TMP/fxgen"   # "דור" של אתר הדוגמה לאינדקס (8יא) — הבדיקה מעלה אותו כדי לדמות עדכון שבועי
-FX_STATE="$TMP/fxgen" php -S "127.0.0.1:$FXPORT" -t recipes-app/tools/fixtures >"$TMP/fixtures.log" 2>&1 &
+FX_STATE="$TMP/fxgen" php -S "127.0.0.1:$FXPORT" -t recipes-app/tools/fixtures recipes-app/tools/fixtures/router.php >"$TMP/fixtures.log" 2>&1 &
 FXSERVER=$!
 trap 'kill $SERVER $FXSERVER 2>/dev/null; rm -rf "$TMP"' EXIT
 
@@ -401,9 +401,21 @@ wait_crawl() {
   done; return 1
 }
 wait_crawl
+# וכל דף נבדק ברקע שיש בו מתכון — גם מה שיש לו שם מה-sitemap
+for _ in $(seq 1 40); do call index-sites | grep -q '"unverified":0' && break; sleep 0.5; done
 IS=$(call index-sites)
 check 'האינדקס נבנה ברקע: 5 מתכונים (בלי זבל, בלי דף רכיב)' "$IS" '"entries_n":5[^}]*"next_in":[0-9]\{6\}'
-check 'שמות מהדף: אין ממתינים, דף הרשימה "לא מתכון"' "$IS" '"titles_pending":0,"not_recipes":1'
+check 'שמות מהדף: אין ממתינים; דף הרשימה והכתבה — "לא מתכון"' "$IS" '"titles_pending":0,"not_recipes":2'
+check 'הכתבה (שם בכתובת, בלי מתכון) — לא בחיפוש'   "$(call web-search '{"q":"השוק בעפולה"}')" '"total":0'
+check 'כל השאר נבדקו — יש בהם מתכון'              "$IS" '"verified":5,"unverified":0'
+# "לא מתכון" מלפני הבדיקה (skip בלי verified) — נבדק שוב פעם אחת; יש בו מתכון — חוזר לחיפוש
+php -r '$p = new PDO("sqlite:" . $argv[1]); $p->exec("UPDATE index_entries SET skip = 1, verified = NULL WHERE url LIKE \"%jsonld-carine.html\"");' "$TMP/t.sqlite"
+CARINE_STATE() { php -r '$p = new PDO("sqlite:" . $argv[1]); echo implode(",", $p->query("SELECT skip, verified FROM index_entries WHERE url LIKE \"%jsonld-carine.html\"")->fetch(PDO::FETCH_NUM));' "$TMP/t.sqlite"; }
+# העובד מתעורר לכל היותר פעם בשתי דקות — כאן מעירים אותו מיד, כמו "עדכן עכשיו"
+rm -f "$TMP"/scout/index-kick "$TMP"/data/scout/index-kick 2>/dev/null; find "$TMP" -name index-kick -delete 2>/dev/null
+for _ in $(seq 1 60); do call index-sites >/dev/null; [ "$(CARINE_STATE)" = "0,1" ] && break; sleep 0.5; done
+check '"לא מתכון" ישן — נבדק שוב, יש בו מתכון, וחזר' "$(CARINE_STATE)" '^0,1$'
+check 'ו"לא מתכון" אמיתי — נשאר בחוץ'             "$(call index-sites)" '"not_recipes":2'
 check 'בלוג בלי עברית בכתובת — נמצא לפי השם מהדף' "$(call web-search '{"q":"לחם מחמצת"}')" '"title":"לחם מחמצת ביתי"'
 check 'השם מהדף, בלי שם האתר'            "$(call web-search '{"q":"קרין גורן"}')" '"title":"קרין גורן מכינה עוגת יומולדת שילדים אוהבים"'
 check '__trashed בלי דף (404) — נמחק'     "$(call web-search '{"q":"trashed"}')" '"total":0'
@@ -445,13 +457,14 @@ HITS=$(grep -c 'sm-recipes.php' "$TMP/fixtures.log")
 call index-site-refresh "{\"id\":$(printf '%s' "$IS" | python3 -c 'import sys,json; print(json.load(sys.stdin)["sites"][0]["id"])')}" >/dev/null
 sleep 1; wait_crawl
 check 'עדכון בלי שינוי: חלק המתכונים לא מובא שוב' "$(( $(grep -c 'sm-recipes.php' "$TMP/fixtures.log") - HITS ))" '^0$'
-check 'והמתכונים נשארו, ו"לא מתכון" לא חזר'  "$(call index-sites)" '"entries_n":4,"next_in":[0-9]*,"crawling":false,"progress":null,"titles_pending":0,"not_recipes":1'
+check 'והמתכונים נשארו, ו"לא מתכון" לא חזר'  "$(call index-sites)" '"entries_n":4,"next_in":[0-9]*,"crawling":false,"progress":null,"titles_pending":0,"not_recipes":2'
 # הבעלים כבר ייבא את הדף — לכן בחיפוש הוא "מהאפליקציה", לא שוב ברשת; השם באינדקס נבדק במסד
 check 'השם האמיתי שרד את העדכון'           "$(php -r '$p = new PDO("sqlite:" . $argv[1]); echo $p->query("SELECT title FROM index_entries WHERE url LIKE \"%jsonld-carine.html\"")->fetchColumn();' "$TMP/t.sqlite")" '^קרין גורן מכינה עוגת יומולדת'
 check 'מה שכבר באפליקציה — בראש, ולא שוב ברשת' "$(call web-search '{"q":"קרין גורן"}')" '"local":\[{"id":[0-9]*,"title":"קרין גורן[^]]*\],"results":\[\],"total":0'
 check 'תור הניסוח: שני המתכונים שיובאו ברקע בלי ניסוח (8ח2)' "$(call rewrite-export)" '"format":"recipes-rewrite-1"[^}]*"total_waiting":2,"items":\[{"id":"r:'
 check 'החלת קובץ לא תקין — נדחית'           "$(call rewrite-apply '{"text":"not json"}')" 'JSON'
 check 'תור הניסוח דרך הטוקן של היומן'       "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$(call log-token-create '{"label":"rw","ttl_minutes":30}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["token"]["token"])')&view=rewrite")" '"format": "recipes-rewrite-1"'
+check 'heartbeat — פתוח לאורח, בלי מידע'      "$(curl -sS -X POST -H 'Content-Type: application/json' -d '{}' "http://127.0.0.1:$PORT/recipes-app/api.php?action=heartbeat")" '^{"success":true}$'
 check 'עובד האינדקס בלי מפתח — 403'        "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/recipes-app/index-worker.php?key=x")" '^403$'
 call logout >/dev/null
 
@@ -559,6 +572,20 @@ call logout >/dev/null
 echo
 echo "8ל. רשת — שיתוף עם אדם מסוים, ומעקב"
 call login '{"username":"owner","password":"sod12345"}' >/dev/null
+check 'פעילות: מונה לפעמון'                       "$(call activity-count)" '"unread":[0-9]'
+check 'פעילות: הדף, ואחריו המונה מתאפס'           "$(call activity)$(call activity-count)" '"items":\[.*"unread":0}$'
+check 'בשבילך: עונה, טעם, התאמה אישית'          "$(call foryou)" '"items":\[.*"personalize":true,"needs_taste":'
+check 'בשבילך: אירוע לא מוכר — נדחה'            "$(call event '{"kind":"hack","recipe_id":1}')" 'לא מוכר'
+check 'בשבילך: טעם — נושא לא מוכר מסונן'        "$(call foryou-taste '{"topics":[999999],"diet":[]}')" '"taste":{"topics":\[\],"diet":\[\]}'
+check 'קטגוריות: מונים לכל תג, עם סמלי הנושאים' "$(call tag-counts)" '"counts":.*"icons":.*"עוגות":"🎂"'
+check 'קטגוריות: חיפוש ברשת לפי נושא, בלי מילים' "$(call web-search '{"q":"","topic":"עוגות"}')" '"success":true.*"total":'
+check 'קטגוריות: סינון זמן — מספר ולא טקסט'     "$(call search '{"max_minutes":1}')" '"recipes":\[\]'
+CL=$(call collection-create '{"name":"ספר מתכונים לאמא","icon":"📖"}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["collection"]["id"])')
+check 'אוסף: נוצר'                              "$(call collections)" '"name":"שמורים".*"name":"ספר מתכונים לאמא"'
+PRC=$(call recipe-save '{"title":"הסוד של סבתא","visibility":"private","sections":[{"ingredients":[{"free_text":"קמח"}],"steps":[{"text":"לאפות"}]}]}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
+check 'אוסף: הוספת מתכון פרטי שלי'             "$(call collection-toggle "{\"id\":$CL,\"recipe_id\":$PRC,\"on\":true}")" '"has":true'
+check 'אוסף: בגיליון — מסומן'                    "$(call collections-for "{\"recipe_id\":$PRC}")" '"name":"ספר מתכונים לאמא","icon":"📖","is_saved":false,"has":true'
+check 'אוסף: "שמורים" לא נמחק'                   "$(call collection-delete "{\"id\":$(call collections | python3 -c 'import sys,json; print(json.load(sys.stdin)["mine"][0]["id"])')}")" 'אי אפשר למחוק'
 PR=$(call recipe-save '{"title":"מרק של סבתא לשיתוף","visibility":"private","sections":[{"ingredients":[{"free_text":"גזר"}],"steps":[{"text":"לבשל"}]}]}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
 PS=$(call people-search '{"q":"tester"}')
 check 'חיפוש אנשים — בלי דוא"ל'              "$PS" '"username":"tester"'
@@ -566,8 +593,20 @@ check 'ובלי השדה email'                       "$(printf '%s' "$PS" | gre
 TID=$(printf '%s' "$PS" | python3 -c 'import sys,json; print(json.load(sys.stdin)["people"][0]["id"])')
 check 'שיתוף עם tester'                       "$(call recipe-share "{\"recipe_id\":$PR,\"user_ids\":[$TID]}")" '"username":"tester"'
 check 'הבעלים רואה "משותף עם 1"'              "$(call recipe "{\"id\":$PR}")" '"shared_with_me":false,"share_count":1'
+CIR=$(call circle-create "{\"name\":\"משפחה\",\"user_ids\":[$TID]}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["circle"]["id"])')
+check 'מעגל: נוצר עם tester'                    "$(call circles)" '"name":"משפחה","icon":"👥","n":1'
+PRC2=$(call recipe-save '{"title":"מתכון למשפחה","visibility":"private","sections":[{"ingredients":[{"free_text":"קמח"}],"steps":[{"text":"לאפות"}]}]}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
+check 'מעגל: שיתוף מתכון עם המעגל'              "$(call circle-share "{\"kind\":\"recipe\",\"target_id\":$PRC2,\"circle_id\":$CIR}")" '"name":"משפחה"'
+check 'מעגל: בלוח השיתוף — המעגל, בלי שמות'      "$(call recipe-shares "{\"recipe_id\":$PRC2}")" '"shares":\[\],"circles":\[.*"name":"משפחה"'
+check 'אוסף: שיתוף עם tester'                  "$(call collection-share "{\"id\":$CL,\"user_ids\":[$TID]}")" '"username":"tester"'
 call logout >/dev/null
 call login '{"username":"tester","password":"sod12345"}' >/dev/null
+check 'אוסף: אצל tester — ב"שותפו איתי", חדש'     "$(call collections)" '"shared":\[.*"name":"ספר מתכונים לאמא".*"new":true'
+check 'אוסף: tester רואה את הפרטי של הבעלים שבו'   "$(call collection "{\"id\":$CL}")" '"title":"הסוד של סבתא"'
+check 'אוסף: ופותח אותו'                          "$(call recipe "{\"id\":$PRC}")" '"title":"הסוד של סבתא"'
+check 'מעגל: tester רואה את המתכון'               "$(call recipe "{\"id\":$PRC2}")" '"title":"מתכון למשפחה"'
+check 'מעגל: ולא את המעגל עצמו'                  "$(call circle "{\"id\":$CIR}")" 'אינו קיים'
+check 'אוסף: אבל לא עורך את האוסף'                "$(call collection-update "{\"id\":$CL,\"name\":\"שלי\"}")" 'אינו שלך'
 check 'tester רואה ברשימה — משותף, חדש'         "$(call search '{"q":"מרק של סבתא"}')" '"title":"מרק של סבתא לשיתוף".*"shared_with_me":true,"shared_new":true'
 check 'ופותח — "שותף איתך"'                     "$(call recipe "{\"id\":$PR}")" '"shared_with_me":true'
 check 'אחרי הפתיחה — כבר לא חדש'                "$(call search '{"shared":true}')" '"shared_new":false'
@@ -580,6 +619,42 @@ check 'האנשים שלי'                              "$(call network)" '"fol
 check 'הסרה מהרשימה שלי'                        "$(call recipe-leave-share "{\"recipe_id\":$PR}")" '"success":true'
 check 'ואז הפרטי כבר לא זמין'                    "$(call recipe "{\"id\":$PR}")" 'אינו קיים או שאינו זמין'
 call logout >/dev/null
+
+echo
+echo "8מ. פרטיות ושליטה — העדפות, חסימה, דיווח, מחיקת חשבון"
+call login '{"username":"owner","password":"sod12345"}' >/dev/null
+PUBR=$(call recipe-save '{"title":"עוגה ציבורית לדיווח","visibility":"public","sections":[{"ingredients":[{"free_text":"קמח"}],"steps":[{"text":"לאפות"}]}]}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
+PRIVR=$(call recipe-save '{"title":"פרטי לחסימה","visibility":"private","sections":[{"ingredients":[{"free_text":"קמח"}],"steps":[{"text":"לאפות"}]}]}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
+OWNID=$(call me | python3 -c 'import sys,json; d=json.load(sys.stdin); print((d.get("user") or d)["id"])')
+TID=$(call people-search '{"q":"tester"}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["people"][0]["id"])')
+call logout >/dev/null
+call login '{"username":"tester","password":"sod12345"}' >/dev/null
+check 'העדפות — ברירת מחדל'                   "$(call privacy)" '"prefs":{"discoverable":true,"share_from":"all","personalize":true}'
+check '"אף אחד לא משתף איתי"'                  "$(call privacy-save '{"share_from":"none"}')" '"share_from":"none"'
+call logout >/dev/null
+call login '{"username":"owner","password":"sod12345"}' >/dev/null
+check 'owner לא משתף עם tester'                "$(call recipe-share "{\"recipe_id\":$PRIVR,\"user_ids\":[$TID]}")" 'לא מקבל'
+call logout >/dev/null
+call login '{"username":"tester","password":"sod12345"}' >/dev/null
+call privacy-save '{"share_from":"all"}' >/dev/null
+check 'דיווח על מתכון'                         "$(call report "{\"kind\":\"recipe\",\"id\":$PUBR,\"reason\":\"copyright\",\"note\":\"מועתק\"}")" '"success":true'
+check 'חסימת owner'                           "$(call block "{\"id\":$OWNID}")" '"username":"owner"'
+check 'אחרי חסימה — המתכון שלו לא ברשימה'        "$(call search '{"q":"עוגה ציבורית לדיווח"}' | grep -c 'עוגה ציבורית לדיווח')" '^0$'
+check 'ולא עוקבים'                             "$(call follow "{\"id\":$OWNID}")" 'אינו קיים'
+check 'ביטול חסימה'                            "$(call unblock "{\"id\":$OWNID}")" '"blocks":\[\]'
+check 'מחיקת חשבון — סיסמה שגויה נדחית'          "$(call account-delete '{"password":"nope"}')" 'שגויה'
+call logout >/dev/null
+call login '{"username":"owner","password":"sod12345"}' >/dev/null
+REP=$(call reports)
+check 'המפתח רואה את הדיווח'                   "$REP" '"kind":"recipe".*"reason_label":"הפרת זכויות יוצרים".*"snapshot":"עוגה ציבורית לדיווח"'
+RPID=$(printf '%s' "$REP" | python3 -c 'import sys,json; print(json.load(sys.stdin)["reports"][0]["id"])')
+check 'הסתרה — התור מתרוקן'                     "$(call report-resolve "{\"id\":$RPID,\"action\":\"hide\"}")" '"reports":\[\]'
+check 'והמתכון פרטי'                           "$(call recipe "{\"id\":$PUBR}")" '"visibility":"private"'
+call logout >/dev/null
+check 'tester לא רואה דיווחים'                  "$(call login '{"username":"tester","password":"sod12345"}' >/dev/null; call reports)" 'מפתח'
+call logout >/dev/null
+check 'מדיניות פרטיות — עמוד ציבורי'             "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/privacy.html")" 'מדיניות פרטיות'
+check 'דף מחיקת חשבון — ציבורי'                  "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/delete-account.html")" 'מחיקת חשבון ונתונים'
 
 echo
 echo "9. אבחון למנהל"

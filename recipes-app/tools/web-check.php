@@ -76,6 +76,12 @@ check('תמונה משותפת לכמה דפים (אייקון) מדולגת; CD
 check('אותו אתר עם www ובלי', [indexSameHost('https://gad-dairy.co.il/recipe/x/', 'www.gad-dairy.co.il'), indexSameHost('https://www.a.co.il/x', 'a.co.il'),
                                indexSameHost('https://foody.co.il/x', 'www.carine.co.il')], [true, true, false]);
 
+check('חלק "recipe_quantity" (קבוצות של מחלבות גד) — לא נבחר, רק המתכונים', array_column(indexPickSitemaps([['https://g.co.il/recipe-sitemap.xml'], ['https://g.co.il/recipe_quantity-sitemap.xml'], ['https://g.co.il/recipe_type-sitemap2.xml']]), 0),
+      ['https://g.co.il/recipe-sitemap.xml']);
+$skipUrl = fn(string $p) => (bool) preg_match(INDEX_SKIP_URL, $p);
+check('דף קבוצה — בחוץ; מתכון, ומילה שרק מתחילה כמו קבוצה — בפנים',
+      array_map($skipUrl, ['/recipe_quantity/100-עוגיות/', '/recipe-category/cakes/', '/recipe/עוגת-גבינה/', '/foody_recipe/x/', '/best-catering/']), [true, true, false, false, false]);
+
 echo "\n2. שם מהכתובת, וגזעים\n";
 check('סלאג עברי', indexTitleFromUrl('https://a.co.il/recipe/%d7%a2%d7%95%d7%92%d7%aa-%d7%92%d7%91%d7%99%d7%a0%d7%94-%d7%90%d7%a4%d7%95%d7%99%d7%94-2/'), 'עוגת גבינה אפויה');
 check('__trashed ומספרים — בלי שם', [indexTitleFromUrl('https://c.co.il/foody_recipe/__trashed-3/'), indexTitleFromUrl('https://c.co.il/r/12345/')], ['', '']);
@@ -237,6 +243,22 @@ $r = indexSearch('פשטידת תרד', 0, $noaU);
 check('מהאפליקציה קודם: הציבורי של אחר והפרטי שלי (לא פרטי של אחר)', (function ($t) { sort($t); return $t; })(array_column($r['local'], 'title')), ['פשטידת תרד פרטית של נועה', 'פשטידת תרד של סבתא']);
 check('דף שכבר מוצג מהאפליקציה — לא שוב ברשת', [in_array('https://a.co.il/q/4/', array_column($r['results'], 'url')), $r['total']], [false, 3]);
 check('עמוד שני — בלי "מהאפליקציה"', indexSearch('פשטידת תרד', 30, $noaU)['local'], []);
+
+echo "\n5ד. אתר מעורב (כתבות ומתכונים) — מה שלא נבדק לא מוצג\n";
+$pdo->exec("UPDATE index_entries SET verified = 1 WHERE skip = 0");   // כל מה שכבר באתר א — נבדק
+$pdo->prepare('INSERT INTO index_sites (host, name, start_url, added_at, next_crawl_at) VALUES (?,?,?,?,?)')->execute(['mix.co.il', 'מעורב', 'https://mix.co.il/', nowIso(), time() + 9999]);
+$sm = (int) $pdo->lastInsertId();
+$put = $pdo->prepare('INSERT INTO index_entries (site_id, url, title, stems, seen_at, verified, skip) VALUES (?,?,?,?,1,?,?)');
+for ($i = 0; $i < 18; $i++) $put->execute([$sm, "https://mix.co.il/ok/$i/", "מתכון $i", indexStems("מתכון $i"), 1, 0]);
+for ($i = 0; $i < 2; $i++) $put->execute([$sm, "https://mix.co.il/news/$i/", "כתבה $i", indexStems("כתבה $i"), null, 1]);
+$put->execute([$sm, 'https://mix.co.il/a/', 'מרק עדשים בדוק', indexStems('מרק עדשים בדוק'), 1, 0]);
+$put->execute([$sm, 'https://mix.co.il/b/', 'מרק עדשים לא בדוק', indexStems('מרק עדשים לא בדוק'), null, 0]);
+$titles = fn() => array_column(indexSearch('מרק עדשים')['results'], 'title');
+check('20 נבדקו, 2 מהם כתבות (10%) — אתר מעורב: רק הנבדק', $titles(), ['מרק עדשים בדוק']);
+$pdo->exec("UPDATE index_entries SET skip = 0, verified = 1 WHERE url LIKE 'https://mix.co.il/news/%'");
+check('בלי כתבות — מה שלא נבדק מוצג, אחרי הנבדק', $titles(), ['מרק עדשים בדוק', 'מרק עדשים לא בדוק']);
+check('בסטטוס האתר: כמה נבדקו וכמה לא', array_values(array_map(fn($x) => [$x['verified'], $x['unverified']], array_filter(indexSites(), fn($x) => $x['host'] === 'mix.co.il'))), [[21, 1]]);
+indexRemoveSite($sm, $devU);
 
 echo "\n6. הסרת אתר מוחקת את המתכונים שלו מהאינדקס\n";
 indexRemoveSite($sa, $devU);

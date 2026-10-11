@@ -41,8 +41,8 @@ export function estimate(model, rates = {}) {
     const m = material(p.material);
     const c = cutSize(p);
     const area = (c.l * c.w) / 1e6;
-    const row = byMaterial.get(p.material) || { id: p.material, name: m.name, kind: m.kind, area: 0, count: 0 };
-    row.area += area; row.count += 1;
+    const row = byMaterial.get(p.material) || { id: p.material, name: m.name, kind: m.kind, area: 0, count: 0, len: 0 };
+    row.area += area; row.count += 1; row.len += c.l / 1000;
     byMaterial.set(p.material, row);
     // קנט: כל צד שמסומן, באורכו לאורך החלק.
     if (edgeT && m.kind === 'board') {
@@ -61,10 +61,10 @@ export function estimate(model, rates = {}) {
   let materialsTotal = 0;
   for (const row of byMaterial.values()) {
     const { price, unit, mine } = priceOf(row.id);
-    const qty = unit === 'm2' ? row.area * (row.kind === 'board' ? PRICING_DEFAULTS.waste : 1) : row.count;
+    const qty = unit === 'm2' ? row.area * (row.kind === 'board' ? PRICING_DEFAULTS.waste : 1) : unit === 'm' ? row.len : row.count;
     const total = qty * price;
     materialsTotal += total;
-    lines.push({ group: row.kind === 'glass' ? 'זכוכית' : 'לוחות', name: row.name, qty: round(qty), unit: unit === 'm2' ? 'מ"ר' : 'יח׳', unitPrice: price, total: round(total), mine, note: unit === 'm2' && row.kind === 'board' ? `${round(row.area)} מ"ר נטו + פחת` : '' });
+    lines.push({ group: row.kind === 'glass' ? 'זכוכית' : row.kind === 'profile' ? 'פרופילים' : 'לוחות', name: row.name, qty: round(qty), unit: unit === 'm2' ? 'מ"ר' : unit === 'm' ? 'מ׳' : 'יח׳', unitPrice: price, total: round(total), mine, note: unit === 'm2' && row.kind === 'board' ? `${round(row.area)} מ"ר נטו + פחת` : '' });
   }
   if (edgeMeters > 0 && values.edgeMaterial) {
     const { price, mine, name } = priceOf(values.edgeMaterial);

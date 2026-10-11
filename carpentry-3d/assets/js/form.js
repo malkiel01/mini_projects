@@ -4,6 +4,7 @@
 // לרשימת בחירה. השדות מקובצים לפי `group`, ושדה עם `showIf` מוצג רק כשהתנאי
 // מתקיים. שינוי בכל שדה קורא ל-onChange עם הערכים המעודכנים.
 
+import { renderUnitsEditor } from './units-ui.js';
 import { allParams, visible, optionsFor } from './model/index.js';
 import { material } from './model/materials.js';
 import { resolveShares, editShare, sectionLayout, layoutIsEmpty, cellsOf, effectivePins, MIN_SHARE } from './model/layout.js';
@@ -29,6 +30,18 @@ export function renderForm(root, tpl, values, onChange) {
       const unit = p.type === 'mm' ? '<span class="unit">מ"מ</span>' : '';
       row.innerHTML = `<span class="field__label">${p.label}${unit}</span>`;
       let input;
+      if (p.type === 'json' && p.editor === 'units') {
+        // כרטיסי העמודות והקומות (units-ui.js) — מצויר מחדש אחרי כל בנייה (sync), כי הוא מציג ערכים מחושבים
+        row.className = 'field field--wide';
+        row.innerHTML = `<span class="field__label">${p.label}</span>`;
+        const box = document.createElement('div');
+        box.className = 'unitsedit';
+        row.appendChild(box);
+        sec.appendChild(row);
+        fields.set(p.key, { p, row, input: null, widget: () => renderUnitsEditor(box, values, () => { refresh(); onChange(values); }), live: true });
+        continue;
+      }
+      if (p.type === 'json' && p.editor !== 'columns') continue;   // מבנה פנימי — לא שדה בטופס
       if (p.type === 'json' && p.editor === 'columns') {
         // עורך העמודות: לא שדה — ווידג'ט שמצייר את עצמו מחדש לפי שאר הערכים
         row.className = 'field field--wide';
@@ -99,9 +112,12 @@ export function renderForm(root, tpl, values, onChange) {
       if (widget && !row.hidden) widget();
       if (p.presets) row.querySelectorAll('[data-preset]').forEach((b) => b.classList.toggle('is-on', Number(b.dataset.preset) === Number(values[p.key])));
     }
+    // קבוצה שכל השדות שלה מוסתרים (למשל "דלתות" אחרי שעברו לכרטיס הקומה) — לא מוצגת
+    for (const sec of root.querySelectorAll('details.group')) sec.hidden = ![...sec.querySelectorAll(':scope > .field')].some((r) => !r.hidden);
   }
   /** מציג בשדות את הערכים כפי שהמודל הצמיד אותם (אחרי clamp). */
   function sync(clamped) {
+    for (const { row, widget, live } of fields.values()) if (live && widget && !row.hidden) widget();   // ערכים מחושבים מהבנייה האחרונה
     for (const { p, input } of fields.values()) {
       if (!input) continue;                                // ווידג'ט — מצייר את עצמו ב-refresh
       if (document.activeElement === input) continue;   // לא לדרוס שדה שמקלידים בו

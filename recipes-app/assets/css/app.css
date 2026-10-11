@@ -383,7 +383,7 @@ a.icon-btn { display: inline-grid; place-items: center; text-decoration: none; }
 .tags { border: 0; display: flex; flex-direction: column; gap: 10px; }
 .tags__axis { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .tags__axis > .muted { width: 100%; }
-.chip--pick { cursor: pointer; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; }
+.chip--pick { cursor: pointer; display: inline-flex; flex-direction: row; align-items: center; gap: 6px; min-height: 36px; }
 .chip--pick input { width: 16px; height: 16px; min-height: 0; accent-color: var(--accent); }
 .chip--pick:has(input:checked) { border-color: var(--accent); color: var(--accent); }
 
@@ -846,6 +846,11 @@ a.icon-btn { display: inline-grid; place-items: center; text-decoration: none; }
 .reco .item__main .small { overflow-wrap: anywhere; }
 .list__head { margin: 8px 0 0; font-size: .95rem; color: var(--muted); }
 .check.is-disabled { opacity: .55; }
+.report-reasons { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.link--muted { color: var(--muted); }
+.person-card__more { display: inline-flex; gap: 12px; margin-inline-start: 12px; }
+.danger-zone { margin-top: 18px; border: 1px solid #f1c4b5; border-radius: 8px; padding: 10px 12px; }
+.danger-zone summary { cursor: pointer; color: var(--err); font-weight: 600; }
 .btn--small { padding: 6px 12px; min-height: 36px; font-size: .9rem; }
 .web-item__title { color: inherit; text-decoration: none; }
 .web-item__title:hover strong { text-decoration: underline; }
@@ -858,3 +863,260 @@ a.icon-btn { display: inline-grid; place-items: center; text-decoration: none; }
 .indexsites textarea { width: 100%; font-family: inherit; font-size: 0.95rem; line-height: 1.6; }
 .site-results { list-style: none; padding: 0; margin: 4px 0 0; display: flex; flex-direction: column; gap: 4px; }
 .site-results li.is-err { color: var(--err); }
+
+/* ───────── קטגוריות: נושאים וסינון (SPEC 15.1) ───────── */
+
+/* שורת נושאים — גוללת לרוחב בטלפון, לא נשברת לשורות */
+.topics { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 6px; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+.topics:empty { display: none; }
+.topic {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px;
+  min-height: 40px; padding: 6px 12px; border-radius: 999px;
+  background: var(--panel); border: 1px solid var(--line); color: var(--ink);
+  text-decoration: none; font: inherit; font-size: 0.9rem; cursor: pointer; white-space: nowrap;
+}
+.topic:hover { border-color: var(--accent); }
+.topic.is-on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.topic__icon { font-size: 1.15rem; line-height: 1; }
+.topic__n { font-size: 0.75rem; color: var(--muted); background: var(--panel-2); border-radius: 999px; padding: 1px 7px; }
+.topic.is-on .topic__n { background: rgba(255, 255, 255, 0.25); color: var(--accent-ink); }
+.topic--small { min-height: 36px; padding: 4px 10px; font-size: 0.85rem; }
+
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.filters__chips { display: contents; }
+.filters .chip--item { text-decoration: none; }
+.btn.is-on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.filter-sheet {
+  display: grid; gap: 10px; padding: 12px; margin-top: 4px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.filter__axis { display: flex; flex-wrap: wrap; gap: 6px; }
+.filter__axis legend { width: 100%; font-weight: 600; font-size: 0.9rem; margin-bottom: 4px; }
+.filter__axis .chip--pick { font-size: 0.85rem; }
+.filter__axis .chip--pick .muted { font-size: 0.75rem; }
+.filter__time { display: flex; flex-direction: row; align-items: center; gap: 8px; flex-wrap: wrap; font-weight: 600; font-size: 0.9rem; }
+.filter__time select { width: auto; font-weight: normal; }
+.tags__hint { flex-basis: 100%; font-size: 0.9rem; padding: 6px 10px; border-radius: 8px; background: #fff8e6; border: 1px solid #f0d89a; }
+
+/* ───────── אוספים (SPEC 15.3) ───────── */
+
+.coll-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+.coll {
+  display: flex; flex-direction: column; overflow: hidden; min-width: 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  color: var(--ink); text-decoration: none;
+}
+.coll:hover { border-color: var(--accent); }
+.coll__cover { display: grid; aspect-ratio: 4 / 3; background: var(--accent-soft); gap: 2px; overflow: hidden; }
+.coll__cover img { width: 100%; height: 100%; object-fit: cover; display: block; min-height: 0; }
+.coll__cover--2 { grid-template-columns: 1fr 1fr; }
+.coll__cover--3 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.coll__cover--3 img:first-child { grid-row: span 2; }
+.coll__cover--4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.coll__cover--icon { place-items: center; font-size: 2.6rem; }
+.coll__body { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px 10px; min-width: 0; }
+.coll__body strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.coll__badges { display: flex; flex-wrap: wrap; gap: 4px; }
+.coll__badges:empty { display: none; }
+.colls { display: flex; flex-direction: column; gap: 12px; }
+.colls > .btn { align-self: flex-start; }
+.colls h3.list__head { margin-top: 8px; }
+
+.coll-page h2 { font-size: 1.4rem; color: var(--ink); }
+.coll-item__ctl { display: flex; gap: 2px; flex: none; }
+.coll-item__ctl .btn { min-width: 34px; min-height: 34px; padding: 0; }
+.coll-item .item__main { flex: 1; }
+.coll-item a { color: inherit; text-decoration: none; }
+
+.coll-form { gap: 10px; }
+.coll-form__icons { display: flex; flex-wrap: wrap; gap: 4px; }
+.coll-form__icon { flex-direction: row; cursor: pointer; }
+.coll-form__icon input { position: absolute; opacity: 0; pointer-events: none; }
+.coll-form__icon span { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 8px; font-size: 1.3rem;
+  border: 1px solid var(--line); background: var(--panel); }
+.coll-form__icon input:checked + span { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.coll-form__icon input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.coll-pick { display: flex; flex-wrap: wrap; gap: 6px; }
+.coll-pick__new { display: flex; gap: 6px; }
+.coll-pick__new input { flex: 1; min-width: 0; width: 0; }   /* width: 0 — שהרוחב הטבעי של שדה לא ירחיב את הגיליון */
+.web-item__coll { flex-basis: 100%; min-width: 0; }
+.web-item { flex-wrap: wrap; }
+.web-item .scout-item__main { flex: 1 1 0; }
+
+/* ───────── מעגלים (SPEC 15.4) ───────── */
+
+.circle-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.chip--circle { font: inherit; font-size: 0.85rem; cursor: pointer; min-height: 34px; color: var(--ink); background: var(--panel); }
+.chip--circle.is-on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.chip--circle:disabled { opacity: 0.6; }
+.circle-page h2 { font-size: 1.4rem; color: var(--ink); }
+.circle-page h3 { font-size: 1rem; margin-top: 8px; }
+
+/* ═══════════════ צמצום מרווחים ומסגרות ═══════════════
+   בהדרגה, לפי בקשה: "מדיי מרווחים, פדינגים ומרז'ינים; פחות מסגרות מיותרות".
+   הכול כאן, בבלוק אחד בסוף הקובץ — כל סבב משנה רק אותו, וקל לחזור צעד.
+   סבב 1: מרווחים ~30% פחות; כרטיס לבן על רקע ירקרק — בלי מסגרת (הניגוד מספיק);
+   קופסה בתוך כרטיס — בלי מסגרת משלה. */
+
+/* מסגרת הדף */
+.bar { padding: 8px 12px; padding-top: max(8px, env(safe-area-inset-top)); }
+.stage, .centered { padding: 12px 10px; }
+@media (min-width: 720px) { .bar { padding-inline: 24px; } .stage { padding: 18px 16px; } }
+
+/* כרטיסים: פחות ריפוד, בלי מסגרת — רק צל עדין */
+.card, .recipe__head, .part, .item, .coll, .user {
+  border-color: transparent;
+  box-shadow: 0 1px 3px rgba(23, 40, 29, .07);
+}
+.card { padding: 16px 14px; }
+@media (min-width: 720px) { .card { padding: 22px; } }
+.card h1, .card h2 { margin-bottom: 10px; }
+.recipe { gap: 10px; }
+.recipe__head { padding: 14px; gap: 8px; }
+.part { padding: 12px 14px; }
+.part h4 { margin: 10px 0 6px; }
+.ings { margin-bottom: 10px; }
+
+/* רשימות */
+.toolbar { gap: 8px; margin-bottom: 10px; }
+.list { gap: 6px; }
+.item { padding: 10px 12px; gap: 10px; min-height: 0; }
+.item--new { border-color: #9db2f5; }   /* "חדש" — המסגרת היחידה שנשארת, כי היא מסמנת */
+
+/* קופסאות בתוך כרטיס — בלי מסגרת משלהן */
+.share-box, .check--big, .credit { border: 0; }
+.share-box { padding: 10px; gap: 6px; }
+.person-row { border: 0; padding: 4px 6px; }
+.card .scout-item { border-color: transparent; background: var(--bg); }
+.scout-item { padding: 8px 10px; }
+.filter-sheet { border: 0; padding: 10px; }
+
+/* הגדרות וניווט משני */
+.settings h3 { margin: 14px 0 4px; }
+.subnav { margin-bottom: 8px; padding-bottom: 6px; }
+.form { gap: 12px; }
+.tabs { margin-bottom: 14px; }
+
+/* ═══════════════ סבב 2: כפתורים ופעולות — בהשראת אפליקציות נפוצות ═══════════════
+   הבעיה: קבוצות של כפתורים גדולים ברוחבים שונים נשברו לשורות עקומות.
+   הכלל מעכשיו: פעולה ראשית אחת — כפתור ברוחב מלא; כל השאר — סרגל עמודות שוות
+   (סמל ומתחתיו מילה, כמו באינסטגרם / יוטיוב), ומה שנדיר — בתפריט "⋯ עוד". */
+
+/* כפתורים: נמוכים ושקטים יותר. 40px עדיין נוח לאצבע */
+.btn { min-height: 40px; padding: 8px 14px; border-radius: 10px; font-size: 0.95rem; }
+.btn--ghost { min-height: 36px; padding: 6px 10px; }
+.btn--small { min-height: 34px; padding: 4px 10px; font-size: 0.85rem; }
+/* קבוצת כפתורים: כל שורה מתמלאת עד הסוף — גם כשנשברת, היא נראית מכוונת */
+.actions { flex-wrap: wrap; gap: 8px; }
+.actions > .btn { flex: 1 1 auto; }
+
+/* קישור חזרה — קטן, בפינה, בלי קו */
+.link--back { align-self: flex-start; min-height: 0; padding: 2px 0; font-size: 0.9rem; text-decoration: none; color: var(--muted); }
+.link--back:hover { color: var(--accent); }
+
+/* אייקונים בראש מסך — עגולים, בלי מסגרת */
+.icon-btn { border-color: transparent; border-radius: 50%; min-width: 40px; min-height: 40px; font-size: 1.15rem; }
+.icon-btn:hover { background: var(--accent-soft); border-color: transparent; }
+.recipe__icons { gap: 2px; }
+
+/* סרגל פעולות */
+.actbar {
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px;
+  border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 2px 0;
+}
+.actbar__btn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  min-width: 0; min-height: 52px; padding: 6px 2px; border: 0; border-radius: 10px; background: none;
+  font: inherit; font-size: 0.75rem; color: var(--ink); text-decoration: none; cursor: pointer; white-space: nowrap;
+  list-style: none;
+}
+.actbar__btn > span { font-size: 1.3rem; line-height: 1.1; }
+.actbar__btn:hover, .actbar__btn.is-on { background: var(--accent-soft); color: var(--accent); }
+.actbar__btn::-webkit-details-marker { display: none; }
+.actbar__more { position: relative; display: flex; }
+.actbar__more > summary { flex: 1; }
+.more-menu {
+  position: absolute; inset-inline-end: 0; top: calc(100% + 4px); z-index: 20; min-width: 190px;
+  display: flex; flex-direction: column; padding: 4px;
+  background: var(--panel); border-radius: 12px; box-shadow: 0 8px 24px rgba(23, 40, 29, .18);
+}
+.more-menu button {
+  text-align: start; padding: 10px 12px; border: 0; border-radius: 8px; background: none;
+  font: inherit; font-size: 0.95rem; color: var(--ink); cursor: pointer;
+}
+.more-menu button:hover { background: var(--accent-soft); }
+.more-menu .is-danger { color: var(--err); }
+
+/* ראש המתכון: צפוף, ברור */
+.recipe__head h2 { font-size: 1.35rem; line-height: 1.25; }
+.recipe__by { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.meta { gap: 4px 14px; font-size: 0.9rem; }
+.chips { gap: 4px; }
+.chip { font-size: 0.75rem; padding: 2px 9px; border: 0; }
+.credit { padding: 8px 10px; font-size: 0.85rem; }
+.servings .btn--ghost { min-width: 36px; min-height: 36px; font-size: 1.1rem; }
+
+/* בית: פעולות מהירות — גלולות בשורה אחת שנגללת לרוחב */
+.quick { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 1px 0; }
+.quick::-webkit-scrollbar { display: none; }
+.quick__btn {
+  flex: none; display: inline-flex; align-items: center; min-height: 36px; padding: 6px 12px;
+  border-radius: 999px; background: var(--panel); color: var(--ink); text-decoration: none; font-size: 0.9rem;
+  box-shadow: 0 1px 2px rgba(23, 40, 29, .08); white-space: nowrap;
+}
+.quick__btn:hover { color: var(--accent); }
+.quick__btn--primary { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.quick__btn--primary:hover { color: var(--accent-ink); filter: brightness(1.08); }
+.topics__list { display: contents; }
+.topic { min-height: 36px; padding: 4px 11px; font-size: 0.88rem; border-color: transparent; box-shadow: 0 1px 2px rgba(23, 40, 29, .08); }
+.topic--filter { font-weight: 600; }
+.search input { min-height: 42px; }
+.search__go { width: 42px; min-height: 42px; }
+.subnav--list a { min-height: 34px; padding: 4px 12px; }
+.link--inline { min-height: 0; align-self: auto; }   /* קישור בתוך שורת טקסט — לא בגובה כפתור */
+
+/* ───────── בשבילך (SPEC 15.5) ───────── */
+
+.fy-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.fy-row__head { display: flex; align-items: baseline; justify-content: space-between; }
+.fy-row__head h3 { font-size: 1rem; margin: 0; }
+.fy-cards { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.fy-cards::-webkit-scrollbar { display: none; }
+.fy-card {
+  flex: none; width: 140px; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--panel); border-radius: 12px; box-shadow: 0 1px 3px rgba(23, 40, 29, .08);
+  color: var(--ink); text-decoration: none;
+}
+.fy-card__img { display: grid; place-items: center; height: 92px; background: var(--accent-soft); font-size: 2rem; overflow: hidden; }
+.fy-card__img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fy-card__body { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px 8px; min-width: 0; }
+.fy-card__body strong { font-size: 0.85rem; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.fy-card__why, .fy-why { font-size: 0.75rem; color: var(--accent); }
+.fy-card--taste .fy-card__img { background: #fff4d6; }
+.fy-item .item__main { flex: 1; }
+.fy-item a { color: inherit; text-decoration: none; }
+.fy-more { position: relative; }
+.fy-more > summary { list-style: none; }
+.fy-more > summary::-webkit-details-marker { display: none; }
+.taste .chips { gap: 6px; }
+.fy-page h2 { font-size: 1.3rem; }
+
+/* ───────── מרכז פעילות (SPEC 15.6) ───────── */
+
+.bell { position: relative; display: inline-grid; place-items: center; min-width: 40px; min-height: 40px; border-radius: 50%; font-size: 1.15rem; text-decoration: none; }
+.bell:hover { background: var(--accent-soft); }
+.bell__n {
+  position: absolute; top: 2px; inset-inline-end: 0; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px;
+  display: grid; place-items: center; background: var(--err); color: #fff; font-size: 0.7rem; font-weight: 700; line-height: 1;
+}
+.act-list { list-style: none; display: flex; flex-direction: column; }
+.act { display: flex; gap: 10px; align-items: flex-start; padding: 10px 4px; border-bottom: 1px solid var(--line); }
+.act:last-child { border-bottom: 0; }
+.act--new { background: var(--accent-soft); border-radius: 10px; border-bottom-color: transparent; padding-inline: 8px; margin-bottom: 2px; }
+.act__who { position: relative; flex: none; text-decoration: none; }
+.act__icon { position: absolute; bottom: -4px; inset-inline-start: -4px; font-size: 0.8rem; background: var(--panel); border-radius: 50%; padding: 1px; line-height: 1; }
+.act__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; color: var(--ink); text-decoration: none; font-size: 0.92rem; }
+.act__snippet { color: var(--muted); font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity h2 { font-size: 1.3rem; }
+.act .avatar { background: var(--panel); box-shadow: 0 0 0 1px var(--line); }

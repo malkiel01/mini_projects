@@ -24,6 +24,7 @@ require_once __DIR__ . '/errors.php';
 require_once __DIR__ . '/recipes.php';
 require_once __DIR__ . '/log.php';
 require_once __DIR__ . '/social.php';
+require_once __DIR__ . '/privacy.php';
 
 const SHARE_MAX_PER_RECIPE = 50;
 
@@ -58,9 +59,12 @@ function peopleSearch(string $q, array $user): array {
                                 EXISTS (SELECT 1 FROM follows f WHERE f.follower_id = ? AND f.followee_id = u.id) AS following
                            FROM users u
                           WHERE u.id != ? AND u.email_verified = 1 AND u.blocked = 0
+                            AND NOT EXISTS (SELECT 1 FROM user_prefs pr WHERE pr.user_id = u.id AND pr.discoverable = 0)
+                            AND " . sqlNotBlocked('u.id') . "
                             AND ($name LIKE ? ESCAPE '\\' OR $name LIKE ? ESCAPE '\\' OR lower(u.username) LIKE ? ESCAPE '\\')
                           ORDER BY ($name LIKE ? ESCAPE '\\') DESC, u.display_name LIMIT 12");
-    $st->execute([(int) $user['id'], (int) $user['id'], $like . '%', '% ' . $like . '%', $like . '%', $like . '%']);
+    $uid = (int) $user['id'];
+    $st->execute([$uid, $uid, $uid, $uid, $like . '%', '% ' . $like . '%', $like . '%', $like . '%']);
     return array_map(fn($r) => personPublic($r) + ['following' => (bool) $r['following']], $st->fetchAll());
 }
 
@@ -68,11 +72,11 @@ function peopleSearch(string $q, array $user): array {
 // שיתוף
 // ─────────────────────────────────────────────────────────────
 
-/** עם מי המתכון משותף — לבעלים בלבד. */
+/** עם מי המתכון משותף ישירות (בשם) — לבעלים בלבד. מי שמקבל דרך מעגל — circles.php. */
 function recipeShares(int $recipeId, array $owner): array {
     requireOwnRecipe($recipeId, $owner);
     $st = db()->prepare('SELECT u.id, u.username, u.display_name, s.created_at, s.seen_at
-                           FROM recipe_shares s JOIN users u ON u.id = s.user_id WHERE s.recipe_id = ? ORDER BY s.created_at');
+                           FROM recipe_shares s JOIN users u ON u.id = s.user_id WHERE s.recipe_id = ? AND s.direct = 1 ORDER BY s.created_at');
     $st->execute([$recipeId]);
     return array_map(fn($r) => personPublic($r) + ['shared_at' => $r['created_at'], 'seen' => $r['seen_at'] !== null], $st->fetchAll());
 }
@@ -83,29 +87,45 @@ function shareRecipe(int $recipeId, array $userIds, array $owner): array {
     if (!$ids) throw new AppError('לא נבחרו אנשים');
     $have = count(recipeShares($recipeId, $owner));
     if ($have + count($ids) > SHARE_MAX_PER_RECIPE) throw new AppError('עד ' . SHARE_MAX_PER_RECIPE . ' אנשים למתכון. למתכון לכולם — לפרסם אותו כציבורי');
+    require_once __DIR__ . '/circles.php';
     $ins = db()->prepare('INSERT OR IGNORE INTO recipe_shares (recipe_id, user_id, created_at) VALUES (?,?,?)');
+    $direct = db()->prepare('UPDATE recipe_shares SET direct = 1 WHERE recipe_id = ? AND user_id = ?');   // קיבל כבר דרך מעגל
     $added = 0;
     foreach ($ids as $id) {
         activePerson($id);
+        requireReachable($owner, $id);   // חסימה, או "רק מי שאני עוקב אחריו / אף אחד"
         $ins->execute([$recipeId, $id, nowIso()]);
         $added += $ins->rowCount();
+        $direct->execute([$recipeId, $id]);
+        shareOptIn('recipe', $recipeId, $id);
     }
     logEvent('info', 'recipe-share', $recipe['title'], ['recipe_id' => $recipeId, 'added' => $added], $owner);
     return recipeShares($recipeId, $owner);
 }
 
-/** הבעלים מסיר נמען. */
+/** הבעלים מסיר נמען (את השיתוף הישיר; אם הוא במעגל שהמתכון משותף איתו — נשאר דרכו). */
 function unshareRecipe(int $recipeId, int $userId, array $owner): array {
     requireOwnRecipe($recipeId, $owner);
-    db()->prepare('DELETE FROM recipe_shares WHERE recipe_id = ? AND user_id = ?')->execute([$recipeId, $userId]);
+    require_once __DIR__ . '/circles.php';
+    db()->prepare('UPDATE recipe_shares SET direct = 0 WHERE recipe_id = ? AND user_id = ?')->execute([$recipeId, $userId]);
+    circleSync('recipe', $recipeId);
     return recipeShares($recipeId, $owner);
 }
 
-/** הנמען מסיר את עצמו ("לא מעניין אותי"). */
+/** לכמה אנשים המתכון מגיע — ישירות ודרך מעגלים. */
+function recipeShareReach(int $recipeId): int {
+    $st = db()->prepare('SELECT COUNT(*) FROM recipe_shares WHERE recipe_id = ?');
+    $st->execute([$recipeId]);
+    return (int) $st->fetchColumn();
+}
+
+/** הנמען מסיר את עצמו ("לא מעניין אותי") — ולא יחזור דרך מעגל. */
 function leaveShare(int $recipeId, array $user): void {
+    require_once __DIR__ . '/circles.php';
     $st = db()->prepare('DELETE FROM recipe_shares WHERE recipe_id = ? AND user_id = ?');
     $st->execute([$recipeId, (int) $user['id']]);
     if ($st->rowCount() === 0) throw new AppError('המתכון לא שותף איתך', 404);
+    shareOptOut('recipe', $recipeId, (int) $user['id']);
 }
 
 /** הנמען פתח את המתכון — כבר לא "חדש". */
@@ -128,6 +148,7 @@ function sharesUnseen(array $user): int {
 function followUser(int $followeeId, array $user): array {
     if ($followeeId === (int) $user['id']) throw new AppError('אי אפשר לעקוב אחרי עצמך');
     activePerson($followeeId);
+    if (blockedBetween((int) $user['id'], $followeeId)) throw new AppError('המשתמש אינו קיים', 404);
     db()->prepare('INSERT OR IGNORE INTO follows (follower_id, followee_id, created_at) VALUES (?,?,?)')->execute([(int) $user['id'], $followeeId, nowIso()]);
     return personProfile($followeeId, $user)['person'];
 }
@@ -144,12 +165,12 @@ function myNetwork(array $user): array {
     $following = $q("SELECT u.id, u.username, u.display_name, 1 AS following,
                             (SELECT COUNT(*) FROM recipes r WHERE r.owner_id = u.id AND r.visibility = 'public') AS public_n
                        FROM follows f JOIN users u ON u.id = f.followee_id
-                      WHERE f.follower_id = ? AND u.blocked = 0 ORDER BY u.display_name", [$uid]);
+                      WHERE f.follower_id = ? AND u.blocked = 0 AND " . sqlNotBlocked('u.id') . " ORDER BY u.display_name", [$uid, $uid, $uid]);
     $followers = $q("SELECT u.id, u.username, u.display_name,
                             EXISTS (SELECT 1 FROM follows f2 WHERE f2.follower_id = ? AND f2.followee_id = u.id) AS following,
                             (SELECT COUNT(*) FROM recipes r WHERE r.owner_id = u.id AND r.visibility = 'public') AS public_n
                        FROM follows f JOIN users u ON u.id = f.follower_id
-                      WHERE f.followee_id = ? AND u.blocked = 0 ORDER BY f.created_at DESC", [$uid, $uid]);
+                      WHERE f.followee_id = ? AND u.blocked = 0 AND " . sqlNotBlocked('u.id') . " ORDER BY f.created_at DESC", [$uid, $uid, $uid, $uid]);
     $fmt = fn($r) => personPublic($r) + ['following' => (bool) $r['following'], 'public_n' => (int) $r['public_n']];
     return ['following' => array_map($fmt, $following), 'followers' => array_map($fmt, $followers), 'shares_unseen' => sharesUnseen($user)];
 }
@@ -163,9 +184,14 @@ function personProfile(int $personId, array $viewer): array {
     $p = activePerson($personId);
     $one = function (string $sql, array $args): int { $st = db()->prepare($sql); $st->execute($args); return (int) $st->fetchColumn(); };
     $vid = (int) $viewer['id'];
+    if ($one('SELECT COUNT(*) FROM blocks WHERE blocker_id = ? AND blocked_id = ?', [$personId, $vid])) throw new AppError('המשתמש אינו קיים', 404);
+    if ($one('SELECT COUNT(*) FROM blocks WHERE blocker_id = ? AND blocked_id = ?', [$vid, $personId])) {
+        return ['person' => personPublic($p) + ['is_me' => false, 'blocked_by_me' => true], 'recipes' => []];
+    }
     return [
         'person' => personPublic($p) + [
             'is_me'      => $personId === $vid,
+            'blocked_by_me' => false,
             'following'  => (bool) $one('SELECT COUNT(*) FROM follows WHERE follower_id = ? AND followee_id = ?', [$vid, $personId]),
             'follows_me' => (bool) $one('SELECT COUNT(*) FROM follows WHERE follower_id = ? AND followee_id = ?', [$personId, $vid]),
             'public_n'   => $one("SELECT COUNT(*) FROM recipes WHERE owner_id = ? AND visibility = 'public'", [$personId]),
@@ -214,6 +240,7 @@ function recommend(array $target, array $toIds, string $note, array $user): arra
     $sent = 0;
     foreach ($ids as $id) {
         activePerson($id);
+        requireReachable($user, $id);
         $dup->execute([(int) $user['id'], $id, $item['url']]);
         $exists = $dup->fetchColumn();
         $dup->closeCursor();

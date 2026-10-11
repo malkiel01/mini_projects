@@ -145,6 +145,8 @@ function shoppingAddRecipes(int $listId, array $recipes, array $user): array {
         $row = $r->fetch();
         if (!$row || !canView($row, $user)) throw new AppError('המתכון אינו קיים או שאינו זמין לך', 404);
         $ins->execute([$listId, $rid, max(0.1, min(20, (float) $factor))]);
+        require_once __DIR__ . '/foryou.php';
+        fyEvent($user, 'shop', $rid);   // בשבילך — "הוספתי לקניות"
     }
     $n = (int) $pdo->query("SELECT COUNT(*) FROM shopping_list_recipes WHERE list_id = $listId")->fetchColumn();
     if ($n > SHOPPING_MAX_RECIPES_PER_LIST) throw new AppError('עד ' . SHOPPING_MAX_RECIPES_PER_LIST . ' מתכונים ברשימה');
@@ -289,6 +291,13 @@ function cookingSetDone(int $stepId, bool $done, array $user): void {
     if (!$r || !canView($r, $user)) throw new AppError('השלב אינו קיים', 404);
     if ($done) db()->prepare('INSERT OR REPLACE INTO cooking_progress (user_id, step_id, done_at) VALUES (?,?,?)')->execute([$user['id'], $stepId, nowIso()]);
     else db()->prepare('DELETE FROM cooking_progress WHERE user_id = ? AND step_id = ?')->execute([$user['id'], $stepId]);
+    // השלב האחרון סומן — "בישלתי" (בשבילך, lib/foryou.php)
+    if ($done) {
+        $st = db()->prepare('SELECT COUNT(*) FROM steps st JOIN sections s ON s.id = st.section_id
+                              WHERE s.recipe_id = ? AND st.id NOT IN (SELECT step_id FROM cooking_progress WHERE user_id = ?)');
+        $st->execute([(int) $r['id'], (int) $user['id']]);
+        if ((int) $st->fetchColumn() === 0) { require_once __DIR__ . '/foryou.php'; fyEvent($user, 'cook', (int) $r['id']); }
+    }
 }
 
 function cookingReset(int $recipeId, array $user): void {
