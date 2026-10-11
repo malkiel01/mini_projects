@@ -74,20 +74,23 @@ function sqlNotBlocked(string $col): string {
  * $from רשאי לשתף עם $toId / להמליץ לו? לא — אם יש חסימה, או ש-$toId הגביל
  * ("רק מי שאני עוקב אחריו" / "אף אחד"). ההודעה אחידה: לא מגלה מה בדיוק.
  */
-function requireReachable(array $from, int $toId): void {
-    $fid = (int) $from['id'];
-    $ok = !blockedBetween($fid, $toId);
-    if ($ok) {
-        $mode = userPrefs($toId)['share_from'];
-        if ($mode === 'none') $ok = false;
-        elseif ($mode === 'following') {
-            $st = db()->prepare('SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ?');
-            $st->execute([$toId, $fid]);
-            $ok = (bool) $st->fetchColumn();
-            $st->closeCursor();
-        }
+/** האם $fromId יכול לשתף ולהמליץ ל-$toId: לא חסום, ולפי "מי משתף איתי" של הנמען. */
+function canReach(int $fromId, int $toId): bool {
+    if (blockedBetween($fromId, $toId)) return false;
+    $mode = userPrefs($toId)['share_from'];
+    if ($mode === 'none') return false;
+    if ($mode === 'following') {
+        $st = db()->prepare('SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ?');
+        $st->execute([$toId, $fromId]);
+        $ok = (bool) $st->fetchColumn();
+        $st->closeCursor();
+        return $ok;
     }
-    if (!$ok) throw new AppError('המשתמש הזה לא מקבל שיתופים והמלצות ממך', 403);
+    return true;
+}
+
+function requireReachable(array $from, int $toId): void {
+    if (!canReach((int) $from['id'], $toId)) throw new AppError('המשתמש הזה לא מקבל שיתופים והמלצות ממך', 403);
 }
 
 function blockUser(int $targetId, array $user): void {
@@ -106,6 +109,9 @@ function blockUser(int $targetId, array $user): void {
         $pdo->prepare('DELETE FROM recipe_shares WHERE (user_id = ? AND recipe_id IN (SELECT id FROM recipes WHERE owner_id = ?))
                                                   OR (user_id = ? AND recipe_id IN (SELECT id FROM recipes WHERE owner_id = ?))')->execute([$targetId, $uid, $uid, $targetId]);
         $pdo->prepare('DELETE FROM recommendations WHERE (from_user = ? AND to_user = ?) OR (from_user = ? AND to_user = ?)')->execute([$uid, $targetId, $targetId, $uid]);
+        // ומהמעגלים — אחרת הסנכרון של המעגל היה מחזיר את השיתוף (lib/circles.php)
+        $pdo->prepare('DELETE FROM circle_members WHERE (user_id = ? AND circle_id IN (SELECT id FROM circles WHERE owner_id = ?))
+                                                   OR (user_id = ? AND circle_id IN (SELECT id FROM circles WHERE owner_id = ?))')->execute([$targetId, $uid, $uid, $targetId]);
         $pdo->prepare('DELETE FROM collection_shares WHERE (user_id = ? AND collection_id IN (SELECT id FROM collections WHERE owner_id = ?))
                                                       OR (user_id = ? AND collection_id IN (SELECT id FROM collections WHERE owner_id = ?))')->execute([$targetId, $uid, $uid, $targetId]);
         $pdo->commit();

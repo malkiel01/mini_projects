@@ -31,6 +31,7 @@ require_once __DIR__ . '/lib/scan.php';
 require_once __DIR__ . '/lib/network.php';
 require_once __DIR__ . '/lib/privacy.php';
 require_once __DIR__ . '/lib/collections.php';
+require_once __DIR__ . '/lib/circles.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -216,7 +217,7 @@ try {
             'note'        => $user ? getNote($id, $user) : null,
             'is_favorite' => isFavorite($id, $user),
             'shared_with_me' => $shared,
-            'share_count' => $user && $recipe['is_mine'] ? count(recipeShares($id, $user)) : 0,
+            'share_count' => $user && $recipe['is_mine'] ? recipeShareReach($id) : 0,   // ישירות ודרך מעגלים
         ]);
     }
 
@@ -461,7 +462,7 @@ try {
         ok(['person' => unfollowUser((int) ($in['id'] ?? 0), $user)]);
 
     case 'recipe-shares':
-        ok(['shares' => recipeShares((int) ($in['recipe_id'] ?? 0), $user)]);
+        ok(['shares' => recipeShares((int) ($in['recipe_id'] ?? 0), $user), 'circles' => targetCircles('recipe', (int) ($in['recipe_id'] ?? 0), $user)]);
 
     case 'recipe-share':
         ok(['shares' => shareRecipe((int) ($in['recipe_id'] ?? 0), (array) ($in['user_ids'] ?? []), $user)]);
@@ -500,8 +501,39 @@ try {
         ok(['deleted' => true]);
 
     case 'recommend':
+        // מעגל בהמלצה — לחברים שבו עכשיו (הודעה, לא גישה); מי שלא מקבל ממני — מדולג
         ok(recommend(['entry_id' => (int) ($in['entry_id'] ?? 0), 'recipe_id' => (int) ($in['recipe_id'] ?? 0)],
-                     (array) ($in['user_ids'] ?? []), str_field($in, 'note', 300), $user));
+                     array_merge((array) ($in['user_ids'] ?? []), circleMemberIds((array) ($in['circle_ids'] ?? []), $user)),
+                     str_field($in, 'note', 300), $user));
+
+    // מעגלים (lib/circles.php, SPEC 15.4). kind: recipe / collection
+    case 'circles':
+        ok(['circles' => circlesMine($user)]);
+
+    case 'circle':
+        ok(circleView((int) ($in['id'] ?? 0), $user));
+
+    case 'circle-create':
+        ok(circleCreate($in, $user));
+
+    case 'circle-update':
+        ok(circleUpdate((int) ($in['id'] ?? 0), $in, $user));
+
+    case 'circle-delete':
+        circleDelete((int) ($in['id'] ?? 0), $user);
+        ok([]);
+
+    case 'circle-add':
+        ok(circleAddMembers((int) ($in['id'] ?? 0), (array) ($in['user_ids'] ?? []), $user));
+
+    case 'circle-remove':
+        ok(circleRemoveMember((int) ($in['id'] ?? 0), (int) ($in['user_id'] ?? 0), $user));
+
+    case 'circle-share':
+        ok(['circles' => shareWithCircle(str_field($in, 'kind', 20), (int) ($in['target_id'] ?? 0), (int) ($in['circle_id'] ?? 0), $user)]);
+
+    case 'circle-unshare':
+        ok(['circles' => unshareWithCircle(str_field($in, 'kind', 20), (int) ($in['target_id'] ?? 0), (int) ($in['circle_id'] ?? 0), $user)]);
 
     case 'recommendations':
         // ועוד כמה אוספים ששותפו איתי ועוד לא נפתחו — לתג "שותפו איתי" בבית
@@ -551,7 +583,7 @@ try {
         ok([]);
 
     case 'collection-shares':
-        ok(['shares' => collectionShares((int) ($in['id'] ?? 0), $user)]);
+        ok(['shares' => collectionShares((int) ($in['id'] ?? 0), $user), 'circles' => targetCircles('collection', (int) ($in['id'] ?? 0), $user)]);
 
     case 'collection-share':
         ok(['shares' => shareCollection((int) ($in['id'] ?? 0), (array) ($in['user_ids'] ?? []), $user)]);

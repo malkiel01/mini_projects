@@ -306,6 +306,8 @@ async function route() {
     else if (h === '#/rewrite') await renderRewrite();
     else if (h === '#/scan') await renderScan();
     else if (h === '#/people') await renderPeople();
+    else if (h === '#/circles') await renderCircles();
+    else if ((m = h.match(/^#\/circle\/(\d+)$/))) await renderCircle(+m[1]);
     else if (h === '#/reports') await renderReports();
     else if ((m = h.match(/^#\/u\/(\d+)$/))) await renderPerson(+m[1]);
     else if (h === '#/scans') await renderScansDev();
@@ -1033,6 +1035,7 @@ async function renderCollectionShareBox(box, c) {
     <h3>👥 שיתוף האוסף</h3>
     <p class="muted small">מי שברשימה רואה את האוסף — <strong>כולל המתכונים הפרטיים שלך שבתוכו</strong>. מתכונים פרטיים של אחרים
       נשארים מוסתרים מהם. מה שתוסיף לאוסף — יראו מיד.</p>
+    <div id="cshare-circles"></div>
     <div id="cshare-list" class="people-list"></div>
     <div id="cshare-pick"></div>`;
   let current = [];
@@ -1040,10 +1043,12 @@ async function renderCollectionShareBox(box, c) {
     $('#cshare-list', box).innerHTML = current.length
       ? current.map((p) => personRow(p, `<span class="muted small">${p.seen ? 'פתח/ה ✓' : 'עוד לא פתח/ה'}</span>
           <button class="btn btn--ghost btn--small" type="button" data-unshare="${p.id}" aria-label="הסרה">✕</button>`)).join('')
-      : '<p class="muted small">עוד לא שותף עם אף אחד.</p>';
+      : '<p class="muted small">עוד לא שותף עם אף אחד בשמו.</p>';
   };
-  try { current = (await api('collection-shares', { id: c.id })).shares; } catch (err) { box.innerHTML = `<p class="note note--err">${esc(err.message)}</p>`; return; }
+  let sharedCircles = [];
+  try { ({ shares: current, circles: sharedCircles } = await api('collection-shares', { id: c.id })); } catch (err) { box.innerHTML = `<p class="note note--err">${esc(err.message)}</p>`; return; }
   drawList();
+  circleShareRow($('#cshare-circles', box), 'collection', c.id, sharedCircles);
   $('#cshare-list', box).addEventListener('click', async (e) => {
     const uid = e.target.dataset.unshare;
     if (!uid) return;
@@ -3001,6 +3006,7 @@ async function renderShareBox(box, r) {
     <p class="muted small">${r.visibility === 'public'
       ? 'המתכון ציבורי — כולם רואים אותו. שיתוף מוסיף אותו אצלם ל"שותפו איתי".'
       : 'המתכון פרטי — רק מי שברשימה יראה אותו (ויוכל להסיר את עצמו). עריכה שלך נראית להם מיד.'}</p>
+    <div id="share-circles"></div>
     <div id="share-list" class="people-list"></div>
     <div id="share-pick"></div>`;
   let current = [];
@@ -3008,10 +3014,12 @@ async function renderShareBox(box, r) {
     $('#share-list', box).innerHTML = current.length
       ? current.map((p) => personRow(p, `<span class="muted small">${p.seen ? 'פתח/ה ✓' : 'עוד לא פתח/ה'}</span>
           <button class="btn btn--ghost btn--small" type="button" data-unshare="${p.id}" aria-label="הסרה">✕</button>`)).join('')
-      : '<p class="muted small">עוד לא שותף עם אף אחד.</p>';
+      : '<p class="muted small">עוד לא שותף עם אף אחד בשמו.</p>';
   };
-  try { current = (await api('recipe-shares', { recipe_id: r.id })).shares; } catch (err) { box.innerHTML = `<p class="note note--err">${esc(err.message)}</p>`; return; }
+  let sharedCircles = [];
+  try { ({ shares: current, circles: sharedCircles } = await api('recipe-shares', { recipe_id: r.id })); } catch (err) { box.innerHTML = `<p class="note note--err">${esc(err.message)}</p>`; return; }
   drawList();
+  circleShareRow($('#share-circles', box), 'recipe', r.id, sharedCircles);
   $('#share-list', box).addEventListener('click', async (e) => {
     const id = e.target.dataset.unshare;
     if (!id) return;
@@ -3032,10 +3040,29 @@ function renderRecoBox(box, target, title) {
     <h3>📨 המלצה על "${esc(title)}"</h3>
     <p class="muted small">המתכון יגיע אליהם כהמלצה לעיין בו, עם קישור למקור — לא כהעתק.</p>
     <input type="text" id="reco-note" maxlength="300" placeholder="הערה (לא חובה) — למשל: נראה טעים, ננסה בשבת?" autocomplete="off">
+    <div id="reco-circles"></div>
     <div id="reco-pick"></div>
     <p class="note" id="reco-msg" hidden></p>`;
   const sent = new Set();
   const say = (t, k) => { const m = $('#reco-msg', box); m.textContent = t; m.className = 'note' + (k ? ' note--' + k : ''); m.hidden = !t; };
+  // מעגל בהמלצה — שליחה לכל מי שבו עכשיו (מי שלא מקבל ממך — מדולג)
+  api('circles').then(({ circles }) => {
+    if (!circles.length) return;
+    const row = $('#reco-circles', box);
+    row.innerHTML = `<div class="circle-row"><span class="muted small">למעגל:</span>${circles.map((c) => `
+      <button type="button" class="chip chip--circle" data-circle="${c.id}">${esc(c.icon)} ${esc(c.name)} <span class="muted small">(${c.n})</span></button>`).join('')}</div>`;
+    row.addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-circle]');
+      if (!b || b.classList.contains('is-on')) return;
+      b.disabled = true;
+      try {
+        const r = await api('recommend', { ...target, circle_ids: [+b.dataset.circle], note: $('#reco-note', box).value });
+        b.classList.add('is-on'); b.insertAdjacentText('beforeend', ' ✓');
+        say(r.sent ? `ההמלצה נשלחה ל-${r.sent} ✓${r.already ? ` (ל-${r.already} היא כבר ממתינה)` : ''}` : 'כבר ממתינה אצל כולם המלצה על המתכון הזה.', r.sent ? 'ok' : 'warn');
+      } catch (err) { say(err.message, 'err'); }
+      b.disabled = false;
+    });
+  }).catch(() => {});
   const picker = peoplePicker($('#reco-pick', box), {
     placeholder: 'למי? חיפוש לפי שם…',
     actionFor: (p) => sent.has(p.id) ? '<span class="muted small">נשלח ✓</span>' : '<button class="btn btn--primary btn--small" type="button" data-act="send">שלח</button>',
@@ -3046,6 +3073,136 @@ function renderRecoBox(box, target, title) {
     },
   });
   picker.input.focus();
+}
+
+// ───────────────────────── מעגלים (SPEC 15.4) ─────────────────────────
+
+const CIRCLE_ICONS = ['👪', '👥', '👵', '👴', '🏠', '🕍', '🍳', '💼', '🎓', '⚽', '❤️', '⭐'];
+
+/**
+ * שורת המעגלים בלוח שיתוף (מתכון / אוסף): לחיצה משתפת עם כל מי שבמעגל, לחיצה
+ * נוספת מבטלת. החברות דינמית — מי שיצטרף למעגל אחר כך יקבל גם הוא.
+ */
+async function circleShareRow(slot, kind, targetId, shared) {
+  let mine = [];
+  try { mine = (await api('circles')).circles; } catch { return; }
+  const draw = () => {
+    slot.innerHTML = mine.length ? `<div class="circle-row"><span class="muted small">מעגלים:</span>${mine.map((c) => {
+      const on = shared.some((x) => x.id === c.id);
+      return `<button type="button" class="chip chip--circle ${on ? 'is-on' : ''}" data-circle="${c.id}" aria-pressed="${on}"
+        title="${on ? 'ביטול השיתוף עם המעגל' : 'שיתוף עם כל מי שבמעגל'}">${esc(c.icon)} ${esc(c.name)} <span class="small">(${c.n})</span>${on ? ' ✓' : ''}</button>`;
+    }).join('')}</div>`
+      : '<p class="muted small">👪 אפשר ליצור <a class="link link--inline" href="#/circles">מעגל</a> — "משפחה", "חברים" — ולשתף עם כולם בלחיצה אחת.</p>';
+  };
+  draw();
+  slot.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-circle]');
+    if (!b) return;
+    const on = b.getAttribute('aria-pressed') === 'true';
+    b.disabled = true;
+    try { shared = (await api(on ? 'circle-unshare' : 'circle-share', { kind, target_id: targetId, circle_id: +b.dataset.circle })).circles; draw(); }
+    catch (err) { alert(err.message); b.disabled = false; }
+  });
+}
+
+/** טופס מעגל: סמל ושם. */
+function circleForm(c = null) {
+  const icon = c ? c.icon : '👪';
+  return `
+    <form class="coll-form share-box" id="circle-form">
+      <div class="coll-form__icons" role="radiogroup" aria-label="סמל">${CIRCLE_ICONS.map((i) => `
+        <label class="coll-form__icon"><input type="radio" name="icon" value="${i}" ${i === icon ? 'checked' : ''}><span>${i}</span></label>`).join('')}</div>
+      <label>שם <input name="name" maxlength="40" required value="${esc(c ? c.name : '')}" placeholder="למשל: משפחה"></label>
+      <div class="actions"><button class="btn btn--primary" type="submit">${c ? 'שמור' : 'צור מעגל'}</button>
+        <button class="btn btn--ghost" type="button" data-cancel>ביטול</button></div>
+      <p class="note" id="circle-msg" hidden></p>
+    </form>`;
+}
+function bindCircleForm(slot, submit) {
+  const f = $('#circle-form');
+  f.name.focus();
+  f.querySelector('[data-cancel]').addEventListener('click', () => { slot.innerHTML = ''; });
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try { await submit({ icon: f.icon.value, name: f.name.value }); }
+    catch (err) { const m = $('#circle-msg'); m.textContent = err.message; m.className = 'note note--err'; m.hidden = false; }
+  });
+}
+
+async function renderCircles() {
+  const { circles } = await api('circles');
+  view.innerHTML = `
+    <section class="card settings settings--wide colls">
+      <a class="link" href="#/people">‹ אנשים</a>
+      <h2>👪 המעגלים שלי</h2>
+      <p class="muted">מעגל הוא רשימת אנשים בשם שלך — "משפחה", "חברים מהעבודה" — כדי לשתף ולהמליץ לכולם בלחיצה אחת.
+        <strong>רק אתה רואה את המעגלים.</strong> מי שבמעגל לא יודע את שמו ולא מי עוד בו — רק שמשהו שותף איתו.</p>
+      <button class="btn btn--primary" type="button" id="circle-new">+ מעגל חדש</button>
+      <div id="circle-new-slot"></div>
+      <div class="list">${circles.length ? circles.map((c) => `
+        <a class="item" href="#/circle/${c.id}">
+          <span class="item__thumb item__thumb--empty">${esc(c.icon)}</span>
+          <div class="item__main"><strong>${esc(c.name)}</strong><span class="muted">${c.n === 1 ? 'אדם אחד' : `${c.n} אנשים`}</span></div>
+        </a>`).join('') : '<p class="muted">עוד אין מעגלים.</p>'}</div>
+    </section>`;
+  $('#circle-new').addEventListener('click', () => {
+    const slot = $('#circle-new-slot');
+    if (slot.innerHTML) { slot.innerHTML = ''; return; }
+    slot.innerHTML = circleForm();
+    bindCircleForm(slot, async (data) => { const { circle } = await api('circle-create', data); go('#/circle/' + circle.id); });
+  });
+}
+
+async function renderCircle(id) {
+  let d = await api('circle', { id });
+  view.innerHTML = `
+    <section class="card settings settings--wide circle-page">
+      <div class="recipe__top">
+        <a class="link" href="#/circles">‹ המעגלים</a>
+        <span class="recipe__icons">
+          <button class="icon-btn" id="circle-edit" type="button" aria-label="עריכה" title="עריכה">✏️</button>
+          <button class="icon-btn icon-btn--danger" id="circle-del" type="button" aria-label="מחיקה" title="מחיקה">🗑</button>
+        </span>
+      </div>
+      <h2 id="circle-title"></h2>
+      <p class="muted small" id="circle-used"></p>
+      <div id="circle-slot"></div>
+      <div id="circle-members" class="people-list"></div>
+      <h3>הוספה למעגל</h3>
+      <div id="circle-pick"></div>
+      <p class="muted small">מי שתוסיף יקבל מיד את כל מה שכבר שותף עם המעגל; מי שתוציא — יפסיק לראות (אלא אם שיתפת איתו גם בשמו).</p>
+    </section>`;
+  const draw = () => {
+    const c = d.circle;
+    $('#circle-title').textContent = `${c.icon} ${c.name}`;
+    $('#circle-used').textContent = `${c.n === 1 ? 'אדם אחד' : `${c.n} אנשים`} · משותפים עם המעגל: ${d.used.recipe} מתכונים, ${d.used.collection} אוספים`;
+    $('#circle-members').innerHTML = d.members.length ? d.members.map((p) => personRow(p, `${p.reachable ? ''
+      : '<span class="muted small" title="חסם אותך, או בחר שרק מי שהוא עוקב אחריו / אף אחד לא ישתף איתו">לא מקבל שיתופים ממך</span>'}
+      <button class="btn btn--ghost btn--small" type="button" data-remove="${p.id}" aria-label="הוצאה מהמעגל">✕</button>`)).join('')
+      : '<p class="muted small">המעגל ריק — מוסיפים למטה.</p>';
+  };
+  draw();
+  $('#circle-members').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-remove]');
+    if (!b) return;
+    try { d = await api('circle-remove', { id, user_id: +b.dataset.remove }); draw(); picker.refresh(); } catch (err) { alert(err.message); }
+  });
+  const picker = peoplePicker($('#circle-pick'), {
+    placeholder: 'חיפוש לפי שם…',
+    actionFor: (p) => d.members.some((m) => m.id === p.id) ? '<span class="muted small">במעגל ✓</span>'
+      : '<button class="btn btn--primary btn--small" type="button" data-act="add">הוסף</button>',
+    onAction: async (pid) => { d = await api('circle-add', { id, user_ids: [pid] }); draw(); },
+  });
+  $('#circle-edit').addEventListener('click', () => {
+    const slot = $('#circle-slot');
+    if (slot.innerHTML) { slot.innerHTML = ''; return; }
+    slot.innerHTML = circleForm(d.circle);
+    bindCircleForm(slot, async (data) => { d = await api('circle-update', { id, ...data }); slot.innerHTML = ''; draw(); });
+  });
+  $('#circle-del').addEventListener('click', async () => {
+    if (!confirm(`למחוק את המעגל "${d.circle.name}"?\n\nמי שקיבל מתכונים או אוספים רק דרך המעגל — יפסיק לראות אותם.`)) return;
+    try { await api('circle-delete', { id }); go('#/circles'); } catch (err) { alert(err.message); }
+  });
 }
 
 const followBtn = (p) => p.is_me ? '' : p.following
@@ -3095,7 +3252,8 @@ async function renderPeople() {
     <section class="card settings settings--wide people-page">
       <a class="link" href="#/">‹ לרשימה</a>
       <h2>👥 אנשים</h2>
-      <p class="muted">עוקבים אחרי מי שמפרסם מתכונים — והמתכונים הציבוריים שלהם מופיעים בלשונית "נעקבים".</p>
+      <p class="muted">עוקבים אחרי מי שמפרסם מתכונים — והמתכונים הציבוריים שלהם מופיעים בלשונית "נעקבים".
+        <a class="link link--inline" href="#/circles">👪 המעגלים שלי ›</a></p>
       <div id="people-pick"></div>
       <nav class="subnav" aria-label="אנשים">
         <a href="#/people" class="is-on" data-tab="following">אני עוקב</a>

@@ -575,12 +575,19 @@ check 'ובלי השדה email'                       "$(printf '%s' "$PS" | gre
 TID=$(printf '%s' "$PS" | python3 -c 'import sys,json; print(json.load(sys.stdin)["people"][0]["id"])')
 check 'שיתוף עם tester'                       "$(call recipe-share "{\"recipe_id\":$PR,\"user_ids\":[$TID]}")" '"username":"tester"'
 check 'הבעלים רואה "משותף עם 1"'              "$(call recipe "{\"id\":$PR}")" '"shared_with_me":false,"share_count":1'
+CIR=$(call circle-create "{\"name\":\"משפחה\",\"user_ids\":[$TID]}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["circle"]["id"])')
+check 'מעגל: נוצר עם tester'                    "$(call circles)" '"name":"משפחה","icon":"👥","n":1'
+PRC2=$(call recipe-save '{"title":"מתכון למשפחה","visibility":"private","sections":[{"ingredients":[{"free_text":"קמח"}],"steps":[{"text":"לאפות"}]}]}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
+check 'מעגל: שיתוף מתכון עם המעגל'              "$(call circle-share "{\"kind\":\"recipe\",\"target_id\":$PRC2,\"circle_id\":$CIR}")" '"name":"משפחה"'
+check 'מעגל: בלוח השיתוף — המעגל, בלי שמות'      "$(call recipe-shares "{\"recipe_id\":$PRC2}")" '"shares":\[\],"circles":\[.*"name":"משפחה"'
 check 'אוסף: שיתוף עם tester'                  "$(call collection-share "{\"id\":$CL,\"user_ids\":[$TID]}")" '"username":"tester"'
 call logout >/dev/null
 call login '{"username":"tester","password":"sod12345"}' >/dev/null
 check 'אוסף: אצל tester — ב"שותפו איתי", חדש'     "$(call collections)" '"shared":\[.*"name":"ספר מתכונים לאמא".*"new":true'
 check 'אוסף: tester רואה את הפרטי של הבעלים שבו'   "$(call collection "{\"id\":$CL}")" '"title":"הסוד של סבתא"'
 check 'אוסף: ופותח אותו'                          "$(call recipe "{\"id\":$PRC}")" '"title":"הסוד של סבתא"'
+check 'מעגל: tester רואה את המתכון'               "$(call recipe "{\"id\":$PRC2}")" '"title":"מתכון למשפחה"'
+check 'מעגל: ולא את המעגל עצמו'                  "$(call circle "{\"id\":$CIR}")" 'אינו קיים'
 check 'אוסף: אבל לא עורך את האוסף'                "$(call collection-update "{\"id\":$CL,\"name\":\"שלי\"}")" 'אינו שלך'
 check 'tester רואה ברשימה — משותף, חדש'         "$(call search '{"q":"מרק של סבתא"}')" '"title":"מרק של סבתא לשיתוף".*"shared_with_me":true,"shared_new":true'
 check 'ופותח — "שותף איתך"'                     "$(call recipe "{\"id\":$PR}")" '"shared_with_me":true'

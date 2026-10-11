@@ -515,6 +515,50 @@ function migrate(PDO $pdo): void {
         );
         CREATE INDEX IF NOT EXISTS idx_collection_shares_user ON collection_shares(user_id);
 
+        -- מעגלים (SPEC 15.4, lib/circles.php): רשימת אנשים בעלת שם שרק הבעלים רואה.
+        -- שיתוף עם מעגל = עם מי שבו עכשיו (החלטה 4): הקישור נשמר ב-recipe_circles /
+        -- collection_circles, ולכל חבר נכתבת שורת שיתוף רגילה (direct = 0) שמתעדכנת
+        -- כשהמעגל משתנה. כך כל הקוד שקורא שיתופים — רשימות, חדש, חסימה — לא השתנה.
+        CREATE TABLE IF NOT EXISTS circles (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name       TEXT    NOT NULL,
+            icon       TEXT    NOT NULL DEFAULT '👥',
+            created_at TEXT    NOT NULL,
+            updated_at TEXT    NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_circles_owner ON circles(owner_id);
+        CREATE TABLE IF NOT EXISTS circle_members (
+            circle_id INTEGER NOT NULL REFERENCES circles(id) ON DELETE CASCADE,
+            user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            added_at  TEXT    NOT NULL,
+            PRIMARY KEY (circle_id, user_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_circle_members_user ON circle_members(user_id);
+        CREATE TABLE IF NOT EXISTS recipe_circles (
+            recipe_id  INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+            circle_id  INTEGER NOT NULL REFERENCES circles(id) ON DELETE CASCADE,
+            created_at TEXT    NOT NULL,
+            PRIMARY KEY (recipe_id, circle_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_recipe_circles_circle ON recipe_circles(circle_id);
+        CREATE TABLE IF NOT EXISTS collection_circles (
+            collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+            circle_id     INTEGER NOT NULL REFERENCES circles(id) ON DELETE CASCADE,
+            created_at    TEXT    NOT NULL,
+            PRIMARY KEY (collection_id, circle_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_collection_circles_circle ON collection_circles(circle_id);
+        -- מי שהסיר את עצמו משיתוף (הסר מהרשימה שלי) — לא יחזור דרך מעגל. שיתוף ישיר חדש מבטל.
+        -- kind: recipe / collection; target_id בלי מפתח זר (שתי טבלאות). מזהים לא חוזרים (AUTOINCREMENT).
+        CREATE TABLE IF NOT EXISTS share_optouts (
+            kind       TEXT    NOT NULL CHECK (kind IN ('recipe', 'collection')),
+            target_id  INTEGER NOT NULL,
+            user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at TEXT    NOT NULL,
+            PRIMARY KEY (kind, target_id, user_id)
+        );
+
         -- מיגרציות חד־פעמיות על נתונים: שם ומתי רצה. מה שרשום כאן — לא ירוץ שוב,
         -- גם אם המצב שהוא תיקן חזר (משתמש שהסיר נושא לא יקבל אותו בחזרה).
         CREATE TABLE IF NOT EXISTS migrations (
@@ -612,6 +656,9 @@ function migrate(PDO $pdo): void {
     }
     // הורדות לחיפוש ברשת: כמה משתמשים שמרו את אותו דף (recipes.source_url)
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_recipes_source ON recipes(source_url)');
+    // שיתוף ישיר (1) או דרך מעגל בלבד (0) — lib/circles.php
+    addColumnIfMissing($pdo, 'recipe_shares', 'direct', 'INTEGER NOT NULL DEFAULT 1');
+    addColumnIfMissing($pdo, 'collection_shares', 'direct', 'INTEGER NOT NULL DEFAULT 1');
     addColumnIfMissing($pdo, 'shopping_list_recipes', 'factor', 'REAL NOT NULL DEFAULT 1');
     addColumnIfMissing($pdo, 'shopping_list_items', 'amount_max', 'REAL');
     addColumnIfMissing($pdo, 'shopping_list_items', 'recipe_count', 'INTEGER NOT NULL DEFAULT 1');

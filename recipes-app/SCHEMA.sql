@@ -213,6 +213,7 @@ CREATE TABLE recipe_shares (
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_at TEXT    NOT NULL,
   seen_at    TEXT,                                  -- הנמען פתח אותו
+  direct     INTEGER NOT NULL DEFAULT 1,            -- 1 ישיר; 0 — רק דרך מעגל (circles.php)
   PRIMARY KEY (recipe_id, user_id)
 );
 CREATE INDEX idx_shares_user ON recipe_shares(user_id, created_at);
@@ -497,9 +498,56 @@ CREATE TABLE collection_shares (
   user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_at    TEXT    NOT NULL,
   seen_at       TEXT,
+  direct        INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY (collection_id, user_id)
 );
 CREATE INDEX idx_collection_shares_user ON collection_shares(user_id);
+
+-- ═══════════════════════════════════════════════════════════
+-- מעגלים  (SPEC 15.4, lib/circles.php)
+-- ═══════════════════════════════════════════════════════════
+
+-- רשימת אנשים בעלת שם שרק הבעלים רואה. שיתוף עם מעגל = עם מי שבו עכשיו
+-- (החלטה 4): הקישור נשמר כאן, ולכל חבר נכתבת שורת שיתוף רגילה (direct = 0)
+-- שמתעדכנת כשהמעגל משתנה — כך הקריאה של שיתופים לא השתנתה בשום מקום.
+CREATE TABLE circles (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name       TEXT    NOT NULL,
+  icon       TEXT    NOT NULL DEFAULT '👥',
+  created_at TEXT    NOT NULL,
+  updated_at TEXT    NOT NULL
+);
+CREATE INDEX idx_circles_owner ON circles(owner_id);
+CREATE TABLE circle_members (
+  circle_id INTEGER NOT NULL REFERENCES circles(id) ON DELETE CASCADE,
+  user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  added_at  TEXT    NOT NULL,
+  PRIMARY KEY (circle_id, user_id)
+);
+CREATE INDEX idx_circle_members_user ON circle_members(user_id);
+CREATE TABLE recipe_circles (
+  recipe_id  INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+  circle_id  INTEGER NOT NULL REFERENCES circles(id) ON DELETE CASCADE,
+  created_at TEXT    NOT NULL,
+  PRIMARY KEY (recipe_id, circle_id)
+);
+CREATE INDEX idx_recipe_circles_circle ON recipe_circles(circle_id);
+CREATE TABLE collection_circles (
+  collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+  circle_id     INTEGER NOT NULL REFERENCES circles(id) ON DELETE CASCADE,
+  created_at    TEXT    NOT NULL,
+  PRIMARY KEY (collection_id, circle_id)
+);
+CREATE INDEX idx_collection_circles_circle ON collection_circles(circle_id);
+-- מי שהסיר את עצמו משיתוף — לא חוזר דרך מעגל. שיתוף ישיר חדש מבטל.
+CREATE TABLE share_optouts (
+  kind       TEXT    NOT NULL CHECK (kind IN ('recipe', 'collection')),
+  target_id  INTEGER NOT NULL,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT    NOT NULL,
+  PRIMARY KEY (kind, target_id, user_id)
+);
 
 -- מיגרציות חד־פעמיות על נתונים (runOnce ב-lib/db.php): מה שרשום — לא ירוץ שוב.
 CREATE TABLE migrations (

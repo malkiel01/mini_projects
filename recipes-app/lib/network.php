@@ -72,11 +72,11 @@ function peopleSearch(string $q, array $user): array {
 // שיתוף
 // ─────────────────────────────────────────────────────────────
 
-/** עם מי המתכון משותף — לבעלים בלבד. */
+/** עם מי המתכון משותף ישירות (בשם) — לבעלים בלבד. מי שמקבל דרך מעגל — circles.php. */
 function recipeShares(int $recipeId, array $owner): array {
     requireOwnRecipe($recipeId, $owner);
     $st = db()->prepare('SELECT u.id, u.username, u.display_name, s.created_at, s.seen_at
-                           FROM recipe_shares s JOIN users u ON u.id = s.user_id WHERE s.recipe_id = ? ORDER BY s.created_at');
+                           FROM recipe_shares s JOIN users u ON u.id = s.user_id WHERE s.recipe_id = ? AND s.direct = 1 ORDER BY s.created_at');
     $st->execute([$recipeId]);
     return array_map(fn($r) => personPublic($r) + ['shared_at' => $r['created_at'], 'seen' => $r['seen_at'] !== null], $st->fetchAll());
 }
@@ -87,30 +87,45 @@ function shareRecipe(int $recipeId, array $userIds, array $owner): array {
     if (!$ids) throw new AppError('לא נבחרו אנשים');
     $have = count(recipeShares($recipeId, $owner));
     if ($have + count($ids) > SHARE_MAX_PER_RECIPE) throw new AppError('עד ' . SHARE_MAX_PER_RECIPE . ' אנשים למתכון. למתכון לכולם — לפרסם אותו כציבורי');
+    require_once __DIR__ . '/circles.php';
     $ins = db()->prepare('INSERT OR IGNORE INTO recipe_shares (recipe_id, user_id, created_at) VALUES (?,?,?)');
+    $direct = db()->prepare('UPDATE recipe_shares SET direct = 1 WHERE recipe_id = ? AND user_id = ?');   // קיבל כבר דרך מעגל
     $added = 0;
     foreach ($ids as $id) {
         activePerson($id);
         requireReachable($owner, $id);   // חסימה, או "רק מי שאני עוקב אחריו / אף אחד"
         $ins->execute([$recipeId, $id, nowIso()]);
         $added += $ins->rowCount();
+        $direct->execute([$recipeId, $id]);
+        shareOptIn('recipe', $recipeId, $id);
     }
     logEvent('info', 'recipe-share', $recipe['title'], ['recipe_id' => $recipeId, 'added' => $added], $owner);
     return recipeShares($recipeId, $owner);
 }
 
-/** הבעלים מסיר נמען. */
+/** הבעלים מסיר נמען (את השיתוף הישיר; אם הוא במעגל שהמתכון משותף איתו — נשאר דרכו). */
 function unshareRecipe(int $recipeId, int $userId, array $owner): array {
     requireOwnRecipe($recipeId, $owner);
-    db()->prepare('DELETE FROM recipe_shares WHERE recipe_id = ? AND user_id = ?')->execute([$recipeId, $userId]);
+    require_once __DIR__ . '/circles.php';
+    db()->prepare('UPDATE recipe_shares SET direct = 0 WHERE recipe_id = ? AND user_id = ?')->execute([$recipeId, $userId]);
+    circleSync('recipe', $recipeId);
     return recipeShares($recipeId, $owner);
 }
 
-/** הנמען מסיר את עצמו ("לא מעניין אותי"). */
+/** לכמה אנשים המתכון מגיע — ישירות ודרך מעגלים. */
+function recipeShareReach(int $recipeId): int {
+    $st = db()->prepare('SELECT COUNT(*) FROM recipe_shares WHERE recipe_id = ?');
+    $st->execute([$recipeId]);
+    return (int) $st->fetchColumn();
+}
+
+/** הנמען מסיר את עצמו ("לא מעניין אותי") — ולא יחזור דרך מעגל. */
 function leaveShare(int $recipeId, array $user): void {
+    require_once __DIR__ . '/circles.php';
     $st = db()->prepare('DELETE FROM recipe_shares WHERE recipe_id = ? AND user_id = ?');
     $st->execute([$recipeId, (int) $user['id']]);
     if ($st->rowCount() === 0) throw new AppError('המתכון לא שותף איתך', 404);
+    shareOptOut('recipe', $recipeId, (int) $user['id']);
 }
 
 /** הנמען פתח את המתכון — כבר לא "חדש". */

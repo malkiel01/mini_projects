@@ -378,7 +378,7 @@ function collectionMoveItem(int $itemId, int $dir, array $user): void {
 function collectionShares(int $id, array $owner): array {
     requireOwnCollection($id, $owner);
     $st = db()->prepare('SELECT u.id, u.username, u.display_name, s.created_at, s.seen_at
-                           FROM collection_shares s JOIN users u ON u.id = s.user_id WHERE s.collection_id = ? ORDER BY s.created_at');
+                           FROM collection_shares s JOIN users u ON u.id = s.user_id WHERE s.collection_id = ? AND s.direct = 1 ORDER BY s.created_at');
     $st->execute([$id]);
     return array_map(fn($r) => personPublic($r) + ['shared_at' => $r['created_at'], 'seen' => $r['seen_at'] !== null], $st->fetchAll());
 }
@@ -388,13 +388,17 @@ function shareCollection(int $id, array $userIds, array $owner): array {
     $ids = array_values(array_unique(array_filter(array_map('intval', $userIds), fn($x) => $x > 0 && $x !== (int) $owner['id'])));
     if (!$ids) throw new AppError('לא נבחרו אנשים');
     if (count(collectionShares($id, $owner)) + count($ids) > COLLECTION_SHARE_MAX) throw new AppError('עד ' . COLLECTION_SHARE_MAX . ' אנשים לאוסף. לכולם — להפוך אותו לציבורי');
+    require_once __DIR__ . '/circles.php';
     $ins = db()->prepare('INSERT OR IGNORE INTO collection_shares (collection_id, user_id, created_at) VALUES (?,?,?)');
+    $direct = db()->prepare('UPDATE collection_shares SET direct = 1 WHERE collection_id = ? AND user_id = ?');
     $added = 0;
     foreach ($ids as $uid) {
         activePerson($uid);
         requireReachable($owner, $uid);
         $ins->execute([$id, $uid, nowIso()]);
         $added += $ins->rowCount();
+        $direct->execute([$id, $uid]);
+        shareOptIn('collection', $id, $uid);
     }
     logEvent('info', 'collection-share', $c['name'], ['collection_id' => $id, 'added' => $added], $owner);
     return collectionShares($id, $owner);
@@ -402,15 +406,19 @@ function shareCollection(int $id, array $userIds, array $owner): array {
 
 function unshareCollection(int $id, int $userId, array $owner): array {
     requireOwnCollection($id, $owner);
-    db()->prepare('DELETE FROM collection_shares WHERE collection_id = ? AND user_id = ?')->execute([$id, $userId]);
+    require_once __DIR__ . '/circles.php';
+    db()->prepare('UPDATE collection_shares SET direct = 0 WHERE collection_id = ? AND user_id = ?')->execute([$id, $userId]);
+    circleSync('collection', $id);
     return collectionShares($id, $owner);
 }
 
 /** הנמען מסיר את עצמו. */
 function leaveCollectionShare(int $id, array $user): void {
+    require_once __DIR__ . '/circles.php';
     $st = db()->prepare('DELETE FROM collection_shares WHERE collection_id = ? AND user_id = ?');
     $st->execute([$id, (int) $user['id']]);
     if ($st->rowCount() === 0) throw new AppError('האוסף לא שותף איתך', 404);
+    shareOptOut('collection', $id, (int) $user['id']);
 }
 
 /** אוספים חדשים ששותפו איתי ועוד לא נפתחו — לתג בתפריט. */

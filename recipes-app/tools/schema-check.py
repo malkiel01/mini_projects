@@ -47,8 +47,11 @@ def compare_with_php():
 
     q = "SELECT name FROM sqlite_master WHERE type=? AND name NOT LIKE 'sqlite_%'"
     names = lambda db, kind: set(r[0] for r in db.execute(q, (kind,)))
+    # עמודות: גם עמודה שנוספה ב-addColumnIfMissing בלבד, או רק ב-SCHEMA.sql
+    cols = lambda db: set((t, r[1]) for t in names(db, 'table') for r in db.execute(f'PRAGMA table_info("{t}")'))
     return (names(want, 'table') ^ names(got, 'table'),
-            names(want, 'index') ^ names(got, 'index'))
+            names(want, 'index') ^ names(got, 'index'),
+            cols(want) ^ cols(got))
 
 
 def main():
@@ -158,9 +161,10 @@ def main():
     if drift is None:
         print('  — אין php בסביבה, הבדיקה מדלגת')
     else:
-        tables_diff, index_diff = drift
+        tables_diff, index_diff, cols_diff = drift
         check('הפרש טבלאות', tables_diff, set())
         check('הפרש אינדקסים', index_diff, set())
+        check('הפרש עמודות', cols_diff, set())
 
     print()
     if fail:

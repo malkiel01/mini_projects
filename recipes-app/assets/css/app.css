@@ -943,3 +943,12 @@ a.icon-btn { display: inline-grid; place-items: center; text-decoration: none; }
 .web-item__coll { flex-basis: 100%; min-width: 0; }
 .web-item { flex-wrap: wrap; }
 .web-item .scout-item__main { flex: 1 1 0; }
+
+/* ───────── מעגלים (SPEC 15.4) ───────── */
+
+.circle-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.chip--circle { font: inherit; font-size: 0.85rem; cursor: pointer; min-height: 34px; color: var(--ink); background: var(--panel); }
+.chip--circle.is-on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.chip--circle:disabled { opacity: 0.6; }
+.circle-page h2 { font-size: 1.4rem; color: var(--ink); }
+.circle-page h3 { font-size: 1rem; margin-top: 8px; }
