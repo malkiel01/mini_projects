@@ -4,5 +4,9 @@
   "icon": "💬",
   "description": "שאילת שאלות בשפה חופשית על היסטוריית הוואטסאפ — מי התכתב מתי, מי שלח אסמכתת תשלום ועוד. השרת שומר את ההודעות מוצפנות ועונה דרך בינה מלאכותית; אפליקציית גשר לאנדרואיד קוראת את המסך דרך שירות נגישות. הצד השרתי עובד ונבדק; הגשר בשלד.",
   "category": "web",
-  "entry": "index.html"
+  "entry": "index.html",
+  "gate": true,
+  "public": [
+    "api/index.php?action=ping|bridge_accounts|media|log|ingest|logs"
+  ]
 }

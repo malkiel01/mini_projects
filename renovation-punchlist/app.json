@@ -4,5 +4,12 @@
   "icon": "📋",
   "description": "ניהול רשימת הפינישים שנשארו — תמונה או סרטון לכל ליקוי, תיאור קצר ומפורט, על מי המטלה מוטלת ומעקב ביצוע. עובד גם ללא אינטרנט, עם סנכרון אופציונלי בין כמה אנשים.",
   "category": "daily",
-  "entry": "index.html"
+  "entry": "index.html",
+  "gate": true,
+  "public": [
+    "api.php?action=ping|pull|push|media-upload|media-file",
+    "assets/icons/**",
+    "manifest.webmanifest",
+    "service-worker.js"
+  ]
 }

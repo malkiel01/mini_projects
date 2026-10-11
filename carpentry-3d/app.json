@@ -9,5 +9,15 @@
       "label": "🪚 כניסה לאפליקציה",
       "href": ""
     }
+  ],
+  "gate": true,
+  "public": [
+    "view.html",
+    "api.php?action=view|view-assembly",
+    "assets/**",
+    "vendor/**",
+    "data/media/**",
+    "manifest.webmanifest",
+    "service-worker.js"
   ]
 }

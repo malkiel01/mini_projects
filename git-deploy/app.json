@@ -4,5 +4,6 @@
   "icon": "🚀",
   "description": "ממשק לפריסת ריפוזיטוריז מ-GitHub לשרת. בוחר ריפו, branch ותיקיית יעד - והממשק מבצע clone/pull. שומר היסטוריית ניתובים לכל ריפו.",
   "category": "dev",
-  "entry": ""
+  "entry": "",
+  "gate": true
 }

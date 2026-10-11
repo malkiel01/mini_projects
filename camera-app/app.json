@@ -4,5 +4,12 @@
   "icon": "📷",
   "description": "ניהול מצלמות IP מהדפדפן — שידור חי, הקלטה ידנית/רציפה/לפי אדם, נגן עם ציר זמן יומי, צילומי מסך, וקיטלוג בתיקיות נושא עם תיאורים. המצלמה מעלה ל‑FTP בעצמה; גשר קטן ברשת הביתית מוסיף חי ו‑PTZ.",
   "category": "daily",
-  "entry": "index.html"
+  "entry": "index.html",
+  "gate": true,
+  "public": [
+    "api.php?action=bridge-pair|bridge-heartbeat|bridge-command-done",
+    "upload.php",
+    "cron.php",
+    "bridge/**"
+  ]
 }
