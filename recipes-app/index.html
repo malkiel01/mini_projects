@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-title" content="מתכונים">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="apple-touch-icon" href="./assets/icons/icon-192.png">
-<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-11w">
+<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-11x">
 </head>
 <body>
 
@@ -74,8 +74,13 @@
 
 <!-- מסך אורח: כניסה והרשמה. שני טפסים באותו כרטיס, כי בטלפון מסך
      נפרד לכל אחד הוא ניווט מיותר. -->
-<main id="guest" class="centered" hidden>
-  <section class="card">
+<main id="guest" class="centered guest" hidden>
+  <div class="guest__brand">
+    <img class="guest__logo" src="./assets/icon.svg" alt="" width="76" height="76">
+    <h2 class="guest__name">מתכונים</h2>
+    <p class="guest__tag">ספר המתכונים שלך — במקום אחד</p>
+  </div>
+  <section class="card guest__card">
     <div class="tabs" role="tablist">
       <button class="tab is-on" data-pane="login"    role="tab" type="button">כניסה</button>
       <button class="tab"       data-pane="register" role="tab" type="button">הרשמה</button>
@@ -98,7 +103,7 @@
                autocomplete="username" autocapitalize="off">
         <small class="muted">אותיות לועזיות, ספרות, נקודה, מקף או קו תחתון</small>
       </label>
-      <label>שם לתצוגה <small class="muted">(לא חובה)</small>
+      <label><span>שם לתצוגה <small class="muted">(לא חובה)</small></span>
         <input name="display_name" maxlength="60" autocomplete="nickname">
       </label>
       <label>דוא"ל
@@ -130,6 +135,6 @@
   <div id="view" class="view"></div>
 </main>
 
-<script type="module" src="./assets/js/app.js?v=2026-10-11w"></script>
+<script type="module" src="./assets/js/app.js?v=2026-10-11x"></script>
 </body>
 </html>
