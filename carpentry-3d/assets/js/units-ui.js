@@ -12,6 +12,7 @@
 import * as M from './model/materials.js';
 import { optionsFor } from './model/index.js';
 import { FINISHES_NO_GLASS } from './model/templates/common.js';
+import { suggest, applySuggestion } from './model/suggest.js';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const clone = (x) => JSON.parse(JSON.stringify(x));
@@ -53,7 +54,7 @@ function summary(u, g) {
  */
 export function renderUnitsEditor(box, values, onChange) {
   editors.add(box);
-  box._units = { values, onChange };
+  box._units = { values, onChange, change: box._units?.change || null };   // השינוי האחרון נשמר בין ציורים
   const units = Array.isArray(values.units) && values.units.length ? values.units : model?.units;
   if (!units) { box.innerHTML = '<p class="muted">טוען…</p>'; return; }
   const geo = model?.unitGeo || [];
@@ -113,7 +114,17 @@ export function renderUnitsEditor(box, values, onChange) {
     </details>`;
   }
 
-  box.innerHTML = units.map((u, i) => {
+  // 💡 המלצות: אחרי שינוי — "להחיל גם על…"; אחידות; מקצועיות (model/suggest.js)
+  const sugs = suggest(units, { change: box._units.change || null, geo, dismissed: values.dismissed });
+  box._sugs = sugs;
+  const sugHtml = sugs.slice(0, 4).map((x) => `<div class="sug sug--${x.kind}">
+      <span class="sug__text">${x.kind === 'fix' ? '🛠' : '💡'} ${esc(x.text)}</span>
+      <span class="sug__acts">${x.kind === 'copy'
+        ? x.targets.map((t) => `<button type="button" class="btn btn--small" data-sug="${esc(x.key)}" data-tg="${t.id}">${esc(t.label)}</button>`).join('')
+        : `<button type="button" class="btn btn--small btn--accent" data-sug="${esc(x.key)}">${x.kind === 'fix' ? 'תיקון' : 'להשוות'}</button>`}
+        <button type="button" class="sug__no" data-sug-no="${esc(x.key)}" title="לא, תודה — לא להציע שוב">✕</button></span>
+    </div>`).join('');
+  box.innerHTML = (sugHtml ? `<div class="sugs">${sugHtml}</div>` : '') + units.map((u, i) => {
     const g = geo[i];
     const notes = inactive.filter((x) => x.column === i && !x.path.startsWith('units.')).map((x) => `<small class="unit__off">⚠ ${esc(x.reason)}</small>`).join('');
     // הקומות מוצגות מלמעלה למטה — כמו שרואים את הארון
@@ -146,7 +157,8 @@ export function openUnit(i, j) {
 
 // ---- עריכה (האצלה אחת לכל המסמך — הכרטיס מצויר מחדש אחרי כל בנייה) ----
 function editorOf(el) { const box = el.closest('.unitsedit'); return box && box._units ? box : null; }
-function commit(box, mutate) {
+function commit(box, mutate, change = null) {
+  box._units.change = change;   // לשינוי הזה יוצעו "להחיל גם על…"
   const { values, onChange } = box._units;
   const units = clone(Array.isArray(values.units) && values.units.length ? values.units : model.units);
   for (const u of units) { delete u.splitIgnored; delete u.splitCancelled; }   // סימונים של ההמרה — לא נשמרים
@@ -179,12 +191,13 @@ document.addEventListener('change', (e) => {
   let v = t.value;
   if (t.type === 'number') v = v === '' ? null : Number(v);
   else if (/\.leaves$/.test(path)) v = v === 'auto' ? 'auto' : Number(v);
+  const [ci, ...rest] = path.split('.');
   commit(box, (units) => {
     setPath(units, path, v);
     // קומה שקיבלה מגירות בפעם הראשונה — ברירת מחדל סבירה
     if (/\.interior\.type$/.test(path) && v === 'drawers') { const it = getPath(units, path.replace(/\.type$/, '')); it.drawers = it.drawers || { count: 3, slide: 'hw:slide-std', handle: 'hw:handle-bar-128' }; }
     if (/\.interior\.type$/.test(path) && v === 'shelves') { const it = getPath(units, path.replace(/\.type$/, '')); it.shelves = it.shelves || { count: 2, material: 'same', mode: 'adjustable' }; }
-  });
+  }, { unit: Number(ci), path: rest.join('.') });
 });
 
 document.addEventListener('click', (e) => {
@@ -193,7 +206,22 @@ document.addEventListener('click', (e) => {
   const box = editorOf(b); if (!box) return;
   if (b.dataset.step) {
     const path = b.dataset.step, d = Number(b.dataset.d);
-    commit(box, (units) => setPath(units, path, Math.max(0, (Number(getPath(units, path)) || 0) + d)));
+    const [ci, ...rest] = path.split('.');
+    commit(box, (units) => setPath(units, path, Math.max(0, (Number(getPath(units, path)) || 0) + d)), { unit: Number(ci), path: rest.join('.') });
+    return;
+  }
+  // המלצות: החלה / "לא, תודה"
+  if (b.dataset.sug) {
+    const sg = (box._sugs || []).find((x) => x.key === b.dataset.sug);
+    if (!sg) return;
+    const tg = sg.kind === 'copy' ? sg.targets.find((t) => t.id === b.dataset.tg) : null;
+    commit(box, (units) => { const next = applySuggestion(units, sg, tg); units.splice(0, units.length, ...next); }, null);
+    return;
+  }
+  if (b.dataset.sugNo) {
+    const { values, onChange } = box._units;
+    values.dismissed = [...new Set([...(values.dismissed || []), b.dataset.sugNo])];
+    onChange(values);
     return;
   }
   const act = b.dataset.act; if (!act) return;
@@ -207,5 +235,5 @@ document.addEventListener('click', (e) => {
     if (act === 'down' && j > 0) [fl[j], fl[j - 1]] = [fl[j - 1], fl[j]];
     // שתי קומות שאחת מהן נעוצה ושתיהן נעוצות — האחרונה חוזרת לאוטומטי (שתמיד יהיה מי שממלא)
     if (fl.length > 1 && fl.every((f) => Number.isFinite(f.height) && f.height > 0)) fl[fl.length - 1].height = null;
-  });
+  }, { unit: i, path: 'floors' });
 });

@@ -26,6 +26,7 @@ import legacyTable from '../assets/js/model/templates/table.js';
 import legacyDresser from '../assets/js/model/templates/dresser.js';
 import legacyBookcase from '../assets/js/model/templates/legacy/bookcase-v1.js';
 import { visible, splitOverrides, joinOverrides } from '../assets/js/model/index.js';
+import { suggest, applySuggestion } from '../assets/js/model/suggest.js';
 import { millSpec, fluteGrooves, fluteRib, millRects, millSolids, millRemoved, millText, millEdges, cncPatterns } from '../assets/js/model/milling.js';
 
 let failed = 0;
@@ -1322,6 +1323,42 @@ console.log('שלב 3: כרטיס עמודה/קומה — מודל');
   check(r.units.length === 4 && r.units[3].floors.length === 2 && r.units[3].floors[1].front.type === 'glass' && build('bookcase', { columns: 2, units }).units.length === 2, 'מספר עמודות השתנה — units מתאימים את עצמם');
   check(r.unitGeo.length === 4 && r.unitGeo.every((g) => g.width > 0 && g.floors.length === 2 && Math.abs(g.floors[0] - 800) < 0.01), 'unitGeo — רוחב וגבהי הקומות לתצוגה');
   check(allParams(t).filter((p) => p.legacy).every((p) => !visible(p, {})) && allParams(t).find((p) => p.key === 'units').editor === 'units', 'השדות הישנים לא בטופס; units — עורך משלו');
+}
+
+console.log('שלב 4: המלצות — להחיל גם על, אחידות, מקצועיות');
+{
+  const r0 = build('bookcase', { columns: 5, width: 2500, height: 2400, lowerH: 800, lowerDoors: 'wood', doorType: 'glass' });
+  let units = JSON.parse(JSON.stringify(r0.units));
+  // שינוי בוויטרינה של עמודה 1 (קומה עליונה) → "להחיל את הוויטרינה גם על…"
+  units[0].floors[1].front.vitrine = { ...units[0].floors[1].front.vitrine, frame: 'alu', frameW: 20, alu: 'profile:alu-black' };
+  let ss = suggest(units, { change: { unit: 0, path: 'floors.1.front.vitrine.frame' }, geo: r0.unitGeo });
+  const cp = ss.find((x) => x.kind === 'copy');
+  check(cp && /הוויטרינה \(קומה 2\) של עמודה 1/.test(cp.text) && cp.targets[0].id === 'all' && cp.targets[0].units.length === 4 && cp.targets.some((t) => t.id === 'ends') && cp.targets.some((t) => t.id === 'alt'), `copy: הוויטרינה, יעדים — כולן/הקיצוניות/לסירוגין/כל עמודה (${cp && cp.targets.map((t) => t.label).join(',')})`);
+  const ends = applySuggestion(units, cp, cp.targets.find((t) => t.id === 'ends'));
+  check(ends[4].floors[1].front.vitrine.frame === 'alu' && ends[2].floors[1].front.vitrine.frame !== 'alu' && ends[0].floors[1].front.vitrine.frame === 'alu', 'החלה על הקיצוניות בלבד');
+  const all = applySuggestion(units, cp, cp.targets[0]);
+  check(all.every((u) => u.floors[1].front.vitrine.frame === 'alu') && !suggest(all, { change: { unit: 0, path: 'floors.1.front.vitrine.frame' } }).some((x) => x.kind === 'copy'), 'אחרי החלה על כולן — אין עוד מה להציע');
+  all[0].floors[1].front.vitrine.frame = 'wood';
+  check(all[1].floors[1].front.vitrine.frame === 'alu', 'העתקה חד-פעמית — בלי קישור');
+  check(!suggest(units, { change: { unit: 0, path: 'floors.1.front.vitrine.frame' }, dismissed: [cp.key] }).some((x) => x.kind === 'copy'), '"לא, תודה" — לא חוזרת');
+  // מבנה הקומות: הוספת קומה בעמודה 2 → להחיל את המבנה
+  const u2 = JSON.parse(JSON.stringify(r0.units));
+  u2[1].floors.push(JSON.parse(JSON.stringify(u2[1].floors[1])));
+  const st = suggest(u2, { change: { unit: 1, path: 'floors' } }).find((x) => x.kind === 'copy');
+  check(st && /מבנה הקומות/.test(st.text) && applySuggestion(u2, st, st.targets[0]).every((u) => u.floors.length === 3), 'מבנה הקומות — מועתק כולו');
+  // אחידות: גבהים שונים
+  const u3 = JSON.parse(JSON.stringify(r0.units)); u3[2].height = 1800;
+  const un = suggest(u3).find((x) => x.kind === 'uniform');
+  check(un && applySuggestion(u3, un).every((u) => u.height === null), 'אחידות: גבהים שונים → גובה מלא לכולן');
+  // מקצועיות
+  const u4 = JSON.parse(JSON.stringify(r0.units));
+  u4[0].floors[1].front.vitrine.frame = 'none'; u4[0].floors[1].front.glass = 'glass:clear-4';
+  u4[1].floors[0].front.leaves = 1;
+  const fx = suggest(u4, { geo: r0.unitGeo.map((g, i) => (i === 1 ? { ...g, width: 700 } : g)) }).filter((x) => x.kind === 'fix');
+  const tf = fx.find((x) => /מחוסמת 6/.test(x.text)), lf = fx.find((x) => /שתי כנפיים/.test(x.text));
+  check(tf && lf && applySuggestion(u4, tf)[0].floors[1].front.glass === 'glass:tempered-6' && applySuggestion(u4, lf)[1].floors[0].front.leaves === 'auto', 'מקצועיות: זכוכית דקה בלי מסגרת, דלת רחבה בכנף אחת — עם תיקון');
+  const built = build('bookcase', { columns: 5, width: 2500, height: 2400, units: applySuggestion(units, cp, cp.targets[0]) });
+  check(built.parts.filter((p) => /^door-\d-up-stile-L$/.test(p.id)).every((p) => p.material === 'profile:alu-black'), 'הבנייה אחרי ההחלה — כל הוויטרינות אלומיניום');
 }
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }

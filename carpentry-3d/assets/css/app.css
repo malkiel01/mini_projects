@@ -1022,4 +1022,12 @@ input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner
 .unit__hint { font-size: 0.78rem; margin: 2px 0 0; }
 .unit.is-flash, .unit__floor.is-flash { box-shadow: 0 0 0 3px var(--accent); transition: box-shadow 0.3s; }
 .pedit__unit { width: 100%; justify-content: center; margin-bottom: 6px; }
+/* 💡 המלצות בכרטיסי העמודות */
+.sugs { display: flex; flex-direction: column; gap: 6px; position: sticky; top: 0; z-index: 3; }  /* נשאר בעין גם כשגוללים לקומה רחוקה */
+.sug { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 10px; border-radius: 12px; border: 1px solid #e8c98f; background: #fff8ea; font-size: 0.84rem; }
+.sug--fix { border-color: #f0b3a8; background: #fff3f0; }
+.sug__text { flex: 1 1 200px; min-width: 0; line-height: 1.4; }
+.sug__acts { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.sug__acts .btn { padding: 4px 10px; min-height: 0; }
+.sug__no { border: none; background: none; color: var(--muted); cursor: pointer; font: inherit; padding: 2px 6px; }
 
