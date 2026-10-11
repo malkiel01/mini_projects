@@ -2,7 +2,7 @@
 /**
  * מגיש קובץ סטטי מתוך תיקיית כלי, אחרי בדיקת השער.
  *
- * ה-.htaccess של כלי שהשער פעיל בו מפנה לכאן כל בקשה לקובץ שאינו PHP
+ * ה-.htaccess של כלי שהשער פעיל בו מפנה לכאן (הפניה פנימית) כל בקשה לקובץ שאינו PHP
  * (ראו build-gate.php): gate.php?__gate_app=<כלי>&__gate_path=<נתיב בתוך הכלי>.
  * קובצי PHP אינם מגיעים לכאן — עליהם שומר gate-prepend.php.
  */
@@ -34,10 +34,18 @@ function not_found(): never
     exit('Not found');
 }
 
-$app  = (string)($_GET['__gate_app'] ?? '');
-$path = ltrim((string)($_GET['__gate_path'] ?? ''), '/');
-$root = realpath(__DIR__ . '/..');
+// הקובץ נגזר מהכתובת המקורית (REQUEST_URI — נשמרת בהפניה פנימית של rewrite),
+// לא מפרמטרי השאילתה: את הכתובת המקורית השרת כבר בדק מול חוקי ה-.htaccess של
+// הכלי (data/ חסומה וכו'), ואילו פרמטרים אפשר לזייף — ?__gate_path=data/x.sqlite
+// בסוף כתובת לגיטימית היה דורס את הנתיב (QSA). פנייה ישירה ל-gate.php — 404.
+$base = base_url($_SERVER['SCRIPT_NAME'] ?? '/platform/gate.php', 'platform/gate.php');
+$uri  = rawurldecode((string)parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH));
+if (!str_starts_with($uri, $base) || str_starts_with($uri, $base . 'platform/')) not_found();
+[$app, $path] = array_pad(explode('/', substr($uri, strlen($base)), 2), 2, '');
+if ($path === '' || str_ends_with($path, '/')) $path .= 'index.html';
+if (($_GET['__gate_app'] ?? null) !== $app) not_found(); // הבלוק של הכלי הזה הוא שהפנה לכאן
 
+$root = realpath(__DIR__ . '/..');
 // הנתיב חייב להישאר בתוך תיקיית הכלי, ולא לגעת בקבצים נסתרים.
 $appDir = $root ? realpath("$root/$app") : false;
 $file = $appDir ? realpath("$appDir/$path") : false;
@@ -49,21 +57,10 @@ if (!preg_match('/^[a-z0-9][a-z0-9-]*$/', $app) || !$appDir || dirname($appDir) 
 $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
 if (!isset(TYPES[$ext])) not_found();
 
-// תיקייה שה-.htaccess שלה חוסם הכול (data/ של כלים) נשארת חסומה גם דרכנו.
-for ($dir = dirname($file); strlen($dir) >= strlen($appDir); $dir = dirname($dir)) {
-    $ht = "$dir/.htaccess";
-    // חסימה בתוך <Files…> חלה רק על קבצים מסוימים (כמו .user.ini) — לא על התיקייה.
-    $rules = preg_replace('#<Files(Match)?\b.*?</Files(Match)?>#si', '', is_file($ht) ? (string)file_get_contents($ht) : '');
-    if (preg_match('/Require\s+all\s+denied|Deny\s+from\s+all/i', $rules)) {
-        not_found();
-    }
-    if ($dir === $appDir) break;
-}
-
 $rel = substr($file, strlen($appDir) + 1);
 $verdict = decide($app, $rel, array_diff_key($_GET, ['__gate_app' => 1, '__gate_path' => 1]));
 if ($verdict !== null) {
-    deny($verdict, base_url($_SERVER['SCRIPT_NAME'] ?? '/platform/gate.php', 'platform/gate.php'));
+    deny($verdict, $base);
 }
 
 // ---- הגשה ----

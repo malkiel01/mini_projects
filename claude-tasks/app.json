@@ -4,5 +4,10 @@
   "icon": "🗂️",
   "description": "לוח מטלות ש-Claude עובד עליו לבד, מטלה אחר מטלה. קטלוג לפי נושאים, ריבוי משתמשים, ושאלה שנשארת פתוחה לא עוצרת את שאר העבודה.",
   "category": "dev",
-  "entry": "index.html"
+  "entry": "index.html",
+  "gate": true,
+  "public": [
+    "api.php",
+    "health.php"
+  ]
 }
