@@ -484,9 +484,16 @@ function indexTitleNextFile(string $host): string { return scoutStateDir() . '/t
  * אתרים שיש בהם מתכונים שממתינים לשם או לתמונה (image IS NULL — לא נבדק; '' — נבדק ואין),
  * עם הזמן שבו מותר להביא את הדף הבא.
  */
+/**
+ * מה ממתין לעובד: בלי שם, בלי תמונה, או לא נבדק. ועוד "לא מתכון" מלפני הבדיקה
+ * (skip = 1 בלי verified) — נבדק שוב פעם אחת: חלק סומן כך בגלל באג בחילוץ
+ * (קרוטית, "מצרכים לבצק:"). מה שסומן מעכשיו "לא מתכון" מקבל verified = 0 ולא חוזר.
+ */
+const INDEX_PENDING_SQL = '((e.skip = 0 AND (e.needs_title = 1 OR e.image IS NULL OR e.verified IS NULL)) OR (e.skip = 1 AND e.verified IS NULL))';
+
 function indexTitleHosts(): array {
     $rows = db()->query('SELECT s.host, s.name, COUNT(*) n FROM index_entries e JOIN index_sites s ON s.id = e.site_id
-                         WHERE s.enabled = 1 AND s.crawl_state IS NULL AND e.skip = 0 AND (e.needs_title = 1 OR e.image IS NULL OR e.verified IS NULL) GROUP BY s.id')->fetchAll();
+                         WHERE s.enabled = 1 AND s.crawl_state IS NULL AND ' . INDEX_PENDING_SQL . ' GROUP BY s.id')->fetchAll();
     $out = [];
     foreach ($rows as $r) {
         $ready = (int) @file_get_contents(indexTitleNextFile($r['host']));
@@ -513,7 +520,7 @@ function indexTitleStep(): string {
     // קודם שמות (בלי שם המתכון לא בחיפוש), אחר כך תמונות
     // קודם מה שבלי שם, אחר כך מה שנפתח הכי הרבה (מה שאנשים רואים), אחר כך החדש
     $st = db()->prepare('SELECT e.id, e.url, e.title, e.image, e.needs_title, e.lastmod FROM index_entries e JOIN index_sites s ON s.id = e.site_id
-                         WHERE s.host = ? AND e.skip = 0 AND (e.needs_title = 1 OR e.image IS NULL OR e.verified IS NULL)
+                         WHERE s.host = ? AND ' . INDEX_PENDING_SQL . '
                          ORDER BY e.needs_title DESC, e.opens DESC, e.lastmod DESC, e.id DESC LIMIT 1');
     $st->execute([$h['host']]);
     $e = $st->fetch();
@@ -529,17 +536,17 @@ function indexTitleStep(): string {
     // כל דף — גם מה שיש לו כבר שם מה-sitemap — נבדק שיש בו מתכון. בלי זה כתבות
     // חדשות של פודיס ("השוק 34 בעפולה") נכנסו לחיפוש, ונכשלו רק כשמשתמש פתח אותן.
     try {
-        if (!scoutRobotsAllowed($e['url'])) { $done(['needs_title' => 0, 'skip' => 1]); return 'not-recipe'; }
+        if (!scoutRobotsAllowed($e['url'])) { $done(['needs_title' => 0, 'skip' => 1, 'verified' => 0]); return 'not-recipe'; }
         scoutThrottle($e['url']);
         [$html, $final] = importFetch($e['url'], true);   // במטמון רבע שעה — פתיחה מיד אחר כך לא תביא שוב
         $doc = importDom($html);
         try { $raw = importParseDoc($doc, $final); }
-        catch (AppError $ex) { $done(['needs_title' => 0, 'skip' => 1]); return 'not-recipe'; }   // אין מתכון בדף
-        $f = ['verified' => 1];
+        catch (AppError $ex) { $done(['needs_title' => 0, 'skip' => 1, 'verified' => 0]); return 'not-recipe'; }   // אין מתכון בדף
+        $f = ['verified' => 1, 'skip' => 0];   // גם "לא מתכון" ישן שנבדק שוב ונמצא מתכון — חוזר
         if ($e['image'] === null) $f['image'] = indexImageUrl((string) ($raw['images'][0] ?? '')) ?? indexPageImage($html, $final) ?? '';   // '' — אין, לא לחזור
-        if (!$e['needs_title']) { $done($f); return 'verified'; }
+        if (!$e['needs_title'] && $e['title'] !== '') { $done($f); return 'verified'; }
         [$title, $full] = indexCleanTitle((string) ($raw['title'] ?? ''), [$h['name'], (string) ($raw['publisher'] ?? '')]);
-        if (!indexHasHebrew($title) && preg_match_all('/\p{L}/u', $title) < 3) { $done(['needs_title' => 0, 'skip' => 1]); return 'not-recipe'; }
+        if (!indexHasHebrew($title) && preg_match_all('/\p{L}/u', $title) < 3) { $done(['needs_title' => 0, 'skip' => 1, 'verified' => 0]); return 'not-recipe'; }
         // הגזעים: השם המלא מהדף, ועוד השם מהכתובת אם היה (כך "apple dessert" עדיין נמצא גם באנגלית)
         $done($f + ['title' => $title, 'stems' => indexStems($full . ' ' . $e['title']), 'title_fixed' => 1, 'needs_title' => 0]);
         return 'titled';
@@ -792,7 +799,7 @@ function webOpen(int $id, array $user): array {
     } catch (AppError $ex) {
         // אין בדף מתכון — יוצא מהחיפוש לתמיד, כדי שאף אחד לא ייתקל בו שוב
         if (str_contains($ex->getMessage(), 'לא מצאתי מתכון')) {
-            db()->prepare('UPDATE index_entries SET skip = 1, needs_title = 0 WHERE id = ?')->execute([(int) $e['id']]);
+            db()->prepare('UPDATE index_entries SET skip = 1, verified = 0, needs_title = 0 WHERE id = ?')->execute([(int) $e['id']]);
             throw new AppError('הדף הזה אינו מתכון — הוצאנו אותו מהחיפוש, כך שלא יופיע שוב. אפשר לחזור לתוצאות.', 422);
         }
         throw $ex;

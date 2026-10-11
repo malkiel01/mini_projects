@@ -408,6 +408,14 @@ check 'האינדקס נבנה ברקע: 5 מתכונים (בלי זבל, בלי
 check 'שמות מהדף: אין ממתינים; דף הרשימה והכתבה — "לא מתכון"' "$IS" '"titles_pending":0,"not_recipes":2'
 check 'הכתבה (שם בכתובת, בלי מתכון) — לא בחיפוש'   "$(call web-search '{"q":"השוק בעפולה"}')" '"total":0'
 check 'כל השאר נבדקו — יש בהם מתכון'              "$IS" '"verified":5,"unverified":0'
+# "לא מתכון" מלפני הבדיקה (skip בלי verified) — נבדק שוב פעם אחת; יש בו מתכון — חוזר לחיפוש
+php -r '$p = new PDO("sqlite:" . $argv[1]); $p->exec("UPDATE index_entries SET skip = 1, verified = NULL WHERE url LIKE \"%jsonld-carine.html\"");' "$TMP/t.sqlite"
+CARINE_STATE() { php -r '$p = new PDO("sqlite:" . $argv[1]); echo implode(",", $p->query("SELECT skip, verified FROM index_entries WHERE url LIKE \"%jsonld-carine.html\"")->fetch(PDO::FETCH_NUM));' "$TMP/t.sqlite"; }
+# העובד מתעורר לכל היותר פעם בשתי דקות — כאן מעירים אותו מיד, כמו "עדכן עכשיו"
+rm -f "$TMP"/scout/index-kick "$TMP"/data/scout/index-kick 2>/dev/null; find "$TMP" -name index-kick -delete 2>/dev/null
+for _ in $(seq 1 60); do call index-sites >/dev/null; [ "$(CARINE_STATE)" = "0,1" ] && break; sleep 0.5; done
+check '"לא מתכון" ישן — נבדק שוב, יש בו מתכון, וחזר' "$(CARINE_STATE)" '^0,1$'
+check 'ו"לא מתכון" אמיתי — נשאר בחוץ'             "$(call index-sites)" '"not_recipes":2'
 check 'בלוג בלי עברית בכתובת — נמצא לפי השם מהדף' "$(call web-search '{"q":"לחם מחמצת"}')" '"title":"לחם מחמצת ביתי"'
 check 'השם מהדף, בלי שם האתר'            "$(call web-search '{"q":"קרין גורן"}')" '"title":"קרין גורן מכינה עוגת יומולדת שילדים אוהבים"'
 check '__trashed בלי דף (404) — נמחק'     "$(call web-search '{"q":"trashed"}')" '"total":0'
