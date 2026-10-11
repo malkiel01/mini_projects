@@ -328,6 +328,7 @@ async function route() {
     else if (h === '#/favorites') await renderFavorites();
     else if (h === '#/collections') await renderCollections();
     else if (h === '#/foryou') await renderForYou();
+    else if (h === '#/tonight') await renderTonight();
     else if (h === '#/activity') await renderActivity();
     else if ((m = h.match(/^#\/c\/(\d+)$/))) await renderCollection(+m[1]);
     else if (h === '#/pantry') await renderPantry();
@@ -522,6 +523,69 @@ async function renderForYou() {
   list.addEventListener('error', (e) => { if (e.target.tagName === 'IMG') e.target.remove(); }, true);
 }
 
+// ───────────────────────── מה לבשל הערב? ─────────────────────────
+
+/** שלוש הצעות לארוחה: זמן, כשרות, "עוד רעיונות". ללקוח — רק עובדות (זמן, מה חסר), בלי "למה". */
+async function renderTonight() {
+  const live = routeLive();
+  const opt = { minutes: 0, kosher: '', seed: 0, exclude: [] };
+  try { Object.assign(opt, JSON.parse(localStorage.getItem('tonight') || '{}'), { seed: 0, exclude: [] }); } catch { /* ברירת מחדל */ }
+  const TIMES = [[0, 'כל זמן'], [20, 'עד 20 דק׳'], [40, 'עד 40 דק׳'], [60, 'עד שעה']];
+  const KOSHER = [['', 'הכול'], ['בשרי', 'בשרי'], ['חלבי', 'חלבי'], ['פרווה', 'פרווה']];
+  const chips = (name, list, cur) => list.map(([v, l]) => `<button type="button" class="chip chip--pick ${String(cur) === String(v) ? 'is-on' : ''}" data-${name}="${v}">${l}</button>`).join('');
+  if (!live()) return;
+  view.innerHTML = `
+    <section class="card tonight">
+      <a class="link link--back" href="#/">‹ לרשימה</a>
+      <h2>🍽 מה לבשל הערב?</h2>
+      <div class="chips" id="tn-time"></div>
+      <div class="chips" id="tn-kosher"></div>
+    </section>
+    <section class="list" id="tn-list"><p class="muted">רגע…</p></section>
+    <div class="actions" id="tn-more" hidden><button class="btn" type="button">🔄 עוד רעיונות</button></div>`;
+  const drawChips = () => {
+    $('#tn-time').innerHTML = chips('min', TIMES, opt.minutes);
+    $('#tn-kosher').innerHTML = chips('ko', KOSHER, opt.kosher);
+  };
+  const load = async () => {
+    const list = $('#tn-list');
+    try { localStorage.setItem('tonight', JSON.stringify({ minutes: opt.minutes, kosher: opt.kosher })); } catch { /* לא חשוב */ }
+    let d;
+    try { d = await api('tonight', opt); } catch (err) { list.innerHTML = `<p class="note note--err">${esc(err.message)}</p>`; return; }
+    if (!live()) return;
+    opt.exclude.push(...d.items.map((i) => i.id));
+    list.innerHTML = d.items.length ? d.items.map((it) => `
+      <div class="item tn-item">
+        <a class="item__media" href="#/r/${it.id}">${it.thumb ? `<img class="item__thumb" src="${esc(it.thumb)}" alt="" loading="lazy">` : '<span class="item__thumb item__thumb--empty">🍲</span>'}</a>
+        <div class="item__main">
+          <a href="#/r/${it.id}"><strong>${esc(it.title)}</strong></a>
+          <span class="muted small">${it.minutes ? `⏱ ${minutes(it.minutes)}` : ''}${it.minutes && it.difficulty ? ' · ' : ''}${it.difficulty ? DIFFICULTY[it.difficulty] : ''}</span>
+          ${it.missing === null ? '' : it.missing.length ? `<span class="small">🛒 חסר: ${esc(it.missing.slice(0, 4).join(', '))}${it.missing.length > 4 ? ` ועוד ${it.missing.length - 4}` : ''}</span>` : '<span class="small tn-ok">✓ יש הכול בבית</span>'}
+          <div class="tn-actions">
+            <a class="btn btn--primary btn--small" href="#/cook/${it.id}">🍳 בישול</a>
+            ${it.missing === null || it.missing.length ? `<button class="btn btn--small" type="button" data-shop="${it.id}" data-title="${esc(it.title)}">🛒 לקניות</button>` : ''}
+          </div>
+        </div>
+      </div>`).join('')
+      : `<p class="muted">לא מצאתי מתכון שמתאים. אפשר לנסות זמן אחר${opt.kosher ? ' או בלי סינון כשרות' : ''}.</p>`;
+    if (!d.pantry && d.items.length) list.insertAdjacentHTML('beforeend', '<p class="small tonight-pantry"><a class="link link--inline" href="#/pantry">🥕 מה יש בבית?</a></p>');
+    $('#tn-more').hidden = !d.more;
+  };
+  const reset = () => { opt.seed = 0; opt.exclude = []; drawChips(); load(); };
+  drawChips();
+  $('#tn-time').addEventListener('click', (e) => { const b = e.target.closest('[data-min]'); if (b) { opt.minutes = +b.dataset.min; reset(); } });
+  $('#tn-kosher').addEventListener('click', (e) => { const b = e.target.closest('[data-ko]'); if (b) { opt.kosher = b.dataset.ko; reset(); } });
+  $('#tn-more').addEventListener('click', () => { opt.seed++; load(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+  $('#tn-list').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-shop]');
+    if (!b) return;
+    b.disabled = true;
+    try { go(`#/shopping/${(await api('shopping-create', { recipes: { [b.dataset.shop]: 1 }, name: b.dataset.title })).list.id}`); }
+    catch (err) { alert(err.message); b.disabled = false; }
+  });
+  await load();
+}
+
 // ───────────────────────── קטגוריות (SPEC 15.1) ─────────────────────────
 
 const TIME_CHOICES = [15, 30, 45, 60, 90, 120, 180];
@@ -599,6 +663,7 @@ async function renderList(f = listParams('')) {
       <!-- פעולות מהירות — שורה אחת של גלולות שנגללת לרוחב, לא כפתורים גדולים שנשברים לשורות -->
       <nav class="quick" aria-label="פעולות">
         <a class="quick__btn quick__btn--primary" href="#/new">＋ מתכון חדש</a>
+        <a class="quick__btn" href="#/tonight">🍽 מה לבשל הערב?</a>
         <a class="quick__btn" href="#/web">🔎 ברשת</a>
         <a class="quick__btn" href="#/pantry">🥕 מה יש בבית</a>
         <a class="quick__btn" href="#/scan">📷 סריקה</a>

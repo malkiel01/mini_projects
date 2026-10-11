@@ -1120,3 +1120,12 @@ a.icon-btn { display: inline-grid; place-items: center; text-decoration: none; }
 .act__snippet { color: var(--muted); font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .activity h2 { font-size: 1.3rem; }
 .act .avatar { background: var(--panel); box-shadow: 0 0 0 1px var(--line); }
+
+/* ── מה לבשל הערב? ── */
+.tonight .chips { margin-top: 6px; }
+.tonight .chip.is-on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.tn-item .item__main { gap: 3px; }
+.tn-ok { color: var(--ok); }
+.tn-actions { display: flex; gap: 6px; margin-top: 4px; }
+.tn-item .item__main a { color: inherit; text-decoration: none; }
+.tonight-pantry { text-align: center; }

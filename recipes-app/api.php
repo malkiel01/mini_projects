@@ -189,6 +189,11 @@ try {
     case 'foryou':
         ok(forYou($user, max(1, min(30, (int) ($in['limit'] ?? 10)))));
 
+    // מה לבשל הערב? (lib/tonight.php) — שלוש הצעות לארוחה
+    case 'tonight':
+        require_once __DIR__ . '/lib/tonight.php';
+        ok(tonight($user, $in));
+
     case 'foryou-taste':
         ok(['taste' => fySetTaste($in, $user)]);
 
