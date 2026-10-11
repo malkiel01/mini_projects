@@ -69,7 +69,7 @@ function switchLink(text, linkText, onClick) {
     return el('div', { className: 'switch' }, [text + ' ', btn]);
 }
 
-const USERNAME_HINT = 'באנגלית: אותיות, ספרות, נקודה, מקף או קו תחתון';
+const USERNAME_HINT = 'באנגלית, או כתובת המייל שלכם';
 
 // ---------- המסכים ----------
 
