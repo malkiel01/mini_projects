@@ -55,10 +55,25 @@ function activityFeed(array $user): array {
     };
     $actor = 'u.id AS actor_id, u.display_name AS actor_name, u.username AS actor_username';
 
-    // שותף איתי מתכון (בשם או דרך מעגל)
+    // שותף איתי מתכון (בשם או דרך מעגל) — מה שהגיע דרך קבוצה מופיע למטה, כ"הוסיף/ה לקבוצה"
     foreach ($q("SELECT $actor, r.id, r.title, s.created_at AS at FROM recipe_shares s JOIN recipes r ON r.id = s.recipe_id JOIN users u ON u.id = r.owner_id
-                  WHERE s.user_id = $uid AND s.created_at > ? AND " . $ok('u.id') . ' ORDER BY s.created_at DESC') as $r)
+                  WHERE s.user_id = $uid AND s.created_at > ? AND " . $ok('u.id') . "
+                    AND (s.direct = 1 OR NOT EXISTS (SELECT 1 FROM community_recipes cr JOIN community_members cm ON cm.community_id = cr.community_id
+                                                      AND cm.user_id = $uid AND cm.status = 'active' WHERE cr.recipe_id = r.id AND cr.added_by = r.owner_id))
+                  ORDER BY s.created_at DESC") as $r)
         $add('share', $r, 'שיתף/ה איתך מתכון', '#/r/' . (int) $r['id'], $r['title']);
+    // קהילות (lib/communities.php): הזמנה שמחכה לי, ומתכון חדש בקבוצה שלי
+    foreach ($q("SELECT $actor, c.id, c.name AS title, m.created_at AS at FROM community_members m JOIN communities c ON c.id = m.community_id
+                   JOIN users u ON u.id = m.invited_by
+                  WHERE m.user_id = $uid AND m.status = 'invited' AND m.created_at > ? AND " . $ok('u.id') . ' ORDER BY m.created_at DESC') as $r)
+        $add('group_invite', $r, 'הזמין/ה אותך לקבוצה', '#/g/' . (int) $r['id'], $r['title']);
+    foreach ($q("SELECT $actor, r.id, r.title, c.name AS cname, cr.added_at AS at FROM community_recipes cr
+                   JOIN community_members m ON m.community_id = cr.community_id AND m.user_id = $uid AND m.status = 'active'
+                   JOIN communities c ON c.id = cr.community_id JOIN recipes r ON r.id = cr.recipe_id JOIN users u ON u.id = cr.added_by
+                  WHERE cr.added_at > ? AND (r.visibility = 'public' OR EXISTS (SELECT 1 FROM recipe_shares s WHERE s.recipe_id = r.id AND s.user_id = $uid))
+                    AND r.id NOT IN (SELECT target_id FROM share_optouts WHERE kind = 'recipe' AND user_id = $uid) AND " . $ok('u.id') . '
+                  ORDER BY cr.added_at DESC') as $r)
+        $add('group_add', $r, 'הוסיף/ה לקבוצה "' . $r['cname'] . '"', '#/r/' . (int) $r['id'], $r['title']);
     // ואוסף
     foreach ($q("SELECT $actor, c.id, c.name AS title, s.created_at AS at FROM collection_shares s JOIN collections c ON c.id = s.collection_id JOIN users u ON u.id = c.owner_id
                   WHERE s.user_id = $uid AND s.created_at > ? AND " . $ok('u.id') . ' ORDER BY s.created_at DESC') as $r)

@@ -125,7 +125,16 @@ function blockUser(int $targetId, array $user): void {
 }
 
 function unblockUser(int $targetId, array $user): void {
-    db()->prepare('DELETE FROM blocks WHERE blocker_id = ? AND blocked_id = ?')->execute([(int) $user['id'], $targetId]);
+    $uid = (int) $user['id'];
+    db()->prepare('DELETE FROM blocks WHERE blocker_id = ? AND blocked_id = ?')->execute([$uid, $targetId]);
+    // קבוצה משותפת (lib/communities.php): מה ששני הצדדים הוסיפו לה — שוב משותף ביניהם
+    $st = db()->prepare("SELECT DISTINCT cr.recipe_id FROM community_recipes cr
+                           JOIN community_members a ON a.community_id = cr.community_id AND a.user_id = ? AND a.status = 'active'
+                           JOIN community_members b ON b.community_id = cr.community_id AND b.user_id = ? AND b.status = 'active'
+                          WHERE cr.added_by IN (?, ?)");
+    $st->execute([$uid, $targetId, $uid, $targetId]);
+    $ids = $st->fetchAll(PDO::FETCH_COLUMN);
+    if ($ids) { require_once __DIR__ . '/circles.php'; foreach ($ids as $rid) circleSync('recipe', (int) $rid); }
 }
 
 /** מי שחסמתי. */
@@ -253,6 +262,11 @@ function deleteAccount(array $user, string $password): void {
     $st->execute([$uid]);
     foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $j) foreach (json_decode((string) $j, true) ?: [] as $n) $files[] = dirname(DB_FILE) . '/scans/' . basename((string) $n);
 
+    // קהילות שהוא יצר נמחקות איתו — מתכונים שאחרים הוסיפו להן יפסיקו להיות משותפים דרכן (אחרי המחיקה)
+    $st = db()->prepare('SELECT cr.recipe_id FROM community_recipes cr JOIN communities c ON c.id = cr.community_id WHERE c.owner_id = ? AND cr.added_by != ?');
+    $st->execute([$uid, $uid]);
+    $resync = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+
     $pdo = db();
     $pdo->beginTransaction();
     try {
@@ -262,6 +276,7 @@ function deleteAccount(array $user, string $password): void {
         $pdo->prepare('DELETE FROM users WHERE id = ?')->execute([$uid]);   // כל השאר — בשרשור (ON DELETE CASCADE)
         $pdo->commit();
     } catch (Throwable $e) { $pdo->rollBack(); throw $e; }
+    if ($resync) { require_once __DIR__ . '/circles.php'; foreach (array_unique($resync) as $rid) circleSync('recipe', $rid); }
     foreach ($files as $f) @unlink($f);
     logEvent('info', 'account-delete', '', ['user_id' => $uid, 'files' => count($files)]);
 }

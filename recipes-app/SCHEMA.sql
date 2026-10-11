@@ -750,3 +750,43 @@ CREATE TABLE push_vapid (
   public_key  TEXT    NOT NULL,
   created_at  TEXT    NOT NULL
 );
+
+-- ═══════════════════════════════════════════════════════════
+-- קהילות  (lib/communities.php, SPEC 15.4ב)
+-- ═══════════════════════════════════════════════════════════
+
+-- קבוצה שכל החברים בה רואים זה את זה ומוסיפים לה מתכונים. הצטרפות — בהזמנה ובאישור.
+CREATE TABLE communities (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name        TEXT    NOT NULL,
+  icon        TEXT    NOT NULL DEFAULT '',
+  description TEXT    NOT NULL DEFAULT '',
+  created_at  TEXT    NOT NULL,
+  updated_at  TEXT    NOT NULL
+);
+
+-- owner — יצר (מוחק, לא עוזב); admin — מזמין, מסיר, עורך; member — מוסיף ועוזב.
+-- invited — הוזמן ועוד לא אישר (לא רואה כלום מהקבוצה).
+CREATE TABLE community_members (
+  community_id INTEGER NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+  user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role         TEXT    NOT NULL CHECK (role IN ('owner', 'admin', 'member')),
+  status       TEXT    NOT NULL CHECK (status IN ('invited', 'active')),
+  invited_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at   TEXT    NOT NULL,
+  joined_at    TEXT,
+  PRIMARY KEY (community_id, user_id)
+);
+CREATE INDEX idx_community_members_user ON community_members(user_id, status);
+
+-- מתכון בקבוצה: של מי שהוסיף (גם פרטי — משותף עם החברים, דרך recipe_shares direct = 0),
+-- או ציבורי של אחר (הפניה). עזיבה מוציאה את מה שהחבר הוסיף.
+CREATE TABLE community_recipes (
+  community_id INTEGER NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+  recipe_id    INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+  added_by     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  added_at     TEXT    NOT NULL,
+  PRIMARY KEY (community_id, recipe_id)
+);
+CREATE INDEX idx_community_recipes_recipe ON community_recipes(recipe_id);

@@ -1167,3 +1167,10 @@ a.icon-btn { display: inline-grid; place-items: center; text-decoration: none; }
 /* ── התראות לטלפון ── */
 .push-invite { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; justify-content: space-between; }
 .push-invite__btns { display: flex; gap: 6px; }
+
+/* ── קהילות ── */
+.comm-invite { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; justify-content: space-between; margin-bottom: 8px; }
+.comm-recipe { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
+.comm-recipe__by { padding-inline: 12px; display: flex; gap: 8px; align-items: center; }
+.comm-pick { max-height: 320px; overflow-y: auto; }
+.comm-pick .person-row { justify-content: space-between; }

@@ -603,6 +603,37 @@ function migrate(PDO $pdo): void {
             updated_at TEXT    NOT NULL
         );
 
+        -- קהילות (lib/communities.php, SPEC 15.4ב): הצטרפות בהזמנה ובאישור. מתכון שבעליו הוסיף
+        -- לקבוצה משותף עם החברים הפעילים — שיתוף ממומש (recipe_shares direct = 0, circleSync).
+        CREATE TABLE IF NOT EXISTS communities (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name        TEXT    NOT NULL,
+            icon        TEXT    NOT NULL DEFAULT '',
+            description TEXT    NOT NULL DEFAULT '',
+            created_at  TEXT    NOT NULL,
+            updated_at  TEXT    NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS community_members (
+            community_id INTEGER NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+            user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            role         TEXT    NOT NULL CHECK (role IN ('owner', 'admin', 'member')),
+            status       TEXT    NOT NULL CHECK (status IN ('invited', 'active')),
+            invited_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at   TEXT    NOT NULL,
+            joined_at    TEXT,
+            PRIMARY KEY (community_id, user_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_community_members_user ON community_members(user_id, status);
+        CREATE TABLE IF NOT EXISTS community_recipes (
+            community_id INTEGER NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+            recipe_id    INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+            added_by     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            added_at     TEXT    NOT NULL,
+            PRIMARY KEY (community_id, recipe_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_community_recipes_recipe ON community_recipes(recipe_id);
+
         -- התראות לטלפון (lib/push.php): המכשירים, עד איפה צלצלנו ונמסר, ומפתח VAPID של השרת.
         -- הצלצול ריק — התוכן נשאל מהשרת (push-pending) — ולכן אין כאן מפתחות הצפנה של המכשיר.
         CREATE TABLE IF NOT EXISTS push_subs (

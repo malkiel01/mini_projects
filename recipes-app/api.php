@@ -117,7 +117,8 @@ if (!in_array($action, $public, true) && !$user) {
     fail('נדרשת התחברות', 401);
 }
 // פעולה שיוצרת פעילות לאחרים (שיתוף, המלצה, תגובה, מעקב) — צלצול לטלפונים שלהם, אחרי התשובה
-if ($user && in_array($action, ['recipe-share', 'collection-share', 'circle-share', 'circle-add', 'recommend', 'comment-add', 'follow', 'recipe-save'], true)) {
+if ($user && in_array($action, ['recipe-share', 'collection-share', 'circle-share', 'circle-add', 'recommend', 'comment-add', 'follow', 'recipe-save',
+                                 'community-invite', 'community-add'], true)) {
     require_once __DIR__ . '/lib/push.php';
     pushAfterResponse();
 }
@@ -217,6 +218,60 @@ try {
     // בשבילך (lib/foryou.php, SPEC 15.5)
     case 'foryou':
         ok(forYou($user, max(1, min(30, (int) ($in['limit'] ?? 10)))));
+
+    // קהילות (lib/communities.php, SPEC 15.4ב)
+    case 'communities':
+        require_once __DIR__ . '/lib/communities.php';
+        ok(communitiesMine($user));
+
+    case 'community':
+        require_once __DIR__ . '/lib/communities.php';
+        ok(communityView((int) ($in['id'] ?? 0), $user));
+
+    case 'community-create':
+        require_once __DIR__ . '/lib/communities.php';
+        ok(communityCreate($in, $user));
+
+    case 'community-update':
+        require_once __DIR__ . '/lib/communities.php';
+        ok(communityUpdate((int) ($in['id'] ?? 0), $in, $user));
+
+    case 'community-delete':
+        require_once __DIR__ . '/lib/communities.php';
+        communityDelete((int) ($in['id'] ?? 0), $user);
+        ok([]);
+
+    case 'community-invite': {
+        require_once __DIR__ . '/lib/communities.php';
+        $n = communityInvite((int) ($in['id'] ?? 0), is_array($in['user_ids'] ?? null) ? $in['user_ids'] : [], $user);
+        ok(['invited' => $n] + communityView((int) ($in['id'] ?? 0), $user));
+    }
+
+    case 'community-respond':
+        require_once __DIR__ . '/lib/communities.php';
+        communityRespond((int) ($in['id'] ?? 0), !empty($in['accept']), $user);
+        ok([]);
+
+    case 'community-leave':
+        require_once __DIR__ . '/lib/communities.php';
+        communityLeave((int) ($in['id'] ?? 0), $user);
+        ok([]);
+
+    case 'community-remove-member':
+        require_once __DIR__ . '/lib/communities.php';
+        ok(communityRemoveMember((int) ($in['id'] ?? 0), (int) ($in['user_id'] ?? 0), $user));
+
+    case 'community-role':
+        require_once __DIR__ . '/lib/communities.php';
+        ok(communitySetRole((int) ($in['id'] ?? 0), (int) ($in['user_id'] ?? 0), str_field($in, 'role', 10), $user));
+
+    case 'community-add':
+        require_once __DIR__ . '/lib/communities.php';
+        ok(communityAddRecipe((int) ($in['id'] ?? 0), (int) ($in['recipe_id'] ?? 0), $user));
+
+    case 'community-remove':
+        require_once __DIR__ . '/lib/communities.php';
+        ok(communityRemoveRecipe((int) ($in['id'] ?? 0), (int) ($in['recipe_id'] ?? 0), $user));
 
     // מה לבשל הערב? (lib/tonight.php) — שלוש הצעות לארוחה
     case 'tonight':

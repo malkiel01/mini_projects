@@ -363,6 +363,9 @@ function searchRecipes(?array $user, string $query = '', array $filters = []): a
     if (!empty($filters['following']) && $user) { $where[] = 'r.owner_id IN (SELECT followee_id FROM follows WHERE follower_id = ?)'; $params[] = $uid0; }
     if (!empty($filters['shared']) && $user)    { $where[] = 'EXISTS (SELECT 1 FROM recipe_shares sh2 WHERE sh2.recipe_id = r.id AND sh2.user_id = ?)'; $params[] = $uid0; }
     if (!empty($filters['owner_id']))            { $where[] = 'r.owner_id = ?'; $params[] = (int) $filters['owner_id']; }
+    // מזהים מסוימים (דף קהילה) — אותם כללי "גלוי לי"
+    $idsFilter = !empty($filters['ids']) && is_array($filters['ids']) ? array_slice(array_values(array_unique(array_map('intval', $filters['ids']))), 0, 1000) : [];
+    if ($idsFilter) { $where[] = 'r.id IN (' . implode(',', array_fill(0, count($idsFilter), '?')) . ')'; array_push($params, ...$idsFilter); }
     // חסימה (lib/privacy.php): מתכונים של מי שחסמתי או שחסם אותי — לא ברשימות
     if ($user) { $where[] = 'r.owner_id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = ? UNION SELECT blocker_id FROM blocks WHERE blocked_id = ?)'; array_push($params, $uid0, $uid0); }
     // "הסר מהרשימה שלי" (lib/network.php) — לא ברשימות; בדף של המפרסם כן, כדי שאפשר יהיה להחזיר
@@ -414,7 +417,7 @@ function searchRecipes(?array $user, string $query = '', array $filters = []): a
               LEFT JOIN media m ON m.id = r.main_media_id AND m.kind = \'image\'
              WHERE ' . implode(' AND ', $where) . '
              ORDER BY rank_title, r.updated_at DESC
-             LIMIT 100';
+             LIMIT ' . ($idsFilter ? 1000 : 100);
 
     $st = db()->prepare($sql);
     $st->execute($params);

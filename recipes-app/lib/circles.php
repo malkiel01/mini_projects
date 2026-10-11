@@ -63,6 +63,17 @@ function circleSync(string $kind, int $targetId): int {
                             AND NOT EXISTS (SELECT 1 FROM share_optouts o WHERE o.kind = ? AND o.target_id = ? AND o.user_id = cm.user_id)");
     $st->execute([$owner, $targetId, $owner, $kind, $targetId]);
     $want = array_values(array_filter(array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN)), fn($u) => canReach($owner, $u)));
+    // קהילות (lib/communities.php): מתכון שהבעלים הוסיף לקבוצה — לכל החברים הפעילים. הם הצטרפו
+    // בהסכמה, ולכן בלי "ממי אני מקבל שיתופים" — רק חסימה ו"הסר מהרשימה שלי" מכובדות.
+    if ($kind === 'recipe') {
+        $st = $pdo->prepare("SELECT DISTINCT m.user_id FROM community_recipes cr
+                               JOIN community_members m ON m.community_id = cr.community_id AND m.status = 'active'
+                               JOIN users u ON u.id = m.user_id AND u.email_verified = 1 AND u.blocked = 0
+                              WHERE cr.recipe_id = ? AND cr.added_by = ? AND m.user_id != ?
+                                AND NOT EXISTS (SELECT 1 FROM share_optouts o WHERE o.kind = 'recipe' AND o.target_id = ? AND o.user_id = m.user_id)");
+        $st->execute([$targetId, $owner, $owner, $targetId]);
+        foreach (array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN)) as $u) if (!in_array($u, $want, true) && !blockedBetween($owner, $u)) $want[] = $u;
+    }
 
     $st = $pdo->prepare("SELECT user_id FROM {$t['shares']} WHERE {$t['col']} = ? AND direct = 0");
     $st->execute([$targetId]);

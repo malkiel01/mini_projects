@@ -345,6 +345,8 @@ async function route() {
     else if (h === '#/scan') await renderScan();
     else if (h === '#/people') await renderPeople();
     else if (h === '#/circles') await renderCircles();
+    else if (h === '#/groups') await renderCommunities();
+    else if ((m = h.match(/^#\/g\/(\d+)$/))) await renderCommunity(+m[1]);
     else if ((m = h.match(/^#\/circle\/(\d+)$/))) await renderCircle(+m[1]);
     else if (h === '#/reports') await renderReports();
     else if ((m = h.match(/^#\/u\/(\d+)$/))) await renderPerson(+m[1]);
@@ -442,7 +444,7 @@ function pushInvite(box) {
   });
 }
 
-const ACTIVITY_ICON = { share: '👥', collection: '📁', reco: '📨', follow: '➕', published: '🆕', comment: '💬', reply: '↩️' };
+const ACTIVITY_ICON = { share: '👥', collection: '📁', reco: '📨', follow: '➕', published: '🆕', comment: '💬', reply: '↩️', group_invite: '📣', group_add: '👨‍👩‍👧' };
 
 async function renderActivity() {
   const live = routeLive();
@@ -3657,6 +3659,188 @@ async function renderCircle(id) {
   $('#circle-del').addEventListener('click', async () => {
     if (!confirm(`למחוק את המעגל "${d.circle.name}"?\n\nמי שקיבל מתכונים או אוספים רק דרך המעגל — יפסיק לראות אותם.`)) return;
     try { await api('circle-delete', { id }); go('#/circles'); } catch (err) { alert(err.message); }
+  });
+}
+
+// ───────────────────────── קהילות (SPEC 15.4ב) ─────────────────────────
+
+const ROLE_UI = { owner: 'יוצר/ת', admin: 'מנהל/ת' };
+
+/** טופס קבוצה: סמל, שם, תיאור. */
+function communityForm(c, icons) {
+  const icon = c ? c.icon : icons[0];
+  return `
+    <form class="coll-form share-box" id="comm-form">
+      <div class="coll-form__icons" role="radiogroup" aria-label="סמל">${icons.map((i) => `
+        <label class="coll-form__icon"><input type="radio" name="icon" value="${i}" ${i === icon ? 'checked' : ''}><span>${i}</span></label>`).join('')}</div>
+      <label>שם <input name="name" maxlength="60" required value="${esc(c ? c.name : '')}" placeholder="למשל: ספר המתכונים של המשפחה"></label>
+      <label>תיאור <span class="muted small">(לא חובה)</span> <input name="description" maxlength="300" value="${esc(c ? c.description : '')}"></label>
+      <div class="actions"><button class="btn btn--primary" type="submit">${c ? 'שמור' : 'צור קבוצה'}</button>
+        <button class="btn btn--ghost" type="button" data-cancel>ביטול</button></div>
+      <p class="note" id="comm-msg" hidden></p>
+    </form>`;
+}
+const communityFormData = (f) => ({ icon: f.icon.value, name: f.name.value, description: f.description.value });
+
+async function renderCommunities() {
+  const live = routeLive();
+  const d = await api('communities');
+  if (!live()) return;
+  view.innerHTML = `
+    <section class="card settings settings--wide">
+      <a class="link link--back" href="#/">‹ לרשימה</a>
+      <h2>👨‍👩‍👧 הקבוצות שלי</h2>
+      ${d.invites.map((c) => `
+        <div class="note comm-invite" data-inv="${c.id}">📣 <strong>${esc(c.inviter)}</strong> הזמין/ה אותך לקבוצה <strong>${esc(c.icon)} ${esc(c.name)}</strong>
+          <span class="push-invite__btns"><button class="btn btn--primary btn--small" type="button" data-accept="1">הצטרפות</button>
+          <button class="btn btn--ghost btn--small" type="button" data-accept="0">לא תודה</button></span></div>`).join('')}
+      <div class="coll-grid">${d.mine.map((c) => `
+        <a class="coll" href="#/g/${c.id}"><span class="coll__cover coll__cover--icon" aria-hidden="true">${esc(c.icon)}</span>
+          <span class="coll__body"><strong>${esc(c.name)}</strong>
+          <span class="muted small">${c.members === 1 ? 'חבר/ה אחד/ת' : `${c.members} חברים`} · ${c.recipes} מתכונים</span></span></a>`).join('')}</div>
+      ${!d.mine.length && !d.invites.length ? '<p class="muted">קבוצה — כמו "ספר המתכונים של המשפחה": כל החברים מוסיפים מתכונים ורואים את של כולם.</p>' : ''}
+      <div id="comm-slot"></div>
+      <div class="actions"><button class="btn btn--primary" type="button" id="comm-new">＋ קבוצה חדשה</button></div>
+    </section>`;
+  view.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-accept]');
+    if (!b) return;
+    const id = +b.closest('[data-inv]').dataset.inv;
+    try { await api('community-respond', { id, accept: b.dataset.accept === '1' }); if (b.dataset.accept === '1') go(`#/g/${id}`); else route(); }
+    catch (err) { alert(err.message); }
+  });
+  $('#comm-new').addEventListener('click', () => {
+    const slot = $('#comm-slot');
+    if (slot.innerHTML) { slot.innerHTML = ''; return; }
+    slot.innerHTML = communityForm(null, d.icons);
+    const f = $('#comm-form');
+    f.querySelector('[data-cancel]').addEventListener('click', () => { slot.innerHTML = ''; });
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try { go(`#/g/${(await api('community-create', communityFormData(f))).community.id}`); }
+      catch (err) { const m = $('#comm-msg'); m.textContent = err.message; m.className = 'note note--err'; m.hidden = false; }
+    });
+  });
+}
+
+async function renderCommunity(id) {
+  const live = routeLive();
+  let d = await api('community', { id });
+  if (!live()) return;
+  let tab = 'recipes';
+  const c0 = d.community;
+  if (c0.my_status === 'invited') {
+    view.innerHTML = `
+      <section class="card settings">
+        <a class="link link--back" href="#/groups">‹ הקבוצות</a>
+        <h2>${esc(c0.icon)} ${esc(c0.name)}</h2>
+        <p>📣 <strong>${esc(c0.inviter)}</strong> הזמין/ה אותך לקבוצה. אחרי ההצטרפות — תראה/י את המתכונים של כל החברים, והם את מה שתוסיף/י.</p>
+        <div class="actions"><button class="btn btn--primary" type="button" data-accept="1">הצטרפות</button>
+          <button class="btn btn--ghost" type="button" data-accept="0">לא תודה</button></div>
+      </section>`;
+    view.addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-accept]');
+      if (!b) return;
+      try { await api('community-respond', { id, accept: b.dataset.accept === '1' }); if (b.dataset.accept === '1') route(); else go('#/groups'); }
+      catch (err) { alert(err.message); }
+    });
+    return;
+  }
+  view.innerHTML = `
+    <section class="card settings settings--wide comm-page">
+      <div class="recipe__top">
+        <a class="link" href="#/groups">‹ הקבוצות</a>
+        <span class="recipe__icons" id="comm-icons"></span>
+      </div>
+      <h2 id="comm-title"></h2>
+      <p id="comm-desc"></p>
+      <p class="muted small" id="comm-count"></p>
+      <div id="comm-slot"></div>
+      <nav class="subnav" aria-label="קבוצה">
+        <a href="#" data-tab="recipes">מתכונים</a>
+        <a href="#" data-tab="members">חברים</a>
+      </nav>
+    </section>
+    <section id="comm-body"></section>
+    <div class="actions" id="comm-foot"></div>`;
+  const admin = () => d.community.my_role !== 'member';
+  const draw = () => {
+    const c = d.community;
+    $('#comm-title').textContent = `${c.icon} ${c.name}`;
+    $('#comm-desc').textContent = c.description;
+    $('#comm-count').textContent = `${c.members_n === 1 ? 'חבר/ה אחד/ת' : `${c.members_n} חברים`} · ${c.recipes_n} מתכונים`;
+    $('#comm-icons').innerHTML = admin() ? `<button class="icon-btn" id="comm-edit" type="button" aria-label="עריכה" title="עריכה">✏️</button>${
+      c.my_role === 'owner' ? '<button class="icon-btn icon-btn--danger" id="comm-del" type="button" aria-label="מחיקה" title="מחיקה">🗑</button>' : ''}` : '';
+    $$('[data-tab]').forEach((a) => a.classList.toggle('is-on', a.dataset.tab === tab));
+    const body = $('#comm-body');
+    if (tab === 'recipes') {
+      body.innerHTML = `
+        <div class="actions"><button class="btn btn--primary" type="button" id="comm-add">＋ הוספת מתכון שלי</button></div>
+        <div id="comm-pick"></div>
+        <div class="list">${d.recipes.length ? d.recipes.map((r) => `
+          <div class="comm-recipe">${recipeItem(r)}
+            <span class="muted small comm-recipe__by">${r.added_by === r.owner_id ? '' : `נוסף ע״י ${esc(r.adder)}`}
+              ${r.can_remove ? `<button class="link link--inline small" type="button" data-rm="${r.id}">הסרה מהקבוצה</button>` : ''}</span>
+          </div>`).join('') : '<p class="muted">עוד אין מתכונים. מוסיפים — וכל החברים רואים.</p>'}</div>`;
+    } else {
+      body.innerHTML = `
+        <div class="card settings settings--wide">
+          <div class="people-list">${d.members.map((p) => personRow(p, `
+            ${p.status === 'invited' ? '<span class="badge">הוזמן/ה</span>' : ROLE_UI[p.role] ? `<span class="badge badge--mine">${ROLE_UI[p.role]}</span>` : ''}
+            ${admin() && !p.is_me && p.role !== 'owner' && p.status === 'active' ? `<button class="btn btn--ghost btn--small" type="button" data-role="${p.role === 'admin' ? 'member' : 'admin'}">${p.role === 'admin' ? 'ביטול ניהול' : 'מנהל/ת'}</button>` : ''}
+            ${admin() && !p.is_me && p.role !== 'owner' ? '<button class="btn btn--ghost btn--small" type="button" data-kick aria-label="הסרה מהקבוצה">✕</button>' : ''}`)).join('')}</div>
+          ${admin() ? '<h3>הזמנה לקבוצה</h3><div id="comm-invite"></div><p class="muted small">המוזמן/ת יאשר/תאשר לפני שיראה משהו.</p>' : ''}
+        </div>`;
+      if (admin()) {
+        peoplePicker($('#comm-invite'), {
+          placeholder: 'חיפוש לפי שם…',
+          actionFor: (p) => d.members.some((m) => m.id === p.id) ? '<span class="muted small">בקבוצה ✓</span>'
+            : '<button class="btn btn--primary btn--small" type="button" data-act="invite">הזמנה</button>',
+          onAction: async (pid) => { d = await api('community-invite', { id, user_ids: [pid] }); },
+        });
+      }
+    }
+    $('#comm-foot').innerHTML = d.community.my_role === 'owner' ? '' : '<button class="link link--danger" type="button" id="comm-leave">עזיבת הקבוצה</button>';
+  };
+  draw();
+  view.addEventListener('click', async (e) => {
+    const t = e.target.closest('[data-tab]');
+    if (t) { e.preventDefault(); tab = t.dataset.tab; draw(); return; }
+    try {
+      const rm = e.target.closest('[data-rm]');
+      if (rm) { e.preventDefault(); if (!confirm('להסיר את המתכון מהקבוצה?')) return; d = await api('community-remove', { id, recipe_id: +rm.dataset.rm }); draw(); return; }
+      const role = e.target.closest('[data-role]');
+      if (role) { d = await api('community-role', { id, user_id: +role.closest('[data-pid]').dataset.pid, role: role.dataset.role }); draw(); return; }
+      const kick = e.target.closest('[data-kick]');
+      if (kick) { if (!confirm('להסיר מהקבוצה? המתכונים שהוסיף/ה ייצאו ממנה.')) return; d = await api('community-remove-member', { id, user_id: +kick.closest('[data-pid]').dataset.pid }); draw(); return; }
+      if (e.target.closest('#comm-leave')) { if (!confirm('לעזוב את הקבוצה? המתכונים שהוספת ייצאו ממנה.')) return; await api('community-leave', { id }); go('#/groups'); return; }
+      if (e.target.closest('#comm-del')) { if (!confirm(`למחוק את הקבוצה "${d.community.name}"? המתכונים עצמם נשארים אצל מי שכתב אותם.`)) return; await api('community-delete', { id }); go('#/groups'); return; }
+      if (e.target.closest('#comm-edit')) {
+        const slot = $('#comm-slot');
+        if (slot.innerHTML) { slot.innerHTML = ''; return; }
+        slot.innerHTML = communityForm(d.community, d.icons);
+        const f = $('#comm-form');
+        f.querySelector('[data-cancel]').addEventListener('click', () => { slot.innerHTML = ''; });
+        f.addEventListener('submit', async (ev) => { ev.preventDefault(); d = await api('community-update', { id, ...communityFormData(f) }); slot.innerHTML = ''; draw(); });
+        return;
+      }
+      if (e.target.closest('#comm-add')) {
+        const box = $('#comm-pick');
+        if (box.innerHTML) { box.innerHTML = ''; return; }
+        const mine = (await api('search', {})).recipes.filter((r) => r.is_mine && !d.recipes.some((x) => x.id === r.id));
+        box.innerHTML = mine.length ? `<div class="share-box"><input type="search" class="people-q" placeholder="סינון לפי שם…" aria-label="סינון">
+          <div class="comm-pick">${mine.map((r) => `<div class="person-row" data-title="${esc(r.title)}"><span>${esc(r.title)} <span class="muted small">${r.visibility === 'public' ? 'ציבורי' : 'פרטי'}</span></span>
+            <button class="btn btn--primary btn--small" type="button" data-addr="${r.id}">הוספה</button></div>`).join('')}</div></div>`
+          : '<p class="muted small">כל המתכונים שלך כבר בקבוצה (או שעוד אין לך).</p>';
+        box.querySelector('.people-q')?.addEventListener('input', (ev) => {
+          const q = ev.target.value.trim();
+          $$('[data-title]', box).forEach((row) => { row.hidden = q && !row.dataset.title.includes(q); });
+        });
+        return;
+      }
+      const addr = e.target.closest('[data-addr]');
+      if (addr) { addr.disabled = true; d = await api('community-add', { id, recipe_id: +addr.dataset.addr }); draw(); }
+    } catch (err) { alert(err.message); }
   });
 }
 
