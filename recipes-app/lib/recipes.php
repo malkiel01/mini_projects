@@ -75,7 +75,17 @@ function requireOwnRecipe(int $recipeId, array $user): array {
 
 function canView(array $recipe, ?array $user): bool {
     if ($recipe['visibility'] === 'public') return true;
-    return $user && (int) $recipe['owner_id'] === (int) $user['id'];
+    if (!$user) return false;
+    if ((int) $recipe['owner_id'] === (int) $user['id']) return true;
+    return isSharedWith((int) $recipe['id'], (int) $user['id']);   // פרטי ששותף איתו (lib/network.php)
+}
+
+function isSharedWith(int $recipeId, int $userId): bool {
+    $st = db()->prepare('SELECT 1 FROM recipe_shares WHERE recipe_id = ? AND user_id = ?');
+    $st->execute([$recipeId, $userId]);
+    $ok = (bool) $st->fetchColumn();
+    $st->closeCursor();
+    return $ok;
 }
 
 /**
@@ -305,8 +315,13 @@ function loadRecipe(int $recipeId, ?array $user): ?array {
  * הדירוג — התאמה בשם לפני התאמה בשאר הטקסט.
  */
 function searchRecipes(?array $user, string $query = '', array $filters = []): array {
-    $where  = ['(r.visibility = \'public\'' . ($user ? ' OR r.owner_id = ?' : '') . ')'];
-    $params = $user ? [$user['id']] : [];
+    $uid0   = $user ? (int) $user['id'] : 0;
+    $where  = ['(r.visibility = \'public\'' . ($user ? ' OR r.owner_id = ? OR EXISTS (SELECT 1 FROM recipe_shares sh WHERE sh.recipe_id = r.id AND sh.user_id = ?)' : '') . ')'];
+    $params = $user ? [$uid0, $uid0] : [];
+    // רשת (lib/network.php): של מי שאני עוקב אחריו / ששותפו איתי / של משתמש אחד (דף פרופיל)
+    if (!empty($filters['following']) && $user) { $where[] = 'r.owner_id IN (SELECT followee_id FROM follows WHERE follower_id = ?)'; $params[] = $uid0; }
+    if (!empty($filters['shared']) && $user)    { $where[] = 'EXISTS (SELECT 1 FROM recipe_shares sh2 WHERE sh2.recipe_id = r.id AND sh2.user_id = ?)'; $params[] = $uid0; }
+    if (!empty($filters['owner_id']))            { $where[] = 'r.owner_id = ?'; $params[] = (int) $filters['owner_id']; }
 
     $q = normalizeText($query);
     if ($q !== '') {
@@ -346,6 +361,7 @@ function searchRecipes(?array $user, string $query = '', array $filters = []): a
                    u.display_name AS owner_name,
                    m.path_or_url AS main_path, m.source AS main_source,
                    EXISTS (SELECT 1 FROM media mv WHERE mv.recipe_id = r.id AND mv.kind = \'video\') AS has_video,
+                   ' . ($user ? '(SELECT CASE WHEN s3.seen_at IS NULL THEN 2 ELSE 1 END FROM recipe_shares s3 WHERE s3.recipe_id = r.id AND s3.user_id = ' . $uid0 . ')' : 'NULL') . ' AS shared_state,
                    ' . $titleMatch . ' AS rank_title
               FROM recipes r JOIN users u ON u.id = r.owner_id
               LEFT JOIN media m ON m.id = r.main_media_id AND m.kind = \'image\'
@@ -373,6 +389,9 @@ function searchRecipes(?array $user, string $query = '', array $filters = []): a
         'source_name'  => $row['source_url'] ? ($row['source_name'] ?: parse_url($row['source_url'], PHP_URL_HOST)) : null,
         'source_url'   => $row['source_url'],
         'has_video'    => (bool) $row['has_video'],
+        'owner_id'     => (int) $row['owner_id'],
+        'shared_with_me' => $row['shared_state'] !== null,          // פרטי ששותף איתי
+        'shared_new'   => (int) $row['shared_state'] === 2,          // ועוד לא פתחתי
     ], $st->fetchAll());
 }
 

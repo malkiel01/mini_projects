@@ -145,8 +145,9 @@ function pantryMatch(array $user, int $maxMissing = 2, int $limit = 50): array {
                                   u.display_name AS owner_name, m.path_or_url AS main_path, m.source AS main_source
                              FROM recipes r JOIN users u ON u.id = r.owner_id
                              LEFT JOIN media m ON m.id = r.main_media_id AND m.kind = 'image'
-                            WHERE r.visibility = 'public' OR r.owner_id = ?");
-    $rows->execute([$uid]);
+                            WHERE r.visibility = 'public' OR r.owner_id = ?
+                               OR EXISTS (SELECT 1 FROM recipe_shares sh WHERE sh.recipe_id = r.id AND sh.user_id = ?)");
+    $rows->execute([$uid, $uid]);
     $ingSt = db()->prepare('SELECT i.free_text, i.optional, p.name AS product FROM ingredients i
                               JOIN sections s ON s.id = i.section_id
                               LEFT JOIN products p ON p.id = i.product_id

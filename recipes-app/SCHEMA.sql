@@ -207,6 +207,23 @@ CREATE TABLE web_cache (
   created_at INTEGER NOT NULL
 );
 
+-- רשת: שיתוף מתכון עם אנשים מסוימים, ומעקב אחרי מי שמפרסם (lib/network.php).
+CREATE TABLE recipe_shares (
+  recipe_id  INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT    NOT NULL,
+  seen_at    TEXT,                                  -- הנמען פתח אותו
+  PRIMARY KEY (recipe_id, user_id)
+);
+CREATE INDEX idx_shares_user ON recipe_shares(user_id, created_at);
+CREATE TABLE follows (
+  follower_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  followee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at  TEXT    NOT NULL,
+  PRIMARY KEY (follower_id, followee_id)
+);
+CREATE INDEX idx_follows_followee ON follows(followee_id);
+
 -- סריקת מתכון מתמונה (lib/scan.php): ממתינה לאישור המפתח, עד שתהיה טעינת קרדיטים.
 -- התמונות ב-data/scans/; נמחקות כשהסריקה טופלה.
 CREATE TABLE scans (

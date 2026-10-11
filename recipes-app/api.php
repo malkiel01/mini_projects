@@ -28,6 +28,7 @@ require_once __DIR__ . '/lib/rewrite_queue.php';
 require_once __DIR__ . '/lib/pantry.php';
 require_once __DIR__ . '/lib/shopping.php';
 require_once __DIR__ . '/lib/scan.php';
+require_once __DIR__ . '/lib/network.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -181,6 +182,8 @@ try {
         // תיבה אחת לשלי ולציבורי יחד, עם סימון לכל תוצאה (סעיף 5).
         ok(['recipes' => searchRecipes($user, str_field($in, 'q', 120), [
             'from_web'    => !empty($in['from_web']),
+            'following'   => !empty($in['following']),
+            'shared'      => !empty($in['shared']),
             'difficulty'  => $in['difficulty'] ?? null,
             'max_minutes' => $in['max_minutes'] ?? null,
             'tag_ids'     => $in['tag_ids'] ?? null,
@@ -195,11 +198,16 @@ try {
         if (!$recipe) fail('המתכון אינו קיים או שאינו זמין לך', 404);
         // התגובות מגיעות עם המתכון — גם לאורח, במתכון ציבורי. הפתק
         // והמועדף הם של המשתמש, ולכן רק כשיש כזה.
+        // רשת: למי ששותף איתו — מסומן כנפתח; לבעלים — עם כמה אנשים הוא משותף
+        $shared = $user && !$recipe['is_mine'] && isSharedWith($id, (int) $user['id']);
+        if ($shared) markShareSeen($id, $user);
         ok([
             'recipe'      => $recipe,
             'comments'    => listComments($id, $user),
             'note'        => $user ? getNote($id, $user) : null,
             'is_favorite' => isFavorite($id, $user),
+            'shared_with_me' => $shared,
+            'share_count' => $user && $recipe['is_mine'] ? count(recipeShares($id, $user)) : 0,
         ]);
     }
 
@@ -426,6 +434,35 @@ try {
         if (!is_array($data)) fail('הקובץ אינו JSON תקין');
         ok(rewriteApply($data, $user));
     }
+
+    // רשת (lib/network.php): אנשים, שיתוף מתכון, מעקב, פרופיל
+    case 'people-search':
+        ok(['people' => peopleSearch(str_field($in, 'q', 40), $user)]);
+
+    case 'network':
+        ok(myNetwork($user));
+
+    case 'person':
+        ok(personProfile((int) ($in['id'] ?? 0), $user));
+
+    case 'follow':
+        ok(['person' => followUser((int) ($in['id'] ?? 0), $user)]);
+
+    case 'unfollow':
+        ok(['person' => unfollowUser((int) ($in['id'] ?? 0), $user)]);
+
+    case 'recipe-shares':
+        ok(['shares' => recipeShares((int) ($in['recipe_id'] ?? 0), $user)]);
+
+    case 'recipe-share':
+        ok(['shares' => shareRecipe((int) ($in['recipe_id'] ?? 0), (array) ($in['user_ids'] ?? []), $user)]);
+
+    case 'recipe-unshare':
+        ok(['shares' => unshareRecipe((int) ($in['recipe_id'] ?? 0), (int) ($in['user_id'] ?? 0), $user)]);
+
+    case 'recipe-leave-share':
+        leaveShare((int) ($in['recipe_id'] ?? 0), $user);
+        ok([]);
 
     // סריקת מתכון מתמונה (lib/scan.php). ההעלאה עצמה — scan.php (multipart).
     case 'scans-mine':

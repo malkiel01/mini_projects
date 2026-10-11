@@ -303,6 +303,8 @@ async function route() {
     else if (h === '#/index') await renderIndexSites();
     else if (h === '#/rewrite') await renderRewrite();
     else if (h === '#/scan') await renderScan();
+    else if (h === '#/people') await renderPeople();
+    else if ((m = h.match(/^#\/u\/(\d+)$/))) await renderPerson(+m[1]);
     else if (h === '#/scans') await renderScansDev();
     else if (h === '#/web' || h.startsWith('#/web?')) await renderWebSearch(new URLSearchParams(h.split('?')[1] || '').get('q') || '');
     else if ((m = h.match(/^#\/web\/(\d+)$/))) await renderWebRecipe(+m[1]);
@@ -338,6 +340,8 @@ async function renderList() {
       <a class="btn btn--wide" href="#/pantry">🥕 מה אפשר להכין ממה שיש לי בבית?</a>
       <nav class="subnav subnav--list" aria-label="סינון">
         <a href="#/" class="is-on" data-scope="all">הכול</a>
+        <a href="#/" data-scope="following">נעקבים</a>
+        <a href="#/" data-scope="shared">שותפו איתי <span class="count-badge" id="shared-new" hidden></span></a>
         <a href="#/" data-scope="web">מהרשת</a>
       </nav>
     </section>
@@ -347,23 +351,18 @@ async function renderList() {
   let scope = 'all';
   const run = async (q) => {
     results.innerHTML = '<p class="muted">טוען…</p>';
-    const { recipes } = await api('search', { q, from_web: scope === 'web' });
+    const { recipes } = await api('search', { q, from_web: scope === 'web', following: scope === 'following', shared: scope === 'shared' });
+    // תג "חדש" ללשונית — מתוך "הכול" (שם מופיעים גם המשותפים)
+    if (scope === 'all' && !q) { const n = recipes.filter((r) => r.shared_new).length; const b = $('#shared-new'); b.textContent = n; b.hidden = !n; }
     if (!recipes.length) {
-      results.innerHTML = `<p class="muted">${q ? 'לא נמצא כלום.' : scope === 'web'
-        ? 'עדיין לא יובא כלום מהרשת. "🌐 ייבוא מהרשת" — מדביקים קישור למתכון.' : 'עדיין אין מתכונים. זה הרגע.'}</p>`;
+      results.innerHTML = `<p class="muted">${q ? 'לא נמצא כלום.' : {
+        web: 'עדיין לא יובא כלום מהרשת. "🌐 ייבוא מהרשת" — מדביקים קישור למתכון.',
+        following: 'כאן יופיעו מתכונים של מי שאתה עוקב אחריו. <a href="#/people">מצא אנשים ›</a>',
+        shared: 'עוד לא שיתפו איתך מתכונים.',
+      }[scope] || 'עדיין אין מתכונים. זה הרגע.'}</p>`;
       return;
     }
-    results.innerHTML = recipes.map((r) => `
-      <a class="item" href="#/r/${r.id}">
-        <span class="item__media">${r.thumb ? `<img class="item__thumb" src="${esc(r.thumb)}" alt="" loading="lazy">` : '<span class="item__thumb item__thumb--empty">🍲</span>'}${
-          r.has_video ? '<span class="item__play" title="יש סרטון" aria-label="יש סרטון">▶</span>' : ''}</span>
-        <div class="item__main">
-          <strong>${esc(r.title)}</strong>
-          <span class="muted">${esc(r.owner_name)}${r.source_name ? ` · 🌐 ${esc(r.source_name)}` : ''}${r.difficulty ? ' · ' + DIFFICULTY[r.difficulty] : ''}${
-            r.work_minutes || r.wait_minutes ? ' · ' + minutes((r.work_minutes || 0) + (r.wait_minutes || 0)) : ''}</span>
-        </div>
-        <span class="badge ${r.is_mine ? 'badge--mine' : 'badge--public'}">${r.is_mine ? 'שלי' : 'ציבורי'}</span>
-      </a>`).join('');
+    results.innerHTML = recipes.map(recipeItem).join('');
   };
 
   $$('[data-scope]').forEach((a) => a.addEventListener('click', (e) => {
@@ -374,6 +373,23 @@ async function renderList() {
   }));
   $('#search').addEventListener('submit', (e) => { e.preventDefault(); run(e.target.q.value.trim()); });
   await run('');
+}
+
+/** שורה ברשימת מתכונים — ברשימה הראשית, בפרופיל. */
+function recipeItem(r) {
+  const badge = r.is_mine ? ['badge--mine', 'שלי']
+    : r.shared_with_me ? ['badge--shared', r.shared_new ? 'חדש · שותף איתך' : 'שותף איתך'] : ['badge--public', 'ציבורי'];
+  return `
+      <a class="item ${r.shared_new ? 'item--new' : ''}" href="#/r/${r.id}">
+        <span class="item__media">${r.thumb ? `<img class="item__thumb" src="${esc(r.thumb)}" alt="" loading="lazy">` : '<span class="item__thumb item__thumb--empty">🍲</span>'}${
+          r.has_video ? '<span class="item__play" title="יש סרטון" aria-label="יש סרטון">▶</span>' : ''}</span>
+        <div class="item__main">
+          <strong>${esc(r.title)}</strong>
+          <span class="muted">${esc(r.owner_name)}${r.source_name ? ` · 🌐 ${esc(r.source_name)}` : ''}${r.difficulty ? ' · ' + DIFFICULTY[r.difficulty] : ''}${
+            r.work_minutes || r.wait_minutes ? ' · ' + minutes((r.work_minutes || 0) + (r.wait_minutes || 0)) : ''}</span>
+        </div>
+        <span class="badge ${badge[0]}">${badge[1]}</span>
+      </a>`;
 }
 
 // ───────────────────────── תצוגת מתכון ─────────────────────────
@@ -397,15 +413,20 @@ async function renderRecipe(id) {
             <a class="link" href="#/">‹ לרשימה</a>
             <span class="recipe__icons">
               ${r.is_mine ? `<a class="icon-btn" href="#/edit/${r.id}" aria-label="עריכה" title="עריכה">✏️</a>
-              <button class="icon-btn icon-btn--danger" id="del" type="button" aria-label="מחיקה" title="מחיקה">🗑</button>` : ''}
+              <button class="icon-btn icon-btn--danger" id="del" type="button" aria-label="מחיקה" title="מחיקה">🗑</button>
+              <button class="icon-btn" id="share-open" type="button" aria-label="שיתוף עם אנשים" title="שיתוף עם אנשים">👥</button>` : ''}
               <button class="icon-btn" id="print" type="button" aria-label="הדפסה" title="הדפסה">🖨</button>
             </span>
           </div>
           <h2>${esc(r.title)}</h2>
-          <p class="muted">${esc(r.owner_name)} ·
+          <p class="muted">${r.is_mine ? esc(r.owner_name) : `<a class="link link--inline" href="#/u/${r.owner_id}">${esc(r.owner_name)}</a>`} ·
             <span class="badge ${r.is_mine ? 'badge--mine' : 'badge--public'}">${r.visibility === 'public' ? 'ציבורי' : 'פרטי'}</span>
+            ${loaded.share_count ? ` · <span class="badge badge--shared">👥 משותף עם ${loaded.share_count}</span>` : ''}
+            ${loaded.shared_with_me ? ` · <span class="badge badge--shared">👥 שותף איתך</span>` : ''}
             ${r.updated_at !== r.created_at ? ` · עודכן ${esc(r.updated_at.slice(0, 10))}` : ''}
           </p>
+          ${r.is_mine ? '<div id="share-box" class="share-box" hidden></div>' : ''}
+          ${loaded.shared_with_me ? '<p class="small"><button class="link" type="button" id="leave-share">הסר מהרשימה שלי</button></p>' : ''}
           ${r.source ? `
           <p class="credit">
             🌐 <strong>${r.source.rewritten ? 'מבוסס על המתכון של' : 'מקור:'}</strong> <a href="${esc(r.source.url)}" target="_blank" rel="noopener nofollow">${esc(r.source.name || r.source.url)}</a>${
@@ -485,6 +506,15 @@ async function renderRecipe(id) {
       go('#/');
     });
     $('#print').addEventListener('click', () => window.print());
+    $('#share-open')?.addEventListener('click', () => {
+      const box = $('#share-box');
+      box.hidden = !box.hidden;
+      if (!box.hidden) renderShareBox(box, r);
+    });
+    $('#leave-share')?.addEventListener('click', async () => {
+      if (!confirm('להסיר את המתכון מהרשימה שלך? הוא יישאר אצל מי ששיתף.')) return;
+      try { await api('recipe-leave-share', { recipe_id: r.id }); go('#/'); } catch (err) { alert(err.message); }
+    });
     // לרשימת קניות: בוחרים רשימה קיימת או חדשה. ה-factor הוא המרת המנות
     // שמוצגת כרגע — מי שהכפיל ל-16 מנות רוצה לקנות ל-16.
     $('#to-shopping').addEventListener('click', async () => {
@@ -2444,6 +2474,145 @@ async function renderRewrite() {
     } catch (err) { note(err.message, 'err'); }
   });
   await count();
+}
+
+// ───────────────────────── רשת: שיתוף, אנשים, פרופיל ─────────────────────────
+
+/** שורת אדם: שם (לפרופיל), ופעולה בצד. */
+const personRow = (p, action = '') => `
+  <div class="person-row" data-pid="${p.id}">
+    <a class="person-row__name" href="#/u/${p.id}"><span class="avatar" aria-hidden="true">${esc((p.display_name || '?').trim().charAt(0))}</span>
+      <span><strong>${esc(p.display_name)}</strong> <span class="muted small" dir="ltr">@${esc(p.username)}</span>${
+        p.public_n != null ? ` <span class="muted small">· ${p.public_n} מתכונים</span>` : ''}</span></a>
+    ${action}
+  </div>`;
+
+/** חיפוש אנשים עם הקלדה: onPick(person) כשבוחרים; actionFor(person) — הכפתור בשורה. */
+function peoplePicker(box, { placeholder, actionFor, onAction }) {
+  box.innerHTML = `<input type="search" class="people-q" placeholder="${esc(placeholder)}" autocomplete="off" aria-label="${esc(placeholder)}">
+    <div class="people-results"></div>`;
+  const inp = $('.people-q', box);
+  const out = $('.people-results', box);
+  let timer;
+  const run = async () => {
+    const q = inp.value.trim();
+    if (q.length < 2) { out.innerHTML = q ? '<p class="muted small">עוד אות…</p>' : ''; return; }
+    try {
+      const { people } = await api('people-search', { q });
+      out.innerHTML = people.length ? people.map((p) => personRow(p, actionFor(p))).join('') : '<p class="muted small">לא נמצא אף אחד בשם הזה.</p>';
+    } catch (err) { out.innerHTML = `<p class="note note--err">${esc(err.message)}</p>`; }
+  };
+  inp.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(run, 250); });
+  out.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    b.disabled = true;
+    try { await onAction(+b.closest('[data-pid]').dataset.pid, b.dataset.act); await run(); } catch (err) { alert(err.message); b.disabled = false; }
+  });
+  return { refresh: run, input: inp };
+}
+
+/** לוח השיתוף של מתכון (לבעלים): עם מי משותף, והוספה. */
+async function renderShareBox(box, r) {
+  box.innerHTML = `
+    <h3>👥 שיתוף עם אנשים</h3>
+    <p class="muted small">${r.visibility === 'public'
+      ? 'המתכון ציבורי — כולם רואים אותו. שיתוף מוסיף אותו אצלם ל"שותפו איתי".'
+      : 'המתכון פרטי — רק מי שברשימה יראה אותו (ויוכל להסיר את עצמו). עריכה שלך נראית להם מיד.'}</p>
+    <div id="share-list" class="people-list"></div>
+    <div id="share-pick"></div>`;
+  let current = [];
+  const drawList = () => {
+    $('#share-list', box).innerHTML = current.length
+      ? current.map((p) => personRow(p, `<span class="muted small">${p.seen ? 'פתח/ה ✓' : 'עוד לא פתח/ה'}</span>
+          <button class="btn btn--ghost btn--small" type="button" data-unshare="${p.id}" aria-label="הסרה">✕</button>`)).join('')
+      : '<p class="muted small">עוד לא שותף עם אף אחד.</p>';
+  };
+  try { current = (await api('recipe-shares', { recipe_id: r.id })).shares; } catch (err) { box.innerHTML = `<p class="note note--err">${esc(err.message)}</p>`; return; }
+  drawList();
+  $('#share-list', box).addEventListener('click', async (e) => {
+    const id = e.target.dataset.unshare;
+    if (!id) return;
+    try { current = (await api('recipe-unshare', { recipe_id: r.id, user_id: +id })).shares; drawList(); picker.refresh(); } catch (err) { alert(err.message); }
+  });
+  const picker = peoplePicker($('#share-pick', box), {
+    placeholder: 'חיפוש לפי שם…',
+    actionFor: (p) => current.some((c) => c.id === p.id) ? '<span class="muted small">משותף ✓</span>'
+      : '<button class="btn btn--primary btn--small" type="button" data-act="share">שתף</button>',
+    onAction: async (pid) => { current = (await api('recipe-share', { recipe_id: r.id, user_ids: [pid] })).shares; drawList(); },
+  });
+  picker.input.focus();
+}
+
+const followBtn = (p) => p.is_me ? '' : p.following
+  ? '<button class="btn btn--small" type="button" data-act="unfollow">✓ עוקב</button>'
+  : '<button class="btn btn--primary btn--small" type="button" data-act="follow">+ מעקב</button>';
+
+/** דף משתמש: מונים, מעקב, והמתכונים שגלויים לי. */
+async function renderPerson(id) {
+  const d = await api('person', { id });
+  const p = d.person;
+  view.innerHTML = `
+    <section class="card person-card">
+      <a class="link" href="#/people">‹ אנשים</a>
+      <div class="person-card__head">
+        <span class="avatar avatar--big" aria-hidden="true">${esc(p.display_name.charAt(0))}</span>
+        <div>
+          <h2>${esc(p.display_name)}</h2>
+          <span class="muted small" dir="ltr">@${esc(p.username)}</span>${p.follows_me ? ' <span class="badge badge--shared">עוקב/ת אחריך</span>' : ''}
+        </div>
+      </div>
+      <div class="person-card__stats">
+        <span><strong>${p.public_n}</strong> מתכונים ציבוריים</span>
+        <span><strong>${p.followers_n}</strong> עוקבים</span>
+        <span><strong>${p.following_n}</strong> נעקבים</span>
+      </div>
+      <div id="follow-slot" data-pid="${p.id}">${p.is_me ? '<span class="muted">זה הדף שלך.</span>' : followBtn(p)}</div>
+    </section>
+    <section class="list">${d.recipes.length ? d.recipes.map(recipeItem).join('') : '<p class="muted">אין מתכונים שגלויים לך.</p>'}</section>`;
+  $('#follow-slot').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    b.disabled = true;
+    try { await api(b.dataset.act, { id: p.id }); renderPerson(id); } catch (err) { alert(err.message); b.disabled = false; }
+  });
+}
+
+/** אנשים: חיפוש, אחרי מי אני עוקב, ומי עוקב אחריי. */
+async function renderPeople() {
+  view.innerHTML = `
+    <section class="card settings settings--wide people-page">
+      <a class="link" href="#/">‹ לרשימה</a>
+      <h2>👥 אנשים</h2>
+      <p class="muted">עוקבים אחרי מי שמפרסם מתכונים — והמתכונים הציבוריים שלהם מופיעים בלשונית "נעקבים".</p>
+      <div id="people-pick"></div>
+      <nav class="subnav" aria-label="אנשים">
+        <a href="#/people" class="is-on" data-tab="following">אני עוקב</a>
+        <a href="#/people" data-tab="followers">עוקבים אחריי</a>
+      </nav>
+      <div id="people-list" class="people-list"><p class="muted">טוען…</p></div>
+    </section>`;
+  let tab = 'following';
+  let net = null;
+  const draw = () => {
+    const list = net[tab];
+    $('#people-list').innerHTML = list.length ? list.map((p) => personRow(p, followBtn(p))).join('')
+      : `<p class="muted">${tab === 'following' ? 'עוד לא עוקב אחרי אף אחד — חפש למעלה.' : 'עוד אף אחד לא עוקב אחריך.'}</p>`;
+  };
+  const load = async () => { net = await api('network'); draw(); };
+  const act = async (pid, what) => { await api(what, { id: pid }); await load(); };
+  peoplePicker($('#people-pick'), { placeholder: 'חיפוש אנשים לפי שם…', actionFor: followBtn, onAction: act });
+  $('#people-list').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    b.disabled = true;
+    try { await act(+b.closest('[data-pid]').dataset.pid, b.dataset.act); } catch (err) { alert(err.message); b.disabled = false; }
+  });
+  $$('[data-tab]').forEach((a) => a.addEventListener('click', (e) => {
+    e.preventDefault(); tab = a.dataset.tab;
+    $$('[data-tab]').forEach((x) => x.classList.toggle('is-on', x === a)); draw();
+  }));
+  await load();
 }
 
 // ───────────────────────── סריקת מתכון מתמונה ─────────────────────────

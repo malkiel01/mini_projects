@@ -237,7 +237,7 @@ function listFavorites(array $user): array {
     $uid = (int) $user['id'];
     return array_map(function ($row) use ($uid) {
         if ($row['recipe_id'] === null) $status = 'gone';
-        elseif ($row['visibility'] !== 'public' && (int) $row['owner_id'] !== $uid) $status = 'hidden';
+        elseif ($row['visibility'] !== 'public' && (int) $row['owner_id'] !== $uid && !isSharedWith((int) $row['recipe_id'], $uid)) $status = 'hidden';
         else $status = 'ok';
         return [
             'fav_id'       => (int) $row['fav_id'],

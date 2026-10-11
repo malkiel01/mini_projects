@@ -252,6 +252,23 @@ function migrate(PDO $pdo): void {
             seen_at    INTEGER NOT NULL DEFAULT 0    -- unix: העדכון האחרון שראה אותו
         );
         CREATE INDEX IF NOT EXISTS idx_index_entries_site ON index_entries(site_id, seen_at);
+        -- רשת: שיתוף מתכון עם אנשים מסוימים, ומעקב אחרי מי שמפרסם (lib/network.php).
+        -- מתכון פרטי שמשותף עם מישהו — גלוי לו (canView), ולא לאחרים.
+        CREATE TABLE IF NOT EXISTS recipe_shares (
+            recipe_id  INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+            user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at TEXT    NOT NULL,
+            seen_at    TEXT,                                  -- הנמען פתח אותו; עד אז מסומן כחדש
+            PRIMARY KEY (recipe_id, user_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_shares_user ON recipe_shares(user_id, created_at);
+        CREATE TABLE IF NOT EXISTS follows (
+            follower_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            followee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at  TEXT    NOT NULL,
+            PRIMARY KEY (follower_id, followee_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_follows_followee ON follows(followee_id);
         -- סריקת מתכון מתמונה (lib/scan.php): ממתינה לאישור המפתח, עד שתהיה טעינת קרדיטים.
         -- התמונות ב-data/scans/; נמחקות כשהסריקה טופלה.
         CREATE TABLE IF NOT EXISTS scans (

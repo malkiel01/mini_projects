@@ -557,6 +557,31 @@ check 'הסריקה: נוצר מתכון'                   "$(call scans-mine)"
 call logout >/dev/null
 
 echo
+echo "8ל. רשת — שיתוף עם אדם מסוים, ומעקב"
+call login '{"username":"owner","password":"sod12345"}' >/dev/null
+PR=$(call recipe-save '{"title":"מרק של סבתא לשיתוף","visibility":"private","sections":[{"ingredients":[{"free_text":"גזר"}],"steps":[{"text":"לבשל"}]}]}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
+PS=$(call people-search '{"q":"tester"}')
+check 'חיפוש אנשים — בלי דוא"ל'              "$PS" '"username":"tester"'
+check 'ובלי השדה email'                       "$(printf '%s' "$PS" | grep -c '"email"')" '^0$'
+TID=$(printf '%s' "$PS" | python3 -c 'import sys,json; print(json.load(sys.stdin)["people"][0]["id"])')
+check 'שיתוף עם tester'                       "$(call recipe-share "{\"recipe_id\":$PR,\"user_ids\":[$TID]}")" '"username":"tester"'
+check 'הבעלים רואה "משותף עם 1"'              "$(call recipe "{\"id\":$PR}")" '"shared_with_me":false,"share_count":1'
+call logout >/dev/null
+call login '{"username":"tester","password":"sod12345"}' >/dev/null
+check 'tester רואה ברשימה — משותף, חדש'         "$(call search '{"q":"מרק של סבתא"}')" '"title":"מרק של סבתא לשיתוף".*"shared_with_me":true,"shared_new":true'
+check 'ופותח — "שותף איתך"'                     "$(call recipe "{\"id\":$PR}")" '"shared_with_me":true'
+check 'אחרי הפתיחה — כבר לא חדש'                "$(call search '{"shared":true}')" '"shared_new":false'
+check 'tester לא משתף מתכון של אחר'             "$(call recipe-share "{\"recipe_id\":$PR,\"user_ids\":[1]}")" 'אינו שלך'
+OID=$(call recipe "{\"id\":$PR}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["recipe"]["owner_id"])')
+check 'מעקב אחרי owner'                        "$(call follow "{\"id\":$OID}")" '"following":true'
+check 'פרופיל: עוקב, ורואה גם את המשותף'          "$(call person "{\"id\":$OID}")" '"following":true.*"title":"מרק של סבתא לשיתוף"'
+check 'לשונית "נעקבים"'                         "$(call search '{"following":true}')" '"owner_id":'"$OID"
+check 'האנשים שלי'                              "$(call network)" '"following":\[{"id":'"$OID"
+check 'הסרה מהרשימה שלי'                        "$(call recipe-leave-share "{\"recipe_id\":$PR}")" '"success":true'
+check 'ואז הפרטי כבר לא זמין'                    "$(call recipe "{\"id\":$PR}")" 'אינו קיים או שאינו זמין'
+call logout >/dev/null
+
+echo
 echo "9. אבחון למנהל"
 call login '{"username":"owner","password":"sod12345"}' >/dev/null
 D=$(call diag)
