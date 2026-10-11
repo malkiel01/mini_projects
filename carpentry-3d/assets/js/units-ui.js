@@ -13,6 +13,7 @@ import * as M from './model/materials.js';
 import { optionsFor } from './model/index.js';
 import { FINISHES_NO_GLASS } from './model/templates/common.js';
 import { suggest, applySuggestion } from './model/suggest.js';
+import { newUnitOf } from './model/templates/bookcase.js';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const clone = (x) => JSON.parse(JSON.stringify(x));
@@ -115,6 +116,7 @@ export function renderUnitsEditor(box, values, onChange) {
   }
 
   // 💡 המלצות: אחרי שינוי — "להחיל גם על…"; אחידות; מקצועיות (model/suggest.js)
+  const colsMax = model?.template?.params?.find((p) => p.key === 'columns')?.max ?? 8;
   const sugs = suggest(units, { change: box._units.change || null, geo, dismissed: values.dismissed });
   box._sugs = sugs;
   const sugHtml = sugs.slice(0, 4).map((x) => `<div class="sug sug--${x.kind}">
@@ -134,9 +136,10 @@ export function renderUnitsEditor(box, values, onChange) {
       ${notes}
       <div class="unit__row">${num(`${i}.width`, u.width, 'רוחב', g ? `אוטומטי (${Math.round(g.width)})` : 'אוטומטי')}${num(`${i}.height`, u.height, 'גובה', g ? `כל הגובה (${Math.round(g.height)})` : 'כל הגובה')}</div>
       ${floors}
-      <button type="button" class="btn btn--small unit__add" data-act="add" data-i="${i}">＋ קומה</button>
+      <div class="unit__acts"><button type="button" class="btn btn--small unit__add" data-act="add" data-i="${i}">＋ קומה</button>
+      ${units.length > 1 ? `<button type="button" class="btn btn--small unit__delcol" data-act="delcol" data-i="${i}" title="העמודות האחרות מתרחבות לתוך המקום">🗑 מחיקת העמודה</button>` : ''}</div>
     </details>`;
-  }).join('') + (values.units ? '' : '<p class="muted unit__hint">כל עמודה וכל קומה — עצמאית. השינוי הראשון שומר את המבנה בפרויקט.</p>');
+  }).join('') + (units.length < colsMax ? `<button type="button" class="btn btn--small unit__addcol" data-act="addcol" title="לפי &quot;עמודה שנוספת&quot; בטופס">＋ עמודה</button>` : '') + (values.units ? '' : '<p class="muted unit__hint">כל עמודה וכל קומה — עצמאית. השינוי הראשון שומר את המבנה בפרויקט.</p>');
 }
 
 /** פותח את כרטיס העמודה (ואם צריך — הקומה) וגולל אליו. */
@@ -226,6 +229,16 @@ document.addEventListener('click', (e) => {
   }
   const act = b.dataset.act; if (!act) return;
   const i = Number(b.dataset.i), j = Number(b.dataset.j);
+  if (act === 'addcol' || act === 'delcol') {
+    // מספר העמודות משתנה מכאן — העמודה החדשה לפי "עמודה שנוספת" (newUnit)
+    const { values } = box._units;
+    commit(box, (units) => {
+      if (act === 'addcol') units.push(newUnitOf(units[units.length - 1], values.newUnit, model?.values || values));
+      else if (units.length > 1) units.splice(i, 1);
+      values.columns = units.length;
+    });
+    return;
+  }
   commit(box, (units) => {
     const fl = units[i].floors;
     if (act === 'add') { const top = clone(fl[fl.length - 1]); top.height = null; fl.push(top); }

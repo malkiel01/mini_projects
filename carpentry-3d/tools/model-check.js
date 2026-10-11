@@ -1214,7 +1214,9 @@ console.log('ספרייה לפי עמודה וקומה (שלב 1): המרה זה
   const norm = (o) => JSON.parse(JSON.stringify(o, (k, val) => (typeof val === 'number' ? Math.round(val * 1e6) / 1e6 : val)));
   const sortKeys = (o) => (Array.isArray(o) ? o.map(sortKeys) : o && typeof o === 'object' ? Object.fromEntries(Object.keys(o).sort().filter((k) => o[k] !== undefined).map((k) => [k, sortKeys(o[k])])) : o);
   const span = (w) => /^מדף ברוחב/.test(w);
-  const pick = (r, dropSpan) => sortKeys(norm({ parts: r.parts, hardware: r.hardware, warnings: dropSpan ? r.warnings.filter((w) => !span(w)) : r.warnings, bounds: r.bounds }));
+  // אזהרת עובי שנקבע ידנית ושונה מהחומר (שלב 5) — חדשה, לא קיימת בבנייה הישנה; אינה חלק מההשוואה
+  const thick = (w) => /שונה מעובי החומר/.test(w);
+  const pick = (r, dropSpan) => sortKeys(norm({ parts: r.parts, hardware: r.hardware, warnings: r.warnings.filter((w) => !thick(w) && !(dropSpan && span(w))), bounds: r.bounds }));
   TEMPLATES['legacy-bookcase'] = { ...legacyBookcase, key: 'legacy-bookcase' };
   let seed = 11;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
@@ -1359,6 +1361,33 @@ console.log('שלב 4: המלצות — להחיל גם על, אחידות, מק
   check(tf && lf && applySuggestion(u4, tf)[0].floors[1].front.glass === 'glass:tempered-6' && applySuggestion(u4, lf)[1].floors[0].front.leaves === 'auto', 'מקצועיות: זכוכית דקה בלי מסגרת, דלת רחבה בכנף אחת — עם תיקון');
   const built = build('bookcase', { columns: 5, width: 2500, height: 2400, units: applySuggestion(units, cp, cp.targets[0]) });
   check(built.parts.filter((p) => /^door-\d-up-stile-L$/.test(p.id)).every((p) => p.material === 'profile:alu-black'), 'הבנייה אחרי ההחלה — כל הוויטרינות אלומיניום');
+}
+
+console.log('שלב 5: עובי מהחומר, עמודה חדשה');
+{
+  const base = { columns: 3, width: 1500, height: 2000, depth: 350 };
+  const sideL = (r) => r.parts.find((p) => p.id === 'side-L').box.w;
+  // ריק = כעובי החומר
+  const r25 = build('bookcase', { ...base, bodyMaterial: 'board:mdf-paint-22', shelfMaterial: 'board:mdf-paint-22' });
+  const t25 = M.material('board:mdf-paint-22').t;
+  check(t25 && t25 !== 18 && sideL(r25) === t25 && r25.auto.sideT === t25 && r25.values.sideT === t25 && !('sideT' in build('bookcase', { ...base, sideT: 18 }).auto), `דפנות כעובי החומר (${t25}); model.auto מסמן נגזר`);
+  check(!r25.warnings.some((w) => /שונה מעובי החומר/.test(w)), 'בלי דריסה — בלי אזהרה');
+  // דריסה גלויה + אזהרה
+  const r18 = build('bookcase', { ...base, bodyMaterial: 'board:mdf-paint-22', sideT: 18 });
+  check(sideL(r18) === 18 && r18.warnings.some((w) => /עובי הדפנות 18/.test(w)), 'עובי שהוקלד גובר, עם אזהרה כשהוא שונה מהחומר');
+  // פרויקט קיים: 18 שנשמר עם חומר 18 → "כעובי החומר", אותה בנייה
+  const old = { ...base, bodyMaterial: 'board:melamine-oak-18', shelfMaterial: 'board:melamine-oak-18', sideT: 18, shelfT: 18 };
+  const mig = TEMPLATES.bookcase.migrate({ ...old });
+  check(mig.sideT === null && mig.shelfT === null, 'המרה: 18 ששווה לחומר → ריק (נגזר)');
+  check(JSON.stringify(build('bookcase', old).parts) === JSON.stringify(build('bookcase', { ...old, sideT: null, shelfT: null }).parts), 'המרה: אותה בנייה בדיוק');
+  const keep = TEMPLATES.bookcase.migrate({ ...old, bodyMaterial: 'board:mdf-paint-22' });
+  check(keep.sideT === 18, 'המרה: 18 עם חומר 22 נשאר דריסה');
+  // עמודה חדשה לפי newUnit
+  const u = build('bookcase', base).units.map((x) => ({ ...x, floors: x.floors.map((f) => ({ ...f, front: { ...f.front, type: 'wood' } })) }));
+  const add = (newUnit) => build('bookcase', { ...base, columns: 4, units: u, newUnit }).units[3];
+  check(add('last').floors[0].front.type === 'wood' && add().floors[0].front.type === 'wood', 'ברירת מחדל: העתק של האחרונה');
+  check(add('open').floors[0].front.type === 'none' && add('glass').floors[0].front.type === 'glass' && add('glass').floors.length === 1, 'פתוחה / ויטרינה — קומה אחת');
+  check(add('glass').floors[0].front.material === u[2].floors[0].front.material && add('glass').width === null, 'פרטי החזית מהאחרונה, רוחב אוטומטי');
 }
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }
