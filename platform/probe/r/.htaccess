@@ -1,0 +1,5 @@
+# בדיקה: האם כלל rewrite ב-.htaccess עובד, וגם גובר על קובץ שקיים בדיסק.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^(page\.html|virtual)$ target.php?f=$1 [L,QSA]
+</IfModule>
