@@ -13,5 +13,12 @@
       "label": "🔐 ממשק מנהל",
       "href": "admin/"
     }
+  ],
+  "gate": true,
+  "public": [
+    "index.html",
+    "assets/**",
+    "api.php?action=order|menu|config|logo|font|tick",
+    "admin/manifest.webmanifest"
   ]
 }

@@ -4,5 +4,12 @@
   "icon": "📄",
   "description": "העלאת תמונה, בחירת פונט ומיקום, והפקת קבצי PDF מרובים עם טקסט מותאם אישית לכל לקוח.",
   "category": "documents",
-  "entry": "index.html"
+  "entry": "index.html",
+  "gate": true,
+  "public": [
+    "sign.html",
+    "track.html",
+    "signed/**",
+    "api.php?action=get_template|save_signed|list_signed|render"
+  ]
 }

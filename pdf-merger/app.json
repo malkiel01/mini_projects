@@ -4,5 +4,6 @@
   "icon": "📑",
   "description": "מאחדים קבצי PDF ותמונות (JPG, PNG, WEBP) לקובץ PDF אחד — גרירה לשינוי סדר, תצוגה מקדימה, סיבוב דפים ופיצול PDF לדפים בודדים. הכול רץ בדפדפן, בלי שרת.",
   "category": "documents",
-  "entry": "index.html"
+  "entry": "index.html",
+  "gate": true
 }
