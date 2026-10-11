@@ -154,7 +154,7 @@ export function cutList({ parts, values }) {
   const rows = new Map();
   for (const p of parts) {
     const m = material(p.material);
-    if (m.kind === 'glass') continue;           // זכוכית מוזמנת, לא נחתכת — ברשימה נפרדת
+    if (m.kind === 'glass' || m.kind === 'profile') continue;   // זכוכית ופרופילים — ברשימות נפרדות
     const c = cutSize(p);
     const e = edgeSides(p);
     let l = c.l, w = c.w;
@@ -178,7 +178,17 @@ export function cutList({ parts, values }) {
     const g = glass.find((r) => r.key === key) || (glass.push({ key, name: m.name, qty: 0, l: c.l, w: c.w, t: m.t }), glass[glass.length - 1]);
     g.qty += 1;
   }
-  return { boards: [...rows.values()], glass };
+  // פרופילים (אלומיניום לוויטרינה): לפי אורך, בחיתוך 45° בפינות
+  const profiles = [];
+  for (const p of parts) {
+    const m = material(p.material);
+    if (m.kind !== 'profile') continue;
+    const c = cutSize(p);
+    const key = [p.name, c.l, p.material].join('|');
+    const r = profiles.find((x) => x.key === key) || (profiles.push({ key, name: p.name, material: m.name, qty: 0, l: c.l, w: c.w }), profiles[profiles.length - 1]);
+    r.qty += 1;
+  }
+  return { boards: [...rows.values()], glass, profiles };
 }
 
 /**

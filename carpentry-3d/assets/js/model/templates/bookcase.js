@@ -16,6 +16,8 @@ import { handleParam, hingeParam, wheelsParam, addWheels, materialParams, joiner
 
 const DOOR_OPTIONS = [{ id: 'none', name: 'ללא' }, { id: 'wood', name: 'עץ' }, { id: 'glass', name: 'ויטרינה' }];
 const WITH_DOORS = ['wood', 'glass'];
+/** יש דלת ויטרינה כלשהי — למעלה / כל הגובה, למטה (בפיצול), או עמודת ויטרינה מלאה. */
+const anyGlass = (v) => v.doorType === 'glass' || v.lowerDoors === 'glass' || (v.glassColumns && v.glassColumns !== 'none');
 
 export default {
   key: 'bookcase',
@@ -49,6 +51,25 @@ export default {
     { key: 'doorMaterial', label: 'חומר הדלתות', type: 'material', kind: 'board', back: false, solid: false, top: false, default: 'board:mdf-paint-18', group: 'דלתות' },
     { key: 'glassType', label: 'זכוכית', type: 'material', kind: 'glass', default: 'glass:clear-4', group: 'דלתות' },
     hingeParam(), handleParam(),
+
+    // ויטרינה — מוצג רק כשיש דלת זכוכית כלשהי (למעלה, למטה, או עמודת ויטרינה מלאה)
+    { key: 'vitrineFrame', label: 'מסגרת הוויטרינה', type: 'enum', default: 'wood', group: 'ויטרינה', showIf: anyGlass, showIfText: 'יש דלת ויטרינה',
+      options: [{ id: 'wood', name: 'מסגרת עץ / MDF' }, { id: 'alu', name: 'פרופיל אלומיניום' }, { id: 'none', name: 'זכוכית בלבד (בלי מסגרת)' }],
+      hint: 'בלי מסגרת — זכוכית מחוסמת 6 לפחות, וצירי זכוכית' },
+    { key: 'vitrineSides', label: 'כמה צדדים למסגרת', type: 'enum', default: '4', group: 'ויטרינה', showIf: (v) => anyGlass(v) && v.vitrineFrame !== 'none', showIfText: 'יש ויטרינה עם מסגרת',
+      options: [{ id: '4', name: '4 צדדים — מסגרת מלאה' }, { id: '2v', name: '2 צדדים — ימין ושמאל (זקפים)' }, { id: '2h', name: '2 צדדים — למעלה ולמטה (קושרות)' }],
+      hint: 'בצד בלי מסגרת הזכוכית מגיעה עד הקצה, מלוטשת. בלי זקף בצד הציר — צירי זכוכית' },
+    { key: 'vitrineFrameW', label: 'רוחב פס המסגרת', type: 'mm', min: 10, max: 120, default: 60, group: 'ויטרינה', showIf: (v) => anyGlass(v) && v.vitrineFrame !== 'none', showIfText: 'יש ויטרינה עם מסגרת',
+      hint: 'הרוחב שנראה מלפנים. אלומיניום דק — 20; עץ קלאסי — 60' },
+    { key: 'vitrineProfile', label: 'פרופיל המסגרת', type: 'enum', default: 'flat', group: 'ויטרינה', showIf: (v) => anyGlass(v) && v.vitrineFrame === 'wood', showIfText: 'מסגרת עץ',
+      options: [{ id: 'flat', name: 'ישר' }, { id: 'shaker', name: 'שייקר — פס פנימי מדורג' }, { id: 'bevel', name: 'פאזה פנימית 45°' }, { id: 'round', name: 'קנט פנימי מעוגל' }] },
+    sameOrMaterial('vitrineFrameMaterial', 'חומר / צבע המסגרת', 'ויטרינה', { showIf: (v) => anyGlass(v) && v.vitrineFrame === 'wood', showIfText: 'מסגרת עץ', hint: '"כמו הגוף" = כמו חומר הדלתות' }),
+    { key: 'vitrineAlu', label: 'צבע הפרופיל', type: 'material', kind: 'profile', default: 'profile:alu-black', group: 'ויטרינה', showIf: (v) => anyGlass(v) && v.vitrineFrame === 'alu', showIfText: 'פרופיל אלומיניום' },
+    { key: 'vitrineMullions', label: 'חלוקת הזכוכית (שפרוסים)', type: 'enum', default: 'none', group: 'ויטרינה', showIf: (v) => anyGlass(v) && v.vitrineFrame !== 'none', showIfText: 'יש ויטרינה עם מסגרת',
+      options: [{ id: 'none', name: 'ללא — שמשה אחת' }, { id: 'v2', name: 'פס אנכי באמצע' }, { id: 'h2', name: 'פס אופקי באמצע' }, { id: 'h3', name: 'שני פסים אופקיים (3 שמשות)' }, { id: 'grid4', name: 'שתי וערב (4 שמשות)' }, { id: 'grid6', name: '6 שמשות' }] },
+    { key: 'vitrineShelves', label: 'מדפים בוויטרינה', type: 'enum', default: 'same', group: 'ויטרינה', showIf: anyGlass, showIfText: 'יש דלת ויטרינה',
+      options: [{ id: 'same', name: 'כמו שאר המדפים' }, { id: 'glass', name: 'מדפי זכוכית' }] },
+    { key: 'vitrineShelfGlass', label: 'זכוכית המדפים', type: 'material', kind: 'glass', default: 'glass:shelf-8', group: 'ויטרינה', showIf: (v) => anyGlass(v) && v.vitrineShelves === 'glass', showIfText: 'מדפי זכוכית' },
 
     { key: 'sideLeftFinish', label: 'דופן שמאל — סוג', type: 'enum', default: 'flat', group: 'דפנות ותאורה', options: FINISHES },
     sameOrMaterial('sideLeftMaterial', 'דופן שמאל — חומר', 'דפנות ותאורה', { showIf: { sideLeftFinish: { not: ['glass'] } } }),
@@ -199,6 +220,20 @@ export default {
       }
     });
 
+    // מדפי זכוכית בעמודות / בחלקים שמאחורי דלת ויטרינה (מדף הפיצול הקבוע נשאר לוח)
+    if (v.vitrineShelves === 'glass') {
+      const gt = material(v.vitrineShelfGlass).t || 8;
+      const glassZone = (i, y) => isGlassCol(i) || (lowerOf(i) ? (y < splitYOf(i) ? v.lowerDoors === 'glass' : v.doorType === 'glass') : v.doorType === 'glass');
+      cols.cols.forEach((col, i) => {
+        for (const p of parts) {
+          if (!/(^|-)shelf-/.test(p.id) || p.id.startsWith('split-') || p.box.x < col.x0 - 1 || p.box.x + p.box.w > col.x1 + 1) continue;
+          if (!glassZone(i, p.box.y)) continue;
+          p.material = v.vitrineShelfGlass; p.box = { ...p.box, h: gt }; p.edges = {};
+          p.note = 'מדף זכוכית מחוסם, מלוטש — על תומכי זכוכית'; p.qtyKey = `glass-shelf-${Math.round(p.box.w)}`;
+        }
+      });
+    }
+
     if (stepped) parts.push(...steppedBack({ mode: v.backMode, outer: { w: W, y0: bottomY - shelfT, y1: topY }, inner, cols: cols.cols, tops, t: backT, grooveDepth: v.backGrooveDepth, inset: v.backInset, material: v.backMaterial, sideT, W, panelT: shelfT }));
     else parts.push(...back({
       mode: v.backMode, outer: { w: W, y0: bottomY - shelfT, y1: topY }, inner, t: backT,
@@ -217,6 +252,11 @@ export default {
       return mp ? { id: mid, y: mp.box.y } : null;
     };
     const doorT = boardThickness(v.doorMaterial);
+    // ויטרינה: מסגרת (עץ / אלומיניום / בלי), צדדים, רוחב, פרופיל, צבע ושפרוסים — לכל דלת זכוכית
+    const vitrine = {
+      frame: v.vitrineFrame, sides: v.vitrineSides, frameW: v.vitrineFrameW, profile: v.vitrineProfile, mullions: v.vitrineMullions,
+      frameMaterial: v.vitrineFrame === 'alu' ? v.vitrineAlu : resolveSame(v.vitrineFrameMaterial, v.doorMaterial),
+    };
     let anyDoor = false;
     cols.cols.forEach((col, i) => {
       const zones = [];
@@ -244,6 +284,7 @@ export default {
             id, name: `דלת ${i + 1}${zoneTag ? (zi === 0 ? ' תחתונה' : ' עליונה') : ''}${leaves === 2 ? (k === 0 ? ' שמאל' : ' ימין') : ''}`,
             x0: lx0, x1: lx1, y0, y1, zFront: D, type, t: doorT,
             material: v.doorMaterial, glass: v.glassType, handle: v.handle === 'none' ? null : v.handle,
+            vitrine: type === 'glass' ? vitrine : null,
             hinge: type === 'glass' && v.hinge === 'hw:hinge-110' ? 'hw:hinge-glass' : v.hinge, hingeSide,
             mountId: mount ? mountId : null, mountBottom: mount ? mount.box.y : null,
             mounts: leaves === 2 ? (k === 0 ? { left: mountOf(i, 'left') } : { right: mountOf(i, 'right') }) : { left: mountOf(i, 'left'), right: mountOf(i, 'right') },
@@ -258,6 +299,9 @@ export default {
     });
     const anySplit = cols.cols.some((_, i) => lowerOf(i) > 0);
     const anyGlassDoor = anyDoor && (v.doorType === 'glass' || (anySplit && v.lowerDoors === 'glass') || v.glassColumns !== 'none');
+    if (anyGlassDoor && v.vitrineFrame === 'none' && (material(v.glassType).t || 4) < 6) {
+      warnings.push(`דלת זכוכית בלי מסגרת צריכה זכוכית מחוסמת 6 מ"מ לפחות — נבחרה ${material(v.glassType).name}`);
+    }
     if (anyGlassDoor && D - doorT < L.glassMinDepth) {
       warnings.push(`עומק ${D} מ"מ קטן מדי לוויטרינה — נדרשים לפחות ${L.glassMinDepth + doorT}`);
     }

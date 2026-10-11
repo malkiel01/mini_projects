@@ -49,11 +49,22 @@ export const SEED = [
   { id: 'glass:clear-4',           kind: 'glass', name: 'זכוכית שקופה 4', t: 4, color: 0xbfe0ea, finish: 'glass', opacity: 0.3, price: 180, priceUnit: 'm2', density: 2500 },
   { id: 'glass:frosted-4',         kind: 'glass', name: 'זכוכית חלבית 4', t: 4, color: 0xe9eff0, finish: 'glass', opacity: 0.75, price: 220, priceUnit: 'm2', density: 2500 },
   { id: 'glass:smoked-4',          kind: 'glass', name: 'זכוכית מעושנת 4', t: 4, color: 0x5a5e62, finish: 'glass', opacity: 0.5, price: 240, priceUnit: 'm2', density: 2500 },
+  { id: 'glass:reeded-4',          kind: 'glass', name: 'זכוכית פסים (ריבד) 4', t: 4, color: 0xd6e6ea, finish: 'glass', opacity: 0.6, price: 280, priceUnit: 'm2', density: 2500 },
+  { id: 'glass:bronze-4',          kind: 'glass', name: 'זכוכית ברונזה 4', t: 4, color: 0x8a6a4a, finish: 'glass', opacity: 0.5, price: 250, priceUnit: 'm2', density: 2500 },
+  { id: 'glass:tempered-6',        kind: 'glass', name: 'זכוכית שקופה מחוסמת 6 (לדלת בלי מסגרת)', t: 6, color: 0xbfe0ea, finish: 'glass', opacity: 0.3, price: 320, priceUnit: 'm2', density: 2500 },
+  { id: 'glass:shelf-8',           kind: 'glass', name: 'זכוכית למדפים 8 (מחוסמת, מלוטשת)', t: 8, color: 0xbfe0ea, finish: 'glass', opacity: 0.35, price: 360, priceUnit: 'm2', density: 2500 },
+  // פרופילי אלומיניום לדלתות ויטרינה — נמדדים במטר. צפיפות "אפקטיבית" 900: הפרופיל חלול
+  { id: 'profile:alu-black',       kind: 'profile', name: 'פרופיל אלומיניום שחור', color: 0x222222, finish: 'metal', price: 45, priceUnit: 'm', density: 900 },
+  { id: 'profile:alu-silver',      kind: 'profile', name: 'פרופיל אלומיניום כסוף', color: 0xc0c4c8, finish: 'metal', price: 40, priceUnit: 'm', density: 900 },
+  { id: 'profile:alu-gold',        kind: 'profile', name: 'פרופיל אלומיניום זהב', color: 0xc9a54a, finish: 'metal', price: 60, priceUnit: 'm', density: 900 },
+  { id: 'profile:alu-bronze',      kind: 'profile', name: 'פרופיל אלומיניום ברונזה', color: 0x7a5a3a, finish: 'metal', price: 55, priceUnit: 'm', density: 900 },
+  { id: 'profile:alu-white',       kind: 'profile', name: 'פרופיל אלומיניום לבן', color: 0xf2f2f2, finish: 'metal', price: 45, priceUnit: 'm', density: 900 },
   // אביזרים: פרזול עם מתכון תלת־ממדי (accessories.js). הנגר מוסיף ועורך במסך "אביזרים".
   { id: 'hw:hinge-110',            kind: 'hardware', name: 'ציר נסתר 110°', price: 12, priceUnit: 'unit', accessory: { type: 'concealed', params: { angle: 110 }, finish: 'nickel' } },
   { id: 'hw:hinge-165',            kind: 'hardware', name: 'ציר נסתר 165°', price: 22, priceUnit: 'unit', accessory: { type: 'concealed', params: { angle: 165 }, finish: 'nickel' } },
   { id: 'hw:hinge-soft',           kind: 'hardware', name: 'ציר נסתר 110° בטריקה שקטה', price: 24, priceUnit: 'unit', accessory: { type: 'concealed', params: { angle: 110 }, finish: 'nickel' } },
   { id: 'hw:hinge-glass',          kind: 'hardware', name: 'ציר לוויטרינה (כוס 26)', price: 28, priceUnit: 'unit', accessory: { type: 'concealed', params: { angle: 110, cup: 26 }, finish: 'chrome' } },
+  { id: 'hw:hinge-glass-clamp',    kind: 'hardware', name: 'ציר זכוכית (קלאמפ) — לדלת בלי זקף בצד הציר', price: 45, priceUnit: 'unit', accessory: { type: 'concealed', params: { angle: 110 }, finish: 'chrome' } },
   { id: 'hw:hinge-butt',           kind: 'hardware', name: 'ציר פרפר פליז 60', price: 9, priceUnit: 'unit', accessory: { type: 'butt', params: { length: 60, width: 20 }, finish: 'brass' } },
   { id: 'hw:handle-bar-128',       kind: 'hardware', name: 'ידית מוט 128 ניקל', price: 25, priceUnit: 'unit', accessory: { type: 'bar', params: { length: 128 }, finish: 'nickel' } },
   { id: 'hw:handle-bar-160-black', kind: 'hardware', name: 'ידית מוט 160 שחור', price: 28, priceUnit: 'unit', accessory: { type: 'bar', params: { length: 160, diameter: 12 }, finish: 'black' } },
@@ -100,6 +111,7 @@ export const KINDS = [
   { id: 'board', name: 'לוחות' },
   { id: 'edge', name: 'קנטים' },
   { id: 'glass', name: 'זכוכית' },
+  { id: 'profile', name: 'פרופילים' },
   { id: 'hardware', name: 'פרזול' },
 ];
 
@@ -109,6 +121,7 @@ export const FINISHES = [
   { id: 'paint', name: 'צבע / חלק' },
   { id: 'stone', name: 'שיש / אבן (עורקים)' },
   { id: 'glass', name: 'זכוכית' },
+  { id: 'metal', name: 'מתכת (אלומיניום)' },
 ];
 
 // הספרייה החיה. מפה שומרת על סדר ההכנסה — הסדר שבו החומרים מוצגים.
