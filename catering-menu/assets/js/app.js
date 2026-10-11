@@ -265,7 +265,8 @@
 
         if (!d.name) return fail('נא למלא שם');
         if (d.phone.replace(/\D/g, '').length < 9) return fail('נא למלא מספר טלפון תקין');
-        if (d.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)) return fail('כתובת המייל אינה תקינה');
+        if (!d.email) return fail('נא למלא מייל — אליו נשלח אישור ההזמנה');
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)) return fail('כתובת המייל אינה תקינה');
         if (!selected.size) return fail('לא נבחרו מנות');
         const missing = [...selected].map(id => byId.get(id).item).find(i => i.options && !choices[i.id]);
         if (missing) {
