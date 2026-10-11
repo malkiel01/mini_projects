@@ -74,8 +74,13 @@ jobs:
         with:
           packages: 'platform-tools'
 
+      # גרסה מפורשת: ה-gradle שמותקן ב-runner (9.8 ומעלה) אינו תואם ל-AGP 8.x —
+      # "relies on InternalProblems, a Gradle internal API that was removed in Gradle 9.6.0".
+      # gradle wrapper מגדיר את הפרויקט, ולכן כבר הוא צריך גרסה תואמת.
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.14.3'
 
       - name: Generate the Gradle wrapper
         run: gradle wrapper --gradle-version 8.14.3
