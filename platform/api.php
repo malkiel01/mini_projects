@@ -8,13 +8,17 @@
  *   POST ?action=logout
  *   POST ?action=register  {username, password, display_name} → ממתין לאישור
  *   POST ?action=setup     {code, username, password, display_name} → המנהל הראשון
+ *
+ * פעולות מנהל (lib/admin.php): GET admin_state, ו-POST admin_* — כולן דורשות
+ * מנהל מחובר ו-X-CSRF.
  */
 
 declare(strict_types=1);
 
 require __DIR__ . '/lib/http.php';
 require __DIR__ . '/lib/auth.php';
-require __DIR__ . '/lib/registry.php';
+require __DIR__ . '/lib/access.php';
+require __DIR__ . '/lib/admin.php';
 
 try {
     $action = $_GET['action'] ?? '';
@@ -24,6 +28,7 @@ try {
         match ($action) {
             'me'   => action_me(),
             'apps' => action_apps(),
+            'admin_state' => admin_state(require_admin()),
             default => throw new ApiError('פעולה לא מוכרת', 404),
         };
     }
@@ -34,7 +39,9 @@ try {
             'logout'   => action_logout(),
             'register' => action_register($body),
             'setup'    => action_setup($body),
-            default    => throw new ApiError('פעולה לא מוכרת', 404),
+            default    => str_starts_with($action, 'admin_')
+                ? admin_dispatch($action, $body, require_admin(true))
+                : throw new ApiError('פעולה לא מוכרת', 404),
         };
     }
     throw new ApiError('שיטה לא נתמכת', 405);
@@ -71,10 +78,7 @@ function action_apps(): never
     $user = current_user();
     if (!$user) throw new ApiError('נדרשת כניסה', 401);
 
-    $registry = registry_load();
-    // שלב 2: המנהל רואה הכול. ההרשאות למשתמשים — בשלב 3.
-    $apps = $user['role'] === 'admin' ? $registry['apps'] : [];
-    json_out(['categories' => registry_categories(), 'apps' => $apps]);
+    json_out(visible_for($user));
 }
 
 function action_login(array $body): never
