@@ -23,7 +23,7 @@ android {
 
     defaultConfig {
         applicationId = "com.mbeplus.recipes"
-        minSdk = 23
+        minSdk = 24   // androidbrowserhelper 2.7.4 דורש 24 (Android 7.0)
         targetSdk = 36
         versionCode = ((findProperty("versionCode") as String?) ?: "1").toInt()
         versionName = "1.0"
