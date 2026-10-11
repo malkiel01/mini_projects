@@ -65,6 +65,13 @@ jobs:
       - name: App registry gate (every app.json must be valid)
         run: php platform/check-apps.php
 
+      # השער: לכל אפליקציה שב-app.json שלה "gate": true — .user.ini ובלוק בראש
+      # ה-.htaccess, בעותק שבמכונה הזו בלבד (לא בגיט). ראו platform/build-gate.php.
+      - name: Build the platform gate
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: php platform/build-gate.php --root="$DEPLOY_PATH"
+
       # קוד ההתקנה של המנהל הראשון (platform/). לשרת עולה רק ה-hash שלו, לקובץ
       # שחסום מהדפדפן (platform/lib/.htaccess); הקוד עצמו לא נכתב לשום מקום.
       # בלי הסוד — אזהרה בלבד: דף ההתקנה יאמר שהקוד חסר, ושאר האתר נפרס כרגיל.

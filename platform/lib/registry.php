@@ -65,6 +65,10 @@ function registry_validate(string $folder, $app, array $categoryIds): ?string
     }
     if (!in_array($app['category'], $categoryIds, true)) return "קטגוריה לא מוכרת: '{$app['category']}'";
     if (isset($app['entry']) && !registry_safe_path($app['entry'])) return "entry לא תקין";
+    if (isset($app['gate']) && !is_bool($app['gate'])) return "gate חייב להיות true או false";
+    foreach ($app['public'] ?? [] as $p) {
+        if (!is_string($p) || !registry_safe_path(explode('?', $p, 2)[0])) return 'נתיב לא תקין ב-public';
+    }
     foreach ($app['links'] ?? [] as $l) {
         if (!is_string($l['label'] ?? null) || !is_string($l['href'] ?? null) || !registry_safe_path($l['href'])) {
             return 'קישור לא תקין ב-links';
