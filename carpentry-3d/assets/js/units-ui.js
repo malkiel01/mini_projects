@@ -13,7 +13,7 @@ import * as M from './model/materials.js';
 import { optionsFor } from './model/index.js';
 import { FINISHES_NO_GLASS } from './model/templates/common.js';
 import { suggest, applySuggestion } from './model/suggest.js';
-import { newUnitOf } from './model/templates/bookcase.js';
+import { newUnitOf as bookcaseNewUnit } from './model/templates/bookcase.js';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const clone = (x) => JSON.parse(JSON.stringify(x));
@@ -23,8 +23,11 @@ const editors = new Set();
 /** המודל האחרון שנבנה — לערכים המחושבים (רוחב, גובה) ול"לא בתוקף". */
 export function setUnitsModel(m) { model = m; }
 
-const FRONTS = { none: 'ללא', wood: 'דלת עץ', glass: 'ויטרינה' };
-const INTERIORS = { shelves: 'מדפים', drawers: 'מגירות', empty: 'ריק' };
+// מה הכרטיס מציע — לפי סוג המוצר (template.unitsSpec); ברירת המחדל — ספרייה
+const BOOKCASE_SPEC = { fronts: { none: 'ללא', wood: 'דלת עץ', glass: 'ויטרינה' }, interiors: { shelves: 'מדפים', drawers: 'מגירות', empty: 'ריק' }, newUnit: bookcaseNewUnit };
+const spec = () => ({ ...BOOKCASE_SPEC, ...(model?.template?.unitsSpec || {}) });
+const FRONTS_ALL = { none: 'ללא', wood: 'דלת עץ', glass: 'ויטרינה' };
+const INTERIORS_ALL = { shelves: 'מדפים', hanging: 'תלייה', drawers: 'מגירות', empty: 'ריק' };
 const FRAMES = { wood: 'מסגרת עץ / MDF', alu: 'פרופיל אלומיניום', none: 'זכוכית בלבד (בלי מסגרת)' };
 const SIDES = { 4: '4 צדדים', '2v': '2 — ימין ושמאל', '2h': '2 — למעלה ולמטה' };
 const PROFILES = { flat: 'ישר', shaker: 'שייקר', bevel: 'פאזה 45°', round: 'מעוגל' };
@@ -42,9 +45,9 @@ const finishes = () => Object.fromEntries(optionsFor({ type: 'enum', options: FI
 /** סיכום עמודה בשורה אחת: "496 מ"מ · עץ 850 / ויטרינה". */
 function summary(u, g) {
   const fl = u.floors.map((f, j) => {
-    const fr = FRONTS[f.front?.type || 'none'], it = f.interior?.type === 'drawers' ? ` + ${f.interior.drawers?.count ?? 3} מגירות` : '';
+    const fr = FRONTS_ALL[f.front?.type || 'none'], it = f.interior?.type === 'drawers' ? ` + ${f.interior.drawers?.count ?? 3} מגירות` : f.interior?.type === 'hanging' ? ' + תלייה' : '';
     const h = u.floors.length > 1 && g?.floors?.[j] ? ` ${Math.round(g.floors[j])}` : '';
-    return `${f.front?.type === 'none' ? (f.interior?.type === 'drawers' ? 'מגירות' : 'פתוח') : fr}${h}${f.front?.type !== 'none' ? it : ''}`;
+    return `${f.front?.type === 'none' ? (f.interior?.type === 'drawers' ? 'מגירות' : f.interior?.type === 'hanging' ? 'תלייה' : 'פתוח') : fr}${h}${f.front?.type !== 'none' ? it : ''}`;
   });
   return `${g ? `${Math.round(g.width)} מ"מ · ` : ''}${fl.join(' / ')}`;
 }
@@ -73,8 +76,8 @@ export function renderUnitsEditor(box, values, onChange) {
     const n = u.floors.length;
     const name = n === 1 ? 'כל הגובה' : `קומה ${j + 1}${j === 0 ? ' (תחתונה)' : j === n - 1 ? ' (עליונה)' : ''}`;
     const g = geo[i]?.floors?.[j];
-    const head = `${name} · ${FRONTS[fr.type || 'none']}${it.type && it.type !== 'empty' ? ` · ${INTERIORS[it.type]}` : ''}${g ? ` · ${Math.round(g)} מ"מ` : ''}`;
-    const front = [sel(`${at}.front.type`, fr.type || 'none', FRONTS, 'חזית')];
+    const head = `${name} · ${FRONTS_ALL[fr.type || 'none']}${it.type && it.type !== 'empty' ? ` · ${INTERIORS_ALL[it.type]}` : ''}${g ? ` · ${Math.round(g)} מ"מ` : ''}`;
+    const front = [sel(`${at}.front.type`, fr.type || 'none', spec().fronts, 'חזית')];
     if (fr.type === 'wood' || fr.type === 'glass') {
       if (fr.type === 'wood') front.push(sel(`${at}.front.material`, fr.material, boards(), 'חומר הדלת'), sel(`${at}.front.finish`, fr.finish || 'flat', finishes(), 'גימור'));
       if (fr.type === 'glass') {
@@ -87,7 +90,12 @@ export function renderUnitsEditor(box, values, onChange) {
       front.push(sel(`${at}.front.leaves`, fr.leaves || 'auto', LEAVES, 'כנפיים'), sel(`${at}.front.hingeSide`, fr.hingeSide || 'auto', HINGE_SIDES, 'פתיחה'),
         sel(`${at}.front.hinge`, fr.hinge, role('hinge'), 'צירים'), sel(`${at}.front.handle`, fr.handle || 'none', role('handle', 'ללא (לחיצה)'), 'ידית'));
     }
-    const inner = [sel(`${at}.interior.type`, it.type || 'shelves', INTERIORS, 'תוכן')];
+    const inner = [sel(`${at}.interior.type`, it.type || 'shelves', spec().interiors, 'תוכן')];
+    if (it.type === 'hanging') {
+      const hg = it.hanging || {};
+      inner.push(sel(`${at}.interior.hanging.topShelf`, hg.topShelf === false ? 'no' : 'yes', { yes: 'עם מדף עליון', no: 'בלי מדף עליון' }, 'מדף מעל המוט'));
+      if (hg.topShelf !== false) inner.push(sel(`${at}.interior.hanging.mode`, hg.mode || 'adjustable', MODES, 'המדף העליון'), '<small class="muted">המדף העליון נבנה כשגובה הקומה מעל 1800</small>');
+    }
     if ((it.type || 'shelves') === 'shelves') {
       const sh = it.shelves || {};
       inner.push(cnt(`${at}.interior.shelves.count`, sh.count ?? 0, 'מדפים', 0, 15), sel(`${at}.interior.shelves.material`, sh.material || 'same', { same: 'כמו המדפים', ...boards(), ...glasses() }, 'חומר המדפים'), sel(`${at}.interior.shelves.mode`, sh.mode || 'adjustable', MODES, 'קבועים / מתכווננים'));
@@ -194,11 +202,13 @@ document.addEventListener('change', (e) => {
   let v = t.value;
   if (t.type === 'number') v = v === '' ? null : Number(v);
   else if (/\.leaves$/.test(path)) v = v === 'auto' ? 'auto' : Number(v);
+  else if (/\.topShelf$/.test(path)) v = v === 'yes';
   const [ci, ...rest] = path.split('.');
   commit(box, (units) => {
     setPath(units, path, v);
     // קומה שקיבלה מגירות בפעם הראשונה — ברירת מחדל סבירה
     if (/\.interior\.type$/.test(path) && v === 'drawers') { const it = getPath(units, path.replace(/\.type$/, '')); it.drawers = it.drawers || { count: 3, slide: 'hw:slide-std', handle: 'hw:handle-bar-128' }; }
+    if (/\.interior\.type$/.test(path) && v === 'hanging') { const it = getPath(units, path.replace(/\.type$/, '')); it.hanging = it.hanging || { topShelf: true, mode: 'adjustable' }; }
     if (/\.interior\.type$/.test(path) && v === 'shelves') { const it = getPath(units, path.replace(/\.type$/, '')); it.shelves = it.shelves || { count: 2, material: 'same', mode: 'adjustable' }; }
   }, { unit: Number(ci), path: rest.join('.') });
 });
@@ -233,7 +243,7 @@ document.addEventListener('click', (e) => {
     // מספר העמודות משתנה מכאן — העמודה החדשה לפי "עמודה שנוספת" (newUnit)
     const { values } = box._units;
     commit(box, (units) => {
-      if (act === 'addcol') units.push(newUnitOf(units[units.length - 1], values.newUnit, model?.values || values));
+      if (act === 'addcol') units.push(spec().newUnit(units[units.length - 1], values.newUnit, model?.values || values));
       else if (units.length > 1) units.splice(i, 1);
       values.columns = units.length;
     });
