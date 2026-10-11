@@ -337,6 +337,8 @@ function searchRecipes(?array $user, string $query = '', array $filters = []): a
     if (!empty($filters['following']) && $user) { $where[] = 'r.owner_id IN (SELECT followee_id FROM follows WHERE follower_id = ?)'; $params[] = $uid0; }
     if (!empty($filters['shared']) && $user)    { $where[] = 'EXISTS (SELECT 1 FROM recipe_shares sh2 WHERE sh2.recipe_id = r.id AND sh2.user_id = ?)'; $params[] = $uid0; }
     if (!empty($filters['owner_id']))            { $where[] = 'r.owner_id = ?'; $params[] = (int) $filters['owner_id']; }
+    // חסימה (lib/privacy.php): מתכונים של מי שחסמתי או שחסם אותי — לא ברשימות
+    if ($user) { $where[] = 'r.owner_id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = ? UNION SELECT blocker_id FROM blocks WHERE blocked_id = ?)'; array_push($params, $uid0, $uid0); }
 
     $q = normalizeText($query);
     if ($q !== '') {

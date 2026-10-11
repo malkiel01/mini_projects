@@ -582,6 +582,42 @@ check 'ואז הפרטי כבר לא זמין'                    "$(call recipe
 call logout >/dev/null
 
 echo
+echo "8מ. פרטיות ושליטה — העדפות, חסימה, דיווח, מחיקת חשבון"
+call login '{"username":"owner","password":"sod12345"}' >/dev/null
+PUBR=$(call recipe-save '{"title":"עוגה ציבורית לדיווח","visibility":"public","sections":[{"ingredients":[{"free_text":"קמח"}],"steps":[{"text":"לאפות"}]}]}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
+PRIVR=$(call recipe-save '{"title":"פרטי לחסימה","visibility":"private","sections":[{"ingredients":[{"free_text":"קמח"}],"steps":[{"text":"לאפות"}]}]}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
+OWNID=$(call me | python3 -c 'import sys,json; d=json.load(sys.stdin); print((d.get("user") or d)["id"])')
+TID=$(call people-search '{"q":"tester"}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["people"][0]["id"])')
+call logout >/dev/null
+call login '{"username":"tester","password":"sod12345"}' >/dev/null
+check 'העדפות — ברירת מחדל'                   "$(call privacy)" '"prefs":{"discoverable":true,"share_from":"all","personalize":true}'
+check '"אף אחד לא משתף איתי"'                  "$(call privacy-save '{"share_from":"none"}')" '"share_from":"none"'
+call logout >/dev/null
+call login '{"username":"owner","password":"sod12345"}' >/dev/null
+check 'owner לא משתף עם tester'                "$(call recipe-share "{\"recipe_id\":$PRIVR,\"user_ids\":[$TID]}")" 'לא מקבל'
+call logout >/dev/null
+call login '{"username":"tester","password":"sod12345"}' >/dev/null
+call privacy-save '{"share_from":"all"}' >/dev/null
+check 'דיווח על מתכון'                         "$(call report "{\"kind\":\"recipe\",\"id\":$PUBR,\"reason\":\"copyright\",\"note\":\"מועתק\"}")" '"success":true'
+check 'חסימת owner'                           "$(call block "{\"id\":$OWNID}")" '"username":"owner"'
+check 'אחרי חסימה — המתכון שלו לא ברשימה'        "$(call search '{"q":"עוגה ציבורית לדיווח"}' | grep -c 'עוגה ציבורית לדיווח')" '^0$'
+check 'ולא עוקבים'                             "$(call follow "{\"id\":$OWNID}")" 'אינו קיים'
+check 'ביטול חסימה'                            "$(call unblock "{\"id\":$OWNID}")" '"blocks":\[\]'
+check 'מחיקת חשבון — סיסמה שגויה נדחית'          "$(call account-delete '{"password":"nope"}')" 'שגויה'
+call logout >/dev/null
+call login '{"username":"owner","password":"sod12345"}' >/dev/null
+REP=$(call reports)
+check 'המפתח רואה את הדיווח'                   "$REP" '"kind":"recipe".*"reason_label":"הפרת זכויות יוצרים".*"snapshot":"עוגה ציבורית לדיווח"'
+RPID=$(printf '%s' "$REP" | python3 -c 'import sys,json; print(json.load(sys.stdin)["reports"][0]["id"])')
+check 'הסתרה — התור מתרוקן'                     "$(call report-resolve "{\"id\":$RPID,\"action\":\"hide\"}")" '"reports":\[\]'
+check 'והמתכון פרטי'                           "$(call recipe "{\"id\":$PUBR}")" '"visibility":"private"'
+call logout >/dev/null
+check 'tester לא רואה דיווחים'                  "$(call login '{"username":"tester","password":"sod12345"}' >/dev/null; call reports)" 'מפתח'
+call logout >/dev/null
+check 'מדיניות פרטיות — עמוד ציבורי'             "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/privacy.html")" 'מדיניות פרטיות'
+check 'דף מחיקת חשבון — ציבורי'                  "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/delete-account.html")" 'מחיקת חשבון ונתונים'
+
+echo
 echo "9. אבחון למנהל"
 call login '{"username":"owner","password":"sod12345"}' >/dev/null
 D=$(call diag)

@@ -284,6 +284,37 @@ function migrate(PDO $pdo): void {
             seen_at    TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_reco_to ON recommendations(to_user, id);
+        -- פרטיות ושליטה (lib/privacy.php, SPEC 15.7)
+        CREATE TABLE IF NOT EXISTS user_prefs (
+            user_id      INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            discoverable INTEGER NOT NULL DEFAULT 1,       -- מופיע בחיפוש אנשים
+            share_from   TEXT    NOT NULL DEFAULT 'all',   -- מי משתף וממליץ לי: all / following / none
+            personalize  INTEGER NOT NULL DEFAULT 1,       -- התאמה אישית בהמלצות
+            updated_at   TEXT
+        );
+        CREATE TABLE IF NOT EXISTS blocks (
+            blocker_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            blocked_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at TEXT    NOT NULL,
+            PRIMARY KEY (blocker_id, blocked_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_blocks_blocked ON blocks(blocked_id);
+        CREATE TABLE IF NOT EXISTS reports (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            reporter_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            kind         TEXT    NOT NULL,                 -- recipe / comment / user
+            target_id    INTEGER NOT NULL,
+            target_owner INTEGER,                          -- של מי התוכן, ברגע הדיווח
+            reason       TEXT    NOT NULL,
+            note         TEXT,
+            snapshot     TEXT,                             -- השם/הטקסט כפי שהיה
+            status       TEXT    NOT NULL DEFAULT 'open',  -- open / handled / dismissed
+            resolution   TEXT,
+            created_at   TEXT    NOT NULL,
+            resolved_at  TEXT,
+            resolved_by  INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status, id);
         -- סריקת מתכון מתמונה (lib/scan.php): ממתינה לאישור המפתח, עד שתהיה טעינת קרדיטים.
         -- התמונות ב-data/scans/; נמחקות כשהסריקה טופלה.
         CREATE TABLE IF NOT EXISTS scans (

@@ -29,6 +29,7 @@ require_once __DIR__ . '/lib/pantry.php';
 require_once __DIR__ . '/lib/shopping.php';
 require_once __DIR__ . '/lib/scan.php';
 require_once __DIR__ . '/lib/network.php';
+require_once __DIR__ . '/lib/privacy.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -459,6 +460,36 @@ try {
 
     case 'recipe-unshare':
         ok(['shares' => unshareRecipe((int) ($in['recipe_id'] ?? 0), (int) ($in['user_id'] ?? 0), $user)]);
+
+    // פרטיות ושליטה (lib/privacy.php)
+    case 'privacy':
+        ok(['prefs' => userPrefs((int) $user['id']), 'blocks' => myBlocks($user)]);
+
+    case 'privacy-save':
+        ok(['prefs' => setUserPrefs($in, $user)]);
+
+    case 'block':
+        blockUser((int) ($in['id'] ?? 0), $user);
+        ok(['blocks' => myBlocks($user)]);
+
+    case 'unblock':
+        unblockUser((int) ($in['id'] ?? 0), $user);
+        ok(['blocks' => myBlocks($user)]);
+
+    case 'report':
+        reportContent(str_field($in, 'kind', 20), (int) ($in['id'] ?? 0), str_field($in, 'reason', 20), str_field($in, 'note', 500), $user);
+        ok([]);
+
+    case 'reports':
+        ok(['reports' => reportsList($user, str_field($in, 'status', 10) ?: 'open'), 'reasons' => REPORT_REASONS]);
+
+    case 'report-resolve':
+        ok(['reports' => reportResolve((int) ($in['id'] ?? 0), str_field($in, 'action', 20), $user)]);
+
+    case 'account-delete':
+        deleteAccount($user, (string) ($in['password'] ?? ''));
+        logout();
+        ok(['deleted' => true]);
 
     case 'recommend':
         ok(recommend(['entry_id' => (int) ($in['entry_id'] ?? 0), 'recipe_id' => (int) ($in['recipe_id'] ?? 0)],

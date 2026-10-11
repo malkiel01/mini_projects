@@ -48,8 +48,9 @@ function listComments(int $recipeId, ?array $user): array {
                                 u.display_name AS user_name
                            FROM comments c JOIN users u ON u.id = c.user_id
                           WHERE c.recipe_id = ? AND c.visibility = \'public\'
+                            AND c.user_id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = ?)
                           ORDER BY c.created_at, c.id');
-    $st->execute([$recipeId]);
+    $st->execute([$recipeId, $user ? (int) $user['id'] : 0]);
 
     $uid     = $user ? (int) $user['id'] : 0;
     $isOwner = $uid && (int) $recipe['owner_id'] === $uid;
@@ -89,6 +90,9 @@ function addComment(int $recipeId, ?int $parentId, string $text, array $user): i
     $recipe = viewableRecipeRow($recipeId, $user);
     if ($recipe['visibility'] !== 'public') throw new AppError('אפשר להגיב רק במתכון ציבורי', 403);
     if ((int) $recipe['comments_open'] === 0) throw new AppError('הכותב סגר את התגובות במתכון הזה', 403);
+    $st = db()->prepare('SELECT 1 FROM blocks WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?)');
+    $st->execute([(int) $recipe['owner_id'], (int) $user['id'], (int) $user['id'], (int) $recipe['owner_id']]);
+    if ($st->fetchColumn()) throw new AppError('אי אפשר להגיב במתכון הזה', 403);
 
     $text = trim($text);
     if ($text === '') throw new AppError('התגובה ריקה');

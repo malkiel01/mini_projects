@@ -304,6 +304,7 @@ async function route() {
     else if (h === '#/rewrite') await renderRewrite();
     else if (h === '#/scan') await renderScan();
     else if (h === '#/people') await renderPeople();
+    else if (h === '#/reports') await renderReports();
     else if ((m = h.match(/^#\/u\/(\d+)$/))) await renderPerson(+m[1]);
     else if (h === '#/scans') await renderScansDev();
     else if (h === '#/web' || h.startsWith('#/web?')) await renderWebSearch(new URLSearchParams(h.split('?')[1] || '').get('q') || '');
@@ -444,6 +445,7 @@ async function renderRecipe(id) {
               <button class="icon-btn icon-btn--danger" id="del" type="button" aria-label="מחיקה" title="מחיקה">🗑</button>
               <button class="icon-btn" id="share-open" type="button" aria-label="שיתוף עם אנשים" title="שיתוף עם אנשים">👥</button>` : ''}
               ${r.source ? '<button class="icon-btn" id="reco-open" type="button" aria-label="המלצה על המקור" title="המלצה על המקור">📨</button>' : ''}
+              ${!r.is_mine ? '<button class="icon-btn" id="report-open" type="button" aria-label="דיווח" title="דיווח">⚑</button>' : ''}
               <button class="icon-btn" id="print" type="button" aria-label="הדפסה" title="הדפסה">🖨</button>
             </span>
           </div>
@@ -456,6 +458,7 @@ async function renderRecipe(id) {
           </p>
           ${r.is_mine ? '<div id="share-box" class="share-box" hidden></div>' : ''}
           ${r.source ? '<div id="reco-box" class="share-box" hidden></div>' : ''}
+          <div id="report-slot"></div>
           ${loaded.shared_with_me ? '<p class="small"><button class="link" type="button" id="leave-share">הסר מהרשימה שלי</button></p>' : ''}
           ${r.source ? `
           <p class="credit">
@@ -540,6 +543,11 @@ async function renderRecipe(id) {
       const box = $('#share-box');
       box.hidden = !box.hidden;
       if (!box.hidden) renderShareBox(box, r);
+    });
+    $('#report-open')?.addEventListener('click', () => {
+      const slot = $('#report-slot');
+      if (slot.innerHTML) { slot.innerHTML = ''; return; }
+      reportBox(slot, 'recipe', r.id, 'המתכון');
     });
     $('#reco-open')?.addEventListener('click', () => {
       const box = $('#reco-box');
@@ -677,6 +685,7 @@ async function renderRecipe(id) {
         ${!isReply && r.comments_open ? `<button class="link" type="button" data-reply="${c.id}">השב</button>` : ''}
         ${c.can_edit ? `<button class="link" type="button" data-cedit="${c.id}">עריכה</button>` : ''}
         ${c.can_delete ? `<button class="link link--danger" type="button" data-cdel="${c.id}">מחיקה</button>` : ''}
+        ${!c.is_mine ? `<button class="link link--muted" type="button" data-creport="${c.id}">דווח</button>` : ''}
       </div>
       <div class="comment__slot" data-slot="${c.id}"></div>
       ${c.replies?.length ? `<div class="comment__replies">${c.replies.map((x) => commentHtml(x, true)).join('')}</div>` : ''}
@@ -737,6 +746,9 @@ async function renderRecipe(id) {
       if (!confirm('למחוק את התגובה? תשובות עליה יימחקו איתה.')) return;
       try { refresh((await api('comment-delete', { id: +b.dataset.cdel })).comments); }
       catch (err) { fail(err.message); }
+    }));
+    $$('[data-creport]', box).forEach((b) => b.addEventListener('click', () => {
+      reportBox($(`[data-slot="${b.dataset.creport}"]`, box), 'comment', +b.dataset.creport, 'התגובה');
     }));
     $('#toggle-comments')?.addEventListener('click', async () => {
       try { r.comments_open = (await api('recipe-comments-open', { recipe_id: r.id, open: !r.comments_open })).comments_open; drawComments(); }
@@ -1789,6 +1801,7 @@ function settingsNav(active) {
     ['#/index', 'אינדקס', true],
     ['#/rewrite', 'ניסוח', true],
     ['#/scans', 'סריקות', true],
+    ['#/reports', 'דיווחים', true],
   ];
   return `<nav class="subnav" aria-label="הגדרות">${items
     .filter(([, , dev]) => !dev || state.user.is_developer)
@@ -1821,10 +1834,65 @@ async function renderSettingsPrivate() {
         <tr><th>אחסון כולל</th><td>${toMB(limits.used)} מתוך ${toMB(limits.quota)} MB</td></tr>
       </table>
       <div class="quota"><div class="quota__bar"><span style="width:${Math.min(100, (limits.used / limits.quota) * 100).toFixed(1)}%"></span></div></div>
+      <h3>🔒 פרטיות</h3>
+      <form id="privacy" class="form">
+        <label class="check"><input type="checkbox" name="discoverable"> אנשים יכולים למצוא אותי בחיפוש לפי שם</label>
+        <label>מי יכול לשתף איתי מתכונים ולהמליץ לי
+          <select name="share_from">
+            <option value="all">כולם</option>
+            <option value="following">רק מי שאני עוקב אחריו</option>
+            <option value="none">אף אחד</option>
+          </select></label>
+        <label class="check"><input type="checkbox" name="personalize"> התאמה אישית — המלצות לפי מה שאני שומר ומבשל</label>
+        <p class="note" id="privacy-msg" hidden></p>
+      </form>
+      <h4>אנשים שחסמתי</h4>
+      <div id="blocks" class="people-list"><p class="muted small">טוען…</p></div>
       <h3>📲 אפליקציה בטלפון</h3>
       <div id="install-box" class="install"></div>
+      <h3>מסמכים</h3>
+      <p class="small"><a href="./privacy.html" target="_blank" rel="noopener">מדיניות פרטיות</a> · <a href="./delete-account.html" target="_blank" rel="noopener">מחיקת חשבון ונתונים</a></p>
+      <details class="danger-zone">
+        <summary>מחיקת החשבון</summary>
+        <p class="small">מוחק לצמיתות את החשבון ואת כל מה שבו: המתכונים שלך (גם הציבוריים), תמונות וסרטונים שהעלית, תגובות,
+          רשימות קניות, מעקבים ושיתופים. <strong>אי אפשר לשחזר.</strong></p>
+        <form id="del-account" class="form">
+          <label>הסיסמה שלך, לאישור <input name="password" type="password" autocomplete="current-password" required></label>
+          <button class="btn btn--danger" type="submit">מחק את החשבון לצמיתות</button>
+          <p class="note" id="del-msg" hidden></p>
+        </form>
+      </details>
     </section>`;
   drawInstall($('#install-box'));
+  const pf = $('#privacy');
+  const drawBlocks = (blocks) => {
+    $('#blocks').innerHTML = blocks.length ? blocks.map((p) => personRow(p, `<button class="btn btn--small" type="button" data-unblock="${p.id}">ביטול חסימה</button>`)).join('')
+      : '<p class="muted small">לא חסמת אף אחד.</p>';
+  };
+  api('privacy').then(({ prefs, blocks }) => {
+    pf.discoverable.checked = prefs.discoverable; pf.share_from.value = prefs.share_from; pf.personalize.checked = prefs.personalize;
+    drawBlocks(blocks);
+  }).catch(() => {});
+  pf.addEventListener('change', async () => {
+    const m = $('#privacy-msg');
+    try {
+      await api('privacy-save', { discoverable: pf.discoverable.checked, share_from: pf.share_from.value, personalize: pf.personalize.checked });
+      m.textContent = 'נשמר ✓'; m.className = 'note note--ok';
+    } catch (err) { m.textContent = err.message; m.className = 'note note--err'; }
+    m.hidden = false;
+  });
+  $('#blocks').addEventListener('click', async (e) => {
+    const id = e.target.dataset.unblock;
+    if (!id) return;
+    try { drawBlocks((await api('unblock', { id: +id })).blocks); } catch (err) { alert(err.message); }
+  });
+  $('#del-account').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!confirm('למחוק את החשבון לצמיתות? אי אפשר לשחזר.')) return;
+    const m = $('#del-msg');
+    try { await api('account-delete', { password: e.target.password.value }); alert('החשבון נמחק.'); location.href = './index.html'; }
+    catch (err) { m.textContent = err.message; m.className = 'note note--err'; m.hidden = false; }
+  });
   $('#priv').addEventListener('submit', async (e) => {
     e.preventDefault();
     const out = $('#priv-msg');
@@ -2554,6 +2622,29 @@ function peoplePicker(box, { placeholder, actionFor, onAction }) {
   return { refresh: run, input: inp };
 }
 
+const REPORT_REASONS_UI = { spam: 'ספאם / פרסומת', offensive: 'פוגעני', copyright: 'הפרת זכויות יוצרים', unsafe: 'מסוכן / לא בטוח', other: 'אחר' };
+
+/** דיווח על מתכון / תגובה / משתמש: סיבה, הערה, שליחה. מוצג בתוך $slot. */
+function reportBox(slot, kind, id, what) {
+  slot.innerHTML = `
+    <form class="share-box report-box">
+      <h3>⚑ דיווח על ${esc(what)}</h3>
+      <div class="report-reasons">${Object.entries(REPORT_REASONS_UI).map(([k, v], i) =>
+        `<label class="check"><input type="radio" name="reason" value="${k}" ${i === 0 ? 'checked' : ''}> ${v}</label>`).join('')}</div>
+      <input name="note" maxlength="500" placeholder="פרטים (לא חובה)" autocomplete="off">
+      <div class="actions"><button class="btn btn--primary btn--small" type="submit">שליחה</button>
+        <button class="btn btn--ghost btn--small" type="button" data-cancel>ביטול</button></div>
+      <p class="muted small">הדיווח מגיע למנהל האפליקציה. מי שדווח עליו לא יודע מי דיווח.</p>
+    </form>`;
+  const f = slot.querySelector('form');
+  f.querySelector('[data-cancel]').addEventListener('click', () => { slot.innerHTML = ''; });
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try { await api('report', { kind, id, reason: f.reason.value, note: f.note.value }); slot.innerHTML = '<p class="note note--ok">תודה — הדיווח נשלח.</p>'; }
+    catch (err) { slot.innerHTML = `<p class="note note--err">${esc(err.message)}</p>`; }
+  });
+}
+
 /** לוח השיתוף של מתכון (לבעלים): עם מי משותף, והוספה. */
 async function renderShareBox(box, r) {
   box.innerHTML = `
@@ -2631,12 +2722,18 @@ async function renderPerson(id) {
         <span><strong>${p.followers_n}</strong> עוקבים</span>
         <span><strong>${p.following_n}</strong> נעקבים</span>
       </div>
-      <div id="follow-slot" data-pid="${p.id}">${p.is_me ? '<span class="muted">זה הדף שלך.</span>' : followBtn(p)}</div>
+      <div id="follow-slot" data-pid="${p.id}">${p.is_me ? '<span class="muted">זה הדף שלך.</span>'
+        : p.blocked_by_me ? `<span class="muted">חסמת את ${esc(p.display_name)}.</span> <button class="btn btn--small" type="button" data-act="unblock">ביטול חסימה</button>`
+        : `${followBtn(p)} <span class="person-card__more"><button class="link link--muted" type="button" data-act="report-user">דווח</button>
+           <button class="link link--danger" type="button" data-act="block">חסום</button></span>`}</div>
+      <div id="person-report"></div>
     </section>
     <section class="list">${d.recipes.length ? d.recipes.map(recipeItem).join('') : '<p class="muted">אין מתכונים שגלויים לך.</p>'}</section>`;
   $('#follow-slot').addEventListener('click', async (e) => {
     const b = e.target.closest('[data-act]');
     if (!b) return;
+    if (b.dataset.act === 'report-user') { reportBox($('#person-report'), 'user', p.id, p.display_name); return; }
+    if (b.dataset.act === 'block' && !confirm(`לחסום את ${p.display_name}?\n\nלא תראו זה את זה בחיפוש ובמתכונים, לא תוכלו לשתף, להמליץ או לעקוב, והמעקבים והשיתופים ביניכם יימחקו.`)) return;
     b.disabled = true;
     try { await api(b.dataset.act, { id: p.id }); renderPerson(id); } catch (err) { alert(err.message); b.disabled = false; }
   });
@@ -2808,6 +2905,47 @@ async function renderScan() {
       load();
     } catch (err) { note(err.message, 'err'); btn.disabled = !picked.length; }
   });
+  await load();
+}
+
+/** המפתח: תור הדיווחים — דחייה, הסתרה (פרטי), מחיקה, חסימת המשתמש באתר. */
+async function renderReports() {
+  if (!state.user.is_developer) { go('#/settings'); return; }
+  view.innerHTML = `
+    <section class="card settings settings--wide">
+      ${settingsNav()}
+      <h2>⚑ דיווחים</h2>
+      <nav class="subnav"><a href="#/reports" class="is-on" data-st="open">פתוחים</a><a href="#/reports" data-st="closed">טופלו</a></nav>
+      <div id="rep-list" class="scan-list"><p class="muted">טוען…</p></div>
+    </section>`;
+  let st = 'open';
+  const KIND = { recipe: 'מתכון', comment: 'תגובה', user: 'משתמש' };
+  const link = (r) => r.kind === 'recipe' ? `#/r/${r.target_id}` : r.kind === 'user' ? `#/u/${r.target_id}` : null;
+  const draw = (list) => {
+    $('#rep-list').innerHTML = list.length ? list.map((r) => `
+      <article class="scan-card ${r.status === 'open' ? 'scan-card--pending' : ''}" data-id="${r.id}">
+        <div class="scan-card__head"><strong>${KIND[r.kind] || r.kind} · ${esc(r.reason_label)}</strong>
+          <span class="muted small">מאת ${esc(r.reporter || 'משתמש שנמחק')} · ${fmtWhen(r.created_at)}</span></div>
+        <p>${link(r) ? `<a href="${link(r)}">${esc(r.snapshot || '')}</a>` : `„${esc(r.snapshot || '')}”`}</p>
+        <p class="muted small">של ${esc(r.owner.display_name || r.owner.username || '?')}${r.owner.blocked ? ' (חסום באתר)' : ''}${r.note ? ` · 💬 ${esc(r.note)}` : ''}</p>
+        ${r.status === 'open' ? `<div class="actions actions--wrap">
+          <button class="btn btn--small" type="button" data-a="dismiss">אין הפרה</button>
+          ${r.kind === 'recipe' ? '<button class="btn btn--small" type="button" data-a="hide">הסתר (פרטי)</button>' : ''}
+          ${r.kind !== 'user' ? '<button class="btn btn--small btn--danger" type="button" data-a="delete">מחק</button>' : ''}
+          <button class="btn btn--small btn--danger" type="button" data-a="block">חסום משתמש באתר</button>
+        </div>` : `<p class="small">✓ ${esc(r.resolution || '')} · ${fmtWhen(r.resolved_at)}</p>`}
+      </article>`).join('') : `<p class="muted">${st === 'open' ? 'אין דיווחים פתוחים. ✓' : 'עוד לא טופלו דיווחים.'}</p>`;
+  };
+  const load = async () => draw((await api('reports', { status: st })).reports);
+  $('#rep-list').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-a]');
+    if (!b) return;
+    if (b.dataset.a !== 'dismiss' && !confirm('לבצע? ' + b.textContent.trim())) return;
+    try { draw((await api('report-resolve', { id: +b.closest('[data-id]').dataset.id, action: b.dataset.a })).reports); } catch (err) { alert(err.message); }
+  });
+  $$('[data-st]').forEach((a) => a.addEventListener('click', (e) => {
+    e.preventDefault(); st = a.dataset.st; $$('[data-st]').forEach((x) => x.classList.toggle('is-on', x === a)); load();
+  }));
   await load();
 }
 
