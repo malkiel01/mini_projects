@@ -40,15 +40,17 @@ function scopeOf(path) {
 }
 
 /** קבוצות יעד מוכנות: כולן, הקיצוניות, לסירוגין (כמו העמודה), וכל עמודה בנפרד. */
-function targetGroups(from, n, differs) {
+function targetGroups(from, members, differs, short) {
+  // members — העמודות שבאותה קבוצה (במטבח: אותה שורת ארונות), לפי הסדר
+  const n = members.length, pos = (i) => members.indexOf(i);
   const all = differs;
-  const ends = [0, n - 1].filter((i) => i !== from && differs.includes(i));
-  const alt = differs.filter((i) => (i - from) % 2 === 0);
+  const ends = [members[0], members[n - 1]].filter((i) => i !== from && differs.includes(i));
+  const alt = differs.filter((i) => (pos(i) - pos(from)) % 2 === 0);
   const out = [];
-  if (all.length > 1) out.push({ id: 'all', label: 'כל העמודות', units: all });
+  if (all.length > 1) out.push({ id: 'all', label: 'כולן', units: all });
   if (n > 3 && ends.length && ends.length < all.length) out.push({ id: 'ends', label: 'הקיצוניות', units: ends });
   if (n > 3 && alt.length && alt.length < all.length) out.push({ id: 'alt', label: 'לסירוגין', units: alt });
-  for (const i of differs) out.push({ id: String(i), label: String(i + 1), units: [i] });
+  for (const i of differs) out.push({ id: String(i), label: short(i), units: [i] });
   return out;
 }
 
@@ -56,23 +58,25 @@ function targetGroups(from, n, differs) {
  * ההמלצות למצב הנוכחי. `change` — { unit, path } (נתיב בתוך העמודה) של השינוי
  * האחרון, אם יש; `geo` — model.unitGeo (רוחבים); `dismissed` — מפתחות שנדחו.
  */
-export function suggest(units, { change = null, geo = [], dismissed = [] } = {}) {
+export function suggest(units, { change = null, geo = [], dismissed = [], label = (i) => `עמודה ${i + 1}`, group = null } = {}) {
   if (!Array.isArray(units) || !units.length) return [];
   const out = [];
   const no = new Set(dismissed || []);
   const n = units.length;
+  const short = (i) => label(i).replace(/^(עמודה|ארון) /, '');
   // copy — אחרי שינוי
   if (change && n > 1 && units[change.unit]) {
     const sc = scopeOf(change.path);
     if (sc) {
       const src = get(units[change.unit], sc.path);
-      const differs = units.map((u, i) => i).filter((i) => i !== change.unit
+      const members = units.map((u, i) => i).filter((i) => !group || group(units[i]) === group(units[change.unit]));
+      const differs = members.filter((i) => i !== change.unit
         && (sc.floor === null || units[i].floors.length > sc.floor)
         && !same(get(units[i], sc.path), src));
       const key = `copy:${change.unit}:${sc.path}`;
       if (differs.length && !no.has(key)) {
         const where = sc.floor === null || units[change.unit].floors.length === 1 ? '' : ` (קומה ${sc.floor + 1})`;
-        out.push({ kind: 'copy', key, from: change.unit, path: sc.path, text: `להחיל את ${sc.label}${where} של עמודה ${change.unit + 1} גם על:`, targets: targetGroups(change.unit, n, differs) });
+        out.push({ kind: 'copy', key, from: change.unit, path: sc.path, text: `להחיל את ${sc.label}${where} של ${label(change.unit)} גם על:`, targets: targetGroups(change.unit, members, differs, short) });
       }
     }
   }
@@ -83,7 +87,7 @@ export function suggest(units, { change = null, geo = [], dismissed = [] } = {})
   }
   // fix — מקצועיות
   units.forEach((u, i) => u.floors.forEach((f, j) => {
-    const fr = f.front || {}, at = `floors.${j}.front`, where = `עמודה ${i + 1}${u.floors.length > 1 ? `, קומה ${j + 1}` : ''}`;
+    const fr = f.front || {}, at = `floors.${j}.front`, where = `${label(i)}${u.floors.length > 1 ? `, קומה ${j + 1}` : ''}`;
     const add = (id, text, path, value) => { const key = `fix:${i}:${j}:${id}`; if (!no.has(key)) out.push({ kind: 'fix', key, unit: i, floor: j, path, value, text: `${where}: ${text}` }); };
     if (fr.type === 'glass') {
       const vt = fr.vitrine || {};

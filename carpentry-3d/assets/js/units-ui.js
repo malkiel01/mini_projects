@@ -40,7 +40,9 @@ const list = (arr) => Object.fromEntries(arr.map((m) => [m.id, m.name]));
 const boards = () => list(M.materialsOfKind('board', { back: false, solid: false, top: false }));
 const glasses = () => list(M.materialsOfKind('glass'));
 const role = (r, none) => ({ ...(none ? { none: none } : {}), ...list(M.materialsOfRole(r)) });
-const finishes = () => Object.fromEntries(optionsFor({ type: 'enum', options: FINISHES_NO_GLASS }).map((o) => [o.id, o.name]));
+const finishes = () => Object.fromEntries(optionsFor({ type: 'enum', options: spec().finishes || FINISHES_NO_GLASS }).map((o) => [o.id, o.name]));
+/** "כמו המוצר" (spec.same, למשל "כמו המטבח") בראש רשימה — חזית שעוקבת אחרי ההגדרה הכללית. */
+const withSame = (opts) => (spec().same ? { same: spec().same, ...opts } : opts);
 
 /** סיכום עמודה בשורה אחת: "496 מ"מ · עץ 850 / ויטרינה". */
 function summary(u, g) {
@@ -79,7 +81,7 @@ export function renderUnitsEditor(box, values, onChange) {
     const head = `${name} · ${FRONTS_ALL[fr.type || 'none']}${it.type && it.type !== 'empty' ? ` · ${INTERIORS_ALL[it.type]}` : ''}${g ? ` · ${Math.round(g)} מ"מ` : ''}`;
     const front = [sel(`${at}.front.type`, fr.type || 'none', spec().fronts, 'חזית')];
     if (fr.type === 'wood' || fr.type === 'glass') {
-      if (fr.type === 'wood') front.push(sel(`${at}.front.material`, fr.material, boards(), 'חומר הדלת'), sel(`${at}.front.finish`, fr.finish || 'flat', finishes(), 'גימור'));
+      if (fr.type === 'wood') front.push(sel(`${at}.front.material`, fr.material, withSame(boards()), 'חומר הדלת'), sel(`${at}.front.finish`, fr.finish || (spec().same ? 'same' : 'flat'), withSame(finishes()), 'גימור'));
       if (fr.type === 'glass') {
         front.push(sel(`${at}.front.glass`, fr.glass, glasses(), 'זכוכית'), sel(`${at}.front.vitrine.frame`, vt.frame || 'wood', FRAMES, 'מסגרת'));
         if (vt.frame !== 'none') front.push(sel(`${at}.front.vitrine.sides`, vt.sides || '4', SIDES, 'צדדים'), num(`${at}.front.vitrine.frameW`, vt.frameW ?? 60, 'רוחב הפס', '60'));
@@ -88,7 +90,7 @@ export function renderUnitsEditor(box, values, onChange) {
         if (vt.frame !== 'none') front.push(sel(`${at}.front.vitrine.mullions`, vt.mullions || 'none', MULLIONS, 'שפרוסים'));
       }
       front.push(sel(`${at}.front.leaves`, fr.leaves || 'auto', LEAVES, 'כנפיים'), sel(`${at}.front.hingeSide`, fr.hingeSide || 'auto', HINGE_SIDES, 'פתיחה'),
-        sel(`${at}.front.hinge`, fr.hinge, role('hinge'), 'צירים'), sel(`${at}.front.handle`, fr.handle || 'none', role('handle', 'ללא (לחיצה)'), 'ידית'));
+        sel(`${at}.front.hinge`, fr.hinge, withSame(role('hinge')), 'צירים'), sel(`${at}.front.handle`, fr.handle || 'none', withSame(role('handle', 'ללא (לחיצה)')), 'ידית'));
     }
     const inner = [sel(`${at}.interior.type`, it.type || 'shelves', spec().interiors, 'תוכן')];
     if (it.type === 'hanging') {
@@ -102,8 +104,9 @@ export function renderUnitsEditor(box, values, onChange) {
       if (Array.isArray(sh.gaps) && sh.gaps.some((x) => x !== null)) inner.push(off(`units.${at}.interior.shelves.gaps`) || '<small class="muted">גבהי התאים — לפי עריכה קודמת</small>');
     } else if (it.type === 'drawers') {
       const dr = it.drawers || {};
-      inner.push(cnt(`${at}.interior.drawers.count`, dr.count ?? 3, 'מגירות', 1, 10), sel(`${at}.interior.drawers.frontMaterial`, dr.frontMaterial || fr.material, boards(), 'חומר החזיתות'), sel(`${at}.interior.drawers.slide`, dr.slide || 'hw:slide-std', role('slide'), 'מסילות'));
-      if ((fr.type || 'none') === 'none') inner.push(sel(`${at}.interior.drawers.finish`, dr.finish || 'flat', finishes(), 'גימור החזיתות'), sel(`${at}.interior.drawers.handle`, dr.handle || 'hw:handle-bar-128', role('handle', 'ללא (לחיצה)'), 'ידיות'));
+      const S = spec().same;
+      inner.push(cnt(`${at}.interior.drawers.count`, dr.count ?? 3, 'מגירות', 1, 10), sel(`${at}.interior.drawers.frontMaterial`, dr.frontMaterial || (S ? 'same' : fr.material), withSame(boards()), 'חומר החזיתות'), sel(`${at}.interior.drawers.slide`, dr.slide || (S ? 'same' : 'hw:slide-std'), withSame(role('slide')), 'מסילות'));
+      if ((fr.type || 'none') === 'none') inner.push(sel(`${at}.interior.drawers.finish`, dr.finish || (S ? 'same' : 'flat'), withSame(finishes()), 'גימור החזיתות'), sel(`${at}.interior.drawers.handle`, dr.handle || (S ? 'same' : 'hw:handle-bar-128'), withSame(role('handle', 'ללא (לחיצה)')), 'ידיות'));
       else inner.push('<small class="muted">מאחורי הדלת — מגירות פנימיות, בלי ידית</small>');
     }
     return `<details class="unit__floor" data-key="f${key}" ${open.has(`f${key}`) ? 'open' : ''}>
@@ -125,7 +128,9 @@ export function renderUnitsEditor(box, values, onChange) {
 
   // 💡 המלצות: אחרי שינוי — "להחיל גם על…"; אחידות; מקצועיות (model/suggest.js)
   const colsMax = model?.template?.params?.find((p) => p.key === 'columns')?.max ?? 8;
-  const sugs = suggest(units, { change: box._units.change || null, geo, dismissed: values.dismissed });
+  const sp = spec();
+  const labelOf = (u, i) => (sp.label ? sp.label(u, i, units) : `עמודה ${i + 1}`);
+  const sugs = suggest(units, { change: box._units.change || null, geo, dismissed: values.dismissed, label: (i) => labelOf(units[i], i), group: sp.group });
   box._sugs = sugs;
   const sugHtml = sugs.slice(0, 4).map((x) => `<div class="sug sug--${x.kind}">
       <span class="sug__text">${x.kind === 'fix' ? '🛠' : '💡'} ${esc(x.text)}</span>
@@ -136,18 +141,19 @@ export function renderUnitsEditor(box, values, onChange) {
     </div>`).join('');
   box.innerHTML = (sugHtml ? `<div class="sugs">${sugHtml}</div>` : '') + units.map((u, i) => {
     const g = geo[i];
+    const title = sp.rowTitle && (i === 0 || units[i - 1].row !== u.row) ? `<div class="unit__rowtitle">${esc(sp.rowTitle(u, units))}</div>` : '';
     const notes = inactive.filter((x) => x.column === i && !x.path.startsWith('units.')).map((x) => `<small class="unit__off">⚠ ${esc(x.reason)}</small>`).join('');
     // הקומות מוצגות מלמעלה למטה — כמו שרואים את הארון
     const floors = u.floors.map((f, j) => [f, j]).reverse().map(([f, j]) => floorCard(u, i, f, j)).join('');
-    return `<details class="unit" data-key="u${i}" ${open.has(`u${i}`) ? 'open' : ''}>
-      <summary><b>עמודה ${i + 1}</b> <span class="muted">· ${esc(summary(u, g))}</span>${notes ? ' <span class="unit__warn">⚠</span>' : ''}</summary>
+    return `${title}<details class="unit" data-key="u${i}" ${open.has(`u${i}`) ? 'open' : ''}>
+      <summary><b>${esc(labelOf(u, i))}</b> <span class="muted">· ${esc(summary(u, g))}</span>${notes ? ' <span class="unit__warn">⚠</span>' : ''}</summary>
       ${notes}
-      <div class="unit__row">${num(`${i}.width`, u.width, 'רוחב', g ? `אוטומטי (${Math.round(g.width)})` : 'אוטומטי')}${num(`${i}.height`, u.height, 'גובה', g ? `כל הגובה (${Math.round(g.height)})` : 'כל הגובה')}</div>
+      <div class="unit__row">${num(`${i}.width`, u.width, 'רוחב', g ? `אוטומטי (${Math.round(g.width)})` : 'אוטומטי')}${sp.unitHeight === false ? '' : num(`${i}.height`, u.height, 'גובה', g ? `כל הגובה (${Math.round(g.height)})` : 'כל הגובה')}</div>
       ${floors}
       <div class="unit__acts"><button type="button" class="btn btn--small unit__add" data-act="add" data-i="${i}">＋ קומה</button>
-      ${units.length > 1 ? `<button type="button" class="btn btn--small unit__delcol" data-act="delcol" data-i="${i}" title="העמודות האחרות מתרחבות לתוך המקום">🗑 מחיקת העמודה</button>` : ''}</div>
+      ${units.length > 1 && sp.addColumns !== false ? `<button type="button" class="btn btn--small unit__delcol" data-act="delcol" data-i="${i}" title="העמודות האחרות מתרחבות לתוך המקום">🗑 מחיקת העמודה</button>` : ''}</div>
     </details>`;
-  }).join('') + (units.length < colsMax ? `<button type="button" class="btn btn--small unit__addcol" data-act="addcol" title="לפי &quot;עמודה שנוספת&quot; בטופס">＋ עמודה</button>` : '') + (values.units ? '' : '<p class="muted unit__hint">כל עמודה וכל קומה — עצמאית. השינוי הראשון שומר את המבנה בפרויקט.</p>');
+  }).join('') + (units.length < colsMax && sp.addColumns !== false ? `<button type="button" class="btn btn--small unit__addcol" data-act="addcol" title="לפי &quot;עמודה שנוספת&quot; בטופס">＋ עמודה</button>` : '') + (values.units ? '' : '<p class="muted unit__hint">כל עמודה וכל קומה — עצמאית. השינוי הראשון שומר את המבנה בפרויקט.</p>');
 }
 
 /** פותח את כרטיס העמודה (ואם צריך — הקומה) וגולל אליו. */
@@ -207,7 +213,7 @@ document.addEventListener('change', (e) => {
   commit(box, (units) => {
     setPath(units, path, v);
     // קומה שקיבלה מגירות בפעם הראשונה — ברירת מחדל סבירה
-    if (/\.interior\.type$/.test(path) && v === 'drawers') { const it = getPath(units, path.replace(/\.type$/, '')); it.drawers = it.drawers || { count: 3, slide: 'hw:slide-std', handle: 'hw:handle-bar-128' }; }
+    if (/\.interior\.type$/.test(path) && v === 'drawers') { const it = getPath(units, path.replace(/\.type$/, '')); it.drawers = it.drawers || (spec().same ? { count: 3, frontMaterial: 'same', finish: 'same', slide: 'same', handle: 'same' } : { count: 3, slide: 'hw:slide-std', handle: 'hw:handle-bar-128' }); }
     if (/\.interior\.type$/.test(path) && v === 'hanging') { const it = getPath(units, path.replace(/\.type$/, '')); it.hanging = it.hanging || { topShelf: true, mode: 'adjustable' }; }
     if (/\.interior\.type$/.test(path) && v === 'shelves') { const it = getPath(units, path.replace(/\.type$/, '')); it.shelves = it.shelves || { count: 2, material: 'same', mode: 'adjustable' }; }
   }, { unit: Number(ci), path: rest.join('.') });
