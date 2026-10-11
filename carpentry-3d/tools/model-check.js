@@ -24,6 +24,7 @@ import { registerRecipes, starterRecipe, runRecipe, recipeSyntax, BUILTIN_RECIPE
 import legacyBed from '../assets/js/model/templates/bed.js';
 import legacyTable from '../assets/js/model/templates/table.js';
 import legacyDresser from '../assets/js/model/templates/dresser.js';
+import legacyBookcase from '../assets/js/model/templates/legacy/bookcase-v1.js';
 import { visible } from '../assets/js/model/index.js';
 import { millSpec, fluteGrooves, fluteRib, millRects, millSolids, millRemoved, millText, millEdges, cncPatterns } from '../assets/js/model/milling.js';
 
@@ -1204,6 +1205,70 @@ console.log('ויטרינה: מסגרת, צדדים, פרופיל, צבע, שפ�
   check(mix.parts.filter((p) => /^shelf-1-/.test(p.id)).every((p) => p.material === 'glass:shelf-8') && mix.parts.filter((p) => /^shelf-2-/.test(p.id)).every((p) => p.material !== 'glass:shelf-8'), 'מדפי זכוכית רק בעמודת הוויטרינה');
   const vp = allParams(TEMPLATES.bookcase).find((p) => p.key === 'vitrineFrame');
   check(!visible(vp, { doorType: 'wood', lowerDoors: 'wood', glassColumns: 'none' }) && visible(vp, { doorType: 'none', lowerDoors: 'wood', glassColumns: 'last' }), 'שאלות הוויטרינה מופיעות רק כשיש דלת זכוכית');
+}
+
+console.log('ספרייה לפי עמודה וקומה (שלב 1): המרה זהה לבנייה הישנה');
+{
+  const norm = (o) => JSON.parse(JSON.stringify(o, (k, val) => (typeof val === 'number' ? Math.round(val * 1e6) / 1e6 : val)));
+  const sortKeys = (o) => (Array.isArray(o) ? o.map(sortKeys) : o && typeof o === 'object' ? Object.fromEntries(Object.keys(o).sort().filter((k) => o[k] !== undefined).map((k) => [k, sortKeys(o[k])])) : o);
+  const span = (w) => /^מדף ברוחב/.test(w);
+  const pick = (r, dropSpan) => sortKeys(norm({ parts: r.parts, hardware: r.hardware, warnings: dropSpan ? r.warnings.filter((w) => !span(w)) : r.warnings, bounds: r.bounds }));
+  TEMPLATES['legacy-bookcase'] = { ...legacyBookcase, key: 'legacy-bookcase' };
+  let seed = 11;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const one = (arr) => arr[Math.floor(rnd() * arr.length)];
+  let same = 0, roundtrip = 0, diff = null, rdiff = null, spanOnly = 0;
+  for (let n = 0; n < 500; n += 1) {
+    const v = {};
+    for (const p of allParams(legacyBookcase)) {
+      if (p.type === 'json') continue;
+      if (['mm', 'int', 'deg'].includes(p.type)) v[p.key] = n === 0 ? p.default : Math.round(p.min + rnd() * (p.max - p.min));
+      else { const o = optionsFor(p); if (o.length) v[p.key] = o[Math.floor(rnd() * o.length)].id; }
+    }
+    // מידות סבירות יותר, ופיצול/דלתות בתדירות גבוהה
+    v.columns = 1 + Math.floor(rnd() * 5); v.width = 600 + Math.round(rnd() * 2400); v.height = 900 + Math.round(rnd() * 1800); v.depth = 250 + Math.round(rnd() * 400);
+    v.shelvesPerColumn = Math.floor(rnd() * 7); v.lowerH = rnd() < 0.5 ? 0 : Math.round(300 + rnd() * 900);
+    v.doorType = one(['none', 'wood', 'glass']); v.lowerDoors = one(['none', 'wood', 'glass']);
+    v.glassColumns = one(['none', 'none', 'first', 'last', 'ends', 'all']);
+    if (n % 2) {
+      const pin = (lo, hi) => (rnd() < 0.5 ? null : Math.round(lo + rnd() * (hi - lo)));
+      const cols = {};
+      for (let i = 0; i < v.columns; i++) {
+        const c = {};
+        if (rnd() < 0.4) c.shelves = Math.floor(rnd() * 6);
+        if (rnd() < 0.3) c.height = Math.round(v.height * (0.5 + rnd() * 0.5));
+        if (rnd() < 0.3) c.split = rnd() < 0.2 ? 0 : Math.round(200 + rnd() * 1000);
+        if (rnd() < 0.3) { const k = (c.shelves ?? v.shelvesPerColumn) + 1; c.gaps = Array.from({ length: k }, () => pin(100, 400)); }
+        if (Object.keys(c).length) cols[i] = c;
+      }
+      v.columnsLayout = { widths: Array.from({ length: v.columns }, () => pin(250, 700)), cols };
+    }
+    const a = build('legacy-bookcase', v), b = build('bookcase', v);
+    if (!a.parts.every((p) => p.box.w > 0 && p.box.h > 0 && p.box.d > 0)) continue;
+    const exact = JSON.stringify(pick(a)) === JSON.stringify(pick(b));
+    if (exact) same += 1;
+    else if (JSON.stringify(pick(a, true)) === JSON.stringify(pick(b, true))) spanOnly += 1;   // רק אזהרת מפתח המדף — בכוונה (ראו למטה)
+    else if (!diff) diff = { a: pick(a), b: pick(b), v };
+    // הלוך-חזור: units שנשמרו בפרויקט בונים בדיוק את אותו דבר
+    const c = build('bookcase', { ...v, units: b.units });
+    if (JSON.stringify(pick(c)) === JSON.stringify(pick(b))) roundtrip += 1; else if (!rdiff) rdiff = { b: pick(b), c: pick(c) };
+  }
+  for (const [d, x, y] of [[diff, 'a', 'b'], [rdiff, 'b', 'c']]) {
+    if (!d) continue;
+    const A = JSON.stringify(d[x]), B = JSON.stringify(d[y]);
+    let i = 0; while (A[i] === B[i]) i += 1;
+    console.error(`    שונה ב: …${A.slice(Math.max(0, i - 160), i + 80)}\n    מול: …${B.slice(Math.max(0, i - 160), i + 80)}`);
+    if (d.v) console.error('    ערכים:', JSON.stringify(d.v).slice(0, 600));
+  }
+  check(!diff && same + spanOnly > 400, `${same} תצורות זהות לחלוטין, ${spanOnly} שונות רק באזהרת מפתח המדף (מכוון), בלי הבדל אחר`);
+  check(!rdiff && roundtrip > 400, `הלוך-חזור: ${roundtrip} — units שמורים בונים אותו דבר`);
+  delete TEMPLATES['legacy-bookcase'];
+  // אזהרת מפתח המדף: לפי המדפים שבאמת יש, לא לפי "מדפים בכל עמודה" הכללי
+  const w = build('bookcase', { columns: 1, width: 1400, shelvesPerColumn: 0, columnsLayout: { cols: { 0: { shelves: 3 } } } }).warnings;
+  check(w.some(span), 'מפתח מדף רחב — אזהרה גם כשהמדפים נקבעו לעמודה בלבד');
+  // הפרויקט מהצילום: ויטרינה מלאה בעמודה 1 + פיצול 850 בשאר — המבנה מבטא בדיוק מה שנבנה
+  const u = build('bookcase', { columns: 5, width: 2590, height: 2560, depth: 340, lowerH: 850, lowerDoors: 'wood', doorType: 'glass', glassColumns: 'first' }).units;
+  check(u[0].floors.length === 1 && u[0].floors[0].front.type === 'glass' && u.slice(1).every((c) => c.floors.length === 2 && c.floors[0].height === 850 && c.floors[0].front.type === 'wood' && c.floors[1].front.type === 'glass'), 'עמודה 1 — קומה אחת ויטרינה; 2–5 — עץ 850 ומעליו ויטרינה');
 }
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }

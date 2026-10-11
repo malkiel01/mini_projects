@@ -29,6 +29,7 @@ export function renderForm(root, tpl, values, onChange) {
       const unit = p.type === 'mm' ? '<span class="unit">מ"מ</span>' : '';
       row.innerHTML = `<span class="field__label">${p.label}${unit}</span>`;
       let input;
+      if (p.type === 'json' && p.editor !== 'columns') continue;   // מבנה פנימי (למשל units) — לא שדה בטופס
       if (p.type === 'json' && p.editor === 'columns') {
         // עורך העמודות: לא שדה — ווידג'ט שמצייר את עצמו מחדש לפי שאר הערכים
         row.className = 'field field--wide';
