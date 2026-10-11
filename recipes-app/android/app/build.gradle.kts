@@ -1,0 +1,67 @@
+// אפליקציית המתכונים לחנות של גוגל — Trusted Web Activity (TWA).
+//
+// אין כאן קוד משלנו: LauncherActivity של androidbrowserhelper (ספריית גוגל) פותח
+// את האתר ב-Chrome, במסך מלא, בלי שורת כתובת — בתנאי שהאתר מאשר את האפליקציה
+// ב-/.well-known/assetlinks.json (Digital Asset Links). בלי האישור — נפתח כלשונית
+// Chrome רגילה עם שורת כתובת. כל עדכון באתר מגיע לאפליקציה מיד, בלי גרסה חדשה בחנות.
+//
+// בזמן בנייה (מ-.github/workflows/recipes-twa.yml):
+//   -PappHost=recipes.mbe-plus.com    הדומיין של האפליקציה (חייב להיות שורש של דומיין)
+//   -PversionCode=N                   עולה בכל העלאה לחנות
+//   חתימה: RECIPES_KEYSTORE_FILE + RECIPES_KEYSTORE_PASSWORD (מפתח ההעלאה, alias "upload")
+
+plugins {
+    id("com.android.application")
+}
+
+val appHost = (findProperty("appHost") as String?) ?: "recipes.mbe-plus.com"
+val launchUrl = "https://$appHost/"
+
+android {
+    namespace = "com.mbeplus.recipes"
+    compileSdk = 36
+
+    defaultConfig {
+        applicationId = "com.mbeplus.recipes"
+        minSdk = 23
+        targetSdk = 36
+        versionCode = ((findProperty("versionCode") as String?) ?: "1").toInt()
+        versionName = "1.0"
+
+        resValue("string", "hostName", appHost)
+        resValue("string", "launchUrl", launchUrl)
+        resValue("string", "providerAuthority", "com.mbeplus.recipes.fileprovider")
+        // האישור ההדדי: האפליקציה מצהירה על האתר, והאתר (assetlinks.json) על האפליקציה
+        resValue("string", "assetStatements",
+            "[{\\\"relation\\\": [\\\"delegate_permission/common.handle_all_urls\\\"], " +
+            "\\\"target\\\": {\\\"namespace\\\": \\\"web\\\", \\\"site\\\": \\\"https://$appHost\\\"}}]")
+    }
+
+    signingConfigs {
+        create("upload") {
+            val file = System.getenv("RECIPES_KEYSTORE_FILE")
+            if (file != null) {
+                storeFile = file(file)
+                storePassword = System.getenv("RECIPES_KEYSTORE_PASSWORD")
+                keyAlias = "upload"
+                keyPassword = System.getenv("RECIPES_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            if (System.getenv("RECIPES_KEYSTORE_FILE") != null) signingConfig = signingConfigs.getByName("upload")
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation("com.google.androidbrowserhelper:androidbrowserhelper:2.7.4")
+}

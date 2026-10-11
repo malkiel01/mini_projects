@@ -149,6 +149,7 @@ jobs:
             --exclude='camera-app/data/live/' \
             --exclude='node_modules/' \
             --exclude='guarded-browser/android/' \
+            --exclude='recipes-app/android/' \
             --exclude='whatsapp-ai-scanner/android/' \
             --exclude='whatsapp-ai-scanner/data/scanner.sqlite*' \
             --exclude='whatsapp-ai-scanner/data/secret.key' \

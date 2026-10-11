@@ -442,7 +442,7 @@ async function renderForYou() {
         <a class="item__main" href="${esc(it.open)}" data-fy="${fyKey(it)}">
           <strong>${esc(it.title)}</strong>
           <span class="fy-why">${esc(it.reason)}</span>
-          <span class="muted small">${it.kind === 'web' ? '🌐 ' : ''}${esc(it.by || '')}</span>
+          ${it.by && !it.reason.includes(it.by) ? `<span class="muted small">${it.kind === 'web' ? '🌐 ' : ''}${esc(it.by)}</span>` : ''}
         </a>
         ${it.kind !== 'reco' ? `<details class="actbar__more fy-more"><summary class="btn btn--ghost btn--small" aria-label="עוד">⋯</summary>
           <div class="more-menu">
