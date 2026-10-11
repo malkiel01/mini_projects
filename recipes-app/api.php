@@ -634,6 +634,9 @@ try {
     case 'collection-toggle':
         ok(['has' => collectionToggle((int) ($in['id'] ?? 0), $in, !empty($in['on']), $user)]);
 
+    case 'collection-book':   // ספר מתכונים מהאוסף — להדפסה / PDF
+        ok(collectionBook((int) ($in['id'] ?? 0), $user));
+
     case 'collection-item-remove':
         collectionRemoveItem((int) ($in['item_id'] ?? 0), $user);
         ok([]);

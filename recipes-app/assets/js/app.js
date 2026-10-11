@@ -331,6 +331,7 @@ async function route() {
     else if (h === '#/tonight') await renderTonight();
     else if (h === '#/activity') await renderActivity();
     else if ((m = h.match(/^#\/c\/(\d+)$/))) await renderCollection(+m[1]);
+    else if ((m = h.match(/^#\/c\/(\d+)\/book$/))) await renderBook(+m[1]);
     else if (h === '#/pantry') await renderPantry();
     else if (h === '#/shopping') await renderShoppingLists();
     else if ((m = h.match(/^#\/shopping\/(\d+)$/))) await renderShoppingList(+m[1]);
@@ -1261,6 +1262,62 @@ function collectionItemRow(it, mine) {
       <a class="item__main" href="${esc(href)}"><strong>${esc(it.title)}</strong><span class="muted">${sub}</span></a>${ctl}</div>`;
 }
 
+/**
+ * ספר מתכונים מאוסף: שער, תוכן עניינים, ומתכון בכל עמוד. "🖨 הדפסה / PDF" — הדפסה של
+ * הדפדפן (בטלפון: "שמור כ-PDF"). בלי ספרייה ובלי שרת: עיצוב הדפסה (‎@media print).
+ */
+async function renderBook(id) {
+  const live = routeLive();
+  const d = await api('collection-book', { id });
+  if (!live()) return;
+  const c = d.collection;
+  const when = new Date().toLocaleDateString('he-IL', { month: 'long', year: 'numeric' });
+  const ingLine = (i) => `<li class="${i.optional ? 'is-optional' : ''}">${esc(i.free_text)}${i.product && !i.free_text.includes(i.product) ? ` ${esc(i.product)}` : ''}${i.optional ? ' <span class="muted">(לא חובה)</span>' : ''}</li>`;
+  const recipePage = (r, n) => {
+    const img = (r.media || []).find((m) => m.id === r.main_media_id) || (r.media || []).find((m) => m.kind === 'image');
+    const meta = [r.servings ? `${r.servings} מנות` : r.yield_text ? esc(r.yield_text) : '', r.work_minutes ? `⏱ ${minutes(r.work_minutes)}` : '',
+                  r.wait_minutes ? `⏳ ${minutes(r.wait_minutes)}` : '', r.difficulty ? DIFFICULTY[r.difficulty] : ''].filter(Boolean).join(' · ');
+    return `
+      <article class="book__recipe" id="book-r${n}">
+        <h2><span class="book__n">${n}</span> ${esc(r.title)}</h2>
+        ${meta ? `<p class="book__meta">${meta}</p>` : ''}
+        ${img ? `<img class="book__img" src="${esc(img.url)}" alt="" loading="eager">` : ''}
+        ${r.sections.map((s) => `
+          <section class="book__part">
+            ${s.name ? `<h3>${esc(s.name)}</h3>` : ''}
+            ${s.ingredients.length ? `<h4>רכיבים</h4><ul class="book__ings">${s.ingredients.map(ingLine).join('')}</ul>` : ''}
+            ${s.steps.length ? `<h4>אופן ההכנה</h4><ol class="book__steps">${s.steps.map((st) => `<li>${esc(st.text)}</li>`).join('')}</ol>` : ''}
+          </section>`).join('')}
+        ${r.tips ? `<p class="book__tips"><strong>טיפ:</strong> ${esc(r.tips)}</p>` : ''}
+        <p class="book__credit">${r.source ? `מקור: ${esc(r.source.name || r.source.url)}${r.source.author ? ` · ${esc(r.source.author)}` : ''} · ${esc(r.source.url)}` : `מאת ${esc(r.owner_name)}`}</p>
+      </article>`;
+  };
+  view.innerHTML = `
+    <section class="card book-bar">
+      <a class="link link--back" href="#/c/${id}">‹ לאוסף</a>
+      <button class="btn btn--primary btn--wide" type="button" id="book-print">🖨 הדפסה / שמירה כ-PDF</button>
+    </section>
+    <div class="book">
+      <section class="book__cover">
+        <div class="book__icon">${esc(c.icon)}</div>
+        <h1>${esc(c.name)}</h1>
+        ${c.description ? `<p class="book__desc">${esc(c.description)}</p>` : ''}
+        <p class="book__by">${esc(c.owner.display_name)} · ${when}</p>
+      </section>
+      ${d.recipes.length > 1 ? `<section class="book__toc"><h2>תוכן העניינים</h2><ol>${d.recipes.map((r, i) => `<li><a href="#book-r${i + 1}" data-jump="book-r${i + 1}">${esc(r.title)}</a></li>`).join('')}</ol></section>` : ''}
+      ${d.recipes.map((r, i) => recipePage(r, i + 1)).join('')}
+      ${d.web.length ? `<section class="book__recipe book__web"><h2>מהרשת</h2><ul>${d.web.map((w) => `<li><strong>${esc(w.title)}</strong>${w.site ? ` — ${esc(w.site)}` : ''}<br><span class="book__url">${esc(w.url)}</span></li>`).join('')}</ul></section>` : ''}
+    </div>`;
+  $('#book-print').addEventListener('click', () => window.print());
+  // תוכן העניינים: גלילה בתוך הדף — בלי לשנות את הכתובת (#) של האפליקציה
+  view.addEventListener('click', (e) => {
+    const a = e.target.closest('[data-jump]');
+    if (!a) return;
+    e.preventDefault();
+    document.getElementById(a.dataset.jump)?.scrollIntoView({ behavior: 'smooth' });
+  });
+}
+
 async function renderCollection(id) {
   const live = routeLive();
   const d = await api('collection', { id });
@@ -1271,7 +1328,7 @@ async function renderCollection(id) {
     <section class="card coll-page">
       <div class="recipe__top">
         <a class="link" href="#/collections">‹ האוספים</a>
-        <span class="recipe__icons">${mine ? `
+        <span class="recipe__icons">${c.count ? `<a class="icon-btn" href="#/c/${id}/book" aria-label="ספר מתכונים — הדפסה או PDF" title="ספר מתכונים — הדפסה או PDF">📖</a>` : ''}${mine ? `
           <button class="icon-btn" id="coll-edit" type="button" aria-label="עריכה" title="עריכה">✏️</button>
           <button class="icon-btn" id="coll-share" type="button" aria-label="שיתוף עם אנשים" title="שיתוף עם אנשים">👥</button>
           ${c.is_saved ? '' : '<button class="icon-btn icon-btn--danger" id="coll-del" type="button" aria-label="מחיקה" title="מחיקה">🗑</button>'}` : ''}

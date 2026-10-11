@@ -193,6 +193,24 @@ function collectionView(int $id, array $user): array {
     ];
 }
 
+/**
+ * ספר מתכונים מאוסף — להדפסה או לשמירה כ-PDF (מהדפדפן). המתכונים המלאים שגלויים לצופה,
+ * בסדר של האוסף; מהרשת — שם, אתר וקישור (המתכון עצמו שייך לאתר). עד COLLECTION_BOOK_MAX.
+ */
+const COLLECTION_BOOK_MAX = 150;
+function collectionBook(int $id, array $user): array {
+    $v = collectionView($id, $user);
+    $recipes = []; $web = [];
+    foreach ($v['items'] as $it) {
+        if ($it['status'] !== 'ok') continue;
+        if ($it['kind'] === 'web') { $web[] = ['title' => $it['title'], 'site' => $it['site'], 'url' => $it['url']]; continue; }
+        if (count($recipes) >= COLLECTION_BOOK_MAX) continue;
+        $r = loadRecipe((int) $it['id'], $user);
+        if ($r) $recipes[] = $r;
+    }
+    return ['collection' => $v['collection'], 'recipes' => $recipes, 'web' => $web];
+}
+
 function activePersonOrAny(int $id): array {
     $st = db()->prepare('SELECT id, username, display_name FROM users WHERE id = ?');
     $st->execute([$id]);

@@ -1129,3 +1129,37 @@ a.icon-btn { display: inline-grid; place-items: center; text-decoration: none; }
 .tn-actions { display: flex; gap: 6px; margin-top: 4px; }
 .tn-item .item__main a { color: inherit; text-decoration: none; }
 .tonight-pantry { text-align: center; }
+
+/* ── ספר מתכונים מאוסף (#/c/N/book): על המסך — עמודים; בהדפסה — עמוד לכל מתכון ── */
+.book { display: flex; flex-direction: column; gap: 10px; }
+.book__cover, .book__toc, .book__recipe { background: var(--panel); border-radius: var(--radius); padding: 16px; }
+.book__cover { text-align: center; padding: 40px 16px; }
+.book__icon { font-size: 3.5rem; }
+.book__cover h1 { margin: 8px 0; font-size: 1.8rem; color: var(--accent); }
+.book__desc { font-size: 1.05rem; }
+.book__by { color: var(--muted); }
+.book__toc ol { padding-inline-start: 22px; line-height: 1.9; }
+.book__toc a { color: inherit; }
+.book__recipe h2 { margin: 0 0 4px; }
+.book__n { color: var(--accent); }
+.book__meta { color: var(--muted); margin: 0 0 8px; }
+.book__img { width: 100%; max-height: 220px; object-fit: cover; border-radius: 8px; }
+.book__part h3 { margin: 12px 0 4px; }
+.book__part h4 { margin: 8px 0 2px; font-size: 0.9rem; color: var(--muted); }
+.book__ings, .book__steps { margin: 0; padding-inline-start: 22px; line-height: 1.6; }
+.book__steps li { margin-bottom: 4px; }
+.book__tips { background: var(--accent-soft); padding: 8px 10px; border-radius: 8px; }
+.book__credit, .book__url { color: var(--muted); font-size: 0.8rem; word-break: break-all; }
+@media print {
+  @page { margin: 14mm; }
+  .book-bar { display: none !important; }
+  .book { gap: 0; }
+  .book__cover, .book__toc, .book__recipe { background: none; border-radius: 0; padding: 0; box-shadow: none; }
+  .book__cover { min-height: 230mm; display: flex; flex-direction: column; justify-content: center; break-after: page; }
+  .book__cover h1 { font-size: 30pt; }
+  .book__toc { break-after: page; }
+  .book__recipe { break-before: page; }
+  .book__img { max-height: 70mm; }
+  .book__ings li, .book__steps li, .book__tips { break-inside: avoid; }
+  .book__part h3, .book__part h4 { break-after: avoid; }
+}

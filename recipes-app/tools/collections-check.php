@@ -144,6 +144,13 @@ echo "\n5. ♡ = \"שמורים\"\n";
 check('♡ על מתכון — נכנס ל"שמורים"', [toggleFavorite($cake, $noa), in_array('עוגת גבינה של סבתא', $titles(collectionView(collectionsMine($noa)['mine'][0]['id'], $noa)['items']), true)], [true, true]);
 check('ו"שמורים" הוא אוסף רגיל — אפשר להוסיף אליו גם מהרשת', collectionToggle(collectionsMine($noa)['mine'][0]['id'], ['entry_id' => $entry], true, $noa), true);
 check('listFavorites — רק מתכונים', count(listFavorites($noa)), 3);
+echo "\n6. ספר מתכונים מהאוסף\n";
+$okRecipes = fn(array $u) => array_values(array_column(array_filter(collectionView($GLOBALS['mom']['id'], $u)['items'], fn($i) => $i['kind'] === 'recipe' && $i['status'] === 'ok'), 'title'));
+$book = collectionBook($mom['id'], $dana);
+check('ספר: המתכונים המלאים, בסדר האוסף, עם חלקים ושלבים', [array_column($book['recipes'], 'title'), isset($book['recipes'][0]['sections'][0]['steps'])], [$okRecipes($dana), true]);
+check('ספר לאחר — רק מה שגלוי לו (לא הפרטי של דנה)', array_column(collectionBook($mom['id'], $eli)['recipes'], 'title'), $okRecipes($eli));
+check('ספר: מהרשת — שם, אתר וקישור', array_keys(collectionBook($mom['id'], $dana)['web'][0] ?? ['title' => 1, 'site' => 1, 'url' => 1]), ['title', 'site', 'url']);
+
 collectionDelete($mom['id'], $dana);
 check('מחיקת אוסף — המתכונים עצמם נשארים', (bool) loadRecipe($cake, $dana), true);
 
