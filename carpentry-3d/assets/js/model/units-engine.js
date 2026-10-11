@@ -6,12 +6,30 @@
 // בין קומות, מדפים ותאורה; unitsFronts — מגירות ודלתות (אחרי הגב, הסוקל והכרכוב).
 // שניהם דוחפים ל-ctx.parts / ctx.hardware / ctx.warnings, כמו הקוד המקורי.
 
-import { partitions, shelves, door, drawer } from './blocks.js';
+import { partitions, shelves, door, drawer, part } from './blocks.js';
 import { material } from './materials.js';
 import { resolveShares } from './layout.js';
 import { applyFinish, resolveSame, stepTops } from './templates/common.js';
 
 function boardThickness(id) { return material(id).t || 18; }
+const sameOr = (x, dflt) => (!x || x === 'same' ? dflt : x);
+/** עובי המחיצה שמימין לעמודה i (units[i].partitionR.t), או של המוצר. */
+export function partT(units, i, dflt) { const t = units?.[i]?.partitionR?.t; return Number.isFinite(t) && t > 0 ? t : dflt; }
+/** מחיצות בעובי ובחומר שונים לכל אחת — כמו partitions() של blocks.js. */
+function customPartitions({ inner, columns, widths, t, material: mat }) {
+  const parts = [], cols = [];
+  let x0 = inner.x0;
+  for (let c = 0; c < columns; c++) {
+    const w = widths[c];
+    cols.push({ x0, x1: x0 + w });
+    if (c < columns - 1) {
+      parts.push(part(`partition-${c + 1}`, `מחיצה ${c + 1}`, { x: x0 + w, y: inner.y0, z: inner.z0, w: t(c), h: inner.y1 - inner.y0, d: inner.z1 - inner.z0 },
+        { axis: 'x', grain: 'y', material: mat(c), qtyKey: `partition-${t(c)}-${mat(c)}`, edges: { front: true } }));
+      x0 += w + t(c);
+    }
+  }
+  return { parts, cols, colW: Math.max(...widths), free: widths.reduce((a, b) => a + b, 0) };
+}
 function backThickness(id) { return material(id).t || 6; }
 /** עומק שסטריפים מודבקים מוסיפים לחזית. */
 function fluteDepth(f) { return typeof f === 'string' && f.startsWith('fluted') ? (f === 'fluted-wide' ? 10 : 8) : 0; }
@@ -40,8 +58,12 @@ export function unitsInterior(ctx, o) {
   const { parts, hardware } = ctx;
   const { units, inner, W, sideT, shelfT, bottomY, topY, tops, stepped, colY1, z0, z1, innerMat, shelfMat, sidesOverTop } = o;
   const v = { columns: o.columns, shelvesMode: o.shelvesMode, led: o.led };
-    const widths = resolveShares(inner.x1 - inner.x0 - (v.columns - 1) * sideT, units.map((u) => (Number.isFinite(u.width) && u.width > 0 ? u.width : null)));
-    const cols = partitions({ inner, columns: v.columns, t: sideT, material: innerMat, widths });
+    // מחיצה לכל זוג עמודות: עובי וחומר משלה (units[i].partitionR — המחיצה מימין לעמודה i);
+    // בלי הגדרה — של המוצר. כשכולן כברירת המחדל — המחיצות הרגילות, בדיוק כמו קודם.
+    const pT = (i) => partT(units, i, sideT), pM = (i) => sameOr(units[i]?.partitionR?.material, innerMat);
+    const custom = units.slice(0, -1).some((u, i) => pT(i) !== sideT || pM(i) !== innerMat);
+    const widths = resolveShares(inner.x1 - inner.x0 - units.slice(0, -1).reduce((s0, u, i) => s0 + pT(i), 0), units.map((u) => (Number.isFinite(u.width) && u.width > 0 ? u.width : null)));
+    const cols = custom ? customPartitions({ inner, columns: v.columns, widths, t: pT, material: pM }) : partitions({ inner, columns: v.columns, t: sideT, material: innerMat, widths });
     parts.push(...cols.parts);
     if (stepped) stepTops(parts, cols.cols, tops, { W, panelT: shelfT, sidesOverTop });
 
@@ -70,10 +92,12 @@ export function unitsInterior(ctx, o) {
         const adj = (sh.mode || v.shelvesMode) === 'adjustable';
         const a = j === 0 ? inner.y0 : b[j], top = j === fl.length - 1 ? y1c : b[j + 1] - shelfT;
         const n = Math.max(0, Math.round(sh.count ?? 0));
-        const gaps = fl.length === 1 && Array.isArray(sh.gaps) && sh.gaps.length === n + 1 && !sh.gaps.every((g) => g === null) ? resolveShares(top - a - n * shelfT, sh.gaps) : null;
         const glassShelf = sh.material && material(sh.material).kind === 'glass' ? sh.material : null;
         const mat = !sh.material || sh.material === 'same' || glassShelf ? shelfMat : sh.material;
-        const s = shelves({ col, y0: a, y1: top, z0, z1, count: n, t: shelfT, material: mat, setback: adj ? 5 : 0, adjustable: adj, colIndex: i, prefix: shelfPrefix(fl.length, j), gaps });
+        // עובי המדפים בקומה: שהוקלד, או של החומר שנבחר לקומה, או של המוצר
+        const t = Number.isFinite(sh.t) && sh.t > 0 ? sh.t : !sh.material || sh.material === 'same' || glassShelf ? shelfT : boardThickness(mat);
+        const gaps = fl.length === 1 && Array.isArray(sh.gaps) && sh.gaps.length === n + 1 && !sh.gaps.every((g) => g === null) ? resolveShares(top - a - n * t, sh.gaps) : null;
+        const s = shelves({ col, y0: a, y1: top, z0, z1, count: n, t, material: mat, setback: adj ? 5 : 0, adjustable: adj, colIndex: i, prefix: shelfPrefix(fl.length, j), gaps });
         if (glassShelf) {
           // מדף זכוכית (מאחורי ויטרינה): אותו מיקום, בעובי הזכוכית
           const gt = material(glassShelf).t || 8;
@@ -82,8 +106,20 @@ export function unitsInterior(ctx, o) {
         parts.push(...s.parts);
         if (adj) s.parts.forEach((p) => hardware.push({ id: `${p.id}-pins`, kind: 'shelf-pin', material: 'hw:shelf-pin', qty: 4, for: p.id }));
       });
-      // תאורה
-      if (v.led === 'sides') {
+      // תאורה: לכל קומה (f.led), ובלי הגדרה — של המוצר
+      if (fl.some((f) => f.led && f.led !== 'same')) {
+        fl.forEach((f, j) => {
+          const led = f.led && f.led !== 'same' ? f.led : v.led;
+          const a = j === 0 ? inner.y0 : b[j], top = j === fl.length - 1 ? y1c : b[j + 1] - shelfT;
+          if (led === 'sides') {
+            for (const [tag, x] of [['L', col.x0], ['R', col.x1 - 6]]) hardware.push({ id: `led-${i + 1}-f${j + 1}-${tag}`, kind: 'led', material: 'hw:led-strip', qty: Math.round((top - a) / 100) / 10, pos: [x, a, z1 - 30], len: top - a, note: `עמודה ${i + 1}, קומה ${j + 1}, ${tag === 'L' ? 'שמאל' : 'ימין'}` });
+          } else if (led === 'shelves') {
+            for (const p of parts.filter((p) => p.axis === 'y' && p.box.x >= col.x0 - 1 && p.box.x + p.box.w <= col.x1 + 1 && p.id.includes('shelf') && p.box.y > a - 1 && p.box.y < top + 1)) {
+              hardware.push({ id: `led-${p.id}`, kind: 'led', material: 'hw:led-strip', qty: Math.round(p.box.w / 100) / 10, pos: [p.box.x, p.box.y - 4, z1 - 30], len: p.box.w, horizontal: true, note: `מתחת ל${p.name}` });
+            }
+          }
+        });
+      } else if (v.led === 'sides') {
         for (const [tag, x] of [['L', col.x0], ['R', col.x1 - 6]]) {
           hardware.push({ id: `led-${i + 1}-${tag}`, kind: 'led', material: 'hw:led-strip', qty: Math.round((y1c - inner.y0) / 100) / 10, pos: [x, inner.y0, z1 - 30], len: y1c - inner.y0, note: `עמודה ${i + 1}, ${tag === 'L' ? 'שמאל' : 'ימין'}` });
         }
@@ -119,8 +155,8 @@ export function unitsFronts(ctx, o, cols, floorsOf) {
       const { fl, b } = floorsOf(i);
       const colTop = stepped ? tops[i] : topY;
       // הדלת מכסה את העמודה וחצי מחיצה מכל צד (ובדפנות החיצוניות — את כל הדופן).
-      const x0 = i === 0 ? 0 : col.x0 - sideT / 2;
-      const x1 = i === cols.cols.length - 1 ? W : col.x1 + sideT / 2;
+      const x0 = i === 0 ? 0 : col.x0 - partT(units, i - 1, sideT) / 2;
+      const x1 = i === cols.cols.length - 1 ? W : col.x1 + partT(units, i, sideT) / 2;
       const colW = x1 - x0;
       let narrowWide = false;
       fl.forEach((f, zi) => {

@@ -36,6 +36,11 @@ function scopeOf(path) {
   if (m) return { path: `floors.${m[1]}.interior`, floor: +m[1], label: 'התוכן' };
   if (/^floors(\.\d+\.height)?$/.test(path)) return { path: 'floors', floor: null, label: 'מבנה הקומות (קומות, חזיתות ותוכן)' };
   if (path === 'height') return { path: 'height', floor: null, label: 'הגובה' };
+  m = /^floors\.(\d+)\.led$/.exec(path);
+  if (m) return { path: `floors.${m[1]}.led`, floor: +m[1], label: 'התאורה' };
+  if (/^back(\.|$)/.test(path)) return { path: 'back', floor: null, label: 'הגב' };
+  if (path === 'crownH') return { path: 'crownH', floor: null, label: 'הכרכוב' };
+  if (/^partitionR(\.|$)/.test(path)) return { path: 'partitionR', floor: null, label: 'המחיצה (מימין)' };
   return null;
 }
 
