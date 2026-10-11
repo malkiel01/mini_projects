@@ -258,9 +258,39 @@ $('#login-form').addEventListener('submit', (e) => {
   });
 });
 
+// 👁 הצגת סיסמה — לכל שדה סיסמה במסך הכניסה וההרשמה
+function addPasswordEyes(root) {
+  for (const inp of $$('input[type="password"]', root)) {
+    const wrap = document.createElement('span');
+    wrap.className = 'pw';
+    inp.replaceWith(wrap);
+    wrap.append(inp);
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'pw__eye'; b.textContent = '👁'; b.setAttribute('aria-label', 'הצגת הסיסמה'); b.title = 'הצגת הסיסמה';
+    b.addEventListener('click', () => {
+      const show = inp.type === 'password';
+      inp.type = show ? 'text' : 'password';
+      b.textContent = show ? '🙈' : '👁';
+      b.setAttribute('aria-label', show ? 'הסתרת הסיסמה' : 'הצגת הסיסמה');
+      inp.focus();
+    });
+    wrap.append(b);
+    // אחרי שליחה (reset) — הסיסמה חוזרת להיות מוסתרת
+    inp.form?.addEventListener('reset', () => { inp.type = 'password'; b.textContent = '👁'; b.setAttribute('aria-label', 'הצגת הסיסמה'); });
+  }
+}
+addPasswordEyes($('#guest'));
+
+// אימות סיסמה: ההודעה כבר בזמן ההקלדה, לא רק בשליחה
+const regForm = $('#register-form');
+const matchPw = () => regForm.password2.setCustomValidity(regForm.password2.value && regForm.password2.value !== regForm.password.value ? 'הסיסמאות אינן זהות' : '');
+regForm.password.addEventListener('input', matchPw);
+regForm.password2.addEventListener('input', matchPw);
+
 $('#register-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const f = e.target;
+  if (f.password.value !== f.password2.value) { say('הסיסמאות אינן זהות — כדאי להקליד שוב.', 'err'); f.password2.focus(); return; }
   withButton(f, async () => {
     const res = await api('register', {
       username: f.username.value, display_name: f.display_name.value,
