@@ -85,6 +85,14 @@
             white-space: nowrap;
         }
         .entry-link button.copied { background: #ddf3e5; border-color: #9fd9b4; }
+        .category { margin-bottom: 40px; }
+        .category h2.category-title {
+            font-size: 1.15rem;
+            color: #444;
+            margin: 0 4px 16px;
+        }
+        .status { text-align: center; color: #888; padding: 40px 0; }
+        .status.error { color: #b3261e; }
     </style>
 </head>
 <body>
@@ -93,130 +101,79 @@
         <p>אוסף כלים שימושיים לעבודה יומיומית</p>
     </header>
     <div class="container">
-        <div class="projects-grid">
-            <a href="data-embed-for-clients/index.html" class="project-card">
-                <div class="icon">📄</div>
-                <h2>הטמעת נתונים לריכוז לקוחות</h2>
-                <p>העלאת תמונה, בחירת פונט ומיקום, והפקת קבצי PDF מרובים עם טקסט מותאם אישית לכל לקוח.</p>
-            </a>
-            <a href="generic-table/index.html" class="project-card">
-                <div class="icon">📊</div>
-                <h2>טבלאות גנריות</h2>
-                <p>יצירה וניהול של טבלאות מותאמות אישית עם API גנרי להטמעה באתרים קיימים. כולל סימולטור ויזואלי.</p>
-            </a>
-            <a href="git-deploy/" class="project-card">
-                <div class="icon">🚀</div>
-                <h2>git-deploy</h2>
-                <p>ממשק לפריסת ריפוזיטוריז מ-GitHub לשרת. בוחר ריפו, branch ותיקיית יעד - והממשק מבצע clone/pull. שומר היסטוריית ניתובים לכל ריפו.</p>
-            </a>
-            <a href="database-analyzer/index.html" class="project-card">
-                <div class="icon">🗄️</div>
-                <h2>אנליסט מסד נתונים</h2>
-                <p>כלי ניתוח וניהול מסדי נתונים MySQL - צפייה במבנה, תוכן, קשרים בין טבלאות (רשימה ותרשים ויזואלי), הוספה/מחיקה של שורות ועמודות, וייצוא ל-JSON.</p>
-            </a>
-            <a href="file-merger/index.html" class="project-card">
-                <div class="icon">🗂️</div>
-                <h2>איחוד ופיצול קבצים</h2>
-                <p>איחוד תמונות וקבצי PDF לקובץ PDF אחד בסדר שבוחרים, ופיצול PDF לתמונות בתוך ZIP. רץ כולו בדפדפן — הקבצים לא עולים לשרת.</p>
-            </a>
-            <a href="renovation-punchlist/index.html" class="project-card">
-                <div class="icon">📋</div>
-                <h2>השלמות לשיפוץ</h2>
-                <p>ניהול רשימת הפינישים שנשארו — תמונה או סרטון לכל ליקוי, תיאור קצר ומפורט, על מי המטלה מוטלת ומעקב ביצוע. עובד גם ללא אינטרנט, עם סנכרון אופציונלי בין כמה אנשים.</p>
-            </a>
-            <a href="claude-tasks/index.html" class="project-card">
-                <div class="icon">🗂️</div>
-                <h2>מטלות לקלוד</h2>
-                <p>לוח מטלות ש-Claude עובד עליו לבד, מטלה אחר מטלה. קטלוג לפי נושאים, ריבוי משתמשים, ושאלה שנשארת פתוחה לא עוצרת את שאר העבודה.</p>
-            </a>
-            <a href="sketches-3d/index.html" class="project-card">
-                <div class="icon">📐</div>
-                <h2>שרטוטים בתלת מימד</h2>
-                <p>כלי לשרטוט ולצפייה במודלים תלת־ממדיים. כרגע שלד בלבד — התשתית עומדת ונפרסת, והתכן ייכתב לפי האפיון.</p>
-            </a>
-            <a href="frame-browser/index.html" class="project-card">
-                <div class="icon">🪟</div>
-                <h2>דפדפן משובץ</h2>
-                <p>מדביקים כתובת והדף נפתח כאן בפנים, כמה במקביל. בודק מראש אם האתר מרשה הטמעה, ואומר את הסיבה במקום להשאיר מלבן ריק.</p>
-            </a>
-            <a href="sukkah-sketch/index.html" class="project-card">
-                <div class="icon">⛺</div>
-                <h2>שרטוט לסוכה</h2>
-                <p>סוכה למרפסת בשלד תלת־ממדי בקנה מידה 1:1 — מבטים, מפלסים ומחברי שרוול־ושן, והקשה על חלק מציגה אורך וזוויות חיתוך. ומצגת חלקים: כל קורה, עמוד ומחבר עם מידות, חיתוכים ומיקומי השיניים. ומצגת זוויות: לכל חיתוך משופע — המעלות, ומי נסוג בכמה.</p>
-            </a>
-            <a href="greeting-cards/index.html" class="project-card">
-                <div class="icon">🎆</div>
-                <h2>כרטיסי ברכה לשנה טובה</h2>
-                <p>יצירת כרטיסי ברכה מותאמים אישית — בחירת רקע ופונט, עיצוב שדות טקסט בגרירה חופשית, טעינת רשימת נמענים מאקסל, והורדת ZIP עם כל הכרטיסים כ-PDF.</p>
-            </a>
-            <div class="project-card multi">
-                <div class="icon">🍲</div>
-                <h2>אפליקציית מתכונים</h2>
-                <p>מתכונים פרטיים וציבוריים — חלקים, רכיבים בשתי שכבות, המרת מנות, חיפוש בשם וברכיב, ייבוא מהרשת עם קרדיט, "מה יש לי בבית", רשימת קניות ומצב בישול. חשבונות עם אימות דוא"ל; ניתנת להתקנה כאפליקציה בטלפון.</p>
-                <div class="entry-links">
-                    <div class="entry-link">
-                        <a href="recipes-app/">🍲 כניסה לאפליקציה</a>
-                        <button type="button" data-copy="recipes-app/">📋 העתקת קישור</button>
-                    </div>
-                </div>
-            </div>
-            <a href="camera-app/index.html" class="project-card">
-                <div class="icon">📷</div>
-                <h2>אפליקציית מצלמות</h2>
-                <p>ניהול מצלמות IP מהדפדפן — שידור חי, הקלטה ידנית/רציפה/לפי אדם, נגן עם ציר זמן יומי, צילומי מסך, וקיטלוג בתיקיות נושא עם תיאורים. המצלמה מעלה ל‑FTP בעצמה; גשר קטן ברשת הביתית מוסיף חי ו‑PTZ.</p>
-            </a>
-            <a href="whatsapp-ai-scanner/index.html" class="project-card">
-                <div class="icon">💬</div>
-                <h2>סורק וואטסאפ חכם</h2>
-                <p>שאילת שאלות בשפה חופשית על היסטוריית הוואטסאפ — מי התכתב מתי, מי שלח אסמכתת תשלום ועוד. השרת שומר את ההודעות מוצפנות ועונה דרך בינה מלאכותית; אפליקציית גשר לאנדרואיד קוראת את המסך דרך שירות נגישות. הצד השרתי עובד ונבדק; הגשר בשלד.</p>
-            </a>
-            <a href="pdf-merger/index.html" class="project-card">
-                <div class="icon">📑</div>
-                <h2>איחוד PDF ותמונות</h2>
-                <p>מאחדים קבצי PDF ותמונות (JPG, PNG, WEBP) לקובץ PDF אחד — גרירה לשינוי סדר, תצוגה מקדימה, סיבוב דפים ופיצול PDF לדפים בודדים. הכול רץ בדפדפן, בלי שרת.</p>
-            </a>
-            <div class="project-card multi">
-                <div class="icon">🍽️</div>
-                <h2>תפריט קייטרינג ניחוחות</h2>
-                <p>תפריט ללקוחות שמסמנים בו מנות בטלפון ושולחים הזמנה, וממשק מנהל לכל ההזמנות לפי לקוח — עם מעקב "קיים / לא קיים" לכל מנה.</p>
-                <div class="entry-links">
-                    <div class="entry-link">
-                        <a href="catering-menu/">🧾 תפריט ציבורי</a>
-                        <button type="button" data-copy="catering-menu/">📋 העתקת קישור</button>
-                    </div>
-                    <div class="entry-link">
-                        <a href="catering-menu/admin/">🔐 ממשק מנהל</a>
-                        <button type="button" data-copy="catering-menu/admin/">📋 העתקת קישור</button>
-                    </div>
-                </div>
-            </div>
-            <div class="project-card multi">
-                <div class="icon">🪚</div>
-                <h2>נגרות בתלת מימד</h2>
-                <p>אפליקציה לנגרים: ספרייה, ארון בגדים, שידה, מטבח (גם בצורת ר׳), שולחן, מיטה וחיפוי קירות — ממלאים מידות, חומרים ופרזול ומקבלים מודל תלת־ממדי עם דלתות שנפתחות, הדמיית חומרים, רשימת חיתוך, שרטוטים, מחיר, לוחות וסידור חיתוך, PDF, וקישור צפייה ללקוח. פרויקטים בשרת לכמה נגרים; ניתנת להתקנה כאפליקציה.</p>
-                <div class="entry-links">
-                    <div class="entry-link">
-                        <a href="carpentry-3d/">🪚 כניסה לאפליקציה</a>
-                        <button type="button" data-copy="carpentry-3d/">📋 העתקת קישור</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <p style="text-align:center;margin-top:40px;color:#888;font-size:0.85rem">
-            גרסה 15 · נוסף כלי: נגרות בתלת מימד 🪚
-        </p>
+        <!-- הכרטיסים נבנים מ-app.json שבכל תיקיית כלי (דרך platform/api.php).
+             כלי חדש לא נוגע בקובץ הזה — ראה platform/README.md. -->
+        <div id="apps"><p class="status">טוען את הכלים…</p></div>
+        <noscript><p class="status error">הדף צריך JavaScript כדי להציג את הכלים.</p></noscript>
     </div>
     <script>
+        const root = document.getElementById('apps');
+
+        function el(tag, props = {}, children = []) {
+            const node = Object.assign(document.createElement(tag), props);
+            node.append(...children);
+            return node;
+        }
+
         // העתקת קישור ישיר לכניסה — הכתובת נבנית מהדף הנוכחי, כך שהיא נכונה בכל דומיין.
-        document.querySelectorAll('[data-copy]').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const url = new URL(btn.dataset.copy, location.href).href;
-                try {
-                    await navigator.clipboard.writeText(url);
-                } catch {
-                    window.prompt('העתיקו את הקישור:', url);
-                    return;
-                }
+        async function copyLink(btn, href) {
+            const url = new URL(href, location.href).href;
+            try {
+                await navigator.clipboard.writeText(url);
+            } catch {
+                window.prompt('העתיקו את הקישור:', url);
+                return;
+            }
+            const label = btn.textContent;
+            btn.textContent = '✓ הועתק';
+            btn.classList.add('copied');
+            setTimeout(() => { btn.textContent = label; btn.classList.remove('copied'); }, 1800);
+        }
+
+        // כרטיס עם כמה כניסות: הכרטיס עצמו אינו קישור, וליד כל כניסה כפתור העתקה.
+        function card(app) {
+            const head = [
+                el('div', { className: 'icon', textContent: app.icon }),
+                el('h2', { textContent: app.name }),
+                el('p', { textContent: app.description }),
+            ];
+            if (!app.links.length) {
+                return el('a', { className: 'project-card', href: app.href }, head);
+            }
+            const links = app.links.map(link => {
+                const btn = el('button', { type: 'button', textContent: '📋 העתקת קישור' });
+                btn.addEventListener('click', () => copyLink(btn, link.href));
+                return el('div', { className: 'entry-link' }, [
+                    el('a', { href: link.href, textContent: link.label }), btn,
+                ]);
+            });
+            return el('div', { className: 'project-card multi' }, [
+                ...head, el('div', { className: 'entry-links' }, links),
+            ]);
+        }
+
+        function render({ categories, apps }) {
+            const sections = categories
+                .map(cat => ({ cat, apps: apps.filter(a => a.category === cat.id) }))
+                .filter(s => s.apps.length)
+                .map(({ cat, apps }) => el('section', { className: 'category' }, [
+                    el('h2', { className: 'category-title', textContent: `${cat.icon} ${cat.name}` }),
+                    el('div', { className: 'projects-grid' }, apps.map(card)),
+                ]));
+            root.replaceChildren(...sections);
+        }
+
+        fetch('platform/api.php', { cache: 'no-store' })
+            .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+            .then(render)
+            .catch(() => {
+                root.replaceChildren(el('p', {
+                    className: 'status error',
+                    textContent: 'לא ניתן לטעון את רשימת הכלים. נסו לרענן את הדף.',
+                }));
+            });
+    </script>
+         }
                 const label = btn.textContent;
                 btn.textContent = '✓ הועתק';
                 btn.classList.add('copied');

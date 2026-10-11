@@ -60,6 +60,11 @@ jobs:
           if [ "$ERR" -ne 0 ]; then echo "::error::JS syntax errors — aborting deploy"; exit 1; fi
           echo "JS lint OK"
 
+      # הדף הראשי נבנה מ-app.json שבכל תיקיית כלי. רישום פגום היה מעלים את
+      # הכלי מהדף בשקט — לכן הוא עוצר את הפריסה כאן, עם שם הקובץ והבעיה.
+      - name: App registry gate (every app.json must be valid)
+        run: php platform/check-apps.php
+
       - name: Validate the deploy target
         env:
           HOST: ${{ secrets.DEPLOY_HOST }}
