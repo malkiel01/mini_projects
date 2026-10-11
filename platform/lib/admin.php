@@ -42,7 +42,8 @@ function admin_state(array $admin): never
         'apps'       => array_map(fn($a) => [
             'id' => $a['id'], 'name' => $a['name'], 'icon' => $a['icon'],
             'category' => $a['category'], 'default_category' => $a['default_category'],
-            'hidden' => $a['hidden'],
+            'hidden' => $a['hidden'], 'install_ok' => $a['install_ok'],
+            'can_install' => $a['install']['pwa'] || $a['install']['apk'] || $a['install']['store'],
         ], apps_effective()),
     ]);
 }
@@ -193,7 +194,7 @@ function admin_category_delete(array $body): never
 
 // ---------- אפליקציות ----------
 
-/** {id, category?, hidden?} */
+/** {id, category?, hidden?, install_ok?} */
 function admin_app_update(array $body): never
 {
     $apps = array_column(apps_effective(), null, 'id');
@@ -203,6 +204,10 @@ function admin_app_update(array $body): never
     $category = $body['category'] ?? $app['category'];
     if (!in_array($category, array_column(categories_list(), 'id'), true)) throw new ApiError('קטגוריה לא מוכרת', 422);
     $hidden = (bool)($body['hidden'] ?? $app['hidden']);
+    if (isset($body['install_ok'])) {
+        db()->prepare($body['install_ok'] ? 'INSERT OR IGNORE INTO install_approvals (app_id) VALUES (?)'
+                                          : 'DELETE FROM install_approvals WHERE app_id = ?')->execute([$app['id']]);
+    }
 
     // קטגוריה זהה לברירת המחדל של app.json לא נשמרת — כך שינוי עתידי ב-app.json ייכנס.
     db()->prepare('INSERT INTO app_overrides (app_id, category, hidden) VALUES (?,?,?)

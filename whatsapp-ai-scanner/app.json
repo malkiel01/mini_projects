@@ -8,5 +8,8 @@
   "gate": true,
   "public": [
     "api/index.php?action=ping|bridge_accounts|media|log|ingest|logs"
-  ]
+  ],
+  "install": {
+    "apk": "https://github.com/malkiel01/mini_projects/releases/tag/wascanner-apk"
+  }
 }

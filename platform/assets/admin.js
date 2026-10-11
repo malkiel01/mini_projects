@@ -194,16 +194,25 @@ window.PlatformAdmin = (() => {
             const hidden = el('input', { type: 'checkbox', checked: app.hidden });
             hidden.addEventListener('change', () => act('admin_app_update', { id: app.id, hidden: hidden.checked },
                 hidden.checked ? `${app.name} מוסתרת מכולם` : `${app.name} גלויה שוב`));
-            return el('div', { className: `app-row${app.hidden ? ' is-hidden' : ''}` }, [
+            const row = [
                 el('span', { textContent: `${app.icon} ${app.name}` }), sel,
                 el('label', { className: 'small' }, [hidden, ' מוסתרת']),
-            ]);
+            ];
+            // התקנה נפרדת / APK / חנות — מוצגים למשתמשים רק אחרי אישור כאן.
+            if (app.can_install) {
+                const inst = el('input', { type: 'checkbox', checked: app.install_ok });
+                inst.addEventListener('change', () => act('admin_app_update', { id: app.id, install_ok: inst.checked },
+                    inst.checked ? `${app.name}: התקנה והורדה מוצגות` : `${app.name}: התקנה והורדה הוסתרו`));
+                row.push(el('label', { className: 'small' }, [inst, ' 📲 התקנה והורדה']));
+            }
+            return el('div', { className: `app-row${app.hidden ? ' is-hidden' : ''}` }, row);
         });
 
         return el('div', {}, [
             el('h3', { textContent: 'קטגוריות' }), ...cats, add,
             el('h3', { textContent: 'אפליקציות' }),
-            el('p', { className: 'muted small', textContent: 'אפליקציה מוסתרת לא מוצגת לאף אחד, גם לא למי שקיבל הרשאה — רק כאן.' }),
+            el('p', { className: 'muted small', textContent: 'אפליקציה מוסתרת לא מוצגת לאף אחד, גם לא למי שקיבל הרשאה — רק כאן. ' +
+                '"📲 התקנה והורדה" מציג למשתמשים את ההתקנה כאפליקציה נפרדת, את ה-APK או את החנות — רק לאפליקציות שיש להן אחד מאלה.' }),
             ...apps,
         ]);
     }
