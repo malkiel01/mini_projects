@@ -386,6 +386,62 @@ function ago(iso) {
   return iso.slice(0, 10).split('-').reverse().join('.');
 }
 
+// ── התראות לטלפון (lib/push.php, service-worker.js) ──
+// הרשמה לכל מכשיר בנפרד. הצלצול ריק, והתוכן נשאל מהשרת — ולכן אין כאן מפתחות הצפנה.
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const b64ToBytes = (s) => Uint8Array.from(atob((s + '='.repeat((4 - s.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+async function pushReg() {
+  // service worker שלא נרשם (למשל בלי https) — לא לחכות לנצח
+  return Promise.race([navigator.serviceWorker.ready, new Promise((_, no) => setTimeout(() => no(new Error('ההתראות אינן זמינות כאן')), 4000))]);
+}
+async function pushCurrent() { return (await pushReg()).pushManager.getSubscription(); }
+async function pushEnable() {
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') throw new Error(perm === 'denied' ? 'ההתראות חסומות בדפדפן — אפשר לאשר אותן בהגדרות האתר (🔒 ליד הכתובת).' : 'לא אושר.');
+  const { key } = await api('push-key');
+  if (!key) throw new Error('ההתראות אינן זמינות כרגע.');
+  const reg = await pushReg();
+  let sub;
+  try { sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) }); }
+  catch { throw new Error('הדפדפן הזה לא אפשר להירשם להתראות. בטלפון — מ-Chrome, או מהאפליקציה.'); }
+  await api('push-subscribe', { endpoint: sub.endpoint });
+}
+async function pushDisable() {
+  const sub = await pushCurrent();
+  if (!sub) return;
+  await api('push-unsubscribe', { endpoint: sub.endpoint }).catch(() => {});
+  await sub.unsubscribe();
+}
+async function drawPush(box) {
+  if (!pushSupported()) { box.innerHTML = '<p class="muted small">המכשיר או הדפדפן הזה לא תומכים בהתראות. באייפון — אחרי "הוסף למסך הבית".</p>'; return; }
+  const on = Notification.permission === 'granted' && !!(await pushCurrent().catch(() => null));
+  box.innerHTML = `<label class="check"><input type="checkbox" id="push-on" ${on ? 'checked' : ''}> במכשיר הזה — כששיתפו איתי, המליצו לי, הגיבו או התחילו לעקוב</label>
+    <p class="note small" id="push-msg" hidden></p>`;
+  $('#push-on', box).addEventListener('change', async (e) => {
+    const msg = $('#push-msg', box);
+    msg.hidden = true; e.target.disabled = true;
+    try { if (e.target.checked) await pushEnable(); else await pushDisable(); }
+    catch (err) { e.target.checked = !e.target.checked; msg.textContent = err.message; msg.className = 'note note--err small'; msg.hidden = false; }
+    finally { e.target.disabled = false; }
+  });
+}
+/** בדף הפעילות — הצעה אחת להפעיל התראות (עד שמסרבים או מפעילים). */
+function pushInvite(box) {
+  let asked = false;
+  try { asked = localStorage.getItem('push-asked') === '1'; } catch { /* בלי אחסון — מציעים */ }
+  if (!pushSupported() || Notification.permission !== 'default' || asked) return;
+  box.innerHTML = `<div class="note push-invite">🔔 לקבל התראה לטלפון כשמשתפים איתך או ממליצים לך?
+    <span class="push-invite__btns"><button class="btn btn--primary btn--small" type="button" data-push="yes">כן</button>
+    <button class="btn btn--ghost btn--small" type="button" data-push="no">לא עכשיו</button></span></div>`;
+  box.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-push]');
+    if (!b) return;
+    try { localStorage.setItem('push-asked', '1'); } catch { /* לא חשוב */ }
+    if (b.dataset.push === 'yes') { try { await pushEnable(); } catch (err) { alert(err.message); } }
+    box.innerHTML = '';
+  });
+}
+
 const ACTIVITY_ICON = { share: '👥', collection: '📁', reco: '📨', follow: '➕', published: '🆕', comment: '💬', reply: '↩️' };
 
 async function renderActivity() {
@@ -397,6 +453,7 @@ async function renderActivity() {
     <section class="card activity">
       <a class="link link--back" href="#/">‹ לרשימה</a>
       <h2>🔔 פעילות</h2>
+      <div id="push-invite"></div>
       ${d.items.length ? `<ul class="act-list">${d.items.map((it) => `
         <li class="act ${it.new ? 'act--new' : ''}">
           <a class="act__who" href="#/u/${it.actor.id}" aria-label="${esc(it.actor.name)}"><span class="avatar" aria-hidden="true">${esc((it.actor.name || '?').charAt(0))}</span>
@@ -409,6 +466,7 @@ async function renderActivity() {
         </li>`).join('')}</ul>`
         : '<p class="muted">אין עדיין פעילות. כשמישהו ישתף איתך, ימליץ, יעקוב אחריך או יגיב על מתכון שלך — זה יופיע כאן.</p>'}
     </section>`;
+  pushInvite($('#push-invite'));
 }
 
 async function ensureTags() {
@@ -2537,6 +2595,8 @@ async function renderSettingsPrivate() {
       </form>
       <h4>אנשים שחסמתי</h4>
       <div id="blocks" class="people-list"><p class="muted small">טוען…</p></div>
+      <h3>🔔 התראות לטלפון</h3>
+      <div id="push-box"><p class="muted small">טוען…</p></div>
       <h3>📲 אפליקציה בטלפון</h3>
       <div id="install-box" class="install"></div>
       <h3>מסמכים</h3>
@@ -2553,6 +2613,7 @@ async function renderSettingsPrivate() {
       </details>
     </section>`;
   drawInstall($('#install-box'));
+  drawPush($('#push-box'));
   const pf = $('#privacy');
   const drawBlocks = (blocks) => {
     $('#blocks').innerHTML = blocks.length ? blocks.map((p) => personRow(p, `<button class="btn btn--small" type="button" data-unblock="${p.id}">ביטול חסימה</button>`)).join('')

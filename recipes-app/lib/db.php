@@ -603,6 +603,29 @@ function migrate(PDO $pdo): void {
             updated_at TEXT    NOT NULL
         );
 
+        -- התראות לטלפון (lib/push.php): המכשירים, עד איפה צלצלנו ונמסר, ומפתח VAPID של השרת.
+        -- הצלצול ריק — התוכן נשאל מהשרת (push-pending) — ולכן אין כאן מפתחות הצפנה של המכשיר.
+        CREATE TABLE IF NOT EXISTS push_subs (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            endpoint   TEXT    NOT NULL UNIQUE,
+            fails      INTEGER NOT NULL DEFAULT 0,
+            last_ok_at TEXT,
+            created_at TEXT    NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_push_subs_user ON push_subs(user_id);
+        CREATE TABLE IF NOT EXISTS push_state (
+            user_id      INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            pinged_at    TEXT,
+            delivered_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS push_vapid (
+            id          INTEGER PRIMARY KEY CHECK (id = 1),
+            private_pem TEXT    NOT NULL,
+            public_key  TEXT    NOT NULL,
+            created_at  TEXT    NOT NULL
+        );
+
         -- מרכז פעילות (SPEC 15.6, lib/activity.php): מתי פתחתי אותו לאחרונה — מה שאחרי זה חדש.
         -- הפעילות עצמה נגזרת מהטבלאות הקיימות (שיתופים, המלצות, מעקב, מתכונים, תגובות).
         CREATE TABLE IF NOT EXISTS activity_seen (

@@ -719,3 +719,34 @@ CREATE TABLE cooking_progress (
 --   * מחיקת שורת media מאפסת main_media_id ו-steps.media_id שהצביעו עליה.
 --   * main_media_id חייב להיות media של אותו מתכון.
 -- זו ההתפשרות המודעת היחידה על שלמות הנתונים בסכימה הזאת.
+
+-- ═══════════════════════════════════════════════════════════
+-- התראות לטלפון  (lib/push.php)
+-- ═══════════════════════════════════════════════════════════
+
+-- הצלצול דרך שירות ההתראות ריק; הטלפון שואל את השרת מה חדש (push-pending). לכן אין
+-- כאן מפתחות הצפנה של המכשיר — רק הכתובת שלו בשירות (מוגבלת לשירותים המוכרים).
+CREATE TABLE push_subs (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint   TEXT    NOT NULL UNIQUE,
+  fails      INTEGER NOT NULL DEFAULT 0,   -- 5 כשלונות ברצף, או 404/410 — נמחק
+  last_ok_at TEXT,
+  created_at TEXT    NOT NULL
+);
+CREATE INDEX idx_push_subs_user ON push_subs(user_id);
+
+-- עד איפה צלצלנו ועד איפה נמסר — לפי זמן הפעילות (lib/activity.php): כל דבר מצלצל פעם אחת.
+CREATE TABLE push_state (
+  user_id      INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  pinged_at    TEXT,
+  delivered_at TEXT
+);
+
+-- מפתח VAPID של השרת — נוצר בשרת בפעם הראשונה. לא בריפו.
+CREATE TABLE push_vapid (
+  id          INTEGER PRIMARY KEY CHECK (id = 1),
+  private_pem TEXT    NOT NULL,
+  public_key  TEXT    NOT NULL,
+  created_at  TEXT    NOT NULL
+);

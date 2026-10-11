@@ -116,6 +116,11 @@ $GLOBALS['__user']   = $user;
 if (!in_array($action, $public, true) && !$user) {
     fail('נדרשת התחברות', 401);
 }
+// פעולה שיוצרת פעילות לאחרים (שיתוף, המלצה, תגובה, מעקב) — צלצול לטלפונים שלהם, אחרי התשובה
+if ($user && in_array($action, ['recipe-share', 'collection-share', 'circle-share', 'circle-add', 'recommend', 'comment-add', 'follow', 'recipe-save'], true)) {
+    require_once __DIR__ . '/lib/push.php';
+    pushAfterResponse();
+}
 
 try {
     switch ($action) {
@@ -173,7 +178,31 @@ try {
     }
 
     case 'heartbeat':
+        // התראות שהתפספסו (למשל — הפעולה רצה על שרת בלי fastcgi_finish_request)
+        require_once __DIR__ . '/lib/push.php';
+        pushAfterResponse();
         ok([]);
+
+    // התראות לטלפון (lib/push.php)
+    case 'push-key': {
+        require_once __DIR__ . '/lib/push.php';
+        $k = pushKeys();
+        ok(['key' => $k['public'] ?? null]);
+    }
+
+    case 'push-subscribe':
+        require_once __DIR__ . '/lib/push.php';
+        pushSubscribe($user, $in);
+        ok([]);
+
+    case 'push-unsubscribe':
+        require_once __DIR__ . '/lib/push.php';
+        pushUnsubscribe($user, str_field($in, 'endpoint', 1000));
+        ok([]);
+
+    case 'push-pending':   // service worker שהתעורר מצלצול — מה להראות
+        require_once __DIR__ . '/lib/push.php';
+        ok(['items' => pushPending($user)]);
 
     // מרכז פעילות (lib/activity.php, SPEC 15.6). פתיחת הדף — הכול נקרא; ה"חדש" מחושב לפני
     case 'activity': {
