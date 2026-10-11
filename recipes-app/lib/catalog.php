@@ -90,7 +90,8 @@ function catalogCounts(?array $user): array {
     $uid = $user ? (int) $user['id'] : 0;
     $vis = $user
         ? "(r.visibility = 'public' OR r.owner_id = $uid OR EXISTS (SELECT 1 FROM recipe_shares sh WHERE sh.recipe_id = r.id AND sh.user_id = $uid))
-           AND r.owner_id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = $uid UNION SELECT blocker_id FROM blocks WHERE blocked_id = $uid)"
+           AND r.owner_id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = $uid UNION SELECT blocker_id FROM blocks WHERE blocked_id = $uid)
+           AND r.id NOT IN (SELECT target_id FROM share_optouts WHERE kind = 'recipe' AND user_id = $uid)"
         : "r.visibility = 'public'";
     $rows = db()->query("SELECT rt.tag_id, COUNT(*) n FROM recipe_tags rt JOIN recipes r ON r.id = rt.recipe_id WHERE $vis GROUP BY rt.tag_id")->fetchAll();
     $out = [];

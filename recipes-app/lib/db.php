@@ -369,6 +369,19 @@ function migrate(PDO $pdo): void {
             created_at TEXT    NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_tokens_user ON user_tokens(user_id, kind);
+        -- להישאר מחובר: עוגייה ארוכה (selector:validator) במקום סשן שנמחק אחרי כ-24 דקות בשרת.
+        -- במסד רק hash של ה-validator. נמחק ביציאה, באיפוס סיסמה, בחסימה ועם החשבון.
+        CREATE TABLE IF NOT EXISTS login_tokens (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            selector     TEXT    NOT NULL UNIQUE,
+            token_hash   TEXT    NOT NULL,
+            created_at   TEXT    NOT NULL,
+            last_used_at TEXT    NOT NULL,
+            expires_at   TEXT    NOT NULL,
+            user_agent   TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_login_tokens_user ON login_tokens(user_id);
 
         CREATE TABLE IF NOT EXISTS recipes (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -704,6 +717,11 @@ function migrate(PDO $pdo): void {
     // ── מיגרציות חד־פעמיות על נתונים (טבלת migrations) ──
     // נושא לפי השם למתכונים קיימים שאין להם נושא (SPEC 15.1). כשרות — לא.
     runOnce($pdo, 'topics-backfill', function (PDO $pdo) {
+        require_once __DIR__ . '/catalog.php';
+        catalogBackfillTopics($pdo);
+    });
+    // שוב, פעם אחת: מתכונים שנוספו בעורך אחרי הסבב הראשון — שם לא ניחשו נושא עד עכשיו
+    runOnce($pdo, 'topics-backfill-2', function (PDO $pdo) {
         require_once __DIR__ . '/catalog.php';
         catalogBackfillTopics($pdo);
     });

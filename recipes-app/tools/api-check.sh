@@ -587,6 +587,7 @@ check 'אוסף: הוספת מתכון פרטי שלי'             "$(call coll
 check 'אוסף: בגיליון — מסומן'                    "$(call collections-for "{\"recipe_id\":$PRC}")" '"name":"ספר מתכונים לאמא","icon":"📖","is_saved":false,"has":true'
 check 'אוסף: "שמורים" לא נמחק'                   "$(call collection-delete "{\"id\":$(call collections | python3 -c 'import sys,json; print(json.load(sys.stdin)["mine"][0]["id"])')}")" 'אי אפשר למחוק'
 PR=$(call recipe-save '{"title":"מרק של סבתא לשיתוף","visibility":"private","sections":[{"ingredients":[{"free_text":"גזר"}],"steps":[{"text":"לבשל"}]}]}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
+PUBH=$(call recipe-save '{"title":"עוגה ציבורית להסתרה","visibility":"public","sections":[{"ingredients":[{"free_text":"קמח"}],"steps":[{"text":"לאפות"}]}]}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
 PS=$(call people-search '{"q":"tester"}')
 check 'חיפוש אנשים — בלי דוא"ל'              "$PS" '"username":"tester"'
 check 'ובלי השדה email'                       "$(printf '%s' "$PS" | grep -c '"email"')" '^0$'
@@ -618,7 +619,19 @@ check 'לשונית "נעקבים"'                         "$(call search '{"fo
 check 'האנשים שלי'                              "$(call network)" '"following":\[{"id":'"$OID"
 check 'הסרה מהרשימה שלי'                        "$(call recipe-leave-share "{\"recipe_id\":$PR}")" '"success":true'
 check 'ואז הפרטי כבר לא זמין'                    "$(call recipe "{\"id\":$PR}")" 'אינו קיים או שאינו זמין'
+# "הסר מהרשימה שלי" גם בציבורי — יוצא מ"הכול", ו"החזר לרשימה שלי" מחזיר
+check 'ציבורי של owner — ב"הכול" אצל tester'     "$(call search '{}')" '"id":'"$PUBH"','
+check 'הסרה של ציבורי'                          "$(call recipe-leave-share "{\"recipe_id\":$PUBH}")" '"success":true'
+check 'ואז הוא לא ב"הכול"'                      "$(call search '{}' | grep -c "\"id\":$PUBH,")" '^0$'
+check 'בדף שלו — מסומן שהוסר'                    "$(call recipe "{\"id\":$PUBH}")" '"hidden":true'
+check 'החזר לרשימה שלי'                         "$(call recipe-unhide "{\"recipe_id\":$PUBH}")$(call search '{}')" '"success":true.*"id":'"$PUBH"','
+# להישאר מחובר: הסשן נמחק בשרת (או שהדפדפן נסגר) — העוגייה הארוכה מחזירה אותו
+check 'להישאר מחובר: יש עוגייה ארוכה'           "$(grep -c 'RECIPES_KEEP' "$JAR")" '^1$'
+sed -i '/\tRECIPES\t/d' "$JAR"
+check 'הסשן נמחק — עדיין מחובר'                 "$(call me)" '"username":"tester"'
 call logout >/dev/null
+sed -i '/\tRECIPES\t/d' "$JAR"
+check 'אחרי יציאה — העוגייה לא מחזירה'           "$(call me)" '"user":null'
 
 echo
 echo "8מ. פרטיות ושליטה — העדפות, חסימה, דיווח, מחיקת חשבון"

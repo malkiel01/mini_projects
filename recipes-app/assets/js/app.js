@@ -16,7 +16,12 @@ const api = async (action, payload) => {
   let data;
   try { data = await res.json(); }
   catch { throw new Error('השרת החזיר תשובה שאינה תקינה'); }
-  if (!data.success) { const e = new Error(data.error || 'שגיאה לא מזוהה'); e.status = res.status; throw e; }
+  if (!data.success) {
+    const e = new Error(data.error || 'שגיאה לא מזוהה'); e.status = res.status;
+    // החיבור פג בשרת והמסך עוד חושב שאני מחובר — חזרה לכניסה, לא שגיאה סתומה באמצע פעולה
+    if (res.status === 401 && state.user && !['login', 'logout', 'me'].includes(action)) sessionLost();
+    throw e;
+  }
   return data;
 };
 
@@ -48,7 +53,7 @@ function checkVersion(serverVersion) {
   document.body.prepend(bar);
 }
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') api('me').then((r) => checkVersion(r.assets_version)).catch(() => {});
+  if (document.visibilityState === 'visible') api('me').then((r) => { checkVersion(r.assets_version); if (state.user && !r.user) sessionLost(); }).catch(() => {});
 });
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
@@ -187,6 +192,25 @@ function say(text, kind) {
   msg.hidden = !text;
 }
 
+/**
+ * החיבור פג (הסשן נמחק בשרת והעוגייה הארוכה לא החזירה אותו) — חוזרים למסך הכניסה
+ * עם הסבר, וזוכרים איפה הייתי: אחרי הכניסה ממשיכים מאותו מסך.
+ */
+let resumeHash = '';
+function sessionLost() {
+  if (!state.user) return;
+  resumeHash = location.hash;
+  setUser(null);
+  view.innerHTML = '';
+  showPane('login');
+  say('החיבור פג — צריך להתחבר שוב, ואז ממשיכים מאותו מקום.', 'warn');
+}
+
+/** ניווט שמרנדר גם כשהכתובת לא משתנה (אחרת hashchange לא נורה והמסך נשאר ישן). */
+function goFresh(hash) {
+  if (location.hash === hash) route(); else go(hash);
+}
+
 function showPane(name) {
   $$('.pane').forEach((p) => { p.hidden = p.dataset.pane !== name; });
   $$('.tab').forEach((t) => t.classList.toggle('is-on', t.dataset.pane === name));
@@ -214,7 +238,9 @@ $('#login-form').addEventListener('submit', (e) => {
       const { user } = await api('login', { username: f.username.value, password: f.password.value });
       f.reset();
       setUser(user);
-      go('#/');
+      const to = resumeHash || '#/';
+      resumeHash = '';
+      goFresh(to);
     } catch (err) {
       // חשבון שטרם אומת: במקום שגיאה בלבד, כפתור שמאפשר לצאת מהמצב הזה.
       // בלעדיו מי שהמייל שלו אבד תקוע בלי שום דרך להמשיך.
@@ -257,7 +283,7 @@ $('#forgot-form').addEventListener('submit', (e) => {
 
 $('#logout').addEventListener('click', async () => {
   try { await api('logout'); }
-  finally { setUser(null); showPane('login'); }
+  finally { resumeHash = ''; setUser(null); view.innerHTML = ''; showPane('login'); }
 });
 
 function setUser(user) {
@@ -276,9 +302,16 @@ function setUser(user) {
 // ───────────────────────── ניתוב ─────────────────────────
 
 const view = $('#view');
+
+// מסך שהתחיל לרנדר וחיכה לשרת, בזמן שהמשתמש כבר עבר מסך — לא מצייר: אחרת הוא דורס
+// את המסך החדש (לחיצה מהירה על נושא אחרי נושא, "חזור" באמצע טעינה). כל רינדור לוקח
+// חותמת בתחילתו (routeLive), וכל ציור ב-view בודק אותה.
+let routeSeq = 0;
+const routeLive = () => { const seq = routeSeq; return () => seq === routeSeq; };
 const go = (hash) => { location.hash = hash; };
 
 async function route() {
+  routeSeq++;
   if (!state.user) return;
   // כל ניווט סוגר את התפריט — אחרת הוא נשאר פתוח מעל המסך החדש.
   // לפני ה-try, כדי שגם ניווט שנכשל יסגור אותו.
@@ -354,9 +387,11 @@ function ago(iso) {
 const ACTIVITY_ICON = { share: '👥', collection: '📁', reco: '📨', follow: '➕', published: '🆕', comment: '💬', reply: '↩️' };
 
 async function renderActivity() {
+  const live = routeLive();
   const d = await api('activity');
+  if (!live()) return;
   const b = $('#bell-n'); b.hidden = true; b.textContent = '';
-  view.innerHTML = `
+  if (!live()) return; view.innerHTML = `
     <section class="card activity">
       <a class="link link--back" href="#/">‹ לרשימה</a>
       <h2>🔔 פעילות</h2>
@@ -425,8 +460,10 @@ function tasteForm(taste, tags, icons) {
 }
 
 async function renderForYou() {
+  const live = routeLive();
   const [d, tags, counts] = await Promise.all([api('foryou', { limit: 30 }), ensureTags(), api('tag-counts').catch(() => ({ icons: {} }))]);
-  view.innerHTML = `
+  if (!live()) return;
+  if (!live()) return; view.innerHTML = `
     <section class="card fy-page">
       <a class="link link--back" href="#/">‹ לרשימה</a>
       <h2>✨ בשבילך</h2>
@@ -550,10 +587,11 @@ function filterSheet(f, tags, counts) {
 // ───────────────────────── רשימה וחיפוש ─────────────────────────
 
 async function renderList(f = listParams('')) {
+  const live = routeLive();
   const filtered = !!(f.topic || f.tags.length || f.d || f.m);
   const nFilters = f.tags.length + (f.d ? 1 : 0) + (f.m ? 1 : 0);
   const tab = (s, label) => `<a href="${listHash({ ...f, s })}" class="${f.s === s ? 'is-on' : ''}">${label}</a>`;
-  view.innerHTML = `
+  if (!live()) return; view.innerHTML = `
     <section class="toolbar">
       <form id="search" class="search" role="search">
         <input name="q" type="search" placeholder="חיפוש בשם או ברכיב…" autocomplete="off" value="${esc(f.q)}">
@@ -589,7 +627,16 @@ async function renderList(f = listParams('')) {
   results.innerHTML = '<p class="muted">טוען…</p>';
 
   // נושאים וסינון — מהתגים ומהמונים; כשל כאן לא מפיל את הרשימה
+  // "⚙︎ סינון" עובד מיד — גם לפני שהתגים הגיעו (אז הגיליון נפתח כשהם מגיעים)
+  let wantSheet = false;
+  $('#filter-open').addEventListener('click', () => {
+    const sheet = $('#filter-sheet');
+    if (!sheet) { wantSheet = !wantSheet; $('#filter-slot').innerHTML = wantSheet ? '<p class="muted small">טוען…</p>' : ''; return; }
+    sheet.hidden = !sheet.hidden;
+    $('#filter-open').setAttribute('aria-expanded', String(!sheet.hidden));
+  });
   Promise.all([ensureTags(), api('tag-counts')]).then(([tags, { counts, icons }]) => {
+    if (!live()) return;   // המשתמש כבר במסך אחר — לא לצייר נושאים של הסינון הקודם על החדש
     const topics = (tags.topic || []).filter((t) => counts[t.id] || t.id === f.topic);
     $('#topics').innerHTML = topics.map((t) => `
       <a class="topic ${t.id === f.topic ? 'is-on' : ''}" href="${listHash({ ...f, topic: t.id === f.topic ? 0 : t.id })}" ${t.id === f.topic ? 'aria-current="true"' : ''}>
@@ -606,18 +653,19 @@ async function renderList(f = listParams('')) {
     $('#filter-slot').innerHTML = filterSheet(f, tags, counts);
     const sheet = $('#filter-sheet');
     const toggle = (on) => { sheet.hidden = !on; $('#filter-open').setAttribute('aria-expanded', String(on)); };
-    $('#filter-open').addEventListener('click', () => toggle(sheet.hidden));
+    if (wantSheet) toggle(true);
     $('#filter-close').addEventListener('click', () => toggle(false));
-    $('#filter-clear').addEventListener('click', () => go(listHash({ ...f, tags: [], d: '', m: 0 })));
+    // goFresh: כשהכתובת לא משתנה (רק נושא נבחר, אין מה לנקות) — עדיין מרנדר וסוגר את הגיליון
+    $('#filter-clear').addEventListener('click', () => goFresh(listHash({ ...f, tags: [], d: '', m: 0 })));
     sheet.addEventListener('submit', (e) => {
       e.preventDefault();
       const el = (name) => sheet.elements.namedItem(name);
       const ids = ['kosher', 'method', 'cuisine'].map((a) => +el(a)?.value || 0)
         .concat($$('[name="suitable"]:checked', sheet).map((c) => +c.value)).filter(Boolean);
       // תג מנושא שהגיע בקישור — נשאר; כל השאר נקבע מהגיליון
-      go(listHash({ ...f, tags: ids, d: el('d').value, m: +el('m').value || 0 }));
+      goFresh(listHash({ ...f, tags: ids, d: el('d').value, m: +el('m').value || 0 }));
     });
-  }).catch(() => {});
+  }).catch(() => { if (live() && wantSheet) $('#filter-slot').innerHTML = '<p class="note note--err small">הסינון לא נטען. לרענן ולנסות שוב.</p>'; });
 
   // ✨ בשבילך — בראש הבית, רק במצב הרגיל (בלי חיפוש וסינון); כשל כאן לא מפיל את הרשימה
   if (scope === 'all' && !q && !filtered) drawForYouRow($('#fy-row')).catch(() => {});
@@ -627,6 +675,7 @@ async function renderList(f = listParams('')) {
     scope === 'shared' || (scope === 'all' && !q && !filtered) ? api('recommendations') : Promise.resolve(null),
   ]);
   const sharedColls = scope === 'shared' && !filtered && !q ? (await api('collections').catch(() => ({ shared: [] }))).shared : [];
+  if (!live()) return;   // תוצאות של חיפוש קודם — לא על המסך החדש, ולא מאזינים כפולים
   // תג "חדש" ללשונית: מתכונים ששותפו ועוד לא נפתחו (מתוך "הכול"), ועוד המלצות שלא נפתחו
   if (scope === 'all' && !q && !filtered) { const n = recipes.filter((r) => r.shared_new).length + (reco?.unseen || 0) + (reco?.collections_unseen || 0); const b = $('#shared-new'); b.textContent = n; b.hidden = !n; }
   const collHtml = sharedColls.length ? `<h3 class="list__head">📁 אוספים ששותפו איתי</h3><div class="coll-grid">${sharedColls.map(collectionCard).join('')}</div>` : '';
@@ -649,7 +698,7 @@ async function renderList(f = listParams('')) {
     if (!del) return;
     try { await api('recommendation-dismiss', { id: +del.dataset.recoDismiss }); del.closest('[data-reco]').remove(); } catch (err) { alert(err.message); }
   });
-  $('#search').addEventListener('submit', (e) => { e.preventDefault(); go(listHash({ ...f, q: e.target.q.value.trim() })); });
+  $('#search').addEventListener('submit', (e) => { e.preventDefault(); goFresh(listHash({ ...f, q: e.target.q.value.trim() })); });
 }
 
 /** המלצה שקיבלתי: ממי, על מה, ההערה; פתיחה — דרך החיפוש ברשת (או ייבוא מקישור). */
@@ -687,7 +736,9 @@ function recipeItem(r) {
 // ───────────────────────── תצוגת מתכון ─────────────────────────
 
 async function renderRecipe(id) {
+  const live = routeLive();
   const loaded = await api('recipe', { id });
+  if (!live()) return;
   const r = loaded.recipe;
   let servings = r.servings;
   let mult = 1;   // לתיאור חופשי ("עוגה אחת"): ×½ / ×2 / ×3 על הכמויות המחושבות
@@ -698,7 +749,7 @@ async function renderRecipe(id) {
     const tagsByAxis = {};
     for (const t of r.tags) (tagsByAxis[t.axis] ||= []).push(t.name);
 
-    view.innerHTML = `
+    if (!live()) return; view.innerHTML = `
       <article class="recipe">
         <header class="recipe__head">
           <a class="link link--back" href="#/">‹ לרשימה</a>
@@ -751,6 +802,7 @@ async function renderRecipe(id) {
               <div class="more-menu">
                 <button type="button" id="print">🖨 הדפסה</button>
                 ${r.is_mine && r.source ? '<button type="button" id="reco-open" data-panel="reco-box">📨 המלצה על המקור</button>' : ''}
+                ${!r.is_mine && !loaded.hidden ? '<button type="button" id="leave-share">🙈 הסר מהרשימה שלי</button>' : ''}
                 ${!r.is_mine ? '<button type="button" id="report-open" data-panel="report-slot">⚑ דיווח</button>' : ''}
                 ${r.is_mine ? '<button type="button" class="is-danger" id="del">🗑 מחיקה</button>' : ''}
               </div>
@@ -761,7 +813,7 @@ async function renderRecipe(id) {
           <div id="coll-box" class="share-box" hidden></div>
           <div id="shopping-pick" hidden></div>
           <div id="report-slot"></div>
-          ${loaded.shared_with_me ? '<p class="small"><button class="link" type="button" id="leave-share">הסר מהרשימה שלי</button></p>' : ''}
+          ${loaded.hidden ? '<p class="note small">🙈 הסרת את המתכון מהרשימה שלך — הוא לא מופיע אצלך בבית ובקטגוריות. <button class="link link--inline" type="button" id="unhide">החזר לרשימה שלי</button></p>' : ''}
         </header>
 
         ${mediaGallery(r)}
@@ -833,9 +885,13 @@ async function renderRecipe(id) {
       box.hidden = !box.hidden;
       if (!box.hidden) collectionPicker(box, { recipe_id: r.id });
     });
+    // "הסר מהרשימה שלי" — גם ציבורי, לא רק ששותף איתי. נשאר בדף של המפרסם, ומשם מחזירים
     $('#leave-share')?.addEventListener('click', async () => {
-      if (!confirm('להסיר את המתכון מהרשימה שלך? הוא יישאר אצל מי ששיתף.')) return;
+      if (!confirm(`להסיר את המתכון מהרשימה שלך?\nהוא לא יופיע אצלך בבית, בקטגוריות וב"בשבילך". אפשר להחזיר אותו מהדף של ${r.owner_name}.`)) return;
       try { await api('recipe-leave-share', { recipe_id: r.id }); go('#/'); } catch (err) { alert(err.message); }
+    });
+    $('#unhide')?.addEventListener('click', async () => {
+      try { await api('recipe-unhide', { recipe_id: r.id }); route(); } catch (err) { alert(err.message); }
     });
     // לרשימת קניות: בוחרים רשימה קיימת או חדשה. ה-factor הוא המרת המנות
     // שמוצגת כרגע — מי שהכפיל ל-16 מנות רוצה לקנות ל-16.
@@ -1042,7 +1098,9 @@ async function renderRecipe(id) {
 
 /** המועדפים הם עכשיו האוסף "שמורים" — הכתובת הישנה מפנה אליו. */
 async function renderFavorites() {
+  const live = routeLive();
   const { mine } = await api('collections');
+  if (!live()) return;
   location.replace('#/c/' + mine.find((c) => c.is_saved).id);
 }
 
@@ -1087,8 +1145,10 @@ const collectionFormData = (f) => ({ icon: f.icon.value, ...(f.name ? { name: f.
                                      visibility: f.public.checked ? 'public' : 'private' });
 
 async function renderCollections() {
+  const live = routeLive();
   const d = await api('collections');
-  view.innerHTML = `
+  if (!live()) return;
+  if (!live()) return; view.innerHTML = `
     <section class="card settings settings--wide colls">
       <a class="link" href="#/">‹ לרשימה</a>
       <h2>📁 האוספים שלי</h2>
@@ -1138,10 +1198,12 @@ function collectionItemRow(it, mine) {
 }
 
 async function renderCollection(id) {
+  const live = routeLive();
   const d = await api('collection', { id });
+  if (!live()) return;
   const c = d.collection;
   const mine = c.is_mine;
-  view.innerHTML = `
+  if (!live()) return; view.innerHTML = `
     <section class="card coll-page">
       <div class="recipe__top">
         <a class="link" href="#/collections">‹ האוספים</a>
@@ -1203,6 +1265,7 @@ async function renderCollection(id) {
 
 /** לוח השיתוף של אוסף: מי ששותף רואה את האוסף, ואת המתכונים הפרטיים *שלך* שבו. */
 async function renderCollectionShareBox(box, c) {
+  const live = routeLive();
   box.innerHTML = `
     <h3>👥 שיתוף האוסף</h3>
     <p class="muted small">מי שברשימה רואה את האוסף — <strong>כולל המתכונים הפרטיים שלך שבתוכו</strong>. מתכונים פרטיים של אחרים
@@ -1319,7 +1382,9 @@ const emptyIng = () => ({ free_text: '', amount_min: '', amount_max: '', unit: '
 const emptySection = () => ({ name: '', ingredients: [emptyIng()], steps: [''] });
 
 async function renderEditor(id, draft = null) {
+  const live = routeLive();
   const tags = await ensureTags();
+  if (!live()) return;
   // draft: טיוטה מהייבוא — כבר בצורת המודל, עם מקור ומדיה שממתינה לשמירה
   let r = draft ? {
     ...draft, tags: draft.tag_ids.map((tid) => ({ id: tid })),
@@ -1431,7 +1496,7 @@ async function renderEditor(id, draft = null) {
   const draw = () => {
     // מתכון פשוט = חלק אחד: שדה השם שלו מוסתר, והחלוקה לא נראית (3.1).
     const multi = model.sections.length > 1;
-    view.innerHTML = `
+    if (!live()) return; view.innerHTML = `
       <form id="editor" class="form editor">
         <a class="link" href="${id ? `#/r/${id}` : '#/'}">‹ ביטול</a>
         <h2>${id ? 'עריכת מתכון' : draft ? 'ייבוא מהרשת — בדיקה לפני שמירה' : 'מתכון חדש'}</h2>
@@ -1775,8 +1840,10 @@ const qtyText = (i) => i.amount != null
   : (i.free_text || '');
 
 async function renderShoppingLists() {
+  const live = routeLive();
   const { lists } = await api('shopping-lists');
-  view.innerHTML = `
+  if (!live()) return;
+  if (!live()) return; view.innerHTML = `
     <section class="card settings">
       <a class="link" href="#/">‹ לרשימה</a>
       <h2>🛒 רשימות קניות</h2>
@@ -1804,7 +1871,9 @@ async function renderShoppingLists() {
 }
 
 async function renderShoppingList(id) {
+  const live = routeLive();
   let { list } = await api('shopping-get', { id });
+  if (!live()) return;
   const draw = () => {
     const open = list.items.filter((i) => !i.checked), done = list.items.filter((i) => i.checked);
     const row = (i) => `
@@ -1820,7 +1889,7 @@ async function renderShoppingList(id) {
         </label>
         <button class="btn btn--ghost btn--tiny" type="button" data-rm="${i.id}" aria-label="הסר">✕</button>
       </li>`;
-    view.innerHTML = `
+    if (!live()) return; view.innerHTML = `
       <section class="card settings shopping">
         <a class="link" href="#/shopping">‹ כל הרשימות</a>
         <h2 class="shopping__title">🛒 <span id="list-name" contenteditable="true" spellcheck="false">${esc(list.name || 'רשימה ' + list.id)}</span></h2>
@@ -1922,10 +1991,12 @@ function cookTick() {
 setInterval(cookTick, 500);
 
 async function renderCook(id) {
+  const live = routeLive();
   const [{ recipe: r }, { done }] = await Promise.all([api('recipe', { id }), api('cook-progress', { recipe_id: id })]);
+  if (!live()) return;
   const steps = [];
   r.sections.forEach((s, si) => s.steps.forEach((st, ki) => steps.push({ ...st, si, ki, section: s.name, ingredients: s.ingredients })));
-  if (!steps.length) { view.innerHTML = '<section class="card"><p class="note note--warn">למתכון הזה אין שלבים.</p><a class="btn" href="#/r/' + id + '">למתכון</a></section>'; return; }
+  if (!steps.length) { if (!live()) return; view.innerHTML = '<section class="card"><p class="note note--warn">למתכון הזה אין שלבים.</p><a class="btn" href="#/r/' + id + '">למתכון</a></section>'; return; }
   const doneSet = new Set(done);
   let idx = Math.max(0, steps.findIndex((s) => !doneSet.has(s.id)));
   if (idx === -1 || steps.every((s) => doneSet.has(s.id))) idx = 0;
@@ -1943,7 +2014,7 @@ async function renderCook(id) {
     const s = steps[idx];
     const multi = r.sections.length > 1;
     const doneCount = steps.filter((x) => doneSet.has(x.id)).length;
-    view.innerHTML = `
+    if (!live()) return; view.innerHTML = `
       <section class="cook">
         <header class="cook__head">
           <a class="link" href="#/r/${r.id}">‹ ${esc(r.title)}</a>
@@ -1999,12 +2070,14 @@ async function renderCook(id) {
 // ───────────────────────── מה יש לי בבית ─────────────────────────
 
 async function renderPantry() {
+  const live = routeLive();
   let pantry = await api('pantry');
+  if (!live()) return;
   let maxMissing = 2;
   let aiOk = false;
   api('ai-status').then((r) => { aiOk = r.available; $('#photo-hint').textContent = aiOk ? 'מצלמים את המקרר, המזווה או שקית הקניות — הבינה מזהה את המוצרים ואתה מאשר.' : 'זיהוי בתמונה דורש מפתח API (המפתח מגדיר). בינתיים — להקליד.'; }).catch(() => {});
 
-  view.innerHTML = `
+  if (!live()) return; view.innerHTML = `
     <section class="card settings pantry">
       <a class="link" href="#/">‹ לרשימה</a>
       <h2>🥕 מה יש לי בבית</h2>
@@ -2132,7 +2205,8 @@ async function renderPantry() {
 // ───────────────────────── ייבוא מהרשת ─────────────────────────
 
 async function renderImport(presetUrl = '') {
-  view.innerHTML = `
+  const live = routeLive();
+  if (!live()) return; view.innerHTML = `
     <section class="card settings">
       <a class="link" href="#/">‹ לרשימה</a>
       <h2>🌐 ייבוא מתכון מהרשת</h2>
@@ -2179,9 +2253,11 @@ async function renderImport(presetUrl = '') {
  * ומאבד את כולן.
  */
 async function renderMediaEdit(recipeId) {
+  const live = routeLive();
   const box = $('#media-edit');
   if (!box) return;
   const [{ recipe: r }, { limits }] = await Promise.all([api('recipe', { id: recipeId }), api('media-limits')]);
+  if (!live()) return;
   const images = r.media.filter((m) => m.kind === 'image');
   const videos = r.media.filter((m) => m.kind === 'video');
 
@@ -2300,8 +2376,10 @@ function settingsNav(active) {
 
 /** הגדרות פרטיות — לכל משתמש. מה שהוא קובע לעצמו, ומה שחל עליו. */
 async function renderSettingsPrivate() {
+  const live = routeLive();
   const { limits, display_name } = await api('settings-private');
-  view.innerHTML = `
+  if (!live()) return;
+  if (!live()) return; view.innerHTML = `
     <section class="card settings">
       ${settingsNav()}
       <h2>הגדרות פרטיות</h2>
@@ -2440,9 +2518,11 @@ function drawInstall(box, justInstalled = false) {
 
 /** הגדרות ציבוריות — המפתח בלבד. חלות על כל מי שאין לו דריסה אישית. */
 async function renderSettingsPublic() {
+  const live = routeLive();
   const { settings, is_developer } = await api('settings-public');
+  if (!live()) return;
   if (!is_developer) { go('#/settings'); return; }
-  view.innerHTML = `
+  if (!live()) return; view.innerHTML = `
     <section class="card settings">
       ${settingsNav()}
       <h2>הגדרות ציבוריות</h2>
@@ -2508,9 +2588,11 @@ async function renderSettingsPublic() {
 
 /** ניהול משתמשים — המפתח בלבד. */
 async function renderUsers() {
+  const live = routeLive();
   const { users } = await api('users');
+  if (!live()) return;
   const draw = (list) => {
-    view.innerHTML = `
+    if (!live()) return; view.innerHTML = `
       <section class="card settings settings--wide">
         ${settingsNav()}
         <h2>ניהול משתמשים <span class="muted">(${list.length})</span></h2>
@@ -2605,13 +2687,14 @@ const fmtLeft = (iso) => {
 };
 
 async function renderLogs() {
+  const live = routeLive();
   if (!state.user.is_developer) { go('#/settings'); return; }
   const filters = { level: '', action: '', user: '', q: '' };
   let rows = [];
   let stats = null;
   let autoTimer = null;
 
-  view.innerHTML = `
+  if (!live()) return; view.innerHTML = `
     <section class="card settings settings--wide logs">
       ${settingsNav()}
       <h2>יומן — כל צעד במערכת</h2>
@@ -2785,11 +2868,12 @@ const IMPORT_KIND_HE = { preview: 'ייבוא מהעורך', 'scout-preview': '�
 // כל הבאה של דף: מה היה בדף ומה חולץ ממנו, עם קישור למקור. כאן רואים, ובטקסט
 // מעתיקים — זה מה שמדביקים בצ'אט כדי לאבחן למה דף מסוים לא חולץ נכון.
 async function renderImportLog() {
+  const live = routeLive();
   if (!state.user.is_developer) { go('#/settings'); return; }
   const filters = { host: '', kind: '', ok: '', q: '' };
   let rows = [];
 
-  view.innerHTML = `
+  if (!live()) return; view.innerHTML = `
     <section class="card settings settings--wide logs importlog">
       ${settingsNav()}
       <h2>יומן ייבוא</h2>
@@ -2873,7 +2957,8 @@ async function renderImportLog() {
 const webState = { q: '', topic: '', data: null, offset: 0 };
 
 async function renderWebSearch(q = '', topic = '') {
-  view.innerHTML = `
+  const live = routeLive();
+  if (!live()) return; view.innerHTML = `
     <section class="card settings settings--wide websearch">
       <a class="link" href="#/">‹ לרשימה</a>
       <h2>🔎 חיפוש מתכונים ברשת</h2>
@@ -2972,7 +3057,8 @@ async function renderWebSearch(q = '', topic = '') {
 }
 
 async function renderWebRecipe(id) {
-  view.innerHTML = `<section class="card"><p class="muted">מביא את המתכון מהאתר, מסדר ומנסח מחדש… (עד חצי דקה בפעם הראשונה)</p></section>`;
+  const live = routeLive();
+  if (!live()) return; view.innerHTML = `<section class="card"><p class="muted">מביא את המתכון מהאתר, מסדר ומנסח מחדש… (עד חצי דקה בפעם הראשונה)</p></section>`;
   let res;
   try { res = await api('web-open', { id }); }
   catch (err) {
@@ -2983,7 +3069,7 @@ async function renderWebRecipe(id) {
       webState.data.results = webState.data.results.filter((r) => r.id !== id);
       webState.data.total = Math.max(0, webState.data.total - 1);
     }
-    view.innerHTML = `<section class="card settings">
+    if (!live()) return; view.innerHTML = `<section class="card settings">
       <a class="link link--back" href="${back}">‹ לתוצאות</a>
       <p class="${err.status === 422 ? 'muted' : 'note note--err'}">${esc(err.message)}</p>
       <div class="actions">${err.status === 422 ? `<a class="btn btn--primary" href="${back}">חזרה לתוצאות</a>`
@@ -2993,7 +3079,7 @@ async function renderWebRecipe(id) {
   }
   const d = res.draft;
   const img = d.pending_media?.images?.[0];
-  view.innerHTML = `
+  if (!live()) return; view.innerHTML = `
     <article class="recipe webrecipe">
       <header class="recipe__head">
         <a class="link link--back" href="#/web${webState.q ? '?q=' + encodeURIComponent(webState.q) : ''}">‹ לתוצאות</a>
@@ -3063,8 +3149,9 @@ async function renderWebRecipe(id) {
 // המנוסח. השרת בודק כל פריט לפני שהוא מחליף משהו (lib/rewrite_queue.php).
 
 async function renderRewrite() {
+  const live = routeLive();
   if (!state.user.is_developer) { go('#/settings'); return; }
-  view.innerHTML = `
+  if (!live()) return; view.innerHTML = `
     <section class="card settings settings--wide rewrite-page">
       ${settingsNav()}
       <h2>✍️ ניסוח ידני</h2>
@@ -3181,6 +3268,7 @@ function reportBox(slot, kind, id, what) {
 
 /** לוח השיתוף של מתכון (לבעלים): עם מי משותף, והוספה. */
 async function renderShareBox(box, r) {
+  const live = routeLive();
   box.innerHTML = `
     <h3>👥 שיתוף עם אנשים</h3>
     <p class="muted small">${r.visibility === 'public'
@@ -3310,8 +3398,10 @@ function bindCircleForm(slot, submit) {
 }
 
 async function renderCircles() {
+  const live = routeLive();
   const { circles } = await api('circles');
-  view.innerHTML = `
+  if (!live()) return;
+  if (!live()) return; view.innerHTML = `
     <section class="card settings settings--wide colls">
       <a class="link" href="#/people">‹ אנשים</a>
       <h2>👪 המעגלים שלי</h2>
@@ -3334,8 +3424,10 @@ async function renderCircles() {
 }
 
 async function renderCircle(id) {
+  const live = routeLive();
   let d = await api('circle', { id });
-  view.innerHTML = `
+  if (!live()) return;
+  if (!live()) return; view.innerHTML = `
     <section class="card settings settings--wide circle-page">
       <div class="recipe__top">
         <a class="link" href="#/circles">‹ המעגלים</a>
@@ -3391,9 +3483,11 @@ const followBtn = (p) => p.is_me ? '' : p.following
 
 /** דף משתמש: מונים, מעקב, והמתכונים שגלויים לי. */
 async function renderPerson(id) {
+  const live = routeLive();
   const d = await api('person', { id });
+  if (!live()) return;
   const p = d.person;
-  view.innerHTML = `
+  if (!live()) return; view.innerHTML = `
     <section class="card person-card">
       <a class="link" href="#/people">‹ אנשים</a>
       <div class="person-card__head">
@@ -3428,7 +3522,8 @@ async function renderPerson(id) {
 
 /** אנשים: חיפוש, אחרי מי אני עוקב, ומי עוקב אחריי. */
 async function renderPeople() {
-  view.innerHTML = `
+  const live = routeLive();
+  if (!live()) return; view.innerHTML = `
     <section class="card settings settings--wide people-page">
       <a class="link" href="#/">‹ לרשימה</a>
       <h2>👥 אנשים</h2>
@@ -3511,8 +3606,9 @@ function scanCard(s, { dev = false } = {}) {
 }
 
 async function renderScan() {
+  const live = routeLive();
   const picked = [];   // { file, url }
-  view.innerHTML = `
+  if (!live()) return; view.innerHTML = `
     <section class="card settings settings--wide scan-page">
       <a class="link" href="#/">‹ לרשימה</a>
       <h2>📷 סריקת מתכון מתמונה</h2>
@@ -3598,8 +3694,9 @@ async function renderScan() {
 
 /** המפתח: תור הדיווחים — דחייה, הסתרה (פרטי), מחיקה, חסימת המשתמש באתר. */
 async function renderReports() {
+  const live = routeLive();
   if (!state.user.is_developer) { go('#/settings'); return; }
-  view.innerHTML = `
+  if (!live()) return; view.innerHTML = `
     <section class="card settings settings--wide">
       ${settingsNav()}
       <h2>⚑ דיווחים</h2>
@@ -3639,8 +3736,9 @@ async function renderReports() {
 
 /** המפתח: הסריקות שממתינות — בבינה, ידנית (קובץ לקלוד וחזרה), או דחייה. */
 async function renderScansDev() {
+  const live = routeLive();
   if (!state.user.is_developer) { go('#/scan'); return; }
-  view.innerHTML = `
+  if (!live()) return; view.innerHTML = `
     <section class="card settings settings--wide scan-page">
       ${settingsNav()}
       <h2>📷 סריקות ממתינות</h2>
@@ -3724,9 +3822,10 @@ const fmtDuration = (sec) => sec < 3600 ? `${Math.max(1, Math.round(sec / 60))} 
 const s_poll = (d) => (d.sites.some((s) => s.crawling || (s.enabled && s.next_in === 0)) ? 5000 : 30000);
 
 async function renderIndexSites() {
+  const live = routeLive();
   if (!state.user.is_developer) { go('#/settings'); return; }
   let timer = null;
-  view.innerHTML = `
+  if (!live()) return; view.innerHTML = `
     <section class="card settings settings--wide indexsites">
       ${settingsNav()}
       <h2>🗂 אינדקס החיפוש</h2>
@@ -3813,13 +3912,14 @@ const prettyUrl = (u) => { try { return decodeURIComponent(u).replace(/^https?:\
 const SCOUT_LABEL = { new: 'חדש', wanted: 'לייבוא', skipped: 'דילוג', imported: 'יובא', error: 'שגיאה' };
 
 async function renderScout() {
+  const live = routeLive();
   if (!state.user.is_developer) { go('#/settings'); return; }
   const filters = { status: 'new', site: '', q: '' };
   let data = { items: [], counts: {}, sites: [] };
   let job = null;
   let jobTimer = null;
 
-  view.innerHTML = `
+  if (!live()) return; view.innerHTML = `
     <section class="card settings settings--wide scout">
       ${settingsNav()}
       <h2>🔎 סורק אתרים <span class="muted">— כלי פרטי</span></h2>
@@ -4056,13 +4156,15 @@ async function renderScout() {
 }
 
 async function renderDiag() {
+  const live = routeLive();
   const { diag: d } = await api('diag');
+  if (!live()) return;
   const yes = (b) => (b === true ? '✅' : b === false ? '❌' : '—');
   const rows = (obj, fmt = (v) => esc(v)) =>
     Object.entries(obj).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${fmt(v)}</td></tr>`).join('');
   const boolRows = (obj) => rows(obj, (v) => (typeof v === 'boolean' ? yes(v) : esc(v)));
 
-  view.innerHTML = `
+  if (!live()) return; view.innerHTML = `
     <section class="card settings settings--wide diag">
       ${settingsNav()}
       <h2>אזור פיתוח — מה השרת אומר על עצמו</h2>

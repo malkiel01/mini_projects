@@ -109,6 +109,17 @@ function isSharedWith(int $recipeId, int $userId): bool {
  * שומר מתכון — חדש או קיים — על כל תוכנו, בטרנזקציה אחת.
  * מחזיר את המזהה.
  */
+/**
+ * בלי נושא, מתכון לא מופיע באף קטגוריה ("הוספתי מתכון והוא לא בקטגוריה"). כשלא נבחר
+ * אף נושא — מנחשים מהשם (lib/catalog.php), כמו בייבוא ובסריקה. נבחר נושא — לא נוגעים.
+ */
+function withGuessedTopic(array $tagIds, string $title): array {
+    require_once __DIR__ . '/catalog.php';
+    $tagIds = array_values(array_unique(array_filter(array_map('intval', $tagIds))));
+    if (array_intersect($tagIds, catalogTagIds('topic'))) return $tagIds;
+    return array_values(array_unique(array_merge($tagIds, catalogGuessTopics($title))));
+}
+
 function saveRecipe(array $in, array $user, ?int $recipeId = null): int {
     $title = trim((string) ($in['title'] ?? ''));
     if ($title === '') throw new AppError('למתכון חייב להיות שם');
@@ -199,7 +210,7 @@ function saveRecipe(array $in, array $user, ?int $recipeId = null): int {
         }
 
         writeSections($pdo, $recipeId, $sections);
-        writeTags($pdo, $recipeId, $in['tag_ids'] ?? []);
+        writeTags($pdo, $recipeId, withGuessedTopic(is_array($in['tag_ids'] ?? null) ? $in['tag_ids'] : [], $title));
 
         $pdo->commit();
     } catch (Throwable $e) {
@@ -354,6 +365,8 @@ function searchRecipes(?array $user, string $query = '', array $filters = []): a
     if (!empty($filters['owner_id']))            { $where[] = 'r.owner_id = ?'; $params[] = (int) $filters['owner_id']; }
     // חסימה (lib/privacy.php): מתכונים של מי שחסמתי או שחסם אותי — לא ברשימות
     if ($user) { $where[] = 'r.owner_id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = ? UNION SELECT blocker_id FROM blocks WHERE blocked_id = ?)'; array_push($params, $uid0, $uid0); }
+    // "הסר מהרשימה שלי" (lib/network.php) — לא ברשימות; בדף של המפרסם כן, כדי שאפשר יהיה להחזיר
+    if ($user && empty($filters['owner_id'])) { $where[] = "r.id NOT IN (SELECT target_id FROM share_optouts WHERE kind = 'recipe' AND user_id = ?)"; $params[] = $uid0; }
 
     $q = normalizeText($query);
     if ($q !== '') {
@@ -450,6 +463,10 @@ function deleteRecipe(int $recipeId, array $user): int {
     $st->execute([$recipeId]);
     $comments = (int) $st->fetch()['c'];
 
+    // מהאוספים של הבעלים עצמו — יוצא לגמרי: הוא מחק אותו, ו"הוסר" אצלו רק נשאר תקוע
+    // ב"שמורים". אצל אחרים שאספו אותו — נשאר "הוסר", כדי שיידעו לאן הוא נעלם.
+    db()->prepare('DELETE FROM collection_items WHERE recipe_id = ? AND collection_id IN (SELECT id FROM collections WHERE owner_id = ?)')
+        ->execute([$recipeId, (int) $row['owner_id']]);
     $st = db()->prepare('DELETE FROM recipes WHERE id = ?');
     $st->execute([$recipeId]);
     return $comments;

@@ -74,7 +74,7 @@ expectError('אחר לא רואה למי משותף', fn() => recipeShares($GLOB
 check('מועדף של נועה על פרטי משותף — זמין, לא "מוסתר"', [toggleFavorite($priv, $noa), listFavorites($noa)[0]['status']], [true, 'ok']);
 leaveShare($priv, $noa);
 check('נועה הסירה את עצמה — שוב לא רואה; המועדף מוסתר', [loadRecipe($priv, $noa), listFavorites($noa)[0]['status']], [null, 'hidden']);
-expectError('הסרה כפולה', fn() => leaveShare($GLOBALS['priv'], $GLOBALS['noa']), 'לא שותף');
+expectError('הסרה כפולה', fn() => leaveShare($GLOBALS['priv'], $GLOBALS['noa']), 'אינו זמין');
 shareRecipe($priv, [$noa['id'], $dan['id']], $dana);
 check('הבעלים מסיר את דן', array_column(unshareRecipe($priv, $dan['id'], $dana), 'username'), ['noa']);
 

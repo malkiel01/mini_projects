@@ -43,6 +43,8 @@ function sessionStart(): void {
 
 function currentUser(): ?array {
     sessionStart();
+    // הסשן נמחק (24 דקות בלי פעילות בשרת, או דפדפן שנסגר) — העוגייה הארוכה מחזירה אותו
+    if (empty($_SESSION['uid'])) keepRestore();
     if (empty($_SESSION['uid'])) return null;
     $st = db()->prepare('SELECT id, username, email, display_name, role, email_verified,
                                 blocked, storage_used
@@ -191,6 +193,7 @@ function login(string $usernameOrEmail, string $password): ?array {
     sessionStart();
     if (PHP_SAPI !== 'cli') session_regenerate_id(true);   // מונע קיבוע סשן
     $_SESSION['uid'] = (int) $user['id'];
+    keepIssue((int) $user['id']);
 
     return ['id' => (int) $user['id'], 'username' => $user['username'],
             'display_name' => $user['display_name'], 'role' => $user['role']];
@@ -198,6 +201,7 @@ function login(string $usernameOrEmail, string $password): ?array {
 
 function logout(): void {
     sessionStart();
+    keepForget();
     $_SESSION = [];
     if (PHP_SAPI === 'cli') return;
     if (ini_get('session.use_cookies')) {
@@ -206,6 +210,100 @@ function logout(): void {
                   $p['secure'], $p['httponly']);
     }
     session_destroy();
+}
+
+// ─────────────────────────────────────────────────────────────
+// להישאר מחובר — עוגייה ארוכה
+// ─────────────────────────────────────────────────────────────
+//
+// סשן של PHP לבדו לא מחזיק: בשרת המשותף הוא נמחק אחרי כ-24 דקות בלי פעילות,
+// ועוגיית הסשן נמחקת כשסוגרים את הדפדפן. המשתמש ראה את עצמו מחובר, ובפעולה
+// הבאה ("נקה סינון") קיבל "נדרשת התחברות". העוגייה RECIPES_KEEP מחזירה את הסשן.
+//
+// selector:validator — ה-selector לחיפוש במסד, ה-validator נבדק מול hash בזמן
+// קבוע. 180 יום, מתחדש בשימוש (פעם ביום לכל היותר). נמחק ביציאה, באיפוס סיסמה
+// ובחסימה (כל המכשירים), ועם החשבון (CASCADE).
+
+const KEEP_COOKIE = 'RECIPES_KEEP';
+const KEEP_DAYS   = 180;
+const KEEP_MAX    = 20;     // מכשירים לחשבון — הישנים נמחקים
+
+function keepCookieSet(string $value, int $expires): void {
+    if (PHP_SAPI === 'cli' || headers_sent()) return;
+    setcookie(KEEP_COOKIE, $value, [
+        'expires'  => $expires,
+        'path'     => '/',
+        'secure'   => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+}
+
+/** אחרי כניסה: אסימון חדש למכשיר הזה. */
+function keepIssue(int $userId): void {
+    $selector = bin2hex(random_bytes(9));
+    $validator = bin2hex(random_bytes(32));
+    $exp = time() + KEEP_DAYS * 86400;
+    db()->prepare('INSERT INTO login_tokens (user_id, selector, token_hash, created_at, last_used_at, expires_at, user_agent) VALUES (?,?,?,?,?,?,?)')
+        ->execute([$userId, $selector, hash('sha256', $validator), nowIso(), nowIso(), gmdate('Y-m-d\TH:i:s\Z', $exp),
+                   mb_substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 200)]);
+    // מעבר לתקרה — הישנים ביותר נמחקים
+    db()->prepare('DELETE FROM login_tokens WHERE user_id = ? AND id NOT IN (SELECT id FROM login_tokens WHERE user_id = ? ORDER BY last_used_at DESC LIMIT ' . KEEP_MAX . ')')
+        ->execute([$userId, $userId]);
+    keepCookieSet($selector . ':' . $validator, $exp);
+    $_COOKIE[KEEP_COOKIE] = $selector . ':' . $validator;
+}
+
+/** השורה של העוגייה הנוכחית, אם תקפה. */
+function keepRow(): ?array {
+    $raw = (string) ($_COOKIE[KEEP_COOKIE] ?? '');
+    if (!preg_match('/^([0-9a-f]{18}):([0-9a-f]{64})$/', $raw, $m)) return null;
+    $st = db()->prepare('SELECT * FROM login_tokens WHERE selector = ?');
+    $st->execute([$m[1]]);
+    $row = $st->fetch();
+    $st->closeCursor();
+    if (!$row || !hash_equals($row['token_hash'], hash('sha256', $m[2]))) return null;
+    if ($row['expires_at'] < nowIso()) {
+        db()->prepare('DELETE FROM login_tokens WHERE id = ?')->execute([(int) $row['id']]);
+        return null;
+    }
+    return $row;
+}
+
+/** אין סשן — מחזיר אותו מהעוגייה, אם תקפה ושל משתמש פעיל. */
+function keepRestore(): void {
+    if (empty($_COOKIE[KEEP_COOKIE])) return;
+    $row = keepRow();
+    if (!$row) { keepCookieSet('', time() - 42000); return; }
+    $st = db()->prepare('SELECT blocked, email_verified FROM users WHERE id = ?');
+    $st->execute([(int) $row['user_id']]);
+    $u = $st->fetch();
+    $st->closeCursor();
+    if (!$u || (int) $u['blocked'] === 1 || (int) $u['email_verified'] === 0) return;
+    if (PHP_SAPI !== 'cli' && session_status() === PHP_SESSION_ACTIVE) session_regenerate_id(true);
+    $_SESSION['uid'] = (int) $row['user_id'];
+    // מתחדש — פעם ביום לכל היותר, כדי לא לכתוב למסד בכל בקשה
+    if ($row['last_used_at'] < gmdate('Y-m-d\TH:i:s\Z', time() - 86400)) {
+        $exp = time() + KEEP_DAYS * 86400;
+        db()->prepare('UPDATE login_tokens SET last_used_at = ?, expires_at = ? WHERE id = ?')
+            ->execute([nowIso(), gmdate('Y-m-d\TH:i:s\Z', $exp), (int) $row['id']]);
+        keepCookieSet((string) $_COOKIE[KEEP_COOKIE], $exp);
+    }
+}
+
+/** יציאה מהמכשיר הזה. */
+function keepForget(): void {
+    $raw = (string) ($_COOKIE[KEEP_COOKIE] ?? '');
+    if ($raw === '') return;
+    $sel = explode(':', $raw)[0];
+    db()->prepare('DELETE FROM login_tokens WHERE selector = ?')->execute([$sel]);
+    keepCookieSet('', time() - 42000);
+    unset($_COOKIE[KEEP_COOKIE]);
+}
+
+/** כל המכשירים של משתמש — באיפוס סיסמה ובחסימה. */
+function keepForgetAll(int $userId): void {
+    db()->prepare('DELETE FROM login_tokens WHERE user_id = ?')->execute([$userId]);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -279,4 +377,6 @@ function resetPassword(string $token, string $newPassword): void {
     // איפוס מוצלח מאמת גם את הכתובת: מי שקיבל את ההודעה הוכיח שהיא שלו.
     $st = db()->prepare('UPDATE users SET password_hash = ?, email_verified = 1 WHERE id = ?');
     $st->execute([password_hash($newPassword, PASSWORD_DEFAULT), $userId]);
+    // סיסמה חדשה מנתקת כל מכשיר שנשאר מחובר — אולי זה בדיוק מה שהאיפוס בא לעצור
+    keepForgetAll($userId);
 }

@@ -19,6 +19,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/errors.php';
+require_once __DIR__ . '/auth.php';
 
 /**
  * ההגדרות הציבוריות והמשמעות שלהן. הרשימה הזאת היא מקור האמת: מה שלא
@@ -190,6 +191,7 @@ function setUserBlocked(int $userId, bool $blocked, array $developer): void {
     if ($userId === (int) $developer['id']) throw new AppError('אי אפשר לחסום את חשבון המפתח', 400);
     $st = db()->prepare('UPDATE users SET blocked = ? WHERE id = ?');
     $st->execute([$blocked ? 1 : 0, $userId]);
+    if ($blocked) keepForgetAll($userId);   // גם המכשירים שנשארו מחוברים
 }
 
 function setUserVerified(int $userId, array $developer): void {

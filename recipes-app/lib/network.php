@@ -119,14 +119,41 @@ function recipeShareReach(int $recipeId): int {
     return (int) $st->fetchColumn();
 }
 
-/** הנמען מסיר את עצמו ("לא מעניין אותי") — ולא יחזור דרך מעגל. */
+/**
+ * "הסר מהרשימה שלי" — מתכון של אחר, ששותף איתי או ציבורי, יוצא מהרשימות שלי: הבית,
+ * הקטגוריות, נעקבים, בשבילך. השיתוף נמחק ולא יחזור דרך מעגל (share_optouts).
+ * מתכון ציבורי נשאר בדף של המפרסם ובקישור ישיר — ומשם "החזר לרשימה שלי".
+ * (עד עכשיו רק השיתוף נמחק, ומתכון ציבורי נשאר ב"הכול" — כאילו ההסרה לא עבדה.)
+ */
 function leaveShare(int $recipeId, array $user): void {
     require_once __DIR__ . '/circles.php';
-    $st = db()->prepare('DELETE FROM recipe_shares WHERE recipe_id = ? AND user_id = ?');
-    $st->execute([$recipeId, (int) $user['id']]);
-    if ($st->rowCount() === 0) throw new AppError('המתכון לא שותף איתך', 404);
-    shareOptOut('recipe', $recipeId, (int) $user['id']);
+    $uid = (int) $user['id'];
+    $st = db()->prepare('SELECT * FROM recipes WHERE id = ?');
+    $st->execute([$recipeId]);
+    $r = $st->fetch();
+    $st->closeCursor();
+    if (!$r || !canView($r, $user)) throw new AppError('המתכון אינו קיים או שאינו זמין לך', 404);
+    if ((int) $r['owner_id'] === $uid) throw new AppError('זה מתכון שלך — אפשר למחוק אותו');
+    db()->prepare('DELETE FROM recipe_shares WHERE recipe_id = ? AND user_id = ?')->execute([$recipeId, $uid]);
+    shareOptOut('recipe', $recipeId, $uid);
 }
+
+/** "החזר לרשימה שלי" — ואם המתכון משותף עם מעגל שאני בו, גם השיתוף חוזר. */
+function unhideRecipe(int $recipeId, array $user): void {
+    require_once __DIR__ . '/circles.php';
+    shareOptIn('recipe', $recipeId, (int) $user['id']);
+    circleSync('recipe', $recipeId);
+}
+
+/** האם הסרתי את המתכון מהרשימה שלי. */
+function recipeHiddenFor(int $recipeId, int $uid): bool {
+    $st = db()->prepare("SELECT 1 FROM share_optouts WHERE kind = 'recipe' AND target_id = ? AND user_id = ?");
+    $st->execute([$recipeId, $uid]);
+    $v = (bool) $st->fetchColumn();
+    $st->closeCursor();
+    return $v;
+}
+
 
 /** הנמען פתח את המתכון — כבר לא "חדש". */
 function markShareSeen(int $recipeId, array $user): void {

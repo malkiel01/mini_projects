@@ -76,6 +76,7 @@ function activityFeed(array $user): array {
     // מי שאני עוקב אחריו פרסם
     foreach ($q("SELECT $actor, r.id, r.title, r.created_at AS at FROM recipes r JOIN users u ON u.id = r.owner_id
                   WHERE r.visibility = 'public' AND r.owner_id IN (SELECT followee_id FROM follows WHERE follower_id = $uid)
+                    AND r.id NOT IN (SELECT target_id FROM share_optouts WHERE kind = 'recipe' AND user_id = $uid)
                     AND r.created_at > ? AND " . $ok('u.id') . ' ORDER BY r.created_at DESC') as $r)
         $add('published', $r, 'פרסם/ה מתכון חדש', '#/r/' . (int) $r['id'], $r['title']);
     // תגובה על מתכון שלי

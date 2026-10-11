@@ -323,6 +323,21 @@ CREATE TABLE user_tokens (
 );
 CREATE INDEX idx_tokens_user ON user_tokens(user_id, kind);
 
+-- להישאר מחובר: הסשן של PHP נמחק בשרת אחרי כ-24 דקות בלי פעילות, ועוגיית הסשן
+-- נמחקת כשסוגרים את הדפדפן. העוגייה RECIPES_KEEP (selector:validator, 180 יום,
+-- מתחדשת בשימוש) מחזירה את הסשן. במסד רק hash של ה-validator.
+CREATE TABLE login_tokens (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  selector     TEXT    NOT NULL UNIQUE,   -- לחיפוש; ה-validator נבדק ב-hash_equals
+  token_hash   TEXT    NOT NULL,
+  created_at   TEXT    NOT NULL,
+  last_used_at TEXT    NOT NULL,
+  expires_at   TEXT    NOT NULL,
+  user_agent   TEXT
+);
+CREATE INDEX idx_login_tokens_user ON login_tokens(user_id);
+
 -- ═══════════════════════════════════════════════════════════
 -- מתכונים, חלקים, רכיבים, שלבים  (סעיף 3)
 -- ═══════════════════════════════════════════════════════════

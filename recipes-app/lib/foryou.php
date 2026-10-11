@@ -243,6 +243,7 @@ function forYou(array $user, int $limit = 10): array {
                            FROM recipes r JOIN users u ON u.id = r.owner_id AND u.blocked = 0
                            LEFT JOIN media m ON m.id = r.main_media_id AND m.kind = 'image'
                           WHERE $vis AND r.owner_id != $uid AND " . sqlNotBlockedInline($uid) . "
+                            AND r.id NOT IN (SELECT target_id FROM share_optouts WHERE kind = 'recipe' AND user_id = $uid)
                           ORDER BY r.updated_at DESC LIMIT 500")->fetchAll();
     $ids = array_column($rows, 'id');
     $tags = [];

@@ -247,6 +247,7 @@ try {
             'is_favorite' => isFavorite($id, $user),
             'shared_with_me' => $shared,
             'share_count' => $user && $recipe['is_mine'] ? recipeShareReach($id) : 0,   // ישירות ודרך מעגלים
+            'hidden'      => $user && !$recipe['is_mine'] && recipeHiddenFor($id, (int) $user['id']),   // "הסר מהרשימה שלי"
         ]);
     }
 
@@ -576,8 +577,12 @@ try {
         recommendationDismiss((int) ($in['id'] ?? 0), $user);
         ok(recommendationsInbox($user));
 
-    case 'recipe-leave-share':
+    case 'recipe-leave-share':   // "הסר מהרשימה שלי" — גם מתכון ציבורי, לא רק ששותף איתי
         leaveShare((int) ($in['recipe_id'] ?? 0), $user);
+        ok([]);
+
+    case 'recipe-unhide':
+        unhideRecipe((int) ($in['recipe_id'] ?? 0), $user);
         ok([]);
 
     // אוספים (lib/collections.php, SPEC 15.3). מה מוסיפים: recipe_id או entry_id
