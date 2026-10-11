@@ -76,6 +76,12 @@ check('תמונה משותפת לכמה דפים (אייקון) מדולגת; CD
 check('אותו אתר עם www ובלי', [indexSameHost('https://gad-dairy.co.il/recipe/x/', 'www.gad-dairy.co.il'), indexSameHost('https://www.a.co.il/x', 'a.co.il'),
                                indexSameHost('https://foody.co.il/x', 'www.carine.co.il')], [true, true, false]);
 
+check('חלק "recipe_quantity" (קבוצות של מחלבות גד) — לא נבחר, רק המתכונים', array_column(indexPickSitemaps([['https://g.co.il/recipe-sitemap.xml'], ['https://g.co.il/recipe_quantity-sitemap.xml'], ['https://g.co.il/recipe_type-sitemap2.xml']]), 0),
+      ['https://g.co.il/recipe-sitemap.xml']);
+$skipUrl = fn(string $p) => (bool) preg_match(INDEX_SKIP_URL, $p);
+check('דף קבוצה — בחוץ; מתכון, ומילה שרק מתחילה כמו קבוצה — בפנים',
+      array_map($skipUrl, ['/recipe_quantity/100-עוגיות/', '/recipe-category/cakes/', '/recipe/עוגת-גבינה/', '/foody_recipe/x/', '/best-catering/']), [true, true, false, false, false]);
+
 echo "\n2. שם מהכתובת, וגזעים\n";
 check('סלאג עברי', indexTitleFromUrl('https://a.co.il/recipe/%d7%a2%d7%95%d7%92%d7%aa-%d7%92%d7%91%d7%99%d7%a0%d7%94-%d7%90%d7%a4%d7%95%d7%99%d7%94-2/'), 'עוגת גבינה אפויה');
 check('__trashed ומספרים — בלי שם', [indexTitleFromUrl('https://c.co.il/foody_recipe/__trashed-3/'), indexTitleFromUrl('https://c.co.il/r/12345/')], ['', '']);

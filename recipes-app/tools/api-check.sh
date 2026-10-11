@@ -464,6 +464,7 @@ check 'מה שכבר באפליקציה — בראש, ולא שוב ברשת' "$
 check 'תור הניסוח: שני המתכונים שיובאו ברקע בלי ניסוח (8ח2)' "$(call rewrite-export)" '"format":"recipes-rewrite-1"[^}]*"total_waiting":2,"items":\[{"id":"r:'
 check 'החלת קובץ לא תקין — נדחית'           "$(call rewrite-apply '{"text":"not json"}')" 'JSON'
 check 'תור הניסוח דרך הטוקן של היומן'       "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$(call log-token-create '{"label":"rw","ttl_minutes":30}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["token"]["token"])')&view=rewrite")" '"format": "recipes-rewrite-1"'
+check 'heartbeat — פתוח לאורח, בלי מידע'      "$(curl -sS -X POST -H 'Content-Type: application/json' -d '{}' "http://127.0.0.1:$PORT/recipes-app/api.php?action=heartbeat")" '^{"success":true}$'
 check 'עובד האינדקס בלי מפתח — 403'        "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/recipes-app/index-worker.php?key=x")" '^403$'
 call logout >/dev/null
 

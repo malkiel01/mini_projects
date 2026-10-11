@@ -690,6 +690,15 @@ function migrate(PDO $pdo): void {
             foreach ($st->fetchAll() as $i => $f) $ins->execute([$cid, $f['recipe_id'], $f['title_snapshot'], $i + 1, $f['created_at']]);
         }
     });
+    // דפי קבוצה (טקסונומיה) שנכנסו לאינדקס כמתכונים — מחלבות גד: /recipe_quantity/100-עוגיות/.
+    // מעכשיו INDEX_SKIP_URL לא מכניס אותם; מה שכבר בפנים — יוצא (לא מתכון, ולא נבדק שוב)
+    runOnce($pdo, 'index-drop-taxonomy', function (PDO $pdo) {
+        require_once __DIR__ . '/web_index.php';
+        $up = $pdo->prepare('UPDATE index_entries SET skip = 1, verified = 0, needs_title = 0 WHERE id = ?');
+        foreach ($pdo->query('SELECT id, url FROM index_entries WHERE skip = 0')->fetchAll() as $e) {
+            if (preg_match(INDEX_SKIP_URL, urldecode((string) parse_url($e['url'], PHP_URL_PATH)))) $up->execute([(int) $e['id']]);
+        }
+    });
     // תוויות אישיות — לא ייבנו (SPEC 15.10, החלטה 1: רק אוספים). הטבלאות ריקות ונמחקות.
     runOnce($pdo, 'drop-user-tags', function (PDO $pdo) {
         $has = fn($t) => (bool) $pdo->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '$t'")->fetchColumn();

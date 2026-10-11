@@ -101,11 +101,13 @@ $action = $_GET['action'] ?? (is_string($in['action'] ?? null) ? $in['action'] :
 // נקודות קצה שאינן דורשות התחברות — הן כל מה שמוביל אליה.
 // נקודות קצה שאינן דורשות התחברות — הן כל מה שמוביל אליה, ובנוסף
 // עיון במתכונים ציבוריים: אורח שמגיע מקישור צריך לראות מתכון.
-$public = ['register', 'login', 'me', 'request-reset', 'resend-verification', 'tags', 'search', 'recipe'];
+$public = ['register', 'login', 'me', 'request-reset', 'resend-verification', 'tags', 'search', 'recipe', 'heartbeat'];
 
 $user = currentUser();
-// ייבוא ברקע: אם העובד אמור לרוץ ושתק — מעירים אותו (lib/scout_job.php)
-if ($user) { scoutJobWatchdog(); indexWatchdog(); }   // וכך גם עדכון האינדקס השבועי
+// ייבוא ברקע: אם העובד אמור לרוץ ושתק — מעירים אותו (lib/scout_job.php). וכך גם עובד האינדקס.
+// heartbeat — אותו דבר בלי התחברות: מתזמן חיצוני (או המפתח) מחזיק את העובדים ערים גם
+// כשאף אחד לא באפליקציה. אין בו מידע, וההערה עצמה מוגבלת לפעם בשתי דקות.
+if ($user || $action === 'heartbeat') { scoutJobWatchdog(); indexWatchdog(); }
 $GLOBALS['__action'] = $action;
 $GLOBALS['__in']     = $in;
 $GLOBALS['__user']   = $user;
@@ -167,6 +169,9 @@ try {
         resendVerification(str_field($in, 'username', 254));
         ok(['message' => 'אם החשבון קיים וטרם אומת, נשלח אליו דוא"ל חדש. אפשר לבקש שוב בעוד שתי דקות.']);
     }
+
+    case 'heartbeat':
+        ok([]);
 
     case 'tags': {
         // הצירים הסגורים. נדרשים לטופס המתכון, ונפתחים גם לאורח כדי

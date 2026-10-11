@@ -40,8 +40,12 @@ if (!defined('WEB_DAILY_LIMIT')) define('WEB_DAILY_LIMIT', 20);   // פתיחו�
 
 // חלקי sitemap שאינם מתכונים — דפים, תגיות, כותבים, רכיבים, מוצרים
 const INDEX_SKIP_SITEMAP = '~(page|category|categories|tag|author|user|attachment|product|media|image|video|ingredient|accessor|technique|filter|taxonom|poll|local|news|wpml)~i';
+// טקסונומיה של וורדפרס — קבוצה, לא מתכון: recipe_quantity ("100 עוגיות" — מחלבות גד),
+// recipe_category, recipe-type, dish_course. מתכון בודד הוא recipe / foody_recipe — בלי סיומת כזאת.
+// מילה שלמה בלבד — אחרת "best-catering" היה נפסל בגלל "cat".
+const INDEX_TAXONOMY = '(quantity|quantities|category|categories|cats?|types?|tags?|courses?|cuisines?|difficulty|levels?|diets?|occasions?|holidays?|kosher|kashrut|times?|collections?|groups?|seasons?|methods?|authors?)';
 // כתובות שאינן מתכון בודד
-const INDEX_SKIP_URL = '~/(category|tag|author|page|feed|search|cart|login|wp-|[a-z_]*ingredient|[a-z_]*accessory|[a-z_]*technique|[a-z_]*filter)(/|$)~i';
+const INDEX_SKIP_URL = '~/(category|tag|author|page|feed|search|cart|login|wp-|[a-z_]*ingredient|[a-z_]*accessory|[a-z_]*technique|[a-z_]*filter|[a-z]+[_-]' . INDEX_TAXONOMY . ')(/|$)~i';
 
 // ─────────────────────────────────────────────────────────────
 // אתרים
@@ -243,7 +247,9 @@ function indexImageUrl(string $u): ?string {
  * (בלוג שהמתכונים בו הם פוסטים).
  */
 function indexPickSitemaps(array $children): array {
-    $recipe = array_values(array_filter($children, fn($c) => preg_match('~recipe|recette|rezept|%d7%9e%d7%aa%d7%9b%d7%95%d7%9f|מתכון~i', basename((string) parse_url($c[0], PHP_URL_PATH)))));
+    // "recipe" בשם — אבל לא recipe_quantity-sitemap.xml וכדומה: חלק של קבוצות, לא של מתכונים
+    $recipe = array_values(array_filter($children, fn($c) => preg_match('~recipe|recette|rezept|%d7%9e%d7%aa%d7%9b%d7%95%d7%9f|מתכון~i', $b = basename((string) parse_url($c[0], PHP_URL_PATH)))
+                                                         && !preg_match('~[_-]' . INDEX_TAXONOMY . '(?=[-_.\d])~i', $b)));
     $pick = $recipe ?: array_values(array_filter($children, fn($c) => !preg_match(INDEX_SKIP_SITEMAP, basename((string) parse_url($c[0], PHP_URL_PATH)))));
     return array_slice($pick, 0, INDEX_MAX_SITEMAPS);
 }
@@ -588,6 +594,13 @@ function indexWorkerRun(bool $once = false): string {
     if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) return 'busy';
     $t0 = time();
     $last = 'idle';
+    $steps = [];
+    // יומן העובד: מתי התחיל, מתי סיים, מה עשה. ריצה בלי "ended_at" — נקטעה באמצע (השרת
+    // הרג את התהליך), ואז השרשרת נשברת עד ששומר-הסף מעיר. לאבחון — logs.php?view=index
+    $note = function (array $f) use ($t0, &$steps) {
+        @file_put_contents(scoutStateDir() . '/index-worker.json', json_encode(['started_at' => gmdate('c', $t0)] + $f + ['steps' => $steps]));
+    };
+    if (!$once) $note(['ended_at' => null]);
     try {
         while (time() - $t0 < INDEX_WORKER_BUDGET) {
             $site = indexDueSite();
@@ -606,6 +619,9 @@ function indexWorkerRun(bool $once = false): string {
             // אחר כך שמות מהדף — לאט, אתר אחר אתר
             try { $last = indexTitleStep(); }
             catch (Throwable $e) { error_log('recipes-app index titles: ' . $e->getMessage()); $last = 'retry'; sleep(5); }
+            $k = preg_replace('/:\d+$/', '', $last);
+            $steps[$k] = ($steps[$k] ?? 0) + 1;
+            if (!$once && array_sum($steps) % 5 === 0) $note(['ended_at' => null, 'last' => $last]);
             if ($last === 'none' || $once) break;
             if (str_starts_with($last, 'wait:')) {
                 $w = (int) substr($last, 5);
@@ -617,7 +633,9 @@ function indexWorkerRun(bool $once = false): string {
         flock($lock, LOCK_UN);
         fclose($lock);
     }
-    if (!$once && $last !== 'none' && indexWorkReady()) indexKick(true);
+    $chain = !$once && $last !== 'none' && indexWorkReady();
+    if (!$once) $note(['ended_at' => gmdate('c'), 'last' => $last, 'chained' => $chain]);
+    if ($chain) indexKick(true);
     return $last;
 }
 
@@ -638,6 +656,12 @@ function indexKick(bool $force = false): void {
     $j = scoutJobRow();
     if (!$j['base_url']) return;
     workerKick(rtrim($j['base_url'], '/') . '/index-worker.php?key=' . $j['worker_key'], 'recipes-app/index-worker');
+}
+
+/** מצב העובד מהריצה האחרונה (indexWorkerRun) — לאבחון. */
+function indexWorkerState(): ?array {
+    $s = @file_get_contents(scoutStateDir() . '/index-worker.json');
+    return $s ? json_decode($s, true) : null;
 }
 
 /** שומר-סף: נקרא מ-api.php. יש אתר שהגיע זמנו — מעירים (לכל היותר פעם בשתי דקות). */

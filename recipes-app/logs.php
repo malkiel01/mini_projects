@@ -82,7 +82,7 @@ if ($view === 'scans' || $view === 'scan-image') {
 // מצב האינדקס: לכל אתר — מתכונים, תמונות, האם מתעדכן ועד כמה. קריאה בלבד.
 if ($view === 'index') {
     header('Content-Type: application/json; charset=utf-8');
-    echo json_encode(['now' => nowIso(), 'sites' => indexSites()], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+    echo json_encode(['now' => nowIso(), 'worker' => indexWorkerState(), 'sites' => indexSites()], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
     exit;
 }
 
@@ -115,7 +115,7 @@ if ($view === 'import') {
 <title>יומן ייבוא · אפליקציית מתכונים</title>
 <meta name="theme-color" content="#0f8a4f">
 <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-11k">
+<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-11l">
 </head>
 <body>
 <header class="bar">
@@ -215,7 +215,7 @@ $qs    = fn(array $extra) => $self . '&' . http_build_query(array_filter($filter
 <title>יומן · אפליקציית מתכונים</title>
 <meta name="theme-color" content="#0f8a4f">
 <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-11k">
+<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-11l">
 </head>
 <body>
 <header class="bar">
