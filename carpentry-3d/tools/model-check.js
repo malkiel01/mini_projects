@@ -20,7 +20,7 @@ import { toSTL, printSize } from '../assets/js/model/stl.js';
 import { applyRules, originalOf, describeShowIf, LIMIT_INFO } from '../assets/js/model/rules.js';
 import { LIMITS } from '../assets/js/model/templates/common.js';
 import { evaluate, evalNum, interpolate, syntaxError } from '../assets/js/model/expr.js';
-import { registerRecipes, starterRecipe, runRecipe, recipeSyntax, BUILTIN_RECIPES } from '../assets/js/model/recipe.js';
+import { registerRecipes, starterRecipe, modularRecipe, recipeTemplate, runRecipe, recipeSyntax, BUILTIN_RECIPES } from '../assets/js/model/recipe.js';
 import legacyBed from '../assets/js/model/templates/bed.js';
 import legacyTable from '../assets/js/model/templates/table.js';
 import legacyDresser from '../assets/js/model/templates/dresser.js';
@@ -1554,6 +1554,31 @@ console.log('שלב 6ב: מטבח לפי ארון וקומה — המרה זהה
   check(more.units.length === 4 && JSON.stringify(more.units[3].floors) === JSON.stringify(mixed[2].floors), 'ארון נוסף — העתק של האחרון בשורה');
   const loc = (id, us) => JSON.stringify(TEMPLATES.kitchen.locate(id, us));
   check(loc('ת2-f2-drawer-1', mixed) === '{"unit":1,"floor":1}' && loc('ת3-shelf-1-1', mixed) === '{"unit":2,"floor":0}' && loc('ע2-door', up.units) === '{"unit":4,"floor":0}', 'locate: לפי התחילית והקומה');
+}
+
+console.log('שלב 7: אבן "עמודות וקומות" במתכונים');
+{
+  const r = modularRecipe('r-modtest');
+  check(!recipeSyntax(r).length, 'המתכון לדוגמה תקין תחבירית');
+  const t = recipeTemplate(r);
+  const v0 = Object.fromEntries(t.params.map((p) => [p.key, p.default]));
+  const m = t.build(v0);
+  const ids = m.parts.map((p) => p.id);
+  check(!m.errors.length && allFinite(m.parts), 'נבנה בלי שגיאות');
+  check(Array.isArray(m.units) && m.units.length === 4 && m.unitGeo.length === 4 && ids.filter((x) => /^partition-\d$/.test(x)).length === 3 && ids.filter((x) => /^shelf-1-\d$/.test(x)).length === 3, 'units, 3 מחיצות, 3 מדפים בעמודה 1');
+  check(t.params.find((p) => p.key === 'units').editor === 'units' && typeof t.locate === 'function', 'פרמטר הכרטיסים (editor units) ו-locate');
+  // עריכה בכרטיס: עמודה 1 ויטרינה, עמודה 2 — מגירות למטה ודלת עץ מעל
+  const u = JSON.parse(JSON.stringify(m.units));
+  u[0].floors[0].front.type = 'glass';
+  u[1].floors = [{ ...u[1].floors[0], height: 600, front: { ...u[1].floors[0].front, type: 'none' }, interior: { type: 'drawers', drawers: { count: 3, handle: 'hw:handle-bar-128' } } },
+    { ...u[1].floors[0], front: { ...u[1].floors[0].front, type: 'wood' } }];
+  const e = t.build({ ...v0, units: u });
+  const eids = e.parts.map((p) => p.id);
+  check(!e.errors.length && eids.includes('door-1-stile-L') && eids.filter((x) => /^drawer-2-1-\d$/.test(x)).length === 3 && eids.some((x) => /^door-2-up/.test(x)) && eids.includes('split-shelf-2-1'), 'ויטרינה בעמודה 1; בעמודה 2 מגירות למטה, דלת למעלה ומדף קבוע');
+  check(JSON.stringify(t.locate('drawer-2-1-2', e.units)) === '{"unit":1,"floor":0}', 'locate מהתלת מימד');
+  // מספר עמודות שהשתנה — העתק של האחרונה
+  const more = t.build({ ...v0, units: u, cols: 5 });
+  check(more.units.length === 5 && more.units[4].floors.length === more.units[3].floors.length, 'עמודה נוספת — העתק של האחרונה');
 }
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }
