@@ -32,6 +32,7 @@ require_once __DIR__ . '/lib/network.php';
 require_once __DIR__ . '/lib/privacy.php';
 require_once __DIR__ . '/lib/collections.php';
 require_once __DIR__ . '/lib/circles.php';
+require_once __DIR__ . '/lib/foryou.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -173,6 +174,17 @@ try {
     case 'heartbeat':
         ok([]);
 
+    // בשבילך (lib/foryou.php, SPEC 15.5)
+    case 'foryou':
+        ok(forYou($user, max(1, min(30, (int) ($in['limit'] ?? 10)))));
+
+    case 'foryou-taste':
+        ok(['taste' => fySetTaste($in, $user)]);
+
+    case 'event':
+        fyClientEvent($in, $user);
+        ok([]);
+
     case 'tags': {
         // הצירים הסגורים. נדרשים לטופס המתכון, ונפתחים גם לאורח כדי
         // שדף ציבורי יוכל להציג סינון לפני התחברות.
@@ -216,6 +228,7 @@ try {
         // רשת: למי ששותף איתו — מסומן כנפתח; לבעלים — עם כמה אנשים הוא משותף
         $shared = $user && !$recipe['is_mine'] && isSharedWith($id, (int) $user['id']);
         if ($shared) markShareSeen($id, $user);
+        if ($user && !$recipe['is_mine']) fyEvent($user, 'open', $id);   // בשבילך — רק כשהתאמה אישית דלוקה
         ok([
             'recipe'      => $recipe,
             'comments'    => listComments($id, $user),

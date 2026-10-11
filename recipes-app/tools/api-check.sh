@@ -572,6 +572,9 @@ call logout >/dev/null
 echo
 echo "8ל. רשת — שיתוף עם אדם מסוים, ומעקב"
 call login '{"username":"owner","password":"sod12345"}' >/dev/null
+check 'בשבילך: עונה, טעם, התאמה אישית'          "$(call foryou)" '"items":\[.*"personalize":true,"needs_taste":'
+check 'בשבילך: אירוע לא מוכר — נדחה'            "$(call event '{"kind":"hack","recipe_id":1}')" 'לא מוכר'
+check 'בשבילך: טעם — נושא לא מוכר מסונן'        "$(call foryou-taste '{"topics":[999999],"diet":[]}')" '"taste":{"topics":\[\],"diet":\[\]}'
 check 'קטגוריות: מונים לכל תג, עם סמלי הנושאים' "$(call tag-counts)" '"counts":.*"icons":.*"עוגות":"🎂"'
 check 'קטגוריות: חיפוש ברשת לפי נושא, בלי מילים' "$(call web-search '{"q":"","topic":"עוגות"}')" '"success":true.*"total":'
 check 'קטגוריות: סינון זמן — מספר ולא טקסט'     "$(call search '{"max_minutes":1}')" '"recipes":\[\]'

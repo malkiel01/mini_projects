@@ -13,6 +13,7 @@
  *
  *   logs.php?token=…&view=scans      סריקות שממתינות (JSON), עם קישור לכל תמונה (&view=scan-image)
  *   logs.php?token=…&view=index      מצב האינדקס (JSON): לכל אתר — מתכונים, תמונות, התקדמות העדכון
+ *   logs.php?token=…&view=foryou     בשבילך (JSON): לחיצות על המלצות, ומה מהן נשמר / בושל
  *   logs.php?token=…&view=import     יומן הייבוא (lib/import_log.php): מה היה
  *                                    בכל דף ומה חולץ ממנו, עם קישור למקור.
  *                                    גם &format=text|json. מסננים: host, kind,
@@ -80,6 +81,14 @@ if ($view === 'scans' || $view === 'scan-image') {
 }
 
 // מצב האינדקס: לכל אתר — מתכונים, תמונות, האם מתעדכן ועד כמה. קריאה בלבד.
+if ($view === 'foryou') {
+    // בשבילך: כמה לחצו על המלצות, וכמה מהן נשמרו / בושלו — לכוונון המשקלות
+    require_once __DIR__ . '/lib/foryou.php';
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['now' => nowIso()] + foryouStats(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+    exit;
+}
+
 if ($view === 'index') {
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode(['now' => nowIso(), 'worker' => indexWorkerState(), 'sites' => indexSites()], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
@@ -115,7 +124,7 @@ if ($view === 'import') {
 <title>יומן ייבוא · אפליקציית מתכונים</title>
 <meta name="theme-color" content="#0f8a4f">
 <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-11m">
+<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-11n">
 </head>
 <body>
 <header class="bar">
@@ -215,7 +224,7 @@ $qs    = fn(array $extra) => $self . '&' . http_build_query(array_filter($filter
 <title>יומן · אפליקציית מתכונים</title>
 <meta name="theme-color" content="#0f8a4f">
 <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-11m">
+<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-11n">
 </head>
 <body>
 <header class="bar">

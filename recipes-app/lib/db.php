@@ -559,6 +559,27 @@ function migrate(PDO $pdo): void {
             PRIMARY KEY (kind, target_id, user_id)
         );
 
+        -- בשבילך (SPEC 15.5, lib/foryou.php): מה המשתמש עשה — רק בשביל ההמלצות. נרשם רק כשהתאמה
+        -- אישית דלוקה, נמחק אחרי 180 יום ועם החשבון. kind: open / cook / shop / foryou_click /
+        -- not_interested (מתכון או ערך מהרשת) / less_topic (value = מזהה תג נושא).
+        CREATE TABLE IF NOT EXISTS user_events (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            kind       TEXT    NOT NULL,
+            recipe_id  INTEGER REFERENCES recipes(id) ON DELETE CASCADE,
+            entry_id   INTEGER REFERENCES index_entries(id) ON DELETE CASCADE,
+            value      TEXT,
+            created_at TEXT    NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_user_events ON user_events(user_id, kind, created_at);
+        -- מה אני אוהב (התחלה קרה): נושאים — מעדיפים; תזונה (ציר מתאים ל) — מסננת (החלטה 6)
+        CREATE TABLE IF NOT EXISTS user_taste (
+            user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            topics     TEXT    NOT NULL DEFAULT '[]',
+            diet       TEXT    NOT NULL DEFAULT '[]',
+            updated_at TEXT    NOT NULL
+        );
+
         -- מיגרציות חד־פעמיות על נתונים: שם ומתי רצה. מה שרשום כאן — לא ירוץ שוב,
         -- גם אם המצב שהוא תיקן חזר (משתמש שהסיר נושא לא יקבל אותו בחזרה).
         CREATE TABLE IF NOT EXISTS migrations (

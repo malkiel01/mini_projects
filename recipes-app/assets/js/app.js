@@ -293,6 +293,7 @@ async function route() {
     else if ((m = h.match(/^#\/edit\/(\d+)$/))) await renderEditor(+m[1]);
     else if (h === '#/favorites') await renderFavorites();
     else if (h === '#/collections') await renderCollections();
+    else if (h === '#/foryou') await renderForYou();
     else if ((m = h.match(/^#\/c\/(\d+)$/))) await renderCollection(+m[1]);
     else if (h === '#/pantry') await renderPantry();
     else if (h === '#/shopping') await renderShoppingLists();
@@ -327,6 +328,113 @@ window.addEventListener('hashchange', route);
 async function ensureTags() {
   if (!state.tags) state.tags = (await api('tags')).tags;
   return state.tags;
+}
+
+// ───────────────────────── בשבילך (SPEC 15.5) ─────────────────────────
+
+/** לחיצה על המלצה — נרשמת (למדידה), והניווט ממשיך כרגיל. */
+function fyClick(e) {
+  const a = e.target.closest('[data-fy]');
+  if (!a) return;
+  const [kind, id] = a.dataset.fy.split(':');
+  if (kind !== 'reco') api('event', { kind: 'foryou_click', [kind === 'web' ? 'entry_id' : 'recipe_id']: +id }).catch(() => {});
+}
+const fyKey = (it) => it.kind === 'web' ? `web:${it.entry_id}` : it.kind === 'reco' ? `reco:${it.reco_id}` : `recipe:${it.id}`;
+
+/** שורת "בשבילך" בבית: כרטיסים שנגללים לרוחב, עם הסיבה. */
+async function drawForYouRow(box) {
+  const d = await api('foryou', { limit: 10 });
+  if (!d.items.length && !d.needs_taste) return;
+  box.hidden = false;
+  box.innerHTML = `
+    <div class="fy-row__head"><h3>✨ בשבילך</h3><a class="link link--inline small" href="#/foryou">הכול ›</a></div>
+    <div class="fy-cards">
+      ${d.needs_taste ? `<a class="fy-card fy-card--taste" href="#/foryou"><span class="fy-card__img">🎯</span>
+        <span class="fy-card__body"><strong>מה אתה אוהב?</strong><span class="fy-card__why">בחר נושאים — ונמליץ בהתאם</span></span></a>` : ''}
+      ${d.items.map((it) => `
+        <a class="fy-card" href="${esc(it.open)}" data-fy="${fyKey(it)}">
+          <span class="fy-card__img">${it.thumb ? `<img src="${esc(it.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : (it.kind === 'web' ? '🌐' : '🍲')}</span>
+          <span class="fy-card__body"><strong>${esc(it.title)}</strong><span class="fy-card__why">${esc(it.reason)}</span></span>
+        </a>`).join('')}
+    </div>`;
+  box.addEventListener('click', fyClick);
+  box.addEventListener('error', (e) => { if (e.target.tagName === 'IMG') e.target.remove(); }, true);
+}
+
+/** בחירת טעם: נושאים (מעדיפים) ותזונה (מסננת). */
+function tasteForm(taste, tags, icons) {
+  return `
+    <form id="taste" class="share-box taste">
+      <h3>🎯 מה אתה אוהב?</h3>
+      <p class="muted small">נושאים — כדי שנדע מה להציע קודם (כדאי 3 לפחות).</p>
+      <div class="chips">${(tags.topic || []).map((t) => `<label class="chip chip--pick"><input type="checkbox" name="topic" value="${t.id}" ${taste.topics.includes(t.id) ? 'checked' : ''}>
+        ${topicIcon(t.name, icons)} ${esc(t.name)}</label>`).join('')}</div>
+      <p class="muted small">תזונה — <strong>מסננת</strong>: נציע רק מה שמתאים (טבעוני לא יקבל בשר).</p>
+      <div class="chips">${(tags.suitable || []).map((t) => `<label class="chip chip--pick"><input type="checkbox" name="diet" value="${t.id}" ${taste.diet.includes(t.id) ? 'checked' : ''}> ${esc(t.name)}</label>`).join('')}</div>
+      <div class="actions"><button class="btn btn--primary" type="submit">שמור</button></div>
+    </form>`;
+}
+
+async function renderForYou() {
+  const [d, tags, counts] = await Promise.all([api('foryou', { limit: 30 }), ensureTags(), api('tag-counts').catch(() => ({ icons: {} }))]);
+  view.innerHTML = `
+    <section class="card fy-page">
+      <a class="link link--back" href="#/">‹ לרשימה</a>
+      <h2>✨ בשבילך</h2>
+      <p class="muted small">לפי מה ששמרת, בישלת ופתחת, מי שאתה עוקב אחריו${d.season.length ? `, ו${d.season.join(' ו')}` : ''}.
+        <button class="link link--inline" type="button" id="taste-open">🎯 מה אני אוהב</button></p>
+      ${d.personalize ? '' : '<p class="note note--warn small">ההתאמה האישית כבויה — מוצגים רק עונה ופופולרי. <a class="link link--inline" href="#/settings">להדליק ›</a></p>'}
+      <div id="taste-slot"></div>
+    </section>
+    <section class="list" id="fy-list">${d.items.length ? d.items.map((it) => `
+      <div class="item fy-item" data-key="${fyKey(it)}">
+        <a class="item__media" href="${esc(it.open)}" data-fy="${fyKey(it)}">${it.thumb
+          ? `<img class="item__thumb" src="${esc(it.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<span class="item__thumb item__thumb--empty">${it.kind === 'web' ? '🌐' : '🍲'}</span>`}</a>
+        <a class="item__main" href="${esc(it.open)}" data-fy="${fyKey(it)}">
+          <strong>${esc(it.title)}</strong>
+          <span class="fy-why">${esc(it.reason)}</span>
+          <span class="muted small">${it.kind === 'web' ? '🌐 ' : ''}${esc(it.by || '')}</span>
+        </a>
+        ${it.kind !== 'reco' ? `<details class="actbar__more fy-more"><summary class="btn btn--ghost btn--small" aria-label="עוד">⋯</summary>
+          <div class="more-menu">
+            <button type="button" data-not="${fyKey(it)}">✕ לא מעניין</button>
+            ${it.topic_id ? `<button type="button" data-less="${it.topic_id}">פחות ${esc(it.topic)}</button>` : ''}
+          </div></details>` : ''}
+      </div>`).join('') : '<p class="muted">עוד אין מה להציע. שומרים ומבשלים — וההמלצות מתחילות.</p>'}</section>`;
+
+  const slot = $('#taste-slot');
+  const openTaste = () => {
+    slot.innerHTML = tasteForm(d.taste, tags, counts.icons || {});
+    $('#taste').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      try {
+        await api('foryou-taste', { topics: $$('[name="topic"]:checked', f).map((c) => +c.value), diet: $$('[name="diet"]:checked', f).map((c) => +c.value) });
+        renderForYou();
+      } catch (err) { alert(err.message); }
+    });
+  };
+  $('#taste-open').addEventListener('click', () => { if (slot.innerHTML) slot.innerHTML = ''; else openTaste(); });
+  if (d.needs_taste) openTaste();
+
+  const list = $('#fy-list');
+  list.addEventListener('click', async (e) => {
+    fyClick(e);
+    const not = e.target.closest('[data-not]');
+    const less = e.target.closest('[data-less]');
+    if (!not && !less) return;
+    try {
+      if (not) {
+        const [kind, id] = not.dataset.not.split(':');
+        await api('event', { kind: 'not_interested', [kind === 'web' ? 'entry_id' : 'recipe_id']: +id });
+        not.closest('.fy-item').remove();
+      } else {
+        await api('event', { kind: 'less_topic', tag_id: +less.dataset.less });
+        renderForYou();
+      }
+    } catch (err) { alert(err.message); }
+  });
+  list.addEventListener('error', (e) => { if (e.target.tagName === 'IMG') e.target.remove(); }, true);
 }
 
 // ───────────────────────── קטגוריות (SPEC 15.1) ─────────────────────────
@@ -423,6 +531,7 @@ async function renderList(f = listParams('')) {
         ${tab('web', 'מהרשת')}
       </nav>
     </section>
+    <section id="fy-row" class="fy-row" hidden></section>
     <section id="results" class="list"></section>`;
 
   const results = $('#results');
@@ -461,6 +570,8 @@ async function renderList(f = listParams('')) {
     });
   }).catch(() => {});
 
+  // ✨ בשבילך — בראש הבית, רק במצב הרגיל (בלי חיפוש וסינון); כשל כאן לא מפיל את הרשימה
+  if (scope === 'all' && !q && !filtered) drawForYouRow($('#fy-row')).catch(() => {});
   const [{ recipes }, reco] = await Promise.all([
     api('search', { q, from_web: scope === 'web', following: scope === 'following', shared: scope === 'shared',
                     tag_ids: [f.topic, ...f.tags].filter(Boolean), difficulty: f.d || null, max_minutes: f.m || null }),
