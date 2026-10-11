@@ -26,6 +26,7 @@ import legacyTable from '../assets/js/model/templates/table.js';
 import legacyDresser from '../assets/js/model/templates/dresser.js';
 import legacyBookcase from '../assets/js/model/templates/legacy/bookcase-v1.js';
 import legacyWardrobe from '../assets/js/model/templates/legacy/wardrobe-v1.js';
+import legacyKitchen from '../assets/js/model/templates/legacy/kitchen-v1.js';
 import { visible, splitOverrides, joinOverrides } from '../assets/js/model/index.js';
 import { suggest, applySuggestion } from '../assets/js/model/suggest.js';
 import { millSpec, fluteGrooves, fluteRib, millRects, millSolids, millRemoved, millText, millEdges, cncPatterns } from '../assets/js/model/milling.js';
@@ -1475,6 +1476,84 @@ console.log('שלב 6: ארון בגדים לפי עמודה וקומה — המ
   // עמודה חדשה
   const add = (newUnit) => build('wardrobe', { ...base, columns: 3, units, newUnit }).units[2];
   check(add('hanging').floors[0].interior.type === 'hanging' && add('drawers').floors[0].interior.type === 'drawers' && add('last').floors.length === 2, 'עמודה חדשה: תלייה / מגירות / העתק');
+}
+
+console.log('שלב 6ב: מטבח לפי ארון וקומה — המרה זהה לבנייה הישנה');
+{
+  const norm = (o) => JSON.parse(JSON.stringify(o, (k, val) => (typeof val === 'number' ? Math.round(val * 1e6) / 1e6 : val)));
+  const sortKeys = (o) => (Array.isArray(o) ? o.map(sortKeys) : o && typeof o === 'object' ? Object.fromEntries(Object.keys(o).sort().filter((k) => o[k] !== undefined).map((k) => [k, sortKeys(o[k])])) : o);
+  const thick = (w) => /שונה מעובי החומר/.test(w);
+  const pick = (r) => sortKeys(norm({ parts: r.parts, hardware: r.hardware, warnings: r.warnings.filter((w) => !thick(w)), bounds: r.bounds }));
+  TEMPLATES['legacy-kitchen'] = { ...legacyKitchen, key: 'legacy-kitchen' };
+  let seed = 37;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const one = (arr) => arr[Math.floor(rnd() * arr.length)];
+  let same = 0, roundtrip = 0, diff = null, rdiff = null, tried = 0;
+  for (let n = 0; n < 400; n++) {
+    const v = {};
+    for (const p of allParams(legacyKitchen)) {
+      if (p.type === 'json') continue;
+      if (['mm', 'int', 'deg'].includes(p.type)) v[p.key] = n === 0 ? p.default : Math.round(p.min + rnd() * (p.max - p.min));
+      else { const o = optionsFor(p); if (o.length) v[p.key] = o[Math.floor(rnd() * o.length)].id; }
+    }
+    v.cabinets = 1 + Math.floor(rnd() * 5); v.cabinetsB = 1 + Math.floor(rnd() * 3); v.length = 1500 + Math.round(rnd() * 3500); v.lengthB = 1800 + Math.round(rnd() * 2000);
+    v.drawerCabinets = Math.floor(rnd() * (v.cabinets + 1)); v.drawerCabinetsB = Math.floor(rnd() * (v.cabinetsB + 1));
+    if (n % 2) {
+      const pin = (lo, hi) => (rnd() < 0.5 ? null : Math.round(lo + rnd() * (hi - lo)));
+      const sec = (cnt, kinds) => { const cols = {}; for (let i = 0; i < cnt; i++) { const c = {}; if (kinds && rnd() < 0.3) c.kind = one(['doors', 'drawers']); if (rnd() < 0.4) c.shelves = 1 + Math.floor(rnd() * 3); if (rnd() < 0.3) { const k = (c.shelves ?? 1) + (c.kind === 'drawers' ? 0 : 1); c.gaps = Array.from({ length: k }, () => pin(80, 250)); } if (Object.keys(c).length) cols[i] = c; } return { widths: Array.from({ length: cnt }, () => pin(300, 800)), cols }; };
+      v.columnsLayout = { sections: { baseA: sec(v.cabinets, true), baseB: sec(v.cabinetsB, true), upperA: sec(v.cabinets), upperB: sec(v.cabinetsB) } };
+    }
+    const a = build('legacy-kitchen', v), b = build('kitchen', v);
+    if (!a.parts.every((p) => p.box.w > 0 && p.box.h > 0 && p.box.d > 0)) continue;
+    tried += 1;
+    if (JSON.stringify(pick(a)) === JSON.stringify(pick(b))) same += 1; else if (!diff) diff = { a: pick(a), b: pick(b), v };
+    const c = build('kitchen', { ...v, units: b.units });
+    if (JSON.stringify(pick(c)) === JSON.stringify(pick(b))) roundtrip += 1; else if (!rdiff) rdiff = { b: pick(b), c: pick(c) };
+  }
+  for (const [d, x, y] of [[diff, 'a', 'b'], [rdiff, 'b', 'c']]) {
+    if (!d) continue;
+    const A = JSON.stringify(d[x]), B = JSON.stringify(d[y]);
+    let i = 0; while (A[i] === B[i]) i += 1;
+    console.error(`    שונה ב: …${A.slice(Math.max(0, i - 160), i + 80)}\n    מול: …${B.slice(Math.max(0, i - 160), i + 80)}`);
+    if (d.v) console.error('    ערכים:', JSON.stringify(d.v).slice(0, 700));
+  }
+  check(!diff && same === tried && tried > 250, `${same} תצורות זהות לחלוטין מתוך ${tried}`);
+  check(!rdiff && roundtrip === tried, `הלוך-חזור: ${roundtrip} — units שמורים בונים אותו דבר`);
+  delete TEMPLATES['legacy-kitchen'];
+
+  // יכולות חדשות: מגירה למעלה + דלת ומדף מתחת; ארון פתוח; מגירות מאחורי דלת; חזית "כמו המטבח"
+  const base = { cabinets: 3, length: 2400, uppers: 'no' };
+  const u = build('kitchen', base).units;
+  const front = u[0].floors[0].front.type === 'none' ? u[1].floors[0].front : u[0].floors[0].front;
+  check(u.length === 3 && u.every((x) => x.row === 'baseA') && front.material === 'same', 'units: שורה לכל ארון, חזית "כמו המטבח"');
+  const mixed = JSON.parse(JSON.stringify(u));
+  mixed[1].floors = [
+    { height: null, front: { ...front, type: 'wood', leaves: 1 }, interior: { type: 'shelves', shelves: { count: 1, mode: 'adjustable' } } },
+    { height: 150, front: { ...front, type: 'none' }, interior: { type: 'drawers', drawers: { count: 1 } } }];
+  mixed[2].floors = [{ height: null, front: { ...front, type: 'none' }, interior: { type: 'shelves', shelves: { count: 2, mode: 'fixed' } } }];
+  const r = build('kitchen', { ...base, units: mixed });
+  const ids = r.parts.map((p) => p.id);
+  check(allFinite(r.parts), 'גאומטריה סופית');
+  check(ids.includes('ת2-f1-door') && ids.includes('ת2-f2-drawer-1') && ids.some((x) => x.startsWith('ת2-split1-shelf')), 'ת2: דלת למטה, מגירה למעלה, מדף קבוע ביניהן');
+  const dr = r.parts.find((p) => p.id === 'ת2-f2-drawer-1'), dd = r.parts.find((p) => p.id === 'ת2-f1-door');
+  const mid = r.parts.find((p) => p.id === 'ת2-split1-shelf-1-1').box;
+  check(Math.abs((dd.box.y + dd.box.h + dr.box.y) / 2 - (mid.y + mid.h / 2)) < 0.01 && dr.box.y - (dd.box.y + dd.box.h) < 4 && Math.abs(dr.box.y + dr.box.h - (100 + 720)) < 2, 'החזיתות נפגשות (במרווח) באמצע המדף הקבוע, והמגירה עד ראש הארון');
+  check(!ids.some((x) => /^ת3-door/.test(x)) && ids.filter((x) => /^ת3-shelf/.test(x)).length === 2, 'ת3: ארון פתוח עם 2 מדפים');
+  const red = build('kitchen', { ...base, units: mixed, frontMaterial: 'board:veneer-oak-18' });
+  check(red.parts.find((p) => p.id === 'ת2-f1-door').material === 'board:veneer-oak-18', 'חזית "כמו המטבח" עוקבת אחרי חומר החזיתות הכללי');
+  const own = JSON.parse(JSON.stringify(mixed)); own[1].floors[0].front.material = 'board:veneer-walnut-18';
+  check(build('kitchen', { ...base, units: own, frontMaterial: 'board:veneer-oak-18' }).parts.find((p) => p.id === 'ת2-f1-door').material === 'board:veneer-walnut-18', 'חומר שנבחר לקומה גובר');
+  const inn = JSON.parse(JSON.stringify(mixed)); inn[2].floors = [{ height: null, front: { ...front, type: 'wood', leaves: 1 }, interior: { type: 'drawers', drawers: { count: 2, handle: 'hw:handle-bar-128' } } }];
+  const ri = build('kitchen', { ...base, units: inn });
+  const fi = ri.parts.find((p) => p.id === 'ת3-drawer-1'), di = ri.parts.find((p) => p.id === 'ת3-door');
+  check(fi.box.z + fi.box.d <= di.box.z && !ri.hardware.some((h) => h.id === 'ת3-drawer-1-handle') && ri.inactive.length === 1, 'מגירות מאחורי דלת: פנימיות, בלי ידית, "לא בתוקף"');
+  // שורות: הוספת עליונים / קיר שני — נגזרות; שינוי מספר ארונות — העתק של האחרון
+  const up = build('kitchen', { ...base, units: mixed, uppers: 'yes' });
+  check(up.units.filter((x) => x.row === 'upperA').length === 3 && up.units.filter((x) => x.row === 'baseA')[1].floors.length === 2, 'הוספת עליונים: נגזרים, התחתונים שנערכו נשמרים');
+  const more = build('kitchen', { ...base, units: mixed, cabinets: 4 });
+  check(more.units.length === 4 && JSON.stringify(more.units[3].floors) === JSON.stringify(mixed[2].floors), 'ארון נוסף — העתק של האחרון בשורה');
+  const loc = (id, us) => JSON.stringify(TEMPLATES.kitchen.locate(id, us));
+  check(loc('ת2-f2-drawer-1', mixed) === '{"unit":1,"floor":1}' && loc('ת3-shelf-1-1', mixed) === '{"unit":2,"floor":0}' && loc('ע2-door', up.units) === '{"unit":4,"floor":0}', 'locate: לפי התחילית והקומה');
 }
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }

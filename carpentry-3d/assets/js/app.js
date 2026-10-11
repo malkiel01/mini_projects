@@ -746,7 +746,8 @@ function partEditor(p) {
   }).filter(Boolean);
   // הרכיב שייך לעמודה/קומה — אותו כרטיס כמו בטופס (units-ui): חזית, תוכן, גובה…
   const t0 = currentTemplate(), loc = t0.locate ? t0.locate(p.id, model.units) : null;
-  const unitBtn = loc && model.units ? `<button type="button" class="btn btn--small pedit__unit" data-open-unit="${loc.unit}" data-open-floor="${loc.floor ?? ''}">⚙️ הגדרות ${loc.floor !== null ? `הקומה — עמודה ${loc.unit + 1}${model.units[loc.unit]?.floors.length > 1 ? `, קומה ${loc.floor + 1}` : ''}` : `עמודה ${loc.unit + 1}`}</button>` : '';
+  const unitName = loc && model.units ? (t0.unitsSpec?.label ? t0.unitsSpec.label(model.units[loc.unit], loc.unit, model.units) : `עמודה ${loc.unit + 1}`) : '';   // "ארון א2" במטבח
+  const unitBtn = loc && model.units ? `<button type="button" class="btn btn--small pedit__unit" data-open-unit="${loc.unit}" data-open-floor="${loc.floor ?? ''}">⚙️ הגדרות ${loc.floor !== null ? `הקומה — ${esc(unitName)}${model.units[loc.unit]?.floors.length > 1 ? `, קומה ${loc.floor + 1}` : ''}` : esc(unitName)}</button>` : '';
   return `${unitBtn}<details class="pedit" ${partEditor.open ? 'open' : ''} data-pedit="own"><summary>✏️ עריכת הרכיב הזה</summary>${out.join('')}</details>
     ${rel.length ? `<details class="pedit" ${partEditor.openRel ? 'open' : ''} data-pedit="rel"><summary>⚙️ הגדרות המוצר שנוגעות לרכיב</summary><p class="muted pedit__note">שינוי כאן חל על כל המוצר (או על כל השדה / העמודה), כמו בטופס.</p>${rel.join('')}</details>` : ''}`;
 }
