@@ -127,8 +127,10 @@ function clear_failures(array $keys): void
 
 function validate_username($u): string
 {
-    if (!is_string($u) || !preg_match('/^[A-Za-z0-9._-]{3,32}$/', $u)) {
-        throw new ApiError('שם משתמש: 3–32 תווים, אותיות באנגלית, ספרות, נקודה, מקף או קו תחתון', 422);
+    // גם כתובת מייל מתקבלת כשם משתמש — זה מה שאנשים מקלידים מעצמם.
+    $u = is_string($u) ? trim($u) : '';
+    if (!preg_match('/^[A-Za-z0-9._@+-]{3,100}$/', $u)) {
+        throw new ApiError('שם משתמש: לפחות 3 תווים באנגלית — אפשר גם כתובת מייל', 422);
     }
     return $u;
 }
