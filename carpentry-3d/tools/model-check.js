@@ -1179,5 +1179,32 @@ console.log('שלב 3: מתכונים מובנים זהים לקוד הישן');
   check(!TEMPLATES.table.overridden && TEMPLATES.table.name === 'שולחן' && TEMPLATES.bookcase && !TEMPLATES.bookcase.recipe, 'בלי דריסה — חזרה למובנה; תבניות הקוד לא נגעו');
 }
 
+console.log('ויטרינה: מסגרת, צדדים, פרופיל, צבע, שפרוסים, מדפי זכוכית');
+{
+  const ids = (r) => r.parts.filter((p) => p.id.startsWith('door-1')).map((p) => p.id.slice(6));
+  const base = { doorType: 'glass', columns: 3 };
+  const def = build('bookcase', base);
+  check(JSON.stringify(ids(def)) === JSON.stringify(['-stile-L', '-stile-R', '-rail-T', '-rail-B', '-glass']) && def.parts.find((p) => p.id === 'door-1-stile-L').box.w === 60, 'ברירת מחדל — כמו קודם: עץ 4 צדדים, 60');
+  const v2 = build('bookcase', { ...base, vitrineSides: '2v' });
+  const g2 = v2.parts.find((p) => p.id === 'door-1-glass'), d2 = v2.parts.find((p) => p.id === 'door-1-stile-L');
+  check(!ids(v2).some((x) => x.includes('rail')) && Math.abs(g2.box.h - d2.box.h) < 0.01 && /מלוטשים/.test(g2.note), '2 צדדים (זקפים): בלי קושרות, הזכוכית לכל הגובה ומלוטשת');
+  const h2 = build('bookcase', { ...base, vitrineSides: '2h' });
+  check(!ids(h2).some((x) => x.includes('stile')) && h2.hardware.some((h) => h.kind === 'hinge' && h.material === 'hw:hinge-glass-clamp') && !drillingList(h2).some((g) => /door-1-glass/.test(g.id)), '2 צדדים (קושרות): בלי זקפים, צירי זכוכית ובלי קידוח בזכוכית');
+  const fl = build('bookcase', { ...base, vitrineFrame: 'none' });
+  check(JSON.stringify(ids(fl)) === JSON.stringify(['-glass']) && fl.warnings.some((w) => /מחוסמת 6/.test(w)) && !build('bookcase', { ...base, vitrineFrame: 'none', glassType: 'glass:tempered-6' }).warnings.some((w) => /מחוסמת 6/.test(w)), 'בלי מסגרת: זכוכית בלבד, ואזהרה כשהזכוכית דקה מ-6');
+  const alu = build('bookcase', { ...base, vitrineFrame: 'alu', vitrineFrameW: 20, vitrineAlu: 'profile:alu-gold' });
+  const cl = cutList(alu);
+  check(alu.parts.find((p) => p.id === 'door-1-stile-L').material === 'profile:alu-gold' && cl.profiles.length > 0 && !cl.boards.some((r) => /פרופיל/.test(r.name)), 'אלומיניום: צבע מהספרייה, ברשימת פרופילים ולא בלוחות');
+  check(estimate(alu, {}).lines.some((l) => l.group === 'פרופילים' && l.unit === 'מ׳'), 'אלומיניום במחיר — לפי מטר');
+  const sh = build('bookcase', { ...base, vitrineProfile: 'shaker', vitrineMullions: 'grid6', vitrineFrameMaterial: 'board:veneer-oak-18' });
+  check(ids(sh).filter((x) => x.includes('bead')).length === 4 && ids(sh).filter((x) => x.includes('mullion')).length === 3 && sh.parts.find((p) => p.id === 'door-1-stile-L').material === 'board:veneer-oak-18', 'שייקר (4 פסים), 6 שמשות (3 שפרוסים), צבע מסגרת משלה');
+  const gs = build('bookcase', { ...base, vitrineShelves: 'glass' });
+  check(gs.parts.filter((p) => /shelf-/.test(p.id)).every((p) => p.material === 'glass:shelf-8' && p.box.h === 8), 'מדפי זכוכית 8 מאחורי הוויטרינה');
+  const mix = build('bookcase', { columns: 3, glassColumns: 'first', vitrineShelves: 'glass' });
+  check(mix.parts.filter((p) => /^shelf-1-/.test(p.id)).every((p) => p.material === 'glass:shelf-8') && mix.parts.filter((p) => /^shelf-2-/.test(p.id)).every((p) => p.material !== 'glass:shelf-8'), 'מדפי זכוכית רק בעמודת הוויטרינה');
+  const vp = allParams(TEMPLATES.bookcase).find((p) => p.key === 'vitrineFrame');
+  check(!visible(vp, { doorType: 'wood', lowerDoors: 'wood', glassColumns: 'none' }) && visible(vp, { doorType: 'none', lowerDoors: 'wood', glassColumns: 'last' }), 'שאלות הוויטרינה מופיעות רק כשיש דלת זכוכית');
+}
+
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }
 console.log('\nהכול עבר ✓');
