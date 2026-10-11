@@ -599,11 +599,35 @@
 
     let pushReport = null;         // תוצאת הבדיקה האחרונה — מוצגת בכרטיס, לאבחון
     let resynced = false;
+    let pushKnown = false;          // מצב ההתראות כבר נבדק — עד אז לא מציגים את הפס (שלא יהבהב)
+    let autoTried = false;
+
+    /**
+     * ההרשאה כבר ניתנה, אבל המכשיר לא רשום (הרישום אבד — ניקוי נתונים, עדכון
+     * דפדפן, או הפעלה שנקטעה באמצע). נרשמים מחדש בשקט: כשההרשאה קיימת,
+     * הדפדפן לא שואל שוב.
+     */
+    async function resubscribeSilently() {
+        autoTried = true;
+        try {
+            await navigator.serviceWorker.ready;
+            const { key } = await api('pushKey');
+            const raw = Uint8Array.from(atob(key.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+            pushSub = await swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: raw });
+            await api('pushSubscribe', { subscription: pushSub.toJSON(), device: deviceName });
+            resynced = true;
+        } catch { /* לא הצליח — הכרטיס בהגדרות יציע להפעיל ידנית */ }
+    }
 
     async function refreshPushState() {
         try {
+            swReg ??= await navigator.serviceWorker?.getRegistration();
             if (swReg && 'PushManager' in window) pushSub = await swReg.pushManager.getSubscription();
         } catch { pushSub = null; }
+        if (swReg && !pushSub && pushSupported && Notification.permission === 'granted' && !autoTried && !$('#board').hidden) {
+            await resubscribeSilently();
+        }
+        pushKnown = !!swReg || !('serviceWorker' in navigator);
         // המכשיר רשום אצלו — מוודאים שגם השרת מכיר אותו (אם נמחק שם, נרשם מחדש)
         if (pushSub && Notification.permission === 'granted' && !resynced && !$('#board').hidden) {
             resynced = true;
@@ -621,7 +645,7 @@
         renderSoundHelp();
         let dismissed = false;
         try { dismissed = localStorage.getItem('catering-menu:push-banner') === 'no'; } catch { /* */ }
-        $('#pushBanner').hidden = !banner || dismissed || $('#board').hidden;
+        $('#pushBanner').hidden = !banner || !pushKnown || dismissed || $('#board').hidden;
     }
 
     /** ממלא כרטיס התראות אחד. מחזיר true אם כדאי להציג את פס התזכורת. */
@@ -686,7 +710,9 @@
                         ? 'כדי לאפשר: בכרום לוחצים על הסמל שליד הכתובת ← הרשאות ← התראות ← לאפשר. ואז לרענן.'
                         : 'כדי לאפשר: לוחצים על המנעול שליד הכתובת ← התראות ← לאפשר. ואז לרענן.'));
         } else {
-            banner = true;
+            // הפס בראש המסך — רק אם עוד לא נשאלנו. אם ההרשאה כבר ניתנה והרישום
+            // לא הצליח, לא מטרידים בפס: הכרטיס בהגדרות מציע להפעיל שוב.
+            banner = Notification.permission === 'default';
             card.className = 'push-card push-slot';
             card.append(
                 el('p', { class: 'push-title' }, '🔔 התראות על הזמנות חדשות'),
