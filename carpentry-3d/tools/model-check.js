@@ -25,7 +25,7 @@ import legacyBed from '../assets/js/model/templates/bed.js';
 import legacyTable from '../assets/js/model/templates/table.js';
 import legacyDresser from '../assets/js/model/templates/dresser.js';
 import legacyBookcase from '../assets/js/model/templates/legacy/bookcase-v1.js';
-import { visible } from '../assets/js/model/index.js';
+import { visible, splitOverrides, joinOverrides } from '../assets/js/model/index.js';
 import { millSpec, fluteGrooves, fluteRib, millRects, millSolids, millRemoved, millText, millEdges, cncPatterns } from '../assets/js/model/milling.js';
 
 let failed = 0;
@@ -1269,6 +1269,46 @@ console.log('ספרייה לפי עמודה וקומה (שלב 1): המרה זה
   // הפרויקט מהצילום: ויטרינה מלאה בעמודה 1 + פיצול 850 בשאר — המבנה מבטא בדיוק מה שנבנה
   const u = build('bookcase', { columns: 5, width: 2590, height: 2560, depth: 340, lowerH: 850, lowerDoors: 'wood', doorType: 'glass', glassColumns: 'first' }).units;
   check(u[0].floors.length === 1 && u[0].floors[0].front.type === 'glass' && u.slice(1).every((c) => c.floors.length === 2 && c.floors[0].height === 850 && c.floors[0].front.type === 'wood' && c.floors[1].front.type === 'glass'), 'עמודה 1 — קומה אחת ויטרינה; 2–5 — עץ 850 ומעליו ויטרינה');
+}
+
+console.log('שלב 2: קומות ללא הגבלה, ויטרינה לקומה, מגירות, חריגות, "לא בתוקף"');
+{
+  const base = { columns: 3, width: 1500, height: 2200, depth: 400 };   // עמודות צרות — כנף אחת לכל דלת
+  const u0 = build('bookcase', base).units;
+  const mk = (floors) => u0.map((u) => ({ ...u, floors: floors.map((f) => ({ ...f, front: { ...u.floors[0].front, ...(f.front || {}) }, interior: f.interior })) }));
+  // 3 קומות: מגירות גלויות למטה, דלת עץ באמצע, ויטרינת אלומיניום למעלה
+  const three = mk([
+    { height: 500, front: { type: 'none' }, interior: { type: 'drawers', drawers: { count: 3, handle: 'hw:handle-bar-128' } } },
+    { height: 800, front: { type: 'wood' }, interior: { type: 'shelves', shelves: { count: 1, material: 'same', mode: 'adjustable' } } },
+    { height: null, front: { type: 'glass', vitrine: { frame: 'alu', sides: '4', frameW: 20, alu: 'profile:alu-black' } }, interior: { type: 'shelves', shelves: { count: 2, material: 'glass:shelf-8', mode: 'adjustable' } } },
+  ]);
+  const r = build('bookcase', { ...base, units: three });
+  const ids = r.parts.map((p) => p.id);
+  check(allFinite(r.parts), 'גאומטריה סופית');
+  check(ids.filter((x) => /^drawer-1-1-\d$/.test(x)).length === 3 && ids.includes('door-1-f2') && ids.includes('door-1-f3-stile-L') && ids.includes('split1-shelf-1-1') && ids.includes('split2-shelf-1-1'), 'מזהים: מגירות drawer-1-1-k, דלתות door-1-f2/f3, מדפי גבול');
+  check(r.parts.find((p) => p.id === 'door-1-f3-stile-L').material === 'profile:alu-black' && r.parts.find((p) => p.id === 'door-1-f2').material !== 'profile:alu-black', 'ויטרינה לכל קומה בנפרד');
+  check(r.parts.filter((p) => /^f3-shelf-/.test(p.id)).every((p) => p.material === 'glass:shelf-8') && r.parts.filter((p) => /^f2-shelf-/.test(p.id)).every((p) => p.material !== 'glass:shelf-8'), 'מדפי זכוכית רק בקומה שבחרה בהם');
+  const d1 = r.parts.find((p) => p.id === 'drawer-1-1-1'), door2 = r.parts.find((p) => p.id === 'door-1-f2');
+  check(d1.box.z === base.depth && r.hardware.some((h) => h.id === 'drawer-1-1-1-handle'), 'מגירה גלויה: חזית בחזית הגוף, עם ידית');
+  check(d1.box.y + d1.box.h <= door2.box.y + 0.01, 'המגירות מתחת לדלת האמצעית');
+  // מגירות מאחורי דלת ויטרינה — פנימיות
+  const inner = build('bookcase', { ...base, units: mk([{ height: null, front: { type: 'glass' }, interior: { type: 'drawers', drawers: { count: 2, handle: 'hw:handle-bar-128' } } }]) });
+  const f = inner.parts.find((p) => p.id === 'drawer-1-1-1'), dg = inner.parts.find((p) => p.id === 'door-1-stile-L');
+  check(f && f.box.z + f.box.d < dg.box.z && !inner.hardware.some((h) => h.id === 'drawer-1-1-1-handle') && /פנימית/.test(f.note), 'מגירות פנימיות: מאחורי הדלת, בלי ידית');
+  check(inner.inactive.some((x) => x.path === 'units.0.floors.0.interior.drawers.handle'), '"לא בתוקף": ידית למגירה פנימית');
+  // "לא בתוקף": המקרה מהצילום — ויטרינה מלאה ופיצול
+  const shot = build('bookcase', { columns: 5, width: 2590, height: 2560, depth: 340, lowerH: 850, lowerDoors: 'wood', doorType: 'glass', glassColumns: 'first', columnsLayout: { cols: { 0: { split: 850 } } } });
+  check(shot.inactive.some((x) => x.path === 'columnsLayout.cols.0.split' && /ויטרינה מלאה/.test(x.reason)) && !shot.inactive.some((x) => x.column === 1), '"לא בתוקף": פיצול בעמודת ויטרינה מלאה — רק בעמודה 1');
+  const nf = build('bookcase', { ...base, units: mk([{ height: 900, front: { type: 'glass', vitrine: { frame: 'none', mullions: 'grid4' } }, interior: { type: 'shelves', shelves: { count: 2 } } }]) });
+  check(nf.inactive.some((x) => x.path.endsWith('vitrine.mullions')) && nf.inactive.some((x) => x.path === 'units.0.floors.0.height'), '"לא בתוקף": שפרוסים בלי מסגרת; גובה לקומה יחידה');
+  const over = build('bookcase', { ...base, units: mk([{ height: 1500 }, { height: 1500 }, { height: null }].map((x) => ({ ...x, front: { type: 'wood' }, interior: { type: 'shelves', shelves: { count: 1 } } }))) });
+  check(over.inactive.filter((x) => /הוקטן/.test(x.reason)).length >= 2, '"לא בתוקף": קומות שלא נכנסות — מוקטנות ומסומנות');
+  // חריגות לרכיב: מבנה אחד ⇄ שלושת הישנים
+  const legacy = { partEdits: { 'shelf-1-1': { material: 'board:veneer-oak-18' } }, partFinishes: { 'side-L': 'fluted-fine' }, doorOpen: { 'door-1': 'left' } };
+  const joined = joinOverrides(legacy);
+  check(joined['side-L'].finish === 'fluted-fine' && joined['door-1'].hingeSide === 'left' && JSON.stringify(splitOverrides({ overrides: joined })) === JSON.stringify(splitOverrides(legacy)), 'overrides ⇄ partEdits/partFinishes/doorOpen');
+  const bo = build('bookcase', { ...base, doorType: 'wood', overrides: joined }), bl = build('bookcase', { ...base, doorType: 'wood', ...legacy });
+  check(JSON.stringify(bo.parts) === JSON.stringify(bl.parts) && JSON.stringify(bo.hardware) === JSON.stringify(bl.hardware), 'בנייה עם overrides = בנייה עם המבנים הישנים');
 }
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }

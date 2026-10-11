@@ -9,7 +9,7 @@
 // יכולות להיות ויטרינה מלאה, והדפנות החיצוניות — זכוכית. פסי לד לאורך
 // הדפנות הפנימיות.
 
-import { carcass, partitions, shelves, back, plinth, crown, door, part } from '../blocks.js';
+import { carcass, partitions, shelves, back, plinth, crown, door, drawer, part } from '../blocks.js';
 import { material } from '../materials.js';
 import { resolveShares, sectionLayout, cellsOf } from '../layout.js';
 import { handleParam, hingeParam, wheelsParam, addWheels, materialParams, joineryParams, FINISHES, FINISHES_NO_GLASS, applyFinish, sameOrMaterial, resolveSame, columnHeights, fitSides, stepTops, steppedBack, steppedCrown, LIMITS } from './common.js';
@@ -261,9 +261,40 @@ export default {
       fl.forEach((f, zi) => {
         const fr = f.front || {};
         const type = fr.type || 'none';
+        const y0 = zi === 0 ? v.plinthH : b[zi], y1 = zi === fl.length - 1 ? colTop : b[zi + 1];
+        // מגירות כתוכן הקומה: בלי חזית — חזיתות גלויות (כמו דלת: עמודה + חצי מחיצה);
+        // מאחורי דלת — מגירות פנימיות: החזית בתוך הפתח, נסוגה מאחורי הדלת, בלי ידית
+        if (f.interior?.type === 'drawers') {
+          const dr = f.interior.drawers || {};
+          const inner = type !== 'none';
+          const count = Math.max(1, Math.round(dr.count ?? 3));
+          const fm = dr.frontMaterial || fr.material || v.doorMaterial;
+          const frontT = boardThickness(fm);
+          const boxA = zi === 0 ? bottomY : b[zi], boxB = zi === fl.length - 1 ? colY1(i) : b[zi + 1] - shelfT;
+          const fa = inner ? boxA : y0, fb = inner ? boxB : y1;
+          const hs = resolveShares(fb - fa, Array.from({ length: count }, (_, k) => (Number.isFinite(dr.heights?.[k]) && dr.heights[k] > 0 ? dr.heights[k] : null)), 60);
+          const zFront = inner ? D - frontT - 22 : D;   // פנימית: מרווח לזרועות הצירים של הדלת
+          const depth = Math.min(zFront - z0 - 20, 550);
+          let ry = fa;
+          hs.forEach((h, k) => {
+            const fy0 = ry, fy1 = ry + h; ry = fy1;
+            const d = drawer({
+              id: `drawer-${i + 1}-${zi + 1}-${k + 1}`, name: `מגירה ${i + 1}.${k + 1}${fl.length > 1 ? ` (קומה ${zi + 1})` : ''}${inner ? ' — פנימית' : ''}`,
+              x0: inner ? col.x0 : x0, x1: inner ? col.x1 : x1, y0: fy0, y1: fy1, boxX0: col.x0, boxX1: col.x1,
+              boxY0: Math.max(boxA, fy0), boxY1: Math.min(boxB, fy1),
+              zFront, depth, frontT, boxT: boardThickness(dr.boxMaterial || 'board:melamine-white-18'), bottomT: backThickness(dr.bottomMaterial || 'board:back-hdf-6'),
+              frontMaterial: fm, boxMaterial: dr.boxMaterial || 'board:melamine-white-18', bottomMaterial: dr.bottomMaterial || 'board:back-hdf-6',
+              slide: dr.slide || 'hw:slide-std', handle: inner || !dr.handle || dr.handle === 'none' ? null : dr.handle,
+              mountIds: [i === 0 ? 'side-L' : `partition-${i}`, i === cols.cols.length - 1 ? 'side-R' : `partition-${i + 1}`], mountBottom: inner ? boxA : bottomY,
+            });
+            if (!inner && dr.finish) parts.push(...applyFinish(d.parts[0], dr.finish, { material: fm, normal: '+z' }));
+            parts.push(...d.parts); hardware.push(...d.hardware);
+            if (!inner) maxFront = Math.max(maxFront, frontT + fluteDepth(dr.finish));
+          });
+          if (col.x1 - col.x0 > L.drawerMaxWidth) warnings.push(`עמודה ${i + 1}: מגירה ברוחב ${Math.round(col.x1 - col.x0)} מ"מ — מעבר ל-${L.drawerMaxWidth} המומלצים`);
+        }
         if (type === 'none') return;
         anyDoor = true;
-        const y0 = zi === 0 ? v.plinthH : b[zi], y1 = zi === fl.length - 1 ? colTop : b[zi + 1];
         const leaves = fr.leaves === 1 || fr.leaves === 2 ? fr.leaves : colW > L.doorWidth ? 2 : 1;
         if (leaves === 1 && colW > L.doorWidth) narrowWide = true;
         const doorT = boardThickness(fr.material);
@@ -320,7 +351,7 @@ export default {
       warnings.push('החריץ לגב רחוק מהקצה יותר מהמקובל — לבדוק מול הנגר');
     }
 
-    const extraD = anyDoor ? maxFront : 0;
+    const extraD = maxFront;
     const sideExtra = (f) => (f === 'fluted-wide' ? 10 : f.startsWith('fluted') ? 8 : 0);
     const bounds = { w: W + sideExtra(v.sideLeftFinish) + sideExtra(v.sideRightFinish), h: Math.max(...heights), d: D + extraD };
     // סטריפים על דופן שמאל יוצאים ל-x שלילי — מזיזים הכול ימינה כדי שהגבולות יתחילו ב-0
@@ -328,7 +359,7 @@ export default {
     if (shift) { for (const p of parts) p.box = { ...p.box, x: p.box.x + shift }; for (const h of hardware) if (h.pos) h.pos = [h.pos[0] + shift, h.pos[1], h.pos[2]]; for (const p of parts) if (p.motion && p.motion.kind === 'hinge' && !p.motion.shifted) { p.motion = { ...p.motion, pivot: [p.motion.pivot[0] + shift, p.motion.pivot[1], p.motion.pivot[2]], shifted: true }; } }
     const lift = addWheels(parts, hardware, v, { x0: shift, x1: shift + W, y0: 0, z0: bodyZ, z1: bodyZ + bodyD });
     bounds.h += lift;
-    return { parts, hardware, warnings, bounds, units };
+    return { parts, hardware, warnings, bounds, units, inactive: inactiveOf(units, saved ? null : layout, v, (i) => floorsOf(i)) };
   },
 };
 
@@ -349,6 +380,47 @@ function floorHeights(room, pins) {
 }
 /** עומק שסטריפים מודבקים מוסיפים לחזית. */
 function fluteDepth(f) { return typeof f === 'string' && f.startsWith('fluted') ? (f === 'fluted-wide' ? 10 : 8) : 0; }
+
+/**
+ * הגדרות שנקבעו אבל לא חלות — כדי שהממשק יסמן "לא בתוקף, כי…" במקום להתעלם בשקט.
+ * [{ path, reason }]; path לפי המבנה (units.<עמודה>.floors.<קומה>.…), או השדה הישן
+ * (columnsLayout / lowerH) כשהעמודות עדיין מומרות ממנו.
+ */
+function inactiveOf(units, legacyLayout, v, floorsOf) {
+  const out = [];
+  units.forEach((u, i) => {
+    const col = `עמודה ${i + 1}`;
+    if (u.splitIgnored > 0) out.push({ path: legacyLayout?.cols?.[i]?.split !== undefined ? `columnsLayout.cols.${i}.split` : 'lowerH', column: i, reason: `${col} היא ויטרינה מלאה (קומה אחת) — הפיצול ${u.splitIgnored} לא חל` });
+    if (u.splitCancelled > 0) out.push({ path: legacyLayout?.cols?.[i]?.split !== undefined ? `columnsLayout.cols.${i}.split` : 'lowerH', column: i, reason: `${col}: החלק התחתון ${u.splitCancelled} גבוה מדי לעמודה — הפיצול בוטל` });
+    const fl = u.floors;
+    if (fl.length === 1 && Number.isFinite(fl[0].height) && fl[0].height > 0) out.push({ path: `units.${i}.floors.0.height`, column: i, reason: `${col}: קומה יחידה — לוקחת את כל הגובה` });
+    if (fl.length > 1) {
+      const pins = fl.map((f) => (Number.isFinite(f.height) && f.height > 0 ? f.height : null));
+      const { b } = floorsOf(i);
+      fl.forEach((f, j) => {
+        if (pins[j] === null) return;
+        const real = (j === fl.length - 1 ? null : b[j + 1] - b[j]);
+        if (real !== null && Math.abs(real - pins[j]) > 0.5) out.push({ path: `units.${i}.floors.${j}.height`, column: i, floor: j, reason: `${col}, קומה ${j + 1}: הגובה הוקטן ל-${Math.round(real)} כדי שהקומות ייכנסו` });
+      });
+    }
+    fl.forEach((f, j) => {
+      const at = `units.${i}.floors.${j}`, where = `${col}${fl.length > 1 ? `, קומה ${j + 1}` : ''}`;
+      const fr = f.front || {}, vt = fr.vitrine || {};
+      if (fr.type === 'glass') {
+        if (vt.frame === 'none') for (const k of ['sides', 'frameW', 'profile', 'mullions']) if (vt[k] !== undefined && !(k === 'mullions' && vt[k] === 'none') && !(k === 'profile' && vt[k] === 'flat') && !(k === 'sides' && vt[k] === '4')) out.push({ path: `${at}.front.vitrine.${k}`, column: i, floor: j, reason: `${where}: זכוכית בלי מסגרת` });
+        if (vt.frame === 'alu' && vt.profile && vt.profile !== 'flat') out.push({ path: `${at}.front.vitrine.profile`, column: i, floor: j, reason: `${where}: פרופיל (שייקר/פאזה/מעוגל) — במסגרת עץ בלבד` });
+        if (vt.frame === 'wood' && vt.profile === 'shaker' && vt.sides && vt.sides !== '4') out.push({ path: `${at}.front.vitrine.profile`, column: i, floor: j, reason: `${where}: שייקר — רק במסגרת של 4 צדדים` });
+      }
+      const it = f.interior || {};
+      if (it.type === 'drawers' && fr.type && fr.type !== 'none') {
+        if (it.drawers?.handle && it.drawers.handle !== 'none') out.push({ path: `${at}.interior.drawers.handle`, column: i, floor: j, reason: `${where}: מגירות פנימיות (מאחורי דלת) — בלי ידית` });
+        if (it.drawers?.finish && it.drawers.finish !== 'flat') out.push({ path: `${at}.interior.drawers.finish`, column: i, floor: j, reason: `${where}: מגירות פנימיות — הגימור לא נראה` });
+      }
+      if (it.type === 'shelves' && fl.length > 1 && Array.isArray(it.shelves?.gaps) && it.shelves.gaps.some((g) => g !== null)) out.push({ path: `${at}.interior.shelves.gaps`, column: i, floor: j, reason: `${where}: גובה לכל תא — בינתיים רק בעמודה בלי קומות` });
+    });
+  });
+  return out;
+}
 
 /** units שנשמרו בפרויקט — רק אם הם במבנה תקין ובמספר העמודות הנוכחי. */
 function validUnits(u, n) {
@@ -383,6 +455,7 @@ export function migrateUnits(v, layout, geo) {
     if (want > 0 && !lower) unit.splitCancelled = want;
     const shelvesOf = (count, frontType, gaps) => ({ type: 'shelves', shelves: { count, gaps: gaps || null, material: shelfMatFor(frontType), mode: v.shelvesMode } });
     if (isGlassCol(i)) {
+      if (want > 0) unit.splitIgnored = want;   // הפיצול לא חל על עמודת ויטרינה מלאה — מסומן "לא בתוקף"
       unit.floors.push({ height: null, front: legacyFront(v, 'glass'), interior: shelvesOf(total, 'glass', c.gaps) });
     } else if (lower) {
       const y1c = geo.colY1(i);
