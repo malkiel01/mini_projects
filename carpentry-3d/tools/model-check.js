@@ -25,6 +25,7 @@ import legacyBed from '../assets/js/model/templates/bed.js';
 import legacyTable from '../assets/js/model/templates/table.js';
 import legacyDresser from '../assets/js/model/templates/dresser.js';
 import legacyBookcase from '../assets/js/model/templates/legacy/bookcase-v1.js';
+import legacyWardrobe from '../assets/js/model/templates/legacy/wardrobe-v1.js';
 import { visible, splitOverrides, joinOverrides } from '../assets/js/model/index.js';
 import { suggest, applySuggestion } from '../assets/js/model/suggest.js';
 import { millSpec, fluteGrooves, fluteRib, millRects, millSolids, millRemoved, millText, millEdges, cncPatterns } from '../assets/js/model/milling.js';
@@ -1388,6 +1389,92 @@ console.log('שלב 5: עובי מהחומר, עמודה חדשה');
   check(add('last').floors[0].front.type === 'wood' && add().floors[0].front.type === 'wood', 'ברירת מחדל: העתק של האחרונה');
   check(add('open').floors[0].front.type === 'none' && add('glass').floors[0].front.type === 'glass' && add('glass').floors.length === 1, 'פתוחה / ויטרינה — קומה אחת');
   check(add('glass').floors[0].front.material === u[2].floors[0].front.material && add('glass').width === null, 'פרטי החזית מהאחרונה, רוחב אוטומטי');
+}
+
+console.log('שלב 6: ארון בגדים לפי עמודה וקומה — המרה זהה לבנייה הישנה');
+{
+  const norm = (o) => JSON.parse(JSON.stringify(o, (k, val) => (typeof val === 'number' ? Math.round(val * 1e6) / 1e6 : val)));
+  const sortKeys = (o) => (Array.isArray(o) ? o.map(sortKeys) : o && typeof o === 'object' ? Object.fromEntries(Object.keys(o).sort().filter((k) => o[k] !== undefined).map((k) => [k, sortKeys(o[k])])) : o);
+  const span = (w) => /^מדף ברוחב/.test(w), thick = (w) => /שונה מעובי החומר/.test(w);
+  const pick = (r, dropSpan) => sortKeys(norm({ parts: r.parts, hardware: r.hardware, warnings: r.warnings.filter((w) => !thick(w) && !(dropSpan && span(w))), bounds: r.bounds }));
+  TEMPLATES['legacy-wardrobe'] = { ...legacyWardrobe, key: 'legacy-wardrobe' };
+  let seed = 23;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const one = (arr) => arr[Math.floor(rnd() * arr.length)];
+  let same = 0, spanOnly = 0, roundtrip = 0, diff = null, rdiff = null, tried = 0;
+  for (let n = 0; n < 500; n++) {
+    const v = {};
+    for (const p of allParams(legacyWardrobe)) {
+      if (p.type === 'json') continue;
+      if (['mm', 'int', 'deg'].includes(p.type)) v[p.key] = n === 0 ? p.default : Math.round(p.min + rnd() * (p.max - p.min));
+      else { const o = optionsFor(p); if (o.length) v[p.key] = o[Math.floor(rnd() * o.length)].id; }
+    }
+    v.columns = 1 + Math.floor(rnd() * 5); v.width = 900 + Math.round(rnd() * 3000); v.height = 1800 + Math.round(rnd() * 1000);
+    v.hangingColumns = Math.floor(rnd() * (v.columns + 1)); v.drawersPerColumn = one([0, 0, 1, 2, 3]); v.shelvesPerColumn = Math.floor(rnd() * 7);
+    v.doorType = one(['none', 'wood', 'sliding']);
+    if (n % 2) {
+      const pin = (lo, hi) => (rnd() < 0.5 ? null : Math.round(lo + rnd() * (hi - lo)));
+      const cols = {};
+      for (let i = 0; i < v.columns; i++) {
+        const c = {};
+        if (rnd() < 0.4) c.shelves = Math.floor(rnd() * 6);
+        if (rnd() < 0.3) c.height = Math.round(v.height * (0.6 + rnd() * 0.4));
+        if (rnd() < 0.3) { const k = (c.shelves ?? v.shelvesPerColumn) + 1; c.gaps = Array.from({ length: k }, () => pin(100, 400)); }
+        if (Object.keys(c).length) cols[i] = c;
+      }
+      v.columnsLayout = { widths: Array.from({ length: v.columns }, () => pin(300, 900)), cols };
+    }
+    const a = build('legacy-wardrobe', v), b = build('wardrobe', v);
+    if (!a.parts.every((p) => p.box.w > 0 && p.box.h > 0 && p.box.d > 0)) continue;
+    tried += 1;
+    if (JSON.stringify(pick(a)) === JSON.stringify(pick(b))) same += 1;
+    else if (JSON.stringify(pick(a, true)) === JSON.stringify(pick(b, true))) spanOnly += 1;   // אזהרת מפתח המדף — לפי המדפים שבאמת יש
+    else if (!diff) diff = { a: pick(a), b: pick(b), v };
+    const c = build('wardrobe', { ...v, units: b.units });
+    if (JSON.stringify(pick(c)) === JSON.stringify(pick(b))) roundtrip += 1; else if (!rdiff) rdiff = { b: pick(b), c: pick(c) };
+  }
+  for (const [d, x, y] of [[diff, 'a', 'b'], [rdiff, 'b', 'c']]) {
+    if (!d) continue;
+    const A = JSON.stringify(d[x]), B = JSON.stringify(d[y]);
+    let i = 0; while (A[i] === B[i]) i += 1;
+    console.error(`    שונה ב: …${A.slice(Math.max(0, i - 160), i + 80)}\n    מול: …${B.slice(Math.max(0, i - 160), i + 80)}`);
+    if (d.v) console.error('    ערכים:', JSON.stringify(d.v).slice(0, 700));
+  }
+  check(!diff && same + spanOnly === tried && tried > 300, `${same} תצורות זהות לחלוטין, ${spanOnly} שונות רק באזהרת מפתח המדף, מתוך ${tried}`);
+  check(!rdiff && roundtrip === tried, `הלוך-חזור: ${roundtrip} — units שמורים בונים אותו דבר`);
+  delete TEMPLATES['legacy-wardrobe'];
+
+  // יכולות חדשות: מגירות מאחורי דלת (פנימיות), שתי קומות דלתות, תלייה כפולה
+  const base = { columns: 2, width: 1200, height: 2400, depth: 600 };
+  const u0 = build('wardrobe', base).units;
+  const fr = (type) => ({ ...u0[0].floors[0].front, type });
+  const units = [
+    { width: null, height: null, floors: [
+      { height: 700, front: fr('wood'), interior: { type: 'drawers', drawers: { count: 3, handle: 'hw:handle-bar-128' } } },
+      { height: null, front: fr('wood'), interior: { type: 'hanging', hanging: { topShelf: true } } }] },
+    { width: null, height: null, floors: [
+      { height: 950, front: fr('none'), interior: { type: 'hanging', hanging: { topShelf: false } } },
+      { height: null, front: fr('none'), interior: { type: 'hanging', hanging: { topShelf: false } } }] },
+  ];
+  const r = build('wardrobe', { ...base, units });
+  const ids = r.parts.map((p) => p.id), hw = r.hardware.map((h) => h.id);
+  check(allFinite(r.parts), 'גאומטריה סופית');
+  check(ids.includes('door-1-f1') && ids.includes('door-1-f2') && ids.filter((x) => /^drawer-1-\d$/.test(x)).length === 3, 'שתי דלתות בעמודה 1 (door-1-f1/f2), 3 מגירות');
+  const d1 = r.parts.find((p) => p.id === 'drawer-1-1'), door1 = r.parts.find((p) => p.id === 'door-1-f1');
+  check(d1.box.z + d1.box.d <= door1.box.z && !hw.includes('drawer-1-1-handle') && /פנימית/.test(d1.note), 'מגירות מאחורי הדלת — פנימיות, בלי ידית');
+  check(r.inactive.some((x) => x.path === 'units.0.floors.0.interior.drawers.handle'), '"לא בתוקף": ידית למגירה פנימית');
+  check(hw.includes('rod-2-f1') && hw.includes('rod-2-f2') && ids.some((x) => /^split1-shelf-2-/.test(x)), 'תלייה כפולה: שני מוטות ומדף קבוע ביניהם');
+  check(r.warnings.some((w) => /עמודה 2: גובה תלייה/.test(w)), 'תלייה נמוכה — אזהרה');
+  // הזזה: החזיתות לא חלות
+  const s = build('wardrobe', { ...base, units, slidingDoors: 'yes' });
+  check(!s.parts.some((p) => /^door-/.test(p.id)) && s.parts.some((p) => /^sliding/.test(p.id)) && s.inactive.some((x) => /דלתות ההזזה/.test(x.reason)), 'דלתות הזזה: בלי דלתות קומה, "לא בתוקף" על החזית');
+  check(TEMPLATES.wardrobe.migrate({ doorType: 'sliding' }).slidingDoors === 'yes' && TEMPLATES.wardrobe.migrate({ doorType: 'wood' }).slidingDoors === 'no', 'המרה: doorType=sliding → דלתות הזזה');
+  // מזהים → קומה
+  const loc = (id) => JSON.stringify(TEMPLATES.wardrobe.locate(id, units));
+  check(loc('drawer-1-2') === '{"unit":0,"floor":0}' && loc('door-1-f2') === '{"unit":0,"floor":1}' && loc('rod-2-f2') === '{"unit":1,"floor":1}', 'locate: מגירה, דלת ומוט לקומה הנכונה');
+  // עמודה חדשה
+  const add = (newUnit) => build('wardrobe', { ...base, columns: 3, units, newUnit }).units[2];
+  check(add('hanging').floors[0].interior.type === 'hanging' && add('drawers').floors[0].interior.type === 'drawers' && add('last').floors.length === 2, 'עמודה חדשה: תלייה / מגירות / העתק');
 }
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }
