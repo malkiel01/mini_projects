@@ -28,6 +28,8 @@ import { part, door, carcass, partitions, drawer, back, plinth } from './blocks.
 import { addWheels, applyFinish, LIMITS, FINISHES, FINISHES_NO_GLASS, FINISHES_FLUSH } from './templates/common.js';
 import { resolveShares, sectionLayout, effectivePins } from './layout.js';
 import { material } from './materials.js';
+import { unitsInterior, unitsFronts, locateUnitPart } from './units-engine.js';
+import { newUnitOf } from './templates/bookcase.js';
 import { evaluate, evalNum, evalBool, interpolate, compile, ExprError } from './expr.js';
 
 export const RECIPE_PREFIX = 'r-';
@@ -153,6 +155,41 @@ export const BLOCKS = {
       ctx.parts.push(...res.parts.map((p) => (dx ? { ...p, box: { ...p.box, x: p.box.x + dx } } : p)));
     },
   },
+  // עמודות וקומות (שלב 7): המנוע של הספרייה — מחיצות, ולכל עמודה קומות עם חזית
+  // (ללא / דלת עץ / ויטרינה) ותוכן (מדפים / מגירות / ריק). הנגר עורך בכרטיסים
+  // (פרמטר מסוג "עמודות וקומות"), עם המלצות, "לא בתוקף" וכפתור מהתלת מימד.
+  units: {
+    name: 'עמודות וקומות (כרטיסים)', out: '<מזהה>_colW (רוחב עמודה ממוצע)',
+    fields: [F('x0', 'פנים x0'), F('x1', 'פנים x1'), F('y0', 'פנים y0 (פני הרצפה)'), F('y1', 'פנים y1 (תקרה)'), F('z0', 'פנים z0 (מול הגב)'), F('z1', 'פנים z1'),
+      F('W', 'רוחב חיצוני (הגוף מ-x=0)'), F('D', 'z החזית'), F('frontY0', 'תחתית החזית התחתונה'), F('frontY1', 'ראש החזית העליונה'),
+      F('columns', 'עמודות'), F('t', 'עובי מחיצה'), F('shelfT', 'עובי מדף'), F('shelves', 'מדפים בעמודה (ברירת מחדל)'),
+      F('unitsParam', 'פרמטר הכרטיסים (מפתח)', 'text'), F('innerMaterial', 'חומר מחיצות', 'mat'), F('shelfMaterial', 'חומר מדפים', 'mat'), F('doorMaterial', 'חומר דלתות (ברירת מחדל)', 'mat'),
+      F('handle', 'ידית (ברירת מחדל)', 'mat'), F('hinge', 'ציר (ברירת מחדל)', 'mat')],
+    run(a, ctx) {
+      const n = Math.max(1, Math.round(a.num('columns')));
+      const inner = { x0: a.num('x0'), x1: a.num('x1'), y0: a.num('y0'), y1: a.num('y1'), z0: a.num('z0'), z1: a.num('z1') };
+      const shelfT = a.num('shelfT', 18), sideT = a.num('t', 18), topY = a.num('frontY1');
+      const doorMat = a.mat('doorMaterial') || 'board:mdf-paint-18', shelfMat = a.mat('shelfMaterial') || a.mat('innerMaterial') || doorMat;
+      const key = a.text('unitsParam');
+      const fresh = () => ({ width: null, height: null, floors: [{ height: null,
+        front: { type: 'none', leaves: 'auto', material: doorMat, finish: 'flat', glass: 'glass:clear-4', hinge: a.mat('hinge') || 'hw:hinge-110', handle: a.mat('handle') || 'hw:handle-bar-128', hingeSide: 'auto',
+          vitrine: { frame: 'wood', sides: '4', frameW: 60, profile: 'flat', mullions: 'none', frameMaterial: 'same', alu: 'profile:alu-black' } },
+        interior: { type: 'shelves', shelves: { count: Math.max(0, Math.round(a.num('shelves', 3))), gaps: null, material: 'same', mode: 'adjustable' } } }] });
+      // הכרטיסים שנשמרו (פרמטר json); מספר עמודות שהשתנה — העתק של האחרונה / חיתוך
+      const saved = ctx.values?.[key];
+      let units = Array.isArray(saved) && saved.length && saved.every((u) => u && Array.isArray(u.floors) && u.floors.length) ? saved.slice(0, n) : Array.from({ length: n }, fresh);
+      while (units.length < n) units.push(newUnitOf(units[units.length - 1], 'last'));
+      const o = { units, columns: n, inner, W: a.num('W'), D: a.num('D'), sideT, shelfT, bottomY: inner.y0, topY, tops: units.map(() => topY), stepped: false, colY1: () => inner.y1,
+        z0: inner.z0, z1: inner.z1, innerMat: a.mat('innerMaterial') || shelfMat, shelfMat, sidesOverTop: true, shelvesMode: 'adjustable', led: 'none',
+        plinthH: a.num('frontY0'), doorMaterial: doorMat, limits: LIMITS };
+      const ec = { parts: ctx.parts, hardware: ctx.hardware, warnings: ctx.warnings };
+      const { cols, floorsOf } = unitsInterior(ec, o);
+      unitsFronts(ec, o, cols, floorsOf);
+      const unitGeo = cols.cols.map((c, i) => { const { fl, b } = floorsOf(i); return { width: c.x1 - c.x0, height: topY - a.num('frontY0'), floors: fl.map((_, j) => (j === fl.length - 1 ? topY : b[j + 1]) - b[j]) }; });
+      ctx.setUnits({ units, unitGeo, key });
+      ctx.out({ colW: cols.colW });
+    },
+  },
   plinth: {
     name: 'סוקל', out: '',
     fields: [F('x0', 'x0'), F('x1', 'x1'), F('h', 'גובה'), F('setback', 'נסיגה'), F('t', 'עובי'), F('d', 'עומק הגוף'), F('material', 'חומר', 'mat'), F('prefix', 'קידומת מזהים', 'text')],
@@ -211,6 +248,7 @@ export function runRecipe(r, v) {
   const scope = baseScope(r, v, fail);
   const matOf = (m) => (m && Object.prototype.hasOwnProperty.call(v, m) ? v[m] : m);
   const ids = new Set();
+  let unitsInfo = null;   // מאבן "עמודות וקומות" — לכרטיסים בטופס
   for (const [ci, c] of (r.components || []).entries()) {
     if (!c) continue;
     const label = `רכיב ${c.name || c.id || ci + 1}`;
@@ -231,7 +269,7 @@ export function runRecipe(r, v) {
         ids.add(id);
         const name = interpolate(c.name || baseId, s);
         if (BLOCKS[c.kind]) {
-          BLOCKS[c.kind].run(blockArgs(c, s, matOf), { parts, hardware, id, name, out: (o) => { for (const [k, val] of Object.entries(o)) scope[`${outName(baseId)}_${k}`] = val; } });
+          BLOCKS[c.kind].run(blockArgs(c, s, matOf), { parts, hardware, warnings, values: v, setUnits: (u) => { unitsInfo = u; }, id, name, out: (o) => { for (const [k, val] of Object.entries(o)) scope[`${outName(baseId)}_${k}`] = val; } });
           continue;
         }
         const box = { x: evalNum(c.x || 0, s), y: evalNum(c.y || 0, s), z: evalNum(c.z || 0, s), w: evalNum(c.w || 0, s), h: evalNum(c.h || 0, s), d: evalNum(c.d || 0, s) };
@@ -292,7 +330,7 @@ export function runRecipe(r, v) {
   // גבולות מפורשים (רשות) — כשהמוצר "תופס" יותר מהחלקים (למשל מזרן)
   if (r.bounds) for (const k of ['w', 'h', 'd']) if (r.bounds[k] && String(r.bounds[k]).trim()) { try { bounds[k] = evalNum(r.bounds[k], scope); } catch (e) { fail(`גבולות ${k}`, e); } }
   for (const e of errors) warnings.push(`שגיאה במתכון — ${e.where}: ${e.message}`);
-  return { parts, hardware, warnings, errors, bounds, scope };
+  return { parts, hardware, warnings, errors, bounds, scope, ...(unitsInfo ? { units: unitsInfo.units, unitGeo: unitsInfo.unitGeo, inactive: [] } : {}) };
 }
 
 /** מתכון → תבנית רגילה. */
@@ -303,6 +341,9 @@ export function recipeTemplate(r) {
     recipe: r, params,
     build(v) { const { scope, ...out } = runRecipe(r, v); return out; },
   };
+  // אבן "עמודות וקומות": כפתור "⚙️ הגדרות הקומה" מהתלת מימד — אותם מזהים כמו בספרייה
+  // בכרטיס: בלי גובה לעמודה (האבן בונה גובה אחיד) ובלי "＋ עמודה" (מספר העמודות — פרמטר של המתכון, בכל שם)
+  if ((r.components || []).some((c) => c && c.kind === 'units')) { t.locate = locateUnitPart; t.unitsSpec = { unitHeight: false, addColumns: false }; }
   // עורך החלוקה (form.js): לכל חלוקה עם כותרת — קבוצה עם הסכום והפריטים
   const eds = (r.layouts || []).filter((L) => L && L.title);
   if (eds.length) {
@@ -385,6 +426,38 @@ export function newRecipeKey() {
   let k;
   do k = RECIPE_PREFIX + Math.random().toString(36).slice(2, 8); while (REG[k]);
   return k;
+}
+
+/**
+ * מתכון לדוגמה — ספרייה מודולרית: גוף, "עמודות וקומות" (כרטיסים לכל עמודה וקומה),
+ * גב וסוקל. נקודת התחלה למוצר עם עמודות — הנגר עורך כל עמודה בכרטיס.
+ */
+export function modularRecipe(key = newRecipeKey()) {
+  return {
+    key, name: 'ספרייה מודולרית (דוגמה)', description: 'גוף ועמודות; לכל עמודה קומות עם דלת / ויטרינה / מגירות — בכרטיסים', laborHours: 6,
+    params: [
+      { key: 'W', label: 'רוחב', type: 'mm', default: 1600, min: 400, max: 4000, group: 'מידות' },
+      { key: 'H', label: 'גובה', type: 'mm', default: 2000, min: 400, max: 3000, group: 'מידות' },
+      { key: 'D', label: 'עומק', type: 'mm', default: 380, min: 200, max: 700, group: 'מידות' },
+      { key: 'plinthH', label: 'סוקל', type: 'mm', default: 80, min: 0, max: 200, group: 'מידות' },
+      { key: 'cols', label: 'עמודות', type: 'int', default: 4, min: 1, max: 8, group: 'חלוקה' },
+      { key: 'units', label: 'עמודות וקומות', type: 'json', editor: 'units', group: 'חלוקה' },
+      { key: 'body', label: 'חומר הגוף', type: 'material', use: 'body', default: 'board:melamine-oak-18', group: 'חומרים' },
+      { key: 'fronts', label: 'חומר הדלתות', type: 'material', use: 'body', default: 'board:mdf-paint-18', group: 'חומרים' },
+      { key: 'backMat', label: 'חומר הגב', type: 'material', use: 'back', default: 'board:back-hdf-6', group: 'חומרים' },
+      { key: 'handle', label: 'ידיות', type: 'material', use: 'handle', default: 'hw:handle-bar-128', group: 'חומרים' },
+    ],
+    vars: [{ name: 'T', expr: 'body_t' }],
+    components: [
+      { id: 'body', name: 'גוף', kind: 'carcass', a: { w: 'W', d: 'D', z: '0', bottomY: 'plinthH + T', topY: 'H', sideT: 'T', panelT: 'T', sidesOverTop: '1', material: 'body' } },
+      { id: 'cols', name: 'עמודות', kind: 'units', a: { x0: 'body_x0', x1: 'body_x1', y0: 'body_y0', y1: 'body_y1', z0: 'body_z0 + 16', z1: 'body_z1', W: 'W', D: 'D', frontY0: 'plinthH', frontY1: 'H',
+        columns: 'cols', t: 'T', shelfT: 'T', shelves: '3', unitsParam: 'units', innerMaterial: 'body', shelfMaterial: 'body', doorMaterial: 'fronts', handle: 'handle' } },
+      { id: 'back', name: 'גב', kind: 'back', a: { mode: "'groove'", w: 'W', y0: 'plinthH', y1: 'H', ix0: 'body_x0', ix1: 'body_x1', iy0: 'body_y0', iy1: 'body_y1', t: 'backMat_t', grooveDepth: '8', inset: '10', material: 'backMat' } },
+      { id: 'plinth', name: 'סוקל', kind: 'plinth', a: { x0: 'body_x0', x1: 'body_x1', h: 'plinthH', setback: '30', t: 'T', d: 'D', material: 'body' }, when: 'plinthH > 0' },
+    ],
+    hardware: [],
+    warnings: [{ when: 'H > 2200', text: 'גובה {H} — מומלץ עיגון לקיר' }],
+  };
 }
 
 /**

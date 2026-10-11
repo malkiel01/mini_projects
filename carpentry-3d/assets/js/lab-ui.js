@@ -16,7 +16,7 @@ import { applyRules, activeRules, originalOf, originalLimits, describeShowIf, LI
 import { LIMITS } from './model/templates/common.js';
 import { createViewer } from './viewer.js';
 import { api } from './store.js';
-import { registerRecipes, recipeTemplate, starterRecipe, newRecipeKey, RECIPE_PREFIX, isBuiltinKey, builtinTemplate, BUILTIN_RECIPES } from './model/recipe.js';
+import { registerRecipes, recipeTemplate, starterRecipe, modularRecipe, newRecipeKey, RECIPE_PREFIX, isBuiltinKey, builtinTemplate, BUILTIN_RECIPES } from './model/recipe.js';
 import { createRecipeEditor } from './recipe-ui.js';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -225,6 +225,7 @@ export function createLabUI(root, { onChange, onError, toast, requestClose }) {
       + '<h4 class="lab__lhead">מוצרים מנוסחאות</h4>'
       + shown.map(rcard).join('')
       + '<button type="button" class="btn btn--small lab__new" data-new-recipe="starter">＋ מוצר חדש (מדוגמה)</button>'
+      + '<button type="button" class="btn btn--small lab__new" data-new-recipe="modular">＋ ספרייה מודולרית (עמודות וקומות)</button>'
       + '<button type="button" class="btn btn--small lab__new" data-new-recipe="blank">＋ מוצר ריק</button>'
       + '<p class="muted lab__note">שינוי חל על פרויקטים חדשים ועל ברירות המחדל. פרויקט קיים שומר את הערכים שלו. "מוסתר" — הנגר לא רואה את השדה, והמוצר תמיד נבנה עם ברירת המחדל.</p>';
   }
@@ -233,7 +234,7 @@ export function createLabUI(root, { onChange, onError, toast, requestClose }) {
     if (nb) {
       if (!leaveRecipe()) return;
       const key = newRecipeKey();
-      openRecipe(nb.dataset.newRecipe === 'starter' ? starterRecipe(key) : {
+      openRecipe(nb.dataset.newRecipe === 'starter' ? starterRecipe(key) : nb.dataset.newRecipe === 'modular' ? modularRecipe(key) : {
         key, name: 'מוצר חדש', description: '', laborHours: 2, active: true,
         params: [{ key: 'W', label: 'רוחב', type: 'mm', default: 600, min: 100, max: 3000, group: 'מידות' }, { key: 'D', label: 'עומק', type: 'mm', default: 400, min: 100, max: 1000, group: 'מידות' },
           { key: 'body', label: 'חומר', type: 'material', use: 'board', default: 'board:melamine-white-18', group: 'חומרים' }],

@@ -16,7 +16,7 @@ function edgeSet(e) {
   return new Set(String(e).split(',').map((x) => x.trim()));
 }
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-const TYPES = { mm: 'מ"מ', int: 'מספר שלם', deg: 'מעלות', enum: 'בחירה מרשימה', material: 'חומר', json: 'עריכת חלוקה (עמודות/שורות)' };
+const TYPES = { mm: 'מ"מ', int: 'מספר שלם', deg: 'מעלות', enum: 'בחירה מרשימה', material: 'חומר', json: 'עריכה (חלוקה / עמודות וקומות)' };
 const KINDS = { board: 'לוח', door: 'דלת (עם צירים)', ...Object.fromEntries(Object.entries(BLOCKS).map(([k, b]) => [k, `אבן: ${b.name}`])) };
 const BLANK = {
   params: () => ({ key: 'p' + Math.random().toString(36).slice(2, 5), label: 'פרמטר חדש', type: 'mm', default: 100, min: 0, max: 1000, group: 'כללי' }),
@@ -103,7 +103,7 @@ export function createRecipeEditor(side, table, { onChange, onSave, onDelete, on
           <div class="rrow">${lbl('סוג', sel(`params.${i}.type`, p.type, TYPES))}
           ${p.type === 'material' ? lbl('סוג חומר', sel(`params.${i}.use`, p.use || 'board', Object.fromEntries(Object.entries(MATERIAL_USES).map(([k, u]) => [k, u.name]))))
             + lbl('ברירת מחדל (מזהה)', tx(`params.${i}.default`, p.default, 'board:…', 'dir="ltr"'))
-          : p.type === 'json' ? '<span class="muted rf">רוחב/גובה לכל פריט — נערך בעורך החלוקה; מוגדר ב"חלוקות"</span>'
+          : p.type === 'json' ? lbl('עורך', sel(`params.${i}.editor`, p.editor || 'columns', { columns: 'חלוקה — רוחב/גובה לכל פריט (ב"חלוקות")', units: 'עמודות וקומות — כרטיסים (לאבן "עמודות וקומות")' }), 'rwide')
           : p.type === 'enum' ? lbl('ברירת מחדל', tx(`params.${i}.default`, p.default, 'id', 'dir="ltr"')) + lbl('רשימה', sel(`params.${i}.source`, p.source || '', { '': 'קבועה (למטה)', ...Object.fromEntries(Object.entries(OPTION_SOURCES).map(([k, o]) => [k, o.name])) }))
           : lbl('ברירת מחדל', `<input type="number" data-num="1" data-path="params.${i}.default" value="${esc(p.default)}">`) + lbl('מינ׳', `<input type="number" data-num="1" data-path="params.${i}.min" value="${esc(p.min)}">`) + lbl('מקס׳', `<input type="number" data-num="1" data-path="params.${i}.max" value="${esc(p.max)}">`)}
           ${lbl('קבוצה', tx(`params.${i}.group`, p.group || ''))}</div>
