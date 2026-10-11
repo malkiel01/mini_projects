@@ -949,11 +949,13 @@ function cutListOne(m) {
     .map((r) => `<tr><td>${esc(r.name)}</td><td>${r.qty}</td><td dir="ltr">${r.l} × ${r.w}</td><td>${r.t}</td><td>${esc(r.material)}</td><td>${esc(r.edges)}</td><td>${esc(r.note || '')}</td></tr>`)
     .join('');
   const glass = cl.glass.map((g) => `<tr><td>${esc(g.name)}</td><td>${g.qty}</td><td dir="ltr">${g.l} × ${g.w}</td><td>${g.t}</td></tr>`).join('');
+  const profiles = (cl.profiles || []).map((g) => `<tr><td>${esc(g.name)}</td><td>${esc(g.material)}</td><td>${g.qty}</td><td dir="ltr">${g.l}</td><td dir="ltr">${g.w}</td></tr>`).join('');
   const hwRows = hw.map((h) => `<tr><td>${esc(h.name)}</td><td>${h.qty}</td></tr>`).join('');
   const area = cl.boards.reduce((s, r) => s + r.qty * r.l * r.w, 0) / 1e6;
   return `
     <h3>רשימת חיתוך <small>${cl.boards.reduce((s, r) => s + r.qty, 0)} לוחות · ${area.toFixed(2)} מ"ר נטו</small></h3>
     <table><thead><tr><th>חלק</th><th>כמות</th><th>אורך × רוחב</th><th>עובי</th><th>חומר</th><th>קנט</th><th>הערה</th></tr></thead><tbody>${rows}</tbody></table>
+    ${profiles ? `<h3>פרופילים</h3><table><thead><tr><th>חלק</th><th>פרופיל</th><th>כמות</th><th>אורך</th><th>רוחב נראה</th></tr></thead><tbody>${profiles}</tbody></table><p class="muted">אורך חיצוני; בפינות — חיתוך 45°.</p>` : ''}
     ${glass ? `<h3>זכוכית</h3><table><thead><tr><th>סוג</th><th>כמות</th><th>מידה</th><th>עובי</th></tr></thead><tbody>${glass}</tbody></table>` : ''}
     ${hwRows ? `<h3>פרזול</h3><table><thead><tr><th>פריט</th><th>כמות</th></tr></thead><tbody>${hwRows}</tbody></table>` : ''}
     <p class="muted">האורך הוא בכיוון הסיבים. מידות אחרי הורדת הקנט כשנבחר "יורדת מהמידה".</p>`;
@@ -967,7 +969,7 @@ function drawingsHtml(m) {
 const ils = (v) => `₪${Number(v).toLocaleString('he-IL', { maximumFractionDigits: 0 })}`;
 function priceOne(m) {
   const e = estimate(m, state.rates);
-  const groups = ['לוחות', 'זכוכית', 'קנט', 'פרזול', 'עיבוד CNC'];
+  const groups = ['לוחות', 'זכוכית', 'פרופילים', 'קנט', 'פרזול', 'עיבוד CNC'];
   const rows = groups.flatMap((g) => e.lines.filter((l) => l.group === g).map((l) =>
     `<tr><td>${g}</td><td>${esc(l.name)}${l.mine ? ' <span class="tag">המחיר שלי</span>' : ''}</td><td dir="ltr">${l.qty} ${l.unit}</td><td>${ils(l.unitPrice)}</td><td>${ils(l.total)}</td><td class="muted">${esc(l.note || '')}</td></tr>`)).join('');
   return `
@@ -1043,6 +1045,7 @@ function downloadCsv(m) {
     const cl = cutList(mm);
     for (const r of cl.boards) lines.push([r.name, r.qty, r.l, r.w, r.t, r.material, r.edges, r.note || '', label]);
     for (const g of cl.glass) lines.push([g.name, g.qty, g.l, g.w, g.t, 'זכוכית', '', '', label]);
+    for (const g of cl.profiles || []) lines.push([g.name, g.qty, g.l, g.w, '', g.material, '', 'בפינות 45°', label]);
     for (const h of hardwareList(mm)) lines.push([h.name, h.qty, '', '', '', 'פרזול', '', '', label]);
   }
   lines.push([]); lines.push(['קידוחים: חלק', 'פאה', 'x מהקצה', 'y מהתחתית', 'קוטר', 'עומק', 'למה', '', 'אלמנט']);
