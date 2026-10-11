@@ -141,8 +141,17 @@ function showUserbar(user) {
         try { await api('logout', {}); } finally { csrf = null; start(); }
     });
     const role = user.role === 'admin' ? ' · מנהל' : '';
+    const actions = [logout];
+    if (user.role === 'admin') {
+        const inAdmin = location.hash === '#admin';
+        actions.unshift(el('a', {
+            href: inAdmin ? '#' : '#admin',
+            textContent: inAdmin ? '← לאפליקציות' : '⚙️ ניהול',
+        }));
+    }
     userbar.replaceChildren(el('div', { className: 'userbar' }, [
-        el('span', { textContent: `שלום, ${user.display_name}${role}` }), logout,
+        el('span', { textContent: `שלום, ${user.display_name}${role}` }),
+        el('span', { className: 'userbar-actions' }, actions),
     ]));
 }
 
@@ -214,6 +223,9 @@ async function start() {
             return showMessage('החשבון ממתין לאישור',
                 'נרשמתם בהצלחה. המנהל צריך לאשר את החשבון ולבחור אילו אפליקציות יוצגו לכם.');
         }
+        if (location.hash === '#admin' && me.user.role === 'admin') {
+            return await window.PlatformAdmin.show(view);
+        }
         await showApps();
     } catch (err) {
         view.replaceChildren(el('p', {
@@ -223,4 +235,8 @@ async function start() {
     }
 }
 
+// עזרים משותפים ל-admin.js.
+window.Platform = { el, api, showMessage };
+
+window.addEventListener('hashchange', start);
 start();
