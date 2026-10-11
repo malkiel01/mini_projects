@@ -295,7 +295,7 @@ platform/
 | --- | --- |
 | offline | pdf-merger, sukkah-sketch, sketches-3d |
 | pwa (מזוהה לבד) | file-merger, recipes-app, renovation-punchlist, carpentry-3d |
-| apk | whatsapp-ai-scanner — דף ה-Release ב-GitHub (`wascanner-apk`) |
+| apk | whatsapp-ai-scanner, guarded-browser, greeting-cards — קישור הורדה ישיר מ-Release ב-GitHub (תגים `wascanner-apk`, `guarded-browser-apk`, `greeting-cards-apk`), שה-workflow של כל אחד מעדכן בכל בנייה מ-main |
 | store | אין עדיין — המתכונים (`com.mbeplus.recipes`) יקבלו קישור כשיפורסמו |
 
 ## הוכרע בדרך

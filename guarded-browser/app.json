@@ -13,5 +13,8 @@
   "gate": true,
   "public": [
     "api/index.php?do=register|login|policy|check|trace|heartbeat"
-  ]
+  ],
+  "install": {
+    "apk": "https://github.com/malkiel01/mini_projects/releases/download/guarded-browser-apk/app-debug.apk"
+  }
 }
