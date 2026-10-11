@@ -4,5 +4,6 @@
   "icon": "🗄️",
   "description": "כלי ניתוח וניהול מסדי נתונים MySQL - צפייה במבנה, תוכן, קשרים בין טבלאות (רשימה ותרשים ויזואלי), הוספה/מחיקה של שורות ועמודות, וייצוא ל-JSON.",
   "category": "dev",
-  "entry": "index.html"
+  "entry": "index.html",
+  "gate": true
 }
