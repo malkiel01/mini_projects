@@ -19,6 +19,7 @@ import { createMaterialsUI } from './materials-ui.js';
 import { createAccessoriesUI } from './accessories-ui.js';
 import { createCncUI } from './cnc-ui.js';
 import { createLabUI } from './lab-ui.js';
+import { setUnitsModel, openUnit } from './units-ui.js';
 import { applyRules } from './model/rules.js';
 import { registerRecipes } from './model/recipe.js';
 import { api, loadLast, saveLast } from './store.js';
@@ -524,6 +525,7 @@ function rebuild(reframe = false) {
   if (!state.project) return;
   model = build(state.project.template_key, state.values);
   Object.assign(state.values, model.values);
+  setUnitsModel(model);   // כרטיסי העמודות מציגים רוחב/גובה מחושבים ו"לא בתוקף"
   form.sync(model.values);
   viewer.setModel(model);
   // ממסגרים מחדש בטעינה, וגם כשהמידות השתנו בהרבה (למשל גובה 2000 → 2600) — אחרת המודל יוצא מהמסך.
@@ -605,6 +607,14 @@ function onShowHidden(e) {
 }
 $('#summary').addEventListener('click', onShowHidden);
 $('#part').addEventListener('click', onShowHidden);
+// "⚙️ הגדרות הקומה" — עוברים לטופס (בטלפון: ללשונית) ופותחים את כרטיס העמודה/הקומה
+$('#part').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-open-unit]');
+  if (!b) return;
+  const i = Number(b.dataset.openUnit), j = b.dataset.openFloor === '' ? null : Number(b.dataset.openFloor);
+  if (window.matchMedia('(max-width: 860px)').matches) document.querySelector('.tabs button[data-tab="form"]')?.click();
+  setTimeout(() => openUnit(i, j), 60);
+});
 
 let shownPart = null;
 /**
@@ -733,7 +743,10 @@ function partEditor(p) {
     const attr = `data-rl="${esc(JSON.stringify({ layout: it.layout, col: it.col, prop: it.prop, type: it.type }))}"`;
     return row(esc(it.label), paramControl({ type: it.type, options: it.options, min: it.min, max: it.max }, v, attr));
   }).filter(Boolean);
-  return `<details class="pedit" ${partEditor.open ? 'open' : ''} data-pedit="own"><summary>✏️ עריכת הרכיב הזה</summary>${out.join('')}</details>
+  // הרכיב שייך לעמודה/קומה — אותו כרטיס כמו בטופס (units-ui): חזית, תוכן, גובה…
+  const t0 = currentTemplate(), loc = t0.locate ? t0.locate(p.id, model.units) : null;
+  const unitBtn = loc && model.units ? `<button type="button" class="btn btn--small pedit__unit" data-open-unit="${loc.unit}" data-open-floor="${loc.floor ?? ''}">⚙️ הגדרות ${loc.floor !== null ? `הקומה — עמודה ${loc.unit + 1}${model.units[loc.unit]?.floors.length > 1 ? `, קומה ${loc.floor + 1}` : ''}` : `עמודה ${loc.unit + 1}`}</button>` : '';
+  return `${unitBtn}<details class="pedit" ${partEditor.open ? 'open' : ''} data-pedit="own"><summary>✏️ עריכת הרכיב הזה</summary>${out.join('')}</details>
     ${rel.length ? `<details class="pedit" ${partEditor.openRel ? 'open' : ''} data-pedit="rel"><summary>⚙️ הגדרות המוצר שנוגעות לרכיב</summary><p class="muted pedit__note">שינוי כאן חל על כל המוצר (או על כל השדה / העמודה), כמו בטופס.</p>${rel.join('')}</details>` : ''}`;
 }
 partEditor.open = true; partEditor.openRel = false;

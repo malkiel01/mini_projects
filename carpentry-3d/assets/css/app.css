@@ -992,3 +992,34 @@ input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner
 .redges label { display: inline-flex; align-items: center; gap: 3px; }
 .rgrid--block { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 @media (max-width: 860px) { .rgrid--block { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ---------- כרטיסי העמודה והקומה (units-ui.js) ---------- */
+.unitsedit { display: flex; flex-direction: column; gap: 6px; }
+.unit { border: 1px solid var(--line); border-radius: 12px; padding: 4px 10px 8px; background: var(--panel-2); }
+.unit > summary { cursor: pointer; font-size: 0.92rem; padding: 6px 0; list-style: none; }
+.unit > summary::-webkit-details-marker, .unit__floor > summary::-webkit-details-marker { display: none; }
+.unit__warn { color: var(--warn); }
+.unit__row { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0 8px; }
+.unit__floor { border: 1px solid var(--line); border-radius: 10px; padding: 2px 8px 8px; background: var(--panel); margin-top: 6px; }
+.unit__floor > summary { cursor: pointer; font-size: 0.86rem; font-weight: 600; padding: 6px 0; list-style: none; color: var(--accent-deep); }
+.unit__tools { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; padding-bottom: 6px; }
+.unit__btns { display: inline-flex; gap: 4px; margin-inline-start: auto; }
+.unit__btns button, .unit__cnt button { width: 30px; height: 30px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel); font: inherit; cursor: pointer; }
+.unit__btns button:disabled, .unit__cnt button:disabled { opacity: 0.35; cursor: default; }
+.unit__sec { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px 10px; padding: 6px 0; border-top: 1px dashed var(--line); }
+.unit__sec > b { grid-column: 1 / -1; font-size: 0.8rem; color: var(--muted); }
+.unit__sec > small { grid-column: 1 / -1; }
+.unit__f { display: flex; flex-direction: column; gap: 2px; font-size: 0.78rem; color: var(--muted); min-width: 0; position: relative; }
+.unit__f select, .unit__f input { padding: 6px 8px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel); font: inherit; font-size: 0.86rem; color: var(--ink, inherit); min-width: 0; width: 100%; box-sizing: border-box; }
+.unit__f > i { position: absolute; inset-inline-end: 8px; bottom: 8px; font-style: normal; font-size: 0.7rem; color: var(--muted); pointer-events: none; }
+.unit__f:has(.unit__off) > i { bottom: auto; top: 26px; }
+.unit__row .unit__f { flex: 1 1 140px; }
+.unit__cnt { display: inline-flex; align-items: center; gap: 8px; }
+.unit__cnt b { min-width: 1.5em; text-align: center; color: var(--ink, inherit); }
+.unit__off { display: block; color: var(--warn); font-size: 0.74rem; line-height: 1.35; padding-top: 2px; }
+.unit > .unit__off { padding: 0 0 6px; }
+.unit__add { margin-top: 8px; }
+.unit__hint { font-size: 0.78rem; margin: 2px 0 0; }
+.unit.is-flash, .unit__floor.is-flash { box-shadow: 0 0 0 3px var(--accent); transition: box-shadow 0.3s; }
+.pedit__unit { width: 100%; justify-content: center; margin-bottom: 6px; }
+
