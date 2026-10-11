@@ -1,0 +1,2 @@
+platform/data/*.sqlite*
+platform/lib/setup-code.php

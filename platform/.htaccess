@@ -1,0 +1,7 @@
+# הקוד של המעטפת נבדק מול השרת בכל טעינה — אחרת הטלפון מחזיק app.js ישן
+# ימים, ומסך שנפרס פשוט לא מופיע. מסתיים ב-304 כשלא השתנה דבר.
+<IfModule mod_headers.c>
+    <FilesMatch "\.(html|js|css)$">
+        Header set Cache-Control "no-cache, must-revalidate"
+    </FilesMatch>
+</IfModule>

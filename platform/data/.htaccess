@@ -1,0 +1,9 @@
+# platform.sqlite: המשתמשים, הסיסמאות (כ-hash) וההתחברויות. רק דרך api.php.
+# הקובץ אינו בגיט, ו-deploy.yml מחריג אותו — בלי זה פריסה מוחקת את המשתמשים.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>
