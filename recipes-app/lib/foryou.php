@@ -118,7 +118,7 @@ function aiTaste(int $uid): ?array {
             'picks' => json_decode($r['picks'], true) ?: [], 'updated_at' => $r['updated_at']];
 }
 
-/** "זה לא אני" — הלקוח מוחק את מה שלמדנו. */
+/** מחיקת מה שהניתוח היומי למד על לקוח (לבדיקות ולתחזוקה; כיבוי התאמה אישית מוחק בעצמו). */
 function aiTasteReset(int $uid): void {
     db()->prepare('DELETE FROM ai_taste WHERE user_id = ?')->execute([$uid]);
 }
@@ -448,7 +448,6 @@ function forYou(array $user, int $limit = 10): array {
         'needs_taste' => $personal && $taste === null && $signals < 3,
         'taste' => $taste ?? ['topics' => [], 'diet' => []],
         'season' => array_column($season, 'label'),
-        'ai' => $ai ? ['summary' => $ai['summary'], 'at' => $ai['updated_at']] : null,   // "מה למדנו עליך"
     ];
 }
 

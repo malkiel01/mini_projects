@@ -438,7 +438,7 @@ async function drawForYouRow(box) {
       ${d.items.map((it) => `
         <a class="fy-card" href="${esc(it.open)}" data-fy="${fyKey(it)}">
           <span class="fy-card__img">${it.thumb ? `<img src="${esc(it.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : (it.kind === 'web' ? '🌐' : '🍲')}</span>
-          <span class="fy-card__body"><strong>${esc(it.title)}</strong><span class="fy-card__why">${esc(it.reason)}</span></span>
+          <span class="fy-card__body"><strong>${esc(it.title)}</strong>${it.kind === 'reco' ? `<span class="fy-card__why">${esc(it.reason)}</span>` : ''}</span>
         </a>`).join('')}
     </div>`;
   box.addEventListener('click', fyClick);
@@ -467,11 +467,8 @@ async function renderForYou() {
     <section class="card fy-page">
       <a class="link link--back" href="#/">‹ לרשימה</a>
       <h2>✨ בשבילך</h2>
-      <p class="muted small">לפי מה שחיפשת, שמרת, בישלת ופתחת, מי שאתה עוקב אחריו${d.season.length ? `, ו${d.season.join(' ו')}` : ''}.
-        <button class="link link--inline" type="button" id="taste-open">🎯 מה אני אוהב</button></p>
-      ${d.personalize ? '' : '<p class="note note--warn small">ההתאמה האישית כבויה — מוצגים רק עונה ופופולרי. <a class="link link--inline" href="#/settings">להדליק ›</a></p>'}
-      ${d.ai?.summary ? `<p class="fy-ai small">🧠 <strong>מה למדנו עליך:</strong> ${esc(d.ai.summary)}
-        <button class="link link--inline" type="button" id="ai-reset" title="מוחק את מה שלמדנו; נלמד מחדש ממה שתעשה מעכשיו">זה לא אני — אפס</button></p>` : ''}
+      <p class="small"><button class="link link--inline" type="button" id="taste-open">🎯 מה אני אוהב</button></p>
+      ${d.personalize ? '' : '<p class="note note--warn small">ההתאמה האישית כבויה. <a class="link link--inline" href="#/settings">להדליק ›</a></p>'}
       <div id="taste-slot"></div>
     </section>
     <section class="list" id="fy-list">${d.items.length ? d.items.map((it) => `
@@ -480,10 +477,10 @@ async function renderForYou() {
           ? `<img class="item__thumb" src="${esc(it.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<span class="item__thumb item__thumb--empty">${it.kind === 'web' ? '🌐' : '🍲'}</span>`}</a>
         <a class="item__main" href="${esc(it.open)}" data-fy="${fyKey(it)}">
           <strong>${esc(it.title)}</strong>
-          <span class="fy-why">${esc(it.reason)}</span>
-          ${it.by && !it.reason.includes(it.by) ? `<span class="muted small">${it.kind === 'web' ? '🌐 ' : ''}${esc(it.by)}</span>` : ''}
+          ${it.kind === 'reco' ? `<span class="fy-why">${esc(it.reason)}</span>`
+            : it.by ? `<span class="muted small">${it.kind === 'web' ? '🌐 ' : ''}${esc(it.by)}</span>` : ''}
         </a>
-        ${it.kind !== 'reco' ? `<details class="actbar__more fy-more"><summary class="btn btn--ghost btn--small" aria-label="עוד">⋯</summary>
+        ${it.kind !== 'reco' ? `<details class="actbar__more fy-more"><summary class="btn btn--ghost btn--small" aria-label="פחות כאלה" title="פחות כאלה">👎</summary>
           <div class="more-menu">
             <button type="button" data-not="${fyKey(it)}">✕ לא מעניין</button>
             ${it.topic_id ? `<button type="button" data-less="${it.topic_id}">פחות ${esc(it.topic)}</button>` : ''}
@@ -503,10 +500,6 @@ async function renderForYou() {
     });
   };
   $('#taste-open').addEventListener('click', () => { if (slot.innerHTML) slot.innerHTML = ''; else openTaste(); });
-  $('#ai-reset')?.addEventListener('click', async () => {
-    if (!confirm('למחוק את מה שלמדנו עליך? ההמלצות יחזרו להיות כלליות, ונלמד מחדש ממה שתעשה מעכשיו.')) return;
-    try { await api('foryou-ai-reset'); renderForYou(); } catch (err) { alert(err.message); }
-  });
   if (d.needs_taste) openTaste();
 
   const list = $('#fy-list');
@@ -2417,8 +2410,7 @@ async function renderSettingsPrivate() {
             <option value="none">אף אחד</option>
           </select></label>
         <label class="check"><input type="checkbox" name="personalize"> התאמה אישית — המלצות לפי מה שאני מחפש, שומר ומבשל</label>
-        <p class="muted small">דלוקה: נרשם מה חיפשת, שמרת, פתחת והסרת, ופעם ביום ניתוח אוטומטי מסכם מה את/ה אוהב/ת
-          (רואים אותו ב"בשבילך"). כיבוי מוחק את כל מה שנרשם ונלמד.</p>
+        <p class="muted small">כיבוי מוחק את מה שנרשם.</p>
         <p class="note" id="privacy-msg" hidden></p>
       </form>
       <h4>אנשים שחסמתי</h4>

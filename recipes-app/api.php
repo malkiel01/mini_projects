@@ -192,10 +192,6 @@ try {
     case 'foryou-taste':
         ok(['taste' => fySetTaste($in, $user)]);
 
-    case 'foryou-ai-reset':   // "זה לא אני" — מוחק את מה שהניתוח היומי למד
-        aiTasteReset((int) $user['id']);
-        ok([]);
-
     case 'event':
         fyClientEvent($in, $user);
         ok([]);

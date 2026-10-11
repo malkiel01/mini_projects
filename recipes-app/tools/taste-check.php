@@ -10,8 +10,8 @@
  *      מה ששמר, ומועמדים; מי שכבר נותח ולא עשה דבר — לא שוב.
  *   3. יבוא: בדיקת כל שדה — תג לא מוכר, משקל מחוץ לטווח, בחירה שאינה זמינה, טקסט ארוך,
  *      לקוח שכיבה התאמה אישית — נדחים; השאר נשמר.
- *   4. בשבילך: בחירה של הצ'אט ראשונה, עם הסיבה שלו; "אוהב בשר" מקדם בשרי; "לא אוהב" מוריד;
- *      "קליל ומהיר" מקדם מהיר; התקציר מוצג; איפוס וכיבוי מוחקים.
+ *   4. בשבילך: בחירה של הצ'אט ראשונה; "אוהב בשר" מקדם בשרי; "לא אוהב" מוריד; "קליל ומהיר"
+ *      מקדם מהיר; התקציר פנימי (לא נשלח ללקוח); איפוס וכיבוי מוחקים.
  */
 
 declare(strict_types=1);
@@ -129,7 +129,7 @@ echo "\n4. בשבילך\n";
 $fy = forYou($meat, 10);
 $first = $fy['items'][0];
 check('הבחירה של הצ\'אט ראשונה, עם הסיבה שלו', [$first['id'], $first['reason']], [$asado, 'כי שמרת סטייק וחיפשת אסאדו']);
-check('התקציר מגיע ל"בשבילך"', $fy['ai']['summary'], 'אוהב בשר על האש ובישולים ארוכים');
+check('התקציר — פנימי, לא נשלח ללקוח', array_key_exists('ai', $fy), false);
 $pos = fn(array $items, int $id) => array_search($id, array_column($items, 'id'), true);
 check('"לא אוהב דג" — הסלמון לא לפני הקיש', ($pos($fy['items'], $fish) === false) || ($pos($fy['items'], $quiche) !== false && $pos($fy['items'], $fish) > $pos($fy['items'], $quiche)), true);
 $fl = forYou($light, 10);
@@ -139,7 +139,7 @@ check('והסיבה — "קליל ומהיר"', array_values(array_filter($fl['i
 $ex2 = tasteExport();
 check('מי שנותח ולא עשה דבר מאז — לא ביצוא הבא', in_array($meat['id'], array_column($ex2['users'], 'user_id')), false);
 aiTasteReset($light['id']);
-check('"זה לא אני — אפס" — נמחק, ובשבילך בלי תקציר', [aiTaste($light['id']), forYou($light, 5)['ai']], [null, null]);
+check('איפוס — נמחק', aiTaste($light['id']), null);
 setUserPrefs(['personalize' => false], $meat);
 check('כיבוי התאמה אישית — מוחק יומן וטעם', [aiTaste($meat['id']), $events($meat, 'search') + $events($meat, 'save')], [null, 0]);
 
