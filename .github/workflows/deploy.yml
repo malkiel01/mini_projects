@@ -65,6 +65,21 @@ jobs:
       - name: App registry gate (every app.json must be valid)
         run: php platform/check-apps.php
 
+      # קוד ההתקנה של המנהל הראשון (platform/). לשרת עולה רק ה-hash שלו, לקובץ
+      # שחסום מהדפדפן (platform/lib/.htaccess); הקוד עצמו לא נכתב לשום מקום.
+      # בלי הסוד — אזהרה בלבד: דף ההתקנה יאמר שהקוד חסר, ושאר האתר נפרס כרגיל.
+      - name: Write the platform setup-code hash
+        env:
+          PLATFORM_SETUP_CODE: ${{ secrets.PLATFORM_SETUP_CODE }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PLATFORM_SETUP_CODE:-}" ]; then
+            echo "::warning::PLATFORM_SETUP_CODE לא מוגדר — אי אפשר ליצור את המנהל הראשון של הפלטפורמה"
+            exit 0
+          fi
+          php -r 'file_put_contents("platform/lib/setup-code.php", "<?php\nreturn " . var_export(password_hash(getenv("PLATFORM_SETUP_CODE"), PASSWORD_DEFAULT), true) . ";\n");'
+          php -l platform/lib/setup-code.php
+
       - name: Validate the deploy target
         env:
           HOST: ${{ secrets.DEPLOY_HOST }}
@@ -170,6 +185,7 @@ jobs:
             --exclude='catering-menu/data/fonts/' \
             --exclude='carpentry-3d/data/*.sqlite*' \
             --exclude='carpentry-3d/data/media/' \
+            --exclude='platform/data/*.sqlite*' \
             --exclude='*.log' --exclude='error_log' \
             --exclude='.DS_Store' --exclude='._*' \
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30" \
