@@ -1,0 +1,2 @@
+# בדיקה: php_value ב-.htaccess. בשרת FPM זה מחזיר 500 — וזו התשובה.
+php_value auto_prepend_file "prepend.php"
