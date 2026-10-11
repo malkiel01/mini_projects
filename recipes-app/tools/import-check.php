@@ -242,7 +242,8 @@ check('והיא הראשית', loadRecipe($id, $maliU)['main_media_id'], $m['id'
 check('הרשימה מציגה אותה כ-thumb חיצוני ואת שם האתר',
       [str_starts_with(searchRecipes($maliU, 'בית מלון')[0]['thumb'], 'https://'), searchRecipes($maliU, 'בית מלון')[0]['source_name'] !== null], [true, true]);
 check('סינון "מהרשת"', count(searchRecipes($maliU, '', ['from_web' => true])), 1);
-saveRecipe(['title' => 'שם חדש', 'visibility' => 'public', 'sections' => $draft['sections']], $maliU, $id);
+expectError('מתכון מהרשת — לא ציבורי', fn() => saveRecipe(['title' => 'שם חדש', 'visibility' => 'public', 'sections' => $GLOBALS['draft']['sections']], $GLOBALS['maliU'], $GLOBALS['id']), 'פרטי בלבד');
+saveRecipe(['title' => 'שם חדש', 'visibility' => 'private', 'sections' => $draft['sections']], $maliU, $id);
 check('עריכה בלי שדות מקור — הקרדיט נשאר', loadRecipe($id, $maliU)['source']['url'], 'https://www.10dakot.co.il/recipe/x/');
 $own = saveRecipe(['title' => 'שלי', 'visibility' => 'private', 'sections' => $draft['sections']], $maliU);
 check('מתכון רגיל — בלי מקור', loadRecipe($own, $maliU)['source'], null);

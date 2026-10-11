@@ -460,6 +460,21 @@ try {
     case 'recipe-unshare':
         ok(['shares' => unshareRecipe((int) ($in['recipe_id'] ?? 0), (int) ($in['user_id'] ?? 0), $user)]);
 
+    case 'recommend':
+        ok(recommend(['entry_id' => (int) ($in['entry_id'] ?? 0), 'recipe_id' => (int) ($in['recipe_id'] ?? 0)],
+                     (array) ($in['user_ids'] ?? []), str_field($in, 'note', 300), $user));
+
+    case 'recommendations':
+        ok(recommendationsInbox($user));
+
+    case 'recommendation-seen':
+        recommendationSeen((int) ($in['id'] ?? 0), $user);
+        ok([]);
+
+    case 'recommendation-dismiss':
+        recommendationDismiss((int) ($in['id'] ?? 0), $user);
+        ok(recommendationsInbox($user));
+
     case 'recipe-leave-share':
         leaveShare((int) ($in['recipe_id'] ?? 0), $user);
         ok([]);

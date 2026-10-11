@@ -269,6 +269,21 @@ function migrate(PDO $pdo): void {
             PRIMARY KEY (follower_id, followee_id)
         );
         CREATE INDEX IF NOT EXISTS idx_follows_followee ON follows(followee_id);
+        -- המלצה: משתמש שולח לאחר מתכון מהרשת לעיון (קישור, לא העתק) — lib/network.php
+        CREATE TABLE IF NOT EXISTS recommendations (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            from_user  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            to_user    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            entry_id   INTEGER,                              -- index_entries.id, כשהדף באינדקס
+            url        TEXT    NOT NULL,
+            title      TEXT    NOT NULL,
+            site       TEXT,
+            image      TEXT,
+            note       TEXT,
+            created_at TEXT    NOT NULL,
+            seen_at    TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_reco_to ON recommendations(to_user, id);
         -- סריקת מתכון מתמונה (lib/scan.php): ממתינה לאישור המפתח, עד שתהיה טעינת קרדיטים.
         -- התמונות ב-data/scans/; נמחקות כשהסריקה טופלה.
         CREATE TABLE IF NOT EXISTS scans (
@@ -521,6 +536,10 @@ function migrate(PDO $pdo): void {
         addColumnIfMissing($pdo, 'recipes', $col, 'TEXT');
     }
     addColumnIfMissing($pdo, 'recipes', 'source_rewritten', 'INTEGER NOT NULL DEFAULT 0');
+    // מתכון מהרשת — פרטי בלבד: מה שפורסם כציבורי לפני הכלל הזה הופך לפרטי.
+    if ($pdo->query("SELECT EXISTS (SELECT 1 FROM recipes WHERE visibility = 'public' AND COALESCE(source_url, '') != '')")->fetchColumn()) {
+        $pdo->exec("UPDATE recipes SET visibility = 'private' WHERE visibility = 'public' AND COALESCE(source_url, '') != ''");
+    }
     // הורדות לחיפוש ברשת: כמה משתמשים שמרו את אותו דף (recipes.source_url)
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_recipes_source ON recipes(source_url)');
     addColumnIfMissing($pdo, 'shopping_list_recipes', 'factor', 'REAL NOT NULL DEFAULT 1');

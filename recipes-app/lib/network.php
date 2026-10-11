@@ -23,6 +23,7 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/errors.php';
 require_once __DIR__ . '/recipes.php';
 require_once __DIR__ . '/log.php';
+require_once __DIR__ . '/social.php';
 
 const SHARE_MAX_PER_RECIPE = 50;
 
@@ -173,4 +174,79 @@ function personProfile(int $personId, array $viewer): array {
         ],
         'recipes' => searchRecipes($viewer, '', ['owner_id' => $personId]),
     ];
+}
+
+// ─────────────────────────────────────────────────────────────
+// המלצות — "תעיין במתכון הזה": קישור למתכון מהרשת, לא העתק
+// ─────────────────────────────────────────────────────────────
+
+const RECO_DAILY_MAX = 30;   // המלצות ששולח משתמש ביום — נגד הצפה
+
+/**
+ * ממליץ לאנשים על מתכון מהרשת. $target: ['entry_id' => N] (מהחיפוש ברשת) או
+ * ['recipe_id' => N] (מתכון מיובא שגלוי לי — ההמלצה היא על המקור שלו, לא על העותק).
+ */
+function recommend(array $target, array $toIds, string $note, array $user): array {
+    require_once __DIR__ . '/web_index.php';
+    if (!empty($target['entry_id'])) {
+        $e = webEntry((int) $target['entry_id']);
+        $item = ['entry_id' => (int) $e['id'], 'url' => $e['url'], 'title' => $e['title'], 'site' => $e['site'], 'image' => $e['image'] ?: null];
+    } elseif (!empty($target['recipe_id'])) {
+        $r = viewableRecipeRow((int) $target['recipe_id'], $user);
+        if (empty($r['source_url'])) throw new AppError('אפשר להמליץ רק על מתכון מהרשת. מתכון שלך — משתפים (👥)');
+        $st = db()->prepare('SELECT id, image FROM index_entries WHERE url = ?');
+        $st->execute([$r['source_url']]);
+        $e = $st->fetch() ?: null;
+        $st->closeCursor();
+        $item = ['entry_id' => $e ? (int) $e['id'] : null, 'url' => $r['source_url'], 'title' => $r['title'],
+                 'site' => $r['source_name'] ?: parse_url($r['source_url'], PHP_URL_HOST), 'image' => $e['image'] ?? null];
+    } else {
+        throw new AppError('על מה ההמלצה?');
+    }
+    $ids = array_values(array_unique(array_filter(array_map('intval', $toIds), fn($id) => $id > 0 && $id !== (int) $user['id'])));
+    if (!$ids) throw new AppError('לא נבחרו אנשים');
+    $st = db()->prepare('SELECT COUNT(*) FROM recommendations WHERE from_user = ? AND created_at > ?');
+    $st->execute([(int) $user['id'], gmdate('Y-m-d\TH:i:s\Z', time() - 86400)]);
+    if ((int) $st->fetchColumn() + count($ids) > RECO_DAILY_MAX) throw new AppError('הגעת למספר ההמלצות ליום (' . RECO_DAILY_MAX . '). אפשר שוב מחר', 429);
+    $note = mb_substr(trim($note), 0, 300);
+    $dup = db()->prepare('SELECT 1 FROM recommendations WHERE from_user = ? AND to_user = ? AND url = ? AND seen_at IS NULL');
+    $ins = db()->prepare('INSERT INTO recommendations (from_user, to_user, entry_id, url, title, site, image, note, created_at) VALUES (?,?,?,?,?,?,?,?,?)');
+    $sent = 0;
+    foreach ($ids as $id) {
+        activePerson($id);
+        $dup->execute([(int) $user['id'], $id, $item['url']]);
+        $exists = $dup->fetchColumn();
+        $dup->closeCursor();
+        if ($exists) continue;   // כבר ממתינה אצלו — לא שוב
+        $ins->execute([(int) $user['id'], $id, $item['entry_id'], $item['url'], mb_substr($item['title'], 0, 140), $item['site'], $item['image'], $note !== '' ? $note : null, nowIso()]);
+        $sent++;
+    }
+    logEvent('info', 'recommend', $item['title'], ['to' => count($ids), 'sent' => $sent], $user);
+    return ['sent' => $sent, 'already' => count($ids) - $sent];
+}
+
+/** ההמלצות שקיבלתי — החדשות קודם. 'open' — לאן מובילה: #/web/<entry> כשבאינדקס, אחרת ייבוא מקישור. */
+function recommendationsInbox(array $user): array {
+    $st = db()->prepare("SELECT r.*, u.username, u.display_name,
+                                EXISTS (SELECT 1 FROM index_entries e WHERE e.id = r.entry_id AND e.skip = 0) AS in_index
+                           FROM recommendations r JOIN users u ON u.id = r.from_user
+                          WHERE r.to_user = ? AND u.blocked = 0 ORDER BY (r.seen_at IS NULL) DESC, r.id DESC LIMIT 50");
+    $st->execute([(int) $user['id']]);
+    $items = array_map(fn($r) => [
+        'id' => (int) $r['id'], 'from' => personPublic(['id' => $r['from_user'], 'username' => $r['username'], 'display_name' => $r['display_name']]),
+        'title' => $r['title'], 'site' => $r['site'], 'image' => $r['image'], 'note' => $r['note'], 'url' => $r['url'],
+        'open' => $r['in_index'] ? '#/web/' . (int) $r['entry_id'] : '#/import?url=' . rawurlencode($r['url']),
+        'new' => $r['seen_at'] === null, 'created_at' => $r['created_at'],
+    ], $st->fetchAll());
+    return ['items' => $items, 'unseen' => count(array_filter($items, fn($i) => $i['new']))];
+}
+
+function recommendationSeen(int $id, array $user): void {
+    db()->prepare('UPDATE recommendations SET seen_at = COALESCE(seen_at, ?) WHERE id = ? AND to_user = ?')->execute([nowIso(), $id, (int) $user['id']]);
+}
+
+function recommendationDismiss(int $id, array $user): void {
+    $st = db()->prepare('DELETE FROM recommendations WHERE id = ? AND to_user = ?');
+    $st->execute([$id, (int) $user['id']]);
+    if ($st->rowCount() === 0) throw new AppError('ההמלצה אינה קיימת', 404);
 }

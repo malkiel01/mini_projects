@@ -351,9 +351,15 @@ async function renderList() {
   let scope = 'all';
   const run = async (q) => {
     results.innerHTML = '<p class="muted">טוען…</p>';
-    const { recipes } = await api('search', { q, from_web: scope === 'web', following: scope === 'following', shared: scope === 'shared' });
-    // תג "חדש" ללשונית — מתוך "הכול" (שם מופיעים גם המשותפים)
-    if (scope === 'all' && !q) { const n = recipes.filter((r) => r.shared_new).length; const b = $('#shared-new'); b.textContent = n; b.hidden = !n; }
+    const [{ recipes }, reco] = await Promise.all([
+      api('search', { q, from_web: scope === 'web', following: scope === 'following', shared: scope === 'shared' }),
+      scope === 'shared' || (scope === 'all' && !q) ? api('recommendations') : Promise.resolve(null),
+    ]);
+    // תג "חדש" ללשונית: מתכונים ששותפו ועוד לא נפתחו (מתוך "הכול"), ועוד המלצות שלא נפתחו
+    if (scope === 'all' && !q) { const n = recipes.filter((r) => r.shared_new).length + (reco?.unseen || 0); const b = $('#shared-new'); b.textContent = n; b.hidden = !n; }
+    const recoHtml = scope === 'shared' && reco?.items.length ? `<h3 class="list__head">📨 המלצות</h3>${reco.items.map(recoItem).join('')}
+      ${recipes.length ? '<h3 class="list__head">👥 מתכונים ששותפו איתי</h3>' : ''}` : '';
+    if (recoHtml) { results.innerHTML = recoHtml + recipes.map(recipeItem).join(''); return; }
     if (!recipes.length) {
       results.innerHTML = `<p class="muted">${q ? 'לא נמצא כלום.' : {
         web: 'עדיין לא יובא כלום מהרשת. "🌐 ייבוא מהרשת" — מדביקים קישור למתכון.',
@@ -365,6 +371,13 @@ async function renderList() {
     results.innerHTML = recipes.map(recipeItem).join('');
   };
 
+  results.addEventListener('click', async (e) => {
+    const open = e.target.closest('[data-reco-open]');
+    if (open) { api('recommendation-seen', { id: +open.dataset.recoOpen }).catch(() => {}); return; }   // הניווט ממשיך כרגיל
+    const del = e.target.closest('[data-reco-dismiss]');
+    if (!del) return;
+    try { await api('recommendation-dismiss', { id: +del.dataset.recoDismiss }); del.closest('[data-reco]').remove(); } catch (err) { alert(err.message); }
+  });
   $$('[data-scope]').forEach((a) => a.addEventListener('click', (e) => {
     e.preventDefault();
     scope = a.dataset.scope;
@@ -373,6 +386,21 @@ async function renderList() {
   }));
   $('#search').addEventListener('submit', (e) => { e.preventDefault(); run(e.target.q.value.trim()); });
   await run('');
+}
+
+/** המלצה שקיבלתי: ממי, על מה, ההערה; פתיחה — דרך החיפוש ברשת (או ייבוא מקישור). */
+function recoItem(i) {
+  return `
+    <div class="item reco ${i.new ? 'item--new' : ''}" data-reco="${i.id}">
+      <a class="item__media" href="${esc(i.open)}" data-reco-open="${i.id}">${i.image
+        ? `<img class="item__thumb" src="${esc(i.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="item__thumb item__thumb--empty">📨</span>'}</a>
+      <a class="item__main" href="${esc(i.open)}" data-reco-open="${i.id}">
+        <strong>${esc(i.title)}</strong>
+        <span class="muted">${esc(i.from.display_name)} ממליץ/ה${i.site ? ` · 🌐 ${esc(i.site)}` : ''}</span>
+        ${i.note ? `<span class="small">💬 ${esc(i.note)}</span>` : ''}
+      </a>
+      <button class="btn btn--ghost btn--small" type="button" data-reco-dismiss="${i.id}" aria-label="הסרה">✕</button>
+    </div>`;
 }
 
 /** שורה ברשימת מתכונים — ברשימה הראשית, בפרופיל. */
@@ -415,6 +443,7 @@ async function renderRecipe(id) {
               ${r.is_mine ? `<a class="icon-btn" href="#/edit/${r.id}" aria-label="עריכה" title="עריכה">✏️</a>
               <button class="icon-btn icon-btn--danger" id="del" type="button" aria-label="מחיקה" title="מחיקה">🗑</button>
               <button class="icon-btn" id="share-open" type="button" aria-label="שיתוף עם אנשים" title="שיתוף עם אנשים">👥</button>` : ''}
+              ${r.source ? '<button class="icon-btn" id="reco-open" type="button" aria-label="המלצה על המקור" title="המלצה על המקור">📨</button>' : ''}
               <button class="icon-btn" id="print" type="button" aria-label="הדפסה" title="הדפסה">🖨</button>
             </span>
           </div>
@@ -426,6 +455,7 @@ async function renderRecipe(id) {
             ${r.updated_at !== r.created_at ? ` · עודכן ${esc(r.updated_at.slice(0, 10))}` : ''}
           </p>
           ${r.is_mine ? '<div id="share-box" class="share-box" hidden></div>' : ''}
+          ${r.source ? '<div id="reco-box" class="share-box" hidden></div>' : ''}
           ${loaded.shared_with_me ? '<p class="small"><button class="link" type="button" id="leave-share">הסר מהרשימה שלי</button></p>' : ''}
           ${r.source ? `
           <p class="credit">
@@ -510,6 +540,11 @@ async function renderRecipe(id) {
       const box = $('#share-box');
       box.hidden = !box.hidden;
       if (!box.hidden) renderShareBox(box, r);
+    });
+    $('#reco-open')?.addEventListener('click', () => {
+      const box = $('#reco-box');
+      box.hidden = !box.hidden;
+      if (!box.hidden) renderRecoBox(box, { recipe_id: r.id }, r.title);
     });
     $('#leave-share')?.addEventListener('click', async () => {
       if (!confirm('להסיר את המתכון מהרשימה שלך? הוא יישאר אצל מי ששיתף.')) return;
@@ -1024,11 +1059,11 @@ async function renderEditor(id, draft = null) {
             </div>` : '').join('')}
         </fieldset>
 
-        <label class="check check--big">
-          <input type="checkbox" name="public" ${model.visibility === 'public' ? 'checked' : ''}>
+        <label class="check check--big ${model.source ? 'is-disabled' : ''}">
+          <input type="checkbox" name="public" ${model.visibility === 'public' && !model.source ? 'checked' : ''} ${model.source ? 'disabled' : ''}>
           מתכון ציבורי — כולם רואים, ואפשר להגיב
         </label>
-        ${model.source ? '<p class="muted small">מתכון שיובא מהרשת: הקרדיט והקישור למקור מוצגים תמיד. פרסום ציבורי של תוכן שאינו שלך — על אחריותך.</p>' : ''}
+        ${model.source ? '<p class="muted small">🔒 מתכון מהרשת נשמר <strong>כפרטי בלבד</strong>, עם הקרדיט והקישור למקור. אפשר לשתף אותו עם אנשים מסוימים (👥) או להמליץ להם על המקור (📨) — מתוך המתכון אחרי השמירה.</p>' : ''}
         <label class="check">
           <input type="checkbox" name="comments_open" ${model.comments_open ? 'checked' : ''}>
           לאפשר תגובות (במתכון ציבורי)
@@ -1053,7 +1088,7 @@ async function renderEditor(id, draft = null) {
     model.work_minutes = f.work_minutes.value;
     model.wait_minutes = f.wait_minutes.value;
     model.tips = f.tips.value;
-    model.visibility = f.public.checked ? 'public' : 'private';
+    model.visibility = f.public.checked && !model.source ? 'public' : 'private';
     model.comments_open = f.comments_open.checked;
     if (model.source && f.rewritten_manual) model.source.rewritten = f.rewritten_manual.checked;
     model.tag_ids = new Set($$('[data-tag]:checked', f).map((c) => +c.dataset.tag));
@@ -2383,8 +2418,10 @@ async function renderWebRecipe(id) {
         <div class="actions actions--wrap">
           <button class="btn btn--primary" type="button" id="web-save">💾 שמור אצלי</button>
           <button class="btn" type="button" id="web-edit">✏️ ערוך לפני שמירה</button>
+          <button class="btn" type="button" id="web-reco">📨 המלץ למישהו</button>
           <a class="btn btn--ghost" href="${esc(d.source_url)}" target="_blank" rel="noopener nofollow">↗ באתר המקור</a>
         </div>
+        <div id="reco-box" class="share-box" hidden></div>
         <p class="note" id="web-msg" hidden></p>
         ${res.opens_left != null ? `<p class="muted small">נשארו לך היום ${res.opens_left} פתיחות חדשות. מתכונים שכבר נפתחו — בלי הגבלה.</p>` : ''}
       </header>
@@ -2400,6 +2437,11 @@ async function renderWebRecipe(id) {
       ${d.tips ? `<section class="part"><h3>על המתכון</h3><p class="tips">${esc(d.tips)}</p></section>` : ''}
     </article>`;
   const msg = $('#web-msg');
+  $('#web-reco').addEventListener('click', () => {
+    const box = $('#reco-box');
+    box.hidden = !box.hidden;
+    if (!box.hidden) renderRecoBox(box, { entry_id: res.entry.id }, d.title);
+  });
   $('#web-save').addEventListener('click', async (e) => {
     e.target.disabled = true;
     try {
@@ -2540,6 +2582,28 @@ async function renderShareBox(box, r) {
     actionFor: (p) => current.some((c) => c.id === p.id) ? '<span class="muted small">משותף ✓</span>'
       : '<button class="btn btn--primary btn--small" type="button" data-act="share">שתף</button>',
     onAction: async (pid) => { current = (await api('recipe-share', { recipe_id: r.id, user_ids: [pid] })).shares; drawList(); },
+  });
+  picker.input.focus();
+}
+
+/** המלצה: למי לשלוח, ועם הערה קצרה. ההמלצה היא קישור למקור — לא העתק. */
+function renderRecoBox(box, target, title) {
+  box.innerHTML = `
+    <h3>📨 המלצה על "${esc(title)}"</h3>
+    <p class="muted small">המתכון יגיע אליהם כהמלצה לעיין בו, עם קישור למקור — לא כהעתק.</p>
+    <input type="text" id="reco-note" maxlength="300" placeholder="הערה (לא חובה) — למשל: נראה טעים, ננסה בשבת?" autocomplete="off">
+    <div id="reco-pick"></div>
+    <p class="note" id="reco-msg" hidden></p>`;
+  const sent = new Set();
+  const say = (t, k) => { const m = $('#reco-msg', box); m.textContent = t; m.className = 'note' + (k ? ' note--' + k : ''); m.hidden = !t; };
+  const picker = peoplePicker($('#reco-pick', box), {
+    placeholder: 'למי? חיפוש לפי שם…',
+    actionFor: (p) => sent.has(p.id) ? '<span class="muted small">נשלח ✓</span>' : '<button class="btn btn--primary btn--small" type="button" data-act="send">שלח</button>',
+    onAction: async (pid) => {
+      const r = await api('recommend', { ...target, user_ids: [pid], note: $('#reco-note', box).value });
+      sent.add(pid);
+      say(r.sent ? 'ההמלצה נשלחה ✓' : 'כבר ממתינה אצלו/ה המלצה על המתכון הזה.', r.sent ? 'ok' : 'warn');
+    },
   });
   picker.input.focus();
 }

@@ -224,6 +224,22 @@ CREATE TABLE follows (
 );
 CREATE INDEX idx_follows_followee ON follows(followee_id);
 
+-- המלצה: מתכון מהרשת לעיון (קישור, לא העתק) — lib/network.php
+CREATE TABLE recommendations (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  from_user  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  to_user    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  entry_id   INTEGER,                              -- index_entries.id, כשהדף באינדקס
+  url        TEXT    NOT NULL,
+  title      TEXT    NOT NULL,
+  site       TEXT,
+  image      TEXT,
+  note       TEXT,
+  created_at TEXT    NOT NULL,
+  seen_at    TEXT
+);
+CREATE INDEX idx_reco_to ON recommendations(to_user, id);
+
 -- סריקת מתכון מתמונה (lib/scan.php): ממתינה לאישור המפתח, עד שתהיה טעינת קרדיטים.
 -- התמונות ב-data/scans/; נמחקות כשהסריקה טופלה.
 CREATE TABLE scans (

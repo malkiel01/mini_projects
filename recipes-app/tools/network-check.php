@@ -112,6 +112,40 @@ unfollowUser($dana['id'], $dan);
 check('דן הפסיק לעקוב', personProfile($dana['id'], $dan)['person']['following'], false);
 expectError('פרופיל של לא-מאומת — לא קיים', fn() => personProfile($GLOBALS['ghost']['id'], $GLOBALS['noa']), 'אינו קיים');
 
+echo "\n6. מתכון מהרשת — פרטי בלבד\n";
+$webSec = $sec;
+expectError('ייבוא כציבורי — נחסם', fn() => saveRecipe(['title' => 'מהרשת', 'visibility' => 'public', 'sections' => $GLOBALS['webSec'], 'source_url' => 'https://a.co.il/r/1/'], $GLOBALS['dana']), 'פרטי בלבד');
+$wid = saveRecipe(['title' => 'פשטידה מהרשת', 'visibility' => 'private', 'sections' => $sec, 'source_url' => 'https://a.co.il/r/1/', 'source_name' => 'אתר א'], $dana);
+expectError('ובעריכה — אי אפשר להפוך לציבורי', fn() => saveRecipe(['title' => 'פשטידה מהרשת', 'visibility' => 'public', 'sections' => $GLOBALS['webSec']], $GLOBALS['dana'], $GLOBALS['wid']), 'פרטי בלבד');
+check('מתכון שלי (לא מהרשת) — ציבורי מותר', loadRecipe(saveRecipe(['title' => 'שלי', 'visibility' => 'public', 'sections' => $sec], $dana), $dana)['visibility'], 'public');
+check('אבל לשתף אותו — מותר', array_column(shareRecipe($wid, [$noa['id']], $dana), 'username'), ['noa']);
+db()->exec("UPDATE recipes SET visibility = 'public' WHERE id = $wid");   // כמו שהיה לפני הכלל
+migrate(db());
+check('תיקון חד-פעמי: מיובא שהיה ציבורי — עכשיו פרטי', loadRecipe($wid, $dana)['visibility'], 'private');
+
+echo "\n7. המלצה — לעיין במתכון מהרשת\n";
+db()->prepare('INSERT INTO index_sites (host, name, start_url, added_at, next_crawl_at) VALUES (?,?,?,?,?)')->execute(['a.co.il', 'אתר א', 'https://a.co.il/', nowIso(), time() + 9999]);
+$site = (int) db()->lastInsertId();
+db()->prepare('INSERT INTO index_entries (site_id, url, title, stems, image, seen_at) VALUES (?,?,?,?,?,1)')->execute([$site, 'https://a.co.il/r/9/', 'עוגת שזיפים', ' עוג שזיפ ', 'https://a.co.il/9.jpg']);
+$eid = (int) db()->lastInsertId();
+$r = recommend(['entry_id' => $eid], [$noa['id'], $dan['id'], $dana['id']], 'נראה טעים!', $dana);
+check('נשלחה לשניים (לא לעצמי)', $r, ['sent' => 2, 'already' => 0]);
+check('שוב, לפני שראו — לא כפול', recommend(['entry_id' => $eid], [$noa['id']], '', $dana), ['sent' => 0, 'already' => 1]);
+$in = recommendationsInbox($noa);
+check('אצל נועה: חדשה, ממי, ההערה, ופתיחה דרך החיפוש ברשת', [$in['unseen'], $in['items'][0]['from']['username'], $in['items'][0]['note'], $in['items'][0]['open'], $in['items'][0]['image']],
+      [1, 'dana', 'נראה טעים!', '#/web/' . $eid, 'https://a.co.il/9.jpg']);
+recommendationSeen($in['items'][0]['id'], $noa);
+check('נפתחה — כבר לא חדשה', recommendationsInbox($noa)['unseen'], 0);
+check('על המקור של מתכון מיובא (לא באינדקס) — דרך ייבוא מקישור', (function () {
+    recommend(['recipe_id' => $GLOBALS['wid']], [$GLOBALS['dan']['id']], '', $GLOBALS['dana']);
+    return recommendationsInbox($GLOBALS['dan'])['items'][0]['open'];
+})(), '#/import?url=' . rawurlencode('https://a.co.il/r/1/'));
+expectError('על מתכון שלא מהרשת — לא (משתפים)', fn() => recommend(['recipe_id' => $GLOBALS['pub']], [$GLOBALS['noa']['id']], '', $GLOBALS['dana']), 'רק על מתכון מהרשת');
+expectError('על מתכון פרטי של אחר — לא', fn() => recommend(['recipe_id' => $GLOBALS['wid']], [$GLOBALS['dana']['id']], '', $GLOBALS['dan']), 'אינו קיים');
+expectError('אחר לא מוחק המלצה שלא אליו', fn() => recommendationDismiss($GLOBALS['in']['items'][0]['id'], $GLOBALS['dan']), 'אינה קיימת');
+recommendationDismiss($in['items'][0]['id'], $noa);
+check('נועה מחקה — הרשימה ריקה', recommendationsInbox($noa)['items'], []);
+
 echo "\n5. מחיקה מנקה\n";
 deleteRecipe($priv, $dana);
 check('מחיקת מתכון מוחקת את השיתופים שלו', (int) db()->query("SELECT COUNT(*) FROM recipe_shares WHERE recipe_id = $priv")->fetchColumn(), 0);

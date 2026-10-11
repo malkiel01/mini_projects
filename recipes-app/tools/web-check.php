@@ -230,8 +230,9 @@ $sec = [['ingredients' => [['free_text' => 'תרד']], 'steps' => [['text' => '�
 saveRecipe(['title' => 'הפשטידה של נועה', 'sections' => $sec, 'source_url' => 'https://a.co.il/q/2/'], $noaU);
 check('הורדה (נשמר אצל משתמש) — מעל פתיחות', $order(), ['https://a.co.il/q/2/', 'https://a.co.il/q/3/', 'https://a.co.il/q/1/', 'https://a.co.il/q/4/']);
 check('מספר המורידים בתוצאה', indexSearch('פשטידת תרד')['results'][0]['saves'], 1);
-saveRecipe(['title' => 'פשטידת תרד של סבתא', 'visibility' => 'public', 'sections' => $sec, 'source_url' => 'https://a.co.il/q/4/'], $devU);
-saveRecipe(['title' => 'פשטידת תרד פרטית של נועה', 'sections' => $sec], $noaU);
+// ציבורי של אחר — מתכון שלו (מהרשת אי אפשר לפרסם ציבורי); הפרטי של נועה — יובא מ-q/4
+saveRecipe(['title' => 'פשטידת תרד של סבתא', 'visibility' => 'public', 'sections' => $sec], $devU);
+saveRecipe(['title' => 'פשטידת תרד פרטית של נועה', 'sections' => $sec, 'source_url' => 'https://a.co.il/q/4/'], $noaU);
 $r = indexSearch('פשטידת תרד', 0, $noaU);
 check('מהאפליקציה קודם: הציבורי של אחר והפרטי שלי (לא פרטי של אחר)', (function ($t) { sort($t); return $t; })(array_column($r['local'], 'title')), ['פשטידת תרד פרטית של נועה', 'פשטידת תרד של סבתא']);
 check('דף שכבר מוצג מהאפליקציה — לא שוב ברשת', [in_array('https://a.co.il/q/4/', array_column($r['results'], 'url')), $r['total']], [false, 3]);

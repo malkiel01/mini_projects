@@ -73,6 +73,8 @@ function requireOwnRecipe(int $recipeId, array $user): array {
     return $recipe;
 }
 
+const WEB_PRIVATE_MSG = 'מתכון מהרשת נשמר כפרטי בלבד. אפשר לשתף אותו עם אנשים מסוימים (👥), או להמליץ להם על המקור (📨)';
+
 function canView(array $recipe, ?array $user): bool {
     if ($recipe['visibility'] === 'public') return true;
     if (!$user) return false;
@@ -131,6 +133,19 @@ function saveRecipe(array $in, array $user, ?int $recipeId = null): int {
         'author' => mb_substr(trim((string) ($in['source_author'] ?? '')), 0, 80) ?: null,
     ] : null;
     $search = buildSearchText($recipe + ['title' => $title], $sections);
+
+    // מתכון מהרשת — פרטי בלבד (בשלב זה). אפשר לשתף אותו עם אנשים מסוימים או להמליץ
+    // עליו (lib/network.php), אבל לא לפרסם לכולם תוכן שאינו שלנו.
+    if ($visibility === 'public') {
+        $fromWeb = $source !== null;
+        if (!$fromWeb && $recipeId !== null) {
+            $st = db()->prepare("SELECT COALESCE(source_url, '') != '' FROM recipes WHERE id = ?");
+            $st->execute([$recipeId]);
+            $fromWeb = (bool) $st->fetchColumn();
+            $st->closeCursor();
+        }
+        if ($fromWeb) throw new AppError(WEB_PRIVATE_MSG);
+    }
 
     $pdo = db();
     $pdo->beginTransaction();
