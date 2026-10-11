@@ -30,6 +30,7 @@ require_once __DIR__ . '/lib/shopping.php';
 require_once __DIR__ . '/lib/scan.php';
 require_once __DIR__ . '/lib/network.php';
 require_once __DIR__ . '/lib/privacy.php';
+require_once __DIR__ . '/lib/collections.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -451,7 +452,7 @@ try {
         ok(myNetwork($user));
 
     case 'person':
-        ok(personProfile((int) ($in['id'] ?? 0), $user));
+        ok(personProfile((int) ($in['id'] ?? 0), $user) + ['collections' => personCollections((int) ($in['id'] ?? 0), $user)]);
 
     case 'follow':
         ok(['person' => followUser((int) ($in['id'] ?? 0), $user)]);
@@ -503,7 +504,8 @@ try {
                      (array) ($in['user_ids'] ?? []), str_field($in, 'note', 300), $user));
 
     case 'recommendations':
-        ok(recommendationsInbox($user));
+        // ועוד כמה אוספים ששותפו איתי ועוד לא נפתחו — לתג "שותפו איתי" בבית
+        ok(recommendationsInbox($user) + ['collections_unseen' => collectionSharesUnseen($user)]);
 
     case 'recommendation-seen':
         recommendationSeen((int) ($in['id'] ?? 0), $user);
@@ -515,6 +517,50 @@ try {
 
     case 'recipe-leave-share':
         leaveShare((int) ($in['recipe_id'] ?? 0), $user);
+        ok([]);
+
+    // אוספים (lib/collections.php, SPEC 15.3). מה מוסיפים: recipe_id או entry_id
+    case 'collections':
+        ok(collectionsMine($user) + ['unseen' => collectionSharesUnseen($user)]);
+
+    case 'collection':
+        ok(collectionView((int) ($in['id'] ?? 0), $user));
+
+    case 'collection-create':
+        ok(['collection' => collectionCreate($in, $user)]);
+
+    case 'collection-update':
+        ok(['collection' => collectionUpdate((int) ($in['id'] ?? 0), $in, $user)]);
+
+    case 'collection-delete':
+        collectionDelete((int) ($in['id'] ?? 0), $user);
+        ok([]);
+
+    case 'collections-for':
+        ok(['collections' => collectionsFor($in, $user)]);
+
+    case 'collection-toggle':
+        ok(['has' => collectionToggle((int) ($in['id'] ?? 0), $in, !empty($in['on']), $user)]);
+
+    case 'collection-item-remove':
+        collectionRemoveItem((int) ($in['item_id'] ?? 0), $user);
+        ok([]);
+
+    case 'collection-item-move':
+        collectionMoveItem((int) ($in['item_id'] ?? 0), (int) ($in['dir'] ?? 0) < 0 ? -1 : 1, $user);
+        ok([]);
+
+    case 'collection-shares':
+        ok(['shares' => collectionShares((int) ($in['id'] ?? 0), $user)]);
+
+    case 'collection-share':
+        ok(['shares' => shareCollection((int) ($in['id'] ?? 0), (array) ($in['user_ids'] ?? []), $user)]);
+
+    case 'collection-unshare':
+        ok(['shares' => unshareCollection((int) ($in['id'] ?? 0), (int) ($in['user_id'] ?? 0), $user)]);
+
+    case 'collection-leave':
+        leaveCollectionShare((int) ($in['id'] ?? 0), $user);
         ok([]);
 
     // סריקת מתכון מתמונה (lib/scan.php). ההעלאה עצמה — scan.php (multipart).

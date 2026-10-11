@@ -470,17 +470,56 @@ function migrate(PDO $pdo): void {
         );
         CREATE INDEX IF NOT EXISTS idx_recipe_tags_tag ON recipe_tags(tag_id);
 
-        CREATE TABLE IF NOT EXISTS user_tags (
-            id      INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            name    TEXT    NOT NULL,
-            UNIQUE (user_id, name)
+        -- אוספים (SPEC 15.3, lib/collections.php): רשימה בעלת שם, ממתכונים מכל מקור.
+        -- is_saved: האוסף שמורים — אחד למשתמש, לא נמחק; ♡ מוסיף אליו. המועדפים עברו אליו.
+        -- visibility: private / public (בפרופיל). שיתוף עם אנשים — בנפרד, ב-collection_shares.
+        CREATE TABLE IF NOT EXISTS collections (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name        TEXT    NOT NULL,
+            icon        TEXT    NOT NULL DEFAULT '📁',
+            description TEXT    NOT NULL DEFAULT '',
+            visibility  TEXT    NOT NULL DEFAULT 'private' CHECK (visibility IN ('private', 'public')),
+            is_saved    INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT    NOT NULL,
+            updated_at  TEXT    NOT NULL
         );
+        CREATE INDEX IF NOT EXISTS idx_collections_owner ON collections(owner_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_collections_saved ON collections(owner_id) WHERE is_saved = 1;
+        -- פריט: מתכון באפליקציה (הפניה; נמחק — recipe_id ריק והשם נשאר), או מתכון מהרשת בלי
+        -- לייבא (קישור + שם + תמונה, כמו המלצה; entry_id — לפתיחה דרך החיפוש ברשת).
+        CREATE TABLE IF NOT EXISTS collection_items (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+            kind          TEXT    NOT NULL CHECK (kind IN ('recipe', 'web')),
+            recipe_id     INTEGER REFERENCES recipes(id) ON DELETE SET NULL,
+            entry_id      INTEGER REFERENCES index_entries(id) ON DELETE SET NULL,
+            url           TEXT,
+            title         TEXT    NOT NULL,
+            image         TEXT,
+            site          TEXT,
+            position      INTEGER NOT NULL,
+            added_at      TEXT    NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_collection_items ON collection_items(collection_id, position);
+        CREATE INDEX IF NOT EXISTS idx_collection_items_recipe ON collection_items(recipe_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_collection_items_r ON collection_items(collection_id, recipe_id) WHERE recipe_id IS NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_collection_items_w ON collection_items(collection_id, url) WHERE kind = 'web';
+        -- שיתוף אוסף: הנמען רואה את האוסף, ואת המתכונים הפרטיים של בעל האוסף שבתוכו (החלטה 3)
+        CREATE TABLE IF NOT EXISTS collection_shares (
+            collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+            user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at    TEXT    NOT NULL,
+            seen_at       TEXT,
+            PRIMARY KEY (collection_id, user_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_collection_shares_user ON collection_shares(user_id);
 
-        CREATE TABLE IF NOT EXISTS recipe_user_tags (
-            recipe_id   INTEGER NOT NULL REFERENCES recipes(id)   ON DELETE CASCADE,
-            user_tag_id INTEGER NOT NULL REFERENCES user_tags(id) ON DELETE CASCADE,
-            PRIMARY KEY (recipe_id, user_tag_id)
+        -- מיגרציות חד־פעמיות על נתונים: שם ומתי רצה. מה שרשום כאן — לא ירוץ שוב,
+        -- גם אם המצב שהוא תיקן חזר (משתמש שהסיר נושא לא יקבל אותו בחזרה).
+        CREATE TABLE IF NOT EXISTS migrations (
+            name    TEXT PRIMARY KEY,
+            done_at TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS favorites (
@@ -582,6 +621,31 @@ function migrate(PDO $pdo): void {
     // העדכון אידמפוטנטי — בפריסות הבאות הוא לא משנה דבר.
     $pdo->exec("UPDATE users SET email_verified = 1 WHERE role = 'admin' AND email_verified = 0");
 
+    // ── מיגרציות חד־פעמיות על נתונים (טבלת migrations) ──
+    // נושא לפי השם למתכונים קיימים שאין להם נושא (SPEC 15.1). כשרות — לא.
+    runOnce($pdo, 'topics-backfill', function (PDO $pdo) {
+        require_once __DIR__ . '/catalog.php';
+        catalogBackfillTopics($pdo);
+    });
+    // המועדפים עוברים לאוסף "שמורים" של כל משתמש (SPEC 15.3, החלטה 2), עם הסדר והשם שנשמר.
+    runOnce($pdo, 'favorites-to-saved', function (PDO $pdo) {
+        $users = $pdo->query('SELECT DISTINCT user_id FROM favorites')->fetchAll(PDO::FETCH_COLUMN);
+        foreach ($users as $uid) {
+            $cid = savedCollectionId($pdo, (int) $uid);
+            $st = $pdo->prepare('SELECT recipe_id, title_snapshot, created_at FROM favorites WHERE user_id = ? ORDER BY created_at, id');
+            $st->execute([$uid]);
+            $ins = $pdo->prepare("INSERT OR IGNORE INTO collection_items (collection_id, kind, recipe_id, title, position, added_at) VALUES (?, 'recipe', ?, ?, ?, ?)");
+            foreach ($st->fetchAll() as $i => $f) $ins->execute([$cid, $f['recipe_id'], $f['title_snapshot'], $i + 1, $f['created_at']]);
+        }
+    });
+    // תוויות אישיות — לא ייבנו (SPEC 15.10, החלטה 1: רק אוספים). הטבלאות ריקות ונמחקות.
+    runOnce($pdo, 'drop-user-tags', function (PDO $pdo) {
+        $has = fn($t) => (bool) $pdo->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '$t'")->fetchColumn();
+        foreach (['recipe_user_tags', 'user_tags'] as $t) {
+            if ($has($t) && !(int) $pdo->query("SELECT COUNT(*) FROM $t")->fetchColumn()) $pdo->exec("DROP TABLE $t");
+        }
+    });
+
     // ריפוי שני: מערכת עם משתמשים אך בלי אף מנהל. לא אמור לקרות — הראשון
     // נוצר כמנהל — אבל אם קרה (שחזור מסד, עריכה ידנית), אין מי שיתקן.
     // הוותיק ביותר הופך למנהל, ולכן גם למפתח. אידמפוטנטי: ברגע שיש מנהל
@@ -589,6 +653,44 @@ function migrate(PDO $pdo): void {
     $pdo->exec("UPDATE users SET role = 'admin'
                  WHERE id = (SELECT MIN(id) FROM users)
                    AND NOT EXISTS (SELECT 1 FROM users WHERE role = 'admin')");
+}
+
+/**
+ * מריץ מיגרציה על נתונים פעם אחת בחיי המסד, בטרנזקציה: נכשלה — לא נרשמה, ותנוסה
+ * שוב בבקשה הבאה. הבדיקה זולה (שורה אחת במפתח ראשי) ולכן בטוחה בכל בקשה.
+ */
+function runOnce(PDO $pdo, string $name, callable $fn): void {
+    $st = $pdo->prepare('SELECT 1 FROM migrations WHERE name = ?');
+    $st->execute([$name]);
+    $done = (bool) $st->fetchColumn();
+    $st->closeCursor();
+    if ($done) return;
+    $pdo->exec('BEGIN IMMEDIATE');
+    try {
+        // שוב, בתוך הנעילה: בקשה מקבילה אולי הקדימה אותנו
+        $st->execute([$name]);
+        $done = (bool) $st->fetchColumn();
+        $st->closeCursor();
+        if (!$done) $fn($pdo);
+        $pdo->prepare('INSERT OR IGNORE INTO migrations (name, done_at) VALUES (?, ?)')->execute([$name, nowIso()]);
+        $pdo->exec('COMMIT');
+    } catch (Throwable $e) {
+        $pdo->exec('ROLLBACK');
+        throw $e;
+    }
+}
+
+/** האוסף "שמורים" של משתמש — נוצר בפעם הראשונה שצריך אותו. */
+function savedCollectionId(PDO $pdo, int $userId): int {
+    $st = $pdo->prepare('SELECT id FROM collections WHERE owner_id = ? AND is_saved = 1');
+    $st->execute([$userId]);
+    $id = $st->fetchColumn();
+    $st->closeCursor();
+    if ($id) return (int) $id;
+    $now = nowIso();
+    $pdo->prepare("INSERT INTO collections (owner_id, name, icon, is_saved, created_at, updated_at) VALUES (?, 'שמורים', '♡', 1, ?, ?)")
+        ->execute([$userId, $now, $now]);
+    return (int) $pdo->lastInsertId();
 }
 
 /**

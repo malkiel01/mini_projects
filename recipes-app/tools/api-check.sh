@@ -562,6 +562,12 @@ call login '{"username":"owner","password":"sod12345"}' >/dev/null
 check 'קטגוריות: מונים לכל תג, עם סמלי הנושאים' "$(call tag-counts)" '"counts":.*"icons":.*"עוגות":"🎂"'
 check 'קטגוריות: חיפוש ברשת לפי נושא, בלי מילים' "$(call web-search '{"q":"","topic":"עוגות"}')" '"success":true.*"total":'
 check 'קטגוריות: סינון זמן — מספר ולא טקסט'     "$(call search '{"max_minutes":1}')" '"recipes":\[\]'
+CL=$(call collection-create '{"name":"ספר מתכונים לאמא","icon":"📖"}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["collection"]["id"])')
+check 'אוסף: נוצר'                              "$(call collections)" '"name":"שמורים".*"name":"ספר מתכונים לאמא"'
+PRC=$(call recipe-save '{"title":"הסוד של סבתא","visibility":"private","sections":[{"ingredients":[{"free_text":"קמח"}],"steps":[{"text":"לאפות"}]}]}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
+check 'אוסף: הוספת מתכון פרטי שלי'             "$(call collection-toggle "{\"id\":$CL,\"recipe_id\":$PRC,\"on\":true}")" '"has":true'
+check 'אוסף: בגיליון — מסומן'                    "$(call collections-for "{\"recipe_id\":$PRC}")" '"name":"ספר מתכונים לאמא","icon":"📖","is_saved":false,"has":true'
+check 'אוסף: "שמורים" לא נמחק'                   "$(call collection-delete "{\"id\":$(call collections | python3 -c 'import sys,json; print(json.load(sys.stdin)["mine"][0]["id"])')}")" 'אי אפשר למחוק'
 PR=$(call recipe-save '{"title":"מרק של סבתא לשיתוף","visibility":"private","sections":[{"ingredients":[{"free_text":"גזר"}],"steps":[{"text":"לבשל"}]}]}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
 PS=$(call people-search '{"q":"tester"}')
 check 'חיפוש אנשים — בלי דוא"ל'              "$PS" '"username":"tester"'
@@ -569,8 +575,13 @@ check 'ובלי השדה email'                       "$(printf '%s' "$PS" | gre
 TID=$(printf '%s' "$PS" | python3 -c 'import sys,json; print(json.load(sys.stdin)["people"][0]["id"])')
 check 'שיתוף עם tester'                       "$(call recipe-share "{\"recipe_id\":$PR,\"user_ids\":[$TID]}")" '"username":"tester"'
 check 'הבעלים רואה "משותף עם 1"'              "$(call recipe "{\"id\":$PR}")" '"shared_with_me":false,"share_count":1'
+check 'אוסף: שיתוף עם tester'                  "$(call collection-share "{\"id\":$CL,\"user_ids\":[$TID]}")" '"username":"tester"'
 call logout >/dev/null
 call login '{"username":"tester","password":"sod12345"}' >/dev/null
+check 'אוסף: אצל tester — ב"שותפו איתי", חדש'     "$(call collections)" '"shared":\[.*"name":"ספר מתכונים לאמא".*"new":true'
+check 'אוסף: tester רואה את הפרטי של הבעלים שבו'   "$(call collection "{\"id\":$CL}")" '"title":"הסוד של סבתא"'
+check 'אוסף: ופותח אותו'                          "$(call recipe "{\"id\":$PRC}")" '"title":"הסוד של סבתא"'
+check 'אוסף: אבל לא עורך את האוסף'                "$(call collection-update "{\"id\":$CL,\"name\":\"שלי\"}")" 'אינו שלך'
 check 'tester רואה ברשימה — משותף, חדש'         "$(call search '{"q":"מרק של סבתא"}')" '"title":"מרק של סבתא לשיתוף".*"shared_with_me":true,"shared_new":true'
 check 'ופותח — "שותף איתך"'                     "$(call recipe "{\"id\":$PR}")" '"shared_with_me":true'
 check 'אחרי הפתיחה — כבר לא חדש'                "$(call search '{"shared":true}')" '"shared_new":false'

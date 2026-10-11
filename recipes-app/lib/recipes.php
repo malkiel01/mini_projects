@@ -79,7 +79,22 @@ function canView(array $recipe, ?array $user): bool {
     if ($recipe['visibility'] === 'public') return true;
     if (!$user) return false;
     if ((int) $recipe['owner_id'] === (int) $user['id']) return true;
-    return isSharedWith((int) $recipe['id'], (int) $user['id']);   // פרטי ששותף איתו (lib/network.php)
+    return isSharedWith((int) $recipe['id'], (int) $user['id'])     // פרטי ששותף איתו (lib/network.php)
+        || sharedViaCollection((int) $recipe['id'], (int) $user['id']);   // בתוך אוסף ששותף איתו (lib/collections.php)
+}
+
+/**
+ * מתכון פרטי בתוך אוסף ששותף איתי — גלוי לי, אם הוא של בעל האוסף (SPEC 15.3,
+ * החלטה 3). מתכון פרטי של אחר באותו אוסף — לא: שיתוף אוסף משתף את *שלי*.
+ */
+function sharedViaCollection(int $recipeId, int $userId): bool {
+    $st = db()->prepare('SELECT 1 FROM collection_items ci JOIN collections c ON c.id = ci.collection_id
+                           JOIN collection_shares cs ON cs.collection_id = c.id JOIN recipes r ON r.id = ci.recipe_id
+                          WHERE ci.recipe_id = ? AND cs.user_id = ? AND c.owner_id = r.owner_id LIMIT 1');
+    $st->execute([$recipeId, $userId]);
+    $ok = (bool) $st->fetchColumn();
+    $st->closeCursor();
+    return $ok;
 }
 
 function isSharedWith(int $recipeId, int $userId): bool {

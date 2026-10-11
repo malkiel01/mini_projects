@@ -199,67 +199,45 @@ function setNote(int $recipeId, string $text, array $user): ?array {
 // מועדפים
 // ─────────────────────────────────────────────────────────────
 
+// המועדפים הם עכשיו האוסף "שמורים" (lib/collections.php, SPEC 15.3). הפונקציות
+// נשארו באותם שמות ובאותה צורה — ♡ במתכון, ו-api: favorite-toggle / favorites.
+
 function isFavorite(int $recipeId, ?array $user): bool {
     if (!$user) return false;
-    $st = db()->prepare('SELECT 1 FROM favorites WHERE user_id = ? AND recipe_id = ?');
+    $st = db()->prepare('SELECT 1 FROM collection_items ci JOIN collections c ON c.id = ci.collection_id
+                          WHERE c.owner_id = ? AND c.is_saved = 1 AND ci.recipe_id = ?');
     $st->execute([$user['id'], $recipeId]);
-    return (bool) $st->fetch();
+    $ok = (bool) $st->fetch();
+    $st->closeCursor();
+    return $ok;
 }
 
-/** "שמור אצלי": מוסיף אם אין, מסיר אם יש. מחזיר את המצב החדש. */
+/** ♡: מוסיף ל"שמורים" אם אין, מסיר אם יש. מחזיר את המצב החדש. */
 function toggleFavorite(int $recipeId, array $user): bool {
+    require_once __DIR__ . '/collections.php';
     $recipe = viewableRecipeRow($recipeId, $user);
     if ((int) $recipe['owner_id'] === (int) $user['id']) throw new AppError('המתכון כבר שלך — הוא ברשימה בלי לשמור');
-
-    if (isFavorite($recipeId, $user)) {
-        db()->prepare('DELETE FROM favorites WHERE user_id = ? AND recipe_id = ?')
-            ->execute([$user['id'], $recipeId]);
-        return false;
-    }
-    db()->prepare('INSERT INTO favorites (user_id, recipe_id, title_snapshot, created_at) VALUES (?,?,?,?)')
-        ->execute([$user['id'], $recipeId, $recipe['title'], nowIso()]);
-    return true;
+    return collectionToggle(mySavedCollection($user), ['recipe_id' => $recipeId], !isFavorite($recipeId, $user), $user);
 }
 
 /**
- * המועדפים של המשתמש. לכל אחד status:
+ * המתכונים ב"שמורים", החדש ראשון. לכל אחד status:
  *   ok     — המתכון זמין, ויש לו את שדות הרשימה הרגילים
  *   hidden — קיים אך הכותב הפך אותו לפרטי ("אינו זמין כרגע")
  *   gone   — נמחק ("הוסר על ידי הכותב"), נשאר רק השם שנשמר
  */
 function listFavorites(array $user): array {
-    $st = db()->prepare('SELECT f.id AS fav_id, f.recipe_id, f.title_snapshot, f.created_at AS saved_at,
-                                r.title, r.visibility, r.owner_id, r.difficulty, r.work_minutes, r.wait_minutes,
-                                u.display_name AS owner_name, m.path_or_url AS main_path, m.source AS main_source
-                           FROM favorites f
-                           LEFT JOIN recipes r ON r.id = f.recipe_id
-                           LEFT JOIN users u ON u.id = r.owner_id
-                           LEFT JOIN media m ON m.id = r.main_media_id AND m.kind = \'image\'
-                          WHERE f.user_id = ?
-                          ORDER BY f.created_at DESC');
-    $st->execute([$user['id']]);
-    $uid = (int) $user['id'];
-    return array_map(function ($row) use ($uid) {
-        if ($row['recipe_id'] === null) $status = 'gone';
-        elseif ($row['visibility'] !== 'public' && (int) $row['owner_id'] !== $uid && !isSharedWith((int) $row['recipe_id'], $uid)) $status = 'hidden';
-        else $status = 'ok';
-        return [
-            'fav_id'       => (int) $row['fav_id'],
-            'status'       => $status,
-            'id'           => $row['recipe_id'] !== null ? (int) $row['recipe_id'] : null,
-            'title'        => $status === 'gone' ? $row['title_snapshot'] : $row['title'],
-            'owner_name'   => $status === 'ok' ? $row['owner_name'] : null,
-            'difficulty'   => $status === 'ok' ? $row['difficulty'] : null,
-            'work_minutes' => $status === 'ok' && $row['work_minutes'] !== null ? (int) $row['work_minutes'] : null,
-            'wait_minutes' => $status === 'ok' && $row['wait_minutes'] !== null ? (int) $row['wait_minutes'] : null,
-            'thumb'        => $status === 'ok' ? mediaThumbUrl($row['main_path'], $row['main_source']) : null,
-            'saved_at'     => $row['saved_at'],
-        ];
-    }, $st->fetchAll());
+    require_once __DIR__ . '/collections.php';
+    $items = collectionItems(collectionRow(mySavedCollection($user)), $user);
+    $items = array_values(array_filter($items, fn($i) => $i['kind'] === 'recipe'));
+    usort($items, fn($a, $b) => [$b['saved_at'], $b['item_id']] <=> [$a['saved_at'], $a['item_id']]);
+    return array_map(fn($i) => ['fav_id' => $i['item_id'], 'status' => $i['status'], 'id' => $i['id'], 'title' => $i['title'],
+        'owner_name' => $i['owner_name'], 'difficulty' => $i['difficulty'], 'work_minutes' => $i['work_minutes'],
+        'wait_minutes' => $i['wait_minutes'], 'thumb' => $i['thumb'], 'saved_at' => $i['saved_at']], $items);
 }
 
 function removeFavorite(int $favId, array $user): void {
-    $st = db()->prepare('DELETE FROM favorites WHERE id = ? AND user_id = ?');
+    $st = db()->prepare('DELETE FROM collection_items WHERE id = ? AND collection_id IN (SELECT id FROM collections WHERE owner_id = ? AND is_saved = 1)');
     $st->execute([$favId, $user['id']]);
     if ($st->rowCount() === 0) throw new AppError('המועדף אינו קיים', 404);
 }

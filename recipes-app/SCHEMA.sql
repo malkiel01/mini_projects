@@ -448,18 +448,63 @@ CREATE INDEX idx_recipe_tags_tag ON recipe_tags(tag_id);
 -- לבטא "לכל היותר תג אחד מציר X" באילוץ, וזו אכיפה שכן צריכה להתריע
 -- למשתמש בהודעה ולא ליפול בשגיאת מסד.
 
--- תג חופשי — פרטי למשתמש (4). לכן user_id כאן ולא בטבלת tags.
-CREATE TABLE user_tags (
-  id      INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  name    TEXT    NOT NULL,
-  UNIQUE (user_id, name)
-);
+-- תוויות אישיות (תג חופשי, סעיף 4) — לא ייבנו: אוספים במקומן (SPEC 15.10, החלטה 1).
 
-CREATE TABLE recipe_user_tags (
-  recipe_id   INTEGER NOT NULL REFERENCES recipes(id)    ON DELETE CASCADE,
-  user_tag_id INTEGER NOT NULL REFERENCES user_tags(id)  ON DELETE CASCADE,
-  PRIMARY KEY (recipe_id, user_tag_id)
+-- ═══════════════════════════════════════════════════════════
+-- אוספים  (SPEC 15.3, lib/collections.php)
+-- ═══════════════════════════════════════════════════════════
+
+-- רשימה בעלת שם, ממתכונים מכל מקור. "שמורים" (is_saved) — אחד למשתמש, לא
+-- נמחק, ♡ מוסיף אליו; המועדפים הישנים עברו אליו (החלטה 2).
+CREATE TABLE collections (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name        TEXT    NOT NULL,
+  icon        TEXT    NOT NULL DEFAULT '📁',
+  description TEXT    NOT NULL DEFAULT '',
+  visibility  TEXT    NOT NULL DEFAULT 'private' CHECK (visibility IN ('private', 'public')),
+  is_saved    INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT    NOT NULL,
+  updated_at  TEXT    NOT NULL
+);
+CREATE INDEX idx_collections_owner ON collections(owner_id);
+CREATE UNIQUE INDEX idx_collections_saved ON collections(owner_id) WHERE is_saved = 1;
+
+-- מתכון באפליקציה — הפניה, לא העתק (נמחק: recipe_id ריק, השם נשאר). מתכון
+-- מהרשת בלי לייבא — קישור, שם ותמונה, כמו המלצה.
+CREATE TABLE collection_items (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+  kind          TEXT    NOT NULL CHECK (kind IN ('recipe', 'web')),
+  recipe_id     INTEGER REFERENCES recipes(id) ON DELETE SET NULL,
+  entry_id      INTEGER REFERENCES index_entries(id) ON DELETE SET NULL,
+  url           TEXT,
+  title         TEXT    NOT NULL,
+  image         TEXT,
+  site          TEXT,
+  position      INTEGER NOT NULL,
+  added_at      TEXT    NOT NULL
+);
+CREATE INDEX idx_collection_items ON collection_items(collection_id, position);
+CREATE INDEX idx_collection_items_recipe ON collection_items(recipe_id);
+CREATE UNIQUE INDEX idx_collection_items_r ON collection_items(collection_id, recipe_id) WHERE recipe_id IS NOT NULL;
+CREATE UNIQUE INDEX idx_collection_items_w ON collection_items(collection_id, url) WHERE kind = 'web';
+
+-- שיתוף אוסף: הנמען רואה את המתכונים הפרטיים של בעל האוסף שבתוכו (החלטה 3).
+-- של אחרים — לעולם לא.
+CREATE TABLE collection_shares (
+  collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+  user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at    TEXT    NOT NULL,
+  seen_at       TEXT,
+  PRIMARY KEY (collection_id, user_id)
+);
+CREATE INDEX idx_collection_shares_user ON collection_shares(user_id);
+
+-- מיגרציות חד־פעמיות על נתונים (runOnce ב-lib/db.php): מה שרשום — לא ירוץ שוב.
+CREATE TABLE migrations (
+  name    TEXT PRIMARY KEY,
+  done_at TEXT NOT NULL
 );
 
 -- ═══════════════════════════════════════════════════════════

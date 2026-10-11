@@ -111,3 +111,24 @@ function catalogRegisterSql(): void {
     }, 2, PDO::SQLITE_DETERMINISTIC);
     $done = true;
 }
+
+/**
+ * חד־פעמי (runOnce ב-db.php): נושא לפי השם למתכונים שאין להם אף נושא. עובד על
+ * ה-PDO שמתקבל — רץ בתוך db() עצמו, לפני שהוא מוכן. מחזיר כמה מתכונים שויכו.
+ */
+function catalogBackfillTopics(PDO $pdo): int {
+    $byName = array_map('intval', $pdo->query("SELECT name, id FROM tags WHERE axis = 'topic'")->fetchAll(PDO::FETCH_KEY_PAIR));
+    $rows = $pdo->query("SELECT r.id, r.title FROM recipes r
+                          WHERE NOT EXISTS (SELECT 1 FROM recipe_tags rt JOIN tags t ON t.id = rt.tag_id WHERE rt.recipe_id = r.id AND t.axis = 'topic')")->fetchAll();
+    $ins = $pdo->prepare('INSERT OR IGNORE INTO recipe_tags (recipe_id, tag_id) VALUES (?, ?)');
+    $n = 0;
+    foreach ($rows as $r) {
+        $hit = false;
+        foreach (CATALOG_TOPIC_WORDS as $name => $words) {
+            if (!isset($byName[$name])) continue;
+            foreach ($words as $w) if (catalogHasWord((string) $r['title'], $w)) { $ins->execute([(int) $r['id'], $byName[$name]]); $hit = true; break; }
+        }
+        $n += (int) $hit;
+    }
+    return $n;
+}

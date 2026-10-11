@@ -292,6 +292,8 @@ async function route() {
     else if (h === '#/import' || h.startsWith('#/import?')) await renderImport(new URLSearchParams(h.split('?')[1] || '').get('url') || '');
     else if ((m = h.match(/^#\/edit\/(\d+)$/))) await renderEditor(+m[1]);
     else if (h === '#/favorites') await renderFavorites();
+    else if (h === '#/collections') await renderCollections();
+    else if ((m = h.match(/^#\/c\/(\d+)$/))) await renderCollection(+m[1]);
     else if (h === '#/pantry') await renderPantry();
     else if (h === '#/shopping') await renderShoppingLists();
     else if ((m = h.match(/^#\/shopping\/(\d+)$/))) await renderShoppingList(+m[1]);
@@ -459,9 +461,11 @@ async function renderList(f = listParams('')) {
                     tag_ids: [f.topic, ...f.tags].filter(Boolean), difficulty: f.d || null, max_minutes: f.m || null }),
     scope === 'shared' || (scope === 'all' && !q && !filtered) ? api('recommendations') : Promise.resolve(null),
   ]);
+  const sharedColls = scope === 'shared' && !filtered && !q ? (await api('collections').catch(() => ({ shared: [] }))).shared : [];
   // תג "חדש" ללשונית: מתכונים ששותפו ועוד לא נפתחו (מתוך "הכול"), ועוד המלצות שלא נפתחו
-  if (scope === 'all' && !q && !filtered) { const n = recipes.filter((r) => r.shared_new).length + (reco?.unseen || 0); const b = $('#shared-new'); b.textContent = n; b.hidden = !n; }
-  const recoHtml = scope === 'shared' && !filtered && reco?.items.length ? `<h3 class="list__head">📨 המלצות</h3>${reco.items.map(recoItem).join('')}
+  if (scope === 'all' && !q && !filtered) { const n = recipes.filter((r) => r.shared_new).length + (reco?.unseen || 0) + (reco?.collections_unseen || 0); const b = $('#shared-new'); b.textContent = n; b.hidden = !n; }
+  const collHtml = sharedColls.length ? `<h3 class="list__head">📁 אוספים ששותפו איתי</h3><div class="coll-grid">${sharedColls.map(collectionCard).join('')}</div>` : '';
+  const recoHtml = scope === 'shared' && !filtered && (reco?.items.length || collHtml) ? `${collHtml}${reco?.items.length ? `<h3 class="list__head">📨 המלצות</h3>${reco.items.map(recoItem).join('')}` : ''}
     ${recipes.length ? '<h3 class="list__head">👥 מתכונים ששותפו איתי</h3>' : ''}` : '';
   if (recoHtml) results.innerHTML = recoHtml + recipes.map(recipeItem).join('');
   else if (!recipes.length) {
@@ -538,6 +542,7 @@ async function renderRecipe(id) {
               ${r.is_mine ? `<a class="icon-btn" href="#/edit/${r.id}" aria-label="עריכה" title="עריכה">✏️</a>
               <button class="icon-btn icon-btn--danger" id="del" type="button" aria-label="מחיקה" title="מחיקה">🗑</button>
               <button class="icon-btn" id="share-open" type="button" aria-label="שיתוף עם אנשים" title="שיתוף עם אנשים">👥</button>` : ''}
+              <button class="icon-btn" id="coll-open" type="button" aria-label="הוספה לאוסף" title="הוספה לאוסף">📁</button>
               ${r.source ? '<button class="icon-btn" id="reco-open" type="button" aria-label="המלצה על המקור" title="המלצה על המקור">📨</button>' : ''}
               ${!r.is_mine ? '<button class="icon-btn" id="report-open" type="button" aria-label="דיווח" title="דיווח">⚑</button>' : ''}
               <button class="icon-btn" id="print" type="button" aria-label="הדפסה" title="הדפסה">🖨</button>
@@ -552,6 +557,7 @@ async function renderRecipe(id) {
           </p>
           ${r.is_mine ? '<div id="share-box" class="share-box" hidden></div>' : ''}
           ${r.source ? '<div id="reco-box" class="share-box" hidden></div>' : ''}
+          <div id="coll-box" class="share-box" hidden></div>
           <div id="report-slot"></div>
           ${loaded.shared_with_me ? '<p class="small"><button class="link" type="button" id="leave-share">הסר מהרשימה שלי</button></p>' : ''}
           ${r.source ? `
@@ -588,7 +594,7 @@ async function renderRecipe(id) {
           <div id="shopping-pick" hidden></div>
           ${r.is_mine ? '' : `<div class="actions">
             <button class="btn ${social.isFavorite ? 'btn--primary' : ''}" id="fav" type="button" aria-pressed="${social.isFavorite}">
-              ${social.isFavorite ? '♥ שמור אצלי' : '♡ שמור אצלי'}
+              ${social.isFavorite ? '♥ בשמורים' : '♡ לשמורים'}
             </button>
           </div>`}
         </header>
@@ -647,6 +653,11 @@ async function renderRecipe(id) {
       const box = $('#reco-box');
       box.hidden = !box.hidden;
       if (!box.hidden) renderRecoBox(box, { recipe_id: r.id }, r.title);
+    });
+    $('#coll-open').addEventListener('click', () => {
+      const box = $('#coll-box');
+      box.hidden = !box.hidden;
+      if (!box.hidden) collectionPicker(box, { recipe_id: r.id });
     });
     $('#leave-share')?.addEventListener('click', async () => {
       if (!confirm('להסיר את המתכון מהרשימה שלך? הוא יישאר אצל מי ששיתף.')) return;
@@ -855,38 +866,233 @@ async function renderRecipe(id) {
 
 // ───────────────────────── מועדפים ─────────────────────────
 
+/** המועדפים הם עכשיו האוסף "שמורים" — הכתובת הישנה מפנה אליו. */
 async function renderFavorites() {
-  const { favorites } = await api('favorites');
-  const draw = (items) => {
-    view.innerHTML = `
-      <section class="toolbar"><a class="link" href="#/">‹ לרשימה</a><h2>המועדפים שלי</h2></section>
-      <section class="list">
-        ${items.length ? items.map((f) => f.status === 'ok' ? `
-          <a class="item" href="#/r/${f.id}">
-            ${f.thumb ? `<img class="item__thumb" src="${esc(f.thumb)}" alt="" loading="lazy">` : '<span class="item__thumb item__thumb--empty">🍲</span>'}
-            <div class="item__main">
-              <strong>${esc(f.title)}</strong>
-              <span class="muted">${esc(f.owner_name)}${f.difficulty ? ' · ' + DIFFICULTY[f.difficulty] : ''}${
-                f.work_minutes || f.wait_minutes ? ' · ' + minutes((f.work_minutes || 0) + (f.wait_minutes || 0)) : ''}</span>
-            </div>
-            <span class="badge badge--public">♥</span>
-          </a>` : `
-          <div class="item item--gone">
-            <span class="item__thumb item__thumb--empty">${f.status === 'gone' ? '🗑' : '🔒'}</span>
-            <div class="item__main">
-              <strong>${esc(f.title)}</strong>
-              <span class="muted">${f.status === 'gone' ? 'הוסר על ידי הכותב' : 'המתכון אינו זמין כרגע — הכותב הפך אותו לפרטי'}</span>
-            </div>
-            <button class="btn btn--ghost btn--danger" type="button" data-unfav="${f.fav_id}" aria-label="הסר מהמועדפים">✕</button>
-          </div>`).join('')
-        : '<p class="muted">עדיין לא שמרת כלום. במתכון של מישהו אחר יש כפתור ♡ "שמור אצלי".</p>'}
-      </section>`;
-    $$('[data-unfav]').forEach((b) => b.addEventListener('click', async () => {
-      try { draw((await api('favorite-remove', { fav_id: +b.dataset.unfav })).favorites); }
-      catch (err) { alert(err.message); }
-    }));
+  const { mine } = await api('collections');
+  location.replace('#/c/' + mine.find((c) => c.is_saved).id);
+}
+
+// ───────────────────────── אוספים (SPEC 15.3) ─────────────────────────
+
+const COLLECTION_ICONS = ['📁', '📖', '🎂', '🍪', '🥗', '🍲', '🍗', '🥘', '🍝', '🥖', '🍰', '🥧', '🍷', '🎉', '🕯️', '🌙', '🏖️', '❤️', '⭐', '👵'];
+
+/** כרטיס אוסף: תמונת שער מארבעת הראשונים (או הסמל), שם, כמה, פרטיות. */
+function collectionCard(c) {
+  const cover = c.cover.length
+    ? `<span class="coll__cover coll__cover--${Math.min(c.cover.length, 4)}">${c.cover.map((u) => `<img src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer">`).join('')}</span>`
+    : `<span class="coll__cover coll__cover--icon" aria-hidden="true">${esc(c.icon)}</span>`;
+  return `
+    <a class="coll ${c.new ? 'item--new' : ''}" href="#/c/${c.id}">
+      ${cover}
+      <span class="coll__body">
+        <strong>${c.cover.length ? esc(c.icon) + ' ' : ''}${esc(c.name)}</strong>
+        <span class="muted small">${c.count === 1 ? 'מתכון אחד' : `${c.count} מתכונים`}${c.owner ? ` · ${esc(c.owner.display_name)}` : ''}</span>
+        <span class="coll__badges">${c.visibility === 'public' ? '<span class="badge badge--public">ציבורי</span>' : ''}${
+          c.share_count ? `<span class="badge badge--shared">👥 ${c.share_count}</span>` : ''}${c.new ? '<span class="badge badge--shared">חדש</span>' : ''}</span>
+      </span>
+    </a>`;
+}
+
+/** טופס אוסף (חדש או עריכה): סמל, שם, תיאור, ציבורי. */
+function collectionForm(c = null) {
+  const icon = c ? c.icon : '📁';
+  return `
+    <form class="coll-form share-box" id="coll-form">
+      <div class="coll-form__icons" role="radiogroup" aria-label="סמל">${COLLECTION_ICONS.map((i) => `
+        <label class="coll-form__icon"><input type="radio" name="icon" value="${i}" ${i === icon ? 'checked' : ''}><span>${i}</span></label>`).join('')}</div>
+      ${c && c.is_saved ? '' : `<label>שם <input name="name" maxlength="60" required value="${esc(c ? c.name : '')}" placeholder="למשל: ספר מתכונים לאמא"></label>`}
+      <label>תיאור <span class="muted small">(לא חובה)</span> <input name="description" maxlength="300" value="${esc(c ? c.description : '')}"></label>
+      <label class="check"><input type="checkbox" name="public" ${c && c.visibility === 'public' ? 'checked' : ''}> ציבורי — מוצג בפרופיל שלי</label>
+      <p class="muted small">גם באוסף ציבורי רואים רק מתכונים שגלויים לכל אחד: המתכונים הפרטיים שלך לא נחשפים. לאנשים מסוימים — 👥 שיתוף.</p>
+      <div class="actions"><button class="btn btn--primary" type="submit">${c ? 'שמור' : 'צור אוסף'}</button>
+        <button class="btn btn--ghost" type="button" data-cancel>ביטול</button></div>
+      <p class="note" id="coll-msg" hidden></p>
+    </form>`;
+}
+const collectionFormData = (f) => ({ icon: f.icon.value, ...(f.name ? { name: f.name.value } : {}), description: f.description.value,
+                                     visibility: f.public.checked ? 'public' : 'private' });
+
+async function renderCollections() {
+  const d = await api('collections');
+  view.innerHTML = `
+    <section class="card settings settings--wide colls">
+      <a class="link" href="#/">‹ לרשימה</a>
+      <h2>📁 האוספים שלי</h2>
+      <p class="muted">רשימות בשם שלך, ממתכונים מכל מקום: שלך, של אחרים, וגם מהחיפוש ברשת — בלי לייבא.
+        ♡ במתכון מוסיף ל"שמורים"; 📁 — לכל אוסף.</p>
+      <button class="btn btn--primary" type="button" id="coll-new">+ אוסף חדש</button>
+      <div id="coll-new-slot"></div>
+      <div class="coll-grid">${d.mine.map(collectionCard).join('')}</div>
+      ${d.shared.length ? `<h3 class="list__head">👥 שותפו איתי</h3><div class="coll-grid">${d.shared.map(collectionCard).join('')}</div>` : ''}
+    </section>`;
+  $('#coll-new').addEventListener('click', () => {
+    const slot = $('#coll-new-slot');
+    if (slot.innerHTML) { slot.innerHTML = ''; return; }
+    slot.innerHTML = collectionForm();
+    const f = $('#coll-form');
+    f.name.focus();
+    f.querySelector('[data-cancel]').addEventListener('click', () => { slot.innerHTML = ''; });
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try { const { collection } = await api('collection-create', collectionFormData(f)); go('#/c/' + collection.id); }
+      catch (err) { const m = $('#coll-msg'); m.textContent = err.message; m.className = 'note note--err'; m.hidden = false; }
+    });
+  });
+}
+
+/** שורת פריט באוסף. לבעלים — ▲▼✕. */
+function collectionItemRow(it, mine) {
+  const ctl = mine ? `<span class="coll-item__ctl">
+      <button class="btn btn--ghost btn--small" type="button" data-move="-1" data-item="${it.item_id}" aria-label="למעלה">▲</button>
+      <button class="btn btn--ghost btn--small" type="button" data-move="1" data-item="${it.item_id}" aria-label="למטה">▼</button>
+      <button class="btn btn--ghost btn--small btn--danger" type="button" data-remove="${it.item_id}" aria-label="הסר מהאוסף">✕</button></span>` : '';
+  if (it.status !== 'ok') {
+    return `<div class="item item--gone">
+      <span class="item__thumb item__thumb--empty">${it.status === 'gone' ? '🗑' : '🔒'}</span>
+      <div class="item__main"><strong>${esc(it.title)}</strong>
+        <span class="muted">${it.status === 'gone' ? 'הוסר על ידי הכותב' : 'המתכון אינו זמין כרגע'}</span></div>${ctl}</div>`;
+  }
+  const href = it.kind === 'web' ? it.open : `#/r/${it.id}`;
+  const thumb = it.thumb ? `<img class="item__thumb" src="${esc(it.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+    : `<span class="item__thumb item__thumb--empty">${it.kind === 'web' ? '🌐' : '🍲'}</span>`;
+  const sub = it.kind === 'web' ? `🌐 ${esc(it.site || '')} · מהרשת, לא יובא`
+    : `${esc(it.owner_name || '')}${it.difficulty ? ' · ' + DIFFICULTY[it.difficulty] : ''}${
+        it.work_minutes || it.wait_minutes ? ' · ' + minutes((it.work_minutes || 0) + (it.wait_minutes || 0)) : ''}`;
+  return `<div class="item coll-item">
+      <a class="item__media" href="${esc(href)}">${thumb}</a>
+      <a class="item__main" href="${esc(href)}"><strong>${esc(it.title)}</strong><span class="muted">${sub}</span></a>${ctl}</div>`;
+}
+
+async function renderCollection(id) {
+  const d = await api('collection', { id });
+  const c = d.collection;
+  const mine = c.is_mine;
+  view.innerHTML = `
+    <section class="card coll-page">
+      <div class="recipe__top">
+        <a class="link" href="#/collections">‹ האוספים</a>
+        <span class="recipe__icons">${mine ? `
+          <button class="icon-btn" id="coll-edit" type="button" aria-label="עריכה" title="עריכה">✏️</button>
+          <button class="icon-btn" id="coll-share" type="button" aria-label="שיתוף עם אנשים" title="שיתוף עם אנשים">👥</button>
+          ${c.is_saved ? '' : '<button class="icon-btn icon-btn--danger" id="coll-del" type="button" aria-label="מחיקה" title="מחיקה">🗑</button>'}` : ''}
+        </span>
+      </div>
+      <h2>${esc(c.icon)} ${esc(c.name)}</h2>
+      ${c.description ? `<p>${esc(c.description)}</p>` : ''}
+      <p class="muted small">${mine ? '' : `של <a class="link link--inline" href="#/u/${c.owner.id}">${esc(c.owner.display_name)}</a> · `}${
+        c.count === 1 ? 'מתכון אחד' : `${c.count} מתכונים`}${c.visibility === 'public' ? ' · <span class="badge badge--public">ציבורי</span>' : ' · פרטי'}${
+        c.share_count ? ` · <span class="badge badge--shared">👥 משותף עם ${c.share_count}</span>` : ''}${c.shared_with_me ? ' · <span class="badge badge--shared">👥 שותף איתך</span>' : ''}</p>
+      <div id="coll-slot"></div>
+      ${c.shared_with_me ? '<p class="small"><button class="link" type="button" id="coll-leave">הסר מהרשימה שלי</button></p>' : ''}
+    </section>
+    <section class="list" id="coll-items">${d.items.length ? d.items.map((it) => collectionItemRow(it, mine)).join('')
+      : `<p class="muted">${mine ? 'עוד ריק. מוסיפים מתוך מתכון (📁 למעלה), או מתוצאה בחיפוש ברשת.' : 'אין כאן מתכונים שגלויים לך.'}</p>`}</section>`;
+
+  const slot = $('#coll-slot');
+  $('#coll-edit')?.addEventListener('click', () => {
+    if (slot.innerHTML) { slot.innerHTML = ''; return; }
+    slot.innerHTML = collectionForm(c);
+    const f = $('#coll-form');
+    f.querySelector('[data-cancel]').addEventListener('click', () => { slot.innerHTML = ''; });
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try { await api('collection-update', { id, ...collectionFormData(f) }); renderCollection(id); }
+      catch (err) { const m = $('#coll-msg'); m.textContent = err.message; m.className = 'note note--err'; m.hidden = false; }
+    });
+  });
+  $('#coll-share')?.addEventListener('click', () => {
+    if (slot.innerHTML) { slot.innerHTML = ''; return; }
+    slot.innerHTML = '<div class="share-box" id="coll-share-box"></div>';
+    renderCollectionShareBox($('#coll-share-box'), c);
+  });
+  $('#coll-del')?.addEventListener('click', async () => {
+    if (!confirm(`למחוק את האוסף "${c.name}"?
+
+המתכונים עצמם לא יימחקו — רק הרשימה.`)) return;
+    try { await api('collection-delete', { id }); go('#/collections'); } catch (err) { alert(err.message); }
+  });
+  $('#coll-leave')?.addEventListener('click', async () => {
+    if (!confirm('להסיר את האוסף מהרשימה שלך? הוא יישאר אצל מי ששיתף.')) return;
+    try { await api('collection-leave', { id }); go('#/collections'); } catch (err) { alert(err.message); }
+  });
+  $('#coll-items').addEventListener('click', async (e) => {
+    const mv = e.target.closest('[data-move]');
+    const rm = e.target.closest('[data-remove]');
+    if (!mv && !rm) return;
+    try {
+      if (mv) await api('collection-item-move', { item_id: +mv.dataset.item, dir: +mv.dataset.move });
+      else await api('collection-item-remove', { item_id: +rm.dataset.remove });
+      renderCollection(id);
+    } catch (err) { alert(err.message); }
+  });
+}
+
+/** לוח השיתוף של אוסף: מי ששותף רואה את האוסף, ואת המתכונים הפרטיים *שלך* שבו. */
+async function renderCollectionShareBox(box, c) {
+  box.innerHTML = `
+    <h3>👥 שיתוף האוסף</h3>
+    <p class="muted small">מי שברשימה רואה את האוסף — <strong>כולל המתכונים הפרטיים שלך שבתוכו</strong>. מתכונים פרטיים של אחרים
+      נשארים מוסתרים מהם. מה שתוסיף לאוסף — יראו מיד.</p>
+    <div id="cshare-list" class="people-list"></div>
+    <div id="cshare-pick"></div>`;
+  let current = [];
+  const drawList = () => {
+    $('#cshare-list', box).innerHTML = current.length
+      ? current.map((p) => personRow(p, `<span class="muted small">${p.seen ? 'פתח/ה ✓' : 'עוד לא פתח/ה'}</span>
+          <button class="btn btn--ghost btn--small" type="button" data-unshare="${p.id}" aria-label="הסרה">✕</button>`)).join('')
+      : '<p class="muted small">עוד לא שותף עם אף אחד.</p>';
   };
-  draw(favorites);
+  try { current = (await api('collection-shares', { id: c.id })).shares; } catch (err) { box.innerHTML = `<p class="note note--err">${esc(err.message)}</p>`; return; }
+  drawList();
+  $('#cshare-list', box).addEventListener('click', async (e) => {
+    const uid = e.target.dataset.unshare;
+    if (!uid) return;
+    try { current = (await api('collection-unshare', { id: c.id, user_id: +uid })).shares; drawList(); picker.refresh(); } catch (err) { alert(err.message); }
+  });
+  const picker = peoplePicker($('#cshare-pick', box), {
+    placeholder: 'חיפוש לפי שם…',
+    actionFor: (p) => current.some((x) => x.id === p.id) ? '<span class="muted small">משותף ✓</span>'
+      : '<button class="btn btn--primary btn--small" type="button" data-act="share">שתף</button>',
+    onAction: async (pid) => { current = (await api('collection-share', { id: c.id, user_ids: [pid] })).shares; drawList(); },
+  });
+  picker.input.focus();
+}
+
+/**
+ * גיליון "📁 לאוסף": האוספים שלי עם סימון במה שהפריט כבר נמצא, ו"אוסף חדש"
+ * באותו מקום. target: { recipe_id } או { entry_id } (מהרשת, בלי לייבא).
+ */
+async function collectionPicker(box, target) {
+  box.innerHTML = '<p class="muted small">טוען…</p>';
+  let list;
+  try { list = (await api('collections-for', target)).collections; } catch (err) { box.innerHTML = `<p class="note note--err">${esc(err.message)}</p>`; return; }
+  const draw = () => {
+    box.innerHTML = `
+      <h3>📁 לאוסף</h3>
+      <div class="coll-pick">${list.map((c) => `
+        <label class="chip chip--pick"><input type="checkbox" data-coll="${c.id}" ${c.has ? 'checked' : ''}> ${esc(c.icon)} ${esc(c.name)}</label>`).join('')}</div>
+      <form class="coll-pick__new"><input name="name" maxlength="60" placeholder="+ אוסף חדש…" autocomplete="off" aria-label="שם לאוסף חדש">
+        <button class="btn btn--small" type="submit">צור והוסף</button></form>
+      <p class="muted small">${target.entry_id ? 'נשמר כקישור — בלי לייבא ובלי לבזבז פתיחה.' : 'הפניה למתכון, לא העתק.'} <a class="link link--inline" href="#/collections">האוספים שלי ›</a></p>`;
+    $$('[data-coll]', box).forEach((cb) => cb.addEventListener('change', async () => {
+      cb.disabled = true;
+      try { const { has } = await api('collection-toggle', { id: +cb.dataset.coll, ...target, on: cb.checked }); list.find((c) => c.id === +cb.dataset.coll).has = has; }
+      catch (err) { cb.checked = !cb.checked; alert(err.message); }
+      cb.disabled = false;
+    }));
+    $('.coll-pick__new', box).addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = e.target.name.value.trim();
+      if (!name) return;
+      try {
+        const { collection } = await api('collection-create', { name });
+        await api('collection-toggle', { id: collection.id, ...target, on: true });
+        list.push({ id: collection.id, name: collection.name, icon: collection.icon, has: true });
+        draw();
+      } catch (err) { alert(err.message); }
+    });
+  };
+  draw();
 }
 
 // ───────────────────────── עורך ─────────────────────────
@@ -2532,7 +2738,9 @@ async function renderWebSearch(q = '', topic = '') {
           <span class="muted small">${esc(r.site)}${r.saves ? ` · <span class="web-item__saves">⬇ ${r.saves === 1 ? 'משתמש אחד שמר' : `${r.saves} משתמשים שמרו`}</span>` : ''}</span>
           <a class="muted small scout-item__url" dir="auto" href="${esc(r.url)}" target="_blank" rel="noopener nofollow">${esc(prettyUrl(r.url))}</a>
         </div>
-        <div class="scout-item__actions"><a class="btn btn--primary btn--small" href="#/web/${r.id}">פתח</a></div>
+        <div class="scout-item__actions"><a class="btn btn--primary btn--small" href="#/web/${r.id}">פתח</a>
+          <button class="btn btn--small" type="button" data-coll-entry="${r.id}" aria-label="לאוסף — בלי לפתוח" title="לאוסף — בלי לפתוח">📁</button></div>
+        <div class="share-box web-item__coll" data-coll-box="${r.id}" hidden></div>
       </article>`).join('');
     $('#web-more').hidden = d.results.length >= d.total;
   };
@@ -2569,6 +2777,14 @@ async function renderWebSearch(q = '', topic = '') {
     if (webState.q || webState.topic) search(); else { webState.data = null; resEl.innerHTML = ''; stats.textContent = ''; $('#web-more').hidden = true; }
   });
   $('#web-more').addEventListener('click', () => search(true));
+  // 📁 בתוצאה: שמירה לאוסף כקישור — בלי לפתוח (פתיחה נספרת במכסה היומית)
+  resEl.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-coll-entry]');
+    if (!b) return;
+    const box = $(`[data-coll-box="${b.dataset.collEntry}"]`, resEl);
+    box.hidden = !box.hidden;
+    if (!box.hidden) collectionPicker(box, { entry_id: +b.dataset.collEntry });
+  });
   // תמונה שלא נטענה (נמחקה באתר, חסימת קישור חיצוני) — חוזרים לסמל, בלי אייקון שבור
   resEl.addEventListener('error', (e) => { if (e.target.tagName === 'IMG') e.target.remove(); }, true);
   // כתובת עם חיפוש — היא הקובעת (קישור, "חזור"); בלי — ממשיכים מהחיפוש האחרון
@@ -2613,9 +2829,11 @@ async function renderWebRecipe(id) {
           <button class="btn btn--primary" type="button" id="web-save">💾 שמור אצלי</button>
           <button class="btn" type="button" id="web-edit">✏️ ערוך לפני שמירה</button>
           <button class="btn" type="button" id="web-reco">📨 המלץ למישהו</button>
+          <button class="btn" type="button" id="web-coll">📁 לאוסף</button>
           <a class="btn btn--ghost" href="${esc(d.source_url)}" target="_blank" rel="noopener nofollow">↗ באתר המקור</a>
         </div>
         <div id="reco-box" class="share-box" hidden></div>
+        <div id="coll-box" class="share-box" hidden></div>
         <p class="note" id="web-msg" hidden></p>
         ${res.opens_left != null ? `<p class="muted small">נשארו לך היום ${res.opens_left} פתיחות חדשות. מתכונים שכבר נפתחו — בלי הגבלה.</p>` : ''}
       </header>
@@ -2635,6 +2853,11 @@ async function renderWebRecipe(id) {
     const box = $('#reco-box');
     box.hidden = !box.hidden;
     if (!box.hidden) renderRecoBox(box, { entry_id: res.entry.id }, d.title);
+  });
+  $('#web-coll').addEventListener('click', () => {
+    const box = $('#coll-box');
+    box.hidden = !box.hidden;
+    if (!box.hidden) collectionPicker(box, { entry_id: res.entry.id });
   });
   $('#web-save').addEventListener('click', async (e) => {
     e.target.disabled = true;
@@ -2854,6 +3077,7 @@ async function renderPerson(id) {
            <button class="link link--danger" type="button" data-act="block">חסום</button></span>`}</div>
       <div id="person-report"></div>
     </section>
+    ${d.collections && d.collections.length ? `<h3 class="list__head">📁 אוספים</h3><div class="coll-grid">${d.collections.map(collectionCard).join('')}</div>` : ''}
     <section class="list">${d.recipes.length ? d.recipes.map(recipeItem).join('') : '<p class="muted">אין מתכונים שגלויים לך.</p>'}</section>`;
   $('#follow-slot').addEventListener('click', async (e) => {
     const b = e.target.closest('[data-act]');

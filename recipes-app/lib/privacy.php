@@ -106,6 +106,8 @@ function blockUser(int $targetId, array $user): void {
         $pdo->prepare('DELETE FROM recipe_shares WHERE (user_id = ? AND recipe_id IN (SELECT id FROM recipes WHERE owner_id = ?))
                                                   OR (user_id = ? AND recipe_id IN (SELECT id FROM recipes WHERE owner_id = ?))')->execute([$targetId, $uid, $uid, $targetId]);
         $pdo->prepare('DELETE FROM recommendations WHERE (from_user = ? AND to_user = ?) OR (from_user = ? AND to_user = ?)')->execute([$uid, $targetId, $targetId, $uid]);
+        $pdo->prepare('DELETE FROM collection_shares WHERE (user_id = ? AND collection_id IN (SELECT id FROM collections WHERE owner_id = ?))
+                                                      OR (user_id = ? AND collection_id IN (SELECT id FROM collections WHERE owner_id = ?))')->execute([$targetId, $uid, $uid, $targetId]);
         $pdo->commit();
     } catch (Throwable $e) { $pdo->rollBack(); throw $e; }
     logEvent('info', 'user-block-self', '', ['target' => $targetId], $user);
