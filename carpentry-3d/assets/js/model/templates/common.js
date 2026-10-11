@@ -94,10 +94,12 @@ export function drawerParams({ slide = 'hw:slide-std' } = {}) {
 }
 
 /** החלטות החיבור — נשאלות בכל מופע. */
-export function joineryParams({ shelves = true } = {}) {
+export function joineryParams({ shelves = true, autoT = false } = {}) {
+  // autoT: העובי נגזר מהחומר (ריק = כעובי החומר); מספר שהוקלד = דריסה גלויה, עם אזהרה כשהוא שונה מהחומר
+  const auto = (of, what) => (autoT ? { default: null, auto: { label: 'כעובי החומר', of }, hint: `ריק = כעובי ${what}; מספר = דריסה ידנית` } : {});
   const out = [
-    { key: 'sideT', label: 'עובי הדפנות', type: 'mm', min: 12, max: 40, default: 18, group: 'חיבורים' },
-    { key: 'shelfT', label: 'עובי המדפים', type: 'mm', min: 12, max: 40, default: 18, group: 'חיבורים' },
+    { key: 'sideT', label: 'עובי הדפנות', type: 'mm', min: 12, max: 40, default: 18, group: 'חיבורים', ...auto((v) => boardT(v.bodyMaterial), 'חומר הגוף') },
+    { key: 'shelfT', label: 'עובי המדפים', type: 'mm', min: 12, max: 40, default: 18, group: 'חיבורים', ...auto((v) => boardT(v.shelfMaterial ?? v.bodyMaterial), 'חומר המדפים') },
     { key: 'sidesOverTop', label: 'דפנות ↔ גג', type: 'enum', default: 'sides', group: 'חיבורים',
       options: [{ id: 'sides', name: 'הדפנות עוברות' }, { id: 'top', name: 'הגג עובר' }] },
     { key: 'backMode', label: 'גב', type: 'enum', default: 'groove', group: 'חיבורים',

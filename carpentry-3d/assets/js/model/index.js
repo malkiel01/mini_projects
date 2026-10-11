@@ -57,6 +57,7 @@ export function clamp(p, value) {
     if (!Number.isFinite(n)) return p.default;
     return Math.min(p.max, Math.max(p.min, Math.round(n * 10) / 10));
   }
+  if (p.auto && (value === null || value === '')) return null;   // נגזר (למשל מהחומר)
   if (p.type === 'mm' || p.type === 'int') {
     let n = Number(value);
     if (!Number.isFinite(n)) return p.default;
@@ -103,6 +104,14 @@ export function build(key, values) {
   const v = defaults(t);
   if (t.migrate) values = t.migrate({ ...values });   // ערכים ישנים שנשמרו בפרויקטים → המפתחות הנוכחיים
   for (const p of allParams(t)) if (values[p.key] !== undefined && !p.hidden) v[p.key] = clamp(p, values[p.key]);
+  // פרמטר שנגזר (p.auto — למשל עובי מהחומר): ריק = הערך הנגזר; מספר = דריסה, ואזהרה כשהוא שונה
+  const autoKeys = [], autoWarnings = [];
+  for (const p of allParams(t)) {
+    if (!p.auto) continue;
+    const derived = p.auto.of(v);
+    if (v[p.key] === null || v[p.key] === undefined) { v[p.key] = derived; autoKeys.push(p.key); }
+    else if (Number(v[p.key]) !== derived) autoWarnings.push(`${p.label} ${v[p.key]} מ"מ — שונה מעובי החומר (${derived} מ"מ); נקבע ידנית. ריקון השדה מחזיר לעובי החומר`);
+  }
   // חריגות לרכיב: values.overrides (המבנה האחד — docs/elements-spec.md) מתמזג עם שלושת המבנים
   // הישנים (partEdits / partFinishes / doorOpen). כשיש שניהם לאותו רכיב — overrides גובר.
   values = { ...values, ...splitOverrides(values) };
@@ -122,8 +131,8 @@ export function build(key, values) {
   // רכיב שהוזז / שמידותיו / זוויתו שונו ביד — אזהרה, כדי שמרווח או חפיפה לא יפתיעו
   const editWarnings = Object.entries(values.partEdits || {}).filter(([id, e]) => e && (e.size || (e.move && Object.values(e.move).some(Number)) || Number(e.yaw)) && out.parts.some((p) => p.id === id))
     .map(([id, e]) => `${out.parts.find((p) => p.id === id).name} (${id}) נערך ביד — ${editSummary(e)}; "↺ איפוס הרכיב" בכרטיס שלו מחזיר לתבנית`);
-  out.warnings = [...(out.warnings || []), ...physicsWarnings(out.hardware || []), ...clashWarnings, ...editWarnings, ...millWarnings(out.parts || [])];
-  return { ...out, values: { ...v, partFinishes: values.partFinishes || undefined, doorOpen: values.doorOpen || undefined, partEdits: values.partEdits || undefined, overrides: values.overrides || undefined }, template: t };
+  out.warnings = [...(out.warnings || []), ...autoWarnings, ...physicsWarnings(out.hardware || []), ...clashWarnings, ...editWarnings, ...millWarnings(out.parts || [])];
+  return { ...out, auto: Object.fromEntries(autoKeys.map((k) => [k, v[k]])), values: { ...v, partFinishes: values.partFinishes || undefined, doorOpen: values.doorOpen || undefined, partEdits: values.partEdits || undefined, overrides: values.overrides || undefined }, template: t };
 }
 
 /**

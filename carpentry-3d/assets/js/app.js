@@ -525,8 +525,9 @@ function rebuild(reframe = false) {
   if (!state.project) return;
   model = build(state.project.template_key, state.values);
   Object.assign(state.values, model.values);
+  for (const k of Object.keys(model.auto || {})) state.values[k] = null;   // נגזר (עובי מהחומר) — נשמר ריק, כדי שימשיך להשתנות עם החומר
   setUnitsModel(model);   // כרטיסי העמודות מציגים רוחב/גובה מחושבים ו"לא בתוקף"
-  form.sync(model.values);
+  form.sync(model.values, model.auto || {});
   viewer.setModel(model);
   // ממסגרים מחדש בטעינה, וגם כשהמידות השתנו בהרבה (למשל גובה 2000 → 2600) — אחרת המודל יוצא מהמסך.
   const b = model.bounds, lb = rebuild.lastBounds;
@@ -753,7 +754,7 @@ partEditor.open = true; partEditor.openRel = false;
 /** שדה לפרמטר של התבנית — מספר (עם קיצורים, אם יש) או רשימה. */
 function paramControl(q, value, attr) {
   if (q.type === 'mm' || q.type === 'int' || q.type === 'deg') {
-    return `<input type="number" ${attr} value="${value ?? ''}" ${q.min !== undefined ? `min="${q.min}"` : ''} ${q.max !== undefined ? `max="${q.max}"` : ''} step="1" data-step="${q.type === 'mm' ? 10 : q.type === 'deg' ? 5 : 1}">${q.presets ? `<span class="presets">${q.presets.map((v) => `<button type="button" data-rp-preset data-v="${v}" class="${Number(value) === v ? 'is-on' : ''}">${v}${q.type === 'deg' ? '°' : ''}</button>`).join('')}</span>` : ''}`;
+    return `<input type="number" ${attr} value="${value ?? ''}" ${q.auto ? `placeholder="${q.auto.of(state.values)}" title="ריק = ${q.auto.label}"` : ''} ${q.min !== undefined ? `min="${q.min}"` : ''} ${q.max !== undefined ? `max="${q.max}"` : ''} step="1" data-step="${q.type === 'mm' ? 10 : q.type === 'deg' ? 5 : 1}">${q.presets ? `<span class="presets">${q.presets.map((v) => `<button type="button" data-rp-preset data-v="${v}" class="${Number(value) === v ? 'is-on' : ''}">${v}${q.type === 'deg' ? '°' : ''}</button>`).join('')}</span>` : ''}`;
   }
   const opts = typeof q.options === 'function' || q.type === 'material' ? optionsFor(q) : (q.options || []);
   return `<select ${attr}>${opts.map((o) => `<option value="${esc(o.id)}" ${String(value) === String(o.id) ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}</select>`;
@@ -817,7 +818,8 @@ $('#part').addEventListener('change', (e) => {
   if (t.dataset.peEdge) return setPartEdit(p.id, { edges: { ...(cur.edges || {}), [t.dataset.peEdge]: t.checked } });
   if (t.dataset.rp) {
     const q = allParams(currentTemplate()).find((x) => x.key === t.dataset.rp);
-    return setTemplateValue(q.key, q.type === 'mm' || q.type === 'int' || q.type === 'deg' ? clamp(q, Number(t.value)) : t.value);
+    const num = q.type === 'mm' || q.type === 'int' || q.type === 'deg';
+    return setTemplateValue(q.key, num ? (q.auto && t.value === '' ? null : clamp(q, Number(t.value))) : t.value);   // נגזר: ריק = מהחומר
   }
   if (t.dataset.rl) {
     const l = JSON.parse(t.dataset.rl);

@@ -60,7 +60,7 @@ export function renderForm(root, tpl, values, onChange) {
         input.inputMode = 'numeric';
         input.min = p.min; input.max = p.max; input.step = 1;
         input.dataset.step = p.type === 'mm' ? 10 : p.type === 'deg' ? 5 : 1;   // החיצים קופצים ב-10 מ"מ; בהקלדה כל מספר שלם
-        input.value = values[p.key];
+        input.value = values[p.key] ?? '';
       } else {
         input = document.createElement('select');
         const opts = optionsFor(p);
@@ -91,6 +91,13 @@ export function renderForm(root, tpl, values, onChange) {
         });
         row.appendChild(chips);
       }
+      // נגזר (למשל עובי מהחומר): ריק = הערך הנגזר (מוצג כ-placeholder); ↺ מוחק דריסה
+      if (p.auto) {
+        const back = document.createElement('button');
+        back.type = 'button'; back.className = 'field__auto'; back.textContent = '↺ מהחומר'; back.title = `חזרה ל"${p.auto.label}"`;
+        back.addEventListener('click', (e) => { e.preventDefault(); values[p.key] = null; input.value = ''; refresh(); onChange(values); });
+        row.querySelector('.field__label').appendChild(back);
+      }
       if (p.hint) row.insertAdjacentHTML('beforeend', `<small class="hint">${p.hint}</small>`);
       sec.appendChild(row);
       fields.set(p.key, { p, row, input });
@@ -98,7 +105,7 @@ export function renderForm(root, tpl, values, onChange) {
       // מספרים מתעדכנים תוך כדי הקלדה; הערך מוצמד לטווח במודל, לא כאן,
       // כדי שהמשתמש יוכל להקליד "12" בדרך ל-"1200" בלי שהשדה יקפוץ.
       input.addEventListener(input.tagName === 'SELECT' ? 'change' : 'input', () => {
-        values[p.key] = input.tagName === 'SELECT' ? input.value : input.value === '' ? values[p.key] : Number(input.value);
+        values[p.key] = input.tagName === 'SELECT' ? input.value : input.value === '' ? (p.auto ? null : values[p.key]) : Number(input.value);
         refresh();
         onChange(values);
       });
@@ -110,18 +117,25 @@ export function renderForm(root, tpl, values, onChange) {
     for (const { p, row, widget } of fields.values()) {
       row.hidden = !visible(p, values);
       if (widget && !row.hidden) widget();
+      if (p.auto) {
+        const input = row.querySelector('input');
+        if (input) { input.placeholder = String(p.auto.of(values)); input.title = `ריק = ${p.auto.label} (${p.auto.of(values)})`; }
+        const back = row.querySelector('.field__auto');
+        if (back) back.hidden = values[p.key] === null || values[p.key] === undefined;
+      }
       if (p.presets) row.querySelectorAll('[data-preset]').forEach((b) => b.classList.toggle('is-on', Number(b.dataset.preset) === Number(values[p.key])));
     }
     // קבוצה שכל השדות שלה מוסתרים (למשל "דלתות" אחרי שעברו לכרטיס הקומה) — לא מוצגת
     for (const sec of root.querySelectorAll('details.group')) sec.hidden = ![...sec.querySelectorAll(':scope > .field')].some((r) => !r.hidden);
   }
   /** מציג בשדות את הערכים כפי שהמודל הצמיד אותם (אחרי clamp). */
-  function sync(clamped) {
+  function sync(clamped, auto = {}) {
     for (const { row, widget, live } of fields.values()) if (live && widget && !row.hidden) widget();   // ערכים מחושבים מהבנייה האחרונה
     for (const { p, input } of fields.values()) {
       if (!input) continue;                                // ווידג'ט — מצייר את עצמו ב-refresh
       if (document.activeElement === input) continue;   // לא לדרוס שדה שמקלידים בו
-      if (input.value !== String(clamped[p.key])) input.value = clamped[p.key];
+      const shown = p.key in auto ? '' : clamped[p.key];   // נגזר — השדה ריק ומציג את הערך כ-placeholder
+      if (input.value !== String(shown)) input.value = shown;
     }
   }
   refresh();

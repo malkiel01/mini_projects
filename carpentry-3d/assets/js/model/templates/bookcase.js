@@ -33,6 +33,9 @@ export default {
     { key: 'columns', label: 'עמודות', type: 'int', min: 1, max: 8, default: 3, group: 'חלוקה' },
     { legacy: true, key: 'shelvesPerColumn', label: 'מדפים בכל עמודה', type: 'int', min: 0, max: 15, default: 4, group: 'חלוקה', hint: 'ברירת המחדל; אפשר לשנות לכל עמודה ולכל תא למטה' },
     // המבנה לפי עמודה וקומה (docs/elements-spec.md). ריק — נגזר מההגדרות הישנות בכל בנייה.
+    { key: 'newUnit', label: 'עמודה שנוספת', type: 'enum', default: 'last', group: 'חלוקה', hint: 'כשמגדילים את מספר העמודות (או "＋ עמודה" בכרטיסים)',
+      showIf: (v) => Array.isArray(v.units) && v.units.length > 0, showIfText: 'יש עמודות שהוגדרו',
+      options: [{ id: 'last', name: 'העתק של העמודה האחרונה' }, { id: 'open', name: 'פתוחה — מדפים' }, { id: 'wood', name: 'דלת עץ' }, { id: 'glass', name: 'ויטרינה' }] },
     { key: 'units', label: 'עמודות וקומות', type: 'json', default: null, group: 'חלוקה', editor: 'units' },
     { legacy: true, key: 'columnsLayout', label: 'עריכת עמודות', type: 'json', default: null, group: 'חלוקה', editor: 'columns' },
 
@@ -83,7 +86,7 @@ export default {
 
   // החלטות החיבור — נשאלות בכל מופע, עם ברירת מחדל מהתבנית.
   // מדפים קבועים/מתכווננים — לכל קומה בכרטיס העמודה (ההגדרה הכללית רק לפרויקטים שעוד לא הומרו)
-  joinery: joineryParams().map((p) => (p.key === 'shelvesMode' ? { ...p, legacy: true } : p)),
+  joinery: joineryParams({ autoT: true }).map((p) => (p.key === 'shelvesMode' ? { ...p, legacy: true } : p)),
 
   /** פרויקטים שנשמרו לפני הפרדת הדפנות: glassSides → סוג דופן, 'fluted' → סטריפים דקים. */
   migrate(v) {
@@ -93,6 +96,8 @@ export default {
     }
     delete v.glassSides;
     if (v.doorFinish === 'fluted') v.doorFinish = 'fluted-fine';
+    // עובי שנשמר כמספר ושווה לעובי החומר → "כעובי החומר" (אותה בנייה; מעכשיו משתנה עם החומר)
+    for (const [k, m] of [['sideT', v.bodyMaterial], ['shelfT', v.shelfMaterial ?? v.bodyMaterial]]) if (v[k] != null && m && Number(v[k]) === boardThickness(m)) v[k] = null;
     return v;
   },
 
@@ -161,7 +166,7 @@ export default {
 
     // גובה לכל עמודה (ברירת מחדל — גובה הספרייה). `tops` — פני הגג של כל עמודה.
     const layout = sectionLayout(v.columnsLayout, 'main', v.columns);
-    const saved = validUnits(v.units, v.columns);
+    const saved = validUnits(v.units, v.columns, v);
     const heights = columnHeights(saved ? { cols: Object.fromEntries(saved.map((u, i) => [i, { height: u.height }])) } : layout, v.columns, H, minColumnH(v));
     const tops = heights.map((h) => h - v.crownH);
     const stepped = tops.some((t) => t !== topY);
@@ -444,13 +449,30 @@ function inactiveOf(units, legacyLayout, v, floorsOf) {
 }
 
 /** units שנשמרו בפרויקט — רק אם הם במבנה תקין ובמספר העמודות הנוכחי. */
-function validUnits(u, n) {
+function validUnits(u, n, v = {}) {
   if (!Array.isArray(u) || !u.length || !u.every((c) => c && Array.isArray(c.floors) && c.floors.length > 0)) return null;
   if (u.length === n) return u;
-  // מספר העמודות השתנה: עמודות שנוספו — העתק של האחרונה (ברוחב אוטומטי); שירדו — נחתכות
+  // מספר העמודות השתנה: עמודות שנוספו — לפי newUnit (ברירת מחדל: העתק של האחרונה, ברוחב אוטומטי); שירדו — נחתכות
   const out = u.slice(0, n);
-  while (out.length < n) out.push({ ...JSON.parse(JSON.stringify(u[u.length - 1])), width: null });
+  while (out.length < n) out.push(newUnitOf(u[u.length - 1], v.newUnit, v));
   return out;
+}
+/**
+ * עמודה חדשה: 'last' — העתק של האחרונה; 'open' / 'wood' / 'glass' — קומה אחת לכל הגובה
+ * עם מדפים, והחזית לפי הבחירה. פרטי החזית (חומר, צירים, ויטרינה…) מהקומה העליונה של
+ * האחרונה, כדי שהעמודה תתאים לשאר.
+ */
+export function newUnitOf(last, kind = 'last', v = {}) {
+  const copy = JSON.parse(JSON.stringify(last));
+  if (!kind || kind === 'last') return { ...copy, width: null };
+  const top = copy.floors[copy.floors.length - 1] || {};
+  const sh = top.interior?.type === 'shelves' ? top.interior.shelves || {} : {};
+  const type = kind === 'open' ? 'none' : kind;
+  return {
+    width: null, height: null,
+    floors: [{ height: null, front: { ...legacyFront(v, type), ...(top.front || {}), type },
+      interior: { type: 'shelves', shelves: { count: Number.isInteger(sh.count) ? sh.count : (v.shelvesPerColumn ?? 4), gaps: null, material: type === 'glass' ? (sh.material ?? 'same') : 'same', mode: sh.mode ?? v.shelvesMode ?? 'adjustable' } } }],
+  };
 }
 
 /** חזית קומה מההגדרות הישנות (כלליות) — אותו דבר לכל עמודה. */
