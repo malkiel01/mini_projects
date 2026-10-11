@@ -572,6 +572,8 @@ call logout >/dev/null
 echo
 echo "8ל. רשת — שיתוף עם אדם מסוים, ומעקב"
 call login '{"username":"owner","password":"sod12345"}' >/dev/null
+check 'פעילות: מונה לפעמון'                       "$(call activity-count)" '"unread":[0-9]'
+check 'פעילות: הדף, ואחריו המונה מתאפס'           "$(call activity)$(call activity-count)" '"items":\[.*"unread":0}$'
 check 'בשבילך: עונה, טעם, התאמה אישית'          "$(call foryou)" '"items":\[.*"personalize":true,"needs_taste":'
 check 'בשבילך: אירוע לא מוכר — נדחה'            "$(call event '{"kind":"hack","recipe_id":1}')" 'לא מוכר'
 check 'בשבילך: טעם — נושא לא מוכר מסונן'        "$(call foryou-taste '{"topics":[999999],"diet":[]}')" '"taste":{"topics":\[\],"diet":\[\]}'
