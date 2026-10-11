@@ -581,6 +581,14 @@ function indexPageImage(string $html, string $base): ?string {
     return null;
 }
 
+/** בעוד כמה שניות יש עבודה לעובד (0 — עכשיו), או null כשאין בכלל. */
+function indexNextWorkIn(): ?int {
+    if (indexDueSite()) return 0;
+    $hosts = indexTitleHosts();
+    if (!$hosts) return null;
+    return max(0, min(array_column($hosts, 'ready_at')) - time());
+}
+
 /** יש עבודה לעובד עכשיו: אתר שהגיע זמנו, או שם/תמונה שאפשר להביא. */
 function indexWorkReady(): bool {
     if (indexDueSite()) return true;
@@ -633,7 +641,11 @@ function indexWorkerRun(bool $once = false): string {
         flock($lock, LOCK_UN);
         fclose($lock);
     }
-    $chain = !$once && $last !== 'none' && indexWorkReady();
+    // שרשור: גם כשהעבודה הבאה עוד כמה שניות (כל האתרים בהמתנה של 20–30 שניות בין דפים).
+    // בדיקה של "מוכן עכשיו" בלבד שברה את השרשרת בכל סוף ריצה — והעובד חיכה למשתמש מחובר.
+    // עבודה רחוקה (אתר חסום לשעות) — לא משרשרים; שומר-הסף / heartbeat יעירו.
+    $next = $once || $last === 'none' ? null : indexNextWorkIn();
+    $chain = $next !== null && $next <= INDEX_WORKER_BUDGET;
     if (!$once) $note(['ended_at' => gmdate('c'), 'last' => $last, 'chained' => $chain]);
     if ($chain) indexKick(true);
     return $last;
