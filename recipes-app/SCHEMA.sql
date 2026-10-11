@@ -190,6 +190,7 @@ CREATE TABLE index_entries (
   url        TEXT    NOT NULL UNIQUE,
   title      TEXT    NOT NULL,
   title_fixed INTEGER NOT NULL DEFAULT 0,
+  verified    INTEGER,                              -- 1: נבדק ויש בדף מתכון; NULL: עוד לא (לא מתכון — skip)
   needs_title INTEGER NOT NULL DEFAULT 0,   -- אין שם עברי בכתובת — השם יובא מהדף ברקע
   skip       INTEGER NOT NULL DEFAULT 0,    -- נבדק ואינו מתכון
   stems      TEXT    NOT NULL,

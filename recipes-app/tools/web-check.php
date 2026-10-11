@@ -238,6 +238,22 @@ check('מהאפליקציה קודם: הציבורי של אחר והפרטי ש
 check('דף שכבר מוצג מהאפליקציה — לא שוב ברשת', [in_array('https://a.co.il/q/4/', array_column($r['results'], 'url')), $r['total']], [false, 3]);
 check('עמוד שני — בלי "מהאפליקציה"', indexSearch('פשטידת תרד', 30, $noaU)['local'], []);
 
+echo "\n5ד. אתר מעורב (כתבות ומתכונים) — מה שלא נבדק לא מוצג\n";
+$pdo->exec("UPDATE index_entries SET verified = 1 WHERE skip = 0");   // כל מה שכבר באתר א — נבדק
+$pdo->prepare('INSERT INTO index_sites (host, name, start_url, added_at, next_crawl_at) VALUES (?,?,?,?,?)')->execute(['mix.co.il', 'מעורב', 'https://mix.co.il/', nowIso(), time() + 9999]);
+$sm = (int) $pdo->lastInsertId();
+$put = $pdo->prepare('INSERT INTO index_entries (site_id, url, title, stems, seen_at, verified, skip) VALUES (?,?,?,?,1,?,?)');
+for ($i = 0; $i < 18; $i++) $put->execute([$sm, "https://mix.co.il/ok/$i/", "מתכון $i", indexStems("מתכון $i"), 1, 0]);
+for ($i = 0; $i < 2; $i++) $put->execute([$sm, "https://mix.co.il/news/$i/", "כתבה $i", indexStems("כתבה $i"), null, 1]);
+$put->execute([$sm, 'https://mix.co.il/a/', 'מרק עדשים בדוק', indexStems('מרק עדשים בדוק'), 1, 0]);
+$put->execute([$sm, 'https://mix.co.il/b/', 'מרק עדשים לא בדוק', indexStems('מרק עדשים לא בדוק'), null, 0]);
+$titles = fn() => array_column(indexSearch('מרק עדשים')['results'], 'title');
+check('20 נבדקו, 2 מהם כתבות (10%) — אתר מעורב: רק הנבדק', $titles(), ['מרק עדשים בדוק']);
+$pdo->exec("UPDATE index_entries SET skip = 0, verified = 1 WHERE url LIKE 'https://mix.co.il/news/%'");
+check('בלי כתבות — מה שלא נבדק מוצג, אחרי הנבדק', $titles(), ['מרק עדשים בדוק', 'מרק עדשים לא בדוק']);
+check('בסטטוס האתר: כמה נבדקו וכמה לא', array_values(array_map(fn($x) => [$x['verified'], $x['unverified']], array_filter(indexSites(), fn($x) => $x['host'] === 'mix.co.il'))), [[21, 1]]);
+indexRemoveSite($sm, $devU);
+
 echo "\n6. הסרת אתר מוחקת את המתכונים שלו מהאינדקס\n";
 indexRemoveSite($sa, $devU);
 check('האינדקס ריק מאתר א', (int) $pdo->query("SELECT COUNT(*) FROM index_entries WHERE site_id = $sa")->fetchColumn(), 0);

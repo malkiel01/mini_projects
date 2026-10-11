@@ -11,6 +11,7 @@ $urls = [
     '/recipe/__trashed-3/',                         // בלי שם בכתובת; הדף לא קיים (404) — יימחק
     "/recipe/' + product_url + '",                  // תבנית שלא רונדרה — לא נכנס
     '/foody_ingredient/' . rawurlencode('קמח') . '/',   // דף רכיב — לא נכנס
+    '/news/' . rawurlencode('השוק-בעפולה') . '/',     // כתבה עם שם בכתובת (פודיס) — הבדיקה ברקע מוציאה אותה
 ];
 if ($gen < 2) $urls[] = '/recipe/' . rawurlencode('עוגת-שוקולד-של-סבתא') . '/';   // בדור 2 הוסר מהאתר
 header('Content-Type: application/xml; charset=utf-8');

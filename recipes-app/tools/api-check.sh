@@ -41,7 +41,7 @@ SERVER=$!
 # שמביאה דף מאותו שרת הייתה נתקעת עד timeout.
 FXPORT=$((PORT + 1))
 echo 1 > "$TMP/fxgen"   # "דור" של אתר הדוגמה לאינדקס (8יא) — הבדיקה מעלה אותו כדי לדמות עדכון שבועי
-FX_STATE="$TMP/fxgen" php -S "127.0.0.1:$FXPORT" -t recipes-app/tools/fixtures >"$TMP/fixtures.log" 2>&1 &
+FX_STATE="$TMP/fxgen" php -S "127.0.0.1:$FXPORT" -t recipes-app/tools/fixtures recipes-app/tools/fixtures/router.php >"$TMP/fixtures.log" 2>&1 &
 FXSERVER=$!
 trap 'kill $SERVER $FXSERVER 2>/dev/null; rm -rf "$TMP"' EXIT
 
@@ -401,9 +401,13 @@ wait_crawl() {
   done; return 1
 }
 wait_crawl
+# וכל דף נבדק ברקע שיש בו מתכון — גם מה שיש לו שם מה-sitemap
+for _ in $(seq 1 40); do call index-sites | grep -q '"unverified":0' && break; sleep 0.5; done
 IS=$(call index-sites)
 check 'האינדקס נבנה ברקע: 5 מתכונים (בלי זבל, בלי דף רכיב)' "$IS" '"entries_n":5[^}]*"next_in":[0-9]\{6\}'
-check 'שמות מהדף: אין ממתינים, דף הרשימה "לא מתכון"' "$IS" '"titles_pending":0,"not_recipes":1'
+check 'שמות מהדף: אין ממתינים; דף הרשימה והכתבה — "לא מתכון"' "$IS" '"titles_pending":0,"not_recipes":2'
+check 'הכתבה (שם בכתובת, בלי מתכון) — לא בחיפוש'   "$(call web-search '{"q":"השוק בעפולה"}')" '"total":0'
+check 'כל השאר נבדקו — יש בהם מתכון'              "$IS" '"verified":5,"unverified":0'
 check 'בלוג בלי עברית בכתובת — נמצא לפי השם מהדף' "$(call web-search '{"q":"לחם מחמצת"}')" '"title":"לחם מחמצת ביתי"'
 check 'השם מהדף, בלי שם האתר'            "$(call web-search '{"q":"קרין גורן"}')" '"title":"קרין גורן מכינה עוגת יומולדת שילדים אוהבים"'
 check '__trashed בלי דף (404) — נמחק'     "$(call web-search '{"q":"trashed"}')" '"total":0'
@@ -445,7 +449,7 @@ HITS=$(grep -c 'sm-recipes.php' "$TMP/fixtures.log")
 call index-site-refresh "{\"id\":$(printf '%s' "$IS" | python3 -c 'import sys,json; print(json.load(sys.stdin)["sites"][0]["id"])')}" >/dev/null
 sleep 1; wait_crawl
 check 'עדכון בלי שינוי: חלק המתכונים לא מובא שוב' "$(( $(grep -c 'sm-recipes.php' "$TMP/fixtures.log") - HITS ))" '^0$'
-check 'והמתכונים נשארו, ו"לא מתכון" לא חזר'  "$(call index-sites)" '"entries_n":4,"next_in":[0-9]*,"crawling":false,"progress":null,"titles_pending":0,"not_recipes":1'
+check 'והמתכונים נשארו, ו"לא מתכון" לא חזר'  "$(call index-sites)" '"entries_n":4,"next_in":[0-9]*,"crawling":false,"progress":null,"titles_pending":0,"not_recipes":2'
 # הבעלים כבר ייבא את הדף — לכן בחיפוש הוא "מהאפליקציה", לא שוב ברשת; השם באינדקס נבדק במסד
 check 'השם האמיתי שרד את העדכון'           "$(php -r '$p = new PDO("sqlite:" . $argv[1]); echo $p->query("SELECT title FROM index_entries WHERE url LIKE \"%jsonld-carine.html\"")->fetchColumn();' "$TMP/t.sqlite")" '^קרין גורן מכינה עוגת יומולדת'
 check 'מה שכבר באפליקציה — בראש, ולא שוב ברשת' "$(call web-search '{"q":"קרין גורן"}')" '"local":\[{"id":[0-9]*,"title":"קרין גורן[^]]*\],"results":\[\],"total":0'

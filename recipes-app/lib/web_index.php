@@ -53,8 +53,10 @@ function indexSites(): array {
     $counts = [];
     foreach (db()->query("SELECT site_id, SUM(needs_title = 1 AND skip = 0) pending, SUM(skip) skipped, SUM(skip = 0 AND title != '' AND needs_title = 0) ready,
                                   SUM(skip = 0 AND image IS NOT NULL AND image != '') images,
-                                  SUM(skip = 0 AND needs_title = 0 AND image IS NULL) images_pending FROM index_entries GROUP BY site_id")->fetchAll() as $c) {
-        $counts[(int) $c['site_id']] = ['pending' => (int) $c['pending'], 'skipped' => (int) $c['skipped'], 'ready' => (int) $c['ready'], 'images' => (int) $c['images'], 'images_pending' => (int) $c['images_pending']];
+                                  SUM(skip = 0 AND needs_title = 0 AND image IS NULL) images_pending,
+                                  SUM(skip = 0 AND verified = 1) verified, SUM(skip = 0 AND verified IS NULL) unverified FROM index_entries GROUP BY site_id")->fetchAll() as $c) {
+        $counts[(int) $c['site_id']] = ['pending' => (int) $c['pending'], 'skipped' => (int) $c['skipped'], 'ready' => (int) $c['ready'], 'images' => (int) $c['images'],
+                                        'images_pending' => (int) $c['images_pending'], 'verified' => (int) $c['verified'], 'unverified' => (int) $c['unverified']];
     }
     return array_map(function ($r) use ($now, $counts) {
         $st = $r['crawl_state'] ? (json_decode($r['crawl_state'], true) ?: []) : null;
@@ -69,6 +71,8 @@ function indexSites(): array {
             'not_recipes'    => $counts[(int) $r['id']]['skipped'] ?? 0,
             'with_image'     => $counts[(int) $r['id']]['images'] ?? 0,
             'images_pending' => $counts[(int) $r['id']]['images_pending'] ?? 0,
+            'verified'       => $counts[(int) $r['id']]['verified'] ?? 0,     // נבדק — יש בדף מתכון
+            'unverified'     => $counts[(int) $r['id']]['unverified'] ?? 0,   // עוד לא נבדק
         ];
     }, $rows);
 }
@@ -482,7 +486,7 @@ function indexTitleNextFile(string $host): string { return scoutStateDir() . '/t
  */
 function indexTitleHosts(): array {
     $rows = db()->query('SELECT s.host, s.name, COUNT(*) n FROM index_entries e JOIN index_sites s ON s.id = e.site_id
-                         WHERE s.enabled = 1 AND s.crawl_state IS NULL AND e.skip = 0 AND (e.needs_title = 1 OR e.image IS NULL) GROUP BY s.id')->fetchAll();
+                         WHERE s.enabled = 1 AND s.crawl_state IS NULL AND e.skip = 0 AND (e.needs_title = 1 OR e.image IS NULL OR e.verified IS NULL) GROUP BY s.id')->fetchAll();
     $out = [];
     foreach ($rows as $r) {
         $ready = (int) @file_get_contents(indexTitleNextFile($r['host']));
@@ -495,7 +499,8 @@ function indexTitleHosts(): array {
 /**
  * צעד אחד: מתכון אחד שממתין לשם, מהאתר שתורו הגיע. מביא את הדף, ומחלץ
  * כמו בייבוא: יש מתכון — השם שלו; אין מתכון בדף — "לא מתכון" (skip), ולא
- * יחזור. מחזיר 'titled' / 'not-recipe' / 'failed' / 'blocked' / 'wait:N' / 'none'.
+ * יחזור. גם דף שיש לו שם (מה-sitemap) נבדק כך — ומקבל verified = 1, ותמונה אם חסרה.
+ * מחזיר 'titled' / 'verified' / 'not-recipe' / 'failed' / 'blocked' / 'wait:N' / 'none'.
  */
 function indexTitleStep(): string {
     $hosts = indexTitleHosts();
@@ -506,9 +511,10 @@ function indexTitleStep(): string {
     if ($h['ready_at'] > $now) return 'wait:' . ($h['ready_at'] - $now);
 
     // קודם שמות (בלי שם המתכון לא בחיפוש), אחר כך תמונות
-    $st = db()->prepare('SELECT e.id, e.url, e.title, e.image, e.needs_title FROM index_entries e JOIN index_sites s ON s.id = e.site_id
-                         WHERE s.host = ? AND e.skip = 0 AND (e.needs_title = 1 OR e.image IS NULL)
-                         ORDER BY e.needs_title DESC, e.lastmod DESC, e.id DESC LIMIT 1');
+    // קודם מה שבלי שם, אחר כך מה שנפתח הכי הרבה (מה שאנשים רואים), אחר כך החדש
+    $st = db()->prepare('SELECT e.id, e.url, e.title, e.image, e.needs_title, e.lastmod FROM index_entries e JOIN index_sites s ON s.id = e.site_id
+                         WHERE s.host = ? AND e.skip = 0 AND (e.needs_title = 1 OR e.image IS NULL OR e.verified IS NULL)
+                         ORDER BY e.needs_title DESC, e.opens DESC, e.lastmod DESC, e.id DESC LIMIT 1');
     $st->execute([$h['host']]);
     $e = $st->fetch();
     $st->closeCursor();
@@ -520,7 +526,8 @@ function indexTitleStep(): string {
         $sets = implode(', ', array_map(fn($k) => "$k = ?", array_keys($f)));
         db()->prepare("UPDATE index_entries SET $sets WHERE id = ?")->execute([...array_values($f), (int) $e['id']]);
     };
-    if (!$e['needs_title']) return indexImageStep($e, $done);
+    // כל דף — גם מה שיש לו כבר שם מה-sitemap — נבדק שיש בו מתכון. בלי זה כתבות
+    // חדשות של פודיס ("השוק 34 בעפולה") נכנסו לחיפוש, ונכשלו רק כשמשתמש פתח אותן.
     try {
         if (!scoutRobotsAllowed($e['url'])) { $done(['needs_title' => 0, 'skip' => 1]); return 'not-recipe'; }
         scoutThrottle($e['url']);
@@ -528,37 +535,22 @@ function indexTitleStep(): string {
         $doc = importDom($html);
         try { $raw = importParseDoc($doc, $final); }
         catch (AppError $ex) { $done(['needs_title' => 0, 'skip' => 1]); return 'not-recipe'; }   // אין מתכון בדף
+        $f = ['verified' => 1];
+        if ($e['image'] === null) $f['image'] = indexImageUrl((string) ($raw['images'][0] ?? '')) ?? indexPageImage($html, $final) ?? '';   // '' — אין, לא לחזור
+        if (!$e['needs_title']) { $done($f); return 'verified'; }
         [$title, $full] = indexCleanTitle((string) ($raw['title'] ?? ''), [$h['name'], (string) ($raw['publisher'] ?? '')]);
         if (!indexHasHebrew($title) && preg_match_all('/\p{L}/u', $title) < 3) { $done(['needs_title' => 0, 'skip' => 1]); return 'not-recipe'; }
         // הגזעים: השם המלא מהדף, ועוד השם מהכתובת אם היה (כך "apple dessert" עדיין נמצא גם באנגלית)
-        $f = ['title' => $title, 'stems' => indexStems($full . ' ' . $e['title']), 'title_fixed' => 1, 'needs_title' => 0];
-        if ($e['image'] === null) $f['image'] = indexImageUrl((string) ($raw['images'][0] ?? '')) ?? '';   // הדף כבר כאן; '' — אין, לא לחזור
-        $done($f);
+        $done($f + ['title' => $title, 'stems' => indexStems($full . ' ' . $e['title']), 'title_fixed' => 1, 'needs_title' => 0]);
         return 'titled';
     } catch (AppError $ex) {
         if ($ex->status === 429) return 'blocked';            // האתר חסם — השעה נשמרה; ממתינים
         if (preg_match('/שגיאה (404|410)/u', $ex->getMessage())) { db()->prepare('DELETE FROM index_entries WHERE id = ?')->execute([(int) $e['id']]); return 'failed'; }
-        return 'failed';                                      // תקלה זמנית — ננסה שוב בתורו הבא
-    }
-}
-
-/**
- * תמונה למתכון שיש לו שם אבל ב-sitemap לא הייתה תמונה (10 דקות, פודיס, קרין):
- * מביאים את הדף ולוקחים את og:image. בכל מקרה מסמנים — קישור, או '' (נבדק ואין;
- * גם בתקלה, כדי לא להיתקע על אותו דף). הדף לא נמחק כאן: מה שהוסר מהאתר יוצא
- * מה-sitemap בעדכון השבועי.
- */
-function indexImageStep(array $e, callable $done): string {
-    try {
-        if (!scoutRobotsAllowed($e['url'])) { $done(['image' => '']); return 'no-image'; }
-        scoutThrottle($e['url']);
-        [$html, $final] = importFetch($e['url'], true);
-        $img = indexPageImage($html, $final);
-        $done(['image' => $img ?? '']);
-        return $img ? 'imaged' : 'no-image';
-    } catch (AppError $ex) {
-        if ($ex->status === 429) return 'blocked';
-        $done(['image' => '']);
+        // תקלה אחרת. בלי סימון הדף הזה היה נבחר שוב בכל סבב והתור היה נתקע עליו.
+        // בפעם הראשונה — לסוף התור (lastmod ריק); בשנייה — מוותרים: verified = 0, "לא הצלחנו
+        // לבדוק" (באתר מעורב לא יוצג — שם רק verified = 1), ובלי שם — לא בחיפוש.
+        if (($e['lastmod'] ?? null) !== '') { $done(['lastmod' => '']); return 'failed'; }
+        $done(['verified' => 0] + ($e['image'] === null ? ['image' => ''] : []) + ($e['needs_title'] ? ['needs_title' => 0, 'skip' => 1] : []));
         return 'failed';
     }
 }
@@ -659,6 +651,21 @@ function indexWatchdog(): void {
  * דירוג מהאתרים עצמם לא נלקח: רק אחד מעשרה מפרסם, ושם הוא זהה בכל המתכונים.
  * $user — למתכונים מהאפליקציה; null (בדיקות) — בלי.
  */
+/**
+ * אתרים "מעורבים": מתוך מה שכבר נבדק בהם (לפחות 20 דפים), יותר מ-5% אינם מתכון.
+ * הדפים שלהם שעוד לא נבדקו לא מוצגים בחיפוש עד שייבדקו (indexTitleStep).
+ */
+const INDEX_MIXED_MIN_CHECKED = 20;
+const INDEX_MIXED_MAX_BAD     = 0.05;
+function indexMixedSites(): array {
+    $out = [];
+    foreach (db()->query('SELECT site_id, SUM(skip = 0 AND verified = 1) ok, SUM(skip = 1) bad FROM index_entries GROUP BY site_id')->fetchAll() as $r) {
+        $n = (int) $r['ok'] + (int) $r['bad'];
+        if ($n >= INDEX_MIXED_MIN_CHECKED && (int) $r['bad'] / $n > INDEX_MIXED_MAX_BAD) $out[] = (int) $r['site_id'];
+    }
+    return $out;
+}
+
 function indexSearch(string $q, int $offset = 0, ?array $user = null, string $topic = ''): array {
     $q = trim(mb_substr($q, 0, 100));
     $stems = [];
@@ -677,6 +684,9 @@ function indexSearch(string $q, int $offset = 0, ?array $user = null, string $to
     $local = $user ? array_slice(searchRecipes($user, $q, $topicId ? ['tag_ids' => [$topicId]] : []), 0, WEB_LOCAL_MAX) : [];
     $where = ['s.enabled = 1', 'e.skip = 0', "e.title != ''"];
     $params = [];
+    // דף שעוד לא נבדק — רק מאתר שהבדיקות בו מראות שכמעט הכול מתכונים. באתר שמערב כתבות
+    // (פודיס: "השוק 34 בעפולה") — רק מה שנבדק. כך פתיחה לא נכשלת על "אין מתכון בדף".
+    if ($mixed = indexMixedSites()) $where[] = '(e.verified = 1 OR e.site_id NOT IN (' . implode(',', $mixed) . '))';
     if ($topicId) { $where[] = 'catalog_topic(e.title, ?)'; $params[] = $topic; catalogRegisterSql(); }
     // מה שכבר מוצג מהאפליקציה (מתכון שיובא מאותו דף) — לא פעמיים
     $mine = array_values(array_filter(array_column($local, 'source_url')));
@@ -690,7 +700,7 @@ function indexSearch(string $q, int $offset = 0, ?array $user = null, string $to
     $st = db()->prepare("SELECT e.id, e.title, e.url, e.image, e.opens, s.name AS site, s.host, COALESCE(sv.n, 0) AS saves
                            FROM index_entries e JOIN index_sites s ON s.id = e.site_id
                            LEFT JOIN (SELECT source_url, COUNT(DISTINCT owner_id) n FROM recipes WHERE source_url IS NOT NULL GROUP BY source_url) sv ON sv.source_url = e.url
-                         WHERE $w ORDER BY saves DESC, e.opens DESC, (e.title LIKE ?) DESC, length(e.title), e.id DESC LIMIT 30 OFFSET " . max(0, $offset));
+                         WHERE $w ORDER BY saves DESC, (e.verified = 1) DESC, e.opens DESC, (e.title LIKE ?) DESC, length(e.title), e.id DESC LIMIT 30 OFFSET " . max(0, $offset));
     $st->execute([...$params, '%' . $q . '%']);
     return ['local' => $offset === 0 ? $local : [],
             'results' => array_map(fn($r) => ['id' => (int) $r['id'], 'title' => $r['title'], 'url' => $r['url'], 'site' => $r['site'], 'host' => $r['host'],
@@ -752,7 +762,8 @@ function webRewriteDraft(array &$draft, ?array $user): bool {
  */
 function webOpen(int $id, array $user): array {
     $e = webEntry($id);
-    db()->prepare('UPDATE index_entries SET opens = opens + 1 WHERE id = ?')->execute([(int) $e['id']]);   // לסדר בחיפוש
+    // לסדר בחיפוש — רק פתיחה שהצליחה (פתיחה שנכשלה לא מקדמת את הדף)
+    $opened = fn() => db()->prepare('UPDATE index_entries SET opens = opens + 1, verified = 1 WHERE id = ?')->execute([(int) $e['id']]);
     $st = db()->prepare('SELECT * FROM web_cache WHERE url = ? AND created_at > ?');
     $st->execute([$e['url'], time() - WEB_CACHE_DAYS * 86400]);
     $c = $st->fetch();
@@ -767,6 +778,7 @@ function webOpen(int $id, array $user): array {
             db()->prepare('UPDATE web_cache SET draft = ?, rewritten = ? WHERE url = ?')
                 ->execute([json_encode($draft, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $rewritten ? 1 : 0, $e['url']]);
         }
+        $opened();
         return ['draft' => $draft, 'rewritten' => $rewritten, 'cached' => true, 'opens_left' => webOpensLeft($user),
                 'entry' => ['id' => (int) $e['id'], 'url' => $e['url'], 'site' => $e['site']]];
     }
@@ -775,7 +787,17 @@ function webOpen(int $id, array $user): array {
     if ($left === 0) throw new AppError('הגעת למכסת הפתיחות של היום (' . WEB_DAILY_LIMIT . '). מתכונים שכבר נפתחו — עדיין נפתחים. אפשר גם לפתוח באתר המקור.', 429);
     if (!scoutRobotsAllowed($e['url'])) throw new AppError('האתר לא מאפשר ייבוא אוטומטי של הדף הזה. אפשר לפתוח אותו באתר המקור.', 403);
     scoutThrottle($e['url']);
-    $draft = importPreview($e['url'], 'web-open', $user, []);
+    try {
+        $draft = importPreview($e['url'], 'web-open', $user, []);
+    } catch (AppError $ex) {
+        // אין בדף מתכון — יוצא מהחיפוש לתמיד, כדי שאף אחד לא ייתקל בו שוב
+        if (str_contains($ex->getMessage(), 'לא מצאתי מתכון')) {
+            db()->prepare('UPDATE index_entries SET skip = 1, needs_title = 0 WHERE id = ?')->execute([(int) $e['id']]);
+            throw new AppError('הדף הזה אינו מתכון — הוצאנו אותו מהחיפוש, כך שלא יופיע שוב. אפשר לחזור לתוצאות.', 422);
+        }
+        throw $ex;
+    }
+    $opened();
 
     $rewritten = webRewriteDraft($draft, $user);
     unset($draft['import_log_id']);

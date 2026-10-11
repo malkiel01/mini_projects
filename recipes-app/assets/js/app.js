@@ -402,16 +402,19 @@ async function renderList(f = listParams('')) {
         <input name="q" type="search" placeholder="חיפוש בשם או ברכיב…" autocomplete="off" value="${esc(f.q)}">
         <button class="btn btn--primary search__go" type="submit" aria-label="חפש" title="חפש">🔍</button>
       </form>
-      <div class="toolbar__row">
-        <a class="btn btn--primary" href="#/new">+ מתכון חדש</a>
-        <a class="btn" href="#/web">🔎 חיפוש ברשת</a>
+      <!-- פעולות מהירות — שורה אחת של גלולות שנגללת לרוחב, לא כפתורים גדולים שנשברים לשורות -->
+      <nav class="quick" aria-label="פעולות">
+        <a class="quick__btn quick__btn--primary" href="#/new">＋ מתכון חדש</a>
+        <a class="quick__btn" href="#/web">🔎 ברשת</a>
+        <a class="quick__btn" href="#/pantry">🥕 מה יש בבית</a>
+        <a class="quick__btn" href="#/scan">📷 סריקה</a>
+        <a class="quick__btn" href="#/collections">📁 אוספים</a>
+      </nav>
+      <div class="topics">
+        <button class="topic topic--filter ${nFilters ? 'is-on' : ''}" type="button" id="filter-open" aria-expanded="false" aria-label="סינון">⚙︎${nFilters ? ` ${nFilters}` : ' סינון'}</button>
+        <span id="topics" class="topics__list"></span>
       </div>
-      <a class="btn btn--wide" href="#/pantry">🥕 מה אפשר להכין ממה שיש לי בבית?</a>
-      <nav class="topics" id="topics" aria-label="נושאים"></nav>
-      <div class="filters">
-        <button class="btn btn--small ${nFilters ? 'is-on' : ''}" type="button" id="filter-open" aria-expanded="false">⚙︎ סינון${nFilters ? ` · ${nFilters}` : ''}</button>
-        <span id="filter-chips" class="filters__chips"></span>
-      </div>
+      <div class="filters" ${filtered ? '' : 'hidden'}><span id="filter-chips" class="filters__chips"></span></div>
       <div id="filter-slot"></div>
       <nav class="subnav subnav--list" aria-label="סינון">
         ${tab('all', 'הכול')}
@@ -538,30 +541,14 @@ async function renderRecipe(id) {
     view.innerHTML = `
       <article class="recipe">
         <header class="recipe__head">
-          <div class="recipe__top">
-            <a class="link" href="#/">‹ לרשימה</a>
-            <span class="recipe__icons">
-              ${r.is_mine ? `<a class="icon-btn" href="#/edit/${r.id}" aria-label="עריכה" title="עריכה">✏️</a>
-              <button class="icon-btn icon-btn--danger" id="del" type="button" aria-label="מחיקה" title="מחיקה">🗑</button>
-              <button class="icon-btn" id="share-open" type="button" aria-label="שיתוף עם אנשים" title="שיתוף עם אנשים">👥</button>` : ''}
-              <button class="icon-btn" id="coll-open" type="button" aria-label="הוספה לאוסף" title="הוספה לאוסף">📁</button>
-              ${r.source ? '<button class="icon-btn" id="reco-open" type="button" aria-label="המלצה על המקור" title="המלצה על המקור">📨</button>' : ''}
-              ${!r.is_mine ? '<button class="icon-btn" id="report-open" type="button" aria-label="דיווח" title="דיווח">⚑</button>' : ''}
-              <button class="icon-btn" id="print" type="button" aria-label="הדפסה" title="הדפסה">🖨</button>
-            </span>
-          </div>
+          <a class="link link--back" href="#/">‹ לרשימה</a>
           <h2>${esc(r.title)}</h2>
-          <p class="muted">${r.is_mine ? esc(r.owner_name) : `<a class="link link--inline" href="#/u/${r.owner_id}">${esc(r.owner_name)}</a>`} ·
+          <p class="muted recipe__by">${r.is_mine ? esc(r.owner_name) : `<a class="link link--inline" href="#/u/${r.owner_id}">${esc(r.owner_name)}</a>`} ·
             <span class="badge ${r.is_mine ? 'badge--mine' : 'badge--public'}">${r.visibility === 'public' ? 'ציבורי' : 'פרטי'}</span>
-            ${loaded.share_count ? ` · <span class="badge badge--shared">👥 משותף עם ${loaded.share_count}</span>` : ''}
+            ${loaded.share_count ? ` · <span class="badge badge--shared">👥 ${loaded.share_count}</span>` : ''}
             ${loaded.shared_with_me ? ` · <span class="badge badge--shared">👥 שותף איתך</span>` : ''}
             ${r.updated_at !== r.created_at ? ` · עודכן ${esc(r.updated_at.slice(0, 10))}` : ''}
           </p>
-          ${r.is_mine ? '<div id="share-box" class="share-box" hidden></div>' : ''}
-          ${r.source ? '<div id="reco-box" class="share-box" hidden></div>' : ''}
-          <div id="coll-box" class="share-box" hidden></div>
-          <div id="report-slot"></div>
-          ${loaded.shared_with_me ? '<p class="small"><button class="link" type="button" id="leave-share">הסר מהרשימה שלי</button></p>' : ''}
           ${r.source ? `
           <p class="credit">
             🌐 <strong>${r.source.rewritten ? 'מבוסס על המתכון של' : 'מקור:'}</strong> <a href="${esc(r.source.url)}" target="_blank" rel="noopener nofollow">${esc(r.source.name || r.source.url)}</a>${
@@ -569,11 +556,11 @@ async function renderRecipe(id) {
               r.source.imported_at ? ` · יובא ${esc(r.source.imported_at.slice(0, 10))}` : ''}
             <span class="muted small">— המתכון, התמונות והסרטונים שייכים למקור. הגרסה המקורית והמלאה שם.</span>
           </p>` : ''}
-          <div class="meta">
-            ${r.difficulty ? `<span>קושי: ${DIFFICULTY[r.difficulty]}</span>` : ''}
-            ${r.work_minutes ? `<span>עבודה: ${minutes(r.work_minutes)}</span>` : ''}
-            ${r.wait_minutes ? `<span>המתנה: ${minutes(r.wait_minutes)}</span>` : ''}
-          </div>
+          ${r.difficulty || r.work_minutes || r.wait_minutes ? `<div class="meta">
+            ${r.work_minutes ? `<span title="זמן עבודה">⏱ ${minutes(r.work_minutes)}</span>` : ''}
+            ${r.wait_minutes ? `<span title="זמן המתנה">⏳ ${minutes(r.wait_minutes)}</span>` : ''}
+            ${r.difficulty ? `<span title="קושי">📶 ${DIFFICULTY[r.difficulty]}</span>` : ''}
+          </div>` : ''}
           ${Object.keys(tagsByAxis).length ? `<div class="chips">${
             Object.entries(tagsByAxis).map(([axis, names]) =>
               names.map((n) => `<span class="chip">${esc(n)}</span>`).join('')).join('')}</div>` : ''}
@@ -589,16 +576,32 @@ async function renderRecipe(id) {
               <span>כמות: <strong>${esc(r.yield_text)}</strong></span>
               ${[0.5, 1, 2, 3].map((m) => `<button class="btn btn--ghost btn--tiny ${mult === m ? 'is-on' : ''}" data-mult="${m}" type="button">×${m === 0.5 ? '½' : m}</button>`).join('')}
             </div>` : ''}
-          <div class="actions actions--wrap">
-            <a class="btn btn--primary" href="#/cook/${r.id}">🍳 מצב בישול</a>
-            <button class="btn" id="to-shopping" type="button">🛒 לרשימת קניות</button>
-          </div>
+          <a class="btn btn--primary btn--wide" href="#/cook/${r.id}">🍳 מצב בישול</a>
+          <!-- סרגל פעולות: עמודות שוות, סמל ומתחת מילה — לא נשבר לשורות. מה שנדיר — ב"עוד" -->
+          <nav class="actbar" aria-label="פעולות">
+            ${r.is_mine
+              ? `<button class="actbar__btn" id="share-open" type="button" data-panel="share-box"><span aria-hidden="true">👥</span>שיתוף</button>`
+              : `<button class="actbar__btn ${social.isFavorite ? 'is-on' : ''}" id="fav" type="button" aria-pressed="${social.isFavorite}"><span aria-hidden="true">${social.isFavorite ? '♥' : '♡'}</span>${social.isFavorite ? 'נשמר' : 'שמירה'}</button>`}
+            <button class="actbar__btn" id="coll-open" type="button" data-panel="coll-box"><span aria-hidden="true">📁</span>לאוסף</button>
+            <button class="actbar__btn" id="to-shopping" type="button" data-panel="shopping-pick"><span aria-hidden="true">🛒</span>לקניות</button>
+            ${r.is_mine ? `<a class="actbar__btn" href="#/edit/${r.id}"><span aria-hidden="true">✏️</span>עריכה</a>`
+              : r.source ? `<button class="actbar__btn" id="reco-open" type="button" data-panel="reco-box"><span aria-hidden="true">📨</span>המלצה</button>` : ''}
+            <details class="actbar__more">
+              <summary class="actbar__btn"><span aria-hidden="true">⋯</span>עוד</summary>
+              <div class="more-menu">
+                <button type="button" id="print">🖨 הדפסה</button>
+                ${r.is_mine && r.source ? '<button type="button" id="reco-open" data-panel="reco-box">📨 המלצה על המקור</button>' : ''}
+                ${!r.is_mine ? '<button type="button" id="report-open" data-panel="report-slot">⚑ דיווח</button>' : ''}
+                ${r.is_mine ? '<button type="button" class="is-danger" id="del">🗑 מחיקה</button>' : ''}
+              </div>
+            </details>
+          </nav>
+          ${r.is_mine ? '<div id="share-box" class="share-box" hidden></div>' : ''}
+          ${r.source ? '<div id="reco-box" class="share-box" hidden></div>' : ''}
+          <div id="coll-box" class="share-box" hidden></div>
           <div id="shopping-pick" hidden></div>
-          ${r.is_mine ? '' : `<div class="actions">
-            <button class="btn ${social.isFavorite ? 'btn--primary' : ''}" id="fav" type="button" aria-pressed="${social.isFavorite}">
-              ${social.isFavorite ? '♥ בשמורים' : '♡ לשמורים'}
-            </button>
-          </div>`}
+          <div id="report-slot"></div>
+          ${loaded.shared_with_me ? '<p class="small"><button class="link" type="button" id="leave-share">הסר מהרשימה שלי</button></p>' : ''}
         </header>
 
         ${mediaGallery(r)}
@@ -634,6 +637,15 @@ async function renderRecipe(id) {
       servings = d === 0 ? r.servings : Math.max(1, servings + d);
       draw();   // ההמרה היא תצוגה בלבד — לא נשמרת (3.3)
     }));
+    // לוח אחד פתוח בכל פעם; בחירה מ"עוד" סוגרת אותו
+    $$('[data-panel]').forEach((b) => b.addEventListener('click', () => {
+      for (const id of ['share-box', 'reco-box', 'coll-box', 'shopping-pick', 'report-slot']) {
+        const p = $('#' + id);
+        if (!p || id === b.dataset.panel) continue;
+        if (id === 'report-slot') p.innerHTML = ''; else p.hidden = true;
+      }
+    }));
+    $$('.more-menu button').forEach((b) => b.addEventListener('click', () => { b.closest('details').open = false; }));
     $('#del')?.addEventListener('click', async () => {
       if (!confirm(`למחוק את "${r.title}"? הפעולה אינה הפיכה.`)) return;
       const { deleted_comments } = await api('recipe-delete', { id: r.id });
@@ -2805,10 +2817,17 @@ async function renderWebRecipe(id) {
   try { res = await api('web-open', { id }); }
   catch (err) {
     const hit = webState.data?.results.find((r) => r.id === id);
+    const back = `#/web${webState.q ? '?q=' + encodeURIComponent(webState.q) : ''}`;
+    // 422 — הדף אינו מתכון, והשרת כבר הוציא אותו מהחיפוש: גם מהתוצאות שכאן
+    if (err.status === 422 && webState.data) {
+      webState.data.results = webState.data.results.filter((r) => r.id !== id);
+      webState.data.total = Math.max(0, webState.data.total - 1);
+    }
     view.innerHTML = `<section class="card settings">
-      <a class="link" href="#/web${webState.q ? '?q=' + encodeURIComponent(webState.q) : ''}">‹ לתוצאות</a>
-      <p class="note note--err">${esc(err.message)}</p>
-      ${hit ? `<a class="btn" href="${esc(hit.url)}" target="_blank" rel="noopener nofollow">↗ לפתוח באתר המקור</a>` : ''}
+      <a class="link link--back" href="${back}">‹ לתוצאות</a>
+      <p class="${err.status === 422 ? 'muted' : 'note note--err'}">${esc(err.message)}</p>
+      <div class="actions">${err.status === 422 ? `<a class="btn btn--primary" href="${back}">חזרה לתוצאות</a>`
+        : hit ? `<a class="btn" href="${esc(hit.url)}" target="_blank" rel="noopener nofollow">↗ לפתוח באתר המקור</a>` : ''}</div>
     </section>`;
     return;
   }
@@ -2817,26 +2836,27 @@ async function renderWebRecipe(id) {
   view.innerHTML = `
     <article class="recipe webrecipe">
       <header class="recipe__head">
-        <a class="link" href="#/web${webState.q ? '?q=' + encodeURIComponent(webState.q) : ''}">‹ לתוצאות</a>
+        <a class="link link--back" href="#/web${webState.q ? '?q=' + encodeURIComponent(webState.q) : ''}">‹ לתוצאות</a>
         <h2>${esc(d.title)}</h2>
         <p class="credit">
           🌐 <strong>${res.rewritten ? 'מבוסס על המתכון של' : 'מקור:'}</strong>
           <a href="${esc(d.source_url)}" target="_blank" rel="noopener nofollow">${esc(d.source_name || res.entry.site)}</a>${d.source_author ? ` · מאת ${esc(d.source_author)}` : ''}
           <span class="muted small">— ${res.rewritten ? 'אופן ההכנה נוסח מחדש; ' : ''}המתכון המקורי, התמונות והפרטים המלאים — באתר המקור.</span>
         </p>
-        ${!res.rewritten && d.rewrite_note ? `<p class="note note--warn small">לא נוסח מחדש: ${esc(d.rewrite_note)}</p>` : ''}
+        ${!res.rewritten && d.rewrite_note ? `<p class="muted small">ℹ️ אופן ההכנה מוצג כמו במקור — ${
+          state.user.is_developer ? esc(d.rewrite_note) : 'הניסוח מחדש לא זמין כרגע'}.</p>` : ''}
         <div class="meta">
-          ${d.servings ? `<span>מנות: ${d.servings}</span>` : d.yield_text ? `<span>כמות: ${esc(d.yield_text)}</span>` : ''}
-          ${d.work_minutes ? `<span>עבודה: ${minutes(d.work_minutes)}</span>` : ''}
-          ${d.wait_minutes ? `<span>המתנה: ${minutes(d.wait_minutes)}</span>` : ''}
+          ${d.servings ? `<span>🍽 ${d.servings} מנות</span>` : d.yield_text ? `<span>🍽 ${esc(d.yield_text)}</span>` : ''}
+          ${d.work_minutes ? `<span title="זמן עבודה">⏱ ${minutes(d.work_minutes)}</span>` : ''}
+          ${d.wait_minutes ? `<span title="זמן המתנה">⏳ ${minutes(d.wait_minutes)}</span>` : ''}
         </div>
-        <div class="actions actions--wrap">
-          <button class="btn btn--primary" type="button" id="web-save">💾 שמור אצלי</button>
-          <button class="btn" type="button" id="web-edit">✏️ ערוך לפני שמירה</button>
-          <button class="btn" type="button" id="web-reco">📨 המלץ למישהו</button>
-          <button class="btn" type="button" id="web-coll">📁 לאוסף</button>
-          <a class="btn btn--ghost" href="${esc(d.source_url)}" target="_blank" rel="noopener nofollow">↗ באתר המקור</a>
-        </div>
+        <button class="btn btn--primary btn--wide" type="button" id="web-save">💾 שמור אצלי</button>
+        <nav class="actbar" aria-label="פעולות">
+          <button class="actbar__btn" type="button" id="web-edit"><span aria-hidden="true">✏️</span>עריכה</button>
+          <button class="actbar__btn" type="button" id="web-coll"><span aria-hidden="true">📁</span>לאוסף</button>
+          <button class="actbar__btn" type="button" id="web-reco"><span aria-hidden="true">📨</span>המלצה</button>
+          <a class="actbar__btn" href="${esc(d.source_url)}" target="_blank" rel="noopener nofollow"><span aria-hidden="true">↗</span>במקור</a>
+        </nav>
         <div id="reco-box" class="share-box" hidden></div>
         <div id="coll-box" class="share-box" hidden></div>
         <p class="note" id="web-msg" hidden></p>

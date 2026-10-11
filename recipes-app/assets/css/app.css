@@ -997,3 +997,81 @@ a.icon-btn { display: inline-grid; place-items: center; text-decoration: none; }
 .subnav { margin-bottom: 8px; padding-bottom: 6px; }
 .form { gap: 12px; }
 .tabs { margin-bottom: 14px; }
+
+/* ═══════════════ סבב 2: כפתורים ופעולות — בהשראת אפליקציות נפוצות ═══════════════
+   הבעיה: קבוצות של כפתורים גדולים ברוחבים שונים נשברו לשורות עקומות.
+   הכלל מעכשיו: פעולה ראשית אחת — כפתור ברוחב מלא; כל השאר — סרגל עמודות שוות
+   (סמל ומתחתיו מילה, כמו באינסטגרם / יוטיוב), ומה שנדיר — בתפריט "⋯ עוד". */
+
+/* כפתורים: נמוכים ושקטים יותר. 40px עדיין נוח לאצבע */
+.btn { min-height: 40px; padding: 8px 14px; border-radius: 10px; font-size: 0.95rem; }
+.btn--ghost { min-height: 36px; padding: 6px 10px; }
+.btn--small { min-height: 34px; padding: 4px 10px; font-size: 0.85rem; }
+/* קבוצת כפתורים: כל שורה מתמלאת עד הסוף — גם כשנשברת, היא נראית מכוונת */
+.actions { flex-wrap: wrap; gap: 8px; }
+.actions > .btn { flex: 1 1 auto; }
+
+/* קישור חזרה — קטן, בפינה, בלי קו */
+.link--back { align-self: flex-start; min-height: 0; padding: 2px 0; font-size: 0.9rem; text-decoration: none; color: var(--muted); }
+.link--back:hover { color: var(--accent); }
+
+/* אייקונים בראש מסך — עגולים, בלי מסגרת */
+.icon-btn { border-color: transparent; border-radius: 50%; min-width: 40px; min-height: 40px; font-size: 1.15rem; }
+.icon-btn:hover { background: var(--accent-soft); border-color: transparent; }
+.recipe__icons { gap: 2px; }
+
+/* סרגל פעולות */
+.actbar {
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px;
+  border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 2px 0;
+}
+.actbar__btn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  min-width: 0; min-height: 52px; padding: 6px 2px; border: 0; border-radius: 10px; background: none;
+  font: inherit; font-size: 0.75rem; color: var(--ink); text-decoration: none; cursor: pointer; white-space: nowrap;
+  list-style: none;
+}
+.actbar__btn > span { font-size: 1.3rem; line-height: 1.1; }
+.actbar__btn:hover, .actbar__btn.is-on { background: var(--accent-soft); color: var(--accent); }
+.actbar__btn::-webkit-details-marker { display: none; }
+.actbar__more { position: relative; display: flex; }
+.actbar__more > summary { flex: 1; }
+.more-menu {
+  position: absolute; inset-inline-end: 0; top: calc(100% + 4px); z-index: 20; min-width: 190px;
+  display: flex; flex-direction: column; padding: 4px;
+  background: var(--panel); border-radius: 12px; box-shadow: 0 8px 24px rgba(23, 40, 29, .18);
+}
+.more-menu button {
+  text-align: start; padding: 10px 12px; border: 0; border-radius: 8px; background: none;
+  font: inherit; font-size: 0.95rem; color: var(--ink); cursor: pointer;
+}
+.more-menu button:hover { background: var(--accent-soft); }
+.more-menu .is-danger { color: var(--err); }
+
+/* ראש המתכון: צפוף, ברור */
+.recipe__head h2 { font-size: 1.35rem; line-height: 1.25; }
+.recipe__by { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.meta { gap: 4px 14px; font-size: 0.9rem; }
+.chips { gap: 4px; }
+.chip { font-size: 0.75rem; padding: 2px 9px; border: 0; }
+.credit { padding: 8px 10px; font-size: 0.85rem; }
+.servings .btn--ghost { min-width: 36px; min-height: 36px; font-size: 1.1rem; }
+
+/* בית: פעולות מהירות — גלולות בשורה אחת שנגללת לרוחב */
+.quick { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 1px 0; }
+.quick::-webkit-scrollbar { display: none; }
+.quick__btn {
+  flex: none; display: inline-flex; align-items: center; min-height: 36px; padding: 6px 12px;
+  border-radius: 999px; background: var(--panel); color: var(--ink); text-decoration: none; font-size: 0.9rem;
+  box-shadow: 0 1px 2px rgba(23, 40, 29, .08); white-space: nowrap;
+}
+.quick__btn:hover { color: var(--accent); }
+.quick__btn--primary { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.quick__btn--primary:hover { color: var(--accent-ink); filter: brightness(1.08); }
+.topics__list { display: contents; }
+.topic { min-height: 36px; padding: 4px 11px; font-size: 0.88rem; border-color: transparent; box-shadow: 0 1px 2px rgba(23, 40, 29, .08); }
+.topic--filter { font-weight: 600; }
+.search input { min-height: 42px; }
+.search__go { width: 42px; min-height: 42px; }
+.subnav--list a { min-height: 34px; padding: 4px 12px; }
+.link--inline { min-height: 0; align-self: auto; }   /* קישור בתוך שורת טקסט — לא בגובה כפתור */

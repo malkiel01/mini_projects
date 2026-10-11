@@ -646,6 +646,11 @@ function migrate(PDO $pdo): void {
         $pdo->exec('UPDATE index_sites SET next_crawl_at = 0 WHERE crawl_state IS NULL');
     }
     addColumnIfMissing($pdo, 'index_entries', 'opens', 'INTEGER NOT NULL DEFAULT 0');
+    // נבדק שיש בדף מתכון (1), או עוד לא (NULL). מה שאינו מתכון — skip = 1. כשהעמודה נוספת:
+    // מה שכבר חולץ בהצלחה (השם תוקן מהדף, או נפתח ונשמר במטמון) — נחשב נבדק.
+    if (addColumnIfMissing($pdo, 'index_entries', 'verified', 'INTEGER')) {
+        $pdo->exec('UPDATE index_entries SET verified = 1 WHERE skip = 0 AND (title_fixed = 1 OR url IN (SELECT url FROM web_cache))');
+    }
     foreach (['source_url', 'source_name', 'source_author', 'imported_at'] as $col) {
         addColumnIfMissing($pdo, 'recipes', $col, 'TEXT');
     }
