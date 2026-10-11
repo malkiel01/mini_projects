@@ -177,6 +177,13 @@ try {
         ok(['tags' => $byAxis]);
     }
 
+    case 'tag-counts': {
+        // כמה מתכונים גלויים לי בכל תג — לשורת הנושאים ולגיליון הסינון (SPEC 15.1).
+        // נפרד מ-tags כי הוא משתנה עם כל מתכון, והצירים כמעט לא.
+        require_once __DIR__ . '/lib/catalog.php';
+        ok(['counts' => (object) catalogCounts($user), 'icons' => CATALOG_TOPIC_ICONS]);
+    }
+
     // ───────── מתכונים ─────────
 
     case 'search': {
@@ -417,7 +424,7 @@ try {
     // ───────── חיפוש מתכונים ברשת (lib/web_index.php) ─────────
 
     case 'web-search':
-        ok(indexSearch(str_field($in, 'q', 100), (int) ($in['offset'] ?? 0), $user));
+        ok(indexSearch(str_field($in, 'q', 100), (int) ($in['offset'] ?? 0), $user, str_field($in, 'topic', 40)));
 
     case 'web-open':
         ok(webOpen((int) ($in['id'] ?? 0), $user) + ['ai_available' => aiAvailable()]);

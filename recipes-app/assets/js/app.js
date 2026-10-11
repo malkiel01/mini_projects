@@ -286,7 +286,7 @@ async function route() {
   const h = location.hash || '#/';
   let m;
   try {
-    if (h === '#/' || h === '') await renderList();
+    if (h === '#/' || h === '' || h.startsWith('#/?')) await renderList(listParams(h));
     else if ((m = h.match(/^#\/r\/(\d+)$/))) await renderRecipe(+m[1]);
     else if (h === '#/new') await renderEditor(null);
     else if (h === '#/import' || h.startsWith('#/import?')) await renderImport(new URLSearchParams(h.split('?')[1] || '').get('url') || '');
@@ -307,7 +307,7 @@ async function route() {
     else if (h === '#/reports') await renderReports();
     else if ((m = h.match(/^#\/u\/(\d+)$/))) await renderPerson(+m[1]);
     else if (h === '#/scans') await renderScansDev();
-    else if (h === '#/web' || h.startsWith('#/web?')) await renderWebSearch(new URLSearchParams(h.split('?')[1] || '').get('q') || '');
+    else if (h === '#/web' || h.startsWith('#/web?')) { const p = new URLSearchParams(h.split('?')[1] || ''); await renderWebSearch(p.get('q') || '', p.get('topic') || ''); }
     else if ((m = h.match(/^#\/web\/(\d+)$/))) await renderWebRecipe(+m[1]);
     else if (h === '#/settings') await renderSettingsPrivate();
     else if (h === '#/settings/public') await renderSettingsPublic();
@@ -325,13 +325,77 @@ async function ensureTags() {
   return state.tags;
 }
 
+// ───────────────────────── קטגוריות (SPEC 15.1) ─────────────────────────
+
+const TIME_CHOICES = [15, 30, 45, 60, 90, 120, 180];
+
+/** מצב הרשימה בכתובת: #/?s=following&q=…&topic=3&tags=12,15&d=easy&m=60 — "חזור" עובד, ואפשר לשלוח קישור. */
+function listParams(h) {
+  const p = new URLSearchParams(h.split('?')[1] || '');
+  const ids = (v) => [...new Set((v || '').split(',').map(Number).filter((n) => n > 0))];
+  return {
+    s: ['following', 'shared', 'web'].includes(p.get('s')) ? p.get('s') : 'all',
+    q: (p.get('q') || '').slice(0, 120),
+    topic: +p.get('topic') || 0,
+    tags: ids(p.get('tags')),
+    d: DIFFICULTY[p.get('d')] ? p.get('d') : '',
+    m: +p.get('m') > 0 ? +p.get('m') : 0,
+  };
+}
+function listHash(f) {
+  const p = new URLSearchParams();
+  if (f.s !== 'all') p.set('s', f.s);
+  if (f.q) p.set('q', f.q);
+  if (f.topic) p.set('topic', f.topic);
+  if (f.tags.length) p.set('tags', f.tags.join(','));
+  if (f.d) p.set('d', f.d);
+  if (f.m) p.set('m', f.m);
+  const qs = p.toString().replaceAll('%2C', ',');
+  return '#/' + (qs ? '?' + qs : '');
+}
+const topicIcon = (name, icons) => icons[name] || '🏷';
+
+/** גיליון הסינון: כשרות (אחד), מתאים ל (כמה — וגם), סוג ומטבח (אחד), קושי, זמן כולל. */
+function filterSheet(f, tags, counts) {
+  const n = (id) => (counts[id] ? `<span class="muted small">${counts[id]}</span>` : '');
+  const one = (axis) => `
+    <fieldset class="filter__axis"><legend>${AXES[axis]}</legend>
+      <label class="chip chip--pick"><input type="radio" name="${axis}" value="" ${!(tags[axis] || []).some((t) => f.tags.includes(t.id)) ? 'checked' : ''}> הכול</label>
+      ${(tags[axis] || []).map((t) => `<label class="chip chip--pick"><input type="radio" name="${axis}" value="${t.id}" ${f.tags.includes(t.id) ? 'checked' : ''}> ${esc(t.name)} ${n(t.id)}</label>`).join('')}
+    </fieldset>`;
+  return `
+    <form id="filter-sheet" class="filter-sheet" hidden>
+      ${one('kosher')}
+      <fieldset class="filter__axis"><legend>${AXES.suitable} <span class="muted small">(אפשר כמה)</span></legend>
+        ${(tags.suitable || []).map((t) => `<label class="chip chip--pick"><input type="checkbox" name="suitable" value="${t.id}" ${f.tags.includes(t.id) ? 'checked' : ''}> ${esc(t.name)} ${n(t.id)}</label>`).join('')}
+      </fieldset>
+      ${one('method')}
+      ${one('cuisine')}
+      <fieldset class="filter__axis"><legend>קושי</legend>
+        <label class="chip chip--pick"><input type="radio" name="d" value="" ${!f.d ? 'checked' : ''}> הכול</label>
+        ${Object.entries(DIFFICULTY).map(([k, v]) => `<label class="chip chip--pick"><input type="radio" name="d" value="${k}" ${f.d === k ? 'checked' : ''}> ${v}</label>`).join('')}
+      </fieldset>
+      <label class="filter__time">זמן כולל עד
+        <select name="m"><option value="">ללא הגבלה</option>${TIME_CHOICES.map((m) => `<option value="${m}" ${f.m === m ? 'selected' : ''}>${minutes(m)}</option>`).join('')}</select>
+      </label>
+      <div class="actions">
+        <button class="btn btn--primary" type="submit">הצג</button>
+        <button class="btn" type="button" id="filter-clear">נקה</button>
+        <button class="btn btn--ghost" type="button" id="filter-close">סגור</button>
+      </div>
+    </form>`;
+}
+
 // ───────────────────────── רשימה וחיפוש ─────────────────────────
 
-async function renderList() {
+async function renderList(f = listParams('')) {
+  const filtered = !!(f.topic || f.tags.length || f.d || f.m);
+  const nFilters = f.tags.length + (f.d ? 1 : 0) + (f.m ? 1 : 0);
+  const tab = (s, label) => `<a href="${listHash({ ...f, s })}" class="${f.s === s ? 'is-on' : ''}">${label}</a>`;
   view.innerHTML = `
     <section class="toolbar">
       <form id="search" class="search" role="search">
-        <input name="q" type="search" placeholder="חיפוש בשם או ברכיב…" autocomplete="off">
+        <input name="q" type="search" placeholder="חיפוש בשם או ברכיב…" autocomplete="off" value="${esc(f.q)}">
         <button class="btn btn--primary search__go" type="submit" aria-label="חפש" title="חפש">🔍</button>
       </form>
       <div class="toolbar__row">
@@ -339,38 +403,75 @@ async function renderList() {
         <a class="btn" href="#/web">🔎 חיפוש ברשת</a>
       </div>
       <a class="btn btn--wide" href="#/pantry">🥕 מה אפשר להכין ממה שיש לי בבית?</a>
+      <nav class="topics" id="topics" aria-label="נושאים"></nav>
+      <div class="filters">
+        <button class="btn btn--small ${nFilters ? 'is-on' : ''}" type="button" id="filter-open" aria-expanded="false">⚙︎ סינון${nFilters ? ` · ${nFilters}` : ''}</button>
+        <span id="filter-chips" class="filters__chips"></span>
+      </div>
+      <div id="filter-slot"></div>
       <nav class="subnav subnav--list" aria-label="סינון">
-        <a href="#/" class="is-on" data-scope="all">הכול</a>
-        <a href="#/" data-scope="following">נעקבים</a>
-        <a href="#/" data-scope="shared">שותפו איתי <span class="count-badge" id="shared-new" hidden></span></a>
-        <a href="#/" data-scope="web">מהרשת</a>
+        ${tab('all', 'הכול')}
+        ${tab('following', 'נעקבים')}
+        <a href="${listHash({ ...f, s: 'shared' })}" class="${f.s === 'shared' ? 'is-on' : ''}">שותפו איתי <span class="count-badge" id="shared-new" hidden></span></a>
+        ${tab('web', 'מהרשת')}
       </nav>
     </section>
     <section id="results" class="list"></section>`;
 
   const results = $('#results');
-  let scope = 'all';
-  const run = async (q) => {
-    results.innerHTML = '<p class="muted">טוען…</p>';
-    const [{ recipes }, reco] = await Promise.all([
-      api('search', { q, from_web: scope === 'web', following: scope === 'following', shared: scope === 'shared' }),
-      scope === 'shared' || (scope === 'all' && !q) ? api('recommendations') : Promise.resolve(null),
-    ]);
-    // תג "חדש" ללשונית: מתכונים ששותפו ועוד לא נפתחו (מתוך "הכול"), ועוד המלצות שלא נפתחו
-    if (scope === 'all' && !q) { const n = recipes.filter((r) => r.shared_new).length + (reco?.unseen || 0); const b = $('#shared-new'); b.textContent = n; b.hidden = !n; }
-    const recoHtml = scope === 'shared' && reco?.items.length ? `<h3 class="list__head">📨 המלצות</h3>${reco.items.map(recoItem).join('')}
-      ${recipes.length ? '<h3 class="list__head">👥 מתכונים ששותפו איתי</h3>' : ''}` : '';
-    if (recoHtml) { results.innerHTML = recoHtml + recipes.map(recipeItem).join(''); return; }
-    if (!recipes.length) {
-      results.innerHTML = `<p class="muted">${q ? 'לא נמצא כלום.' : {
-        web: 'עדיין לא יובא כלום מהרשת. "🌐 ייבוא מהרשת" — מדביקים קישור למתכון.',
-        following: 'כאן יופיעו מתכונים של מי שאתה עוקב אחריו. <a href="#/people">מצא אנשים ›</a>',
-        shared: 'עוד לא שיתפו איתך מתכונים.',
-      }[scope] || 'עדיין אין מתכונים. זה הרגע.'}</p>`;
-      return;
-    }
-    results.innerHTML = recipes.map(recipeItem).join('');
-  };
+  const scope = f.s;
+  const q = f.q;
+  results.innerHTML = '<p class="muted">טוען…</p>';
+
+  // נושאים וסינון — מהתגים ומהמונים; כשל כאן לא מפיל את הרשימה
+  Promise.all([ensureTags(), api('tag-counts')]).then(([tags, { counts, icons }]) => {
+    const topics = (tags.topic || []).filter((t) => counts[t.id] || t.id === f.topic);
+    $('#topics').innerHTML = topics.map((t) => `
+      <a class="topic ${t.id === f.topic ? 'is-on' : ''}" href="${listHash({ ...f, topic: t.id === f.topic ? 0 : t.id })}" ${t.id === f.topic ? 'aria-current="true"' : ''}>
+        <span class="topic__icon" aria-hidden="true">${topicIcon(t.name, icons)}</span><span>${esc(t.name)}</span><span class="topic__n">${counts[t.id] || 0}</span></a>`).join('');
+    const byId = {};
+    for (const list of Object.values(tags)) for (const t of list) byId[t.id] = t.name;
+    const chip = (label, nf) => `<a class="chip chip--item" href="${listHash({ ...f, ...nf })}" aria-label="הסר ${esc(label)}">${esc(label)} ✕</a>`;
+    $('#filter-chips').innerHTML = [
+      ...f.tags.filter((id) => byId[id]).map((id) => chip(byId[id], { tags: f.tags.filter((x) => x !== id) })),
+      f.d ? chip(DIFFICULTY[f.d], { d: '' }) : '',
+      f.m ? chip(`עד ${minutes(f.m)}`, { m: 0 }) : '',
+      filtered ? `<a class="link small" href="${listHash({ ...f, topic: 0, tags: [], d: '', m: 0 })}">נקה הכול</a>` : '',
+    ].join('');
+    $('#filter-slot').innerHTML = filterSheet(f, tags, counts);
+    const sheet = $('#filter-sheet');
+    const toggle = (on) => { sheet.hidden = !on; $('#filter-open').setAttribute('aria-expanded', String(on)); };
+    $('#filter-open').addEventListener('click', () => toggle(sheet.hidden));
+    $('#filter-close').addEventListener('click', () => toggle(false));
+    $('#filter-clear').addEventListener('click', () => go(listHash({ ...f, tags: [], d: '', m: 0 })));
+    sheet.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const el = (name) => sheet.elements.namedItem(name);
+      const ids = ['kosher', 'method', 'cuisine'].map((a) => +el(a)?.value || 0)
+        .concat($$('[name="suitable"]:checked', sheet).map((c) => +c.value)).filter(Boolean);
+      // תג מנושא שהגיע בקישור — נשאר; כל השאר נקבע מהגיליון
+      go(listHash({ ...f, tags: ids, d: el('d').value, m: +el('m').value || 0 }));
+    });
+  }).catch(() => {});
+
+  const [{ recipes }, reco] = await Promise.all([
+    api('search', { q, from_web: scope === 'web', following: scope === 'following', shared: scope === 'shared',
+                    tag_ids: [f.topic, ...f.tags].filter(Boolean), difficulty: f.d || null, max_minutes: f.m || null }),
+    scope === 'shared' || (scope === 'all' && !q && !filtered) ? api('recommendations') : Promise.resolve(null),
+  ]);
+  // תג "חדש" ללשונית: מתכונים ששותפו ועוד לא נפתחו (מתוך "הכול"), ועוד המלצות שלא נפתחו
+  if (scope === 'all' && !q && !filtered) { const n = recipes.filter((r) => r.shared_new).length + (reco?.unseen || 0); const b = $('#shared-new'); b.textContent = n; b.hidden = !n; }
+  const recoHtml = scope === 'shared' && !filtered && reco?.items.length ? `<h3 class="list__head">📨 המלצות</h3>${reco.items.map(recoItem).join('')}
+    ${recipes.length ? '<h3 class="list__head">👥 מתכונים ששותפו איתי</h3>' : ''}` : '';
+  if (recoHtml) results.innerHTML = recoHtml + recipes.map(recipeItem).join('');
+  else if (!recipes.length) {
+    results.innerHTML = `<p class="muted">${filtered ? `לא נמצא מתכון שמתאים לסינון. <a class="link link--inline" href="${listHash({ ...f, topic: 0, tags: [], d: '', m: 0 })}">נקה סינון</a>`
+      : q ? 'לא נמצא כלום.' : {
+      web: 'עדיין לא יובא כלום מהרשת. "🌐 ייבוא מהרשת" — מדביקים קישור למתכון.',
+      following: 'כאן יופיעו מתכונים של מי שאתה עוקב אחריו. <a href="#/people">מצא אנשים ›</a>',
+      shared: 'עוד לא שיתפו איתך מתכונים.',
+    }[scope] || 'עדיין אין מתכונים. זה הרגע.'}</p>`;
+  } else results.innerHTML = recipes.map(recipeItem).join('');
 
   results.addEventListener('click', async (e) => {
     const open = e.target.closest('[data-reco-open]');
@@ -379,14 +480,7 @@ async function renderList() {
     if (!del) return;
     try { await api('recommendation-dismiss', { id: +del.dataset.recoDismiss }); del.closest('[data-reco]').remove(); } catch (err) { alert(err.message); }
   });
-  $$('[data-scope]').forEach((a) => a.addEventListener('click', (e) => {
-    e.preventDefault();
-    scope = a.dataset.scope;
-    $$('[data-scope]').forEach((x) => x.classList.toggle('is-on', x === a));
-    run($('#search').q.value.trim());
-  }));
-  $('#search').addEventListener('submit', (e) => { e.preventDefault(); run(e.target.q.value.trim()); });
-  await run('');
+  $('#search').addEventListener('submit', (e) => { e.preventDefault(); go(listHash({ ...f, q: e.target.q.value.trim() })); });
 }
 
 /** המלצה שקיבלתי: ממי, על מה, ההערה; פתיחה — דרך החיפוש ברשת (או ייבוא מקישור). */
@@ -869,6 +963,7 @@ async function renderEditor(id, draft = null) {
     import_log_id: draft ? draft.import_log_id || null : null,   // השורה ביומן הייבוא — תקושר למתכון בשמירה
     ai_available: draft ? !!draft.ai_available : null,
     pending_media: draft ? draft.pending_media : null,
+    kosher_suggestion: draft ? draft.kosher_suggestion || null : null,   // הצעה בלבד — מסמנים רק באישור
     tag_ids: new Set(r.tags.map((t) => t.id)),
     sections: r.sections.map((s) => ({
       name: s.name ?? '',
@@ -1068,6 +1163,10 @@ async function renderEditor(id, draft = null) {
             <div class="tags__axis"><span class="muted">${label}</span>
               ${tags[axis].map((t) => `<label class="chip chip--pick">
                 <input type="checkbox" data-tag="${t.id}" ${model.tag_ids.has(t.id) ? 'checked' : ''}> ${esc(t.name)}</label>`).join('')}
+              ${axis === 'kosher' && model.kosher_suggestion && !tags.kosher.some((t) => model.tag_ids.has(t.id)) ? `
+                <p class="tags__hint" id="kosher-hint">💡 לפי המתכון נראה <strong>${esc(model.kosher_suggestion.name)}</strong> —
+                  <button class="link link--inline" type="button" data-kosher-accept="${model.kosher_suggestion.id}">לסמן?</button>
+                  <span class="muted small">(בדקו — הכשרות באחריותכם)</span></p>` : ''}
             </div>` : '').join('')}
         </fieldset>
 
@@ -1086,6 +1185,13 @@ async function renderEditor(id, draft = null) {
       </form>`;
 
     bindEditor(id);
+    const ka = $('[data-kosher-accept]');
+    if (ka) ka.addEventListener('click', () => {
+      const c = $(`[data-tag="${ka.dataset.kosherAccept}"]`);
+      if (c) c.checked = true;
+      model.kosher_suggestion = null;
+      $('#kosher-hint').remove();
+    });
   };
 
   // כל שינוי בשדה נכתב למודל מיד, כך שהוספה או הסרה של שורה (שמציירת
@@ -2381,17 +2487,18 @@ async function renderImportLog() {
 // באינדקס משלנו (lib/web_index.php): האתרים שהמפתח בחר. התוצאות — שם, אתר
 // וקישור, כמו מנוע חיפוש. פתיחה מביאה, מחלצת ומנסחת מחדש; שמירה — אצלך, פרטי.
 
-const webState = { q: '', data: null, offset: 0 };
+const webState = { q: '', topic: '', data: null, offset: 0 };
 
-async function renderWebSearch(q = '') {
+async function renderWebSearch(q = '', topic = '') {
   view.innerHTML = `
     <section class="card settings settings--wide websearch">
       <a class="link" href="#/">‹ לרשימה</a>
       <h2>🔎 חיפוש מתכונים ברשת</h2>
       <form id="web-form" class="search" role="search">
-        <input name="q" type="search" placeholder="למשל: עוגת גבינה אפויה" autocomplete="off" value="${esc(q || webState.q)}" required>
+        <input name="q" type="search" placeholder="למשל: עוגת גבינה אפויה" autocomplete="off" value="${esc(q || webState.q)}">
         <button class="btn btn--primary search__go" type="submit" aria-label="חפש" title="חפש">🔍</button>
       </form>
+      <nav class="topics" id="web-topics" aria-label="נושא"></nav>
       <p class="muted small" id="web-stats"></p>
       <div id="web-results" class="scout__list"></div>
       <div class="actions"><button class="btn" type="button" id="web-more" hidden>עוד תוצאות ›</button></div>
@@ -2432,23 +2539,42 @@ async function renderWebSearch(q = '') {
   const search = async (append = false) => {
     webState.offset = append ? webState.data.results.length : 0;
     try {
-      const d = await api('web-search', { q: webState.q, offset: webState.offset });
+      const d = await api('web-search', { q: webState.q, topic: webState.topic, offset: webState.offset });
       webState.data = append ? { ...d, local: webState.data.local, results: webState.data.results.concat(d.results) } : d;
       draw();
     } catch (err) { stats.textContent = err.message; }
   };
+  const webHash = () => '#/web?' + new URLSearchParams({ q: webState.q, ...(webState.topic ? { topic: webState.topic } : {}) });
   $('#web-form').addEventListener('submit', (e) => {
     e.preventDefault();
     webState.q = e.target.q.value.trim();
-    history.replaceState(null, '', '#/web?q=' + encodeURIComponent(webState.q));
+    if (!webState.q && !webState.topic) return;
+    history.replaceState(null, '', webHash());
     search();
+  });
+  // נושא — מוסק משם הערך (לאינדקס אין יותר). בלי כשרות: אותה אי אפשר לדעת מהשם
+  const drawTopics = (icons = {}) => {
+    $('#web-topics').innerHTML = (state.tags?.topic || []).map((t) => `<button type="button" class="topic topic--small ${webState.topic === t.name ? 'is-on' : ''}" data-topic="${esc(t.name)}">
+      <span class="topic__icon" aria-hidden="true">${topicIcon(t.name, icons)}</span><span>${esc(t.name)}</span></button>`).join('');
+  };
+  let topicIcons = {};
+  Promise.all([ensureTags(), api('tag-counts')]).then(([, c]) => { topicIcons = c.icons; drawTopics(topicIcons); }).catch(() => {});
+  $('#web-topics').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-topic]');
+    if (!b) return;
+    webState.topic = webState.topic === b.dataset.topic ? '' : b.dataset.topic;
+    webState.q = $('#web-form').q.value.trim();
+    drawTopics(topicIcons);
+    history.replaceState(null, '', webHash());
+    if (webState.q || webState.topic) search(); else { webState.data = null; resEl.innerHTML = ''; stats.textContent = ''; $('#web-more').hidden = true; }
   });
   $('#web-more').addEventListener('click', () => search(true));
   // תמונה שלא נטענה (נמחקה באתר, חסימת קישור חיצוני) — חוזרים לסמל, בלי אייקון שבור
   resEl.addEventListener('error', (e) => { if (e.target.tagName === 'IMG') e.target.remove(); }, true);
-  if (q && q !== webState.q) { webState.q = q; webState.data = null; }
-  if (webState.q && webState.data) draw();               // חזרה מפתיחה — בלי לחפש שוב
-  else if (webState.q) search();
+  // כתובת עם חיפוש — היא הקובעת (קישור, "חזור"); בלי — ממשיכים מהחיפוש האחרון
+  if ((q || topic) && (q !== webState.q || topic !== webState.topic)) { webState.q = q; webState.topic = topic; webState.data = null; }
+  if ((webState.q || webState.topic) && webState.data) draw();     // חזרה מפתיחה — בלי לחפש שוב
+  else if (webState.q || webState.topic) search();
   else $('#web-form input').focus();
 }
 

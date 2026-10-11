@@ -352,7 +352,9 @@ function searchRecipes(?array $user, string $query = '', array $filters = []): a
     }
     if (!empty($filters['from_web'])) $where[] = 'r.source_url IS NOT NULL';
     if (!empty($filters['max_minutes'])) {
-        $where[]  = '(COALESCE(r.work_minutes,0) + COALESCE(r.wait_minutes,0)) <= ?';
+        // CAST: execute() קושר הכול כטקסט, וב-SQLite כל מספר "קטן" מכל טקסט — בלעדיו הסינון לא סינן כלום
+        // מתכון בלי זמן כלל — לא "0 דקות": זמן לא ידוע לא עונה על "עד חצי שעה"
+        $where[]  = '(r.work_minutes IS NOT NULL OR r.wait_minutes IS NOT NULL) AND (COALESCE(r.work_minutes,0) + COALESCE(r.wait_minutes,0)) <= CAST(? AS INTEGER)';
         $params[] = (int) $filters['max_minutes'];
     }
     if (!empty($filters['tag_ids']) && is_array($filters['tag_ids'])) {

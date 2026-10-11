@@ -289,7 +289,7 @@ function scanToDraft(array $in): array {
         'difficulty' => in_array($in['difficulty'] ?? null, DIFFICULTIES, true) ? $in['difficulty'] : null,
         'work_minutes' => $int($in['work_minutes'] ?? null), 'wait_minutes' => $int($in['wait_minutes'] ?? null),
         'tips' => mb_substr(trim((string) ($in['tips'] ?? '')), 0, 2000),
-        'tag_ids' => importGuessTags([$title]), 'sections' => $sections, 'comments_open' => true,
+        'tag_ids' => importGuessTags([$title], $title), 'sections' => $sections, 'comments_open' => true,
     ];
 }
 

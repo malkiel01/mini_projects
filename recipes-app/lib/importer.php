@@ -635,18 +635,38 @@ function importParseYield(string $y): array {
     return ['servings' => null, 'yield_text' => mb_substr($y, 0, 60)];
 }
 
-/** תגים מהצירים הסגורים לפי קטגוריות/מילות מפתח של המקור. */
-function importGuessTags(array $categories): array {
+/**
+ * תגים מהצירים הסגורים: לפי קטגוריות/מילות מפתח של המקור, ונושא לפי השם
+ * (lib/catalog.php). **בלי כשרות** — היא רק הצעה (importGuessKosher), כי טעות
+ * בה היא לא טעות תצוגה.
+ */
+function importGuessTags(array $categories, string $title = ''): array {
+    require_once __DIR__ . '/catalog.php';
+    $ids = $title !== '' ? catalogGuessTopics($title) : [];
     $hay = mb_strtolower(implode(' | ', $categories));
-    if ($hay === '') return [];
-    $ids = [];
-    foreach (db()->query('SELECT id, name FROM tags')->fetchAll() as $tag) {
+    if ($hay === '') return $ids;
+    foreach (db()->query("SELECT id, name FROM tags WHERE axis != 'kosher'")->fetchAll() as $tag) {
         $name = mb_strtolower($tag['name']);
         // "עוגות" נמצא ב"מתכונים לעוגות"; "חלבי" ב"מתכונים חלביים" לא — ולכן גם הגזע
         $stem = mb_substr($name, 0, max(3, mb_strlen($name) - 1));
         if (str_contains($hay, $name) || (mb_strlen($stem) >= 4 && str_contains($hay, $stem))) $ids[] = (int) $tag['id'];
     }
-    return $ids;
+    return array_values(array_unique($ids));
+}
+
+/**
+ * הצעת כשרות לעורך: מה שהמקור הצהיר בקטגוריות, ואם לא — מהרכיבים. מזהה תג
+ * ושמו, או null. לא נשמרת לבד: העורך שואל "נראה חלבי — לסמן?".
+ */
+function importGuessKosher(array $categories, array $ingredients): ?array {
+    require_once __DIR__ . '/catalog.php';
+    $byName = catalogTagIds('kosher');
+    $hay = implode(' | ', $categories);
+    $name = null;
+    // "חלביים" מכיל "חלבי"; שתי כשרויות בקטגוריות — סתירה, נשארים עם הרכיבים
+    foreach (array_keys($byName) as $n) if ($hay !== '' && str_contains($hay, (string) $n)) $name = $name === null ? $n : false;
+    if (!$name) $name = catalogGuessKosher($ingredients);
+    return $name && isset($byName[$name]) ? ['id' => $byName[$name], 'name' => $name] : null;
 }
 
 /** החילוץ הגולמי → המודל שהעורך מצייר, עם pending_media לקישורים אחרי השמירה. */
@@ -680,7 +700,8 @@ function importToDraft(array $raw): array {
         'work_minutes'  => $prep,
         'wait_minutes'  => $cook,
         'tips'          => mb_substr($raw['description'], 0, 2000),
-        'tag_ids'       => importGuessTags($raw['categories']),
+        'tag_ids'       => importGuessTags($raw['categories'], (string) $raw['title']),
+        'kosher_suggestion' => importGuessKosher($raw['categories'], $raw['ingredients']),
         'sections'      => $sections,
         'comments_open' => true,
         'source_url'    => $raw['url'],

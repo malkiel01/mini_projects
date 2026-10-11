@@ -659,7 +659,7 @@ function indexWatchdog(): void {
  * דירוג מהאתרים עצמם לא נלקח: רק אחד מעשרה מפרסם, ושם הוא זהה בכל המתכונים.
  * $user — למתכונים מהאפליקציה; null (בדיקות) — בלי.
  */
-function indexSearch(string $q, int $offset = 0, ?array $user = null): array {
+function indexSearch(string $q, int $offset = 0, ?array $user = null, string $topic = ''): array {
     $q = trim(mb_substr($q, 0, 100));
     $stems = [];
     foreach (preg_split('/\s+/u', normalizeText($q)) ?: [] as $w) {
@@ -668,12 +668,16 @@ function indexSearch(string $q, int $offset = 0, ?array $user = null): array {
     }
     $sites = (int) db()->query('SELECT COUNT(*) FROM index_sites WHERE enabled = 1')->fetchColumn();
     $all = (int) db()->query("SELECT COUNT(*) FROM index_entries e JOIN index_sites s ON s.id = e.site_id WHERE s.enabled = 1 AND e.skip = 0 AND e.title != ''")->fetchColumn();
-    if (!$stems) return ['local' => [], 'results' => [], 'total' => 0, 'indexed' => $all, 'sites' => $sites];
+    // נושא (SPEC 15.1): מוסק מהשם — לערכי האינדקס אין יותר מזה. עם נושא אפשר גם בלי מילים
+    require_once __DIR__ . '/catalog.php';
+    $topicId = $topic !== '' ? (catalogTagIds('topic')[$topic] ?? null) : null;
+    if (!$stems && !$topicId) return ['local' => [], 'results' => [], 'total' => 0, 'indexed' => $all, 'sites' => $sites];
 
     // גם בעמודים הבאים — כדי שההחרגה שלמטה תהיה זהה וההיסט לא יזוז
-    $local = $user ? array_slice(searchRecipes($user, $q), 0, WEB_LOCAL_MAX) : [];
+    $local = $user ? array_slice(searchRecipes($user, $q, $topicId ? ['tag_ids' => [$topicId]] : []), 0, WEB_LOCAL_MAX) : [];
     $where = ['s.enabled = 1', 'e.skip = 0', "e.title != ''"];
     $params = [];
+    if ($topicId) { $where[] = 'catalog_topic(e.title, ?)'; $params[] = $topic; catalogRegisterSql(); }
     // מה שכבר מוצג מהאפליקציה (מתכון שיובא מאותו דף) — לא פעמיים
     $mine = array_values(array_filter(array_column($local, 'source_url')));
     if ($mine) { $where[] = 'e.url NOT IN (' . implode(',', array_fill(0, count($mine), '?')) . ')'; array_push($params, ...$mine); }

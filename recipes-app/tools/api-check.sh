@@ -559,6 +559,9 @@ call logout >/dev/null
 echo
 echo "8ל. רשת — שיתוף עם אדם מסוים, ומעקב"
 call login '{"username":"owner","password":"sod12345"}' >/dev/null
+check 'קטגוריות: מונים לכל תג, עם סמלי הנושאים' "$(call tag-counts)" '"counts":.*"icons":.*"עוגות":"🎂"'
+check 'קטגוריות: חיפוש ברשת לפי נושא, בלי מילים' "$(call web-search '{"q":"","topic":"עוגות"}')" '"success":true.*"total":'
+check 'קטגוריות: סינון זמן — מספר ולא טקסט'     "$(call search '{"max_minutes":1}')" '"recipes":\[\]'
 PR=$(call recipe-save '{"title":"מרק של סבתא לשיתוף","visibility":"private","sections":[{"ingredients":[{"free_text":"גזר"}],"steps":[{"text":"לבשל"}]}]}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
 PS=$(call people-search '{"q":"tester"}')
 check 'חיפוש אנשים — בלי דוא"ל'              "$PS" '"username":"tester"'
