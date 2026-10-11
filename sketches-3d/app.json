@@ -5,5 +5,8 @@
   "description": "כלי לשרטוט ולצפייה במודלים תלת־ממדיים. כרגע שלד בלבד — התשתית עומדת ונפרסת, והתכן ייכתב לפי האפיון.",
   "category": "design",
   "entry": "index.html",
-  "gate": true
+  "gate": true,
+  "install": {
+    "offline": true
+  }
 }

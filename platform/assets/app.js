@@ -138,10 +138,14 @@ function showUserbar(user) {
     if (!user) { userbar.replaceChildren(); return; }
     const logout = el('button', { type: 'button', textContent: 'יציאה' });
     logout.addEventListener('click', async () => {
-        try { await api('logout', {}); } finally { csrf = null; start(); }
+        try { await api('logout', {}); } finally {
+            csrf = null;
+            await clearFamilyCache();
+            start();
+        }
     });
     const role = user.role === 'admin' ? ' · מנהל' : '';
-    const actions = [logout];
+    const actions = [...familyActions(), logout];
     if (user.role === 'admin') {
         const inAdmin = location.hash === '#admin';
         actions.unshift(el('a', {
@@ -179,10 +183,12 @@ function card(app) {
         el('h2', { textContent: app.name }),
         el('p', { textContent: app.description }),
     ];
-    if (!app.links.length) {
+    const extras = installLinks(app);
+    if (!app.links.length && !extras.length) {
         return el('a', { className: 'project-card', href: app.href }, head);
     }
-    const links = app.links.map(link => {
+    const entries = app.links.length ? app.links : [{ label: '▶️ פתיחה', href: app.href }];
+    const links = entries.map(link => {
         const btn = el('button', { type: 'button', textContent: '📋 העתקת קישור' });
         btn.addEventListener('click', () => copyLink(btn, link.href));
         return el('div', { className: 'entry-link' }, [
@@ -191,11 +197,128 @@ function card(app) {
     });
     return el('div', { className: 'project-card multi' }, [
         ...head, el('div', { className: 'entry-links' }, links),
+        ...(extras.length ? [el('div', { className: 'install-links' }, extras)] : []),
     ]);
+}
+
+// ---------- התקנה והורדה (שלב 5) ----------
+
+// מה שהמנהל אישר לאפליקציה: התקנה נפרדת, APK, חנות. השרת לא שולח את מה שלא אושר.
+function installLinks(app) {
+    const out = [];
+    if (app.install.pwa) {
+        out.push(el('a', {
+            href: app.href, textContent: '📲 התקנה כאפליקציה נפרדת',
+            title: 'פתחו את האפליקציה, ובתפריט הדפדפן בחרו "התקנה" או "הוספה למסך הבית"',
+        }));
+    }
+    if (app.install.apk) out.push(el('a', { href: app.install.apk, textContent: '⬇️ הורדת APK', rel: 'noopener' }));
+    if (app.install.store) out.push(el('a', { href: app.install.store, textContent: '▶️ Google Play', rel: 'noopener', target: '_blank' }));
+    return out;
+}
+
+const FAMILY_CACHE = 'family-v1';
+const CDN_HOSTS = ['cdnjs.cloudflare.com', 'cdn.jsdelivr.net', 'unpkg.com', 'fonts.googleapis.com', 'fonts.gstatic.com'];
+let installPrompt = null;
+let currentApps = [];
+
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('family-sw.js').catch(() => {});
+}
+// Chrome/Android: הדפדפן מציע להתקין את המשפחה — שומרים את ההצעה לכפתור שלנו.
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    installPrompt = e;
+    start();
+});
+
+function familyActions() {
+    const out = [];
+    if (installPrompt) {
+        const b = el('button', { type: 'button', textContent: '📲 התקנת המשפחה' });
+        b.addEventListener('click', async () => {
+            installPrompt.prompt();
+            await installPrompt.userChoice;
+            installPrompt = null;
+            start();
+        });
+        out.push(b);
+    }
+    if ('caches' in window && currentApps.some(a => a.install.offline)) {
+        const b = el('button', { type: 'button', textContent: '⬇️ הורדה למכשיר' });
+        b.title = 'שומר במכשיר את האפליקציות שעובדות בלי רשת';
+        b.addEventListener('click', () => downloadFamily(b));
+        out.push(b);
+    }
+    return out;
+}
+
+/**
+ * "הורדת המשפחה": שומר במטמון את הדף של כל אפליקציה שמסומנת offline, ואת מה
+ * שהוא טוען — סקריפטים (כולל import של מודולים, רמה אחת), עיצוב, תמונות,
+ * וספריות מ-CDN. ה-service worker מגיש אותם כשאין רשת.
+ */
+async function downloadFamily(btn) {
+    const apps = currentApps.filter(a => a.install.offline);
+    const cache = await caches.open(FAMILY_CACHE);
+    const base = new URL('./', location.href);
+    const allowed = (u) => (u.origin === location.origin && u.pathname.startsWith(base.pathname)) || CDN_HOSTS.includes(u.hostname);
+    let done = 0, failed = 0;
+
+    async function save(url) {
+        try { await cache.add(url); return true; } catch { failed++; return false; }
+    }
+    async function assetsOf(pageUrl, html) {
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const refs = [...doc.querySelectorAll('script[src], link[rel~="stylesheet"][href], link[rel~="icon"][href], link[rel="modulepreload"][href], img[src]')]
+            .map(n => n.getAttribute('src') || n.getAttribute('href'));
+        // סקריפט inline עם import — גם הוא טוען מודולים
+        for (const sc of doc.querySelectorAll('script:not([src])')) refs.push(...importsIn(sc.textContent));
+        return refs.map(r => { try { return new URL(r, pageUrl); } catch { return null; } }).filter(u => u && allowed(u));
+    }
+    function importsIn(code) {
+        return [...code.matchAll(/(?:import|from)\s*\(?\s*['"]([^'"]+\.m?js)['"]/g)].map(m => m[1]);
+    }
+
+    for (const app of apps) {
+        btn.textContent = `⏳ ${app.name}…`;
+        const page = new URL(app.href, location.href);
+        try {
+            const res = await fetch(page, { credentials: 'same-origin' });
+            if (!res.ok || res.redirected) { failed++; continue; }
+            await cache.put(page, res.clone());
+            const assets = await assetsOf(page, await res.text());
+            for (const u of assets) {
+                if (!(await save(u.href))) continue;
+                if (/\.m?js$/.test(u.pathname) && u.origin === location.origin) {
+                    const code = await (await cache.match(u.href)).text();
+                    for (const r of importsIn(code)) {
+                        const sub = new URL(r, u);
+                        if (allowed(sub)) await save(sub.href);
+                    }
+                }
+            }
+            done++;
+        } catch { failed++; }
+    }
+    btn.textContent = failed ? `✓ ${done} אפליקציות במכשיר (${failed} קבצים לא נשמרו)` : `✓ ${done} אפליקציות במכשיר`;
+}
+
+// ביציאה: כל מה שהורד ורשימת האפליקציות נמחקים — מי שמקבל את המכשיר אחריך לא
+// יראה את המשפחה שלך. המעטפת עצמה (הדף והקוד, בלי מידע אישי) נשמרת מחדש.
+async function clearFamilyCache() {
+    if (!('caches' in window)) return;
+    try {
+        await caches.delete(FAMILY_CACHE);
+        const c = await caches.open(FAMILY_CACHE);
+        await c.addAll(['./', 'index.html', 'platform/assets/app.js', 'platform/assets/admin.js',
+            'platform/assets/app.css', 'platform/manifest.webmanifest', 'platform/assets/icons/icon-192.png']);
+    } catch { /* בלי רשת — יימלא בפעם הבאה */ }
 }
 
 async function showApps() {
     const { categories, apps } = await api('apps');
+    currentApps = apps;
     if (!apps.length) {
         showMessage('עוד אין כאן אפליקציות', 'המנהל עדיין לא הקצה לכם אפליקציות. כשיקצה — הן יופיעו כאן.');
         return;
@@ -239,6 +362,7 @@ async function start() {
             return await window.PlatformAdmin.show(view);
         }
         await showApps();
+        showUserbar(me.user); // כפתור "הורדה למכשיר" תלוי ברשימה שנטענה עכשיו
     } catch (err) {
         view.replaceChildren(el('p', {
             className: 'status error',

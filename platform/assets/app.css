@@ -184,3 +184,16 @@ header p { opacity: 0.8; font-size: 1.1rem; }
     background: #1a1a2e; color: #e8eaf0; border-radius: 10px; padding: 14px;
     font-size: 0.82rem; line-height: 1.7; margin: 12px 0;
 }
+
+/* --- התקנה והורדה --- */
+.install-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.install-links a {
+    font-size: 0.82rem; text-decoration: none; color: #2d4a8a;
+    border: 1px dashed #c9d7f5; border-radius: 999px; padding: 5px 10px;
+}
+.install-links a:hover { background: #eef3fd; }
+.userbar-actions button {
+    background: none; border: none; color: #2d4a8a; cursor: pointer;
+    font: inherit; padding: 0; text-decoration: underline;
+}
+.userbar { flex-wrap: wrap; }
