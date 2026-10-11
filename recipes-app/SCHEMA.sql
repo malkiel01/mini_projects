@@ -591,6 +591,18 @@ CREATE TABLE user_taste (
   updated_at TEXT    NOT NULL
 );
 
+-- טעם מהניתוח היומי (lib/taste_job.php): צ'אט עם שעון קורא פעם ביום את יומן השימוש
+-- (user_events) ומחזיר לכל לקוח: summary — משפט שהלקוח רואה ב"בשבילך"; profile — JSON
+-- {tags: {שם תג: -3..3}, quick: -1..1, special: -1..1, keywords: [], avoid: []};
+-- picks — JSON [{key: "r:12" / "w:345", reason}]. רק כשהתאמה אישית דלוקה; כיבוי ואיפוס מוחקים.
+CREATE TABLE ai_taste (
+  user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  summary    TEXT    NOT NULL DEFAULT '',
+  profile    TEXT    NOT NULL DEFAULT '{}',
+  picks      TEXT    NOT NULL DEFAULT '[]',
+  updated_at TEXT    NOT NULL
+);
+
 -- מרכז פעילות (SPEC 15.6, lib/activity.php): מתי פתחתי אותו לאחרונה. הפעילות עצמה
 -- נגזרת מהטבלאות הקיימות — שיתופים, המלצות, מעקב, מתכונים, תגובות.
 CREATE TABLE activity_seen (

@@ -136,6 +136,8 @@ function leaveShare(int $recipeId, array $user): void {
     if ((int) $r['owner_id'] === $uid) throw new AppError('זה מתכון שלך — אפשר למחוק אותו');
     db()->prepare('DELETE FROM recipe_shares WHERE recipe_id = ? AND user_id = ?')->execute([$recipeId, $uid]);
     shareOptOut('recipe', $recipeId, $uid);
+    require_once __DIR__ . '/foryou.php';
+    fyTrack($user, 'hide', $recipeId);   // יומן השימוש — "לא מעניין אותי"
 }
 
 /** "החזר לרשימה שלי" — ואם המתכון משותף עם מעגל שאני בו, גם השיתוף חוזר. */

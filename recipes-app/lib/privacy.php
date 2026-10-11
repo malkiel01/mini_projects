@@ -49,6 +49,11 @@ function setUserPrefs(array $in, array $user): array {
                    ON CONFLICT(user_id) DO UPDATE SET discoverable = excluded.discoverable, share_from = excluded.share_from,
                                                      personalize = excluded.personalize, updated_at = excluded.updated_at')
         ->execute([(int) $user['id'], $p['discoverable'] ? 1 : 0, $p['share_from'], $p['personalize'] ? 1 : 0, nowIso()]);
+    // כיבוי ההתאמה האישית מוחק את מה שנאסף: יומן השימוש והטעם מהניתוח היומי
+    if (!$p['personalize']) {
+        db()->prepare('DELETE FROM user_events WHERE user_id = ?')->execute([(int) $user['id']]);
+        db()->prepare('DELETE FROM ai_taste WHERE user_id = ?')->execute([(int) $user['id']]);
+    }
     return $p;
 }
 

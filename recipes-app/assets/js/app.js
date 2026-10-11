@@ -463,13 +463,15 @@ async function renderForYou() {
   const live = routeLive();
   const [d, tags, counts] = await Promise.all([api('foryou', { limit: 30 }), ensureTags(), api('tag-counts').catch(() => ({ icons: {} }))]);
   if (!live()) return;
-  if (!live()) return; view.innerHTML = `
+  view.innerHTML = `
     <section class="card fy-page">
       <a class="link link--back" href="#/">‹ לרשימה</a>
       <h2>✨ בשבילך</h2>
-      <p class="muted small">לפי מה ששמרת, בישלת ופתחת, מי שאתה עוקב אחריו${d.season.length ? `, ו${d.season.join(' ו')}` : ''}.
+      <p class="muted small">לפי מה שחיפשת, שמרת, בישלת ופתחת, מי שאתה עוקב אחריו${d.season.length ? `, ו${d.season.join(' ו')}` : ''}.
         <button class="link link--inline" type="button" id="taste-open">🎯 מה אני אוהב</button></p>
       ${d.personalize ? '' : '<p class="note note--warn small">ההתאמה האישית כבויה — מוצגים רק עונה ופופולרי. <a class="link link--inline" href="#/settings">להדליק ›</a></p>'}
+      ${d.ai?.summary ? `<p class="fy-ai small">🧠 <strong>מה למדנו עליך:</strong> ${esc(d.ai.summary)}
+        <button class="link link--inline" type="button" id="ai-reset" title="מוחק את מה שלמדנו; נלמד מחדש ממה שתעשה מעכשיו">זה לא אני — אפס</button></p>` : ''}
       <div id="taste-slot"></div>
     </section>
     <section class="list" id="fy-list">${d.items.length ? d.items.map((it) => `
@@ -501,6 +503,10 @@ async function renderForYou() {
     });
   };
   $('#taste-open').addEventListener('click', () => { if (slot.innerHTML) slot.innerHTML = ''; else openTaste(); });
+  $('#ai-reset')?.addEventListener('click', async () => {
+    if (!confirm('למחוק את מה שלמדנו עליך? ההמלצות יחזרו להיות כלליות, ונלמד מחדש ממה שתעשה מעכשיו.')) return;
+    try { await api('foryou-ai-reset'); renderForYou(); } catch (err) { alert(err.message); }
+  });
   if (d.needs_taste) openTaste();
 
   const list = $('#fy-list');
@@ -1148,7 +1154,7 @@ async function renderCollections() {
   const live = routeLive();
   const d = await api('collections');
   if (!live()) return;
-  if (!live()) return; view.innerHTML = `
+  view.innerHTML = `
     <section class="card settings settings--wide colls">
       <a class="link" href="#/">‹ לרשימה</a>
       <h2>📁 האוספים שלי</h2>
@@ -1843,7 +1849,7 @@ async function renderShoppingLists() {
   const live = routeLive();
   const { lists } = await api('shopping-lists');
   if (!live()) return;
-  if (!live()) return; view.innerHTML = `
+  view.innerHTML = `
     <section class="card settings">
       <a class="link" href="#/">‹ לרשימה</a>
       <h2>🛒 רשימות קניות</h2>
@@ -2379,7 +2385,7 @@ async function renderSettingsPrivate() {
   const live = routeLive();
   const { limits, display_name } = await api('settings-private');
   if (!live()) return;
-  if (!live()) return; view.innerHTML = `
+  view.innerHTML = `
     <section class="card settings">
       ${settingsNav()}
       <h2>הגדרות פרטיות</h2>
@@ -2410,7 +2416,9 @@ async function renderSettingsPrivate() {
             <option value="following">רק מי שאני עוקב אחריו</option>
             <option value="none">אף אחד</option>
           </select></label>
-        <label class="check"><input type="checkbox" name="personalize"> התאמה אישית — המלצות לפי מה שאני שומר ומבשל</label>
+        <label class="check"><input type="checkbox" name="personalize"> התאמה אישית — המלצות לפי מה שאני מחפש, שומר ומבשל</label>
+        <p class="muted small">דלוקה: נרשם מה חיפשת, שמרת, פתחת והסרת, ופעם ביום ניתוח אוטומטי מסכם מה את/ה אוהב/ת
+          (רואים אותו ב"בשבילך"). כיבוי מוחק את כל מה שנרשם ונלמד.</p>
         <p class="note" id="privacy-msg" hidden></p>
       </form>
       <h4>אנשים שחסמתי</h4>
@@ -3401,7 +3409,7 @@ async function renderCircles() {
   const live = routeLive();
   const { circles } = await api('circles');
   if (!live()) return;
-  if (!live()) return; view.innerHTML = `
+  view.innerHTML = `
     <section class="card settings settings--wide colls">
       <a class="link" href="#/people">‹ אנשים</a>
       <h2>👪 המעגלים שלי</h2>
@@ -3427,7 +3435,7 @@ async function renderCircle(id) {
   const live = routeLive();
   let d = await api('circle', { id });
   if (!live()) return;
-  if (!live()) return; view.innerHTML = `
+  view.innerHTML = `
     <section class="card settings settings--wide circle-page">
       <div class="recipe__top">
         <a class="link" href="#/circles">‹ המעגלים</a>

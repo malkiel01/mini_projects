@@ -26,7 +26,9 @@ require_once __DIR__ . '/catalog.php';
 require_once __DIR__ . '/privacy.php';
 
 const FY_EVENT_DAYS = 180;
-const FY_EVENT_KINDS = ['open', 'cook', 'shop', 'foryou_click', 'not_interested', 'less_topic'];
+const FY_EVENT_KINDS = ['open', 'cook', 'shop', 'foryou_click', 'not_interested', 'less_topic',
+                        // יומן השימוש (lib/taste_job.php) — מה הלקוח חיפש, שמר, הסיר, פתח מהרשת
+                        'search', 'web_search', 'save', 'unsave', 'hide', 'web_open'];
 const FY_MAX_PER_TOPIC = 2;
 const FY_MAX_PER_SOURCE = 2;
 
@@ -36,6 +38,9 @@ const FY_W = [
     'topic_cap' => 8.0,      // נושא אהוב — עד כמה הוא יכול לתרום
     'followed' => 3.0, 'shared_unseen' => 6.0, 'friend_saved' => 2.0, 'season' => 4.0,
     'pantry_full' => 4.0, 'pantry_one' => 3.0, 'popular_cap' => 3.0, 'seen' => -2.0, 'fresh' => 0.3,
+    // הניתוח היומי (lib/taste_job.php): תג שהלקוח אוהב (×משקל -3..3), מילה מהסגנון שלו,
+    // מה שהוא לא אוהב, תכונה (קליל / מיוחד, ×-1..1), ומה שהצ'אט בחר בשבילו
+    'ai_tag' => 2.0, 'ai_keyword' => 3.0, 'ai_avoid' => -6.0, 'ai_trait' => 3.0, 'ai_pick' => 10.0,
 ];
 
 /** תזונה מוצהרת — מילים בשם, למתכון מהרשת (אין לו תגים). */
@@ -56,9 +61,11 @@ function fyEvent(array $user, string $kind, ?int $recipeId = null, ?int $entryId
     if (!in_array($kind, FY_EVENT_KINDS, true)) throw new AppError('אירוע לא מוכר');
     $uid = (int) $user['id'];
     if (!userPrefs($uid)['personalize']) return;
-    if ($kind === 'open') {
-        $st = db()->prepare("SELECT 1 FROM user_events WHERE user_id = ? AND kind = 'open' AND recipe_id = ? AND created_at > ?");
-        $st->execute([$uid, $recipeId, gmdate('Y-m-d\TH:i:s\Z', time() - 86400)]);
+    // אותו דבר שוב — לא שורה חדשה: פתיחה — פעם ביום; אותו חיפוש — פעם בחצי שעה
+    $dupWindow = ['open' => 86400, 'web_open' => 86400, 'search' => 1800, 'web_search' => 1800][$kind] ?? 0;
+    if ($dupWindow) {
+        $st = db()->prepare('SELECT 1 FROM user_events WHERE user_id = ? AND kind = ? AND recipe_id IS ? AND entry_id IS ? AND value IS ? AND created_at > ?');
+        $st->execute([$uid, $kind, $recipeId, $entryId, $value, gmdate('Y-m-d\TH:i:s\Z', time() - $dupWindow)]);
         $dup = $st->fetchColumn();
         $st->closeCursor();
         if ($dup) return;
@@ -68,6 +75,16 @@ function fyEvent(array $user, string $kind, ?int $recipeId = null, ?int $entryId
     if (random_int(1, 200) === 1) {
         db()->prepare('DELETE FROM user_events WHERE created_at < ?')->execute([gmdate('Y-m-d\TH:i:s\Z', time() - FY_EVENT_DAYS * 86400)]);
     }
+}
+
+/**
+ * יומן השימוש — מהפעולות עצמן (חיפוש, שמירה, הסרה...). כשל ברישום לא מפיל את הפעולה:
+ * היומן הוא תוספת, והלקוח שמר את המתכון גם אם השורה ביומן לא נכתבה.
+ */
+function fyTrack(array $user, string $kind, ?int $recipeId = null, ?int $entryId = null, ?array $value = null): void {
+    try {
+        fyEvent($user, $kind, $recipeId, $entryId, $value !== null ? json_encode($value, JSON_UNESCAPED_UNICODE) : null);
+    } catch (Throwable $e) { /* היומן אינו חשוב מהפעולה */ }
 }
 
 /** מהממשק: לחיצה על המלצה, "לא מעניין", "פחות כאלה", בישול. */
@@ -84,6 +101,26 @@ function fyClientEvent(array $in, array $user): void {
     }
     if (!$rid && !$eid) throw new AppError('על מה?');
     fyEvent($user, $kind, $rid, $eid);
+}
+
+// ─────────────────────────────────────────────────────────────
+// הטעם מהניתוח היומי (lib/taste_job.php)
+// ─────────────────────────────────────────────────────────────
+
+/** הטעם מהניתוח היומי, או null. */
+function aiTaste(int $uid): ?array {
+    $st = db()->prepare('SELECT * FROM ai_taste WHERE user_id = ?');
+    $st->execute([$uid]);
+    $r = $st->fetch();
+    $st->closeCursor();
+    if (!$r) return null;
+    return ['summary' => $r['summary'], 'profile' => json_decode($r['profile'], true) ?: [],
+            'picks' => json_decode($r['picks'], true) ?: [], 'updated_at' => $r['updated_at']];
+}
+
+/** "זה לא אני" — הלקוח מוחק את מה שלמדנו. */
+function aiTasteReset(int $uid): void {
+    db()->prepare('DELETE FROM ai_taste WHERE user_id = ?')->execute([$uid]);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -201,6 +238,26 @@ function forYou(array $user, int $limit = 10): array {
     $taste = fyTaste($user);
     $aff = $personal ? fyTopicAffinity($user, $taste) : [];
     $topicName = array_flip(catalogTagIds('topic'));
+    // הניתוח היומי: נושאים מצטרפים לזיקה; שאר התגים, מילים, תכונות ובחירות — בניקוד למטה
+    $ai = $personal ? aiTaste($uid) : null;
+    $aiTagW = []; $aiPicks = [];
+    if ($ai) {
+        $byName = [];
+        foreach (db()->query('SELECT id, name, axis FROM tags')->fetchAll() as $t) $byName[$t['name']] = [(int) $t['id'], $t['axis']];
+        foreach ($ai['profile']['tags'] ?? [] as $name => $w) {
+            if (!isset($byName[$name])) continue;
+            [$tid, $axis] = $byName[$name];
+            if ($axis === 'topic') $aff[$tid] = ($aff[$tid] ?? 0) + (float) $w * FY_W['ai_tag'];
+            else $aiTagW[$tid] = (float) $w;
+        }
+        foreach ($ai['picks'] as $p) $aiPicks[$p['key']] = $p['reason'] ?: 'נבחר בשבילך';
+    }
+    $aiWords = $ai['profile']['keywords'] ?? [];
+    $aiAvoid = $ai['profile']['avoid'] ?? [];
+    $hasWord = function (string $title, array $words): ?string {
+        foreach ($words as $w) if (mb_stripos($title, $w) !== false) return $w;
+        return null;
+    };
     $season = fySeason();
     $dietIds = $taste['diet'] ?? [];
     $dietNames = array_values(array_intersect_key(array_flip(catalogTagIds('suitable')), array_flip($dietIds)));
@@ -237,7 +294,8 @@ function forYou(array $user, int $limit = 10): array {
 
     // ── מתכונים באפליקציה ──
     $vis = "(r.visibility = 'public' OR EXISTS (SELECT 1 FROM recipe_shares sh WHERE sh.recipe_id = r.id AND sh.user_id = $uid))";
-    $rows = db()->query("SELECT r.id, r.title, r.owner_id, r.updated_at, u.display_name AS owner_name, m.path_or_url AS main_path, m.source AS main_source,
+    $rows = db()->query("SELECT r.id, r.title, r.owner_id, r.updated_at, r.difficulty, r.work_minutes, r.wait_minutes,
+                                u.display_name AS owner_name, m.path_or_url AS main_path, m.source AS main_source,
                                 (SELECT CASE WHEN s3.seen_at IS NULL THEN 1 ELSE 0 END FROM recipe_shares s3 WHERE s3.recipe_id = r.id AND s3.user_id = $uid) AS shared_unseen,
                                 (SELECT COUNT(DISTINCT c.owner_id) FROM collection_items ci JOIN collections c ON c.id = ci.collection_id WHERE ci.recipe_id = r.id) AS saves
                            FROM recipes r JOIN users u ON u.id = r.owner_id AND u.blocked = 0
@@ -278,7 +336,8 @@ function forYou(array $user, int $limit = 10): array {
         }
         $cands[] = ['kind' => 'recipe', 'id' => $rid, 'title' => $r['title'], 'thumb' => mediaThumbUrl($r['main_path'], $r['main_source']),
                     'by' => $r['owner_name'], 'source' => 'u' . $r['owner_id'], 'topics' => $topics, 'tag_ids' => $tg,
-                    'saves' => (int) $r['saves'], 'fresh' => $r['updated_at'] > gmdate('Y-m-d\TH:i:s\Z', time() - 14 * 86400), 'sig' => $sig, 'open' => "#/r/$rid"];
+                    'saves' => (int) $r['saves'], 'fresh' => $r['updated_at'] > gmdate('Y-m-d\TH:i:s\Z', time() - 14 * 86400), 'sig' => $sig, 'open' => "#/r/$rid",
+                    'd' => $r['difficulty'], 'min' => $r['work_minutes'] !== null || $r['wait_minutes'] !== null ? (int) $r['work_minutes'] + (int) $r['wait_minutes'] : null];
     }
 
     // ── מהרשת: לפי הנושאים שאני אוהב, העונה, והפופולרי ──
@@ -306,6 +365,9 @@ function forYou(array $user, int $limit = 10): array {
         foreach ($pick("($or)", array_map(fn($w) => "%$w%", $s['words']), 12) as $e) $webRows[$e['id']] = $e;
     }
     foreach ($pick('(e.opens > 0 OR EXISTS (SELECT 1 FROM recipes rr WHERE rr.source_url = e.url))', [], 12) as $e) $webRows[$e['id']] = $e;
+    // הניתוח היומי: מילים מהסגנון של הלקוח, ומה שהצ'אט בחר
+    foreach (array_slice($aiWords, 0, 4) as $w) foreach ($pick('e.title LIKE ?', ["%$w%"], 8) as $e) $webRows[$e['id']] = $e;
+    foreach (array_keys($aiPicks) as $k) if (str_starts_with($k, 'w:')) foreach ($pick('e.id = ?', [(int) substr($k, 2)], 1) as $e) $webRows[$e['id']] = $e;
     foreach ($webRows as $e) {
         if (isset($notE[(int) $e['id']]) || isset($savedUrls[$e['url']])) continue;
         if (!$dietOk($e['title'], null)) continue;
@@ -321,6 +383,27 @@ function forYou(array $user, int $limit = 10): array {
             $best = null; $sum = 0.0;
             foreach ($c['topics'] as $t) if (($aff[$t] ?? 0) != 0) { $sum += $aff[$t]; if ($aff[$t] > 0 && (!$best || $aff[$t] > $aff[$best])) $best = $t; }
             if ($sum != 0) $sig[] = [max(-FY_W['topic_cap'] * 2, min(FY_W['topic_cap'], $sum)), $best ? 'כי אתה אוהב ' . $topicName[$best] : null];
+        }
+        if ($ai) {
+            $key = $c['kind'] === 'web' ? 'w:' . $c['entry_id'] : 'r:' . $c['id'];
+            if (isset($aiPicks[$key])) $sig[] = [FY_W['ai_pick'], $aiPicks[$key]];
+            $tw = 0.0; $bestTag = null;
+            foreach ($c['tag_ids'] as $t) if (isset($aiTagW[$t])) { $tw += $aiTagW[$t]; if ($aiTagW[$t] > 0 && (!$bestTag || $aiTagW[$t] > $aiTagW[$bestTag])) $bestTag = $t; }
+            if ($tw != 0) $sig[] = [$tw * FY_W['ai_tag'], $bestTag ? 'כי אתה אוהב ' . db()->query('SELECT name FROM tags WHERE id = ' . (int) $bestTag)->fetchColumn() : null];
+            if ($hasWord($c['title'], $aiAvoid)) $sig[] = [FY_W['ai_avoid'], null];
+            elseif ($hasWord($c['title'], $aiWords)) $sig[] = [FY_W['ai_keyword'], 'בדיוק בסגנון שלך'];
+            // תכונות — רק במתכון שיש לו זמן או קושי (מהרשת אין)
+            $quick = (float) ($ai['profile']['quick'] ?? 0);
+            $special = (float) ($ai['profile']['special'] ?? 0);
+            $min = $c['min'] ?? null; $d = $c['d'] ?? null;
+            $isQuick = ($min !== null && $min <= 30) || $d === 'easy';
+            $isLong = ($min !== null && $min >= 90) || $d === 'hard';
+            if ($quick > 0 && $isQuick) $sig[] = [FY_W['ai_trait'] * $quick, 'קליל ומהיר — כמו שאתה אוהב'];
+            if ($quick > 0 && $isLong) $sig[] = [-FY_W['ai_trait'] * $quick, null];
+            if ($quick < 0 && $isLong) $sig[] = [-FY_W['ai_trait'] * $quick, null];
+            $exotic = (bool) array_intersect($c['tag_ids'], catalogTagIds('cuisine'));
+            if ($special > 0 && ($isLong || $exotic)) $sig[] = [FY_W['ai_trait'] * $special, 'משהו מיוחד — כמו שאתה אוהב'];
+            if ($special < 0 && $exotic) $sig[] = [FY_W['ai_trait'] * $special, null];
         }
         if ($label = $seasonOf($c['title'], $c['tag_ids'])) $sig[] = [FY_W['season'], $label];
         if ($c['saves'] > 0) $sig[] = [min(FY_W['popular_cap'], log(1 + $c['saves'], 2)), 'פופולרי אצלנו'];
@@ -365,6 +448,7 @@ function forYou(array $user, int $limit = 10): array {
         'needs_taste' => $personal && $taste === null && $signals < 3,
         'taste' => $taste ?? ['topics' => [], 'diet' => []],
         'season' => array_column($season, 'label'),
+        'ai' => $ai ? ['summary' => $ai['summary'], 'at' => $ai['updated_at']] : null,   // "מה למדנו עליך"
     ];
 }
 

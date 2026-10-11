@@ -530,6 +530,18 @@ check 'בלי קישור חזרה לדף הכלים'              "$(grep -c '\.
 check 'יומן הייבוא דרך הטוקן — טקסט עם המקור'  "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$TOK&view=import&format=text")" 'מקור: http://127.0.0.1:'"$FXPORT"'/jsonld-10dakot.html'
 check 'יומן הייבוא — HTML'                      "$(curl -sS "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$TOK&view=import&ok=0")" 'class="ilog ilog--err"'
 check 'טוקן שגוי — 403'                        "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$(printf '0%.0s' $(seq 48))")" '^403$'
+# הניתוח היומי של הטעם: הצ'אט עם השעון קורא את יומן השימוש ומחזיר ניתוח — דרך הטוקן, לא דרך גיט
+TASTE=$(curl -sS "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$TOK&view=taste")
+check 'טעם: יצוא — גרסה'                       "$TASTE" '"version": 1'
+check 'טעם: יצוא — תוקף הטוקן (להתראה לפני שפג)' "$TASTE" '"token_expires_at": "20'
+TU=$(printf '%s' "$TASTE" | python3 -c 'import sys,json; u=json.load(sys.stdin)["users"]; print(u[0]["user_id"] if u else 0)')
+check 'טעם: יש לקוח עם פעילות לנתח'            "$TU" '^[1-9][0-9]*$'
+check 'טעם: בלי דוא"ל ביצוא'                   "$(printf '%s' "$TASTE" | grep -c '@example')" '^0$'
+taste_post() { curl -sS -X POST -H 'Content-Type: application/json' --data "$1" "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$TOK&view=taste-import"; }
+check 'טעם: יבוא — נשמר'                       "$(taste_post "{\"version\":1,\"users\":[{\"user_id\":$TU,\"summary\":\"אוהב עוגות\",\"profile\":{\"tags\":{\"עוגות\":2},\"quick\":0.5},\"picks\":[]}]}")" '"updated": 1'
+check 'טעם: גוף שאינו JSON — נדחה'             "$(taste_post 'xyz')" 'אינו JSON'
+check 'טעם: יבוא ב-GET — 405'                  "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$TOK&view=taste-import")" '^405$'
+check 'טעם: בלי טוקן תקף — 403'                 "$(curl -sS -o /dev/null -w '%{http_code}' -X POST --data '{}' "http://127.0.0.1:$PORT/recipes-app/logs.php?token=$(printf '1%.0s' $(seq 48))&view=taste-import")" '^403$'
 call login '{"username":"owner","password":"sod12345"}' >/dev/null
 check 'הצפייה נרשמה ביומן עם שם הטוקן'         "$(call log '{"action":"log-view"}')" 'לקלוד'
 TID2=$(call log-tokens | python3 -c 'import sys,json; print(json.load(sys.stdin)["tokens"][0]["id"])')

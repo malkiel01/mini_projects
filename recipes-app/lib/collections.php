@@ -328,9 +328,16 @@ function collectionsFor(array $target, array $user): array {
 function collectionToggle(int $collectionId, array $target, bool $on, array $user): bool {
     requireOwnCollection($collectionId, $user);
     $t = collectionTarget($target, $user);
-    if ($on) { collectionAddTarget($collectionId, $t); return true; }
+    require_once __DIR__ . '/foryou.php';
+    $name = (string) collectionRow($collectionId)['name'];
+    if ($on) {
+        if (collectionAddTarget($collectionId, $t)) fyTrack($user, 'save', $t['recipe_id'], $t['entry_id'], ['to' => $name, 'title' => $t['title']]);
+        return true;
+    }
     [$cond, $arg] = collectionItemMatch($t);
-    db()->prepare("DELETE FROM collection_items WHERE collection_id = ? AND $cond")->execute([$collectionId, $arg]);
+    $st = db()->prepare("DELETE FROM collection_items WHERE collection_id = ? AND $cond");
+    $st->execute([$collectionId, $arg]);
+    if ($st->rowCount()) fyTrack($user, 'unsave', $t['recipe_id'], $t['entry_id'], ['from' => $name, 'title' => $t['title']]);
     return false;
 }
 
@@ -345,8 +352,11 @@ function ownCollectionItem(int $itemId, array $user): array {
 }
 
 function collectionRemoveItem(int $itemId, array $user): void {
-    ownCollectionItem($itemId, $user);
+    $it = ownCollectionItem($itemId, $user);
     db()->prepare('DELETE FROM collection_items WHERE id = ?')->execute([$itemId]);
+    require_once __DIR__ . '/foryou.php';
+    fyTrack($user, 'unsave', $it['recipe_id'] !== null ? (int) $it['recipe_id'] : null, $it['entry_id'] !== null ? (int) $it['entry_id'] : null,
+            ['from' => (string) collectionRow((int) $it['collection_id'])['name'], 'title' => $it['title']]);
 }
 
 /** הזזה מעלה/מטה: החלפת מקום עם השכן. */
