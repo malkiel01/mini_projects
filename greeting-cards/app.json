@@ -4,5 +4,8 @@
   "icon": "🎆",
   "description": "יצירת כרטיסי ברכה מותאמים אישית — בחירת רקע ופונט, עיצוב שדות טקסט בגרירה חופשית, טעינת רשימת נמענים מאקסל, והורדת ZIP עם כל הכרטיסים כ-PDF.",
   "category": "documents",
-  "entry": "index.html"
+  "entry": "index.html",
+  "install": {
+    "apk": "https://github.com/malkiel01/mini_projects/releases/download/greeting-cards-apk/app-debug.apk"
+  }
 }

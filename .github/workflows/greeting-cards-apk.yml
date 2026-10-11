@@ -22,6 +22,9 @@ defaults:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # נדרש כדי לפרסם את ה-APK כ-Release (ראו השלב האחרון).
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -55,3 +58,19 @@ jobs:
           name: greeting-cards-apk
           path: greeting-cards/android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+      # ‏Artifact של Actions אינו ניתן להורדה מהטלפון. ל-Release יש קישור הורדה
+      # ישיר — והוא הקישור שבכרטיס של הכלי בדף הראשי ("⬇️ הורדת APK", ב-app.json).
+      # התג נייח ומתעדכן בכל בנייה, כך שהקישור תמיד מצביע ל-APK האחרון. רק מ-main:
+      # בנייה מענף אחר לא מחליפה את מה שהמשתמשים מורידים.
+      - name: Publish APK to a GitHub Release (mobile-friendly)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: greeting-cards-apk
+          name: כרטיסי ברכה — APK (debug)
+          body: |
+            APK בחתימת debug להתקנה ידנית בטלפון (sideload).
+            מתעדכן אוטומטית בכל בנייה מ-main.
+          files: greeting-cards/android/app/build/outputs/apk/debug/*.apk
+          fail_on_unmatched_files: true
