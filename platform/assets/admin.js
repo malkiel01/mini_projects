@@ -42,9 +42,10 @@ window.PlatformAdmin = (() => {
         const tabs = el('div', { className: 'admin-tabs' }, [
             ['users', `👥 משתמשים${pendingCount() ? ` (${pendingCount()} ממתינים)` : ''}`],
             ['catalog', '🗂️ קטגוריות ואפליקציות'],
+            ['probe', '🩺 בדיקת שרת'],
         ].map(([id, label]) => button(label, () => { tab = id; flash = ''; render(); }, tab === id ? 'active' : '')));
 
-        const body = tab === 'users' ? renderUsers() : renderCatalog();
+        const body = tab === 'users' ? renderUsers() : tab === 'catalog' ? renderCatalog() : renderProbe();
         const note = flash ? [el('div', { className: 'admin-flash', textContent: flash })] : [];
         root.replaceChildren(el('div', { className: 'admin' }, [tabs, ...note, body]));
     }
@@ -204,6 +205,53 @@ window.PlatformAdmin = (() => {
             el('h3', { textContent: 'אפליקציות' }),
             el('p', { className: 'muted small', textContent: 'אפליקציה מוסתרת לא מוצגת לאף אחד, גם לא למי שקיבל הרשאה — רק כאן.' }),
             ...apps,
+        ]);
+    }
+
+    // ---------- בדיקת שרת (לקראת השער, שלב 4) ----------
+    // כל בדיקה היא בקשה אמיתית לשרת — ראו platform/probe/README.md.
+
+    async function probe(path) {
+        try {
+            const res = await fetch(`platform/probe/${path}`, { cache: 'no-store' });
+            const text = await res.text();
+            try { return { status: res.status, json: JSON.parse(text) }; }
+            catch { return { status: res.status, text: text.slice(0, 80) }; }
+        } catch (err) {
+            return { status: 0, text: err.message };
+        }
+    }
+
+    function renderProbe() {
+        const out = el('pre', { className: 'probe-out', textContent: 'בודק…' });
+        const copy = button('📋 העתקת התוצאה', async () => {
+            try { await navigator.clipboard.writeText(out.textContent); copy.textContent = '✓ הועתק'; }
+            catch { window.prompt('העתיקו:', out.textContent); }
+        });
+        (async () => {
+            const [info, rewriteFile, rewriteVirtual, userIni, htaccess] = await Promise.all([
+                probe('info.php'), probe('r/page.html'), probe('r/virtual'), probe('u/check.php'), probe('h/check.php'),
+            ]);
+            const yes = (ok) => ok ? '✅ כן' : '❌ לא';
+            const lines = [
+                `PHP: ${info.json?.php} · SAPI: ${info.json?.sapi} · ${info.json?.server}`,
+                `rewrite על קובץ קיים: ${yes(rewriteFile.json?.rewritten)} (${rewriteFile.status})`,
+                `rewrite על כתובת וירטואלית: ${yes(rewriteVirtual.json?.rewritten)} (${rewriteVirtual.status})`,
+                `.user.ini auto_prepend: ${yes(userIni.json?.prepended)} (${userIni.status})`,
+                `.htaccess php_value: ${yes(htaccess.json?.prepended)} (${htaccess.status})`,
+                `user_ini: ${info.json?.user_ini} · ttl: ${info.json?.user_ini_ttl}`,
+                `platform: ${info.json?.platform_dir}`,
+                `document_root: ${info.json?.document_root}`,
+                `script: ${info.json?.script_name} · cwd: ${info.json?.cwd}`,
+                `include_path: ${info.json?.include_path} · pdo_sqlite: ${info.json?.pdo_sqlite}`,
+            ];
+            out.textContent = lines.join('\n');
+        })();
+        return el('div', {}, [
+            el('p', { className: 'muted small', textContent:
+                'הבדיקה קובעת איך ייבנה השער שחוסם כניסה ישירה לכלים. העתיקו את התוצאה ושלחו אותה בצ׳אט. ' +
+                '.user.ini נקרא מחדש רק כל כמה דקות — אם הוא "לא" מיד אחרי פריסה, נסו שוב בעוד 5 דקות.' }),
+            out, copy,
         ]);
     }
 
