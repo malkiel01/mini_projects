@@ -1,0 +1,27 @@
+# דופק לאפליקציית המתכונים — מעיר את העובדים שברקע (אינדקס החיפוש, ייבוא ברקע)
+# גם כשאף אחד לא מחובר לאפליקציה. בלי זה הם מתעוררים רק מבקשה של משתמש מחובר.
+#
+# לא פורס דבר — רק בקשה אחת ל-api.php?action=heartbeat, שאין בה מידע והיא מוגבלת
+# בשרת להערה אחת בשתי דקות. הפריסה היחידה היא deploy.yml.
+#
+# שימו לב: GitHub מריץ schedule רק מענף ברירת המחדל של הריפו — לכן הקובץ פועל
+# רק כשענף ברירת המחדל הוא main.
+name: Recipes heartbeat
+
+on:
+  schedule:
+    - cron: '4,19,34,49 * * * *'   # כל רבע שעה, לא בדקה עגולה (עומס בשרתי GitHub)
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: מעיר את העובדים
+        run: |
+          curl -fsS --max-time 30 --retry 2 -b 'humans_21909=1' -X POST \
+            -H 'Content-Type: application/json' -d '{}' \
+            'https://mbe-plus.com/mini_projects/recipes-app/api.php?action=heartbeat'
