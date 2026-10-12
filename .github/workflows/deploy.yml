@@ -193,6 +193,11 @@ jobs:
             --exclude='carpentry-3d/data/*.sqlite*' \
             --exclude='carpentry-3d/data/media/' \
             --exclude='platform/data/*.sqlite*' \
+            --exclude='project-manager/data/*.sqlite*' \
+            --exclude='project-manager/data/config.json' \
+            --exclude='project-manager/data/files/' \
+            --exclude='project-manager/data/media/' \
+            --exclude='project-manager/data/tmp/' \
             --exclude='*.log' --exclude='error_log' \
             --exclude='.DS_Store' --exclude='._*' \
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30" \
