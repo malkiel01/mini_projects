@@ -17,6 +17,7 @@ require_once __DIR__ . '/i18n.php';
 
 if (!defined('PM_DB')) define('PM_DB', __DIR__ . '/../data/pm.sqlite');
 
+// i18n-ok-start — נתונים שנזרעים במסד בעברית; מתורגמים בתצוגה (t(trade.name) וכו')
 /** תחומי ברירת מחדל — נזרעים פעם אחת, ומאז המפתח עורך אותם. */
 const PM_DEFAULT_TRADES = [
     'מודד מוסמך', 'אדריכלות', 'עיצוב פנים', 'הנדסה', 'פיקוח', 'קבלן ראשי', 'שלד', 'הריסה',
@@ -53,6 +54,7 @@ const PM_DEFAULT_TEMPLATES = [
         ['אלומיניום', 'אלומיניום'], ['צבע', 'צבע'], ['מסירה', 'ניקיון'],
     ]],
 ];
+// i18n-ok-end
 
 const PM_MSG_TEMPLATES_TABLE = 'CREATE TABLE IF NOT EXISTS message_templates (
     owner_id INTEGER NOT NULL,
@@ -106,6 +108,7 @@ function pm_db(): PDO
 
 function pm_migrate(PDO $pdo): void
 {
+    // i18n-none-start — הערות SQL
     $pdo->exec(<<<SQL
         -- משתמשי האפליקציה (lib/auth.php): המפתח ומנהלי הפרויקט.
         CREATE TABLE IF NOT EXISTS users (
@@ -490,6 +493,7 @@ function pm_migrate(PDO $pdo): void
             sort        INTEGER NOT NULL DEFAULT 0
         );
         SQL);
+    // i18n-none-end
 
     if (!$pdo->query("SELECT 1 FROM settings WHERE key = 'templates_seeded'")->fetchColumn()) {
         $ins = $pdo->prepare('INSERT OR IGNORE INTO stage_templates (name, stages_json, sort) VALUES (?, ?, ?)');

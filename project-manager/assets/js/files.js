@@ -18,15 +18,15 @@ const Files = (() => {
     /** הנתיב המלא של תיקייה, לבחירה בחלונות: "הלקוח / חוזים". */
     function path(id) {
         const parts = [];
-        for (let f = folderById(id); f; f = folderById(f.parent_id)) parts.unshift(f.name);
+        for (let f = folderById(id); f; f = folderById(f.parent_id)) parts.unshift(t(f.name));
         return parts.join(' / ');
     }
 
     function bind() {
         if (bound) return;
         bound = true;
-        let t;
-        $('#fq').addEventListener('input', () => { clearTimeout(t); t = setTimeout(loadFiles, 250); });
+        let timer;
+        $('#fq').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(loadFiles, 250); });
         $('#ftype').addEventListener('change', loadFiles);
         $('#fpick').addEventListener('change', e => { upload([...e.target.files]); e.target.value = ''; });
         $('#new-folder').addEventListener('click', () => openFolder(null));
@@ -77,7 +77,7 @@ const Files = (() => {
         const switched = project?.id !== p.id;
         project = p;
         folderId = folder || 0;
-        $('#ftype').innerHTML = options(Object.entries(state.fileTypes).map(([value, label]) => ({ value, label })), '', 'כל הסוגים');
+        $('#ftype').innerHTML = options(Object.entries(state.fileTypes).map(([value, label]) => ({ value, label: t(label) })), '', t('כל הסוגים'));
         if (switched) { $('#fq').value = ''; }
         await loadFolders();
         await loadFiles();
@@ -108,26 +108,26 @@ const Files = (() => {
         // פירורי לחם
         const trail = [];
         for (let f = folderById(folderId); f; f = folderById(f.parent_id)) trail.unshift(f);
-        $('#crumbs').innerHTML = `<a href="#" data-go="0">כל הקבצים</a>` + trail.map(f =>
-            `<i aria-hidden="true">‹</i><a href="#" data-go="${f.id}"${f.id === folderId ? ' aria-current="page"' : ''}>${esc(f.name)}</a>`).join('');
+        $('#crumbs').innerHTML = `<a href="#" data-go="0">${esc(t('כל הקבצים'))}</a>` + trail.map(f =>
+            `<i class="dir-flip" aria-hidden="true">‹</i><a href="#" data-go="${f.id}"${f.id === folderId ? ' aria-current="page"' : ''}>${esc(t(f.name))}</a>`).join('');
 
         // תיקיות (לא בחיפוש)
         const subs = searching ? [] : folders.filter(f => (f.parent_id || 0) === folderId);
         const count = id => folders.filter(f => f.parent_id === id).length;
-        $('#folder-list').innerHTML = subs.map(f => `<li class="card" data-folder="${f.id}" tabindex="0" role="button" aria-label="${esc(f.name)}">
+        $('#folder-list').innerHTML = subs.map(f => `<li class="card" data-folder="${f.id}" tabindex="0" role="button" aria-label="${esc(t(f.name))}">
             <span class="ficon" aria-hidden="true">${f.icon}</span>
-            <div class="body"><div class="l1"><span class="one">${esc(f.name)}</span></div>
-                <div class="l2">${[f.files ? f.files + ' קבצים' : 'ריקה', count(f.id) ? count(f.id) + ' תיקיות' : ''].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>')}</div></div>
-            ${f.system ? '' : `<button class="icon-btn" data-edit-folder="${f.id}" aria-label="עריכת התיקייה ${esc(f.name)}">✏️</button>`}
+            <div class="body"><div class="l1"><span class="one">${esc(t(f.name))}</span></div>
+                <div class="l2">${[f.files ? esc(t('{n} קבצים', { n: f.files })) : esc(t('ריקה')), count(f.id) ? esc(t('{n} תיקיות', { n: count(f.id) })) : ''].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>')}</div></div>
+            ${f.system ? '' : `<button class="icon-btn" data-edit-folder="${f.id}" aria-label="${esc(t('עריכת התיקייה {name}', { name: f.name }))}">✏️</button>`}
         </li>`).join('');
         $('#folder-list').hidden = !subs.length;
 
         $('#files-title').hidden = false;
-        $('#files-title').textContent = searching ? `תוצאות (${files.length})` : folderId ? 'קבצים' : 'הועלו לאחרונה';
+        $('#files-title').textContent = searching ? t('תוצאות ({n})', { n: files.length }) : folderId ? t('קבצים') : t('הועלו לאחרונה');
         $('#file-list').innerHTML = files.map(fileRow).join('')
-            || `<p class="empty">${searching ? 'לא נמצאו קבצים' : folderId ? 'התיקייה ריקה. "+ העלאה" או גרירה לכאן.' : 'עוד אין קבצים בפרויקט.'}</p>`;
+            || `<p class="empty">${esc(searching ? t('לא נמצאו קבצים') : folderId ? t('התיקייה ריקה. "+ העלאה" או גרירה לכאן.') : t('עוד אין קבצים בפרויקט.'))}</p>`;
         // בשורש: העלאה נכנסת ל"ממתין למיון"
-        $('.upload-btn').title = folderId ? 'העלאה לתיקייה הזו' : 'העלאה ל"ממתין למיון"';
+        $('.upload-btn').title = folderId ? t('העלאה לתיקייה הזו') : t('העלאה ל"ממתין למיון"');
     }
 
     function fileRow(f) {
@@ -138,13 +138,13 @@ const Files = (() => {
             ? `<img class="fthumb" src="${fileUrl(f.id, '&thumb=1')}" alt="" loading="lazy" width="40" height="40">`
             : `<span class="ficon" aria-hidden="true">${TYPE_ICON[f.type] || '📄'}</span>`;
         const meta = [
-            esc(state.fileTypes[f.type] || ''), fmtSize(f.size), when(f.created_at),
+            esc(t(state.fileTypes[f.type] || '')), fmtSize(f.size), when(f.created_at),
             !folderId && home ? esc(path(home.folder_id)) : '',
         ].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>');
         return `<li class="card" data-file="${f.id}" tabindex="0" role="button" aria-label="${esc(f.name)}">
             ${thumb}
             <div class="body"><div class="l1"><span class="one">${esc(f.name)}</span>
-                ${f.visible ? '<span class="chip" title="גלוי בפורטל">👁</span>' : ''}${shortcut ? '<span class="chip" title="קיצור דרך">🔗</span>' : ''}</div>
+                ${f.visible ? `<span class="chip" title="${esc(t('גלוי בפורטל'))}">👁</span>` : ''}${shortcut ? `<span class="chip" title="${esc(t('קיצור דרך'))}">🔗</span>` : ''}</div>
                 <div class="l2">${meta}</div></div>
         </li>`;
     }
@@ -154,9 +154,9 @@ const Files = (() => {
     async function upload(list) {
         if (!list.length) return;
         const target = folderId || inbox()?.id;
-        if (!target) { toast('אין תיקייה להעלאה', true); return; }
+        if (!target) { toast(t('אין תיקייה להעלאה'), true); return; }
         for (const file of list) {
-            if (file.size > state.maxUpload) { toast(`${file.name}: גדול מ-${Math.round(state.maxUpload / 1048576)}MB`, true); continue; }
+            if (file.size > state.maxUpload) { toast(t('{name}: גדול מ-{mb}MB', { name: file.name, mb: Math.round(state.maxUpload / 1048576) }), true); continue; }
             await uploadOne(file, target);
         }
         await loadFolders();
@@ -191,7 +191,7 @@ const Files = (() => {
                     headers: { 'Content-Type': 'application/octet-stream', 'X-CSRF': state.user.csrf },
                 });
                 const data = await res.json();
-                if (!res.ok) throw new Error(data.error || 'תקלה בהעלאה');
+                if (!res.ok) throw new Error(data.error || t('תקלה בהעלאה'));
                 offset = data.received; // השרת אומר מאיפה להמשיך — גם אחרי ניתוק
                 tries = 0;
             } catch (e) {
@@ -212,11 +212,13 @@ const Files = (() => {
     /** סוג הקובץ לפי השם והתוכן — אפשר לשנות אחר כך בחלון הקובץ. */
     function guessType(file) {
         const n = file.name;
+        // i18n-none-start
         if (/הצע[הת]|quote|offer/i.test(n)) return 'quote';
         if (/אסמכת|העבר|קבלה|receipt|transfer/i.test(n)) return 'proof';
         if (/חשבונית|invoice/i.test(n)) return 'invoice';
         if (/חוזה|הסכם|contract|agreement/i.test(n)) return 'contract';
         if (/תוכני|שרטוט|היתר|plan|dwg|dxf/i.test(n)) return 'plan';
+        // i18n-none-end
         if (file.type.startsWith('image/')) return 'photo';
         if (file.type.startsWith('video/')) return 'video';
         return 'other';
@@ -261,16 +263,16 @@ const Files = (() => {
         const url = fileUrl(f.id);
         $('#file-preview').innerHTML = f.mime.startsWith('image/') ? `<img src="${url}" alt="${esc(f.name)}">`
             : f.mime.startsWith('video/') ? `<video src="${url}" controls preload="metadata" playsinline></video>`
-            : f.mime === 'application/pdf' ? `<a class="btn ghost" href="${url}" target="_blank" rel="noopener">פתיחת ה-PDF</a>`
+            : f.mime === 'application/pdf' ? `<a class="btn ghost" href="${url}" target="_blank" rel="noopener">${esc(t('פתיחת ה-PDF'))}</a>`
             : `<span class="ficon big" aria-hidden="true">${TYPE_ICON[f.type] || '📄'}</span>`;
-        $('#file-meta').textContent = [fmtSize(f.size), 'הועלה ' + new Date(f.created_at).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }),
-            f.uploader ? 'ע"י ' + f.uploader : ''].filter(Boolean).join(' · ');
+        $('#file-meta').textContent = [fmtSize(f.size), t('הועלה {date}', { date: new Date(f.created_at).toLocaleString(I18n.locale(), { dateStyle: 'short', timeStyle: 'short' }) }),
+            f.uploader ? t('על ידי {name}', { name: f.uploader }) : ''].filter(Boolean).join(' · ');
         el.name.value = f.name;
         el.note.value = f.note;
         el.visible.checked = f.visible;
-        el.type.innerHTML = options(Object.entries(state.fileTypes).map(([value, label]) => ({ value, label })), f.type);
+        el.type.innerHTML = options(Object.entries(state.fileTypes).map(([value, label]) => ({ value, label: t(label) })), f.type);
         const home = f.folders.find(l => l.home)?.folder_id;
-        const all = folders.map(x => ({ value: x.id, label: path(x.id) })).sort((a, b) => a.label.localeCompare(b.label, 'he'));
+        const all = folders.map(x => ({ value: x.id, label: path(x.id) })).sort((a, b) => a.label.localeCompare(b.label, I18n.locale()));
         el.home.innerHTML = options(all, home);
         renderLinks();
         $('#file-download').href = fileUrl(f.id, '&download=1');
@@ -281,11 +283,11 @@ const Files = (() => {
     function renderLinks() {
         const links = current.folders.filter(l => !l.home);
         $('#file-links').innerHTML = links.map(l => `<span class="chip link">🔗 ${esc(path(l.folder_id))}
-            <button type="button" class="x" data-unlink="${l.folder_id}" aria-label="הסרת קיצור הדרך מ${esc(path(l.folder_id))}">✕</button></span>`).join('')
-            || '<span class="hint">רק בתיקייה שלו</span>';
+            <button type="button" class="x" data-unlink="${l.folder_id}" aria-label="${esc(t('הסרת קיצור הדרך מ{folder}', { folder: path(l.folder_id) }))}">✕</button></span>`).join('')
+            || `<span class="hint">${esc(t('רק בתיקייה שלו'))}</span>`;
         const used = new Set(current.folders.map(l => l.folder_id));
         $('#file-dlg [name=link_to]').innerHTML = options(folders.filter(x => !used.has(x.id))
-            .map(x => ({ value: x.id, label: path(x.id) })).sort((a, b) => a.label.localeCompare(b.label, 'he')));
+            .map(x => ({ value: x.id, label: path(x.id) })).sort((a, b) => a.label.localeCompare(b.label, I18n.locale())));
     }
 
     async function saveFile() {
@@ -295,7 +297,7 @@ const Files = (() => {
             const home = Number(el.home.value);
             if (home && home !== file.folders.find(l => l.home)?.folder_id) ({ file } = await api('file-move', { body: { id: current.id, folder_id: home } }));
             $('#file-dlg').close();
-            toast('נשמר');
+            toast(t('נשמר'));
             await loadFolders();
             await loadFiles();
         });
@@ -307,7 +309,7 @@ const Files = (() => {
         await busy($('#add-link'), $('#file-dlg form'), async () => {
             ({ file: current } = await api('file-link', { body: { id: current.id, folder_id: to, add: true } }));
             renderLinks();
-            toast('נוסף קיצור דרך');
+            toast(t('נוסף קיצור דרך'));
         });
     }
 
@@ -319,11 +321,11 @@ const Files = (() => {
     }
 
     async function deleteFile() {
-        if (!confirm(`למחוק את "${current.name}"? הוא ייעלם מכל התיקיות.`)) return;
+        if (!confirm(t('למחוק את "{name}"? הוא ייעלם מכל התיקיות.', { name: current.name }))) return;
         await busy(null, $('#file-dlg form'), async () => {
             await api('file-delete', { body: { id: current.id } });
             $('#file-dlg').close();
-            toast('נמחק');
+            toast(t('נמחק'));
             await loadFolders();
             await loadFiles();
         });
@@ -338,9 +340,10 @@ const Files = (() => {
         const dlg = $('#folder-dlg'), form = $('form', dlg);
         formError(form, '');
         const f = id ? folderById(id) : null;
-        $('#folder-dlg-title').textContent = f ? 'עריכת תיקייה' : 'תיקייה חדשה';
-        form.elements.name.value = f?.name || '';
-        $('#folder-where').textContent = f ? 'ב: ' + (path(f.parent_id) || 'כל הקבצים') : 'תיפתח בתוך: ' + (path(folderId) || 'כל הקבצים');
+        $('#folder-dlg-title').textContent = f ? t('עריכת תיקייה') : t('תיקייה חדשה');
+        form.elements.name.value = f ? t(f.name) : ''; // שם שנזרע — מוצג מתורגם, ונשלח כמו שהוא אם לא שונה
+        $('#folder-where').textContent = f ? t('ב: {folder}', { folder: path(f.parent_id) || t('כל הקבצים') })
+            : t('תיפתח בתוך: {folder}', { folder: path(folderId) || t('כל הקבצים') });
         $('#folder-delete').hidden = !f;
         dlg.showModal();
         form.elements.name.focus();
@@ -348,8 +351,10 @@ const Files = (() => {
 
     async function saveFolder() {
         const form = $('#folder-dlg form');
-        const name = form.elements.name.value.trim();
-        if (!name) { formError(form, 'שם התיקייה: שדה חובה'); return; }
+        let name = form.elements.name.value.trim();
+        if (!name) { formError(form, t('שם התיקייה: שדה חובה')); return; }
+        const orig = editingFolder ? folderById(editingFolder)?.name : null;
+        if (orig && name === t(orig)) name = orig;
         await busy($('button[type=submit]', form), form, async () => {
             const body = editingFolder ? { id: editingFolder, name } : { project_id: project.id, parent_id: folderId || null, name };
             ({ folders } = await api('folder', { body }));
@@ -360,7 +365,7 @@ const Files = (() => {
 
     async function deleteFolder() {
         const f = folderById(editingFolder);
-        if (!f || !confirm(`למחוק את התיקייה "${f.name}"?`)) return;
+        if (!f || !confirm(t('למחוק את התיקייה "{name}"?', { name: f.name }))) return;
         await busy(null, $('#folder-dlg form'), async () => {
             ({ folders } = await api('folder-delete', { body: { id: f.id } }));
             $('#folder-dlg').close();

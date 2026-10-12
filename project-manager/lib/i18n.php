@@ -18,7 +18,7 @@ declare(strict_types=1);
 
 /** קוד ← [שם בשפה עצמה, כיוון, locale]. */
 const PM_LANGS = [
-    'he' => ['עברית', 'rtl', 'he-IL'],
+    'he' => ['עברית', 'rtl', 'he-IL'], // i18n-none — שם השפה בשפה עצמה
     'en' => ['English', 'ltr', 'en-GB'],
     'fr' => ['Français', 'ltr', 'fr-FR'],
     'ru' => ['Русский', 'ltr', 'ru-RU'],
@@ -43,6 +43,19 @@ function pm_lang(?string $set = null): string
         $cur = isset(PM_LANGS[$h]) ? $h : 'he';
     }
     return $cur;
+}
+
+/**
+ * שפת המשתמש (מנהל / מפתח) — למיילים אליו. users.lang, ואם עוד לא נבחרה — עברית.
+ * $u — שורת משתמש (עם lang) או מזהה.
+ */
+function pm_user_lang(array|int $u): string
+{
+    if (is_array($u) && array_key_exists('lang', $u)) return pm_lang_valid((string)$u['lang']);
+    $id = is_array($u) ? (int)($u['id'] ?? 0) : $u;
+    $st = pm_db()->prepare('SELECT lang FROM users WHERE id = ?');
+    $st->execute([$id]);
+    return pm_lang_valid((string)$st->fetchColumn());
 }
 
 function pm_dict(string $lang): array

@@ -29,7 +29,7 @@ if (!$ok) {
     pm_log('warn', 'auth', 'log.read_denied', ['message' => 'אסימון קריאה שגוי או שפג', 'data' => ['token_length' => strlen($token)]]);
     http_response_code(403);
     header('Content-Type: text/plain; charset=utf-8');
-    echo "403 — אסימון לא תקף או שפג (מתחלף אחת לשבוע; האסימון הנוכחי בהגדרות ← יומן)\n";
+    echo "403 — אסימון לא תקף או שפג (מתחלף אחת לשבוע; האסימון הנוכחי בהגדרות ← יומן)\n"; // i18n-none — למפתח / לצ'אט
     exit;
 }
 
@@ -42,8 +42,10 @@ if (($_GET['format'] ?? 'text') === 'json') {
     exit;
 }
 header('Content-Type: text/plain; charset=utf-8');
+// i18n-none-start — פלט היומן למפתח / לצ'אט, בעברית
 $s = pm_log_stats();
 echo "# יומן ניהול פרויקטים — {$s['total']} רשומות מאז {$s['oldest']}; 24 שעות: "
    . "{$s['last24h']['error']} שגיאות, {$s['last24h']['warn']} אזהרות, {$s['last24h']['info']} מידע\n";
 echo "# החדש למעלה. עמודות: זמן · רמה · קטגוריה · אירוע · משתמש · IP · פעולה →קוד משך | הודעה {נתונים} req\n\n";
 foreach ($entries as $r) echo pm_log_line($r), "\n";
+// i18n-none-end

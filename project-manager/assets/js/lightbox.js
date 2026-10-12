@@ -12,11 +12,16 @@ const Lightbox = (() => {
         const dlg = $('#lightbox');
         $('.lb-prev', dlg).addEventListener('click', () => go(-1));
         $('.lb-next', dlg).addEventListener('click', () => go(1));
-        dlg.addEventListener('keydown', e => { if (e.key === 'ArrowRight') go(-1); if (e.key === 'ArrowLeft') go(1); });
+        // בעברית ובערבית "הקודם" מימין; בשפות משמאל לימין — משמאל
+        const rtl = () => document.documentElement.dir !== 'ltr';
+        dlg.addEventListener('keydown', e => {
+            if (e.key === 'ArrowRight') go(rtl() ? -1 : 1);
+            if (e.key === 'ArrowLeft') go(rtl() ? 1 : -1);
+        });
         // החלקה בטלפון
         let x0 = null;
         dlg.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; }, { passive: true });
-        dlg.addEventListener('touchend', e => { if (x0 === null) return; const dx = e.changedTouches[0].clientX - x0; if (Math.abs(dx) > 50) go(dx > 0 ? 1 : -1); x0 = null; });
+        dlg.addEventListener('touchend', e => { if (x0 === null) return; const dx = e.changedTouches[0].clientX - x0; if (Math.abs(dx) > 50) go((dx > 0) === rtl() ? 1 : -1); x0 = null; });
         dlg.addEventListener('close', () => { $('#lb-body').innerHTML = ''; });
     }
 

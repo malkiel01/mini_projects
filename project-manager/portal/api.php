@@ -61,6 +61,9 @@ function pm_portal_json(): array
 try {
     $token = (string)($_SERVER['HTTP_X_PORTAL'] ?? ($_GET['t'] ?? ''));
     $a = pm_portal_access($token);
+    // השפה: מה שהמבקר בחר בדף (X-Lang), ואם לא בחר — השפה של איש הקשר
+    $h = (string)($_SERVER['HTTP_X_LANG'] ?? '');
+    pm_lang(isset(PM_LANGS[$h]) ? $h : ($a['contact']['lang'] ?? 'he'));
     pm_log_user(['id' => null, 'username' => 'portal:' . $a['link']['id'] . ' ' . $a['contact']['name']], true);
 
     $result = match ("$method $action") {
@@ -96,5 +99,5 @@ try {
     pm_log('error', 'php', 'exception', ['message' => get_class($e) . ': ' . $e->getMessage(),
         'data' => ['file' => basename($e->getFile()), 'line' => $e->getLine(),
                    'trace' => array_slice(array_map(fn($f) => basename($f['file'] ?? '?') . ':' . ($f['line'] ?? '?') . ' ' . ($f['function'] ?? ''), $e->getTrace()), 0, 12)]]);
-    pm_portal_reply(500, ['error' => pm_fill('תקלה בשרת — נרשמה ({id})', ['id' => pm_request_id()]), '_t' => ['תקלה בשרת — נרשמה ({id})', ['id' => pm_request_id()]]]);
+    pm_portal_reply(500, ['error' => pm_fill('תקלה בשרת — נרשמה ({id})', ['id' => pm_request_id()]), '_t' => ['תקלה בשרת — נרשמה ({id})', ['id' => pm_request_id()]]]); // i18n-ok
 }

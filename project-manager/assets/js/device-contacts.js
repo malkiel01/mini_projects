@@ -41,14 +41,14 @@ const DeviceContacts = (() => {
 
     async function show(kind) {
         bind();
-        $('#title').textContent = 'ייבוא אנשי קשר';
-        document.title = 'ייבוא אנשי קשר';
+        $('#title').textContent = t('ייבוא אנשי קשר');
+        document.title = t('ייבוא אנשי קשר');
         $(`#view-import [name=ikind][value=${KIND_LABEL[kind] ? kind : 'client'}]`).checked = true;
-        $('#import-trade').innerHTML = options(state.trades.map(t => ({ value: t.id, label: t.name })), '', 'ללא');
+        $('#import-trade').innerHTML = options(state.trades.map(tr => ({ value: tr.id, label: t(tr.name) })), '', t('ללא'));
         $('#import-pick').hidden = !supported;
         $('#import-hint').textContent = supported
-            ? 'נפתחים אנשי הקשר של המכשיר — מסמנים, וחוזרים לכאן. אפשר לבחור כמה פעמים, ולהוסיף גם מקובץ.'
-            : 'הדפדפן הזה לא נותן גישה ישירה לאנשי הקשר. באייפון: אנשי הקשר ← איש קשר ← "שיתוף איש קשר" ← "שמירה בקבצים", ואז "📄 קובץ vCard". באנדרואיד אפשר גם לייצא מאנשי הקשר קובץ ‎.vcf.';
+            ? t('נפתחים אנשי הקשר של המכשיר — מסמנים, וחוזרים לכאן. אפשר לבחור כמה פעמים, ולהוסיף גם מקובץ.')
+            : t('הדפדפן הזה לא נותן גישה ישירה לאנשי הקשר. באייפון: אנשי הקשר ← איש קשר ← "שיתוף איש קשר" ← "שמירה בקבצים", ואז "📄 קובץ vCard". באנדרואיד אפשר גם לייצא מאנשי הקשר קובץ ‎.vcf.');
         kindChanged();
         try { picked = JSON.parse(sessionStorage.getItem(KEY) || '[]'); } catch { picked = []; }
         await loadKnown();
@@ -97,7 +97,7 @@ const DeviceContacts = (() => {
             const res = await navigator.contacts.select(want.filter(p => have.includes(p)), { multiple: true });
             add(res.map(fromPicker));
         } catch (e) {
-            if (e?.name !== 'AbortError' && e?.name !== 'InvalidStateError') toast('אין גישה לאנשי הקשר: ' + (e?.message || e), true);
+            if (e?.name !== 'AbortError' && e?.name !== 'InvalidStateError') toast(t('אין גישה לאנשי הקשר: {error}', { error: String(e?.message || e) }), true);
         }
     }
 
@@ -112,7 +112,7 @@ const DeviceContacts = (() => {
     async function readVcf(files) {
         for (const f of files) {
             try { add(parseVcf(await f.text())); }
-            catch { toast(`${f.name}: לא קובץ vCard תקין`, true); }
+            catch { toast(t('{name}: לא קובץ vCard תקין', { name: f.name }), true); }
         }
     }
 
@@ -144,9 +144,9 @@ const DeviceContacts = (() => {
 
     function render() {
         $('#import-list').innerHTML = picked.map((c, i) => `<li class="card static">
-            <input type="checkbox" class="pick" data-i="${i}" ${c.on ? 'checked' : ''} ${c.exists ? 'disabled' : ''} aria-label="ייבוא ${esc(c.name || c.phone)}">
+            <input type="checkbox" class="pick" data-i="${i}" ${c.on ? 'checked' : ''} ${c.exists ? 'disabled' : ''} aria-label="${esc(t('ייבוא {name}', { name: c.name || c.phone }))}">
             ${avatar(c.name || c.phone)}
-            <div class="body"><div class="l1"><span class="one">${esc(c.name || c.phone || c.email)}</span>${c.exists ? '<span class="chip">כבר קיים</span>' : ''}</div>
+            <div class="body"><div class="l1"><span class="one">${esc(c.name || c.phone || c.email)}</span>${c.exists ? `<span class="chip">${esc(t('כבר קיים'))}</span>` : ''}</div>
                 <div class="l2 one">${[c.phone && `<span dir="ltr">${esc(c.phone)}</span>`, c.email && esc(c.email), c.company && esc(c.company)].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>') || '&nbsp;'}</div></div>
         </li>`).join('');
         $('#import-all-box').hidden = !picked.some(c => !c.exists);
@@ -156,9 +156,13 @@ const DeviceContacts = (() => {
 
     function count() {
         const n = picked.filter(c => c.on).length;
-        $('#import-count').textContent = `${n} מתוך ${picked.filter(c => !c.exists).length} נבחרו`;
+        $('#import-count').textContent = t('{n} מתוך {total} נבחרו', { n, total: picked.filter(c => !c.exists).length });
         $('#import-go').disabled = !n;
-        $('#import-go').textContent = n ? `ייבוא ${n} ${KIND_LABEL[kindNow()] === 'לקוח' ? 'לקוחות' : KIND_LABEL[kindNow()] === 'ספק' ? 'ספקים' : 'עורכי דין'}` : 'ייבוא';
+        const k = kindNow();
+        $('#import-go').textContent = !n ? t('ייבוא')
+            : k === 'client' ? t('ייבוא {n} לקוחות', { n })
+            : k === 'supplier' ? t('ייבוא {n} ספקים', { n })
+            : t('ייבוא {n} עורכי דין', { n });
     }
 
     async function importNow() {
@@ -171,7 +175,7 @@ const DeviceContacts = (() => {
             invalidateContacts(kind);
             picked = [];
             persist();
-            toast([`יובאו ${r.created}`, r.skipped ? `${r.skipped} כבר היו` : '', r.errors.length ? `לא יובאו: ${r.errors.join(', ')}` : ''].filter(Boolean).join(' · '), !!r.errors.length);
+            toast([t('יובאו {n}', { n: r.created }), r.skipped ? t('{n} כבר היו', { n: r.skipped }) : '', r.errors.length ? t('לא יובאו: {list}', { list: r.errors.join(', ') }) : ''].filter(Boolean).join(' · '), !!r.errors.length);
             // חזרה לרשימה — במקום מסך הייבוא, כך ש"חזרה" לא מחזירה אליו
             location.replace('#/contacts/' + kind);
         });

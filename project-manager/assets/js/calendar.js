@@ -12,7 +12,9 @@ const Calendar = (() => {
     const HOL_ICON = { yomtov: '✡️', chol: '🌿', erev: '🕯️', fast: '🍽️', minor: '🎉', modern: '🇮🇱', rc: '🌒' };
     // מה מוצג בתא כשיש כמה: חג לפני חוה"מ, לפני צום, לפני ערב…
     const HOL_RANK = { yomtov: 0, modern: 1, fast: 2, minor: 3, chol: 4, erev: 5, rc: 6 };
-    const DAYS = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
+    // כותרות הימים, מיום ראשון: בעברית אות אחת; בשפה אחרת — השם הקצר מ-Intl (4.1.2026 = ראשון)
+    const DAYS = I18n.lang() === 'he' ? ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'] // i18n-none
+        : Array.from({ length: 7 }, (_, i) => new Intl.DateTimeFormat(I18n.locale(), { weekday: 'short' }).format(new Date(2026, 0, 4 + i)));
     const ICON = { appointment: '📅', stage_start: '🏁', stage_end: '🏁', payment: '💳', quote: '🧾' };
     const kindClass = k => k.startsWith('stage') ? 'stage' : k;
     const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -59,20 +61,20 @@ const Calendar = (() => {
         form.elements.date.addEventListener('change', apptHoliday);
         $('#appt-cancel').addEventListener('click', cancelAppt);
         $('#cal-sync').addEventListener('toggle', e => { if (e.target.open) loadLink(false); });
-        $('#cal-renew').addEventListener('click', () => { if (confirm('ליצור קישור חדש? הקישור הקודם יפסיק להתעדכן בטלפון.')) loadLink(true); });
+        $('#cal-renew').addEventListener('click', () => { if (confirm(t('ליצור קישור חדש? הקישור הקודם יפסיק להתעדכן בטלפון.'))) loadLink(true); });
         $('#cal-copy').addEventListener('click', async () => {
-            try { await navigator.clipboard.writeText($('#cal-copy').dataset.url); toast('הועתק'); } catch { prompt('הקישור:', $('#cal-copy').dataset.url); }
+            try { await navigator.clipboard.writeText($('#cal-copy').dataset.url); toast(t('הועתק')); } catch { prompt(t('הקישור:'), $('#cal-copy').dataset.url); }
         });
         $('#digest-on').addEventListener('change', async e => {
-            try { await api('digest', { body: { on: e.target.checked } }); state.user.digest = e.target.checked; toast(e.target.checked ? 'מייל הבוקר דלוק' : 'מייל הבוקר כבוי'); }
+            try { await api('digest', { body: { on: e.target.checked } }); state.user.digest = e.target.checked; toast(t(e.target.checked ? 'מייל הבוקר דלוק' : 'מייל הבוקר כבוי')); }
             catch (x) { toast(x.message, true); e.target.checked = !e.target.checked; }
         });
     }
 
     async function show(sub) {
         bind();
-        $('#title').textContent = 'יומן';
-        document.title = 'יומן — ניהול פרויקטים';
+        $('#title').textContent = t('יומן');
+        document.title = t('יומן — ניהול פרויקטים');
         $('#digest-on').checked = state.user.digest !== false;
         const want = /^\d{4}-\d{2}-\d{2}$/.test(sub || '') ? sub : '';
         await Promise.all([loadReminders(), loadMonth(want ? want.slice(0, 7) : month || '', want)]);
@@ -83,7 +85,7 @@ const Calendar = (() => {
         try { ({ reminders: list } = await api('reminders')); } catch { return; }
         badge(list);
         $('#reminders').hidden = !list.length;
-        $('#rem-title').textContent = `דורש טיפול (${list.length})`;
+        $('#rem-title').textContent = t('דורש טיפול ({n})', { n: list.length });
         const icon = { late: '⚠️', soon: '⏰', wait: '⏳' };
         $('#rem-list').innerHTML = list.map(r => `<li class="card rem-${r.level}" data-go="${r.pane === 'calendar' ? '#/calendar/' + today : `#/p/${r.project_id}/${r.pane}`}" tabindex="0" role="button">
             <span class="ficon" aria-hidden="true">${icon[r.level]}</span>
@@ -98,7 +100,7 @@ const Calendar = (() => {
         $('#rem-badge').classList.toggle('hot', urgent > 0);
         const b = $('#rem-banner');
         b.hidden = !list.length;
-        if (list.length) b.innerHTML = `<span aria-hidden="true">${urgent ? '⚠️' : '⏳'}</span><span class="one">${list.length} דורשים טיפול · ${esc(list[0].text)}</span><span aria-hidden="true">‹</span>`;
+        if (list.length) b.innerHTML = `<span aria-hidden="true">${urgent ? '⚠️' : '⏳'}</span><span class="one">${esc(t('{n} דורשים טיפול · {text}', { n: list.length, text: list[0].text }))}</span><span class="dir-flip" aria-hidden="true">‹</span>`;
     }
 
     async function loadMonth(m, pickDay) {
@@ -126,7 +128,7 @@ const Calendar = (() => {
 
     function drawMonth(start) {
         const m0 = parse(month + '-01');
-        $('#cal-month').innerHTML = `${esc(m0.toLocaleDateString('he-IL', { month: 'long', year: 'numeric' }))} <small>${esc(HebCal.monthSpan(m0.getFullYear(), m0.getMonth()))}</small>`;
+        $('#cal-month').innerHTML = `${esc(m0.toLocaleDateString(I18n.locale(), { month: 'long', year: 'numeric' }))} <small>${esc(HebCal.monthSpan(m0.getFullYear(), m0.getMonth()))}</small>`;
         const byDay = new Map();
         for (const x of items) { if (!byDay.has(x.date)) byDay.set(x.date, []); byDay.get(x.date).push(x); }
         let html = DAYS.map(d => `<span class="dow" aria-hidden="true">${d}</span>`).join('');
@@ -140,7 +142,7 @@ const Calendar = (() => {
             const top = h.holidays.slice().sort((a, b) => (a.place === 'diaspora') - (b.place === 'diaspora') || HOL_RANK[a.kind] - HOL_RANK[b.kind])[0];
             const hol = top ? ` hol-${top.kind}${top.place === 'diaspora' ? ' dia' : ''}` : '';
             html += `<button type="button" class="cday${k.startsWith(month) ? '' : ' out'}${k === today ? ' today' : ''}${late ? ' late' : ''}${d.getDay() === 6 ? ' sat' : ''}${hol}" data-day="${k}"
-                aria-label="${d.toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' })}, ${h.label}${top ? ', ' + top.name : ''}${list.length ? `, ${list.length} פריטים` : ''}">
+                aria-label="${esc([d.toLocaleDateString(I18n.locale(), { weekday: 'long', day: 'numeric', month: 'long' }), h.label, top ? top.name : '', list.length ? t('{n} פריטים', { n: list.length }) : ''].filter(Boolean).join(', '))}">
                 <span class="n">${d.getDate()}</span><span class="hd" aria-hidden="true">${h.day}</span>
                 ${top ? `<span class="hol" aria-hidden="true">${esc(top.short)}</span>` : ''}
                 <span class="dots">${kinds.map(c => `<i class="k-${c}"></i>`).join('')}</span></button>`;
@@ -153,21 +155,24 @@ const Calendar = (() => {
     function pick(d) {
         day = d;
         $$('#cal-grid .cday').forEach(c => c.setAttribute('aria-pressed', String(c.dataset.day === d)));
-        const label = parse(d).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' });
+        const label = parse(d).toLocaleDateString(I18n.locale(), { weekday: 'long', day: 'numeric', month: 'long' });
         const h = HebCal.info(parse(d), diaspora);
-        $('#cal-day-title').textContent = (d === today ? `היום — ${label}` : label) + ` · ${h.label}`;
+        $('#cal-day-title').textContent = (d === today ? t('היום — {date}', { date: label }) : label) + ` · ${h.label}`;
         const hol = h.holidays.map(x => `<li class="card static hol-row hol-${x.kind}">
             <span class="when" aria-hidden="true">${HOL_ICON[x.kind]}</span>
-            <div class="body"><div class="l1"><span class="one">${esc(x.name)}</span>${x.place === 'diaspora' ? '<span class="chip">חו״ל</span>' : x.place === 'il' ? '<span class="chip">בארץ</span>' : ''}</div></div></li>`).join('');
+            <div class="body"><div class="l1"><span class="one">${esc(x.name)}</span>${x.place === 'diaspora' ? `<span class="chip">${esc(t('חו״ל'))}</span>` : x.place === 'il' ? `<span class="chip">${esc(t('בארץ'))}</span>` : ''}</div></div></li>`).join('');
         $('#cal-day').innerHTML = hol + dayItems().map((x, i) => {
-            const contact = x.contact_phone ? `<a class="icon-btn" href="https://wa.me/${esc(waNumber(x.contact_phone))}?text=${encodeURIComponent(`תזכורת: ${x.title}, ${parse(x.date).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'numeric' })}${x.time ? ' ב-' + x.time : ''}${x.location ? ', ' + x.location : ''}.`)}" target="_blank" rel="noopener" aria-label="תזכורת בוואטסאפ ל${esc(x.contact_name)}">💬</a>` : '';
-            const nav = x.location ? `<a class="icon-btn" href="https://waze.com/ul?q=${encodeURIComponent(x.location)}" target="_blank" rel="noopener" aria-label="ניווט אל ${esc(x.location)}">📍</a>` : '';
+            const date = parse(x.date).toLocaleDateString(I18n.locale(), { weekday: 'long', day: 'numeric', month: 'numeric' });
+            const at = x.time ? t('{date} ב-{time}', { date, time: x.time }) : date;
+            const remind = t(x.location ? 'תזכורת: {title}, {when}, {place}.' : 'תזכורת: {title}, {when}.', { title: x.title, when: at, place: x.location });
+            const contact = x.contact_phone ? `<a class="icon-btn" href="https://wa.me/${esc(waNumber(x.contact_phone))}?text=${encodeURIComponent(remind)}" target="_blank" rel="noopener" aria-label="${esc(t('תזכורת בוואטסאפ ל{name}', { name: x.contact_name }))}">💬</a>` : '';
+            const nav = x.location ? `<a class="icon-btn" href="https://waze.com/ul?q=${encodeURIComponent(x.location)}" target="_blank" rel="noopener" aria-label="${esc(t('ניווט אל {place}', { place: x.location }))}">📍</a>` : '';
             return `<li class="card k-row ${x.late ? 'late' : ''}${x.done ? ' done' : ''}" data-i="${i}" tabindex="0" role="button">
                 <span class="when">${x.time ? esc(x.time) : ICON[x.kind]}</span>
                 <div class="body"><div class="l1"><span class="one">${esc(x.title)}</span></div>
-                    <div class="l2 one">${[esc(x.project_name), x.contact_name ? esc(x.contact_name) : '', x.location ? esc(x.location) : '', x.late ? '<b class="late">באיחור</b>' : ''].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>')}</div></div>
+                    <div class="l2 one">${[esc(x.project_name), x.contact_name ? esc(x.contact_name) : '', x.location ? esc(x.location) : '', x.late ? `<b class="late">${esc(t('באיחור'))}</b>` : ''].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>')}</div></div>
                 <div class="acts">${contact}${nav}</div></li>`;
-        }).join('') || (hol ? '' : '<p class="empty">אין כלום ביום הזה.</p>');
+        }).join('') || (hol ? '' : `<p class="empty">${esc(t('אין כלום ביום הזה.'))}</p>`);
     }
 
     /** בחלון הפגישה: "שימו לב — יום כיפור" / שבת. */
@@ -177,9 +182,9 @@ const Calendar = (() => {
         if (!v) { box.hidden = true; return; }
         const d = parse(v), h = HebCal.info(d, false);
         const hard = h.holidays.filter(x => ['yomtov', 'fast', 'modern', 'erev'].includes(x.kind));
-        const warn = [d.getDay() === 6 ? 'שבת' : '', ...hard.map(x => x.name)].filter(Boolean);
+        const warn = [d.getDay() === 6 ? t('שבת') : '', ...hard.map(x => x.name)].filter(Boolean);
         box.hidden = !warn.length;
-        box.textContent = warn.length ? `⚠️ שימו לב — ${warn.join(', ')} (${h.label})` : '';
+        box.textContent = warn.length ? t('⚠️ שימו לב — {what} ({date})', { what: warn.join(', '), date: h.label }) : '';
     }
 
     // ================= פגישה =================
@@ -191,7 +196,7 @@ const Calendar = (() => {
         const dlg = $('#appt-dlg'), form = $('form', dlg), el = form.elements;
         formError(form, '');
         try { ({ projects } = await api('projects', { params: { filter: 'open' } })); } catch { projects = []; }
-        el.project_id.innerHTML = options(projects.map(p => ({ value: p.id, label: p.name })), x?.project_id || (location.hash.match(/#\/p\/(\d+)/) || [])[1] || '', projects.length ? undefined : 'אין פרויקטים פעילים');
+        el.project_id.innerHTML = options(projects.map(p => ({ value: p.id, label: p.name })), x?.project_id || (location.hash.match(/#\/p\/(\d+)/) || [])[1] || '', projects.length ? undefined : t('אין פרויקטים פעילים'));
         el.project_id.disabled = !!x;
         el.title.value = x?.title || '';
         el.date.value = x?.date || day || today;
@@ -199,7 +204,7 @@ const Calendar = (() => {
         el.duration.value = String(x?.duration || 60);
         el.location.value = x?.location || '';
         el.notes.value = x?.notes || '';
-        $('#appt-dlg-title').textContent = x ? 'פגישה' : 'פגישה חדשה';
+        $('#appt-dlg-title').textContent = t(x ? 'פגישה' : 'פגישה חדשה');
         $('#appt-cancel').hidden = !x;
         await fillContacts(x?.contact_id ?? null);
         apptHoliday();
@@ -213,9 +218,9 @@ const Calendar = (() => {
         if (el.project_id.value) {
             try { team = (await api('project', { params: { id: el.project_id.value } })).team; } catch { /* ריק */ }
             const p = projects.find(x => x.id === Number(el.project_id.value));
-            el.location.placeholder = p?.address ? `ברירת מחדל: ${p.address}` : 'כתובת';
+            el.location.placeholder = p?.address ? t('ברירת מחדל: {address}', { address: p.address }) : t('כתובת');
         }
-        el.contact_id.innerHTML = options(team.map(t => ({ value: t.id, label: `${t.name} · ${t.roles[0]}` })), value, 'לא חובה');
+        el.contact_id.innerHTML = options(team.map(m => ({ value: m.id, label: `${m.name} · ${t(m.roles[0])}` })), value, t('לא חובה'));
     }
 
     async function saveAppt() {
@@ -225,23 +230,23 @@ const Calendar = (() => {
             id: editing?.ref, project_id: Number(el.project_id.value), title: el.title.value.trim(), date: el.date.value, time: el.time.value,
             duration: Number(el.duration.value), location: el.location.value.trim() || p?.address || '', contact_id: Number(el.contact_id.value) || null, notes: el.notes.value,
         };
-        if (!body.project_id) { formError(form, 'פרויקט: שדה חובה'); return; }
-        if (!body.title) { formError(form, 'מה: שדה חובה'); return; }
-        if (!body.date) { formError(form, 'תאריך: שדה חובה'); return; }
+        if (!body.project_id) { formError(form, t('פרויקט: שדה חובה')); return; }
+        if (!body.title) { formError(form, t('מה: שדה חובה')); return; }
+        if (!body.date) { formError(form, t('תאריך: שדה חובה')); return; }
         await busy($('button[type=submit]', form), form, async () => {
             await api('appointment', { body });
             $('#appt-dlg').close();
-            toast('נשמר');
+            toast(t('נשמר'));
             if (document.body.dataset.view === 'calendar') { day = body.date; await Promise.all([loadReminders(), loadMonth(body.date.slice(0, 7), body.date)]); }
         });
     }
 
     async function cancelAppt() {
-        if (!confirm(`לבטל את "${editing.title}"?`)) return;
+        if (!confirm(t('לבטל את "{title}"?', { title: editing.title }))) return;
         await busy($('#appt-cancel'), $('#appt-dlg form'), async () => {
             await api('appointment-cancel', { body: { id: editing.ref } });
             $('#appt-dlg').close();
-            toast('הפגישה בוטלה');
+            toast(t('הפגישה בוטלה'));
             await Promise.all([loadReminders(), loadMonth(month, day)]);
         });
     }
@@ -254,7 +259,7 @@ const Calendar = (() => {
             $('#cal-webcal').href = webcal;
             $('#cal-google').href = 'https://calendar.google.com/calendar/r/settings/addbyurl?cid=' + encodeURIComponent(webcal);
             $('#cal-copy').dataset.url = url;
-            if (renew) toast('נוצר קישור חדש — צריך להוסיף אותו שוב בטלפון');
+            if (renew) toast(t('נוצר קישור חדש — צריך להוסיף אותו שוב בטלפון'));
         } catch (e) { toast(e.message, true); }
     }
 

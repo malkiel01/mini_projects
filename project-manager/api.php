@@ -92,12 +92,12 @@ try {
     if (!$user) {
         $s = pm_session_user();
         pm_log_user($s, true);
-        pm_reply(401, ['error' => 'נדרשת כניסה', 'reason' => $s ? $s['status'] : 'no_session']);
+        pm_reply(401, ['error' => 'נדרשת כניסה', 'reason' => $s ? $s['status'] : 'no_session']); // i18n-ok — pm_reply מתרגם
     }
     pm_log_user($user, true);
 
     if ($method === 'POST' && !hash_equals($user['csrf'], (string)($_SERVER['HTTP_X_CSRF'] ?? ''))) {
-        pm_reply(403, ['error' => 'פג תוקף הדף — רענן ונסה שוב']);
+        pm_reply(403, ['error' => 'פג תוקף הדף — רענן ונסה שוב']); // i18n-ok — pm_reply מתרגם
     }
     $isDev = $user['role'] === 'developer';
     $in = $method === 'POST' ? pm_body() : $_GET;
@@ -108,7 +108,7 @@ try {
             $d->execute([$user['id']]);
             $u = $d->fetch();
             return ['user' => $user + ['digest' => (bool)$u['digest'], 'lang' => $u['lang']], 'trades' => pm_trades(), 'templates' => pm_templates(),
-                    'file_types' => PM_FILE_TYPES, 'max_upload' => pm_max_upload(),
+                    'file_types' => pm_t_map(PM_FILE_TYPES), 'max_upload' => pm_max_upload(),
                     // מצב עצמאי: בלי חזרה לדף האפליקציות. כבוי כל עוד האפליקציה בתוך האינדקס.
                     'standalone' => pm_setting('standalone', '0') === '1',
                     'labels' => array_map('pm_t_map', ['stage' => PM_STAGE_STATUSES, 'project' => PM_PROJECT_STATUSES, 'kind' => PM_PROJECT_KINDS,
@@ -243,5 +243,6 @@ try {
     pm_log('error', 'php', 'exception', ['message' => get_class($e) . ': ' . $e->getMessage(),
         'data' => ['file' => basename($e->getFile()), 'line' => $e->getLine(),
                    'trace' => array_slice(array_map(fn($f) => basename($f['file'] ?? '?') . ':' . ($f['line'] ?? '?') . ' ' . ($f['function'] ?? ''), $e->getTrace()), 0, 12)]]);
-    pm_reply(500, ['error' => pm_fill('תקלה בשרת — נרשמה ביומן ({id})', ['id' => pm_request_id()]), '_t' => ['תקלה בשרת — נרשמה ביומן ({id})', ['id' => pm_request_id()]]]);
+    $tpl = 'תקלה בשרת — נרשמה ביומן ({id})'; // i18n-ok — מתורגם ב-pm_reply (_t)
+    pm_reply(500, ['error' => pm_fill($tpl, ['id' => pm_request_id()]), '_t' => [$tpl, ['id' => pm_request_id()]]]);
 }

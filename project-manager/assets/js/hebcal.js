@@ -4,10 +4,19 @@
 //
 // לכל חג: name, short (לתא בחודש), kind — yomtov · chol · erev · fast · minor · modern · rc,
 // ו-place — 'il' (ארץ ישראל בלבד), 'diaspora' (חו"ל בלבד), או '' (בכל מקום).
+// השמות בעברית הם מפתחות התרגום — מתורגמים ב-add (t). התאריך העברי באותיות רק בממשק
+// בעברית; בשפה אחרת — מ-Intl, בשפת הממשק ("25 Kislev 5787").
 'use strict';
 
 const HebCal = (() => {
     const fmt = new Intl.DateTimeFormat('en-u-ca-hebrew', { day: 'numeric', month: 'long', year: 'numeric' });
+    const he = I18n.lang() === 'he';
+    // התאריך העברי בשפת הממשק (לא עברית). לחודשים ולחגים — תמיד fmt האנגלי, למעלה
+    const loc = `${I18n.lang()}-u-ca-hebrew-nu-latn`;
+    const fmtLabel = new Intl.DateTimeFormat(loc, { day: 'numeric', month: 'long', year: 'numeric' });
+    const fmtMonth = new Intl.DateTimeFormat(loc, { month: 'long' });
+    const fmtMonthYear = new Intl.DateTimeFormat(loc, { month: 'long', year: 'numeric' });
+    // i18n-none-start — שמות החודשים והאותיות: רק לתאריך העברי בממשק בעברית
     const MONTH = { Tishri: 'תשרי', Heshvan: 'חשוון', Kislev: 'כסלו', Tevet: 'טבת', Shevat: 'שבט', 'Adar I': 'אדר א׳', 'Adar II': 'אדר ב׳',
         Adar: 'אדר', Nisan: 'ניסן', Iyar: 'אייר', Sivan: 'סיוון', Tamuz: 'תמוז', Av: 'אב', Elul: 'אלול' };
     const cache = new Map();
@@ -26,6 +35,7 @@ const HebCal = (() => {
         else { s += tens[Math.floor(n / 10)] + units[n % 10]; }
         return s.length > 1 ? s.slice(0, -1) + '״' + s.slice(-1) : s + '׳';
     }
+    // i18n-none-end
 
     function parts(d) {
         const p = Object.fromEntries(fmt.formatToParts(d).map(x => [x.type, x.value]));
@@ -41,9 +51,13 @@ const HebCal = (() => {
     function holidays(d, h) {
         const { day: hd, month: hm } = h, dow = d.getDay(); // 0 = ראשון, 6 = שבת
         const out = [];
-        const add = (name, short, kind, place = '') => out.push({ name, short, kind, place });
+        // השם והקיצור — מפתחות תרגום; vars — למשתנים בשם (נר החנוכה)
+        const add = (name, short, kind, place = '', vars) => out.push({ name: t(name, vars), short: t(short), kind, place });
+        // נר חנוכה: באותיות בעברית, ובמספר בשפה אחרת
+        const candle = n => ({ n: he ? gematria(n) : n });
+        // i18n-ok-start
         if (hm === 'Tishri') {
-            if (hd === 1 || hd === 2) add(`ראש השנה ${hd === 1 ? 'א׳' : 'ב׳'}`, 'ר״ה', 'yomtov');
+            if (hd === 1 || hd === 2) add(hd === 1 ? 'ראש השנה א׳' : 'ראש השנה ב׳', 'ר״ה', 'yomtov');
             if ((hd === 3 && dow !== 6) || (hd === 4 && dow === 0)) add('צום גדליה', 'צום', 'fast');
             if (hd === 9) add('ערב יום כיפור', 'ערב יו״כ', 'erev');
             if (hd === 10) add('יום כיפור', 'יו״כ', 'yomtov');
@@ -55,9 +69,9 @@ const HebCal = (() => {
             if (hd === 22) { add('שמיני עצרת ושמחת תורה', 'שמח״ת', 'yomtov', 'il'); add('שמיני עצרת', 'שמ״ע', 'yomtov', 'diaspora'); }
             if (hd === 23) add('שמחת תורה — יום טוב שני של גלויות', 'שמח״ת', 'yomtov', 'diaspora');
         }
-        if (hm === 'Kislev' && hd >= 25) add(`חנוכה — נר ${gematria(hd - 24)}`, 'חנוכה', 'minor');
+        if (hm === 'Kislev' && hd >= 25) add('חנוכה — נר {n}', 'חנוכה', 'minor', '', candle(hd - 24));
         if (hm === 'Tevet') {
-            if (hd <= 3) { const n = kislevLength(d, hd) - 24 + hd; if (n <= 8) add(`חנוכה — נר ${gematria(n)}`, 'חנוכה', 'minor'); }
+            if (hd <= 3) { const n = kislevLength(d, hd) - 24 + hd; if (n <= 8) add('חנוכה — נר {n}', 'חנוכה', 'minor', '', candle(n)); }
             if (hd === 10) add('צום עשרה בטבת', 'צום', 'fast');
         }
         if (hm === 'Shevat' && hd === 15) add('ט״ו בשבט', 'ט״ו בשבט', 'minor');
@@ -97,6 +111,7 @@ const HebCal = (() => {
         if (hm === 'Elul' && hd === 29) add('ערב ראש השנה', 'ערב ר״ה', 'erev');
         // ראש חודש: ל׳ בחודש, וא׳ בחודש (חוץ מתשרי — ראש השנה)
         if (hd === 30 || (hd === 1 && hm !== 'Tishri')) add('ראש חודש', 'ר״ח', 'rc');
+        // i18n-ok-end
         return out;
     }
 
@@ -107,10 +122,16 @@ const HebCal = (() => {
     function info(d, diaspora = true) {
         const key = d.toDateString();
         if (!cache.has(key)) {
-            const h = parts(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12));
-            const month = MONTH[h.month] || h.month;
-            cache.set(key, { day: gematria(h.day), month, year: gematria(h.year), label: `${gematria(h.day)} ב${month} ${gematria(h.year)}`,
-                all: holidays(d, h) });
+            const noon = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12);
+            const h = parts(noon);
+            if (he) {
+                const month = MONTH[h.month] || h.month;
+                cache.set(key, { day: gematria(h.day), month, year: gematria(h.year), label: `${gematria(h.day)} ב${month} ${gematria(h.year)}`, // i18n-none
+                    all: holidays(d, h) });
+            } else {
+                cache.set(key, { day: String(h.day), month: fmtMonth.format(noon), year: String(h.year), label: fmtLabel.format(noon),
+                    monthYear: fmtMonthYear.format(noon), all: holidays(d, h) });
+            }
         }
         const x = cache.get(key);
         return { ...x, holidays: x.all.filter(y => diaspora || y.place !== 'diaspora') };
@@ -119,6 +140,8 @@ const HebCal = (() => {
     /** החודשים העבריים שחודש לועזי עובר בהם: "תשרי–חשוון תשפ״ז". */
     function monthSpan(year, month0) {
         const a = info(new Date(year, month0, 1)), b = info(new Date(year, month0 + 1, 0));
+        // בשפה אחרת: "Tishri–Heshvan 5787" — החודש והשנה בסדר של השפה (Intl)
+        if (!he) return a.month === b.month ? b.monthYear : `${a.year !== b.year ? a.monthYear : a.month}–${b.monthYear}`;
         return a.month === b.month ? `${a.month} ${a.year}` : `${a.month}${a.year !== b.year ? ' ' + a.year : ''}–${b.month} ${b.year}`;
     }
 

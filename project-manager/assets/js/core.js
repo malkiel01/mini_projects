@@ -9,7 +9,7 @@
         if (++sent > 10) return; // לא מציפים: עד 10 לטעינת דף
         fetch('api.php?action=client-error', {
             method: 'POST', credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json', 'X-PM': '1' },
+            headers: { 'Content-Type': 'application/json', 'X-PM': '1', 'X-Lang': I18n.lang() },
             body: JSON.stringify({ kind, message: String(message).slice(0, 1000), page: location.pathname + location.hash, ...extra }),
         }).catch(() => {});
     };
@@ -37,7 +37,8 @@
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
-const KIND_LABEL = { client: 'לקוח', supplier: 'ספק', lawyer: 'עורך דין' };
+// מוצג דרך t(KIND_LABEL[k])
+const KIND_LABEL = { client: 'לקוח', supplier: 'ספק', lawyer: 'עורך דין' }; // i18n-ok
 
 /** מצב משותף לכל המסכים. */
 const state = {
@@ -51,7 +52,7 @@ const isDev = () => state.user?.role === 'developer';
 
 async function api(action, { params = {}, body = null } = {}) {
     const qs = new URLSearchParams({ action, ...params });
-    const opts = { headers: { Accept: 'application/json' }, credentials: 'same-origin' };
+    const opts = { headers: { Accept: 'application/json', 'X-Lang': I18n.lang() }, credentials: 'same-origin' };
     if (body) {
         opts.method = 'POST';
         opts.headers['Content-Type'] = 'application/json';
@@ -61,10 +62,10 @@ async function api(action, { params = {}, body = null } = {}) {
     const res = await fetch('api.php?' + qs, opts);
     let data = {};
     try { data = await res.json(); } catch { /* תשובה שאינה JSON */ }
-    if (res.status === 401) { location.href = 'login.html'; throw new Error(data.error || 'נדרשת כניסה'); }
-    if (!res.ok) throw new Error(data.error || `תקלה (${res.status})`);
+    if (res.status === 401) { location.href = 'login.html'; throw new Error(data.error || t('נדרשת כניסה')); }
+    if (!res.ok) throw new Error(data.error || t('תקלה ({status})', { status: res.status }));
     // מיילים אוטומטיים שנשלחו בפעולה הזו (שלב 11)
-    if (data.notified?.length) setTimeout(() => toast('✉️ נשלח מייל ל' + data.notified.map(n => n.name).join(', ')), 1800);
+    if (data.notified?.length) setTimeout(() => toast('✉️ ' + t('נשלח מייל ל{names}', { names: data.notified.map(n => n.name).join(', ') })), 1800);
     return data;
 }
 
@@ -80,32 +81,34 @@ function invalidateContacts(kind) { delete state.contactsByKind[kind]; }
 // ---- תצוגה ----
 
 function toast(msg, isErr = false) {
-    const t = $('#toast');
-    t.textContent = msg;
-    t.classList.toggle('err', isErr);
-    t.hidden = false;
+    const el = $('#toast');
+    el.textContent = msg;
+    el.classList.toggle('err', isErr);
+    el.hidden = false;
     clearTimeout(toast.timer);
-    toast.timer = setTimeout(() => { t.hidden = true; }, 3000);
+    toast.timer = setTimeout(() => { el.hidden = true; }, 3000);
 }
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const digits = s => String(s || '').replace(/[^\d+]/g, '');
 // וואטסאפ דורש מספר בינלאומי: 050… → 97250…
 const waNumber = s => { const d = digits(s).replace(/^\+/, ''); return d.startsWith('0') ? '972' + d.slice(1) : d; };
-const money = n => '₪' + Number(n || 0).toLocaleString('he-IL');
+// בעברית — כמו תמיד (₪ לפני המספר); בשאר השפות — לפי המוסכמה המקומית. בלי אגורות כשאין.
+const money = n => (I18n.lang() === 'he' ? '₪' + Number(n || 0).toLocaleString('he-IL')
+    : new Intl.NumberFormat(I18n.locale(), { style: 'currency', currency: 'ILS', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(Number(n || 0)));
 
 /** זמן יחסי כמו בצ'אט: "עכשיו", "14:05", "אתמול", "12.10". */
 function when(iso) {
     if (!iso) return '';
     const d = new Date(iso), now = new Date();
     const sameDay = (a, b) => a.toDateString() === b.toDateString();
-    if (now - d < 60_000) return 'עכשיו';
-    if (sameDay(d, now)) return d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+    if (now - d < 60_000) return t('עכשיו');
+    if (sameDay(d, now)) return d.toLocaleTimeString(I18n.locale(), { hour: '2-digit', minute: '2-digit' });
     const y = new Date(now); y.setDate(now.getDate() - 1);
-    if (sameDay(d, y)) return 'אתמול';
-    return d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: d.getFullYear() === now.getFullYear() ? undefined : '2-digit' });
+    if (sameDay(d, y)) return t('אתמול');
+    return d.toLocaleDateString(I18n.locale(), { day: 'numeric', month: 'numeric', year: d.getFullYear() === now.getFullYear() ? undefined : '2-digit' });
 }
-const dateLabel = iso => new Date(iso).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' });
+const dateLabel = iso => new Date(iso).toLocaleDateString(I18n.locale(), { weekday: 'long', day: 'numeric', month: 'long' });
 const shortDate = ymd => ymd ? ymd.split('-').reverse().slice(0, 2).join('.') : '';
 
 /** עיגול עם ראשי תיבות וצבע קבוע לפי השם — כמו תמונת פרופיל בצ'אט. */
@@ -162,7 +165,7 @@ const Send = (() => {
         bound = true;
         $('#send-text').addEventListener('input', () => { cur.text = $('#send-text').value; links(); });
         $('#send-copy').addEventListener('click', async () => {
-            try { await navigator.clipboard.writeText($('#send-text').value); toast('הועתק'); }
+            try { await navigator.clipboard.writeText($('#send-text').value); toast(t('הועתק')); }
             catch { $('#send-text').select(); }
         });
         $('#send-who').addEventListener('change', e => { pick(Number(e.target.value)); });
@@ -182,7 +185,7 @@ const Send = (() => {
         meta = { key, projectId };
         $('#send-dlg-title').textContent = title;
         // מה שכבר יצא במייל אוטומטי בפעולה הזו
-        const full = (mailed.length ? `✉️ כבר נשלח מייל ל${mailed.join(', ')}. ` : '') + hint;
+        const full = (mailed.length ? '✉️ ' + t('כבר נשלח מייל ל{names}.', { names: mailed.join(', ') }) + ' ' : '') + hint;
         $('#send-hint').textContent = full;
         $('#send-hint').hidden = !full;
         $('#send-who').hidden = list.length < 2;
@@ -194,7 +197,7 @@ const Send = (() => {
     function pick(i) {
         cur = list[i];
         const c = cur.contact;
-        $('#send-to').textContent = c ? `אל: ${c.name}${c.phone ? ' · ' + c.phone : ''}${c.email ? ' · ' + c.email : ''}` : 'אין למי לשלוח בפרויקט — אפשר להעתיק.';
+        $('#send-to').textContent = c ? t('אל: {name}', { name: [c.name, c.phone, c.email].filter(Boolean).join(' · ') }) : t('אין למי לשלוח בפרויקט — אפשר להעתיק.');
         $('#send-text').value = cur.text;
         links();
     }
@@ -213,14 +216,21 @@ const Send = (() => {
 })();
 
 /**
- * הודעה מנוסח (הגדרות ← הודעות): renderMsg('quotes_sent', { שם, פרויקט, שלב, … }).
+ * הודעה מנוסח (הגדרות ← הודעות): renderMsg('quotes_sent', { שם, פרויקט, שלב, … }, lang).
  * אותו נוסח שהשרת שולח במייל האוטומטי. {מנהל} — שם המשתמש.
+ * lang — שפת הנמען (contact.lang); אין נוסח בשפה הזו — העברי. המשתנים בשמם העברי
+ * או בשם הכינוי של השפה (state.msgVars[lang]: {'קישור': 'link'}) — שניהם עובדים.
  */
-function renderMsg(key, vars) {
-    const t = (state.msgTemplates || []).find(x => x.key === key);
-    if (!t) return '';
+function renderMsg(key, vars, lang = I18n.lang()) {
+    const list = (state.msgTemplates || []).filter(x => x.key === key);
+    const tpl = list.find(x => x.lang === lang) || list.find(x => (x.lang || 'he') === 'he') || list[0];
+    if (!tpl) return '';
+    // i18n-none-start — שמות משתנים, לא טקסט
     const all = { 'מנהל': state.user.display_name, 'כתובת': '', 'פרטים': '', 'סכום': '', 'שלב': '', 'קישור': '', ...vars };
-    return t.body.replace(/\{([^}]+)\}/g, (m, k) => (k in all ? String(all[k]) : m)).trim();
+    // i18n-none-end
+    const alias = state.msgVars?.[tpl.lang || lang] || {};
+    for (const [he, a] of Object.entries(alias)) if (a && he in all && !(a in all)) all[a] = all[he];
+    return tpl.body.replace(/\{([^}]+)\}/g, (m, k) => (k in all ? String(all[k]) : m)).trim();
 }
 
 /** הקישור האישי לפורטל של איש קשר בפרויקט — נוצר אם עוד אין. '' כשאי אפשר. */

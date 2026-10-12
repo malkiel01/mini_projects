@@ -3,16 +3,22 @@
 'use strict';
 
 async function init() {
+    await I18n.ready; // המילון לפני כל ציור
     try {
         const me = await api('me');
         Object.assign(state, { user: me.user, trades: me.trades, templates: me.templates, labels: me.labels, standalone: me.standalone,
-            fileTypes: me.file_types, maxUpload: me.max_upload, msgTemplates: me.msg_templates });
+            fileTypes: me.file_types, maxUpload: me.max_upload, msgTemplates: me.msg_templates, msgVars: me.msg_vars || {} });
     } catch (e) {
         $('#main').innerHTML = `<p class="empty">${esc(e.message)}</p>`;
         return;
     }
+    // השפה שמורה בחשבון: עוד לא נבחרה — נשמרת זו שבמכשיר; אחרת — של החשבון גוברת
+    const lang = state.user.lang || '';
+    if (!lang) api('lang', { body: { lang: I18n.lang() } }).catch(() => {});
+    else if (lang !== I18n.lang() && I18n.LANGS[lang] && canStore()) { I18n.set(lang); return; }
+    $('#logout').before(I18n.picker(l => { api('lang', { body: { lang: l } }).catch(() => {}).finally(() => I18n.set(l)); }));
     $('#who').innerHTML = `<span class="name">${esc(state.user.display_name)}</span>`
-        + `<span class="badge">${isDev() ? 'מפתח' : 'מנהל פרויקט'}</span>`;
+        + `<span class="badge">${esc(isDev() ? t('מפתח') : t('מנהל פרויקט'))}</span>`;
     $$('.dev-only').forEach(el => { el.hidden = !isDev(); });
     $('#logout').addEventListener('click', logout);
     bindPassword();
@@ -21,6 +27,11 @@ async function init() {
     // שיתוף שהגיע לפני הכניסה (או שלא נשמר) — ממשיכים ממנו
     if (!location.hash.startsWith('#/share') && await Share.pending()) location.hash = '#/share';
     else route();
+}
+
+/** אפשר לשמור במכשיר? בלי זה החלפת שפה הייתה טוענת את הדף שוב ושוב. */
+function canStore() {
+    try { localStorage.setItem('pm.t', '1'); localStorage.removeItem('pm.t'); return true; } catch { return false; }
 }
 
 function route() {
@@ -40,14 +51,15 @@ function route() {
     $('#tools-link').hidden = inner || state.standalone;
     $('#who').hidden = inner;
     $('#logout').hidden = inner;
+    $$('.top .lang-pick').forEach(el => { el.hidden = inner; });
     $('#install').hidden = inner || !installPrompt;
     $$('#nav [data-nav]').forEach(x => x.setAttribute('aria-current', x.dataset.nav === section ? 'page' : 'false'));
     document.body.dataset.view = section;
 
     if (!inner) {
-        $('#title').textContent = 'ניהול פרויקטים';
+        $('#title').textContent = t('ניהול פרויקטים');
         $('#subtitle').hidden = true;
-        document.title = 'ניהול פרויקטים';
+        document.title = t('ניהול פרויקטים');
     }
     if (section === 'projects') { Projects.showList(); Calendar.refreshBadge(); }
     if (section === 'calendar') Calendar.show(a);
@@ -82,17 +94,17 @@ function bindPassword() {
             Object.assign(state.user, user);
             $('#who .name').textContent = user.display_name;
             dlg.close();
-            toast('נשמר');
+            toast(t('נשמר'));
         });
     });
     wf.addEventListener('submit', async e => {
         e.preventDefault();
         const el = wf.elements;
-        if (el.password.value !== el.password2.value) { formError(wf, 'הסיסמאות החדשות לא זהות'); return; }
+        if (el.password.value !== el.password2.value) { formError(wf, t('הסיסמאות החדשות לא זהות')); return; }
         await busy($('button[type=submit]', wf), wf, async () => {
             await api('password', { body: { current: el.current.value, password: el.password.value } });
             dlg.close();
-            toast('הסיסמה עודכנה');
+            toast(t('הסיסמה עודכנה'));
         });
     });
 }
@@ -115,16 +127,16 @@ addEventListener('appinstalled', () => {
     installPrompt = null;
     $('#install').hidden = true;
     renderInstall();
-    toast('האפליקציה הותקנה. מעכשיו אפשר לשתף אליה קבצים מכל אפליקציה.');
+    toast(t('האפליקציה הותקנה. מעכשיו אפשר לשתף אליה קבצים מכל אפליקציה.'));
 });
 
 function renderInstall() {
     const text = isInstalled()
-        ? (isIOS() ? 'האפליקציה במסך הבית. שיתוף קבצים אליה מאפליקציות אחרות — באפליקציית האייפון, בהמשך.'
-            : 'האפליקציה מותקנת. לשמירת קבצים מהגלריה, מוואטסאפ או מכל אפליקציה: "שיתוף" ← "פרויקטים".')
-        : installPrompt ? 'התקנה למסך הבית: נפתחת כאפליקציה, ומופיעה ב"שיתוף" של הטלפון — לשמירת קבצים ישר לפרויקט.'
-        : isIOS() ? 'בספארי: כפתור השיתוף ← "הוספה למסך הבית".'
-        : 'בכרום: תפריט ⋮ ← "התקנת אפליקציה" (או "הוספה למסך הבית").';
+        ? (isIOS() ? t('האפליקציה במסך הבית. שיתוף קבצים אליה מאפליקציות אחרות — באפליקציית האייפון, בהמשך.')
+            : t('האפליקציה מותקנת. לשמירת קבצים מהגלריה, מוואטסאפ או מכל אפליקציה: "שיתוף" ← "פרויקטים".'))
+        : installPrompt ? t('התקנה למסך הבית: נפתחת כאפליקציה, ומופיעה ב"שיתוף" של הטלפון — לשמירת קבצים ישר לפרויקט.')
+        : isIOS() ? t('בספארי: כפתור השיתוף ← "הוספה למסך הבית".')
+        : t('בכרום: תפריט ⋮ ← "התקנת אפליקציה" (או "הוספה למסך הבית").');
     $('#install-text').textContent = text;
     $('#install-btn').hidden = !installPrompt;
 }
