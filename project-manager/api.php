@@ -12,7 +12,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/lib/identity.php';
-require_once __DIR__ . '/lib/contacts.php';
+require_once __DIR__ . '/lib/projects.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -53,7 +53,8 @@ try {
                  ON CONFLICT(platform_user_id) DO UPDATE SET display_name = excluded.display_name,
                     last_seen_at = excluded.last_seen_at'
             )->execute([$user['id'], $user['display_name'], $now, $now]);
-            return ['user' => $user, 'trades' => pm_trades()];
+            return ['user' => $user, 'trades' => pm_trades(), 'templates' => pm_templates(),
+                    'labels' => ['stage' => PM_STAGE_STATUSES, 'project' => PM_PROJECT_STATUSES, 'kind' => PM_PROJECT_KINDS]];
         })(),
 
         'GET contacts'    => ['contacts' => pm_contacts_list($user, (string)($in['kind'] ?? ''),
@@ -62,7 +63,20 @@ try {
         'POST contact'    => ['contact' => pm_contact_save($user, $in)],
         'POST archive'    => ['contact' => pm_contact_archive($user, (int)($in['id'] ?? 0), !empty($in['archived']))],
 
+        'GET projects'    => ['projects' => pm_projects_list($user, trim((string)($in['q'] ?? '')), (string)($in['filter'] ?? 'open'))],
+        'GET project'     => pm_project_get($user, (int)($in['id'] ?? 0)),
+        'POST project'    => pm_project_save($user, $in),
+        'POST project-status' => pm_project_status($user, (int)($in['id'] ?? 0), (string)($in['status'] ?? '')),
+        'POST stage'      => pm_stage_save($user, $in),
+        'POST stage-delete' => pm_stage_delete($user, (int)($in['id'] ?? 0)),
+        'POST stages-order' => pm_stages_order($user, (int)($in['project_id'] ?? 0), is_array($in['ids'] ?? null) ? $in['ids'] : []),
+        'POST note'       => pm_note($user, (int)($in['project_id'] ?? 0), (string)($in['text'] ?? '')),
+        'POST member'     => pm_member($user, (int)($in['project_id'] ?? 0), (int)($in['contact_id'] ?? 0),
+                                       !empty($in['add']), (string)($in['role'] ?? '')),
+
         'GET trades'      => ['trades' => pm_trades()],
+        'POST template'   => $isDev ? ['templates' => pm_template_save($user, $in)] : throw new PmError('רק המפתח עורך תבניות', 403),
+        'POST template-delete' => $isDev ? ['templates' => pm_template_delete($user, (int)($in['id'] ?? 0))] : throw new PmError('רק המפתח עורך תבניות', 403),
         'GET access'      => $isDev ? pm_access_overview() : throw new PmError('רק המפתח', 403),
         'POST trade'      => $isDev ? ['trades' => pm_trade_save($user, $in)] : throw new PmError('רק המפתח עורך תחומים', 403),
         'POST trade-delete' => $isDev ? ['trades' => pm_trade_delete($user, (int)($in['id'] ?? 0))] : throw new PmError('רק המפתח עורך תחומים', 403),
