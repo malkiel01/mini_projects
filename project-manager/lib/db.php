@@ -43,6 +43,9 @@ const PM_DEFAULT_TEMPLATES = [
     ]],
 ];
 
+/** שגיאה שמוצגת למשתמש, עם קוד HTTP. */
+final class PmError extends RuntimeException {}
+
 function pm_now(): string
 {
     return gmdate('Y-m-d\TH:i:s\Z');
@@ -69,15 +72,30 @@ function pm_db(): PDO
 function pm_migrate(PDO $pdo): void
 {
     $pdo->exec(<<<SQL
-        -- מנהלי פרויקט: משתמשי הפלטפורמה שנכנסו לאפליקציה. המזהה הוא ה-id
-        -- שלהם בפלטפורמה; השם מתעדכן בכל כניסה.
-        CREATE TABLE IF NOT EXISTS managers (
-            platform_user_id INTEGER PRIMARY KEY,
-            display_name     TEXT NOT NULL,
-            phone            TEXT NOT NULL DEFAULT '',
-            email            TEXT NOT NULL DEFAULT '',
-            created_at       TEXT NOT NULL,
-            last_seen_at     TEXT NOT NULL
+        -- משתמשי האפליקציה (lib/auth.php): המפתח ומנהלי הפרויקט.
+        CREATE TABLE IF NOT EXISTS users (
+            id            INTEGER PRIMARY KEY,
+            username      TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            password_hash TEXT NOT NULL,
+            display_name  TEXT NOT NULL,
+            phone         TEXT NOT NULL DEFAULT '',
+            role          TEXT NOT NULL DEFAULT 'manager' CHECK (role IN ('developer','manager')),
+            status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','active','blocked')),
+            created_at    TEXT NOT NULL,
+            approved_at   TEXT,
+            last_login_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS sessions (
+            token_hash TEXT PRIMARY KEY,
+            user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            csrf       TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS login_attempts (
+            key          TEXT PRIMARY KEY,
+            failures     INTEGER NOT NULL DEFAULT 0,
+            locked_until TEXT
         );
         CREATE TABLE IF NOT EXISTS trades (
             id   INTEGER PRIMARY KEY,

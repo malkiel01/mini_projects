@@ -14,8 +14,6 @@ const PM_KINDS = ['client', 'supplier', 'lawyer'];
 const PM_CHANNELS = ['email', 'whatsapp', 'sms'];
 const PM_BANK_FIELDS = ['bank', 'branch', 'account', 'holder'];
 
-final class PmError extends RuntimeException {}
-
 function pm_str(array $in, string $key, int $max, bool $required = false, string $label = ''): string
 {
     $v = $in[$key] ?? '';
@@ -81,7 +79,7 @@ function pm_contacts_list(array $user, string $kind, string $q, bool $archived):
     [$where, $args] = pm_owner_clause($user);
     $sql = "SELECT c.*, m.display_name AS owner_name, l.name AS lawyer_name
               FROM contacts c
-              LEFT JOIN managers m ON m.platform_user_id = c.owner_id
+              LEFT JOIN users m ON m.id = c.owner_id
               LEFT JOIN client_settings cs ON cs.contact_id = c.id
               LEFT JOIN contacts l ON l.id = cs.lawyer_id
              WHERE $where AND c.kind = ? AND c.archived = ?";

@@ -57,7 +57,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .top .sub { font-size: .78rem; opacity: .85; }
 .top .icon-btn { color: inherit; }
 .top .logo { border-radius: 6px; flex: none; margin-inline-start: var(--s1); }
-.who { font-size: .8rem; opacity: .9; max-width: 45%; }
+.who { font-size: .8rem; opacity: .9; max-width: 45%; border: 0; background: none; color: inherit; cursor: pointer; min-height: var(--tap); padding: 0 var(--s1); }
 .badge { border: 1px solid currentColor; border-radius: 99px; padding: 0 6px; margin-inline-start: var(--s1); font-size: .72rem; }
 
 .tabs {
@@ -269,6 +269,9 @@ body[data-view="project"] main { padding-bottom: 0; }
 #stage-dlg .row-btns .btn { flex: 1 1 0; min-width: 0; }
 
 /* ---- מנהלים ---- */
+
+.user-row .acts { gap: var(--s1); align-items: center; }
+.user-row .btn { min-height: 36px; }
 
 .sec-title { font-size: .85rem; font-weight: 600; color: var(--muted); margin: var(--s3) 0 var(--s1); }
 .hint a { color: var(--brand); }

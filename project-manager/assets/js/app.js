@@ -14,6 +14,7 @@ async function init() {
         + `<span class="badge">${isDev() ? 'מפתח' : 'מנהל פרויקט'}</span>`;
     $$('.dev-only').forEach(el => { el.hidden = !isDev(); });
     $('#logout').addEventListener('click', logout);
+    bindPassword();
     addEventListener('hashchange', route);
     route();
 }
@@ -47,11 +48,25 @@ function route() {
 }
 
 async function logout() {
-    await fetch('../platform/api.php?action=logout', {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json', 'X-Platform': '1', 'X-CSRF': state.user.csrf }, body: '{}',
-    }).catch(() => {});
+    await api('logout', { body: {} }).catch(() => {});
     location.href = 'login.html';
+}
+
+/** שינוי סיסמה — לחיצה על השם בכותרת. */
+function bindPassword() {
+    const dlg = $('#password-dlg');
+    const form = $('form', dlg);
+    $('#who').addEventListener('click', () => { form.reset(); formError(form, ''); dlg.showModal(); });
+    form.addEventListener('submit', async e => {
+        e.preventDefault();
+        const el = form.elements;
+        if (el.password.value !== el.password2.value) { formError(form, 'הסיסמאות החדשות לא זהות'); return; }
+        await busy($('button[type=submit]', form), form, async () => {
+            await api('password', { body: { current: el.current.value, password: el.password.value } });
+            dlg.close();
+            toast('הסיסמה עודכנה');
+        });
+    });
 }
 
 // אפליקציה עצמאית במסך הבית. בלי service worker אנדרואיד לא מציע התקנה.

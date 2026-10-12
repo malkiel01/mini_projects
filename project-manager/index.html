@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=5">
+    <link rel="stylesheet" href="assets/css/app.css?v=6">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -39,7 +39,7 @@
             <h1 id="title">ניהול פרויקטים</h1>
             <p class="sub" id="subtitle" hidden></p>
         </div>
-        <div class="who" id="who"></div>
+        <button class="who" id="who" type="button" aria-label="החשבון שלי — שינוי סיסמה"></button>
         <button class="icon-btn" id="logout" aria-label="יציאה" title="יציאה">🚪</button>
     </header>
 
@@ -162,11 +162,8 @@
                 <ul id="template-list" class="rows"></ul>
             </div>
             <div class="pane" id="set-access" hidden>
-                <p class="hint">הרשמה חדשה מגיעה לכאן. האישור נעשה ב<a href="../" target="_blank" rel="noopener">ממשק הניהול של הפלטפורמה</a>: אישור המשתמש, ואז "✓ מותר" על "ניהול פרויקטים".</p>
-                <h2 class="sec-title">ממתינים לאישור</h2>
-                <ul id="pending-list" class="rows"></ul>
-                <h2 class="sec-title">מנהלי פרויקט</h2>
-                <ul id="managers-list" class="rows"></ul>
+                <p class="hint">מנהל פרויקט נרשם במסך הכניסה, ומגיע לכאן לאישור. מנהל חסום מתנתק מיד.</p>
+                <ul id="users-list" class="rows"></ul>
             </div>
         </section>
     </main>
@@ -319,11 +316,29 @@
         </form>
     </dialog>
 
+    <!-- ===== חלון: שינוי סיסמה ===== -->
+    <dialog id="password-dlg" aria-labelledby="password-dlg-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="password-dlg-title">שינוי סיסמה</h2>
+                <button type="submit" class="btn primary">שמירה</button>
+            </header>
+            <div class="sheet-body">
+                <label class="f"><span>הסיסמה הנוכחית</span><input name="current" type="password" autocomplete="current-password" dir="ltr" required></label>
+                <label class="f"><span>סיסמה חדשה (לפחות 8 תווים)</span><input name="password" type="password" autocomplete="new-password" dir="ltr" minlength="8" required></label>
+                <label class="f"><span>שוב, לאימות</span><input name="password2" type="password" autocomplete="new-password" dir="ltr" required></label>
+                <p class="hint">שאר ההתחברויות שלך — בטלפון או במחשב אחר — יתנתקו.</p>
+                <p class="error" role="alert" hidden></p>
+            </div>
+        </form>
+    </dialog>
+
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=5"></script>
-    <script src="assets/js/contacts.js?v=5"></script>
-    <script src="assets/js/projects.js?v=5"></script>
-    <script src="assets/js/settings.js?v=5"></script>
-    <script src="assets/js/app.js?v=5"></script>
+    <script src="assets/js/core.js?v=6"></script>
+    <script src="assets/js/contacts.js?v=6"></script>
+    <script src="assets/js/projects.js?v=6"></script>
+    <script src="assets/js/settings.js?v=6"></script>
+    <script src="assets/js/app.js?v=6"></script>
 </body>
 </html>
