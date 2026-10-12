@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#2d4a8a">
+    <meta name="color-scheme" content="light dark">
+    <title>כניסה — ניהול פרויקטים</title>
+    <link rel="stylesheet" href="assets/css/app.css?v=3">
+    <link rel="icon" href="assets/icon.svg">
+</head>
+<body class="auth">
+    <main id="main" class="auth-box">
+        <header class="auth-head">
+            <img src="assets/icon.svg" alt="" width="40" height="40">
+            <h1>ניהול פרויקטים</h1>
+        </header>
+
+        <div class="seg auth-tabs" role="radiogroup" aria-label="כניסה או הרשמה">
+            <label><input type="radio" name="mode" value="login" checked><span>כניסה</span></label>
+            <label><input type="radio" name="mode" value="register"><span>הרשמה</span></label>
+        </div>
+
+        <form id="auth-form" novalidate>
+            <label class="f reg-only" hidden><span>שם מלא</span><input name="display_name" maxlength="60" autocomplete="name"></label>
+            <label class="f"><span>שם משתמש או אימייל</span><input name="username" maxlength="100" autocomplete="username" dir="ltr" autocapitalize="off" spellcheck="false" required></label>
+            <label class="f"><span>סיסמה</span><input name="password" type="password" maxlength="200" autocomplete="current-password" dir="ltr" required></label>
+            <p class="hint reg-only" hidden>לפחות 8 תווים. ההרשמה נשלחת למפתח לאישור.</p>
+            <p class="error" id="auth-error" role="alert" hidden></p>
+            <button class="btn primary" id="auth-submit">כניסה</button>
+        </form>
+
+        <section id="waiting" class="waiting" hidden aria-live="polite">
+            <p class="big" aria-hidden="true">⏳</p>
+            <h2 id="waiting-title"></h2>
+            <p id="waiting-text" class="hint"></p>
+            <div class="row-btns">
+                <button class="btn ghost" id="recheck">בדיקה שוב</button>
+                <button class="btn ghost" id="logout">יציאה</button>
+            </div>
+        </section>
+    </main>
+    <script src="assets/js/login.js?v=1"></script>
+</body>
+</html>

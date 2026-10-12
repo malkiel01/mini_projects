@@ -22,7 +22,7 @@ async function api(action, { params = {}, body = null } = {}) {
     const res = await fetch('api.php?' + qs, opts);
     let data = {};
     try { data = await res.json(); } catch { /* תשובה שאינה JSON */ }
-    if (res.status === 401) { location.href = '../?next=' + encodeURIComponent(location.pathname); throw new Error(data.error || 'נדרשת כניסה'); }
+    if (res.status === 401) { location.href = 'login.html'; throw new Error(data.error || 'נדרשת כניסה'); }
     if (!res.ok) throw new Error(data.error || `תקלה (${res.status})`);
     return data;
 }
@@ -59,7 +59,7 @@ async function init() {
     fillTradeFilter();
     bind();
     const saved = (() => { try { return localStorage.getItem('pm.tab'); } catch { return null; } })();
-    showTab(saved && $(`[data-tab="${saved}"]`) && (saved !== 'trades' || isDev) ? saved : 'client');
+    showTab(saved && KIND_LABEL[saved] || (isDev && (saved === 'trades' || saved === 'access')) ? saved : 'client');
 }
 
 function bind() {
@@ -106,16 +106,24 @@ function bind() {
         } catch (err) { toast(err.message, true); }
     });
     $('#trade-list').addEventListener('click', tradeAction);
+    $('#logout').addEventListener('click', async () => {
+        await fetch('../platform/api.php?action=logout', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-Platform': '1', 'X-CSRF': state.user.csrf }, body: '{}',
+        }).catch(() => {});
+        location.href = 'login.html';
+    });
 }
 
 function showTab(tab) {
     state.tab = tab;
     try { localStorage.setItem('pm.tab', tab); } catch { /* מצב פרטי */ }
     $$('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
-    const isTrades = tab === 'trades';
-    $('#contacts-view').hidden = isTrades;
-    $('#trades-view').hidden = !isTrades;
-    if (isTrades) { renderTrades(); return; }
+    $('#contacts-view').hidden = tab === 'trades' || tab === 'access';
+    $('#trades-view').hidden = tab !== 'trades';
+    $('#access-view').hidden = tab !== 'access';
+    if (tab === 'trades') { renderTrades(); return; }
+    if (tab === 'access') { loadAccess(); return; }
     $('#trade-filter').hidden = tab !== 'supplier';
     $('#add').setAttribute('aria-label', KIND_LABEL[tab] + ' חדש');
     loadContacts();
@@ -125,7 +133,7 @@ function showTab(tab) {
 
 async function loadContacts() {
     const kind = state.tab;
-    if (kind === 'trades') return;
+    if (!KIND_LABEL[kind]) return;
     try {
         const { contacts } = await api('contacts', { params: {
             kind, q: $('#q').value.trim(), archived: $('#show-archived').getAttribute('aria-pressed') === 'true' ? 1 : 0,
@@ -323,6 +331,23 @@ async function tradeAction(e) {
         }
         renderTrades();
     } catch (err) { toast(err.message, true); }
+}
+
+// ---- מנהלים (מפתח) ----
+
+async function loadAccess() {
+    try {
+        const { pending, managers } = await api('access');
+        const when = iso => iso ? new Date(iso).toLocaleDateString('he-IL') : '';
+        $('#pending-list').innerHTML = pending.length ? pending.map(u => `<li>
+            <span class="n">${esc(u.display_name)} <small dir="ltr">${esc(u.username)}</small></span>
+            <small>נרשם ${when(u.created_at)}</small></li>`).join('')
+            : '<li><span class="n hint">אין בקשות ממתינות</span></li>';
+        $('#managers-list').innerHTML = managers.length ? managers.map(u => `<li>
+            <span class="n">${esc(u.display_name)} <small dir="ltr">${esc(u.username)}</small></span>
+            <small>${u.status === 'active' ? (u.last_login_at ? 'נכנס ' + when(u.last_login_at) : 'לא נכנס עדיין') : 'חסום'}</small></li>`).join('')
+            : '<li><span class="n hint">עוד אין מנהלי פרויקט</span></li>';
+    } catch (e) { toast(e.message, true); }
 }
 
 init();

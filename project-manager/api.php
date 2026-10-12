@@ -63,6 +63,7 @@ try {
         'POST archive'    => ['contact' => pm_contact_archive($user, (int)($in['id'] ?? 0), !empty($in['archived']))],
 
         'GET trades'      => ['trades' => pm_trades()],
+        'GET access'      => $isDev ? pm_access_overview() : throw new PmError('רק המפתח', 403),
         'POST trade'      => $isDev ? ['trades' => pm_trade_save($user, $in)] : throw new PmError('רק המפתח עורך תחומים', 403),
         'POST trade-delete' => $isDev ? ['trades' => pm_trade_delete($user, (int)($in['id'] ?? 0))] : throw new PmError('רק המפתח עורך תחומים', 403),
 
