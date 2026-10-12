@@ -30,24 +30,21 @@
         </div>
 
         <!-- מסך אחד לכל המצבים; data-modes קובע באילו מצבים שדה מוצג:
-             login · register · setup (המפתח הראשון) · forgot · recover (סיסמת המפתח בקוד השחזור) · reset (מקישור) -->
+             login · register · setup (המפתח הראשון, רק כשאין משתמשים) · forgot · reset (מקישור) -->
         <p class="hint" id="mode-hint" hidden></p>
         <form id="auth-form" novalidate>
-            <label class="f" data-modes="setup recover"><span>קוד השחזור</span><input name="code" type="password" autocomplete="off" dir="ltr"></label>
+            <label class="f" data-modes="setup"><span>קוד ההקמה</span><input name="code" type="password" autocomplete="off" dir="ltr"></label>
             <label class="f" data-modes="register setup"><span>שם מלא</span><input name="display_name" maxlength="60" autocomplete="name"></label>
             <label class="f" data-modes="register setup"><span class="lbl-email">אימייל</span><input name="email" type="email" maxlength="120" autocomplete="email" dir="ltr"></label>
             <label class="f" data-modes="register"><span>טלפון</span><input name="phone" type="tel" maxlength="30" dir="ltr" autocomplete="tel"></label>
             <label class="f" data-modes="login register setup forgot"><span class="lbl-user">שם משתמש</span><input name="username" maxlength="100" autocomplete="username" dir="ltr" autocapitalize="off" spellcheck="false"></label>
-            <label class="f" data-modes="login register setup recover reset"><span class="lbl-pass">סיסמה</span><input name="password" type="password" maxlength="200" autocomplete="current-password" dir="ltr"></label>
-            <label class="f" data-modes="reset recover"><span>שוב, לאימות</span><input name="password2" type="password" maxlength="200" autocomplete="new-password" dir="ltr"></label>
+            <label class="f" data-modes="login register setup reset"><span class="lbl-pass">סיסמה</span><input name="password" type="password" maxlength="200" autocomplete="current-password" dir="ltr"></label>
+            <label class="f" data-modes="reset"><span>שוב, לאימות</span><input name="password2" type="password" maxlength="200" autocomplete="new-password" dir="ltr"></label>
             <p class="error" id="auth-error" role="alert" hidden></p>
             <p class="ok" id="auth-ok" role="status" hidden></p>
             <button class="btn primary" id="auth-submit">כניסה</button>
-            <div class="row-btns links" data-modes="login">
-                <button type="button" class="btn ghost" data-go="forgot">שכחתי סיסמה</button>
-                <button type="button" class="btn ghost" data-go="recover">אני המפתח — יש לי קוד שחזור</button>
-            </div>
-            <button type="button" class="btn ghost" data-modes="forgot recover" data-go="login">חזרה לכניסה</button>
+            <button type="button" class="btn ghost" data-modes="login" data-go="forgot">שכחתי סיסמה</button>
+            <button type="button" class="btn ghost" data-modes="forgot" data-go="login">חזרה לכניסה</button>
         </form>
 
         <section id="waiting" class="waiting" hidden aria-live="polite">
@@ -60,6 +57,6 @@
             </div>
         </section>
     </main>
-    <script src="assets/js/login.js?v=4"></script>
+    <script src="assets/js/login.js?v=5"></script>
 </body>
 </html>

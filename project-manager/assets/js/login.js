@@ -2,7 +2,7 @@
 // (lib/auth.php). אין כאן שום קשר לחשבונות של דף הכלים.
 //
 // מצבים: login · register · setup (אין עדיין משתמשים) · forgot (קישור לאימייל) ·
-//        recover (המפתח, בקוד השחזור) · reset (נפתח מקישור: login.html#reset=…)
+//        reset (נפתח מקישור: login.html#reset=…)
 'use strict';
 
 // ---- שגיאות בדפדפן נשלחות ליומן (הגדרות ← יומן) ----
@@ -40,12 +40,11 @@ async function call(action, body) {
 }
 
 const HINTS = {
-    setup: 'הקמת האפליקציה: חשבון המפתח. נדרש קוד השחזור — הסוד PM_RECOVERY_CODE שהוגדר ב-GitHub.',
+    setup: 'הקמת האפליקציה: חשבון המפתח. נדרש קוד ההקמה — הסוד PM_RECOVERY_CODE שהוגדר ב-GitHub.',
     forgot: 'נשלח קישור לקביעת סיסמה חדשה לאימייל הרשום בחשבון.',
-    recover: 'קוד השחזור (PM_RECOVERY_CODE) מאפשר לקבוע סיסמה חדשה לחשבון המפתח. כל הנעילות ישתחררו.',
     reset: '',
 };
-const SUBMIT = { login: 'כניסה', register: 'שליחת בקשה', setup: 'הקמת המפתח', forgot: 'שליחת קישור', recover: 'קביעת סיסמה וכניסה', reset: 'קביעת סיסמה' };
+const SUBMIT = { login: 'כניסה', register: 'שליחת בקשה', setup: 'הקמת המפתח', forgot: 'שליחת קישור', reset: 'קביעת סיסמה' };
 
 function setMode(m) {
     mode = m;
@@ -57,7 +56,7 @@ function setMode(m) {
     $('#auth-submit').textContent = SUBMIT[m];
     $('.lbl-user').textContent = m === 'login' || m === 'forgot' ? 'שם משתמש או אימייל' : 'שם משתמש (באנגלית)';
     $('.lbl-email').textContent = m === 'setup' ? 'אימייל (לשחזור סיסמה)' : 'אימייל';
-    $('.lbl-pass').textContent = ['register', 'setup', 'recover', 'reset'].includes(m) ? 'סיסמה חדשה (לפחות 8 תווים)' : 'סיסמה';
+    $('.lbl-pass').textContent = ['register', 'setup', 'reset'].includes(m) ? 'סיסמה חדשה (לפחות 8 תווים)' : 'סיסמה';
     $('[name=password]').autocomplete = m === 'login' ? 'current-password' : 'new-password';
     $('#auth-error').hidden = true;
     $('#auth-ok').hidden = true;
@@ -97,13 +96,13 @@ async function route() {
     if (resetToken) return startReset();
     if (data.setup_needed) {
         if (!data.recovery_set) {
-            showWaiting('האפליקציה עוד לא הוקמה', 'כדי להקים את חשבון המפתח צריך קוד שחזור: להוסיף ב-GitHub (Settings ← Secrets) את הסוד PM_RECOVERY_CODE, ולפרוס.');
+            showWaiting('האפליקציה עוד לא הוקמה', 'כדי להקים את חשבון המפתח צריך קוד הקמה: להוסיף ב-GitHub (Settings ← Secrets) את הסוד PM_RECOVERY_CODE, ולפרוס.');
             return;
         }
         setMode('setup');
         return;
     }
-    if (!user) { if (!['forgot', 'recover', 'register'].includes(mode)) setMode('login'); return; }
+    if (!user) { if (!['forgot', 'register'].includes(mode)) setMode('login'); return; }
     if (user.status === 'active') { location.replace('./'); return; }
     if (user.status === 'pending') {
         showWaiting('ההרשמה התקבלה', `שלום ${user.display_name}. הבקשה ממתינה לאישור המפתח. אחרי האישור תוכל להיכנס מכאן.`);
@@ -135,15 +134,14 @@ async function submit(e) {
     if (mode === 'register') body = { display_name: v('display_name'), email: v('email'), phone: v('phone'), username: v('username'), password: f.password.value };
     if (mode === 'setup') body = { code: f.code.value, display_name: v('display_name'), email: v('email'), username: v('username'), password: f.password.value };
     if (mode === 'forgot') body = { login: v('username') };
-    if (mode === 'recover') { action = 'recover-dev'; body = { code: f.code.value, password: f.password.value }; }
     if (mode === 'reset') { action = 'reset-password'; body = { token: resetToken, password: f.password.value }; }
 
     if (mode === 'forgot' && !body.login) return showError('יש למלא שם משתמש או אימייל');
     if (['login', 'register', 'setup'].includes(mode) && (!body.username || !body.password)) return showError('יש למלא שם משתמש וסיסמה');
     if (['register', 'setup'].includes(mode) && !body.display_name) return showError('יש למלא שם מלא');
     if (mode === 'register' && !body.email) return showError('יש למלא אימייל — דרכו משחזרים סיסמה');
-    if (['recover', 'reset'].includes(mode) && f.password.value !== f.password2.value) return showError('הסיסמאות לא זהות');
-    if (['setup', 'recover'].includes(mode) && !body.code) return showError('יש למלא את קוד השחזור');
+    if (mode === 'reset' && f.password.value !== f.password2.value) return showError('הסיסמאות לא זהות');
+    if (mode === 'setup' && !body.code) return showError('יש למלא את קוד ההקמה');
 
     const btn = $('#auth-submit');
     btn.disabled = true;
@@ -152,7 +150,6 @@ async function submit(e) {
         if (r.status !== 200) return showError(r.data.error || 'תקלה, נסה שוב');
         f.password.value = f.password2.value = f.code.value = '';
         if (mode === 'forgot') return showOk('אם יש חשבון עם אימייל רשום — נשלח אליו קישור. אם לא הגיע תוך כמה דקות, בדוק בספאם או פנה למפתח.');
-        if (mode === 'recover') alert(`הסיסמה עודכנה. שם המשתמש של המפתח: ${r.data.username}`);
         if (mode === 'reset') {
             resetToken = null;
             history.replaceState(null, '', location.pathname);
