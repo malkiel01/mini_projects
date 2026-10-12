@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=2">
+    <link rel="stylesheet" href="assets/css/app.css?v=3">
     <link rel="icon" href="assets/icon.svg">
 </head>
 <body>
@@ -15,6 +15,7 @@
         <a class="icon-btn" href="../" aria-label="חזרה לאפליקציות">→</a>
         <h1>ניהול פרויקטים</h1>
         <div class="who" id="who"></div>
+        <button class="icon-btn" id="logout" aria-label="יציאה" title="יציאה">🚪</button>
     </header>
 
     <nav class="tabs" id="tabs" role="tablist" aria-label="סוג כרטיס">
@@ -22,6 +23,7 @@
         <button role="tab" data-tab="supplier" aria-selected="false">ספקים</button>
         <button role="tab" data-tab="lawyer" aria-selected="false">עורכי דין</button>
         <button role="tab" data-tab="trades" aria-selected="false" class="dev-only" hidden>תחומים</button>
+        <button role="tab" data-tab="access" aria-selected="false" class="dev-only" hidden>מנהלים</button>
     </nav>
 
     <main id="main" tabindex="-1">
@@ -42,6 +44,13 @@
             </form>
             <p class="hint">משותפים לכל המנהלים. תחום שמשויך לספק אינו ניתן למחיקה.</p>
             <ul id="trade-list" class="rows"></ul>
+        </section>
+        <section id="access-view" hidden>
+            <p class="hint">הרשמה חדשה מגיעה לכאן. האישור נעשה ב<a href="../">ממשק הניהול של הפלטפורמה</a>: אישור המשתמש, ואז "✓ מותר" על "ניהול פרויקטים".</p>
+            <h2 class="sec-title">ממתינים לאישור</h2>
+            <ul id="pending-list" class="rows"></ul>
+            <h2 class="sec-title">מנהלי פרויקט</h2>
+            <ul id="managers-list" class="rows"></ul>
         </section>
     </main>
 
@@ -122,6 +131,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/app.js?v=2"></script>
+    <script src="assets/js/app.js?v=3"></script>
 </body>
 </html>

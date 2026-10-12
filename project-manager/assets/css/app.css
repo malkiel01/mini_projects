@@ -121,7 +121,8 @@ button:disabled { opacity: .55; cursor: default; }
 /* ---- תחומים ---- */
 
 .rows { list-style: none; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
-.rows li { display: flex; align-items: center; gap: var(--s2); padding: 0 var(--s1) 0 0; padding-inline-start: var(--s3); border-top: 1px solid var(--line); min-height: 48px; }
+.rows li { display: flex; align-items: center; gap: var(--s2); padding: 0 var(--s3); border-top: 1px solid var(--line); min-height: 48px; }
+.rows li:has(.icon-btn) { padding-inline-end: var(--s1); }
 .rows li:first-child { border-top: 0; }
 .rows .n { flex: 1; }
 .rows small { color: var(--muted); white-space: nowrap; }
@@ -184,6 +185,25 @@ fieldset.opt legend { float: inline-start; width: 92px; flex: none; font-size: .
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .toast.err { background: var(--danger); color: #fff; }
+
+/* ---- מנהלים ---- */
+
+.sec-title { font-size: .85rem; font-weight: 600; color: var(--muted); margin: var(--s3) 0 var(--s1); }
+.hint a { color: var(--brand); }
+
+/* ---- כניסה ---- */
+
+body.auth { display: grid; place-items: start center; padding: max(8vh, var(--s4)) var(--s3) var(--s4); }
+.auth-box { width: 100%; max-width: 360px; display: grid; gap: var(--s3); padding: 0; }
+.auth-head { display: flex; align-items: center; gap: var(--s2); justify-content: center; }
+.auth-head h1 { font-size: 1.2rem; white-space: nowrap; }
+.auth-box form { display: grid; gap: var(--s2); }
+.auth-box .btn { width: 100%; margin-top: var(--s1); }
+.waiting { text-align: center; display: grid; gap: var(--s2); }
+.waiting .big { font-size: 2rem; }
+.waiting h2 { font-size: 1.05rem; }
+.row-btns { display: flex; gap: var(--s2); }
+.row-btns .btn { flex: 1; }
 
 /* ---- טלפון ---- */
 

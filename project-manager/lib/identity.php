@@ -19,6 +19,39 @@ const PM_APP_ID = 'project-manager';
 
 if (!defined('PM_PLATFORM_DB')) define('PM_PLATFORM_DB', __DIR__ . '/../../platform/data/platform.sqlite');
 
+/** חיבור לקריאה בלבד למסד הפלטפורמה. */
+function pm_platform_pdo(): PDO
+{
+    static $pdo = null;
+    if ($pdo instanceof PDO) return $pdo;
+    $pdo = new PDO('sqlite:' . PM_PLATFORM_DB, null, null, [
+        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::SQLITE_ATTR_OPEN_FLAGS  => PDO::SQLITE_OPEN_READONLY,
+    ]);
+    $pdo->exec('PRAGMA busy_timeout = 5000');
+    return $pdo;
+}
+
+/**
+ * למפתח: מי ממתין לאישור בפלטפורמה, ומי כבר מנהל פרויקט כאן.
+ * האישור עצמו נעשה בממשק הניהול של הפלטפורמה — האפליקציה לא כותבת לשם.
+ */
+function pm_access_overview(): array
+{
+    $pdo = pm_platform_pdo();
+    $pending = $pdo->query(
+        "SELECT id, username, display_name, created_at FROM users WHERE status = 'pending' ORDER BY created_at DESC"
+    )->fetchAll();
+    $st = $pdo->prepare(
+        "SELECT u.id, u.username, u.display_name, u.status, u.last_login_at FROM users u
+           JOIN grants g ON g.user_id = u.id AND g.kind = 'app' AND g.target = ? AND g.allowed = 1
+          WHERE u.role != 'admin' ORDER BY u.display_name"
+    );
+    $st->execute([PM_APP_ID]);
+    return ['pending' => $pending, 'managers' => $st->fetchAll()];
+}
+
 /** [id, username, display_name, role(developer|manager), csrf] — או null. */
 function pm_current_user(): ?array
 {
@@ -30,12 +63,7 @@ function pm_current_user(): ?array
     if (!is_string($token) || strlen($token) !== 64 || !is_file(PM_PLATFORM_DB)) return null;
 
     try {
-        $pdo = new PDO('sqlite:' . PM_PLATFORM_DB, null, null, [
-            PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::SQLITE_ATTR_OPEN_FLAGS  => PDO::SQLITE_OPEN_READONLY,
-        ]);
-        $pdo->exec('PRAGMA busy_timeout = 5000');
+        $pdo = pm_platform_pdo();
         $st = $pdo->prepare(
             'SELECT u.id, u.username, u.display_name, u.role, u.status, s.csrf
                FROM sessions s JOIN users u ON u.id = s.user_id

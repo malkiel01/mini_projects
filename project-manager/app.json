@@ -7,5 +7,9 @@
   "entry": "index.html",
   "gate": true,
   "restricted": true,
-  "version": "0.1"
+  "version": "0.2",
+  "public": [
+    "login.html",
+    "assets/**"
+  ]
 }
