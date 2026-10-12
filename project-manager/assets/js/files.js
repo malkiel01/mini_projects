@@ -160,35 +160,39 @@ const Files = (() => {
         uploads.set(key, { name: file.name, pct: 0 });
         renderUploads();
         try {
-            const thumb = await makeThumb(file).catch(() => '');
-            const { upload_id, chunk_size } = await api('upload-start', { body: {
-                project_id: project.id, folder_id: folder, name: file.name, size: file.size, mime: file.type } });
-            let offset = 0, tries = 0;
-            while (offset < file.size) {
-                const blob = file.slice(offset, offset + chunk_size);
-                try {
-                    const res = await fetch(`api.php?action=upload-chunk&id=${upload_id}&offset=${offset}`, {
-                        method: 'POST', credentials: 'same-origin', body: blob,
-                        headers: { 'Content-Type': 'application/octet-stream', 'X-CSRF': state.user.csrf },
-                    });
-                    const data = await res.json();
-                    if (!res.ok) throw new Error(data.error || 'תקלה בהעלאה');
-                    offset = data.received; // השרת אומר מאיפה להמשיך — גם אחרי ניתוק
-                    tries = 0;
-                } catch (e) {
-                    if (++tries > 4) throw e;
-                    await new Promise(r => setTimeout(r, 1000 * tries)); // ניסיון חוזר: 1, 2, 3, 4 שניות
-                }
-                uploads.get(key).pct = Math.round(offset / file.size * 100);
-                renderUploads();
-            }
-            await api('upload-finish', { body: { upload_id, thumb, type: guessType(file) } });
+            await send(file, project.id, folder, pct => { uploads.get(key).pct = pct; renderUploads(); });
             uploads.delete(key);
         } catch (e) {
             uploads.get(key).error = e.message;
             setTimeout(() => { uploads.delete(key); renderUploads(); }, 6000);
         }
         renderUploads();
+    }
+
+    /** העלאת קובץ אחד לתיקייה — בחלקים, עם חידוש. משמש גם את מסך השיתוף. */
+    async function send(file, projectId, folder, onProgress = () => {}) {
+        const thumb = await makeThumb(file).catch(() => '');
+        const { upload_id, chunk_size } = await api('upload-start', { body: {
+            project_id: projectId, folder_id: folder, name: file.name, size: file.size, mime: file.type } });
+        let offset = 0, tries = 0;
+        while (offset < file.size) {
+            const blob = file.slice(offset, offset + chunk_size);
+            try {
+                const res = await fetch(`api.php?action=upload-chunk&id=${upload_id}&offset=${offset}`, {
+                    method: 'POST', credentials: 'same-origin', body: blob,
+                    headers: { 'Content-Type': 'application/octet-stream', 'X-CSRF': state.user.csrf },
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'תקלה בהעלאה');
+                offset = data.received; // השרת אומר מאיפה להמשיך — גם אחרי ניתוק
+                tries = 0;
+            } catch (e) {
+                if (++tries > 4) throw e;
+                await new Promise(r => setTimeout(r, 1000 * tries)); // ניסיון חוזר: 1, 2, 3, 4 שניות
+            }
+            onProgress(Math.round(offset / file.size * 100));
+        }
+        return api('upload-finish', { body: { upload_id, thumb, type: guessType(file) } });
     }
 
     function renderUploads() {
@@ -355,5 +359,5 @@ const Files = (() => {
         });
     }
 
-    return { show };
+    return { show, send, fmtSize };
 })();
