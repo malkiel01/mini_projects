@@ -296,6 +296,10 @@ function pm_stage_save(array $user, array $in): array
         'plan_start'   => pm_date($in, 'plan_start', 'התחלה מתוכננת'),
         'plan_end'     => pm_date($in, 'plan_end', 'סיום מתוכנן'),
     ];
+    // "בוצע" — רק דרך דיווח מהשטח עם תמונה (lib/reports.php)
+    if (in_array($status, ['done', 'paid'], true) && !in_array($old['status'] ?? 'planned', ['done', 'paid'], true)) {
+        throw new PmError('כדי לסמן שלב "בוצע" — "דיווח מהשטח" עם לפחות תמונה אחת', 409);
+    }
     $now = pm_now();
     $doneAt = in_array($status, ['done', 'paid'], true) ? ($old['done_at'] ?? null ?: $now) : null;
 

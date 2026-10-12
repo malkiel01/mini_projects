@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=15">
+    <link rel="stylesheet" href="assets/css/app.css?v=16">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -27,7 +27,7 @@
 
     ניווט בכתובת (#/…), כדי שכפתור "חזרה" של הטלפון יעבוד:
       #/                 הפרויקטים (מסך הבית)
-      #/p/<id>/<pane>    פרויקט: timeline · files · stages · quotes · payments · team · details
+      #/p/<id>/<pane>    פרויקט: timeline · field · files · stages · quotes · payments · team · details
                          (#/p/<id>/files/<folder> — תיקייה)
       #/contacts/<kind>  אנשי קשר: client · supplier · lawyer
       #/contacts/<kind>/import  ייבוא מאנשי הקשר במכשיר
@@ -54,6 +54,7 @@
     </nav>
     <nav class="tabs sub-tabs" id="project-nav" aria-label="חלקי הפרויקט" hidden>
         <a data-pane="timeline">ציר זמן</a>
+        <a data-pane="field">מהשטח</a>
         <a data-pane="files">קבצים</a>
         <a data-pane="stages">שלבים</a>
         <a data-pane="quotes">הצעות</a>
@@ -86,6 +87,14 @@
                     <textarea id="note" rows="1" maxlength="4000" placeholder="הערה לציר הזמן" aria-label="הערה חדשה" enterkeyhint="send"></textarea>
                     <button class="icon-btn primary" aria-label="שליחה">➤</button>
                 </form>
+            </div>
+
+            <div class="pane" id="pane-field" hidden>
+                <div class="toolbar">
+                    <select id="field-stage" aria-label="סינון לפי שלב"></select>
+                    <button class="btn primary" id="add-report">📷 <span class="add-label">עדכון מהשטח</span></button>
+                </div>
+                <div id="report-list"></div>
             </div>
 
             <div class="pane" id="pane-files" hidden>
@@ -443,6 +452,43 @@
         </form>
     </dialog>
 
+    <!-- ===== חלון: דיווח מהשטח ===== -->
+    <dialog id="report-dlg" aria-labelledby="report-dlg-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="report-dlg-title">דיווח מהשטח</h2>
+                <button type="submit" class="btn primary" id="report-go">שליחה</button>
+            </header>
+            <div class="sheet-body">
+                <div class="seg">
+                    <label><input type="radio" name="kind" value="update" checked><span>📷 עדכון</span></label>
+                    <label><input type="radio" name="kind" value="done"><span>✅ השלב בוצע</span></label>
+                </div>
+                <label class="f"><span id="report-stage-label">שלב</span><select name="stage_id"></select></label>
+                <label class="f"><span>מה נעשה</span><textarea name="text" rows="3" maxlength="4000" placeholder="למשל: הונחו צנרת וקופסאות בחדר הרחצה"></textarea></label>
+                <div class="row-btns">
+                    <label class="btn ghost upload-btn">📸 מצלמה<input type="file" id="report-camera" accept="image/*" capture="environment" hidden></label>
+                    <label class="btn ghost upload-btn">🖼️ גלריה / סרטון<input type="file" id="report-pick" accept="image/*,video/*" multiple hidden></label>
+                </div>
+                <ul class="media-grid" id="report-media"></ul>
+                <p class="hint" id="report-hint"></p>
+                <label class="switch"><input type="checkbox" name="visible" checked><span>גלוי ללקוח ולעו"ד בקישור האישי</span></label>
+                <div class="uploads" id="report-progress" aria-live="polite"></div>
+                <p class="error" role="alert" hidden></p>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- ===== תצוגת תמונה / סרטון ===== -->
+    <dialog id="lightbox" class="lightbox" aria-label="תצוגה">
+        <button type="button" class="icon-btn lb-close" data-close aria-label="סגירה">✕</button>
+        <button type="button" class="icon-btn lb-prev" aria-label="הקודם">›</button>
+        <div class="lb-body" id="lb-body"></div>
+        <button type="button" class="icon-btn lb-next" aria-label="הבא">‹</button>
+        <p class="lb-cap" id="lb-cap"></p>
+    </dialog>
+
     <!-- ===== חלון: אבן דרך לתשלום ===== -->
     <dialog id="payment-dlg" aria-labelledby="payment-dlg-title">
         <form method="dialog" novalidate>
@@ -733,16 +779,18 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=15"></script>
-    <script src="assets/js/contacts.js?v=15"></script>
-    <script src="assets/js/device-contacts.js?v=15"></script>
-    <script src="assets/js/files.js?v=15"></script>
+    <script src="assets/js/core.js?v=16"></script>
+    <script src="assets/js/contacts.js?v=16"></script>
+    <script src="assets/js/device-contacts.js?v=16"></script>
+    <script src="assets/js/files.js?v=16"></script>
+    <script src="assets/js/lightbox.js?v=16"></script>
+    <script src="assets/js/field.js?v=16"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=15"></script>
-    <script src="assets/js/projects.js?v=15"></script>
-    <script src="assets/js/quotes.js?v=15"></script>
-    <script src="assets/js/payments.js?v=15"></script>
-    <script src="assets/js/settings.js?v=15"></script>
-    <script src="assets/js/app.js?v=15"></script>
+    <script src="assets/js/share.js?v=16"></script>
+    <script src="assets/js/projects.js?v=16"></script>
+    <script src="assets/js/quotes.js?v=16"></script>
+    <script src="assets/js/payments.js?v=16"></script>
+    <script src="assets/js/settings.js?v=16"></script>
+    <script src="assets/js/app.js?v=16"></script>
 </body>
 </html>

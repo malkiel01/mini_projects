@@ -304,8 +304,11 @@ function pm_upload_finish(array $user, array $in): array
         $db->prepare('DELETE FROM uploads WHERE id = ?')->execute([$id]);
         $fr = $db->prepare('SELECT * FROM folders WHERE id = ?');
         $fr->execute([$u['folder_id']]);
-        pm_event($user, (int)$u['project_id'], 'file', "📎 {$u['name']} ← " . pm_folder_label($fr->fetch()),
-                 ['file' => $fileId, 'folder' => (int)$u['folder_id'], 'size' => (int)$u['size'], 'type' => $type]);
+        // quiet: חלק מדיווח מהשטח — הדיווח עצמו נרשם בציר הזמן, לא כל תמונה
+        if (empty($in['quiet'])) {
+            pm_event($user, (int)$u['project_id'], 'file', "📎 {$u['name']} ← " . pm_folder_label($fr->fetch()),
+                     ['file' => $fileId, 'folder' => (int)$u['folder_id'], 'size' => (int)$u['size'], 'type' => $type]);
+        }
         $db->commit();
     } catch (Throwable $e) {
         $db->rollBack();

@@ -175,7 +175,7 @@ const Projects = (() => {
 
     async function showProject(id, p, sub) {
         bind();
-        pane = ['timeline', 'files', 'stages', 'quotes', 'payments', 'team', 'details'].includes(p) ? p : 'timeline';
+        pane = ['timeline', 'field', 'files', 'stages', 'quotes', 'payments', 'team', 'details'].includes(p) ? p : 'timeline';
         subFolder = sub;
         $$('#project-nav a').forEach(a => {
             a.href = `#/p/${id}/${a.dataset.pane}`;
@@ -208,6 +208,7 @@ const Projects = (() => {
         if (pane === 'files') Files.show(cur.project, Number(subFolder) || 0);
         if (pane === 'stages') renderStages();
         if (pane === 'quotes') Quotes.show(cur);
+        if (pane === 'field') Field.show(cur);
         if (pane === 'payments') Payments.show(cur);
         if (pane === 'team') renderTeam();
         if (pane === 'details') renderDetails();
@@ -330,8 +331,17 @@ const Projects = (() => {
             plan_start: el.plan_start.value, plan_end: el.plan_end.value,
         };
         if (!body.name) { formError(form, 'שם השלב: שדה חובה'); return; }
+        // "בוצע" — דרך דיווח מהשטח עם תמונה: שומרים את השאר, ועוברים לדיווח
+        const old = stageId ? cur.stages.find(x => x.id === stageId) : null;
+        const toDone = ['done', 'paid'].includes(body.status) && !['done', 'paid'].includes(old?.status || 'planned');
+        if (toDone) body.status = old?.status || 'planned';
         await busy($('button[type=submit]', form), form, async () => {
             const d = await api('stage', { body });
+            if (toDone) {
+                $('#stage-dlg').close();
+                Field.markDone(cur.project.id, d.stages.find(x => x.name === body.name && (!stageId || x.id === stageId))?.id || stageId);
+                return;
+            }
             update(d);
             if (d.notice) toast(d.notice);
             $('#stage-dlg').close();

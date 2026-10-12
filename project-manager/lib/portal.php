@@ -15,7 +15,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/payments.php';
+require_once __DIR__ . '/reports.php';
 require_once __DIR__ . '/mail.php';
 
 const PM_CONFIG = __DIR__ . '/../data/config.json';
@@ -225,6 +225,7 @@ function pm_portal_view(array $a): array
         'project' => ['name' => $p['name'], 'address' => $p['address'], 'status' => $p['status'], 'kind' => $p['kind']],
         'manager' => ['name' => $a['owner']['display_name'], 'phone' => $a['owner']['phone'], 'email' => $a['owner']['email']],
         'stages' => $stages, 'quotes' => $quotes, 'files' => $files, 'payments' => $payments,
+        'reports' => pm_reports_of($pid, true),
         'labels' => ['stage' => PM_STAGE_STATUSES, 'quote' => PM_QUOTE_STATUSES, 'file' => PM_FILE_TYPES, 'method' => PM_PAY_METHODS],
         'max_proof' => PM_PROOF_MAX,
     ];

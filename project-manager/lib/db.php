@@ -394,6 +394,27 @@ function pm_migrate(PDO $pdo): void
             created_at      TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS payment_proofs_payment ON payment_proofs (payment_id);
+        -- שלב 8: דיווח מהשטח (lib/reports.php). kind: update (עדכון) · done (השלב בוצע —
+        -- חובה לפחות תמונה אחת). visible — הלקוח והעו"ד רואים בפורטל (ברירת מחדל: כן).
+        -- הקבצים עצמם ב-files, בתיקייה "תמונות מהשטח / <שלב>". מחיקה = deleted_at.
+        CREATE TABLE IF NOT EXISTS reports (
+            id          INTEGER PRIMARY KEY,
+            project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            stage_id    INTEGER REFERENCES stages(id) ON DELETE SET NULL,
+            kind        TEXT NOT NULL DEFAULT 'update' CHECK (kind IN ('update','done')),
+            text        TEXT NOT NULL DEFAULT '',
+            visible     INTEGER NOT NULL DEFAULT 1,
+            created_by  INTEGER NOT NULL,
+            created_at  TEXT NOT NULL,
+            deleted_at  TEXT
+        );
+        CREATE INDEX IF NOT EXISTS reports_project ON reports (project_id, created_at);
+        CREATE TABLE IF NOT EXISTS report_files (
+            report_id INTEGER NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+            file_id   INTEGER NOT NULL REFERENCES files(id),
+            sort      INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (report_id, file_id)
+        );
         CREATE TABLE IF NOT EXISTS stage_templates (
             id          INTEGER PRIMARY KEY,
             name        TEXT NOT NULL UNIQUE,
