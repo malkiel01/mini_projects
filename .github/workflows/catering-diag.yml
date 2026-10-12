@@ -58,6 +58,16 @@ jobs:
           done
           exit 1
 
+      - name: Send a test push (only when the commit message has [test-push])
+        if: contains(github.event.head_commit.message, '[test-push]')
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER_: ${{ secrets.DEPLOY_USER }}
+          PATH_: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30 "$USER_@$HOST" \
+            "cd '$PATH_/catering-menu' && php -d display_errors=1 2>&1" < .github/diag/catering-testpush.php
+
       - name: Read push state from the server
         env:
           HOST: ${{ secrets.DEPLOY_HOST }}
