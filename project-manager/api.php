@@ -13,7 +13,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/lib/calendar.php';
+require_once __DIR__ . '/lib/messages.php';
 require_once __DIR__ . '/lib/auth.php';
 
 pm_log_install_handlers();
@@ -42,6 +42,8 @@ function pm_reply(int $code, array $payload): never
             'message' => $payload['error'] ?? '', 'data' => ['request' => $req],
         ]);
     }
+    // מיילים שנשלחו בבקשה הזו — הדפדפן מראה "✉️ נשלח מייל ל…"
+    if ($code < 400 && function_exists('pm_notified') && pm_notified()) $payload['notified'] = pm_notified();
     http_response_code($code);
     echo json_encode($payload, JSON_UNESCAPED_UNICODE);
     exit;
@@ -106,7 +108,9 @@ try {
                     // מצב עצמאי: בלי חזרה לדף האפליקציות. כבוי כל עוד האפליקציה בתוך האינדקס.
                     'standalone' => pm_setting('standalone', '0') === '1',
                     'labels' => ['stage' => PM_STAGE_STATUSES, 'project' => PM_PROJECT_STATUSES, 'kind' => PM_PROJECT_KINDS,
-                                 'quote' => PM_QUOTE_STATUSES, 'payment' => PM_PAYMENT_STATUSES, 'method' => PM_PAY_METHODS]];
+                                 'quote' => PM_QUOTE_STATUSES, 'payment' => PM_PAYMENT_STATUSES, 'method' => PM_PAY_METHODS],
+                    // נוסחי ההודעות — אותו נוסח לוואטסאפ / SMS בלחיצה ולמייל האוטומטי
+                    'msg_templates' => pm_msg_templates($user)];
         })(),
 
         'GET contacts'    => ['contacts' => pm_contacts_list($user, (string)($in['kind'] ?? ''),
@@ -150,6 +154,13 @@ try {
         'POST quote-decide' => pm_quote_decide($user, (int)($in['id'] ?? 0), (string)($in['role'] ?? ''),
                                                (string)($in['decision'] ?? ''), (string)($in['note'] ?? '')),
         'POST quote-cancel' => pm_quote_cancel($user, (int)($in['id'] ?? 0), (string)($in['note'] ?? '')),
+        // הודעות (שלב 11)
+        'GET msg-templates'  => ['templates' => pm_msg_templates($user)],
+        'POST msg-template'  => pm_msg_template_save($user, $in),
+        'POST message-log'   => pm_message_log($user, $in),
+        'GET messages'       => pm_messages($user, (int)($in['project_id'] ?? 0)),
+        'POST mail-test'     => pm_mail_test($user),
+
         // יומן ותזכורות (שלב 10)
         'GET calendar'      => pm_calendar($user, (string)($in['from'] ?? ''), (string)($in['to'] ?? '')),
         'GET reminders'     => ['reminders' => pm_reminders($user)],

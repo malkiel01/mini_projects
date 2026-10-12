@@ -52,7 +52,10 @@ const Projects = (() => {
         $('#portal-create').addEventListener('click', () => portalDo('get'));
         $('#portal-renew').addEventListener('click', () => portalDo('renew'));
         $('#portal-revoke').addEventListener('click', () => portalDo('revoke'));
-        $('#portal-copy').addEventListener('click', async () => {
+        for (const [id, channel] of [['#portal-wa', 'whatsapp'], ['#portal-sms', 'sms'], ['#portal-mail', 'email']]) {
+            $(id).addEventListener('click', () => api('message-log', { body: { project_id: cur.project.id, contact_id: portalContact.id, channel, key: 'portal_link', text: portalText } }).catch(() => {}));
+        }
+                $('#portal-copy').addEventListener('click', async () => {
             try { await navigator.clipboard.writeText($('#portal-url').textContent); toast('הועתק'); }
             catch { getSelection().selectAllChildren($('#portal-url')); }
         });
@@ -389,11 +392,25 @@ const Projects = (() => {
         };
         draw();
         try { ({ links } = await api('portal-links', { params: { project_id: cur.project.id } })); draw(); } catch { /* בלי שורת "פתח" */ }
+        renderMessages();
+    }
+
+    /** ההודעות שיצאו בפרויקט — אוטומטיות (מייל) וידניות (וואטסאפ / SMS שנפתחו). */
+    async function renderMessages() {
+        let messages = [];
+        try { ({ messages } = await api('messages', { params: { project_id: cur.project.id } })); } catch { return; }
+        const icon = { email: '✉️', whatsapp: '💬', sms: '📱', copy: '📋' };
+        const status = m => m.status === 'sent' ? 'נשלח' : m.status === 'failed' ? 'לא נשלח' : 'נפתח';
+        $('#msg-hist-title').hidden = !messages.length;
+        $('#msg-hist').innerHTML = messages.slice(0, 30).map(m => `<li class="card static msg-${m.status}">
+            <span class="ficon" aria-hidden="true">${icon[m.channel] || '✉️'}</span>
+            <div class="body"><div class="l1"><span class="one">${esc(m.contact_name || '')}${m.subject ? ' · ' + esc(m.subject) : ''}</span><time class="t">${when(m.at)}</time></div>
+                <div class="l2 one">${m.auto ? 'אוטומטי · ' : ''}${status(m)}${m.body ? ' · ' + esc(m.body.split('\n').find(x => x && !x.startsWith('שלום')) || '') : ''}</div></div></li>`).join('');
     }
 
     // ---- קישור אישי לפורטל ----
 
-    let portalContact = null;
+    let portalContact = null, portalText = '';
 
     function openPortal(id) {
         portalContact = cur.team.find(t => t.id === id);
@@ -419,7 +436,8 @@ const Projects = (() => {
         $('#portal-url').textContent = l.url;
         $('#portal-seen').textContent = l.last_seen_at ? `נפתח לאחרונה ${when(l.last_seen_at)} · ${l.views} כניסות` : 'עוד לא נפתח';
         const what = c.kind === 'supplier' ? 'הגשת הצעות מחיר, בקשות תשלום ואישור קבלה' : 'מצב העבודות, הצעות המחיר והמסמכים, ואישור הצעות';
-        const text = `שלום ${c.name},\nזה הקישור האישי שלך לפרויקט "${cur.project.name}" — ${what}:\n${l.url}\n\n${state.user.display_name}`;
+        const text = renderMsg('portal_link', { 'שם': c.name, 'פרויקט': cur.project.name, 'פרטים': what, 'קישור': l.url });
+        portalText = text;
         const phone = c.whatsapp || c.phone;
         $('#portal-wa').href = `https://wa.me/${phone ? waNumber(phone) : ''}?text=${encodeURIComponent(text)}`;
         $('#portal-sms').hidden = !c.phone;

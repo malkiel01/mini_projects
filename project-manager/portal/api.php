@@ -16,7 +16,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/../lib/portal.php';
+require_once __DIR__ . '/../lib/messages.php';
 require_once __DIR__ . '/../lib/auth.php';
 
 pm_log_install_handlers();

@@ -6,7 +6,7 @@ async function init() {
     try {
         const me = await api('me');
         Object.assign(state, { user: me.user, trades: me.trades, templates: me.templates, labels: me.labels, standalone: me.standalone,
-            fileTypes: me.file_types, maxUpload: me.max_upload });
+            fileTypes: me.file_types, maxUpload: me.max_upload, msgTemplates: me.msg_templates });
     } catch (e) {
         $('#main').innerHTML = `<p class="empty">${esc(e.message)}</p>`;
         return;
@@ -27,7 +27,7 @@ function route() {
     const [, view = '', a = '', b = '', c = ''] = location.hash.split('/');
     const inProject = view === 'p' && Number(a) > 0;
     const section = inProject ? 'project' : view === 'contacts' ? (b === 'import' ? 'import' : 'contacts')
-        : view === 'settings' && isDev() ? 'settings' : view === 'share' ? 'share' : view === 'calendar' ? 'calendar' : 'projects';
+        : view === 'settings' ? 'settings' : view === 'share' ? 'share' : view === 'calendar' ? 'calendar' : 'projects';
     const inner = inProject || section === 'share' || section === 'import'; // מסך פנימי: חץ חזרה במקום הניווט הראשי
 
     $$('.view').forEach(v => { v.hidden = v.id !== 'view-' + section; });

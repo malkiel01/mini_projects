@@ -290,7 +290,8 @@ const Quotes = (() => {
 
     async function sendToClient(stageId) {
         const st = stageOf(stageId);
-        try { await refresh(await api('quotes-send', { body: { stage_id: stageId } })); }
+        let mailed = [];
+        try { const r = await api('quotes-send', { body: { stage_id: stageId } }); mailed = (r.notified || []).map(n => n.name); await refresh(r); }
         catch (e) { toast(e.message, true); return; }
         const client = project.team.find(t => t.roles.includes('לקוח'));
         const list = data.quotes.filter(q => q.stage_id === stageId && q.status === 'sent')
@@ -299,12 +300,8 @@ const Quotes = (() => {
             + (q.valid_until ? `, בתוקף עד ${shortDate(q.valid_until)}` : '') + (q.recommended ? ' — ההמלצה שלי' : ''));
         // הקישור האישי של הלקוח — שם הוא רואה את ההצעות ומאשר בעצמו
         const url = await portalUrl(project.project.id, client?.id);
-        const text = `שלום${client ? ' ' + client.name : ''},\n`
-            + `הצעות מחיר לשלב "${st.name}" בפרויקט ${project.project.name}:\n\n${lines.join('\n')}\n\n`
-            + 'הסכומים כוללים מע"מ. '
-            + (url ? `לצפייה בהצעות ולאישור:\n${url}\n\n` : 'אשמח לאישורך על ההצעה שבחרת.\n')
-            + state.user.display_name;
-        Send.open({ title: 'שליחת ההצעות ללקוח', recipients: [{ contact: client, label: 'הלקוח', text }],
+        const text = renderMsg('quotes_sent', { 'שם': client?.name || '', 'פרויקט': project.project.name, 'שלב': st.name, 'פרטים': lines.join('\n'), 'קישור': url });
+        Send.open({ title: 'שליחת ההצעות ללקוח', recipients: [{ contact: client, label: 'הלקוח', text }], key: 'quotes_sent', projectId: project.project.id, mailed,
             subject: 'הצעות מחיר — ' + project.project.name,
             hint: 'ההצעות סומנו "נשלחה ללקוח", והשלב ממתין לאישורו. בקישור האישי הלקוח רואה את ההצעות ומאשר בעצמו. אם הוא עונה בטלפון — פותחים את ההצעה ורושמים את ההחלטה.' });
     }
@@ -337,14 +334,14 @@ const Quotes = (() => {
         const ids = $$('#invite-suppliers input:checked').map(cb => Number(cb.value));
         if (!ids.length) { formError(form, 'בחרו ספק אחד לפחות'); return; }
         await busy($('button[type=submit]', form), form, async () => {
-            const { invites } = await api('quote-invite', { body: { stage_id: stageId, supplier_ids: ids } });
+            const { invites, notified } = await api('quote-invite', { body: { stage_id: stageId, supplier_ids: ids } });
             $('#invite-dlg').close();
             project = await Projects.reload();
             const st = stageOf(stageId), p = project.project;
             Send.open({ title: 'בקשת הצעות — ' + st.name, subject: `בקשת הצעת מחיר — ${st.name}, ${p.name}`,
+                key: 'quote_invite', projectId: p.id, mailed: (notified || []).map(n => n.name),
                 recipients: invites.map(i => ({ contact: i.contact, label: i.contact.name,
-                    text: `שלום ${i.contact.name},\nאשמח להצעת מחיר לשלב "${st.name}" בפרויקט ${p.name}${p.address ? ` (${p.address})` : ''}.\n`
-                        + `להגשת ההצעה — סכום וקובץ:\n${i.url}\n\n${state.user.display_name}` })),
+                    text: renderMsg('quote_invite', { 'שם': i.contact.name, 'פרויקט': p.name, 'שלב': st.name, 'כתובת': p.address ? ` (${p.address})` : '', 'קישור': i.url }) })),
                 hint: 'כל ספק — ההודעה והקישור שלו (בוחרים למעלה). הצעה שספק מגיש נכנסת לכאן לבד, ותקבל מייל.' });
             render();
         });

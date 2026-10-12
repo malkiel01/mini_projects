@@ -439,6 +439,32 @@ function pm_migrate(PDO $pdo): void
             cancelled_at TEXT
         );
         CREATE INDEX IF NOT EXISTS appointments_date ON appointments (date);
+        -- שלב 11: הודעות (lib/messages.php). כל הודעה ללקוח / עו"ד / ספק — אוטומטית
+        -- (מייל מהשרת) או ידנית (וואטסאפ / SMS / מייל בלחיצה). status: sent · failed ·
+        -- opened (נפתח בוואטסאפ / SMS / מייל במכשיר של המנהל — לא ודאי שנשלח).
+        CREATE TABLE IF NOT EXISTS messages (
+            id         INTEGER PRIMARY KEY,
+            project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+            contact_id INTEGER REFERENCES contacts(id) ON DELETE SET NULL,
+            channel    TEXT NOT NULL,
+            key        TEXT NOT NULL DEFAULT '',
+            recipient  TEXT NOT NULL DEFAULT '',
+            subject    TEXT NOT NULL DEFAULT '',
+            body       TEXT NOT NULL DEFAULT '',
+            status     TEXT NOT NULL,
+            auto       INTEGER NOT NULL DEFAULT 0,
+            created_by INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS messages_project ON messages (project_id, id);
+        -- נוסחי ההודעות של כל מנהל (ברירת המחדל — בקוד). {שם} {פרויקט} {קישור} …
+        CREATE TABLE IF NOT EXISTS message_templates (
+            owner_id INTEGER NOT NULL,
+            key      TEXT NOT NULL,
+            subject  TEXT NOT NULL,
+            body     TEXT NOT NULL,
+            PRIMARY KEY (owner_id, key)
+        );
         CREATE TABLE IF NOT EXISTS stage_templates (
             id          INTEGER PRIMARY KEY,
             name        TEXT NOT NULL UNIQUE,

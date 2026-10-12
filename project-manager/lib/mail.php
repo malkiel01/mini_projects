@@ -16,7 +16,8 @@ function pm_mail_available(): bool
 
 function pm_mail_from(): string
 {
-    $host = preg_replace('/[^A-Za-z0-9.\-]/', '', (string)($_SERVER['HTTP_HOST'] ?? 'localhost')) ?: 'localhost';
+    $host = explode(':', (string)($_SERVER['HTTP_HOST'] ?? 'localhost'))[0]; // בלי פורט
+    $host = preg_replace('/[^A-Za-z0-9.\-]/', '', $host) ?: 'localhost';
     return 'no-reply@' . preg_replace('/^www\./', '', $host);
 }
 

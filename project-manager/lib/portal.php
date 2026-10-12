@@ -567,6 +567,10 @@ function pm_quote_invite(array $user, int $stageId, array $supplierIds): array
         $out[] = ['contact' => ['id' => (int)$contact['id']] + $contact, 'url' => $link['url']];
     }
     pm_event($user, (int)$p['id'], 'quote', "📨 בקשת הצעת מחיר — {$stage['name']}: " . implode(', ', $names), ['stage' => $stageId]);
+    foreach ($out as $x) {
+        pm_notify((int)$p['id'], (int)$x['contact']['id'], 'quote_invite', ['שלב' => $stage['name'], 'כתובת' => $p['address'] ? " ({$p['address']})" : '',
+            'קישור' => $x['url']], $user);
+    }
     if ($stage['status'] === 'planned') pm_stage_set_status($user, $stage, 'quotes');
     return ['invites' => $out];
 }

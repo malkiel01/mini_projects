@@ -63,6 +63,8 @@ async function api(action, { params = {}, body = null } = {}) {
     try { data = await res.json(); } catch { /* תשובה שאינה JSON */ }
     if (res.status === 401) { location.href = 'login.html'; throw new Error(data.error || 'נדרשת כניסה'); }
     if (!res.ok) throw new Error(data.error || `תקלה (${res.status})`);
+    // מיילים אוטומטיים שנשלחו בפעולה הזו (שלב 11)
+    if (data.notified?.length) setTimeout(() => toast('✉️ נשלח מייל ל' + data.notified.map(n => n.name).join(', ')), 1800);
     return data;
 }
 
@@ -153,7 +155,7 @@ async function busy(btn, form, fn) {
  * recipients: [{ contact, label, text }] — כשיש כמה (לקוח ועו"ד), בוחרים למעלה.
  */
 const Send = (() => {
-    let list = [], cur = null, subject = '', bound = false;
+    let list = [], cur = null, subject = '', bound = false, meta = {};
 
     function bind() {
         if (bound) return;
@@ -164,15 +166,25 @@ const Send = (() => {
             catch { $('#send-text').select(); }
         });
         $('#send-who').addEventListener('change', e => { pick(Number(e.target.value)); });
+        // מה נפתח — נרשם בהיסטוריית ההודעות של הפרויקט (לא ודאי שנשלח)
+        for (const [id, channel] of [['#send-wa', 'whatsapp'], ['#send-sms', 'sms'], ['#send-mail', 'email'], ['#send-copy', 'copy']]) {
+            $(id).addEventListener('click', () => {
+                api('message-log', { body: { project_id: meta.projectId, contact_id: cur?.contact?.id || null, channel, key: meta.key, subject, text: cur?.text || '' } }).catch(() => {});
+            });
+        }
     }
 
-    function open({ title, recipients, subject: subj = '', hint = '' }) {
+    /** mailed — שמות שכבר קיבלו מייל אוטומטי בפעולה שפתחה את החלון. */
+    function open({ title, recipients, subject: subj = '', hint = '', key = '', projectId = null, mailed = [] }) {
         bind();
         list = recipients.length ? recipients : [{ contact: null, label: '', text: '' }];
         subject = subj;
+        meta = { key, projectId };
         $('#send-dlg-title').textContent = title;
-        $('#send-hint').textContent = hint;
-        $('#send-hint').hidden = !hint;
+        // מה שכבר יצא במייל אוטומטי בפעולה הזו
+        const full = (mailed.length ? `✉️ כבר נשלח מייל ל${mailed.join(', ')}. ` : '') + hint;
+        $('#send-hint').textContent = full;
+        $('#send-hint').hidden = !full;
         $('#send-who').hidden = list.length < 2;
         $('#send-who').innerHTML = list.map((r, i) => `<label><input type="radio" name="send-who" value="${i}"${i ? '' : ' checked'}><span>${esc(r.label)}</span></label>`).join('');
         pick(0);
@@ -199,6 +211,17 @@ const Send = (() => {
 
     return { open };
 })();
+
+/**
+ * הודעה מנוסח (הגדרות ← הודעות): renderMsg('quotes_sent', { שם, פרויקט, שלב, … }).
+ * אותו נוסח שהשרת שולח במייל האוטומטי. {מנהל} — שם המשתמש.
+ */
+function renderMsg(key, vars) {
+    const t = (state.msgTemplates || []).find(x => x.key === key);
+    if (!t) return '';
+    const all = { 'מנהל': state.user.display_name, 'כתובת': '', 'פרטים': '', 'סכום': '', 'שלב': '', 'קישור': '', ...vars };
+    return t.body.replace(/\{([^}]+)\}/g, (m, k) => (k in all ? String(all[k]) : m)).trim();
+}
 
 /** הקישור האישי לפורטל של איש קשר בפרויקט — נוצר אם עוד אין. '' כשאי אפשר. */
 async function portalUrl(projectId, contactId) {
