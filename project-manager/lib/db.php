@@ -273,6 +273,50 @@ function pm_migrate(PDO $pdo): void
             created_at TEXT NOT NULL
         );
         -- תבניות שלבים — המפתח עורך. stages_json: [{"name": "...", "trade": "..."}]
+        -- שלב 5: הצעות מחיר (lib/quotes.php). סכום באגורות, כולל מע"מ. לא נמחקות —
+        -- ביטול הוא status = 'cancelled'. version עולה בכל שינוי מהותי (סכום, קובץ,
+        -- תנאים, תוקף), ואישור ישן לא עובר לגרסה חדשה.
+        CREATE TABLE IF NOT EXISTS quotes (
+            id          INTEGER PRIMARY KEY,
+            project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            stage_id    INTEGER NOT NULL REFERENCES stages(id),
+            supplier_id INTEGER NOT NULL REFERENCES contacts(id),
+            amount      INTEGER NOT NULL,
+            valid_until TEXT NOT NULL DEFAULT '',
+            terms       TEXT NOT NULL DEFAULT '',
+            notes       TEXT NOT NULL DEFAULT '',
+            file_id     INTEGER REFERENCES files(id),
+            recommended INTEGER NOT NULL DEFAULT 0,
+            status      TEXT NOT NULL DEFAULT 'open',
+            version     INTEGER NOT NULL DEFAULT 1,
+            created_by  INTEGER NOT NULL,
+            created_at  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL,
+            sent_at     TEXT
+        );
+        CREATE INDEX IF NOT EXISTS quotes_stage ON quotes (stage_id);
+        CREATE INDEX IF NOT EXISTS quotes_project ON quotes (project_id);
+        -- אישור או דחייה של הצעה — בידי הלקוח או העו"ד. נשמר לתמיד, עם צילום מצב של
+        -- ההצעה כפי שהייתה. method: manual (המנהל רשם, למשל "אישר בטלפון") · click ·
+        -- signature (פורטל, שלב 6).
+        CREATE TABLE IF NOT EXISTS approvals (
+            id            INTEGER PRIMARY KEY,
+            project_id    INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            stage_id      INTEGER NOT NULL,
+            quote_id      INTEGER NOT NULL REFERENCES quotes(id),
+            quote_version INTEGER NOT NULL,
+            role          TEXT NOT NULL CHECK (role IN ('client','lawyer')),
+            decision      TEXT NOT NULL CHECK (decision IN ('approved','rejected')),
+            method        TEXT NOT NULL DEFAULT 'manual',
+            by_name       TEXT NOT NULL DEFAULT '',
+            recorded_by   INTEGER,
+            note          TEXT NOT NULL DEFAULT '',
+            snapshot_json TEXT NOT NULL,
+            ip            TEXT NOT NULL DEFAULT '',
+            ua            TEXT NOT NULL DEFAULT '',
+            created_at    TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS approvals_quote ON approvals (quote_id);
         CREATE TABLE IF NOT EXISTS stage_templates (
             id          INTEGER PRIMARY KEY,
             name        TEXT NOT NULL UNIQUE,

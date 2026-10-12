@@ -13,7 +13,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/lib/files.php';
+require_once __DIR__ . '/lib/quotes.php';
 require_once __DIR__ . '/lib/auth.php';
 
 pm_log_install_handlers();
@@ -98,7 +98,8 @@ try {
                     'file_types' => PM_FILE_TYPES, 'max_upload' => pm_max_upload(),
                     // מצב עצמאי: בלי חזרה לדף האפליקציות. כבוי כל עוד האפליקציה בתוך האינדקס.
                     'standalone' => pm_setting('standalone', '0') === '1',
-                    'labels' => ['stage' => PM_STAGE_STATUSES, 'project' => PM_PROJECT_STATUSES, 'kind' => PM_PROJECT_KINDS]];
+                    'labels' => ['stage' => PM_STAGE_STATUSES, 'project' => PM_PROJECT_STATUSES, 'kind' => PM_PROJECT_KINDS,
+                                 'quote' => PM_QUOTE_STATUSES]];
         })(),
 
         'GET contacts'    => ['contacts' => pm_contacts_list($user, (string)($in['kind'] ?? ''),
@@ -132,6 +133,16 @@ try {
         'POST file-move'   => pm_file_move($user, (int)($in['id'] ?? 0), (int)($in['folder_id'] ?? 0)),
         'POST file-link'   => pm_file_link($user, (int)($in['id'] ?? 0), (int)($in['folder_id'] ?? 0), !empty($in['add'])),
         'POST file-delete' => pm_file_delete($user, (int)($in['id'] ?? 0)),
+
+        // הצעות מחיר (שלב 5)
+        'GET quotes'        => pm_quotes($user, (int)($in['project_id'] ?? 0)),
+        'POST quote'        => pm_quote_save($user, $in),
+        'POST quote-recommend' => pm_quote_recommend($user, (int)($in['id'] ?? 0), !empty($in['on'])),
+        'POST quotes-send'  => pm_quotes_send($user, (int)($in['stage_id'] ?? 0)),
+        'POST quote-decide' => pm_quote_decide($user, (int)($in['id'] ?? 0), (string)($in['role'] ?? ''),
+                                               (string)($in['decision'] ?? ''), (string)($in['note'] ?? '')),
+        'POST quote-cancel' => pm_quote_cancel($user, (int)($in['id'] ?? 0), (string)($in['note'] ?? '')),
+        'GET approval'      => ['approval' => pm_approval_get($user, (int)($in['id'] ?? 0))],
         'POST max-upload'  => $isDev ? (function () use ($user, $in) {
             $mb = max(1, min(2000, (int)($in['mb'] ?? 100)));
             pm_setting_set('max_upload_mb', (string)$mb);

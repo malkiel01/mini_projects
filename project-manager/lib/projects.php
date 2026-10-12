@@ -336,6 +336,10 @@ function pm_contact_name(int $id): string
 function pm_stage_delete(array $user, int $id): array
 {
     $s = pm_stage_row($user, $id);
+    // הצעות ואישורים לא נמחקים — וגם לא השלב שהם שייכים לו
+    $q = pm_db()->prepare('SELECT COUNT(*) FROM quotes WHERE stage_id = ?');
+    $q->execute([$id]);
+    if ($q->fetchColumn()) throw new PmError('יש בשלב הצעות מחיר — אי אפשר למחוק אותו. אפשר לשנות לו שם או סדר', 422);
     pm_db()->prepare('DELETE FROM stages WHERE id = ?')->execute([$id]);
     pm_event($user, (int)$s['project_id'], 'stage_removed', "הוסר שלב: {$s['name']}", ['stage' => $id]);
     return pm_project_get($user, (int)$s['project_id']);

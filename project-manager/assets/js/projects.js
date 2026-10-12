@@ -167,7 +167,7 @@ const Projects = (() => {
 
     async function showProject(id, p, sub) {
         bind();
-        pane = ['timeline', 'files', 'stages', 'team', 'details'].includes(p) ? p : 'timeline';
+        pane = ['timeline', 'files', 'stages', 'quotes', 'team', 'details'].includes(p) ? p : 'timeline';
         subFolder = sub;
         $$('#project-nav a').forEach(a => {
             a.href = `#/p/${id}/${a.dataset.pane}`;
@@ -199,6 +199,7 @@ const Projects = (() => {
         if (pane === 'timeline') renderTimeline();
         if (pane === 'files') Files.show(cur.project, Number(subFolder) || 0);
         if (pane === 'stages') renderStages();
+        if (pane === 'quotes') Quotes.show(cur);
         if (pane === 'team') renderTeam();
         if (pane === 'details') renderDetails();
     }
@@ -298,10 +299,10 @@ const Projects = (() => {
     }
 
     /** ספקים של בעל הפרויקט — קודם מי שבתחום של השלב. */
-    async function fillSuppliers(select, tradeId, value) {
+    async function fillSuppliers(select, tradeId, value, ownerId = cur.project.owner_id) {
         let all = [];
         try { all = await contactsOf('supplier'); } catch { /* ריק */ }
-        all = all.filter(c => c.owner_id === cur.project.owner_id && (!c.archived || c.id === value));
+        all = all.filter(c => c.owner_id === ownerId && (!c.archived || c.id === value));
         const opt = c => ({ value: c.id, label: c.name + (c.company ? ' · ' + c.company : '') });
         const inTrade = tradeId ? all.filter(c => c.trades.includes(tradeId)) : [];
         const rest = all.filter(c => !inTrade.includes(c));
@@ -415,5 +416,12 @@ const Projects = (() => {
         });
     }
 
-    return { showList, showProject };
+    /** הפרויקט מחדש מהשרת — אחרי פעולה בלשונית אחרת שמזיזה שלבים (הצעות). */
+    async function reload() {
+        cur = await api('project', { params: { id: cur.project.id } });
+        header();
+        return cur;
+    }
+
+    return { showList, showProject, reload, fillSuppliers };
 })();

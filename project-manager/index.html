@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=11">
+    <link rel="stylesheet" href="assets/css/app.css?v=12">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -27,7 +27,7 @@
 
     ניווט בכתובת (#/…), כדי שכפתור "חזרה" של הטלפון יעבוד:
       #/                 הפרויקטים (מסך הבית)
-      #/p/<id>/<pane>    פרויקט: timeline · files · stages · team · details
+      #/p/<id>/<pane>    פרויקט: timeline · files · stages · quotes · team · details
                          (#/p/<id>/files/<folder> — תיקייה)
       #/contacts/<kind>  אנשי קשר: client · supplier · lawyer
       #/settings/<pane>  הגדרות מפתח: trades · templates · access
@@ -55,6 +55,7 @@
         <a data-pane="timeline">ציר זמן</a>
         <a data-pane="files">קבצים</a>
         <a data-pane="stages">שלבים</a>
+        <a data-pane="quotes">הצעות</a>
         <a data-pane="team">צוות</a>
         <a data-pane="details">פרטים</a>
     </nav>
@@ -108,6 +109,14 @@
                     <button class="btn primary" id="add-stage"><span aria-hidden="true">+</span><span class="add-label">שלב</span></button>
                 </div>
                 <ul id="stage-list" class="list rows-list"></ul>
+            </div>
+
+            <div class="pane" id="pane-quotes" hidden>
+                <div class="toolbar">
+                    <p class="q-sum" id="q-sum"></p>
+                    <button class="btn primary" id="add-quote"><span aria-hidden="true">+</span><span class="add-label">הצעה</span></button>
+                </div>
+                <div id="quote-list"></div>
             </div>
 
             <div class="pane" id="pane-team" hidden>
@@ -355,6 +364,70 @@
         </form>
     </dialog>
 
+    <!-- ===== חלון: הצעת מחיר ===== -->
+    <dialog id="quote-dlg" aria-labelledby="quote-dlg-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="quote-dlg-title">הצעת מחיר</h2>
+                <button type="submit" class="btn primary">שמירה</button>
+            </header>
+            <div class="sheet-body">
+                <p class="chip-row" id="quote-state" hidden></p>
+                <div class="fields">
+                    <label class="f"><span>שלב *</span><select name="stage_id" required></select></label>
+                    <label class="f"><span>ספק *</span><select name="supplier_id" required></select></label>
+                    <label class="f"><span>סכום כולל מע"מ (₪) *</span><input name="amount" inputmode="decimal" maxlength="14" dir="ltr" required autocomplete="off"></label>
+                    <label class="f"><span>בתוקף עד</span><input name="valid_until" type="date"></label>
+                    <label class="f wide"><span>תנאי תשלום</span><input name="terms" maxlength="1000" placeholder="למשל: 30% מקדמה, 70% בסיום"></label>
+                    <label class="f wide"><span>קובץ ההצעה</span><select name="file_id"></select></label>
+                </div>
+                <div class="row-btns">
+                    <label class="btn ghost upload-btn">📎 העלאת קובץ<input type="file" id="quote-pick" accept="application/pdf,image/*" hidden></label>
+                    <a class="btn ghost" id="quote-file-open" target="_blank" rel="noopener" hidden>פתיחת הקובץ</a>
+                </div>
+                <div class="uploads" id="quote-upload" aria-live="polite"></div>
+                <label class="f"><span>הערות</span><textarea name="notes" rows="2" maxlength="2000"></textarea></label>
+                <p class="hint" id="quote-version-hint" hidden>שינוי בסכום, בקובץ, בתנאים או בתוקף יוצר גרסה חדשה — ואישור קודם לא חל עליה.</p>
+                <p class="error" role="alert" hidden></p>
+
+                <div id="quote-actions" hidden>
+                    <h3 class="sec-title">החלטה</h3>
+                    <label class="f"><span>הערה להחלטה</span><input id="decision-note" maxlength="1000" placeholder="למשל: אישר בטלפון"></label>
+                    <div class="row-btns wrap" id="decision-btns"></div>
+                    <h3 class="sec-title" id="decisions-title" hidden>היסטוריה</h3>
+                    <ul class="decisions" id="decisions"></ul>
+                    <div class="row-btns wrap">
+                        <button type="button" class="btn ghost" id="quote-recommend">⭐ המלצה ללקוח</button>
+                        <button type="button" class="btn ghost danger" id="quote-cancel">ביטול ההצעה</button>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- ===== חלון: שליחת ההצעות ללקוח ===== -->
+    <dialog id="send-dlg" aria-labelledby="send-dlg-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="send-dlg-title">שליחה ללקוח</h2>
+                <span></span>
+            </header>
+            <div class="sheet-body">
+                <p class="hint" id="send-to"></p>
+                <label class="f"><span>ההודעה</span><textarea id="send-text" rows="8" maxlength="3000"></textarea></label>
+                <div class="row-btns wrap">
+                    <a class="btn primary" id="send-wa" target="_blank" rel="noopener">וואטסאפ</a>
+                    <a class="btn ghost" id="send-sms">SMS</a>
+                    <a class="btn ghost" id="send-mail">אימייל</a>
+                    <button type="button" class="btn ghost" id="send-copy">העתקה</button>
+                </div>
+                <p class="hint">ההצעות סומנו "נשלחה ללקוח", והשלב ממתין לאישורו. כשהלקוח עונה — פותחים את ההצעה ורושמים את ההחלטה. בשלב הבא: קישור אישי שבו הלקוח מאשר בעצמו.</p>
+            </div>
+        </form>
+    </dialog>
+
     <!-- ===== חלון: קובץ ===== -->
     <dialog id="file-dlg" aria-labelledby="file-dlg-title">
         <form method="dialog" novalidate>
@@ -380,6 +453,7 @@
                 </section>
                 <p class="error" role="alert" hidden></p>
                 <div class="row-btns wrap">
+                    <button type="button" class="btn ghost" id="file-quote">🧾 הצעת מחיר מהקובץ</button>
                     <a class="btn ghost" id="file-download">הורדה</a>
                     <button type="button" class="btn ghost danger" id="file-delete">מחיקה</button>
                 </div>
@@ -522,13 +596,14 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=11"></script>
-    <script src="assets/js/contacts.js?v=11"></script>
-    <script src="assets/js/files.js?v=11"></script>
+    <script src="assets/js/core.js?v=12"></script>
+    <script src="assets/js/contacts.js?v=12"></script>
+    <script src="assets/js/files.js?v=12"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=11"></script>
-    <script src="assets/js/projects.js?v=11"></script>
-    <script src="assets/js/settings.js?v=11"></script>
-    <script src="assets/js/app.js?v=11"></script>
+    <script src="assets/js/share.js?v=12"></script>
+    <script src="assets/js/projects.js?v=12"></script>
+    <script src="assets/js/quotes.js?v=12"></script>
+    <script src="assets/js/settings.js?v=12"></script>
+    <script src="assets/js/app.js?v=12"></script>
 </body>
 </html>
