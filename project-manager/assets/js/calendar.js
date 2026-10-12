@@ -7,6 +7,11 @@
 
 const Calendar = (() => {
     let bound = false, items = [], today = '', month = '', day = '', projects = [];
+    // חגי חו"ל (יום טוב שני של גלויות) — מוצגים כברירת מחדל; נשמר במכשיר
+    let diaspora = (() => { try { return localStorage.getItem('pm.diaspora') !== '0'; } catch { return true; } })();
+    const HOL_ICON = { yomtov: '✡️', chol: '🌿', erev: '🕯️', fast: '🍽️', minor: '🎉', modern: '🇮🇱', rc: '🌒' };
+    // מה מוצג בתא כשיש כמה: חג לפני חוה"מ, לפני צום, לפני ערב…
+    const HOL_RANK = { yomtov: 0, modern: 1, fast: 2, minor: 3, chol: 4, erev: 5, rc: 6 };
     const DAYS = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
     const ICON = { appointment: '📅', stage_start: '🏁', stage_end: '🏁', payment: '💳', quote: '🧾' };
     const kindClass = k => k.startsWith('stage') ? 'stage' : k;
@@ -19,6 +24,12 @@ const Calendar = (() => {
         $('#cal-prev').addEventListener('click', () => shift(-1));
         $('#cal-next').addEventListener('click', () => shift(1));
         $('#cal-today').addEventListener('click', () => { location.hash = '#/calendar/' + today; });
+        $('#cal-diaspora').checked = diaspora;
+        $('#cal-diaspora').addEventListener('change', e => {
+            diaspora = e.target.checked;
+            try { localStorage.setItem('pm.diaspora', diaspora ? '1' : '0'); } catch { /* לא חובה */ }
+            loadMonth(month, day);
+        });
         $('#add-appt').addEventListener('click', () => openAppt(null));
         $('#cal-grid').addEventListener('click', e => {
             const c = e.target.closest('[data-day]');
@@ -45,6 +56,7 @@ const Calendar = (() => {
         const form = $('#appt-dlg form');
         form.addEventListener('submit', e => { e.preventDefault(); saveAppt(); });
         form.elements.project_id.addEventListener('change', () => fillContacts(null));
+        form.elements.date.addEventListener('change', apptHoliday);
         $('#appt-cancel').addEventListener('click', cancelAppt);
         $('#cal-sync').addEventListener('toggle', e => { if (e.target.open) loadLink(false); });
         $('#cal-renew').addEventListener('click', () => { if (confirm('ליצור קישור חדש? הקישור הקודם יפסיק להתעדכן בטלפון.')) loadLink(true); });
@@ -113,7 +125,8 @@ const Calendar = (() => {
     }
 
     function drawMonth(start) {
-        $('#cal-month').textContent = parse(month + '-01').toLocaleDateString('he-IL', { month: 'long', year: 'numeric' });
+        const m0 = parse(month + '-01');
+        $('#cal-month').innerHTML = `${esc(m0.toLocaleDateString('he-IL', { month: 'long', year: 'numeric' }))} <small>${esc(HebCal.monthSpan(m0.getFullYear(), m0.getMonth()))}</small>`;
         const byDay = new Map();
         for (const x of items) { if (!byDay.has(x.date)) byDay.set(x.date, []); byDay.get(x.date).push(x); }
         let html = DAYS.map(d => `<span class="dow" aria-hidden="true">${d}</span>`).join('');
@@ -122,9 +135,15 @@ const Calendar = (() => {
             const k = ymd(d), list = byDay.get(k) || [];
             const kinds = [...new Set(list.map(x => kindClass(x.kind)))];
             const late = list.some(x => x.late);
-            html += `<button type="button" class="cday${k.startsWith(month) ? '' : ' out'}${k === today ? ' today' : ''}${late ? ' late' : ''}" data-day="${k}"
-                aria-label="${d.toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' })}${list.length ? `, ${list.length} פריטים` : ''}">
-                <span class="n">${d.getDate()}</span><span class="dots">${kinds.map(c => `<i class="k-${c}"></i>`).join('')}</span></button>`;
+            const h = HebCal.info(d, diaspora);
+            // בתא — קודם מה שחל בארץ; יום טוב שני של גלויות רק כשאין משהו אחר
+            const top = h.holidays.slice().sort((a, b) => (a.place === 'diaspora') - (b.place === 'diaspora') || HOL_RANK[a.kind] - HOL_RANK[b.kind])[0];
+            const hol = top ? ` hol-${top.kind}${top.place === 'diaspora' ? ' dia' : ''}` : '';
+            html += `<button type="button" class="cday${k.startsWith(month) ? '' : ' out'}${k === today ? ' today' : ''}${late ? ' late' : ''}${d.getDay() === 6 ? ' sat' : ''}${hol}" data-day="${k}"
+                aria-label="${d.toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' })}, ${h.label}${top ? ', ' + top.name : ''}${list.length ? `, ${list.length} פריטים` : ''}">
+                <span class="n">${d.getDate()}</span><span class="hd" aria-hidden="true">${h.day}</span>
+                ${top ? `<span class="hol" aria-hidden="true">${esc(top.short)}</span>` : ''}
+                <span class="dots">${kinds.map(c => `<i class="k-${c}"></i>`).join('')}</span></button>`;
         }
         $('#cal-grid').innerHTML = html;
     }
@@ -135,8 +154,12 @@ const Calendar = (() => {
         day = d;
         $$('#cal-grid .cday').forEach(c => c.setAttribute('aria-pressed', String(c.dataset.day === d)));
         const label = parse(d).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' });
-        $('#cal-day-title').textContent = d === today ? `היום — ${label}` : label;
-        $('#cal-day').innerHTML = dayItems().map((x, i) => {
+        const h = HebCal.info(parse(d), diaspora);
+        $('#cal-day-title').textContent = (d === today ? `היום — ${label}` : label) + ` · ${h.label}`;
+        const hol = h.holidays.map(x => `<li class="card static hol-row hol-${x.kind}">
+            <span class="when" aria-hidden="true">${HOL_ICON[x.kind]}</span>
+            <div class="body"><div class="l1"><span class="one">${esc(x.name)}</span>${x.place === 'diaspora' ? '<span class="chip">חו״ל</span>' : x.place === 'il' ? '<span class="chip">בארץ</span>' : ''}</div></div></li>`).join('');
+        $('#cal-day').innerHTML = hol + dayItems().map((x, i) => {
             const contact = x.contact_phone ? `<a class="icon-btn" href="https://wa.me/${esc(waNumber(x.contact_phone))}?text=${encodeURIComponent(`תזכורת: ${x.title}, ${parse(x.date).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'numeric' })}${x.time ? ' ב-' + x.time : ''}${x.location ? ', ' + x.location : ''}.`)}" target="_blank" rel="noopener" aria-label="תזכורת בוואטסאפ ל${esc(x.contact_name)}">💬</a>` : '';
             const nav = x.location ? `<a class="icon-btn" href="https://waze.com/ul?q=${encodeURIComponent(x.location)}" target="_blank" rel="noopener" aria-label="ניווט אל ${esc(x.location)}">📍</a>` : '';
             return `<li class="card k-row ${x.late ? 'late' : ''}${x.done ? ' done' : ''}" data-i="${i}" tabindex="0" role="button">
@@ -144,7 +167,19 @@ const Calendar = (() => {
                 <div class="body"><div class="l1"><span class="one">${esc(x.title)}</span></div>
                     <div class="l2 one">${[esc(x.project_name), x.contact_name ? esc(x.contact_name) : '', x.location ? esc(x.location) : '', x.late ? '<b class="late">באיחור</b>' : ''].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>')}</div></div>
                 <div class="acts">${contact}${nav}</div></li>`;
-        }).join('') || '<p class="empty">אין כלום ביום הזה.</p>';
+        }).join('') || (hol ? '' : '<p class="empty">אין כלום ביום הזה.</p>');
+    }
+
+    /** בחלון הפגישה: "שימו לב — יום כיפור" / שבת. */
+    function apptHoliday() {
+        const v = $('#appt-dlg form').elements.date.value;
+        const box = $('#appt-hol');
+        if (!v) { box.hidden = true; return; }
+        const d = parse(v), h = HebCal.info(d, false);
+        const hard = h.holidays.filter(x => ['yomtov', 'fast', 'modern', 'erev'].includes(x.kind));
+        const warn = [d.getDay() === 6 ? 'שבת' : '', ...hard.map(x => x.name)].filter(Boolean);
+        box.hidden = !warn.length;
+        box.textContent = warn.length ? `⚠️ שימו לב — ${warn.join(', ')} (${h.label})` : '';
     }
 
     // ================= פגישה =================
@@ -167,6 +202,7 @@ const Calendar = (() => {
         $('#appt-dlg-title').textContent = x ? 'פגישה' : 'פגישה חדשה';
         $('#appt-cancel').hidden = !x;
         await fillContacts(x?.contact_id ?? null);
+        apptHoliday();
         dlg.showModal();
     }
 
