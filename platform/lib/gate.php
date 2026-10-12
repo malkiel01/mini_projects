@@ -90,7 +90,8 @@ function can_use(array $user, string $app, array $cfg): bool
     $g->execute([$user['id'], $app, $category]);
     $byKind = [];
     foreach ($g->fetchAll(\PDO::FETCH_ASSOC) as $row) $byKind[$row['kind']] = (bool)$row['allowed'];
-    return $byKind['app'] ?? $byKind['category'] ?? false;
+    if (array_key_exists('app', $byKind)) return $byKind['app'];
+    return empty($cfg['restricted']) && ($byKind['category'] ?? false);
 }
 
 /**

@@ -41,6 +41,7 @@ function registry_load(): array
             'name'        => $app['name'],
             'icon'        => $app['icon'],
             'description' => $app['description'],
+            'restricted'  => $app['restricted'] ?? false,
             'category'    => $app['category'],
             'href'        => $folder . '/' . ($app['entry'] ?? ''),
             'install'     => registry_install($folder, $app['install'] ?? []),
@@ -86,6 +87,7 @@ function registry_validate(string $folder, $app, array $categoryIds): ?string
     if (!in_array($app['category'], $categoryIds, true)) return "קטגוריה לא מוכרת: '{$app['category']}'";
     if (isset($app['entry']) && !registry_safe_path($app['entry'])) return "entry לא תקין";
     if (isset($app['gate']) && !is_bool($app['gate'])) return "gate חייב להיות true או false";
+    if (isset($app['restricted']) && !is_bool($app['restricted'])) return "restricted חייב להיות true או false";
     $install = $app['install'] ?? [];
     if (!is_array($install)) return 'install חייב להיות אובייקט';
     foreach (['pwa', 'offline'] as $k) {

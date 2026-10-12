@@ -42,7 +42,7 @@ function admin_state(array $admin): never
         'apps'       => array_map(fn($a) => [
             'id' => $a['id'], 'name' => $a['name'], 'icon' => $a['icon'],
             'category' => $a['category'], 'default_category' => $a['default_category'],
-            'hidden' => $a['hidden'], 'install_ok' => $a['install_ok'],
+            'hidden' => $a['hidden'], 'install_ok' => $a['install_ok'], 'restricted' => $a['restricted'],
             'can_install' => $a['install']['pwa'] || $a['install']['apk'] || $a['install']['store'],
         ], apps_effective()),
     ]);

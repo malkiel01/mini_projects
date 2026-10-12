@@ -9,7 +9,8 @@
  * הרשאה של משתמש רגיל:
  *   1. אפליקציה מוסתרת — אף אחד מלבד המנהל.
  *   2. הרשאה ישירה לאפליקציה (מותר / חסום) — גוברת.
- *   3. אחרת — הרשאה לקטגוריה שהאפליקציה נמצאת בה.
+ *   3. אחרת — הרשאה לקטגוריה שהאפליקציה נמצאת בה. חוץ מאפליקציה "restricted"
+ *      ב-app.json: היא נפתחת רק בהרשאה ישירה (סעיף 2).
  *   4. אחרת — לא.
  * הרשאה לקטגוריה כוללת גם אפליקציות שיתווספו אליה בעתיד.
  */
@@ -110,6 +111,8 @@ function can_see(array $app, array $grants): bool
 {
     if ($app['hidden']) return false;
     if (array_key_exists($app['id'], $grants['apps'])) return $grants['apps'][$app['id']];
+    // restricted: הרשאה לקטגוריה לא פותחת אותה — רק אישור ישיר לאפליקציה.
+    if ($app['restricted']) return false;
     return $grants['categories'][$app['category']] ?? false;
 }
 
