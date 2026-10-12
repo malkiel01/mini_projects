@@ -54,6 +54,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .top h1 { font-size: 1.05rem; font-weight: 600; flex: 1; }
 .top .icon-btn { color: inherit; }
+.top .logo { border-radius: 6px; flex: none; margin-inline-start: var(--s1); }
 .who { font-size: .8rem; opacity: .9; max-width: 45%; }
 .badge { border: 1px solid currentColor; border-radius: 99px; padding: 0 6px; margin-inline-start: var(--s1); font-size: .72rem; }
 

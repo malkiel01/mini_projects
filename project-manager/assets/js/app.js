@@ -350,4 +350,7 @@ async function loadAccess() {
     } catch (e) { toast(e.message, true); }
 }
 
+// אפליקציה עצמאית במסך הבית. בלי service worker אנדרואיד לא מציע התקנה.
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+
 init();

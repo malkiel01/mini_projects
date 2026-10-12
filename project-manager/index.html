@@ -8,11 +8,23 @@
     <title>ניהול פרויקטים</title>
     <link rel="stylesheet" href="assets/css/app.css?v=3">
     <link rel="icon" href="assets/icon.svg">
+    <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="פרויקטים">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="robots" content="noindex, nofollow">
 </head>
 <body>
     <a class="skip" href="#main">דילוג לתוכן</a>
+<!--
+    אפליקציה עצמאית: אין כאן קישור לדף הכלים הראשי. הכניסה היא הקישור הישיר
+    לכאן, או האייקון במסך הבית (כמו ממשק המנהל של הקייטרינג).
+-->
     <header class="top">
-        <a class="icon-btn" href="../" aria-label="חזרה לאפליקציות">→</a>
+        <img class="logo" src="assets/icon.svg" alt="" width="28" height="28">
         <h1>ניהול פרויקטים</h1>
         <div class="who" id="who"></div>
         <button class="icon-btn" id="logout" aria-label="יציאה" title="יציאה">🚪</button>
@@ -46,7 +58,7 @@
             <ul id="trade-list" class="rows"></ul>
         </section>
         <section id="access-view" hidden>
-            <p class="hint">הרשמה חדשה מגיעה לכאן. האישור נעשה ב<a href="../">ממשק הניהול של הפלטפורמה</a>: אישור המשתמש, ואז "✓ מותר" על "ניהול פרויקטים".</p>
+            <p class="hint">הרשמה חדשה מגיעה לכאן. האישור נעשה ב<a href="../" target="_blank" rel="noopener">ממשק הניהול של הפלטפורמה</a>: אישור המשתמש, ואז "✓ מותר" על "ניהול פרויקטים".</p>
             <h2 class="sec-title">ממתינים לאישור</h2>
             <ul id="pending-list" class="rows"></ul>
             <h2 class="sec-title">מנהלי פרויקט</h2>
