@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=18">
+    <link rel="stylesheet" href="assets/css/app.css?v=19">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -196,7 +196,8 @@
                 <button class="btn primary" id="add-appt"><span aria-hidden="true">+</span><span class="add-label">פגישה</span></button>
             </div>
             <div class="cal-grid" id="cal-grid"></div>
-            <div class="cal-legend" aria-hidden="true"><i class="k-appointment"></i>פגישה<i class="k-stage"></i>שלב<i class="k-payment"></i>תשלום<i class="k-quote"></i>תוקף הצעה</div>
+            <div class="cal-legend"><span aria-hidden="true"><i class="k-appointment"></i>פגישה<i class="k-stage"></i>שלב<i class="k-payment"></i>תשלום<i class="k-quote"></i>תוקף הצעה</span>
+                <label class="chip-toggle sm"><input type="checkbox" id="cal-diaspora"><span>חגי חו״ל</span></label></div>
             <h2 class="sec-title" id="cal-day-title"></h2>
             <ul class="list rows-list" id="cal-day"></ul>
             <details class="cal-sync" id="cal-sync">
@@ -506,6 +507,7 @@
                     <label class="f wide"><span>הערות</span><textarea name="notes" rows="2" maxlength="2000"></textarea></label>
                 </div>
                 <datalist id="appt-titles"><option value="פגישה עם הלקוח"><option value="ביקור באתר"><option value="מדידה"><option value="פגישה עם ספק"><option value="מסירה"><option value="פיקוח"></datalist>
+                <p class="hint warn" id="appt-hol" hidden></p>
                 <p class="error" role="alert" hidden></p>
                 <button type="button" class="btn ghost danger" id="appt-cancel" hidden>ביטול הפגישה</button>
             </div>
@@ -859,19 +861,20 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=18"></script>
-    <script src="assets/js/contacts.js?v=18"></script>
-    <script src="assets/js/device-contacts.js?v=18"></script>
-    <script src="assets/js/files.js?v=18"></script>
-    <script src="assets/js/lightbox.js?v=18"></script>
-    <script src="assets/js/field.js?v=18"></script>
+    <script src="assets/js/core.js?v=19"></script>
+    <script src="assets/js/contacts.js?v=19"></script>
+    <script src="assets/js/device-contacts.js?v=19"></script>
+    <script src="assets/js/files.js?v=19"></script>
+    <script src="assets/js/lightbox.js?v=19"></script>
+    <script src="assets/js/field.js?v=19"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=18"></script>
-    <script src="assets/js/projects.js?v=18"></script>
-    <script src="assets/js/quotes.js?v=18"></script>
-    <script src="assets/js/payments.js?v=18"></script>
-    <script src="assets/js/calendar.js?v=18"></script>
-    <script src="assets/js/settings.js?v=18"></script>
-    <script src="assets/js/app.js?v=18"></script>
+    <script src="assets/js/share.js?v=19"></script>
+    <script src="assets/js/projects.js?v=19"></script>
+    <script src="assets/js/quotes.js?v=19"></script>
+    <script src="assets/js/payments.js?v=19"></script>
+    <script src="assets/js/hebcal.js?v=19"></script>
+    <script src="assets/js/calendar.js?v=19"></script>
+    <script src="assets/js/settings.js?v=19"></script>
+    <script src="assets/js/app.js?v=19"></script>
 </body>
 </html>
