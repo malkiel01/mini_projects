@@ -95,7 +95,10 @@ function scan_php(string $file): void
             [$id, $text, $line] = $tok;
             if (in_array($id, [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) continue;
             if ($id === T_STRING || $id === T_NAME_QUALIFIED) { $pendingName = $text; continue; }
-            if ($id === T_CONSTANT_ENCAPSED_STRING && preg_match(HEB, $text)) {
+            // בלי עברית אבל עם חץ ("📎 {name} ← {folder}") — גם זה מפתח, כדי שהחץ יתהפך בשפות משמאל לימין
+            if ($id === T_CONSTANT_ENCAPSED_STRING && !preg_match(HEB, $text) && preg_match('/[←→]/u', $text) && array_intersect($stack, PHP_TR) && ($marks[$line] ?? null) !== 'none') {
+                add_key(substr($text, 1, -1), rel($file) . ":$line");
+            } elseif ($id === T_CONSTANT_ENCAPSED_STRING && preg_match(HEB, $text)) {
                 $q = $text[0];
                 $s = substr($text, 1, -1);
                 $s = $q === "'" ? strtr($s, ["\\'" => "'", '\\\\' => '\\']) : stripcslashes($s);
@@ -149,6 +152,7 @@ function scan_js(string $file, ?string $src = null, int $lineBase = 0): void
             while ($j < $n && $src[$j] !== $c) { if ($src[$j] === '\\') $j++; elseif ($src[$j] === "\n") $line++; $j++; }
             $s = js_unescape(substr($src, $i + 1, $j - $i - 1));
             if (preg_match(HEB, $s)) found($s, $stack, JS_TR, JS_NONE, $marks[$start] ?? null, rel($file) . ':' . ($start + $lineBase));
+            elseif (preg_match('/[←→]/u', $s) && array_intersect($stack, JS_TR) && ($marks[$start] ?? null) !== 'none') add_key($s, rel($file) . ':' . ($start + $lineBase));
             $i = $j; $last = 'v'; $ident = ''; continue;
         }
         if ($c === '`' || ($c === '}' && $tpl && end($tpl) === 0)) {

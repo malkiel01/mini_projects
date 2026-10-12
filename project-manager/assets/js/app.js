@@ -16,7 +16,7 @@ async function init() {
     const lang = state.user.lang || '';
     if (!lang) api('lang', { body: { lang: I18n.lang() } }).catch(() => {});
     else if (lang !== I18n.lang() && I18n.LANGS[lang] && canStore()) { I18n.set(lang); return; }
-    $('#logout').before(I18n.picker(l => { api('lang', { body: { lang: l } }).catch(() => {}).finally(() => I18n.set(l)); }));
+    $('#logout').before(I18n.picker(l => { api('lang', { body: { lang: l } }).catch(() => {}).finally(() => I18n.set(l)); }, true));
     $('#who').innerHTML = `<span class="name">${esc(state.user.display_name)}</span>`
         + `<span class="badge">${esc(isDev() ? t('מפתח') : t('מנהל פרויקט'))}</span>`;
     $$('.dev-only').forEach(el => { el.hidden = !isDev(); });

@@ -41,7 +41,7 @@ async function call(action, body) {
 
 async function load() {
     await I18n.ready;
-    $('header.top').appendChild(I18n.picker());
+    $('header.top').appendChild(I18n.picker(undefined, true));
     if (!token) return fail(t('בקישור חסר החלק האישי. פתחו אותו שוב מההודעה שקיבלתם.'));
     try { data = await call('view'); }
     catch (e) { return e.status === 404 ? fail(e.message) : fail(t('אין חיבור לשרת. נסו שוב בעוד רגע.')); }

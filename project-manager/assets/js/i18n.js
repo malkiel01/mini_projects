@@ -25,15 +25,11 @@ const I18n = (() => {
     let dict = {};
 
     function stored() { try { return localStorage.getItem(KEY) || ''; } catch { return ''; } }
+    // ברירת המחדל — עברית, גם כשהטלפון באנגלית: מי שכבר עובד באפליקציה לא מופתע.
+    // שפה אחרת — רק כשנבחרה (בבורר, בחשבון, או השפה של איש הקשר בפורטל).
     function detect() {
         const s = stored();
-        if (LANGS[s]) return s;
-        for (const l of navigator.languages || [navigator.language || '']) {
-            const c = String(l).slice(0, 2).toLowerCase();
-            if (c === 'iw') return 'he';
-            if (LANGS[c]) return c;
-        }
-        return 'he';
+        return LANGS[s] ? s : 'he';
     }
 
     const lang = detect();
@@ -106,13 +102,14 @@ const I18n = (() => {
         if (l !== lang) location.reload();
     }
 
-    /** <select> לבחירת שפה — לכניסה, להגדרות ולפורטל. */
-    function picker(onChange = set) {
+    /** <select> לבחירת שפה — לכניסה, לכותרת ולפורטל. short — קוד קצר (EN), לכותרת הצרה בטלפון. */
+    function picker(onChange = set, short = false) {
         const sel = document.createElement('select');
         sel.className = 'lang-pick';
         sel.setAttribute('aria-label', 'Language · שפה'); // i18n-none
         sel.setAttribute('data-no-i18n', '');
-        sel.innerHTML = Object.entries(LANGS).map(([k, v]) => `<option value="${k}"${k === lang ? ' selected' : ''}>${v.name}</option>`).join('');
+        sel.innerHTML = Object.entries(LANGS).map(([k, v]) => `<option value="${k}"${k === lang ? ' selected' : ''}>${short ? k.toUpperCase() : v.name}</option>`).join('');
+        if (short) sel.title = LANGS[lang].name;
         sel.addEventListener('change', () => onChange(sel.value));
         return sel;
     }

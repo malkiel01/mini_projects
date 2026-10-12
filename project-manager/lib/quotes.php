@@ -172,7 +172,7 @@ function pm_quote_save(array $user, array $in, ?array $actor = null): array
                 pm_event($actor, $projectId, 'quote', $text, ['quote' => $id, 'version' => $version, 'changed' => array_values($material)], [
                     'supplier' => $supplier, 'stage' => $stage['name'],
                     'fields'   => implode(', ', array_map(fn($k) => $what[$k], $material)),
-                    'amounts'  => $old['amount'] != $f['amount'] ? ' (' . pm_money((int)$old['amount']) . ' → ' . pm_money($f['amount']) . ')' : '',
+                    'amounts'  => $old['amount'] != $f['amount'] ? ' (' . pm_money((int)$old['amount']) . ' → ' . pm_money($f['amount']) . ')' : '', // i18n-none
                 ]);
                 if ($reset && in_array($old['status'], ['client_approved', 'approved'], true)
                     && in_array($stage['status'], ['client_approval', 'lawyer_approval', 'approved'], true)) {
