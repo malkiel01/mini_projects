@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=19">
+    <link rel="stylesheet" href="assets/css/app.css?v=20">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -52,7 +52,7 @@
         <a href="#/" data-nav="projects">פרויקטים</a>
         <a href="#/calendar" data-nav="calendar">יומן<span class="nbadge" id="rem-badge" hidden></span></a>
         <a href="#/contacts/client" data-nav="contacts">אנשי קשר</a>
-        <a href="#/settings/general" data-nav="settings" class="dev-only" hidden>הגדרות</a>
+        <a href="#/settings/messages" data-nav="settings">הגדרות</a>
     </nav>
     <nav class="tabs sub-tabs" id="project-nav" aria-label="חלקי הפרויקט" hidden>
         <a data-pane="timeline">ציר זמן</a>
@@ -148,6 +148,8 @@
                 </div>
                 <ul id="team-list" class="list rows-list"></ul>
                 <p class="hint">ספק שמשויך לשלב מצטרף לצוות לבד.</p>
+                <h2 class="sec-title" id="msg-hist-title" hidden>הודעות שנשלחו</h2>
+                <ul class="list rows-list" id="msg-hist"></ul>
             </div>
 
             <div class="pane" id="pane-details" hidden>
@@ -259,11 +261,21 @@
         <!-- ===== הגדרות מפתח ===== -->
         <section id="view-settings" class="view" hidden>
             <div class="seg kinds" role="tablist" aria-label="הגדרות">
-                <a role="tab" data-set="general" href="#/settings/general"><span>כללי</span></a>
-                <a role="tab" data-set="trades" href="#/settings/trades"><span>תחומים</span></a>
-                <a role="tab" data-set="templates" href="#/settings/templates"><span>תבניות שלבים</span></a>
-                <a role="tab" data-set="access" href="#/settings/access"><span>מנהלים</span></a>
-                <a role="tab" data-set="log" href="#/settings/log"><span>יומן</span></a>
+                <a role="tab" data-set="messages" href="#/settings/messages"><span>הודעות</span></a>
+                <a role="tab" data-set="general" href="#/settings/general" class="dev-only" hidden><span>כללי</span></a>
+                <a role="tab" data-set="trades" href="#/settings/trades" class="dev-only" hidden><span>תחומים</span></a>
+                <a role="tab" data-set="templates" href="#/settings/templates" class="dev-only" hidden><span>תבניות שלבים</span></a>
+                <a role="tab" data-set="access" href="#/settings/access" class="dev-only" hidden><span>מנהלים</span></a>
+                <a role="tab" data-set="log" href="#/settings/log" class="dev-only" hidden><span>יומן</span></a>
+            </div>
+            <div class="pane" id="set-messages" hidden>
+                <p class="hint">כשקורה משהו שנוגע ללקוח, לעו"ד או לספק — נשלח אליו מייל אוטומטי (ללקוח — לפי "ערוצי הודעות" בכרטיס שלו). וואטסאפ ו-SMS — בלחיצה, עם אותו נוסח. משתנים: <code>{שם}</code> <code>{פרויקט}</code> <code>{שלב}</code> <code>{סכום}</code> <code>{פרטים}</code> <code>{קישור}</code> <code>{מנהל}</code>.</p>
+                <div class="mail-test">
+                    <button type="button" class="btn ghost" id="mail-test">✉️ מייל בדיקה לעצמי</button>
+                    <span class="hint" id="mail-test-result"></span>
+                </div>
+                <div id="msg-templates"></div>
+                <p class="hint">שליחה אוטומטית בוואטסאפ או ב-SMS (בלי לחיצה) — דורשת ספק בתשלום; אפשר להוסיף בהמשך.</p>
             </div>
             <div class="pane" id="set-general" hidden>
                 <form class="toolbar" id="max-upload-form">
@@ -861,20 +873,20 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=19"></script>
-    <script src="assets/js/contacts.js?v=19"></script>
-    <script src="assets/js/device-contacts.js?v=19"></script>
-    <script src="assets/js/files.js?v=19"></script>
-    <script src="assets/js/lightbox.js?v=19"></script>
-    <script src="assets/js/field.js?v=19"></script>
+    <script src="assets/js/core.js?v=20"></script>
+    <script src="assets/js/contacts.js?v=20"></script>
+    <script src="assets/js/device-contacts.js?v=20"></script>
+    <script src="assets/js/files.js?v=20"></script>
+    <script src="assets/js/lightbox.js?v=20"></script>
+    <script src="assets/js/field.js?v=20"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=19"></script>
-    <script src="assets/js/projects.js?v=19"></script>
-    <script src="assets/js/quotes.js?v=19"></script>
-    <script src="assets/js/payments.js?v=19"></script>
-    <script src="assets/js/hebcal.js?v=19"></script>
-    <script src="assets/js/calendar.js?v=19"></script>
-    <script src="assets/js/settings.js?v=19"></script>
-    <script src="assets/js/app.js?v=19"></script>
+    <script src="assets/js/share.js?v=20"></script>
+    <script src="assets/js/projects.js?v=20"></script>
+    <script src="assets/js/quotes.js?v=20"></script>
+    <script src="assets/js/payments.js?v=20"></script>
+    <script src="assets/js/hebcal.js?v=20"></script>
+    <script src="assets/js/calendar.js?v=20"></script>
+    <script src="assets/js/settings.js?v=20"></script>
+    <script src="assets/js/app.js?v=20"></script>
 </body>
 </html>

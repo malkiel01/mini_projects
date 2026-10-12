@@ -219,7 +219,26 @@ function pm_payment_request(array $user, int $id): array
         pm_event($user, (int)$p['project_id'], 'payment', "נשלחה דרישת תשלום: {$p['title']} — " . pm_contact_name((int)$p['supplier_id']) . ', ' . pm_money((int)$p['amount'])
             . ($p['needs_lawyer'] ? ' (ממתין לאישור עו"ד)' : ''), ['payment' => $id]);
     }
+    pm_payment_notify_request($user, $p);
     return pm_payments($user, (int)$p['project_id']);
+}
+
+/** מיילים לדרישת תשלום (שלב 11): לעו"ד — כשנדרש אישורו; למשלם — כשאפשר לשלם. */
+function pm_payment_notify_request(array $actor, array $p, bool $afterLawyer = false): void
+{
+    $pid = (int)$p['project_id'];
+    $pr = pm_db()->prepare('SELECT client_id, lawyer_id FROM projects WHERE id = ?');
+    $pr->execute([$pid]);
+    $proj = $pr->fetch();
+    $what = $p['title'] . ' — ' . pm_contact_name((int)$p['supplier_id']) . ($p['due_date'] ? ', עד ' . pm_short_date($p['due_date']) : '');
+    $vars = ['פרטים' => $what, 'סכום' => pm_money((int)$p['amount'])];
+    $waitLawyer = $p['needs_lawyer'] && !$p['lawyer_approved_at'] && !$afterLawyer;
+    if ($waitLawyer && $proj['lawyer_id']) {
+        pm_notify($pid, (int)$proj['lawyer_id'], 'payment_lawyer', $vars + ['קישור' => pm_notify_link($pid, (int)$proj['lawyer_id'])], $actor);
+        return; // המשלם יקבל אחרי אישור העו"ד
+    }
+    $payer = $p['payer'] === 'lawyer' ? $proj['lawyer_id'] : $proj['client_id'];
+    if ($payer) pm_notify($pid, (int)$payer, 'payment_request', $vars + ['קישור' => pm_notify_link($pid, (int)$payer)], $actor);
 }
 
 /** אישור העו"ד לתשלום — מהפורטל (click) או שהמנהל רושם (manual). */
@@ -237,6 +256,7 @@ function pm_payment_lawyer_approve(array $user, int $id, string $note, string $m
        ->execute([pm_now(), $byName, $method, $note, pm_now(), $id]);
     pm_event($actor, (int)$p['project_id'], 'payment', "העו\"ד אישר לתשלום: {$p['title']} — " . pm_money((int)$p['amount'])
         . ($note !== '' ? ": $note" : '') . ($method === 'manual' ? " (נרשם ע\"י {$user['display_name']})" : ' — בקישור'), ['payment' => $id]);
+    pm_payment_notify_request($actor, $p, true);
     return pm_payments($user, (int)$p['project_id']);
 }
 
@@ -269,6 +289,9 @@ function pm_payment_proof_add(array $user, int $id, array $in, string $byRole, s
     $db->prepare("UPDATE payments SET status = 'paid', updated_at = ? WHERE id = ?")->execute([pm_now(), $id]);
     pm_event($actor, (int)$p['project_id'], 'payment', "💳 דווח תשלום: {$p['title']} — " . pm_money($amount) . ' ב' . PM_PAY_METHODS[$method]
         . ' (' . pm_short_date($paidOn) . ')' . ($note !== '' ? ": $note" : '') . ($fileId ? ', עם אסמכתא' : ''), ['payment' => $id]);
+    // מייל לספק: דווח תשלום אליו — לאשר שהכסף התקבל
+    pm_notify((int)$p['project_id'], (int)$p['supplier_id'], 'proof_supplier', ['פרטים' => $p['title'], 'סכום' => pm_money($amount),
+        'קישור' => pm_notify_link((int)$p['project_id'], (int)$p['supplier_id'])], $actor);
     return pm_payments($user, (int)$p['project_id']);
 }
 

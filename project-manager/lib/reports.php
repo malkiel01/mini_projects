@@ -134,6 +134,14 @@ function pm_report_save(array $user, array $in): array
         $db->rollBack();
         throw $e;
     }
+    // מייל ללקוח: השלב בוצע (אחרי ה-commit — יצירת קישור פותחת טרנזקציה משלה)
+    if ($kind === 'done' && $visible) {
+        $proj = pm_project_row($user, $projectId);
+        if ($proj['client_id']) {
+            pm_notify($projectId, (int)$proj['client_id'], 'stage_done', ['שלב' => $stage['name'], 'פרטים' => $text !== '' ? "\n$text" : '',
+                'קישור' => pm_notify_link($projectId, (int)$proj['client_id'])], $user);
+        }
+    }
     return ['reports' => pm_reports_of($projectId), 'saved' => $id];
 }
 

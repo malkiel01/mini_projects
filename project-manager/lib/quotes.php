@@ -239,6 +239,15 @@ function pm_quotes_send(array $user, int $stageId): array
        ->execute([pm_now(), pm_now(), $stageId]);
     pm_event($user, (int)$stage['project_id'], 'quote', "נשלח ללקוח לאישור: {$stage['name']} ($n " . ($n > 1 ? 'הצעות' : 'הצעה') . ')', ['stage' => $stageId]);
     if (in_array($stage['status'], ['planned', 'quotes'], true)) pm_stage_set_status($user, $stage, 'client_approval');
+    // מייל ללקוח (שלב 11) — עם רשימת ההצעות והקישור האישי
+    $p = pm_project_row($user, (int)$stage['project_id']);
+    if ($p['client_id']) {
+        $l = $db->prepare("SELECT q.amount, q.recommended, c.name FROM quotes q JOIN contacts c ON c.id = q.supplier_id WHERE q.stage_id = ? AND q.status = 'sent' ORDER BY q.recommended DESC, q.amount");
+        $l->execute([$stageId]);
+        $lines = array_map(fn($x) => ($x['recommended'] ? '⭐ ' : '• ') . $x['name'] . ' — ' . pm_money((int)$x['amount']) . ($x['recommended'] ? ' (ההמלצה שלי)' : ''), $l->fetchAll());
+        pm_notify((int)$p['id'], (int)$p['client_id'], 'quotes_sent',
+            ['שלב' => $stage['name'], 'פרטים' => implode("\n", $lines), 'קישור' => pm_notify_link((int)$p['id'], (int)$p['client_id'])], $user);
+    }
     return pm_quotes($user, (int)$stage['project_id']);
 }
 
@@ -328,6 +337,20 @@ function pm_quote_decide(array $user, int $id, string $role, string $decision, s
     } catch (Throwable $e) {
         $db->rollBack();
         throw $e;
+    }
+    // מיילים (שלב 11): לעו"ד — כשהלקוח אישר ונדרש עו"ד; לספקים — כשההחלטה סופית
+    $pid = (int)$q['project_id'];
+    if ($decision === 'approved' && $status === 'client_approved' && $p['lawyer_id']) {
+        pm_notify($pid, (int)$p['lawyer_id'], 'quote_lawyer', ['שלב' => $stage['name'], 'פרטים' => $supplier, 'סכום' => pm_money((int)$q['amount']),
+            'קישור' => pm_notify_link($pid, (int)$p['lawyer_id'])], $actor);
+    }
+    if ($decision === 'approved' && $status === 'approved') {
+        $all = $db->prepare("SELECT id, supplier_id, amount, status FROM quotes WHERE stage_id = ? AND (id = ? OR status = 'declined')");
+        $all->execute([$q['stage_id'], $id]);
+        foreach ($all->fetchAll() as $x) {
+            pm_notify($pid, (int)$x['supplier_id'], 'quote_result', ['שלב' => $stage['name'], 'סכום' => pm_money((int)$x['amount']),
+                'פרטים' => (int)$x['id'] === $id ? 'אושרה ✅' : 'לא נבחרה הפעם', 'קישור' => pm_notify_link($pid, (int)$x['supplier_id'])], $actor);
+        }
     }
     return pm_quotes($user, (int)$q['project_id']);
 }

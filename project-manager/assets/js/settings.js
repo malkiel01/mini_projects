@@ -1,4 +1,4 @@
-// הגדרות מפתח: תחומים, תבניות שלבים ומנהלים.
+// הגדרות: הודעות (לכל מנהל); כללי, תחומים, תבניות שלבים, מנהלים ויומן — למפתח.
 'use strict';
 
 const Settings = (() => {
@@ -18,6 +18,16 @@ const Settings = (() => {
             });
         });
         $('#trade-list').addEventListener('click', tradeAction);
+        $('#msg-templates').addEventListener('submit', e => { e.preventDefault(); saveMsgTemplate(e.target, false); });
+        $('#msg-templates').addEventListener('click', e => { if (e.target.closest('[data-reset]')) saveMsgTemplate(e.target.closest('form'), true); });
+        $('#mail-test').addEventListener('click', async () => {
+            const out = $('#mail-test-result');
+            out.textContent = 'שולח…';
+            try {
+                const r = await api('mail-test', { body: {} });
+                out.textContent = r.sent ? `השרת קיבל את המייל ל-${r.to} (מאת ${r.from}). אם לא הגיע תוך כמה דקות — בדוק בספאם.` : `השרת לא הצליח לשלוח ל-${r.to}. נרשם ביומן.`;
+            } catch (e) { out.textContent = e.message; }
+        });
         $('#standalone').addEventListener('change', async e => {
             const on = e.target.checked;
             await busy(null, null, async () => {
@@ -71,17 +81,41 @@ const Settings = (() => {
 
     function show(pane) {
         bind();
-        pane = ['general', 'trades', 'templates', 'access', 'log'].includes(pane) ? pane : 'general';
+        // מנהל רואה רק "הודעות"; המפתח — הכול
+        const allowed = isDev() ? ['messages', 'general', 'trades', 'templates', 'access', 'log'] : ['messages'];
+        pane = allowed.includes(pane) ? pane : 'messages';
         $$('#view-settings [data-set]').forEach(a => a.setAttribute('aria-selected', String(a.dataset.set === pane)));
         $$('#view-settings .pane').forEach(el => { el.hidden = el.id !== 'set-' + pane; });
         if (pane === 'general') {
             $('#standalone').checked = !!state.standalone;
             $('#max-upload').value = Math.round(state.maxUpload / 1048576);
         }
+        if (pane === 'messages') renderMsgTemplates();
         if (pane === 'trades') renderTrades();
         if (pane === 'templates') renderTemplates();
         if (pane === 'access') loadAccess();
         if (pane === 'log') { loadLog(); loadToken(); }
+    }
+
+    // ---- נוסחי הודעות (שלב 11) ----
+
+    function renderMsgTemplates() {
+        $('#msg-templates').innerHTML = (state.msgTemplates || []).map(t => `<form class="msg-tpl" data-key="${t.key}" novalidate>
+            <div class="mt-head"><b class="one">${esc(t.label)}</b><span class="chip">${esc(t.to)}</span>${t.custom ? '<span class="chip">נוסח שלך</span>' : ''}</div>
+            <label class="f"><span>נושא (במייל)</span><input name="subject" maxlength="200" value="${esc(t.subject)}"></label>
+            <label class="f"><span>הנוסח</span><textarea name="body" rows="6" maxlength="3000">${esc(t.body)}</textarea></label>
+            <p class="error" role="alert" hidden></p>
+            <div class="row-btns"><button class="btn primary sm">שמירה</button>${t.custom ? '<button type="button" class="btn ghost sm" data-reset>חזרה לנוסח המקורי</button>' : ''}</div>
+        </form>`).join('');
+    }
+
+    async function saveMsgTemplate(form, reset) {
+        const el = form.elements;
+        await busy($('.btn.primary', form), form, async () => {
+            ({ templates: state.msgTemplates } = await api('msg-template', { body: { key: form.dataset.key, subject: el.subject.value, body: el.body.value, reset } }));
+            renderMsgTemplates();
+            toast(reset ? 'חזר לנוסח המקורי' : 'הנוסח נשמר');
+        });
     }
 
     // ---- תחומים ----

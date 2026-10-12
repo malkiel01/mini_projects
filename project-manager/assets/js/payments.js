@@ -229,7 +229,8 @@ const Payments = (() => {
     /** דרישת תשלום: מסמנים, ושולחים הודעה עם הקישור האישי — למשלם, ולעו"ד כשנדרש אישורו. */
     async function sendRequest() {
         const p = current;
-        try { await refresh(await api('payment-request', { body: { id: p.id } })); }
+        let mailed = [];
+        try { const r = await api('payment-request', { body: { id: p.id } }); mailed = (r.notified || []).map(n => n.name); await refresh(r); }
         catch (e) { formError($('#payment-dlg form'), e.message); return; }
         $('#payment-dlg').close();
         const st = p.stage_id ? stageOf(p.stage_id) : null;
@@ -240,15 +241,14 @@ const Payments = (() => {
         for (const [c, role] of [[client, 'client'], [lawyer, 'lawyer']]) {
             if (!c) continue;
             const url = await portalUrl(project.project.id, c.id);
-            const body = role === 'lawyer' && waitLawyer
-                ? `דרישת תשלום לאישורך בפרויקט ${project.project.name}:\n${what}`
-                : `דרישת תשלום בפרויקט ${project.project.name}:\n${what}` + (waitLawyer ? '\nהתשלום — אחרי אישור עורך הדין.' : '');
+            const key = role === 'lawyer' && waitLawyer ? 'payment_lawyer' : 'payment_request';
             recipients.push({ contact: c, label: role === 'client' ? 'ללקוח' : 'לעו"ד',
-                text: `שלום ${c.name},\n${body}\n\n${url ? `פרטי הבנק של הספק, ${role === 'lawyer' && waitLawyer ? 'אישור' : 'והעלאת אסמכתא אחרי התשלום'}:\n${url}\n\n` : ''}${state.user.display_name}` });
+                text: renderMsg(key, { 'שם': c.name, 'פרויקט': project.project.name, 'פרטים': `${p.title}${st ? ` (${st.name})` : ''} — ${p.supplier_name}${p.due_date ? `, עד ${shortDate(p.due_date)}` : ''}${role === 'client' && waitLawyer ? ' (התשלום — אחרי אישור עורך הדין)' : ''}`,
+                    'סכום': money(p.amount), 'קישור': url }) });
         }
         // מי קודם: מי שצריך לפעול עכשיו
         recipients.sort((a, b) => (waitLawyer ? (a.label === 'לעו"ד' ? -1 : 1) : (a.label === (p.payer === 'lawyer' ? 'לעו"ד' : 'ללקוח') ? -1 : 1)));
-        Send.open({ title: 'דרישת תשלום — ' + p.title, recipients, subject: `דרישת תשלום — ${project.project.name}`,
+        Send.open({ title: 'דרישת תשלום — ' + p.title, recipients, subject: `דרישת תשלום — ${project.project.name}`, key: 'payment_request', projectId: project.project.id, mailed,
             hint: 'בקישור האישי: הסכום, פרטי הבנק של הספק, ו"שילמתי" עם העלאת אסמכתא. כשמגיעה אסמכתא — תקבל מייל, ותאשר כאן שהכסף התקבל.' });
     }
 

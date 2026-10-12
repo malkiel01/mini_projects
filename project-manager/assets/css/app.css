@@ -270,6 +270,20 @@ body[data-view="project"] main { padding-bottom: 0; }
 .switch input { width: 20px; min-height: 20px; flex: none; accent-color: var(--brand); }
 #stage-dlg .row-btns .btn { flex: 1 1 0; min-width: 0; }
 
+/* ---- הודעות ---- */
+
+#set-messages { display: grid; gap: var(--s3); }
+#set-messages code { direction: rtl; background: var(--bg); padding: 0 4px; border-radius: 4px; font-size: .85em; }
+.mail-test { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.mail-test .hint { margin: 0; }
+#msg-templates { display: grid; gap: var(--s2); }
+.msg-tpl { display: grid; gap: var(--s2); padding: var(--s3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.mt-head { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
+.mt-head b { flex: 1; min-width: 0; }
+.msg-tpl .row-btns .btn { flex: none; }
+#msg-hist-title { margin-top: var(--s3); }
+#msg-hist .msg-failed .l2 { color: var(--danger); }
+
 /* ---- יומן ---- */
 
 .log-stats { display: flex; gap: var(--s2); flex-wrap: wrap; margin-bottom: var(--s2); font-size: .85rem; color: var(--muted); }
@@ -372,6 +386,20 @@ body[data-view="project"] main { padding-bottom: 0; }
 .decisions .btn { justify-self: start; margin-top: 4px; }
 .sig-img { display: block; max-width: 100%; max-height: 120px; margin-top: 4px; background: #fff; border-radius: 6px; }
 #portal-dlg .code { user-select: all; }
+
+/* ---- הודעות ---- */
+
+#set-messages { display: grid; gap: var(--s3); }
+#set-messages code { direction: rtl; background: var(--bg); padding: 0 4px; border-radius: 4px; font-size: .85em; }
+.mail-test { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.mail-test .hint { margin: 0; }
+#msg-templates { display: grid; gap: var(--s2); }
+.msg-tpl { display: grid; gap: var(--s2); padding: var(--s3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.mt-head { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
+.mt-head b { flex: 1; min-width: 0; }
+.msg-tpl .row-btns .btn { flex: none; }
+#msg-hist-title { margin-top: var(--s3); }
+#msg-hist .msg-failed .l2 { color: var(--danger); }
 
 /* ---- יומן ---- */
 
