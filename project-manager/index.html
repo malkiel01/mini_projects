@@ -2,12 +2,12 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="assets/js/i18n.js?v=21"></script>
+    <script src="assets/js/i18n.js?v=22"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=21">
+    <link rel="stylesheet" href="assets/css/app.css?v=22">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -44,10 +44,21 @@
             <h1 id="title">ניהול פרויקטים</h1>
             <p class="sub" id="subtitle" hidden></p>
         </div>
-        <button class="icon-btn" id="install" type="button" aria-label="התקנת האפליקציה במכשיר" title="התקנה" hidden>📲</button>
-        <button class="who" id="who" type="button" aria-label="החשבון שלי — שינוי סיסמה"></button>
-        <button class="icon-btn" id="logout" aria-label="יציאה" title="יציאה">🚪</button>
+        <!-- הפרופיל: עיגול עם ראשי התיבות, ובלחיצה — תפריט: החשבון, שפה, התקנה, הגדרות, יציאה -->
+        <button class="me-btn" id="me-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="me-menu" aria-label="התפריט שלי"></button>
     </header>
+    <div class="me-menu" id="me-menu" role="menu" aria-labelledby="me-btn" hidden>
+        <div class="me-head" id="me-head"></div>
+        <button type="button" role="menuitem" class="me-item" id="me-account"><span aria-hidden="true">👤</span><span>החשבון שלי</span></button>
+        <div class="me-lang" role="group" aria-labelledby="me-lang-title">
+            <p class="me-label" id="me-lang-title"><span aria-hidden="true">🌐</span> שפה</p>
+            <div class="me-langs" id="me-langs" data-no-i18n></div>
+        </div>
+        <button type="button" role="menuitem" class="me-item" id="install" hidden><span aria-hidden="true">📲</span><span>התקנת האפליקציה במכשיר</span></button>
+        <a role="menuitem" class="me-item" href="#/settings" id="me-settings"><span aria-hidden="true">⚙️</span><span>הגדרות</span></a>
+        <a role="menuitem" class="me-item" href="../" id="me-apps"><span aria-hidden="true">🧰</span><span>דף האפליקציות</span></a>
+        <button type="button" role="menuitem" class="me-item danger" id="logout"><span aria-hidden="true">↩️</span><span>יציאה מהחשבון</span></button>
+    </div>
 
     <nav class="tabs" id="nav" aria-label="ניווט ראשי">
         <a href="#/" data-nav="projects">פרויקטים</a>
@@ -875,20 +886,20 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=21"></script>
-    <script src="assets/js/contacts.js?v=21"></script>
-    <script src="assets/js/device-contacts.js?v=21"></script>
-    <script src="assets/js/files.js?v=21"></script>
-    <script src="assets/js/lightbox.js?v=21"></script>
-    <script src="assets/js/field.js?v=21"></script>
+    <script src="assets/js/core.js?v=22"></script>
+    <script src="assets/js/contacts.js?v=22"></script>
+    <script src="assets/js/device-contacts.js?v=22"></script>
+    <script src="assets/js/files.js?v=22"></script>
+    <script src="assets/js/lightbox.js?v=22"></script>
+    <script src="assets/js/field.js?v=22"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=21"></script>
-    <script src="assets/js/projects.js?v=21"></script>
-    <script src="assets/js/quotes.js?v=21"></script>
-    <script src="assets/js/payments.js?v=21"></script>
-    <script src="assets/js/hebcal.js?v=21"></script>
-    <script src="assets/js/calendar.js?v=21"></script>
-    <script src="assets/js/settings.js?v=21"></script>
-    <script src="assets/js/app.js?v=21"></script>
+    <script src="assets/js/share.js?v=22"></script>
+    <script src="assets/js/projects.js?v=22"></script>
+    <script src="assets/js/quotes.js?v=22"></script>
+    <script src="assets/js/payments.js?v=22"></script>
+    <script src="assets/js/hebcal.js?v=22"></script>
+    <script src="assets/js/calendar.js?v=22"></script>
+    <script src="assets/js/settings.js?v=22"></script>
+    <script src="assets/js/app.js?v=22"></script>
 </body>
 </html>

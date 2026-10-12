@@ -1370,5 +1370,7 @@
     "הדחייה נשמרה. מנהל הפרויקט מעודכן.": "Rejection saved. The project manager has been notified.",
     "שעה אחת": "1 hour",
     "📎 {name} ← {folder}": "📎 {name} → {folder}",
-    "📂 {name} → {folder}": "📂 {name} → {folder}"
+    "📂 {name} → {folder}": "📂 {name} → {folder}",
+    "יציאה מהחשבון": "Sign out",
+    "התפריט שלי": "My menu"
 }

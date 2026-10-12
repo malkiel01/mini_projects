@@ -1388,5 +1388,7 @@
     "הדחייה נשמרה. מנהל הפרויקט מעודכן.": "Refus enregistré. Le chef de projet est informé.",
     "שעה אחת": "1 heure",
     "📎 {name} ← {folder}": "📎 {name} → {folder}",
-    "📂 {name} → {folder}": "📂 {name} → {folder}"
+    "📂 {name} → {folder}": "📂 {name} → {folder}",
+    "יציאה מהחשבון": "Se déconnecter",
+    "התפריט שלי": "Mon menu"
 }

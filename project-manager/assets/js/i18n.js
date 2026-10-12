@@ -19,7 +19,7 @@ const I18n = (() => {
         ar: { name: 'العربية', dir: 'rtl', locale: 'ar-u-nu-latn' },
     };
     const KEY = 'pm.lang';
-    const VERSION = 1; // לשנות כשהמילונים משתנים — עוקף את המטמון של הדפדפן
+    const VERSION = 2; // לשנות כשהמילונים משתנים — עוקף את המטמון של הדפדפן
     const base = (document.currentScript?.src || '').replace(/js\/i18n\.js.*$/, 'lang/');
     const ATTRS = ['placeholder', 'title', 'aria-label', 'alt'];
     let dict = {};
