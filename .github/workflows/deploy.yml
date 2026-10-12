@@ -202,6 +202,7 @@ jobs:
             --exclude='catering-menu/data/menu.json' \
             --exclude='catering-menu/data/sessions/' \
             --exclude='catering-menu/data/push.json' \
+            --exclude='catering-menu/data/push-log.json' \
             --exclude='catering-menu/data/reminders.json*' \
             --exclude='catering-menu/data/logo.*' \
             --exclude='catering-menu/data/fonts/' \

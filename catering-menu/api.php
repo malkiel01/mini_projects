@@ -666,6 +666,32 @@ switch ($action) {
         ok();
     }
 
+    case 'pushLog': {
+        // אבחון: מה קרה בשליחות האחרונות, אילו מכשירים רשומים, ומה יש בשרת
+        requireAdmin();
+        $store = pushStore();
+        ok([
+            'log'     => array_reverse(readJson(PUSH_LOG) ?? []),
+            'devices' => array_map(fn($s) => [
+                'device'    => $s['device'] ?? '',
+                'service'   => parse_url($s['endpoint'], PHP_URL_HOST),
+                'created'   => $s['created'] ?? null,
+                'lastOk'    => $s['lastOk'] ?? null,
+                'lastError' => $s['lastError'] ?? null,
+                'mine'      => false,
+                'endpoint'  => substr(hash('sha256', $s['endpoint']), 0, 16),
+            ], $store['subs']),
+            'server'  => [
+                'php'     => PHP_VERSION,
+                'curl'    => function_exists('curl_init'),
+                'openssl' => function_exists('openssl_pkey_derive'),
+                'finish'  => function_exists('fastcgi_finish_request') ? 'fastcgi'
+                           : (function_exists('litespeed_finish_request') ? 'litespeed' : 'none'),
+                'time'    => date('c'),
+            ],
+        ]);
+    }
+
     case 'pushTest': {
         if ($method !== 'POST') fail('שיטה לא נתמכת', 405);
         requireAdmin();

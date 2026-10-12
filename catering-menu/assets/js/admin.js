@@ -874,6 +874,49 @@
         return [false, `${svc}: ${why} (${d.code}${d.info ? ' · ' + d.info : ''})`];
     }
 
+    /** איזה סוג התראה — לפי ה-tag שלה. */
+    function pushKind(tag) {
+        if (tag.startsWith('order-')) return '🔔 הזמנה חדשה';
+        if (tag.startsWith('remind-')) return '⏰ תזכורת לפני אירוע';
+        return { nag: '⏳ ממתינה לאישור', digest: '📋 סיכום יומי', test: '🧪 בדיקה' }[tag] || '🔔 התראה';
+    }
+
+    /** יומן ההתראות: כל שליחה, ומה ענה שירות ההתראות לכל מכשיר. */
+    async function loadPushLog() {
+        const box = $('#pushLog');
+        box.textContent = 'טוען…';
+        let data;
+        try { data = await api('pushLog'); } catch (ex) { box.textContent = ex.message; return; }
+        box.textContent = '';
+        const when = iso => new Date(iso).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+        box.append(el('p', { class: 'push-log-h' }, `📱 מכשירים רשומים בשרת: ${data.devices.length}`));
+        if (!data.devices.length) box.append(el('p', { class: 'push-log-bad' }, 'אין אף מכשיר רשום — התראות לא יכולות לצאת. מפעילים בכרטיס שלמעלה.'));
+        for (const d of data.devices) {
+            box.append(el('div', { class: 'push-log-row' },
+                el('b', {}, d.device || 'מכשיר'),
+                el('span', {}, ` · נרשם ${d.created ? when(d.created) : '—'}`),
+                d.lastOk ? el('span', { class: 'ok' }, ` · ✓ אחרונה שהגיעה לשירות: ${when(d.lastOk)}`) : null,
+                d.lastError ? el('span', { class: 'bad' }, ` · ✕ שגיאה אחרונה: ${d.lastError}`) : null));
+        }
+
+        box.append(el('p', { class: 'push-log-h' }, `📜 שליחות אחרונות (${data.log.length})`));
+        if (!data.log.length) box.append(el('p', {}, 'עדיין לא נשלחה אף התראה מאז שהיומן נוסף.'));
+        for (const e of data.log.slice(0, 30)) {
+            const row = el('div', { class: 'push-log-row' },
+                el('b', {}, `${when(e.at)} · ${pushKind(e.tag)}`), el('div', { class: 'push-log-title' }, e.title));
+            if (e.note) row.append(el('div', { class: 'bad' }, '✕ ' + e.note));
+            for (const d of e.details || []) {
+                const [ok, text] = explainPush(d);
+                row.append(el('div', { class: ok ? 'ok' : 'bad' }, `${ok ? '✓' : '✕'} ${d.device || 'מכשיר'}: ${text}`));
+            }
+            box.append(row);
+        }
+        const sv = data.server;
+        box.append(el('p', { class: 'set-hint' },
+            `שרת: PHP ${sv.php} · curl ${sv.curl ? '✓' : '✕'} · openssl ${sv.openssl ? '✓' : '✕'} · שליחה ברקע: ${sv.finish} · שעון השרת: ${when(sv.time)}`));
+    }
+
     async function testPush() {
         try {
             const r = await api('pushTest', {});
@@ -2008,6 +2051,7 @@
         $('#oRemOff').addEventListener('change', e => update({ remindersOff: e.target.checked }));
         wireReminders();
         $('#bizLogoFile').addEventListener('change', uploadLogo);
+        $('#pushLogLoad').addEventListener('click', loadPushLog);
         $('#bizLogoReset').addEventListener('click', resetLogo);
         document.querySelectorAll('[data-panel="business"] input:not([type=file])').forEach(i => i.addEventListener('input', previewContact));
         $('#pdfDownload').addEventListener('click', downloadPdf);

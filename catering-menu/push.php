@@ -16,6 +16,22 @@ if (!defined('DATA_DIR')) {         // נטען רק מתוך api.php
 }
 
 const PUSH_FILE = DATA_DIR . '/push.json';
+const PUSH_LOG  = DATA_DIR . '/push-log.json';     // יומן השליחות האחרונות — לאבחון בממשק
+
+/** רושם ביומן ניסיון שליחה אחד: מה נשלח, ומה ענה שירות ההתראות לכל מכשיר. */
+function pushLog(array $message, array $details, string $note = ''): void {
+    try {
+        $log = readJson(PUSH_LOG) ?? [];
+        $log[] = [
+            'at'      => date('c'),
+            'title'   => mb_substr((string) ($message['title'] ?? ''), 0, 120),
+            'tag'     => (string) ($message['tag'] ?? ''),
+            'note'    => $note,
+            'details' => $details,
+        ];
+        writeJson(PUSH_LOG, array_slice($log, -60));
+    } catch (Throwable $e) { /* יומן שנכשל לא עוצר התראה */ }
+}
 
 /** קידוד base64url (בלי ריפוד), כמו שמשמש ב-Web Push. */
 function b64u(string $bin): string {
@@ -137,7 +153,10 @@ function pushPost(string $url, string $body, array $headers): array {
  */
 function pushToAll(array $message): array {
     $store = pushStore();
-    if (!$store['subs']) return [0, 0, []];
+    if (!$store['subs']) {
+        pushLog($message, [], 'אין אף מכשיר רשום בשרת — לא נשלח לאף אחד');
+        return [0, 0, []];
+    }
 
     $host = preg_replace('/:\d+$/', '', $_SERVER['HTTP_HOST'] ?? 'localhost');
     $settings = loadSettings();
@@ -172,6 +191,7 @@ function pushToAll(array $message): array {
     }
     $store['subs'] = array_values($keep);
     writeJson(PUSH_FILE, $store);
+    pushLog($message, $details);
     return [$sent, $failed, $details];
 }
 
@@ -213,6 +233,8 @@ function respondThenContinue(array $payload): void {
     echo $json;
     if (function_exists('fastcgi_finish_request')) {
         fastcgi_finish_request();
+    } elseif (function_exists('litespeed_finish_request')) {   // שרתי LiteSpeed (נפוץ ב-cPanel)
+        litespeed_finish_request();
     } else {
         @ob_end_flush();
         flush();
