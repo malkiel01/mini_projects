@@ -16,10 +16,8 @@ async function init() {
     const lang = state.user.lang || '';
     if (!lang) api('lang', { body: { lang: I18n.lang() } }).catch(() => {});
     else if (lang !== I18n.lang() && I18n.LANGS[lang] && canStore()) { I18n.set(lang); return; }
-    $('#logout').before(I18n.picker(l => { api('lang', { body: { lang: l } }).catch(() => {}).finally(() => I18n.set(l)); }, true));
-    $('#who').innerHTML = `<span class="name">${esc(state.user.display_name)}</span>`
-        + `<span class="badge">${esc(isDev() ? t('מפתח') : t('מנהל פרויקט'))}</span>`;
     $$('.dev-only').forEach(el => { el.hidden = !isDev(); });
+    bindMe();
     $('#logout').addEventListener('click', logout);
     bindPassword();
     bindInstall();
@@ -49,10 +47,8 @@ function route() {
     $('#logo').hidden = inner;
     // בתוך דף האפליקציות — חזרה אליו. במצב עצמאי אין לאן לחזור.
     $('#tools-link').hidden = inner || state.standalone;
-    $('#who').hidden = inner;
-    $('#logout').hidden = inner;
-    $$('.top .lang-pick').forEach(el => { el.hidden = inner; });
-    $('#install').hidden = inner || !installPrompt;
+    $('#me-btn').hidden = inner;
+    Me.close();
     $$('#nav [data-nav]').forEach(x => x.setAttribute('aria-current', x.dataset.nav === section ? 'page' : 'false'));
     document.body.dataset.view = section;
 
@@ -75,24 +71,83 @@ async function logout() {
     location.href = 'login.html';
 }
 
-/** החשבון שלי — לחיצה על השם בכותרת: שם, אימייל, טלפון, וסיסמה. */
+/**
+ * התפריט שלי — העיגול בכותרת (ראשי התיבות, בצבע הקבוע של השם). נפתח מתחתיו: מי אני,
+ * החשבון (פרטים וסיסמה), שפה, התקנה במכשיר, הגדרות, דף האפליקציות ויציאה.
+ * נסגר בלחיצה מחוץ לו, ב-Esc ובמעבר מסך.
+ */
+const Me = (() => {
+    const menu = () => $('#me-menu'), btn = () => $('#me-btn');
+    function open() {
+        menu().hidden = false;
+        btn().setAttribute('aria-expanded', 'true');
+        $('.me-item:not([hidden])', menu())?.focus();
+    }
+    function close(focusBack = false) {
+        if (!menu() || menu().hidden) return;
+        menu().hidden = true;
+        btn().setAttribute('aria-expanded', 'false');
+        if (focusBack) btn().focus();
+    }
+    return { open, close, toggle: () => (menu().hidden ? open() : close()) };
+})();
+
+function renderMe() {
+    const u = state.user;
+    $('#me-btn').innerHTML = avatar(u.display_name);
+    $('#me-btn').title = u.display_name;
+    const id = u.email || u.username || '';
+    $('#me-head').innerHTML = `${avatar(u.display_name)}<div class="me-who"><b>${esc(u.display_name)}</b>`
+        + `<small>${esc(isDev() ? t('מפתח') : t('מנהל פרויקט'))}${id ? ' · <bdi>' + esc(id) + '</bdi>' : ''}</small></div>`;
+}
+
+function bindMe() {
+    renderMe();
+    $('#me-btn').addEventListener('click', e => { e.stopPropagation(); Me.toggle(); });
+    document.addEventListener('click', e => { if (!e.target.closest('#me-menu')) Me.close(); });
+    $('#me-menu').addEventListener('keydown', e => {
+        if (e.key === 'Escape') { e.preventDefault(); Me.close(true); return; }
+        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+        const items = $$('.me-item:not([hidden]), .me-langs button', $('#me-menu'));
+        const i = items.indexOf(document.activeElement);
+        e.preventDefault();
+        items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus();
+    });
+    $('#me-menu').addEventListener('click', e => { if (e.target.closest('a.me-item')) Me.close(); });
+    $('#me-account').addEventListener('click', () => { Me.close(); openAccount(); });
+    // שפה — נשמרת בחשבון ובמכשיר, והדף נטען מחדש בשפה החדשה
+    $('#me-langs').innerHTML = Object.entries(I18n.LANGS).map(([k, v]) =>
+        `<button type="button" lang="${k}" data-lang="${k}" aria-pressed="${k === I18n.lang()}">${esc(v.name)}</button>`).join('');
+    $('#me-langs').addEventListener('click', e => {
+        const b = e.target.closest('[data-lang]');
+        if (!b || b.dataset.lang === I18n.lang()) return;
+        const l = b.dataset.lang;
+        api('lang', { body: { lang: l } }).catch(() => {}).finally(() => I18n.set(l));
+    });
+    $('#me-apps').hidden = !!state.standalone;
+}
+
+/** החשבון שלי — מהתפריט: שם, אימייל, טלפון, התקנה וסיסמה. */
+function openAccount() {
+    const pf = $('#profile-form'), wf = $('#password-form');
+    pf.reset(); wf.reset(); formError(pf, ''); formError(wf, '');
+    pf.elements.display_name.value = state.user.display_name || '';
+    pf.elements.email.value = state.user.email || '';
+    pf.elements.phone.value = state.user.phone || '';
+    renderInstall();
+    $('#password-dlg').showModal();
+}
+
 function bindPassword() {
     const dlg = $('#password-dlg');
     const pf = $('#profile-form'), wf = $('#password-form');
-    $('#who').addEventListener('click', () => {
-        pf.reset(); wf.reset(); formError(pf, ''); formError(wf, '');
-        pf.elements.display_name.value = state.user.display_name || '';
-        pf.elements.email.value = state.user.email || '';
-        pf.elements.phone.value = state.user.phone || '';
-        dlg.showModal();
-    });
     pf.addEventListener('submit', async e => {
         e.preventDefault();
         const el = pf.elements;
         await busy($('button[type=submit]', pf), pf, async () => {
             const { user } = await api('profile', { body: { display_name: el.display_name.value, email: el.email.value, phone: el.phone.value } });
             Object.assign(state.user, user);
-            $('#who .name').textContent = user.display_name;
+            renderMe();
             dlg.close();
             toast(t('נשמר'));
         });
@@ -121,7 +176,7 @@ const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.p
 addEventListener('beforeinstallprompt', e => {
     e.preventDefault();
     installPrompt = e;
-    if (state.user) { $('#install').hidden = document.body.dataset.view === 'project' || document.body.dataset.view === 'share'; renderInstall(); }
+    if (state.user) { $('#install').hidden = false; renderInstall(); }
 });
 addEventListener('appinstalled', () => {
     installPrompt = null;
@@ -153,9 +208,8 @@ async function install() {
 }
 
 function bindInstall() {
-    $('#install').addEventListener('click', install);
+    $('#install').addEventListener('click', () => { Me.close(); install(); });
     $('#install-btn').addEventListener('click', install);
-    $('#who').addEventListener('click', renderInstall);
 }
 
 // בלי service worker אין התקנה ואין שיתוף לאפליקציה
