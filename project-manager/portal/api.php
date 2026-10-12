@@ -40,6 +40,9 @@ function pm_portal_reply(int $code, array $payload): never
             'message' => $payload['error'] ?? '', 'data' => ['request' => is_array($body) ? $body : array_diff_key($_GET, ['action' => 1, 't' => 1])],
         ]);
     }
+    // השגיאה ביומן — בעברית; למשתמש — בשפה שלו (X-Lang, lib/i18n.php)
+    if (isset($payload['error'])) $payload['error'] = isset($payload['_t']) ? pm_t(...$payload['_t']) : pm_t((string)$payload['error']);
+    unset($payload['_t']);
     http_response_code($code);
     echo json_encode($payload, JSON_UNESCAPED_UNICODE);
     exit;
@@ -87,11 +90,11 @@ try {
     };
     pm_portal_reply(200, $result);
 } catch (PmError $e) {
-    pm_portal_reply($e->getCode() ?: 400, ['error' => $e->getMessage()]);
+    pm_portal_reply($e->getCode() ?: 400, ['error' => $e->getMessage(), '_t' => [$e->tpl, $e->vars]]);
 } catch (Throwable $e) {
     error_log('project-manager portal: ' . $e->getMessage());
     pm_log('error', 'php', 'exception', ['message' => get_class($e) . ': ' . $e->getMessage(),
         'data' => ['file' => basename($e->getFile()), 'line' => $e->getLine(),
                    'trace' => array_slice(array_map(fn($f) => basename($f['file'] ?? '?') . ':' . ($f['line'] ?? '?') . ' ' . ($f['function'] ?? ''), $e->getTrace()), 0, 12)]]);
-    pm_portal_reply(500, ['error' => 'תקלה בשרת — נרשמה (' . pm_request_id() . ')']);
+    pm_portal_reply(500, ['error' => pm_fill('תקלה בשרת — נרשמה ({id})', ['id' => pm_request_id()]), '_t' => ['תקלה בשרת — נרשמה ({id})', ['id' => pm_request_id()]]]);
 }

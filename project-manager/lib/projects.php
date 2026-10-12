@@ -56,15 +56,31 @@ function pm_owned_contact(?int $id, int $ownerId, string $kind, string $label): 
 }
 
 /** רישום אירוע בציר הזמן, ועדכון "הפעילות האחרונה" של הפרויקט. */
-function pm_event(array $user, int $projectId, string $kind, string $text, array $data = []): void
+/**
+ * שורה בציר הזמן. $text — הטקסט העברי עם {משתנים}, ו-$vars — הערכים: נשמרת העברית
+ * המלאה, ולצידה התבנית — כדי שכל אחד יקרא את השורה בשפה שלו (pm_event_text).
+ */
+function pm_event(array $user, int $projectId, string $kind, string $text, array $data = [], array $vars = []): void
 {
     $now = pm_now();
+    $full = pm_fill($text, $vars);
+    $i18n = json_encode(['t' => $text, 'v' => $vars], JSON_UNESCAPED_UNICODE);
     pm_db()->prepare('INSERT INTO events (project_id, at, actor_id, actor_name, kind, text, data_json) VALUES (?,?,?,?,?,?,?)')
-        ->execute([$projectId, $now, $user['id'], $user['display_name'], $kind, $text, json_encode($data, JSON_UNESCAPED_UNICODE)]);
-    pm_db()->prepare('UPDATE projects SET last_activity_at = ?, last_event = ? WHERE id = ?')
-        ->execute([$now, mb_substr($text, 0, 140), $projectId]);
+        ->execute([$projectId, $now, $user['id'], $user['display_name'], $kind, $full,
+                   json_encode($data + ['i18n' => ['t' => $text, 'v' => $vars]], JSON_UNESCAPED_UNICODE)]);
+    pm_db()->prepare('UPDATE projects SET last_activity_at = ?, last_event = ?, last_event_i18n = ? WHERE id = ?')
+        ->execute([$now, mb_substr($full, 0, 140), $i18n, $projectId]);
     // מהפורטל: $user['actor'] = "portal:<קישור>" — לא משתמש של האפליקציה
-    pm_audit($user['actor'] ?? "user:{$user['id']}", "project.$kind", 'project', $projectId, $data + ['text' => $text]);
+    pm_audit($user['actor'] ?? "user:{$user['id']}", "project.$kind", 'project', $projectId, $data + ['text' => $full]);
+}
+
+/** הטקסט של אירוע בשפת הקורא. $json — data_json של האירוע, או last_event_i18n. */
+function pm_event_text(string $text, ?string $json, ?string $lang = null): string
+{
+    $d = $json ? json_decode($json, true) : null;
+    $x = $d['i18n'] ?? $d;
+    if (!is_array($x) || !isset($x['t'])) return pm_t($text, [], $lang);
+    return pm_t((string)$x['t'], is_array($x['v'] ?? null) ? $x['v'] : [], $lang);
 }
 
 // ---- רשימה ----
@@ -73,7 +89,7 @@ function pm_event(array $user, int $projectId, string $kind, string $text, array
 function pm_projects_list(array $user, string $q, string $filter): array
 {
     [$where, $args] = pm_owner_clause($user, 'p');
-    $sql = "SELECT p.id, p.owner_id, p.name, p.address, p.kind, p.status, p.last_activity_at, p.last_event,
+    $sql = "SELECT p.id, p.owner_id, p.name, p.address, p.kind, p.status, p.last_activity_at, p.last_event, p.last_event_i18n,
                    c.name AS client_name, m.display_name AS owner_name,
                    (SELECT COUNT(*) FROM stages s WHERE s.project_id = p.id) AS stages_total,
                    (SELECT COUNT(*) FROM stages s WHERE s.project_id = p.id AND s.status IN ('done','paid')) AS stages_done,
@@ -106,7 +122,7 @@ function pm_projects_list(array $user, string $q, string $filter): array
         return [
             'id' => (int)$r['id'], 'owner_id' => (int)$r['owner_id'], 'owner_name' => $r['owner_name'],
             'name' => $r['name'], 'address' => $r['address'], 'kind' => $r['kind'], 'status' => $r['status'],
-            'client_name' => $r['client_name'], 'last_activity_at' => $r['last_activity_at'], 'last_event' => $r['last_event'],
+            'client_name' => $r['client_name'], 'last_activity_at' => $r['last_activity_at'], 'last_event' => pm_event_text($r['last_event'], $r['last_event_i18n']),
             'stages_total' => (int)$r['stages_total'], 'stages_done' => (int)$r['stages_done'], 'current_stage' => $cur,
         ];
     }, $st->fetchAll());
@@ -134,9 +150,10 @@ function pm_project_get(array $user, int $id): array
         'plan_start' => $s['plan_start'], 'plan_end' => $s['plan_end'], 'done_at' => $s['done_at'],
     ], $st->fetchAll());
 
-    $ev = $db->prepare('SELECT id, at, actor_id, actor_name, kind, text FROM events WHERE project_id = ? ORDER BY id DESC LIMIT 300');
+    $ev = $db->prepare('SELECT id, at, actor_id, actor_name, kind, text, data_json FROM events WHERE project_id = ? ORDER BY id DESC LIMIT 300');
     $ev->execute([$id]);
-    $events = array_reverse(array_map(fn($e) => ['id' => (int)$e['id'], 'actor_id' => (int)$e['actor_id']] + $e, $ev->fetchAll()));
+    $events = array_reverse(array_map(fn($e) => ['id' => (int)$e['id'], 'at' => $e['at'], 'actor_id' => (int)$e['actor_id'],
+        'actor_name' => pm_t($e['actor_name']), 'kind' => $e['kind'], 'text' => pm_event_text($e['text'], $e['data_json'])], $ev->fetchAll()));
 
     return [
         'project' => [

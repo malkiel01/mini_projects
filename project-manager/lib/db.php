@@ -13,6 +13,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/log.php';
+require_once __DIR__ . '/i18n.php';
 
 if (!defined('PM_DB')) define('PM_DB', __DIR__ . '/../data/pm.sqlite');
 
@@ -53,8 +54,32 @@ const PM_DEFAULT_TEMPLATES = [
     ]],
 ];
 
+const PM_MSG_TEMPLATES_TABLE = 'CREATE TABLE IF NOT EXISTS message_templates (
+    owner_id INTEGER NOT NULL,
+    key      TEXT NOT NULL,
+    lang     TEXT NOT NULL DEFAULT \'he\',
+    subject  TEXT NOT NULL,
+    body     TEXT NOT NULL,
+    PRIMARY KEY (owner_id, key, lang)
+)';
+
 /** שגיאה שמוצגת למשתמש, עם קוד HTTP. */
-final class PmError extends RuntimeException {}
+final class PmError extends RuntimeException
+{
+    /**
+     * $message — הטקסט העברי עם {משתנים}; $vars — הערכים. ביומן נרשמת העברית,
+     * ולמשתמש — localized(), בשפה שלו (lib/i18n.php).
+     */
+    public function __construct(public readonly string $tpl, int $code = 400, public readonly array $vars = [])
+    {
+        parent::__construct(pm_fill($tpl, $vars), $code);
+    }
+
+    public function localized(?string $lang = null): string
+    {
+        return pm_t($this->tpl, $this->vars, $lang);
+    }
+}
 
 function pm_now(): string
 {
@@ -458,13 +483,6 @@ function pm_migrate(PDO $pdo): void
         );
         CREATE INDEX IF NOT EXISTS messages_project ON messages (project_id, id);
         -- נוסחי ההודעות של כל מנהל (ברירת המחדל — בקוד). {שם} {פרויקט} {קישור} …
-        CREATE TABLE IF NOT EXISTS message_templates (
-            owner_id INTEGER NOT NULL,
-            key      TEXT NOT NULL,
-            subject  TEXT NOT NULL,
-            body     TEXT NOT NULL,
-            PRIMARY KEY (owner_id, key)
-        );
         CREATE TABLE IF NOT EXISTS stage_templates (
             id          INTEGER PRIMARY KEY,
             name        TEXT NOT NULL UNIQUE,
@@ -510,6 +528,23 @@ function pm_migrate(PDO $pdo): void
     pm_add_column($pdo, 'users', 'cal_nonce', "TEXT NOT NULL DEFAULT ''");
     pm_add_column($pdo, 'users', 'digest', 'INTEGER NOT NULL DEFAULT 1');
     pm_add_column($pdo, 'users', 'digest_sent', "TEXT NOT NULL DEFAULT ''");
+    // שפות (lib/i18n.php): שפת הממשק של המשתמש ('' — עוד לא נבחרה, נלקחת מהמכשיר),
+    // שפת איש הקשר (הפורטל והמיילים שלו), והטקסט המתורגם של האירוע האחרון בפרויקט
+    pm_add_column($pdo, 'users', 'lang', "TEXT NOT NULL DEFAULT ''");
+    pm_add_column($pdo, 'contacts', 'lang', "TEXT NOT NULL DEFAULT 'he'");
+    pm_add_column($pdo, 'projects', 'last_event_i18n', "TEXT NOT NULL DEFAULT ''");
+    // נוסחי ההודעות — לכל שפה נוסח משלו. המפתח הראשי משתנה, ולכן הטבלה נבנית מחדש
+    // פעם אחת; הנוסחים הקיימים נשמרים כנוסחים בעברית.
+    $pdo->exec(PM_MSG_TEMPLATES_TABLE);
+    $sql = (string)$pdo->query("SELECT sql FROM sqlite_master WHERE name = 'message_templates'")->fetchColumn();
+    if ($sql !== '' && !str_contains($sql, 'lang')) {
+        $pdo->exec('BEGIN');
+        $pdo->exec('ALTER TABLE message_templates RENAME TO message_templates_old');
+        $pdo->exec(PM_MSG_TEMPLATES_TABLE);
+        $pdo->exec("INSERT INTO message_templates (owner_id, key, lang, subject, body) SELECT owner_id, key, 'he', subject, body FROM message_templates_old");
+        $pdo->exec('DROP TABLE message_templates_old');
+        $pdo->exec('COMMIT');
+    }
 
     if (!$pdo->query("SELECT 1 FROM settings WHERE key = 'trades_seeded'")->fetchColumn()) {
         $ins = $pdo->prepare('INSERT OR IGNORE INTO trades (name, sort) VALUES (?, ?)');
