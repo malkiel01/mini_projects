@@ -126,7 +126,7 @@ window.PlatformAdmin = (() => {
 
             const rows = catApps.map(app => {
                 const sel = el('select', {}, [
-                    ['', 'לפי הקטגוריה'], ['allow', '✓ מותר'], ['deny', '✕ חסום'],
+                    ['', app.restricted ? '🔒 רק באישור ישיר' : 'לפי הקטגוריה'], ['allow', '✓ מותר'], ['deny', '✕ חסום'],
                 ].map(([v, t]) => el('option', { value: v, textContent: t })));
                 sel.value = app.id in apps ? (apps[app.id] ? 'allow' : 'deny') : '';
                 const result = el('span', { className: 'small' });
@@ -141,7 +141,7 @@ window.PlatformAdmin = (() => {
 
             function refresh() {
                 for (const r of rows) {
-                    const seen = r.app.id in apps ? apps[r.app.id] : cats.has(cat.id);
+                    const seen = r.app.id in apps ? apps[r.app.id] : (!r.app.restricted && cats.has(cat.id));
                     r.result.textContent = seen ? '👁️ רואה' : '— לא רואה';
                     r.result.className = `small ${seen ? 'yes' : 'no'}`;
                 }
