@@ -21,6 +21,28 @@ const PM_DEFAULT_TRADES = [
     'צבע', 'מיזוג אוויר', 'גבס', 'מסגרות', 'ניקיון',
 ];
 
+/** תבניות שלבים ראשונות — [שם, [[שלב, תחום], …]]. התחום לפי שם, כי המפתח עשוי לשנות מזהים. */
+const PM_DEFAULT_TEMPLATES = [
+    ['שיפוץ דירה', [
+        ['תכנון ועיצוב', 'אדריכלות'], ['הריסה ופינוי', 'הריסה'], ['אינסטלציה', 'אינסטלציה'],
+        ['חשמל', 'חשמל'], ['מיזוג אוויר', 'מיזוג אוויר'], ['גבס', 'גבס'], ['איטום', 'איטום'],
+        ['טיח', 'טיח'], ['ריצוף וחיפוי', 'ריצוף'], ['אלומיניום', 'אלומיניום'], ['נגרות', 'נגרות'],
+        ['צבע', 'צבע'], ['ניקיון ומסירה', 'ניקיון'],
+    ]],
+    ['בנייה', [
+        ['תכנון ואדריכלות', 'אדריכלות'], ['הנדסה וקונסטרוקציה', 'הנדסה'], ['היתרים', ''],
+        ['עבודות עפר ויסודות', 'שלד'], ['שלד', 'שלד'], ['אינסטלציה', 'אינסטלציה'], ['חשמל', 'חשמל'],
+        ['גז', 'גז'], ['איטום', 'איטום'], ['טיח', 'טיח'], ['ריצוף וחיפוי', 'ריצוף'],
+        ['אלומיניום', 'אלומיניום'], ['מסגרות', 'מסגרות'], ['נגרות', 'נגרות'], ['צבע', 'צבע'],
+        ['פיקוח ומסירה', 'פיקוח'],
+    ]],
+    ['תוספת בנייה', [
+        ['תכנון והיתר', 'אדריכלות'], ['קונסטרוקציה', 'הנדסה'], ['שלד', 'שלד'], ['חשמל', 'חשמל'],
+        ['אינסטלציה', 'אינסטלציה'], ['איטום', 'איטום'], ['טיח', 'טיח'], ['ריצוף', 'ריצוף'],
+        ['אלומיניום', 'אלומיניום'], ['צבע', 'צבע'], ['מסירה', 'ניקיון'],
+    ]],
+];
+
 function pm_now(): string
 {
     return gmdate('Y-m-d\TH:i:s\Z');
@@ -110,7 +132,82 @@ function pm_migrate(PDO $pdo): void
             key   TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+
+        -- שלב 2: פרויקטים. פרויקט הוא "צ'אט": last_activity_at ממיין את מסך הבית,
+        -- ו-last_event הוא השורה שמוצגת מתחת לשם (כמו ההודעה האחרונה בוואטסאפ).
+        CREATE TABLE IF NOT EXISTS projects (
+            id               INTEGER PRIMARY KEY,
+            owner_id         INTEGER NOT NULL,
+            name             TEXT NOT NULL,
+            address          TEXT NOT NULL DEFAULT '',
+            kind             TEXT NOT NULL DEFAULT 'renovation'
+                             CHECK (kind IN ('renovation','construction','addition','other')),
+            client_id        INTEGER REFERENCES contacts(id),
+            lawyer_id        INTEGER REFERENCES contacts(id),
+            budget           INTEGER NOT NULL DEFAULT 0,        -- ₪ כולל מע"מ
+            start_date       TEXT NOT NULL DEFAULT '',
+            due_date         TEXT NOT NULL DEFAULT '',
+            status           TEXT NOT NULL DEFAULT 'active'
+                             CHECK (status IN ('active','paused','done','archived')),
+            notes            TEXT NOT NULL DEFAULT '',
+            created_at       TEXT NOT NULL,
+            updated_at       TEXT NOT NULL,
+            last_activity_at TEXT NOT NULL,
+            last_event       TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS projects_owner ON projects (owner_id, status, last_activity_at);
+        CREATE TABLE IF NOT EXISTS stages (
+            id           INTEGER PRIMARY KEY,
+            project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            sort         INTEGER NOT NULL DEFAULT 0,
+            name         TEXT NOT NULL,
+            trade_id     INTEGER REFERENCES trades(id) ON DELETE SET NULL,
+            supplier_id  INTEGER REFERENCES contacts(id) ON DELETE SET NULL,
+            status       TEXT NOT NULL DEFAULT 'planned',
+            needs_lawyer INTEGER NOT NULL DEFAULT 0,
+            plan_start   TEXT NOT NULL DEFAULT '',
+            plan_end     TEXT NOT NULL DEFAULT '',
+            done_at      TEXT,
+            created_at   TEXT NOT NULL,
+            updated_at   TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS stages_project ON stages (project_id, sort);
+        -- אנשי צוות שאינם משויכים לשלב (אדריכלית, מפקח…). ספקי השלבים נוספים לבד.
+        CREATE TABLE IF NOT EXISTS project_members (
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+            role       TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (project_id, contact_id)
+        );
+        -- ציר הזמן של הפרויקט: כל מה שקרה בו, ממוין לפי זמן. לא נמחק.
+        CREATE TABLE IF NOT EXISTS events (
+            id         INTEGER PRIMARY KEY,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            at         TEXT NOT NULL,
+            actor_id   INTEGER NOT NULL,
+            actor_name TEXT NOT NULL,
+            kind       TEXT NOT NULL,
+            text       TEXT NOT NULL,
+            data_json  TEXT NOT NULL DEFAULT '{}'
+        );
+        CREATE INDEX IF NOT EXISTS events_project ON events (project_id, id);
+        -- תבניות שלבים — המפתח עורך. stages_json: [{"name": "...", "trade": "..."}]
+        CREATE TABLE IF NOT EXISTS stage_templates (
+            id          INTEGER PRIMARY KEY,
+            name        TEXT NOT NULL UNIQUE,
+            stages_json TEXT NOT NULL DEFAULT '[]',
+            sort        INTEGER NOT NULL DEFAULT 0
+        );
         SQL);
+
+    if (!$pdo->query("SELECT 1 FROM settings WHERE key = 'templates_seeded'")->fetchColumn()) {
+        $ins = $pdo->prepare('INSERT OR IGNORE INTO stage_templates (name, stages_json, sort) VALUES (?, ?, ?)');
+        foreach (PM_DEFAULT_TEMPLATES as $i => [$name, $stages]) {
+            $list = array_map(fn($s) => ['name' => $s[0], 'trade' => $s[1]], $stages);
+            $ins->execute([$name, json_encode($list, JSON_UNESCAPED_UNICODE), ($i + 1) * 10]);
+        }
+        $pdo->exec("INSERT INTO settings (key, value) VALUES ('templates_seeded', '1')");
+    }
 
     if (!$pdo->query("SELECT 1 FROM settings WHERE key = 'trades_seeded'")->fetchColumn()) {
         $ins = $pdo->prepare('INSERT OR IGNORE INTO trades (name, sort) VALUES (?, ?)');

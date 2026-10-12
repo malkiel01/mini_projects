@@ -1,0 +1,117 @@
+// ניהול פרויקטים — הליבה המשותפת: שרת, מצב, עזרים. נטען ראשון.
+// הזהות מהפלטפורמה; אסימון ה-CSRF מגיע מ-api.php?action=me.
+'use strict';
+
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+
+const KIND_LABEL = { client: 'לקוח', supplier: 'ספק', lawyer: 'עורך דין' };
+
+/** מצב משותף לכל המסכים. */
+const state = {
+    user: null, trades: [], templates: [], labels: { stage: {}, project: {}, kind: {} },
+    contactsByKind: {},   // מטמון לבחירת אנשי קשר בחלונות (לקוח, עו"ד, ספק)
+};
+
+const isDev = () => state.user?.role === 'developer';
+
+// ---- שרת ----
+
+async function api(action, { params = {}, body = null } = {}) {
+    const qs = new URLSearchParams({ action, ...params });
+    const opts = { headers: { Accept: 'application/json' }, credentials: 'same-origin' };
+    if (body) {
+        opts.method = 'POST';
+        opts.headers['Content-Type'] = 'application/json';
+        opts.headers['X-CSRF'] = state.user?.csrf || '';
+        opts.body = JSON.stringify(body);
+    }
+    const res = await fetch('api.php?' + qs, opts);
+    let data = {};
+    try { data = await res.json(); } catch { /* תשובה שאינה JSON */ }
+    if (res.status === 401) { location.href = 'login.html'; throw new Error(data.error || 'נדרשת כניסה'); }
+    if (!res.ok) throw new Error(data.error || `תקלה (${res.status})`);
+    return data;
+}
+
+/** אנשי קשר מסוג מסוים, לבחירה בחלונות. נטען פעם אחת; invalidate אחרי שמירה. */
+async function contactsOf(kind) {
+    if (!state.contactsByKind[kind]) {
+        state.contactsByKind[kind] = (await api('contacts', { params: { kind } })).contacts;
+    }
+    return state.contactsByKind[kind];
+}
+function invalidateContacts(kind) { delete state.contactsByKind[kind]; }
+
+// ---- תצוגה ----
+
+function toast(msg, isErr = false) {
+    const t = $('#toast');
+    t.textContent = msg;
+    t.classList.toggle('err', isErr);
+    t.hidden = false;
+    clearTimeout(toast.timer);
+    toast.timer = setTimeout(() => { t.hidden = true; }, 3000);
+}
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const digits = s => String(s || '').replace(/[^\d+]/g, '');
+// וואטסאפ דורש מספר בינלאומי: 050… → 97250…
+const waNumber = s => { const d = digits(s).replace(/^\+/, ''); return d.startsWith('0') ? '972' + d.slice(1) : d; };
+const money = n => '₪' + Number(n || 0).toLocaleString('he-IL');
+
+/** זמן יחסי כמו בצ'אט: "עכשיו", "14:05", "אתמול", "12.10". */
+function when(iso) {
+    if (!iso) return '';
+    const d = new Date(iso), now = new Date();
+    const sameDay = (a, b) => a.toDateString() === b.toDateString();
+    if (now - d < 60_000) return 'עכשיו';
+    if (sameDay(d, now)) return d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+    const y = new Date(now); y.setDate(now.getDate() - 1);
+    if (sameDay(d, y)) return 'אתמול';
+    return d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: d.getFullYear() === now.getFullYear() ? undefined : '2-digit' });
+}
+const dateLabel = iso => new Date(iso).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' });
+const shortDate = ymd => ymd ? ymd.split('-').reverse().slice(0, 2).join('.') : '';
+
+/** עיגול עם ראשי תיבות וצבע קבוע לפי השם — כמו תמונת פרופיל בצ'אט. */
+function avatar(name) {
+    const words = String(name || '?').trim().split(/\s+/);
+    const initials = (words[0]?.[0] || '?') + (words[1]?.[0] || '');
+    let h = 0;
+    for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) % 360;
+    return `<span class="avatar" style="--h:${h}" aria-hidden="true">${esc(initials)}</span>`;
+}
+
+/** תג סטטוס של שלב. */
+function stageChip(status) {
+    return `<span class="chip st-${esc(status)}">${esc(state.labels.stage[status] || status)}</span>`;
+}
+
+function options(list, value, empty) {
+    return (empty !== undefined ? `<option value="">${esc(empty)}</option>` : '')
+        + list.map(o => `<option value="${esc(o.value)}"${String(o.value) === String(value ?? '') ? ' selected' : ''}>${esc(o.label)}</option>`).join('');
+}
+
+// ---- חלונות ----
+
+function formError(form, msg) {
+    const el = $('.error', form);
+    el.textContent = msg;
+    el.hidden = !msg;
+    if (msg) el.scrollIntoView({ block: 'nearest' });
+}
+
+/** סגירה בכפתור ✕ בכל החלונות. */
+document.addEventListener('click', e => {
+    const b = e.target.closest('[data-close]');
+    if (b) b.closest('dialog').close();
+});
+
+/** כפתור שמבצע פעולה: נעול בזמן הבקשה, ומציג שגיאה בטופס או בהודעה. */
+async function busy(btn, form, fn) {
+    if (btn) btn.disabled = true;
+    try { await fn(); }
+    catch (e) { form ? formError(form, e.message) : toast(e.message, true); }
+    finally { if (btn) btn.disabled = false; }
+}

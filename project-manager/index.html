@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=3">
+    <link rel="stylesheet" href="assets/css/app.css?v=4">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -22,24 +22,104 @@
 <!--
     אפליקציה עצמאית: אין כאן קישור לדף הכלים הראשי. הכניסה היא הקישור הישיר
     לכאן, או האייקון במסך הבית (כמו ממשק המנהל של הקייטרינג).
+
+    ניווט בכתובת (#/…), כדי שכפתור "חזרה" של הטלפון יעבוד:
+      #/                 הפרויקטים (מסך הבית)
+      #/p/<id>/<pane>    פרויקט: timeline · stages · team · details
+      #/contacts/<kind>  אנשי קשר: client · supplier · lawyer
+      #/settings/<pane>  הגדרות מפתח: trades · templates · access
 -->
     <header class="top">
-        <img class="logo" src="assets/icon.svg" alt="" width="28" height="28">
-        <h1>ניהול פרויקטים</h1>
+        <a class="icon-btn" id="back" href="#/" aria-label="חזרה לפרויקטים" hidden>→</a>
+        <img class="logo" id="logo" src="assets/icon.svg" alt="" width="28" height="28">
+        <div class="titles">
+            <h1 id="title">ניהול פרויקטים</h1>
+            <p class="sub" id="subtitle" hidden></p>
+        </div>
         <div class="who" id="who"></div>
         <button class="icon-btn" id="logout" aria-label="יציאה" title="יציאה">🚪</button>
     </header>
 
-    <nav class="tabs" id="tabs" role="tablist" aria-label="סוג כרטיס">
-        <button role="tab" data-tab="client" aria-selected="true">לקוחות</button>
-        <button role="tab" data-tab="supplier" aria-selected="false">ספקים</button>
-        <button role="tab" data-tab="lawyer" aria-selected="false">עורכי דין</button>
-        <button role="tab" data-tab="trades" aria-selected="false" class="dev-only" hidden>תחומים</button>
-        <button role="tab" data-tab="access" aria-selected="false" class="dev-only" hidden>מנהלים</button>
+    <nav class="tabs" id="nav" aria-label="ניווט ראשי">
+        <a href="#/" data-nav="projects">פרויקטים</a>
+        <a href="#/contacts/client" data-nav="contacts">אנשי קשר</a>
+        <a href="#/settings/trades" data-nav="settings" class="dev-only" hidden>הגדרות</a>
+    </nav>
+    <nav class="tabs sub-tabs" id="project-nav" aria-label="חלקי הפרויקט" hidden>
+        <a data-pane="timeline">ציר זמן</a>
+        <a data-pane="stages">שלבים</a>
+        <a data-pane="team">צוות</a>
+        <a data-pane="details">פרטים</a>
     </nav>
 
     <main id="main" tabindex="-1">
-        <section id="contacts-view" aria-labelledby="tabs">
+        <!-- ===== פרויקטים ===== -->
+        <section id="view-projects" class="view" hidden>
+            <div class="toolbar">
+                <input type="search" id="pq" placeholder="חיפוש פרויקט" aria-label="חיפוש לפי שם, כתובת או לקוח" autocomplete="off" enterkeyhint="search">
+                <select id="pfilter" aria-label="אילו פרויקטים">
+                    <option value="open">פעילים</option>
+                    <option value="done">הסתיימו</option>
+                    <option value="archived">ארכיון</option>
+                    <option value="all">הכול</option>
+                </select>
+                <button class="btn primary" id="add-project"><span aria-hidden="true">+</span><span class="add-label">פרויקט</span></button>
+            </div>
+            <div id="project-list" class="list" aria-live="polite"></div>
+        </section>
+
+        <!-- ===== פרויקט אחד ===== -->
+        <section id="view-project" class="view" hidden>
+            <div class="pane" id="pane-timeline" hidden>
+                <ol id="timeline" class="timeline" aria-label="ציר הזמן של הפרויקט"></ol>
+                <form id="composer" class="composer">
+                    <textarea id="note" rows="1" maxlength="4000" placeholder="הערה לציר הזמן" aria-label="הערה חדשה" enterkeyhint="send"></textarea>
+                    <button class="icon-btn primary" aria-label="שליחה">➤</button>
+                </form>
+            </div>
+
+            <div class="pane" id="pane-stages" hidden>
+                <div class="progress-row">
+                    <div class="progress" role="progressbar" id="progress" aria-valuemin="0"><span></span></div>
+                    <small id="progress-text"></small>
+                    <button class="btn primary" id="add-stage"><span aria-hidden="true">+</span><span class="add-label">שלב</span></button>
+                </div>
+                <ul id="stage-list" class="list rows-list"></ul>
+            </div>
+
+            <div class="pane" id="pane-team" hidden>
+                <div class="toolbar end">
+                    <button class="btn primary" id="add-member"><span aria-hidden="true">+</span><span class="add-label">איש צוות</span></button>
+                </div>
+                <ul id="team-list" class="list rows-list"></ul>
+                <p class="hint">ספק שמשויך לשלב מצטרף לצוות לבד.</p>
+            </div>
+
+            <div class="pane" id="pane-details" hidden>
+                <fieldset class="opt status-row">
+                    <legend>סטטוס</legend>
+                    <div class="seg" id="project-status">
+                        <label><input type="radio" name="pstatus" value="active"><span>פעיל</span></label>
+                        <label><input type="radio" name="pstatus" value="paused"><span>מושהה</span></label>
+                        <label><input type="radio" name="pstatus" value="done"><span>הסתיים</span></label>
+                        <label><input type="radio" name="pstatus" value="archived"><span>ארכיון</span></label>
+                    </div>
+                </fieldset>
+                <form id="details-form" class="stack" novalidate>
+                    <div class="fields" data-project-fields></div>
+                    <p class="error" role="alert" hidden></p>
+                    <button class="btn primary">שמירת הפרטים</button>
+                </form>
+            </div>
+        </section>
+
+        <!-- ===== אנשי קשר ===== -->
+        <section id="view-contacts" class="view" hidden>
+            <div class="seg kinds" id="kinds" role="tablist" aria-label="סוג איש קשר">
+                <a role="tab" data-kind="client" href="#/contacts/client"><span>לקוחות</span></a>
+                <a role="tab" data-kind="supplier" href="#/contacts/supplier"><span>ספקים</span></a>
+                <a role="tab" data-kind="lawyer" href="#/contacts/lawyer"><span>עורכי דין</span></a>
+            </div>
             <div class="toolbar">
                 <input type="search" id="q" placeholder="חיפוש" aria-label="חיפוש לפי שם, עסק, טלפון או אימייל" autocomplete="off" enterkeyhint="search">
                 <select id="trade-filter" aria-label="סינון לפי תחום" hidden><option value="">כל התחומים</option></select>
@@ -49,31 +129,46 @@
             <div id="list" class="list" aria-live="polite"></div>
         </section>
 
-        <section id="trades-view" hidden>
-            <form id="trade-add" class="toolbar">
-                <input id="trade-name" placeholder="תחום חדש" aria-label="שם תחום חדש" maxlength="40" required>
-                <button class="btn primary">הוספה</button>
-            </form>
-            <p class="hint">משותפים לכל המנהלים. תחום שמשויך לספק אינו ניתן למחיקה.</p>
-            <ul id="trade-list" class="rows"></ul>
-        </section>
-        <section id="access-view" hidden>
-            <p class="hint">הרשמה חדשה מגיעה לכאן. האישור נעשה ב<a href="../" target="_blank" rel="noopener">ממשק הניהול של הפלטפורמה</a>: אישור המשתמש, ואז "✓ מותר" על "ניהול פרויקטים".</p>
-            <h2 class="sec-title">ממתינים לאישור</h2>
-            <ul id="pending-list" class="rows"></ul>
-            <h2 class="sec-title">מנהלי פרויקט</h2>
-            <ul id="managers-list" class="rows"></ul>
+        <!-- ===== הגדרות מפתח ===== -->
+        <section id="view-settings" class="view" hidden>
+            <div class="seg kinds" role="tablist" aria-label="הגדרות">
+                <a role="tab" data-set="trades" href="#/settings/trades"><span>תחומים</span></a>
+                <a role="tab" data-set="templates" href="#/settings/templates"><span>תבניות שלבים</span></a>
+                <a role="tab" data-set="access" href="#/settings/access"><span>מנהלים</span></a>
+            </div>
+            <div class="pane" id="set-trades" hidden>
+                <form id="trade-add" class="toolbar">
+                    <input id="trade-name" placeholder="תחום חדש" aria-label="שם תחום חדש" maxlength="40" required>
+                    <button class="btn primary">הוספה</button>
+                </form>
+                <p class="hint">משותפים לכל המנהלים. תחום שמשויך לספק אינו ניתן למחיקה.</p>
+                <ul id="trade-list" class="rows"></ul>
+            </div>
+            <div class="pane" id="set-templates" hidden>
+                <div class="toolbar end">
+                    <button class="btn primary" id="add-template"><span aria-hidden="true">+</span><span class="add-label">תבנית</span></button>
+                </div>
+                <p class="hint">פרויקט חדש נפתח עם השלבים של התבנית שנבחרה. שינוי בתבנית לא משנה פרויקטים קיימים.</p>
+                <ul id="template-list" class="rows"></ul>
+            </div>
+            <div class="pane" id="set-access" hidden>
+                <p class="hint">הרשמה חדשה מגיעה לכאן. האישור נעשה ב<a href="../" target="_blank" rel="noopener">ממשק הניהול של הפלטפורמה</a>: אישור המשתמש, ואז "✓ מותר" על "ניהול פרויקטים".</p>
+                <h2 class="sec-title">ממתינים לאישור</h2>
+                <ul id="pending-list" class="rows"></ul>
+                <h2 class="sec-title">מנהלי פרויקט</h2>
+                <ul id="managers-list" class="rows"></ul>
+            </div>
         </section>
     </main>
 
+    <!-- ===== חלון: איש קשר ===== -->
     <dialog id="editor" aria-labelledby="form-title">
         <form id="form" method="dialog" novalidate>
             <header class="sheet-head">
-                <button type="button" class="icon-btn" id="cancel" aria-label="סגירה">✕</button>
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
                 <h2 id="form-title"></h2>
                 <button type="submit" class="btn primary" id="save">שמירה</button>
             </header>
-
             <div class="sheet-body">
                 <div class="fields">
                     <label class="f wide"><span>שם *</span><input name="name" required maxlength="100" autocomplete="off"></label>
@@ -84,17 +179,14 @@
                     <label class="f"><span>אימייל</span><input name="email" type="email" maxlength="120" dir="ltr" autocomplete="off"></label>
                     <label class="f wide"><span>כתובת</span><input name="address" maxlength="200"></label>
                 </div>
-
                 <section class="group k-supplier" aria-labelledby="g-trades">
                     <h3 id="g-trades">תחומים</h3>
                     <div id="trade-chips" class="chips"></div>
                 </section>
-
                 <section class="group k-supplier" aria-labelledby="g-rating">
                     <h3 id="g-rating">דירוג פנימי</h3>
                     <div class="stars" id="stars" role="radiogroup" aria-labelledby="g-rating"></div>
                 </section>
-
                 <section class="group k-supplier" aria-labelledby="g-bank">
                     <h3 id="g-bank">פרטי בנק <small>מוצגים ללקוח בדרישת תשלום</small></h3>
                     <div class="fields">
@@ -104,7 +196,6 @@
                         <label class="f"><span>על שם</span><input name="bank.holder" maxlength="60"></label>
                     </div>
                 </section>
-
                 <section class="group k-client" aria-labelledby="g-client">
                     <h3 id="g-client">הגדרות הלקוח</h3>
                     <label class="f"><span>עורך הדין</span>
@@ -133,16 +224,96 @@
                         </div>
                     </fieldset>
                 </section>
-
                 <label class="f wide"><span>הערות</span><textarea name="notes" rows="3" maxlength="4000"></textarea></label>
-
                 <p class="error" id="form-error" role="alert" hidden></p>
                 <button type="button" id="archive" class="btn ghost" hidden></button>
             </div>
         </form>
     </dialog>
 
+    <!-- ===== חלון: פרויקט חדש ===== -->
+    <dialog id="project-dlg" aria-labelledby="project-dlg-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="project-dlg-title">פרויקט חדש</h2>
+                <button type="submit" class="btn primary">פתיחה</button>
+            </header>
+            <div class="sheet-body">
+                <div class="fields" data-project-fields></div>
+                <label class="f wide"><span>תבנית שלבים</span><select name="template_id"></select></label>
+                <p class="error" role="alert" hidden></p>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- ===== חלון: שלב ===== -->
+    <dialog id="stage-dlg" aria-labelledby="stage-dlg-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="stage-dlg-title">שלב</h2>
+                <button type="submit" class="btn primary">שמירה</button>
+            </header>
+            <div class="sheet-body">
+                <div class="fields">
+                    <label class="f wide"><span>שם השלב *</span><input name="name" maxlength="80" required></label>
+                    <label class="f"><span>תחום</span><select name="trade_id"></select></label>
+                    <label class="f"><span>ספק</span><select name="supplier_id"></select></label>
+                    <label class="f wide"><span>סטטוס</span><select name="status"></select></label>
+                    <label class="f"><span>התחלה מתוכננת</span><input name="plan_start" type="date"></label>
+                    <label class="f"><span>סיום מתוכנן</span><input name="plan_end" type="date"></label>
+                </div>
+                <label class="switch"><input type="checkbox" name="needs_lawyer"><span>דורש גם אישור עו"ד</span></label>
+                <p class="error" role="alert" hidden></p>
+                <div class="row-btns" data-existing>
+                    <button type="button" class="btn ghost" data-move="-1" aria-label="הזזת השלב למעלה">↑ למעלה</button>
+                    <button type="button" class="btn ghost" data-move="1" aria-label="הזזת השלב למטה">↓ למטה</button>
+                    <button type="button" class="btn ghost danger" data-delete>מחיקה</button>
+                </div>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- ===== חלון: איש צוות ===== -->
+    <dialog id="member-dlg" aria-labelledby="member-dlg-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="member-dlg-title">הוספה לצוות</h2>
+                <button type="submit" class="btn primary">הוספה</button>
+            </header>
+            <div class="sheet-body">
+                <label class="f"><span>איש קשר</span><select name="contact_id" required></select></label>
+                <label class="f"><span>תפקיד בפרויקט</span><input name="role" maxlength="40" placeholder="למשל: אדריכלית, מפקח"></label>
+                <p class="error" role="alert" hidden></p>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- ===== חלון: תבנית שלבים ===== -->
+    <dialog id="template-dlg" aria-labelledby="template-dlg-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="template-dlg-title">תבנית שלבים</h2>
+                <button type="submit" class="btn primary">שמירה</button>
+            </header>
+            <div class="sheet-body">
+                <label class="f"><span>שם התבנית *</span><input name="name" maxlength="60" required></label>
+                <label class="f"><span>שלבים — שורה לכל שלב, ואחרי "|" התחום</span>
+                    <textarea name="stages" rows="12" placeholder="חשמל | חשמל&#10;ריצוף וחיפוי | ריצוף"></textarea></label>
+                <p class="error" role="alert" hidden></p>
+                <button type="button" class="btn ghost danger" data-delete>מחיקת התבנית</button>
+            </div>
+        </form>
+    </dialog>
+
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/app.js?v=3"></script>
+    <script src="assets/js/core.js?v=4"></script>
+    <script src="assets/js/contacts.js?v=4"></script>
+    <script src="assets/js/projects.js?v=4"></script>
+    <script src="assets/js/settings.js?v=4"></script>
+    <script src="assets/js/app.js?v=4"></script>
 </body>
 </html>
