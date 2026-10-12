@@ -54,6 +54,8 @@ try {
                     last_seen_at = excluded.last_seen_at'
             )->execute([$user['id'], $user['display_name'], $now, $now]);
             return ['user' => $user, 'trades' => pm_trades(), 'templates' => pm_templates(),
+                    // מצב עצמאי: בלי חזרה לדף האפליקציות. כבוי כל עוד האפליקציה בתוך האינדקס.
+                    'standalone' => pm_setting('standalone', '0') === '1',
                     'labels' => ['stage' => PM_STAGE_STATUSES, 'project' => PM_PROJECT_STATUSES, 'kind' => PM_PROJECT_KINDS]];
         })(),
 
@@ -77,6 +79,11 @@ try {
         'GET trades'      => ['trades' => pm_trades()],
         'POST template'   => $isDev ? ['templates' => pm_template_save($user, $in)] : throw new PmError('רק המפתח עורך תבניות', 403),
         'POST template-delete' => $isDev ? ['templates' => pm_template_delete($user, (int)($in['id'] ?? 0))] : throw new PmError('רק המפתח עורך תבניות', 403),
+        'POST standalone' => $isDev ? (function () use ($user, $in) {
+            pm_setting_set('standalone', !empty($in['on']) ? '1' : '0');
+            pm_audit("user:{$user['id']}", 'setting.standalone', 'setting', null, ['on' => !empty($in['on'])]);
+            return ['standalone' => !empty($in['on'])];
+        })() : throw new PmError('רק המפתח', 403),
         'GET access'      => $isDev ? pm_access_overview() : throw new PmError('רק המפתח', 403),
         'POST trade'      => $isDev ? ['trades' => pm_trade_save($user, $in)] : throw new PmError('רק המפתח עורך תחומים', 403),
         'POST trade-delete' => $isDev ? ['trades' => pm_trade_delete($user, (int)($in['id'] ?? 0))] : throw new PmError('רק המפתח עורך תחומים', 403),

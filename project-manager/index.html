@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=4">
+    <link rel="stylesheet" href="assets/css/app.css?v=5">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -20,8 +20,10 @@
 <body>
     <a class="skip" href="#main">דילוג לתוכן</a>
 <!--
-    אפליקציה עצמאית: אין כאן קישור לדף הכלים הראשי. הכניסה היא הקישור הישיר
-    לכאן, או האייקון במסך הבית (כמו ממשק המנהל של הקייטרינג).
+    שני מצבים (הגדרות ← כללי ← "אפליקציה עצמאית"):
+      כבוי (ברירת מחדל) — חלק מדף האפליקציות: נכנסים מהכרטיס, ו-→ חוזר לשם.
+      דלוק — אפליקציה עצמאית: בלי חזרה לדף האפליקציות; נכנסים מהקישור הישיר
+              או מהאייקון במסך הבית. כל השאר — אותו דבר בשני המצבים.
 
     ניווט בכתובת (#/…), כדי שכפתור "חזרה" של הטלפון יעבוד:
       #/                 הפרויקטים (מסך הבית)
@@ -31,6 +33,7 @@
 -->
     <header class="top">
         <a class="icon-btn" id="back" href="#/" aria-label="חזרה לפרויקטים" hidden>→</a>
+        <a class="icon-btn" id="tools-link" href="../" aria-label="חזרה לדף האפליקציות" title="דף האפליקציות" hidden>→</a>
         <img class="logo" id="logo" src="assets/icon.svg" alt="" width="28" height="28">
         <div class="titles">
             <h1 id="title">ניהול פרויקטים</h1>
@@ -43,7 +46,7 @@
     <nav class="tabs" id="nav" aria-label="ניווט ראשי">
         <a href="#/" data-nav="projects">פרויקטים</a>
         <a href="#/contacts/client" data-nav="contacts">אנשי קשר</a>
-        <a href="#/settings/trades" data-nav="settings" class="dev-only" hidden>הגדרות</a>
+        <a href="#/settings/general" data-nav="settings" class="dev-only" hidden>הגדרות</a>
     </nav>
     <nav class="tabs sub-tabs" id="project-nav" aria-label="חלקי הפרויקט" hidden>
         <a data-pane="timeline">ציר זמן</a>
@@ -132,9 +135,16 @@
         <!-- ===== הגדרות מפתח ===== -->
         <section id="view-settings" class="view" hidden>
             <div class="seg kinds" role="tablist" aria-label="הגדרות">
+                <a role="tab" data-set="general" href="#/settings/general"><span>כללי</span></a>
                 <a role="tab" data-set="trades" href="#/settings/trades"><span>תחומים</span></a>
                 <a role="tab" data-set="templates" href="#/settings/templates"><span>תבניות שלבים</span></a>
                 <a role="tab" data-set="access" href="#/settings/access"><span>מנהלים</span></a>
+            </div>
+            <div class="pane" id="set-general" hidden>
+                <label class="switch"><input type="checkbox" id="standalone"><span>אפליקציה עצמאית</span></label>
+                <p class="hint">כבוי — חלק מדף האפליקציות: נכנסים מהכרטיס, והחץ בכותרת חוזר אליו.
+                    דלוק — עצמאית: בלי חזרה לדף האפליקציות; נכנסים מהקישור הישיר או מהאייקון במסך הבית.
+                    להדליק כשמשחררים את האפליקציה מהאינדקס.</p>
             </div>
             <div class="pane" id="set-trades" hidden>
                 <form id="trade-add" class="toolbar">
@@ -310,10 +320,10 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=4"></script>
-    <script src="assets/js/contacts.js?v=4"></script>
-    <script src="assets/js/projects.js?v=4"></script>
-    <script src="assets/js/settings.js?v=4"></script>
-    <script src="assets/js/app.js?v=4"></script>
+    <script src="assets/js/core.js?v=5"></script>
+    <script src="assets/js/contacts.js?v=5"></script>
+    <script src="assets/js/projects.js?v=5"></script>
+    <script src="assets/js/settings.js?v=5"></script>
+    <script src="assets/js/app.js?v=5"></script>
 </body>
 </html>

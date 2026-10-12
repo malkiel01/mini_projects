@@ -216,6 +216,20 @@ function pm_migrate(PDO $pdo): void
     }
 }
 
+function pm_setting(string $key, string $default = ''): string
+{
+    $st = pm_db()->prepare('SELECT value FROM settings WHERE key = ?');
+    $st->execute([$key]);
+    $v = $st->fetchColumn();
+    return $v === false ? $default : (string)$v;
+}
+
+function pm_setting_set(string $key, string $value): void
+{
+    pm_db()->prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+        ->execute([$key, $value]);
+}
+
 /** רישום ביומן הביקורת. $actor — "user:<id>" או "portal:<contact>" בהמשך. */
 function pm_audit(string $actor, string $action, string $refKind, ?int $refId, array $data = []): void
 {

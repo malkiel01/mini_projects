@@ -4,12 +4,7 @@
   "icon": "📊",
   "description": "ניהול פרויקטים של שיפוץ ובנייה: לקוחות, ספקים ועורכי דין, הצעות מחיר, אישורים, תשלומים ותיעוד מהשטח.",
   "category": "dev",
-  "links": [
-    {
-      "label": "📊 ניהול פרויקטים",
-      "href": ""
-    }
-  ],
+  "entry": "index.html",
   "gate": true,
   "restricted": true,
   "public": [
@@ -19,5 +14,5 @@
     "sw.js",
     "assets/**"
   ],
-  "version": "0.4"
+  "version": "0.5"
 }
