@@ -17,6 +17,7 @@ require_once __DIR__ . '/lib/quotes.php';
 require_once __DIR__ . '/lib/auth.php';
 
 pm_log_install_handlers();
+pm_survey_migrate();
 $PM_T0 = microtime(true);
 
 header('Content-Type: application/json; charset=utf-8');
@@ -106,6 +107,7 @@ try {
                                  trim((string)($in['q'] ?? '')), !empty($in['archived']))],
         'GET contact'     => ['contact' => pm_contact_get($user, (int)($in['id'] ?? 0))],
         'POST contact'    => ['contact' => pm_contact_save($user, $in)],
+        'POST contacts-import' => pm_contacts_import($user, $in),
         'POST archive'    => ['contact' => pm_contact_archive($user, (int)($in['id'] ?? 0), !empty($in['archived']))],
 
         'GET projects'    => ['projects' => pm_projects_list($user, trim((string)($in['q'] ?? '')), (string)($in['filter'] ?? 'open'))],

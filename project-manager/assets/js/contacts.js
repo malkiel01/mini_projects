@@ -16,6 +16,7 @@ const Contacts = (() => {
         });
         $('#trade-filter').addEventListener('change', render);
         $('#add').addEventListener('click', () => open(null, kind));
+        $('#device-contacts').addEventListener('click', () => DeviceContacts.open());
         $('#list').addEventListener('click', e => {
             if (e.target.closest('a')) return; // קישור טלפון / וואטסאפ / מייל
             const card = e.target.closest('.card');
@@ -79,7 +80,6 @@ const Contacts = (() => {
                 ...c.trades.map(id => esc(tradeName(id))),
                 c.kind === 'client' && c.lawyer_name ? 'עו"ד ' + esc(c.lawyer_name.replace(/^עו"ד\s*/, '')) : '',
                 c.phone ? `<span dir="ltr">${esc(c.phone)}</span>` : (c.email ? esc(c.email) : ''),
-                isDev() && c.owner_name && c.owner_id !== state.user.id ? 'של ' + esc(c.owner_name) : '',
             ].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>');
             const stars = c.rating ? `<span class="rating" aria-label="דירוג ${c.rating} מתוך 5">${'★'.repeat(c.rating)}</span>` : '';
             return `<article class="card" data-id="${c.id}" tabindex="0" role="button" aria-label="${esc(c.name)}">
@@ -128,6 +128,7 @@ const Contacts = (() => {
             arch.textContent = c.archived ? 'החזרה מהארכיון' : 'העברה לארכיון';
             arch.classList.toggle('danger', !c.archived);
         }
+        DeviceContacts.editorReady(!c);
         $('#editor').showModal();
         form.elements.name.focus();
     }

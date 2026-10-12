@@ -320,6 +320,12 @@ body[data-view="project"] main { padding-bottom: 0; }
 #max-upload-form { align-items: flex-end; margin-bottom: var(--s3); }
 #max-upload-form .f { flex: 1; }
 
+/* ---- ייבוא מאנשי הקשר במכשיר ---- */
+
+#import-list .pick { flex: none; width: 20px; height: 20px; accent-color: var(--brand); }
+#import-list:empty { display: none; }
+#fill-from-device { justify-self: start; }
+
 /* ---- הצעות מחיר ---- */
 
 #pane-quotes > .toolbar { justify-content: space-between; }

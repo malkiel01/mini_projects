@@ -87,7 +87,6 @@ const Projects = (() => {
                 p.client_name ? esc(p.client_name) : '',
                 p.current_stage ? `${esc(p.current_stage.name)}: ${esc(state.labels.stage[p.current_stage.status] || '')}` : (p.stages_total ? 'כל השלבים בוצעו' : ''),
                 p.stages_total ? `${p.stages_done}/${p.stages_total}` : '',
-                isDev() && p.owner_id !== state.user.id && p.owner_name ? 'של ' + esc(p.owner_name) : '',
             ].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>');
             const status = p.status !== 'active' ? `<span class="chip">${esc(state.labels.project[p.status])}</span>` : '';
             return `<article class="card chat" data-id="${p.id}" tabindex="0" role="link" aria-label="${esc(p.name)}">
@@ -322,7 +321,9 @@ const Projects = (() => {
         };
         if (!body.name) { formError(form, 'שם השלב: שדה חובה'); return; }
         await busy($('button[type=submit]', form), form, async () => {
-            update(await api('stage', { body }));
+            const d = await api('stage', { body });
+            update(d);
+            if (d.notice) toast(d.notice);
             $('#stage-dlg').close();
         });
     }
