@@ -121,8 +121,10 @@ async function startReset() {
     if (r.status !== 200) {
         resetToken = null;
         history.replaceState(null, '', location.pathname);
-        setMode('forgot');
-        showError(r.data.error || 'הקישור לא תקף');
+        // קישור שכבר שומש, ומי שפתח אותו כבר מחובר — פשוט נכנסים
+        if (state.user?.status === 'active') { location.replace('./'); return; }
+        setMode('login');
+        showError('הקישור כבר שומש או שפג. אם כבר קבעת סיסמה חדשה — היכנס איתה כאן. אם לא — "שכחתי סיסמה" או בקש מהמפתח קישור חדש.');
         return;
     }
     setMode('reset');
