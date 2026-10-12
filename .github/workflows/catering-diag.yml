@@ -1,8 +1,10 @@
 name: Catering push diagnostics
 
-# אבחון התראות של catering-menu: מתחבר לשרת עם מפתח הפריסה ומדפיס מצב בלבד —
+# אבחון התראות של catering-menu: מתחבר לשרת עם מפתח הפריסה ומדפיס מצב —
 # מכשירים רשומים, יומן השליחות, מצב התזכורות וה-cron, ושגיאות PHP.
-# קורא בלבד ולא מעלה קבצים — אינו פריסה. רץ רק בדחיפה לענף diag/catering-menu.
+# בנוסף מוודא שקיימת ב-crontab שורת התקתוק של התזכורות (פעם ב-5 דקות) —
+# בלעדיה תזכורות יוצאות רק כשמישהו נכנס לאתר. לא מעלה קבצים — אינו פריסה.
+# רץ רק בדחיפה לענף diag/catering-menu.
 # הלוג ציבורי (ריפו ציבורי) — לכן הסקריפט לא מדפיס שמות לקוחות או מפתחות.
 
 on:
@@ -32,6 +34,30 @@ jobs:
           chmod +x "$RUNNER_TEMP/askpass"
           SSH_ASKPASS="$RUNNER_TEMP/askpass" SSH_ASKPASS_REQUIRE=force ssh-add ~/.ssh/deploy_key
           rm -f "$RUNNER_TEMP/askpass"
+      - name: Ensure the reminders cron line
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER_: ${{ secrets.DEPLOY_USER }}
+        run: |
+          for wait in 0 30 90 180; do
+            sleep "$wait"
+            if ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30 "$USER_@$HOST" bash -s <<'SH'
+          LINE='*/5 * * * * curl -s "https://mbe-plus.com/mini_projects/catering-menu/api.php?action=tick" >/dev/null 2>&1'
+          current="$(crontab -l 2>/dev/null || true)"
+          if printf '%s\n' "$current" | grep -qF 'catering-menu/api.php?action=tick'; then
+            echo "שורת התזכורות כבר קיימת ב-crontab"
+          else
+            { [ -n "$current" ] && printf '%s\n' "$current"; printf '%s\n' "$LINE"; } | crontab -
+            echo "נוספה שורת התזכורות ל-crontab"
+          fi
+          echo "--- crontab (שורות catering בלבד):"
+          crontab -l 2>/dev/null | grep -F 'catering-menu' || echo "(אין)"
+          SH
+            then exit 0; fi
+            echo "::warning::החיבור נכשל — מנסה שוב"
+          done
+          exit 1
+
       - name: Read push state from the server
         env:
           HOST: ${{ secrets.DEPLOY_HOST }}
