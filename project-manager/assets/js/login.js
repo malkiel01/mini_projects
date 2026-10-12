@@ -1,18 +1,19 @@
-// כניסה, הרשמה והקמת המפתח — בחשבונות של האפליקציה עצמה (lib/auth.php).
+// כניסה, הרשמה, הקמת המפתח ושחזור סיסמה — בחשבונות של האפליקציה עצמה
+// (lib/auth.php). אין כאן שום קשר לחשבונות של דף הכלים.
 //
-// כשאין אף משתמש: "הקמת המפתח" — רק למי שמחובר לפלטפורמה כמנהל שלה.
-// אחר כך: כניסה, או הרשמה כמנהל פרויקט — שממתינה לאישור המפתח.
+// מצבים: login · register · setup (אין עדיין משתמשים) · forgot (קישור לאימייל) ·
+//        recover (המפתח, בקוד השחזור) · reset (נפתח מקישור: login.html#reset=…)
 'use strict';
 
 // ---- שגיאות בדפדפן נשלחות ליומן (הגדרות ← יומן) ----
 (() => {
     let sent = 0;
     const report = (kind, message, extra = {}) => {
-        if (++sent > 10) return; // לא מציפים: עד 10 לטעינת דף
+        if (++sent > 10) return;
         fetch('api.php?action=client-error', {
             method: 'POST', credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json', 'X-PM': '1' },
-            body: JSON.stringify({ kind, message: String(message).slice(0, 1000), page: location.pathname + location.hash, ...extra }),
+            body: JSON.stringify({ kind, message: String(message).slice(0, 1000), page: location.pathname, ...extra }),
         }).catch(() => {});
     };
     addEventListener('error', e => report('error', e.message, { source: e.filename, line: e.lineno, col: e.colno, stack: e.error?.stack?.slice(0, 2000) }));
@@ -21,7 +22,7 @@
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
-let csrf = null, setup = false;
+let csrf = null, mode = 'login', resetToken = null, state = {};
 
 async function call(action, body) {
     const opts = { credentials: 'same-origin', headers: { Accept: 'application/json' } };
@@ -38,36 +39,48 @@ async function call(action, body) {
     return { status: res.status, data };
 }
 
-const mode = () => setup ? 'setup' : document.querySelector('[name=mode]:checked').value;
+const HINTS = {
+    setup: 'הקמת האפליקציה: חשבון המפתח. נדרש קוד השחזור — הסוד PM_RECOVERY_CODE שהוגדר ב-GitHub.',
+    forgot: 'נשלח קישור לקביעת סיסמה חדשה לאימייל הרשום בחשבון.',
+    recover: 'קוד השחזור (PM_RECOVERY_CODE) מאפשר לקבוע סיסמה חדשה לחשבון המפתח. כל הנעילות ישתחררו.',
+    reset: '',
+};
+const SUBMIT = { login: 'כניסה', register: 'שליחת בקשה', setup: 'הקמת המפתח', forgot: 'שליחת קישור', recover: 'קביעת סיסמה וכניסה', reset: 'קביעת סיסמה' };
 
-function setMode() {
-    const m = mode();
-    const reg = m !== 'login';
-    $$('.reg-only').forEach(el => { el.hidden = !reg; });
-    $$('.setup-only').forEach(el => { el.hidden = m !== 'setup'; });
-    $('.auth-tabs').hidden = m === 'setup';
-    $('[name=phone]').closest('label').hidden = m !== 'register';
-    $('.reg-only.hint').textContent = m === 'setup' ? 'לפחות 8 תווים.' : 'לפחות 8 תווים. ההרשמה נשלחת למפתח לאישור.';
-    $('#auth-submit').textContent = { login: 'כניסה', register: 'שליחת בקשה', setup: 'הקמת המפתח' }[m];
-    $('[name=password]').autocomplete = reg ? 'new-password' : 'current-password';
+function setMode(m) {
+    mode = m;
+    $$('[data-modes]').forEach(el => { el.hidden = !el.dataset.modes.split(' ').includes(m); });
+    $('.auth-tabs').hidden = !['login', 'register'].includes(m);
+    if (['login', 'register'].includes(m)) $(`[name=mode][value=${m}]`).checked = true;
+    $('#mode-hint').textContent = HINTS[m] || '';
+    $('#mode-hint').hidden = !HINTS[m];
+    $('#auth-submit').textContent = SUBMIT[m];
+    $('.lbl-user').textContent = m === 'login' || m === 'forgot' ? 'שם משתמש או אימייל' : 'שם משתמש (באנגלית)';
+    $('.lbl-email').textContent = m === 'setup' ? 'אימייל (לשחזור סיסמה)' : 'אימייל';
+    $('.lbl-pass').textContent = ['register', 'setup', 'recover', 'reset'].includes(m) ? 'סיסמה חדשה (לפחות 8 תווים)' : 'סיסמה';
+    $('[name=password]').autocomplete = m === 'login' ? 'current-password' : 'new-password';
     $('#auth-error').hidden = true;
+    $('#auth-ok').hidden = true;
+    $('#auth-form').hidden = false;
+    $('#waiting').hidden = true;
 }
 
 function showError(msg) {
+    $('#auth-ok').hidden = true;
     $('#auth-error').textContent = msg;
     $('#auth-error').hidden = false;
 }
 
-function showForm() {
-    $('#auth-form').hidden = false;
-    $('#waiting').hidden = true;
-    setMode();
+function showOk(msg) {
+    $('#auth-error').hidden = true;
+    $('#auth-ok').textContent = msg;
+    $('#auth-ok').hidden = false;
 }
 
 function showWaiting(title, text, canRetry = true) {
     $('#auth-form').hidden = true;
     $('.auth-tabs').hidden = true;
-    $$('.setup-only').forEach(el => { el.hidden = true; });
+    $('#mode-hint').hidden = true;
     $('#waiting').hidden = false;
     $('#waiting-title').textContent = title;
     $('#waiting-text').textContent = text;
@@ -75,19 +88,22 @@ function showWaiting(title, text, canRetry = true) {
     $('#logout').hidden = !csrf;
 }
 
-/** לאן ממשיכים: לאפליקציה, למסך "ממתין", להקמה, או לטופס הכניסה. */
+/** לאן ממשיכים: לאפליקציה, למסך "ממתין", להקמה, לאיפוס, או לכניסה. */
 async function route() {
     const { data } = await call('auth');
+    state = data;
     csrf = data.csrf || null;
     const user = data.user;
-    setup = !!data.setup_needed;
-    if (setup) {
-        if (data.setup_allowed) { showForm(); return; }
-        showWaiting('האפליקציה עוד לא הוקמה', 'את חשבון המפתח מקים מנהל הפלטפורמה: להיכנס לדף האפליקציות כמנהל, ואז לחזור לכאן.', true);
+    if (resetToken) return startReset();
+    if (data.setup_needed) {
+        if (!data.recovery_set) {
+            showWaiting('האפליקציה עוד לא הוקמה', 'כדי להקים את חשבון המפתח צריך קוד שחזור: להוסיף ב-GitHub (Settings ← Secrets) את הסוד PM_RECOVERY_CODE, ולפרוס.');
+            return;
+        }
+        setMode('setup');
         return;
     }
-    $('#forgot').hidden = !data.can_reset_dev;
-    if (!user) { showForm(); return; }
+    if (!user) { if (!['forgot', 'recover', 'register'].includes(mode)) setMode('login'); return; }
     if (user.status === 'active') { location.replace('./'); return; }
     if (user.status === 'pending') {
         showWaiting('ההרשמה התקבלה', `שלום ${user.display_name}. הבקשה ממתינה לאישור המפתח. אחרי האישור תוכל להיכנס מכאן.`);
@@ -96,23 +112,52 @@ async function route() {
     showWaiting('החשבון חסום', 'פנה למפתח.', false);
 }
 
+async function startReset() {
+    const r = await call('reset-info', { token: resetToken });
+    if (r.status !== 200) {
+        resetToken = null;
+        history.replaceState(null, '', location.pathname);
+        setMode('forgot');
+        showError(r.data.error || 'הקישור לא תקף');
+        return;
+    }
+    setMode('reset');
+    $('#mode-hint').textContent = `שלום ${r.data.display_name}. בחר סיסמה חדשה לחשבון ${r.data.username}.`;
+    $('#mode-hint').hidden = false;
+}
+
 async function submit(e) {
     e.preventDefault();
     const f = e.target.elements;
-    const m = mode();
-    const body = { username: f.username.value.trim(), password: f.password.value };
-    if (!body.username || !body.password) { showError('יש למלא שם משתמש וסיסמה'); return; }
-    if (m !== 'login') {
-        body.display_name = f.display_name.value.trim();
-        if (!body.display_name) { showError('יש למלא שם מלא'); return; }
-        if (m === 'register') body.phone = f.phone.value.trim();
-    }
+    const v = n => f[n].value.trim();
+    let action = mode, body;
+    if (mode === 'login') body = { username: v('username'), password: f.password.value };
+    if (mode === 'register') body = { display_name: v('display_name'), email: v('email'), phone: v('phone'), username: v('username'), password: f.password.value };
+    if (mode === 'setup') body = { code: f.code.value, display_name: v('display_name'), email: v('email'), username: v('username'), password: f.password.value };
+    if (mode === 'forgot') body = { login: v('username') };
+    if (mode === 'recover') { action = 'recover-dev'; body = { code: f.code.value, password: f.password.value }; }
+    if (mode === 'reset') { action = 'reset-password'; body = { token: resetToken, password: f.password.value }; }
+
+    if (mode === 'forgot' && !body.login) return showError('יש למלא שם משתמש או אימייל');
+    if (['login', 'register', 'setup'].includes(mode) && (!body.username || !body.password)) return showError('יש למלא שם משתמש וסיסמה');
+    if (['register', 'setup'].includes(mode) && !body.display_name) return showError('יש למלא שם מלא');
+    if (mode === 'register' && !body.email) return showError('יש למלא אימייל — דרכו משחזרים סיסמה');
+    if (['recover', 'reset'].includes(mode) && f.password.value !== f.password2.value) return showError('הסיסמאות לא זהות');
+    if (['setup', 'recover'].includes(mode) && !body.code) return showError('יש למלא את קוד השחזור');
+
     const btn = $('#auth-submit');
     btn.disabled = true;
     try {
-        const r = await call(m, body);
-        if (r.status !== 200) { showError(r.data.error || 'תקלה, נסה שוב'); return; }
-        f.password.value = '';
+        const r = await call(action, body);
+        if (r.status !== 200) return showError(r.data.error || 'תקלה, נסה שוב');
+        f.password.value = f.password2.value = f.code.value = '';
+        if (mode === 'forgot') return showOk('אם יש חשבון עם אימייל רשום — נשלח אליו קישור. אם לא הגיע תוך כמה דקות, בדוק בספאם או פנה למפתח.');
+        if (mode === 'recover') alert(`הסיסמה עודכנה. שם המשתמש של המפתח: ${r.data.username}`);
+        if (mode === 'reset') {
+            resetToken = null;
+            history.replaceState(null, '', location.pathname);
+            if (r.data.blocked) return showWaiting('הסיסמה עודכנה', 'אבל החשבון חסום — פנה למפתח.', false);
+        }
         await route();
     } catch {
         showError('אין חיבור לשרת');
@@ -127,25 +172,13 @@ async function logout() {
     await route();
 }
 
-$('#forgot').addEventListener('click', () => {
-    $('#auth-form').hidden = true;
-    $('.auth-tabs').hidden = true;
-    $('#reset-form').hidden = false;
-    $('#reset-form [name=password]').focus();
-});
-$('#reset-cancel').addEventListener('click', () => { $('#reset-form').hidden = true; showForm(); });
-$('#reset-form').addEventListener('submit', async e => {
-    e.preventDefault();
-    const err = $('#reset-form .error');
-    const r = await call('reset-dev', { password: e.target.elements.password.value }).catch(() => ({ status: 0, data: {} }));
-    if (r.status !== 200) { err.textContent = r.data.error || 'אין חיבור לשרת'; err.hidden = false; return; }
-    alert(`הסיסמה עודכנה. שם המשתמש של המפתח: ${r.data.username}`);
-    location.replace('./');
-});
-
-$$('[name=mode]').forEach(r => r.addEventListener('change', setMode));
+$$('[name=mode]').forEach(r => r.addEventListener('change', () => setMode(r.value)));
+$$('[data-go]').forEach(b => b.addEventListener('click', () => setMode(b.dataset.go)));
 $('#auth-form').addEventListener('submit', submit);
 $('#recheck').addEventListener('click', () => route());
 $('#logout').addEventListener('click', logout);
+
+const m = location.hash.match(/reset=([a-f0-9]{48})/);
+if (m) resetToken = m[1];
 $('#auth-form').hidden = true; // עד שיתברר אם כבר מחובר
-route().catch(() => { showForm(); showError('אין חיבור לשרת'); });
+route().catch(() => { setMode('login'); showError('אין חיבור לשרת'); });

@@ -5,7 +5,8 @@
  * GET לקריאה, POST עם JSON לשינוי. ה-action ב-query (?action=…).
  * משתמשים וכניסה — של האפליקציה עצמה (lib/auth.php). api.php ציבורי בשער של
  * הפלטפורמה, ולכן כל ההגנה כאן: בלי משתמש פעיל — 401; כל POST דורש X-CSRF.
- * חריגים, לפני כניסה: auth (מצב), login, register, setup, logout.
+ * חריגים, לפני כניסה: auth (מצב), login, register, setup, logout, recover-dev,
+ * forgot, reset-info, reset-password, client-error.
  *
  * הפורטל (לקוח, עו"ד, ספק) יקבל API נפרד ב-portal/api.php — שלב 4.
  */
@@ -61,7 +62,10 @@ try {
         'POST register' => fn() => pm_register(pm_body()),
         'POST setup'    => fn() => pm_setup(pm_body()),
         'POST logout'   => fn() => pm_logout(pm_session_user()),
-        'POST reset-dev' => fn() => pm_reset_developer(pm_body()),
+        'POST recover-dev'     => fn() => pm_recover_developer(pm_body()),
+        'POST forgot'          => fn() => pm_forgot(pm_body()),
+        'POST reset-info'      => fn() => pm_reset_info((string)(pm_body()['token'] ?? '')),
+        'POST reset-password'  => fn() => pm_reset_password(pm_body()),
         // שגיאת JavaScript מהדפדפן — גם לפני כניסה (מסך הכניסה). X-PM מונע הצפה מאתר זר.
         'POST client-error' => function () {
             pm_require_app_header();
@@ -123,8 +127,11 @@ try {
             return ['standalone' => !empty($in['on'])];
         })() : throw new PmError('רק המפתח', 403),
         'POST password'   => pm_change_password($user, $in),
-        'GET users'       => $isDev ? ['users' => pm_users_list()] : throw new PmError('רק המפתח', 403),
-        'POST user'       => $isDev ? pm_user_action($user, (int)($in['id'] ?? 0), (string)($in['do'] ?? '')) : throw new PmError('רק המפתח', 403),
+        'POST profile'    => pm_update_profile($user, $in),
+        'GET users'       => $isDev ? ['users' => pm_users_list(), 'orphans' => pm_orphans(), 'mail' => pm_mail_available()] : throw new PmError('רק המפתח', 403),
+        'POST user'       => $isDev ? pm_user_action($user, (int)($in['id'] ?? 0), (string)($in['do'] ?? ''), $in) : throw new PmError('רק המפתח', 403),
+        'POST user-save'  => $isDev ? pm_user_save($user, $in) : throw new PmError('רק המפתח', 403),
+        'POST claim-orphans' => $isDev ? pm_claim_orphans($user, (int)($in['to'] ?? 0)) : throw new PmError('רק המפתח', 403),
         'GET log'         => $isDev ? ['entries' => pm_log_query($in), 'stats' => pm_log_stats()] : throw new PmError('רק המפתח', 403),
         'GET log-token'   => $isDev ? pm_log_token() : throw new PmError('רק המפתח', 403),
         'POST log-token'  => $isDev ? pm_log_token(true) : throw new PmError('רק המפתח', 403),

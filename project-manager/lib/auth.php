@@ -1,28 +1,34 @@
 <?php
 /**
- * משתמשים, כניסה והגנות — של האפליקציה עצמה (הוכרע 2026-10-12).
+ * משתמשים, כניסה והגנות — של האפליקציה עצמה, **בלי שום קשר לפלטפורמה**
+ * (הוכרע 2026-10-12): לא חשבונות, לא עוגיות, לא מסד. האפליקציה של דף הכלים
+ * והאפליקציה הזו הן שתי מערכות משתמשים נפרדות לגמרי — היום, וגם כשהאפליקציה
+ * תעמוד בפני עצמה.
  *
- * האפליקציה לא תלויה בחשבונות הפלטפורמה: כך היא יכולה לעמוד בפני עצמה כשתשוחרר
- * מהאינדקס. השער של הפלטפורמה לא חוסם את api.php ("public" ב-app.json), ולכן
- * כל ההגנה כאן:
- *
+ * השער של הפלטפורמה לא חוסם את api.php ("public" ב-app.json), ולכן כל ההגנה כאן:
  *   - סיסמאות ב-password_hash.
  *   - העוגייה pm_session מחזיקה אסימון אקראי; במסד נשמר רק ה-hash שלו.
- *   - CSRF: אסימון לכל התחברות, נדרש בכותרת X-CSRF בכל פעולה משנה. כניסה,
- *     הרשמה והקמה (שקודמות לאסימון) דורשות JSON עם הכותרת X-PM — אתר זר לא יכול
- *     לשלוח כזו בלי אישור CORS.
- *   - הגבלת ניסיונות: 5 כשלים → נעילה של 15 דקות, לפי שם משתמש ולפי IP.
+ *   - CSRF: אסימון לכל התחברות, נדרש בכותרת X-CSRF בכל פעולה משנה. מה שקודם
+ *     לכניסה (כניסה, הרשמה, הקמה, שחזור) — רק JSON עם הכותרת X-PM.
+ *   - נעילה: 5 כשלים לשם משתמש, 20 לרשת, ל-15 דקות.
  *
- * תפקידים: developer (המפתח — רואה הכול, מאשר מנהלים) · manager (מנהל פרויקט).
- * מצבים:   pending (נרשם, ממתין לאישור) · active · blocked.
+ * תפקידים: developer (המפתח) · manager (מנהל פרויקט).
+ * מצבים:   pending (נרשם, ממתין) · active · blocked.
  *
- * המפתח הראשון: כשאין אף משתמש, מסך הכניסה מציע "הקמת המפתח" — רק למי שמחובר
- * לפלטפורמה כמנהל שלה. אחרי שנוצר, המסך נסגר לתמיד.
+ * **קוד השחזור** — הסוד היחיד שמחוץ לאפליקציה: סוד GitHub בשם PM_RECOVERY_CODE,
+ * שהפריסה כותבת ל-lib/recovery-code.php כ-hash בלבד. הוא מאפשר שני דברים:
+ *   1. להקים את המפתח הראשון, כשאין אף משתמש.
+ *   2. לקבוע סיסמה חדשה למפתח, אם שכח אותה (ואין לו אימייל, או שהאימייל לא מגיע).
+ *
+ * **איפוס סיסמה בקישור** — קישור חד-פעמי (login.html#reset=…):
+ *   - המפתח שולח למנהל: באימייל, ובכל מקרה גם מוצג לו להעתקה / וואטסאפ. תקף 24 שעות.
+ *   - משתמש מבקש לעצמו ("שכחתי סיסמה"): נשלח רק לאימייל הרשום. תקף שעה.
  */
 
 declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/mail.php';
 
 const PM_COOKIE = 'pm_session';
 const PM_SESSION_DAYS = 30;
@@ -30,10 +36,10 @@ const PM_MAX_FAILURES = 5;      // לשם משתמש
 const PM_MAX_FAILURES_IP = 20;  // לרשת
 const PM_LOCK_MINUTES = 15;
 const PM_MIN_PASSWORD = 8;
-/** המשתמש הראשון מקבל מזהה 1000 ומעלה — שלא יתנגש במזהים ישנים מהפלטפורמה (README). */
+/** המשתמש הראשון מקבל מזהה 1000 ומעלה — כך מזהים ישנים (לפני שהיו משתמשים משלה) לא מתנגשים. */
 const PM_FIRST_USER_ID = 1000;
-
-if (!defined('PM_PLATFORM_DB')) define('PM_PLATFORM_DB', __DIR__ . '/../../platform/data/platform.sqlite');
+const PM_RESET_HOURS_BY_DEV = 24;
+const PM_RESET_HOURS_SELF = 1;
 
 function pm_client_ip(): string
 {
@@ -45,7 +51,7 @@ function pm_users_exist(): bool
     return (bool)pm_db()->query('SELECT 1 FROM users LIMIT 1')->fetchColumn();
 }
 
-/** המשתמש המחובר — [id, username, display_name, role, status, csrf] — או null (גם ממתין). */
+/** המשתמש המחובר — [id, username, display_name, email, role, status, csrf] — או null (גם ממתין). */
 function pm_session_user(): ?array
 {
     static $cached = false;
@@ -54,7 +60,7 @@ function pm_session_user(): ?array
     $token = $_COOKIE[PM_COOKIE] ?? '';
     if (!is_string($token) || strlen($token) !== 64) return null;
     $st = pm_db()->prepare(
-        'SELECT u.id, u.username, u.display_name, u.role, u.status, s.csrf
+        'SELECT u.id, u.username, u.display_name, u.email, u.phone, u.role, u.status, s.csrf
            FROM sessions s JOIN users u ON u.id = s.user_id
           WHERE s.token_hash = ? AND s.expires_at > ?'
     );
@@ -192,60 +198,110 @@ function pm_require_app_header(): void
     }
 }
 
-// ---- פעולות ----
+// ---- קלט נוסף ----
+
+function pm_valid_email($e, bool $required): string
+{
+    $e = is_string($e) ? trim($e) : '';
+    if ($e === '' && !$required) return '';
+    if (!filter_var($e, FILTER_VALIDATE_EMAIL) || strlen($e) > 120) throw new PmError('אימייל לא תקין', 422);
+    return $e;
+}
+
+function pm_user_row(int $id): array
+{
+    $st = pm_db()->prepare('SELECT * FROM users WHERE id = ?');
+    $st->execute([$id]);
+    $u = $st->fetch();
+    if (!$u) throw new PmError('המשתמש לא נמצא', 404);
+    return $u;
+}
+
+// ---- קוד שחזור ----
+
+/** ה-hash של PM_RECOVERY_CODE, שהפריסה כותבת — או null אם הסוד לא הוגדר. */
+function pm_recovery_hash(): ?string
+{
+    $file = __DIR__ . '/recovery-code.php';
+    if (!is_file($file)) return null;
+    $h = require $file;
+    return is_string($h) && $h !== '' ? $h : null;
+}
+
+/** בדיקת קוד השחזור, עם נעילה כמו בכניסה. */
+function pm_check_recovery(string $code, string $purpose): void
+{
+    $keys = ['recovery', 'ip:' . pm_client_ip()];
+    $wait = pm_lock_remaining($keys);
+    if ($wait > 0) {
+        pm_log('warn', 'auth', "$purpose.locked", ['message' => "נעול עוד {$wait} שניות"]);
+        throw new PmError('יותר מדי ניסיונות. נסו שוב בעוד ' . (int)ceil($wait / 60) . ' דקות', 429);
+    }
+    $hash = pm_recovery_hash();
+    if (!$hash) {
+        pm_log('error', 'auth', "$purpose.no_code", ['message' => 'הסוד PM_RECOVERY_CODE לא הוגדר ב-GitHub']);
+        throw new PmError('קוד השחזור עוד לא הוגדר. יש להוסיף ב-GitHub את הסוד PM_RECOVERY_CODE ולפרוס.', 409);
+    }
+    if (!password_verify($code, $hash)) {
+        $locked = pm_record_failure($keys);
+        pm_log('warn', 'auth', "$purpose.bad_code", ['data' => ['failures' => pm_failures('recovery'), 'locked_now' => $locked]]);
+        throw new PmError('קוד השחזור שגוי', 403);
+    }
+    pm_clear_failures(['recovery']);
+}
+
+// ---- פעולות לפני כניסה ----
 
 function pm_auth_state(): array
 {
     $u = pm_session_user();
-    $setupNeeded = !pm_users_exist();
     return [
-        'user'           => $u ? array_diff_key($u, ['csrf' => 1]) : null,
-        'csrf'           => $u['csrf'] ?? null,
-        'setup_needed'   => $setupNeeded,
-        'setup_allowed'  => $setupNeeded && pm_platform_admin() !== null,
-        // מנהל הפלטפורמה המחובר יכול לאפס את סיסמת המפתח ולשחרר נעילה (שכחתי סיסמה)
-        'can_reset_dev'  => !$setupNeeded && pm_platform_admin() !== null,
+        'user'          => $u ? array_diff_key($u, ['csrf' => 1]) : null,
+        'csrf'          => $u['csrf'] ?? null,
+        'setup_needed'  => !pm_users_exist(),
+        'recovery_set'  => pm_recovery_hash() !== null,
+        'mail'          => pm_mail_available(),
     ];
 }
 
 function pm_login(array $in): array
 {
     pm_require_app_header();
-    $username = is_string($in['username'] ?? null) ? trim($in['username']) : '';
+    $login = is_string($in['username'] ?? null) ? trim($in['username']) : '';
     $password = is_string($in['password'] ?? null) ? $in['password'] : '';
-    $keys = ['u:' . mb_strtolower($username), 'ip:' . pm_client_ip()];
+    $keys = ['u:' . mb_strtolower($login), 'ip:' . pm_client_ip()];
     $wait = pm_lock_remaining($keys);
     if ($wait > 0) {
-        pm_log('warn', 'auth', 'login.locked', ['username' => $username, 'message' => "נעול עוד {$wait} שניות",
+        pm_log('warn', 'auth', 'login.locked', ['username' => $login, 'message' => "נעול עוד {$wait} שניות",
             'data' => ['user_locked' => pm_lock_remaining([$keys[0]]) > 0, 'ip_locked' => pm_lock_remaining([$keys[1]]) > 0]]);
         throw new PmError('יותר מדי ניסיונות. נסו שוב בעוד ' . (int)ceil($wait / 60) . ' דקות', 429);
     }
-
-    $st = pm_db()->prepare('SELECT * FROM users WHERE username = ?');
-    $st->execute([$username]);
+    // נכנסים בשם המשתמש או באימייל
+    $st = pm_db()->prepare('SELECT * FROM users WHERE username = ? OR (email != \'\' AND email = ? COLLATE NOCASE) ORDER BY username = ? DESC LIMIT 1');
+    $st->execute([$login, $login, $login]);
     $u = $st->fetch();
     // גם כשאין משתמש כזה מריצים password_verify — שזמן התגובה לא יסגיר מי קיים.
     $hash = $u['password_hash'] ?? '$2y$10$rxAGOCUktx7c3KoNsrn5quXX6u4.mqw4TkeXZk1yylgcrXjz.UZFa';
     if (!password_verify($password, $hash) || !$u) {
         $locked = pm_record_failure($keys);
-        // ביומן — הסיבה האמיתית (בלי הסיסמה). למשתמש — הודעה כללית, כדי לא לחשוף מי קיים.
-        pm_log('warn', 'auth', 'login.fail', ['username' => $username,
-            'message' => $u ? 'סיסמה שגויה' : 'אין משתמש בשם הזה',
-            'data' => ['user_exists' => (bool)$u, 'failures_user' => pm_failures($keys[0]), 'failures_ip' => pm_failures($keys[1]),
+        pm_log('warn', 'auth', 'login.fail', ['username' => $login,
+            'message' => $u ? 'סיסמה שגויה' : 'אין משתמש בשם או באימייל הזה',
+            'data' => ['user_exists' => (bool)$u, 'matched_by' => $u ? ($u['username'] === $login ? 'username' : 'email') : null,
+                       'failures_user' => pm_failures($keys[0]), 'failures_ip' => pm_failures($keys[1]),
                        'password_length' => mb_strlen($password), 'users_total' => (int)pm_db()->query('SELECT COUNT(*) FROM users')->fetchColumn(),
                        'locked_now' => $locked]]);
         throw new PmError('שם משתמש או סיסמה שגויים', 401);
     }
     if ($u['status'] === 'blocked') {
-        pm_log('warn', 'auth', 'login.blocked', ['username' => $username, 'user' => ['id' => (int)$u['id']]]);
+        pm_log('warn', 'auth', 'login.blocked', ['username' => $u['username'], 'user' => ['id' => (int)$u['id']]]);
         throw new PmError('החשבון חסום — פנה למפתח', 403);
     }
     pm_clear_failures($keys);
-    pm_log('info', 'auth', 'login.ok', ['username' => $username, 'user' => ['id' => (int)$u['id'], 'username' => $username],
-        'data' => ['role' => $u['role'], 'status' => $u['status']]]);
     if (password_needs_rehash($u['password_hash'], PASSWORD_DEFAULT)) {
         pm_db()->prepare('UPDATE users SET password_hash = ? WHERE id = ?')->execute([password_hash($password, PASSWORD_DEFAULT), $u['id']]);
     }
+    pm_log('info', 'auth', 'login.ok', ['username' => $u['username'], 'user' => ['id' => (int)$u['id'], 'username' => $u['username']],
+        'data' => ['role' => $u['role'], 'status' => $u['status']]]);
     pm_start_session((int)$u['id']);
     return ['ok' => true];
 }
@@ -262,11 +318,15 @@ function pm_register(array $in): array
     $username = pm_valid_username($in['username'] ?? null);
     $password = pm_valid_password($in['password'] ?? null);
     $name = pm_valid_name($in['display_name'] ?? null);
+    $email = pm_valid_email($in['email'] ?? null, true);
     $phone = is_string($in['phone'] ?? null) ? mb_substr(trim($in['phone']), 0, 30) : '';
     pm_record_failure($keys); // כל הרשמה נספרת; החמישית נועלת לרבע שעה
+    $dup = pm_db()->prepare('SELECT 1 FROM users WHERE email = ? COLLATE NOCASE');
+    $dup->execute([$email]);
+    if ($dup->fetchColumn()) throw new PmError('האימייל הזה כבר רשום', 409);
     try {
-        pm_db()->prepare('INSERT INTO users (username, password_hash, display_name, phone, role, status, created_at) VALUES (?,?,?,?,?,?,?)')
-            ->execute([$username, password_hash($password, PASSWORD_DEFAULT), $name, $phone, 'manager', 'pending', pm_now()]);
+        pm_db()->prepare('INSERT INTO users (username, password_hash, display_name, email, phone, role, status, created_at) VALUES (?,?,?,?,?,?,?,?)')
+            ->execute([$username, password_hash($password, PASSWORD_DEFAULT), $name, $email, $phone, 'manager', 'pending', pm_now()]);
     } catch (PDOException $e) {
         if (str_contains($e->getMessage(), 'UNIQUE')) throw new PmError('שם המשתמש תפוס', 409);
         throw $e;
@@ -274,47 +334,125 @@ function pm_register(array $in): array
     $id = (int)pm_db()->lastInsertId();
     pm_audit("user:$id", 'user.register', 'user', $id, ['username' => $username]);
     pm_log('info', 'auth', 'register', ['username' => $username, 'user' => ['id' => $id, 'username' => $username],
-        'message' => 'נרשם — ממתין לאישור', 'data' => ['display_name' => $name, 'phone' => $phone]]);
+        'message' => 'נרשם — ממתין לאישור', 'data' => ['display_name' => $name, 'email' => $email, 'phone' => $phone]]);
+    // הודעה למפתח, אם יש לו אימייל
+    $dev = pm_db()->query("SELECT email FROM users WHERE role = 'developer' AND email != '' LIMIT 1")->fetchColumn();
+    if ($dev) {
+        $sent = pm_send_mail($dev, 'הרשמה חדשה ממתינה לאישור — ניהול פרויקטים',
+            "$name ($username, $email) נרשם כמנהל פרויקט וממתין לאישור.\n\nלאישור: " . pm_app_url() . "/#/settings/access\n");
+        pm_log($sent ? 'info' : 'warn', 'mail', 'mail.register_notice', ['data' => ['to' => $dev, 'sent' => $sent]]);
+    }
     pm_start_session($id);
     return ['ok' => true];
 }
 
-/**
- * המפתח הראשון. מותר רק כשאין אף משתמש, ורק למי שמחובר לפלטפורמה כמנהל שלה —
- * כך אף אחד מבחוץ לא יכול "לתפוס" את האפליקציה לפני המפתח.
- */
+/** המפתח הראשון — כשאין אף משתמש, עם קוד השחזור. אחרי שנוצר, המסך נסגר לתמיד. */
 function pm_setup(array $in): array
 {
     pm_require_app_header();
-    $admin = pm_platform_admin();
     if (pm_users_exist()) throw new PmError('המפתח כבר הוקם', 409);
-    if (!$admin) {
-        pm_log('warn', 'auth', 'setup.denied', ['message' => 'ניסיון הקמה בלי חיבור כמנהל הפלטפורמה']);
-        throw new PmError('הקמת המפתח — רק למי שמחובר לפלטפורמה כמנהל', 403);
-    }
+    pm_check_recovery((string)($in['code'] ?? ''), 'setup');
     $username = pm_valid_username($in['username'] ?? null);
     $password = pm_valid_password($in['password'] ?? null);
     $name = pm_valid_name($in['display_name'] ?? null);
-
-    $db = pm_db();
-    $db->beginTransaction();
-    try {
-        $db->prepare('INSERT INTO users (id, username, password_hash, display_name, role, status, created_at, approved_at) VALUES (?,?,?,?,?,?,?,?)')
-           ->execute([PM_FIRST_USER_ID, $username, password_hash($password, PASSWORD_DEFAULT), $name, 'developer', 'active', pm_now(), pm_now()]);
-        // מה שמנהל הפלטפורמה כבר יצר באפליקציה (לפני שהיו לה משתמשים משלה) עובר אליו.
-        $old = (int)$admin['id'];
-        foreach (['contacts' => 'owner_id', 'projects' => 'owner_id', 'events' => 'actor_id'] as $table => $col) {
-            $db->prepare("UPDATE $table SET $col = ? WHERE $col = ?")->execute([PM_FIRST_USER_ID, $old]);
-        }
-        pm_audit('user:' . PM_FIRST_USER_ID, 'user.setup', 'user', PM_FIRST_USER_ID, ['username' => $username, 'platform_admin' => $old]);
-        pm_log('info', 'auth', 'setup', ['username' => $username, 'user' => ['id' => PM_FIRST_USER_ID, 'username' => $username],
-            'message' => 'המפתח הוקם', 'data' => ['platform_admin_id' => $old]]);
-        $db->commit();
-    } catch (Throwable $e) {
-        $db->rollBack();
-        throw $e;
-    }
+    $email = pm_valid_email($in['email'] ?? null, false);
+    pm_db()->prepare('INSERT INTO users (id, username, password_hash, display_name, email, role, status, created_at, approved_at) VALUES (?,?,?,?,?,?,?,?,?)')
+        ->execute([PM_FIRST_USER_ID, $username, password_hash($password, PASSWORD_DEFAULT), $name, $email, 'developer', 'active', pm_now(), pm_now()]);
+    pm_audit('user:' . PM_FIRST_USER_ID, 'user.setup', 'user', PM_FIRST_USER_ID, ['username' => $username]);
+    pm_log('info', 'auth', 'setup', ['username' => $username, 'user' => ['id' => PM_FIRST_USER_ID, 'username' => $username], 'message' => 'המפתח הוקם']);
     pm_start_session(PM_FIRST_USER_ID);
+    return ['ok' => true];
+}
+
+/** "שכחתי את סיסמת המפתח" — קוד השחזור, סיסמה חדשה, וכל הנעילות משתחררות. */
+function pm_recover_developer(array $in): array
+{
+    pm_require_app_header();
+    pm_check_recovery((string)($in['code'] ?? ''), 'recover_dev');
+    $password = pm_valid_password($in['password'] ?? null);
+    $dev = pm_db()->query("SELECT id, username FROM users WHERE role = 'developer' ORDER BY id LIMIT 1")->fetch();
+    if (!$dev) throw new PmError('המפתח עוד לא הוקם', 409);
+    pm_db()->prepare("UPDATE users SET password_hash = ?, status = 'active' WHERE id = ?")->execute([password_hash($password, PASSWORD_DEFAULT), $dev['id']]);
+    pm_db()->prepare('DELETE FROM sessions WHERE user_id = ?')->execute([$dev['id']]);
+    pm_db()->exec('DELETE FROM login_attempts');
+    pm_log('info', 'auth', 'recover_dev', ['username' => $dev['username'], 'user' => ['id' => (int)$dev['id'], 'username' => $dev['username']],
+        'message' => 'סיסמת המפתח נקבעה מחדש בקוד השחזור; נעילות שוחררו']);
+    pm_start_session((int)$dev['id']);
+    return ['ok' => true, 'username' => $dev['username']];
+}
+
+/**
+ * "שכחתי סיסמה" — קישור לאימייל הרשום. התשובה זהה תמיד (קיים או לא), כדי לא
+ * לחשוף מי רשום; מה שקרה באמת — ביומן.
+ */
+function pm_forgot(array $in): array
+{
+    pm_require_app_header();
+    $login = is_string($in['login'] ?? null) ? trim($in['login']) : '';
+    $keys = ['forgot:' . pm_client_ip()];
+    if (pm_lock_remaining($keys) > 0) throw new PmError('יותר מדי בקשות. נסו שוב מאוחר יותר', 429);
+    pm_record_failure($keys); // כל בקשה נספרת — החמישית נועלת לרבע שעה
+    $st = pm_db()->prepare('SELECT * FROM users WHERE username = ? OR (email != \'\' AND email = ? COLLATE NOCASE) LIMIT 1');
+    $st->execute([$login, $login]);
+    $u = $st->fetch();
+    $result = 'no_user';
+    if ($u && $u['status'] === 'blocked') $result = 'blocked';
+    elseif ($u && $u['email'] === '') $result = 'no_email';
+    elseif ($u) {
+        $link = pm_create_reset((int)$u['id'], PM_RESET_HOURS_SELF, 'self');
+        $sent = pm_send_mail($u['email'], 'איפוס סיסמה — ניהול פרויקטים',
+            "שלום {$u['display_name']},\n\nלקביעת סיסמה חדשה:\n\n$link\n\nהקישור תקף שעה אחת ולשימוש חד-פעמי. אם לא ביקשת — אין צורך לעשות דבר.\n");
+        $result = $sent ? 'sent' : 'mail_failed';
+    }
+    pm_log($result === 'sent' ? 'info' : 'warn', 'auth', 'forgot', ['username' => $u['username'] ?? $login, 'message' => $result]);
+    return ['ok' => true];
+}
+
+/** קישור איפוס חדש. $by: self · developer. מבטל קישורים קודמים של אותו משתמש. */
+function pm_create_reset(int $userId, int $hours, string $by): string
+{
+    $token = bin2hex(random_bytes(24));
+    $db = pm_db();
+    $db->prepare('DELETE FROM password_resets WHERE user_id = ?')->execute([$userId]);
+    $db->prepare('INSERT INTO password_resets (token_hash, user_id, created_by, created_at, expires_at) VALUES (?,?,?,?,?)')
+       ->execute([hash('sha256', $token), $userId, $by, pm_now(), gmdate('Y-m-d\TH:i:s\Z', time() + $hours * 3600)]);
+    return pm_app_url() . '/login.html#reset=' . $token;
+}
+
+function pm_reset_row(string $token): array
+{
+    $st = pm_db()->prepare('SELECT r.*, u.username, u.display_name, u.status FROM password_resets r JOIN users u ON u.id = r.user_id
+                             WHERE r.token_hash = ? AND r.used_at IS NULL AND r.expires_at > ?');
+    $st->execute([hash('sha256', $token), pm_now()]);
+    $r = $st->fetch();
+    if (!$r) {
+        pm_log('warn', 'auth', 'reset.invalid', ['data' => ['token_length' => strlen($token)]]);
+        throw new PmError('הקישור לא תקף, שומש כבר, או שפג — אפשר לבקש חדש', 410);
+    }
+    return $r;
+}
+
+/** מי הקישור — כדי שמסך האיפוס יציג "שלום X". */
+function pm_reset_info(string $token): array
+{
+    $r = pm_reset_row($token);
+    return ['display_name' => $r['display_name'], 'username' => $r['username']];
+}
+
+function pm_reset_password(array $in): array
+{
+    pm_require_app_header();
+    $r = pm_reset_row((string)($in['token'] ?? ''));
+    $password = pm_valid_password($in['password'] ?? null);
+    $db = pm_db();
+    $db->prepare('UPDATE users SET password_hash = ? WHERE id = ?')->execute([password_hash($password, PASSWORD_DEFAULT), $r['user_id']]);
+    $db->prepare('UPDATE password_resets SET used_at = ? WHERE token_hash = ?')->execute([pm_now(), $r['token_hash']]);
+    $db->prepare('DELETE FROM sessions WHERE user_id = ?')->execute([$r['user_id']]);
+    $db->prepare('DELETE FROM login_attempts WHERE key = ?')->execute(['u:' . mb_strtolower($r['username'])]);
+    pm_log('info', 'auth', 'reset.done', ['username' => $r['username'], 'user' => ['id' => (int)$r['user_id'], 'username' => $r['username']],
+        'data' => ['created_by' => $r['created_by']]]);
+    if ($r['status'] === 'blocked') return ['ok' => true, 'blocked' => true];
+    pm_start_session((int)$r['user_id']);
     return ['ok' => true];
 }
 
@@ -326,39 +464,18 @@ function pm_logout(?array $u): array
     return ['ok' => true];
 }
 
-/**
- * "שכחתי סיסמה" של המפתח: מנהל הפלטפורמה המחובר קובע סיסמה חדשה, ומשחרר את
- * כל הנעילות. אותה סמכות כמו הקמת המפתח.
- */
-function pm_reset_developer(array $in): array
-{
-    pm_require_app_header();
-    $admin = pm_platform_admin();
-    if (!$admin) {
-        pm_log('warn', 'auth', 'reset_dev.denied', ['message' => 'ניסיון איפוס בלי חיבור כמנהל הפלטפורמה']);
-        throw new PmError('איפוס סיסמת המפתח — רק למי שמחובר לפלטפורמה כמנהל', 403);
-    }
-    $password = pm_valid_password($in['password'] ?? null);
-    $dev = pm_db()->query("SELECT id, username FROM users WHERE role = 'developer' ORDER BY id LIMIT 1")->fetch();
-    if (!$dev) throw new PmError('המפתח עוד לא הוקם', 409);
-    pm_db()->prepare('UPDATE users SET password_hash = ?, status = ? WHERE id = ?')
-        ->execute([password_hash($password, PASSWORD_DEFAULT), 'active', $dev['id']]);
-    pm_db()->prepare('DELETE FROM sessions WHERE user_id = ?')->execute([$dev['id']]);
-    pm_db()->exec('DELETE FROM login_attempts');
-    pm_log('info', 'auth', 'reset_dev', ['username' => $dev['username'], 'user' => ['id' => (int)$dev['id'], 'username' => $dev['username']],
-        'message' => 'סיסמת המפתח אופסה ונעילות שוחררו', 'data' => ['platform_admin_id' => (int)$admin['id']]]);
-    pm_start_session((int)$dev['id']);
-    return ['ok' => true, 'username' => $dev['username']];
-}
+// ---- החשבון שלי ----
 
 function pm_change_password(array $u, array $in): array
 {
     $st = pm_db()->prepare('SELECT password_hash FROM users WHERE id = ?');
     $st->execute([$u['id']]);
-    if (!password_verify((string)($in['current'] ?? ''), (string)$st->fetchColumn())) throw new PmError('הסיסמה הנוכחית שגויה', 422);
+    if (!password_verify((string)($in['current'] ?? ''), (string)$st->fetchColumn())) {
+        pm_log('warn', 'auth', 'password.bad_current', ['user' => $u]);
+        throw new PmError('הסיסמה הנוכחית שגויה', 422);
+    }
     $new = pm_valid_password($in['password'] ?? null);
     pm_db()->prepare('UPDATE users SET password_hash = ? WHERE id = ?')->execute([password_hash($new, PASSWORD_DEFAULT), $u['id']]);
-    // כל ההתחברויות האחרות מתנתקות
     $token = (string)($_COOKIE[PM_COOKIE] ?? '');
     pm_db()->prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash != ?')->execute([$u['id'], hash('sha256', $token)]);
     pm_audit("user:{$u['id']}", 'user.password', 'user', $u['id']);
@@ -366,30 +483,109 @@ function pm_change_password(array $u, array $in): array
     return ['ok' => true];
 }
 
-// ---- ניהול מנהלים (המפתח) ----
+function pm_update_profile(array $u, array $in): array
+{
+    $name = pm_valid_name($in['display_name'] ?? null);
+    $email = pm_valid_email($in['email'] ?? null, false);
+    $phone = is_string($in['phone'] ?? null) ? mb_substr(trim($in['phone']), 0, 30) : '';
+    pm_unique_email($email, $u['id']);
+    pm_db()->prepare('UPDATE users SET display_name = ?, email = ?, phone = ? WHERE id = ?')->execute([$name, $email, $phone, $u['id']]);
+    pm_log('info', 'auth', 'profile.updated', ['user' => $u, 'data' => ['email' => $email, 'phone' => $phone]]);
+    return ['user' => pm_public_user(pm_user_row($u['id']))];
+}
+
+function pm_unique_email(string $email, int $exceptId): void
+{
+    if ($email === '') return;
+    $st = pm_db()->prepare('SELECT 1 FROM users WHERE email = ? COLLATE NOCASE AND id != ?');
+    $st->execute([$email, $exceptId]);
+    if ($st->fetchColumn()) throw new PmError('האימייל הזה כבר רשום אצל משתמש אחר', 409);
+}
+
+// ---- ניהול הרשומים (המפתח) ----
+
+function pm_public_user(array $r): array
+{
+    return [
+        'id' => (int)$r['id'], 'username' => $r['username'], 'display_name' => $r['display_name'],
+        'email' => $r['email'], 'phone' => $r['phone'], 'role' => $r['role'], 'status' => $r['status'],
+        'notes' => $r['notes'] ?? '', 'created_at' => $r['created_at'], 'approved_at' => $r['approved_at'],
+        'last_login_at' => $r['last_login_at'],
+    ];
+}
 
 function pm_users_list(): array
 {
+    $now = pm_now();
     $rows = pm_db()->query(
-        "SELECT id, username, display_name, phone, role, status, created_at, approved_at, last_login_at,
-                (SELECT COUNT(*) FROM projects p WHERE p.owner_id = users.id) AS projects
-           FROM users ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'active' THEN 1 ELSE 2 END, display_name"
+        "SELECT u.*,
+                (SELECT COUNT(*) FROM projects p WHERE p.owner_id = u.id) AS projects,
+                (SELECT COUNT(*) FROM contacts c WHERE c.owner_id = u.id) AS contacts,
+                (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id AND s.expires_at > '$now') AS sessions,
+                (SELECT MAX(expires_at) FROM password_resets r WHERE r.user_id = u.id AND r.used_at IS NULL AND r.expires_at > '$now') AS reset_pending
+           FROM users u
+          ORDER BY CASE u.status WHEN 'pending' THEN 0 WHEN 'active' THEN 1 ELSE 2 END, u.display_name"
     )->fetchAll();
-    return array_map(fn($r) => ['id' => (int)$r['id'], 'projects' => (int)$r['projects']] + $r, $rows);
+    return array_map(fn($r) => pm_public_user($r) + [
+        'projects' => (int)$r['projects'], 'contacts' => (int)$r['contacts'],
+        'sessions' => (int)$r['sessions'], 'reset_pending' => $r['reset_pending'],
+    ], $rows);
 }
 
-/** $action: approve · block · unblock · reject (מחיקת בקשה ממתינה) · reset (סיסמה זמנית) */
-function pm_user_action(array $dev, int $id, string $action): array
+/** נתונים שנוצרו לפני שהיו לאפליקציה משתמשים משלה — בעלים שאינו משתמש. */
+function pm_orphans(): array
 {
-    $st = pm_db()->prepare('SELECT * FROM users WHERE id = ?');
-    $st->execute([$id]);
-    $u = $st->fetch();
-    if (!$u) throw new PmError('המשתמש לא נמצא', 404);
-    if ($u['role'] === 'developer') throw new PmError('אי אפשר לשנות את המפתח', 422);
+    $c = (int)pm_db()->query('SELECT COUNT(*) FROM contacts WHERE owner_id NOT IN (SELECT id FROM users)')->fetchColumn();
+    $p = (int)pm_db()->query('SELECT COUNT(*) FROM projects WHERE owner_id NOT IN (SELECT id FROM users)')->fetchColumn();
+    return ['contacts' => $c, 'projects' => $p];
+}
+
+/** עריכת רשום בידי המפתח: שם, שם משתמש, אימייל, טלפון, הערות. */
+function pm_user_save(array $dev, array $in): array
+{
+    $u = pm_user_row((int)($in['id'] ?? 0));
+    $username = pm_valid_username($in['username'] ?? null);
+    $email = pm_valid_email($in['email'] ?? null, false);
+    pm_unique_email($email, (int)$u['id']);
+    $f = [
+        'display_name' => pm_valid_name($in['display_name'] ?? null),
+        'username'     => $username,
+        'email'        => $email,
+        'phone'        => is_string($in['phone'] ?? null) ? mb_substr(trim($in['phone']), 0, 30) : '',
+        'notes'        => is_string($in['notes'] ?? null) ? mb_substr(trim($in['notes']), 0, 2000) : '',
+    ];
+    try {
+        pm_db()->prepare('UPDATE users SET display_name = ?, username = ?, email = ?, phone = ?, notes = ? WHERE id = ?')
+            ->execute([...array_values($f), $u['id']]);
+    } catch (PDOException $e) {
+        if (str_contains($e->getMessage(), 'UNIQUE')) throw new PmError('שם המשתמש תפוס', 409);
+        throw $e;
+    }
+    $changed = array_keys(array_filter($f, fn($v, $k) => (string)$v !== (string)($u[$k] ?? ''), ARRAY_FILTER_USE_BOTH));
+    pm_audit("user:{$dev['id']}", 'user.edit', 'user', (int)$u['id'], ['fields' => $changed]);
+    pm_log('info', 'admin', 'user.edit', ['data' => ['target' => $u['username'], 'fields' => $changed]]);
+    return ['users' => pm_users_list()];
+}
+
+/**
+ * $action: approve · reject (מחיקת בקשה ממתינה) · block · unblock ·
+ *          reset (קישור איפוס — לאימייל, ומוצג למפתח) · logout (ניתוק מכל המכשירים) ·
+ *          delete (רק בלי פרויקטים ואנשי קשר — אחרת קודם העברה) · transfer (to: משתמש)
+ */
+function pm_user_action(array $dev, int $id, string $action, array $in = []): array
+{
+    $u = pm_user_row($id);
     $db = pm_db();
+    $extra = [];
+    if ($u['role'] === 'developer' && !in_array($action, ['reset', 'logout'], true)) throw new PmError('אי אפשר לשנות את המפתח', 422);
     switch ($action) {
         case 'approve':
             $db->prepare("UPDATE users SET status = 'active', approved_at = COALESCE(approved_at, ?) WHERE id = ?")->execute([pm_now(), $id]);
+            if ($u['email'] !== '') {
+                $sent = pm_send_mail($u['email'], 'החשבון שלך אושר — ניהול פרויקטים',
+                    "שלום {$u['display_name']},\n\nהחשבון שלך אושר. אפשר להיכנס:\n\n" . pm_app_url() . "/login.html\n\nשם המשתמש: {$u['username']}\n");
+                pm_log($sent ? 'info' : 'warn', 'mail', 'mail.approved', ['data' => ['to' => $u['email'], 'sent' => $sent]]);
+            }
             break;
         case 'unblock':
             $db->prepare("UPDATE users SET status = 'active' WHERE id = ?")->execute([$id]);
@@ -398,48 +594,52 @@ function pm_user_action(array $dev, int $id, string $action): array
             $db->prepare("UPDATE users SET status = 'blocked' WHERE id = ?")->execute([$id]);
             $db->prepare('DELETE FROM sessions WHERE user_id = ?')->execute([$id]);
             break;
-        case 'reset':
-            // סיסמה זמנית — מוצגת למפתח פעם אחת, והוא מעביר אותה למנהל
-            $temp = substr(strtr(base64_encode(random_bytes(9)), '+/', 'xy'), 0, 10);
-            $db->prepare('UPDATE users SET password_hash = ? WHERE id = ?')->execute([password_hash($temp, PASSWORD_DEFAULT), $id]);
+        case 'logout':
             $db->prepare('DELETE FROM sessions WHERE user_id = ?')->execute([$id]);
-            $db->prepare('DELETE FROM login_attempts WHERE key = ?')->execute(['u:' . mb_strtolower($u['username'])]);
-            pm_audit("user:{$dev['id']}", 'user.reset', 'user', $id, ['username' => $u['username']]);
-            pm_log('info', 'admin', 'user.reset', ['username' => $u['username'], 'data' => ['target_id' => $id]]);
-            return ['users' => pm_users_list(), 'temp_password' => $temp, 'username' => $u['username']];
+            break;
         case 'reject':
             if ($u['status'] !== 'pending') throw new PmError('אפשר לדחות רק בקשה ממתינה', 422);
+            $db->prepare('DELETE FROM users WHERE id = ?')->execute([$id]);
+            break;
+        case 'reset':
+            $link = pm_create_reset($id, PM_RESET_HOURS_BY_DEV, 'developer');
+            $sent = $u['email'] !== '' && pm_send_mail($u['email'], 'קביעת סיסמה חדשה — ניהול פרויקטים',
+                "שלום {$u['display_name']},\n\nהמפתח שלח לך קישור לקביעת סיסמה חדשה:\n\n$link\n\nשם המשתמש: {$u['username']}\nהקישור תקף 24 שעות ולשימוש חד-פעמי.\n");
+            pm_log($sent ? 'info' : 'warn', 'mail', 'mail.reset', ['data' => ['to' => $u['email'], 'sent' => $sent]]);
+            $extra = ['reset_link' => $link, 'mailed' => $sent, 'email' => $u['email'], 'phone' => $u['phone'],
+                      'display_name' => $u['display_name'], 'username' => $u['username']];
+            break;
+        case 'transfer':
+            $to = pm_user_row((int)($in['to'] ?? 0));
+            if ($to['id'] == $id) throw new PmError('בחר משתמש אחר', 422);
+            foreach (['projects', 'contacts'] as $t) $db->prepare("UPDATE $t SET owner_id = ? WHERE owner_id = ?")->execute([$to['id'], $id]);
+            $extra = ['transferred_to' => $to['username']];
+            break;
+        case 'delete':
+            $o = $db->prepare('SELECT (SELECT COUNT(*) FROM projects WHERE owner_id = ?) + (SELECT COUNT(*) FROM contacts WHERE owner_id = ?)');
+            $o->execute([$id, $id]);
+            if ((int)$o->fetchColumn() > 0) throw new PmError('יש לו פרויקטים או אנשי קשר — קודם להעביר אותם למשתמש אחר', 422);
             $db->prepare('DELETE FROM users WHERE id = ?')->execute([$id]);
             break;
         default:
             throw new PmError('פעולה לא מוכרת', 422);
     }
-    pm_audit("user:{$dev['id']}", "user.$action", 'user', $id, ['username' => $u['username']]);
-    pm_log('info', 'admin', "user.$action", ['data' => ['target_id' => $id, 'target' => $u['username']]]);
-    return ['users' => pm_users_list()];
+    pm_audit("user:{$dev['id']}", "user.$action", 'user', $id, ['username' => $u['username']] + $extra);
+    pm_log('info', 'admin', "user.$action", ['data' => ['target_id' => $id, 'target' => $u['username']]
+        + array_diff_key($extra, ['reset_link' => 1])]);
+    return ['users' => pm_users_list()] + $extra;
 }
 
-// ---- הפלטפורמה: רק לבדיקת "מי רשאי להקים את המפתח" ----
-
-/** מנהל הפלטפורמה המחובר — [id, display_name] — או null. קריאה בלבד ממסד הפלטפורמה. */
-function pm_platform_admin(): ?array
+/** נתונים ישנים בלי בעלים → למשתמש שנבחר. */
+function pm_claim_orphans(array $dev, int $to): array
 {
-    $token = $_COOKIE['mp_session'] ?? '';
-    if (!is_string($token) || strlen($token) !== 64 || !is_file(PM_PLATFORM_DB)) return null;
-    try {
-        $pdo = new PDO('sqlite:' . PM_PLATFORM_DB, null, null, [
-            PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::SQLITE_ATTR_OPEN_FLAGS  => PDO::SQLITE_OPEN_READONLY,
-        ]);
-        $st = $pdo->prepare(
-            "SELECT u.id, u.display_name FROM sessions s JOIN users u ON u.id = s.user_id
-              WHERE s.token_hash = ? AND s.expires_at > ? AND u.role = 'admin' AND u.status = 'active'"
-        );
-        $st->execute([hash('sha256', $token), gmdate('Y-m-d\TH:i:s\Z')]);
-        return $st->fetch() ?: null;
-    } catch (Throwable $e) {
-        error_log('project-manager platform check: ' . $e->getMessage());
-        return null;
+    $u = pm_user_row($to);
+    $n = 0;
+    foreach (['projects', 'contacts'] as $t) {
+        $st = pm_db()->prepare("UPDATE $t SET owner_id = ? WHERE owner_id NOT IN (SELECT id FROM users)");
+        $st->execute([$to]);
+        $n += $st->rowCount();
     }
+    pm_log('info', 'admin', 'orphans.claimed', ['data' => ['to' => $u['username'], 'rows' => $n]]);
+    return ['users' => pm_users_list(), 'orphans' => pm_orphans(), 'moved' => $n];
 }
