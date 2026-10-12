@@ -27,7 +27,7 @@ function route() {
     const [, view = '', a = '', b = '', c = ''] = location.hash.split('/');
     const inProject = view === 'p' && Number(a) > 0;
     const section = inProject ? 'project' : view === 'contacts' ? (b === 'import' ? 'import' : 'contacts')
-        : view === 'settings' && isDev() ? 'settings' : view === 'share' ? 'share' : 'projects';
+        : view === 'settings' && isDev() ? 'settings' : view === 'share' ? 'share' : view === 'calendar' ? 'calendar' : 'projects';
     const inner = inProject || section === 'share' || section === 'import'; // מסך פנימי: חץ חזרה במקום הניווט הראשי
 
     $$('.view').forEach(v => { v.hidden = v.id !== 'view-' + section; });
@@ -49,7 +49,8 @@ function route() {
         $('#subtitle').hidden = true;
         document.title = 'ניהול פרויקטים';
     }
-    if (section === 'projects') Projects.showList();
+    if (section === 'projects') { Projects.showList(); Calendar.refreshBadge(); }
+    if (section === 'calendar') Calendar.show(a);
     if (section === 'project') Projects.showProject(Number(a), b, c);
     if (section === 'contacts') Contacts.show(a);
     if (section === 'settings') Settings.show(a);

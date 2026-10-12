@@ -373,6 +373,45 @@ body[data-view="project"] main { padding-bottom: 0; }
 .sig-img { display: block; max-width: 100%; max-height: 120px; margin-top: 4px; background: #fff; border-radius: 6px; }
 #portal-dlg .code { user-select: all; }
 
+/* ---- יומן ---- */
+
+.nbadge { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; margin-inline-start: 4px; border-radius: 99px; background: var(--muted); color: #fff; font-size: .7rem; font-weight: 600; vertical-align: middle; }
+.nbadge.hot { background: var(--danger); }
+.rem-banner { display: flex; align-items: center; gap: var(--s2); min-height: 44px; padding: var(--s2) var(--s3); margin-bottom: var(--s2); border-radius: var(--r); text-decoration: none; color: var(--ink);
+    background: color-mix(in srgb, var(--star) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--star) 35%, var(--line)); font-size: .9rem; }
+.rem-banner .one { flex: 1; }
+#reminders { margin-bottom: var(--s3); }
+#rem-list .rem-late .l1 { color: var(--danger); }
+.cal-head { display: flex; align-items: center; gap: var(--s1); margin-bottom: var(--s2); }
+.cal-head h2 { flex: 1; text-align: center; font-size: 1rem; font-weight: 600; white-space: nowrap; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 4px; }
+.cal-grid .dow { text-align: center; font-size: .75rem; color: var(--muted); padding: 2px 0; }
+.cday { display: grid; justify-items: center; align-content: start; gap: 2px; min-height: 44px; padding: 4px 0; border: 0; border-radius: 8px; background: none; cursor: pointer; font: inherit; color: inherit; }
+.cday:hover { background: var(--bg); }
+.cday.out { opacity: .35; }
+.cday .n { font-size: .85rem; line-height: 1.4; min-width: 24px; border-radius: 99px; }
+.cday.today .n { background: var(--brand); color: var(--brand-ink); font-weight: 600; }
+.cday[aria-pressed="true"] { background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--brand); }
+.cday.late .n { color: var(--danger); font-weight: 600; }
+.cday.today.late .n { color: var(--brand-ink); }
+.dots { display: flex; gap: 2px; min-height: 6px; }
+.dots i, .cal-legend i { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+.k-appointment { background: #2b6cb0; }
+.k-stage { background: #b7791f; }
+.k-payment { background: #2f855a; }
+.k-quote { background: #805ad5; }
+.cal-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: var(--s1) 0 var(--s2); font-size: .75rem; color: var(--muted); }
+.cal-legend i { margin-inline-end: -6px; }
+#cal-day .when { flex: none; min-width: 44px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
+#cal-day .late .l1 { color: var(--danger); }
+#cal-day .done { opacity: .6; }
+#cal-day b.late { color: var(--danger); }
+.cal-sync { margin-top: var(--s3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2) var(--s3); }
+.cal-sync summary { cursor: pointer; min-height: 32px; display: flex; align-items: center; font-weight: 600; }
+.cal-sync[open] { display: grid; gap: var(--s2); }
+.cal-sync .hint { margin: 0; }
+button.link { border: 0; background: none; color: var(--brand); text-decoration: underline; cursor: pointer; font: inherit; padding: 0; }
+
 /* ---- מהשטח ---- */
 
 #pane-field > .toolbar select { flex: 1; max-width: none; }
