@@ -10,7 +10,7 @@
  *   - העוגייה pm_session מחזיקה אסימון אקראי; במסד נשמר רק ה-hash שלו.
  *   - CSRF: אסימון לכל התחברות, נדרש בכותרת X-CSRF בכל פעולה משנה. מה שקודם
  *     לכניסה (כניסה, הרשמה, הקמה, שחזור) — רק JSON עם הכותרת X-PM.
- *   - נעילה: 5 כשלים לשם משתמש, 20 לרשת, ל-15 דקות.
+ *   - נעילה: 5 כשלים לשם משתמש — ל-15 דקות, רק לאותו שם משתמש. לא לפי רשת.
  *
  * תפקידים: developer (המפתח) · manager (מנהל פרויקט).
  * מצבים:   pending (נרשם, ממתין) · active · blocked.
@@ -32,8 +32,8 @@ require_once __DIR__ . '/mail.php';
 
 const PM_COOKIE = 'pm_session';
 const PM_SESSION_DAYS = 30;
-const PM_MAX_FAILURES = 5;      // לשם משתמש
-const PM_MAX_FAILURES_IP = 20;  // לרשת
+const PM_MAX_FAILURES = 5;      // לשם משתמש (וגם לקוד השחזור)
+const PM_MAX_REQUESTS = 20;     // הרשמות / בקשות איפוס מאותה רשת, לפני השהייה
 const PM_LOCK_MINUTES = 15;
 const PM_MIN_PASSWORD = 8;
 /** המשתמש הראשון מקבל מזהה 1000 ומעלה — כך מזהים ישנים (לפני שהיו משתמשים משלה) לא מתנגשים. */
@@ -131,16 +131,17 @@ function pm_lock_remaining(array $keys): int
 }
 
 /**
- * כשל נספר לכל מפתח. שם משתמש — נעילה אחרי 5; רשת (IP) — אחרי 20, כי כמה
- * אנשים יכולים לעבוד מאותה רשת, ונעילה של כולם בגלל אחד שטעה היא תקלה.
- * מחזיר את המפתחות שננעלו עכשיו.
+ * כשל נספר לכל מפתח. **הכניסה ננעלת רק לפי שם המשתמש** — טעות של אחד לא נוגעת
+ * באף אחד אחר, גם לא באותה רשת. ההגבלה לפי רשת קיימת רק להרשמה ולבקשות איפוס
+ * (מפתחות reg: ו-forgot:), כדי שאי אפשר יהיה להציף את המפתח בבקשות — והיא לא
+ * חוסמת כניסה של אף אחד. מחזיר את המפתחות שננעלו עכשיו.
  */
 function pm_record_failure(array $keys): array
 {
     $locked = [];
     $lock = gmdate('Y-m-d\TH:i:s\Z', time() + PM_LOCK_MINUTES * 60);
     foreach ($keys as $k) {
-        $max = str_starts_with($k, 'ip:') ? PM_MAX_FAILURES_IP : PM_MAX_FAILURES;
+        $max = str_starts_with($k, 'reg:') || str_starts_with($k, 'forgot:') ? PM_MAX_REQUESTS : PM_MAX_FAILURES;
         pm_db()->prepare('INSERT INTO login_attempts (key, failures) VALUES (?, 1)
                           ON CONFLICT(key) DO UPDATE SET failures = failures + 1')->execute([$k]);
         $st = pm_db()->prepare('UPDATE login_attempts SET locked_until = ?, failures = 0 WHERE key = ? AND failures >= ?');
@@ -231,7 +232,7 @@ function pm_recovery_hash(): ?string
 /** בדיקת קוד השחזור, עם נעילה כמו בכניסה. */
 function pm_check_recovery(string $code, string $purpose): void
 {
-    $keys = ['recovery', 'ip:' . pm_client_ip()];
+    $keys = ['recovery'];
     $wait = pm_lock_remaining($keys);
     if ($wait > 0) {
         pm_log('warn', 'auth', "$purpose.locked", ['message' => "נעול עוד {$wait} שניות"]);
@@ -269,11 +270,11 @@ function pm_login(array $in): array
     pm_require_app_header();
     $login = is_string($in['username'] ?? null) ? trim($in['username']) : '';
     $password = is_string($in['password'] ?? null) ? $in['password'] : '';
-    $keys = ['u:' . mb_strtolower($login), 'ip:' . pm_client_ip()];
+    $keys = ['u:' . mb_strtolower($login)];
     $wait = pm_lock_remaining($keys);
     if ($wait > 0) {
         pm_log('warn', 'auth', 'login.locked', ['username' => $login, 'message' => "נעול עוד {$wait} שניות",
-            'data' => ['user_locked' => pm_lock_remaining([$keys[0]]) > 0, 'ip_locked' => pm_lock_remaining([$keys[1]]) > 0]]);
+            'data' => ['failures_before_lock' => PM_MAX_FAILURES]]);
         throw new PmError('יותר מדי ניסיונות. נסו שוב בעוד ' . (int)ceil($wait / 60) . ' דקות', 429);
     }
     // נכנסים בשם המשתמש או באימייל
@@ -287,7 +288,7 @@ function pm_login(array $in): array
         pm_log('warn', 'auth', 'login.fail', ['username' => $login,
             'message' => $u ? 'סיסמה שגויה' : 'אין משתמש בשם או באימייל הזה',
             'data' => ['user_exists' => (bool)$u, 'matched_by' => $u ? ($u['username'] === $login ? 'username' : 'email') : null,
-                       'failures_user' => pm_failures($keys[0]), 'failures_ip' => pm_failures($keys[1]),
+                       'failures_user' => pm_failures($keys[0]), 'lock_after' => PM_MAX_FAILURES,
                        'password_length' => mb_strlen($password), 'users_total' => (int)pm_db()->query('SELECT COUNT(*) FROM users')->fetchColumn(),
                        'locked_now' => $locked]]);
         throw new PmError('שם משתמש או סיסמה שגויים', 401);

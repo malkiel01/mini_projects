@@ -238,6 +238,9 @@ function pm_migrate(PDO $pdo): void
         $pdo->exec("INSERT INTO settings (key, value) VALUES ('templates_seeded', '1')");
     }
 
+    // נעילה לפי רשת בוטלה (2026-10-12) — משחררים נעילות כאלה שנשארו בשרת
+    $pdo->exec("DELETE FROM login_attempts WHERE key LIKE 'ip:%'");
+
     // עמודות שנוספו אחרי שהטבלה כבר קיימת בשרת
     pm_add_column($pdo, 'users', 'email', "TEXT NOT NULL DEFAULT ''");
     pm_add_column($pdo, 'users', 'notes', "TEXT NOT NULL DEFAULT ''");
