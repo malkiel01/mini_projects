@@ -42,6 +42,8 @@
 .qcard .late, .q2 .late { color: var(--danger); }
 .qcard.pay-received { border-color: color-mix(in srgb, var(--ok) 55%, var(--line)); box-shadow: inset -3px 0 0 var(--ok); }
 .qcard.pay-received .amt { color: var(--ok); }
+/* הפס בצד ההתחלה: inset -3px = ימין (RTL); ב-LTR — שמאל */
+[dir="ltr"] .qcard.q-approved, [dir="ltr"] .qcard.pay-received { box-shadow: inset 3px 0 0 var(--ok); }
 .bank { display: grid; grid-template-columns: auto 1fr; gap: 2px var(--s3); padding: var(--s2) var(--s3); background: var(--bg); border-radius: 8px; font-size: .9rem; align-items: center; }
 .bank dt { color: var(--muted); }
 .bank .btn { min-height: 28px; margin-inline-start: var(--s1); }
@@ -60,3 +62,4 @@
 .bank-box summary small { font-weight: 400; color: var(--muted); }
 .bank-box form { margin: var(--s2) 0; }
 .proofs .row-btns { margin-top: 4px; }
+.top .lang-pick { flex: none; }
