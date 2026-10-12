@@ -356,6 +356,7 @@ catering-menu/
 --exclude='catering-menu/data/menu.json'
 --exclude='catering-menu/data/sessions/'
 --exclude='catering-menu/data/push.json'
+--exclude='catering-menu/data/push-log.json'
 --exclude='catering-menu/data/reminders.json*'
 --exclude='catering-menu/data/logo.*'
 --exclude='catering-menu/data/fonts/'
@@ -375,6 +376,14 @@ catering-menu/
   מהפריסה.
 - **מכשיר שביטל הרשמה:** כששירות ההתראות מחזיר 404 או 410, המכשיר נמחק
   מהרשימה.
+- **יומן התראות** (הגדרות ← אפליקציה והתראות ← "טעינת היומן"):
+  - **מה נרשם:** כל שליחה נרשמת ב‑`data/push-log.json` (60 אחרונות, מוחרג מהפריסה).
+    לכל שליחה רואים את הסוג (הזמנה חדשה, תזכורת, ממתינה לאישור, סיכום יומי,
+    בדיקה), ומה ענה שירות ההתראות לכל מכשיר, כולל הקוד.
+  - **מכשירים:** רשימת המכשירים הרשומים בשרת, עם השליחה האחרונה שהצליחה והשגיאה
+    האחרונה.
+  - **השרת:** curl, openssl, ושיטת השליחה ברקע (`fastcgi_finish_request`, או
+    `litespeed_finish_request` בשרתי LiteSpeed).
 - **התור של הלקוח:** הלקוח מקבל תשובה מיד. ההתראות והמייל למנהל יוצאים אחרי
   שהתשובה נשלחה (`fastcgi_finish_request`).
 - **בצד הטלפון:** ה‑service worker (`admin/sw.js`) מציג את ההתראה ופותח את

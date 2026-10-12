@@ -942,3 +942,11 @@ html.big-text { font-size: 112.5%; }
 .font-list li.rem-empty { background: none; padding: 0; }
 .font-list small { color: var(--muted); }
 .reset-btn { margin: 10px 0 2px; }
+
+/* יומן התראות */
+.push-log { display: flex; flex-direction: column; gap: 8px; font-size: .86rem; }
+.push-log-h { font-weight: 700; margin-top: 6px; }
+.push-log-row { background: #f7f4ee; border-radius: 10px; padding: 8px 10px; overflow-wrap: anywhere; }
+.push-log-title { color: var(--muted); }
+.push-log .ok { color: #1f7a43; }
+.push-log .bad, .push-log-bad { color: #b3261e; }
