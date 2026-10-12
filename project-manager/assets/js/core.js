@@ -2,6 +2,21 @@
 // הזהות מהפלטפורמה; אסימון ה-CSRF מגיע מ-api.php?action=me.
 'use strict';
 
+// ---- שגיאות בדפדפן נשלחות ליומן (הגדרות ← יומן) ----
+(() => {
+    let sent = 0;
+    const report = (kind, message, extra = {}) => {
+        if (++sent > 10) return; // לא מציפים: עד 10 לטעינת דף
+        fetch('api.php?action=client-error', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-PM': '1' },
+            body: JSON.stringify({ kind, message: String(message).slice(0, 1000), page: location.pathname + location.hash, ...extra }),
+        }).catch(() => {});
+    };
+    addEventListener('error', e => report('error', e.message, { source: e.filename, line: e.lineno, col: e.colno, stack: e.error?.stack?.slice(0, 2000) }));
+    addEventListener('unhandledrejection', e => report('promise', e.reason?.message || e.reason, { stack: e.reason?.stack?.slice(0, 2000) }));
+})();
+
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 

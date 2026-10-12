@@ -28,6 +28,17 @@ const Settings = (() => {
             e.target.checked = !!state.standalone;
         });
         $('#users-list').addEventListener('click', userAction);
+        let t;
+        $('#log-q').addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => loadLog(), 300); });
+        $('#log-level').addEventListener('change', () => loadLog());
+        $('#log-cat').addEventListener('change', () => loadLog());
+        $('#log-more').addEventListener('click', () => loadLog(true));
+        $('#token-copy').addEventListener('click', () => copy($('#token-url').textContent, 'הקישור הועתק'));
+        $('#log-copy').addEventListener('click', () => copy(logText(), 'היומן הועתק'));
+        $('#token-rotate').addEventListener('click', async () => {
+            if (!confirm('להחליף את האסימון? הקישור הנוכחי יפסיק לעבוד מיד.')) return;
+            await busy(null, null, async () => { showToken(await api('log-token', { body: {} })); toast('הוחלף'); });
+        });
         $('#add-template').addEventListener('click', () => openTemplate(null));
         $('#template-list').addEventListener('click', e => {
             const row = e.target.closest('[data-template]');
@@ -39,13 +50,14 @@ const Settings = (() => {
 
     function show(pane) {
         bind();
-        pane = ['general', 'trades', 'templates', 'access'].includes(pane) ? pane : 'general';
+        pane = ['general', 'trades', 'templates', 'access', 'log'].includes(pane) ? pane : 'general';
         $$('#view-settings [data-set]').forEach(a => a.setAttribute('aria-selected', String(a.dataset.set === pane)));
         $$('#view-settings .pane').forEach(el => { el.hidden = el.id !== 'set-' + pane; });
         if (pane === 'general') $('#standalone').checked = !!state.standalone;
         if (pane === 'trades') renderTrades();
         if (pane === 'templates') renderTemplates();
         if (pane === 'access') loadAccess();
+        if (pane === 'log') { loadLog(); loadToken(); }
     }
 
     // ---- תחומים ----
@@ -137,7 +149,8 @@ const Settings = (() => {
             const acts = u.role === 'developer' ? '<span class="chip">מפתח</span>' : {
                 pending: `<button class="btn primary" data-do="approve" data-id="${u.id}">אישור</button>
                           <button class="icon-btn" data-do="reject" data-id="${u.id}" aria-label="דחיית ${esc(u.display_name)}">✕</button>`,
-                active:  `<button class="btn ghost danger" data-do="block" data-id="${u.id}">חסימה</button>`,
+                active:  `<button class="icon-btn" data-do="reset" data-id="${u.id}" aria-label="איפוס הסיסמה של ${esc(u.display_name)}" title="איפוס סיסמה">🔑</button>
+                          <button class="btn ghost danger" data-do="block" data-id="${u.id}">חסימה</button>`,
                 blocked: `<button class="btn ghost" data-do="unblock" data-id="${u.id}">שחרור</button>`,
             }[u.status];
             const meta = [
@@ -157,12 +170,67 @@ const Settings = (() => {
     async function userAction(e) {
         const b = e.target.closest('button[data-do]');
         if (!b) return;
-        const confirmText = { reject: 'לדחות את הבקשה ולמחוק אותה?', block: 'לחסום? המנהל יתנתק מיד, והפרויקטים שלו יישמרו.' }[b.dataset.do];
+        const confirmText = {
+            reject: 'לדחות את הבקשה ולמחוק אותה?',
+            block: 'לחסום? המנהל יתנתק מיד, והפרויקטים שלו יישמרו.',
+            reset: 'לקבוע סיסמה זמנית חדשה? המנהל יתנתק, והסיסמה תוצג לך פעם אחת כדי שתעביר לו.',
+        }[b.dataset.do];
         if (confirmText && !confirm(confirmText)) return;
         await busy(b, null, async () => {
-            renderUsers((await api('user', { body: { id: Number(b.dataset.id), do: b.dataset.do } })).users);
-            toast({ approve: 'אושר — יכול להיכנס', reject: 'הבקשה נדחתה', block: 'נחסם', unblock: 'שוחרר' }[b.dataset.do]);
+            const r = await api('user', { body: { id: Number(b.dataset.id), do: b.dataset.do } });
+            renderUsers(r.users);
+            if (r.temp_password) prompt(`הסיסמה הזמנית של ${r.username} (להעתיק ולהעביר לו; היא לא תוצג שוב):`, r.temp_password);
+            else toast({ approve: 'אושר — יכול להיכנס', reject: 'הבקשה נדחתה', block: 'נחסם', unblock: 'שוחרר' }[b.dataset.do]);
         });
+    }
+
+    // ---- יומן ----
+
+    const LOG_CAT = { auth: 'כניסה', api: 'בקשה', data: 'נתונים', admin: 'מפתח', client: 'דפדפן', php: 'שרת' };
+    let logRows = [];
+
+    async function loadLog(more = false) {
+        const params = { level: $('#log-level').value, category: $('#log-cat').value, q: $('#log-q').value.trim(), limit: 200 };
+        if (more && logRows.length) params.before_id = logRows[logRows.length - 1].id;
+        await busy(null, null, async () => {
+            const { entries, stats } = await api('log', { params });
+            logRows = more ? logRows.concat(entries) : entries;
+            $('#log-more').hidden = entries.length < 200;
+            $('#log-stats').innerHTML = `<span><b>${stats.total ?? 0}</b> רשומות</span>
+                <span>24 שעות: <span class="e"><b>${stats.last24h?.error ?? 0}</b> שגיאות</span> · <b>${stats.last24h?.warn ?? 0}</b> אזהרות · <b>${stats.last24h?.info ?? 0}</b> מידע</span>`;
+            $('#log-list').innerHTML = logRows.map(r => {
+                const t = new Date(r.at);
+                const who = r.username || (r.user_id ? '#' + r.user_id : '');
+                return `<li><details><summary>
+                    <span class="lv ${esc(r.level)}" aria-label="${esc(r.level)}"></span>
+                    <span class="ev">${esc(r.event)}</span>
+                    <span class="msg">${esc([LOG_CAT[r.category] || r.category, who, r.message, r.status ? '→' + r.status : ''].filter(Boolean).join(' · '))}</span>
+                    <time datetime="${esc(r.at)}">${t.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })} ${t.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time>
+                </summary><pre>${esc(JSON.stringify({ ...r, data: r.data }, null, 1))}</pre></details></li>`;
+            }).join('') || '<li><p class="empty">אין רשומות</p></li>';
+        });
+    }
+
+    /** מה שמוצג, כטקסט — להדבקה בצ'אט. */
+    function logText() {
+        return logRows.map(r => [r.at, r.level.toUpperCase(), r.category, r.event, r.username || (r.user_id ? '#' + r.user_id : '-'), r.ip,
+            r.method + (r.action ? ' ' + r.action : '') + (r.status ? ' →' + r.status : '') + (r.ms != null ? ' ' + r.ms + 'ms' : ''),
+            r.message ? '| ' + r.message : '', JSON.stringify(r.data), 'req=' + r.req].join(' ')).join('\n');
+    }
+
+    function showToken(t) {
+        const url = new URL('log.php?token=' + t.token, location.href).href;
+        $('#token-url').textContent = url;
+        $('#token-exp').textContent = 'עד ' + new Date(t.expires_at).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'numeric' });
+    }
+
+    async function loadToken() {
+        await busy(null, null, async () => showToken(await api('log-token')));
+    }
+
+    async function copy(text, done) {
+        try { await navigator.clipboard.writeText(text); toast(done); }
+        catch { prompt('להעתקה:', text); }
     }
 
     return { show };

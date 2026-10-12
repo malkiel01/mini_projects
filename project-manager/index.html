@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=6">
+    <link rel="stylesheet" href="assets/css/app.css?v=7">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -139,6 +139,7 @@
                 <a role="tab" data-set="trades" href="#/settings/trades"><span>תחומים</span></a>
                 <a role="tab" data-set="templates" href="#/settings/templates"><span>תבניות שלבים</span></a>
                 <a role="tab" data-set="access" href="#/settings/access"><span>מנהלים</span></a>
+                <a role="tab" data-set="log" href="#/settings/log"><span>יומן</span></a>
             </div>
             <div class="pane" id="set-general" hidden>
                 <label class="switch"><input type="checkbox" id="standalone"><span>אפליקציה עצמאית</span></label>
@@ -160,6 +161,38 @@
                 </div>
                 <p class="hint">פרויקט חדש נפתח עם השלבים של התבנית שנבחרה. שינוי בתבנית לא משנה פרויקטים קיימים.</p>
                 <ul id="template-list" class="rows"></ul>
+            </div>
+            <div class="pane" id="set-log" hidden>
+                <div class="token-box">
+                    <b>קישור קריאה לצ'אט</b>
+                    <p class="hint">כשיש תקלה — מעתיקים את הקישור לצ'אט. האסימון מתחלף לבד אחת לשבוע (<span id="token-exp"></span>), והקישור הישן מפסיק לעבוד.</p>
+                    <code id="token-url"></code>
+                    <div class="row-btns">
+                        <button class="btn primary" id="token-copy">העתקת הקישור</button>
+                        <button class="btn ghost" id="log-copy">העתקת מה שמוצג</button>
+                        <button class="btn ghost danger" id="token-rotate">החלפה עכשיו</button>
+                    </div>
+                </div>
+                <div class="log-stats" id="log-stats"></div>
+                <div class="toolbar">
+                    <input type="search" id="log-q" placeholder="חיפוש ביומן" aria-label="חיפוש ביומן" autocomplete="off">
+                    <select id="log-level" aria-label="רמה">
+                        <option value="info">הכול</option>
+                        <option value="warn">אזהרות ושגיאות</option>
+                        <option value="error">שגיאות</option>
+                    </select>
+                    <select id="log-cat" aria-label="קטגוריה">
+                        <option value="">כל הקטגוריות</option>
+                        <option value="auth">כניסה</option>
+                        <option value="api">בקשות</option>
+                        <option value="data">נתונים</option>
+                        <option value="admin">מפתח</option>
+                        <option value="client">דפדפן</option>
+                        <option value="php">שרת</option>
+                    </select>
+                </div>
+                <ul class="log-list" id="log-list"></ul>
+                <div class="toolbar end"><button class="btn ghost" id="log-more" hidden>עוד</button></div>
             </div>
             <div class="pane" id="set-access" hidden>
                 <p class="hint">מנהל פרויקט נרשם במסך הכניסה, ומגיע לכאן לאישור. מנהל חסום מתנתק מיד.</p>
@@ -335,10 +368,10 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=6"></script>
-    <script src="assets/js/contacts.js?v=6"></script>
-    <script src="assets/js/projects.js?v=6"></script>
-    <script src="assets/js/settings.js?v=6"></script>
-    <script src="assets/js/app.js?v=6"></script>
+    <script src="assets/js/core.js?v=7"></script>
+    <script src="assets/js/contacts.js?v=7"></script>
+    <script src="assets/js/projects.js?v=7"></script>
+    <script src="assets/js/settings.js?v=7"></script>
+    <script src="assets/js/app.js?v=7"></script>
 </body>
 </html>

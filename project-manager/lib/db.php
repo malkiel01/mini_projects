@@ -12,6 +12,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/log.php';
+
 if (!defined('PM_DB')) define('PM_DB', __DIR__ . '/../data/pm.sqlite');
 
 /** תחומי ברירת מחדל — נזרעים פעם אחת, ומאז המפתח עורך אותם. */
@@ -253,4 +255,5 @@ function pm_audit(string $actor, string $action, string $refKind, ?int $refId, a
 {
     pm_db()->prepare('INSERT INTO audit_log (at, actor, action, ref_kind, ref_id, data_json) VALUES (?,?,?,?,?,?)')
         ->execute([pm_now(), $actor, $action, $refKind, $refId, json_encode($data, JSON_UNESCAPED_UNICODE)]);
+    pm_log('info', 'data', $action, ['data' => $data + ['ref' => "$refKind:$refId"]]);
 }

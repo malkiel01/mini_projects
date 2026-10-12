@@ -40,6 +40,16 @@
             <p class="hint reg-only" hidden>לפחות 8 תווים. ההרשמה נשלחת למפתח לאישור.</p>
             <p class="error" id="auth-error" role="alert" hidden></p>
             <button class="btn primary" id="auth-submit">כניסה</button>
+            <button type="button" class="btn ghost" id="forgot" hidden>שכחתי את סיסמת המפתח</button>
+        </form>
+
+        <!-- איפוס סיסמת המפתח — רק כשמחוברים לפלטפורמה כמנהל -->
+        <form id="reset-form" novalidate hidden>
+            <p class="hint">אתה מחובר לפלטפורמה כמנהל, ולכן אפשר לקבוע כאן סיסמה חדשה לחשבון המפתח. גם כל הנעילות ישוחררו.</p>
+            <label class="f"><span>סיסמה חדשה למפתח (לפחות 8 תווים)</span><input name="password" type="password" autocomplete="new-password" dir="ltr" required></label>
+            <p class="error" role="alert" hidden></p>
+            <button class="btn primary">קביעת סיסמה וכניסה</button>
+            <button type="button" class="btn ghost" id="reset-cancel">ביטול</button>
         </form>
 
         <section id="waiting" class="waiting" hidden aria-live="polite">
@@ -52,6 +62,6 @@
             </div>
         </section>
     </main>
-    <script src="assets/js/login.js?v=2"></script>
+    <script src="assets/js/login.js?v=3"></script>
 </body>
 </html>
