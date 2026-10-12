@@ -582,9 +582,11 @@
     let installPrompt = null;      // אנדרואיד/מחשב: אפשרות "התקנה כאפליקציה"
 
     async function initPush() {
-        window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; renderPushCard(); });
+        // כרום מציע להתקין רק כשהאפליקציה לא מותקנת — אז הסימון הישן לא נכון
+        window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; clearInstalled(); renderPushCard(); });
         window.addEventListener('appinstalled', () => { markInstalled(); installPrompt = null; renderPushCard(); });
         if (isStandalone) markInstalled();
+        verifyInstalled();
         if (!('serviceWorker' in navigator)) return;
         try {
             swReg = await navigator.serviceWorker.register('sw.js');
@@ -733,6 +735,25 @@
     function markInstalled() {
         try { localStorage.setItem(INSTALLED_KEY, new Date().toISOString()); } catch { /* */ }
     }
+    function clearInstalled() {
+        try { localStorage.removeItem(INSTALLED_KEY); } catch { /* */ }
+    }
+
+    /**
+     * האם האפליקציה באמת מותקנת — ולא רק "פעם סומנה". הסימון נשמר בדפדפן, ולכן
+     * אחרי הסרה הוא נשאר. כרום (אנדרואיד ומחשב) יודע לענות בעצמו
+     * (getInstalledRelatedApps, לפי related_applications במניפסט); וכשכרום מציע
+     * להתקין (beforeinstallprompt) — סימן שהיא לא מותקנת.
+     */
+    async function verifyInstalled() {
+        if (isStandalone || !('getInstalledRelatedApps' in navigator)) return;
+        try {
+            const apps = await navigator.getInstalledRelatedApps();
+            if (apps.some(a => a.platform === 'webapp')) { if (!installedAt()) markInstalled(); }
+            else clearInstalled();
+            renderPushCard();
+        } catch { /* לא נתמך כאן — נשארים עם הסימון */ }
+    }
     function installedAt() {
         try { return localStorage.getItem(INSTALLED_KEY); } catch { return null; }
     }
@@ -757,8 +778,12 @@
             line('', '✓ פתוח עכשיו כאפליקציה', 'ההתחברות נשמרת 4 חודשים, וההתראות מגיעות גם כשהאפליקציה סגורה.');
         } else if (installedAt()) {
             box.className = 'install-box done';
-            line('', `✓ האפליקציה הותקנה ב${deviceName} הזה`,
-                `הותקנה ב-${new Date(installedAt()).toLocaleDateString('he-IL')}. פתחו את "ניחוחות" ממסך הבית.`);
+            line('', `✓ האפליקציה מותקנת ב${deviceName} הזה`, 'פתחו את "ניחוחות" ממסך הבית.');
+            // היכן שהדפדפן לא יודע לבדוק בעצמו (אייפון, פיירפוקס) — אפשר לבטל ידנית
+            if (!('getInstalledRelatedApps' in navigator)) {
+                box.append(el('button', { type: 'button', class: 'link-btn', onclick: () => { clearInstalled(); renderPushCard(); } },
+                    'הסרתי את האפליקציה'));
+            }
         } else if (installPrompt) {
             box.className = 'install-box';
             line('', 'אפשר להתקין את ממשק המנהל כאפליקציה', 'אייקון במסך הבית, נפתח במסך מלא, ובאנדרואיד אפשר לבחור לו צליל התראות משלו.');
@@ -775,8 +800,11 @@
             line('', 'התקנה כאפליקציה', isAndroid
                 ? 'בכרום: תפריט ⋮ (למעלה) ← "התקנת אפליקציה" או "הוספה למסך הבית". אם האפשרות לא מופיעה — כנראה שהאפליקציה כבר מותקנת.'
                 : 'בכרום או Edge: לוחצים על סמל ההתקנה בשורת הכתובת (מסך עם חץ).');
-            box.append(el('button', { type: 'button', class: 'btn btn-ghost btn-wide', onclick: () => { markInstalled(); renderPushCard(); } },
-                'כבר התקנתי — לסמן'));
+            // כרום בודק לבד אם מותקנת — סימון ידני רק בדפדפן שלא יודע
+            if (!('getInstalledRelatedApps' in navigator)) {
+                box.append(el('button', { type: 'button', class: 'btn btn-ghost btn-wide', onclick: () => { markInstalled(); renderPushCard(); } },
+                    'כבר התקנתי — לסמן'));
+            }
         }
     }
 
