@@ -60,6 +60,14 @@ const Files = (() => {
         $('#add-link').addEventListener('click', addLink);
         $('#file-links').addEventListener('click', e => { const b = e.target.closest('[data-unlink]'); if (b) unlink(Number(b.dataset.unlink)); });
         $('#file-delete').addEventListener('click', deleteFile);
+        $('#file-quote').addEventListener('click', () => {
+            // הספק — לפי התיקייה שהקובץ יושב בה
+            const home = folderById(current.folders.find(l => l.home)?.folder_id);
+            let supplier = null;
+            for (let f = home; f && !supplier; f = folderById(f.parent_id)) if (f.kind === 'contact') supplier = f.contact_id;
+            $('#file-dlg').close();
+            Quotes.fromFile(project.id, { file_id: current.id, supplier_id: supplier });
+        });
         $('#folder-dlg form').addEventListener('submit', e => { e.preventDefault(); saveFolder(); });
         $('#folder-delete').addEventListener('click', deleteFolder);
     }
@@ -266,6 +274,7 @@ const Files = (() => {
         el.home.innerHTML = options(all, home);
         renderLinks();
         $('#file-download').href = fileUrl(f.id, '&download=1');
+        $('#file-quote').hidden = !['quote', 'other', 'photo', 'contract'].includes(f.type);
         dlg.showModal();
     }
 

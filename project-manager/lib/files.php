@@ -73,13 +73,14 @@ function pm_ensure_folders(array $p): void
     foreach (PM_SYSTEM_FOLDERS as $kind => [$name, , $sort]) {
         if (!isset($existing["$kind:0"])) $ins->execute([$p['id'], $kind, null, $name, $sort, pm_now()]);
     }
-    // ספקים: מהשלבים ומהצוות. לקוח ועו"ד — בתיקיות שלהם.
+    // ספקים: מהשלבים, מהצוות ומההצעות. לקוח ועו"ד — בתיקיות שלהם.
     $st = $db->prepare(
         "SELECT DISTINCT c.id, c.name FROM contacts c
           WHERE c.kind = 'supplier' AND (c.id IN (SELECT supplier_id FROM stages WHERE project_id = ?)
-                                      OR c.id IN (SELECT contact_id FROM project_members WHERE project_id = ?))"
+                                      OR c.id IN (SELECT contact_id FROM project_members WHERE project_id = ?)
+                                      OR c.id IN (SELECT supplier_id FROM quotes WHERE project_id = ?))"
     );
-    $st->execute([$p['id'], $p['id']]);
+    $st->execute([$p['id'], $p['id'], $p['id']]);
     foreach ($st->fetchAll() as $c) {
         if (!isset($existing['contact:' . $c['id']])) $ins->execute([$p['id'], 'contact', $c['id'], $c['name'], 40, pm_now()]);
     }
@@ -100,7 +101,8 @@ function pm_folders(array $user, int $projectId): array
     $st->execute([$projectId]);
     return array_map(fn($f) => [
         'id' => (int)$f['id'], 'parent_id' => $f['parent_id'] !== null ? (int)$f['parent_id'] : null,
-        'kind' => $f['kind'], 'name' => $f['kind'] === 'contact' && $f['contact_name'] ? $f['contact_name'] : $f['name'],
+        'kind' => $f['kind'], 'contact_id' => $f['contact_id'] !== null ? (int)$f['contact_id'] : null,
+        'name' => $f['kind'] === 'contact' && $f['contact_name'] ? $f['contact_name'] : $f['name'],
         'icon' => PM_SYSTEM_FOLDERS[$f['kind']][1] ?? ($f['kind'] === 'contact' ? '🧰' : '📁'),
         'files' => (int)$f['files'], 'system' => $f['kind'] !== 'custom',
     ], $st->fetchAll());

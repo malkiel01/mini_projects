@@ -320,6 +320,38 @@ body[data-view="project"] main { padding-bottom: 0; }
 #max-upload-form { align-items: flex-end; margin-bottom: var(--s3); }
 #max-upload-form .f { flex: 1; }
 
+/* ---- הצעות מחיר ---- */
+
+#pane-quotes > .toolbar { justify-content: space-between; }
+.q-sum { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: .85rem; }
+.q-sum.over { color: var(--danger); }
+.q-sum .sep, .decisions .sep { font-style: normal; margin: 0 6px; }
+.q-stage { margin-bottom: var(--s3); }
+.q-head { display: flex; align-items: center; gap: var(--s2); min-height: 40px; margin-bottom: var(--s1); }
+.q-head h2 { font-size: .95rem; font-weight: 600; min-width: 0; }
+.q-head .btn { margin-inline-start: auto; }
+.card .amt { margin-inline-start: auto; flex: none; font-variant-numeric: tabular-nums; }
+.q-row.rec { background: color-mix(in srgb, var(--star) 8%, var(--surface)); }
+.q-row.q-approved { box-shadow: inset -3px 0 0 var(--ok); }
+.q-row.q-approved .amt { color: var(--ok); }
+.q-row.q-declined, .q-row.q-rejected, .q-row.q-cancelled { opacity: .6; }
+.q-row.q-cancelled .amt { text-decoration: line-through; }
+.card .l2 .cheap { color: var(--ok); font-weight: 600; }
+.card .l2 .late, .decisions .late { color: var(--danger); }
+.q-without { margin-top: var(--s2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.uploads:empty { display: none; }
+@media (max-width: 430px) { #add-quote .add-label { display: none; } #add-quote { min-width: var(--tap); padding: 0; justify-content: center; } }
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
+.chip.q-approved { color: var(--ok); }
+.chip.q-rejected, .chip.q-cancelled { color: var(--danger); }
+.chip.rec { color: var(--star); }
+#quote-actions { display: grid; gap: var(--s2); border-top: 1px solid var(--line); padding-top: var(--s2); }
+#quote-actions .sec-title { margin: var(--s1) 0 0; }
+.decisions { list-style: none; display: grid; gap: var(--s1); }
+.decisions li { display: grid; padding: 6px var(--s3); border-radius: 8px; background: var(--bg); font-size: .9rem; }
+.decisions small { color: var(--muted); font-size: .78rem; }
+#send-dlg textarea { min-height: 160px; }
+
 /* ---- שיתוף לאפליקציה ---- */
 
 #share-targets .card { padding-inline-start: calc(var(--s3) + var(--d, 0) * 20px); }
