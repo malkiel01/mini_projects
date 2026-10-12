@@ -103,7 +103,7 @@ const Settings = (() => {
     // ---- נוסחי הודעות (שלב 11) ----
 
     // המשתנים בנוסח — בשמם העברי; בשפה אחרת מוצג הכינוי שלהם (state.msgVars[שפה]), ושניהם עובדים
-    const MSG_VARS = ['שם', 'פרויקט', 'שלב', 'סכום', 'פרטים', 'כתובת', 'קישור', 'מנהל']; // i18n-none
+    const MSG_VARS = ['שם', 'פרויקט', 'שלב', 'סכום', 'פרטים', 'קישור', 'מנהל']; // i18n-none
 
     /** בורר השפה והמשתנים — מעל הנוסחים; נוצר פעם אחת. */
     function msgLangBar() {
@@ -113,14 +113,15 @@ const Settings = (() => {
             bar.id = 'msg-lang-bar';
             bar.className = 'toolbar';
             bar.innerHTML = `<label class="f"><span>${esc(t('שפת הנוסח'))}</span>
-                <select id="msg-lang" data-no-i18n>${Object.entries(I18n.LANGS).map(([k, v]) => `<option value="${k}">${esc(v.name)}</option>`).join('')}</select></label>
-                <p class="hint" id="msg-vars"></p>`;
+                <select id="msg-lang" data-no-i18n>${Object.entries(I18n.LANGS).map(([k, v]) => `<option value="${k}">${esc(v.name)}</option>`).join('')}</select></label>`;
             $('#msg-templates').before(bar);
+            // המשתנים — בשורת ההסבר שמעל (#msg-vars-hint); אם אין — מתחת לבורר
+            if (!$('#msg-vars-hint')) bar.insertAdjacentHTML('beforeend', '<p class="hint" id="msg-vars-hint"></p>');
             $('#msg-lang').addEventListener('change', e => { msgLang = e.target.value; renderMsgTemplates(); });
         }
         $('#msg-lang').value = msgLang;
         const alias = state.msgVars?.[msgLang] || {};
-        $('#msg-vars').innerHTML = `${esc(t('משתנים:'))} ` + MSG_VARS.map(v => `<code dir="auto">{${esc(alias[v] || v)}}</code>`).join(' ');
+        $('#msg-vars-hint').innerHTML = `${esc(t('משתנים:'))} ` + MSG_VARS.map(v => `<code dir="auto">{${esc(alias[v] || v)}}</code>`).join(' ') + '.';
     }
 
     function renderMsgTemplates() {
