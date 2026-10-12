@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=13">
+    <link rel="stylesheet" href="assets/css/app.css?v=14">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -30,6 +30,7 @@
       #/p/<id>/<pane>    פרויקט: timeline · files · stages · quotes · team · details
                          (#/p/<id>/files/<folder> — תיקייה)
       #/contacts/<kind>  אנשי קשר: client · supplier · lawyer
+      #/contacts/<kind>/import  ייבוא מאנשי הקשר במכשיר
       #/settings/<pane>  הגדרות מפתח: trades · templates · access
       #/share[/<id>]     שמירת מה ששותף לאפליקציה ("שתף אל…") — פרויקט, ואז תיקייה
 -->
@@ -168,13 +169,38 @@
             </div>
             <div class="toolbar">
                 <input type="search" id="q" placeholder="חיפוש" aria-label="חיפוש לפי שם, עסק, טלפון או אימייל" autocomplete="off" enterkeyhint="search">
-                <select id="trade-filter" aria-label="סינון לפי תחום" hidden><option value="">כל התחומים</option></select>
-                <button class="icon-btn ghost" id="show-archived" aria-pressed="false" aria-label="הצגת הארכיון" title="ארכיון">🗄️</button>
-                <button class="icon-btn ghost" id="device-contacts" aria-label="אנשי הקשר במכשיר — ייבוא" title="מאנשי הקשר במכשיר">📱</button>
-                <input type="file" id="vcf-pick" accept=".vcf,text/vcard,text/x-vcard" multiple hidden>
                 <button class="btn primary" id="add"><span aria-hidden="true">+</span><span class="add-label">חדש</span></button>
             </div>
+            <div class="filters" role="group" aria-label="סינון וייבוא">
+                <select id="trade-filter" aria-label="סינון לפי תחום" hidden><option value="">כל התחומים</option></select>
+                <label class="chip-toggle"><input type="checkbox" id="show-archived"><span>ארכיון</span></label>
+                <a class="btn ghost sm" id="device-contacts" href="#/contacts/client/import">📱 ייבוא מהמכשיר</a>
+            </div>
             <div id="list" class="list" aria-live="polite"></div>
+        </section>
+
+        <!-- ===== ייבוא מאנשי הקשר במכשיר (#/contacts/<kind>/import) ===== -->
+        <section id="view-import" class="view" hidden>
+            <fieldset class="opt">
+                <legend>לייבא בתור</legend>
+                <div class="seg">
+                    <label><input type="radio" name="ikind" value="client"><span>לקוחות</span></label>
+                    <label><input type="radio" name="ikind" value="supplier"><span>ספקים</span></label>
+                    <label><input type="radio" name="ikind" value="lawyer"><span>עורכי דין</span></label>
+                </div>
+            </fieldset>
+            <label class="f" id="import-trade-box"><span>תחום לספקים שמיובאים (לא חובה)</span><select id="import-trade"></select></label>
+            <div class="row-btns wrap">
+                <button type="button" class="btn ghost" id="import-pick">📱 בחירה מאנשי הקשר</button>
+                <label class="btn ghost upload-btn">📄 קובץ vCard<input type="file" id="import-vcf" accept=".vcf,text/vcard,text/x-vcard" multiple hidden></label>
+            </div>
+            <p class="hint" id="import-hint"></p>
+            <label class="switch" id="import-all-box" hidden><input type="checkbox" id="import-all" checked><span id="import-count"></span></label>
+            <ul class="list rows-list" id="import-list"></ul>
+            <div class="import-bar" id="import-bar" hidden>
+                <button type="button" class="btn ghost" id="import-clear">ניקוי</button>
+                <button type="button" class="btn primary" id="import-go">ייבוא</button>
+            </div>
         </section>
 
         <!-- ===== הגדרות מפתח ===== -->
@@ -261,7 +287,6 @@
                 <button type="submit" class="btn primary" id="save">שמירה</button>
             </header>
             <div class="sheet-body">
-                <button type="button" class="btn ghost sm" id="fill-from-device" hidden>📱 מילוי מאנשי הקשר במכשיר</button>
                 <div class="fields">
                     <label class="f wide"><span>שם *</span><input name="name" required maxlength="100" autocomplete="off"></label>
                     <label class="f k-supplier k-lawyer"><span>עסק / משרד</span><input name="company" maxlength="100"></label>
@@ -319,39 +344,6 @@
                 <label class="f wide"><span>הערות</span><textarea name="notes" rows="3" maxlength="4000"></textarea></label>
                 <p class="error" id="form-error" role="alert" hidden></p>
                 <button type="button" id="archive" class="btn ghost" hidden></button>
-            </div>
-        </form>
-    </dialog>
-
-    <!-- ===== חלון: ייבוא מאנשי הקשר במכשיר ===== -->
-    <dialog id="import-dlg" aria-labelledby="import-dlg-title">
-        <form method="dialog" novalidate>
-            <header class="sheet-head">
-                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
-                <h2 id="import-dlg-title">מאנשי הקשר במכשיר</h2>
-                <button type="submit" class="btn primary" id="import-go">ייבוא</button>
-            </header>
-            <div class="sheet-body">
-                <fieldset class="opt">
-                    <legend>לייבא בתור</legend>
-                    <div class="seg">
-                        <label><input type="radio" name="ikind" value="client"><span>לקוחות</span></label>
-                        <label><input type="radio" name="ikind" value="supplier"><span>ספקים</span></label>
-                        <label><input type="radio" name="ikind" value="lawyer"><span>עורכי דין</span></label>
-                    </div>
-                </fieldset>
-                <section class="group" id="import-trades-box" aria-labelledby="g-itrades">
-                    <h3 id="g-itrades">תחום <small>לכל הספקים שמיובאים</small></h3>
-                    <div id="import-trades" class="chips"></div>
-                </section>
-                <div class="row-btns wrap">
-                    <button type="button" class="btn ghost" id="import-pick">📱 בחירה מאנשי הקשר</button>
-                    <label class="btn ghost upload-btn">📄 מקובץ vCard<input type="file" id="import-vcf" accept=".vcf,text/vcard,text/x-vcard" multiple hidden></label>
-                </div>
-                <p class="hint" id="import-hint"></p>
-                <label class="switch" id="import-all-box" hidden><input type="checkbox" id="import-all" checked><span id="import-count"></span></label>
-                <ul class="list rows-list" id="import-list"></ul>
-                <p class="error" role="alert" hidden></p>
             </div>
         </form>
     </dialog>
@@ -632,15 +624,15 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=13"></script>
-    <script src="assets/js/contacts.js?v=13"></script>
-    <script src="assets/js/device-contacts.js?v=13"></script>
-    <script src="assets/js/files.js?v=13"></script>
+    <script src="assets/js/core.js?v=14"></script>
+    <script src="assets/js/contacts.js?v=14"></script>
+    <script src="assets/js/device-contacts.js?v=14"></script>
+    <script src="assets/js/files.js?v=14"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=13"></script>
-    <script src="assets/js/projects.js?v=13"></script>
-    <script src="assets/js/quotes.js?v=13"></script>
-    <script src="assets/js/settings.js?v=13"></script>
-    <script src="assets/js/app.js?v=13"></script>
+    <script src="assets/js/share.js?v=14"></script>
+    <script src="assets/js/projects.js?v=14"></script>
+    <script src="assets/js/quotes.js?v=14"></script>
+    <script src="assets/js/settings.js?v=14"></script>
+    <script src="assets/js/app.js?v=14"></script>
 </body>
 </html>

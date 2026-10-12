@@ -9,14 +9,9 @@ const Contacts = (() => {
         bound = true;
         let timer;
         $('#q').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 250); });
-        $('#show-archived').addEventListener('click', e => {
-            const b = e.currentTarget;
-            b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'));
-            load();
-        });
+        $('#show-archived').addEventListener('change', load);
         $('#trade-filter').addEventListener('change', render);
         $('#add').addEventListener('click', () => open(null, kind));
-        $('#device-contacts').addEventListener('click', () => DeviceContacts.open());
         $('#list').addEventListener('click', e => {
             if (e.target.closest('a')) return; // קישור טלפון / וואטסאפ / מייל
             const card = e.target.closest('.card');
@@ -43,6 +38,7 @@ const Contacts = (() => {
         $$('#kinds [data-kind]').forEach(a => a.setAttribute('aria-selected', String(a.dataset.kind === kind)));
         $('#trade-filter').hidden = kind !== 'supplier';
         $('#add').setAttribute('aria-label', KIND_LABEL[kind] + ' חדש');
+        $('#device-contacts').href = `#/contacts/${kind}/import`;
         fillTradeFilter();
         load();
     }
@@ -51,7 +47,7 @@ const Contacts = (() => {
         const k = kind;
         try {
             const { contacts } = await api('contacts', { params: {
-                kind: k, q: $('#q').value.trim(), archived: $('#show-archived').getAttribute('aria-pressed') === 'true' ? 1 : 0,
+                kind: k, q: $('#q').value.trim(), archived: $('#show-archived').checked ? 1 : 0,
             } });
             if (k !== kind) return; // הלשונית התחלפה בזמן הטעינה
             list = contacts;
@@ -72,7 +68,9 @@ const Contacts = (() => {
         const rows = list.filter(c => !tradeId || c.trades.includes(tradeId));
         if (!rows.length) {
             const q = $('#q').value.trim();
-            $('#list').innerHTML = `<p class="empty">${q || tradeId ? 'לא נמצאו תוצאות' : 'עוד אין כרטיסים כאן. לחץ "+ חדש" כדי להתחיל.'}</p>`;
+            const archived = $('#show-archived').checked;
+            $('#list').innerHTML = `<p class="empty">${q || tradeId ? 'לא נמצאו תוצאות' : archived ? 'אין כרטיסים בארכיון.'
+                : 'עוד אין כרטיסים — "+ חדש" או "📱 ייבוא".'}</p>`;
             return;
         }
         $('#list').innerHTML = rows.map(c => {
@@ -128,7 +126,6 @@ const Contacts = (() => {
             arch.textContent = c.archived ? 'החזרה מהארכיון' : 'העברה לארכיון';
             arch.classList.toggle('danger', !c.archived);
         }
-        DeviceContacts.editorReady(!c);
         $('#editor').showModal();
         form.elements.name.focus();
     }
