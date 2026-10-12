@@ -1,0 +1,231 @@
+// יומן ותזכורות — שלב 10 (lib/calendar.php). #/calendar[/YYYY-MM-DD]
+//
+// למעלה "דורש טיפול" (תשלום באיחור, ממתין ללקוח / לעו"ד, שלב שלא התחיל / הסתיים,
+// תוקף הצעה, פגישה היום). מתחת — חודש: נקודה צבעונית לכל דבר ביום; לחיצה על יום —
+// הרשימה שלו. פגישות וביקורים: "+ פגישה". ובתחתית — סנכרון ליומן בטלפון ומייל בוקר.
+'use strict';
+
+const Calendar = (() => {
+    let bound = false, items = [], today = '', month = '', day = '', projects = [];
+    const DAYS = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
+    const ICON = { appointment: '📅', stage_start: '🏁', stage_end: '🏁', payment: '💳', quote: '🧾' };
+    const kindClass = k => k.startsWith('stage') ? 'stage' : k;
+    const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const parse = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d || 1); };
+
+    function bind() {
+        if (bound) return;
+        bound = true;
+        $('#cal-prev').addEventListener('click', () => shift(-1));
+        $('#cal-next').addEventListener('click', () => shift(1));
+        $('#cal-today').addEventListener('click', () => { location.hash = '#/calendar/' + today; });
+        $('#add-appt').addEventListener('click', () => openAppt(null));
+        $('#cal-grid').addEventListener('click', e => {
+            const c = e.target.closest('[data-day]');
+            if (c) history.replaceState(null, '', '#/calendar/' + c.dataset.day), pick(c.dataset.day);
+        });
+        $('#cal-day').addEventListener('click', e => {
+            if (e.target.closest('a')) return;
+            const row = e.target.closest('[data-i]');
+            if (!row) return;
+            const x = dayItems()[Number(row.dataset.i)];
+            if (x.kind === 'appointment') openAppt(x);
+            else location.hash = `#/p/${x.project_id}/${x.pane}`;
+        });
+        $('#rem-list').addEventListener('click', e => {
+            const row = e.target.closest('[data-go]');
+            if (row) location.hash = row.dataset.go;
+        });
+        for (const id of ['#cal-day', '#rem-list']) {
+            $(id).addEventListener('keydown', e => {
+                const row = e.target.closest('[role=button]');
+                if (row && e.target === row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); row.click(); }
+            });
+        }
+        const form = $('#appt-dlg form');
+        form.addEventListener('submit', e => { e.preventDefault(); saveAppt(); });
+        form.elements.project_id.addEventListener('change', () => fillContacts(null));
+        $('#appt-cancel').addEventListener('click', cancelAppt);
+        $('#cal-sync').addEventListener('toggle', e => { if (e.target.open) loadLink(false); });
+        $('#cal-renew').addEventListener('click', () => { if (confirm('ליצור קישור חדש? הקישור הקודם יפסיק להתעדכן בטלפון.')) loadLink(true); });
+        $('#cal-copy').addEventListener('click', async () => {
+            try { await navigator.clipboard.writeText($('#cal-copy').dataset.url); toast('הועתק'); } catch { prompt('הקישור:', $('#cal-copy').dataset.url); }
+        });
+        $('#digest-on').addEventListener('change', async e => {
+            try { await api('digest', { body: { on: e.target.checked } }); state.user.digest = e.target.checked; toast(e.target.checked ? 'מייל הבוקר דלוק' : 'מייל הבוקר כבוי'); }
+            catch (x) { toast(x.message, true); e.target.checked = !e.target.checked; }
+        });
+    }
+
+    async function show(sub) {
+        bind();
+        $('#title').textContent = 'יומן';
+        document.title = 'יומן — ניהול פרויקטים';
+        $('#digest-on').checked = state.user.digest !== false;
+        const want = /^\d{4}-\d{2}-\d{2}$/.test(sub || '') ? sub : '';
+        await Promise.all([loadReminders(), loadMonth(want ? want.slice(0, 7) : month || '', want)]);
+    }
+
+    async function loadReminders() {
+        let list = [];
+        try { ({ reminders: list } = await api('reminders')); } catch { return; }
+        badge(list);
+        $('#reminders').hidden = !list.length;
+        $('#rem-title').textContent = `דורש טיפול (${list.length})`;
+        const icon = { late: '⚠️', soon: '⏰', wait: '⏳' };
+        $('#rem-list').innerHTML = list.map(r => `<li class="card rem-${r.level}" data-go="${r.pane === 'calendar' ? '#/calendar/' + today : `#/p/${r.project_id}/${r.pane}`}" tabindex="0" role="button">
+            <span class="ficon" aria-hidden="true">${icon[r.level]}</span>
+            <div class="body"><div class="l1"><span class="one">${esc(r.text)}</span></div><div class="l2 one">${esc(r.project_name)}</div></div></li>`).join('');
+    }
+
+    /** המספר ליד "יומן", והפס במסך הבית. */
+    function badge(list) {
+        const urgent = list.filter(r => r.level !== 'wait').length;
+        $('#rem-badge').hidden = !list.length;
+        $('#rem-badge').textContent = list.length;
+        $('#rem-badge').classList.toggle('hot', urgent > 0);
+        const b = $('#rem-banner');
+        b.hidden = !list.length;
+        if (list.length) b.innerHTML = `<span aria-hidden="true">${urgent ? '⚠️' : '⏳'}</span><span class="one">${list.length} דורשים טיפול · ${esc(list[0].text)}</span><span aria-hidden="true">‹</span>`;
+    }
+
+    async function loadMonth(m, pickDay) {
+        const now = new Date();
+        month = m || month || ymd(now).slice(0, 7);
+        const first = parse(month + '-01');
+        // שישה שבועות מלאים, מיום ראשון
+        const start = new Date(first); start.setDate(1 - first.getDay());
+        const end = new Date(start); end.setDate(start.getDate() + 41);
+        try { ({ items, today } = await api('calendar', { params: { from: ymd(start), to: ymd(end) } })); }
+        catch (e) { toast(e.message, true); return; }
+        day = pickDay || (day && day.startsWith(month) ? day : (today.startsWith(month) ? today : month + '-01'));
+        drawMonth(start);
+        pick(day);
+    }
+
+    function shift(d) {
+        const f = parse(month + '-01');
+        f.setMonth(f.getMonth() + d);
+        const m = ymd(f).slice(0, 7);
+        history.replaceState(null, '', '#/calendar/' + m + '-01');
+        day = '';
+        loadMonth(m);
+    }
+
+    function drawMonth(start) {
+        $('#cal-month').textContent = parse(month + '-01').toLocaleDateString('he-IL', { month: 'long', year: 'numeric' });
+        const byDay = new Map();
+        for (const x of items) { if (!byDay.has(x.date)) byDay.set(x.date, []); byDay.get(x.date).push(x); }
+        let html = DAYS.map(d => `<span class="dow" aria-hidden="true">${d}</span>`).join('');
+        for (let i = 0; i < 42; i++) {
+            const d = new Date(start); d.setDate(start.getDate() + i);
+            const k = ymd(d), list = byDay.get(k) || [];
+            const kinds = [...new Set(list.map(x => kindClass(x.kind)))];
+            const late = list.some(x => x.late);
+            html += `<button type="button" class="cday${k.startsWith(month) ? '' : ' out'}${k === today ? ' today' : ''}${late ? ' late' : ''}" data-day="${k}"
+                aria-label="${d.toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' })}${list.length ? `, ${list.length} פריטים` : ''}">
+                <span class="n">${d.getDate()}</span><span class="dots">${kinds.map(c => `<i class="k-${c}"></i>`).join('')}</span></button>`;
+        }
+        $('#cal-grid').innerHTML = html;
+    }
+
+    const dayItems = () => items.filter(x => x.date === day);
+
+    function pick(d) {
+        day = d;
+        $$('#cal-grid .cday').forEach(c => c.setAttribute('aria-pressed', String(c.dataset.day === d)));
+        const label = parse(d).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' });
+        $('#cal-day-title').textContent = d === today ? `היום — ${label}` : label;
+        $('#cal-day').innerHTML = dayItems().map((x, i) => {
+            const contact = x.contact_phone ? `<a class="icon-btn" href="https://wa.me/${esc(waNumber(x.contact_phone))}?text=${encodeURIComponent(`תזכורת: ${x.title}, ${parse(x.date).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'numeric' })}${x.time ? ' ב-' + x.time : ''}${x.location ? ', ' + x.location : ''}.`)}" target="_blank" rel="noopener" aria-label="תזכורת בוואטסאפ ל${esc(x.contact_name)}">💬</a>` : '';
+            const nav = x.location ? `<a class="icon-btn" href="https://waze.com/ul?q=${encodeURIComponent(x.location)}" target="_blank" rel="noopener" aria-label="ניווט אל ${esc(x.location)}">📍</a>` : '';
+            return `<li class="card k-row ${x.late ? 'late' : ''}${x.done ? ' done' : ''}" data-i="${i}" tabindex="0" role="button">
+                <span class="when">${x.time ? esc(x.time) : ICON[x.kind]}</span>
+                <div class="body"><div class="l1"><span class="one">${esc(x.title)}</span></div>
+                    <div class="l2 one">${[esc(x.project_name), x.contact_name ? esc(x.contact_name) : '', x.location ? esc(x.location) : '', x.late ? '<b class="late">באיחור</b>' : ''].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>')}</div></div>
+                <div class="acts">${contact}${nav}</div></li>`;
+        }).join('') || '<p class="empty">אין כלום ביום הזה.</p>';
+    }
+
+    // ================= פגישה =================
+
+    let editing = null;
+
+    async function openAppt(x) {
+        editing = x;
+        const dlg = $('#appt-dlg'), form = $('form', dlg), el = form.elements;
+        formError(form, '');
+        try { ({ projects } = await api('projects', { params: { filter: 'open' } })); } catch { projects = []; }
+        el.project_id.innerHTML = options(projects.map(p => ({ value: p.id, label: p.name })), x?.project_id || (location.hash.match(/#\/p\/(\d+)/) || [])[1] || '', projects.length ? undefined : 'אין פרויקטים פעילים');
+        el.project_id.disabled = !!x;
+        el.title.value = x?.title || '';
+        el.date.value = x?.date || day || today;
+        el.time.value = x?.time || '';
+        el.duration.value = String(x?.duration || 60);
+        el.location.value = x?.location || '';
+        el.notes.value = x?.notes || '';
+        $('#appt-dlg-title').textContent = x ? 'פגישה' : 'פגישה חדשה';
+        $('#appt-cancel').hidden = !x;
+        await fillContacts(x?.contact_id ?? null);
+        dlg.showModal();
+    }
+
+    /** "עם מי": הצוות של הפרויקט — לקוח, עו"ד, ספקים. */
+    async function fillContacts(value) {
+        const el = $('#appt-dlg form').elements;
+        let team = [];
+        if (el.project_id.value) {
+            try { team = (await api('project', { params: { id: el.project_id.value } })).team; } catch { /* ריק */ }
+            const p = projects.find(x => x.id === Number(el.project_id.value));
+            el.location.placeholder = p?.address ? `ברירת מחדל: ${p.address}` : 'כתובת';
+        }
+        el.contact_id.innerHTML = options(team.map(t => ({ value: t.id, label: `${t.name} · ${t.roles[0]}` })), value, 'לא חובה');
+    }
+
+    async function saveAppt() {
+        const form = $('#appt-dlg form'), el = form.elements;
+        const p = projects.find(x => x.id === Number(el.project_id.value));
+        const body = {
+            id: editing?.ref, project_id: Number(el.project_id.value), title: el.title.value.trim(), date: el.date.value, time: el.time.value,
+            duration: Number(el.duration.value), location: el.location.value.trim() || p?.address || '', contact_id: Number(el.contact_id.value) || null, notes: el.notes.value,
+        };
+        if (!body.project_id) { formError(form, 'פרויקט: שדה חובה'); return; }
+        if (!body.title) { formError(form, 'מה: שדה חובה'); return; }
+        if (!body.date) { formError(form, 'תאריך: שדה חובה'); return; }
+        await busy($('button[type=submit]', form), form, async () => {
+            await api('appointment', { body });
+            $('#appt-dlg').close();
+            toast('נשמר');
+            if (document.body.dataset.view === 'calendar') { day = body.date; await Promise.all([loadReminders(), loadMonth(body.date.slice(0, 7), body.date)]); }
+        });
+    }
+
+    async function cancelAppt() {
+        if (!confirm(`לבטל את "${editing.title}"?`)) return;
+        await busy($('#appt-cancel'), $('#appt-dlg form'), async () => {
+            await api('appointment-cancel', { body: { id: editing.ref } });
+            $('#appt-dlg').close();
+            toast('הפגישה בוטלה');
+            await Promise.all([loadReminders(), loadMonth(month, day)]);
+        });
+    }
+
+    // ================= סנכרון =================
+
+    async function loadLink(renew) {
+        try {
+            const { url, webcal } = renew ? await api('cal-link', { body: {} }) : await api('cal-link');
+            $('#cal-webcal').href = webcal;
+            $('#cal-google').href = 'https://calendar.google.com/calendar/r/settings/addbyurl?cid=' + encodeURIComponent(webcal);
+            $('#cal-copy').dataset.url = url;
+            if (renew) toast('נוצר קישור חדש — צריך להוסיף אותו שוב בטלפון');
+        } catch (e) { toast(e.message, true); }
+    }
+
+    /** מהבית: רק המספר והפס — בלי לטעון את כל היומן. */
+    async function refreshBadge() {
+        try { badge((await api('reminders')).reminders); } catch { /* בלי פס */ }
+    }
+
+    return { show, refreshBadge, openAppt };
+})();

@@ -13,11 +13,13 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/lib/portal.php';
+require_once __DIR__ . '/lib/calendar.php';
 require_once __DIR__ . '/lib/auth.php';
 
 pm_log_install_handlers();
 pm_survey_migrate();
+// מייל התזכורות היומי — "קרון" שרץ בבקשה הראשונה אחרי 07:00. תקלה בו לא מפילה את הבקשה.
+try { pm_digest_tick(); } catch (Throwable $e) { pm_log('error', 'mail', 'digest.failed', ['message' => $e->getMessage()]); }
 $PM_T0 = microtime(true);
 
 header('Content-Type: application/json; charset=utf-8');
@@ -66,6 +68,8 @@ try {
         'POST forgot'          => fn() => pm_forgot(pm_body()),
         'POST reset-info'      => fn() => pm_reset_info((string)(pm_body()['token'] ?? '')),
         'POST reset-password'  => fn() => pm_reset_password(pm_body()),
+        // יומן הטלפון מושך את זה בלי עוגייה — האסימון בכתובת (lib/calendar.php)
+        'GET calendar-feed'    => fn() => pm_calendar_feed((string)($_GET['t'] ?? '')),
         // שגיאת JavaScript מהדפדפן — גם לפני כניסה (מסך הכניסה). X-PM מונע הצפה מאתר זר.
         'POST client-error' => function () {
             pm_require_app_header();
@@ -95,7 +99,9 @@ try {
 
     $result = match ("$method $action") {
         'GET me' => (function () use ($user) {
-            return ['user' => $user, 'trades' => pm_trades(), 'templates' => pm_templates(),
+            $d = pm_db()->prepare('SELECT digest FROM users WHERE id = ?');
+            $d->execute([$user['id']]);
+            return ['user' => $user + ['digest' => (bool)$d->fetchColumn()], 'trades' => pm_trades(), 'templates' => pm_templates(),
                     'file_types' => PM_FILE_TYPES, 'max_upload' => pm_max_upload(),
                     // מצב עצמאי: בלי חזרה לדף האפליקציות. כבוי כל עוד האפליקציה בתוך האינדקס.
                     'standalone' => pm_setting('standalone', '0') === '1',
@@ -144,6 +150,18 @@ try {
         'POST quote-decide' => pm_quote_decide($user, (int)($in['id'] ?? 0), (string)($in['role'] ?? ''),
                                                (string)($in['decision'] ?? ''), (string)($in['note'] ?? '')),
         'POST quote-cancel' => pm_quote_cancel($user, (int)($in['id'] ?? 0), (string)($in['note'] ?? '')),
+        // יומן ותזכורות (שלב 10)
+        'GET calendar'      => pm_calendar($user, (string)($in['from'] ?? ''), (string)($in['to'] ?? '')),
+        'GET reminders'     => ['reminders' => pm_reminders($user)],
+        'POST appointment'  => pm_appointment_save($user, $in),
+        'POST appointment-cancel' => pm_appointment_cancel($user, (int)($in['id'] ?? 0)),
+        'GET cal-link'      => pm_cal_link($user, false),
+        'POST cal-link'     => pm_cal_link($user, true),
+        'POST digest'       => (function () use ($user, $in) {
+            pm_db()->prepare('UPDATE users SET digest = ? WHERE id = ?')->execute([!empty($in['on']) ? 1 : 0, $user['id']]);
+            return ['digest' => !empty($in['on'])];
+        })(),
+
         // דיווח מהשטח (שלב 8)
         'GET reports'       => pm_reports($user, (int)($in['project_id'] ?? 0)),
         'GET report-folder' => ['folder_id' => pm_report_folder($user, (int)($in['project_id'] ?? 0), (int)($in['stage_id'] ?? 0) ?: null)],

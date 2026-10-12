@@ -423,6 +423,22 @@ function pm_migrate(PDO $pdo): void
             created_at  TEXT NOT NULL,
             PRIMARY KEY (stage_id, supplier_id)
         );
+        -- שלב 10: פגישות וביקורים ביומן (lib/calendar.php). date מקומי (Y-m-d), time HH:MM או ''.
+        CREATE TABLE IF NOT EXISTS appointments (
+            id           INTEGER PRIMARY KEY,
+            project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            title        TEXT NOT NULL,
+            date         TEXT NOT NULL,
+            time         TEXT NOT NULL DEFAULT '',
+            duration     INTEGER NOT NULL DEFAULT 60,
+            location     TEXT NOT NULL DEFAULT '',
+            contact_id   INTEGER REFERENCES contacts(id) ON DELETE SET NULL,
+            notes        TEXT NOT NULL DEFAULT '',
+            created_by   INTEGER NOT NULL,
+            created_at   TEXT NOT NULL,
+            cancelled_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS appointments_date ON appointments (date);
         CREATE TABLE IF NOT EXISTS stage_templates (
             id          INTEGER PRIMARY KEY,
             name        TEXT NOT NULL UNIQUE,
@@ -464,6 +480,10 @@ function pm_migrate(PDO $pdo): void
     // דרישת תשלום שהספק ביקש בקישור (המנהל מאשר ושולח), וקובץ מצורף (חשבון / פירוט)
     pm_add_column($pdo, 'payments', 'supplier_request', 'INTEGER NOT NULL DEFAULT 0');
     pm_add_column($pdo, 'payments', 'file_id', 'INTEGER');
+    // שלב 10: סנכרון היומן לטלפון (nonce לאסימון), ומייל תזכורות יומי
+    pm_add_column($pdo, 'users', 'cal_nonce', "TEXT NOT NULL DEFAULT ''");
+    pm_add_column($pdo, 'users', 'digest', 'INTEGER NOT NULL DEFAULT 1');
+    pm_add_column($pdo, 'users', 'digest_sent', "TEXT NOT NULL DEFAULT ''");
 
     if (!$pdo->query("SELECT 1 FROM settings WHERE key = 'trades_seeded'")->fetchColumn()) {
         $ins = $pdo->prepare('INSERT OR IGNORE INTO trades (name, sort) VALUES (?, ?)');

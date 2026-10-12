@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=17">
+    <link rel="stylesheet" href="assets/css/app.css?v=18">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -29,6 +29,7 @@
       #/                 הפרויקטים (מסך הבית)
       #/p/<id>/<pane>    פרויקט: timeline · field · files · stages · quotes · payments · team · details
                          (#/p/<id>/files/<folder> — תיקייה)
+      #/calendar[/YYYY-MM-DD]  יומן: דורש טיפול, חודש, ויום נבחר
       #/contacts/<kind>  אנשי קשר: client · supplier · lawyer
       #/contacts/<kind>/import  ייבוא מאנשי הקשר במכשיר
       #/settings/<pane>  הגדרות מפתח: trades · templates · access
@@ -49,6 +50,7 @@
 
     <nav class="tabs" id="nav" aria-label="ניווט ראשי">
         <a href="#/" data-nav="projects">פרויקטים</a>
+        <a href="#/calendar" data-nav="calendar">יומן<span class="nbadge" id="rem-badge" hidden></span></a>
         <a href="#/contacts/client" data-nav="contacts">אנשי קשר</a>
         <a href="#/settings/general" data-nav="settings" class="dev-only" hidden>הגדרות</a>
     </nav>
@@ -66,6 +68,7 @@
     <main id="main" tabindex="-1">
         <!-- ===== פרויקטים ===== -->
         <section id="view-projects" class="view" hidden>
+            <a class="rem-banner" id="rem-banner" href="#/calendar" hidden></a>
             <div class="toolbar">
                 <input type="search" id="pq" placeholder="חיפוש פרויקט" aria-label="חיפוש לפי שם, כתובת או לקוח" autocomplete="off" enterkeyhint="search">
                 <select id="pfilter" aria-label="אילו פרויקטים">
@@ -177,6 +180,36 @@
             <ul id="share-targets" class="list rows-list" aria-live="polite"></ul>
             <div class="uploads" id="share-progress" aria-live="polite"></div>
             <button class="btn ghost danger" id="share-cancel" type="button" hidden>ביטול השיתוף</button>
+        </section>
+
+        <!-- ===== יומן ותזכורות ===== -->
+        <section id="view-calendar" class="view" hidden>
+            <section id="reminders" aria-labelledby="rem-title" hidden>
+                <h2 class="sec-title" id="rem-title">דורש טיפול</h2>
+                <ul class="list rows-list" id="rem-list"></ul>
+            </section>
+            <div class="cal-head">
+                <button class="icon-btn ghost" id="cal-prev" aria-label="החודש הקודם">›</button>
+                <h2 id="cal-month" aria-live="polite"></h2>
+                <button class="icon-btn ghost" id="cal-next" aria-label="החודש הבא">‹</button>
+                <button class="btn ghost sm" id="cal-today">היום</button>
+                <button class="btn primary" id="add-appt"><span aria-hidden="true">+</span><span class="add-label">פגישה</span></button>
+            </div>
+            <div class="cal-grid" id="cal-grid"></div>
+            <div class="cal-legend" aria-hidden="true"><i class="k-appointment"></i>פגישה<i class="k-stage"></i>שלב<i class="k-payment"></i>תשלום<i class="k-quote"></i>תוקף הצעה</div>
+            <h2 class="sec-title" id="cal-day-title"></h2>
+            <ul class="list rows-list" id="cal-day"></ul>
+            <details class="cal-sync" id="cal-sync">
+                <summary>📅 סנכרון ליומן בטלפון, ומייל בוקר</summary>
+                <p class="hint">היומן הזה — שלבים, תשלומים, תוקף הצעות ופגישות — מופיע ביומן של הטלפון ומתעדכן לבד (כל כשעה).</p>
+                <div class="row-btns wrap">
+                    <a class="btn primary" id="cal-webcal">📅 הוספה ליומן (אייפון)</a>
+                    <a class="btn ghost" id="cal-google" target="_blank" rel="noopener">יומן גוגל</a>
+                    <button type="button" class="btn ghost" id="cal-copy">העתקת הקישור</button>
+                </div>
+                <p class="hint">יומן גוגל: "הוספת יומן" ← "מכתובת URL" ← להדביק את הקישור. הקישור אישי — מי שמחזיק בו רואה את היומן שלך. <button type="button" class="link" id="cal-renew">קישור חדש</button> מבטל את הקודם.</p>
+                <label class="switch"><input type="checkbox" id="digest-on"><span>מייל בוקר עם מה שדורש טיפול (פעם ביום, רק כשיש)</span></label>
+            </details>
         </section>
 
         <!-- ===== אנשי קשר ===== -->
@@ -449,6 +482,32 @@
                         <button type="button" class="btn ghost danger" id="quote-cancel">ביטול ההצעה</button>
                     </div>
                 </div>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- ===== חלון: פגישה / ביקור ===== -->
+    <dialog id="appt-dlg" aria-labelledby="appt-dlg-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="appt-dlg-title">פגישה</h2>
+                <button type="submit" class="btn primary">שמירה</button>
+            </header>
+            <div class="sheet-body">
+                <div class="fields">
+                    <label class="f wide"><span>פרויקט *</span><select name="project_id" required></select></label>
+                    <label class="f wide"><span>מה *</span><input name="title" maxlength="100" list="appt-titles" placeholder="למשל: פגישה עם הלקוח" required autocomplete="off"></label>
+                    <label class="f"><span>תאריך *</span><input name="date" type="date" required></label>
+                    <label class="f"><span>שעה</span><input name="time" type="time" step="300"></label>
+                    <label class="f"><span>משך</span><select name="duration"><option value="30">חצי שעה</option><option value="60" selected>שעה</option><option value="90">שעה וחצי</option><option value="120">שעתיים</option><option value="180">3 שעות</option><option value="240">4 שעות</option></select></label>
+                    <label class="f"><span>עם מי</span><select name="contact_id"></select></label>
+                    <label class="f wide"><span>איפה</span><input name="location" maxlength="200" placeholder="כתובת — ברירת מחדל: הפרויקט"></label>
+                    <label class="f wide"><span>הערות</span><textarea name="notes" rows="2" maxlength="2000"></textarea></label>
+                </div>
+                <datalist id="appt-titles"><option value="פגישה עם הלקוח"><option value="ביקור באתר"><option value="מדידה"><option value="פגישה עם ספק"><option value="מסירה"><option value="פיקוח"></datalist>
+                <p class="error" role="alert" hidden></p>
+                <button type="button" class="btn ghost danger" id="appt-cancel" hidden>ביטול הפגישה</button>
             </div>
         </form>
     </dialog>
@@ -800,18 +859,19 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=17"></script>
-    <script src="assets/js/contacts.js?v=17"></script>
-    <script src="assets/js/device-contacts.js?v=17"></script>
-    <script src="assets/js/files.js?v=17"></script>
-    <script src="assets/js/lightbox.js?v=17"></script>
-    <script src="assets/js/field.js?v=17"></script>
+    <script src="assets/js/core.js?v=18"></script>
+    <script src="assets/js/contacts.js?v=18"></script>
+    <script src="assets/js/device-contacts.js?v=18"></script>
+    <script src="assets/js/files.js?v=18"></script>
+    <script src="assets/js/lightbox.js?v=18"></script>
+    <script src="assets/js/field.js?v=18"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=17"></script>
-    <script src="assets/js/projects.js?v=17"></script>
-    <script src="assets/js/quotes.js?v=17"></script>
-    <script src="assets/js/payments.js?v=17"></script>
-    <script src="assets/js/settings.js?v=17"></script>
-    <script src="assets/js/app.js?v=17"></script>
+    <script src="assets/js/share.js?v=18"></script>
+    <script src="assets/js/projects.js?v=18"></script>
+    <script src="assets/js/quotes.js?v=18"></script>
+    <script src="assets/js/payments.js?v=18"></script>
+    <script src="assets/js/calendar.js?v=18"></script>
+    <script src="assets/js/settings.js?v=18"></script>
+    <script src="assets/js/app.js?v=18"></script>
 </body>
 </html>
