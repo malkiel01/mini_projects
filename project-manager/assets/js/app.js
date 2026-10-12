@@ -5,7 +5,8 @@
 async function init() {
     try {
         const me = await api('me');
-        Object.assign(state, { user: me.user, trades: me.trades, templates: me.templates, labels: me.labels, standalone: me.standalone });
+        Object.assign(state, { user: me.user, trades: me.trades, templates: me.templates, labels: me.labels, standalone: me.standalone,
+            fileTypes: me.file_types, maxUpload: me.max_upload });
     } catch (e) {
         $('#main').innerHTML = `<p class="empty">${esc(e.message)}</p>`;
         return;
@@ -20,7 +21,7 @@ async function init() {
 }
 
 function route() {
-    const [, view = '', a = '', b = ''] = location.hash.split('/');
+    const [, view = '', a = '', b = '', c = ''] = location.hash.split('/');
     const inProject = view === 'p' && Number(a) > 0;
     const section = inProject ? 'project' : view === 'contacts' ? 'contacts' : view === 'settings' && isDev() ? 'settings' : 'projects';
 
@@ -42,7 +43,7 @@ function route() {
         document.title = 'ניהול פרויקטים';
     }
     if (section === 'projects') Projects.showList();
-    if (section === 'project') Projects.showProject(Number(a), b);
+    if (section === 'project') Projects.showProject(Number(a), b, c);
     if (section === 'contacts') Contacts.show(a);
     if (section === 'settings') Settings.show(a);
 }

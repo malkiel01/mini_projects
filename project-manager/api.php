@@ -13,7 +13,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/lib/projects.php';
+require_once __DIR__ . '/lib/files.php';
 require_once __DIR__ . '/lib/auth.php';
 
 pm_log_install_handlers();
@@ -30,7 +30,7 @@ function pm_reply(int $code, array $payload): never
     global $PM_T0;
     $action = (string)($_GET['action'] ?? '');
     // קריאות שקטות (מצב, רשימות) — רק כשנכשלו, כדי שהיומן יישאר קריא
-    $quiet = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET' && $code < 400 && $action !== 'me';
+    $quiet = $code < 400 && ((($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET' && $action !== 'me') || $action === 'upload-chunk');
     if (!$quiet) {
         $level = $code >= 500 ? 'error' : ($code >= 400 ? 'warn' : 'info');
         $req = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' ? pm_body() : array_diff_key($_GET, ['action' => 1]);
@@ -95,6 +95,7 @@ try {
     $result = match ("$method $action") {
         'GET me' => (function () use ($user) {
             return ['user' => $user, 'trades' => pm_trades(), 'templates' => pm_templates(),
+                    'file_types' => PM_FILE_TYPES, 'max_upload' => pm_max_upload(),
                     // מצב עצמאי: בלי חזרה לדף האפליקציות. כבוי כל עוד האפליקציה בתוך האינדקס.
                     'standalone' => pm_setting('standalone', '0') === '1',
                     'labels' => ['stage' => PM_STAGE_STATUSES, 'project' => PM_PROJECT_STATUSES, 'kind' => PM_PROJECT_KINDS]];
@@ -116,6 +117,27 @@ try {
         'POST note'       => pm_note($user, (int)($in['project_id'] ?? 0), (string)($in['text'] ?? '')),
         'POST member'     => pm_member($user, (int)($in['project_id'] ?? 0), (int)($in['contact_id'] ?? 0),
                                        !empty($in['add']), (string)($in['role'] ?? '')),
+
+        // קבצים ותיקיות (שלב 3)
+        'GET folders'     => ['folders' => pm_folders($user, (int)($in['project_id'] ?? 0))],
+        'POST folder'     => pm_folder_save($user, $in),
+        'POST folder-delete' => pm_folder_delete($user, (int)($in['id'] ?? 0)),
+        'GET files'       => ['files' => pm_files_list($user, (int)($in['project_id'] ?? 0), $in)],
+        'GET file'        => !empty($in['meta']) ? ['file' => pm_file_get($user, (int)($in['id'] ?? 0))]
+                             : pm_file_send($user, (int)($in['id'] ?? 0), !empty($in['thumb']), !empty($in['download'])),
+        'POST upload-start'  => pm_upload_start($user, $in),
+        'POST upload-chunk'  => pm_upload_chunk($user, (string)($_GET['id'] ?? ''), (int)($_GET['offset'] ?? -1)),
+        'POST upload-finish' => pm_upload_finish($user, $in),
+        'POST file-update' => pm_file_update($user, $in),
+        'POST file-move'   => pm_file_move($user, (int)($in['id'] ?? 0), (int)($in['folder_id'] ?? 0)),
+        'POST file-link'   => pm_file_link($user, (int)($in['id'] ?? 0), (int)($in['folder_id'] ?? 0), !empty($in['add'])),
+        'POST file-delete' => pm_file_delete($user, (int)($in['id'] ?? 0)),
+        'POST max-upload'  => $isDev ? (function () use ($user, $in) {
+            $mb = max(1, min(2000, (int)($in['mb'] ?? 100)));
+            pm_setting_set('max_upload_mb', (string)$mb);
+            pm_log('info', 'admin', 'setting.max_upload', ['data' => ['mb' => $mb]]);
+            return ['max_upload' => pm_max_upload()];
+        })() : throw new PmError('רק המפתח', 403),
 
         'GET trades'      => ['trades' => pm_trades()],
         'POST template'   => $isDev ? ['templates' => pm_template_save($user, $in)] : throw new PmError('רק המפתח עורך תבניות', 403),

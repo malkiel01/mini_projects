@@ -2,11 +2,11 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=8">
+    <link rel="stylesheet" href="assets/css/app.css?v=10">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -27,7 +27,8 @@
 
     ניווט בכתובת (#/…), כדי שכפתור "חזרה" של הטלפון יעבוד:
       #/                 הפרויקטים (מסך הבית)
-      #/p/<id>/<pane>    פרויקט: timeline · stages · team · details
+      #/p/<id>/<pane>    פרויקט: timeline · files · stages · team · details
+                         (#/p/<id>/files/<folder> — תיקייה)
       #/contacts/<kind>  אנשי קשר: client · supplier · lawyer
       #/settings/<pane>  הגדרות מפתח: trades · templates · access
 -->
@@ -50,6 +51,7 @@
     </nav>
     <nav class="tabs sub-tabs" id="project-nav" aria-label="חלקי הפרויקט" hidden>
         <a data-pane="timeline">ציר זמן</a>
+        <a data-pane="files">קבצים</a>
         <a data-pane="stages">שלבים</a>
         <a data-pane="team">צוות</a>
         <a data-pane="details">פרטים</a>
@@ -79,6 +81,22 @@
                     <textarea id="note" rows="1" maxlength="4000" placeholder="הערה לציר הזמן" aria-label="הערה חדשה" enterkeyhint="send"></textarea>
                     <button class="icon-btn primary" aria-label="שליחה">➤</button>
                 </form>
+            </div>
+
+            <div class="pane" id="pane-files" hidden>
+                <nav class="crumbs" id="crumbs" aria-label="מיקום"></nav>
+                <div class="toolbar">
+                    <input type="search" id="fq" placeholder="חיפוש קובץ" aria-label="חיפוש קובץ בכל הפרויקט" autocomplete="off" enterkeyhint="search">
+                    <select id="ftype" aria-label="סוג קובץ"></select>
+                    <button class="icon-btn ghost" id="new-folder" aria-label="תיקייה חדשה" title="תיקייה חדשה">📁</button>
+                    <label class="btn primary upload-btn"><span aria-hidden="true">+</span><span class="add-label">העלאה</span>
+                        <input type="file" id="fpick" multiple hidden></label>
+                </div>
+                <ul id="folder-list" class="list rows-list"></ul>
+                <h2 class="sec-title" id="files-title" hidden></h2>
+                <ul id="file-list" class="list rows-list"></ul>
+                <p class="drop-hint" id="drop-hint" hidden>שחרר כאן כדי להעלות</p>
+                <div class="uploads" id="uploads" aria-live="polite"></div>
             </div>
 
             <div class="pane" id="pane-stages" hidden>
@@ -142,6 +160,11 @@
                 <a role="tab" data-set="log" href="#/settings/log"><span>יומן</span></a>
             </div>
             <div class="pane" id="set-general" hidden>
+                <form class="toolbar" id="max-upload-form">
+                    <label class="f"><span>גודל מרבי לקובץ (MB) — תמונות, סרטונים, מסמכים</span>
+                        <input type="number" id="max-upload" min="1" max="2000" inputmode="numeric"></label>
+                    <button class="btn ghost">שמירה</button>
+                </form>
                 <label class="switch"><input type="checkbox" id="standalone"><span>אפליקציה עצמאית</span></label>
                 <p class="hint">כבוי — חלק מדף האפליקציות: נכנסים מהכרטיס, והחץ בכותרת חוזר אליו.
                     דלוק — עצמאית: בלי חזרה לדף האפליקציות; נכנסים מהקישור הישיר או מהאייקון במסך הבית.
@@ -316,6 +339,55 @@
         </form>
     </dialog>
 
+    <!-- ===== חלון: קובץ ===== -->
+    <dialog id="file-dlg" aria-labelledby="file-dlg-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="file-dlg-title"></h2>
+                <button type="submit" class="btn primary">שמירה</button>
+            </header>
+            <div class="sheet-body">
+                <div class="preview" id="file-preview"></div>
+                <p class="hint" id="file-meta"></p>
+                <div class="fields">
+                    <label class="f wide"><span>שם</span><input name="name" maxlength="150"></label>
+                    <label class="f"><span>סוג</span><select name="type"></select></label>
+                    <label class="f"><span>תיקייה</span><select name="home"></select></label>
+                    <label class="f wide"><span>הערה</span><textarea name="note" rows="2" maxlength="2000"></textarea></label>
+                </div>
+                <label class="switch"><input type="checkbox" name="visible"><span>גלוי ללקוח, לעו"ד ולספק בפורטל</span></label>
+                <section class="group" aria-labelledby="g-links">
+                    <h3 id="g-links">מופיע גם ב… <small>קיצורי דרך — לא העתק</small></h3>
+                    <div class="chips" id="file-links"></div>
+                    <div class="toolbar"><select name="link_to" aria-label="הוספת קיצור דרך לתיקייה"></select><button type="button" class="btn ghost" id="add-link">הוספה</button></div>
+                </section>
+                <p class="error" role="alert" hidden></p>
+                <div class="row-btns wrap">
+                    <a class="btn ghost" id="file-download">הורדה</a>
+                    <button type="button" class="btn ghost danger" id="file-delete">מחיקה</button>
+                </div>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- ===== חלון: תיקייה ===== -->
+    <dialog id="folder-dlg" aria-labelledby="folder-dlg-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="folder-dlg-title">תיקייה חדשה</h2>
+                <button type="submit" class="btn primary">שמירה</button>
+            </header>
+            <div class="sheet-body">
+                <label class="f"><span>שם התיקייה</span><input name="name" maxlength="60" required></label>
+                <p class="hint" id="folder-where"></p>
+                <p class="error" role="alert" hidden></p>
+                <button type="button" class="btn ghost danger" id="folder-delete" hidden>מחיקת התיקייה (רק ריקה)</button>
+            </div>
+        </form>
+    </dialog>
+
     <!-- ===== חלון: איש צוות ===== -->
     <dialog id="member-dlg" aria-labelledby="member-dlg-title">
         <form method="dialog" novalidate>
@@ -429,10 +501,11 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=8"></script>
-    <script src="assets/js/contacts.js?v=8"></script>
-    <script src="assets/js/projects.js?v=8"></script>
-    <script src="assets/js/settings.js?v=8"></script>
-    <script src="assets/js/app.js?v=8"></script>
+    <script src="assets/js/core.js?v=10"></script>
+    <script src="assets/js/contacts.js?v=10"></script>
+    <script src="assets/js/files.js?v=10"></script>
+    <script src="assets/js/projects.js?v=10"></script>
+    <script src="assets/js/settings.js?v=10"></script>
+    <script src="assets/js/app.js?v=10"></script>
 </body>
 </html>

@@ -220,6 +220,58 @@ function pm_migrate(PDO $pdo): void
             data_json  TEXT NOT NULL DEFAULT '{}'
         );
         CREATE INDEX IF NOT EXISTS events_project ON events (project_id, id);
+        -- שלב 3: קבצים ותיקיות (lib/files.php).
+        -- תיקייה: kind = inbox · client · lawyer · contact (ספק / איש צוות) · plans ·
+        -- photos · general · custom. המערכתיות נוצרות לבד; custom — בידי המשתמש.
+        CREATE TABLE IF NOT EXISTS folders (
+            id         INTEGER PRIMARY KEY,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            parent_id  INTEGER REFERENCES folders(id) ON DELETE CASCADE,
+            kind       TEXT NOT NULL DEFAULT 'custom',
+            contact_id INTEGER REFERENCES contacts(id) ON DELETE SET NULL,
+            name       TEXT NOT NULL,
+            sort       INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS folders_project ON folders (project_id, parent_id);
+        -- קובץ: התוכן בדיסק (data/files/<project>/<storage>), כאן — הפרטים.
+        -- type: quote · proof · contract · plan · photo · video · invoice · other
+        CREATE TABLE IF NOT EXISTS files (
+            id          INTEGER PRIMARY KEY,
+            project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            name        TEXT NOT NULL,
+            mime        TEXT NOT NULL DEFAULT '',
+            size        INTEGER NOT NULL DEFAULT 0,
+            type        TEXT NOT NULL DEFAULT 'other',
+            storage     TEXT NOT NULL,
+            thumb       TEXT,
+            visible     INTEGER NOT NULL DEFAULT 0,   -- גלוי ללקוח / עו"ד / ספק בפורטל
+            note        TEXT NOT NULL DEFAULT '',
+            uploaded_by INTEGER NOT NULL,
+            created_at  TEXT NOT NULL,
+            deleted_at  TEXT
+        );
+        CREATE INDEX IF NOT EXISTS files_project ON files (project_id, deleted_at, created_at);
+        -- קובץ בתיקייה. is_home = התיקייה שלו; השאר — קיצורי דרך (לא העתק).
+        CREATE TABLE IF NOT EXISTS file_links (
+            file_id   INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+            folder_id INTEGER NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+            is_home   INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (file_id, folder_id)
+        );
+        CREATE INDEX IF NOT EXISTS file_links_folder ON file_links (folder_id);
+        -- העלאה בחלקים: נוצרת ב-upload-start, נמחקת כשהושלמה או אחרי יום.
+        CREATE TABLE IF NOT EXISTS uploads (
+            id         TEXT PRIMARY KEY,
+            project_id INTEGER NOT NULL,
+            folder_id  INTEGER NOT NULL,
+            user_id    INTEGER NOT NULL,
+            name       TEXT NOT NULL,
+            mime       TEXT NOT NULL,
+            size       INTEGER NOT NULL,
+            received   INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+        );
         -- תבניות שלבים — המפתח עורך. stages_json: [{"name": "...", "trade": "..."}]
         CREATE TABLE IF NOT EXISTS stage_templates (
             id          INTEGER PRIMARY KEY,

@@ -27,6 +27,13 @@ const Settings = (() => {
             });
             e.target.checked = !!state.standalone;
         });
+        $('#max-upload-form').addEventListener('submit', async e => {
+            e.preventDefault();
+            await busy($('#max-upload-form .btn'), null, async () => {
+                ({ max_upload: state.maxUpload } = await api('max-upload', { body: { mb: Number($('#max-upload').value) } }));
+                toast('נשמר: עד ' + Math.round(state.maxUpload / 1048576) + 'MB');
+            });
+        });
         $('#users-list').addEventListener('click', e => {
             const q = e.target.closest('[data-quick]');
             if (q) { e.stopPropagation(); userAction(q.dataset.quick, Number(q.dataset.id), q); return; }
@@ -67,7 +74,10 @@ const Settings = (() => {
         pane = ['general', 'trades', 'templates', 'access', 'log'].includes(pane) ? pane : 'general';
         $$('#view-settings [data-set]').forEach(a => a.setAttribute('aria-selected', String(a.dataset.set === pane)));
         $$('#view-settings .pane').forEach(el => { el.hidden = el.id !== 'set-' + pane; });
-        if (pane === 'general') $('#standalone').checked = !!state.standalone;
+        if (pane === 'general') {
+            $('#standalone').checked = !!state.standalone;
+            $('#max-upload').value = Math.round(state.maxUpload / 1048576);
+        }
         if (pane === 'trades') renderTrades();
         if (pane === 'templates') renderTemplates();
         if (pane === 'access') loadAccess();

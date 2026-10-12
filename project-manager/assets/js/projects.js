@@ -3,7 +3,7 @@
 'use strict';
 
 const Projects = (() => {
-    let list = [], cur = null, pane = 'timeline', bound = false;
+    let list = [], cur = null, pane = 'timeline', bound = false, subFolder = 0;
 
     function bind() {
         if (bound) return;
@@ -165,16 +165,19 @@ const Projects = (() => {
 
     // ================= פרויקט אחד =================
 
-    async function showProject(id, p) {
+    async function showProject(id, p, sub) {
         bind();
-        pane = ['timeline', 'stages', 'team', 'details'].includes(p) ? p : 'timeline';
+        pane = ['timeline', 'files', 'stages', 'team', 'details'].includes(p) ? p : 'timeline';
+        subFolder = sub;
         $$('#project-nav a').forEach(a => {
             a.href = `#/p/${id}/${a.dataset.pane}`;
             a.setAttribute('aria-current', a.dataset.pane === pane ? 'page' : 'false');
         });
         $$('#view-project .pane').forEach(el => { el.hidden = el.id !== 'pane-' + pane; });
-        if (cur?.project.id !== id) {
-            $('#title').textContent = '…';
+        // נטען מחדש בכל מעבר לשונית — קבצים שהועלו, למשל, מוסיפים שורות לציר הזמן.
+        // רק ניווט בין תיקיות באותו פרויקט משתמש במה שכבר נטען.
+        if (cur?.project.id !== id || pane !== 'files') {
+            if (cur?.project.id !== id) $('#title').textContent = '…';
             try { cur = await api('project', { params: { id } }); }
             catch (e) { toast(e.message, true); location.hash = '#/'; return; }
         }
@@ -194,6 +197,7 @@ const Projects = (() => {
     function render() {
         header();
         if (pane === 'timeline') renderTimeline();
+        if (pane === 'files') Files.show(cur.project, Number(subFolder) || 0);
         if (pane === 'stages') renderStages();
         if (pane === 'team') renderTeam();
         if (pane === 'details') renderDetails();
