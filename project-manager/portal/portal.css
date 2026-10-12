@@ -50,3 +50,13 @@
 .pending .amt { margin-inline-start: auto; flex: none; font-weight: 600; }
 .proof-pick { width: 100%; justify-content: center; }
 #pay-go { width: 100%; }
+
+.sec-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); margin-bottom: var(--s1); }
+.sec-row .sec-title { margin: 0; }
+#s-stage-list, #s-payment-list { display: grid; gap: var(--s2); }
+.q1 .chip { flex: none; }
+.bank-box { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2) var(--s3); }
+.bank-box summary { cursor: pointer; font-weight: 600; min-height: 32px; display: flex; align-items: center; gap: var(--s1); }
+.bank-box summary small { font-weight: 400; color: var(--muted); }
+.bank-box form { margin: var(--s2) 0; }
+.proofs .row-btns { margin-top: 4px; }

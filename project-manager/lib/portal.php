@@ -44,12 +44,15 @@ function pm_portal_url(string $token): string
     return pm_app_url() . '/portal/#t=' . $token;
 }
 
-/** תפקיד איש הקשר בפרויקט — client · lawyer — או חריגה. */
+/** תפקיד איש הקשר בפרויקט — client · lawyer · supplier (כל ספק של בעל הפרויקט) — או חריגה. */
 function pm_portal_role(array $p, int $contactId): string
 {
     if ($contactId && (int)$p['client_id'] === $contactId) return 'client';
     if ($contactId && (int)$p['lawyer_id'] === $contactId) return 'lawyer';
-    throw new PmError('קישור אישי — רק ללקוח או לעו"ד של הפרויקט', 422);
+    $st = pm_db()->prepare("SELECT 1 FROM contacts WHERE id = ? AND owner_id = ? AND kind = 'supplier'");
+    $st->execute([$contactId, $p['owner_id']]);
+    if ($contactId && $st->fetchColumn()) return 'supplier';
+    throw new PmError('קישור אישי — ללקוח, לעו"ד או לספק של הפרויקט', 422);
 }
 
 function pm_portal_link_row(int $projectId, int $contactId): ?array
@@ -87,7 +90,7 @@ function pm_portal_link_save(array $user, int $projectId, int $contactId, string
     $db = pm_db();
     $cur = pm_portal_link_row($projectId, $contactId);
     $name = pm_contact_name($contactId);
-    $who = $role === 'client' ? 'ללקוח' : 'לעו"ד';
+    $who = ['client' => 'ללקוח', 'lawyer' => 'לעו"ד', 'supplier' => 'לספק'][$role];
     if ($do === 'revoke') {
         if ($cur) {
             $db->prepare('UPDATE portal_links SET revoked_at = ? WHERE id = ?')->execute([pm_now(), $cur['id']]);
@@ -138,17 +141,22 @@ function pm_portal_access(string $token): array
     $p->execute([$l['project_id']]);
     $project = $p->fetch();
     if (!$project) $bad('הפרויקט לא קיים');
-    $col = $l['role'] === 'client' ? 'client_id' : 'lawyer_id';
-    if ((int)$project[$col] !== (int)$l['contact_id']) $bad('איש הקשר כבר לא ' . ($l['role'] === 'client' ? 'הלקוח' : 'העו"ד') . ' של הפרויקט');
     $c = pm_db()->prepare('SELECT * FROM contacts WHERE id = ?');
     $c->execute([$l['contact_id']]);
     $contact = $c->fetch();
+    if (!$contact) $bad('איש הקשר לא קיים');
+    if ($l['role'] === 'supplier') {
+        if ($contact['kind'] !== 'supplier' || (int)$contact['owner_id'] !== (int)$project['owner_id']) $bad('הספק לא שייך לבעל הפרויקט');
+    } else {
+        $col = $l['role'] === 'client' ? 'client_id' : 'lawyer_id';
+        if ((int)$project[$col] !== (int)$l['contact_id']) $bad('איש הקשר כבר לא ' . ($l['role'] === 'client' ? 'הלקוח' : 'העו"ד') . ' של הפרויקט');
+    }
     $u = pm_db()->prepare('SELECT id, display_name, phone, email, role FROM users WHERE id = ?');
     $u->execute([$project['owner_id']]);
     $owner = $u->fetch() ?: ['id' => (int)$project['owner_id'], 'display_name' => '', 'phone' => '', 'email' => '', 'role' => 'manager'];
     return ['link' => $l, 'project' => $project, 'contact' => $contact, 'owner' => ['id' => (int)$owner['id']] + $owner,
             // מי שמופיע בציר הזמן כשהלקוח / העו"ד פועל
-            'actor' => ['id' => 0, 'display_name' => $contact['name'] . ($l['role'] === 'client' ? ' (לקוח)' : ' (עו"ד)'),
+            'actor' => ['id' => 0, 'display_name' => $contact['name'] . ['client' => ' (לקוח)', 'lawyer' => ' (עו"ד)', 'supplier' => ' (ספק)'][$l['role']],
                         'actor' => 'portal:' . $l['id']]];
 }
 
@@ -164,6 +172,7 @@ function pm_portal_seen(array $a): void
 
 function pm_portal_view(array $a): array
 {
+    if ($a['link']['role'] === 'supplier') return pm_portal_supplier_view($a);
     $p = $a['project'];
     $role = $a['link']['role'];
     $pid = (int)$p['id'];
@@ -235,6 +244,7 @@ function pm_portal_view(array $a): array
 function pm_portal_decide(array $a, array $in): array
 {
     $role = $a['link']['role'];
+    if ($role === 'supplier') throw new PmError('לא זמין בקישור של ספק', 403);
     $id = (int)($in['quote_id'] ?? 0);
     $decision = (string)($in['decision'] ?? '');
     $view = pm_portal_view($a);
@@ -283,6 +293,11 @@ function pm_portal_file(array $a, int $id, bool $thumb, bool $download): never
     $st = pm_db()->prepare('SELECT * FROM files WHERE id = ? AND project_id = ? AND deleted_at IS NULL');
     $st->execute([$id, $a['project']['id']]);
     $x = $st->fetch();
+    if ($x && $a['link']['role'] === 'supplier') {
+        if (!pm_portal_supplier_can_file($a, $x)) throw new PmError('הקובץ לא נמצא', 404);
+        pm_log('info', 'portal', 'portal.file', ['data' => ['link' => (int)$a['link']['id'], 'file' => $id, 'name' => $x['name']]]);
+        pm_file_output($x, $thumb, $download);
+    }
     $ok = $x && ((int)$x['visible'] === 1 || (function () use ($id, $a) {
         $q = pm_db()->prepare("SELECT 1 FROM quotes WHERE file_id = ? AND project_id = ? AND sent_at IS NOT NULL AND status != 'cancelled'
                                UNION SELECT 1 FROM payment_proofs x JOIN payments p ON p.id = x.payment_id WHERE x.file_id = ? AND p.project_id = ?");
@@ -300,6 +315,7 @@ const PM_PROOF_MAX = 8 * 1048576; // אסמכתא: צילום או PDF — תמ�
 
 function pm_portal_payment(array $a, int $id): array
 {
+    if ($a['link']['role'] === 'supplier') throw new PmError('לא זמין בקישור של ספק', 403);
     foreach (pm_portal_view($a)['payments'] as $x) if ($x['id'] === $id) return $x;
     throw new PmError('אבן הדרך לא נמצאה', 404);
 }
@@ -352,10 +368,205 @@ function pm_portal_proof(array $a, array $q): array
     return pm_portal_view($a);
 }
 
-function pm_portal_mail(array $a, string $subject, string $body): void
+function pm_portal_mail(array $a, string $subject, string $body, string $pane = 'payments'): void
 {
     $to = pm_user_email($a['owner']);
     if ($to === '') return;
-    $sent = pm_send_mail($to, "$subject — {$a['project']['name']}", $body . "\n\n" . pm_app_url_root() . "/#/p/{$a['project']['id']}/payments\n");
+    $sent = pm_send_mail($to, "$subject — {$a['project']['name']}", $body . "\n\n" . pm_app_url_root() . "/#/p/{$a['project']['id']}/$pane\n");
     pm_log($sent ? 'info' : 'warn', 'mail', 'mail.portal', ['data' => ['to' => $to, 'sent' => $sent, 'subject' => $subject]]);
+}
+
+// ================= פורטל ספק (שלב 9) =================
+
+/** השלבים שהספק רואה: משויך אליהם, הוזמן להציע בהם, או שיש לו בהם הצעה / תשלום. */
+function pm_portal_supplier_stages(array $a): array
+{
+    $sid = (int)$a['contact']['id'];
+    $pid = (int)$a['project']['id'];
+    $st = pm_db()->prepare('SELECT s.*, t.name AS trade_name,
+            (s.supplier_id = :s) AS assigned,
+            EXISTS (SELECT 1 FROM quote_invites i WHERE i.stage_id = s.id AND i.supplier_id = :s) AS invited
+        FROM stages s LEFT JOIN trades t ON t.id = s.trade_id
+        WHERE s.project_id = :p AND (s.supplier_id = :s
+            OR s.id IN (SELECT stage_id FROM quote_invites WHERE supplier_id = :s)
+            OR s.id IN (SELECT stage_id FROM quotes WHERE supplier_id = :s)
+            OR s.id IN (SELECT stage_id FROM payments WHERE supplier_id = :s AND stage_id IS NOT NULL))
+        ORDER BY s.sort, s.id');
+    $st->execute([':s' => $sid, ':p' => $pid]);
+    return array_map(fn($s) => ['id' => (int)$s['id'], 'name' => $s['name'], 'status' => $s['status'], 'trade' => $s['trade_name'],
+        'plan_start' => $s['plan_start'], 'plan_end' => $s['plan_end'], 'assigned' => (bool)$s['assigned'], 'invited' => (bool)$s['invited'],
+        // אפשר להגיש הצעה כל עוד השלב לא התחיל, ולא אושרה בו הצעה של ספק אחר
+        'can_quote' => in_array($s['status'], ['planned', 'quotes', 'client_approval'], true) && ((bool)$s['invited'] || (bool)$s['assigned']),
+    ], $st->fetchAll());
+}
+
+function pm_portal_supplier_view(array $a): array
+{
+    $sid = (int)$a['contact']['id'];
+    $pid = (int)$a['project']['id'];
+    $db = pm_db();
+    $stages = pm_portal_supplier_stages($a);
+
+    // ההצעות של הספק בלבד — בלי מחירים של אחרים
+    $q = $db->prepare("SELECT q.*, f.name AS file_name, f.deleted_at AS file_deleted FROM quotes q LEFT JOIN files f ON f.id = q.file_id
+                        WHERE q.project_id = ? AND q.supplier_id = ? ORDER BY q.created_at DESC");
+    $q->execute([$pid, $sid]);
+    $label = ['open' => 'התקבלה אצל מנהל הפרויקט', 'sent' => 'אצל הלקוח לבחירה', 'client_approved' => 'הלקוח אישר — ממתין לעו"ד',
+              'approved' => '✅ אושרה', 'declined' => 'לא נבחרה', 'rejected' => 'נדחתה', 'cancelled' => 'בוטלה'];
+    $quotes = array_map(fn($x) => ['id' => (int)$x['id'], 'stage_id' => (int)$x['stage_id'], 'amount' => (int)$x['amount'] / 100,
+        'valid_until' => $x['valid_until'], 'terms' => $x['terms'], 'notes' => $x['notes'], 'status' => $x['status'], 'label' => $label[$x['status']] ?? $x['status'],
+        'file' => $x['file_id'] && !$x['file_deleted'] ? ['id' => (int)$x['file_id'], 'name' => $x['file_name']] : null, 'at' => $x['created_at']], $q->fetchAll());
+
+    // תשלומים אליו — עם האסמכתאות, ואישור "התקבל"
+    $payments = array_values(array_filter(pm_payments_of($pid)['payments'], fn($p) => $p['supplier_id'] === $sid && $p['status'] !== 'cancelled'));
+    $payments = array_map(function ($p) {
+        foreach ($p['proofs'] as &$x) $x['can_confirm'] = $x['status'] === 'pending';
+        unset($p['quote_id'], $p['lawyer']);
+        return $p;
+    }, $payments);
+
+    // קבצים: תוכניות שסומנו "גלוי", ומה שבתיקייה של הספק
+    $f = $db->prepare("SELECT DISTINCT x.id, x.name, x.mime, x.size, x.type, x.thumb IS NOT NULL AS has_thumb, x.created_at
+                         FROM files x JOIN file_links l ON l.file_id = x.id JOIN folders d ON d.id = l.folder_id
+                        WHERE x.project_id = ? AND x.deleted_at IS NULL
+                          AND ((d.kind = 'plans' AND x.visible = 1) OR (d.kind = 'contact' AND d.contact_id = ?))
+                        ORDER BY x.created_at DESC LIMIT 300");
+    $f->execute([$pid, $sid]);
+    $files = array_map(fn($x) => ['id' => (int)$x['id'], 'name' => $x['name'], 'mime' => $x['mime'], 'size' => (int)$x['size'],
+        'type' => $x['type'], 'thumb' => (bool)$x['has_thumb'], 'at' => $x['created_at']], $f->fetchAll());
+
+    return [
+        'role' => 'supplier', 'name' => $a['contact']['name'],
+        'project' => ['name' => $a['project']['name'], 'address' => $a['project']['address'], 'status' => $a['project']['status']],
+        'manager' => ['name' => $a['owner']['display_name'], 'phone' => $a['owner']['phone'], 'email' => $a['owner']['email']],
+        'stages' => $stages, 'my_quotes' => $quotes, 'payments' => $payments, 'files' => $files,
+        'bank' => pm_supplier_bank($sid)['bank'], 'quotes' => [], 'reports' => [],
+        'labels' => ['stage' => PM_STAGE_STATUSES, 'file' => PM_FILE_TYPES, 'method' => PM_PAY_METHODS],
+        'max_proof' => PM_PROOF_MAX,
+    ];
+}
+
+/** ספק רואה: תוכניות גלויות, התיקייה שלו, הקבצים של ההצעות / התשלומים / האסמכתאות שלו. */
+function pm_portal_supplier_can_file(array $a, array $x): bool
+{
+    $sid = (int)$a['contact']['id'];
+    $id = (int)$x['id'];
+    $st = pm_db()->prepare("SELECT 1 FROM file_links l JOIN folders d ON d.id = l.folder_id JOIN files f ON f.id = l.file_id
+                             WHERE l.file_id = ? AND ((d.kind = 'plans' AND f.visible = 1) OR (d.kind = 'contact' AND d.contact_id = ?))
+                            UNION SELECT 1 FROM quotes WHERE file_id = ? AND supplier_id = ?
+                            UNION SELECT 1 FROM payments WHERE file_id = ? AND supplier_id = ?
+                            UNION SELECT 1 FROM payment_proofs pp JOIN payments p ON p.id = pp.payment_id WHERE pp.file_id = ? AND p.supplier_id = ?");
+    $st->execute([$id, $sid, $id, $sid, $id, $sid, $id, $sid]);
+    return (bool)$st->fetchColumn();
+}
+
+/** קובץ שהספק שלח בגוף הבקשה (אופציונלי) — לתיקייה שלו בפרויקט. null כשאין. */
+function pm_portal_supplier_upload(array $a, string $label, string $type): ?int
+{
+    $len = (int)($_SERVER['CONTENT_LENGTH'] ?? 0);
+    if ($len <= 0) return null;
+    if ($len > PM_PROOF_MAX) throw new PmError('הקובץ גדול מדי — עד 8MB', 413);
+    $tmp = pm_tmp_dir() . '/sup_' . bin2hex(random_bytes(8));
+    $in = fopen('php://input', 'rb');
+    $out = fopen($tmp, 'wb');
+    $n = stream_copy_to_stream($in, $out, PM_PROOF_MAX + 1);
+    fclose($in); fclose($out);
+    if ($n <= 0 || $n > PM_PROOF_MAX) { @unlink($tmp); throw new PmError('הקובץ לא הגיע — נסו שוב', 422); }
+    $mime = pm_detect_mime($tmp, '');
+    if (!preg_match('#^(image/(jpeg|png|webp|heic|heif)|application/pdf)$#', $mime)) { @unlink($tmp); throw new PmError('קובץ — תמונה או PDF', 415); }
+    $name = trim((string)($_GET['name'] ?? '')) ?: ($mime === 'application/pdf' ? 'מסמך.pdf' : 'תמונה.jpg');
+    return pm_file_store((int)$a['project']['id'], 'contact', "$label — $name", $tmp, $type, 0,
+        'הועלה בקישור האישי של ' . $a['contact']['name'], (int)$a['contact']['id']);
+}
+
+/** הספק מגיש הצעת מחיר. הפרטים ב-query, הקובץ (אם יש) בגוף הבקשה. */
+function pm_portal_supplier_quote(array $a, array $q): array
+{
+    $stageId = (int)($q['stage_id'] ?? 0);
+    $stage = null;
+    foreach (pm_portal_supplier_stages($a) as $s) if ($s['id'] === $stageId) $stage = $s;
+    if (!$stage || !$stage['can_quote']) throw new PmError('אי אפשר להגיש הצעה לשלב הזה עכשיו', 422);
+    pm_quote_amount($q['amount'] ?? null); // בדיקה לפני שמירת הקובץ
+    $fileId = pm_portal_supplier_upload($a, 'הצעת מחיר — ' . $stage['name'], 'quote');
+    $r = pm_quote_save($a['owner'], ['stage_id' => $stageId, 'supplier_id' => (int)$a['contact']['id'], 'amount' => $q['amount'] ?? null,
+        'valid_until' => $q['valid_until'] ?? '', 'terms' => $q['terms'] ?? '', 'notes' => $q['notes'] ?? '', 'file_id' => $fileId], $a['actor']);
+    pm_portal_mail($a, "הצעת מחיר חדשה מ{$a['contact']['name']}: {$stage['name']}",
+        "{$a['contact']['name']} הגיש הצעת מחיר לשלב \"{$stage['name']}\": " . pm_money(pm_quote_amount($q['amount'])) . ' כולל מע"מ.', 'quotes');
+    pm_log('info', 'portal', 'portal.supplier_quote', ['data' => ['link' => (int)$a['link']['id'], 'quote' => $r['saved'], 'file' => $fileId]]);
+    return pm_portal_view($a);
+}
+
+/** הספק מבקש תשלום — נכנס למנהל כאבן דרך "מתוכנן" עם סימון "בקשת הספק"; המנהל שולח ללקוח. */
+function pm_portal_supplier_payreq(array $a, array $q): array
+{
+    $stageId = (int)($q['stage_id'] ?? 0) ?: null;
+    if ($stageId) {
+        $ok = false;
+        foreach (pm_portal_supplier_stages($a) as $s) if ($s['id'] === $stageId) $ok = true;
+        if (!$ok) throw new PmError('השלב לא נמצא', 422);
+    }
+    pm_quote_amount($q['amount'] ?? null);
+    $title = trim((string)($q['title'] ?? ''));
+    if ($title === '') throw new PmError('על מה התשלום? (למשל "מקדמה")', 422);
+    $fileId = pm_portal_supplier_upload($a, 'דרישת תשלום — ' . $title, 'invoice');
+    $r = pm_payment_save($a['owner'], ['project_id' => (int)$a['project']['id'], 'stage_id' => $stageId, 'supplier_id' => (int)$a['contact']['id'],
+        'title' => $title, 'amount' => $q['amount'], 'notes' => $q['notes'] ?? '', 'payer' => 'client',
+        'needs_lawyer' => (bool)$a['project']['lawyer_id']], $a['actor']);
+    pm_db()->prepare('UPDATE payments SET supplier_request = 1, file_id = ? WHERE id = ?')->execute([$fileId, $r['saved']]);
+    pm_portal_mail($a, "{$a['contact']['name']} ביקש תשלום: $title",
+        "{$a['contact']['name']} ביקש תשלום \"$title\": " . pm_money(pm_quote_amount($q['amount'])) . ".\nבלשונית התשלומים — לבדוק ולשלוח ללקוח.", 'payments');
+    return pm_portal_view($a);
+}
+
+/** הספק: הכסף התקבל (או לא) — על אסמכתא שהלקוח העלה. */
+function pm_portal_supplier_receipt(array $a, array $in): array
+{
+    $proofId = (int)($in['proof_id'] ?? 0);
+    $st = pm_db()->prepare("SELECT 1 FROM payment_proofs x JOIN payments p ON p.id = x.payment_id WHERE x.id = ? AND p.supplier_id = ? AND p.project_id = ? AND x.status = 'pending'");
+    $st->execute([$proofId, $a['contact']['id'], $a['project']['id']]);
+    if (!$st->fetchColumn()) throw new PmError('אין כאן מה לאשר', 422);
+    pm_payment_proof_review($a['owner'], $proofId, !empty($in['ok']), $in['received'] ?? null, (string)($in['note'] ?? ''), $a['actor']);
+    pm_portal_mail($a, "{$a['contact']['name']} " . (!empty($in['ok']) ? 'אישר שהתשלום התקבל' : 'דיווח שהתשלום לא התקבל'),
+        "{$a['contact']['name']} " . (!empty($in['ok']) ? 'אישר שהתשלום התקבל.' : 'דיווח שהתשלום לא התקבל.') . (($in['note'] ?? '') !== '' ? "\n\nהערה: {$in['note']}" : ''), 'payments');
+    return pm_portal_view($a);
+}
+
+/** הספק מעדכן את פרטי הבנק שלו — מה שהלקוח רואה בתשלום. */
+function pm_portal_supplier_bank(array $a, array $in): array
+{
+    $bank = [];
+    foreach (PM_BANK_FIELDS as $f) $bank[$f] = pm_str($in, $f, 60, false, 'פרטי בנק');
+    pm_db()->prepare('UPDATE contacts SET bank_json = ?, updated_at = ? WHERE id = ?')
+       ->execute([json_encode(array_filter($bank, 'strlen'), JSON_UNESCAPED_UNICODE), pm_now(), $a['contact']['id']]);
+    pm_audit($a['actor']['actor'], 'contact.bank', 'contact', (int)$a['contact']['id'], ['by' => 'portal']);
+    pm_event($a['actor'], (int)$a['project']['id'], 'portal', 'עדכן את פרטי הבנק שלו');
+    return pm_portal_view($a);
+}
+
+/**
+ * "📨 בקשת הצעות": ספקים לשלב — כל אחד מקבל את הקישור האישי שלו, ורואה בו את השלב
+ * כ"מבקשים ממך הצעה". מחזיר לכל ספק את הקישור, להודעה (וואטסאפ / SMS / מייל).
+ */
+function pm_quote_invite(array $user, int $stageId, array $supplierIds): array
+{
+    $stage = pm_stage_row($user, $stageId);
+    $p = pm_project_row($user, (int)$stage['project_id']);
+    $ids = array_values(array_unique(array_filter(array_map('intval', $supplierIds))));
+    if (!$ids) throw new PmError('בחרו ספק אחד לפחות', 422);
+    $out = [];
+    $names = [];
+    foreach ($ids as $sid) {
+        pm_owned_contact($sid, (int)$p['owner_id'], 'supplier', 'הספק');
+        pm_db()->prepare('INSERT OR IGNORE INTO quote_invites (project_id, stage_id, supplier_id, created_at) VALUES (?,?,?,?)')
+           ->execute([$p['id'], $stageId, $sid, pm_now()]);
+        $link = pm_portal_link_save($user, (int)$p['id'], $sid, 'get')['link'];
+        $c = pm_db()->prepare('SELECT id, name, company, phone, whatsapp, email FROM contacts WHERE id = ?');
+        $c->execute([$sid]);
+        $contact = $c->fetch();
+        $names[] = $contact['name'];
+        $out[] = ['contact' => ['id' => (int)$contact['id']] + $contact, 'url' => $link['url']];
+    }
+    pm_event($user, (int)$p['id'], 'quote', "📨 בקשת הצעת מחיר — {$stage['name']}: " . implode(', ', $names), ['stage' => $stageId]);
+    if ($stage['status'] === 'planned') pm_stage_set_status($user, $stage, 'quotes');
+    return ['invites' => $out];
 }

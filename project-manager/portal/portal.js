@@ -62,6 +62,10 @@ function render() {
     document.title = p.name;
     $('#subtitle').textContent = [`שלום ${data.name}`, p.address].filter(Boolean).join(' · ');
     $('#subtitle').hidden = false;
+    const sup = data.role === 'supplier';
+    for (const id of ['#s-stages', '#s-payments', '#s-bank']) $(id).hidden = !sup;
+    if (sup) { $('#field').hidden = $('#quotes').hidden = $('#payments').hidden = true; $('#progress').closest('section').hidden = true; renderSupplier(); renderCommon(); return; }
+    $('#progress').closest('section').hidden = false;
 
     // ---- ממתין לאישורך: שלב אחד = שורה אחת ----
     const waiting = new Map();
@@ -118,6 +122,11 @@ function render() {
     $('#payments').hidden = !data.payments.length;
     $('#payment-list').innerHTML = data.payments.map(payCard).join('');
 
+    renderCommon();
+}
+
+/** קבצים ומנהל הפרויקט — לכל התפקידים. */
+function renderCommon() {
     // ---- קבצים ----
     $('#files').hidden = !data.files.length;
     $('#file-list').innerHTML = data.files.map(f => `<li class="card">
@@ -182,6 +191,119 @@ function drawReports() {
         </article>`;
     }).join('');
     $('#more-reports').hidden = data.reports.length <= reportsShown;
+}
+
+// ================= ספק =================
+
+function renderSupplier() {
+    const quotesOf = id => data.my_quotes.filter(q => q.stage_id === id);
+    const invited = data.stages.filter(s => s.can_quote && !quotesOf(s.id).some(q => !['declined', 'rejected', 'cancelled'].includes(q.status)));
+    const confirm = data.payments.flatMap(p => p.proofs.filter(x => x.can_confirm).map(x => ({ p, x })));
+    $('#pending').hidden = !invited.length && !confirm.length;
+    $('#pending-list').innerHTML = invited.map(s => `<li class="card" data-go="sstage-${s.id}" tabindex="0" role="button">
+            <span class="ficon" aria-hidden="true">📝</span>
+            <div class="body"><div class="l1"><span class="one">${esc(s.name)}</span></div><div class="l2">מבקשים ממך הצעת מחיר</div></div>
+            <span class="go" aria-hidden="true">‹</span></li>`).join('')
+        + confirm.map(({ p, x }) => `<li class="card" data-go="spay-${p.id}" tabindex="0" role="button">
+            <span class="ficon" aria-hidden="true">💳</span>
+            <div class="body"><div class="l1"><span class="one">${esc(p.title)}</span><span class="amt">${esc(money(x.amount))}</span></div>
+                <div class="l2">דווח ששולם לך — לאשר שהתקבל</div></div>
+            <span class="go" aria-hidden="true">‹</span></li>`).join('');
+
+    $('#s-stage-list').innerHTML = data.stages.map(st => {
+        const qs = quotesOf(st.id);
+        return `<article class="qcard" id="sstage-${st.id}">
+            <div class="q1"><span class="one">${esc(st.name)}</span><span class="chip st-${esc(st.status)}">${esc(data.labels.stage[st.status] || st.status)}</span></div>
+            <div class="q2">${[st.assigned ? 'שלך' : st.invited ? 'הוזמנת להציע' : '', st.plan_start || st.plan_end ? `${shortDate(st.plan_start)}–${shortDate(st.plan_end)}` : ''].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>')}</div>
+            ${qs.map(q => `<p class="q3">📝 ההצעה שלך: <b>${esc(money(q.amount))}</b> · ${esc(q.label)} · ${new Date(q.at).toLocaleDateString('he-IL')}
+                ${q.file ? ` · <a href="${fileUrl(q.file.id)}" target="_blank" rel="noopener">הקובץ</a>` : ''}</p>`).join('')}
+            ${st.can_quote ? `<div class="row-btns"><button class="btn ${qs.length ? 'ghost' : 'primary'}" data-squote="${st.id}">📝 ${qs.length ? 'הצעה מעודכנת' : 'הגשת הצעת מחיר'}</button></div>` : ''}
+        </article>`;
+    }).join('') || '<p class="empty">עוד אין שלבים שלך בפרויקט.</p>';
+
+    $('#s-payment-list').innerHTML = data.payments.map(p => {
+        const st = p.stage_id ? data.stages.find(s => s.id === p.stage_id) : null;
+        const label = p.supplier_request && p.status === 'planned' ? 'בקשתך — אצל מנהל הפרויקט' : p.label;
+        const proofs = p.proofs.map(x => `<li>${x.status === 'received' ? '✅' : x.status === 'rejected' ? '✖' : '⏳'} ${esc(money(x.amount))} · ${esc(data.labels.method[x.method] || '')} · ${esc(shortDate(x.paid_on))}
+            ${x.file ? ` · <a href="${fileUrl(x.file.id)}" target="_blank" rel="noopener">אסמכתא</a>` : ''}
+            ${x.can_confirm ? `<div class="row-btns"><button class="btn primary sm" data-receipt="${x.id}" data-ok="1">✅ התקבל</button><button class="btn ghost sm" data-receipt="${x.id}" data-ok="0">✖ לא התקבל</button></div>` : ''}</li>`).join('');
+        return `<article class="qcard pay-${esc(p.status)}" id="spay-${p.id}">
+            <div class="q1"><span class="one">${esc(p.title)}${st ? ` · ${esc(st.name)}` : ''}</span><span class="amt">${esc(money(p.amount))}</span></div>
+            <div class="q2">${esc(label)}${p.due_date ? `<i class="sep" aria-hidden="true">·</i>עד ${shortDate(p.due_date)}` : ''}${p.received ? `<i class="sep" aria-hidden="true">·</i>התקבל ${esc(money(p.received))}` : ''}</div>
+            ${proofs ? `<ul class="proofs">${proofs}</ul>` : ''}
+        </article>`;
+    }).join('') || '<p class="empty">עוד אין תשלומים.</p>';
+
+    const b = data.bank || {};
+    const f = $('#s-bank-form').elements;
+    for (const k of ['bank', 'branch', 'account', 'holder']) f[k].value = b[k] || '';
+    $('#s-bank-sum').textContent = b.account ? `· ${b.bank || ''} ${b.account}` : '· חסרים — מלאו כדי שהלקוח יוכל לשלם';
+    $('#s-bank details, #s-bank .bank-box').open = !b.account;
+}
+
+let sMode = null, sStage = null, sFile = null;
+
+function openSupplierDlg(mode, stageId) {
+    sMode = mode; sStage = stageId; sFile = null;
+    const dlg = $('#s-dlg'), form = $('form', dlg), el = form.elements;
+    form.reset();
+    $('.error', form).hidden = true;
+    $('#s-file-name').textContent = '';
+    const quote = mode === 'quote';
+    const st = data.stages.find(s => s.id === stageId);
+    $('#s-dlg-title').textContent = quote ? `הצעת מחיר — ${st.name}` : 'בקשת תשלום';
+    $('#s-stage-box').hidden = quote;
+    el.stage_id.innerHTML = '<option value="">בלי שלב</option>' + data.stages.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+    $('#s-title-box').hidden = quote;
+    $('#s-valid-box').hidden = $('#s-terms-box').hidden = !quote;
+    $('#s-file-label').textContent = quote ? 'קובץ ההצעה (PDF או צילום)' : 'חשבון / פירוט (לא חובה)';
+    $('#s-go').textContent = quote ? 'שליחת ההצעה' : 'שליחת הבקשה';
+    dlg.showModal();
+}
+
+async function submitSupplier(e) {
+    e.preventDefault();
+    const form = $('#s-dlg form'), el = form.elements, err = $('.error', form);
+    err.hidden = true;
+    if (!el.amount.value.trim()) { err.textContent = 'סכום: שדה חובה'; err.hidden = false; return; }
+    if (sMode === 'payreq' && !el.title.value.trim()) { err.textContent = 'על מה התשלום?'; err.hidden = false; return; }
+    const btn = $('#s-go');
+    btn.disabled = true;
+    try {
+        const file = sFile ? await shrink(sFile) : null;
+        if (file && file.size > data.max_proof) throw new Error('הקובץ גדול מדי — עד 8MB');
+        const qs = new URLSearchParams(sMode === 'quote'
+            ? { action: 's-quote', stage_id: sStage, amount: el.amount.value.trim(), valid_until: el.valid_until.value, terms: el.terms.value, notes: el.notes.value }
+            : { action: 's-payreq', stage_id: el.stage_id.value, title: el.title.value.trim(), amount: el.amount.value.trim(), notes: el.notes.value });
+        if (file) qs.set('name', file.name);
+        const res = await fetch('api.php?' + qs, { method: 'POST', body: file || undefined,
+            headers: { 'X-Portal': token, Accept: 'application/json', 'Content-Type': file ? (file.type || 'application/octet-stream') : 'application/octet-stream' } });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(d.error || `תקלה (${res.status})`);
+        data = d;
+        $('#s-dlg').close();
+        render();
+        toast(sMode === 'quote' ? 'ההצעה נשלחה למנהל הפרויקט' : 'הבקשה נשלחה למנהל הפרויקט');
+    } catch (x) {
+        err.textContent = x.message;
+        err.hidden = false;
+    } finally { btn.disabled = false; }
+}
+
+async function receipt(proofId, ok) {
+    const x = data.payments.flatMap(p => p.proofs).find(y => y.id === proofId);
+    let received = null, note = '';
+    if (ok) { received = prompt('כמה התקבל בפועל? (₪)', String(x.amount)); if (received === null) return; }
+    else { note = prompt('מה הבעיה? (מנהל הפרויקט יקבל את זה)', ''); if (note === null) return; }
+    try { data = await call('s-receipt', { proof_id: proofId, ok, received, note }); render(); toast(ok ? 'תודה — נרשם שהתקבל' : 'נרשם — מנהל הפרויקט מעודכן'); }
+    catch (e) { toast(e.message, true); }
+}
+
+async function saveBank(e) {
+    e.preventDefault();
+    const f = e.target.elements;
+    try { data = await call('s-bank', { bank: f.bank.value, branch: f.branch.value, account: f.account.value, holder: f.holder.value }); render(); toast('פרטי הבנק נשמרו'); }
+    catch (x) { toast(x.message, true); }
 }
 
 const PAY_ICON = { requested: '📤', paid: '💳', partial: '◐', received: '✅' };
@@ -376,6 +498,11 @@ document.addEventListener('click', e => {
     if (act) { openDecide(Number(act.dataset.q), act.dataset.act); return; }
     const go = e.target.closest('[data-go]');
     if (go) { $('#' + go.dataset.go)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+    const sq = e.target.closest('[data-squote]');
+    if (sq) { openSupplierDlg('quote', Number(sq.dataset.squote)); return; }
+    if (e.target.closest('#s-payreq-btn')) { openSupplierDlg('payreq', null); return; }
+    const rc = e.target.closest('[data-receipt]');
+    if (rc) { receipt(Number(rc.dataset.receipt), rc.dataset.ok === '1'); return; }
     const pay = e.target.closest('[data-pay]');
     if (pay) { openPay(Number(pay.dataset.pay)); return; }
     const pa = e.target.closest('[data-pay-approve]');
@@ -393,6 +520,9 @@ document.addEventListener('keydown', e => {
 });
 $('#decide-dlg form').addEventListener('submit', submitDecide);
 $('#pay-dlg form').addEventListener('submit', submitPay);
+$('#s-dlg form').addEventListener('submit', submitSupplier);
+$('#s-dlg [name=file]').addEventListener('change', e => { sFile = e.target.files[0] || null; $('#s-file-name').textContent = sFile ? '📎 ' + sFile.name : ''; });
+$('#s-bank-form').addEventListener('submit', saveBank);
 $('#pay-dlg [name=file]').addEventListener('change', e => { proofFile = e.target.files[0] || null; $('#proof-name').textContent = proofFile ? '📎 ' + proofFile.name : ''; });
 // מקלדת בטלפון: השדה בפוקוס למרכז, והחלון בגובה הנראה
 (() => {

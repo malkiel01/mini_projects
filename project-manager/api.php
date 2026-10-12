@@ -163,6 +163,7 @@ try {
         // קישורים אישיים לפורטל (שלב 6)
         'GET portal-links'  => ['links' => pm_portal_links($user, (int)($in['project_id'] ?? 0))],
         'POST portal-link'  => pm_portal_link_save($user, (int)($in['project_id'] ?? 0), (int)($in['contact_id'] ?? 0), (string)($in['do'] ?? 'get')),
+        'POST quote-invite' => pm_quote_invite($user, (int)($in['stage_id'] ?? 0), is_array($in['supplier_ids'] ?? null) ? $in['supplier_ids'] : []),
         'GET approval'      => ['approval' => pm_approval_get($user, (int)($in['id'] ?? 0))],
         'POST max-upload'  => $isDev ? (function () use ($user, $in) {
             $mb = max(1, min(2000, (int)($in['mb'] ?? 100)));

@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=16">
+    <link rel="stylesheet" href="assets/css/app.css?v=17">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -125,6 +125,7 @@
             <div class="pane" id="pane-quotes" hidden>
                 <div class="toolbar">
                     <p class="q-sum" id="q-sum"></p>
+                    <button class="btn ghost" id="invite-quotes" title="בקשת הצעות מספקים">📨<span class="add-label"> בקשה</span></button>
                     <button class="btn primary" id="add-quote"><span aria-hidden="true">+</span><span class="add-label">הצעה</span></button>
                 </div>
                 <div id="quote-list"></div>
@@ -556,6 +557,26 @@
         </form>
     </dialog>
 
+    <!-- ===== חלון: בקשת הצעות מספקים ===== -->
+    <dialog id="invite-dlg" aria-labelledby="invite-dlg-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="invite-dlg-title">בקשת הצעות מחיר</h2>
+                <button type="submit" class="btn primary">המשך</button>
+            </header>
+            <div class="sheet-body">
+                <label class="f"><span>לאיזה שלב</span><select name="stage_id"></select></label>
+                <section class="group" aria-labelledby="g-inv">
+                    <h3 id="g-inv">מאילו ספקים <small>קודם ספקי התחום</small></h3>
+                    <div class="chips" id="invite-suppliers"></div>
+                </section>
+                <p class="hint">כל ספק מקבל את הקישור האישי שלו לפרויקט: שם הוא מגיש הצעה (סכום וקובץ), מבקש תשלום ומאשר שהכסף התקבל — בלי לראות הצעות של אחרים.</p>
+                <p class="error" role="alert" hidden></p>
+            </div>
+        </form>
+    </dialog>
+
     <!-- ===== חלון: שליחה (וואטסאפ / SMS / אימייל) ===== -->
     <dialog id="send-dlg" aria-labelledby="send-dlg-title">
         <form method="dialog" novalidate>
@@ -779,18 +800,18 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=16"></script>
-    <script src="assets/js/contacts.js?v=16"></script>
-    <script src="assets/js/device-contacts.js?v=16"></script>
-    <script src="assets/js/files.js?v=16"></script>
-    <script src="assets/js/lightbox.js?v=16"></script>
-    <script src="assets/js/field.js?v=16"></script>
+    <script src="assets/js/core.js?v=17"></script>
+    <script src="assets/js/contacts.js?v=17"></script>
+    <script src="assets/js/device-contacts.js?v=17"></script>
+    <script src="assets/js/files.js?v=17"></script>
+    <script src="assets/js/lightbox.js?v=17"></script>
+    <script src="assets/js/field.js?v=17"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=16"></script>
-    <script src="assets/js/projects.js?v=16"></script>
-    <script src="assets/js/quotes.js?v=16"></script>
-    <script src="assets/js/payments.js?v=16"></script>
-    <script src="assets/js/settings.js?v=16"></script>
-    <script src="assets/js/app.js?v=16"></script>
+    <script src="assets/js/share.js?v=17"></script>
+    <script src="assets/js/projects.js?v=17"></script>
+    <script src="assets/js/quotes.js?v=17"></script>
+    <script src="assets/js/payments.js?v=17"></script>
+    <script src="assets/js/settings.js?v=17"></script>
+    <script src="assets/js/app.js?v=17"></script>
 </body>
 </html>

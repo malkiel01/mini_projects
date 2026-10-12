@@ -83,7 +83,7 @@ const Payments = (() => {
         const late = p.due_date && p.due_date < today() && !['received', 'cancelled'].includes(p.status);
         const l2 = [
             esc(p.supplier_name),
-            `${ICON[p.status]} ${esc(p.label)}`,
+            p.supplier_request && p.status === 'planned' ? '📥 בקשת הספק' : `${ICON[p.status]} ${esc(p.label)}`,
             p.due_date ? `<span class="${late ? 'late' : ''}">${late ? 'באיחור · ' : 'עד '}${shortDate(p.due_date)}</span>` : '',
             p.status === 'partial' ? `נשאר ${esc(money(p.balance))}` : '',
         ].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>');
@@ -115,7 +115,9 @@ const Payments = (() => {
         [...form.elements].forEach(x => { if (x.name) x.disabled = !!locked; });
         $('button[type=submit]', form).hidden = !!locked;
         $('#payment-state').hidden = !current;
-        if (current) $('#payment-state').innerHTML = `<span class="chip">${ICON[current.status]} ${esc(current.label)}</span>`
+        if (current) $('#payment-state').innerHTML = (current.supplier_request ? '<span class="chip">📥 הספק ביקש</span>' : '')
+            + (current.file_id ? `<a class="chip" href="api.php?action=file&id=${current.file_id}" target="_blank" rel="noopener">📄 המסמך של הספק</a>` : '')
+            + `<span class="chip">${ICON[current.status]} ${esc(current.label)}</span>`
             + (current.received ? `<span class="chip">התקבל ${esc(money(current.received))}</span>` : '')
             + (current.lawyer ? `<span class="chip">⚖️ ${esc(current.lawyer.by)} אישר</span>` : '');
         await stageChanged(p.supplier_id || null);
