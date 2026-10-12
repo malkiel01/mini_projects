@@ -8,8 +8,8 @@
     <meta name="robots" content="noindex, nofollow">
     <meta name="referrer" content="no-referrer">
     <title>הפרויקט שלך</title>
-    <link rel="stylesheet" href="../assets/css/app.css?v=16">
-    <link rel="stylesheet" href="portal.css?v=4">
+    <link rel="stylesheet" href="../assets/css/app.css?v=17">
+    <link rel="stylesheet" href="portal.css?v=5">
     <link rel="icon" href="../assets/icon.svg">
 </head>
 <body>
@@ -38,6 +38,30 @@
             <section id="pending" class="pending" aria-labelledby="pending-title" hidden>
                 <h2 class="sec-title" id="pending-title">ממתין לאישורך</h2>
                 <ul class="list rows-list" id="pending-list"></ul>
+            </section>
+
+            <!-- ספק (שלב 9) -->
+            <section id="s-stages" aria-labelledby="s-stages-title" hidden>
+                <h2 class="sec-title" id="s-stages-title">השלבים שלי</h2>
+                <div id="s-stage-list"></div>
+            </section>
+            <section id="s-payments" aria-labelledby="s-payments-title" hidden>
+                <div class="sec-row"><h2 class="sec-title" id="s-payments-title">תשלומים אליי</h2>
+                    <button type="button" class="btn ghost sm" id="s-payreq-btn">+ בקשת תשלום</button></div>
+                <div id="s-payment-list"></div>
+            </section>
+            <section id="s-bank" aria-labelledby="s-bank-title" hidden>
+                <details class="bank-box">
+                    <summary id="s-bank-title">פרטי הבנק שלי <small id="s-bank-sum"></small></summary>
+                    <form id="s-bank-form" class="fields" novalidate>
+                        <label class="f"><span>בנק</span><input name="bank" maxlength="60"></label>
+                        <label class="f"><span>סניף</span><input name="branch" maxlength="60" inputmode="numeric"></label>
+                        <label class="f"><span>חשבון</span><input name="account" maxlength="60" inputmode="numeric" dir="ltr"></label>
+                        <label class="f"><span>על שם</span><input name="holder" maxlength="60"></label>
+                        <button class="btn primary">שמירה</button>
+                    </form>
+                    <p class="hint">הלקוח רואה את הפרטים האלה כשהוא משלם לך.</p>
+                </details>
             </section>
 
             <section id="quotes" aria-labelledby="quotes-title" hidden>
@@ -121,6 +145,32 @@
         </form>
     </dialog>
 
+    <!-- ===== ספק: הגשת הצעה / בקשת תשלום ===== -->
+    <dialog id="s-dlg" aria-labelledby="s-dlg-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="s-dlg-title"></h2>
+                <span></span>
+            </header>
+            <div class="sheet-body">
+                <label class="f" id="s-stage-box"><span>שלב</span><select name="stage_id"></select></label>
+                <label class="f" id="s-title-box"><span>על מה *</span><input name="title" maxlength="100" placeholder="למשל: מקדמה" list="s-titles"></label>
+                <datalist id="s-titles"><option value="מקדמה"><option value="תשלום ביניים"><option value="תשלום סופי"><option value="תוספת"></datalist>
+                <div class="fields">
+                    <label class="f"><span>סכום כולל מע"מ (₪) *</span><input name="amount" inputmode="decimal" dir="ltr" maxlength="14"></label>
+                    <label class="f" id="s-valid-box"><span>בתוקף עד</span><input name="valid_until" type="date"></label>
+                </div>
+                <label class="f" id="s-terms-box"><span>תנאי תשלום</span><input name="terms" maxlength="1000" placeholder="למשל: 30% מקדמה, 70% בסיום"></label>
+                <label class="f"><span>פירוט / הערות</span><textarea name="notes" rows="3" maxlength="2000"></textarea></label>
+                <label class="btn ghost upload-btn proof-pick">📎 <span id="s-file-label">קובץ (PDF או צילום)</span><input type="file" name="file" accept="image/*,application/pdf" hidden></label>
+                <p class="hint" id="s-file-name"></p>
+                <p class="error" role="alert" hidden></p>
+                <button type="submit" class="btn primary" id="s-go"></button>
+            </div>
+        </form>
+    </dialog>
+
     <dialog id="lightbox" class="lightbox" aria-label="תצוגה">
         <button type="button" class="icon-btn lb-close" data-close aria-label="סגירה">✕</button>
         <button type="button" class="icon-btn lb-prev" aria-label="הקודם">›</button>
@@ -130,7 +180,7 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="portal.js?v=4"></script>
-    <script src="../assets/js/lightbox.js?v=16"></script>
+    <script src="portal.js?v=5"></script>
+    <script src="../assets/js/lightbox.js?v=17"></script>
 </body>
 </html>

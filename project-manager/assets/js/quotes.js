@@ -18,6 +18,9 @@ const Quotes = (() => {
         if (bound) return;
         bound = true;
         $('#add-quote').addEventListener('click', () => open(null));
+        $('#invite-quotes').addEventListener('click', () => openInvite());
+        $('#invite-dlg form').addEventListener('submit', e => { e.preventDefault(); sendInvite(); });
+        $('#invite-dlg [name=stage_id]').addEventListener('change', fillInvitees);
         $('#quote-list').addEventListener('click', e => {
             const send = e.target.closest('[data-send]');
             if (send) { e.stopPropagation(); sendToClient(Number(send.dataset.send)); return; }
@@ -304,6 +307,47 @@ const Quotes = (() => {
         Send.open({ title: 'שליחת ההצעות ללקוח', recipients: [{ contact: client, label: 'הלקוח', text }],
             subject: 'הצעות מחיר — ' + project.project.name,
             hint: 'ההצעות סומנו "נשלחה ללקוח", והשלב ממתין לאישורו. בקישור האישי הלקוח רואה את ההצעות ומאשר בעצמו. אם הוא עונה בטלפון — פותחים את ההצעה ורושמים את ההחלטה.' });
+    }
+
+    // ================= בקשת הצעות מספקים =================
+
+    function openInvite(stageId) {
+        const dlg = $('#invite-dlg'), form = $('form', dlg);
+        formError(form, '');
+        const open = project.stages.filter(s => ['planned', 'quotes', 'client_approval'].includes(s.status));
+        form.elements.stage_id.innerHTML = options((open.length ? open : project.stages).map(s => ({ value: s.id, label: s.name })), stageId || stageGuess());
+        fillInvitees();
+        dlg.showModal();
+    }
+
+    async function fillInvitees() {
+        const st = stageOf(Number($('#invite-dlg [name=stage_id]').value));
+        let all = [];
+        try { all = (await contactsOf('supplier')).filter(c => c.owner_id === project.project.owner_id && !c.archived); } catch { /* ריק */ }
+        const asked = new Set(data.quotes.filter(q => q.stage_id === st?.id).map(q => q.supplier_id));
+        const inTrade = st?.trade_id ? all.filter(c => c.trades.includes(st.trade_id)) : [];
+        const list = [...inTrade, ...all.filter(c => !inTrade.includes(c))];
+        $('#invite-suppliers').innerHTML = list.map(c => `<label><input type="checkbox" value="${c.id}"${inTrade.includes(c) && !asked.has(c.id) ? ' checked' : ''}>
+            <span>${esc(c.name)}${asked.has(c.id) ? ' ✓' : ''}</span></label>`).join('') || '<p class="hint">אין ספקים. מוסיפים באנשי קשר ← ספקים.</p>';
+    }
+
+    async function sendInvite() {
+        const form = $('#invite-dlg form');
+        const stageId = Number(form.elements.stage_id.value);
+        const ids = $$('#invite-suppliers input:checked').map(cb => Number(cb.value));
+        if (!ids.length) { formError(form, 'בחרו ספק אחד לפחות'); return; }
+        await busy($('button[type=submit]', form), form, async () => {
+            const { invites } = await api('quote-invite', { body: { stage_id: stageId, supplier_ids: ids } });
+            $('#invite-dlg').close();
+            project = await Projects.reload();
+            const st = stageOf(stageId), p = project.project;
+            Send.open({ title: 'בקשת הצעות — ' + st.name, subject: `בקשת הצעת מחיר — ${st.name}, ${p.name}`,
+                recipients: invites.map(i => ({ contact: i.contact, label: i.contact.name,
+                    text: `שלום ${i.contact.name},\nאשמח להצעת מחיר לשלב "${st.name}" בפרויקט ${p.name}${p.address ? ` (${p.address})` : ''}.\n`
+                        + `להגשת ההצעה — סכום וקובץ:\n${i.url}\n\n${state.user.display_name}` })),
+                hint: 'כל ספק — ההודעה והקישור שלו (בוחרים למעלה). הצעה שספק מגיש נכנסת לכאן לבד, ותקבל מייל.' });
+            render();
+        });
     }
 
     return { show, fromFile };

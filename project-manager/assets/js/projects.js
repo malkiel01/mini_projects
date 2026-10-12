@@ -376,7 +376,7 @@ const Projects = (() => {
         const draw = () => {
             $('#team-list').innerHTML = cur.team.map(c => {
                 // ללקוח ולעו"ד — קישור אישי לפורטל. מתי נפתח לאחרונה — בשורה.
-                const portal = c.id === cur.project.client_id || c.id === cur.project.lawyer_id;
+                const portal = c.id === cur.project.client_id || c.id === cur.project.lawyer_id || c.kind === 'supplier';
                 const l = links[c.id];
                 const seen = l ? (l.last_seen_at ? 'פתח ' + when(l.last_seen_at) : 'קישור נשלח, עוד לא נפתח') : '';
                 return `<li class="card">
@@ -399,11 +399,13 @@ const Projects = (() => {
         portalContact = cur.team.find(t => t.id === id);
         const dlg = $('#portal-dlg');
         formError($('form', dlg), '');
-        const role = id === cur.project.client_id ? 'client' : 'lawyer';
+        const role = id === cur.project.client_id ? 'client' : id === cur.project.lawyer_id ? 'lawyer' : 'supplier';
         $('#portal-dlg-title').textContent = 'קישור אישי — ' + portalContact.name;
-        $('#portal-about').textContent = role === 'client'
-            ? 'בקישור הלקוח רואה את התקדמות השלבים, את הצעות המחיר שנשלחו אליו (המומלצת בראש) ואת הקבצים שסומנו "גלוי" — ומאשר הצעות בעצמו, בלחיצה או בחתימה לפי הגדרות הלקוח. בלי סיסמה.'
-            : 'בקישור העו"ד רואה את הפרויקט ואת ההצעות, ומאשר הצעות שהלקוח כבר אישר בשלבים שדורשים עו"ד. בלי סיסמה.';
+        $('#portal-about').textContent = {
+            client: 'בקישור הלקוח רואה את התקדמות השלבים, את הצעות המחיר שנשלחו אליו (המומלצת בראש) ואת הקבצים שסומנו "גלוי" — ומאשר הצעות בעצמו, בלחיצה או בחתימה לפי הגדרות הלקוח. בלי סיסמה.',
+            lawyer: 'בקישור העו"ד רואה את הפרויקט ואת ההצעות, ומאשר הצעות שהלקוח כבר אישר בשלבים שדורשים עו"ד. בלי סיסמה.',
+            supplier: 'בקישור הספק רואה את השלבים שלו, מגיש הצעות מחיר, מבקש תשלום, מאשר שהכסף התקבל ומעדכן את פרטי הבנק שלו — בלי לראות הצעות של ספקים אחרים, פרטי לקוח או תשלומים לאחרים. בלי סיסמה.',
+        }[role];
         drawPortal(links[id] || null);
         dlg.showModal();
     }
@@ -416,7 +418,8 @@ const Projects = (() => {
         const c = portalContact;
         $('#portal-url').textContent = l.url;
         $('#portal-seen').textContent = l.last_seen_at ? `נפתח לאחרונה ${when(l.last_seen_at)} · ${l.views} כניסות` : 'עוד לא נפתח';
-        const text = `שלום ${c.name},\nזה הקישור האישי שלך לפרויקט "${cur.project.name}" — מצב העבודות, הצעות המחיר והמסמכים, ואישור הצעות:\n${l.url}\n\n${state.user.display_name}`;
+        const what = c.kind === 'supplier' ? 'הגשת הצעות מחיר, בקשות תשלום ואישור קבלה' : 'מצב העבודות, הצעות המחיר והמסמכים, ואישור הצעות';
+        const text = `שלום ${c.name},\nזה הקישור האישי שלך לפרויקט "${cur.project.name}" — ${what}:\n${l.url}\n\n${state.user.display_name}`;
         const phone = c.whatsapp || c.phone;
         $('#portal-wa').href = `https://wa.me/${phone ? waNumber(phone) : ''}?text=${encodeURIComponent(text)}`;
         $('#portal-sms').hidden = !c.phone;

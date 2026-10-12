@@ -72,6 +72,7 @@ function pm_payment_out(array $p, array $proofs): array
         'lawyer' => $p['lawyer_approved_at'] ? ['at' => $p['lawyer_approved_at'], 'by' => $p['lawyer_by'], 'method' => $p['lawyer_method'], 'note' => $p['lawyer_note']] : null,
         'status' => $p['status'], 'label' => pm_payment_label($p), 'payable' => pm_payment_payable($p),
         'notes' => $p['notes'], 'requested_at' => $p['requested_at'], 'created_at' => $p['created_at'],
+        'supplier_request' => (bool)($p['supplier_request'] ?? false), 'file_id' => isset($p['file_id']) ? (int)$p['file_id'] ?: null : null,
         'received' => $received / 100, 'balance' => max(0, (int)$p['amount'] - $received) / 100,
         'proofs' => $proofs,
     ];
@@ -134,8 +135,9 @@ function pm_stage_approved_quote(int $stageId): ?array
     return $st->fetch() ?: null;
 }
 
-function pm_payment_save(array $user, array $in): array
+function pm_payment_save(array $user, array $in, ?array $actor = null): array
 {
+    $actor ??= $user;
     $id = (int)($in['id'] ?? 0);
     $old = $id ? pm_payment_row($user, $id) : null;
     if ($old && !in_array($old['status'], ['planned', 'requested'], true)) throw new PmError('כבר דווח תשלום — אי אפשר לשנות. אפשר לבטל וליצור חדשה', 422);
@@ -187,7 +189,7 @@ function pm_payment_save(array $user, array $in): array
         $db->prepare("UPDATE payments SET $set, updated_at = ?" . ($resetLawyer ? ", lawyer_approved_at = NULL, lawyer_by = '', lawyer_method = '', lawyer_note = ''" : '') . ' WHERE id = ?')
            ->execute(array_merge(array_values($f), [$now, $id]));
         if ((int)$old['amount'] !== $f['amount'] || $old['due_date'] !== $f['due_date'] || $old['title'] !== $f['title']) {
-            pm_event($user, $projectId, 'payment', "אבן דרך עודכנה: {$f['title']} — $supplier, " . pm_money($f['amount'])
+            pm_event($actor, $projectId, 'payment', "אבן דרך עודכנה: {$f['title']} — $supplier, " . pm_money($f['amount'])
                 . ($f['due_date'] ? ' עד ' . pm_short_date($f['due_date']) : '') . ($resetLawyer ? '. נדרש אישור עו"ד מחדש' : ''), ['payment' => $id]);
         }
     } else {
@@ -196,7 +198,7 @@ function pm_payment_save(array $user, array $in): array
         $db->prepare("INSERT INTO payments ($cols, project_id, created_by, created_at, updated_at) VALUES ($qs, ?, ?, ?, ?)")
            ->execute(array_merge(array_values($f), [$projectId, $user['id'], $now, $now]));
         $id = (int)$db->lastInsertId();
-        pm_event($user, $projectId, 'payment', "אבן דרך לתשלום: {$f['title']} — $supplier, " . pm_money($f['amount'])
+        pm_event($actor, $projectId, 'payment', "אבן דרך לתשלום: {$f['title']} — $supplier, " . pm_money($f['amount'])
             . ($f['due_date'] ? ' עד ' . pm_short_date($f['due_date']) : ''), ['payment' => $id]);
     }
     return pm_payments($user, $projectId) + ['saved' => $id];
@@ -271,8 +273,9 @@ function pm_payment_proof_add(array $user, int $id, array $in, string $byRole, s
 }
 
 /** המנהל: הכסף התקבל (סכום — גם חלקי), או לא התקבל. */
-function pm_payment_proof_review(array $user, int $proofId, bool $ok, $receivedAmount, string $note): array
+function pm_payment_proof_review(array $user, int $proofId, bool $ok, $receivedAmount, string $note, ?array $actor = null): array
 {
+    $actor ??= $user; // מהקישור של הספק: "התקבל" בשם הספק
     $st = pm_db()->prepare('SELECT * FROM payment_proofs WHERE id = ?');
     $st->execute([$proofId]);
     $x = $st->fetch();
@@ -289,14 +292,14 @@ function pm_payment_proof_review(array $user, int $proofId, bool $ok, $receivedA
                ->execute([$got, pm_now(), $user['id'], $note, $proofId]);
             $total = pm_payment_received((int)$p['id']);
             $status = $total >= (int)$p['amount'] ? 'received' : 'partial';
-            pm_event($user, (int)$p['project_id'], 'payment', "✅ התקבל: {$p['title']} — " . pm_money($got)
+            pm_event($actor, (int)$p['project_id'], 'payment', "✅ התקבל: {$p['title']} — " . pm_money($got)
                 . ($status === 'partial' ? ' (נשארה יתרה ' . pm_money((int)$p['amount'] - $total) . ')' : ' — אבן הדרך נסגרה'), ['payment' => (int)$p['id']]);
         } else {
             $db->prepare("UPDATE payment_proofs SET status = 'rejected', reviewed_at = ?, reviewed_by = ?, review_note = ? WHERE id = ?")
                ->execute([pm_now(), $user['id'], $note, $proofId]);
             $total = pm_payment_received((int)$p['id']);
             $status = $total > 0 ? 'partial' : 'requested';
-            pm_event($user, (int)$p['project_id'], 'payment', "✖ התשלום לא התקבל: {$p['title']} — " . pm_money((int)$x['amount']) . ($note !== '' ? ": $note" : ''),
+            pm_event($actor, (int)$p['project_id'], 'payment', "✖ התשלום לא התקבל: {$p['title']} — " . pm_money((int)$x['amount']) . ($note !== '' ? ": $note" : ''),
                 ['payment' => (int)$p['id']]);
         }
         // עוד אסמכתא שממתינה — נשאר "דווח ששולם"

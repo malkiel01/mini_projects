@@ -119,8 +119,9 @@ function pm_stage_set_status(array $user, array $stage, string $status, string $
         ['stage' => (int)$stage['id'], 'status' => $status]);
 }
 
-function pm_quote_save(array $user, array $in): array
+function pm_quote_save(array $user, array $in, ?array $actor = null): array
 {
+    $actor ??= $user; // מהקישור של הספק: בציר הזמן בשם הספק
     $id = (int)($in['id'] ?? 0);
     $old = $id ? pm_quote_row($user, $id) : null;
     if ($old && $old['status'] === 'cancelled') throw new PmError('ההצעה בוטלה — אי אפשר לערוך', 422);
@@ -165,10 +166,10 @@ function pm_quote_save(array $user, array $in): array
                 $text = "הצעה עודכנה: $supplier, {$stage['name']} — " . implode(', ', array_map(fn($k) => $what[$k], $material))
                       . ($old['amount'] != $f['amount'] ? ' (' . pm_money((int)$old['amount']) . ' → ' . pm_money($f['amount']) . ')' : '')
                       . ($reset ? '. האישור הקודם לא חל על הגרסה החדשה' : '');
-                pm_event($user, $projectId, 'quote', $text, ['quote' => $id, 'version' => $version, 'changed' => array_values($material)]);
+                pm_event($actor, $projectId, 'quote', $text, ['quote' => $id, 'version' => $version, 'changed' => array_values($material)]);
                 if ($reset && in_array($old['status'], ['client_approved', 'approved'], true)
                     && in_array($stage['status'], ['client_approval', 'lawyer_approval', 'approved'], true)) {
-                    pm_stage_set_status($user, $stage, 'quotes', 'ההצעה שאושרה השתנתה');
+                    pm_stage_set_status($actor, $stage, 'quotes', 'ההצעה שאושרה השתנתה');
                 }
             }
         } else {
@@ -177,9 +178,9 @@ function pm_quote_save(array $user, array $in): array
             $db->prepare("INSERT INTO quotes ($cols, project_id, created_by, created_at, updated_at) VALUES ($qs, ?, ?, ?, ?)")
                ->execute(array_merge(array_values($f), [$projectId, $user['id'], $now, $now]));
             $id = (int)$db->lastInsertId();
-            pm_event($user, $projectId, 'quote', "הצעת מחיר: $supplier, {$stage['name']} — " . pm_money($f['amount']),
+            pm_event($actor, $projectId, 'quote', "הצעת מחיר: $supplier, {$stage['name']} — " . pm_money($f['amount']),
                 ['quote' => $id, 'stage' => (int)$stage['id']]);
-            if ($stage['status'] === 'planned') pm_stage_set_status($user, $stage, 'quotes');
+            if ($stage['status'] === 'planned') pm_stage_set_status($actor, $stage, 'quotes');
         }
         if ($fileId) pm_quote_file_home($projectId, $fileId, $f['supplier_id']);
         $db->commit();

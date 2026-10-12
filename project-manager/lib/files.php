@@ -73,14 +73,16 @@ function pm_ensure_folders(array $p): void
     foreach (PM_SYSTEM_FOLDERS as $kind => [$name, , $sort]) {
         if (!isset($existing["$kind:0"])) $ins->execute([$p['id'], $kind, null, $name, $sort, pm_now()]);
     }
-    // ספקים: מהשלבים, מהצוות ומההצעות. לקוח ועו"ד — בתיקיות שלהם.
+    // ספקים: מהשלבים, מהצוות, מההצעות, מבקשות ההצעה ומהתשלומים. לקוח ועו"ד — בתיקיות שלהם.
     $st = $db->prepare(
         "SELECT DISTINCT c.id, c.name FROM contacts c
           WHERE c.kind = 'supplier' AND (c.id IN (SELECT supplier_id FROM stages WHERE project_id = ?)
                                       OR c.id IN (SELECT contact_id FROM project_members WHERE project_id = ?)
-                                      OR c.id IN (SELECT supplier_id FROM quotes WHERE project_id = ?))"
+                                      OR c.id IN (SELECT supplier_id FROM quotes WHERE project_id = ?)
+                                      OR c.id IN (SELECT supplier_id FROM quote_invites WHERE project_id = ?)
+                                      OR c.id IN (SELECT supplier_id FROM payments WHERE project_id = ?))"
     );
-    $st->execute([$p['id'], $p['id'], $p['id']]);
+    $st->execute([$p['id'], $p['id'], $p['id'], $p['id'], $p['id']]);
     foreach ($st->fetchAll() as $c) {
         if (!isset($existing['contact:' . $c['id']])) $ins->execute([$p['id'], 'contact', $c['id'], $c['name'], 40, pm_now()]);
     }
@@ -323,11 +325,12 @@ function pm_upload_finish(array $user, array $in): array
  * קובץ שהגיע בבקשה אחת (מהפורטל — אסמכתא), לתיקייה הראשית מסוג $kind
  * (client · lawyer · inbox). מחזיר את מזהה הקובץ. בלי אירוע — הקורא רושם.
  */
-function pm_file_store(int $projectId, string $kind, string $name, string $tmpPath, string $type, int $uploadedBy, string $note = ''): int
+function pm_file_store(int $projectId, string $kind, string $name, string $tmpPath, string $type, int $uploadedBy, string $note = '', ?int $contactId = null): int
 {
     pm_ensure_folders(['id' => $projectId]);
-    $f = pm_db()->prepare('SELECT id FROM folders WHERE project_id = ? AND kind = ? AND parent_id IS NULL');
-    $f->execute([$projectId, $kind]);
+    // kind = contact: התיקייה של הספק ($contactId)
+    $f = pm_db()->prepare('SELECT id FROM folders WHERE project_id = ? AND kind = ? AND parent_id IS NULL AND (? IS NULL OR contact_id = ?)');
+    $f->execute([$projectId, $kind, $contactId, $contactId]);
     $folder = (int)$f->fetchColumn();
     if (!$folder) throw new PmError('אין תיקייה לקובץ', 500);
     $name = pm_clean_filename($name);

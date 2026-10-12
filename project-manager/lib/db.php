@@ -332,7 +332,7 @@ function pm_migrate(PDO $pdo): void
             id           INTEGER PRIMARY KEY,
             project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
             contact_id   INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
-            role         TEXT NOT NULL CHECK (role IN ('client','lawyer')),
+            role         TEXT NOT NULL CHECK (role IN ('client','lawyer','supplier')),
             nonce        TEXT NOT NULL,
             token_hash   TEXT NOT NULL UNIQUE,
             created_by   INTEGER NOT NULL,
@@ -415,6 +415,14 @@ function pm_migrate(PDO $pdo): void
             sort      INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (report_id, file_id)
         );
+        -- שלב 9: בקשת הצעת מחיר מספק לשלב — מה שהספק רואה בקישור שלו כ"מבקשים ממך הצעה".
+        CREATE TABLE IF NOT EXISTS quote_invites (
+            project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            stage_id    INTEGER NOT NULL REFERENCES stages(id) ON DELETE CASCADE,
+            supplier_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+            created_at  TEXT NOT NULL,
+            PRIMARY KEY (stage_id, supplier_id)
+        );
         CREATE TABLE IF NOT EXISTS stage_templates (
             id          INTEGER PRIMARY KEY,
             name        TEXT NOT NULL UNIQUE,
@@ -441,6 +449,21 @@ function pm_migrate(PDO $pdo): void
     // שלב 6: אישור מהפורטל — מאיזה קישור, והחתימה (תמונה) כשנדרשה
     pm_add_column($pdo, 'approvals', 'portal_id', 'INTEGER');
     pm_add_column($pdo, 'approvals', 'signature', "TEXT NOT NULL DEFAULT ''");
+    // שלב 9: ספק בקישור — תפקיד supplier. ב-SQLite אי אפשר לשנות CHECK, ולכן הטבלה
+    // נבנית מחדש פעם אחת (הקישורים הקיימים נשמרים כמו שהם).
+    $sql = (string)$pdo->query("SELECT sql FROM sqlite_master WHERE name = 'portal_links'")->fetchColumn();
+    if ($sql !== '' && !str_contains($sql, "'supplier'")) {
+        $pdo->exec('BEGIN');
+        $pdo->exec('ALTER TABLE portal_links RENAME TO portal_links_old');
+        $pdo->exec(str_replace(["('client','lawyer')", 'portal_links_old'], ["('client','lawyer','supplier')", 'portal_links'], $sql));
+        $pdo->exec('INSERT INTO portal_links SELECT * FROM portal_links_old');
+        $pdo->exec('DROP TABLE portal_links_old');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS portal_links_project ON portal_links (project_id, contact_id)');
+        $pdo->exec('COMMIT');
+    }
+    // דרישת תשלום שהספק ביקש בקישור (המנהל מאשר ושולח), וקובץ מצורף (חשבון / פירוט)
+    pm_add_column($pdo, 'payments', 'supplier_request', 'INTEGER NOT NULL DEFAULT 0');
+    pm_add_column($pdo, 'payments', 'file_id', 'INTEGER');
 
     if (!$pdo->query("SELECT 1 FROM settings WHERE key = 'trades_seeded'")->fetchColumn()) {
         $ins = $pdo->prepare('INSERT OR IGNORE INTO trades (name, sort) VALUES (?, ?)');
