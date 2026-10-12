@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=10">
+    <link rel="stylesheet" href="assets/css/app.css?v=11">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -31,6 +31,7 @@
                          (#/p/<id>/files/<folder> — תיקייה)
       #/contacts/<kind>  אנשי קשר: client · supplier · lawyer
       #/settings/<pane>  הגדרות מפתח: trades · templates · access
+      #/share[/<id>]     שמירת מה ששותף לאפליקציה ("שתף אל…") — פרויקט, ואז תיקייה
 -->
     <header class="top">
         <a class="icon-btn" id="back" href="#/" aria-label="חזרה לפרויקטים" hidden>→</a>
@@ -40,6 +41,7 @@
             <h1 id="title">ניהול פרויקטים</h1>
             <p class="sub" id="subtitle" hidden></p>
         </div>
+        <button class="icon-btn" id="install" type="button" aria-label="התקנת האפליקציה במכשיר" title="התקנה" hidden>📲</button>
         <button class="who" id="who" type="button" aria-label="החשבון שלי — שינוי סיסמה"></button>
         <button class="icon-btn" id="logout" aria-label="יציאה" title="יציאה">🚪</button>
     </header>
@@ -132,6 +134,20 @@
                     <button class="btn primary">שמירת הפרטים</button>
                 </form>
             </div>
+        </section>
+
+        <!-- ===== שיתוף לאפליקציה ===== -->
+        <section id="view-share" class="view" hidden>
+            <p class="error" id="share-error" role="alert" hidden></p>
+            <h2 class="sec-title" id="share-got" hidden></h2>
+            <ul id="share-items" class="list rows-list" hidden></ul>
+            <h2 class="sec-title" id="share-where" hidden></h2>
+            <div class="toolbar" hidden>
+                <input type="search" id="sq" placeholder="חיפוש פרויקט" aria-label="חיפוש פרויקט לשמירה" autocomplete="off" enterkeyhint="search">
+            </div>
+            <ul id="share-targets" class="list rows-list" aria-live="polite"></ul>
+            <div class="uploads" id="share-progress" aria-live="polite"></div>
+            <button class="btn ghost danger" id="share-cancel" type="button" hidden>ביטול השיתוף</button>
         </section>
 
         <!-- ===== אנשי קשר ===== -->
@@ -489,6 +505,11 @@
                 <p class="error" role="alert" hidden></p>
             </div>
         </form>
+        <div class="sheet-body install-box" id="install-box">
+            <h3 class="sec-title">התקנה במכשיר</h3>
+            <p class="hint" id="install-text"></p>
+            <button type="button" class="btn ghost" id="install-btn" hidden>📲 התקנת האפליקציה</button>
+        </div>
         <form method="dialog" id="password-form" class="sheet-body" novalidate>
             <h3 class="sec-title">שינוי סיסמה</h3>
                 <label class="f"><span>הסיסמה הנוכחית</span><input name="current" type="password" autocomplete="current-password" dir="ltr" required></label>
@@ -501,11 +522,13 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=10"></script>
-    <script src="assets/js/contacts.js?v=10"></script>
-    <script src="assets/js/files.js?v=10"></script>
-    <script src="assets/js/projects.js?v=10"></script>
-    <script src="assets/js/settings.js?v=10"></script>
-    <script src="assets/js/app.js?v=10"></script>
+    <script src="assets/js/core.js?v=11"></script>
+    <script src="assets/js/contacts.js?v=11"></script>
+    <script src="assets/js/files.js?v=11"></script>
+    <script src="assets/js/share-store.js?v=1"></script>
+    <script src="assets/js/share.js?v=11"></script>
+    <script src="assets/js/projects.js?v=11"></script>
+    <script src="assets/js/settings.js?v=11"></script>
+    <script src="assets/js/app.js?v=11"></script>
 </body>
 </html>

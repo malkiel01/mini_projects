@@ -320,6 +320,20 @@ body[data-view="project"] main { padding-bottom: 0; }
 #max-upload-form { align-items: flex-end; margin-bottom: var(--s3); }
 #max-upload-form .f { flex: 1; }
 
+/* ---- שיתוף לאפליקציה ---- */
+
+#share-targets .card { padding-inline-start: calc(var(--s3) + var(--d, 0) * 20px); }
+.card.static { cursor: default; }
+.card.static:hover { background: none; }
+.card.quick { background: var(--brand-soft); }
+.card .l2.err { color: var(--danger); }
+.btn.sm { min-height: 36px; padding: 0 var(--s2); font-size: .85rem; flex: none; }
+#view-share.busy #share-targets, #view-share.busy #share-items { opacity: .5; pointer-events: none; }
+#share-cancel { margin-top: var(--s3); }
+#share-error { margin-bottom: var(--s2); }
+#password-dlg .install-box { border-top: 1px solid var(--line); }
+#password-dlg .install-box .btn { justify-self: start; }
+
 /* ---- מנהלים ---- */
 
 .notice { display: grid; gap: var(--s2); padding: var(--s3); margin-bottom: var(--s2); border-radius: var(--r);
