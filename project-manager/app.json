@@ -10,9 +10,10 @@
   "public": [
     "index.html",
     "login.html",
+    "api.php",
     "manifest.webmanifest",
     "sw.js",
     "assets/**"
   ],
-  "version": "0.5"
+  "version": "0.6"
 }

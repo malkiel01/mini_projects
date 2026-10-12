@@ -27,6 +27,7 @@ const Settings = (() => {
             });
             e.target.checked = !!state.standalone;
         });
+        $('#users-list').addEventListener('click', userAction);
         $('#add-template').addEventListener('click', () => openTemplate(null));
         $('#template-list').addEventListener('click', e => {
             const row = e.target.closest('[data-template]');
@@ -124,18 +125,43 @@ const Settings = (() => {
 
     // ---- מנהלים ----
 
+    const USER_STATUS = { pending: 'ממתין לאישור', active: 'פעיל', blocked: 'חסום' };
+
     async function loadAccess() {
-        await busy(null, null, async () => {
-            const { pending, managers } = await api('access');
-            const day = iso => iso ? new Date(iso).toLocaleDateString('he-IL') : '';
-            $('#pending-list').innerHTML = pending.length ? pending.map(u => `<li>
-                <span class="n">${esc(u.display_name)} <small dir="ltr">${esc(u.username)}</small></span>
-                <small>נרשם ${day(u.created_at)}</small></li>`).join('')
-                : '<li><span class="n hint">אין בקשות ממתינות</span></li>';
-            $('#managers-list').innerHTML = managers.length ? managers.map(u => `<li>
-                <span class="n">${esc(u.display_name)} <small dir="ltr">${esc(u.username)}</small></span>
-                <small>${u.status === 'active' ? (u.last_login_at ? 'נכנס ' + day(u.last_login_at) : 'לא נכנס עדיין') : 'חסום'}</small></li>`).join('')
-                : '<li><span class="n hint">עוד אין מנהלי פרויקט</span></li>';
+        await busy(null, null, async () => renderUsers((await api('users')).users));
+    }
+
+    function renderUsers(users) {
+        const day = iso => iso ? new Date(iso).toLocaleDateString('he-IL') : '';
+        $('#users-list').innerHTML = users.map(u => {
+            const acts = u.role === 'developer' ? '<span class="chip">מפתח</span>' : {
+                pending: `<button class="btn primary" data-do="approve" data-id="${u.id}">אישור</button>
+                          <button class="icon-btn" data-do="reject" data-id="${u.id}" aria-label="דחיית ${esc(u.display_name)}">✕</button>`,
+                active:  `<button class="btn ghost danger" data-do="block" data-id="${u.id}">חסימה</button>`,
+                blocked: `<button class="btn ghost" data-do="unblock" data-id="${u.id}">שחרור</button>`,
+            }[u.status];
+            const meta = [
+                `<span dir="ltr">${esc(u.username)}</span>`,
+                u.phone ? `<span dir="ltr">${esc(u.phone)}</span>` : '',
+                u.status === 'pending' ? 'נרשם ' + day(u.created_at) : u.last_login_at ? 'נכנס ' + day(u.last_login_at) : 'לא נכנס עדיין',
+                u.projects ? u.projects + ' פרויקטים' : '',
+            ].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>');
+            return `<li class="card user-row st-${u.status}">
+                ${avatar(u.display_name)}
+                <div class="body"><div class="l1">${esc(u.display_name)}${u.role !== 'developer' ? `<span class="chip">${USER_STATUS[u.status]}</span>` : ''}</div>
+                <div class="l2">${meta}</div></div>
+                <div class="acts">${acts}</div></li>`;
+        }).join('');
+    }
+
+    async function userAction(e) {
+        const b = e.target.closest('button[data-do]');
+        if (!b) return;
+        const confirmText = { reject: 'לדחות את הבקשה ולמחוק אותה?', block: 'לחסום? המנהל יתנתק מיד, והפרויקטים שלו יישמרו.' }[b.dataset.do];
+        if (confirmText && !confirm(confirmText)) return;
+        await busy(b, null, async () => {
+            renderUsers((await api('user', { body: { id: Number(b.dataset.id), do: b.dataset.do } })).users);
+            toast({ approve: 'אושר — יכול להיכנס', reject: 'הבקשה נדחתה', block: 'נחסם', unblock: 'שוחרר' }[b.dataset.do]);
         });
     }
 

@@ -3,16 +3,17 @@
  * ה-API של ממשק המנהלים.
  *
  * GET לקריאה, POST עם JSON לשינוי. ה-action ב-query (?action=…).
- * הזהות מהפלטפורמה (lib/identity.php); כל POST דורש X-CSRF — אותו אסימון של
- * ההתחברות לפלטפורמה, שמגיע לדפדפן מ-action=me.
+ * משתמשים וכניסה — של האפליקציה עצמה (lib/auth.php). api.php ציבורי בשער של
+ * הפלטפורמה, ולכן כל ההגנה כאן: בלי משתמש פעיל — 401; כל POST דורש X-CSRF.
+ * חריגים, לפני כניסה: auth (מצב), login, register, setup, logout.
  *
  * הפורטל (לקוח, עו"ד, ספק) יקבל API נפרד ב-portal/api.php — שלב 4.
  */
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/lib/identity.php';
 require_once __DIR__ . '/lib/projects.php';
+require_once __DIR__ . '/lib/auth.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -36,8 +37,19 @@ $action = (string)($_GET['action'] ?? '');
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 try {
+    // לפני כניסה
+    $pre = match ("$method $action") {
+        'GET auth'      => fn() => pm_auth_state(),
+        'POST login'    => fn() => pm_login(pm_body()),
+        'POST register' => fn() => pm_register(pm_body()),
+        'POST setup'    => fn() => pm_setup(pm_body()),
+        'POST logout'   => fn() => pm_logout(pm_session_user()),
+        default         => null,
+    };
+    if ($pre) pm_reply(200, $pre());
+
     $user = pm_current_user();
-    if (!$user) pm_reply(401, ['error' => 'נדרשת כניסה לפלטפורמה עם הרשאה לאפליקציה']);
+    if (!$user) pm_reply(401, ['error' => 'נדרשת כניסה']);
 
     if ($method === 'POST' && !hash_equals($user['csrf'], (string)($_SERVER['HTTP_X_CSRF'] ?? ''))) {
         pm_reply(403, ['error' => 'פג תוקף הדף — רענן ונסה שוב']);
@@ -47,12 +59,6 @@ try {
 
     $result = match ("$method $action") {
         'GET me' => (function () use ($user) {
-            $now = pm_now();
-            pm_db()->prepare(
-                'INSERT INTO managers (platform_user_id, display_name, created_at, last_seen_at) VALUES (?,?,?,?)
-                 ON CONFLICT(platform_user_id) DO UPDATE SET display_name = excluded.display_name,
-                    last_seen_at = excluded.last_seen_at'
-            )->execute([$user['id'], $user['display_name'], $now, $now]);
             return ['user' => $user, 'trades' => pm_trades(), 'templates' => pm_templates(),
                     // מצב עצמאי: בלי חזרה לדף האפליקציות. כבוי כל עוד האפליקציה בתוך האינדקס.
                     'standalone' => pm_setting('standalone', '0') === '1',
@@ -84,7 +90,9 @@ try {
             pm_audit("user:{$user['id']}", 'setting.standalone', 'setting', null, ['on' => !empty($in['on'])]);
             return ['standalone' => !empty($in['on'])];
         })() : throw new PmError('רק המפתח', 403),
-        'GET access'      => $isDev ? pm_access_overview() : throw new PmError('רק המפתח', 403),
+        'POST password'   => pm_change_password($user, $in),
+        'GET users'       => $isDev ? ['users' => pm_users_list()] : throw new PmError('רק המפתח', 403),
+        'POST user'       => $isDev ? ['users' => pm_user_action($user, (int)($in['id'] ?? 0), (string)($in['do'] ?? ''))] : throw new PmError('רק המפתח', 403),
         'POST trade'      => $isDev ? ['trades' => pm_trade_save($user, $in)] : throw new PmError('רק המפתח עורך תחומים', 403),
         'POST trade-delete' => $isDev ? ['trades' => pm_trade_delete($user, (int)($in['id'] ?? 0))] : throw new PmError('רק המפתח עורך תחומים', 403),
 

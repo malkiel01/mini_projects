@@ -80,7 +80,7 @@ function pm_projects_list(array $user, string $q, string $filter): array
                         AND s.status NOT IN ('done','paid') ORDER BY s.sort, s.id LIMIT 1) AS current_stage
               FROM projects p
               LEFT JOIN contacts c ON c.id = p.client_id
-              LEFT JOIN managers m ON m.platform_user_id = p.owner_id
+              LEFT JOIN users m ON m.id = p.owner_id
              WHERE $where";
     $sql .= match ($filter) {
         'done'     => " AND p.status = 'done'",
