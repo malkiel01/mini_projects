@@ -2,8 +2,8 @@
 /**
  * כרטיסים: לקוחות, ספקים ועורכי דין.
  *
- * כל כרטיס שייך למנהל שיצר אותו (owner_id). מנהל רואה ועורך רק את שלו; המפתח
- * רואה ועורך הכול. אין מאגר משותף (הוכרע 2026-10-12).
+ * כל כרטיס שייך למנהל שיצר אותו (owner_id). כל מנהל — גם המפתח — רואה ועורך רק
+ * את שלו. אין מאגר משותף (הוכרע 2026-10-12).
  */
 
 declare(strict_types=1);
@@ -30,10 +30,14 @@ function pm_phone(array $in, string $key, string $label): string
     return $v;
 }
 
-/** תנאי ה-SQL שמגביל לכרטיסים שהמשתמש רשאי לראות. */
+/**
+ * תנאי ה-SQL שמגביל לכרטיסים ולפרויקטים שהמשתמש רשאי לראות: **רק שלו**. גם
+ * המפתח — כמנהל פרויקטים הוא רואה רק את שלו; ניהול החשבונות (הגדרות ← מנהלים)
+ * הוא משהו אחר, ולא חושף אנשי קשר או פרויקטים של אחרים.
+ */
 function pm_owner_clause(array $user, string $alias = 'c'): array
 {
-    return $user['role'] === 'developer' ? ['1 = 1', []] : ["$alias.owner_id = ?", [$user['id']]];
+    return ["$alias.owner_id = ?", [$user['id']]];
 }
 
 /** כרטיס שהמשתמש רשאי לראות — או חריגה 404. */
@@ -215,6 +219,51 @@ function pm_contact_save(array $user, array $in): array
         throw $e;
     }
     return pm_contact_get($user, $id);
+}
+
+/**
+ * ייבוא מאנשי הקשר במכשיר (או מקובץ vCard): כמה כרטיסים מאותו סוג בבת אחת.
+ * מי שכבר קיים אצל המשתמש (אותו טלפון או אימייל) — מדולג.
+ */
+function pm_contacts_import(array $user, array $in): array
+{
+    $kind = (string)($in['kind'] ?? '');
+    if (!in_array($kind, PM_KINDS, true)) throw new PmError('סוג כרטיס לא מוכר', 422);
+    $items = is_array($in['contacts'] ?? null) ? array_slice($in['contacts'], 0, 500) : [];
+    if (!$items) throw new PmError('לא נבחרו אנשי קשר', 422);
+    $trades = is_array($in['trades'] ?? null) ? $in['trades'] : [];
+
+    $st = pm_db()->prepare('SELECT phone, whatsapp, email FROM contacts WHERE owner_id = ?');
+    $st->execute([$user['id']]);
+    $phones = $emails = [];
+    $norm = fn($p) => ($d = preg_replace('/\D/', '', (string)$p)) === '' ? '' : (str_starts_with($d, '972') ? '0' . substr($d, 3) : $d);
+    foreach ($st->fetchAll() as $r) {
+        foreach ([$r['phone'], $r['whatsapp']] as $p) if ($n = $norm($p)) $phones[$n] = true;
+        if ($r['email'] !== '') $emails[mb_strtolower($r['email'])] = true;
+    }
+
+    $created = $skipped = 0;
+    $errors = [];
+    foreach ($items as $c) {
+        if (!is_array($c)) continue;
+        $phone = trim(preg_replace('/[^0-9+ \-]/', '', (string)($c['phone'] ?? '')));
+        $email = trim((string)($c['email'] ?? ''));
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) $email = '';
+        $name = trim((string)($c['name'] ?? '')) ?: $phone ?: $email;
+        if (($phone !== '' && isset($phones[$norm($phone)])) || ($email !== '' && isset($emails[mb_strtolower($email)]))) { $skipped++; continue; }
+        try {
+            pm_contact_save($user, ['kind' => $kind, 'name' => mb_substr($name, 0, 100), 'phone' => $phone, 'email' => $email,
+                'company' => mb_substr(trim((string)($c['company'] ?? '')), 0, 100), 'address' => mb_substr(trim((string)($c['address'] ?? '')), 0, 200),
+                'trades' => $kind === 'supplier' ? $trades : []]);
+            $created++;
+            if ($phone !== '') $phones[$norm($phone)] = true;
+            if ($email !== '') $emails[mb_strtolower($email)] = true;
+        } catch (PmError $e) {
+            $errors[] = "$name: " . $e->getMessage();
+        }
+    }
+    pm_log('info', 'data', 'contacts.import', ['user' => $user, 'data' => ['kind' => $kind, 'created' => $created, 'skipped' => $skipped, 'errors' => count($errors)]]);
+    return ['created' => $created, 'skipped' => $skipped, 'errors' => array_slice($errors, 0, 20)];
 }
 
 function pm_validate_client_settings(int $ownerId, $raw): array

@@ -6,7 +6,7 @@
  * last_activity_at ואת last_event — מה שממיין את מסך הבית ומוצג מתחת לשם.
  *
  * בעלות: פרויקט שייך למנהל שיצר אותו, וכל איש קשר שמשויך אליו (לקוח, עו"ד,
- * ספק) חייב להיות של אותו מנהל. המפתח רואה ועורך הכול.
+ * ספק) חייב להיות של אותו מנהל. כל מנהל — גם המפתח — רואה רק את שלו.
  */
 
 declare(strict_types=1);
@@ -221,6 +221,7 @@ function pm_project_save(array $user, array $in): array
                ->execute(array_merge([$ownerId], array_values($f), [$now, $now, $now]));
             $id = (int)$db->lastInsertId();
             $count = pm_apply_template($id, (int)($in['template_id'] ?? 0));
+            if ($count && pm_project_survey_first($user, $id)) $count++;
             pm_event($user, $id, 'created', 'הפרויקט נפתח' . ($count ? " עם $count שלבים" : ''));
         }
         $db->commit();
@@ -318,12 +319,13 @@ function pm_stage_save(array $user, array $in): array
                ->execute(array_merge([$projectId, $sort], array_values($f), [$doneAt, $now, $now]));
             pm_event($user, $projectId, 'stage_added', "נוסף שלב: {$f['name']}", ['stage' => (int)$db->lastInsertId()]);
         }
+        $surveyAdded = pm_project_survey_first($user, $projectId);
         $db->commit();
     } catch (Throwable $e) {
         $db->rollBack();
         throw $e;
     }
-    return pm_project_get($user, $projectId);
+    return pm_project_get($user, $projectId) + ($surveyAdded ? ['notice' => 'מודד מוסמך תמיד לפני אדריכלות — שלב המדידה סודר לפני האדריכלות'] : []);
 }
 
 function pm_contact_name(int $id): string
@@ -340,6 +342,14 @@ function pm_stage_delete(array $user, int $id): array
     $q = pm_db()->prepare('SELECT COUNT(*) FROM quotes WHERE stage_id = ?');
     $q->execute([$id]);
     if ($q->fetchColumn()) throw new PmError('יש בשלב הצעות מחיר — אי אפשר למחוק אותו. אפשר לשנות לו שם או סדר', 422);
+    $survey = pm_trade_id(PM_TRADE_SURVEYOR);
+    if ($survey && (int)$s['trade_id'] === $survey) {
+        $o = pm_db()->prepare('SELECT COUNT(*) FROM stages WHERE project_id = ? AND id != ? AND trade_id = ?');
+        $o->execute([$s['project_id'], $id, $survey]);
+        $a = pm_db()->prepare('SELECT COUNT(*) FROM stages WHERE project_id = ? AND trade_id = ?');
+        $a->execute([$s['project_id'], pm_trade_id(PM_TRADE_ARCHITECT)]);
+        if (!$o->fetchColumn() && $a->fetchColumn()) throw new PmError('יש בפרויקט אדריכלות — ולפניה תמיד מדידה של מודד מוסמך. אי אפשר למחוק את שלב המדידה', 422);
+    }
     pm_db()->prepare('DELETE FROM stages WHERE id = ?')->execute([$id]);
     pm_event($user, (int)$s['project_id'], 'stage_removed', "הוסר שלב: {$s['name']}", ['stage' => $id]);
     return pm_project_get($user, (int)$s['project_id']);
@@ -357,6 +367,17 @@ function pm_stages_order(array $user, int $projectId, array $ids): array
     $check = $ids;
     sort($check);
     if ($check !== $mine) throw new PmError('רשימת השלבים לא תואמת', 422);
+    // מדידה לפני אדריכלות — לא מאפשרים להזיז את האדריכלות מעל המדידה
+    $trade = pm_db()->prepare('SELECT id, trade_id FROM stages WHERE project_id = ?');
+    $trade->execute([$projectId]);
+    $tradeOf = array_column($trade->fetchAll(), 'trade_id', 'id');
+    $survey = pm_trade_id(PM_TRADE_SURVEYOR);
+    $arch = pm_trade_id(PM_TRADE_ARCHITECT);
+    foreach ($ids as $sid) {
+        $t = (int)($tradeOf[$sid] ?? 0);
+        if ($t === $survey) break;
+        if ($t === $arch && in_array($survey, array_map('intval', $tradeOf), true)) throw new PmError('מדידה (מודד מוסמך) תמיד לפני אדריכלות', 422);
+    }
     $up = pm_db()->prepare('UPDATE stages SET sort = ? WHERE id = ?');
     foreach ($ids as $i => $sid) $up->execute([($i + 1) * 10, $sid]);
     pm_db()->prepare('UPDATE projects SET last_activity_at = ? WHERE id = ?')->execute([pm_now(), $projectId]);
@@ -395,6 +416,89 @@ function pm_member(array $user, int $projectId, int $contactId, bool $add, strin
     return pm_project_get($user, $projectId);
 }
 
+// ---- מודד מוסמך לפני אדריכלות ----
+
+/**
+ * רשימת שלבים [['name' => …, 'trade' => שם תחום], …] — ואם יש שלב אדריכלות בלי
+ * שלב מדידה לפניו, נוסף אחד מיד לפניו.
+ */
+function pm_survey_first(array $stages): array
+{
+    foreach ($stages as $i => $s) {
+        if (($s['trade'] ?? '') === PM_TRADE_SURVEYOR) return $stages;      // יש מדידה לפני
+        if (($s['trade'] ?? '') === PM_TRADE_ARCHITECT) {
+            array_splice($stages, $i, 0, [['name' => PM_SURVEY_STAGE, 'trade' => PM_TRADE_SURVEYOR]]);
+            return $stages;
+        }
+    }
+    return $stages;
+}
+
+function pm_trade_id(string $name): ?int
+{
+    $st = pm_db()->prepare('SELECT id FROM trades WHERE name = ?');
+    $st->execute([$name]);
+    $id = $st->fetchColumn();
+    return $id === false ? null : (int)$id;
+}
+
+/**
+ * הכלל בפרויקט: אם יש שלב אדריכלות שעוד לא התחיל, ואין שלב מדידה לפניו — נוסף
+ * שלב מדידה מיד לפניו. מחזיר true אם נוסף.
+ */
+function pm_project_survey_first(array $user, int $projectId): bool
+{
+    $survey = pm_trade_id(PM_TRADE_SURVEYOR);
+    $arch = pm_trade_id(PM_TRADE_ARCHITECT);
+    if (!$survey || !$arch) return false;
+    $st = pm_db()->prepare('SELECT id, sort, trade_id, status FROM stages WHERE project_id = ? ORDER BY sort, id');
+    $st->execute([$projectId]);
+    $rows = $st->fetchAll();
+    foreach ($rows as $i => $r) {
+        if ((int)$r['trade_id'] === $survey) return false;
+        if ((int)$r['trade_id'] !== $arch) continue;
+        if (!in_array($r['status'], ['planned', 'quotes'], true)) return false; // האדריכלות כבר בדרך — לא משנים בדיעבד
+        $db = pm_db();
+        $db->prepare('UPDATE stages SET sort = sort + 10 WHERE project_id = ? AND (sort > ? OR (sort = ? AND id >= ?))')
+           ->execute([$projectId, $r['sort'], $r['sort'], $r['id']]);
+        $now = pm_now();
+        // שלב מדידה שכבר קיים אחרי האדריכלות — עובר לפניה; אחרת נוצר חדש
+        $later = null;
+        foreach (array_slice($rows, $i + 1) as $x) if ((int)$x['trade_id'] === $survey) { $later = $x; break; }
+        if ($later) {
+            $db->prepare('UPDATE stages SET sort = ?, updated_at = ? WHERE id = ?')->execute([(int)$r['sort'], $now, $later['id']]);
+            pm_event($user, $projectId, 'stage_moved', 'שלב המדידה הוזז לפני האדריכלות — מודד מוסמך תמיד לפני אדריכלות', ['stage' => (int)$later['id']]);
+            return true;
+        }
+        $db->prepare('INSERT INTO stages (project_id, sort, name, trade_id, created_at, updated_at) VALUES (?,?,?,?,?,?)')
+           ->execute([$projectId, (int)$r['sort'], PM_SURVEY_STAGE, $survey, $now, $now]);
+        pm_event($user, $projectId, 'stage_added', 'נוסף שלב: ' . PM_SURVEY_STAGE . ' (מודד מוסמך — תמיד לפני אדריכלות)',
+            ['stage' => (int)$db->lastInsertId()]);
+        return true;
+    }
+    return false;
+}
+
+/** פעם אחת בשרת: התבניות והפרויקטים הקיימים מקבלים את הכלל. */
+function pm_survey_migrate(): void
+{
+    if (pm_setting('survey_rule') === '1') return;
+    $db = pm_db();
+    foreach ($db->query('SELECT id, stages_json FROM stage_templates')->fetchAll() as $t) {
+        $stages = json_decode($t['stages_json'], true) ?: [];
+        $fixed = pm_survey_first($stages);
+        if ($fixed !== $stages) {
+            $db->prepare('UPDATE stage_templates SET stages_json = ? WHERE id = ?')->execute([json_encode($fixed, JSON_UNESCAPED_UNICODE), $t['id']]);
+        }
+    }
+    $system = ['id' => 0, 'display_name' => 'מערכת'];
+    foreach ($db->query("SELECT id FROM projects WHERE status IN ('active','paused')")->fetchAll(PDO::FETCH_COLUMN) as $pid) {
+        pm_project_survey_first($system, (int)$pid);
+    }
+    pm_setting_set('survey_rule', '1');
+    pm_log('info', 'data', 'migrate.survey_rule');
+}
+
 // ---- תבניות שלבים (המפתח עורך) ----
 
 function pm_templates(): array
@@ -415,6 +519,7 @@ function pm_template_save(array $user, array $in): array
         $stages[] = ['name' => $n, 'trade' => mb_substr(trim((string)($s['trade'] ?? '')), 0, 40)];
     }
     if (!$stages) throw new PmError('תבנית צריכה לפחות שלב אחד', 422);
+    $stages = pm_survey_first($stages);
     if (count($stages) > 60) throw new PmError('עד 60 שלבים בתבנית', 422);
     $json = json_encode($stages, JSON_UNESCAPED_UNICODE);
     $db = pm_db();
