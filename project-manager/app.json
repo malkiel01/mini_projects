@@ -11,9 +11,10 @@
     "index.html",
     "login.html",
     "api.php",
+    "log.php",
     "manifest.webmanifest",
     "sw.js",
     "assets/**"
   ],
-  "version": "0.6"
+  "version": "0.7"
 }

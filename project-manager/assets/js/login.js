@@ -4,6 +4,21 @@
 // אחר כך: כניסה, או הרשמה כמנהל פרויקט — שממתינה לאישור המפתח.
 'use strict';
 
+// ---- שגיאות בדפדפן נשלחות ליומן (הגדרות ← יומן) ----
+(() => {
+    let sent = 0;
+    const report = (kind, message, extra = {}) => {
+        if (++sent > 10) return; // לא מציפים: עד 10 לטעינת דף
+        fetch('api.php?action=client-error', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-PM': '1' },
+            body: JSON.stringify({ kind, message: String(message).slice(0, 1000), page: location.pathname + location.hash, ...extra }),
+        }).catch(() => {});
+    };
+    addEventListener('error', e => report('error', e.message, { source: e.filename, line: e.lineno, col: e.colno, stack: e.error?.stack?.slice(0, 2000) }));
+    addEventListener('unhandledrejection', e => report('promise', e.reason?.message || e.reason, { stack: e.reason?.stack?.slice(0, 2000) }));
+})();
+
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 let csrf = null, setup = false;
@@ -71,6 +86,7 @@ async function route() {
         showWaiting('האפליקציה עוד לא הוקמה', 'את חשבון המפתח מקים מנהל הפלטפורמה: להיכנס לדף האפליקציות כמנהל, ואז לחזור לכאן.', true);
         return;
     }
+    $('#forgot').hidden = !data.can_reset_dev;
     if (!user) { showForm(); return; }
     if (user.status === 'active') { location.replace('./'); return; }
     if (user.status === 'pending') {
@@ -110,6 +126,22 @@ async function logout() {
     csrf = null;
     await route();
 }
+
+$('#forgot').addEventListener('click', () => {
+    $('#auth-form').hidden = true;
+    $('.auth-tabs').hidden = true;
+    $('#reset-form').hidden = false;
+    $('#reset-form [name=password]').focus();
+});
+$('#reset-cancel').addEventListener('click', () => { $('#reset-form').hidden = true; showForm(); });
+$('#reset-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const err = $('#reset-form .error');
+    const r = await call('reset-dev', { password: e.target.elements.password.value }).catch(() => ({ status: 0, data: {} }));
+    if (r.status !== 200) { err.textContent = r.data.error || 'אין חיבור לשרת'; err.hidden = false; return; }
+    alert(`הסיסמה עודכנה. שם המשתמש של המפתח: ${r.data.username}`);
+    location.replace('./');
+});
 
 $$('[name=mode]').forEach(r => r.addEventListener('change', setMode));
 $('#auth-form').addEventListener('submit', submit);

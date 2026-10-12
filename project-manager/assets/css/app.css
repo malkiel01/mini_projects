@@ -268,6 +268,29 @@ body[data-view="project"] main { padding-bottom: 0; }
 .switch input { width: 20px; min-height: 20px; flex: none; accent-color: var(--brand); }
 #stage-dlg .row-btns .btn { flex: 1 1 0; min-width: 0; }
 
+/* ---- יומן ---- */
+
+.log-stats { display: flex; gap: var(--s2); flex-wrap: wrap; margin-bottom: var(--s2); font-size: .85rem; color: var(--muted); }
+.log-stats b { color: var(--ink); }
+.log-stats .e b { color: var(--danger); }
+.log-list { list-style: none; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.log-list li { border-top: 1px solid var(--line); }
+.log-list li:first-child { border-top: 0; }
+.log-list summary {
+    display: flex; gap: var(--s2); align-items: center; padding: 6px var(--s3); cursor: pointer; list-style: none; font-size: .85rem; min-height: 40px;
+}
+.log-list summary::-webkit-details-marker { display: none; }
+.log-list .lv { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+.log-list .lv.warn { background: #d69e2e; }
+.log-list .lv.error { background: var(--danger); }
+.log-list .ev { flex: none; font-weight: 600; direction: ltr; }
+.log-list .msg { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+.log-list time { flex: none; font-size: .75rem; color: var(--muted); }
+.log-list pre { margin: 0 var(--s3) var(--s2); padding: var(--s2); background: var(--bg); border-radius: 8px; font-size: .75rem; overflow-x: auto; direction: ltr; text-align: left; white-space: pre-wrap; word-break: break-all; }
+.token-box { display: grid; gap: var(--s2); padding: var(--s3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); margin-bottom: var(--s3); }
+.token-box code { direction: ltr; text-align: left; font-size: .75rem; word-break: break-all; background: var(--bg); padding: var(--s2); border-radius: 8px; }
+.token-box .row-btns { flex-wrap: wrap; }
+
 /* ---- מנהלים ---- */
 
 .user-row .acts { gap: var(--s1); align-items: center; }
@@ -283,6 +306,7 @@ body.auth { display: grid; place-items: start center; padding: max(8vh, var(--s4
 .auth-head { display: flex; align-items: center; gap: var(--s2); justify-content: center; }
 .auth-head h1 { font-size: 1.2rem; white-space: nowrap; }
 .auth-box form { display: grid; gap: var(--s2); }
+.auth-box #forgot, .auth-box #reset-cancel { margin-top: 0; }
 .auth-box .btn { width: 100%; margin-top: var(--s1); }
 .waiting { text-align: center; display: grid; gap: var(--s2); }
 .waiting .big { font-size: 2rem; }
