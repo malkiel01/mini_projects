@@ -191,7 +191,6 @@ function pm_valid_name($n): string
     return $n;
 }
 
-/** בקשות שקודמות לאסימון CSRF: רק JSON עם X-PM (README, "אבטחה"). */
 /** שפה שנשלחה מהדפדפן (כניסה / הרשמה) — קוד מ-PM_LANGS, או '' כשלא נבחרה. */
 function pm_in_lang(array $in): string
 {
@@ -199,6 +198,7 @@ function pm_in_lang(array $in): string
     return isset(PM_LANGS[$l]) ? $l : '';
 }
 
+/** בקשות שקודמות לאסימון CSRF: רק JSON עם X-PM (README, "אבטחה"). */
 function pm_require_app_header(): void
 {
     if (($_SERVER['HTTP_X_PM'] ?? '') !== '1' || !str_starts_with($_SERVER['CONTENT_TYPE'] ?? '', 'application/json')) {
