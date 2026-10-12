@@ -50,3 +50,4 @@ foreach (['error_log', 'admin/error_log'] as $f) {
         foreach (array_slice($lines, -30) as $l) echo "  " . rtrim($l) . "\n";
     }
 }
+// בדיקה 2026-10-12T19:53:29
