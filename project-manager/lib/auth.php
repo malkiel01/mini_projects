@@ -15,10 +15,10 @@
  * תפקידים: developer (המפתח) · manager (מנהל פרויקט).
  * מצבים:   pending (נרשם, ממתין) · active · blocked.
  *
- * **קוד השחזור** — הסוד היחיד שמחוץ לאפליקציה: סוד GitHub בשם PM_RECOVERY_CODE,
- * שהפריסה כותבת ל-lib/recovery-code.php כ-hash בלבד. הוא מאפשר שני דברים:
- *   1. להקים את המפתח הראשון, כשאין אף משתמש.
- *   2. לקבוע סיסמה חדשה למפתח, אם שכח אותה (ואין לו אימייל, או שהאימייל לא מגיע).
+ * **קוד ההקמה** — כמו PLATFORM_SETUP_CODE של דף הכלים: סוד GitHub בשם
+ * PM_RECOVERY_CODE, שהפריסה כותבת ל-lib/recovery-code.php כ-hash בלבד. משמש **רק**
+ * להקמת המפתח הראשון, כשאין אף משתמש. אחרי ההקמה — אין לו שום שימוש, ואין במסך
+ * הכניסה שום אפשרות "אני המפתח" (הוסרה 2026-10-12: אין סיבה להציג אותה לכל מי שנכנס).
  *
  * **איפוס סיסמה בקישור** — קישור חד-פעמי (login.html#reset=…):
  *   - המפתח שולח למנהל: באימייל, ובכל מקרה גם מוצג לו להעתקה / וואטסאפ. תקף 24 שעות.
@@ -32,7 +32,7 @@ require_once __DIR__ . '/mail.php';
 
 const PM_COOKIE = 'pm_session';
 const PM_SESSION_DAYS = 30;
-const PM_MAX_FAILURES = 5;      // לשם משתמש (וגם לקוד השחזור)
+const PM_MAX_FAILURES = 5;      // לשם משתמש (וגם לקוד ההקמה)
 const PM_MAX_REQUESTS = 20;     // הרשמות / בקשות איפוס מאותה רשת, לפני השהייה
 const PM_LOCK_MINUTES = 15;
 const PM_MIN_PASSWORD = 8;
@@ -218,7 +218,7 @@ function pm_user_row(int $id): array
     return $u;
 }
 
-// ---- קוד שחזור ----
+// ---- קוד ההקמה (כמו PLATFORM_SETUP_CODE) ----
 
 /** ה-hash של PM_RECOVERY_CODE, שהפריסה כותבת — או null אם הסוד לא הוגדר. */
 function pm_recovery_hash(): ?string
@@ -229,7 +229,7 @@ function pm_recovery_hash(): ?string
     return is_string($h) && $h !== '' ? $h : null;
 }
 
-/** בדיקת קוד השחזור, עם נעילה כמו בכניסה. */
+/** בדיקת קוד ההקמה, עם נעילה כמו בכניסה. */
 function pm_check_recovery(string $code, string $purpose): void
 {
     $keys = ['recovery'];
@@ -241,12 +241,12 @@ function pm_check_recovery(string $code, string $purpose): void
     $hash = pm_recovery_hash();
     if (!$hash) {
         pm_log('error', 'auth', "$purpose.no_code", ['message' => 'הסוד PM_RECOVERY_CODE לא הוגדר ב-GitHub']);
-        throw new PmError('קוד השחזור עוד לא הוגדר. יש להוסיף ב-GitHub את הסוד PM_RECOVERY_CODE ולפרוס.', 409);
+        throw new PmError('קוד ההקמה עוד לא הוגדר. יש להוסיף ב-GitHub את הסוד PM_RECOVERY_CODE ולפרוס.', 409);
     }
     if (!password_verify($code, $hash)) {
         $locked = pm_record_failure($keys);
         pm_log('warn', 'auth', "$purpose.bad_code", ['data' => ['failures' => pm_failures('recovery'), 'locked_now' => $locked]]);
-        throw new PmError('קוד השחזור שגוי', 403);
+        throw new PmError('קוד ההקמה שגוי', 403);
     }
     pm_clear_failures(['recovery']);
 }
@@ -347,7 +347,7 @@ function pm_register(array $in): array
     return ['ok' => true];
 }
 
-/** המפתח הראשון — כשאין אף משתמש, עם קוד השחזור. אחרי שנוצר, המסך נסגר לתמיד. */
+/** המפתח הראשון — כשאין אף משתמש, עם קוד ההקמה. אחרי שנוצר, המסך נסגר לתמיד. */
 function pm_setup(array $in): array
 {
     pm_require_app_header();
@@ -363,23 +363,6 @@ function pm_setup(array $in): array
     pm_log('info', 'auth', 'setup', ['username' => $username, 'user' => ['id' => PM_FIRST_USER_ID, 'username' => $username], 'message' => 'המפתח הוקם']);
     pm_start_session(PM_FIRST_USER_ID);
     return ['ok' => true];
-}
-
-/** "שכחתי את סיסמת המפתח" — קוד השחזור, סיסמה חדשה, וכל הנעילות משתחררות. */
-function pm_recover_developer(array $in): array
-{
-    pm_require_app_header();
-    pm_check_recovery((string)($in['code'] ?? ''), 'recover_dev');
-    $password = pm_valid_password($in['password'] ?? null);
-    $dev = pm_db()->query("SELECT id, username FROM users WHERE role = 'developer' ORDER BY id LIMIT 1")->fetch();
-    if (!$dev) throw new PmError('המפתח עוד לא הוקם', 409);
-    pm_db()->prepare("UPDATE users SET password_hash = ?, status = 'active' WHERE id = ?")->execute([password_hash($password, PASSWORD_DEFAULT), $dev['id']]);
-    pm_db()->prepare('DELETE FROM sessions WHERE user_id = ?')->execute([$dev['id']]);
-    pm_db()->exec('DELETE FROM login_attempts');
-    pm_log('info', 'auth', 'recover_dev', ['username' => $dev['username'], 'user' => ['id' => (int)$dev['id'], 'username' => $dev['username']],
-        'message' => 'סיסמת המפתח נקבעה מחדש בקוד השחזור; נעילות שוחררו']);
-    pm_start_session((int)$dev['id']);
-    return ['ok' => true, 'username' => $dev['username']];
 }
 
 /**

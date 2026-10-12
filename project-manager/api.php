@@ -5,7 +5,7 @@
  * GET לקריאה, POST עם JSON לשינוי. ה-action ב-query (?action=…).
  * משתמשים וכניסה — של האפליקציה עצמה (lib/auth.php). api.php ציבורי בשער של
  * הפלטפורמה, ולכן כל ההגנה כאן: בלי משתמש פעיל — 401; כל POST דורש X-CSRF.
- * חריגים, לפני כניסה: auth (מצב), login, register, setup, logout, recover-dev,
+ * חריגים, לפני כניסה: auth (מצב), login, register, setup, logout,
  * forgot, reset-info, reset-password, client-error.
  *
  * הפורטל (לקוח, עו"ד, ספק) יקבל API נפרד ב-portal/api.php — שלב 4.
@@ -62,7 +62,6 @@ try {
         'POST register' => fn() => pm_register(pm_body()),
         'POST setup'    => fn() => pm_setup(pm_body()),
         'POST logout'   => fn() => pm_logout(pm_session_user()),
-        'POST recover-dev'     => fn() => pm_recover_developer(pm_body()),
         'POST forgot'          => fn() => pm_forgot(pm_body()),
         'POST reset-info'      => fn() => pm_reset_info((string)(pm_body()['token'] ?? '')),
         'POST reset-password'  => fn() => pm_reset_password(pm_body()),
