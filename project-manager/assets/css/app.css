@@ -12,7 +12,7 @@
 :root {
     --bg: #f4f5f7; --surface: #fff; --ink: #16192b; --muted: #5d6475; --line: #e3e6eb;
     --brand: #2d4a8a; --brand-ink: #fff; --brand-soft: #e9eef8; --danger: #b3261e; --danger-soft: #fdecea;
-    --star: #e19a00;
+    --star: #e19a00; --ok: #1e7b3a;
     --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px;
     --r: 10px; --tap: 40px; --head: 48px;
     --shadow: 0 1px 2px rgba(16, 24, 40, .06);
@@ -21,7 +21,7 @@
     :root {
         --bg: #111318; --surface: #1b1e26; --ink: #e8eaf0; --muted: #9aa1b2; --line: #2c303b;
         --brand: #7f9fe0; --brand-ink: #0d1324; --brand-soft: #232c42; --danger: #f2a49d; --danger-soft: #3a1f1d;
-        --star: #f5b83d; --shadow: none;
+        --star: #f5b83d; --ok: #6fcf97; --shadow: none;
     }
 }
 
@@ -292,6 +292,21 @@ body[data-view="project"] main { padding-bottom: 0; }
 .token-box .row-btns { flex-wrap: wrap; }
 
 /* ---- מנהלים ---- */
+
+.notice { display: grid; gap: var(--s2); padding: var(--s3); margin-bottom: var(--s2); border-radius: var(--r);
+    background: color-mix(in srgb, #d69e2e 12%, var(--surface)); border: 1px solid color-mix(in srgb, #d69e2e 40%, transparent); font-size: .9rem; }
+.notice .toolbar { margin: 0; }
+.chip.us-pending { color: #b7791f; }
+.chip.us-blocked { color: var(--danger); }
+.row-btns.wrap { flex-wrap: wrap; }
+.row-btns.wrap .btn { flex: 1 1 auto; }
+.code { display: block; direction: ltr; text-align: left; font-size: .75rem; word-break: break-all; background: var(--bg); padding: var(--s2); border-radius: 8px; }
+#password-dlg { overflow-y: auto; }
+#password-dlg #password-form { border-top: 1px solid var(--line); }
+#password-dlg #password-form .btn { justify-self: start; }
+.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, var(--surface)); border-radius: var(--r); padding: var(--s2) var(--s3); }
+.auth-box .links { flex-wrap: wrap; }
+.auth-box .links .btn { flex: 1 1 auto; width: auto; font-size: .9rem; }
 
 .user-row .acts { gap: var(--s1); align-items: center; }
 .user-row .btn { min-height: 36px; }

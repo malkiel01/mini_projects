@@ -52,16 +52,33 @@ async function logout() {
     location.href = 'login.html';
 }
 
-/** שינוי סיסמה — לחיצה על השם בכותרת. */
+/** החשבון שלי — לחיצה על השם בכותרת: שם, אימייל, טלפון, וסיסמה. */
 function bindPassword() {
     const dlg = $('#password-dlg');
-    const form = $('form', dlg);
-    $('#who').addEventListener('click', () => { form.reset(); formError(form, ''); dlg.showModal(); });
-    form.addEventListener('submit', async e => {
+    const pf = $('#profile-form'), wf = $('#password-form');
+    $('#who').addEventListener('click', () => {
+        pf.reset(); wf.reset(); formError(pf, ''); formError(wf, '');
+        pf.elements.display_name.value = state.user.display_name || '';
+        pf.elements.email.value = state.user.email || '';
+        pf.elements.phone.value = state.user.phone || '';
+        dlg.showModal();
+    });
+    pf.addEventListener('submit', async e => {
         e.preventDefault();
-        const el = form.elements;
-        if (el.password.value !== el.password2.value) { formError(form, 'הסיסמאות החדשות לא זהות'); return; }
-        await busy($('button[type=submit]', form), form, async () => {
+        const el = pf.elements;
+        await busy($('button[type=submit]', pf), pf, async () => {
+            const { user } = await api('profile', { body: { display_name: el.display_name.value, email: el.email.value, phone: el.phone.value } });
+            Object.assign(state.user, user);
+            $('#who .name').textContent = user.display_name;
+            dlg.close();
+            toast('נשמר');
+        });
+    });
+    wf.addEventListener('submit', async e => {
+        e.preventDefault();
+        const el = wf.elements;
+        if (el.password.value !== el.password2.value) { formError(wf, 'הסיסמאות החדשות לא זהות'); return; }
+        await busy($('button[type=submit]', wf), wf, async () => {
             await api('password', { body: { current: el.current.value, password: el.password.value } });
             dlg.close();
             toast('הסיסמה עודכנה');

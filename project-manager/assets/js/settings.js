@@ -27,7 +27,21 @@ const Settings = (() => {
             });
             e.target.checked = !!state.standalone;
         });
-        $('#users-list').addEventListener('click', userAction);
+        $('#users-list').addEventListener('click', e => {
+            const q = e.target.closest('[data-quick]');
+            if (q) { e.stopPropagation(); userAction(q.dataset.quick, Number(q.dataset.id), q); return; }
+            const row = e.target.closest('[data-user]');
+            if (row) openUser(Number(row.dataset.user));
+        });
+        $('#users-list').addEventListener('keydown', e => {
+            const row = e.target.closest('[data-user]');
+            if (row && e.target === row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openUser(Number(row.dataset.user)); }
+        });
+        $('#user-dlg form').addEventListener('submit', e => { e.preventDefault(); saveUser(); });
+        $('#user-dlg').addEventListener('click', e => {
+            const b = e.target.closest('[data-act]');
+            if (b) userAction(b.dataset.act, userId, b);
+        });
         let t;
         $('#log-q').addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => loadLog(), 300); });
         $('#log-level').addEventListener('change', () => loadLog());
@@ -135,53 +149,131 @@ const Settings = (() => {
         });
     }
 
-    // ---- מנהלים ----
+    // ---- הרשומים (מנהלים) — נפרדים לגמרי מהמשתמשים של דף הכלים ----
 
     const USER_STATUS = { pending: 'ממתין לאישור', active: 'פעיל', blocked: 'חסום' };
+    let users = [], userId = null;
 
     async function loadAccess() {
-        await busy(null, null, async () => renderUsers((await api('users')).users));
+        await busy(null, null, async () => {
+            const r = await api('users');
+            renderUsers(r.users);
+            renderOrphans(r.orphans);
+        });
     }
 
-    function renderUsers(users) {
-        const day = iso => iso ? new Date(iso).toLocaleDateString('he-IL') : '';
+    const day = iso => iso ? new Date(iso).toLocaleDateString('he-IL') : '';
+
+    function renderUsers(list) {
+        users = list;
         $('#users-list').innerHTML = users.map(u => {
-            const acts = u.role === 'developer' ? '<span class="chip">מפתח</span>' : {
-                pending: `<button class="btn primary" data-do="approve" data-id="${u.id}">אישור</button>
-                          <button class="icon-btn" data-do="reject" data-id="${u.id}" aria-label="דחיית ${esc(u.display_name)}">✕</button>`,
-                active:  `<button class="icon-btn" data-do="reset" data-id="${u.id}" aria-label="איפוס הסיסמה של ${esc(u.display_name)}" title="איפוס סיסמה">🔑</button>
-                          <button class="btn ghost danger" data-do="block" data-id="${u.id}">חסימה</button>`,
-                blocked: `<button class="btn ghost" data-do="unblock" data-id="${u.id}">שחרור</button>`,
-            }[u.status];
             const meta = [
                 `<span dir="ltr">${esc(u.username)}</span>`,
-                u.phone ? `<span dir="ltr">${esc(u.phone)}</span>` : '',
+                u.email ? `<span dir="ltr">${esc(u.email)}</span>` : '<span class="muted">אין אימייל</span>',
                 u.status === 'pending' ? 'נרשם ' + day(u.created_at) : u.last_login_at ? 'נכנס ' + day(u.last_login_at) : 'לא נכנס עדיין',
                 u.projects ? u.projects + ' פרויקטים' : '',
+                u.reset_pending ? 'נשלח איפוס' : '',
             ].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>');
-            return `<li class="card user-row st-${u.status}">
+            const chip = u.role === 'developer' ? '<span class="chip">מפתח</span>' : `<span class="chip us-${u.status}">${USER_STATUS[u.status]}</span>`;
+            const quick = u.status === 'pending' ? `<button class="btn primary" data-quick="approve" data-id="${u.id}">אישור</button>` : '';
+            return `<li class="card" data-user="${u.id}" tabindex="0" role="button" aria-label="${esc(u.display_name)}">
                 ${avatar(u.display_name)}
-                <div class="body"><div class="l1">${esc(u.display_name)}${u.role !== 'developer' ? `<span class="chip">${USER_STATUS[u.status]}</span>` : ''}</div>
-                <div class="l2">${meta}</div></div>
-                <div class="acts">${acts}</div></li>`;
+                <div class="body"><div class="l1"><span class="one">${esc(u.display_name)}</span>${chip}</div><div class="l2">${meta}</div></div>
+                <div class="acts">${quick}</div></li>`;
         }).join('');
     }
 
-    async function userAction(e) {
-        const b = e.target.closest('button[data-do]');
-        if (!b) return;
-        const confirmText = {
-            reject: 'לדחות את הבקשה ולמחוק אותה?',
-            block: 'לחסום? המנהל יתנתק מיד, והפרויקטים שלו יישמרו.',
-            reset: 'לקבוע סיסמה זמנית חדשה? המנהל יתנתק, והסיסמה תוצג לך פעם אחת כדי שתעביר לו.',
-        }[b.dataset.do];
-        if (confirmText && !confirm(confirmText)) return;
-        await busy(b, null, async () => {
-            const r = await api('user', { body: { id: Number(b.dataset.id), do: b.dataset.do } });
+    function renderOrphans(o) {
+        const box = $('#orphans');
+        const n = (o?.projects || 0) + (o?.contacts || 0);
+        box.hidden = !n;
+        if (!n) return;
+        box.innerHTML = `<span>${o.projects} פרויקטים ו-${o.contacts} אנשי קשר נוצרו לפני שהיו לאפליקציה משתמשים משלה, ואין להם בעלים.</span>
+            <div class="toolbar"><select id="orphans-to" aria-label="למי לשייך">${options(users.filter(u => u.status === 'active').map(u => ({ value: u.id, label: u.display_name })), state.user.id)}</select>
+            <button class="btn primary" id="orphans-claim">שיוך</button></div>`;
+        $('#orphans-claim').onclick = async () => {
+            await busy($('#orphans-claim'), null, async () => {
+                const r = await api('claim-orphans', { body: { to: Number($('#orphans-to').value) } });
+                renderUsers(r.users); renderOrphans(r.orphans); toast(`שויכו ${r.moved}`);
+            });
+        };
+    }
+
+    function openUser(id) {
+        const u = users.find(x => x.id === id);
+        if (!u) return;
+        userId = id;
+        const dlg = $('#user-dlg'), form = $('form', dlg);
+        formError(form, '');
+        $('#user-dlg-title').textContent = u.display_name;
+        $('#user-meta').textContent = [
+            u.role === 'developer' ? 'מפתח' : USER_STATUS[u.status],
+            'נרשם ' + day(u.created_at), u.approved_at && u.role !== 'developer' ? 'אושר ' + day(u.approved_at) : '',
+            u.last_login_at ? 'נכנס לאחרונה ' + day(u.last_login_at) : 'לא נכנס עדיין',
+            `${u.sessions} מכשירים מחוברים`, `${u.projects} פרויקטים`, `${u.contacts} אנשי קשר`,
+        ].filter(Boolean).join(' · ');
+        for (const f of ['display_name', 'username', 'email', 'phone', 'notes']) form.elements[f].value = u[f] || '';
+        const dev = u.role === 'developer';
+        const acts = dev ? ['reset', 'logout'] : {
+            pending: ['approve', 'reject'],
+            active: ['reset', 'logout', 'block', 'delete'],
+            blocked: ['unblock', 'reset', 'delete'],
+        }[u.status];
+        const LABEL = { approve: 'אישור', reject: 'דחיית הבקשה', reset: 'שליחת איפוס סיסמה', logout: 'ניתוק מכל המכשירים',
+                        block: 'חסימה', unblock: 'שחרור חסימה', delete: 'מחיקה' };
+        $('#user-actions').innerHTML = acts.map(a =>
+            `<button type="button" class="btn ${a === 'approve' ? 'primary' : 'ghost'}${['block', 'delete', 'reject'].includes(a) ? ' danger' : ''}" data-act="${a}">${LABEL[a]}</button>`).join('');
+        const others = users.filter(x => x.id !== id && x.status === 'active');
+        $('#user-transfer').hidden = dev || !(u.projects + u.contacts) || !others.length;
+        form.elements.transfer_to.innerHTML = options(others.map(x => ({ value: x.id, label: x.display_name })));
+        dlg.showModal();
+    }
+
+    async function saveUser() {
+        const form = $('#user-dlg form');
+        const el = form.elements;
+        await busy($('button[type=submit]', form), form, async () => {
+            const r = await api('user-save', { body: { id: userId, display_name: el.display_name.value, username: el.username.value,
+                email: el.email.value, phone: el.phone.value, notes: el.notes.value } });
             renderUsers(r.users);
-            if (r.temp_password) prompt(`הסיסמה הזמנית של ${r.username} (להעתיק ולהעביר לו; היא לא תוצג שוב):`, r.temp_password);
-            else toast({ approve: 'אושר — יכול להיכנס', reject: 'הבקשה נדחתה', block: 'נחסם', unblock: 'שוחרר' }[b.dataset.do]);
+            $('#user-dlg').close();
+            toast('נשמר');
         });
+    }
+
+    async function userAction(act, id = userId, btn = null) {
+        const u = users.find(x => x.id === id);
+        const confirmText = {
+            reject: `לדחות את הבקשה של ${u.display_name} ולמחוק אותה?`,
+            block: `לחסום את ${u.display_name}? הוא יתנתק מיד, והפרויקטים שלו יישמרו.`,
+            delete: `למחוק את ${u.display_name} לצמיתות?`,
+            logout: `לנתק את ${u.display_name} מכל המכשירים?`,
+            transfer: `להעביר את כל הפרויקטים ואנשי הקשר של ${u.display_name}?`,
+        }[act];
+        if (confirmText && !confirm(confirmText)) return;
+        const body = { id, do: act };
+        if (act === 'transfer') body.to = Number($('#user-dlg [name=transfer_to]').value);
+        await busy(btn, $('#user-dlg form'), async () => {
+            const r = await api('user', { body });
+            renderUsers(r.users);
+            if ($('#user-dlg').open) $('#user-dlg').close();
+            if (act === 'reset') return showReset(r);
+            toast({ approve: 'אושר — יכול להיכנס', reject: 'הבקשה נדחתה', block: 'נחסם', unblock: 'שוחרר',
+                    logout: 'נותק מכל המכשירים', delete: 'נמחק', transfer: 'הועבר ל' + r.transferred_to }[act]);
+        });
+    }
+
+    function showReset(r) {
+        const text = `שלום ${r.display_name}, זה קישור לקביעת סיסמה חדשה בניהול הפרויקטים (שם המשתמש: ${r.username}):\n${r.reset_link}`;
+        $('#reset-status').textContent = r.mailed ? `הקישור נשלח לאימייל ${r.email}. אפשר לשלוח אותו גם בדרך אחרת:`
+            : r.email ? `השליחה לאימייל ${r.email} לא הצליחה — שלח את הקישור בדרך אחרת:` : 'אין לו אימייל — שלח את הקישור בדרך אחרת:';
+        $('#reset-link').textContent = r.reset_link;
+        const wa = $('#reset-wa');
+        wa.hidden = !r.phone;
+        wa.href = r.phone ? `https://wa.me/${waNumber(r.phone)}?text=${encodeURIComponent(text)}` : '#';
+        $('#reset-mail').href = `mailto:${encodeURIComponent(r.email || '')}?subject=${encodeURIComponent('קביעת סיסמה — ניהול פרויקטים')}&body=${encodeURIComponent(text)}`;
+        $('#reset-copy').onclick = () => copy(r.reset_link, 'הקישור הועתק');
+        $('#reset-dlg').showModal();
     }
 
     // ---- יומן ----

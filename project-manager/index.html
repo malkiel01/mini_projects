@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=7">
+    <link rel="stylesheet" href="assets/css/app.css?v=8">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -195,8 +195,9 @@
                 <div class="toolbar end"><button class="btn ghost" id="log-more" hidden>עוד</button></div>
             </div>
             <div class="pane" id="set-access" hidden>
-                <p class="hint">מנהל פרויקט נרשם במסך הכניסה, ומגיע לכאן לאישור. מנהל חסום מתנתק מיד.</p>
-                <ul id="users-list" class="rows"></ul>
+                <p class="hint">הרשומים לאפליקציה הזו בלבד — נפרדים לגמרי מהמשתמשים של דף הכלים. מנהל פרויקט נרשם במסך הכניסה ומגיע לכאן לאישור. לחיצה על שורה — עריכה וכל הפעולות.</p>
+                <div class="notice" id="orphans" hidden></div>
+                <ul id="users-list" class="list rows-list"></ul>
             </div>
         </section>
     </main>
@@ -349,29 +350,89 @@
         </form>
     </dialog>
 
-    <!-- ===== חלון: שינוי סיסמה ===== -->
-    <dialog id="password-dlg" aria-labelledby="password-dlg-title">
+    <!-- ===== חלון: רשום (המפתח) ===== -->
+    <dialog id="user-dlg" aria-labelledby="user-dlg-title">
         <form method="dialog" novalidate>
             <header class="sheet-head">
                 <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
-                <h2 id="password-dlg-title">שינוי סיסמה</h2>
+                <h2 id="user-dlg-title"></h2>
                 <button type="submit" class="btn primary">שמירה</button>
             </header>
             <div class="sheet-body">
+                <p class="hint" id="user-meta"></p>
+                <div class="fields">
+                    <label class="f"><span>שם מלא</span><input name="display_name" maxlength="60" required></label>
+                    <label class="f"><span>שם משתמש</span><input name="username" maxlength="100" dir="ltr" autocapitalize="off" required></label>
+                    <label class="f"><span>אימייל</span><input name="email" type="email" maxlength="120" dir="ltr"></label>
+                    <label class="f"><span>טלפון</span><input name="phone" type="tel" maxlength="30" dir="ltr"></label>
+                    <label class="f wide"><span>הערות (רק למפתח)</span><textarea name="notes" rows="2" maxlength="2000"></textarea></label>
+                </div>
+                <p class="error" role="alert" hidden></p>
+                <section class="group" aria-labelledby="g-uact">
+                    <h3 id="g-uact">פעולות</h3>
+                    <div class="row-btns wrap" id="user-actions"></div>
+                </section>
+                <section class="group" id="user-transfer" aria-labelledby="g-utr">
+                    <h3 id="g-utr">העברת הפרויקטים ואנשי הקשר</h3>
+                    <div class="toolbar"><select name="transfer_to" aria-label="אל מי להעביר"></select><button type="button" class="btn ghost" data-act="transfer">העברה</button></div>
+                </section>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- ===== חלון: קישור איפוס שנוצר ===== -->
+    <dialog id="reset-dlg" aria-labelledby="reset-dlg-title">
+        <form method="dialog">
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="reset-dlg-title">קישור לקביעת סיסמה</h2>
+            </header>
+            <div class="sheet-body">
+                <p id="reset-status"></p>
+                <code class="code" id="reset-link"></code>
+                <div class="row-btns wrap">
+                    <button type="button" class="btn primary" id="reset-copy">העתקה</button>
+                    <a class="btn ghost" id="reset-wa" target="_blank" rel="noopener">שליחה בוואטסאפ</a>
+                    <a class="btn ghost" id="reset-mail">שליחה מהמייל שלי</a>
+                </div>
+                <p class="hint">תקף 24 שעות ולשימוש חד-פעמי. קישור חדש מבטל את הקודם.</p>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- ===== חלון: החשבון שלי ===== -->
+    <dialog id="password-dlg" aria-labelledby="password-dlg-title">
+        <form method="dialog" id="profile-form" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="password-dlg-title">החשבון שלי</h2>
+                <button type="submit" class="btn primary">שמירה</button>
+            </header>
+            <div class="sheet-body">
+                <div class="fields">
+                    <label class="f"><span>שם מלא</span><input name="display_name" maxlength="60" required></label>
+                    <label class="f"><span>אימייל (לשחזור סיסמה)</span><input name="email" type="email" maxlength="120" dir="ltr"></label>
+                    <label class="f"><span>טלפון</span><input name="phone" type="tel" maxlength="30" dir="ltr"></label>
+                </div>
+                <p class="error" role="alert" hidden></p>
+            </div>
+        </form>
+        <form method="dialog" id="password-form" class="sheet-body" novalidate>
+            <h3 class="sec-title">שינוי סיסמה</h3>
                 <label class="f"><span>הסיסמה הנוכחית</span><input name="current" type="password" autocomplete="current-password" dir="ltr" required></label>
                 <label class="f"><span>סיסמה חדשה (לפחות 8 תווים)</span><input name="password" type="password" autocomplete="new-password" dir="ltr" minlength="8" required></label>
                 <label class="f"><span>שוב, לאימות</span><input name="password2" type="password" autocomplete="new-password" dir="ltr" required></label>
                 <p class="hint">שאר ההתחברויות שלך — בטלפון או במחשב אחר — יתנתקו.</p>
                 <p class="error" role="alert" hidden></p>
-            </div>
+                <button type="submit" class="btn ghost">שינוי הסיסמה</button>
         </form>
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=7"></script>
-    <script src="assets/js/contacts.js?v=7"></script>
-    <script src="assets/js/projects.js?v=7"></script>
-    <script src="assets/js/settings.js?v=7"></script>
-    <script src="assets/js/app.js?v=7"></script>
+    <script src="assets/js/core.js?v=8"></script>
+    <script src="assets/js/contacts.js?v=8"></script>
+    <script src="assets/js/projects.js?v=8"></script>
+    <script src="assets/js/settings.js?v=8"></script>
+    <script src="assets/js/app.js?v=8"></script>
 </body>
 </html>

@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>כניסה — ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=3">
+    <link rel="stylesheet" href="assets/css/app.css?v=7">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -29,27 +29,25 @@
             <label><input type="radio" name="mode" value="register"><span>הרשמה</span></label>
         </div>
 
-        <!-- כשאין אף משתמש: הקמת המפתח הראשון (רק למנהל הפלטפורמה המחובר) -->
-        <p class="hint setup-only" hidden>הקמת האפליקציה: יצירת חשבון המפתח. אחריו מנהלי פרויקט נרשמים, והמפתח מאשר כל אחד.</p>
-
+        <!-- מסך אחד לכל המצבים; data-modes קובע באילו מצבים שדה מוצג:
+             login · register · setup (המפתח הראשון) · forgot · recover (סיסמת המפתח בקוד השחזור) · reset (מקישור) -->
+        <p class="hint" id="mode-hint" hidden></p>
         <form id="auth-form" novalidate>
-            <label class="f reg-only" hidden><span>שם מלא</span><input name="display_name" maxlength="60" autocomplete="name"></label>
-            <label class="f reg-only" hidden><span>טלפון</span><input name="phone" type="tel" maxlength="30" dir="ltr" autocomplete="tel"></label>
-            <label class="f"><span>שם משתמש או אימייל</span><input name="username" maxlength="100" autocomplete="username" dir="ltr" autocapitalize="off" spellcheck="false" required></label>
-            <label class="f"><span>סיסמה</span><input name="password" type="password" maxlength="200" autocomplete="current-password" dir="ltr" required></label>
-            <p class="hint reg-only" hidden>לפחות 8 תווים. ההרשמה נשלחת למפתח לאישור.</p>
+            <label class="f" data-modes="setup recover"><span>קוד השחזור</span><input name="code" type="password" autocomplete="off" dir="ltr"></label>
+            <label class="f" data-modes="register setup"><span>שם מלא</span><input name="display_name" maxlength="60" autocomplete="name"></label>
+            <label class="f" data-modes="register setup"><span class="lbl-email">אימייל</span><input name="email" type="email" maxlength="120" autocomplete="email" dir="ltr"></label>
+            <label class="f" data-modes="register"><span>טלפון</span><input name="phone" type="tel" maxlength="30" dir="ltr" autocomplete="tel"></label>
+            <label class="f" data-modes="login register setup forgot"><span class="lbl-user">שם משתמש</span><input name="username" maxlength="100" autocomplete="username" dir="ltr" autocapitalize="off" spellcheck="false"></label>
+            <label class="f" data-modes="login register setup recover reset"><span class="lbl-pass">סיסמה</span><input name="password" type="password" maxlength="200" autocomplete="current-password" dir="ltr"></label>
+            <label class="f" data-modes="reset recover"><span>שוב, לאימות</span><input name="password2" type="password" maxlength="200" autocomplete="new-password" dir="ltr"></label>
             <p class="error" id="auth-error" role="alert" hidden></p>
+            <p class="ok" id="auth-ok" role="status" hidden></p>
             <button class="btn primary" id="auth-submit">כניסה</button>
-            <button type="button" class="btn ghost" id="forgot" hidden>שכחתי את סיסמת המפתח</button>
-        </form>
-
-        <!-- איפוס סיסמת המפתח — רק כשמחוברים לפלטפורמה כמנהל -->
-        <form id="reset-form" novalidate hidden>
-            <p class="hint">אתה מחובר לפלטפורמה כמנהל, ולכן אפשר לקבוע כאן סיסמה חדשה לחשבון המפתח. גם כל הנעילות ישוחררו.</p>
-            <label class="f"><span>סיסמה חדשה למפתח (לפחות 8 תווים)</span><input name="password" type="password" autocomplete="new-password" dir="ltr" required></label>
-            <p class="error" role="alert" hidden></p>
-            <button class="btn primary">קביעת סיסמה וכניסה</button>
-            <button type="button" class="btn ghost" id="reset-cancel">ביטול</button>
+            <div class="row-btns links" data-modes="login">
+                <button type="button" class="btn ghost" data-go="forgot">שכחתי סיסמה</button>
+                <button type="button" class="btn ghost" data-go="recover">אני המפתח — יש לי קוד שחזור</button>
+            </div>
+            <button type="button" class="btn ghost" data-modes="forgot recover" data-go="login">חזרה לכניסה</button>
         </form>
 
         <section id="waiting" class="waiting" hidden aria-live="polite">
@@ -62,6 +60,6 @@
             </div>
         </section>
     </main>
-    <script src="assets/js/login.js?v=3"></script>
+    <script src="assets/js/login.js?v=4"></script>
 </body>
 </html>

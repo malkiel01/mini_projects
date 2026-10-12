@@ -87,6 +87,15 @@ function pm_migrate(PDO $pdo): void
             approved_at   TEXT,
             last_login_at TEXT
         );
+        -- קישורי איפוס סיסמה חד-פעמיים (lib/auth.php). נשמר רק ה-hash.
+        CREATE TABLE IF NOT EXISTS password_resets (
+            token_hash TEXT PRIMARY KEY,
+            user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_by TEXT NOT NULL,             -- self · developer
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            used_at    TEXT
+        );
         CREATE TABLE IF NOT EXISTS sessions (
             token_hash TEXT PRIMARY KEY,
             user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -229,6 +238,10 @@ function pm_migrate(PDO $pdo): void
         $pdo->exec("INSERT INTO settings (key, value) VALUES ('templates_seeded', '1')");
     }
 
+    // עמודות שנוספו אחרי שהטבלה כבר קיימת בשרת
+    pm_add_column($pdo, 'users', 'email', "TEXT NOT NULL DEFAULT ''");
+    pm_add_column($pdo, 'users', 'notes', "TEXT NOT NULL DEFAULT ''");
+
     if (!$pdo->query("SELECT 1 FROM settings WHERE key = 'trades_seeded'")->fetchColumn()) {
         $ins = $pdo->prepare('INSERT OR IGNORE INTO trades (name, sort) VALUES (?, ?)');
         foreach (PM_DEFAULT_TRADES as $i => $name) $ins->execute([$name, ($i + 1) * 10]);
@@ -248,6 +261,12 @@ function pm_setting_set(string $key, string $value): void
 {
     pm_db()->prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
         ->execute([$key, $value]);
+}
+
+function pm_add_column(PDO $pdo, string $table, string $col, string $def): void
+{
+    $cols = array_column($pdo->query("PRAGMA table_info($table)")->fetchAll(), 'name');
+    if (!in_array($col, $cols, true)) $pdo->exec("ALTER TABLE $table ADD COLUMN $col $def");
 }
 
 /** רישום ביומן הביקורת. $actor — "user:<id>" או "portal:<contact>" בהמשך. */

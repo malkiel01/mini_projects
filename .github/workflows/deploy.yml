@@ -87,6 +87,21 @@ jobs:
           php -r 'file_put_contents("platform/lib/setup-code.php", "<?php\nreturn " . var_export(password_hash(getenv("PLATFORM_SETUP_CODE"), PASSWORD_DEFAULT), true) . ";\n");'
           php -l platform/lib/setup-code.php
 
+      # קוד השחזור של ניהול הפרויקטים — מקים את המפתח הראשון, ומאפשר לו לקבוע
+      # סיסמה חדשה אם שכח. נפרד לגמרי מהפלטפורמה. לשרת עולה רק ה-hash, לקובץ
+      # שחסום מהדפדפן (project-manager/.htaccess חוסם את lib/). בלי הסוד — אזהרה.
+      - name: Write the project-manager recovery-code hash
+        env:
+          PM_RECOVERY_CODE: ${{ secrets.PM_RECOVERY_CODE }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PM_RECOVERY_CODE:-}" ]; then
+            echo "::warning::PM_RECOVERY_CODE לא מוגדר — אי אפשר להקים את המפתח של ניהול הפרויקטים או לשחזר את סיסמתו"
+            exit 0
+          fi
+          php -r 'file_put_contents("project-manager/lib/recovery-code.php", "<?php\nreturn " . var_export(password_hash(getenv("PM_RECOVERY_CODE"), PASSWORD_DEFAULT), true) . ";\n");'
+          php -l project-manager/lib/recovery-code.php
+
       - name: Validate the deploy target
         env:
           HOST: ${{ secrets.DEPLOY_HOST }}
