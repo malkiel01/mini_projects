@@ -291,7 +291,7 @@ function pm_portal_notify(array $a, array $q, string $decision, string $note): v
     $ok = $decision === 'approved';
     $sent = pm_send_mail($to, pm_t($ok ? '{who} אישר הצעת מחיר — {project}' : '{who} דחה הצעת מחיר — {project}', $v, $lang),
         pm_t($ok ? '{who} אישר את ההצעה של {supplier} על {amount} בפרויקט {project}.' : '{who} דחה את ההצעה של {supplier} על {amount} בפרויקט {project}.', $v, $lang)
-        . ($note !== '' ? "\n\n" . pm_t('הערה: {note}', ['note' => $note], $lang) : '') . "\n\n" . pm_app_url_root() . "/#/p/{$a['project']['id']}/quotes\n");
+        . ($note !== '' ? "\n\n" . pm_t('הערה: {note}', ['note' => $note], $lang) : '') . "\n\n" . pm_app_url_root() . "/#/p/{$a['project']['id']}/quotes\n", $lang);
     pm_log($sent ? 'info' : 'warn', 'mail', 'mail.portal_decision', ['data' => ['to' => $to, 'sent' => $sent]]);
 }
 
@@ -391,7 +391,8 @@ function pm_portal_mail(array $a, string $subject, string $body, string $pane = 
 {
     $to = pm_user_email($a['owner']);
     if ($to === '') return;
-    $sent = pm_send_mail($to, "$subject — {$a['project']['name']}", $body . "\n\n" . pm_app_url_root() . "/#/p/{$a['project']['id']}/$pane\n");
+    $sent = pm_send_mail($to, "$subject — {$a['project']['name']}", $body . "\n\n" . pm_app_url_root() . "/#/p/{$a['project']['id']}/$pane\n",
+        pm_lang_valid($a['owner']['lang'] ?? 'he'));
     pm_log($sent ? 'info' : 'warn', 'mail', 'mail.portal', ['data' => ['to' => $to, 'sent' => $sent, 'subject' => $subject]]);
 }
 

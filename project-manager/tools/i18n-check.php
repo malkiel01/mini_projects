@@ -13,6 +13,7 @@
  *            ({name}) שבמקור חסר בו.
  *
  * --keys          כל המפתחות (JSON) — בשביל מי שמתרגם
+ * --keys-where    המפתחות עם המקום הראשון שבו הם מופיעים (קובץ:שורה)
  * --missing en    המפתחות שחסרים בשפה (JSON)
  * קוד יציאה 1 כשיש שגיאה, אזהרה או תרגום חסר.
  */
@@ -221,6 +222,10 @@ foreach (files() as $f) {
 }
 
 $args = array_slice($argv, 1);
+if (($args[0] ?? '') === '--keys-where') {
+    echo json_encode($keys, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), "\n";
+    exit(0);
+}
 if (($args[0] ?? '') === '--keys') {
     echo json_encode(array_keys($keys), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), "\n";
     exit(0);
@@ -237,11 +242,12 @@ foreach (LANGS as $l) {
     foreach ($keys as $k => $where) {
         $tr = $d[$k] ?? null;
         if ($tr === null || $tr === '' || $tr === []) { $missing[$l][] = $k; continue; }
+        if (preg_match('/^\{[^{}]+\}$/u', $k)) continue; // כינוי של משתנה בנוסח: "{קישור}" ← "{link}"
         foreach (is_array($tr) ? $tr : [$tr] as $form) {
             foreach ($vars($k) as $v) {
                 // בנוסחי ההודעות המשתנה עצמו מתורגם: {קישור} ← {link}
                 if ($v === 'n' && is_array($tr)) continue;
-                $alias = $d[$v] ?? null;
+                $alias = isset($d['{' . $v . '}']) ? trim((string)$d['{' . $v . '}'], '{}') : null;
                 if (!str_contains((string)$form, '{' . $v . '}') && !(is_string($alias) && str_contains((string)$form, '{' . $alias . '}'))) {
                     $bad[] = "$l  חסר {{$v}} בתרגום של: " . mb_substr($k, 0, 60);
                     break 2;
@@ -249,7 +255,7 @@ foreach (LANGS as $l) {
             }
         }
     }
-    foreach ($d as $k => $_) if (!isset($keys[$k]) && !preg_match('/^[^\s{}]+$/u', (string)$k)) $unused[$l][] = $k;
+    foreach ($d as $k => $_) if (!isset($keys[$k])) $unused[$l][] = $k;
 }
 
 if (($args[0] ?? '') === '--missing') {

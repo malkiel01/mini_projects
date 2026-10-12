@@ -12,7 +12,7 @@
 
 const I18n = (() => {
     const LANGS = {
-        he: { name: 'עברית', dir: 'rtl', locale: 'he-IL' },
+        he: { name: 'עברית', dir: 'rtl', locale: 'he-IL' }, // i18n-none
         en: { name: 'English', dir: 'ltr', locale: 'en-GB' },
         fr: { name: 'Français', dir: 'ltr', locale: 'fr-FR' },
         ru: { name: 'Русский', dir: 'ltr', locale: 'ru-RU' },
@@ -110,7 +110,7 @@ const I18n = (() => {
     function picker(onChange = set) {
         const sel = document.createElement('select');
         sel.className = 'lang-pick';
-        sel.setAttribute('aria-label', 'Language · שפה');
+        sel.setAttribute('aria-label', 'Language · שפה'); // i18n-none
         sel.setAttribute('data-no-i18n', '');
         sel.innerHTML = Object.entries(LANGS).map(([k, v]) => `<option value="${k}"${k === lang ? ' selected' : ''}>${v.name}</option>`).join('');
         sel.addEventListener('change', () => onChange(sel.value));

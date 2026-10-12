@@ -114,7 +114,7 @@ try {
                     'labels' => array_map('pm_t_map', ['stage' => PM_STAGE_STATUSES, 'project' => PM_PROJECT_STATUSES, 'kind' => PM_PROJECT_KINDS,
                                  'quote' => PM_QUOTE_STATUSES, 'payment' => PM_PAYMENT_STATUSES, 'method' => PM_PAY_METHODS]),
                     // נוסחי ההודעות — אותו נוסח לוואטסאפ / SMS בלחיצה ולמייל האוטומטי
-                    'msg_templates' => pm_msg_templates($user)];
+                    'msg_templates' => pm_msg_templates($user), 'msg_vars' => pm_msg_vars()];
         })(),
 
         'GET contacts'    => ['contacts' => pm_contacts_list($user, (string)($in['kind'] ?? ''),

@@ -48,7 +48,7 @@ function pm_cal_projects(array $user): array
     return array_column($st->fetchAll(), 'name', 'id');
 }
 
-/** כל מה שביומן בין שני תאריכים (כולל). */
+/** כל מה שביומן בין שני תאריכים (כולל). הכותרות — בשפת הבקשה (pm_lang). */
 function pm_calendar(array $user, string $from, string $to): array
 {
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $to) || $from > $to) throw new PmError('טווח תאריכים לא תקין', 422);
@@ -64,22 +64,22 @@ function pm_calendar(array $user, string $from, string $to): array
     };
     foreach ($db->query("SELECT id, project_id, name, status, plan_start, plan_end FROM stages WHERE project_id IN ($ids)") as $s) {
         $done = in_array($s['status'], ['done', 'paid'], true);
-        $add($s['plan_start'], ['kind' => 'stage_start', 'title' => "התחלה: {$s['name']}", 'project_id' => (int)$s['project_id'], 'ref' => (int)$s['id'],
+        $add($s['plan_start'], ['kind' => 'stage_start', 'title' => pm_t('התחלה: {stage}', ['stage' => $s['name']]), 'project_id' => (int)$s['project_id'], 'ref' => (int)$s['id'],
             'pane' => 'stages', 'late' => !$done && in_array($s['status'], ['planned', 'quotes', 'client_approval', 'lawyer_approval', 'approved'], true) && $s['plan_start'] < $today]);
         if ($s['plan_end'] !== $s['plan_start']) {
-            $add($s['plan_end'], ['kind' => 'stage_end', 'title' => "סיום: {$s['name']}", 'project_id' => (int)$s['project_id'], 'ref' => (int)$s['id'],
+            $add($s['plan_end'], ['kind' => 'stage_end', 'title' => pm_t('סיום: {stage}', ['stage' => $s['name']]), 'project_id' => (int)$s['project_id'], 'ref' => (int)$s['id'],
                 'pane' => 'stages', 'late' => !$done && $s['plan_end'] < $today]);
         }
     }
     foreach ($db->query("SELECT p.id, p.project_id, p.title, p.amount, p.due_date, p.status, c.name AS supplier FROM payments p JOIN contacts c ON c.id = p.supplier_id
                           WHERE p.project_id IN ($ids) AND p.status != 'cancelled' AND p.due_date != ''") as $p) {
-        $add($p['due_date'], ['kind' => 'payment', 'title' => "תשלום: {$p['title']} — {$p['supplier']}, " . pm_money((int)$p['amount']),
+        $add($p['due_date'], ['kind' => 'payment', 'title' => pm_t('תשלום: {title} — {supplier}, {amount}', ['title' => $p['title'], 'supplier' => $p['supplier'], 'amount' => pm_money((int)$p['amount'])]),
             'project_id' => (int)$p['project_id'], 'ref' => (int)$p['id'], 'pane' => 'payments', 'done' => $p['status'] === 'received',
             'late' => $p['status'] !== 'received' && $p['due_date'] < $today]);
     }
     foreach ($db->query("SELECT q.id, q.project_id, q.valid_until, q.amount, c.name AS supplier FROM quotes q JOIN contacts c ON c.id = q.supplier_id
                           WHERE q.project_id IN ($ids) AND q.valid_until != '' AND q.status IN ('open','sent','client_approved')") as $q) {
-        $add($q['valid_until'], ['kind' => 'quote', 'title' => "תוקף הצעה: {$q['supplier']}, " . pm_money((int)$q['amount']),
+        $add($q['valid_until'], ['kind' => 'quote', 'title' => pm_t('תוקף הצעה: {supplier}, {amount}', ['supplier' => $q['supplier'], 'amount' => pm_money((int)$q['amount'])]),
             'project_id' => (int)$q['project_id'], 'ref' => (int)$q['id'], 'pane' => 'quotes', 'late' => $q['valid_until'] < $today]);
     }
     foreach (pm_appointments_rows($ids, $from, $to) as $a) {
@@ -105,9 +105,10 @@ function pm_appointment_out(array $a, array $projects): array
         'contact_name' => $a['contact_name'], 'contact_phone' => $a['contact_phone'], 'notes' => $a['notes']];
 }
 
-/** "דורש טיפול" — מהדחוף לפחות דחוף. */
-function pm_reminders(array $user): array
+/** "דורש טיפול" — מהדחוף לפחות דחוף. $lang — שפת הטקסטים (למייל היומי: שפת המנהל); אחרת שפת הבקשה. */
+function pm_reminders(array $user, ?string $lang = null): array
 {
+    $lang ??= pm_lang();
     $projects = pm_cal_projects($user);
     if (!$projects) return [];
     $ids = implode(',', array_map('intval', array_keys($projects)));
@@ -122,44 +123,50 @@ function pm_reminders(array $user): array
     foreach ($db->query("SELECT p.*, c.name AS supplier FROM payments p JOIN contacts c ON c.id = p.supplier_id
                           WHERE p.project_id IN ($ids) AND p.status NOT IN ('received','cancelled') AND p.due_date != '' AND p.due_date <= '$soon'") as $p) {
         $late = $p['due_date'] < $today;
-        $r($late ? 'late' : 'soon', ($late ? 'תשלום באיחור' : 'תשלום מתקרב') . ": {$p['title']} — {$p['supplier']}, " . pm_money((int)$p['amount'])
-            . ' (' . pm_short_date($p['due_date']) . ')', (int)$p['project_id'], 'payments', $p['due_date']);
+        $r($late ? 'late' : 'soon', pm_t($late ? 'תשלום באיחור: {title} — {supplier}, {amount} ({date})' : 'תשלום מתקרב: {title} — {supplier}, {amount} ({date})',
+            ['title' => $p['title'], 'supplier' => $p['supplier'], 'amount' => pm_money((int)$p['amount']), 'date' => pm_short_date($p['due_date'])], $lang),
+            (int)$p['project_id'], 'payments', $p['due_date']);
     }
     // אסמכתאות שממתינות לאישור קבלה
     foreach ($db->query("SELECT p.project_id, p.title, x.amount, x.created_at FROM payment_proofs x JOIN payments p ON p.id = x.payment_id
                           WHERE p.project_id IN ($ids) AND x.status = 'pending'") as $x) {
-        $r('wait', "דווח תשלום — לאשר שהתקבל: {$x['title']}, " . pm_money((int)$x['amount']), (int)$x['project_id'], 'payments', substr($x['created_at'], 0, 10));
+        $r('wait', pm_t('דווח תשלום — לאשר שהתקבל: {title}, {amount}', ['title' => $x['title'], 'amount' => pm_money((int)$x['amount'])], $lang),
+            (int)$x['project_id'], 'payments', substr($x['created_at'], 0, 10));
     }
     // ממתין ללקוח / לעו"ד יותר מ-X ימים
     foreach ($db->query("SELECT q.project_id, q.status, q.sent_at, q.updated_at, s.name AS stage FROM quotes q JOIN stages s ON s.id = q.stage_id
                           WHERE q.project_id IN ($ids) AND q.status IN ('sent','client_approved') GROUP BY q.stage_id, q.status") as $q) {
         $days = pm_days_since($q['status'] === 'sent' ? $q['sent_at'] : $q['updated_at']);
-        if ($days >= PM_WAIT_DAYS) $r('wait', ($q['status'] === 'sent' ? 'הצעות ממתינות ללקוח' : 'הצעה ממתינה לעו"ד') . " $days ימים: {$q['stage']}",
-            (int)$q['project_id'], 'quotes', substr((string)$q['sent_at'], 0, 10));
+        if ($days >= PM_WAIT_DAYS) $r('wait', pm_t($q['status'] === 'sent' ? 'הצעות ממתינות ללקוח {n} ימים: {stage}' : 'הצעה ממתינה לעו"ד {n} ימים: {stage}',
+            ['n' => $days, 'stage' => $q['stage']], $lang), (int)$q['project_id'], 'quotes', substr((string)$q['sent_at'], 0, 10));
     }
     foreach ($db->query("SELECT project_id, title, needs_lawyer, lawyer_approved_at, requested_at FROM payments
                           WHERE project_id IN ($ids) AND status = 'requested'") as $p) {
         $days = pm_days_since($p['requested_at']);
         if ($days < PM_WAIT_DAYS) continue;
-        $who = $p['needs_lawyer'] && !$p['lawyer_approved_at'] ? 'לאישור עו"ד' : 'לתשלום';
-        $r('wait', "דרישת תשלום ממתינה $who $days ימים: {$p['title']}", (int)$p['project_id'], 'payments', substr((string)$p['requested_at'], 0, 10));
+        $r('wait', pm_t($p['needs_lawyer'] && !$p['lawyer_approved_at'] ? 'דרישת תשלום ממתינה לאישור עו"ד {n} ימים: {title}' : 'דרישת תשלום ממתינה לתשלום {n} ימים: {title}',
+            ['n' => $days, 'title' => $p['title']], $lang), (int)$p['project_id'], 'payments', substr((string)$p['requested_at'], 0, 10));
     }
     // שלבים: היו אמורים להתחיל / להסתיים
     foreach ($db->query("SELECT project_id, name, status, plan_start, plan_end FROM stages WHERE project_id IN ($ids) AND status NOT IN ('done','paid')") as $s) {
         if ($s['plan_end'] !== '' && $s['plan_end'] < $today) {
-            $r('late', "שלב שהיה אמור להסתיים: {$s['name']} (" . pm_short_date($s['plan_end']) . ')', (int)$s['project_id'], 'stages', $s['plan_end']);
+            $r('late', pm_t('שלב שהיה אמור להסתיים: {stage} ({date})', ['stage' => $s['name'], 'date' => pm_short_date($s['plan_end'])], $lang),
+                (int)$s['project_id'], 'stages', $s['plan_end']);
         } elseif ($s['plan_start'] !== '' && $s['plan_start'] < $today && $s['status'] !== 'in_progress') {
-            $r('late', "שלב שהיה אמור להתחיל: {$s['name']} (" . pm_short_date($s['plan_start']) . ')', (int)$s['project_id'], 'stages', $s['plan_start']);
+            $r('late', pm_t('שלב שהיה אמור להתחיל: {stage} ({date})', ['stage' => $s['name'], 'date' => pm_short_date($s['plan_start'])], $lang),
+                (int)$s['project_id'], 'stages', $s['plan_start']);
         }
     }
     // תוקף הצעה פג
     foreach ($db->query("SELECT q.project_id, q.valid_until, c.name AS supplier, s.name AS stage FROM quotes q JOIN contacts c ON c.id = q.supplier_id JOIN stages s ON s.id = q.stage_id
                           WHERE q.project_id IN ($ids) AND q.status IN ('open','sent') AND q.valid_until != '' AND q.valid_until < '$today'") as $q) {
-        $r('wait', "תוקף הצעה פג: {$q['supplier']}, {$q['stage']} (" . pm_short_date($q['valid_until']) . ')', (int)$q['project_id'], 'quotes', $q['valid_until']);
+        $r('wait', pm_t('תוקף הצעה פג: {supplier}, {stage} ({date})', ['supplier' => $q['supplier'], 'stage' => $q['stage'], 'date' => pm_short_date($q['valid_until'])], $lang),
+            (int)$q['project_id'], 'quotes', $q['valid_until']);
     }
     // פגישות היום ומחר
     foreach (pm_appointments_rows($ids, $today, pm_today(1)) as $a) {
-        $r('soon', ($a['date'] === $today ? 'היום' : 'מחר') . ($a['time'] ? " {$a['time']}" : '') . ": {$a['title']}" . ($a['location'] ? " — {$a['location']}" : ''),
+        $tpl = $a['date'] === $today ? ($a['time'] ? 'היום {time}: {title}' : 'היום: {title}') : ($a['time'] ? 'מחר {time}: {title}' : 'מחר: {title}'); // i18n-ok — מתורגם בשורה הבאה
+        $r('soon', pm_t($tpl, ['time' => $a['time'], 'title' => $a['title']], $lang) . ($a['location'] ? " — {$a['location']}" : ''),
             (int)$a['project_id'], 'calendar', $a['date']);
     }
     $rank = ['late' => 0, 'soon' => 1, 'wait' => 2];
@@ -189,7 +196,7 @@ function pm_appointment_save(array $user, array $in): array
     }
     $f = [
         'title'      => pm_str($in, 'title', 100, true, 'מה'),
-        'date'       => pm_date($in, 'date', 'תאריך') ?: throw new PmError('תאריך: שדה חובה', 422),
+        'date'       => pm_date($in, 'date', 'תאריך') ?: throw new PmError('תאריך: שדה חובה', 422), // i18n-ok
         'time'       => $time,
         'duration'   => max(15, min(720, (int)($in['duration'] ?? 60))),
         'location'   => pm_str($in, 'location', 200, false, 'מקום'),
@@ -201,13 +208,16 @@ function pm_appointment_save(array $user, array $in): array
     if ($id) {
         $set = implode(', ', array_map(fn($k) => "$k = ?", array_keys($f)));
         $db->prepare("UPDATE appointments SET $set WHERE id = ?")->execute(array_merge(array_values($f), [$id]));
-        if ($old['date'] !== $f['date'] || $old['time'] !== $f['time']) pm_event($user, $projectId, 'appointment', "📅 הפגישה \"{$f['title']}\" עברה ל-$when", ['appointment' => $id]);
+        if ($old['date'] !== $f['date'] || $old['time'] !== $f['time']) {
+            pm_event($user, $projectId, 'appointment', '📅 הפגישה "{title}" עברה ל-{when}', ['appointment' => $id], ['title' => $f['title'], 'when' => $when]);
+        }
     } else {
         $cols = implode(', ', array_keys($f));
         $db->prepare("INSERT INTO appointments ($cols, project_id, created_by, created_at) VALUES (" . implode(',', array_fill(0, count($f), '?')) . ', ?, ?, ?)')
            ->execute(array_merge(array_values($f), [$projectId, $user['id'], pm_now()]));
         $id = (int)$db->lastInsertId();
-        pm_event($user, $projectId, 'appointment', "📅 נקבעה פגישה: {$f['title']} — $when" . ($f['location'] ? ", {$f['location']}" : ''), ['appointment' => $id]);
+        pm_event($user, $projectId, 'appointment', $f['location'] ? '📅 נקבעה פגישה: {title} — {when}, {location}' : '📅 נקבעה פגישה: {title} — {when}',
+            ['appointment' => $id], ['title' => $f['title'], 'when' => $when, 'location' => $f['location']]);
     }
     return ['saved' => $id];
 }
@@ -220,7 +230,8 @@ function pm_appointment_cancel(array $user, int $id): array
     if (!$a) throw new PmError('הפגישה לא נמצאה', 404);
     pm_project_row($user, (int)$a['project_id']);
     pm_db()->prepare('UPDATE appointments SET cancelled_at = ? WHERE id = ?')->execute([pm_now(), $id]);
-    pm_event($user, (int)$a['project_id'], 'appointment', "📅 בוטלה הפגישה: {$a['title']} (" . pm_short_date($a['date']) . ')', ['appointment' => $id]);
+    pm_event($user, (int)$a['project_id'], 'appointment', '📅 בוטלה הפגישה: {title} ({date})', ['appointment' => $id],
+        ['title' => $a['title'], 'date' => pm_short_date($a['date'])]);
     return ['ok' => true];
 }
 
@@ -268,20 +279,22 @@ function pm_ics_line(string $line): string
 function pm_calendar_feed(string $token): never
 {
     if (!preg_match('/^(\d+)\.[A-Za-z0-9_-]{20,30}$/', $token, $m)) throw new PmError('לא נמצא', 404);
-    $st = pm_db()->prepare("SELECT id, display_name, role, status, cal_nonce FROM users WHERE id = ? AND status = 'active'");
+    $st = pm_db()->prepare("SELECT id, display_name, role, status, cal_nonce, lang FROM users WHERE id = ? AND status = 'active'");
     $st->execute([(int)$m[1]]);
     $u = $st->fetch();
     if (!$u || $u['cal_nonce'] === '' || !hash_equals(pm_cal_token((int)$u['id'], $u['cal_nonce']), $token)) {
         pm_log('warn', 'auth', 'calendar.denied', ['data' => ['user' => (int)$m[1]]]);
         throw new PmError('לא נמצא', 404);
     }
+    // היומן בטלפון — בשפה של בעל הקישור (אין כותרת X-Lang מיומן הטלפון)
+    pm_lang(pm_user_lang($u));
     $user = ['id' => (int)$u['id'], 'display_name' => $u['display_name'], 'role' => $u['role']];
     $cal = pm_calendar($user, pm_today(-30), pm_today(365));
     $base = pm_app_url();
     $host = parse_url($base, PHP_URL_HOST) ?: 'project-manager';
     $now = gmdate('Ymd\THis\Z');
     $ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//mbe-plus//project-manager//HE\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\n"
-         . pm_ics_line('X-WR-CALNAME:' . pm_ics_escape('ניהול פרויקטים — ' . $u['display_name']))
+         . pm_ics_line('X-WR-CALNAME:' . pm_ics_escape(pm_t('ניהול פרויקטים — {name}', ['name' => $u['display_name']])))
          . "X-WR-TIMEZONE:Asia/Jerusalem\r\nREFRESH-INTERVAL;VALUE=DURATION:PT1H\r\nX-PUBLISHED-TTL:PT1H\r\n";
     foreach ($cal['items'] as $x) {
         $uid = "{$x['kind']}-{$x['ref']}-{$x['date']}@$host";
@@ -325,21 +338,25 @@ function pm_digest_tick(): void
     $today = $now->format('Y-m-d');
     if (pm_setting('digest_day') === $today) return;
     pm_setting_set('digest_day', $today); // קודם מסמנים — כדי ששתי בקשות במקביל לא ישלחו פעמיים
-    $st = pm_db()->prepare("SELECT id, username, display_name, email, role FROM users WHERE status = 'active' AND digest = 1 AND digest_sent != ?");
+    $st = pm_db()->prepare("SELECT id, username, display_name, email, role, lang FROM users WHERE status = 'active' AND digest = 1 AND digest_sent != ?");
     $st->execute([$today]);
     $sent = 0;
     foreach ($st->fetchAll() as $u) {
         $user = ['id' => (int)$u['id'], 'display_name' => $u['display_name'], 'role' => $u['role']];
         $to = pm_user_email($u);
-        $list = pm_reminders($user);
+        $lang = pm_user_lang($u); // המייל — בשפת המנהל, לא בשפת הבקשה שהפעילה אותו
+        $list = pm_reminders($user, $lang);
         pm_db()->prepare('UPDATE users SET digest_sent = ? WHERE id = ?')->execute([$today, $u['id']]);
         if ($to === '' || !$list) continue;
         $lines = [];
         $byProject = [];
         foreach ($list as $x) $byProject[$x['project_name']][] = ($x['level'] === 'late' ? '⚠️ ' : '• ') . $x['text'];
         foreach ($byProject as $name => $items) $lines[] = "$name\n" . implode("\n", $items);
-        $ok = pm_send_mail($to, 'דורש טיפול היום (' . count($list) . ') — ניהול פרויקטים',
-            "בוקר טוב {$u['display_name']},\n\n" . implode("\n\n", $lines) . "\n\nביומן: " . pm_app_url() . "/#/calendar\n\n(אפשר לכבות את המייל הזה ב\"החשבון שלי\".)\n");
+        $ok = pm_send_mail($to, pm_t('דורש טיפול היום ({n}) — ניהול פרויקטים', ['n' => count($list)], $lang),
+            pm_t("בוקר טוב {name},\n\n{items}\n\nביומן: {url}\n\n(אפשר לכבות את המייל הזה ב\"החשבון שלי\".)\n",
+                ['name' => $u['display_name'], 'items' => implode("\n\n", $lines), 'url' => pm_app_url() . '/#/calendar'], $lang), $lang);
+
+
         pm_log($ok ? 'info' : 'warn', 'mail', 'mail.digest', ['data' => ['to' => $to, 'items' => count($list), 'sent' => $ok]]);
         $sent++;
     }

@@ -47,7 +47,8 @@ const PM_MSG_TEMPLATES = [
 ];
 
 /** שמות המשתנים בנוסחים. בכל שפה הכינוי שלהם — התרגום של השם (מילה אחת). */
-const PM_MSG_VARS = ['שם', 'פרויקט', 'מנהל', 'כתובת', 'פרטים', 'סכום', 'שלב', 'קישור'];
+// במילון — עם הסוגריים ("{קישור}" ← "{link}"), כדי שמילה רגילה בנתונים ("שם") לא תיתפס ככינוי
+const PM_MSG_VARS = ['{שם}', '{פרויקט}', '{מנהל}', '{כתובת}', '{פרטים}', '{סכום}', '{שלב}', '{קישור}'];
 // i18n-ok-end
 
 /** נוסחים שחייבים את הקישור — בלעדיו הנמען לא יכול לפעול. */
@@ -60,8 +61,9 @@ function pm_msg_vars(): array
     if ($out !== null) return $out;
     $out = [];
     foreach (array_keys(PM_LANGS) as $lang) {
-        foreach (PM_MSG_VARS as $name) {
-            $alias = $lang === 'he' ? $name : trim(pm_t($name, [], $lang));
+        foreach (PM_MSG_VARS as $key) {
+            $name = trim($key, '{}');
+            $alias = $lang === 'he' ? $name : trim(pm_t($key, [], $lang), " {}");
             // כינוי חייב להיות מילה אחת בלי סוגריים — אחרת נשאר השם העברי
             if ($alias === '' || preg_match('/[\s{}]/u', $alias)) $alias = $name;
             $out[$lang][$name] = $alias;
@@ -180,8 +182,9 @@ function pm_notify(int $projectId, int $contactId, string $key, array $vars, ?ar
         if ($c['kind'] === 'client' && !in_array('email', pm_client_settings($contactId)['channels'], true)) return false;
         $owner = pm_project_owner($projectId);
         $vars += ['שם' => $c['name'], 'פרויקט' => $owner['project_name']]; // i18n-none
-        [$subject, $body] = pm_msg_render($owner, $key, $vars, pm_lang_valid((string)($c['lang'] ?? 'he')));
-        $ok = pm_send_mail($c['email'], $subject, $body);
+        $lang = pm_lang_valid((string)($c['lang'] ?? 'he'));
+        [$subject, $body] = pm_msg_render($owner, $key, $vars, $lang);
+        $ok = pm_send_mail($c['email'], $subject, $body, $lang);
         pm_db()->prepare('INSERT INTO messages (project_id, contact_id, channel, key, recipient, subject, body, status, auto, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
            ->execute([$projectId, $contactId, 'email', $key, $c['email'], $subject, $body, $ok ? 'sent' : 'failed', 1, (int)($actor['id'] ?? 0), pm_now()]);
         pm_log($ok ? 'info' : 'warn', 'mail', "mail.$key", ['data' => ['to' => $c['email'], 'contact' => $contactId, 'project' => $projectId, 'sent' => $ok]]);
@@ -250,7 +253,8 @@ function pm_mail_test(array $user): array
     $lang = pm_user_lang((int)$user['id']);
     $ok = pm_send_mail($to, pm_t('מייל בדיקה — ניהול פרויקטים', [], $lang),
         pm_t("שלום {name},\n\nאם המייל הזה הגיע — השרת שולח מיילים, וההודעות האוטומטיות יגיעו ללקוחות, לעורכי הדין ולספקים.\n\n{url}\n",
-            ['name' => $user['display_name'], 'url' => pm_app_url()], $lang));
+            ['name' => $user['display_name'], 'url' => pm_app_url()], $lang), $lang);
+
     pm_log($ok ? 'info' : 'warn', 'mail', 'mail.test', ['user' => $user, 'data' => ['to' => $to, 'sent' => $ok, 'from' => pm_mail_from()]]);
     return ['sent' => $ok, 'to' => $to, 'from' => pm_mail_from()];
 }
