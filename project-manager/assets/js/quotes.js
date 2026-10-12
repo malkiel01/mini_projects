@@ -39,11 +39,6 @@ const Quotes = (() => {
             const b = e.target.closest('[data-decide]');
             if (b) decide(b.dataset.role, b.dataset.decide);
         });
-        $('#send-copy').addEventListener('click', async () => {
-            try { await navigator.clipboard.writeText($('#send-text').value); toast('הועתק'); }
-            catch { $('#send-text').select(); }
-        });
-        $('#send-text').addEventListener('input', sendLinks);
         $('#decisions').addEventListener('click', async e => {
             const b = e.target.closest('[data-sig]');
             if (!b) return;
@@ -300,28 +295,15 @@ const Quotes = (() => {
         const lines = list.map(q => `${q.recommended ? '⭐' : '•'} ${q.supplier_name}${q.supplier_company ? ` (${q.supplier_company})` : ''} — ${money(q.amount)}`
             + (q.valid_until ? `, בתוקף עד ${shortDate(q.valid_until)}` : '') + (q.recommended ? ' — ההמלצה שלי' : ''));
         // הקישור האישי של הלקוח — שם הוא רואה את ההצעות ומאשר בעצמו
-        let url = '';
-        if (client) { try { url = (await api('portal-link', { body: { project_id: project.project.id, contact_id: client.id, do: 'get' } })).link?.url || ''; } catch { /* בלי קישור */ } }
+        const url = await portalUrl(project.project.id, client?.id);
         const text = `שלום${client ? ' ' + client.name : ''},\n`
             + `הצעות מחיר לשלב "${st.name}" בפרויקט ${project.project.name}:\n\n${lines.join('\n')}\n\n`
             + 'הסכומים כוללים מע"מ. '
             + (url ? `לצפייה בהצעות ולאישור:\n${url}\n\n` : 'אשמח לאישורך על ההצעה שבחרת.\n')
             + state.user.display_name;
-        $('#send-to').textContent = client ? `אל: ${client.name}${client.phone ? ' · ' + client.phone : ''}${client.email ? ' · ' + client.email : ''}` : 'אין לקוח בפרויקט — אפשר להעתיק ולשלוח.';
-        $('#send-text').value = text;
-        sendLinks();
-        $('#send-dlg').showModal();
-    }
-
-    function sendLinks() {
-        const client = project.team.find(t => t.roles.includes('לקוח'));
-        const text = $('#send-text').value;
-        const phone = client?.whatsapp || client?.phone || '';
-        $('#send-wa').href = `https://wa.me/${phone ? waNumber(phone) : ''}?text=${encodeURIComponent(text)}`;
-        $('#send-sms').hidden = !client?.phone;
-        $('#send-sms').href = `sms:${digits(client?.phone || '')}?&body=${encodeURIComponent(text)}`;
-        $('#send-mail').hidden = !client?.email;
-        $('#send-mail').href = `mailto:${encodeURIComponent(client?.email || '')}?subject=${encodeURIComponent('הצעות מחיר — ' + project.project.name)}&body=${encodeURIComponent(text)}`;
+        Send.open({ title: 'שליחת ההצעות ללקוח', recipients: [{ contact: client, label: 'הלקוח', text }],
+            subject: 'הצעות מחיר — ' + project.project.name,
+            hint: 'ההצעות סומנו "נשלחה ללקוח", והשלב ממתין לאישורו. בקישור האישי הלקוח רואה את ההצעות ומאשר בעצמו. אם הוא עונה בטלפון — פותחים את ההצעה ורושמים את ההחלטה.' });
     }
 
     return { show, fromFile };

@@ -15,7 +15,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/quotes.php';
+require_once __DIR__ . '/payments.php';
 require_once __DIR__ . '/mail.php';
 
 const PM_CONFIG = __DIR__ . '/../data/config.json';
@@ -211,12 +211,22 @@ function pm_portal_view(array $a): array
     $method = 'click';
     if ($role === 'client') $method = pm_client_settings((int)$a['contact']['id'])['approval_method'];
 
+    // תשלומים: רק מה שכבר נשלחה עליו דרישה. פרטי הבנק — כשאפשר לשלם.
+    $payments = array_map(function ($x) use ($role) {
+        $x['can_pay'] = $x['payable'];
+        $x['can_approve'] = $role === 'lawyer' && $x['needs_lawyer'] && !$x['lawyer'] && $x['status'] === 'requested';
+        $x['bank'] = $x['payable'] ? pm_supplier_bank($x['supplier_id']) : null;
+        unset($x['quote_id'], $x['percent']);
+        return $x;
+    }, pm_payments_of($pid, true)['payments']);
+
     return [
         'role' => $role, 'name' => $a['contact']['name'], 'approval_method' => $method,
         'project' => ['name' => $p['name'], 'address' => $p['address'], 'status' => $p['status'], 'kind' => $p['kind']],
         'manager' => ['name' => $a['owner']['display_name'], 'phone' => $a['owner']['phone'], 'email' => $a['owner']['email']],
-        'stages' => $stages, 'quotes' => $quotes, 'files' => $files,
-        'labels' => ['stage' => PM_STAGE_STATUSES, 'quote' => PM_QUOTE_STATUSES, 'file' => PM_FILE_TYPES],
+        'stages' => $stages, 'quotes' => $quotes, 'files' => $files, 'payments' => $payments,
+        'labels' => ['stage' => PM_STAGE_STATUSES, 'quote' => PM_QUOTE_STATUSES, 'file' => PM_FILE_TYPES, 'method' => PM_PAY_METHODS],
+        'max_proof' => PM_PROOF_MAX,
     ];
 }
 
@@ -266,18 +276,85 @@ function pm_app_url_root(): string
     return preg_replace('#/portal$#', '', pm_app_url());
 }
 
-/** קובץ מהפורטל: רק "גלוי", או קובץ של הצעה שנשלחה ללקוח. */
+/** קובץ מהפורטל: רק "גלוי", קובץ של הצעה שנשלחה ללקוח, או אסמכתא של תשלום בפרויקט. */
 function pm_portal_file(array $a, int $id, bool $thumb, bool $download): never
 {
     $st = pm_db()->prepare('SELECT * FROM files WHERE id = ? AND project_id = ? AND deleted_at IS NULL');
     $st->execute([$id, $a['project']['id']]);
     $x = $st->fetch();
     $ok = $x && ((int)$x['visible'] === 1 || (function () use ($id, $a) {
-        $q = pm_db()->prepare("SELECT 1 FROM quotes WHERE file_id = ? AND project_id = ? AND sent_at IS NOT NULL AND status != 'cancelled'");
-        $q->execute([$id, $a['project']['id']]);
+        $q = pm_db()->prepare("SELECT 1 FROM quotes WHERE file_id = ? AND project_id = ? AND sent_at IS NOT NULL AND status != 'cancelled'
+                               UNION SELECT 1 FROM payment_proofs x JOIN payments p ON p.id = x.payment_id WHERE x.file_id = ? AND p.project_id = ?");
+        $q->execute([$id, $a['project']['id'], $id, $a['project']['id']]);
         return (bool)$q->fetchColumn();
     })());
     if (!$ok) throw new PmError('הקובץ לא נמצא', 404);
     if (!$thumb) pm_log('info', 'portal', 'portal.file', ['data' => ['link' => (int)$a['link']['id'], 'file' => $id, 'name' => $x['name']]]);
     pm_file_output($x, $thumb, $download);
+}
+
+// ================= תשלומים מהפורטל =================
+
+const PM_PROOF_MAX = 8 * 1048576; // אסמכתא: צילום או PDF — תמונה מוקטנת בדפדפן לפני השליחה
+
+function pm_portal_payment(array $a, int $id): array
+{
+    foreach (pm_portal_view($a)['payments'] as $x) if ($x['id'] === $id) return $x;
+    throw new PmError('אבן הדרך לא נמצאה', 404);
+}
+
+/** העו"ד: אישור לתשלום. */
+function pm_portal_pay_approve(array $a, array $in): array
+{
+    $x = pm_portal_payment($a, (int)($in['payment_id'] ?? 0));
+    if (!$x['can_approve']) throw new PmError('אין כאן מה לאשר', 422);
+    $note = (string)($in['note'] ?? '');
+    pm_payment_lawyer_approve($a['owner'], $x['id'], $note, 'click', $a['contact']['name'], $a['actor']);
+    pm_portal_mail($a, "{$a['actor']['display_name']} אישר לתשלום: {$x['title']}",
+        "{$a['actor']['display_name']} אישר לתשלום את \"{$x['title']}\" ל{$x['supplier_name']} — " . pm_money((int)round($x['amount'] * 100)) . '.' . ($note !== '' ? "\n\nהערה: $note" : ''));
+    return pm_portal_view($a);
+}
+
+/**
+ * "שילמתי": גוף הבקשה הוא הקובץ עצמו (תמונה או PDF), והפרטים בכתובת —
+ * payment_id, amount, paid_on, method, note, name. הכול בבקשה אחת.
+ */
+function pm_portal_proof(array $a, array $q): array
+{
+    $x = pm_portal_payment($a, (int)($q['payment_id'] ?? 0));
+    if (!$x['can_pay']) throw new PmError($x['needs_lawyer'] && !$x['lawyer'] ? 'ממתין לאישור העו"ד — אחריו אפשר לדווח תשלום' : 'אי אפשר לדווח תשלום עכשיו', 422);
+    $len = (int)($_SERVER['CONTENT_LENGTH'] ?? 0);
+    if ($len <= 0) throw new PmError('נדרשת אסמכתא — צילום ההעברה, הצ\'ק או אישור הבנק', 422);
+    if ($len > PM_PROOF_MAX) throw new PmError('הקובץ גדול מדי — עד 8MB', 413);
+    $tmp = pm_tmp_dir() . '/proof_' . bin2hex(random_bytes(8));
+    $in = fopen('php://input', 'rb');
+    $out = fopen($tmp, 'wb');
+    $n = stream_copy_to_stream($in, $out, PM_PROOF_MAX + 1);
+    fclose($in); fclose($out);
+    if ($n <= 0 || $n > PM_PROOF_MAX) { @unlink($tmp); throw new PmError('הקובץ לא הגיע — נסו שוב', 422); }
+    $mime = pm_detect_mime($tmp, '');
+    if (!preg_match('#^(image/(jpeg|png|webp|heic|heif)|application/pdf)$#', $mime)) { @unlink($tmp); throw new PmError('אסמכתא — תמונה או PDF', 415); }
+    $role = $a['link']['role'];
+    $name = trim((string)($q['name'] ?? '')) ?: 'אסמכתא.' . ($mime === 'application/pdf' ? 'pdf' : 'jpg');
+    $fileId = pm_file_store((int)$a['project']['id'], $role, 'אסמכתא — ' . $x['title'] . ' — ' . $name, $tmp, 'proof', 0,
+        'הועלה בקישור האישי של ' . $a['contact']['name']);
+    try {
+        pm_payment_proof_add($a['owner'], $x['id'], $q, $role, $a['contact']['name'], $fileId, $a['actor'], (int)$a['link']['id']);
+    } catch (Throwable $e) {
+        pm_db()->prepare('UPDATE files SET deleted_at = ? WHERE id = ?')->execute([pm_now(), $fileId]);
+        throw $e;
+    }
+    $amount = pm_quote_amount($q['amount'] ?? null);
+    pm_portal_mail($a, "{$a['actor']['display_name']} דיווח תשלום: {$x['title']}",
+        "{$a['actor']['display_name']} דיווח ששילם " . pm_money($amount) . " ל{$x['supplier_name']} עבור \"{$x['title']}\", עם אסמכתא.\nנא לאשר שהתקבל.");
+    pm_log('info', 'portal', 'portal.proof', ['data' => ['link' => (int)$a['link']['id'], 'payment' => $x['id'], 'file' => $fileId, 'bytes' => $n]]);
+    return pm_portal_view($a);
+}
+
+function pm_portal_mail(array $a, string $subject, string $body): void
+{
+    $to = pm_user_email($a['owner']);
+    if ($to === '') return;
+    $sent = pm_send_mail($to, "$subject — {$a['project']['name']}", $body . "\n\n" . pm_app_url_root() . "/#/p/{$a['project']['id']}/payments\n");
+    pm_log($sent ? 'info' : 'warn', 'mail', 'mail.portal', ['data' => ['to' => $to, 'sent' => $sent, 'subject' => $subject]]);
 }

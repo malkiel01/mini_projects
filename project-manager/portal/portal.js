@@ -66,15 +66,21 @@ function render() {
     // ---- ממתין לאישורך: שלב אחד = שורה אחת ----
     const waiting = new Map();
     data.quotes.filter(q => q.can_decide && (q.status === 'sent' || q.status === 'client_approved')).forEach(q => waiting.set(q.stage_id, (waiting.get(q.stage_id) || 0) + 1));
-    $('#pending').hidden = !waiting.size;
+    // תשלומים שממתינים לי: עו"ד — לאישור; משלם — לתשלום
+    const payNow = data.payments.filter(p => p.can_approve || (p.can_pay && p.payer === data.role));
+    $('#pending').hidden = !waiting.size && !payNow.length;
     $('#pending-list').innerHTML = [...waiting].map(([sid, n]) => {
         const st = data.stages.find(s => s.id === sid);
-        return `<li class="card" data-go="${sid}" tabindex="0" role="button">
+        return `<li class="card" data-go="stage-${sid}" tabindex="0" role="button">
             <span class="ficon" aria-hidden="true">✍️</span>
             <div class="body"><div class="l1"><span class="one">${esc(st?.name)}</span></div>
                 <div class="l2">${n > 1 ? `${n} הצעות מחיר — לבחירה ואישור` : 'הצעת מחיר — לאישור'}</div></div>
             <span class="go" aria-hidden="true">‹</span></li>`;
-    }).join('');
+    }).join('') + payNow.map(p => `<li class="card" data-go="pay-${p.id}" tabindex="0" role="button">
+            <span class="ficon" aria-hidden="true">${p.can_approve ? '⚖️' : '💳'}</span>
+            <div class="body"><div class="l1"><span class="one">${esc(p.title)}</span><span class="amt">${esc(money(p.status === 'partial' ? p.balance : p.amount))}</span></div>
+                <div class="l2">${p.can_approve ? 'דרישת תשלום — לאישורך' : 'לתשלום'} · ${esc(p.supplier_name)}${p.due_date ? ' · עד ' + shortDate(p.due_date) : ''}</div></div>
+            <span class="go" aria-hidden="true">‹</span></li>`).join('');
 
     // ---- התקדמות ----
     const s = data.stages;
@@ -103,6 +109,10 @@ function render() {
             ${list.map(q => quoteCard(q, low)).join('')}
         </section>`;
     }).join('');
+
+    // ---- תשלומים ----
+    $('#payments').hidden = !data.payments.length;
+    $('#payment-list').innerHTML = data.payments.map(payCard).join('');
 
     // ---- קבצים ----
     $('#files').hidden = !data.files.length;
@@ -149,6 +159,112 @@ function quoteCard(q, low) {
         ${q.file ? `<a class="btn ghost sm file-link" href="${fileUrl(q.file.id)}" target="_blank" rel="noopener">📄 צפייה בהצעה</a>` : ''}
         ${btns}
     </article>`;
+}
+
+const PAY_ICON = { requested: '📤', paid: '💳', partial: '◐', received: '✅' };
+
+function payCard(p) {
+    const st = p.stage_id ? data.stages.find(s => s.id === p.stage_id) : null;
+    const late = p.due_date && p.due_date < new Date().toISOString().slice(0, 10) && !['received'].includes(p.status);
+    const b = p.bank?.bank || {};
+    const bank = p.bank && (b.bank || b.account) ? `<dl class="bank">
+            <dt>לטובת</dt><dd>${esc(b.holder || p.bank.company || p.bank.name)}</dd>
+            ${b.bank ? `<dt>בנק</dt><dd>${esc(b.bank)}</dd>` : ''}${b.branch ? `<dt>סניף</dt><dd>${esc(b.branch)}</dd>` : ''}
+            ${b.account ? `<dt>חשבון</dt><dd><span dir="ltr">${esc(b.account)}</span> <button type="button" class="btn ghost sm" data-copy="${esc(b.account)}">העתקה</button></dd>` : ''}
+            ${p.bank.tax_id ? `<dt>ח.פ.</dt><dd>${esc(p.bank.tax_id)}</dd>` : ''}</dl>`
+        : p.can_pay ? '<p class="q3 muted">פרטי הבנק — אצל הספק או מנהל הפרויקט.</p>' : '';
+    const proofs = p.proofs.map(x => `<li>${x.status === 'received' ? '✅' : x.status === 'rejected' ? '✖' : '⏳'} ${esc(money(x.amount))} · ${esc(data.labels.method[x.method] || '')} · ${esc(shortDate(x.paid_on))}
+        ${x.status === 'pending' ? '— ממתין לאישור קבלה' : x.status === 'received' ? '— התקבל' : '— לא התקבל' + (x.review_note ? ': ' + esc(x.review_note) : '')}
+        ${x.file ? ` · <a href="${fileUrl(x.file.id)}" target="_blank" rel="noopener">אסמכתא</a>` : ''}</li>`).join('');
+    const btns = [
+        p.can_approve ? `<button class="btn primary" data-pay-approve="${p.id}">✅ אישור לתשלום</button>` : '',
+        p.can_pay ? `<button class="btn ${p.payer === data.role ? 'primary' : 'ghost'}" data-pay="${p.id}">💳 שילמתי — העלאת אסמכתא</button>` : '',
+    ].filter(Boolean).join('');
+    return `<article class="qcard pay-${esc(p.status)}" id="pay-${p.id}">
+        <div class="q1"><span class="one">${esc(p.title)}${st ? ` · ${esc(st.name)}` : ''}</span><span class="amt">${esc(money(p.amount))}</span></div>
+        <div class="q2">${esc(p.supplier_name)}<i class="sep" aria-hidden="true">·</i>${PAY_ICON[p.status] || ''} ${esc(p.label)}${p.due_date ? `<i class="sep" aria-hidden="true">·</i><span class="${late ? 'late' : ''}">עד ${shortDate(p.due_date)}</span>` : ''}</div>
+        ${p.status === 'partial' ? `<p class="q3">התקבל ${esc(money(p.received))} · נשאר <b>${esc(money(p.balance))}</b></p>` : ''}
+        ${p.notes ? `<p class="q3">${esc(p.notes)}</p>` : ''}
+        ${p.lawyer ? `<p class="q3 muted">⚖️ ${esc(p.lawyer.by)} אישר לתשלום · ${new Date(p.lawyer.at).toLocaleDateString('he-IL')}</p>` : ''}
+        ${bank}
+        ${proofs ? `<ul class="proofs">${proofs}</ul>` : ''}
+        ${btns ? `<div class="row-btns wrap">${btns}</div>` : ''}
+    </article>`;
+}
+
+// ================= תשלומים =================
+
+let payItem = null, proofFile = null;
+
+function openPay(id) {
+    payItem = data.payments.find(p => p.id === id);
+    const dlg = $('#pay-dlg'), form = $('form', dlg), el = form.elements;
+    form.reset();
+    proofFile = null;
+    $('#proof-name').textContent = '';
+    $('.error', form).hidden = true;
+    $('#pay-summary').innerHTML = `<dl><dt>עבור</dt><dd>${esc(payItem.title)}</dd><dt>לספק</dt><dd>${esc(payItem.supplier_name)}</dd>
+        <dt>${payItem.status === 'partial' ? 'נשאר' : 'סכום'}</dt><dd><b>${esc(money(payItem.balance))}</b> כולל מע"מ</dd></dl>`;
+    el.amount.value = String(payItem.balance);
+    el.paid_on.value = new Date().toISOString().slice(0, 10);
+    el.method.innerHTML = Object.entries(data.labels.method).map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('');
+    dlg.showModal();
+}
+
+/** תמונה — מוקטנת ל-2000px (JPEG) לפני השליחה; PDF כמו שהוא. */
+async function shrink(file) {
+    if (!file.type.startsWith('image/') || !('createImageBitmap' in window)) return file;
+    try {
+        const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+        const scale = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
+        if (scale === 1 && file.size < 1.5 * 1048576) return file;
+        const c = document.createElement('canvas');
+        c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+        c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+        const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
+        return blob ? new File([blob], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' }) : file;
+    } catch { return file; }
+}
+
+async function submitPay(e) {
+    e.preventDefault();
+    const form = $('#pay-dlg form'), el = form.elements, err = $('.error', form);
+    err.hidden = true;
+    const amount = el.amount.value.trim();
+    if (!amount) { err.textContent = 'כמה שילמתם?'; err.hidden = false; return; }
+    if (!proofFile) { err.textContent = 'נדרשת אסמכתא — צילום ההעברה, הצ\'ק או אישור הבנק'; err.hidden = false; return; }
+    const btn = $('#pay-go');
+    btn.disabled = true;
+    btn.textContent = 'שולח…';
+    try {
+        const file = await shrink(proofFile);
+        if (file.size > data.max_proof) throw new Error('הקובץ גדול מדי — עד 8MB');
+        const qs = new URLSearchParams({ action: 'proof', payment_id: payItem.id, amount, paid_on: el.paid_on.value, method: el.method.value, note: el.note.value, name: file.name });
+        const res = await fetch('api.php?' + qs, { method: 'POST', headers: { 'X-Portal': token, 'Content-Type': file.type || 'application/octet-stream', Accept: 'application/json' }, body: file });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(d.error || `תקלה (${res.status})`);
+        data = d;
+        $('#pay-dlg').close();
+        render();
+        toast('האסמכתא נשלחה. מנהל הפרויקט יאשר כשהכסף יתקבל.');
+    } catch (x) {
+        err.textContent = x.message;
+        err.hidden = false;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'שילמתי — שליחת האסמכתא';
+    }
+}
+
+async function payApprove(id) {
+    const p = data.payments.find(x => x.id === id);
+    const note = prompt(`לאשר את התשלום: ${p.title} — ${money(p.amount)} ל${p.supplier_name}?\nהערה (לא חובה):`, '');
+    if (note === null) return;
+    try {
+        data = await call('pay-approve', { payment_id: id, note });
+        render();
+        toast('האישור נשמר. הלקוח יכול לשלם.');
+    } catch (x) { toast(x.message, true); }
 }
 
 // ================= אישור / דחייה =================
@@ -236,7 +352,13 @@ document.addEventListener('click', e => {
     const act = e.target.closest('[data-act]');
     if (act) { openDecide(Number(act.dataset.q), act.dataset.act); return; }
     const go = e.target.closest('[data-go]');
-    if (go) { $('#stage-' + go.dataset.go)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+    if (go) { $('#' + go.dataset.go)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+    const pay = e.target.closest('[data-pay]');
+    if (pay) { openPay(Number(pay.dataset.pay)); return; }
+    const pa = e.target.closest('[data-pay-approve]');
+    if (pa) { payApprove(Number(pa.dataset.payApprove)); return; }
+    const cp = e.target.closest('[data-copy]');
+    if (cp) { navigator.clipboard?.writeText(cp.dataset.copy).then(() => toast('הועתק'), () => {}); return; }
     if (e.target.closest('[data-close]')) e.target.closest('dialog')?.close();
 });
 document.addEventListener('keydown', e => {
@@ -244,6 +366,8 @@ document.addEventListener('keydown', e => {
     if (go && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); go.click(); }
 });
 $('#decide-dlg form').addEventListener('submit', submitDecide);
+$('#pay-dlg form').addEventListener('submit', submitPay);
+$('#pay-dlg [name=file]').addEventListener('change', e => { proofFile = e.target.files[0] || null; $('#proof-name').textContent = proofFile ? '📎 ' + proofFile.name : ''; });
 // מקלדת בטלפון: השדה בפוקוס למרכז, והחלון בגובה הנראה
 (() => {
     const vv = window.visualViewport;

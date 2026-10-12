@@ -316,6 +316,32 @@ function pm_upload_finish(array $user, array $in): array
 }
 
 /** תמונה ממוזערת שהדפדפן הכין (data:image/jpeg;base64,…) — עד 200KB. */
+/**
+ * קובץ שהגיע בבקשה אחת (מהפורטל — אסמכתא), לתיקייה הראשית מסוג $kind
+ * (client · lawyer · inbox). מחזיר את מזהה הקובץ. בלי אירוע — הקורא רושם.
+ */
+function pm_file_store(int $projectId, string $kind, string $name, string $tmpPath, string $type, int $uploadedBy, string $note = ''): int
+{
+    pm_ensure_folders(['id' => $projectId]);
+    $f = pm_db()->prepare('SELECT id FROM folders WHERE project_id = ? AND kind = ? AND parent_id IS NULL');
+    $f->execute([$projectId, $kind]);
+    $folder = (int)$f->fetchColumn();
+    if (!$folder) throw new PmError('אין תיקייה לקובץ', 500);
+    $name = pm_clean_filename($name);
+    $mime = pm_detect_mime($tmpPath, '');
+    $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+    $storage = bin2hex(random_bytes(12)) . (preg_match('/^[a-z0-9]{1,8}$/', $ext) ? ".$ext" : '');
+    $dir = pm_files_dir($projectId);
+    $size = (int)filesize($tmpPath);
+    if (!rename($tmpPath, "$dir/$storage")) throw new PmError('שמירת הקובץ נכשלה', 500);
+    $db = pm_db();
+    $db->prepare('INSERT INTO files (project_id, name, mime, size, type, storage, thumb, visible, note, uploaded_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+       ->execute([$projectId, $name, $mime, $size, $type, $storage, null, 0, $note, $uploadedBy, pm_now()]);
+    $id = (int)$db->lastInsertId();
+    $db->prepare('INSERT INTO file_links (file_id, folder_id, is_home) VALUES (?,?,1)')->execute([$id, $folder]);
+    return $id;
+}
+
 function pm_save_thumb(string $dir, string $dataUrl): ?string
 {
     if (!preg_match('#^data:image/(jpeg|png|webp);base64,(.+)$#', $dataUrl, $m)) return null;

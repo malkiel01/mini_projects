@@ -100,7 +100,7 @@ try {
                     // מצב עצמאי: בלי חזרה לדף האפליקציות. כבוי כל עוד האפליקציה בתוך האינדקס.
                     'standalone' => pm_setting('standalone', '0') === '1',
                     'labels' => ['stage' => PM_STAGE_STATUSES, 'project' => PM_PROJECT_STATUSES, 'kind' => PM_PROJECT_KINDS,
-                                 'quote' => PM_QUOTE_STATUSES]];
+                                 'quote' => PM_QUOTE_STATUSES, 'payment' => PM_PAYMENT_STATUSES, 'method' => PM_PAY_METHODS]];
         })(),
 
         'GET contacts'    => ['contacts' => pm_contacts_list($user, (string)($in['kind'] ?? ''),
@@ -144,6 +144,15 @@ try {
         'POST quote-decide' => pm_quote_decide($user, (int)($in['id'] ?? 0), (string)($in['role'] ?? ''),
                                                (string)($in['decision'] ?? ''), (string)($in['note'] ?? '')),
         'POST quote-cancel' => pm_quote_cancel($user, (int)($in['id'] ?? 0), (string)($in['note'] ?? '')),
+        // אבני דרך לתשלום (שלב 7)
+        'GET payments'        => pm_payments($user, (int)($in['project_id'] ?? 0)),
+        'POST payment'        => pm_payment_save($user, $in),
+        'POST payment-request' => pm_payment_request($user, (int)($in['id'] ?? 0)),
+        'POST payment-lawyer' => pm_payment_lawyer_approve($user, (int)($in['id'] ?? 0), (string)($in['note'] ?? '')),
+        'POST payment-proof'  => pm_payment_proof_add($user, (int)($in['id'] ?? 0), $in, 'manager', $user['display_name'], (int)($in['file_id'] ?? 0) ?: null),
+        'POST proof-review'   => pm_payment_proof_review($user, (int)($in['id'] ?? 0), !empty($in['ok']), $in['received'] ?? null, (string)($in['note'] ?? '')),
+        'POST payment-cancel' => pm_payment_cancel($user, (int)($in['id'] ?? 0), (string)($in['note'] ?? '')),
+
         // קישורים אישיים לפורטל (שלב 6)
         'GET portal-links'  => ['links' => pm_portal_links($user, (int)($in['project_id'] ?? 0))],
         'POST portal-link'  => pm_portal_link_save($user, (int)($in['project_id'] ?? 0), (int)($in['contact_id'] ?? 0), (string)($in['do'] ?? 'get')),

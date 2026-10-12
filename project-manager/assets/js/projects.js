@@ -175,7 +175,7 @@ const Projects = (() => {
 
     async function showProject(id, p, sub) {
         bind();
-        pane = ['timeline', 'files', 'stages', 'quotes', 'team', 'details'].includes(p) ? p : 'timeline';
+        pane = ['timeline', 'files', 'stages', 'quotes', 'payments', 'team', 'details'].includes(p) ? p : 'timeline';
         subFolder = sub;
         $$('#project-nav a').forEach(a => {
             a.href = `#/p/${id}/${a.dataset.pane}`;
@@ -208,6 +208,7 @@ const Projects = (() => {
         if (pane === 'files') Files.show(cur.project, Number(subFolder) || 0);
         if (pane === 'stages') renderStages();
         if (pane === 'quotes') Quotes.show(cur);
+        if (pane === 'payments') Payments.show(cur);
         if (pane === 'team') renderTeam();
         if (pane === 'details') renderDetails();
     }
