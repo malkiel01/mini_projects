@@ -51,7 +51,7 @@ function pm_users_exist(): bool
     return (bool)pm_db()->query('SELECT 1 FROM users LIMIT 1')->fetchColumn();
 }
 
-/** המשתמש המחובר — [id, username, display_name, email, role, status, csrf] — או null (גם ממתין). */
+/** המשתמש המחובר — [id, username, display_name, email, role, status, lang, csrf] — או null (גם ממתין). */
 function pm_session_user(): ?array
 {
     static $cached = false;
@@ -60,7 +60,7 @@ function pm_session_user(): ?array
     $token = $_COOKIE[PM_COOKIE] ?? '';
     if (!is_string($token) || strlen($token) !== 64) return null;
     $st = pm_db()->prepare(
-        'SELECT u.id, u.username, u.display_name, u.email, u.phone, u.role, u.status, s.csrf
+        'SELECT u.id, u.username, u.display_name, u.email, u.phone, u.role, u.status, u.lang, s.csrf
            FROM sessions s JOIN users u ON u.id = s.user_id
           WHERE s.token_hash = ? AND s.expires_at > ?'
     );
@@ -179,7 +179,7 @@ function pm_valid_username($u): string
 function pm_valid_password($p): string
 {
     if (!is_string($p) || mb_strlen($p) < PM_MIN_PASSWORD || strlen($p) > 200) {
-        throw new PmError('הסיסמה צריכה לפחות ' . PM_MIN_PASSWORD . ' תווים', 422);
+        throw new PmError('הסיסמה צריכה לפחות {n} תווים', 422, ['n' => PM_MIN_PASSWORD]);
     }
     return $p;
 }
@@ -189,6 +189,13 @@ function pm_valid_name($n): string
     $n = is_string($n) ? trim($n) : '';
     if ($n === '' || mb_strlen($n) > 60) throw new PmError('שם מלא: 1–60 תווים', 422);
     return $n;
+}
+
+/** שפה שנשלחה מהדפדפן (כניסה / הרשמה) — קוד מ-PM_LANGS, או '' כשלא נבחרה. */
+function pm_in_lang(array $in): string
+{
+    $l = is_string($in['lang'] ?? null) ? $in['lang'] : '';
+    return isset(PM_LANGS[$l]) ? $l : '';
 }
 
 /** בקשות שקודמות לאסימון CSRF: רק JSON עם X-PM (README, "אבטחה"). */
@@ -244,7 +251,7 @@ function pm_check_recovery(string $code, string $purpose): void
     $wait = pm_lock_remaining($keys);
     if ($wait > 0) {
         pm_log('warn', 'auth', "$purpose.locked", ['message' => "נעול עוד {$wait} שניות"]);
-        throw new PmError('יותר מדי ניסיונות. נסו שוב בעוד ' . (int)ceil($wait / 60) . ' דקות', 429);
+        throw new PmError('יותר מדי ניסיונות. נסו שוב בעוד {n} דקות', 429, ['n' => (int)ceil($wait / 60)]);
     }
     $hash = pm_recovery_hash();
     if (!$hash) {
@@ -283,7 +290,7 @@ function pm_login(array $in): array
     if ($wait > 0) {
         pm_log('warn', 'auth', 'login.locked', ['username' => $login, 'message' => "נעול עוד {$wait} שניות",
             'data' => ['failures_before_lock' => PM_MAX_FAILURES]]);
-        throw new PmError('יותר מדי ניסיונות. נסו שוב בעוד ' . (int)ceil($wait / 60) . ' דקות', 429);
+        throw new PmError('יותר מדי ניסיונות. נסו שוב בעוד {n} דקות', 429, ['n' => (int)ceil($wait / 60)]);
     }
     // נכנסים בשם המשתמש או באימייל
     $st = pm_db()->prepare('SELECT * FROM users WHERE username = ? OR (email != \'\' AND email = ? COLLATE NOCASE) ORDER BY username = ? DESC LIMIT 1');
@@ -306,6 +313,10 @@ function pm_login(array $in): array
         throw new PmError('החשבון חסום — פנה למפתח', 403);
     }
     pm_clear_failures($keys);
+    // השפה שנבחרה במסך הכניסה — נשמרת למשתמש (גם המיילים אליו יוצאים בה)
+    if (($lang = pm_in_lang($in)) !== '') {
+        pm_db()->prepare('UPDATE users SET lang = ? WHERE id = ?')->execute([$lang, $u['id']]);
+    }
     if (password_needs_rehash($u['password_hash'], PASSWORD_DEFAULT)) {
         pm_db()->prepare('UPDATE users SET password_hash = ? WHERE id = ?')->execute([password_hash($password, PASSWORD_DEFAULT), $u['id']]);
     }
@@ -334,8 +345,8 @@ function pm_register(array $in): array
     $dup->execute([$email]);
     if ($dup->fetchColumn()) throw new PmError('האימייל הזה כבר רשום', 409);
     try {
-        pm_db()->prepare('INSERT INTO users (username, password_hash, display_name, email, phone, role, status, created_at) VALUES (?,?,?,?,?,?,?,?)')
-            ->execute([$username, password_hash($password, PASSWORD_DEFAULT), $name, $email, $phone, 'manager', 'pending', pm_now()]);
+        pm_db()->prepare('INSERT INTO users (username, password_hash, display_name, email, phone, role, status, created_at, lang) VALUES (?,?,?,?,?,?,?,?,?)')
+            ->execute([$username, password_hash($password, PASSWORD_DEFAULT), $name, $email, $phone, 'manager', 'pending', pm_now(), pm_in_lang($in)]);
     } catch (PDOException $e) {
         if (str_contains($e->getMessage(), 'UNIQUE')) throw new PmError('שם המשתמש תפוס', 409);
         throw $e;
@@ -344,11 +355,14 @@ function pm_register(array $in): array
     pm_audit("user:$id", 'user.register', 'user', $id, ['username' => $username]);
     pm_log('info', 'auth', 'register', ['username' => $username, 'user' => ['id' => $id, 'username' => $username],
         'message' => 'נרשם — ממתין לאישור', 'data' => ['display_name' => $name, 'email' => $email, 'phone' => $phone]]);
-    // הודעה למפתח, אם יש לו אימייל
-    $dev = pm_db()->query("SELECT email FROM users WHERE role = 'developer' AND email != '' LIMIT 1")->fetchColumn();
-    if ($dev) {
-        $sent = pm_send_mail($dev, 'הרשמה חדשה ממתינה לאישור — ניהול פרויקטים',
-            "$name ($username, $email) נרשם כמנהל פרויקט וממתין לאישור.\n\nלאישור: " . pm_app_url() . "/#/settings/access\n");
+    // הודעה למפתח, אם יש לו אימייל — בשפה שלו
+    $devRow = pm_db()->query("SELECT email, lang FROM users WHERE role = 'developer' AND email != '' LIMIT 1")->fetch();
+    if ($devRow) {
+        $dev = $devRow['email'];
+        $lang = pm_user_lang($devRow);
+        $sent = pm_send_mail($dev, pm_t('הרשמה חדשה ממתינה לאישור — ניהול פרויקטים', [], $lang),
+            pm_t("{name} ({username}, {email}) נרשם כמנהל פרויקט וממתין לאישור.\n\nלאישור: {link}\n",
+                 ['name' => $name, 'username' => $username, 'email' => $email, 'link' => pm_app_url() . '/#/settings/access'], $lang), $lang);
         pm_log($sent ? 'info' : 'warn', 'mail', 'mail.register_notice', ['data' => ['to' => $dev, 'sent' => $sent]]);
     }
     pm_start_session($id);
@@ -365,8 +379,8 @@ function pm_setup(array $in): array
     $password = pm_valid_password($in['password'] ?? null);
     $name = pm_valid_name($in['display_name'] ?? null);
     $email = pm_valid_email($in['email'] ?? null, false);
-    pm_db()->prepare('INSERT INTO users (id, username, password_hash, display_name, email, role, status, created_at, approved_at) VALUES (?,?,?,?,?,?,?,?,?)')
-        ->execute([PM_FIRST_USER_ID, $username, password_hash($password, PASSWORD_DEFAULT), $name, $email, 'developer', 'active', pm_now(), pm_now()]);
+    pm_db()->prepare('INSERT INTO users (id, username, password_hash, display_name, email, role, status, created_at, approved_at, lang) VALUES (?,?,?,?,?,?,?,?,?,?)')
+        ->execute([PM_FIRST_USER_ID, $username, password_hash($password, PASSWORD_DEFAULT), $name, $email, 'developer', 'active', pm_now(), pm_now(), pm_in_lang($in)]);
     pm_audit('user:' . PM_FIRST_USER_ID, 'user.setup', 'user', PM_FIRST_USER_ID, ['username' => $username]);
     pm_log('info', 'auth', 'setup', ['username' => $username, 'user' => ['id' => PM_FIRST_USER_ID, 'username' => $username], 'message' => 'המפתח הוקם']);
     pm_start_session(PM_FIRST_USER_ID);
@@ -392,8 +406,10 @@ function pm_forgot(array $in): array
     elseif ($u && pm_user_email($u) === '') $result = 'no_email';
     elseif ($u) {
         $link = pm_create_reset((int)$u['id'], PM_RESET_HOURS_SELF, 'self');
-        $sent = pm_send_mail(pm_user_email($u), 'איפוס סיסמה — ניהול פרויקטים',
-            "שלום {$u['display_name']},\n\nלקביעת סיסמה חדשה:\n\n$link\n\nהקישור תקף שעה אחת ולשימוש חד-פעמי. אם לא ביקשת — אין צורך לעשות דבר.\n");
+        $lang = pm_user_lang($u);
+        $sent = pm_send_mail(pm_user_email($u), pm_t('איפוס סיסמה — ניהול פרויקטים', [], $lang),
+            pm_t("שלום {name},\n\nלקביעת סיסמה חדשה:\n\n{link}\n\nהקישור תקף שעה אחת ולשימוש חד-פעמי. אם לא ביקשת — אין צורך לעשות דבר.\n",
+                 ['name' => $u['display_name'], 'link' => $link], $lang), $lang);
         $result = $sent ? 'sent' : 'mail_failed';
     }
     pm_log($result === 'sent' ? 'info' : 'warn', 'auth', 'forgot', ['username' => $u['username'] ?? $login, 'message' => $result,
@@ -503,7 +519,7 @@ function pm_public_user(array $r): array
         'id' => (int)$r['id'], 'username' => $r['username'], 'display_name' => $r['display_name'],
         'email' => $r['email'], 'phone' => $r['phone'], 'role' => $r['role'], 'status' => $r['status'],
         'notes' => $r['notes'] ?? '', 'created_at' => $r['created_at'], 'approved_at' => $r['approved_at'],
-        'last_login_at' => $r['last_login_at'],
+        'last_login_at' => $r['last_login_at'], 'lang' => $r['lang'] ?? '',
     ];
 }
 
@@ -575,8 +591,10 @@ function pm_user_action(array $dev, int $id, string $action, array $in = []): ar
         case 'approve':
             $db->prepare("UPDATE users SET status = 'active', approved_at = COALESCE(approved_at, ?) WHERE id = ?")->execute([pm_now(), $id]);
             if (pm_user_email($u) !== '') {
-                $sent = pm_send_mail(pm_user_email($u), 'החשבון שלך אושר — ניהול פרויקטים',
-                    "שלום {$u['display_name']},\n\nהחשבון שלך אושר. אפשר להיכנס:\n\n" . pm_app_url() . "/login.html\n\nשם המשתמש: {$u['username']}\n");
+                $lang = pm_user_lang($u);
+                $sent = pm_send_mail(pm_user_email($u), pm_t('החשבון שלך אושר — ניהול פרויקטים', [], $lang),
+                    pm_t("שלום {name},\n\nהחשבון שלך אושר. אפשר להיכנס:\n\n{link}\n\nשם המשתמש: {username}\n",
+                         ['name' => $u['display_name'], 'link' => pm_app_url() . '/login.html', 'username' => $u['username']], $lang), $lang);
                 pm_log($sent ? 'info' : 'warn', 'mail', 'mail.approved', ['data' => ['to' => pm_user_email($u), 'sent' => $sent]]);
             }
             break;
@@ -597,8 +615,10 @@ function pm_user_action(array $dev, int $id, string $action, array $in = []): ar
         case 'reset':
             $link = pm_create_reset($id, PM_RESET_HOURS_BY_DEV, 'developer');
             $to = pm_user_email($u);
-            $sent = $to !== '' && pm_send_mail($to, 'קביעת סיסמה חדשה — ניהול פרויקטים',
-                "שלום {$u['display_name']},\n\nהמפתח שלח לך קישור לקביעת סיסמה חדשה:\n\n$link\n\nשם המשתמש: {$u['username']}\nהקישור תקף 24 שעות ולשימוש חד-פעמי.\n");
+            $lang = pm_user_lang($u);
+            $sent = $to !== '' && pm_send_mail($to, pm_t('קביעת סיסמה חדשה — ניהול פרויקטים', [], $lang),
+                pm_t("שלום {name},\n\nהמפתח שלח לך קישור לקביעת סיסמה חדשה:\n\n{link}\n\nשם המשתמש: {username}\nהקישור תקף 24 שעות ולשימוש חד-פעמי.\n",
+                     ['name' => $u['display_name'], 'link' => $link, 'username' => $u['username']], $lang), $lang);
             pm_log($sent ? 'info' : 'warn', 'mail', 'mail.reset', ['data' => ['to' => $to, 'sent' => $sent]]);
             $extra = ['reset_link' => $link, 'mailed' => $sent, 'email' => $to, 'phone' => $u['phone'],
                       'display_name' => $u['display_name'], 'username' => $u['username']];

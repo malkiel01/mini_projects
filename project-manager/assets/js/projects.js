@@ -56,7 +56,7 @@ const Projects = (() => {
             $(id).addEventListener('click', () => api('message-log', { body: { project_id: cur.project.id, contact_id: portalContact.id, channel, key: 'portal_link', text: portalText } }).catch(() => {}));
         }
                 $('#portal-copy').addEventListener('click', async () => {
-            try { await navigator.clipboard.writeText($('#portal-url').textContent); toast('הועתק'); }
+            try { await navigator.clipboard.writeText($('#portal-url').textContent); toast(t('הועתק')); }
             catch { getSelection().selectAllChildren($('#portal-url')); }
         });
         $('#project-status').addEventListener('change', e => setStatus(e.target.value));
@@ -91,13 +91,13 @@ const Projects = (() => {
     function renderList() {
         if (!list.length) {
             const searching = $('#pq').value.trim() || $('#pfilter').value !== 'open';
-            $('#project-list').innerHTML = `<p class="empty">${searching ? 'לא נמצאו פרויקטים' : 'עוד אין פרויקטים. לחץ "+ פרויקט" כדי לפתוח את הראשון.'}</p>`;
+            $('#project-list').innerHTML = `<p class="empty">${esc(searching ? t('לא נמצאו פרויקטים') : t('עוד אין פרויקטים. לחץ "+ פרויקט" כדי לפתוח את הראשון.'))}</p>`;
             return;
         }
         $('#project-list').innerHTML = list.map(p => {
             const meta = [
                 p.client_name ? esc(p.client_name) : '',
-                p.current_stage ? `${esc(p.current_stage.name)}: ${esc(state.labels.stage[p.current_stage.status] || '')}` : (p.stages_total ? 'כל השלבים בוצעו' : ''),
+                p.current_stage ? `${esc(t(p.current_stage.name))}: ${esc(state.labels.stage[p.current_stage.status] || '')}` : (p.stages_total ? esc(t('כל השלבים בוצעו')) : ''),
                 p.stages_total ? `${p.stages_done}/${p.stages_total}` : '',
             ].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>');
             const status = p.status !== 'active' ? `<span class="chip">${esc(state.labels.project[p.status])}</span>` : '';
@@ -119,7 +119,7 @@ const Projects = (() => {
         const form = $('form', dlg);
         formError(form, '');
         await fillProjectFields($('[data-project-fields]', dlg), { kind: 'renovation', owner_id: state.user.id }, false);
-        form.elements.template_id.innerHTML = options(state.templates.map(t => ({ value: t.id, label: `${t.name} (${t.stages.length} שלבים)` })), state.templates[0]?.id, 'בלי תבנית');
+        form.elements.template_id.innerHTML = options(state.templates.map(tp => ({ value: tp.id, label: t('{name} ({n} שלבים)', { name: tp.name, n: tp.stages.length }) })), state.templates[0]?.id, t('בלי תבנית'));
         dlg.showModal();
         form.elements.name.focus();
     }
@@ -128,7 +128,7 @@ const Projects = (() => {
         const form = $('#project-dlg form');
         const body = readProjectFields(form);
         body.template_id = Number(form.elements.template_id.value) || 0;
-        if (!body.name) { formError(form, 'שם הפרויקט: שדה חובה'); return; }
+        if (!body.name) { formError(form, t('שם הפרויקט: שדה חובה')); return; }
         await busy($('button[type=submit]', form), form, async () => {
             const data = await api('project', { body });
             $('#project-dlg').close();
@@ -143,15 +143,15 @@ const Projects = (() => {
         const mine = c => c.owner_id === (p.owner_id ?? state.user.id) && (!c.archived || c.id === p.client_id || c.id === p.lawyer_id);
         const kinds = Object.entries(state.labels.kind).map(([value, label]) => ({ value, label }));
         box.innerHTML = `
-            <label class="f wide"><span>שם הפרויקט *</span><input name="name" maxlength="100" required value="${esc(p.name || '')}" placeholder="למשל: שיפוץ דירת כהן"></label>
-            <label class="f"><span>לקוח</span><select name="client_id">${options(clients.filter(mine).map(c => ({ value: c.id, label: c.name })), p.client_id, 'בחירה')}<option value="__new">+ לקוח חדש</option></select></label>
-            <label class="f"><span>עורך דין</span><select name="lawyer_id">${options(lawyers.filter(mine).map(c => ({ value: c.id, label: c.name })), p.lawyer_id, p.id ? 'ללא' : 'לפי הלקוח')}</select></label>
-            <label class="f"><span>סוג</span><select name="kind">${options(kinds, p.kind)}</select></label>
-            <label class="f"><span>תקציב ₪ <small>כולל מע"מ</small></span><input name="budget" type="number" inputmode="numeric" min="0" step="1" value="${p.budget || ''}"></label>
-            <label class="f wide"><span>כתובת הנכס</span><input name="address" maxlength="200" value="${esc(p.address || '')}"></label>
-            <label class="f"><span>התחלה</span><input name="start_date" type="date" value="${esc(p.start_date || '')}"></label>
-            <label class="f"><span>יעד מסירה</span><input name="due_date" type="date" value="${esc(p.due_date || '')}"></label>
-            ${withNotes ? `<label class="f wide"><span>הערות</span><textarea name="notes" rows="3" maxlength="4000">${esc(p.notes || '')}</textarea></label>` : ''}`;
+            <label class="f wide"><span>${esc(t('שם הפרויקט *'))}</span><input name="name" maxlength="100" required value="${esc(p.name || '')}" placeholder="${esc(t('למשל: שיפוץ דירת כהן'))}"></label>
+            <label class="f"><span>${esc(t('לקוח'))}</span><select name="client_id">${options(clients.filter(mine).map(c => ({ value: c.id, label: c.name })), p.client_id, t('בחירה'))}<option value="__new">${esc(t('+ לקוח חדש'))}</option></select></label>
+            <label class="f"><span>${esc(t('עורך דין'))}</span><select name="lawyer_id">${options(lawyers.filter(mine).map(c => ({ value: c.id, label: c.name })), p.lawyer_id, p.id ? t('ללא') : t('לפי הלקוח'))}</select></label>
+            <label class="f"><span>${esc(t('סוג'))}</span><select name="kind">${options(kinds, p.kind)}</select></label>
+            <label class="f"><span>${esc(t('תקציב ₪'))} <small>${esc(t('כולל מע"מ'))}</small></span><input name="budget" type="number" inputmode="numeric" min="0" step="1" value="${p.budget || ''}"></label>
+            <label class="f wide"><span>${esc(t('כתובת הנכס'))}</span><input name="address" maxlength="200" value="${esc(p.address || '')}"></label>
+            <label class="f"><span>${esc(t('התחלה'))}</span><input name="start_date" type="date" value="${esc(p.start_date || '')}"></label>
+            <label class="f"><span>${esc(t('יעד מסירה'))}</span><input name="due_date" type="date" value="${esc(p.due_date || '')}"></label>
+            ${withNotes ? `<label class="f wide"><span>${esc(t('הערות'))}</span><textarea name="notes" rows="3" maxlength="4000">${esc(p.notes || '')}</textarea></label>` : ''}`;
     }
 
     function readProjectFields(form) {
@@ -198,11 +198,11 @@ const Projects = (() => {
     function header() {
         const p = cur.project;
         $('#title').textContent = p.name;
-        const client = cur.team.find(t => t.roles.includes('לקוח'));
+        const client = p.client_id ? cur.team.find(c => c.id === p.client_id) : null;
         const sub = [client?.name, state.labels.kind[p.kind], p.status !== 'active' ? state.labels.project[p.status] : ''].filter(Boolean).join(' · ');
         $('#subtitle').textContent = sub;
         $('#subtitle').hidden = !sub;
-        document.title = p.name + ' — ניהול פרויקטים';
+        document.title = t('{name} — ניהול פרויקטים', { name: p.name });
     }
 
     function render() {
@@ -231,7 +231,7 @@ const Projects = (() => {
             const d = new Date(e.at).toDateString();
             const sep = d !== day ? `<li class="day"><span>${esc(dateLabel(e.at))}</span></li>` : '';
             day = d;
-            const time = `<time datetime="${esc(e.at)}">${new Date(e.at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</time>`;
+            const time = `<time datetime="${esc(e.at)}">${new Date(e.at).toLocaleTimeString(I18n.locale(), { hour: '2-digit', minute: '2-digit' })}</time>`;
             if (e.kind === 'note') {
                 const mine = e.actor_id === state.user.id;
                 return sep + `<li class="msg${mine ? ' mine' : ''}">
@@ -239,27 +239,27 @@ const Projects = (() => {
                     <p>${esc(e.text)}</p>${time}</li>`;
             }
             return sep + `<li class="sys"><span>${esc(e.text)} · ${esc(e.actor_name)} · ${time}</span></li>`;
-        }).join('') || '<li class="day"><span>עוד אין כלום בציר הזמן</span></li>';
+        }).join('') || `<li class="day"><span>${esc(t('עוד אין כלום בציר הזמן'))}</span></li>`;
         requestAnimationFrame(() => {
             const last = $('#timeline li:last-child');
             if (last) last.scrollIntoView({ block: 'end' });
         });
     }
 
-    function autoGrow(t) {
-        t.style.height = 'auto';
-        t.style.height = Math.min(t.scrollHeight, 160) + 'px';
+    function autoGrow(box) {
+        box.style.height = 'auto';
+        box.style.height = Math.min(box.scrollHeight, 160) + 'px';
     }
 
     async function sendNote() {
-        const t = $('#note');
-        const text = t.value.trim();
+        const box = $('#note');
+        const text = box.value.trim();
         if (!text) return;
         await busy($('#composer button'), null, async () => {
             update(await api('note', { body: { project_id: cur.project.id, text } }));
-            t.value = '';
-            autoGrow(t);
-            t.focus();
+            box.value = '';
+            autoGrow(box);
+            box.focus();
         });
     }
 
@@ -272,21 +272,21 @@ const Projects = (() => {
         $('#progress span').style.width = pct + '%';
         $('#progress').setAttribute('aria-valuenow', String(pct));
         $('#progress').setAttribute('aria-valuemax', '100');
-        $('#progress').setAttribute('aria-label', `${done} מתוך ${s.length} שלבים בוצעו`);
-        $('#progress-text').textContent = s.length ? `${done}/${s.length} בוצעו` : '';
+        $('#progress').setAttribute('aria-label', t('{done} מתוך {n} שלבים בוצעו', { done, n: s.length }));
+        $('#progress-text').textContent = s.length ? t('{done}/{n} בוצעו', { done, n: s.length }) : '';
         $('#stage-list').innerHTML = s.map((x, i) => {
             const l2 = [
-                x.trade_name ? esc(x.trade_name) : '',
-                x.supplier_name ? esc(x.supplier_name) : '<span class="muted">אין ספק</span>',
+                x.trade_name ? esc(t(x.trade_name)) : '',
+                x.supplier_name ? esc(x.supplier_name) : `<span class="muted">${esc(t('אין ספק'))}</span>`,
                 x.plan_start || x.plan_end ? `${shortDate(x.plan_start)}–${shortDate(x.plan_end)}` : '',
-                x.needs_lawyer ? 'עו"ד' : '',
+                x.needs_lawyer ? esc(t('עורך דין')) : '',
             ].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>');
-            return `<li class="card" data-stage="${x.id}" tabindex="0" role="button" aria-label="${esc(x.name)}, ${esc(state.labels.stage[x.status])}">
+            return `<li class="card" data-stage="${x.id}" tabindex="0" role="button" aria-label="${esc(t(x.name))}, ${esc(state.labels.stage[x.status])}">
                 <span class="num st-${esc(x.status)}" aria-hidden="true">${i + 1}</span>
-                <div class="body"><div class="l1">${esc(x.name)}</div><div class="l2">${l2}</div></div>
+                <div class="body"><div class="l1">${esc(t(x.name))}</div><div class="l2">${l2}</div></div>
                 ${stageChip(x.status)}
             </li>`;
-        }).join('') || '<p class="empty">אין שלבים. לחץ "+ שלב" כדי להוסיף.</p>';
+        }).join('') || `<p class="empty">${esc(t('אין שלבים. לחץ "+ שלב" כדי להוסיף.'))}</p>`;
     }
 
     let stageId = null;
@@ -297,10 +297,10 @@ const Projects = (() => {
         formError(form, '');
         stageId = id;
         const s = id ? cur.stages.find(x => x.id === id) : { status: 'planned' };
-        $('#stage-dlg-title').textContent = id ? s.name : 'שלב חדש';
+        $('#stage-dlg-title').textContent = id ? t(s.name) : t('שלב חדש');
         const el = form.elements;
-        el.name.value = s.name || '';
-        el.trade_id.innerHTML = options(state.trades.map(t => ({ value: t.id, label: t.name })), s.trade_id, 'ללא');
+        el.name.value = s.name ? t(s.name) : ''; // שם שנזרע — מוצג מתורגם, ונשלח כמו שהוא אם לא שונה
+        el.trade_id.innerHTML = options(state.trades.map(tr => ({ value: tr.id, label: t(tr.name) })), s.trade_id, t('ללא'));
         el.status.innerHTML = options(Object.entries(state.labels.stage).map(([value, label]) => ({ value, label })), s.status);
         el.plan_start.value = s.plan_start || '';
         el.plan_end.value = s.plan_end || '';
@@ -319,9 +319,9 @@ const Projects = (() => {
         const opt = c => ({ value: c.id, label: c.name + (c.company ? ' · ' + c.company : '') });
         const inTrade = tradeId ? all.filter(c => c.trades.includes(tradeId)) : [];
         const rest = all.filter(c => !inTrade.includes(c));
-        select.innerHTML = '<option value="">ללא</option>'
-            + (inTrade.length ? `<optgroup label="בתחום">${options(inTrade.map(opt), value)}</optgroup>` : '')
-            + (rest.length ? `<optgroup label="${inTrade.length ? 'אחרים' : 'כל הספקים'}">${options(rest.map(opt), value)}</optgroup>` : '');
+        select.innerHTML = `<option value="">${esc(t('ללא'))}</option>`
+            + (inTrade.length ? `<optgroup label="${esc(t('בתחום'))}">${options(inTrade.map(opt), value)}</optgroup>` : '')
+            + (rest.length ? `<optgroup label="${esc(inTrade.length ? t('אחרים') : t('כל הספקים'))}">${options(rest.map(opt), value)}</optgroup>` : '');
     }
 
     async function saveStage() {
@@ -333,9 +333,10 @@ const Projects = (() => {
             status: el.status.value, needs_lawyer: el.needs_lawyer.checked,
             plan_start: el.plan_start.value, plan_end: el.plan_end.value,
         };
-        if (!body.name) { formError(form, 'שם השלב: שדה חובה'); return; }
+        if (!body.name) { formError(form, t('שם השלב: שדה חובה')); return; }
         // "בוצע" — דרך דיווח מהשטח עם תמונה: שומרים את השאר, ועוברים לדיווח
         const old = stageId ? cur.stages.find(x => x.id === stageId) : null;
+        if (old && body.name === t(old.name)) body.name = old.name;
         const toDone = ['done', 'paid'].includes(body.status) && !['done', 'paid'].includes(old?.status || 'planned');
         if (toDone) body.status = old?.status || 'planned';
         await busy($('button[type=submit]', form), form, async () => {
@@ -358,13 +359,13 @@ const Projects = (() => {
         [ids[i], ids[j]] = [ids[j], ids[i]];
         await busy(null, $('#stage-dlg form'), async () => {
             update(await api('stages-order', { body: { project_id: cur.project.id, ids } }));
-            toast(dir < 0 ? 'הוזז למעלה' : 'הוזז למטה');
+            toast(dir < 0 ? t('הוזז למעלה') : t('הוזז למטה'));
         });
     }
 
     async function deleteStage() {
         const s = cur.stages.find(x => x.id === stageId);
-        if (!s || !confirm(`למחוק את השלב "${s.name}"?`)) return;
+        if (!s || !confirm(t('למחוק את השלב "{name}"?', { name: s.name }))) return;
         await busy(null, $('#stage-dlg form'), async () => {
             update(await api('stage-delete', { body: { id: s.id } }));
             $('#stage-dlg').close();
@@ -381,14 +382,14 @@ const Projects = (() => {
                 // ללקוח ולעו"ד — קישור אישי לפורטל. מתי נפתח לאחרונה — בשורה.
                 const portal = c.id === cur.project.client_id || c.id === cur.project.lawyer_id || c.kind === 'supplier';
                 const l = links[c.id];
-                const seen = l ? (l.last_seen_at ? 'פתח ' + when(l.last_seen_at) : 'קישור נשלח, עוד לא נפתח') : '';
+                const seen = l ? (l.last_seen_at ? t('פתח {when}', { when: when(l.last_seen_at) }) : t('קישור נשלח, עוד לא נפתח')) : '';
                 return `<li class="card">
                 ${avatar(c.name)}
                 <div class="body"><div class="l1">${esc(c.name)}${c.company ? `<span class="sub">${esc(c.company)}</span>` : ''}</div>
-                    <div class="l2">${[...c.roles.map(esc), seen ? esc(seen) : ''].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>')}</div></div>
-                <div class="acts">${portal ? `<button class="icon-btn" data-portal="${c.id}" aria-label="הקישור האישי של ${esc(c.name)}" title="קישור אישי">🔗</button>` : ''}${contactActs(c)}${c.removable ? `<button class="icon-btn" data-remove="${c.id}" data-name="${esc(c.name)}" aria-label="הסרת ${esc(c.name)} מהצוות">✕</button>` : ''}</div>
+                    <div class="l2">${[...c.roles.map(r => esc(t(r))), seen ? esc(seen) : ''].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>')}</div></div>
+                <div class="acts">${portal ? `<button class="icon-btn" data-portal="${c.id}" aria-label="${esc(t('הקישור האישי של {name}', { name: c.name }))}" title="${esc(t('קישור אישי'))}">🔗</button>` : ''}${contactActs(c)}${c.removable ? `<button class="icon-btn" data-remove="${c.id}" data-name="${esc(c.name)}" aria-label="${esc(t('הסרת {name} מהצוות', { name: c.name }))}">✕</button>` : ''}</div>
             </li>`;
-            }).join('') || '<p class="empty">עוד אין צוות. שייך לקוח בפרטים, או ספק לשלב.</p>';
+            }).join('') || `<p class="empty">${esc(t('עוד אין צוות. שייך לקוח בפרטים, או ספק לשלב.'))}</p>`;
         };
         draw();
         try { ({ links } = await api('portal-links', { params: { project_id: cur.project.id } })); draw(); } catch { /* בלי שורת "פתח" */ }
@@ -400,12 +401,14 @@ const Projects = (() => {
         let messages = [];
         try { ({ messages } = await api('messages', { params: { project_id: cur.project.id } })); } catch { return; }
         const icon = { email: '✉️', whatsapp: '💬', sms: '📱', copy: '📋' };
-        const status = m => m.status === 'sent' ? 'נשלח' : m.status === 'failed' ? 'לא נשלח' : 'נפתח';
+        const status = m => m.status === 'sent' ? t('נשלח') : m.status === 'failed' ? t('לא נשלח') : t('נפתח');
+        // שורת הפתיחה של ההודעה ("שלום …") לא מוצגת בתקציר — בשפה של הנמען
+        const GREETING = /^(שלום|Hello|Hi|Dear|Bonjour|Здравствуйте|مرحبا)/i; // i18n-none
         $('#msg-hist-title').hidden = !messages.length;
         $('#msg-hist').innerHTML = messages.slice(0, 30).map(m => `<li class="card static msg-${m.status}">
             <span class="ficon" aria-hidden="true">${icon[m.channel] || '✉️'}</span>
             <div class="body"><div class="l1"><span class="one">${esc(m.contact_name || '')}${m.subject ? ' · ' + esc(m.subject) : ''}</span><time class="t">${when(m.at)}</time></div>
-                <div class="l2 one">${m.auto ? 'אוטומטי · ' : ''}${status(m)}${m.body ? ' · ' + esc(m.body.split('\n').find(x => x && !x.startsWith('שלום')) || '') : ''}</div></div></li>`).join('');
+                <div class="l2 one">${m.auto ? esc(t('אוטומטי')) + ' · ' : ''}${esc(status(m))}${m.body ? ' · ' + esc(m.body.split('\n').find(x => x && !GREETING.test(x)) || '') : ''}</div></div></li>`).join('');
     }
 
     // ---- קישור אישי לפורטל ----
@@ -413,16 +416,16 @@ const Projects = (() => {
     let portalContact = null, portalText = '';
 
     function openPortal(id) {
-        portalContact = cur.team.find(t => t.id === id);
+        portalContact = cur.team.find(c => c.id === id);
         const dlg = $('#portal-dlg');
         formError($('form', dlg), '');
         const role = id === cur.project.client_id ? 'client' : id === cur.project.lawyer_id ? 'lawyer' : 'supplier';
-        $('#portal-dlg-title').textContent = 'קישור אישי — ' + portalContact.name;
-        $('#portal-about').textContent = {
+        $('#portal-dlg-title').textContent = t('קישור אישי — {name}', { name: portalContact.name });
+        $('#portal-about').textContent = t({ // i18n-ok-start
             client: 'בקישור הלקוח רואה את התקדמות השלבים, את הצעות המחיר שנשלחו אליו (המומלצת בראש) ואת הקבצים שסומנו "גלוי" — ומאשר הצעות בעצמו, בלחיצה או בחתימה לפי הגדרות הלקוח. בלי סיסמה.',
             lawyer: 'בקישור העו"ד רואה את הפרויקט ואת ההצעות, ומאשר הצעות שהלקוח כבר אישר בשלבים שדורשים עו"ד. בלי סיסמה.',
             supplier: 'בקישור הספק רואה את השלבים שלו, מגיש הצעות מחיר, מבקש תשלום, מאשר שהכסף התקבל ומעדכן את פרטי הבנק שלו — בלי לראות הצעות של ספקים אחרים, פרטי לקוח או תשלומים לאחרים. בלי סיסמה.',
-        }[role];
+        }[role]); // i18n-ok-end
         drawPortal(links[id] || null);
         dlg.showModal();
     }
@@ -434,9 +437,10 @@ const Projects = (() => {
         if (!l) return;
         const c = portalContact;
         $('#portal-url').textContent = l.url;
-        $('#portal-seen').textContent = l.last_seen_at ? `נפתח לאחרונה ${when(l.last_seen_at)} · ${l.views} כניסות` : 'עוד לא נפתח';
-        const what = c.kind === 'supplier' ? 'הגשת הצעות מחיר, בקשות תשלום ואישור קבלה' : 'מצב העבודות, הצעות המחיר והמסמכים, ואישור הצעות';
-        const text = renderMsg('portal_link', { 'שם': c.name, 'פרויקט': cur.project.name, 'פרטים': what, 'קישור': l.url });
+        $('#portal-seen').textContent = l.last_seen_at ? t('נפתח לאחרונה {when} · {n} כניסות', { when: when(l.last_seen_at), n: l.views }) : t('עוד לא נפתח');
+        const what = c.kind === 'supplier' ? t('הגשת הצעות מחיר, בקשות תשלום ואישור קבלה') : t('מצב העבודות, הצעות המחיר והמסמכים, ואישור הצעות');
+        // בשפה של איש הקשר. שמות המשתנים בעברית — כמו בנוסח (הגדרות ← הודעות)
+        const text = renderMsg('portal_link', { 'שם': c.name, 'פרויקט': cur.project.name, 'פרטים': what, 'קישור': l.url }, c.lang || I18n.lang()); // i18n-none
         portalText = text;
         const phone = c.whatsapp || c.phone;
         $('#portal-wa').href = `https://wa.me/${phone ? waNumber(phone) : ''}?text=${encodeURIComponent(text)}`;
@@ -448,13 +452,13 @@ const Projects = (() => {
     }
 
     async function portalDo(what) {
-        if (what === 'renew' && !confirm('ליצור קישור חדש? הקישור הקודם יפסיק לעבוד.')) return;
-        if (what === 'revoke' && !confirm('לבטל את הקישור? הוא יפסיק לעבוד מיד.')) return;
+        if (what === 'renew' && !confirm(t('ליצור קישור חדש? הקישור הקודם יפסיק לעבוד.'))) return;
+        if (what === 'revoke' && !confirm(t('לבטל את הקישור? הוא יפסיק לעבוד מיד.'))) return;
         await busy(null, $('#portal-dlg form'), async () => {
             const { link } = await api('portal-link', { body: { project_id: cur.project.id, contact_id: portalContact.id, do: what } });
             drawPortal(link);
             renderTeam();
-            if (what !== 'get') toast(what === 'revoke' ? 'הקישור בוטל' : 'נוצר קישור חדש');
+            if (what !== 'get') toast(what === 'revoke' ? t('הקישור בוטל') : t('נוצר קישור חדש'));
         });
     }
 
@@ -464,19 +468,19 @@ const Projects = (() => {
         formError(form, '');
         form.reset();
         const lists = await Promise.all(['supplier', 'lawyer', 'client'].map(k => contactsOf(k).catch(() => [])));
-        const inTeam = new Set(cur.team.map(t => t.id));
-        const groups = ['ספקים', 'עורכי דין', 'לקוחות'].map((label, i) => {
+        const inTeam = new Set(cur.team.map(c => c.id));
+        const groups = ['ספקים', 'עורכי דין', 'לקוחות'].map((label, i) => { // i18n-ok
             const items = lists[i].filter(c => c.owner_id === cur.project.owner_id && !c.archived && !inTeam.has(c.id));
-            return items.length ? `<optgroup label="${label}">${options(items.map(c => ({ value: c.id, label: c.name + (c.company ? ' · ' + c.company : '') })))}</optgroup>` : '';
+            return items.length ? `<optgroup label="${esc(t(label))}">${options(items.map(c => ({ value: c.id, label: c.name + (c.company ? ' · ' + c.company : '') })))}</optgroup>` : '';
         }).join('');
-        form.elements.contact_id.innerHTML = groups || '<option value="">אין אנשי קשר להוספה</option>';
+        form.elements.contact_id.innerHTML = groups || `<option value="">${esc(t('אין אנשי קשר להוספה'))}</option>`;
         dlg.showModal();
     }
 
     async function addMember() {
         const form = $('#member-dlg form');
         const contact_id = Number(form.elements.contact_id.value);
-        if (!contact_id) { formError(form, 'יש לבחור איש קשר'); return; }
+        if (!contact_id) { formError(form, t('יש לבחור איש קשר')); return; }
         await busy($('button[type=submit]', form), form, async () => {
             update(await api('member', { body: { project_id: cur.project.id, contact_id, add: true, role: form.elements.role.value } }));
             $('#member-dlg').close();
@@ -484,7 +488,7 @@ const Projects = (() => {
     }
 
     async function removeMember(id, name) {
-        if (!confirm(`להסיר את ${name} מהצוות?`)) return;
+        if (!confirm(t('להסיר את {name} מהצוות?', { name }))) return;
         await busy(null, null, async () => update(await api('member', { body: { project_id: cur.project.id, contact_id: id, add: false } })));
     }
 
@@ -502,17 +506,17 @@ const Projects = (() => {
     async function setStatus(status) {
         await busy(null, null, async () => {
             update(await api('project-status', { body: { id: cur.project.id, status } }));
-            toast('הסטטוס עודכן');
+            toast(t('הסטטוס עודכן'));
         });
     }
 
     async function saveDetails() {
         const form = $('#details-form');
         const body = { id: cur.project.id, ...readProjectFields(form) };
-        if (!body.name) { formError(form, 'שם הפרויקט: שדה חובה'); return; }
+        if (!body.name) { formError(form, t('שם הפרויקט: שדה חובה')); return; }
         await busy($('button', form), form, async () => {
             update(await api('project', { body }));
-            toast('הפרטים נשמרו');
+            toast(t('הפרטים נשמרו'));
         });
     }
 

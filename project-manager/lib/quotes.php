@@ -23,6 +23,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/files.php';
 
+// i18n-ok-start — מתורגם בתצוגה (pm_t_map)
 const PM_QUOTE_STATUSES = [
     'open'            => 'התקבלה',
     'sent'            => 'נשלחה ללקוח',
@@ -32,6 +33,7 @@ const PM_QUOTE_STATUSES = [
     'rejected'        => 'נדחתה',
     'cancelled'       => 'בוטלה',
 ];
+// i18n-ok-end
 /** הצעות "חיות" — שעוד אפשר לבחור ביניהן. */
 const PM_QUOTE_LIVE = ['open', 'sent', 'client_approved'];
 
@@ -99,7 +101,7 @@ function pm_quotes(array $user, int $projectId): array
         'quotes'  => $quotes,
         'summary' => ['budget' => (int)$p['budget'], 'approved' => $approved,
                       'open' => count(array_filter($quotes, fn($q) => in_array($q['status'], PM_QUOTE_LIVE, true)))],
-        'statuses' => PM_QUOTE_STATUSES,
+        'statuses' => pm_t_map(PM_QUOTE_STATUSES),
     ];
 }
 
@@ -115,8 +117,10 @@ function pm_stage_set_status(array $user, array $stage, string $status, string $
 {
     if ($stage['status'] === $status) return;
     pm_db()->prepare('UPDATE stages SET status = ?, updated_at = ? WHERE id = ?')->execute([$status, pm_now(), $stage['id']]);
-    pm_event($user, (int)$stage['project_id'], 'stage_status', "{$stage['name']}: " . PM_STAGE_STATUSES[$status] . ($why ? " ($why)" : ''),
-        ['stage' => (int)$stage['id'], 'status' => $status]);
+    // $why — משפט עברי (מפתח במילון), מתורגם בקריאה כמו שם השלב והסטטוס
+    $vars = ['stage' => $stage['name'], 'status' => PM_STAGE_STATUSES[$status], 'why' => $why];
+    pm_event($user, (int)$stage['project_id'], 'stage_status', $why !== '' ? '{stage}: {status} ({why})' : '{stage}: {status}',
+        ['stage' => (int)$stage['id'], 'status' => $status], $vars);
 }
 
 function pm_quote_save(array $user, array $in, ?array $actor = null): array
@@ -137,10 +141,10 @@ function pm_quote_save(array $user, array $in, ?array $actor = null): array
     }
     $f = [
         'stage_id'    => (int)$stage['id'],
-        'supplier_id' => pm_owned_contact((int)($in['supplier_id'] ?? 0) ?: null, (int)$p['owner_id'], 'supplier', 'הספק')
+        'supplier_id' => pm_owned_contact((int)($in['supplier_id'] ?? 0) ?: null, (int)$p['owner_id'], 'supplier', 'הספק') // i18n-ok
                          ?? throw new PmError('ספק: שדה חובה', 422),
         'amount'      => pm_quote_amount($in['amount'] ?? null),
-        'valid_until' => pm_date($in, 'valid_until', 'בתוקף עד'),
+        'valid_until' => pm_date($in, 'valid_until', 'בתוקף עד'), // i18n-ok
         'terms'       => pm_str($in, 'terms', 1000, false, 'תנאי תשלום'),
         'notes'       => pm_str($in, 'notes', 2000, false, 'הערות'),
         'file_id'     => $fileId,
@@ -162,14 +166,17 @@ function pm_quote_save(array $user, array $in, ?array $actor = null): array
             $db->prepare("UPDATE quotes SET $set, version = ?, status = ?, updated_at = ? WHERE id = ?")
                ->execute(array_merge(array_values($f), [$version, $status, $now, $id]));
             if ($material) {
-                $what = ['amount' => 'סכום', 'valid_until' => 'תוקף', 'terms' => 'תנאים', 'file_id' => 'קובץ', 'supplier_id' => 'ספק', 'stage_id' => 'שלב'];
-                $text = "הצעה עודכנה: $supplier, {$stage['name']} — " . implode(', ', array_map(fn($k) => $what[$k], $material))
-                      . ($old['amount'] != $f['amount'] ? ' (' . pm_money((int)$old['amount']) . ' → ' . pm_money($f['amount']) . ')' : '')
-                      . ($reset ? '. האישור הקודם לא חל על הגרסה החדשה' : '');
-                pm_event($actor, $projectId, 'quote', $text, ['quote' => $id, 'version' => $version, 'changed' => array_values($material)]);
+                $what = ['amount' => 'סכום', 'valid_until' => 'תוקף', 'terms' => 'תנאים', 'file_id' => 'קובץ', 'supplier_id' => 'ספק', 'stage_id' => 'שלב']; // i18n-ok
+                $text = $reset ? 'הצעה עודכנה: {supplier}, {stage} — {fields}{amounts}. האישור הקודם לא חל על הגרסה החדשה' // i18n-ok
+                               : 'הצעה עודכנה: {supplier}, {stage} — {fields}{amounts}'; // i18n-ok
+                pm_event($actor, $projectId, 'quote', $text, ['quote' => $id, 'version' => $version, 'changed' => array_values($material)], [
+                    'supplier' => $supplier, 'stage' => $stage['name'],
+                    'fields'   => implode(', ', array_map(fn($k) => $what[$k], $material)),
+                    'amounts'  => $old['amount'] != $f['amount'] ? ' (' . pm_money((int)$old['amount']) . ' → ' . pm_money($f['amount']) . ')' : '', // i18n-none
+                ]);
                 if ($reset && in_array($old['status'], ['client_approved', 'approved'], true)
                     && in_array($stage['status'], ['client_approval', 'lawyer_approval', 'approved'], true)) {
-                    pm_stage_set_status($actor, $stage, 'quotes', 'ההצעה שאושרה השתנתה');
+                    pm_stage_set_status($actor, $stage, 'quotes', 'ההצעה שאושרה השתנתה'); // i18n-ok
                 }
             }
         } else {
@@ -178,8 +185,8 @@ function pm_quote_save(array $user, array $in, ?array $actor = null): array
             $db->prepare("INSERT INTO quotes ($cols, project_id, created_by, created_at, updated_at) VALUES ($qs, ?, ?, ?, ?)")
                ->execute(array_merge(array_values($f), [$projectId, $user['id'], $now, $now]));
             $id = (int)$db->lastInsertId();
-            pm_event($actor, $projectId, 'quote', "הצעת מחיר: $supplier, {$stage['name']} — " . pm_money($f['amount']),
-                ['quote' => $id, 'stage' => (int)$stage['id']]);
+            pm_event($actor, $projectId, 'quote', 'הצעת מחיר: {supplier}, {stage} — {amount}',
+                ['quote' => $id, 'stage' => (int)$stage['id']], ['supplier' => $supplier, 'stage' => $stage['name'], 'amount' => pm_money($f['amount'])]);
             if ($stage['status'] === 'planned') pm_stage_set_status($actor, $stage, 'quotes');
         }
         if ($fileId) pm_quote_file_home($projectId, $fileId, $f['supplier_id']);
@@ -221,8 +228,8 @@ function pm_quote_recommend(array $user, int $id, bool $on): array
     if ($on) $db->prepare('UPDATE quotes SET recommended = 0 WHERE stage_id = ?')->execute([$q['stage_id']]);
     $db->prepare('UPDATE quotes SET recommended = ?, updated_at = ? WHERE id = ?')->execute([$on ? 1 : 0, pm_now(), $id]);
     $stage = pm_stage_row($user, (int)$q['stage_id']);
-    pm_event($user, (int)$q['project_id'], 'quote', ($on ? 'הצעה מומלצת: ' : 'בוטלה ההמלצה: ') . pm_contact_name((int)$q['supplier_id']) . ", {$stage['name']}",
-        ['quote' => $id]);
+    pm_event($user, (int)$q['project_id'], 'quote', $on ? 'הצעה מומלצת: {supplier}, {stage}' : 'בוטלה ההמלצה: {supplier}, {stage}',
+        ['quote' => $id], ['supplier' => pm_contact_name((int)$q['supplier_id']), 'stage' => $stage['name']]);
     return pm_quotes($user, (int)$q['project_id']);
 }
 
@@ -237,16 +244,22 @@ function pm_quotes_send(array $user, int $stageId): array
     if (!$n) throw new PmError('אין הצעות פתוחות בשלב הזה', 422);
     $db->prepare("UPDATE quotes SET status = 'sent', sent_at = ?, updated_at = ? WHERE stage_id = ? AND status IN ('open','sent')")
        ->execute([pm_now(), pm_now(), $stageId]);
-    pm_event($user, (int)$stage['project_id'], 'quote', "נשלח ללקוח לאישור: {$stage['name']} ($n " . ($n > 1 ? 'הצעות' : 'הצעה') . ')', ['stage' => $stageId]);
+    pm_event($user, (int)$stage['project_id'], 'quote', $n > 1 ? 'נשלח ללקוח לאישור: {stage} ({n} הצעות)' : 'נשלח ללקוח לאישור: {stage} ({n} הצעה)',
+        ['stage' => $stageId], ['stage' => $stage['name'], 'n' => $n]);
     if (in_array($stage['status'], ['planned', 'quotes'], true)) pm_stage_set_status($user, $stage, 'client_approval');
     // מייל ללקוח (שלב 11) — עם רשימת ההצעות והקישור האישי
     $p = pm_project_row($user, (int)$stage['project_id']);
     if ($p['client_id']) {
         $l = $db->prepare("SELECT q.amount, q.recommended, c.name FROM quotes q JOIN contacts c ON c.id = q.supplier_id WHERE q.stage_id = ? AND q.status = 'sent' ORDER BY q.recommended DESC, q.amount");
         $l->execute([$stageId]);
-        $lines = array_map(fn($x) => ($x['recommended'] ? '⭐ ' : '• ') . $x['name'] . ' — ' . pm_money((int)$x['amount']) . ($x['recommended'] ? ' (ההמלצה שלי)' : ''), $l->fetchAll());
-        pm_notify((int)$p['id'], (int)$p['client_id'], 'quotes_sent',
+        // הרשימה — בשפת הלקוח, כמו המייל כולו
+        $lang = pm_contact_lang((int)$p['client_id']);
+        $lines = array_map(fn($x) => $x['recommended']
+            ? pm_t('⭐ {name} — {amount} (ההמלצה שלי)', ['name' => $x['name'], 'amount' => pm_money((int)$x['amount'])], $lang)
+            : '• ' . $x['name'] . ' — ' . pm_money((int)$x['amount']), $l->fetchAll());
+        pm_notify((int)$p['id'], (int)$p['client_id'], 'quotes_sent', // i18n-none-start — שמות המשתנים
             ['שלב' => $stage['name'], 'פרטים' => implode("\n", $lines), 'קישור' => pm_notify_link((int)$p['id'], (int)$p['client_id'])], $user);
+        // i18n-none-end
     }
     return pm_quotes($user, (int)$stage['project_id']);
 }
@@ -290,17 +303,16 @@ function pm_quote_decide(array $user, int $id, string $role, string $decision, s
         if (!$p['lawyer_id']) throw new PmError('אין עו"ד בפרויקט', 422);
         if ($q['status'] !== 'client_approved') throw new PmError('העו"ד מאשר אחרי הלקוח', 422);
     } elseif (!in_array($q['status'], ['open', 'sent', 'declined', 'rejected'], true)) {
-        throw new PmError('ההצעה כבר ' . PM_QUOTE_STATUSES[$q['status']], 422);
+        throw new PmError('ההצעה כבר {status}', 422, ['status' => PM_QUOTE_STATUSES[$q['status']]]);
     }
-    if ($byName === '') $byName = pm_contact_name((int)($role === 'client' ? $p['client_id'] : $p['lawyer_id'])) ?: ($role === 'client' ? 'הלקוח' : 'עו"ד');
+    if ($byName === '') $byName = pm_contact_name((int)($role === 'client' ? $p['client_id'] : $p['lawyer_id'])) ?: ($role === 'client' ? 'הלקוח' : 'עו"ד'); // i18n-ok
 
     if ($decision === 'approved' && in_array($stage['status'], ['in_progress', 'done', 'paid'], true)) {
-        throw new PmError('השלב כבר ' . PM_STAGE_STATUSES[$stage['status']] . ' — אי אפשר להחליף בו הצעה', 422);
+        throw new PmError('השלב כבר {status} — אי אפשר להחליף בו הצעה', 422, ['status' => PM_STAGE_STATUSES[$stage['status']]]);
     }
     $needsLawyer = (bool)$stage['needs_lawyer'] && $p['lawyer_id'];
     $status = $decision === 'rejected' ? 'rejected' : ($role === 'client' && $needsLawyer ? 'client_approved' : 'approved');
     $supplier = pm_contact_name((int)$q['supplier_id']);
-    $who = $role === 'client' ? 'הלקוח' : 'העו"ד';
     $now = pm_now();
     $db = pm_db();
     $db->beginTransaction();
@@ -313,10 +325,32 @@ function pm_quote_decide(array $user, int $id, string $role, string $decision, s
                       $portal['portal_id'] ?? null, (string)($portal['signature'] ?? '')]);
         $db->prepare('UPDATE quotes SET status = ?, updated_at = ? WHERE id = ?')->execute([$status, $now, $id]);
 
-        $how = $method === 'manual' ? ' (נרשם ע"י ' . $user['display_name'] . ')' : ($method === 'signature' ? ' — בחתימה בקישור' : ' — בקישור');
-        $text = ($decision === 'approved' ? "$who אישר" : "$who דחה") . " את ההצעה של $supplier, {$stage['name']} — " . pm_money((int)$q['amount'])
-              . ($note !== '' ? ": $note" : '') . $how;
-        pm_event($actor, (int)$q['project_id'], 'approval', $text, ['quote' => $id, 'role' => $role, 'decision' => $decision]);
+        // משפט שלם לכל צירוף: מי × החלטה × איך. {note} — ": <הערה>" או ריק
+        $how = $method === 'manual' ? 'manual' : ($method === 'signature' ? 'signature' : 'link');
+        // i18n-ok-start
+        $text = [
+            'client' => [
+                'approved' => ['manual'    => 'הלקוח אישר את ההצעה של {supplier}, {stage} — {amount}{note} (נרשם על ידי {by})',
+                               'signature' => 'הלקוח אישר את ההצעה של {supplier}, {stage} — {amount}{note} — בחתימה בקישור',
+                               'link'      => 'הלקוח אישר את ההצעה של {supplier}, {stage} — {amount}{note} — בקישור'],
+                'rejected' => ['manual'    => 'הלקוח דחה את ההצעה של {supplier}, {stage} — {amount}{note} (נרשם על ידי {by})',
+                               'signature' => 'הלקוח דחה את ההצעה של {supplier}, {stage} — {amount}{note} — בחתימה בקישור',
+                               'link'      => 'הלקוח דחה את ההצעה של {supplier}, {stage} — {amount}{note} — בקישור'],
+            ],
+            'lawyer' => [
+                'approved' => ['manual'    => 'העו"ד אישר את ההצעה של {supplier}, {stage} — {amount}{note} (נרשם על ידי {by})',
+                               'signature' => 'העו"ד אישר את ההצעה של {supplier}, {stage} — {amount}{note} — בחתימה בקישור',
+                               'link'      => 'העו"ד אישר את ההצעה של {supplier}, {stage} — {amount}{note} — בקישור'],
+                'rejected' => ['manual'    => 'העו"ד דחה את ההצעה של {supplier}, {stage} — {amount}{note} (נרשם על ידי {by})',
+                               'signature' => 'העו"ד דחה את ההצעה של {supplier}, {stage} — {amount}{note} — בחתימה בקישור',
+                               'link'      => 'העו"ד דחה את ההצעה של {supplier}, {stage} — {amount}{note} — בקישור'],
+            ],
+        ][$role][$decision][$how];
+        // i18n-ok-end
+        pm_event($actor, (int)$q['project_id'], 'approval', $text, ['quote' => $id, 'role' => $role, 'decision' => $decision], [
+            'supplier' => $supplier, 'stage' => $stage['name'], 'amount' => pm_money((int)$q['amount']),
+            'note' => $note !== '' ? ": $note" : '', 'by' => $user['display_name'],
+        ]);
 
         if ($decision === 'approved') {
             // ההצעה נבחרה: האחרות בשלב — "לא נבחרה" (גם הצעה שאושרה קודם, אם הלקוח
@@ -325,13 +359,14 @@ function pm_quote_decide(array $user, int $id, string $role, string $decision, s
                ->execute([$now, $q['stage_id'], $id]);
             if ((int)$stage['supplier_id'] !== (int)$q['supplier_id']) {
                 $db->prepare('UPDATE stages SET supplier_id = ?, updated_at = ? WHERE id = ?')->execute([$q['supplier_id'], $now, $stage['id']]);
-                pm_event($actor, (int)$q['project_id'], 'stage_supplier', "{$stage['name']}: שויך $supplier", ['stage' => (int)$stage['id']]);
+                pm_event($actor, (int)$q['project_id'], 'stage_supplier', '{stage}: שויך {supplier}', ['stage' => (int)$stage['id']],
+                    ['stage' => $stage['name'], 'supplier' => $supplier]);
             }
             if (in_array($stage['status'], ['planned', 'quotes', 'client_approval', 'lawyer_approval'], true)) {
                 pm_stage_set_status($actor, $stage, $status === 'approved' ? 'approved' : 'lawyer_approval');
             }
         } elseif ($role === 'lawyer' || $q['status'] === 'client_approved') {
-            if (in_array($stage['status'], ['client_approval', 'lawyer_approval'], true)) pm_stage_set_status($actor, $stage, 'quotes', 'ההצעה נדחתה');
+            if (in_array($stage['status'], ['client_approval', 'lawyer_approval'], true)) pm_stage_set_status($actor, $stage, 'quotes', 'ההצעה נדחתה'); // i18n-ok
         }
         $db->commit();
     } catch (Throwable $e) {
@@ -341,15 +376,21 @@ function pm_quote_decide(array $user, int $id, string $role, string $decision, s
     // מיילים (שלב 11): לעו"ד — כשהלקוח אישר ונדרש עו"ד; לספקים — כשההחלטה סופית
     $pid = (int)$q['project_id'];
     if ($decision === 'approved' && $status === 'client_approved' && $p['lawyer_id']) {
+        // i18n-none-start — שמות המשתנים בנוסח
         pm_notify($pid, (int)$p['lawyer_id'], 'quote_lawyer', ['שלב' => $stage['name'], 'פרטים' => $supplier, 'סכום' => pm_money((int)$q['amount']),
             'קישור' => pm_notify_link($pid, (int)$p['lawyer_id'])], $actor);
+        // i18n-none-end
     }
     if ($decision === 'approved' && $status === 'approved') {
         $all = $db->prepare("SELECT id, supplier_id, amount, status FROM quotes WHERE stage_id = ? AND (id = ? OR status = 'declined')");
         $all->execute([$q['stage_id'], $id]);
         foreach ($all->fetchAll() as $x) {
+            // "אושרה ✅" / "לא נבחרה הפעם" — מתורגמים בשפת הספק (pm_msg_render)
+            $res = (int)$x['id'] === $id ? 'אושרה ✅' : 'לא נבחרה הפעם'; // i18n-ok
+            // i18n-none-start — שמות המשתנים בנוסח
             pm_notify($pid, (int)$x['supplier_id'], 'quote_result', ['שלב' => $stage['name'], 'סכום' => pm_money((int)$x['amount']),
-                'פרטים' => (int)$x['id'] === $id ? 'אושרה ✅' : 'לא נבחרה הפעם', 'קישור' => pm_notify_link($pid, (int)$x['supplier_id'])], $actor);
+                'פרטים' => $res, 'קישור' => pm_notify_link($pid, (int)$x['supplier_id'])], $actor);
+            // i18n-none-end
         }
     }
     return pm_quotes($user, (int)$q['project_id']);
@@ -363,10 +404,13 @@ function pm_quote_cancel(array $user, int $id, string $note): array
     $stage = pm_stage_row($user, (int)$q['stage_id']);
     pm_db()->prepare("UPDATE quotes SET status = 'cancelled', recommended = 0, updated_at = ? WHERE id = ?")->execute([pm_now(), $id]);
     $note = mb_substr(trim($note), 0, 500);
-    pm_event($user, (int)$q['project_id'], 'quote', 'בוטלה הצעה: ' . pm_contact_name((int)$q['supplier_id']) . ", {$stage['name']} — " . pm_money((int)$q['amount'])
-        . ($note !== '' ? ": $note" : ''), ['quote' => $id]);
+    pm_event($user, (int)$q['project_id'], 'quote', 'בוטלה הצעה: {supplier}, {stage} — {amount}{note}', ['quote' => $id], [
+        'supplier' => pm_contact_name((int)$q['supplier_id']), 'stage' => $stage['name'], 'amount' => pm_money((int)$q['amount']),
+        'note' => $note !== '' ? ": $note" : '',
+    ]);
     if (in_array($q['status'], ['approved', 'client_approved'], true) && in_array($stage['status'], ['approved', 'lawyer_approval'], true)) {
-        pm_stage_set_status($user, $stage, 'quotes', 'ההצעה שאושרה בוטלה');
+        pm_stage_set_status($user, $stage, 'quotes', 'ההצעה שאושרה בוטלה'); // i18n-ok
+
     }
     return pm_quotes($user, (int)$q['project_id']);
 }

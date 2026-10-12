@@ -13,13 +13,18 @@
  * {סכום} {פרטים} {קישור} {מנהל}.
  *
  * כל הודעה נרשמת ב-messages (גם ידנית: "נפתח בוואטסאפ"), ושורה בציר הזמן.
+ *
+ * שפות: לכל נוסח גרסה בכל שפה (message_templates: owner_id, key, lang). ברירת המחדל —
+ * הנוסח העברי כאן, מתורגם במילון. המייל יוצא בשפת הנמען (contacts.lang). המשתנים
+ * הם שמות עבריים ({קישור}), ולכל שפה גם כינוי משלה ({link}) — pm_msg_vars().
  */
 
 declare(strict_types=1);
 
 require_once __DIR__ . '/calendar.php';
 
-/** key => [שם, למי, נושא, גוף] */
+/** key => [שם, למי, נושא, גוף] — העברית היא המפתח במילון; מתורגם ב-pm_msg_templates. */
+// i18n-ok-start
 const PM_MSG_TEMPLATES = [
     'portal_link' => ['הקישור האישי', 'לקוח / עו"ד / ספק', 'הקישור שלך לפרויקט {פרויקט}',
         "שלום {שם},\nזה הקישור האישי שלך לפרויקט \"{פרויקט}\" — {פרטים}:\n{קישור}\n\n{מנהל}"],
@@ -41,6 +46,40 @@ const PM_MSG_TEMPLATES = [
         "שלום {שם},\nשלב \"{שלב}\" בפרויקט {פרויקט} בוצע.{פרטים}\nתמונות ועדכונים:\n{קישור}\n\n{מנהל}"],
 ];
 
+/** שמות המשתנים בנוסחים. בכל שפה הכינוי שלהם — התרגום של השם (מילה אחת). */
+// במילון — עם הסוגריים ("{קישור}" ← "{link}"), כדי שמילה רגילה בנתונים ("שם") לא תיתפס ככינוי
+const PM_MSG_VARS = ['{שם}', '{פרויקט}', '{מנהל}', '{כתובת}', '{פרטים}', '{סכום}', '{שלב}', '{קישור}'];
+// i18n-ok-end
+
+/** נוסחים שחייבים את הקישור — בלעדיו הנמען לא יכול לפעול. */
+const PM_MSG_NEED_LINK = ['portal_link', 'quotes_sent', 'quote_lawyer', 'payment_request', 'payment_lawyer', 'quote_invite', 'proof_supplier'];
+
+/** שפה ← [שם עברי ← כינוי בשפה]. בעברית — השם עצמו. */
+function pm_msg_vars(): array
+{
+    static $out = null;
+    if ($out !== null) return $out;
+    $out = [];
+    foreach (array_keys(PM_LANGS) as $lang) {
+        foreach (PM_MSG_VARS as $key) {
+            $name = trim($key, '{}');
+            $alias = $lang === 'he' ? $name : trim(pm_t($key, [], $lang), " {}");
+            // כינוי חייב להיות מילה אחת בלי סוגריים — אחרת נשאר השם העברי
+            if ($alias === '' || preg_match('/[\s{}]/u', $alias)) $alias = $name;
+            $out[$lang][$name] = $alias;
+        }
+    }
+    return $out;
+}
+
+/** שפת איש הקשר — למיילים ולהודעות אליו. */
+function pm_contact_lang(int $id): string
+{
+    $st = pm_db()->prepare('SELECT lang FROM contacts WHERE id = ?');
+    $st->execute([$id]);
+    return pm_lang_valid((string)$st->fetchColumn());
+}
+
 /** ההודעות שנשלחו בבקשה הזו — חוזרות בתשובה (notified), והדפדפן מראה "נשלח מייל ל…". */
 function pm_notified(?array $add = null): array
 {
@@ -51,15 +90,20 @@ function pm_notified(?array $add = null): array
 
 function pm_msg_templates(array $user): array
 {
-    $st = pm_db()->prepare('SELECT key, subject, body FROM message_templates WHERE owner_id = ?');
+    $st = pm_db()->prepare('SELECT key, lang, subject, body FROM message_templates WHERE owner_id = ?');
     $st->execute([$user['id']]);
     $mine = [];
-    foreach ($st->fetchAll() as $r) $mine[$r['key']] = $r;
+    foreach ($st->fetchAll() as $r) $mine[$r['key']][$r['lang']] = $r;
     $out = [];
     foreach (PM_MSG_TEMPLATES as $key => [$label, $to, $subject, $body]) {
-        $out[] = ['key' => $key, 'label' => $label, 'to' => $to,
-            'subject' => $mine[$key]['subject'] ?? $subject, 'body' => $mine[$key]['body'] ?? $body,
-            'custom' => isset($mine[$key]), 'default_subject' => $subject, 'default_body' => $body];
+        foreach (array_keys(PM_LANGS) as $lang) {
+            $ds = pm_t($subject, [], $lang);
+            $dbody = pm_t($body, [], $lang);
+            $c = $mine[$key][$lang] ?? null;
+            $out[] = ['key' => $key, 'lang' => $lang, 'label' => pm_t($label), 'to' => pm_t($to),
+                'subject' => $c['subject'] ?? $ds, 'body' => $c['body'] ?? $dbody,
+                'custom' => $c !== null, 'default_subject' => $ds, 'default_body' => $dbody];
+        }
     }
     return $out;
 }
@@ -68,29 +112,45 @@ function pm_msg_template_save(array $user, array $in): array
 {
     $key = (string)($in['key'] ?? '');
     if (!isset(PM_MSG_TEMPLATES[$key])) throw new PmError('נוסח לא מוכר', 422);
+    $lang = isset(PM_LANGS[(string)($in['lang'] ?? '')]) ? (string)$in['lang'] : pm_lang();
     if (!empty($in['reset'])) {
-        pm_db()->prepare('DELETE FROM message_templates WHERE owner_id = ? AND key = ?')->execute([$user['id'], $key]);
+        pm_db()->prepare('DELETE FROM message_templates WHERE owner_id = ? AND key = ? AND lang = ?')->execute([$user['id'], $key, $lang]);
     } else {
         $subject = pm_str($in, 'subject', 200, true, 'נושא');
         $body = pm_str($in, 'body', 3000, true, 'הנוסח');
-        if (!str_contains($body, '{קישור}') && in_array($key, ['portal_link', 'quotes_sent', 'quote_lawyer', 'payment_request', 'payment_lawyer', 'quote_invite', 'proof_supplier'], true)) {
-            throw new PmError('הנוסח צריך לכלול {קישור} — בלעדיו הנמען לא יוכל לפעול', 422);
+        $link = pm_msg_vars()[$lang]['קישור']; // i18n-none
+        if (!str_contains($body, '{קישור}') && !str_contains($body, '{' . $link . '}') && in_array($key, PM_MSG_NEED_LINK, true)) { // i18n-none
+            throw new PmError('הנוסח צריך לכלול {tag} — בלעדיו הנמען לא יוכל לפעול', 422, ['tag' => '{' . $link . '}']);
         }
-        pm_db()->prepare('INSERT INTO message_templates (owner_id, key, subject, body) VALUES (?,?,?,?)
-                          ON CONFLICT(owner_id, key) DO UPDATE SET subject = excluded.subject, body = excluded.body')
-           ->execute([$user['id'], $key, $subject, $body]);
+        pm_db()->prepare('INSERT INTO message_templates (owner_id, key, lang, subject, body) VALUES (?,?,?,?,?)
+                          ON CONFLICT(owner_id, key, lang) DO UPDATE SET subject = excluded.subject, body = excluded.body')
+           ->execute([$user['id'], $key, $lang, $subject, $body]);
     }
     return ['templates' => pm_msg_templates($user)];
 }
 
-/** [נושא, גוף] — הנוסח של בעל הפרויקט, עם המשתנים. */
-function pm_msg_render(array $owner, string $key, array $vars): array
+/**
+ * [נושא, גוף] — הנוסח של בעל הפרויקט בשפה $lang (שלו בשפה הזו, אחרת ברירת המחדל
+ * מתורגמת), עם המשתנים: גם {שם עברי} וגם {כינוי בשפה}. ערך שהוא מפתח במילון
+ * ("אושרה ✅", שם שלב שנזרע) — מתורגם לשפה.
+ */
+function pm_msg_render(array $owner, string $key, array $vars, ?string $lang = null): array
 {
-    $t = null;
-    foreach (pm_msg_templates($owner) as $x) if ($x['key'] === $key) $t = $x;
+    $lang = pm_lang_valid($lang ?? pm_lang());
+    $def = PM_MSG_TEMPLATES[$key] ?? throw new PmError('נוסח לא מוכר', 422);
+    $st = pm_db()->prepare('SELECT subject, body FROM message_templates WHERE owner_id = ? AND key = ? AND lang = ?');
+    $st->execute([$owner['id'], $key, $lang]);
+    $t = $st->fetch() ?: ['subject' => pm_t($def[2], [], $lang), 'body' => pm_t($def[3], [], $lang)];
+    // i18n-none-start — שמות המשתנים, לא טקסט
+    $vars += ['מנהל' => $owner['display_name'] ?? '', 'כתובת' => '', 'פרטים' => '', 'סכום' => '', 'שלב' => '', 'קישור' => ''];
+    // i18n-none-end
+    $alias = pm_msg_vars()[$lang];
     $map = [];
-    foreach ($vars as $k => $v) $map['{' . $k . '}'] = (string)$v;
-    $map += ['{מנהל}' => $owner['display_name'] ?? '', '{כתובת}' => '', '{פרטים}' => '', '{סכום}' => '', '{שלב}' => '', '{קישור}' => ''];
+    foreach ($vars as $k => $v) {
+        $v = is_string($v) && $v !== '' ? pm_t($v, [], $lang) : (string)$v;
+        $map['{' . $k . '}'] = $v;
+        if (isset($alias[$k])) $map['{' . $alias[$k] . '}'] ??= $v;
+    }
     return [trim(strtr($t['subject'], $map)), trim(strtr($t['body'], $map))];
 }
 
@@ -121,14 +181,16 @@ function pm_notify(int $projectId, int $contactId, string $key, array $vars, ?ar
         if (!$c || $c['email'] === '') return false;
         if ($c['kind'] === 'client' && !in_array('email', pm_client_settings($contactId)['channels'], true)) return false;
         $owner = pm_project_owner($projectId);
-        $vars += ['שם' => $c['name'], 'פרויקט' => $owner['project_name']];
-        [$subject, $body] = pm_msg_render($owner, $key, $vars);
-        $ok = pm_send_mail($c['email'], $subject, $body);
+        $vars += ['שם' => $c['name'], 'פרויקט' => $owner['project_name']]; // i18n-none
+        $lang = pm_lang_valid((string)($c['lang'] ?? 'he'));
+        [$subject, $body] = pm_msg_render($owner, $key, $vars, $lang);
+        $ok = pm_send_mail($c['email'], $subject, $body, $lang);
         pm_db()->prepare('INSERT INTO messages (project_id, contact_id, channel, key, recipient, subject, body, status, auto, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
            ->execute([$projectId, $contactId, 'email', $key, $c['email'], $subject, $body, $ok ? 'sent' : 'failed', 1, (int)($actor['id'] ?? 0), pm_now()]);
         pm_log($ok ? 'info' : 'warn', 'mail', "mail.$key", ['data' => ['to' => $c['email'], 'contact' => $contactId, 'project' => $projectId, 'sent' => $ok]]);
         if ($ok) {
-            pm_event($actor ?? ['id' => 0, 'display_name' => 'מערכת'], $projectId, 'message', "✉️ נשלח מייל ל{$c['name']}: $subject", ['contact' => $contactId, 'key' => $key]);
+            pm_event($actor ?? ['id' => 0, 'display_name' => 'מערכת'], $projectId, 'message', '✉️ נשלח מייל ל{name}: {subject}', // i18n-ok
+                ['contact' => $contactId, 'key' => $key], ['name' => $c['name'], 'subject' => $subject]);
             pm_notified(['name' => $c['name'], 'email' => $c['email']]);
         }
         return $ok;
@@ -162,8 +224,12 @@ function pm_message_log(array $user, array $in): array
     $body = mb_substr((string)($in['text'] ?? ''), 0, 3000);
     pm_db()->prepare('INSERT INTO messages (project_id, contact_id, channel, key, recipient, subject, body, status, auto, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
        ->execute([$projectId, $contactId, $channel, mb_substr((string)($in['key'] ?? ''), 0, 40), $name, mb_substr((string)($in['subject'] ?? ''), 0, 200), $body, 'opened', 0, $user['id'], pm_now()]);
-    $via = ['whatsapp' => 'וואטסאפ', 'sms' => 'SMS', 'email' => 'מייל', 'copy' => 'העתקה'][$channel];
-    if ($projectId) pm_event($user, $projectId, 'message', "💬 $via ל" . ($name ?: 'איש קשר') . ': ' . mb_substr(strtok($body, "\n") ?: '', 0, 60), ['contact' => $contactId, 'channel' => $channel]);
+    // i18n-ok-start — שורה שלמה לכל ערוץ; מתורגמת בקריאה (pm_event_text)
+    $tpl = ['whatsapp' => '💬 וואטסאפ ל{name}: {text}', 'sms' => '💬 SMS ל{name}: {text}',
+            'email' => '💬 מייל ל{name}: {text}', 'copy' => '💬 העתקה ל{name}: {text}'][$channel];
+    if ($projectId) pm_event($user, $projectId, 'message', $tpl, ['contact' => $contactId, 'channel' => $channel],
+        ['name' => $name ?: 'איש קשר', 'text' => mb_substr(strtok($body, "\n") ?: '', 0, 60)]);
+    // i18n-ok-end
     return ['ok' => true];
 }
 
@@ -184,7 +250,11 @@ function pm_mail_test(array $user): array
 {
     $to = pm_user_email($user + ['username' => $user['username'] ?? '']);
     if ($to === '') throw new PmError('אין אימייל בחשבון שלך — מוסיפים ב"החשבון שלי"', 422);
-    $ok = pm_send_mail($to, 'מייל בדיקה — ניהול פרויקטים', "שלום {$user['display_name']},\n\nאם המייל הזה הגיע — השרת שולח מיילים, וההודעות האוטומטיות יגיעו ללקוחות, לעורכי הדין ולספקים.\n\n" . pm_app_url() . "\n");
+    $lang = pm_user_lang((int)$user['id']);
+    $ok = pm_send_mail($to, pm_t('מייל בדיקה — ניהול פרויקטים', [], $lang),
+        pm_t("שלום {name},\n\nאם המייל הזה הגיע — השרת שולח מיילים, וההודעות האוטומטיות יגיעו ללקוחות, לעורכי הדין ולספקים.\n\n{url}\n",
+            ['name' => $user['display_name'], 'url' => pm_app_url()], $lang), $lang);
+
     pm_log($ok ? 'info' : 'warn', 'mail', 'mail.test', ['user' => $user, 'data' => ['to' => $to, 'sent' => $ok, 'from' => pm_mail_from()]]);
     return ['sent' => $ok, 'to' => $to, 'from' => pm_mail_from()];
 }

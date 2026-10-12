@@ -44,6 +44,9 @@ function pm_reply(int $code, array $payload): never
     }
     // מיילים שנשלחו בבקשה הזו — הדפדפן מראה "✉️ נשלח מייל ל…"
     if ($code < 400 && function_exists('pm_notified') && pm_notified()) $payload['notified'] = pm_notified();
+    // השגיאה ביומן — בעברית; למשתמש — בשפה שלו (X-Lang, lib/i18n.php)
+    if (isset($payload['error'])) $payload['error'] = isset($payload['_t']) ? pm_t(...$payload['_t']) : pm_t((string)$payload['error']);
+    unset($payload['_t']);
     http_response_code($code);
     echo json_encode($payload, JSON_UNESCAPED_UNICODE);
     exit;
@@ -89,28 +92,29 @@ try {
     if (!$user) {
         $s = pm_session_user();
         pm_log_user($s, true);
-        pm_reply(401, ['error' => 'נדרשת כניסה', 'reason' => $s ? $s['status'] : 'no_session']);
+        pm_reply(401, ['error' => 'נדרשת כניסה', 'reason' => $s ? $s['status'] : 'no_session']); // i18n-ok — pm_reply מתרגם
     }
     pm_log_user($user, true);
 
     if ($method === 'POST' && !hash_equals($user['csrf'], (string)($_SERVER['HTTP_X_CSRF'] ?? ''))) {
-        pm_reply(403, ['error' => 'פג תוקף הדף — רענן ונסה שוב']);
+        pm_reply(403, ['error' => 'פג תוקף הדף — רענן ונסה שוב']); // i18n-ok — pm_reply מתרגם
     }
     $isDev = $user['role'] === 'developer';
     $in = $method === 'POST' ? pm_body() : $_GET;
 
     $result = match ("$method $action") {
         'GET me' => (function () use ($user) {
-            $d = pm_db()->prepare('SELECT digest FROM users WHERE id = ?');
+            $d = pm_db()->prepare('SELECT digest, lang FROM users WHERE id = ?');
             $d->execute([$user['id']]);
-            return ['user' => $user + ['digest' => (bool)$d->fetchColumn()], 'trades' => pm_trades(), 'templates' => pm_templates(),
-                    'file_types' => PM_FILE_TYPES, 'max_upload' => pm_max_upload(),
+            $u = $d->fetch();
+            return ['user' => $user + ['digest' => (bool)$u['digest'], 'lang' => $u['lang']], 'trades' => pm_trades(), 'templates' => pm_templates(),
+                    'file_types' => pm_t_map(PM_FILE_TYPES), 'max_upload' => pm_max_upload(),
                     // מצב עצמאי: בלי חזרה לדף האפליקציות. כבוי כל עוד האפליקציה בתוך האינדקס.
                     'standalone' => pm_setting('standalone', '0') === '1',
-                    'labels' => ['stage' => PM_STAGE_STATUSES, 'project' => PM_PROJECT_STATUSES, 'kind' => PM_PROJECT_KINDS,
-                                 'quote' => PM_QUOTE_STATUSES, 'payment' => PM_PAYMENT_STATUSES, 'method' => PM_PAY_METHODS],
+                    'labels' => array_map('pm_t_map', ['stage' => PM_STAGE_STATUSES, 'project' => PM_PROJECT_STATUSES, 'kind' => PM_PROJECT_KINDS,
+                                 'quote' => PM_QUOTE_STATUSES, 'payment' => PM_PAYMENT_STATUSES, 'method' => PM_PAY_METHODS]),
                     // נוסחי ההודעות — אותו נוסח לוואטסאפ / SMS בלחיצה ולמייל האוטומטי
-                    'msg_templates' => pm_msg_templates($user)];
+                    'msg_templates' => pm_msg_templates($user), 'msg_vars' => pm_msg_vars()];
         })(),
 
         'GET contacts'    => ['contacts' => pm_contacts_list($user, (string)($in['kind'] ?? ''),
@@ -168,6 +172,13 @@ try {
         'POST appointment-cancel' => pm_appointment_cancel($user, (int)($in['id'] ?? 0)),
         'GET cal-link'      => pm_cal_link($user, false),
         'POST cal-link'     => pm_cal_link($user, true),
+        // שפת הממשק (lib/i18n.php) — נשמרת למשתמש, וגם המיילים אליו יוצאים בה
+        'POST lang'         => (function () use ($user, $in) {
+            $lang = (string)($in['lang'] ?? '');
+            if (!isset(PM_LANGS[$lang])) throw new PmError('שפה לא מוכרת', 422);
+            pm_db()->prepare('UPDATE users SET lang = ? WHERE id = ?')->execute([$lang, $user['id']]);
+            return ['lang' => $lang];
+        })(),
         'POST digest'       => (function () use ($user, $in) {
             pm_db()->prepare('UPDATE users SET digest = ? WHERE id = ?')->execute([!empty($in['on']) ? 1 : 0, $user['id']]);
             return ['digest' => !empty($in['on'])];
@@ -225,12 +236,13 @@ try {
     };
     pm_reply(200, $result);
 } catch (PmError $e) {
-    pm_reply($e->getCode() ?: 400, ['error' => $e->getMessage()]);
+    pm_reply($e->getCode() ?: 400, ['error' => $e->getMessage(), '_t' => [$e->tpl, $e->vars]]);
 } catch (Throwable $e) {
     error_log('project-manager api: ' . $e->getMessage());
     // החריגה המלאה ליומן — סוג, הודעה, קובץ, שורה ומחסנית — כדי שאפשר יהיה להבין מה קרה
     pm_log('error', 'php', 'exception', ['message' => get_class($e) . ': ' . $e->getMessage(),
         'data' => ['file' => basename($e->getFile()), 'line' => $e->getLine(),
                    'trace' => array_slice(array_map(fn($f) => basename($f['file'] ?? '?') . ':' . ($f['line'] ?? '?') . ' ' . ($f['function'] ?? ''), $e->getTrace()), 0, 12)]]);
-    pm_reply(500, ['error' => 'תקלה בשרת — נרשמה ביומן (' . pm_request_id() . ')']);
+    $tpl = 'תקלה בשרת — נרשמה ביומן ({id})'; // i18n-ok — מתורגם ב-pm_reply (_t)
+    pm_reply(500, ['error' => pm_fill($tpl, ['id' => pm_request_id()]), '_t' => [$tpl, ['id' => pm_request_id()]]]);
 }

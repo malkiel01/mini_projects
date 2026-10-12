@@ -581,3 +581,11 @@ body.auth { display: grid; place-items: start center; padding: max(8vh, var(--s4
 @media (max-width: 380px) {
     .add-label { display: none; }
 }
+
+/* ---- שפות (assets/js/i18n.js) ---- */
+/* חצים וסימנים שמצביעים "קדימה / אחורה" — מתהפכים בשפות משמאל לימין */
+[dir="ltr"] .dir-flip { display: inline-block; transform: scaleX(-1); }
+.lang-pick { inline-size: auto; min-inline-size: 0; padding-block: 4px; padding-inline: 8px 24px; font-size: .85rem; border: 1px solid var(--line, #ccc); border-radius: 8px; background-color: transparent; color: inherit; }
+.lang-pick option { color: #16192b; background: #fff; }
+.top .lang-pick { flex: none; inline-size: auto; min-block-size: 0; padding-block: 2px; padding-inline: 6px 2px; font-size: .8rem; border-color: rgba(255, 255, 255, .5); }
+#msg-lang-bar select { max-width: none; min-inline-size: 9em; }

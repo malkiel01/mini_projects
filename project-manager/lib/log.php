@@ -231,7 +231,7 @@ const PM_LOG_TOKEN_DAYS = 7;
 function pm_log_token(bool $rotate = false): array
 {
     $db = pm_log_db();
-    if (!$db) throw new RuntimeException('היומן לא זמין');
+    if (!$db) throw new RuntimeException('היומן לא זמין'); // i18n-none — חריגה פנימית (ביומן; למשתמש "תקלה בשרת")
     $get = fn($k) => ($s = $db->prepare('SELECT value FROM meta WHERE key = ?')) && $s->execute([$k]) ? $s->fetchColumn() : false;
     $token = $get('read_token');
     $created = $get('read_token_at');

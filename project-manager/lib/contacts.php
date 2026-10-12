@@ -18,15 +18,16 @@ function pm_str(array $in, string $key, int $max, bool $required = false, string
 {
     $v = $in[$key] ?? '';
     $v = is_scalar($v) ? trim((string)$v) : '';
-    if ($required && $v === '') throw new PmError(($label ?: $key) . ': שדה חובה', 422);
-    if (mb_strlen($v) > $max) throw new PmError(($label ?: $key) . ": עד $max תווים", 422);
+    // התווית (field) — משתנה, ומתורגמת לבד (lib/i18n.php)
+    if ($required && $v === '') throw new PmError('{field}: שדה חובה', 422, ['field' => $label ?: $key]);
+    if (mb_strlen($v) > $max) throw new PmError('{field}: עד {n} תווים', 422, ['field' => $label ?: $key, 'n' => $max]);
     return $v;
 }
 
 function pm_phone(array $in, string $key, string $label): string
 {
     $v = pm_str($in, $key, 30, false, $label);
-    if ($v !== '' && !preg_match('/^\+?[0-9][0-9 \-]{5,25}$/', $v)) throw new PmError("$label: מספר לא תקין", 422);
+    if ($v !== '' && !preg_match('/^\+?[0-9][0-9 \-]{5,25}$/', $v)) throw new PmError('{field}: מספר לא תקין', 422, ['field' => $label]);
     return $v;
 }
 
@@ -67,6 +68,7 @@ function pm_contact_out(array $row, array $tradeIds = [], ?array $settings = nul
         'bank'       => json_decode($row['bank_json'], true) ?: (object)[],
         'rating'     => (int)$row['rating'],
         'notes'      => $row['notes'],
+        'lang'       => $row['lang'] ?? 'he',
         'archived'   => (bool)$row['archived'],
         'trades'     => array_map('intval', $tradeIds),
         'updated_at' => $row['updated_at'],
@@ -157,14 +159,23 @@ function pm_contact_save(array $user, array $in): array
         'name'      => pm_str($in, 'name', 100, true, 'שם'),
         'company'   => pm_str($in, 'company', 100, false, 'שם העסק'),
         'tax_id'    => pm_str($in, 'tax_id', 20, false, 'ח.פ. / ת"ז'),
-        'phone'     => pm_phone($in, 'phone', 'טלפון'),
-        'whatsapp'  => pm_phone($in, 'whatsapp', 'וואטסאפ'),
+        'phone'     => pm_phone($in, 'phone', 'טלפון'),        // i18n-ok — מתורגם כמשתנה ב-PmError
+        'whatsapp'  => pm_phone($in, 'whatsapp', 'וואטסאפ'),   // i18n-ok
         'email'     => $email,
         'address'   => pm_str($in, 'address', 200, false, 'כתובת'),
         'bank_json' => json_encode(array_filter($bank, 'strlen'), JSON_UNESCAPED_UNICODE),
         'rating'    => max(0, min(5, $rating)),
         'notes'     => pm_str($in, 'notes', 4000, false, 'הערות'),
     ];
+    // שפת איש הקשר — הפורטל והמיילים שלו. חדש: מה שנבחר, אחרת שפת הממשק של מי שיצר;
+    // עדכון בלי lang — נשאר כמו שהיה.
+    $lang = $in['lang'] ?? null;
+    if ($lang !== null && $lang !== '') {
+        if (!is_string($lang) || !isset(PM_LANGS[$lang])) throw new PmError('שפה לא מוכרת', 422);
+        $fields['lang'] = $lang;
+    } elseif (!$id) {
+        $fields['lang'] = pm_lang();
+    }
 
     $tradeIds = [];
     if ($kind === 'supplier') {
@@ -252,14 +263,15 @@ function pm_contacts_import(array $user, array $in): array
         $name = trim((string)($c['name'] ?? '')) ?: $phone ?: $email;
         if (($phone !== '' && isset($phones[$norm($phone)])) || ($email !== '' && isset($emails[mb_strtolower($email)]))) { $skipped++; continue; }
         try {
-            pm_contact_save($user, ['kind' => $kind, 'name' => mb_substr($name, 0, 100), 'phone' => $phone, 'email' => $email,
+            pm_contact_save($user, ['kind' => $kind, 'lang' => $c['lang'] ?? $in['lang'] ?? pm_lang(),
+                'name' => mb_substr($name, 0, 100), 'phone' => $phone, 'email' => $email,
                 'company' => mb_substr(trim((string)($c['company'] ?? '')), 0, 100), 'address' => mb_substr(trim((string)($c['address'] ?? '')), 0, 200),
                 'trades' => $kind === 'supplier' ? $trades : []]);
             $created++;
             if ($phone !== '') $phones[$norm($phone)] = true;
             if ($email !== '') $emails[mb_strtolower($email)] = true;
         } catch (PmError $e) {
-            $errors[] = "$name: " . $e->getMessage();
+            $errors[] = $name . ': ' . $e->localized();
         }
     }
     pm_log('info', 'data', 'contacts.import', ['user' => $user, 'data' => ['kind' => $kind, 'created' => $created, 'skipped' => $skipped, 'errors' => count($errors)]]);

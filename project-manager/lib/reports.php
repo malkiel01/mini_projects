@@ -106,7 +106,7 @@ function pm_report_save(array $user, array $in): array
     if ($kind === 'done') {
         if (!$stage) throw new PmError('"השלב בוצע" — צריך לבחור שלב', 422);
         if (!$pics) throw new PmError('כדי לסמן שלב "בוצע" — צריך לפחות תמונה או סרטון אחד', 422);
-        if (in_array($stage['status'], ['done', 'paid'], true)) throw new PmError('השלב כבר מסומן ' . PM_STAGE_STATUSES[$stage['status']], 422);
+        if (in_array($stage['status'], ['done', 'paid'], true)) throw new PmError('השלב כבר מסומן {status}', 422, ['status' => PM_STAGE_STATUSES[$stage['status']]]);
     }
     if ($text === '' && !$fileIds) throw new PmError('דיווח ריק — כתבו משהו או צרפו תמונה', 422);
     $visible = !array_key_exists('visible', $in) || !empty($in['visible']) ? 1 : 0;
@@ -120,14 +120,23 @@ function pm_report_save(array $user, array $in): array
         $ins = $db->prepare('INSERT INTO report_files (report_id, file_id, sort) VALUES (?,?,?)');
         foreach ($fileIds as $i => $f) $ins->execute([$id, $f, $i]);
         pm_report_files_visible($id, (bool)$visible);
-        $count = $fileIds ? ' (' . count($fileIds) . ' ' . (count($fileIds) > 1 ? 'קבצים' : 'קובץ') . ')' : '';
+        // משפט שלם לכל צירוף: עם / בלי קבצים (אחד / כמה), עם / בלי שלב. {text} — " — <טקסט>" / ": <טקסט>" או ריק
+        $n = count($fileIds);
+        $vars = ['stage' => $stage['name'] ?? '', 'n' => $n];
         if ($kind === 'done') {
-            pm_event($user, $projectId, 'report', "✅ {$stage['name']}: בוצע$count" . ($text !== '' ? " — $text" : ''), ['report' => $id, 'stage' => $stageId]);
+            // i18n-ok-start
+            $tpl = !$n ? '✅ {stage}: בוצע{text}' : ($n > 1 ? '✅ {stage}: בוצע ({n} קבצים){text}' : '✅ {stage}: בוצע ({n} קובץ){text}');
+            // i18n-ok-end
+            pm_event($user, $projectId, 'report', $tpl, ['report' => $id, 'stage' => $stageId], $vars + ['text' => $text !== '' ? " — $text" : '']);
             $db->prepare("UPDATE stages SET status = 'done', done_at = ?, updated_at = ? WHERE id = ?")->execute([pm_now(), pm_now(), $stageId]);
             pm_stage_close_if_paid($user, $stageId);
         } else {
-            pm_event($user, $projectId, 'report', '📷 עדכון מהשטח' . ($stage ? " — {$stage['name']}" : '') . $count . ($text !== '' ? ": $text" : ''),
-                ['report' => $id, 'stage' => $stageId]);
+            // i18n-ok-start
+            $tpl = $stage
+                ? (!$n ? '📷 עדכון מהשטח — {stage}{text}' : ($n > 1 ? '📷 עדכון מהשטח — {stage} ({n} קבצים){text}' : '📷 עדכון מהשטח — {stage} ({n} קובץ){text}'))
+                : (!$n ? '📷 עדכון מהשטח{text}' : ($n > 1 ? '📷 עדכון מהשטח ({n} קבצים){text}' : '📷 עדכון מהשטח ({n} קובץ){text}'));
+            // i18n-ok-end
+            pm_event($user, $projectId, 'report', $tpl, ['report' => $id, 'stage' => $stageId], $vars + ['text' => $text !== '' ? ": $text" : '']);
         }
         $db->commit();
     } catch (Throwable $e) {
@@ -138,8 +147,10 @@ function pm_report_save(array $user, array $in): array
     if ($kind === 'done' && $visible) {
         $proj = pm_project_row($user, $projectId);
         if ($proj['client_id']) {
+            // i18n-none-start — שמות המשתנים בנוסח
             pm_notify($projectId, (int)$proj['client_id'], 'stage_done', ['שלב' => $stage['name'], 'פרטים' => $text !== '' ? "\n$text" : '',
                 'קישור' => pm_notify_link($projectId, (int)$proj['client_id'])], $user);
+            // i18n-none-end
         }
     }
     return ['reports' => pm_reports_of($projectId), 'saved' => $id];
@@ -161,7 +172,8 @@ function pm_report_update(array $user, array $in): array
     pm_db()->prepare('UPDATE reports SET text = ?, visible = ? WHERE id = ?')->execute([$text, $visible, $r['id']]);
     if ((int)$r['visible'] !== $visible) {
         pm_report_files_visible((int)$r['id'], (bool)$visible);
-        pm_event($user, (int)$r['project_id'], 'report', ($visible ? '👁 דיווח מהשטח גלוי ללקוח' : 'דיווח מהשטח הוסתר מהלקוח') . ' (' . pm_short_date(substr($r['created_at'], 0, 10)) . ')', ['report' => (int)$r['id']]);
+        pm_event($user, (int)$r['project_id'], 'report', $visible ? '👁 דיווח מהשטח גלוי ללקוח ({date})' : 'דיווח מהשטח הוסתר מהלקוח ({date})',
+            ['report' => (int)$r['id']], ['date' => pm_short_date(substr($r['created_at'], 0, 10))]);
     }
     return ['reports' => pm_reports_of((int)$r['project_id'])];
 }
@@ -173,6 +185,7 @@ function pm_report_delete(array $user, int $id): array
     if ($r['kind'] === 'done') throw new PmError('דיווח "בוצע" לא נמחק — אפשר להסתיר אותו מהלקוח', 422);
     pm_db()->prepare('UPDATE reports SET deleted_at = ? WHERE id = ?')->execute([pm_now(), $id]);
     pm_report_files_visible($id, false);
-    pm_event($user, (int)$r['project_id'], 'report', 'נמחק דיווח מהשטח (' . pm_short_date(substr($r['created_at'], 0, 10)) . ')', ['report' => $id]);
+    pm_event($user, (int)$r['project_id'], 'report', 'נמחק דיווח מהשטח ({date})', ['report' => $id], ['date' => pm_short_date(substr($r['created_at'], 0, 10))]);
+
     return ['reports' => pm_reports_of((int)$r['project_id'])];
 }

@@ -2,11 +2,12 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
+    <script src="assets/js/i18n.js?v=21"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=20">
+    <link rel="stylesheet" href="assets/css/app.css?v=21">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -36,8 +37,8 @@
       #/share[/<id>]     שמירת מה ששותף לאפליקציה ("שתף אל…") — פרויקט, ואז תיקייה
 -->
     <header class="top">
-        <a class="icon-btn" id="back" href="#/" aria-label="חזרה לפרויקטים" hidden>→</a>
-        <a class="icon-btn" id="tools-link" href="../" aria-label="חזרה לדף האפליקציות" title="דף האפליקציות" hidden>→</a>
+        <a class="icon-btn" id="back" href="#/" aria-label="חזרה לפרויקטים" hidden><span class="dir-flip">→</span></a>
+        <a class="icon-btn" id="tools-link" href="../" aria-label="חזרה לדף האפליקציות" title="דף האפליקציות" hidden><span class="dir-flip">→</span></a>
         <img class="logo" id="logo" src="assets/icon.svg" alt="" width="28" height="28">
         <div class="titles">
             <h1 id="title">ניהול פרויקטים</h1>
@@ -191,9 +192,9 @@
                 <ul class="list rows-list" id="rem-list"></ul>
             </section>
             <div class="cal-head">
-                <button class="icon-btn ghost" id="cal-prev" aria-label="החודש הקודם">›</button>
+                <button class="icon-btn ghost" id="cal-prev" aria-label="החודש הקודם"><span class="dir-flip">›</span></button>
                 <h2 id="cal-month" aria-live="polite"></h2>
-                <button class="icon-btn ghost" id="cal-next" aria-label="החודש הבא">‹</button>
+                <button class="icon-btn ghost" id="cal-next" aria-label="החודש הבא"><span class="dir-flip">‹</span></button>
                 <button class="btn ghost sm" id="cal-today">היום</button>
                 <button class="btn primary" id="add-appt"><span aria-hidden="true">+</span><span class="add-label">פגישה</span></button>
             </div>
@@ -210,7 +211,7 @@
                     <a class="btn ghost" id="cal-google" target="_blank" rel="noopener">יומן גוגל</a>
                     <button type="button" class="btn ghost" id="cal-copy">העתקת הקישור</button>
                 </div>
-                <p class="hint">יומן גוגל: "הוספת יומן" ← "מכתובת URL" ← להדביק את הקישור. הקישור אישי — מי שמחזיק בו רואה את היומן שלך. <button type="button" class="link" id="cal-renew">קישור חדש</button> מבטל את הקודם.</p>
+                <p class="hint">יומן גוגל: "הוספת יומן" ← "מכתובת URL" ← להדביק את הקישור. הקישור אישי — מי שמחזיק בו רואה את היומן שלך, וקישור חדש מבטל את הקודם. <button type="button" class="link" id="cal-renew">קישור חדש</button></p>
                 <label class="switch"><input type="checkbox" id="digest-on"><span>מייל בוקר עם מה שדורש טיפול (פעם ביום, רק כשיש)</span></label>
             </details>
         </section>
@@ -269,7 +270,8 @@
                 <a role="tab" data-set="log" href="#/settings/log" class="dev-only" hidden><span>יומן</span></a>
             </div>
             <div class="pane" id="set-messages" hidden>
-                <p class="hint">כשקורה משהו שנוגע ללקוח, לעו"ד או לספק — נשלח אליו מייל אוטומטי (ללקוח — לפי "ערוצי הודעות" בכרטיס שלו). וואטסאפ ו-SMS — בלחיצה, עם אותו נוסח. משתנים: <code>{שם}</code> <code>{פרויקט}</code> <code>{שלב}</code> <code>{סכום}</code> <code>{פרטים}</code> <code>{קישור}</code> <code>{מנהל}</code>.</p>
+                <p class="hint"><span>כשקורה משהו שנוגע ללקוח, לעו"ד או לספק — נשלח אליו מייל אוטומטי (ללקוח — לפי "ערוצי הודעות" בכרטיס שלו). וואטסאפ ו-SMS — בלחיצה, עם אותו נוסח.</span>
+                    <span id="msg-vars-hint">משתנים: <code>{שם}</code> <code>{פרויקט}</code> <code>{שלב}</code> <code>{סכום}</code> <code>{פרטים}</code> <code>{קישור}</code> <code>{מנהל}</code>.</span></p>
                 <div class="mail-test">
                     <button type="button" class="btn ghost" id="mail-test">✉️ מייל בדיקה לעצמי</button>
                     <span class="hint" id="mail-test-result"></span>
@@ -306,7 +308,7 @@
             <div class="pane" id="set-log" hidden>
                 <div class="token-box">
                     <b>קישור קריאה לצ'אט</b>
-                    <p class="hint">כשיש תקלה — מעתיקים את הקישור לצ'אט. האסימון מתחלף לבד אחת לשבוע (<span id="token-exp"></span>), והקישור הישן מפסיק לעבוד.</p>
+                    <p class="hint"><span>כשיש תקלה — מעתיקים את הקישור לצ'אט. האסימון מתחלף לבד אחת לשבוע, והקישור הישן מפסיק לעבוד</span> (<span id="token-exp"></span>).</p>
                     <code id="token-url"></code>
                     <div class="row-btns">
                         <button class="btn primary" id="token-copy">העתקת הקישור</button>
@@ -513,7 +515,7 @@
                     <label class="f wide"><span>מה *</span><input name="title" maxlength="100" list="appt-titles" placeholder="למשל: פגישה עם הלקוח" required autocomplete="off"></label>
                     <label class="f"><span>תאריך *</span><input name="date" type="date" required></label>
                     <label class="f"><span>שעה</span><input name="time" type="time" step="300"></label>
-                    <label class="f"><span>משך</span><select name="duration"><option value="30">חצי שעה</option><option value="60" selected>שעה</option><option value="90">שעה וחצי</option><option value="120">שעתיים</option><option value="180">3 שעות</option><option value="240">4 שעות</option></select></label>
+                    <label class="f"><span>משך</span><select name="duration"><option value="30">חצי שעה</option><option value="60" selected>שעה אחת</option><option value="90">שעה וחצי</option><option value="120">שעתיים</option><option value="180">3 שעות</option><option value="240">4 שעות</option></select></label>
                     <label class="f"><span>עם מי</span><select name="contact_id"></select></label>
                     <label class="f wide"><span>איפה</span><input name="location" maxlength="200" placeholder="כתובת — ברירת מחדל: הפרויקט"></label>
                     <label class="f wide"><span>הערות</span><textarea name="notes" rows="2" maxlength="2000"></textarea></label>
@@ -557,9 +559,9 @@
     <!-- ===== תצוגת תמונה / סרטון ===== -->
     <dialog id="lightbox" class="lightbox" aria-label="תצוגה">
         <button type="button" class="icon-btn lb-close" data-close aria-label="סגירה">✕</button>
-        <button type="button" class="icon-btn lb-prev" aria-label="הקודם">›</button>
+        <button type="button" class="icon-btn lb-prev" aria-label="הקודם"><span class="dir-flip">›</span></button>
         <div class="lb-body" id="lb-body"></div>
-        <button type="button" class="icon-btn lb-next" aria-label="הבא">‹</button>
+        <button type="button" class="icon-btn lb-next" aria-label="הבא"><span class="dir-flip">‹</span></button>
         <p class="lb-cap" id="lb-cap"></p>
     </dialog>
 
@@ -873,20 +875,20 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=20"></script>
-    <script src="assets/js/contacts.js?v=20"></script>
-    <script src="assets/js/device-contacts.js?v=20"></script>
-    <script src="assets/js/files.js?v=20"></script>
-    <script src="assets/js/lightbox.js?v=20"></script>
-    <script src="assets/js/field.js?v=20"></script>
+    <script src="assets/js/core.js?v=21"></script>
+    <script src="assets/js/contacts.js?v=21"></script>
+    <script src="assets/js/device-contacts.js?v=21"></script>
+    <script src="assets/js/files.js?v=21"></script>
+    <script src="assets/js/lightbox.js?v=21"></script>
+    <script src="assets/js/field.js?v=21"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=20"></script>
-    <script src="assets/js/projects.js?v=20"></script>
-    <script src="assets/js/quotes.js?v=20"></script>
-    <script src="assets/js/payments.js?v=20"></script>
-    <script src="assets/js/hebcal.js?v=20"></script>
-    <script src="assets/js/calendar.js?v=20"></script>
-    <script src="assets/js/settings.js?v=20"></script>
-    <script src="assets/js/app.js?v=20"></script>
+    <script src="assets/js/share.js?v=21"></script>
+    <script src="assets/js/projects.js?v=21"></script>
+    <script src="assets/js/quotes.js?v=21"></script>
+    <script src="assets/js/payments.js?v=21"></script>
+    <script src="assets/js/hebcal.js?v=21"></script>
+    <script src="assets/js/calendar.js?v=21"></script>
+    <script src="assets/js/settings.js?v=21"></script>
+    <script src="assets/js/app.js?v=21"></script>
 </body>
 </html>

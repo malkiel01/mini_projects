@@ -13,6 +13,8 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/contacts.php';
 
+// התוויות בעברית — מתורגמות בתצוגה (pm_t_map ב-api.php, t() בדפדפן)
+// i18n-ok-start
 const PM_PROJECT_KINDS = ['renovation' => 'שיפוץ', 'construction' => 'בנייה', 'addition' => 'תוספת בנייה', 'other' => 'אחר'];
 const PM_PROJECT_STATUSES = ['active' => 'פעיל', 'paused' => 'מושהה', 'done' => 'הסתיים', 'archived' => 'בארכיון'];
 /** מסלול השלב (README, "שלב"). בשלב 2 המנהל מעביר ידנית; בהמשך הצעות ואישורים יקדמו לבד. */
@@ -26,11 +28,12 @@ const PM_STAGE_STATUSES = [
     'done'            => 'בוצע',
     'paid'            => 'שולם וסגור',
 ];
+// i18n-ok-end
 
 function pm_date(array $in, string $key, string $label): string
 {
     $v = pm_str($in, $key, 10, false, $label);
-    if ($v !== '' && (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) || !strtotime($v))) throw new PmError("$label: תאריך לא תקין", 422);
+    if ($v !== '' && (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) || !strtotime($v))) throw new PmError('{label}: תאריך לא תקין', 422, ['label' => $label]);
     return $v;
 }
 
@@ -51,20 +54,36 @@ function pm_owned_contact(?int $id, int $ownerId, string $kind, string $label): 
     if (!$id) return null;
     $st = pm_db()->prepare('SELECT 1 FROM contacts WHERE id = ? AND owner_id = ? AND kind = ?');
     $st->execute([$id, $ownerId, $kind]);
-    if (!$st->fetchColumn()) throw new PmError("$label לא נמצא", 422);
+    if (!$st->fetchColumn()) throw new PmError('{label} לא נמצא', 422, ['label' => $label]);
     return $id;
 }
 
 /** רישום אירוע בציר הזמן, ועדכון "הפעילות האחרונה" של הפרויקט. */
-function pm_event(array $user, int $projectId, string $kind, string $text, array $data = []): void
+/**
+ * שורה בציר הזמן. $text — הטקסט העברי עם {משתנים}, ו-$vars — הערכים: נשמרת העברית
+ * המלאה, ולצידה התבנית — כדי שכל אחד יקרא את השורה בשפה שלו (pm_event_text).
+ */
+function pm_event(array $user, int $projectId, string $kind, string $text, array $data = [], array $vars = []): void
 {
     $now = pm_now();
+    $full = pm_fill($text, $vars);
+    $i18n = json_encode(['t' => $text, 'v' => $vars], JSON_UNESCAPED_UNICODE);
     pm_db()->prepare('INSERT INTO events (project_id, at, actor_id, actor_name, kind, text, data_json) VALUES (?,?,?,?,?,?,?)')
-        ->execute([$projectId, $now, $user['id'], $user['display_name'], $kind, $text, json_encode($data, JSON_UNESCAPED_UNICODE)]);
-    pm_db()->prepare('UPDATE projects SET last_activity_at = ?, last_event = ? WHERE id = ?')
-        ->execute([$now, mb_substr($text, 0, 140), $projectId]);
+        ->execute([$projectId, $now, $user['id'], $user['display_name'], $kind, $full,
+                   json_encode($data + ['i18n' => ['t' => $text, 'v' => $vars]], JSON_UNESCAPED_UNICODE)]);
+    pm_db()->prepare('UPDATE projects SET last_activity_at = ?, last_event = ?, last_event_i18n = ? WHERE id = ?')
+        ->execute([$now, mb_substr($full, 0, 140), $i18n, $projectId]);
     // מהפורטל: $user['actor'] = "portal:<קישור>" — לא משתמש של האפליקציה
-    pm_audit($user['actor'] ?? "user:{$user['id']}", "project.$kind", 'project', $projectId, $data + ['text' => $text]);
+    pm_audit($user['actor'] ?? "user:{$user['id']}", "project.$kind", 'project', $projectId, $data + ['text' => $full]);
+}
+
+/** הטקסט של אירוע בשפת הקורא. $json — data_json של האירוע, או last_event_i18n. */
+function pm_event_text(string $text, ?string $json, ?string $lang = null): string
+{
+    $d = $json ? json_decode($json, true) : null;
+    $x = $d['i18n'] ?? $d;
+    if (!is_array($x) || !isset($x['t'])) return pm_t($text, [], $lang);
+    return pm_t((string)$x['t'], is_array($x['v'] ?? null) ? $x['v'] : [], $lang);
 }
 
 // ---- רשימה ----
@@ -73,7 +92,7 @@ function pm_event(array $user, int $projectId, string $kind, string $text, array
 function pm_projects_list(array $user, string $q, string $filter): array
 {
     [$where, $args] = pm_owner_clause($user, 'p');
-    $sql = "SELECT p.id, p.owner_id, p.name, p.address, p.kind, p.status, p.last_activity_at, p.last_event,
+    $sql = "SELECT p.id, p.owner_id, p.name, p.address, p.kind, p.status, p.last_activity_at, p.last_event, p.last_event_i18n,
                    c.name AS client_name, m.display_name AS owner_name,
                    (SELECT COUNT(*) FROM stages s WHERE s.project_id = p.id) AS stages_total,
                    (SELECT COUNT(*) FROM stages s WHERE s.project_id = p.id AND s.status IN ('done','paid')) AS stages_done,
@@ -106,7 +125,7 @@ function pm_projects_list(array $user, string $q, string $filter): array
         return [
             'id' => (int)$r['id'], 'owner_id' => (int)$r['owner_id'], 'owner_name' => $r['owner_name'],
             'name' => $r['name'], 'address' => $r['address'], 'kind' => $r['kind'], 'status' => $r['status'],
-            'client_name' => $r['client_name'], 'last_activity_at' => $r['last_activity_at'], 'last_event' => $r['last_event'],
+            'client_name' => $r['client_name'], 'last_activity_at' => $r['last_activity_at'], 'last_event' => pm_event_text($r['last_event'], $r['last_event_i18n']),
             'stages_total' => (int)$r['stages_total'], 'stages_done' => (int)$r['stages_done'], 'current_stage' => $cur,
         ];
     }, $st->fetchAll());
@@ -134,9 +153,10 @@ function pm_project_get(array $user, int $id): array
         'plan_start' => $s['plan_start'], 'plan_end' => $s['plan_end'], 'done_at' => $s['done_at'],
     ], $st->fetchAll());
 
-    $ev = $db->prepare('SELECT id, at, actor_id, actor_name, kind, text FROM events WHERE project_id = ? ORDER BY id DESC LIMIT 300');
+    $ev = $db->prepare('SELECT id, at, actor_id, actor_name, kind, text, data_json FROM events WHERE project_id = ? ORDER BY id DESC LIMIT 300');
     $ev->execute([$id]);
-    $events = array_reverse(array_map(fn($e) => ['id' => (int)$e['id'], 'actor_id' => (int)$e['actor_id']] + $e, $ev->fetchAll()));
+    $events = array_reverse(array_map(fn($e) => ['id' => (int)$e['id'], 'at' => $e['at'], 'actor_id' => (int)$e['actor_id'],
+        'actor_name' => pm_t($e['actor_name']), 'kind' => $e['kind'], 'text' => pm_event_text($e['text'], $e['data_json'])], $ev->fetchAll()));
 
     return [
         'project' => [
@@ -161,19 +181,20 @@ function pm_project_team(array $p, array $stages): array
     $add = function (?int $id, string $role, bool $removable = false) use (&$team, $db) {
         if (!$id) return;
         if (isset($team[$id])) { $team[$id]['roles'][] = $role; return; }
-        $st = $db->prepare('SELECT id, kind, name, company, phone, whatsapp, email FROM contacts WHERE id = ?');
+        $st = $db->prepare('SELECT id, kind, name, company, phone, whatsapp, email, lang FROM contacts WHERE id = ?');
         $st->execute([$id]);
         if ($c = $st->fetch()) $team[$id] = ['id' => (int)$c['id']] + $c + ['roles' => [$role], 'removable' => $removable];
     };
-    $add($p['client_id'] !== null ? (int)$p['client_id'] : null, 'לקוח');
-    $add($p['lawyer_id'] !== null ? (int)$p['lawyer_id'] : null, 'עו"ד');
+    // התפקידים בעברית — הדפדפן משווה אליהם (roles.includes('לקוח')) ומתרגם בתצוגה
+    $add($p['client_id'] !== null ? (int)$p['client_id'] : null, 'לקוח'); // i18n-ok
+    $add($p['lawyer_id'] !== null ? (int)$p['lawyer_id'] : null, 'עו"ד'); // i18n-ok
     foreach ($stages as $s) if ($s['supplier_id']) $add($s['supplier_id'], $s['name']);
     $m = $db->prepare('SELECT contact_id, role FROM project_members WHERE project_id = ?');
     $m->execute([$p['id']]);
     foreach ($m->fetchAll() as $r) {
         $id = (int)$r['contact_id'];
-        if (isset($team[$id])) { $team[$id]['removable'] = true; $team[$id]['roles'][] = $r['role'] ?: 'צוות'; }
-        else $add($id, $r['role'] ?: 'צוות', true);
+        if (isset($team[$id])) { $team[$id]['removable'] = true; $team[$id]['roles'][] = $r['role'] ?: 'צוות'; } // i18n-ok
+        else $add($id, $r['role'] ?: 'צוות', true); // i18n-ok
     }
     return array_values($team);
 }
@@ -186,8 +207,8 @@ function pm_project_save(array $user, array $in): array
 
     $kind = (string)($in['kind'] ?? 'renovation');
     if (!isset(PM_PROJECT_KINDS[$kind])) throw new PmError('סוג פרויקט לא מוכר', 422);
-    $clientId = pm_owned_contact((int)($in['client_id'] ?? 0) ?: null, $ownerId, 'client', 'הלקוח');
-    $lawyerId = pm_owned_contact((int)($in['lawyer_id'] ?? 0) ?: null, $ownerId, 'lawyer', 'עורך הדין');
+    $clientId = pm_owned_contact((int)($in['client_id'] ?? 0) ?: null, $ownerId, 'client', 'הלקוח'); // i18n-ok
+    $lawyerId = pm_owned_contact((int)($in['lawyer_id'] ?? 0) ?: null, $ownerId, 'lawyer', 'עורך הדין'); // i18n-ok
     // פרויקט חדש בלי עו"ד — לוקחים את העו"ד מהגדרות הלקוח
     if (!$existing && !$lawyerId && $clientId) $lawyerId = pm_client_settings($clientId)['lawyer_id'];
     $budget = $in['budget'] ?? 0;
@@ -200,8 +221,8 @@ function pm_project_save(array $user, array $in): array
         'client_id'  => $clientId,
         'lawyer_id'  => $lawyerId,
         'budget'     => (int)round((float)$budget),
-        'start_date' => pm_date($in, 'start_date', 'תאריך התחלה'),
-        'due_date'   => pm_date($in, 'due_date', 'יעד מסירה'),
+        'start_date' => pm_date($in, 'start_date', 'תאריך התחלה'), // i18n-ok
+        'due_date'   => pm_date($in, 'due_date', 'יעד מסירה'), // i18n-ok
         'notes'      => pm_str($in, 'notes', 4000, false, 'הערות'),
     ];
 
@@ -223,7 +244,8 @@ function pm_project_save(array $user, array $in): array
             $id = (int)$db->lastInsertId();
             $count = pm_apply_template($id, (int)($in['template_id'] ?? 0));
             if ($count && pm_project_survey_first($user, $id)) $count++;
-            pm_event($user, $id, 'created', 'הפרויקט נפתח' . ($count ? " עם $count שלבים" : ''));
+            if ($count) pm_event($user, $id, 'created', 'הפרויקט נפתח עם {n} שלבים', [], ['n' => $count]);
+            else pm_event($user, $id, 'created', 'הפרויקט נפתח');
         }
         $db->commit();
     } catch (Throwable $e) {
@@ -259,7 +281,7 @@ function pm_project_status(array $user, int $id, string $status): array
     if (!isset(PM_PROJECT_STATUSES[$status])) throw new PmError('סטטוס לא מוכר', 422);
     if ($p['status'] !== $status) {
         pm_db()->prepare('UPDATE projects SET status = ?, updated_at = ? WHERE id = ?')->execute([$status, pm_now(), $id]);
-        pm_event($user, $id, 'status', 'סטטוס הפרויקט: ' . PM_PROJECT_STATUSES[$status], ['status' => $status]);
+        pm_event($user, $id, 'status', 'סטטוס הפרויקט: {status}', ['status' => $status], ['status' => PM_PROJECT_STATUSES[$status]]);
     }
     return pm_project_get($user, $id);
 }
@@ -290,11 +312,11 @@ function pm_stage_save(array $user, array $in): array
     $f = [
         'name'         => pm_str($in, 'name', 80, true, 'שם השלב'),
         'trade_id'     => $tradeId,
-        'supplier_id'  => pm_owned_contact((int)($in['supplier_id'] ?? 0) ?: null, (int)$p['owner_id'], 'supplier', 'הספק'),
+        'supplier_id'  => pm_owned_contact((int)($in['supplier_id'] ?? 0) ?: null, (int)$p['owner_id'], 'supplier', 'הספק'), // i18n-ok
         'status'       => $status,
         'needs_lawyer' => !empty($in['needs_lawyer']) ? 1 : 0,
-        'plan_start'   => pm_date($in, 'plan_start', 'התחלה מתוכננת'),
-        'plan_end'     => pm_date($in, 'plan_end', 'סיום מתוכנן'),
+        'plan_start'   => pm_date($in, 'plan_start', 'התחלה מתוכננת'), // i18n-ok
+        'plan_end'     => pm_date($in, 'plan_end', 'סיום מתוכנן'), // i18n-ok
     ];
     // "בוצע" — רק דרך דיווח מהשטח עם תמונה (lib/reports.php)
     if (in_array($status, ['done', 'paid'], true) && !in_array($old['status'] ?? 'planned', ['done', 'paid'], true)) {
@@ -311,10 +333,12 @@ function pm_stage_save(array $user, array $in): array
             $db->prepare("UPDATE stages SET $set, done_at = ?, updated_at = ? WHERE id = ?")
                ->execute(array_merge(array_values($f), [$doneAt, $now, $id]));
             if ($old['status'] !== $status) {
-                pm_event($user, $projectId, 'stage_status', "{$f['name']}: " . PM_STAGE_STATUSES[$status], ['stage' => $id, 'status' => $status]);
+                pm_event($user, $projectId, 'stage_status', '{stage}: {status}', ['stage' => $id, 'status' => $status],
+                    ['stage' => $f['name'], 'status' => PM_STAGE_STATUSES[$status]]);
             }
             if ((int)$old['supplier_id'] !== (int)$f['supplier_id'] && $f['supplier_id']) {
-                pm_event($user, $projectId, 'stage_supplier', "{$f['name']}: שויך " . pm_contact_name($f['supplier_id']), ['stage' => $id]);
+                pm_event($user, $projectId, 'stage_supplier', '{stage}: שויך {supplier}', ['stage' => $id],
+                    ['stage' => $f['name'], 'supplier' => pm_contact_name($f['supplier_id'])]);
             }
         } else {
             $sort = (int)$db->query("SELECT COALESCE(MAX(sort), 0) + 10 FROM stages WHERE project_id = $projectId")->fetchColumn();
@@ -322,7 +346,7 @@ function pm_stage_save(array $user, array $in): array
             $qs = implode(', ', array_fill(0, count($f), '?'));
             $db->prepare("INSERT INTO stages (project_id, sort, $cols, done_at, created_at, updated_at) VALUES (?, ?, $qs, ?, ?, ?)")
                ->execute(array_merge([$projectId, $sort], array_values($f), [$doneAt, $now, $now]));
-            pm_event($user, $projectId, 'stage_added', "נוסף שלב: {$f['name']}", ['stage' => (int)$db->lastInsertId()]);
+            pm_event($user, $projectId, 'stage_added', 'נוסף שלב: {stage}', ['stage' => (int)$db->lastInsertId()], ['stage' => $f['name']]);
         }
         $surveyAdded = pm_project_survey_first($user, $projectId);
         $db->commit();
@@ -330,7 +354,7 @@ function pm_stage_save(array $user, array $in): array
         $db->rollBack();
         throw $e;
     }
-    return pm_project_get($user, $projectId) + ($surveyAdded ? ['notice' => 'מודד מוסמך תמיד לפני אדריכלות — שלב המדידה סודר לפני האדריכלות'] : []);
+    return pm_project_get($user, $projectId) + ($surveyAdded ? ['notice' => pm_t('מודד מוסמך תמיד לפני אדריכלות — שלב המדידה סודר לפני האדריכלות')] : []);
 }
 
 function pm_contact_name(int $id): string
@@ -356,7 +380,7 @@ function pm_stage_delete(array $user, int $id): array
         if (!$o->fetchColumn() && $a->fetchColumn()) throw new PmError('יש בפרויקט אדריכלות — ולפניה תמיד מדידה של מודד מוסמך. אי אפשר למחוק את שלב המדידה', 422);
     }
     pm_db()->prepare('DELETE FROM stages WHERE id = ?')->execute([$id]);
-    pm_event($user, (int)$s['project_id'], 'stage_removed', "הוסר שלב: {$s['name']}", ['stage' => $id]);
+    pm_event($user, (int)$s['project_id'], 'stage_removed', 'הוסר שלב: {stage}', ['stage' => $id], ['stage' => $s['name']]);
     return pm_project_get($user, (int)$s['project_id']);
 }
 
@@ -413,10 +437,11 @@ function pm_member(array $user, int $projectId, int $contactId, bool $add, strin
         pm_db()->prepare('INSERT INTO project_members (project_id, contact_id, role) VALUES (?,?,?)
                           ON CONFLICT(project_id, contact_id) DO UPDATE SET role = excluded.role')
             ->execute([$projectId, $contactId, $role]);
-        pm_event($user, $projectId, 'member_added', "הצטרף לצוות: {$c['name']}" . ($role ? " ($role)" : ''));
+        if ($role !== '') pm_event($user, $projectId, 'member_added', 'הצטרף לצוות: {name} ({role})', [], ['name' => $c['name'], 'role' => $role]);
+        else pm_event($user, $projectId, 'member_added', 'הצטרף לצוות: {name}', [], ['name' => $c['name']]);
     } else {
         pm_db()->prepare('DELETE FROM project_members WHERE project_id = ? AND contact_id = ?')->execute([$projectId, $contactId]);
-        pm_event($user, $projectId, 'member_removed', "הוסר מהצוות: {$c['name']}");
+        pm_event($user, $projectId, 'member_removed', 'הוסר מהצוות: {name}', [], ['name' => $c['name']]);
     }
     return pm_project_get($user, $projectId);
 }
@@ -477,8 +502,8 @@ function pm_project_survey_first(array $user, int $projectId): bool
         }
         $db->prepare('INSERT INTO stages (project_id, sort, name, trade_id, created_at, updated_at) VALUES (?,?,?,?,?,?)')
            ->execute([$projectId, (int)$r['sort'], PM_SURVEY_STAGE, $survey, $now, $now]);
-        pm_event($user, $projectId, 'stage_added', 'נוסף שלב: ' . PM_SURVEY_STAGE . ' (מודד מוסמך — תמיד לפני אדריכלות)',
-            ['stage' => (int)$db->lastInsertId()]);
+        pm_event($user, $projectId, 'stage_added', 'נוסף שלב: {stage} (מודד מוסמך — תמיד לפני אדריכלות)',
+            ['stage' => (int)$db->lastInsertId()], ['stage' => PM_SURVEY_STAGE]);
         return true;
     }
     return false;
@@ -496,7 +521,8 @@ function pm_survey_migrate(): void
             $db->prepare('UPDATE stage_templates SET stages_json = ? WHERE id = ?')->execute([json_encode($fixed, JSON_UNESCAPED_UNICODE), $t['id']]);
         }
     }
-    $system = ['id' => 0, 'display_name' => 'מערכת'];
+    $system = ['id' => 0, 'display_name' => 'מערכת']; // i18n-ok — actor_name, מתורגם בקריאה
+
     foreach ($db->query("SELECT id FROM projects WHERE status IN ('active','paused')")->fetchAll(PDO::FETCH_COLUMN) as $pid) {
         pm_project_survey_first($system, (int)$pid);
     }

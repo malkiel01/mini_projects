@@ -22,6 +22,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/projects.php';
 
+// i18n-ok-start — תוויות ושמות תיקיות שנזרעים במסד; מתורגמים בתצוגה (pm_t_map / t(folder.name))
 const PM_FILE_TYPES = [
     'quote' => 'הצעת מחיר', 'proof' => 'אסמכתת תשלום', 'contract' => 'חוזה', 'plan' => 'תוכנית',
     'photo' => 'תמונה', 'video' => 'סרטון', 'invoice' => 'חשבונית', 'other' => 'אחר',
@@ -36,6 +37,7 @@ const PM_SYSTEM_FOLDERS = [
     'photos'  => ['תמונות מהשטח', '📷', 70],
     'general' => ['כללי', '📁', 80],
 ];
+// i18n-ok-end
 
 function pm_files_dir(int $projectId = 0): string
 {
@@ -242,7 +244,7 @@ function pm_upload_start(array $user, array $in): array
     $size = (int)($in['size'] ?? 0);
     if ($size <= 0) throw new PmError('קובץ ריק', 422);
     $max = pm_max_upload();
-    if ($size > $max) throw new PmError('הקובץ גדול מדי — עד ' . (int)($max / 1048576) . 'MB', 413);
+    if ($size > $max) throw new PmError('הקובץ גדול מדי — עד {n}MB', 413, ['n' => (int)($max / 1048576)]);
     pm_upload_cleanup();
     $id = bin2hex(random_bytes(12));
     pm_db()->prepare('INSERT INTO uploads (id, project_id, folder_id, user_id, name, mime, size, created_at) VALUES (?,?,?,?,?,?,?,?)')
@@ -308,8 +310,9 @@ function pm_upload_finish(array $user, array $in): array
         $fr->execute([$u['folder_id']]);
         // quiet: חלק מדיווח מהשטח — הדיווח עצמו נרשם בציר הזמן, לא כל תמונה
         if (empty($in['quiet'])) {
-            pm_event($user, (int)$u['project_id'], 'file', "📎 {$u['name']} ← " . pm_folder_label($fr->fetch()),
-                     ['file' => $fileId, 'folder' => (int)$u['folder_id'], 'size' => (int)$u['size'], 'type' => $type]);
+            pm_event($user, (int)$u['project_id'], 'file', '📎 {name} ← {folder}',
+                     ['file' => $fileId, 'folder' => (int)$u['folder_id'], 'size' => (int)$u['size'], 'type' => $type],
+                     ['name' => $u['name'], 'folder' => pm_folder_label($fr->fetch())]);
         }
         $db->commit();
     } catch (Throwable $e) {
@@ -368,7 +371,7 @@ function pm_clean_filename(string $name): string
 {
     $name = trim(str_replace(["\0", '/', '\\'], '', $name));
     $name = preg_replace('/[\x00-\x1F\x7F]/u', '', $name) ?? '';
-    if ($name === '' || $name === '.' || $name === '..') $name = 'קובץ';
+    if ($name === '' || $name === '.' || $name === '..') $name = pm_t('קובץ');
     return mb_substr($name, 0, 150);
 }
 
@@ -443,7 +446,8 @@ function pm_file_update(array $user, array $in): array
     $note = pm_str($in, 'note', 2000, false, 'הערה');
     pm_db()->prepare('UPDATE files SET name = ?, type = ?, visible = ?, note = ? WHERE id = ?')->execute([$name, $type, $visible, $note, $x['id']]);
     if ((int)$x['visible'] !== $visible) {
-        pm_event($user, (int)$x['project_id'], 'file_visible', ($visible ? '👁 גלוי ללקוח: ' : '🔒 פנימי: ') . $name, ['file' => (int)$x['id']]);
+        pm_event($user, (int)$x['project_id'], 'file_visible', $visible ? '👁 גלוי ללקוח: {name}' : '🔒 פנימי: {name}',
+                 ['file' => (int)$x['id']], ['name' => $name]);
     } else {
         pm_audit("user:{$user['id']}", 'file.update', 'file', (int)$x['id'], ['name' => $name, 'type' => $type]);
     }
@@ -459,7 +463,8 @@ function pm_file_move(array $user, int $id, int $folderId): array
     $db = pm_db();
     $db->prepare('DELETE FROM file_links WHERE file_id = ? AND (is_home = 1 OR folder_id = ?)')->execute([$id, $folderId]);
     $db->prepare('INSERT INTO file_links (file_id, folder_id, is_home) VALUES (?,?,1)')->execute([$id, $folderId]);
-    pm_event($user, (int)$x['project_id'], 'file_move', "📂 {$x['name']} → " . pm_folder_label($f), ['file' => $id, 'folder' => $folderId]);
+    pm_event($user, (int)$x['project_id'], 'file_move', '📂 {name} → {folder}', ['file' => $id, 'folder' => $folderId],
+             ['name' => $x['name'], 'folder' => pm_folder_label($f)]);
     return ['file' => pm_file_get($user, $id)];
 }
 
@@ -482,6 +487,6 @@ function pm_file_delete(array $user, int $id): array
 {
     $x = pm_file_row($user, $id);
     pm_db()->prepare('UPDATE files SET deleted_at = ? WHERE id = ?')->execute([pm_now(), $id]);
-    pm_event($user, (int)$x['project_id'], 'file_deleted', "🗑️ נמחק: {$x['name']}", ['file' => $id]);
+    pm_event($user, (int)$x['project_id'], 'file_deleted', '🗑️ נמחק: {name}', ['file' => $id], ['name' => $x['name']]);
     return ['ok' => true];
 }

@@ -9,6 +9,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/i18n.php';
+
 function pm_mail_available(): bool
 {
     return function_exists('mail');
@@ -29,12 +31,17 @@ function pm_app_url(): string
     return ($https ? 'https://' : 'http://') . $host . rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
 }
 
-function pm_send_mail(string $to, string $subject, string $body): bool
+/**
+ * $lang — שפת הנמען (lib/i18n.php): שם השולח בשפה שלו. הנושא והגוף — הקורא כבר
+ * מתרגם (pm_t עם אותה שפה). בלי $lang — עברית, כמו קודם. המייל טקסט פשוט, בלי HTML.
+ */
+function pm_send_mail(string $to, string $subject, string $body, ?string $lang = null): bool
 {
     if (!pm_mail_available() || !filter_var($to, FILTER_VALIDATE_EMAIL)) return false;
     $from = pm_mail_from();
+    $fromName = pm_t('ניהול פרויקטים', [], $lang ?? 'he');
     $headers = implode("\r\n", [
-        'From: =?UTF-8?B?' . base64_encode('ניהול פרויקטים') . '?= <' . $from . '>',
+        'From: =?UTF-8?B?' . base64_encode($fromName) . '?= <' . $from . '>',
         'Reply-To: ' . $from,
         'MIME-Version: 1.0',
         'Content-Type: text/plain; charset=UTF-8',
