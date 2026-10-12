@@ -10,7 +10,8 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const moneyFmt = new Intl.NumberFormat(I18n.locale(), { style: 'currency', currency: 'ILS', minimumFractionDigits: 0, maximumFractionDigits: 2 });
-const money = n => moneyFmt.format(Number(n || 0));
+// בעברית — כמו קודם ובאפליקציה: ₪13,200
+const money = n => (I18n.lang() === 'he' ? '₪' + Number(n || 0).toLocaleString('he-IL') : moneyFmt.format(Number(n || 0)));
 const longDate = iso => new Date(iso).toLocaleDateString(I18n.locale());
 const shortDate = ymd => ymd ? ymd.split('-').reverse().slice(0, 2).join('.') : '';
 const fmtSize = n => n < 1048576 ? Math.max(1, Math.round(n / 1024)) + 'KB' : (n / 1048576).toFixed(1) + 'MB';
