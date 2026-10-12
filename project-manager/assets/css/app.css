@@ -369,6 +369,9 @@ body[data-view="project"] main { padding-bottom: 0; }
 .decisions li { display: grid; padding: 6px var(--s3); border-radius: 8px; background: var(--bg); font-size: .9rem; }
 .decisions small { color: var(--muted); font-size: .78rem; }
 #send-dlg textarea { min-height: 160px; }
+.decisions .btn { justify-self: start; margin-top: 4px; }
+.sig-img { display: block; max-width: 100%; max-height: 120px; margin-top: 4px; background: #fff; border-radius: 6px; }
+#portal-dlg .code { user-select: all; }
 
 /* ---- שיתוף לאפליקציה ---- */
 

@@ -63,7 +63,8 @@ function pm_event(array $user, int $projectId, string $kind, string $text, array
         ->execute([$projectId, $now, $user['id'], $user['display_name'], $kind, $text, json_encode($data, JSON_UNESCAPED_UNICODE)]);
     pm_db()->prepare('UPDATE projects SET last_activity_at = ?, last_event = ? WHERE id = ?')
         ->execute([$now, mb_substr($text, 0, 140), $projectId]);
-    pm_audit("user:{$user['id']}", "project.$kind", 'project', $projectId, $data + ['text' => $text]);
+    // מהפורטל: $user['actor'] = "portal:<קישור>" — לא משתמש של האפליקציה
+    pm_audit($user['actor'] ?? "user:{$user['id']}", "project.$kind", 'project', $projectId, $data + ['text' => $text]);
 }
 
 // ---- רשימה ----

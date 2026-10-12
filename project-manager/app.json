@@ -14,7 +14,9 @@
     "log.php",
     "manifest.webmanifest",
     "sw.js",
-    "assets/**"
+    "assets/**",
+    "portal/",
+    "portal/**"
   ],
-  "version": "0.13"
+  "version": "0.14"
 }

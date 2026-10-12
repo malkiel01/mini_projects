@@ -325,6 +325,23 @@ function pm_migrate(PDO $pdo): void
             created_at    TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS approvals_quote ON approvals (quote_id);
+        -- שלב 6: קישור אישי לפורטל — ללקוח או לעו"ד של פרויקט. האסימון נגזר מ-nonce
+        -- וסוד השרת (data/config.json), כך שהמנהל יכול לקבל את אותו קישור שוב; במסד
+        -- רק ה-hash. "קישור חדש" = nonce חדש, והישן מפסיק לעבוד.
+        CREATE TABLE IF NOT EXISTS portal_links (
+            id           INTEGER PRIMARY KEY,
+            project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            contact_id   INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+            role         TEXT NOT NULL CHECK (role IN ('client','lawyer')),
+            nonce        TEXT NOT NULL,
+            token_hash   TEXT NOT NULL UNIQUE,
+            created_by   INTEGER NOT NULL,
+            created_at   TEXT NOT NULL,
+            revoked_at   TEXT,
+            last_seen_at TEXT,
+            views        INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS portal_links_project ON portal_links (project_id, contact_id);
         CREATE TABLE IF NOT EXISTS stage_templates (
             id          INTEGER PRIMARY KEY,
             name        TEXT NOT NULL UNIQUE,
@@ -348,6 +365,9 @@ function pm_migrate(PDO $pdo): void
     // עמודות שנוספו אחרי שהטבלה כבר קיימת בשרת
     pm_add_column($pdo, 'users', 'email', "TEXT NOT NULL DEFAULT ''");
     pm_add_column($pdo, 'users', 'notes', "TEXT NOT NULL DEFAULT ''");
+    // שלב 6: אישור מהפורטל — מאיזה קישור, והחתימה (תמונה) כשנדרשה
+    pm_add_column($pdo, 'approvals', 'portal_id', 'INTEGER');
+    pm_add_column($pdo, 'approvals', 'signature', "TEXT NOT NULL DEFAULT ''");
 
     if (!$pdo->query("SELECT 1 FROM settings WHERE key = 'trades_seeded'")->fetchColumn()) {
         $ins = $pdo->prepare('INSERT OR IGNORE INTO trades (name, sort) VALUES (?, ?)');

@@ -8,12 +8,12 @@
  * חריגים, לפני כניסה: auth (מצב), login, register, setup, logout,
  * forgot, reset-info, reset-password, client-error.
  *
- * הפורטל (לקוח, עו"ד, ספק) יקבל API נפרד ב-portal/api.php — שלב 4.
+ * הפורטל של הלקוח והעו"ד — API נפרד ב-portal/api.php (lib/portal.php).
  */
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/lib/quotes.php';
+require_once __DIR__ . '/lib/portal.php';
 require_once __DIR__ . '/lib/auth.php';
 
 pm_log_install_handlers();
@@ -144,6 +144,9 @@ try {
         'POST quote-decide' => pm_quote_decide($user, (int)($in['id'] ?? 0), (string)($in['role'] ?? ''),
                                                (string)($in['decision'] ?? ''), (string)($in['note'] ?? '')),
         'POST quote-cancel' => pm_quote_cancel($user, (int)($in['id'] ?? 0), (string)($in['note'] ?? '')),
+        // קישורים אישיים לפורטל (שלב 6)
+        'GET portal-links'  => ['links' => pm_portal_links($user, (int)($in['project_id'] ?? 0))],
+        'POST portal-link'  => pm_portal_link_save($user, (int)($in['project_id'] ?? 0), (int)($in['contact_id'] ?? 0), (string)($in['do'] ?? 'get')),
         'GET approval'      => ['approval' => pm_approval_get($user, (int)($in['id'] ?? 0))],
         'POST max-upload'  => $isDev ? (function () use ($user, $in) {
             $mb = max(1, min(2000, (int)($in['mb'] ?? 100)));

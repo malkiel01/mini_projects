@@ -44,6 +44,18 @@ const Quotes = (() => {
             catch { $('#send-text').select(); }
         });
         $('#send-text').addEventListener('input', sendLinks);
+        $('#decisions').addEventListener('click', async e => {
+            const b = e.target.closest('[data-sig]');
+            if (!b) return;
+            try {
+                const { approval } = await api('approval', { params: { id: b.dataset.sig } });
+                const img = new Image();
+                img.className = 'sig-img';
+                img.alt = 'החתימה של ' + approval.by_name;
+                img.src = approval.signature;
+                b.replaceWith(img);
+            } catch (x) { toast(x.message, true); }
+        });
     }
 
     /** project = התשובה של api('project') — הפרויקט, השלבים והצוות. */
@@ -218,10 +230,11 @@ const Quotes = (() => {
         $('#decision-note').closest('.f').hidden = !b;
         $('#decision-note').value = '';
         const roleName = { client: 'הלקוח', lawyer: 'העו"ד' };
-        const method = { manual: 'נרשם ידנית', click: 'בקישור', signature: 'בחתימה' };
+        const method = { manual: 'נרשם ידנית', click: 'בקישור האישי', signature: 'בחתימה בקישור האישי' };
         $('#decisions').innerHTML = q.decisions.slice().reverse().map(d => `<li class="${d.decision}">
             <span>${d.decision === 'approved' ? '✅' : '✖'} ${roleName[d.role]} ${d.decision === 'approved' ? 'אישר' : 'דחה'} — ${esc(money(d.amount))}${d.version !== q.version ? ` <small>(גרסה ${d.version}, לא בתוקף)</small>` : ''}</span>
             <small>${esc(d.by_name)} · ${esc(new Date(d.at).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }))} · ${method[d.method] || d.method}${d.note ? ' · ' + esc(d.note) : ''}</small>
+            ${d.signed ? `<button type="button" class="btn ghost sm" data-sig="${d.id}">✍️ החתימה</button>` : ''}
         </li>`).join('');
         $('#decisions-title').hidden = !q.decisions.length;
         $('#quote-recommend').hidden = !LIVE.includes(q.status);
@@ -286,9 +299,13 @@ const Quotes = (() => {
             .sort((a, b) => b.recommended - a.recommended || a.amount - b.amount);
         const lines = list.map(q => `${q.recommended ? '⭐' : '•'} ${q.supplier_name}${q.supplier_company ? ` (${q.supplier_company})` : ''} — ${money(q.amount)}`
             + (q.valid_until ? `, בתוקף עד ${shortDate(q.valid_until)}` : '') + (q.recommended ? ' — ההמלצה שלי' : ''));
+        // הקישור האישי של הלקוח — שם הוא רואה את ההצעות ומאשר בעצמו
+        let url = '';
+        if (client) { try { url = (await api('portal-link', { body: { project_id: project.project.id, contact_id: client.id, do: 'get' } })).link?.url || ''; } catch { /* בלי קישור */ } }
         const text = `שלום${client ? ' ' + client.name : ''},\n`
             + `הצעות מחיר לשלב "${st.name}" בפרויקט ${project.project.name}:\n\n${lines.join('\n')}\n\n`
-            + 'הסכומים כוללים מע"מ. אשמח לאישורך על ההצעה שבחרת.\n'
+            + 'הסכומים כוללים מע"מ. '
+            + (url ? `לצפייה בהצעות ולאישור:\n${url}\n\n` : 'אשמח לאישורך על ההצעה שבחרת.\n')
             + state.user.display_name;
         $('#send-to').textContent = client ? `אל: ${client.name}${client.phone ? ' · ' + client.phone : ''}${client.email ? ' · ' + client.email : ''}` : 'אין לקוח בפרויקט — אפשר להעתיק ולשלוח.';
         $('#send-text').value = text;

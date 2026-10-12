@@ -71,7 +71,7 @@ function pm_quotes(array $user, int $projectId): array
     $rows = $st->fetchAll();
 
     $ap = $db->prepare('SELECT id, quote_id, quote_version, role, decision, method, by_name, note, created_at, recorded_by,
-                               json_extract(snapshot_json, \'$.amount\') AS amount
+                               json_extract(snapshot_json, \'$.amount\') AS amount, signature != \'\' AS signed
                           FROM approvals WHERE project_id = ? ORDER BY id');
     $ap->execute([$projectId]);
     $decisions = [];
@@ -79,7 +79,7 @@ function pm_quotes(array $user, int $projectId): array
         $decisions[(int)$a['quote_id']][] = [
             'id' => (int)$a['id'], 'version' => (int)$a['quote_version'], 'role' => $a['role'], 'decision' => $a['decision'],
             'method' => $a['method'], 'by_name' => $a['by_name'], 'note' => $a['note'], 'at' => $a['created_at'],
-            'amount' => (float)$a['amount'],
+            'amount' => (float)$a['amount'], 'signed' => (bool)$a['signed'],
         ];
     }
 
@@ -264,8 +264,12 @@ function pm_quote_snapshot(array $q): array
  * החלטה על הצעה: $role = client · lawyer, $decision = approved · rejected.
  * בשלב הזה רושם אותה המנהל (method = manual) — עם שם מי שהחליט ואיך ("אישר בטלפון").
  */
-function pm_quote_decide(array $user, int $id, string $role, string $decision, string $note, string $method = 'manual', string $byName = ''): array
+function pm_quote_decide(array $user, int $id, string $role, string $decision, string $note, string $method = 'manual', string $byName = '',
+                         ?array $actor = null, array $portal = []): array
 {
+    // $user — בשמו נבדקת ההרשאה (מהפורטל: בעל הפרויקט). $actor — מי שמופיע בציר
+    // הזמן (מהפורטל: הלקוח או העו"ד). $portal — portal_id, signature.
+    $actor ??= $user;
     $q = pm_quote_row($user, $id);
     if (!in_array($role, ['client', 'lawyer'], true) || !in_array($decision, ['approved', 'rejected'], true)) throw new PmError('החלטה לא מוכרת', 422);
     $stage = pm_stage_row($user, (int)$q['stage_id']);
@@ -291,17 +295,18 @@ function pm_quote_decide(array $user, int $id, string $role, string $decision, s
     $db = pm_db();
     $db->beginTransaction();
     try {
-        $db->prepare('INSERT INTO approvals (project_id, stage_id, quote_id, quote_version, role, decision, method, by_name, recorded_by, note, snapshot_json, ip, ua, created_at)
-                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+        $db->prepare('INSERT INTO approvals (project_id, stage_id, quote_id, quote_version, role, decision, method, by_name, recorded_by, note, snapshot_json, ip, ua, created_at, portal_id, signature)
+                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
            ->execute([$q['project_id'], $q['stage_id'], $id, $q['version'], $role, $decision, $method, $byName,
                       $method === 'manual' ? $user['id'] : null, $note, json_encode(pm_quote_snapshot($q), JSON_UNESCAPED_UNICODE),
-                      (string)($_SERVER['REMOTE_ADDR'] ?? ''), mb_substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 300), $now]);
+                      (string)($_SERVER['REMOTE_ADDR'] ?? ''), mb_substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 300), $now,
+                      $portal['portal_id'] ?? null, (string)($portal['signature'] ?? '')]);
         $db->prepare('UPDATE quotes SET status = ?, updated_at = ? WHERE id = ?')->execute([$status, $now, $id]);
 
-        $how = $method === 'manual' ? ' (נרשם ע"י ' . $user['display_name'] . ')' : '';
+        $how = $method === 'manual' ? ' (נרשם ע"י ' . $user['display_name'] . ')' : ($method === 'signature' ? ' — בחתימה בקישור' : ' — בקישור');
         $text = ($decision === 'approved' ? "$who אישר" : "$who דחה") . " את ההצעה של $supplier, {$stage['name']} — " . pm_money((int)$q['amount'])
               . ($note !== '' ? ": $note" : '') . $how;
-        pm_event($user, (int)$q['project_id'], 'approval', $text, ['quote' => $id, 'role' => $role, 'decision' => $decision]);
+        pm_event($actor, (int)$q['project_id'], 'approval', $text, ['quote' => $id, 'role' => $role, 'decision' => $decision]);
 
         if ($decision === 'approved') {
             // ההצעה נבחרה: האחרות בשלב — "לא נבחרה" (גם הצעה שאושרה קודם, אם הלקוח
@@ -310,13 +315,13 @@ function pm_quote_decide(array $user, int $id, string $role, string $decision, s
                ->execute([$now, $q['stage_id'], $id]);
             if ((int)$stage['supplier_id'] !== (int)$q['supplier_id']) {
                 $db->prepare('UPDATE stages SET supplier_id = ?, updated_at = ? WHERE id = ?')->execute([$q['supplier_id'], $now, $stage['id']]);
-                pm_event($user, (int)$q['project_id'], 'stage_supplier', "{$stage['name']}: שויך $supplier", ['stage' => (int)$stage['id']]);
+                pm_event($actor, (int)$q['project_id'], 'stage_supplier', "{$stage['name']}: שויך $supplier", ['stage' => (int)$stage['id']]);
             }
             if (in_array($stage['status'], ['planned', 'quotes', 'client_approval', 'lawyer_approval'], true)) {
-                pm_stage_set_status($user, $stage, $status === 'approved' ? 'approved' : 'lawyer_approval');
+                pm_stage_set_status($actor, $stage, $status === 'approved' ? 'approved' : 'lawyer_approval');
             }
         } elseif ($role === 'lawyer' || $q['status'] === 'client_approved') {
-            if (in_array($stage['status'], ['client_approval', 'lawyer_approval'], true)) pm_stage_set_status($user, $stage, 'quotes', 'ההצעה נדחתה');
+            if (in_array($stage['status'], ['client_approval', 'lawyer_approval'], true)) pm_stage_set_status($actor, $stage, 'quotes', 'ההצעה נדחתה');
         }
         $db->commit();
     } catch (Throwable $e) {
@@ -352,5 +357,5 @@ function pm_approval_get(array $user, int $id): array
     pm_project_row($user, (int)$a['project_id']);
     return ['id' => (int)$a['id'], 'role' => $a['role'], 'decision' => $a['decision'], 'method' => $a['method'],
             'by_name' => $a['by_name'], 'note' => $a['note'], 'at' => $a['created_at'], 'version' => (int)$a['quote_version'],
-            'ip' => $a['ip'], 'snapshot' => json_decode($a['snapshot_json'], true)];
+            'ip' => $a['ip'], 'ua' => $a['ua'], 'signature' => $a['signature'] ?? '', 'snapshot' => json_decode($a['snapshot_json'], true)];
 }
