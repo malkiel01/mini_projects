@@ -209,6 +209,14 @@ function pm_valid_email($e, bool $required): string
     return $e;
 }
 
+/** לאן שולחים מייל: האימייל שבחשבון, ואם הוא ריק ושם המשתמש הוא אימייל — אליו. */
+function pm_user_email(array $u): string
+{
+    if (($u['email'] ?? '') !== '') return $u['email'];
+    $name = (string)($u['username'] ?? '');
+    return filter_var($name, FILTER_VALIDATE_EMAIL) ? $name : '';
+}
+
 function pm_user_row(int $id): array
 {
     $st = pm_db()->prepare('SELECT * FROM users WHERE id = ?');
@@ -381,14 +389,15 @@ function pm_forgot(array $in): array
     $u = $st->fetch();
     $result = 'no_user';
     if ($u && $u['status'] === 'blocked') $result = 'blocked';
-    elseif ($u && $u['email'] === '') $result = 'no_email';
+    elseif ($u && pm_user_email($u) === '') $result = 'no_email';
     elseif ($u) {
         $link = pm_create_reset((int)$u['id'], PM_RESET_HOURS_SELF, 'self');
-        $sent = pm_send_mail($u['email'], 'איפוס סיסמה — ניהול פרויקטים',
+        $sent = pm_send_mail(pm_user_email($u), 'איפוס סיסמה — ניהול פרויקטים',
             "שלום {$u['display_name']},\n\nלקביעת סיסמה חדשה:\n\n$link\n\nהקישור תקף שעה אחת ולשימוש חד-פעמי. אם לא ביקשת — אין צורך לעשות דבר.\n");
         $result = $sent ? 'sent' : 'mail_failed';
     }
-    pm_log($result === 'sent' ? 'info' : 'warn', 'auth', 'forgot', ['username' => $u['username'] ?? $login, 'message' => $result]);
+    pm_log($result === 'sent' ? 'info' : 'warn', 'auth', 'forgot', ['username' => $u['username'] ?? $login, 'message' => $result,
+        'data' => ['to' => $u ? pm_user_email($u) : null]]);
     return ['ok' => true];
 }
 
@@ -565,10 +574,10 @@ function pm_user_action(array $dev, int $id, string $action, array $in = []): ar
     switch ($action) {
         case 'approve':
             $db->prepare("UPDATE users SET status = 'active', approved_at = COALESCE(approved_at, ?) WHERE id = ?")->execute([pm_now(), $id]);
-            if ($u['email'] !== '') {
-                $sent = pm_send_mail($u['email'], 'החשבון שלך אושר — ניהול פרויקטים',
+            if (pm_user_email($u) !== '') {
+                $sent = pm_send_mail(pm_user_email($u), 'החשבון שלך אושר — ניהול פרויקטים',
                     "שלום {$u['display_name']},\n\nהחשבון שלך אושר. אפשר להיכנס:\n\n" . pm_app_url() . "/login.html\n\nשם המשתמש: {$u['username']}\n");
-                pm_log($sent ? 'info' : 'warn', 'mail', 'mail.approved', ['data' => ['to' => $u['email'], 'sent' => $sent]]);
+                pm_log($sent ? 'info' : 'warn', 'mail', 'mail.approved', ['data' => ['to' => pm_user_email($u), 'sent' => $sent]]);
             }
             break;
         case 'unblock':
@@ -587,10 +596,11 @@ function pm_user_action(array $dev, int $id, string $action, array $in = []): ar
             break;
         case 'reset':
             $link = pm_create_reset($id, PM_RESET_HOURS_BY_DEV, 'developer');
-            $sent = $u['email'] !== '' && pm_send_mail($u['email'], 'קביעת סיסמה חדשה — ניהול פרויקטים',
+            $to = pm_user_email($u);
+            $sent = $to !== '' && pm_send_mail($to, 'קביעת סיסמה חדשה — ניהול פרויקטים',
                 "שלום {$u['display_name']},\n\nהמפתח שלח לך קישור לקביעת סיסמה חדשה:\n\n$link\n\nשם המשתמש: {$u['username']}\nהקישור תקף 24 שעות ולשימוש חד-פעמי.\n");
-            pm_log($sent ? 'info' : 'warn', 'mail', 'mail.reset', ['data' => ['to' => $u['email'], 'sent' => $sent]]);
-            $extra = ['reset_link' => $link, 'mailed' => $sent, 'email' => $u['email'], 'phone' => $u['phone'],
+            pm_log($sent ? 'info' : 'warn', 'mail', 'mail.reset', ['data' => ['to' => $to, 'sent' => $sent]]);
+            $extra = ['reset_link' => $link, 'mailed' => $sent, 'email' => $to, 'phone' => $u['phone'],
                       'display_name' => $u['display_name'], 'username' => $u['username']];
             break;
         case 'transfer':
