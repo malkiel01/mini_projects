@@ -1,0 +1,179 @@
+// דיווח מהשטח — שלב 8 (lib/reports.php). לשונית "מהשטח" בפרויקט.
+//
+// "📷 עדכון מהשטח": תמונות מהמצלמה או מהגלריה, סרטונים, ומה נעשה — לשלב או כללי.
+// "✅ השלב בוצע": אותו דבר, וחובה לפחות תמונה אחת — וזה מה שמסמן את השלב "בוצע".
+// הקבצים עולים לתיקייה "תמונות מהשטח / <שלב>". גלוי (ברירת מחדל) — הלקוח רואה בקישור.
+'use strict';
+
+const Field = (() => {
+    let project = null, reports = [], bound = false, picked = [], pending = null;
+    const fileUrl = (id, extra = '') => `api.php?action=file&id=${id}${extra}`;
+    const kindNow = () => $('#report-dlg [name=kind]:checked').value;
+
+    function bind() {
+        if (bound) return;
+        bound = true;
+        $('#add-report').addEventListener('click', () => open({ stage_id: Number($('#field-stage').value) || null }));
+        $('#field-stage').addEventListener('change', render);
+        $('#report-list').addEventListener('click', e => {
+            const m = e.target.closest('[data-media]');
+            if (m) {
+                const r = reports.find(x => x.id === Number(m.dataset.report));
+                Lightbox.open(r.media, Number(m.dataset.media), id => fileUrl(id));
+                return;
+            }
+            const v = e.target.closest('[data-visible]');
+            if (v) { toggleVisible(Number(v.dataset.visible)); return; }
+            const d = e.target.closest('[data-delete-report]');
+            if (d) remove(Number(d.dataset.deleteReport));
+        });
+        const form = $('#report-dlg form');
+        form.addEventListener('submit', e => { e.preventDefault(); save(); });
+        $$('#report-dlg [name=kind]').forEach(r => r.addEventListener('change', kindChanged));
+        for (const id of ['#report-camera', '#report-pick']) {
+            $(id).addEventListener('change', e => { addFiles([...e.target.files]); e.target.value = ''; });
+        }
+        $('#report-media').addEventListener('click', e => {
+            const x = e.target.closest('[data-unpick]');
+            if (x) { const [p] = picked.splice(Number(x.dataset.unpick), 1); URL.revokeObjectURL(p.url); drawPicked(); }
+        });
+    }
+
+    async function show(p) {
+        bind();
+        project = p;
+        const keep = $('#field-stage').value;
+        $('#field-stage').innerHTML = options(project.stages.map(s => ({ value: s.id, label: s.name })), keep, 'כל השלבים');
+        try { ({ reports } = await api('reports', { params: { project_id: project.project.id } })); }
+        catch (e) { toast(e.message, true); return; }
+        render();
+        if (pending) { const x = pending; pending = null; open(x); }
+    }
+
+    /** מחלון השלב: "בוצע" נבחר — עוברים לכאן עם הדיווח מוכן. */
+    function markDone(projectId, stageId) {
+        pending = { stage_id: stageId, kind: 'done' };
+        location.hash = `#/p/${projectId}/field`;
+    }
+
+    function render() {
+        const sid = Number($('#field-stage').value) || 0;
+        const list = reports.filter(r => !sid || r.stage_id === sid);
+        let day = '';
+        $('#report-list').innerHTML = list.map(r => {
+            const d = new Date(r.at).toDateString();
+            const sep = d !== day ? `<h2 class="sec-title day-sep">${esc(dateLabel(r.at))}</h2>` : '';
+            day = d;
+            return sep + card(r);
+        }).join('') || `<p class="empty">${sid ? 'אין עדכונים לשלב הזה.' : 'עוד אין עדכונים מהשטח. "📷 עדכון מהשטח" — תמונות מהמצלמה ומה נעשה.'}</p>`;
+    }
+
+    function card(r) {
+        const time = new Date(r.at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+        const media = r.media.map((m, i) => `<li><button type="button" class="tile" data-report="${r.id}" data-media="${i}" aria-label="${m.video ? 'סרטון' : 'תמונה'} ${i + 1}">
+            ${m.thumb ? `<img src="${fileUrl(m.id, '&thumb=1')}" alt="" loading="lazy">` : `<span aria-hidden="true">${m.video ? '🎬' : '🖼️'}</span>`}
+            ${m.video ? '<i class="play" aria-hidden="true">▶</i>' : ''}</button></li>`).join('');
+        return `<article class="report${r.kind === 'done' ? ' done' : ''}${r.visible ? '' : ' hidden-r'}">
+            <header><span class="one">${r.kind === 'done' ? '✅ ' : ''}${esc(r.stage_name || 'כללי')}${r.kind === 'done' ? ' — בוצע' : ''}</span>
+                <time datetime="${esc(r.at)}">${time}</time></header>
+            ${r.text ? `<p>${esc(r.text)}</p>` : ''}
+            ${media ? `<ul class="media-grid">${media}</ul>` : ''}
+            <footer><span class="one">${esc(r.author || '')}</span>
+                <button type="button" class="btn ghost sm" data-visible="${r.id}" aria-pressed="${r.visible}">${r.visible ? '👁 גלוי ללקוח' : '🙈 פנימי'}</button>
+                ${r.kind === 'done' ? '' : `<button type="button" class="icon-btn" data-delete-report="${r.id}" aria-label="מחיקת העדכון">🗑</button>`}</footer>
+        </article>`;
+    }
+
+    // ================= חלון =================
+
+    function open(preset = {}) {
+        const dlg = $('#report-dlg'), form = $('form', dlg), el = form.elements;
+        formError(form, '');
+        picked.forEach(p => URL.revokeObjectURL(p.url));
+        picked = [];
+        el.text.value = '';
+        el.visible.checked = true;
+        $(`#report-dlg [name=kind][value=${preset.kind || 'update'}]`).checked = true;
+        el.stage_id.innerHTML = options(project.stages.map(s => ({ value: s.id, label: `${s.name} · ${state.labels.stage[s.status]}` })), preset.stage_id || '', 'בלי שלב — עדכון כללי');
+        drawPicked();
+        kindChanged();
+        $('#report-progress').innerHTML = '';
+        dlg.showModal();
+    }
+
+    function kindChanged() {
+        const done = kindNow() === 'done';
+        const sel = $('#report-dlg form').elements.stage_id;
+        sel.options[0].disabled = done;
+        if (done && !sel.value) sel.value = project.stages.find(s => !['done', 'paid'].includes(s.status))?.id || '';
+        $('#report-stage-label').textContent = done ? 'איזה שלב בוצע *' : 'שלב';
+        $('#report-dlg-title').textContent = done ? 'השלב בוצע' : 'עדכון מהשטח';
+        $('#report-go').textContent = done ? 'סימון "בוצע"' : 'שליחה';
+        hint();
+    }
+
+    function hint() {
+        const done = kindNow() === 'done';
+        const n = picked.length;
+        $('#report-hint').textContent = done && !n ? 'כדי לסמן "בוצע" — צריך לפחות תמונה או סרטון אחד.'
+            : n ? `${n} ${n > 1 ? 'קבצים' : 'קובץ'} · ${Files.fmtSize(picked.reduce((a, p) => a + p.file.size, 0))}` : '';
+    }
+
+    function addFiles(files) {
+        for (const f of files) {
+            if (!/^(image|video)\//.test(f.type)) { toast(`${f.name}: רק תמונות וסרטונים`, true); continue; }
+            if (f.size > state.maxUpload) { toast(`${f.name}: גדול מ-${Math.round(state.maxUpload / 1048576)}MB`, true); continue; }
+            picked.push({ file: f, url: URL.createObjectURL(f), video: f.type.startsWith('video/') });
+        }
+        drawPicked();
+    }
+
+    function drawPicked() {
+        $('#report-media').innerHTML = picked.map((p, i) => `<li><span class="tile">
+            ${p.video ? `<video src="${p.url}" muted playsinline preload="metadata"></video><i class="play" aria-hidden="true">▶</i>` : `<img src="${p.url}" alt="">`}
+            <button type="button" class="x" data-unpick="${i}" aria-label="הסרה">✕</button></span></li>`).join('');
+        hint();
+    }
+
+    async function save() {
+        const form = $('#report-dlg form'), el = form.elements;
+        const kind = kindNow(), stageId = Number(el.stage_id.value) || null;
+        if (kind === 'done' && !stageId) { formError(form, 'איזה שלב בוצע?'); return; }
+        if (kind === 'done' && !picked.length) { formError(form, 'כדי לסמן "בוצע" — צריך לפחות תמונה או סרטון אחד'); return; }
+        if (!picked.length && !el.text.value.trim()) { formError(form, 'כתבו מה נעשה, או צרפו תמונה'); return; }
+        const box = $('#report-progress');
+        await busy($('#report-go'), form, async () => {
+            const { folder_id } = await api('report-folder', { params: { project_id: project.project.id, stage_id: stageId || '' } });
+            const ids = [];
+            for (const [i, p] of picked.entries()) {
+                const bar = pct => { box.innerHTML = `<div class="up"><span class="one">${i + 1}/${picked.length} · ${esc(p.file.name)}</span><span>${pct}%</span><i style="width:${pct}%"></i></div>`; };
+                bar(0);
+                const { file } = await Files.send(p.file, project.project.id, folder_id, bar, { quiet: true, type: p.video ? 'video' : 'photo' });
+                ids.push(file.id);
+            }
+            box.innerHTML = '';
+            ({ reports } = await api('report', { body: { project_id: project.project.id, stage_id: stageId, kind, text: el.text.value, visible: el.visible.checked, file_ids: ids } }));
+            picked.forEach(p => URL.revokeObjectURL(p.url));
+            picked = [];
+            $('#report-dlg').close();
+            project = await Projects.reload();
+            render();
+            toast(kind === 'done' ? 'השלב סומן "בוצע"' : 'העדכון נשמר');
+        });
+        box.innerHTML = '';
+    }
+
+    async function toggleVisible(id) {
+        const r = reports.find(x => x.id === id);
+        try { ({ reports } = await api('report-update', { body: { id, text: r.text, visible: !r.visible } })); render(); }
+        catch (e) { toast(e.message, true); }
+    }
+
+    async function remove(id) {
+        if (!confirm('למחוק את העדכון? התמונות יישארו בתיקייה.')) return;
+        try { ({ reports } = await api('report-delete', { body: { id } })); render(); toast('נמחק'); }
+        catch (e) { toast(e.message, true); }
+    }
+
+    return { show, markDone };
+})();

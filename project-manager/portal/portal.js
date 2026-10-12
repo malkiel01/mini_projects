@@ -110,6 +110,10 @@ function render() {
         </section>`;
     }).join('');
 
+    // ---- מהשטח: העדכונים הגלויים, החדש למעלה ----
+    $('#field').hidden = !data.reports.length;
+    drawReports();
+
     // ---- תשלומים ----
     $('#payments').hidden = !data.payments.length;
     $('#payment-list').innerHTML = data.payments.map(payCard).join('');
@@ -159,6 +163,25 @@ function quoteCard(q, low) {
         ${q.file ? `<a class="btn ghost sm file-link" href="${fileUrl(q.file.id)}" target="_blank" rel="noopener">📄 צפייה בהצעה</a>` : ''}
         ${btns}
     </article>`;
+}
+
+let reportsShown = 5;
+
+function drawReports() {
+    const list = data.reports.slice(0, reportsShown);
+    $('#report-list').innerHTML = list.map(r => {
+        const st = r.stage_id ? data.stages.find(s => s.id === r.stage_id) : null;
+        const media = r.media.map((m, i) => `<li><button type="button" class="tile" data-report="${r.id}" data-media="${i}" aria-label="${m.video ? 'סרטון' : 'תמונה'} ${i + 1}">
+            ${m.thumb ? `<img src="${fileUrl(m.id, '&thumb=1')}" alt="" loading="lazy">` : `<span aria-hidden="true">${m.video ? '🎬' : '🖼️'}</span>`}
+            ${m.video ? '<i class="play" aria-hidden="true">▶</i>' : ''}</button></li>`).join('');
+        return `<article class="report${r.kind === 'done' ? ' done' : ''}">
+            <header><span class="one">${r.kind === 'done' ? '✅ ' : ''}${esc(st?.name || r.stage_name || 'כללי')}${r.kind === 'done' ? ' — בוצע' : ''}</span>
+                <time datetime="${esc(r.at)}">${new Date(r.at).toLocaleDateString('he-IL')}</time></header>
+            ${r.text ? `<p>${esc(r.text)}</p>` : ''}
+            ${media ? `<ul class="media-grid">${media}</ul>` : ''}
+        </article>`;
+    }).join('');
+    $('#more-reports').hidden = data.reports.length <= reportsShown;
 }
 
 const PAY_ICON = { requested: '📤', paid: '💳', partial: '◐', received: '✅' };
@@ -357,6 +380,9 @@ document.addEventListener('click', e => {
     if (pay) { openPay(Number(pay.dataset.pay)); return; }
     const pa = e.target.closest('[data-pay-approve]');
     if (pa) { payApprove(Number(pa.dataset.payApprove)); return; }
+    const m = e.target.closest('[data-media]');
+    if (m) { const r = data.reports.find(x => x.id === Number(m.dataset.report)); Lightbox.open(r.media, Number(m.dataset.media), id => fileUrl(id)); return; }
+    if (e.target.closest('#more-reports')) { reportsShown += 10; drawReports(); return; }
     const cp = e.target.closest('[data-copy]');
     if (cp) { navigator.clipboard?.writeText(cp.dataset.copy).then(() => toast('הועתק'), () => {}); return; }
     if (e.target.closest('[data-close]')) e.target.closest('dialog')?.close();

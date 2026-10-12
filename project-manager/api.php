@@ -144,6 +144,13 @@ try {
         'POST quote-decide' => pm_quote_decide($user, (int)($in['id'] ?? 0), (string)($in['role'] ?? ''),
                                                (string)($in['decision'] ?? ''), (string)($in['note'] ?? '')),
         'POST quote-cancel' => pm_quote_cancel($user, (int)($in['id'] ?? 0), (string)($in['note'] ?? '')),
+        // דיווח מהשטח (שלב 8)
+        'GET reports'       => pm_reports($user, (int)($in['project_id'] ?? 0)),
+        'GET report-folder' => ['folder_id' => pm_report_folder($user, (int)($in['project_id'] ?? 0), (int)($in['stage_id'] ?? 0) ?: null)],
+        'POST report'       => pm_report_save($user, $in),
+        'POST report-update' => pm_report_update($user, $in),
+        'POST report-delete' => pm_report_delete($user, (int)($in['id'] ?? 0)),
+
         // אבני דרך לתשלום (שלב 7)
         'GET payments'        => pm_payments($user, (int)($in['project_id'] ?? 0)),
         'POST payment'        => pm_payment_save($user, $in),

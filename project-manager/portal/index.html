@@ -8,8 +8,8 @@
     <meta name="robots" content="noindex, nofollow">
     <meta name="referrer" content="no-referrer">
     <title>הפרויקט שלך</title>
-    <link rel="stylesheet" href="../assets/css/app.css?v=15">
-    <link rel="stylesheet" href="portal.css?v=3">
+    <link rel="stylesheet" href="../assets/css/app.css?v=16">
+    <link rel="stylesheet" href="portal.css?v=4">
     <link rel="icon" href="../assets/icon.svg">
 </head>
 <body>
@@ -49,6 +49,12 @@
                 <h2 class="sec-title" id="payments-title">תשלומים</h2>
                 <div id="payment-list"></div>
                 <p class="hint">התשלום עצמו — ישירות לספק. כאן מדווחים ששילמתם ומעלים אסמכתא.</p>
+            </section>
+
+            <section id="field" aria-labelledby="field-title" hidden>
+                <h2 class="sec-title" id="field-title">מהשטח</h2>
+                <div id="report-list"></div>
+                <button type="button" class="btn ghost" id="more-reports" hidden>עוד עדכונים</button>
             </section>
 
             <section aria-labelledby="progress-title">
@@ -115,7 +121,16 @@
         </form>
     </dialog>
 
+    <dialog id="lightbox" class="lightbox" aria-label="תצוגה">
+        <button type="button" class="icon-btn lb-close" data-close aria-label="סגירה">✕</button>
+        <button type="button" class="icon-btn lb-prev" aria-label="הקודם">›</button>
+        <div class="lb-body" id="lb-body"></div>
+        <button type="button" class="icon-btn lb-next" aria-label="הבא">‹</button>
+        <p class="lb-cap" id="lb-cap"></p>
+    </dialog>
+
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="portal.js?v=3"></script>
+    <script src="portal.js?v=4"></script>
+    <script src="../assets/js/lightbox.js?v=16"></script>
 </body>
 </html>

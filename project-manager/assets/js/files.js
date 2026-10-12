@@ -178,7 +178,7 @@ const Files = (() => {
     }
 
     /** העלאת קובץ אחד לתיקייה — בחלקים, עם חידוש. משמש גם את מסך השיתוף. */
-    async function send(file, projectId, folder, onProgress = () => {}) {
+    async function send(file, projectId, folder, onProgress = () => {}, finish = {}) {
         const thumb = await makeThumb(file).catch(() => '');
         const { upload_id, chunk_size } = await api('upload-start', { body: {
             project_id: projectId, folder_id: folder, name: file.name, size: file.size, mime: file.type } });
@@ -200,7 +200,7 @@ const Files = (() => {
             }
             onProgress(Math.round(offset / file.size * 100));
         }
-        return api('upload-finish', { body: { upload_id, thumb, type: guessType(file) } });
+        return api('upload-finish', { body: { upload_id, thumb, type: guessType(file), ...finish } });
     }
 
     function renderUploads() {
