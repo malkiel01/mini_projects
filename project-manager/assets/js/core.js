@@ -147,3 +147,62 @@ async function busy(btn, form, fn) {
     catch (e) { form ? formError(form, e.message) : toast(e.message, true); }
     finally { if (btn) btn.disabled = false; }
 }
+
+/**
+ * חלון שליחה — הודעה מוכנה לאיש קשר: וואטסאפ, SMS, אימייל או העתקה.
+ * recipients: [{ contact, label, text }] — כשיש כמה (לקוח ועו"ד), בוחרים למעלה.
+ */
+const Send = (() => {
+    let list = [], cur = null, subject = '', bound = false;
+
+    function bind() {
+        if (bound) return;
+        bound = true;
+        $('#send-text').addEventListener('input', () => { cur.text = $('#send-text').value; links(); });
+        $('#send-copy').addEventListener('click', async () => {
+            try { await navigator.clipboard.writeText($('#send-text').value); toast('הועתק'); }
+            catch { $('#send-text').select(); }
+        });
+        $('#send-who').addEventListener('change', e => { pick(Number(e.target.value)); });
+    }
+
+    function open({ title, recipients, subject: subj = '', hint = '' }) {
+        bind();
+        list = recipients.length ? recipients : [{ contact: null, label: '', text: '' }];
+        subject = subj;
+        $('#send-dlg-title').textContent = title;
+        $('#send-hint').textContent = hint;
+        $('#send-hint').hidden = !hint;
+        $('#send-who').hidden = list.length < 2;
+        $('#send-who').innerHTML = list.map((r, i) => `<label><input type="radio" name="send-who" value="${i}"${i ? '' : ' checked'}><span>${esc(r.label)}</span></label>`).join('');
+        pick(0);
+        $('#send-dlg').showModal();
+    }
+
+    function pick(i) {
+        cur = list[i];
+        const c = cur.contact;
+        $('#send-to').textContent = c ? `אל: ${c.name}${c.phone ? ' · ' + c.phone : ''}${c.email ? ' · ' + c.email : ''}` : 'אין למי לשלוח בפרויקט — אפשר להעתיק.';
+        $('#send-text').value = cur.text;
+        links();
+    }
+
+    function links() {
+        const c = cur.contact, text = cur.text;
+        const phone = c?.whatsapp || c?.phone || '';
+        $('#send-wa').href = `https://wa.me/${phone ? waNumber(phone) : ''}?text=${encodeURIComponent(text)}`;
+        $('#send-sms').hidden = !c?.phone;
+        $('#send-sms').href = `sms:${digits(c?.phone || '')}?&body=${encodeURIComponent(text)}`;
+        $('#send-mail').hidden = !c?.email;
+        $('#send-mail').href = `mailto:${encodeURIComponent(c?.email || '')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`;
+    }
+
+    return { open };
+})();
+
+/** הקישור האישי לפורטל של איש קשר בפרויקט — נוצר אם עוד אין. '' כשאי אפשר. */
+async function portalUrl(projectId, contactId) {
+    if (!contactId) return '';
+    try { return (await api('portal-link', { body: { project_id: projectId, contact_id: contactId, do: 'get' } })).link?.url || ''; }
+    catch { return ''; }
+}

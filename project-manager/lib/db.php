@@ -342,6 +342,58 @@ function pm_migrate(PDO $pdo): void
             views        INTEGER NOT NULL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS portal_links_project ON portal_links (project_id, contact_id);
+        -- שלב 7: אבני דרך לתשלום (lib/payments.php). האפליקציה רק מתעדת — הלקוח משלם
+        -- ישירות לספק, בעצמו או דרך העו"ד. סכומים באגורות, כולל מע"מ.
+        -- status: planned · requested · paid (דווח ששולם) · partial · received · cancelled.
+        -- אישור העו"ד — בעמודות lawyer_*; בלעדיו (כשנדרש) אין "שילמתי".
+        -- payer / payee: מי משלם ולמי — מוכן לתשלום דרך מנהל הפרויקט בהמשך.
+        CREATE TABLE IF NOT EXISTS payments (
+            id                INTEGER PRIMARY KEY,
+            project_id        INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            stage_id          INTEGER REFERENCES stages(id),
+            supplier_id       INTEGER NOT NULL REFERENCES contacts(id),
+            quote_id          INTEGER REFERENCES quotes(id),
+            title             TEXT NOT NULL,
+            amount            INTEGER NOT NULL,
+            percent           REAL,
+            due_date          TEXT NOT NULL DEFAULT '',
+            payer             TEXT NOT NULL DEFAULT 'client' CHECK (payer IN ('client','lawyer')),
+            payee             TEXT NOT NULL DEFAULT 'supplier',
+            needs_lawyer      INTEGER NOT NULL DEFAULT 0,
+            lawyer_approved_at TEXT,
+            lawyer_by         TEXT NOT NULL DEFAULT '',
+            lawyer_method     TEXT NOT NULL DEFAULT '',
+            lawyer_note       TEXT NOT NULL DEFAULT '',
+            status            TEXT NOT NULL DEFAULT 'planned',
+            notes             TEXT NOT NULL DEFAULT '',
+            requested_at      TEXT,
+            created_by        INTEGER NOT NULL,
+            created_at        TEXT NOT NULL,
+            updated_at        TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS payments_project ON payments (project_id);
+        -- אסמכתא: "שילמתי" — מהפורטל (לקוח / עו"ד) או בידי המנהל. מנהל הפרויקט מאשר
+        -- שהכסף התקבל (received_amount — גם חלקי), או מסמן "לא התקבל".
+        CREATE TABLE IF NOT EXISTS payment_proofs (
+            id              INTEGER PRIMARY KEY,
+            payment_id      INTEGER NOT NULL REFERENCES payments(id),
+            amount          INTEGER NOT NULL,
+            paid_on         TEXT NOT NULL,
+            method          TEXT NOT NULL DEFAULT 'transfer',
+            file_id         INTEGER REFERENCES files(id),
+            note            TEXT NOT NULL DEFAULT '',
+            by_role         TEXT NOT NULL,
+            by_name         TEXT NOT NULL DEFAULT '',
+            portal_id       INTEGER,
+            ip              TEXT NOT NULL DEFAULT '',
+            status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','received','rejected')),
+            received_amount INTEGER,
+            reviewed_at     TEXT,
+            reviewed_by     INTEGER,
+            review_note     TEXT NOT NULL DEFAULT '',
+            created_at      TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS payment_proofs_payment ON payment_proofs (payment_id);
         CREATE TABLE IF NOT EXISTS stage_templates (
             id          INTEGER PRIMARY KEY,
             name        TEXT NOT NULL UNIQUE,

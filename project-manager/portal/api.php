@@ -5,7 +5,10 @@
  *
  *   GET  ?action=view                 הפרויקט, השלבים, ההצעות שנשלחו, הקבצים הגלויים
  *   POST ?action=decide               {quote_id, version, decision, note, signature?}
- *   GET  ?action=file&id=…&t=…        קובץ גלוי / קובץ של הצעה (thumb=1, download=1)
+ *   GET  ?action=file&id=…&t=…        קובץ גלוי / של הצעה / אסמכתא (thumb=1, download=1)
+ *   POST ?action=pay-approve          {payment_id, note} — העו"ד מאשר לתשלום
+ *   POST ?action=proof&payment_id=…&amount=…&paid_on=…&method=…&note=…&name=…
+ *                                     "שילמתי": גוף הבקשה = האסמכתא (תמונה / PDF)
  *
  * אין כאן עוגיות, ולכן אין CSRF: הבקשה מורשית רק עם האסימון עצמו.
  */
@@ -28,8 +31,8 @@ function pm_portal_reply(int $code, array $payload): never
 {
     global $PM_T0;
     $action = (string)($_GET['action'] ?? '');
-    if ($code >= 400 || $action === 'decide') {
-        $body = json_decode((string)file_get_contents('php://input'), true);
+    if ($code >= 400 || in_array($action, ['decide', 'pay-approve', 'proof'], true)) {
+        $body = $action === 'proof' ? null : json_decode((string)file_get_contents('php://input'), true);
         if (is_array($body)) unset($body['signature']); // החתימה עצמה נשמרת באישור, לא ביומן
         pm_log($code >= 500 ? 'error' : ($code >= 400 ? 'warn' : 'info'), 'portal', 'portal.' . ($action ?: '?'), [
             'status' => $code, 'ms' => (int)round((microtime(true) - $PM_T0) * 1000),
@@ -60,6 +63,13 @@ try {
             return pm_portal_decide($a, is_array($in) ? $in : []);
         })(),
         'GET file' => pm_portal_file($a, (int)($_GET['id'] ?? 0), !empty($_GET['thumb']), !empty($_GET['download'])),
+        'POST pay-approve' => (function () use ($a) {
+            if (!str_starts_with((string)($_SERVER['CONTENT_TYPE'] ?? ''), 'application/json')) throw new PmError('בקשה לא תקינה', 400);
+            $in = json_decode((string)file_get_contents('php://input'), true);
+            return pm_portal_pay_approve($a, is_array($in) ? $in : []);
+        })(),
+        // גוף הבקשה — הקובץ; הפרטים ב-query
+        'POST proof' => pm_portal_proof($a, $_GET),
         default => throw new PmError('פעולה לא מוכרת', 404),
     };
     pm_portal_reply(200, $result);

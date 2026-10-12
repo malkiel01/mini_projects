@@ -373,6 +373,28 @@ body[data-view="project"] main { padding-bottom: 0; }
 .sig-img { display: block; max-width: 100%; max-height: 120px; margin-top: 4px; background: #fff; border-radius: 6px; }
 #portal-dlg .code { user-select: all; }
 
+/* ---- תשלומים ---- */
+
+#pane-payments > .toolbar { justify-content: space-between; }
+.q-sum .late { color: var(--danger); }
+.q-row.pay-received { box-shadow: inset -3px 0 0 var(--ok); }
+.q-row.pay-received .amt { color: var(--ok); }
+.q-row.pay-paid { background: color-mix(in srgb, var(--star) 8%, var(--surface)); }
+.q-row.pay-cancelled { opacity: .6; }
+.q-row.pay-cancelled .amt { text-decoration: line-through; }
+#payment-actions { display: grid; gap: var(--s2); border-bottom: 1px solid var(--line); padding-bottom: var(--s3); }
+#payment-actions .sec-title { margin: var(--s1) 0 0; }
+.decisions li.approved { box-shadow: inset -3px 0 0 var(--ok); }
+.decisions li.rejected { opacity: .7; }
+.decisions .row-btns { margin-top: 4px; }
+.decisions .row-btns:empty { display: none; }
+.manual-proof { border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2) var(--s3); }
+.manual-proof summary { cursor: pointer; min-height: 32px; display: flex; align-items: center; color: var(--brand); }
+.manual-proof[open] summary { margin-bottom: var(--s2); }
+.manual-proof .row-btns { margin-top: var(--s2); }
+#payment-cancel { justify-self: start; }
+@media (max-width: 430px) { #add-payment .add-label { display: none; } #add-payment { min-width: var(--tap); padding: 0; justify-content: center; } }
+
 /* ---- שיתוף לאפליקציה ---- */
 
 #share-targets .card { padding-inline-start: calc(var(--s3) + var(--d, 0) * 20px); }

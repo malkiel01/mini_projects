@@ -8,8 +8,8 @@
     <meta name="robots" content="noindex, nofollow">
     <meta name="referrer" content="no-referrer">
     <title>הפרויקט שלך</title>
-    <link rel="stylesheet" href="../assets/css/app.css?v=14">
-    <link rel="stylesheet" href="portal.css?v=2">
+    <link rel="stylesheet" href="../assets/css/app.css?v=15">
+    <link rel="stylesheet" href="portal.css?v=3">
     <link rel="icon" href="../assets/icon.svg">
 </head>
 <body>
@@ -43,6 +43,12 @@
             <section id="quotes" aria-labelledby="quotes-title" hidden>
                 <h2 class="sec-title" id="quotes-title">הצעות מחיר</h2>
                 <div id="quote-list"></div>
+            </section>
+
+            <section id="payments" aria-labelledby="payments-title" hidden>
+                <h2 class="sec-title" id="payments-title">תשלומים</h2>
+                <div id="payment-list"></div>
+                <p class="hint">התשלום עצמו — ישירות לספק. כאן מדווחים ששילמתם ומעלים אסמכתא.</p>
             </section>
 
             <section aria-labelledby="progress-title">
@@ -85,7 +91,31 @@
         </form>
     </dialog>
 
+    <!-- ===== שילמתי — אסמכתא ===== -->
+    <dialog id="pay-dlg" aria-labelledby="pay-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="pay-title">דיווח תשלום</h2>
+                <span></span>
+            </header>
+            <div class="sheet-body">
+                <div class="summary" id="pay-summary"></div>
+                <div class="fields">
+                    <label class="f"><span>כמה שילמתם (₪)</span><input name="amount" inputmode="decimal" dir="ltr" maxlength="14" required></label>
+                    <label class="f"><span>מתי</span><input name="paid_on" type="date" required></label>
+                    <label class="f"><span>איך</span><select name="method"></select></label>
+                    <label class="f"><span>הערה (לא חובה)</span><input name="note" maxlength="1000"></label>
+                </div>
+                <label class="btn ghost upload-btn proof-pick">📎 אסמכתא — צילום ההעברה, הצ'ק או אישור הבנק<input type="file" name="file" accept="image/*,application/pdf" hidden></label>
+                <p class="hint" id="proof-name"></p>
+                <p class="error" role="alert" hidden></p>
+                <button type="submit" class="btn primary" id="pay-go">שילמתי — שליחת האסמכתא</button>
+            </div>
+        </form>
+    </dialog>
+
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="portal.js?v=2"></script>
+    <script src="portal.js?v=3"></script>
 </body>
 </html>

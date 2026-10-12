@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=14">
+    <link rel="stylesheet" href="assets/css/app.css?v=15">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -27,7 +27,7 @@
 
     ניווט בכתובת (#/…), כדי שכפתור "חזרה" של הטלפון יעבוד:
       #/                 הפרויקטים (מסך הבית)
-      #/p/<id>/<pane>    פרויקט: timeline · files · stages · quotes · team · details
+      #/p/<id>/<pane>    פרויקט: timeline · files · stages · quotes · payments · team · details
                          (#/p/<id>/files/<folder> — תיקייה)
       #/contacts/<kind>  אנשי קשר: client · supplier · lawyer
       #/contacts/<kind>/import  ייבוא מאנשי הקשר במכשיר
@@ -57,6 +57,7 @@
         <a data-pane="files">קבצים</a>
         <a data-pane="stages">שלבים</a>
         <a data-pane="quotes">הצעות</a>
+        <a data-pane="payments">תשלומים</a>
         <a data-pane="team">צוות</a>
         <a data-pane="details">פרטים</a>
     </nav>
@@ -118,6 +119,14 @@
                     <button class="btn primary" id="add-quote"><span aria-hidden="true">+</span><span class="add-label">הצעה</span></button>
                 </div>
                 <div id="quote-list"></div>
+            </div>
+
+            <div class="pane" id="pane-payments" hidden>
+                <div class="toolbar">
+                    <p class="q-sum" id="pay-sum"></p>
+                    <button class="btn primary" id="add-payment"><span aria-hidden="true">+</span><span class="add-label">אבן דרך</span></button>
+                </div>
+                <div id="payment-list"></div>
             </div>
 
             <div class="pane" id="pane-team" hidden>
@@ -434,15 +443,83 @@
         </form>
     </dialog>
 
-    <!-- ===== חלון: שליחת ההצעות ללקוח ===== -->
+    <!-- ===== חלון: אבן דרך לתשלום ===== -->
+    <dialog id="payment-dlg" aria-labelledby="payment-dlg-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="payment-dlg-title">אבן דרך לתשלום</h2>
+                <button type="submit" class="btn primary">שמירה</button>
+            </header>
+            <div class="sheet-body">
+                <p class="chip-row" id="payment-state" hidden></p>
+                <div id="payment-actions" hidden>
+                    <div class="row-btns wrap" id="payment-main-btns"></div>
+                    <div id="pay-lawyer-row" hidden>
+                        <label class="f"><span>הערת העו"ד (לא חובה)</span><input id="pay-lawyer-note" maxlength="1000" placeholder="למשל: אישר בטלפון"></label>
+                    </div>
+                    <h3 class="sec-title" id="proofs-title" hidden>אסמכתאות</h3>
+                    <ul class="decisions" id="proofs"></ul>
+                    <details class="manual-proof" id="manual-proof">
+                        <summary>+ דיווח תשלום ידני</summary>
+                        <div class="fields">
+                            <label class="f"><span>סכום (₪)</span><input id="mp-amount" inputmode="decimal" dir="ltr" maxlength="14"></label>
+                            <label class="f"><span>תאריך</span><input id="mp-date" type="date"></label>
+                            <label class="f"><span>אמצעי</span><select id="mp-method"></select></label>
+                            <label class="f"><span>הערה</span><input id="mp-note" maxlength="1000"></label>
+                        </div>
+                        <div class="row-btns wrap">
+                            <label class="btn ghost upload-btn">📎 אסמכתא<input type="file" id="mp-file" accept="image/*,application/pdf" hidden></label>
+                            <button type="button" class="btn ghost" id="mp-save">הוספה</button>
+                        </div>
+                        <p class="hint" id="mp-file-name"></p>
+                    </details>
+                    <button type="button" class="btn ghost danger" id="payment-cancel">ביטול אבן הדרך</button>
+                </div>
+                <div class="fields">
+                    <label class="f"><span>שלב</span><select name="stage_id"></select></label>
+                    <label class="f"><span>ספק (מקבל התשלום) *</span><select name="supplier_id" required></select></label>
+                    <label class="f wide"><span>שם *</span><input name="title" maxlength="100" list="payment-titles" placeholder="למשל: מקדמה" required autocomplete="off"></label>
+                </div>
+                <datalist id="payment-titles"><option value="מקדמה"><option value="תשלום ביניים"><option value="תשלום סופי"><option value="עם סיום השלב"><option value="תוספת"></datalist>
+                <fieldset class="opt" id="pay-mode-box">
+                    <legend>סכום</legend>
+                    <div class="seg">
+                        <label><input type="radio" name="mode" value="amount" checked><span>סכום קבוע</span></label>
+                        <label><input type="radio" name="mode" value="percent"><span>אחוז מההצעה</span></label>
+                    </div>
+                </fieldset>
+                <p class="hint" id="pay-quote-hint" hidden></p>
+                <div class="fields">
+                    <label class="f" id="pay-amount-box"><span>סכום כולל מע"מ (₪) *</span><input name="amount" inputmode="decimal" maxlength="14" dir="ltr" autocomplete="off"></label>
+                    <label class="f" id="pay-percent-box" hidden><span>אחוז (%) *</span><input name="percent" inputmode="decimal" maxlength="6" dir="ltr" autocomplete="off"></label>
+                    <label class="f"><span>תאריך יעד</span><input name="due_date" type="date"></label>
+                </div>
+                <fieldset class="opt" id="payer-box">
+                    <legend>משלם</legend>
+                    <div class="seg">
+                        <label><input type="radio" name="payer" value="client" checked><span>הלקוח</span></label>
+                        <label><input type="radio" name="payer" value="lawyer"><span>העו"ד</span></label>
+                    </div>
+                </fieldset>
+                <label class="switch" id="pay-lawyer-box"><input type="checkbox" name="needs_lawyer"><span>דורש אישור עו"ד לפני התשלום</span></label>
+                <label class="f"><span>מה כלול</span><textarea name="notes" rows="2" maxlength="2000"></textarea></label>
+                <p class="error" role="alert" hidden></p>
+
+            </div>
+        </form>
+    </dialog>
+
+    <!-- ===== חלון: שליחה (וואטסאפ / SMS / אימייל) ===== -->
     <dialog id="send-dlg" aria-labelledby="send-dlg-title">
         <form method="dialog" novalidate>
             <header class="sheet-head">
                 <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
-                <h2 id="send-dlg-title">שליחה ללקוח</h2>
+                <h2 id="send-dlg-title">שליחה</h2>
                 <span></span>
             </header>
             <div class="sheet-body">
+                <div class="seg" id="send-who" role="radiogroup" aria-label="למי לשלוח" hidden></div>
                 <p class="hint" id="send-to"></p>
                 <label class="f"><span>ההודעה</span><textarea id="send-text" rows="8" maxlength="3000"></textarea></label>
                 <div class="row-btns wrap">
@@ -451,7 +528,7 @@
                     <a class="btn ghost" id="send-mail">אימייל</a>
                     <button type="button" class="btn ghost" id="send-copy">העתקה</button>
                 </div>
-                <p class="hint">ההצעות סומנו "נשלחה ללקוח", והשלב ממתין לאישורו. בקישור האישי הלקוח רואה את ההצעות ומאשר בעצמו. אם הוא עונה בטלפון — פותחים את ההצעה ורושמים את ההחלטה.</p>
+                <p class="hint" id="send-hint"></p>
             </div>
         </form>
     </dialog>
@@ -656,15 +733,16 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=14"></script>
-    <script src="assets/js/contacts.js?v=14"></script>
-    <script src="assets/js/device-contacts.js?v=14"></script>
-    <script src="assets/js/files.js?v=14"></script>
+    <script src="assets/js/core.js?v=15"></script>
+    <script src="assets/js/contacts.js?v=15"></script>
+    <script src="assets/js/device-contacts.js?v=15"></script>
+    <script src="assets/js/files.js?v=15"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=14"></script>
-    <script src="assets/js/projects.js?v=14"></script>
-    <script src="assets/js/quotes.js?v=14"></script>
-    <script src="assets/js/settings.js?v=14"></script>
-    <script src="assets/js/app.js?v=14"></script>
+    <script src="assets/js/share.js?v=15"></script>
+    <script src="assets/js/projects.js?v=15"></script>
+    <script src="assets/js/quotes.js?v=15"></script>
+    <script src="assets/js/payments.js?v=15"></script>
+    <script src="assets/js/settings.js?v=15"></script>
+    <script src="assets/js/app.js?v=15"></script>
 </body>
 </html>
