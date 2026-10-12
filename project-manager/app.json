@@ -2,9 +2,10 @@
   "id": "project-manager",
   "name": "ניהול פרויקטים",
   "icon": "📊",
-  "description": "ניהול פרויקטים — בבנייה. האפיון נכתב בצ'אט ייעודי.",
+  "description": "ניהול פרויקטים של שיפוץ ובנייה: לקוחות, ספקים ועורכי דין, הצעות מחיר, אישורים, תשלומים ותיעוד מהשטח.",
   "category": "dev",
   "entry": "index.html",
   "gate": true,
-  "restricted": true
+  "restricted": true,
+  "version": "0.1"
 }

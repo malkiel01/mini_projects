@@ -1,0 +1,12 @@
+# חסימת גישה ישירה לכל תיקיית הנתונים.
+#
+# כאן יושבים המסד (לקוחות, ספקים, פרטי בנק), ובהמשך גם הצעות מחיר, אסמכתאות
+# תשלום ותמונות מהשטח. שום דבר מזה אינו ציבורי: קבצים יוגשו רק דרך api.php,
+# אחרי בדיקת הרשאה.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>
