@@ -2,116 +2,126 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#2d4a8a">
+    <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=1">
+    <link rel="stylesheet" href="assets/css/app.css?v=2">
     <link rel="icon" href="assets/icon.svg">
 </head>
 <body>
+    <a class="skip" href="#main">דילוג לתוכן</a>
     <header class="top">
-        <a class="home" href="../" title="חזרה לאפליקציות">←</a>
-        <h1>📊 ניהול פרויקטים</h1>
+        <a class="icon-btn" href="../" aria-label="חזרה לאפליקציות">→</a>
+        <h1>ניהול פרויקטים</h1>
         <div class="who" id="who"></div>
     </header>
 
-    <nav class="tabs" id="tabs">
-        <button data-tab="client" class="active">👤 לקוחות</button>
-        <button data-tab="supplier">🧰 ספקים</button>
-        <button data-tab="lawyer">⚖️ עורכי דין</button>
-        <button data-tab="trades" class="dev-only" hidden>🏷️ תחומים</button>
+    <nav class="tabs" id="tabs" role="tablist" aria-label="סוג כרטיס">
+        <button role="tab" data-tab="client" aria-selected="true">לקוחות</button>
+        <button role="tab" data-tab="supplier" aria-selected="false">ספקים</button>
+        <button role="tab" data-tab="lawyer" aria-selected="false">עורכי דין</button>
+        <button role="tab" data-tab="trades" aria-selected="false" class="dev-only" hidden>תחומים</button>
     </nav>
 
-    <main id="main">
-        <section id="contacts-view">
+    <main id="main" tabindex="-1">
+        <section id="contacts-view" aria-labelledby="tabs">
             <div class="toolbar">
-                <input type="search" id="q" placeholder="חיפוש לפי שם, עסק, טלפון או אימייל" autocomplete="off">
-                <select id="trade-filter" hidden><option value="">כל התחומים</option></select>
-                <label class="check"><input type="checkbox" id="show-archived"> ארכיון</label>
-                <button class="primary" id="add">+ חדש</button>
+                <input type="search" id="q" placeholder="חיפוש" aria-label="חיפוש לפי שם, עסק, טלפון או אימייל" autocomplete="off" enterkeyhint="search">
+                <select id="trade-filter" aria-label="סינון לפי תחום" hidden><option value="">כל התחומים</option></select>
+                <button class="icon-btn ghost" id="show-archived" aria-pressed="false" aria-label="הצגת הארכיון" title="ארכיון">🗄️</button>
+                <button class="btn primary" id="add"><span aria-hidden="true">+</span><span class="add-label">חדש</span></button>
             </div>
-            <div id="list" class="list"></div>
+            <div id="list" class="list" aria-live="polite"></div>
         </section>
 
         <section id="trades-view" hidden>
-            <p class="hint">התחומים משותפים לכל המנהלים. תחום שמשויך לספק לא ניתן למחיקה.</p>
             <form id="trade-add" class="toolbar">
-                <input id="trade-name" placeholder="תחום חדש" maxlength="40" required>
-                <button class="primary">הוספה</button>
+                <input id="trade-name" placeholder="תחום חדש" aria-label="שם תחום חדש" maxlength="40" required>
+                <button class="btn primary">הוספה</button>
             </form>
-            <ul id="trade-list" class="trade-list"></ul>
+            <p class="hint">משותפים לכל המנהלים. תחום שמשויך לספק אינו ניתן למחיקה.</p>
+            <ul id="trade-list" class="rows"></ul>
         </section>
     </main>
 
-    <dialog id="editor">
+    <dialog id="editor" aria-labelledby="form-title">
         <form id="form" method="dialog" novalidate>
-            <h2 id="form-title"></h2>
-            <div class="grid">
-                <label>שם *<input name="name" required maxlength="100"></label>
-                <label class="k-supplier k-lawyer">שם העסק / המשרד<input name="company" maxlength="100"></label>
-                <label><span class="lbl-tax">ח.פ. / ע.מ.</span><input name="tax_id" maxlength="20" inputmode="numeric"></label>
-                <label>טלפון<input name="phone" type="tel" maxlength="30" dir="ltr"></label>
-                <label>וואטסאפ <small>(אם שונה)</small><input name="whatsapp" type="tel" maxlength="30" dir="ltr"></label>
-                <label>אימייל<input name="email" type="email" maxlength="120" dir="ltr"></label>
-                <label class="wide">כתובת<input name="address" maxlength="200"></label>
-            </div>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" id="cancel" aria-label="סגירה">✕</button>
+                <h2 id="form-title"></h2>
+                <button type="submit" class="btn primary" id="save">שמירה</button>
+            </header>
 
-            <fieldset class="k-supplier">
-                <legend>תחומים</legend>
-                <div id="trade-chips" class="chips"></div>
-            </fieldset>
-
-            <fieldset class="k-supplier">
-                <legend>פרטי בנק <small>(יוצגו ללקוח בדרישת תשלום)</small></legend>
-                <div class="grid">
-                    <label>בנק<input name="bank.bank" maxlength="60"></label>
-                    <label>סניף<input name="bank.branch" maxlength="60" inputmode="numeric"></label>
-                    <label>מספר חשבון<input name="bank.account" maxlength="60" inputmode="numeric"></label>
-                    <label>על שם<input name="bank.holder" maxlength="60"></label>
+            <div class="sheet-body">
+                <div class="fields">
+                    <label class="f wide"><span>שם *</span><input name="name" required maxlength="100" autocomplete="off"></label>
+                    <label class="f k-supplier k-lawyer"><span>עסק / משרד</span><input name="company" maxlength="100"></label>
+                    <label class="f"><span class="lbl-tax">ח.פ.</span><input name="tax_id" maxlength="20" inputmode="numeric"></label>
+                    <label class="f"><span>טלפון</span><input name="phone" type="tel" maxlength="30" dir="ltr" autocomplete="off"></label>
+                    <label class="f"><span>וואטסאפ</span><input name="whatsapp" type="tel" maxlength="30" dir="ltr" placeholder="אם שונה מהטלפון"></label>
+                    <label class="f"><span>אימייל</span><input name="email" type="email" maxlength="120" dir="ltr" autocomplete="off"></label>
+                    <label class="f wide"><span>כתובת</span><input name="address" maxlength="200"></label>
                 </div>
-            </fieldset>
 
-            <fieldset class="k-client">
-                <legend>הגדרות הלקוח</legend>
-                <label>עורך הדין
-                    <select name="settings.lawyer_id"><option value="">— ללא —</option></select>
-                </label>
-                <div class="row">
-                    <span class="row-label">אופן אישור</span>
-                    <label class="check"><input type="radio" name="settings.approval_method" value="click"> לחיצה על "מאשר"</label>
-                    <label class="check"><input type="radio" name="settings.approval_method" value="signature"> חתימה ביד</label>
-                </div>
-                <div class="row">
-                    <span class="row-label">ערוצי הודעות</span>
-                    <label class="check"><input type="checkbox" name="settings.channels" value="email"> אימייל</label>
-                    <label class="check"><input type="checkbox" name="settings.channels" value="whatsapp"> וואטסאפ</label>
-                    <label class="check"><input type="checkbox" name="settings.channels" value="sms"> SMS</label>
-                </div>
-                <div class="row">
-                    <span class="row-label">מי משלם בדרך כלל</span>
-                    <label class="check"><input type="radio" name="settings.default_payer" value="client"> הלקוח</label>
-                    <label class="check"><input type="radio" name="settings.default_payer" value="lawyer"> העו"ד</label>
-                </div>
-            </fieldset>
+                <section class="group k-supplier" aria-labelledby="g-trades">
+                    <h3 id="g-trades">תחומים</h3>
+                    <div id="trade-chips" class="chips"></div>
+                </section>
 
-            <fieldset class="k-supplier">
-                <legend>דירוג פנימי</legend>
-                <div class="stars" id="stars"></div>
-            </fieldset>
+                <section class="group k-supplier" aria-labelledby="g-rating">
+                    <h3 id="g-rating">דירוג פנימי</h3>
+                    <div class="stars" id="stars" role="radiogroup" aria-labelledby="g-rating"></div>
+                </section>
 
-            <label class="wide">הערות<textarea name="notes" rows="3" maxlength="4000"></textarea></label>
+                <section class="group k-supplier" aria-labelledby="g-bank">
+                    <h3 id="g-bank">פרטי בנק <small>מוצגים ללקוח בדרישת תשלום</small></h3>
+                    <div class="fields">
+                        <label class="f"><span>בנק</span><input name="bank.bank" maxlength="60"></label>
+                        <label class="f"><span>סניף</span><input name="bank.branch" maxlength="60" inputmode="numeric"></label>
+                        <label class="f"><span>חשבון</span><input name="bank.account" maxlength="60" inputmode="numeric"></label>
+                        <label class="f"><span>על שם</span><input name="bank.holder" maxlength="60"></label>
+                    </div>
+                </section>
 
-            <p class="error" id="form-error" hidden></p>
-            <div class="actions">
-                <button type="button" id="archive" class="ghost" hidden></button>
-                <span class="spacer"></span>
-                <button type="button" id="cancel" class="ghost">ביטול</button>
-                <button type="submit" class="primary" id="save">שמירה</button>
+                <section class="group k-client" aria-labelledby="g-client">
+                    <h3 id="g-client">הגדרות הלקוח</h3>
+                    <label class="f"><span>עורך הדין</span>
+                        <select name="settings.lawyer_id"><option value="">ללא</option></select>
+                    </label>
+                    <fieldset class="opt">
+                        <legend>אופן אישור</legend>
+                        <div class="seg">
+                            <label><input type="radio" name="settings.approval_method" value="click"><span>לחיצה</span></label>
+                            <label><input type="radio" name="settings.approval_method" value="signature"><span>חתימה</span></label>
+                        </div>
+                    </fieldset>
+                    <fieldset class="opt">
+                        <legend>ערוצי הודעות</legend>
+                        <div class="seg">
+                            <label><input type="checkbox" name="settings.channels" value="email"><span>אימייל</span></label>
+                            <label><input type="checkbox" name="settings.channels" value="whatsapp"><span>וואטסאפ</span></label>
+                            <label><input type="checkbox" name="settings.channels" value="sms"><span>SMS</span></label>
+                        </div>
+                    </fieldset>
+                    <fieldset class="opt">
+                        <legend>משלם</legend>
+                        <div class="seg">
+                            <label><input type="radio" name="settings.default_payer" value="client"><span>הלקוח</span></label>
+                            <label><input type="radio" name="settings.default_payer" value="lawyer"><span>העו"ד</span></label>
+                        </div>
+                    </fieldset>
+                </section>
+
+                <label class="f wide"><span>הערות</span><textarea name="notes" rows="3" maxlength="4000"></textarea></label>
+
+                <p class="error" id="form-error" role="alert" hidden></p>
+                <button type="button" id="archive" class="btn ghost" hidden></button>
             </div>
         </form>
     </dialog>
 
-    <div id="toast" class="toast" hidden></div>
-    <script src="assets/js/app.js?v=1"></script>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <script src="assets/js/app.js?v=2"></script>
 </body>
 </html>

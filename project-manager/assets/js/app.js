@@ -69,13 +69,21 @@ function bind() {
     });
     let timer;
     $('#q').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(loadContacts, 250); });
-    $('#show-archived').addEventListener('change', loadContacts);
+    $('#show-archived').addEventListener('click', e => {
+        const b = e.currentTarget;
+        b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'));
+        loadContacts();
+    });
     $('#trade-filter').addEventListener('change', renderList);
     $('#add').addEventListener('click', () => openEditor(null));
     $('#list').addEventListener('click', e => {
         if (e.target.closest('a')) return; // קישור טלפון / וואטסאפ / מייל
         const card = e.target.closest('.card');
         if (card) openEditor(Number(card.dataset.id));
+    });
+    $('#list').addEventListener('keydown', e => {
+        const card = e.target.closest('.card');
+        if (card && e.target === card && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openEditor(Number(card.dataset.id)); }
     });
     $('#form').addEventListener('submit', e => { e.preventDefault(); save(); });
     $('#cancel').addEventListener('click', () => $('#editor').close());
@@ -103,13 +111,13 @@ function bind() {
 function showTab(tab) {
     state.tab = tab;
     try { localStorage.setItem('pm.tab', tab); } catch { /* מצב פרטי */ }
-    $$('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    $$('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
     const isTrades = tab === 'trades';
     $('#contacts-view').hidden = isTrades;
     $('#trades-view').hidden = !isTrades;
     if (isTrades) { renderTrades(); return; }
     $('#trade-filter').hidden = tab !== 'supplier';
-    $('#add').textContent = '+ ' + KIND_LABEL[tab] + ' חדש';
+    $('#add').setAttribute('aria-label', KIND_LABEL[tab] + ' חדש');
     loadContacts();
 }
 
@@ -120,7 +128,7 @@ async function loadContacts() {
     if (kind === 'trades') return;
     try {
         const { contacts } = await api('contacts', { params: {
-            kind, q: $('#q').value.trim(), archived: $('#show-archived').checked ? 1 : 0,
+            kind, q: $('#q').value.trim(), archived: $('#show-archived').getAttribute('aria-pressed') === 'true' ? 1 : 0,
         } });
         if (kind !== state.tab) return; // הלשונית התחלפה בזמן הטעינה
         state.contacts = contacts;
@@ -148,19 +156,26 @@ function renderList() {
         return;
     }
     $('#list').innerHTML = rows.map(c => {
-        const phone = c.phone ? `<a href="tel:${esc(digits(c.phone))}">📞 ${esc(c.phone)}</a>` : '';
-        const wa = (c.whatsapp || c.phone) ? `<a href="https://wa.me/${esc(waNumber(c.whatsapp || c.phone))}" target="_blank" rel="noopener">💬 וואטסאפ</a>` : '';
-        const mail = c.email ? `<a href="mailto:${esc(c.email)}">✉️ ${esc(c.email)}</a>` : '';
-        const tags = c.trades.map(id => `<span class="tag">${esc(tradeName(id))}</span>`).join('');
-        const stars = c.rating ? `<span class="rating" title="דירוג">${'★'.repeat(c.rating)}</span>` : '';
-        const lawyer = c.kind === 'client' && c.lawyer_name ? `<span class="sub">⚖️ ${esc(c.lawyer_name)}</span>` : '';
-        const owner = isDev && c.owner_name && c.owner_id !== state.user.id ? `<span class="owner">של ${esc(c.owner_name)}</span>` : '';
-        return `<div class="card" data-id="${c.id}">
-            <div class="title"><span class="name">${esc(c.name)}</span>
-                ${c.company ? `<span class="sub">${esc(c.company)}</span>` : ''}${stars}${owner}</div>
-            ${tags ? `<div class="meta">${tags}</div>` : ''}
-            <div class="meta">${phone}${wa}${mail}${lawyer}</div>
-        </div>`;
+        const wa = c.whatsapp || c.phone;
+        const acts = [
+            c.phone ? `<a class="icon-btn" href="tel:${esc(digits(c.phone))}" aria-label="חיוג ל${esc(c.name)}">📞</a>` : '',
+            wa ? `<a class="icon-btn" href="https://wa.me/${esc(waNumber(wa))}" target="_blank" rel="noopener" aria-label="וואטסאפ ל${esc(c.name)}">💬</a>` : '',
+            !c.phone && c.email ? `<a class="icon-btn" href="mailto:${esc(c.email)}" aria-label="אימייל ל${esc(c.name)}">✉️</a>` : '',
+        ].join('');
+        const l2 = [
+            ...c.trades.map(id => esc(tradeName(id))),
+            c.kind === 'client' && c.lawyer_name ? 'עו"ד ' + esc(c.lawyer_name.replace(/^עו"ד\s*/, '')) : '',
+            c.phone ? `<span dir="ltr">${esc(c.phone)}</span>` : (c.email ? esc(c.email) : ''),
+            isDev && c.owner_name && c.owner_id !== state.user.id ? 'של ' + esc(c.owner_name) : '',
+        ].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>');
+        const stars = c.rating ? `<span class="rating" aria-label="דירוג ${c.rating} מתוך 5">${'★'.repeat(c.rating)}</span>` : '';
+        return `<article class="card" data-id="${c.id}" tabindex="0" role="button" aria-label="${esc(c.name)}">
+            <div class="body">
+                <div class="l1">${esc(c.name)}${c.company ? `<span class="sub">${esc(c.company)}</span>` : ''}${stars}</div>
+                ${l2 ? `<div class="l2">${l2}</div>` : ''}
+            </div>
+            <div class="acts">${acts}</div>
+        </article>`;
     }).join('');
 }
 
@@ -189,7 +204,7 @@ async function openEditor(id) {
     if (kind === 'supplier') {
         const mine = new Set(c?.trades || []);
         $('#trade-chips').innerHTML = state.trades.map(t =>
-            `<label><input type="checkbox" value="${t.id}" ${mine.has(t.id) ? 'checked' : ''}>${esc(t.name)}</label>`).join('');
+            `<label><input type="checkbox" value="${t.id}" ${mine.has(t.id) ? 'checked' : ''}><span>${esc(t.name)}</span></label>`).join('');
         state.rating = c?.rating || 0;
         renderStars();
     }
@@ -198,7 +213,7 @@ async function openEditor(id) {
     const arch = $('#archive');
     arch.hidden = !c;
     if (c) {
-        arch.textContent = c.archived ? '↩️ מהארכיון' : '🗄️ לארכיון';
+        arch.textContent = c.archived ? 'החזרה מהארכיון' : 'העברה לארכיון';
         arch.classList.toggle('danger', !c.archived);
     }
     $('#editor').showModal();
@@ -214,7 +229,7 @@ async function fillClientSettings(c) {
     try { ({ contacts: lawyers } = await api('contacts', { params: { kind: 'lawyer' } })); } catch { /* הרשימה תישאר ריקה */ }
     const owner = c?.owner_id ?? state.user.id;
     lawyers = lawyers.filter(l => l.owner_id === owner);
-    sel.innerHTML = '<option value="">— ללא —</option>'
+    sel.innerHTML = '<option value="">ללא</option>'
         + lawyers.map(l => `<option value="${l.id}">${esc(l.name)}${l.company ? ' · ' + esc(l.company) : ''}</option>`).join('');
     sel.value = s.lawyer_id ? String(s.lawyer_id) : '';
     form.querySelector(`[name="settings.approval_method"][value="${s.approval_method}"]`).checked = true;
@@ -224,7 +239,7 @@ async function fillClientSettings(c) {
 
 function renderStars() {
     $('#stars').innerHTML = [1, 2, 3, 4, 5].map(n =>
-        `<button type="button" data-n="${n}" class="${n <= state.rating ? 'on' : ''}" aria-label="${n} כוכבים">★</button>`).join('');
+        `<button type="button" role="radio" data-n="${n}" aria-checked="${n <= state.rating}" aria-label="${n} מתוך 5">★</button>`).join('');
 }
 
 function collect() {
@@ -288,8 +303,8 @@ function renderTrades() {
     fillTradeFilter();
     $('#trade-list').innerHTML = state.trades.map(t => `<li data-id="${t.id}">
         <span class="n">${esc(t.name)}</span><small>${t.used ? t.used + ' ספקים' : ''}</small>
-        <button data-act="rename" title="שינוי שם">✏️</button>
-        <button data-act="delete" title="מחיקה" ${t.used ? 'disabled' : ''}>🗑️</button></li>`).join('');
+        <button class="icon-btn" data-act="rename" aria-label="שינוי שם ${esc(t.name)}">✏️</button>
+        <button class="icon-btn" data-act="delete" aria-label="מחיקת ${esc(t.name)}" ${t.used ? 'disabled' : ''}>🗑️</button></li>`).join('');
 }
 
 async function tradeAction(e) {
