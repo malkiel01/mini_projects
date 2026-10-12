@@ -1,0 +1,49 @@
+name: Catering push diagnostics
+
+# אבחון התראות של catering-menu: מתחבר לשרת עם מפתח הפריסה ומדפיס מצב בלבד —
+# מכשירים רשומים, יומן השליחות, מצב התזכורות וה-cron, ושגיאות PHP.
+# קורא בלבד ולא מעלה קבצים — אינו פריסה. רץ רק בדחיפה לענף diag/catering-menu.
+# הלוג ציבורי (ריפו ציבורי) — לכן הסקריפט לא מדפיס שמות לקוחות או מפתחות.
+
+on:
+  push:
+    branches: [diag/catering-menu]
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+      - name: Unlock the deploy key if it has a passphrase
+        env:
+          DEPLOY_PASS: ${{ secrets.DEPLOY_SSH_PASSPHRASE }}
+        run: |
+          [ -z "$DEPLOY_PASS" ] && exit 0
+          eval "$(ssh-agent -s)"
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> "$GITHUB_ENV"
+          printf '#!/bin/sh\nprintf "%%s\\n" "$DEPLOY_PASS"\n' > "$RUNNER_TEMP/askpass"
+          chmod +x "$RUNNER_TEMP/askpass"
+          SSH_ASKPASS="$RUNNER_TEMP/askpass" SSH_ASKPASS_REQUIRE=force ssh-add ~/.ssh/deploy_key
+          rm -f "$RUNNER_TEMP/askpass"
+      - name: Read push state from the server
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER_: ${{ secrets.DEPLOY_USER }}
+          PATH_: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          for wait in 0 30 90 180; do
+            sleep "$wait"
+            if ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30 "$USER_@$HOST" \
+                 "cd '$PATH_/catering-menu' && php -d display_errors=1 2>&1" < .github/diag/catering-push.php; then
+              exit 0
+            fi
+            echo "::warning::החיבור נכשל — מנסה שוב"
+          done
+          exit 1
