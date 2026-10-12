@@ -5,7 +5,7 @@
 async function init() {
     try {
         const me = await api('me');
-        Object.assign(state, { user: me.user, trades: me.trades, templates: me.templates, labels: me.labels });
+        Object.assign(state, { user: me.user, trades: me.trades, templates: me.templates, labels: me.labels, standalone: me.standalone });
     } catch (e) {
         $('#main').innerHTML = `<p class="empty">${esc(e.message)}</p>`;
         return;
@@ -28,6 +28,8 @@ function route() {
     $('#project-nav').hidden = !inProject;
     $('#back').hidden = !inProject;
     $('#logo').hidden = inProject;
+    // בתוך דף האפליקציות — חזרה אליו. במצב עצמאי אין לאן לחזור.
+    $('#tools-link').hidden = inProject || state.standalone;
     $('#who').hidden = inProject;
     $('#logout').hidden = inProject;
     $$('#nav [data-nav]').forEach(x => x.setAttribute('aria-current', x.dataset.nav === section ? 'page' : 'false'));

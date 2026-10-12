@@ -18,6 +18,15 @@ const Settings = (() => {
             });
         });
         $('#trade-list').addEventListener('click', tradeAction);
+        $('#standalone').addEventListener('change', async e => {
+            const on = e.target.checked;
+            await busy(null, null, async () => {
+                ({ standalone: state.standalone } = await api('standalone', { body: { on } }));
+                $('#tools-link').hidden = state.standalone;
+                toast(on ? 'האפליקציה עצמאית' : 'האפליקציה חלק מדף האפליקציות');
+            });
+            e.target.checked = !!state.standalone;
+        });
         $('#add-template').addEventListener('click', () => openTemplate(null));
         $('#template-list').addEventListener('click', e => {
             const row = e.target.closest('[data-template]');
@@ -29,9 +38,10 @@ const Settings = (() => {
 
     function show(pane) {
         bind();
-        pane = ['trades', 'templates', 'access'].includes(pane) ? pane : 'trades';
+        pane = ['general', 'trades', 'templates', 'access'].includes(pane) ? pane : 'general';
         $$('#view-settings [data-set]').forEach(a => a.setAttribute('aria-selected', String(a.dataset.set === pane)));
         $$('#view-settings .pane').forEach(el => { el.hidden = el.id !== 'set-' + pane; });
+        if (pane === 'general') $('#standalone').checked = !!state.standalone;
         if (pane === 'trades') renderTrades();
         if (pane === 'templates') renderTemplates();
         if (pane === 'access') loadAccess();
