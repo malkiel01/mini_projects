@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+    <meta name="theme-color" content="#2d4a8a">
+    <meta name="color-scheme" content="light dark">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="referrer" content="no-referrer">
+    <title>הפרויקט שלך</title>
+    <link rel="stylesheet" href="../assets/css/app.css?v=14">
+    <link rel="stylesheet" href="portal.css?v=2">
+    <link rel="icon" href="../assets/icon.svg">
+</head>
+<body>
+<!--
+    פורטל הלקוח והעו"ד (lib/portal.php, portal/api.php). נפתח מקישור אישי:
+    portal/#t=<אסימון> — בלי סיסמה. האסימון נשלח לשרת בכותרת X-Portal.
+-->
+    <a class="skip" href="#main">דילוג לתוכן</a>
+    <header class="top">
+        <img class="logo" src="../assets/icon.svg" alt="" width="28" height="28">
+        <div class="titles">
+            <h1 id="title">הפרויקט שלך</h1>
+            <p class="sub" id="subtitle" hidden></p>
+        </div>
+    </header>
+
+    <main id="main" tabindex="-1">
+        <p class="empty" id="loading">טוען…</p>
+        <div id="fail" class="fail" hidden>
+            <p class="big" aria-hidden="true">🔒</p>
+            <h2>הקישור לא תקף</h2>
+            <p id="fail-text">בקשו קישור חדש ממנהל הפרויקט.</p>
+        </div>
+
+        <div id="content" hidden>
+            <section id="pending" class="pending" aria-labelledby="pending-title" hidden>
+                <h2 class="sec-title" id="pending-title">ממתין לאישורך</h2>
+                <ul class="list rows-list" id="pending-list"></ul>
+            </section>
+
+            <section id="quotes" aria-labelledby="quotes-title" hidden>
+                <h2 class="sec-title" id="quotes-title">הצעות מחיר</h2>
+                <div id="quote-list"></div>
+            </section>
+
+            <section aria-labelledby="progress-title">
+                <h2 class="sec-title" id="progress-title">התקדמות</h2>
+                <div class="progress-row">
+                    <div class="progress" role="progressbar" id="progress" aria-valuemin="0" aria-valuemax="100"><span></span></div>
+                    <small id="progress-text"></small>
+                </div>
+                <ol class="list rows-list" id="stage-list"></ol>
+            </section>
+
+            <section id="files" aria-labelledby="files-title" hidden>
+                <h2 class="sec-title" id="files-title">קבצים</h2>
+                <ul class="list rows-list" id="file-list"></ul>
+            </section>
+
+            <footer class="manager" id="manager"></footer>
+        </div>
+    </main>
+
+    <!-- ===== אישור / דחייה ===== -->
+    <dialog id="decide-dlg" aria-labelledby="decide-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="decide-title"></h2>
+                <span></span>
+            </header>
+            <div class="sheet-body">
+                <div class="summary" id="decide-summary"></div>
+                <label class="f"><span id="note-label">הערה (לא חובה)</span><textarea name="note" rows="2" maxlength="1000"></textarea></label>
+                <div id="sign-box" hidden>
+                    <div class="sign-head"><span>חתימה</span><button type="button" class="btn ghost sm" id="sign-clear">ניקוי</button></div>
+                    <canvas id="sign" class="sign" aria-label="שטח לחתימה באצבע או בעכבר"></canvas>
+                </div>
+                <p class="hint" id="decide-legal"></p>
+                <p class="error" role="alert" hidden></p>
+                <button type="submit" class="btn primary" id="decide-go"></button>
+            </div>
+        </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <script src="portal.js?v=2"></script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+/* פורטל הלקוח והעו"ד — מעל assets/css/app.css (אותם צבעים, ריווח ורכיבים). */
+
+#content > section { margin-bottom: var(--s4); }
+.sec-title { margin-top: 0; }
+.fail { text-align: center; display: grid; gap: var(--s2); padding: var(--s4) var(--s2); }
+.fail .big { font-size: 2.4rem; }
+.fail h2 { font-size: 1.1rem; }
+
+.pending .card { background: color-mix(in srgb, var(--star) 10%, var(--surface)); }
+.card .go { flex: none; color: var(--muted); font-size: 1.3rem; }
+
+.q-stage { margin-bottom: var(--s3); display: grid; gap: var(--s2); }
+.q-head { display: flex; align-items: center; gap: var(--s2); min-height: 32px; }
+.q-head h3 { font-size: .95rem; font-weight: 600; min-width: 0; }
+.qcard { display: grid; gap: 4px; padding: var(--s3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.qcard.rec { border-color: color-mix(in srgb, var(--star) 55%, var(--line)); background: color-mix(in srgb, var(--star) 7%, var(--surface)); }
+.qcard.q-approved { border-color: color-mix(in srgb, var(--ok) 55%, var(--line)); box-shadow: inset -3px 0 0 var(--ok); }
+.qcard.q-declined, .qcard.q-rejected { opacity: .65; }
+.rec-tag { font-size: .78rem; font-weight: 600; color: color-mix(in srgb, var(--star) 70%, var(--ink)); }
+.q1 { display: flex; align-items: baseline; gap: var(--s2); font-weight: 600; min-width: 0; }
+.q1 .one { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q1 .amt { flex: none; font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+.q-approved .amt { color: var(--ok); }
+.q2 { color: var(--muted); font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q2 .sep, .card .sep { font-style: normal; margin: 0 6px; }
+.q2 .cheap { color: var(--ok); }
+.q-approved .q2 .st { color: var(--ok); font-weight: 600; }
+.q3 { font-size: .85rem; }
+.qcard .row-btns { margin-top: var(--s1); }
+.qcard .file-link { justify-self: start; }
+
+.manager { display: flex; align-items: center; gap: var(--s1); padding: var(--s2) var(--s3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.manager span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.summary dl { display: grid; grid-template-columns: auto 1fr; gap: 4px var(--s3); padding: var(--s3); background: var(--bg); border-radius: var(--r); font-size: .9rem; }
+.summary dt { color: var(--muted); }
+.sign-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; font-size: .9rem; }
+.sign { display: block; width: 100%; height: 160px; background: #fff; border: 1px dashed var(--muted); border-radius: var(--r); touch-action: none; cursor: crosshair; }
+#decide-go { width: 100%; }
+#stage-list .card { min-height: 44px; padding-block: 6px; }

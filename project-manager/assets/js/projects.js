@@ -46,6 +46,15 @@ const Projects = (() => {
         $('#team-list').addEventListener('click', e => {
             const b = e.target.closest('[data-remove]');
             if (b) removeMember(Number(b.dataset.remove), b.dataset.name);
+            const l = e.target.closest('[data-portal]');
+            if (l) openPortal(Number(l.dataset.portal));
+        });
+        $('#portal-create').addEventListener('click', () => portalDo('get'));
+        $('#portal-renew').addEventListener('click', () => portalDo('renew'));
+        $('#portal-revoke').addEventListener('click', () => portalDo('revoke'));
+        $('#portal-copy').addEventListener('click', async () => {
+            try { await navigator.clipboard.writeText($('#portal-url').textContent); toast('הועתק'); }
+            catch { getSelection().selectAllChildren($('#portal-url')); }
         });
         $('#project-status').addEventListener('change', e => setStatus(e.target.value));
         $('#details-form').addEventListener('submit', e => { e.preventDefault(); saveDetails(); });
@@ -350,13 +359,71 @@ const Projects = (() => {
 
     // ---- צוות ----
 
-    function renderTeam() {
-        $('#team-list').innerHTML = cur.team.map(c => `<li class="card">
-            ${avatar(c.name)}
-            <div class="body"><div class="l1">${esc(c.name)}${c.company ? `<span class="sub">${esc(c.company)}</span>` : ''}</div>
-                <div class="l2">${c.roles.map(esc).join('<i class="sep" aria-hidden="true">·</i>')}</div></div>
-            <div class="acts">${contactActs(c)}${c.removable ? `<button class="icon-btn" data-remove="${c.id}" data-name="${esc(c.name)}" aria-label="הסרת ${esc(c.name)} מהצוות">✕</button>` : ''}</div>
-        </li>`).join('') || '<p class="empty">עוד אין צוות. שייך לקוח בפרטים, או ספק לשלב.</p>';
+    let links = {};
+
+    async function renderTeam() {
+        const draw = () => {
+            $('#team-list').innerHTML = cur.team.map(c => {
+                // ללקוח ולעו"ד — קישור אישי לפורטל. מתי נפתח לאחרונה — בשורה.
+                const portal = c.id === cur.project.client_id || c.id === cur.project.lawyer_id;
+                const l = links[c.id];
+                const seen = l ? (l.last_seen_at ? 'פתח ' + when(l.last_seen_at) : 'קישור נשלח, עוד לא נפתח') : '';
+                return `<li class="card">
+                ${avatar(c.name)}
+                <div class="body"><div class="l1">${esc(c.name)}${c.company ? `<span class="sub">${esc(c.company)}</span>` : ''}</div>
+                    <div class="l2">${[...c.roles.map(esc), seen ? esc(seen) : ''].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>')}</div></div>
+                <div class="acts">${portal ? `<button class="icon-btn" data-portal="${c.id}" aria-label="הקישור האישי של ${esc(c.name)}" title="קישור אישי">🔗</button>` : ''}${contactActs(c)}${c.removable ? `<button class="icon-btn" data-remove="${c.id}" data-name="${esc(c.name)}" aria-label="הסרת ${esc(c.name)} מהצוות">✕</button>` : ''}</div>
+            </li>`;
+            }).join('') || '<p class="empty">עוד אין צוות. שייך לקוח בפרטים, או ספק לשלב.</p>';
+        };
+        draw();
+        try { ({ links } = await api('portal-links', { params: { project_id: cur.project.id } })); draw(); } catch { /* בלי שורת "פתח" */ }
+    }
+
+    // ---- קישור אישי לפורטל ----
+
+    let portalContact = null;
+
+    function openPortal(id) {
+        portalContact = cur.team.find(t => t.id === id);
+        const dlg = $('#portal-dlg');
+        formError($('form', dlg), '');
+        const role = id === cur.project.client_id ? 'client' : 'lawyer';
+        $('#portal-dlg-title').textContent = 'קישור אישי — ' + portalContact.name;
+        $('#portal-about').textContent = role === 'client'
+            ? 'בקישור הלקוח רואה את התקדמות השלבים, את הצעות המחיר שנשלחו אליו (המומלצת בראש) ואת הקבצים שסומנו "גלוי" — ומאשר הצעות בעצמו, בלחיצה או בחתימה לפי הגדרות הלקוח. בלי סיסמה.'
+            : 'בקישור העו"ד רואה את הפרויקט ואת ההצעות, ומאשר הצעות שהלקוח כבר אישר בשלבים שדורשים עו"ד. בלי סיסמה.';
+        drawPortal(links[id] || null);
+        dlg.showModal();
+    }
+
+    function drawPortal(l) {
+        links[portalContact.id] = l;
+        $('#portal-has').hidden = !l;
+        $('#portal-create').hidden = !!l;
+        if (!l) return;
+        const c = portalContact;
+        $('#portal-url').textContent = l.url;
+        $('#portal-seen').textContent = l.last_seen_at ? `נפתח לאחרונה ${when(l.last_seen_at)} · ${l.views} כניסות` : 'עוד לא נפתח';
+        const text = `שלום ${c.name},\nזה הקישור האישי שלך לפרויקט "${cur.project.name}" — מצב העבודות, הצעות המחיר והמסמכים, ואישור הצעות:\n${l.url}\n\n${state.user.display_name}`;
+        const phone = c.whatsapp || c.phone;
+        $('#portal-wa').href = `https://wa.me/${phone ? waNumber(phone) : ''}?text=${encodeURIComponent(text)}`;
+        $('#portal-sms').hidden = !c.phone;
+        $('#portal-sms').href = `sms:${digits(c.phone || '')}?&body=${encodeURIComponent(text)}`;
+        $('#portal-mail').hidden = !c.email;
+        $('#portal-mail').href = `mailto:${encodeURIComponent(c.email || '')}?subject=${encodeURIComponent(cur.project.name)}&body=${encodeURIComponent(text)}`;
+        $('#portal-open').href = l.url;
+    }
+
+    async function portalDo(what) {
+        if (what === 'renew' && !confirm('ליצור קישור חדש? הקישור הקודם יפסיק לעבוד.')) return;
+        if (what === 'revoke' && !confirm('לבטל את הקישור? הוא יפסיק לעבוד מיד.')) return;
+        await busy(null, $('#portal-dlg form'), async () => {
+            const { link } = await api('portal-link', { body: { project_id: cur.project.id, contact_id: portalContact.id, do: what } });
+            drawPortal(link);
+            renderTeam();
+            if (what !== 'get') toast(what === 'revoke' ? 'הקישור בוטל' : 'נוצר קישור חדש');
+        });
     }
 
     async function openMember() {

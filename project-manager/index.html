@@ -451,7 +451,7 @@
                     <a class="btn ghost" id="send-mail">אימייל</a>
                     <button type="button" class="btn ghost" id="send-copy">העתקה</button>
                 </div>
-                <p class="hint">ההצעות סומנו "נשלחה ללקוח", והשלב ממתין לאישורו. כשהלקוח עונה — פותחים את ההצעה ורושמים את ההחלטה. בשלב הבא: קישור אישי שבו הלקוח מאשר בעצמו.</p>
+                <p class="hint">ההצעות סומנו "נשלחה ללקוח", והשלב ממתין לאישורו. בקישור האישי הלקוח רואה את ההצעות ומאשר בעצמו. אם הוא עונה בטלפון — פותחים את ההצעה ורושמים את ההחלטה.</p>
             </div>
         </form>
     </dialog>
@@ -502,6 +502,38 @@
                 <p class="hint" id="folder-where"></p>
                 <p class="error" role="alert" hidden></p>
                 <button type="button" class="btn ghost danger" id="folder-delete" hidden>מחיקת התיקייה (רק ריקה)</button>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- ===== חלון: קישור אישי לפורטל (לקוח / עו"ד) ===== -->
+    <dialog id="portal-dlg" aria-labelledby="portal-dlg-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="portal-dlg-title">קישור אישי</h2>
+                <span></span>
+            </header>
+            <div class="sheet-body">
+                <p class="hint" id="portal-about"></p>
+                <div id="portal-has" hidden>
+                    <code class="code" id="portal-url" dir="ltr"></code>
+                    <p class="hint" id="portal-seen"></p>
+                    <div class="row-btns wrap">
+                        <a class="btn primary" id="portal-wa" target="_blank" rel="noopener">וואטסאפ</a>
+                        <a class="btn ghost" id="portal-sms">SMS</a>
+                        <a class="btn ghost" id="portal-mail">אימייל</a>
+                        <button type="button" class="btn ghost" id="portal-copy">העתקה</button>
+                        <a class="btn ghost" id="portal-open" target="_blank" rel="noopener">פתיחה</a>
+                    </div>
+                    <div class="row-btns wrap">
+                        <button type="button" class="btn ghost" id="portal-renew">קישור חדש</button>
+                        <button type="button" class="btn ghost danger" id="portal-revoke">ביטול הקישור</button>
+                    </div>
+                    <p class="hint">"קישור חדש" או "ביטול" — הקישור הקודם מפסיק לעבוד מיד.</p>
+                </div>
+                <button type="button" class="btn primary" id="portal-create" hidden>יצירת קישור אישי</button>
+                <p class="error" role="alert" hidden></p>
             </div>
         </form>
     </dialog>

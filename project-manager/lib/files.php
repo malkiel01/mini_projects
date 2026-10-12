@@ -355,7 +355,12 @@ function pm_upload_cleanup(): void
 /** מגיש את הקובץ (או את הממוזערת) — עם Range, כדי שסרטון ינוגן ויודלג בטלפון. */
 function pm_file_send(array $user, int $id, bool $thumb, bool $download): never
 {
-    $x = pm_file_row($user, $id);
+    pm_file_output(pm_file_row($user, $id), $thumb, $download);
+}
+
+/** הגשת קובץ שההרשאה אליו כבר נבדקה — מהאפליקציה או מהפורטל. */
+function pm_file_output(array $x, bool $thumb, bool $download): never
+{
     $dir = pm_files_dir((int)$x['project_id']);
     $path = $thumb && $x['thumb'] ? "$dir/{$x['thumb']}" : "$dir/{$x['storage']}";
     if (!is_file($path)) throw new PmError('הקובץ חסר בשרת', 404);
