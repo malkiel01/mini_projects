@@ -17,6 +17,23 @@
     addEventListener('unhandledrejection', e => report('promise', e.reason?.message || e.reason, { stack: e.reason?.stack?.slice(0, 2000) }));
 })();
 
+// ---- מקלדת בטלפון ----
+// אנדרואיד: interactive-widget=resizes-content (במטא viewport) מקצר את הדף כשהמקלדת
+// נפתחת. אייפון לא מכיר את זה — לכן --vvh = הגובה הנראה בפועל (VisualViewport),
+// והחלונות בגובה הזה. השדה שבפוקוס נגלל למרכז, כדי שלא יישאר מתחת למקלדת.
+(() => {
+    const vv = window.visualViewport;
+    if (vv) {
+        const set = () => document.documentElement.style.setProperty('--vvh', Math.round(vv.height) + 'px');
+        vv.addEventListener('resize', set);
+        set();
+    }
+    document.addEventListener('focusin', e => {
+        if (!e.target.matches('input, textarea, select')) return;
+        setTimeout(() => e.target.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300);
+    });
+})();
+
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 

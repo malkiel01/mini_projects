@@ -20,6 +20,11 @@
     addEventListener('unhandledrejection', e => report('promise', e.reason?.message || e.reason, { stack: e.reason?.stack?.slice(0, 2000) }));
 })();
 
+// השדה שבפוקוס נגלל למרכז, כדי שלא יישאר מתחת למקלדת בטלפון
+document.addEventListener('focusin', e => {
+    if (e.target.matches('input, textarea, select')) setTimeout(() => e.target.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300);
+});
+
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 let csrf = null, mode = 'login', resetToken = null, state = {};
