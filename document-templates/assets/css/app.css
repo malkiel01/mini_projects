@@ -23,6 +23,8 @@
 }
 
 * { box-sizing: border-box; }
+/* hidden גובר תמיד — גם על display של מחלקה (.panel, .card). */
+[hidden] { display: none !important; }
 
 body {
   margin: 0;
@@ -250,3 +252,29 @@ tr.archived { opacity: .6; }
 .journal .events { margin: 0; padding-inline-start: 18px; display: grid; gap: 8px; }
 .journal ul { margin: 2px 0 0; padding-inline-start: 16px; }
 .numbering { display: grid; gap: 8px; border-top: 1px solid var(--border); padding-top: 10px; }
+
+/* ── שלב 5: משתתפים ── */
+
+/* צבע לכל תפקיד: אותו צבע בעורך (שדות) וברשימת המשתתפים. */
+.role-0 { --role: #3b5bdb; } .role-1 { --role: #e8590c; } .role-2 { --role: #2b8a3e; }
+.role-3 { --role: #ae3ec9; } .role-4 { --role: #0c8599; } .role-5 { --role: #c2255c; }
+.field[class*="role-"] { border-color: var(--role); background: color-mix(in srgb, var(--role) 13%, transparent); }
+.field.required[class*="role-"] { border-width: 2px; }
+.field.selected { outline-color: var(--role, #3b5bdb); }
+.role-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--role); flex: none; }
+.roles { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.roles li { display: flex; align-items: center; gap: 6px; }
+.role-row input { flex: 1; min-width: 0; }
+
+/* מילוי: מה שלי מודגש, של אחרים — לקריאה. */
+.fill.theirs input:disabled, .fill.theirs textarea:disabled, .fill.theirs .sig-btn:disabled { border-color: transparent; background: transparent; }
+.fill.mine input:not(:disabled), .fill.mine textarea:not(:disabled), .fill.mine .sig-btn:not(:disabled) {
+  border: 1.5px solid #e8590c; background: rgba(232,89,12,.08); }
+.form-field:has(:disabled) > span { color: var(--muted); }
+
+.people { display: grid; gap: 12px; }
+.person { border: 1px solid var(--border); border-radius: 10px; padding: 10px; display: grid; gap: 8px; }
+.person-fields { display: grid; gap: 6px; }
+.person-fields input, .link-box { font: inherit; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--text); width: 100%; box-sizing: border-box; }
+.link-box { font-size: .8rem; }

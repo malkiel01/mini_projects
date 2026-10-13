@@ -164,6 +164,19 @@ function clean_schema($s): array
     }
     if (!$pages) throw new ApiError('לתבנית אין דפים', 422);
 
+    // משתתפים (שלב 5). "owner" — מי שמנפיק — תמיד קיים ותמיד ראשון.
+    $roles = [['key' => 'owner', 'label' => 'אני (המנפיק)', 'auth' => 'none']];
+    foreach (array_slice((array)($s['roles'] ?? []), 0, 20) as $r) {
+        $key = preg_replace('/[^a-z0-9_]/', '', strtolower((string)($r['key'] ?? '')));
+        if ($key === '' || $key === 'owner' || in_array($key, array_column($roles, 'key'), true)) continue;
+        $roles[] = [
+            'key' => $key,
+            'label' => $str($r['label'] ?? '', 60) ?: 'משתתף',
+            'auth' => in_array($r['auth'] ?? '', ['none', 'email'], true) ? $r['auth'] : 'none',
+        ];
+    }
+    $roleKeys = array_column($roles, 'key');
+
     $fields = [];
     $keys = [];
     foreach ((array)($s['fields'] ?? []) as $f) {
@@ -191,9 +204,10 @@ function clean_schema($s): array
             'fontSize' => (int)$num($f['fontSize'] ?? 12, 6, 72),
             'align' => in_array($f['align'] ?? '', ['right', 'center', 'left'], true) ? $f['align'] : 'right',
             'overflow' => in_array($f['overflow'] ?? '', OVERFLOW, true) ? $f['overflow'] : 'shrink',
+            'role' => in_array($f['role'] ?? '', $roleKeys, true) ? $f['role'] : 'owner',
         ];
     }
-    return ['pages' => $pages, 'fields' => $fields];
+    return ['pages' => $pages, 'fields' => $fields, 'roles' => $roles, 'sequential' => !empty($s['sequential'])];
 }
 
 function tpl_save(array $user, array $b): array

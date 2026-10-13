@@ -53,7 +53,7 @@
     clearInterval(devTimer);
     leaveGuard = null;
     document.body.classList.remove('wide');
-    app.replaceChildren(...nodes);
+    app.replaceChildren(...nodes.filter(n => n != null));
   }
 
   function notice(text, kind) {

@@ -37,10 +37,13 @@ $method  = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $session = null;
 
 // פעולות שלא דורשות כניסה.
-$PUBLIC = ['health', 'register', 'verify', 'login', 'forgot', 'reset', 'me'];
+$PUBLIC = ['health', 'register', 'verify', 'login', 'forgot', 'reset', 'me',
+           // ממלא חיצוני: הזהות היא האסימון שבכותרת X-Fill-Token, לא עוגייה.
+           'fill_get', 'fill_asset', 'fill_otp_send', 'fill_otp_verify', 'fill_save', 'fill_complete'];
 $POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'dev_user',
            'tpl_create', 'tpl_save', 'tpl_archive', 'tpl_delete',
-           'doc_create', 'doc_save', 'doc_complete', 'doc_archive', 'doc_delete', 'doc_downloaded'];
+           'doc_create', 'doc_save', 'doc_complete', 'doc_archive', 'doc_delete', 'doc_downloaded',
+           'part_contact', 'part_link', 'fill_otp_send', 'fill_otp_verify', 'fill_save', 'fill_complete'];
 
 try {
     if (in_array($action, $POSTS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -60,7 +63,7 @@ try {
         'health' => (function () {
             $probe = 'בדיקה';
             db();
-            return ['ok' => true, 'stage' => 4, 'php' => PHP_VERSION, 'sqlite' => true,
+            return ['ok' => true, 'stage' => 5, 'php' => PHP_VERSION, 'sqlite' => true,
                 'crypto' => unseal(seal($probe)) === $probe,
                 'mail' => function_exists('mail'), 'zip' => class_exists('ZipArchive'),
                 'finfo' => class_exists('finfo'),
@@ -91,6 +94,14 @@ try {
         'doc_archive'    => doc_archive($session, $body),
         'doc_delete'     => doc_delete($session, $body),
         'doc_downloaded' => doc_downloaded($session, $body),
+        'part_contact'    => part_contact($session, $body),
+        'part_link'       => part_link($session, $body),
+        'fill_get'        => fill_get(),
+        'fill_asset'      => fill_asset(),
+        'fill_otp_send'   => fill_otp_send(),
+        'fill_otp_verify' => fill_otp_verify($body),
+        'fill_save'       => fill_save($body),
+        'fill_complete'   => fill_complete(),
         'dev_users' => dev_users(),
         'dev_user'  => dev_user_action($body, $session),
         default     => throw new ApiError('פעולה לא מוכרת', 404),

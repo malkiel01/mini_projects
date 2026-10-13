@@ -5,5 +5,10 @@
   "description": "יוצרים תבנית פעם אחת, ומנפיקים ממנה מסמכים: ממלאים לבד או שולחים קישור למילוי ולחתימה. בבנייה.",
   "category": "documents",
   "entry": "index.html",
-  "gate": true
+  "gate": true,
+  "public": [
+    "fill.html",
+    "assets/**",
+    "api.php?action=fill_get|fill_asset|fill_otp_send|fill_otp_verify|fill_save|fill_complete"
+  ]
 }
