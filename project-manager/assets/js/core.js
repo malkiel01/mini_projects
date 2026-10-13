@@ -48,6 +48,9 @@ const state = {
 
 const isDev = () => state.user?.role === 'developer';
 
+/** מי בפרויקט (הבעלים והשותפים המנהלים) — אנשי הקשר של כולם נבחרים בו. d — התשובה של api('project'). */
+const teamOf = d => (d?.partners?.length ? d.partners.map(u => u.id) : [d?.project?.owner_id ?? state.user?.id]);
+
 /**
  * סמכות מפתח — מתג של המפתח בלבד (נשמר ללשונית הנוכחית). כשהוא דולק: כל בקשה נושאת X-PM-Dev,
  * והשרת מתיר מחיקה גמורה ועקיפת נעילות (lib/dev.php).

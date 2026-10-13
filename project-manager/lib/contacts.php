@@ -38,9 +38,46 @@ function pm_phone(array $in, string $key, string $label): string
  */
 function pm_owner_clause(array $user, string $alias = 'c'): array
 {
-    // כרטיסים — של הצוות: הוא, ומי שחולק איתו פרויקט כשותף מנהל (pm_team_ids)
-    $ids = pm_team_ids((int)$user['id']);
-    return ["$alias.owner_id IN (" . implode(',', array_fill(0, count($ids), '?')) . ')', $ids];
+    // כרטיסים: שלו, ואנשי הקשר של הפרויקטים שהוא בהם (בעלים או שותף מנהל) — רק אלה, לא כל
+    // ספר הכתובות של השותף. יוצא מהפרויקט המשותף — אנשי הקשר שלו יוצאים איתו.
+    $uid = (int)$user['id'];
+    return ["($alias.owner_id = ? OR $alias.id IN (SELECT contact_id FROM (" . pm_project_contacts_sql(pm_my_projects_sql($uid)) . ')))', [$uid]];
+}
+
+/** הפרויקטים שהמשתמש בהם — בעלים או שותף מנהל (SQL של מזהים). */
+function pm_my_projects_sql(int $uid): string
+{
+    return "SELECT id FROM projects WHERE owner_id = $uid UNION SELECT project_id FROM project_partners WHERE user_id = $uid";
+}
+
+/**
+ * אנשי הקשר שמשויכים לפרויקטים ($projects — SQL של מזהי פרויקטים): לקוח, עו"ד, ספקי השלבים, הצוות,
+ * הצעות, תשלומים, תוספות, חוזים, בקשות הצעה ופגישות. עמודות: contact_id, project_id.
+ */
+function pm_project_contacts_sql(string $projects): string
+{
+    $q = [];
+    foreach (['projects' => ['client_id', 'id'], 'projects ' => ['lawyer_id', 'id'], 'stages' => ['supplier_id', 'project_id'],
+              'project_members' => ['contact_id', 'project_id'], 'quotes' => ['supplier_id', 'project_id'], 'payments' => ['supplier_id', 'project_id'],
+              'change_orders' => ['supplier_id', 'project_id'], 'contracts' => ['supplier_id', 'project_id'],
+              'quote_invites' => ['supplier_id', 'project_id'], 'appointments' => ['contact_id', 'project_id']] as $t => [$col, $pcol]) {
+        $t = trim($t);
+        $q[] = "SELECT $col AS contact_id, $pcol AS project_id FROM $t WHERE $col IS NOT NULL AND $pcol IN ($projects)";
+    }
+    return implode(' UNION ', $q);
+}
+
+/**
+ * כרטיסים של מישהו אחר שהמשתמש רואה בזכות פרויקט: contact_id => [שמות הפרויקטים]. לסימון
+ * "🤝 מפרויקט משותף" ברשימת אנשי הקשר.
+ */
+function pm_shared_contacts(int $uid): array
+{
+    $st = pm_db()->query('SELECT x.contact_id, p.name FROM (' . pm_project_contacts_sql(pm_my_projects_sql($uid)) . ') x
+        JOIN contacts c ON c.id = x.contact_id JOIN projects p ON p.id = x.project_id WHERE c.owner_id != ' . $uid . ' ORDER BY p.name');
+    $out = [];
+    foreach ($st->fetchAll() as $r) $out[(int)$r['contact_id']][$r['name']] = true;
+    return array_map('array_keys', $out);
 }
 
 /** פרויקטים שהמשתמש רואה: שלו, ומה ששותף איתו כשותף מנהל. */
@@ -148,7 +185,8 @@ function pm_contacts_list(array $user, string $kind, string $q, bool $archived):
         $t->execute($ids);
         foreach ($t->fetchAll() as $r) $trades[$r['contact_id']][] = $r['trade_id'];
     }
-    return array_map(fn($r) => pm_contact_out($r, $trades[$r['id']] ?? []), $rows);
+    $shared = pm_shared_contacts((int)$user['id']);
+    return array_map(fn($r) => pm_contact_out($r, $trades[$r['id']] ?? []) + ['shared' => $shared[(int)$r['id']] ?? []], $rows);
 }
 
 function pm_contact_get(array $user, int $id): array
@@ -158,7 +196,8 @@ function pm_contact_get(array $user, int $id): array
     $t->execute([$id]);
     $settings = null;
     if ($row['kind'] === 'client') $settings = pm_client_settings($id);
-    return pm_contact_out($row, $t->fetchAll(PDO::FETCH_COLUMN), $settings);
+    $shared = (int)$row['owner_id'] !== (int)$user['id'] ? (pm_shared_contacts((int)$user['id'])[$id] ?? []) : [];
+    return pm_contact_out($row, $t->fetchAll(PDO::FETCH_COLUMN), $settings) + ['shared' => $shared];
 }
 
 function pm_client_settings(int $id): array
@@ -343,7 +382,9 @@ function pm_validate_client_settings(int $ownerId, $raw): array
 
 function pm_contact_archive(array $user, int $id, bool $archived): array
 {
-    pm_contact_row($user, $id);
+    $c = pm_contact_row($user, $id);
+    // כרטיס מפרויקט משותף — רואים ועורכים, אבל רק מי שיצר אותו מעביר לארכיון
+    if ((int)$c['owner_id'] !== (int)$user['id']) throw new PmError('כרטיס מפרויקט משותף — רק מי שיצר אותו יכול להעביר לארכיון', 403);
     pm_db()->prepare('UPDATE contacts SET archived = ?, updated_at = ? WHERE id = ?')
         ->execute([$archived ? 1 : 0, pm_now(), $id]);
     pm_audit("user:{$user['id']}", $archived ? 'contact.archive' : 'contact.restore', 'contact', $id);

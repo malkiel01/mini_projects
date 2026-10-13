@@ -223,8 +223,7 @@ function pm_message_log(array $user, array $in): array
     $contactId = (int)($in['contact_id'] ?? 0) ?: null;
     $name = '';
     if ($contactId) {
-        $c = pm_contact_full($contactId);
-        if (!$c || !in_array((int)$c['owner_id'], pm_team_ids((int)$user['id']), true)) $contactId = null; else $name = $c['name'];
+        try { $name = pm_contact_row($user, $contactId)['name']; } catch (PmError) { $contactId = null; } // רק כרטיס שהוא רואה
     }
     $body = mb_substr((string)($in['text'] ?? ''), 0, 3000);
     pm_db()->prepare('INSERT INTO messages (project_id, contact_id, channel, key, recipient, subject, body, status, auto, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')

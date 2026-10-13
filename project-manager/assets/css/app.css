@@ -798,3 +798,5 @@ body.auth { display: grid; place-items: start center; padding: max(8vh, var(--s4
 .dev-purge { margin-top: var(--s3); padding-top: var(--s3); border-top: 2px dashed var(--danger); }
 .dev-purge .btn { width: 100%; background: var(--danger-soft); color: var(--danger); border-color: var(--danger); }
 .btn.icon-only { min-width: var(--tap); padding-inline: 0; font-size: 1.1rem; }
+.shared-from { color: var(--brand); }
+p.shared-from { margin-bottom: var(--s2); padding: var(--s2) var(--s3); background: var(--brand-soft); border-radius: var(--r); }

@@ -1862,5 +1862,9 @@
     "🛠️ תוקן בסמכות מפתח: {supplier}, {stage} — {fields}{amounts}": "🛠️ Corrected with developer authority: {supplier}, {stage} — {fields}{amounts}",
     "✏️ — לשנות סדר (↑↓), למחוק שלב ריק, בלי הצעות, תשלומים ודיווחים (🗑), ולהוסיף שלב בכל מקום (\"+ שלב כאן\"). אפשר לפצל תחום לשניים, למשל \"חשמל — תשתית\" ו\"חשמל — גמר\".": "✏️ — reorder (↑↓), delete an empty stage with no quotes, payments or reports (🗑), and add a stage anywhere (\"+ Stage here\"). You can split a trade in two, e.g. \"Electrical — infrastructure\" and \"Electrical — finishing\".",
     "השלב לא ריק — אי אפשר למחוק": "The stage isn't empty — it can't be deleted",
-    "השלב לא ריק — יש בו הצעות, תשלומים או דיווחים. אפשר לשנות לו שם או סדר": "The stage isn't empty — it has quotes, payments or reports. You can rename or reorder it"
+    "השלב לא ריק — יש בו הצעות, תשלומים או דיווחים. אפשר לשנות לו שם או סדר": "The stage isn't empty — it has quotes, payments or reports. You can rename or reorder it",
+    "מפרויקט משותף: {names}": "From a shared project: {names}",
+    "מפרויקט משותף: {names}. מוצג כאן כל עוד יש לך גישה לפרויקט.": "From a shared project: {names}. Shown here as long as you have access to the project.",
+    "כרטיס של מנהל אחר": "Another manager's card",
+    "כרטיס מפרויקט משותף — רק מי שיצר אותו יכול להעביר לארכיון": "A card from a shared project — only its creator can archive it"
 }

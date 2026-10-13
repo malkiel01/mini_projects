@@ -107,6 +107,7 @@ const Contacts = (() => {
                 <div class="body">
                     <div class="l1">${esc(c.name)}${c.company ? `<span class="sub">${esc(c.company)}</span>` : ''}${stars}</div>
                     ${l2 ? `<div class="l2">${l2}</div>` : ''}
+                    ${c.shared?.length ? `<div class="l2 shared-from">🤝 ${esc(t('מפרויקט משותף: {names}', { names: c.shared.join(', ') }))}</div>` : ''}
                 </div>
                 <div class="acts">${contactActs(c)}</div>
             </article>`;
@@ -146,7 +147,11 @@ const Contacts = (() => {
         if (kk === 'client') await fillClientSettings(c);
         $('#contact-ledger').hidden = !(c && kk === 'supplier');
         const arch = $('#archive');
-        arch.hidden = !c;
+        // כרטיס מפרויקט משותף: רואים ועורכים; רק מי שיצר אותו מעביר לארכיון
+        const foreign = !!c && c.owner_id !== state.user.id;
+        $('#contact-shared').hidden = !foreign;
+        if (foreign) $('#contact-shared').textContent = '🤝 ' + (c.shared?.length ? t('מפרויקט משותף: {names}. מוצג כאן כל עוד יש לך גישה לפרויקט.', { names: c.shared.join(', ') }) : t('כרטיס של מנהל אחר'));
+        arch.hidden = !c || foreign;
         if (c) {
             arch.textContent = c.archived ? t('החזרה מהארכיון') : t('העברה לארכיון');
             arch.classList.toggle('danger', !c.archived);
