@@ -112,9 +112,10 @@ const Files = (() => {
         const q = $('#fq').value.trim(), type = $('#ftype').value;
         const searching = !!(q || type);
         const params = { project_id: project.id };
+        // חיפוש / סינון מתוך תיקייה — בתיקייה ובתת-התיקיות שלה; מהשורש — בכל הפרויקט
         if (searching) Object.assign(params, { q, type });
-        else if (folderId) params.folder_id = folderId;
-        else params.recent = 1;
+        if (folderId) params.folder_id = folderId;
+        else if (!searching) params.recent = 1;
         await busy(null, null, async () => {
             ({ files } = await api('files', { params }));
             render(searching);
@@ -140,7 +141,8 @@ const Files = (() => {
         $('#folder-list').hidden = !subs.length;
 
         $('#files-title').hidden = false;
-        $('#files-title').textContent = searching ? t('תוצאות ({n})', { n: files.length }) : folderId ? t('קבצים') : t('הועלו לאחרונה');
+        $('#files-title').textContent = searching ? (folderId ? t('תוצאות בתיקייה הזו ({n})', { n: files.length }) : t('תוצאות בכל הפרויקט ({n})', { n: files.length }))
+            : folderId ? t('קבצים') : t('הועלו לאחרונה');
         $('#file-list').innerHTML = files.map(fileRow).join('')
             || `<p class="empty">${esc(searching ? t('לא נמצאו קבצים') : folderId ? t('התיקייה ריקה. "+ העלאה" או גרירה לכאן.') : t('עוד אין קבצים בפרויקט.'))}</p>`;
         // בשורש: העלאה נכנסת ל"ממתין למיון"
@@ -156,7 +158,7 @@ const Files = (() => {
             : `<span class="ficon" aria-hidden="true">${TYPE_ICON[f.type] || '📄'}</span>`;
         const meta = [
             esc(t(state.fileTypes[f.type] || '')), fmtSize(f.size), when(f.created_at),
-            !folderId && home ? esc(path(home.folder_id)) : '',
+            home && (!folderId || home.folder_id !== folderId) ? esc(path(home.folder_id)) : '',
         ].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>');
         return `<li class="card" data-file="${f.id}" tabindex="0" role="button" aria-label="${esc(f.name)}">
             ${thumb}

@@ -181,8 +181,11 @@ function pm_files_list(array $user, int $projectId, array $f): array
     $args = [$projectId];
     $join = '';
     if (!empty($f['folder_id'])) {
-        $join = 'JOIN file_links l ON l.file_id = x.id AND l.folder_id = ?';
-        array_unshift($args, (int)$f['folder_id']);
+        // בתיקייה: הקבצים שלה; בחיפוש / סינון מתוך תיקייה — גם בתת-התיקיות שלה (לא בכל הפרויקט)
+        $deep = !empty($f['q']) || !empty($f['type']);
+        $where[] = $deep ? 'x.id IN (SELECT file_id FROM file_links WHERE folder_id IN (WITH RECURSIVE t(id) AS (SELECT ? UNION SELECT d.id FROM folders d JOIN t ON d.parent_id = t.id) SELECT id FROM t))'
+                         : 'x.id IN (SELECT file_id FROM file_links WHERE folder_id = ?)';
+        $args[] = (int)$f['folder_id'];
     }
     if (!empty($f['type']) && isset(PM_FILE_TYPES[$f['type']])) { $where[] = 'x.type = ?'; $args[] = $f['type']; }
     if (!empty($f['q'])) { $where[] = '(x.name LIKE ? OR x.note LIKE ?)'; $like = '%' . strtr((string)$f['q'], ['%' => '', '_' => '']) . '%'; array_push($args, $like, $like); }
