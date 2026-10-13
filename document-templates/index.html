@@ -8,22 +8,23 @@
   <link rel="stylesheet" href="assets/css/app.css">
 </head>
 <body>
-  <main class="shell">
-    <header class="brand">
-      <img src="assets/icon.svg" alt="" width="48" height="48">
-      <div>
-        <h1>תבניות מסמכים</h1>
-        <p class="muted">יוצרים תבנית פעם אחת, ומנפיקים ממנה מסמכים — ממלאים לבד או שולחים קישור למילוי ולחתימה.</p>
-      </div>
-    </header>
+  <header class="topbar">
+    <a class="brand" href="#">
+      <img src="assets/icon.svg" alt="" width="32" height="32">
+      <span>תבניות מסמכים</span>
+    </a>
+    <nav id="nav" class="nav" hidden>
+      <a href="#home" data-tab="home">התבניות שלי</a>
+      <a href="#dev" data-tab="dev" id="nav-dev" hidden>פיתוח</a>
+      <span id="who" class="muted"></span>
+      <button id="logout" class="link">יציאה</button>
+    </nav>
+  </header>
 
-    <section class="card">
-      <h2>בבנייה — שלב 1 מתוך 14</h2>
-      <p>השלד עומד: מסד נתונים משלו, הצפנת תוכן, וחסימת גישה ישירה לנתונים. השלב הבא — חשבונות: הרשמה, אישור, כניסה ואיפוס סיסמה.</p>
-      <h3>בדיקת השרת</h3>
-      <ul id="health" class="checks"><li class="muted">בודק…</li></ul>
-    </section>
+  <main id="app" class="shell" aria-live="polite">
+    <p class="muted">טוען…</p>
   </main>
+
   <script src="assets/js/app.js"></script>
 </body>
 </html>

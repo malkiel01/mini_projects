@@ -235,6 +235,14 @@ function db_migrate(PDO $pdo): void
         CREATE INDEX IF NOT EXISTS idx_shares_user ON shares(user_id);
         SQL);
 
+    // שלב 2: אסימון האימות נושא את הסיסמה שנבחרה בהרשמה (מוצפנת). כך מי
+    // שלוחץ על הקישור במייל מפעיל את הסיסמה *שלו*, גם אם מישהו אחר ניסה
+    // להירשם עם אותה כתובת אחריו.
+    $cols = array_column($pdo->query('PRAGMA table_info(email_tokens)')->fetchAll(), 'name');
+    if (!in_array('payload_enc', $cols, true)) {
+        $pdo->exec('ALTER TABLE email_tokens ADD COLUMN payload_enc TEXT');
+    }
+
     // היומן: אי אפשר לשנות או למחוק רשומה — גם לא בטעות בקוד עתידי.
     $pdo->exec(<<<'SQL'
         CREATE TRIGGER IF NOT EXISTS events_no_update BEFORE UPDATE ON events
