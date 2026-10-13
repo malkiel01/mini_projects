@@ -1743,5 +1743,16 @@
     "צורף שותף מנהל: {name}": "Partner manager added: {name}",
     "{name} שיתף איתך פרויקט: {project}": "{name} shared a project with you: {project}",
     "{name} צירף אותך כשותף מנהל בפרויקט {project}.\nמעכשיו הוא מופיע ברשימת הפרויקטים שלך — עם כל מה שבו.\n\n{url}\n": "{name} added you as a partner manager on the project {project}.\nFrom now on it appears in your project list — with everything in it.\n\n{url}\n",
-    "חזרה למסך הקודם": "Back to the previous screen"
+    "חזרה למסך הקודם": "Back to the previous screen",
+    "💰 כספים": "💰 Finance",
+    "📝 הצעות": "📝 Quotes",
+    "🧱 שלבים ושטח": "🧱 Stages & site",
+    "👥 צוות והודעות": "👥 Team & messages",
+    "📎 קבצים": "📎 Files",
+    "💬 הערות": "💬 Notes",
+    "עוד {n} פעולות": {
+        "one": "{n} more action",
+        "other": "{n} more actions"
+    },
+    "סינון ציר הזמן": "Filter the timeline"
 }

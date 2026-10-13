@@ -735,3 +735,24 @@ body.auth { display: grid; place-items: start center; padding: max(8vh, var(--s4
 .sec-row .sec-title { margin: 0; }
 #partners { margin-block-end: var(--s3); }
 .partner-chip { font-size: .7rem; }
+/* ציר הזמן: כרטיס לכל רצף פעולות של אדם אחד; פס צבע לפי קטגוריה; סינון */
+.tl-filters { padding-block: var(--s2) 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.tl-filters .chip { flex: none; }
+.tl-filters .chip small { color: var(--muted); font-weight: 400; margin-inline-start: 4px; }
+.tl-filters .chip.on { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.tl-filters .chip.on small { color: inherit; opacity: .8; }
+.timeline .tl-group { align-self: stretch; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: var(--s2) var(--s3); }
+.tl-head { display: flex; align-items: center; gap: var(--s2); margin-block-end: 6px; }
+.tl-head .avatar { inline-size: 26px; block-size: 26px; font-size: .7rem; flex: none; }
+.tl-head b { flex: 1; min-width: 0; font-size: .85rem; }
+.tl-head time { flex: none; font-size: .75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tl-items { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+.tl-item { display: grid; grid-template-columns: 1.6em 1fr; gap: 6px; align-items: start; padding: 4px 8px;
+    border-inline-start: 3px solid var(--tl, var(--line)); border-radius: 4px; background: var(--bg); font-size: .86rem; line-height: 1.45; }
+.tl-ic { text-align: center; }
+.tl-t { min-width: 0; overflow-wrap: anywhere; }
+.tl-t .tl-k { font-weight: 600; }
+.tl-money { --tl: #1f9d55; } .tl-quotes { --tl: #3b6fd8; } .tl-stages { --tl: #8a5cd0; } .tl-team { --tl: #0e9aa7; }
+.tl-files { --tl: #9aa3ad; } .tl-other { --tl: var(--line); }
+.tl-more summary { cursor: pointer; font-size: .8rem; color: var(--brand); padding: 2px 8px; }
+.tl-more .tl-items { margin-block-start: 4px; }
