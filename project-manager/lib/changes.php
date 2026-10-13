@@ -84,12 +84,8 @@ function pm_change_save(array $user, array $in): array
     $amount = (int)round((float)$v * 100);
     $reason = pm_str($in, 'reason', 1000, true, 'סיבה');
     $fileId = (int)($in['file_id'] ?? 0) ?: null;
-    if ($fileId) {
-        $f = pm_db()->prepare('SELECT 1 FROM files WHERE id = ? AND project_id = ? AND deleted_at IS NULL');
-        $f->execute([$fileId, $projectId]);
-        if (!$f->fetchColumn()) throw new PmError('הקובץ לא נמצא', 422);
-        pm_db()->prepare('UPDATE files SET visible = 1 WHERE id = ?')->execute([$fileId]); // הלקוח צריך לראות את הפירוט
-    }
+    // הלקוח צריך לראות את הפירוט; מ"ממתין למיון" — לתיקיית הספק
+    pm_file_claim($projectId, $fileId, null, $supplierId, true);
     $needsLawyer = $stage['needs_lawyer'] && $p['lawyer_id'] ? 1 : 0;
     $now = pm_now();
     $db = pm_db();

@@ -15,6 +15,19 @@ const Files = (() => {
     const folderById = id => folders.find(f => f.id === id);
     const inbox = () => folders.find(f => f.kind === 'inbox' && f.parent_id === null);
 
+    // i18n-ok-start — מתורגם בתצוגה
+    const USE = { quote: ['🧾', 'הצעת מחיר'], contract: ['📝', 'חוזה'], change: ['±', 'תוספת / חריגה'], payment: ['🗓️', 'אבן דרך'],
+        invoice: ['🧾', 'חשבונית'], proof: ['💳', 'אסמכתא'], expense: ['🧾', 'הוצאה ישירה'], report: ['📷', 'דיווח מהשטח'] };
+    // i18n-ok-end
+    /** "🧾 הצעת מחיר — אבי · חשמל": איפה הקובץ משמש. */
+    function useLabel(u) {
+        const [ic, l] = USE[u.kind] || ['📄', ''];
+        const what = u.kind === 'quote' ? [u.supplier, t(u.text)] : u.kind === 'contract' ? [u.supplier, u.text] : [u.text, u.supplier];
+        return `${ic} ${t(l)} — ${what.filter(Boolean).join(' · ')}`;
+    }
+    // סוגים שהם מסמך של רשומה — בלי שיוך, הקובץ "לא משויך" (למשל הצעה שהועלתה ב"קבצים" ולא נרשמה כהצעה)
+    const RECORD_TYPES = ['quote', 'contract', 'invoice', 'proof'];
+
     /** הנתיב המלא של תיקייה, לבחירה בחלונות: "הלקוח / חוזים". */
     function path(id) {
         const parts = [];
@@ -60,6 +73,10 @@ const Files = (() => {
         $('#add-link').addEventListener('click', addLink);
         $('#file-links').addEventListener('click', e => { const b = e.target.closest('[data-unlink]'); if (b) unlink(Number(b.dataset.unlink)); });
         $('#file-delete').addEventListener('click', deleteFile);
+        $('#file-uses').addEventListener('click', e => { const b = e.target.closest('[data-use]'); if (b) goUse(current.uses[Number(b.dataset.use)]); });
+        $('#file-attach-btns').addEventListener('click', e => { const b = e.target.closest('[data-attach]'); if (b) attachStart(b.dataset.attach); });
+        $('#file-attach-go').addEventListener('click', attachGo);
+        $('#file-dlg [name=type]').addEventListener('change', attachButtons);
         $('#file-quote').addEventListener('click', () => {
             // הספק — לפי התיקייה שהקובץ יושב בה
             const home = folderById(current.folders.find(l => l.home)?.folder_id);
@@ -145,7 +162,9 @@ const Files = (() => {
             ${thumb}
             <div class="body"><div class="l1"><span class="one">${esc(f.name)}</span>
                 ${f.visible ? `<span class="chip" title="${esc(t('גלוי בפורטל'))}">👁</span>` : ''}${shortcut ? `<span class="chip" title="${esc(t('קיצור דרך'))}">🔗</span>` : ''}</div>
-                <div class="l2">${meta}</div></div>
+                <div class="l2">${meta}</div>
+                ${f.uses?.length ? `<div class="l2 f-uses">${f.uses.slice(0, 2).map(u => `<span class="chip">${esc(useLabel(u))}</span>`).join('')}${f.uses.length > 2 ? `<span class="chip">+${f.uses.length - 2}</span>` : ''}</div>`
+                    : RECORD_TYPES.includes(f.type) ? `<div class="l2 f-uses"><span class="chip fin-warn">${esc(t('לא משויך — לחצו לשיוך'))}</span></div>` : ''}</div>
         </li>`;
     }
 
@@ -276,8 +295,129 @@ const Files = (() => {
         el.home.innerHTML = options(all, home);
         renderLinks();
         $('#file-download').href = fileUrl(f.id, '&download=1');
-        $('#file-quote').hidden = !['quote', 'other', 'photo', 'contract'].includes(f.type);
+        renderUses();
         dlg.showModal();
+    }
+
+    // ================= שימוש במערכת ושיוך =================
+    // קובץ שהועלה ב"קבצים" צריך להגיע לאותו מקום כמו קובץ שהועלה מהחלון של ההצעה / החוזה / אבן הדרך:
+    // כאן רואים איפה הוא משמש, ומשייכים אותו — והשרת מטפל בו כמו בכל צירוף (סוג, תיקייה — pm_file_claim).
+
+    function renderUses() {
+        const uses = current.uses || [];
+        $('#file-uses').innerHTML = uses.map((u, i) => `<button type="button" class="chip" data-use="${i}">${esc(useLabel(u))} ‹</button>`).join('')
+            || `<span class="hint">${esc(RECORD_TYPES.includes(current.type) ? t('הקובץ עוד לא משויך — בחרו למטה למה הוא שייך.') : t('הקובץ לא משמש באף רשומה.'))}</span>`;
+        $('#file-attach').hidden = true;
+        attachButtons();
+    }
+
+    /** כפתורי השיוך — לפי הסוג שנבחר (גם לפני שמירה); בסוג כללי — כולם. */
+    function attachButtons() {
+        const type = $('#file-dlg [name=type]').value, open = ['other', 'photo'].includes(type);
+        $('#file-quote').hidden = !(open || type === 'quote');
+        for (const b of $$('#file-attach-btns [data-attach]')) b.hidden = !(open || type === b.dataset.attach);
+    }
+
+    /** מהקובץ לרשומה: ההצעה, החוזה, אבן הדרך, התוספת, ההוצאה, הדיווח. */
+    function goUse(u) {
+        $('#file-dlg').close();
+        const pid = project.id;
+        if (u.kind === 'quote') { Quotes.openWhenReady(u.id); location.hash = `#/p/${pid}/quotes`; }
+        else if (u.kind === 'contract') Finance.openWhenReady({ contract: u.id, supplier: u.supplier_id }, pid);
+        else if (u.kind === 'change') Finance.openWhenReady({ change: u.id }, pid);
+        else if (u.kind === 'expense') Finance.openWhenReady({ expense: u.id }, pid);
+        else if (u.payment_id) { Payments.openWhenReady(u.payment_id); location.hash = `#/p/${pid}/payments`; }
+        else if (u.kind === 'report') location.hash = `#/p/${pid}/field`;
+    }
+
+    let attachKind = null, attachList = [];
+    async function attachStart(kind) {
+        attachKind = kind;
+        const form = $('#file-dlg form');
+        formError(form, '');
+        attachList = [];
+        if (kind === 'contract') {
+            // הספקים של הפרויקט — מהתיקיות שלהם
+            attachList = folders.filter(f => f.kind === 'contact' && f.parent_id === null).map(f => ({ value: f.contact_id, label: f.name }));
+        } else {
+            let payments = [];
+            try { ({ payments } = await api('payments', { params: { project_id: project.id } })); } catch (e) { formError(form, e.message); return; }
+            const ok = kind === 'invoice' ? p => p.received > 0 && !p.invoice : p => ['planned', 'requested', 'partial', 'paid'].includes(p.status);
+            attachList = payments.filter(p => p.status !== 'cancelled' && ok(p)).map(p => ({ value: p.id, label: `${p.title} — ${p.supplier_name}` }));
+        }
+        $('#file-attach-label').textContent = kind === 'contract' ? t('הספק') : t('אבן הדרך');
+        $('#file-attach-to').innerHTML = options(attachList);
+        const hint = $('#file-attach-hint');
+        hint.textContent = !attachList.length ? (kind === 'contract' ? t('אין עדיין ספקים בפרויקט.') : kind === 'invoice' ? t('אין אבן דרך שהתקבל בה תשלום ועוד אין לה חשבונית.') : t('אין אבן דרך פתוחה לתשלום.'))
+            : kind === 'contract' ? t('נפתח החוזה של הספק, עם הקובץ הזה כמסמך — שם בוחרים חוזה קיים או חדש ושומרים.')
+            : kind === 'proof' ? t('נפתחת אבן הדרך, עם הקובץ כאסמכתא — שם רושמים סכום ותאריך.') : '';
+        hint.hidden = !hint.textContent;
+        $('#file-attach-go').disabled = !attachList.length;
+        $('#file-attach').hidden = false;
+    }
+
+    async function attachGo() {
+        const to = Number($('#file-attach-to').value);
+        if (!to) return;
+        const f = { id: current.id, name: current.name }, pid = project.id;
+        if (attachKind === 'invoice') {
+            await busy($('#file-attach-go'), $('#file-dlg form'), async () => {
+                await api('payment-invoice', { body: { id: to, invoice_no: '', file_id: f.id } });
+                toast(t('החשבונית נשמרה'));
+                $('#file-dlg').close();
+                await openFile(f.id);
+                await loadFolders(); await loadFiles();
+            });
+            return;
+        }
+        $('#file-dlg').close();
+        if (attachKind === 'contract') Finance.openWhenReady({ contract: null, supplier: to, file: f.id }, pid);
+        else if (attachKind === 'proof') { Payments.openWhenReady(to, { proof: f }); location.hash = `#/p/${pid}/payments`; }
+    }
+
+    // ================= בחירת קובץ קיים (מהחלונות: תוספת, הוצאה, אסמכתא, חשבונית) =================
+
+    let chooser = null;
+    /**
+     * בחירת קובץ שכבר בפרויקט — במקום להעלות שוב. prefer: הסוגים שמתאימים (ראשונים), וקבצים שעוד לא משויכים לפני
+     * המשויכים. מחזיר {id, name} או null.
+     */
+    function choose(projectId, prefer = []) {
+        return new Promise(async resolve => {
+            let list = [];
+            try { ({ files: list } = await api('files', { params: { project_id: projectId } })); } catch (e) { toast(e.message, true); resolve(null); return; }
+            const rank = f => (prefer.includes(f.type) ? 0 : 2) + (f.uses?.length ? 1 : 0);
+            list.sort((a, b) => rank(a) - rank(b) || b.created_at.localeCompare(a.created_at));
+            if (!chooser) {
+                chooser = document.createElement('dialog');
+                chooser.id = 'fchoose-dlg';
+                chooser.setAttribute('aria-labelledby', 'fchoose-title');
+                chooser.innerHTML = `<form method="dialog" novalidate><header class="sheet-head">
+                    <button type="button" class="icon-btn" data-close aria-label="${esc(t('סגירה'))}">✕</button>
+                    <h2 id="fchoose-title">${esc(t('בחירת קובץ מהפרויקט'))}</h2><span></span></header>
+                    <div class="sheet-body"><input type="search" id="fchoose-q" placeholder="${esc(t('חיפוש לפי שם'))}" aria-label="${esc(t('חיפוש לפי שם'))}">
+                    <ul class="list fchoose" id="fchoose-list"></ul></div></form>`;
+                document.body.appendChild(chooser);
+                chooser.querySelector('[data-close]').addEventListener('click', () => chooser.close());
+            }
+            const q = chooser.querySelector('#fchoose-q'), ul = chooser.querySelector('#fchoose-list');
+            const draw = () => {
+                const s = q.value.trim().toLowerCase();
+                const shown = list.filter(f => !s || f.name.toLowerCase().includes(s));
+                ul.innerHTML = shown.map(f => `<li><button type="button" class="fch-row" data-id="${f.id}">
+                    <span class="ficon" aria-hidden="true">${TYPE_ICON[f.type] || '📄'}</span>
+                    <span class="body"><span class="one">${esc(f.name)}</span>
+                    <small>${esc([t(state.fileTypes[f.type] || ''), new Date(f.created_at).toLocaleDateString(I18n.locale()), ...(f.uses || []).slice(0, 1).map(useLabel)].filter(Boolean).join(' · '))}</small></span></button></li>`).join('')
+                    || `<li class="empty">${esc(t('לא נמצאו קבצים'))}</li>`;
+            };
+            q.value = '';
+            draw();
+            q.oninput = draw;
+            let picked = null;
+            ul.onclick = e => { const b = e.target.closest('[data-id]'); if (!b) return; const f = list.find(x => x.id === Number(b.dataset.id)); picked = { id: f.id, name: f.name }; chooser.close(); };
+            chooser.onclose = () => resolve(picked);
+            chooser.showModal();
+        });
     }
 
     function renderLinks() {
@@ -373,5 +513,5 @@ const Files = (() => {
         });
     }
 
-    return { show, send, fmtSize };
+    return { show, send, fmtSize, choose };
 })();

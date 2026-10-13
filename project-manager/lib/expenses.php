@@ -64,12 +64,8 @@ function pm_expense_fields(int $projectId, array $in): array
 /** קבלה: קובץ של הפרויקט — וגלוי בפורטל (הלקוח קנה, הוא צריך לראות). */
 function pm_expense_file(int $projectId, ?int $fileId): ?int
 {
-    if (!$fileId) return null;
-    $f = pm_db()->prepare('SELECT 1 FROM files WHERE id = ? AND project_id = ? AND deleted_at IS NULL');
-    $f->execute([$fileId, $projectId]);
-    if (!$f->fetchColumn()) throw new PmError('הקובץ לא נמצא', 422);
-    pm_db()->prepare('UPDATE files SET visible = 1 WHERE id = ?')->execute([$fileId]);
-    return $fileId;
+    // סוג "חשבונית" (קבלה), מ"ממתין למיון" — לתיקיית הלקוח
+    return pm_file_claim($projectId, $fileId, 'invoice', null, true);
 }
 
 /** הוצאה חדשה או עדכון: {id?, project_id, title, amount, vat, spent_on, stage_id?, notes?, file_id?} */

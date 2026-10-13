@@ -72,6 +72,9 @@ const Finance = (() => {
         f.elements.index_on.addEventListener('change', () => { $('#index-box').hidden = !f.elements.index_on.checked; });
         $('#co-dlg form').addEventListener('submit', e => { e.preventDefault(); sendChange(); });
         $('#co-file').addEventListener('change', e => { coFile = e.target.files[0] || null; $('#co-file-name').textContent = coFile ? '📎 ' + coFile.name : ''; });
+        // קובץ שכבר בפרויקט — במקום להעלות שוב ({id, name}; קובץ חדש — File)
+        $('#co-existing').addEventListener('click', async () => { const f = await Files.choose(project.project.id, ['quote', 'other']); if (f) { coFile = f; $('#co-file-name').textContent = '📂 ' + f.name; } });
+        $('#exp-existing').addEventListener('click', async () => { const f = await Files.choose(project.project.id, ['invoice', 'photo', 'other']); if (f) { expFile = f; $('#exp-file-name').textContent = '📂 ' + f.name; } });
         $('#co-actions').addEventListener('click', e => { const b = e.target.closest('[data-co-do]'); if (b) changeAction(b.dataset.coDo); });
         const s = $('#split-dlg form');
         s.addEventListener('submit', e => { e.preventDefault(); saveSplit(); });
@@ -106,7 +109,17 @@ const Finance = (() => {
         catch (e) { $('#fin-sum').innerHTML = `<p class="error">${esc(e.message)}</p>`; return; }
         render();
         if (pendingChange) { const id = pendingChange; pendingChange = null; finTab('suppliers'); openChange(id); }
+        if (pendingOpen) {
+            const o = pendingOpen; pendingOpen = null;
+            if (o.change) { finTab('suppliers'); openChange(o.change); }
+            else if (o.expense && data.expenses?.items?.some(x => x.id === o.expense)) { finTab('expenses'); openExpense(o.expense); }
+            else if (o.supplier) { finTab('suppliers'); openContract(o.supplier, null, { id: o.contract || 0, file: o.file || null }); }
+        }
     }
+
+    /** מחוץ לכספים (חלון קובץ): לפתוח תוספת / הוצאה / חוזה — אחרי שהלשונית תיטען. file — מסמך לחוזה. */
+    let pendingOpen = null;
+    function openWhenReady(o, pid) { pendingOpen = o; location.hash = `#/p/${pid}/payments`; }
 
     /** אחרי שינוי בתשלומים / בשלבים — מחדש. */
     async function reload(p = project) { if (p) await show(p); }
@@ -311,7 +324,8 @@ const Finance = (() => {
         if (!el.reason.value.trim()) { formError(f, t('מה ולמה: שדה חובה')); return; }
         await busy($('#co-send'), f, async () => {
             let fileId = null;
-            if (coFile) {
+            if (coFile?.id) fileId = coFile.id;
+            else if (coFile) {
                 const { folders } = await api('folders', { params: { project_id: project.project.id } });
                 const folder = folders.find(x => x.contact_id === co.supplierId && x.parent_id === null) || folders.find(x => x.kind === 'inbox');
                 fileId = (await Files.send(coFile, project.project.id, folder.id, undefined, { quiet: true })).file.id;
@@ -401,7 +415,8 @@ const Finance = (() => {
         if (!el.title.value.trim()) { formError(f, t('מה נקנה: שדה חובה')); return; }
         await busy($('button[type=submit]', f), f, async () => {
             let fileId;
-            if (expFile) {
+            if (expFile?.id) fileId = expFile.id;
+            else if (expFile) {
                 const { folders } = await api('folders', { params: { project_id: project.project.id } });
                 const folder = folders.find(x => x.kind === 'client') || folders.find(x => x.kind === 'inbox');
                 fileId = (await Files.send(expFile, project.project.id, folder.id, undefined, { quiet: true })).file.id;
@@ -567,11 +582,12 @@ const Finance = (() => {
      * חוזה לשורת ספק בשלב. לספק יכולים להיות כמה חוזים (אחד לאינסטלציה וחשמל, אחר לריצוף) — בראש החלון בוחרים:
      * החוזה של השלב, חוזה אחר של הספק (בשמירה השלב מצורף אליו — בלי להעלות את המסמך שוב), או חוזה חדש.
      */
-    async function openContract(supplierId, stageId = null) {
+    async function openContract(supplierId, stageId = null, opt = {}) {
         let c, contracts;
-        try { ({ contract: c, contracts } = await api('contract', { params: { project_id: project.project.id, supplier_id: supplierId, stage_id: stageId || undefined } })); } catch (e) { toast(e.message, true); return; }
-        const name = data.stages.flatMap(s => s.rows).find(r => r.supplier_id === supplierId)?.name || '';
-        ct = { supplierId, stageId, name, list: contracts || [] };
+        try { ({ contract: c, contracts } = await api('contract', { params: { project_id: project.project.id, supplier_id: supplierId, stage_id: stageId || undefined, id: opt.id || undefined } })); } catch (e) { toast(e.message, true); return; }
+        const name = data.stages.flatMap(s => s.rows).find(r => r.supplier_id === supplierId)?.name || (project.team || []).find(x => x.id === supplierId)?.name || '';
+        // file — מסמך שנבחר בחלון הקובץ ("לחוזה של ספק"): נשאר בחוזה שבוחרים, עד השמירה
+        ct = { supplierId, stageId, name, list: contracts || [], presetFile: opt.file || null };
         $('#ct-dlg-title').textContent = t('חוזה — {name}', { name });
         const sel = $('#ct-which');
         sel.innerHTML = ct.list.map(x => `<option value="${x.id}">${esc(ctLabel(x))}</option>`).join('') + `<option value="new">${esc(t('+ חוזה חדש'))}</option>`;
@@ -621,6 +637,7 @@ const Finance = (() => {
         hint.textContent = join ? t('השלב "{stage}" יצורף לחוזה הזה בשמירה — בלי להעלות את המסמך שוב.', { stage: stage ? stageName(stage) : '' })
             : !c && ct.list.length ? t('ל{name} כבר יש חוזים בפרויקט ({n}). אם החוזה הזה כבר שם — בוחרים אותו למעלה; אחרת ממלאים חוזה חדש.', { name: ct.name, n: ct.list.length })
             : '';
+        if (ct.presetFile) hint.textContent = (hint.textContent ? hint.textContent + ' ' : '') + t('המסמך מהקבצים כבר נבחר — בשמירה הוא יצורף לחוזה שבחרתם למעלה.');
         hint.hidden = !hint.textContent;
         // תקציר: עד מתי, כמה נשאר / איחור, קנס
         const sum = $('#ct-sum');
@@ -632,7 +649,7 @@ const Finance = (() => {
             if (c.penalty) sum.innerHTML += `<br><b class="fin-late">${esc(t('קנס מצטבר: {amount} ({n} ימים × {per})', { amount: money(c.penalty), n: c.penalty_days, per: money(c.penalty_per_day) }))}</b>`;
         }
         renderMs();
-        await ctFiles(c?.file?.id || null);
+        await ctFiles(ct.presetFile || c?.file?.id || null);
         ctUnits(c);
         Dev.attach($('#ct-dlg'), 'contract', c?.id);
     }
@@ -916,5 +933,5 @@ const Finance = (() => {
         });
     }
 
-    return { show, reload, ledger, tab: finTab };
+    return { show, reload, ledger, tab: finTab, openWhenReady };
 })();

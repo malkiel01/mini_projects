@@ -2012,5 +2012,22 @@
     "החוזה לא נמצא": "Contrat introuvable",
     "שם החוזה": "Nom du contrat",
     "החוזה של ספק אחר": "Le contrat appartient à un autre fournisseur",
-    "מתוך {total}": "sur {total}"
+    "מתוך {total}": "sur {total}",
+    "לא משויך — לחצו לשיוך": "Non rattaché — touchez pour rattacher",
+    "הקובץ עוד לא משויך — בחרו למטה למה הוא שייך.": "Ce fichier n'est pas encore rattaché — choisissez ci-dessous à quoi il appartient.",
+    "הקובץ לא משמש באף רשומה.": "Ce fichier n'est utilisé par aucun enregistrement.",
+    "אבן הדרך": "Jalon",
+    "אין עדיין ספקים בפרויקט.": "Pas encore de fournisseurs dans le projet.",
+    "אין אבן דרך שהתקבל בה תשלום ועוד אין לה חשבונית.": "Aucun jalon n'a de paiement reçu sans facture.",
+    "אין אבן דרך פתוחה לתשלום.": "Aucun jalon n'est ouvert au paiement.",
+    "נפתח החוזה של הספק, עם הקובץ הזה כמסמך — שם בוחרים חוזה קיים או חדש ושומרים.": "Le contrat du fournisseur s'ouvre avec ce fichier comme document — choisissez-y un contrat existant ou nouveau et enregistrez.",
+    "נפתחת אבן הדרך, עם הקובץ כאסמכתא — שם רושמים סכום ותאריך.": "Le jalon s'ouvre avec ce fichier comme justificatif — saisissez-y le montant et la date.",
+    "בחירת קובץ מהפרויקט": "Choisir un fichier du projet",
+    "חיפוש לפי שם": "Rechercher par nom",
+    "המסמך מהקבצים כבר נבחר — בשמירה הוא יצורף לחוזה שבחרתם למעלה.": "Le document des fichiers est déjà sélectionné — à l'enregistrement il sera joint au contrat choisi ci-dessus.",
+    "📂 מהקבצים": "📂 Depuis les fichiers",
+    "שימוש במערכת": "Utilisé dans",
+    "📝 לחוזה של ספק": "📝 Vers un contrat fournisseur",
+    "🧾 חשבונית לאבן דרך": "🧾 Facture d'un jalon",
+    "💳 אסמכתא לאבן דרך": "💳 Justificatif d'un jalon"
 }
