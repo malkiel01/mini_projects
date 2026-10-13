@@ -758,3 +758,18 @@ body.auth { display: grid; place-items: start center; padding: max(8vh, var(--s4
 .tl-more .tl-items { margin-block-start: 4px; }
 /* הצעה שהוחלט עליה — נעולה */
 .lock-hint { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px var(--s2); color: var(--ink); }
+/* חוזה עם ספק */
+.ct-sum { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: var(--s2) var(--s3); font-size: .9rem; }
+.ct-ms { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--s2); }
+.ct-m { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px var(--s2); align-items: end; padding: var(--s2); border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.ct-m .f.wide { grid-column: 1 / -1; }
+.ct-m .icon-btn { grid-row: 2; grid-column: 3; }
+.ct-m .hint { grid-column: 1 / -1; margin: 0; }
+.ct-stages { border: 0; padding: 0; margin: 0; }
+.ct-stages legend { font-size: .78rem; color: var(--muted); padding: 0; margin-bottom: 4px; }
+.ct-stages .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.ct-stages .chips label { display: inline-flex; }
+.ct-stages .chips input { position: absolute; opacity: 0; pointer-events: none; }
+.ct-stages .chips span { padding: 3px 10px; border: 1px solid var(--line); border-radius: 99px; font-size: .8rem; cursor: pointer; background: var(--surface); }
+.ct-stages .chips input:checked + span { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+.ct-stages .chips input:focus-visible + span { outline: 2px solid var(--brand); outline-offset: 2px; }

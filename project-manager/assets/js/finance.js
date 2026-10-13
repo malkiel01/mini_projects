@@ -5,7 +5,7 @@
 'use strict';
 
 const Finance = (() => {
-    let project = null, data = null, bound = false, split = null, coFile = null, co = null, exp = null, expFile = null, fee = null;
+    let project = null, data = null, bound = false, split = null, coFile = null, co = null, exp = null, expFile = null, fee = null, ct = null;
     const pct = n => `${Math.round(n)}%`;
 
     function bind() {
@@ -26,6 +26,8 @@ const Finance = (() => {
             if (n) { openNewChange(Number(n.dataset.coNew), Number(n.dataset.supplier)); return; }
             const c = e.target.closest('[data-co]');
             if (c) { openChange(Number(c.dataset.co)); return; }
+            const k = e.target.closest('[data-contract]');
+            if (k) { openContract(Number(k.dataset.contract)); return; }
             const l = e.target.closest('[data-ledger]');
             if (l) { ledger(project.project.id, Number(l.dataset.ledger)); return; }
             if (e.target.closest('[data-exp-new]')) { openExpense(null); return; }
@@ -36,6 +38,13 @@ const Finance = (() => {
             if (fp) openFee(Number(fp.dataset.fee));
         });
         $('#exp-dlg form').addEventListener('submit', e => { e.preventDefault(); saveExpense(); });
+        $('#ct-dlg form').addEventListener('submit', e => { e.preventDefault(); saveContract(); });
+        $('#ct-ms-add').addEventListener('click', () => { readMs(); ct.ms.push({ title: '', due_date: '', months: null, stage_ids: [], done_on: '' }); renderMs(); });
+        $('#ct-ms').addEventListener('input', e => { if (e.target.name === 'months') ctMonths(e.target.closest('.ct-m')); });
+        $('#ct-dlg [name=start_date]').addEventListener('change', () => $$('#ct-ms .ct-m').forEach(ctMonths));
+        $('#ct-ms').addEventListener('click', e => { const b = e.target.closest('[data-ms-del]'); if (b) { readMs(); ct.ms.splice(Number(b.dataset.msDel), 1); renderMs(); } });
+        $('#ct-dlg [name=file_id]').addEventListener('change', ctFileLink);
+        $('#ct-pick').addEventListener('change', e => { ctUpload(e.target.files[0]); e.target.value = ''; });
         $('#exp-file').addEventListener('change', e => { expFile = e.target.files[0] || null; $('#exp-file-name').textContent = expFile ? '📎 ' + expFile.name : ''; });
         $('#exp-delete').addEventListener('click', deleteExpense);
         $('#fee-dlg form').addEventListener('submit', e => { e.preventDefault(); saveFee(); });
@@ -203,11 +212,12 @@ const Finance = (() => {
     const shortDateL = ymd => (ymd ? new Date(ymd + 'T12:00:00').toLocaleDateString(I18n.locale()) : '');
 
     function supplierRow(s, r) {
-        const flags = r.flags.map(f => FLAG[f](r)).map(x => `<span class="chip ${x.cls}">${esc(x.text)}</span>`).join('');
+        const flags = r.flags.map(f => FLAG[f](r)).map(x => `<span class="chip ${x.cls}">${esc(x.text)}</span>`).join('') + contractChip(r.contract);
         const act = [];
         if (r.flags.includes('uncovered') && !r.milestones && r.quote_id) act.push(`<button type="button" class="btn ghost sm" data-split="${s.stage_id}" data-supplier="${r.supplier_id}">✂️ ${esc(t('חלוקה לתשלומים'))}</button>`);
         else if (r.flags.includes('uncovered')) act.push(`<button type="button" class="btn ghost sm" data-milestone="${s.stage_id}" data-supplier="${r.supplier_id}">+ ${esc(t('אבן דרך'))}</button>`);
         if (s.stage_id) act.push(`<button type="button" class="btn ghost sm" data-co-new="${s.stage_id}" data-supplier="${r.supplier_id}">± ${esc(t('תוספת / חריגה'))}</button>`);
+        act.push(`<button type="button" class="btn ghost sm" data-contract="${r.supplier_id}">📄 ${esc(t(r.contract ? 'חוזה' : '+ חוזה'))}</button>`);
         act.push(`<button type="button" class="btn ghost sm" data-ledger="${r.supplier_id}">📒 ${esc(t('כרטסת'))}</button>`);
         const changes = (r.changes || []).filter(c => c.status !== 'cancelled').map(c => `<button type="button" class="chip co-${c.status}" data-co="${c.id}">${c.amount > 0 ? '+' : '−'}${esc(money(Math.abs(c.amount)))} · ${esc(t(STATUS[c.status]))}</button>`).join('');
         return `<li class="fin-row">
@@ -221,6 +231,16 @@ const Finance = (() => {
             ${act.length ? `<div class="row-btns wrap">${act.join('')}</div>` : ''}
         </li>`;
     }
+
+    /** החוזה בשורת הספק: עד מתי, איחור וקנס, אבני דרך באיחור. */
+    function contractChip(c) {
+        if (!c) return '';
+        if (c.completed_on) return `<span class="chip fin-ok">📄 ${esc(t('הסתיים {date}', { date: dateL(c.completed_on) }))}${c.penalty ? ' · ' + esc(t('קנס {amount}', { amount: money(c.penalty) })) : ''}</span>`;
+        if (c.delay_days > 0) return `<span class="chip fin-late">📄 ${esc(c.penalty ? t('איחור {n} ימים · קנס {amount}', { n: c.delay_days, amount: money(c.penalty) }) : t('איחור {n} ימים', { n: c.delay_days }))}</span>`;
+        const ms = c.late_milestones ? `<span class="chip fin-late">${esc(t('אבני דרך באיחור: {n}', { n: c.late_milestones }))}</span>` : '';
+        return (c.end_date ? `<span class="chip">📄 ${esc(t('סיום עד {date}', { date: dateL(c.end_date) }))}</span>` : '') + ms;
+    }
+    const dateL = ymd => (ymd ? new Date(ymd + 'T12:00:00').toLocaleDateString(I18n.locale()) : '');
 
     // i18n-ok-start — מתורגם בתצוגה
     const STATUS = { sent: 'ממתינה ללקוח', client_approved: 'הלקוח אישר — ממתינה לעו"ד', approved: 'אושרה', rejected: 'נדחתה', cancelled: 'בוטלה' };
@@ -423,6 +443,114 @@ const Finance = (() => {
         $('#ledger-body').innerHTML = total + (d.projects.map(P => `<section class="fin-stage">${d.totals ? `<h3 class="sec-title">${esc(P.name)}</h3>` : ''}${one(P)}</section>`).join('')
             || `<p class="muted">${esc(t('עוד אין לספק התחייבויות או תשלומים בפרויקטים שלך'))}</p>`);
         $('#ledger-dlg').showModal();
+    }
+
+    // ================= חוזה עם ספק — מועדים, אבני דרך וקנס =================
+
+    async function openContract(supplierId) {
+        let c;
+        try { ({ contract: c } = await api('contract', { params: { project_id: project.project.id, supplier_id: supplierId } })); } catch (e) { toast(e.message, true); return; }
+        const f = $('#ct-dlg form'), el = f.elements;
+        f.reset(); formError(f, '');
+        const name = data.stages.flatMap(s => s.rows).find(r => r.supplier_id === supplierId)?.name || '';
+        ct = { supplierId, ms: (c?.milestones || []).map(m => ({ title: m.title, due_date: m.due_date, months: m.months, stage_ids: m.stage_ids, done_on: m.done_on,
+            status: m.status, late: m.late_days, by_stage: m.by_stage, stages_done: m.stages_done })) };
+        $('#ct-dlg-title').textContent = t('חוזה — {name}', { name });
+        for (const k of ['signed_on', 'start_date', 'end_date', 'completed_on', 'notes']) el[k].value = c?.[k] || '';
+        el.penalty_per_day.value = c?.penalty_per_day || '';
+        el.grace_days.value = c?.grace_days ?? '';
+        el.max_deviation_days.value = c?.max_deviation_days ?? 30;
+        // תקציר: עד מתי, כמה נשאר / איחור, קנס
+        const sum = $('#ct-sum');
+        sum.hidden = !c || !c.end_date;
+        if (c && c.end_date) {
+            sum.innerHTML = c.completed_on ? `✅ ${esc(t('הסתיים ב-{date}', { date: dateL(c.completed_on) }))}${c.delay_days ? ' · ' + esc(t('באיחור של {n} ימים', { n: c.delay_days })) : ''}`
+                : c.delay_days > 0 ? `<b class="fin-late">${esc(t('איחור של {n} ימים מהמועד בחוזה', { n: c.delay_days }))}</b>`
+                : esc(t('נשארו {n} ימים עד מועד הסיום', { n: c.days_left }));
+            if (c.penalty) sum.innerHTML += `<br><b class="fin-late">${esc(t('קנס מצטבר: {amount} ({n} ימים × {per})', { amount: money(c.penalty), n: c.penalty_days, per: money(c.penalty_per_day) }))}</b>`;
+        }
+        renderMs();
+        await ctFiles(c?.file?.id || null);
+        $('#ct-dlg').showModal();
+    }
+
+    function renderMs() {
+        const ST = { done: '✅', done_late: '✅', late: '⚠️', breach: '⛔', soon: '⏰', ok: '' };
+        // אבן דרך = קבוצת שלבים (כמו בנספח "אבני דרך"): "סיום הריסה, קירות צד אחד ותשתיות אינסטלציה — עד 4 חודשים"
+        $('#ct-ms').innerHTML = ct.ms.map((m, i) => `<li class="ct-m" data-i="${i}">
+            <label class="f wide"><span>${ST[m.status] || ''} ${esc(t('אבן דרך'))}</span><input name="title" value="${esc(m.title)}" maxlength="200" placeholder="${esc(t('למשל: סיום הריסה, פינוי ותשתיות אינסטלציה'))}"></label>
+            <label class="f"><span>${esc(t('עד X חודשים מההתחלה'))}</span><input name="months" inputmode="numeric" dir="ltr" maxlength="3" value="${m.months ?? ''}"></label>
+            <label class="f"><span>${esc(t('או עד תאריך'))}</span><input name="due_date" type="date" value="${esc(m.due_date)}"></label>
+            <button type="button" class="icon-btn" data-ms-del="${i}" aria-label="${esc(t('הסרה'))}">✕</button>
+            <fieldset class="f wide ct-stages"><legend>${esc(t('השלבים שבה — הושגה כשכולם בוצעו'))}</legend>
+                <div class="chips">${project.stages.map(s => `<label><input type="checkbox" value="${s.id}"${(m.stage_ids || []).includes(s.id) ? ' checked' : ''}><span>${esc(t(s.name))}</span></label>`).join('')}</div></fieldset>
+            <label class="f"><span>${esc(t('הושגה ב (ידני)'))}</span><input name="done_on" type="date" value="${esc(m.done_on)}"></label>
+            ${m.late && m.status !== 'done' ? `<p class="hint ${m.status === 'done_late' ? '' : 'fin-late'}">${esc(t('{n} ימים אחרי המועד', { n: m.late }))}${m.by_stage ? ' · ' + esc(t('הושגה כשכל השלבים בוצעו')) : ''}</p>` : ''}
+            ${!m.done_on && m.stage_ids?.length && m.status && !['done', 'done_late'].includes(m.status) ? `<p class="hint">${esc(t('בוצעו {d} מתוך {n} שלבים', { d: m.stages_done || 0, n: m.stage_ids.length }))}</p>` : ''}
+        </li>`).join('') || `<li class="muted">${esc(t('עוד אין אבני דרך — למשל מהנספח "אבני דרך" בחוזה.'))}</li>`;
+        $$('#ct-ms .ct-m').forEach(ctMonths);
+    }
+
+    /** "עד X חודשים מההתחלה" — מחשב את התאריך (והשדה של התאריך ננעל). */
+    function ctMonths(li) {
+        const months = $('[name=months]', li).value.trim(), start = $('#ct-dlg [name=start_date]').value, due = $('[name=due_date]', li);
+        due.disabled = months !== '';
+        if (months !== '' && start) {
+            const d = new Date(start + 'T12:00:00');
+            d.setMonth(d.getMonth() + Number(months));
+            due.value = d.toISOString().slice(0, 10);
+        }
+    }
+
+    function readMs() {
+        $$('#ct-ms .ct-m').forEach(li => {
+            const m = ct.ms[Number(li.dataset.i)], q = n => $(`[name=${n}]`, li);
+            m.title = q('title').value; m.due_date = q('due_date').value; m.done_on = q('done_on').value;
+            m.months = q('months').value.trim() === '' ? null : Number(q('months').value);
+            m.stage_ids = $$('.ct-stages input:checked', li).map(x => Number(x.value));
+        });
+    }
+
+    async function ctFiles(value) {
+        const sel = $('#ct-dlg [name=file_id]');
+        let files = [];
+        try { ({ files } = await api('files', { params: { project_id: project.project.id } })); } catch { /* ריק */ }
+        const docs = files.filter(x => x.type === 'contract'), rest = files.filter(x => x.type !== 'contract');
+        const opt = x => ({ value: x.id, label: x.name });
+        sel.innerHTML = `<option value="">${esc(t('בלי מסמך'))}</option>`
+            + (docs.length ? `<optgroup label="${esc(t('חוזים'))}">${options(docs.map(opt), value)}</optgroup>` : '')
+            + (rest.length ? `<optgroup label="${esc(t('קבצים אחרים'))}">${options(rest.map(opt), value)}</optgroup>` : '');
+        ctFileLink();
+    }
+    function ctFileLink() {
+        const id = Number($('#ct-dlg [name=file_id]').value);
+        $('#ct-file-open').hidden = !id;
+        if (id) $('#ct-file-open').href = `api.php?action=file&id=${id}`;
+    }
+    async function ctUpload(file) {
+        if (!file) return;
+        const f = $('#ct-dlg form');
+        await busy(null, f, async () => {
+            const { folders } = await api('folders', { params: { project_id: project.project.id } });
+            const folder = folders.find(x => x.contact_id === ct.supplierId && x.parent_id === null) || folders.find(x => x.kind === 'inbox');
+            const saved = (await Files.send(file, project.project.id, folder.id, undefined, { quiet: true })).file;
+            await ctFiles(saved.id);
+        });
+    }
+
+    async function saveContract() {
+        readMs();
+        const f = $('#ct-dlg form'), el = f.elements;
+        if (ct.ms.some(m => m.title.trim() && !m.due_date && m.months === null)) { formError(f, t('לכל אבן דרך — מועד')); return; }
+        if (ct.ms.some(m => m.months !== null) && !el.start_date.value) { formError(f, t('"עד X חודשים" — צריך מועד התחלה')); return; }
+        const body = { project_id: project.project.id, supplier_id: ct.supplierId, file_id: Number(el.file_id.value) || null,
+            milestones: ct.ms.filter(m => m.title.trim()).map(m => ({ title: m.title.trim(), due_date: m.due_date, months: m.months, stage_ids: m.stage_ids, done_on: m.done_on })) };
+        for (const k of ['signed_on', 'start_date', 'end_date', 'completed_on', 'notes', 'penalty_per_day', 'grace_days', 'max_deviation_days']) body[k] = el[k].value.trim();
+        await busy($('button[type=submit]', f), f, async () => {
+            take(await api('contract', { body }));
+            $('#ct-dlg').close();
+            toast(t('נשמר'));
+        });
     }
 
     // ================= דוח כספי (כ5) =================

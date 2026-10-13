@@ -216,6 +216,9 @@ try {
         'POST fee-payment-receive' => pm_fee_payment_receive($user, $in),
         'POST fee-payment-delete'  => pm_fee_payment_delete($user, (int)($in['id'] ?? 0)),
         'GET ledger'          => pm_ledger($user, $in),
+        // חוזה עם ספק: מועדים, אבני דרך וקנס איחור (lib/contracts.php)
+        'GET contract'        => pm_contract($user, (int)($in['project_id'] ?? 0), (int)($in['supplier_id'] ?? 0)),
+        'POST contract'       => pm_contract_save($user, $in),
         // שותף מנהל — צירוף / הסרה (lib/projects.php)
         'POST project-partner' => pm_partner_save($user, $in),
         'GET payments'        => pm_payments($user, (int)($in['project_id'] ?? 0)),

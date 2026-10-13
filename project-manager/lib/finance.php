@@ -19,6 +19,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/payments.php';
 require_once __DIR__ . '/changes.php';
 require_once __DIR__ . '/expenses.php';
+require_once __DIR__ . '/contracts.php';
 
 const PM_FEE_TYPES = ['', 'percent', 'fixed'];
 const PM_DUE_KINDS = ['date', 'stage_done', 'progress'];
@@ -198,6 +199,7 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
         }
     }
 
+    $contracts = pm_contracts_of($projectId);
     // שלבים
     $T = [];
     $outStages = [];
@@ -238,6 +240,9 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
                 'balance' => pm_m($balance, pm_net($balance, $rate)), 'gap' => pm_m($gap, pm_net($gap, $rate)),
                 'paid_pct' => $paidPct, 'progress' => $progress, 'flags' => $portal ? array_values(array_intersect($flags, ['overpaid'])) : $flags,
                 'changes' => $r['changes'] ?? [], 'index' => pm_m($acc['index'][0] ?? 0, $acc['index'][1] ?? 0),
+                // החוזה עם הספק (מועדים, אבני דרך, קנס) — תקציר לשורה
+                'contract' => isset($contracts[$cid]) ? array_intersect_key($contracts[$cid], array_flip(['id', 'end_date', 'completed_on', 'delay_days', 'penalty', 'days_left', 'worst_deviation', 'max_deviation_days']))
+                    + ['late_milestones' => count(array_filter($contracts[$cid]['milestones'], fn($m) => in_array($m['status'], ['late', 'breach'], true)))] : null,
             ];
         }
         $committedStage = $S['committed'][0] ?? 0;
@@ -525,6 +530,8 @@ function pm_fin_alerts(int $projectId, array $cfg, ?string $lang = null, string 
                 ['title' => $r['title'], 'supplier' => $r['supplier'], 'n' => $days], substr((string)$r['got'], 0, 10), (int)$r['id']);
         }
     }
+    // ---- החוזים: אבני דרך, הפרה יסודית, איחור בסיום וקנס ----
+    if ($mgr) pm_contract_alerts($projectId, $add, $lang);
     // ---- שכר הטרחה שלי: אבן דרך שעבר מועדה ולא סומנה "התקבל" ----
     if ($mgr) {
         $fp = $db->prepare("SELECT * FROM fee_payments WHERE project_id = ? AND received_on IS NULL AND due_date != '' AND due_date <= ?");
