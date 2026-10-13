@@ -29,6 +29,7 @@ const Contacts = (() => {
         });
         $('#form').addEventListener('submit', e => { e.preventDefault(); save(); });
         $('#archive').addEventListener('click', toggleArchive);
+        $('#contact-ledger').addEventListener('click', () => Finance.ledger(null, editing.id)); // כ5 — כל הפרויקטים
         langField();
         $('#stars').addEventListener('click', e => {
             const b = e.target.closest('button');
@@ -143,6 +144,7 @@ const Contacts = (() => {
             renderStars();
         }
         if (kk === 'client') await fillClientSettings(c);
+        $('#contact-ledger').hidden = !(c && kk === 'supplier');
         const arch = $('#archive');
         arch.hidden = !c;
         if (c) {

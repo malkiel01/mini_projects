@@ -392,6 +392,40 @@ function pm_portal_proof(array $a, array $q): array
     return pm_portal_view($a);
 }
 
+/**
+ * הלקוח רושם הוצאה ישירה — קנייה שלו (חומרים, אגרות). הפרטים בכתובת: title, amount, spent_on, vat,
+ * stage_id, notes, name; צילום הקבלה (לא חובה) — בגוף הבקשה.
+ */
+function pm_portal_expense(array $a, array $q): array
+{
+    if ($a['link']['role'] !== 'client') throw new PmError('רק הלקוח רושם הוצאות', 403);
+    $pid = (int)$a['project']['id'];
+    pm_expense_fields($pid, $q); // בדיקה לפני שמירת הקובץ
+    $lang = $a['owner']['lang'];
+    $fileId = null;
+    $len = (int)($_SERVER['CONTENT_LENGTH'] ?? 0);
+    if ($len > 0) {
+        if ($len > PM_PROOF_MAX) throw new PmError('הקובץ גדול מדי — עד 8MB', 413);
+        $tmp = pm_tmp_dir() . '/exp_' . bin2hex(random_bytes(8));
+        $in = fopen('php://input', 'rb');
+        $out = fopen($tmp, 'wb');
+        $n = stream_copy_to_stream($in, $out, PM_PROOF_MAX + 1);
+        fclose($in); fclose($out);
+        if ($n <= 0 || $n > PM_PROOF_MAX) { @unlink($tmp); throw new PmError('הקובץ לא הגיע — נסו שוב', 422); }
+        $mime = pm_detect_mime($tmp, '');
+        if (!preg_match('#^(image/(jpeg|png|webp|heic|heif)|application/pdf)$#', $mime)) { @unlink($tmp); throw new PmError('קבלה — תמונה או PDF', 415); }
+        $name = trim((string)($q['name'] ?? '')) ?: pm_t('קבלה', [], $lang) . '.' . ($mime === 'application/pdf' ? 'pdf' : 'jpg');
+        $fileId = pm_file_store($pid, 'client', pm_t('קבלה — {title} — {name}', ['title' => (string)($q['title'] ?? ''), 'name' => $name], $lang), $tmp, 'invoice', 0,
+            pm_t('הועלה בקישור האישי של {name}', ['name' => $a['contact']['name']], $lang));
+        pm_db()->prepare('UPDATE files SET visible = 1 WHERE id = ?')->execute([$fileId]);
+    }
+    $id = pm_expense_add_portal(['project_id' => $pid, 'role' => 'client', 'name' => $a['contact']['name'], 'actor' => $a['actor']], $q, $fileId);
+    $v = ['who' => $a['actor']['display_name'], 'title' => (string)$q['title'], 'amount' => pm_money(pm_quote_amount($q['amount']))];
+    pm_portal_mail($a, pm_t('{who} רשם הוצאה: {title}', $v, $lang), pm_t('{who} רשם הוצאה ישירה: {title} — {amount}.', $v, $lang));
+    pm_log('info', 'portal', 'portal.expense', ['data' => ['link' => (int)$a['link']['id'], 'expense' => $id, 'file' => $fileId]]);
+    return pm_portal_view($a);
+}
+
 function pm_portal_mail(array $a, string $subject, string $body, string $pane = 'payments'): void
 {
     $to = pm_user_email($a['owner']);
@@ -468,6 +502,8 @@ function pm_portal_supplier_view(array $a): array
         'stages' => $stages, 'my_quotes' => $quotes, 'payments' => $payments, 'files' => $files,
         // כ4: תוספות שאושרו לו, וחשבוניות שחסרות על תשלומים שהתקבלו
         'changes' => array_values(array_filter(pm_changes_of($pid), fn($x) => $x['supplier_id'] === $sid && $x['status'] === 'approved')),
+        // כ5: הכרטסת שלו בפרויקט — הצעה, תוספות, תשלומים וחשבוניות, עם יתרה
+        'ledger' => pm_ledger_of($pid, $sid),
         'bank' => pm_supplier_bank($sid)['bank'], 'quotes' => [], 'reports' => [],
         'labels' => ['stage' => pm_t_map(PM_STAGE_STATUSES), 'file' => pm_t_map(PM_FILE_TYPES), 'method' => pm_t_map(PM_PAY_METHODS)],
         'max_proof' => PM_PROOF_MAX,

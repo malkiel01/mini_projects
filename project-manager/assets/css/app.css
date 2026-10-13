@@ -683,7 +683,7 @@ body.auth { display: grid; place-items: start center; padding: max(8vh, var(--s4
 :root { --cf-plan: #4a6cc0; --cf-paid: #d97706; }
 @media (prefers-color-scheme: dark) { :root { --cf-plan: #6c8ee0; --cf-paid: #c27a14; } }
 #view-finance > section, #view-finance > .fin-kpis { margin-block-end: var(--s3); }
-#fa-kpis .kpi-late dd { color: var(--danger); }
+#fa-kpis .kpi-late dd, .fa-income .kpi-late dd { color: var(--danger); }
 #fa-filters .btn { margin-inline-start: auto; }
 .cf-chart { position: relative; inline-size: 100%; }
 .cf-chart svg { display: block; inline-size: 100%; block-size: auto; overflow: visible; }
@@ -709,6 +709,24 @@ body.auth { display: grid; place-items: start center; padding: max(8vh, var(--s4
 .fa-proj .l1 { display: flex; align-items: center; gap: var(--s2); }
 .fa-proj .l1 .one { flex: 1; min-width: 0; font-weight: 600; }
 .fin-bar.sm { block-size: 8px; }
-#fa-upcoming .body { text-decoration: none; color: inherit; }
+#fa-upcoming .body, #fa-invoices .body, #fa-income .body { text-decoration: none; color: inherit; }
 #fa-filters { flex-wrap: wrap; overflow: visible; }
 #fa-filters select { flex: 1 1 140px; max-width: none; }
+/* אגף הכספים, כ5: הוצאות ישירות, שכר טרחה, כרטסת */
+.fin-item { cursor: pointer; }
+.fin-item:hover, .fin-item:focus-visible { border-color: var(--accent); }
+.fin-item-l2 { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s2); font-size: .85rem; }
+.fin-item-l2 .mv { justify-items: end; }
+#fin-expenses .q-head .q-sum, #fin-fee .q-head .q-sum { flex: none; overflow: visible; }
+.fin-stage > .row-btns { margin-block-start: var(--s2); }
+.fin-head .row-btns { gap: 6px; }
+.ledger { list-style: none; padding: 0; margin: var(--s2) 0 0; display: grid; gap: 2px; font-size: .85rem; }
+.ledger li { display: grid; grid-template-columns: auto 1fr auto; grid-template-areas: "at text d" "at text b"; gap: 0 var(--s2);
+    padding: 6px var(--s2); border-block-end: 1px solid var(--line); }
+.ledger .lg-at { grid-area: at; color: var(--muted); font-size: .75rem; white-space: nowrap; }
+.ledger .lg-text { grid-area: text; min-width: 0; }
+.ledger .lg-d { grid-area: d; text-align: end; font-weight: 600; white-space: nowrap; }
+.ledger .lg-b { grid-area: b; text-align: end; color: var(--muted); font-size: .75rem; white-space: nowrap; }
+.ledger .lg-paid .lg-d { color: var(--ok); }
+.ledger .lg-milestone, .ledger .lg-invoice { color: var(--muted); }
+.fa-income .fin-cells { margin-block-end: var(--s2); }
