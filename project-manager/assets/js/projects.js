@@ -35,11 +35,20 @@ const Projects = (() => {
         // שלבים, צוות, פרטים
         $('#add-stage').addEventListener('click', () => openStage(null));
         $('#edit-stages').addEventListener('click', () => { stEdit = !stEdit; renderStages(); });
+        $('#unit-bar').addEventListener('click', e => {
+            const b = e.target.closest('[data-unit-f]');
+            if (b) setUnitFilter(b.dataset.unitF);
+            if (e.target.closest('[data-unit-new]')) openUnit(null);
+        });
+        $('#add-unit').addEventListener('click', () => openUnit(null));
+        $('#units-list').addEventListener('click', e => { const r = e.target.closest('[data-unit]'); if (r) openUnit(Number(r.dataset.unit)); });
+        $('#unit-dlg form').addEventListener('submit', e => { e.preventDefault(); saveUnit(); });
+        $('#unit-delete').addEventListener('click', deleteUnit);
         $('#stage-list').addEventListener('click', e => {
             const b = e.target.closest('[data-st-up],[data-st-down],[data-st-del],[data-st-add]');
             if (b) {
                 e.stopPropagation();
-                if (b.dataset.stAdd !== undefined) openStage(null, Number(b.dataset.stAdd));
+                if (b.dataset.stAdd !== undefined) openStage(null, Number(b.dataset.stAdd), b.dataset.unit === '' ? null : Number(b.dataset.unit));
                 else if (b.dataset.stDel) deleteStage(Number(b.dataset.stDel));
                 else moveStage(b.dataset.stUp ? -1 : 1, Number(b.dataset.stUp || b.dataset.stDown));
                 return;
@@ -118,6 +127,7 @@ const Projects = (() => {
         }
         $('#project-list').innerHTML = list.map(p => {
             const meta = [
+                p.units > 1 ? esc(t('🏢 {n} יחידות', { n: p.units })) : '',
                 p.client_name ? esc(p.client_name) : '',
                 p.current_stage ? `${esc(t(p.current_stage.name))}: ${esc(state.labels.stage[p.current_stage.status] || '')}` : (p.stages_total ? esc(t('כל השלבים בוצעו')) : ''),
                 p.stages_total ? `${p.stages_done}/${p.stages_total}` : '',
@@ -239,7 +249,7 @@ const Projects = (() => {
         if (pane === 'field') Field.show(cur);
         if (pane === 'payments') Payments.show(cur);
         if (pane === 'team') renderTeam();
-        if (pane === 'details') renderDetails();
+        if (pane === 'details') { renderDetails(); renderUnits(); }
     }
 
     /** תשובת שרת שמחזירה את הפרויקט המעודכן. */
@@ -354,8 +364,25 @@ const Projects = (() => {
         $('#edit-stages').setAttribute('aria-pressed', String(ed));
         $('#edit-stages').classList.toggle('on', ed);
         $('#pane-stages').classList.toggle('st-editing', ed);
-        const addHere = after => ed ? `<li class="st-add"><button class="btn ghost small" data-st-add="${after}">${esc(t('+ שלב כאן'))}</button></li>` : '';
-        $('#stage-list').innerHTML = s.length ? addHere(0) + s.map((x, i) => {
+        const units = cur.units || [];
+        const f = unitFilter();
+        $('#unit-bar').hidden = !units.length;
+        $('#unit-bar').innerHTML = units.length ? [['all', t('הכול')], ...units.map(u => [String(u.id), u.name]), ['shared', t('משותף')]]
+            .map(([k, label]) => `<button type="button" class="chip${f === k ? ' on' : ''}" data-unit-f="${esc(k)}" aria-pressed="${f === k}">${esc(label)}</button>`).join('')
+            + `<button type="button" class="chip add" data-unit-new aria-label="${esc(t('+ יחידה'))}">+ 🏢</button>` : '';
+        // קבוצות: משותף, ואז כל יחידה (כמו הסדר בשרת). בלי יחידות — קבוצה אחת בלי כותרת.
+        const groups = units.length
+            ? [{ unit: null, label: t('משותף לכל המתחם'), list: s.filter(x => !x.unit_id) }, ...units.map(u => ({ unit: u.id, label: '🏢 ' + u.name, list: s.filter(x => x.unit_id === u.id) }))]
+                .filter(g => f === 'all' || (f === 'shared' ? g.unit === null : g.unit === null || g.unit === Number(f)))
+                .filter(g => g.list.length || g.unit !== null)
+            : [{ unit: null, label: '', list: s }];
+        const addHere = (after, unit) => ed ? `<li class="st-add"><button class="btn ghost small" data-st-add="${after}" data-unit="${unit ?? ''}">${esc(t('+ שלב כאן'))}</button></li>` : '';
+        let n = 0;
+        $('#stage-list').innerHTML = s.length || units.length ? groups.map(g => {
+            const head = g.label ? `<li class="st-group"><h3>${esc(g.label)}</h3>${!g.list.length ? `<small class="muted">${esc(t('אין עדיין שלבים ביחידה הזו'))}</small>` : ''}</li>` : '';
+            const prev = s.indexOf(g.list[0]) > 0 ? s[s.indexOf(g.list[0]) - 1].id : (g.list.length ? 0 : (s.filter(x => groupOf(x) <= groupIdx(g.unit)).at(-1)?.id || 0));
+            return head + addHere(prev, g.unit) + g.list.map((x, i) => {
+            n++;
             const l2 = [
                 x.trade_name ? esc(t(x.trade_name)) : '',
                 x.supplier_name ? esc(x.supplier_name) : `<span class="muted">${esc(t('אין ספק'))}</span>`,
@@ -367,15 +394,98 @@ const Projects = (() => {
             const name = esc(t(x.name));
             const acts = ed ? `<div class="acts st-acts">
                 <button class="icon-btn" data-st-up="${x.id}" ${i ? '' : 'disabled'} aria-label="${esc(t('להזיז למעלה: {name}', { name: t(x.name) }))}">↑</button>
-                <button class="icon-btn" data-st-down="${x.id}" ${i < s.length - 1 ? '' : 'disabled'} aria-label="${esc(t('להזיז למטה: {name}', { name: t(x.name) }))}">↓</button>
+                <button class="icon-btn" data-st-down="${x.id}" ${i < g.list.length - 1 ? '' : 'disabled'} aria-label="${esc(t('להזיז למטה: {name}', { name: t(x.name) }))}">↓</button>
                 <button class="icon-btn danger" data-st-del="${x.id}" ${x.used && !Dev.on() ? `title="${esc(t('השלב לא ריק — אי אפשר למחוק'))}" disabled` : ''} aria-label="${esc(t('מחיקת השלב {name}', { name: t(x.name) }))}">🗑</button>
             </div>` : stageChip(x.status);
-            return `<li class="card" data-stage="${x.id}" tabindex="0" role="button" aria-label="${name}, ${esc(state.labels.stage[x.status])}">
-                <span class="num st-${esc(x.status)}" aria-hidden="true">${i + 1}</span>
+            return `<li class="card" data-stage="${x.id}" tabindex="0" role="button" aria-label="${esc(stageName(x))}, ${esc(state.labels.stage[x.status])}">
+                <span class="num st-${esc(x.status)}" aria-hidden="true">${n}</span>
                 <div class="body"><div class="l1">${name}</div><div class="l2">${l2}</div>${miss.length ? `<div class="l2 st-miss">${esc(t('חסר: {list}', { list: miss.join(t(', ')) }))}</div>` : ''}</div>
                 ${acts}
-            </li>` + addHere(x.id);
+            </li>` + addHere(x.id, g.unit);
+            }).join('');
         }).join('') : `<p class="empty">${esc(t('אין שלבים. לחץ "+ שלב" כדי להוסיף.'))}</p>`;
+    }
+
+    // ---- מתחם: יחידות ----
+
+    /** הסינון לפי יחידה — לכל פרויקט, ללשונית הנוכחית: all · shared · מזהה יחידה. */
+    function unitFilter() {
+        let f = 'all';
+        try { f = sessionStorage.getItem('pm.unit.' + cur.project.id) || 'all'; } catch { /* מצב פרטי */ }
+        return f === 'all' || f === 'shared' || (cur.units || []).some(u => String(u.id) === f) ? f : 'all';
+    }
+    function setUnitFilter(f) {
+        try { sessionStorage.setItem('pm.unit.' + cur.project.id, f); } catch { /* מצב פרטי */ }
+        renderStages();
+    }
+    /** מספר הקבוצה של שלב בסדר התצוגה (0 — משותף). */
+    const groupIdx = unit => unit === null ? 0 : 1 + (cur.units || []).findIndex(u => u.id === unit);
+    const groupOf = x => groupIdx(x.unit_id ?? null);
+
+    let unitId = null;
+
+    function openUnit(id) {
+        const dlg = $('#unit-dlg'), form = $('form', dlg), el = form.elements;
+        form.reset(); formError(form, '');
+        unitId = id;
+        const units = cur.units || [];
+        const u = id ? units.find(x => x.id === id) : null;
+        $('#unit-dlg-title').textContent = u ? u.name : t('יחידה חדשה במתחם');
+        el.name.value = u ? u.name : (units.length ? t('דירה {n}', { n: units.length + 1 }) : t('דירה 1'));
+        el.area.value = u?.area ?? '';
+        el.budget.value = u?.budget || '';
+        el.notes.value = u?.notes || '';
+        const shared = cur.stages.filter(x => !x.unit_id).length;
+        el.copy_from.innerHTML = options([
+            { value: '', label: t('בלי שלבים — אוסיף בעצמי') },
+            ...(shared ? [{ value: 'shared', label: t('כמו השלבים המשותפים ({n})', { n: shared }) }] : []),
+            ...units.filter(x => x.stages).map(x => ({ value: x.id, label: t('כמו {name} ({n} שלבים)', { name: x.name, n: x.stages }) })),
+        ], units.find(x => x.stages)?.id || '');
+        $('#unit-copy-box').hidden = !!u;
+        // היחידה הראשונה בפרויקט שכבר יש בו שלבים: להעביר אותם אליה, או להשאיר משותפים
+        $('#unit-move-box').hidden = !!u || units.length > 0 || !shared;
+        el.move_shared.checked = false;
+        el.move_shared.onchange = () => { el.copy_from.disabled = el.move_shared.checked; };
+        el.copy_from.disabled = false;
+        $('#unit-delete').hidden = !u;
+        dlg.showModal();
+        if (!u) el.name.select();
+    }
+
+    async function saveUnit() {
+        const form = $('#unit-dlg form'), el = form.elements;
+        const body = { id: unitId || undefined, project_id: cur.project.id, name: el.name.value.trim(), area: el.area.value.trim(),
+            budget: el.budget.value.trim(), notes: el.notes.value.trim(), copy_from: unitId ? undefined : el.copy_from.value, move_shared: !unitId && el.move_shared.checked };
+        if (!body.name) { formError(form, t('שם היחידה: שדה חובה')); return; }
+        await busy($('button[type=submit]', form), form, async () => {
+            const d = await api('unit', { body });
+            $('#unit-dlg').close();
+            cur = d;
+            if (!unitId) try { sessionStorage.setItem('pm.unit.' + cur.project.id, String(d.saved_unit)); } catch { /* מצב פרטי */ }
+            render();
+            toast(unitId ? t('נשמר') : t('נוספה יחידה: {name}', { name: body.name }));
+        });
+    }
+
+    async function deleteUnit() {
+        const u = (cur.units || []).find(x => x.id === unitId);
+        if (!u || !confirm(t('למחוק את "{name}"? השלבים הריקים שלה יימחקו איתה.', { name: u.name }))) return;
+        await busy(null, $('#unit-dlg form'), async () => {
+            update(await api('unit-delete', { body: { id: u.id } }));
+            $('#unit-dlg').close();
+            toast(t('היחידה נמחקה'));
+        });
+    }
+
+    /** "פרטים": היחידות במתחם — רשימה, עריכה ו"+ יחידה". */
+    function renderUnits() {
+        const units = cur.units || [];
+        $('#units-list').innerHTML = units.map(u => `<li class="card" data-unit="${u.id}" tabindex="0" role="button">
+            <span class="num" aria-hidden="true">🏢</span>
+            <div class="body"><div class="l1">${esc(u.name)}</div><div class="l2">${[
+                t('{n} שלבים', { n: u.stages }), u.area ? t('{n} מ"ר', { n: u.area }) : '', u.budget ? money(u.budget) : '',
+            ].filter(Boolean).map(esc).join('<i class="sep" aria-hidden="true">·</i>')}</div></div></li>`).join('');
+        $('#units-hint').hidden = units.length > 0;
     }
 
     let stEdit = false;
@@ -393,18 +503,24 @@ const Projects = (() => {
 
     let stageId = null, stageAfter = null;
 
-    async function openStage(id, after = null) {
+    async function openStage(id, after = null, unit = undefined) {
         stageAfter = id ? null : after;
         const dlg = $('#stage-dlg');
         const form = $('form', dlg);
         formError(form, '');
         stageId = id;
         const s = id ? cur.stages.find(x => x.id === id) : { status: 'planned' };
-        $('#stage-dlg-title').textContent = id ? t(s.name) : t('שלב חדש');
+        $('#stage-dlg-title').textContent = id ? stageName(s) : t('שלב חדש');
         const el = form.elements;
         el.name.value = s.name ? t(s.name) : ''; // שם שנזרע — מוצג מתורגם, ונשלח כמו שהוא אם לא שונה
         el.trade_id.innerHTML = options(state.trades.map(tr => ({ value: tr.id, label: t(tr.name) })), s.trade_id, t('ללא'));
         el.status.innerHTML = options(Object.entries(state.labels.stage).map(([value, label]) => ({ value, label })), s.status);
+        // מתחם: לאיזו יחידה השלב שייך (חדש — לפי "+ שלב כאן" או הסינון)
+        const units = cur.units || [];
+        $('#stage-unit-box').hidden = !units.length;
+        const f = units.length ? unitFilter() : 'all';
+        const defUnit = id ? s.unit_id : unit !== undefined ? unit : (f !== 'all' && f !== 'shared' ? Number(f) : null);
+        el.unit_id.innerHTML = options([{ value: '', label: t('משותף לכל המתחם') }, ...units.map(u => ({ value: u.id, label: u.name }))], defUnit ?? '');
         el.plan_start.value = s.plan_start || '';
         el.plan_end.value = s.plan_end || '';
         el.needs_lawyer.checked = !!s.needs_lawyer;
@@ -453,6 +569,7 @@ const Projects = (() => {
             status: el.status.value, needs_lawyer: el.needs_lawyer.checked,
             plan_start: el.plan_start.value, plan_end: el.plan_end.value,
             progress: Number(el.progress.value) || 0, budget: el.budget.value.trim(),
+            ...((cur.units || []).length ? { unit_id: Number(el.unit_id.value) || null } : {}),
         };
         if (!body.name) { formError(form, t('שם השלב: שדה חובה')); return; }
         // "בוצע" — דרך דיווח מהשטח עם תמונה: שומרים את השאר, ועוברים לדיווח
@@ -478,6 +595,7 @@ const Projects = (() => {
         const ids = cur.stages.map(s => s.id);
         const i = ids.indexOf(id), j = i + dir;
         if (i < 0 || j < 0 || j >= ids.length) return;
+        if (groupOf(cur.stages[i]) !== groupOf(cur.stages[j])) return; // רק בתוך אותה יחידה
         [ids[i], ids[j]] = [ids[j], ids[i]];
         const dlg = $('#stage-dlg').open;
         await busy(null, dlg ? $('#stage-dlg form') : null, async () => {

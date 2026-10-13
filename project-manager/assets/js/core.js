@@ -48,6 +48,9 @@ const state = {
 
 const isDev = () => state.user?.role === 'developer';
 
+/** שם השלב, עם היחידה במתחם: "חשמל · דירה א'". */
+const stageName = s => t(s.name) + (s.unit_name ? ' · ' + s.unit_name : '');
+
 /** מי בפרויקט (הבעלים והשותפים המנהלים) — אנשי הקשר של כולם נבחרים בו. d — התשובה של api('project'). */
 const teamOf = d => (d?.partners?.length ? d.partners.map(u => u.id) : [d?.project?.owner_id ?? state.user?.id]);
 

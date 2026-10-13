@@ -115,7 +115,7 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
     $today = pm_today();
     $vat = pm_vat_rate();
 
-    $st = $db->prepare('SELECT * FROM stages WHERE project_id = ? ORDER BY sort, id');
+    $st = $db->prepare('SELECT s.*, u.name AS unit_name FROM stages s LEFT JOIN units u ON u.id = s.unit_id WHERE s.project_id = ? ORDER BY s.sort, s.id');
     $st->execute([$projectId]);
     $stages = [];
     foreach ($st->fetchAll() as $s) $stages[(int)$s['id']] = $s;
@@ -254,7 +254,7 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
         foreach ($S as $k => [$g, $n]) { $T[$k][0] = ($T[$k][0] ?? 0) + $g; $T[$k][1] = ($T[$k][1] ?? 0) + $n; }
         if (!$outRows && !$budgetStage) continue;
         $outStages[] = [
-            'stage_id' => $s ? (int)$s['id'] : null, 'name' => $s['name'] ?? '', 'status' => $s['status'] ?? '',
+            'stage_id' => $s ? (int)$s['id'] : null, 'name' => $s['name'] ?? '', 'status' => $s['status'] ?? '', 'unit_name' => $s['unit_name'] ?? null,
             'progress' => $s ? pm_stage_progress($s) : 0, 'budget' => pm_m($budgetStage, pm_net($budgetStage, $vat)),
             'over_budget' => $budgetStage > 0 && $committedStage > $budgetStage,
             'rows' => $outRows,

@@ -172,7 +172,7 @@ const Finance = (() => {
         const html = data.stages.map(s => {
             const rows = s.rows.map(r => supplierRow(s, r)).join('');
             const head = s.stage_id
-                ? `<h3 class="one">${esc(t(s.name))}</h3>${stageChip(s.status)}`
+                ? `<h3 class="one">${esc(stageName(s))}</h3>${stageChip(s.status)}`
                 : `<h3 class="one">${esc(t('בלי שלב'))}</h3>`;
             const budget = s.budget.g ? `<p class="fin-stage-budget">${esc(t('תקציב לשלב {amount}', { amount: money(s.budget.g) }))}${s.over_budget ? ` · <span class="fin-late">${esc(t('ההתחייבות מעל תקציב השלב'))}</span>` : ''}</p>` : '';
             return `<section class="fin-stage"><header class="q-head">${head}</header>
@@ -255,7 +255,7 @@ const Finance = (() => {
         co = { new: true, stageId, supplierId };
         coFile = null; $('#co-file-name').textContent = '';
         $('#co-dlg-title').textContent = t('תוספת / חריגה');
-        $('#co-for').textContent = t('{supplier} · {stage}', { supplier: r.name, stage: t(s.name) });
+        $('#co-for').textContent = t('{supplier} · {stage}', { supplier: r.name, stage: stageName(s) });
         $('#co-new').hidden = false; $('#co-view').hidden = true; $('#co-send').hidden = false;
         Dev.attach($('#co-dlg'), 'change', null);
         $('#co-dlg').showModal();
@@ -346,7 +346,7 @@ const Finance = (() => {
         el.spent_on.value = x?.spent_on || new Date().toISOString().slice(0, 10);
         el.notes.value = x?.notes || '';
         el.vat.checked = x ? x.vat_rate > 0 : true;
-        el.stage_id.innerHTML = options(project.stages.map(s => ({ value: s.id, label: t(s.name) })), x?.stage_id || '', t('בלי שלב'));
+        el.stage_id.innerHTML = options(project.stages.map(s => ({ value: s.id, label: stageName(s) })), x?.stage_id || '', t('בלי שלב'));
         $('#exp-delete').hidden = !x;
         Dev.attach($('#exp-dlg'), 'expense', x?.id);
         $('#exp-dlg').showModal();
@@ -488,7 +488,7 @@ const Finance = (() => {
             <label class="f"><span>${esc(t('או עד תאריך'))}</span><input name="due_date" type="date" value="${esc(m.due_date)}"></label>
             <button type="button" class="icon-btn" data-ms-del="${i}" aria-label="${esc(t('הסרה'))}">✕</button>
             <fieldset class="f wide ct-stages"><legend>${esc(t('השלבים שבה — הושגה כשכולם בוצעו'))}</legend>
-                <div class="chips">${project.stages.map(s => `<label><input type="checkbox" value="${s.id}"${(m.stage_ids || []).includes(s.id) ? ' checked' : ''}><span>${esc(t(s.name))}</span></label>`).join('')}</div></fieldset>
+                <div class="chips">${project.stages.map(s => `<label><input type="checkbox" value="${s.id}"${(m.stage_ids || []).includes(s.id) ? ' checked' : ''}><span>${esc(stageName(s))}</span></label>`).join('')}</div></fieldset>
             <label class="f"><span>${esc(t('הושגה ב (ידני)'))}</span><input name="done_on" type="date" value="${esc(m.done_on)}"></label>
             ${m.late && m.status !== 'done' ? `<p class="hint ${m.status === 'done_late' ? '' : 'fin-late'}">${esc(t('{n} ימים אחרי המועד', { n: m.late }))}${m.by_stage ? ' · ' + esc(t('הושגה כשכל השלבים בוצעו')) : ''}</p>` : ''}
             ${!m.done_on && m.stage_ids?.length && m.status && !['done', 'done_late'].includes(m.status) ? `<p class="hint">${esc(t('בוצעו {d} מתוך {n} שלבים', { d: m.stages_done || 0, n: m.stage_ids.length }))}</p>` : ''}
@@ -641,7 +641,7 @@ const Finance = (() => {
         const s = data.stages.find(x => x.stage_id === stageId);
         const r = s.rows.find(x => x.supplier_id === supplierId);
         split = { stageId, amount: r.committed.g, rate: r.vat_rate, rows: presets()[0].rows.map(x => ({ ...x })) };
-        $('#split-dlg-title').textContent = t('חלוקה לתשלומים — {stage}', { stage: t(s.name) });
+        $('#split-dlg-title').textContent = t('חלוקה לתשלומים — {stage}', { stage: stageName(s) });
         $('#split-quote').textContent = t('ההצעה שאושרה: {name} — {amount}', { name: r.name, amount: money(r.committed.g) });
         $('#split-presets').innerHTML = presets().map((p, i) => `<button type="button" class="chip" data-preset="${i}">${esc(p.label)}</button>`).join('');
         formError($('#split-dlg form'), '');

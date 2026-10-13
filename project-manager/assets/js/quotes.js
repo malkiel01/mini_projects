@@ -102,14 +102,14 @@ const Quotes = (() => {
             const rank = q => q.status === 'approved' ? 0 : q.status === 'client_approved' ? 1 : q.recommended ? 2 : LIVE.includes(q.status) ? 3 : q.status === 'cancelled' ? 5 : 4;
             list.sort((a, b) => rank(a) - rank(b) || a.amount - b.amount);
             const canSend = list.some(q => q.status === 'open' || q.status === 'sent');
-            return `<section class="q-stage" aria-label="${esc(t(st.name))}">
-                <header class="q-head"><h2 class="one">${esc(t(st.name))}</h2>${stageChip(st.status)}
+            return `<section class="q-stage" aria-label="${esc(stageName(st))}">
+                <header class="q-head"><h2 class="one">${esc(stageName(st))}</h2>${stageChip(st.status)}
                     ${canSend ? `<button class="btn ghost sm" data-send="${st.id}" aria-label="${esc(t('שליחת ההצעות של {stage} ללקוח', { stage: st.name }))}">📤 ${esc(t('ללקוח'))}</button>` : ''}</header>
                 <ul class="list rows-list">${list.map(q => row(q, low)).join('')}</ul>
             </section>`;
         }).join('');
         const without = project.stages.filter(st => !byStage.has(st.id) && !['done', 'paid'].includes(st.status));
-        const names = without.map(s => t(s.name)).join(', ');
+        const names = without.map(s => stageName(s)).join(', ');
         $('#quote-list').innerHTML = (html || `<p class="empty">${esc(t('עוד אין הצעות מחיר. "+ הצעה", או מחלון של קובץ: "🧾 הצעת מחיר מהקובץ".'))}</p>`)
             + (html && without.length ? `<p class="hint q-without one" title="${esc(names)}">${esc(t('בלי הצעות ({n}): {names}', { n: without.length, names }))}</p>` : '');
     }
@@ -150,7 +150,7 @@ const Quotes = (() => {
         current = id ? data.quotes.find(q => q.id === id) : null;
         const q = current || { stage_id: preset.stage_id || stageGuess(), supplier_id: preset.supplier_id || null, file_id: preset.file_id || null };
         $('#quote-dlg-title').textContent = current ? `${current.supplier_name} — ${money(current.amount)}` : t('הצעת מחיר חדשה');
-        el.stage_id.innerHTML = options(project.stages.map(s => ({ value: s.id, label: t(s.name) })), q.stage_id, project.stages.length ? undefined : t('אין שלבים'));
+        el.stage_id.innerHTML = options(project.stages.map(s => ({ value: s.id, label: stageName(s) })), q.stage_id, project.stages.length ? undefined : t('אין שלבים'));
         el.amount.value = current ? String(current.amount) : '';
         el.valid_until.value = q.valid_until || '';
         el.terms.value = q.terms || '';
@@ -350,7 +350,7 @@ const Quotes = (() => {
         const dlg = $('#invite-dlg'), form = $('form', dlg);
         formError(form, '');
         const open = project.stages.filter(s => ['planned', 'quotes', 'client_approval'].includes(s.status));
-        form.elements.stage_id.innerHTML = options((open.length ? open : project.stages).map(s => ({ value: s.id, label: t(s.name) })), stageId || stageGuess());
+        form.elements.stage_id.innerHTML = options((open.length ? open : project.stages).map(s => ({ value: s.id, label: stageName(s) })), stageId || stageGuess());
         fillInvitees();
         dlg.showModal();
     }

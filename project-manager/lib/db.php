@@ -673,6 +673,20 @@ function pm_migrate(PDO $pdo): void
         done_on     TEXT NOT NULL DEFAULT \'\',
         sort        INTEGER NOT NULL DEFAULT 0
     )');
+    // מתחם: יחידות בפרויקט (דירה א', דירה ב'). שלב משותף — unit_id NULL. budget — ₪ כולל מע"מ.
+    $pdo->exec('CREATE TABLE IF NOT EXISTS units (
+        id         INTEGER PRIMARY KEY,
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        name       TEXT NOT NULL,
+        area       REAL,
+        budget     INTEGER NOT NULL DEFAULT 0,
+        client_id  INTEGER REFERENCES contacts(id) ON DELETE SET NULL,
+        lawyer_id  INTEGER REFERENCES contacts(id) ON DELETE SET NULL,
+        notes      TEXT NOT NULL DEFAULT \'\',
+        sort       INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+    )');
+    pm_add_column($pdo, 'stages', 'unit_id', 'INTEGER REFERENCES units(id) ON DELETE SET NULL');
     $pdo->exec('CREATE TABLE IF NOT EXISTS fin_alert_sent (
         project_id INTEGER NOT NULL,
         contact_id INTEGER NOT NULL,

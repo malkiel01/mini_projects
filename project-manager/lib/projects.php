@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/contacts.php';
 require_once __DIR__ . '/dev.php'; // סמכות מפתח (pm_dev_mode)
+require_once __DIR__ . '/units.php'; // מתחם ויחידות
 
 // התוויות בעברית — מתורגמות בתצוגה (pm_t_map ב-api.php, t() בדפדפן)
 // i18n-ok-start
@@ -98,6 +99,7 @@ function pm_projects_list(array $user, string $q, string $filter): array
     $sql = "SELECT p.id, p.owner_id, p.name, p.address, p.kind, p.status, p.last_activity_at, p.last_event, p.last_event_i18n,
                    c.name AS client_name, m.display_name AS owner_name,
                    EXISTS (SELECT 1 FROM project_partners x WHERE x.project_id = p.id) AS shared,
+                   (SELECT COUNT(*) FROM units u WHERE u.project_id = p.id) AS units,
                    (SELECT COUNT(*) FROM stages s WHERE s.project_id = p.id) AS stages_total,
                    (SELECT COUNT(*) FROM stages s WHERE s.project_id = p.id AND s.status IN ('done','paid')) AS stages_done,
                    (SELECT s.name || '|' || s.status FROM stages s WHERE s.project_id = p.id
@@ -127,7 +129,7 @@ function pm_projects_list(array $user, string $q, string $filter): array
             $cur = ['name' => $name, 'status' => $status];
         }
         return [
-            'id' => (int)$r['id'], 'owner_id' => (int)$r['owner_id'], 'owner_name' => $r['owner_name'], 'shared' => (bool)$r['shared'],
+            'id' => (int)$r['id'], 'owner_id' => (int)$r['owner_id'], 'owner_name' => $r['owner_name'], 'shared' => (bool)$r['shared'], 'units' => (int)$r['units'],
             'name' => $r['name'], 'address' => $r['address'], 'kind' => $r['kind'], 'status' => $r['status'],
             'client_name' => $r['client_name'], 'last_activity_at' => $r['last_activity_at'], 'last_event' => pm_event_text($r['last_event'], $r['last_event_i18n']),
             'stages_total' => (int)$r['stages_total'], 'stages_done' => (int)$r['stages_done'], 'current_stage' => $cur,
@@ -143,10 +145,11 @@ function pm_project_get(array $user, int $id): array
     $db = pm_db();
 
     $st = $db->prepare(
-        'SELECT s.*, t.name AS trade_name, c.name AS supplier_name, c.phone AS supplier_phone,
+        'SELECT s.*, t.name AS trade_name, c.name AS supplier_name, c.phone AS supplier_phone, un.name AS unit_name,
                 (SELECT COUNT(*) FROM quotes q WHERE q.stage_id = s.id) AS quotes, ' . PM_STAGE_USED . ' AS used
            FROM stages s LEFT JOIN trades t ON t.id = s.trade_id LEFT JOIN contacts c ON c.id = s.supplier_id
-          WHERE s.project_id = ? ORDER BY s.sort, s.id'
+                LEFT JOIN units un ON un.id = s.unit_id
+          WHERE s.project_id = ? ORDER BY ' . PM_STAGE_ORDER
     );
     $st->execute([$id]);
     $stages = array_map(fn($s) => [
@@ -157,6 +160,7 @@ function pm_project_get(array $user, int $id): array
         'status' => $s['status'], 'needs_lawyer' => (bool)$s['needs_lawyer'],
         'plan_start' => $s['plan_start'], 'plan_end' => $s['plan_end'], 'done_at' => $s['done_at'],
         'progress' => pm_stage_progress($s), 'budget' => (int)$s['budget'] / 100, 'quotes' => (int)$s['quotes'], 'used' => (int)$s['used'],
+        'unit_id' => $s['unit_id'] !== null ? (int)$s['unit_id'] : null, 'unit_name' => $s['unit_name'],
     ], $st->fetchAll());
 
     $ev = $db->prepare('SELECT id, at, actor_id, actor_name, kind, text, data_json FROM events WHERE project_id = ? ORDER BY id DESC LIMIT 300');
@@ -174,6 +178,7 @@ function pm_project_get(array $user, int $id): array
             'created_at' => $p['created_at'], 'last_activity_at' => $p['last_activity_at'],
         ],
         'stages' => $stages,
+        'units'  => pm_units_of($id),
         // הגדרות הכספים (אגף הכספים) — לחלונות: עיכבון, הצמדה
         'finance' => pm_finance_settings($p),
         // שותף מנהל: הבעלים והשותפים; is_owner — רק הבעלים מצרף ומסיר
@@ -331,6 +336,8 @@ function pm_stage_save(array $user, array $in): array
         // אגף הכספים: התקדמות (אחוז; "בוצע" = 100) ותקציב לשלב (אגורות)
         'progress'     => max(0, min(100, (int)($in['progress'] ?? ($old['progress'] ?? 0)))),
         'budget'       => pm_stage_budget($in, $old),
+        // מתחם: יחידה (NULL — משותף). בלי השדה — נשאר
+        'unit_id'      => array_key_exists('unit_id', $in) ? pm_unit_of_project((int)($in['unit_id'] ?? 0) ?: null, $projectId) : ($old['unit_id'] ?? null),
     ];
     if (in_array($status, ['done', 'paid'], true)) $f['progress'] = 100;
     // "בוצע" — רק דרך דיווח מהשטח עם תמונה (lib/reports.php)
@@ -378,11 +385,14 @@ function pm_stage_save(array $user, array $in): array
     return pm_project_get($user, $projectId) + ($surveyAdded ? ['notice' => pm_t('מודד מוסמך תמיד לפני אדריכלות — שלב המדידה סודר לפני האדריכלות')] : []);
 }
 
+/** סדר השלבים בתצוגה: קודם המשותפים, ואז לפי היחידות (מתחם); בתוך כל קבוצה — sort. alias s, LEFT JOIN units un. */
+const PM_STAGE_ORDER = '(s.unit_id IS NOT NULL), COALESCE(un.sort, 0), COALESCE(un.id, 0), s.sort, s.id';
+
 /** שלב חדש — אחרי שלב נתון (0 = ראשון); מספור מחדש של הסדר. */
 function pm_stage_place(int $projectId, int $id, int $after): void
 {
     $db = pm_db();
-    $st = $db->prepare('SELECT id FROM stages WHERE project_id = ? AND id != ? ORDER BY sort, id');
+    $st = $db->prepare('SELECT s.id FROM stages s LEFT JOIN units un ON un.id = s.unit_id WHERE s.project_id = ? AND s.id != ? ORDER BY ' . PM_STAGE_ORDER);
     $st->execute([$projectId, $id]);
     $ids = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
     $at = $after ? array_search($after, $ids, true) : -1;

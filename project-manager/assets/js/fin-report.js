@@ -63,14 +63,14 @@ const FinReport = (() => {
 
     function stageName(id) {
         const s = src.finance.stages.find(x => x.stage_id === id);
-        return s ? t(s.name) : '';
+        return s ? (t(s.name) + (s.unit_name ? ' · ' + s.unit_name : '')) : '';
     }
 
     function html() {
         const F = src.finance, T = F.totals, S = F.settings;
         const kpi = (label, m) => `<div><dt>${e(label)}</dt><dd>${mv(m)}</dd></div>`;
         const rows = [];
-        for (const s of F.stages) for (const r of s.rows) rows.push({ stage: s.stage_id ? t(s.name) : t('בלי שלב'), ...r });
+        for (const s of F.stages) for (const r of s.rows) rows.push({ stage: s.stage_id ? (t(s.name) + (s.unit_name ? ' · ' + s.unit_name : '')) : t('בלי שלב'), ...r });
         const sumRow = (label, list, keys) => `<tr class="sum"><td colspan="2">${e(label)}</td>${keys.map(k => `<td class="n">${e(money(list.reduce((a, x) => a + x[k].g, 0)))}</td>`).join('')}</tr>`;
         const out = [];
         out.push(`<header><h1>${e(t('דוח כספי — {project}', { project: src.project.name }))}</h1>
@@ -128,7 +128,7 @@ const FinReport = (() => {
         }
         row();
         row(t('שלב'), t('ספק'), ...vatHead(t('סוכם')), ...vatHead(t('שולם')), ...vatHead(t('יתרה')));
-        for (const s of F.stages) for (const r of s.rows) row(s.stage_id ? t(s.name) : t('בלי שלב'), r.name, ...m(r.committed.g ? r.committed : r.scheduled), ...m(r.paid), ...m(r.balance));
+        for (const s of F.stages) for (const r of s.rows) row(s.stage_id ? (t(s.name) + (s.unit_name ? ' · ' + s.unit_name : '')) : t('בלי שלב'), r.name, ...m(r.committed.g ? r.committed : r.scheduled), ...m(r.paid), ...m(r.balance));
         const X = F.expenses?.items || [];
         if (X.length) {
             row();
