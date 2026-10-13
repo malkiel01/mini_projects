@@ -804,3 +804,13 @@ p.shared-from { margin-bottom: var(--s2); padding: var(--s2) var(--s3); backgrou
 select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-soft); }
 .need-stage { display: block; width: 100%; margin: var(--s1) 0 var(--s2); padding: var(--s2) var(--s3); border: 1px dashed var(--danger); border-radius: var(--r);
     background: var(--danger-soft); color: var(--danger); font: inherit; font-size: .9rem; text-align: start; cursor: pointer; }
+
+/* מתחם: יחידות */
+.unit-bar { display: flex; gap: var(--s1); overflow-x: auto; margin-bottom: var(--s2); padding-bottom: 2px; scrollbar-width: none; }
+.unit-bar .chip { flex: 0 0 auto; min-height: 34px; cursor: pointer; }
+.unit-bar .chip.on { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+.unit-bar .chip.add { border-style: dashed; }
+#stage-list .st-group { list-style: none; display: flex; align-items: baseline; gap: var(--s2); padding: var(--s3) var(--s1) var(--s1); background: none; border: 0; }
+#stage-list .st-group h3 { font-size: .95rem; color: var(--brand); }
+.units-box { margin-bottom: var(--s4); }
+.units-box .toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }

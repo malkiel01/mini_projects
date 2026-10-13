@@ -111,7 +111,7 @@ const Payments = (() => {
         const order = [...project.stages.map(s => s.id).filter(id => groups.has(id)), ...(groups.has(0) ? [0] : [])];
         $('#payment-list').innerHTML = order.map(k => {
             const st = k ? stageOf(k) : null;
-            return `<section class="q-stage"><header class="q-head"><h2 class="one">${esc(st ? t(st.name) : t('בלי שלב'))}</h2>${st ? stageChip(st.status) : ''}</header>
+            return `<section class="q-stage"><header class="q-head"><h2 class="one">${esc(st ? stageName(st) : t('בלי שלב'))}</h2>${st ? stageChip(st.status) : ''}</header>
                 <ul class="list rows-list">${groups.get(k).map(row).join('')}</ul></section>`;
         }).join('') || `<p class="empty">${esc(t('עוד אין אבני דרך לתשלום. "+ אבן דרך" — למשל מקדמה של 30% מההצעה שאושרה.'))}</p>`;
     }
@@ -139,7 +139,7 @@ const Payments = (() => {
         current = id ? data.payments.find(p => p.id === id) : null;
         const p = current || { stage_id: guessStage(), payer: defaultPayer(), needs_lawyer: hasLawyer(), due_kind: 'date', ...preset };
         $('#payment-dlg-title').textContent = current ? `${current.title} — ${money(current.amount)}` : t('אבן דרך לתשלום');
-        el.stage_id.innerHTML = options(project.stages.map(s => ({ value: s.id, label: t(s.name) })), p.stage_id, t('בלי שלב'));
+        el.stage_id.innerHTML = options(project.stages.map(s => ({ value: s.id, label: stageName(s) })), p.stage_id, t('בלי שלב'));
         el.title.value = p.title || '';
         el.amount.value = current ? String(current.amount) : '';
         el.percent.value = current?.percent ?? '';

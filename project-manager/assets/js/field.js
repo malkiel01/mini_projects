@@ -43,7 +43,7 @@ const Field = (() => {
         bind();
         project = p;
         const keep = $('#field-stage').value;
-        $('#field-stage').innerHTML = options(project.stages.map(s => ({ value: s.id, label: t(s.name) })), keep, t('כל השלבים'));
+        $('#field-stage').innerHTML = options(project.stages.map(s => ({ value: s.id, label: stageName(s) })), keep, t('כל השלבים'));
         try { ({ reports } = await api('reports', { params: { project_id: project.project.id } })); }
         catch (e) { toast(e.message, true); return; }
         render();
@@ -94,7 +94,7 @@ const Field = (() => {
         el.text.value = '';
         el.visible.checked = true;
         $(`#report-dlg [name=kind][value=${preset.kind || 'update'}]`).checked = true;
-        el.stage_id.innerHTML = options(project.stages.map(s => ({ value: s.id, label: `${t(s.name)} · ${state.labels.stage[s.status]}` })), preset.stage_id || '', t('בלי שלב — עדכון כללי'));
+        el.stage_id.innerHTML = options(project.stages.map(s => ({ value: s.id, label: `${stageName(s)} · ${state.labels.stage[s.status]}` })), preset.stage_id || '', t('בלי שלב — עדכון כללי'));
         drawPicked();
         kindChanged();
         $('#report-progress').innerHTML = '';

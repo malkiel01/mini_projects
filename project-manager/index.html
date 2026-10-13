@@ -2,12 +2,12 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="assets/js/i18n.js?v=39"></script>
+    <script src="assets/js/i18n.js?v=40"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=39">
+    <link rel="stylesheet" href="assets/css/app.css?v=40">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -141,6 +141,7 @@
                     <button class="btn ghost icon-only" id="edit-stages" aria-pressed="false" aria-label="עריכת שלבים" title="עריכת שלבים"><span aria-hidden="true">✏️</span></button>
                     <button class="btn primary" id="add-stage"><span aria-hidden="true">+</span><span class="add-label">שלב</span></button>
                 </div>
+                <div class="unit-bar" id="unit-bar" role="group" aria-label="סינון לפי יחידה" hidden></div>
                 <details class="stages-help" id="stages-help">
                     <summary>מה זה המסך הזה?</summary>
                     <p>אלה שלבי העבודה של הפרויקט, לפי סדר הביצוע. כל שלב הוא עבודה אחת — בדרך כלל של בעל מקצוע אחד.</p>
@@ -193,6 +194,12 @@
             </div>
 
             <div class="pane" id="pane-details" hidden>
+                <section class="units-box" aria-labelledby="units-title">
+                    <div class="toolbar"><h2 class="sec-title" id="units-title">🏢 יחידות במתחם</h2>
+                        <button class="btn ghost" id="add-unit" type="button">+ יחידה</button></div>
+                    <p class="hint" id="units-hint">כמה דירות בפרויקט אחד, עם קבלן וחוזים משותפים? "+ יחידה" — ובכל שלב בוחרים אם הוא משותף או של דירה אחת.</p>
+                    <ul class="list rows-list" id="units-list"></ul>
+                </section>
                 <fieldset class="opt status-row">
                     <legend>סטטוס</legend>
                     <div class="seg" id="project-status">
@@ -537,6 +544,30 @@
         </form>
     </dialog>
 
+    <!-- ===== חלון: יחידה במתחם (lib/units.php) ===== -->
+    <dialog id="unit-dlg" aria-labelledby="unit-dlg-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="unit-dlg-title">יחידה</h2>
+                <button type="submit" class="btn primary">שמירה</button>
+            </header>
+            <div class="sheet-body">
+                <p class="hint">מתחם — כמה דירות בפרויקט אחד, עם קבלן וחוזים משותפים. כל שלב משותף לכל המתחם, או של דירה אחת.</p>
+                <div class="fields">
+                    <label class="f wide"><span>שם היחידה *</span><input name="name" maxlength="60" required placeholder="למשל: דירה 4, קומה 2"></label>
+                    <label class="f"><span>שטח (מ"ר)</span><input name="area" inputmode="decimal" dir="ltr" maxlength="10"></label>
+                    <label class="f"><span>תקציב ליחידה (₪, כולל מע"מ)</span><input name="budget" inputmode="numeric" dir="ltr" maxlength="12"></label>
+                    <label class="f wide" id="unit-copy-box"><span>שלבים ליחידה</span><select name="copy_from"></select></label>
+                    <label class="f wide"><span>הערות</span><input name="notes" maxlength="500"></label>
+                </div>
+                <label class="switch" id="unit-move-box" hidden><input type="checkbox" name="move_shared"><span>השלבים הקיימים שייכים ליחידה הזו (אחרת — יישארו משותפים לכל המתחם)</span></label>
+                <p class="error" role="alert" hidden></p>
+                <div class="row-btns"><button type="button" class="btn ghost danger" id="unit-delete">מחיקת היחידה</button></div>
+            </div>
+        </form>
+    </dialog>
+
     <!-- ===== חלון: שלב ===== -->
     <dialog id="stage-dlg" aria-labelledby="stage-dlg-title">
         <form method="dialog" novalidate>
@@ -548,6 +579,7 @@
             <div class="sheet-body">
                 <div class="fields">
                     <label class="f wide"><span>שם השלב *</span><input name="name" maxlength="80" required></label>
+                    <label class="f wide" id="stage-unit-box" hidden><span>🏢 יחידה</span><select name="unit_id"></select></label>
                     <label class="f"><span>תחום</span><select name="trade_id"></select></label>
                     <label class="f"><span>ספק</span><select name="supplier_id"></select></label>
                     <label class="f wide"><span>סטטוס</span><select name="status"></select></label>
@@ -1231,23 +1263,23 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=39"></script>
-    <script src="assets/js/contacts.js?v=39"></script>
-    <script src="assets/js/device-contacts.js?v=39"></script>
-    <script src="assets/js/files.js?v=39"></script>
-    <script src="assets/js/lightbox.js?v=39"></script>
-    <script src="assets/js/field.js?v=39"></script>
+    <script src="assets/js/core.js?v=40"></script>
+    <script src="assets/js/contacts.js?v=40"></script>
+    <script src="assets/js/device-contacts.js?v=40"></script>
+    <script src="assets/js/files.js?v=40"></script>
+    <script src="assets/js/lightbox.js?v=40"></script>
+    <script src="assets/js/field.js?v=40"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=39"></script>
-    <script src="assets/js/projects.js?v=39"></script>
-    <script src="assets/js/quotes.js?v=39"></script>
-    <script src="assets/js/payments.js?v=39"></script>
-    <script src="assets/js/fin-report.js?v=39"></script>
-    <script src="assets/js/finance.js?v=39"></script>
-    <script src="assets/js/finance-all.js?v=39"></script>
-    <script src="assets/js/hebcal.js?v=39"></script>
-    <script src="assets/js/calendar.js?v=39"></script>
-    <script src="assets/js/settings.js?v=39"></script>
-    <script src="assets/js/app.js?v=39"></script>
+    <script src="assets/js/share.js?v=40"></script>
+    <script src="assets/js/projects.js?v=40"></script>
+    <script src="assets/js/quotes.js?v=40"></script>
+    <script src="assets/js/payments.js?v=40"></script>
+    <script src="assets/js/fin-report.js?v=40"></script>
+    <script src="assets/js/finance.js?v=40"></script>
+    <script src="assets/js/finance-all.js?v=40"></script>
+    <script src="assets/js/hebcal.js?v=40"></script>
+    <script src="assets/js/calendar.js?v=40"></script>
+    <script src="assets/js/settings.js?v=40"></script>
+    <script src="assets/js/app.js?v=40"></script>
 </body>
 </html>
