@@ -53,6 +53,9 @@ const Payments = (() => {
         $('#mp-file').addEventListener('change', e => { mpFile = e.target.files[0] || null; $('#mp-file-name').textContent = mpFile ? '📎 ' + mpFile.name : ''; });
         $('#mp-save').addEventListener('click', manualProof);
         $('#inv-file').addEventListener('change', e => { invFile = e.target.files[0] || null; $('#inv-file-name').textContent = invFile ? '📎 ' + invFile.name : ''; });
+        // קובץ שכבר בפרויקט — במקום להעלות שוב ({id, name}; קובץ חדש — File)
+        $('#mp-existing').addEventListener('click', async () => { const f = await Files.choose(project.project.id, ['proof', 'photo', 'other']); if (f) { mpFile = f; $('#mp-file-name').textContent = '📂 ' + f.name; } });
+        $('#inv-existing').addEventListener('click', async () => { const f = await Files.choose(project.project.id, ['invoice', 'photo', 'other']); if (f) { invFile = f; $('#inv-file-name').textContent = '📂 ' + f.name; } });
         $('#inv-save').addEventListener('click', saveInvoice);
         form.elements.index_value.addEventListener('input', calcHint);
         form.elements.amount.addEventListener('input', calcHint);
@@ -67,13 +70,22 @@ const Payments = (() => {
         catch (e) { toast(e.message, true); return; }
         render();
         // מ"כספים" (כ3): אבן דרך שביקשו לפתוח
-        if (pendingOpen && data.payments.some(p => p.id === pendingOpen)) { Finance.tab('milestones'); open(pendingOpen); }
-        pendingOpen = null;
+        if (pendingOpen && data.payments.some(p => p.id === pendingOpen)) {
+            Finance.tab('milestones');
+            await open(pendingOpen);
+            // מחלון קובץ: "אסמכתא לאבן דרך" — הקובץ כבר בטופס הרישום, רק סכום ותאריך
+            if (pendingExtra?.proof && !$('#manual-proof').hidden) {
+                mpFile = pendingExtra.proof;
+                $('#mp-file-name').textContent = '📂 ' + mpFile.name;
+                $('#manual-proof').open = true;
+            }
+        }
+        pendingOpen = null; pendingExtra = null;
     }
 
-    let pendingOpen = null;
-    /** פתיחת אבן דרך אחרי שהלשונית תיטען. */
-    function openWhenReady(id) { pendingOpen = id; }
+    let pendingOpen = null, pendingExtra = null;
+    /** פתיחת אבן דרך אחרי שהלשונית תיטען. extra.proof — {id, name}: קובץ מהפרויקט כאסמכתא. */
+    function openWhenReady(id, extra = null) { pendingOpen = id; pendingExtra = extra; }
 
     /** אחרי פעולה: הרשימה, הפרויקט, והמצב הכספי (אגף הכספים). */
     async function refresh(d) {
@@ -252,7 +264,8 @@ const Payments = (() => {
         if (!no && !invFile) { formError(form, t('חשבונית: מספר או קובץ')); return; }
         await busy($('#inv-save'), form, async () => {
             let fileId = null;
-            if (invFile) {
+            if (invFile?.id) fileId = invFile.id;
+            else if (invFile) {
                 const { folders } = await api('folders', { params: { project_id: project.project.id } });
                 const folder = folders.find(f => f.contact_id === current.supplier_id && f.parent_id === null) || folders.find(f => f.kind === 'inbox');
                 fileId = (await Files.send(invFile, project.project.id, folder.id, undefined, { quiet: true, type: 'invoice' })).file.id;
@@ -430,7 +443,8 @@ const Payments = (() => {
         const body = { id: current.id, amount: $('#mp-amount').value.trim(), paid_on: $('#mp-date').value, method: $('#mp-method').value, note: $('#mp-note').value };
         if (!body.amount) { formError(form, t('סכום: שדה חובה')); return; }
         await busy($('#mp-save'), form, async () => {
-            if (mpFile) {
+            if (mpFile?.id) body.file_id = mpFile.id;
+            else if (mpFile) {
                 const { folders } = await api('folders', { params: { project_id: project.project.id } });
                 const folder = folders.find(f => f.kind === 'client' && f.parent_id === null) || folders.find(f => f.kind === 'inbox');
                 const { file } = await Files.send(mpFile, project.project.id, folder.id);

@@ -891,3 +891,19 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .ct-which { background: var(--surface-2, #f1f4f8); border-radius: var(--r, 12px); padding: var(--s2); margin-bottom: var(--s3); }
 .ct-which .hint { margin: var(--s1) 0 0; }
 #ct-scope .chips + .chips { margin-top: var(--s1); }
+
+/* ===== קבצים: איפה הקובץ משמש, שיוך, ובחירת קובץ קיים (files.js) ===== */
+.f-uses { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.f-uses .chip { font-size: .72rem; max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#file-uses { display: flex; flex-wrap: wrap; gap: 6px; }
+#file-uses button.chip { cursor: pointer; text-align: start; }
+#file-attach-btns { margin-top: var(--s2); }
+.file-attach { display: grid; gap: var(--s2); margin-top: var(--s2); padding: var(--s2); border: 1px dashed var(--line); border-radius: var(--r); }
+#fchoose-q { inline-size: 100%; margin-bottom: var(--s2); }
+.fchoose li { border-bottom: 1px solid var(--line); }
+.fchoose li:last-child { border-bottom: 0; }
+.fch-row { display: flex; align-items: center; gap: var(--s2); inline-size: 100%; padding: var(--s2) var(--s3); background: none; border: 0; font: inherit; color: inherit; text-align: start; cursor: pointer; min-block-size: var(--tap); }
+.fch-row:hover, .fch-row:focus-visible { background: var(--bg); }
+.fch-row .body { display: grid; min-inline-size: 0; }
+.fch-row .one { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fch-row small { color: var(--muted); font-size: .75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

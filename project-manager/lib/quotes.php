@@ -210,25 +210,10 @@ function pm_quote_save(array $user, array $in, ?array $actor = null): array
     return pm_quotes($user, $projectId) + ['saved' => $id];
 }
 
-/**
- * הקובץ של ההצעה מסומן "הצעת מחיר", ואם הוא עוד ב"ממתין למיון" — עובר לתיקיית
- * הספק. קובץ שכבר מוין לא זז.
- */
+/** הקובץ של ההצעה: "הצעת מחיר", ומ"ממתין למיון" — לתיקיית הספק (pm_file_claim — כמו בכל צירוף). */
 function pm_quote_file_home(int $projectId, int $fileId, int $supplierId): void
 {
-    $db = pm_db();
-    $db->prepare("UPDATE files SET type = 'quote' WHERE id = ? AND type IN ('other', 'photo')")->execute([$fileId]);
-    pm_ensure_folders(['id' => $projectId]);
-    $home = $db->prepare('SELECT l.folder_id, f.kind, f.parent_id FROM file_links l JOIN folders f ON f.id = l.folder_id WHERE l.file_id = ? AND l.is_home = 1');
-    $home->execute([$fileId]);
-    $h = $home->fetch();
-    if (!$h || $h['kind'] !== 'inbox' || $h['parent_id'] !== null) return;
-    $to = $db->prepare("SELECT id FROM folders WHERE project_id = ? AND kind = 'contact' AND contact_id = ? AND parent_id IS NULL");
-    $to->execute([$projectId, $supplierId]);
-    $target = $to->fetchColumn();
-    if (!$target) return;
-    $db->prepare('DELETE FROM file_links WHERE file_id = ? AND folder_id = ?')->execute([$fileId, $target]);
-    $db->prepare('UPDATE file_links SET folder_id = ? WHERE file_id = ? AND is_home = 1')->execute([$target, $fileId]);
+    pm_file_claim($projectId, $fileId, 'quote', $supplierId);
 }
 
 /** ההצעה המומלצת — אחת לשלב. מה שהלקוח יראה מודגש בראש. */

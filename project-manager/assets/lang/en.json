@@ -1994,5 +1994,22 @@
     "החוזה לא נמצא": "Contract not found",
     "שם החוזה": "Contract name",
     "החוזה של ספק אחר": "The contract belongs to another supplier",
-    "מתוך {total}": "of {total}"
+    "מתוך {total}": "of {total}",
+    "לא משויך — לחצו לשיוך": "Not linked — tap to link",
+    "הקובץ עוד לא משויך — בחרו למטה למה הוא שייך.": "This file isn't linked yet — choose below what it belongs to.",
+    "הקובץ לא משמש באף רשומה.": "This file isn't used by any record.",
+    "אבן הדרך": "Milestone",
+    "אין עדיין ספקים בפרויקט.": "No suppliers in the project yet.",
+    "אין אבן דרך שהתקבל בה תשלום ועוד אין לה חשבונית.": "No milestone has a received payment without an invoice.",
+    "אין אבן דרך פתוחה לתשלום.": "No milestone is open for payment.",
+    "נפתח החוזה של הספק, עם הקובץ הזה כמסמך — שם בוחרים חוזה קיים או חדש ושומרים.": "The supplier's contract opens with this file as its document — choose an existing or new contract there and save.",
+    "נפתחת אבן הדרך, עם הקובץ כאסמכתא — שם רושמים סכום ותאריך.": "The milestone opens with this file as proof — enter the amount and date there.",
+    "בחירת קובץ מהפרויקט": "Choose a file from the project",
+    "חיפוש לפי שם": "Search by name",
+    "המסמך מהקבצים כבר נבחר — בשמירה הוא יצורף לחוזה שבחרתם למעלה.": "The document from Files is already selected — on save it will be attached to the contract chosen above.",
+    "📂 מהקבצים": "📂 From files",
+    "שימוש במערכת": "Used in",
+    "📝 לחוזה של ספק": "📝 To a supplier contract",
+    "🧾 חשבונית לאבן דרך": "🧾 Invoice for a milestone",
+    "💳 אסמכתא לאבן דרך": "💳 Proof for a milestone"
 }

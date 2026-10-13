@@ -199,16 +199,77 @@ function pm_files_list(array $user, int $projectId, array $f): array
         $l->execute($ids);
         foreach ($l->fetchAll() as $r) $links[$r['file_id']][] = ['folder_id' => (int)$r['folder_id'], 'home' => (bool)$r['is_home']];
     }
-    return array_map(fn($x) => pm_file_out($x, $links[$x['id']] ?? []), $rows);
+    $uses = pm_file_uses(array_column($rows, 'id'));
+    return array_map(fn($x) => pm_file_out($x, $links[$x['id']] ?? [], $uses[(int)$x['id']] ?? []), $rows);
 }
 
-function pm_file_out(array $x, array $links): array
+function pm_file_out(array $x, array $links, array $uses = []): array
 {
     return [
         'id' => (int)$x['id'], 'name' => $x['name'], 'mime' => $x['mime'], 'size' => (int)$x['size'],
         'type' => $x['type'], 'visible' => (bool)$x['visible'], 'note' => $x['note'], 'has_thumb' => (bool)$x['thumb'],
         'uploader' => $x['uploader'] ?? '', 'created_at' => $x['created_at'], 'folders' => $links,
+        // איפה הקובץ משמש במערכת: הצעה, חוזה, תוספת, אבן דרך (מסמך / חשבונית / אסמכתא), הוצאה, דיווח
+        'uses' => $uses,
     ];
+}
+
+/**
+ * איפה כל קובץ משמש: file_id => [{kind, id, text, supplier, payment_id?}]. kind: quote · contract · change ·
+ * payment (מסמך של אבן דרך) · invoice · proof · expense · report. כך גם קובץ שהועלה ב"קבצים" וגם קובץ
+ * שהועלה מהחלון של ההצעה מראים אותו דבר.
+ */
+function pm_file_uses(array $ids): array
+{
+    $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+    if (!$ids) return [];
+    $in = implode(',', $ids);
+    $db = pm_db();
+    $out = [];
+    $add = function (string $sql, string $kind) use ($db, &$out) {
+        foreach ($db->query($sql)->fetchAll() as $r) {
+            $out[(int)$r['file_id']][] = ['kind' => $kind, 'id' => (int)$r['id'], 'text' => (string)$r['text'], 'supplier' => (string)($r['supplier'] ?? ''),
+                'status' => (string)($r['status'] ?? ''), 'supplier_id' => isset($r['supplier_id']) ? (int)$r['supplier_id'] : null]
+                + (isset($r['payment_id']) ? ['payment_id' => (int)$r['payment_id']] : []);
+        }
+    };
+    $add("SELECT q.file_id, q.id, s.name AS text, c.name AS supplier, c.id AS supplier_id, q.status FROM quotes q JOIN stages s ON s.id = q.stage_id JOIN contacts c ON c.id = q.supplier_id WHERE q.file_id IN ($in)", 'quote');
+    $add("SELECT k.file_id, k.id, k.title AS text, c.name AS supplier, c.id AS supplier_id FROM contracts k JOIN contacts c ON c.id = k.supplier_id WHERE k.file_id IN ($in)", 'contract');
+    $add("SELECT o.file_id, o.id, o.reason AS text, c.name AS supplier, c.id AS supplier_id, o.status FROM change_orders o JOIN contacts c ON c.id = o.supplier_id WHERE o.file_id IN ($in)", 'change');
+    $add("SELECT p.file_id, p.id, p.id AS payment_id, p.title AS text, c.name AS supplier, c.id AS supplier_id, p.status FROM payments p JOIN contacts c ON c.id = p.supplier_id WHERE p.file_id IN ($in)", 'payment');
+    $add("SELECT p.invoice_file_id AS file_id, p.id, p.id AS payment_id, p.title AS text, c.name AS supplier, c.id AS supplier_id, p.status FROM payments p JOIN contacts c ON c.id = p.supplier_id WHERE p.invoice_file_id IN ($in)", 'invoice');
+    $add("SELECT x.file_id, x.id, p.id AS payment_id, p.title AS text, c.name AS supplier, c.id AS supplier_id, x.status FROM payment_proofs x JOIN payments p ON p.id = x.payment_id JOIN contacts c ON c.id = p.supplier_id WHERE x.file_id IN ($in)", 'proof');
+    $add("SELECT e.file_id, e.id, e.title AS text FROM expenses e WHERE e.file_id IN ($in)", 'expense');
+    $add("SELECT r.file_id, r.report_id AS id, substr(x.text, 1, 60) AS text FROM report_files r JOIN reports x ON x.id = r.report_id WHERE r.file_id IN ($in)", 'report');
+    return $out;
+}
+
+/**
+ * קובץ שצורף לרשומה (הצעה, חוזה, תוספת, הוצאה, חשבונית, אסמכתא) — אותו טיפול מכל מקום:
+ * $type — הסוג שהרשומה קובעת (null — לא משנים); קובץ שעוד ב"ממתין למיון" עובר לתיקייה שלו —
+ * של הספק ($supplierId), ובלי ספק — של הלקוח; $visible — גלוי ללקוח. קובץ שכבר מוין — לא זז.
+ */
+function pm_file_claim(int $projectId, ?int $fileId, ?string $type, ?int $supplierId = null, bool $visible = false): ?int
+{
+    if (!$fileId) return null;
+    $db = pm_db();
+    $f = $db->prepare('SELECT 1 FROM files WHERE id = ? AND project_id = ? AND deleted_at IS NULL');
+    $f->execute([$fileId, $projectId]);
+    if (!$f->fetchColumn()) throw new PmError('הקובץ לא שייך לפרויקט', 422);
+    if ($type !== null) $db->prepare('UPDATE files SET type = ? WHERE id = ?')->execute([$type, $fileId]);
+    if ($visible) $db->prepare('UPDATE files SET visible = 1 WHERE id = ?')->execute([$fileId]);
+    $home = $db->prepare('SELECT f.kind, f.parent_id FROM file_links l JOIN folders f ON f.id = l.folder_id WHERE l.file_id = ? AND l.is_home = 1');
+    $home->execute([$fileId]);
+    $h = $home->fetch();
+    if (!$h || $h['kind'] !== 'inbox' || $h['parent_id'] !== null) return $fileId;
+    pm_ensure_folders(['id' => $projectId]);
+    $to = $db->prepare('SELECT id FROM folders WHERE project_id = ? AND parent_id IS NULL AND ' . ($supplierId ? "kind = 'contact' AND contact_id = ?" : "kind = 'client' AND ? IS NULL"));
+    $to->execute([$projectId, $supplierId]);
+    $target = $to->fetchColumn();
+    if (!$target) return $fileId;
+    $db->prepare('DELETE FROM file_links WHERE file_id = ? AND folder_id = ?')->execute([$fileId, $target]);
+    $db->prepare('UPDATE file_links SET folder_id = ? WHERE file_id = ? AND is_home = 1')->execute([$target, $fileId]);
+    return $fileId;
 }
 
 function pm_file_row(array $user, int $id): array
@@ -229,7 +290,7 @@ function pm_file_get(array $user, int $id): array
     $u = pm_db()->prepare('SELECT display_name FROM users WHERE id = ?');
     $u->execute([$x['uploaded_by']]);
     $x['uploader'] = (string)$u->fetchColumn();
-    return pm_file_out($x, array_map(fn($r) => ['folder_id' => (int)$r['folder_id'], 'home' => (bool)$r['is_home']], $l->fetchAll()));
+    return pm_file_out($x, array_map(fn($r) => ['folder_id' => (int)$r['folder_id'], 'home' => (bool)$r['is_home']], $l->fetchAll()), pm_file_uses([$id])[$id] ?? []);
 }
 
 // ---- העלאה בחלקים ----

@@ -382,12 +382,7 @@ function pm_payment_proof_add(array $user, int $id, array $in, string $byRole, s
     $method = (string)($in['method'] ?? 'transfer');
     if (!isset(PM_PAY_METHODS[$method])) throw new PmError('אמצעי תשלום לא מוכר', 422);
     if (!$fileId && $byRole !== 'manager') throw new PmError('נדרשת אסמכתא — צילום ההעברה, הצ\'ק או אישור הבנק', 422);
-    if ($fileId) {
-        $f = pm_db()->prepare('SELECT project_id FROM files WHERE id = ? AND deleted_at IS NULL');
-        $f->execute([$fileId]);
-        if ((int)$f->fetchColumn() !== (int)$p['project_id']) throw new PmError('הקובץ לא שייך לפרויקט', 422);
-        pm_db()->prepare("UPDATE files SET type = 'proof' WHERE id = ?")->execute([$fileId]);
-    }
+    pm_file_claim((int)$p['project_id'], $fileId, 'proof');
     $note = mb_substr(trim((string)($in['note'] ?? '')), 0, 1000);
     $db = pm_db();
     $db->prepare('INSERT INTO payment_proofs (payment_id, amount, paid_on, method, file_id, note, by_role, by_name, portal_id, ip, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
@@ -495,11 +490,7 @@ function pm_payment_invoice(array $user, array $in, ?array $actor = null): array
     $p = pm_payment_row($user, (int)($in['id'] ?? 0));
     if (pm_payment_received((int)$p['id']) <= 0) throw new PmError('חשבונית — אחרי שהתשלום התקבל', 422);
     $fileId = (int)($in['file_id'] ?? 0) ?: null;
-    if ($fileId) {
-        $f = pm_db()->prepare('SELECT 1 FROM files WHERE id = ? AND project_id = ? AND deleted_at IS NULL');
-        $f->execute([$fileId, $p['project_id']]);
-        if (!$f->fetchColumn()) throw new PmError('הקובץ לא נמצא', 422);
-    }
+    pm_file_claim((int)$p['project_id'], $fileId, 'invoice', (int)$p['supplier_id']);
     $no = pm_str($in, 'invoice_no', 40, false, 'מספר חשבונית');
     if (!$fileId && $no === '') throw new PmError('חשבונית: מספר או קובץ', 422);
     pm_db()->prepare('UPDATE payments SET invoice_file_id = ?, invoice_no = ?, invoice_at = ?, updated_at = ? WHERE id = ?')
