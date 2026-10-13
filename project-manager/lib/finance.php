@@ -192,8 +192,15 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
     $proofs = pm_payment_proofs(array_map('intval', array_column($payments, 'id')));
     $next = null;
     $retHeld = [0, 0];
+    // תשלום בלי שלב (מקדמה, תשלום כללי) לספק שיש לו הצעה מאושרת — על חשבון ההצעה שלו: נכנס לשורה שלה
+    // (השלב עם ההתחייבות הגדולה), ולא נספר כהתחייבות נוספת "בלי שלב"
+    $mainStage = [];
+    foreach ($rows as $s0 => $byS) foreach ($byS as $c0 => $r0) {
+        $g = $r0['acc']['committed'][0] ?? 0;
+        if ($s0 && $g > 0 && $g > ($mainStage[$c0][1] ?? 0)) $mainStage[$c0] = [$s0, $g];
+    }
     foreach ($payments as $x) {
-        $sid = (int)$x['stage_id'];
+        $sid = (int)$x['stage_id'] ?: ($mainStage[(int)$x['supplier_id']][0] ?? 0);
         if ($scope !== null && !pm_portal_in_scope($scope, $sid ?: null, $x['unit_id'] ? (int)$x['unit_id'] : null)) continue;
         $cid = (int)$x['supplier_id'];
         $row($sid, $cid);
