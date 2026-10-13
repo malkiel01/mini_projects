@@ -41,7 +41,10 @@ function renderFinance() {
     const row = (label, m, extra = '') => `<div><dt>${esc(label)}</dt><dd>${moneyVat(m)}${extra ? `<small class="kpi-x">${extra}</small>` : ''}</dd></div>`;
     const n = T.next;
     const when = n ? (n.due_kind === 'stage_done' ? t('בגמר השלב') : n.due_kind === 'progress' ? t('בהתקדמות {n}%', { n: n.due_pct }) : n.due_date ? t('עד {date}', { date: shortDate(n.due_date) }) : '') : '';
-    $('#finance').innerHTML = `<h2 class="sec-title" id="finance-title">${esc(t('המצב הכספי'))}</h2>
+    const fee = F.fee ? `<p class="fin-next">💼 ${esc(t('שכר הטרחה — {name}', { name: F.fee.name }))}: <b>${esc(money(F.fee.amount.g))}</b>
+            · ${esc(t('שולם {paid} · יתרה {balance}', { paid: money(F.fee.paid.g), balance: money(F.fee.balance.g) }))}<small class="mv-n">${esc(vatLine(F.fee.amount))}</small></p>` : '';
+    $('#finance').innerHTML = `<div class="sec-row"><h2 class="sec-title" id="finance-title">${esc(t('המצב הכספי'))}</h2>
+            <button type="button" class="btn ghost sm" data-fin-report>📄 ${esc(t('דוח כספי'))}</button></div>
         <dl class="fin-kpis">
             ${row(t('תקציב ראשוני'), T.budget_initial)}
             ${row(t('תקציב היום'), T.budget_today, growth > 0 ? `<span class="fin-late">${esc(t('גדל ב-{amount}', { amount: money(growth) }))}</span>` : '')}
@@ -51,6 +54,7 @@ function renderFinance() {
         </dl>
         ${n ? `<p class="fin-next">💳 ${esc(t('התשלום הבא'))}: <b>${esc(n.title)}</b> · ${esc(n.supplier)} · <b>${esc(money(n.amount.g))}</b>${when ? ` · ${esc(when)}` : ''}<small class="mv-n">${esc(vatLine(n.amount))}</small></p>` : ''}
         ${(F.alerts || []).length ? `<ul class="fin-alerts">${F.alerts.map(x => `<li class="fa-${x.level}"><span aria-hidden="true">${{ late: '⚠️', soon: '⏰', wait: '⏳', info: 'ℹ️' }[x.level]}</span><span class="fa-text">${esc(x.text)}</span></li>`).join('')}</ul>` : ''}
+        ${fee}
         ${F.settings.retention_pct ? `<p class="hint">${esc(t('עיכבון לפי החוזה: {n}% מכל תשלום נשאר אצלכם עד המסירה', { n: F.settings.retention_pct }))}</p>` : ''}`;
 }
 
@@ -105,8 +109,9 @@ function render() {
     $('#subtitle').textContent = [t('שלום {name}', { name: data.name }), p.address].filter(Boolean).join(' · ');
     $('#subtitle').hidden = false;
     const sup = data.role === 'supplier';
-    for (const id of ['#s-stages', '#s-payments', '#s-bank']) $(id).hidden = !sup;
-    if (sup) { $('#field').hidden = $('#quotes').hidden = $('#payments').hidden = true; $('#progress').closest('section').hidden = true; renderSupplier(); renderCommon(); return; }
+    for (const id of ['#s-stages', '#s-payments', '#s-bank', '#s-ledger']) $(id).hidden = !sup;
+    if (sup) $('#expenses').hidden = true;
+    if (sup) { renderLedger(); $('#field').hidden = $('#quotes').hidden = $('#payments').hidden = true; $('#progress').closest('section').hidden = true; renderSupplier(); renderCommon(); return; }
     $('#progress').closest('section').hidden = false;
 
     // ---- ממתין לאישורך: שלב אחד = שורה אחת ----
@@ -135,6 +140,7 @@ function render() {
     renderChanges();
 
     renderFinance();
+    renderExpenses();
 
     // ---- התקדמות ----
     const s = data.stages;
@@ -312,7 +318,7 @@ function openSupplierDlg(mode, stageId) {
     $('#s-title-box').hidden = quote;
     $('#s-titles').innerHTML = [t('מקדמה'), t('תשלום ביניים'), t('תשלום סופי'), t('תוספת')].map(v => `<option value="${esc(v)}">`).join('');
     $('#s-valid-box').hidden = $('#s-terms-box').hidden = !quote;
-    $('#s-file-label').textContent = quote ? t('קובץ ההצעה (PDF או צילום)') : t('חשבון / פירוט (לא חובה)');
+    $('#s-file-label').textContent = quote ? t('טופס ההצעה (PDF או צילום) *') : t('חשבון / פירוט (לא חובה)');
     $('#s-go').textContent = quote ? t('שליחת ההצעה') : t('שליחת הבקשה');
     dlg.showModal();
 }
@@ -323,6 +329,7 @@ async function submitSupplier(e) {
     err.hidden = true;
     if (!el.amount.value.trim()) { err.textContent = t('סכום: שדה חובה'); err.hidden = false; return; }
     if (sMode === 'payreq' && !el.title.value.trim()) { err.textContent = t('על מה התשלום?'); err.hidden = false; return; }
+    if (sMode === 'quote' && !sFile) { err.textContent = t('צריך לצרף את טופס הצעת המחיר (PDF או צילום)'); err.hidden = false; return; }
     const btn = $('#s-go');
     btn.disabled = true;
     try {
@@ -528,6 +535,78 @@ function openDecide(id, act) {
     if (sign) setupSign();
 }
 
+/** הוצאות ישירות (כ5) — מה שהלקוח קנה בעצמו. הלקוח מוסיף; העו"ד רואה. */
+function renderExpenses() {
+    const X = data.finance?.expenses?.items || [];
+    const client = data.role === 'client';
+    $('#expenses').hidden = !X.length && !client;
+    $('#x-add').hidden = !client;
+    $('#expense-list').innerHTML = X.map(x => `<article class="qcard">
+        <div class="q1"><span class="one">🧾 ${esc(x.title)}</span><span class="amt">${moneyVat(x.amount)}</span></div>
+        <div class="q2">${esc(shortDate(x.spent_on))}${x.stage ? `<i class="sep" aria-hidden="true">·</i>${esc(t(x.stage))}` : ''}${x.by_role === 'client' ? `<i class="sep" aria-hidden="true">·</i>${esc(t('נרשם על ידך'))}` : ''}
+            ${x.file ? `<i class="sep" aria-hidden="true">·</i><a href="${fileUrl(x.file.id)}" target="_blank" rel="noopener">📎 ${esc(t('קבלה'))}</a>` : ''}</div>
+    </article>`).join('') + (X.length ? `<p class="q-sum">${esc(t('סה"כ {amount}', { amount: money(data.finance.expenses.total.g) }))}</p>`
+        : `<p class="empty">${esc(t('קניתם בעצמכם חומרים, או שילמתם אגרה? רשמו כאן — זה נכנס למצב הכספי.'))}</p>`);
+}
+
+let xFile = null;
+function openExpense() {
+    const f = $('#x-dlg form');
+    f.reset();
+    $('.error', f).hidden = true;
+    xFile = null;
+    $('#x-file-name').textContent = '';
+    f.elements.spent_on.value = new Date().toISOString().slice(0, 10);
+    f.elements.stage_id.innerHTML = `<option value="">${esc(t('בלי שלב'))}</option>` + data.stages.map(s => `<option value="${s.id}">${esc(t(s.name))}</option>`).join('');
+    $('#x-dlg').showModal();
+}
+
+async function submitExpense(e) {
+    e.preventDefault();
+    const f = $('#x-dlg form'), el = f.elements, err = $('.error', f);
+    const fail = m => { err.textContent = m; err.hidden = false; };
+    if (!el.title.value.trim()) return fail(t('מה קניתם: שדה חובה'));
+    if (!(Number(el.amount.value.replace(/[,\s₪]/g, '')) > 0)) return fail(t('סכום: מספר חיובי'));
+    const btn = $('#x-go');
+    btn.disabled = true;
+    try {
+        const file = xFile ? await shrink(xFile) : null;
+        if (file && file.size > data.max_proof) throw new Error(t('הקובץ גדול מדי — עד 8MB'));
+        const qs = new URLSearchParams({ action: 'expense', title: el.title.value.trim(), amount: el.amount.value.replace(/[,\s₪]/g, ''), spent_on: el.spent_on.value,
+            stage_id: el.stage_id.value, notes: el.notes.value.trim(), vat: el.vat.checked ? '1' : '0', name: file?.name || '' });
+        const res = await fetch('api.php?' + qs, { method: 'POST', body: file || '',
+            headers: { 'X-Portal': token, 'X-Lang': I18n.lang(), Accept: 'application/json', 'Content-Type': file?.type || 'application/octet-stream' } });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(d.error || t('תקלה ({status})', { status: res.status }));
+        data = d;
+        $('#x-dlg').close();
+        render();
+        toast(t('ההוצאה נרשמה — מנהל הפרויקט מעודכן'));
+    } catch (x) { fail(x.message); } finally { btn.disabled = false; }
+}
+
+/** הכרטסת של הספק (כ5): הצעה ← תוספות ← תשלומים ← חשבוניות, עם יתרה. */
+function renderLedger() {
+    const L = data.ledger;
+    $('#s-ledger').hidden = !L || !L.entries.length;
+    if ($('#s-ledger').hidden) return;
+    const ICON = { quote: '📝', change: '±', index: '📈', milestone: '🗓️', paid: '💳', invoice: '🧾' };
+    const cell = (label, m) => `<div><dt>${esc(label)}</dt><dd>${moneyVat(m)}</dd></div>`;
+    $('#s-ledger-body').innerHTML = `<dl class="fin-kpis">${cell(t('סוכם'), L.committed)}${cell(t('שולם'), L.paid)}${cell(t('יתרה'), L.balance)}</dl>
+        ${L.missing_invoices ? `<p class="hint fin-warn">${esc(t('תשלומים בלי חשבונית: {n}', { n: L.missing_invoices }))}</p>` : ''}
+        <ol class="ledger">${L.entries.map(x => `<li class="lg-${x.kind}">
+            <span class="lg-at">${esc(shortDate(x.at))}</span>
+            <span class="lg-text"><span aria-hidden="true">${ICON[x.kind]}</span> ${esc(x.text)}${x.kind === 'milestone' ? ` <small class="muted">· ${esc(money(x.amount))} · ${esc(x.label)}</small>` : ''}</span>
+            <span class="lg-d">${x.delta.g ? esc((x.delta.g > 0 ? '+' : '−') + money(Math.abs(x.delta.g))) : ''}</span>
+            <span class="lg-b">${x.delta.g ? esc((x.balance < 0 ? '−' : '') + money(Math.abs(x.balance))) : ''}</span></li>`).join('')}</ol>`;
+}
+
+/** דוח כספי (כ5) — אותו דוח כמו אצל המנהל, מהנתונים שבדף. */
+function openReport() {
+    FinReport.open({ project: { name: data.project.name, address: data.project.address, client: data.role === 'client' ? data.name : '' },
+        manager: data.manager.name, finance: data.finance, payments: data.payments, changes: data.changes });
+}
+
 /** תוספות וחריגות — מה שנשלח אליהם, עם אישור / דחייה כשזה תורם. */
 function renderChanges() {
     const list = data.changes || [];
@@ -630,6 +709,8 @@ document.addEventListener('click', e => {
     if (act) { openDecide(Number(act.dataset.q), act.dataset.act); return; }
     const chg = e.target.closest('[data-chg]');
     if (chg) { openDecideChange(Number(chg.dataset.chg), chg.dataset.actChg); return; }
+    if (e.target.closest('#x-add')) { openExpense(); return; }
+    if (e.target.closest('[data-fin-report]')) { openReport(); return; }
     const si = e.target.closest('[data-sinv]');
     if (si) { supplierInvoice(Number(si.dataset.sinv)); return; }
     const go = e.target.closest('[data-go]');
@@ -659,6 +740,8 @@ $('#pay-dlg form').addEventListener('submit', submitPay);
 $('#s-dlg form').addEventListener('submit', submitSupplier);
 $('#s-dlg [name=file]').addEventListener('change', e => { sFile = e.target.files[0] || null; $('#s-file-name').textContent = sFile ? '📎 ' + sFile.name : ''; });
 $('#s-bank-form').addEventListener('submit', saveBank);
+$('#x-dlg form').addEventListener('submit', submitExpense);
+$('#x-dlg [name=file]').addEventListener('change', e => { xFile = e.target.files[0] || null; $('#x-file-name').textContent = xFile ? '📎 ' + xFile.name : ''; });
 $('#pay-dlg [name=file]').addEventListener('change', e => { proofFile = e.target.files[0] || null; $('#proof-name').textContent = proofFile ? '📎 ' + proofFile.name : ''; });
 // מקלדת בטלפון: השדה בפוקוס למרכז, והחלון בגובה הנראה
 (() => {

@@ -5,7 +5,7 @@
 'use strict';
 
 const Finance = (() => {
-    let project = null, data = null, bound = false, split = null, coFile = null, co = null;
+    let project = null, data = null, bound = false, split = null, coFile = null, co = null, exp = null, expFile = null, fee = null, ct = null;
     const pct = n => `${Math.round(n)}%`;
 
     function bind() {
@@ -13,6 +13,7 @@ const Finance = (() => {
         bound = true;
         $('#fin-sum').addEventListener('click', e => {
             if (e.target.closest('[data-fin-settings]')) { openSettings(); return; }
+            if (e.target.closest('[data-fin-report]')) { openReport(); return; }
             const a = e.target.closest('[data-alert-pay]');
             if (a) Payments.openPayment(Number(a.dataset.alertPay));
         });
@@ -24,8 +25,32 @@ const Finance = (() => {
             const n = e.target.closest('[data-co-new]');
             if (n) { openNewChange(Number(n.dataset.coNew), Number(n.dataset.supplier)); return; }
             const c = e.target.closest('[data-co]');
-            if (c) openChange(Number(c.dataset.co));
+            if (c) { openChange(Number(c.dataset.co)); return; }
+            const k = e.target.closest('[data-contract]');
+            if (k) { openContract(Number(k.dataset.contract)); return; }
+            const l = e.target.closest('[data-ledger]');
+            if (l) { ledger(project.project.id, Number(l.dataset.ledger)); return; }
+            if (e.target.closest('[data-exp-new]')) { openExpense(null); return; }
+            const x = e.target.closest('[data-exp]');
+            if (x) { openExpense(Number(x.dataset.exp)); return; }
+            if (e.target.closest('[data-fee-new]')) { openFee(null); return; }
+            const fp = e.target.closest('[data-fee]');
+            if (fp) openFee(Number(fp.dataset.fee));
         });
+        $('#exp-dlg form').addEventListener('submit', e => { e.preventDefault(); saveExpense(); });
+        $('#ct-dlg form').addEventListener('submit', e => { e.preventDefault(); saveContract(); });
+        $('#ct-ms-add').addEventListener('click', () => { readMs(); ct.ms.push({ title: '', due_date: '', months: null, stage_ids: [], done_on: '' }); renderMs(); });
+        $('#ct-ms').addEventListener('input', e => { if (e.target.name === 'months') ctMonths(e.target.closest('.ct-m')); });
+        $('#ct-dlg [name=start_date]').addEventListener('change', () => $$('#ct-ms .ct-m').forEach(ctMonths));
+        $('#ct-ms').addEventListener('click', e => { const b = e.target.closest('[data-ms-del]'); if (b) { readMs(); ct.ms.splice(Number(b.dataset.msDel), 1); renderMs(); } });
+        $('#ct-dlg [name=file_id]').addEventListener('change', ctFileLink);
+        $('#ct-pick').addEventListener('change', e => { ctUpload(e.target.files[0]); e.target.value = ''; });
+        $('#exp-file').addEventListener('change', e => { expFile = e.target.files[0] || null; $('#exp-file-name').textContent = expFile ? '📎 ' + expFile.name : ''; });
+        $('#exp-delete').addEventListener('click', deleteExpense);
+        $('#fee-dlg form').addEventListener('submit', e => { e.preventDefault(); saveFee(); });
+        $('#fee-recv').addEventListener('click', () => receiveFee(true));
+        $('#fee-unrecv').addEventListener('click', () => receiveFee(false));
+        $('#fee-delete').addEventListener('click', deleteFee);
         const f = $('#fin-dlg form');
         f.addEventListener('submit', e => { e.preventDefault(); saveSettings(); });
         $$('#fin-dlg [name=fee_type]').forEach(r => r.addEventListener('change', feeChanged));
@@ -73,7 +98,8 @@ const Finance = (() => {
         const growth = Math.round(T.budget_growth.g);
         $('#fin-sum').innerHTML = `
             <header class="fin-head"><h2 id="fin-title">${esc(t('המצב הכספי'))}</h2>
-                <button type="button" class="btn ghost sm" data-fin-settings>⚙️ ${esc(t('הגדרות'))}</button></header>
+                <span class="row-btns"><button type="button" class="btn ghost sm" data-fin-report>📄 ${esc(t('דוח'))}</button>
+                <button type="button" class="btn ghost sm" data-fin-settings>⚙️ ${esc(t('הגדרות'))}</button></span></header>
             <p class="fin-sentence">${sentence}${status ? ` — ${status}` : ''}</p>
             ${alerts()}
             ${bar(T)}
@@ -153,17 +179,46 @@ const Finance = (() => {
                 ${s.stage_id ? meter(s.progress, t('בוצע')) : ''}${budget}
                 <ul class="list fin-rows">${rows || `<li class="muted fin-empty">${esc(t('עוד אין הצעה שאושרה'))}</li>`}</ul></section>`;
         }).join('');
-        const fee = data.fee ? `<section class="fin-stage"><header class="q-head"><h3 class="one">💼 ${esc(t('שכר הטרחה — {name}', { name: data.fee.name }))}</h3></header>
-            <ul class="list fin-rows"><li class="fin-row"><dl class="fin-cells">${cell(t('סוכם'), data.fee.amount)}</dl></li></ul></section>` : '';
-        $('#fin-stages').innerHTML = html + fee;
+        $('#fin-stages').innerHTML = html + expensesSection() + feeSection();
     }
 
+    /** הוצאות ישירות (כ5) — מה שהלקוח קנה בעצמו. */
+    function expensesSection() {
+        const X = data.expenses || { items: [], total: { g: 0, n: 0 } };
+        const items = X.items.map(x => `<li class="fin-row fin-item" data-exp="${x.id}" tabindex="0" role="button">
+            <div class="fin-row-head"><b class="one">${esc(x.title)}</b>${x.by_role === 'client' ? `<span class="chip">${esc(t('רשם הלקוח'))}</span>` : ''}${x.file ? '<span aria-hidden="true">📎</span>' : ''}</div>
+            <div class="fin-item-l2"><span class="muted">${esc(shortDateL(x.spent_on))}${x.stage ? ' · ' + esc(t(x.stage)) : ''}</span>${moneyVat(x.amount)}</div></li>`).join('');
+        return `<section class="fin-stage" id="fin-expenses"><header class="q-head"><h3 class="one">🧾 ${esc(t('הוצאות ישירות'))}</h3>
+                ${X.items.length ? `<span class="q-sum">${moneyVat(X.total)}</span>` : ''}</header>
+            ${items ? `<ul class="list fin-rows">${items}</ul>` : `<p class="muted fin-empty">${esc(t('מה שהלקוח קנה בעצמו — חומרים, אגרות, היתרים. נכנס לסוכם ולשולם.'))}</p>`}
+            <div class="row-btns wrap"><button type="button" class="btn ghost sm" data-exp-new>+ ${esc(t('הוצאה ישירה'))}</button></div></section>`;
+    }
+
+    /** שכר הטרחה — סוכם, שולם, יתרה, ואבני דרך משלו (כ5). */
+    function feeSection() {
+        const F = data.fee;
+        if (!F) return '';
+        const items = F.payments.map(x => `<li class="fin-row fin-item" data-fee="${x.id}" tabindex="0" role="button">
+            <div class="fin-row-head"><b class="one">${esc(x.title)}</b>${x.received ? `<span class="chip fin-ok">✅ ${esc(t('התקבל'))}</span>` : x.late ? `<span class="chip fin-late">${esc(t('באיחור'))}</span>` : ''}</div>
+            <div class="fin-item-l2"><span class="muted">${esc(x.received ? t('התקבל ב-{date}', { date: shortDateL(x.received_on) }) : x.due_date ? t('עד {date}', { date: shortDateL(x.due_date) }) : t('בלי תאריך'))}</span>${moneyVat(x.amount)}</div></li>`).join('');
+        const gap = Math.round((F.amount.g - F.scheduled.g) * 100) / 100;
+        return `<section class="fin-stage" id="fin-fee"><header class="q-head"><h3 class="one">💼 ${esc(t('שכר הטרחה — {name}', { name: F.name }))}</h3></header>
+            <ul class="list fin-rows"><li class="fin-row"><dl class="fin-cells">${cell(t('סוכם'), F.amount)}${cell(t('היה צריך עד היום'), F.due)}${cell(t('שולם'), F.paid)}${cell(t('יתרה'), F.balance)}</dl>
+                ${F.payments.length && Math.abs(gap) > 1 ? `<p class="fin-stage-budget fin-warn">${esc(t('אבני הדרך מכסות {s} מתוך {c}', { s: money(F.scheduled.g), c: money(F.amount.g) }))}</p>` : ''}</li>
+            ${items}</ul>
+            <div class="row-btns wrap"><button type="button" class="btn ghost sm" data-fee-new>+ ${esc(t('אבן דרך לשכר הטרחה'))}</button></div></section>`;
+    }
+
+    const shortDateL = ymd => (ymd ? new Date(ymd + 'T12:00:00').toLocaleDateString(I18n.locale()) : '');
+
     function supplierRow(s, r) {
-        const flags = r.flags.map(f => FLAG[f](r)).map(x => `<span class="chip ${x.cls}">${esc(x.text)}</span>`).join('');
+        const flags = r.flags.map(f => FLAG[f](r)).map(x => `<span class="chip ${x.cls}">${esc(x.text)}</span>`).join('') + contractChip(r.contract);
         const act = [];
         if (r.flags.includes('uncovered') && !r.milestones && r.quote_id) act.push(`<button type="button" class="btn ghost sm" data-split="${s.stage_id}" data-supplier="${r.supplier_id}">✂️ ${esc(t('חלוקה לתשלומים'))}</button>`);
         else if (r.flags.includes('uncovered')) act.push(`<button type="button" class="btn ghost sm" data-milestone="${s.stage_id}" data-supplier="${r.supplier_id}">+ ${esc(t('אבן דרך'))}</button>`);
         if (s.stage_id) act.push(`<button type="button" class="btn ghost sm" data-co-new="${s.stage_id}" data-supplier="${r.supplier_id}">± ${esc(t('תוספת / חריגה'))}</button>`);
+        act.push(`<button type="button" class="btn ghost sm" data-contract="${r.supplier_id}">📄 ${esc(t(r.contract ? 'חוזה' : '+ חוזה'))}</button>`);
+        act.push(`<button type="button" class="btn ghost sm" data-ledger="${r.supplier_id}">📒 ${esc(t('כרטסת'))}</button>`);
         const changes = (r.changes || []).filter(c => c.status !== 'cancelled').map(c => `<button type="button" class="chip co-${c.status}" data-co="${c.id}">${c.amount > 0 ? '+' : '−'}${esc(money(Math.abs(c.amount)))} · ${esc(t(STATUS[c.status]))}</button>`).join('');
         return `<li class="fin-row">
             <div class="fin-row-head"><b class="one">${esc(r.name)}</b>${flags}</div>
@@ -176,6 +231,16 @@ const Finance = (() => {
             ${act.length ? `<div class="row-btns wrap">${act.join('')}</div>` : ''}
         </li>`;
     }
+
+    /** החוזה בשורת הספק: עד מתי, איחור וקנס, אבני דרך באיחור. */
+    function contractChip(c) {
+        if (!c) return '';
+        if (c.completed_on) return `<span class="chip fin-ok">📄 ${esc(t('הסתיים {date}', { date: dateL(c.completed_on) }))}${c.penalty ? ' · ' + esc(t('קנס {amount}', { amount: money(c.penalty) })) : ''}</span>`;
+        if (c.delay_days > 0) return `<span class="chip fin-late">📄 ${esc(c.penalty ? t('איחור {n} ימים · קנס {amount}', { n: c.delay_days, amount: money(c.penalty) }) : t('איחור {n} ימים', { n: c.delay_days }))}</span>`;
+        const ms = c.late_milestones ? `<span class="chip fin-late">${esc(t('אבני דרך באיחור: {n}', { n: c.late_milestones }))}</span>` : '';
+        return (c.end_date ? `<span class="chip">📄 ${esc(t('סיום עד {date}', { date: dateL(c.end_date) }))}</span>` : '') + ms;
+    }
+    const dateL = ymd => (ymd ? new Date(ymd + 'T12:00:00').toLocaleDateString(I18n.locale()) : '');
 
     // i18n-ok-start — מתורגם בתצוגה
     const STATUS = { sent: 'ממתינה ללקוח', client_approved: 'הלקוח אישר — ממתינה לעו"ד', approved: 'אושרה', rejected: 'נדחתה', cancelled: 'בוטלה' };
@@ -192,6 +257,7 @@ const Finance = (() => {
         $('#co-dlg-title').textContent = t('תוספת / חריגה');
         $('#co-for').textContent = t('{supplier} · {stage}', { supplier: r.name, stage: t(s.name) });
         $('#co-new').hidden = false; $('#co-view').hidden = true; $('#co-send').hidden = false;
+        Dev.attach($('#co-dlg'), 'change', null);
         $('#co-dlg').showModal();
     }
 
@@ -238,6 +304,7 @@ const Finance = (() => {
         if (c.status === 'client_approved') b.push(['lawyer-approve', '✅ ' + t('העו"ד אישר (נרשם ידנית)'), 'primary'], ['lawyer-reject', '✖ ' + t('העו"ד דחה'), 'ghost']);
         if (['sent', 'client_approved'].includes(c.status)) b.push(['cancel', t('ביטול התוספת'), 'ghost danger']);
         $('#co-actions').innerHTML = b.map(([k, label, cls]) => `<button type="button" class="btn ${cls}" data-co-do="${k}">${esc(label)}</button>`).join('');
+        Dev.attach($('#co-dlg'), 'change', id);
         $('#co-dlg').showModal();
     }
 
@@ -260,8 +327,247 @@ const Finance = (() => {
 
     /** תשובה מהשרת (מצב כספי) — מציירים מחדש. */
     function take(d) {
-        data = { settings: d.settings, totals: d.totals, stages: d.stages, fee: d.fee, alerts: d.alerts };
+        data = { settings: d.settings, totals: d.totals, stages: d.stages, fee: d.fee, alerts: d.alerts, expenses: d.expenses };
         render();
+    }
+
+    // ================= הוצאות ישירות (כ5) =================
+
+    function openExpense(id) {
+        const x = id ? data.expenses.items.find(i => i.id === id) : null;
+        const f = $('#exp-dlg form'), el = f.elements;
+        f.reset(); formError(f, '');
+        exp = { id, x };
+        expFile = null;
+        $('#exp-file-name').textContent = x?.file ? '📎 ' + x.file.name : '';
+        $('#exp-dlg-title').textContent = x ? t('הוצאה ישירה') : t('הוצאה ישירה חדשה');
+        el.title.value = x?.title || '';
+        el.amount.value = x ? x.amount.g : '';
+        el.spent_on.value = x?.spent_on || new Date().toISOString().slice(0, 10);
+        el.notes.value = x?.notes || '';
+        el.vat.checked = x ? x.vat_rate > 0 : true;
+        el.stage_id.innerHTML = options(project.stages.map(s => ({ value: s.id, label: t(s.name) })), x?.stage_id || '', t('בלי שלב'));
+        $('#exp-delete').hidden = !x;
+        Dev.attach($('#exp-dlg'), 'expense', x?.id);
+        $('#exp-dlg').showModal();
+        el.title.focus();
+    }
+
+    async function saveExpense() {
+        const f = $('#exp-dlg form'), el = f.elements;
+        if (!el.title.value.trim()) { formError(f, t('מה נקנה: שדה חובה')); return; }
+        await busy($('button[type=submit]', f), f, async () => {
+            let fileId;
+            if (expFile) {
+                const { folders } = await api('folders', { params: { project_id: project.project.id } });
+                const folder = folders.find(x => x.kind === 'client') || folders.find(x => x.kind === 'inbox');
+                fileId = (await Files.send(expFile, project.project.id, folder.id, undefined, { quiet: true })).file.id;
+            }
+            const body = { id: exp.id || undefined, project_id: project.project.id, title: el.title.value.trim(), amount: el.amount.value.trim(),
+                spent_on: el.spent_on.value, stage_id: el.stage_id.value || null, notes: el.notes.value.trim(), vat: el.vat.checked };
+            if (fileId) body.file_id = fileId;
+            take(await api('expense', { body }));
+            $('#exp-dlg').close();
+            toast(t('נשמר'));
+        });
+    }
+
+    async function deleteExpense() {
+        if (!confirm(t('למחוק את ההוצאה?'))) return;
+        const f = $('#exp-dlg form');
+        await busy($('#exp-delete'), f, async () => { take(await api('expense-delete', { body: { id: exp.id } })); $('#exp-dlg').close(); });
+    }
+
+    // ================= שכר הטרחה — אבני דרך (כ5) =================
+
+    function openFee(id) {
+        const x = id ? data.fee.payments.find(i => i.id === id) : null;
+        const f = $('#fee-dlg form'), el = f.elements;
+        f.reset(); formError(f, '');
+        fee = { id, x };
+        $('#fee-dlg-title').textContent = x ? x.title : t('שכר טרחה — אבן דרך');
+        el.title.value = x?.title || '';
+        el.amount.value = x ? x.amount.g : '';
+        el.due_date.value = x?.due_date || '';
+        $('#fee-recv-box').hidden = !x;
+        if (x) {
+            el.received_on.value = x.received_on || new Date().toISOString().slice(0, 10);
+            el.received_amount.value = x.received_amount ?? x.amount.g;
+            $('#fee-recv').hidden = x.received;
+            $('#fee-unrecv').hidden = !x.received;
+        }
+        Dev.attach($('#fee-dlg'), 'fee_payment', x?.id);
+        $('#fee-dlg').showModal();
+    }
+
+    async function saveFee() {
+        const f = $('#fee-dlg form'), el = f.elements;
+        await busy($('button[type=submit]', f), f, async () => {
+            take(await api('fee-payment', { body: { id: fee.id || undefined, project_id: project.project.id, title: el.title.value.trim(), amount: el.amount.value.trim(), due_date: el.due_date.value } }));
+            $('#fee-dlg').close();
+            toast(t('נשמר'));
+        });
+    }
+
+    async function receiveFee(yes) {
+        const f = $('#fee-dlg form'), el = f.elements;
+        await busy(null, f, async () => {
+            take(await api('fee-payment-receive', { body: { id: fee.id, received: yes, received_on: el.received_on.value, amount: el.received_amount.value.trim() } }));
+            $('#fee-dlg').close();
+            toast(yes ? t('נרשם שהתקבל') : t('נשמר'));
+        });
+    }
+
+    async function deleteFee() {
+        if (!confirm(t('למחוק את אבן הדרך?'))) return;
+        const f = $('#fee-dlg form');
+        await busy(null, f, async () => { take(await api('fee-payment-delete', { body: { id: fee.id } })); $('#fee-dlg').close(); });
+    }
+
+    // ================= כרטסת ספק (כ5) =================
+
+    // i18n-ok-start — מתורגם בתצוגה
+    const LEDGER_ICON = { quote: '📝', change: '±', index: '📈', milestone: '🗓️', paid: '💳', invoice: '🧾' };
+    // i18n-ok-end
+
+    /** כרטסת: projectId — בפרויקט אחד; null — בכל הפרויקטים (מכרטיס הספק). */
+    async function ledger(projectId, supplierId) {
+        let d;
+        try { d = await api('ledger', { params: { supplier_id: supplierId, project_id: projectId || undefined } }); } catch (e) { toast(e.message, true); return; }
+        $('#ledger-dlg-title').textContent = t('כרטסת — {name}', { name: d.supplier.name });
+        const one = L => `<dl class="fin-cells">${cell(t('סוכם'), L.committed)}${cell(t('שולם'), L.paid)}${cell(t('יתרה'), L.balance)}</dl>
+            ${L.missing_invoices ? `<p class="fin-stage-budget fin-warn">${esc(t('תשלומים בלי חשבונית: {n}', { n: L.missing_invoices }))}</p>` : ''}
+            <ol class="ledger">${L.entries.map(x => `<li class="lg-${x.kind}">
+                <span class="lg-at">${esc(shortDateL(x.at))}</span>
+                <span class="lg-text"><span aria-hidden="true">${LEDGER_ICON[x.kind]}</span> ${esc(x.text)}${x.kind === 'milestone' ? ` <small class="muted">· ${esc(money(x.amount))} · ${esc(x.label)}</small>` : ''}</span>
+                <span class="lg-d">${x.delta.g ? esc((x.delta.g > 0 ? '+' : '−') + money(Math.abs(x.delta.g))) : ''}</span>
+                <span class="lg-b">${x.delta.g ? esc((x.balance < 0 ? '−' : '') + money(Math.abs(x.balance))) : ''}</span></li>`).join('') || `<li class="muted">${esc(t('עוד אין תנועות'))}</li>`}</ol>`;
+        const total = d.totals ? `<section class="fin-card"><h3 class="sec-title">${esc(t('בכל הפרויקטים'))}</h3><dl class="fin-cells">${cell(t('סוכם'), d.totals.committed)}${cell(t('שולם'), d.totals.paid)}${cell(t('יתרה'), d.totals.balance)}</dl>
+            ${d.totals.missing_invoices ? `<p class="fin-stage-budget fin-warn">${esc(t('תשלומים בלי חשבונית: {n}', { n: d.totals.missing_invoices }))}</p>` : ''}</section>` : '';
+        $('#ledger-body').innerHTML = total + (d.projects.map(P => `<section class="fin-stage">${d.totals ? `<h3 class="sec-title">${esc(P.name)}</h3>` : ''}${one(P)}</section>`).join('')
+            || `<p class="muted">${esc(t('עוד אין לספק התחייבויות או תשלומים בפרויקטים שלך'))}</p>`);
+        $('#ledger-dlg').showModal();
+    }
+
+    // ================= חוזה עם ספק — מועדים, אבני דרך וקנס =================
+
+    async function openContract(supplierId) {
+        let c;
+        try { ({ contract: c } = await api('contract', { params: { project_id: project.project.id, supplier_id: supplierId } })); } catch (e) { toast(e.message, true); return; }
+        const f = $('#ct-dlg form'), el = f.elements;
+        f.reset(); formError(f, '');
+        const name = data.stages.flatMap(s => s.rows).find(r => r.supplier_id === supplierId)?.name || '';
+        ct = { supplierId, ms: (c?.milestones || []).map(m => ({ title: m.title, due_date: m.due_date, months: m.months, stage_ids: m.stage_ids, done_on: m.done_on,
+            status: m.status, late: m.late_days, by_stage: m.by_stage, stages_done: m.stages_done })) };
+        $('#ct-dlg-title').textContent = t('חוזה — {name}', { name });
+        for (const k of ['signed_on', 'start_date', 'end_date', 'completed_on', 'notes']) el[k].value = c?.[k] || '';
+        el.penalty_per_day.value = c?.penalty_per_day || '';
+        el.grace_days.value = c?.grace_days ?? '';
+        el.max_deviation_days.value = c?.max_deviation_days ?? 30;
+        // תקציר: עד מתי, כמה נשאר / איחור, קנס
+        const sum = $('#ct-sum');
+        sum.hidden = !c || !c.end_date;
+        if (c && c.end_date) {
+            sum.innerHTML = c.completed_on ? `✅ ${esc(t('הסתיים ב-{date}', { date: dateL(c.completed_on) }))}${c.delay_days ? ' · ' + esc(t('באיחור של {n} ימים', { n: c.delay_days })) : ''}`
+                : c.delay_days > 0 ? `<b class="fin-late">${esc(t('איחור של {n} ימים מהמועד בחוזה', { n: c.delay_days }))}</b>`
+                : esc(t('נשארו {n} ימים עד מועד הסיום', { n: c.days_left }));
+            if (c.penalty) sum.innerHTML += `<br><b class="fin-late">${esc(t('קנס מצטבר: {amount} ({n} ימים × {per})', { amount: money(c.penalty), n: c.penalty_days, per: money(c.penalty_per_day) }))}</b>`;
+        }
+        renderMs();
+        await ctFiles(c?.file?.id || null);
+        Dev.attach($('#ct-dlg'), 'contract', c?.id);
+        $('#ct-dlg').showModal();
+    }
+
+    function renderMs() {
+        const ST = { done: '✅', done_late: '✅', late: '⚠️', breach: '⛔', soon: '⏰', ok: '' };
+        // אבן דרך = קבוצת שלבים (כמו בנספח "אבני דרך"): "סיום הריסה, קירות צד אחד ותשתיות אינסטלציה — עד 4 חודשים"
+        $('#ct-ms').innerHTML = ct.ms.map((m, i) => `<li class="ct-m" data-i="${i}">
+            <label class="f wide"><span>${ST[m.status] || ''} ${esc(t('אבן דרך'))}</span><input name="title" value="${esc(m.title)}" maxlength="200" placeholder="${esc(t('למשל: סיום הריסה, פינוי ותשתיות אינסטלציה'))}"></label>
+            <label class="f"><span>${esc(t('עד X חודשים מההתחלה'))}</span><input name="months" inputmode="numeric" dir="ltr" maxlength="3" value="${m.months ?? ''}"></label>
+            <label class="f"><span>${esc(t('או עד תאריך'))}</span><input name="due_date" type="date" value="${esc(m.due_date)}"></label>
+            <button type="button" class="icon-btn" data-ms-del="${i}" aria-label="${esc(t('הסרה'))}">✕</button>
+            <fieldset class="f wide ct-stages"><legend>${esc(t('השלבים שבה — הושגה כשכולם בוצעו'))}</legend>
+                <div class="chips">${project.stages.map(s => `<label><input type="checkbox" value="${s.id}"${(m.stage_ids || []).includes(s.id) ? ' checked' : ''}><span>${esc(t(s.name))}</span></label>`).join('')}</div></fieldset>
+            <label class="f"><span>${esc(t('הושגה ב (ידני)'))}</span><input name="done_on" type="date" value="${esc(m.done_on)}"></label>
+            ${m.late && m.status !== 'done' ? `<p class="hint ${m.status === 'done_late' ? '' : 'fin-late'}">${esc(t('{n} ימים אחרי המועד', { n: m.late }))}${m.by_stage ? ' · ' + esc(t('הושגה כשכל השלבים בוצעו')) : ''}</p>` : ''}
+            ${!m.done_on && m.stage_ids?.length && m.status && !['done', 'done_late'].includes(m.status) ? `<p class="hint">${esc(t('בוצעו {d} מתוך {n} שלבים', { d: m.stages_done || 0, n: m.stage_ids.length }))}</p>` : ''}
+        </li>`).join('') || `<li class="muted">${esc(t('עוד אין אבני דרך — למשל מהנספח "אבני דרך" בחוזה.'))}</li>`;
+        $$('#ct-ms .ct-m').forEach(ctMonths);
+    }
+
+    /** "עד X חודשים מההתחלה" — מחשב את התאריך (והשדה של התאריך ננעל). */
+    function ctMonths(li) {
+        const months = $('[name=months]', li).value.trim(), start = $('#ct-dlg [name=start_date]').value, due = $('[name=due_date]', li);
+        due.disabled = months !== '';
+        if (months !== '' && start) {
+            const d = new Date(start + 'T12:00:00');
+            d.setMonth(d.getMonth() + Number(months));
+            due.value = d.toISOString().slice(0, 10);
+        }
+    }
+
+    function readMs() {
+        $$('#ct-ms .ct-m').forEach(li => {
+            const m = ct.ms[Number(li.dataset.i)], q = n => $(`[name=${n}]`, li);
+            m.title = q('title').value; m.due_date = q('due_date').value; m.done_on = q('done_on').value;
+            m.months = q('months').value.trim() === '' ? null : Number(q('months').value);
+            m.stage_ids = $$('.ct-stages input:checked', li).map(x => Number(x.value));
+        });
+    }
+
+    async function ctFiles(value) {
+        const sel = $('#ct-dlg [name=file_id]');
+        let files = [];
+        try { ({ files } = await api('files', { params: { project_id: project.project.id } })); } catch { /* ריק */ }
+        const docs = files.filter(x => x.type === 'contract'), rest = files.filter(x => x.type !== 'contract');
+        const opt = x => ({ value: x.id, label: x.name });
+        sel.innerHTML = `<option value="">${esc(t('בלי מסמך'))}</option>`
+            + (docs.length ? `<optgroup label="${esc(t('חוזים'))}">${options(docs.map(opt), value)}</optgroup>` : '')
+            + (rest.length ? `<optgroup label="${esc(t('קבצים אחרים'))}">${options(rest.map(opt), value)}</optgroup>` : '');
+        ctFileLink();
+    }
+    function ctFileLink() {
+        const id = Number($('#ct-dlg [name=file_id]').value);
+        $('#ct-file-open').hidden = !id;
+        if (id) $('#ct-file-open').href = `api.php?action=file&id=${id}`;
+    }
+    async function ctUpload(file) {
+        if (!file) return;
+        const f = $('#ct-dlg form');
+        await busy(null, f, async () => {
+            const { folders } = await api('folders', { params: { project_id: project.project.id } });
+            const folder = folders.find(x => x.contact_id === ct.supplierId && x.parent_id === null) || folders.find(x => x.kind === 'inbox');
+            const saved = (await Files.send(file, project.project.id, folder.id, undefined, { quiet: true })).file;
+            await ctFiles(saved.id);
+        });
+    }
+
+    async function saveContract() {
+        readMs();
+        const f = $('#ct-dlg form'), el = f.elements;
+        if (ct.ms.some(m => m.title.trim() && !m.due_date && m.months === null)) { formError(f, t('לכל אבן דרך — מועד')); return; }
+        if (ct.ms.some(m => m.months !== null) && !el.start_date.value) { formError(f, t('"עד X חודשים" — צריך מועד התחלה')); return; }
+        const body = { project_id: project.project.id, supplier_id: ct.supplierId, file_id: Number(el.file_id.value) || null,
+            milestones: ct.ms.filter(m => m.title.trim()).map(m => ({ title: m.title.trim(), due_date: m.due_date, months: m.months, stage_ids: m.stage_ids, done_on: m.done_on })) };
+        for (const k of ['signed_on', 'start_date', 'end_date', 'completed_on', 'notes', 'penalty_per_day', 'grace_days', 'max_deviation_days']) body[k] = el[k].value.trim();
+        await busy($('button[type=submit]', f), f, async () => {
+            take(await api('contract', { body }));
+            $('#ct-dlg').close();
+            toast(t('נשמר'));
+        });
+    }
+
+    // ================= דוח כספי (כ5) =================
+
+    async function openReport() {
+        let payments = [], changes = [];
+        try {
+            [{ payments }, { changes }] = await Promise.all([api('payments', { params: { project_id: project.project.id } }), api('changes', { params: { project_id: project.project.id } })]);
+        } catch (e) { toast(e.message, true); return; }
+        const P = project.project;
+        FinReport.open({ project: { name: P.name, address: P.address, client: (project.team || []).find(c => c.id === P.client_id)?.name || '' }, manager: state.user.display_name,
+            finance: data, payments, changes });
     }
 
     function cell(label, m) { return `<div><dt>${esc(label)}</dt><dd>${moneyVat(m)}</dd></div>`; }
@@ -380,12 +686,12 @@ const Finance = (() => {
         await busy($('button[type=submit]', f), f, async () => {
             const d = await api('payment-split', { body: { stage_id: split.stageId, parts: split.rows } });
             $('#split-dlg').close();
-            data = { settings: d.settings, totals: d.totals, stages: d.stages, fee: d.fee };
+            data = { settings: d.settings, totals: d.totals, stages: d.stages, fee: d.fee, expenses: d.expenses };
             render();
             await Payments.refreshList({ payments: d.payments, summary: d.summary, statuses: d.statuses, methods: d.methods });
             toast(t('נוצרו {n} אבני דרך', { n: split.rows.length }));
         });
     }
 
-    return { show, reload };
+    return { show, reload, ledger };
 })();

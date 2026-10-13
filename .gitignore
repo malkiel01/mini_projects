@@ -1,3 +1,6 @@
 platform/data/*.sqlite*
 platform/lib/setup-code.php
 project-manager/lib/recovery-code.php
+document-templates/data/*.sqlite*
+document-templates/data/secret.key
+document-templates/data/files/

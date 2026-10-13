@@ -209,6 +209,9 @@ jobs:
             --exclude='carpentry-3d/data/*.sqlite*' \
             --exclude='carpentry-3d/data/media/' \
             --exclude='platform/data/*.sqlite*' \
+            --exclude='document-templates/data/*.sqlite*' \
+            --exclude='document-templates/data/secret.key' \
+            --exclude='document-templates/data/files/' \
             --exclude='project-manager/data/*.sqlite*' \
             --exclude='project-manager/data/config.json' \
             --exclude='project-manager/data/files/' \

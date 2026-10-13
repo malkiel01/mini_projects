@@ -9,6 +9,7 @@
 const Quotes = (() => {
     let project = null, data = { quotes: [], summary: {} }, bound = false, current = null, pending = null;
     const LIVE = ['open', 'sent', 'client_approved'];
+    const LOCKED = ['client_approved', 'approved', 'rejected', 'declined', 'cancelled']; // כמו PM_QUOTE_LOCKED בשרת
     const ICON = { open: '📥', sent: '📤', client_approved: '⏳', approved: '✅', declined: '▫️', rejected: '✖️', cancelled: '🚫' };
     const stageOf = id => project.stages.find(s => s.id === id);
     const fileUrl = (id, extra = '') => `api.php?action=file&id=${id}${extra}`;
@@ -39,6 +40,7 @@ const Quotes = (() => {
         form.elements.file_id.addEventListener('change', fileLink);
         $('#quote-pick').addEventListener('change', e => { uploadFile(e.target.files[0]); e.target.value = ''; });
         $('#quote-recommend').addEventListener('click', recommend);
+        $('#quote-attach').addEventListener('click', attachFile);
         $('#quote-cancel').addEventListener('click', cancel);
         $('#decision-btns').addEventListener('click', e => {
             const b = e.target.closest('[data-decide]');
@@ -153,11 +155,23 @@ const Quotes = (() => {
         el.valid_until.value = q.valid_until || '';
         el.terms.value = q.terms || '';
         el.notes.value = q.notes || '';
-        const locked = current?.status === 'cancelled';
+        // הצעה שהוחלט עליה (אושרה / נדחתה / לא נבחרה / בוטלה) — לצפייה בלבד
+        const locked = !!current && LOCKED.includes(current.status) && !Dev.on(); // סמכות מפתח: עריכה גם של נעולה
+        Dev.attach(dlg, 'quote', current?.id);
         [...form.elements].forEach(x => { if (x.name) x.disabled = locked; });
         $('button[type=submit]', form).hidden = locked;
-        $('.upload-btn', form).hidden = locked;
-        $('#quote-version-hint').hidden = !current || !['sent', 'client_approved', 'approved'].includes(current.status);
+        // נעולה בלי טופס (מלפני שהטופס היה חובה) — אפשר רק להשלים את הטופס
+        const attach = locked && !current.file_id && current.status !== 'cancelled';
+        $('.upload-btn', form).hidden = locked && !attach;
+        el.file_id.disabled = locked && !attach;
+        $('#quote-attach').hidden = !attach;
+        $('#quote-version-hint').hidden = current?.status !== 'sent';
+        const lock = $('#quote-locked-hint');
+        lock.hidden = !locked;
+        lock.textContent = !locked ? '' : ['approved', 'client_approved'].includes(current.status)
+            ? t('🔒 הצעה שאושרה — לא נערכת. שינוי במחיר או בהיקף: "± תוספת / חריגה" בלשונית הכספים, או ביטול והצעה חדשה.')
+            : current.status === 'cancelled' ? t('🔒 הצעה שבוטלה — לצפייה בלבד.')
+            : t('🔒 הצעה שנדחתה — לא נערכת. הצעה חדשה מהספק: "+ הצעה".');
         $('#quote-state').hidden = !current;
         if (current) {
             $('#quote-state').innerHTML = `<span class="chip q-${current.status}">${ICON[current.status]} ${esc(state.labels.quote[current.status])}</span>`
@@ -178,7 +192,7 @@ const Quotes = (() => {
     async function fillSuppliers(value) {
         const el = $('#quote-dlg form').elements;
         const st = stageOf(Number(el.stage_id.value));
-        await Projects.fillSuppliers(el.supplier_id, st?.trade_id || 0, value ?? (Number(el.supplier_id.value) || null), project.project.owner_id);
+        await Projects.fillSuppliers(el.supplier_id, st?.trade_id || 0, value ?? (Number(el.supplier_id.value) || null), teamOf(project));
         el.supplier_id.options[0].textContent = t('בחירת ספק');
     }
 
@@ -188,7 +202,7 @@ const Quotes = (() => {
         try { ({ files } = await api('files', { params: { project_id: project.project.id } })); } catch { /* ריק */ }
         const quotes = files.filter(f => f.type === 'quote'), rest = files.filter(f => f.type !== 'quote');
         const opt = f => ({ value: f.id, label: f.name });
-        el.file_id.innerHTML = `<option value="">${esc(t('ללא קובץ'))}</option>`
+        el.file_id.innerHTML = `<option value="">${esc(t('בחירת הטופס — או העלאה'))}</option>`
             + (quotes.length ? `<optgroup label="${esc(t('הצעות מחיר'))}">${options(quotes.map(opt), value)}</optgroup>` : '')
             + (rest.length ? `<optgroup label="${esc(t('קבצים אחרים'))}">${options(rest.map(opt), value)}</optgroup>` : '');
         fileLink();
@@ -259,6 +273,7 @@ const Quotes = (() => {
         if (!body.stage_id) { formError(form, t('שלב: שדה חובה. מוסיפים שלבים בלשונית "שלבים"')); return; }
         if (!body.supplier_id) { formError(form, t('ספק: שדה חובה')); return; }
         if (!body.amount) { formError(form, t('סכום: שדה חובה')); return; }
+        if (!body.file_id) { formError(form, t('צריך לצרף את טופס הצעת המחיר (PDF או צילום)')); return; }
         await busy($('button[type=submit]', form), form, async () => {
             await refresh(await api('quote', { body }));
             $('#quote-dlg').close();
@@ -275,6 +290,17 @@ const Quotes = (() => {
             await refresh(await api('quote-decide', { body: { id: current.id, role, decision, note } }));
             $('#quote-dlg').close();
             toast(t(decision === 'approved' ? 'האישור נרשם' : 'הדחייה נרשמה'));
+        });
+    }
+
+    async function attachFile() {
+        const form = $('#quote-dlg form');
+        const fileId = Number(form.elements.file_id.value) || 0;
+        if (!fileId) { formError(form, t('צריך לצרף את טופס הצעת המחיר (PDF או צילום)')); return; }
+        await busy($('#quote-attach'), form, async () => {
+            await refresh(await api('quote-attach', { body: { id: current.id, file_id: fileId } }));
+            $('#quote-dlg').close();
+            toast(t('הטופס צורף להצעה'));
         });
     }
 
@@ -332,7 +358,7 @@ const Quotes = (() => {
     async function fillInvitees() {
         const st = stageOf(Number($('#invite-dlg [name=stage_id]').value));
         let all = [];
-        try { all = (await contactsOf('supplier')).filter(c => c.owner_id === project.project.owner_id && !c.archived); } catch { /* ריק */ }
+        try { all = (await contactsOf('supplier')).filter(c => teamOf(project).includes(c.owner_id) && !c.archived); } catch { /* ריק */ }
         const asked = new Set(data.quotes.filter(q => q.stage_id === st?.id).map(q => q.supplier_id));
         const inTrade = st?.trade_id ? all.filter(c => c.trades.includes(st.trade_id)) : [];
         const list = [...inTrade, ...all.filter(c => !inTrade.includes(c))];

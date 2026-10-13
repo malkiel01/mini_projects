@@ -48,6 +48,67 @@ const state = {
 
 const isDev = () => state.user?.role === 'developer';
 
+/** מי בפרויקט (הבעלים והשותפים המנהלים) — אנשי הקשר של כולם נבחרים בו. d — התשובה של api('project'). */
+const teamOf = d => (d?.partners?.length ? d.partners.map(u => u.id) : [d?.project?.owner_id ?? state.user?.id]);
+
+/**
+ * סמכות מפתח — מתג של המפתח בלבד (נשמר ללשונית הנוכחית). כשהוא דולק: כל בקשה נושאת X-PM-Dev,
+ * והשרת מתיר מחיקה גמורה ועקיפת נעילות (lib/dev.php).
+ */
+const Dev = (() => {
+    const on = () => { try { return isDev() && sessionStorage.getItem('pm.dev') === '1'; } catch { return false; } };
+    function set(v) {
+        try { v ? sessionStorage.setItem('pm.dev', '1') : sessionStorage.removeItem('pm.dev'); } catch { /* מצב פרטי */ }
+        show();
+    }
+    function show() {
+        document.body.classList.toggle('dev-on', on());
+        const b = $('#dev-bar');
+        if (b) b.hidden = !on();
+        const m = $('#me-dev');
+        if (m) { m.hidden = !isDev(); $('span:last-child', m).textContent = on() ? t('סמכות מפתח: פעילה') : t('סמכות מפתח: כבויה'); }
+        $$('dialog[data-purge-kind]').forEach(mark);
+        $$('[data-dev-on]').forEach(e => { e.hidden = !on(); });
+    }
+    /** בכל חלון של ישות: כפתור "מחיקה גמורה" (גלוי רק כשהמתג דולק ויש מזהה). */
+    function attach(dlg, kind, id) {
+        dlg.dataset.purgeKind = kind;
+        dlg.dataset.purgeId = id || '';
+        mark(dlg);
+    }
+    function mark(dlg) {
+        let box = $('.dev-purge', dlg);
+        if (!box) {
+            box = document.createElement('div');
+            box.className = 'dev-purge';
+            box.innerHTML = `<button type="button" class="btn danger"></button>`;
+            ($('form', dlg) || dlg).append(box);
+            $('button', box).addEventListener('click', async () => {
+                if (await purge(dlg.dataset.purgeKind, Number(dlg.dataset.purgeId))) dlg.close();
+            });
+        }
+        $('button', box).textContent = t('🛠️ מחיקה גמורה — כאילו לא הייתה');
+        box.hidden = !on() || !Number(dlg.dataset.purgeId);
+    }
+    /** מחיקה גמורה, אחרי הקלדת "מחק". מחזיר true אם נמחק. */
+    async function purge(kind, id) {
+        if (!on()) return false;
+        const word = t('מחק');
+        const typed = prompt(t('מחיקה גמורה: הרשומה, כל מה שתלוי בה והאירועים שלה בציר הזמן — בלי שחזור מהאפליקציה. כדי לאשר הקלד: {word}', { word }));
+        if (typed === null) return false;
+        if (typed.trim() !== word) { toast(t('לא נמחק — המילה לא תאמה'), true); return false; }
+        try {
+            const d = await api('dev-purge', { body: { kind, id } });
+            const n = Object.values(d.purged.counts).reduce((a, b) => a + b, 0);
+            toast(t('נמחק לגמרי ({n} רשומות)', { n }));
+            if (d.project_id === null) location.hash = '#/';
+            else route();
+            return true;
+        } catch (e) { toast(e.message, true); return false; }
+    }
+    return { on, set, show, attach, purge };
+})();
+
 // ---- שרת ----
 
 async function api(action, { params = {}, body = null } = {}) {
@@ -57,6 +118,7 @@ async function api(action, { params = {}, body = null } = {}) {
         opts.method = 'POST';
         opts.headers['Content-Type'] = 'application/json';
         opts.headers['X-CSRF'] = state.user?.csrf || '';
+        if (Dev.on()) opts.headers['X-PM-Dev'] = '1';
         opts.body = JSON.stringify(body);
     }
     const res = await fetch('api.php?' + qs, opts);

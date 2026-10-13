@@ -12,6 +12,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/contacts.php';
+require_once __DIR__ . '/dev.php'; // סמכות מפתח (pm_dev_mode)
 
 // התוויות בעברית — מתורגמות בתצוגה (pm_t_map ב-api.php, t() בדפדפן)
 // i18n-ok-start
@@ -37,10 +38,10 @@ function pm_date(array $in, string $key, string $label): string
     return $v;
 }
 
-/** פרויקט שהמשתמש רשאי לראות — או 404. */
+/** פרויקט שהמשתמש רשאי לראות (שלו, או ששותף איתו כשותף מנהל) — או 404. */
 function pm_project_row(array $user, int $id): array
 {
-    [$where, $args] = pm_owner_clause($user, 'p');
+    [$where, $args] = pm_project_clause($user, 'p');
     $st = pm_db()->prepare("SELECT p.* FROM projects p WHERE p.id = ? AND $where");
     $st->execute(array_merge([$id], $args));
     $row = $st->fetch();
@@ -52,9 +53,11 @@ function pm_project_row(array $user, int $id): array
 function pm_owned_contact(?int $id, int $ownerId, string $kind, string $label): ?int
 {
     if (!$id) return null;
-    $st = pm_db()->prepare('SELECT 1 FROM contacts WHERE id = ? AND owner_id = ? AND kind = ?');
-    $st->execute([$id, $ownerId, $kind]);
-    if (!$st->fetchColumn()) throw new PmError('{label} לא נמצא', 422, ['label' => $label]);
+    // של בעל הפרויקט — או של מי שבצוות שלו (שותף מנהל)
+    $st = pm_db()->prepare('SELECT owner_id FROM contacts WHERE id = ? AND kind = ?');
+    $st->execute([$id, $kind]);
+    $o = $st->fetchColumn();
+    if ($o === false || !pm_contact_in_team((int)$o, $ownerId)) throw new PmError('{label} לא נמצא', 422, ['label' => $label]);
     return $id;
 }
 
@@ -91,9 +94,10 @@ function pm_event_text(string $text, ?string $json, ?string $lang = null): strin
 /** $filter: open (פעיל + מושהה) · done · archived · all */
 function pm_projects_list(array $user, string $q, string $filter): array
 {
-    [$where, $args] = pm_owner_clause($user, 'p');
+    [$where, $args] = pm_project_clause($user, 'p');
     $sql = "SELECT p.id, p.owner_id, p.name, p.address, p.kind, p.status, p.last_activity_at, p.last_event, p.last_event_i18n,
                    c.name AS client_name, m.display_name AS owner_name,
+                   EXISTS (SELECT 1 FROM project_partners x WHERE x.project_id = p.id) AS shared,
                    (SELECT COUNT(*) FROM stages s WHERE s.project_id = p.id) AS stages_total,
                    (SELECT COUNT(*) FROM stages s WHERE s.project_id = p.id AND s.status IN ('done','paid')) AS stages_done,
                    (SELECT s.name || '|' || s.status FROM stages s WHERE s.project_id = p.id
@@ -123,7 +127,7 @@ function pm_projects_list(array $user, string $q, string $filter): array
             $cur = ['name' => $name, 'status' => $status];
         }
         return [
-            'id' => (int)$r['id'], 'owner_id' => (int)$r['owner_id'], 'owner_name' => $r['owner_name'],
+            'id' => (int)$r['id'], 'owner_id' => (int)$r['owner_id'], 'owner_name' => $r['owner_name'], 'shared' => (bool)$r['shared'],
             'name' => $r['name'], 'address' => $r['address'], 'kind' => $r['kind'], 'status' => $r['status'],
             'client_name' => $r['client_name'], 'last_activity_at' => $r['last_activity_at'], 'last_event' => pm_event_text($r['last_event'], $r['last_event_i18n']),
             'stages_total' => (int)$r['stages_total'], 'stages_done' => (int)$r['stages_done'], 'current_stage' => $cur,
@@ -139,7 +143,8 @@ function pm_project_get(array $user, int $id): array
     $db = pm_db();
 
     $st = $db->prepare(
-        'SELECT s.*, t.name AS trade_name, c.name AS supplier_name, c.phone AS supplier_phone
+        'SELECT s.*, t.name AS trade_name, c.name AS supplier_name, c.phone AS supplier_phone,
+                (SELECT COUNT(*) FROM quotes q WHERE q.stage_id = s.id) AS quotes, ' . PM_STAGE_USED . ' AS used
            FROM stages s LEFT JOIN trades t ON t.id = s.trade_id LEFT JOIN contacts c ON c.id = s.supplier_id
           WHERE s.project_id = ? ORDER BY s.sort, s.id'
     );
@@ -151,7 +156,7 @@ function pm_project_get(array $user, int $id): array
         'supplier_name' => $s['supplier_name'], 'supplier_phone' => $s['supplier_phone'],
         'status' => $s['status'], 'needs_lawyer' => (bool)$s['needs_lawyer'],
         'plan_start' => $s['plan_start'], 'plan_end' => $s['plan_end'], 'done_at' => $s['done_at'],
-        'progress' => pm_stage_progress($s), 'budget' => (int)$s['budget'] / 100,
+        'progress' => pm_stage_progress($s), 'budget' => (int)$s['budget'] / 100, 'quotes' => (int)$s['quotes'], 'used' => (int)$s['used'],
     ], $st->fetchAll());
 
     $ev = $db->prepare('SELECT id, at, actor_id, actor_name, kind, text, data_json FROM events WHERE project_id = ? ORDER BY id DESC LIMIT 300');
@@ -171,6 +176,8 @@ function pm_project_get(array $user, int $id): array
         'stages' => $stages,
         // הגדרות הכספים (אגף הכספים) — לחלונות: עיכבון, הצמדה
         'finance' => pm_finance_settings($p),
+        // שותף מנהל: הבעלים והשותפים; is_owner — רק הבעלים מצרף ומסיר
+        'partners' => pm_partners_of($p), 'is_owner' => (int)$p['owner_id'] === (int)$user['id'],
         'team'   => pm_project_team($p, $stages),
         'events' => $events,
     ];
@@ -327,7 +334,7 @@ function pm_stage_save(array $user, array $in): array
     ];
     if (in_array($status, ['done', 'paid'], true)) $f['progress'] = 100;
     // "בוצע" — רק דרך דיווח מהשטח עם תמונה (lib/reports.php)
-    if (in_array($status, ['done', 'paid'], true) && !in_array($old['status'] ?? 'planned', ['done', 'paid'], true)) {
+    if (in_array($status, ['done', 'paid'], true) && !in_array($old['status'] ?? 'planned', ['done', 'paid'], true) && !pm_dev_mode($user)) {
         throw new PmError('כדי לסמן שלב "בוצע" — "דיווח מהשטח" עם לפחות תמונה אחת', 409);
     }
     $now = pm_now();
@@ -357,7 +364,10 @@ function pm_stage_save(array $user, array $in): array
             $qs = implode(', ', array_fill(0, count($f), '?'));
             $db->prepare("INSERT INTO stages (project_id, sort, $cols, done_at, created_at, updated_at) VALUES (?, ?, $qs, ?, ?, ?)")
                ->execute(array_merge([$projectId, $sort], array_values($f), [$doneAt, $now, $now]));
-            pm_event($user, $projectId, 'stage_added', 'נוסף שלב: {stage}', ['stage' => (int)$db->lastInsertId()], ['stage' => $f['name']]);
+            $newId = (int)$db->lastInsertId();
+            // "+ שלב כאן" במצב עריכה: after = מזהה השלב שלפניו (0 — בראש הרשימה)
+            if (array_key_exists('after', $in) && $in['after'] !== null && $in['after'] !== '') pm_stage_place($projectId, $newId, (int)$in['after']);
+            pm_event($user, $projectId, 'stage_added', 'נוסף שלב: {stage}', ['stage' => $newId], ['stage' => $f['name']]);
         }
         $surveyAdded = pm_project_survey_first($user, $projectId);
         $db->commit();
@@ -366,6 +376,20 @@ function pm_stage_save(array $user, array $in): array
         throw $e;
     }
     return pm_project_get($user, $projectId) + ($surveyAdded ? ['notice' => pm_t('מודד מוסמך תמיד לפני אדריכלות — שלב המדידה סודר לפני האדריכלות')] : []);
+}
+
+/** שלב חדש — אחרי שלב נתון (0 = ראשון); מספור מחדש של הסדר. */
+function pm_stage_place(int $projectId, int $id, int $after): void
+{
+    $db = pm_db();
+    $st = $db->prepare('SELECT id FROM stages WHERE project_id = ? AND id != ? ORDER BY sort, id');
+    $st->execute([$projectId, $id]);
+    $ids = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+    $at = $after ? array_search($after, $ids, true) : -1;
+    if ($at === false) throw new PmError('השלב לא נמצא', 404);
+    array_splice($ids, $at + 1, 0, [$id]);
+    $up = $db->prepare('UPDATE stages SET sort = ? WHERE id = ?');
+    foreach ($ids as $i => $sid) $up->execute([($i + 1) * 10, $sid]);
 }
 
 /** תקציב לשלב — ₪ מהטופס, באגורות במסד. בלי שדה — נשאר מה שהיה. */
@@ -385,13 +409,21 @@ function pm_contact_name(int $id): string
     return (string)$st->fetchColumn();
 }
 
+/**
+ * כמה דברים רשומים על השלב (s.id): הצעות, תשלומים, תוספות, דיווחים והוצאות. שלב "ריק" (0) — אפשר
+ * למחוק; אחרת רק בסמכות מפתח (מחיקה גמורה, lib/dev.php).
+ */
+const PM_STAGE_USED = '((SELECT COUNT(*) FROM quotes x WHERE x.stage_id = s.id) + (SELECT COUNT(*) FROM payments x WHERE x.stage_id = s.id)
+    + (SELECT COUNT(*) FROM change_orders x WHERE x.stage_id = s.id) + (SELECT COUNT(*) FROM reports x WHERE x.stage_id = s.id AND x.deleted_at IS NULL)
+    + (SELECT COUNT(*) FROM expenses x WHERE x.stage_id = s.id AND x.deleted_at IS NULL))';
+
 function pm_stage_delete(array $user, int $id): array
 {
     $s = pm_stage_row($user, $id);
-    // הצעות ואישורים לא נמחקים — וגם לא השלב שהם שייכים לו
-    $q = pm_db()->prepare('SELECT COUNT(*) FROM quotes WHERE stage_id = ?');
+    // רק שלב ריק — בלי הצעות, תשלומים, תוספות, דיווחים או הוצאות
+    $q = pm_db()->prepare('SELECT ' . PM_STAGE_USED . ' FROM stages s WHERE s.id = ?');
     $q->execute([$id]);
-    if ($q->fetchColumn()) throw new PmError('יש בשלב הצעות מחיר — אי אפשר למחוק אותו. אפשר לשנות לו שם או סדר', 422);
+    if ($q->fetchColumn()) throw new PmError('השלב לא ריק — יש בו הצעות, תשלומים או דיווחים. אפשר לשנות לו שם או סדר', 422);
     $survey = pm_trade_id(PM_TRADE_SURVEYOR);
     if ($survey && (int)$s['trade_id'] === $survey) {
         $o = pm_db()->prepare('SELECT COUNT(*) FROM stages WHERE project_id = ? AND id != ? AND trade_id = ?');
@@ -449,10 +481,10 @@ function pm_note(array $user, int $projectId, string $text): array
 function pm_member(array $user, int $projectId, int $contactId, bool $add, string $role): array
 {
     $p = pm_project_row($user, $projectId);
-    $st = pm_db()->prepare('SELECT name, kind FROM contacts WHERE id = ? AND owner_id = ?');
-    $st->execute([$contactId, $p['owner_id']]);
+    $st = pm_db()->prepare('SELECT name, kind, owner_id FROM contacts WHERE id = ?');
+    $st->execute([$contactId]);
     $c = $st->fetch();
-    if (!$c) throw new PmError('איש הקשר לא נמצא', 422);
+    if (!$c || !pm_contact_in_team((int)$c['owner_id'], (int)$p['owner_id'])) throw new PmError('איש הקשר לא נמצא', 422);
     if ($add) {
         $role = mb_substr(trim($role), 0, 40);
         pm_db()->prepare('INSERT INTO project_members (project_id, contact_id, role) VALUES (?,?,?)
@@ -593,4 +625,68 @@ function pm_template_delete(array $user, int $id): array
     pm_db()->prepare('DELETE FROM stage_templates WHERE id = ?')->execute([$id]);
     pm_audit("user:{$user['id']}", 'template.delete', 'template', $id);
     return pm_templates();
+}
+
+// ================= שותף מנהל =================
+
+/** הבעלים והשותפים של פרויקט — לחלונית "צוות". */
+function pm_partners_of(array $p): array
+{
+    $o = pm_db()->prepare('SELECT id, display_name, username FROM users WHERE id = ?');
+    $o->execute([$p['owner_id']]);
+    $st = pm_db()->prepare('SELECT u.id, u.display_name, u.username, x.created_at FROM project_partners x JOIN users u ON u.id = x.user_id WHERE x.project_id = ? ORDER BY x.created_at');
+    $st->execute([$p['id']]);
+    $out = [];
+    if ($u = $o->fetch()) $out[] = ['id' => (int)$u['id'], 'name' => $u['display_name'], 'username' => $u['username'], 'owner' => true, 'since' => null];
+    foreach ($st->fetchAll() as $u) $out[] = ['id' => (int)$u['id'], 'name' => $u['display_name'], 'username' => $u['username'], 'owner' => false, 'since' => $u['created_at']];
+    return $out;
+}
+
+/**
+ * צירוף או הסרה של שותף מנהל: {project_id, do: add|remove, login (שם משתמש או אימייל) | user_id}.
+ * מצרף ומסיר — רק הבעלים. שותף יכול להסיר את עצמו (עזיבה).
+ */
+function pm_partner_save(array $user, array $in): array
+{
+    $projectId = (int)($in['project_id'] ?? 0);
+    $p = pm_project_row($user, $projectId);
+    $owner = (int)$p['owner_id'] === (int)$user['id'];
+    $db = pm_db();
+    if (($in['do'] ?? '') === 'remove') {
+        $uid = (int)($in['user_id'] ?? 0);
+        if (!$owner && $uid !== (int)$user['id']) throw new PmError('רק בעל הפרויקט מסיר שותפים', 403);
+        $u = $db->prepare('SELECT u.display_name FROM project_partners x JOIN users u ON u.id = x.user_id WHERE x.project_id = ? AND x.user_id = ?');
+        $u->execute([$projectId, $uid]);
+        $name = $u->fetchColumn();
+        if ($name === false) throw new PmError('השותף לא נמצא', 404);
+        $db->prepare('DELETE FROM project_partners WHERE project_id = ? AND user_id = ?')->execute([$projectId, $uid]);
+        pm_team_reset();
+        pm_event($user, $projectId, 'partner', $uid === (int)$user['id'] ? '{name} עזב את הפרויקט (שותף מנהל)' : 'הוסר שותף מנהל: {name}', ['user' => $uid], ['name' => $name]);
+        // מי שעזב — כבר לא רואה את הפרויקט
+        return $uid === (int)$user['id'] ? ['left' => true] : pm_project_get($user, $projectId);
+    }
+    if (!$owner) throw new PmError('רק בעל הפרויקט מצרף שותפים', 403);
+    $login = trim((string)($in['login'] ?? ''));
+    if ($login === '') throw new PmError('שם משתמש או אימייל: שדה חובה', 422);
+    $u = $db->prepare("SELECT id, display_name, email, lang, username, role, status FROM users WHERE (username = ? COLLATE NOCASE OR email = ? COLLATE NOCASE)");
+    $u->execute([$login, $login]);
+    $partner = $u->fetch();
+    // משתמש פעיל באפליקציה בלבד — לא איש קשר ולא חשבון שממתין לאישור
+    if (!$partner || $partner['status'] !== 'active') throw new PmError('אין משתמש פעיל כזה באפליקציה', 404);
+    if ((int)$partner['id'] === (int)$p['owner_id']) throw new PmError('זה בעל הפרויקט', 422);
+    $db->prepare('INSERT OR IGNORE INTO project_partners (project_id, user_id, added_by, created_at) VALUES (?,?,?,?)')
+       ->execute([$projectId, $partner['id'], $user['id'], pm_now()]);
+    pm_team_reset();
+    pm_event($user, $projectId, 'partner', 'צורף שותף מנהל: {name}', ['user' => (int)$partner['id']], ['name' => $partner['display_name']]);
+    // מייל לשותף — בשפה שלו
+    $to = pm_user_email($partner);
+    if ($to !== '') {
+        $lang = pm_user_lang($partner);
+        $ok = pm_send_mail($to, pm_t('{name} שיתף איתך פרויקט: {project}', ['name' => $user['display_name'], 'project' => $p['name']], $lang),
+            pm_t("{name} צירף אותך כשותף מנהל בפרויקט {project}.\nמעכשיו הוא מופיע ברשימת הפרויקטים שלך — עם כל מה שבו.\n\n{url}\n", [
+                'name' => $user['display_name'], 'project' => $p['name'], 'url' => pm_app_url() . "/#/p/$projectId",
+            ], $lang), $lang);
+        pm_log($ok ? 'info' : 'warn', 'mail', 'mail.partner', ['data' => ['to' => $to, 'project' => $projectId, 'sent' => $ok]]);
+    }
+    return pm_project_get($user, $projectId);
 }
