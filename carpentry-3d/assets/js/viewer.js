@@ -40,7 +40,8 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
   const css = getComputedStyle(document.documentElement);
   const cssColor = (name, fallback) => new THREE.Color(css.getPropertyValue(name).trim() || fallback);
 
-  scene.add(new THREE.HemisphereLight(0xffffff, 0xcdbfa9, 0.95));
+  const hemi = new THREE.HemisphereLight(0xffffff, 0xcdbfa9, 0.95);
+  scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xffffff, 0.55);
   sun.position.set(-1500, 3000, 2500);
   scene.add(sun);
@@ -52,6 +53,9 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
 
   const group = new THREE.Group();
   scene.add(group);
+  let lightsOn = false, ledLights = [];
+  /** גוון האור לפי טמפרטורת הצבע של הפס (קלווין); בלי — לבן חם. */
+  const kelvinColor = (k) => (k >= 6000 ? 0xf4f8ff : k >= 4000 ? 0xfff1de : 0xffd9a8);
   let pickables = [];
   let selected = null;
 
@@ -468,6 +472,7 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
   }
 
   function setModel(model) {
+    ledLights = [];
     currentModel = model;
     if (libraryVersion() !== libVersion) { clearTextures(); libVersion = libraryVersion(); }
     while (group.children.length) {
@@ -554,9 +559,11 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
         mesh = new THREE.Mesh(h.horizontal ? new THREE.BoxGeometry(140, 12, 12) : new THREE.BoxGeometry(12, 140, 12), new THREE.MeshStandardMaterial({ color: 0x374151, metalness: 0.7, roughness: 0.3 }));
         mesh.position.set(h.pos[0], h.pos[1], h.pos[2] + 20);
       } else if (h.kind === 'led') {
-        // פס לד: תיבה דקה עם חומר זוהר (emissive), אנכית לאורך הדופן או אופקית מתחת למדף
-        const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff4d6, emissiveIntensity: 1.6, roughness: 0.4 });
+        // פס לד: תיבה דקה עם חומר זוהר (emissive), אנכית לאורך הדופן או אופקית מתחת למדף.
+        // במצב "תאורה" (setLights) — גם אור אמיתי בגוון הפס (ledLights)
+        const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: kelvinColor(h.kelvin), emissiveIntensity: lightsOn ? 3 : 1.6, roughness: 0.4 });
         mesh = new THREE.Mesh(h.horizontal ? new THREE.BoxGeometry(h.len, 4, 8) : new THREE.BoxGeometry(6, h.len, 8), mat);
+        mesh.userData.led = true;
         mesh.position.set(h.pos[0] + (h.horizontal ? h.len / 2 : 3), h.pos[1] + (h.horizontal ? 0 : h.len / 2), h.pos[2]);
       } else if (h.kind === 'track') {
         // מסילה/מוליך להזזה: פרופיל אלומיניום לרוחב הפתח, בעומק שני הנתיבים
@@ -591,6 +598,7 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
       } else group.add(hwWorld(mesh, h));
     }
     updateLinks();
+    rebuildLeds();   // במצב "תאורה" — האורות לפי הלדים של המודל החדש
     if (onPick) onPick(null);
   }
 
@@ -770,5 +778,34 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
     setTimeout(() => { if (focusMark === mark) { scene.remove(mark); focusMark = null; } }, hw ? 2600 : 1400);
     return true;
   }
-  return { setModel, frame, view, fit, select, selectById, focus, nudgeTarget, lookFrom, home, toggleOpen, isOpen, toggleGhost, isGhost, openAll, anyOpen, ghostFronts, anyGhost, debug: () => ({ group, camera, ctl, open: openGroups.size, motionParts: [...partNodes.values()].filter((e) => e.part.motion).length, amounts: [...amounts.entries()].slice(0, 4), theta: ctl.theta, phi: ctl.phi, radius: ctl.radius, target: ctl.target.toArray(), w: canvas.clientWidth, h: canvas.clientHeight, aspect: camera.aspect, fov: camera.fov }) };
+  // ---- מצב "💡 תאורה": הסצנה מחשיכה, ולכל פס לד — אור נקודתי בגוון שלו ----
+  // (r128: אורות "ישנים", בלי יחידות פיזיקליות). עד 24 אורות — יותר מזה כבד לכרטיס
+  // המסך; בפרויקט גדול נבחרים פסים לסירוגין, והעוצמה מוגדלת בהתאם.
+  function ledHardware() { return (currentModel?.hardware || []).filter((h) => h.kind === 'led' && h.pos && h.len); }
+  function rebuildLeds() {
+    for (const l of ledLights) group.remove(l);
+    ledLights = [];
+    if (!lightsOn) return;
+    const all = ledHardware(), MAX = 24;
+    const pick = all.length <= MAX ? all : all.filter((_, k) => k % Math.ceil(all.length / MAX) === 0);
+    const boost = Math.sqrt(all.length / Math.max(1, pick.length));
+    for (const h of pick) {
+      const len = h.len;
+      const l = new THREE.PointLight(kelvinColor(h.kelvin), Math.min(1.6, 0.35 + len / 1200) * boost, 1100, 2);
+      if (h.horizontal) l.position.set(h.pos[0] + len / 2, h.pos[1] - 60, h.pos[2] - 40);
+      else l.position.set(h.pos[0] + (h.pos[0] > 0 ? 40 : 40), h.pos[1] + len / 2, h.pos[2] - 40);
+      group.add(l); ledLights.push(l);
+    }
+  }
+  function setLights(on) {
+    lightsOn = !!on;
+    hemi.intensity = lightsOn ? 0.1 : 0.95;
+    sun.intensity = lightsOn ? 0.03 : 0.55;
+    canvas.parentElement?.classList.toggle('is-night', lightsOn);
+    for (const m of [].concat(grid.material)) { m.transparent = true; m.opacity = lightsOn ? 0.12 : 1; }
+    group.traverse((o) => { if (o.material && o.material.emissive && o.userData?.led) o.material.emissiveIntensity = lightsOn ? 3 : 1.6; });
+    rebuildLeds();
+  }
+
+  return { setLights, lightsOn: () => lightsOn, hasLeds: () => ledHardware().length > 0, setModel, frame, view, fit, select, selectById, focus, nudgeTarget, lookFrom, home, toggleOpen, isOpen, toggleGhost, isGhost, openAll, anyOpen, ghostFronts, anyGhost, debug: () => ({ group, camera, ctl, open: openGroups.size, motionParts: [...partNodes.values()].filter((e) => e.part.motion).length, amounts: [...amounts.entries()].slice(0, 4), theta: ctl.theta, phi: ctl.phi, radius: ctl.radius, target: ctl.target.toArray(), w: canvas.clientWidth, h: canvas.clientHeight, aspect: camera.aspect, fov: camera.fov }) };
 }
