@@ -756,3 +756,5 @@ body.auth { display: grid; place-items: start center; padding: max(8vh, var(--s4
 .tl-files { --tl: #9aa3ad; } .tl-other { --tl: var(--line); }
 .tl-more summary { cursor: pointer; font-size: .8rem; color: var(--brand); padding: 2px 8px; }
 .tl-more .tl-items { margin-block-start: 4px; }
+/* הצעה שהוחלט עליה — נעולה */
+.lock-hint { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px var(--s2); color: var(--ink); }

@@ -9,6 +9,7 @@
 const Quotes = (() => {
     let project = null, data = { quotes: [], summary: {} }, bound = false, current = null, pending = null;
     const LIVE = ['open', 'sent', 'client_approved'];
+    const LOCKED = ['client_approved', 'approved', 'rejected', 'declined', 'cancelled']; // כמו PM_QUOTE_LOCKED בשרת
     const ICON = { open: '📥', sent: '📤', client_approved: '⏳', approved: '✅', declined: '▫️', rejected: '✖️', cancelled: '🚫' };
     const stageOf = id => project.stages.find(s => s.id === id);
     const fileUrl = (id, extra = '') => `api.php?action=file&id=${id}${extra}`;
@@ -153,11 +154,18 @@ const Quotes = (() => {
         el.valid_until.value = q.valid_until || '';
         el.terms.value = q.terms || '';
         el.notes.value = q.notes || '';
-        const locked = current?.status === 'cancelled';
+        // הצעה שהוחלט עליה (אושרה / נדחתה / לא נבחרה / בוטלה) — לצפייה בלבד
+        const locked = !!current && LOCKED.includes(current.status);
         [...form.elements].forEach(x => { if (x.name) x.disabled = locked; });
         $('button[type=submit]', form).hidden = locked;
         $('.upload-btn', form).hidden = locked;
-        $('#quote-version-hint').hidden = !current || !['sent', 'client_approved', 'approved'].includes(current.status);
+        $('#quote-version-hint').hidden = current?.status !== 'sent';
+        const lock = $('#quote-locked-hint');
+        lock.hidden = !locked;
+        lock.textContent = !locked ? '' : ['approved', 'client_approved'].includes(current.status)
+            ? t('🔒 הצעה שאושרה — לא נערכת. שינוי במחיר או בהיקף: "± תוספת / חריגה" בלשונית הכספים, או ביטול והצעה חדשה.')
+            : current.status === 'cancelled' ? t('🔒 הצעה שבוטלה — לצפייה בלבד.')
+            : t('🔒 הצעה שנדחתה — לא נערכת. הצעה חדשה מהספק: "+ הצעה".');
         $('#quote-state').hidden = !current;
         if (current) {
             $('#quote-state').innerHTML = `<span class="chip q-${current.status}">${ICON[current.status]} ${esc(state.labels.quote[current.status])}</span>`
@@ -188,7 +196,7 @@ const Quotes = (() => {
         try { ({ files } = await api('files', { params: { project_id: project.project.id } })); } catch { /* ריק */ }
         const quotes = files.filter(f => f.type === 'quote'), rest = files.filter(f => f.type !== 'quote');
         const opt = f => ({ value: f.id, label: f.name });
-        el.file_id.innerHTML = `<option value="">${esc(t('ללא קובץ'))}</option>`
+        el.file_id.innerHTML = `<option value="">${esc(t('בחירת הטופס — או העלאה'))}</option>`
             + (quotes.length ? `<optgroup label="${esc(t('הצעות מחיר'))}">${options(quotes.map(opt), value)}</optgroup>` : '')
             + (rest.length ? `<optgroup label="${esc(t('קבצים אחרים'))}">${options(rest.map(opt), value)}</optgroup>` : '');
         fileLink();
@@ -259,6 +267,7 @@ const Quotes = (() => {
         if (!body.stage_id) { formError(form, t('שלב: שדה חובה. מוסיפים שלבים בלשונית "שלבים"')); return; }
         if (!body.supplier_id) { formError(form, t('ספק: שדה חובה')); return; }
         if (!body.amount) { formError(form, t('סכום: שדה חובה')); return; }
+        if (!body.file_id) { formError(form, t('צריך לצרף את טופס הצעת המחיר (PDF או צילום)')); return; }
         await busy($('button[type=submit]', form), form, async () => {
             await refresh(await api('quote', { body }));
             $('#quote-dlg').close();

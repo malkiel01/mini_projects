@@ -1754,5 +1754,14 @@
         "one": "{n} more action",
         "other": "{n} more actions"
     },
-    "סינון ציר הזמן": "Filter the timeline"
+    "סינון ציר הזמן": "Filter the timeline",
+    "🔒 הצעה שאושרה — לא נערכת. שינוי במחיר או בהיקף: \"± תוספת / חריגה\" בלשונית הכספים, או ביטול והצעה חדשה.": "🔒 Approved quote — cannot be edited. To change the price or scope: \"± Addition / overrun\" in the Finance tab, or cancel it and add a new quote.",
+    "🔒 הצעה שבוטלה — לצפייה בלבד.": "🔒 Cancelled quote — view only.",
+    "🔒 הצעה שנדחתה — לא נערכת. הצעה חדשה מהספק: \"+ הצעה\".": "🔒 Rejected quote — cannot be edited. For a new quote from the supplier: \"+ Quote\".",
+    "בחירת הטופס — או העלאה": "Choose the document — or upload",
+    "צריך לצרף את טופס הצעת המחיר (PDF או צילום)": "The quote document must be attached (PDF or photo)",
+    "טופס ההצעה *": "Quote document *",
+    "הצעה שאושרה לא נערכת. שינוי במחיר או בהיקף — \"± תוספת / חריגה\" בלשונית הכספים": "An approved quote cannot be edited. To change the price or scope — \"± Addition / overrun\" in the Finance tab",
+    "הצעה שנדחתה לא נערכת. הצעה חדשה — \"+ הצעה\"": "A rejected quote cannot be edited. For a new quote — \"+ Quote\"",
+    "טופס ההצעה (PDF או צילום) *": "Quote document (PDF or photo) *"
 }

@@ -1772,5 +1772,14 @@
         "one": "{n} action de plus",
         "other": "{n} actions de plus"
     },
-    "סינון ציר הזמן": "Filtrer la chronologie"
+    "סינון ציר הזמן": "Filtrer la chronologie",
+    "🔒 הצעה שאושרה — לא נערכת. שינוי במחיר או בהיקף: \"± תוספת / חריגה\" בלשונית הכספים, או ביטול והצעה חדשה.": "🔒 Devis approuvé — non modifiable. Pour changer le prix ou le périmètre : « ± Supplément / dépassement » dans l'onglet Finances, ou l'annuler et ajouter un nouveau devis.",
+    "🔒 הצעה שבוטלה — לצפייה בלבד.": "🔒 Devis annulé — consultation seulement.",
+    "🔒 הצעה שנדחתה — לא נערכת. הצעה חדשה מהספק: \"+ הצעה\".": "🔒 Devis refusé — non modifiable. Pour un nouveau devis du fournisseur : « + Devis ».",
+    "בחירת הטופס — או העלאה": "Choisir le document — ou le téléverser",
+    "צריך לצרף את טופס הצעת המחיר (PDF או צילום)": "Le document du devis doit être joint (PDF ou photo)",
+    "טופס ההצעה *": "Document du devis *",
+    "הצעה שאושרה לא נערכת. שינוי במחיר או בהיקף — \"± תוספת / חריגה\" בלשונית הכספים": "Un devis approuvé n'est pas modifiable. Pour changer le prix ou le périmètre — « ± Supplément / dépassement » dans l'onglet Finances",
+    "הצעה שנדחתה לא נערכת. הצעה חדשה — \"+ הצעה\"": "Un devis refusé n'est pas modifiable. Pour un nouveau devis — « + Devis »",
+    "טופס ההצעה (PDF או צילום) *": "Document du devis (PDF ou photo) *"
 }
