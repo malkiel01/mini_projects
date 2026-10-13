@@ -797,3 +797,4 @@ body.auth { display: grid; place-items: start center; padding: max(8vh, var(--s4
 @media (prefers-color-scheme: dark) { .dev-bar { color: #1b1e26; } .dev-bar .btn { background: #1b1e26; color: var(--danger); border-color: #1b1e26; } }
 .dev-purge { margin-top: var(--s3); padding-top: var(--s3); border-top: 2px dashed var(--danger); }
 .dev-purge .btn { width: 100%; background: var(--danger-soft); color: var(--danger); border-color: var(--danger); }
+.btn.icon-only { min-width: var(--tap); padding-inline: 0; font-size: 1.1rem; }

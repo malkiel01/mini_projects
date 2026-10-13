@@ -367,7 +367,7 @@ const Projects = (() => {
             const acts = ed ? `<div class="acts st-acts">
                 <button class="icon-btn" data-st-up="${x.id}" ${i ? '' : 'disabled'} aria-label="${esc(t('להזיז למעלה: {name}', { name: t(x.name) }))}">↑</button>
                 <button class="icon-btn" data-st-down="${x.id}" ${i < s.length - 1 ? '' : 'disabled'} aria-label="${esc(t('להזיז למטה: {name}', { name: t(x.name) }))}">↓</button>
-                <button class="icon-btn danger" data-st-del="${x.id}" ${x.quotes && !Dev.on() ? `title="${esc(t('יש בשלב הצעות מחיר — אי אפשר למחוק'))}" disabled` : ''} aria-label="${esc(t('מחיקת השלב {name}', { name: t(x.name) }))}">🗑</button>
+                <button class="icon-btn danger" data-st-del="${x.id}" ${x.used && !Dev.on() ? `title="${esc(t('השלב לא ריק — אי אפשר למחוק'))}" disabled` : ''} aria-label="${esc(t('מחיקת השלב {name}', { name: t(x.name) }))}">🗑</button>
             </div>` : stageChip(x.status);
             return `<li class="card" data-stage="${x.id}" tabindex="0" role="button" aria-label="${name}, ${esc(state.labels.stage[x.status])}">
                 <span class="num st-${esc(x.status)}" aria-hidden="true">${i + 1}</span>
@@ -415,6 +415,7 @@ const Projects = (() => {
         el.status.onchange = progressShown;
         $('[data-existing]', dlg).hidden = !id;
         Dev.attach(dlg, 'stage', id);
+        $('[data-delete]', dlg).hidden = !!s.used && !Dev.on(); // רק שלב ריק (חוץ מסמכות מפתח)
         await fillSuppliers(el.supplier_id, Number(el.trade_id.value) || 0, s.supplier_id);
         el.trade_id.onchange = () => fillSuppliers(el.supplier_id, Number(el.trade_id.value) || 0, Number(el.supplier_id.value) || null);
         dlg.showModal();
@@ -488,7 +489,7 @@ const Projects = (() => {
     async function deleteStage(id) {
         const s = cur.stages.find(x => x.id === id);
         // סמכות מפתח: שלב עם הצעות — מחיקה גמורה (עם ההצעות, התוספות ואבני הדרך שלו)
-        if (s && s.quotes && Dev.on()) { if (await Dev.purge('stage', id) && $('#stage-dlg').open) $('#stage-dlg').close(); return; }
+        if (s && s.used && Dev.on()) { if (await Dev.purge('stage', id) && $('#stage-dlg').open) $('#stage-dlg').close(); return; }
         if (!s || !confirm(t('למחוק את השלב "{name}"?', { name: t(s.name) }))) return;
         const dlg = $('#stage-dlg').open;
         await busy(null, dlg ? $('#stage-dlg form') : null, async () => {
