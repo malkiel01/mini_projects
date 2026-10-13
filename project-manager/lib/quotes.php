@@ -36,6 +36,9 @@ const PM_QUOTE_STATUSES = [
 // i18n-ok-end
 /** הצעות "חיות" — שעוד אפשר לבחור ביניהן. */
 const PM_QUOTE_LIVE = ['open', 'sent', 'client_approved'];
+// הצעה שהוחלט עליה — נעולה: מה שאושר או נדחה הוא עובדה שכבר קרתה. שינוי בהצעה שאושרה — "תוספת / חריגה"
+// (lib/changes.php) או ביטול והצעה חדשה; החלטה חדשה (הלקוח שינה את דעתו) — נרשמת לצד הקודמת.
+const PM_QUOTE_LOCKED = ['client_approved', 'approved', 'rejected', 'declined', 'cancelled'];
 
 function pm_quote_row(array $user, int $id): array
 {
@@ -130,16 +133,21 @@ function pm_quote_save(array $user, array $in, ?array $actor = null): array
     $id = (int)($in['id'] ?? 0);
     $old = $id ? pm_quote_row($user, $id) : null;
     if ($old && $old['status'] === 'cancelled') throw new PmError('ההצעה בוטלה — אי אפשר לערוך', 422);
+    if ($old && in_array($old['status'], PM_QUOTE_LOCKED, true)) {
+        throw new PmError(in_array($old['status'], ['approved', 'client_approved'], true)
+            ? 'הצעה שאושרה לא נערכת. שינוי במחיר או בהיקף — "± תוספת / חריגה" בלשונית הכספים'
+            : 'הצעה שנדחתה לא נערכת. הצעה חדשה — "+ הצעה"', 422);
+    }
     $stage = pm_stage_row($user, (int)($in['stage_id'] ?? ($old['stage_id'] ?? 0)));
     $projectId = (int)$stage['project_id'];
     if ($old && (int)$old['project_id'] !== $projectId) throw new PmError('אי אפשר להעביר הצעה לפרויקט אחר', 422);
     $p = pm_project_row($user, $projectId);
 
-    $fileId = (int)($in['file_id'] ?? 0) ?: null;
-    if ($fileId) {
-        $file = pm_file_row($user, $fileId);
-        if ((int)$file['project_id'] !== $projectId) throw new PmError('הקובץ לא שייך לפרויקט', 422);
-    }
+    // הטופס של ההצעה — חובה: הצעת מחיר היא מסמך, לא רק רישום
+    $fileId = (int)($in['file_id'] ?? ($old['file_id'] ?? 0)) ?: null;
+    if (!$fileId) throw new PmError('צריך לצרף את טופס הצעת המחיר (PDF או צילום)', 422);
+    $file = pm_file_row($user, $fileId);
+    if ((int)$file['project_id'] !== $projectId) throw new PmError('הקובץ לא שייך לפרויקט', 422);
     $f = [
         'stage_id'    => (int)$stage['id'],
         'supplier_id' => pm_owned_contact((int)($in['supplier_id'] ?? 0) ?: null, (int)$p['owner_id'], 'supplier', 'הספק') // i18n-ok
