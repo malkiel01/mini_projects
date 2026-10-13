@@ -39,6 +39,8 @@ const Finance = (() => {
         });
         $('#exp-dlg form').addEventListener('submit', e => { e.preventDefault(); saveExpense(); });
         $('#ct-dlg form').addEventListener('submit', e => { e.preventDefault(); saveContract(); });
+        $('#ct-units').addEventListener('change', ctSplitShown);
+        $('#ct-units').addEventListener('input', ctSplitShown);
         $('#ct-ms-add').addEventListener('click', () => { readMs(); ct.ms.push({ title: '', due_date: '', months: null, stage_ids: [], done_on: '' }); renderMs(); });
         $('#ct-ms').addEventListener('input', e => { if (e.target.name === 'months') ctMonths(e.target.closest('.ct-m')); });
         $('#ct-dlg [name=start_date]').addEventListener('change', () => $$('#ct-ms .ct-m').forEach(ctMonths));
@@ -111,8 +113,21 @@ const Finance = (() => {
                 ${kpi(t('יתרה לתשלום'), T.balance)}
                 ${kpi(t('צפי סופי'), T.forecast, esc(t('סוכם, ותקציב השלבים שעוד אין להם הצעה')))}
             </dl>
-            <p class="fin-terms">${terms(S, T)}</p>`;
+            <p class="fin-terms">${terms(S, T)}</p>
+            ${unitsTable()}`;
         renderStages();
+    }
+
+    /** מתחם: הכספים לפי יחידה — תקציב, סוכם, שולם, יתרה. שלב משותף — לפי החלוקה בחוזה. */
+    function unitsTable() {
+        const U = data.units || [];
+        if (!U.length) return '';
+        const td = m => `<td class="n">${esc(money(Math.round(m.g)))}</td>`;
+        return `<div class="fin-units"><h3>${esc(t('🏢 לפי יחידות'))}</h3><div class="tbl-wrap"><table>
+            <thead><tr><th>${esc(t('יחידה'))}</th><th class="n">${esc(t('תקציב'))}</th><th class="n">${esc(t('סוכם'))}</th><th class="n">${esc(t('שולם'))}</th><th class="n">${esc(t('יתרה'))}</th></tr></thead>
+            <tbody>${U.map(u => `<tr${u.id ? '' : ' class="muted"'}><th>${esc(u.name)}${u.area ? `<small>${esc(t('{n} מ"ר', { n: u.area }))}</small>` : ''}</th>
+                <td class="n">${u.budget ? esc(money(u.budget)) : '—'}</td>${td(u.committed)}${td(u.paid)}${td(u.balance)}</tr>`).join('')}</tbody></table></div>
+            <p class="hint">${esc(t('שלב של דירה — כולו שלה. שלב משותף — לפי החלוקה שבחוזה עם הספק ("📄 חוזה"); בלי חלוקה — "משותף".'))}</p></div>`;
     }
 
     /** ההתראות של הפרויקט (כ2) — מהדחוף; תשלום — פותח את אבן הדרך. */
@@ -327,7 +342,7 @@ const Finance = (() => {
 
     /** תשובה מהשרת (מצב כספי) — מציירים מחדש. */
     function take(d) {
-        data = { settings: d.settings, totals: d.totals, stages: d.stages, fee: d.fee, alerts: d.alerts, expenses: d.expenses };
+        data = { settings: d.settings, totals: d.totals, stages: d.stages, fee: d.fee, alerts: d.alerts, expenses: d.expenses, units: d.units || [] };
         render();
     }
 
@@ -475,6 +490,7 @@ const Finance = (() => {
         }
         renderMs();
         await ctFiles(c?.file?.id || null);
+        ctUnits(c);
         Dev.attach($('#ct-dlg'), 'contract', c?.id);
         $('#ct-dlg').showModal();
     }
@@ -543,6 +559,53 @@ const Finance = (() => {
         });
     }
 
+    // ---- מתחם: על אילו יחידות החוזה חל, ואיך מחלקים את העלות ----
+
+    function ctUnits(c) {
+        const units = project.units || [];
+        $('#ct-units').hidden = !units.length;
+        if (!units.length) return;
+        const cover = c?.unit_ids?.length ? c.unit_ids : units.map(u => u.id);
+        $('#ct-cover').innerHTML = units.map(u => `<label><input type="checkbox" value="${u.id}"${cover.includes(u.id) ? ' checked' : ''}><span>${esc(u.name)}${u.area ? ` <small>${esc(t('{n} מ"ר', { n: u.area }))}</small>` : ''}</span></label>`).join('');
+        const sp = c?.split || { method: 'auto', fixed: {}, rest: 'equal' };
+        $(`#ct-dlg [name=split_method][value=${sp.method}]`).checked = true;
+        $(`#ct-dlg [name=split_rest][value=${sp.rest}]`).checked = true;
+        $('#ct-fixed-list').innerHTML = units.map(u => `<label class="f" data-u="${u.id}"><span>${esc(u.name)} (₪)</span><input inputmode="decimal" dir="ltr" maxlength="12" value="${sp.fixed?.[u.id] ?? ''}"></label>`).join('');
+        ctSplitShown();
+    }
+
+    function ctUnitsRead() {
+        const cover = $$('#ct-cover input:checked').map(i => Number(i.value));
+        const fixed = {};
+        $$('#ct-fixed-list [data-u]').forEach(l => { const v = $('input', l).value.replace(/[,₪\s]/g, ''); if (v) fixed[l.dataset.u] = Number(v); });
+        // כולן מסומנות = "כל היחידות" ([]), כך שיחידה שתתווסף בהמשך נכללת
+        return { unit_ids: cover.length === (project.units || []).length ? [] : cover,
+            split: { method: $('#ct-dlg [name=split_method]:checked').value, fixed, rest: $('#ct-dlg [name=split_rest]:checked').value } };
+    }
+
+    /** תצוגה: סכומים קבועים רק ב"סכום ליחידה", ושורת הסבר עם האחוזים לכל יחידה. */
+    function ctSplitShown() {
+        const units = project.units || [];
+        const { unit_ids, split } = ctUnitsRead();
+        const cover = units.filter(u => !unit_ids.length || unit_ids.includes(u.id));
+        $('#ct-fixed').hidden = split.method !== 'fixed';
+        $$('#ct-fixed-list [data-u]').forEach(l => { l.hidden = !cover.some(u => String(u.id) === l.dataset.u); });
+        const area = cover.reduce((a, u) => a + (u.area || 0), 0);
+        const w = how => Object.fromEntries(cover.map(u => [u.id, how === 'area' && area > 0 ? (u.area || 0) / area : 1 / cover.length]));
+        let txt = '';
+        if (!cover.length) txt = t('צריך לבחור לפחות יחידה אחת');
+        else if (split.method === 'auto') txt = t('שלב של דירה — כולו שלה. שלב משותף — נשאר "משותף", בלי חלוקה.');
+        else if (split.method === 'fixed') {
+            const sum = cover.reduce((a, u) => a + (split.fixed[u.id] || 0), 0);
+            txt = t('סכום קבוע: {sum} · השאר — {rest}', { sum: money(sum), rest: split.rest === 'area' ? t('לפי שטח') : t('שווה בשווה') });
+        } else {
+            if (split.method === 'area' && !area) txt = t('אין שטח ליחידות — יחולק שווה בשווה. אפשר להוסיף שטח ב"פרטים".') + ' ';
+            const ww = w(split.method);
+            txt += cover.map(u => `${u.name}: ${Math.round(ww[u.id] * 1000) / 10}%`).join(' · ');
+        }
+        $('#ct-split-hint').textContent = txt;
+    }
+
     async function saveContract() {
         readMs();
         const f = $('#ct-dlg form'), el = f.elements;
@@ -551,6 +614,7 @@ const Finance = (() => {
         const body = { project_id: project.project.id, supplier_id: ct.supplierId, file_id: Number(el.file_id.value) || null,
             milestones: ct.ms.filter(m => m.title.trim()).map(m => ({ title: m.title.trim(), due_date: m.due_date, months: m.months, stage_ids: m.stage_ids, done_on: m.done_on })) };
         for (const k of ['signed_on', 'start_date', 'end_date', 'completed_on', 'notes', 'penalty_per_day', 'grace_days', 'max_deviation_days']) body[k] = el[k].value.trim();
+        if ((project.units || []).length) Object.assign(body, ctUnitsRead());
         await busy($('button[type=submit]', f), f, async () => {
             take(await api('contract', { body }));
             $('#ct-dlg').close();
@@ -686,7 +750,7 @@ const Finance = (() => {
         await busy($('button[type=submit]', f), f, async () => {
             const d = await api('payment-split', { body: { stage_id: split.stageId, parts: split.rows } });
             $('#split-dlg').close();
-            data = { settings: d.settings, totals: d.totals, stages: d.stages, fee: d.fee, expenses: d.expenses };
+            data = { settings: d.settings, totals: d.totals, stages: d.stages, fee: d.fee, expenses: d.expenses, units: d.units || [] };
             render();
             await Payments.refreshList({ payments: d.payments, summary: d.summary, statuses: d.statuses, methods: d.methods });
             toast(t('נוצרו {n} אבני דרך', { n: split.rows.length }));

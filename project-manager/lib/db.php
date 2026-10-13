@@ -687,6 +687,9 @@ function pm_migrate(PDO $pdo): void
         created_at TEXT NOT NULL
     )');
     pm_add_column($pdo, 'stages', 'unit_id', 'INTEGER REFERENCES units(id) ON DELETE SET NULL');
+    // מתחם, שלב 2: על אילו יחידות החוזה חל ('[]' — כולן), ואיך מחלקים ביניהן את העלות (JSON; '' — לפי השלבים)
+    pm_add_column($pdo, 'contracts', 'unit_ids', "TEXT NOT NULL DEFAULT '[]'");
+    pm_add_column($pdo, 'contracts', 'split', "TEXT NOT NULL DEFAULT ''");
     $pdo->exec('CREATE TABLE IF NOT EXISTS fin_alert_sent (
         project_id INTEGER NOT NULL,
         contact_id INTEGER NOT NULL,

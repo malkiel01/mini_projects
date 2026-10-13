@@ -1932,5 +1932,19 @@
     "🏢 נוספה יחידה: {name}": "🏢 Unité ajoutée : {name}",
     "ביחידה יש שלבים עם הצעות, תשלומים או דיווחים — אי אפשר למחוק אותה": "L'unité a des étapes avec devis, paiements ou rapports — impossible de la supprimer",
     "🏢 הוסרה יחידה: {name}": "🏢 Unité retirée : {name}",
-    "🏢 {n} יחידות": "🏢 {n} unités"
+    "🏢 {n} יחידות": "🏢 {n} unités",
+    "🏢 לפי יחידות": "🏢 Par unité",
+    "שלב של דירה — כולו שלה. שלב משותף — לפי החלוקה שבחוזה עם הספק (\"📄 חוזה\"); בלי חלוקה — \"משותף\".": "Une étape d'appartement lui appartient entièrement. Une étape commune — selon la répartition du contrat du fournisseur (« 📄 Contrat ») ; sans répartition — « Commun ».",
+    "צריך לבחור לפחות יחידה אחת": "Choisissez au moins une unité",
+    "שלב של דירה — כולו שלה. שלב משותף — נשאר \"משותף\", בלי חלוקה.": "Une étape d'appartement lui appartient entièrement. Une étape commune reste « Commun », sans répartition.",
+    "סכום קבוע: {sum} · השאר — {rest}": "Montants fixes : {sum} · le reste — {rest}",
+    "לפי שטח": "selon la surface",
+    "שווה בשווה": "À parts égales",
+    "אין שטח ליחידות — יחולק שווה בשווה. אפשר להוסיף שטח ב\"פרטים\".": "Les unités n'ont pas de surface — répartition à parts égales. Vous pouvez ajouter la surface dans « Détails ».",
+    "החוזה חל על": "Le contrat couvre",
+    "חלוקת העלות בשלבים המשותפים": "Répartition du coût des étapes communes",
+    "לפי השלבים": "Selon les étapes",
+    "סכום ליחידה": "Montant par unité",
+    "השאר — לפי": "Le reste — selon",
+    "משותף — לא מחולק": "Commun — non réparti"
 }
