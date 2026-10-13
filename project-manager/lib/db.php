@@ -744,7 +744,13 @@ function pm_setting_set(string $key, string $value): void
 function pm_add_column(PDO $pdo, string $table, string $col, string $def): void
 {
     $cols = array_column($pdo->query("PRAGMA table_info($table)")->fetchAll(), 'name');
-    if (!in_array($col, $cols, true)) $pdo->exec("ALTER TABLE $table ADD COLUMN $col $def");
+    if (in_array($col, $cols, true)) return;
+    try {
+        $pdo->exec("ALTER TABLE $table ADD COLUMN $col $def");
+    } catch (PDOException $e) {
+        // שתי בקשות ברגע הפריסה: שתיהן ראו שהעמודה חסרה, והשנייה נתקלה בה — היא כבר שם, ממשיכים
+        if (!str_contains($e->getMessage(), 'duplicate column')) throw $e;
+    }
 }
 
 /** רישום ביומן הביקורת. $actor — "user:<id>" או "portal:<contact>" בהמשך. */
