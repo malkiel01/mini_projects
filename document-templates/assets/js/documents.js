@@ -14,7 +14,9 @@
   const EVENTS = {
     created: 'נוצר', values_saved: 'נשמרו ערכים', completed: 'הושלם ונעול', archived: 'הועבר לארכיון',
     restored: 'שוחזר מהארכיון', downloaded: 'הורד PDF', deleted: 'נמחק',
+    link_issued: 'נשלח קישור', opened: 'נפתח', verified: 'אומת בקוד', participant_completed: 'משתתף סיים',
   };
+  const VIA = { email: 'במייל', link: 'כקישור', whatsapp: 'בוואטסאפ' };
   const EDITABLE = ['draft', 'in_progress'];
 
   const fmtDate = (iso) => iso ? new Date(iso).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }) : '—';
@@ -102,17 +104,33 @@
 
   // ── מסמך ─────────────────────────────────────────────────
 
-  async function open(id) {
+  /**
+   * מסך המסמך. שני מצבים:
+   *   - מנהל הטופס (ברירת מחדל): כל המסמך, יומן, משתתפים, סיום ו-PDF.
+   *   - ממלא חיצוני (opts.fill): אותו מסך, אבל עורך רק את השדות של התפקיד
+   *     שלו, בלי יומן ובלי פרטי משתתפים. ה-api שלו מוסיף את האסימון לכל בקשה.
+   */
+  async function open(id, opts = {}) {
     const { api, el, notice, show } = window.DT;
+    const fill = !!opts.fill;
+    const src = fill ? {
+      get: () => api('fill_get'),
+      save: (b) => api('fill_save', { values: b.values }),
+      asset: ['api.php?action=fill_asset', { 'X-Fill-Token': opts.token }],
+    } : {
+      get: () => api('doc_get', undefined, { id }),
+      save: (b) => api('doc_save', b),
+      asset: ['api.php?action=doc_asset&id=' + id, {}],
+    };
     window.DT.setTab('docs');
     show(el('p', { class: 'muted' }, 'טוען מסמך…'));
     window.DT.wide();
 
     let doc;
     try {
-      doc = (await api('doc_get', undefined, { id })).document;
+      doc = (await src.get()).document;
     } catch (e) {
-      show(notice(e.message, 'bad'), el('p', {}, el('a', { href: '#docs' }, 'חזרה למסמכים')));
+      show(notice(e.message, 'bad'), fill ? null : el('p', {}, el('a', { href: '#docs' }, 'חזרה למסמכים')));
       return;
     }
 
@@ -120,8 +138,19 @@
     const pending = {};
     let timer = null;
     let inflight = null;
-    let mode = localStorage.getItem('dt-fill-mode') === 'form' ? 'form' : 'page';
-    const editable = () => EDITABLE.includes(doc.status);
+    let mode = 'page';
+    try { if (localStorage.getItem('dt-fill-mode') === 'form') mode = 'form'; } catch (e) { /* אחסון חסום — ברירת מחדל */ }
+    // בטלפון, ממלא חיצוני מתחיל בטופס — נוח יותר מהקלדה על דף מוקטן.
+    if (fill && window.innerWidth < 640) mode = 'form';
+    const editable = () => fill ? !doc.me.locked && !doc.me.blocked : EDITABLE.includes(doc.status);
+    // שדה שאפשר לערוך עכשיו: אצל הממלא — רק שלו. אצל המנפיק — כל שדה, חוץ
+    // משדות של משתתף שכבר נשלח אליו קישור.
+    const canEdit = (f) => {
+      if (!editable()) return false;
+      const role = f.role || 'owner';
+      if (fill) return role === doc.me.role_key;
+      return !(doc.participants || []).some(p => p.role_key === role && p.notified_at);
+    };
     const fields = doc.schema.fields;
     // סדר הטופס: לפי דף, ואז מלמעלה למטה, ואז מימין לשמאל.
     const ordered = [...fields].sort((a, b) => a.page - b.page || (a.y - b.y > 0.01 ? 1 : b.y - a.y > 0.01 ? -1 : b.x - a.x));
@@ -135,19 +164,26 @@
     const journal = el('aside', { class: 'panel card journal', hidden: true });
     const modeBtn = el('button', { class: 'small', onclick: () => { mode = mode === 'page' ? 'form' : 'page';
       try { localStorage.setItem('dt-fill-mode', mode); } catch (e) {} renderBody(); } });
-    const completeBtn = el('button', { class: 'primary small', onclick: complete }, 'סיום ונעילה');
+    const completeBtn = el('button', { class: 'primary small', onclick: fill ? fillDone : complete }, fill ? 'סיימתי ✓' : 'סיום ונעילה');
     const pdfBtn = el('button', { class: 'small', onclick: downloadPdf }, '⬇ הורדת PDF');
+    const people = el('aside', { class: 'panel card people', hidden: true });
+    const side = (panel, other) => { panel.hidden = !panel.hidden; other.hidden = true; };
 
     show(
       el('div', { class: 'editor-bar card' },
-        el('a', { href: '#docs', class: 'small' }, '→ מסמכים'),
+        fill ? null : el('a', { href: '#docs', class: 'small' }, '→ מסמכים'),
         el('strong', { dir: 'ltr', class: 'doc-number' }, doc.number || ''),
         title, statusBadge, saveStatus),
+      fill && doc.me ? el('p', { class: 'notice' }, `שלום${doc.me.name ? ' ' + doc.me.name : ''} — ממלאים כאן את השדות של "${doc.me.role}". ` +
+        'השדות שלך מסומנים במסגרת; את השאר רואים לקריאה בלבד.') : null,
       el('div', { class: 'palette' },
-        modeBtn, el('button', { class: 'small', onclick: () => { journal.hidden = !journal.hidden; renderJournal(); } }, '📜 יומן'),
-        pdfBtn, completeBtn, progress),
+        modeBtn,
+        fill ? null : el('button', { class: 'small', onclick: () => { side(journal, people); renderJournal(); } }, '📜 יומן'),
+        fill || !(doc.participants || []).length ? null
+          : el('button', { class: 'small', onclick: () => { side(people, journal); renderPeople(); } }, '👥 משתתפים'),
+        fill ? null : pdfBtn, completeBtn, progress),
       msg,
-      el('div', { class: 'editor' }, body, journal));
+      el('div', { class: 'editor' }, body, journal, people));
 
     window.DT.setLeaveGuard(Object.assign(() => {
       if (Object.keys(pending).length) flush();
@@ -158,11 +194,16 @@
       const [label, kind] = STATUS[doc.status] || [doc.status, ''];
       statusBadge.textContent = label;
       statusBadge.className = 'badge ' + kind;
-      title.disabled = !editable();
+      title.disabled = fill || !editable();
       completeBtn.hidden = !editable();
       modeBtn.textContent = mode === 'page' ? '☰ למילוי כטופס' : '📄 למילוי על המסמך';
       const p = doc.progress;
-      progress.textContent = p.required ? `שדות חובה: ${p.filled} מתוך ${p.required}` : '';
+      if (fill) {
+        progress.textContent = doc.me.blocked || (doc.me.completed ? '✓ סיימת. תודה!'
+          : p.missing.length ? 'נשארו שדות חובה: ' + p.missing.join(', ') : 'כל שדות החובה שלך מלאים');
+      } else {
+        progress.textContent = p.required ? `שדות חובה: ${p.filled} מתוך ${p.required}` : '';
+      }
     }
 
     function setSave(state, text) {
@@ -187,9 +228,9 @@
       if (!keys.length) return;
       const batch = {};
       keys.forEach(k => { batch[k] = pending[k]; delete pending[k]; });
-      const send = { id, values: batch };
+      const send = fill ? { values: batch } : { id, values: batch };
       if (batch._title !== undefined) { send.title = batch._title; delete batch._title; }
-      inflight = api('doc_save', send).then(r => {
+      inflight = src.save(send).then(r => {
         doc.progress = r.progress;
         if (doc.status === 'draft' && r.saved) doc.status = 'in_progress';
         keys.forEach(k => markField(k, 'saved'));
@@ -214,7 +255,7 @@
     // ── קלט לשדה — אותו רכיב בשתי התצוגות ──
     function control(f, onPage) {
       const v = values[f.key] ?? '';
-      const ro = !editable();
+      const ro = !canEdit(f);
       const common = { 'data-key': f.key, 'aria-label': f.label, disabled: ro };
       let n;
       if (f.type === 'checkbox') {
@@ -259,7 +300,7 @@
     async function renderPage() {
       if (!pagesCache) {
         body.replaceChildren(el('p', { class: 'muted' }, 'טוען את המסמך…'));
-        pagesCache = await window.DTEditor.renderBackground('api.php?action=doc_asset&id=' + id, doc.mime);
+        pagesCache = await window.DTEditor.renderBackground(src.asset[0], doc.mime, src.asset[1]);
       }
       const wrap = el('div', { class: 'pages filling' });
       pagesCache.forEach((pg, i) => {
@@ -268,7 +309,7 @@
         pg.visual.classList.add('page-bg');
         fields.filter(f => f.page === i).forEach(f => {
           layer.append(el('div', {
-            class: 'fill t-' + f.type + (f.required ? ' required' : ''), 'data-key': f.key, title: f.label + (f.help ? ' — ' + f.help : ''),
+            class: 'fill t-' + f.type + (f.required ? ' required' : '') + (canEdit(f) ? ' mine' : ' theirs'), 'data-key': f.key, title: f.label + (f.help ? ' — ' + f.help : ''),
             style: `left:${f.x * 100}%; top:${f.y * 100}%; width:${f.w * 100}%; height:${f.h * 100}%`,
           }, control(f, true)));
         });
@@ -352,14 +393,87 @@
             c.label + ': ', 'signed' in c ? (c.signed ? 'נחתם' : 'החתימה נמחקה')
               : el('span', {}, el('del', { class: 'muted' }, short(c.from)), ' → ', short(c.to))))) : null,
           e.detail && e.detail.number ? el('div', { class: 'small muted' }, 'מספר: ' + e.detail.number) : null,
+          e.detail && e.detail.role ? el('div', { class: 'small muted' }, e.detail.role +
+            (e.detail.via ? ' · ' + (VIA[e.detail.via] || e.detail.via) + (e.detail.auto ? ' (אוטומטית)' : '') : '')) : null,
           e.detail && e.detail.hash ? el('div', { class: 'small muted', dir: 'ltr' }, 'SHA-256: ' + e.detail.hash.slice(0, 16) + '…') : null))));
     }
     const short = (s) => { s = s === '1' ? '✓' : String(s || '∅'); return s.length > 40 ? s.slice(0, 40) + '…' : s; };
 
     async function reload() {
-      doc = (await api('doc_get', undefined, { id })).document;
+      doc = (await src.get()).document;
       renderHeader();
       renderJournal();
+      renderPeople();
+    }
+
+    // ── ממלא: סיום ──
+    async function fillDone() {
+      await flush();
+      if (doc.progress.missing.length) {
+        msg.replaceChildren(notice('חסרים שדות חובה: ' + doc.progress.missing.join(', '), 'bad'));
+        return;
+      }
+      if (!confirm('לסיים? אחרי זה אי אפשר לשנות את מה שמילאת.')) return;
+      try {
+        const r = await api('fill_complete', {});
+        await reload();
+        msg.replaceChildren(notice(r.document_completed
+          ? 'תודה! המסמך הושלם, ומי ששלח אותו קיבל הודעה.' : 'תודה! מה שמילאת נשמר ונשלח.', 'ok'));
+        renderBody();
+      } catch (e) {
+        msg.replaceChildren(notice(e.message, 'bad'));
+      }
+    }
+
+    // ── מנהל הטופס: משתתפים וקישורים ──
+    const PSTATUS = { waiting: 'לא נשלח', sent: 'נשלח', opened: 'פתח', completed: '✓ סיים' };
+    // ההודעה נשמרת מחוץ לרינדור: אחרי שליחה הלוח מתרענן, וההודעה צריכה להישאר.
+    const out = el('div', { class: 'people-out' });
+    function renderPeople() {
+      if (fill || people.hidden) return;
+      people.replaceChildren(...[
+        el('div', { class: 'row' }, el('h2', {}, 'משתתפים'), el('button', { class: 'link small', onclick: () => { people.hidden = true; } }, 'סגירה')),
+        doc.schema.sequential ? el('p', { class: 'muted small' }, 'לפי הסדר: הקישור הבא נשלח אוטומטית במייל כשהקודם מסיים.') : null,
+        ...doc.participants.map(p => {
+          const name = el('input', { value: p.name, placeholder: 'שם', maxlength: 80 });
+          const email = el('input', { value: p.email, placeholder: 'מייל', type: 'email', dir: 'ltr' });
+          const phone = el('input', { value: p.phone, placeholder: 'טלפון (לוואטסאפ)', dir: 'ltr' });
+          const saveContact = async () => {
+            await api('part_contact', { id, participant_id: p.id, name: name.value, email: email.value, phone: phone.value });
+            Object.assign(p, { name: name.value, email: email.value, phone: phone.value });
+          };
+          const act = async (via) => {
+            out.replaceChildren();
+            // חלון וואטסאפ נפתח עכשיו, בתוך הלחיצה — אחרי await דפדפנים חוסמים חלונות.
+            const wa = via === 'whatsapp' ? window.open('', '_blank') : null;
+            try {
+              await saveContact();
+              const r = await api('part_link', { id, participant_id: p.id, via });
+              if (wa) wa.location.href = r.whatsapp;
+              out.replaceChildren(notice(r.emailed ? 'נשלח במייל ל-' + email.value : 'הקישור החדש (הקודם בוטל):', 'ok'),
+                via === 'link' ? el('input', { class: 'link-box', value: r.url, readonly: true, dir: 'ltr', onclick: (e) => e.target.select() }) : null);
+              if (via === 'link') navigator.clipboard?.writeText(r.url).catch(() => {});
+              await reload();
+              renderBody();   // השדות של המשתתף ננעלו אצל המנפיק
+            } catch (e) {
+              if (wa) wa.close();
+              out.replaceChildren(notice(e.message, 'bad'));
+            }
+          };
+          const done = !!p.completed_at;
+          return el('div', { class: 'person' },
+            el('div', { class: 'row' }, el('strong', {}, p.role),
+              el('span', { class: 'badge ' + (done ? 'ok' : p.opened_at ? 'warn' : 'muted') }, PSTATUS[p.status] || p.status)),
+            p.auth === 'email' ? el('div', { class: 'muted small' }, '🔒 אימות בקוד למייל') : null,
+            done ? null : el('div', { class: 'person-fields' }, name, email, phone),
+            p.blocked && !done ? el('p', { class: 'muted small' }, p.blocked) : null,
+            done || p.blocked ? null : el('div', { class: 'ops' },
+              el('button', { class: 'small primary', onclick: () => act('email') }, '✉ מייל'),
+              el('button', { class: 'small', onclick: () => act('whatsapp') }, 'וואטסאפ'),
+              el('button', { class: 'small', onclick: () => act('link') }, '🔗 העתקת קישור')),
+            p.missing.length && !done ? el('div', { class: 'muted small' }, 'חסר אצלו: ' + p.missing.join(', ')) : null);
+        }),
+        out].filter(Boolean));
     }
 
     // ── סיום ──
@@ -386,7 +500,7 @@
       pdfBtn.textContent = 'מכין PDF…';
       try {
         await flush();
-        if (!pagesCache) pagesCache = await window.DTEditor.renderBackground('api.php?action=doc_asset&id=' + id, doc.mime);
+        if (!pagesCache) pagesCache = await window.DTEditor.renderBackground(src.asset[0], doc.mime, src.asset[1]);
         const bytes = await buildPdf(doc, values, pagesCache.bytes);
         const a = el('a', { href: URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' })),
           download: ((doc.number ? doc.number + ' ' : '') + title.value).replace(/[\\/:*?"<>|]+/g, '_') + '.pdf' });

@@ -15,7 +15,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/templates.php';
 
 const DOC_MAX_VALUE     = 200 * 1024;   // חתימה (תמונה) היא הערך הגדול ביותר
-const DOC_EDITABLE      = ['draft', 'in_progress'];
+const DOC_EDITABLE      = ['draft', 'sent', 'in_progress'];
 const NUMBERING_SCHEMES = ['prefix_year_seq', 'seq', 'year_month_seq', 'yearly', 'pattern', 'none'];
 
 // ── מספור ────────────────────────────────────────────────────
@@ -168,6 +168,7 @@ function doc_create(array $user, array $b): array
         foreach ($schema['fields'] as $f) {
             if (($f['default'] ?? '') !== '') $ins->execute([$docId, $f['key'], seal($f['default']), 'user:' . $user['id'], $now]);
         }
+        create_participants($docId, $schema);
         log_event($docId, 'user:' . $user['id'], 'created', ['number' => $number, 'template_version' => (int)$t['current_version']]);
         $pdo->commit();
     } catch (Throwable $e) {
@@ -226,6 +227,7 @@ function doc_get(array $user, int $id): array
         'archived' => $d['archived_at'] !== null,
         'schema' => $schema, 'values' => $values, 'progress' => doc_progress($schema, $values),
         'events' => $events, 'chain_ok' => doc_verify_chain($id),
+        'participants' => participants_view($d, doc_schema($d)),
     ]];
 }
 
@@ -294,9 +296,16 @@ function doc_save(array $user, array $b): array
              ON CONFLICT(document_id, field_key, row_index) DO UPDATE SET
                value_enc = excluded.value_enc, updated_by = excluded.updated_by, updated_at = excluded.updated_at'
         );
+        // אחרי שנשלח קישור — שדות של משתתף שייכים לו. לפני כן המנפיק יכול למלא מראש.
+        $sentTo = db()->prepare("SELECT role_key FROM participants WHERE document_id = ? AND notified_at IS NOT NULL");
+        $sentTo->execute([$d['id']]);
+        $sentTo = $sentTo->fetchAll(PDO::FETCH_COLUMN);
         foreach ((array)($b['values'] ?? []) as $key => $v) {
             $f = $byKey[$key] ?? null;
             if (!$f) continue;
+            if (in_array($f['role'] ?? 'owner', $sentTo, true)) {
+                throw new ApiError('השדה "' . $f['label'] . '" כבר נשלח למילוי של המשתתף', 409);
+            }
             $v = clean_value($f, $v);
             $prev = $old[$key] ?? '';
             if ($v === $prev) continue;
@@ -338,6 +347,14 @@ function doc_complete(array $user, array $b): array
     $p = doc_progress($schema, $values);
     if ($p['missing']) throw new ApiError('חסרים שדות חובה: ' . implode(', ', $p['missing']), 422);
 
+    doc_finalize($d, 'user:' . $user['id']);
+    return ['ok' => true, 'hash' => db()->query('SELECT final_hash FROM documents WHERE id = ' . (int)$d['id'])->fetchColumn()];
+}
+
+/** נעילה וטביעת אצבע. נקרא מ"סיום" של המנפיק, או כשהמשתתף האחרון סיים. */
+function doc_finalize(array $d, string $actor): void
+{
+    $values = doc_values((int)$d['id']);
     ksort($values);
     $hash = hash('sha256', json_encode(['template_version_id' => (int)$d['template_version_id'], 'values' => $values],
         JSON_UNESCAPED_UNICODE));
@@ -345,9 +362,8 @@ function doc_complete(array $user, array $b): array
     $pdo->beginTransaction();
     $pdo->prepare("UPDATE documents SET status = 'completed', completed_at = ?, final_hash = ? WHERE id = ?")
         ->execute([now_iso(), $hash, $d['id']]);
-    log_event((int)$d['id'], 'user:' . $user['id'], 'completed', ['hash' => $hash]);
+    log_event((int)$d['id'], $actor, 'completed', ['hash' => $hash]);
     $pdo->commit();
-    return ['ok' => true, 'hash' => $hash];
 }
 
 function doc_archive(array $user, array $b): array
@@ -376,3 +392,5 @@ function doc_delete(array $user, array $b): array
     log_event((int)$d['id'], 'user:' . $user['id'], 'deleted');
     return ['ok' => true];
 }
+
+require_once __DIR__ . '/participants.php';

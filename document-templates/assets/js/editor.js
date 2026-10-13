@@ -39,8 +39,8 @@
    * מצייר את קובץ הרקע (PDF או תמונה) ומחזיר לכל דף: אלמנט להצגה, ורוחב/גובה
    * בנקודות PDF. משמש גם את העורך וגם את מסך המסמך.
    */
-  async function renderBackground(url, mime) {
-    const res = await fetch(url, { credentials: 'same-origin' });
+  async function renderBackground(url, mime, headers) {
+    const res = await fetch(url, { credentials: 'same-origin', headers: headers || {} });
     if (!res.ok) throw new Error('טעינת הקובץ נכשלה');
     const buf = await res.arrayBuffer();
     const out = [];
@@ -86,7 +86,13 @@
       return;
     }
 
-    const schema = { pages: tpl.schema.pages || [], fields: (tpl.schema.fields || []).map(f => ({ ...f })) };
+    const schema = {
+      pages: tpl.schema.pages || [],
+      fields: (tpl.schema.fields || []).map(f => ({ role: 'owner', ...f })),
+      roles: (tpl.schema.roles && tpl.schema.roles.length ? tpl.schema.roles : [{ key: 'owner', label: 'אני (המנפיק)', auth: 'none' }]).map(r => ({ ...r })),
+      sequential: !!tpl.schema.sequential,
+    };
+    const roleIndex = (key) => Math.max(0, schema.roles.findIndex(r => r.key === key));
     let selected = null;
     let placing = null;
     let dirty = false;
@@ -187,7 +193,7 @@
 
     function fieldEl(f) {
       const box = el('div', {
-        class: 'field t-' + f.type + (selected === f ? ' selected' : '') + (f.required ? ' required' : ''),
+        class: 'field t-' + f.type + ' role-' + (roleIndex(f.role) % 6) + (selected === f ? ' selected' : '') + (f.required ? ' required' : ''),
         style: `left:${f.x * 100}%; top:${f.y * 100}%; width:${f.w * 100}%; height:${f.h * 100}%`,
         title: f.label, tabindex: 0,
       }, el('span', { class: 'field-label' }, TYPES[f.type].icon + ' ' + f.label),
@@ -292,6 +298,7 @@
                 el('span', { class: 'muted small' }, ' · דף ' + (f.page + 1) + (f.required ? ' · חובה' : '')))))
             : el('p', { class: 'muted small' }, 'בחרו סוג שדה למעלה, ואז לחצו על המקום בדף.'),
           el('p', { class: 'muted small' }, 'גרירה מזיזה; הפינה התחתונה משנה גודל; חצים במקלדת — הזזה עדינה; Delete — מחיקה.'),
+          rolesPanel(),
           numberingPanel());
         return;
       }
@@ -319,6 +326,7 @@
         input('תווית — מה הממלא רואה', 'label', { maxlength: 120 }),
         select_('סוג', 'type', Object.fromEntries(Object.entries(TYPES).map(([k, t]) => [k, t.icon + ' ' + t.label]))),
         el('label', { class: 'inline' }, req, ' שדה חובה'),
+        schema.roles.length > 1 ? select_('מי ממלא', 'role', Object.fromEntries(schema.roles.map(r => [r.key, r.label]))) : null,
         input('שורת עזרה (לא חובה)', 'help', { maxlength: 300 }),
         f.type !== 'signature' ? input('ערך ברירת מחדל', 'default', { maxlength: 1000 }) : null,
         textual ? input('גודל גופן', 'fontSize', { type: 'number', min: 6, max: 72 }) : null,
@@ -328,6 +336,40 @@
         el('div', { class: 'ops' },
           el('button', { class: 'small', onclick: () => duplicate(f) }, 'שכפול'),
           el('button', { class: 'small danger', onclick: () => removeField(f) }, 'מחיקה')));
+    }
+
+    // משתתפים: מי ממלא איזה שדה, ובאיזה סדר. "אני" תמיד ראשון ואינו נמחק.
+    function rolesPanel() {
+      const list = el('ol', { class: 'roles' }, schema.roles.map((r, i) => {
+        const dot = el('span', { class: 'role-dot role-' + (i % 6) });
+        if (r.key === 'owner') return el('li', {}, dot, el('strong', {}, r.label), ' ', el('span', { class: 'muted small' }, '— ממלא ראשון'));
+        const label = el('input', { value: r.label, maxlength: 60, 'aria-label': 'שם התפקיד' });
+        label.addEventListener('input', () => { r.label = label.value; setDirty(true); });
+        const auth = el('select', { 'aria-label': 'אימות' },
+          el('option', { value: 'none', selected: r.auth !== 'email' }, 'בלי אימות'),
+          el('option', { value: 'email', selected: r.auth === 'email' }, 'קוד במייל'));
+        auth.addEventListener('change', () => { r.auth = auth.value; setDirty(true); });
+        const del = el('button', { class: 'link small', title: 'הסרה', onclick: () => {
+          const used = schema.fields.filter(f => f.role === r.key).length;
+          if (used && !confirm(`ל"${r.label}" משויכים ${used} שדות. הם יעברו אליך. להסיר?`)) return;
+          schema.fields.forEach(f => { if (f.role === r.key) f.role = 'owner'; });
+          schema.roles = schema.roles.filter(x => x !== r);
+          setDirty(true); draw(); renderPanel();
+        } }, '✕');
+        return el('li', { class: 'role-row' }, dot, label, auth, del);
+      }));
+      const seq = el('input', { type: 'checkbox', checked: schema.sequential });
+      seq.addEventListener('change', () => { schema.sequential = seq.checked; setDirty(true); });
+      return el('div', { class: 'numbering' },
+        el('h2', {}, 'משתתפים'),
+        el('p', { class: 'muted small' }, 'כל משתתף מקבל קישור אישי, וממלא רק את השדות שלו. משייכים שדה בהגדרות השדה.'),
+        list,
+        el('button', { class: 'small', onclick: () => {
+          const n = schema.roles.length;
+          schema.roles.push({ key: 'role_' + Math.random().toString(36).slice(2, 7), label: n === 1 ? 'לקוח' : 'משתתף ' + n, auth: 'none' });
+          setDirty(true); renderPanel();
+        } }, '+ הוספת משתתף'),
+        schema.roles.length > 1 ? el('label', { class: 'inline small' }, seq, ' לפי הסדר — כל אחד מקבל את הקישור רק אחרי שהקודם סיים') : null);
     }
 
     // מספור המסמכים שיונפקו מהתבנית.

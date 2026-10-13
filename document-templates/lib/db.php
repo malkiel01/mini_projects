@@ -243,6 +243,13 @@ function db_migrate(PDO $pdo): void
         $pdo->exec('ALTER TABLE email_tokens ADD COLUMN payload_enc TEXT');
     }
 
+    // שלב 5: סדר המשתתפים, וקוד חד-פעמי במייל לאימות זהות.
+    $cols = array_column($pdo->query('PRAGMA table_info(participants)')->fetchAll(), 'name');
+    foreach (['sort_order INTEGER NOT NULL DEFAULT 0', 'otp_hash TEXT', 'otp_expires_at TEXT',
+              'otp_attempts INTEGER NOT NULL DEFAULT 0', 'verified_at TEXT', 'notified_at TEXT'] as $def) {
+        if (!in_array(strtok($def, ' '), $cols, true)) $pdo->exec("ALTER TABLE participants ADD COLUMN $def");
+    }
+
     // היומן: אי אפשר לשנות או למחוק רשומה — גם לא בטעות בקוד עתידי.
     $pdo->exec(<<<'SQL'
         CREATE TRIGGER IF NOT EXISTS events_no_update BEFORE UPDATE ON events
