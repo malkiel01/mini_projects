@@ -1600,7 +1600,7 @@ console.log('הכול לפי עמודה: מחיצות, גב, כרכוב, דפנ�
   // תאורה לקומה
   const ul = U(); ul[0].floors[0].led = 'sides';
   const rl = build('bookcase', { ...base, units: ul });
-  check(rl.hardware.some((h) => h.id === 'led-1-f1-L') && !rl.hardware.some((h) => /^led-2/.test(h.id)), 'לד רק בעמודה 1');
+  check(rl.hardware.some((h) => h.id === 'led-1-L') && !rl.hardware.some((h) => /^led-2/.test(h.id)), 'לד רק בעמודה 1');
   // גב לעמודה
   const ub = U(); ub[1].back = { mode: 'none' }; ub[2].back = { mode: 'overlay', material: 'board:back-mdf-8' };
   const rb = build('bookcase', { ...base, units: ub });
@@ -1617,6 +1617,32 @@ console.log('הכול לפי עמודה: מחיצות, גב, כרכוב, דפנ�
   check(rd.parts.some((p) => p.id === 'side-L-glass') && get(rd, 'side-R').material === 'board:veneer-walnut-18', 'דופן שמאל זכוכית (עמודה 1), דופן ימין אגוז (עמודה 3)');
   // ברירת מחדל — זהה
   check(JSON.stringify(build('bookcase', { ...base, units: U() }).parts) === JSON.stringify(build('bookcase', base).parts), 'בלי הגדרות לעמודות — אותה בנייה');
+}
+
+console.log('תאורת לד: מיקומים, פרופיל, שנאי, שליטה, חריצים');
+{
+  const base = { columns: 3, width: 1500, height: 2000, depth: 350 };
+  const hw = (r, re) => r.hardware.filter((h) => re.test(h.id));
+  // פרויקט ישן עם לד — נשאר על הפס "כולל פרופיל ושנאי", בלי שורות נוספות
+  const old = build('bookcase', { ...base, led: 'shelves' });
+  check(hw(old, /^led-/).every((h) => h.material === 'hw:led-strip') && !hw(old, /^led-(driver|touch|door)/).length, 'פרויקט ישן: אותו פס ואותו מחיר');
+  // מפורט: מלמעלה ומתחת למדפים, פרופיל שקוע, שליטה אוטומטית
+  const u = build('bookcase', base).units.map((x) => ({ ...x, floors: x.floors.map((f) => ({ ...f, interior: { ...f.interior, shelves: { ...f.interior.shelves, mode: 'fixed' } } })) }));
+  u[0].floors[0].front = { ...u[0].floors[0].front, type: 'wood' };
+  const r = build('bookcase', { ...base, units: u, led: 'top+shelves', ledStrip: 'hw:led-12v-3000', ledProfile: 'hw:led-profile-recessed', ledControl: 'auto' });
+  const strips = r.hardware.filter((h) => h.kind === 'led');
+  check(strips.length === 3 * 5 && strips.every((h) => h.material === 'hw:led-12v-3000'), '3 עמודות × (מלמעלה + 4 מדפים) = 15 פסים');
+  check(hw(r, /-profile$/).length === 15 && hw(r, /-profile$/).every((h) => h.material === 'hw:led-profile-recessed'), 'פרופיל לכל פס');
+  const meters = strips.reduce((a, h) => a + h.qty, 0), drv = r.hardware.find((h) => h.id === 'led-driver');
+  check(drv && M.material(drv.material).led.w >= meters * 9.6 * 1.2 - 1, `שנאי ${M.material(drv?.material).name} מספיק ל-${meters.toFixed(1)} מ' × 9.6W + 20%`);
+  check(r.hardware.find((h) => h.id === 'led-door')?.qty === 1 && r.hardware.find((h) => h.id === 'led-touch')?.qty === 1, 'אוטומטי: חיישן דלת לעמודה עם דלת, מתג מגע אחד לשאר');
+  check(/חריץ לפרופיל לד שקוע/.test(r.parts.find((p) => p.id === 'shelf-1-1').note || '') && /חריץ לפרופיל לד שקוע/.test(r.parts.find((p) => p.id === 'top').note || ''), 'חריץ לפרופיל — הערה על המדף ועל הגג');
+  check(/חור 10 מ"מ לכבל לד/.test(r.parts.find((p) => /back$/.test(p.id)).note || ''), 'חור לכבל בגב');
+  // אזהרות: מדפים מתכווננים, מתג במקום חיישן מאחורי דלת
+  const w = build('bookcase', { ...base, led: 'shelves', ledStrip: 'hw:led-24v-4000', ledControl: 'touch', units: build('bookcase', { ...base }).units.map((x, i) => (i ? x : { ...x, floors: x.floors.map((f) => ({ ...f, front: { ...f.front, type: 'glass' } })) })) }).warnings;
+  check(w.some((x) => /מדפים מתכווננים/.test(x)) && w.some((x) => /כדאי חיישן דלת/.test(x)), 'אזהרות: מדף מתכוונן, תאורה מאחורי דלת בלי חיישן');
+  check(build('bookcase', { ...base, led: 'top', ledStrip: 'hw:led-strip' }).hardware.filter((h) => h.kind === 'led').length === 3, 'פס ישן + מיקום חדש (מלמעלה) — עדיין נבנה');
+  check(build('bookcase', { ...base, led: 'shelves', ledStrip: 'hw:led-24v-4000' }).hardware.find((h) => h.id === 'led-driver')?.material.includes('24v'), 'שנאי במתח של הפס (24V)');
 }
 
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }

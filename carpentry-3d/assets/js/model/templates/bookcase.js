@@ -13,6 +13,9 @@ import { carcass, back, plinth, crown, part } from '../blocks.js';
 import { material } from '../materials.js';
 import { sectionLayout, cellsOf } from '../layout.js';
 import { unitsInterior, unitsFronts, locateUnitPart, partT } from '../units-engine.js';
+import { LED_OPTIONS, isBundle, lightingState, finishLighting } from '../lighting.js';
+/** יש תאורה כלשהי — כללית או לקומה. */
+const anyLed = (v) => (v.led && v.led !== 'none') || (Array.isArray(v.units) && v.units.some((u) => u.floors?.some((f) => f.led && f.led !== 'same' && f.led !== 'none')));
 import { handleParam, hingeParam, wheelsParam, addWheels, materialParams, joineryParams, FINISHES, FINISHES_NO_GLASS, applyFinish, sameOrMaterial, resolveSame, columnHeights, fitSides, stepTops, steppedBack, steppedCrown, LIMITS } from './common.js';
 
 const DOOR_OPTIONS = [{ id: 'none', name: 'ללא' }, { id: 'wood', name: 'עץ' }, { id: 'glass', name: 'ויטרינה' }];
@@ -77,12 +80,17 @@ export default {
       options: [{ id: 'same', name: 'כמו שאר המדפים' }, { id: 'glass', name: 'מדפי זכוכית' }] },
     { legacy: true, key: 'vitrineShelfGlass', label: 'זכוכית המדפים', type: 'material', kind: 'glass', default: 'glass:shelf-8', group: 'ויטרינה', showIf: (v) => anyGlass(v) && v.vitrineShelves === 'glass', showIfText: 'מדפי זכוכית' },
 
-    { key: 'sideLeftFinish', label: 'דופן שמאל — סוג', type: 'enum', default: 'flat', group: 'דפנות ותאורה', options: FINISHES },
-    sameOrMaterial('sideLeftMaterial', 'דופן שמאל — חומר', 'דפנות ותאורה', { showIf: { sideLeftFinish: { not: ['glass'] } } }),
-    { key: 'sideRightFinish', label: 'דופן ימין — סוג', type: 'enum', default: 'flat', group: 'דפנות ותאורה', options: FINISHES },
-    sameOrMaterial('sideRightMaterial', 'דופן ימין — חומר', 'דפנות ותאורה', { showIf: { sideRightFinish: { not: ['glass'] } } }),
-    { key: 'led', label: 'פסי לד', type: 'enum', default: 'none', group: 'דפנות ותאורה',
-      options: [{ id: 'none', name: 'ללא' }, { id: 'sides', name: 'אנכיים, בדפנות של כל עמודה' }, { id: 'shelves', name: 'מתחת לכל מדף' }] },
+    { key: 'sideLeftFinish', label: 'דופן שמאל — סוג', type: 'enum', default: 'flat', group: 'דפנות', options: FINISHES },
+    sameOrMaterial('sideLeftMaterial', 'דופן שמאל — חומר', 'דפנות', { showIf: { sideLeftFinish: { not: ['glass'] } } }),
+    { key: 'sideRightFinish', label: 'דופן ימין — סוג', type: 'enum', default: 'flat', group: 'דפנות', options: FINISHES },
+    sameOrMaterial('sideRightMaterial', 'דופן ימין — חומר', 'דפנות', { showIf: { sideRightFinish: { not: ['glass'] } } }),
+    { key: 'led', label: 'פסי לד — ברירת המחדל לכל קומה', type: 'enum', default: 'none', group: 'תאורה', options: LED_OPTIONS,
+      hint: 'בכרטיס של כל קומה אפשר אחרת' },
+    { key: 'ledStrip', label: 'פס הלד', type: 'material', kind: 'hardware', role: 'led-strip', default: 'hw:led-12v-3000', group: 'תאורה', showIf: anyLed, showIfText: 'יש תאורה',
+      hint: '"כולל פרופיל ושנאי" — המחיר הישן למטר, בלי פירוט' },
+    { key: 'ledProfile', label: 'פרופיל', type: 'material', kind: 'hardware', role: 'led-profile', allowNone: true, noneLabel: 'בלי פרופיל (פס חשוף)', default: 'hw:led-profile-surface', group: 'תאורה', showIf: (v) => anyLed(v) && !isBundle(v.ledStrip), showIfText: 'פס לד מפורט' },
+    { key: 'ledControl', label: 'שליטה', type: 'enum', default: 'auto', group: 'תאורה', showIf: (v) => anyLed(v) && !isBundle(v.ledStrip), showIfText: 'פס לד מפורט',
+      options: [{ id: 'auto', name: 'אוטומטי — חיישן דלת בקומה עם דלת, מתג מגע לשאר' }, { id: 'touch', name: 'מתג מגע / עמעם' }, { id: 'switch', name: 'מתג על הכבל' }, { id: 'door', name: 'חיישן דלת' }, { id: 'motion', name: 'חיישן תנועה' }] },
   ],
 
   // החלטות החיבור — נשאלות בכל מופע, עם ברירת מחדל מהתבנית.
@@ -97,6 +105,8 @@ export default {
     }
     delete v.glassSides;
     if (v.doorFinish === 'fluted') v.doorFinish = 'fluted-fine';
+    // פרויקט עם לד מלפני התאורה המפורטת — נשאר על הפס "כולל פרופיל ושנאי" (אותו מחיר)
+    if (v.ledStrip === undefined && v.led && v.led !== 'none') v.ledStrip = 'hw:led-strip';
     // עובי שנשמר כמספר ושווה לעובי החומר → "כעובי החומר" (אותה בנייה; מעכשיו משתנה עם החומר)
     for (const [k, m] of [['sideT', v.bodyMaterial], ['shelfT', v.shelfMaterial ?? v.bodyMaterial]]) if (v[k] != null && m && Number(v[k]) === boardThickness(m)) v[k] = null;
     return v;
@@ -196,7 +206,8 @@ export default {
     const z0 = inner.z0 + (v.backMode === 'groove' ? v.backInset + backT : 0), z1 = inner.z1;
     const geo = { inner, bottomY, topY, tops, stepped, colY1, shelfT };
     const units = saved || migrateUnits(v, layout, geo);
-    const eng = { units, columns: v.columns, inner, W, D, sideT, shelfT, bottomY, topY, tops, stepped, colY1, z0, z1, innerMat, shelfMat, sidesOverTop, shelvesMode: v.shelvesMode, led: v.led, plinthH: v.plinthH, doorMaterial: v.doorMaterial, limits: L };
+    const light = lightingState(v.ledStrip, v.ledProfile);
+    const eng = { light, units, columns: v.columns, inner, W, D, sideT, shelfT, bottomY, topY, tops, stepped, colY1, z0, z1, innerMat, shelfMat, sidesOverTop, shelvesMode: v.shelvesMode, led: v.led, plinthH: v.plinthH, doorMaterial: v.doorMaterial, limits: L };
     const ctx = { parts, hardware, warnings };
     const { cols, floorsOf } = unitsInterior(ctx, eng);
 
@@ -217,6 +228,8 @@ export default {
 
     // ---- מגירות ודלתות: לכל קומה בכל עמודה — לפי החזית שלה (units-engine.js) ----
     const { maxFront } = unitsFronts(ctx, eng, cols, floorsOf);
+    // תאורה: שנאי לפי ההספק, שליטה, וחור לכבל בגב העמודה (או בגג, כשאין גב)
+    finishLighting(ctx, light, { control: v.ledControl, holeBoard: (i) => parts.find((p) => /(^|-)back$/.test(p.id) && p.box.x <= cols.cols[i].x0 + 1 && p.box.x + p.box.w >= cols.cols[i].x1 - 1) || parts.find((p) => (p.id === 'top' || /^top-\d/.test(p.id)) && p.box.x <= cols.cols[i].x0 + 1 && p.box.x + p.box.w >= cols.cols[i].x1 - 1) });
     units.forEach((u, i) => { if (u.splitCancelled > 0) warnings.push(`עמודה ${i + 1}: גובה החלק התחתון ${u.splitCancelled} גדול מדי לגובה העמודה — הפיצול בוטל`); });
     const adjustable = v.shelvesMode === 'adjustable';
     if (anyGlassSide && adjustable) warnings.push('דופן זכוכית: מדפים מתכווננים נשענים על הזקפים בלבד — עדיף מדפים קבועים או מסגרת פנימית');

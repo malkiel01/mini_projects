@@ -13,6 +13,7 @@ import * as M from './model/materials.js';
 import { optionsFor } from './model/index.js';
 import { FINISHES, FINISHES_NO_GLASS } from './model/templates/common.js';
 import { suggest, applySuggestion } from './model/suggest.js';
+import { LED_OPTIONS } from './model/lighting.js';
 import { newUnitOf as bookcaseNewUnit } from './model/templates/bookcase.js';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -126,7 +127,7 @@ export function renderUnitsEditor(box, values, onChange) {
       </div>
       <div class="unit__sec"><b>חזית</b>${front.join('')}</div>
       <div class="unit__sec"><b>תוכן</b>${inner.join('')}</div>
-      ${spec().columnBody ? `<div class="unit__sec"><b>תאורה</b>${sel(`${at}.led`, f.led || 'same', { ...SAME, none: 'ללא', sides: 'פסים אנכיים בדפנות', shelves: 'מתחת לכל מדף' }, 'פסי לד')}</div>` : ''}
+      ${spec().columnBody ? `<div class="unit__sec"><b>תאורה</b>${sel(`${at}.led`, f.led || 'same', { ...SAME, ...Object.fromEntries(LED_OPTIONS.map((o) => [o.id, o.name])) }, 'פסי לד')}</div>` : ''}
     </details>`;
   }
 
