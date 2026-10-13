@@ -226,7 +226,7 @@
     catch (e) { alert(e.message); }
   }
 
-  const SOURCE = { pdf_locked: '📄 PDF', image: '🖼️ תמונה', docx: '📝 Word', pdf_parsed: '📄 PDF', authored: '✍️ נכתב כאן' };
+  const SOURCE = { pdf_locked: '🔒 PDF נעול', image: '🖼️ תמונה', docx: '📝 Word', pdf_parsed: '🔍 PDF מפורק', authored: '✍️ נכתב כאן' };
 
   async function viewHome() {
     setTab('home');
@@ -301,6 +301,13 @@
       el('label', {}, el('span', {}, 'שם התבנית'), el('input', { name: 'name', required: true, maxlength: 120 })),
       el('label', {}, el('span', {}, 'קובץ: PDF, Word (docx — שדות מסומנים {{כך}}) או תמונה'),
         el('input', { name: 'file', type: 'file', required: true, accept: 'application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp' })),
+      // שלב 10: ב-PDF — לפרק (המערכת קוראת שדות וטקסט) או להשתמש כקובץ נעול.
+      el('fieldset', { class: 'pdf-mode', hidden: true },
+        el('legend', {}, 'PDF — מה לעשות איתו?'),
+        el('label', { class: 'inline' }, el('input', { type: 'radio', name: 'mode', value: 'parse', checked: true }),
+          ' 🔍 לפרק — המערכת מנסה לקרוא את שדות הטופס והטקסט, ומציעה מקומות מילוי'),
+        el('label', { class: 'inline' }, el('input', { type: 'radio', name: 'mode', value: 'locked' }),
+          ' 🔒 קובץ נעול — כמו תמונה; את השדות ממקמים לבד')),
       el('div', { class: 'ops' },
         el('button', { type: 'submit', class: 'primary' }, 'העלאה ופתיחה בעורך'),
         el('button', { type: 'button', onclick: () => { upload.hidden = true; } }, 'ביטול')));
@@ -308,6 +315,7 @@
       const name = upload.querySelector('[name=name]');
       const f = e.target.files[0];
       if (f && !name.value) name.value = f.name.replace(/\.[^.]+$/, '');
+      upload.querySelector('.pdf-mode').hidden = !(f && (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)));
     });
     upload.addEventListener('submit', async (e) => {
       e.preventDefault();

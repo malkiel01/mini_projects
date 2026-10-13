@@ -60,6 +60,7 @@
         await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
         out.push({ visual: canvas, w: vp1.width, h: vp1.height });
       }
+      out.pdf = pdf;   // לפירוק (שלב 10)
     } else {
       const img = new Image();
       img.src = URL.createObjectURL(new Blob([buf], { type: mime }));
@@ -124,6 +125,7 @@
       fields: (tpl.schema.fields || []).map(f => ({ role: 'owner', ...f })),
       roles: (tpl.schema.roles && tpl.schema.roles.length ? tpl.schema.roles : [{ key: 'owner', label: 'אני (המנפיק)', auth: 'none' }]).map(r => ({ ...r })),
       sequential: !!tpl.schema.sequential,
+      parsed: !!tpl.schema.parsed,
     };
     const roleIndex = (key) => Math.max(0, schema.roles.findIndex(r => r.key === key));
     let selected = null;
@@ -143,6 +145,9 @@
     const pagesBox = el('div', { class: 'pages' });
     const panel = el('aside', { class: 'panel card' });
     const msg = el('div');
+    const parseBox = el('div');
+    let spots = [];          // שלב 10: מקומות מילוי מוצעים מהטקסט
+    let showSpots = true;
 
     // שלב 7: תבנית ששותפה ברמה נמוכה מ"עורך" — צפייה בלבד.
     const readOnly = window.DT.rank(tpl.access || 'owner') < 3;
@@ -160,7 +165,7 @@
         nameInput, status, saveBtn),
       tpl.owner_name ? el('p', { class: 'notice' }, `👥 תבנית של ${tpl.owner_name} — ההרשאה שלך: ${window.DT.LEVEL[tpl.access]}` +
         (readOnly ? '. צפייה בלבד.' : '.')) : null,
-      palette, msg,
+      palette, parseBox, msg,
       el('div', { class: 'editor' }, pagesBox, panel));
 
     window.DT.setLeaveGuard(Object.assign(
@@ -192,7 +197,7 @@
       }
     } else {
       try {
-        const pages = await renderBackground('api.php?action=tpl_asset&id=' + id, tpl.mime);
+        var pages = await renderBackground('api.php?action=tpl_asset&id=' + id, tpl.mime);
         pages.forEach((pg, i) => addPage(pg.visual, pg.w, pg.h, i));
       } catch (e) {
         msg.replaceChildren(notice(e.message, 'bad'));
@@ -206,6 +211,102 @@
       setDirty(true);
     } else {
       setDirty(false);
+    }
+
+    // ── שלב 10: PDF "לפרק" ──
+    let report = null;
+    let autoSave = false;
+    if (pages && pages.pdf && tpl.source === 'pdf_parsed') {
+      try { report = await window.DTParse.analyze(pages.pdf); }
+      catch (e) { parseBox.replaceChildren(notice('הפירוק נכשל: ' + e.message, 'bad')); }
+      // בפתיחה הראשונה: שדות הטופס המובנים נהפכים לשדות התבנית, במקומם המדויק.
+      if (report && !schema.parsed && !readOnly) {
+        const added = schema.fields.some(f => f.pdfName) ? [] : report.fields.map(asField);
+        schema.fields.push(...added);
+        schema.parsed = true;
+        setDirty(true);
+        autoSave = added.length > 0;   // נשמר בסוף הפתיחה, כשהכול מאותחל
+      }
+    }
+    renderParse();
+
+    function asField(p) {
+      const n = schema.fields.filter(f => f.type === p.type).length + 1;
+      const ascii = String(p.pdfName || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+      const key = (/^[a-z]/.test(ascii) ? ascii : p.type + '_' + n) + '_' + Math.random().toString(36).slice(2, 5);
+      const { label: _l, ...rest } = p;
+      return { id: uid(), key, help: '', required: false, default: '', fontSize: 11, align: 'right', overflow: 'shrink',
+        role: 'owner', ...rest, label: (p.label || TYPES[p.type].label).slice(0, 120) };
+    }
+
+    /** הצעות שעדיין פנויות — בלי אלה שכבר יש עליהן שדה. */
+    function freeSpots() { return spots.filter(s => !schema.fields.some(f => window.DTParse.overlap(f, s) > 0.3)); }
+
+    function addSpot(s) {
+      const t = TYPES[s.type] ? s.type : 'text';
+      const p = schema.pages[s.page];
+      // שטח קטן מדי לחתימה — מגדילים כלפי מעלה
+      const h = t === 'signature' ? Math.max(s.h, 40 / p.h) : s.h;
+      const f = asField({ type: t, label: s.label || TYPES[t].label, page: s.page, x: s.x, y: Math.max(0, s.y + s.h - h), w: s.w, h,
+        fontSize: Math.round(Math.max(8, Math.min(12, s.h * p.h * 0.7))) });
+      schema.fields.push(f);
+      setDirty(true);
+      return f;
+    }
+
+    function renderParse() {
+      if (readOnly || isWord || tpl.mime !== 'application/pdf') { parseBox.replaceChildren(); return; }
+      const toSource = async (source) => {
+        // שומרים קודם — המעבר טוען את העורך מחדש
+        if (dirty) { await save(); if (dirty) return; }
+        try { await api('tpl_set_source', { id, source }); open(id); }
+        catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
+      };
+      if (tpl.source !== 'pdf_parsed') {
+        parseBox.replaceChildren(el('p', { class: 'parse-bar muted small' }, '🔒 PDF נעול — את השדות ממקמים לבד. ',
+          el('button', { class: 'small', onclick: () => toSource('pdf_parsed') }, '🔍 לנסות לפרק את הקובץ')));
+        return;
+      }
+      if (!report) return;
+      spots = report.spots;
+      const free = freeSpots();
+      if (!report.fields.length && report.chars < 20) {
+        parseBox.replaceChildren(el('div', { class: 'notice bad parse-bar' },
+          el('strong', {}, '❌ לא הצלחתי לפרק. '),
+          'אין בקובץ שדות טופס ולא שכבת טקסט — כנראה סריקה או תמונה. ',
+          el('div', { class: 'ops' },
+            el('button', { class: 'small', onclick: () => toSource('pdf_locked') }, '🔒 להמשיך כקובץ נעול'),
+            el('button', { class: 'small', disabled: true, title: 'דורש קרדיטים שהמפתח מקצה — שלב 13' }, '🤖 לפרק בבינה מלאכותית (בקרוב)'))));
+        return;
+      }
+      const toggle = el('input', { type: 'checkbox', checked: showSpots });
+      toggle.addEventListener('change', () => { showSpots = toggle.checked; draw(); });
+      parseBox.replaceChildren(el('div', { class: 'notice ok parse-bar' },
+        el('strong', {}, '✅ הצלחתי. '),
+        report.fields.length ? `נמצאו ${report.fields.length} שדות טופס — הם בתבנית, במקומם. ` : 'אין בקובץ שדות טופס מובנים. ',
+        report.chars >= 20 ? 'קראתי את הטקסט' + (spots.length ? ` — ויש ${free.length} הצעות למקומות מילוי (מסומנות בקו מקווקו; לחיצה הופכת לשדה).` : ', ולא מצאתי בו מקומות מילוי ברורים.') : '',
+        el('div', { class: 'ops' },
+          spots.length ? el('label', { class: 'inline small' }, toggle, ' להציג הצעות') : null,
+          free.length ? el('button', { class: 'small', onclick: () => {
+            for (const s of freeSpots()) addSpot(s);
+            select(null); renderParse();
+          } }, `+ להוסיף את כל ${free.length} ההצעות`) : null,
+          el('button', { class: 'small', onclick: () => toSource('pdf_locked') }, '🔒 להפוך לנעול'))));
+    }
+
+    function spotEl(s) {
+      const b = el('button', { type: 'button', class: 'spot', title: 'להוסיף שדה: ' + (s.label || ''),
+        style: `left:${s.x * 100}%; top:${s.y * 100}%; width:${s.w * 100}%; height:${s.h * 100}%` },
+        el('span', {}, '+ ' + (s.label || TYPES[s.type]?.label || 'שדה')));
+      b.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        if (placing) return;
+        e.preventDefault();
+        const f = addSpot(s);
+        select(f);
+        renderParse();
+      });
+      return b;
     }
 
     function addPage(visual, w, h, index) {
@@ -265,7 +366,10 @@
     }
 
     function draw() {
-      pageEls.forEach((p, i) => p.layer.replaceChildren(...schema.fields.filter(f => f.page === i).map(fieldEl)));
+      const sp = showSpots && !readOnly ? freeSpots() : [];
+      pageEls.forEach((p, i) => p.layer.replaceChildren(
+        ...sp.filter(s => s.page === i).map(spotEl),
+        ...schema.fields.filter(f => f.page === i).map(fieldEl)));
     }
 
     // גרירה: הזזה, או שינוי גודל מהידית. התנועה מחושבת כשבר מגודל הדף.
@@ -320,6 +424,7 @@
       schema.fields = schema.fields.filter(x => x !== f);
       setDirty(true);
       select(null);
+      if (spots.length) renderParse();   // ההצעה שמתחתיו חוזרת
     }
 
     function duplicate(f) {
@@ -398,6 +503,7 @@
       panel.replaceChildren(
         el('div', { class: 'row' }, el('h2', {}, 'הגדרות שדה'), el('button', { class: 'link small', onclick: () => select(null) }, 'כל השדות')),
         f.placeholder ? el('p', { class: 'small muted' }, 'בקובץ: ', el('code', {}, '{{' + f.placeholder + '}}')) : null,
+        f.pdfName ? el('p', { class: 'small muted' }, 'שדה בטופס המקורי: ', el('code', { dir: 'ltr' }, f.pdfName)) : null,
         input('תווית — מה הממלא רואה', 'label', { maxlength: 120 }),
         select_('סוג', 'type', Object.fromEntries(Object.entries(TYPES).map(([k, t]) => [k, t.icon + ' ' + t.label]))),
         el('label', { class: 'inline' }, req, ' שדה חובה'),
@@ -547,6 +653,7 @@
 
     draw();
     renderPanel();
+    if (autoSave) save();
   }
 
   window.DTEditor = { open, renderBackground, TYPES, wordPreview, DOCX };

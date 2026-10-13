@@ -120,6 +120,9 @@ function tpl_create(array $user, array $post, array $files): array
         if (!$names) throw new ApiError('לא נמצאו שדות בקובץ. מסמנים שדה כך: {{שם_הלקוח}}', 422);
         $schema = ['pages' => [['w' => 595, 'h' => 842]], 'fields' => docx_fields($names)];
     }
+    // שלב 10: PDF — "לפרק" (המערכת קוראת שדות וטקסט) או "נעול" (תמונה בלבד).
+    $source = TPL_MIME[$mime];
+    if ($source === 'pdf_locked' && ($post['mode'] ?? '') === 'parse') $source = 'pdf_parsed';
 
     if (function_exists('assert_room')) assert_room((int)$user['id'], strlen($bytes));
     $path = store_file($bytes);
@@ -128,7 +131,7 @@ function tpl_create(array $user, array $post, array $files): array
     try {
         $now = now_iso();
         $pdo->prepare('INSERT INTO templates (owner_id, name_enc, source, current_version, created_at) VALUES (?, ?, ?, 1, ?)')
-            ->execute([$user['id'], seal($name), TPL_MIME[$mime], $now]);
+            ->execute([$user['id'], seal($name), $source, $now]);
         $tid = (int)$pdo->lastInsertId();
         $pdo->prepare('INSERT INTO template_versions (template_id, version, schema_enc, created_at) VALUES (?, 1, ?, ?)')
             ->execute([$tid, seal(json_encode($schema, JSON_UNESCAPED_UNICODE)), $now]);
@@ -224,6 +227,8 @@ function clean_schema($s): array
             'role' => in_array($f['role'] ?? '', $roleKeys, true) ? $f['role'] : 'owner',
             // שלב 9: בתבנית Word — הסימון בקובץ שהשדה ממלא ({{...}}).
             'placeholder' => $str($f['placeholder'] ?? '', 60),
+            // שלב 10: בתבנית PDF מפורק — שם השדה בטופס המקורי.
+            'pdfName' => $str($f['pdfName'] ?? '', 120),
             // שלב 8: מתמלא מאיש הקשר שמקושר למסמך.
             'contactField' => in_array($f['contactField'] ?? '', CONTACT_FIELDS, true) && $type !== 'file' && $type !== 'signature'
                 ? $f['contactField'] : '',
@@ -238,7 +243,23 @@ function clean_schema($s): array
             ];
         }
     }
-    return ['pages' => $pages, 'fields' => $fields, 'roles' => $roles, 'sequential' => !empty($s['sequential'])];
+    return ['pages' => $pages, 'fields' => $fields, 'roles' => $roles, 'sequential' => !empty($s['sequential']),
+        // שלב 10: הפירוק האוטומטי כבר רץ — לא להוסיף שוב את שדות הטופס המקורי.
+        'parsed' => !empty($s['parsed'])];
+}
+
+/**
+ * שלב 10: מעבר בין "לפרק" ל"נעול" בתבנית PDF. לא משנה את הקובץ ולא את השדות —
+ * רק אם העורך מנסה לקרוא את הקובץ ומציע מקומות מילוי.
+ */
+function tpl_set_source(array $user, array $b): array
+{
+    $t = tpl_owned((int)($b['id'] ?? 0), $user, 'edit');
+    $to = (string)($b['source'] ?? '');
+    if (!in_array($t['source'], ['pdf_parsed', 'pdf_locked'], true)) throw new ApiError('רק בתבנית PDF', 422);
+    if (!in_array($to, ['pdf_parsed', 'pdf_locked'], true)) throw new ApiError('מצב לא מוכר', 422);
+    db()->prepare('UPDATE templates SET source = ? WHERE id = ?')->execute([$to, $t['id']]);
+    return ['ok' => true, 'source' => $to];
 }
 
 function tpl_save(array $user, array $b): array
