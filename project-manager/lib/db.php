@@ -645,7 +645,7 @@ function pm_migrate(PDO $pdo): void
         PRIMARY KEY (project_id, user_id)
     )');
     $pdo->exec('CREATE INDEX IF NOT EXISTS project_partners_user ON project_partners (user_id)');
-    // חוזה עם ספק (מעקב מהחוזה): מועדים, אבני דרך וקנס איחור. אחד לכל ספק בפרויקט.
+    // חוזה עם ספק (מעקב מהחוזה): מועדים, אבני דרך וקנס איחור. לספק — חוזה אחד או כמה (pm_contracts_multi).
     $pdo->exec('CREATE TABLE IF NOT EXISTS contracts (
         id                 INTEGER PRIMARY KEY,
         project_id         INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -660,8 +660,7 @@ function pm_migrate(PDO $pdo): void
         file_id            INTEGER REFERENCES files(id),
         notes              TEXT NOT NULL DEFAULT \'\',
         created_at         TEXT NOT NULL,
-        updated_at         TEXT NOT NULL,
-        UNIQUE (project_id, supplier_id)
+        updated_at         TEXT NOT NULL
     )');
     $pdo->exec('CREATE TABLE IF NOT EXISTS contract_milestones (
         id          INTEGER PRIMARY KEY,
@@ -695,6 +694,9 @@ function pm_migrate(PDO $pdo): void
     pm_add_column($pdo, 'payments', 'unit_id', 'INTEGER');
     // מתחם, שלב 4: ללקוח של יחידה — להציג גם את השלבים המשותפים
     pm_add_column($pdo, 'projects', 'portal_shared', 'INTEGER NOT NULL DEFAULT 1');
+    // כמה חוזים לאותו ספק בפרויקט (חוזה אחד לאינסטלציה וחשמל, אחר לריצוף): בלי UNIQUE, ולכל חוזה —
+    // על אילו שלבים הוא חל (stage_ids: '' — כל השלבים של הספק; '[..]' — רק אלה), ושם להבחנה
+    pm_contracts_multi($pdo);
     $pdo->exec('CREATE TABLE IF NOT EXISTS fin_alert_sent (
         project_id INTEGER NOT NULL,
         contact_id INTEGER NOT NULL,
@@ -739,6 +741,40 @@ function pm_setting_set(string $key, string $value): void
 {
     pm_db()->prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
         ->execute([$key, $value]);
+}
+
+/**
+ * חוזים: הסרת UNIQUE (project_id, supplier_id) — ב-SQLite רק בבנייה מחדש של הטבלה (העתקה, מחיקה, שינוי שם).
+ * foreign_keys כבוי בזמן הבנייה — אחרת מחיקת הטבלה הישנה הייתה מוחקת (CASCADE) את אבני הדרך של החוזים.
+ * BEGIN IMMEDIATE ובדיקה חוזרת בפנים — שתי בקשות ברגע הפריסה לא בונות פעמיים.
+ */
+function pm_contracts_multi(PDO $pdo): void
+{
+    $sql = fn() => (string)$pdo->query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'contracts'")->fetchColumn();
+    if (str_contains($sql(), 'UNIQUE (project_id, supplier_id)')) {
+        $pdo->exec('PRAGMA foreign_keys = OFF');
+        $pdo->exec('BEGIN IMMEDIATE');
+        try {
+            if (str_contains($sql(), 'UNIQUE (project_id, supplier_id)')) {
+                $cols = array_column($pdo->query('PRAGMA table_info(contracts)')->fetchAll(), 'name');
+                $new = preg_replace(['/CREATE TABLE "?contracts"?/', '/,\s*UNIQUE \(project_id, supplier_id\)/'], ['CREATE TABLE contracts_new', ''], $sql());
+                $pdo->exec($new);
+                $list = implode(', ', $cols);
+                $pdo->exec("INSERT INTO contracts_new ($list) SELECT $list FROM contracts");
+                $pdo->exec('DROP TABLE contracts');
+                $pdo->exec('ALTER TABLE contracts_new RENAME TO contracts');
+                $pdo->exec('CREATE INDEX IF NOT EXISTS contracts_supplier ON contracts (project_id, supplier_id)');
+            }
+            $pdo->exec('COMMIT');
+        } catch (Throwable $e) {
+            $pdo->exec('ROLLBACK');
+            throw $e;
+        } finally {
+            $pdo->exec('PRAGMA foreign_keys = ON');
+        }
+    }
+    pm_add_column($pdo, 'contracts', 'stage_ids', "TEXT NOT NULL DEFAULT ''");
+    pm_add_column($pdo, 'contracts', 'title', "TEXT NOT NULL DEFAULT ''");
 }
 
 function pm_add_column(PDO $pdo, string $table, string $col, string $def): void

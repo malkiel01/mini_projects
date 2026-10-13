@@ -273,8 +273,10 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
                 'paid_pct' => $paidPct, 'progress' => $progress, 'flags' => $portal ? array_values(array_intersect($flags, ['overpaid'])) : $flags,
                 'changes' => $r['changes'] ?? [], 'index' => pm_m($acc['index'][0] ?? 0, $acc['index'][1] ?? 0),
                 // החוזה עם הספק (מועדים, אבני דרך, קנס) — תקציר לשורה
-                'contract' => isset($contracts[$cid]) ? array_intersect_key($contracts[$cid], array_flip(['id', 'end_date', 'completed_on', 'delay_days', 'penalty', 'days_left', 'worst_deviation', 'max_deviation_days']))
-                    + ['late_milestones' => count(array_filter($contracts[$cid]['milestones'], fn($m) => in_array($m['status'], ['late', 'breach'], true)))] : null,
+                // לספק יכולים להיות כמה חוזים — של השלב הזה (pm_contract_for); contracts — כמה יש לו בפרויקט
+                'contract' => ($k = pm_contract_for($contracts, $cid, $sid ?: null)) ? array_intersect_key($k, array_flip(['id', 'title', 'end_date', 'completed_on', 'delay_days', 'penalty', 'days_left', 'worst_deviation', 'max_deviation_days']))
+                    + ['late_milestones' => count(array_filter($k['milestones'], fn($m) => in_array($m['status'], ['late', 'breach'], true)))] : null,
+                'contracts' => count(array_filter($contracts, fn($k) => $k['supplier_id'] === $cid)),
             ];
         }
         $committedStage = $S['committed'][0] ?? 0;
@@ -381,7 +383,7 @@ function pm_finance_units(int $projectId, array $stages, array $outStages, array
     foreach ($outStages as $s) {
         $u = $unitOf($s['stage_id']);
         foreach ($s['rows'] as $r) {
-            $ratios = $u ? [$u => 1.0] : (pm_contract_ratios($contracts[$r['supplier_id']] ?? null, $units, $sharedOf[$r['supplier_id']] ?? 0) ?: [0 => 1.0]);
+            $ratios = $u ? [$u => 1.0] : (pm_contract_ratios(pm_contract_for($contracts, $r['supplier_id'], $s['stage_id']), $units, $sharedOf[$r['supplier_id']] ?? 0) ?: [0 => 1.0]);
             foreach ($ratios as $to => $k) foreach (['committed', 'paid', 'balance'] as $f) $add((int)$to, $f, $r[$f], $k);
         }
     }
