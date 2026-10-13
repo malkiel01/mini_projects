@@ -134,6 +134,7 @@ const Contacts = (() => {
         for (const f of ['name', 'company', 'tax_id', 'phone', 'whatsapp', 'email', 'address', 'notes']) form.elements[f].value = c?.[f] || '';
         form.elements.lang.value = I18n.LANGS[c?.lang] ? c.lang : I18n.lang();
         for (const f of ['bank', 'branch', 'account', 'holder']) form.elements['bank.' + f].value = c?.bank?.[f] || '';
+        form.elements.vat_exempt.checked = !!c?.vat_exempt;
         if (kk === 'supplier') {
             const mine = new Set(c?.trades || []);
             $('#trade-chips').innerHTML = state.trades.map(tr =>
@@ -182,6 +183,7 @@ const Contacts = (() => {
             body.bank = Object.fromEntries(['bank', 'branch', 'account', 'holder'].map(f => [f, v('bank.' + f)]));
             body.trades = $$('#trade-chips input:checked').map(cb => Number(cb.value));
             body.rating = rating;
+            body.vat_exempt = form.elements.vat_exempt.checked;
         }
         if (k === 'client') {
             body.settings = {

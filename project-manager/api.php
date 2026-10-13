@@ -111,6 +111,7 @@ try {
                     'file_types' => pm_t_map(PM_FILE_TYPES), 'max_upload' => pm_max_upload(),
                     // מצב עצמאי: בלי חזרה לדף האפליקציות. כבוי כל עוד האפליקציה בתוך האינדקס.
                     'standalone' => pm_setting('standalone', '0') === '1',
+                    'vat_rate' => pm_vat_rate(),
                     'labels' => array_map('pm_t_map', ['stage' => PM_STAGE_STATUSES, 'project' => PM_PROJECT_STATUSES, 'kind' => PM_PROJECT_KINDS,
                                  'quote' => PM_QUOTE_STATUSES, 'payment' => PM_PAYMENT_STATUSES, 'method' => PM_PAY_METHODS]),
                     // נוסחי ההודעות — אותו נוסח לוואטסאפ / SMS בלחיצה ולמייל האוטומטי
@@ -192,6 +193,10 @@ try {
         'POST report-delete' => pm_report_delete($user, (int)($in['id'] ?? 0)),
 
         // אבני דרך לתשלום (שלב 7)
+        // אגף הכספים (lib/finance.php)
+        'GET finance'         => pm_finance($user, (int)($in['project_id'] ?? 0)),
+        'POST finance-settings' => pm_finance_settings_save($user, $in),
+        'POST payment-split'  => pm_payment_split($user, $in),
         'GET payments'        => pm_payments($user, (int)($in['project_id'] ?? 0)),
         'POST payment'        => pm_payment_save($user, $in),
         'POST payment-request' => pm_payment_request($user, (int)($in['id'] ?? 0)),
@@ -215,6 +220,14 @@ try {
         'GET trades'      => ['trades' => pm_trades()],
         'POST template'   => $isDev ? ['templates' => pm_template_save($user, $in)] : throw new PmError('רק המפתח עורך תבניות', 403),
         'POST template-delete' => $isDev ? ['templates' => pm_template_delete($user, (int)($in['id'] ?? 0))] : throw new PmError('רק המפתח עורך תבניות', 403),
+        // שיעור המע"מ — לסכומים חדשים (הצעות ואבני דרך שומרות את השיעור ביום שנקבעו)
+        'POST vat-rate'   => $isDev ? (function () use ($user, $in) {
+            $r = $in['rate'] ?? '';
+            if (!is_numeric($r) || $r < 0 || $r > 50) throw new PmError('{field}: מספר לא תקין', 422, ['field' => 'מע"מ']);
+            pm_setting_set('vat_rate', (string)(float)$r);
+            pm_audit("user:{$user['id']}", 'setting.vat_rate', 'setting', null, ['rate' => (float)$r]);
+            return ['vat_rate' => (float)$r];
+        })() : throw new PmError('רק המפתח', 403),
         'POST standalone' => $isDev ? (function () use ($user, $in) {
             pm_setting_set('standalone', !empty($in['on']) ? '1' : '0');
             pm_audit("user:{$user['id']}", 'setting.standalone', 'setting', null, ['on' => !empty($in['on'])]);

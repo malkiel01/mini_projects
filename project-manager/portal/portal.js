@@ -12,6 +12,17 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const moneyFmt = new Intl.NumberFormat(I18n.locale(), { style: 'currency', currency: 'ILS', minimumFractionDigits: 0, maximumFractionDigits: 2 });
 // בעברית — כמו קודם ובאפליקציה: ₪13,200
 const money = n => (I18n.lang() === 'he' ? '₪' + Number(n || 0).toLocaleString('he-IL') : moneyFmt.format(Number(n || 0)));
+// שיקוף מע"מ — כמו באפליקציה (assets/js/core.js): סכום, ומתחתיו לפני מע"מ + המע"מ
+const vatOf = (g, rate) => ({ g: Number(g) || 0, n: rate > 0 ? Math.round((Number(g) || 0) / (1 + rate / 100)) : Number(g) || 0 });
+function vatLine(m) {
+    const g = Math.round(m.g), n = Math.round(m.n);
+    if (!g) return '';
+    return g === n ? t('בלי מע"מ') : t('{net} + מע"מ {vat}', { net: money(n), vat: money(g - n) });
+}
+function moneyVat(m) {
+    const line = vatLine(m);
+    return `<span class="mv"><span class="mv-g">${esc(money(m.g))}</span>${line ? `<small class="mv-n">${esc(line)}</small>` : ''}</span>`;
+}
 const longDate = iso => new Date(iso).toLocaleDateString(I18n.locale());
 const shortDate = ymd => ymd ? ymd.split('-').reverse().slice(0, 2).join('.') : '';
 const fmtSize = n => n < 1048576 ? Math.max(1, Math.round(n / 1024)) + 'KB' : (n / 1048576).toFixed(1) + 'MB';
@@ -20,6 +31,27 @@ const waNumber = s => { const d = String(s || '').replace(/\D/g, ''); return d.s
 const token = (location.hash.match(/t=([A-Za-z0-9_-]+)/) || [])[1] || '';
 const fileUrl = (id, extra = '') => `api.php?action=file&id=${id}&t=${encodeURIComponent(token)}${extra}`;
 let data = null, current = null, decision = null, signed = false;
+
+/** המצב הכספי — ללקוח ולעו"ד: התקציב (ראשוני מול היום), סוכם, שולם, יתרה, והתשלום הבא. */
+function renderFinance() {
+    const F = data.finance, T = F?.totals;
+    $('#finance').hidden = !T || (!T.committed.g && !T.budget_today.g);
+    if ($('#finance').hidden) return;
+    const growth = Math.round(T.budget_growth.g);
+    const row = (label, m, extra = '') => `<div><dt>${esc(label)}</dt><dd>${moneyVat(m)}${extra ? `<small class="kpi-x">${extra}</small>` : ''}</dd></div>`;
+    const n = T.next;
+    const when = n ? (n.due_kind === 'stage_done' ? t('בגמר השלב') : n.due_kind === 'progress' ? t('בהתקדמות {n}%', { n: n.due_pct }) : n.due_date ? t('עד {date}', { date: shortDate(n.due_date) }) : '') : '';
+    $('#finance').innerHTML = `<h2 class="sec-title" id="finance-title">${esc(t('המצב הכספי'))}</h2>
+        <dl class="fin-kpis">
+            ${row(t('תקציב ראשוני'), T.budget_initial)}
+            ${row(t('תקציב היום'), T.budget_today, growth > 0 ? `<span class="fin-late">${esc(t('גדל ב-{amount}', { amount: money(growth) }))}</span>` : '')}
+            ${row(t('סוכם (התחייבויות)'), T.committed, F.fee ? esc(t('כולל שכר טרחה {amount}', { amount: money(F.fee.amount.g) })) : '')}
+            ${row(t('שולם'), T.paid, T.committed.g ? esc(t('{n}% מהסוכם · בוצע {p}%', { n: T.paid_pct, p: T.progress })) : '')}
+            ${row(t('יתרה לתשלום'), T.balance)}
+        </dl>
+        ${n ? `<p class="fin-next">💳 ${esc(t('התשלום הבא'))}: <b>${esc(n.title)}</b> · ${esc(n.supplier)} · <b>${esc(money(n.amount.g))}</b>${when ? ` · ${esc(when)}` : ''}<small class="mv-n">${esc(vatLine(n.amount))}</small></p>` : ''}
+        ${F.settings.retention_pct ? `<p class="hint">${esc(t('עיכבון לפי החוזה: {n}% מכל תשלום נשאר אצלכם עד המסירה', { n: F.settings.retention_pct }))}</p>` : ''}`;
+}
 
 function toast(msg, isErr = false) {
     const t = $('#toast');
@@ -91,9 +123,11 @@ function render() {
             <span class="go dir-flip" aria-hidden="true">‹</span></li>`;
     }).join('') + payNow.map(p => `<li class="card" data-go="pay-${p.id}" tabindex="0" role="button">
             <span class="ficon" aria-hidden="true">${p.can_approve ? '⚖️' : '💳'}</span>
-            <div class="body"><div class="l1"><span class="one">${esc(p.title)}</span><span class="amt">${esc(money(p.status === 'partial' ? p.balance : p.amount))}</span></div>
+            <div class="body"><div class="l1"><span class="one">${esc(p.title)}</span><span class="amt">${moneyVat(vatOf(p.status === 'partial' ? p.balance : p.amount, p.vat_rate))}</span></div>
                 <div class="l2">${[p.can_approve ? t('דרישת תשלום — לאישורך') : t('לתשלום'), p.supplier_name, p.due_date ? t('עד {date}', { date: shortDate(p.due_date) }) : ''].filter(Boolean).map(esc).join(' · ')}</div></div>
             <span class="go dir-flip" aria-hidden="true">‹</span></li>`).join('');
+
+    renderFinance();
 
     // ---- התקדמות ----
     const s = data.stages;
@@ -173,7 +207,7 @@ function quoteCard(q, low) {
             ${q.can_reject ? `<button class="btn ghost" data-act="rejected" data-q="${q.id}">${esc(t('דחייה'))}</button>` : ''}</div>` : '';
     return `<article class="qcard q-${esc(q.status)}${q.recommended ? ' rec' : ''}">
         ${q.recommended ? `<p class="rec-tag">⭐ ${esc(t('ההמלצה של מנהל הפרויקט'))}</p>` : ''}
-        <div class="q1"><span class="one">${esc(q.supplier)}</span><span class="amt">${esc(money(q.amount))}</span></div>
+        <div class="q1"><span class="one">${esc(q.supplier)}</span><span class="amt">${moneyVat(vatOf(q.amount, q.vat_rate))}</span></div>
         <div class="q2">${meta}${meta ? '<i class="sep" aria-hidden="true">·</i>' : ''}<span class="st">${esc(quoteLabel(q.status))}</span></div>
         ${q.terms ? `<p class="q3">${esc(t('תנאי תשלום: {terms}', { terms: q.terms }))}</p>` : ''}
         ${q.notes ? `<p class="q3">${esc(q.notes)}</p>` : ''}
@@ -216,7 +250,7 @@ function renderSupplier() {
             <span class="go dir-flip" aria-hidden="true">‹</span></li>`).join('')
         + confirm.map(({ p, x }) => `<li class="card" data-go="spay-${p.id}" tabindex="0" role="button">
             <span class="ficon" aria-hidden="true">💳</span>
-            <div class="body"><div class="l1"><span class="one">${esc(p.title)}</span><span class="amt">${esc(money(x.amount))}</span></div>
+            <div class="body"><div class="l1"><span class="one">${esc(p.title)}</span><span class="amt">${moneyVat(vatOf(x.amount, x.vat_rate))}</span></div>
                 <div class="l2">${esc(t('דווח ששולם לך — לאשר שהתקבל'))}</div></div>
             <span class="go dir-flip" aria-hidden="true">‹</span></li>`).join('');
 
@@ -238,7 +272,7 @@ function renderSupplier() {
             ${x.file ? ` · <a href="${fileUrl(x.file.id)}" target="_blank" rel="noopener">${esc(t('אסמכתא'))}</a>` : ''}
             ${x.can_confirm ? `<div class="row-btns"><button class="btn primary sm" data-receipt="${x.id}" data-ok="1">✅ ${esc(t('התקבל'))}</button><button class="btn ghost sm" data-receipt="${x.id}" data-ok="0">✖ ${esc(t('לא התקבל'))}</button></div>` : ''}</li>`).join('');
         return `<article class="qcard pay-${esc(p.status)}" id="spay-${p.id}">
-            <div class="q1"><span class="one">${esc(p.title)}${st ? ` · ${esc(t(st.name))}` : ''}</span><span class="amt">${esc(money(p.amount))}</span></div>
+            <div class="q1"><span class="one">${esc(p.title)}${st ? ` · ${esc(t(st.name))}` : ''}</span><span class="amt">${moneyVat(vatOf(p.amount, p.vat_rate))}</span></div>
             <div class="q2">${esc(label)}${p.due_date ? `<i class="sep" aria-hidden="true">·</i>${esc(t('עד {date}', { date: shortDate(p.due_date) }))}` : ''}${p.received ? `<i class="sep" aria-hidden="true">·</i>${esc(t('התקבל {amount}', { amount: money(p.received) }))}` : ''}</div>
             ${proofs ? `<ul class="proofs">${proofs}</ul>` : ''}
         </article>`;
@@ -337,7 +371,7 @@ function payCard(p) {
         p.can_pay ? `<button class="btn ${p.payer === data.role ? 'primary' : 'ghost'}" data-pay="${p.id}">💳 ${esc(t('שילמתי — העלאת אסמכתא'))}</button>` : '',
     ].filter(Boolean).join('');
     return `<article class="qcard pay-${esc(p.status)}" id="pay-${p.id}">
-        <div class="q1"><span class="one">${esc(p.title)}${st ? ` · ${esc(t(st.name))}` : ''}</span><span class="amt">${esc(money(p.amount))}</span></div>
+        <div class="q1"><span class="one">${esc(p.title)}${st ? ` · ${esc(t(st.name))}` : ''}</span><span class="amt">${moneyVat(vatOf(p.amount, p.vat_rate))}</span></div>
         <div class="q2">${esc(p.supplier_name)}<i class="sep" aria-hidden="true">·</i>${PAY_ICON[p.status] || ''} ${esc(p.label)}${p.due_date ? `<i class="sep" aria-hidden="true">·</i><span class="${late ? 'late' : ''}">${esc(t('עד {date}', { date: shortDate(p.due_date) }))}</span>` : ''}</div>
         ${p.status === 'partial' ? `<p class="q3">${esc(t('התקבל {amount}', { amount: money(p.received) }))} · ${esc(t('נשאר'))} <b>${esc(money(p.balance))}</b></p>` : ''}
         ${p.notes ? `<p class="q3">${esc(p.notes)}</p>` : ''}

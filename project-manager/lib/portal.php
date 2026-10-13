@@ -214,7 +214,7 @@ function pm_portal_view(array $a): array
             : $x['status'] === 'client_approved';
         return [
             'id' => (int)$x['id'], 'stage_id' => (int)$x['stage_id'], 'supplier' => $x['supplier_name'], 'company' => $x['supplier_company'],
-            'amount' => (int)$x['amount'] / 100, 'valid_until' => $x['valid_until'], 'terms' => $x['terms'], 'notes' => $x['notes'],
+            'amount' => (int)$x['amount'] / 100, 'vat_rate' => pm_quote_vat($x), 'valid_until' => $x['valid_until'], 'terms' => $x['terms'], 'notes' => $x['notes'],
             'recommended' => (bool)$x['recommended'], 'status' => $x['status'], 'version' => (int)$x['version'],
             'file' => $x['file_id'] && !$x['file_deleted'] ? ['id' => (int)$x['file_id'], 'name' => $x['file_name'], 'mime' => $x['file_mime'], 'thumb' => (bool)$x['file_thumb']] : null,
             'can_decide' => $can, 'can_reject' => $can && in_array($x['status'], ['sent', 'client_approved'], true),
@@ -247,6 +247,8 @@ function pm_portal_view(array $a): array
         'manager' => ['name' => $a['owner']['display_name'], 'phone' => $a['owner']['phone'], 'email' => $a['owner']['email']],
         'stages' => $stages, 'quotes' => $quotes, 'files' => $files, 'payments' => $payments,
         'reports' => pm_reports_of($pid, true),
+        // המצב הכספי (אגף הכספים): תקציב ראשוני מול היום, סוכם, שולם, יתרה והתשלום הבא — עם מע"מ
+        'finance' => pm_finance_of($pid, true),
         'labels' => ['stage' => pm_t_map(PM_STAGE_STATUSES), 'quote' => pm_t_map(PM_QUOTE_STATUSES), 'file' => pm_t_map(PM_FILE_TYPES), 'method' => pm_t_map(PM_PAY_METHODS)],
         'max_proof' => PM_PROOF_MAX,
     ];
@@ -431,9 +433,9 @@ function pm_portal_supplier_view(array $a): array
     $q = $db->prepare("SELECT q.*, f.name AS file_name, f.deleted_at AS file_deleted FROM quotes q LEFT JOIN files f ON f.id = q.file_id
                         WHERE q.project_id = ? AND q.supplier_id = ? ORDER BY q.created_at DESC");
     $q->execute([$pid, $sid]);
-    $label = ['open' => 'התקבלה אצל מנהל הפרויקט', // i18n-ok 'sent' => 'אצל הלקוח לבחירה', 'client_approved' => 'הלקוח אישר — ממתין לעו"ד',
+    $label = ['open' => 'התקבלה אצל מנהל הפרויקט', 'sent' => 'אצל הלקוח לבחירה', 'client_approved' => 'הלקוח אישר — ממתין לעו"ד', // i18n-ok
               'approved' => '✅ אושרה', 'declined' => 'לא נבחרה', 'rejected' => 'נדחתה', 'cancelled' => 'בוטלה']; // i18n-ok
-    $quotes = array_map(fn($x) => ['id' => (int)$x['id'], 'stage_id' => (int)$x['stage_id'], 'amount' => (int)$x['amount'] / 100,
+    $quotes = array_map(fn($x) => ['id' => (int)$x['id'], 'stage_id' => (int)$x['stage_id'], 'amount' => (int)$x['amount'] / 100, 'vat_rate' => pm_quote_vat($x),
         'valid_until' => $x['valid_until'], 'terms' => $x['terms'], 'notes' => $x['notes'], 'status' => $x['status'], 'label' => pm_t($label[$x['status']] ?? $x['status']),
         'file' => $x['file_id'] && !$x['file_deleted'] ? ['id' => (int)$x['file_id'], 'name' => $x['file_name']] : null, 'at' => $x['created_at']], $q->fetchAll());
 

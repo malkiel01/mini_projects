@@ -69,6 +69,7 @@ function pm_contact_out(array $row, array $tradeIds = [], ?array $settings = nul
         'rating'     => (int)$row['rating'],
         'notes'      => $row['notes'],
         'lang'       => $row['lang'] ?? 'he',
+        'vat_exempt' => (bool)($row['vat_exempt'] ?? false),
         'archived'   => (bool)$row['archived'],
         'trades'     => array_map('intval', $tradeIds),
         'updated_at' => $row['updated_at'],
@@ -167,6 +168,8 @@ function pm_contact_save(array $user, array $in): array
         'rating'    => max(0, min(5, $rating)),
         'notes'     => pm_str($in, 'notes', 4000, false, 'הערות'),
     ];
+    // ספק "עוסק פטור" — בלי מע"מ (אגף הכספים). עדכון בלי השדה — נשאר כמו שהיה.
+    if (array_key_exists('vat_exempt', $in)) $fields['vat_exempt'] = !empty($in['vat_exempt']) ? 1 : 0;
     // שפת איש הקשר — הפורטל והמיילים שלו. חדש: מה שנבחר, אחרת שפת הממשק של מי שיצר;
     // עדכון בלי lang — נשאר כמו שהיה.
     $lang = $in['lang'] ?? null;

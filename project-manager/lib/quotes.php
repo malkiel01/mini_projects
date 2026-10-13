@@ -60,7 +60,7 @@ function pm_quotes(array $user, int $projectId): array
     $p = pm_project_row($user, $projectId);
     $db = pm_db();
     $st = $db->prepare(
-        'SELECT q.*, c.name AS supplier_name, c.company AS supplier_company, c.phone AS supplier_phone,
+        'SELECT q.*, c.name AS supplier_name, c.company AS supplier_company, c.phone AS supplier_phone, c.vat_exempt,
                 f.name AS file_name, f.mime AS file_mime, f.thumb IS NOT NULL AS file_thumb, f.deleted_at AS file_deleted,
                 u.display_name AS creator
            FROM quotes q
@@ -88,7 +88,8 @@ function pm_quotes(array $user, int $projectId): array
     $quotes = array_map(fn($q) => [
         'id' => (int)$q['id'], 'stage_id' => (int)$q['stage_id'], 'supplier_id' => (int)$q['supplier_id'],
         'supplier_name' => $q['supplier_name'], 'supplier_company' => $q['supplier_company'], 'supplier_phone' => $q['supplier_phone'],
-        'amount' => (int)$q['amount'] / 100, 'valid_until' => $q['valid_until'], 'terms' => $q['terms'], 'notes' => $q['notes'],
+        'amount' => (int)$q['amount'] / 100, 'vat_rate' => $q['vat_exempt'] ? 0.0 : ($q['vat_rate'] !== null ? (float)$q['vat_rate'] : pm_vat_rate()),
+        'valid_until' => $q['valid_until'], 'terms' => $q['terms'], 'notes' => $q['notes'],
         'file_id' => $q['file_id'] !== null && !$q['file_deleted'] ? (int)$q['file_id'] : null,
         'file_name' => $q['file_deleted'] ? null : $q['file_name'], 'file_mime' => $q['file_mime'], 'file_thumb' => (bool)$q['file_thumb'],
         'recommended' => (bool)$q['recommended'], 'status' => $q['status'], 'version' => (int)$q['version'],
@@ -182,8 +183,8 @@ function pm_quote_save(array $user, array $in, ?array $actor = null): array
         } else {
             $cols = implode(', ', array_keys($f));
             $qs = implode(', ', array_fill(0, count($f), '?'));
-            $db->prepare("INSERT INTO quotes ($cols, project_id, created_by, created_at, updated_at) VALUES ($qs, ?, ?, ?, ?)")
-               ->execute(array_merge(array_values($f), [$projectId, $user['id'], $now, $now]));
+            $db->prepare("INSERT INTO quotes ($cols, project_id, vat_rate, created_by, created_at, updated_at) VALUES ($qs, ?, ?, ?, ?, ?)")
+               ->execute(array_merge(array_values($f), [$projectId, pm_vat_rate(), $user['id'], $now, $now]));
             $id = (int)$db->lastInsertId();
             pm_event($actor, $projectId, 'quote', 'הצעת מחיר: {supplier}, {stage} — {amount}',
                 ['quote' => $id, 'stage' => (int)$stage['id']], ['supplier' => $supplier, 'stage' => $stage['name'], 'amount' => pm_money($f['amount'])]);
