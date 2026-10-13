@@ -1974,5 +1974,9 @@
     "של הפרויקט — {name}": "Celui du projet — {name}",
     "של הפרויקט": "Celui du projet",
     "לקוח של יחידה רואה בפורטל גם את השלבים המשותפים (היתר, חדר מדרגות…)": "Le client d'une unité voit aussi les étapes communes dans le portail (permis, cage d'escalier…)",
-    "לכל יחידה — לקוח ועו\"ד משלה (או של הפרויקט). כל לקוח רואה בקישור האישי רק את היחידות שלו: שלבים, הצעות, תשלומים והמצב הכספי שלהן.": "Chaque unité a son client et son avocat (ou ceux du projet). Chaque client ne voit que ses unités dans son lien personnel : étapes, devis, paiements et situation financière."
+    "לכל יחידה — לקוח ועו\"ד משלה (או של הפרויקט). כל לקוח רואה בקישור האישי רק את היחידות שלו: שלבים, הצעות, תשלומים והמצב הכספי שלהן.": "Chaque unité a son client et son avocat (ou ceux du projet). Chaque client ne voit que ses unités dans son lien personnel : étapes, devis, paiements et situation financière.",
+    "מקדמה — בתחילת העבודה": "Acompte — au début des travaux",
+    "💰 מקדמה — בתחילת העבודה": "💰 Acompte — au début des travaux",
+    "💰 מקדמה — לתשלום בתחילת העבודה, עם החתימה על החוזה. בלי עיכבון.": "💰 Acompte — payé au début des travaux, à la signature du contrat. Sans retenue.",
+    "מקדמה — לשלוח דרישת תשלום: {title} — {supplier}, {amount}": "Acompte — envoyer une demande de paiement : {title} — {supplier}, {amount}"
 }

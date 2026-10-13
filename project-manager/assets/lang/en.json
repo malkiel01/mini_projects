@@ -1956,5 +1956,9 @@
     "של הפרויקט — {name}": "The project's — {name}",
     "של הפרויקט": "The project's",
     "לקוח של יחידה רואה בפורטל גם את השלבים המשותפים (היתר, חדר מדרגות…)": "A unit's client also sees the shared stages in the portal (permit, stairwell…)",
-    "לכל יחידה — לקוח ועו\"ד משלה (או של הפרויקט). כל לקוח רואה בקישור האישי רק את היחידות שלו: שלבים, הצעות, תשלומים והמצב הכספי שלהן.": "Each unit has its own client and lawyer (or the project's). Each client sees only their own units in their personal link: stages, quotes, payments and their financial status."
+    "לכל יחידה — לקוח ועו\"ד משלה (או של הפרויקט). כל לקוח רואה בקישור האישי רק את היחידות שלו: שלבים, הצעות, תשלומים והמצב הכספי שלהן.": "Each unit has its own client and lawyer (or the project's). Each client sees only their own units in their personal link: stages, quotes, payments and their financial status.",
+    "מקדמה — בתחילת העבודה": "Advance — at the start of work",
+    "💰 מקדמה — בתחילת העבודה": "💰 Advance — at the start of work",
+    "💰 מקדמה — לתשלום בתחילת העבודה, עם החתימה על החוזה. בלי עיכבון.": "💰 Advance — paid at the start of work, upon signing the contract. No retention.",
+    "מקדמה — לשלוח דרישת תשלום: {title} — {supplier}, {amount}": "Advance — send a payment request: {title} — {supplier}, {amount}"
 }

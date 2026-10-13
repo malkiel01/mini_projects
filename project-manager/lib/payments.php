@@ -190,8 +190,10 @@ function pm_payment_save(array $user, array $in, ?array $actor = null): array
     $kind = $old['kind'] ?? 'milestone'; // שחרור העיכבון נוצר לבד (pm_retention_sync), לא מהחלון
     $dueKind = (string)($in['due_kind'] ?? ($old['due_kind'] ?? 'date'));
     if ($kind === 'retention') $dueKind = $old['due_kind'];
-    if (!in_array($dueKind, ['date', 'stage_done', 'progress', 'handover'], true)) throw new PmError('מועד לא מוכר', 422);
-    if (!in_array($dueKind, ['date', 'handover'], true) && !$stageId) throw new PmError('"בגמר שלב" או "בהתקדמות" — רק כשנבחר שלב', 422);
+    // advance — מקדמה: בתחילת העבודה (עם החתימה), בלי שלב ובלי תאריך
+    if (!in_array($dueKind, ['date', 'stage_done', 'progress', 'handover', 'advance'], true)) throw new PmError('מועד לא מוכר', 422);
+    if ($dueKind === 'advance') $stageId = null;
+    if (!in_array($dueKind, ['date', 'handover', 'advance'], true) && !$stageId) throw new PmError('"בגמר שלב" או "בהתקדמות" — רק כשנבחר שלב', 422);
     $duePct = (int)($in['due_pct'] ?? 0);
     if ($dueKind === 'progress' && ($duePct < 1 || $duePct > 100)) throw new PmError('התקדמות: בין 1 ל-100%', 422);
     $payer = (string)($in['payer'] ?? 'client');
@@ -212,7 +214,8 @@ function pm_payment_save(array $user, array $in, ?array $actor = null): array
         'needs_lawyer' => !empty($in['needs_lawyer']) && $p['lawyer_id'] ? 1 : 0,
         'notes'        => pm_str($in, 'notes', 2000, false, 'מה כלול'),
         // עיכבון (לפי הגדרות הפרויקט): החלק מהתשלום שנשאר אצל הלקוח עד המסירה
-        'retention'    => $kind === 'retention' ? 0 : (int)round($amount * (float)$p['retention_pct'] / 100),
+        // מקדמה — בלי עיכבון (העיכבון נעצר מחשבונות הביצוע)
+        'retention'    => $kind === 'retention' || $dueKind === 'advance' ? 0 : (int)round($amount * (float)$p['retention_pct'] / 100),
         // "במסירה" — של איזו יחידה (מתחם); בלי — כל המתחם. ברירת מחדל: היחידה של השלב
         'unit_id'      => $dueKind === 'handover' ? (array_key_exists('unit_id', $in) ? pm_unit_of_project((int)($in['unit_id'] ?? 0) ?: null, $projectId)
                           : ($old['unit_id'] ?? ($stageId ? pm_stage_unit($stageId) : null))) : null,
