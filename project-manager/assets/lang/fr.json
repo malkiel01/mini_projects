@@ -1893,5 +1893,7 @@
     "כבר יש כרטיס \"{name}\" {who}, עם {what}.": "Il existe déjà une fiche « {name} » {who}, avec {what}.",
     "אישור — להשתמש בכרטיס הקיים (בלי כפילות). ביטול — לחזור לטופס.": "OK — utiliser la fiche existante (sans doublon). Annuler — revenir au formulaire.",
     "הוא יופיע אצלך ברגע שישויך לפרויקט המשותף. אישור — לשמור בכל זאת כרטיס נפרד. ביטול — לחזור לטופס.": "Elle apparaîtra chez vous dès qu'elle sera liée au projet partagé. OK — enregistrer quand même une fiche séparée. Annuler — revenir au formulaire.",
-    "נבחר הכרטיס הקיים: {name}": "Fiche existante utilisée : {name}"
+    "נבחר הכרטיס הקיים: {name}": "Fiche existante utilisée : {name}",
+    "\"בגמר השלב\" או \"בהתקדמות\" — קודם בוחרים שלב (למעלה)": "« À la fin de l'étape » ou « Selon l'avancement » — choisissez d'abord une étape (ci-dessus)",
+    "👆 בוחרים שלב למעלה — התשלום יגיע כשהשלב הזה יסתיים או יתקדם": "👆 Choisissez une étape ci-dessus — le paiement sera dû quand cette étape sera terminée ou avancera"
 }

@@ -800,3 +800,7 @@ body.auth { display: grid; place-items: start center; padding: max(8vh, var(--s4
 .btn.icon-only { min-width: var(--tap); padding-inline: 0; font-size: 1.1rem; }
 .shared-from { color: var(--brand); }
 p.shared-from { margin-bottom: var(--s2); padding: var(--s2) var(--s3); background: var(--brand-soft); border-radius: var(--r); }
+.seg input:disabled + span { opacity: .45; cursor: not-allowed; }
+select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-soft); }
+.need-stage { display: block; width: 100%; margin: var(--s1) 0 var(--s2); padding: var(--s2) var(--s3); border: 1px dashed var(--danger); border-radius: var(--r);
+    background: var(--danger-soft); color: var(--danger); font: inherit; font-size: .9rem; text-align: start; cursor: pointer; }
