@@ -1986,5 +1986,8 @@
     "💳 אבני דרך": "💳 Échéances",
     "🧾 הוצאות": "🧾 Dépenses",
     "לכל ספק — מה סוכם, מה היה צריך להיות משולם עד היום ומה שולם; ומשם: חוזה, תוספת, אבן דרך וכרטסת.": "Pour chaque fournisseur — le convenu, ce qui aurait dû être payé à ce jour et ce qui a été payé ; et de là : contrat, avenant, échéance et relevé.",
-    "חלקי הכספים": "Sections financières"
+    "חלקי הכספים": "Sections financières",
+    "נרשמה {date}": "Enregistrée le {date}",
+    "פתיחה: {what}": "Ouvrir : {what}",
+    "עוד אין לספק הצעה שאושרה בפרויקט — לכן \"סוכם\" 0. אבני הדרך מוצגות כמתוכננות.": "Le fournisseur n'a pas encore de devis approuvé dans le projet — « Convenu » est donc 0. Les échéances sont affichées comme prévues."
 }

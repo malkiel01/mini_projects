@@ -40,6 +40,15 @@ const Finance = (() => {
         });
         $('#exp-dlg form').addEventListener('submit', e => { e.preventDefault(); saveExpense(); });
         $('#ct-dlg form').addEventListener('submit', e => { e.preventDefault(); saveContract(); });
+        $('#ledger-body').addEventListener('click', e => {
+            if (e.target.closest('a')) return; // קובץ — נפתח בלשונית
+            const r = e.target.closest('[data-lg-type]');
+            if (r) ledgerGo(r.dataset.lgType, Number(r.dataset.lgId), Number(r.dataset.lgPid));
+        });
+        $('#ledger-body').addEventListener('keydown', e => {
+            const r = e.target.closest('[data-lg-type]');
+            if (r && e.target === r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); ledgerGo(r.dataset.lgType, Number(r.dataset.lgId), Number(r.dataset.lgPid)); }
+        });
         $('#ct-units').addEventListener('change', ctSplitShown);
         $('#ct-units').addEventListener('input', ctSplitShown);
         $('#ct-ms-add').addEventListener('click', () => { readMs(); ct.ms.push({ title: '', due_date: '', months: null, stage_ids: [], done_on: '' }); renderMs(); });
@@ -93,6 +102,7 @@ const Finance = (() => {
         try { data = await api('finance', { params: { project_id: p.project.id } }); }
         catch (e) { $('#fin-sum').innerHTML = `<p class="error">${esc(e.message)}</p>`; return; }
         render();
+        if (pendingChange) { const id = pendingChange; pendingChange = null; finTab('suppliers'); openChange(id); }
     }
 
     /** אחרי שינוי בתשלומים / בשלבים — מחדש. */
@@ -461,20 +471,51 @@ const Finance = (() => {
     // i18n-ok-end
 
     /** כרטסת: projectId — בפרויקט אחד; null — בכל הפרויקטים (מכרטיס הספק). */
+    /**
+     * שורה בכרטסת: מה, באיזה שלב, מתי (המועד האמיתי — לא רק תאריך הרישום), הסכום והיתרה, הקבצים —
+     * ולחיצה פותחת את הפעולה עצמה (ההצעה / התוספת / אבן הדרך).
+     */
+    function ledgerRow(x, pid) {
+        const sum = x.delta.g ? (x.delta.g > 0 ? '+' : '−') + money(Math.abs(x.delta.g)) : x.kind === 'milestone' ? money(x.amount) : '';
+        const meta = [
+            x.stage ? '🧱 ' + x.stage : '',
+            x.when,
+            x.kind === 'milestone' ? x.label : '',
+            x.kind === 'milestone' ? t('נרשמה {date}', { date: shortDateL(x.at) }) : shortDateL(x.at),
+        ].filter(Boolean).map(esc).join('<i class="sep" aria-hidden="true">·</i>');
+        const files = (x.files || []).map(f => `<a class="chip lg-file" href="api.php?action=file&id=${f.id}" target="_blank" rel="noopener">📎 ${esc(f.name)}</a>`).join('');
+        const go = x.ref ? ` data-lg-type="${x.ref.type}" data-lg-id="${x.ref.id}" data-lg-pid="${pid}" tabindex="0" role="button" aria-label="${esc(t('פתיחה: {what}', { what: x.text }))}"` : '';
+        return `<li class="lg-${x.kind}${x.ref ? ' lg-go' : ''}"${go}>
+            <div class="lg-top"><span class="lg-ic" aria-hidden="true">${LEDGER_ICON[x.kind]}</span><b class="lg-text">${esc(x.text)}</b>
+                <span class="lg-d${x.kind === 'milestone' ? ' muted' : ''}">${esc(sum)}</span></div>
+            <div class="lg-meta">${meta}</div>
+            ${x.notes ? `<div class="lg-meta">${esc(x.notes)}</div>` : ''}
+            ${files ? `<div class="lg-files">${files}</div>` : ''}
+            ${x.delta.g ? `<div class="lg-b">${esc(t('יתרה {amount}', { amount: (x.balance < 0 ? '−' : '') + money(Math.abs(x.balance)) }))}</div>` : ''}</li>`;
+    }
+
+    /** מהכרטסת לפעולה עצמה: אבן דרך / הצעה / תוספת — בפרויקט שלה (אם צריך — עוברים אליו). */
+    function ledgerGo(type, id, pid) {
+        $('#ledger-dlg').close();
+        const pane = type === 'quote' ? 'quotes' : 'payments';
+        const here = project?.project?.id === pid && location.hash.startsWith(`#/p/${pid}/${pane}`);
+        if (type === 'payment') { finTab('milestones'); here ? Payments.openPayment(id) : (Payments.openWhenReady(id), location.hash = `#/p/${pid}/payments`); }
+        else if (type === 'quote') { here ? Quotes.openNow(id) : (Quotes.openWhenReady(id), location.hash = `#/p/${pid}/quotes`); }
+        else if (type === 'change') { here ? openChange(id) : (pendingChange = id, location.hash = `#/p/${pid}/payments`); }
+    }
+    let pendingChange = null;
+
     async function ledger(projectId, supplierId) {
         let d;
         try { d = await api('ledger', { params: { supplier_id: supplierId, project_id: projectId || undefined } }); } catch (e) { toast(e.message, true); return; }
         $('#ledger-dlg-title').textContent = t('כרטסת — {name}', { name: d.supplier.name });
-        const one = L => `<dl class="fin-cells">${cell(t('סוכם'), L.committed)}${cell(t('שולם'), L.paid)}${cell(t('יתרה'), L.balance)}</dl>
+        const one = (L, pid) => `<dl class="fin-cells">${cell(t('סוכם'), L.committed)}${cell(t('שולם'), L.paid)}${cell(t('יתרה'), L.balance)}</dl>
             ${L.missing_invoices ? `<p class="fin-stage-budget fin-warn">${esc(t('תשלומים בלי חשבונית: {n}', { n: L.missing_invoices }))}</p>` : ''}
-            <ol class="ledger">${L.entries.map(x => `<li class="lg-${x.kind}">
-                <span class="lg-at">${esc(shortDateL(x.at))}</span>
-                <span class="lg-text"><span aria-hidden="true">${LEDGER_ICON[x.kind]}</span> ${esc(x.text)}${x.kind === 'milestone' ? ` <small class="muted">· ${esc(money(x.amount))} · ${esc(x.label)}</small>` : ''}</span>
-                <span class="lg-d">${x.delta.g ? esc((x.delta.g > 0 ? '+' : '−') + money(Math.abs(x.delta.g))) : ''}</span>
-                <span class="lg-b">${x.delta.g ? esc((x.balance < 0 ? '−' : '') + money(Math.abs(x.balance))) : ''}</span></li>`).join('') || `<li class="muted">${esc(t('עוד אין תנועות'))}</li>`}</ol>`;
+            ${!L.committed.g && L.entries.length ? `<p class="hint">${esc(t('עוד אין לספק הצעה שאושרה בפרויקט — לכן "סוכם" 0. אבני הדרך מוצגות כמתוכננות.'))}</p>` : ''}
+            <ol class="ledger">${L.entries.map(x => ledgerRow(x, pid)).join('') || `<li class="muted">${esc(t('עוד אין תנועות'))}</li>`}</ol>`;
         const total = d.totals ? `<section class="fin-card"><h3 class="sec-title">${esc(t('בכל הפרויקטים'))}</h3><dl class="fin-cells">${cell(t('סוכם'), d.totals.committed)}${cell(t('שולם'), d.totals.paid)}${cell(t('יתרה'), d.totals.balance)}</dl>
             ${d.totals.missing_invoices ? `<p class="fin-stage-budget fin-warn">${esc(t('תשלומים בלי חשבונית: {n}', { n: d.totals.missing_invoices }))}</p>` : ''}</section>` : '';
-        $('#ledger-body').innerHTML = total + (d.projects.map(P => `<section class="fin-stage">${d.totals ? `<h3 class="sec-title">${esc(P.name)}</h3>` : ''}${one(P)}</section>`).join('')
+        $('#ledger-body').innerHTML = total + (d.projects.map(P => `<section class="fin-stage">${d.totals ? `<h3 class="sec-title">${esc(P.name)}</h3>` : ''}${one(P, P.id)}</section>`).join('')
             || `<p class="muted">${esc(t('עוד אין לספק התחייבויות או תשלומים בפרויקטים שלך'))}</p>`);
         $('#ledger-dlg').showModal();
     }

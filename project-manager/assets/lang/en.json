@@ -1968,5 +1968,8 @@
     "💳 אבני דרך": "💳 Milestones",
     "🧾 הוצאות": "🧾 Expenses",
     "לכל ספק — מה סוכם, מה היה צריך להיות משולם עד היום ומה שולם; ומשם: חוזה, תוספת, אבן דרך וכרטסת.": "For each supplier — what was agreed, what should have been paid by today and what was paid; and from there: contract, change order, milestone and ledger.",
-    "חלקי הכספים": "Finance sections"
+    "חלקי הכספים": "Finance sections",
+    "נרשמה {date}": "Recorded {date}",
+    "פתיחה: {what}": "Open: {what}",
+    "עוד אין לספק הצעה שאושרה בפרויקט — לכן \"סוכם\" 0. אבני הדרך מוצגות כמתוכננות.": "The supplier has no approved quote in the project yet — so \"Agreed\" is 0. Milestones are shown as planned."
 }

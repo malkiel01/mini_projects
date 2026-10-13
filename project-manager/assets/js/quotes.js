@@ -66,6 +66,8 @@ const Quotes = (() => {
         project = p;
         await load();
         if (pending) { const x = pending; pending = null; open(null, x); }
+        if (openId && data.quotes.some(q => q.id === openId)) open(openId);
+        openId = null;
     }
 
     async function load() {
@@ -390,5 +392,10 @@ const Quotes = (() => {
         });
     }
 
-    return { show, fromFile };
+    // מהכרטסת: פתיחת הצעה — אחרי שהלשונית תיטען, או מיד אם היא כבר פתוחה
+    let openId = null;
+    function openWhenReady(id) { openId = id; }
+    function openNow(id) { if (data.quotes.some(q => q.id === id)) open(id); }
+
+    return { show, fromFile, openWhenReady, openNow };
 })();
