@@ -32,8 +32,8 @@ function pm_portal_reply(int $code, array $payload): never
 {
     global $PM_T0;
     $action = (string)($_GET['action'] ?? '');
-    if ($code >= 400 || in_array($action, ['decide', 'pay-approve', 'proof', 's-quote', 's-payreq', 's-receipt', 's-bank'], true)) {
-        $body = in_array($action, ['proof', 's-quote', 's-payreq'], true) ? null : json_decode((string)file_get_contents('php://input'), true);
+    if ($code >= 400 || in_array($action, ['decide', 'decide-change', 'pay-approve', 'proof', 's-quote', 's-payreq', 's-receipt', 's-bank', 's-invoice', 'expense'], true)) {
+        $body = in_array($action, ['proof', 's-quote', 's-payreq', 's-invoice', 'expense'], true) ? null : json_decode((string)file_get_contents('php://input'), true);
         if (is_array($body)) unset($body['signature']); // החתימה עצמה נשמרת באישור, לא ביומן
         pm_log($code >= 500 ? 'error' : ($code >= 400 ? 'warn' : 'info'), 'portal', 'portal.' . ($action ?: '?'), [
             'status' => $code, 'ms' => (int)round((microtime(true) - $PM_T0) * 1000),
@@ -89,6 +89,10 @@ try {
         'POST s-payreq'  => pm_portal_supplier_payreq($a, $_GET),
         'POST s-receipt' => pm_portal_supplier_receipt($a, pm_portal_json()),
         'POST s-bank'    => pm_portal_supplier_bank($a, pm_portal_json()),
+        // כ4: תוספת / חריגה — אישור או דחייה; חשבונית מהספק (הקובץ בגוף הבקשה)
+        'POST decide-change' => pm_portal_change_decide($a, pm_portal_json()),
+        'POST s-invoice' => pm_portal_supplier_invoice($a, $_GET),
+        'POST expense'   => pm_portal_expense($a, $_GET),
         default => throw new PmError('פעולה לא מוכרת', 404),
     };
     pm_portal_reply(200, $result);

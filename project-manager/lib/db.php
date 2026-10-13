@@ -560,6 +560,82 @@ function pm_migrate(PDO $pdo): void
     pm_add_column($pdo, 'projects', 'index_base', 'REAL');
     // כ2 — התראות: הספים של כל מנהל (JSON; ריק = ברירות המחדל), ומה כבר נשלח במייל ללקוח / לעו"ד
     pm_add_column($pdo, 'users', 'fin_alerts', "TEXT NOT NULL DEFAULT ''");
+    // כ4 — תוספות וחריגות (אישור הלקוח / העו"ד כמו בהצעה), עיכבון, חשבוניות והצמדה
+    $pdo->exec('CREATE TABLE IF NOT EXISTS change_orders (
+        id          INTEGER PRIMARY KEY,
+        project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        stage_id    INTEGER NOT NULL REFERENCES stages(id),
+        supplier_id INTEGER NOT NULL REFERENCES contacts(id),
+        amount      INTEGER NOT NULL,
+        reason      TEXT NOT NULL,
+        file_id     INTEGER REFERENCES files(id),
+        status      TEXT NOT NULL DEFAULT \'sent\',
+        needs_lawyer INTEGER NOT NULL DEFAULT 0,
+        vat_rate    REAL,
+        created_by  INTEGER NOT NULL,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+    )');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS change_orders_project ON change_orders (project_id)');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS change_decisions (
+        id              INTEGER PRIMARY KEY,
+        change_order_id INTEGER NOT NULL REFERENCES change_orders(id),
+        role            TEXT NOT NULL,
+        decision        TEXT NOT NULL,
+        method          TEXT NOT NULL,
+        by_name         TEXT NOT NULL DEFAULT \'\',
+        note            TEXT NOT NULL DEFAULT \'\',
+        signature       TEXT NOT NULL DEFAULT \'\',
+        portal_id       INTEGER,
+        recorded_by     INTEGER,
+        ip              TEXT NOT NULL DEFAULT \'\',
+        created_at      TEXT NOT NULL
+    )');
+    // kind: milestone · retention (שחרור העיכבון — במסירה); retention — כמה מהתשלום נשאר אצל הלקוח;
+    // index_value / index_diff — המדד הקובע והפרשי ההצמדה; חשבונית מהספק
+    pm_add_column($pdo, 'payments', 'kind', "TEXT NOT NULL DEFAULT 'milestone'");
+    pm_add_column($pdo, 'payments', 'retention', 'INTEGER NOT NULL DEFAULT 0');
+    pm_add_column($pdo, 'payments', 'change_order_id', 'INTEGER');
+    pm_add_column($pdo, 'payments', 'index_value', 'REAL');
+    pm_add_column($pdo, 'payments', 'index_diff', 'INTEGER NOT NULL DEFAULT 0');
+    pm_add_column($pdo, 'payments', 'invoice_file_id', 'INTEGER');
+    pm_add_column($pdo, 'payments', 'invoice_no', "TEXT NOT NULL DEFAULT ''");
+    pm_add_column($pdo, 'payments', 'invoice_at', 'TEXT');
+    // כ5 — הוצאות ישירות: מה שהלקוח קנה בעצמו, בלי ספק (חומרים, אגרות, היתרים). נכנסות לסוכם
+    // ולשולם. by_role — מי רשם: manager · client (מהפורטל). מחיקה — deleted_at.
+    $pdo->exec('CREATE TABLE IF NOT EXISTS expenses (
+        id          INTEGER PRIMARY KEY,
+        project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        stage_id    INTEGER REFERENCES stages(id),
+        title       TEXT NOT NULL,
+        amount      INTEGER NOT NULL,
+        vat_rate    REAL NOT NULL DEFAULT 0,
+        spent_on    TEXT NOT NULL,
+        file_id     INTEGER REFERENCES files(id),
+        notes       TEXT NOT NULL DEFAULT \'\',
+        by_role     TEXT NOT NULL DEFAULT \'manager\',
+        by_name     TEXT NOT NULL DEFAULT \'\',
+        created_by  INTEGER,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL,
+        deleted_at  TEXT
+    )');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS expenses_project ON expenses (project_id)');
+    // אבני הדרך של שכר הטרחה של המנהל — ההכנסות שלו. התקבל: received_on + received_amount.
+    $pdo->exec('CREATE TABLE IF NOT EXISTS fee_payments (
+        id              INTEGER PRIMARY KEY,
+        project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        title           TEXT NOT NULL,
+        amount          INTEGER NOT NULL,
+        due_date        TEXT NOT NULL DEFAULT \'\',
+        received_on     TEXT,
+        received_amount INTEGER,
+        notes           TEXT NOT NULL DEFAULT \'\',
+        created_by      INTEGER NOT NULL,
+        created_at      TEXT NOT NULL,
+        updated_at      TEXT NOT NULL
+    )');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS fee_payments_project ON fee_payments (project_id)');
     $pdo->exec('CREATE TABLE IF NOT EXISTS fin_alert_sent (
         project_id INTEGER NOT NULL,
         contact_id INTEGER NOT NULL,

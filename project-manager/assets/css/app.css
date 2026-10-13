@@ -678,3 +678,55 @@ body.auth { display: grid; place-items: start center; padding: max(8vh, var(--s4
 .fin-alerts .fa-late { background: var(--danger-soft); }
 .fin-alerts .fa-late .fa-text { color: var(--danger); }
 .fin-alerts .btn { flex: none; }
+
+/* ---- אגף הכספים, כ3: כל הפרויקטים (finance-all.js) ---- */
+:root { --cf-plan: #4a6cc0; --cf-paid: #d97706; }
+@media (prefers-color-scheme: dark) { :root { --cf-plan: #6c8ee0; --cf-paid: #c27a14; } }
+#view-finance > section, #view-finance > .fin-kpis { margin-block-end: var(--s3); }
+#fa-kpis .kpi-late dd, .fa-income .kpi-late dd { color: var(--danger); }
+#fa-filters .btn { margin-inline-start: auto; }
+.cf-chart { position: relative; inline-size: 100%; }
+.cf-chart svg { display: block; inline-size: 100%; block-size: auto; overflow: visible; }
+.cf-plan { fill: var(--cf-plan); background: var(--cf-plan); }
+.cf-paid { fill: var(--cf-paid); background: var(--cf-paid); }
+.cf-grid { stroke: var(--line); stroke-width: 1; }
+.cf-base { stroke: var(--muted); stroke-width: 1; }
+.cf-axis { fill: var(--muted); font-size: 10px; font-family: inherit; }
+.cf-mon-now { fill: var(--ink); font-weight: 600; }
+.cf-today { fill: var(--brand-soft); }
+.cf-hit { fill: transparent; }
+.cf-g { outline: none; cursor: default; }
+.cf-g:focus-visible .cf-hit { stroke: var(--brand); stroke-width: 1.5; }
+.cf-legend i { display: inline-block; inline-size: 10px; block-size: 10px; border-radius: 3px; margin-inline-end: 4px; vertical-align: -1px; }
+.cf-tip { position: absolute; inset-block-start: 0; inline-size: 150px; display: grid; gap: 2px; padding: 6px 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 12px rgba(16, 24, 40, .14); font-size: .75rem; pointer-events: none; }
+.cf-tip i { display: inline-block; inline-size: 8px; block-size: 8px; border-radius: 2px; margin-inline-end: 4px; }
+.cf-table-box summary { font-size: .8rem; color: var(--muted); cursor: pointer; }
+.cf-table { inline-size: 100%; border-collapse: collapse; font-size: .8rem; margin-block-start: var(--s2); }
+.cf-table th, .cf-table td { padding: 4px 6px; border-block-end: 1px solid var(--line); text-align: start; font-variant-numeric: tabular-nums; }
+.cf-table tr.cf-now td { font-weight: 600; }
+.fa-projects { display: grid; gap: var(--s2); padding: 0; list-style: none; }
+.fa-proj .body { display: grid; gap: 6px; text-decoration: none; color: inherit; inline-size: 100%; }
+.fa-proj .l1 { display: flex; align-items: center; gap: var(--s2); }
+.fa-proj .l1 .one { flex: 1; min-width: 0; font-weight: 600; }
+.fin-bar.sm { block-size: 8px; }
+#fa-upcoming .body, #fa-invoices .body, #fa-income .body { text-decoration: none; color: inherit; }
+#fa-filters { flex-wrap: wrap; overflow: visible; }
+#fa-filters select { flex: 1 1 140px; max-width: none; }
+/* אגף הכספים, כ5: הוצאות ישירות, שכר טרחה, כרטסת */
+.fin-item { cursor: pointer; }
+.fin-item:hover, .fin-item:focus-visible { border-color: var(--accent); }
+.fin-item-l2 { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s2); font-size: .85rem; }
+.fin-item-l2 .mv { justify-items: end; }
+#fin-expenses .q-head .q-sum, #fin-fee .q-head .q-sum { flex: none; overflow: visible; }
+.fin-stage > .row-btns { margin-block-start: var(--s2); }
+.fin-head .row-btns { gap: 6px; }
+.ledger { list-style: none; padding: 0; margin: var(--s2) 0 0; display: grid; gap: 2px; font-size: .85rem; }
+.ledger li { display: grid; grid-template-columns: auto 1fr auto; grid-template-areas: "at text d" "at text b"; gap: 0 var(--s2);
+    padding: 6px var(--s2); border-block-end: 1px solid var(--line); }
+.ledger .lg-at { grid-area: at; color: var(--muted); font-size: .75rem; white-space: nowrap; }
+.ledger .lg-text { grid-area: text; min-width: 0; }
+.ledger .lg-d { grid-area: d; text-align: end; font-weight: 600; white-space: nowrap; }
+.ledger .lg-b { grid-area: b; text-align: end; color: var(--muted); font-size: .75rem; white-space: nowrap; }
+.ledger .lg-paid .lg-d { color: var(--ok); }
+.ledger .lg-milestone, .ledger .lg-invoice { color: var(--muted); }
+.fa-income .fin-cells { margin-block-end: var(--s2); }

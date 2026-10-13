@@ -2,12 +2,12 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="assets/js/i18n.js?v=24"></script>
+    <script src="assets/js/i18n.js?v=27"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=24">
+    <link rel="stylesheet" href="assets/css/app.css?v=27">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -63,6 +63,7 @@
     <nav class="tabs" id="nav" aria-label="ניווט ראשי">
         <a href="#/" data-nav="projects">פרויקטים</a>
         <a href="#/calendar" data-nav="calendar">יומן<span class="nbadge" id="rem-badge" hidden></span></a>
+        <a href="#/finance" data-nav="finance">כספים<span class="nbadge" id="fin-badge" hidden></span></a>
         <a href="#/contacts/client" data-nav="contacts">אנשי קשר</a>
         <a href="#/settings/messages" data-nav="settings">הגדרות</a>
     </nav>
@@ -200,6 +201,44 @@
             <button class="btn ghost danger" id="share-cancel" type="button" hidden>ביטול השיתוף</button>
         </section>
 
+        <!-- ===== אגף הכספים — כל הפרויקטים (כ3, assets/js/finance-all.js) ===== -->
+        <section id="view-finance" class="view" hidden>
+            <div class="filters" id="fa-filters">
+                <select id="fa-project" aria-label="פרויקט"></select>
+                <select id="fa-supplier" aria-label="ספק"></select>
+                <label class="chip-toggle"><input type="checkbox" id="fa-all"><span>כולל שהסתיימו</span></label>
+                <a class="btn ghost sm" id="fa-export" href="#" download>⬇️ Excel</a>
+            </div>
+            <dl class="fin-kpis" id="fa-kpis"></dl>
+            <section id="fa-alerts-box" aria-labelledby="fa-alerts-title" hidden>
+                <h2 class="sec-title" id="fa-alerts-title">דורש טיפול כספי</h2>
+                <ul class="fin-alerts" id="fa-alerts"></ul>
+            </section>
+            <section class="fin-card" aria-labelledby="fa-cash-title">
+                <header class="fin-head"><h2 id="fa-cash-title">תזרים — מתוכנן מול שולם בפועל</h2></header>
+                <ul class="fin-legend cf-legend"><li><i class="cf-plan"></i>מתוכנן</li><li><i class="cf-paid"></i>שולם בפועל</li></ul>
+                <div class="cf-chart" id="fa-chart"></div>
+                <details class="cf-table-box"><summary>טבלה</summary><div id="fa-table"></div></details>
+            </section>
+            <section aria-labelledby="fa-up-title">
+                <h2 class="sec-title" id="fa-up-title">תשלומים קרובים ובאיחור</h2>
+                <ul class="list rows-list" id="fa-upcoming"></ul>
+            </section>
+            <section aria-labelledby="fa-proj-title">
+                <h2 class="sec-title" id="fa-proj-title">לפי פרויקט</h2>
+                <ul class="list fa-projects" id="fa-projects"></ul>
+            </section>
+            <!-- כ5: חשבוניות חסרות מספקים, והכנסות שלי (שכר הטרחה) -->
+            <section aria-labelledby="fa-inv-title" id="fa-inv-box" hidden>
+                <h2 class="sec-title" id="fa-inv-title">חשבוניות חסרות</h2>
+                <ul class="list rows-list" id="fa-invoices"></ul>
+            </section>
+            <section class="fin-card fa-income" aria-labelledby="fa-inc-title" id="fa-inc-box" hidden>
+                <header class="fin-head"><h2 id="fa-inc-title">💼 הכנסות שלי — שכר טרחה</h2></header>
+                <div id="fa-income"></div>
+            </section>
+        </section>
+
         <!-- ===== יומן ותזכורות ===== -->
         <section id="view-calendar" class="view" hidden>
             <section id="reminders" aria-labelledby="rem-title" hidden>
@@ -304,6 +343,7 @@
                         <label class="f"><span>אסמכתא שלא אושרה — "באיחור" אחרי (ימים)</span><input name="proof_days" type="number" min="0" max="60" inputmode="numeric" dir="ltr"></label>
                         <label class="f"><span>שולם מעל הביצוע — ביותר מ- (נקודות אחוז)</span><input name="overpay" type="number" min="0" max="100" inputmode="numeric" dir="ltr"></label>
                         <label class="f"><span>אזהרת תקציב — כשסוכם (% מהתקציב)</span><input name="budget_warn" type="number" min="1" max="100" inputmode="numeric" dir="ltr"></label>
+                        <label class="f"><span>חשבונית מהספק — חסרה אחרי (ימים)</span><input name="invoice_days" type="number" min="0" max="120" inputmode="numeric" dir="ltr"></label>
                     </div>
                     <label class="switch"><input type="checkbox" name="notify_contacts"><span>מייל ללקוח ולעו"ד על חריגה מהתקציב, גידול בתקציב, ושולם מעל הביצוע (לעו"ד)</span></label>
                     <p class="hint">כל התראה נשלחת להם פעם אחת, עם מייל הבוקר, בשפה שלהם ועם הקישור האישי. בפורטל הם רואים אותן תמיד.</p>
@@ -448,6 +488,7 @@
                 </section>
                 <label class="f wide"><span>הערות</span><textarea name="notes" rows="3" maxlength="4000"></textarea></label>
                 <p class="error" id="form-error" role="alert" hidden></p>
+                <button type="button" id="contact-ledger" class="btn ghost" hidden>💰 כספים — כל הפרויקטים</button>
                 <button type="button" id="archive" class="btn ghost" hidden></button>
             </div>
         </form>
@@ -652,6 +693,115 @@
         </form>
     </dialog>
 
+    <!-- ===== חלון: תוספת / חריגה (finance.js, כ4) — חדשה, או צפייה והחלטה ===== -->
+    <dialog id="co-dlg" aria-labelledby="co-dlg-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="co-dlg-title">תוספת / חריגה</h2>
+                <button type="submit" class="btn primary" id="co-send">שליחה ללקוח</button>
+            </header>
+            <div class="sheet-body">
+                <p class="hint" id="co-for"></p>
+                <div id="co-new">
+                    <fieldset class="opt">
+                        <legend class="sr-only">סוג</legend>
+                        <div class="seg">
+                            <label><input type="radio" name="sign" value="1" checked><span>תוספת</span></label>
+                            <label><input type="radio" name="sign" value="-1"><span>הפחתה</span></label>
+                        </div>
+                    </fieldset>
+                    <div class="fields">
+                        <label class="f"><span>סכום כולל מע"מ (₪) *</span><input name="amount" inputmode="decimal" dir="ltr" maxlength="14" autocomplete="off"></label>
+                        <label class="f wide"><span>מה ולמה *</span><textarea name="reason" rows="2" maxlength="1000" placeholder="למשל: 6 נקודות חשמל נוספות במטבח"></textarea></label>
+                    </div>
+                    <div class="row-btns wrap">
+                        <label class="btn ghost upload-btn">📎 פירוט / הצעה<input type="file" id="co-file" accept="image/*,application/pdf" hidden></label>
+                    </div>
+                    <p class="hint" id="co-file-name"></p>
+                    <p class="hint">נשלח ללקוח לאישור בקישור האישי (בלחיצה או בחתימה, לפי ההגדרות שלו), ובשלב שדורש עו"ד — גם לעו"ד. מה שאושר נכנס להתחייבות.</p>
+                </div>
+                <div id="co-view" hidden>
+                    <div class="summary" id="co-summary"></div>
+                    <ul class="decisions" id="co-decisions"></ul>
+                    <div class="row-btns wrap" id="co-actions"></div>
+                </div>
+                <p class="error" role="alert" hidden></p>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- ===== חלון: הוצאה ישירה (finance.js, כ5) — מה שהלקוח קנה בעצמו ===== -->
+    <dialog id="exp-dlg" aria-labelledby="exp-dlg-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="exp-dlg-title">הוצאה ישירה</h2>
+                <button type="submit" class="btn primary">שמירה</button>
+            </header>
+            <div class="sheet-body">
+                <div class="fields">
+                    <label class="f wide"><span>מה נקנה *</span><input name="title" maxlength="200" placeholder="למשל: אריחים לאמבטיה, אגרת היתר"></label>
+                    <label class="f"><span>סכום (₪) *</span><input name="amount" inputmode="decimal" dir="ltr" maxlength="14" autocomplete="off"></label>
+                    <label class="f"><span>תאריך</span><input name="spent_on" type="date"></label>
+                    <label class="f"><span>שלב</span><select name="stage_id"></select></label>
+                    <label class="f wide"><span>הערה</span><input name="notes" maxlength="1000"></label>
+                </div>
+                <label class="switch"><input type="checkbox" name="vat" checked><span>כולל מע"מ (קבלה מעוסק מורשה)</span></label>
+                <div class="row-btns wrap">
+                    <label class="btn ghost upload-btn">📎 קבלה<input type="file" id="exp-file" accept="image/*,application/pdf" hidden></label>
+                </div>
+                <p class="hint" id="exp-file-name"></p>
+                <p class="hint">נכנסת ל"סוכם" ול"שולם" של הפרויקט, ולא לספק. הלקוח רואה אותה בקישור האישי.</p>
+                <div class="row-btns wrap"><button type="button" class="btn ghost danger" id="exp-delete" hidden>🗑 מחיקת ההוצאה</button></div>
+                <p class="error" role="alert" hidden></p>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- ===== חלון: אבן דרך של שכר הטרחה (finance.js, כ5) ===== -->
+    <dialog id="fee-dlg" aria-labelledby="fee-dlg-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="fee-dlg-title">שכר טרחה — אבן דרך</h2>
+                <button type="submit" class="btn primary">שמירה</button>
+            </header>
+            <div class="sheet-body">
+                <div class="fields">
+                    <label class="f wide"><span>שם *</span><input name="title" maxlength="100" placeholder="למשל: מקדמה, סיום שלד"></label>
+                    <label class="f"><span>סכום כולל מע"מ (₪) *</span><input name="amount" inputmode="decimal" dir="ltr" maxlength="14" autocomplete="off"></label>
+                    <label class="f"><span>תאריך יעד</span><input name="due_date" type="date"></label>
+                </div>
+                <div id="fee-recv-box" hidden>
+                    <h3 class="sec-title">התקבל</h3>
+                    <div class="fields">
+                        <label class="f"><span>תאריך</span><input name="received_on" type="date"></label>
+                        <label class="f"><span>סכום שהתקבל (₪)</span><input name="received_amount" inputmode="decimal" dir="ltr" maxlength="14"></label>
+                    </div>
+                    <div class="row-btns wrap">
+                        <button type="button" class="btn primary" id="fee-recv">✅ התקבל</button>
+                        <button type="button" class="btn ghost" id="fee-unrecv" hidden>ביטול "התקבל"</button>
+                        <button type="button" class="btn ghost danger" id="fee-delete">🗑 מחיקה</button>
+                    </div>
+                </div>
+                <p class="error" role="alert" hidden></p>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- ===== חלון: כרטסת ספק (finance.js, כ5) — בפרויקט, או בכל הפרויקטים ===== -->
+    <dialog id="ledger-dlg" aria-labelledby="ledger-dlg-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="ledger-dlg-title">כרטסת ספק</h2>
+                <span></span>
+            </header>
+            <div class="sheet-body" id="ledger-body"></div>
+        </form>
+    </dialog>
+
     <!-- ===== חלון: חלוקת ההצעה לתשלומים (finance.js) ===== -->
     <dialog id="split-dlg" aria-labelledby="split-dlg-title">
         <form method="dialog" novalidate>
@@ -703,6 +853,19 @@
                         </div>
                         <p class="hint" id="mp-file-name"></p>
                     </details>
+                    <!-- חשבונית מהספק (כ4) — אחרי שהתשלום התקבל -->
+                    <div class="invoice-box" id="invoice-box" hidden>
+                        <h3 class="sec-title">חשבונית / קבלה מהספק</h3>
+                        <p class="hint" id="invoice-state"></p>
+                        <div class="fields" id="invoice-fields">
+                            <label class="f"><span>מספר חשבונית</span><input id="inv-no" maxlength="40" dir="ltr"></label>
+                        </div>
+                        <div class="row-btns wrap" id="invoice-btns">
+                            <label class="btn ghost upload-btn">📎 קובץ<input type="file" id="inv-file" accept="image/*,application/pdf" hidden></label>
+                            <button type="button" class="btn ghost" id="inv-save">שמירת החשבונית</button>
+                        </div>
+                        <p class="hint" id="inv-file-name"></p>
+                    </div>
                     <button type="button" class="btn ghost danger" id="payment-cancel">ביטול אבן הדרך</button>
                 </div>
                 <div class="fields">
@@ -736,6 +899,10 @@
                     <label class="f" id="due-pct-box" hidden><span>כשהשלב מגיע ל- (%)</span><input name="due_pct" type="number" min="1" max="100" step="5" inputmode="numeric" dir="ltr"></label>
                 </div>
                 <p class="hint" id="due-kind-hint" hidden>"בגמר השלב" — כשמסמנים "בוצע" בדיווח מהשטח, התשלום הופך ל"הגיע מועד".</p>
+                <div class="fields" id="pay-index-box" hidden>
+                    <label class="f"><span>מדד קובע (הצמדה)</span><input name="index_value" inputmode="decimal" dir="ltr" maxlength="10" autocomplete="off"></label>
+                </div>
+                <p class="hint" id="pay-calc" hidden></p>
                 <fieldset class="opt" id="payer-box">
                     <legend>משלם</legend>
                     <div class="seg">
@@ -994,21 +1161,23 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=24"></script>
-    <script src="assets/js/contacts.js?v=24"></script>
-    <script src="assets/js/device-contacts.js?v=24"></script>
-    <script src="assets/js/files.js?v=24"></script>
-    <script src="assets/js/lightbox.js?v=24"></script>
-    <script src="assets/js/field.js?v=24"></script>
+    <script src="assets/js/core.js?v=27"></script>
+    <script src="assets/js/contacts.js?v=27"></script>
+    <script src="assets/js/device-contacts.js?v=27"></script>
+    <script src="assets/js/files.js?v=27"></script>
+    <script src="assets/js/lightbox.js?v=27"></script>
+    <script src="assets/js/field.js?v=27"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=24"></script>
-    <script src="assets/js/projects.js?v=24"></script>
-    <script src="assets/js/quotes.js?v=24"></script>
-    <script src="assets/js/payments.js?v=24"></script>
-    <script src="assets/js/finance.js?v=24"></script>
-    <script src="assets/js/hebcal.js?v=24"></script>
-    <script src="assets/js/calendar.js?v=24"></script>
-    <script src="assets/js/settings.js?v=24"></script>
-    <script src="assets/js/app.js?v=24"></script>
+    <script src="assets/js/share.js?v=27"></script>
+    <script src="assets/js/projects.js?v=27"></script>
+    <script src="assets/js/quotes.js?v=27"></script>
+    <script src="assets/js/payments.js?v=27"></script>
+    <script src="assets/js/fin-report.js?v=27"></script>
+    <script src="assets/js/finance.js?v=27"></script>
+    <script src="assets/js/finance-all.js?v=27"></script>
+    <script src="assets/js/hebcal.js?v=27"></script>
+    <script src="assets/js/calendar.js?v=27"></script>
+    <script src="assets/js/settings.js?v=27"></script>
+    <script src="assets/js/app.js?v=27"></script>
 </body>
 </html>

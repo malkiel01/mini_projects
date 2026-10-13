@@ -169,6 +169,8 @@ function pm_project_get(array $user, int $id): array
             'created_at' => $p['created_at'], 'last_activity_at' => $p['last_activity_at'],
         ],
         'stages' => $stages,
+        // הגדרות הכספים (אגף הכספים) — לחלונות: עיכבון, הצמדה
+        'finance' => pm_finance_settings($p),
         'team'   => pm_project_team($p, $stages),
         'events' => $events,
     ];
