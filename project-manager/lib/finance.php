@@ -93,15 +93,16 @@ function pm_finance_settings(array $p): array
 
 function pm_finance(array $user, int $projectId): array
 {
-    pm_project_row($user, $projectId);
-    return pm_finance_of($projectId);
+    $p = pm_project_row($user, $projectId);
+    $cfg = pm_fin_alert_settings((int)$p['owner_id']);
+    return pm_finance_of($projectId, false, $cfg['overpay']) + ['alerts' => pm_fin_alerts($projectId, $cfg)];
 }
 
 /**
  * כל החישוב. $portal — לפורטל של הלקוח / העו"ד: בלי סימונים פנימיים, אותם מספרים.
  * מבנה: settings · totals · stages[{…, rows[ספק]}] · fee.
  */
-function pm_finance_of(int $projectId, bool $portal = false): array
+function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_OVERPAY_MARGIN): array
 {
     $db = pm_db();
     $pr = $db->prepare('SELECT p.*, u.display_name AS owner_name FROM projects p JOIN users u ON u.id = p.owner_id WHERE p.id = ?');
@@ -199,7 +200,7 @@ function pm_finance_of(int $projectId, bool $portal = false): array
             $progress = $s ? pm_stage_progress($s) : 0;
             $flags = [];
             if ($gap > 100) $flags[] = 'behind';
-            if ($s && $base > 0 && $paidPct > $progress + PM_OVERPAY_MARGIN) $flags[] = 'overpaid';
+            if ($s && $base > 0 && $paidPct > $progress + $overpay) $flags[] = 'overpaid';
             if ($committed > 0 && abs($scheduled - $committed) > 100) $flags[] = $scheduled < $committed ? 'uncovered' : 'overscheduled';
             if ($committed === 0 && $scheduled > 0) $flags[] = 'no_quote';
             foreach (['committed' => $committed, 'scheduled' => $scheduled, 'due' => $due, 'paid' => $paid] as $k => $v) pm_acc($S, $k, $v, $rate);
@@ -211,7 +212,7 @@ function pm_finance_of(int $projectId, bool $portal = false): array
                 'committed' => pm_m($committed, pm_net($committed, $rate)), 'scheduled' => pm_m($scheduled, pm_net($scheduled, $rate)),
                 'due' => pm_m($due, pm_net($due, $rate)), 'paid' => pm_m($paid, pm_net($paid, $rate)),
                 'balance' => pm_m($balance, pm_net($balance, $rate)), 'gap' => pm_m($gap, pm_net($gap, $rate)),
-                'paid_pct' => $paidPct, 'flags' => $portal ? [] : $flags,
+                'paid_pct' => $paidPct, 'progress' => $progress, 'flags' => $portal ? array_values(array_intersect($flags, ['overpaid'])) : $flags,
             ];
         }
         $committedStage = $S['committed'][0] ?? 0;
@@ -312,7 +313,7 @@ function pm_finance_settings_save(array $user, array $in): array
         pm_event($user, $projectId, 'finance', 'התקציב עודכן: {from} ← {to}', ['budget' => $f['budget']],
             ['from' => pm_money((int)$p['budget'] * 100), 'to' => pm_money($f['budget'] * 100)]);
     }
-    return pm_finance_of($projectId);
+    return pm_finance($user, $projectId);
 }
 
 /**
@@ -345,5 +346,193 @@ function pm_payment_split(array $user, array $in): array
         $db->rollBack();
         throw $e;
     }
-    return pm_finance_of($projectId) + pm_payments($user, $projectId);
+    return pm_finance($user, $projectId) + pm_payments($user, $projectId);
+}
+
+// ================= כ2 — התראות =================
+
+/** ברירות המחדל של הספים — לכל מנהל אפשר לשנות (הגדרות ← התראות). */
+const PM_FIN_ALERT_DEFAULTS = [
+    'days_before'     => 3,    // תשלום מתקרב — כמה ימים לפני
+    'overpay'         => 10,   // שולם מעל הביצוע — ביותר מכמה נקודות אחוז
+    'budget_warn'     => 80,   // אזהרה כשההתחייבויות מגיעות לאחוז הזה מהתקציב
+    'proof_days'      => 2,    // אסמכתא שלא אושרה — אחרי כמה ימים היא "באיחור"
+    'notify_contacts' => true, // מייל ללקוח ולעו"ד על חריגה מהתקציב, גידול בתקציב ושולם מעל הביצוע
+];
+
+function pm_fin_alert_settings(int $userId): array
+{
+    static $cache = [];
+    if (!isset($cache[$userId])) {
+        $st = pm_db()->prepare('SELECT fin_alerts FROM users WHERE id = ?');
+        $st->execute([$userId]);
+        $j = json_decode((string)$st->fetchColumn(), true);
+        $cache[$userId] = array_merge(PM_FIN_ALERT_DEFAULTS, is_array($j) ? array_intersect_key($j, PM_FIN_ALERT_DEFAULTS) : []);
+    }
+    return $cache[$userId];
+}
+
+function pm_fin_alert_settings_save(array $user, array $in): array
+{
+    $int = function (string $k, int $min, int $max, string $label) use ($in): int {
+        $v = $in[$k] ?? PM_FIN_ALERT_DEFAULTS[$k];
+        if (!is_numeric($v) || $v < $min || $v > $max) throw new PmError('{field}: בין {min} ל-{max}', 422, ['field' => $label, 'min' => $min, 'max' => $max]);
+        return (int)$v;
+    };
+    $cfg = [
+        'days_before'     => $int('days_before', 0, 60, 'ימים לפני תשלום'), // i18n-ok
+        'overpay'         => $int('overpay', 0, 100, 'שולם מעל הביצוע'), // i18n-ok
+        'budget_warn'     => $int('budget_warn', 1, 100, 'אזהרת תקציב'), // i18n-ok
+        'proof_days'      => $int('proof_days', 0, 60, 'ימים לאישור אסמכתא'), // i18n-ok
+        'notify_contacts' => !empty($in['notify_contacts']),
+    ];
+    pm_db()->prepare('UPDATE users SET fin_alerts = ? WHERE id = ?')->execute([json_encode($cfg), $user['id']]);
+    pm_audit("user:{$user['id']}", 'settings.fin_alerts', 'user', (int)$user['id'], $cfg);
+    return ['fin_alerts' => $cfg];
+}
+
+/**
+ * ההתראות הכספיות של פרויקט. $audience — manager (הכול), או client / lawyer (רק מה שנוגע להם, לפורטל ולמייל).
+ * כל התראה: level (late · soon · wait · info), kind, key (קבוע — למייל שנשלח פעם אחת), text, sort,
+ * ולפעמים payment_id (לפעולה: דרישת תשלום / אישור קבלה).
+ */
+function pm_fin_alerts(int $projectId, array $cfg, ?string $lang = null, string $audience = 'manager'): array
+{
+    $lang ??= pm_lang();
+    $db = pm_db();
+    $today = pm_today();
+    $soon = pm_today((int)$cfg['days_before']);
+    $mgr = $audience === 'manager';
+    $out = [];
+    $add = function (string $level, string $kind, string $key, string $tpl, array $vars, string $sort, ?int $payment = null) use (&$out, $lang) {
+        $out[] = ['level' => $level, 'kind' => $kind, 'key' => $key, 'text' => pm_t($tpl, $vars, $lang), 'sort' => $sort, 'payment_id' => $payment];
+    };
+
+    $st = $db->prepare('SELECT * FROM stages WHERE project_id = ?');
+    $st->execute([$projectId]);
+    $stages = [];
+    foreach ($st->fetchAll() as $s) $stages[(int)$s['id']] = $s;
+
+    // ---- תשלומים ----
+    $pay = $db->prepare("SELECT p.*, c.name AS supplier FROM payments p JOIN contacts c ON c.id = p.supplier_id
+                          WHERE p.project_id = ? AND p.status NOT IN ('received','cancelled')");
+    $pay->execute([$projectId]);
+    foreach ($pay->fetchAll() as $p) {
+        $v = ['title' => $p['title'], 'supplier' => $p['supplier'], 'amount' => pm_money((int)$p['amount']), 'date' => pm_short_date($p['due_date'])];
+        $id = (int)$p['id'];
+        $mine = $audience === ($p['payer'] === 'lawyer' ? 'lawyer' : 'client');
+        if ($p['due_kind'] === 'date' && $p['due_date'] !== '' && $p['due_date'] <= $soon) {
+            $late = $p['due_date'] < $today;
+            if ($mgr) {
+                $add($late ? 'late' : 'soon', $late ? 'pay_late' : 'pay_soon', "pay:$id", $late ? 'תשלום באיחור: {title} — {supplier}, {amount} ({date})' : 'תשלום מתקרב: {title} — {supplier}, {amount} ({date})', $v, $p['due_date'], $id); // i18n-ok
+            } elseif ($mine && $p['status'] !== 'planned') {
+                $add($late ? 'late' : 'soon', $late ? 'pay_late' : 'pay_soon', "pay:$id", $late ? 'תשלום באיחור: {title} — {supplier}, {amount} ({date})' : 'תשלום קרוב: {title} — {supplier}, {amount} ({date})', $v, $p['due_date'], $id); // i18n-ok
+            }
+        } elseif ($mgr && $p['due_kind'] !== 'date' && $p['status'] === 'planned' && pm_payment_due($p, $stages[(int)$p['stage_id']] ?? null, $today)) {
+            // "בגמר השלב" / "בהתקדמות" — הגיע המועד, ועוד לא נשלחה דרישה
+            $s = $stages[(int)$p['stage_id']] ?? null;
+            $done = $s && in_array($s['status'], ['done', 'paid'], true);
+            $add('soon', 'pay_reached', "reached:$id", $done ? 'השלב בוצע — הגיע מועד התשלום: {title} — {supplier}, {amount}' : 'ההתקדמות הגיעה ל-{n}% — הגיע מועד התשלום: {title} — {supplier}, {amount}', // i18n-ok
+                $v + ['n' => (int)($s['progress'] ?? 0)], $today, $id);
+        }
+        if ($mgr && $p['status'] === 'partial') {
+            $add('wait', 'pay_partial', "partial:$id", 'יתרה פתוחה: {title} — {supplier}, נשארו {amount}', ['title' => $p['title'], 'supplier' => $p['supplier'], // i18n-ok
+                'amount' => pm_money(max(0, (int)$p['amount'] - pm_payment_received($id)))], $today, $id);
+        }
+    }
+    // אסמכתאות שממתינות לאישור קבלה
+    if ($mgr) {
+        $x = $db->prepare("SELECT p.id, p.title, x.amount, x.created_at FROM payment_proofs x JOIN payments p ON p.id = x.payment_id WHERE p.project_id = ? AND x.status = 'pending'");
+        $x->execute([$projectId]);
+        foreach ($x->fetchAll() as $r) {
+            $days = pm_days_since($r['created_at']);
+            $add($days >= (int)$cfg['proof_days'] ? 'late' : 'wait', 'proof', 'proof:' . $r['id'],
+                $days >= 1 ? 'דווח תשלום לפני {n} ימים — לאשר שהתקבל: {title}, {amount}' : 'דווח תשלום — לאשר שהתקבל: {title}, {amount}', // i18n-ok
+                ['n' => $days, 'title' => $r['title'], 'amount' => pm_money((int)$r['amount'])], substr($r['created_at'], 0, 10), (int)$r['id']);
+        }
+    }
+
+    // ---- מהמצב הכספי: תקציב, שולם מעל הביצוע, כיסוי ----
+    $f = pm_finance_of($projectId, false, (int)$cfg['overpay']);
+    $T = $f['totals'];
+    $budget = $T['budget']['g'];
+    $committed = $T['committed']['g'];
+    if ($budget > 0 && $committed > $budget) {
+        $add('late', 'over_budget', 'over_budget:' . (int)round($committed), 'חריגה מהתקציב: סוכם {committed} מתוך תקציב {budget}', // i18n-ok
+            ['committed' => pm_money((int)round($committed * 100)), 'budget' => pm_money((int)round($budget * 100))], $today);
+    } elseif ($budget > 0 && $committed >= $budget * (int)$cfg['budget_warn'] / 100) {
+        $add('soon', 'budget_warn', 'budget_warn:' . (int)$cfg['budget_warn'], '{n}% מהתקציב כבר סוכם ({committed} מתוך {budget})', // i18n-ok
+            ['n' => (int)floor($committed * 100 / $budget), 'committed' => pm_money((int)round($committed * 100)), 'budget' => pm_money((int)round($budget * 100))], $today);
+    }
+    $growth = (int)round($T['budget_growth']['g']);
+    if (!$mgr && $growth > 0) {
+        $add('info', 'budget_grew', 'budget_grew:' . $growth, 'התקציב גדל ב-{amount} מאז הפתיחה ({from} ← {to})', // i18n-ok
+            ['amount' => pm_money($growth * 100), 'from' => pm_money((int)round($T['budget_initial']['g'] * 100)), 'to' => pm_money((int)round($T['budget_today']['g'] * 100))], $today);
+    }
+    foreach ($f['stages'] as $s) {
+        if ($mgr && $s['over_budget']) {
+            $add('late', 'stage_over', 'stage_over:' . $s['stage_id'], 'בשלב {stage} סוכם {committed} — מעל התקציב שלו ({budget})', // i18n-ok
+                ['stage' => $s['name'], 'committed' => pm_money((int)round($s['committed']['g'] * 100)), 'budget' => pm_money((int)round($s['budget']['g'] * 100))], $today);
+        }
+        foreach ($s['rows'] as $r) {
+            $v = ['supplier' => $r['name'], 'stage' => $s['name'] ?: pm_t('בלי שלב', [], $lang), 'paid' => $r['paid_pct'], 'done' => $r['progress'],
+                  's' => pm_money((int)round($r['scheduled']['g'] * 100)), 'c' => pm_money((int)round($r['committed']['g'] * 100))];
+            $k = $s['stage_id'] . ':' . $r['supplier_id'];
+            if (in_array('overpaid', $r['flags'], true) && ($mgr || $audience === 'lawyer')) {
+                $add('late', 'overpaid', "overpaid:$k", 'שולם מעל הביצוע: {supplier}, {stage} — שולם {paid}%, בוצע {done}%', $v, $today); // i18n-ok
+            }
+            if (!$mgr) continue;
+            if (in_array('uncovered', $r['flags'], true)) $add('wait', 'uncovered', "uncovered:$k", 'אבני הדרך לא מכסות את ההצעה: {supplier}, {stage} — {s} מתוך {c}', $v, $today); // i18n-ok
+            if (in_array('overscheduled', $r['flags'], true)) $add('wait', 'overscheduled', "overscheduled:$k", 'אבני הדרך עוברות את ההצעה: {supplier}, {stage} — {s} מול {c}', $v, $today); // i18n-ok
+            if (in_array('no_quote', $r['flags'], true)) $add('wait', 'no_quote', "no_quote:$k", 'אבני דרך בלי הצעה שאושרה: {supplier}, {stage}', $v, $today); // i18n-ok
+        }
+    }
+    $rank = ['late' => 0, 'soon' => 1, 'wait' => 2, 'info' => 3];
+    usort($out, fn($a, $b) => [$rank[$a['level']], $a['sort']] <=> [$rank[$b['level']], $b['sort']]);
+    return $out;
+}
+
+/**
+ * מייל ללקוח ולעו"ד — פעם אחת לכל התראה (fin_alert_sent): חריגה מהתקציב, התקציב גדל, ולעו"ד גם שולם
+ * מעל הביצוע. רץ עם מייל הבוקר (pm_digest_tick), לכל פרויקט פעיל שהמנהל שלו לא כיבה את זה.
+ */
+function pm_fin_contact_tick(): void
+{
+    $db = pm_db();
+    $kinds = ['over_budget', 'budget_warn', 'budget_grew', 'overpaid'];
+    foreach ($db->query("SELECT id, owner_id, name, client_id, lawyer_id FROM projects WHERE status = 'active'")->fetchAll() as $p) {
+        $cfg = pm_fin_alert_settings((int)$p['owner_id']);
+        if (!$cfg['notify_contacts']) continue;
+        foreach (['client' => $p['client_id'], 'lawyer' => $p['lawyer_id']] as $role => $cid) {
+            if (!$cid) continue;
+            $c = pm_contact_full((int)$cid);
+            if (!$c || $c['email'] === '') continue;
+            $lang = pm_lang_valid($c['lang'] ?? 'he');
+            $new = [];
+            foreach (pm_fin_alerts((int)$p['id'], $cfg, $lang, $role) as $a) {
+                if (!in_array($a['kind'], $kinds, true)) continue;
+                $seen = $db->prepare('SELECT 1 FROM fin_alert_sent WHERE project_id = ? AND contact_id = ? AND key = ?');
+                $seen->execute([$p['id'], $cid, $a['key']]);
+                if (!$seen->fetchColumn()) $new[] = $a;
+            }
+            if (!$new) continue;
+            $owner = pm_project_owner((int)$p['id']);
+            $subject = pm_t('עדכון כספי — {project}', ['project' => $p['name']], $lang);
+            $body = pm_t("שלום {name},\n\nעדכון כספי בפרויקט {project}:\n{items}\n\nהמצב הכספי המלא, בקישור האישי שלך:\n{link}\n\n{manager}", [
+                'name' => $c['name'], 'project' => $p['name'], 'manager' => $owner['display_name'],
+                'items' => implode("\n", array_map(fn($a) => '• ' . $a['text'], $new)),
+                'link' => pm_notify_link((int)$p['id'], (int)$cid),
+            ], $lang);
+            $ok = pm_send_mail($c['email'], $subject, $body, $lang);
+            $now = pm_now();
+            $db->prepare('INSERT INTO messages (project_id, contact_id, channel, key, recipient, subject, body, status, auto, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+               ->execute([$p['id'], $cid, 'email', 'fin_alert', $c['email'], $subject, $body, $ok ? 'sent' : 'failed', 1, 0, $now]);
+            pm_log($ok ? 'info' : 'warn', 'mail', 'mail.fin_alert', ['data' => ['to' => $c['email'], 'project' => (int)$p['id'], 'alerts' => array_column($new, 'key'), 'sent' => $ok]]);
+            if (!$ok) continue;
+            $ins = $db->prepare('INSERT OR IGNORE INTO fin_alert_sent (project_id, contact_id, key, sent_at) VALUES (?,?,?,?)');
+            foreach ($new as $a) $ins->execute([$p['id'], $cid, $a['key'], $now]);
+            pm_event(['id' => 0, 'display_name' => 'מערכת'], (int)$p['id'], 'message', '✉️ נשלח מייל ל{name}: {subject}', ['contact' => (int)$cid, 'key' => 'fin_alert'],
+                ['name' => $c['name'], 'subject' => $subject]);
+        }
+    }
 }

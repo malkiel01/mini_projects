@@ -6,11 +6,12 @@
  * תשלומים, תוקף הצעות מחיר, ופגישות / ביקורים (appointments).
  *
  * "דורש טיפול" — מחושב מהנתונים בכל פעם, לא נשמר:
- *   - תשלום שתאריך היעד שלו עבר, או מגיע בשלושת הימים הקרובים
+ *   - כספים (lib/finance.php, pm_fin_alerts): תשלום באיחור / מתקרב / שהגיע מועדו, אסמכתא לאישור,
+ *     יתרה פתוחה, חריגה מהתקציב, שולם מעל הביצוע, אבני דרך שלא מכסות את ההצעה
  *   - הצעה או תשלום שממתינים ללקוח / לעו"ד יותר מ-PM_WAIT_DAYS ימים
  *   - שלב שהיה אמור להתחיל ולא התחיל, או להסתיים ולא הסתיים
  *   - הצעת מחיר שתוקפה פג (ועוד לא הוחלט עליה)
- *   - אסמכתא שממתינה לאישור קבלה; פגישה היום / מחר
+ *   - פגישה היום / מחר
  *
  * סנכרון לטלפון: api.php?action=calendar-feed&t=<אסימון> — קובץ iCalendar שיומן
  * הטלפון (גוגל / אפל) מתעדכן ממנו. האסימון: HMAC של המשתמש ו-nonce (users.cal_nonce)
@@ -114,24 +115,15 @@ function pm_reminders(array $user, ?string $lang = null): array
     $ids = implode(',', array_map('intval', array_keys($projects)));
     $db = pm_db();
     $today = pm_today();
-    $soon = pm_today(3);
     $out = [];
     $r = function (string $level, string $text, int $pid, string $pane, string $sort) use (&$out, $projects) {
         $out[] = ['level' => $level, 'text' => $text, 'project_id' => $pid, 'project_name' => $projects[$pid] ?? '', 'pane' => $pane, 'sort' => $sort];
     };
-    // תשלומים: יעד עבר / מתקרב
-    foreach ($db->query("SELECT p.*, c.name AS supplier FROM payments p JOIN contacts c ON c.id = p.supplier_id
-                          WHERE p.project_id IN ($ids) AND p.status NOT IN ('received','cancelled') AND p.due_date != '' AND p.due_date <= '$soon'") as $p) {
-        $late = $p['due_date'] < $today;
-        $r($late ? 'late' : 'soon', pm_t($late ? 'תשלום באיחור: {title} — {supplier}, {amount} ({date})' : 'תשלום מתקרב: {title} — {supplier}, {amount} ({date})',
-            ['title' => $p['title'], 'supplier' => $p['supplier'], 'amount' => pm_money((int)$p['amount']), 'date' => pm_short_date($p['due_date'])], $lang),
-            (int)$p['project_id'], 'payments', $p['due_date']);
-    }
-    // אסמכתאות שממתינות לאישור קבלה
-    foreach ($db->query("SELECT p.project_id, p.title, x.amount, x.created_at FROM payment_proofs x JOIN payments p ON p.id = x.payment_id
-                          WHERE p.project_id IN ($ids) AND x.status = 'pending'") as $x) {
-        $r('wait', pm_t('דווח תשלום — לאשר שהתקבל: {title}, {amount}', ['title' => $x['title'], 'amount' => pm_money((int)$x['amount'])], $lang),
-            (int)$x['project_id'], 'payments', substr($x['created_at'], 0, 10));
+    // כספים (אגף הכספים, כ2): תשלום באיחור / מתקרב / שהגיע מועדו, אסמכתא לאישור, יתרה פתוחה, חריגה
+    // מהתקציב, שולם מעל הביצוע, כיסוי — לפי הספים של המנהל (הגדרות ← התראות)
+    $cfg = pm_fin_alert_settings((int)$user['id']);
+    foreach (array_keys($projects) as $pid) {
+        foreach (pm_fin_alerts((int)$pid, $cfg, $lang) as $a) $r($a['level'], $a['text'], (int)$pid, 'payments', $a['sort']);
     }
     // ממתין ללקוח / לעו"ד יותר מ-X ימים
     foreach ($db->query("SELECT q.project_id, q.status, q.sent_at, q.updated_at, s.name AS stage FROM quotes q JOIN stages s ON s.id = q.stage_id
@@ -360,4 +352,6 @@ function pm_digest_tick(): void
         pm_log($ok ? 'info' : 'warn', 'mail', 'mail.digest', ['data' => ['to' => $to, 'items' => count($list), 'sent' => $ok]]);
         $sent++;
     }
+    // ללקוח ולעו"ד — התראות כספיות חדשות (חריגה, גידול בתקציב, שולם מעל הביצוע), פעם אחת לכל אחת
+    try { pm_fin_contact_tick(); } catch (Throwable $e) { pm_log('error', 'mail', 'fin_alert.failed', ['message' => $e->getMessage()]); }
 }

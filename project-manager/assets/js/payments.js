@@ -349,5 +349,8 @@ const Payments = (() => {
         });
     }
 
-    return { show, add, refreshList };
+    /** מהתראה (finance.js) — פותח את אבן הדרך. */
+    function openPayment(id) { if (data.payments.some(p => p.id === id)) open(id); }
+
+    return { show, add, refreshList, openPayment };
 })();

@@ -40,6 +40,18 @@ const Settings = (() => {
             });
             e.target.checked = !!state.standalone;
         });
+        // הספים של ההתראות הכספיות (כ2)
+        $('#alerts-form').addEventListener('submit', async e => {
+            e.preventDefault();
+            const f = $('#alerts-form'), el = f.elements;
+            const body = Object.fromEntries(['days_before', 'proof_days', 'overpay', 'budget_warn'].map(k => [k, el[k].value]));
+            body.notify_contacts = el.notify_contacts.checked;
+            await busy($('button', f), f, async () => {
+                ({ fin_alerts: state.finAlerts } = await api('fin-alerts', { body }));
+                formError(f, '');
+                toast(t('נשמר'));
+            });
+        });
         // שיעור המע"מ — לסכומים חדשים (אגף הכספים)
         $('#vat-form').addEventListener('submit', async e => {
             e.preventDefault();
@@ -90,10 +102,16 @@ const Settings = (() => {
         $('#template-dlg [data-delete]').addEventListener('click', deleteTemplate);
     }
 
+    function fillAlerts() {
+        const el = $('#alerts-form').elements, c = state.finAlerts || {};
+        for (const k of ['days_before', 'proof_days', 'overpay', 'budget_warn']) el[k].value = c[k] ?? '';
+        el.notify_contacts.checked = c.notify_contacts !== false;
+    }
+
     function show(pane) {
         bind();
         // מנהל רואה רק "הודעות"; המפתח — הכול
-        const allowed = isDev() ? ['messages', 'general', 'trades', 'templates', 'access', 'log'] : ['messages'];
+        const allowed = isDev() ? ['messages', 'alerts', 'general', 'trades', 'templates', 'access', 'log'] : ['messages', 'alerts'];
         pane = allowed.includes(pane) ? pane : 'messages';
         $$('#view-settings [data-set]').forEach(a => a.setAttribute('aria-selected', String(a.dataset.set === pane)));
         $$('#view-settings .pane').forEach(el => { el.hidden = el.id !== 'set-' + pane; });
@@ -103,6 +121,7 @@ const Settings = (() => {
             $('#vat-rate').value = state.vatRate ?? 18;
         }
         if (pane === 'messages') renderMsgTemplates();
+        if (pane === 'alerts') fillAlerts();
         if (pane === 'trades') renderTrades();
         if (pane === 'templates') renderTemplates();
         if (pane === 'access') loadAccess();
