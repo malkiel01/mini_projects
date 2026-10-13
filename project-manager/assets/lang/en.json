@@ -1844,5 +1844,20 @@
     "בתוך שלב (לחיצה עליו): התחום, הספק שמבצע, תאריכים מתוכננים, תקציב, ואחוז התקדמות.": "Inside a stage (tap it): the trade, the supplier doing it, planned dates, budget and progress percentage.",
     "הצעות מחיר נאספות לפי שלב, תשלומים נקשרים לגמר שלב, ואבני הדרך בחוזה הן קבוצות של שלבים.": "Quotes are collected per stage, payments are tied to a stage's completion, and contract milestones are groups of stages.",
     "\"חסר:\" מתחת לשלב — מה עוד לא מולא בו. אפשר להשלים בהדרגה.": "\"Missing:\" under a stage — what hasn't been filled in yet. You can complete it gradually.",
-    "✏️ עריכת שלבים — לשנות סדר (↑↓), למחוק שלב שלא צריך (🗑), ולהוסיף שלב בכל מקום (\"+ שלב כאן\"). אפשר לפצל תחום לשניים, למשל \"חשמל — תשתית\" ו\"חשמל — גמר\".": "✏️ Edit stages — reorder (↑↓), delete a stage you don't need (🗑), and add a stage anywhere (\"+ Stage here\"). You can split a trade in two, e.g. \"Electrical — infrastructure\" and \"Electrical — finishing\"."
+    "✏️ עריכת שלבים — לשנות סדר (↑↓), למחוק שלב שלא צריך (🗑), ולהוסיף שלב בכל מקום (\"+ שלב כאן\"). אפשר לפצל תחום לשניים, למשל \"חשמל — תשתית\" ו\"חשמל — גמר\".": "✏️ Edit stages — reorder (↑↓), delete a stage you don't need (🗑), and add a stage anywhere (\"+ Stage here\"). You can split a trade in two, e.g. \"Electrical — infrastructure\" and \"Electrical — finishing\".",
+    "סמכות מפתח פעילה — אפשר למחוק הכול ולערוך גם נעול": "Developer authority on — you can delete anything and edit locked items",
+    "סמכות מפתח כבויה": "Developer authority off",
+    "סמכות מפתח: פעילה": "Developer authority: on",
+    "סמכות מפתח: כבויה": "Developer authority: off",
+    "🛠️ מחיקה גמורה — כאילו לא הייתה": "🛠️ Delete completely — as if it never existed",
+    "מחק": "DELETE",
+    "מחיקה גמורה: הרשומה, כל מה שתלוי בה והאירועים שלה בציר הזמן — בלי שחזור מהאפליקציה. כדי לאשר הקלד: {word}": "Complete deletion: the record, everything that depends on it and its timeline events — no restore from the app. To confirm, type: {word}",
+    "לא נמחק — המילה לא תאמה": "Not deleted — the word didn't match",
+    "נמחק לגמרי ({n} רשומות)": "Deleted completely ({n} records)",
+    "🛠️ סמכות מפתח פעילה — מחיקה גמורה ועריכה גם של נעול": "🛠️ Developer authority on — complete deletion and editing of locked items",
+    "כיבוי": "Turn off",
+    "🛠️ מחיקת הפרויקט כולו — כאילו לא היה": "🛠️ Delete the whole project — as if it never existed",
+    "רק המפתח, כשסמכות המפתח פעילה": "Developer only, with developer authority on",
+    "סוג לא מוכר": "Unknown type",
+    "🛠️ תוקן בסמכות מפתח: {supplier}, {stage} — {fields}{amounts}": "🛠️ Corrected with developer authority: {supplier}, {stage} — {fields}{amounts}"
 }

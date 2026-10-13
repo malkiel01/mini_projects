@@ -82,6 +82,7 @@ const Projects = (() => {
         });
         $('#project-status').addEventListener('change', e => setStatus(e.target.value));
         $('#details-form').addEventListener('submit', e => { e.preventDefault(); saveDetails(); });
+        $('#dev-purge-project').addEventListener('click', () => Dev.purge('project', cur.project.id));
 
         // חלונות
         $('#project-dlg form').addEventListener('submit', e => { e.preventDefault(); createProject(); });
@@ -366,7 +367,7 @@ const Projects = (() => {
             const acts = ed ? `<div class="acts st-acts">
                 <button class="icon-btn" data-st-up="${x.id}" ${i ? '' : 'disabled'} aria-label="${esc(t('להזיז למעלה: {name}', { name: t(x.name) }))}">↑</button>
                 <button class="icon-btn" data-st-down="${x.id}" ${i < s.length - 1 ? '' : 'disabled'} aria-label="${esc(t('להזיז למטה: {name}', { name: t(x.name) }))}">↓</button>
-                <button class="icon-btn danger" data-st-del="${x.id}" ${x.quotes ? `title="${esc(t('יש בשלב הצעות מחיר — אי אפשר למחוק'))}" disabled` : ''} aria-label="${esc(t('מחיקת השלב {name}', { name: t(x.name) }))}">🗑</button>
+                <button class="icon-btn danger" data-st-del="${x.id}" ${x.quotes && !Dev.on() ? `title="${esc(t('יש בשלב הצעות מחיר — אי אפשר למחוק'))}" disabled` : ''} aria-label="${esc(t('מחיקת השלב {name}', { name: t(x.name) }))}">🗑</button>
             </div>` : stageChip(x.status);
             return `<li class="card" data-stage="${x.id}" tabindex="0" role="button" aria-label="${name}, ${esc(state.labels.stage[x.status])}">
                 <span class="num st-${esc(x.status)}" aria-hidden="true">${i + 1}</span>
@@ -413,6 +414,7 @@ const Projects = (() => {
         el.progress.oninput = progressShown;
         el.status.onchange = progressShown;
         $('[data-existing]', dlg).hidden = !id;
+        Dev.attach(dlg, 'stage', id);
         await fillSuppliers(el.supplier_id, Number(el.trade_id.value) || 0, s.supplier_id);
         el.trade_id.onchange = () => fillSuppliers(el.supplier_id, Number(el.trade_id.value) || 0, Number(el.supplier_id.value) || null);
         dlg.showModal();
@@ -454,7 +456,8 @@ const Projects = (() => {
         // "בוצע" — דרך דיווח מהשטח עם תמונה: שומרים את השאר, ועוברים לדיווח
         const old = stageId ? cur.stages.find(x => x.id === stageId) : null;
         if (old && body.name === t(old.name)) body.name = old.name;
-        const toDone = ['done', 'paid'].includes(body.status) && !['done', 'paid'].includes(old?.status || 'planned');
+        // סמכות מפתח: "בוצע" גם בלי דיווח מהשטח
+        const toDone = !Dev.on() && ['done', 'paid'].includes(body.status) && !['done', 'paid'].includes(old?.status || 'planned');
         if (toDone) { body.status = old?.status || 'planned'; body.progress = old?.progress || 0; }
         await busy($('button[type=submit]', form), form, async () => {
             const d = await api('stage', { body });
@@ -484,6 +487,8 @@ const Projects = (() => {
 
     async function deleteStage(id) {
         const s = cur.stages.find(x => x.id === id);
+        // סמכות מפתח: שלב עם הצעות — מחיקה גמורה (עם ההצעות, התוספות ואבני הדרך שלו)
+        if (s && s.quotes && Dev.on()) { if (await Dev.purge('stage', id) && $('#stage-dlg').open) $('#stage-dlg').close(); return; }
         if (!s || !confirm(t('למחוק את השלב "{name}"?', { name: t(s.name) }))) return;
         const dlg = $('#stage-dlg').open;
         await busy(null, dlg ? $('#stage-dlg form') : null, async () => {

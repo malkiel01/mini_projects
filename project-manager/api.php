@@ -15,6 +15,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/lib/messages.php';
 require_once __DIR__ . '/lib/auth.php';
+require_once __DIR__ . '/lib/dev.php';
 
 pm_log_install_handlers();
 pm_survey_migrate();
@@ -131,6 +132,7 @@ try {
         'POST project'    => pm_project_save($user, $in),
         'POST project-status' => pm_project_status($user, (int)($in['id'] ?? 0), (string)($in['status'] ?? '')),
         'POST stage'      => pm_stage_save($user, $in),
+        'POST dev-purge'  => pm_dev_purge($user, (string)($in['kind'] ?? ''), (int)($in['id'] ?? 0)),
         'POST stage-delete' => pm_stage_delete($user, (int)($in['id'] ?? 0)),
         'POST stages-order' => pm_stages_order($user, (int)($in['project_id'] ?? 0), is_array($in['ids'] ?? null) ? $in['ids'] : []),
         'POST note'       => pm_note($user, (int)($in['project_id'] ?? 0), (string)($in['text'] ?? '')),

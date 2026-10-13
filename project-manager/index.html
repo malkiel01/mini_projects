@@ -2,12 +2,12 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="assets/js/i18n.js?v=34"></script>
+    <script src="assets/js/i18n.js?v=35"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=34">
+    <link rel="stylesheet" href="assets/css/app.css?v=35">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -54,6 +54,7 @@
             <div class="me-langs" id="me-langs" data-no-i18n></div>
         </div>
         <button type="button" role="menuitem" class="me-item" id="install" hidden><span aria-hidden="true">📲</span><span>התקנת האפליקציה במכשיר</span></button>
+        <button type="button" role="menuitem" class="me-item" id="me-dev" hidden><span aria-hidden="true">🛠️</span><span>סמכות מפתח: כבויה</span></button>
         <a role="menuitem" class="me-item" href="#/settings" id="me-settings"><span aria-hidden="true">⚙️</span><span>הגדרות</span></a>
         <a role="menuitem" class="me-item" href="../" id="me-apps"><span aria-hidden="true">🧰</span><span>דף האפליקציות</span></a>
         <button type="button" role="menuitem" class="me-item danger" id="logout"><span aria-hidden="true">↩️</span><span>יציאה מהחשבון</span></button>
@@ -77,6 +78,10 @@
         <a data-pane="details">פרטים</a>
     </nav>
 
+    <div class="dev-bar" id="dev-bar" role="status" hidden>
+        <span>🛠️ סמכות מפתח פעילה — מחיקה גמורה ועריכה גם של נעול</span>
+        <button type="button" class="btn small" id="dev-off">כיבוי</button>
+    </div>
     <main id="main" tabindex="-1">
         <!-- ===== פרויקטים ===== -->
         <section id="view-projects" class="view" hidden>
@@ -202,6 +207,9 @@
                     <p class="error" role="alert" hidden></p>
                     <button class="btn primary">שמירת הפרטים</button>
                 </form>
+                <div class="dev-purge" data-dev-on hidden>
+                    <button type="button" class="btn danger" id="dev-purge-project">🛠️ מחיקת הפרויקט כולו — כאילו לא היה</button>
+                </div>
             </div>
         </section>
 
@@ -1221,23 +1229,23 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=34"></script>
-    <script src="assets/js/contacts.js?v=34"></script>
-    <script src="assets/js/device-contacts.js?v=34"></script>
-    <script src="assets/js/files.js?v=34"></script>
-    <script src="assets/js/lightbox.js?v=34"></script>
-    <script src="assets/js/field.js?v=34"></script>
+    <script src="assets/js/core.js?v=35"></script>
+    <script src="assets/js/contacts.js?v=35"></script>
+    <script src="assets/js/device-contacts.js?v=35"></script>
+    <script src="assets/js/files.js?v=35"></script>
+    <script src="assets/js/lightbox.js?v=35"></script>
+    <script src="assets/js/field.js?v=35"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=34"></script>
-    <script src="assets/js/projects.js?v=34"></script>
-    <script src="assets/js/quotes.js?v=34"></script>
-    <script src="assets/js/payments.js?v=34"></script>
-    <script src="assets/js/fin-report.js?v=34"></script>
-    <script src="assets/js/finance.js?v=34"></script>
-    <script src="assets/js/finance-all.js?v=34"></script>
-    <script src="assets/js/hebcal.js?v=34"></script>
-    <script src="assets/js/calendar.js?v=34"></script>
-    <script src="assets/js/settings.js?v=34"></script>
-    <script src="assets/js/app.js?v=34"></script>
+    <script src="assets/js/share.js?v=35"></script>
+    <script src="assets/js/projects.js?v=35"></script>
+    <script src="assets/js/quotes.js?v=35"></script>
+    <script src="assets/js/payments.js?v=35"></script>
+    <script src="assets/js/fin-report.js?v=35"></script>
+    <script src="assets/js/finance.js?v=35"></script>
+    <script src="assets/js/finance-all.js?v=35"></script>
+    <script src="assets/js/hebcal.js?v=35"></script>
+    <script src="assets/js/calendar.js?v=35"></script>
+    <script src="assets/js/settings.js?v=35"></script>
+    <script src="assets/js/app.js?v=35"></script>
 </body>
 </html>

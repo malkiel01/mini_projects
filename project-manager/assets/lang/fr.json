@@ -1862,5 +1862,20 @@
     "בתוך שלב (לחיצה עליו): התחום, הספק שמבצע, תאריכים מתוכננים, תקציב, ואחוז התקדמות.": "Dans une étape (touchez-la) : le métier, le fournisseur qui l'exécute, les dates prévues, le budget et le pourcentage d'avancement.",
     "הצעות מחיר נאספות לפי שלב, תשלומים נקשרים לגמר שלב, ואבני הדרך בחוזה הן קבוצות של שלבים.": "Les devis sont recueillis par étape, les paiements sont liés à la fin d'une étape, et les jalons du contrat sont des groupes d'étapes.",
     "\"חסר:\" מתחת לשלב — מה עוד לא מולא בו. אפשר להשלים בהדרגה.": "« Manque : » sous une étape — ce qui n'est pas encore rempli. Vous pouvez compléter au fur et à mesure.",
-    "✏️ עריכת שלבים — לשנות סדר (↑↓), למחוק שלב שלא צריך (🗑), ולהוסיף שלב בכל מקום (\"+ שלב כאן\"). אפשר לפצל תחום לשניים, למשל \"חשמל — תשתית\" ו\"חשמל — גמר\".": "✏️ Modifier les étapes — réordonner (↑↓), supprimer une étape inutile (🗑) et ajouter une étape n'importe où (« + Étape ici »). Vous pouvez scinder un métier en deux, p. ex. « Électricité — réseaux » et « Électricité — finitions »."
+    "✏️ עריכת שלבים — לשנות סדר (↑↓), למחוק שלב שלא צריך (🗑), ולהוסיף שלב בכל מקום (\"+ שלב כאן\"). אפשר לפצל תחום לשניים, למשל \"חשמל — תשתית\" ו\"חשמל — גמר\".": "✏️ Modifier les étapes — réordonner (↑↓), supprimer une étape inutile (🗑) et ajouter une étape n'importe où (« + Étape ici »). Vous pouvez scinder un métier en deux, p. ex. « Électricité — réseaux » et « Électricité — finitions ».",
+    "סמכות מפתח פעילה — אפשר למחוק הכול ולערוך גם נעול": "Autorité développeur activée — vous pouvez tout supprimer et modifier les éléments verrouillés",
+    "סמכות מפתח כבויה": "Autorité développeur désactivée",
+    "סמכות מפתח: פעילה": "Autorité développeur : activée",
+    "סמכות מפתח: כבויה": "Autorité développeur : désactivée",
+    "🛠️ מחיקה גמורה — כאילו לא הייתה": "🛠️ Suppression totale — comme si cela n'avait jamais existé",
+    "מחק": "SUPPRIMER",
+    "מחיקה גמורה: הרשומה, כל מה שתלוי בה והאירועים שלה בציר הזמן — בלי שחזור מהאפליקציה. כדי לאשר הקלד: {word}": "Suppression totale : l'enregistrement, tout ce qui en dépend et ses événements dans la chronologie — sans restauration depuis l'application. Pour confirmer, tapez : {word}",
+    "לא נמחק — המילה לא תאמה": "Non supprimé — le mot ne correspond pas",
+    "נמחק לגמרי ({n} רשומות)": "Supprimé totalement ({n} enregistrements)",
+    "🛠️ סמכות מפתח פעילה — מחיקה גמורה ועריכה גם של נעול": "🛠️ Autorité développeur activée — suppression totale et modification des éléments verrouillés",
+    "כיבוי": "Désactiver",
+    "🛠️ מחיקת הפרויקט כולו — כאילו לא היה": "🛠️ Supprimer tout le projet — comme s'il n'avait jamais existé",
+    "רק המפתח, כשסמכות המפתח פעילה": "Développeur uniquement, avec l'autorité développeur activée",
+    "סוג לא מוכר": "Type inconnu",
+    "🛠️ תוקן בסמכות מפתח: {supplier}, {stage} — {fields}{amounts}": "🛠️ Corrigé avec l'autorité développeur : {supplier}, {stage} — {fields}{amounts}"
 }

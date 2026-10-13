@@ -132,8 +132,9 @@ function pm_quote_save(array $user, array $in, ?array $actor = null): array
     $actor ??= $user; // מהקישור של הספק: בציר הזמן בשם הספק
     $id = (int)($in['id'] ?? 0);
     $old = $id ? pm_quote_row($user, $id) : null;
-    if ($old && $old['status'] === 'cancelled') throw new PmError('ההצעה בוטלה — אי אפשר לערוך', 422);
-    if ($old && in_array($old['status'], PM_QUOTE_LOCKED, true)) {
+    $dev = pm_dev_mode($user); // סמכות מפתח: עריכה גם של הצעה נעולה
+    if ($old && $old['status'] === 'cancelled' && !$dev) throw new PmError('ההצעה בוטלה — אי אפשר לערוך', 422);
+    if ($old && !$dev && in_array($old['status'], PM_QUOTE_LOCKED, true)) {
         throw new PmError(in_array($old['status'], ['approved', 'client_approved'], true)
             ? 'הצעה שאושרה לא נערכת. שינוי במחיר או בהיקף — "± תוספת / חריגה" בלשונית הכספים'
             : 'הצעה שנדחתה לא נערכת. הצעה חדשה — "+ הצעה"', 422);
@@ -167,17 +168,19 @@ function pm_quote_save(array $user, array $in, ?array $actor = null): array
             // שינוי מהותי — גרסה חדשה. הצעה שכבר אושרה חוזרת ל"התקבלה", והשלב לאיסוף הצעות.
             $material = array_filter(['amount', 'valid_until', 'terms', 'file_id', 'supplier_id', 'stage_id'],
                 fn($k) => (string)$f[$k] !== (string)$old[$k]);
-            $version = (int)$old['version'] + ($material ? 1 : 0);
+            // סמכות מפתח: תיקון — באותה גרסה, והאישור נשאר
+            $version = (int)$old['version'] + ($material && !$dev ? 1 : 0);
             $status = $old['status'];
-            $reset = $material && in_array($status, ['sent', 'client_approved', 'approved', 'rejected', 'declined'], true);
+            $reset = $material && !$dev && in_array($status, ['sent', 'client_approved', 'approved', 'rejected', 'declined'], true);
             if ($reset) $status = 'open';
             $set = implode(', ', array_map(fn($k) => "$k = ?", array_keys($f)));
             $db->prepare("UPDATE quotes SET $set, version = ?, status = ?, updated_at = ? WHERE id = ?")
                ->execute(array_merge(array_values($f), [$version, $status, $now, $id]));
             if ($material) {
                 $what = ['amount' => 'סכום', 'valid_until' => 'תוקף', 'terms' => 'תנאים', 'file_id' => 'קובץ', 'supplier_id' => 'ספק', 'stage_id' => 'שלב']; // i18n-ok
-                $text = $reset ? 'הצעה עודכנה: {supplier}, {stage} — {fields}{amounts}. האישור הקודם לא חל על הגרסה החדשה' // i18n-ok
-                               : 'הצעה עודכנה: {supplier}, {stage} — {fields}{amounts}'; // i18n-ok
+                $text = $dev ? '🛠️ תוקן בסמכות מפתח: {supplier}, {stage} — {fields}{amounts}' // i18n-ok
+                    : ($reset ? 'הצעה עודכנה: {supplier}, {stage} — {fields}{amounts}. האישור הקודם לא חל על הגרסה החדשה' // i18n-ok
+                               : 'הצעה עודכנה: {supplier}, {stage} — {fields}{amounts}'); // i18n-ok
                 pm_event($actor, $projectId, 'quote', $text, ['quote' => $id, 'version' => $version, 'changed' => array_values($material)], [
                     'supplier' => $supplier, 'stage' => $stage['name'],
                     'fields'   => implode(', ', array_map(fn($k) => $what[$k], $material)),

@@ -18,6 +18,9 @@ async function init() {
     else if (lang !== I18n.lang() && I18n.LANGS[lang] && canStore()) { I18n.set(lang); return; }
     $$('.dev-only').forEach(el => { el.hidden = !isDev(); });
     bindMe();
+    $('#me-dev').addEventListener('click', () => { Dev.set(!Dev.on()); Me.close(); toast(Dev.on() ? t('סמכות מפתח פעילה — אפשר למחוק הכול ולערוך גם נעול') : t('סמכות מפתח כבויה')); });
+    $('#dev-off').addEventListener('click', () => Dev.set(false));
+    Dev.show();
     $('#logout').addEventListener('click', logout);
     bindPassword();
     bindInstall();
