@@ -196,9 +196,16 @@
           t.used ? null : el('button', { class: 'small danger', onclick: () => remove(t) }, 'מחיקה')))));
     }
 
+    const usage = el('p', { class: 'muted small usage' });
     async function load() {
       try {
-        all = (await api('tpl_list')).templates;
+        const r = await api('tpl_list');
+        all = r.templates;
+        if (r.usage) {
+          const pct = Math.min(100, Math.round(r.usage.used_mb / r.usage.storage_mb * 100));
+          usage.replaceChildren(`נפח: ${r.usage.used_mb < 0.1 ? 'פחות מ-0.1' : r.usage.used_mb}MB מתוך ${r.usage.storage_mb}MB · קובץ עד ${r.usage.max_file_mb}MB `,
+            el('span', { class: 'meter' }, el('span', { style: `width:${pct}%`, class: pct > 90 ? 'full' : '' })));
+        }
         render();
       } catch (e) {
         msg.replaceChildren(notice(e.message, 'bad'));
@@ -256,7 +263,7 @@
           '+ תבנית חדשה')),
       el('p', { class: 'muted small' }, 'רק אתה רואה את התבניות שלך — גם לא המפתח. הקבצים נשמרים מוצפנים.'),
       upload, msg, list,
-      el('label', { class: 'inline small muted' }, showArchived, ' להציג גם תבניות בארכיון')));
+      el('label', { class: 'inline small muted' }, showArchived, ' להציג גם תבניות בארכיון'), usage));
     await load();
   }
 
@@ -310,8 +317,44 @@
         el('td', { class: 'small', 'data-label': 'נראה לאחרונה' }, fmtTime(u.last_seen_at),
           el('div', { class: 'muted' }, u.devices ? u.devices + ' מכשירים' : 'אין חיבור פעיל')),
         el('td', { class: 'small muted', 'data-label': 'נרשם' }, fmtTime(u.created_at)),
+        el('td', { class: 'small', 'data-label': 'נפח' }, u.quota
+          ? el('button', { class: 'link small', title: 'עריכת מכסות', onclick: () => quotaDialog(u) },
+              `${u.quota.used_mb}/${u.quota.storage_mb}MB`) : '—'),
         el('td', { class: 'ops' }, ops.map(([op, text]) =>
           el('button', { class: op === 'approve' ? 'primary small' : 'small', onclick: () => act(u, op) }, text))));
+    }
+
+    // מכסות לחשבון: נפח, גודל קובץ, ושירותים בתשלום (בינה מלאכותית, SMS) לעתיד.
+    function quotaDialog(u) {
+      const q = u.quota;
+      const num = (name, label, val, min, max) => el('label', {}, el('span', {}, label),
+        el('input', { name, type: 'number', min, max, value: val ?? '' }));
+      const ai = el('input', { type: 'checkbox', name: 'ai_enabled', checked: q.ai_enabled });
+      const out = el('div');
+      const form = el('form', { class: 'quota-form' },
+        el('h2', {}, 'מכסות — ' + u.display_name),
+        el('p', { class: 'muted small' }, `בשימוש: ${q.used_mb}MB`),
+        num('storage_mb', 'נפח אחסון (MB)', q.storage_mb, 1, 100000),
+        num('max_file_mb', 'גודל קובץ מרבי (MB, עד 50)', q.max_file_mb, 1, 50),
+        num('file_retention_days', 'שמירת קבצים (ימים; ריק = ללא הגבלה)', q.file_retention_days, 1, 36500),
+        el('label', { class: 'inline' }, ai, ' שירותי בינה מלאכותית'),
+        num('ai_credits', 'קרדיטים לבינה מלאכותית', q.ai_credits, 0, 10000000),
+        num('sms_credits', 'קרדיטים ל-SMS', q.sms_credits, 0, 10000000),
+        out,
+        el('div', { class: 'ops' }, el('button', { type: 'submit', class: 'primary' }, 'שמירה'),
+          el('button', { type: 'button', onclick: () => dlg.close() }, 'ביטול')));
+      const dlg = el('dialog', { class: 'sig-dialog' }, form);
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const b = Object.fromEntries(new FormData(form));
+        b.ai_enabled = ai.checked;
+        b.user_id = u.id;
+        try { await api('dev_quota', b); dlg.close(); await load(); }
+        catch (err) { out.replaceChildren(notice(err.message, 'bad')); }
+      });
+      dlg.addEventListener('close', () => dlg.remove());
+      document.body.append(dlg);
+      dlg.showModal();
     }
 
     async function act(u, op) {
@@ -331,7 +374,7 @@
       el('p', { class: 'muted small' }, 'כאן רואים חשבונות בלבד. תבניות ומסמכים של משתמשים אינם נגישים מכאן — לעולם.'),
       summary, msg,
       el('div', { class: 'table-wrap' }, el('table', {},
-        el('thead', {}, el('tr', {}, ['משתמש', 'מצב', 'נראה לאחרונה', 'נרשם', ''].map(h => el('th', {}, h)))),
+        el('thead', {}, el('tr', {}, ['משתמש', 'מצב', 'נראה לאחרונה', 'נרשם', 'נפח', ''].map(h => el('th', {}, h)))),
         body))));
     await load();
     devTimer = setInterval(load, 30000);

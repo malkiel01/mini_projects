@@ -253,6 +253,7 @@ function fill_get(): array
     return ['ok' => true, 'document' => [
         'id' => (int)$d['id'], 'number' => $d['number'], 'title' => unseal($d['title_enc']), 'status' => $d['status'],
         'mime' => $a['mime'], 'schema' => $schema, 'values' => $values,
+        'attachments' => attachments_of((int)$d['id'], 'participant:' . $p['id']),
         'progress' => ['required' => 0, 'filled' => 0, 'missing' => missing_for($schema, $values, $p['role_key'])],
         'me' => [
             'role_key' => $p['role_key'], 'role' => role_of($schema, $p['role_key'])['label'], 'name' => $c['name'],
@@ -321,7 +322,7 @@ function fill_save(array $b): array
         foreach ((array)($b['values'] ?? []) as $key => $v) {
             $f = $mine[$key] ?? null;
             if (!$f) continue;   // שדה של מישהו אחר — לא נוגעים, בשקט
-            $v = clean_value($f, $v);
+            $v = clean_value($f, $v, (int)$d['id']);
             $prev = $old[$key] ?? '';
             if ($v === $prev) continue;
             $up->execute([$d['id'], $key, seal($v), $actor, $now]);
@@ -399,3 +400,5 @@ function fill_asset(): never
     echo $bytes;
     exit;
 }
+
+require_once __DIR__ . '/attachments.php';

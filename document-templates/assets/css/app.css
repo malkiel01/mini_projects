@@ -278,3 +278,19 @@ tr.archived { opacity: .6; }
 .person-fields input, .link-box { font: inherit; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);
   background: var(--bg); color: var(--text); width: 100%; box-sizing: border-box; }
 .link-box { font-size: .8rem; }
+
+/* ── שלב 6: קבצים ומכסות ── */
+.file-ctl { display: grid; gap: 6px; }
+.file-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.danger-text { color: var(--bad); }
+.fill .file-btn { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.form-field .file-ctl { padding: 10px; border: 1px dashed var(--border); border-radius: 8px; background: var(--bg); }
+.meter { display: inline-block; width: 120px; height: 6px; border-radius: 3px; background: var(--border); vertical-align: middle; overflow: hidden; }
+.meter > span { display: block; height: 100%; background: var(--accent); }
+.meter > span.full { background: var(--bad); }
+.quota-form { display: grid; gap: 10px; }
+.quota-form label { display: grid; gap: 4px; }
+.quota-form label.inline { display: flex; }
+.quota-form input:not([type=checkbox]) { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--text); }
+.file-opts { display: grid; gap: 6px; }

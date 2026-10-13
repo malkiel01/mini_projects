@@ -258,7 +258,12 @@
       const ro = !canEdit(f);
       const common = { 'data-key': f.key, 'aria-label': f.label, disabled: ro };
       let n;
-      if (f.type === 'checkbox') {
+      if (f.type === 'file') {
+        n = onPage
+          ? el('button', { type: 'button', class: 'sig-btn file-btn', 'data-key': f.key, 'aria-label': f.label,
+              onclick: () => fileDialog(f) }, fileSummary(f))
+          : fileControl(f);
+      } else if (f.type === 'checkbox') {
         n = el('input', { type: 'checkbox', checked: v === '1', ...common });
         n.addEventListener('change', () => queue(f.key, n.checked ? '1' : ''));
       } else if (f.type === 'signature') {
@@ -284,6 +289,89 @@
       return n;
     }
 
+    // ── צירוף קבצים ──
+    const ACCEPT = { pdf: '.pdf,application/pdf', image: 'image/*', office: '.doc,.docx,.xls,.xlsx' };
+    const fileIds = (f) => { try { return JSON.parse(values[f.key] || '[]'); } catch (e) { return []; } };
+    const attById = (aid) => (doc.attachments || []).find(a => a.id === aid);
+    const kb = (n) => n > 1048576 ? (n / 1048576).toFixed(1) + 'MB' : Math.max(1, Math.round(n / 1024)) + 'KB';
+    function fileSummary(f) {
+      const n = fileIds(f).length;
+      return n ? `📎 ${n === 1 ? (attById(fileIds(f)[0])?.name || 'קובץ מצורף') : n + ' קבצים'}` : (canEdit(f) ? '📎 צירוף' : '—');
+    }
+
+    function fileControl(f) {
+      const ids = fileIds(f);
+      const editable = canEdit(f);
+      const status = el('span', { class: 'muted small' });
+      const pick = (capture) => {
+        const inp = el('input', { type: 'file', accept: capture ? 'image/*' : (f.accept || ['pdf', 'image']).map(k => ACCEPT[k]).join(','),
+          capture: capture ? 'environment' : null, hidden: true });
+        inp.addEventListener('change', async () => {
+          const files = [...inp.files].slice(0, f.multiple ? 10 : 1);
+          for (const file of files) {
+            status.textContent = 'מעלה ' + file.name + '…';
+            const fd = new FormData();
+            if (!fill) fd.append('id', id);
+            fd.append('field_key', f.key);
+            fd.append('file', file);
+            try {
+              const r = await api(fill ? 'fill_upload' : 'doc_upload', fd);
+              doc.attachments = [...(doc.attachments || []), r.attachment];
+              values[f.key] = r.value;
+              status.textContent = '';
+            } catch (e) {
+              status.textContent = '⚠ ' + e.message;
+              return;
+            }
+          }
+          await reload();
+          renderBody();
+        });
+        document.body.append(inp);
+        inp.click();
+        setTimeout(() => inp.remove(), 60000);
+      };
+      return el('div', { class: 'file-ctl', 'data-key': f.key },
+        ids.length ? el('ul', { class: 'file-list' }, ids.map(aid => {
+          const a = attById(aid);
+          return el('li', {},
+            a ? el('button', { type: 'button', class: 'link', onclick: () => downloadAtt(a) }, '📄 ' + a.name)
+              : el('span', { class: 'muted' }, '📄 קובץ מצורף (לא זמין לצפייה)'),
+            a ? el('span', { class: 'muted small' }, ' ' + kb(a.size)) : null,
+            editable ? el('button', { type: 'button', class: 'link small danger-text', title: 'הסרה',
+              onclick: () => { queue(f.key, JSON.stringify(ids.filter(x => x !== aid))); renderBody(); } }, ' ✕') : null);
+        })) : (editable ? null : el('span', { class: 'muted small' }, 'לא צורף קובץ')),
+        editable ? el('div', { class: 'ops' },
+          el('button', { type: 'button', class: 'small', onclick: () => pick(false) },
+            ids.length && !f.multiple ? '📎 החלפת קובץ' : '📎 צירוף קובץ'),
+          (f.accept || []).includes('image') ? el('button', { type: 'button', class: 'small', onclick: () => pick(true) }, '📷 צילום') : null,
+          el('span', { class: 'muted small' }, 'עד ' + (f.maxMb || 10) + 'MB')) : null,
+        status);
+    }
+
+    function fileDialog(f) {
+      const body_ = el('div');
+      const dlg = el('dialog', { class: 'sig-dialog' }, el('h2', {}, f.label), body_,
+        el('div', { class: 'ops' }, el('button', { onclick: () => dlg.close() }, 'סגירה')));
+      const draw = () => body_.replaceChildren(fileControl(f));
+      draw();
+      dlg.addEventListener('close', () => { dlg.remove(); renderBody(); });
+      document.body.append(dlg);
+      dlg.showModal();
+    }
+
+    async function downloadAtt(a) {
+      try {
+        const url = fill ? 'api.php?action=fill_file&att=' + a.id : `api.php?action=doc_file&id=${id}&att=${a.id}`;
+        const res = await fetch(url, { credentials: 'same-origin', headers: fill ? { 'X-Fill-Token': opts.token } : {} });
+        if (!res.ok) throw new Error('ההורדה נכשלה');
+        const link = el('a', { href: URL.createObjectURL(await res.blob()), download: a.name });
+        document.body.append(link); link.click(); link.remove();
+      } catch (e) {
+        msg.replaceChildren(notice(e.message, 'bad'));
+      }
+    }
+
     // "לא לאפשר להקליד מעבר לגודל": מודדים את הטקסט בגופן ובגודל של השדה.
     const measure = document.createElement('canvas').getContext('2d');
     function limit(f, input) {
@@ -297,10 +385,12 @@
 
     // ── תצוגה: על המסמך ──
     let pagesCache = null;
-    async function renderPage() {
+    async function renderPage(seq) {
       if (!pagesCache) {
         body.replaceChildren(el('p', { class: 'muted' }, 'טוען את המסמך…'));
         pagesCache = await window.DTEditor.renderBackground(src.asset[0], doc.mime, src.asset[1]);
+        // בזמן שהדפים נטענו, אולי עברו לטופס (או ציירו מחדש) — אז לא דורסים.
+        if (seq !== renderSeq) return;
       }
       const wrap = el('div', { class: 'pages filling' });
       pagesCache.forEach((pg, i) => {
@@ -329,17 +419,20 @@
           lastPage = f.page;
         }
         const c = control(f, false);
-        items.push(el('label', { class: 'form-field t-' + f.type, 'data-key': f.key },
+        // שדה עם כפתורים (קובץ, חתימה) — div: לחיצה על תווית הייתה מפעילה את הכפתור הראשון.
+        items.push(el(['file', 'signature'].includes(f.type) ? 'div' : 'label', { class: 'form-field t-' + f.type, 'data-key': f.key },
           el('span', {}, f.label, f.required ? el('b', { class: 'req', title: 'חובה' }, ' *') : null),
           c, f.help ? el('small', { class: 'muted' }, f.help) : null));
       }
       body.replaceChildren(el('div', { class: 'card fill-form' }, items));
     }
 
+    let renderSeq = 0;
     async function renderBody() {
       renderHeader();
+      const seq = ++renderSeq;
       try {
-        if (mode === 'page') await renderPage(); else renderForm();
+        if (mode === 'page') await renderPage(seq); else renderForm();
       } catch (e) {
         body.replaceChildren(notice(e.message, 'bad'));
       }
@@ -598,7 +691,7 @@
     const annex = [];
 
     for (const f of doc.schema.fields) {
-      const raw = values[f.key] ?? '';
+      let raw = values[f.key] ?? '';
       if (raw === '' || !pages[f.page]) continue;
       const page = pages[f.page];
       const { width: W, height: H } = page.getSize();
@@ -610,6 +703,13 @@
         page.drawLine({ start: { x: cx - s * 0.35, y: cy }, end: { x: cx - s * 0.08, y: cy - s * 0.3 }, thickness: Math.max(1, s / 8), color: ink });
         page.drawLine({ start: { x: cx - s * 0.08, y: cy - s * 0.3 }, end: { x: cx + s * 0.4, y: cy + s * 0.35 }, thickness: Math.max(1, s / 8), color: ink });
         continue;
+      }
+      if (f.type === 'file') {
+        let ids = [];
+        try { ids = JSON.parse(raw); } catch (e) { /* ריק */ }
+        if (!ids.length) continue;
+        const names = ids.map(aid => (doc.attachments || []).find(a => a.id === aid)?.name || 'קובץ');
+        raw = 'מצורף: ' + names.join(', ');
       }
       if (f.type === 'signature') {
         const png = await pdf.embedPng(raw);

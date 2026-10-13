@@ -26,7 +26,8 @@ const TPL_MIME = [
     'image/jpeg'      => 'image',
     'image/webp'      => 'image',
 ];
-const FIELD_TYPES = ['text', 'textarea', 'number', 'date', 'checkbox', 'signature'];
+const FIELD_TYPES = ['text', 'textarea', 'number', 'date', 'checkbox', 'signature', 'file'];
+const FILE_KINDS  = ['pdf', 'image', 'office'];
 const OVERFLOW    = ['shrink', 'annex', 'block'];
 
 function valid_tpl_name($n): string
@@ -83,7 +84,8 @@ function tpl_list(array $user): array
          WHERE t.owner_id = ? AND t.deleted_at IS NULL ORDER BY t.created_at DESC'
     );
     $st->execute([$user['id']]);
-    return ['ok' => true, 'templates' => array_map('tpl_summary', $st->fetchAll())];
+    return ['ok' => true, 'templates' => array_map('tpl_summary', $st->fetchAll()),
+        'usage' => function_exists('usage_view') ? usage_view((int)$user['id']) : null];
 }
 
 /** קובץ חדש → תבנית בגרסה 1, בלי שדות. מבנה הדפים נקבע בשמירה הראשונה מהדפדפן. */
@@ -105,6 +107,7 @@ function tpl_create(array $user, array $post, array $files): array
     $mime = (new finfo(FILEINFO_MIME_TYPE))->buffer($bytes);
     if (!isset(TPL_MIME[$mime])) throw new ApiError('סוג קובץ לא נתמך. PDF, PNG, JPG או WEBP', 415);
 
+    if (function_exists('assert_room')) assert_room((int)$user['id'], strlen($bytes));
     $path = store_file($bytes);
     $pdo = db();
     $pdo->beginTransaction();
@@ -206,6 +209,15 @@ function clean_schema($s): array
             'overflow' => in_array($f['overflow'] ?? '', OVERFLOW, true) ? $f['overflow'] : 'shrink',
             'role' => in_array($f['role'] ?? '', $roleKeys, true) ? $f['role'] : 'owner',
         ];
+        if ($type === 'file') {
+            // צירוף קובץ (שלב 6): אילו סוגים, גודל מרבי לקובץ, ואחד או כמה.
+            $kinds = array_values(array_intersect(FILE_KINDS, (array)($f['accept'] ?? [])));
+            $fields[count($fields) - 1] += [
+                'accept' => $kinds ?: ['pdf', 'image'],
+                'maxMb' => (int)$num($f['maxMb'] ?? 10, 1, 50),
+                'multiple' => !empty($f['multiple']),
+            ];
+        }
     }
     return ['pages' => $pages, 'fields' => $fields, 'roles' => $roles, 'sequential' => !empty($s['sequential'])];
 }
