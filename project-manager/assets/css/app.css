@@ -920,15 +920,24 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .fv .ficon.big { font-size: 3.5rem; padding: var(--s4); }
 .fv-img { display: block; inline-size: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; }
 .fv-img img { display: block; margin: 0 auto; max-inline-size: 100%; max-block-size: 62dvh; object-fit: contain; }
-.fv-pdf { display: block; background: #e9ecf1; padding: var(--s2) 0; }
-.pdf-pages { display: flex; gap: var(--s2); overflow-x: auto; scroll-snap-type: x mandatory; padding: 0 var(--s2); min-block-size: 200px; align-items: flex-start; }
-.pdf-page { flex: 0 0 calc(100% - var(--s4)); scroll-snap-align: center; display: block; background: #fff; box-shadow: 0 1px 4px rgb(0 0 0 / .18); border-radius: 4px; overflow: hidden; }
-.pdf-page canvas { display: block; inline-size: 100%; block-size: auto; }
-.pdf-pages:has(.pdf-page:only-child) .pdf-page { flex-basis: 100%; }
-.pdf-ph { display: block; margin: 0 auto; max-inline-size: 70%; opacity: .6; }
-.pdf-wait { align-self: center; margin: auto; color: var(--muted); font-size: .85rem; }
-.pdf-count { text-align: center; font-size: .8rem; color: var(--muted); margin-top: 6px; min-block-size: 1em; }
-.pdf-count:empty { display: none; }
+.fv-pdf { display: block; background: #e9ecf1; }
+/* צפייה ב-PDF: קנבס אחד, סרגל עמודים וזום (files.js — renderPdf) */
+.pdfv { display: flex; flex-direction: column; inline-size: 100%; max-inline-size: 100%; min-inline-size: 0; }
+.pdfv-bar { display: flex; align-items: center; gap: 2px; padding: 4px 6px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.pdfv-bar .icon-btn { min-inline-size: 36px; min-block-size: 36px; font-size: 1.1rem; }
+.pdfv-bar .icon-btn:disabled { opacity: .35; }
+.pv-page { font-size: .82rem; color: var(--muted); white-space: nowrap; padding: 0 4px; }
+.pv-sp { flex: 1; }
+.pv-zoom { min-inline-size: 52px; min-block-size: 32px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font: inherit; font-size: .8rem; color: inherit; cursor: pointer; }
+.pdfv-stage { direction: ltr; position: relative; inline-size: 100%; max-inline-size: 100%; min-inline-size: 0; box-sizing: border-box; overflow: auto; max-block-size: 62dvh; min-block-size: 220px; padding: 8px; touch-action: pan-x pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.pdfv-stage canvas { display: block; margin: 0 auto; background: #fff; box-shadow: 0 1px 4px rgb(0 0 0 / .2); }
+.pdfv-stage .pdf-ph { display: block; margin: 0 auto; max-inline-size: 70%; opacity: .6; }
+.pdfv-stage .pdf-wait { display: block; text-align: center; margin: var(--s3) 0; color: var(--muted); font-size: .85rem; }
+/* צביטה בחלון הקובץ לא מגדילה את כל האתר — רק את המסמך (בבמה, files.js) */
+#file-dlg { touch-action: pan-x pan-y; }
+.pdfv.full { position: fixed; inset: 0; z-index: 50; background: #e9ecf1; }
+.pdfv.full .pdfv-bar { padding-top: calc(4px + env(safe-area-inset-top)); }
+.pdfv.full .pdfv-stage { flex: 1; max-block-size: none; }
 .fv-bar { display: flex; align-items: center; gap: var(--s2); }
 .fv-bar .hint { flex: 1; margin: 0; min-inline-size: 0; }
 .fv-acts { display: flex; gap: 4px; flex: none; }
