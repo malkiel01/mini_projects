@@ -181,6 +181,7 @@ const FinanceAll = (() => {
 
     function upcoming() {
         const when = u => u.late ? t('באיחור · {date}', { date: shortDate(u.date) })
+            : u.due_kind === 'advance' ? t('מקדמה — בתחילת העבודה')
             : u.due_kind === 'stage_done' ? (u.due ? t('השלב בוצע — הגיע מועד') : t('בגמר השלב'))
             : u.due_kind === 'progress' ? (u.due ? t('ההתקדמות הגיעה — הגיע מועד') : t('בהתקדמות {n}%', { n: u.due_pct }))
             : t('עד {date}', { date: shortDate(u.date) });
