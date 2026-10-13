@@ -306,3 +306,15 @@ tr.archived { opacity: .6; }
 .share-add input, .share-row select, .share-add select { font: inherit; padding: 6px 8px; border-radius: 8px;
   border: 1px solid var(--border); background: var(--bg); color: var(--text); }
 .pages.readonly .field { cursor: pointer; }
+
+/* ── שלב 8: קטלוג ── */
+.chips { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-inline-start: 6px; vertical-align: middle; }
+.chip { font-size: .72rem; padding: 1px 8px; border-radius: 99px; background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent); white-space: nowrap; }
+.doc-meta { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin: -2px 0 10px; }
+.doc-meta select, .tags-input, .filters input[type=date] { font: inherit; padding: 6px 9px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+.tags-label { flex: 1; min-width: 220px; }
+.tags-input { flex: 1; min-width: 160px; }
+.quota-form textarea { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--text); }

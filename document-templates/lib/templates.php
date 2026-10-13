@@ -15,7 +15,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/sharing.php';
+require_once __DIR__ . '/contacts.php';
 
 const TPL_MAX_FILE_MB = 20;
 const TPL_MAX_SCHEMA  = 512 * 1024;
@@ -75,6 +75,7 @@ function tpl_summary(array $t, ?array $user = null): array
         'archived' => $t['archived_at'] !== null,
         'created_at' => $t['created_at'],
         'access' => $user ? access_level('template', (int)$t['id'], (int)$t['owner_id'], $user) : 'owner',
+        'tags' => tags_of($t['tags_enc']),
         'owner_name' => $user && (int)$t['owner_id'] !== (int)$user['id'] ? user_name((int)$t['owner_id']) : null,
     ];
 }
@@ -211,6 +212,9 @@ function clean_schema($s): array
             'align' => in_array($f['align'] ?? '', ['right', 'center', 'left'], true) ? $f['align'] : 'right',
             'overflow' => in_array($f['overflow'] ?? '', OVERFLOW, true) ? $f['overflow'] : 'shrink',
             'role' => in_array($f['role'] ?? '', $roleKeys, true) ? $f['role'] : 'owner',
+            // שלב 8: מתמלא מאיש הקשר שמקושר למסמך.
+            'contactField' => in_array($f['contactField'] ?? '', CONTACT_FIELDS, true) && $type !== 'file' && $type !== 'signature'
+                ? $f['contactField'] : '',
         ];
         if ($type === 'file') {
             // צירוף קובץ (שלב 6): אילו סוגים, גודל מרבי לקובץ, ואחד או כמה.
@@ -238,6 +242,10 @@ function tpl_save(array $user, array $b): array
             require_once __DIR__ . '/documents.php';
             $pdo->prepare('UPDATE templates SET numbering_json = ? WHERE id = ?')
                 ->execute([json_encode(clean_numbering($b['numbering']), JSON_UNESCAPED_UNICODE), $t['id']]);
+        }
+        if (array_key_exists('tags', $b)) {
+            $pdo->prepare('UPDATE templates SET tags_enc = ? WHERE id = ?')
+                ->execute([seal(json_encode(clean_tags($b['tags']), JSON_UNESCAPED_UNICODE)), $t['id']]);
         }
         if (array_key_exists('name', $b)) {
             $pdo->prepare('UPDATE templates SET name_enc = ? WHERE id = ?')->execute([seal(valid_tpl_name($b['name'])), $t['id']]);
