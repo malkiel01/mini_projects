@@ -34,7 +34,16 @@ const Projects = (() => {
 
         // שלבים, צוות, פרטים
         $('#add-stage').addEventListener('click', () => openStage(null));
+        $('#edit-stages').addEventListener('click', () => { stEdit = !stEdit; renderStages(); });
         $('#stage-list').addEventListener('click', e => {
+            const b = e.target.closest('[data-st-up],[data-st-down],[data-st-del],[data-st-add]');
+            if (b) {
+                e.stopPropagation();
+                if (b.dataset.stAdd !== undefined) openStage(null, Number(b.dataset.stAdd));
+                else if (b.dataset.stDel) deleteStage(Number(b.dataset.stDel));
+                else moveStage(b.dataset.stUp ? -1 : 1, Number(b.dataset.stUp || b.dataset.stDown));
+                return;
+            }
             const row = e.target.closest('[data-stage]');
             if (row) openStage(Number(row.dataset.stage));
         });
@@ -77,8 +86,8 @@ const Projects = (() => {
         // חלונות
         $('#project-dlg form').addEventListener('submit', e => { e.preventDefault(); createProject(); });
         $('#stage-dlg form').addEventListener('submit', e => { e.preventDefault(); saveStage(); });
-        $('#stage-dlg [data-delete]').addEventListener('click', deleteStage);
-        $$('#stage-dlg [data-move]').forEach(b => b.addEventListener('click', () => moveStage(Number(b.dataset.move))));
+        $('#stage-dlg [data-delete]').addEventListener('click', () => deleteStage(stageId));
+        $$('#stage-dlg [data-move]').forEach(b => b.addEventListener('click', () => moveStage(Number(b.dataset.move), stageId)));
         $('#member-dlg form').addEventListener('submit', e => { e.preventDefault(); addMember(); });
         document.addEventListener('change', e => {
             if (e.target.matches('[data-project-fields] [name=client_id]') && e.target.value === '__new') newClient(e.target);
@@ -339,7 +348,12 @@ const Projects = (() => {
         $('#progress').setAttribute('aria-valuemax', '100');
         $('#progress').setAttribute('aria-label', t('{done} מתוך {n} שלבים בוצעו', { done, n: s.length }));
         $('#progress-text').textContent = s.length ? t('{done}/{n} בוצעו', { done, n: s.length }) : '';
-        $('#stage-list').innerHTML = s.map((x, i) => {
+        const ed = stEdit && s.length > 0;
+        $('#edit-stages').setAttribute('aria-pressed', String(ed));
+        $('#edit-stages').classList.toggle('on', ed);
+        $('#pane-stages').classList.toggle('st-editing', ed);
+        const addHere = after => ed ? `<li class="st-add"><button class="btn ghost small" data-st-add="${after}">${esc(t('+ שלב כאן'))}</button></li>` : '';
+        $('#stage-list').innerHTML = s.length ? addHere(0) + s.map((x, i) => {
             const l2 = [
                 x.trade_name ? esc(t(x.trade_name)) : '',
                 x.supplier_name ? esc(x.supplier_name) : `<span class="muted">${esc(t('אין ספק'))}</span>`,
@@ -347,17 +361,38 @@ const Projects = (() => {
                 x.needs_lawyer ? esc(t('עורך דין')) : '',
                 x.status === 'in_progress' && x.progress ? esc(t('{n}% בוצע', { n: x.progress })) : '',
             ].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>');
-            return `<li class="card" data-stage="${x.id}" tabindex="0" role="button" aria-label="${esc(t(x.name))}, ${esc(state.labels.stage[x.status])}">
+            const miss = stageMissing(x);
+            const name = esc(t(x.name));
+            const acts = ed ? `<div class="acts st-acts">
+                <button class="icon-btn" data-st-up="${x.id}" ${i ? '' : 'disabled'} aria-label="${esc(t('להזיז למעלה: {name}', { name: t(x.name) }))}">↑</button>
+                <button class="icon-btn" data-st-down="${x.id}" ${i < s.length - 1 ? '' : 'disabled'} aria-label="${esc(t('להזיז למטה: {name}', { name: t(x.name) }))}">↓</button>
+                <button class="icon-btn danger" data-st-del="${x.id}" ${x.quotes ? `title="${esc(t('יש בשלב הצעות מחיר — אי אפשר למחוק'))}" disabled` : ''} aria-label="${esc(t('מחיקת השלב {name}', { name: t(x.name) }))}">🗑</button>
+            </div>` : stageChip(x.status);
+            return `<li class="card" data-stage="${x.id}" tabindex="0" role="button" aria-label="${name}, ${esc(state.labels.stage[x.status])}">
                 <span class="num st-${esc(x.status)}" aria-hidden="true">${i + 1}</span>
-                <div class="body"><div class="l1">${esc(t(x.name))}</div><div class="l2">${l2}</div></div>
-                ${stageChip(x.status)}
-            </li>`;
-        }).join('') || `<p class="empty">${esc(t('אין שלבים. לחץ "+ שלב" כדי להוסיף.'))}</p>`;
+                <div class="body"><div class="l1">${name}</div><div class="l2">${l2}</div>${miss.length ? `<div class="l2 st-miss">${esc(t('חסר: {list}', { list: miss.join(t(', ')) }))}</div>` : ''}</div>
+                ${acts}
+            </li>` + addHere(x.id);
+        }).join('') : `<p class="empty">${esc(t('אין שלבים. לחץ "+ שלב" כדי להוסיף.'))}</p>`;
     }
 
-    let stageId = null;
+    let stEdit = false;
 
-    async function openStage(id) {
+    /** מה עוד לא מולא בשלב — רק בשלבים שעוד לא בוצעו. */
+    function stageMissing(x) {
+        if (['done', 'paid'].includes(x.status)) return [];
+        const m = [];
+        if (!x.trade_id) m.push(t('תחום'));
+        if (!x.supplier_id) m.push(x.quotes ? t('בחירת ספק') : t('ספק או הצעת מחיר'));
+        if (!x.plan_start && !x.plan_end) m.push(t('תאריכים'));
+        if (!x.budget) m.push(t('תקציב'));
+        return m;
+    }
+
+    let stageId = null, stageAfter = null;
+
+    async function openStage(id, after = null) {
+        stageAfter = id ? null : after;
         const dlg = $('#stage-dlg');
         const form = $('form', dlg);
         formError(form, '');
@@ -409,6 +444,7 @@ const Projects = (() => {
         const el = form.elements;
         const body = {
             id: stageId || undefined, project_id: cur.project.id, name: el.name.value.trim(),
+            after: stageId || stageAfter === null ? undefined : stageAfter,
             trade_id: Number(el.trade_id.value) || null, supplier_id: Number(el.supplier_id.value) || null,
             status: el.status.value, needs_lawyer: el.needs_lawyer.checked,
             plan_start: el.plan_start.value, plan_end: el.plan_end.value,
@@ -433,23 +469,27 @@ const Projects = (() => {
         });
     }
 
-    async function moveStage(dir) {
+    async function moveStage(dir, id) {
         const ids = cur.stages.map(s => s.id);
-        const i = ids.indexOf(stageId), j = i + dir;
+        const i = ids.indexOf(id), j = i + dir;
         if (i < 0 || j < 0 || j >= ids.length) return;
         [ids[i], ids[j]] = [ids[j], ids[i]];
-        await busy(null, $('#stage-dlg form'), async () => {
+        const dlg = $('#stage-dlg').open;
+        await busy(null, dlg ? $('#stage-dlg form') : null, async () => {
             update(await api('stages-order', { body: { project_id: cur.project.id, ids } }));
             toast(dir < 0 ? t('הוזז למעלה') : t('הוזז למטה'));
+            if (!dlg) $(`#stage-list [data-st-${dir < 0 ? 'up' : 'down'}="${id}"]`)?.focus();
         });
     }
 
-    async function deleteStage() {
-        const s = cur.stages.find(x => x.id === stageId);
-        if (!s || !confirm(t('למחוק את השלב "{name}"?', { name: s.name }))) return;
-        await busy(null, $('#stage-dlg form'), async () => {
+    async function deleteStage(id) {
+        const s = cur.stages.find(x => x.id === id);
+        if (!s || !confirm(t('למחוק את השלב "{name}"?', { name: t(s.name) }))) return;
+        const dlg = $('#stage-dlg').open;
+        await busy(null, dlg ? $('#stage-dlg form') : null, async () => {
             update(await api('stage-delete', { body: { id: s.id } }));
-            $('#stage-dlg').close();
+            if (dlg) $('#stage-dlg').close();
+            toast(t('השלב נמחק'));
         });
     }
 

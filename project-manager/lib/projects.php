@@ -142,7 +142,8 @@ function pm_project_get(array $user, int $id): array
     $db = pm_db();
 
     $st = $db->prepare(
-        'SELECT s.*, t.name AS trade_name, c.name AS supplier_name, c.phone AS supplier_phone
+        'SELECT s.*, t.name AS trade_name, c.name AS supplier_name, c.phone AS supplier_phone,
+                (SELECT COUNT(*) FROM quotes q WHERE q.stage_id = s.id) AS quotes
            FROM stages s LEFT JOIN trades t ON t.id = s.trade_id LEFT JOIN contacts c ON c.id = s.supplier_id
           WHERE s.project_id = ? ORDER BY s.sort, s.id'
     );
@@ -154,7 +155,7 @@ function pm_project_get(array $user, int $id): array
         'supplier_name' => $s['supplier_name'], 'supplier_phone' => $s['supplier_phone'],
         'status' => $s['status'], 'needs_lawyer' => (bool)$s['needs_lawyer'],
         'plan_start' => $s['plan_start'], 'plan_end' => $s['plan_end'], 'done_at' => $s['done_at'],
-        'progress' => pm_stage_progress($s), 'budget' => (int)$s['budget'] / 100,
+        'progress' => pm_stage_progress($s), 'budget' => (int)$s['budget'] / 100, 'quotes' => (int)$s['quotes'],
     ], $st->fetchAll());
 
     $ev = $db->prepare('SELECT id, at, actor_id, actor_name, kind, text, data_json FROM events WHERE project_id = ? ORDER BY id DESC LIMIT 300');
@@ -362,7 +363,10 @@ function pm_stage_save(array $user, array $in): array
             $qs = implode(', ', array_fill(0, count($f), '?'));
             $db->prepare("INSERT INTO stages (project_id, sort, $cols, done_at, created_at, updated_at) VALUES (?, ?, $qs, ?, ?, ?)")
                ->execute(array_merge([$projectId, $sort], array_values($f), [$doneAt, $now, $now]));
-            pm_event($user, $projectId, 'stage_added', 'נוסף שלב: {stage}', ['stage' => (int)$db->lastInsertId()], ['stage' => $f['name']]);
+            $newId = (int)$db->lastInsertId();
+            // "+ שלב כאן" במצב עריכה: after = מזהה השלב שלפניו (0 — בראש הרשימה)
+            if (array_key_exists('after', $in) && $in['after'] !== null && $in['after'] !== '') pm_stage_place($projectId, $newId, (int)$in['after']);
+            pm_event($user, $projectId, 'stage_added', 'נוסף שלב: {stage}', ['stage' => $newId], ['stage' => $f['name']]);
         }
         $surveyAdded = pm_project_survey_first($user, $projectId);
         $db->commit();
@@ -371,6 +375,20 @@ function pm_stage_save(array $user, array $in): array
         throw $e;
     }
     return pm_project_get($user, $projectId) + ($surveyAdded ? ['notice' => pm_t('מודד מוסמך תמיד לפני אדריכלות — שלב המדידה סודר לפני האדריכלות')] : []);
+}
+
+/** שלב חדש — אחרי שלב נתון (0 = ראשון); מספור מחדש של הסדר. */
+function pm_stage_place(int $projectId, int $id, int $after): void
+{
+    $db = pm_db();
+    $st = $db->prepare('SELECT id FROM stages WHERE project_id = ? AND id != ? ORDER BY sort, id');
+    $st->execute([$projectId, $id]);
+    $ids = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+    $at = $after ? array_search($after, $ids, true) : -1;
+    if ($at === false) throw new PmError('השלב לא נמצא', 404);
+    array_splice($ids, $at + 1, 0, [$id]);
+    $up = $db->prepare('UPDATE stages SET sort = ? WHERE id = ?');
+    foreach ($ids as $i => $sid) $up->execute([($i + 1) * 10, $sid]);
 }
 
 /** תקציב לשלב — ₪ מהטופס, באגורות במסד. בלי שדה — נשאר מה שהיה. */

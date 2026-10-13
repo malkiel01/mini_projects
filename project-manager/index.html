@@ -2,12 +2,12 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="assets/js/i18n.js?v=33"></script>
+    <script src="assets/js/i18n.js?v=34"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=33">
+    <link rel="stylesheet" href="assets/css/app.css?v=34">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -133,8 +133,19 @@
                 <div class="progress-row">
                     <div class="progress" role="progressbar" id="progress" aria-valuemin="0"><span></span></div>
                     <small id="progress-text"></small>
+                    <button class="btn ghost" id="edit-stages" aria-pressed="false">✏️<span class="add-label"> עריכת שלבים</span></button>
                     <button class="btn primary" id="add-stage"><span aria-hidden="true">+</span><span class="add-label">שלב</span></button>
                 </div>
+                <details class="stages-help" id="stages-help">
+                    <summary>מה זה המסך הזה?</summary>
+                    <p>אלה שלבי העבודה של הפרויקט, לפי סדר הביצוע. כל שלב הוא עבודה אחת — בדרך כלל של בעל מקצוע אחד.</p>
+                    <ul>
+                        <li>בתוך שלב (לחיצה עליו): התחום, הספק שמבצע, תאריכים מתוכננים, תקציב, ואחוז התקדמות.</li>
+                        <li>הצעות מחיר נאספות לפי שלב, תשלומים נקשרים לגמר שלב, ואבני הדרך בחוזה הן קבוצות של שלבים.</li>
+                        <li>"חסר:" מתחת לשלב — מה עוד לא מולא בו. אפשר להשלים בהדרגה.</li>
+                        <li>✏️ עריכת שלבים — לשנות סדר (↑↓), למחוק שלב שלא צריך (🗑), ולהוסיף שלב בכל מקום ("+ שלב כאן"). אפשר לפצל תחום לשניים, למשל "חשמל — תשתית" ו"חשמל — גמר".</li>
+                    </ul>
+                </details>
                 <ul id="stage-list" class="list rows-list"></ul>
             </div>
 
@@ -1210,23 +1221,23 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=33"></script>
-    <script src="assets/js/contacts.js?v=33"></script>
-    <script src="assets/js/device-contacts.js?v=33"></script>
-    <script src="assets/js/files.js?v=33"></script>
-    <script src="assets/js/lightbox.js?v=33"></script>
-    <script src="assets/js/field.js?v=33"></script>
+    <script src="assets/js/core.js?v=34"></script>
+    <script src="assets/js/contacts.js?v=34"></script>
+    <script src="assets/js/device-contacts.js?v=34"></script>
+    <script src="assets/js/files.js?v=34"></script>
+    <script src="assets/js/lightbox.js?v=34"></script>
+    <script src="assets/js/field.js?v=34"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=33"></script>
-    <script src="assets/js/projects.js?v=33"></script>
-    <script src="assets/js/quotes.js?v=33"></script>
-    <script src="assets/js/payments.js?v=33"></script>
-    <script src="assets/js/fin-report.js?v=33"></script>
-    <script src="assets/js/finance.js?v=33"></script>
-    <script src="assets/js/finance-all.js?v=33"></script>
-    <script src="assets/js/hebcal.js?v=33"></script>
-    <script src="assets/js/calendar.js?v=33"></script>
-    <script src="assets/js/settings.js?v=33"></script>
-    <script src="assets/js/app.js?v=33"></script>
+    <script src="assets/js/share.js?v=34"></script>
+    <script src="assets/js/projects.js?v=34"></script>
+    <script src="assets/js/quotes.js?v=34"></script>
+    <script src="assets/js/payments.js?v=34"></script>
+    <script src="assets/js/fin-report.js?v=34"></script>
+    <script src="assets/js/finance.js?v=34"></script>
+    <script src="assets/js/finance-all.js?v=34"></script>
+    <script src="assets/js/hebcal.js?v=34"></script>
+    <script src="assets/js/calendar.js?v=34"></script>
+    <script src="assets/js/settings.js?v=34"></script>
+    <script src="assets/js/app.js?v=34"></script>
 </body>
 </html>
