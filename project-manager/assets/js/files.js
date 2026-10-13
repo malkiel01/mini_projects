@@ -70,6 +70,8 @@ const Files = (() => {
         pane.addEventListener('drop', e => { e.preventDefault(); $('#drop-hint').hidden = true; upload([...e.dataTransfer.files]); });
 
         $('#file-dlg form').addEventListener('submit', e => { e.preventDefault(); saveFile(); });
+        // סגירה: עוצרים ציור של עמודים וסרטון שרץ
+        $('#file-dlg').addEventListener('close', () => { previewToken++; $('#file-preview').innerHTML = ''; });
         $('#add-link').addEventListener('click', addLink);
         $('#file-links').addEventListener('click', e => { const b = e.target.closest('[data-unlink]'); if (b) unlink(Number(b.dataset.unlink)); });
         $('#file-delete').addEventListener('click', deleteFile);
@@ -235,7 +237,8 @@ const Files = (() => {
      * onProgress(pct, {sent, total, speed (בתים לשנייה), left (שניות), retry}).
      */
     async function send(file, projectId, folder, onProgress = () => {}, finish = {}) {
-        const thumb = await makeThumb(file).catch(() => '');
+        // התמונה הממוזערת (גם עמוד ראשון של PDF) — במקביל להעלאה, לא לפניה
+        const thumbP = makeThumb(file).catch(() => '');
         const { upload_id, chunk_size } = await api('upload-start', { body: {
             project_id: projectId, folder_id: folder, name: file.name, size: file.size, mime: file.type } });
         let offset = 0, tries = 0;
@@ -263,7 +266,7 @@ const Files = (() => {
                     await new Promise(r => setTimeout(r, wait * 1000));
                 }
             }
-            return await api('upload-finish', { body: { upload_id, thumb, type: guessType(file), ...finish } });
+            return await api('upload-finish', { body: { upload_id, thumb: await thumbP, type: guessType(file), ...finish } });
         } finally { active--; }
     }
 
@@ -321,6 +324,11 @@ const Files = (() => {
             const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
             return draw(bmp, bmp.width, bmp.height);
         }
+        if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+            // העמוד הראשון — בדפדפן (pdf.js), כדי שברשימה יופיע המסמך עצמו ולא אייקון
+            const doc = await Promise.race([pdfDoc(await file.arrayBuffer()), new Promise((_, bad) => setTimeout(() => bad(new Error('timeout')), 10000))]);
+            return shrink(await drawPage(await doc.getPage(1), 320));
+        }
         if (file.type.startsWith('video/')) {
             const url = URL.createObjectURL(file);
             try {
@@ -345,10 +353,8 @@ const Files = (() => {
         formError(form, '');
         $('#file-dlg-title').textContent = f.name;
         const url = fileUrl(f.id);
-        $('#file-preview').innerHTML = f.mime.startsWith('image/') ? `<img src="${url}" alt="${esc(f.name)}">`
-            : f.mime.startsWith('video/') ? `<video src="${url}" controls preload="metadata" playsinline></video>`
-            : f.mime === 'application/pdf' ? `<a class="btn ghost" href="${url}" target="_blank" rel="noopener">${esc(t('פתיחת ה-PDF'))}</a>`
-            : `<span class="ficon big" aria-hidden="true">${TYPE_ICON[f.type] || '📄'}</span>`;
+        preview(f);
+        $('#file-open').href = url;
         $('#file-meta').textContent = [fmtSize(f.size), t('הועלה {date}', { date: new Date(f.created_at).toLocaleString(I18n.locale(), { dateStyle: 'short', timeStyle: 'short' }) }),
             f.uploader ? t('על ידי {name}', { name: f.uploader }) : ''].filter(Boolean).join(' · ');
         el.name.value = f.name;
@@ -362,6 +368,96 @@ const Files = (() => {
         $('#file-download').href = fileUrl(f.id, '&download=1');
         renderUses();
         dlg.showModal();
+    }
+
+    // ================= תצוגה: תמונה, סרטון, עמודי PDF =================
+
+    let pdfLib = null, previewToken = 0;
+    /** pdf.js (assets/vendor/pdfjs) — נטען רק כשצריך: בחלון של PDF, ובהעלאת PDF (תמונה ממוזערת). */
+    function pdfjs() {
+        return pdfLib ||= new Promise((ok, bad) => {
+            const sc = document.createElement('script');
+            sc.src = 'assets/vendor/pdfjs/pdf.min.js?v=3.11.174';
+            sc.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'assets/vendor/pdfjs/pdf.worker.min.js?v=3.11.174'; ok(window.pdfjsLib); };
+            sc.onerror = () => { pdfLib = null; bad(new Error('pdf.js')); };
+            document.head.appendChild(sc);
+        });
+    }
+
+    async function pdfDoc(src) {
+        const lib = await pdfjs();
+        return lib.getDocument(src instanceof ArrayBuffer ? { data: src } : { url: src, withCredentials: true }).promise;
+    }
+
+    /** עמוד לקנבס ברוחב width (פיקסלים של CSS), חד גם במסך צפוף. */
+    async function drawPage(page, width) {
+        const base = page.getViewport({ scale: 1 }), dpr = Math.min(2, window.devicePixelRatio || 1);
+        const vp = page.getViewport({ scale: (width / base.width) * dpr });
+        const c = document.createElement('canvas');
+        c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+        await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+        return c;
+    }
+
+    function preview(f) {
+        const box = $('#file-preview'), url = fileUrl(f.id), token = ++previewToken;
+        box.className = 'fv';
+        if (f.mime.startsWith('image/')) {
+            box.innerHTML = `<button type="button" class="fv-img" aria-label="${esc(t('תצוגה במסך מלא'))}"><img src="${url}" alt="${esc(f.name)}"></button>`;
+            $('.fv-img', box).addEventListener('click', () => Lightbox.open([{ id: f.id, name: f.name }], 0, id => fileUrl(id)));
+        } else if (f.mime.startsWith('video/')) {
+            box.innerHTML = `<video src="${url}" controls preload="metadata" playsinline></video>`;
+        } else if (f.mime === 'application/pdf') {
+            box.classList.add('fv-pdf');
+            box.innerHTML = `<div class="pdf-pages" id="pdf-pages" tabindex="0" aria-label="${esc(t('עמודי המסמך'))}">${f.has_thumb ? `<img class="pdf-ph" src="${fileUrl(f.id, '&thumb=1')}" alt="">` : ''}<span class="pdf-wait">${esc(t('טוען את המסמך…'))}</span></div>
+                <div class="pdf-count" id="pdf-count" aria-live="polite"></div>`;
+            renderPdf(f, token).catch(() => {
+                if (token !== previewToken) return;
+                box.innerHTML = `<a class="btn ghost" href="${url}" target="_blank" rel="noopener">📄 ${esc(t('פתיחת ה-PDF'))}</a>`;
+            });
+        } else {
+            box.innerHTML = `<span class="ficon big" aria-hidden="true">${TYPE_ICON[f.type] || '📄'}</span>`;
+        }
+    }
+
+    /** כל העמודים בשורה שגוללים בה (עמוד 1 מתוך N); לחיצה על עמוד — ה-PDF בלשונית. עד 30 עמודים. */
+    async function renderPdf(f, token) {
+        const doc = await pdfDoc(fileUrl(f.id));
+        if (token !== previewToken) return;
+        const strip = $('#pdf-pages'), n = doc.numPages, width = Math.min(strip.clientWidth || 340, 700);
+        const pages = [];
+        for (let i = 1; i <= Math.min(n, 30); i++) {
+            const c = await drawPage(await doc.getPage(i), width);
+            if (token !== previewToken) return;
+            if (i === 1) {
+                strip.innerHTML = '';
+                // PDF בלי תמונה ממוזערת (הועלה לפני שהיה ציור בדפדפן) — שולחים עכשיו, כדי שיופיע ברשימה
+                if (!f.has_thumb) api('file-thumb', { body: { id: f.id, thumb: shrink(c) } }).catch(() => {});
+            }
+            const a = document.createElement('a');
+            a.className = 'pdf-page'; a.href = fileUrl(f.id); a.target = '_blank'; a.rel = 'noopener';
+            a.setAttribute('aria-label', t('עמוד {i} מתוך {n}', { i, n }));
+            a.appendChild(c);
+            strip.appendChild(a);
+            pages.push(a);
+            if (i === 1) count(1);
+        }
+        function count(i) { $('#pdf-count').textContent = n > 1 ? t('עמוד {i} מתוך {n}', { i, n }) + (n > 30 ? ' · ' + t('מוצגים 30 הראשונים') : '') : ''; }
+        strip.addEventListener('scroll', () => {
+            const mid = strip.getBoundingClientRect().left + strip.clientWidth / 2;
+            const i = pages.findIndex(p => { const r = p.getBoundingClientRect(); return r.left <= mid && r.right >= mid; });
+            if (i >= 0) count(i + 1);
+        }, { passive: true });
+    }
+
+    /** קנבס → תמונה ממוזערת (320px, JPEG) לרשימת הקבצים. */
+    function shrink(c) {
+        const k = Math.min(1, 320 / Math.max(c.width, c.height)), o = document.createElement('canvas');
+        o.width = Math.round(c.width * k); o.height = Math.round(c.height * k);
+        const g = o.getContext('2d');
+        g.fillStyle = '#fff'; g.fillRect(0, 0, o.width, o.height);
+        g.drawImage(c, 0, 0, o.width, o.height);
+        return o.toDataURL('image/jpeg', 0.75);
     }
 
     // ================= שימוש במערכת ושיוך =================

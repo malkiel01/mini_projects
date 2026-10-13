@@ -154,6 +154,7 @@ try {
         'POST upload-chunk'  => pm_upload_chunk($user, (string)($_GET['id'] ?? ''), (int)($_GET['offset'] ?? -1)),
         'POST upload-finish' => pm_upload_finish($user, $in),
         'POST file-update' => pm_file_update($user, $in),
+        'POST file-thumb'  => pm_file_thumb($user, (int)($in['id'] ?? 0), (string)($in['thumb'] ?? '')),
         'POST file-move'   => pm_file_move($user, (int)($in['id'] ?? 0), (int)($in['folder_id'] ?? 0)),
         'POST file-link'   => pm_file_link($user, (int)($in['id'] ?? 0), (int)($in['folder_id'] ?? 0), !empty($in['add'])),
         'POST file-delete' => pm_file_delete($user, (int)($in['id'] ?? 0)),
