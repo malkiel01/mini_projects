@@ -17,6 +17,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/payments.php';
+require_once __DIR__ . '/changes.php';
 
 const PM_FEE_TYPES = ['', 'percent', 'fixed'];
 const PM_DUE_KINDS = ['date', 'stage_done', 'progress'];
@@ -62,10 +63,11 @@ function pm_acc_out(array $acc, array $keys): array
 }
 
 /** אבן דרך שהגיע מועדה — תאריך שעבר, שלב שבוצע, או התקדמות שהגיעה לאחוז. */
-function pm_payment_due(array $p, ?array $stage, string $today): bool
+function pm_payment_due(array $p, ?array $stage, string $today, string $projectStatus = ''): bool
 {
     $done = $stage && in_array($stage['status'], ['done', 'paid'], true);
     return match ($p['due_kind'] ?? 'date') {
+        'handover'   => $projectStatus === 'done', // שחרור העיכבון — במסירת הפרויקט
         'stage_done' => $done,
         'progress'   => $done || ($stage && (int)$stage['progress'] >= (int)($p['due_pct'] ?? 101)),
         default      => $p['due_date'] !== '' && $p['due_date'] <= $today,
@@ -144,6 +146,19 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
         $rows[$sid][$cid]['quote_id'] = (int)$x['id'];
         $rows[$sid][$cid]['rate'] = $r;
     }
+    // תוספות וחריגות (כ4): שאושרו — נכנסות להתחייבות; כולן — מוצגות בשורה
+    $co = $db->prepare("SELECT * FROM change_orders WHERE project_id = ? AND status != 'cancelled' ORDER BY id");
+    $co->execute([$projectId]);
+    foreach ($co->fetchAll() as $x) {
+        $sid = (int)$x['stage_id'];
+        $cid = (int)$x['supplier_id'];
+        $row($sid, $cid);
+        $r = $rateOf($cid, $x['vat_rate']);
+        $rows[$sid][$cid]['rate'] ??= $r;
+        if ($x['status'] === 'approved') pm_acc($rows[$sid][$cid]['acc'], 'committed', (int)$x['amount'], $r);
+        $rows[$sid][$cid]['changes'][] = ['id' => (int)$x['id'], 'amount' => (int)$x['amount'] / 100, 'reason' => $x['reason'], 'status' => $x['status'],
+            'days' => pm_days_since($x['updated_at'])];
+    }
 
     // מתוכנן / הגיע מועד / שולם — מאבני הדרך
     $pay = $db->prepare("SELECT * FROM payments WHERE project_id = ? AND status != 'cancelled'");
@@ -151,24 +166,29 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
     $payments = $pay->fetchAll();
     $proofs = pm_payment_proofs(array_map('intval', array_column($payments, 'id')));
     $next = null;
+    $retHeld = [0, 0];
     foreach ($payments as $x) {
         $sid = (int)$x['stage_id'];
         $cid = (int)$x['supplier_id'];
         $row($sid, $cid);
         $r = $rateOf($cid, $x['vat_rate']);
         $rows[$sid][$cid]['rate'] ??= $r;
-        $amount = (int)$x['amount'];
+        // מה משלמים באבן הדרך: בלי העיכבון (הוא בשחרור), ועם הפרשי ההצמדה
+        $amount = pm_payment_due_amount($x);
         $received = 0;
         foreach ($proofs[(int)$x['id']] ?? [] as $pf) if ($pf['status'] === 'received') $received += (int)round($pf['received_amount'] * 100);
         $a = &$rows[$sid][$cid]['acc'];
         pm_acc($a, 'scheduled', $amount, $r);
         pm_acc($a, 'paid', $received, $r);
-        if (pm_payment_due($x, $stages[$sid] ?? null, $today)) pm_acc($a, 'due', $amount, $r);
+        if ((int)$x['index_diff']) pm_acc($a, 'index', (int)$x['index_diff'], $r);
+        if (pm_payment_due($x, $stages[$sid] ?? null, $today, $p['status'])) pm_acc($a, 'due', $amount, $r);
         unset($a);
+        if ($x['kind'] === 'retention') { $retHeld[0] += max(0, $amount - $received); $retHeld[1] += pm_net(max(0, $amount - $received), $r); }
         $rows[$sid][$cid]['milestones']++;
         // התשלום הבא — לפורטל: הקרוב שעוד לא שולם במלואו
         if ($received < $amount && !in_array($x['status'], ['received'], true)) {
-            $key = ($x['due_kind'] === 'date' && $x['due_date'] !== '' ? $x['due_date'] : '9999') . sprintf('%08d', $x['id']);
+            // שחרור העיכבון — אחרון, עד שהפרויקט נמסר
+            $key = ($x['due_kind'] === 'date' && $x['due_date'] !== '' ? $x['due_date'] : ($x['due_kind'] === 'handover' && $p['status'] !== 'done' ? 'Z' : '9999')) . sprintf('%08d', $x['id']);
             if (!$next || $key < $next['key']) {
                 $next = ['key' => $key, 'title' => $x['title'], 'supplier' => $sup[$cid]['name'] ?? '', 'amount' => pm_m($amount - $received, pm_net($amount - $received, $r)),
                     'due_kind' => $x['due_kind'], 'due_date' => $x['due_date'], 'due_pct' => $x['due_pct'] !== null ? (int)$x['due_pct'] : null,
@@ -188,6 +208,8 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
         $outRows = [];
         foreach ($rows[$sid] ?? [] as $cid => $r) {
             $acc = $r['acc'];
+            // הפרשי הצמדה — מגדילים את ההתחייבות
+            if (!empty($acc['index'])) foreach ([0, 1] as $i) $acc['committed'][$i] = ($acc['committed'][$i] ?? 0) + $acc['index'][$i];
             $committed = $acc['committed'][0] ?? 0;
             $scheduled = $acc['scheduled'][0] ?? 0;
             $paid = $acc['paid'][0] ?? 0;
@@ -204,6 +226,7 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
             if ($committed > 0 && abs($scheduled - $committed) > 100) $flags[] = $scheduled < $committed ? 'uncovered' : 'overscheduled';
             if ($committed === 0 && $scheduled > 0) $flags[] = 'no_quote';
             foreach (['committed' => $committed, 'scheduled' => $scheduled, 'due' => $due, 'paid' => $paid] as $k => $v) pm_acc($S, $k, $v, $rate);
+            if (!empty($acc['index'])) foreach ([0, 1] as $i) $S['index'][$i] = ($S['index'][$i] ?? 0) + $acc['index'][$i];
             pm_acc($S, 'balance', $balance, $rate);
             pm_acc($S, 'gap', $gap, $rate);
             if ($committed) { $suppliersCommitted[0] += $committed; $suppliersCommitted[1] += pm_net($committed, $rate); }
@@ -213,6 +236,7 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
                 'due' => pm_m($due, pm_net($due, $rate)), 'paid' => pm_m($paid, pm_net($paid, $rate)),
                 'balance' => pm_m($balance, pm_net($balance, $rate)), 'gap' => pm_m($gap, pm_net($gap, $rate)),
                 'paid_pct' => $paidPct, 'progress' => $progress, 'flags' => $portal ? array_values(array_intersect($flags, ['overpaid'])) : $flags,
+                'changes' => $r['changes'] ?? [], 'index' => pm_m($acc['index'][0] ?? 0, $acc['index'][1] ?? 0),
             ];
         }
         $committedStage = $S['committed'][0] ?? 0;
@@ -247,14 +271,17 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
     $committedAll = $T['committed'][0] ?? 0;
     // "תקציב היום": התקציב שהמנהל עדכן — או ההתחייבויות, כשעברו אותו
     $todayBudget = max($budget, $committedAll);
-    $retention = (int)round(($suppliersCommitted[0]) * (float)$p['retention_pct'] / 100);
+    // עיכבון: מה שנעצר בפועל (שחרורים שעוד לא שולמו); בלי אבני דרך — הערכה לפי האחוז
+    $retention = $retHeld[0] ?: (int)round(($suppliersCommitted[0]) * (float)$p['retention_pct'] / 100);
     $totals = pm_acc_out($T, ['committed', 'scheduled', 'due', 'paid', 'balance', 'gap']) + [
         'budget' => pm_m($budget, pm_net($budget, $vat)),
         'budget_initial' => pm_m($initial, pm_net($initial, $vat)),
         'budget_today' => pm_m($todayBudget, pm_net($todayBudget, $vat)),
         'budget_growth' => pm_m($todayBudget - $initial, pm_net($todayBudget - $initial, $vat)),
         'forecast' => pm_m($forecast[0], $forecast[1]),
-        'retention' => pm_m($retention, pm_net($retention, $vat)),
+        'retention' => $retHeld[0] ? pm_m($retHeld[0], $retHeld[1]) : pm_m($retention, pm_net($retention, $vat)),
+        'retention_held' => (bool)$retHeld[0],
+        'index' => pm_m($T['index'][0] ?? 0, $T['index'][1] ?? 0),
         'paid_pct' => $committedAll > 0 ? (int)round(($T['paid'][0] ?? 0) * 100 / $committedAll) : 0,
         'progress' => pm_project_progress($stages),
         'over_budget' => $budget > 0 && $committedAll > $budget,
@@ -358,6 +385,7 @@ const PM_FIN_ALERT_DEFAULTS = [
     'budget_warn'     => 80,   // אזהרה כשההתחייבויות מגיעות לאחוז הזה מהתקציב
     'proof_days'      => 2,    // אסמכתא שלא אושרה — אחרי כמה ימים היא "באיחור"
     'notify_contacts' => true, // מייל ללקוח ולעו"ד על חריגה מהתקציב, גידול בתקציב ושולם מעל הביצוע
+    'invoice_days'    => 14,   // חשבונית מהספק — כמה ימים אחרי שהתשלום התקבל
 ];
 
 function pm_fin_alert_settings(int $userId): array
@@ -384,6 +412,7 @@ function pm_fin_alert_settings_save(array $user, array $in): array
         'overpay'         => $int('overpay', 0, 100, 'שולם מעל הביצוע'), // i18n-ok
         'budget_warn'     => $int('budget_warn', 1, 100, 'אזהרת תקציב'), // i18n-ok
         'proof_days'      => $int('proof_days', 0, 60, 'ימים לאישור אסמכתא'), // i18n-ok
+        'invoice_days'    => $int('invoice_days', 0, 120, 'ימים לחשבונית'), // i18n-ok
         'notify_contacts' => !empty($in['notify_contacts']),
     ];
     pm_db()->prepare('UPDATE users SET fin_alerts = ? WHERE id = ?')->execute([json_encode($cfg), $user['id']]);
@@ -412,6 +441,9 @@ function pm_fin_alerts(int $projectId, array $cfg, ?string $lang = null, string 
     $st->execute([$projectId]);
     $stages = [];
     foreach ($st->fetchAll() as $s) $stages[(int)$s['id']] = $s;
+    $ps = $db->prepare('SELECT status FROM projects WHERE id = ?');
+    $ps->execute([$projectId]);
+    $projectStatus = (string)$ps->fetchColumn();
 
     // ---- תשלומים ----
     $pay = $db->prepare("SELECT p.*, c.name AS supplier FROM payments p JOIN contacts c ON c.id = p.supplier_id
@@ -428,7 +460,9 @@ function pm_fin_alerts(int $projectId, array $cfg, ?string $lang = null, string 
             } elseif ($mine && $p['status'] !== 'planned') {
                 $add($late ? 'late' : 'soon', $late ? 'pay_late' : 'pay_soon', "pay:$id", $late ? 'תשלום באיחור: {title} — {supplier}, {amount} ({date})' : 'תשלום קרוב: {title} — {supplier}, {amount} ({date})', $v, $p['due_date'], $id); // i18n-ok
             }
-        } elseif ($mgr && $p['due_kind'] !== 'date' && $p['status'] === 'planned' && pm_payment_due($p, $stages[(int)$p['stage_id']] ?? null, $today)) {
+        } elseif ($mgr && $p['due_kind'] === 'handover' && $p['status'] === 'planned' && $projectStatus === 'done') {
+            $add('soon', 'pay_reached', "reached:$id", 'הפרויקט נמסר — לשחרר את העיכבון: {supplier}, {amount}', $v, $today, $id); // i18n-ok
+        } elseif ($mgr && $p['due_kind'] !== 'date' && $p['due_kind'] !== 'handover' && $p['status'] === 'planned' && pm_payment_due($p, $stages[(int)$p['stage_id']] ?? null, $today)) {
             // "בגמר השלב" / "בהתקדמות" — הגיע המועד, ועוד לא נשלחה דרישה
             $s = $stages[(int)$p['stage_id']] ?? null;
             $done = $s && in_array($s['status'], ['done', 'paid'], true);
@@ -449,6 +483,33 @@ function pm_fin_alerts(int $projectId, array $cfg, ?string $lang = null, string 
             $add($days >= (int)$cfg['proof_days'] ? 'late' : 'wait', 'proof', 'proof:' . $r['id'],
                 $days >= 1 ? 'דווח תשלום לפני {n} ימים — לאשר שהתקבל: {title}, {amount}' : 'דווח תשלום — לאשר שהתקבל: {title}, {amount}', // i18n-ok
                 ['n' => $days, 'title' => $r['title'], 'amount' => pm_money((int)$r['amount'])], substr($r['created_at'], 0, 10), (int)$r['id']);
+        }
+    }
+
+    // ---- חשבונית מהספק: תשלום שהתקבל, ואין חשבונית אחרי X ימים ----
+    if ($mgr || $audience === 'supplier') {
+        $inv = $db->prepare("SELECT p.id, p.title, p.supplier_id, c.name AS supplier, MAX(x.reviewed_at) AS got FROM payments p
+                              JOIN payment_proofs x ON x.payment_id = p.id AND x.status = 'received' JOIN contacts c ON c.id = p.supplier_id
+                             WHERE p.project_id = ? AND p.invoice_at IS NULL AND p.status != 'cancelled' GROUP BY p.id");
+        $inv->execute([$projectId]);
+        foreach ($inv->fetchAll() as $r) {
+            $days = pm_days_since($r['got']);
+            if ($days < (int)$cfg['invoice_days']) continue;
+            $add('wait', 'invoice', 'invoice:' . $r['id'], 'חסרה חשבונית: {title} — {supplier} (התקבל לפני {n} ימים)', // i18n-ok
+                ['title' => $r['title'], 'supplier' => $r['supplier'], 'n' => $days], substr((string)$r['got'], 0, 10), (int)$r['id']);
+        }
+    }
+    // ---- תוספות וחריגות שממתינות ----
+    $co = $db->prepare("SELECT o.*, c.name AS supplier, s.name AS stage FROM change_orders o JOIN contacts c ON c.id = o.supplier_id JOIN stages s ON s.id = o.stage_id
+                         WHERE o.project_id = ? AND o.status IN ('sent','client_approved')");
+    $co->execute([$projectId]);
+    foreach ($co->fetchAll() as $o) {
+        $v = ['supplier' => $o['supplier'], 'stage' => $o['stage'], 'amount' => pm_money((int)$o['amount']), 'n' => pm_days_since($o['updated_at'])];
+        $waitsFor = $o['status'] === 'sent' ? 'client' : 'lawyer';
+        if ($mgr && $v['n'] >= PM_WAIT_DAYS) {
+            $add('wait', 'co_pending', 'co:' . $o['id'], $waitsFor === 'client' ? 'תוספת ממתינה ללקוח {n} ימים: {supplier}, {stage} — {amount}' : 'תוספת ממתינה לעו"ד {n} ימים: {supplier}, {stage} — {amount}', $v, substr($o['updated_at'], 0, 10)); // i18n-ok
+        } elseif ($audience === $waitsFor) {
+            $add('soon', 'co_pending', 'co:' . $o['id'], 'תוספת ממתינה לאישורך: {supplier}, {stage} — {amount}', $v, substr($o['updated_at'], 0, 10)); // i18n-ok
         }
     }
 
@@ -612,7 +673,7 @@ function pm_finance_all(array $user, array $in): array
     $in14 = pm_today(14);
     if ($ids) {
         $q = implode(',', array_fill(0, count($ids), '?'));
-        $ps = $db->prepare("SELECT p.*, c.name AS supplier, pr.name AS project FROM payments p JOIN contacts c ON c.id = p.supplier_id JOIN projects pr ON pr.id = p.project_id
+        $ps = $db->prepare("SELECT p.*, c.name AS supplier, pr.name AS project, pr.status AS project_status FROM payments p JOIN contacts c ON c.id = p.supplier_id JOIN projects pr ON pr.id = p.project_id
                              WHERE p.project_id IN ($q) AND p.status != 'cancelled'" . ($sf ? ' AND p.supplier_id = ' . $sf : ''));
         $ps->execute($ids);
         $payments = $ps->fetchAll();
@@ -639,7 +700,7 @@ function pm_finance_all(array $user, array $in): array
             $left = $amount - $received;
             if ($left <= 0 || $x['status'] === 'received') continue;
             $rate = pm_payment_vat($x);
-            $due = pm_payment_due($x, $stage, $today);
+            $due = pm_payment_due($x, $stage, $today, $x['project_status']);
             if ($exp !== '' && $exp >= $today && $exp <= $in30) { $soon30[0] += $left; $soon30[1] += pm_net($left, $rate); }
             if ($due || ($exp !== '' && $exp <= $in14)) {
                 $upcoming[] = ['payment_id' => (int)$x['id'], 'project_id' => (int)$x['project_id'], 'project' => $x['project'], 'title' => $x['title'],

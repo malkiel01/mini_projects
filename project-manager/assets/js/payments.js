@@ -6,7 +6,7 @@
 'use strict';
 
 const Payments = (() => {
-    let project = null, data = { payments: [], summary: {} }, bound = false, current = null, mpFile = null;
+    let project = null, data = { payments: [], summary: {} }, bound = false, current = null, mpFile = null, invFile = null;
     const ICON = { planned: '🗓️', requested: '📤', paid: '💳', partial: '◐', received: '✅', cancelled: '🚫' };
     const today = () => new Date().toISOString().slice(0, 10);
     const stageOf = id => project.stages.find(s => s.id === id);
@@ -44,6 +44,10 @@ const Payments = (() => {
         });
         $('#mp-file').addEventListener('change', e => { mpFile = e.target.files[0] || null; $('#mp-file-name').textContent = mpFile ? '📎 ' + mpFile.name : ''; });
         $('#mp-save').addEventListener('click', manualProof);
+        $('#inv-file').addEventListener('change', e => { invFile = e.target.files[0] || null; $('#inv-file-name').textContent = invFile ? '📎 ' + invFile.name : ''; });
+        $('#inv-save').addEventListener('click', saveInvoice);
+        form.elements.index_value.addEventListener('input', calcHint);
+        form.elements.amount.addEventListener('input', calcHint);
         $('#payment-cancel').addEventListener('click', cancel);
     }
 
@@ -84,6 +88,7 @@ const Payments = (() => {
 
     /** מתי משלמים — לשורה ולחלון. */
     function dueText(p, late) {
+        if (p.due_kind === 'handover') return t('במסירת הפרויקט');
         if (p.due_kind === 'stage_done') return t('בגמר השלב');
         if (p.due_kind === 'progress') return t('בהתקדמות {n}%', { n: p.due_pct });
         return p.due_date ? t(late ? 'באיחור · {date}' : 'עד {date}', { date: shortDate(p.due_date) }) : '';
@@ -117,6 +122,8 @@ const Payments = (() => {
             p.supplier_request && p.status === 'planned' ? `📥 ${esc(t('בקשת הספק'))}` : `${ICON[p.status]} ${esc(p.label)}`,
             dueText(p, late) ? `<span class="${late ? 'late' : ''}">${esc(dueText(p, late))}</span>` : '',
             p.status === 'partial' ? esc(t('נשאר {amount}', { amount: money(p.balance) })) : '',
+            p.kind === 'retention' ? '' : p.retention ? esc(t('לתשלום {amount} (עיכבון {r})', { amount: money(p.due_amount), r: money(p.retention) })) : '',
+            p.received > 0 && !p.invoice ? `<span class="late">🧾 ${esc(t('חסרה חשבונית'))}</span>` : '',
         ].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>');
         return `<li class="card q-row pay-${p.status}" data-payment="${p.id}" tabindex="0" role="button" aria-label="${esc(p.title)}, ${esc(money(p.amount))}, ${esc(p.label)}">
             <div class="body"><div class="l1"><span class="one">${esc(p.title)}</span><span class="amt">${moneyVat(vatOf(p.amount, p.vat_rate))}</span></div>
@@ -138,6 +145,10 @@ const Payments = (() => {
         el.due_date.value = p.due_date || '';
         $(`#payment-dlg [name=due_kind][value=${p.due_kind || 'date'}]`).checked = true;
         el.due_pct.value = p.due_pct || 50;
+        // הצמדה (כ4): המדד הקובע — כשהפרויקט צמוד
+        const fs = project.finance || {};
+        $('#pay-index-box').hidden = !fs.index_on;
+        el.index_value.value = current?.index_value ?? '';
         el.notes.value = p.notes || '';
         $(`#payment-dlg [name=mode][value=${current?.percent ? 'percent' : 'amount'}]`).checked = true;
         $(`#payment-dlg [name=payer][value=${p.payer || 'client'}]`).checked = true;
@@ -155,6 +166,7 @@ const Payments = (() => {
             + (current.lawyer ? `<span class="chip">⚖️ ${esc(t('{name} אישר', { name: current.lawyer.by }))}</span>` : '');
         await stageChanged(p.supplier_id || null);
         dueKindChanged();
+        calcHint();
         renderActions();
         dlg.showModal();
     }
@@ -187,6 +199,44 @@ const Payments = (() => {
         $('#pay-mode-box').hidden = !approvedQuote;
         if (!approvedQuote) $('#payment-dlg [name=mode][value=amount]').checked = true;
         modeChanged();
+    }
+
+    /** כמה משלמים בפועל: בלי העיכבון (הוא בשחרור), ועם הפרשי ההצמדה. */
+    function calcHint() {
+        const h = $('#pay-calc');
+        const p = current;
+        if (p?.kind === 'retention') { h.hidden = false; h.textContent = t('שחרור העיכבון — במסירת הפרויקט.'); return; }
+        // מחושב ממה שבטופס עכשיו — כמו בשרת (lib/payments.php)
+        const F = project.finance || {}, el = $('#payment-dlg form').elements;
+        const amount = Number(String(el.amount.value).replace(/[,\s₪]/g, '')) || 0;
+        const iv = Number(el.index_value.value) || 0;
+        const ret = Math.round(amount * (F.retention_pct || 0)) / 100; // באגורות, כמו בשרת
+        const diff = F.index_on && F.index_base && iv ? Math.round((amount - ret) * 100 * (iv / F.index_base - 1)) / 100 : 0;
+        const parts = [];
+        if (ret) parts.push(t('עיכבון {amount} — נשאר עד המסירה', { amount: money(ret) }));
+        if (diff) parts.push(t('הפרשי הצמדה {amount}', { amount: money(diff) }));
+        if (amount && (ret || diff)) parts.push(t('לתשלום עכשיו: {amount}', { amount: money(amount - ret + diff) }));
+        else if (!amount && (F.retention_pct || 0) > 0) parts.push(t('{n}% מהסכום יישאר כעיכבון עד המסירה', { n: F.retention_pct }));
+        h.hidden = !parts.length;
+        h.textContent = parts.join(' · ');
+    }
+
+    /** חשבונית מהספק — על תשלום שהתקבל. */
+    async function saveInvoice() {
+        const form = $('#payment-dlg form');
+        const no = $('#inv-no').value.trim();
+        if (!no && !invFile) { formError(form, t('חשבונית: מספר או קובץ')); return; }
+        await busy($('#inv-save'), form, async () => {
+            let fileId = null;
+            if (invFile) {
+                const { folders } = await api('folders', { params: { project_id: project.project.id } });
+                const folder = folders.find(f => f.contact_id === current.supplier_id && f.parent_id === null) || folders.find(f => f.kind === 'inbox');
+                fileId = (await Files.send(invFile, project.project.id, folder.id, undefined, { quiet: true, type: 'invoice' })).file.id;
+            }
+            await refresh(await api('payment-invoice', { body: { id: current.id, invoice_no: no, file_id: fileId } }));
+            $('#payment-dlg').close();
+            toast(t('החשבונית נשמרה'));
+        });
     }
 
     /** "בגמר השלב" / "בהתקדמות" — רק כשנבחר שלב. */
@@ -249,7 +299,13 @@ const Payments = (() => {
         $('#mp-note').value = '';
         mpFile = null;
         $('#mp-file-name').textContent = '';
-        $('#payment-cancel').hidden = p.status === 'cancelled' || p.received > 0;
+        $('#payment-cancel').hidden = p.status === 'cancelled' || p.received > 0 || p.kind === 'retention';
+        // חשבונית (כ4) — אחרי שהתקבל כסף
+        $('#invoice-box').hidden = !(p.received > 0);
+        invFile = null; $('#inv-file-name').textContent = ''; $('#inv-no').value = p.invoice?.no || '';
+        $('#invoice-state').innerHTML = p.invoice
+            ? `🧾 ${esc(p.invoice.no ? t('התקבלה חשבונית {no}', { no: p.invoice.no }) : t('התקבלה חשבונית'))}${p.invoice.file_id ? ` · <a href="${fileUrl(p.invoice.file_id)}" target="_blank" rel="noopener">${esc(t('הקובץ'))}</a>` : ''}`
+            : esc(t('עוד אין חשבונית — אפשר לרשום כאן, או שהספק יעלה בקישור שלו.'));
     }
 
     async function save() {
@@ -263,6 +319,7 @@ const Payments = (() => {
             due_date: $('#payment-dlg [name=due_kind]:checked').value === 'date' ? el.due_date.value : '', payer: $('#payment-dlg [name=payer]:checked').value,
             needs_lawyer: el.needs_lawyer.checked, notes: el.notes.value,
         };
+        if (project.finance?.index_on) body.index_value = el.index_value.value.trim();
         if (!body.supplier_id) { formError(form, t('ספק: שדה חובה')); return; }
         if (!body.title) { formError(form, t('שם: שדה חובה (למשל "מקדמה")')); return; }
         if (pct ? !body.percent : !body.amount) { formError(form, t(pct ? 'אחוז: שדה חובה' : 'סכום: שדה חובה')); return; }

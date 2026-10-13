@@ -5,7 +5,7 @@
 'use strict';
 
 const Finance = (() => {
-    let project = null, data = null, bound = false, split = null;
+    let project = null, data = null, bound = false, split = null, coFile = null, co = null;
     const pct = n => `${Math.round(n)}%`;
 
     function bind() {
@@ -20,12 +20,19 @@ const Finance = (() => {
             const b = e.target.closest('[data-split]');
             if (b) { openSplit(Number(b.dataset.split), Number(b.dataset.supplier)); return; }
             const m = e.target.closest('[data-milestone]');
-            if (m) Payments.add(Number(m.dataset.milestone), Number(m.dataset.supplier));
+            if (m) { Payments.add(Number(m.dataset.milestone), Number(m.dataset.supplier)); return; }
+            const n = e.target.closest('[data-co-new]');
+            if (n) { openNewChange(Number(n.dataset.coNew), Number(n.dataset.supplier)); return; }
+            const c = e.target.closest('[data-co]');
+            if (c) openChange(Number(c.dataset.co));
         });
         const f = $('#fin-dlg form');
         f.addEventListener('submit', e => { e.preventDefault(); saveSettings(); });
         $$('#fin-dlg [name=fee_type]').forEach(r => r.addEventListener('change', feeChanged));
         f.elements.index_on.addEventListener('change', () => { $('#index-box').hidden = !f.elements.index_on.checked; });
+        $('#co-dlg form').addEventListener('submit', e => { e.preventDefault(); sendChange(); });
+        $('#co-file').addEventListener('change', e => { coFile = e.target.files[0] || null; $('#co-file-name').textContent = coFile ? '📎 ' + coFile.name : ''; });
+        $('#co-actions').addEventListener('click', e => { const b = e.target.closest('[data-co-do]'); if (b) changeAction(b.dataset.coDo); });
         const s = $('#split-dlg form');
         s.addEventListener('submit', e => { e.preventDefault(); saveSplit(); });
         $('#split-add').addEventListener('click', () => { readSplit(); split.rows.push({ title: '', percent: 0, due_kind: 'stage_done', due_pct: 50, due_date: '' }); renderSplit(); });
@@ -118,7 +125,8 @@ const Finance = (() => {
         if (data.fee) parts.push(esc(data.fee.type === 'percent'
             ? t('שכר טרחה {n}% — {amount}', { n: data.fee.value, amount: money(data.fee.amount.g) })
             : t('שכר טרחה — {amount}', { amount: money(data.fee.amount.g) })));
-        if (S.retention_pct) parts.push(esc(t('עיכבון {n}% ({amount})', { n: S.retention_pct, amount: money(T.retention.g) })));
+        if (S.retention_pct) parts.push(esc(T.retention_held ? t('עיכבון {n}% — נעצרו {amount}', { n: S.retention_pct, amount: money(T.retention.g) }) : t('עיכבון {n}% ({amount})', { n: S.retention_pct, amount: money(T.retention.g) })));
+        if (T.index?.g) parts.push(esc(t('הפרשי הצמדה {amount}', { amount: money(T.index.g) })));
         if (S.index_on) parts.push(esc(t('צמוד ל{index} · בסיס {month}: {base}', { index: S.index_name || t('מדד תשומות הבנייה'), month: S.index_base_month.split('-').reverse().join('/'), base: S.index_base })));
         parts.push(esc(t('מע"מ {n}%', { n: S.vat_rate })));
         return parts.join('<i class="sep" aria-hidden="true">·</i>');
@@ -155,14 +163,105 @@ const Finance = (() => {
         const act = [];
         if (r.flags.includes('uncovered') && !r.milestones && r.quote_id) act.push(`<button type="button" class="btn ghost sm" data-split="${s.stage_id}" data-supplier="${r.supplier_id}">✂️ ${esc(t('חלוקה לתשלומים'))}</button>`);
         else if (r.flags.includes('uncovered')) act.push(`<button type="button" class="btn ghost sm" data-milestone="${s.stage_id}" data-supplier="${r.supplier_id}">+ ${esc(t('אבן דרך'))}</button>`);
+        if (s.stage_id) act.push(`<button type="button" class="btn ghost sm" data-co-new="${s.stage_id}" data-supplier="${r.supplier_id}">± ${esc(t('תוספת / חריגה'))}</button>`);
+        const changes = (r.changes || []).filter(c => c.status !== 'cancelled').map(c => `<button type="button" class="chip co-${c.status}" data-co="${c.id}">${c.amount > 0 ? '+' : '−'}${esc(money(Math.abs(c.amount)))} · ${esc(t(STATUS[c.status]))}</button>`).join('');
         return `<li class="fin-row">
             <div class="fin-row-head"><b class="one">${esc(r.name)}</b>${flags}</div>
             <dl class="fin-cells">
                 ${cell(t('סוכם'), r.committed.g ? r.committed : r.scheduled)}${cell(t('היה צריך עד היום'), r.due)}${cell(t('שולם'), r.paid)}${cell(t('יתרה'), r.balance)}
             </dl>
+            ${changes ? `<div class="chip-row co-row">${changes}</div>` : ''}
+            ${r.index.g ? `<p class="fin-stage-budget">${esc(t('כולל הפרשי הצמדה {amount}', { amount: money(r.index.g) }))}</p>` : ''}
             ${s.stage_id ? `<div class="fin-vs">${meter(r.paid_pct, t('שולם'), 'paid')}${meter(s.progress, t('בוצע'))}</div>` : ''}
             ${act.length ? `<div class="row-btns wrap">${act.join('')}</div>` : ''}
         </li>`;
+    }
+
+    // i18n-ok-start — מתורגם בתצוגה
+    const STATUS = { sent: 'ממתינה ללקוח', client_approved: 'הלקוח אישר — ממתינה לעו"ד', approved: 'אושרה', rejected: 'נדחתה', cancelled: 'בוטלה' };
+    // i18n-ok-end
+
+    // ================= תוספות וחריגות (כ4) =================
+
+    function openNewChange(stageId, supplierId) {
+        const s = data.stages.find(x => x.stage_id === stageId), r = s.rows.find(x => x.supplier_id === supplierId);
+        const f = $('#co-dlg form');
+        f.reset(); formError(f, '');
+        co = { new: true, stageId, supplierId };
+        coFile = null; $('#co-file-name').textContent = '';
+        $('#co-dlg-title').textContent = t('תוספת / חריגה');
+        $('#co-for').textContent = t('{supplier} · {stage}', { supplier: r.name, stage: t(s.name) });
+        $('#co-new').hidden = false; $('#co-view').hidden = true; $('#co-send').hidden = false;
+        $('#co-dlg').showModal();
+    }
+
+    async function sendChange() {
+        const f = $('#co-dlg form'), el = f.elements;
+        const v = Number(String(el.amount.value).replace(/[^\d.]/g, ''));
+        if (!v) { formError(f, t('סכום: שדה חובה')); return; }
+        if (!el.reason.value.trim()) { formError(f, t('מה ולמה: שדה חובה')); return; }
+        await busy($('#co-send'), f, async () => {
+            let fileId = null;
+            if (coFile) {
+                const { folders } = await api('folders', { params: { project_id: project.project.id } });
+                const folder = folders.find(x => x.contact_id === co.supplierId && x.parent_id === null) || folders.find(x => x.kind === 'inbox');
+                fileId = (await Files.send(coFile, project.project.id, folder.id, undefined, { quiet: true })).file.id;
+            }
+            const d = await api('change', { body: { project_id: project.project.id, stage_id: co.stageId, supplier_id: co.supplierId,
+                amount: v * Number($('#co-dlg [name=sign]:checked').value), reason: el.reason.value.trim(), file_id: fileId } });
+            $('#co-dlg').close();
+            take(d);
+            toast(d.notified?.length ? t('נשלחה ללקוח לאישור') : t('נשמרה — הלקוח יראה אותה בקישור האישי'));
+        });
+    }
+
+    async function openChange(id) {
+        const f = $('#co-dlg form');
+        formError(f, '');
+        let list;
+        try { ({ changes: list } = await api('changes', { params: { project_id: project.project.id } })); } catch (e) { toast(e.message, true); return; }
+        const c = list.find(x => x.id === id);
+        if (!c) return;
+        co = { new: false, id, c };
+        $('#co-dlg-title').textContent = c.amount > 0 ? t('תוספת') : t('הפחתה');
+        $('#co-for').textContent = t('{supplier} · {stage}', { supplier: c.supplier, stage: t(c.stage) });
+        $('#co-new').hidden = true; $('#co-view').hidden = false; $('#co-send').hidden = true;
+        $('#co-summary').innerHTML = `<dl><dt>${esc(t('סכום'))}</dt><dd>${moneyVat(vatOf(c.amount, c.vat_rate))}</dd>
+            <dt>${esc(t('מה ולמה'))}</dt><dd>${esc(c.reason)}</dd>
+            <dt>${esc(t('סטטוס'))}</dt><dd>${esc(c.label)}</dd>
+            ${c.file ? `<dt>${esc(t('קובץ'))}</dt><dd><a href="api.php?action=file&id=${c.file.id}" target="_blank" rel="noopener">📄 ${esc(c.file.name)}</a></dd>` : ''}</dl>`;
+        const who = { client: 'הלקוח', lawyer: 'העו"ד' }; // i18n-ok
+        $('#co-decisions').innerHTML = c.decisions.map(d => `<li class="${d.decision}"><span>${d.decision === 'approved' ? '✅' : '✖'} ${esc(t(who[d.role]))} · ${esc(d.by_name)}</span>
+            <small>${esc(new Date(d.at).toLocaleString(I18n.locale(), { dateStyle: 'short', timeStyle: 'short' }))}${d.note ? ' · ' + esc(d.note) : ''}</small></li>`).join('');
+        const b = [];
+        if (c.status === 'sent') b.push(['client-approve', '✅ ' + t('הלקוח אישר (נרשם ידנית)'), 'primary'], ['client-reject', '✖ ' + t('הלקוח דחה'), 'ghost']);
+        if (c.status === 'client_approved') b.push(['lawyer-approve', '✅ ' + t('העו"ד אישר (נרשם ידנית)'), 'primary'], ['lawyer-reject', '✖ ' + t('העו"ד דחה'), 'ghost']);
+        if (['sent', 'client_approved'].includes(c.status)) b.push(['cancel', t('ביטול התוספת'), 'ghost danger']);
+        $('#co-actions').innerHTML = b.map(([k, label, cls]) => `<button type="button" class="btn ${cls}" data-co-do="${k}">${esc(label)}</button>`).join('');
+        $('#co-dlg').showModal();
+    }
+
+    async function changeAction(k) {
+        const f = $('#co-dlg form');
+        if (k === 'cancel') {
+            if (!confirm(t('לבטל את התוספת? היא תישאר בהיסטוריה.'))) return;
+            await busy(null, f, async () => { take(await api('change-cancel', { body: { id: co.id } })); $('#co-dlg').close(); });
+            return;
+        }
+        const [role, act] = k.split('-');
+        const note = prompt(t('הערה (לא חובה) — למשל "אישר בטלפון"'), '');
+        if (note === null) return;
+        await busy(null, f, async () => {
+            take(await api('change-decide', { body: { id: co.id, role, decision: act === 'approve' ? 'approved' : 'rejected', note } }));
+            $('#co-dlg').close();
+            toast(t('נרשם'));
+        });
+    }
+
+    /** תשובה מהשרת (מצב כספי) — מציירים מחדש. */
+    function take(d) {
+        data = { settings: d.settings, totals: d.totals, stages: d.stages, fee: d.fee, alerts: d.alerts };
+        render();
     }
 
     function cell(label, m) { return `<div><dt>${esc(label)}</dt><dd>${moneyVat(m)}</dd></div>`; }
