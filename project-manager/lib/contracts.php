@@ -85,6 +85,7 @@ function pm_contract_out(array $c): array
         'penalty_per_day' => (int)$c['penalty_per_day'] / 100, 'grace_days' => (int)$c['grace_days'], 'max_deviation_days' => $maxDev,
         'notes' => $c['notes'], 'file' => $c['file_id'] && empty($c['file_deleted']) ? ['id' => (int)$c['file_id'], 'name' => $c['file_name']] : null,
         'milestones' => $milestones,
+        'unit_ids' => array_map('intval', json_decode($c['unit_ids'] ?? '[]', true) ?: []), 'split' => pm_split_of($c['split'] ?? ''),
         'delay_days' => $delay, 'penalty_days' => $penaltyDays, 'penalty' => $penalty / 100,
         'worst_deviation' => $worst,
         'days_left' => $c['end_date'] !== '' && $c['completed_on'] === '' ? pm_days_between($today, $c['end_date']) : null,
@@ -123,6 +124,10 @@ function pm_contract_save(array $user, array $in): array
         'max_deviation_days' => $int('max_deviation_days', 365, 'סטייה מרבית מאבן דרך') ?: 30, // i18n-ok
         'notes'              => pm_str($in, 'notes', 2000, false, 'הערות'),
     ];
+    // מתחם: על אילו יחידות החוזה חל, ואיך מחלקים ביניהן את העלות
+    $f['unit_ids'] = json_encode(array_values(array_map(fn($u) => (int)pm_unit_of_project((int)$u, $projectId),
+        array_unique(array_filter(array_map('intval', is_array($in['unit_ids'] ?? null) ? $in['unit_ids'] : []))))));
+    $f['split'] = json_encode(pm_split_clean(is_array($in['split'] ?? null) ? $in['split'] : [], $projectId));
     if ($f['start_date'] !== '' && $f['end_date'] !== '' && $f['end_date'] < $f['start_date']) throw new PmError('מועד הסיום לפני מועד ההתחלה', 422);
     $fileId = (int)($in['file_id'] ?? 0) ?: null;
     if ($fileId) {
@@ -197,4 +202,61 @@ function pm_contract_alerts(int $projectId, callable $add, string $lang): void
                 ['supplier' => $sup, 'n' => $c['delay_days'], 'amount' => pm_money((int)round($c['penalty'] * 100)), 'grace' => $c['grace_days']], $c['end_date']);
         }
     }
+}
+
+// ---- מתחם: חלוקת העלות של חוזה בין היחידות ----
+
+/**
+ * method: auto — לפי השלבים (שורה בשלב של דירה — לדירה; בשלב משותף — נשארת "משותף");
+ * equal — שווה בשווה; area — לפי השטח; fixed — סכום קבוע לכל יחידה (₪), והשאר לפי rest (equal / area).
+ */
+function pm_split_of(string $json): array
+{
+    $s = $json !== '' ? (json_decode($json, true) ?: []) : [];
+    return ['method' => in_array($s['method'] ?? '', ['auto', 'equal', 'area', 'fixed'], true) ? $s['method'] : 'auto',
+            'fixed' => array_map('floatval', is_array($s['fixed'] ?? null) ? $s['fixed'] : []),
+            'rest' => ($s['rest'] ?? '') === 'area' ? 'area' : 'equal'];
+}
+
+function pm_split_clean(array $in, int $projectId): array
+{
+    $s = pm_split_of(json_encode($in));
+    $fixed = [];
+    foreach ($s['fixed'] as $u => $v) {
+        if ($v < 0 || $v > 1e9) throw new PmError('{field}: מספר לא תקין', 422, ['field' => 'סכום ליחידה']); // i18n-ok
+        if ($v > 0) $fixed[(string)pm_unit_of_project((int)$u, $projectId)] = round($v, 2);
+    }
+    $s['fixed'] = $fixed;
+    return $s;
+}
+
+/**
+ * החלוקה של סכום (בשלבים המשותפים) בין היחידות שהחוזה חל עליהן: unit_id => יחס (סכום היחסים = 1).
+ * [] — לא מחלקים (auto, או בלי יחידות). $total — הסכום שמחלקים (₪), בשביל "סכום קבוע".
+ */
+function pm_contract_ratios(?array $c, array $units, float $total): array
+{
+    if (!$c || !$units) return [];
+    $sp = $c['split'];
+    if ($sp['method'] === 'auto') return [];
+    $cover = $c['unit_ids'] ? array_values(array_filter($units, fn($u) => in_array($u['id'], $c['unit_ids'], true))) : $units;
+    if (!$cover) return [];
+    $weights = function (string $how) use ($cover): array {
+        $area = array_sum(array_map(fn($u) => (float)$u['area'], $cover));
+        $w = [];
+        foreach ($cover as $u) $w[$u['id']] = $how === 'area' && $area > 0 ? (float)$u['area'] / $area : 1 / count($cover);
+        return $w;
+    };
+    if ($sp['method'] !== 'fixed') return $weights($sp['method']);
+    // סכום קבוע לכל יחידה, והשאר לפי rest
+    $fixed = [];
+    foreach ($cover as $u) $fixed[$u['id']] = (float)($sp['fixed'][(string)$u['id']] ?? 0);
+    $sumFixed = array_sum($fixed);
+    $base = max($total, $sumFixed);
+    if ($base <= 0) return $weights($sp['rest']);
+    $rest = $base - $sumFixed;
+    $w = $weights($sp['rest']);
+    $out = [];
+    foreach ($cover as $u) $out[$u['id']] = ($fixed[$u['id']] + $rest * $w[$u['id']]) / $base;
+    return $out;
 }

@@ -324,7 +324,42 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
         $totals['issues'] = $issues;
     }
     return ['settings' => pm_finance_settings($p), 'totals' => $totals, 'stages' => $outStages, 'fee' => $fee,
-        'expenses' => ['items' => $expenses, 'total' => pm_m($E[0], $E[1])]];
+        'expenses' => ['items' => $expenses, 'total' => pm_m($E[0], $E[1])],
+        'units' => pm_finance_units($projectId, $stages, $outStages, $contracts, $expenses)];
+}
+
+/**
+ * מתחם: הכספים לפי יחידה. שורה בשלב של יחידה — כולה שלה; בשלב משותף — לפי החלוקה בחוזה עם הספק
+ * (pm_contract_ratios), ובלי חלוקה — "משותף". הוצאה ישירה — לפי השלב שלה. [] — פרויקט בלי יחידות.
+ */
+function pm_finance_units(int $projectId, array $stages, array $outStages, array $contracts, array $expenses): array
+{
+    $units = pm_units_of($projectId);
+    if (!$units) return [];
+    $U = [];
+    $add = function (int $u, string $k, array $m, float $ratio = 1.0) use (&$U) {
+        $U[$u][$k]['g'] = ($U[$u][$k]['g'] ?? 0) + $m['g'] * $ratio;
+        $U[$u][$k]['n'] = ($U[$u][$k]['n'] ?? 0) + $m['n'] * $ratio;
+    };
+    $unitOf = fn(?int $sid) => $sid && isset($stages[$sid]) && $stages[$sid]['unit_id'] !== null ? (int)$stages[$sid]['unit_id'] : 0;
+    // כמה מכל ספק בשלבים המשותפים — בשביל "סכום קבוע ליחידה"
+    $sharedOf = [];
+    foreach ($outStages as $s) if (!$unitOf($s['stage_id'])) foreach ($s['rows'] as $r) $sharedOf[$r['supplier_id']] = ($sharedOf[$r['supplier_id']] ?? 0) + $r['committed']['g'];
+    foreach ($outStages as $s) {
+        $u = $unitOf($s['stage_id']);
+        foreach ($s['rows'] as $r) {
+            $ratios = $u ? [$u => 1.0] : (pm_contract_ratios($contracts[$r['supplier_id']] ?? null, $units, $sharedOf[$r['supplier_id']] ?? 0) ?: [0 => 1.0]);
+            foreach ($ratios as $to => $k) foreach (['committed', 'paid', 'balance'] as $f) $add((int)$to, $f, $r[$f], $k);
+        }
+    }
+    foreach ($expenses as $x) foreach (['committed', 'paid'] as $f) $add($unitOf($x['stage_id']), $f, $x['amount']);
+    $out = [];
+    $m = fn(int $u, string $k) => ['g' => round($U[$u][$k]['g'] ?? 0, 2), 'n' => round($U[$u][$k]['n'] ?? 0, 2)];
+    foreach ($units as $x) $out[] = ['id' => $x['id'], 'name' => $x['name'], 'area' => $x['area'], 'budget' => $x['budget'],
+        'committed' => $m($x['id'], 'committed'), 'paid' => $m($x['id'], 'paid'), 'balance' => $m($x['id'], 'balance')];
+    if (isset($U[0])) $out[] = ['id' => 0, 'name' => pm_t('משותף — לא מחולק'), 'area' => null, 'budget' => 0,
+        'committed' => $m(0, 'committed'), 'paid' => $m(0, 'paid'), 'balance' => $m(0, 'balance')];
+    return $out;
 }
 
 /** התקדמות הפרויקט: ממוצע השלבים, משוקלל בהתחייבות כשיש — אחרת פשוט. */

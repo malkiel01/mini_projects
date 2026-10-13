@@ -2,12 +2,12 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="assets/js/i18n.js?v=40"></script>
+    <script src="assets/js/i18n.js?v=41"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=40">
+    <link rel="stylesheet" href="assets/css/app.css?v=41">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -875,6 +875,24 @@
                     <label class="f"><span>סטייה מרבית מאבן דרך (ימים)</span><input name="max_deviation_days" inputmode="numeric" dir="ltr" maxlength="3"></label>
                 </div>
                 <p class="hint">למשל: ₪1,000 ליום, מהיום ה-11 לאיחור (10 ימי חסד). סטייה מעל הגבול מאבן דרך — "הפרה יסודית" בחוזה; תגיע התראה לפני.</p>
+                <section id="ct-units" hidden>
+                    <h3 class="sec-title">🏢 יחידות במתחם</h3>
+                    <fieldset class="opt"><legend>החוזה חל על</legend><div class="chips" id="ct-cover"></div></fieldset>
+                    <fieldset class="opt"><legend>חלוקת העלות בשלבים המשותפים</legend>
+                        <div class="seg wrap" id="ct-split">
+                            <label><input type="radio" name="split_method" value="auto" checked><span>לפי השלבים</span></label>
+                            <label><input type="radio" name="split_method" value="equal"><span>שווה בשווה</span></label>
+                            <label><input type="radio" name="split_method" value="area"><span>לפי שטח</span></label>
+                            <label><input type="radio" name="split_method" value="fixed"><span>סכום ליחידה</span></label>
+                        </div></fieldset>
+                    <div id="ct-fixed" hidden>
+                        <div class="fields" id="ct-fixed-list"></div>
+                        <fieldset class="opt"><legend>השאר — לפי</legend><div class="seg">
+                            <label><input type="radio" name="split_rest" value="equal" checked><span>שווה בשווה</span></label>
+                            <label><input type="radio" name="split_rest" value="area"><span>שטח</span></label></div></fieldset>
+                    </div>
+                    <p class="hint" id="ct-split-hint"></p>
+                </section>
                 <h3 class="sec-title">אבני דרך</h3>
                 <ol class="ct-ms" id="ct-ms"></ol>
                 <div class="row-btns wrap"><button type="button" class="btn ghost sm" id="ct-ms-add">+ אבן דרך</button></div>
@@ -1263,23 +1281,23 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=40"></script>
-    <script src="assets/js/contacts.js?v=40"></script>
-    <script src="assets/js/device-contacts.js?v=40"></script>
-    <script src="assets/js/files.js?v=40"></script>
-    <script src="assets/js/lightbox.js?v=40"></script>
-    <script src="assets/js/field.js?v=40"></script>
+    <script src="assets/js/core.js?v=41"></script>
+    <script src="assets/js/contacts.js?v=41"></script>
+    <script src="assets/js/device-contacts.js?v=41"></script>
+    <script src="assets/js/files.js?v=41"></script>
+    <script src="assets/js/lightbox.js?v=41"></script>
+    <script src="assets/js/field.js?v=41"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=40"></script>
-    <script src="assets/js/projects.js?v=40"></script>
-    <script src="assets/js/quotes.js?v=40"></script>
-    <script src="assets/js/payments.js?v=40"></script>
-    <script src="assets/js/fin-report.js?v=40"></script>
-    <script src="assets/js/finance.js?v=40"></script>
-    <script src="assets/js/finance-all.js?v=40"></script>
-    <script src="assets/js/hebcal.js?v=40"></script>
-    <script src="assets/js/calendar.js?v=40"></script>
-    <script src="assets/js/settings.js?v=40"></script>
-    <script src="assets/js/app.js?v=40"></script>
+    <script src="assets/js/share.js?v=41"></script>
+    <script src="assets/js/projects.js?v=41"></script>
+    <script src="assets/js/quotes.js?v=41"></script>
+    <script src="assets/js/payments.js?v=41"></script>
+    <script src="assets/js/fin-report.js?v=41"></script>
+    <script src="assets/js/finance.js?v=41"></script>
+    <script src="assets/js/finance-all.js?v=41"></script>
+    <script src="assets/js/hebcal.js?v=41"></script>
+    <script src="assets/js/calendar.js?v=41"></script>
+    <script src="assets/js/settings.js?v=41"></script>
+    <script src="assets/js/app.js?v=41"></script>
 </body>
 </html>

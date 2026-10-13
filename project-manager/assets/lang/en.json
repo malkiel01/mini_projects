@@ -1914,5 +1914,19 @@
     "🏢 נוספה יחידה: {name}": "🏢 Unit added: {name}",
     "ביחידה יש שלבים עם הצעות, תשלומים או דיווחים — אי אפשר למחוק אותה": "The unit has stages with quotes, payments or reports — it can't be deleted",
     "🏢 הוסרה יחידה: {name}": "🏢 Unit removed: {name}",
-    "🏢 {n} יחידות": "🏢 {n} units"
+    "🏢 {n} יחידות": "🏢 {n} units",
+    "🏢 לפי יחידות": "🏢 By unit",
+    "שלב של דירה — כולו שלה. שלב משותף — לפי החלוקה שבחוזה עם הספק (\"📄 חוזה\"); בלי חלוקה — \"משותף\".": "An apartment's stage belongs entirely to it. A shared stage — by the split in the supplier's contract (\"📄 Contract\"); with no split — \"Shared\".",
+    "צריך לבחור לפחות יחידה אחת": "Choose at least one unit",
+    "שלב של דירה — כולו שלה. שלב משותף — נשאר \"משותף\", בלי חלוקה.": "An apartment's stage belongs entirely to it. A shared stage stays \"Shared\", not split.",
+    "סכום קבוע: {sum} · השאר — {rest}": "Fixed amounts: {sum} · the rest — {rest}",
+    "לפי שטח": "by area",
+    "שווה בשווה": "Equally",
+    "אין שטח ליחידות — יחולק שווה בשווה. אפשר להוסיף שטח ב\"פרטים\".": "The units have no area — it will be split equally. You can add the area in \"Details\".",
+    "החוזה חל על": "The contract covers",
+    "חלוקת העלות בשלבים המשותפים": "Splitting the cost of shared stages",
+    "לפי השלבים": "By stages",
+    "סכום ליחידה": "Amount per unit",
+    "השאר — לפי": "The rest — by",
+    "משותף — לא מחולק": "Shared — not split"
 }
