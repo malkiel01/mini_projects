@@ -2,12 +2,12 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="assets/js/i18n.js?v=41"></script>
+    <script src="assets/js/i18n.js?v=42"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=41">
+    <link rel="stylesheet" href="assets/css/app.css?v=42">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -196,7 +196,8 @@
             <div class="pane" id="pane-details" hidden>
                 <section class="units-box" aria-labelledby="units-title">
                     <div class="toolbar"><h2 class="sec-title" id="units-title">🏢 יחידות במתחם</h2>
-                        <button class="btn ghost" id="add-unit" type="button">+ יחידה</button></div>
+                        <span class="row-btns"><button class="btn ghost" id="units-handover" type="button" hidden>🔑 מסירת כל היחידות</button>
+                        <button class="btn ghost" id="add-unit" type="button">+ יחידה</button></span></div>
                     <p class="hint" id="units-hint">כמה דירות בפרויקט אחד, עם קבלן וחוזים משותפים? "+ יחידה" — ובכל שלב בוחרים אם הוא משותף או של דירה אחת.</p>
                     <ul class="list rows-list" id="units-list"></ul>
                 </section>
@@ -560,9 +561,12 @@
                     <label class="f"><span>תקציב ליחידה (₪, כולל מע"מ)</span><input name="budget" inputmode="numeric" dir="ltr" maxlength="12"></label>
                     <label class="f wide" id="unit-copy-box"><span>שלבים ליחידה</span><select name="copy_from"></select></label>
                     <label class="f wide"><span>הערות</span><input name="notes" maxlength="500"></label>
+                    <label class="f" id="unit-handover-box"><span>🔑 נמסרה ב</span><input name="handed_over_at" type="date"></label>
                 </div>
+                <p class="hint" id="unit-handover-hint">כשהיחידה נמסרת — שחרור העיכבון ותשלומים "במסירה" שלה מגיעים למועד. ריק — עוד לא נמסרה.</p>
                 <label class="switch" id="unit-move-box" hidden><input type="checkbox" name="move_shared"><span>השלבים הקיימים שייכים ליחידה הזו (אחרת — יישארו משותפים לכל המתחם)</span></label>
                 <p class="error" role="alert" hidden></p>
+                <div class="fields" id="unit-merge-box" hidden><label class="f wide"><span>🔀 לאחד עם — השלבים, ההצעות והתשלומים עוברים ל</span><select name="move_to"></select></label></div>
                 <div class="row-btns"><button type="button" class="btn ghost danger" id="unit-delete">מחיקת היחידה</button></div>
             </div>
         </form>
@@ -1011,8 +1015,10 @@
                         <label><input type="radio" name="due_kind" value="date" checked><span>בתאריך</span></label>
                         <label><input type="radio" name="due_kind" value="stage_done"><span>בגמר השלב</span></label>
                         <label><input type="radio" name="due_kind" value="progress"><span>בהתקדמות</span></label>
+                        <label><input type="radio" name="due_kind" value="handover"><span>במסירה</span></label>
                     </div>
                 </fieldset>
+                <div class="fields" id="due-unit-box" hidden><label class="f wide"><span>🔑 במסירה של</span><select name="unit_id"></select></label></div>
                 <div class="fields">
                     <label class="f" id="due-date-box"><span>תאריך יעד</span><input name="due_date" type="date"></label>
                     <label class="f" id="due-pct-box" hidden><span>כשהשלב מגיע ל- (%)</span><input name="due_pct" type="number" min="1" max="100" step="5" inputmode="numeric" dir="ltr"></label>
@@ -1281,23 +1287,23 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=41"></script>
-    <script src="assets/js/contacts.js?v=41"></script>
-    <script src="assets/js/device-contacts.js?v=41"></script>
-    <script src="assets/js/files.js?v=41"></script>
-    <script src="assets/js/lightbox.js?v=41"></script>
-    <script src="assets/js/field.js?v=41"></script>
+    <script src="assets/js/core.js?v=42"></script>
+    <script src="assets/js/contacts.js?v=42"></script>
+    <script src="assets/js/device-contacts.js?v=42"></script>
+    <script src="assets/js/files.js?v=42"></script>
+    <script src="assets/js/lightbox.js?v=42"></script>
+    <script src="assets/js/field.js?v=42"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=41"></script>
-    <script src="assets/js/projects.js?v=41"></script>
-    <script src="assets/js/quotes.js?v=41"></script>
-    <script src="assets/js/payments.js?v=41"></script>
-    <script src="assets/js/fin-report.js?v=41"></script>
-    <script src="assets/js/finance.js?v=41"></script>
-    <script src="assets/js/finance-all.js?v=41"></script>
-    <script src="assets/js/hebcal.js?v=41"></script>
-    <script src="assets/js/calendar.js?v=41"></script>
-    <script src="assets/js/settings.js?v=41"></script>
-    <script src="assets/js/app.js?v=41"></script>
+    <script src="assets/js/share.js?v=42"></script>
+    <script src="assets/js/projects.js?v=42"></script>
+    <script src="assets/js/quotes.js?v=42"></script>
+    <script src="assets/js/payments.js?v=42"></script>
+    <script src="assets/js/fin-report.js?v=42"></script>
+    <script src="assets/js/finance.js?v=42"></script>
+    <script src="assets/js/finance-all.js?v=42"></script>
+    <script src="assets/js/hebcal.js?v=42"></script>
+    <script src="assets/js/calendar.js?v=42"></script>
+    <script src="assets/js/settings.js?v=42"></script>
+    <script src="assets/js/app.js?v=42"></script>
 </body>
 </html>

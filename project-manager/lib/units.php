@@ -7,15 +7,33 @@
 
 declare(strict_types=1);
 
+/** היחידה של שלב (NULL — משותף). */
+function pm_stage_unit(int $stageId): ?int
+{
+    $st = pm_db()->prepare('SELECT unit_id FROM stages WHERE id = ?');
+    $st->execute([$stageId]);
+    $u = $st->fetchColumn();
+    return $u ? (int)$u : null;
+}
+
+function pm_unit_name(int $id): string
+{
+    static $c = [];
+    if (!isset($c[$id])) { $st = pm_db()->prepare('SELECT name FROM units WHERE id = ?'); $st->execute([$id]); $c[$id] = (string)$st->fetchColumn(); }
+    return $c[$id];
+}
+
 /** היחידות של הפרויקט, לפי הסדר — עם מספר השלבים בכל אחת. */
 function pm_units_of(int $projectId): array
 {
-    $st = pm_db()->prepare('SELECT u.*, (SELECT COUNT(*) FROM stages s WHERE s.unit_id = u.id) AS stages
+    $st = pm_db()->prepare('SELECT u.*, (SELECT COUNT(*) FROM stages s WHERE s.unit_id = u.id) AS stages,
+            (SELECT COUNT(*) FROM stages s WHERE s.unit_id = u.id AND ' . PM_STAGE_USED . ' > 0) AS used
         FROM units u WHERE u.project_id = ? ORDER BY u.sort, u.id');
     $st->execute([$projectId]);
     return array_map(fn($u) => [
         'id' => (int)$u['id'], 'name' => $u['name'], 'area' => $u['area'] !== null ? (float)$u['area'] : null,
         'budget' => (int)$u['budget'], 'notes' => $u['notes'], 'sort' => (int)$u['sort'], 'stages' => (int)$u['stages'],
+        'used' => (int)$u['used'], 'handed_over_at' => $u['handed_over_at'],
     ], $st->fetchAll());
 }
 
@@ -58,6 +76,8 @@ function pm_unit_save(array $user, array $in): array
         'area'   => $area === '' || $area === null ? null : (float)$area,
         'budget' => (int)round((float)($budget ?: 0)),
         'notes'  => pm_str($in, 'notes', 500, false, 'הערות'),
+        // מסירה (שלב 3): תאריך שבו היחידה נמסרה; ריק — עוד לא
+        'handed_over_at' => array_key_exists('handed_over_at', $in) ? (pm_date($in, 'handed_over_at', 'נמסרה ב') ?: null) : ($old['handed_over_at'] ?? null), // i18n-ok
     ];
     $db = pm_db();
     $dup = $db->prepare('SELECT 1 FROM units WHERE project_id = ? AND name = ? AND id != ?');
@@ -67,11 +87,12 @@ function pm_unit_save(array $user, array $in): array
     $db->beginTransaction();
     try {
         if ($old) {
-            $db->prepare('UPDATE units SET name = ?, area = ?, budget = ?, notes = ? WHERE id = ?')->execute([...array_values($f), $id]);
+            $db->prepare('UPDATE units SET name = ?, area = ?, budget = ?, notes = ?, handed_over_at = ? WHERE id = ?')->execute([...array_values($f), $id]);
+            if (($old['handed_over_at'] ?? null) !== $f['handed_over_at']) pm_event($user, $projectId, 'unit', $f['handed_over_at'] ? '🔑 נמסרה: {name}' : '🔑 בוטלה המסירה: {name}', ['unit' => $id], ['name' => $f['name']]);
         } else {
             $first = !(int)$db->query("SELECT COUNT(*) FROM units WHERE project_id = $projectId")->fetchColumn();
             $sort = (int)$db->query("SELECT COALESCE(MAX(sort), 0) + 10 FROM units WHERE project_id = $projectId")->fetchColumn();
-            $db->prepare('INSERT INTO units (project_id, name, area, budget, notes, sort, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+            $db->prepare('INSERT INTO units (project_id, name, area, budget, notes, handed_over_at, sort, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
                ->execute([$projectId, ...array_values($f), $sort, $now]);
             $id = (int)$db->lastInsertId();
             if ($first && !empty($in['move_shared'])) {
@@ -102,10 +123,35 @@ function pm_unit_copy_stages(int $projectId, ?int $fromUnit, int $toUnit): void
 }
 
 /** מחיקת יחידה — רק כשהשלבים שלה ריקים (אז נמחקים איתה). אחרת — סמכות מפתח. */
-function pm_unit_delete(array $user, int $id): array
+function pm_unit_delete(array $user, int $id, ?string $moveTo = null): array
 {
     $u = pm_unit_row($user, $id);
     $db = pm_db();
+    // איחוד: השלבים (עם ההצעות, התשלומים והדיווחים) עוברים ליחידה אחרת או למשותף, והיחידה נמחקת
+    if ($moveTo !== null && $moveTo !== '') {
+        $to = $moveTo === 'shared' ? null : pm_unit_of_project((int)$moveTo, (int)$u['project_id']);
+        if ($to === $id) throw new PmError('אי אפשר לאחד יחידה עם עצמה', 422);
+        $db->beginTransaction();
+        try {
+            $db->prepare('UPDATE stages SET unit_id = ? WHERE unit_id = ?')->execute([$to, $id]);
+            $db->prepare('UPDATE payments SET unit_id = ? WHERE unit_id = ?')->execute([$to, $id]);
+            $cs = $db->prepare('SELECT id, unit_ids FROM contracts WHERE project_id = ?');
+            $cs->execute([$u['project_id']]);
+            foreach ($cs->fetchAll() as $c) {
+                $ids = json_decode($c['unit_ids'], true) ?: [];
+                if (!in_array($id, $ids, true)) continue;
+                $ids = array_values(array_unique(array_filter(array_map(fn($x) => $x === $id ? $to : $x, $ids))));
+                $db->prepare('UPDATE contracts SET unit_ids = ? WHERE id = ?')->execute([json_encode($ids), $c['id']]);
+            }
+            $db->prepare('DELETE FROM units WHERE id = ?')->execute([$id]);
+            pm_event($user, (int)$u['project_id'], 'unit', '🏢 {name} אוחדה עם {to}', ['unit' => $id], ['name' => $u['name'], 'to' => $to ? pm_unit_name($to) : pm_t('משותף לכל המתחם')]);
+            $db->commit();
+        } catch (Throwable $e) {
+            $db->rollBack();
+            throw $e;
+        }
+        return pm_project_get($user, (int)$u['project_id']);
+    }
     $q = $db->prepare('SELECT s.id FROM stages s WHERE s.unit_id = ? AND ' . PM_STAGE_USED . ' > 0');
     $q->execute([$id]);
     $used = $q->fetchAll(PDO::FETCH_COLUMN);
@@ -123,4 +169,15 @@ function pm_unit_delete(array $user, int $id): array
         throw $e;
     }
     return pm_project_get($user, (int)$u['project_id']);
+}
+
+/** "🔑 מסירת כל היחידות" — כל מה שעוד לא נמסר, באותו תאריך (מסירה יחד). */
+function pm_units_handover(array $user, int $projectId, string $date): array
+{
+    pm_project_row($user, $projectId);
+    $date = pm_date(['d' => $date ?: pm_today()], 'd', 'תאריך המסירה'); // i18n-ok
+    $st = pm_db()->prepare('UPDATE units SET handed_over_at = ? WHERE project_id = ? AND handed_over_at IS NULL');
+    $st->execute([$date, $projectId]);
+    if ($st->rowCount()) pm_event($user, $projectId, 'unit', '🔑 כל היחידות נמסרו ({n})', [], ['n' => $st->rowCount()]);
+    return pm_project_get($user, $projectId);
 }
