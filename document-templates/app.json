@@ -9,6 +9,6 @@
   "public": [
     "fill.html",
     "assets/**",
-    "api.php?action=fill_get|fill_asset|fill_otp_send|fill_otp_verify|fill_save|fill_complete"
+    "api.php?action=fill_get|fill_asset|fill_otp_send|fill_otp_verify|fill_save|fill_complete|fill_upload|fill_file"
   ]
 }

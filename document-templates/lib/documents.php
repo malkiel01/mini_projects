@@ -228,6 +228,7 @@ function doc_get(array $user, int $id): array
         'schema' => $schema, 'values' => $values, 'progress' => doc_progress($schema, $values),
         'events' => $events, 'chain_ok' => doc_verify_chain($id),
         'participants' => participants_view($d, doc_schema($d)),
+        'attachments' => attachments_of($id),
     ]];
 }
 
@@ -244,7 +245,7 @@ function doc_asset(array $user, int $id): never
     exit;
 }
 
-function clean_value(array $f, $v): string
+function clean_value(array $f, $v, int $docId = 0): string
 {
     if (is_bool($v)) $v = $v ? '1' : '';
     $v = (string)$v;
@@ -265,6 +266,18 @@ function clean_value(array $f, $v): string
                 throw new ApiError('חתימה לא תקינה', 422);
             }
             return $v;
+        case 'file':
+            // הערך: רשימת מזהי קבצים שהועלו לשדה הזה במסמך הזה. הסרה = שמירה בלי המזהה.
+            $ids = $v === '' ? [] : json_decode($v, true);
+            if (!is_array($ids)) throw new ApiError('ערך קבצים לא תקין', 422);
+            $ids = array_values(array_unique(array_map('intval', $ids)));
+            if ($ids) {
+                $in = implode(',', array_fill(0, count($ids), '?'));
+                $st = db()->prepare("SELECT COUNT(*) FROM attachments WHERE document_id = ? AND field_key = ? AND id IN ($in)");
+                $st->execute(array_merge([$docId, $f['key']], $ids));
+                if ((int)$st->fetchColumn() !== count($ids)) throw new ApiError('קובץ לא שייך לשדה', 422);
+            }
+            return $ids ? json_encode($ids) : '';
         case 'text':
             return mb_substr(preg_replace('/[\r\n]+/', ' ', $v), 0, 2000);
         default:
@@ -306,7 +319,7 @@ function doc_save(array $user, array $b): array
             if (in_array($f['role'] ?? 'owner', $sentTo, true)) {
                 throw new ApiError('השדה "' . $f['label'] . '" כבר נשלח למילוי של המשתתף', 409);
             }
-            $v = clean_value($f, $v);
+            $v = clean_value($f, $v, (int)$d['id']);
             $prev = $old[$key] ?? '';
             if ($v === $prev) continue;
             $up->execute([$d['id'], $key, seal($v), $actor, $now]);

@@ -369,6 +369,8 @@ function dev_users(): array
         $r['is_developer'] = (bool)$r['is_developer'];
         $r['devices'] = (int)$r['devices'];
         $r['online'] = $r['devices'] > 0 && $r['last_seen_at'] && time() - strtotime($r['last_seen_at']) < ONLINE_SECONDS;
+        // נפח ומכסה — מספרים בלבד, בלי שום פרט על התוכן.
+        if (function_exists('quota_of')) $r['quota'] = quota_of($r['id']) + ['used_mb' => round(usage_bytes($r['id']) / 1048576, 2)];
     }
     return ['ok' => true, 'users' => $rows, 'online_seconds' => ONLINE_SECONDS];
 }

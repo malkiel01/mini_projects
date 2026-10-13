@@ -9,7 +9,10 @@
 
   async function api(action, body) {
     const opts = { headers: { 'X-Fill-Token': token }, credentials: 'omit' };
-    if (body !== undefined) {
+    if (body instanceof FormData) {
+      opts.method = 'POST';
+      opts.body = body;
+    } else if (body !== undefined) {
       opts.method = 'POST';
       opts.headers['Content-Type'] = 'application/json';
       opts.body = JSON.stringify(body);

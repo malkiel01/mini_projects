@@ -15,6 +15,7 @@
     date:      { label: 'תאריך',      icon: '📅', w: 90,  h: 20 },
     checkbox:  { label: 'תיבת סימון', icon: '☑',  w: 14,  h: 14 },
     signature: { label: 'חתימה',      icon: '✍️', w: 150, h: 50 },
+    file:      { label: 'צירוף קובץ', icon: '📎', w: 170, h: 20 },
   };
   const OVERFLOW = {
     shrink: 'להקטין גופן עד שייכנס',
@@ -328,7 +329,8 @@
         el('label', { class: 'inline' }, req, ' שדה חובה'),
         schema.roles.length > 1 ? select_('מי ממלא', 'role', Object.fromEntries(schema.roles.map(r => [r.key, r.label]))) : null,
         input('שורת עזרה (לא חובה)', 'help', { maxlength: 300 }),
-        f.type !== 'signature' ? input('ערך ברירת מחדל', 'default', { maxlength: 1000 }) : null,
+        f.type !== 'signature' && f.type !== 'file' ? input('ערך ברירת מחדל', 'default', { maxlength: 1000 }) : null,
+        f.type === 'file' ? filePanel(f) : null,
         textual ? input('גודל גופן', 'fontSize', { type: 'number', min: 6, max: 72 }) : null,
         textual ? select_('יישור', 'align', { right: 'ימין', center: 'מרכז', left: 'שמאל' }) : null,
         textual ? select_('כשהטקסט ארוך מהשדה', 'overflow', OVERFLOW) : null,
@@ -410,6 +412,31 @@
         none ? null : el('label', {}, el('span', {}, 'ספרות במספר הרץ'), dig),
         numbering.scheme === 'pattern' ? el('label', {}, el('span', {}, 'תבנית: {prefix} {yyyy} {mm} {seq}'), pat) : null,
         el('p', { class: 'small' }, 'המסמך הבא יקבל: ', preview));
+    }
+
+    // צירוף קובץ: אילו סוגים, גודל מרבי, ואחד או כמה.
+    function filePanel(f) {
+      f.accept ??= ['pdf', 'image'];
+      f.maxMb ??= 10;
+      const KINDS = { pdf: 'PDF', image: 'תמונה (כולל צילום מהמצלמה)', office: 'Word / Excel' };
+      const boxes = Object.entries(KINDS).map(([k, t]) => {
+        const c = el('input', { type: 'checkbox', checked: f.accept.includes(k) });
+        c.addEventListener('change', () => {
+          f.accept = Object.keys(KINDS).filter(x => x === k ? c.checked : f.accept.includes(x));
+          if (!f.accept.length) { f.accept = [k]; c.checked = true; }
+          setDirty(true);
+        });
+        return el('label', { class: 'inline small' }, c, ' ' + t);
+      });
+      const max = el('input', { type: 'number', min: 1, max: 50, value: f.maxMb });
+      max.addEventListener('input', () => { f.maxMb = Math.max(1, Math.min(50, Number(max.value) || 10)); setDirty(true); });
+      const multi = el('input', { type: 'checkbox', checked: !!f.multiple });
+      multi.addEventListener('change', () => { f.multiple = multi.checked; setDirty(true); });
+      return el('div', { class: 'file-opts' },
+        el('span', { class: 'muted small' }, 'סוגי קבצים מותרים'), ...boxes,
+        el('label', {}, el('span', {}, 'גודל מרבי לקובץ (MB)'), max),
+        el('label', { class: 'inline small' }, multi, ' אפשר לצרף כמה קבצים'),
+        el('p', { class: 'muted small' }, 'המגבלה בפועל היא הקטנה מבין זו לבין המכסה של החשבון.'));
     }
 
     function scrollTo(f) {
