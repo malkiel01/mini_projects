@@ -176,6 +176,7 @@ function pm_project_get(array $user, int $id): array
             'lawyer_id' => $p['lawyer_id'] !== null ? (int)$p['lawyer_id'] : null,
             'start_date' => $p['start_date'], 'due_date' => $p['due_date'], 'notes' => $p['notes'],
             'created_at' => $p['created_at'], 'last_activity_at' => $p['last_activity_at'],
+            'portal_shared' => (bool)($p['portal_shared'] ?? 1),
         ],
         'stages' => $stages,
         'units'  => pm_units_of($id),
@@ -203,6 +204,11 @@ function pm_project_team(array $p, array $stages): array
     // התפקידים בעברית — הדפדפן משווה אליהם (roles.includes('לקוח')) ומתרגם בתצוגה
     $add($p['client_id'] !== null ? (int)$p['client_id'] : null, 'לקוח'); // i18n-ok
     $add($p['lawyer_id'] !== null ? (int)$p['lawyer_id'] : null, 'עו"ד'); // i18n-ok
+    // מתחם: לקוח / עו"ד של יחידה — גם בצוות (לקישור האישי שלהם)
+    foreach (pm_units_of((int)$p['id']) as $u) {
+        if ($u['client_id'] && $u['client_id'] !== (int)$p['client_id']) { $add($u['client_id'], 'לקוח'); $team[$u['client_id']]['roles'][] = '🏢 ' . $u['name']; } // i18n-ok
+        if ($u['lawyer_id'] && $u['lawyer_id'] !== (int)$p['lawyer_id']) { $add($u['lawyer_id'], 'עו"ד'); $team[$u['lawyer_id']]['roles'][] = '🏢 ' . $u['name']; } // i18n-ok
+    }
     foreach ($stages as $s) if ($s['supplier_id']) $add($s['supplier_id'], $s['name']);
     $m = $db->prepare('SELECT contact_id, role FROM project_members WHERE project_id = ?');
     $m->execute([$p['id']]);

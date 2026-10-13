@@ -41,6 +41,9 @@ const Projects = (() => {
             if (e.target.closest('[data-unit-new]')) openUnit(null);
         });
         $('#add-unit').addEventListener('click', () => openUnit(null));
+        $('#units-portal-shared').addEventListener('change', async e => {
+            await busy(null, null, async () => { update(await api('units-settings', { body: { project_id: cur.project.id, portal_shared: e.target.checked } })); toast(t('נשמר')); });
+        });
         $('#units-handover').addEventListener('click', async () => {
             if (!confirm(t('לסמן שכל היחידות שעוד לא נמסרו נמסרו היום? שחרורי העיכבון ותשלומי "במסירה" יגיעו למועד.'))) return;
             await busy($('#units-handover'), null, async () => { update(await api('units-handover', { body: { project_id: cur.project.id } })); toast(t('🔑 כל היחידות נמסרו')); });
@@ -428,7 +431,7 @@ const Projects = (() => {
 
     let unitId = null;
 
-    function openUnit(id) {
+    async function openUnit(id) {
         const dlg = $('#unit-dlg'), form = $('form', dlg), el = form.elements;
         form.reset(); formError(form, '');
         unitId = id;
@@ -439,6 +442,14 @@ const Projects = (() => {
         el.area.value = u?.area ?? '';
         el.budget.value = u?.budget || '';
         el.notes.value = u?.notes || '';
+        // לקוח ועו"ד ליחידה — ריק = של הפרויקט
+        const [clients, lawyers] = await Promise.all([contactsOf('client'), contactsOf('lawyer')]).catch(() => [[], []]);
+        const team = teamOf(cur), mine = c => team.includes(c.owner_id) && !c.archived;
+        const projName = kind => (cur.team || []).find(c => c.id === cur.project[kind])?.name;
+        el.client_id.innerHTML = options(clients.filter(mine).map(c => ({ value: c.id, label: c.name })), u?.client_id ?? '',
+            projName('client_id') ? t('של הפרויקט — {name}', { name: projName('client_id') }) : t('של הפרויקט'));
+        el.lawyer_id.innerHTML = options(lawyers.filter(mine).map(c => ({ value: c.id, label: c.name })), u?.lawyer_id ?? '',
+            projName('lawyer_id') ? t('של הפרויקט — {name}', { name: projName('lawyer_id') }) : t('של הפרויקט'));
         el.handed_over_at.value = u?.handed_over_at || '';
         $('#unit-handover-box').hidden = $('#unit-handover-hint').hidden = !u;
         // איחוד: יחידה עם נתונים — מעבירים את השלבים ליחידה אחרת או למשותף, ואז מוחקים
@@ -466,7 +477,8 @@ const Projects = (() => {
     async function saveUnit() {
         const form = $('#unit-dlg form'), el = form.elements;
         const body = { id: unitId || undefined, project_id: cur.project.id, name: el.name.value.trim(), area: el.area.value.trim(),
-            budget: el.budget.value.trim(), notes: el.notes.value.trim(), ...(unitId ? { handed_over_at: el.handed_over_at.value } : {}), copy_from: unitId ? undefined : el.copy_from.value, move_shared: !unitId && el.move_shared.checked };
+            budget: el.budget.value.trim(), notes: el.notes.value.trim(), ...(unitId ? { handed_over_at: el.handed_over_at.value } : {}),
+            client_id: Number(el.client_id.value) || null, lawyer_id: Number(el.lawyer_id.value) || null, copy_from: unitId ? undefined : el.copy_from.value, move_shared: !unitId && el.move_shared.checked };
         if (!body.name) { formError(form, t('שם היחידה: שדה חובה')); return; }
         await busy($('button[type=submit]', form), form, async () => {
             const d = await api('unit', { body });
@@ -500,9 +512,12 @@ const Projects = (() => {
             <span class="num" aria-hidden="true">🏢</span>
             <div class="body"><div class="l1">${esc(u.name)}</div><div class="l2">${[
                 u.handed_over_at ? t('🔑 נמסרה {date}', { date: shortDate(u.handed_over_at) }) : '',
+                u.client_name ? '👤 ' + u.client_name : '',
                 t('{n} שלבים', { n: u.stages }), u.area ? t('{n} מ"ר', { n: u.area }) : '', u.budget ? money(u.budget) : '',
             ].filter(Boolean).map(esc).join('<i class="sep" aria-hidden="true">·</i>')}</div></div></li>`).join('');
         $('#units-hint').hidden = units.length > 0;
+        $('#units-shared-box').hidden = $('#units-portal-hint').hidden = !units.length;
+        $('#units-portal-shared').checked = cur.project.portal_shared !== false;
         $('#units-handover').hidden = units.length < 2 || units.every(u => u.handed_over_at);
     }
 

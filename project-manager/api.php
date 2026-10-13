@@ -135,6 +135,7 @@ try {
         'POST dev-purge'  => pm_dev_purge($user, (string)($in['kind'] ?? ''), (int)($in['id'] ?? 0)),
         'POST unit'       => pm_unit_save($user, $in),
         'POST unit-delete' => pm_unit_delete($user, (int)($in['id'] ?? 0), isset($in['move_to']) ? (string)$in['move_to'] : null),
+        'POST units-settings' => pm_units_settings($user, (int)($in['project_id'] ?? 0), $in),
         'POST units-handover' => pm_units_handover($user, (int)($in['project_id'] ?? 0), (string)($in['date'] ?? '')),
         'POST stage-delete' => pm_stage_delete($user, (int)($in['id'] ?? 0)),
         'POST stages-order' => pm_stages_order($user, (int)($in['project_id'] ?? 0), is_array($in['ids'] ?? null) ? $in['ids'] : []),

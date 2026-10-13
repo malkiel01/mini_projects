@@ -1952,5 +1952,9 @@
     "אי אפשר לאחד יחידה עם עצמה": "A unit can't be merged with itself",
     "🏢 {name} אוחדה עם {to}": "🏢 {name} merged into {to}",
     "תאריך המסירה": "Handover date",
-    "🔑 כל היחידות נמסרו ({n})": "🔑 All units handed over ({n})"
+    "🔑 כל היחידות נמסרו ({n})": "🔑 All units handed over ({n})",
+    "של הפרויקט — {name}": "The project's — {name}",
+    "של הפרויקט": "The project's",
+    "לקוח של יחידה רואה בפורטל גם את השלבים המשותפים (היתר, חדר מדרגות…)": "A unit's client also sees the shared stages in the portal (permit, stairwell…)",
+    "לכל יחידה — לקוח ועו\"ד משלה (או של הפרויקט). כל לקוח רואה בקישור האישי רק את היחידות שלו: שלבים, הצעות, תשלומים והמצב הכספי שלהן.": "Each unit has its own client and lawyer (or the project's). Each client sees only their own units in their personal link: stages, quotes, payments and their financial status."
 }

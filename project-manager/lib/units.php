@@ -26,14 +26,16 @@ function pm_unit_name(int $id): string
 /** היחידות של הפרויקט, לפי הסדר — עם מספר השלבים בכל אחת. */
 function pm_units_of(int $projectId): array
 {
-    $st = pm_db()->prepare('SELECT u.*, (SELECT COUNT(*) FROM stages s WHERE s.unit_id = u.id) AS stages,
+    $st = pm_db()->prepare('SELECT u.*, cl.name AS client_name, lw.name AS lawyer_name, (SELECT COUNT(*) FROM stages s WHERE s.unit_id = u.id) AS stages,
             (SELECT COUNT(*) FROM stages s WHERE s.unit_id = u.id AND ' . PM_STAGE_USED . ' > 0) AS used
-        FROM units u WHERE u.project_id = ? ORDER BY u.sort, u.id');
+        FROM units u LEFT JOIN contacts cl ON cl.id = u.client_id LEFT JOIN contacts lw ON lw.id = u.lawyer_id WHERE u.project_id = ? ORDER BY u.sort, u.id');
     $st->execute([$projectId]);
     return array_map(fn($u) => [
         'id' => (int)$u['id'], 'name' => $u['name'], 'area' => $u['area'] !== null ? (float)$u['area'] : null,
         'budget' => (int)$u['budget'], 'notes' => $u['notes'], 'sort' => (int)$u['sort'], 'stages' => (int)$u['stages'],
         'used' => (int)$u['used'], 'handed_over_at' => $u['handed_over_at'],
+        'client_id' => $u['client_id'] !== null ? (int)$u['client_id'] : null, 'client_name' => $u['client_name'],
+        'lawyer_id' => $u['lawyer_id'] !== null ? (int)$u['lawyer_id'] : null, 'lawyer_name' => $u['lawyer_name'],
     ], $st->fetchAll());
 }
 
@@ -66,7 +68,7 @@ function pm_unit_save(array $user, array $in): array
     $id = (int)($in['id'] ?? 0);
     $old = $id ? pm_unit_row($user, $id) : null;
     $projectId = $old ? (int)$old['project_id'] : (int)($in['project_id'] ?? 0);
-    pm_project_row($user, $projectId);
+    $p = pm_project_row($user, $projectId);
     $area = $in['area'] ?? '';
     if ($area !== '' && $area !== null && (!is_numeric($area) || $area < 0 || $area > 1e6)) throw new PmError('{field}: מספר לא תקין', 422, ['field' => 'שטח']);
     $budget = $in['budget'] ?? '';
@@ -78,6 +80,9 @@ function pm_unit_save(array $user, array $in): array
         'notes'  => pm_str($in, 'notes', 500, false, 'הערות'),
         // מסירה (שלב 3): תאריך שבו היחידה נמסרה; ריק — עוד לא
         'handed_over_at' => array_key_exists('handed_over_at', $in) ? (pm_date($in, 'handed_over_at', 'נמסרה ב') ?: null) : ($old['handed_over_at'] ?? null), // i18n-ok
+        // לקוח ועו"ד ליחידה (שלב 4); ריק — של הפרויקט
+        'client_id' => array_key_exists('client_id', $in) ? pm_owned_contact((int)($in['client_id'] ?? 0) ?: null, (int)$p['owner_id'], 'client', 'הלקוח') : ($old['client_id'] ?? null), // i18n-ok
+        'lawyer_id' => array_key_exists('lawyer_id', $in) ? pm_owned_contact((int)($in['lawyer_id'] ?? 0) ?: null, (int)$p['owner_id'], 'lawyer', 'עורך הדין') : ($old['lawyer_id'] ?? null), // i18n-ok
     ];
     $db = pm_db();
     $dup = $db->prepare('SELECT 1 FROM units WHERE project_id = ? AND name = ? AND id != ?');
@@ -87,12 +92,12 @@ function pm_unit_save(array $user, array $in): array
     $db->beginTransaction();
     try {
         if ($old) {
-            $db->prepare('UPDATE units SET name = ?, area = ?, budget = ?, notes = ?, handed_over_at = ? WHERE id = ?')->execute([...array_values($f), $id]);
+            $db->prepare('UPDATE units SET ' . implode(', ', array_map(fn($k) => "$k = ?", array_keys($f))) . ' WHERE id = ?')->execute([...array_values($f), $id]);
             if (($old['handed_over_at'] ?? null) !== $f['handed_over_at']) pm_event($user, $projectId, 'unit', $f['handed_over_at'] ? '🔑 נמסרה: {name}' : '🔑 בוטלה המסירה: {name}', ['unit' => $id], ['name' => $f['name']]);
         } else {
             $first = !(int)$db->query("SELECT COUNT(*) FROM units WHERE project_id = $projectId")->fetchColumn();
             $sort = (int)$db->query("SELECT COALESCE(MAX(sort), 0) + 10 FROM units WHERE project_id = $projectId")->fetchColumn();
-            $db->prepare('INSERT INTO units (project_id, name, area, budget, notes, handed_over_at, sort, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+            $db->prepare('INSERT INTO units (project_id, ' . implode(', ', array_keys($f)) . ', sort, created_at) VALUES (?, ' . str_repeat('?, ', count($f)) . '?, ?)')
                ->execute([$projectId, ...array_values($f), $sort, $now]);
             $id = (int)$db->lastInsertId();
             if ($first && !empty($in['move_shared'])) {
@@ -180,4 +185,42 @@ function pm_units_handover(array $user, int $projectId, string $date): array
     $st->execute([$date, $projectId]);
     if ($st->rowCount()) pm_event($user, $projectId, 'unit', '🔑 כל היחידות נמסרו ({n})', [], ['n' => $st->rowCount()]);
     return pm_project_get($user, $projectId);
+}
+
+/** הגדרות המתחם: portal_shared — להציג ללקוח של יחידה גם את השלבים המשותפים (ברירת מחדל: כן). */
+function pm_units_settings(array $user, int $projectId, array $in): array
+{
+    pm_project_row($user, $projectId);
+    if (array_key_exists('portal_shared', $in)) pm_db()->prepare('UPDATE projects SET portal_shared = ? WHERE id = ?')->execute([!empty($in['portal_shared']) ? 1 : 0, $projectId]);
+    return pm_project_get($user, $projectId);
+}
+
+/**
+ * מה איש קשר (לקוח / עו"ד) רואה בפורטל של מתחם: null — הכול (אין יחידות, או שכולן שלו);
+ * אחרת {units, stages, budget}: היחידות שלו, השלבים שלהן (ומשותפים — אם portal_shared), והתקציב שלהן (₪).
+ * יחידה בלי לקוח / עו"ד משלה — של הלקוח / העו"ד של הפרויקט.
+ */
+function pm_portal_scope(array $project, int $contactId, string $role): ?array
+{
+    if (!in_array($role, ['client', 'lawyer'], true)) return null;
+    $units = pm_units_of((int)$project['id']);
+    if (!$units) return null;
+    $col = $role === 'client' ? 'client_id' : 'lawyer_id';
+    $mine = array_values(array_filter($units, fn($u) => (int)($u[$col] ?? $project[$col]) === $contactId));
+    if (count($mine) === count($units)) return null;
+    $ids = array_column($mine, 'id');
+    $st = pm_db()->prepare('SELECT id, unit_id FROM stages WHERE project_id = ?');
+    $st->execute([$project['id']]);
+    $shared = (int)($project['portal_shared'] ?? 1) === 1;
+    $stages = [];
+    foreach ($st->fetchAll() as $s) if ($s['unit_id'] === null ? $shared : in_array((int)$s['unit_id'], $ids, true)) $stages[] = (int)$s['id'];
+    return ['units' => $ids, 'names' => array_column($mine, 'name'), 'stages' => $stages, 'budget' => array_sum(array_column($mine, 'budget')), 'shared' => $shared];
+}
+
+/** הרשאה בפורטל לפי היחידות: שלב (או יחידה של תשלום) שמחוץ לתחום — "לא נמצא". */
+function pm_portal_in_scope(?array $scope, ?int $stageId, ?int $unitId = null): bool
+{
+    if ($scope === null) return true;
+    if ($stageId) return in_array($stageId, $scope['stages'], true);
+    return $unitId ? in_array($unitId, $scope['units'], true) : $scope['shared'];
 }

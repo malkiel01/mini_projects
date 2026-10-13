@@ -124,8 +124,10 @@ function pm_finance(array $user, int $projectId): array
  * כל החישוב. $portal — לפורטל של הלקוח / העו"ד: בלי סימונים פנימיים, אותם מספרים.
  * מבנה: settings · totals · stages[{…, rows[ספק]}] · fee.
  */
-function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_OVERPAY_MARGIN): array
+function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_OVERPAY_MARGIN, ?array $scope = null): array
 {
+    // $scope (מתחם, פורטל של לקוח של יחידה): רק השלבים שלו, התקציב שלו, והיחידות שלו (pm_portal_scope)
+    $in = fn($sid) => $scope === null || in_array((int)$sid, $scope['stages'], true);
     $db = pm_db();
     $pr = $db->prepare('SELECT p.*, u.display_name AS owner_name FROM projects p JOIN users u ON u.id = p.owner_id WHERE p.id = ?');
     $pr->execute([$projectId]);
@@ -159,6 +161,7 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
     $q->execute([$projectId]);
     foreach ($q->fetchAll() as $x) {
         $sid = (int)$x['stage_id'];
+        if (!$in($sid)) continue;
         $cid = (int)$x['supplier_id'];
         $row($sid, $cid);
         $r = $rateOf($cid, $x['vat_rate']);
@@ -171,6 +174,7 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
     $co->execute([$projectId]);
     foreach ($co->fetchAll() as $x) {
         $sid = (int)$x['stage_id'];
+        if (!$in($sid)) continue;
         $cid = (int)$x['supplier_id'];
         $row($sid, $cid);
         $r = $rateOf($cid, $x['vat_rate']);
@@ -189,6 +193,7 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
     $retHeld = [0, 0];
     foreach ($payments as $x) {
         $sid = (int)$x['stage_id'];
+        if ($scope !== null && !pm_portal_in_scope($scope, $sid ?: null, $x['unit_id'] ? (int)$x['unit_id'] : null)) continue;
         $cid = (int)$x['supplier_id'];
         $row($sid, $cid);
         $r = $rateOf($cid, $x['vat_rate']);
@@ -225,6 +230,7 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
     $suppliersCommitted = [0, 0];
     foreach ($stages + [0 => null] as $sid => $s) {
         if (!$s && empty($rows[0])) continue;
+        if ($s && !$in($sid)) continue;
         $S = [];
         $outRows = [];
         foreach ($rows[$sid] ?? [] as $cid => $r) {
@@ -280,7 +286,7 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
     }
 
     // הוצאות ישירות (כ5) — הלקוח כבר שילם: נכנסות לסוכם, למתוכנן, ל"עד היום" ולשולם (בלי פיגור ובלי יתרה)
-    $expenses = pm_expenses_of($projectId);
+    $expenses = array_values(array_filter(pm_expenses_of($projectId), fn($x) => $scope === null || ($x['stage_id'] ? $in($x['stage_id']) : $scope['shared'])));
     $E = [0, 0];
     foreach ($expenses as $x) { $E[0] += (int)round($x['amount']['g'] * 100); $E[1] += (int)round($x['amount']['n'] * 100); }
     if ($E[0]) {
@@ -291,7 +297,7 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
 
     // שכר הטרחה של המנהל — גלוי ללקוח כחלק מההוצאות; אבני דרך משלו (כ5)
     $fee = null;
-    if ($p['fee_type'] === 'percent' || $p['fee_type'] === 'fixed') {
+    if ($scope === null && ($p['fee_type'] === 'percent' || $p['fee_type'] === 'fixed')) { // שכר הטרחה — של כל המתחם, לא ללקוח של יחידה
         $g = $p['fee_type'] === 'percent' ? (int)round($suppliersCommitted[0] * (float)$p['fee_value'] / 100) : (int)round((float)$p['fee_value'] * 100);
         $n = pm_net($g, $vat); // שכר הטרחה — שירות של המנהל, במע"מ הרגיל
         $fp = pm_fee_payments_of($projectId);
@@ -314,8 +320,8 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
         $forecast[1] += $n;
     }
 
-    $budget = (int)$p['budget'] * 100;
-    $initial = (int)$p['budget_initial'] * 100;
+    $budget = ($scope !== null ? (int)$scope['budget'] : (int)$p['budget']) * 100;
+    $initial = $scope !== null ? $budget : (int)$p['budget_initial'] * 100;
     $committedAll = $T['committed'][0] ?? 0;
     // "תקציב היום": התקציב שהמנהל עדכן — או ההתחייבויות, כשעברו אותו
     $todayBudget = max($budget, $committedAll);
@@ -343,7 +349,8 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
     }
     return ['settings' => pm_finance_settings($p), 'totals' => $totals, 'stages' => $outStages, 'fee' => $fee,
         'expenses' => ['items' => $expenses, 'total' => pm_m($E[0], $E[1])],
-        'units' => pm_finance_units($projectId, $stages, $outStages, $contracts, $expenses)];
+        'units' => array_values(array_filter(pm_finance_units($projectId, $stages, $outStages, $contracts, $expenses),
+            fn($u) => $scope === null || in_array($u['id'], $scope['units'], true)))];
 }
 
 /**
