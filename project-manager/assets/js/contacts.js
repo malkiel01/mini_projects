@@ -208,7 +208,28 @@ const Contacts = (() => {
         const body = collect();
         if (!body.name) { formError(form, t('שם: שדה חובה')); return; }
         await busy($('#save'), form, async () => {
-            const { contact } = await api('contact', { body });
+            let d = await api('contact', { body });
+            if (d.duplicate) {
+                // כבר יש כרטיס כזה — אצלי או אצל מנהל אחר בפרויקט משותף: משתמשים בו, לא יוצרים כפול
+                const x = d.duplicate;
+                const what = t({ phone: 'אותו טלפון', email: 'אותו אימייל', tax_id: 'אותו ח.פ.' }[x.why]);
+                const who = x.mine ? t('אצלך') : t('אצל {name}', { name: x.owner_name });
+                const usable = onSaved || x.visible;
+                const msg = t('כבר יש כרטיס "{name}" {who}, עם {what}.', { name: x.name, who, what }) + '\n\n';
+                if (usable) {
+                    // אישור — משתמשים בקיים; ביטול — חוזרים לטופס
+                    if (!confirm(msg + t('אישור — להשתמש בכרטיס הקיים (בלי כפילות). ביטול — לחזור לטופס.'))) return;
+                    invalidateContacts(body.kind);
+                    $('#editor').close();
+                    toast(t('נבחר הכרטיס הקיים: {name}', { name: x.name }));
+                    if (onSaved) onSaved(x); else open(x.id, x.kind);
+                    return;
+                }
+                // כרטיס של מנהל אחר שעוד לא משויך לפרויקט משותף — לא מוצג כאן
+                if (!confirm(msg + t('הוא יופיע אצלך ברגע שישויך לפרויקט המשותף. אישור — לשמור בכל זאת כרטיס נפרד. ביטול — לחזור לטופס.'))) return;
+                d = await api('contact', { body: { ...body, force: true } });
+            }
+            const { contact } = d;
             invalidateContacts(body.kind);
             $('#editor').close();
             toast(t(body.id ? 'נשמר' : ADDED_LABEL[body.kind]));

@@ -1866,5 +1866,14 @@
     "מפרויקט משותף: {names}": "From a shared project: {names}",
     "מפרויקט משותף: {names}. מוצג כאן כל עוד יש לך גישה לפרויקט.": "From a shared project: {names}. Shown here as long as you have access to the project.",
     "כרטיס של מנהל אחר": "Another manager's card",
-    "כרטיס מפרויקט משותף — רק מי שיצר אותו יכול להעביר לארכיון": "A card from a shared project — only its creator can archive it"
+    "כרטיס מפרויקט משותף — רק מי שיצר אותו יכול להעביר לארכיון": "A card from a shared project — only its creator can archive it",
+    "אותו טלפון": "the same phone",
+    "אותו אימייל": "the same email",
+    "אותו ח.פ.": "the same company / ID number",
+    "אצלך": "in your contacts",
+    "אצל {name}": "in {name}'s contacts",
+    "כבר יש כרטיס \"{name}\" {who}, עם {what}.": "There is already a card \"{name}\" {who}, with {what}.",
+    "אישור — להשתמש בכרטיס הקיים (בלי כפילות). ביטול — לחזור לטופס.": "OK — use the existing card (no duplicate). Cancel — back to the form.",
+    "הוא יופיע אצלך ברגע שישויך לפרויקט המשותף. אישור — לשמור בכל זאת כרטיס נפרד. ביטול — לחזור לטופס.": "It will appear for you once it's linked to the shared project. OK — save a separate card anyway. Cancel — back to the form.",
+    "נבחר הכרטיס הקיים: {name}": "Using the existing card: {name}"
 }
