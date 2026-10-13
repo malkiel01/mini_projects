@@ -119,7 +119,9 @@ const Payments = (() => {
         const order = [...project.stages.map(s => s.id).filter(id => groups.has(id)), ...(groups.has(0) ? [0] : [])];
         $('#payment-list').innerHTML = order.map(k => {
             const st = k ? stageOf(k) : null;
-            return `<section class="q-stage"><header class="q-head"><h2 class="one">${esc(st ? stageName(st) : t('בלי שלב'))}</h2>${st ? stageChip(st.status) : ''}</header>
+            // בלי שלב — כשכולן מקדמות: "💰 מקדמות"
+            const noStage = groups.get(k).every(x => x.due_kind === 'advance') ? t('💰 מקדמות') : t('בלי שלב');
+            return `<section class="q-stage"><header class="q-head"><h2 class="one">${esc(st ? stageName(st) : noStage)}</h2>${st ? stageChip(st.status) : ''}</header>
                 <ul class="list rows-list">${groups.get(k).map(row).join('')}</ul></section>`;
         }).join('') || `<p class="empty">${esc(t('עוד אין אבני דרך לתשלום. "+ אבן דרך" — למשל מקדמה של 30% מההצעה שאושרה.'))}</p>`;
     }

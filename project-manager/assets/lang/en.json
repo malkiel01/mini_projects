@@ -1960,5 +1960,6 @@
     "מקדמה — בתחילת העבודה": "Advance — at the start of work",
     "💰 מקדמה — בתחילת העבודה": "💰 Advance — at the start of work",
     "💰 מקדמה — לתשלום בתחילת העבודה, עם החתימה על החוזה. בלי עיכבון.": "💰 Advance — paid at the start of work, upon signing the contract. No retention.",
-    "מקדמה — לשלוח דרישת תשלום: {title} — {supplier}, {amount}": "Advance — send a payment request: {title} — {supplier}, {amount}"
+    "מקדמה — לשלוח דרישת תשלום: {title} — {supplier}, {amount}": "Advance — send a payment request: {title} — {supplier}, {amount}",
+    "💰 מקדמות": "💰 Advances"
 }
