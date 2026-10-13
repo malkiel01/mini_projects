@@ -22,6 +22,8 @@ async function init() {
     bindPassword();
     bindInstall();
     addEventListener('hashchange', route);
+    // חץ החזרה — למסך הקודם באפליקציה (לא לדף האפליקציות, ולא מחוץ לאפליקציה)
+    $('#back').addEventListener('click', e => { e.preventDefault(); goBack(); });
     // שיתוף שהגיע לפני הכניסה (או שלא נשמר) — ממשיכים ממנו
     if (!location.hash.startsWith('#/share') && await Share.pending()) location.hash = '#/share';
     else route();
@@ -42,11 +44,10 @@ function route() {
     $$('.view').forEach(v => { v.hidden = v.id !== 'view-' + section; });
     $('#nav').hidden = inner;
     $('#project-nav').hidden = !inProject;
+    track(inner, inProject ? `p/${a}${c ? `/${b}/${c}` : ''}` : `${section}/${a}`, section === 'share' && a ? '#/share' : section === 'import' ? `#/contacts/${a}` : '#/');
+    // במסך ראשי (עם הניווט) — אין חץ חזרה. במסך פנימי — חזרה למסך הקודם, עד המסך הראשי.
     $('#back').hidden = !inner;
-    $('#back').href = section === 'share' && a ? '#/share' : section === 'import' ? `#/contacts/${a}` : '#/';
     $('#logo').hidden = inner;
-    // בתוך דף האפליקציות — חזרה אליו. במצב עצמאי אין לאן לחזור.
-    $('#tools-link').hidden = inner || state.standalone;
     $('#me-btn').hidden = inner;
     Me.close();
     $$('#nav [data-nav]').forEach(x => x.setAttribute('aria-current', x.dataset.nav === section ? 'page' : 'false'));
@@ -65,6 +66,31 @@ function route() {
     if (section === 'settings') Settings.show(a);
     if (section === 'share') { $('#subtitle').hidden = true; Share.show(a); }
     if (section === 'import') { $('#subtitle').hidden = true; DeviceContacts.show(a); }
+}
+
+// ---- חזרה למסך הקודם ----
+// מחסנית של מסכים באפליקציה (נשמרת ללשונית, גם אחרי רענון). מעבר בין לשוניות של אותו פרויקט — אותו
+// מסך (מחליף); תיקייה בתוך הקבצים — מסך חדש. כל מסך ראשי מתחיל את המחסנית מחדש.
+const NAV_KEY = 'pm.nav';
+let navStack = (() => { try { return JSON.parse(sessionStorage.getItem(NAV_KEY)) || []; } catch { return []; } })();
+let navParent = '#/';
+
+function track(inner, key, parent) {
+    const hash = location.hash || '#/';
+    navParent = parent;
+    if (!inner) navStack = [{ key, hash }];
+    else {
+        const i = navStack.findIndex(x => x.key === key);
+        if (i >= 0) { navStack.length = i + 1; navStack[i].hash = hash; } // חזרה למסך שכבר במחסנית / לשונית אחרת באותו מסך
+        else navStack.push({ key, hash });
+    }
+    try { sessionStorage.setItem(NAV_KEY, JSON.stringify(navStack.slice(-30))); } catch { /* מצב פרטי */ }
+}
+
+/** המסך הקודם — ואם נכנסו ישר למסך פנימי (קישור, שיתוף), המסך שמעליו. */
+function goBack() {
+    const prev = navStack.length > 1 ? navStack[navStack.length - 2].hash : navParent;
+    location.hash = prev.replace(/^#?/, '#');
 }
 
 async function logout() {

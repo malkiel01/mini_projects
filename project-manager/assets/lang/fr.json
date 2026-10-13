@@ -1760,5 +1760,6 @@
     "זה בעל הפרויקט": "C'est le propriétaire du projet",
     "צורף שותף מנהל: {name}": "Co-gestionnaire ajouté : {name}",
     "{name} שיתף איתך פרויקט: {project}": "{name} a partagé un projet avec vous : {project}",
-    "{name} צירף אותך כשותף מנהל בפרויקט {project}.\nמעכשיו הוא מופיע ברשימת הפרויקטים שלך — עם כל מה שבו.\n\n{url}\n": "{name} vous a ajouté comme co-gestionnaire du projet {project}.\nIl apparaît désormais dans votre liste de projets — avec tout son contenu.\n\n{url}\n"
+    "{name} צירף אותך כשותף מנהל בפרויקט {project}.\nמעכשיו הוא מופיע ברשימת הפרויקטים שלך — עם כל מה שבו.\n\n{url}\n": "{name} vous a ajouté comme co-gestionnaire du projet {project}.\nIl apparaît désormais dans votre liste de projets — avec tout son contenu.\n\n{url}\n",
+    "חזרה למסך הקודם": "Retour à l'écran précédent"
 }

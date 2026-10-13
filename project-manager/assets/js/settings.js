@@ -35,7 +35,6 @@ const Settings = (() => {
             const on = e.target.checked;
             await busy(null, null, async () => {
                 ({ standalone: state.standalone } = await api('standalone', { body: { on } }));
-                $('#tools-link').hidden = state.standalone;
                 toast(t(on ? 'האפליקציה עצמאית' : 'האפליקציה חלק מדף האפליקציות'));
             });
             e.target.checked = !!state.standalone;
