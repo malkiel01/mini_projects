@@ -129,7 +129,7 @@ const Quotes = (() => {
                 aria-label="${esc(q.supplier_name)}, ${esc(money(q.amount))}, ${esc(state.labels.quote[q.status])}${q.recommended ? ', ' + esc(t('מומלצת')) : ''}">
             ${pic}
             <div class="body"><div class="l1"><span class="one">${q.recommended ? '<span aria-hidden="true">⭐ </span>' : ''}${esc(q.supplier_name)}</span>
-                <span class="amt">${esc(money(q.amount))}</span></div>
+                <span class="amt">${moneyVat(vatOf(q.amount, q.vat_rate))}</span></div>
                 <div class="l2">${l2}</div></div>
         </li>`;
     }

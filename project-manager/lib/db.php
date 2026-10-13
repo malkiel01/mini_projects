@@ -537,6 +537,27 @@ function pm_migrate(PDO $pdo): void
     pm_add_column($pdo, 'users', 'lang', "TEXT NOT NULL DEFAULT ''");
     pm_add_column($pdo, 'contacts', 'lang', "TEXT NOT NULL DEFAULT 'he'");
     pm_add_column($pdo, 'projects', 'last_event_i18n', "TEXT NOT NULL DEFAULT ''");
+    // אגף הכספים, כ1 (lib/finance.php): התקדמות ותקציב לשלב; מועד לאבן דרך ("בגמר שלב" / בהתקדמות);
+    // מע"מ שנקבע ביום שנקבע הסכום; ספק עוסק פטור; הגדרות כספים לפרויקט — תקציב ראשוני, שכר טרחה,
+    // עיכבון והצמדה. סכומים באגורות, חוץ מתקציב הפרויקט (₪, כמו budget).
+    pm_add_column($pdo, 'stages', 'progress', 'INTEGER NOT NULL DEFAULT 0');
+    pm_add_column($pdo, 'stages', 'budget', 'INTEGER NOT NULL DEFAULT 0');
+    pm_add_column($pdo, 'payments', 'due_kind', "TEXT NOT NULL DEFAULT 'date'");
+    pm_add_column($pdo, 'payments', 'due_pct', 'INTEGER');
+    pm_add_column($pdo, 'payments', 'vat_rate', 'REAL');
+    pm_add_column($pdo, 'quotes', 'vat_rate', 'REAL');
+    pm_add_column($pdo, 'contacts', 'vat_exempt', 'INTEGER NOT NULL DEFAULT 0');
+    if (!in_array('budget_initial', array_column($pdo->query('PRAGMA table_info(projects)')->fetchAll(), 'name'), true)) {
+        pm_add_column($pdo, 'projects', 'budget_initial', 'INTEGER NOT NULL DEFAULT 0');
+        $pdo->exec('UPDATE projects SET budget_initial = budget'); // עד היום — התקציב הנוכחי הוא הראשוני
+    }
+    pm_add_column($pdo, 'projects', 'fee_type', "TEXT NOT NULL DEFAULT ''");
+    pm_add_column($pdo, 'projects', 'fee_value', 'REAL NOT NULL DEFAULT 0');
+    pm_add_column($pdo, 'projects', 'retention_pct', 'REAL NOT NULL DEFAULT 10');
+    pm_add_column($pdo, 'projects', 'index_on', 'INTEGER NOT NULL DEFAULT 0');
+    pm_add_column($pdo, 'projects', 'index_name', "TEXT NOT NULL DEFAULT ''");
+    pm_add_column($pdo, 'projects', 'index_base_month', "TEXT NOT NULL DEFAULT ''");
+    pm_add_column($pdo, 'projects', 'index_base', 'REAL');
     // נוסחי ההודעות — לכל שפה נוסח משלו. המפתח הראשי משתנה, ולכן הטבלה נבנית מחדש
     // פעם אחת; הנוסחים הקיימים נשמרים כנוסחים בעברית.
     $pdo->exec(PM_MSG_TEMPLATES_TABLE);

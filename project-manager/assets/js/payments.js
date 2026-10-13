@@ -30,8 +30,9 @@ const Payments = (() => {
         });
         const form = $('#payment-dlg form');
         form.addEventListener('submit', e => { e.preventDefault(); save(); });
-        form.elements.stage_id.addEventListener('change', () => stageChanged(null));
+        form.elements.stage_id.addEventListener('change', () => { stageChanged(null); dueKindChanged(); });
         $$('#payment-dlg [name=mode]').forEach(r => r.addEventListener('change', modeChanged));
+        $$('#payment-dlg [name=due_kind]').forEach(r => r.addEventListener('change', dueKindChanged));
         form.elements.percent.addEventListener('input', quoteHint);
         $('#payment-main-btns').addEventListener('click', e => {
             const b = e.target.closest('[data-do]');
@@ -49,15 +50,36 @@ const Payments = (() => {
     async function show(p) {
         bind();
         project = p;
+        Finance.show(p);
         try { data = await api('payments', { params: { project_id: project.project.id } }); }
         catch (e) { toast(e.message, true); return; }
         render();
     }
 
+    /** אחרי פעולה: הרשימה, הפרויקט, והמצב הכספי (אגף הכספים). */
     async function refresh(d) {
         data = d;
         project = await Projects.reload();
         render();
+        Finance.reload(project);
+    }
+
+    /** מחלוקה לתשלומים (finance.js) — רק הרשימה. */
+    async function refreshList(d) {
+        data = d;
+        render();
+    }
+
+    /** "+ אבן דרך" מהמצב הכספי — עם השלב והספק. */
+    function add(stageId, supplierId) {
+        open(null, { stage_id: stageId, supplier_id: supplierId });
+    }
+
+    /** מתי משלמים — לשורה ולחלון. */
+    function dueText(p, late) {
+        if (p.due_kind === 'stage_done') return t('בגמר השלב');
+        if (p.due_kind === 'progress') return t('בהתקדמות {n}%', { n: p.due_pct });
+        return p.due_date ? t(late ? 'באיחור · {date}' : 'עד {date}', { date: shortDate(p.due_date) }) : '';
     }
 
     function render() {
@@ -82,31 +104,33 @@ const Payments = (() => {
     }
 
     function row(p) {
-        const late = p.due_date && p.due_date < today() && !['received', 'cancelled'].includes(p.status);
+        const late = p.due_kind === 'date' && p.due_date && p.due_date < today() && !['received', 'cancelled'].includes(p.status);
         const l2 = [
             esc(p.supplier_name),
             p.supplier_request && p.status === 'planned' ? `📥 ${esc(t('בקשת הספק'))}` : `${ICON[p.status]} ${esc(p.label)}`,
-            p.due_date ? `<span class="${late ? 'late' : ''}">${esc(t(late ? 'באיחור · {date}' : 'עד {date}', { date: shortDate(p.due_date) }))}</span>` : '',
+            dueText(p, late) ? `<span class="${late ? 'late' : ''}">${esc(dueText(p, late))}</span>` : '',
             p.status === 'partial' ? esc(t('נשאר {amount}', { amount: money(p.balance) })) : '',
         ].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>');
         return `<li class="card q-row pay-${p.status}" data-payment="${p.id}" tabindex="0" role="button" aria-label="${esc(p.title)}, ${esc(money(p.amount))}, ${esc(p.label)}">
-            <div class="body"><div class="l1"><span class="one">${esc(p.title)}</span><span class="amt">${esc(money(p.amount))}</span></div>
+            <div class="body"><div class="l1"><span class="one">${esc(p.title)}</span><span class="amt">${moneyVat(vatOf(p.amount, p.vat_rate))}</span></div>
                 <div class="l2">${l2}</div></div></li>`;
     }
 
     // ================= חלון =================
 
-    async function open(id) {
+    async function open(id, preset = {}) {
         const dlg = $('#payment-dlg'), form = $('form', dlg), el = form.elements;
         formError(form, '');
         current = id ? data.payments.find(p => p.id === id) : null;
-        const p = current || { stage_id: guessStage(), payer: defaultPayer(), needs_lawyer: hasLawyer() };
+        const p = current || { stage_id: guessStage(), payer: defaultPayer(), needs_lawyer: hasLawyer(), due_kind: 'date', ...preset };
         $('#payment-dlg-title').textContent = current ? `${current.title} — ${money(current.amount)}` : t('אבן דרך לתשלום');
         el.stage_id.innerHTML = options(project.stages.map(s => ({ value: s.id, label: t(s.name) })), p.stage_id, t('בלי שלב'));
         el.title.value = p.title || '';
         el.amount.value = current ? String(current.amount) : '';
         el.percent.value = current?.percent ?? '';
         el.due_date.value = p.due_date || '';
+        $(`#payment-dlg [name=due_kind][value=${p.due_kind || 'date'}]`).checked = true;
+        el.due_pct.value = p.due_pct || 50;
         el.notes.value = p.notes || '';
         $(`#payment-dlg [name=mode][value=${current?.percent ? 'percent' : 'amount'}]`).checked = true;
         $(`#payment-dlg [name=payer][value=${p.payer || 'client'}]`).checked = true;
@@ -123,6 +147,7 @@ const Payments = (() => {
             + (current.received ? `<span class="chip">${esc(t('התקבל {amount}', { amount: money(current.received) }))}</span>` : '')
             + (current.lawyer ? `<span class="chip">⚖️ ${esc(t('{name} אישר', { name: current.lawyer.by }))}</span>` : '');
         await stageChanged(p.supplier_id || null);
+        dueKindChanged();
         renderActions();
         dlg.showModal();
     }
@@ -157,6 +182,18 @@ const Payments = (() => {
         modeChanged();
     }
 
+    /** "בגמר השלב" / "בהתקדמות" — רק כשנבחר שלב. */
+    function dueKindChanged() {
+        const el = $('#payment-dlg form').elements;
+        const hasStage = !!Number(el.stage_id.value);
+        $$('#payment-dlg [name=due_kind]').forEach(r => { if (r.value !== 'date') r.disabled = !hasStage || el.title.disabled; });
+        if (!hasStage) $('#payment-dlg [name=due_kind][value=date]').checked = true;
+        const kind = $('#payment-dlg [name=due_kind]:checked').value;
+        $('#due-date-box').hidden = kind !== 'date';
+        $('#due-pct-box').hidden = kind !== 'progress';
+        $('#due-kind-hint').hidden = kind !== 'stage_done';
+    }
+
     function modeChanged() {
         const pct = $('#payment-dlg [name=mode]:checked').value === 'percent';
         $('#pay-amount-box').hidden = pct;
@@ -170,7 +207,7 @@ const Payments = (() => {
         if (!approvedQuote) return;
         const pct = Number($('#payment-dlg form').elements.percent.value) || 0;
         const pctMode = $('#payment-dlg [name=mode]:checked').value === 'percent';
-        h.textContent = t('ההצעה שאושרה: {name} — {amount}', { name: approvedQuote.supplier_name, amount: money(approvedQuote.amount) }) + (pctMode && pct ? ` · ${pct}% = ${money(Math.round(approvedQuote.amount * pct) / 100)}` : '');
+        h.textContent = t('ההצעה שאושרה: {name} — {amount}', { name: approvedQuote.supplier_name, amount: money(approvedQuote.amount) }) + ` (${vatLine(vatOf(approvedQuote.amount, approvedQuote.vat_rate))})` + (pctMode && pct ? ` · ${pct}% = ${money(Math.round(approvedQuote.amount * pct) / 100)}` : '');
     }
 
     function renderActions() {
@@ -215,7 +252,8 @@ const Payments = (() => {
             id: current?.id, project_id: project.project.id, stage_id: Number(el.stage_id.value) || null,
             supplier_id: Number(el.supplier_id.value) || 0, title: el.title.value.trim(),
             amount: pct ? null : el.amount.value.trim(), percent: pct ? el.percent.value.trim() : '',
-            due_date: el.due_date.value, payer: $('#payment-dlg [name=payer]:checked').value,
+            due_kind: $('#payment-dlg [name=due_kind]:checked').value, due_pct: Number(el.due_pct.value) || null,
+            due_date: $('#payment-dlg [name=due_kind]:checked').value === 'date' ? el.due_date.value : '', payer: $('#payment-dlg [name=payer]:checked').value,
             needs_lawyer: el.needs_lawyer.checked, notes: el.notes.value,
         };
         if (!body.supplier_id) { formError(form, t('ספק: שדה חובה')); return; }
@@ -245,7 +283,7 @@ const Payments = (() => {
             const key = role === 'lawyer' && waitLawyer ? 'payment_lawyer' : 'payment_request';
             const lang = c.lang || I18n.lang();
             const details = `${p.title}${st ? ` (${inLang(st.name, lang)})` : ''} — ${p.supplier_name}`
-                + (p.due_date ? ', ' + t('עד {date}', { date: shortDate(p.due_date) }) : '')
+                + (dueText(p, false) ? ', ' + dueText(p, false) : '')
                 + (role === 'client' && waitLawyer ? ' ' + t('(התשלום — אחרי אישור עורך הדין)') : '');
             recipients.push({ contact: c, role, label: t(role === 'client' ? 'ללקוח' : 'לעו"ד'),
                 // i18n-none-start — שמות המשתנים בנוסח
@@ -311,5 +349,5 @@ const Payments = (() => {
         });
     }
 
-    return { show };
+    return { show, add, refreshList };
 })();

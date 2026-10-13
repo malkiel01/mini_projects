@@ -128,7 +128,7 @@ function pm_report_save(array $user, array $in): array
             $tpl = !$n ? '✅ {stage}: בוצע{text}' : ($n > 1 ? '✅ {stage}: בוצע ({n} קבצים){text}' : '✅ {stage}: בוצע ({n} קובץ){text}');
             // i18n-ok-end
             pm_event($user, $projectId, 'report', $tpl, ['report' => $id, 'stage' => $stageId], $vars + ['text' => $text !== '' ? " — $text" : '']);
-            $db->prepare("UPDATE stages SET status = 'done', done_at = ?, updated_at = ? WHERE id = ?")->execute([pm_now(), pm_now(), $stageId]);
+            $db->prepare("UPDATE stages SET status = 'done', progress = 100, done_at = ?, updated_at = ? WHERE id = ?")->execute([pm_now(), pm_now(), $stageId]);
             pm_stage_close_if_paid($user, $stageId);
         } else {
             // i18n-ok-start

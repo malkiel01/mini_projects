@@ -280,6 +280,7 @@ const Projects = (() => {
                 x.supplier_name ? esc(x.supplier_name) : `<span class="muted">${esc(t('אין ספק'))}</span>`,
                 x.plan_start || x.plan_end ? `${shortDate(x.plan_start)}–${shortDate(x.plan_end)}` : '',
                 x.needs_lawyer ? esc(t('עורך דין')) : '',
+                x.status === 'in_progress' && x.progress ? esc(t('{n}% בוצע', { n: x.progress })) : '',
             ].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>');
             return `<li class="card" data-stage="${x.id}" tabindex="0" role="button" aria-label="${esc(t(x.name))}, ${esc(state.labels.stage[x.status])}">
                 <span class="num st-${esc(x.status)}" aria-hidden="true">${i + 1}</span>
@@ -305,10 +306,24 @@ const Projects = (() => {
         el.plan_start.value = s.plan_start || '';
         el.plan_end.value = s.plan_end || '';
         el.needs_lawyer.checked = !!s.needs_lawyer;
+        // אגף הכספים: התקדמות ("בוצע" = 100, נעול) ותקציב לשלב
+        el.progress.value = s.progress || 0;
+        el.budget.value = s.budget || '';
+        progressShown();
+        el.progress.oninput = progressShown;
+        el.status.onchange = progressShown;
         $('[data-existing]', dlg).hidden = !id;
         await fillSuppliers(el.supplier_id, Number(el.trade_id.value) || 0, s.supplier_id);
         el.trade_id.onchange = () => fillSuppliers(el.supplier_id, Number(el.trade_id.value) || 0, Number(el.supplier_id.value) || null);
         dlg.showModal();
+    }
+
+    function progressShown() {
+        const el = $('#stage-dlg form').elements;
+        const done = ['done', 'paid'].includes(el.status.value);
+        if (done) el.progress.value = 100;
+        el.progress.disabled = done;
+        $('#stage-progress-out').textContent = `${el.progress.value}%`;
     }
 
     /** ספקים של בעל הפרויקט — קודם מי שבתחום של השלב. */
@@ -332,13 +347,14 @@ const Projects = (() => {
             trade_id: Number(el.trade_id.value) || null, supplier_id: Number(el.supplier_id.value) || null,
             status: el.status.value, needs_lawyer: el.needs_lawyer.checked,
             plan_start: el.plan_start.value, plan_end: el.plan_end.value,
+            progress: Number(el.progress.value) || 0, budget: el.budget.value.trim(),
         };
         if (!body.name) { formError(form, t('שם השלב: שדה חובה')); return; }
         // "בוצע" — דרך דיווח מהשטח עם תמונה: שומרים את השאר, ועוברים לדיווח
         const old = stageId ? cur.stages.find(x => x.id === stageId) : null;
         if (old && body.name === t(old.name)) body.name = old.name;
         const toDone = ['done', 'paid'].includes(body.status) && !['done', 'paid'].includes(old?.status || 'planned');
-        if (toDone) body.status = old?.status || 'planned';
+        if (toDone) { body.status = old?.status || 'planned'; body.progress = old?.progress || 0; }
         await busy($('button[type=submit]', form), form, async () => {
             const d = await api('stage', { body });
             if (toDone) {

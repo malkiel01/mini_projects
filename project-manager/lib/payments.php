@@ -17,6 +17,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/quotes.php';
+require_once __DIR__ . '/finance.php';
 
 // i18n-ok-start — מתורגם בתצוגה (pm_t_map)
 const PM_PAYMENT_STATUSES = [
@@ -70,7 +71,8 @@ function pm_payment_out(array $p, array $proofs): array
         'id' => (int)$p['id'], 'stage_id' => $p['stage_id'] !== null ? (int)$p['stage_id'] : null, 'supplier_id' => (int)$p['supplier_id'],
         'supplier_name' => $p['supplier_name'] ?? '', 'quote_id' => $p['quote_id'] !== null ? (int)$p['quote_id'] : null,
         'title' => $p['title'], 'amount' => (int)$p['amount'] / 100, 'percent' => $p['percent'] !== null ? (float)$p['percent'] : null,
-        'due_date' => $p['due_date'], 'payer' => $p['payer'], 'needs_lawyer' => (bool)$p['needs_lawyer'],
+        'due_date' => $p['due_date'], 'due_kind' => $p['due_kind'] ?? 'date', 'due_pct' => isset($p['due_pct']) ? (int)$p['due_pct'] : null,
+        'vat_rate' => pm_payment_vat($p), 'payer' => $p['payer'], 'needs_lawyer' => (bool)$p['needs_lawyer'],
         'lawyer' => $p['lawyer_approved_at'] ? ['at' => $p['lawyer_approved_at'], 'by' => $p['lawyer_by'], 'method' => $p['lawyer_method'], 'note' => $p['lawyer_note']] : null,
         'status' => $p['status'], 'label' => pm_payment_label($p), 'payable' => pm_payment_payable($p),
         'notes' => $p['notes'], 'requested_at' => $p['requested_at'], 'created_at' => $p['created_at'],
@@ -78,6 +80,19 @@ function pm_payment_out(array $p, array $proofs): array
         'received' => $received / 100, 'balance' => max(0, (int)$p['amount'] - $received) / 100,
         'proofs' => $proofs,
     ];
+}
+
+/** שיעור המע"מ של אבן דרך: 0 לספק עוסק פטור, השיעור שנשמר בה, או השיעור היום. */
+function pm_payment_vat(array $p): float
+{
+    static $exempt = [];
+    $cid = (int)$p['supplier_id'];
+    if (!isset($exempt[$cid])) {
+        $st = pm_db()->prepare('SELECT vat_exempt FROM contacts WHERE id = ?');
+        $st->execute([$cid]);
+        $exempt[$cid] = (bool)$st->fetchColumn();
+    }
+    return $exempt[$cid] ? 0.0 : (isset($p['vat_rate']) && $p['vat_rate'] !== null ? (float)$p['vat_rate'] : pm_vat_rate());
 }
 
 function pm_payment_proofs(array $ids): array
@@ -166,6 +181,11 @@ function pm_payment_save(array $user, array $in, ?array $actor = null): array
     } else {
         $amount = pm_quote_amount($in['amount'] ?? null);
     }
+    $dueKind = (string)($in['due_kind'] ?? ($old['due_kind'] ?? 'date'));
+    if (!in_array($dueKind, ['date', 'stage_done', 'progress'], true)) throw new PmError('מועד לא מוכר', 422);
+    if ($dueKind !== 'date' && !$stageId) throw new PmError('"בגמר שלב" או "בהתקדמות" — רק כשנבחר שלב', 422);
+    $duePct = (int)($in['due_pct'] ?? 0);
+    if ($dueKind === 'progress' && ($duePct < 1 || $duePct > 100)) throw new PmError('התקדמות: בין 1 ל-100%', 422);
     $payer = (string)($in['payer'] ?? 'client');
     if (!in_array($payer, ['client', 'lawyer'], true)) throw new PmError('משלם לא מוכר', 422);
     if ($payer === 'lawyer' && !$p['lawyer_id']) throw new PmError('אין עו"ד בפרויקט', 422);
@@ -177,6 +197,9 @@ function pm_payment_save(array $user, array $in, ?array $actor = null): array
         'amount'       => $amount,
         'percent'      => $percent,
         'due_date'     => pm_date($in, 'due_date', 'תאריך יעד'), // i18n-ok
+        // מועד (אגף הכספים): תאריך, "בגמר שלב", או כשהשלב מגיע לאחוז התקדמות
+        'due_kind'     => $dueKind,
+        'due_pct'      => $dueKind === 'progress' ? $duePct : null,
         'payer'        => $payer,
         'needs_lawyer' => !empty($in['needs_lawyer']) && $p['lawyer_id'] ? 1 : 0,
         'notes'        => pm_str($in, 'notes', 2000, false, 'מה כלול'),
@@ -202,8 +225,8 @@ function pm_payment_save(array $user, array $in, ?array $actor = null): array
     } else {
         $cols = implode(', ', array_keys($f));
         $qs = implode(', ', array_fill(0, count($f), '?'));
-        $db->prepare("INSERT INTO payments ($cols, project_id, created_by, created_at, updated_at) VALUES ($qs, ?, ?, ?, ?)")
-           ->execute(array_merge(array_values($f), [$projectId, $user['id'], $now, $now]));
+        $db->prepare("INSERT INTO payments ($cols, project_id, vat_rate, created_by, created_at, updated_at) VALUES ($qs, ?, ?, ?, ?, ?)")
+           ->execute(array_merge(array_values($f), [$projectId, pm_vat_rate(), $user['id'], $now, $now]));
         $id = (int)$db->lastInsertId();
         pm_event($actor, $projectId, 'payment', $f['due_date'] ? 'אבן דרך לתשלום: {title} — {supplier}, {amount} עד {date}' : 'אבן דרך לתשלום: {title} — {supplier}, {amount}',
             ['payment' => $id], $ev);

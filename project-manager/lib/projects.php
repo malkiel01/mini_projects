@@ -151,6 +151,7 @@ function pm_project_get(array $user, int $id): array
         'supplier_name' => $s['supplier_name'], 'supplier_phone' => $s['supplier_phone'],
         'status' => $s['status'], 'needs_lawyer' => (bool)$s['needs_lawyer'],
         'plan_start' => $s['plan_start'], 'plan_end' => $s['plan_end'], 'done_at' => $s['done_at'],
+        'progress' => pm_stage_progress($s), 'budget' => (int)$s['budget'] / 100,
     ], $st->fetchAll());
 
     $ev = $db->prepare('SELECT id, at, actor_id, actor_name, kind, text, data_json FROM events WHERE project_id = ? ORDER BY id DESC LIMIT 300');
@@ -239,8 +240,9 @@ function pm_project_save(array $user, array $in): array
         } else {
             $cols = implode(', ', array_keys($f));
             $qs = implode(', ', array_fill(0, count($f), '?'));
-            $db->prepare("INSERT INTO projects (owner_id, $cols, created_at, updated_at, last_activity_at) VALUES (?, $qs, ?, ?, ?)")
-               ->execute(array_merge([$ownerId], array_values($f), [$now, $now, $now]));
+            // התקציב בפתיחה — "תקציב ראשוני" (אגף הכספים: ראשוני מול היום)
+            $db->prepare("INSERT INTO projects (owner_id, $cols, budget_initial, created_at, updated_at, last_activity_at) VALUES (?, $qs, ?, ?, ?, ?)")
+               ->execute(array_merge([$ownerId], array_values($f), [$f['budget'], $now, $now, $now]));
             $id = (int)$db->lastInsertId();
             $count = pm_apply_template($id, (int)($in['template_id'] ?? 0));
             if ($count && pm_project_survey_first($user, $id)) $count++;
@@ -317,7 +319,11 @@ function pm_stage_save(array $user, array $in): array
         'needs_lawyer' => !empty($in['needs_lawyer']) ? 1 : 0,
         'plan_start'   => pm_date($in, 'plan_start', 'התחלה מתוכננת'), // i18n-ok
         'plan_end'     => pm_date($in, 'plan_end', 'סיום מתוכנן'), // i18n-ok
+        // אגף הכספים: התקדמות (אחוז; "בוצע" = 100) ותקציב לשלב (אגורות)
+        'progress'     => max(0, min(100, (int)($in['progress'] ?? ($old['progress'] ?? 0)))),
+        'budget'       => pm_stage_budget($in, $old),
     ];
+    if (in_array($status, ['done', 'paid'], true)) $f['progress'] = 100;
     // "בוצע" — רק דרך דיווח מהשטח עם תמונה (lib/reports.php)
     if (in_array($status, ['done', 'paid'], true) && !in_array($old['status'] ?? 'planned', ['done', 'paid'], true)) {
         throw new PmError('כדי לסמן שלב "בוצע" — "דיווח מהשטח" עם לפחות תמונה אחת', 409);
@@ -335,6 +341,9 @@ function pm_stage_save(array $user, array $in): array
             if ($old['status'] !== $status) {
                 pm_event($user, $projectId, 'stage_status', '{stage}: {status}', ['stage' => $id, 'status' => $status],
                     ['stage' => $f['name'], 'status' => PM_STAGE_STATUSES[$status]]);
+            }
+            if ((int)$old['progress'] !== $f['progress'] && !in_array($status, ['done', 'paid'], true)) {
+                pm_event($user, $projectId, 'stage_progress', '{stage}: התקדמות {n}%', ['stage' => $id], ['stage' => $f['name'], 'n' => $f['progress']]);
             }
             if ((int)$old['supplier_id'] !== (int)$f['supplier_id'] && $f['supplier_id']) {
                 pm_event($user, $projectId, 'stage_supplier', '{stage}: שויך {supplier}', ['stage' => $id],
@@ -355,6 +364,16 @@ function pm_stage_save(array $user, array $in): array
         throw $e;
     }
     return pm_project_get($user, $projectId) + ($surveyAdded ? ['notice' => pm_t('מודד מוסמך תמיד לפני אדריכלות — שלב המדידה סודר לפני האדריכלות')] : []);
+}
+
+/** תקציב לשלב — ₪ מהטופס, באגורות במסד. בלי שדה — נשאר מה שהיה. */
+function pm_stage_budget(array $in, ?array $old): int
+{
+    if (!array_key_exists('budget', $in)) return (int)($old['budget'] ?? 0);
+    $v = $in['budget'];
+    if ($v === '' || $v === null) return 0;
+    if (!is_numeric($v) || $v < 0 || $v > 1e9) throw new PmError('{field}: מספר לא תקין', 422, ['field' => 'תקציב לשלב']);
+    return (int)round((float)$v * 100);
 }
 
 function pm_contact_name(int $id): string

@@ -97,6 +97,23 @@ const waNumber = s => { const d = digits(s).replace(/^\+/, ''); return d.startsW
 const money = n => (I18n.lang() === 'he' ? '₪' + Number(n || 0).toLocaleString('he-IL')
     : new Intl.NumberFormat(I18n.locale(), { style: 'currency', currency: 'ILS', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(Number(n || 0)));
 
+/**
+ * שיקוף מע"מ (אגף הכספים): כל סכום כולל מע"מ, ומתחתיו — כמה לפני מע"מ וכמה המע"מ.
+ * m — { g: כולל, n: לפני } מהשרת, או מספר + שיעור (vatOf). פטור / 0 — "בלי מע"מ".
+ */
+const vatOf = (g, rate) => ({ g: Number(g) || 0, n: rate > 0 ? Math.round((Number(g) || 0) / (1 + rate / 100)) : Number(g) || 0 });
+function vatLine(m) {
+    const g = Math.round(m.g), n = Math.round(m.n);
+    if (!g) return '';
+    if (g === n) return t('בלי מע"מ');
+    return t('{net} + מע"מ {vat}', { net: money(n), vat: money(g - n) });
+}
+/** סכום + שורת מע"מ קטנה, ל-HTML. */
+function moneyVat(m, cls = '') {
+    const line = vatLine(m);
+    return `<span class="mv ${cls}"><span class="mv-g">${esc(money(m.g))}</span>${line ? `<small class="mv-n">${esc(line)}</small>` : ''}</span>`;
+}
+
 /** זמן יחסי כמו בצ'אט: "עכשיו", "14:05", "אתמול", "12.10". */
 function when(iso) {
     if (!iso) return '';

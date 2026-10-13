@@ -40,6 +40,14 @@ const Settings = (() => {
             });
             e.target.checked = !!state.standalone;
         });
+        // שיעור המע"מ — לסכומים חדשים (אגף הכספים)
+        $('#vat-form').addEventListener('submit', async e => {
+            e.preventDefault();
+            await busy($('#vat-form .btn'), null, async () => {
+                ({ vat_rate: state.vatRate } = await api('vat-rate', { body: { rate: Number($('#vat-rate').value) } }));
+                toast(t('נשמר: מע"מ {n}%', { n: state.vatRate }));
+            });
+        });
         $('#max-upload-form').addEventListener('submit', async e => {
             e.preventDefault();
             await busy($('#max-upload-form .btn'), null, async () => {
@@ -92,6 +100,7 @@ const Settings = (() => {
         if (pane === 'general') {
             $('#standalone').checked = !!state.standalone;
             $('#max-upload').value = Math.round(state.maxUpload / 1048576);
+            $('#vat-rate').value = state.vatRate ?? 18;
         }
         if (pane === 'messages') renderMsgTemplates();
         if (pane === 'trades') renderTrades();
