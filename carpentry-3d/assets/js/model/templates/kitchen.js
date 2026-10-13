@@ -18,6 +18,7 @@
 // בכל בנייה, זהה לבנייה הישנה (legacy/kitchen-v1.js).
 
 import { carcass, shelves, back, door, drawer, part } from '../blocks.js';
+import { lightingParams, lightingState, addStrip, finishLighting, ledPlaces } from '../lighting.js';
 import { materialParams, drawerParams, joineryParams, boardT, LIMITS, hingeParam, handleParam, FINISHES_FLUSH, applyFinish } from './common.js';
 import { resolveShares, sectionLayout, cellsOf } from '../layout.js';
 
@@ -47,7 +48,10 @@ function swapXZ(items) {
     // תנועה: החלפת X↔Z היא שיקוף, ולכן כיוון הסיבוב מתהפך.
     if (p.motion) p.motion = swapMotion(p.motion);
   }
-  for (const h of items.hardware) if (h.pos) h.pos = [h.pos[2], h.pos[1], h.pos[0]];
+  for (const h of items.hardware) {
+    if (h.pos) h.pos = [h.pos[2], h.pos[1], h.pos[0]];
+    if (h.kind === 'led' && h.horizontal) h.axis = h.axis === 'z' ? undefined : 'z';   // פס לאורך הקיר — עכשיו לעומק
+  }
   return items;
 }
 const swapCache = new Map();
@@ -66,7 +70,7 @@ function mirrorX(items, Lx) {
     p.edges = { ...e, left: e.right, right: e.left };
     if (p.motion) p.motion = mirrorMotion(p.motion, Lx);
   }
-  for (const h of items.hardware) if (h.pos) h.pos = [Lx - h.pos[0], h.pos[1], h.pos[2]];
+  for (const h of items.hardware) if (h.pos) h.pos = [Lx - h.pos[0] - (h.kind === 'led' && h.horizontal && h.axis !== 'z' ? h.len : 0), h.pos[1], h.pos[2]];
   return items;
 }
 const mirrorCache = new Map();
@@ -119,6 +123,9 @@ export default {
     { key: 'topOverhang', label: 'הבלטת המשטח קדימה', type: 'mm', min: 0, max: 60, default: 40, group: 'חומרים' },
     ...drawerParams({ slide: 'hw:slide-tandem' }),   // מגירות מטבח רחבות וכבדות: טנדם 40 ק"ג כברירת מחדל
     hingeParam({ group: 'חומרים' }), handleParam({ group: 'חומרים' }),
+    // תאורה במטבח: מתחת לארונות העליונים (מאירה את המשטח) ובסוקל
+    ...lightingParams({ label: 'פסי לד', hint: 'מתחת לעליונים — פס לאורך החזית של כל ארון עליון, מאיר את המשטח',
+      options: [{ id: 'none', name: 'ללא' }, { id: 'under', name: 'מתחת לארונות העליונים' }, { id: 'plinth', name: 'בסוקל' }, { id: 'under+plinth', name: 'מתחת לעליונים ובסוקל' }] }),
   ],
   // מדפים קבועים/מתכווננים — לכל קומה; עובי הדפנות והמדפים — מהחומר (שלב 5)
   joinery: joineryParams({ autoT: true }).map((p) => (p.key === 'shelvesMode' ? { ...p, legacy: true } : p)),
@@ -374,6 +381,15 @@ export default {
     parts.push(part('countertop-A', 'משטח עבודה', { x: 0, y: baseTop, z: 0, w: Lx, h: topT, d: topD }, { axis: 'y', grain: 'x', material: v.topMaterial, edges: { front: true, left: !isL, right: true } }));
     if (isL) parts.push(part('countertop-B', 'משטח עבודה', { x: 0, y: baseTop, z: topD, w: topD, h: topT, d: Lz - topD }, { axis: 'y', grain: 'z', material: v.topMaterial, edges: { right: true, front: true }, note: 'חיבור פינה למשטח א' }));
 
+    // תאורה (lighting.js): 'under' — מתחת לכל ארון עליון; 'plinth' — בסוקל
+    const kPlaces = new Set(String(v.led || 'none').split('+'));
+    const light = lightingState(v.ledStrip, v.ledProfile);
+    if (kPlaces.has('plinth')) {
+      addStrip({ hardware, warnings }, light, { id: 'led-plinth-A', len: Lx - (isL ? D - 50 : 0), pos: [isL ? D - 50 : 0, 8, D - 48], horizontal: true, note: 'סוקל — הקיר האחורי' });
+      if (isL) addStrip({ hardware, warnings }, light, { id: 'led-plinth-B', len: Lz - (D - 50), pos: [D - 48, 8, D - 50], horizontal: true, axis: 'z', note: 'סוקל — הקיר השני' });
+      light.lit.push({ i: 0, j: 0, door: false, where: 'סוקל' });
+    }
+
     // ---- עליונים ----
     let H = baseTop + topT;
     if (v.uppers === 'yes') {
@@ -384,6 +400,11 @@ export default {
         let xx = Cu;
         rowUnits(key).forEach(([u, ui], k) => {
           const b = box(prefixOf(k + 1), xx, ws[k], uy, v.upperH, Du, u, { hingeDefault });
+          if (kPlaces.has('under')) {
+            // פס לאורך החזית, מתחת לרצפת הארון העליון — לפני הסיבוב לקיר השני
+            addStrip({ hardware: b.hardware, warnings }, light, { id: `led-${prefixOf(k + 1)}`, len: ws[k] - 40, pos: [xx + 20, uy - 4, Du - 45], horizontal: true, reach: v.upperGap, note: `מתחת ל${prefixOf(k + 1)}`, board: b.parts.find((p) => p.id === `${prefixOf(k + 1)}-bottom`) });
+            light.lit.push({ i: ui, j: 0, door: false, where: `מתחת ל${prefixOf(k + 1)}` });
+          }
           add(swap ? swapXZ(b) : b);
           geo[ui] = { width: ws[k], height: v.upperH, floors: b.floors };
           xx += ws[k];
@@ -394,6 +415,8 @@ export default {
       H = uy + v.upperH;
     }
 
+    if (kPlaces.has('under') && v.uppers !== 'yes') warnings.push('תאורה מתחת לעליונים — אין ארונות עליונים');
+    finishLighting({ hardware, warnings }, light, { control: v.ledControl });
     if (isL && v.cornerSide === 'right') mirrorX(all, Lx);
 
     const minW = Math.min(...wAll), maxW = Math.max(...wAll);

@@ -1645,5 +1645,23 @@ console.log('תאורת לד: מיקומים, פרופיל, שנאי, שליטה
   check(build('bookcase', { ...base, led: 'shelves', ledStrip: 'hw:led-24v-4000' }).hardware.find((h) => h.id === 'led-driver')?.material.includes('24v'), 'שנאי במתח של הפס (24V)');
 }
 
+console.log('תאורת לד בארון הבגדים ובמטבח');
+{
+  // ארון: מלמעלה בכל קומה, דלתות עץ → חיישן דלת
+  const w = build('wardrobe', { columns: 3, hangingColumns: 2, drawersPerColumn: 0, doorType: 'wood', led: 'top', ledStrip: 'hw:led-12v-3000' });
+  const ws = w.hardware.filter((h) => h.kind === 'led');
+  check(ws.length === 3 && w.hardware.some((h) => h.id === 'led-door' && h.qty === 3) && w.hardware.some((h) => h.id === 'led-driver'), 'ארון: פס מלמעלה בכל עמודה, 3 חיישני דלת, שנאי');
+  const wsh = build('wardrobe', { columns: 2, hangingColumns: 1, doorType: 'none', led: 'shelves', ledStrip: 'hw:led-12v-3000', height: 2400 });
+  check(wsh.hardware.some((h) => /^led-top-shelf-1/.test(h.id)) && wsh.hardware.some((h) => h.id === 'led-touch'), 'ארון: לד מתחת למדף שמעל המוט; בלי דלתות — מתג מגע');
+  check(TEMPLATES.wardrobe.unitsSpec.floorLed === true, 'ארון: תאורה לכל קומה בכרטיס');
+  // מטבח ר', פינה מימין: מתחת לעליונים ובסוקל
+  const k = build('kitchen', { shape: 'L', cornerSide: 'right', cabinets: 3, cabinetsB: 2, uppers: 'yes', led: 'under+plinth', ledStrip: 'hw:led-24v-3000' });
+  const ks = k.hardware.filter((h) => h.kind === 'led');
+  check(ks.length === 5 + 2 && ks.filter((h) => h.axis === 'z').length === 3, 'מטבח: 5 פסים מתחת לעליונים + 2 בסוקל; 3 לאורך הקיר השני');
+  check(ks.every((h) => h.pos[0] >= -1 && (h.axis === 'z' ? h.pos[0] : h.pos[0] + h.len) <= k.bounds.w + 1 && h.pos[2] >= -1), 'מטבח: כל הפסים בתוך המטבח (גם אחרי השיקוף)');
+  check(k.hardware.find((h) => h.id === 'led-driver')?.material.includes('24v') && k.hardware.some((h) => h.id === 'led-touch'), 'מטבח: שנאי 24V ומתג מגע');
+  check(build('kitchen', { uppers: 'no', led: 'under', ledStrip: 'hw:led-12v-3000' }).warnings.some((x) => /אין ארונות עליונים/.test(x)), 'מטבח: אזהרה — לד מתחת לעליונים בלי עליונים');
+}
+
 if (failed) { console.error(`\n${failed} בדיקות נכשלו`); process.exit(1); }
 console.log('\nהכול עבר ✓');

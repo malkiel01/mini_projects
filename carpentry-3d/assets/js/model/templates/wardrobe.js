@@ -10,6 +10,7 @@
 // תלייה, מדפים, מגירות בתחתית, סוג דלתות) בכל בנייה, וזהה לבנייה הישנה
 // (legacy/wardrobe-v1.js, נבדק ב-model-check).
 
+import { lightingParams, anyUnitLed, lightingState, lightFloor, finishLighting, ledPlaces } from '../lighting.js';
 import { carcass, partitions, shelves, back, plinth, crown, door, drawer, rod, slidingDoors } from '../blocks.js';
 import { resolveShares, sectionLayout } from '../layout.js';
 import { wheelsParam, addWheels, materialParams, drawerParams, joineryParams, handleParam, hingeParam, boardT, bodyWarnings, LIMITS, FINISHES_NO_GLASS, applyFinish, sameOrMaterial, resolveSame, columnHeights, fitSides, stepTops, steppedBack, steppedCrown } from './common.js';
@@ -64,6 +65,8 @@ export default {
     { legacy: true, key: 'doorType', label: 'דלתות', type: 'enum', default: 'none', group: 'דלתות', options: [{ id: 'none', name: 'ללא' }, { id: 'wood', name: 'עץ' }, { id: 'sliding', name: 'הזזה' }] },
     { legacy: true, key: 'doorFinish', label: 'גימור דלתות העץ', type: 'enum', default: 'flat', group: 'דלתות', options: FINISHES_NO_GLASS },
     hingeParam({ legacy: true }), handleParam({ legacy: true }),
+    // תאורה (lighting.js): ברירת המחדל לכל קומה, ופס, פרופיל ושליטה (אוטומטי — חיישן דלת)
+    ...lightingParams({ anyLed: anyUnitLed }),
     { key: 'rodMaterial', label: 'מוט תלייה', type: 'enum', default: 'hw:rod-chrome', group: 'תלייה', options: [{ id: 'hw:rod-chrome', name: 'כרום' }],
       showIf: (v) => (Array.isArray(v.units) && v.units.length ? v.units.some((u) => u.floors?.some((f) => f.interior?.type === 'hanging')) : (v.hangingColumns ?? 0) > 0), showIfText: 'יש קומת תלייה' },
   ],
@@ -73,7 +76,7 @@ export default {
 
   /** מה כרטיס העמודה מציע בארון בגדים (units-ui.js). */
   unitsSpec: {
-    columnBody: false,   // מחיצות / גב / כרכוב לפי עמודה — בשלב הבא לארון
+    columnBody: false, floorLed: true,   // מחיצות / גב / כרכוב לפי עמודה — בשלב הבא לארון
     fronts: { none: 'ללא', wood: 'דלת עץ' },
     interiors: { hanging: 'תלייה', shelves: 'מדפים', drawers: 'מגירות', empty: 'ריק' },
     newUnit: (last, kind, v) => newUnitOf(last, kind, v),
@@ -177,6 +180,8 @@ export default {
     };
 
     let anyShelves = false;
+    const light = lightingState(v.ledStrip, v.ledProfile);
+    const roofOf = (col) => parts.find((p) => (p.id === 'top' || /^top-\d/.test(p.id)) && p.box.x <= col.x0 + 1 && p.box.x + p.box.w >= col.x1 - 1);
     cols.cols.forEach((col, i) => {
       const { fl, a, hs } = floorsOf(i);
       const count = (t) => fl.filter((f) => t.includes(f.interior?.type)).length;
@@ -184,6 +189,8 @@ export default {
       fl.forEach((f, j) => {
         const it = f.interior || {}, y0 = a[j], y1 = a[j] + hs[j];
         const type = it.type || 'shelves';
+        const floorShelves = [];   // לתאורה: המדפים (או המדף העליון שמעל המוט) של הקומה
+        let floorAdj = false, ceiling = null;
         if (type === 'drawers') {
           // מגירות: חזיתות בתוך העמודה. בלי דלת — גלויות, עם ידית; מאחורי דלת — פנימיות, נסוגות, בלי ידית
           const dr = it.drawers || {};
@@ -213,7 +220,7 @@ export default {
           let rodY = y1 - 40;
           if (hg.topShelf !== false && y1 - y0 > 1800) {
             const s = shelves({ col, y0: y1 - 400 - shelfT, y1: y1 - 400 + shelfT, z0, z1, count: 1, t: shelfT, material: shelfMat, adjustable: (hg.mode || 'adjustable') === 'adjustable', colIndex: i, prefix: `${nShelfFloors > 1 ? `f${j + 1}-` : ''}top-` });
-            parts.push(...s.parts);
+            parts.push(...s.parts); floorShelves.push(...s.parts);
             rodY = y1 - 400 - 40;
           }
           hardware.push(...rod({ id: `rod-${i + 1}${tag}`, x0: col.x0, x1: col.x1, y: rodY, z: (z0 + z1) / 2, material: v.rodMaterial }).hardware);
@@ -226,14 +233,21 @@ export default {
           const mat = !sh.material || sh.material === 'same' ? shelfMat : sh.material;
           const gaps = Array.isArray(sh.gaps) && sh.gaps.length === n + 1 && !sh.gaps.every((g) => g === null) ? resolveShares(y1 - y0 - n * shelfT, sh.gaps) : null;
           const s = shelves({ col, y0, y1, z0, z1, count: n, t: shelfT, material: mat, setback: adjustable ? 5 : 0, adjustable, colIndex: i, prefix: nShelfFloors > 1 ? `f${j + 1}-` : undefined, gaps });
-          parts.push(...s.parts);
+          parts.push(...s.parts); floorShelves.push(...s.parts); floorAdj = adjustable && n > 0;
           if (adjustable) s.parts.forEach((p) => hardware.push({ id: `${p.id}-pins`, kind: 'shelf-pin', material: 'hw:shelf-pin', qty: 4, for: p.id }));
         }
         // מדף קבוע מעל הקומה (בין קומות)
         if (j < fl.length - 1) {
           const prefix = fl.length === 2 && j === 0 && type === 'drawers' ? 'over-drawers-' : `split${j + 1}-`;
-          parts.push(...shelves({ col, y0: y1 - shelfT, y1: y1 + shelfT, z0, z1, count: 1, t: shelfT, material: shelfMat, adjustable: false, colIndex: i, prefix }).parts);
+          const bs = shelves({ col, y0: y1 - shelfT, y1: y1 + shelfT, z0, z1, count: 1, t: shelfT, material: shelfMat, adjustable: false, colIndex: i, prefix }).parts;
+          parts.push(...bs); ceiling = bs[0];
         }
+        // תאורה בקומה (f.led, ובלעדיו — ברירת המחדל של המוצר)
+        const places = ledPlaces(f.led && f.led !== 'same' ? f.led : v.led);
+        if (places.size) lightFloor({ hardware, warnings }, light, { i, j, nFloors: fl.length, col, a: y0, top: y1, z0, z1, places,
+          ceiling: j === fl.length - 1 ? roofOf(col) : ceiling, shelves: floorShelves, adjustable: floorAdj, glassShelves: false,
+          boards: { L: parts.find((p) => p.id === (i === 0 ? 'side-L' : `partition-${i}`)), R: parts.find((p) => p.id === (i === cols.cols.length - 1 ? 'side-R' : `partition-${i + 1}`)) },
+          door: sl || f.front?.type === 'wood' });
         if (type === 'drawers' && col.x1 - col.x0 > LIMITS.drawerMaxWidth) warnings.push(`מגירה ברוחב ${Math.round(col.x1 - col.x0)} מ"מ — מעבר ל-${LIMITS.drawerMaxWidth} המומלצים`);
       });
     });
@@ -290,6 +304,8 @@ export default {
       });
     }
 
+    // תאורה: שנאי לפי ההספק, שליטה (בארון — בדרך כלל חיישן דלת), וחור לכבל בגב
+    finishLighting({ hardware, warnings }, light, { control: v.ledControl, holeBoard: (i) => parts.find((p) => /(^|-)back$/.test(p.id) && p.box.x <= cols.cols[i].x0 + 1 && p.box.x + p.box.w >= cols.cols[i].x1 - 1) || roofOf(cols.cols[i]) });
     warnings.push(...bodyWarnings({ H, colW: cols.colW, shelfT, hasShelves: anyShelves }));
     const sideExtra = (f) => (f === 'fluted-wide' ? 10 : f.startsWith('fluted') ? 8 : 0);
     const shift = sideExtra(v.sideLeftFinish);
