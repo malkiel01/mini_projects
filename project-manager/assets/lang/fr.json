@@ -1979,5 +1979,12 @@
     "💰 מקדמה — בתחילת העבודה": "💰 Acompte — au début des travaux",
     "💰 מקדמה — לתשלום בתחילת העבודה, עם החתימה על החוזה. בלי עיכבון.": "💰 Acompte — payé au début des travaux, à la signature du contrat. Sans retenue.",
     "מקדמה — לשלוח דרישת תשלום: {title} — {supplier}, {amount}": "Acompte — envoyer une demande de paiement : {title} — {supplier}, {amount}",
-    "💰 מקדמות": "💰 Acomptes"
+    "💰 מקדמות": "💰 Acomptes",
+    "עוד אין ספקים עם הצעה או אבן דרך.": "Pas encore de fournisseurs avec devis ou jalon.",
+    "📊 סיכום": "📊 Résumé",
+    "👷 ספקים": "👷 Fournisseurs",
+    "💳 אבני דרך": "💳 Échéances",
+    "🧾 הוצאות": "🧾 Dépenses",
+    "לכל ספק — מה סוכם, מה היה צריך להיות משולם עד היום ומה שולם; ומשם: חוזה, תוספת, אבן דרך וכרטסת.": "Pour chaque fournisseur — le convenu, ce qui aurait dû être payé à ce jour et ce qui a été payé ; et de là : contrat, avenant, échéance et relevé.",
+    "חלקי הכספים": "Sections financières"
 }

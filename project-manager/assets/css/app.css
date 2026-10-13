@@ -841,3 +841,11 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 #due-kind-box legend { float: none; width: auto; margin-bottom: var(--s1); }
 #due-kind-box .seg { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 #due-kind-box .seg span { white-space: normal; text-align: center; line-height: 1.2; padding: 4px; }
+
+/* כספים בפרויקט — לשוניות: סיכום · ספקים · אבני דרך · הוצאות */
+.fin-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin-bottom: var(--s3); }
+.fin-tabs button { min-height: 40px; padding: 4px 2px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: var(--ink); font: inherit; font-size: .82rem; line-height: 1.15; cursor: pointer; }
+.fin-tabs button small { display: inline-block; min-width: 1.4em; padding: 0 4px; border-radius: 999px; background: var(--brand-soft); color: var(--brand); font-size: .72rem; }
+.fin-tabs button small:empty { display: none; }
+.fin-tabs button.on { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+.fin-tabs button.on small { background: rgba(255,255,255,.25); color: inherit; }

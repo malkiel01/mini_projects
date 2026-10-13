@@ -67,7 +67,7 @@ const Payments = (() => {
         catch (e) { toast(e.message, true); return; }
         render();
         // מ"כספים" (כ3): אבן דרך שביקשו לפתוח
-        if (pendingOpen && data.payments.some(p => p.id === pendingOpen)) open(pendingOpen);
+        if (pendingOpen && data.payments.some(p => p.id === pendingOpen)) { Finance.tab('milestones'); open(pendingOpen); }
         pendingOpen = null;
     }
 
@@ -110,6 +110,7 @@ const Payments = (() => {
         if (s.late) parts.push(`<span class="late">${esc(t('{n} באיחור', { n: s.late }))}</span>`);
         $('#pay-sum').innerHTML = parts.map(x => x.startsWith('<') ? x : esc(x)).join('<i class="sep" aria-hidden="true">·</i>');
 
+        $('#fin-n-milestones').textContent = data.payments.length || '';
         const groups = new Map();
         for (const p of data.payments) {
             const k = p.stage_id || 0;
