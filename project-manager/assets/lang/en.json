@@ -1875,5 +1875,7 @@
     "כבר יש כרטיס \"{name}\" {who}, עם {what}.": "There is already a card \"{name}\" {who}, with {what}.",
     "אישור — להשתמש בכרטיס הקיים (בלי כפילות). ביטול — לחזור לטופס.": "OK — use the existing card (no duplicate). Cancel — back to the form.",
     "הוא יופיע אצלך ברגע שישויך לפרויקט המשותף. אישור — לשמור בכל זאת כרטיס נפרד. ביטול — לחזור לטופס.": "It will appear for you once it's linked to the shared project. OK — save a separate card anyway. Cancel — back to the form.",
-    "נבחר הכרטיס הקיים: {name}": "Using the existing card: {name}"
+    "נבחר הכרטיס הקיים: {name}": "Using the existing card: {name}",
+    "\"בגמר השלב\" או \"בהתקדמות\" — קודם בוחרים שלב (למעלה)": "\"When the stage is done\" or \"By progress\" — first choose a stage (above)",
+    "👆 בוחרים שלב למעלה — התשלום יגיע כשהשלב הזה יסתיים או יתקדם": "👆 Choose a stage above — the payment comes due when that stage is done or progresses"
 }

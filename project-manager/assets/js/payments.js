@@ -33,6 +33,7 @@ const Payments = (() => {
         form.elements.stage_id.addEventListener('change', () => { stageChanged(null); dueKindChanged(); });
         $$('#payment-dlg [name=mode]').forEach(r => r.addEventListener('change', modeChanged));
         $$('#payment-dlg [name=due_kind]').forEach(r => r.addEventListener('change', dueKindChanged));
+        $('#due-need-stage').addEventListener('click', () => $('#payment-dlg [name=stage_id]').focus());
         form.elements.percent.addEventListener('input', quoteHint);
         $('#payment-main-btns').addEventListener('click', e => {
             const b = e.target.closest('[data-do]');
@@ -240,13 +241,19 @@ const Payments = (() => {
         });
     }
 
-    /** "בגמר השלב" / "בהתקדמות" — רק כשנבחר שלב. */
-    function dueKindChanged() {
+    /**
+     * "בגמר השלב" / "בהתקדמות" — תלויים בשלב. בלי שלב הם לא נעולים (זה בלבל): בוחרים, ומופיעה הערה
+     * "👆 בוחרים שלב", השדה מסומן והסמן עובר אליו.
+     */
+    function dueKindChanged(e) {
         const el = $('#payment-dlg form').elements;
         const hasStage = !!Number(el.stage_id.value);
-        $$('#payment-dlg [name=due_kind]').forEach(r => { if (r.value !== 'date') r.disabled = !hasStage || el.title.disabled; });
-        if (!hasStage) $('#payment-dlg [name=due_kind][value=date]').checked = true;
+        $$('#payment-dlg [name=due_kind]').forEach(r => { if (r.value !== 'date') r.disabled = el.title.disabled; });
         const kind = $('#payment-dlg [name=due_kind]:checked').value;
+        const need = kind !== 'date' && !hasStage;
+        $('#due-need-stage').hidden = !need;
+        el.stage_id.classList.toggle('need', need);
+        if (need && e?.target?.name === 'due_kind') { el.stage_id.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.stage_id.focus(); }
         $('#due-date-box').hidden = kind !== 'date';
         $('#due-pct-box').hidden = kind !== 'progress';
         $('#due-kind-hint').hidden = kind !== 'stage_done';
@@ -323,6 +330,7 @@ const Payments = (() => {
         if (project.finance?.index_on) body.index_value = el.index_value.value.trim();
         if (!body.supplier_id) { formError(form, t('ספק: שדה חובה')); return; }
         if (!body.title) { formError(form, t('שם: שדה חובה (למשל "מקדמה")')); return; }
+        if (body.due_kind !== 'date' && !body.stage_id) { formError(form, t('"בגמר השלב" או "בהתקדמות" — קודם בוחרים שלב (למעלה)')); el.stage_id.focus(); return; }
         if (pct ? !body.percent : !body.amount) { formError(form, t(pct ? 'אחוז: שדה חובה' : 'סכום: שדה חובה')); return; }
         await busy($('button[type=submit]', form), form, async () => {
             await refresh(await api('payment', { body }));
