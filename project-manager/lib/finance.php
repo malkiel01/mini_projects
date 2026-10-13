@@ -656,9 +656,10 @@ function pm_finance_all(array $user, array $in): array
     $all = !empty($in['all']);
     $pf = (int)($in['project_id'] ?? 0);
     $sf = (int)($in['supplier_id'] ?? 0);
+    [$where, $wargs] = pm_project_clause($user, 'p'); // גם פרויקטים ששותפו איתו
     $st = $db->prepare("SELECT p.id, p.name, p.status, c.name AS client FROM projects p LEFT JOIN contacts c ON c.id = p.client_id
-                         WHERE p.owner_id = ? AND p.status IN ('active','paused'" . ($all ? ",'done'" : '') . ') ORDER BY p.last_activity_at DESC');
-    $st->execute([$user['id']]);
+                         WHERE $where AND p.status IN ('active','paused'" . ($all ? ",'done'" : '') . ') ORDER BY p.last_activity_at DESC');
+    $st->execute($wargs);
     $projects = $st->fetchAll();
     $allProjects = array_map(fn($p) => ['id' => (int)$p['id'], 'name' => $p['name']], $projects);
     if ($pf) $projects = array_values(array_filter($projects, fn($p) => (int)$p['id'] === $pf));
@@ -759,8 +760,8 @@ function pm_finance_all(array $user, array $in): array
 
     // ספקים לסינון — מכל הפרויקטים שלו
     $sp = $db->prepare("SELECT DISTINCT c.id, c.name FROM contacts c JOIN payments p ON p.supplier_id = c.id JOIN projects pr ON pr.id = p.project_id
-                         WHERE pr.owner_id = ? AND c.kind = 'supplier' ORDER BY c.name");
-    $sp->execute([$user['id']]);
+                         WHERE " . pm_project_clause($user, 'pr')[0] . " AND c.kind = 'supplier' ORDER BY c.name");
+    $sp->execute(pm_project_clause($user, 'pr')[1]);
 
     $M = fn($k) => pm_m((int)round(($sum[$k][0] ?? 0) * 100), (int)round(($sum[$k][1] ?? 0) * 100));
     return [
@@ -800,10 +801,10 @@ function pm_finance_export(array $user, array $in): never
     $sf = (int)($in['supplier_id'] ?? 0);
     $sql = "SELECT p.*, c.name AS supplier, pr.name AS project, s.name AS stage, s.status AS stage_status, s.progress AS stage_progress, s.done_at, s.plan_end
               FROM payments p JOIN contacts c ON c.id = p.supplier_id JOIN projects pr ON pr.id = p.project_id LEFT JOIN stages s ON s.id = p.stage_id
-             WHERE pr.owner_id = ? AND pr.status IN ('active','paused'" . ($all ? ",'done'" : '') . ")" . ($pf ? ' AND pr.id = ' . $pf : '') . ($sf ? ' AND p.supplier_id = ' . $sf : '') . '
+             WHERE " . pm_project_clause($user, 'pr')[0] . " AND pr.status IN ('active','paused'" . ($all ? ",'done'" : '') . ")" . ($pf ? ' AND pr.id = ' . $pf : '') . ($sf ? ' AND p.supplier_id = ' . $sf : '') . '
              ORDER BY pr.name, s.sort, p.id';
     $st = $db->prepare($sql);
-    $st->execute([$user['id']]);
+    $st->execute(pm_project_clause($user, 'pr')[1]);
     $rows = $st->fetchAll();
     $proofs = pm_payment_proofs(array_map('intval', array_column($rows, 'id')));
     $kind = ['date' => pm_t('בתאריך'), 'stage_done' => pm_t('בגמר השלב'), 'progress' => pm_t('בהתקדמות')];

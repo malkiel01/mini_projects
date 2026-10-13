@@ -44,8 +44,10 @@ function pm_days_since(?string $iso): int
 /** הפרויקטים הפעילים של המשתמש: id => name */
 function pm_cal_projects(array $user): array
 {
-    $st = pm_db()->prepare("SELECT id, name FROM projects WHERE owner_id = ? AND status IN ('active','paused')");
-    $st->execute([$user['id']]);
+    // גם פרויקטים ששותפו איתו כשותף מנהל
+    [$where, $args] = pm_project_clause($user, 'p');
+    $st = pm_db()->prepare("SELECT p.id, p.name FROM projects p WHERE $where AND p.status IN ('active','paused')");
+    $st->execute($args);
     return array_column($st->fetchAll(), 'name', 'id');
 }
 
@@ -182,9 +184,10 @@ function pm_appointment_save(array $user, array $in): array
     if ($time !== '' && !preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $time)) throw new PmError('שעה לא תקינה', 422);
     $contactId = (int)($in['contact_id'] ?? 0) ?: null;
     if ($contactId) {
-        $c = pm_db()->prepare('SELECT 1 FROM contacts WHERE id = ? AND owner_id = ?');
-        $c->execute([$contactId, $p['owner_id']]);
-        if (!$c->fetchColumn()) throw new PmError('איש הקשר לא נמצא', 422);
+        $c = pm_db()->prepare('SELECT owner_id FROM contacts WHERE id = ?');
+        $c->execute([$contactId]);
+        $o = $c->fetchColumn();
+        if ($o === false || !pm_contact_in_team((int)$o, (int)$p['owner_id'])) throw new PmError('איש הקשר לא נמצא', 422);
     }
     $f = [
         'title'      => pm_str($in, 'title', 100, true, 'מה'),

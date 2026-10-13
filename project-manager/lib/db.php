@@ -636,6 +636,15 @@ function pm_migrate(PDO $pdo): void
         updated_at      TEXT NOT NULL
     )');
     $pdo->exec('CREATE INDEX IF NOT EXISTS fee_payments_project ON fee_payments (project_id)');
+    // שותף מנהל: מנהל אחר באפליקציה שרואה ועורך את כל הפרויקט, כמו הבעלים. רק הבעלים מצרף ומסיר.
+    $pdo->exec('CREATE TABLE IF NOT EXISTS project_partners (
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        added_by   INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (project_id, user_id)
+    )');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS project_partners_user ON project_partners (user_id)');
     $pdo->exec('CREATE TABLE IF NOT EXISTS fin_alert_sent (
         project_id INTEGER NOT NULL,
         contact_id INTEGER NOT NULL,
