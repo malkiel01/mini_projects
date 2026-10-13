@@ -598,10 +598,10 @@ function renderLedger() {
     $('#s-ledger-body').innerHTML = `<dl class="fin-kpis">${cell(t('סוכם'), L.committed)}${cell(t('שולם'), L.paid)}${cell(t('יתרה'), L.balance)}</dl>
         ${L.missing_invoices ? `<p class="hint fin-warn">${esc(t('תשלומים בלי חשבונית: {n}', { n: L.missing_invoices }))}</p>` : ''}
         <ol class="ledger">${L.entries.map(x => `<li class="lg-${x.kind}">
-            <span class="lg-at">${esc(shortDate(x.at))}</span>
-            <span class="lg-text"><span aria-hidden="true">${ICON[x.kind]}</span> ${esc(x.text)}${x.kind === 'milestone' ? ` <small class="muted">· ${esc(money(x.amount))} · ${esc(x.label)}</small>` : ''}</span>
-            <span class="lg-d">${x.delta.g ? esc((x.delta.g > 0 ? '+' : '−') + money(Math.abs(x.delta.g))) : ''}</span>
-            <span class="lg-b">${x.delta.g ? esc((x.balance < 0 ? '−' : '') + money(Math.abs(x.balance))) : ''}</span></li>`).join('')}</ol>`;
+            <div class="lg-top"><span class="lg-ic" aria-hidden="true">${ICON[x.kind]}</span><b class="lg-text">${esc(x.text)}</b>
+                <span class="lg-d${x.kind === 'milestone' ? ' muted' : ''}">${esc(x.delta.g ? (x.delta.g > 0 ? '+' : '−') + money(Math.abs(x.delta.g)) : x.kind === 'milestone' ? money(x.amount) : '')}</span></div>
+            <div class="lg-meta">${[x.stage ? '🧱 ' + x.stage : '', x.when, x.kind === 'milestone' ? x.label : '', shortDate(x.at)].filter(Boolean).map(esc).join(' · ')}</div>
+            ${x.delta.g ? `<div class="lg-b">${esc(t('יתרה {amount}', { amount: (x.balance < 0 ? '−' : '') + money(Math.abs(x.balance)) }))}</div>` : ''}</li>`).join('')}</ol>`;
 }
 
 /** דוח כספי (כ5) — אותו דוח כמו אצל המנהל, מהנתונים שבדף. */

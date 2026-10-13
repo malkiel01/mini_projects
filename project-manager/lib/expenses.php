@@ -209,7 +209,25 @@ function pm_ledger_of(int $projectId, int $supplierId, ?string $lang = null): ar
     $rate = fn($stored) => $exempt ? 0.0 : ($stored !== null ? (float)$stored : $vat);
     $E = [];
     $add = function (string $at, string $kind, string $text, int $delta, float $r, array $extra = []) use (&$E) {
-        $E[] = ['at' => $at, 'kind' => $kind, 'text' => $text, 'delta' => $delta, 'rate' => $r] + $extra;
+        $E[] = ['at' => $at, 'kind' => $kind, 'text' => $text, 'delta' => $delta, 'rate' => $r] + $extra + ['files' => [], 'stage' => '', 'when' => '', 'ref' => null];
+    };
+    // לכל שורה: השלב (עם היחידה), הקבצים, ולאן היא מובילה באפליקציה
+    $st = $db->prepare('SELECT s.id, s.name, u.name AS unit FROM stages s LEFT JOIN units u ON u.id = s.unit_id WHERE s.project_id = ?');
+    $st->execute([$projectId]);
+    $stageName = [];
+    foreach ($st->fetchAll() as $s) $stageName[(int)$s['id']] = pm_t($s['name'], [], $lang) . ($s['unit'] ? ' · ' . $s['unit'] : '');
+    $files = function (...$ids) use ($db): array {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+        if (!$ids) return [];
+        $f = $db->query('SELECT id, name FROM files WHERE deleted_at IS NULL AND id IN (' . implode(',', $ids) . ')');
+        return array_map(fn($x) => ['id' => (int)$x['id'], 'name' => $x['name']], $f->fetchAll());
+    };
+    $whenOf = fn(array $p) => match ($p['due_kind'] ?? 'date') {
+        'advance'    => pm_t('מקדמה — בתחילת העבודה', [], $lang),
+        'stage_done' => pm_t('בגמר השלב', [], $lang),
+        'progress'   => pm_t('בהתקדמות {n}%', ['n' => (int)$p['due_pct']], $lang),
+        'handover'   => pm_t('במסירה', [], $lang),
+        default      => $p['due_date'] !== '' ? pm_t('עד {date}', ['date' => pm_short_date($p['due_date'])], $lang) : '',
     };
 
     // הצעות שאושרו — העדכנית לכל שלב (כמו בהתחייבות)
@@ -219,12 +237,14 @@ function pm_ledger_of(int $projectId, int $supplierId, ?string $lang = null): ar
     $byStage = [];
     foreach ($q->fetchAll() as $x) $byStage[(int)$x['stage_id']] = $x;
     foreach ($byStage as $x) {
-        $add(substr((string)($x['approved_at'] ?: $x['updated_at']), 0, 10), 'quote', pm_t('הצעה שאושרה — {stage}', ['stage' => pm_t($x['stage'], [], $lang)], $lang), (int)$x['amount'], $rate($x['vat_rate']));
+        $add(substr((string)($x['approved_at'] ?: $x['updated_at']), 0, 10), 'quote', pm_t('הצעה שאושרה — {stage}', ['stage' => pm_t($x['stage'], [], $lang)], $lang), (int)$x['amount'], $rate($x['vat_rate']),
+            ['stage' => $stageName[(int)$x['stage_id']] ?? '', 'files' => $files($x['file_id']), 'ref' => ['type' => 'quote', 'id' => (int)$x['id']]]);
     }
     $co = $db->prepare("SELECT o.*, s.name AS stage FROM change_orders o JOIN stages s ON s.id = o.stage_id WHERE o.project_id = ? AND o.supplier_id = ? AND o.status = 'approved'");
     $co->execute([$projectId, $supplierId]);
     foreach ($co->fetchAll() as $x) {
-        $add(substr($x['updated_at'], 0, 10), 'change', pm_t((int)$x['amount'] > 0 ? 'תוספת — {reason}' : 'הפחתה — {reason}', ['reason' => $x['reason']], $lang), (int)$x['amount'], $rate($x['vat_rate']));
+        $add(substr($x['updated_at'], 0, 10), 'change', pm_t((int)$x['amount'] > 0 ? 'תוספת — {reason}' : 'הפחתה — {reason}', ['reason' => $x['reason']], $lang), (int)$x['amount'], $rate($x['vat_rate']),
+            ['stage' => $stageName[(int)$x['stage_id']] ?? '', 'files' => $files($x['file_id']), 'ref' => ['type' => 'change', 'id' => (int)$x['id']]]);
     }
     $pay = $db->prepare("SELECT * FROM payments WHERE project_id = ? AND supplier_id = ? AND status != 'cancelled' ORDER BY id");
     $pay->execute([$projectId, $supplierId]);
@@ -232,17 +252,22 @@ function pm_ledger_of(int $projectId, int $supplierId, ?string $lang = null): ar
     $missing = 0;
     foreach ($payments as $p) {
         $r = $rate($p['vat_rate']);
-        if ((int)$p['index_diff']) $add(substr($p['created_at'], 0, 10), 'index', pm_t('הפרשי הצמדה — {title}', ['title' => $p['title']], $lang), (int)$p['index_diff'], $r);
+        $ref = ['type' => 'payment', 'id' => (int)$p['id']];
+        $stg = $p['stage_id'] ? ($stageName[(int)$p['stage_id']] ?? '') : '';
+        if ((int)$p['index_diff']) $add(substr($p['created_at'], 0, 10), 'index', pm_t('הפרשי הצמדה — {title}', ['title' => $p['title']], $lang), (int)$p['index_diff'], $r, ['ref' => $ref, 'stage' => $stg]);
         $add(substr($p['created_at'], 0, 10), 'milestone', $p['title'], 0, $r, ['amount' => pm_payment_due_amount($p) / 100, 'payment_id' => (int)$p['id'],
-            'label' => pm_t(pm_payment_label($p), [], $lang), 'due_kind' => $p['due_kind'], 'due_date' => $p['due_date']]);
+            'label' => pm_t(pm_payment_label($p), [], $lang), 'due_kind' => $p['due_kind'], 'due_date' => $p['due_date'],
+            'stage' => $stg, 'when' => $whenOf($p), 'files' => $files($p['file_id'] ?? null), 'ref' => $ref, 'status' => $p['status'], 'notes' => $p['notes']]);
         $pr = $db->prepare("SELECT * FROM payment_proofs WHERE payment_id = ? AND status = 'received' ORDER BY id");
         $pr->execute([$p['id']]);
         $got = false;
         foreach ($pr->fetchAll() as $x) {
             $got = true;
-            $add($x['paid_on'], 'paid', pm_t('התקבל תשלום — {title}', ['title' => $p['title']], $lang), -(int)$x['received_amount'], $r, ['payment_id' => (int)$p['id']]);
+            $add($x['paid_on'], 'paid', pm_t('התקבל תשלום — {title}', ['title' => $p['title']], $lang), -(int)$x['received_amount'], $r, ['payment_id' => (int)$p['id'],
+                'stage' => $stg, 'when' => pm_t(PM_PAY_METHODS[$x['method']] ?? $x['method'], [], $lang) . ($x['note'] !== '' ? ' · ' . $x['note'] : ''), 'files' => $files($x['file_id']), 'ref' => $ref]);
         }
-        if ($p['invoice_at']) $add(substr($p['invoice_at'], 0, 10), 'invoice', $p['invoice_no'] !== '' ? pm_t('חשבונית {no} — {title}', ['no' => $p['invoice_no'], 'title' => $p['title']], $lang) : pm_t('חשבונית — {title}', ['title' => $p['title']], $lang), 0, $r);
+        if ($p['invoice_at']) $add(substr($p['invoice_at'], 0, 10), 'invoice', $p['invoice_no'] !== '' ? pm_t('חשבונית {no} — {title}', ['no' => $p['invoice_no'], 'title' => $p['title']], $lang) : pm_t('חשבונית — {title}', ['title' => $p['title']], $lang), 0, $r,
+            ['stage' => $stg, 'files' => $files($p['invoice_file_id']), 'ref' => $ref]);
         elseif ($got) $missing++;
     }
     // לפי התאריך; באותו יום — התחייבות לפני תשלום

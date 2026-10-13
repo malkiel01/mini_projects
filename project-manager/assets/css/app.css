@@ -720,15 +720,20 @@ body.auth { display: grid; place-items: start center; padding: max(8vh, var(--s4
 #fin-expenses .q-head .q-sum, #fin-fee .q-head .q-sum { flex: none; overflow: visible; }
 .fin-stage > .row-btns { margin-block-start: var(--s2); }
 .fin-head .row-btns { gap: 6px; }
-.ledger { list-style: none; padding: 0; margin: var(--s2) 0 0; display: grid; gap: 2px; font-size: .85rem; }
-.ledger li { display: grid; grid-template-columns: auto 1fr auto; grid-template-areas: "at text d" "at text b"; gap: 0 var(--s2);
-    padding: 6px var(--s2); border-block-end: 1px solid var(--line); }
-.ledger .lg-at { grid-area: at; color: var(--muted); font-size: .75rem; white-space: nowrap; }
-.ledger .lg-text { grid-area: text; min-width: 0; }
-.ledger .lg-d { grid-area: d; text-align: end; font-weight: 600; white-space: nowrap; }
-.ledger .lg-b { grid-area: b; text-align: end; color: var(--muted); font-size: .75rem; white-space: nowrap; }
+.ledger { list-style: none; padding: 0; margin: var(--s2) 0 0; display: grid; gap: 6px; font-size: .88rem; }
+.ledger li { padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.ledger li.lg-go { cursor: pointer; }
+.ledger li.lg-go:hover, .ledger li.lg-go:focus-visible { border-color: var(--brand); outline: none; }
+.ledger .lg-top { display: flex; align-items: baseline; gap: var(--s1); }
+.ledger .lg-text { flex: 1; min-width: 0; font-weight: 600; }
+.ledger .lg-d { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ledger .lg-d.muted { font-weight: 500; color: var(--muted); }
+.ledger .lg-meta { color: var(--muted); font-size: .8rem; margin-top: 2px; }
+.ledger .lg-files { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.ledger .lg-file { font-size: .78rem; text-decoration: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ledger .lg-b { text-align: end; color: var(--muted); font-size: .75rem; margin-top: 2px; }
 .ledger .lg-paid .lg-d { color: var(--ok); }
-.ledger .lg-milestone, .ledger .lg-invoice { color: var(--muted); }
+.ledger .lg-milestone { background: var(--bg); }
 .fa-income .fin-cells { margin-block-end: var(--s2); }
 /* שותף מנהל */
 .sec-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); margin-bottom: var(--s1); }
@@ -849,3 +854,4 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .fin-tabs button small:empty { display: none; }
 .fin-tabs button.on { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
 .fin-tabs button.on small { background: rgba(255,255,255,.25); color: inherit; }
+.ledger .lg-meta .sep { margin: 0 4px; }
