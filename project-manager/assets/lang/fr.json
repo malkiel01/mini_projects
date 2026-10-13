@@ -1846,5 +1846,21 @@
     "אבן דרך באיחור: {supplier} — \"{title}\" ({n} ימים, היה עד {date})": "Jalon en retard : {supplier} — « {title} » ({n} jours, échéance {date})",
     "אבן דרך מתקרבת: {supplier} — \"{title}\" עד {date}": "Jalon proche : {supplier} — « {title} » avant le {date}",
     "איחור בסיום: {supplier} — {n} ימים, קנס מצטבר {amount}": "Fin en retard : {supplier} — {n} jours, pénalité cumulée {amount}",
-    "איחור בסיום: {supplier} — {n} ימים (הקנס מתחיל אחרי {grace} ימי חסד)": "Fin en retard : {supplier} — {n} jours (la pénalité commence après {grace} jours de grâce)"
+    "איחור בסיום: {supplier} — {n} ימים (הקנס מתחיל אחרי {grace} ימי חסד)": "Fin en retard : {supplier} — {n} jours (la pénalité commence après {grace} jours de grâce)",
+    "+ שלב כאן": "+ Étape ici",
+    "להזיז למעלה: {name}": "Monter : {name}",
+    "להזיז למטה: {name}": "Descendre : {name}",
+    "יש בשלב הצעות מחיר — אי אפשר למחוק": "Cette étape a des devis — impossible de la supprimer",
+    "מחיקת השלב {name}": "Supprimer l'étape {name}",
+    "חסר: {list}": "Manque : {list}",
+    "ספק או הצעת מחיר": "fournisseur ou devis",
+    "תאריכים": "dates",
+    "השלב נמחק": "Étape supprimée",
+    "עריכת שלבים": "Modifier les étapes",
+    "מה זה המסך הזה?": "Qu'est-ce que cet écran ?",
+    "אלה שלבי העבודה של הפרויקט, לפי סדר הביצוע. כל שלב הוא עבודה אחת — בדרך כלל של בעל מקצוע אחד.": "Ce sont les étapes de travail du projet, dans l'ordre d'exécution. Chaque étape est un travail — généralement d'un seul artisan.",
+    "בתוך שלב (לחיצה עליו): התחום, הספק שמבצע, תאריכים מתוכננים, תקציב, ואחוז התקדמות.": "Dans une étape (touchez-la) : le métier, le fournisseur qui l'exécute, les dates prévues, le budget et le pourcentage d'avancement.",
+    "הצעות מחיר נאספות לפי שלב, תשלומים נקשרים לגמר שלב, ואבני הדרך בחוזה הן קבוצות של שלבים.": "Les devis sont recueillis par étape, les paiements sont liés à la fin d'une étape, et les jalons du contrat sont des groupes d'étapes.",
+    "\"חסר:\" מתחת לשלב — מה עוד לא מולא בו. אפשר להשלים בהדרגה.": "« Manque : » sous une étape — ce qui n'est pas encore rempli. Vous pouvez compléter au fur et à mesure.",
+    "✏️ עריכת שלבים — לשנות סדר (↑↓), למחוק שלב שלא צריך (🗑), ולהוסיף שלב בכל מקום (\"+ שלב כאן\"). אפשר לפצל תחום לשניים, למשל \"חשמל — תשתית\" ו\"חשמל — גמר\".": "✏️ Modifier les étapes — réordonner (↑↓), supprimer une étape inutile (🗑) et ajouter une étape n'importe où (« + Étape ici »). Vous pouvez scinder un métier en deux, p. ex. « Électricité — réseaux » et « Électricité — finitions »."
 }

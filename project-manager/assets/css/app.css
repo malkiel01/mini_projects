@@ -773,3 +773,19 @@ body.auth { display: grid; place-items: start center; padding: max(8vh, var(--s4
 .ct-stages .chips span { padding: 3px 10px; border: 1px solid var(--line); border-radius: 99px; font-size: .8rem; cursor: pointer; background: var(--surface); }
 .ct-stages .chips input:checked + span { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
 .ct-stages .chips input:focus-visible + span { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* מסך השלבים: הסבר ומצב עריכה */
+.stages-help { margin: 0 0 var(--s2); padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); font-size: .92rem; }
+.stages-help summary { cursor: pointer; font-weight: 600; color: var(--brand); min-height: 32px; display: flex; align-items: center; }
+.stages-help ul { margin: var(--s1) 0 0; padding-inline-start: 1.2em; }
+.stages-help li { margin: .25em 0; }
+.stages-help p { margin: var(--s1) 0 0; }
+#edit-stages.on { background: var(--brand-soft); border-color: var(--brand); }
+.rows-list .st-miss { color: var(--muted); white-space: normal; overflow: visible; text-overflow: clip; }
+.st-miss::before { content: "⚠️ "; }
+.st-acts { display: flex; gap: 4px; flex-shrink: 0; }
+.st-acts .icon-btn { min-width: 40px; padding-inline: 0; }
+.st-acts .icon-btn:disabled { opacity: .35; }
+.st-acts .danger { color: var(--danger); }
+#stage-list .st-add { list-style: none; display: flex; justify-content: center; padding: 0; min-height: 0; background: none; border: 0; }
+#stage-list .st-add .btn { min-height: 28px; padding-block: 0; font-size: .8rem; border-style: dashed; color: var(--muted); }

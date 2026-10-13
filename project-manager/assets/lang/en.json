@@ -1828,5 +1828,21 @@
     "אבן דרך באיחור: {supplier} — \"{title}\" ({n} ימים, היה עד {date})": "Milestone late: {supplier} — \"{title}\" ({n} days, was due {date})",
     "אבן דרך מתקרבת: {supplier} — \"{title}\" עד {date}": "Milestone coming up: {supplier} — \"{title}\" by {date}",
     "איחור בסיום: {supplier} — {n} ימים, קנס מצטבר {amount}": "Late completion: {supplier} — {n} days, accrued penalty {amount}",
-    "איחור בסיום: {supplier} — {n} ימים (הקנס מתחיל אחרי {grace} ימי חסד)": "Late completion: {supplier} — {n} days (the penalty starts after {grace} grace days)"
+    "איחור בסיום: {supplier} — {n} ימים (הקנס מתחיל אחרי {grace} ימי חסד)": "Late completion: {supplier} — {n} days (the penalty starts after {grace} grace days)",
+    "+ שלב כאן": "+ Stage here",
+    "להזיז למעלה: {name}": "Move up: {name}",
+    "להזיז למטה: {name}": "Move down: {name}",
+    "יש בשלב הצעות מחיר — אי אפשר למחוק": "This stage has quotes — it can't be deleted",
+    "מחיקת השלב {name}": "Delete the stage {name}",
+    "חסר: {list}": "Missing: {list}",
+    "ספק או הצעת מחיר": "supplier or quote",
+    "תאריכים": "dates",
+    "השלב נמחק": "Stage deleted",
+    "עריכת שלבים": "Edit stages",
+    "מה זה המסך הזה?": "What is this screen?",
+    "אלה שלבי העבודה של הפרויקט, לפי סדר הביצוע. כל שלב הוא עבודה אחת — בדרך כלל של בעל מקצוע אחד.": "These are the project's work stages, in order of execution. Each stage is one job — usually by one tradesperson.",
+    "בתוך שלב (לחיצה עליו): התחום, הספק שמבצע, תאריכים מתוכננים, תקציב, ואחוז התקדמות.": "Inside a stage (tap it): the trade, the supplier doing it, planned dates, budget and progress percentage.",
+    "הצעות מחיר נאספות לפי שלב, תשלומים נקשרים לגמר שלב, ואבני הדרך בחוזה הן קבוצות של שלבים.": "Quotes are collected per stage, payments are tied to a stage's completion, and contract milestones are groups of stages.",
+    "\"חסר:\" מתחת לשלב — מה עוד לא מולא בו. אפשר להשלים בהדרגה.": "\"Missing:\" under a stage — what hasn't been filled in yet. You can complete it gradually.",
+    "✏️ עריכת שלבים — לשנות סדר (↑↓), למחוק שלב שלא צריך (🗑), ולהוסיף שלב בכל מקום (\"+ שלב כאן\"). אפשר לפצל תחום לשניים, למשל \"חשמל — תשתית\" ו\"חשמל — גמר\".": "✏️ Edit stages — reorder (↑↓), delete a stage you don't need (🗑), and add a stage anywhere (\"+ Stage here\"). You can split a trade in two, e.g. \"Electrical — infrastructure\" and \"Electrical — finishing\"."
 }
