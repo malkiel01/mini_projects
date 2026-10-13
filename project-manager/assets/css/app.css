@@ -907,3 +907,8 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .fch-row .body { display: grid; min-inline-size: 0; }
 .fch-row .one { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fch-row small { color: var(--muted); font-size: .75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* העלאה: התקדמות בזמן אמת, ומה נשאר; ניסיון חוזר — בצבע אזהרה */
+.uploads .up .up-st { flex: none; font-size: .8rem; color: var(--muted); white-space: nowrap; }
+.uploads .up.retry .up-st { color: var(--star); white-space: normal; }
+.uploads .up.err .up-st { color: var(--danger); white-space: normal; }

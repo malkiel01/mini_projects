@@ -187,44 +187,107 @@ const Files = (() => {
         uploads.set(key, { name: file.name, pct: 0 });
         renderUploads();
         try {
-            await send(file, project.id, folder, pct => { uploads.get(key).pct = pct; renderUploads(); });
+            await send(file, project.id, folder, (pct, info) => { Object.assign(uploads.get(key), { pct, info }); renderUploads(); });
             uploads.delete(key);
         } catch (e) {
             uploads.get(key).error = e.message;
-            setTimeout(() => { uploads.delete(key); renderUploads(); }, 6000);
+            setTimeout(() => { uploads.delete(key); renderUploads(); }, 15000);
         }
         renderUploads();
     }
 
-    /** העלאת קובץ אחד לתיקייה — בחלקים, עם חידוש. משמש גם את מסך השיתוף. */
+    // ---- העלאה בחלקים ----
+    // כל חלק (2MB) נשלח ב-XHR, כדי לראות התקדמות בזמן אמת — גם בתוך החלק (ברשת סלולרית איטית
+    // חלק אחד לוקח עשרות שניות, ובלי זה האחוז "תקוע" על 0). חיבור שלא זז 30 שניות — נקטע ומנסים
+    // שוב מהמקום שהשרת קיבל; בלי רשת — מחכים שתחזור. אחרי 8 ניסיונות — שגיאה, והיא נרשמת ביומן.
+    const STALL_MS = 30000, MAX_TRIES = 8;
+    let active = 0; // העלאות פעילות — אזהרה לפני סגירת הדף
+
+    function putChunk(url, blob, onBytes) {
+        return new Promise((resolve, reject) => {
+            const x = new XMLHttpRequest();
+            let timer;
+            const arm = () => { clearTimeout(timer); timer = setTimeout(() => { x.abort(); reject(new Error(t('החיבור נתקע'))); }, STALL_MS); };
+            x.open('POST', url);
+            x.withCredentials = true;
+            x.setRequestHeader('Content-Type', 'application/octet-stream');
+            x.setRequestHeader('X-CSRF', state.user.csrf);
+            x.upload.onprogress = e => { arm(); onBytes(e.loaded); };
+            x.onload = () => {
+                clearTimeout(timer);
+                let data = {};
+                try { data = JSON.parse(x.responseText); } catch { /* לא JSON */ }
+                if (x.status >= 200 && x.status < 300 && typeof data.received === 'number') resolve(data);
+                else { const err = new Error(data.error || t('תקלה בהעלאה') + ` (${x.status})`); err.status = x.status; reject(err); }
+            };
+            x.onerror = () => { clearTimeout(timer); reject(new Error(t('אין חיבור לשרת'))); };
+            arm();
+            x.send(blob);
+        });
+    }
+
+    const online = () => (navigator.onLine === false ? new Promise(r => addEventListener('online', r, { once: true })) : Promise.resolve());
+
+    /**
+     * העלאת קובץ אחד לתיקייה — בחלקים, עם חידוש. משמש גם את מסך השיתוף ואת החלונות.
+     * onProgress(pct, {sent, total, speed (בתים לשנייה), left (שניות), retry}).
+     */
     async function send(file, projectId, folder, onProgress = () => {}, finish = {}) {
         const thumb = await makeThumb(file).catch(() => '');
         const { upload_id, chunk_size } = await api('upload-start', { body: {
             project_id: projectId, folder_id: folder, name: file.name, size: file.size, mime: file.type } });
         let offset = 0, tries = 0;
-        while (offset < file.size) {
-            const blob = file.slice(offset, offset + chunk_size);
-            try {
-                const res = await fetch(`api.php?action=upload-chunk&id=${upload_id}&offset=${offset}`, {
-                    method: 'POST', credentials: 'same-origin', body: blob,
-                    headers: { 'Content-Type': 'application/octet-stream', 'X-CSRF': state.user.csrf },
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.error || t('תקלה בהעלאה'));
-                offset = data.received; // השרת אומר מאיפה להמשיך — גם אחרי ניתוק
-                tries = 0;
-            } catch (e) {
-                if (++tries > 4) throw e;
-                await new Promise(r => setTimeout(r, 1000 * tries)); // ניסיון חוזר: 1, 2, 3, 4 שניות
+        const t0 = Date.now();
+        const report = (sent, retry = '') => {
+            const secs = (Date.now() - t0) / 1000, speed = secs > 1 ? sent / secs : 0;
+            onProgress(Math.min(100, Math.round(sent / file.size * 100)), { sent, total: file.size, speed, left: speed ? Math.round((file.size - sent) / speed) : null, retry });
+        };
+        active++;
+        try {
+            while (offset < file.size) {
+                const blob = file.slice(offset, offset + chunk_size);
+                try {
+                    await online();
+                    const data = await putChunk(`api.php?action=upload-chunk&id=${upload_id}&offset=${offset}`, blob, b => report(offset + b));
+                    offset = data.received; // השרת אומר מאיפה להמשיך — גם אחרי ניתוק
+                    tries = 0;
+                    report(offset);
+                } catch (e) {
+                    // שגיאה מהשרת (4xx) — לא תעבור בניסיון חוזר
+                    if (e.status >= 400 && e.status < 500 && e.status !== 408 && e.status !== 429) { logFail(file, offset, e); throw e; }
+                    if (++tries > MAX_TRIES) { logFail(file, offset, e); throw new Error(t('ההעלאה נכשלה: {error}', { error: e.message })); }
+                    const wait = Math.min(30, 2 ** tries);
+                    report(offset, t('{error} — מנסים שוב בעוד {n} שניות', { error: e.message, n: wait }));
+                    await new Promise(r => setTimeout(r, wait * 1000));
+                }
             }
-            onProgress(Math.round(offset / file.size * 100));
-        }
-        return api('upload-finish', { body: { upload_id, thumb, type: guessType(file), ...finish } });
+            return await api('upload-finish', { body: { upload_id, thumb, type: guessType(file), ...finish } });
+        } finally { active--; }
+    }
+
+    /** העלאה שנכשלה — ליומן, כדי שיהיה אפשר לראות מה קרה (בלי זה אין שום עקבה בשרת). */
+    function logFail(file, offset, e) {
+        fetch('api.php?action=client-error', {
+            method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-PM': '1' },
+            body: JSON.stringify({ kind: 'upload', message: `upload failed: ${e.message}`, page: location.pathname + location.hash,
+                stack: JSON.stringify({ name: file.name, size: file.size, offset, status: e.status || 0, online: navigator.onLine }) }),
+        }).catch(() => {});
+    }
+
+    addEventListener('beforeunload', e => { if (active) { e.preventDefault(); e.returnValue = ''; } });
+
+    const mb = n => (n / 1048576).toFixed(n < 10485760 ? 1 : 0);
+    function upLine(u) {
+        if (u.error) return esc(u.error);
+        const i = u.info;
+        if (!i) return u.pct + '%';
+        const left = i.left == null ? '' : i.left >= 60 ? t('נשארו ~{n} דק\'', { n: Math.ceil(i.left / 60) }) : t('נשארו ~{n} שנ\'', { n: Math.max(1, i.left) });
+        return esc(i.retry || [`${u.pct}%`, t('{a} מתוך {b}MB', { a: mb(i.sent), b: mb(i.total) }), left].filter(Boolean).join(' · '));
     }
 
     function renderUploads() {
-        $('#uploads').innerHTML = [...uploads.values()].map(u => `<div class="up${u.error ? ' err' : ''}">
-            <span class="one">${esc(u.name)}</span><span>${u.error ? esc(u.error) : u.pct + '%'}</span>
+        $('#uploads').innerHTML = [...uploads.values()].map(u => `<div class="up${u.error ? ' err' : ''}${u.info?.retry ? ' retry' : ''}">
+            <span class="one">${esc(u.name)}</span><span class="up-st">${upLine(u)}</span>
             <i style="width:${u.pct}%"></i></div>`).join('');
     }
 
