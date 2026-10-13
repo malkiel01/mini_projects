@@ -951,3 +951,18 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .fd-more { border-top: 1px solid var(--line); padding-top: var(--s2); }
 .fd-more summary { cursor: pointer; color: var(--brand); min-block-size: 36px; display: flex; align-items: center; }
 .fd-more[open] { display: grid; gap: var(--s2); }
+
+/* ===== צפייה במסך מלא בתוך האפליקציה (viewer.js — Viewer.open) ===== */
+#viewer-dlg { inline-size: 100vw; max-inline-size: 100vw; block-size: var(--vvh, 100dvh); max-block-size: none; margin: 0; inset: 0; padding: 0; border: 0; border-radius: 0;
+    background: #e9ecf1; color: var(--ink); touch-action: pan-x pan-y; }
+#viewer-dlg[open] { display: flex; flex-direction: column; }
+#viewer-dlg::backdrop { background: rgb(0 0 0 / .6); }
+.viewer-head { display: flex; align-items: center; gap: var(--s2); padding: calc(4px + env(safe-area-inset-top)) var(--s2) 4px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.viewer-head h2 { flex: 1; min-inline-size: 0; margin: 0; font-size: .95rem; }
+.viewer-head .icon-btn { text-decoration: none; }
+.viewer-body { flex: 1; min-block-size: 0; display: flex; flex-direction: column; }
+.viewer-body video { inline-size: 100%; max-block-size: 100%; margin: auto; background: #000; }
+.viewer-body .pdfv { flex: 1; min-block-size: 0; }
+.pdfv.in-full .pdfv-stage { flex: 1; max-block-size: none; min-block-size: 0; }
+.viewer-none { margin: auto; display: grid; justify-items: center; gap: var(--s2); padding: var(--s4); text-align: center; }
+.fv-fail { padding: var(--s3); text-align: center; }

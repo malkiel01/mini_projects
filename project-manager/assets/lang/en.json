@@ -2034,5 +2034,7 @@
     "התאמה לרוחב": "Fit to width",
     "הגדלה": "Zoom in",
     "מסך מלא": "Full screen",
-    "יציאה ממסך מלא": "Exit full screen"
+    "יציאה ממסך מלא": "Exit full screen",
+    "אי אפשר להציג את הקובץ כאן": "This file can't be shown here",
+    "אין תצוגה לסוג הקובץ הזה": "No preview for this file type"
 }
