@@ -188,24 +188,45 @@ function doc_list(array $user, array $q): array
             WHERE ' . mine_or_shared_sql('d', 'document') . ' AND d.deleted_at IS NULL';
     $args = [':uid' => $user['id']];
     if (!empty($q['template_id'])) { $sql .= ' AND v.template_id = :tid'; $args[':tid'] = (int)$q['template_id']; }
+    if (!empty($q['status'])) { $sql .= ' AND d.status = :st'; $args[':st'] = (string)$q['status']; }
     if (empty($q['archived'])) $sql .= ' AND d.archived_at IS NULL';
-    $st = db()->prepare($sql . ' ORDER BY d.created_at DESC, d.id DESC LIMIT 500');
+    $st = db()->prepare($sql . ' ORDER BY d.created_at DESC, d.id DESC LIMIT 2000');
     $st->execute($args);
 
     $out = [];
+    $tags = [];
     foreach ($st->fetchAll() as $d) {
         $schema = json_decode((string)unseal($d['schema_enc']), true) ?: [];
-        $p = doc_progress($schema, doc_values((int)$d['id']));
-        $out[] = [
+        $values = doc_values((int)$d['id']);
+        $p = doc_progress($schema, $values);
+        $view = [
             'id' => (int)$d['id'], 'number' => $d['number'], 'title' => unseal($d['title_enc']),
             'template_id' => (int)$d['template_id'], 'template' => unseal($d['template_name_enc']),
             'status' => $d['status'], 'created_at' => $d['created_at'], 'completed_at' => $d['completed_at'],
             'archived' => $d['archived_at'] !== null, 'required' => $p['required'], 'filled' => $p['filled'],
             'access' => access_level('document', (int)$d['id'], (int)$d['owner_id'], $user),
             'owner_name' => (int)$d['owner_id'] !== (int)$user['id'] ? user_name((int)$d['owner_id']) : null,
+            'tags' => tags_of($d['tags_enc']),
+            'contact_id' => $d['contact_id'] ? (int)$d['contact_id'] : null,
+            'contact' => doc_contact_name($d, $user),
         ];
+        foreach ($view['tags'] as $t) $tags[$t] = true;
+        if (doc_matches($d, $view, $q, $values)) $out[] = $view;
+        if (count($out) >= 500) break;
     }
-    return ['ok' => true, 'documents' => $out];
+    $all = array_keys($tags);
+    sort($all);
+    return ['ok' => true, 'documents' => $out, 'tags' => $all];
+}
+
+/** שם איש הקשר — רק אם הכרטיס של המשתמש. במסמך משותף, כרטיס של הבעלים לא נחשף. */
+function doc_contact_name(array $d, array $user): ?string
+{
+    if (!$d['contact_id'] || (int)$d['owner_id'] !== (int)$user['id']) return null;
+    $st = db()->prepare('SELECT * FROM contacts WHERE id = ? AND owner_id = ?');
+    $st->execute([$d['contact_id'], $user['id']]);
+    $c = $st->fetch();
+    return $c ? contact_view($c)['name'] : null;
 }
 
 function doc_get(array $user, int $id): array
@@ -225,6 +246,8 @@ function doc_get(array $user, int $id): array
     return ['ok' => true, 'document' => [
         'id' => $id, 'number' => $d['number'], 'title' => unseal($d['title_enc']), 'status' => $d['status'],
         'access' => $d['access'], 'owner_name' => $d['access'] === 'owner' ? null : user_name((int)$d['owner_id']),
+        'tags' => tags_of($d['tags_enc']), 'contact_id' => $d['contact_id'] ? (int)$d['contact_id'] : null,
+        'contact' => doc_contact_name($d, $user),
         'template_id' => (int)$d['template_id'], 'template' => unseal($d['template_name_enc']),
         'template_version' => (int)$d['template_version'], 'mime' => $a['mime'],
         'created_at' => $d['created_at'], 'completed_at' => $d['completed_at'], 'final_hash' => $d['final_hash'],
@@ -345,6 +368,14 @@ function doc_save(array $user, array $b): array
             $changes[] = $f['type'] === 'signature'
                 ? ['key' => $key, 'label' => $f['label'], 'signed' => $v !== '']
                 : ['key' => $key, 'label' => $f['label'], 'from' => $prev, 'to' => $v];
+        }
+        if (array_key_exists('tags', $b)) {
+            $new = clean_tags($b['tags']);
+            $old = tags_of($d['tags_enc']);
+            if ($new !== $old) {
+                $pdo->prepare('UPDATE documents SET tags_enc = ? WHERE id = ?')->execute([seal(json_encode($new, JSON_UNESCAPED_UNICODE)), $d['id']]);
+                $changes[] = ['key' => '_tags', 'label' => 'תגיות', 'from' => implode(', ', $old), 'to' => implode(', ', $new)];
+            }
         }
         if (array_key_exists('title', $b)) {
             $title = mb_substr(trim((string)$b['title']), 0, 200);

@@ -233,10 +233,12 @@
     const list = el('div', { class: 'tpl-grid' }, el('p', { class: 'muted' }, 'טוען…'));
     const msg = el('div');
     const showArchived = el('input', { type: 'checkbox' });
+    const tagSel = el('select', { 'aria-label': 'סינון לפי תגית' }, el('option', { value: '' }, 'כל התגיות'));
+    tagSel.addEventListener('change', () => render());
     let all = [];
 
     function render() {
-      const items = all.filter(t => showArchived.checked || !t.archived);
+      const items = all.filter(t => (showArchived.checked || !t.archived) && (!tagSel.value || (t.tags || []).includes(tagSel.value)));
       if (!items.length) {
         list.replaceChildren(el('p', { class: 'muted' }, all.length
           ? 'כל התבניות בארכיון.'
@@ -247,6 +249,7 @@
         el('a', { class: 'tpl-open', href: '#tpl=' + t.id },
           el('strong', {}, t.name),
           t.owner_name ? el('span', { class: 'shared-tag small' }, `👥 של ${t.owner_name} · ${LEVEL[t.access]}`) : null,
+          window.DTCatalog.chips(t.tags),
           el('span', { class: 'muted small' }, `${SOURCE[t.source] || t.source} · ${t.pages} דפים · ${t.fields} שדות · גרסה ${t.version}`)),
         el('div', { class: 'ops' },
           t.archived || !t.fields || rank(t.access) < 2 ? null : el('button', { class: 'small primary', onclick: () => issue(t) }, 'הנפקת מסמך'),
@@ -263,6 +266,10 @@
       try {
         const r = await api('tpl_list');
         all = r.templates;
+        const tags = [...new Set(all.flatMap(t => t.tags || []))].sort();
+        const cur = tagSel.value;
+        tagSel.replaceChildren(el('option', { value: '' }, 'כל התגיות'), ...tags.map(t => el('option', { value: t, selected: t === cur }, t)));
+        tagSel.hidden = !tags.length;
         if (r.usage) {
           const pct = Math.min(100, Math.round(r.usage.used_mb / r.usage.storage_mb * 100));
           usage.replaceChildren(`נפח: ${r.usage.used_mb < 0.1 ? 'פחות מ-0.1' : r.usage.used_mb}MB מתוך ${r.usage.storage_mb}MB · קובץ עד ${r.usage.max_file_mb}MB `,
@@ -325,7 +332,7 @@
           '+ תבנית חדשה')),
       el('p', { class: 'muted small' }, 'רק אתה רואה את התבניות שלך — גם לא המפתח. הקבצים נשמרים מוצפנים.'),
       upload, msg, list,
-      el('label', { class: 'inline small muted' }, showArchived, ' להציג גם תבניות בארכיון'), usage));
+      el('div', { class: 'filters' }, tagSel, el('label', { class: 'inline small muted' }, showArchived, ' להציג גם תבניות בארכיון')), usage));
     await load();
   }
 
@@ -463,6 +470,7 @@
     if (key === 'dev' && me.is_developer) return viewDev();
     if (key === 'tpl' && val) return window.DTEditor.open(Number(val));
     if (key === 'docs') return window.DTDocs.list();
+    if (key === 'contacts') return window.DTCatalog.view();
     if (key === 'doc' && val) return window.DTDocs.open(Number(val));
     return viewHome();
   }

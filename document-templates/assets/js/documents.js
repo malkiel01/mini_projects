@@ -15,7 +15,7 @@
     created: 'נוצר', values_saved: 'נשמרו ערכים', completed: 'הושלם ונעול', archived: 'הועבר לארכיון',
     restored: 'שוחזר מהארכיון', downloaded: 'הורד PDF', deleted: 'נמחק',
     link_issued: 'נשלח קישור', opened: 'נפתח', verified: 'אומת בקוד', participant_completed: 'משתתף סיים',
-    file_uploaded: 'צורף קובץ', shared: 'שותף', unshared: 'שיתוף הוסר',
+    file_uploaded: 'צורף קובץ', shared: 'שותף', unshared: 'שיתוף הוסר', contact_set: 'נקבע איש קשר', tags_set: 'עודכנו תגיות',
   };
   const VIA = { email: 'במייל', link: 'כקישור', whatsapp: 'בוואטסאפ' };
   const EDITABLE = ['draft', 'in_progress'];
@@ -36,37 +36,74 @@
 
   // ── רשימת המסמכים ─────────────────────────────────────────
 
+  // רשימת המסמכים: כל הסינון בשרת (שם הערכים מפוענחים). תצוגות שמורות — בדפדפן.
   async function list() {
     const { api, el, notice, show } = window.DT;
     const params = new URLSearchParams(location.hash.split('?')[1] || '');
     const box = el('div', {}, el('p', { class: 'muted' }, 'טוען…'));
     const msg = el('div');
-    const q = el('input', { type: 'search', placeholder: 'חיפוש לפי מספר או כותרת', class: 'search' });
-    const tplSel = el('select', {}, el('option', { value: '' }, 'כל התבניות'));
-    const statusSel = el('select', {}, el('option', { value: '' }, 'כל המצבים'),
-      ['draft', 'in_progress', 'completed'].map(s => el('option', { value: s }, STATUS[s][0])));
-    const archived = el('input', { type: 'checkbox' });
-    let docs = [];
+    const count = el('span', { class: 'muted small' });
+    const f = {
+      q: el('input', { type: 'search', placeholder: 'חיפוש: מספר, כותרת, ערך בשדה, איש קשר, תגית…', class: 'search' }),
+      template_id: el('select', {}, el('option', { value: '' }, 'כל התבניות')),
+      status: el('select', {}, el('option', { value: '' }, 'כל המצבים'),
+        ['draft', 'sent', 'in_progress', 'completed'].map(s => el('option', { value: s }, STATUS[s][0]))),
+      tag: el('select', {}, el('option', { value: '' }, 'כל התגיות')),
+      contact_id: el('select', {}, el('option', { value: '' }, 'כל אנשי הקשר')),
+      by: el('select', {}, el('option', { value: '' }, 'שלי ומשותפים'), el('option', { value: 'me' }, 'שלי'),
+        el('option', { value: 'shared' }, 'ששותפו איתי')),
+      from: el('input', { type: 'date', 'aria-label': 'מתאריך' }),
+      to: el('input', { type: 'date', 'aria-label': 'עד תאריך' }),
+      archived: el('input', { type: 'checkbox' }),
+    };
+    const views = el('select', { 'aria-label': 'תצוגות שמורות' });
+    const VKEY = 'dt-doc-views';
+    const readViews = () => { try { return JSON.parse(localStorage.getItem(VKEY) || '{}'); } catch (e) { return {}; } };
+    const current = () => Object.fromEntries(Object.entries(f).map(([k, n]) => [k, n.type === 'checkbox' ? (n.checked ? '1' : '') : n.value])
+      .filter(([, v]) => v));
+    function fillViews() {
+      const v = readViews();
+      // replaceChildren לא משטח מערכים ומדפיס null — לכן spread ו-filter.
+      views.replaceChildren(...[el('option', { value: '' }, '⭐ תצוגות שמורות'),
+        ...Object.keys(v).map(n => el('option', { value: n }, n)),
+        el('option', { value: '__save' }, '+ שמירת הסינון הנוכחי…'),
+        Object.keys(v).length ? el('option', { value: '__del' }, '✕ מחיקת תצוגה…') : null].filter(Boolean));
+    }
+    views.addEventListener('change', () => {
+      const v = readViews();
+      if (views.value === '__save') {
+        const name = prompt('שם לתצוגה:');
+        if (name) { v[name] = current(); try { localStorage.setItem(VKEY, JSON.stringify(v)); } catch (e) {} }
+      } else if (views.value === '__del') {
+        const name = prompt('איזו תצוגה למחוק?\n' + Object.keys(v).join('\n'));
+        if (name && v[name]) { delete v[name]; try { localStorage.setItem(VKEY, JSON.stringify(v)); } catch (e) {} }
+      } else if (v[views.value]) {
+        for (const [k, n] of Object.entries(f)) {
+          const val = v[views.value][k] || '';
+          if (n.type === 'checkbox') n.checked = !!val; else n.value = val;
+        }
+        load();
+      }
+      fillViews();
+    });
 
-    function render() {
-      const term = q.value.trim();
-      const rows = docs.filter(d =>
-        (!tplSel.value || String(d.template_id) === tplSel.value) &&
-        (!statusSel.value || d.status === statusSel.value) &&
-        (!term || (d.number || '').includes(term) || d.title.includes(term)));
-      if (!rows.length) {
-        box.replaceChildren(el('p', { class: 'muted' }, docs.length ? 'אין מסמכים שמתאימים לסינון.'
+    function render(docs) {
+      count.textContent = docs.length ? docs.length + ' מסמכים' : '';
+      if (!docs.length) {
+        box.replaceChildren(el('p', { class: 'muted' }, Object.keys(current()).length ? 'אין מסמכים שמתאימים לסינון.'
           : 'עוד לא הונפקו מסמכים. ב"התבניות שלי" לוחצים "הנפקת מסמך" ליד תבנית.'));
         return;
       }
       box.replaceChildren(el('div', { class: 'table-wrap' }, el('table', { class: 'docs' },
-        el('thead', {}, el('tr', {}, ['מספר', 'כותרת', 'תבנית', 'מצב', 'שדות חובה', 'נוצר'].map(h => el('th', {}, h)))),
-        el('tbody', {}, rows.map(d => {
+        el('thead', {}, el('tr', {}, ['מספר', 'כותרת', 'איש קשר', 'תבנית', 'מצב', 'שדות חובה', 'נוצר'].map(h => el('th', {}, h)))),
+        el('tbody', {}, docs.map(d => {
           const [label, kind] = STATUS[d.status] || [d.status, ''];
           return el('tr', { class: 'clickable' + (d.archived ? ' archived' : ''), onclick: () => { location.hash = 'doc=' + d.id; } },
             el('td', { dir: 'ltr', 'data-label': 'מספר' }, el('a', { href: '#doc=' + d.id }, d.number || '—')),
             el('td', { 'data-label': 'כותרת' }, d.title,
-              d.owner_name ? el('span', { class: 'shared-tag small' }, ` 👥 של ${d.owner_name}`) : null),
+              d.owner_name ? el('span', { class: 'shared-tag small' }, ` 👥 של ${d.owner_name}`) : null,
+              window.DTCatalog.chips(d.tags)),
+            el('td', { 'data-label': 'איש קשר' }, d.contact || ''),
             el('td', { class: 'muted', 'data-label': 'תבנית' }, d.template),
             el('td', { 'data-label': 'מצב' }, el('span', { class: 'badge ' + kind }, label)),
             el('td', { 'data-label': 'שדות חובה' }, d.required ? `${d.filled}/${d.required}` : '—'),
@@ -74,26 +111,43 @@
         })))));
     }
 
+    let seq = 0;
     async function load() {
+      const my = ++seq;
       try {
-        docs = (await api('doc_list', undefined, archived.checked ? { archived: 1 } : {})).documents;
-        const seen = new Map(docs.map(d => [d.template_id, d.template]));
-        const cur = tplSel.value || params.get('template') || '';
-        tplSel.replaceChildren(el('option', { value: '' }, 'כל התבניות'),
-          [...seen].map(([id, name]) => el('option', { value: id, selected: String(id) === cur }, name)));
-        render();
+        const r = await api('doc_list', undefined, current());
+        if (my !== seq) return;   // תשובה ישנה שהגיעה אחרי חדשה
+        // אפשרויות הסינון נבנות מהתוצאות (תבניות, תגיות) — בלי לאבד את הבחירה הנוכחית.
+        const keep = (sel, items, first) => {
+          const cur = sel.value;
+          sel.replaceChildren(el('option', { value: '' }, first), ...items.map(([v, t]) => el('option', { value: v, selected: String(v) === cur }, t)));
+        };
+        if (!f.template_id.value) keep(f.template_id, [...new Map(r.documents.map(d => [d.template_id, d.template]))], 'כל התבניות');
+        keep(f.tag, r.tags.map(t => [t, t]), 'כל התגיות');
+        render(r.documents);
       } catch (e) {
         msg.replaceChildren(notice(e.message, 'bad'));
       }
     }
 
-    [q, tplSel, statusSel].forEach(n => n.addEventListener('input', render));
-    archived.addEventListener('change', load);
+    // בחירות שמגיעות מהכתובת: #docs?template=5 / ?contact=7
+    if (params.get('template')) f.template_id.append(el('option', { value: params.get('template'), selected: true }, 'התבנית הנבחרת'));
+    try {
+      const cs = await window.DTCatalog.contacts();
+      f.contact_id.append(...cs.map(c => el('option', { value: c.id, selected: String(c.id) === params.get('contact') }, c.name)));
+    } catch (e) { /* בלי אנשי קשר — בלי הסינון הזה */ }
+
+    let t = null;
+    f.q.addEventListener('input', () => { clearTimeout(t); t = setTimeout(load, 300); });
+    for (const [k, n] of Object.entries(f)) if (k !== 'q') n.addEventListener('change', load);
+    fillViews();
     window.DT.setTab('docs');
     show(el('section', { class: 'card' },
-      el('h1', {}, 'מסמכים'),
-      el('div', { class: 'filters' }, q, tplSel, statusSel,
-        el('label', { class: 'inline small muted' }, archived, ' כולל ארכיון')),
+      el('div', { class: 'row' }, el('h1', {}, 'מסמכים'), count),
+      el('div', { class: 'filters' }, f.q, views),
+      el('div', { class: 'filters' }, f.template_id, f.status, f.tag, f.contact_id, f.by,
+        el('label', { class: 'inline small muted' }, 'מ-', f.from), el('label', { class: 'inline small muted' }, 'עד', f.to),
+        el('label', { class: 'inline small muted' }, f.archived, ' כולל ארכיון')),
       msg, box));
     await load();
   }
@@ -171,6 +225,7 @@
     const completeBtn = el('button', { class: 'primary small', onclick: fill ? fillDone : complete }, fill ? 'סיימתי ✓' : 'סיום ונעילה');
     const pdfBtn = el('button', { class: 'small', onclick: downloadPdf }, '⬇ הורדת PDF');
     const people = el('aside', { class: 'panel card people', hidden: true });
+    const meta = el('div', { class: 'doc-meta' });
     const side = (panel, other) => { panel.hidden = !panel.hidden; other.hidden = true; };
 
     show(
@@ -178,6 +233,7 @@
         fill ? null : el('a', { href: '#docs', class: 'small' }, '→ מסמכים'),
         el('strong', { dir: 'ltr', class: 'doc-number' }, doc.number || ''),
         title, statusBadge, saveStatus),
+      fill ? null : meta,
       !fill && doc.owner_name ? el('p', { class: 'notice' }, `👥 מסמך של ${doc.owner_name} — ההרשאה שלך: ${window.DT.LEVEL[doc.access]}.`) : null,
       fill && doc.me ? el('p', { class: 'notice' }, `שלום${doc.me.name ? ' ' + doc.me.name : ''} — ממלאים כאן את השדות של "${doc.me.role}". ` +
         'השדות שלך מסומנים במסגרת; את השאר רואים לקריאה בלבד.') : null,
@@ -191,6 +247,33 @@
         fill ? null : pdfBtn, completeBtn, progress),
       msg,
       el('div', { class: 'editor' }, body, journal, people));
+
+    // שלב 8: איש קשר (רק לבעלים — הכרטיסים פרטיים) ותגיות (ממלא ומעלה, גם במסמך נעול).
+    async function renderMeta() {
+      if (fill) return;
+      const parts = [];
+      if (doc.access === 'owner') {
+        const picker = await window.DTCatalog.contactPicker(doc.contact_id, async (c) => {
+          try {
+            const filled = Object.values(values).some(v => v) ? confirm('למלא גם שדות שכבר מלאים מכרטיס איש הקשר?') : false;
+            const r = await api('doc_contact', { id, contact_id: c ? c.id : 0, overwrite: filled });
+            Object.assign(values, r.values || {});
+            msg.replaceChildren(notice(c ? `קושר ל${c.name}` + (r.filled ? ` · מולאו ${r.filled} שדות` : '') : 'הקישור לאיש הקשר הוסר', 'ok'));
+            await reload();
+            renderBody();
+          } catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
+        }, { disabled: !EDITABLE.includes(doc.status) });
+        parts.push(el('label', { class: 'inline small' }, '👤 ', picker));
+      } else if (doc.contact) {
+        parts.push(el('span', { class: 'small' }, '👤 ' + doc.contact));
+      }
+      parts.push(el('label', { class: 'inline small tags-label' }, '🏷️ ', window.DTCatalog.tagsInput(doc.tags, async (tags) => {
+        try { await api('doc_tags', { id, tags }); doc.tags = tags; }
+        catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
+      }, { disabled: lvl() < 2 })));
+      meta.replaceChildren(...parts);
+    }
+    renderMeta();
 
     window.DT.setLeaveGuard(Object.assign(() => {
       if (Object.keys(pending).length) flush();
@@ -568,7 +651,15 @@
             el('div', { class: 'row' }, el('strong', {}, p.role),
               el('span', { class: 'badge ' + (done ? 'ok' : p.opened_at ? 'warn' : 'muted') }, PSTATUS[p.status] || p.status)),
             p.auth === 'email' ? el('div', { class: 'muted small' }, '🔒 אימות בקוד למייל') : null,
-            done ? null : el('div', { class: 'person-fields' }, name, email, phone),
+            done ? null : el('div', { class: 'person-fields' }, name, email, phone, (() => {
+              const btn = el('button', { type: 'button', class: 'link small', onclick: async () => {
+                const sel = await window.DTCatalog.contactPicker(null, (c) => {
+                  if (c) { name.value = c.name; email.value = c.email; phone.value = c.phone; }
+                }, { empty: '— בחירה מאנשי הקשר —' });
+                btn.replaceWith(sel);
+              } }, '👤 מאנשי הקשר');
+              return btn;
+            })()),
             p.blocked && !done ? el('p', { class: 'muted small' }, p.blocked) : null,
             done || p.blocked ? null : el('div', { class: 'ops' },
               el('button', { class: 'small primary', onclick: () => act('email') }, '✉ מייל'),

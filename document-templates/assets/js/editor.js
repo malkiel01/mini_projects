@@ -320,7 +320,12 @@
             : el('p', { class: 'muted small' }, 'בחרו סוג שדה למעלה, ואז לחצו על המקום בדף.'),
           el('p', { class: 'muted small' }, 'גרירה מזיזה; הפינה התחתונה משנה גודל; חצים במקלדת — הזזה עדינה; Delete — מחיקה.'),
           rolesPanel(),
-          numberingPanel());
+          numberingPanel(),
+          el('div', { class: 'numbering' }, el('h2', {}, 'תגיות לתבנית'),
+            window.DTCatalog.tagsInput(tpl.tags, async (tags) => {
+              try { await api('tpl_tags', { id, tags }); tpl.tags = tags; }
+              catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
+            }, { disabled: readOnly })));
         return;
       }
       const f = selected;
@@ -351,6 +356,9 @@
         input('שורת עזרה (לא חובה)', 'help', { maxlength: 300 }),
         f.type !== 'signature' && f.type !== 'file' ? input('ערך ברירת מחדל', 'default', { maxlength: 1000 }) : null,
         f.type === 'file' ? filePanel(f) : null,
+        !['file', 'signature', 'checkbox'].includes(f.type) ? select_('מתמלא מאיש קשר', 'contactField', {
+          '': '— לא —', name: 'שם', id_number: 'ת"ז / ח"פ', phone: 'טלפון', email: 'מייל', address: 'כתובת', notes: 'הערות',
+        }) : null,
         textual ? input('גודל גופן', 'fontSize', { type: 'number', min: 6, max: 72 }) : null,
         textual ? select_('יישור', 'align', { right: 'ימין', center: 'מרכז', left: 'שמאל' }) : null,
         textual ? select_('כשהטקסט ארוך מהשדה', 'overflow', OVERFLOW) : null,
