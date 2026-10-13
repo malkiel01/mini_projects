@@ -38,7 +38,46 @@ function pm_phone(array $in, string $key, string $label): string
  */
 function pm_owner_clause(array $user, string $alias = 'c'): array
 {
-    return ["$alias.owner_id = ?", [$user['id']]];
+    // כרטיסים — של הצוות: הוא, ומי שחולק איתו פרויקט כשותף מנהל (pm_team_ids)
+    $ids = pm_team_ids((int)$user['id']);
+    return ["$alias.owner_id IN (" . implode(',', array_fill(0, count($ids), '?')) . ')', $ids];
+}
+
+/** פרויקטים שהמשתמש רואה: שלו, ומה ששותף איתו כשותף מנהל. */
+function pm_project_clause(array $user, string $alias = 'p'): array
+{
+    return ["($alias.owner_id = ? OR $alias.id IN (SELECT project_id FROM project_partners WHERE user_id = ?))", [$user['id'], $user['id']]];
+}
+
+/**
+ * הצוות של מנהל — מי שאנשי הקשר שלו משותפים איתו: הוא עצמו; בעלי הפרויקטים שהוא שותף בהם; וכל
+ * השותפים בפרויקטים של כל אלה. כך ספק שהשותף הוסיף נבחר גם אצל הבעלים, ולהפך. בלי שיתוף — רק הוא.
+ */
+function pm_team_ids(int $userId): array
+{
+    $cache = &$GLOBALS['pm_team_cache'];
+    if (isset($cache[$userId])) return $cache[$userId];
+    $db = pm_db();
+    $owners = [$userId];
+    $st = $db->prepare('SELECT DISTINCT p.owner_id FROM project_partners x JOIN projects p ON p.id = x.project_id WHERE x.user_id = ?');
+    $st->execute([$userId]);
+    foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $o) $owners[] = (int)$o;
+    $ids = $owners;
+    $in = implode(',', array_map('intval', array_unique($owners)));
+    foreach ($db->query("SELECT DISTINCT x.user_id FROM project_partners x JOIN projects p ON p.id = x.project_id WHERE p.owner_id IN ($in)")->fetchAll(PDO::FETCH_COLUMN) as $u) $ids[] = (int)$u;
+    return $cache[$userId] = array_values(array_unique($ids));
+}
+
+/** אחרי צירוף / הסרה של שותף — המטמון של הבקשה מתאפס. */
+function pm_team_reset(): void
+{
+    $GLOBALS['pm_team_cache'] = [];
+}
+
+/** איש קשר שבעליו בצוות של בעל הפרויקט — מותר לשייך אותו לפרויקט. */
+function pm_contact_in_team(int $contactOwnerId, int $projectOwnerId): bool
+{
+    return in_array($contactOwnerId, pm_team_ids($projectOwnerId), true);
 }
 
 /** כרטיס שהמשתמש רשאי לראות — או חריגה 404. */
@@ -286,10 +325,11 @@ function pm_validate_client_settings(int $ownerId, $raw): array
     $raw = is_array($raw) ? $raw : [];
     $lawyerId = (int)($raw['lawyer_id'] ?? 0) ?: null;
     if ($lawyerId) {
-        // עו"ד של אותו מנהל בלבד — אי אפשר לקשר לכרטיס של מנהל אחר.
-        $st = pm_db()->prepare("SELECT 1 FROM contacts WHERE id = ? AND kind = 'lawyer' AND owner_id = ?");
-        $st->execute([$lawyerId, $ownerId]);
-        if (!$st->fetchColumn()) throw new PmError('עורך הדין לא נמצא', 422);
+        // עו"ד של אותו מנהל (או של הצוות שלו — שותף מנהל) — לא של מנהל זר
+        $st = pm_db()->prepare("SELECT owner_id FROM contacts WHERE id = ? AND kind = 'lawyer'");
+        $st->execute([$lawyerId]);
+        $o = $st->fetchColumn();
+        if ($o === false || !pm_contact_in_team((int)$o, $ownerId)) throw new PmError('עורך הדין לא נמצא', 422);
     }
     $method = (string)($raw['approval_method'] ?? 'click');
     if (!in_array($method, ['click', 'signature'], true)) throw new PmError('אופן אישור לא מוכר', 422);

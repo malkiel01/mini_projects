@@ -43,6 +43,11 @@ const Projects = (() => {
             if (row && e.target === row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openStage(Number(row.dataset.stage)); }
         });
         $('#add-member').addEventListener('click', openMember);
+        $('#partners').addEventListener('click', e => {
+            if (e.target.closest('#add-partner')) { addPartner(); return; }
+            const b = e.target.closest('[data-partner-remove]');
+            if (b) removePartner(Number(b.dataset.partnerRemove), b.dataset.name);
+        });
         $('#team-list').addEventListener('click', e => {
             const b = e.target.closest('[data-remove]');
             if (b) removeMember(Number(b.dataset.remove), b.dataset.name);
@@ -100,7 +105,9 @@ const Projects = (() => {
                 p.current_stage ? `${esc(t(p.current_stage.name))}: ${esc(state.labels.stage[p.current_stage.status] || '')}` : (p.stages_total ? esc(t('כל השלבים בוצעו')) : ''),
                 p.stages_total ? `${p.stages_done}/${p.stages_total}` : '',
             ].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>');
-            const status = p.status !== 'active' ? `<span class="chip">${esc(state.labels.project[p.status])}</span>` : '';
+            const status = (p.status !== 'active' ? `<span class="chip">${esc(state.labels.project[p.status])}</span>` : '')
+                // שותף מנהל: פרויקט של מנהל אחר — עם השם שלו; פרויקט שלי ששיתפתי — "משותף"
+                + (p.owner_id !== state.user.id ? `<span class="chip partner-chip" title="${esc(t('שותף מנהל'))}">🤝 ${esc(p.owner_name)}</span>` : p.shared ? `<span class="chip partner-chip">🤝 ${esc(t('משותף'))}</span>` : '');
             return `<article class="card chat" data-id="${p.id}" tabindex="0" role="link" aria-label="${esc(p.name)}">
                 ${avatar(p.name)}
                 <div class="body">
@@ -392,7 +399,41 @@ const Projects = (() => {
 
     let links = {};
 
+    /** שותפים מנהלים: הבעלים, השותפים, ו"+ שותף מנהל" (רק לבעלים). */
+    function renderPartners() {
+        const P = cur.partners || [], me = state.user.id;
+        $('#partners-list').innerHTML = P.map(u => `<li class="card static">
+            ${avatar(u.name)}
+            <div class="body"><div class="l1">${esc(u.name)}${u.id === me ? `<span class="sub">${esc(t('אני'))}</span>` : ''}</div>
+                <div class="l2">${esc(u.owner ? t('👑 בעל הפרויקט') : t('🤝 שותף מנהל — רואה ועורך הכול'))}</div></div>
+            <div class="acts">${!u.owner && (cur.is_owner || u.id === me) ? `<button class="icon-btn" data-partner-remove="${u.id}" data-name="${esc(u.name)}"
+                aria-label="${esc(u.id === me ? t('עזיבת הפרויקט') : t('הסרת {name} מהשותפים', { name: u.name }))}">✕</button>` : ''}</div></li>`).join('');
+        $('#add-partner').hidden = !cur.is_owner;
+    }
+
+    async function addPartner() {
+        const login = prompt(t('שם המשתמש או האימייל של המנהל (משתמש פעיל באפליקציה):'), '');
+        if (!login || !login.trim()) return;
+        try {
+            cur = await api('project-partner', { body: { project_id: cur.project.id, do: 'add', login: login.trim() } });
+            renderTeam();
+            toast(t('צורף כשותף מנהל — הפרויקט מופיע אצלו עכשיו'));
+        } catch (e) { toast(e.message, true); }
+    }
+
+    async function removePartner(id, name) {
+        const self = id === state.user.id;
+        if (!confirm(self ? t('לעזוב את הפרויקט? הוא ייעלם מהרשימה שלך.') : t('להסיר את {name} מהשותפים? הוא לא יראה יותר את הפרויקט.', { name }))) return;
+        try {
+            const d = await api('project-partner', { body: { project_id: cur.project.id, do: 'remove', user_id: id } });
+            if (d.left) { location.hash = '#/'; toast(t('עזבת את הפרויקט')); return; }
+            cur = d;
+            renderTeam();
+        } catch (e) { toast(e.message, true); }
+    }
+
     async function renderTeam() {
+        renderPartners();
         const draw = () => {
             $('#team-list').innerHTML = cur.team.map(c => {
                 // ללקוח ולעו"ד — קישור אישי לפורטל. מתי נפתח לאחרונה — בשורה.

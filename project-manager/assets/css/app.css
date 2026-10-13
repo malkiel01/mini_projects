@@ -730,3 +730,8 @@ body.auth { display: grid; place-items: start center; padding: max(8vh, var(--s4
 .ledger .lg-paid .lg-d { color: var(--ok); }
 .ledger .lg-milestone, .ledger .lg-invoice { color: var(--muted); }
 .fa-income .fin-cells { margin-block-end: var(--s2); }
+/* שותף מנהל */
+.sec-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); margin-bottom: var(--s1); }
+.sec-row .sec-title { margin: 0; }
+#partners { margin-block-end: var(--s3); }
+.partner-chip { font-size: .7rem; }

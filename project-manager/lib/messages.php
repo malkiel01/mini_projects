@@ -224,7 +224,7 @@ function pm_message_log(array $user, array $in): array
     $name = '';
     if ($contactId) {
         $c = pm_contact_full($contactId);
-        if (!$c || (int)$c['owner_id'] !== (int)$user['id']) $contactId = null; else $name = $c['name'];
+        if (!$c || !in_array((int)$c['owner_id'], pm_team_ids((int)$user['id']), true)) $contactId = null; else $name = $c['name'];
     }
     $body = mb_substr((string)($in['text'] ?? ''), 0, 3000);
     pm_db()->prepare('INSERT INTO messages (project_id, contact_id, channel, key, recipient, subject, body, status, auto, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
