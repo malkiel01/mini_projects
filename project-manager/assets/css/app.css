@@ -964,9 +964,9 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .tile-ic { flex: none; font-size: 1.25rem; }
 .fd-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .fd-grid .wide { grid-column: 1 / -1; }
-.fd-more { border-top: 1px solid var(--line); padding-top: var(--s2); }
-.fd-more summary { cursor: pointer; color: var(--brand); min-block-size: 36px; display: flex; align-items: center; }
-.fd-more[open] { display: grid; gap: var(--s2); }
+.fd-more { display: grid; gap: var(--s2); }
+.fd-more .sec-title { margin: var(--s2) 0 0; }
+.fd-more .sec-title small { font-weight: 400; color: var(--muted); font-size: .75rem; }
 
 /* ===== צפייה במסך מלא בתוך האפליקציה (viewer.js — Viewer.open) ===== */
 #viewer-dlg { inline-size: 100vw; max-inline-size: 100vw; block-size: var(--vvh, 100dvh); max-block-size: none; margin: 0; inset: 0; padding: 0; border: 0; border-radius: 0;
