@@ -299,8 +299,8 @@
 
     const upload = el('form', { class: 'upload', hidden: true },
       el('label', {}, el('span', {}, 'שם התבנית'), el('input', { name: 'name', required: true, maxlength: 120 })),
-      el('label', {}, el('span', {}, 'קובץ: PDF או תמונה (PNG, JPG, WEBP)'),
-        el('input', { name: 'file', type: 'file', required: true, accept: 'application/pdf,image/png,image/jpeg,image/webp' })),
+      el('label', {}, el('span', {}, 'קובץ: PDF, Word (docx — שדות מסומנים {{כך}}) או תמונה'),
+        el('input', { name: 'file', type: 'file', required: true, accept: 'application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp' })),
       el('div', { class: 'ops' },
         el('button', { type: 'submit', class: 'primary' }, 'העלאה ופתיחה בעורך'),
         el('button', { type: 'button', onclick: () => { upload.hidden = true; } }, 'ביטול')));

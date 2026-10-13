@@ -16,6 +16,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/contacts.php';
+require_once __DIR__ . '/docx.php';
 
 const TPL_MAX_FILE_MB = 20;
 const TPL_MAX_SCHEMA  = 512 * 1024;
@@ -25,6 +26,7 @@ const TPL_MIME = [
     'image/png'       => 'image',
     'image/jpeg'      => 'image',
     'image/webp'      => 'image',
+    DOCX_MIME         => 'docx',
 ];
 const FIELD_TYPES = ['text', 'textarea', 'number', 'date', 'checkbox', 'signature', 'file'];
 const FILE_KINDS  = ['pdf', 'image', 'office'];
@@ -109,7 +111,15 @@ function tpl_create(array $user, array $post, array $files): array
     $bytes = (string)file_get_contents($f['tmp_name']);
     // הסוג נקבע מהתוכן, לא מהשם או ממה שהדפדפן הצהיר.
     $mime = (new finfo(FILEINFO_MIME_TYPE))->buffer($bytes);
-    if (!isset(TPL_MIME[$mime])) throw new ApiError('סוג קובץ לא נתמך. PDF, PNG, JPG או WEBP', 415);
+    // Word הוא ZIP; finfo לא תמיד מזהה אותו בשמו. בודקים את המבנה עצמו.
+    if (!isset(TPL_MIME[$mime]) && is_docx($bytes)) $mime = DOCX_MIME;
+    if (!isset(TPL_MIME[$mime])) throw new ApiError('סוג קובץ לא נתמך. PDF, Word (docx), PNG, JPG או WEBP', 415);
+    $schema = ['pages' => [], 'fields' => []];
+    if ($mime === DOCX_MIME) {
+        $bytes = docx_normalize($bytes, $names);
+        if (!$names) throw new ApiError('לא נמצאו שדות בקובץ. מסמנים שדה כך: {{שם_הלקוח}}', 422);
+        $schema = ['pages' => [['w' => 595, 'h' => 842]], 'fields' => docx_fields($names)];
+    }
 
     if (function_exists('assert_room')) assert_room((int)$user['id'], strlen($bytes));
     $path = store_file($bytes);
@@ -121,7 +131,7 @@ function tpl_create(array $user, array $post, array $files): array
             ->execute([$user['id'], seal($name), TPL_MIME[$mime], $now]);
         $tid = (int)$pdo->lastInsertId();
         $pdo->prepare('INSERT INTO template_versions (template_id, version, schema_enc, created_at) VALUES (?, 1, ?, ?)')
-            ->execute([$tid, seal(json_encode(['pages' => [], 'fields' => []])), $now]);
+            ->execute([$tid, seal(json_encode($schema, JSON_UNESCAPED_UNICODE)), $now]);
         $pdo->prepare('INSERT INTO template_assets (template_version_id, path, mime, size, sha256) VALUES (?, ?, ?, ?, ?)')
             ->execute([(int)$pdo->lastInsertId(), $path, $mime, strlen($bytes), hash('sha256', $bytes)]);
         $pdo->commit();
@@ -212,6 +222,8 @@ function clean_schema($s): array
             'align' => in_array($f['align'] ?? '', ['right', 'center', 'left'], true) ? $f['align'] : 'right',
             'overflow' => in_array($f['overflow'] ?? '', OVERFLOW, true) ? $f['overflow'] : 'shrink',
             'role' => in_array($f['role'] ?? '', $roleKeys, true) ? $f['role'] : 'owner',
+            // שלב 9: בתבנית Word — הסימון בקובץ שהשדה ממלא ({{...}}).
+            'placeholder' => $str($f['placeholder'] ?? '', 60),
             // שלב 8: מתמלא מאיש הקשר שמקושר למסמך.
             'contactField' => in_array($f['contactField'] ?? '', CONTACT_FIELDS, true) && $type !== 'file' && $type !== 'signature'
                 ? $f['contactField'] : '',

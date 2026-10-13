@@ -66,7 +66,7 @@ try {
         'health' => (function () {
             $probe = 'בדיקה';
             db();
-            return ['ok' => true, 'stage' => 8, 'php' => PHP_VERSION, 'sqlite' => true,
+            return ['ok' => true, 'stage' => 9, 'php' => PHP_VERSION, 'sqlite' => true,
                 'crypto' => unseal(seal($probe)) === $probe,
                 'mail' => function_exists('mail'), 'zip' => class_exists('ZipArchive'),
                 'finfo' => class_exists('finfo'),
@@ -120,6 +120,7 @@ try {
         'doc_contact'     => doc_contact($session, $body),
         'doc_tags'        => doc_tags($session, $body),
         'tpl_tags'        => tpl_tags($session, $body),
+        'doc_docx'        => doc_docx($session, (int)($_GET['id'] ?? 0), !empty($_GET['preview'])),
         'dev_users' => dev_users(),
         'dev_user'  => dev_user_action($body, $session),
         default     => throw new ApiError('פעולה לא מוכרת', 404),
