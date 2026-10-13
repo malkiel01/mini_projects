@@ -1141,12 +1141,13 @@
                 <!-- איפה הקובץ משמש, ושיוך לרשומה — אותו דבר כמו העלאה מהחלון של ההצעה / החוזה / אבן הדרך -->
                 <section class="file-uses" aria-labelledby="g-uses">
                     <h3 class="sec-title" id="g-uses">שימוש במערכת</h3>
-                    <div class="chips" id="file-uses"></div>
-                    <div class="chip-row" id="file-attach-btns">
-                        <button type="button" class="chip" id="file-quote">🧾 הצעת מחיר מהקובץ</button>
-                        <button type="button" class="chip" data-attach="contract">📝 לחוזה של ספק</button>
-                        <button type="button" class="chip" data-attach="invoice">🧾 חשבונית לאבן דרך</button>
-                        <button type="button" class="chip" data-attach="proof">💳 אסמכתא לאבן דרך</button>
+                    <div id="file-uses"></div>
+                    <p class="attach-title" id="file-attach-title">לשייך את הקובץ ל…</p>
+                    <div class="attach-grid" id="file-attach-btns">
+                        <button type="button" class="tile" id="file-quote"><span class="tile-ic" aria-hidden="true">🧾</span><span>הצעת מחיר</span></button>
+                        <button type="button" class="tile" data-attach="contract"><span class="tile-ic" aria-hidden="true">📝</span><span>חוזה עם ספק</span></button>
+                        <button type="button" class="tile" data-attach="invoice"><span class="tile-ic" aria-hidden="true">🧾</span><span>חשבונית לאבן דרך</span></button>
+                        <button type="button" class="tile" data-attach="proof"><span class="tile-ic" aria-hidden="true">💳</span><span>אסמכתת תשלום</span></button>
                     </div>
                     <div class="file-attach" id="file-attach" hidden>
                         <label class="f wide"><span id="file-attach-label"></span><select id="file-attach-to"></select></label>

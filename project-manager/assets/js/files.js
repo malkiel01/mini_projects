@@ -394,8 +394,15 @@ const Files = (() => {
 
     function renderUses() {
         const uses = current.uses || [];
-        $('#file-uses').innerHTML = uses.map((u, i) => `<button type="button" class="chip" data-use="${i}">${esc(useLabel(u))} ‹</button>`).join('')
-            || `<span class="hint">${esc(RECORD_TYPES.includes(current.type) ? t('הקובץ עוד לא משויך — בחרו למטה למה הוא שייך.') : t('הקובץ לא משמש באף רשומה.'))}</span>`;
+        // משויך: שורה לכל רשומה (אייקון, מה, ספק · שלב) — לחיצה פותחת אותה. לא משויך: משפט אחד, והשיוך מתחת
+        $('#file-uses').innerHTML = uses.length ? `<ul class="use-list">${uses.map((u, i) => {
+            const [ic, l] = USE[u.kind] || ['📄', ''];
+            const sub = u.kind === 'quote' ? [u.supplier, t(u.text)] : u.kind === 'contract' ? [u.supplier, u.text] : [u.text, u.supplier];
+            return `<li><button type="button" class="use-row" data-use="${i}"><span class="use-ic" aria-hidden="true">${ic}</span>
+                <span class="use-tx"><b>${esc(t(l))}</b><small>${esc(sub.filter(Boolean).join(' · '))}</small></span><span class="use-go" aria-hidden="true">‹</span></button></li>`;
+        }).join('')}</ul>`
+            : `<p class="use-empty${RECORD_TYPES.includes(current.type) ? ' warn' : ''}">${esc(RECORD_TYPES.includes(current.type) ? t('הקובץ עוד לא משויך — בחרו למטה למה הוא שייך.') : t('הקובץ לא משמש באף רשומה.'))}</p>`;
+        $('#file-attach-title').textContent = uses.length ? t('שיוך נוסף') : t('לשייך את הקובץ ל…');
         $('#file-attach').hidden = true;
         attachButtons();
     }
@@ -405,6 +412,8 @@ const Files = (() => {
         const type = $('#file-dlg [name=type]').value, open = ['other', 'photo'].includes(type);
         $('#file-quote').hidden = !(open || type === 'quote');
         for (const b of $$('#file-attach-btns [data-attach]')) b.hidden = !(open || type === b.dataset.attach);
+        // אריח אחד — לכל הרוחב
+        $('#file-attach-btns').classList.toggle('one', $$('#file-attach-btns .tile:not([hidden])').length === 1);
     }
 
     /** מהקובץ לרשומה: ההצעה, החוזה, אבן הדרך, התוספת, ההוצאה, הדיווח. */
