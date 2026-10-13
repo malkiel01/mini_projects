@@ -513,7 +513,17 @@ button.link { border: 0; background: none; color: var(--brand); text-decoration:
 .manual-proof[open] summary { margin-bottom: var(--s2); }
 .manual-proof .row-btns { margin-top: var(--s2); }
 #payment-cancel { justify-self: start; }
-@media (max-width: 430px) { #add-payment .add-label { display: none; } #add-payment { min-width: var(--tap); padding: 0; justify-content: center; } }
+/* אבני דרך: כותרת וכפתור בשורה אחת; מתחת — כמה התקבל מתוך כמה, עם פס */
+.ms-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); margin-bottom: var(--s2); }
+.ms-head .sec-title { margin: 0; }
+#add-payment { flex: none; white-space: nowrap; }
+.pay-sum { display: grid; gap: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2) var(--s3); margin-bottom: var(--s3); }
+.pay-sum[hidden] { display: none; }
+.pay-sum .ps-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px; font-size: .9rem; }
+.pay-sum .ps-line b { font-size: 1.05rem; }
+.pay-sum .ps-pct { margin-inline-start: auto; font-weight: 600; color: var(--ok); }
+.pay-sum .fm-track > span { background: var(--ok); }
+.pay-sum .chip-row { margin: 0; }
 
 /* ---- שיתוף לאפליקציה ---- */
 

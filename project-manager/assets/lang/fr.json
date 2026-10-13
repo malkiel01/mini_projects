@@ -2011,5 +2011,6 @@
     "הדפסת הכרטסת": "Imprimer le relevé",
     "החוזה לא נמצא": "Contrat introuvable",
     "שם החוזה": "Nom du contrat",
-    "החוזה של ספק אחר": "Le contrat appartient à un autre fournisseur"
+    "החוזה של ספק אחר": "Le contrat appartient à un autre fournisseur",
+    "מתוך {total}": "sur {total}"
 }
