@@ -17,6 +17,35 @@ export const LED_OPTIONS = [
 ];
 export const isBundle = (stripId) => !stripId || !!material(stripId).led?.bundle;
 
+/**
+ * שדות התאורה בטופס של מוצר: ברירת המחדל למיקום, פס, פרופיל ושליטה. `options` —
+ * המיקומים שהמוצר מציע (ספרייה וארון: LED_OPTIONS; מטבח: מתחת לעליונים / סוקל).
+ * `anyLed(v)` — האם יש תאורה (כללית או לקומה), כדי להציג את השאר רק כשצריך.
+ */
+export function lightingParams({ options = LED_OPTIONS, label = 'פסי לד — ברירת המחדל לכל קומה', hint = 'בכרטיס של כל קומה אפשר אחרת', group = 'תאורה', anyLed } = {}) {
+  const on = anyLed || ((v) => v.led && v.led !== 'none');
+  return [
+    { key: 'led', label, type: 'enum', default: 'none', group, options, hint },
+    { key: 'ledStrip', label: 'פס הלד', type: 'material', kind: 'hardware', role: 'led-strip', default: 'hw:led-12v-3000', group, showIf: on, showIfText: 'יש תאורה', hint: '"כולל פרופיל ושנאי" — המחיר הישן למטר, בלי פירוט' },
+    { key: 'ledProfile', label: 'פרופיל', type: 'material', kind: 'hardware', role: 'led-profile', allowNone: true, noneLabel: 'בלי פרופיל (פס חשוף)', default: 'hw:led-profile-surface', group, showIf: (v) => on(v) && !isBundle(v.ledStrip), showIfText: 'פס לד מפורט' },
+    { key: 'ledControl', label: 'שליטה', type: 'enum', default: 'auto', group, showIf: (v) => on(v) && !isBundle(v.ledStrip), showIfText: 'פס לד מפורט',
+      options: [{ id: 'auto', name: 'אוטומטי — חיישן דלת בקומה עם דלת, מתג מגע לשאר' }, { id: 'touch', name: 'מתג מגע / עמעם' }, { id: 'switch', name: 'מתג על הכבל' }, { id: 'door', name: 'חיישן דלת' }, { id: 'motion', name: 'חיישן תנועה' }] },
+  ];
+}
+/** יש תאורה במוצר עם עמודות: כללית, או לקומה כלשהי. */
+export const anyUnitLed = (v) => (v.led && v.led !== 'none') || (Array.isArray(v.units) && v.units.some((u) => u.floors?.some((f) => f.led && f.led !== 'same' && f.led !== 'none')));
+
+/**
+ * פס אחד: לפרזול (פס ופרופיל במטר) ולסיכום ההספק; ובפרופיל שקוע — הערת חריץ על `board`.
+ * `axis: 'z'` — פס אופקי לעומק (קיר שני במטבח).
+ */
+export function addStrip(ctx, st, { id, len, pos, horizontal = false, axis, note, board, grooveAt = 'בפאה התחתונה', reach }) {
+  if (st.groove && board) addNote(board, `חריץ לפרופיל לד שקוע ${st.groove.w}×${st.groove.d} מ"מ ${grooveAt}, 30 מ"מ מהחזית`);
+  ctx.hardware.push({ id, kind: 'led', material: st.stripId, qty: m(len), pos, len, horizontal, ...(axis ? { axis } : {}), ...(reach ? { reach } : {}), note, kelvin: st.strip.k });
+  if (st.profileId) ctx.hardware.push({ id: `${id}-profile`, kind: 'misc', material: st.profileId, qty: m(len), note });
+  st.meters += len / 1000;
+}
+
 /** מצב התאורה לבנייה אחת — מצטבר מכל הקומות, ונסגר ב-finishLighting. */
 export function lightingState(stripId, profileId) {
   const strip = material(stripId), profile = profileId && profileId !== 'none' ? material(profileId) : null;
@@ -35,10 +64,7 @@ export function lightFloor(ctx, st, { i, j, nFloors, col, a, top, z0, z1, places
   const tag = nFloors > 1 ? `-f${j + 1}` : '';
   const where = `עמודה ${i + 1}${nFloors > 1 ? `, קומה ${j + 1}` : ''}`;
   const strips = [];
-  const strip = (id, len, extra, board, grooveAt) => {
-    strips.push({ id, len, ...extra });
-    if (st.groove && board) addNote(board, `חריץ לפרופיל לד שקוע ${st.groove.w}×${st.groove.d} מ"מ ${grooveAt}, 30 מ"מ מהחזית`);
-  };
+  const strip = (id, len, extra, board, grooveAt) => { strips.push(id); addStrip(ctx, st, { id, len, ...extra, board, grooveAt }); };
   const w = col.x1 - col.x0;
   if (places.has('top')) strip(`led-${i + 1}${tag}-top`, w, { pos: [col.x0, top - 4, z1 - 30], horizontal: true, note: `${where}, מלמעלה` }, ceiling, 'בפאה התחתונה');
   if (places.has('shelves')) {
@@ -47,12 +73,7 @@ export function lightFloor(ctx, st, { i, j, nFloors, col, a, top, z0, z1, places
     if (glassShelves) ctx.warnings.push(`${where}: מדפי זכוכית — לד מתחתיהם נראה דרכם; עדיף לד מלמעלה או בדפנות`);
   }
   if (places.has('sides')) for (const [k, x, b] of [['L', col.x0, boards.L], ['R', col.x1 - 6, boards.R]]) strip(`led-${i + 1}${tag}-${k}`, top - a, { pos: [x, a, z1 - 30], note: `${where}, ${k === 'L' ? 'שמאל' : 'ימין'}` }, b, 'בפאה הפנימית, לאורך הקומה');
-  if (places.has('back')) for (const [k, x] of [['BL', col.x0 + 4], ['BR', col.x1 - 10]]) strip(`led-${i + 1}${tag}-${k}`, top - a, { pos: [x, a, z0 + 6], note: `${where}, גב עקיף ${k === 'BL' ? 'שמאל' : 'ימין'}` }, null, '');
-  for (const s of strips) {
-    ctx.hardware.push({ id: s.id, kind: 'led', material: st.stripId, qty: m(s.len), pos: s.pos, len: s.len, horizontal: !!s.horizontal, note: s.note, kelvin: st.strip.k });
-    if (st.profileId) ctx.hardware.push({ id: `${s.id}-profile`, kind: 'misc', material: st.profileId, qty: m(s.len), note: s.note });
-    st.meters += s.len / 1000;
-  }
+  if (places.has('back')) for (const [k, x] of [['BL', col.x0 + 4], ['BR', col.x1 - 10]]) strip(`led-${i + 1}${tag}-${k}`, top - a, { pos: [x, a, z0 + 6], note: `${where}, גב עקיף ${k === 'BL' ? 'שמאל' : 'ימין'}` }, null);
   if (strips.length) st.lit.push({ i, j, door, where });
 }
 
