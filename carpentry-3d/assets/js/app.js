@@ -208,6 +208,7 @@ function wireUi() {
   document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => viewer.view(b.dataset.view)));
   $('#btn-open-all').addEventListener('click', () => { viewer.openAll(!viewer.anyOpen()); syncViewToggles(); if (shownPart) showPart(shownPart); });
   $('#btn-focus').addEventListener('click', () => toggleFocus());
+  $('#btn-lights').addEventListener('click', () => { viewer.setLights(!viewer.lightsOn()); syncViewToggles(); });
   $('#btn-ghost-fronts').addEventListener('click', () => { viewer.ghostFronts(!viewer.anyGhost()); syncViewToggles(); if (shownPart) showPart(shownPart); });
   $('#btn-reset').addEventListener('click', () => {
     if (!state.project) return;
@@ -529,6 +530,7 @@ function rebuild(reframe = false) {
   setUnitsModel(model);   // כרטיסי העמודות מציגים רוחב/גובה מחושבים ו"לא בתוקף"
   form.sync(model.values, model.auto || {});
   viewer.setModel(model);
+  syncViewToggles();   // כפתור 💡 תאורה — לפי הלדים שבמודל
   // ממסגרים מחדש בטעינה, וגם כשהמידות השתנו בהרבה (למשל גובה 2000 → 2600) — אחרת המודל יוצא מהמסך.
   const b = model.bounds, lb = rebuild.lastBounds;
   const big = !lb || Math.max(b.w / lb.w, lb.w / b.w, b.h / lb.h, lb.h / b.h, b.d / lb.d, lb.d / b.d) > 1.25;
@@ -570,7 +572,7 @@ function renderSummary(m) {
   $('#summary').innerHTML = `
     <span>${Math.round(b.w)} × ${Math.round(b.h)} × ${Math.round(b.d)} מ"מ</span>
     <span>${m.parts.length} חלקים</span>
-    <span>${m.hardware.reduce((n, h) => n + (h.kind === 'info' ? 0 : h.qty || 1), 0)} פריטי פרזול</span>
+    <span>${m.hardware.reduce((n, h) => n + (h.kind === 'info' ? 0 : M.material(h.material).priceUnit === 'm' ? 1 : h.qty || 1), 0)} פריטי פרזול</span>
     <span title="נפח × צפיפות החומר, לכל חלק">⚖ ${totalWeight(m.parts)} ק"ג</span>
     ${resetButtons(true)}`;
 }
@@ -873,6 +875,11 @@ $('#part').addEventListener('click', (e) => {
 function syncViewToggles() {
   $('#btn-open-all').classList.toggle('is-on', viewer.anyOpen());
   $('#btn-ghost-fronts').classList.toggle('is-on', viewer.anyGhost());
+  // 💡 תאורה — רק כשיש לדים במודל; בלעדיהם המצב נכבה
+  const hasLeds = !!viewer.hasLeds?.();
+  $('#btn-lights').hidden = !hasLeds;
+  if (!hasLeds && viewer.lightsOn?.()) viewer.setLights(false);
+  $('#btn-lights').classList.toggle('is-on', !!viewer.lightsOn?.());
 }
 
 // ---------- פלט ייצור ----------
@@ -1700,6 +1707,7 @@ function rebuildAssembly(reframe = false) {
   }).filter(Boolean);
   model = combine(items, { joined: !!a.joined, name: a.name });
   viewer.setModel(model);
+  syncViewToggles();   // כפתור 💡 תאורה — לפי הלדים שבמודל
   const b = model.bounds, lb = rebuild.lastBounds;
   const big = !lb || !b.w || !lb.w || Math.max(b.w / lb.w, lb.w / b.w, b.h / lb.h, lb.h / b.h, b.d / lb.d, lb.d / b.d) > 1.25;
   if ((reframe || big) && b.w) { viewer.frame(b); rebuild.lastBounds = { ...b }; }
