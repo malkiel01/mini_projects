@@ -8,7 +8,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/lib/auth.php';
+require_once __DIR__ . '/lib/templates.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -38,11 +38,13 @@ $session = null;
 
 // פעולות שלא דורשות כניסה.
 $PUBLIC = ['health', 'register', 'verify', 'login', 'forgot', 'reset', 'me'];
-$POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'dev_user'];
+$POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'dev_user',
+           'tpl_create', 'tpl_save', 'tpl_archive', 'tpl_delete'];
 
 try {
     if (in_array($action, $POSTS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
-    $body = $method === 'POST' ? (json_decode((string)file_get_contents('php://input'), true) ?: []) : [];
+    $multipart = str_starts_with((string)($_SERVER['CONTENT_TYPE'] ?? ''), 'multipart/');
+    $body = $method === 'POST' && !$multipart ? (json_decode((string)file_get_contents('php://input'), true) ?: []) : [];
 
     $session = current_session();
     if (!in_array($action, $PUBLIC, true)) {
@@ -57,9 +59,11 @@ try {
         'health' => (function () {
             $probe = 'בדיקה';
             db();
-            return ['ok' => true, 'stage' => 2, 'php' => PHP_VERSION, 'sqlite' => true,
+            return ['ok' => true, 'stage' => 3, 'php' => PHP_VERSION, 'sqlite' => true,
                 'crypto' => unseal(seal($probe)) === $probe,
-                'mail' => function_exists('mail'), 'zip' => class_exists('ZipArchive')];
+                'mail' => function_exists('mail'), 'zip' => class_exists('ZipArchive'),
+                'finfo' => class_exists('finfo'),
+                'upload_max' => ini_get('upload_max_filesize'), 'post_max' => ini_get('post_max_size')];
         })(),
         'me' => $session
             ? ['ok' => true, 'user' => public_user($session), 'csrf' => $session['csrf']]
@@ -70,6 +74,13 @@ try {
         'logout'    => auth_logout($session),
         'forgot'    => auth_forgot($body),
         'reset'     => auth_reset($body),
+        'tpl_list'    => tpl_list($session),
+        'tpl_get'     => tpl_get($session, (int)($_GET['id'] ?? 0)),
+        'tpl_asset'   => tpl_asset($session, (int)($_GET['id'] ?? 0)),
+        'tpl_create'  => tpl_create($session, $_POST, $_FILES),
+        'tpl_save'    => tpl_save($session, $body),
+        'tpl_archive' => tpl_archive($session, $body),
+        'tpl_delete'  => tpl_delete($session, $body),
         'dev_users' => dev_users(),
         'dev_user'  => dev_user_action($body, $session),
         default     => throw new ApiError('פעולה לא מוכרת', 404),
