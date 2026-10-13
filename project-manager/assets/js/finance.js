@@ -257,6 +257,7 @@ const Finance = (() => {
         $('#co-dlg-title').textContent = t('תוספת / חריגה');
         $('#co-for').textContent = t('{supplier} · {stage}', { supplier: r.name, stage: t(s.name) });
         $('#co-new').hidden = false; $('#co-view').hidden = true; $('#co-send').hidden = false;
+        Dev.attach($('#co-dlg'), 'change', null);
         $('#co-dlg').showModal();
     }
 
@@ -303,6 +304,7 @@ const Finance = (() => {
         if (c.status === 'client_approved') b.push(['lawyer-approve', '✅ ' + t('העו"ד אישר (נרשם ידנית)'), 'primary'], ['lawyer-reject', '✖ ' + t('העו"ד דחה'), 'ghost']);
         if (['sent', 'client_approved'].includes(c.status)) b.push(['cancel', t('ביטול התוספת'), 'ghost danger']);
         $('#co-actions').innerHTML = b.map(([k, label, cls]) => `<button type="button" class="btn ${cls}" data-co-do="${k}">${esc(label)}</button>`).join('');
+        Dev.attach($('#co-dlg'), 'change', id);
         $('#co-dlg').showModal();
     }
 
@@ -346,6 +348,7 @@ const Finance = (() => {
         el.vat.checked = x ? x.vat_rate > 0 : true;
         el.stage_id.innerHTML = options(project.stages.map(s => ({ value: s.id, label: t(s.name) })), x?.stage_id || '', t('בלי שלב'));
         $('#exp-delete').hidden = !x;
+        Dev.attach($('#exp-dlg'), 'expense', x?.id);
         $('#exp-dlg').showModal();
         el.title.focus();
     }
@@ -393,6 +396,7 @@ const Finance = (() => {
             $('#fee-recv').hidden = x.received;
             $('#fee-unrecv').hidden = !x.received;
         }
+        Dev.attach($('#fee-dlg'), 'fee_payment', x?.id);
         $('#fee-dlg').showModal();
     }
 
@@ -471,6 +475,7 @@ const Finance = (() => {
         }
         renderMs();
         await ctFiles(c?.file?.id || null);
+        Dev.attach($('#ct-dlg'), 'contract', c?.id);
         $('#ct-dlg').showModal();
     }
 

@@ -12,6 +12,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/contacts.php';
+require_once __DIR__ . '/dev.php'; // סמכות מפתח (pm_dev_mode)
 
 // התוויות בעברית — מתורגמות בתצוגה (pm_t_map ב-api.php, t() בדפדפן)
 // i18n-ok-start
@@ -333,7 +334,7 @@ function pm_stage_save(array $user, array $in): array
     ];
     if (in_array($status, ['done', 'paid'], true)) $f['progress'] = 100;
     // "בוצע" — רק דרך דיווח מהשטח עם תמונה (lib/reports.php)
-    if (in_array($status, ['done', 'paid'], true) && !in_array($old['status'] ?? 'planned', ['done', 'paid'], true)) {
+    if (in_array($status, ['done', 'paid'], true) && !in_array($old['status'] ?? 'planned', ['done', 'paid'], true) && !pm_dev_mode($user)) {
         throw new PmError('כדי לסמן שלב "בוצע" — "דיווח מהשטח" עם לפחות תמונה אחת', 409);
     }
     $now = pm_now();

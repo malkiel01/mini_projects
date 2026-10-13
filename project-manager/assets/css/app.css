@@ -789,3 +789,11 @@ body.auth { display: grid; place-items: start center; padding: max(8vh, var(--s4
 .st-acts .danger { color: var(--danger); }
 #stage-list .st-add { list-style: none; display: flex; justify-content: center; padding: 0; min-height: 0; background: none; border: 0; }
 #stage-list .st-add .btn { min-height: 28px; padding-block: 0; font-size: .8rem; border-style: dashed; color: var(--muted); }
+
+/* סמכות מפתח */
+.dev-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--s2);
+    padding: var(--s1) var(--s3); background: var(--danger); color: #fff; font-size: .85rem; font-weight: 600; }
+.dev-bar .btn { min-height: 30px; padding: 0 var(--s3); background: #fff; color: var(--danger); border-color: #fff; }
+@media (prefers-color-scheme: dark) { .dev-bar { color: #1b1e26; } .dev-bar .btn { background: #1b1e26; color: var(--danger); border-color: #1b1e26; } }
+.dev-purge { margin-top: var(--s3); padding-top: var(--s3); border-top: 2px dashed var(--danger); }
+.dev-purge .btn { width: 100%; background: var(--danger-soft); color: var(--danger); border-color: var(--danger); }

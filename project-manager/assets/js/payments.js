@@ -155,7 +155,8 @@ const Payments = (() => {
         $('#payer-box').hidden = !hasLawyer();
         $('#pay-lawyer-box').hidden = !hasLawyer();
         el.needs_lawyer.checked = !!p.needs_lawyer;
-        const locked = current && !['planned', 'requested'].includes(current.status);
+        const locked = current && !['planned', 'requested'].includes(current.status) && !Dev.on();
+        Dev.attach(dlg, 'payment', current?.id);
         [...form.elements].forEach(x => { if (x.name) x.disabled = !!locked; });
         $('button[type=submit]', form).hidden = !!locked;
         $('#payment-state').hidden = !current;

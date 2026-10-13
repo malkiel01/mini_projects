@@ -156,7 +156,8 @@ const Quotes = (() => {
         el.terms.value = q.terms || '';
         el.notes.value = q.notes || '';
         // הצעה שהוחלט עליה (אושרה / נדחתה / לא נבחרה / בוטלה) — לצפייה בלבד
-        const locked = !!current && LOCKED.includes(current.status);
+        const locked = !!current && LOCKED.includes(current.status) && !Dev.on(); // סמכות מפתח: עריכה גם של נעולה
+        Dev.attach(dlg, 'quote', current?.id);
         [...form.elements].forEach(x => { if (x.name) x.disabled = locked; });
         $('button[type=submit]', form).hidden = locked;
         // נעולה בלי טופס (מלפני שהטופס היה חובה) — אפשר רק להשלים את הטופס
