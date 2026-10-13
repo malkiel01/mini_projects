@@ -40,7 +40,7 @@ function renderFinance() {
     const growth = Math.round(T.budget_growth.g);
     const row = (label, m, extra = '') => `<div><dt>${esc(label)}</dt><dd>${moneyVat(m)}${extra ? `<small class="kpi-x">${extra}</small>` : ''}</dd></div>`;
     const n = T.next;
-    const when = n ? (n.due_kind === 'stage_done' ? t('בגמר השלב') : n.due_kind === 'progress' ? t('בהתקדמות {n}%', { n: n.due_pct }) : n.due_date ? t('עד {date}', { date: shortDate(n.due_date) }) : '') : '';
+    const when = n ? (n.due_kind === 'advance' ? t('מקדמה — בתחילת העבודה') : n.due_kind === 'handover' ? t('במסירה') : n.due_kind === 'stage_done' ? t('בגמר השלב') : n.due_kind === 'progress' ? t('בהתקדמות {n}%', { n: n.due_pct }) : n.due_date ? t('עד {date}', { date: shortDate(n.due_date) }) : '') : '';
     const fee = F.fee ? `<p class="fin-next">💼 ${esc(t('שכר הטרחה — {name}', { name: F.fee.name }))}: <b>${esc(money(F.fee.amount.g))}</b>
             · ${esc(t('שולם {paid} · יתרה {balance}', { paid: money(F.fee.paid.g), balance: money(F.fee.balance.g) }))}<small class="mv-n">${esc(vatLine(F.fee.amount))}</small></p>` : '';
     $('#finance').innerHTML = `<div class="sec-row"><h2 class="sec-title" id="finance-title">${esc(t('המצב הכספי'))}</h2>
