@@ -294,3 +294,15 @@ tr.archived { opacity: .6; }
 .quota-form input:not([type=checkbox]) { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
   background: var(--bg); color: var(--text); }
 .file-opts { display: grid; gap: 6px; }
+
+/* ── שלב 7: שיתוף ── */
+.shared-tag { color: var(--accent); }
+.share-list { display: grid; gap: 6px; margin: 8px 0; }
+.share-row { display: flex; align-items: center; gap: 8px; justify-content: space-between; padding: 6px 0;
+  border-bottom: 1px solid var(--border); }
+.share-row > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.share-add { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.share-add input { flex: 1; min-width: 180px; }
+.share-add input, .share-row select, .share-add select { font: inherit; padding: 6px 8px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+.pages.readonly .field { cursor: pointer; }

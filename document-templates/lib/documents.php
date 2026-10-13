@@ -107,18 +107,19 @@ function doc_verify_chain(int $docId): bool
 
 // ── גישה ─────────────────────────────────────────────────────
 
-function doc_owned(int $id, array $user): array
+/** מסמך שיש למשתמש גישה אליו ברמה $min לפחות (שלב 7: גם משותף). מוסיף 'access'. */
+function doc_owned(int $id, array $user, string $min = 'owner'): array
 {
     $st = db()->prepare(
         'SELECT d.*, v.schema_enc, v.template_id, v.version AS template_version, t.name_enc AS template_name_enc
          FROM documents d
          JOIN template_versions v ON v.id = d.template_version_id
          JOIN templates t ON t.id = v.template_id
-         WHERE d.id = ? AND d.owner_id = ? AND d.deleted_at IS NULL'
+         WHERE d.id = ? AND d.deleted_at IS NULL'
     );
-    $st->execute([$id, $user['id']]);
-    $d = $st->fetch();
-    if (!$d) throw new ApiError('המסמך לא נמצא', 404);
+    $st->execute([$id]);
+    $d = $st->fetch() ?: null;
+    $d['access'] = require_level($d ? access_level('document', $id, (int)$d['owner_id'], $user) : null, $min, 'המסמך לא נמצא');
     return $d;
 }
 
@@ -144,7 +145,7 @@ function doc_progress(array $schema, array $values): array
 
 function doc_create(array $user, array $b): array
 {
-    $t = tpl_owned((int)($b['template_id'] ?? 0), $user);
+    $t = tpl_owned((int)($b['template_id'] ?? 0), $user, 'fill');
     if ($t['archived_at']) throw new ApiError('התבנית בארכיון. שחזרו אותה כדי להנפיק', 409);
     $schema = json_decode((string)unseal($t['schema_enc']), true) ?: [];
     if (empty($schema['fields'])) throw new ApiError('לתבנית אין שדות עדיין. הוסיפו שדות בעורך', 409);
@@ -184,9 +185,9 @@ function doc_list(array $user, array $q): array
             FROM documents d
             JOIN template_versions v ON v.id = d.template_version_id
             JOIN templates t ON t.id = v.template_id
-            WHERE d.owner_id = ? AND d.deleted_at IS NULL';
-    $args = [$user['id']];
-    if (!empty($q['template_id'])) { $sql .= ' AND v.template_id = ?'; $args[] = (int)$q['template_id']; }
+            WHERE ' . mine_or_shared_sql('d', 'document') . ' AND d.deleted_at IS NULL';
+    $args = [':uid' => $user['id']];
+    if (!empty($q['template_id'])) { $sql .= ' AND v.template_id = :tid'; $args[':tid'] = (int)$q['template_id']; }
     if (empty($q['archived'])) $sql .= ' AND d.archived_at IS NULL';
     $st = db()->prepare($sql . ' ORDER BY d.created_at DESC, d.id DESC LIMIT 500');
     $st->execute($args);
@@ -200,6 +201,8 @@ function doc_list(array $user, array $q): array
             'template_id' => (int)$d['template_id'], 'template' => unseal($d['template_name_enc']),
             'status' => $d['status'], 'created_at' => $d['created_at'], 'completed_at' => $d['completed_at'],
             'archived' => $d['archived_at'] !== null, 'required' => $p['required'], 'filled' => $p['filled'],
+            'access' => access_level('document', (int)$d['id'], (int)$d['owner_id'], $user),
+            'owner_name' => (int)$d['owner_id'] !== (int)$user['id'] ? user_name((int)$d['owner_id']) : null,
         ];
     }
     return ['ok' => true, 'documents' => $out];
@@ -207,7 +210,7 @@ function doc_list(array $user, array $q): array
 
 function doc_get(array $user, int $id): array
 {
-    $d = doc_owned($id, $user);
+    $d = doc_owned($id, $user, 'view');
     $schema = json_decode((string)unseal($d['schema_enc']), true) ?: [];
     $values = doc_values($id);
     $a = tpl_asset_row((int)$d['template_version_id']);
@@ -215,12 +218,13 @@ function doc_get(array $user, int $id): array
     $st = db()->prepare('SELECT * FROM events WHERE document_id = ? ORDER BY id');
     $st->execute([$id]);
     $events = array_map(fn($e) => [
-        'type' => $e['type'], 'actor' => $e['actor'], 'at' => $e['at'], 'ip' => $e['ip'],
+        'type' => $e['type'], 'actor' => $e['actor'], 'by' => actor_name($e['actor'], $d), 'at' => $e['at'], 'ip' => $e['ip'],
         'detail' => $e['detail_enc'] === null ? null : json_decode((string)unseal($e['detail_enc']), true),
     ], $st->fetchAll());
 
     return ['ok' => true, 'document' => [
         'id' => $id, 'number' => $d['number'], 'title' => unseal($d['title_enc']), 'status' => $d['status'],
+        'access' => $d['access'], 'owner_name' => $d['access'] === 'owner' ? null : user_name((int)$d['owner_id']),
         'template_id' => (int)$d['template_id'], 'template' => unseal($d['template_name_enc']),
         'template_version' => (int)$d['template_version'], 'mime' => $a['mime'],
         'created_at' => $d['created_at'], 'completed_at' => $d['completed_at'], 'final_hash' => $d['final_hash'],
@@ -232,10 +236,25 @@ function doc_get(array $user, int $id): array
     ]];
 }
 
+/** מי עשה: שם המשתמש, או "<תפקיד> (<שם>)" למשתתף מקישור. */
+function actor_name(string $actor, array $d): string
+{
+    [$kind, $id] = array_pad(explode(':', $actor, 2), 2, '0');
+    if ($kind === 'user') return user_name((int)$id);
+    static $cache = [];
+    if (!isset($cache[$actor])) {
+        $st = db()->prepare('SELECT * FROM participants WHERE id = ?');
+        $st->execute([(int)$id]);
+        $p = $st->fetch();
+        $cache[$actor] = $p ? role_of(doc_schema($d), $p['role_key'])['label'] . (($n = contact_of($p)['name']) ? " ($n)" : '') : 'משתתף';
+    }
+    return $cache[$actor];
+}
+
 /** קובץ הרקע של הגרסה שהמסמך נקשר אליה — לא של הגרסה הנוכחית של התבנית. */
 function doc_asset(array $user, int $id): never
 {
-    $d = doc_owned($id, $user);
+    $d = doc_owned($id, $user, 'view');
     $a = tpl_asset_row((int)$d['template_version_id']);
     $bytes = load_file($a['path']);
     header('Content-Type: ' . $a['mime']);
@@ -291,7 +310,7 @@ function clean_value(array $f, $v, int $docId = 0): string
  */
 function doc_save(array $user, array $b): array
 {
-    $d = doc_owned((int)($b['id'] ?? 0), $user);
+    $d = doc_owned((int)($b['id'] ?? 0), $user, 'fill');
     if (!in_array($d['status'], DOC_EDITABLE, true)) throw new ApiError('המסמך נעול', 409);
     $schema = json_decode((string)unseal($d['schema_enc']), true) ?: [];
     $byKey = array_column($schema['fields'] ?? [], null, 'key');
@@ -353,7 +372,7 @@ function doc_save(array $user, array $b): array
  */
 function doc_complete(array $user, array $b): array
 {
-    $d = doc_owned((int)($b['id'] ?? 0), $user);
+    $d = doc_owned((int)($b['id'] ?? 0), $user, 'edit');
     if (!in_array($d['status'], DOC_EDITABLE, true)) throw new ApiError('המסמך כבר הושלם', 409);
     $schema = json_decode((string)unseal($d['schema_enc']), true) ?: [];
     $values = doc_values((int)$d['id']);
@@ -381,7 +400,7 @@ function doc_finalize(array $d, string $actor): void
 
 function doc_archive(array $user, array $b): array
 {
-    $d = doc_owned((int)($b['id'] ?? 0), $user);
+    $d = doc_owned((int)($b['id'] ?? 0), $user, 'co_owner');
     $restore = !empty($b['restore']);
     db()->prepare('UPDATE documents SET archived_at = ? WHERE id = ?')->execute([$restore ? null : now_iso(), $d['id']]);
     log_event((int)$d['id'], 'user:' . $user['id'], $restore ? 'restored' : 'archived');
@@ -391,7 +410,7 @@ function doc_archive(array $user, array $b): array
 /** רישום הורדה ביומן — מי הוריד ומתי. */
 function doc_downloaded(array $user, array $b): array
 {
-    $d = doc_owned((int)($b['id'] ?? 0), $user);
+    $d = doc_owned((int)($b['id'] ?? 0), $user, 'view');
     log_event((int)$d['id'], 'user:' . $user['id'], 'downloaded');
     return ['ok' => true];
 }
@@ -399,7 +418,7 @@ function doc_downloaded(array $user, array $b): array
 /** מחיקה (רכה) — רק לטיוטה שלא מולא בה דבר. כל השאר: ארכיון. */
 function doc_delete(array $user, array $b): array
 {
-    $d = doc_owned((int)($b['id'] ?? 0), $user);
+    $d = doc_owned((int)($b['id'] ?? 0), $user, 'owner');
     if ($d['status'] !== 'draft') throw new ApiError('במסמך כבר מולאו פרטים — אפשר רק להעביר לארכיון', 409);
     db()->prepare('UPDATE documents SET deleted_at = ? WHERE id = ?')->execute([now_iso(), $d['id']]);
     log_event((int)$d['id'], 'user:' . $user['id'], 'deleted');

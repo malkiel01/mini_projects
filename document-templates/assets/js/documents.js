@@ -15,6 +15,7 @@
     created: 'נוצר', values_saved: 'נשמרו ערכים', completed: 'הושלם ונעול', archived: 'הועבר לארכיון',
     restored: 'שוחזר מהארכיון', downloaded: 'הורד PDF', deleted: 'נמחק',
     link_issued: 'נשלח קישור', opened: 'נפתח', verified: 'אומת בקוד', participant_completed: 'משתתף סיים',
+    file_uploaded: 'צורף קובץ', shared: 'שותף', unshared: 'שיתוף הוסר',
   };
   const VIA = { email: 'במייל', link: 'כקישור', whatsapp: 'בוואטסאפ' };
   const EDITABLE = ['draft', 'in_progress'];
@@ -64,7 +65,8 @@
           const [label, kind] = STATUS[d.status] || [d.status, ''];
           return el('tr', { class: 'clickable' + (d.archived ? ' archived' : ''), onclick: () => { location.hash = 'doc=' + d.id; } },
             el('td', { dir: 'ltr', 'data-label': 'מספר' }, el('a', { href: '#doc=' + d.id }, d.number || '—')),
-            el('td', { 'data-label': 'כותרת' }, d.title),
+            el('td', { 'data-label': 'כותרת' }, d.title,
+              d.owner_name ? el('span', { class: 'shared-tag small' }, ` 👥 של ${d.owner_name}`) : null),
             el('td', { class: 'muted', 'data-label': 'תבנית' }, d.template),
             el('td', { 'data-label': 'מצב' }, el('span', { class: 'badge ' + kind }, label)),
             el('td', { 'data-label': 'שדות חובה' }, d.required ? `${d.filled}/${d.required}` : '—'),
@@ -142,7 +144,9 @@
     try { if (localStorage.getItem('dt-fill-mode') === 'form') mode = 'form'; } catch (e) { /* אחסון חסום — ברירת מחדל */ }
     // בטלפון, ממלא חיצוני מתחיל בטופס — נוח יותר מהקלדה על דף מוקטן.
     if (fill && window.innerWidth < 640) mode = 'form';
-    const editable = () => fill ? !doc.me.locked && !doc.me.blocked : EDITABLE.includes(doc.status);
+    // שלב 7: מי שהמסמך שותף איתו — לפי הרמה. ממלא+ ממלא, עורך+ מסיים ושולח, מנהל-שותף+ משתף.
+    const lvl = () => fill ? 0 : window.DT.rank(doc.access || 'owner');
+    const editable = () => fill ? !doc.me.locked && !doc.me.blocked : EDITABLE.includes(doc.status) && lvl() >= 2;
     // שדה שאפשר לערוך עכשיו: אצל הממלא — רק שלו. אצל המנפיק — כל שדה, חוץ
     // משדות של משתתף שכבר נשלח אליו קישור.
     const canEdit = (f) => {
@@ -174,13 +178,16 @@
         fill ? null : el('a', { href: '#docs', class: 'small' }, '→ מסמכים'),
         el('strong', { dir: 'ltr', class: 'doc-number' }, doc.number || ''),
         title, statusBadge, saveStatus),
+      !fill && doc.owner_name ? el('p', { class: 'notice' }, `👥 מסמך של ${doc.owner_name} — ההרשאה שלך: ${window.DT.LEVEL[doc.access]}.`) : null,
       fill && doc.me ? el('p', { class: 'notice' }, `שלום${doc.me.name ? ' ' + doc.me.name : ''} — ממלאים כאן את השדות של "${doc.me.role}". ` +
         'השדות שלך מסומנים במסגרת; את השאר רואים לקריאה בלבד.') : null,
       el('div', { class: 'palette' },
         modeBtn,
         fill ? null : el('button', { class: 'small', onclick: () => { side(journal, people); renderJournal(); } }, '📜 יומן'),
-        fill || !(doc.participants || []).length ? null
+        fill || !(doc.participants || []).length || lvl() < 3 ? null
           : el('button', { class: 'small', onclick: () => { side(people, journal); renderPeople(); } }, '👥 משתתפים'),
+        !fill && lvl() >= 4 ? el('button', { class: 'small', onclick: () => window.DT.shareDialog('document', id, doc.title, reload) }, '🔗 שיתוף') : null,
+        !fill && doc.access && doc.access !== 'owner' ? el('button', { class: 'small', onclick: () => window.DT.leave('document', id, doc.title) }, 'עזיבה') : null,
         fill ? null : pdfBtn, completeBtn, progress),
       msg,
       el('div', { class: 'editor' }, body, journal, people));
@@ -195,7 +202,7 @@
       statusBadge.textContent = label;
       statusBadge.className = 'badge ' + kind;
       title.disabled = fill || !editable();
-      completeBtn.hidden = !editable();
+      completeBtn.hidden = !editable() || (!fill && lvl() < 3);
       modeBtn.textContent = mode === 'page' ? '☰ למילוי כטופס' : '📄 למילוי על המסמך';
       const p = doc.progress;
       if (fill) {
@@ -481,11 +488,14 @@
           doc.chain_ok ? '✓ שרשרת היומן שלמה — לא נמחקה ולא שונתה אף רשומה' : '⚠ שרשרת היומן שבורה — רשומה שונתה או נמחקה'),
         el('ol', { class: 'events' }, [...doc.events].reverse().map(e => el('li', {},
           el('strong', {}, EVENTS[e.type] || e.type), ' ',
+          e.by ? el('span', { class: 'small' }, '· ' + e.by + ' ') : null,
           el('span', { class: 'muted small' }, fmtDate(e.at) + (e.ip ? ' · ' + e.ip : '')),
           e.detail && e.detail.changes ? el('ul', { class: 'small' }, e.detail.changes.map(c => el('li', {},
             c.label + ': ', 'signed' in c ? (c.signed ? 'נחתם' : 'החתימה נמחקה')
               : el('span', {}, el('del', { class: 'muted' }, short(c.from)), ' → ', short(c.to))))) : null,
           e.detail && e.detail.number ? el('div', { class: 'small muted' }, 'מספר: ' + e.detail.number) : null,
+          e.detail && e.detail.with ? el('div', { class: 'small muted' }, 'עם ' + e.detail.with + (e.detail.level ? ' · ' + e.detail.level : '')) : null,
+          e.detail && e.detail.name ? el('div', { class: 'small muted' }, (e.detail.label ? e.detail.label + ': ' : '') + e.detail.name) : null,
           e.detail && e.detail.role ? el('div', { class: 'small muted' }, e.detail.role +
             (e.detail.via ? ' · ' + (VIA[e.detail.via] || e.detail.via) + (e.detail.auto ? ' (אוטומטית)' : '') : '')) : null,
           e.detail && e.detail.hash ? el('div', { class: 'small muted', dir: 'ltr' }, 'SHA-256: ' + e.detail.hash.slice(0, 16) + '…') : null))));

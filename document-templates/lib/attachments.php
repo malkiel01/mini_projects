@@ -190,7 +190,7 @@ function send_attachment(array $a): never
 
 function doc_upload(array $user, array $post, array $files): array
 {
-    $d = doc_owned((int)($post['id'] ?? 0), $user);
+    $d = doc_owned((int)($post['id'] ?? 0), $user, 'fill');
     if (!in_array($d['status'], DOC_EDITABLE, true)) throw new ApiError('המסמך נעול', 409);
     $schema = doc_schema($d);
     $key = (string)($post['field_key'] ?? '');
@@ -205,7 +205,7 @@ function doc_upload(array $user, array $post, array $files): array
 
 function doc_file(array $user, int $docId, int $attId): never
 {
-    $d = doc_owned($docId, $user);
+    $d = doc_owned($docId, $user, 'view');
     $st = db()->prepare('SELECT * FROM attachments WHERE id = ? AND document_id = ?');
     $st->execute([$attId, $d['id']]);
     $a = $st->fetch();
