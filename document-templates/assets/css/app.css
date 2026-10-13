@@ -127,3 +127,64 @@ td.ops { display: flex; gap: 6px; flex-wrap: wrap; }
   td[data-label] > div { display: inline; margin-inline-start: 6px; }
   td.ops { padding-top: 8px; }
 }
+
+/* ── שלב 3: רשימת תבניות ועורך ── */
+
+.row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.row h1, .row h2 { margin: 0; }
+.ops { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.inline { display: flex; align-items: center; gap: 6px; }
+.btn { display: inline-block; text-decoration: none; border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 14px; color: var(--text); background: var(--card); }
+.btn.small { padding: 4px 10px; font-size: .85rem; }
+button.danger { color: var(--bad); border-color: var(--bad); }
+button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.warn { color: var(--warn); }
+
+.upload { display: grid; gap: 10px; margin: 12px 0; padding: 14px; border: 1px dashed var(--border); border-radius: 10px; }
+.upload label, .panel label { display: grid; gap: 4px; }
+.upload label span, .panel label span { font-size: .85rem; color: var(--muted); }
+.upload input, .panel input, .panel select, .tpl-name {
+  font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--text);
+}
+.panel label.inline { display: flex; }
+
+.tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin: 12px 0; }
+.tpl-card { border: 1px solid var(--border); border-radius: 10px; padding: 12px; display: grid; gap: 10px; }
+.tpl-card.archived { opacity: .6; }
+.tpl-open { display: grid; gap: 4px; color: var(--text); text-decoration: none; }
+
+body.wide .shell { max-width: 1400px; }
+.editor-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px; margin-bottom: 10px; }
+.tpl-name { flex: 1; min-width: 160px; font-weight: 600; }
+.palette { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 10px;
+  position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 6px 0; }
+
+.editor { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; align-items: start; }
+.panel { position: sticky; top: 56px; display: grid; gap: 10px; max-height: calc(100vh - 80px); overflow: auto; }
+.panel h2 { font-size: 1rem; margin: 0; }
+.field-list { margin: 0; padding-inline-start: 20px; display: grid; gap: 4px; }
+
+.pages { display: grid; gap: 16px; }
+.page { position: relative; width: 100%; max-width: 1000px; margin: 0 auto; background: #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+.page-bg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.layer { position: absolute; inset: 0; touch-action: none; }
+.pages.placing .layer { cursor: crosshair; outline: 2px dashed var(--accent); }
+.page-no { position: absolute; bottom: 4px; left: 8px; font-size: .75rem; color: #888; pointer-events: none; }
+
+.field { position: absolute; box-sizing: border-box; border: 1.5px solid #3b5bdb; background: rgba(59,91,219,.12);
+  border-radius: 3px; cursor: move; touch-action: none; overflow: hidden; }
+.field.required { border-style: solid; border-color: #e67700; background: rgba(230,119,0,.12); }
+.field.selected { outline: 2px solid #3b5bdb; outline-offset: 1px; z-index: 2; }
+.field-label { position: absolute; inset: 0 4px; font-size: 11px; line-height: 1.2; color: #1d2433;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.handle { position: absolute; width: 12px; height: 12px; right: -1px; bottom: -1px; background: #3b5bdb;
+  cursor: nwse-resize; display: none; }
+.field.selected .handle { display: block; }
+
+@media (max-width: 860px) {
+  .editor { grid-template-columns: 1fr; }
+  .panel { position: static; max-height: none; order: -1; }
+}

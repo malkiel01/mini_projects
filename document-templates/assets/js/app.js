@@ -8,20 +8,27 @@
   let me = null;
   let csrf = '';
   let devTimer = null;
+  // עורך עם שינויים לא שמורים מחזיר כאן פונקציה ששואלת לפני יציאה.
+  let leaveGuard = null;
+  let lastHash = location.hash;
 
   // ── עזרים ──────────────────────────────────────────────────
 
-  async function api(action, body) {
+  async function api(action, body, query) {
     const opts = { credentials: 'same-origin', headers: {} };
     if (body !== undefined) {
       opts.method = 'POST';
-      opts.headers['Content-Type'] = 'application/json';
       if (csrf) opts.headers['X-CSRF'] = csrf;
-      opts.body = JSON.stringify(body);
+      if (body instanceof FormData) {
+        opts.body = body;
+      } else {
+        opts.headers['Content-Type'] = 'application/json';
+        opts.body = JSON.stringify(body);
+      }
     }
     let res, data;
     try {
-      res = await fetch('api.php?action=' + action, opts);
+      res = await fetch('api.php?action=' + action + (query ? '&' + new URLSearchParams(query) : ''), opts);
       data = await res.json();
     } catch (e) {
       throw new Error('אין תשובה מהשרת');
@@ -44,6 +51,8 @@
 
   function show(...nodes) {
     clearInterval(devTimer);
+    leaveGuard = null;
+    document.body.classList.remove('wide');
     app.replaceChildren(...nodes);
   }
 
@@ -158,12 +167,90 @@
     for (const a of nav.querySelectorAll('[data-tab]')) a.classList.toggle('active', a.dataset.tab === tab);
   }
 
-  function viewHome() {
+  const SOURCE = { pdf_locked: '📄 PDF', image: '🖼️ תמונה', docx: '📝 Word', pdf_parsed: '📄 PDF', authored: '✍️ נכתב כאן' };
+
+  async function viewHome() {
     setTab('home');
+    const list = el('div', { class: 'tpl-grid' }, el('p', { class: 'muted' }, 'טוען…'));
+    const msg = el('div');
+    const showArchived = el('input', { type: 'checkbox' });
+    let all = [];
+
+    function render() {
+      const items = all.filter(t => showArchived.checked || !t.archived);
+      if (!items.length) {
+        list.replaceChildren(el('p', { class: 'muted' }, all.length
+          ? 'כל התבניות בארכיון.'
+          : 'עוד אין תבניות. התחילו ב"תבנית חדשה" — מעלים PDF או תמונה, וממקמים עליהם שדות.'));
+        return;
+      }
+      list.replaceChildren(...items.map(t => el('article', { class: 'tpl-card' + (t.archived ? ' archived' : '') },
+        el('a', { class: 'tpl-open', href: '#tpl=' + t.id },
+          el('strong', {}, t.name),
+          el('span', { class: 'muted small' }, `${SOURCE[t.source] || t.source} · ${t.pages} דפים · ${t.fields} שדות · גרסה ${t.version}`)),
+        el('div', { class: 'ops' },
+          el('a', { class: 'btn small', href: '#tpl=' + t.id }, 'עריכה'),
+          el('button', { class: 'small', onclick: () => archive(t) }, t.archived ? 'שחזור' : 'ארכיון'),
+          t.used ? null : el('button', { class: 'small danger', onclick: () => remove(t) }, 'מחיקה')))));
+    }
+
+    async function load() {
+      try {
+        all = (await api('tpl_list')).templates;
+        render();
+      } catch (e) {
+        msg.replaceChildren(notice(e.message, 'bad'));
+      }
+    }
+
+    async function archive(t) {
+      try { await api('tpl_archive', { id: t.id, restore: t.archived }); await load(); }
+      catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
+    }
+
+    async function remove(t) {
+      if (!confirm(`למחוק לצמיתות את "${t.name}"? לא ניתן לשחזר.`)) return;
+      try { await api('tpl_delete', { id: t.id }); await load(); }
+      catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
+    }
+
+    const upload = el('form', { class: 'upload', hidden: true },
+      el('label', {}, el('span', {}, 'שם התבנית'), el('input', { name: 'name', required: true, maxlength: 120 })),
+      el('label', {}, el('span', {}, 'קובץ: PDF או תמונה (PNG, JPG, WEBP)'),
+        el('input', { name: 'file', type: 'file', required: true, accept: 'application/pdf,image/png,image/jpeg,image/webp' })),
+      el('div', { class: 'ops' },
+        el('button', { type: 'submit', class: 'primary' }, 'העלאה ופתיחה בעורך'),
+        el('button', { type: 'button', onclick: () => { upload.hidden = true; } }, 'ביטול')));
+    upload.querySelector('[name=file]').addEventListener('change', (e) => {
+      const name = upload.querySelector('[name=name]');
+      const f = e.target.files[0];
+      if (f && !name.value) name.value = f.name.replace(/\.[^.]+$/, '');
+    });
+    upload.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = upload.querySelector('[type=submit]');
+      btn.disabled = true;
+      btn.textContent = 'מעלה…';
+      try {
+        const r = await api('tpl_create', new FormData(upload));
+        location.hash = 'tpl=' + r.id;
+      } catch (err) {
+        msg.replaceChildren(notice(err.message, 'bad'));
+        btn.disabled = false;
+        btn.textContent = 'העלאה ופתיחה בעורך';
+      }
+    });
+    showArchived.addEventListener('change', render);
+
     show(el('section', { class: 'card' },
-      el('h1', {}, 'התבניות שלי'),
-      el('p', {}, 'כאן יופיעו התבניות והמסמכים שלך. אף אחד אחר לא רואה אותם — גם לא המפתח — אלא אם תשתף.'),
-      el('p', { class: 'muted' }, 'בבנייה: השלב הבא הוא יצירת תבנית מ-PDF או מתמונה, ומיקום שדות עליה.')));
+      el('div', { class: 'row' },
+        el('h1', {}, 'התבניות שלי'),
+        el('button', { class: 'primary', onclick: () => { upload.hidden = false; upload.querySelector('[name=name]').focus(); } },
+          '+ תבנית חדשה')),
+      el('p', { class: 'muted small' }, 'רק אתה רואה את התבניות שלך — גם לא המפתח. הקבצים נשמרים מוצפנים.'),
+      upload, msg, list,
+      el('label', { class: 'inline small muted' }, showArchived, ' להציג גם תבניות בארכיון')));
+    await load();
   }
 
   const STATUS = {
@@ -246,6 +333,11 @@
   // ── ניתוב ──────────────────────────────────────────────────
 
   function route() {
+    if (leaveGuard && !leaveGuard()) {
+      history.replaceState(null, '', lastHash || location.pathname);
+      return;
+    }
+    lastHash = location.hash;
     const h = location.hash.slice(1);
     const [key, val] = h.split('=');
     if (key === 'verify' && val) return viewVerify(val);
@@ -256,6 +348,7 @@
       return viewLogin();
     }
     if (key === 'dev' && me.is_developer) return viewDev();
+    if (key === 'tpl' && val) return window.DTEditor.open(Number(val));
     return viewHome();
   }
 
@@ -282,6 +375,17 @@
     boot();
   });
 
+  // לעורך (editor.js): אותם עזרים, אותה מעטפת.
+  window.DT = {
+    api, el, notice,
+    show: (...n) => show(...n),
+    setLeaveGuard: (fn) => { leaveGuard = fn; },
+    wide: () => document.body.classList.add('wide'),
+  };
+
   window.addEventListener('hashchange', route);
+  window.addEventListener('beforeunload', (e) => {
+    if (leaveGuard && leaveGuard.dirty && leaveGuard.dirty()) { e.preventDefault(); e.returnValue = ''; }
+  });
   boot();
 })();

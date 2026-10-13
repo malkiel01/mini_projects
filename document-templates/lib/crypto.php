@@ -79,3 +79,36 @@ function unseal(?string $sealed): ?string
     if ($plain === false) throw new RuntimeException('פענוח נכשל');
     return $plain;
 }
+
+// ── קבצים ─────────────────────────────────────────────────────
+// קובץ נשמר בינארי (nonce + מוצפן), בלי base64 — חוסך שליש מהנפח.
+
+if (!defined('DT_FILES_DIR')) define('DT_FILES_DIR', DT_DATA_DIR . '/files');
+
+/** מצפין ושומר. מחזיר שם קובץ אקראי — שמו המקורי של הקובץ לא נשמר על הדיסק. */
+function store_file(string $bytes): string
+{
+    ensure_data_dir(DT_FILES_DIR);
+    $name = bin2hex(random_bytes(16)) . '.bin';
+    $nonce = random_bytes(SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
+    if (file_put_contents(DT_FILES_DIR . '/' . $name, $nonce . sodium_crypto_secretbox($bytes, $nonce, secret_key())) === false) {
+        throw new RuntimeException('שמירת הקובץ נכשלה');
+    }
+    return $name;
+}
+
+function load_file(string $name): string
+{
+    if (!preg_match('/^[0-9a-f]{32}\.bin$/', $name)) throw new RuntimeException('שם קובץ לא תקין');
+    $raw = @file_get_contents(DT_FILES_DIR . '/' . $name);
+    if ($raw === false || strlen($raw) <= SODIUM_CRYPTO_SECRETBOX_NONCEBYTES) throw new RuntimeException('הקובץ חסר');
+    $plain = sodium_crypto_secretbox_open(substr($raw, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES),
+        substr($raw, 0, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES), secret_key());
+    if ($plain === false) throw new RuntimeException('פענוח הקובץ נכשל');
+    return $plain;
+}
+
+function delete_file(string $name): void
+{
+    if (preg_match('/^[0-9a-f]{32}\.bin$/', $name)) @unlink(DT_FILES_DIR . '/' . $name);
+}
