@@ -43,6 +43,13 @@ const Projects = (() => {
             if (row && e.target === row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openStage(Number(row.dataset.stage)); }
         });
         $('#add-member').addEventListener('click', openMember);
+        $('#tl-filters').addEventListener('click', e => {
+            const b = e.target.closest('[data-tl]');
+            if (!b) return;
+            tlCat = b.dataset.tl;
+            try { sessionStorage.setItem('pm.tl', tlCat); } catch { /* מצב פרטי */ }
+            renderTimeline();
+        });
         $('#partners').addEventListener('click', e => {
             if (e.target.closest('#add-partner')) { addPartner(); return; }
             const b = e.target.closest('[data-partner-remove]');
@@ -232,23 +239,74 @@ const Projects = (() => {
 
     // ---- ציר זמן ----
 
+    // ---- ציר הזמן ----
+    // כל אירוע — קטגוריה (צבע וסינון) ואייקון. פעולות רצופות של אותו אדם, בהפרש של עד 10 דקות, מתקבצות
+    // לכרטיס אחד: מי ומתי — פעם אחת בראש, ומתחת כל פעולה בשורה מלאה (בלי חיתוך), עם הכותרת והסכומים מודגשים.
+    const TL_KIND = {
+        payment: ['money', '💳'], expense: ['money', '🧾'], change: ['money', '±'], finance: ['money', '⚙️'],
+        quote: ['quotes', '📝'], approval: ['quotes', '✅'],
+        created: ['stages', '🏁'], details: ['stages', '✏️'], status: ['stages', '🚦'], report: ['stages', '📷'],
+        stage_added: ['stages', '➕'], stage_removed: ['stages', '➖'], stage_moved: ['stages', '↕️'], stage_status: ['stages', '🧱'],
+        stage_progress: ['stages', '📊'], stage_supplier: ['stages', '👷'],
+        member_added: ['team', '👥'], member_removed: ['team', '👥'], partner: ['team', '🤝'], portal: ['team', '🔗'], portal_view: ['team', '👀'],
+        message: ['team', '✉️'], appointment: ['team', '📅'],
+        file: ['files', '📎'], file_move: ['files', '📁'], file_visible: ['files', '👁'], file_deleted: ['files', '🗑'],
+        note: ['notes', '💬'],
+    };
+    const TL_CATS = [['all', 'הכול'], ['money', '💰 כספים'], ['quotes', '📝 הצעות'], ['stages', '🧱 שלבים ושטח'], ['team', '👥 צוות והודעות'], ['files', '📎 קבצים'], ['notes', '💬 הערות']]; // i18n-ok — מתורגם בתצוגה
+    let tlCat = (() => { try { return sessionStorage.getItem('pm.tl') || 'all'; } catch { return 'all'; } })();
+    const tlOf = e => TL_KIND[e.kind] || (e.kind.startsWith('file') ? ['files', '📎'] : e.kind.startsWith('stage') ? ['stages', '🧱'] : ['other', '•']);
+
+    /** הטקסט של אירוע: מה שלפני הנקודתיים הראשונות — כותרת מודגשת; סכומים — מודגשים. */
+    function tlText(text) {
+        text = text.replace(/^\p{Extended_Pictographic}\uFE0F?\s*/u, ''); // האייקון כבר בשורה
+        const bold = s => esc(s).replace(/(₪\s?[\d,.]+|[\d,.]+\s?₪)/g, '<b>$1</b>');
+        const m = text.match(/^([^:\n]{2,40}):\s([\s\S]+)$/);
+        return m ? `<b class="tl-k">${esc(m[1])}</b> ${bold(m[2])}` : bold(text);
+    }
+
     function renderTimeline() {
-        let day = '';
-        $('#timeline').innerHTML = cur.events.map(e => {
+        const fmtT = iso => new Date(iso).toLocaleTimeString(I18n.locale(), { hour: '2-digit', minute: '2-digit' });
+        const counts = {};
+        for (const e of cur.events) { const c = tlOf(e)[0]; counts[c] = (counts[c] || 0) + 1; }
+        $('#tl-filters').innerHTML = TL_CATS.filter(([k]) => k === 'all' || counts[k]).map(([k, label]) =>
+            `<button type="button" class="chip${tlCat === k ? ' on' : ''}" data-tl="${k}" aria-pressed="${tlCat === k}">${esc(t(label))}${k !== 'all' ? ` <small>${counts[k]}</small>` : ''}</button>`).join('');
+        if (tlCat !== 'all' && !counts[tlCat]) tlCat = 'all';
+        const list = cur.events.filter(e => tlCat === 'all' || tlOf(e)[0] === tlCat);
+
+        // קיבוץ: יום → כרטיסים של אדם אחד ברצף
+        const out = [];
+        let day = '', g = null;
+        const flush = () => { if (g) out.push(group(g)); g = null; };
+        for (const e of list) {
             const d = new Date(e.at).toDateString();
-            const sep = d !== day ? `<li class="day"><span>${esc(dateLabel(e.at))}</span></li>` : '';
-            day = d;
-            const time = `<time datetime="${esc(e.at)}">${new Date(e.at).toLocaleTimeString(I18n.locale(), { hour: '2-digit', minute: '2-digit' })}</time>`;
-            if (e.kind === 'note') {
-                const mine = e.actor_id === state.user.id;
-                return sep + `<li class="msg${mine ? ' mine' : ''}">
-                    ${mine ? '' : `<b>${esc(e.actor_name)}</b>`}
-                    <p>${esc(e.text)}</p>${time}</li>`;
-            }
-            return sep + `<li class="sys"><span>${esc(e.text)} · ${esc(e.actor_name)} · ${time}</span></li>`;
-        }).join('') || `<li class="day"><span>${esc(t('עוד אין כלום בציר הזמן'))}</span></li>`;
+            if (d !== day) { flush(); out.push(`<li class="day"><span>${esc(dateLabel(e.at))}</span></li>`); day = d; }
+            if (e.kind === 'note') { flush(); out.push(note(e)); continue; }
+            const near = g && g.actor === e.actor_name && (new Date(e.at) - new Date(g.items[g.items.length - 1].at)) <= 10 * 60000;
+            if (!near) { flush(); g = { actor: e.actor_name, mine: e.actor_id === state.user.id, items: [] }; }
+            g.items.push(e);
+        }
+        flush();
+
+        function note(e) {
+            const mine = e.actor_id === state.user.id;
+            return `<li class="msg${mine ? ' mine' : ''}">${mine ? '' : `<b>${esc(e.actor_name)}</b>`}<p>${esc(e.text)}</p><time datetime="${esc(e.at)}">${fmtT(e.at)}</time></li>`;
+        }
+        function group(g) {
+            const a = g.items[0].at, z = g.items[g.items.length - 1].at;
+            const when = fmtT(a) === fmtT(z) ? fmtT(a) : `${fmtT(a)}–${fmtT(z)}`;
+            const row = e => { const [cat, icon] = tlOf(e); return `<li class="tl-item tl-${cat}"><span class="tl-ic" aria-hidden="true">${icon}</span><span class="tl-t">${tlText(e.text)}</span></li>`; };
+            const MAX = 6;
+            const items = g.items.length > MAX + 1
+                ? g.items.slice(0, MAX).map(row).join('') + `<li class="tl-more"><details><summary>${esc(t('עוד {n} פעולות', { n: g.items.length - MAX }))}</summary><ul class="tl-items">${g.items.slice(MAX).map(row).join('')}</ul></details></li>`
+                : g.items.map(row).join('');
+            return `<li class="tl-group${g.mine ? ' mine' : ''}"><header class="tl-head">${avatar(g.actor)}<b class="one">${esc(g.actor)}</b><time datetime="${esc(a)}">${when}</time></header>
+                <ul class="tl-items">${items}</ul></li>`;
+        }
+
+        $('#timeline').innerHTML = out.join('') || `<li class="day"><span>${esc(t('עוד אין כלום בציר הזמן'))}</span></li>`;
         requestAnimationFrame(() => {
-            const last = $('#timeline li:last-child');
+            const last = $('#timeline > li:last-child');
             if (last) last.scrollIntoView({ block: 'end' });
         });
     }
