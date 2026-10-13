@@ -1961,5 +1961,12 @@
     "💰 מקדמה — בתחילת העבודה": "💰 Advance — at the start of work",
     "💰 מקדמה — לתשלום בתחילת העבודה, עם החתימה על החוזה. בלי עיכבון.": "💰 Advance — paid at the start of work, upon signing the contract. No retention.",
     "מקדמה — לשלוח דרישת תשלום: {title} — {supplier}, {amount}": "Advance — send a payment request: {title} — {supplier}, {amount}",
-    "💰 מקדמות": "💰 Advances"
+    "💰 מקדמות": "💰 Advances",
+    "עוד אין ספקים עם הצעה או אבן דרך.": "No suppliers with a quote or milestone yet.",
+    "📊 סיכום": "📊 Summary",
+    "👷 ספקים": "👷 Suppliers",
+    "💳 אבני דרך": "💳 Milestones",
+    "🧾 הוצאות": "🧾 Expenses",
+    "לכל ספק — מה סוכם, מה היה צריך להיות משולם עד היום ומה שולם; ומשם: חוזה, תוספת, אבן דרך וכרטסת.": "For each supplier — what was agreed, what should have been paid by today and what was paid; and from there: contract, change order, milestone and ledger.",
+    "חלקי הכספים": "Finance sections"
 }

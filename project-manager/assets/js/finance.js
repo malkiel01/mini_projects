@@ -17,7 +17,8 @@ const Finance = (() => {
             const a = e.target.closest('[data-alert-pay]');
             if (a) Payments.openPayment(Number(a.dataset.alertPay));
         });
-        $('#fin-stages').addEventListener('click', e => {
+        $('#fin-tabs').addEventListener('click', e => { const b = e.target.closest('[data-fin-tab]'); if (b) finTab(b.dataset.finTab); });
+        $('#fin-body').addEventListener('click', e => {
             const b = e.target.closest('[data-split]');
             if (b) { openSplit(Number(b.dataset.split), Number(b.dataset.supplier)); return; }
             const m = e.target.closest('[data-milestone]');
@@ -75,8 +76,19 @@ const Finance = (() => {
         });
     }
 
+    // ---- לשוניות הכספים ----
+    const FIN_TABS = ['sum', 'suppliers', 'milestones', 'expenses'];
+    function finTab(k) {
+        if (!FIN_TABS.includes(k)) k = 'sum';
+        try { sessionStorage.setItem('pm.fintab', k); } catch { /* מצב פרטי */ }
+        $$('#fin-tabs [data-fin-tab]').forEach(b => { const on = b.dataset.finTab === k; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on)); });
+        $$('#fin-body [data-fin-pane]').forEach(d => { d.hidden = d.dataset.finPane !== k; });
+    }
+    const finTabNow = () => { try { return sessionStorage.getItem('pm.fintab') || 'sum'; } catch { return 'sum'; } };
+
     async function show(p) {
         bind();
+        finTab(finTabNow());
         project = p;
         try { data = await api('finance', { params: { project_id: p.project.id } }); }
         catch (e) { $('#fin-sum').innerHTML = `<p class="error">${esc(e.message)}</p>`; return; }
@@ -194,7 +206,10 @@ const Finance = (() => {
                 ${s.stage_id ? meter(s.progress, t('בוצע')) : ''}${budget}
                 <ul class="list fin-rows">${rows || `<li class="muted fin-empty">${esc(t('עוד אין הצעה שאושרה'))}</li>`}</ul></section>`;
         }).join('');
-        $('#fin-stages').innerHTML = html + expensesSection() + feeSection();
+        $('#fin-stages').innerHTML = html || `<p class="empty">${esc(t('עוד אין ספקים עם הצעה או אבן דרך.'))}</p>`;
+        $('#fin-extra').innerHTML = expensesSection() + feeSection();
+        $('#fin-n-suppliers').textContent = new Set(data.stages.flatMap(s => s.rows.map(r => r.supplier_id))).size || '';
+        $('#fin-n-expenses').textContent = data.expenses?.items?.length || '';
     }
 
     /** הוצאות ישירות (כ5) — מה שהלקוח קנה בעצמו. */
@@ -757,5 +772,5 @@ const Finance = (() => {
         });
     }
 
-    return { show, reload, ledger };
+    return { show, reload, ledger, tab: finTab };
 })();
