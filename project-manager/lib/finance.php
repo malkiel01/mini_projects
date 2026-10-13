@@ -69,6 +69,7 @@ function pm_payment_due(array $p, ?array $stage, string $today, string $projectS
 {
     $done = $stage && in_array($stage['status'], ['done', 'paid'], true);
     return match ($p['due_kind'] ?? 'date') {
+        'advance'    => true, // מקדמה — כבר בתחילת העבודה
         'handover'   => pm_handover_done((int)($p['project_id'] ?? 0), isset($p['unit_id']) ? (int)$p['unit_id'] ?: null : null, $projectStatus),
         'stage_done' => $done,
         'progress'   => $done || ($stage && (int)$stage['progress'] >= (int)($p['due_pct'] ?? 101)),
@@ -213,7 +214,7 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
         // התשלום הבא — לפורטל: הקרוב שעוד לא שולם במלואו
         if ($received < $amount && !in_array($x['status'], ['received'], true)) {
             // שחרור העיכבון — אחרון, עד שהפרויקט נמסר
-            $key = ($x['due_kind'] === 'date' && $x['due_date'] !== '' ? $x['due_date'] : ($x['due_kind'] === 'handover' && !pm_handover_done($projectId, $x['unit_id'] ? (int)$x['unit_id'] : null, $p['status']) ? 'Z' : '9999')) . sprintf('%08d', $x['id']);
+            $key = ($x['due_kind'] === 'advance' ? '0000' : '') . ($x['due_kind'] === 'date' && $x['due_date'] !== '' ? $x['due_date'] : ($x['due_kind'] === 'handover' && !pm_handover_done($projectId, $x['unit_id'] ? (int)$x['unit_id'] : null, $p['status']) ? 'Z' : '9999')) . sprintf('%08d', $x['id']);
             if (!$next || $key < $next['key']) {
                 $next = ['key' => $key, 'title' => $x['title'], 'supplier' => $sup[$cid]['name'] ?? '', 'amount' => pm_m($amount - $received, pm_net($amount - $received, $r)),
                     'due_kind' => $x['due_kind'], 'due_date' => $x['due_date'], 'due_pct' => $x['due_pct'] !== null ? (int)$x['due_pct'] : null,
@@ -551,6 +552,8 @@ function pm_fin_alerts(int $projectId, array $cfg, ?string $lang = null, string 
             } elseif ($mine && $p['status'] !== 'planned') {
                 $add($late ? 'late' : 'soon', $late ? 'pay_late' : 'pay_soon', "pay:$id", $late ? 'תשלום באיחור: {title} — {supplier}, {amount} ({date})' : 'תשלום קרוב: {title} — {supplier}, {amount} ({date})', $v, $p['due_date'], $id); // i18n-ok
             }
+        } elseif ($mgr && $p['due_kind'] === 'advance' && $p['status'] === 'planned') {
+            $add('soon', 'pay_reached', "reached:$id", 'מקדמה — לשלוח דרישת תשלום: {title} — {supplier}, {amount}', $v, $today, $id); // i18n-ok
         } elseif ($mgr && $p['due_kind'] === 'handover' && $p['status'] === 'planned' && pm_payment_due($p, null, $today, $projectStatus)) {
             $un = $p['unit_id'] ? pm_unit_name((int)$p['unit_id']) : '';
             if ($p['kind'] === 'retention') $add('soon', 'pay_reached', "reached:$id", $un !== '' ? '{unit} נמסרה — לשחרר את העיכבון: {supplier}, {amount}' : 'הפרויקט נמסר — לשחרר את העיכבון: {supplier}, {amount}', $v + ['unit' => $un], $today, $id); // i18n-ok

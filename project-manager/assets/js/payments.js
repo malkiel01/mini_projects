@@ -32,9 +32,11 @@ const Payments = (() => {
         form.addEventListener('submit', e => { e.preventDefault(); save(); });
         form.elements.stage_id.addEventListener('change', () => {
             // "במסירה של" — עוקב אחרי היחידה של השלב (מתחם)
+            // מקדמה — שם ברירת מחדל
+            if (form.elements.stage_id.value === 'advance' && !form.elements.title.value.trim()) form.elements.title.value = t('מקדמה');
             const u = project.stages.find(s => s.id === Number(form.elements.stage_id.value))?.unit_id;
             if (u !== undefined) form.elements.unit_id.value = u ?? '';
-            stageChanged(null); dueKindChanged();
+            stageChanged(null); dueKindChanged(); calcHint();
         });
         $$('#payment-dlg [name=mode]').forEach(r => r.addEventListener('change', modeChanged));
         $$('#payment-dlg [name=due_kind]').forEach(r => r.addEventListener('change', dueKindChanged));
@@ -94,6 +96,7 @@ const Payments = (() => {
 
     /** מתי משלמים — לשורה ולחלון. */
     function dueText(p, late) {
+        if (p.due_kind === 'advance') return t('מקדמה — בתחילת העבודה');
         if (p.due_kind === 'handover') return p.unit_name ? t('במסירת {unit}', { unit: p.unit_name }) : t('במסירת הפרויקט');
         if (p.due_kind === 'stage_done') return t('בגמר השלב');
         if (p.due_kind === 'progress') return t('בהתקדמות {n}%', { n: p.due_pct });
@@ -144,7 +147,9 @@ const Payments = (() => {
         current = id ? data.payments.find(p => p.id === id) : null;
         const p = current || { stage_id: guessStage(), payer: defaultPayer(), needs_lawyer: hasLawyer(), due_kind: 'date', ...preset };
         $('#payment-dlg-title').textContent = current ? `${current.title} — ${money(current.amount)}` : t('אבן דרך לתשלום');
-        el.stage_id.innerHTML = options(project.stages.map(s => ({ value: s.id, label: stageName(s) })), p.stage_id, t('בלי שלב'));
+        // "💰 מקדמה" — בראש הרשימה, אחרי "בלי שלב": תשלום בתחילת העבודה, בלי שלב ובלי תאריך
+        el.stage_id.innerHTML = options([{ value: 'advance', label: t('💰 מקדמה — בתחילת העבודה') }, ...project.stages.map(s => ({ value: s.id, label: stageName(s) }))],
+            p.due_kind === 'advance' ? 'advance' : p.stage_id, t('בלי שלב'));
         el.title.value = p.title || '';
         el.amount.value = current ? String(current.amount) : '';
         el.percent.value = current?.percent ?? '';
@@ -221,13 +226,13 @@ const Payments = (() => {
         const F = project.finance || {}, el = $('#payment-dlg form').elements;
         const amount = Number(String(el.amount.value).replace(/[,\s₪]/g, '')) || 0;
         const iv = Number(el.index_value.value) || 0;
-        const ret = Math.round(amount * (F.retention_pct || 0)) / 100; // באגורות, כמו בשרת
+        const ret = el.stage_id.value === 'advance' ? 0 : Math.round(amount * (F.retention_pct || 0)) / 100; // באגורות, כמו בשרת; מקדמה — בלי עיכבון
         const diff = F.index_on && F.index_base && iv ? Math.round((amount - ret) * 100 * (iv / F.index_base - 1)) / 100 : 0;
         const parts = [];
         if (ret) parts.push(t('עיכבון {amount} — נשאר עד המסירה', { amount: money(ret) }));
         if (diff) parts.push(t('הפרשי הצמדה {amount}', { amount: money(diff) }));
         if (amount && (ret || diff)) parts.push(t('לתשלום עכשיו: {amount}', { amount: money(amount - ret + diff) }));
-        else if (!amount && (F.retention_pct || 0) > 0) parts.push(t('{n}% מהסכום יישאר כעיכבון עד המסירה', { n: F.retention_pct }));
+        else if (!amount && (F.retention_pct || 0) > 0 && el.stage_id.value !== 'advance') parts.push(t('{n}% מהסכום יישאר כעיכבון עד המסירה', { n: F.retention_pct }));
         h.hidden = !parts.length;
         h.textContent = parts.join(' · ');
     }
@@ -259,6 +264,11 @@ const Payments = (() => {
         const hasStage = !!Number(el.stage_id.value);
         $$('#payment-dlg [name=due_kind]').forEach(r => { if (r.value !== 'date') r.disabled = el.title.disabled; });
         const kind = $('#payment-dlg [name=due_kind]:checked').value;
+        // מקדמה: בלי "מתי משלמים" — היא בתחילת העבודה
+        const adv = el.stage_id.value === 'advance';
+        $('#due-kind-box').hidden = adv;
+        $('#due-advance-hint').hidden = !adv;
+        if (adv) { $('#due-date-box').hidden = $('#due-pct-box').hidden = $('#due-kind-hint').hidden = $('#due-unit-box').hidden = $('#due-need-stage').hidden = true; el.stage_id.classList.remove('need'); return; }
         const need = !['date', 'handover'].includes(kind) && !hasStage;
         $('#due-unit-box').hidden = kind !== 'handover' || !(project.units || []).length;
         $('#due-need-stage').hidden = !need;
@@ -340,8 +350,9 @@ const Payments = (() => {
         if (project.finance?.index_on) body.index_value = el.index_value.value.trim();
         if (!body.supplier_id) { formError(form, t('ספק: שדה חובה')); return; }
         if (!body.title) { formError(form, t('שם: שדה חובה (למשל "מקדמה")')); return; }
+        if (el.stage_id.value === 'advance') Object.assign(body, { stage_id: null, due_kind: 'advance', due_date: '' });
         if (body.due_kind === 'handover' && (project.units || []).length) body.unit_id = Number(el.unit_id.value) || null;
-        if (!['date', 'handover'].includes(body.due_kind) && !body.stage_id) { formError(form, t('"בגמר השלב" או "בהתקדמות" — קודם בוחרים שלב (למעלה)')); el.stage_id.focus(); return; }
+        if (!['date', 'handover', 'advance'].includes(body.due_kind) && !body.stage_id) { formError(form, t('"בגמר השלב" או "בהתקדמות" — קודם בוחרים שלב (למעלה)')); el.stage_id.focus(); return; }
         if (pct ? !body.percent : !body.amount) { formError(form, t(pct ? 'אחוז: שדה חובה' : 'סכום: שדה חובה')); return; }
         await busy($('button[type=submit]', form), form, async () => {
             await refresh(await api('payment', { body }));
