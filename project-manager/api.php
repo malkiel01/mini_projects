@@ -159,6 +159,7 @@ try {
         'POST quotes-send'  => pm_quotes_send($user, (int)($in['stage_id'] ?? 0)),
         'POST quote-decide' => pm_quote_decide($user, (int)($in['id'] ?? 0), (string)($in['role'] ?? ''),
                                                (string)($in['decision'] ?? ''), (string)($in['note'] ?? '')),
+        'POST quote-attach' => pm_quote_attach($user, (int)($in['id'] ?? 0), (int)($in['file_id'] ?? 0)),
         'POST quote-cancel' => pm_quote_cancel($user, (int)($in['id'] ?? 0), (string)($in['note'] ?? '')),
         // הודעות (שלב 11)
         'GET msg-templates'  => ['templates' => pm_msg_templates($user)],

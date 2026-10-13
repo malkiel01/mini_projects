@@ -1763,5 +1763,9 @@
     "טופס ההצעה *": "Quote document *",
     "הצעה שאושרה לא נערכת. שינוי במחיר או בהיקף — \"± תוספת / חריגה\" בלשונית הכספים": "An approved quote cannot be edited. To change the price or scope — \"± Addition / overrun\" in the Finance tab",
     "הצעה שנדחתה לא נערכת. הצעה חדשה — \"+ הצעה\"": "A rejected quote cannot be edited. For a new quote — \"+ Quote\"",
-    "טופס ההצעה (PDF או צילום) *": "Quote document (PDF or photo) *"
+    "טופס ההצעה (PDF או צילום) *": "Quote document (PDF or photo) *",
+    "להצעה כבר יש טופס — אי אפשר להחליף אותו": "This quote already has a document — it can't be replaced",
+    "צורף טופס להצעה: {supplier} — {amount}": "Document attached to the quote: {supplier} — {amount}",
+    "📎 צירוף הטופס להצעה": "📎 Attach the document to the quote",
+    "הטופס צורף להצעה": "The document was attached to the quote"
 }
