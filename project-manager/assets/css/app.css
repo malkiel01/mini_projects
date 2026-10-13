@@ -671,3 +671,10 @@ body.auth { display: grid; place-items: start center; padding: max(8vh, var(--s4
 /* מקטעים — כשהטקסט ארוך (שפות אחרות), שוברים שורה במקום לגלול ולהסתיר אפשרות */
 .seg label { flex: 1 1 0; min-width: 0; }
 .seg label span { white-space: normal; text-align: center; line-height: 1.15; padding-block: 4px; padding-inline: var(--s2); }
+/* התראות כספיות (כ2) — בכרטיס המצב הכספי ובפורטל */
+.fin-alerts { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+.fin-alerts li { display: flex; align-items: center; gap: var(--s2); padding: 6px var(--s2); border-radius: 8px; font-size: .85rem; background: var(--bg); }
+.fin-alerts .fa-text { flex: 1; min-width: 0; }
+.fin-alerts .fa-late { background: var(--danger-soft); }
+.fin-alerts .fa-late .fa-text { color: var(--danger); }
+.fin-alerts .btn { flex: none; }

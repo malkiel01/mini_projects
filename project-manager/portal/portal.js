@@ -50,6 +50,7 @@ function renderFinance() {
             ${row(t('יתרה לתשלום'), T.balance)}
         </dl>
         ${n ? `<p class="fin-next">💳 ${esc(t('התשלום הבא'))}: <b>${esc(n.title)}</b> · ${esc(n.supplier)} · <b>${esc(money(n.amount.g))}</b>${when ? ` · ${esc(when)}` : ''}<small class="mv-n">${esc(vatLine(n.amount))}</small></p>` : ''}
+        ${(F.alerts || []).length ? `<ul class="fin-alerts">${F.alerts.map(x => `<li class="fa-${x.level}"><span aria-hidden="true">${{ late: '⚠️', soon: '⏰', wait: '⏳', info: 'ℹ️' }[x.level]}</span><span class="fa-text">${esc(x.text)}</span></li>`).join('')}</ul>` : ''}
         ${F.settings.retention_pct ? `<p class="hint">${esc(t('עיכבון לפי החוזה: {n}% מכל תשלום נשאר אצלכם עד המסירה', { n: F.settings.retention_pct }))}</p>` : ''}`;
 }
 

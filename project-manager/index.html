@@ -2,12 +2,12 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="assets/js/i18n.js?v=23"></script>
+    <script src="assets/js/i18n.js?v=24"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=23">
+    <link rel="stylesheet" href="assets/css/app.css?v=24">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -278,6 +278,7 @@
         <section id="view-settings" class="view" hidden>
             <div class="seg kinds" role="tablist" aria-label="הגדרות">
                 <a role="tab" data-set="messages" href="#/settings/messages"><span>הודעות</span></a>
+                <a role="tab" data-set="alerts" href="#/settings/alerts"><span>התראות</span></a>
                 <a role="tab" data-set="general" href="#/settings/general" class="dev-only" hidden><span>כללי</span></a>
                 <a role="tab" data-set="trades" href="#/settings/trades" class="dev-only" hidden><span>תחומים</span></a>
                 <a role="tab" data-set="templates" href="#/settings/templates" class="dev-only" hidden><span>תבניות שלבים</span></a>
@@ -293,6 +294,22 @@
                 </div>
                 <div id="msg-templates"></div>
                 <p class="hint">שליחה אוטומטית בוואטסאפ או ב-SMS (בלי לחיצה) — דורשת ספק בתשלום; אפשר להוסיף בהמשך.</p>
+            </div>
+            <!-- התראות כספיות (אגף הכספים, כ2): הספים של המנהל — ב"דורש טיפול", במייל הבוקר ובפורטל -->
+            <div class="pane" id="set-alerts" hidden>
+                <form id="alerts-form" novalidate>
+                    <p class="hint">ההתראות מופיעות ב"דורש טיפול" (ביומן ובבית), בלשונית "כספים" של כל פרויקט ובמייל הבוקר.</p>
+                    <div class="fields">
+                        <label class="f"><span>תשלום מתקרב — כמה ימים לפני</span><input name="days_before" type="number" min="0" max="60" inputmode="numeric" dir="ltr"></label>
+                        <label class="f"><span>אסמכתא שלא אושרה — "באיחור" אחרי (ימים)</span><input name="proof_days" type="number" min="0" max="60" inputmode="numeric" dir="ltr"></label>
+                        <label class="f"><span>שולם מעל הביצוע — ביותר מ- (נקודות אחוז)</span><input name="overpay" type="number" min="0" max="100" inputmode="numeric" dir="ltr"></label>
+                        <label class="f"><span>אזהרת תקציב — כשסוכם (% מהתקציב)</span><input name="budget_warn" type="number" min="1" max="100" inputmode="numeric" dir="ltr"></label>
+                    </div>
+                    <label class="switch"><input type="checkbox" name="notify_contacts"><span>מייל ללקוח ולעו"ד על חריגה מהתקציב, גידול בתקציב, ושולם מעל הביצוע (לעו"ד)</span></label>
+                    <p class="hint">כל התראה נשלחת להם פעם אחת, עם מייל הבוקר, בשפה שלהם ועם הקישור האישי. בפורטל הם רואים אותן תמיד.</p>
+                    <p class="error" role="alert" hidden></p>
+                    <button class="btn primary">שמירה</button>
+                </form>
             </div>
             <div class="pane" id="set-general" hidden>
                 <form class="toolbar" id="max-upload-form">
@@ -977,21 +994,21 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=23"></script>
-    <script src="assets/js/contacts.js?v=23"></script>
-    <script src="assets/js/device-contacts.js?v=23"></script>
-    <script src="assets/js/files.js?v=23"></script>
-    <script src="assets/js/lightbox.js?v=23"></script>
-    <script src="assets/js/field.js?v=23"></script>
+    <script src="assets/js/core.js?v=24"></script>
+    <script src="assets/js/contacts.js?v=24"></script>
+    <script src="assets/js/device-contacts.js?v=24"></script>
+    <script src="assets/js/files.js?v=24"></script>
+    <script src="assets/js/lightbox.js?v=24"></script>
+    <script src="assets/js/field.js?v=24"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=23"></script>
-    <script src="assets/js/projects.js?v=23"></script>
-    <script src="assets/js/quotes.js?v=23"></script>
-    <script src="assets/js/payments.js?v=23"></script>
-    <script src="assets/js/finance.js?v=23"></script>
-    <script src="assets/js/hebcal.js?v=23"></script>
-    <script src="assets/js/calendar.js?v=23"></script>
-    <script src="assets/js/settings.js?v=23"></script>
-    <script src="assets/js/app.js?v=23"></script>
+    <script src="assets/js/share.js?v=24"></script>
+    <script src="assets/js/projects.js?v=24"></script>
+    <script src="assets/js/quotes.js?v=24"></script>
+    <script src="assets/js/payments.js?v=24"></script>
+    <script src="assets/js/finance.js?v=24"></script>
+    <script src="assets/js/hebcal.js?v=24"></script>
+    <script src="assets/js/calendar.js?v=24"></script>
+    <script src="assets/js/settings.js?v=24"></script>
+    <script src="assets/js/app.js?v=24"></script>
 </body>
 </html>

@@ -248,7 +248,8 @@ function pm_portal_view(array $a): array
         'stages' => $stages, 'quotes' => $quotes, 'files' => $files, 'payments' => $payments,
         'reports' => pm_reports_of($pid, true),
         // המצב הכספי (אגף הכספים): תקציב ראשוני מול היום, סוכם, שולם, יתרה והתשלום הבא — עם מע"מ
-        'finance' => pm_finance_of($pid, true),
+        'finance' => pm_finance_of($pid, true) + ['alerts' => array_map(fn($x) => array_diff_key($x, ['key' => 1, 'sort' => 1]),
+            pm_fin_alerts($pid, pm_fin_alert_settings((int)$a['owner']['id']), pm_lang(), $role))],
         'labels' => ['stage' => pm_t_map(PM_STAGE_STATUSES), 'quote' => pm_t_map(PM_QUOTE_STATUSES), 'file' => pm_t_map(PM_FILE_TYPES), 'method' => pm_t_map(PM_PAY_METHODS)],
         'max_proof' => PM_PROOF_MAX,
     ];

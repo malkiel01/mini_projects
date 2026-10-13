@@ -112,6 +112,7 @@ try {
                     // מצב עצמאי: בלי חזרה לדף האפליקציות. כבוי כל עוד האפליקציה בתוך האינדקס.
                     'standalone' => pm_setting('standalone', '0') === '1',
                     'vat_rate' => pm_vat_rate(),
+                    'fin_alerts' => pm_fin_alert_settings((int)$user['id']),
                     'labels' => array_map('pm_t_map', ['stage' => PM_STAGE_STATUSES, 'project' => PM_PROJECT_STATUSES, 'kind' => PM_PROJECT_KINDS,
                                  'quote' => PM_QUOTE_STATUSES, 'payment' => PM_PAYMENT_STATUSES, 'method' => PM_PAY_METHODS]),
                     // נוסחי ההודעות — אותו נוסח לוואטסאפ / SMS בלחיצה ולמייל האוטומטי
@@ -197,6 +198,7 @@ try {
         'GET finance'         => pm_finance($user, (int)($in['project_id'] ?? 0)),
         'POST finance-settings' => pm_finance_settings_save($user, $in),
         'POST payment-split'  => pm_payment_split($user, $in),
+        'POST fin-alerts'     => pm_fin_alert_settings_save($user, $in),
         'GET payments'        => pm_payments($user, (int)($in['project_id'] ?? 0)),
         'POST payment'        => pm_payment_save($user, $in),
         'POST payment-request' => pm_payment_request($user, (int)($in['id'] ?? 0)),

@@ -558,6 +558,15 @@ function pm_migrate(PDO $pdo): void
     pm_add_column($pdo, 'projects', 'index_name', "TEXT NOT NULL DEFAULT ''");
     pm_add_column($pdo, 'projects', 'index_base_month', "TEXT NOT NULL DEFAULT ''");
     pm_add_column($pdo, 'projects', 'index_base', 'REAL');
+    // כ2 — התראות: הספים של כל מנהל (JSON; ריק = ברירות המחדל), ומה כבר נשלח במייל ללקוח / לעו"ד
+    pm_add_column($pdo, 'users', 'fin_alerts', "TEXT NOT NULL DEFAULT ''");
+    $pdo->exec('CREATE TABLE IF NOT EXISTS fin_alert_sent (
+        project_id INTEGER NOT NULL,
+        contact_id INTEGER NOT NULL,
+        key        TEXT NOT NULL,
+        sent_at    TEXT NOT NULL,
+        PRIMARY KEY (project_id, contact_id, key)
+    )');
     // נוסחי ההודעות — לכל שפה נוסח משלו. המפתח הראשי משתנה, ולכן הטבלה נבנית מחדש
     // פעם אחת; הנוסחים הקיימים נשמרים כנוסחים בעברית.
     $pdo->exec(PM_MSG_TEMPLATES_TABLE);

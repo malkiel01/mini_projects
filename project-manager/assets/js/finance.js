@@ -11,7 +11,11 @@ const Finance = (() => {
     function bind() {
         if (bound) return;
         bound = true;
-        $('#fin-sum').addEventListener('click', e => { if (e.target.closest('[data-fin-settings]')) openSettings(); });
+        $('#fin-sum').addEventListener('click', e => {
+            if (e.target.closest('[data-fin-settings]')) { openSettings(); return; }
+            const a = e.target.closest('[data-alert-pay]');
+            if (a) Payments.openPayment(Number(a.dataset.alertPay));
+        });
         $('#fin-stages').addEventListener('click', e => {
             const b = e.target.closest('[data-split]');
             if (b) { openSplit(Number(b.dataset.split), Number(b.dataset.supplier)); return; }
@@ -64,6 +68,7 @@ const Finance = (() => {
             <header class="fin-head"><h2 id="fin-title">${esc(t('המצב הכספי'))}</h2>
                 <button type="button" class="btn ghost sm" data-fin-settings>⚙️ ${esc(t('הגדרות'))}</button></header>
             <p class="fin-sentence">${sentence}${status ? ` — ${status}` : ''}</p>
+            ${alerts()}
             ${bar(T)}
             <dl class="fin-kpis">
                 ${kpi(t('תקציב ראשוני'), T.budget_initial)}
@@ -75,6 +80,16 @@ const Finance = (() => {
             </dl>
             <p class="fin-terms">${terms(S, T)}</p>`;
         renderStages();
+    }
+
+    /** ההתראות של הפרויקט (כ2) — מהדחוף; תשלום — פותח את אבן הדרך. */
+    function alerts() {
+        const list = data.alerts || [];
+        if (!list.length) return '';
+        const ICON = { late: '⚠️', soon: '⏰', wait: '⏳', info: 'ℹ️' };
+        return `<ul class="fin-alerts" aria-label="${esc(t('דורש טיפול'))}">${list.map(a => `<li class="fa-${a.level}">
+            <span aria-hidden="true">${ICON[a.level]}</span><span class="fa-text">${esc(a.text)}</span>
+            ${a.payment_id ? `<button type="button" class="btn ghost sm" data-alert-pay="${a.payment_id}">${esc(t('לטיפול'))}</button>` : ''}</li>`).join('')}</ul>`;
     }
 
     /** סרגל אחד: שולם · הגיע מועד ולא שולם · עוד לא הגיע מועד · נותר מהתקציב. */
