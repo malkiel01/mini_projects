@@ -831,8 +831,8 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .fin-units tr.muted { color: var(--muted); }
 #ct-cover small { color: var(--muted); }
 .seg.wrap { flex-wrap: wrap; }
-#ct-units fieldset.opt { display: block; margin-bottom: var(--s2); }
-#ct-units fieldset.opt legend { float: none; width: auto; margin-bottom: var(--s1); white-space: normal; }
+#ct-units fieldset.opt, #ct-scope { display: block; margin-bottom: var(--s2); }
+#ct-units fieldset.opt legend, #ct-scope legend { float: none; width: auto; margin-bottom: var(--s1); white-space: normal; }
 #ct-units .seg.wrap label { flex: 1 1 45%; }
 #ct-units .seg.wrap label + label span { border-inline-start: 0; }
 #ct-units .seg.wrap span { border: 1px solid var(--line); margin: -1px 0 0 -1px; }
@@ -855,3 +855,29 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .fin-tabs button.on { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
 .fin-tabs button.on small { background: rgba(255,255,255,.25); color: inherit; }
 .ledger .lg-meta .sep { margin: 0 4px; }
+
+/* ===== הדפסת כרטסת ספק (finance.js — ledgerPrint) ===== */
+#lg-print { display: none; }
+@media print {
+    html.lg-printing body > *:not(#lg-print) { display: none !important; }
+    html.lg-printing #lg-print { display: block; }
+    html.lg-printing body { background: #fff; }
+    #lg-print .lp { font-size: 9.5pt; color: #000; line-height: 1.35; }
+    #lg-print h1 { font-size: 14pt; margin: 0; }
+    #lg-print h2 { font-size: 11pt; margin: 12pt 0 4pt; }
+    #lg-print .lp-head p { margin: 2pt 0; }
+    #lg-print .lp-note { font-size: 8pt; color: #444; }
+    #lg-print table { inline-size: 100%; border-collapse: collapse; }
+    #lg-print th, #lg-print td { border: 1px solid #999; padding: 3pt 4pt; text-align: start; vertical-align: top; }
+    #lg-print th { background: #eee; font-size: 8.5pt; }
+    #lg-print td:nth-child(n+5) { white-space: nowrap; text-align: end; }
+    #lg-print td small { display: block; font-size: 7.5pt; color: #444; }
+    #lg-print tr { break-inside: avoid; }
+    #lg-print thead { display: table-header-group; }
+    #lg-print .lp-milestone td, #lg-print .lp-invoice td { color: #555; }
+    #lg-print .lp-sum td { font-weight: 700; background: #f3f3f3; }
+}
+/* חוזים של ספק: בורר בראש החלון, ועל אילו שלבים החוזה חל */
+.ct-which { background: var(--surface-2, #f1f4f8); border-radius: var(--r, 12px); padding: var(--s2); margin-bottom: var(--s3); }
+.ct-which .hint { margin: var(--s1) 0 0; }
+#ct-scope .chips + .chips { margin-top: var(--s1); }

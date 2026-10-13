@@ -19,24 +19,36 @@ function pm_days_between(string $a, string $b): int
     return (int)round((strtotime($b . 'T12:00:00Z') - strtotime($a . 'T12:00:00Z')) / 86400);
 }
 
-/** החוזה של ספק בפרויקט, עם אבני הדרך והחישוב — או null. */
-function pm_contract_of(int $projectId, int $supplierId): ?array
+/** חוזה לפי המזהה (בפרויקט), עם אבני הדרך והחישוב — או null. */
+function pm_contract_by_id(int $projectId, int $id): ?array
 {
     $st = pm_db()->prepare('SELECT c.*, f.name AS file_name, f.deleted_at AS file_deleted FROM contracts c LEFT JOIN files f ON f.id = c.file_id
-                             WHERE c.project_id = ? AND c.supplier_id = ?');
-    $st->execute([$projectId, $supplierId]);
+                             WHERE c.project_id = ? AND c.id = ?');
+    $st->execute([$projectId, $id]);
     $c = $st->fetch();
     return $c ? pm_contract_out($c) : null;
 }
 
-/** כל החוזים של הפרויקט: supplier_id => חוזה. */
-function pm_contracts_of(int $projectId): array
+/** כל החוזים של הפרויקט (רשימה). לספק יכולים להיות כמה — כל אחד חל על שלבים אחרים. */
+function pm_contracts_of(int $projectId, ?int $supplierId = null): array
 {
-    $st = pm_db()->prepare('SELECT c.*, f.name AS file_name, f.deleted_at AS file_deleted FROM contracts c LEFT JOIN files f ON f.id = c.file_id WHERE c.project_id = ?');
+    $st = pm_db()->prepare('SELECT c.*, f.name AS file_name, f.deleted_at AS file_deleted FROM contracts c LEFT JOIN files f ON f.id = c.file_id
+                             WHERE c.project_id = ?' . ($supplierId ? ' AND c.supplier_id = ' . (int)$supplierId : '') . ' ORDER BY c.id');
     $st->execute([$projectId]);
-    $out = [];
-    foreach ($st->fetchAll() as $c) $out[(int)$c['supplier_id']] = pm_contract_out($c);
-    return $out;
+    return array_map('pm_contract_out', $st->fetchAll());
+}
+
+/**
+ * החוזה של ספק בשלב: קודם חוזה שהשלב רשום בו במפורש, אחרת חוזה "לכל השלבים" (stage_ids ריק) — העדכני.
+ * בלי שלב (תשלום בלי שלב) — החוזה "לכל השלבים", ואם אין — הראשון.
+ */
+function pm_contract_for(array $contracts, int $supplierId, ?int $stageId): ?array
+{
+    $mine = array_values(array_filter($contracts, fn($c) => $c['supplier_id'] === $supplierId));
+    if (!$mine) return null;
+    if ($stageId) foreach (array_reverse($mine) as $c) if ($c['stage_ids'] !== null && in_array($stageId, $c['stage_ids'], true)) return $c;
+    foreach (array_reverse($mine) as $c) if ($c['stage_ids'] === null) return $c;
+    return $stageId ? null : $mine[0];
 }
 
 function pm_contract_out(array $c): array
@@ -80,7 +92,9 @@ function pm_contract_out(array $c): array
     $penaltyDays = max(0, $delay - (int)$c['grace_days']);
     $penalty = $penaltyDays * (int)$c['penalty_per_day'];
     return [
-        'id' => (int)$c['id'], 'project_id' => (int)$c['project_id'], 'supplier_id' => (int)$c['supplier_id'],
+        'id' => (int)$c['id'], 'project_id' => (int)$c['project_id'], 'supplier_id' => (int)$c['supplier_id'], 'title' => $c['title'] ?? '',
+        // על אילו שלבים החוזה חל: null — כל השלבים של הספק; [] — אף שלב (כל השלבים עברו לחוזים אחרים)
+        'stage_ids' => ($c['stage_ids'] ?? '') === '' ? null : array_map('intval', json_decode($c['stage_ids'], true) ?: []),
         'signed_on' => $c['signed_on'], 'start_date' => $c['start_date'], 'end_date' => $c['end_date'], 'completed_on' => $c['completed_on'],
         'penalty_per_day' => (int)$c['penalty_per_day'] / 100, 'grace_days' => (int)$c['grace_days'], 'max_deviation_days' => $maxDev,
         'notes' => $c['notes'], 'file' => $c['file_id'] && empty($c['file_deleted']) ? ['id' => (int)$c['file_id'], 'name' => $c['file_name']] : null,
@@ -92,14 +106,20 @@ function pm_contract_out(array $c): array
     ];
 }
 
-function pm_contract(array $user, int $projectId, int $supplierId): array
+/**
+ * החוזה לשורת ספק בשלב — וכל החוזים של הספק בפרויקט, כדי לבחור: החוזה הזה, חוזה אחר שלו, או חוזה חדש.
+ * id — חוזה מסוים מתוך הרשימה.
+ */
+function pm_contract(array $user, int $projectId, int $supplierId, ?int $stageId = null, int $id = 0): array
 {
     pm_project_row($user, $projectId);
-    return ['contract' => pm_contract_of($projectId, $supplierId)];
+    $all = pm_contracts_of($projectId, $supplierId);
+    $c = $id ? (array_values(array_filter($all, fn($x) => $x['id'] === $id))[0] ?? throw new PmError('החוזה לא נמצא', 404)) : pm_contract_for($all, $supplierId, $stageId);
+    return ['contract' => $c, 'contracts' => $all];
 }
 
 /**
- * שמירה: {project_id, supplier_id, signed_on, start_date, end_date, completed_on, penalty_per_day, grace_days,
+ * שמירה: {id? (בלי — חוזה חדש), project_id, supplier_id, title, stage_ids (null — כל השלבים של הספק), signed_on, start_date, end_date, completed_on, penalty_per_day, grace_days,
  * max_deviation_days, notes, file_id?, milestones: [{id?, title, due_date, stage_id?, done_on?}]} — אבני הדרך מוחלפות.
  */
 function pm_contract_save(array $user, array $in): array
@@ -123,7 +143,19 @@ function pm_contract_save(array $user, array $in): array
         'grace_days'         => $int('grace_days', 365, 'ימי חסד'), // i18n-ok
         'max_deviation_days' => $int('max_deviation_days', 365, 'סטייה מרבית מאבן דרך') ?: 30, // i18n-ok
         'notes'              => pm_str($in, 'notes', 2000, false, 'הערות'),
+        'title'              => pm_str($in, 'title', 120, false, 'שם החוזה'), // i18n-ok
     ];
+    // על אילו שלבים החוזה חל — שלב שנרשם כאן יוצא מחוזים אחרים של אותו ספק (לשלב — חוזה אחד)
+    $stageIds = null;
+    if (is_array($in['stage_ids'] ?? null)) {
+        $stageIds = array_values(array_unique(array_filter(array_map('intval', $in['stage_ids']))));
+        if ($stageIds) {
+            $s = pm_db()->prepare('SELECT COUNT(*) FROM stages WHERE project_id = ? AND id IN (' . implode(',', $stageIds) . ')');
+            $s->execute([$projectId]);
+            if ((int)$s->fetchColumn() !== count($stageIds)) throw new PmError('השלב לא שייך לפרויקט', 422);
+        }
+    }
+    $f['stage_ids'] = $stageIds === null ? '' : json_encode($stageIds);
     // מתחם: על אילו יחידות החוזה חל, ואיך מחלקים ביניהן את העלות
     $f['unit_ids'] = json_encode(array_values(array_map(fn($u) => (int)pm_unit_of_project((int)$u, $projectId),
         array_unique(array_filter(array_map('intval', is_array($in['unit_ids'] ?? null) ? $in['unit_ids'] : []))))));
@@ -153,7 +185,9 @@ function pm_contract_save(array $user, array $in): array
     }
     $db = pm_db();
     $now = pm_now();
-    $old = pm_contract_of($projectId, $supplierId);
+    $id = (int)($in['id'] ?? 0);
+    $old = $id ? (pm_contract_by_id($projectId, $id) ?? throw new PmError('החוזה לא נמצא', 404)) : null;
+    if ($old && $old['supplier_id'] !== $supplierId) throw new PmError('החוזה של ספק אחר', 422);
     $db->beginTransaction();
     try {
         if ($old) {
@@ -170,6 +204,15 @@ function pm_contract_save(array $user, array $in): array
         $ins = $db->prepare('INSERT INTO contract_milestones (contract_id, title, due_date, stage_ids, months, done_on, sort) VALUES (?,?,?,?,?,?,?)');
         foreach ($ms as [$t, $due, $sids, $months, $done, $i]) $ins->execute([$cid, $t, $due, $sids, $months, $done, $i]);
         if ($fileId) $db->prepare("UPDATE files SET type = 'contract' WHERE id = ?")->execute([$fileId]);
+        if ($stageIds) {
+            $o = $db->prepare("SELECT id, stage_ids FROM contracts WHERE project_id = ? AND supplier_id = ? AND id != ? AND stage_ids != ''");
+            $o->execute([$projectId, $supplierId, $cid]);
+            foreach ($o->fetchAll() as $x) {
+                $ids = array_map('intval', json_decode($x['stage_ids'], true) ?: []);
+                $left = array_values(array_diff($ids, $stageIds));
+                if ($left !== $ids) $db->prepare('UPDATE contracts SET stage_ids = ? WHERE id = ?')->execute([json_encode($left), $x['id']]);
+            }
+        }
         pm_event($user, $projectId, 'finance', $old ? 'עודכן החוזה עם {supplier}' : '📄 נרשם חוזה עם {supplier} — סיום עד {date}', ['contract' => $cid],
             ['supplier' => pm_contact_name($supplierId), 'date' => $f['end_date'] !== '' ? pm_short_date($f['end_date']) : '—']);
         $db->commit();
@@ -177,15 +220,15 @@ function pm_contract_save(array $user, array $in): array
         $db->rollBack();
         throw $e;
     }
-    return pm_finance($user, $projectId) + ['contract' => pm_contract_of($projectId, $supplierId)];
+    return pm_finance($user, $projectId) + ['contract' => pm_contract_by_id($projectId, $cid), 'contracts' => pm_contracts_of($projectId, $supplierId)];
 }
 
 /** התראות החוזים — למנהל: אבן דרך מתקרבת / באיחור, לקראת הפרה יסודית, איחור בסיום וקנס מצטבר. */
 function pm_contract_alerts(int $projectId, callable $add, string $lang): void
 {
     $today = pm_today();
-    foreach (pm_contracts_of($projectId) as $sid => $c) {
-        $sup = pm_contact_name($sid);
+    foreach (pm_contracts_of($projectId) as $c) {
+        $sup = pm_contact_name($c['supplier_id']) . ($c['title'] !== '' ? ' (' . $c['title'] . ')' : '');
         foreach ($c['milestones'] as $m) {
             $v = ['supplier' => $sup, 'title' => $m['title'], 'date' => pm_short_date($m['due_date']), 'n' => $m['late_days'], 'max' => $c['max_deviation_days']];
             if ($m['status'] === 'breach') {
