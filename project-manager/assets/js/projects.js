@@ -164,7 +164,8 @@ const Projects = (() => {
     /** שדות הפרויקט — משותפים לחלון "פרויקט חדש" וללשונית "פרטים". */
     async function fillProjectFields(box, p, withNotes) {
         const [clients, lawyers] = await Promise.all([contactsOf('client'), contactsOf('lawyer')]).catch(() => [[], []]);
-        const mine = c => c.owner_id === (p.owner_id ?? state.user.id) && (!c.archived || c.id === p.client_id || c.id === p.lawyer_id);
+        const owners = p.id && cur?.project?.id === p.id ? teamOf(cur) : [p.owner_id ?? state.user.id];
+        const mine = c => owners.includes(c.owner_id) && (!c.archived || c.id === p.client_id || c.id === p.lawyer_id);
         const kinds = Object.entries(state.labels.kind).map(([value, label]) => ({ value, label }));
         box.innerHTML = `
             <label class="f wide"><span>${esc(t('שם הפרויקט *'))}</span><input name="name" maxlength="100" required value="${esc(p.name || '')}" placeholder="${esc(t('למשל: שיפוץ דירת כהן'))}"></label>
@@ -430,10 +431,10 @@ const Projects = (() => {
     }
 
     /** ספקים של בעל הפרויקט — קודם מי שבתחום של השלב. */
-    async function fillSuppliers(select, tradeId, value, ownerId = cur.project.owner_id) {
+    async function fillSuppliers(select, tradeId, value, owners = teamOf(cur)) {
         let all = [];
         try { all = await contactsOf('supplier'); } catch { /* ריק */ }
-        all = all.filter(c => c.owner_id === ownerId && (!c.archived || c.id === value));
+        all = all.filter(c => owners.includes(c.owner_id) && (!c.archived || c.id === value));
         const opt = c => ({ value: c.id, label: c.name + (c.company ? ' · ' + c.company : '') });
         const inTrade = tradeId ? all.filter(c => c.trades.includes(tradeId)) : [];
         const rest = all.filter(c => !inTrade.includes(c));
@@ -631,7 +632,7 @@ const Projects = (() => {
         const lists = await Promise.all(['supplier', 'lawyer', 'client'].map(k => contactsOf(k).catch(() => [])));
         const inTeam = new Set(cur.team.map(c => c.id));
         const groups = ['ספקים', 'עורכי דין', 'לקוחות'].map((label, i) => { // i18n-ok
-            const items = lists[i].filter(c => c.owner_id === cur.project.owner_id && !c.archived && !inTeam.has(c.id));
+            const items = lists[i].filter(c => teamOf(cur).includes(c.owner_id) && !c.archived && !inTeam.has(c.id));
             return items.length ? `<optgroup label="${esc(t(label))}">${options(items.map(c => ({ value: c.id, label: c.name + (c.company ? ' · ' + c.company : '') })))}</optgroup>` : '';
         }).join('');
         form.elements.contact_id.innerHTML = groups || `<option value="">${esc(t('אין אנשי קשר להוספה'))}</option>`;

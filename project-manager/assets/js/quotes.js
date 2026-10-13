@@ -192,7 +192,7 @@ const Quotes = (() => {
     async function fillSuppliers(value) {
         const el = $('#quote-dlg form').elements;
         const st = stageOf(Number(el.stage_id.value));
-        await Projects.fillSuppliers(el.supplier_id, st?.trade_id || 0, value ?? (Number(el.supplier_id.value) || null), project.project.owner_id);
+        await Projects.fillSuppliers(el.supplier_id, st?.trade_id || 0, value ?? (Number(el.supplier_id.value) || null), teamOf(project));
         el.supplier_id.options[0].textContent = t('בחירת ספק');
     }
 
@@ -358,7 +358,7 @@ const Quotes = (() => {
     async function fillInvitees() {
         const st = stageOf(Number($('#invite-dlg [name=stage_id]').value));
         let all = [];
-        try { all = (await contactsOf('supplier')).filter(c => c.owner_id === project.project.owner_id && !c.archived); } catch { /* ריק */ }
+        try { all = (await contactsOf('supplier')).filter(c => teamOf(project).includes(c.owner_id) && !c.archived); } catch { /* ריק */ }
         const asked = new Set(data.quotes.filter(q => q.stage_id === st?.id).map(q => q.supplier_id));
         const inTrade = st?.trade_id ? all.filter(c => c.trades.includes(st.trade_id)) : [];
         const list = [...inTrade, ...all.filter(c => !inTrade.includes(c))];
