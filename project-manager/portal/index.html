@@ -2,15 +2,15 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="../assets/js/i18n.js?v=26"></script>
+    <script src="../assets/js/i18n.js?v=27"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <meta name="robots" content="noindex, nofollow">
     <meta name="referrer" content="no-referrer">
     <title>הפרויקט שלך</title>
-    <link rel="stylesheet" href="../assets/css/app.css?v=26">
-    <link rel="stylesheet" href="portal.css?v=26">
+    <link rel="stylesheet" href="../assets/css/app.css?v=27">
+    <link rel="stylesheet" href="portal.css?v=27">
     <link rel="icon" href="../assets/icon.svg">
 </head>
 <body>
@@ -44,6 +44,13 @@
             <!-- המצב הכספי (אגף הכספים): תקציב ראשוני מול היום, סוכם, שולם, יתרה, התשלום הבא — עם מע"מ -->
             <section id="finance" class="fin-card" aria-labelledby="finance-title" hidden></section>
 
+            <!-- הוצאות ישירות (כ5): מה שהלקוח קנה בעצמו — הלקוח רושם עם צילום קבלה -->
+            <section id="expenses" aria-labelledby="expenses-title" hidden>
+                <div class="sec-row"><h2 class="sec-title" id="expenses-title">הוצאות ישירות</h2>
+                    <button type="button" class="btn ghost sm" id="x-add" hidden>+ הוצאה שקניתי</button></div>
+                <div id="expense-list"></div>
+            </section>
+
             <!-- ספק (שלב 9) -->
             <section id="s-stages" aria-labelledby="s-stages-title" hidden>
                 <h2 class="sec-title" id="s-stages-title">השלבים שלי</h2>
@@ -53,6 +60,11 @@
                 <div class="sec-row"><h2 class="sec-title" id="s-payments-title">תשלומים אליי</h2>
                     <button type="button" class="btn ghost sm" id="s-payreq-btn">+ בקשת תשלום</button></div>
                 <div id="s-payment-list"></div>
+            </section>
+            <!-- הכרטסת שלי (כ5): הצעה, תוספות, תשלומים וחשבוניות, עם יתרה -->
+            <section id="s-ledger" aria-labelledby="s-ledger-title" hidden>
+                <h2 class="sec-title" id="s-ledger-title">הכרטסת שלי</h2>
+                <div class="fin-card" id="s-ledger-body"></div>
             </section>
             <section id="s-bank" aria-labelledby="s-bank-title" hidden>
                 <details class="bank-box">
@@ -156,6 +168,32 @@
         </form>
     </dialog>
 
+    <!-- ===== לקוח: הוצאה ישירה — קנייה שלו, עם צילום קבלה (כ5) ===== -->
+    <dialog id="x-dlg" aria-labelledby="x-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="x-title">הוצאה שקניתי</h2>
+                <span></span>
+            </header>
+            <div class="sheet-body">
+                <div class="fields">
+                    <label class="f wide"><span>מה קניתם *</span><input name="title" maxlength="200" placeholder="למשל: אריחים לאמבטיה, אגרת היתר"></label>
+                    <label class="f"><span>סכום (₪) *</span><input name="amount" inputmode="decimal" dir="ltr" maxlength="14"></label>
+                    <label class="f"><span>מתי</span><input name="spent_on" type="date"></label>
+                    <label class="f"><span>שלב</span><select name="stage_id"></select></label>
+                    <label class="f wide"><span>הערה (לא חובה)</span><input name="notes" maxlength="1000"></label>
+                </div>
+                <label class="switch"><input type="checkbox" name="vat" checked><span>כולל מע"מ (קבלה מעוסק מורשה)</span></label>
+                <label class="btn ghost upload-btn proof-pick">📎 צילום הקבלה<input type="file" name="file" accept="image/*,application/pdf" hidden></label>
+                <p class="hint" id="x-file-name"></p>
+                <p class="hint">מנהל הפרויקט מקבל עדכון, וההוצאה נכנסת למצב הכספי.</p>
+                <p class="error" role="alert" hidden></p>
+                <button type="submit" class="btn primary" id="x-go">שמירה</button>
+            </div>
+        </form>
+    </dialog>
+
     <!-- ===== ספק: הגשת הצעה / בקשת תשלום ===== -->
     <dialog id="s-dlg" aria-labelledby="s-dlg-title">
         <form method="dialog" novalidate>
@@ -191,7 +229,8 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="portal.js?v=26"></script>
+    <script src="../assets/js/fin-report.js?v=27"></script>
+    <script src="portal.js?v=27"></script>
     <script src="../assets/js/lightbox.js?v=21"></script>
 </body>
 </html>

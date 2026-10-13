@@ -60,6 +60,33 @@ const FinanceAll = (() => {
         table();
         upcoming();
         projects();
+        invoices();
+        income();
+    }
+
+    /** כ5: תשלומים שהתקבלו בלי חשבונית מהספק — מהישן. */
+    function invoices() {
+        const list = data.invoices || [];
+        $('#fa-inv-box').hidden = !list.length;
+        $('#fa-inv-title').textContent = t('חשבוניות חסרות ({n})', { n: list.length });
+        $('#fa-invoices').innerHTML = list.slice(0, 30).map(x => `<li class="card"><a class="body" href="#/p/${x.project_id}/payments" data-go-project="${x.project_id}" data-payment="${x.payment_id}">
+            <div class="l1"><span class="one">🧾 ${esc(x.supplier)} · ${esc(x.title)}</span><span class="amt">${esc(money(x.amount))}</span></div>
+            <div class="l2">${esc(x.project)} · ${esc(t('התקבל לפני {n} ימים', { n: x.days }))}</div></a></li>`).join('');
+    }
+
+    /** כ5: הכנסות שלי — שכר הטרחה בכל הפרויקטים: סוכם, התקבל, צפוי, באיחור. */
+    function income() {
+        const I = data.income;
+        $('#fa-inc-box').hidden = !I || !I.projects.length;
+        if (!I || !I.projects.length) return;
+        const kpi = (label, m, cls = '') => `<div class="${cls}"><dt>${esc(label)}</dt><dd>${moneyVat(m)}</dd></div>`;
+        $('#fa-income').innerHTML = `<dl class="fin-cells">${kpi(t('סוכם'), I.totals.amount)}${kpi(t('התקבל'), I.totals.received)}${kpi(t('צפוי'), I.totals.balance)}
+                ${kpi(t('באיחור'), I.totals.late, I.totals.late.g > 0 ? 'kpi-late' : '')}</dl>
+            ${I.next ? `<p class="fin-next">${esc(t('הבא: {title} — {project}, {date}', { title: I.next.title, project: I.next.project, date: new Date(I.next.date + 'T12:00:00').toLocaleDateString(I18n.locale()) }))} · <b>${esc(money(I.next.amount.g))}</b></p>` : ''}
+            <ul class="list rows-list">${I.projects.map(p => `<li class="card"><a class="body" href="#/p/${p.id}/payments" data-go-project="${p.id}">
+                <div class="l1"><span class="one">${esc(p.name)}</span><span class="amt">${esc(money(p.amount.g))}</span></div>
+                <div class="l2">${esc(t('התקבל {received} · צפוי {balance}', { received: money(p.received.g), balance: money(p.balance.g) }))}${p.late.g > 0 ? ` · <span class="fin-late">${esc(t('באיחור {amount}', { amount: money(p.late.g) }))}</span>` : ''}
+                    ${p.milestones ? '' : ` · <span class="fin-warn">${esc(t('בלי אבני דרך'))}</span>`}</div></a></li>`).join('')}</ul>`;
     }
 
     function alerts() {
