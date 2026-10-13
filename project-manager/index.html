@@ -2,12 +2,12 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="assets/js/i18n.js?v=25"></script>
+    <script src="assets/js/i18n.js?v=26"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=25">
+    <link rel="stylesheet" href="assets/css/app.css?v=26">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -334,6 +334,7 @@
                         <label class="f"><span>אסמכתא שלא אושרה — "באיחור" אחרי (ימים)</span><input name="proof_days" type="number" min="0" max="60" inputmode="numeric" dir="ltr"></label>
                         <label class="f"><span>שולם מעל הביצוע — ביותר מ- (נקודות אחוז)</span><input name="overpay" type="number" min="0" max="100" inputmode="numeric" dir="ltr"></label>
                         <label class="f"><span>אזהרת תקציב — כשסוכם (% מהתקציב)</span><input name="budget_warn" type="number" min="1" max="100" inputmode="numeric" dir="ltr"></label>
+                        <label class="f"><span>חשבונית מהספק — חסרה אחרי (ימים)</span><input name="invoice_days" type="number" min="0" max="120" inputmode="numeric" dir="ltr"></label>
                     </div>
                     <label class="switch"><input type="checkbox" name="notify_contacts"><span>מייל ללקוח ולעו"ד על חריגה מהתקציב, גידול בתקציב, ושולם מעל הביצוע (לעו"ד)</span></label>
                     <p class="hint">כל התראה נשלחת להם פעם אחת, עם מייל הבוקר, בשפה שלהם ועם הקישור האישי. בפורטל הם רואים אותן תמיד.</p>
@@ -682,6 +683,44 @@
         </form>
     </dialog>
 
+    <!-- ===== חלון: תוספת / חריגה (finance.js, כ4) — חדשה, או צפייה והחלטה ===== -->
+    <dialog id="co-dlg" aria-labelledby="co-dlg-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="co-dlg-title">תוספת / חריגה</h2>
+                <button type="submit" class="btn primary" id="co-send">שליחה ללקוח</button>
+            </header>
+            <div class="sheet-body">
+                <p class="hint" id="co-for"></p>
+                <div id="co-new">
+                    <fieldset class="opt">
+                        <legend class="sr-only">סוג</legend>
+                        <div class="seg">
+                            <label><input type="radio" name="sign" value="1" checked><span>תוספת</span></label>
+                            <label><input type="radio" name="sign" value="-1"><span>הפחתה</span></label>
+                        </div>
+                    </fieldset>
+                    <div class="fields">
+                        <label class="f"><span>סכום כולל מע"מ (₪) *</span><input name="amount" inputmode="decimal" dir="ltr" maxlength="14" autocomplete="off"></label>
+                        <label class="f wide"><span>מה ולמה *</span><textarea name="reason" rows="2" maxlength="1000" placeholder="למשל: 6 נקודות חשמל נוספות במטבח"></textarea></label>
+                    </div>
+                    <div class="row-btns wrap">
+                        <label class="btn ghost upload-btn">📎 פירוט / הצעה<input type="file" id="co-file" accept="image/*,application/pdf" hidden></label>
+                    </div>
+                    <p class="hint" id="co-file-name"></p>
+                    <p class="hint">נשלח ללקוח לאישור בקישור האישי (בלחיצה או בחתימה, לפי ההגדרות שלו), ובשלב שדורש עו"ד — גם לעו"ד. מה שאושר נכנס להתחייבות.</p>
+                </div>
+                <div id="co-view" hidden>
+                    <div class="summary" id="co-summary"></div>
+                    <ul class="decisions" id="co-decisions"></ul>
+                    <div class="row-btns wrap" id="co-actions"></div>
+                </div>
+                <p class="error" role="alert" hidden></p>
+            </div>
+        </form>
+    </dialog>
+
     <!-- ===== חלון: חלוקת ההצעה לתשלומים (finance.js) ===== -->
     <dialog id="split-dlg" aria-labelledby="split-dlg-title">
         <form method="dialog" novalidate>
@@ -733,6 +772,19 @@
                         </div>
                         <p class="hint" id="mp-file-name"></p>
                     </details>
+                    <!-- חשבונית מהספק (כ4) — אחרי שהתשלום התקבל -->
+                    <div class="invoice-box" id="invoice-box" hidden>
+                        <h3 class="sec-title">חשבונית / קבלה מהספק</h3>
+                        <p class="hint" id="invoice-state"></p>
+                        <div class="fields" id="invoice-fields">
+                            <label class="f"><span>מספר חשבונית</span><input id="inv-no" maxlength="40" dir="ltr"></label>
+                        </div>
+                        <div class="row-btns wrap" id="invoice-btns">
+                            <label class="btn ghost upload-btn">📎 קובץ<input type="file" id="inv-file" accept="image/*,application/pdf" hidden></label>
+                            <button type="button" class="btn ghost" id="inv-save">שמירת החשבונית</button>
+                        </div>
+                        <p class="hint" id="inv-file-name"></p>
+                    </div>
                     <button type="button" class="btn ghost danger" id="payment-cancel">ביטול אבן הדרך</button>
                 </div>
                 <div class="fields">
@@ -766,6 +818,10 @@
                     <label class="f" id="due-pct-box" hidden><span>כשהשלב מגיע ל- (%)</span><input name="due_pct" type="number" min="1" max="100" step="5" inputmode="numeric" dir="ltr"></label>
                 </div>
                 <p class="hint" id="due-kind-hint" hidden>"בגמר השלב" — כשמסמנים "בוצע" בדיווח מהשטח, התשלום הופך ל"הגיע מועד".</p>
+                <div class="fields" id="pay-index-box" hidden>
+                    <label class="f"><span>מדד קובע (הצמדה)</span><input name="index_value" inputmode="decimal" dir="ltr" maxlength="10" autocomplete="off"></label>
+                </div>
+                <p class="hint" id="pay-calc" hidden></p>
                 <fieldset class="opt" id="payer-box">
                     <legend>משלם</legend>
                     <div class="seg">
@@ -1024,22 +1080,22 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=25"></script>
-    <script src="assets/js/contacts.js?v=25"></script>
-    <script src="assets/js/device-contacts.js?v=25"></script>
-    <script src="assets/js/files.js?v=25"></script>
-    <script src="assets/js/lightbox.js?v=25"></script>
-    <script src="assets/js/field.js?v=25"></script>
+    <script src="assets/js/core.js?v=26"></script>
+    <script src="assets/js/contacts.js?v=26"></script>
+    <script src="assets/js/device-contacts.js?v=26"></script>
+    <script src="assets/js/files.js?v=26"></script>
+    <script src="assets/js/lightbox.js?v=26"></script>
+    <script src="assets/js/field.js?v=26"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=25"></script>
-    <script src="assets/js/projects.js?v=25"></script>
-    <script src="assets/js/quotes.js?v=25"></script>
-    <script src="assets/js/payments.js?v=25"></script>
-    <script src="assets/js/finance.js?v=25"></script>
-    <script src="assets/js/finance-all.js?v=25"></script>
-    <script src="assets/js/hebcal.js?v=25"></script>
-    <script src="assets/js/calendar.js?v=25"></script>
-    <script src="assets/js/settings.js?v=25"></script>
-    <script src="assets/js/app.js?v=25"></script>
+    <script src="assets/js/share.js?v=26"></script>
+    <script src="assets/js/projects.js?v=26"></script>
+    <script src="assets/js/quotes.js?v=26"></script>
+    <script src="assets/js/payments.js?v=26"></script>
+    <script src="assets/js/finance.js?v=26"></script>
+    <script src="assets/js/finance-all.js?v=26"></script>
+    <script src="assets/js/hebcal.js?v=26"></script>
+    <script src="assets/js/calendar.js?v=26"></script>
+    <script src="assets/js/settings.js?v=26"></script>
+    <script src="assets/js/app.js?v=26"></script>
 </body>
 </html>

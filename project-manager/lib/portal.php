@@ -246,6 +246,8 @@ function pm_portal_view(array $a): array
         'project' => ['name' => $p['name'], 'address' => $p['address'], 'status' => $p['status'], 'kind' => $p['kind']],
         'manager' => ['name' => $a['owner']['display_name'], 'phone' => $a['owner']['phone'], 'email' => $a['owner']['email']],
         'stages' => $stages, 'quotes' => $quotes, 'files' => $files, 'payments' => $payments,
+        // תוספות וחריגות (כ4) — מה שנשלח אליהם; לאישור / דחייה כמו הצעה
+        'changes' => array_values(array_filter(pm_changes_of($pid, $role), fn($x) => $x['status'] !== 'cancelled')),
         'reports' => pm_reports_of($pid, true),
         // המצב הכספי (אגף הכספים): תקציב ראשוני מול היום, סוכם, שולם, יתרה והתשלום הבא — עם מע"מ
         'finance' => pm_finance_of($pid, true) + ['alerts' => array_map(fn($x) => array_diff_key($x, ['key' => 1, 'sort' => 1]),
@@ -464,6 +466,8 @@ function pm_portal_supplier_view(array $a): array
         'project' => ['name' => $a['project']['name'], 'address' => $a['project']['address'], 'status' => $a['project']['status']],
         'manager' => ['name' => $a['owner']['display_name'], 'phone' => $a['owner']['phone'], 'email' => $a['owner']['email']],
         'stages' => $stages, 'my_quotes' => $quotes, 'payments' => $payments, 'files' => $files,
+        // כ4: תוספות שאושרו לו, וחשבוניות שחסרות על תשלומים שהתקבלו
+        'changes' => array_values(array_filter(pm_changes_of($pid), fn($x) => $x['supplier_id'] === $sid && $x['status'] === 'approved')),
         'bank' => pm_supplier_bank($sid)['bank'], 'quotes' => [], 'reports' => [],
         'labels' => ['stage' => pm_t_map(PM_STAGE_STATUSES), 'file' => pm_t_map(PM_FILE_TYPES), 'method' => pm_t_map(PM_PAY_METHODS)],
         'max_proof' => PM_PROOF_MAX,
@@ -545,6 +549,51 @@ function pm_portal_supplier_payreq(array $a, array $q): array
     $v = ['name' => $a['contact']['name'], 'title' => $title, 'amount' => pm_money(pm_quote_amount($q['amount']))];
     pm_portal_mail($a, pm_t('{name} ביקש תשלום: {title}', $v, $lang),
         pm_t("{name} ביקש תשלום \"{title}\": {amount}.\nבלשונית התשלומים — לבדוק ולשלוח ללקוח.", $v, $lang), 'payments');
+    return pm_portal_view($a);
+}
+
+/** החלטה על תוספת / חריגה מהפורטל — כמו הצעה: בלחיצה או בחתימה (לפי הגדרות הלקוח). */
+function pm_portal_change_decide(array $a, array $in): array
+{
+    $role = $a['link']['role'];
+    if ($role === 'supplier') throw new PmError('לא זמין בקישור של ספק', 403);
+    $id = (int)($in['change_id'] ?? 0);
+    $decision = (string)($in['decision'] ?? '');
+    $view = pm_portal_view($a);
+    $o = null;
+    foreach ($view['changes'] as $x) if ($x['id'] === $id) $o = $x;
+    if (!$o || !$o['can_decide']) throw new PmError('אי אפשר להחליט על התוספת הזו עכשיו', 422);
+    $method = $view['approval_method'];
+    $signature = '';
+    if ($decision === 'approved' && $method === 'signature') {
+        $signature = (string)($in['signature'] ?? '');
+        if (!preg_match('#^data:image/png;base64,[A-Za-z0-9+/=]+$#', $signature) || strlen($signature) > 400000) throw new PmError('נדרשת חתימה', 422);
+    }
+    $note = mb_substr(trim((string)($in['note'] ?? '')), 0, 1000);
+    pm_change_decide($a['owner'], $id, $role, $decision, $note, $decision === 'approved' ? $method : 'click', $a['contact']['name'],
+        $a['actor'], ['portal_id' => (int)$a['link']['id'], 'signature' => $signature]);
+    pm_log('info', 'portal', 'portal.change_decide', ['data' => ['link' => (int)$a['link']['id'], 'change' => $id, 'role' => $role, 'decision' => $decision]]);
+    $lang = $a['owner']['lang'];
+    $v = ['who' => $a['contact']['name'], 'supplier' => $o['supplier'], 'stage' => $o['stage'], 'amount' => pm_money((int)round($o['amount'] * 100))];
+    pm_portal_mail($a, pm_t($decision === 'approved' ? '{who} אישר תוספת: {supplier}, {stage}' : '{who} דחה תוספת: {supplier}, {stage}', $v, $lang),
+        pm_t($decision === 'approved' ? '{who} אישר תוספת של {supplier} בשלב {stage}: {amount}.' : '{who} דחה תוספת של {supplier} בשלב {stage}: {amount}.', $v, $lang)
+        . ($note !== '' ? "\n\n" . pm_t('הערה: {note}', ['note' => $note], $lang) : ''), 'payments');
+    return pm_portal_view($a);
+}
+
+/** הספק מעלה חשבונית על תשלום שהתקבל: ?payment_id=…&no=… — הקובץ בגוף הבקשה. */
+function pm_portal_supplier_invoice(array $a, array $q): array
+{
+    $pid = (int)($q['payment_id'] ?? 0);
+    $st = pm_db()->prepare("SELECT title FROM payments WHERE id = ? AND supplier_id = ? AND project_id = ? AND status != 'cancelled'");
+    $st->execute([$pid, $a['contact']['id'], $a['project']['id']]);
+    $title = $st->fetchColumn();
+    if ($title === false) throw new PmError('התשלום לא נמצא', 422);
+    $lang = $a['owner']['lang'];
+    $fileId = pm_portal_supplier_upload($a, pm_t('חשבונית — {title}', ['title' => $title], $lang), 'invoice');
+    pm_payment_invoice($a['owner'], ['id' => $pid, 'file_id' => $fileId, 'invoice_no' => (string)($q['no'] ?? '')], $a['actor']);
+    $v = ['name' => $a['contact']['name'], 'title' => $title];
+    pm_portal_mail($a, pm_t('{name} העלה חשבונית: {title}', $v, $lang), pm_t('{name} העלה חשבונית על "{title}".', $v, $lang), 'payments');
     return pm_portal_view($a);
 }
 

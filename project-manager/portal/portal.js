@@ -114,7 +114,8 @@ function render() {
     data.quotes.filter(q => q.can_decide && (q.status === 'sent' || q.status === 'client_approved')).forEach(q => waiting.set(q.stage_id, (waiting.get(q.stage_id) || 0) + 1));
     // תשלומים שממתינים לי: עו"ד — לאישור; משלם — לתשלום
     const payNow = data.payments.filter(p => p.can_approve || (p.can_pay && p.payer === data.role));
-    $('#pending').hidden = !waiting.size && !payNow.length;
+    const chWait = (data.changes || []).filter(c => c.can_decide);
+    $('#pending').hidden = !waiting.size && !payNow.length && !chWait.length;
     $('#pending-list').innerHTML = [...waiting].map(([sid, n]) => {
         const st = data.stages.find(s => s.id === sid);
         return `<li class="card" data-go="stage-${sid}" tabindex="0" role="button">
@@ -126,7 +127,12 @@ function render() {
             <span class="ficon" aria-hidden="true">${p.can_approve ? '⚖️' : '💳'}</span>
             <div class="body"><div class="l1"><span class="one">${esc(p.title)}</span><span class="amt">${moneyVat(vatOf(p.status === 'partial' ? p.balance : p.amount, p.vat_rate))}</span></div>
                 <div class="l2">${[p.can_approve ? t('דרישת תשלום — לאישורך') : t('לתשלום'), p.supplier_name, p.due_date ? t('עד {date}', { date: shortDate(p.due_date) }) : ''].filter(Boolean).map(esc).join(' · ')}</div></div>
+            <span class="go dir-flip" aria-hidden="true">‹</span></li>`).join('') + chWait.map(c => `<li class="card" data-go="change-${c.id}" tabindex="0" role="button">
+            <span class="ficon" aria-hidden="true">✍️</span>
+            <div class="body"><div class="l1"><span class="one">${esc(c.amount > 0 ? t('תוספת לאישורך') : t('הפחתה לאישורך'))}</span><span class="amt">${moneyVat(vatOf(c.amount, c.vat_rate))}</span></div>
+                <div class="l2">${esc(c.supplier)} · ${esc(t(c.stage))}</div></div>
             <span class="go dir-flip" aria-hidden="true">‹</span></li>`).join('');
+    renderChanges();
 
     renderFinance();
 
@@ -260,6 +266,7 @@ function renderSupplier() {
         return `<article class="qcard" id="sstage-${st.id}">
             <div class="q1"><span class="one">${esc(t(st.name))}</span><span class="chip st-${esc(st.status)}">${esc(data.labels.stage[st.status] || st.status)}</span></div>
             <div class="q2">${[st.assigned ? esc(t('שלך')) : st.invited ? esc(t('הוזמנת להציע')) : '', st.plan_start || st.plan_end ? `${shortDate(st.plan_start)}–${shortDate(st.plan_end)}` : ''].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>')}</div>
+            ${(data.changes || []).filter(c => c.stage_id === st.id).map(c => `<p class="q3">➕ ${esc(c.amount > 0 ? t('תוספת שאושרה') : t('הפחתה שאושרה'))}: <b>${esc(money(c.amount))}</b> · ${esc(c.reason)}</p>`).join('')}
             ${qs.map(q => `<p class="q3">📝 ${esc(t('ההצעה שלך:'))} <b>${esc(money(q.amount))}</b> · ${esc(q.label)} · ${longDate(q.at)}
                 ${q.file ? ` · <a href="${fileUrl(q.file.id)}" target="_blank" rel="noopener">${esc(t('הקובץ'))}</a>` : ''}</p>`).join('')}
             ${st.can_quote ? `<div class="row-btns"><button class="btn ${qs.length ? 'ghost' : 'primary'}" data-squote="${st.id}">📝 ${esc(qs.length ? t('הצעה מעודכנת') : t('הגשת הצעת מחיר'))}</button></div>` : ''}
@@ -276,6 +283,9 @@ function renderSupplier() {
             <div class="q1"><span class="one">${esc(p.title)}${st ? ` · ${esc(t(st.name))}` : ''}</span><span class="amt">${moneyVat(vatOf(p.amount, p.vat_rate))}</span></div>
             <div class="q2">${esc(label)}${p.due_date ? `<i class="sep" aria-hidden="true">·</i>${esc(t('עד {date}', { date: shortDate(p.due_date) }))}` : ''}${p.received ? `<i class="sep" aria-hidden="true">·</i>${esc(t('התקבל {amount}', { amount: money(p.received) }))}` : ''}</div>
             ${proofs ? `<ul class="proofs">${proofs}</ul>` : ''}
+            ${p.retention && p.kind !== 'retention' ? `<p class="q3">${esc(t('עיכבון {amount} — נשאר עד המסירה', { amount: money(p.retention) }))}${p.index_diff ? ' · ' + esc(t('הפרשי הצמדה {amount}', { amount: money(p.index_diff) })) : ''}</p>` : ''}
+            ${p.invoice ? `<p class="q3">🧾 ${esc(p.invoice.no ? t('התקבלה חשבונית {no}', { no: p.invoice.no }) : t('התקבלה חשבונית'))}</p>`
+                : p.received ? `<div class="row-btns"><button class="btn ${p.status === 'received' ? 'primary' : 'ghost'} sm" data-sinv="${p.id}">🧾 ${esc(t('העלאת חשבונית / קבלה'))}</button></div>` : ''}
         </article>`;
     }).join('') || `<p class="empty">${esc(t('עוד אין תשלומים.'))}</p>`;
 
@@ -336,6 +346,31 @@ async function submitSupplier(e) {
     } finally { btn.disabled = false; }
 }
 
+/** הספק: חשבונית / קבלה על תשלום שהתקבל — מספר (לא חובה) וקובץ. */
+function supplierInvoice(paymentId) {
+    const no = prompt(t('מספר החשבונית (לא חובה)'), '');
+    if (no === null) return;
+    const input = $('#s-inv-file');
+    input.value = '';
+    input.onchange = async () => {
+        const f = input.files[0];
+        if (!f) return;
+        try {
+            const file = await shrink(f);
+            if (file.size > data.max_proof) throw new Error(t('הקובץ גדול מדי — עד 8MB'));
+            const qs = new URLSearchParams({ action: 's-invoice', payment_id: paymentId, no, name: file.name });
+            const res = await fetch('api.php?' + qs, { method: 'POST', body: file,
+                headers: { 'X-Portal': token, 'X-Lang': I18n.lang(), Accept: 'application/json', 'Content-Type': file.type || 'application/octet-stream' } });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(d.error || t('תקלה ({status})', { status: res.status }));
+            data = d;
+            render();
+            toast(t('החשבונית נשלחה למנהל הפרויקט'));
+        } catch (x) { toast(x.message, true); }
+    };
+    input.click();
+}
+
 async function receipt(proofId, ok) {
     const x = data.payments.flatMap(p => p.proofs).find(y => y.id === proofId);
     let received = null, note = '';
@@ -375,6 +410,8 @@ function payCard(p) {
         <div class="q1"><span class="one">${esc(p.title)}${st ? ` · ${esc(t(st.name))}` : ''}</span><span class="amt">${moneyVat(vatOf(p.amount, p.vat_rate))}</span></div>
         <div class="q2">${esc(p.supplier_name)}<i class="sep" aria-hidden="true">·</i>${PAY_ICON[p.status] || ''} ${esc(p.label)}${p.due_date ? `<i class="sep" aria-hidden="true">·</i><span class="${late ? 'late' : ''}">${esc(t('עד {date}', { date: shortDate(p.due_date) }))}</span>` : ''}</div>
         ${p.status === 'partial' ? `<p class="q3">${esc(t('התקבל {amount}', { amount: money(p.received) }))} · ${esc(t('נשאר'))} <b>${esc(money(p.balance))}</b></p>` : ''}
+        ${p.retention && p.kind !== 'retention' ? `<p class="q3">${esc(t('לתשלום עכשיו {amount} — {r} נשארים אצלכם כעיכבון עד המסירה', { amount: money(p.due_amount), r: money(p.retention) }))}</p>` : ''}
+        ${p.index_diff ? `<p class="q3">${esc(t('כולל הפרשי הצמדה {amount}', { amount: money(p.index_diff) }))}</p>` : ''}
         ${p.notes ? `<p class="q3">${esc(p.notes)}</p>` : ''}
         ${p.lawyer ? `<p class="q3 muted">⚖️ ${esc(t('{name} אישר לתשלום', { name: p.lawyer.by }))} · ${longDate(p.lawyer.at)}</p>` : ''}
         ${bank}
@@ -491,6 +528,48 @@ function openDecide(id, act) {
     if (sign) setupSign();
 }
 
+/** תוספות וחריגות — מה שנשלח אליהם, עם אישור / דחייה כשזה תורם. */
+function renderChanges() {
+    const list = data.changes || [];
+    $('#changes').hidden = !list.length;
+    const who = { client: 'הלקוח', lawyer: 'העו"ד' }; // i18n-ok
+    $('#change-list').innerHTML = list.map(c => `<article class="qcard co-${esc(c.status)}" id="change-${c.id}">
+        <div class="q1"><span class="one">${esc(c.amount > 0 ? t('תוספת') : t('הפחתה'))} · ${esc(c.supplier)} · ${esc(t(c.stage))}</span><span class="amt">${moneyVat(vatOf(c.amount, c.vat_rate))}</span></div>
+        <p class="q3">${esc(c.reason)}${c.file ? ` · <a href="${fileUrl(c.file.id)}" target="_blank" rel="noopener">📄 ${esc(t('הפירוט'))}</a>` : ''}</p>
+        <div class="q2">${esc(c.label)}</div>
+        ${c.decisions.map(d => `<p class="q3 muted">${d.decision === 'approved' ? '✅' : '✖'} ${esc(t(who[d.role]))} · ${esc(d.by_name)} · ${longDate(d.at)}${d.note ? ' · ' + esc(d.note) : ''}</p>`).join('')}
+        ${c.can_decide ? `<div class="row-btns"><button class="btn primary" data-chg="${c.id}" data-act-chg="approved">✅ ${esc(t('אישור'))}</button>
+            <button class="btn ghost" data-chg="${c.id}" data-act-chg="rejected">✖ ${esc(t('דחייה'))}</button></div>` : ''}
+    </article>`).join('');
+}
+
+/** אישור / דחייה של תוספת — באותו חלון של הצעה (לחיצה או חתימה). */
+function openDecideChange(id, act) {
+    const c = data.changes.find(x => x.id === id);
+    current = { ...c, kind: 'change' };
+    decision = act;
+    const dlg = $('#decide-dlg'), form = $('form', dlg);
+    form.reset();
+    $('.error', form).hidden = true;
+    const sign = act === 'approved' && data.approval_method === 'signature';
+    $('#decide-title').textContent = act === 'approved' ? t('אישור תוספת') : t('דחיית תוספת');
+    $('#decide-summary').innerHTML = `<dl>
+        <dt>${esc(t('שלב'))}</dt><dd>${esc(t(c.stage))}</dd>
+        <dt>${esc(t('ספק'))}</dt><dd>${esc(c.supplier)}</dd>
+        <dt>${esc(t('סכום'))}</dt><dd>${moneyVat(vatOf(c.amount, c.vat_rate))}</dd>
+        <dt>${esc(t('מה ולמה'))}</dt><dd>${esc(c.reason)}</dd></dl>`;
+    $('#note-label').textContent = act === 'rejected' ? t('סיבה או הערה למנהל הפרויקט') : t('הערה (לא חובה)');
+    $('#sign-box').hidden = !sign;
+    const legal = { name: data.name, supplier: c.supplier, amount: money(c.amount) };
+    $('#decide-legal').textContent = act !== 'approved' ? t('התוספת תסומן כנדחתה, ומנהל הפרויקט יקבל את ההערה.')
+        : sign ? t('בחתימתי אני, {name}, מאשר/ת תוספת של {supplier} על סך {amount} כולל מע"מ. האישור נשמר עם התאריך, השעה והפרטים.', legal)
+        : t('בלחיצה על "אישור" אני, {name}, מאשר/ת תוספת של {supplier} על סך {amount} כולל מע"מ. האישור נשמר עם התאריך, השעה והפרטים.', legal);
+    $('#decide-go').textContent = act === 'approved' ? (sign ? t('חתימה ואישור') : t('אישור')) : t('דחיית התוספת');
+    $('#decide-go').className = 'btn ' + (act === 'approved' ? 'primary' : 'ghost danger');
+    dlg.showModal();
+    if (sign) setupSign();
+}
+
 function setupSign() {
     const c = $('#sign');
     const ratio = window.devicePixelRatio || 1;
@@ -530,8 +609,10 @@ async function submitDecide(e) {
     const btn = $('#decide-go');
     btn.disabled = true;
     try {
-        data = await call('decide', { quote_id: current.id, version: current.version, decision, note: form.elements.note.value,
-            signature: sign ? signatureData() : undefined });
+        data = current.kind === 'change'
+            ? await call('decide-change', { change_id: current.id, decision, note: form.elements.note.value, signature: sign ? signatureData() : undefined })
+            : await call('decide', { quote_id: current.id, version: current.version, decision, note: form.elements.note.value,
+                signature: sign ? signatureData() : undefined });
         $('#decide-dlg').close();
         render();
         toast(decision === 'approved' ? t('האישור נשמר. מנהל הפרויקט מעודכן.') : t('הדחייה נשמרה. מנהל הפרויקט מעודכן.'));
@@ -547,6 +628,10 @@ async function submitDecide(e) {
 document.addEventListener('click', e => {
     const act = e.target.closest('[data-act]');
     if (act) { openDecide(Number(act.dataset.q), act.dataset.act); return; }
+    const chg = e.target.closest('[data-chg]');
+    if (chg) { openDecideChange(Number(chg.dataset.chg), chg.dataset.actChg); return; }
+    const si = e.target.closest('[data-sinv]');
+    if (si) { supplierInvoice(Number(si.dataset.sinv)); return; }
     const go = e.target.closest('[data-go]');
     if (go) { $('#' + go.dataset.go)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     const sq = e.target.closest('[data-squote]');

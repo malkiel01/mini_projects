@@ -77,7 +77,12 @@ function pm_payment_out(array $p, array $proofs): array
         'status' => $p['status'], 'label' => pm_payment_label($p), 'payable' => pm_payment_payable($p),
         'notes' => $p['notes'], 'requested_at' => $p['requested_at'], 'created_at' => $p['created_at'],
         'supplier_request' => (bool)($p['supplier_request'] ?? false), 'file_id' => isset($p['file_id']) ? (int)$p['file_id'] ?: null : null,
-        'received' => $received / 100, 'balance' => max(0, (int)$p['amount'] - $received) / 100,
+        'received' => $received / 100, 'balance' => max(0, pm_payment_due_amount($p) - $received) / 100,
+        // כ4: עיכבון, הצמדה, חשבונית
+        'kind' => $p['kind'] ?? 'milestone', 'retention' => (int)($p['retention'] ?? 0) / 100, 'due_amount' => pm_payment_due_amount($p) / 100,
+        'index_value' => isset($p['index_value']) ? (float)$p['index_value'] : null, 'index_diff' => (int)($p['index_diff'] ?? 0) / 100,
+        'change_order_id' => isset($p['change_order_id']) ? (int)$p['change_order_id'] ?: null : null,
+        'invoice' => !empty($p['invoice_at']) ? ['file_id' => isset($p['invoice_file_id']) ? (int)$p['invoice_file_id'] ?: null : null, 'no' => $p['invoice_no'] ?? '', 'at' => $p['invoice_at']] : null,
         'proofs' => $proofs,
     ];
 }
@@ -181,8 +186,10 @@ function pm_payment_save(array $user, array $in, ?array $actor = null): array
     } else {
         $amount = pm_quote_amount($in['amount'] ?? null);
     }
+    $kind = $old['kind'] ?? 'milestone'; // שחרור העיכבון נוצר לבד (pm_retention_sync), לא מהחלון
     $dueKind = (string)($in['due_kind'] ?? ($old['due_kind'] ?? 'date'));
-    if (!in_array($dueKind, ['date', 'stage_done', 'progress'], true)) throw new PmError('מועד לא מוכר', 422);
+    if ($kind === 'retention') $dueKind = $old['due_kind'];
+    if (!in_array($dueKind, ['date', 'stage_done', 'progress', 'handover'], true) || ($dueKind === 'handover' && $kind !== 'retention')) throw new PmError('מועד לא מוכר', 422);
     if ($dueKind !== 'date' && !$stageId) throw new PmError('"בגמר שלב" או "בהתקדמות" — רק כשנבחר שלב', 422);
     $duePct = (int)($in['due_pct'] ?? 0);
     if ($dueKind === 'progress' && ($duePct < 1 || $duePct > 100)) throw new PmError('התקדמות: בין 1 ל-100%', 422);
@@ -203,7 +210,19 @@ function pm_payment_save(array $user, array $in, ?array $actor = null): array
         'payer'        => $payer,
         'needs_lawyer' => !empty($in['needs_lawyer']) && $p['lawyer_id'] ? 1 : 0,
         'notes'        => pm_str($in, 'notes', 2000, false, 'מה כלול'),
+        // עיכבון (לפי הגדרות הפרויקט): החלק מהתשלום שנשאר אצל הלקוח עד המסירה
+        'retention'    => $kind === 'retention' ? 0 : (int)round($amount * (float)$p['retention_pct'] / 100),
     ];
+    // הצמדה: המדד הקובע לתשלום — והפרשי ההצמדה על מה שמשלמים עכשיו
+    if ($p['index_on'] && array_key_exists('index_value', $in)) {
+        $iv = $in['index_value'];
+        if ($iv === '' || $iv === null) { $f['index_value'] = null; $f['index_diff'] = 0; }
+        else {
+            if (!is_numeric($iv) || $iv <= 0 || $iv > 1e6) throw new PmError('{field}: מספר לא תקין', 422, ['field' => 'מדד קובע']);
+            $f['index_value'] = (float)$iv;
+            $f['index_diff'] = (int)round(($amount - $f['retention']) * ((float)$iv / (float)$p['index_base'] - 1));
+        }
+    }
     $supplier = pm_contact_name($supplierId);
     $ev = ['title' => $f['title'], 'supplier' => $supplier, 'amount' => pm_money($f['amount']), 'date' => pm_short_date($f['due_date'])];
     $now = pm_now();
@@ -231,7 +250,47 @@ function pm_payment_save(array $user, array $in, ?array $actor = null): array
         pm_event($actor, $projectId, 'payment', $f['due_date'] ? 'אבן דרך לתשלום: {title} — {supplier}, {amount} עד {date}' : 'אבן דרך לתשלום: {title} — {supplier}, {amount}',
             ['payment' => $id], $ev);
     }
+    if ($stageId && $kind === 'milestone') pm_retention_sync($user, $projectId, $stageId, $supplierId);
+    if ($old && $old['stage_id'] && ((int)$old['stage_id'] !== (int)$stageId || (int)$old['supplier_id'] !== $supplierId)) {
+        pm_retention_sync($user, $projectId, (int)$old['stage_id'], (int)$old['supplier_id']);
+    }
     return pm_payments($user, $projectId) + ['saved' => $id];
+}
+
+/** כמה צריך לשלם באבן הדרך (אגורות): הסכום, פחות העיכבון, ועוד הפרשי ההצמדה. שחרור העיכבון — כולו. */
+function pm_payment_due_amount(array $p): int
+{
+    $base = ($p['kind'] ?? 'milestone') === 'retention' ? (int)$p['amount'] : (int)$p['amount'] - (int)($p['retention'] ?? 0);
+    return $base + (int)($p['index_diff'] ?? 0);
+}
+
+/**
+ * העיכבון של ספק בשלב — אבן דרך אחת "שחרור עיכבון", בסכום כל העיכבונות, שמועדה במסירת הפרויקט.
+ * נוצרת / מתעדכנת / מתבטלת לבד כשאבני הדרך משתנות.
+ */
+function pm_retention_sync(array $user, int $projectId, int $stageId, int $supplierId): void
+{
+    $db = pm_db();
+    $st = $db->prepare("SELECT COALESCE(SUM(retention), 0) FROM payments WHERE project_id = ? AND stage_id = ? AND supplier_id = ? AND kind = 'milestone' AND status != 'cancelled'");
+    $st->execute([$projectId, $stageId, $supplierId]);
+    $sum = (int)$st->fetchColumn();
+    $r = $db->prepare("SELECT * FROM payments WHERE project_id = ? AND stage_id = ? AND supplier_id = ? AND kind = 'retention' AND status != 'cancelled' ORDER BY id DESC LIMIT 1");
+    $r->execute([$projectId, $stageId, $supplierId]);
+    $rel = $r->fetch();
+    $now = pm_now();
+    if ($rel && !in_array($rel['status'], ['planned', 'requested'], true)) return; // כבר שולם — לא נוגעים
+    if ($sum <= 0) {
+        if ($rel) $db->prepare("UPDATE payments SET status = 'cancelled', updated_at = ? WHERE id = ?")->execute([$now, $rel['id']]);
+        return;
+    }
+    if ($rel) {
+        if ((int)$rel['amount'] !== $sum) $db->prepare('UPDATE payments SET amount = ?, updated_at = ? WHERE id = ?')->execute([$sum, $now, $rel['id']]);
+        return;
+    }
+    $p = pm_project_row($user, $projectId);
+    $db->prepare("INSERT INTO payments (project_id, stage_id, supplier_id, title, amount, due_date, due_kind, payer, needs_lawyer, kind, vat_rate, notes, created_by, created_at, updated_at)
+                  VALUES (?, ?, ?, ?, ?, '', 'handover', 'client', ?, 'retention', ?, '', ?, ?, ?)")
+       ->execute([$projectId, $stageId, $supplierId, pm_t('שחרור עיכבון'), $sum, $p['lawyer_id'] ? 1 : 0, pm_vat_rate(), $user['id'], $now, $now]);
 }
 
 function pm_short_date(string $ymd): string
@@ -357,10 +416,10 @@ function pm_payment_proof_review(array $user, int $proofId, bool $ok, $receivedA
             $db->prepare("UPDATE payment_proofs SET status = 'received', received_amount = ?, reviewed_at = ?, reviewed_by = ?, review_note = ? WHERE id = ?")
                ->execute([$got, pm_now(), $user['id'], $note, $proofId]);
             $total = pm_payment_received((int)$p['id']);
-            $status = $total >= (int)$p['amount'] ? 'received' : 'partial';
+            $status = $total >= pm_payment_due_amount($p) ? 'received' : 'partial';
             pm_event($actor, (int)$p['project_id'], 'payment',
                 $status === 'partial' ? '✅ התקבל: {title} — {amount} (נשארה יתרה {balance})' : '✅ התקבל: {title} — {amount} — אבן הדרך נסגרה',
-                ['payment' => (int)$p['id']], ['title' => $p['title'], 'amount' => pm_money($got), 'balance' => pm_money((int)$p['amount'] - $total)]);
+                ['payment' => (int)$p['id']], ['title' => $p['title'], 'amount' => pm_money($got), 'balance' => pm_money(pm_payment_due_amount($p) - $total)]);
         } else {
             $db->prepare("UPDATE payment_proofs SET status = 'rejected', reviewed_at = ?, reviewed_by = ?, review_note = ? WHERE id = ?")
                ->execute([pm_now(), $user['id'], $note, $proofId]);
@@ -388,7 +447,8 @@ function pm_stage_close_if_paid(array $user, int $stageId): void
 {
     $stage = pm_stage_row($user, $stageId);
     if ($stage['status'] !== 'done') return;
-    $st = pm_db()->prepare("SELECT COUNT(*) FROM payments WHERE stage_id = ? AND status NOT IN ('received','cancelled')");
+    // שחרור העיכבון — רק במסירה; לא מעכב את סגירת השלב
+    $st = pm_db()->prepare("SELECT COUNT(*) FROM payments WHERE stage_id = ? AND kind != 'retention' AND status NOT IN ('received','cancelled')");
     $st->execute([$stageId]);
     if ((int)$st->fetchColumn() === 0) pm_stage_set_status($user, $stage, 'paid', 'כל התשלומים התקבלו'); // i18n-ok
 }
@@ -402,6 +462,7 @@ function pm_payment_cancel(array $user, int $id, string $note): array
     $note = mb_substr(trim($note), 0, 500);
     pm_event($user, (int)$p['project_id'], 'payment', 'בוטלה אבן דרך: {title} — {amount}{note}', ['payment' => $id],
         ['title' => $p['title'], 'amount' => pm_money((int)$p['amount']), 'note' => $note !== '' ? ": $note" : '']);
+    if ($p['stage_id'] && ($p['kind'] ?? 'milestone') === 'milestone') pm_retention_sync($user, (int)$p['project_id'], (int)$p['stage_id'], (int)$p['supplier_id']);
 
     return pm_payments($user, (int)$p['project_id']);
 }
@@ -414,4 +475,28 @@ function pm_supplier_bank(int $supplierId): array
     $c = $st->fetch() ?: [];
     return ['name' => $c['name'] ?? '', 'company' => $c['company'] ?? '', 'tax_id' => $c['tax_id'] ?? '',
             'bank' => json_decode($c['bank_json'] ?? '{}', true) ?: []];
+}
+
+/**
+ * חשבונית / קבלה מהספק על תשלום שהתקבל: {id, invoice_no, file_id} — מהמנהל (הקובץ כבר הועלה), או
+ * מהקישור של הספק (pm_portal_supplier_invoice). בלי חשבונית אחרי X ימים — התראה (כ4).
+ */
+function pm_payment_invoice(array $user, array $in, ?array $actor = null): array
+{
+    $actor ??= $user;
+    $p = pm_payment_row($user, (int)($in['id'] ?? 0));
+    if (pm_payment_received((int)$p['id']) <= 0) throw new PmError('חשבונית — אחרי שהתשלום התקבל', 422);
+    $fileId = (int)($in['file_id'] ?? 0) ?: null;
+    if ($fileId) {
+        $f = pm_db()->prepare('SELECT 1 FROM files WHERE id = ? AND project_id = ? AND deleted_at IS NULL');
+        $f->execute([$fileId, $p['project_id']]);
+        if (!$f->fetchColumn()) throw new PmError('הקובץ לא נמצא', 422);
+    }
+    $no = pm_str($in, 'invoice_no', 40, false, 'מספר חשבונית');
+    if (!$fileId && $no === '') throw new PmError('חשבונית: מספר או קובץ', 422);
+    pm_db()->prepare('UPDATE payments SET invoice_file_id = ?, invoice_no = ?, invoice_at = ?, updated_at = ? WHERE id = ?')
+       ->execute([$fileId, $no, pm_now(), pm_now(), $p['id']]);
+    pm_event($actor, (int)$p['project_id'], 'payment', $no !== '' ? '🧾 התקבלה חשבונית {no}: {title} — {supplier}' : '🧾 התקבלה חשבונית: {title} — {supplier}',
+        ['payment' => (int)$p['id']], ['no' => $no, 'title' => $p['title'], 'supplier' => pm_contact_name((int)$p['supplier_id'])]);
+    return pm_payments($user, (int)$p['project_id']);
 }

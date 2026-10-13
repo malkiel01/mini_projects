@@ -200,6 +200,13 @@ try {
         'POST payment-split'  => pm_payment_split($user, $in),
         'POST fin-alerts'     => pm_fin_alert_settings_save($user, $in),
         'GET finance-all'     => pm_finance_all($user, $in),
+        // כ4: תוספות וחריגות, חשבונית
+        'GET changes'         => pm_changes($user, (int)($in['project_id'] ?? 0)),
+        'POST change'         => pm_change_save($user, $in),
+        'POST change-decide'  => pm_change_decide($user, (int)($in['id'] ?? 0), (string)($in['role'] ?? ''), (string)($in['decision'] ?? ''),
+                                                  (string)($in['note'] ?? '')),
+        'POST change-cancel'  => pm_change_cancel($user, (int)($in['id'] ?? 0)),
+        'POST payment-invoice' => pm_payment_invoice($user, $in),
         'GET finance-export'  => pm_finance_export($user, $in),
         'GET payments'        => pm_payments($user, (int)($in['project_id'] ?? 0)),
         'POST payment'        => pm_payment_save($user, $in),
