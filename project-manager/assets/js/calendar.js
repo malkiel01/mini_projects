@@ -98,6 +98,11 @@ const Calendar = (() => {
         $('#rem-badge').hidden = !list.length;
         $('#rem-badge').textContent = list.length;
         $('#rem-badge').classList.toggle('hot', urgent > 0);
+        // כספים (כ3): רק מה שדחוף — באיחור / מתקרב / הגיע מועד
+        const money = list.filter(r => r.pane === 'payments' && r.level !== 'wait');
+        $('#fin-badge').hidden = !money.length;
+        $('#fin-badge').textContent = money.length;
+        $('#fin-badge').classList.toggle('hot', money.some(r => r.level === 'late'));
         const b = $('#rem-banner');
         b.hidden = !list.length;
         if (list.length) b.innerHTML = `<span aria-hidden="true">${urgent ? '⚠️' : '⏳'}</span><span class="one">${esc(t('{n} דורשים טיפול · {text}', { n: list.length, text: list[0].text }))}</span><span class="dir-flip" aria-hidden="true">‹</span>`;

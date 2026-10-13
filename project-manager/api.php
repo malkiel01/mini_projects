@@ -199,6 +199,8 @@ try {
         'POST finance-settings' => pm_finance_settings_save($user, $in),
         'POST payment-split'  => pm_payment_split($user, $in),
         'POST fin-alerts'     => pm_fin_alert_settings_save($user, $in),
+        'GET finance-all'     => pm_finance_all($user, $in),
+        'GET finance-export'  => pm_finance_export($user, $in),
         'GET payments'        => pm_payments($user, (int)($in['project_id'] ?? 0)),
         'POST payment'        => pm_payment_save($user, $in),
         'POST payment-request' => pm_payment_request($user, (int)($in['id'] ?? 0)),

@@ -54,7 +54,14 @@ const Payments = (() => {
         try { data = await api('payments', { params: { project_id: project.project.id } }); }
         catch (e) { toast(e.message, true); return; }
         render();
+        // מ"כספים" (כ3): אבן דרך שביקשו לפתוח
+        if (pendingOpen && data.payments.some(p => p.id === pendingOpen)) open(pendingOpen);
+        pendingOpen = null;
     }
+
+    let pendingOpen = null;
+    /** פתיחת אבן דרך אחרי שהלשונית תיטען. */
+    function openWhenReady(id) { pendingOpen = id; }
 
     /** אחרי פעולה: הרשימה, הפרויקט, והמצב הכספי (אגף הכספים). */
     async function refresh(d) {
@@ -352,5 +359,5 @@ const Payments = (() => {
     /** מהתראה (finance.js) — פותח את אבן הדרך. */
     function openPayment(id) { if (data.payments.some(p => p.id === id)) open(id); }
 
-    return { show, add, refreshList, openPayment };
+    return { show, add, refreshList, openPayment, openWhenReady };
 })();
