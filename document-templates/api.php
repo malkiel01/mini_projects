@@ -45,7 +45,7 @@ $POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'dev_user
            'tpl_create', 'tpl_save', 'tpl_archive', 'tpl_delete',
            'doc_create', 'doc_save', 'doc_complete', 'doc_archive', 'doc_delete', 'doc_downloaded',
            'part_contact', 'part_link', 'fill_otp_send', 'fill_otp_verify', 'fill_save', 'fill_complete',
-           'doc_upload', 'fill_upload', 'dev_quota'];
+           'doc_upload', 'fill_upload', 'dev_quota', 'share_set', 'share_remove', 'share_leave'];
 
 try {
     if (in_array($action, $POSTS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -65,7 +65,7 @@ try {
         'health' => (function () {
             $probe = 'בדיקה';
             db();
-            return ['ok' => true, 'stage' => 6, 'php' => PHP_VERSION, 'sqlite' => true,
+            return ['ok' => true, 'stage' => 7, 'php' => PHP_VERSION, 'sqlite' => true,
                 'crypto' => unseal(seal($probe)) === $probe,
                 'mail' => function_exists('mail'), 'zip' => class_exists('ZipArchive'),
                 'finfo' => class_exists('finfo'),
@@ -109,6 +109,10 @@ try {
         'fill_upload'     => fill_upload($_POST, $_FILES),
         'fill_file'       => fill_file((int)($_GET['att'] ?? 0)),
         'dev_quota'       => dev_quota($body),
+        'share_list'      => share_list($session, $_GET),
+        'share_set'       => share_set($session, $body),
+        'share_remove'    => share_remove($session, $body),
+        'share_leave'     => share_leave($session, $body),
         'dev_users' => dev_users(),
         'dev_user'  => dev_user_action($body, $session),
         default     => throw new ApiError('פעולה לא מוכרת', 404),

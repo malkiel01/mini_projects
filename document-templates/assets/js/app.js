@@ -167,6 +167,65 @@
     for (const a of nav.querySelectorAll('[data-tab]')) a.classList.toggle('active', a.dataset.tab === tab);
   }
 
+  // רמות שיתוף (שלב 7). rank — להשוואה: מה מותר בכל רמה.
+  const LEVEL = { view: 'צופה', fill: 'ממלא', edit: 'עורך', co_owner: 'מנהל-שותף', owner: 'בעלים' };
+  const rank = (l) => ({ view: 1, fill: 2, edit: 3, co_owner: 4, owner: 5 }[l] || 0);
+
+  /** חלון שיתוף — לתבנית או למסמך. */
+  async function shareDialog(type, id, title, after) {
+    const list = el('div', { class: 'share-list' }, el('p', { class: 'muted small' }, 'טוען…'));
+    const out = el('div');
+    const email = el('input', { type: 'email', placeholder: 'מייל של משתמש רשום', dir: 'ltr', required: true });
+    const levelSel = (cur, max) => el('select', {}, Object.entries(LEVEL).filter(([k]) => k !== 'owner' && rank(k) <= max)
+      .map(([k, t]) => el('option', { value: k, selected: k === cur }, t)));
+    let myRank = 4;
+    async function load() {
+      try {
+        const r = await api('share_list', undefined, { type, id });
+        myRank = rank(r.my_level);
+        add.replaceChildren(email, levelSel('view', myRank), el('button', { type: 'submit', class: 'primary small' }, 'שיתוף'));
+        list.replaceChildren(
+          el('div', { class: 'share-row' }, el('strong', {}, r.owner), el('span', { class: 'muted small' }, 'בעלים')),
+          ...r.shares.map(s => {
+            const sel = levelSel(s.level, myRank);
+            sel.addEventListener('change', () => run('share_set', { type, id, user_id: s.user_id, level: sel.value }));
+            return el('div', { class: 'share-row' },
+              el('span', {}, s.name, el('span', { class: 'muted small', dir: 'ltr' }, ' ' + s.email)), sel,
+              el('button', { class: 'link small danger-text', title: 'הסרה', onclick: () => run('share_remove', { type, id, user_id: s.user_id }) }, '✕'));
+          }));
+      } catch (e) {
+        list.replaceChildren(notice(e.message, 'bad'));
+      }
+    }
+    async function run(action, body) {
+      out.replaceChildren();
+      try { await api(action, body); await load(); if (after) after(); }
+      catch (e) { out.replaceChildren(notice(e.message, 'bad')); }
+    }
+    const add = el('form', { class: 'share-add' });
+    add.addEventListener('submit', (e) => {
+      e.preventDefault();
+      run('share_set', { type, id, email: email.value, level: add.querySelector('select').value }).then(() => { email.value = ''; });
+    });
+    const dlg = el('dialog', { class: 'sig-dialog' },
+      el('h2', {}, 'שיתוף — ' + title),
+      el('p', { class: 'muted small' }, type === 'template'
+        ? 'צופה — רואה. ממלא — מנפיק ממנה מסמכים משלו. עורך — עורך את התבנית. מנהל-שותף — גם משתף ומעביר לארכיון.'
+        : 'צופה — רואה ויומן. ממלא — ממלא שדות. עורך — גם מסיים ושולח למשתתפים. מנהל-שותף — גם משתף ומעביר לארכיון.'),
+      list, add, out,
+      el('div', { class: 'ops' }, el('button', { onclick: () => dlg.close() }, 'סגירה')));
+    dlg.addEventListener('close', () => dlg.remove());
+    document.body.append(dlg);
+    dlg.showModal();
+    await load();
+  }
+
+  async function leave(type, id, title, after) {
+    if (!confirm(`לעזוב את "${title}"? היא תיעלם מהרשימה שלך.`)) return;
+    try { await api('share_leave', { type, id }); after ? after() : (location.hash = type === 'template' ? 'home' : 'docs'); }
+    catch (e) { alert(e.message); }
+  }
+
   const SOURCE = { pdf_locked: '📄 PDF', image: '🖼️ תמונה', docx: '📝 Word', pdf_parsed: '📄 PDF', authored: '✍️ נכתב כאן' };
 
   async function viewHome() {
@@ -187,13 +246,16 @@
       list.replaceChildren(...items.map(t => el('article', { class: 'tpl-card' + (t.archived ? ' archived' : '') },
         el('a', { class: 'tpl-open', href: '#tpl=' + t.id },
           el('strong', {}, t.name),
+          t.owner_name ? el('span', { class: 'shared-tag small' }, `👥 של ${t.owner_name} · ${LEVEL[t.access]}`) : null,
           el('span', { class: 'muted small' }, `${SOURCE[t.source] || t.source} · ${t.pages} דפים · ${t.fields} שדות · גרסה ${t.version}`)),
         el('div', { class: 'ops' },
-          t.archived || !t.fields ? null : el('button', { class: 'small primary', onclick: () => issue(t) }, 'הנפקת מסמך'),
-          el('a', { class: 'btn small', href: '#tpl=' + t.id }, 'עריכה'),
+          t.archived || !t.fields || rank(t.access) < 2 ? null : el('button', { class: 'small primary', onclick: () => issue(t) }, 'הנפקת מסמך'),
+          el('a', { class: 'btn small', href: '#tpl=' + t.id }, rank(t.access) >= 3 ? 'עריכה' : 'צפייה'),
           t.used ? el('a', { class: 'btn small', href: '#docs?template=' + t.id }, 'מסמכים') : null,
-          el('button', { class: 'small', onclick: () => archive(t) }, t.archived ? 'שחזור' : 'ארכיון'),
-          t.used ? null : el('button', { class: 'small danger', onclick: () => remove(t) }, 'מחיקה')))));
+          rank(t.access) >= 4 ? el('button', { class: 'small', onclick: () => shareDialog('template', t.id, t.name, load) }, '🔗 שיתוף') : null,
+          rank(t.access) >= 4 ? el('button', { class: 'small', onclick: () => archive(t) }, t.archived ? 'שחזור' : 'ארכיון') : null,
+          t.used || t.access !== 'owner' ? null : el('button', { class: 'small danger', onclick: () => remove(t) }, 'מחיקה'),
+          t.access === 'owner' ? null : el('button', { class: 'small', onclick: () => leave('template', t.id, t.name, load) }, 'עזיבה')))));
     }
 
     const usage = el('p', { class: 'muted small usage' });
@@ -430,7 +492,7 @@
 
   // לעורך (editor.js): אותם עזרים, אותה מעטפת.
   window.DT = {
-    api, el, notice, setTab,
+    api, el, notice, setTab, shareDialog, leave, rank, LEVEL,
     show: (...n) => show(...n),
     setLeaveGuard: (fn) => { leaveGuard = fn; },
     wide: () => document.body.classList.add('wide'),

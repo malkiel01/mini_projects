@@ -123,7 +123,7 @@ function participants_view(array $d, array $schema): array
 
 function part_owned(array $user, array $b): array
 {
-    $d = doc_owned((int)($b['id'] ?? 0), $user);
+    $d = doc_owned((int)($b['id'] ?? 0), $user, 'edit');
     $st = db()->prepare('SELECT * FROM participants WHERE id = ? AND document_id = ?');
     $st->execute([(int)($b['participant_id'] ?? 0), $d['id']]);
     $p = $st->fetch();

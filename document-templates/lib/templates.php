@@ -15,7 +15,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/sharing.php';
 
 const TPL_MAX_FILE_MB = 20;
 const TPL_MAX_SCHEMA  = 512 * 1024;
@@ -38,16 +38,17 @@ function valid_tpl_name($n): string
 }
 
 /** תבנית של המשתמש, עם הגרסה הנוכחית. אחרת 404. */
-function tpl_owned(int $id, array $user): array
+/** תבנית שיש למשתמש גישה אליה ברמה $min לפחות (שלב 7: גם משותפת). מוסיף 'access'. */
+function tpl_owned(int $id, array $user, string $min = 'owner'): array
 {
     $st = db()->prepare(
         'SELECT t.*, v.id AS version_id, v.schema_enc
          FROM templates t JOIN template_versions v ON v.template_id = t.id AND v.version = t.current_version
-         WHERE t.id = ? AND t.owner_id = ? AND t.deleted_at IS NULL'
+         WHERE t.id = ? AND t.deleted_at IS NULL'
     );
-    $st->execute([$id, $user['id']]);
-    $t = $st->fetch();
-    if (!$t) throw new ApiError('התבנית לא נמצאה', 404);
+    $st->execute([$id]);
+    $t = $st->fetch() ?: null;
+    $t['access'] = require_level($t ? access_level('template', $id, (int)$t['owner_id'], $user) : null, $min, 'התבנית לא נמצאה');
     return $t;
 }
 
@@ -60,7 +61,7 @@ function tpl_asset_row(int $versionId): array
     return $a;
 }
 
-function tpl_summary(array $t): array
+function tpl_summary(array $t, ?array $user = null): array
 {
     $schema = json_decode((string)unseal($t['schema_enc']), true) ?: [];
     return [
@@ -73,6 +74,8 @@ function tpl_summary(array $t): array
         'fields' => count($schema['fields'] ?? []),
         'archived' => $t['archived_at'] !== null,
         'created_at' => $t['created_at'],
+        'access' => $user ? access_level('template', (int)$t['id'], (int)$t['owner_id'], $user) : 'owner',
+        'owner_name' => $user && (int)$t['owner_id'] !== (int)$user['id'] ? user_name((int)$t['owner_id']) : null,
     ];
 }
 
@@ -81,10 +84,10 @@ function tpl_list(array $user): array
     $st = db()->prepare(
         'SELECT t.*, v.schema_enc
          FROM templates t JOIN template_versions v ON v.template_id = t.id AND v.version = t.current_version
-         WHERE t.owner_id = ? AND t.deleted_at IS NULL ORDER BY t.created_at DESC'
+         WHERE ' . mine_or_shared_sql('t', 'template') . ' AND t.deleted_at IS NULL ORDER BY t.created_at DESC'
     );
-    $st->execute([$user['id']]);
-    return ['ok' => true, 'templates' => array_map('tpl_summary', $st->fetchAll()),
+    $st->execute([':uid' => $user['id']]);
+    return ['ok' => true, 'templates' => array_map(fn($t) => tpl_summary($t, $user), $st->fetchAll()),
         'usage' => function_exists('usage_view') ? usage_view((int)$user['id']) : null];
 }
 
@@ -131,9 +134,9 @@ function tpl_create(array $user, array $post, array $files): array
 
 function tpl_get(array $user, int $id): array
 {
-    $t = tpl_owned($id, $user);
+    $t = tpl_owned($id, $user, 'view');
     $a = tpl_asset_row((int)$t['version_id']);
-    return ['ok' => true, 'template' => tpl_summary($t) + [
+    return ['ok' => true, 'template' => tpl_summary($t, $user) + [
         'mime' => $a['mime'],
         'schema' => json_decode((string)unseal($t['schema_enc']), true),
         'numbering' => json_decode((string)$t['numbering_json'], true),
@@ -143,7 +146,7 @@ function tpl_get(array $user, int $id): array
 /** מגיש את קובץ הרקע — מפוענח, רק לבעלים. */
 function tpl_asset(array $user, int $id): never
 {
-    $t = tpl_owned($id, $user);
+    $t = tpl_owned($id, $user, 'view');
     $a = tpl_asset_row((int)$t['version_id']);
     $bytes = load_file($a['path']);
     header('Content-Type: ' . $a['mime']);
@@ -224,7 +227,7 @@ function clean_schema($s): array
 
 function tpl_save(array $user, array $b): array
 {
-    $t = tpl_owned((int)($b['id'] ?? 0), $user);
+    $t = tpl_owned((int)($b['id'] ?? 0), $user, 'edit');
     $json = json_encode(clean_schema($b['schema'] ?? null), JSON_UNESCAPED_UNICODE);
     if (strlen($json) > TPL_MAX_SCHEMA) throw new ApiError('התבנית גדולה מדי', 413);
 
@@ -265,7 +268,7 @@ function tpl_save(array $user, array $b): array
 
 function tpl_archive(array $user, array $b): array
 {
-    $t = tpl_owned((int)($b['id'] ?? 0), $user);
+    $t = tpl_owned((int)($b['id'] ?? 0), $user, 'co_owner');
     db()->prepare('UPDATE templates SET archived_at = ? WHERE id = ?')
         ->execute([empty($b['restore']) ? now_iso() : null, $t['id']]);
     return ['ok' => true];
@@ -277,7 +280,7 @@ function tpl_archive(array $user, array $b): array
  */
 function tpl_delete(array $user, array $b): array
 {
-    $t = tpl_owned((int)($b['id'] ?? 0), $user);
+    $t = tpl_owned((int)($b['id'] ?? 0), $user, 'owner');
     if ($t['used']) throw new ApiError('הונפקו מהתבנית מסמכים — אפשר רק להעביר לארכיון', 409);
 
     $pdo = db();
@@ -292,6 +295,7 @@ function tpl_delete(array $user, array $b): array
         ->execute([$t['id']]);
     $pdo->prepare('DELETE FROM template_versions WHERE template_id = ?')->execute([$t['id']]);
     $pdo->prepare('DELETE FROM counters WHERE template_id = ?')->execute([$t['id']]);
+    $pdo->prepare("DELETE FROM shares WHERE object_type = 'template' AND object_id = ?")->execute([$t['id']]);
     $pdo->prepare('DELETE FROM templates WHERE id = ?')->execute([$t['id']]);
     $pdo->commit();
     foreach ($paths as $p) delete_file($p);

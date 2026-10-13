@@ -112,10 +112,22 @@
     const panel = el('aside', { class: 'panel card' });
     const msg = el('div');
 
+    // שלב 7: תבנית ששותפה ברמה נמוכה מ"עורך" — צפייה בלבד.
+    const readOnly = window.DT.rank(tpl.access || 'owner') < 3;
+    if (readOnly) {
+      nameInput.disabled = true;
+      saveBtn.hidden = true;
+      status.hidden = true;
+      palette.hidden = true;
+      pagesBox.classList.add('readonly');
+    }
+
     show(
       el('div', { class: 'editor-bar card' },
         el('a', { href: '#home', class: 'small' }, '→ התבניות שלי'),
         nameInput, status, saveBtn),
+      tpl.owner_name ? el('p', { class: 'notice' }, `👥 תבנית של ${tpl.owner_name} — ההרשאה שלך: ${window.DT.LEVEL[tpl.access]}` +
+        (readOnly ? '. צפייה בלבד.' : '.')) : null,
       palette, msg,
       el('div', { class: 'editor' }, pagesBox, panel));
 
@@ -210,6 +222,7 @@
 
     // גרירה: הזזה, או שינוי גודל מהידית. התנועה מחושבת כשבר מגודל הדף.
     function startDrag(e, f, resize) {
+      if (readOnly) { e.stopPropagation(); select(f); return; }
       e.preventDefault();
       e.stopPropagation();
       const box = e.currentTarget;
@@ -272,6 +285,7 @@
     // מקלדת: מחיקה, ובחצים — הזזה עדינה (Shift — צעד גדול).
     document.addEventListener('keydown', onKey);
     function onKey(e) {
+      if (readOnly) return;
       if (!document.body.contains(pagesBox)) { document.removeEventListener('keydown', onKey); return; }
       if (e.key === 'Escape') { setPlacing(null); return; }
       if (!selected || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
@@ -289,6 +303,12 @@
 
     // ── לוח ההגדרות ──
     function renderPanel() {
+      renderPanelInner();
+      // צפייה בלבד: הלוח מוצג, אבל אי אפשר לשנות דבר (חוץ ממעבר בין שדות).
+      if (readOnly) for (const n of panel.querySelectorAll('input, select, textarea, button:not(.link)')) n.disabled = true;
+    }
+
+    function renderPanelInner() {
       if (!selected) {
         panel.replaceChildren(
           el('h2', {}, `שדות (${schema.fields.length})`),
