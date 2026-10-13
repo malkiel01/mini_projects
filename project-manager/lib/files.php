@@ -518,6 +518,19 @@ function pm_file_update(array $user, array $in): array
     return ['file' => pm_file_get($user, (int)$x['id'])];
 }
 
+/**
+ * תמונה ממוזערת לקובץ שאין לו (PDF שהועלה לפני שהדפדפן ידע לצייר את העמוד הראשון) — הדפדפן מצייר
+ * את העמוד בחלון הקובץ ושולח. רק כשאין עדיין; קובץ עם תמונה ממוזערת — לא משתנה.
+ */
+function pm_file_thumb(array $user, int $id, string $thumb): array
+{
+    $x = pm_file_row($user, $id);
+    if ($x['thumb']) return ['ok' => true];
+    $name = pm_save_thumb(pm_files_dir((int)$x['project_id']), $thumb);
+    if ($name) pm_db()->prepare('UPDATE files SET thumb = ? WHERE id = ? AND thumb IS NULL')->execute([$name, $id]);
+    return ['ok' => (bool)$name];
+}
+
 /** העברה: התיקייה של הקובץ מתחלפת. קיצורי הדרך נשארים. */
 function pm_file_move(array $user, int $id, int $folderId): array
 {

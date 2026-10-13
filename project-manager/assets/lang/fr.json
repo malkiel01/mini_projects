@@ -2036,5 +2036,13 @@
     "נשארו ~{n} שנ'": "~{n} s restantes",
     "{a} מתוך {b}MB": "{a} sur {b} Mo",
     "תוצאות בתיקייה הזו ({n})": "Résultats dans ce dossier ({n})",
-    "תוצאות בכל הפרויקט ({n})": "Résultats dans tout le projet ({n})"
+    "תוצאות בכל הפרויקט ({n})": "Résultats dans tout le projet ({n})",
+    "תצוגה במסך מלא": "Affichage plein écran",
+    "עמודי המסמך": "Pages du document",
+    "טוען את המסמך…": "Chargement du document…",
+    "עמוד {i} מתוך {n}": "Page {i} sur {n}",
+    "מוצגים 30 הראשונים": "30 premières affichées",
+    "הערה וקיצורי דרך": "Note et raccourcis",
+    "מופיע גם ב… (קיצורי דרך — לא העתק)": "Apparaît aussi dans… (raccourcis — pas une copie)",
+    "פתיחה בלשונית": "Ouvrir dans un onglet"
 }

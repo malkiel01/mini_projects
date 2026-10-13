@@ -2,12 +2,12 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="assets/js/i18n.js?v=53"></script>
+    <script src="assets/js/i18n.js?v=54"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=53">
+    <link rel="stylesheet" href="assets/css/app.css?v=54">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -1127,25 +1127,26 @@
                 <h2 id="file-dlg-title"></h2>
                 <button type="submit" class="btn primary">שמירה</button>
             </header>
-            <div class="sheet-body">
-                <div class="preview" id="file-preview"></div>
-                <p class="hint" id="file-meta"></p>
-                <div class="fields">
-                    <label class="f wide"><span>שם</span><input name="name" maxlength="150"></label>
-                    <label class="f"><span>סוג</span><select name="type"></select></label>
-                    <label class="f"><span>תיקייה</span><select name="home"></select></label>
-                    <label class="f wide"><span>הערה</span><textarea name="note" rows="2" maxlength="2000"></textarea></label>
+            <div class="sheet-body file-sheet">
+                <!-- קודם הקובץ עצמו: תמונה, סרטון, או עמודי ה-PDF (pdf.js) — ואז הפרטים, בקצרה -->
+                <div class="fv" id="file-preview"></div>
+                <div class="fv-bar">
+                    <p class="hint" id="file-meta"></p>
+                    <div class="fv-acts">
+                        <a class="icon-btn" id="file-open" target="_blank" rel="noopener" aria-label="פתיחה בלשונית" title="פתיחה בלשונית">↗️</a>
+                        <a class="icon-btn" id="file-download" aria-label="הורדה" title="הורדה">⬇️</a>
+                        <button type="button" class="icon-btn" id="file-delete" aria-label="מחיקה" title="מחיקה">🗑️</button>
+                    </div>
                 </div>
-                <label class="switch"><input type="checkbox" name="visible"><span>גלוי ללקוח, לעו"ד ולספק בפורטל</span></label>
                 <!-- איפה הקובץ משמש, ושיוך לרשומה — אותו דבר כמו העלאה מהחלון של ההצעה / החוזה / אבן הדרך -->
-                <section class="group file-uses" aria-labelledby="g-uses">
-                    <h3 id="g-uses">שימוש במערכת</h3>
+                <section class="file-uses" aria-labelledby="g-uses">
+                    <h3 class="sec-title" id="g-uses">שימוש במערכת</h3>
                     <div class="chips" id="file-uses"></div>
-                    <div class="row-btns wrap" id="file-attach-btns">
-                        <button type="button" class="btn ghost" id="file-quote">🧾 הצעת מחיר מהקובץ</button>
-                        <button type="button" class="btn ghost" data-attach="contract">📝 לחוזה של ספק</button>
-                        <button type="button" class="btn ghost" data-attach="invoice">🧾 חשבונית לאבן דרך</button>
-                        <button type="button" class="btn ghost" data-attach="proof">💳 אסמכתא לאבן דרך</button>
+                    <div class="chip-row" id="file-attach-btns">
+                        <button type="button" class="chip" id="file-quote">🧾 הצעת מחיר מהקובץ</button>
+                        <button type="button" class="chip" data-attach="contract">📝 לחוזה של ספק</button>
+                        <button type="button" class="chip" data-attach="invoice">🧾 חשבונית לאבן דרך</button>
+                        <button type="button" class="chip" data-attach="proof">💳 אסמכתא לאבן דרך</button>
                     </div>
                     <div class="file-attach" id="file-attach" hidden>
                         <label class="f wide"><span id="file-attach-label"></span><select id="file-attach-to"></select></label>
@@ -1153,16 +1154,21 @@
                         <div class="row-btns"><button type="button" class="btn primary" id="file-attach-go">שיוך</button></div>
                     </div>
                 </section>
-                <section class="group" aria-labelledby="g-links">
-                    <h3 id="g-links">מופיע גם ב… <small>קיצורי דרך — לא העתק</small></h3>
+                <h3 class="sec-title">פרטים</h3>
+                <div class="fields fd-grid">
+                    <label class="f wide"><span>שם</span><input name="name" maxlength="150"></label>
+                    <label class="f"><span>סוג</span><select name="type"></select></label>
+                    <label class="f"><span>תיקייה</span><select name="home"></select></label>
+                </div>
+                <label class="switch"><input type="checkbox" name="visible"><span>גלוי ללקוח, לעו"ד ולספק בפורטל</span></label>
+                <details class="fd-more">
+                    <summary>הערה וקיצורי דרך</summary>
+                    <label class="f wide"><span>הערה</span><textarea name="note" rows="2" maxlength="2000"></textarea></label>
+                    <p class="hint">מופיע גם ב… (קיצורי דרך — לא העתק)</p>
                     <div class="chips" id="file-links"></div>
                     <div class="toolbar"><select name="link_to" aria-label="הוספת קיצור דרך לתיקייה"></select><button type="button" class="btn ghost" id="add-link">הוספה</button></div>
-                </section>
+                </details>
                 <p class="error" role="alert" hidden></p>
-                <div class="row-btns wrap">
-                    <a class="btn ghost" id="file-download">הורדה</a>
-                    <button type="button" class="btn ghost danger" id="file-delete">מחיקה</button>
-                </div>
             </div>
         </form>
     </dialog>
@@ -1334,23 +1340,23 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=53"></script>
-    <script src="assets/js/contacts.js?v=53"></script>
-    <script src="assets/js/device-contacts.js?v=53"></script>
-    <script src="assets/js/files.js?v=53"></script>
-    <script src="assets/js/lightbox.js?v=53"></script>
-    <script src="assets/js/field.js?v=53"></script>
+    <script src="assets/js/core.js?v=54"></script>
+    <script src="assets/js/contacts.js?v=54"></script>
+    <script src="assets/js/device-contacts.js?v=54"></script>
+    <script src="assets/js/files.js?v=54"></script>
+    <script src="assets/js/lightbox.js?v=54"></script>
+    <script src="assets/js/field.js?v=54"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=53"></script>
-    <script src="assets/js/projects.js?v=53"></script>
-    <script src="assets/js/quotes.js?v=53"></script>
-    <script src="assets/js/payments.js?v=53"></script>
-    <script src="assets/js/fin-report.js?v=53"></script>
-    <script src="assets/js/finance.js?v=53"></script>
-    <script src="assets/js/finance-all.js?v=53"></script>
-    <script src="assets/js/hebcal.js?v=53"></script>
-    <script src="assets/js/calendar.js?v=53"></script>
-    <script src="assets/js/settings.js?v=53"></script>
-    <script src="assets/js/app.js?v=53"></script>
+    <script src="assets/js/share.js?v=54"></script>
+    <script src="assets/js/projects.js?v=54"></script>
+    <script src="assets/js/quotes.js?v=54"></script>
+    <script src="assets/js/payments.js?v=54"></script>
+    <script src="assets/js/fin-report.js?v=54"></script>
+    <script src="assets/js/finance.js?v=54"></script>
+    <script src="assets/js/finance-all.js?v=54"></script>
+    <script src="assets/js/hebcal.js?v=54"></script>
+    <script src="assets/js/calendar.js?v=54"></script>
+    <script src="assets/js/settings.js?v=54"></script>
+    <script src="assets/js/app.js?v=54"></script>
 </body>
 </html>

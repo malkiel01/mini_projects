@@ -2018,5 +2018,13 @@
     "נשארו ~{n} שנ'": "~{n} s left",
     "{a} מתוך {b}MB": "{a} of {b}MB",
     "תוצאות בתיקייה הזו ({n})": "Results in this folder ({n})",
-    "תוצאות בכל הפרויקט ({n})": "Results in the whole project ({n})"
+    "תוצאות בכל הפרויקט ({n})": "Results in the whole project ({n})",
+    "תצוגה במסך מלא": "Full-screen view",
+    "עמודי המסמך": "Document pages",
+    "טוען את המסמך…": "Loading the document…",
+    "עמוד {i} מתוך {n}": "Page {i} of {n}",
+    "מוצגים 30 הראשונים": "showing the first 30",
+    "הערה וקיצורי דרך": "Note and shortcuts",
+    "מופיע גם ב… (קיצורי דרך — לא העתק)": "Also appears in… (shortcuts — not a copy)",
+    "פתיחה בלשונית": "Open in a tab"
 }
