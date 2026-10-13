@@ -1993,5 +1993,6 @@
     "הדפסת הכרטסת": "Print the ledger",
     "החוזה לא נמצא": "Contract not found",
     "שם החוזה": "Contract name",
-    "החוזה של ספק אחר": "The contract belongs to another supplier"
+    "החוזה של ספק אחר": "The contract belongs to another supplier",
+    "מתוך {total}": "of {total}"
 }

@@ -105,10 +105,14 @@ const Payments = (() => {
 
     function render() {
         const s = data.summary;
-        const parts = [s.total ? t('התקבל {amount} מתוך {total}', { amount: money(s.received), total: money(s.total) }) : t('התקבל {amount}', { amount: money(s.received) })];
-        if (s.waiting) parts.push(t('{n} לאישור קבלה', { n: s.waiting }));
-        if (s.late) parts.push(`<span class="late">${esc(t('{n} באיחור', { n: s.late }))}</span>`);
-        $('#pay-sum').innerHTML = parts.map(x => x.startsWith('<') ? x : esc(x)).join('<i class="sep" aria-hidden="true">·</i>');
+        // תקציר: כמה התקבל מתוך כמה, עם פס התקדמות; ממתינים לאישור ובאיחור — תגיות
+        const pct = s.total ? Math.min(100, Math.round(s.received * 100 / s.total)) : 0;
+        const tags = [s.waiting ? `<span class="chip">${esc(t('{n} לאישור קבלה', { n: s.waiting }))}</span>` : '',
+            s.late ? `<span class="chip fin-late">${esc(t('{n} באיחור', { n: s.late }))}</span>` : ''].join('');
+        $('#pay-sum').hidden = !data.payments.length;
+        $('#pay-sum').innerHTML = `<div class="ps-line"><span class="muted">${esc(t('התקבל'))}</span> <b>${esc(money(s.received))}</b>${s.total ? ` <span class="muted">${esc(t('מתוך {total}', { total: money(s.total) }))}</span><span class="ps-pct">${pct}%</span>` : ''}</div>
+            ${s.total ? `<span class="fm-track" role="progressbar" aria-label="${esc(t('התקבל'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span style="inline-size:${pct}%"></span></span>` : ''}
+            ${tags ? `<div class="chip-row">${tags}</div>` : ''}`;
 
         $('#fin-n-milestones').textContent = data.payments.length || '';
         const groups = new Map();
