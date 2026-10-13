@@ -214,6 +214,42 @@ function pm_client_settings(int $id): array
 }
 
 /** יצירה או עדכון. מחזיר את הכרטיס המלא. */
+/** ספרות הטלפון בלי קידומת: 0501234567 / +972501234567 → 501234567. */
+function pm_phone_key(string $p): string
+{
+    $d = preg_replace('/\D/', '', $p);
+    return strlen($d) >= 7 ? substr($d, -9) : '';
+}
+
+/**
+ * כרטיס קיים מאותו סוג עם אותו טלפון, וואטסאפ, אימייל או ח.פ. — של המשתמש או של מנהל בצוות שלו
+ * (הבעלים והשותפים בפרויקטים המשותפים). מחזיר פרטים לבחירה, או null.
+ */
+function pm_contact_duplicate(array $user, string $kind, array $f): ?array
+{
+    $phones = array_filter([pm_phone_key($f['phone']), pm_phone_key($f['whatsapp'])]);
+    $email = mb_strtolower($f['email']);
+    $tax = preg_replace('/\D/', '', $f['tax_id']);
+    if (!$phones && $email === '' && $tax === '') return null;
+    $team = pm_team_ids((int)$user['id']);
+    $st = pm_db()->prepare('SELECT c.id, c.owner_id, c.name, c.company, c.phone, c.whatsapp, c.email, c.tax_id, c.archived, u.display_name AS owner_name
+        FROM contacts c LEFT JOIN users u ON u.id = c.owner_id
+        WHERE c.kind = ? AND c.owner_id IN (' . implode(',', array_map('intval', $team)) . ') ORDER BY c.owner_id != ?, c.archived, c.id');
+    $st->execute([$kind, $user['id']]);
+    foreach ($st->fetchAll() as $c) {
+        $why = array_intersect($phones, array_filter([pm_phone_key($c['phone']), pm_phone_key($c['whatsapp'])])) ? 'phone'
+            : ($email !== '' && mb_strtolower($c['email']) === $email ? 'email'
+            : ($tax !== '' && preg_replace('/\D/', '', $c['tax_id']) === $tax ? 'tax_id' : null));
+        if (!$why) continue;
+        $visible = true;
+        try { pm_contact_row($user, (int)$c['id']); } catch (PmError) { $visible = false; }
+        return ['id' => (int)$c['id'], 'kind' => $kind, 'name' => $c['name'], 'company' => $c['company'], 'owner_id' => (int)$c['owner_id'],
+                'owner_name' => $c['owner_name'], 'mine' => (int)$c['owner_id'] === (int)$user['id'], 'visible' => $visible,
+                'archived' => (bool)$c['archived'], 'why' => $why];
+    }
+    return null;
+}
+
 function pm_contact_save(array $user, array $in): array
 {
     $id = (int)($in['id'] ?? 0);
@@ -269,6 +305,10 @@ function pm_contact_save(array $user, array $in): array
             if ((int)$c->fetchColumn() !== count($tradeIds)) throw new PmError('תחום לא מוכר', 422);
         }
     }
+
+    // כרטיס חדש שכבר קיים (אותו טלפון / אימייל / ח.פ.) — אצלו או אצל מנהל אחר בפרויקט משותף: לא
+    // נשמר, והממשק מציע להשתמש בקיים. כך שני מנהלים לא יוצרים שני כרטיסים לאותו ספק. force — בכל זאת.
+    if (!$id && empty($in['force']) && ($dup = pm_contact_duplicate($user, $kind, $fields))) return ['duplicate' => $dup];
 
     $settings = null;
     if ($kind === 'client') $settings = pm_validate_client_settings($ownerId, $in['settings'] ?? []);

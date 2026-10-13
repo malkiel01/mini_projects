@@ -1884,5 +1884,14 @@
     "מפרויקט משותף: {names}": "D'un projet partagé : {names}",
     "מפרויקט משותף: {names}. מוצג כאן כל עוד יש לך גישה לפרויקט.": "D'un projet partagé : {names}. Affiché ici tant que vous avez accès au projet.",
     "כרטיס של מנהל אחר": "Fiche d'un autre gestionnaire",
-    "כרטיס מפרויקט משותף — רק מי שיצר אותו יכול להעביר לארכיון": "Fiche d'un projet partagé — seul son créateur peut l'archiver"
+    "כרטיס מפרויקט משותף — רק מי שיצר אותו יכול להעביר לארכיון": "Fiche d'un projet partagé — seul son créateur peut l'archiver",
+    "אותו טלפון": "le même téléphone",
+    "אותו אימייל": "le même e-mail",
+    "אותו ח.פ.": "le même numéro d'entreprise",
+    "אצלך": "dans vos contacts",
+    "אצל {name}": "chez {name}",
+    "כבר יש כרטיס \"{name}\" {who}, עם {what}.": "Il existe déjà une fiche « {name} » {who}, avec {what}.",
+    "אישור — להשתמש בכרטיס הקיים (בלי כפילות). ביטול — לחזור לטופס.": "OK — utiliser la fiche existante (sans doublon). Annuler — revenir au formulaire.",
+    "הוא יופיע אצלך ברגע שישויך לפרויקט המשותף. אישור — לשמור בכל זאת כרטיס נפרד. ביטול — לחזור לטופס.": "Elle apparaîtra chez vous dès qu'elle sera liée au projet partagé. OK — enregistrer quand même une fiche séparée. Annuler — revenir au formulaire.",
+    "נבחר הכרטיס הקיים: {name}": "Fiche existante utilisée : {name}"
 }
