@@ -127,7 +127,7 @@ export function renderUnitsEditor(box, values, onChange) {
       </div>
       <div class="unit__sec"><b>חזית</b>${front.join('')}</div>
       <div class="unit__sec"><b>תוכן</b>${inner.join('')}</div>
-      ${spec().columnBody ? `<div class="unit__sec"><b>תאורה</b>${sel(`${at}.led`, f.led || 'same', { ...SAME, ...Object.fromEntries(LED_OPTIONS.map((o) => [o.id, o.name])) }, 'פסי לד')}</div>` : ''}
+      ${spec().columnBody || spec().floorLed ? `<div class="unit__sec"><b>תאורה</b>${sel(`${at}.led`, f.led || 'same', { ...SAME, ...Object.fromEntries(LED_OPTIONS.map((o) => [o.id, o.name])) }, 'פסי לד')}</div>` : ''}
     </details>`;
   }
 

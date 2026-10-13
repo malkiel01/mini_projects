@@ -562,9 +562,11 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
         // פס לד: תיבה דקה עם חומר זוהר (emissive), אנכית לאורך הדופן או אופקית מתחת למדף.
         // במצב "תאורה" (setLights) — גם אור אמיתי בגוון הפס (ledLights)
         const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: kelvinColor(h.kelvin), emissiveIntensity: lightsOn ? 3 : 1.6, roughness: 0.4 });
-        mesh = new THREE.Mesh(h.horizontal ? new THREE.BoxGeometry(h.len, 4, 8) : new THREE.BoxGeometry(6, h.len, 8), mat);
+        const alongZ = h.horizontal && h.axis === 'z';   // פס אופקי לעומק (הקיר השני במטבח)
+        mesh = new THREE.Mesh(alongZ ? new THREE.BoxGeometry(8, 4, h.len) : h.horizontal ? new THREE.BoxGeometry(h.len, 4, 8) : new THREE.BoxGeometry(6, h.len, 8), mat);
         mesh.userData.led = true;
-        mesh.position.set(h.pos[0] + (h.horizontal ? h.len / 2 : 3), h.pos[1] + (h.horizontal ? 0 : h.len / 2), h.pos[2]);
+        if (alongZ) mesh.position.set(h.pos[0], h.pos[1], h.pos[2] + h.len / 2);
+        else mesh.position.set(h.pos[0] + (h.horizontal ? h.len / 2 : 3), h.pos[1] + (h.horizontal ? 0 : h.len / 2), h.pos[2]);
       } else if (h.kind === 'track') {
         // מסילה/מוליך להזזה: פרופיל אלומיניום לרוחב הפתח, בעומק שני הנתיבים
         mesh = new THREE.Mesh(new THREE.BoxGeometry(h.len, h.h, h.d), new THREE.MeshStandardMaterial({ color: 0xb8bcc2, metalness: 0.55, roughness: 0.35 }));
@@ -790,9 +792,11 @@ export function createViewer(canvas, { onPick, drag = null } = {}) {
     const pick = all.length <= MAX ? all : all.filter((_, k) => k % Math.ceil(all.length / MAX) === 0);
     const boost = Math.sqrt(all.length / Math.max(1, pick.length));
     for (const h of pick) {
-      const len = h.len;
-      const l = new THREE.PointLight(kelvinColor(h.kelvin), Math.min(1.6, 0.35 + len / 1200) * boost, 1100, 2);
-      if (h.horizontal) l.position.set(h.pos[0] + len / 2, h.pos[1] - 60, h.pos[2] - 40);
+      // `reach` — המרחק עד המשטח שהפס מאיר (מתחת לעליונים: עד משטח העבודה); בלי — מדף בספרייה
+      const len = h.len, reach = h.reach || 350;
+      const l = new THREE.PointLight(kelvinColor(h.kelvin), Math.min(3, (0.35 + len / 1200) * Math.max(1, reach / 350)) * boost, Math.max(1100, reach * 3), 2);
+      if (h.horizontal && h.axis === 'z') l.position.set(h.pos[0] - 40, h.pos[1] - 60, h.pos[2] + len / 2);
+      else if (h.horizontal) l.position.set(h.pos[0] + len / 2, h.pos[1] - 60, h.pos[2] - 40);
       else l.position.set(h.pos[0] + (h.pos[0] > 0 ? 40 : 40), h.pos[1] + len / 2, h.pos[2] - 40);
       group.add(l); ledLights.push(l);
     }
