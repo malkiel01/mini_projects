@@ -198,6 +198,10 @@
     try { if (localStorage.getItem('dt-fill-mode') === 'form') mode = 'form'; } catch (e) { /* אחסון חסום — ברירת מחדל */ }
     // בטלפון, ממלא חיצוני מתחיל בטופס — נוח יותר מהקלדה על דף מוקטן.
     if (fill && window.innerWidth < 640) mode = 'form';
+    // שלב 9: מסמך מתבנית Word — אין "על המסמך" (אין דפים ממוקמים). ממלאים כטופס,
+    // מורידים Word ממולא, ורואים תצוגה מקדימה.
+    const isWord = doc.mime === window.DTEditor.DOCX;
+    if (isWord) mode = 'form';
     // שלב 7: מי שהמסמך שותף איתו — לפי הרמה. ממלא+ ממלא, עורך+ מסיים ושולח, מנהל-שותף+ משתף.
     const lvl = () => fill ? 0 : window.DT.rank(doc.access || 'owner');
     const editable = () => fill ? !doc.me.locked && !doc.me.blocked : EDITABLE.includes(doc.status) && lvl() >= 2;
@@ -244,7 +248,10 @@
           : el('button', { class: 'small', onclick: () => { side(people, journal); renderPeople(); } }, '👥 משתתפים'),
         !fill && lvl() >= 4 ? el('button', { class: 'small', onclick: () => window.DT.shareDialog('document', id, doc.title, reload) }, '🔗 שיתוף') : null,
         !fill && doc.access && doc.access !== 'owner' ? el('button', { class: 'small', onclick: () => window.DT.leave('document', id, doc.title) }, 'עזיבה') : null,
-        fill ? null : pdfBtn, completeBtn, progress),
+        fill || isWord ? null : pdfBtn,
+        !fill && isWord ? el('button', { class: 'small', onclick: () => wordFile(false) }, '⬇ הורדת Word') : null,
+        isWord && !fill ? el('button', { class: 'small', onclick: () => wordFile(true) }, '👁 תצוגה מקדימה') : null,
+        completeBtn, progress),
       msg,
       el('div', { class: 'editor' }, body, journal, people));
 
@@ -287,6 +294,7 @@
       title.disabled = fill || !editable();
       completeBtn.hidden = !editable() || (!fill && lvl() < 3);
       modeBtn.textContent = mode === 'page' ? '☰ למילוי כטופס' : '📄 למילוי על המסמך';
+      modeBtn.hidden = isWord;
       const p = doc.progress;
       if (fill) {
         progress.textContent = doc.me.blocked || (doc.me.completed ? '✓ סיימת. תודה!'
@@ -683,6 +691,32 @@
         await reload();
         msg.replaceChildren(notice('המסמך הושלם וננעל. אפשר להוריד PDF.', 'ok'));
         renderBody();
+      } catch (e) {
+        msg.replaceChildren(notice(e.message, 'bad'));
+      }
+    }
+
+    // ── Word: הורדה או תצוגה מקדימה של הקובץ הממולא ──
+    async function wordFile(preview) {
+      await flush();
+      try {
+        const res = await fetch(`api.php?action=doc_docx&id=${id}${preview ? '&preview=1' : ''}`, { credentials: 'same-origin' });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'ההורדה נכשלה');
+        const blob = await res.blob();
+        if (!preview) {
+          const a = el('a', { href: URL.createObjectURL(blob),
+            download: ((doc.number ? doc.number + ' ' : '') + title.value).replace(/[\\/:*?"<>|]+/g, '_') + '.docx' });
+          document.body.append(a); a.click(); a.remove();
+          reload().catch(() => {});
+          return;
+        }
+        const dlg = el('dialog', { class: 'sig-dialog word-dialog' }, el('div', { class: 'row' },
+          el('h2', {}, 'תצוגה מקדימה'), el('button', { onclick: () => dlg.close() }, 'סגירה')),
+          el('p', { class: 'muted small' }, 'קרובה למקור. הקובץ שיורד הוא Word עצמו — שם העיצוב מדויק.'),
+          await window.DTEditor.wordPreview(await blob.arrayBuffer()));
+        dlg.addEventListener('close', () => dlg.remove());
+        document.body.append(dlg);
+        dlg.showModal();
       } catch (e) {
         msg.replaceChildren(notice(e.message, 'bad'));
       }
