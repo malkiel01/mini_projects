@@ -71,6 +71,38 @@
     return out;
   }
 
+  const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+  /**
+   * תצוגה מקדימה של Word בדפדפן (docx-preview). קרובה למקור, לא זהה —
+   * הקובץ שיורד הוא Word עצמו, ושם העיצוב 1:1.
+   */
+  async function wordPreview(buf) {
+    const load = (src) => new Promise((ok, bad) => {
+      if (document.querySelector(`script[src="${src}"]`)) return ok();
+      const sc = document.createElement('script');
+      sc.src = src; sc.onload = ok; sc.onerror = () => bad(new Error('טעינת רכיב התצוגה נכשלה'));
+      document.head.append(sc);
+    });
+    await load('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+    await load('https://cdn.jsdelivr.net/npm/docx-preview@0.3.3/dist/docx-preview.min.js');
+    const box = document.createElement('div');
+    box.className = 'word-preview';
+    await window.docx.renderAsync(buf, box, null, { inWrapper: true, ignoreLastRenderedPageBreak: true });
+    // הדף ברוחב A4 אמיתי — מקטינים אותו לרוחב העמודה, כמו דפי PDF
+    const wrap = box.querySelector('.docx-wrapper');
+    if (wrap && window.ResizeObserver) {
+      new ResizeObserver(() => {
+        const page = wrap.querySelector('section');
+        if (!page || !box.clientWidth) return;
+        wrap.style.zoom = '';
+        const need = page.offsetWidth + 32;
+        wrap.style.zoom = need > box.clientWidth ? String(box.clientWidth / need) : '';
+      }).observe(box);
+    }
+    return box;
+  }
+
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const uid = () => 'f' + Math.random().toString(36).slice(2, 9);
 
@@ -144,16 +176,32 @@
 
     // ── רקע ──
     const pageEls = [];
-    try {
-      const pages = await renderBackground('api.php?action=tpl_asset&id=' + id, tpl.mime);
-      pages.forEach((pg, i) => addPage(pg.visual, pg.w, pg.h, i));
-    } catch (e) {
-      msg.replaceChildren(notice(e.message, 'bad'));
-      return;
+    const isWord = tpl.mime === DOCX;
+    if (isWord) {
+      // תבנית Word: השדות באים מהסימונים {{...}} בקובץ. אין מיקום על דף —
+      // מגדירים כאן רק את השדות, ומציגים תצוגה מקדימה של הקובץ.
+      palette.hidden = true;
+      pagesBox.classList.add('word');
+      pagesBox.replaceChildren(el('p', { class: 'notice' }, '📝 תבנית Word — השדות הם הסימונים {{...}} שבקובץ. ' +
+        'כדי להוסיף שדה: מוסיפים סימון ב-Word ומעלים מחדש. כאן מגדירים לכל שדה סוג, חובה, מי ממלא ומילוי מאיש קשר.'));
+      try {
+        const res = await fetch('api.php?action=tpl_asset&id=' + id, { credentials: 'same-origin' });
+        pagesBox.append(await wordPreview(await res.arrayBuffer()));
+      } catch (e) {
+        pagesBox.append(notice('התצוגה המקדימה לא נטענה: ' + e.message, 'bad'));
+      }
+    } else {
+      try {
+        const pages = await renderBackground('api.php?action=tpl_asset&id=' + id, tpl.mime);
+        pages.forEach((pg, i) => addPage(pg.visual, pg.w, pg.h, i));
+      } catch (e) {
+        msg.replaceChildren(notice(e.message, 'bad'));
+        return;
+      }
     }
 
     // מבנה הדפים נקבע מהקובץ בפתיחה הראשונה.
-    if (!schema.pages.length) {
+    if (!schema.pages.length && !isWord) {
       schema.pages = pageEls.map(p => ({ w: p.w, h: p.h }));
       setDirty(true);
     } else {
@@ -334,7 +382,7 @@
         i.addEventListener('input', () => {
           f[prop] = attrs.type === 'number' ? Number(i.value) : i.value;
           setDirty(true);
-          if (prop === 'label') pagesBox.querySelector('.field.selected .field-label').textContent = TYPES[f.type].icon + ' ' + f.label;
+          if (prop === 'label') { const lbl = pagesBox.querySelector('.field.selected .field-label'); if (lbl) lbl.textContent = TYPES[f.type].icon + ' ' + f.label; }
         });
         return el('label', {}, el('span', {}, label), i);
       };
@@ -349,6 +397,7 @@
 
       panel.replaceChildren(
         el('div', { class: 'row' }, el('h2', {}, 'הגדרות שדה'), el('button', { class: 'link small', onclick: () => select(null) }, 'כל השדות')),
+        f.placeholder ? el('p', { class: 'small muted' }, 'בקובץ: ', el('code', {}, '{{' + f.placeholder + '}}')) : null,
         input('תווית — מה הממלא רואה', 'label', { maxlength: 120 }),
         select_('סוג', 'type', Object.fromEntries(Object.entries(TYPES).map(([k, t]) => [k, t.icon + ' ' + t.label]))),
         el('label', { class: 'inline' }, req, ' שדה חובה'),
@@ -364,7 +413,7 @@
         textual ? select_('כשהטקסט ארוך מהשדה', 'overflow', OVERFLOW) : null,
         input('מפתח פנימי (לייצוא ולאקסל)', 'key', { dir: 'ltr', maxlength: 60, pattern: '[a-z0-9_]+' }),
         el('div', { class: 'ops' },
-          el('button', { class: 'small', onclick: () => duplicate(f) }, 'שכפול'),
+          f.placeholder ? null : el('button', { class: 'small', onclick: () => duplicate(f) }, 'שכפול'),
           el('button', { class: 'small danger', onclick: () => removeField(f) }, 'מחיקה')));
     }
 
@@ -468,6 +517,7 @@
     }
 
     function scrollTo(f) {
+      if (!pageEls[f.page]) return;   // תבנית Word — אין דפים לגלול אליהם
       pageEls[f.page].layer.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
@@ -499,5 +549,5 @@
     renderPanel();
   }
 
-  window.DTEditor = { open, renderBackground, TYPES };
+  window.DTEditor = { open, renderBackground, TYPES, wordPreview, DOCX };
 })();

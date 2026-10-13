@@ -318,3 +318,11 @@ tr.archived { opacity: .6; }
 .tags-input { flex: 1; min-width: 160px; }
 .quota-form textarea { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
   background: var(--bg); color: var(--text); }
+
+/* ── שלב 9: Word ── */
+.pages.word { display: block; min-width: 0; }
+.word-preview { background: #e9ecef; border-radius: 8px; overflow: auto; max-height: 80vh; }
+.word-preview .docx-wrapper { padding: 16px !important; background: transparent !important; }
+.word-preview .docx-wrapper > section.docx { box-shadow: 0 1px 4px rgba(0,0,0,.2); margin-bottom: 16px !important; }
+.word-dialog { max-width: 900px; }
+code { font-family: ui-monospace, monospace; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
