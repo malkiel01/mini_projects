@@ -833,3 +833,11 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 #ct-units .seg.wrap span { border: 1px solid var(--line); margin: -1px 0 0 -1px; }
 .fin-card { grid-template-columns: minmax(0, 1fr); }
 #ct-cover input:checked + span small { color: inherit; opacity: .85; }
+/* בחירה מקטעית: הכפתור הנבחר ממלא את כל הגובה גם כשטקסט שכן נשבר לשתי שורות */
+.seg label { display: flex; }
+.seg span { flex: 1; }
+/* "מתי משלמים" — ארבע אפשרויות: הכותרת מעל, ארבע עמודות שוות לכל הרוחב */
+#due-kind-box { display: block; }
+#due-kind-box legend { float: none; width: auto; margin-bottom: var(--s1); }
+#due-kind-box .seg { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+#due-kind-box .seg span { white-space: normal; text-align: center; line-height: 1.2; padding: 4px; }
