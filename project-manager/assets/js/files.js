@@ -71,7 +71,8 @@ const Files = (() => {
 
         $('#file-dlg form').addEventListener('submit', e => { e.preventDefault(); saveFile(); });
         // סגירה: עוצרים ציור של עמודים וסרטון שרץ
-        $('#file-dlg').addEventListener('close', () => { previewToken++; $('#file-preview').innerHTML = ''; });
+        $('#file-dlg').addEventListener('close', () => { stopPreview?.(); stopPreview = null; $('#file-preview').innerHTML = ''; });
+        $('#file-open').addEventListener('click', () => Viewer.open(current));
         $('#add-link').addEventListener('click', addLink);
         $('#file-links').addEventListener('click', e => { const b = e.target.closest('[data-unlink]'); if (b) unlink(Number(b.dataset.unlink)); });
         $('#file-delete').addEventListener('click', deleteFile);
@@ -326,8 +327,8 @@ const Files = (() => {
         }
         if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
             // העמוד הראשון — בדפדפן (pdf.js), כדי שברשימה יופיע המסמך עצמו ולא אייקון
-            const doc = await Promise.race([pdfDoc(await file.arrayBuffer()), new Promise((_, bad) => setTimeout(() => bad(new Error('timeout')), 10000))]);
-            return shrink(await drawPage(await doc.getPage(1), 320));
+            const doc = await Promise.race([Viewer.pdfDoc(await file.arrayBuffer()), new Promise((_, bad) => setTimeout(() => bad(new Error('timeout')), 10000))]);
+            return Viewer.shrink(await Viewer.drawPage(await doc.getPage(1), 320));
         }
         if (file.type.startsWith('video/')) {
             const url = URL.createObjectURL(file);
@@ -354,7 +355,6 @@ const Files = (() => {
         $('#file-dlg-title').textContent = f.name;
         const url = fileUrl(f.id);
         preview(f);
-        $('#file-open').href = url;
         $('#file-meta').textContent = [fmtSize(f.size), t('הועלה {date}', { date: new Date(f.created_at).toLocaleString(I18n.locale(), { dateStyle: 'short', timeStyle: 'short' }) }),
             f.uploader ? t('על ידי {name}', { name: f.uploader }) : ''].filter(Boolean).join(' · ');
         el.name.value = f.name;
@@ -370,191 +370,22 @@ const Files = (() => {
         dlg.showModal();
     }
 
-    // ================= תצוגה: תמונה, סרטון, עמודי PDF =================
+    // ================= תצוגה: תמונה, סרטון, PDF — בתוך האפליקציה (viewer.js) =================
 
-    let pdfLib = null, previewToken = 0;
-    /** pdf.js (assets/vendor/pdfjs) — נטען רק כשצריך: בחלון של PDF, ובהעלאת PDF (תמונה ממוזערת). */
-    function pdfjs() {
-        return pdfLib ||= new Promise((ok, bad) => {
-            const sc = document.createElement('script');
-            sc.src = 'assets/vendor/pdfjs/pdf.min.js?v=3.11.174';
-            sc.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'assets/vendor/pdfjs/pdf.worker.min.js?v=3.11.174'; ok(window.pdfjsLib); };
-            sc.onerror = () => { pdfLib = null; bad(new Error('pdf.js')); };
-            document.head.appendChild(sc);
-        });
-    }
-
-    async function pdfDoc(src) {
-        const lib = await pdfjs();
-        return lib.getDocument(src instanceof ArrayBuffer ? { data: src } : { url: src, withCredentials: true }).promise;
-    }
-
-    /** עמוד לקנבס ברוחב width (פיקסלים של CSS), חד גם במסך צפוף. */
-    async function drawPage(page, width) {
-        const base = page.getViewport({ scale: 1 }), dpr = Math.min(2, window.devicePixelRatio || 1);
-        const vp = page.getViewport({ scale: (width / base.width) * dpr });
-        const c = document.createElement('canvas');
-        c.width = Math.round(vp.width); c.height = Math.round(vp.height);
-        await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
-        return c;
-    }
-
+    let stopPreview = null;
     function preview(f) {
-        const box = $('#file-preview'), url = fileUrl(f.id), token = ++previewToken;
+        const box = $('#file-preview');
+        stopPreview?.(); stopPreview = null;
         box.className = 'fv';
-        if (f.mime.startsWith('image/')) {
-            box.innerHTML = `<button type="button" class="fv-img" aria-label="${esc(t('תצוגה במסך מלא'))}"><img src="${url}" alt="${esc(f.name)}"></button>`;
-            $('.fv-img', box).addEventListener('click', () => Lightbox.open([{ id: f.id, name: f.name }], 0, id => fileUrl(id)));
-        } else if (f.mime.startsWith('video/')) {
-            box.innerHTML = `<video src="${url}" controls preload="metadata" playsinline></video>`;
-        } else if (f.mime === 'application/pdf') {
+        if (Viewer.isPdf(f) || f.mime.startsWith('image/')) {
             box.classList.add('fv-pdf');
-            box.innerHTML = `<div class="pdfv" id="pdfv">
-                <div class="pdfv-bar" role="toolbar" aria-label="${esc(t('צפייה במסמך'))}">
-                    <button type="button" class="icon-btn" data-pv="prev" aria-label="${esc(t('העמוד הקודם'))}"><span aria-hidden="true">‹</span></button>
-                    <span class="pv-page" id="pv-page" aria-live="polite"></span>
-                    <button type="button" class="icon-btn" data-pv="next" aria-label="${esc(t('העמוד הבא'))}"><span aria-hidden="true">›</span></button>
-                    <span class="pv-sp"></span>
-                    <button type="button" class="icon-btn" data-pv="out" aria-label="${esc(t('הקטנה'))}">−</button>
-                    <button type="button" class="pv-zoom" data-pv="fit" id="pv-zoom" title="${esc(t('התאמה לרוחב'))}">100%</button>
-                    <button type="button" class="icon-btn" data-pv="in" aria-label="${esc(t('הגדלה'))}">+</button>
-                    <button type="button" class="icon-btn" data-pv="full" aria-label="${esc(t('מסך מלא'))}" aria-pressed="false">⛶</button>
-                </div>
-                <div class="pdfv-stage" id="pv-stage" tabindex="0" aria-label="${esc(t('עמודי המסמך'))}">
-                    ${f.has_thumb ? `<img class="pdf-ph" src="${fileUrl(f.id, '&thumb=1')}" alt="">` : ''}<span class="pdf-wait">${esc(t('טוען את המסמך…'))}</span>
-                    <canvas id="pv-canvas" hidden></canvas>
-                </div></div>`;
-            renderPdf(f, token).catch(() => {
-                if (token !== previewToken) return;
-                box.innerHTML = `<a class="btn ghost" href="${url}" target="_blank" rel="noopener">📄 ${esc(t('פתיחת ה-PDF'))}</a>`;
-            });
+            // PDF בלי תמונה ממוזערת (הועלה לפני שהיה ציור בדפדפן) — מהעמוד הראשון, כדי שיופיע ברשימה
+            stopPreview = Viewer.mount(box, f, { onThumb: !f.has_thumb && Viewer.isPdf(f) ? c => api('file-thumb', { body: { id: f.id, thumb: Viewer.shrink(c) } }).catch(() => {}) : null });
+        } else if (f.mime.startsWith('video/')) {
+            box.innerHTML = `<video src="${fileUrl(f.id)}" controls preload="metadata" playsinline></video>`;
         } else {
             box.innerHTML = `<span class="ficon big" aria-hidden="true">${TYPE_ICON[f.type] || '📄'}</span>`;
         }
-    }
-
-    /**
-     * צפייה ב-PDF: קנבס אחד — עמוד אחד בכל פעם, עם הקודם / הבא, הגדלה / הקטנה (גם בצביטה), התאמה לרוחב
-     * ומסך מלא. בהגדלה גוללים בתוך העמוד; בלי הגדלה — החלקה לצדדים מחליפה עמוד. לחיצה כפולה — x2.5 / חזרה.
-     */
-    async function renderPdf(f, token) {
-        const doc = await pdfDoc(fileUrl(f.id));
-        if (token !== previewToken) return;
-        const root = $('#pdfv'), stage = $('#pv-stage'), cv = $('#pv-canvas'), n = doc.numPages;
-        const st = { i: 1, zoom: 1, task: null, busy: null };
-        const live = () => token === previewToken;
-
-        async function draw(keepCenter = false) {
-            const page = await doc.getPage(st.i);
-            if (!live()) return;
-            const base = page.getViewport({ scale: 1 });
-            // החלון עוד לא נפתח / נמדד — מחכים שיהיה לו רוחב
-            for (let k = 0; k < 20 && stage.clientWidth < 50; k++) await new Promise(r => requestAnimationFrame(r));
-            const fit = Math.max(120, stage.clientWidth - 16) / base.width;
-            const css = fit * st.zoom;
-            // צפיפות המסך — אבל בלי קנבס ענק (זיכרון בטלפון): עד ~16 מיליון פיקסלים
-            let dpr = Math.min(2, window.devicePixelRatio || 1);
-            const px = base.width * css * base.height * css;
-            if (px * dpr * dpr > 16e6) dpr = Math.max(1, Math.sqrt(16e6 / px));
-            const vp = page.getViewport({ scale: css * dpr });
-            // הבמה ב-LTR (pdfv-stage), כדי שחשבון הגלילה יהיה פשוט גם בעברית; בלי מרכז קודם — מרכז העמוד
-            const cx = keepCenter && stage.scrollWidth > stage.clientWidth ? (stage.scrollLeft + stage.clientWidth / 2) / stage.scrollWidth : 0.5;
-            const cy = keepCenter ? (stage.scrollTop + stage.clientHeight / 2) / Math.max(1, stage.scrollHeight) : 0;
-            st.task?.cancel();
-            const off = document.createElement('canvas');
-            off.width = Math.round(vp.width); off.height = Math.round(vp.height);
-            st.task = page.render({ canvasContext: off.getContext('2d'), viewport: vp });
-            try { await st.task.promise; } catch { return; } // בוטל — ציור חדש בדרך
-            if (!live()) return;
-            cv.width = off.width; cv.height = off.height;
-            cv.getContext('2d').drawImage(off, 0, 0);
-            cv.style.inlineSize = Math.round(base.width * css) + 'px';
-            cv.style.blockSize = Math.round(base.height * css) + 'px';
-            cv.style.transform = '';
-            cv.hidden = false;
-            $$('.pdf-wait, .pdf-ph', stage).forEach(x => x.remove());
-            stage.classList.toggle('zoomed', st.zoom > 1.01);
-            stage.scrollLeft = cx * stage.scrollWidth - stage.clientWidth / 2;
-            stage.scrollTop = keepCenter ? cy * stage.scrollHeight - stage.clientHeight / 2 : 0;
-            $('#pv-page').textContent = t('עמוד {i} מתוך {n}', { i: st.i, n });
-            $('#pv-zoom').textContent = Math.round(st.zoom * 100) + '%';
-            $('[data-pv=prev]', root).disabled = st.i <= 1;
-            $('[data-pv=next]', root).disabled = st.i >= n;
-            // PDF בלי תמונה ממוזערת (הועלה לפני שהיה ציור בדפדפן) — מהעמוד הראשון, כדי שיופיע ברשימה
-            if (!f.has_thumb && st.i === 1) { f.has_thumb = true; api('file-thumb', { body: { id: f.id, thumb: shrink(cv) } }).catch(() => {}); }
-        }
-        const go = d => { const i = Math.min(n, Math.max(1, st.i + d)); if (i !== st.i) { st.i = i; draw(); } };
-        const zoomTo = z => { z = Math.min(5, Math.max(0.5, z)); if (Math.abs(z - st.zoom) > 0.001) { st.zoom = z; draw(true); } };
-
-        root.addEventListener('click', e => {
-            const b = e.target.closest('[data-pv]');
-            if (!b) return;
-            const k = b.dataset.pv;
-            if (k === 'prev') go(-1);
-            else if (k === 'next') go(1);
-            else if (k === 'in') zoomTo(st.zoom * 1.25);
-            else if (k === 'out') zoomTo(st.zoom / 1.25);
-            else if (k === 'fit') zoomTo(1);
-            else if (k === 'full') {
-                const on = root.classList.toggle('full');
-                b.setAttribute('aria-pressed', String(on));
-                b.textContent = on ? '✕' : '⛶';
-                b.setAttribute('aria-label', on ? t('יציאה ממסך מלא') : t('מסך מלא'));
-                draw();
-            }
-        });
-        stage.addEventListener('keydown', e => {
-            const rtl = document.documentElement.dir !== 'ltr';
-            if (e.key === 'ArrowLeft' && st.zoom <= 1.01) go(rtl ? 1 : -1);
-            else if (e.key === 'ArrowRight' && st.zoom <= 1.01) go(rtl ? -1 : 1);
-            else if (e.key === 'PageDown') go(1);
-            else if (e.key === 'PageUp') go(-1);
-            else if (e.key === '+' || e.key === '=') zoomTo(st.zoom * 1.25);
-            else if (e.key === '-') zoomTo(st.zoom / 1.25);
-            else return;
-            e.preventDefault();
-        });
-        // מגע: צביטה — הגדלה (תצוגה מיידית ב-CSS, ציור חד בסוף); החלקה בלי הגדלה — עמוד; לחיצה כפולה — זום
-        let pinch = null, swipe = null, lastTap = 0;
-        const dist = tt => Math.hypot(tt[0].clientX - tt[1].clientX, tt[0].clientY - tt[1].clientY);
-        stage.addEventListener('touchstart', e => {
-            if (e.touches.length === 2) { pinch = { d: dist(e.touches), z: st.zoom, r: 1 }; swipe = null; }
-            else if (e.touches.length === 1) swipe = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
-        }, { passive: true });
-        stage.addEventListener('touchmove', e => {
-            if (!pinch || e.touches.length !== 2) return;
-            e.preventDefault();
-            pinch.r = Math.min(5 / pinch.z, Math.max(0.5 / pinch.z, dist(e.touches) / pinch.d));
-            cv.style.transformOrigin = 'center top';
-            cv.style.transform = `scale(${pinch.r})`;
-        }, { passive: false });
-        stage.addEventListener('touchend', e => {
-            if (pinch && e.touches.length < 2) { const z = pinch.z * pinch.r; pinch = null; zoomTo(z); if (Math.abs(z - st.zoom) <= 0.001) cv.style.transform = ''; return; }
-            if (!swipe || e.touches.length) return;
-            const tch = e.changedTouches[0], dx = tch.clientX - swipe.x, dy = tch.clientY - swipe.y, quick = Date.now() - swipe.t < 300;
-            swipe = null;
-            if (quick && Math.abs(dx) < 10 && Math.abs(dy) < 10) {
-                if (Date.now() - lastTap < 300) { zoomTo(st.zoom > 1.01 ? 1 : 2.5); lastTap = 0; } else lastTap = Date.now();
-                return;
-            }
-            if (st.zoom <= 1.01 && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-                const rtl = document.documentElement.dir !== 'ltr';
-                go((dx < 0) === rtl ? -1 : 1);
-            }
-        });
-        // גלגלת עם Ctrl (מחשב) — זום
-        stage.addEventListener('wheel', e => { if (!e.ctrlKey) return; e.preventDefault(); zoomTo(st.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1)); }, { passive: false });
-        await draw();
-    }
-
-    /** קנבס → תמונה ממוזערת (320px, JPEG) לרשימת הקבצים. */
-    function shrink(c) {
-        const k = Math.min(1, 320 / Math.max(c.width, c.height)), o = document.createElement('canvas');
-        o.width = Math.round(c.width * k); o.height = Math.round(c.height * k);
-        const g = o.getContext('2d');
-        g.fillStyle = '#fff'; g.fillRect(0, 0, o.width, o.height);
-        g.drawImage(c, 0, 0, o.width, o.height);
-        return o.toDataURL('image/jpeg', 0.75);
     }
 
     // ================= שימוש במערכת ושיוך =================
@@ -563,8 +394,15 @@ const Files = (() => {
 
     function renderUses() {
         const uses = current.uses || [];
-        $('#file-uses').innerHTML = uses.map((u, i) => `<button type="button" class="chip" data-use="${i}">${esc(useLabel(u))} ‹</button>`).join('')
-            || `<span class="hint">${esc(RECORD_TYPES.includes(current.type) ? t('הקובץ עוד לא משויך — בחרו למטה למה הוא שייך.') : t('הקובץ לא משמש באף רשומה.'))}</span>`;
+        // משויך: שורה לכל רשומה (אייקון, מה, ספק · שלב) — לחיצה פותחת אותה. לא משויך: משפט אחד, והשיוך מתחת
+        $('#file-uses').innerHTML = uses.length ? `<ul class="use-list">${uses.map((u, i) => {
+            const [ic, l] = USE[u.kind] || ['📄', ''];
+            const sub = u.kind === 'quote' ? [u.supplier, t(u.text)] : u.kind === 'contract' ? [u.supplier, u.text] : [u.text, u.supplier];
+            return `<li><button type="button" class="use-row" data-use="${i}"><span class="use-ic" aria-hidden="true">${ic}</span>
+                <span class="use-tx"><b>${esc(t(l))}</b><small>${esc(sub.filter(Boolean).join(' · '))}</small></span><span class="use-go" aria-hidden="true">‹</span></button></li>`;
+        }).join('')}</ul>`
+            : `<p class="use-empty${RECORD_TYPES.includes(current.type) ? ' warn' : ''}">${esc(RECORD_TYPES.includes(current.type) ? t('הקובץ עוד לא משויך — בחרו למטה למה הוא שייך.') : t('הקובץ לא משמש באף רשומה.'))}</p>`;
+        $('#file-attach-title').textContent = uses.length ? t('שיוך נוסף') : t('לשייך את הקובץ ל…');
         $('#file-attach').hidden = true;
         attachButtons();
     }
@@ -574,6 +412,8 @@ const Files = (() => {
         const type = $('#file-dlg [name=type]').value, open = ['other', 'photo'].includes(type);
         $('#file-quote').hidden = !(open || type === 'quote');
         for (const b of $$('#file-attach-btns [data-attach]')) b.hidden = !(open || type === b.dataset.attach);
+        // אריח אחד — לכל הרוחב
+        $('#file-attach-btns').classList.toggle('one', $$('#file-attach-btns .tile:not([hidden])').length === 1);
     }
 
     /** מהקובץ לרשומה: ההצעה, החוזה, אבן הדרך, התוספת, ההוצאה, הדיווח. */

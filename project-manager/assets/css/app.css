@@ -943,11 +943,42 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .fv-acts { display: flex; gap: 4px; flex: none; }
 .fv-acts .icon-btn { text-decoration: none; }
 .file-uses .sec-title, .file-sheet > .sec-title { margin: 0 0 6px; }
-#file-attach-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-#file-attach-btns .chip { cursor: pointer; }
-#file-attach-btns .chip[hidden] { display: none; }
+/* שימוש במערכת: רשומות כשורות, שיוך כאריחים */
+.use-list { list-style: none; margin: 0; padding: 0; display: grid; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--surface); }
+.use-list li + li { border-top: 1px solid var(--line); }
+.use-row { display: flex; align-items: center; gap: var(--s2); inline-size: 100%; padding: 10px var(--s3); background: none; border: 0; font: inherit; color: inherit; text-align: start; cursor: pointer; min-block-size: 52px; }
+.use-row:hover, .use-row:focus-visible { background: var(--bg); }
+.use-ic { flex: none; inline-size: 36px; block-size: 36px; display: grid; place-items: center; border-radius: 10px; background: var(--brand-soft); font-size: 1.1rem; }
+.use-tx { flex: 1; min-inline-size: 0; display: grid; }
+.use-tx b { font-size: .92rem; }
+.use-tx small { color: var(--muted); font-size: .78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.use-go { color: var(--muted); font-size: 1.2rem; }
+.use-empty { margin: 0; padding: 10px var(--s3); border-radius: var(--r); background: var(--bg); color: var(--muted); font-size: .85rem; }
+.use-empty.warn { background: color-mix(in srgb, var(--star) 12%, var(--surface)); color: var(--ink); }
+.attach-title { margin: var(--s3) 0 6px; font-size: .8rem; color: var(--muted); }
+.attach-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); }
+.attach-grid.one { grid-template-columns: minmax(0, 1fr); }
+.attach-grid .tile { display: flex; align-items: center; gap: var(--s2); padding: 10px var(--s2); min-block-size: 52px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); font: inherit; font-size: .85rem; color: inherit; text-align: start; cursor: pointer; }
+.attach-grid .tile:hover, .attach-grid .tile:focus-visible { border-color: var(--brand); background: var(--brand-soft); }
+.attach-grid .tile[hidden] { display: none; }
+.tile-ic { flex: none; font-size: 1.25rem; }
 .fd-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .fd-grid .wide { grid-column: 1 / -1; }
 .fd-more { border-top: 1px solid var(--line); padding-top: var(--s2); }
 .fd-more summary { cursor: pointer; color: var(--brand); min-block-size: 36px; display: flex; align-items: center; }
 .fd-more[open] { display: grid; gap: var(--s2); }
+
+/* ===== צפייה במסך מלא בתוך האפליקציה (viewer.js — Viewer.open) ===== */
+#viewer-dlg { inline-size: 100vw; max-inline-size: 100vw; block-size: var(--vvh, 100dvh); max-block-size: none; margin: 0; inset: 0; padding: 0; border: 0; border-radius: 0;
+    background: #e9ecf1; color: var(--ink); touch-action: pan-x pan-y; }
+#viewer-dlg[open] { display: flex; flex-direction: column; }
+#viewer-dlg::backdrop { background: rgb(0 0 0 / .6); }
+.viewer-head { display: flex; align-items: center; gap: var(--s2); padding: calc(4px + env(safe-area-inset-top)) var(--s2) 4px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.viewer-head h2 { flex: 1; min-inline-size: 0; margin: 0; font-size: .95rem; }
+.viewer-head .icon-btn { text-decoration: none; }
+.viewer-body { flex: 1; min-block-size: 0; display: flex; flex-direction: column; }
+.viewer-body video { inline-size: 100%; max-block-size: 100%; margin: auto; background: #000; }
+.viewer-body .pdfv { flex: 1; min-block-size: 0; }
+.pdfv.in-full .pdfv-stage { flex: 1; max-block-size: none; min-block-size: 0; }
+.viewer-none { margin: auto; display: grid; justify-items: center; gap: var(--s2); padding: var(--s4); text-align: center; }
+.fv-fail { padding: var(--s3); text-align: center; }
