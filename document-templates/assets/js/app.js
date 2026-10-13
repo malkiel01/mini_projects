@@ -189,7 +189,9 @@
           el('strong', {}, t.name),
           el('span', { class: 'muted small' }, `${SOURCE[t.source] || t.source} · ${t.pages} דפים · ${t.fields} שדות · גרסה ${t.version}`)),
         el('div', { class: 'ops' },
+          t.archived || !t.fields ? null : el('button', { class: 'small primary', onclick: () => issue(t) }, 'הנפקת מסמך'),
           el('a', { class: 'btn small', href: '#tpl=' + t.id }, 'עריכה'),
+          t.used ? el('a', { class: 'btn small', href: '#docs?template=' + t.id }, 'מסמכים') : null,
           el('button', { class: 'small', onclick: () => archive(t) }, t.archived ? 'שחזור' : 'ארכיון'),
           t.used ? null : el('button', { class: 'small danger', onclick: () => remove(t) }, 'מחיקה')))));
     }
@@ -201,6 +203,11 @@
       } catch (e) {
         msg.replaceChildren(notice(e.message, 'bad'));
       }
+    }
+
+    async function issue(t) {
+      try { await window.DTDocs.issue(t.id); }
+      catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
     }
 
     async function archive(t) {
@@ -339,7 +346,8 @@
     }
     lastHash = location.hash;
     const h = location.hash.slice(1);
-    const [key, val] = h.split('=');
+    const key = h.split(/[=?]/)[0];
+    const val = h.includes('=') ? h.slice(h.indexOf('=') + 1) : '';
     if (key === 'verify' && val) return viewVerify(val);
     if (key === 'reset' && val) return viewReset(val);
     if (!me) {
@@ -349,6 +357,8 @@
     }
     if (key === 'dev' && me.is_developer) return viewDev();
     if (key === 'tpl' && val) return window.DTEditor.open(Number(val));
+    if (key === 'docs') return window.DTDocs.list();
+    if (key === 'doc' && val) return window.DTDocs.open(Number(val));
     return viewHome();
   }
 
@@ -377,7 +387,7 @@
 
   // לעורך (editor.js): אותם עזרים, אותה מעטפת.
   window.DT = {
-    api, el, notice,
+    api, el, notice, setTab,
     show: (...n) => show(...n),
     setLeaveGuard: (fn) => { leaveGuard = fn; },
     wide: () => document.body.classList.add('wide'),

@@ -8,7 +8,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/lib/templates.php';
+require_once __DIR__ . '/lib/documents.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -39,7 +39,8 @@ $session = null;
 // פעולות שלא דורשות כניסה.
 $PUBLIC = ['health', 'register', 'verify', 'login', 'forgot', 'reset', 'me'];
 $POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'dev_user',
-           'tpl_create', 'tpl_save', 'tpl_archive', 'tpl_delete'];
+           'tpl_create', 'tpl_save', 'tpl_archive', 'tpl_delete',
+           'doc_create', 'doc_save', 'doc_complete', 'doc_archive', 'doc_delete', 'doc_downloaded'];
 
 try {
     if (in_array($action, $POSTS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -59,7 +60,7 @@ try {
         'health' => (function () {
             $probe = 'בדיקה';
             db();
-            return ['ok' => true, 'stage' => 3, 'php' => PHP_VERSION, 'sqlite' => true,
+            return ['ok' => true, 'stage' => 4, 'php' => PHP_VERSION, 'sqlite' => true,
                 'crypto' => unseal(seal($probe)) === $probe,
                 'mail' => function_exists('mail'), 'zip' => class_exists('ZipArchive'),
                 'finfo' => class_exists('finfo'),
@@ -81,6 +82,15 @@ try {
         'tpl_save'    => tpl_save($session, $body),
         'tpl_archive' => tpl_archive($session, $body),
         'tpl_delete'  => tpl_delete($session, $body),
+        'doc_list'       => doc_list($session, $_GET),
+        'doc_get'        => doc_get($session, (int)($_GET['id'] ?? 0)),
+        'doc_asset'      => doc_asset($session, (int)($_GET['id'] ?? 0)),
+        'doc_create'     => doc_create($session, $body),
+        'doc_save'       => doc_save($session, $body),
+        'doc_complete'   => doc_complete($session, $body),
+        'doc_archive'    => doc_archive($session, $body),
+        'doc_delete'     => doc_delete($session, $body),
+        'doc_downloaded' => doc_downloaded($session, $body),
         'dev_users' => dev_users(),
         'dev_user'  => dev_user_action($body, $session),
         default     => throw new ApiError('פעולה לא מוכרת', 404),

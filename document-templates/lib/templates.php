@@ -133,6 +133,7 @@ function tpl_get(array $user, int $id): array
     return ['ok' => true, 'template' => tpl_summary($t) + [
         'mime' => $a['mime'],
         'schema' => json_decode((string)unseal($t['schema_enc']), true),
+        'numbering' => json_decode((string)$t['numbering_json'], true),
     ]];
 }
 
@@ -204,6 +205,11 @@ function tpl_save(array $user, array $b): array
     $pdo = db();
     $pdo->beginTransaction();
     try {
+        if (array_key_exists('numbering', $b)) {
+            require_once __DIR__ . '/documents.php';
+            $pdo->prepare('UPDATE templates SET numbering_json = ? WHERE id = ?')
+                ->execute([json_encode(clean_numbering($b['numbering']), JSON_UNESCAPED_UNICODE), $t['id']]);
+        }
         if (array_key_exists('name', $b)) {
             $pdo->prepare('UPDATE templates SET name_enc = ? WHERE id = ?')->execute([seal(valid_tpl_name($b['name'])), $t['id']]);
         }

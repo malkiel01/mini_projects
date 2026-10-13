@@ -35,6 +35,41 @@
     return pdfReady;
   }
 
+  /**
+   * מצייר את קובץ הרקע (PDF או תמונה) ומחזיר לכל דף: אלמנט להצגה, ורוחב/גובה
+   * בנקודות PDF. משמש גם את העורך וגם את מסך המסמך.
+   */
+  async function renderBackground(url, mime) {
+    const res = await fetch(url, { credentials: 'same-origin' });
+    if (!res.ok) throw new Error('טעינת הקובץ נכשלה');
+    const buf = await res.arrayBuffer();
+    const out = [];
+    if (mime === 'application/pdf') {
+      await loadPdfJs();
+      const pdf = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise;
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const vp1 = page.getViewport({ scale: 1 });
+        const canvas = document.createElement('canvas');
+        // רזולוציה לפי רוחב תצוגה של עד ~1000px, כפול צפיפות המסך.
+        const scale = Math.min(3, (1000 / vp1.width) * (window.devicePixelRatio || 1));
+        const vp = page.getViewport({ scale });
+        canvas.width = Math.round(vp.width);
+        canvas.height = Math.round(vp.height);
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+        out.push({ visual: canvas, w: vp1.width, h: vp1.height });
+      }
+    } else {
+      const img = new Image();
+      img.src = URL.createObjectURL(new Blob([buf], { type: mime }));
+      await img.decode();
+      // תמונה: "נקודות" לפי רוחב A4 (595), כדי שגדלי השדות ייראו סבירים.
+      out.push({ visual: img, w: 595, h: 595 * img.naturalHeight / img.naturalWidth });
+    }
+    out.bytes = buf;
+    return out;
+  }
+
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const uid = () => 'f' + Math.random().toString(36).slice(2, 9);
 
@@ -91,32 +126,8 @@
     // ── רקע ──
     const pageEls = [];
     try {
-      const res = await fetch('api.php?action=tpl_asset&id=' + id, { credentials: 'same-origin' });
-      if (!res.ok) throw new Error('טעינת הקובץ נכשלה');
-      const buf = await res.arrayBuffer();
-      if (tpl.mime === 'application/pdf') {
-        await loadPdfJs();
-        const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          const vp1 = page.getViewport({ scale: 1 });
-          const canvas = document.createElement('canvas');
-          // רזולוציה לפי רוחב תצוגה של עד ~1000px, כפול צפיפות המסך.
-          const scale = Math.min(3, (1000 / vp1.width) * (window.devicePixelRatio || 1));
-          const vp = page.getViewport({ scale });
-          canvas.width = Math.round(vp.width);
-          canvas.height = Math.round(vp.height);
-          await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
-          addPage(canvas, vp1.width, vp1.height, i - 1);
-        }
-      } else {
-        const url = URL.createObjectURL(new Blob([buf], { type: tpl.mime }));
-        const img = new Image();
-        img.src = url;
-        await img.decode();
-        // תמונה: גודל "נקודות" לפי רוחב A4 (595), כדי שגדלי השדות ייראו סבירים.
-        addPage(img, 595, 595 * img.naturalHeight / img.naturalWidth, 0);
-      }
+      const pages = await renderBackground('api.php?action=tpl_asset&id=' + id, tpl.mime);
+      pages.forEach((pg, i) => addPage(pg.visual, pg.w, pg.h, i));
     } catch (e) {
       msg.replaceChildren(notice(e.message, 'bad'));
       return;
@@ -280,7 +291,8 @@
                   TYPES[f.type].icon + ' ' + f.label),
                 el('span', { class: 'muted small' }, ' · דף ' + (f.page + 1) + (f.required ? ' · חובה' : '')))))
             : el('p', { class: 'muted small' }, 'בחרו סוג שדה למעלה, ואז לחצו על המקום בדף.'),
-          el('p', { class: 'muted small' }, 'גרירה מזיזה; הפינה התחתונה משנה גודל; חצים במקלדת — הזזה עדינה; Delete — מחיקה.'));
+          el('p', { class: 'muted small' }, 'גרירה מזיזה; הפינה התחתונה משנה גודל; חצים במקלדת — הזזה עדינה; Delete — מחיקה.'),
+          numberingPanel());
         return;
       }
       const f = selected;
@@ -318,6 +330,46 @@
           el('button', { class: 'small danger', onclick: () => removeField(f) }, 'מחיקה')));
     }
 
+    // מספור המסמכים שיונפקו מהתבנית.
+    const numbering = Object.assign({ scheme: 'prefix_year_seq', prefix: '', digits: 4, pattern: '{prefix}-{yyyy}-{seq}' },
+      tpl.numbering || {});
+    let numberingDirty = false;
+    const SCHEMES = {
+      prefix_year_seq: 'קידומת-שנה-רץ', seq: 'מספר רץ', year_month_seq: 'שנה/חודש-רץ',
+      yearly: 'שנה-רץ, מתאפס כל שנה', pattern: 'תבנית חופשית', none: 'בלי מספור',
+    };
+    function numberingPreview() {
+      const y = new Date().getFullYear(), m = String(new Date().getMonth() + 1).padStart(2, '0');
+      const seq = '1'.padStart(numbering.digits, '0');
+      const j = (...p) => p.filter(Boolean).join('-');
+      return {
+        prefix_year_seq: j(numbering.prefix, y, seq), seq: j(numbering.prefix, seq),
+        year_month_seq: j(numbering.prefix, `${y}/${m}`) + '-001', yearly: j(numbering.prefix, y, seq),
+        pattern: numbering.pattern.replace('{prefix}', numbering.prefix).replace('{yyyy}', y).replace('{mm}', m).replace('{seq}', seq),
+        none: '—',
+      }[numbering.scheme];
+    }
+    function numberingPanel() {
+      const preview = el('strong', { dir: 'ltr' }, numberingPreview());
+      const upd = (k, v) => { numbering[k] = v; numberingDirty = true; setDirty(true); preview.textContent = numberingPreview(); };
+      const sel = el('select', {}, Object.entries(SCHEMES).map(([v, t]) => el('option', { value: v, selected: numbering.scheme === v }, t)));
+      sel.addEventListener('change', () => { upd('scheme', sel.value); renderPanel(); });
+      const pre = el('input', { value: numbering.prefix, maxlength: 20, placeholder: 'למשל: שכ' });
+      pre.addEventListener('input', () => upd('prefix', pre.value));
+      const dig = el('input', { type: 'number', min: 1, max: 8, value: numbering.digits });
+      dig.addEventListener('input', () => upd('digits', Math.max(1, Math.min(8, Number(dig.value) || 4))));
+      const pat = el('input', { value: numbering.pattern, dir: 'ltr', maxlength: 60 });
+      pat.addEventListener('input', () => upd('pattern', pat.value));
+      const none = numbering.scheme === 'none';
+      return el('div', { class: 'numbering' },
+        el('h2', {}, 'מספור מסמכים'),
+        el('label', {}, el('span', {}, 'שיטה'), sel),
+        none ? null : el('label', {}, el('span', {}, 'קידומת'), pre),
+        none ? null : el('label', {}, el('span', {}, 'ספרות במספר הרץ'), dig),
+        numbering.scheme === 'pattern' ? el('label', {}, el('span', {}, 'תבנית: {prefix} {yyyy} {mm} {seq}'), pat) : null,
+        el('p', { class: 'small' }, 'המסמך הבא יקבל: ', preview));
+    }
+
     function scrollTo(f) {
       pageEls[f.page].layer.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
@@ -329,7 +381,10 @@
       saveBtn.disabled = true;
       msg.replaceChildren();
       try {
-        const r = await api('tpl_save', { id, name: nameInput.value, schema });
+        const body = { id, name: nameInput.value, schema };
+        if (numberingDirty) body.numbering = numbering;
+        const r = await api('tpl_save', body);
+        numberingDirty = false;
         setDirty(false);
         if (r.version !== tpl.version) {
           msg.replaceChildren(notice(`נשמר כגרסה ${r.version}. מסמכים שכבר הונפקו נשארים על הגרסה הקודמת.`, 'ok'));
@@ -347,5 +402,5 @@
     renderPanel();
   }
 
-  window.DTEditor = { open };
+  window.DTEditor = { open, renderBackground, TYPES };
 })();
