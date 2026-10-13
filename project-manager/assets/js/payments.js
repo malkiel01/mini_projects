@@ -155,7 +155,8 @@ const Payments = (() => {
         $('#payer-box').hidden = !hasLawyer();
         $('#pay-lawyer-box').hidden = !hasLawyer();
         el.needs_lawyer.checked = !!p.needs_lawyer;
-        const locked = current && !['planned', 'requested'].includes(current.status);
+        const locked = current && !['planned', 'requested'].includes(current.status) && !Dev.on();
+        Dev.attach(dlg, 'payment', current?.id);
         [...form.elements].forEach(x => { if (x.name) x.disabled = !!locked; });
         $('button[type=submit]', form).hidden = !!locked;
         $('#payment-state').hidden = !current;
@@ -194,7 +195,7 @@ const Payments = (() => {
             } catch { /* בלי אחוז */ }
         }
         const value = supplierId ?? approvedQuote?.supplier_id ?? st?.supplier_id ?? null;
-        await Projects.fillSuppliers(el.supplier_id, st?.trade_id || 0, value, project.project.owner_id);
+        await Projects.fillSuppliers(el.supplier_id, st?.trade_id || 0, value, teamOf(project));
         el.supplier_id.options[0].textContent = t('בחירת ספק');
         $('#pay-mode-box').hidden = !approvedQuote;
         if (!approvedQuote) $('#payment-dlg [name=mode][value=amount]').checked = true;

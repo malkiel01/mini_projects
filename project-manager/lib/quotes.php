@@ -36,6 +36,9 @@ const PM_QUOTE_STATUSES = [
 // i18n-ok-end
 /** הצעות "חיות" — שעוד אפשר לבחור ביניהן. */
 const PM_QUOTE_LIVE = ['open', 'sent', 'client_approved'];
+// הצעה שהוחלט עליה — נעולה: מה שאושר או נדחה הוא עובדה שכבר קרתה. שינוי בהצעה שאושרה — "תוספת / חריגה"
+// (lib/changes.php) או ביטול והצעה חדשה; החלטה חדשה (הלקוח שינה את דעתו) — נרשמת לצד הקודמת.
+const PM_QUOTE_LOCKED = ['client_approved', 'approved', 'rejected', 'declined', 'cancelled'];
 
 function pm_quote_row(array $user, int $id): array
 {
@@ -129,17 +132,23 @@ function pm_quote_save(array $user, array $in, ?array $actor = null): array
     $actor ??= $user; // מהקישור של הספק: בציר הזמן בשם הספק
     $id = (int)($in['id'] ?? 0);
     $old = $id ? pm_quote_row($user, $id) : null;
-    if ($old && $old['status'] === 'cancelled') throw new PmError('ההצעה בוטלה — אי אפשר לערוך', 422);
+    $dev = pm_dev_mode($user); // סמכות מפתח: עריכה גם של הצעה נעולה
+    if ($old && $old['status'] === 'cancelled' && !$dev) throw new PmError('ההצעה בוטלה — אי אפשר לערוך', 422);
+    if ($old && !$dev && in_array($old['status'], PM_QUOTE_LOCKED, true)) {
+        throw new PmError(in_array($old['status'], ['approved', 'client_approved'], true)
+            ? 'הצעה שאושרה לא נערכת. שינוי במחיר או בהיקף — "± תוספת / חריגה" בלשונית הכספים'
+            : 'הצעה שנדחתה לא נערכת. הצעה חדשה — "+ הצעה"', 422);
+    }
     $stage = pm_stage_row($user, (int)($in['stage_id'] ?? ($old['stage_id'] ?? 0)));
     $projectId = (int)$stage['project_id'];
     if ($old && (int)$old['project_id'] !== $projectId) throw new PmError('אי אפשר להעביר הצעה לפרויקט אחר', 422);
     $p = pm_project_row($user, $projectId);
 
-    $fileId = (int)($in['file_id'] ?? 0) ?: null;
-    if ($fileId) {
-        $file = pm_file_row($user, $fileId);
-        if ((int)$file['project_id'] !== $projectId) throw new PmError('הקובץ לא שייך לפרויקט', 422);
-    }
+    // הטופס של ההצעה — חובה: הצעת מחיר היא מסמך, לא רק רישום
+    $fileId = (int)($in['file_id'] ?? ($old['file_id'] ?? 0)) ?: null;
+    if (!$fileId) throw new PmError('צריך לצרף את טופס הצעת המחיר (PDF או צילום)', 422);
+    $file = pm_file_row($user, $fileId);
+    if ((int)$file['project_id'] !== $projectId) throw new PmError('הקובץ לא שייך לפרויקט', 422);
     $f = [
         'stage_id'    => (int)$stage['id'],
         'supplier_id' => pm_owned_contact((int)($in['supplier_id'] ?? 0) ?: null, (int)$p['owner_id'], 'supplier', 'הספק') // i18n-ok
@@ -159,17 +168,19 @@ function pm_quote_save(array $user, array $in, ?array $actor = null): array
             // שינוי מהותי — גרסה חדשה. הצעה שכבר אושרה חוזרת ל"התקבלה", והשלב לאיסוף הצעות.
             $material = array_filter(['amount', 'valid_until', 'terms', 'file_id', 'supplier_id', 'stage_id'],
                 fn($k) => (string)$f[$k] !== (string)$old[$k]);
-            $version = (int)$old['version'] + ($material ? 1 : 0);
+            // סמכות מפתח: תיקון — באותה גרסה, והאישור נשאר
+            $version = (int)$old['version'] + ($material && !$dev ? 1 : 0);
             $status = $old['status'];
-            $reset = $material && in_array($status, ['sent', 'client_approved', 'approved', 'rejected', 'declined'], true);
+            $reset = $material && !$dev && in_array($status, ['sent', 'client_approved', 'approved', 'rejected', 'declined'], true);
             if ($reset) $status = 'open';
             $set = implode(', ', array_map(fn($k) => "$k = ?", array_keys($f)));
             $db->prepare("UPDATE quotes SET $set, version = ?, status = ?, updated_at = ? WHERE id = ?")
                ->execute(array_merge(array_values($f), [$version, $status, $now, $id]));
             if ($material) {
                 $what = ['amount' => 'סכום', 'valid_until' => 'תוקף', 'terms' => 'תנאים', 'file_id' => 'קובץ', 'supplier_id' => 'ספק', 'stage_id' => 'שלב']; // i18n-ok
-                $text = $reset ? 'הצעה עודכנה: {supplier}, {stage} — {fields}{amounts}. האישור הקודם לא חל על הגרסה החדשה' // i18n-ok
-                               : 'הצעה עודכנה: {supplier}, {stage} — {fields}{amounts}'; // i18n-ok
+                $text = $dev ? '🛠️ תוקן בסמכות מפתח: {supplier}, {stage} — {fields}{amounts}' // i18n-ok
+                    : ($reset ? 'הצעה עודכנה: {supplier}, {stage} — {fields}{amounts}. האישור הקודם לא חל על הגרסה החדשה' // i18n-ok
+                               : 'הצעה עודכנה: {supplier}, {stage} — {fields}{amounts}'); // i18n-ok
                 pm_event($actor, $projectId, 'quote', $text, ['quote' => $id, 'version' => $version, 'changed' => array_values($material)], [
                     'supplier' => $supplier, 'stage' => $stage['name'],
                     'fields'   => implode(', ', array_map(fn($k) => $what[$k], $material)),
@@ -221,6 +232,23 @@ function pm_quote_file_home(int $projectId, int $fileId, int $supplierId): void
 }
 
 /** ההצעה המומלצת — אחת לשלב. מה שהלקוח יראה מודגש בראש. */
+/**
+ * השלמת הטופס של הצעה שאין לה (נוצרה לפני שהטופס היה חובה) — גם כשהיא נעולה: רק כשאין קובץ, ובלי
+ * לגעת בשום דבר אחר. החלפת טופס קיים — לא.
+ */
+function pm_quote_attach(array $user, int $id, int $fileId): array
+{
+    $q = pm_quote_row($user, $id);
+    if ($q['file_id']) throw new PmError('להצעה כבר יש טופס — אי אפשר להחליף אותו', 422);
+    $file = pm_file_row($user, $fileId);
+    if ((int)$file['project_id'] !== (int)$q['project_id']) throw new PmError('הקובץ לא שייך לפרויקט', 422);
+    pm_db()->prepare('UPDATE quotes SET file_id = ?, updated_at = ? WHERE id = ?')->execute([$fileId, pm_now(), $id]);
+    pm_quote_file_home((int)$q['project_id'], $fileId, (int)$q['supplier_id']);
+    pm_event($user, (int)$q['project_id'], 'quote', 'צורף טופס להצעה: {supplier} — {amount}', ['quote' => $id, 'file' => $fileId],
+        ['supplier' => pm_contact_name((int)$q['supplier_id']), 'amount' => pm_money((int)$q['amount'])]);
+    return pm_quotes($user, (int)$q['project_id']);
+}
+
 function pm_quote_recommend(array $user, int $id, bool $on): array
 {
     $q = pm_quote_row($user, $id);

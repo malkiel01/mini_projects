@@ -162,7 +162,7 @@ function pm_payment_save(array $user, array $in, ?array $actor = null): array
     $actor ??= $user;
     $id = (int)($in['id'] ?? 0);
     $old = $id ? pm_payment_row($user, $id) : null;
-    if ($old && !in_array($old['status'], ['planned', 'requested'], true)) throw new PmError('כבר דווח תשלום — אי אפשר לשנות. אפשר לבטל וליצור חדשה', 422);
+    if ($old && !pm_dev_mode($user) && !in_array($old['status'], ['planned', 'requested'], true)) throw new PmError('כבר דווח תשלום — אי אפשר לשנות. אפשר לבטל וליצור חדשה', 422);
     $projectId = $old ? (int)$old['project_id'] : (int)($in['project_id'] ?? 0);
     $p = pm_project_row($user, $projectId);
 

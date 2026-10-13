@@ -318,7 +318,7 @@ function openSupplierDlg(mode, stageId) {
     $('#s-title-box').hidden = quote;
     $('#s-titles').innerHTML = [t('מקדמה'), t('תשלום ביניים'), t('תשלום סופי'), t('תוספת')].map(v => `<option value="${esc(v)}">`).join('');
     $('#s-valid-box').hidden = $('#s-terms-box').hidden = !quote;
-    $('#s-file-label').textContent = quote ? t('קובץ ההצעה (PDF או צילום)') : t('חשבון / פירוט (לא חובה)');
+    $('#s-file-label').textContent = quote ? t('טופס ההצעה (PDF או צילום) *') : t('חשבון / פירוט (לא חובה)');
     $('#s-go').textContent = quote ? t('שליחת ההצעה') : t('שליחת הבקשה');
     dlg.showModal();
 }
@@ -329,6 +329,7 @@ async function submitSupplier(e) {
     err.hidden = true;
     if (!el.amount.value.trim()) { err.textContent = t('סכום: שדה חובה'); err.hidden = false; return; }
     if (sMode === 'payreq' && !el.title.value.trim()) { err.textContent = t('על מה התשלום?'); err.hidden = false; return; }
+    if (sMode === 'quote' && !sFile) { err.textContent = t('צריך לצרף את טופס הצעת המחיר (PDF או צילום)'); err.hidden = false; return; }
     const btn = $('#s-go');
     btn.disabled = true;
     try {

@@ -281,7 +281,7 @@ function pm_ledger(array $user, array $in): array
         pm_project_row($user, $projectId);
         return ['supplier' => ['id' => $supplierId, 'name' => $sup['name']], 'projects' => [['id' => $projectId, 'name' => pm_project_name($projectId)] + pm_ledger_of($projectId, $supplierId)]];
     }
-    [$where, $args] = pm_owner_clause($user, 'p');
+    [$where, $args] = pm_project_clause($user, 'p');
     $st = pm_db()->prepare("SELECT p.id, p.name FROM projects p WHERE $where AND p.id IN (
         SELECT project_id FROM quotes WHERE supplier_id = ? AND status = 'approved' UNION SELECT project_id FROM payments WHERE supplier_id = ?) ORDER BY p.last_activity_at DESC");
     $st->execute(array_merge($args, [$supplierId, $supplierId]));

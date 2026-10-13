@@ -34,7 +34,16 @@ const Projects = (() => {
 
         // שלבים, צוות, פרטים
         $('#add-stage').addEventListener('click', () => openStage(null));
+        $('#edit-stages').addEventListener('click', () => { stEdit = !stEdit; renderStages(); });
         $('#stage-list').addEventListener('click', e => {
+            const b = e.target.closest('[data-st-up],[data-st-down],[data-st-del],[data-st-add]');
+            if (b) {
+                e.stopPropagation();
+                if (b.dataset.stAdd !== undefined) openStage(null, Number(b.dataset.stAdd));
+                else if (b.dataset.stDel) deleteStage(Number(b.dataset.stDel));
+                else moveStage(b.dataset.stUp ? -1 : 1, Number(b.dataset.stUp || b.dataset.stDown));
+                return;
+            }
             const row = e.target.closest('[data-stage]');
             if (row) openStage(Number(row.dataset.stage));
         });
@@ -43,6 +52,18 @@ const Projects = (() => {
             if (row && e.target === row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openStage(Number(row.dataset.stage)); }
         });
         $('#add-member').addEventListener('click', openMember);
+        $('#tl-filters').addEventListener('click', e => {
+            const b = e.target.closest('[data-tl]');
+            if (!b) return;
+            tlCat = b.dataset.tl;
+            try { sessionStorage.setItem('pm.tl', tlCat); } catch { /* מצב פרטי */ }
+            renderTimeline();
+        });
+        $('#partners').addEventListener('click', e => {
+            if (e.target.closest('#add-partner')) { addPartner(); return; }
+            const b = e.target.closest('[data-partner-remove]');
+            if (b) removePartner(Number(b.dataset.partnerRemove), b.dataset.name);
+        });
         $('#team-list').addEventListener('click', e => {
             const b = e.target.closest('[data-remove]');
             if (b) removeMember(Number(b.dataset.remove), b.dataset.name);
@@ -61,12 +82,13 @@ const Projects = (() => {
         });
         $('#project-status').addEventListener('change', e => setStatus(e.target.value));
         $('#details-form').addEventListener('submit', e => { e.preventDefault(); saveDetails(); });
+        $('#dev-purge-project').addEventListener('click', () => Dev.purge('project', cur.project.id));
 
         // חלונות
         $('#project-dlg form').addEventListener('submit', e => { e.preventDefault(); createProject(); });
         $('#stage-dlg form').addEventListener('submit', e => { e.preventDefault(); saveStage(); });
-        $('#stage-dlg [data-delete]').addEventListener('click', deleteStage);
-        $$('#stage-dlg [data-move]').forEach(b => b.addEventListener('click', () => moveStage(Number(b.dataset.move))));
+        $('#stage-dlg [data-delete]').addEventListener('click', () => deleteStage(stageId));
+        $$('#stage-dlg [data-move]').forEach(b => b.addEventListener('click', () => moveStage(Number(b.dataset.move), stageId)));
         $('#member-dlg form').addEventListener('submit', e => { e.preventDefault(); addMember(); });
         document.addEventListener('change', e => {
             if (e.target.matches('[data-project-fields] [name=client_id]') && e.target.value === '__new') newClient(e.target);
@@ -100,7 +122,9 @@ const Projects = (() => {
                 p.current_stage ? `${esc(t(p.current_stage.name))}: ${esc(state.labels.stage[p.current_stage.status] || '')}` : (p.stages_total ? esc(t('כל השלבים בוצעו')) : ''),
                 p.stages_total ? `${p.stages_done}/${p.stages_total}` : '',
             ].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>');
-            const status = p.status !== 'active' ? `<span class="chip">${esc(state.labels.project[p.status])}</span>` : '';
+            const status = (p.status !== 'active' ? `<span class="chip">${esc(state.labels.project[p.status])}</span>` : '')
+                // שותף מנהל: פרויקט של מנהל אחר — עם השם שלו; פרויקט שלי ששיתפתי — "משותף"
+                + (p.owner_id !== state.user.id ? `<span class="chip partner-chip" title="${esc(t('שותף מנהל'))}">🤝 ${esc(p.owner_name)}</span>` : p.shared ? `<span class="chip partner-chip">🤝 ${esc(t('משותף'))}</span>` : '');
             return `<article class="card chat" data-id="${p.id}" tabindex="0" role="link" aria-label="${esc(p.name)}">
                 ${avatar(p.name)}
                 <div class="body">
@@ -140,7 +164,8 @@ const Projects = (() => {
     /** שדות הפרויקט — משותפים לחלון "פרויקט חדש" וללשונית "פרטים". */
     async function fillProjectFields(box, p, withNotes) {
         const [clients, lawyers] = await Promise.all([contactsOf('client'), contactsOf('lawyer')]).catch(() => [[], []]);
-        const mine = c => c.owner_id === (p.owner_id ?? state.user.id) && (!c.archived || c.id === p.client_id || c.id === p.lawyer_id);
+        const owners = p.id && cur?.project?.id === p.id ? teamOf(cur) : [p.owner_id ?? state.user.id];
+        const mine = c => owners.includes(c.owner_id) && (!c.archived || c.id === p.client_id || c.id === p.lawyer_id);
         const kinds = Object.entries(state.labels.kind).map(([value, label]) => ({ value, label }));
         box.innerHTML = `
             <label class="f wide"><span>${esc(t('שם הפרויקט *'))}</span><input name="name" maxlength="100" required value="${esc(p.name || '')}" placeholder="${esc(t('למשל: שיפוץ דירת כהן'))}"></label>
@@ -225,23 +250,74 @@ const Projects = (() => {
 
     // ---- ציר זמן ----
 
+    // ---- ציר הזמן ----
+    // כל אירוע — קטגוריה (צבע וסינון) ואייקון. פעולות רצופות של אותו אדם, בהפרש של עד 10 דקות, מתקבצות
+    // לכרטיס אחד: מי ומתי — פעם אחת בראש, ומתחת כל פעולה בשורה מלאה (בלי חיתוך), עם הכותרת והסכומים מודגשים.
+    const TL_KIND = {
+        payment: ['money', '💳'], expense: ['money', '🧾'], change: ['money', '±'], finance: ['money', '⚙️'],
+        quote: ['quotes', '📝'], approval: ['quotes', '✅'],
+        created: ['stages', '🏁'], details: ['stages', '✏️'], status: ['stages', '🚦'], report: ['stages', '📷'],
+        stage_added: ['stages', '➕'], stage_removed: ['stages', '➖'], stage_moved: ['stages', '↕️'], stage_status: ['stages', '🧱'],
+        stage_progress: ['stages', '📊'], stage_supplier: ['stages', '👷'],
+        member_added: ['team', '👥'], member_removed: ['team', '👥'], partner: ['team', '🤝'], portal: ['team', '🔗'], portal_view: ['team', '👀'],
+        message: ['team', '✉️'], appointment: ['team', '📅'],
+        file: ['files', '📎'], file_move: ['files', '📁'], file_visible: ['files', '👁'], file_deleted: ['files', '🗑'],
+        note: ['notes', '💬'],
+    };
+    const TL_CATS = [['all', 'הכול'], ['money', '💰 כספים'], ['quotes', '📝 הצעות'], ['stages', '🧱 שלבים ושטח'], ['team', '👥 צוות והודעות'], ['files', '📎 קבצים'], ['notes', '💬 הערות']]; // i18n-ok — מתורגם בתצוגה
+    let tlCat = (() => { try { return sessionStorage.getItem('pm.tl') || 'all'; } catch { return 'all'; } })();
+    const tlOf = e => TL_KIND[e.kind] || (e.kind.startsWith('file') ? ['files', '📎'] : e.kind.startsWith('stage') ? ['stages', '🧱'] : ['other', '•']);
+
+    /** הטקסט של אירוע: מה שלפני הנקודתיים הראשונות — כותרת מודגשת; סכומים — מודגשים. */
+    function tlText(text) {
+        text = text.replace(/^\p{Extended_Pictographic}\uFE0F?\s*/u, ''); // האייקון כבר בשורה
+        const bold = s => esc(s).replace(/(₪\s?[\d,.]+|[\d,.]+\s?₪)/g, '<b>$1</b>');
+        const m = text.match(/^([^:\n]{2,40}):\s([\s\S]+)$/);
+        return m ? `<b class="tl-k">${esc(m[1])}</b> ${bold(m[2])}` : bold(text);
+    }
+
     function renderTimeline() {
-        let day = '';
-        $('#timeline').innerHTML = cur.events.map(e => {
+        const fmtT = iso => new Date(iso).toLocaleTimeString(I18n.locale(), { hour: '2-digit', minute: '2-digit' });
+        const counts = {};
+        for (const e of cur.events) { const c = tlOf(e)[0]; counts[c] = (counts[c] || 0) + 1; }
+        $('#tl-filters').innerHTML = TL_CATS.filter(([k]) => k === 'all' || counts[k]).map(([k, label]) =>
+            `<button type="button" class="chip${tlCat === k ? ' on' : ''}" data-tl="${k}" aria-pressed="${tlCat === k}">${esc(t(label))}${k !== 'all' ? ` <small>${counts[k]}</small>` : ''}</button>`).join('');
+        if (tlCat !== 'all' && !counts[tlCat]) tlCat = 'all';
+        const list = cur.events.filter(e => tlCat === 'all' || tlOf(e)[0] === tlCat);
+
+        // קיבוץ: יום → כרטיסים של אדם אחד ברצף
+        const out = [];
+        let day = '', g = null;
+        const flush = () => { if (g) out.push(group(g)); g = null; };
+        for (const e of list) {
             const d = new Date(e.at).toDateString();
-            const sep = d !== day ? `<li class="day"><span>${esc(dateLabel(e.at))}</span></li>` : '';
-            day = d;
-            const time = `<time datetime="${esc(e.at)}">${new Date(e.at).toLocaleTimeString(I18n.locale(), { hour: '2-digit', minute: '2-digit' })}</time>`;
-            if (e.kind === 'note') {
-                const mine = e.actor_id === state.user.id;
-                return sep + `<li class="msg${mine ? ' mine' : ''}">
-                    ${mine ? '' : `<b>${esc(e.actor_name)}</b>`}
-                    <p>${esc(e.text)}</p>${time}</li>`;
-            }
-            return sep + `<li class="sys"><span>${esc(e.text)} · ${esc(e.actor_name)} · ${time}</span></li>`;
-        }).join('') || `<li class="day"><span>${esc(t('עוד אין כלום בציר הזמן'))}</span></li>`;
+            if (d !== day) { flush(); out.push(`<li class="day"><span>${esc(dateLabel(e.at))}</span></li>`); day = d; }
+            if (e.kind === 'note') { flush(); out.push(note(e)); continue; }
+            const near = g && g.actor === e.actor_name && (new Date(e.at) - new Date(g.items[g.items.length - 1].at)) <= 10 * 60000;
+            if (!near) { flush(); g = { actor: e.actor_name, mine: e.actor_id === state.user.id, items: [] }; }
+            g.items.push(e);
+        }
+        flush();
+
+        function note(e) {
+            const mine = e.actor_id === state.user.id;
+            return `<li class="msg${mine ? ' mine' : ''}">${mine ? '' : `<b>${esc(e.actor_name)}</b>`}<p>${esc(e.text)}</p><time datetime="${esc(e.at)}">${fmtT(e.at)}</time></li>`;
+        }
+        function group(g) {
+            const a = g.items[0].at, z = g.items[g.items.length - 1].at;
+            const when = fmtT(a) === fmtT(z) ? fmtT(a) : `${fmtT(a)}–${fmtT(z)}`;
+            const row = e => { const [cat, icon] = tlOf(e); return `<li class="tl-item tl-${cat}"><span class="tl-ic" aria-hidden="true">${icon}</span><span class="tl-t">${tlText(e.text)}</span></li>`; };
+            const MAX = 6;
+            const items = g.items.length > MAX + 1
+                ? g.items.slice(0, MAX).map(row).join('') + `<li class="tl-more"><details><summary>${esc(t('עוד {n} פעולות', { n: g.items.length - MAX }))}</summary><ul class="tl-items">${g.items.slice(MAX).map(row).join('')}</ul></details></li>`
+                : g.items.map(row).join('');
+            return `<li class="tl-group${g.mine ? ' mine' : ''}"><header class="tl-head">${avatar(g.actor)}<b class="one">${esc(g.actor)}</b><time datetime="${esc(a)}">${when}</time></header>
+                <ul class="tl-items">${items}</ul></li>`;
+        }
+
+        $('#timeline').innerHTML = out.join('') || `<li class="day"><span>${esc(t('עוד אין כלום בציר הזמן'))}</span></li>`;
         requestAnimationFrame(() => {
-            const last = $('#timeline li:last-child');
+            const last = $('#timeline > li:last-child');
             if (last) last.scrollIntoView({ block: 'end' });
         });
     }
@@ -274,7 +350,12 @@ const Projects = (() => {
         $('#progress').setAttribute('aria-valuemax', '100');
         $('#progress').setAttribute('aria-label', t('{done} מתוך {n} שלבים בוצעו', { done, n: s.length }));
         $('#progress-text').textContent = s.length ? t('{done}/{n} בוצעו', { done, n: s.length }) : '';
-        $('#stage-list').innerHTML = s.map((x, i) => {
+        const ed = stEdit && s.length > 0;
+        $('#edit-stages').setAttribute('aria-pressed', String(ed));
+        $('#edit-stages').classList.toggle('on', ed);
+        $('#pane-stages').classList.toggle('st-editing', ed);
+        const addHere = after => ed ? `<li class="st-add"><button class="btn ghost small" data-st-add="${after}">${esc(t('+ שלב כאן'))}</button></li>` : '';
+        $('#stage-list').innerHTML = s.length ? addHere(0) + s.map((x, i) => {
             const l2 = [
                 x.trade_name ? esc(t(x.trade_name)) : '',
                 x.supplier_name ? esc(x.supplier_name) : `<span class="muted">${esc(t('אין ספק'))}</span>`,
@@ -282,17 +363,38 @@ const Projects = (() => {
                 x.needs_lawyer ? esc(t('עורך דין')) : '',
                 x.status === 'in_progress' && x.progress ? esc(t('{n}% בוצע', { n: x.progress })) : '',
             ].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>');
-            return `<li class="card" data-stage="${x.id}" tabindex="0" role="button" aria-label="${esc(t(x.name))}, ${esc(state.labels.stage[x.status])}">
+            const miss = stageMissing(x);
+            const name = esc(t(x.name));
+            const acts = ed ? `<div class="acts st-acts">
+                <button class="icon-btn" data-st-up="${x.id}" ${i ? '' : 'disabled'} aria-label="${esc(t('להזיז למעלה: {name}', { name: t(x.name) }))}">↑</button>
+                <button class="icon-btn" data-st-down="${x.id}" ${i < s.length - 1 ? '' : 'disabled'} aria-label="${esc(t('להזיז למטה: {name}', { name: t(x.name) }))}">↓</button>
+                <button class="icon-btn danger" data-st-del="${x.id}" ${x.used && !Dev.on() ? `title="${esc(t('השלב לא ריק — אי אפשר למחוק'))}" disabled` : ''} aria-label="${esc(t('מחיקת השלב {name}', { name: t(x.name) }))}">🗑</button>
+            </div>` : stageChip(x.status);
+            return `<li class="card" data-stage="${x.id}" tabindex="0" role="button" aria-label="${name}, ${esc(state.labels.stage[x.status])}">
                 <span class="num st-${esc(x.status)}" aria-hidden="true">${i + 1}</span>
-                <div class="body"><div class="l1">${esc(t(x.name))}</div><div class="l2">${l2}</div></div>
-                ${stageChip(x.status)}
-            </li>`;
-        }).join('') || `<p class="empty">${esc(t('אין שלבים. לחץ "+ שלב" כדי להוסיף.'))}</p>`;
+                <div class="body"><div class="l1">${name}</div><div class="l2">${l2}</div>${miss.length ? `<div class="l2 st-miss">${esc(t('חסר: {list}', { list: miss.join(t(', ')) }))}</div>` : ''}</div>
+                ${acts}
+            </li>` + addHere(x.id);
+        }).join('') : `<p class="empty">${esc(t('אין שלבים. לחץ "+ שלב" כדי להוסיף.'))}</p>`;
     }
 
-    let stageId = null;
+    let stEdit = false;
 
-    async function openStage(id) {
+    /** מה עוד לא מולא בשלב — רק בשלבים שעוד לא בוצעו. */
+    function stageMissing(x) {
+        if (['done', 'paid'].includes(x.status)) return [];
+        const m = [];
+        if (!x.trade_id) m.push(t('תחום'));
+        if (!x.supplier_id) m.push(x.quotes ? t('בחירת ספק') : t('ספק או הצעת מחיר'));
+        if (!x.plan_start && !x.plan_end) m.push(t('תאריכים'));
+        if (!x.budget) m.push(t('תקציב'));
+        return m;
+    }
+
+    let stageId = null, stageAfter = null;
+
+    async function openStage(id, after = null) {
+        stageAfter = id ? null : after;
         const dlg = $('#stage-dlg');
         const form = $('form', dlg);
         formError(form, '');
@@ -313,6 +415,8 @@ const Projects = (() => {
         el.progress.oninput = progressShown;
         el.status.onchange = progressShown;
         $('[data-existing]', dlg).hidden = !id;
+        Dev.attach(dlg, 'stage', id);
+        $('[data-delete]', dlg).hidden = !!s.used && !Dev.on(); // רק שלב ריק (חוץ מסמכות מפתח)
         await fillSuppliers(el.supplier_id, Number(el.trade_id.value) || 0, s.supplier_id);
         el.trade_id.onchange = () => fillSuppliers(el.supplier_id, Number(el.trade_id.value) || 0, Number(el.supplier_id.value) || null);
         dlg.showModal();
@@ -327,10 +431,10 @@ const Projects = (() => {
     }
 
     /** ספקים של בעל הפרויקט — קודם מי שבתחום של השלב. */
-    async function fillSuppliers(select, tradeId, value, ownerId = cur.project.owner_id) {
+    async function fillSuppliers(select, tradeId, value, owners = teamOf(cur)) {
         let all = [];
         try { all = await contactsOf('supplier'); } catch { /* ריק */ }
-        all = all.filter(c => c.owner_id === ownerId && (!c.archived || c.id === value));
+        all = all.filter(c => owners.includes(c.owner_id) && (!c.archived || c.id === value));
         const opt = c => ({ value: c.id, label: c.name + (c.company ? ' · ' + c.company : '') });
         const inTrade = tradeId ? all.filter(c => c.trades.includes(tradeId)) : [];
         const rest = all.filter(c => !inTrade.includes(c));
@@ -344,6 +448,7 @@ const Projects = (() => {
         const el = form.elements;
         const body = {
             id: stageId || undefined, project_id: cur.project.id, name: el.name.value.trim(),
+            after: stageId || stageAfter === null ? undefined : stageAfter,
             trade_id: Number(el.trade_id.value) || null, supplier_id: Number(el.supplier_id.value) || null,
             status: el.status.value, needs_lawyer: el.needs_lawyer.checked,
             plan_start: el.plan_start.value, plan_end: el.plan_end.value,
@@ -353,7 +458,8 @@ const Projects = (() => {
         // "בוצע" — דרך דיווח מהשטח עם תמונה: שומרים את השאר, ועוברים לדיווח
         const old = stageId ? cur.stages.find(x => x.id === stageId) : null;
         if (old && body.name === t(old.name)) body.name = old.name;
-        const toDone = ['done', 'paid'].includes(body.status) && !['done', 'paid'].includes(old?.status || 'planned');
+        // סמכות מפתח: "בוצע" גם בלי דיווח מהשטח
+        const toDone = !Dev.on() && ['done', 'paid'].includes(body.status) && !['done', 'paid'].includes(old?.status || 'planned');
         if (toDone) { body.status = old?.status || 'planned'; body.progress = old?.progress || 0; }
         await busy($('button[type=submit]', form), form, async () => {
             const d = await api('stage', { body });
@@ -368,23 +474,29 @@ const Projects = (() => {
         });
     }
 
-    async function moveStage(dir) {
+    async function moveStage(dir, id) {
         const ids = cur.stages.map(s => s.id);
-        const i = ids.indexOf(stageId), j = i + dir;
+        const i = ids.indexOf(id), j = i + dir;
         if (i < 0 || j < 0 || j >= ids.length) return;
         [ids[i], ids[j]] = [ids[j], ids[i]];
-        await busy(null, $('#stage-dlg form'), async () => {
+        const dlg = $('#stage-dlg').open;
+        await busy(null, dlg ? $('#stage-dlg form') : null, async () => {
             update(await api('stages-order', { body: { project_id: cur.project.id, ids } }));
             toast(dir < 0 ? t('הוזז למעלה') : t('הוזז למטה'));
+            if (!dlg) $(`#stage-list [data-st-${dir < 0 ? 'up' : 'down'}="${id}"]`)?.focus();
         });
     }
 
-    async function deleteStage() {
-        const s = cur.stages.find(x => x.id === stageId);
-        if (!s || !confirm(t('למחוק את השלב "{name}"?', { name: s.name }))) return;
-        await busy(null, $('#stage-dlg form'), async () => {
+    async function deleteStage(id) {
+        const s = cur.stages.find(x => x.id === id);
+        // סמכות מפתח: שלב עם הצעות — מחיקה גמורה (עם ההצעות, התוספות ואבני הדרך שלו)
+        if (s && s.used && Dev.on()) { if (await Dev.purge('stage', id) && $('#stage-dlg').open) $('#stage-dlg').close(); return; }
+        if (!s || !confirm(t('למחוק את השלב "{name}"?', { name: t(s.name) }))) return;
+        const dlg = $('#stage-dlg').open;
+        await busy(null, dlg ? $('#stage-dlg form') : null, async () => {
             update(await api('stage-delete', { body: { id: s.id } }));
-            $('#stage-dlg').close();
+            if (dlg) $('#stage-dlg').close();
+            toast(t('השלב נמחק'));
         });
     }
 
@@ -392,7 +504,41 @@ const Projects = (() => {
 
     let links = {};
 
+    /** שותפים מנהלים: הבעלים, השותפים, ו"+ שותף מנהל" (רק לבעלים). */
+    function renderPartners() {
+        const P = cur.partners || [], me = state.user.id;
+        $('#partners-list').innerHTML = P.map(u => `<li class="card static">
+            ${avatar(u.name)}
+            <div class="body"><div class="l1">${esc(u.name)}${u.id === me ? `<span class="sub">${esc(t('אני'))}</span>` : ''}</div>
+                <div class="l2">${esc(u.owner ? t('👑 בעל הפרויקט') : t('🤝 שותף מנהל — רואה ועורך הכול'))}</div></div>
+            <div class="acts">${!u.owner && (cur.is_owner || u.id === me) ? `<button class="icon-btn" data-partner-remove="${u.id}" data-name="${esc(u.name)}"
+                aria-label="${esc(u.id === me ? t('עזיבת הפרויקט') : t('הסרת {name} מהשותפים', { name: u.name }))}">✕</button>` : ''}</div></li>`).join('');
+        $('#add-partner').hidden = !cur.is_owner;
+    }
+
+    async function addPartner() {
+        const login = prompt(t('שם המשתמש או האימייל של המנהל (משתמש פעיל באפליקציה):'), '');
+        if (!login || !login.trim()) return;
+        try {
+            cur = await api('project-partner', { body: { project_id: cur.project.id, do: 'add', login: login.trim() } });
+            renderTeam();
+            toast(t('צורף כשותף מנהל — הפרויקט מופיע אצלו עכשיו'));
+        } catch (e) { toast(e.message, true); }
+    }
+
+    async function removePartner(id, name) {
+        const self = id === state.user.id;
+        if (!confirm(self ? t('לעזוב את הפרויקט? הוא ייעלם מהרשימה שלך.') : t('להסיר את {name} מהשותפים? הוא לא יראה יותר את הפרויקט.', { name }))) return;
+        try {
+            const d = await api('project-partner', { body: { project_id: cur.project.id, do: 'remove', user_id: id } });
+            if (d.left) { location.hash = '#/'; toast(t('עזבת את הפרויקט')); return; }
+            cur = d;
+            renderTeam();
+        } catch (e) { toast(e.message, true); }
+    }
+
     async function renderTeam() {
+        renderPartners();
         const draw = () => {
             $('#team-list').innerHTML = cur.team.map(c => {
                 // ללקוח ולעו"ד — קישור אישי לפורטל. מתי נפתח לאחרונה — בשורה.
@@ -486,7 +632,7 @@ const Projects = (() => {
         const lists = await Promise.all(['supplier', 'lawyer', 'client'].map(k => contactsOf(k).catch(() => [])));
         const inTeam = new Set(cur.team.map(c => c.id));
         const groups = ['ספקים', 'עורכי דין', 'לקוחות'].map((label, i) => { // i18n-ok
-            const items = lists[i].filter(c => c.owner_id === cur.project.owner_id && !c.archived && !inTeam.has(c.id));
+            const items = lists[i].filter(c => teamOf(cur).includes(c.owner_id) && !c.archived && !inTeam.has(c.id));
             return items.length ? `<optgroup label="${esc(t(label))}">${options(items.map(c => ({ value: c.id, label: c.name + (c.company ? ' · ' + c.company : '') })))}</optgroup>` : '';
         }).join('');
         form.elements.contact_id.innerHTML = groups || `<option value="">${esc(t('אין אנשי קשר להוספה'))}</option>`;

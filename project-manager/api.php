@@ -15,6 +15,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/lib/messages.php';
 require_once __DIR__ . '/lib/auth.php';
+require_once __DIR__ . '/lib/dev.php';
 
 pm_log_install_handlers();
 pm_survey_migrate();
@@ -122,7 +123,7 @@ try {
         'GET contacts'    => ['contacts' => pm_contacts_list($user, (string)($in['kind'] ?? ''),
                                  trim((string)($in['q'] ?? '')), !empty($in['archived']))],
         'GET contact'     => ['contact' => pm_contact_get($user, (int)($in['id'] ?? 0))],
-        'POST contact'    => ['contact' => pm_contact_save($user, $in)],
+        'POST contact'    => (fn($r) => isset($r['duplicate']) ? $r : ['contact' => $r])(pm_contact_save($user, $in)),
         'POST contacts-import' => pm_contacts_import($user, $in),
         'POST archive'    => ['contact' => pm_contact_archive($user, (int)($in['id'] ?? 0), !empty($in['archived']))],
 
@@ -131,6 +132,7 @@ try {
         'POST project'    => pm_project_save($user, $in),
         'POST project-status' => pm_project_status($user, (int)($in['id'] ?? 0), (string)($in['status'] ?? '')),
         'POST stage'      => pm_stage_save($user, $in),
+        'POST dev-purge'  => pm_dev_purge($user, (string)($in['kind'] ?? ''), (int)($in['id'] ?? 0)),
         'POST stage-delete' => pm_stage_delete($user, (int)($in['id'] ?? 0)),
         'POST stages-order' => pm_stages_order($user, (int)($in['project_id'] ?? 0), is_array($in['ids'] ?? null) ? $in['ids'] : []),
         'POST note'       => pm_note($user, (int)($in['project_id'] ?? 0), (string)($in['text'] ?? '')),
@@ -159,6 +161,7 @@ try {
         'POST quotes-send'  => pm_quotes_send($user, (int)($in['stage_id'] ?? 0)),
         'POST quote-decide' => pm_quote_decide($user, (int)($in['id'] ?? 0), (string)($in['role'] ?? ''),
                                                (string)($in['decision'] ?? ''), (string)($in['note'] ?? '')),
+        'POST quote-attach' => pm_quote_attach($user, (int)($in['id'] ?? 0), (int)($in['file_id'] ?? 0)),
         'POST quote-cancel' => pm_quote_cancel($user, (int)($in['id'] ?? 0), (string)($in['note'] ?? '')),
         // הודעות (שלב 11)
         'GET msg-templates'  => ['templates' => pm_msg_templates($user)],
@@ -215,6 +218,11 @@ try {
         'POST fee-payment-receive' => pm_fee_payment_receive($user, $in),
         'POST fee-payment-delete'  => pm_fee_payment_delete($user, (int)($in['id'] ?? 0)),
         'GET ledger'          => pm_ledger($user, $in),
+        // חוזה עם ספק: מועדים, אבני דרך וקנס איחור (lib/contracts.php)
+        'GET contract'        => pm_contract($user, (int)($in['project_id'] ?? 0), (int)($in['supplier_id'] ?? 0)),
+        'POST contract'       => pm_contract_save($user, $in),
+        // שותף מנהל — צירוף / הסרה (lib/projects.php)
+        'POST project-partner' => pm_partner_save($user, $in),
         'GET payments'        => pm_payments($user, (int)($in['project_id'] ?? 0)),
         'POST payment'        => pm_payment_save($user, $in),
         'POST payment-request' => pm_payment_request($user, (int)($in['id'] ?? 0)),

@@ -49,9 +49,10 @@ function pm_portal_role(array $p, int $contactId): string
 {
     if ($contactId && (int)$p['client_id'] === $contactId) return 'client';
     if ($contactId && (int)$p['lawyer_id'] === $contactId) return 'lawyer';
-    $st = pm_db()->prepare("SELECT 1 FROM contacts WHERE id = ? AND owner_id = ? AND kind = 'supplier'");
-    $st->execute([$contactId, $p['owner_id']]);
-    if ($contactId && $st->fetchColumn()) return 'supplier';
+    $st = pm_db()->prepare("SELECT owner_id FROM contacts WHERE id = ? AND kind = 'supplier'");
+    $st->execute([$contactId]);
+    $o = $st->fetchColumn();
+    if ($contactId && $o !== false && pm_contact_in_team((int)$o, (int)$p['owner_id'])) return 'supplier';
     throw new PmError('קישור אישי — ללקוח, לעו"ד או לספק של הפרויקט', 422);
 }
 
@@ -153,7 +154,7 @@ function pm_portal_access(string $token): array
     $contact = $c->fetch();
     if (!$contact) $bad('איש הקשר לא קיים');
     if ($l['role'] === 'supplier') {
-        if ($contact['kind'] !== 'supplier' || (int)$contact['owner_id'] !== (int)$project['owner_id']) $bad('הספק לא שייך לבעל הפרויקט');
+        if ($contact['kind'] !== 'supplier' || !pm_contact_in_team((int)$contact['owner_id'], (int)$project['owner_id'])) $bad('הספק לא שייך לבעל הפרויקט');
     } else {
         $col = $l['role'] === 'client' ? 'client_id' : 'lawyer_id';
         if ((int)$project[$col] !== (int)$l['contact_id']) $bad('איש הקשר כבר לא ' . ($l['role'] === 'client' ? 'הלקוח' : 'העו"ד') . ' של הפרויקט');

@@ -107,6 +107,7 @@ const Contacts = (() => {
                 <div class="body">
                     <div class="l1">${esc(c.name)}${c.company ? `<span class="sub">${esc(c.company)}</span>` : ''}${stars}</div>
                     ${l2 ? `<div class="l2">${l2}</div>` : ''}
+                    ${c.shared?.length ? `<div class="l2 shared-from">🤝 ${esc(t('מפרויקט משותף: {names}', { names: c.shared.join(', ') }))}</div>` : ''}
                 </div>
                 <div class="acts">${contactActs(c)}</div>
             </article>`;
@@ -146,7 +147,11 @@ const Contacts = (() => {
         if (kk === 'client') await fillClientSettings(c);
         $('#contact-ledger').hidden = !(c && kk === 'supplier');
         const arch = $('#archive');
-        arch.hidden = !c;
+        // כרטיס מפרויקט משותף: רואים ועורכים; רק מי שיצר אותו מעביר לארכיון
+        const foreign = !!c && c.owner_id !== state.user.id;
+        $('#contact-shared').hidden = !foreign;
+        if (foreign) $('#contact-shared').textContent = '🤝 ' + (c.shared?.length ? t('מפרויקט משותף: {names}. מוצג כאן כל עוד יש לך גישה לפרויקט.', { names: c.shared.join(', ') }) : t('כרטיס של מנהל אחר'));
+        arch.hidden = !c || foreign;
         if (c) {
             arch.textContent = c.archived ? t('החזרה מהארכיון') : t('העברה לארכיון');
             arch.classList.toggle('danger', !c.archived);
@@ -203,7 +208,28 @@ const Contacts = (() => {
         const body = collect();
         if (!body.name) { formError(form, t('שם: שדה חובה')); return; }
         await busy($('#save'), form, async () => {
-            const { contact } = await api('contact', { body });
+            let d = await api('contact', { body });
+            if (d.duplicate) {
+                // כבר יש כרטיס כזה — אצלי או אצל מנהל אחר בפרויקט משותף: משתמשים בו, לא יוצרים כפול
+                const x = d.duplicate;
+                const what = t({ phone: 'אותו טלפון', email: 'אותו אימייל', tax_id: 'אותו ח.פ.' }[x.why]);
+                const who = x.mine ? t('אצלך') : t('אצל {name}', { name: x.owner_name });
+                const usable = onSaved || x.visible;
+                const msg = t('כבר יש כרטיס "{name}" {who}, עם {what}.', { name: x.name, who, what }) + '\n\n';
+                if (usable) {
+                    // אישור — משתמשים בקיים; ביטול — חוזרים לטופס
+                    if (!confirm(msg + t('אישור — להשתמש בכרטיס הקיים (בלי כפילות). ביטול — לחזור לטופס.'))) return;
+                    invalidateContacts(body.kind);
+                    $('#editor').close();
+                    toast(t('נבחר הכרטיס הקיים: {name}', { name: x.name }));
+                    if (onSaved) onSaved(x); else open(x.id, x.kind);
+                    return;
+                }
+                // כרטיס של מנהל אחר שעוד לא משויך לפרויקט משותף — לא מוצג כאן
+                if (!confirm(msg + t('הוא יופיע אצלך ברגע שישויך לפרויקט המשותף. אישור — לשמור בכל זאת כרטיס נפרד. ביטול — לחזור לטופס.'))) return;
+                d = await api('contact', { body: { ...body, force: true } });
+            }
+            const { contact } = d;
             invalidateContacts(body.kind);
             $('#editor').close();
             toast(t(body.id ? 'נשמר' : ADDED_LABEL[body.kind]));

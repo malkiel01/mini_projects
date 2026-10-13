@@ -636,6 +636,43 @@ function pm_migrate(PDO $pdo): void
         updated_at      TEXT NOT NULL
     )');
     $pdo->exec('CREATE INDEX IF NOT EXISTS fee_payments_project ON fee_payments (project_id)');
+    // שותף מנהל: מנהל אחר באפליקציה שרואה ועורך את כל הפרויקט, כמו הבעלים. רק הבעלים מצרף ומסיר.
+    $pdo->exec('CREATE TABLE IF NOT EXISTS project_partners (
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        added_by   INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (project_id, user_id)
+    )');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS project_partners_user ON project_partners (user_id)');
+    // חוזה עם ספק (מעקב מהחוזה): מועדים, אבני דרך וקנס איחור. אחד לכל ספק בפרויקט.
+    $pdo->exec('CREATE TABLE IF NOT EXISTS contracts (
+        id                 INTEGER PRIMARY KEY,
+        project_id         INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        supplier_id        INTEGER NOT NULL REFERENCES contacts(id),
+        signed_on          TEXT NOT NULL DEFAULT \'\',
+        start_date         TEXT NOT NULL DEFAULT \'\',
+        end_date           TEXT NOT NULL DEFAULT \'\',
+        completed_on       TEXT NOT NULL DEFAULT \'\',
+        penalty_per_day    INTEGER NOT NULL DEFAULT 0,
+        grace_days         INTEGER NOT NULL DEFAULT 0,
+        max_deviation_days INTEGER NOT NULL DEFAULT 30,
+        file_id            INTEGER REFERENCES files(id),
+        notes              TEXT NOT NULL DEFAULT \'\',
+        created_at         TEXT NOT NULL,
+        updated_at         TEXT NOT NULL,
+        UNIQUE (project_id, supplier_id)
+    )');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS contract_milestones (
+        id          INTEGER PRIMARY KEY,
+        contract_id INTEGER NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
+        title       TEXT NOT NULL,
+        due_date    TEXT NOT NULL,
+        stage_ids   TEXT NOT NULL DEFAULT \'[]\',
+        months      INTEGER,
+        done_on     TEXT NOT NULL DEFAULT \'\',
+        sort        INTEGER NOT NULL DEFAULT 0
+    )');
     $pdo->exec('CREATE TABLE IF NOT EXISTS fin_alert_sent (
         project_id INTEGER NOT NULL,
         contact_id INTEGER NOT NULL,

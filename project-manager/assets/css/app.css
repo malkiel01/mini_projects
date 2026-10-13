@@ -730,3 +730,73 @@ body.auth { display: grid; place-items: start center; padding: max(8vh, var(--s4
 .ledger .lg-paid .lg-d { color: var(--ok); }
 .ledger .lg-milestone, .ledger .lg-invoice { color: var(--muted); }
 .fa-income .fin-cells { margin-block-end: var(--s2); }
+/* שותף מנהל */
+.sec-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); margin-bottom: var(--s1); }
+.sec-row .sec-title { margin: 0; }
+#partners { margin-block-end: var(--s3); }
+.partner-chip { font-size: .7rem; }
+/* ציר הזמן: כרטיס לכל רצף פעולות של אדם אחד; פס צבע לפי קטגוריה; סינון */
+.tl-filters { padding-block: var(--s2) 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.tl-filters .chip { flex: none; }
+.tl-filters .chip small { color: var(--muted); font-weight: 400; margin-inline-start: 4px; }
+.tl-filters .chip.on { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.tl-filters .chip.on small { color: inherit; opacity: .8; }
+.timeline .tl-group { align-self: stretch; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: var(--s2) var(--s3); }
+.tl-head { display: flex; align-items: center; gap: var(--s2); margin-block-end: 6px; }
+.tl-head .avatar { inline-size: 26px; block-size: 26px; font-size: .7rem; flex: none; }
+.tl-head b { flex: 1; min-width: 0; font-size: .85rem; }
+.tl-head time { flex: none; font-size: .75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tl-items { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+.tl-item { display: grid; grid-template-columns: 1.6em 1fr; gap: 6px; align-items: start; padding: 4px 8px;
+    border-inline-start: 3px solid var(--tl, var(--line)); border-radius: 4px; background: var(--bg); font-size: .86rem; line-height: 1.45; }
+.tl-ic { text-align: center; }
+.tl-t { min-width: 0; overflow-wrap: anywhere; }
+.tl-t .tl-k { font-weight: 600; }
+.tl-money { --tl: #1f9d55; } .tl-quotes { --tl: #3b6fd8; } .tl-stages { --tl: #8a5cd0; } .tl-team { --tl: #0e9aa7; }
+.tl-files { --tl: #9aa3ad; } .tl-other { --tl: var(--line); }
+.tl-more summary { cursor: pointer; font-size: .8rem; color: var(--brand); padding: 2px 8px; }
+.tl-more .tl-items { margin-block-start: 4px; }
+/* הצעה שהוחלט עליה — נעולה */
+.lock-hint { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px var(--s2); color: var(--ink); }
+/* חוזה עם ספק */
+.ct-sum { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: var(--s2) var(--s3); font-size: .9rem; }
+.ct-ms { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--s2); }
+.ct-m { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px var(--s2); align-items: end; padding: var(--s2); border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.ct-m .f.wide { grid-column: 1 / -1; }
+.ct-m .icon-btn { grid-row: 2; grid-column: 3; }
+.ct-m .hint { grid-column: 1 / -1; margin: 0; }
+.ct-stages { border: 0; padding: 0; margin: 0; }
+.ct-stages legend { font-size: .78rem; color: var(--muted); padding: 0; margin-bottom: 4px; }
+.ct-stages .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.ct-stages .chips label { display: inline-flex; }
+.ct-stages .chips input { position: absolute; opacity: 0; pointer-events: none; }
+.ct-stages .chips span { padding: 3px 10px; border: 1px solid var(--line); border-radius: 99px; font-size: .8rem; cursor: pointer; background: var(--surface); }
+.ct-stages .chips input:checked + span { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+.ct-stages .chips input:focus-visible + span { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* מסך השלבים: הסבר ומצב עריכה */
+.stages-help { margin: 0 0 var(--s2); padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); font-size: .92rem; }
+.stages-help summary { cursor: pointer; font-weight: 600; color: var(--brand); min-height: 32px; display: flex; align-items: center; }
+.stages-help ul { margin: var(--s1) 0 0; padding-inline-start: 1.2em; }
+.stages-help li { margin: .25em 0; }
+.stages-help p { margin: var(--s1) 0 0; }
+#edit-stages.on { background: var(--brand-soft); border-color: var(--brand); }
+.rows-list .st-miss { color: var(--muted); white-space: normal; overflow: visible; text-overflow: clip; }
+.st-miss::before { content: "⚠️ "; }
+.st-acts { display: flex; gap: 4px; flex-shrink: 0; }
+.st-acts .icon-btn { min-width: 40px; padding-inline: 0; }
+.st-acts .icon-btn:disabled { opacity: .35; }
+.st-acts .danger { color: var(--danger); }
+#stage-list .st-add { list-style: none; display: flex; justify-content: center; padding: 0; min-height: 0; background: none; border: 0; }
+#stage-list .st-add .btn { min-height: 28px; padding-block: 0; font-size: .8rem; border-style: dashed; color: var(--muted); }
+
+/* סמכות מפתח */
+.dev-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--s2);
+    padding: var(--s1) var(--s3); background: var(--danger); color: #fff; font-size: .85rem; font-weight: 600; }
+.dev-bar .btn { min-height: 30px; padding: 0 var(--s3); background: #fff; color: var(--danger); border-color: #fff; }
+@media (prefers-color-scheme: dark) { .dev-bar { color: #1b1e26; } .dev-bar .btn { background: #1b1e26; color: var(--danger); border-color: #1b1e26; } }
+.dev-purge { margin-top: var(--s3); padding-top: var(--s3); border-top: 2px dashed var(--danger); }
+.dev-purge .btn { width: 100%; background: var(--danger-soft); color: var(--danger); border-color: var(--danger); }
+.btn.icon-only { min-width: var(--tap); padding-inline: 0; font-size: 1.1rem; }
+.shared-from { color: var(--brand); }
+p.shared-from { margin-bottom: var(--s2); padding: var(--s2) var(--s3); background: var(--brand-soft); border-radius: var(--r); }
