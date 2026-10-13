@@ -693,6 +693,8 @@ function pm_migrate(PDO $pdo): void
     // מתחם, שלב 3: מסירה לכל יחידה; תשלום "במסירה" של יחידה (NULL — כל המתחם / הפרויקט)
     pm_add_column($pdo, 'units', 'handed_over_at', 'TEXT');
     pm_add_column($pdo, 'payments', 'unit_id', 'INTEGER');
+    // מתחם, שלב 4: ללקוח של יחידה — להציג גם את השלבים המשותפים
+    pm_add_column($pdo, 'projects', 'portal_shared', 'INTEGER NOT NULL DEFAULT 1');
     $pdo->exec('CREATE TABLE IF NOT EXISTS fin_alert_sent (
         project_id INTEGER NOT NULL,
         contact_id INTEGER NOT NULL,

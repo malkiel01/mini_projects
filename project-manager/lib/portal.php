@@ -49,11 +49,22 @@ function pm_portal_role(array $p, int $contactId): string
 {
     if ($contactId && (int)$p['client_id'] === $contactId) return 'client';
     if ($contactId && (int)$p['lawyer_id'] === $contactId) return 'lawyer';
+    // מתחם: לקוח / עו"ד של יחידה
+    if ($contactId && pm_unit_contact((int)$p['id'], 'client_id', $contactId)) return 'client';
+    if ($contactId && pm_unit_contact((int)$p['id'], 'lawyer_id', $contactId)) return 'lawyer';
     $st = pm_db()->prepare("SELECT owner_id FROM contacts WHERE id = ? AND kind = 'supplier'");
     $st->execute([$contactId]);
     $o = $st->fetchColumn();
     if ($contactId && $o !== false && pm_contact_in_team((int)$o, (int)$p['owner_id'])) return 'supplier';
     throw new PmError('קישור אישי — ללקוח, לעו"ד או לספק של הפרויקט', 422);
+}
+
+/** איש הקשר הוא הלקוח / העו"ד ($col) של אחת היחידות בפרויקט. */
+function pm_unit_contact(int $projectId, string $col, int $contactId): bool
+{
+    $st = pm_db()->prepare("SELECT 1 FROM units WHERE project_id = ? AND $col = ?");
+    $st->execute([$projectId, $contactId]);
+    return (bool)$st->fetchColumn();
 }
 
 function pm_portal_link_row(int $projectId, int $contactId): ?array
@@ -157,7 +168,7 @@ function pm_portal_access(string $token): array
         if ($contact['kind'] !== 'supplier' || !pm_contact_in_team((int)$contact['owner_id'], (int)$project['owner_id'])) $bad('הספק לא שייך לבעל הפרויקט');
     } else {
         $col = $l['role'] === 'client' ? 'client_id' : 'lawyer_id';
-        if ((int)$project[$col] !== (int)$l['contact_id']) $bad('איש הקשר כבר לא ' . ($l['role'] === 'client' ? 'הלקוח' : 'העו"ד') . ' של הפרויקט');
+        if ((int)$project[$col] !== (int)$l['contact_id'] && !pm_unit_contact((int)$project['id'], $col, (int)$l['contact_id'])) $bad('איש הקשר כבר לא ' . ($l['role'] === 'client' ? 'הלקוח' : 'העו"ד') . ' של הפרויקט');
     }
     // i18n-none-end
     $u = pm_db()->prepare('SELECT id, display_name, phone, email, role, lang FROM users WHERE id = ?');
@@ -189,12 +200,17 @@ function pm_portal_view(array $a): array
     $role = $a['link']['role'];
     $pid = (int)$p['id'];
     $db = pm_db();
+    // מתחם: לקוח / עו"ד של יחידה — רואה רק את היחידות שלו (ואת המשותפים, לפי ההגדרה)
+    $scope = pm_portal_scope($p, (int)$a['contact']['id'], $role);
+    $vis = fn($sid) => $scope === null || ($sid && in_array((int)$sid, $scope['stages'], true));
 
-    $st = $db->prepare('SELECT s.id, s.name, s.status, s.plan_start, s.plan_end, s.needs_lawyer, c.name AS supplier
-                          FROM stages s LEFT JOIN contacts c ON c.id = s.supplier_id WHERE s.project_id = ? ORDER BY s.sort, s.id');
+    $st = $db->prepare('SELECT s.id, s.name, s.status, s.plan_start, s.plan_end, s.needs_lawyer, c.name AS supplier, un.name AS unit_name
+                          FROM stages s LEFT JOIN contacts c ON c.id = s.supplier_id LEFT JOIN units un ON un.id = s.unit_id
+                         WHERE s.project_id = ? ORDER BY ' . PM_STAGE_ORDER);
     $st->execute([$pid]);
-    $stages = array_map(fn($s) => ['id' => (int)$s['id'], 'name' => $s['name'], 'status' => $s['status'], 'supplier' => $s['supplier'],
-        'plan_start' => $s['plan_start'], 'plan_end' => $s['plan_end'], 'needs_lawyer' => (bool)$s['needs_lawyer']], $st->fetchAll());
+    $stages = array_values(array_map(fn($s) => ['id' => (int)$s['id'], 'name' => $s['name'], 'status' => $s['status'], 'supplier' => $s['supplier'],
+        'plan_start' => $s['plan_start'], 'plan_end' => $s['plan_end'], 'needs_lawyer' => (bool)$s['needs_lawyer'], 'unit_name' => $s['unit_name']],
+        array_filter($st->fetchAll(), fn($s) => $vis($s['id']))));
 
     // רק הצעות שנשלחו ללקוח. מבוטלות לא מוצגות.
     $q = $db->prepare("SELECT q.*, c.name AS supplier_name, c.company AS supplier_company, f.name AS file_name, f.mime AS file_mime,
@@ -221,7 +237,8 @@ function pm_portal_view(array $a): array
             'can_decide' => $can, 'can_reject' => $can && in_array($x['status'], ['sent', 'client_approved'], true),
             'decisions' => $decisions[(int)$x['id']] ?? [],
         ];
-    }, $q->fetchAll());
+    }, array_filter($q->fetchAll(), fn($x) => $vis($x['stage_id'])));
+    $quotes = array_values($quotes);
 
     $f = $db->prepare('SELECT id, name, mime, size, type, thumb IS NOT NULL AS has_thumb, created_at FROM files
                         WHERE project_id = ? AND visible = 1 AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 500');
@@ -240,19 +257,23 @@ function pm_portal_view(array $a): array
         $x['label'] = pm_t($x['label']);
         unset($x['quote_id'], $x['percent']);
         return $x;
-    }, pm_payments_of($pid, true)['payments']);
+    }, array_values(array_filter(pm_payments_of($pid, true)['payments'], fn($x) => pm_portal_in_scope($scope, $x['stage_id'], $x['unit_id'] ?? null))));
+    $payIds = array_column($payments, 'id');
 
     return [
         'role' => $role, 'name' => $a['contact']['name'], 'approval_method' => $method, 'lang' => pm_lang_valid($a['contact']['lang'] ?? 'he'),
         'project' => ['name' => $p['name'], 'address' => $p['address'], 'status' => $p['status'], 'kind' => $p['kind']],
         'manager' => ['name' => $a['owner']['display_name'], 'phone' => $a['owner']['phone'], 'email' => $a['owner']['email']],
         'stages' => $stages, 'quotes' => $quotes, 'files' => $files, 'payments' => $payments,
+        'units' => $scope['names'] ?? [],
         // תוספות וחריגות (כ4) — מה שנשלח אליהם; לאישור / דחייה כמו הצעה
-        'changes' => array_values(array_filter(pm_changes_of($pid, $role), fn($x) => $x['status'] !== 'cancelled')),
-        'reports' => pm_reports_of($pid, true),
-        // המצב הכספי (אגף הכספים): תקציב ראשוני מול היום, סוכם, שולם, יתרה והתשלום הבא — עם מע"מ
-        'finance' => pm_finance_of($pid, true) + ['alerts' => array_map(fn($x) => array_diff_key($x, ['key' => 1, 'sort' => 1]),
-            pm_fin_alerts($pid, pm_fin_alert_settings((int)$a['owner']['id']), pm_lang(), $role))],
+        'changes' => array_values(array_filter(pm_changes_of($pid, $role), fn($x) => $x['status'] !== 'cancelled' && $vis($x['stage_id'] ?? null))),
+        'reports' => array_values(array_filter(pm_reports_of($pid, true), fn($x) => $scope === null || (($x['stage_id'] ?? null) ? $vis($x['stage_id']) : $scope['shared']))),
+        // המצב הכספי (אגף הכספים): תקציב ראשוני מול היום, סוכם, שולם, יתרה והתשלום הבא — עם מע"מ.
+        // מתחם — רק של היחידות שלו; התראות — רק על התשלומים שלו
+        'finance' => pm_finance_of($pid, true, PM_OVERPAY_MARGIN, $scope) + ['alerts' => array_values(array_map(fn($x) => array_diff_key($x, ['key' => 1, 'sort' => 1]),
+            array_filter(pm_fin_alerts($pid, pm_fin_alert_settings((int)$a['owner']['id']), pm_lang(), $role),
+                fn($x) => $scope === null || in_array($x['payment_id'], $payIds, true))))],
         'labels' => ['stage' => pm_t_map(PM_STAGE_STATUSES), 'quote' => pm_t_map(PM_QUOTE_STATUSES), 'file' => pm_t_map(PM_FILE_TYPES), 'method' => pm_t_map(PM_PAY_METHODS)],
         'max_proof' => PM_PROOF_MAX,
     ];

@@ -100,13 +100,16 @@ const roleName = () => data.role === 'client' ? t('לקוח') : t('עורך די
 const stageLabel = s => data.labels.stage[s] || s;
 const quoteLabel = s => ({ sent: t('ממתינה להחלטה'), client_approved: data.role === 'lawyer' ? t('הלקוח אישר — ממתינה לך') : t('אישרת — ממתינה לעו"ד') }[s] || data.labels.quote[s] || s);
 
+/** שם השלב, עם היחידה במתחם: "חשמל · דירה א'". */
+const sn = s => t(s.name) + (s.unit_name ? ' · ' + s.unit_name : '');
+
 function render() {
     $('#loading').hidden = true;
     $('#content').hidden = false;
     const p = data.project;
     $('#title').textContent = p.name;
     document.title = p.name;
-    $('#subtitle').textContent = [t('שלום {name}', { name: data.name }), p.address].filter(Boolean).join(' · ');
+    $('#subtitle').textContent = [t('שלום {name}', { name: data.name }), (data.units || []).length ? '🏢 ' + data.units.join(', ') : '', p.address].filter(Boolean).join(' · ');
     $('#subtitle').hidden = false;
     const sup = data.role === 'supplier';
     for (const id of ['#s-stages', '#s-payments', '#s-bank', '#s-ledger']) $(id).hidden = !sup;
@@ -152,7 +155,7 @@ function render() {
     $('#progress-text').textContent = s.length ? t('{done}/{n} בוצעו', { done, n: s.length }) : '';
     $('#stage-list').innerHTML = s.map((x, i) => `<li class="card static">
         <span class="num st-${esc(x.status)}" aria-hidden="true">${i + 1}</span>
-        <div class="body"><div class="l1"><span class="one">${esc(t(x.name))}</span></div>${stageMeta(x)}</div>
+        <div class="body"><div class="l1"><span class="one">${esc(sn(x))}</span></div>${stageMeta(x)}</div>
         <span class="chip st-${esc(x.status)}">${esc(stageLabel(x.status))}</span></li>`).join('') || `<p class="empty">${esc(t('עוד אין שלבים.'))}</p>`;
 
     // ---- הצעות מחיר, לפי שלב: המומלצת בראש ----
@@ -164,8 +167,8 @@ function render() {
         const list = byStage.get(st.id).sort((a, b) => rank(a) - rank(b) || a.amount - b.amount);
         const live = list.filter(q => !['declined', 'rejected'].includes(q.status));
         const low = live.length > 1 ? Math.min(...live.map(q => q.amount)) : null;
-        return `<section class="q-stage" id="stage-${st.id}" aria-label="${esc(t(st.name))}">
-            <header class="q-head"><h3 class="one">${esc(t(st.name))}</h3><span class="chip st-${esc(st.status)}">${esc(stageLabel(st.status))}</span></header>
+        return `<section class="q-stage" id="stage-${st.id}" aria-label="${esc(sn(st))}">
+            <header class="q-head"><h3 class="one">${esc(sn(st))}</h3><span class="chip st-${esc(st.status)}">${esc(stageLabel(st.status))}</span></header>
             ${list.map(q => quoteCard(q, low)).join('')}
         </section>`;
     }).join('');
@@ -259,7 +262,7 @@ function renderSupplier() {
     $('#pending').hidden = !invited.length && !confirm.length;
     $('#pending-list').innerHTML = invited.map(s => `<li class="card" data-go="sstage-${s.id}" tabindex="0" role="button">
             <span class="ficon" aria-hidden="true">📝</span>
-            <div class="body"><div class="l1"><span class="one">${esc(t(s.name))}</span></div><div class="l2">${esc(t('מבקשים ממך הצעת מחיר'))}</div></div>
+            <div class="body"><div class="l1"><span class="one">${esc(sn(s))}</span></div><div class="l2">${esc(t('מבקשים ממך הצעת מחיר'))}</div></div>
             <span class="go dir-flip" aria-hidden="true">‹</span></li>`).join('')
         + confirm.map(({ p, x }) => `<li class="card" data-go="spay-${p.id}" tabindex="0" role="button">
             <span class="ficon" aria-hidden="true">💳</span>
@@ -270,7 +273,7 @@ function renderSupplier() {
     $('#s-stage-list').innerHTML = data.stages.map(st => {
         const qs = quotesOf(st.id);
         return `<article class="qcard" id="sstage-${st.id}">
-            <div class="q1"><span class="one">${esc(t(st.name))}</span><span class="chip st-${esc(st.status)}">${esc(data.labels.stage[st.status] || st.status)}</span></div>
+            <div class="q1"><span class="one">${esc(sn(st))}</span><span class="chip st-${esc(st.status)}">${esc(data.labels.stage[st.status] || st.status)}</span></div>
             <div class="q2">${[st.assigned ? esc(t('שלך')) : st.invited ? esc(t('הוזמנת להציע')) : '', st.plan_start || st.plan_end ? `${shortDate(st.plan_start)}–${shortDate(st.plan_end)}` : ''].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>')}</div>
             ${(data.changes || []).filter(c => c.stage_id === st.id).map(c => `<p class="q3">➕ ${esc(c.amount > 0 ? t('תוספת שאושרה') : t('הפחתה שאושרה'))}: <b>${esc(money(c.amount))}</b> · ${esc(c.reason)}</p>`).join('')}
             ${qs.map(q => `<p class="q3">📝 ${esc(t('ההצעה שלך:'))} <b>${esc(money(q.amount))}</b> · ${esc(q.label)} · ${longDate(q.at)}
@@ -286,7 +289,7 @@ function renderSupplier() {
             ${x.file ? ` · <a href="${fileUrl(x.file.id)}" target="_blank" rel="noopener">${esc(t('אסמכתא'))}</a>` : ''}
             ${x.can_confirm ? `<div class="row-btns"><button class="btn primary sm" data-receipt="${x.id}" data-ok="1">✅ ${esc(t('התקבל'))}</button><button class="btn ghost sm" data-receipt="${x.id}" data-ok="0">✖ ${esc(t('לא התקבל'))}</button></div>` : ''}</li>`).join('');
         return `<article class="qcard pay-${esc(p.status)}" id="spay-${p.id}">
-            <div class="q1"><span class="one">${esc(p.title)}${st ? ` · ${esc(t(st.name))}` : ''}</span><span class="amt">${moneyVat(vatOf(p.amount, p.vat_rate))}</span></div>
+            <div class="q1"><span class="one">${esc(p.title)}${st ? ` · ${esc(sn(st))}` : ''}</span><span class="amt">${moneyVat(vatOf(p.amount, p.vat_rate))}</span></div>
             <div class="q2">${esc(label)}${p.due_date ? `<i class="sep" aria-hidden="true">·</i>${esc(t('עד {date}', { date: shortDate(p.due_date) }))}` : ''}${p.received ? `<i class="sep" aria-hidden="true">·</i>${esc(t('התקבל {amount}', { amount: money(p.received) }))}` : ''}</div>
             ${proofs ? `<ul class="proofs">${proofs}</ul>` : ''}
             ${p.retention && p.kind !== 'retention' ? `<p class="q3">${esc(t('עיכבון {amount} — נשאר עד המסירה', { amount: money(p.retention) }))}${p.index_diff ? ' · ' + esc(t('הפרשי הצמדה {amount}', { amount: money(p.index_diff) })) : ''}</p>` : ''}
@@ -314,7 +317,7 @@ function openSupplierDlg(mode, stageId) {
     const st = data.stages.find(s => s.id === stageId);
     $('#s-dlg-title').textContent = quote ? t('הצעת מחיר — {stage}', { stage: st.name }) : t('בקשת תשלום');
     $('#s-stage-box').hidden = quote;
-    el.stage_id.innerHTML = `<option value="">${esc(t('בלי שלב'))}</option>` + data.stages.map(s => `<option value="${s.id}">${esc(t(s.name))}</option>`).join('');
+    el.stage_id.innerHTML = `<option value="">${esc(t('בלי שלב'))}</option>` + data.stages.map(s => `<option value="${s.id}">${esc(sn(s))}</option>`).join('');
     $('#s-title-box').hidden = quote;
     $('#s-titles').innerHTML = [t('מקדמה'), t('תשלום ביניים'), t('תשלום סופי'), t('תוספת')].map(v => `<option value="${esc(v)}">`).join('');
     $('#s-valid-box').hidden = $('#s-terms-box').hidden = !quote;
@@ -414,7 +417,7 @@ function payCard(p) {
         p.can_pay ? `<button class="btn ${p.payer === data.role ? 'primary' : 'ghost'}" data-pay="${p.id}">💳 ${esc(t('שילמתי — העלאת אסמכתא'))}</button>` : '',
     ].filter(Boolean).join('');
     return `<article class="qcard pay-${esc(p.status)}" id="pay-${p.id}">
-        <div class="q1"><span class="one">${esc(p.title)}${st ? ` · ${esc(t(st.name))}` : ''}</span><span class="amt">${moneyVat(vatOf(p.amount, p.vat_rate))}</span></div>
+        <div class="q1"><span class="one">${esc(p.title)}${st ? ` · ${esc(sn(st))}` : ''}</span><span class="amt">${moneyVat(vatOf(p.amount, p.vat_rate))}</span></div>
         <div class="q2">${esc(p.supplier_name)}<i class="sep" aria-hidden="true">·</i>${PAY_ICON[p.status] || ''} ${esc(p.label)}${p.due_date ? `<i class="sep" aria-hidden="true">·</i><span class="${late ? 'late' : ''}">${esc(t('עד {date}', { date: shortDate(p.due_date) }))}</span>` : ''}</div>
         ${p.status === 'partial' ? `<p class="q3">${esc(t('התקבל {amount}', { amount: money(p.received) }))} · ${esc(t('נשאר'))} <b>${esc(money(p.balance))}</b></p>` : ''}
         ${p.retention && p.kind !== 'retention' ? `<p class="q3">${esc(t('לתשלום עכשיו {amount} — {r} נשארים אצלכם כעיכבון עד המסירה', { amount: money(p.due_amount), r: money(p.retention) }))}</p>` : ''}
@@ -557,7 +560,7 @@ function openExpense() {
     xFile = null;
     $('#x-file-name').textContent = '';
     f.elements.spent_on.value = new Date().toISOString().slice(0, 10);
-    f.elements.stage_id.innerHTML = `<option value="">${esc(t('בלי שלב'))}</option>` + data.stages.map(s => `<option value="${s.id}">${esc(t(s.name))}</option>`).join('');
+    f.elements.stage_id.innerHTML = `<option value="">${esc(t('בלי שלב'))}</option>` + data.stages.map(s => `<option value="${s.id}">${esc(sn(s))}</option>`).join('');
     $('#x-dlg').showModal();
 }
 
