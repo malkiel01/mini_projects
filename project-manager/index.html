@@ -2,12 +2,12 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="assets/js/i18n.js?v=24"></script>
+    <script src="assets/js/i18n.js?v=25"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=24">
+    <link rel="stylesheet" href="assets/css/app.css?v=25">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -63,6 +63,7 @@
     <nav class="tabs" id="nav" aria-label="ניווט ראשי">
         <a href="#/" data-nav="projects">פרויקטים</a>
         <a href="#/calendar" data-nav="calendar">יומן<span class="nbadge" id="rem-badge" hidden></span></a>
+        <a href="#/finance" data-nav="finance">כספים<span class="nbadge" id="fin-badge" hidden></span></a>
         <a href="#/contacts/client" data-nav="contacts">אנשי קשר</a>
         <a href="#/settings/messages" data-nav="settings">הגדרות</a>
     </nav>
@@ -198,6 +199,35 @@
             <ul id="share-targets" class="list rows-list" aria-live="polite"></ul>
             <div class="uploads" id="share-progress" aria-live="polite"></div>
             <button class="btn ghost danger" id="share-cancel" type="button" hidden>ביטול השיתוף</button>
+        </section>
+
+        <!-- ===== אגף הכספים — כל הפרויקטים (כ3, assets/js/finance-all.js) ===== -->
+        <section id="view-finance" class="view" hidden>
+            <div class="filters" id="fa-filters">
+                <select id="fa-project" aria-label="פרויקט"></select>
+                <select id="fa-supplier" aria-label="ספק"></select>
+                <label class="chip-toggle"><input type="checkbox" id="fa-all"><span>כולל שהסתיימו</span></label>
+                <a class="btn ghost sm" id="fa-export" href="#" download>⬇️ Excel</a>
+            </div>
+            <dl class="fin-kpis" id="fa-kpis"></dl>
+            <section id="fa-alerts-box" aria-labelledby="fa-alerts-title" hidden>
+                <h2 class="sec-title" id="fa-alerts-title">דורש טיפול כספי</h2>
+                <ul class="fin-alerts" id="fa-alerts"></ul>
+            </section>
+            <section class="fin-card" aria-labelledby="fa-cash-title">
+                <header class="fin-head"><h2 id="fa-cash-title">תזרים — מתוכנן מול שולם בפועל</h2></header>
+                <ul class="fin-legend cf-legend"><li><i class="cf-plan"></i>מתוכנן</li><li><i class="cf-paid"></i>שולם בפועל</li></ul>
+                <div class="cf-chart" id="fa-chart"></div>
+                <details class="cf-table-box"><summary>טבלה</summary><div id="fa-table"></div></details>
+            </section>
+            <section aria-labelledby="fa-up-title">
+                <h2 class="sec-title" id="fa-up-title">תשלומים קרובים ובאיחור</h2>
+                <ul class="list rows-list" id="fa-upcoming"></ul>
+            </section>
+            <section aria-labelledby="fa-proj-title">
+                <h2 class="sec-title" id="fa-proj-title">לפי פרויקט</h2>
+                <ul class="list fa-projects" id="fa-projects"></ul>
+            </section>
         </section>
 
         <!-- ===== יומן ותזכורות ===== -->
@@ -994,21 +1024,22 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=24"></script>
-    <script src="assets/js/contacts.js?v=24"></script>
-    <script src="assets/js/device-contacts.js?v=24"></script>
-    <script src="assets/js/files.js?v=24"></script>
-    <script src="assets/js/lightbox.js?v=24"></script>
-    <script src="assets/js/field.js?v=24"></script>
+    <script src="assets/js/core.js?v=25"></script>
+    <script src="assets/js/contacts.js?v=25"></script>
+    <script src="assets/js/device-contacts.js?v=25"></script>
+    <script src="assets/js/files.js?v=25"></script>
+    <script src="assets/js/lightbox.js?v=25"></script>
+    <script src="assets/js/field.js?v=25"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=24"></script>
-    <script src="assets/js/projects.js?v=24"></script>
-    <script src="assets/js/quotes.js?v=24"></script>
-    <script src="assets/js/payments.js?v=24"></script>
-    <script src="assets/js/finance.js?v=24"></script>
-    <script src="assets/js/hebcal.js?v=24"></script>
-    <script src="assets/js/calendar.js?v=24"></script>
-    <script src="assets/js/settings.js?v=24"></script>
-    <script src="assets/js/app.js?v=24"></script>
+    <script src="assets/js/share.js?v=25"></script>
+    <script src="assets/js/projects.js?v=25"></script>
+    <script src="assets/js/quotes.js?v=25"></script>
+    <script src="assets/js/payments.js?v=25"></script>
+    <script src="assets/js/finance.js?v=25"></script>
+    <script src="assets/js/finance-all.js?v=25"></script>
+    <script src="assets/js/hebcal.js?v=25"></script>
+    <script src="assets/js/calendar.js?v=25"></script>
+    <script src="assets/js/settings.js?v=25"></script>
+    <script src="assets/js/app.js?v=25"></script>
 </body>
 </html>

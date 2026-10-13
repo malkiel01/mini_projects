@@ -536,3 +536,176 @@ function pm_fin_contact_tick(): void
         }
     }
 }
+
+// ================= כ3 — האגף: כל הפרויקטים =================
+
+/** מתי צפוי תשלום (לתזרים): התאריך; "בגמר שלב" / "בהתקדמות" — סיום השלב (בפועל או מתוכנן). '' — לא ידוע. */
+function pm_payment_expected(array $p, ?array $stage): string
+{
+    if ($p['due_kind'] === 'date') return $p['due_date'];
+    if (!$stage) return '';
+    if ($stage['done_at']) return substr((string)$stage['done_at'], 0, 10);
+    return $stage['plan_end'] ?: '';
+}
+
+/**
+ * "💰 כספים" — כל הפרויקטים של המנהל. $in: project_id, supplier_id, all (כולל שהסתיימו).
+ * מחזיר: סיכום, התראות (עם שם הפרויקט), פרויקטים, תזרים חודשי (6 אחורה, 6 קדימה), תשלומים קרובים.
+ */
+function pm_finance_all(array $user, array $in): array
+{
+    $db = pm_db();
+    $cfg = pm_fin_alert_settings((int)$user['id']);
+    $all = !empty($in['all']);
+    $pf = (int)($in['project_id'] ?? 0);
+    $sf = (int)($in['supplier_id'] ?? 0);
+    $st = $db->prepare("SELECT p.id, p.name, p.status, c.name AS client FROM projects p LEFT JOIN contacts c ON c.id = p.client_id
+                         WHERE p.owner_id = ? AND p.status IN ('active','paused'" . ($all ? ",'done'" : '') . ') ORDER BY p.last_activity_at DESC');
+    $st->execute([$user['id']]);
+    $projects = $st->fetchAll();
+    $allProjects = array_map(fn($p) => ['id' => (int)$p['id'], 'name' => $p['name']], $projects);
+    if ($pf) $projects = array_values(array_filter($projects, fn($p) => (int)$p['id'] === $pf));
+    $today = pm_today();
+
+    $sum = [];
+    $outProjects = [];
+    $alerts = [];
+    foreach ($projects as $p) {
+        $pid = (int)$p['id'];
+        $f = pm_finance_of($pid, false, (int)$cfg['overpay']);
+        $P = [];
+        $behind = 0;
+        foreach ($f['stages'] as $s) foreach ($s['rows'] as $r) {
+            if ($sf && $r['supplier_id'] !== $sf) continue;
+            foreach (['committed', 'due', 'paid', 'balance'] as $k) { $P[$k][0] = ($P[$k][0] ?? 0) + $r[$k]['g']; $P[$k][1] = ($P[$k][1] ?? 0) + $r[$k]['n']; }
+            $g = max(0, $r['gap']['g']);
+            if ($g > 0) { $P['overdue'][0] = ($P['overdue'][0] ?? 0) + $g; $P['overdue'][1] = ($P['overdue'][1] ?? 0) + max(0, $r['gap']['n']); }
+        }
+        // שכר הטרחה — רק בלי סינון לפי ספק
+        if (!$sf && $f['fee']) foreach (['committed', 'balance'] as $k) { $P[$k][0] = ($P[$k][0] ?? 0) + $f['fee']['amount']['g']; $P[$k][1] = ($P[$k][1] ?? 0) + $f['fee']['amount']['n']; }
+        if ($sf && empty($P)) continue;
+        $T = $f['totals'];
+        $m = fn($k) => ['g' => round($P[$k][0] ?? 0, 2), 'n' => round($P[$k][1] ?? 0, 2)];
+        $pa = pm_fin_alerts($pid, $cfg);
+        foreach ($pa as $a) $alerts[] = $a + ['project_id' => $pid, 'project_name' => $p['name']];
+        $outProjects[] = [
+            'id' => $pid, 'name' => $p['name'], 'client' => $p['client'], 'status' => $p['status'],
+            'budget_today' => $T['budget_today'], 'over_budget' => $T['over_budget'], 'progress' => $T['progress'],
+            'committed' => $m('committed'), 'due' => $m('due'), 'paid' => $m('paid'), 'balance' => $m('balance'), 'overdue' => $m('overdue'),
+            // מתוך מה שצריך לשלם בסך הכול (שולם + יתרה) — גם כשאבני הדרך בלי הצעה שאושרה
+            'paid_pct' => (($P['paid'][0] ?? 0) + ($P['balance'][0] ?? 0)) > 0 ? (int)round(($P['paid'][0] ?? 0) * 100 / (($P['paid'][0] ?? 0) + ($P['balance'][0] ?? 0))) : 0,
+            'alerts' => count(array_filter($pa, fn($a) => in_array($a['level'], ['late', 'soon'], true))),
+        ];
+        foreach (['committed', 'paid', 'balance', 'overdue'] as $k) { $sum[$k][0] = ($sum[$k][0] ?? 0) + ($P[$k][0] ?? 0); $sum[$k][1] = ($sum[$k][1] ?? 0) + ($P[$k][1] ?? 0); }
+    }
+    $rank = ['late' => 0, 'soon' => 1, 'wait' => 2, 'info' => 3];
+    usort($alerts, fn($a, $b) => [$rank[$a['level']], $a['sort']] <=> [$rank[$b['level']], $b['sort']]);
+
+    // ---- תזרים ותשלומים קרובים — מאבני הדרך ומהאסמכתאות ----
+    $months = [];
+    $base = new DateTimeImmutable(substr($today, 0, 7) . '-01');
+    for ($i = -6; $i <= 6; $i++) $months[$base->modify("$i month")->format('Y-m')] = ['planned' => 0, 'paid' => 0];
+    $ids = array_column($outProjects, 'id');
+    $upcoming = [];
+    $soon30 = [0, 0];
+    $in30 = pm_today(30);
+    $in14 = pm_today(14);
+    if ($ids) {
+        $q = implode(',', array_fill(0, count($ids), '?'));
+        $ps = $db->prepare("SELECT p.*, c.name AS supplier, pr.name AS project FROM payments p JOIN contacts c ON c.id = p.supplier_id JOIN projects pr ON pr.id = p.project_id
+                             WHERE p.project_id IN ($q) AND p.status != 'cancelled'" . ($sf ? ' AND p.supplier_id = ' . $sf : ''));
+        $ps->execute($ids);
+        $payments = $ps->fetchAll();
+        $sids = array_filter(array_unique(array_map(fn($x) => (int)$x['stage_id'], $payments)));
+        $stages = [];
+        if ($sids) {
+            $ss = $db->query('SELECT * FROM stages WHERE id IN (' . implode(',', $sids) . ')');
+            foreach ($ss->fetchAll() as $s) $stages[(int)$s['id']] = $s;
+        }
+        $proofs = pm_payment_proofs(array_map('intval', array_column($payments, 'id')));
+        foreach ($payments as $x) {
+            $amount = (int)$x['amount'];
+            $received = 0;
+            foreach ($proofs[(int)$x['id']] ?? [] as $pf2) {
+                if ($pf2['status'] !== 'received') continue;
+                $r = (int)round($pf2['received_amount'] * 100);
+                $received += $r;
+                $mk = substr($pf2['paid_on'], 0, 7);
+                if (isset($months[$mk])) $months[$mk]['paid'] += $r;
+            }
+            $stage = $stages[(int)$x['stage_id']] ?? null;
+            $exp = pm_payment_expected($x, $stage);
+            if ($exp !== '' && isset($months[substr($exp, 0, 7)])) $months[substr($exp, 0, 7)]['planned'] += $amount;
+            $left = $amount - $received;
+            if ($left <= 0 || $x['status'] === 'received') continue;
+            $rate = pm_payment_vat($x);
+            $due = pm_payment_due($x, $stage, $today);
+            if ($exp !== '' && $exp >= $today && $exp <= $in30) { $soon30[0] += $left; $soon30[1] += pm_net($left, $rate); }
+            if ($due || ($exp !== '' && $exp <= $in14)) {
+                $upcoming[] = ['payment_id' => (int)$x['id'], 'project_id' => (int)$x['project_id'], 'project' => $x['project'], 'title' => $x['title'],
+                    'supplier' => $x['supplier'], 'stage' => $stage['name'] ?? '', 'amount' => pm_m($left, pm_net($left, $rate)),
+                    'date' => $exp, 'due_kind' => $x['due_kind'], 'due_pct' => $x['due_pct'] !== null ? (int)$x['due_pct'] : null,
+                    'late' => $x['due_kind'] === 'date' ? ($exp !== '' && $exp < $today) : false, 'due' => $due, 'status' => $x['status'], 'label' => pm_payment_label($x)];
+            }
+        }
+    }
+    usort($upcoming, fn($a, $b) => [!$a['late'], $a['date'] ?: '9999'] <=> [!$b['late'], $b['date'] ?: '9999']);
+    $cash = [];
+    foreach ($months as $k => $v) $cash[] = ['month' => $k, 'planned' => $v['planned'] / 100, 'paid' => $v['paid'] / 100, 'past' => $k < substr($today, 0, 7), 'current' => $k === substr($today, 0, 7)];
+
+    // ספקים לסינון — מכל הפרויקטים שלו
+    $sp = $db->prepare("SELECT DISTINCT c.id, c.name FROM contacts c JOIN payments p ON p.supplier_id = c.id JOIN projects pr ON pr.id = p.project_id
+                         WHERE pr.owner_id = ? AND c.kind = 'supplier' ORDER BY c.name");
+    $sp->execute([$user['id']]);
+
+    $M = fn($k) => pm_m((int)round(($sum[$k][0] ?? 0) * 100), (int)round(($sum[$k][1] ?? 0) * 100));
+    return [
+        'totals' => ['committed' => $M('committed'), 'paid' => $M('paid'), 'balance' => $M('balance'), 'overdue' => $M('overdue'),
+                     'next30' => pm_m($soon30[0], $soon30[1]), 'projects' => count($outProjects)],
+        'alerts' => array_map(fn($a) => array_diff_key($a, ['key' => 1]), array_slice($alerts, 0, 40)),
+        'alerts_total' => count($alerts),
+        'projects' => $outProjects, 'cashflow' => $cash, 'upcoming' => array_slice($upcoming, 0, 30),
+        'filters' => ['projects' => $allProjects, 'suppliers' => array_map(fn($c) => ['id' => (int)$c['id'], 'name' => $c['name']], $sp->fetchAll())],
+        'today' => $today,
+    ];
+}
+
+/** ייצוא ל-Excel (CSV, UTF-8 עם BOM): כל אבני הדרך בפרויקטים, עם מע"מ, מועד, שולם ויתרה. */
+function pm_finance_export(array $user, array $in): never
+{
+    $db = pm_db();
+    $all = !empty($in['all']);
+    $pf = (int)($in['project_id'] ?? 0);
+    $sf = (int)($in['supplier_id'] ?? 0);
+    $sql = "SELECT p.*, c.name AS supplier, pr.name AS project, s.name AS stage, s.status AS stage_status, s.progress AS stage_progress, s.done_at, s.plan_end
+              FROM payments p JOIN contacts c ON c.id = p.supplier_id JOIN projects pr ON pr.id = p.project_id LEFT JOIN stages s ON s.id = p.stage_id
+             WHERE pr.owner_id = ? AND pr.status IN ('active','paused'" . ($all ? ",'done'" : '') . ")" . ($pf ? ' AND pr.id = ' . $pf : '') . ($sf ? ' AND p.supplier_id = ' . $sf : '') . '
+             ORDER BY pr.name, s.sort, p.id';
+    $st = $db->prepare($sql);
+    $st->execute([$user['id']]);
+    $rows = $st->fetchAll();
+    $proofs = pm_payment_proofs(array_map('intval', array_column($rows, 'id')));
+    $kind = ['date' => pm_t('בתאריך'), 'stage_done' => pm_t('בגמר השלב'), 'progress' => pm_t('בהתקדמות')];
+    $out = fopen('php://temp', 'w+');
+    fwrite($out, "\xEF\xBB\xBF");
+    fputcsv($out, array_map('pm_t', ['פרויקט', 'שלב', 'ספק', 'אבן דרך', 'סכום כולל מע"מ', 'לפני מע"מ', 'מע"מ', 'מתי', 'תאריך יעד', 'סטטוס', 'שולם', 'יתרה']), ',', '"', ''); // i18n-ok — מתורגם ב-array_map('pm_t')
+    foreach ($rows as $r) {
+        $rate = pm_payment_vat($r);
+        $g = (int)$r['amount'];
+        $n = pm_net($g, $rate);
+        $paid = 0;
+        foreach ($proofs[(int)$r['id']] ?? [] as $x) if ($x['status'] === 'received') $paid += (int)round($x['received_amount'] * 100);
+        $when = $kind[$r['due_kind']] ?? $r['due_kind'];
+        if ($r['due_kind'] === 'progress') $when .= ' ' . (int)$r['due_pct'] . '%';
+        fputcsv($out, [$r['project'], pm_t((string)$r['stage']), $r['supplier'], $r['title'], $g / 100, $n / 100, ($g - $n) / 100, $when, $r['due_date'],
+            pm_payment_label($r), $paid / 100, $r['status'] === 'cancelled' ? 0 : max(0, $g - $paid) / 100], ',', '"', '');
+    }
+    rewind($out);
+    $csv = stream_get_contents($out);
+    pm_log('info', 'api', 'api.finance-export', ['data' => ['rows' => count($rows)]]);
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="finance-' . pm_today() . '.csv"');
+    header('Cache-Control: no-store');
+    echo $csv;
+    exit;
+}
