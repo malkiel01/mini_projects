@@ -690,6 +690,9 @@ function pm_migrate(PDO $pdo): void
     // מתחם, שלב 2: על אילו יחידות החוזה חל ('[]' — כולן), ואיך מחלקים ביניהן את העלות (JSON; '' — לפי השלבים)
     pm_add_column($pdo, 'contracts', 'unit_ids', "TEXT NOT NULL DEFAULT '[]'");
     pm_add_column($pdo, 'contracts', 'split', "TEXT NOT NULL DEFAULT ''");
+    // מתחם, שלב 3: מסירה לכל יחידה; תשלום "במסירה" של יחידה (NULL — כל המתחם / הפרויקט)
+    pm_add_column($pdo, 'units', 'handed_over_at', 'TEXT');
+    pm_add_column($pdo, 'payments', 'unit_id', 'INTEGER');
     $pdo->exec('CREATE TABLE IF NOT EXISTS fin_alert_sent (
         project_id INTEGER NOT NULL,
         contact_id INTEGER NOT NULL,

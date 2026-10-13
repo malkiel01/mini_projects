@@ -30,7 +30,12 @@ const Payments = (() => {
         });
         const form = $('#payment-dlg form');
         form.addEventListener('submit', e => { e.preventDefault(); save(); });
-        form.elements.stage_id.addEventListener('change', () => { stageChanged(null); dueKindChanged(); });
+        form.elements.stage_id.addEventListener('change', () => {
+            // "במסירה של" — עוקב אחרי היחידה של השלב (מתחם)
+            const u = project.stages.find(s => s.id === Number(form.elements.stage_id.value))?.unit_id;
+            if (u !== undefined) form.elements.unit_id.value = u ?? '';
+            stageChanged(null); dueKindChanged();
+        });
         $$('#payment-dlg [name=mode]').forEach(r => r.addEventListener('change', modeChanged));
         $$('#payment-dlg [name=due_kind]').forEach(r => r.addEventListener('change', dueKindChanged));
         $('#due-need-stage').addEventListener('click', () => $('#payment-dlg [name=stage_id]').focus());
@@ -89,7 +94,7 @@ const Payments = (() => {
 
     /** מתי משלמים — לשורה ולחלון. */
     function dueText(p, late) {
-        if (p.due_kind === 'handover') return t('במסירת הפרויקט');
+        if (p.due_kind === 'handover') return p.unit_name ? t('במסירת {unit}', { unit: p.unit_name }) : t('במסירת הפרויקט');
         if (p.due_kind === 'stage_done') return t('בגמר השלב');
         if (p.due_kind === 'progress') return t('בהתקדמות {n}%', { n: p.due_pct });
         return p.due_date ? t(late ? 'באיחור · {date}' : 'עד {date}', { date: shortDate(p.due_date) }) : '';
@@ -145,6 +150,10 @@ const Payments = (() => {
         el.percent.value = current?.percent ?? '';
         el.due_date.value = p.due_date || '';
         $(`#payment-dlg [name=due_kind][value=${p.due_kind || 'date'}]`).checked = true;
+        // מתחם: "במסירה" — של איזו יחידה (ברירת מחדל: היחידה של השלב)
+        const units = project.units || [];
+        const stUnit = project.stages.find(s => s.id === Number(p.stage_id))?.unit_id ?? '';
+        el.unit_id.innerHTML = options([{ value: '', label: units.length ? t('כל המתחם') : t('הפרויקט') }, ...units.map(u => ({ value: u.id, label: u.name }))], current ? (current.unit_id ?? '') : stUnit);
         el.due_pct.value = p.due_pct || 50;
         // הצמדה (כ4): המדד הקובע — כשהפרויקט צמוד
         const fs = project.finance || {};
@@ -250,7 +259,8 @@ const Payments = (() => {
         const hasStage = !!Number(el.stage_id.value);
         $$('#payment-dlg [name=due_kind]').forEach(r => { if (r.value !== 'date') r.disabled = el.title.disabled; });
         const kind = $('#payment-dlg [name=due_kind]:checked').value;
-        const need = kind !== 'date' && !hasStage;
+        const need = !['date', 'handover'].includes(kind) && !hasStage;
+        $('#due-unit-box').hidden = kind !== 'handover' || !(project.units || []).length;
         $('#due-need-stage').hidden = !need;
         el.stage_id.classList.toggle('need', need);
         if (need && e?.target?.name === 'due_kind') { el.stage_id.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.stage_id.focus(); }
@@ -330,7 +340,8 @@ const Payments = (() => {
         if (project.finance?.index_on) body.index_value = el.index_value.value.trim();
         if (!body.supplier_id) { formError(form, t('ספק: שדה חובה')); return; }
         if (!body.title) { formError(form, t('שם: שדה חובה (למשל "מקדמה")')); return; }
-        if (body.due_kind !== 'date' && !body.stage_id) { formError(form, t('"בגמר השלב" או "בהתקדמות" — קודם בוחרים שלב (למעלה)')); el.stage_id.focus(); return; }
+        if (body.due_kind === 'handover' && (project.units || []).length) body.unit_id = Number(el.unit_id.value) || null;
+        if (!['date', 'handover'].includes(body.due_kind) && !body.stage_id) { formError(form, t('"בגמר השלב" או "בהתקדמות" — קודם בוחרים שלב (למעלה)')); el.stage_id.focus(); return; }
         if (pct ? !body.percent : !body.amount) { formError(form, t(pct ? 'אחוז: שדה חובה' : 'סכום: שדה חובה')); return; }
         await busy($('button[type=submit]', form), form, async () => {
             await refresh(await api('payment', { body }));

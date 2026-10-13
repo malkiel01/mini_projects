@@ -84,6 +84,7 @@ function pm_payment_out(array $p, array $proofs): array
         'change_order_id' => isset($p['change_order_id']) ? (int)$p['change_order_id'] ?: null : null,
         'invoice' => !empty($p['invoice_at']) ? ['file_id' => isset($p['invoice_file_id']) ? (int)$p['invoice_file_id'] ?: null : null, 'no' => $p['invoice_no'] ?? '', 'at' => $p['invoice_at']] : null,
         'proofs' => $proofs,
+        'unit_id' => !empty($p['unit_id']) ? (int)$p['unit_id'] : null, 'unit_name' => !empty($p['unit_id']) ? pm_unit_name((int)$p['unit_id']) : null,
     ];
 }
 
@@ -189,8 +190,8 @@ function pm_payment_save(array $user, array $in, ?array $actor = null): array
     $kind = $old['kind'] ?? 'milestone'; // שחרור העיכבון נוצר לבד (pm_retention_sync), לא מהחלון
     $dueKind = (string)($in['due_kind'] ?? ($old['due_kind'] ?? 'date'));
     if ($kind === 'retention') $dueKind = $old['due_kind'];
-    if (!in_array($dueKind, ['date', 'stage_done', 'progress', 'handover'], true) || ($dueKind === 'handover' && $kind !== 'retention')) throw new PmError('מועד לא מוכר', 422);
-    if ($dueKind !== 'date' && !$stageId) throw new PmError('"בגמר שלב" או "בהתקדמות" — רק כשנבחר שלב', 422);
+    if (!in_array($dueKind, ['date', 'stage_done', 'progress', 'handover'], true)) throw new PmError('מועד לא מוכר', 422);
+    if (!in_array($dueKind, ['date', 'handover'], true) && !$stageId) throw new PmError('"בגמר שלב" או "בהתקדמות" — רק כשנבחר שלב', 422);
     $duePct = (int)($in['due_pct'] ?? 0);
     if ($dueKind === 'progress' && ($duePct < 1 || $duePct > 100)) throw new PmError('התקדמות: בין 1 ל-100%', 422);
     $payer = (string)($in['payer'] ?? 'client');
@@ -212,6 +213,9 @@ function pm_payment_save(array $user, array $in, ?array $actor = null): array
         'notes'        => pm_str($in, 'notes', 2000, false, 'מה כלול'),
         // עיכבון (לפי הגדרות הפרויקט): החלק מהתשלום שנשאר אצל הלקוח עד המסירה
         'retention'    => $kind === 'retention' ? 0 : (int)round($amount * (float)$p['retention_pct'] / 100),
+        // "במסירה" — של איזו יחידה (מתחם); בלי — כל המתחם. ברירת מחדל: היחידה של השלב
+        'unit_id'      => $dueKind === 'handover' ? (array_key_exists('unit_id', $in) ? pm_unit_of_project((int)($in['unit_id'] ?? 0) ?: null, $projectId)
+                          : ($old['unit_id'] ?? ($stageId ? pm_stage_unit($stageId) : null))) : null,
     ];
     // הצמדה: המדד הקובע לתשלום — והפרשי ההצמדה על מה שמשלמים עכשיו
     if ($p['index_on'] && array_key_exists('index_value', $in)) {
@@ -283,14 +287,15 @@ function pm_retention_sync(array $user, int $projectId, int $stageId, int $suppl
         if ($rel) $db->prepare("UPDATE payments SET status = 'cancelled', updated_at = ? WHERE id = ?")->execute([$now, $rel['id']]);
         return;
     }
+    $unit = pm_stage_unit($stageId); // מתחם: העיכבון של שלב בדירה — משתחרר במסירת הדירה
     if ($rel) {
-        if ((int)$rel['amount'] !== $sum) $db->prepare('UPDATE payments SET amount = ?, updated_at = ? WHERE id = ?')->execute([$sum, $now, $rel['id']]);
+        if ((int)$rel['amount'] !== $sum || ($rel['unit_id'] ?? null) != $unit) $db->prepare('UPDATE payments SET amount = ?, unit_id = ?, updated_at = ? WHERE id = ?')->execute([$sum, $unit, $now, $rel['id']]);
         return;
     }
     $p = pm_project_row($user, $projectId);
-    $db->prepare("INSERT INTO payments (project_id, stage_id, supplier_id, title, amount, due_date, due_kind, payer, needs_lawyer, kind, vat_rate, notes, created_by, created_at, updated_at)
-                  VALUES (?, ?, ?, ?, ?, '', 'handover', 'client', ?, 'retention', ?, '', ?, ?, ?)")
-       ->execute([$projectId, $stageId, $supplierId, pm_t('שחרור עיכבון'), $sum, $p['lawyer_id'] ? 1 : 0, pm_vat_rate(), $user['id'], $now, $now]);
+    $db->prepare("INSERT INTO payments (project_id, stage_id, supplier_id, title, amount, due_date, due_kind, payer, needs_lawyer, kind, vat_rate, notes, created_by, created_at, updated_at, unit_id)
+                  VALUES (?, ?, ?, ?, ?, '', 'handover', 'client', ?, 'retention', ?, '', ?, ?, ?, ?)")
+       ->execute([$projectId, $stageId, $supplierId, pm_t('שחרור עיכבון'), $sum, $p['lawyer_id'] ? 1 : 0, pm_vat_rate(), $user['id'], $now, $now, $unit]);
 }
 
 function pm_short_date(string $ymd): string

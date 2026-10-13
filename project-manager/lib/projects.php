@@ -361,6 +361,8 @@ function pm_stage_save(array $user, array $in): array
             if ((int)$old['progress'] !== $f['progress'] && !in_array($status, ['done', 'paid'], true)) {
                 pm_event($user, $projectId, 'stage_progress', '{stage}: התקדמות {n}%', ['stage' => $id], ['stage' => $f['name'], 'n' => $f['progress']]);
             }
+            // שלב שעבר יחידה — גם שחרור העיכבון שלו עובר (משתחרר במסירה של היחידה החדשה)
+            if (($old['unit_id'] ?? null) != $f['unit_id']) $db->prepare("UPDATE payments SET unit_id = ? WHERE stage_id = ? AND kind = 'retention'")->execute([$f['unit_id'], $id]);
             if ((int)$old['supplier_id'] !== (int)$f['supplier_id'] && $f['supplier_id']) {
                 pm_event($user, $projectId, 'stage_supplier', '{stage}: שויך {supplier}', ['stage' => $id],
                     ['stage' => $f['name'], 'supplier' => pm_contact_name($f['supplier_id'])]);

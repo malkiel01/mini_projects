@@ -41,6 +41,10 @@ const Projects = (() => {
             if (e.target.closest('[data-unit-new]')) openUnit(null);
         });
         $('#add-unit').addEventListener('click', () => openUnit(null));
+        $('#units-handover').addEventListener('click', async () => {
+            if (!confirm(t('לסמן שכל היחידות שעוד לא נמסרו נמסרו היום? שחרורי העיכבון ותשלומי "במסירה" יגיעו למועד.'))) return;
+            await busy($('#units-handover'), null, async () => { update(await api('units-handover', { body: { project_id: cur.project.id } })); toast(t('🔑 כל היחידות נמסרו')); });
+        });
         $('#units-list').addEventListener('click', e => { const r = e.target.closest('[data-unit]'); if (r) openUnit(Number(r.dataset.unit)); });
         $('#unit-dlg form').addEventListener('submit', e => { e.preventDefault(); saveUnit(); });
         $('#unit-delete').addEventListener('click', deleteUnit);
@@ -435,6 +439,13 @@ const Projects = (() => {
         el.area.value = u?.area ?? '';
         el.budget.value = u?.budget || '';
         el.notes.value = u?.notes || '';
+        el.handed_over_at.value = u?.handed_over_at || '';
+        $('#unit-handover-box').hidden = $('#unit-handover-hint').hidden = !u;
+        // איחוד: יחידה עם נתונים — מעבירים את השלבים ליחידה אחרת או למשותף, ואז מוחקים
+        const merge = !!u?.used && !Dev.on();
+        $('#unit-merge-box').hidden = !merge;
+        el.move_to.innerHTML = options([{ value: 'shared', label: t('משותף לכל המתחם') }, ...units.filter(x => x.id !== id).map(x => ({ value: x.id, label: x.name }))], units.find(x => x.id !== id)?.id || 'shared');
+        $('#unit-delete').textContent = merge ? t('🔀 איחוד ומחיקת היחידה') : t('מחיקת היחידה');
         const shared = cur.stages.filter(x => !x.unit_id).length;
         el.copy_from.innerHTML = options([
             { value: '', label: t('בלי שלבים — אוסיף בעצמי') },
@@ -455,7 +466,7 @@ const Projects = (() => {
     async function saveUnit() {
         const form = $('#unit-dlg form'), el = form.elements;
         const body = { id: unitId || undefined, project_id: cur.project.id, name: el.name.value.trim(), area: el.area.value.trim(),
-            budget: el.budget.value.trim(), notes: el.notes.value.trim(), copy_from: unitId ? undefined : el.copy_from.value, move_shared: !unitId && el.move_shared.checked };
+            budget: el.budget.value.trim(), notes: el.notes.value.trim(), ...(unitId ? { handed_over_at: el.handed_over_at.value } : {}), copy_from: unitId ? undefined : el.copy_from.value, move_shared: !unitId && el.move_shared.checked };
         if (!body.name) { formError(form, t('שם היחידה: שדה חובה')); return; }
         await busy($('button[type=submit]', form), form, async () => {
             const d = await api('unit', { body });
@@ -469,9 +480,14 @@ const Projects = (() => {
 
     async function deleteUnit() {
         const u = (cur.units || []).find(x => x.id === unitId);
-        if (!u || !confirm(t('למחוק את "{name}"? השלבים הריקים שלה יימחקו איתה.', { name: u.name }))) return;
+        if (!u) return;
+        const el = $('#unit-dlg form').elements;
+        const merge = !$('#unit-merge-box').hidden;
+        const to = merge ? el.move_to.selectedOptions[0].textContent : '';
+        if (!confirm(merge ? t('לאחד את "{name}" עם {to}? כל השלבים שלה, עם ההצעות והתשלומים, יעברו לשם.', { name: u.name, to })
+            : t('למחוק את "{name}"? השלבים הריקים שלה יימחקו איתה.', { name: u.name }))) return;
         await busy(null, $('#unit-dlg form'), async () => {
-            update(await api('unit-delete', { body: { id: u.id } }));
+            update(await api('unit-delete', { body: { id: u.id, ...(merge ? { move_to: el.move_to.value } : {}) } }));
             $('#unit-dlg').close();
             toast(t('היחידה נמחקה'));
         });
@@ -483,9 +499,11 @@ const Projects = (() => {
         $('#units-list').innerHTML = units.map(u => `<li class="card" data-unit="${u.id}" tabindex="0" role="button">
             <span class="num" aria-hidden="true">🏢</span>
             <div class="body"><div class="l1">${esc(u.name)}</div><div class="l2">${[
+                u.handed_over_at ? t('🔑 נמסרה {date}', { date: shortDate(u.handed_over_at) }) : '',
                 t('{n} שלבים', { n: u.stages }), u.area ? t('{n} מ"ר', { n: u.area }) : '', u.budget ? money(u.budget) : '',
             ].filter(Boolean).map(esc).join('<i class="sep" aria-hidden="true">·</i>')}</div></div></li>`).join('');
         $('#units-hint').hidden = units.length > 0;
+        $('#units-handover').hidden = units.length < 2 || units.every(u => u.handed_over_at);
     }
 
     let stEdit = false;
