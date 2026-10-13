@@ -2029,5 +2029,12 @@
     "שימוש במערכת": "Utilisé dans",
     "📝 לחוזה של ספק": "📝 Vers un contrat fournisseur",
     "🧾 חשבונית לאבן דרך": "🧾 Facture d'un jalon",
-    "💳 אסמכתא לאבן דרך": "💳 Justificatif d'un jalon"
+    "💳 אסמכתא לאבן דרך": "💳 Justificatif d'un jalon",
+    "החיבור נתקע": "La connexion est bloquée",
+    "ההעלאה נכשלה: {error}": "Échec de l'envoi : {error}",
+    "נשארו ~{n} דק'": "~{n} min restantes",
+    "נשארו ~{n} שנ'": "~{n} s restantes",
+    "{a} מתוך {b}MB": "{a} sur {b} Mo",
+    "תוצאות בתיקייה הזו ({n})": "Résultats dans ce dossier ({n})",
+    "תוצאות בכל הפרויקט ({n})": "Résultats dans tout le projet ({n})"
 }

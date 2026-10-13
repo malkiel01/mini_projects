@@ -2011,5 +2011,12 @@
     "שימוש במערכת": "Used in",
     "📝 לחוזה של ספק": "📝 To a supplier contract",
     "🧾 חשבונית לאבן דרך": "🧾 Invoice for a milestone",
-    "💳 אסמכתא לאבן דרך": "💳 Proof for a milestone"
+    "💳 אסמכתא לאבן דרך": "💳 Proof for a milestone",
+    "החיבור נתקע": "The connection stalled",
+    "ההעלאה נכשלה: {error}": "Upload failed: {error}",
+    "נשארו ~{n} דק'": "~{n} min left",
+    "נשארו ~{n} שנ'": "~{n} s left",
+    "{a} מתוך {b}MB": "{a} of {b}MB",
+    "תוצאות בתיקייה הזו ({n})": "Results in this folder ({n})",
+    "תוצאות בכל הפרויקט ({n})": "Results in the whole project ({n})"
 }
