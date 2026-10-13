@@ -326,3 +326,15 @@ tr.archived { opacity: .6; }
 .word-preview .docx-wrapper > section.docx { box-shadow: 0 1px 4px rgba(0,0,0,.2); margin-bottom: 16px !important; }
 .word-dialog { max-width: 900px; }
 code { font-family: ui-monospace, monospace; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+
+/* ── שלב 10: PDF "לפרק" ── */
+.parse-bar { margin: 8px 0; }
+.parse-bar .ops { margin-top: 6px; flex-wrap: wrap; }
+.spot { position: absolute; box-sizing: border-box; border: 1.5px dashed #2f9e44; background: rgba(47,158,68,.07);
+  border-radius: 3px; padding: 0; cursor: copy; overflow: hidden; min-width: 0; font: inherit; }
+.spot:hover, .spot:focus-visible { background: rgba(47,158,68,.2); }
+.spot span { position: absolute; inset: 0 3px; font-size: 10px; line-height: 1.1; color: #2b8a3e;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; pointer-events: none; }
+.pages.placing .spot { pointer-events: none; }
+.upload .pdf-mode { border: 1px solid #dee2e6; border-radius: 8px; padding: 8px 12px; display: grid; gap: 6px; margin: 0; }
+.upload .pdf-mode legend { font-size: .9em; padding: 0 4px; }

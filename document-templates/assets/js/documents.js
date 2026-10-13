@@ -805,6 +805,25 @@
     let pdf;
     if (doc.mime === 'application/pdf') {
       pdf = await PDFDocument.load(srcBytes, { ignoreEncryption: true });
+      // שלב 10: לטופס PDF יש שדות משלו, שמוצגים מעל תוכן הדף — שדה ריק עם רקע
+      // היה מסתיר את מה שנכתוב. משטחים אותם לתוכן הדף לפני שכותבים מעליהם.
+      try {
+        const form = pdf.getForm();
+        if (form.getFields().length) {
+          form.flatten({ updateFieldAppearances: false });
+          // pdf-lib מוחק את השדות אבל משאיר הפניות אליהם ב-Annots של הדף — מנקים
+          for (const page of pdf.getPages()) {
+            const annots = page.node.Annots();
+            if (!annots) continue;
+            for (let i = annots.size() - 1; i >= 0; i--) {
+              const ref = annots.get(i);
+              if (ref instanceof window.PDFLib.PDFRef && !pdf.context.lookup(ref)) annots.remove(i);
+            }
+          }
+        }
+      } catch (e) {
+        try { const form = pdf.getForm(); for (const f of form.getFields()) form.removeField(f); } catch (e2) { /* בלי טופס */ }
+      }
     } else {
       pdf = await PDFDocument.create();
       const p = doc.schema.pages[0];
