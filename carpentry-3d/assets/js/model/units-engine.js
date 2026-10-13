@@ -10,6 +10,7 @@ import { partitions, shelves, door, drawer, part } from './blocks.js';
 import { material } from './materials.js';
 import { resolveShares } from './layout.js';
 import { applyFinish, resolveSame, stepTops } from './templates/common.js';
+import { isBundle, ledPlaces, lightFloor } from './lighting.js';
 
 function boardThickness(id) { return material(id).t || 18; }
 const sameOr = (x, dflt) => (!x || x === 'same' ? dflt : x);
@@ -58,6 +59,9 @@ export function unitsInterior(ctx, o) {
   const { parts, hardware } = ctx;
   const { units, inner, W, sideT, shelfT, bottomY, topY, tops, stepped, colY1, z0, z1, innerMat, shelfMat, sidesOverTop } = o;
   const v = { columns: o.columns, shelvesMode: o.shelvesMode, led: o.led };
+  // תאורה מפורטת (lighting.js) — לפס מפורט, או למיקום חדש (מלמעלה / גב) גם עם הפס הישן; אחרת — הקוד הישן
+  const newPlace = (x) => x && !['none', 'sides', 'shelves', 'same'].includes(x);
+  const light = o.light && (!isBundle(o.light.stripId) || newPlace(o.led) || o.units.some((u) => u.floors.some((f) => newPlace(f.led)))) ? o.light : null;
     // מחיצה לכל זוג עמודות: עובי וחומר משלה (units[i].partitionR — המחיצה מימין לעמודה i);
     // בלי הגדרה — של המוצר. כשכולן כברירת המחדל — המחיצות הרגילות, בדיוק כמו קודם.
     const pT = (i) => partT(units, i, sideT), pM = (i) => sameOr(units[i]?.partitionR?.material, innerMat);
@@ -83,8 +87,11 @@ export function unitsInterior(ctx, o) {
       const y1c = colY1(i);
       const { fl, b } = floorsOf(i);
       // מדף קבוע בגבול בין קומות
+      const ceilings = [], floorShelves = [];
       for (let j = 1; j < fl.length; j++) {
-        parts.push(...shelves({ col, y0: b[j] - shelfT, y1: b[j] + shelfT, z0, z1, count: 1, t: shelfT, material: shelfMat, adjustable: false, colIndex: i, prefix: splitPrefix(fl.length, j) }).parts);
+        const bs = shelves({ col, y0: b[j] - shelfT, y1: b[j] + shelfT, z0, z1, count: 1, t: shelfT, material: shelfMat, adjustable: false, colIndex: i, prefix: splitPrefix(fl.length, j) }).parts;
+        ceilings[j - 1] = bs[0];
+        parts.push(...bs);
       }
       fl.forEach((f, j) => {
         const sh = f.interior?.type === 'shelves' ? f.interior.shelves || {} : null;
@@ -104,10 +111,24 @@ export function unitsInterior(ctx, o) {
           for (const p of s.parts) { p.material = glassShelf; p.box = { ...p.box, h: gt }; p.edges = {}; p.note = 'מדף זכוכית מחוסם, מלוטש — על תומכי זכוכית'; p.qtyKey = `glass-shelf-${Math.round(p.box.w)}`; }
         }
         parts.push(...s.parts);
+        floorShelves[j] = { parts: s.parts, adj: adj && n > 0, glass: !!glassShelf && n > 0 };
         if (adj) s.parts.forEach((p) => hardware.push({ id: `${p.id}-pins`, kind: 'shelf-pin', material: 'hw:shelf-pin', qty: 4, for: p.id }));
       });
       // תאורה: לכל קומה (f.led), ובלי הגדרה — של המוצר
-      if (fl.some((f) => f.led && f.led !== 'same')) {
+      if (light) {
+        const boardAt = (id) => parts.find((p) => p.id === id);
+        const roof = parts.find((p) => (p.id === 'top' || /^top-\d/.test(p.id)) && p.box.x <= col.x0 + 1 && p.box.x + p.box.w >= col.x1 - 1);
+        fl.forEach((f, j) => {
+          const places = ledPlaces(f.led && f.led !== 'same' ? f.led : v.led);
+          if (!places.size) return;
+          const a = j === 0 ? inner.y0 : b[j], top = j === fl.length - 1 ? y1c : b[j + 1] - shelfT;
+          const fs = floorShelves[j] || { parts: [], adj: false, glass: false };
+          lightFloor({ hardware, warnings: ctx.warnings || [] }, light, { i, j, nFloors: fl.length, col, a, top, z0, z1, places,
+            ceiling: j === fl.length - 1 ? roof : ceilings[j], shelves: fs.parts, adjustable: fs.adj, glassShelves: fs.glass,
+            boards: { L: boardAt(i === 0 ? 'side-L' : `partition-${i}`), R: boardAt(i === cols.cols.length - 1 ? 'side-R' : `partition-${i + 1}`) },
+            door: ['wood', 'glass'].includes(f.front?.type) });
+        });
+      } else if (fl.some((f) => f.led && f.led !== 'same')) {
         fl.forEach((f, j) => {
           const led = f.led && f.led !== 'same' ? f.led : v.led;
           const a = j === 0 ? inner.y0 : b[j], top = j === fl.length - 1 ? y1c : b[j + 1] - shelfT;

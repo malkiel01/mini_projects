@@ -98,7 +98,24 @@ export const SEED = [
   { id: 'hw:leg-adjust',           kind: 'hardware', name: 'רגלית מתכווננת', price: 6, priceUnit: 'unit' },
   { id: 'hw:hinge-bifold',         kind: 'hardware', name: 'ציר קיפול לדלת פינה', price: 18, priceUnit: 'unit' },
   { id: 'hw:carousel',             kind: 'hardware', name: 'קרוסלה לארון פינתי', price: 650, priceUnit: 'unit' },
-  { id: 'hw:led-strip',            kind: 'hardware', name: 'פס לד (כולל פרופיל ושנאי יחסי)', price: 90, priceUnit: 'm' },
+  { id: 'hw:led-strip',            kind: 'hardware', name: 'פס לד (כולל פרופיל ושנאי יחסי)', price: 90, priceUnit: 'm', led: { type: 'strip', bundle: true } },
+  // תאורה (model/lighting.js): פסים (מתח, וואט למטר, גוון), פרופילים (מונח / שקוע + חריץ), שנאים, שליטה
+  { id: 'hw:led-12v-3000',         kind: 'hardware', name: 'פס לד 12V חם 3000K (9.6W/מ\')', price: 35, priceUnit: 'm', led: { type: 'strip', v: 12, w: 9.6, k: 3000 } },
+  { id: 'hw:led-12v-4000',         kind: 'hardware', name: 'פס לד 12V ניטרלי 4000K (9.6W/מ\')', price: 35, priceUnit: 'm', led: { type: 'strip', v: 12, w: 9.6, k: 4000 } },
+  { id: 'hw:led-24v-3000',         kind: 'hardware', name: 'פס לד 24V חם 3000K (14.4W/מ\')', price: 48, priceUnit: 'm', led: { type: 'strip', v: 24, w: 14.4, k: 3000 } },
+  { id: 'hw:led-24v-4000',         kind: 'hardware', name: 'פס לד 24V ניטרלי 4000K (14.4W/מ\')', price: 48, priceUnit: 'm', led: { type: 'strip', v: 24, w: 14.4, k: 4000 } },
+  { id: 'hw:led-profile-surface',  kind: 'hardware', name: 'פרופיל לד מונח (אלומיניום + מפזר)', price: 28, priceUnit: 'm', led: { type: 'profile' } },
+  { id: 'hw:led-profile-recessed', kind: 'hardware', name: 'פרופיל לד שקוע (בחריץ 17×8)', price: 34, priceUnit: 'm', led: { type: 'profile', groove: { w: 17, d: 8 } } },
+  { id: 'hw:led-profile-corner',   kind: 'hardware', name: 'פרופיל לד פינתי 45°', price: 32, priceUnit: 'm', led: { type: 'profile' } },
+  { id: 'hw:led-driver-12v-30',    kind: 'hardware', name: 'שנאי לד 12V 30W', price: 70, priceUnit: 'unit', led: { type: 'driver', v: 12, w: 30 } },
+  { id: 'hw:led-driver-12v-60',    kind: 'hardware', name: 'שנאי לד 12V 60W', price: 110, priceUnit: 'unit', led: { type: 'driver', v: 12, w: 60 } },
+  { id: 'hw:led-driver-12v-100',   kind: 'hardware', name: 'שנאי לד 12V 100W', price: 160, priceUnit: 'unit', led: { type: 'driver', v: 12, w: 100 } },
+  { id: 'hw:led-driver-24v-60',    kind: 'hardware', name: 'שנאי לד 24V 60W', price: 120, priceUnit: 'unit', led: { type: 'driver', v: 24, w: 60 } },
+  { id: 'hw:led-driver-24v-150',   kind: 'hardware', name: 'שנאי לד 24V 150W', price: 210, priceUnit: 'unit', led: { type: 'driver', v: 24, w: 150 } },
+  { id: 'hw:led-touch',            kind: 'hardware', name: 'מתג מגע / עמעם ללד', price: 45, priceUnit: 'unit', led: { type: 'control', mode: 'touch' } },
+  { id: 'hw:led-switch',           kind: 'hardware', name: 'מתג לד על הכבל', price: 20, priceUnit: 'unit', led: { type: 'control', mode: 'switch' } },
+  { id: 'hw:led-door',             kind: 'hardware', name: 'חיישן דלת ללד (נדלק בפתיחה)', price: 55, priceUnit: 'unit', led: { type: 'control', mode: 'door' } },
+  { id: 'hw:led-motion',           kind: 'hardware', name: 'חיישן תנועה ללד', price: 70, priceUnit: 'unit', led: { type: 'control', mode: 'motion' } },
   // דוגמאות חירוץ CNC (model/milling.js) — מנוהלות במסך "🛠 CNC". המחיר: למ"ר של פאה מחורצת.
   { id: 'cnc:milled-fine',         kind: 'cnc', name: 'דמוי סטריפים דק', price: 90, priceUnit: 'm2', mill: { kind: 'flutes', groove: 6, rib: 10, depth: 5, margin: 0 } },
   { id: 'cnc:milled-wide',         kind: 'cnc', name: 'דמוי סטריפים רחב', price: 80, priceUnit: 'm2', mill: { kind: 'flutes', groove: 10, rib: 20, depth: 6, margin: 0 } },
@@ -197,6 +214,7 @@ export function materialsOfKind(kind, { back, solid, top } = {}) {
 export function materialsOfRole(role) {
   if (role === 'sliding') return all().filter((m) => m.kind === 'hardware' && m.active && m.system);
   if (role === 'slide') return all().filter((m) => m.kind === 'hardware' && m.active && Number.isFinite(m.load));
+  if (role && role.startsWith('led-')) return all().filter((m) => m.kind === 'hardware' && m.active && m.led?.type === role.slice(4));
   const kinds = role === 'handle' ? ['handle', 'knob'] : [role];
   return all().filter((m) => m.kind === 'hardware' && m.active && m.accessory && kinds.includes(accessoryKind(m.accessory.type)));
 }

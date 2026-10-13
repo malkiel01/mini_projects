@@ -258,7 +258,7 @@ export function hardwareList({ hardware }) {
     if (h.kind === 'info' || !h.material) continue;   // רשומות מידע (משקל, עומס) אינן פריטי פרזול
     const m = material(h.material);
     const row = rows.get(h.material) || { name: m.name, kind: h.kind, qty: 0 };
-    row.qty += h.qty || 1;
+    row.qty = Math.round((row.qty + (h.qty || 1)) * 100) / 100;   // מטרים (לד, פרופיל) — בלי שאריות של חיבור עשרוני
     rows.set(h.material, row);
   }
   return [...rows.values()];
