@@ -1877,5 +1877,8 @@
     "🛠️ מחיקת הפרויקט כולו — כאילו לא היה": "🛠️ Supprimer tout le projet — comme s'il n'avait jamais existé",
     "רק המפתח, כשסמכות המפתח פעילה": "Développeur uniquement, avec l'autorité développeur activée",
     "סוג לא מוכר": "Type inconnu",
-    "🛠️ תוקן בסמכות מפתח: {supplier}, {stage} — {fields}{amounts}": "🛠️ Corrigé avec l'autorité développeur : {supplier}, {stage} — {fields}{amounts}"
+    "🛠️ תוקן בסמכות מפתח: {supplier}, {stage} — {fields}{amounts}": "🛠️ Corrigé avec l'autorité développeur : {supplier}, {stage} — {fields}{amounts}",
+    "✏️ — לשנות סדר (↑↓), למחוק שלב ריק, בלי הצעות, תשלומים ודיווחים (🗑), ולהוסיף שלב בכל מקום (\"+ שלב כאן\"). אפשר לפצל תחום לשניים, למשל \"חשמל — תשתית\" ו\"חשמל — גמר\".": "✏️ — réordonner (↑↓), supprimer une étape vide, sans devis, paiements ni rapports (🗑), et ajouter une étape n'importe où (« + Étape ici »). Vous pouvez scinder un métier en deux, p. ex. « Électricité — réseaux » et « Électricité — finitions ».",
+    "השלב לא ריק — אי אפשר למחוק": "L'étape n'est pas vide — impossible de la supprimer",
+    "השלב לא ריק — יש בו הצעות, תשלומים או דיווחים. אפשר לשנות לו שם או סדר": "L'étape n'est pas vide — elle a des devis, des paiements ou des rapports. Vous pouvez la renommer ou la déplacer"
 }

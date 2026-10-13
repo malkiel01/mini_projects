@@ -144,7 +144,7 @@ function pm_project_get(array $user, int $id): array
 
     $st = $db->prepare(
         'SELECT s.*, t.name AS trade_name, c.name AS supplier_name, c.phone AS supplier_phone,
-                (SELECT COUNT(*) FROM quotes q WHERE q.stage_id = s.id) AS quotes
+                (SELECT COUNT(*) FROM quotes q WHERE q.stage_id = s.id) AS quotes, ' . PM_STAGE_USED . ' AS used
            FROM stages s LEFT JOIN trades t ON t.id = s.trade_id LEFT JOIN contacts c ON c.id = s.supplier_id
           WHERE s.project_id = ? ORDER BY s.sort, s.id'
     );
@@ -156,7 +156,7 @@ function pm_project_get(array $user, int $id): array
         'supplier_name' => $s['supplier_name'], 'supplier_phone' => $s['supplier_phone'],
         'status' => $s['status'], 'needs_lawyer' => (bool)$s['needs_lawyer'],
         'plan_start' => $s['plan_start'], 'plan_end' => $s['plan_end'], 'done_at' => $s['done_at'],
-        'progress' => pm_stage_progress($s), 'budget' => (int)$s['budget'] / 100, 'quotes' => (int)$s['quotes'],
+        'progress' => pm_stage_progress($s), 'budget' => (int)$s['budget'] / 100, 'quotes' => (int)$s['quotes'], 'used' => (int)$s['used'],
     ], $st->fetchAll());
 
     $ev = $db->prepare('SELECT id, at, actor_id, actor_name, kind, text, data_json FROM events WHERE project_id = ? ORDER BY id DESC LIMIT 300');
@@ -409,13 +409,21 @@ function pm_contact_name(int $id): string
     return (string)$st->fetchColumn();
 }
 
+/**
+ * כמה דברים רשומים על השלב (s.id): הצעות, תשלומים, תוספות, דיווחים והוצאות. שלב "ריק" (0) — אפשר
+ * למחוק; אחרת רק בסמכות מפתח (מחיקה גמורה, lib/dev.php).
+ */
+const PM_STAGE_USED = '((SELECT COUNT(*) FROM quotes x WHERE x.stage_id = s.id) + (SELECT COUNT(*) FROM payments x WHERE x.stage_id = s.id)
+    + (SELECT COUNT(*) FROM change_orders x WHERE x.stage_id = s.id) + (SELECT COUNT(*) FROM reports x WHERE x.stage_id = s.id AND x.deleted_at IS NULL)
+    + (SELECT COUNT(*) FROM expenses x WHERE x.stage_id = s.id AND x.deleted_at IS NULL))';
+
 function pm_stage_delete(array $user, int $id): array
 {
     $s = pm_stage_row($user, $id);
-    // הצעות ואישורים לא נמחקים — וגם לא השלב שהם שייכים לו
-    $q = pm_db()->prepare('SELECT COUNT(*) FROM quotes WHERE stage_id = ?');
+    // רק שלב ריק — בלי הצעות, תשלומים, תוספות, דיווחים או הוצאות
+    $q = pm_db()->prepare('SELECT ' . PM_STAGE_USED . ' FROM stages s WHERE s.id = ?');
     $q->execute([$id]);
-    if ($q->fetchColumn()) throw new PmError('יש בשלב הצעות מחיר — אי אפשר למחוק אותו. אפשר לשנות לו שם או סדר', 422);
+    if ($q->fetchColumn()) throw new PmError('השלב לא ריק — יש בו הצעות, תשלומים או דיווחים. אפשר לשנות לו שם או סדר', 422);
     $survey = pm_trade_id(PM_TRADE_SURVEYOR);
     if ($survey && (int)$s['trade_id'] === $survey) {
         $o = pm_db()->prepare('SELECT COUNT(*) FROM stages WHERE project_id = ? AND id != ? AND trade_id = ?');
