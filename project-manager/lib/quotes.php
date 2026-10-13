@@ -229,6 +229,23 @@ function pm_quote_file_home(int $projectId, int $fileId, int $supplierId): void
 }
 
 /** ההצעה המומלצת — אחת לשלב. מה שהלקוח יראה מודגש בראש. */
+/**
+ * השלמת הטופס של הצעה שאין לה (נוצרה לפני שהטופס היה חובה) — גם כשהיא נעולה: רק כשאין קובץ, ובלי
+ * לגעת בשום דבר אחר. החלפת טופס קיים — לא.
+ */
+function pm_quote_attach(array $user, int $id, int $fileId): array
+{
+    $q = pm_quote_row($user, $id);
+    if ($q['file_id']) throw new PmError('להצעה כבר יש טופס — אי אפשר להחליף אותו', 422);
+    $file = pm_file_row($user, $fileId);
+    if ((int)$file['project_id'] !== (int)$q['project_id']) throw new PmError('הקובץ לא שייך לפרויקט', 422);
+    pm_db()->prepare('UPDATE quotes SET file_id = ?, updated_at = ? WHERE id = ?')->execute([$fileId, pm_now(), $id]);
+    pm_quote_file_home((int)$q['project_id'], $fileId, (int)$q['supplier_id']);
+    pm_event($user, (int)$q['project_id'], 'quote', 'צורף טופס להצעה: {supplier} — {amount}', ['quote' => $id, 'file' => $fileId],
+        ['supplier' => pm_contact_name((int)$q['supplier_id']), 'amount' => pm_money((int)$q['amount'])]);
+    return pm_quotes($user, (int)$q['project_id']);
+}
+
 function pm_quote_recommend(array $user, int $id, bool $on): array
 {
     $q = pm_quote_row($user, $id);

@@ -40,6 +40,7 @@ const Quotes = (() => {
         form.elements.file_id.addEventListener('change', fileLink);
         $('#quote-pick').addEventListener('change', e => { uploadFile(e.target.files[0]); e.target.value = ''; });
         $('#quote-recommend').addEventListener('click', recommend);
+        $('#quote-attach').addEventListener('click', attachFile);
         $('#quote-cancel').addEventListener('click', cancel);
         $('#decision-btns').addEventListener('click', e => {
             const b = e.target.closest('[data-decide]');
@@ -158,7 +159,11 @@ const Quotes = (() => {
         const locked = !!current && LOCKED.includes(current.status);
         [...form.elements].forEach(x => { if (x.name) x.disabled = locked; });
         $('button[type=submit]', form).hidden = locked;
-        $('.upload-btn', form).hidden = locked;
+        // נעולה בלי טופס (מלפני שהטופס היה חובה) — אפשר רק להשלים את הטופס
+        const attach = locked && !current.file_id && current.status !== 'cancelled';
+        $('.upload-btn', form).hidden = locked && !attach;
+        el.file_id.disabled = locked && !attach;
+        $('#quote-attach').hidden = !attach;
         $('#quote-version-hint').hidden = current?.status !== 'sent';
         const lock = $('#quote-locked-hint');
         lock.hidden = !locked;
@@ -284,6 +289,17 @@ const Quotes = (() => {
             await refresh(await api('quote-decide', { body: { id: current.id, role, decision, note } }));
             $('#quote-dlg').close();
             toast(t(decision === 'approved' ? 'האישור נרשם' : 'הדחייה נרשמה'));
+        });
+    }
+
+    async function attachFile() {
+        const form = $('#quote-dlg form');
+        const fileId = Number(form.elements.file_id.value) || 0;
+        if (!fileId) { formError(form, t('צריך לצרף את טופס הצעת המחיר (PDF או צילום)')); return; }
+        await busy($('#quote-attach'), form, async () => {
+            await refresh(await api('quote-attach', { body: { id: current.id, file_id: fileId } }));
+            $('#quote-dlg').close();
+            toast(t('הטופס צורף להצעה'));
         });
     }
 

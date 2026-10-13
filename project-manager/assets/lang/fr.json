@@ -1781,5 +1781,9 @@
     "טופס ההצעה *": "Document du devis *",
     "הצעה שאושרה לא נערכת. שינוי במחיר או בהיקף — \"± תוספת / חריגה\" בלשונית הכספים": "Un devis approuvé n'est pas modifiable. Pour changer le prix ou le périmètre — « ± Supplément / dépassement » dans l'onglet Finances",
     "הצעה שנדחתה לא נערכת. הצעה חדשה — \"+ הצעה\"": "Un devis refusé n'est pas modifiable. Pour un nouveau devis — « + Devis »",
-    "טופס ההצעה (PDF או צילום) *": "Document du devis (PDF ou photo) *"
+    "טופס ההצעה (PDF או צילום) *": "Document du devis (PDF ou photo) *",
+    "להצעה כבר יש טופס — אי אפשר להחליף אותו": "Ce devis a déjà un document — il ne peut pas être remplacé",
+    "צורף טופס להצעה: {supplier} — {amount}": "Document joint au devis : {supplier} — {amount}",
+    "📎 צירוף הטופס להצעה": "📎 Joindre le document au devis",
+    "הטופס צורף להצעה": "Le document a été joint au devis"
 }
