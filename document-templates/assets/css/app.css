@@ -188,3 +188,65 @@ body.wide .shell { max-width: 1400px; }
   .editor { grid-template-columns: 1fr; }
   .panel { position: static; max-height: none; order: -1; }
 }
+
+/* ── שלב 4: מסמכים ── */
+
+@font-face { font-family: 'Alef'; src: url('../fonts/Alef-Regular.ttf') format('truetype'); font-display: swap; }
+
+.filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0 4px; }
+.filters input, .filters select { font: inherit; padding: 7px 10px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+.filters .search { flex: 1; min-width: 180px; }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover { background: var(--bg); }
+tr.archived { opacity: .6; }
+.doc-number { font-variant-numeric: tabular-nums; }
+.save-status.ok { color: var(--ok); }
+.save-status.bad { color: var(--bad); }
+.ok-text { color: var(--ok); }
+.bad-text { color: var(--bad); }
+
+/* מילוי על המסמך: הקלט יושב בדיוק במקום השדה. --k = פיקסלים לנקודה. */
+.pages.filling .fill { position: absolute; box-sizing: border-box; }
+.fill input, .fill textarea, .fill .sig-btn {
+  width: 100%; height: 100%; box-sizing: border-box; margin: 0; border: 1px solid rgba(59,91,219,.45);
+  background: rgba(59,91,219,.07); color: #0b1f66; font-family: Alef, Arial, sans-serif;
+  padding: 0 2px; border-radius: 2px; resize: none; line-height: 1.2;
+}
+.fill textarea { padding-top: 1px; }
+.fill.required input, .fill.required textarea, .fill.required .sig-btn { border-color: rgba(230,119,0,.7); }
+.fill input:focus, .fill textarea:focus { outline: 2px solid #3b5bdb; background: rgba(255,255,255,.9); }
+.fill input:disabled, .fill textarea:disabled, .fill .sig-btn:disabled { background: transparent; border-color: transparent; color: #0b1f66; }
+.fill.t-checkbox { display: grid; place-items: center; }
+.fill.t-checkbox input { width: 100%; height: 100%; accent-color: #0b1f66; }
+.sig-btn { display: grid; place-items: center; font-size: 12px; cursor: pointer; overflow: hidden; }
+.sig-btn img { max-width: 100%; max-height: 100%; }
+.fill.saved input, .fill.saved textarea { border-color: rgba(43,138,62,.6); }
+.fill.error input, .fill.error textarea { border-color: var(--bad); }
+
+.fill-form { display: grid; gap: 14px; max-width: 640px; }
+.form-field { display: grid; gap: 4px; }
+.form-field > span { font-weight: 600; }
+.form-field input:not([type=checkbox]), .form-field textarea {
+  font: inherit; padding: 9px 11px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text);
+}
+.form-field textarea { min-height: 90px; }
+.form-field.t-checkbox { grid-template-columns: auto 1fr; align-items: center; }
+.form-field.t-checkbox > span { order: 2; font-weight: 400; }
+.form-field .sig-btn { min-height: 90px; border: 1px dashed var(--border); border-radius: 8px; background: var(--bg); }
+.form-field.saved :is(input, textarea) { border-color: var(--ok); }
+.form-field.error :is(input, textarea) { border-color: var(--bad); }
+.form-page { margin: 8px 0 0; font-size: .95rem; color: var(--muted); border-bottom: 1px solid var(--border); }
+.req { color: var(--warn); }
+
+.sig-dialog { border: 1px solid var(--border); border-radius: 12px; padding: 18px; max-width: 640px; width: calc(100% - 32px);
+  background: var(--card); color: var(--text); }
+.sig-dialog::backdrop { background: rgba(0,0,0,.45); }
+.sig-dialog h2 { margin: 0 0 4px; font-size: 1.1rem; }
+.sig-canvas { width: 100%; aspect-ratio: 3 / 1; background: #fff; border: 1px dashed #98a2b3; border-radius: 8px; touch-action: none; display: block; margin: 8px 0; }
+.sig-dialog input { font: inherit; width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--text); margin-bottom: 10px; }
+
+.journal .events { margin: 0; padding-inline-start: 18px; display: grid; gap: 8px; }
+.journal ul { margin: 2px 0 0; padding-inline-start: 16px; }
+.numbering { display: grid; gap: 8px; border-top: 1px solid var(--border); padding-top: 10px; }

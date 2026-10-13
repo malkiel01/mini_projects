@@ -1,0 +1,378 @@
+<?php
+/**
+ * מסמכים — שלב 4: הנפקה מתבנית, מילוי עצמי, שמירה אוטומטית, יומן ומספור.
+ *
+ * מסמך נקשר לגרסה של התבנית שהייתה נוכחית ברגע ההנפקה, ונשאר עליה לתמיד.
+ * ההנפקה הראשונה מסמנת את התבנית "בשימוש" (used = 1): מעתה עריכה של התבנית
+ * יוצרת גרסה חדשה, ואת התבנית אי אפשר עוד למחוק — רק להעביר לארכיון.
+ *
+ * היומן (events) — הוספה בלבד, וכל רשומה נושאת hash של הקודמת לה במסמך.
+ * מחיקה או שינוי של רשומה באמצע נראים בבדיקת השרשרת (doc_verify_chain).
+ */
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/templates.php';
+
+const DOC_MAX_VALUE     = 200 * 1024;   // חתימה (תמונה) היא הערך הגדול ביותר
+const DOC_EDITABLE      = ['draft', 'in_progress'];
+const NUMBERING_SCHEMES = ['prefix_year_seq', 'seq', 'year_month_seq', 'yearly', 'pattern', 'none'];
+
+// ── מספור ────────────────────────────────────────────────────
+
+function clean_numbering($n): array
+{
+    $n = is_array($n) ? $n : [];
+    $scheme = in_array($n['scheme'] ?? '', NUMBERING_SCHEMES, true) ? $n['scheme'] : 'prefix_year_seq';
+    return [
+        'scheme'  => $scheme,
+        'prefix'  => mb_substr(trim((string)($n['prefix'] ?? '')), 0, 20),
+        'digits'  => max(1, min(8, (int)($n['digits'] ?? 4))),
+        'pattern' => mb_substr(trim((string)($n['pattern'] ?? '{prefix}-{yyyy}-{seq}')), 0, 60),
+    ];
+}
+
+/** המונה מתאפס לפי התקופה: שנתי — כל שנה, חודשי — כל חודש, אחרת לעולם לא. */
+function numbering_period(array $n, int $ts): string
+{
+    return match ($n['scheme']) {
+        'yearly'         => gmdate('Y', $ts),
+        'year_month_seq' => gmdate('Y-m', $ts),
+        default          => 'all',
+    };
+}
+
+function format_number(array $n, int $seq, int $ts): ?string
+{
+    $pad = str_pad((string)$seq, $n['digits'], '0', STR_PAD_LEFT);
+    $y = gmdate('Y', $ts);
+    $m = gmdate('m', $ts);
+    $join = fn(...$parts) => implode('-', array_filter($parts, fn($p) => $p !== ''));
+    return match ($n['scheme']) {
+        'prefix_year_seq' => $join($n['prefix'], $y, $pad),
+        'seq'             => $join($n['prefix'], $pad),
+        'year_month_seq'  => $join($n['prefix'], "$y/$m") . '-' . str_pad((string)$seq, 3, '0', STR_PAD_LEFT),
+        'yearly'          => $join($n['prefix'], $y, $pad),
+        'pattern'         => strtr($n['pattern'], ['{prefix}' => $n['prefix'], '{yyyy}' => $y, '{mm}' => $m, '{seq}' => $pad]),
+        'none'            => null,
+    };
+}
+
+/** חייב לרוץ בתוך טרנזקציה: שתי הנפקות במקביל לא יקבלו אותו מספר. */
+function next_number(int $templateId, array $n): ?string
+{
+    if ($n['scheme'] === 'none') return null;
+    $ts = time();
+    $period = numbering_period($n, $ts);
+    db()->prepare(
+        'INSERT INTO counters (template_id, period, last_number) VALUES (?, ?, 1)
+         ON CONFLICT(template_id, period) DO UPDATE SET last_number = last_number + 1'
+    )->execute([$templateId, $period]);
+    $st = db()->prepare('SELECT last_number FROM counters WHERE template_id = ? AND period = ?');
+    $st->execute([$templateId, $period]);
+    return format_number($n, (int)$st->fetchColumn(), $ts);
+}
+
+// ── יומן ─────────────────────────────────────────────────────
+
+function log_event(int $docId, string $actor, string $type, ?array $detail = null): void
+{
+    $st = db()->prepare('SELECT hash FROM events WHERE document_id = ? ORDER BY id DESC LIMIT 1');
+    $st->execute([$docId]);
+    $prev = $st->fetchColumn() ?: '';
+    $at = now_iso();
+    $detailJson = $detail === null ? '' : json_encode($detail, JSON_UNESCAPED_UNICODE);
+    $hash = hash('sha256', implode("\n", [$prev, $docId, $actor, $type, $detailJson, $at]));
+    db()->prepare(
+        'INSERT INTO events (document_id, actor, type, detail_enc, ip, user_agent, prev_hash, hash, at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    )->execute([$docId, $actor, $type, $detail === null ? null : seal($detailJson), client_ip(),
+        mb_substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 200), $prev ?: null, $hash, $at]);
+}
+
+/** true אם השרשרת שלמה: כל רשומה מצביעה על הקודמת, וה-hash שלה תואם לתוכן. */
+function doc_verify_chain(int $docId): bool
+{
+    $st = db()->prepare('SELECT * FROM events WHERE document_id = ? ORDER BY id');
+    $st->execute([$docId]);
+    $prev = '';
+    foreach ($st->fetchAll() as $e) {
+        $detail = $e['detail_enc'] === null ? '' : (string)unseal($e['detail_enc']);
+        if ((string)$e['prev_hash'] !== $prev) return false;
+        if (!hash_equals($e['hash'], hash('sha256', implode("\n", [$prev, $docId, $e['actor'], $e['type'], $detail, $e['at']])))) return false;
+        $prev = $e['hash'];
+    }
+    return true;
+}
+
+// ── גישה ─────────────────────────────────────────────────────
+
+function doc_owned(int $id, array $user): array
+{
+    $st = db()->prepare(
+        'SELECT d.*, v.schema_enc, v.template_id, v.version AS template_version, t.name_enc AS template_name_enc
+         FROM documents d
+         JOIN template_versions v ON v.id = d.template_version_id
+         JOIN templates t ON t.id = v.template_id
+         WHERE d.id = ? AND d.owner_id = ? AND d.deleted_at IS NULL'
+    );
+    $st->execute([$id, $user['id']]);
+    $d = $st->fetch();
+    if (!$d) throw new ApiError('המסמך לא נמצא', 404);
+    return $d;
+}
+
+function doc_values(int $docId): array
+{
+    $st = db()->prepare('SELECT field_key, value_enc FROM field_values WHERE document_id = ? AND row_index = 0');
+    $st->execute([$docId]);
+    $out = [];
+    foreach ($st->fetchAll() as $r) $out[$r['field_key']] = (string)unseal($r['value_enc']);
+    return $out;
+}
+
+/** כמה שדות חובה מולאו — לרשימה ולסיום. */
+function doc_progress(array $schema, array $values): array
+{
+    $req = array_filter($schema['fields'] ?? [], fn($f) => $f['required']);
+    $done = array_filter($req, fn($f) => trim((string)($values[$f['key']] ?? '')) !== '');
+    return ['required' => count($req), 'filled' => count($done),
+        'missing' => array_values(array_map(fn($f) => $f['label'], array_diff_key($req, $done)))];
+}
+
+// ── פעולות ───────────────────────────────────────────────────
+
+function doc_create(array $user, array $b): array
+{
+    $t = tpl_owned((int)($b['template_id'] ?? 0), $user);
+    if ($t['archived_at']) throw new ApiError('התבנית בארכיון. שחזרו אותה כדי להנפיק', 409);
+    $schema = json_decode((string)unseal($t['schema_enc']), true) ?: [];
+    if (empty($schema['fields'])) throw new ApiError('לתבנית אין שדות עדיין. הוסיפו שדות בעורך', 409);
+
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        $number = next_number((int)$t['id'], clean_numbering(json_decode((string)$t['numbering_json'], true)));
+        $title = trim((string)($b['title'] ?? '')) ?: (string)unseal($t['name_enc']);
+        $now = now_iso();
+        $pdo->prepare(
+            'INSERT INTO documents (owner_id, template_version_id, number, title_enc, status, created_at)
+             VALUES (?, ?, ?, ?, ?, ?)'
+        )->execute([$user['id'], $t['version_id'], $number, seal(mb_substr($title, 0, 200)), 'draft', $now]);
+        $docId = (int)$pdo->lastInsertId();
+        $pdo->prepare('UPDATE templates SET used = 1 WHERE id = ?')->execute([$t['id']]);
+
+        $ins = $pdo->prepare(
+            'INSERT INTO field_values (document_id, field_key, row_index, value_enc, updated_by, updated_at) VALUES (?, ?, 0, ?, ?, ?)'
+        );
+        foreach ($schema['fields'] as $f) {
+            if (($f['default'] ?? '') !== '') $ins->execute([$docId, $f['key'], seal($f['default']), 'user:' . $user['id'], $now]);
+        }
+        log_event($docId, 'user:' . $user['id'], 'created', ['number' => $number, 'template_version' => (int)$t['current_version']]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+    return ['ok' => true, 'id' => $docId, 'number' => $number];
+}
+
+function doc_list(array $user, array $q): array
+{
+    $sql = 'SELECT d.*, v.schema_enc, v.template_id, t.name_enc AS template_name_enc
+            FROM documents d
+            JOIN template_versions v ON v.id = d.template_version_id
+            JOIN templates t ON t.id = v.template_id
+            WHERE d.owner_id = ? AND d.deleted_at IS NULL';
+    $args = [$user['id']];
+    if (!empty($q['template_id'])) { $sql .= ' AND v.template_id = ?'; $args[] = (int)$q['template_id']; }
+    if (empty($q['archived'])) $sql .= ' AND d.archived_at IS NULL';
+    $st = db()->prepare($sql . ' ORDER BY d.created_at DESC, d.id DESC LIMIT 500');
+    $st->execute($args);
+
+    $out = [];
+    foreach ($st->fetchAll() as $d) {
+        $schema = json_decode((string)unseal($d['schema_enc']), true) ?: [];
+        $p = doc_progress($schema, doc_values((int)$d['id']));
+        $out[] = [
+            'id' => (int)$d['id'], 'number' => $d['number'], 'title' => unseal($d['title_enc']),
+            'template_id' => (int)$d['template_id'], 'template' => unseal($d['template_name_enc']),
+            'status' => $d['status'], 'created_at' => $d['created_at'], 'completed_at' => $d['completed_at'],
+            'archived' => $d['archived_at'] !== null, 'required' => $p['required'], 'filled' => $p['filled'],
+        ];
+    }
+    return ['ok' => true, 'documents' => $out];
+}
+
+function doc_get(array $user, int $id): array
+{
+    $d = doc_owned($id, $user);
+    $schema = json_decode((string)unseal($d['schema_enc']), true) ?: [];
+    $values = doc_values($id);
+    $a = tpl_asset_row((int)$d['template_version_id']);
+
+    $st = db()->prepare('SELECT * FROM events WHERE document_id = ? ORDER BY id');
+    $st->execute([$id]);
+    $events = array_map(fn($e) => [
+        'type' => $e['type'], 'actor' => $e['actor'], 'at' => $e['at'], 'ip' => $e['ip'],
+        'detail' => $e['detail_enc'] === null ? null : json_decode((string)unseal($e['detail_enc']), true),
+    ], $st->fetchAll());
+
+    return ['ok' => true, 'document' => [
+        'id' => $id, 'number' => $d['number'], 'title' => unseal($d['title_enc']), 'status' => $d['status'],
+        'template_id' => (int)$d['template_id'], 'template' => unseal($d['template_name_enc']),
+        'template_version' => (int)$d['template_version'], 'mime' => $a['mime'],
+        'created_at' => $d['created_at'], 'completed_at' => $d['completed_at'], 'final_hash' => $d['final_hash'],
+        'archived' => $d['archived_at'] !== null,
+        'schema' => $schema, 'values' => $values, 'progress' => doc_progress($schema, $values),
+        'events' => $events, 'chain_ok' => doc_verify_chain($id),
+    ]];
+}
+
+/** קובץ הרקע של הגרסה שהמסמך נקשר אליה — לא של הגרסה הנוכחית של התבנית. */
+function doc_asset(array $user, int $id): never
+{
+    $d = doc_owned($id, $user);
+    $a = tpl_asset_row((int)$d['template_version_id']);
+    $bytes = load_file($a['path']);
+    header('Content-Type: ' . $a['mime']);
+    header('Content-Length: ' . strlen($bytes));
+    header('Cache-Control: private, no-store');
+    echo $bytes;
+    exit;
+}
+
+function clean_value(array $f, $v): string
+{
+    if (is_bool($v)) $v = $v ? '1' : '';
+    $v = (string)$v;
+    if (strlen($v) > DOC_MAX_VALUE) throw new ApiError('הערך בשדה "' . $f['label'] . '" גדול מדי', 413);
+    switch ($f['type']) {
+        case 'checkbox':
+            return $v === '' || $v === '0' ? '' : '1';
+        case 'number':
+            $v = trim($v);
+            if ($v !== '' && !is_numeric($v)) throw new ApiError('"' . $f['label'] . '": נדרש מספר', 422);
+            return $v;
+        case 'date':
+            $v = trim($v);
+            if ($v !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $v)) throw new ApiError('"' . $f['label'] . '": תאריך לא תקין', 422);
+            return $v;
+        case 'signature':
+            if ($v !== '' && !preg_match('#^data:image/png;base64,[A-Za-z0-9+/=]+$#', $v)) {
+                throw new ApiError('חתימה לא תקינה', 422);
+            }
+            return $v;
+        case 'text':
+            return mb_substr(preg_replace('/[\r\n]+/', ' ', $v), 0, 2000);
+        default:
+            return mb_substr($v, 0, 20000);
+    }
+}
+
+/**
+ * שמירה אוטומטית: רק השדות שהשתנו. ביומן — רשומה אחת לכל שמירה, עם הערך הקודם
+ * והחדש של כל שדה (מוצפן). חתימה ביומן נרשמת כ"נחתם", לא כתמונה.
+ */
+function doc_save(array $user, array $b): array
+{
+    $d = doc_owned((int)($b['id'] ?? 0), $user);
+    if (!in_array($d['status'], DOC_EDITABLE, true)) throw new ApiError('המסמך נעול', 409);
+    $schema = json_decode((string)unseal($d['schema_enc']), true) ?: [];
+    $byKey = array_column($schema['fields'] ?? [], null, 'key');
+    $old = doc_values((int)$d['id']);
+    $actor = 'user:' . $user['id'];
+    $now = now_iso();
+
+    $changes = [];
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        $up = $pdo->prepare(
+            'INSERT INTO field_values (document_id, field_key, row_index, value_enc, updated_by, updated_at)
+             VALUES (?, ?, 0, ?, ?, ?)
+             ON CONFLICT(document_id, field_key, row_index) DO UPDATE SET
+               value_enc = excluded.value_enc, updated_by = excluded.updated_by, updated_at = excluded.updated_at'
+        );
+        foreach ((array)($b['values'] ?? []) as $key => $v) {
+            $f = $byKey[$key] ?? null;
+            if (!$f) continue;
+            $v = clean_value($f, $v);
+            $prev = $old[$key] ?? '';
+            if ($v === $prev) continue;
+            $up->execute([$d['id'], $key, seal($v), $actor, $now]);
+            $changes[] = $f['type'] === 'signature'
+                ? ['key' => $key, 'label' => $f['label'], 'signed' => $v !== '']
+                : ['key' => $key, 'label' => $f['label'], 'from' => $prev, 'to' => $v];
+        }
+        if (array_key_exists('title', $b)) {
+            $title = mb_substr(trim((string)$b['title']), 0, 200);
+            if ($title !== '' && $title !== unseal($d['title_enc'])) {
+                $pdo->prepare('UPDATE documents SET title_enc = ? WHERE id = ?')->execute([seal($title), $d['id']]);
+                $changes[] = ['key' => '_title', 'label' => 'כותרת', 'from' => unseal($d['title_enc']), 'to' => $title];
+            }
+        }
+        if ($changes) {
+            if ($d['status'] === 'draft') $pdo->prepare("UPDATE documents SET status = 'in_progress' WHERE id = ?")->execute([$d['id']]);
+            log_event((int)$d['id'], $actor, 'values_saved', ['changes' => $changes]);
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+    return ['ok' => true, 'saved' => count($changes), 'saved_at' => $now,
+        'progress' => doc_progress($schema, doc_values((int)$d['id']))];
+}
+
+/**
+ * סיום: כל שדות החובה מלאים → המסמך ננעל, ונשמרת טביעת אצבע של הערכים.
+ * ה-PDF נבנה מהתבנית ומהערכים, ולכן כל הפקה שלו מאותו מסמך זהה בתוכן.
+ */
+function doc_complete(array $user, array $b): array
+{
+    $d = doc_owned((int)($b['id'] ?? 0), $user);
+    if (!in_array($d['status'], DOC_EDITABLE, true)) throw new ApiError('המסמך כבר הושלם', 409);
+    $schema = json_decode((string)unseal($d['schema_enc']), true) ?: [];
+    $values = doc_values((int)$d['id']);
+    $p = doc_progress($schema, $values);
+    if ($p['missing']) throw new ApiError('חסרים שדות חובה: ' . implode(', ', $p['missing']), 422);
+
+    ksort($values);
+    $hash = hash('sha256', json_encode(['template_version_id' => (int)$d['template_version_id'], 'values' => $values],
+        JSON_UNESCAPED_UNICODE));
+    $pdo = db();
+    $pdo->beginTransaction();
+    $pdo->prepare("UPDATE documents SET status = 'completed', completed_at = ?, final_hash = ? WHERE id = ?")
+        ->execute([now_iso(), $hash, $d['id']]);
+    log_event((int)$d['id'], 'user:' . $user['id'], 'completed', ['hash' => $hash]);
+    $pdo->commit();
+    return ['ok' => true, 'hash' => $hash];
+}
+
+function doc_archive(array $user, array $b): array
+{
+    $d = doc_owned((int)($b['id'] ?? 0), $user);
+    $restore = !empty($b['restore']);
+    db()->prepare('UPDATE documents SET archived_at = ? WHERE id = ?')->execute([$restore ? null : now_iso(), $d['id']]);
+    log_event((int)$d['id'], 'user:' . $user['id'], $restore ? 'restored' : 'archived');
+    return ['ok' => true];
+}
+
+/** רישום הורדה ביומן — מי הוריד ומתי. */
+function doc_downloaded(array $user, array $b): array
+{
+    $d = doc_owned((int)($b['id'] ?? 0), $user);
+    log_event((int)$d['id'], 'user:' . $user['id'], 'downloaded');
+    return ['ok' => true];
+}
+
+/** מחיקה (רכה) — רק לטיוטה שלא מולא בה דבר. כל השאר: ארכיון. */
+function doc_delete(array $user, array $b): array
+{
+    $d = doc_owned((int)($b['id'] ?? 0), $user);
+    if ($d['status'] !== 'draft') throw new ApiError('במסמך כבר מולאו פרטים — אפשר רק להעביר לארכיון', 409);
+    db()->prepare('UPDATE documents SET deleted_at = ? WHERE id = ?')->execute([now_iso(), $d['id']]);
+    log_event((int)$d['id'], 'user:' . $user['id'], 'deleted');
+    return ['ok' => true];
+}
