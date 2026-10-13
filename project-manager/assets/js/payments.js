@@ -154,7 +154,8 @@ const Payments = (() => {
         el.amount.value = current ? String(current.amount) : '';
         el.percent.value = current?.percent ?? '';
         el.due_date.value = p.due_date || '';
-        $(`#payment-dlg [name=due_kind][value=${p.due_kind || 'date'}]`).checked = true;
+        // מקדמה — אין לה כפתור ב"מתי משלמים" (היא נבחרת ברשימת השלבים); כל מועד לא מוכר — "בתאריך"
+        ($(`#payment-dlg [name=due_kind][value=${p.due_kind || 'date'}]`) || $('#payment-dlg [name=due_kind][value=date]')).checked = true;
         // מתחם: "במסירה" — של איזו יחידה (ברירת מחדל: היחידה של השלב)
         const units = project.units || [];
         const stUnit = project.stages.find(s => s.id === Number(p.stage_id))?.unit_id ?? '';
