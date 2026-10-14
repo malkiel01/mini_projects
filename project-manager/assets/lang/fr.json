@@ -2194,5 +2194,6 @@
     "השלב שלו בפרויקט": "Son étape dans le projet",
     "רק שלבים שיש בפרויקט. אין שלב מתאים (למשל מדידה)? הוסיפו אותו קודם במסך השלבים. שלב בלי ספק — הספק הזה יהיה הספק שלו.": "Seulement les étapes du projet. Pas d'étape adaptée (p. ex. relevé) ? Ajoutez-la d'abord dans l'écran des étapes. Une étape sans fournisseur — ce fournisseur devient le sien.",
     "ספק — בחרו את השלב שלו בפרויקט (אין שלב מתאים? הוסיפו שלב קודם)": "Fournisseur — choisissez son étape dans le projet (pas d'étape adaptée ? ajoutez-en une d'abord)",
-    "השלב לא נמצא בפרויקט": "L'étape est introuvable dans le projet"
+    "השלב לא נמצא בפרויקט": "L'étape est introuvable dans le projet",
+    "📋 מטלות": "📋 Tâches"
 }

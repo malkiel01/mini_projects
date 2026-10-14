@@ -1045,3 +1045,34 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 
 /* צוות: הערה חופשית של המנהל על איש צוות (project_members.note) */
 .card .l2.member-note { color: var(--muted); font-style: italic; white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+
+/* אזור הפיתוח ← 📋 מטלות (devtasks.js) */
+#set-tasks { display: grid; gap: var(--s3); }
+.dt-stats { font-size: .9rem; } .dt-stats small { color: var(--muted); }
+.dt-filters .chip { cursor: pointer; min-height: 34px; }
+.dt-filters .chip.on { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+.dt-items { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s2); }
+.dt-item { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); overflow: hidden; }
+.dt-item > summary { list-style: none; }
+.dt-item > summary::-webkit-details-marker { display: none; }
+.dt-item .use-tx small { white-space: normal; }
+.dt-code { font-size: .78rem; background: var(--bg); border-radius: 6px; padding: 1px 5px; }
+.dt-badges { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; max-inline-size: 40%; }
+.dt-badges .chip { font-size: .72rem; min-height: 22px; padding: 0 6px; }
+.chip.dt-warn { color: var(--star); } .chip.dt-bad { color: var(--danger); } .chip.dt-ok { color: var(--ok); } .chip.dt-info { color: var(--brand); }
+.dt-body { padding: 0 var(--s3) var(--s3); display: grid; gap: var(--s2); }
+.dt-body p { margin: 0; white-space: pre-wrap; }
+.dt-questions ul { margin: 4px 0 0; padding-inline-start: 1.2em; }
+.dt-thread { display: grid; gap: 6px; }
+.dt-comments { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.dt-c { padding: 6px var(--s2); border-radius: 10px; background: var(--bg); }
+.dt-c.claude { background: var(--brand-soft); }
+.dt-c-head { display: flex; gap: var(--s2); align-items: baseline; font-size: .85rem; }
+.dt-c-head small { color: var(--muted); }
+.dt-c-head .link { margin-inline-start: auto; background: none; border: 0; color: var(--danger); cursor: pointer; font: inherit; font-size: .8rem; }
+.dt-new { display: flex; gap: var(--s2); align-items: flex-end; }
+.dt-new textarea { flex: 1; }
+.dt-secret { display: block; padding: 6px; background: var(--bg); border-radius: 8px; overflow-wrap: anywhere; font-size: .78rem; margin-block: 4px; }
+.dt-ok { color: var(--ok); margin: 0; }
+.dt-token { display: flex; align-items: center; gap: var(--s2); padding: 8px var(--s3); }
+.dt-dlg textarea { inline-size: 100%; }
