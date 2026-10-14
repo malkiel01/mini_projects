@@ -2,10 +2,14 @@
 // הזהות מהפלטפורמה; אסימון ה-CSRF מגיע מ-api.php?action=me.
 'use strict';
 
+// ---- עקבות לדיווח 🐞 (devtasks.js): הבקשות והשגיאות האחרונות, בזיכרון בלבד ----
+const PMTrace = { requests: [], errors: [], push(list, x, max = 15) { list.push(x); if (list.length > max) list.shift(); } };
+
 // ---- שגיאות בדפדפן נשלחות ליומן (הגדרות ← יומן) ----
 (() => {
     let sent = 0;
     const report = (kind, message, extra = {}) => {
+        PMTrace.push(PMTrace.errors, { kind, message: String(message).slice(0, 300), at: new Date().toISOString(), source: extra.source, line: extra.line }, 10);
         if (++sent > 10) return; // לא מציפים: עד 10 לטעינת דף
         fetch('api.php?action=client-error', {
             method: 'POST', credentials: 'same-origin',
@@ -124,7 +128,10 @@ async function api(action, { params = {}, body = null } = {}) {
         if (Dev.on()) opts.headers['X-PM-Dev'] = '1';
         opts.body = JSON.stringify(body);
     }
+    const t0 = performance.now();
     const res = await fetch('api.php?' + qs, opts);
+    PMTrace.push(PMTrace.requests, { action, method: body ? 'POST' : 'GET', status: res.status, id: res.headers.get('X-Request-Id') || '',
+        ms: Math.round(performance.now() - t0), at: new Date().toISOString() });
     let data = {};
     try { data = await res.json(); } catch { /* תשובה שאינה JSON */ }
     if (res.status === 401) { location.href = 'login.html'; throw new Error(data.error || t('נדרשת כניסה')); }

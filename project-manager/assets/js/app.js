@@ -17,6 +17,7 @@ async function init() {
     if (!lang) api('lang', { body: { lang: I18n.lang() } }).catch(() => {});
     else if (lang !== I18n.lang() && I18n.LANGS[lang] && canStore()) { I18n.set(lang); return; }
     $$('.dev-only').forEach(el => { el.hidden = !isDev(); });
+    DevTasks.mount(); // 🐞 בכותרת — למפתח: דיווח מכל מסך, ומונה המטלות שממתינות לו (devtasks.js)
     bindMe();
     $('#me-dev').addEventListener('click', () => { Dev.set(!Dev.on()); Me.close(); toast(Dev.on() ? t('סמכות מפתח פעילה — אפשר למחוק הכול ולערוך גם נעול') : t('סמכות מפתח כבויה')); });
     $('#dev-off').addEventListener('click', () => Dev.set(false));

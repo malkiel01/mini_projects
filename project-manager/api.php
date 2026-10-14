@@ -49,6 +49,8 @@ function pm_reply(int $code, array $payload): never
     // השגיאה ביומן — בעברית; למשתמש — בשפה שלו (X-Lang, lib/i18n.php)
     if (isset($payload['error'])) $payload['error'] = isset($payload['_t']) ? pm_t(...$payload['_t']) : pm_t((string)$payload['error']);
     unset($payload['_t']);
+    // מזהה הבקשה — כמו ביומן; הדפדפן שומר את האחרונות לדיווח 🐞 (devtasks.js)
+    if (function_exists('pm_request_id')) header('X-Request-Id: ' . pm_request_id());
     http_response_code($code);
     echo json_encode($payload, JSON_UNESCAPED_UNICODE);
     exit;
@@ -78,6 +80,8 @@ try {
         // מטלות ושיח: Claude קורא ועונה באסימון אישי (X-Dev-Token), בלי עוגייה (lib/devtasks.php)
         'GET devapi-feed'      => fn() => pm_devapi_feed(pm_devapi_auth(), $_GET),
         'POST devapi-comment'  => fn() => pm_devapi_comment(pm_devapi_auth(), pm_body()),
+        'GET devapi-file'      => fn() => (pm_devapi_auth() and pm_dev_file_out((int)($_GET['id'] ?? 0))),
+        'POST devapi-attach'   => fn() => pm_dev_attach('claude', $_GET + ['_auth' => pm_devapi_auth()]),
         // יומן הטלפון מושך את זה בלי עוגייה — האסימון בכתובת (lib/calendar.php)
         'GET calendar-feed'    => fn() => pm_calendar_feed((string)($_GET['t'] ?? '')),
         // שגיאת JavaScript מהדפדפן — גם לפני כניסה (מסך הכניסה). X-PM מונע הצפה מאתר זר.
@@ -294,6 +298,10 @@ try {
         'GET dev-tokens'         => $isDev ? pm_dev_token_list() : throw new PmError('רק המפתח', 403),
         'POST dev-token-create'  => $isDev ? pm_dev_token_create($user, $in) : throw new PmError('רק המפתח', 403),
         'POST dev-token-revoke'  => $isDev ? pm_dev_token_revoke($user, $in) : throw new PmError('רק המפתח', 403),
+        'POST dev-verify'        => $isDev ? pm_dev_verify($user, $in) : throw new PmError('רק המפתח', 403),
+        'POST dev-report'        => $isDev ? pm_dev_report($user, $in) : throw new PmError('רק המפתח', 403),
+        'POST dev-attach'        => $isDev ? pm_dev_attach('user:' . $user['id'], $_GET) : throw new PmError('רק המפתח', 403),
+        'GET dev-file'           => $isDev ? pm_dev_file_out((int)($_GET['id'] ?? 0)) : throw new PmError('רק המפתח', 403),
         'POST log-token'  => $isDev ? pm_log_token(true) : throw new PmError('רק המפתח', 403),
         'POST trade'      => $isDev ? ['trades' => pm_trade_save($user, $in)] : throw new PmError('רק המפתח עורך תחומים', 403),
         'POST trade-delete' => $isDev ? ['trades' => pm_trade_delete($user, (int)($in['id'] ?? 0))] : throw new PmError('רק המפתח עורך תחומים', 403),
