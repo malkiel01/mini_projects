@@ -643,7 +643,10 @@ table.sample th { background: var(--bg); font-weight: 600; }
 .fill-map .map-row { padding: 0; }
 
 /* ── תפריט המשתמש (מהאווטאר בכותרת) ── */
-.me-btn { border: 2px solid rgba(255,255,255,.7); cursor: pointer; width: 36px; height: 36px; padding: 0; font: inherit; font-weight: 700; font-size: .85rem; }
+/* גודל קבוע — לא יורש את הגודל והריפוד של כפתור רגיל (שהיו מגדילים ומזיזים אותו) */
+.top .me-btn { flex: none; box-sizing: border-box; width: 34px; height: 34px; min-width: 0; min-height: 0; padding: 0; margin: 0;
+  border-radius: 50%; border: 2px solid rgba(255,255,255,.75); cursor: pointer; display: grid; place-items: center;
+  font: inherit; font-weight: 700; font-size: .8rem; line-height: 1; letter-spacing: 0; overflow: hidden; }
 .me-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .user-menu { position: fixed; z-index: 40; top: calc(var(--head) + env(safe-area-inset-top) - 4px); inset-inline-end: 8px;
   width: min(300px, calc(100vw - 16px)); max-height: calc(100dvh - var(--head) - 16px); overflow-y: auto;
@@ -655,7 +658,8 @@ table.sample th { background: var(--bg); font-weight: 600; }
 .menu-item { width: 100%; justify-content: flex-start; display: flex; align-items: center; gap: var(--s2); min-height: var(--tap); padding: 4px var(--s2); border: 0; border-radius: 8px;
   background: none; font: inherit; color: inherit; cursor: pointer; text-align: start; }
 .menu-item:hover, .menu-item:focus-visible { background: var(--brand-soft); outline: 0; }
-.mi-ic { width: 24px; text-align: center; flex: none; }
+.mi-ic { width: 24px; text-align: center; flex: none; display: grid; place-items: center; }
+.mi-ic svg { width: 20px; height: 20px; }
 .menu-sep { border-top: 1px solid var(--line); margin: 4px 0 0; padding: 6px var(--s2) 2px; font-size: .72rem; color: var(--muted); font-weight: 600; }
 .menu-sep:empty { padding: 0; margin: 4px 0; }
 

@@ -643,6 +643,23 @@
     meBtn.setAttribute('aria-expanded', 'false');
     document.removeEventListener('pointerdown', outside, true);
   }
+  // סמל יציאה מצויר — התו ⏻ חסר בגופנים של אנדרואיד ומוצג כריבוע ריק
+  function logoutIcon() {
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    for (const d of ['M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4', 'M10 17l-5-5 5-5', 'M5 12h11']) {
+      const path = document.createElementNS(ns, 'path');
+      path.setAttribute('d', d);
+      svg.append(path);
+    }
+    return svg;
+  }
   const outside = (e) => { if (menu && !menu.contains(e.target) && e.target !== meBtn) closeMenu(); };
   meBtn.addEventListener('click', () => {
     if (menu) { closeMenu(); return; }
@@ -664,7 +681,7 @@
         item('🩺', 'מצב המערכת', go('dev?tab=health')),
       ] : null,
       el('div', { class: 'menu-sep' }),
-      item('⏻', 'יציאה', logout));
+      item(logoutIcon(), 'יציאה', logout));
     document.body.append(menu);
     meBtn.setAttribute('aria-expanded', 'true');
     document.addEventListener('pointerdown', outside, true);
