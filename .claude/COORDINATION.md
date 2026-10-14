@@ -63,11 +63,7 @@
 - **לא עורכים את העותק שבתוך אפליקציה** (`lib/devloop.php`, `assets/js/devloop.js`, `assets/css/devloop.css`) — עורכים
   ב-`devloop/src` ומריצים `php devloop/tools/sync.php`. שער בפריסה (`DevLoop gate`) עוצר עותק ששונה.
 - שינוי במקור משפיע על כל האפליקציות שב-`apps.json` — בודקים בכולן לפני מיזוג.
-- **לסשן של מסמכי התבניות (`document-templates`):** עדיין על העותק הישן (`lib/devtasks.php`, `devzone.js`, קודים DT-…,
-  טבלאות `dev_tasks` / `dev_comments` / `dev_tokens` — אותו מבנה, המודול מוסיף עמודות וטבלאות בלי לשבור).
-  המעבר: שורה ב-`devloop/apps.json`, `sync.php`, קובץ חיבור (`devloop_setup`, עם `prefix` = `DT-` ו-`token_prefix` =
-  `dtd_` כדי שהאסימונים הקיימים ימשיכו לעבוד), והפעולות ב-`api.php`. לשים לב: המודול לא מכיר את ההפרדה DT-501
-  (מהמסך מ-501) — הקוד הבא הוא אחרי הגבוה מכולם.
+- **`document-templates`** — על המודול מאז 2026-10-14 (`lib/devtasks.php` הוא קובץ החיבור; הקידומת `DT-`, אסימון `dtd_`).
 
 ## מה הקובץ הזה לא עושה
 

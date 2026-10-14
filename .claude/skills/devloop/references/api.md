@@ -45,3 +45,9 @@ curl -s -H "$T" -H 'Content-Type: image/png' --data-binary @shot.png "$API?actio
 
 אם הסביבה חוסמת את המארח — בקש מהמשתמש "📋 העתקה לצ'אט" ותענה בצ'אט; את המצב והצעדים עדכן בקובץ
 `dev/open-items.json`, והם יגיעו עם הפריסה.
+
+## תבניות המסמכים (DT-…)
+
+אותן פעולות ואותם שדות. הכתובת: `https://mbe-plus.com/mini_projects/document-templates/api.php`. האסימון: `dtd_…`.
+המייל והקישורים מפנים ל-`#dev?tab=items&code=DT-012`. שגיאות "⚠️ לבירור" באות מלוג המעקב שלו (`dev_log`):
+ה-`id` של בקשה בהקשר הוא המזהה שבלוג (אזור הפיתוח ← 🪵 לוג, חיפוש לפי המזהה). ראיות פריסה — בסוד `DT_DEVLOOP_TOKEN`.

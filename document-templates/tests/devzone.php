@@ -95,14 +95,14 @@ $byA = array_column($rows, null, 'action');
 check('לוג: שגיאה עם מזהה מהבקשה, בלי הערך', $byA['doc_save']['ref'] === 'id=7' && $byA['doc_save']['status'] === 422 && !str_contains(json_encode($rows, JSON_UNESCAPED_UNICODE), 'ערך שלא נרשם'));
 check('לוג: שגיאת שרת — קובץ ושורה', str_contains((string)$byA['doc_get']['trace'], 'devzone.php:') && $byA['doc_get']['actor'] === 'guest');
 check('לוג: שגיאת JavaScript מהדפדפן', $byA['client_error']['message'] === 'x is undefined' && $byA['client_error']['page'] === '#tpl=3');
-dev_track($dev, 'dev_items', microtime(true), 200);
+dev_track($dev, 'dev-items', microtime(true), 200);
 $all = array_column(dev_log_list([])['rows'], 'action');
 $quiet = array_column(dev_log_list(['nodev' => 1])['rows'], 'action');
-check('לוג: "בלי אזור הפיתוח" מסתיר את הבקשות שלו, לא שגיאות', in_array('dev_items', $all, true) && !in_array('dev_items', $quiet, true) && in_array('doc_save', $quiet, true));
+check('לוג: "בלי אזור הפיתוח" מסתיר את הבקשות שלו, לא שגיאות', in_array('dev-items', $all, true) && !in_array('dev-items', $quiet, true) && in_array('doc_save', $quiet, true));
 check('לוג: סיכום 24 שעות', dev_log_list([])['day']['e5'] === 1);
 
 // ── פתוח / סגור, מצב ──
-$items = dev_items();
+$items = devloop_task_list();
 check('פתוח/סגור: הרשימה נקראת, עם שאלות פתוחות', count($items['items']) > 5 && count(array_filter($items['items'], fn($x) => $x['status'] === 'question')) > 0);
 $h = dev_health()['health'];
 check('מצב המערכת: הצפנה תקינה, ספירות', $h['crypto'] && $h['counts']['users'] === 2 && is_array($h['chain_broken']));

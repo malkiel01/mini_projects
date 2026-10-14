@@ -440,38 +440,39 @@ dev_log            id, at, user_id, action, error_code, duration_ms   -- בלי 
 | גופנים ומיקום הטקסט | ✅ גופן לכל שדה: Alef או גופן שהמשתמש העלה (TTF/OTF — מה שאפשר להטמיע ב-PDF; נשמר מוצפן). מיקום הטקסט בשדה — רשת 3×3. זהה על המסך וב-PDF. נעילת שדה במקומו. גישה לקובץ: הבעלים, מי שרואה תבנית/מסמך שמשתמש בו, וממלא — רק גופן שבמסמך שלו |
 | מבנים מותאמים | ✅ "מבנה התצוגה" לתאריך ולמספר — כמו תבנית מותאמת בוורד: d/dd/M/MM/MMMM/yy/yyyy/dddd, עברי hd/hMMMM/hyy/hyyyy, מספר #,##0.00/%/₪. מנוע זהה ב-`assets/js/fmt.js` (מסך, PDF) וב-`lib/fmt.php` (Word), עם `tests/fmt-vectors.json` משותף. לוח עברי עצמאי — זהה ל-jdtojewish ב-1900–2150 |
 | "או פלוני או אלמוני" | ✅ שדה עם כמה ממלאים (`roles` במבנה; `role` נשאר הראשי). כל אחד מהם יכול למלא; חובה משותף עוצר רק את האחרון שעוד לא סיים. `field_roles` / `open_roles` ב-`lib/participants.php`, בדיקה ב-`tests/multirole.php` |
-| מטלות ושיח | ✅ קוד לכל מטלה (DT-001…), שיח בכל מטלה, מטלה חדשה מהמסך, "העתקה לצ'אט", ואסימון שדרכו Claude קורא ועונה. `lib/devtasks.php`, בדיקה ב-`tests/devtasks.php` |
+| מטלות ושיח | ✅ על המודול המשותף DevLoop: קוד, שיח עם צילומים, אימות שלך (✅ / ↩️), ראיות, 🐞 מכל מסך, ושגיאות מלוג המעקב שנפתחות לבד. `lib/devtasks.php`, בדיקה ב-`tests/devtasks.php` |
 | ממלא ← איש קשר | ✅ כל ממלא בקישור מקושר לאיש קשר (`participants.contact_id`) — בלי זה אין קישור. כרטיס קיים נמצא לפי טלפון/מייל (`phone_key`), אחרת נוצר. סנכרון דו-כיווני; ממלא שסיים — לא משתנה (תיעוד). בכרטיס: `contact_fills` — המסמכים, המצב ושליחה. בתבנית: `roles[].contact` — איש קשר קבוע. ייבוא מהטלפון: Contact Picker או vcf (`assets/js/vcard.js`, `contact_import`). בדיקות: `tests/contactsync.php`, `tests/vcard.test.js` |
 | 13 — בינה מלאכותית וקרדיטים | הבא בתור |
 
-## מטלות ושיח
+## מטלות ושיח (DevLoop)
 
-**שני מקורות, רשימה אחת.** `dev/open-items.json` הוא מה ש-Claude מנהל בקוד, ו**מתעדכן בכל שינוי
-שנכנס**: מה שנעשה נסגר, ומה שמחכה להחלטה נשאר עם השאלות שלו. הטבלה `dev_tasks` היא מטלות שהמפתח
-פתח מהמסך. אם אותו קוד מופיע בשניהם, הקובץ גובר: Claude העביר את המטלה לקוד.
+המטלות רצות על **המודול המשותף DevLoop** (`devloop/` בשורש הריפו, ראו `devloop/README.md`), אותו מודול כמו
+במנהל הפרויקטים. הסקיל `.claude/skills/devloop` מתאר את הלולאה: בקשה ← עבודה ← פריסה ← **אימות שלך**.
 
-**הקוד קבוע, והטווחים נפרדים.** `DT-` ומספר רץ. בקובץ — עד DT-500; מטלה מהמסך — מ-DT-501. כך
-Claude מוסיף לקובץ בלי לראות את המסך, ואין התנגשות. מטלה מהמסך ש-Claude מעביר לקובץ נשארת באותו
-קוד, עם `"moved": true`. התנגשות ישנה (בלי `moved`) — מוצגות שתיהן.
+| מה | איפה |
+| --- | --- |
+| המנוע — **לא עורכים כאן** | `lib/devloop.php`, `assets/js/devloop.js`, `assets/css/devloop.css` (עותקים; עורכים ב-`devloop/src` ומריצים `php devloop/tools/sync.php`) |
+| החיבור לכלי | `lib/devtasks.php` — המסד, המשתמשים, המייל, ו**לוג המעקב** |
+| הפעולות | `dev-items` · `dev-task-create` · `dev-task-set` · `dev-comment` · `dev-verify` · `dev-report` · `dev-attach` · `dev-file` · `dev-tokens`; באסימון: `devapi-feed` · `devapi-comment` · `devapi-file` · `devapi-attach` |
+| המסך | אזור הפיתוח ← 📋 מטלות (`#dev?tab=items&code=DT-012`), ו-🐞 בכותרת |
+| מה ש-Claude מנהל בקוד | `dev/open-items.json` — `status` + `status_at`, `acceptance`, `steps` (`.claude/skills/devloop/references/items-file.md`) |
 
-**השיח.** בכל מטלה יש שרשור הערות. המפתח כותב, ו-Claude עונה באותו מקום. מטלה שההערה האחרונה בה
-היא של המפתח מסומנת "ממתין ל-Claude". מצב של מטלה מהמסך אפשר לשנות מהמסך. מצב של מטלה מהקוד
-משתנה רק בקוד.
+**הסנכרון עם לוג המעקב:**
+- **לכל בקשה יש מזהה** (`X-Request-Id`): הוא נשמר בשורה בלוג, מופיע בהקשר של 🐞 דיווח, ואפשר לחפש לפיו בלוג.
+- **שגיאה נפתחת לבד כמטלה "⚠️ לבירור".** זה קורה לשגיאת שרת (5xx) ולשגיאת JavaScript בדפדפן. אחת לכל חתימה,
+  עם מונה. סירוב רגיל (4xx) אינו באג ולא נפתח.
+- **מה המפתח מחליט:** 👍 לטפל (עובר ל-Claude), או 🙈 להתעלם (מופעים חדשים רק נספרים).
+- **בלוג,** ליד כל שגיאה יש קישור ⚠️ DT-… למטלה שלה. החתימה מחושבת כמו במודול (`dt_log_task_codes`).
 
-**איך Claude קורא, בלי חיבור לחשבון:**
-1. **"העתקה לצ'אט"** — טקסט של המטלות שממתינות לתשובה, להדבקה בצ'אט.
-2. **אסימון** — "🔑 גישה ל-Claude" יוצר אסימון. הוא מוצג פעם אחת ונשמר רק כגיבוב, והוא פותח רק את
-   המטלות. אחרי שהמפתח נתן אותו ל-Claude, מספיק לכתוב לו "תקרא את המטלות".
+**קודים.** `DT-` ומספר. מטלה חדשה, מהקובץ או מהמסך, מקבלת את המספר שאחרי הגבוה מכולם (`next_code` בפיד).
+
+**אסימון.** "🔑 גישה ל-Claude" (`dtd_…`). אסימונים מלפני המודול ממשיכים לעבוד. **פריסה מעבירה לאימות:** קוד
+`DT-…` בהודעת ה-commit מקבל ראיות (פריסה, commit, PR) ועובר ל-🧪 — כשהסוד `DT_DEVLOOP_TOKEN` מוגדר ב-GitHub.
 
 ```bash
 T=dtd_…   # האסימון
-U=https://<האתר>/document-templates/api.php
-curl -s -H "X-Dev-Token: $T" "$U?action=devapi_feed"            # רק מטלות עם הערה חדשה
-curl -s -H "X-Dev-Token: $T" "$U?action=devapi_feed&all=1"      # הכול  ·  &code=DT-012 — אחת
-curl -s -H "X-Dev-Token: $T" "$U?action=devapi_feed&mark=1"     # סימון: מה שנקרא כבר לא "חדש"
+U=https://mbe-plus.com/mini_projects/document-templates/api.php
+curl -s -H "X-Dev-Token: $T" "$U?action=devapi-feed"           # מה שחדש · &all=1 הכול · &code=DT-012 · &mark=1
 curl -s -H "X-Dev-Token: $T" -H "Content-Type: application/json" \
-     -d '{"code":"DT-012","body":"תשובה","status":"closed"}' "$U?action=devapi_comment"
+     -d '{"code":"DT-012","body":"…","status":"verify","steps":["…"]}' "$U?action=devapi-comment"
 ```
-
-`status` אפשרי רק במטלה שנפתחה מהמסך. הבקשות מסומנות 🤖 בלוג המעקב.
-

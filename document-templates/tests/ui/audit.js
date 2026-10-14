@@ -145,8 +145,8 @@ function scan() {
     ['פיתוח — משתמש', click('.list .use-row')],
     ['פיתוח — מטלות', go('dev?tab=items')],
     ['פיתוח — מטלה עם שיח', async () => {
-      await p.evaluate(async () => { const r = await window.DT.api('dev_items'); const c = r.items.find(x => x.status !== 'closed').code;
-        await window.DT.api('dev_comment', { code: c, body: 'הערה ארוכה כדי לבדוק שבירת שורות: ' + 'מילה '.repeat(40) });
+      await p.evaluate(async () => { const r = await window.DT.api('dev-items'); const c = r.items.find(x => x.status !== 'closed').code;
+        await window.DT.api('dev-comment', { code: c, body: 'הערה ארוכה כדי לבדוק שבירת שורות: ' + 'מילה '.repeat(40) });
         location.hash = '#dev?tab=items&code=' + c; });
       await p.waitForTimeout(800); }],
     ['פיתוח — מטלה חדשה', async () => { await go('dev?tab=items')(); await p.click('button:has-text("+ מטלה חדשה")'); await p.waitForTimeout(300); }],

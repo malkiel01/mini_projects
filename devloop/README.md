@@ -71,4 +71,4 @@ DevLoop.show(element);      // מסך המטלות
 | אפליקציה | מצב |
 | --- | --- |
 | `project-manager` | על המודול (מגרסה 0.71); התראות במייל (0.72) |
-| `document-templates` | עדיין על העותק הישן שלו (`lib/devtasks.php`, DT-…) — המעבר בידי הסשן של הכלי; ראו `.claude/COORDINATION.md` |
+| `document-templates` | על המודול (DT-…, אסימון `dtd_`); שגיאות מלוג המעקב (`dev_log`) → ⚠️ לבירור; מייל; ראיות פריסה בסוד `DT_DEVLOOP_TOKEN` |

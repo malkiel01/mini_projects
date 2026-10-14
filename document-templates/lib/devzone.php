@@ -31,7 +31,7 @@ function devzone_migrate(PDO $pdo): void
     devtasks_migrate($pdo);
     // לוג המעקב: מה שצריך כדי לשחזר תקלה — בלי תוכן של משתמשים
     $cols = array_column($pdo->query('PRAGMA table_info(dev_log)')->fetchAll(), 'name');
-    foreach (['method TEXT', 'status INTEGER', 'actor TEXT', 'ref TEXT', 'ip TEXT', 'message TEXT', 'trace TEXT', 'page TEXT'] as $def) {
+    foreach (['method TEXT', 'status INTEGER', 'actor TEXT', 'ref TEXT', 'ip TEXT', 'message TEXT', 'trace TEXT', 'page TEXT', 'req TEXT', 'ua TEXT'] as $def) {
         if (!in_array(strtok($def, ' '), $cols, true)) $pdo->exec("ALTER TABLE dev_log ADD COLUMN $def");
     }
 }
@@ -42,6 +42,12 @@ function devzone_migrate(PDO $pdo): void
  * רשומה ללוג. $e — השגיאה (אם הייתה). ref — מזהים מהבקשה (מסמך, תבנית),
  * לא ערכים. בשגיאת שרת — גם הקובץ והשורה.
  */
+/** מזהה הבקשה (X-Request-Id) — בלוג, בכותרת התשובה, ובהקשר של 🐞 דיווח ושל מטלת "לבירור". */
+function dev_req_id(): string
+{
+    return $GLOBALS['dt_req'] ??= bin2hex(random_bytes(6));
+}
+
 function dev_track(?array $session, string $action, float $started, int $status, ?Throwable $e = null, array $extra = []): void
 {
     try {
@@ -50,15 +56,16 @@ function dev_track(?array $session, string $action, float $started, int $status,
             $v = $_GET[$k] ?? ($GLOBALS['dt_body'][$k] ?? null);
             if (is_numeric($v)) $ref[] = "$k=" . (int)$v;
         }
-        $actor = $session ? 'user' : (str_starts_with($action, 'ext_') ? 'api' : (str_starts_with($action, 'fill_') ? 'fill' : (str_starts_with($action, 'devapi_') ? 'claude' : 'guest')));
+        $actor = $session ? 'user' : (str_starts_with($action, 'ext_') ? 'api' : (str_starts_with($action, 'fill_') ? 'fill' : (str_starts_with($action, 'devapi') ? 'claude' : 'guest')));
         $trace = null;
         if ($e && !($e instanceof ApiError)) $trace = basename($e->getFile()) . ':' . $e->getLine() . ' ' . get_class($e);
-        db()->prepare('INSERT INTO dev_log (at, user_id, action, error_code, duration_ms, method, status, actor, ref, ip, message, trace, page)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        db()->prepare('INSERT INTO dev_log (at, user_id, action, error_code, duration_ms, method, status, actor, ref, ip, message, trace, page, req, ua)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
             ->execute([now_iso(), $session ? (int)$session['id'] : null, mb_substr($action, 0, 60), $status >= 400 ? (string)$status : null,
                 (int)((microtime(true) - $started) * 1000), $_SERVER['REQUEST_METHOD'] ?? 'GET', $status, $actor,
                 $ref ? implode(' ', $ref) : null, client_ip(),
-                $e ? mb_substr($e->getMessage(), 0, 500) : ($extra['message'] ?? null), $extra['trace'] ?? $trace, $extra['page'] ?? null]);
+                $e ? mb_substr($e->getMessage(), 0, 500) : ($extra['message'] ?? null), $extra['trace'] ?? $trace, $extra['page'] ?? null,
+                dev_req_id(), mb_substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 200)]);
         if (random_int(1, 200) === 1) {
             db()->prepare('DELETE FROM dev_log WHERE at < ?')->execute([gmdate('Y-m-d\TH:i:s\Z', time() - DEV_LOG_DAYS * 86400)]);
         }
@@ -87,14 +94,16 @@ function dev_log_list(array $q): array
     if (!empty($q['errors'])) $where[] = "(l.status >= 400 OR l.action = 'client_error')";
     if (!empty($q['act'])) { $where[] = 'l.action LIKE ?'; $args[] = '%' . $q['act'] . '%'; }   // לא action — זה שם הפעולה של ה-API
     // בלי הבקשות של אזור הפיתוח עצמו (הלוג מתרענן — הוא היה ממלא את הרשימה), חוץ משגיאות
-    if (!empty($q['nodev'])) $where[] = "(l.action NOT LIKE 'dev\_%' ESCAPE '\\' OR l.status >= 400)";
+    if (!empty($q['nodev'])) $where[] = "((l.action NOT LIKE 'dev\_%' ESCAPE '\\' AND l.action NOT LIKE 'dev-%' AND l.action NOT LIKE 'devapi-%') OR l.status >= 400)";
     if (!empty($q['user_id'])) { $where[] = 'l.user_id = ?'; $args[] = (int)$q['user_id']; }
     if (!empty($q['ref'])) { $where[] = 'l.ref LIKE ?'; $args[] = '%' . $q['ref'] . '%'; }
+    if (!empty($q['req'])) { $where[] = 'l.req = ?'; $args[] = (string)$q['req']; }   // מזהה בקשה — מ-🐞 דיווח או ממטלה
     if (!empty($q['before'])) { $where[] = 'l.id < ?'; $args[] = (int)$q['before']; }
     $st = db()->prepare('SELECT l.*, u.display_name, u.email FROM dev_log l LEFT JOIN users u ON u.id = l.user_id
         WHERE ' . implode(' AND ', $where) . ' ORDER BY l.id DESC LIMIT 200');
     $st->execute($args);
     $rows = $st->fetchAll();
+    $tasks = dt_log_task_codes($rows);   // שגיאה → המטלה "לבירור" שלה (DevLoop)
     $day = gmdate('Y-m-d\TH:i:s\Z', time() - 86400);
     $stats = db()->query("SELECT COUNT(*) AS n, SUM(status >= 500) AS e5, SUM(status >= 400 AND status < 500) AS e4,
         SUM(action = 'client_error') AS js, ROUND(AVG(duration_ms)) AS avg_ms FROM dev_log WHERE at > '$day'")->fetch();
@@ -102,6 +111,7 @@ function dev_log_list(array $q): array
         'id' => (int)$r['id'], 'at' => $r['at'], 'action' => $r['action'], 'method' => $r['method'], 'status' => $r['status'] === null ? null : (int)$r['status'],
         'ms' => (int)$r['duration_ms'], 'actor' => $r['actor'], 'user' => $r['display_name'], 'email' => $r['email'], 'user_id' => $r['user_id'],
         'ref' => $r['ref'], 'ip' => $r['ip'], 'message' => $r['message'], 'trace' => $r['trace'], 'page' => $r['page'],
+        'req' => $r['req'] ?? null, 'task' => $tasks[(int)$r['id']] ?? null,
     ], $rows), 'day' => array_map('intval', $stats)];
 }
 
