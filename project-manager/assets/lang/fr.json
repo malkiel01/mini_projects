@@ -2172,5 +2172,21 @@
     "המסמך נשלח למנהל הפרויקט": "Le document a été envoyé au chef de projet",
     "בקישור הלקוח רואה את התקדמות השלבים, את הצעות המחיר שנשלחו אליו (המומלצת בראש) ואת הקבצים שסומנו \"גלוי\" — מאשר הצעות בעצמו, בלחיצה או בחתימה לפי הגדרות הלקוח, ומעלה מסמכים. בלי סיסמה.": "Via le lien, le client voit l'avancement des étapes, les devis qui lui ont été envoyés (le recommandé en premier) et les fichiers marqués « visibles » — il approuve lui-même les devis, d'un clic ou par signature selon ses réglages, et envoie des documents. Sans mot de passe.",
     "בקישור העו\"ד רואה את הפרויקט ואת ההצעות, מאשר הצעות שהלקוח כבר אישר בשלבים שדורשים עו\"ד, ומעלה מסמכים. בלי סיסמה.": "Via le lien, l'avocat voit le projet et les devis, approuve les devis déjà approuvés par le client dans les étapes qui exigent un avocat, et envoie des documents. Sans mot de passe.",
-    "בקישור הספק רואה את השלבים שלו, מגיש הצעות מחיר, מבקש תשלום, מאשר שהכסף התקבל, מעלה מסמכים (ביטוח, רישיון, אחריות) ומעדכן את פרטי הבנק שלו — בלי לראות הצעות של ספקים אחרים, פרטי לקוח או תשלומים לאחרים. בלי סיסמה.": "Via le lien, le fournisseur voit ses étapes, soumet des devis, demande un paiement, confirme la réception de l'argent, envoie des documents (assurance, licence, garantie) et met à jour ses coordonnées bancaires — sans voir les devis des autres fournisseurs, les détails du client ni les paiements aux autres. Sans mot de passe."
+    "בקישור הספק רואה את השלבים שלו, מגיש הצעות מחיר, מבקש תשלום, מאשר שהכסף התקבל, מעלה מסמכים (ביטוח, רישיון, אחריות) ומעדכן את פרטי הבנק שלו — בלי לראות הצעות של ספקים אחרים, פרטי לקוח או תשלומים לאחרים. בלי סיסמה.": "Via le lien, le fournisseur voit ses étapes, soumet des devis, demande un paiement, confirme la réception de l'argent, envoie des documents (assurance, licence, garantie) et met à jour ses coordonnées bancaires — sans voir les devis des autres fournisseurs, les détails du client ni les paiements aux autres. Sans mot de passe.",
+    "עריכת התפקיד של {name}": "Modifier le rôle de {name}",
+    "עריכה בצוות — {name}": "Modifier dans l'équipe — {name}",
+    "הערה (רק לנו)": "Note (pour nous seulement)",
+    "למשל: זמינה אחרי 17:00, מעדיפה וואטסאפ": "p. ex. disponible après 17h, préfère WhatsApp",
+    "בן / בת זוג": "Conjoint(e)",
+    "בן משפחה": "Membre de la famille",
+    "נציג הלקוח": "Représentant du client",
+    "מפקח": "Superviseur",
+    "אדריכל": "Architecte",
+    "מהנדס": "Ingénieur",
+    "מעצב פנים": "Architecte d'intérieur",
+    "יועץ": "Consultant",
+    "מודד": "Géomètre",
+    "מנהל עבודה": "Chef de chantier",
+    "תפקיד לא מוכר": "Rôle inconnu",
+    "עודכן בצוות: {name} ({role})": "Mis à jour dans l'équipe : {name} ({role})"
 }

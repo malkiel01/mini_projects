@@ -197,6 +197,29 @@ function pm_project_get(array $user, int $id): array
 }
 
 /** הצוות: הלקוח, העו"ד, ספקי השלבים ואנשי צוות נוספים — כל אחד פעם אחת. */
+/**
+ * תפקידים בצוות — לפי סוג איש הקשר. ספק — גם התחומים שלו (trade:<id>). key => תווית (מתורגמת בדפדפן).
+ */
+// i18n-ok-start
+const PM_MEMBER_ROLES = [
+    'client'   => ['co_client' => 'לקוח נוסף', 'spouse' => 'בן / בת זוג', 'family' => 'בן משפחה', 'client_rep' => 'נציג הלקוח'],
+    'lawyer'   => ['co_lawyer' => 'עו"ד נוסף'],
+    'supplier' => ['supervisor' => 'מפקח', 'architect' => 'אדריכל', 'engineer' => 'מהנדס', 'designer' => 'מעצב פנים',
+                   'consultant' => 'יועץ', 'surveyor' => 'מודד', 'foreman' => 'מנהל עבודה'],
+];
+// i18n-ok-end
+
+/** התווית של תפקיד שמור — או ברירת המחדל לסוג איש הקשר. */
+function pm_member_role_label(string $key, string $kind): string
+{
+    if (preg_match('/^trade:(\d+)$/', $key, $m)) {
+        $st = pm_db()->prepare('SELECT name FROM trades WHERE id = ?');
+        $st->execute([(int)$m[1]]);
+        if ($n = $st->fetchColumn()) return (string)$n;
+    }
+    return PM_MEMBER_ROLES[$kind][$key] ?? (['client' => 'לקוח נוסף', 'lawyer' => 'עו"ד נוסף'][$kind] ?? 'צוות'); // i18n-ok
+}
+
 function pm_project_team(array $p, array $stages): array
 {
     $db = pm_db();
@@ -217,14 +240,17 @@ function pm_project_team(array $p, array $stages): array
         if ($u['lawyer_id'] && $u['lawyer_id'] !== (int)$p['lawyer_id']) { $add($u['lawyer_id'], 'עו"ד'); $team[$u['lawyer_id']]['roles'][] = '🏢 ' . $u['name']; } // i18n-ok
     }
     foreach ($stages as $s) if ($s['supplier_id']) $add($s['supplier_id'], $s['name']);
-    $m = $db->prepare('SELECT m.contact_id, m.role, c.kind FROM project_members m JOIN contacts c ON c.id = m.contact_id WHERE m.project_id = ?');
+    $m = $db->prepare('SELECT m.contact_id, m.role, m.role_key, m.note, c.kind FROM project_members m JOIN contacts c ON c.id = m.contact_id WHERE m.project_id = ?');
     $m->execute([$p['id']]);
     foreach ($m->fetchAll() as $r) {
         $id = (int)$r['contact_id'];
-        // לקוח / עו"ד שנוסף לצוות — "לקוח נוסף" / "עו"ד נוסף", עם קישור אישי משלו (lib/portal.php: pm_portal_co)
-        $role = $r['role'] ?: (['client' => 'לקוח נוסף', 'lawyer' => 'עו"ד נוסף'][$r['kind']] ?? 'צוות'); // i18n-ok
-        if (isset($team[$id])) { $team[$id]['removable'] = true; if ($r['role'] || !in_array($r['kind'], ['client', 'lawyer'], true)) $team[$id]['roles'][] = $role; }
+        // תפקיד מהרשימה (לקוח / עו"ד נוסף — עם קישור אישי משלו, lib/portal.php: pm_portal_co); הערה — רק לנו.
+        // role — טקסט חופשי מלפני הרשימה: מוצג כהערה
+        $role = pm_member_role_label((string)$r['role_key'], $r['kind']);
+        $note = trim((string)$r['note']) !== '' ? (string)$r['note'] : (string)$r['role'];
+        if (isset($team[$id])) { $team[$id]['removable'] = true; if ($r['role_key'] !== '' || !in_array($r['kind'], ['client', 'lawyer'], true)) $team[$id]['roles'][] = $role; }
         else $add($id, $role, true);
+        if (isset($team[$id])) $team[$id] += ['member' => ['role_key' => (string)$r['role_key'], 'note' => $note]];
     }
     return array_values($team);
 }
@@ -505,7 +531,7 @@ function pm_note(array $user, int $projectId, string $text): array
     return pm_project_get($user, $projectId);
 }
 
-function pm_member(array $user, int $projectId, int $contactId, bool $add, string $role): array
+function pm_member(array $user, int $projectId, int $contactId, bool $add, string $roleKey, string $note = ''): array
 {
     $p = pm_project_row($user, $projectId);
     $st = pm_db()->prepare('SELECT name, kind, owner_id FROM contacts WHERE id = ?');
@@ -513,12 +539,20 @@ function pm_member(array $user, int $projectId, int $contactId, bool $add, strin
     $c = $st->fetch();
     if (!$c || !pm_contact_in_team((int)$c['owner_id'], (int)$p['owner_id'])) throw new PmError('איש הקשר לא נמצא', 422);
     if ($add) {
-        $role = mb_substr(trim($role), 0, 40);
-        pm_db()->prepare('INSERT INTO project_members (project_id, contact_id, role) VALUES (?,?,?)
-                          ON CONFLICT(project_id, contact_id) DO UPDATE SET role = excluded.role')
-            ->execute([$projectId, $contactId, $role]);
-        if ($role !== '') pm_event($user, $projectId, 'member_added', 'הצטרף לצוות: {name} ({role})', [], ['name' => $c['name'], 'role' => $role]);
-        else pm_event($user, $projectId, 'member_added', 'הצטרף לצוות: {name}', [], ['name' => $c['name']]);
+        // התפקיד — מהרשימה של סוג איש הקשר (או תחום של הספק); הערה — טקסט חופשי לתצוגה אצלנו
+        $roleKey = trim($roleKey);
+        $ok = $roleKey === '' || isset(PM_MEMBER_ROLES[$c['kind']][$roleKey])
+            || ($c['kind'] === 'supplier' && preg_match('/^trade:(\d+)$/', $roleKey, $m) && pm_db()->query('SELECT 1 FROM trades WHERE id = ' . (int)$m[1])->fetchColumn());
+        if (!$ok) throw new PmError('תפקיד לא מוכר', 422);
+        $note = mb_substr(trim($note), 0, 100);
+        $was = pm_db()->prepare('SELECT 1 FROM project_members WHERE project_id = ? AND contact_id = ?');
+        $was->execute([$projectId, $contactId]);
+        $existed = (bool)$was->fetchColumn();
+        pm_db()->prepare("INSERT INTO project_members (project_id, contact_id, role, role_key, note) VALUES (?,?,'',?,?)
+                          ON CONFLICT(project_id, contact_id) DO UPDATE SET role = '', role_key = excluded.role_key, note = excluded.note")
+            ->execute([$projectId, $contactId, $roleKey, $note]);
+        $label = pm_member_role_label($roleKey, $c['kind']);
+        pm_event($user, $projectId, 'member_added', $existed ? 'עודכן בצוות: {name} ({role})' : 'הצטרף לצוות: {name} ({role})', [], ['name' => $c['name'], 'role' => $label]);
     } else {
         pm_db()->prepare('DELETE FROM project_members WHERE project_id = ? AND contact_id = ?')->execute([$projectId, $contactId]);
         pm_event($user, $projectId, 'member_removed', 'הוסר מהצוות: {name}', [], ['name' => $c['name']]);

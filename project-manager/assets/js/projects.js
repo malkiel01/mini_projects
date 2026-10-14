@@ -67,7 +67,7 @@ const Projects = (() => {
             const row = e.target.closest('[data-stage]');
             if (row && e.target === row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openStage(Number(row.dataset.stage)); }
         });
-        $('#add-member').addEventListener('click', openMember);
+        $('#add-member').addEventListener('click', () => openMember());
         $('#tl-filters').addEventListener('click', e => {
             const b = e.target.closest('[data-tl]');
             if (!b) return;
@@ -83,6 +83,8 @@ const Projects = (() => {
         $('#team-list').addEventListener('click', e => {
             const b = e.target.closest('[data-remove]');
             if (b) removeMember(Number(b.dataset.remove), b.dataset.name);
+            const ed = e.target.closest('[data-member-edit]');
+            if (ed) openMember(Number(ed.dataset.memberEdit));
             const l = e.target.closest('[data-portal]');
             if (l) openPortal(Number(l.dataset.portal));
         });
@@ -727,8 +729,9 @@ const Projects = (() => {
                 return `<li class="card">
                 ${avatar(c.name)}
                 <div class="body"><div class="l1">${esc(c.name)}${c.company ? `<span class="sub">${esc(c.company)}</span>` : ''}</div>
-                    <div class="l2">${[...c.roles.map(r => esc(t(r))), seen ? esc(seen) : ''].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>')}</div></div>
-                <div class="acts">${portal ? `<button class="icon-btn" data-portal="${c.id}" aria-label="${esc(t('הקישור האישי של {name}', { name: c.name }))}" title="${esc(t('קישור אישי'))}">🔗</button>` : ''}${contactActs(c)}${c.removable ? `<button class="icon-btn" data-remove="${c.id}" data-name="${esc(c.name)}" aria-label="${esc(t('הסרת {name} מהצוות', { name: c.name }))}">✕</button>` : ''}</div>
+                    <div class="l2">${[...c.roles.map(r => esc(t(r))), seen ? esc(seen) : ''].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>')}</div>
+                    ${c.member?.note ? `<div class="l2 member-note">📝 ${esc(c.member.note)}</div>` : ''}</div>
+                <div class="acts">${portal ? `<button class="icon-btn" data-portal="${c.id}" aria-label="${esc(t('הקישור האישי של {name}', { name: c.name }))}" title="${esc(t('קישור אישי'))}">🔗</button>` : ''}${contactActs(c)}${c.member ? `<button class="icon-btn" data-member-edit="${c.id}" aria-label="${esc(t('עריכת התפקיד של {name}', { name: c.name }))}">✏️</button>` : ''}${c.removable ? `<button class="icon-btn" data-remove="${c.id}" data-name="${esc(c.name)}" aria-label="${esc(t('הסרת {name} מהצוות', { name: c.name }))}">✕</button>` : ''}</div>
             </li>`;
             }).join('') || `<p class="empty">${esc(t('עוד אין צוות. שייך לקוח בפרטים, או ספק לשלב.'))}</p>`;
         };
@@ -804,18 +807,45 @@ const Projects = (() => {
         });
     }
 
-    async function openMember() {
+    // תפקידים לפי סוג איש הקשר (PM_MEMBER_ROLES בשרת); ספק — גם התחומים שלו
+    let memberRoles = null, memberContacts = new Map();
+    function fillRoles(form, contactId, value = '') {
+        const c = memberContacts.get(contactId);
+        const kind = c?.kind || 'supplier';
+        const own = kind === 'supplier' ? (c?.trades || []).map(id => state.trades.find(x => x.id === id)).filter(Boolean)
+            .map(x => ({ value: 'trade:' + x.id, label: t(x.name) })) : [];
+        const list = [...own, ...Object.entries(memberRoles?.[kind] || {}).map(([value, label]) => ({ value, label: t(label) }))];
+        form.elements.role_key.innerHTML = (kind === 'supplier' ? `<option value="">${esc(t('צוות'))}</option>` : '') + options(list, value);
+        if (value) form.elements.role_key.value = value;
+    }
+
+    /** "+ איש צוות" — או ✏️ על איש צוות (editId): התפקיד מתוך רשימה, והערה חופשית רק לנו. */
+    async function openMember(editId = 0) {
         const dlg = $('#member-dlg');
         const form = $('form', dlg);
         formError(form, '');
         form.reset();
+        if (!memberRoles) try { ({ roles: memberRoles } = await api('member-roles')); } catch { memberRoles = {}; }
         const lists = await Promise.all(['supplier', 'lawyer', 'client'].map(k => contactsOf(k).catch(() => [])));
+        lists.forEach((l, i) => l.forEach(c => memberContacts.set(c.id, { ...c, kind: ['supplier', 'lawyer', 'client'][i] })));
+        const editing = editId ? cur.team.find(c => c.id === editId) : null;
         const inTeam = new Set(cur.team.map(c => c.id));
-        const groups = ['ספקים', 'עורכי דין', 'לקוחות'].map((label, i) => { // i18n-ok
-            const items = lists[i].filter(c => teamOf(cur).includes(c.owner_id) && !c.archived && !inTeam.has(c.id));
-            return items.length ? `<optgroup label="${esc(t(label))}">${options(items.map(c => ({ value: c.id, label: c.name + (c.company ? ' · ' + c.company : '') })))}</optgroup>` : '';
-        }).join('');
-        form.elements.contact_id.innerHTML = groups || `<option value="">${esc(t('אין אנשי קשר להוספה'))}</option>`;
+        if (editing) {
+            if (!memberContacts.has(editId)) memberContacts.set(editId, { id: editId, kind: editing.kind, trades: [] });
+            form.elements.contact_id.innerHTML = options([{ value: editId, label: editing.name }], editId);
+        } else {
+            const groups = ['ספקים', 'עורכי דין', 'לקוחות'].map((label, i) => { // i18n-ok
+                const items = lists[i].filter(c => teamOf(cur).includes(c.owner_id) && !c.archived && !inTeam.has(c.id));
+                return items.length ? `<optgroup label="${esc(t(label))}">${options(items.map(c => ({ value: c.id, label: c.name + (c.company ? ' · ' + c.company : '') })))}</optgroup>` : '';
+            }).join('');
+            form.elements.contact_id.innerHTML = groups || `<option value="">${esc(t('אין אנשי קשר להוספה'))}</option>`;
+        }
+        form.elements.contact_id.disabled = !!editing;
+        form.elements.contact_id.onchange = () => fillRoles(form, Number(form.elements.contact_id.value));
+        fillRoles(form, editing ? editId : Number(form.elements.contact_id.value), editing?.member?.role_key || '');
+        form.elements.note.value = editing?.member?.note || '';
+        $('#member-dlg-title').textContent = editing ? t('עריכה בצוות — {name}', { name: editing.name }) : t('הוספה לצוות');
+        $('button[type=submit]', form).textContent = editing ? t('שמירה') : t('הוספה');
         dlg.showModal();
     }
 
@@ -824,7 +854,7 @@ const Projects = (() => {
         const contact_id = Number(form.elements.contact_id.value);
         if (!contact_id) { formError(form, t('יש לבחור איש קשר')); return; }
         await busy($('button[type=submit]', form), form, async () => {
-            update(await api('member', { body: { project_id: cur.project.id, contact_id, add: true, role: form.elements.role.value } }));
+            update(await api('member', { body: { project_id: cur.project.id, contact_id, add: true, role_key: form.elements.role_key.value, note: form.elements.note.value } }));
             $('#member-dlg').close();
         });
     }
