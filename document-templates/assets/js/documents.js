@@ -695,6 +695,7 @@
     }
 
     // ── תצוגה: על המסמך ──
+    let zoom = null;   // הזום נשמר בין ציורים של הדף
     let pagesCache = null;
     async function renderPage(seq) {
       if (!pagesCache) {
@@ -718,7 +719,10 @@
         new ResizeObserver(() => { page.style.setProperty('--k', page.clientWidth / pg.w); }).observe(page);
         wrap.append(page);
       });
-      body.replaceChildren(wrap);
+      // צופה עם זום וגלילה — גם בטלפון (שלב 12+: נגישות)
+      const z = zoom || (zoom = window.DTEditor.zoomable(wrap));
+      if (z.stage.firstChild !== wrap) { z.stage.replaceChildren(wrap); wrap.style.width = z.zoom * 100 + '%'; }
+      body.replaceChildren(z.box);
     }
 
     // ── תצוגה: טופס ──
