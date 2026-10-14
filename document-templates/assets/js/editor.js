@@ -226,6 +226,11 @@
       ...(tpl.schema.body ? { body: tpl.schema.body.map(b => ({ ...b })) } : {}),
     };
     const roleIndex = (key) => Math.max(0, schema.roles.findIndex(r => r.key === key));
+    // גופנים: מה שבתבנית (גם של הבעלים, כששותף עורך) + מה שהעליתי
+    const fontNames = new Map((tpl.fonts || []).map(x => [x.id, x.name]));
+    let myFonts = null;
+    const loadMyFonts = () => (myFonts ??= api('font_list').then(r => { for (const x of r.fonts) fontNames.set(x.id, x.name); return r.fonts; }).catch(() => []));
+    window.DTFonts.loadAll(schema, { tpl: id }).then(() => draw());
     let selected = null;
     let placing = null;
     let dirty = false;
@@ -503,7 +508,8 @@
           + (f.required ? ' required' : '') + (f.hidden ? ' private' : '') + (f.locked ? ' locked' : ''),
         style: `left:${f.x * 100}%; top:${f.y * 100}%; width:${f.w * 100}%; height:${f.h * 100}%`,
         title: f.label + (f.locked ? ' — 🔒 נעול במקומו. לחיצה: הגדרות' : ' — לחיצה: הגדרות; גרירה: הזזה'), tabindex: 0, role: 'button',
-      }, el('span', { class: 'field-label' }, iconOf(f) + ' ' + f.label),
+      }, el('span', { class: 'field-label va-' + (f.valign || 'middle') + ' ha-' + (f.align || 'right'),
+          style: f.font ? `font-family:${window.DTFonts.family(f.font)}` : null }, iconOf(f) + ' ' + f.label),
         el('span', { class: 'handle', 'aria-hidden': 'true' }));
       box.addEventListener('pointerdown', (e) => startDrag(e, f, e.target.classList.contains('handle')));
       // נעול: לא נגרר — הקשה פותחת הגדרות, ואצבע על השדה גוללת ומגדילה את הדף כרגיל
@@ -667,6 +673,7 @@
         el('p', { class: 'hint' }, 'מערכת חיצונית (CRM, אתר) יכולה להנפיק מסמכים מהתבנית הזאת דרך ה-API, ולקבל הודעה כשמולאו.'),
         el('p', { class: 'small' }, 'מזהה התבנית: ', el('code', { dir: 'ltr' }, String(id))),
         el('a', { class: 'link small', href: '#connections' }, 'מפתחות ודוגמאות — ב"🔌 חיבורים"')),
+        fontsPanel(),
         el('div', { class: 'numbering' }, el('h2', {}, 'תגיות לתבנית'),
         window.DTCatalog.tagsInput(tpl.tags, async (tags) => {
           try { await api('tpl_tags', { id, tags }); tpl.tags = tags; }
@@ -704,6 +711,97 @@
               el('span', { class: 'use-tx' }, el('b', {}, f.label), el('small', {}, sub(f))),
               el('span', { class: 'chev', 'aria-hidden': 'true' }, '‹'))))))),
         isWord || isAuthored ? null : el('p', { class: 'hint' }, 'בדף: הקשה על שדה — הגדרות; גרירה — הזזה; הפינה — גודל; חצים — הזזה עדינה; Delete — מחיקה.'));
+    }
+
+    /** הגופנים שהעליתי — רשימה, העלאה, מחיקה. */
+    function fontsPanel() {
+      const box = el('div', { class: 'numbering fonts-panel' }, el('h2', {}, '🔤 הגופנים שלי'));
+      const list = el('ul', { class: 'list card-list' });
+      const file = el('input', { type: 'file', accept: '.ttf,.otf', class: 'visually-hidden' });
+      const render = async () => {
+        const fonts = await loadMyFonts();
+        list.replaceChildren(...fonts.map(x => el('li', {},
+          el('span', { class: 'use-row' }, el('span', { class: 'use-ic', 'aria-hidden': 'true' }, 'Aa'),
+            el('span', { class: 'use-tx' }, el('b', { style: `font-family:${window.DTFonts.family(x.id)}` }, x.name),
+              el('small', {}, `${x.format.toUpperCase()} · ${Math.max(1, Math.round(x.size / 1024))}KB · דוגמה: אבגד 123`))),
+          readOnly ? null : el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'מחיקת הגופן', title: 'מחיקה', onclick: async () => {
+            if (!confirm(`למחוק את הגופן "${x.name}"? שדות שכבר משתמשים בו ימשיכו להציג אותו.`)) return;
+            try { await api('font_delete', { id: x.id }); myFonts = null; render(); } catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
+          } }, '🗑️'))));
+        for (const x of fonts) window.DTFonts.load(x.id, { tpl: id });
+        if (!fonts.length) list.replaceChildren(el('li', {}, el('p', { class: 'empty' }, 'עוד אין גופנים. מעלים קובץ TTF או OTF.')));
+      };
+      file.addEventListener('change', async () => {
+        if (!file.files[0]) return;
+        const fd = new FormData(); fd.append('file', file.files[0]);
+        try { const r = (await api('font_upload', fd)).font; await window.DTFonts.add(r.id, await file.files[0].arrayBuffer()); myFonts = null; render(); }
+        catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
+        file.value = '';
+      });
+      render();
+      box.append(el('p', { class: 'hint' }, 'גופן שמעלים משמש גם על המסך וגם ב-PDF שיוצא. בוחרים אותו בהגדרות של כל שדה ("על הדף").'),
+        list, readOnly ? null : el('label', { class: 'btn small' }, file, '+ העלאת גופן'));
+      return box;
+    }
+
+    /** בחירת גופן: ברירת המחדל, הגופנים שבתבנית ושלי, והעלאה ישר מכאן. */
+    function fontPicker(f, after) {
+      const sel = el('select', { 'aria-label': 'גופן' });
+      const file = el('input', { type: 'file', accept: '.ttf,.otf,font/ttf,font/otf', class: 'visually-hidden' });
+      const fill = (fonts) => {
+        const ids = new Set([...fonts.map(x => x.id), ...fontNames.keys()]);
+        // replaceChildren לא פורש מערכים (el כן) — פורשים כאן
+        sel.replaceChildren(...[el('option', { value: '0' }, 'Alef — ברירת מחדל'),
+          ...[...ids].map(i => el('option', { value: i, selected: f.font === i }, fontNames.get(i) || 'גופן ' + i)),
+          readOnly ? null : el('option', { value: 'upload' }, '+ העלאת גופן (TTF / OTF)…')].filter(Boolean));
+        sel.value = String(f.font || 0);
+      };
+      const apply = () => { setDirty(true); window.DTFonts.load(f.font, { tpl: id }).then(() => { draw(); after && after(); }); };
+      sel.addEventListener('change', () => {
+        if (sel.value === 'upload') { sel.value = String(f.font || 0); file.click(); return; }
+        f.font = Number(sel.value) || 0;
+        apply();
+      });
+      file.addEventListener('change', async () => {
+        const x = file.files[0];
+        if (!x) return;
+        const fd = new FormData();
+        fd.append('file', x);
+        try {
+          const r = (await api('font_upload', fd)).font;
+          fontNames.set(r.id, r.name);
+          (await loadMyFonts()).push(r);
+          await window.DTFonts.add(r.id, await x.arrayBuffer());
+          f.font = r.id;
+          fill(await loadMyFonts());
+          apply();
+        } catch (e) { sel.after(notice(e.message, 'bad')); }
+        file.value = '';
+      });
+      fill([]);
+      loadMyFonts().then(fill);
+      return el('label', { class: 'f' }, el('span', {}, 'גופן'), sel, file);
+    }
+
+    /** מיקום הטקסט בשדה: רשת 3×3 — ימין/מרכז/שמאל × למעלה/אמצע/למטה. */
+    function positionGrid(f) {
+      const H = [['right', 'ימין'], ['center', 'מרכז'], ['left', 'שמאל']];
+      const V = [['top', 'למעלה'], ['middle', 'באמצע'], ['bottom', 'למטה']];
+      const box = el('div', { class: 'pos-grid', role: 'radiogroup', 'aria-label': 'מיקום הטקסט בשדה' });
+      const now = el('small', { class: 'muted' });
+      const draw_ = () => {
+        box.replaceChildren(...V.flatMap(([v, vl]) => H.map(([h, hl]) => {
+          const on = (f.align || 'right') === h && (f.valign || 'middle') === v;
+          return el('button', { type: 'button', role: 'radio', 'aria-checked': String(on), class: 'pos-cell' + (on ? ' on' : ''),
+            'aria-label': `${vl}, ${hl}`, title: `${vl}, ${hl}`, disabled: readOnly,
+            onclick: () => { f.align = h; f.valign = v; setDirty(true); draw(); draw_(); } },
+            el('span', { class: `pos-dot va-${v} ha-${h}` }, el('i')));
+        })));
+        const vl = V.find(x => x[0] === (f.valign || 'middle'))[1], hl = H.find(x => x[0] === (f.align || 'right'))[1];
+        now.textContent = `${vl}, ${hl}`;
+      };
+      draw_();
+      return el('div', { class: 'f' }, el('span', {}, 'מיקום הטקסט בשדה'), el('div', { class: 'pos-row' }, box, now));
     }
 
     /** הגדרות שדה אחד — בגיליון: מה, מי ממלא, הרשאות, ערך, מיקום, מתקדם. */
@@ -804,8 +902,9 @@
             }) : null),
           onPage ? group('על הדף',
             textual ? el('div', { class: 'fields two' },
-              input('גודל גופן', 'fontSize', { type: 'number', min: 6, max: 72 }),
-              choose('יישור', 'align', { right: 'ימין', center: 'מרכז', left: 'שמאל' })) : null,
+              fontPicker(f, relabel),
+              input('גודל גופן', 'fontSize', { type: 'number', min: 6, max: 72 })) : null,
+            textual ? positionGrid(f) : null,
             textual ? choose('כשהטקסט ארוך מהשדה', 'overflow', OVERFLOW) : null,
             el('p', { class: 'hint' }, `דף ${f.page + 1}. ` + (f.locked ? 'נעול — אי אפשר לגרור.' : 'הזזה וגודל — בגרירה על הדף.'))) : null,
           el('details', { class: 'fs-group adv' }, el('summary', {}, 'מתקדם'),

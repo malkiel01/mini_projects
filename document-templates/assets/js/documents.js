@@ -428,7 +428,9 @@
       // מחושב / מתמלא לבד: על הדף — באותו גופן ויישור כמו בפלט, בשורה אחת
       const onPageText = (o) => {
         if (onPage) { o.classList.add('on-page'); o.style.fontSize = `calc(var(--k) * ${f.fontSize || 11}px)`;
-          o.style.textAlign = f.align === 'center' ? 'center' : f.align === 'left' ? 'left' : 'right'; }
+          o.style.textAlign = f.align === 'center' ? 'center' : f.align === 'left' ? 'left' : 'right';
+          o.style.alignItems = f.valign === 'top' ? 'flex-start' : f.valign === 'bottom' ? 'flex-end' : 'center';
+          if (f.font) o.style.fontFamily = window.DTFonts.family(f.font); }
         return o;
       };
       if (f.type === 'calc') {
@@ -477,6 +479,12 @@
       if (onPage && f.type !== 'checkbox' && f.type !== 'signature') {
         n.style.fontSize = `calc(var(--k) * ${f.fontSize || 11}px)`;
         n.style.textAlign = f.align === 'center' ? 'center' : f.align === 'left' ? 'left' : 'right';
+        if (f.font) n.style.fontFamily = window.DTFonts.family(f.font);
+        // למעלה / למטה: שורה אחת — הריפוד דוחף את הטקסט לקצה (בגובה השדה, בנקודות של הדף)
+        if (f.type !== 'textarea' && f.type !== 'file' && f.valign && f.valign !== 'middle') {
+          const rest = Math.max(0, f.h * doc.schema.pages[f.page].h - (f.fontSize || 11) * 1.3);
+          n.style[f.valign === 'top' ? 'paddingBottom' : 'paddingTop'] = `calc(var(--k) * ${rest}px)`;
+        }
       }
       return n;
     }
@@ -721,7 +729,7 @@
       // בשדה רב-שורתי זה תלוי בשבירת השורות — שם נשען על ה-PDF (הקטנה), לא חוסמים.
       if (f.overflow !== 'block' || f.type === 'textarea') return input.value;
       const pw = doc.schema.pages[f.page].w * f.w;
-      measure.font = `${f.fontSize || 11}px Alef, Arial`;
+      measure.font = `${f.fontSize || 11}px ${window.DTFonts.family(f.font)}`;
       while (input.value && measure.measureText(input.value).width > pw - 4) input.value = input.value.slice(0, -1);
       return input.value;
     }
@@ -730,6 +738,8 @@
     let zoom = null;   // הזום נשמר בין ציורים של הדף
     let pagesCache = null;
     async function renderPage(seq) {
+      // גופנים שהועלו — לפני הציור, כדי שהשדות יופיעו מיד בגופן הנכון
+      window.DTFonts.loadAll(doc.schema, fill ? { token: opts.token } : { doc: id });
       if (!pagesCache) {
         body.replaceChildren(el('p', { class: 'muted' }, 'טוען את המסמך…'));
         pagesCache = await window.DTEditor.renderBackground(src.asset[0], doc.mime, src.asset[1]);
@@ -1093,6 +1103,13 @@
     }
     pdf.registerFontkit(window.fontkit);
     const font = await pdf.embedFont(fontBytes, { subset: true });
+    const fontDefault = font;
+    // גופנים שהועלו: אותו קובץ שעל המסך. לא נטען — נופלים לגופן ברירת המחדל
+    const fonts = new Map();
+    for (const fid of new Set(doc.schema.fields.map(f => f.font).filter(Boolean))) {
+      try { fonts.set(fid, await pdf.embedFont(await window.DTFonts.bytes(fid, { doc: doc.id }), { subset: true })); }
+      catch (e) { /* ברירת מחדל */ }
+    }
     const ink = rgb(0.04, 0.12, 0.4);
     const pages = pdf.getPages();
     const annex = [];
@@ -1151,6 +1168,7 @@
         continue;
       }
 
+      const font = fonts.get(f.font) || fontDefault;
       const text = f.type === 'date' ? ddmmyyyy(raw) : f.type === 'calc' ? window.DTCalc.display(raw, f.format)
         : f.type === 'system' ? sysText(f, raw) : f.type === 'select' ? optText(f, raw) : raw;
       let size = f.fontSize || 11;
@@ -1170,7 +1188,10 @@
       }
       const lh = size * 1.25;
       const blockH = r.lines.length * lh;
-      let y = by + (bh - blockH) / 2 + size;   // קו הבסיס של השורה הראשונה, בדף הנראה
+      // קו הבסיס של השורה הראשונה, בדף הנראה — לפי המיקום שנבחר: למעלה / באמצע / למטה
+      let y = f.valign === 'top' ? by + pad + size * 0.95
+        : f.valign === 'bottom' ? by + bh - pad - size * 0.25 - (r.lines.length - 1) * lh
+        : by + (bh - blockH) / 2 + size;
       for (const line of r.lines) {
         const v = pdfText(line);
         const w = font.widthOfTextAtSize(v, size);

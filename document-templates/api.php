@@ -47,7 +47,7 @@ $PUBLIC = ['health', 'register', 'verify', 'login', 'forgot', 'reset', 'me',
            'fill_get', 'fill_asset', 'fill_otp_send', 'fill_otp_verify', 'fill_save', 'fill_complete',
            'fill_upload', 'fill_file',
            // מערכת חיצונית: הזהות היא מפתח ה-API שבכותרת Authorization, לא עוגייה.
-           'ext_templates', 'ext_template', 'ext_issue', 'ext_document', 'ext_update', 'ext_file'];
+           'ext_templates', 'ext_template', 'ext_issue', 'ext_document', 'ext_update', 'ext_file', 'fill_font'];
 $POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'dev_user',
            'tpl_create', 'tpl_create_authored', 'tpl_save', 'tpl_set_source', 'tpl_archive', 'tpl_delete',
            'doc_create', 'doc_save', 'doc_complete', 'doc_archive', 'doc_delete', 'doc_downloaded',
@@ -56,7 +56,7 @@ $POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'dev_user
            'contact_save', 'contact_archive', 'doc_contact', 'doc_tags', 'tpl_tags', 'bulk_preview', 'bulk_issue',
            'src_save', 'src_delete', 'src_sync', 'key_create', 'key_update', 'key_revoke', 'key_secret', 'key_test',
            'ext_issue', 'ext_update',
-           'client_error', 'dev_force', 'me_update', 'me_password', 'me_logout_others'];
+           'client_error', 'font_upload', 'font_delete', 'dev_force', 'me_update', 'me_password', 'me_logout_others'];
 
 try {
     if (in_array($action, $POSTS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -175,6 +175,12 @@ try {
         'me_update'      => me_update($session, $body),
         'me_password'    => me_password($session, $body),
         'me_logout_others' => me_logout_others($session),
+        // גופנים
+        'font_list'   => font_list($session),
+        'font_upload' => font_upload($session, $_POST, $_FILES),
+        'font_delete' => font_delete($session, $body),
+        'font_file'   => font_file($session, $_GET),
+        'fill_font'   => fill_font($_GET),
         'dev_users' => dev_users(),
         'dev_user'  => dev_user_action($body, $session),
         default     => throw new ApiError('פעולה לא מוכרת', 404),

@@ -259,7 +259,7 @@ function fill_get(): array
     $locked = !in_array($d['status'], ['sent', 'in_progress'], true) || $p['completed_at'] !== null;
     return ['ok' => true, 'document' => [
         'id' => (int)$d['id'], 'number' => $d['number'], 'title' => unseal($d['title_enc']), 'status' => $d['status'],
-        'mime' => $a['mime'], 'schema' => $schema, 'values' => $values,
+        'mime' => $a['mime'], 'schema' => $schema, 'values' => $values, 'fonts' => fonts_info($schema),
         'attachments' => attachments_of((int)$d['id'], 'participant:' . $p['id']),
         'progress' => ['required' => 0, 'filled' => 0, 'missing' => missing_for($schema, $values, $p['role_key'])],
         'me' => [
