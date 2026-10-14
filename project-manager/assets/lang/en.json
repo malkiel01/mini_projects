@@ -2170,5 +2170,11 @@
     "מודד": "Surveyor",
     "מנהל עבודה": "Site foreman",
     "תפקיד לא מוכר": "Unknown role",
-    "עודכן בצוות: {name} ({role})": "Team member updated: {name} ({role})"
+    "עודכן בצוות: {name} ({role})": "Team member updated: {name} ({role})",
+    "יש ספק": "has a supplier",
+    "אין שלבים בפרויקט — הוסיפו שלב קודם": "No stages in the project — add a stage first",
+    "השלב שלו בפרויקט": "Their stage in the project",
+    "רק שלבים שיש בפרויקט. אין שלב מתאים (למשל מדידה)? הוסיפו אותו קודם במסך השלבים. שלב בלי ספק — הספק הזה יהיה הספק שלו.": "Only stages that exist in the project. No matching stage (e.g. surveying)? Add it first on the stages screen. A stage without a supplier — this supplier becomes its supplier.",
+    "ספק — בחרו את השלב שלו בפרויקט (אין שלב מתאים? הוסיפו שלב קודם)": "Supplier — choose their stage in the project (no matching stage? add a stage first)",
+    "השלב לא נמצא בפרויקט": "The stage was not found in the project"
 }

@@ -18,9 +18,10 @@ function pm_supplier_stages(int $projectId, int $supplierId): array
             SELECT id FROM stages WHERE project_id = ? AND supplier_id = ?
             UNION SELECT stage_id FROM quotes WHERE project_id = ? AND supplier_id = ? AND status NOT IN ('rejected', 'declined', 'cancelled')
             UNION SELECT stage_id FROM change_orders WHERE project_id = ? AND supplier_id = ? AND status != 'cancelled'
-            UNION SELECT stage_id FROM payments WHERE project_id = ? AND supplier_id = ? AND stage_id IS NOT NULL AND status != 'cancelled')
+            UNION SELECT stage_id FROM payments WHERE project_id = ? AND supplier_id = ? AND stage_id IS NOT NULL AND status != 'cancelled'
+            UNION SELECT CAST(substr(role_key, 7) AS INTEGER) FROM project_members WHERE project_id = ? AND contact_id = ? AND role_key LIKE 'stage:%')
         ORDER BY s.sort, s.id");
-    $st->execute([$projectId, $projectId, $supplierId, $projectId, $supplierId, $projectId, $supplierId, $projectId, $supplierId]);
+    $st->execute([$projectId, $projectId, $supplierId, $projectId, $supplierId, $projectId, $supplierId, $projectId, $supplierId, $projectId, $supplierId]);
     return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
 }
 

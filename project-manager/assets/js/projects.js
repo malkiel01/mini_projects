@@ -812,11 +812,14 @@ const Projects = (() => {
     function fillRoles(form, contactId, value = '') {
         const c = memberContacts.get(contactId);
         const kind = c?.kind || 'supplier';
-        const own = kind === 'supplier' ? (c?.trades || []).map(id => state.trades.find(x => x.id === id)).filter(Boolean)
-            .map(x => ({ value: 'trade:' + x.id, label: t(x.name) })) : [];
-        const list = [...own, ...Object.entries(memberRoles?.[kind] || {}).map(([value, label]) => ({ value, label: t(label) }))];
-        form.elements.role_key.innerHTML = (kind === 'supplier' ? `<option value="">${esc(t('צוות'))}</option>` : '') + options(list, value);
-        if (value) form.elements.role_key.value = value;
+        // ספק — השלבים שיש בפרויקט (אין שלב מתאים — מוסיפים שלב קודם); לקוח / עו"ד — הרשימה שלהם
+        const list = kind === 'supplier'
+            ? (cur.stages || []).map(s => ({ value: 'stage:' + s.id, label: stageName(s) + (s.supplier_id && s.supplier_id !== contactId ? ' · ' + t('יש ספק') : '') }))
+            : Object.entries(memberRoles?.[kind] || {}).map(([value, label]) => ({ value, label: t(label) }));
+        form.elements.role_key.innerHTML = list.length ? options(list, value) : `<option value="">${esc(t('אין שלבים בפרויקט — הוסיפו שלב קודם'))}</option>`;
+        if (value && list.some(x => x.value === value)) form.elements.role_key.value = value;
+        $('#member-role-label').textContent = kind === 'supplier' ? t('השלב שלו בפרויקט') : t('תפקיד בפרויקט');
+        $('#member-stage-hint').hidden = kind !== 'supplier';
     }
 
     /** "+ איש צוות" — או ✏️ על איש צוות (editId): התפקיד מתוך רשימה, והערה חופשית רק לנו. */
