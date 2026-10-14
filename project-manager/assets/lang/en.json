@@ -2212,5 +2212,10 @@
     "עיכבון {n}% — שוחרר": "Retention {n}% — released",
     "זיכוי {amount} — שולם מעל הסוכם": "Credit {amount} — paid above the agreed amount",
     "זיכוי": "Credit",
-    "שלבים משותפים שעוד לא חולקו בחוזה בין הדירות — לא נכללים בסכומים שלמעלה": "Shared stages not yet split between the units in the contract — not included in the amounts above"
+    "שלבים משותפים שעוד לא חולקו בחוזה בין הדירות — לא נכללים בסכומים שלמעלה": "Shared stages not yet split between the units in the contract — not included in the amounts above",
+    "מתוך {amount} — עיכבון {r} בשחרור": "of {amount} — retention {r} in the release",
+    "מתוך {amount}": "of {amount}",
+    "עיכבון {amount} — בשחרור, במסירה": "Retention {amount} — paid in the release, at handover",
+    "מתוך {total} — עיכבון {amount} נשאר עד המסירה": "of {total} — retention {amount} held until handover",
+    "מתוך {amount} — {r} נשארים אצלכם כעיכבון עד המסירה": "of {amount} — {r} stays with you as retention until handover"
 }

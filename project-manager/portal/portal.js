@@ -306,10 +306,10 @@ function renderSupplier() {
             ${x.file ? ` · <a href="${fileUrl(x.file.id)}" target="_blank" rel="noopener">${esc(t('אסמכתא'))}</a>` : ''}
             ${x.can_confirm ? `<div class="row-btns"><button class="btn primary sm" data-receipt="${x.id}" data-ok="1">✅ ${esc(t('התקבל'))}</button><button class="btn ghost sm" data-receipt="${x.id}" data-ok="0">✖ ${esc(t('לא התקבל'))}</button></div>` : ''}</li>`).join('');
         return `<article class="qcard pay-${esc(p.status)}" id="spay-${p.id}">
-            <div class="q1"><span class="one">${esc(p.title)}${st ? ` · ${esc(sn(st))}` : ''}</span><span class="amt">${moneyVat(vatOf(p.amount, p.vat_rate))}</span></div>
+            <div class="q1"><span class="one">${esc(p.title)}${st ? ` · ${esc(sn(st))}` : ''}</span><span class="amt">${moneyVat(vatOf(p.due_amount, p.vat_rate))}</span></div>
             <div class="q2">${esc(label)}${p.due_date ? `<i class="sep" aria-hidden="true">·</i>${esc(t('עד {date}', { date: shortDate(p.due_date) }))}` : ''}${p.received ? `<i class="sep" aria-hidden="true">·</i>${esc(t('התקבל {amount}', { amount: money(p.received) }))}` : ''}</div>
             ${proofs ? `<ul class="proofs">${proofs}</ul>` : ''}
-            ${p.retention && p.kind !== 'retention' ? `<p class="q3">${esc(t('עיכבון {amount} — נשאר עד המסירה', { amount: money(p.retention) }))}${p.index_diff ? ' · ' + esc(t('הפרשי הצמדה {amount}', { amount: money(p.index_diff) })) : ''}</p>` : ''}
+            ${p.retention && p.kind !== 'retention' ? `<p class="q3">${esc(t('מתוך {total} — עיכבון {amount} נשאר עד המסירה', { total: money(p.amount), amount: money(p.retention) }))}${p.index_diff ? ' · ' + esc(t('הפרשי הצמדה {amount}', { amount: money(p.index_diff) })) : ''}</p>` : ''}
             ${p.invoice ? `<p class="q3">🧾 ${esc(p.invoice.no ? t('התקבלה חשבונית {no}', { no: p.invoice.no }) : t('התקבלה חשבונית'))}</p>`
                 : p.received ? `<div class="row-btns"><button class="btn ${p.status === 'received' ? 'primary' : 'ghost'} sm" data-sinv="${p.id}">🧾 ${esc(t('העלאת חשבונית / קבלה'))}</button></div>` : ''}
         </article>`;
@@ -434,10 +434,10 @@ function payCard(p) {
         p.can_pay ? `<button class="btn ${p.payer === data.role ? 'primary' : 'ghost'}" data-pay="${p.id}">💳 ${esc(t('שילמתי — העלאת אסמכתא'))}</button>` : '',
     ].filter(Boolean).join('');
     return `<article class="qcard pay-${esc(p.status)}" id="pay-${p.id}">
-        <div class="q1"><span class="one">${esc(p.title)}${st ? ` · ${esc(sn(st))}` : ''}</span><span class="amt">${moneyVat(vatOf(p.amount, p.vat_rate))}</span></div>
+        <div class="q1"><span class="one">${esc(p.title)}${st ? ` · ${esc(sn(st))}` : ''}</span><span class="amt">${moneyVat(vatOf(p.due_amount, p.vat_rate))}</span></div>
         <div class="q2">${esc(p.supplier_name)}<i class="sep" aria-hidden="true">·</i>${PAY_ICON[p.status] || ''} ${esc(p.label)}${p.due_date ? `<i class="sep" aria-hidden="true">·</i><span class="${late ? 'late' : ''}">${esc(t('עד {date}', { date: shortDate(p.due_date) }))}</span>` : ''}</div>
         ${p.status === 'partial' ? `<p class="q3">${esc(t('התקבל {amount}', { amount: money(p.received) }))} · ${esc(t('נשאר'))} <b>${esc(money(p.balance))}</b></p>` : ''}
-        ${p.retention && p.kind !== 'retention' ? `<p class="q3">${esc(t('לתשלום עכשיו {amount} — {r} נשארים אצלכם כעיכבון עד המסירה', { amount: money(p.due_amount), r: money(p.retention) }))}</p>` : ''}
+        ${p.retention && p.kind !== 'retention' ? `<p class="q3">${esc(t('מתוך {amount} — {r} נשארים אצלכם כעיכבון עד המסירה', { amount: money(p.amount), r: money(p.retention) }))}</p>` : ''}
         ${p.index_diff ? `<p class="q3">${esc(t('כולל הפרשי הצמדה {amount}', { amount: money(p.index_diff) }))}</p>` : ''}
         ${p.notes ? `<p class="q3">${esc(p.notes)}</p>` : ''}
         ${p.lawyer ? `<p class="q3 muted">⚖️ ${esc(t('{name} אישר לתשלום', { name: p.lawyer.by }))} · ${longDate(p.lawyer.at)}</p>` : ''}
@@ -550,7 +550,7 @@ async function submitPay(e) {
 
 async function payApprove(id) {
     const p = data.payments.find(x => x.id === id);
-    const note = prompt(t('לאשר את התשלום: {title} — {amount} ל{supplier}?\nהערה (לא חובה):', { title: p.title, amount: money(p.amount), supplier: p.supplier_name }), '');
+    const note = prompt(t('לאשר את התשלום: {title} — {amount} ל{supplier}?\nהערה (לא חובה):', { title: p.title, amount: money(p.due_amount), supplier: p.supplier_name }), '');
     if (note === null) return;
     try {
         data = await call('pay-approve', { payment_id: id, note });
