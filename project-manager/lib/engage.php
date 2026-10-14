@@ -176,3 +176,94 @@ function pm_file_ref_remove(array $user, array $in): array
         ->execute([(int)$x['id'], (int)($in['supplier_id'] ?? 0), (int)($in['stage_id'] ?? 0) ?: null]);
     return ['file' => pm_file_get($user, (int)$x['id'])];
 }
+
+/**
+ * תיק ההתקשרות — כל מה שקשור לספק במקצוע, במקום אחד (README "התקשרות", שלב 3):
+ * {project_id, supplier_id, stage_id?} → סיכום (סוכם / שולם / יתרה / פיגור), חוזה, הצעות, תוספות,
+ * אבני דרך (עם אסמכתאות וחשבונית), תיעוד מהשטח, מסמכים ששויכו, והקבצים בתיקייה "ספק / מקצוע".
+ * בלי שלב — כל המקצועות של הספק בפרויקט.
+ */
+function pm_engagement(array $user, array $in): array
+{
+    $projectId = (int)($in['project_id'] ?? 0);
+    pm_project_row($user, $projectId);
+    $supplierId = (int)($in['supplier_id'] ?? 0);
+    $stageId = (int)($in['stage_id'] ?? 0) ?: null;
+    $db = pm_db();
+    $c = $db->prepare("SELECT id, name, phone, email, company FROM contacts WHERE id = ? AND kind = 'supplier'");
+    $c->execute([$supplierId]);
+    $sup = $c->fetch() ?: throw new PmError('הספק לא נמצא', 404);
+    $stage = null;
+    if ($stageId) {
+        $s = pm_stage_row($user, $stageId);
+        if ((int)$s['project_id'] !== $projectId) throw new PmError('השלב לא שייך לפרויקט', 422);
+        $stage = ['id' => (int)$s['id'], 'name' => pm_trade_folder_name($stageId), 'status' => $s['status'], 'progress' => pm_stage_progress($s)];
+    }
+    $inStage = fn($sid) => !$stageId || (int)$sid === $stageId;
+
+    // סיכום — משורות הכספים של הספק (בשלב, או בכל השלבים)
+    $fin = pm_finance_of($projectId);
+    $sum = ['committed' => [0, 0], 'paid' => [0, 0], 'balance' => [0, 0], 'gap' => [0, 0]];
+    foreach ($fin['stages'] as $fs) {
+        if ($stageId && (int)$fs['stage_id'] !== $stageId) continue;
+        foreach ($fs['rows'] as $r) {
+            if ((int)$r['supplier_id'] !== $supplierId) continue;
+            $base = $r['committed']['g'] ? $r['committed'] : $r['scheduled'];
+            foreach (['committed' => $base, 'paid' => $r['paid'], 'balance' => $r['balance'], 'gap' => $r['gap']] as $k => $m) { $sum[$k][0] += $m['g']; $sum[$k][1] += $m['n']; }
+        }
+    }
+    $summary = array_map(fn($v) => ['g' => round($v[0], 2), 'n' => round($v[1], 2)], $sum);
+
+    // חוזה: החוזה של המקצוע (או כולם, בלי מקצוע)
+    $contracts = pm_contracts_of($projectId, $supplierId);
+    $contract = pm_contract_for($contracts, $supplierId, $stageId);
+
+    $q = $db->prepare("SELECT q.id, q.stage_id, q.amount, q.status, q.version, q.created_at, q.file_id, f.name AS file_name, s.name AS stage
+                         FROM quotes q JOIN stages s ON s.id = q.stage_id LEFT JOIN files f ON f.id = q.file_id AND f.deleted_at IS NULL
+                        WHERE q.project_id = ? AND q.supplier_id = ? ORDER BY q.id DESC");
+    $q->execute([$projectId, $supplierId]);
+    $quotes = array_values(array_map(fn($x) => ['id' => (int)$x['id'], 'stage_id' => (int)$x['stage_id'], 'stage' => $x['stage'], 'amount' => (int)$x['amount'] / 100,
+        'status' => $x['status'], 'label' => pm_t(PM_QUOTE_STATUSES[$x['status']] ?? $x['status']), 'at' => $x['created_at'],
+        'file' => $x['file_name'] !== null ? ['id' => (int)$x['file_id'], 'name' => $x['file_name']] : null], array_filter($q->fetchAll(), fn($x) => $inStage($x['stage_id']))));
+
+    $changes = array_values(array_filter(pm_changes_of($projectId), fn($x) => $x['supplier_id'] === $supplierId && $inStage($x['stage_id'])));
+
+    $pays = pm_payments_of($projectId);
+    $milestones = array_values(array_filter($pays['payments'], fn($p) => $p['supplier_id'] === $supplierId && $p['status'] !== 'cancelled'
+        && (!$stageId || $p['stage_id'] === $stageId || $p['stage_id'] === null)));
+
+    // תיעוד מהשטח: של הספק בשלב, וגם דיווחים בשלב בלי ספק (שייתכן שהם שלו)
+    $field = array_values(array_filter(pm_reports_of($projectId), fn($r) => ($r['supplier_id'] === $supplierId && $inStage($r['stage_id']))
+        || ($stageId && $r['stage_id'] === $stageId && $r['supplier_id'] === null)));
+
+    $d = $db->prepare('SELECT d.file_id, d.stage_id, d.note, d.created_at, f.name, f.mime, f.thumb IS NOT NULL AS thumb FROM file_refs d JOIN files f ON f.id = d.file_id AND f.deleted_at IS NULL
+                        WHERE d.project_id = ? AND d.supplier_id = ? ORDER BY d.created_at DESC');
+    $d->execute([$projectId, $supplierId]);
+    $docs = array_values(array_map(fn($x) => ['id' => (int)$x['file_id'], 'name' => $x['name'], 'mime' => $x['mime'], 'has_thumb' => (bool)$x['thumb'],
+        'note' => $x['note'], 'at' => $x['created_at'], 'stage_id' => $x['stage_id'] !== null ? (int)$x['stage_id'] : null],
+        array_filter($d->fetchAll(), fn($x) => !$stageId || $x['stage_id'] === null || (int)$x['stage_id'] === $stageId)));
+
+    // הקבצים בתיקייה "ספק / מקצוע" (או בכל תיקיית הספק)
+    pm_ensure_folders(['id' => $projectId]);
+    $folder = $stageId ? pm_trade_folder($projectId, $supplierId, $stageId) : null;
+    if (!$folder) {
+        $fr = $db->prepare("SELECT id FROM folders WHERE project_id = ? AND kind = 'contact' AND contact_id = ? AND parent_id IS NULL");
+        $fr->execute([$projectId, $supplierId]);
+        $folder = (int)$fr->fetchColumn() ?: null;
+    }
+    $files = $folder ? pm_files_list($user, $projectId, ['folder_id' => $folder, 'type' => '']) : [];
+    if ($folder && !$stageId) {
+        // כל המקצועות — גם מה שבתיקיות המקצוע שמתחת לתיקיית הספק
+        $sub = $db->prepare('SELECT id FROM folders WHERE project_id = ? AND parent_id = ?');
+        $sub->execute([$projectId, $folder]);
+        foreach ($sub->fetchAll(PDO::FETCH_COLUMN) as $fid) $files = array_merge($files, pm_files_list($user, $projectId, ['folder_id' => (int)$fid, 'type' => '']));
+        usort($files, fn($a, $b) => strcmp($b['created_at'], $a['created_at']));
+    }
+
+    return [
+        'supplier' => ['id' => (int)$sup['id'], 'name' => $sup['name'], 'phone' => $sup['phone'], 'company' => $sup['company']],
+        'stage' => $stage, 'stages' => array_map(fn($id) => ['id' => $id, 'name' => pm_trade_folder_name($id)], pm_supplier_stages($projectId, $supplierId)), 'folder_id' => $folder,
+        'summary' => $summary, 'contract' => $contract, 'contracts' => count($contracts),
+        'quotes' => $quotes, 'changes' => $changes, 'milestones' => $milestones, 'field' => $field, 'docs' => $docs, 'files' => $files,
+    ];
+}

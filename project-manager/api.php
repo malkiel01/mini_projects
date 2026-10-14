@@ -218,6 +218,7 @@ try {
         'POST payments-stage' => pm_payments_set_stage($user, $in),
         // התקשרות: שיוך כללי של קבצים לספק × שלב (lib/engage.php)
         'POST file-ref'       => pm_file_ref_add($user, $in),
+        'GET engagement'      => pm_engagement($user, $in),
         'POST file-unref'     => pm_file_ref_remove($user, $in),
         'GET finance-export'  => pm_finance_export($user, $in),
         // כ5: הוצאות ישירות, שכר הטרחה (אבני דרך), כרטסת ספק
