@@ -30,7 +30,8 @@ const DEVLOOP_RATE = 300; // בקשות בשעה לאסימון
  * החיבור לאפליקציה. חובה: db (fn(): PDO), items_file, data_dir, prefix ('PM-'), token_prefix ('pmd_'),
  * error (fn(string $msg, int $status, array $vars): Throwable), user_names (fn(): [id => שם]),
  * is_developer (fn(int $userId): bool). רשות: now, audit, log, as_claude, errors (fn(int $afterId, int $limit): rows),
- * errors_max (fn(): int) — בלי errors אין "לבירור".
+ * errors_max (fn(): int) — בלי errors אין "לבירור"; notify (fn(string $subject, string $body)) — מייל למפתח כשמשהו
+ * מחכה לו; item_url (fn(string $code): string) — קישור ישר למטלה, להתראה.
  */
 function devloop_setup(array $cfg): void
 {
@@ -54,6 +55,22 @@ function devloop_hook(string $name, mixed ...$args): void
 {
     $f = devloop_cfg($name);
     if ($f) $f(...$args);
+}
+
+/**
+ * התראה למפתח (מייל — לפי האפליקציה): מטלה עברה לאימות / שאלה, Claude ענה, שגיאות חדשות לבירור.
+ * לא זורקת לעולם — התראה שנכשלה לא מפילה את הפעולה.
+ */
+function devloop_notify(string $subject, string $body, string $code = ''): void
+{
+    $f = devloop_cfg('notify');
+    if (!$f) return;
+    try {
+        $url = $code !== '' && devloop_cfg('item_url') ? (devloop_cfg('item_url'))($code) : '';
+        $f($subject, $body . ($url !== '' ? "\n\n$url" : ''));
+    } catch (Throwable $e) {
+        devloop_hook('log', 'warn', 'data', 'devtasks.notify', ['message' => $e->getMessage()]);
+    }
 }
 
 function devloop_add_column(PDO $pdo, string $table, string $col, string $def): void
@@ -238,6 +255,7 @@ function devloop_errors_sync(): int
         $made++;
     }
     if ($max > $upto) $db->prepare("INSERT OR REPLACE INTO dev_meta (key, value) VALUES ('err_upto', ?)")->execute([(string)$max]);
+    if ($made) devloop_notify("⚠️ $made שגיאות חדשות לבירור", "נפתחו לבד מהיומן — 👍 לטפל או 🙈 להתעלם, במסך המטלות.");
     return $made;
 }
 
@@ -572,6 +590,12 @@ function devloop_api_comment(array $k, array $b): array
         if (!$skip) devloop_task_status($code, (string)$b['status'], (string)($b['by'] ?? '') === 'github' ? 'github' : 'claude');
         $r['status_skipped'] = $skip;
     }
+    // התראה אחת לבקשה: מה שמחכה עכשיו למפתח
+    $st = !empty($b['status']) && empty($r['status_skipped']) ? (string)$b['status'] : '';
+    $title = $st || trim((string)($b['body'] ?? '')) !== '' ? devloop_task_get($code)['title'] : '';
+    if ($st === 'verify') devloop_notify("🧪 $code ממתינה לאימות שלך", "$title\n\nנפרס — עברו על \"איך בודקים\" ולחצו ✅ עובד אצלי או ↩️ לא עובד.", $code);
+    elseif ($st === 'question') devloop_notify("❓ $code — שאלה אליך", "$title\n\n" . trim((string)($b['body'] ?? '')), $code);
+    elseif (trim((string)($b['body'] ?? '')) !== '') devloop_notify("💬 Claude ענה ב-$code", "$title\n\n" . mb_substr(trim((string)$b['body']), 0, 1500), $code);
     return $r;
 }
 // i18n-none-end

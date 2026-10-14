@@ -28,6 +28,13 @@ devloop_setup([
     'log'          => fn(string $level, string $cat, string $event, array $extra = []) => pm_log($level, $cat, $event, $extra),
     // בקשות באסימון מסומנות 🤖 ביומן
     'as_claude'    => fn(int $tokenId) => pm_log_user(['id' => null, 'username' => '🤖 devapi:' . $tokenId], true),
+    // התראות במייל למפתח: ממתינה לאימות, שאלה, Claude ענה, שגיאות חדשות (DevLoop שלב 4)
+    'notify'       => function (string $subject, string $body): void {
+        foreach (pm_db()->query("SELECT email FROM users WHERE role = 'developer' AND status = 'active' AND email != ''")->fetchAll(PDO::FETCH_COLUMN) as $to) {
+            pm_send_mail($to, '[מנהל הפרויקטים] ' . $subject, $body); // i18n-none
+        }
+    },
+    'item_url'     => fn(string $code) => pm_app_url() . '/#/settings/tasks/' . rawurlencode($code),
     // שגיאות ביומן (שרת ודפדפן) — הופכות למטלות "⚠️ לבירור"
     'errors_max'   => fn() => (int)(pm_log_db()?->query('SELECT COALESCE(MAX(id), 0) FROM log')->fetchColumn() ?: 0),
     'errors'       => function (int $after, int $limit): array {

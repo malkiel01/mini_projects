@@ -1,5 +1,6 @@
 import { $, $$, el, toast, api, state, timeAgo, on, set } from './core.js';
 import { loadConnections, loadProviders, runTask } from './platform.js';
+import { initHub } from './devloop-hub.js';
 
 /**
  * מטלות לקלוד — ממשק.
@@ -76,6 +77,7 @@ async function enterApp() {
   // כישלון בטעינת ההגדרות לא אמור למנוע עבודה על מטלות.
   loadConnections().catch(() => {});
   loadProviders().catch(() => {});
+  initHub(); // 🔁 — מה מחכה לך בכל האפליקציות שעל DevLoop
 }
 
 /* ── נושאים ────────────────────────────────────────────────── */

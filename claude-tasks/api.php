@@ -18,6 +18,7 @@ require_once __DIR__ . '/lib/github.php';
 require_once __DIR__ . '/lib/projects.php';
 require_once __DIR__ . '/lib/engine.php';
 require_once __DIR__ . '/lib/skills.php';
+require_once __DIR__ . '/lib/devloop_hub.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -647,6 +648,32 @@ try {
         db()->prepare("UPDATE users SET github_login = '', github_scopes = '' WHERE id = ?")
             ->execute([$me['id']]);
         logEvent($me, 'github.disconnect');
+        ok();
+    }
+
+    /* ── DevLoop: הלוח המרכזי של כל האפליקציות (lib/devloop_hub.php) ── */
+
+    case 'devloop-board': {
+        $me = requireUser($user);
+        ok(hubBoard((int) $me['id']));
+    }
+
+    case 'devloop-sources': {
+        $me = requireUser($user);
+        ok(['sources' => hubSources((int) $me['id'])]);
+    }
+
+    case 'devloop-source-add': {
+        $me = requireUser($user);
+        $r = hubAddSource((int) $me['id'], str_field($in, 'name', 60), str_field($in, 'url', 300), (string) ($in['token'] ?? ''));
+        logEvent($me, 'devloop.source_add', str_field($in, 'name', 60));
+        ok($r);
+    }
+
+    case 'devloop-source-remove': {
+        $me = requireUser($user);
+        hubRemoveSource((int) $me['id'], (int) ($in['id'] ?? 0));
+        logEvent($me, 'devloop.source_remove', (string) (int) ($in['id'] ?? 0));
         ok();
     }
 
