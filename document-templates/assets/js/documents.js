@@ -249,11 +249,23 @@
     const editable = () => fill ? !doc.me.locked && !doc.me.blocked : EDITABLE.includes(doc.status) && lvl() >= 2;
     // שדה שאפשר לערוך עכשיו: אצל הממלא — רק שלו. אצל המנפיק — כל שדה, חוץ
     // משדות של משתתף שכבר נשלח אליו קישור.
+    // שדה עם כמה ממלאים ("או פלוני או אלמוני") — כל אחד מהם יכול
+    const rolesOf = (f) => f.roles && f.roles.length ? f.roles : [f.role || 'owner'];
     const canEdit = (f) => {
       if (!editable()) return false;
-      const role = f.role || 'owner';
-      if (fill) return role === doc.me.role_key;
-      return !(doc.participants || []).some(p => p.role_key === role && p.notified_at);
+      const roles = rolesOf(f);
+      if (fill) return roles.includes(doc.me.role_key);
+      if (roles.includes('owner')) return true;
+      return !(doc.participants || []).some(p => roles.includes(p.role_key) && p.notified_at);
+    };
+    /** "או: לקוח, ערב" — מי עוד יכול למלא את השדה (חוץ ממני). */
+    const othersText = (f) => {
+      const roles = rolesOf(f);
+      if (roles.length < 2) return '';
+      const me = fill ? doc.me.role_key : 'owner';
+      const names = roles.filter(r => r !== me).map(r => r === 'owner' ? (fill ? 'השולח' : 'אני')
+        : ((doc.schema.roles || []).find(x => x.key === r)?.label || r));
+      return names.length ? 'אפשר שימלא גם: ' + names.join(' או ') : '';
     };
     const fields = doc.schema.fields;
     const byKey = Object.fromEntries(fields.map(f => [f.key, f]));
@@ -804,7 +816,8 @@
         // שדה עם כפתורים (קובץ, חתימה) — div: לחיצה על תווית הייתה מפעילה את הכפתור הראשון.
         items.push(el(['file', 'signature', 'table', 'calc', 'system'].includes(f.type) ? 'div' : 'label', { class: 'form-field t-' + f.type, 'data-key': f.key, 'data-vis-key': f.key },
           el('span', {}, f.label, f.required ? el('b', { class: 'req', title: 'חובה' }, ' *') : null),
-          c, f.help ? el('small', { class: 'muted' }, f.help) : null));
+          c, f.help ? el('small', { class: 'muted' }, f.help) : null,
+          othersText(f) ? el('small', { class: 'muted shared-hint' }, '🔀 ' + othersText(f)) : null));
       }
       body.replaceChildren(el('div', { class: 'card fill-form' }, items));
     }

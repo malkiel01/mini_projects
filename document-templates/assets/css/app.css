@@ -755,3 +755,7 @@ table.sample th { background: var(--bg); font-weight: 600; }
 .fmt-help dl { display: grid; grid-template-columns: auto 1fr; gap: 4px var(--s3); margin: var(--s2) 0 0; font-size: .85rem; }
 .fmt-help dt { font-family: monospace; font-weight: 600; text-align: left; }
 .fmt-help dd { margin: 0; color: var(--muted); }
+
+/* שדה עם כמה ממלאים ("או פלוני או אלמוני") — מסגרת מקווקוות */
+.field.multi { border-style: dashed; border-width: 2px; }
+.shared-hint { display: block; }

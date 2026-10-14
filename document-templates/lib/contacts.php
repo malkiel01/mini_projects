@@ -122,7 +122,7 @@ function doc_contact(array $user, array $b): array
     $fill = [];
     foreach ($schema['fields'] as $f) {
         $src = $f['contactField'] ?? '';
-        if ($src === '' || ($c[$src] ?? '') === '' || in_array($f['role'] ?? 'owner', $sent, true)) continue;
+        if ($src === '' || ($c[$src] ?? '') === '' || (!in_array('owner', field_roles($f), true) && array_intersect(field_roles($f), $sent))) continue;
         if (trim((string)($values[$f['key']] ?? '')) !== '' && empty($b['overwrite'])) continue;
         $fill[$f['key']] = $c[$src];
     }
