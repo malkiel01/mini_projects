@@ -2243,5 +2243,7 @@
     "שוחרר ושולם": "Libérée et payée",
     "נשאר לסוף — ישוחרר במסירה": "Conservée jusqu'à la fin — libérée à la livraison",
     "נשאר לסוף — אחרי שיוך לשלב": "Conservée jusqu'à la fin — après rattachement à une étape",
-    "שוחרר העיכבון — {stage}": "Retenue libérée — {stage}"
+    "שוחרר העיכבון — {stage}": "Retenue libérée — {stage}",
+    "נשאר לסוף": "Conservée jusqu'à la fin",
+    "העיכבון שנעצר מאבני הדרך של השלב — משתחרר במסירה": "Retenue prélevée sur les jalons de l'étape — libérée à la livraison"
 }
