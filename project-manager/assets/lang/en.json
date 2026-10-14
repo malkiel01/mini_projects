@@ -2154,5 +2154,21 @@
     "המסמך נשלח למנהל הפרויקט": "The document was sent to the project manager",
     "בקישור הלקוח רואה את התקדמות השלבים, את הצעות המחיר שנשלחו אליו (המומלצת בראש) ואת הקבצים שסומנו \"גלוי\" — מאשר הצעות בעצמו, בלחיצה או בחתימה לפי הגדרות הלקוח, ומעלה מסמכים. בלי סיסמה.": "Through the link the client sees stage progress, the quotes sent to them (recommended first) and files marked \"visible\" — approves quotes themselves, by click or signature per the client's settings, and uploads documents. No password.",
     "בקישור העו\"ד רואה את הפרויקט ואת ההצעות, מאשר הצעות שהלקוח כבר אישר בשלבים שדורשים עו\"ד, ומעלה מסמכים. בלי סיסמה.": "Through the link the lawyer sees the project and the quotes, approves quotes the client already approved in stages that require a lawyer, and uploads documents. No password.",
-    "בקישור הספק רואה את השלבים שלו, מגיש הצעות מחיר, מבקש תשלום, מאשר שהכסף התקבל, מעלה מסמכים (ביטוח, רישיון, אחריות) ומעדכן את פרטי הבנק שלו — בלי לראות הצעות של ספקים אחרים, פרטי לקוח או תשלומים לאחרים. בלי סיסמה.": "Through the link the supplier sees their stages, submits quotes, requests payment, confirms money received, uploads documents (insurance, license, warranty) and updates their bank details — without seeing other suppliers' quotes, client details or payments to others. No password."
+    "בקישור הספק רואה את השלבים שלו, מגיש הצעות מחיר, מבקש תשלום, מאשר שהכסף התקבל, מעלה מסמכים (ביטוח, רישיון, אחריות) ומעדכן את פרטי הבנק שלו — בלי לראות הצעות של ספקים אחרים, פרטי לקוח או תשלומים לאחרים. בלי סיסמה.": "Through the link the supplier sees their stages, submits quotes, requests payment, confirms money received, uploads documents (insurance, license, warranty) and updates their bank details — without seeing other suppliers' quotes, client details or payments to others. No password.",
+    "עריכת התפקיד של {name}": "Edit {name}'s role",
+    "עריכה בצוות — {name}": "Edit team member — {name}",
+    "הערה (רק לנו)": "Note (only for us)",
+    "למשל: זמינה אחרי 17:00, מעדיפה וואטסאפ": "e.g. available after 17:00, prefers WhatsApp",
+    "בן / בת זוג": "Spouse / partner",
+    "בן משפחה": "Family member",
+    "נציג הלקוח": "Client's representative",
+    "מפקח": "Supervisor",
+    "אדריכל": "Architect",
+    "מהנדס": "Engineer",
+    "מעצב פנים": "Interior designer",
+    "יועץ": "Consultant",
+    "מודד": "Surveyor",
+    "מנהל עבודה": "Site foreman",
+    "תפקיד לא מוכר": "Unknown role",
+    "עודכן בצוות: {name} ({role})": "Team member updated: {name} ({role})"
 }
