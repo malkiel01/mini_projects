@@ -2536,5 +2536,11 @@
     "החזרה לספק": "Send back to supplier",
     "{n} תמונות": "{n} photos",
     "🔧 ריג'קט באיחור — תזכורת לספק כל (ימים, 0 — בלי)": "🔧 Overdue punch item — remind supplier every (days, 0 — never)",
-    "תזכורת על ריג'קט": "Punch item reminder"
+    "תזכורת על ריג'קט": "Punch item reminder",
+    "ערכת נושא לא מוכרת": "Unknown theme",
+    "ערכת נושא": "Theme",
+    "☀️ בהירה": "☀️ Light",
+    "🌙 כהה": "🌙 Dark",
+    "📱 לפי המכשיר": "📱 Device setting",
+    "\"לפי המכשיר\" — מתחלפת לבד עם הגדרות הטלפון או המחשב (למשל כהה בלילה). הבחירה שלך עוברת איתך לכל מכשיר שתיכנס ממנו.": "\"Device setting\" follows your phone or computer settings (e.g. dark at night). Your choice follows you to every device you sign in from."
 }

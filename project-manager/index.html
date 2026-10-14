@@ -2,13 +2,14 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="assets/js/i18n.js?v=88"></script>
+    <script src="assets/js/i18n.js?v=89"></script>
+    <script src="assets/js/theme.js?v=89"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=88">
-    <link rel="stylesheet" href="assets/css/devloop.css?v=88">
+    <link rel="stylesheet" href="assets/css/app.css?v=89">
+    <link rel="stylesheet" href="assets/css/devloop.css?v=89">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -382,6 +383,7 @@
             <div class="seg kinds" role="tablist" aria-label="הגדרות">
                 <a role="tab" data-set="messages" href="#/settings/messages"><span>הודעות</span></a>
                 <a role="tab" data-set="alerts" href="#/settings/alerts"><span>התראות</span></a>
+                <a role="tab" data-set="display" href="#/settings/display"><span>תצוגה</span></a>
                 <a role="tab" data-set="general" href="#/settings/general" class="dev-only" hidden><span>כללי</span></a>
                 <a role="tab" data-set="trades" href="#/settings/trades" class="dev-only" hidden><span>תחומים</span></a>
                 <a role="tab" data-set="templates" href="#/settings/templates" class="dev-only" hidden><span>תבניות שלבים</span></a>
@@ -416,6 +418,18 @@
                     <p class="error" role="alert" hidden></p>
                     <button class="btn primary">שמירה</button>
                 </form>
+            </div>
+            <!-- תצוגה: ערכת נושא לכל משתמש (theme.js) -->
+            <div class="pane" id="set-display" hidden>
+                <fieldset class="f theme-pick">
+                    <legend>ערכת נושא</legend>
+                    <div class="seg" role="radiogroup">
+                        <label><input type="radio" name="theme" value="light"><span>☀️ בהירה</span></label>
+                        <label><input type="radio" name="theme" value="dark"><span>🌙 כהה</span></label>
+                        <label><input type="radio" name="theme" value="system"><span>📱 לפי המכשיר</span></label>
+                    </div>
+                </fieldset>
+                <p class="hint">"לפי המכשיר" — מתחלפת לבד עם הגדרות הטלפון או המחשב (למשל כהה בלילה). הבחירה שלך עוברת איתך לכל מכשיר שתיכנס ממנו.</p>
             </div>
             <div class="pane" id="set-general" hidden>
                 <form class="toolbar" id="max-upload-form">
@@ -1456,30 +1470,30 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=88"></script>
-    <script src="assets/js/contacts.js?v=88"></script>
-    <script src="assets/js/device-contacts.js?v=88"></script>
-    <script src="assets/js/viewer.js?v=88"></script>
-    <script src="assets/js/devloop.js?v=88"></script>
-    <script src="assets/js/engage.js?v=88"></script>
-    <script src="assets/js/linker.js?v=88"></script>
-    <script src="assets/js/files.js?v=88"></script>
-    <script src="assets/js/lightbox.js?v=88"></script>
-    <script src="assets/js/field.js?v=88"></script>
+    <script src="assets/js/core.js?v=89"></script>
+    <script src="assets/js/contacts.js?v=89"></script>
+    <script src="assets/js/device-contacts.js?v=89"></script>
+    <script src="assets/js/viewer.js?v=89"></script>
+    <script src="assets/js/devloop.js?v=89"></script>
+    <script src="assets/js/engage.js?v=89"></script>
+    <script src="assets/js/linker.js?v=89"></script>
+    <script src="assets/js/files.js?v=89"></script>
+    <script src="assets/js/lightbox.js?v=89"></script>
+    <script src="assets/js/field.js?v=89"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=88"></script>
-    <script src="assets/js/projects.js?v=88"></script>
-    <script src="assets/js/quotes.js?v=88"></script>
-    <script src="assets/js/payments.js?v=88"></script>
-    <script src="assets/js/fin-report.js?v=88"></script>
-    <script src="assets/js/budget.js?v=88"></script>
-    <script src="assets/js/deviations.js?v=88"></script>
-    <script src="assets/js/rejects.js?v=88"></script>
-    <script src="assets/js/finance.js?v=88"></script>
-    <script src="assets/js/finance-all.js?v=88"></script>
-    <script src="assets/js/hebcal.js?v=88"></script>
-    <script src="assets/js/calendar.js?v=88"></script>
-    <script src="assets/js/settings.js?v=88"></script>
-    <script src="assets/js/app.js?v=88"></script>
+    <script src="assets/js/share.js?v=89"></script>
+    <script src="assets/js/projects.js?v=89"></script>
+    <script src="assets/js/quotes.js?v=89"></script>
+    <script src="assets/js/payments.js?v=89"></script>
+    <script src="assets/js/fin-report.js?v=89"></script>
+    <script src="assets/js/budget.js?v=89"></script>
+    <script src="assets/js/deviations.js?v=89"></script>
+    <script src="assets/js/rejects.js?v=89"></script>
+    <script src="assets/js/finance.js?v=89"></script>
+    <script src="assets/js/finance-all.js?v=89"></script>
+    <script src="assets/js/hebcal.js?v=89"></script>
+    <script src="assets/js/calendar.js?v=89"></script>
+    <script src="assets/js/settings.js?v=89"></script>
+    <script src="assets/js/app.js?v=89"></script>
 </body>
 </html>

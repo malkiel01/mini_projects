@@ -8,6 +8,8 @@ async function init() {
         const me = await api('me');
         Object.assign(state, { user: me.user, trades: me.trades, templates: me.templates, labels: me.labels, standalone: me.standalone,
             fileTypes: me.file_types, maxUpload: me.max_upload, msgTemplates: me.msg_templates, msgVars: me.msg_vars || {}, vatRate: me.vat_rate, finAlerts: me.fin_alerts });
+        // ערכת הנושא של המשתמש — הבחירה בשרת גוברת (עוברת איתו ממכשיר למכשיר)
+        if (me.user.theme) Theme.apply(me.user.theme);
     } catch (e) {
         $('#main').innerHTML = `<p class="empty">${esc(e.message)}</p>`;
         return;

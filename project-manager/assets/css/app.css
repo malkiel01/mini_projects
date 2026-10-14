@@ -17,13 +17,22 @@
     --r: 10px; --tap: 40px; --head: 48px;
     --shadow: 0 1px 2px rgba(16, 24, 40, .06);
 }
+/* ערכת נושא: לפי המכשיר (ברירת מחדל), או בחירה של המשתמש — <html data-theme="light|dark"> (theme.js, הגדרות ← תצוגה).
+ * כל כלל כהה מופיע פעמיים: תחת prefers-color-scheme כשלא נבחרה בהירה, ותחת data-theme="dark". */
 @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
         --bg: #111318; --surface: #1b1e26; --ink: #e8eaf0; --muted: #9aa1b2; --line: #2c303b;
         --brand: #7f9fe0; --brand-ink: #0d1324; --brand-soft: #232c42; --danger: #f2a49d; --danger-soft: #3a1f1d;
         --star: #f5b83d; --ok: #6fcf97; --shadow: none;
     }
 }
+:root[data-theme="dark"] {
+    --bg: #111318; --surface: #1b1e26; --ink: #e8eaf0; --muted: #9aa1b2; --line: #2c303b;
+    --brand: #7f9fe0; --brand-ink: #0d1324; --brand-soft: #232c42; --danger: #f2a49d; --danger-soft: #3a1f1d;
+    --star: #f5b83d; --ok: #6fcf97; --shadow: none;
+}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -201,7 +210,8 @@ body[data-view="project"] .toast { bottom: calc(72px + env(safe-area-inset-botto
     flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%;
     background: hsl(var(--h) 45% 88%); color: hsl(var(--h) 45% 28%); font-weight: 600; font-size: .9rem;
 }
-@media (prefers-color-scheme: dark) { .avatar { background: hsl(var(--h) 30% 26%); color: hsl(var(--h) 60% 85%); } }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .avatar { background: hsl(var(--h) 30% 26%); color: hsl(var(--h) 60% 85%); } }
+:root[data-theme="dark"] .avatar { background: hsl(var(--h) 30% 26%); color: hsl(var(--h) 60% 85%); }
 .chip {
     flex: none; display: inline-flex; align-items: center; min-height: 22px; padding: 0 var(--s2); border-radius: 99px;
     font-size: .75rem; font-weight: 500; white-space: nowrap; background: var(--bg); color: var(--muted); border: 1px solid var(--line);
@@ -212,10 +222,13 @@ body[data-view="project"] .toast { bottom: calc(72px + env(safe-area-inset-botto
 .st-done, .st-paid { --c: #2f855a; }
 .chip[class*="st-"] { color: var(--c, var(--muted)); border-color: color-mix(in srgb, var(--c, var(--line)) 40%, transparent); background: color-mix(in srgb, var(--c, var(--bg)) 10%, var(--surface)); }
 @media (prefers-color-scheme: dark) {
-    .st-quotes, .st-client_approval, .st-lawyer_approval { --c: #f6c05c; }
-    .st-approved, .st-in_progress { --c: #7fb2f0; }
-    .st-done, .st-paid { --c: #6fcf97; }
+    :root:not([data-theme="light"]) .st-quotes, :root:not([data-theme="light"]) .st-client_approval, :root:not([data-theme="light"]) .st-lawyer_approval { --c: #f6c05c; }
+    :root:not([data-theme="light"]) .st-approved, :root:not([data-theme="light"]) .st-in_progress { --c: #7fb2f0; }
+    :root:not([data-theme="light"]) .st-done, :root:not([data-theme="light"]) .st-paid { --c: #6fcf97; }
 }
+:root[data-theme="dark"] .st-quotes, :root[data-theme="dark"] .st-client_approval, :root[data-theme="dark"] .st-lawyer_approval { --c: #f6c05c; }
+:root[data-theme="dark"] .st-approved, :root[data-theme="dark"] .st-in_progress { --c: #7fb2f0; }
+:root[data-theme="dark"] .st-done, :root[data-theme="dark"] .st-paid { --c: #6fcf97; }
 .muted { color: var(--muted); }
 
 /* ---- בורר מקטעים מקישורים (סוג איש קשר, הגדרות) ---- */
@@ -436,11 +449,15 @@ body[data-view="project"] main { padding-bottom: 0; }
 #cal-day .hol-yomtov .l1 { color: #c53030; }
 .hint.warn { color: #b7791f; margin: 0; }
 @media (prefers-color-scheme: dark) {
-    .cday.hol-yomtov .hol, .cday.hol-yomtov .hd, #cal-day .hol-yomtov .l1 { color: #fc8181; }
-    .cday.hol-modern .hol { color: #7fb2f0; }
-    .cday.hol-fast .hol { color: #f6c05c; }
-    .cday.hol-minor .hol { color: #b794f4; }
+    :root:not([data-theme="light"]) .cday.hol-yomtov .hol, :root:not([data-theme="light"]) .cday.hol-yomtov .hd, :root:not([data-theme="light"]) #cal-day .hol-yomtov .l1 { color: #fc8181; }
+    :root:not([data-theme="light"]) .cday.hol-modern .hol { color: #7fb2f0; }
+    :root:not([data-theme="light"]) .cday.hol-fast .hol { color: #f6c05c; }
+    :root:not([data-theme="light"]) .cday.hol-minor .hol { color: #b794f4; }
 }
+:root[data-theme="dark"] .cday.hol-yomtov .hol, :root[data-theme="dark"] .cday.hol-yomtov .hd, :root[data-theme="dark"] #cal-day .hol-yomtov .l1 { color: #fc8181; }
+:root[data-theme="dark"] .cday.hol-modern .hol { color: #7fb2f0; }
+:root[data-theme="dark"] .cday.hol-fast .hol { color: #f6c05c; }
+:root[data-theme="dark"] .cday.hol-minor .hol { color: #b794f4; }
 .cday.today .n { background: var(--brand); color: var(--brand-ink); font-weight: 600; }
 .cday[aria-pressed="true"] { background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--brand); }
 .cday.late .n { color: var(--danger); font-weight: 600; }
@@ -691,7 +708,8 @@ body.auth { display: grid; place-items: start center; padding: max(8vh, var(--s4
 
 /* ---- אגף הכספים, כ3: כל הפרויקטים (finance-all.js) ---- */
 :root { --cf-plan: #4a6cc0; --cf-paid: #d97706; }
-@media (prefers-color-scheme: dark) { :root { --cf-plan: #6c8ee0; --cf-paid: #c27a14; } }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --cf-plan: #6c8ee0; --cf-paid: #c27a14; } }
+:root[data-theme="dark"] { --cf-plan: #6c8ee0; --cf-paid: #c27a14; }
 #view-finance > section, #view-finance > .fin-kpis { margin-block-end: var(--s3); }
 #fa-kpis .kpi-late dd, .fa-income .kpi-late dd { color: var(--danger); }
 #fa-filters .btn { margin-inline-start: auto; }
@@ -826,7 +844,9 @@ body.auth { display: grid; place-items: start center; padding: max(8vh, var(--s4
 .dev-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--s2);
     padding: var(--s1) var(--s3); background: var(--danger); color: #fff; font-size: .85rem; font-weight: 600; }
 .dev-bar .btn { min-height: 30px; padding: 0 var(--s3); background: #fff; color: var(--danger); border-color: #fff; }
-@media (prefers-color-scheme: dark) { .dev-bar { color: #1b1e26; } .dev-bar .btn { background: #1b1e26; color: var(--danger); border-color: #1b1e26; } }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .dev-bar { color: #1b1e26; } :root:not([data-theme="light"]) .dev-bar .btn { background: #1b1e26; color: var(--danger); border-color: #1b1e26; } }
+:root[data-theme="dark"] .dev-bar { color: #1b1e26; }
+:root[data-theme="dark"] .dev-bar .btn { background: #1b1e26; color: var(--danger); border-color: #1b1e26; }
 .dev-purge { margin-top: var(--s3); padding-top: var(--s3); border-top: 2px dashed var(--danger); }
 .dev-purge .btn { width: 100%; background: var(--danger-soft); color: var(--danger); border-color: var(--danger); }
 .btn.icon-only { min-width: var(--tap); padding-inline: 0; font-size: 1.1rem; }
@@ -1196,3 +1216,9 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .rj-walk-done { opacity: .7; }
 .rj-walk-end { text-align: center; margin-top: var(--s3); }
 @media (prefers-reduced-motion: reduce) { .rj-walk-bar i { transition: none; } }
+
+/* ===== הגדרות ← תצוגה: ערכת נושא ===== */
+.theme-pick { border: 0; min-inline-size: 0; }
+.theme-pick legend { font-size: .85rem; color: var(--muted); margin-bottom: var(--s1); }
+.theme-pick .seg span { min-height: var(--tap); }
+#set-display .hint { margin-top: var(--s2); }
