@@ -5,7 +5,9 @@
  * שני מקורות שמתמזגים לרשימה אחת:
  *   dev/open-items.json — מה ש-Claude מנהל בקוד, עם כל שינוי שנכנס.
  *   הטבלה dev_tasks     — מטלה שהמפתח פתח מהמסך.
- * אותו קוד בשניהם? הקובץ גובר (Claude העביר את המטלה לקוד).
+ * הקודים לא מתנגשים: בקובץ — עד DT-500; מהמסך — מ-DT-501 (Claude לא רואה את המסך כשהוא
+ * מוסיף לקובץ). מטלה מהמסך ש-Claude העביר לקובץ — באותו קוד עם "moved": true, והקובץ גובר.
+ * התנגשות בלי moved (מהימים שלפני ההפרדה) — מוצגות שתיהן; אף אחת לא נעלמת.
  *
  * Claude קורא את השיח בלי חיבור ישיר לחשבון: או שהמפתח מעתיק אותו לצ'אט
  * (כפתור "העתקה לצ'אט"), או באסימון אישי — devapi_feed / devapi_comment,
@@ -17,6 +19,7 @@ declare(strict_types=1);
 const DEV_TOKEN_PREFIX = 'dtd_';
 const DEV_COMMENT_MAX = 4000;
 const DEV_TASK_STATUS = ['open', 'question', 'closed'];
+const DEV_USER_CODES = 500;   // מטלות מהמסך מתחילות מ-DT-501
 
 function devtasks_migrate(PDO $pdo): void
 {
@@ -76,8 +79,12 @@ function dev_task_list(): array
         $items[$x['code']] = $x + ['source' => 'code'];
     }
     foreach (db()->query('SELECT * FROM dev_tasks ORDER BY id DESC')->fetchAll() as $t) {
-        if (isset($items[$t['code']])) continue;
-        $items[$t['code']] = ['code' => $t['code'], 'area' => $t['area'], 'status' => $t['status'], 'title' => $t['title'],
+        $slot = $t['code'];
+        if (isset($items[$slot])) {
+            if (!empty($items[$slot]['moved'])) continue;   // Claude העביר אותה לקובץ
+            $slot .= '#user';                                 // התנגשות ישנה — מציגים את שתיהן
+        }
+        $items[$slot] = ['code' => $t['code'], 'area' => $t['area'], 'status' => $t['status'], 'title' => $t['title'],
             'detail' => $t['detail'], 'opened' => substr($t['created_at'], 0, 10), 'questions' => [], 'source' => 'user'];
     }
     $names = [];
@@ -87,8 +94,8 @@ function dev_task_list(): array
         $byCode[$c['code']][] = ['id' => (int)$c['id'], 'at' => $c['at'], 'author' => $c['author'],
             'name' => $c['author'] === 'claude' ? 'Claude' : ($names[(int)$c['user_id']] ?? '—'), 'body' => $c['body']];
     }
-    foreach ($items as $code => &$x) {
-        $x['comments'] = $byCode[$code] ?? [];
+    foreach ($items as &$x) {
+        $x['comments'] = $byCode[$x['code']] ?? [];
         $last = end($x['comments']) ?: null;
         // מי צריך להגיב עכשיו: הערה של המפתח שלא נענתה — ממתינה ל-Claude
         $x['waiting'] = $last ? ($last['author'] === 'claude' ? 'user' : 'claude') : null;
@@ -111,12 +118,22 @@ function dev_task_get(string $code): array
     throw new ApiError('אין מטלה ' . $code, 404);
 }
 
-/** הקוד הבא — אחרי הגבוה שבקובץ ובטבלה. */
+/** הקוד הבא למטלה מהמסך — מ-DT-501. */
 function dev_next_code(): string
+{
+    $max = DEV_USER_CODES;
+    foreach (db()->query('SELECT code FROM dev_tasks')->fetchAll(PDO::FETCH_COLUMN) as $c) $max = max($max, dev_code_num($c));
+    return sprintf('DT-%03d', $max + 1);
+}
+
+/** הקוד הבא לפריט בקובץ — עד DT-500, אחרי כל מה שכבר תפוס בטווח (גם מהמסך, מלפני ההפרדה). */
+function dev_next_file_code(): string
 {
     $max = 0;
     foreach (dev_items_file()['items'] ?? [] as $x) $max = max($max, dev_code_num((string)($x['code'] ?? '')));
-    foreach (db()->query('SELECT code FROM dev_tasks')->fetchAll(PDO::FETCH_COLUMN) as $c) $max = max($max, dev_code_num($c));
+    foreach (db()->query('SELECT code FROM dev_tasks')->fetchAll(PDO::FETCH_COLUMN) as $c) {
+        if (dev_code_num($c) <= DEV_USER_CODES) $max = max($max, dev_code_num($c));
+    }
     return sprintf('DT-%03d', $max + 1);
 }
 
@@ -238,7 +255,7 @@ function devapi_feed(array $k, array $q): array
     $max = (int)db()->query('SELECT COALESCE(MAX(id), 0) FROM dev_comments')->fetchColumn();
     if (!empty($q['mark'])) db()->prepare('UPDATE dev_tokens SET read_upto = ? WHERE id = ?')->execute([$max, $k['id']]);
     return ['ok' => true, 'updated' => $list['updated'], 'read_upto' => !empty($q['mark']) ? $max : $upto,
-        'next_code' => dev_next_code(), 'items' => $items];
+        'next_code' => dev_next_file_code(), 'items' => $items];
 }
 
 /** תשובה של Claude במטלה; במטלה שנפתחה מהמסך — אפשר גם לשנות מצב. */

@@ -87,6 +87,18 @@ fill_save(['values' => ['phone' => '03-111']]);
 check('הערב ממלא את הטלפון (גם בלי שהשוכר נשלח)', doc_values($did2)['phone'] === '03-111');
 throws('הערב לא כותב בשדה של השוכר בלבד', fn() => (function () use ($did2) { fill_save(['values' => ['tsig' => 'x']]); if ((doc_values($did2)['tsig'] ?? '') === '') throw new ApiError('לא נכתב', 403); })(), 403);
 
+// אכיפה: אי אפשר להסתיר שדה ממי שממלא אותו
+$hid = fn(array $roles, array $f) => clean_schema(['pages' => [['w' => 595, 'h' => 842]], 'roles' => $roles,
+    'fields' => [$f + ['key' => 'x', 'type' => 'text', 'page' => 0, 'x' => .1, 'y' => .1, 'w' => .2, 'h' => .03, 'hidden' => true]]])['fields'][0]['hidden'];
+$R2 = [['key' => 'owner', 'label' => 'אני'], ['key' => 'tenant', 'label' => 'שוכר']];
+$R3 = array_merge($R2, [['key' => 'guar', 'label' => 'ערב']]);
+check('מוסתר + הממלא היחיד בקישור ממלא אותו — ההסתרה מתבטלת', $hid($R2, ['role' => 'tenant']) === false);
+check('מוסתר + "אני או השוכר" — מתבטלת', $hid($R2, ['role' => 'owner', 'roles' => ['owner', 'tenant']]) === false);
+check('מוסתר + שוכר ממלא, ויש ערב — נשאר (מוסתר מהערב)', $hid($R3, ['role' => 'tenant']) === true);
+check('מוסתר + "שוכר או ערב" — מתבטלת (אין ממי)', $hid($R3, ['role' => 'tenant', 'roles' => ['tenant', 'guar']]) === false);
+check('מוסתר + אני ממלא — נשאר (מידע פנימי)', $hid($R2, ['role' => 'owner']) === true);
+check('מוסתר בלי ממלאים בקישור בכלל — מתבטלת', $hid([['key' => 'owner', 'label' => 'אני']], ['role' => 'owner']) === false);
+
 foreach (array_merge(glob("$tmp/files/*") ?: [], array_filter(glob("$tmp/{,.}*", GLOB_BRACE) ?: [], 'is_file')) as $f) @unlink($f);
 @rmdir("$tmp/files");
 @rmdir($tmp);

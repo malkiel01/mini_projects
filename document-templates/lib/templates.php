@@ -298,6 +298,11 @@ function clean_schema($s, array $sources = [], array $fonts = []): array
             // מבנה תצוגה מותאם (lib/fmt.php): תאריך — dd/MM/yyyy, hd בhMMMM hyy…; מספר — #,##0.00…
             'fmt' => in_array($type, ['date', 'number', 'calc', 'system'], true) ? $str($f['fmt'] ?? '', 80) : '',
         ];
+        // אכיפה: "מוסתר מהממלאים בקישור" מסתיר רק ממי שלא ממלא את השדה. אם כל הממלאים בקישור
+        // ממלאים אותו — אין ממי להסתיר, וזו סתירה: ההסתרה מתבטלת
+        $nf = &$fields[count($fields) - 1];
+        if ($nf['hidden'] && !array_diff($roleKeys, ['owner'], $nf['roles'] ?: [$nf['role']])) $nf['hidden'] = false;
+        unset($nf);
         if ($type === 'system') {
             $fields[count($fields) - 1]['source'] = in_array($f['source'] ?? '', SYSTEM_SOURCES, true) ? $f['source'] : 'number';
             $fields[count($fields) - 1]['required'] = false;
