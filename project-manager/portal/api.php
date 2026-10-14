@@ -32,7 +32,7 @@ function pm_portal_reply(int $code, array $payload): never
 {
     global $PM_T0;
     $action = (string)($_GET['action'] ?? '');
-    if ($code >= 400 || in_array($action, ['decide', 'decide-change', 'pay-approve', 'proof', 's-quote', 's-payreq', 's-receipt', 's-bank', 's-invoice', 'expense'], true)) {
+    if ($code >= 400 || in_array($action, ['decide', 'decide-change', 'decide-budget', 'pay-approve', 'proof', 's-quote', 's-payreq', 's-receipt', 's-bank', 's-invoice', 'expense'], true)) {
         $body = in_array($action, ['proof', 's-quote', 's-payreq', 's-invoice', 'expense'], true) ? null : json_decode((string)file_get_contents('php://input'), true);
         if (is_array($body)) unset($body['signature']); // החתימה עצמה נשמרת באישור, לא ביומן
         pm_log($code >= 500 ? 'error' : ($code >= 400 ? 'warn' : 'info'), 'portal', 'portal.' . ($action ?: '?'), [
@@ -67,7 +67,7 @@ try {
     pm_log_user(['id' => null, 'username' => 'portal:' . $a['link']['id'] . ' ' . $a['contact']['name']], true);
 
     // צפייה בלבד: הפעולות שמשנות כסף או מאשרות — חסומות (העלאת מסמך — מותרת)
-    if (in_array("$method $action", ['POST decide', 'POST pay-approve', 'POST proof', 'POST decide-change', 'POST expense'], true)) pm_portal_need_full($a);
+    if (in_array("$method $action", ['POST decide', 'POST pay-approve', 'POST proof', 'POST decide-change', 'POST decide-budget', 'POST expense'], true)) pm_portal_need_full($a);
     $result = match ("$method $action") {
         'GET view' => (function () use ($a) {
             pm_portal_seen($a);
@@ -93,6 +93,7 @@ try {
         'POST s-bank'    => pm_portal_supplier_bank($a, pm_portal_json()),
         // כ4: תוספת / חריגה — אישור או דחייה; חשבונית מהספק (הקובץ בגוף הבקשה)
         'POST decide-change' => pm_portal_change_decide($a, pm_portal_json()),
+        'POST decide-budget' => pm_portal_budget_decide($a, pm_portal_json()),
         'POST s-invoice' => pm_portal_supplier_invoice($a, $_GET),
         'POST expense'   => pm_portal_expense($a, $_GET),
         'POST upload'    => pm_portal_upload($a, $_GET), // "📎 העלאת מסמך" — לכל התפקידים

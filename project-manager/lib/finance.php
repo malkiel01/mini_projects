@@ -20,6 +20,7 @@ require_once __DIR__ . '/payments.php';
 require_once __DIR__ . '/changes.php';
 require_once __DIR__ . '/expenses.php';
 require_once __DIR__ . '/contracts.php';
+require_once __DIR__ . '/budget.php';
 
 const PM_FEE_TYPES = ['', 'percent', 'fixed'];
 const PM_DUE_KINDS = ['date', 'stage_done', 'progress'];
@@ -146,6 +147,9 @@ function pm_finance_settings(array $p): array
         'index_on' => (bool)$p['index_on'], 'index_name' => $p['index_name'],
         'index_base_month' => $p['index_base_month'], 'index_base' => $p['index_base'] !== null ? (float)$p['index_base'] : null,
         'vat_rate' => pm_vat_rate(),
+        // הצעת תקציב (lib/budget.php): פורק לשלבים — התקציב מחושב ולא נערך כאן; מי מאשר; חלוקת המשותפים בין הדירות
+        'budget_broken' => pm_budget_broken((int)$p['id']), 'budget_locked' => pm_budget_locked((int)$p['id']), 'budget_approver' => $p['budget_approver'] ?: 'client',
+        'unit_split' => json_decode((string)($p['unit_split'] ?? ''), true) ?: (object)[],
     ];
 }
 
@@ -268,15 +272,17 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
 
     $contracts = pm_contracts_of($projectId);
     // מתחם, לקוח של יחידה: שלב משותף — רק החלק של היחידות שלו לפי החלוקה בחוזה עם הספק (pm_contract_ratios).
-    // בלי חלוקה בחוזה — השורה מוצגת ("משותף — לא מחולק"), אבל לא נספרת בסכומים שלו
+    // בלי חלוקה בחוזה — לפי החלוקה בין הדירות שבהגדרות הפרויקט (pm_unit_split). null — לא מחולק: מוצגת ולא נספרת
     $share = fn() => 1.0;
     if ($scope !== null && ($units = pm_units_of($projectId))) {
         $sharedOf = [];
         foreach ($rows as $s0 => $byS) if ($s0 && isset($stages[$s0]) && $stages[$s0]['unit_id'] === null)
             foreach ($byS as $c0 => $r0) $sharedOf[$c0] = ($sharedOf[$c0] ?? 0) + pm_fin_commitment($r0['acc'])[0] / 100;
-        $share = function (int $sid, int $cid) use ($stages, $contracts, $units, $sharedOf, $scope): ?float {
+        $projSplit = pm_unit_split($p, $units);
+        $share = function (int $sid, int $cid) use ($stages, $contracts, $units, $sharedOf, $scope, $projSplit): ?float {
             if (!$sid || !isset($stages[$sid]) || $stages[$sid]['unit_id'] !== null) return 1.0;
-            $ratios = pm_contract_ratios(pm_contract_for($contracts, $cid, $sid), $units, $sharedOf[$cid] ?? 0);
+            // החלוקה שבחוזה עם הספק; בלי — החלוקה בין הדירות שבהגדרות הפרויקט
+            $ratios = pm_contract_ratios(pm_contract_for($contracts, $cid, $sid), $units, $sharedOf[$cid] ?? 0) ?: $projSplit;
             if (!$ratios) return null;
             return array_sum(array_map(fn($u) => $ratios[$u] ?? 0, $scope['units']));
         };
@@ -437,6 +443,8 @@ function pm_finance_units(int $projectId, array $stages, array $outStages, array
 {
     $units = pm_units_of($projectId);
     if (!$units) return [];
+    // שלב משותף בלי חלוקה בחוזה — לפי החלוקה בין הדירות שבהגדרות הפרויקט (ברירת מחדל: שווה בשווה)
+    $projSplit = pm_unit_split(pm_db()->query('SELECT unit_split FROM projects WHERE id = ' . $projectId)->fetch() ?: [], $units);
     $U = [];
     $add = function (int $u, string $k, array $m, float $ratio = 1.0) use (&$U) {
         $U[$u][$k]['g'] = ($U[$u][$k]['g'] ?? 0) + $m['g'] * $ratio;
@@ -449,7 +457,7 @@ function pm_finance_units(int $projectId, array $stages, array $outStages, array
     foreach ($outStages as $s) {
         $u = $unitOf($s['stage_id']);
         foreach ($s['rows'] as $r) {
-            $ratios = $u ? [$u => 1.0] : (pm_contract_ratios(pm_contract_for($contracts, $r['supplier_id'], $s['stage_id']), $units, $sharedOf[$r['supplier_id']] ?? 0) ?: [0 => 1.0]);
+            $ratios = $u ? [$u => 1.0] : (pm_contract_ratios(pm_contract_for($contracts, $r['supplier_id'], $s['stage_id']), $units, $sharedOf[$r['supplier_id']] ?? 0) ?: $projSplit ?: [0 => 1.0]);
             // השורה כבר מוקטנת לחלק של הלקוח (pm_finance_of, share) — חוזרים לשלם לפני החלוקה
             $whole = ($r['share'] ?? 1.0) ?: 1.0;
             foreach ($ratios as $to => $k) foreach (['committed', 'paid', 'balance'] as $f) $add((int)$to, $f, $r[$f], $k / $whole);
@@ -501,6 +509,21 @@ function pm_finance_settings_save(array $user, array $in): array
         'index_base'       => ($in['index_base'] ?? '') === '' ? null : $num('index_base', 1e6, 'מדד בסיס'), // i18n-ok
     ];
     if ($indexOn && ($f['index_base_month'] === '' || $f['index_base'] === null)) throw new PmError('הצמדה: צריך חודש בסיס ומדד בסיס', 422);
+    // תקציב שפורק לשלבים — מחושב מהשלבים (pm_budget_sync), לא מספר שנערך כאן
+    if (pm_budget_broken($projectId)) { $f['budget'] = (int)$p['budget']; $f['budget_initial'] = (int)$p['budget_initial']; }
+    $appr = (string)($in['budget_approver'] ?? ($p['budget_approver'] ?: 'client'));
+    if (!isset(PM_BUDGET_APPROVERS[$appr])) throw new PmError('מי מאשר את התקציב — לא מוכר', 422);
+    $f['budget_approver'] = $appr;
+    if (array_key_exists('unit_split', $in)) {
+        $split = [];
+        foreach ((array)$in['unit_split'] as $u => $v) {
+            if ($v === '' || $v === null) continue;
+            if (!is_numeric($v) || $v < 0 || $v > 100) throw new PmError('{field}: מספר לא תקין', 422, ['field' => pm_t('חלוקה בין הדירות')]);
+            $split[(string)(int)$u] = (float)$v;
+        }
+        if ($split && abs(array_sum($split) - 100) > 0.5) throw new PmError('החלוקה בין הדירות צריכה להסתכם ב-100% (עכשיו {n}%)', 422, ['n' => round(array_sum($split), 2)]);
+        $f['unit_split'] = $split ? json_encode($split) : '';
+    }
     $set = implode(', ', array_map(fn($k) => "$k = ?", array_keys($f)));
     pm_db()->prepare("UPDATE projects SET $set, updated_at = ? WHERE id = ?")->execute(array_merge(array_values($f), [pm_now(), $projectId]));
     $changed = array_keys(array_filter($f, fn($v, $k) => (string)$v !== (string)$p[$k], ARRAY_FILTER_USE_BOTH));
@@ -509,6 +532,8 @@ function pm_finance_settings_save(array $user, array $in): array
         pm_event($user, $projectId, 'finance', 'התקציב עודכן: {from} ← {to}', ['budget' => $f['budget']],
             ['from' => pm_money((int)$p['budget'] * 100), 'to' => pm_money($f['budget'] * 100)]);
     }
+    // שכר הטרחה או החלוקה בין הדירות השתנו — התקציב המחושב והדירות מתעדכנים (בהצעה נעולה — רק הדירות)
+    pm_budget_sync($projectId);
     return pm_finance($user, $projectId);
 }
 

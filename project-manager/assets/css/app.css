@@ -875,7 +875,7 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 #due-kind-box .seg span { white-space: normal; text-align: center; line-height: 1.2; padding: 4px; }
 
 /* כספים בפרויקט — לשוניות: סיכום · ספקים · אבני דרך · הוצאות */
-.fin-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin-bottom: var(--s3); }
+.fin-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin-bottom: var(--s3); }
 .fin-tabs button { min-height: 40px; padding: 4px 2px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: var(--ink); font: inherit; font-size: .82rem; line-height: 1.15; cursor: pointer; }
 .fin-tabs button small { display: inline-block; min-width: 1.4em; padding: 0 4px; border-radius: 999px; background: var(--brand-soft); color: var(--brand); font-size: .72rem; }
 .fin-tabs button small:empty { display: none; }
@@ -1087,3 +1087,27 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .pm-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: var(--s3) 0 0; }
 #pm-details > .sec-title:first-child { margin-top: var(--s2); }
 .pm-cancel { justify-self: start; margin-top: var(--s3); }
+
+/* ===== הצעת תקציב לפי שלבים (assets/js/budget.js) ===== */
+.bd .fin-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
+.bd-unit { margin: var(--s3) 0 var(--s1); font-size: .9rem; }
+.bd-rows { margin: 0; }
+.bd-row { display: flex; align-items: center; gap: var(--s2); padding: 6px var(--s2); }
+.bd-row > .one { flex: 1; min-width: 0; }
+.bd-row input { inline-size: 9.5em; max-inline-size: 45%; font-size: 16px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); text-align: end; }
+.bd-row.bd-ro { display: block; }
+.bd-l1 { display: flex; align-items: baseline; gap: var(--s2); }
+.bd-l1 .one { flex: 1; min-width: 0; }
+.bd-l1 b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bd-l2 { font-size: .78rem; margin-top: 2px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.bd-l2 .sep { margin: 0 2px; }
+.bd-tot { display: grid; gap: 4px; margin: var(--s3) 0 var(--s2); padding-top: var(--s2); border-top: 1px solid var(--line); }
+.bd-tot > div { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); font-size: .9rem; }
+.bd-tot dd { margin: 0; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bd-tot .bd-sum { font-weight: 700; font-size: 1.02rem; border-top: 1px dashed var(--line); padding-top: 4px; }
+.bd-cont input { inline-size: 4em; font-size: 16px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); text-align: end; }
+.bd-pending { border: 1px solid var(--star); border-radius: var(--r); padding: var(--s2) var(--s3); margin: var(--s2) 0; background: color-mix(in srgb, var(--star) 8%, var(--surface)); font-size: .88rem; }
+.bd-pending p { margin: 2px 0; }
+.bd-chg li, .bd-units li { display: flex; justify-content: space-between; gap: var(--s2); padding: 4px var(--s2); font-size: .85rem; }
+.bd-chg b, .bd-units b { white-space: nowrap; font-variant-numeric: tabular-nums; }
+

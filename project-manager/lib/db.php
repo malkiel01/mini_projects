@@ -799,6 +799,42 @@ function pm_contracts_multi(PDO $pdo): void
     pm_add_column($pdo, 'project_members', 'note', "TEXT NOT NULL DEFAULT ''");
     // לקוח / עו"ד נוסף בקישור האישי: full — מאשר כמו הראשי; view — צפייה והעלאת מסמכים בלבד (מנהל הפרויקט מחליט)
     pm_add_column($pdo, 'project_members', 'portal_access', "TEXT NOT NULL DEFAULT 'full'");
+    // הצעת תקציב לפי שלבים (lib/budget.php): מי מאשר, "בלתי צפוי" (אחוז מהשלבים), חלוקת המשותפים בין הדירות
+    // (JSON {unit_id: אחוז}; ריק — שווה בשווה), ותקציב ראשוני לשלב (באגורות). גרסאות — ההצעה וכל שינוי, וההחלטות עליהן.
+    pm_add_column($pdo, 'projects', 'budget_approver', "TEXT NOT NULL DEFAULT 'client'");
+    pm_add_column($pdo, 'projects', 'contingency_pct', 'REAL NOT NULL DEFAULT 0');
+    pm_add_column($pdo, 'projects', 'unit_split', "TEXT NOT NULL DEFAULT ''");
+    pm_add_column($pdo, 'stages', 'budget_initial', 'INTEGER NOT NULL DEFAULT 0');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS budget_versions (
+        id              INTEGER PRIMARY KEY,
+        project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        seq             INTEGER NOT NULL,
+        kind            TEXT NOT NULL CHECK (kind IN (\'initial\',\'change\')),
+        status          TEXT NOT NULL DEFAULT \'pending\',
+        lines_json      TEXT NOT NULL DEFAULT \'[]\',
+        total_from      INTEGER NOT NULL DEFAULT 0,
+        total_to        INTEGER NOT NULL DEFAULT 0,
+        contingency_pct REAL NOT NULL DEFAULT 0,
+        note            TEXT NOT NULL DEFAULT \'\',
+        created_by      INTEGER,
+        created_at      TEXT NOT NULL,
+        decided_at      TEXT
+    )');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS budget_versions_project ON budget_versions (project_id)');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS budget_decisions (
+        id          INTEGER PRIMARY KEY,
+        version_id  INTEGER NOT NULL REFERENCES budget_versions(id) ON DELETE CASCADE,
+        role        TEXT NOT NULL,
+        decision    TEXT NOT NULL,
+        method      TEXT NOT NULL DEFAULT \'manual\',
+        by_name     TEXT NOT NULL DEFAULT \'\',
+        note        TEXT NOT NULL DEFAULT \'\',
+        signature   TEXT NOT NULL DEFAULT \'\',
+        portal_id   INTEGER,
+        recorded_by INTEGER,
+        ip          TEXT NOT NULL DEFAULT \'\',
+        created_at  TEXT NOT NULL
+    )');
 }
 
 function pm_add_column(PDO $pdo, string $table, string $col, string $def): void
