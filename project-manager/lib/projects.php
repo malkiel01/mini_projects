@@ -217,12 +217,14 @@ function pm_project_team(array $p, array $stages): array
         if ($u['lawyer_id'] && $u['lawyer_id'] !== (int)$p['lawyer_id']) { $add($u['lawyer_id'], 'עו"ד'); $team[$u['lawyer_id']]['roles'][] = '🏢 ' . $u['name']; } // i18n-ok
     }
     foreach ($stages as $s) if ($s['supplier_id']) $add($s['supplier_id'], $s['name']);
-    $m = $db->prepare('SELECT contact_id, role FROM project_members WHERE project_id = ?');
+    $m = $db->prepare('SELECT m.contact_id, m.role, c.kind FROM project_members m JOIN contacts c ON c.id = m.contact_id WHERE m.project_id = ?');
     $m->execute([$p['id']]);
     foreach ($m->fetchAll() as $r) {
         $id = (int)$r['contact_id'];
-        if (isset($team[$id])) { $team[$id]['removable'] = true; $team[$id]['roles'][] = $r['role'] ?: 'צוות'; } // i18n-ok
-        else $add($id, $r['role'] ?: 'צוות', true); // i18n-ok
+        // לקוח / עו"ד שנוסף לצוות — "לקוח נוסף" / "עו"ד נוסף", עם קישור אישי משלו (lib/portal.php: pm_portal_co)
+        $role = $r['role'] ?: (['client' => 'לקוח נוסף', 'lawyer' => 'עו"ד נוסף'][$r['kind']] ?? 'צוות'); // i18n-ok
+        if (isset($team[$id])) { $team[$id]['removable'] = true; if ($r['role'] || !in_array($r['kind'], ['client', 'lawyer'], true)) $team[$id]['roles'][] = $role; }
+        else $add($id, $role, true);
     }
     return array_values($team);
 }

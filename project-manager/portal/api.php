@@ -93,6 +93,7 @@ try {
         'POST decide-change' => pm_portal_change_decide($a, pm_portal_json()),
         'POST s-invoice' => pm_portal_supplier_invoice($a, $_GET),
         'POST expense'   => pm_portal_expense($a, $_GET),
+        'POST upload'    => pm_portal_upload($a, $_GET), // "📎 העלאת מסמך" — לכל התפקידים
         default => throw new PmError('פעולה לא מוכרת', 404),
     };
     pm_portal_reply(200, $result);

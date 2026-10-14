@@ -792,6 +792,8 @@ function pm_contracts_multi(PDO $pdo): void
     }
     pm_add_column($pdo, 'contracts', 'stage_ids', "TEXT NOT NULL DEFAULT ''");
     pm_add_column($pdo, 'contracts', 'title', "TEXT NOT NULL DEFAULT ''");
+    // מסמך שהועלה בקישור האישי ("📎 העלאת מסמך") — של מי (portal_links.id); "מסמכים ששלחתי" בפורטל
+    pm_add_column($pdo, 'files', 'portal_id', 'INTEGER');
 }
 
 function pm_add_column(PDO $pdo, string $table, string $col, string $def): void
