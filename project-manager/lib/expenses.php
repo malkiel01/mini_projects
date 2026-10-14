@@ -232,6 +232,11 @@ function pm_ledger_of(int $projectId, int $supplierId, ?string $lang = null): ar
     $q->execute([$projectId, $supplierId]);
     $byStage = [];
     foreach ($q->fetchAll() as $x) $byStage[(int)$x['stage_id']] = $x;
+    // שלב בלי הצעה מאושרת — ההתחייבות היא אבני הדרך (כמו בכספים, pm_finance: "בלי הצעה — מאבני הדרך").
+    // תשלום בלי שלב (מקדמה) — על חשבון השלב העיקרי של הספק: ההצעה הגדולה, או השלב היחיד שלו
+    $mainStage = 0;
+    foreach ($byStage as $sid0 => $x) if (!$mainStage || (int)$x['amount'] > (int)$byStage[$mainStage]['amount']) $mainStage = $sid0;
+    if (!$mainStage) { $only = pm_supplier_stages($projectId, $supplierId); if (count($only) === 1) $mainStage = $only[0]; }
     foreach ($byStage as $x) {
         $add(substr((string)($x['approved_at'] ?: $x['updated_at']), 0, 10), 'quote', pm_t('הצעה שאושרה — {stage}', ['stage' => pm_t($x['stage'], [], $lang)], $lang), (int)$x['amount'], $rate($x['vat_rate']),
             ['stage' => $stageName[(int)$x['stage_id']] ?? '', 'files' => $files($x['file_id']), 'ref' => ['type' => 'quote', 'id' => (int)$x['id']]]);
@@ -251,7 +256,10 @@ function pm_ledger_of(int $projectId, int $supplierId, ?string $lang = null): ar
         $ref = ['type' => 'payment', 'id' => (int)$p['id']];
         $stg = $p['stage_id'] ? ($stageName[(int)$p['stage_id']] ?? '') : '';
         if ((int)$p['index_diff']) $add(substr($p['created_at'], 0, 10), 'index', pm_t('הפרשי הצמדה — {title}', ['title' => $p['title']], $lang), (int)$p['index_diff'], $r, ['ref' => $ref, 'stage' => $stg]);
-        $add(substr($p['created_at'], 0, 10), 'milestone', $p['title'], 0, $r, ['amount' => pm_payment_due_amount($p) / 100, 'payment_id' => (int)$p['id'],
+        $effStage = (int)$p['stage_id'] ?: $mainStage;
+        // אין הצעה מאושרת בשלב — אבן הדרך היא ההתחייבות (בלי הפרשי ההצמדה — הם בשורה משלהם)
+        $commit = !isset($byStage[$effStage]) ? pm_payment_due_amount($p) - (int)$p['index_diff'] : 0;
+        $add(substr($p['created_at'], 0, 10), 'milestone', $p['title'], $commit, $r, ['commit' => $commit > 0, 'amount' => pm_payment_due_amount($p) / 100, 'payment_id' => (int)$p['id'],
             'label' => pm_t(pm_payment_label($p), [], $lang), 'due_kind' => $p['due_kind'], 'due_date' => $p['due_date'],
             'stage' => $stg, 'when' => $whenOf($p), 'files' => $files($p['file_id'] ?? null), 'ref' => $ref, 'status' => $p['status'], 'notes' => $p['notes']]);
         $pr = $db->prepare("SELECT * FROM payment_proofs WHERE payment_id = ? AND status = 'received' ORDER BY id");
@@ -270,11 +278,13 @@ function pm_ledger_of(int $projectId, int $supplierId, ?string $lang = null): ar
     $order = ['quote' => 0, 'change' => 1, 'index' => 2, 'milestone' => 3, 'paid' => 4, 'invoice' => 5];
     usort($E, fn($a, $b) => [$a['at'], $order[$a['kind']]] <=> [$b['at'], $order[$b['kind']]]);
     $bal = 0;
+    $byMilestones = false;
     $committed = [0, 0];
     $paid = [0, 0];
     foreach ($E as &$e) {
         $d = $e['delta'];
         if ($d > 0 || $e['kind'] === 'change') { $committed[0] += $d; $committed[1] += pm_net($d, $e['rate']); }
+        if (!empty($e['commit'])) $byMilestones = true;
         if ($e['kind'] === 'paid') { $paid[0] -= $d; $paid[1] += pm_net(-$d, $e['rate']); }
         $bal += $d;
         $e['delta'] = pm_m($d, pm_net($d, $e['rate']));
@@ -287,6 +297,8 @@ function pm_ledger_of(int $projectId, int $supplierId, ?string $lang = null): ar
         'entries' => $E,
         'committed' => pm_m($committed[0], $committed[1]), 'paid' => pm_m($paid[0], $paid[1]), 'balance' => pm_m($b, $committed[1] - $paid[1]),
         'missing_invoices' => $missing,
+        // חלק מה"סוכם" — מאבני הדרך, כי אין עליהן הצעה מאושרת (המסך מסביר)
+        'by_milestones' => $byMilestones,
     ];
 }
 
