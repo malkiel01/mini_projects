@@ -61,8 +61,7 @@ description: The work loop between the user and Claude on the apps in mini_proje
 **לא עורכים את העותקים** (`lib/devloop.php`, `assets/js/devloop.js`, `assets/css/devloop.css`) — רק את `devloop/src`,
 ואז sync; שער בפריסה עוצר עותק ששונה.
 
-## לוח מרכזי והתראות
+## התראות
 
 - המשתמש מקבל מייל כשמשהו מחכה לו (🧪, ❓, 💬, ⚠️) — ולכן כל `devapi-comment` עם `body` שולח מייל. תשובה אחת
   מסודרת עדיפה על כמה קטנות.
-- "מטלות לקלוד" (`claude-tasks`) ← 🔁: כל האפליקציות יחד. הוא לא מחליף את האפליקציה — האימות נעשה בה.
