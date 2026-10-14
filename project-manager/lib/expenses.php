@@ -248,6 +248,17 @@ function pm_ledger_of(int $projectId, int $supplierId, ?string $lang = null): ar
     $pay = $db->prepare("SELECT * FROM payments WHERE project_id = ? AND supplier_id = ? AND status != 'cancelled' ORDER BY id");
     $pay->execute([$projectId, $supplierId]);
     $payments = $pay->fetchAll();
+    // שחרור העיכבון של כל שלב — לא שורה משלו ("שלב" נוסף בעין), אלא חלק מאבני הדרך שהעיכבון נעצר מהן
+    $release = [];
+    foreach ($payments as $p) if (($p['kind'] ?? '') === 'retention') $release[(int)$p['stage_id']] = $p;
+    $retState = function (?array $rel) use ($lang): string {
+        return match ($rel['status'] ?? 'planned') {
+            'requested' => pm_t('נדרש לשחרור', [], $lang),
+            'paid', 'partial' => pm_t('שוחרר — ממתין לאישור קבלה', [], $lang),
+            'received' => pm_t('שוחרר ושולם', [], $lang),
+            default => pm_t('נשאר לסוף — ישוחרר במסירה', [], $lang),
+        };
+    };
     $missing = 0;
     foreach ($payments as $p) {
         $r = $rate($p['vat_rate']);
@@ -255,17 +266,27 @@ function pm_ledger_of(int $projectId, int $supplierId, ?string $lang = null): ar
         $stg = $p['stage_id'] ? ($stageName[(int)$p['stage_id']] ?? '') : '';
         if ((int)$p['index_diff']) $add(substr($p['created_at'], 0, 10), 'index', pm_t('הפרשי הצמדה — {title}', ['title' => $p['title']], $lang), (int)$p['index_diff'], $r, ['ref' => $ref, 'stage' => $stg]);
         $effStage = (int)$p['stage_id'] ?: $mainStage;
-        // אין הצעה מאושרת בשלב — אבן הדרך היא ההתחייבות (בלי הפרשי ההצמדה — הם בשורה משלהם)
-        $commit = !isset($byStage[$effStage]) ? pm_payment_due_amount($p) - (int)$p['index_diff'] : 0;
-        $add(substr($p['created_at'], 0, 10), 'milestone', $p['title'], $commit, $r, ['commit' => $commit > 0, 'amount' => pm_payment_due_amount($p) / 100, 'payment_id' => (int)$p['id'],
-            'label' => pm_t(pm_payment_label($p), [], $lang), 'due_kind' => $p['due_kind'], 'due_date' => $p['due_date'],
-            'stage' => $stg, 'when' => $whenOf($p), 'files' => $files($p['file_id'] ?? null), 'ref' => $ref, 'status' => $p['status'], 'notes' => $p['notes']]);
+        $isRelease = ($p['kind'] ?? 'milestone') === 'retention';
+        $ret = $isRelease ? 0 : (int)($p['retention'] ?? 0);
+        if (!$isRelease) {
+            // אין הצעה מאושרת בשלב — אבן הדרך היא ההתחייבות, בסכום המלא: מה שמשלמים בה + העיכבון שנעצר ממנה
+            // (בלי הפרשי ההצמדה — הם בשורה משלהם). שורת השחרור לא נספרת — כך העיכבון לא פעמיים
+            $commit = !isset($byStage[$effStage]) ? pm_payment_due_amount($p) - (int)$p['index_diff'] + $ret : 0;
+            $add(substr($p['created_at'], 0, 10), 'milestone', $p['title'], $commit, $r, ['commit' => $commit > 0, 'amount' => ((int)$p['amount'] + (int)$p['index_diff']) / 100, 'payment_id' => (int)$p['id'],
+                'label' => pm_t(pm_payment_label($p), [], $lang), 'due_kind' => $p['due_kind'], 'due_date' => $p['due_date'],
+                'stage' => $stg, 'when' => $whenOf($p), 'files' => $files($p['file_id'] ?? null), 'ref' => $ref, 'status' => $p['status'], 'notes' => $p['notes']]
+                // מחולק לשניים: לתשלום עכשיו (90%), ועיכבון (10%) שנשאר לסוף — ומה מצבו
+                + ($ret > 0 ? ['split' => ['pay_now' => pm_payment_due_amount($p) / 100, 'retention' => $ret / 100,
+                    'pct' => (float)round($ret * 100 / max(1, (int)$p['amount']), 1),
+                    'state' => $p['stage_id'] ? $retState($release[(int)$p['stage_id']] ?? null) : pm_t('נשאר לסוף — אחרי שיוך לשלב', [], $lang),
+                    'released' => ($release[(int)$p['stage_id']]['status'] ?? '') === 'received']] : []));
+        }
         $pr = $db->prepare("SELECT * FROM payment_proofs WHERE payment_id = ? AND status = 'received' ORDER BY id");
         $pr->execute([$p['id']]);
         $got = false;
         foreach ($pr->fetchAll() as $x) {
             $got = true;
-            $add($x['paid_on'], 'paid', pm_t('התקבל תשלום — {title}', ['title' => $p['title']], $lang), -(int)$x['received_amount'], $r, ['payment_id' => (int)$p['id'],
+            $add($x['paid_on'], 'paid', $isRelease ? pm_t('שוחרר העיכבון — {stage}', ['stage' => $stg], $lang) : pm_t('התקבל תשלום — {title}', ['title' => $p['title']], $lang), -(int)$x['received_amount'], $r, ['payment_id' => (int)$p['id'],
                 'stage' => $stg, 'when' => pm_t(PM_PAY_METHODS[$x['method']] ?? $x['method'], [], $lang) . (($x['ref_no'] ?? '') !== '' ? ' #' . $x['ref_no'] : '') . ($x['note'] !== '' ? ' · ' . $x['note'] : ''), 'files' => $files($x['file_id']), 'ref' => $ref]);
         }
         if ($p['invoice_at']) $add(substr($p['invoice_at'], 0, 10), 'invoice', $p['invoice_no'] !== '' ? pm_t('חשבונית {no} — {title}', ['no' => $p['invoice_no'], 'title' => $p['title']], $lang) : pm_t('חשבונית — {title}', ['title' => $p['title']], $lang), 0, $r,

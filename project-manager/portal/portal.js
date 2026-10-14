@@ -654,7 +654,10 @@ function renderLedger() {
         <ol class="ledger">${L.entries.map(x => `<li class="lg-${x.kind}">
             <div class="lg-top"><span class="lg-ic" aria-hidden="true">${ICON[x.kind]}</span><b class="lg-text">${esc(x.text)}</b>
                 <span class="lg-d${x.kind === 'milestone' ? ' muted' : ''}">${esc(x.delta.g ? (x.delta.g > 0 ? '+' : '−') + money(Math.abs(x.delta.g)) : x.kind === 'milestone' ? money(x.amount) : '')}</span></div>
-            <div class="lg-meta">${[x.stage ? '🧱 ' + x.stage : '', x.when, x.kind === 'milestone' ? x.label : '', shortDate(x.at)].filter(Boolean).map(esc).join(' · ')}</div>
+            <div class="lg-meta">${[x.stage ? '🧱 ' + x.stage : '', x.when, x.kind === 'milestone' && !x.split ? x.label : '', shortDate(x.at)].filter(Boolean).map(esc).join(' · ')}</div>
+            ${x.split ? `<div class="lg-split">
+                <div><span>💳 ${esc(t('לתשלום ({n}%)', { n: Math.round((100 - x.split.pct) * 10) / 10 }))} · ${esc(x.label)}</span><b>${esc(money(x.split.pay_now))}</b></div>
+                <div class="lg-ret${x.split.released ? ' ok' : ''}"><span>🔒 ${esc(t('עיכבון ({n}%) — {state}', { n: x.split.pct, state: x.split.state }))}</span><b>${esc(money(x.split.retention))}</b></div></div>` : ''}
             ${x.delta.g ? `<div class="lg-b">${esc(t('יתרה {amount}', { amount: (x.balance < 0 ? '−' : '') + money(Math.abs(x.balance)) }))}</div>` : ''}</li>`).join('')}</ol>`;
 }
 

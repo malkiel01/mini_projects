@@ -2235,5 +2235,13 @@
     "מתוך {amount}": "sur {amount}",
     "עיכבון {amount} — בשחרור, במסירה": "Retenue {amount} — versée à la libération, à la livraison",
     "מתוך {total} — עיכבון {amount} נשאר עד המסירה": "sur {total} — retenue {amount} conservée jusqu'à la livraison",
-    "מתוך {amount} — {r} נשארים אצלכם כעיכבון עד המסירה": "sur {amount} — {r} reste chez vous comme retenue jusqu'à la livraison"
+    "מתוך {amount} — {r} נשארים אצלכם כעיכבון עד המסירה": "sur {amount} — {r} reste chez vous comme retenue jusqu'à la livraison",
+    "לתשלום ({n}%)": "À payer ({n} %)",
+    "עיכבון ({n}%) — {state}": "Retenue ({n} %) — {state}",
+    "נדרש לשחרור": "Libération demandée",
+    "שוחרר — ממתין לאישור קבלה": "Libérée — en attente de confirmation de réception",
+    "שוחרר ושולם": "Libérée et payée",
+    "נשאר לסוף — ישוחרר במסירה": "Conservée jusqu'à la fin — libérée à la livraison",
+    "נשאר לסוף — אחרי שיוך לשלב": "Conservée jusqu'à la fin — après rattachement à une étape",
+    "שוחרר העיכבון — {stage}": "Retenue libérée — {stage}"
 }

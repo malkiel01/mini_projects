@@ -526,7 +526,7 @@ const Finance = (() => {
         const meta = [
             x.stage ? '🧱 ' + x.stage : '',
             x.when,
-            x.kind === 'milestone' ? x.label : '',
+            x.kind === 'milestone' && !x.split ? x.label : '',
             x.kind === 'milestone' ? t('נרשמה {date}', { date: shortDateL(x.at) }) : shortDateL(x.at),
         ].filter(Boolean).map(esc).join('<i class="sep" aria-hidden="true">·</i>');
         const files = (x.files || []).map(f => `<a class="chip lg-file" href="api.php?action=file&id=${f.id}" target="_blank" rel="noopener">📎 ${esc(f.name)}</a>`).join('');
@@ -535,9 +535,19 @@ const Finance = (() => {
             <div class="lg-top"><span class="lg-ic" aria-hidden="true">${LEDGER_ICON[x.kind]}</span><b class="lg-text">${esc(x.text)}</b>
                 <span class="lg-d${x.kind === 'milestone' ? ' muted' : ''}">${esc(sum)}</span></div>
             <div class="lg-meta">${meta}</div>
+            ${ledgerSplit(x)}
             ${x.notes ? `<div class="lg-meta">${esc(x.notes)}</div>` : ''}
             ${files ? `<div class="lg-files">${files}</div>` : ''}
             ${x.delta.g ? `<div class="lg-b">${esc(t('יתרה {amount}', { amount: (x.balance < 0 ? '−' : '') + money(Math.abs(x.balance)) }))}</div>` : ''}</li>`;
+    }
+
+    /** אבן דרך עם עיכבון: הסכום המלא בראש, ובתוכה — לתשלום עכשיו (90%) ועיכבון (10%) שנשאר לסוף. */
+    function ledgerSplit(x) {
+        const S = x.split;
+        if (!S) return '';
+        return `<div class="lg-split">
+            <div><span>💳 ${esc(t('לתשלום ({n}%)', { n: Math.round((100 - S.pct) * 10) / 10 }))} · ${esc(x.label)}</span><b>${esc(money(S.pay_now))}</b></div>
+            <div class="lg-ret${S.released ? ' ok' : ''}"><span>🔒 ${esc(t('עיכבון ({n}%) — {state}', { n: S.pct, state: S.state }))}</span><b>${esc(money(S.retention))}</b></div></div>`;
     }
 
     /** מהכרטסת לפעולה עצמה: אבן דרך / הצעה / תוספת — בפרויקט שלה (אם צריך — עוברים אליו). */
@@ -563,7 +573,9 @@ const Finance = (() => {
         const table = L => `<table class="lp-t"><thead><tr><th>${esc(t('תאריך'))}</th><th>${esc(t('פירוט'))}</th><th>${esc(t('שלב'))}</th><th>${esc(t('מועד / אמצעי'))}</th>
             <th>${esc(t('חובה (סוכם)'))}</th><th>${esc(t('זכות (שולם)'))}</th><th>${esc(t('יתרה'))}</th></tr></thead><tbody>
             ${L.entries.map(x => {
-                const g = x.delta.g, info = x.kind === 'milestone' ? `${t('מתוכנן')}: ${money(x.amount)} · ${x.label}` : '';
+                const g = x.delta.g, info = x.kind !== 'milestone' ? '' : x.split
+                    ? `${t('לתשלום ({n}%)', { n: Math.round((100 - x.split.pct) * 10) / 10 })}: ${money(x.split.pay_now)} · ${x.label} · ${t('עיכבון ({n}%) — {state}', { n: x.split.pct, state: x.split.state })}: ${money(x.split.retention)}`
+                    : `${t('מתוכנן')}: ${money(x.amount)} · ${x.label}`;
                 return `<tr class="lp-${x.kind}"><td>${esc(shortDateL(x.at))}</td><td>${esc(x.text)}${info || x.notes ? `<small>${esc([info, x.notes].filter(Boolean).join(' · '))}</small>` : ''}${x.files?.length ? `<small>📎 ${esc(x.files.map(f => f.name).join(', '))}</small>` : ''}</td>
                     <td>${esc(x.stage || '')}</td><td>${esc(x.when || '')}</td><td>${esc(g > 0 || (g && x.kind === 'change') ? (g < 0 ? '−' : '') + m(g) : '')}</td><td>${esc(x.kind === 'paid' ? m(g) : '')}</td><td>${g ? esc(bal(x.balance)) : ''}</td></tr>`;
             }).join('') || `<tr><td colspan="7">${esc(t('עוד אין תנועות'))}</td></tr>`}
