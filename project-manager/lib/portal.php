@@ -507,11 +507,11 @@ function pm_portal_supplier_view(array $a): array
         return $p;
     }, $payments);
 
-    // קבצים: תוכניות שסומנו "גלוי", ומה שבתיקייה של הספק
+    // קבצים: תוכניות שסומנו "גלוי", ומה שבתיקייה של הספק — כולל תתי-התיקיות של המקצועות שלו (lib/links.php)
     $f = $db->prepare("SELECT DISTINCT x.id, x.name, x.mime, x.size, x.type, x.thumb IS NOT NULL AS has_thumb, x.created_at
                          FROM files x JOIN file_links l ON l.file_id = x.id JOIN folders d ON d.id = l.folder_id
                         WHERE x.project_id = ? AND x.deleted_at IS NULL
-                          AND ((d.kind = 'plans' AND x.visible = 1) OR (d.kind = 'contact' AND d.contact_id = ?))
+                          AND ((d.kind = 'plans' AND x.visible = 1) OR (d.kind IN ('contact', 'trade', 'tgroup', 'ssup') AND d.contact_id = ?))
                         ORDER BY x.created_at DESC LIMIT 300");
     $f->execute([$pid, $sid]);
     $files = array_map(fn($x) => ['id' => (int)$x['id'], 'name' => $x['name'], 'mime' => $x['mime'], 'size' => (int)$x['size'],
@@ -538,11 +538,12 @@ function pm_portal_supplier_can_file(array $a, array $x): bool
     $sid = (int)$a['contact']['id'];
     $id = (int)$x['id'];
     $st = pm_db()->prepare("SELECT 1 FROM file_links l JOIN folders d ON d.id = l.folder_id JOIN files f ON f.id = l.file_id
-                             WHERE l.file_id = ? AND ((d.kind = 'plans' AND f.visible = 1) OR (d.kind = 'contact' AND d.contact_id = ?))
+                             WHERE l.file_id = ? AND ((d.kind = 'plans' AND f.visible = 1) OR (d.kind IN ('contact', 'trade', 'tgroup', 'ssup') AND d.contact_id = ?))
                             UNION SELECT 1 FROM quotes WHERE file_id = ? AND supplier_id = ?
+                            UNION SELECT 1 FROM payments WHERE invoice_file_id = ? AND supplier_id = ?
                             UNION SELECT 1 FROM payments WHERE file_id = ? AND supplier_id = ?
                             UNION SELECT 1 FROM payment_proofs pp JOIN payments p ON p.id = pp.payment_id WHERE pp.file_id = ? AND p.supplier_id = ?");
-    $st->execute([$id, $sid, $id, $sid, $id, $sid, $id, $sid]);
+    $st->execute([$id, $sid, $id, $sid, $id, $sid, $id, $sid, $id, $sid]);
     return (bool)$st->fetchColumn();
 }
 
@@ -567,6 +568,12 @@ function pm_portal_supplier_upload(array $a, string $label, string $type): ?int
         pm_t('הועלה בקישור האישי של {name}', ['name' => $a['contact']['name']], $lang), (int)$a['contact']['id']);
 }
 
+/** פעולה שנכשלה אחרי שהקובץ כבר נשמר — הקובץ לא נשאר יתום בתיקיית הספק. */
+function pm_portal_drop_file(?int $fileId): void
+{
+    if ($fileId) pm_db()->prepare('UPDATE files SET deleted_at = ? WHERE id = ?')->execute([pm_now(), $fileId]);
+}
+
 /** הספק מגיש הצעת מחיר. הפרטים ב-query, הקובץ (אם יש) בגוף הבקשה. */
 function pm_portal_supplier_quote(array $a, array $q): array
 {
@@ -577,8 +584,10 @@ function pm_portal_supplier_quote(array $a, array $q): array
     pm_quote_amount($q['amount'] ?? null); // בדיקה לפני שמירת הקובץ
     $lang = $a['owner']['lang'];
     $fileId = pm_portal_supplier_upload($a, pm_t('הצעת מחיר — {stage}', ['stage' => $stage['name']], $lang), 'quote');
-    $r = pm_quote_save($a['owner'], ['stage_id' => $stageId, 'supplier_id' => (int)$a['contact']['id'], 'amount' => $q['amount'] ?? null,
-        'valid_until' => $q['valid_until'] ?? '', 'terms' => $q['terms'] ?? '', 'notes' => $q['notes'] ?? '', 'file_id' => $fileId], $a['actor']);
+    try {
+        $r = pm_quote_save($a['owner'], ['stage_id' => $stageId, 'supplier_id' => (int)$a['contact']['id'], 'amount' => $q['amount'] ?? null,
+            'valid_until' => $q['valid_until'] ?? '', 'terms' => $q['terms'] ?? '', 'notes' => $q['notes'] ?? '', 'file_id' => $fileId], $a['actor']);
+    } catch (Throwable $e) { pm_portal_drop_file($fileId); throw $e; }
     $v = ['name' => $a['contact']['name'], 'stage' => $stage['name'], 'amount' => pm_money(pm_quote_amount($q['amount']))];
     pm_portal_mail($a, pm_t('הצעת מחיר חדשה מ{name}: {stage}', $v, $lang),
         pm_t('{name} הגיש הצעת מחיר לשלב "{stage}": {amount} כולל מע"מ.', $v, $lang), 'quotes');
@@ -600,9 +609,11 @@ function pm_portal_supplier_payreq(array $a, array $q): array
     if ($title === '') throw new PmError('על מה התשלום? (למשל "מקדמה")', 422);
     $lang = $a['owner']['lang'];
     $fileId = pm_portal_supplier_upload($a, pm_t('דרישת תשלום — {title}', ['title' => $title], $lang), 'invoice');
-    $r = pm_payment_save($a['owner'], ['project_id' => (int)$a['project']['id'], 'stage_id' => $stageId, 'supplier_id' => (int)$a['contact']['id'],
-        'title' => $title, 'amount' => $q['amount'], 'notes' => $q['notes'] ?? '', 'payer' => 'client',
-        'needs_lawyer' => (bool)$a['project']['lawyer_id']], $a['actor']);
+    try {
+        $r = pm_payment_save($a['owner'], ['project_id' => (int)$a['project']['id'], 'stage_id' => $stageId, 'supplier_id' => (int)$a['contact']['id'],
+            'title' => $title, 'amount' => $q['amount'], 'notes' => $q['notes'] ?? '', 'payer' => 'client',
+            'needs_lawyer' => (bool)$a['project']['lawyer_id']], $a['actor']);
+    } catch (Throwable $e) { pm_portal_drop_file($fileId); throw $e; }
     pm_db()->prepare('UPDATE payments SET supplier_request = 1, file_id = ? WHERE id = ?')->execute([$fileId, $r['saved']]);
     $v = ['name' => $a['contact']['name'], 'title' => $title, 'amount' => pm_money(pm_quote_amount($q['amount']))];
     pm_portal_mail($a, pm_t('{name} ביקש תשלום: {title}', $v, $lang),
@@ -649,7 +660,8 @@ function pm_portal_supplier_invoice(array $a, array $q): array
     if ($title === false) throw new PmError('התשלום לא נמצא', 422);
     $lang = $a['owner']['lang'];
     $fileId = pm_portal_supplier_upload($a, pm_t('חשבונית — {title}', ['title' => $title], $lang), 'invoice');
-    pm_payment_invoice($a['owner'], ['id' => $pid, 'file_id' => $fileId, 'invoice_no' => (string)($q['no'] ?? '')], $a['actor']);
+    try { pm_payment_invoice($a['owner'], ['id' => $pid, 'file_id' => $fileId, 'invoice_no' => (string)($q['no'] ?? '')], $a['actor']); }
+    catch (Throwable $e) { pm_portal_drop_file($fileId); throw $e; }
     $v = ['name' => $a['contact']['name'], 'title' => $title];
     pm_portal_mail($a, pm_t('{name} העלה חשבונית: {title}', $v, $lang), pm_t('{name} העלה חשבונית על "{title}".', $v, $lang), 'payments');
     return pm_portal_view($a);
