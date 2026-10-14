@@ -196,7 +196,8 @@ function tpl_get(array $user, int $id): array
     $a = tpl_asset_row((int)$t['version_id']);
     return ['ok' => true, 'template' => tpl_summary($t, $user) + [
         'mime' => $a['mime'],
-        'schema' => json_decode((string)unseal($t['schema_enc']), true),
+        'schema' => $schemaArr = json_decode((string)unseal($t['schema_enc']), true),
+        'fonts' => fonts_info($schemaArr ?: []),
         'numbering' => json_decode((string)$t['numbering_json'], true),
     ]];
 }
@@ -217,7 +218,7 @@ function tpl_asset(array $user, int $id): never
 
 /** מנקה את מה שהדפדפן שלח: רק סוגים מוכרים, מספרים בטווח, מחרוזות באורך סביר. */
 /** $sources — מקורות הנתונים שמותר לשדה בחירה להפנות אליהם (של השומר, או שכבר היו בתבנית). */
-function clean_schema($s, array $sources = []): array
+function clean_schema($s, array $sources = [], array $fonts = []): array
 {
     if (!is_array($s)) throw new ApiError('מבנה תבנית לא תקין', 422);
     $num = fn($v, $min, $max) => (float)(is_numeric($v) ? max($min, min($max, (float)$v)) : $min);
@@ -284,6 +285,9 @@ function clean_schema($s, array $sources = []): array
             'print' => !array_key_exists('print', $f) || !empty($f['print']),
             // נעול במקומו — בעורך לא זז ולא משנה גודל עד שמשחררים
             'locked' => !empty($f['locked']),
+            // גופן (0 — ברירת המחדל) ומיקום אנכי של הטקסט בשדה
+            'font' => in_array((int)($f['font'] ?? 0), $fonts, true) ? (int)$f['font'] : 0,
+            'valign' => in_array($f['valign'] ?? '', ['top', 'middle', 'bottom'], true) ? $f['valign'] : 'middle',
         ];
         if ($type === 'system') {
             $fields[count($fields) - 1]['source'] = in_array($f['source'] ?? '', SYSTEM_SOURCES, true) ? $f['source'] : 'number';
@@ -394,7 +398,7 @@ function tpl_set_source(array $user, array $b): array
 function tpl_save(array $user, array $b): array
 {
     $t = tpl_owned((int)($b['id'] ?? 0), $user, 'edit');
-    $json = json_encode(clean_schema($b['schema'] ?? null, allowed_sources($user, $t)), JSON_UNESCAPED_UNICODE);
+    $json = json_encode(clean_schema($b['schema'] ?? null, allowed_sources($user, $t), allowed_fonts($user, $t)), JSON_UNESCAPED_UNICODE);
     if (strlen($json) > TPL_MAX_SCHEMA) throw new ApiError('התבנית גדולה מדי', 413);
 
     $pdo = db();
@@ -473,3 +477,4 @@ function tpl_delete(array $user, array $b): array
 }
 
 require_once __DIR__ . '/integrations.php';   // בחירה מרשימה, מקורות נתונים
+require_once __DIR__ . '/fonts.php';   // גופנים שהמשתמש העלה

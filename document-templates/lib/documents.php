@@ -265,7 +265,7 @@ function doc_get(array $user, int $id): array
         'created_at' => $d['created_at'], 'completed_at' => $d['completed_at'], 'final_hash' => $d['final_hash'],
         'archived' => $d['archived_at'] !== null,
         'schema' => attach_options($schema), 'values' => $values, 'progress' => doc_progress($schema, $values),
-        'ref' => $d['external_ref'], 'events' => $events, 'chain_ok' => doc_verify_chain($id),
+        'ref' => $d['external_ref'], 'events' => $events, 'fonts' => fonts_info($schema), 'chain_ok' => doc_verify_chain($id),
         'participants' => participants_view($d, doc_schema($d)),
         'attachments' => attachments_of($id),
     ]];
