@@ -44,6 +44,7 @@
       <h1>מטלות לקלוד</h1>
       <p id="scopeLabel">כל הנושאים</p>
     </div>
+    <button type="button" class="icon-btn hub-btn" id="loopBtn" title="DevLoop — מה מחכה לך בכל האפליקציות" aria-label="DevLoop — מה מחכה לך בכל האפליקציות">🔁<span class="hub-n" id="loopN" hidden></span></button>
     <button type="button" class="icon-btn" id="projectsBtn" title="פרויקטים">📁</button>
     <button type="button" class="icon-btn" id="adminBtn" title="ניהול" hidden>🛡</button>
     <button type="button" class="icon-btn" id="settingsBtn" title="הגדרות">⚙</button>
@@ -292,6 +293,18 @@
       <div class="tree" id="pvTree"></div>
       <pre class="filebox" id="pvFile" hidden></pre>
     </div>
+  </div>
+</dialog>
+
+<!-- ── DevLoop: הלוח המרכזי של כל האפליקציות (assets/js/devloop-hub.js) ── -->
+<dialog class="sheet" id="devloop" aria-labelledby="devloopTitle">
+  <div class="sheet__inner">
+    <header class="sheet__head">
+      <h2 id="devloopTitle">🔁 DevLoop — כל האפליקציות</h2>
+      <button type="button" class="icon-btn" id="loopReload" title="רענון" aria-label="רענון">↻</button>
+      <button type="button" class="icon-btn" data-close="devloop" aria-label="סגירה">✕</button>
+    </header>
+    <div class="sheet__body" id="loopBody"></div>
   </div>
 </dialog>
 

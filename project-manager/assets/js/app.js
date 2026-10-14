@@ -18,7 +18,8 @@ async function init() {
     else if (lang !== I18n.lang() && I18n.LANGS[lang] && canStore()) { I18n.set(lang); return; }
     $$('.dev-only').forEach(el => { el.hidden = !isDev(); });
     // DevLoop (המודול המשותף, devloop.js): 🐞 בכותרת — למפתח: דיווח מכל מסך, ומונה המטלות שממתינות לו
-    DevLoop.setup({ api, toast, isDev, appName: 'מנהל הפרויקטים', // i18n-none tasksHref: '#/settings/tasks', mountBefore: '#me-btn',
+    DevLoop.setup({ api, toast, isDev, tasksHref: '#/settings/tasks', mountBefore: '#me-btn',
+        appName: 'מנהל הפרויקטים', // i18n-none
         headers: () => ({ 'X-CSRF': state.user?.csrf || '', 'X-Lang': I18n.lang() }), lang: () => I18n.lang(),
         version: () => '0.' + ((document.querySelector('script[src*="core.js"]')?.src.match(/v=(\d+)/) || [])[1] || ''), trace: () => PMTrace });
     DevLoop.mount();
@@ -71,7 +72,7 @@ function route() {
     if (section === 'finance') FinanceAll.show();
     if (section === 'project') Projects.showProject(Number(a), b, c);
     if (section === 'contacts') Contacts.show(a);
-    if (section === 'settings') Settings.show(a);
+    if (section === 'settings') Settings.show(a, b); // #/settings/tasks/PM-018 — ישר למטלה (קישור מהלוח המרכזי)
     if (section === 'share') { $('#subtitle').hidden = true; Share.show(a); }
     if (section === 'import') { $('#subtitle').hidden = true; DeviceContacts.show(a); }
 }
