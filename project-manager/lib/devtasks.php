@@ -21,8 +21,8 @@ const PM_DEV_ITEMS_FILE = __DIR__ . '/../dev/open-items.json';
 const PM_DEV_PREFIX = 'PM-';
 const PM_DEV_TOKEN_PREFIX = 'pmd_';
 const PM_DEV_COMMENT_MAX = 4000;
-// open פתוח · in_progress בעבודה · verify ממתין לאימות שלך · question שאלה אליך · closed סגור
-const PM_DEV_STATUS = ['open', 'in_progress', 'verify', 'question', 'closed'];
+// triage לבירור (שגיאה שנפתחה לבד) · open פתוח · in_progress בעבודה · verify ממתין לאימות שלך · question שאלה אליך · closed סגור
+const PM_DEV_STATUS = ['triage', 'open', 'in_progress', 'verify', 'question', 'closed'];
 const PM_DEV_KINDS = ['bug', 'feature', 'question', 'research', 'task'];
 const PM_DEV_PRIORITY = ['high', 'normal', 'low'];
 const PM_DEV_FILE_MAX = 8 * 1048576;
@@ -99,6 +99,17 @@ function pm_devtasks_migrate(): void
             by         TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS dev_files_code ON dev_files (code);
+        -- DevLoop 2: שגיאות מהיומן, מקובצות לפי חתימה — כל קבוצה היא מטלה "לבירור"
+        CREATE TABLE IF NOT EXISTS dev_err_groups (
+            sig       TEXT PRIMARY KEY,
+            code      TEXT NOT NULL,
+            count     INTEGER NOT NULL DEFAULT 0,
+            first_at  TEXT NOT NULL,
+            last_at   TEXT NOT NULL,
+            last_req  TEXT NOT NULL DEFAULT '',
+            ignored   INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS dev_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         SQL);
     // שדות במטלה שנפתחה מהמסך: סוג, עדיפות, איך יודעים שזה עובד, צעדי בדיקה, ההקשר של דיווח 🐞
     $db = pm_db();
@@ -127,10 +138,74 @@ function pm_dev_code_num(string $code): int
     return preg_match('/^PM-(\d+)$/', $code, $m) ? (int)$m[1] : 0;
 }
 
+/**
+ * DevLoop 2: שגיאות חדשות ביומן (level=error — שרת ודפדפן) → מטלות "לבירור", אחת לכל חתימה (קטגוריה, אירוע,
+ * פעולה והודעה בלי מספרים), עם מונה. שגיאה שחוזרת אחרי שהמטלה נסגרה — המטלה נפתחת שוב "לבירור".
+ * רץ כשהמפתח פותח את המטלות וכש-Claude קורא (devapi-feed). עד 20 מטלות חדשות בריצה — לא מציפים.
+ */
+function pm_dev_errors_sync(): int
+{
+    pm_devtasks_migrate();
+    $log = function_exists('pm_log_db') ? pm_log_db() : null;
+    if (!$log) return 0;
+    $db = pm_db();
+    $upto = (int)($db->query("SELECT value FROM dev_meta WHERE key = 'err_upto'")->fetchColumn() ?: 0);
+    if (!$upto) {
+        // פעם ראשונה: מתחילים מעכשיו — לא פותחים מטלות על כל ההיסטוריה
+        $upto = (int)$log->query('SELECT COALESCE(MAX(id), 0) FROM log')->fetchColumn();
+        $db->prepare("INSERT OR REPLACE INTO dev_meta (key, value) VALUES ('err_upto', ?)")->execute([(string)$upto]);
+        return 0;
+    }
+    $st = $log->prepare("SELECT * FROM log WHERE id > ? AND level = 'error' ORDER BY id LIMIT 500");
+    $st->execute([$upto]);
+    $rows = $st->fetchAll();
+    $max = $upto;
+    $made = 0;
+    foreach ($rows as $r) {
+        $max = max($max, (int)$r['id']);
+        $norm = preg_replace(['/\b[0-9a-f]{8,}\b/i', '/\d+/', '/"[^"]*"/u', "/'[^']*'/u"], ['#', '#', '"…"', "'…'"], (string)$r['message']);
+        $sig = substr(hash('sha1', $r['category'] . '|' . $r['event'] . '|' . $r['action'] . '|' . mb_substr($norm, 0, 200)), 0, 16);
+        $g = $db->prepare('SELECT * FROM dev_err_groups WHERE sig = ?');
+        $g->execute([$sig]);
+        $grp = $g->fetch();
+        if ($grp) {
+            $db->prepare('UPDATE dev_err_groups SET count = count + 1, last_at = ?, last_req = ? WHERE sig = ?')->execute([$r['at'], $r['req'], $sig]);
+            $t = $db->prepare('SELECT status FROM dev_tasks WHERE code = ?');
+            $t->execute([$grp['code']]);
+            if (!$grp['ignored'] && $t->fetchColumn() === 'closed') {
+                $db->prepare("UPDATE dev_tasks SET status = 'triage', updated_at = ? WHERE code = ?")->execute([pm_now(), $grp['code']]);
+                pm_dev_comment_add($grp['code'], 'claude', null, "⚠️ השגיאה חזרה אחרי שהמטלה נסגרה ({$r['at']}, בקשה {$r['req']}) — חזרה לבירור.");
+            }
+            continue;
+        }
+        if ($made >= 20) continue;
+        $data = json_decode((string)$r['data_json'], true) ?: [];
+        $where = $r['category'] === 'client' ? ($data['page'] ?? '') : trim($r['method'] . ' ' . $r['action']);
+        $title = mb_substr('⚠️ ' . ($r['category'] === 'client' ? 'דפדפן' : 'שרת') . ': ' . ($r['message'] ?: $r['event']) . ($where !== '' ? " ($where)" : ''), 0, 200);
+        $code = pm_dev_next_code();
+        $now = pm_now();
+        $ctx = json_encode(['url' => $data['page'] ?? '', 'ua' => $r['ua'], 'requests' => [['action' => $r['action'], 'method' => $r['method'],
+            'status' => (int)$r['status'], 'id' => $r['req'], 'ms' => (int)$r['ms'], 'at' => $r['at']]],
+            'errors' => [['message' => $r['message'], 'source' => $data['source'] ?? ($data['file'] ?? ''), 'line' => $data['line'] ?? '']]], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $detail = "נפתח לבד מהיומן ({$r['category']} · {$r['event']}). בקשה {$r['req']} ב-{$r['at']}."
+            . (!empty($data['trace']) ? "\n\n" . implode("\n", array_slice((array)$data['trace'], 0, 8)) : '')
+            . (!empty($data['stack']) ? "\n\n" . mb_substr((string)$data['stack'], 0, 1200) : '');
+        $db->prepare("INSERT INTO dev_tasks (code, area, title, detail, status, created_by, created_at, updated_at, kind, priority, acceptance, steps, context)
+                      VALUES (?, 'שגיאה אוטומטית', ?, ?, 'triage', NULL, ?, ?, 'bug', 'normal', '', '[]', ?)")
+           ->execute([$code, $title, mb_substr($detail, 0, PM_DEV_COMMENT_MAX), $now, $now, mb_substr($ctx, 0, 20000)]);
+        $db->prepare('INSERT INTO dev_err_groups (sig, code, count, first_at, last_at, last_req) VALUES (?,?,1,?,?,?)')->execute([$sig, $code, $r['at'], $r['at'], $r['req']]);
+        $made++;
+    }
+    if ($max > $upto) $db->prepare("INSERT OR REPLACE INTO dev_meta (key, value) VALUES ('err_upto', ?)")->execute([(string)$max]);
+    return $made;
+}
+
 /** הרשימה המאוחדת, עם השיח של כל מטלה. */
 function pm_dev_task_list(): array
 {
     pm_devtasks_migrate();
+    static $synced = false;
+    if (!$synced) { $synced = true; try { pm_dev_errors_sync(); } catch (Throwable $e) { pm_log('warn', 'data', 'devtasks.errors_sync', ['message' => $e->getMessage()]); } }
     $db = pm_db();
     $file = pm_dev_items_file();
     $items = [];
@@ -168,7 +243,10 @@ function pm_dev_task_list(): array
         $byCode[$c['code']][] = ['id' => (int)$c['id'], 'at' => $c['at'], 'author' => $c['author'],
             'name' => $c['author'] === 'claude' ? 'Claude' : ($names[(int)$c['user_id']] ?? '—'), 'body' => $c['body']];
     }
+    $groups = [];
+    foreach ($db->query('SELECT code, count, last_at, ignored FROM dev_err_groups')->fetchAll() as $g) $groups[$g['code']] = ['count' => (int)$g['count'], 'last_at' => $g['last_at'], 'ignored' => (bool)$g['ignored']];
     foreach ($items as $code => &$x) {
+        if (isset($groups[$code])) $x['occurrences'] = $groups[$code];
         $x += ['kind' => 'task', 'priority' => 'normal', 'acceptance' => '', 'steps' => [], 'context' => null];
         // ראיות: מהקובץ (pr) ומהטבלה
         $x['evidence'] = array_merge(!empty($x['pr']) ? [['kind' => 'pr', 'ref' => '#' . $x['pr'], 'url' => '', 'note' => '', 'at' => $x['closed'] ?? '', 'by' => 'code']] : [], $ev[$code] ?? []);
@@ -231,6 +309,21 @@ function pm_dev_task_status(string $code, string $status, string $by = 'user'): 
         pm_db()->prepare('INSERT INTO dev_state (code, status, at, by) VALUES (?,?,?,?) ON CONFLICT(code) DO UPDATE SET status = excluded.status, at = excluded.at, by = excluded.by')
             ->execute([$code, $status, pm_now(), $by]);
     }
+}
+
+/**
+ * שינוי מצב מהמסך. במטלת שגיאה "לבירור": 👍 לטפל (open) — עוברת ל-Claude; 🙈 להתעלם (ignore) — נסגרת, וגם
+ * כשהשגיאה חוזרת היא רק נספרת ולא נפתחת שוב. החזרה למצב אחר מבטלת את ההתעלמות.
+ */
+function pm_dev_task_set(array $dev, array $b): array
+{
+    $code = (string)($b['code'] ?? '');
+    $ignore = !empty($b['ignore']);
+    pm_dev_task_status($code, $ignore ? 'closed' : (string)($b['status'] ?? ''), 'user:' . $dev['id']);
+    pm_db()->prepare('UPDATE dev_err_groups SET ignored = ? WHERE code = ?')->execute([$ignore ? 1 : 0, $code]);
+    if ($ignore) pm_dev_comment_add($code, 'claude', null, '🙈 סומנה "להתעלם" — מופעים חדשים רק נספרים.');
+    elseif (($b['from'] ?? '') === 'triage') pm_dev_comment_add($code, 'user', (int)$dev['id'], '👍 לטפל');
+    return ['ok' => true];
 }
 
 /**
@@ -431,7 +524,12 @@ function pm_devapi_comment(array $k, array $b): array
         $steps = array_values(array_filter(array_map(fn($x) => mb_substr(trim((string)$x), 0, 300), $b['steps']), 'strlen'));
         pm_db()->prepare('UPDATE dev_tasks SET steps = ? WHERE code = ?')->execute([json_encode(array_slice($steps, 0, 20), JSON_UNESCAPED_UNICODE), $code]);
     }
-    if (!empty($b['status'])) pm_dev_task_status($code, (string)$b['status'], 'claude');
+    if (!empty($b['status'])) {
+        // פריסה (GitHub) לא מחזירה מטלה שכבר אומתה ונסגרה — רק if_open=0 מכריח
+        $skip = ($b['if_open'] ?? 1) && pm_dev_task_get($code)['status'] === 'closed';
+        if (!$skip) pm_dev_task_status($code, (string)$b['status'], (string)($b['by'] ?? '') === 'github' ? 'github' : 'claude');
+        $r['status_skipped'] = $skip;
+    }
     return $r;
 }
 // i18n-none-end
