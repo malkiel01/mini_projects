@@ -2219,5 +2219,11 @@
     "בצוות של הפרויקט, עם השלבים שלו": "dans l'équipe du projet, avec ses étapes",
     "{name} עוד לא מוגדר כספק בתיק — חסר: {missing}": "{name} n'est pas encore configuré comme fournisseur du projet — manque : {missing}",
     "ממתין להשלמת פרטי הספק אצל מנהל הפרויקט — אחר כך אפשר יהיה לאשר.": "En attente des coordonnées du fournisseur par le chef de projet — vous pourrez ensuite valider.",
-    "אין הצעה מאושרת על חלק מאבני הדרך — \"סוכם\" כולל אותן לפי מה שנרשם (+).": "Certaines étapes de paiement n'ont pas de devis validé — « Convenu » les inclut telles qu'enregistrées (+)."
+    "אין הצעה מאושרת על חלק מאבני הדרך — \"סוכם\" כולל אותן לפי מה שנרשם (+).": "Certaines étapes de paiement n'ont pas de devis validé — « Convenu » les inclut telles qu'enregistrées (+).",
+    "עוד לא דווח תשלום. הלקוח מעלה אסמכתא בקישור האישי שלו — או דיווח ידני כאן.": "Aucun paiement signalé pour l'instant. Le client dépose un justificatif via son lien personnel — ou déclarez-le ici manuellement.",
+    "למי ועל מה": "À qui et pour quoi",
+    "כמה": "Combien",
+    "מי משלם": "Qui paie",
+    "🚫 ביטול אבן הדרך": "🚫 Annuler cette étape de paiement",
+    "לתשלום עכשיו {amount}": "À payer maintenant {amount}"
 }

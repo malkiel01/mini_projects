@@ -2,13 +2,13 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="assets/js/i18n.js?v=76"></script>
+    <script src="assets/js/i18n.js?v=77"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=76">
-    <link rel="stylesheet" href="assets/css/devloop.css?v=76">
+    <link rel="stylesheet" href="assets/css/app.css?v=77">
+    <link rel="stylesheet" href="assets/css/devloop.css?v=77">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -996,12 +996,23 @@
                 <button type="submit" class="btn primary">שמירה</button>
             </header>
             <div class="sheet-body">
-                <p class="chip-row" id="payment-state" hidden></p>
-                <div id="payment-actions" hidden>
+                <!-- אבן דרך קיימת: כרטיס סיכום — כמה, מצב, למי ומתי, כמה התקבל — והפעולה הבאה -->
+                <section class="pm-head" id="pm-head" hidden>
+                    <div class="pm-head-top"><b class="pm-amt" id="pm-amt"></b><span class="chip" id="pm-status"></span></div>
+                    <div class="pm-head-sub" id="pm-sub"></div>
+                    <div id="pm-progress"></div>
+                    <div class="chip-row" id="payment-state"></div>
                     <div class="row-btns wrap" id="payment-main-btns"></div>
                     <div id="pay-lawyer-row" hidden>
                         <label class="f"><span>הערת העו"ד (לא חובה)</span><input id="pay-lawyer-note" maxlength="1000" placeholder="למשל: אישר בטלפון"></label>
                     </div>
+                </section>
+                <div class="fin-tabs pm-tabs" id="pm-tabs" role="tablist" hidden>
+                    <button type="button" role="tab" data-pm-tab="money">💳 <span>תשלומים</span> <small id="pm-tab-n"></small></button>
+                    <button type="button" role="tab" data-pm-tab="details">✏️ <span>פרטים</span></button>
+                </div>
+                <div id="payment-actions" hidden>
+                    <p class="use-empty" id="pm-no-proofs">עוד לא דווח תשלום. הלקוח מעלה אסמכתא בקישור האישי שלו — או דיווח ידני כאן.</p>
                     <h3 class="sec-title" id="proofs-title" hidden>אסמכתאות</h3>
                     <ul class="decisions" id="proofs"></ul>
                     <details class="manual-proof" id="manual-proof">
@@ -1034,14 +1045,16 @@
                         </div>
                         <p class="hint" id="inv-file-name"></p>
                     </div>
-                    <button type="button" class="btn ghost danger" id="payment-cancel">ביטול אבן הדרך</button>
                 </div>
+                <div id="pm-details">
+                <h3 class="sec-title">למי ועל מה</h3>
                 <div class="fields">
                     <label class="f"><span>שלב</span><select name="stage_id"></select></label>
                     <label class="f"><span>ספק (מקבל התשלום) *</span><select name="supplier_id" required></select></label>
                     <label class="f wide"><span>שם *</span><input name="title" maxlength="100" list="payment-titles" placeholder="למשל: מקדמה" required autocomplete="off"></label>
                 </div>
                 <datalist id="payment-titles"><option value="מקדמה"><option value="תשלום ביניים"><option value="תשלום סופי"><option value="עם סיום השלב"><option value="תוספת"></datalist>
+                <h3 class="sec-title">כמה</h3>
                 <fieldset class="opt" id="pay-mode-box">
                     <legend>סכום</legend>
                     <div class="seg">
@@ -1054,6 +1067,11 @@
                     <label class="f" id="pay-amount-box"><span>סכום כולל מע"מ (₪) *</span><input name="amount" inputmode="decimal" maxlength="14" dir="ltr" autocomplete="off"></label>
                     <label class="f" id="pay-percent-box" hidden><span>אחוז (%) *</span><input name="percent" inputmode="decimal" maxlength="6" dir="ltr" autocomplete="off"></label>
                 </div>
+                <div class="fields" id="pay-index-box" hidden>
+                    <label class="f"><span>מדד קובע (הצמדה)</span><input name="index_value" inputmode="decimal" dir="ltr" maxlength="10" autocomplete="off"></label>
+                </div>
+                <p class="hint" id="pay-calc" hidden></p>
+                <h3 class="sec-title">מתי</h3>
                 <fieldset class="opt" id="due-kind-box">
                     <legend>מתי משלמים</legend>
                     <div class="seg">
@@ -1071,10 +1089,7 @@
                 </div>
                 <button type="button" class="need-stage" id="due-need-stage" hidden>👆 בוחרים שלב למעלה — התשלום יגיע כשהשלב הזה יסתיים או יתקדם</button>
                 <p class="hint" id="due-kind-hint" hidden>"בגמר השלב" — כשמסמנים "בוצע" בדיווח מהשטח, התשלום הופך ל"הגיע מועד".</p>
-                <div class="fields" id="pay-index-box" hidden>
-                    <label class="f"><span>מדד קובע (הצמדה)</span><input name="index_value" inputmode="decimal" dir="ltr" maxlength="10" autocomplete="off"></label>
-                </div>
-                <p class="hint" id="pay-calc" hidden></p>
+                <h3 class="sec-title" id="payer-title">מי משלם</h3>
                 <fieldset class="opt" id="payer-box">
                     <legend>משלם</legend>
                     <div class="seg">
@@ -1084,6 +1099,8 @@
                 </fieldset>
                 <label class="switch" id="pay-lawyer-box"><input type="checkbox" name="needs_lawyer"><span>דורש אישור עו"ד לפני התשלום</span></label>
                 <label class="f"><span>מה כלול</span><textarea name="notes" rows="2" maxlength="2000"></textarea></label>
+                <button type="button" class="btn ghost danger pm-cancel" id="payment-cancel" hidden>🚫 ביטול אבן הדרך</button>
+                </div>
                 <p class="error" role="alert" hidden></p>
 
             </div>
@@ -1359,27 +1376,27 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=76"></script>
-    <script src="assets/js/contacts.js?v=76"></script>
-    <script src="assets/js/device-contacts.js?v=76"></script>
-    <script src="assets/js/viewer.js?v=76"></script>
-    <script src="assets/js/devloop.js?v=76"></script>
-    <script src="assets/js/engage.js?v=76"></script>
-    <script src="assets/js/linker.js?v=76"></script>
-    <script src="assets/js/files.js?v=76"></script>
-    <script src="assets/js/lightbox.js?v=76"></script>
-    <script src="assets/js/field.js?v=76"></script>
+    <script src="assets/js/core.js?v=77"></script>
+    <script src="assets/js/contacts.js?v=77"></script>
+    <script src="assets/js/device-contacts.js?v=77"></script>
+    <script src="assets/js/viewer.js?v=77"></script>
+    <script src="assets/js/devloop.js?v=77"></script>
+    <script src="assets/js/engage.js?v=77"></script>
+    <script src="assets/js/linker.js?v=77"></script>
+    <script src="assets/js/files.js?v=77"></script>
+    <script src="assets/js/lightbox.js?v=77"></script>
+    <script src="assets/js/field.js?v=77"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=76"></script>
-    <script src="assets/js/projects.js?v=76"></script>
-    <script src="assets/js/quotes.js?v=76"></script>
-    <script src="assets/js/payments.js?v=76"></script>
-    <script src="assets/js/fin-report.js?v=76"></script>
-    <script src="assets/js/finance.js?v=76"></script>
-    <script src="assets/js/finance-all.js?v=76"></script>
-    <script src="assets/js/hebcal.js?v=76"></script>
-    <script src="assets/js/calendar.js?v=76"></script>
-    <script src="assets/js/settings.js?v=76"></script>
-    <script src="assets/js/app.js?v=76"></script>
+    <script src="assets/js/share.js?v=77"></script>
+    <script src="assets/js/projects.js?v=77"></script>
+    <script src="assets/js/quotes.js?v=77"></script>
+    <script src="assets/js/payments.js?v=77"></script>
+    <script src="assets/js/fin-report.js?v=77"></script>
+    <script src="assets/js/finance.js?v=77"></script>
+    <script src="assets/js/finance-all.js?v=77"></script>
+    <script src="assets/js/hebcal.js?v=77"></script>
+    <script src="assets/js/calendar.js?v=77"></script>
+    <script src="assets/js/settings.js?v=77"></script>
+    <script src="assets/js/app.js?v=77"></script>
 </body>
 </html>
