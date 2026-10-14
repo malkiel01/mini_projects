@@ -57,6 +57,41 @@ function pm_acc(array &$acc, string $key, int $gross, float $rate): void
     $acc[$key][1] = ($acc[$key][1] ?? 0) + pm_net($gross, $rate);
 }
 
+/**
+ * ההתחייבות של שורה (שלב × ספק) — כלל אחד לכספים, לכרטסת, לפורטל ולדוח: [ברוטו, נטו, יש הצעה].
+ * יש הצעה מאושרת — ההצעה + התוספות וההפחתות שאושרו + הפרשי ההצמדה.
+ * אין הצעה — אבני הדרך ("לתשלום", כבר עם ההצמדה ועם שחרור העיכבון) + התוספות וההפחתות שאושרו.
+ */
+function pm_fin_commitment(array $acc): array
+{
+    $sum = fn(string ...$keys) => [array_sum(array_map(fn($k) => $acc[$k][0] ?? 0, $keys)), array_sum(array_map(fn($k) => $acc[$k][1] ?? 0, $keys))];
+    return isset($acc['quote']) ? [...$sum('quote', 'change', 'index'), true] : [...$sum('scheduled', 'change'), false];
+}
+
+/**
+ * השלב העיקרי של כל ספק בפרויקט — לתשלום בלי שלב (מקדמה): השלב של ההצעה המאושרת הגדולה, ובלי הצעה — השלב
+ * היחיד שהספק עובד בו. [supplier_id => stage_id]. אותו כלל בכספים, בכרטסת ובפורטל.
+ */
+function pm_main_stages(int $projectId): array
+{
+    $out = [];
+    $best = [];
+    $q = pm_db()->prepare("SELECT supplier_id, stage_id, amount FROM quotes WHERE project_id = ? AND status = 'approved' AND stage_id IS NOT NULL ORDER BY id");
+    $q->execute([$projectId]);
+    foreach ($q->fetchAll() as $x) {
+        $c = (int)$x['supplier_id'];
+        if (!isset($best[$c]) || (int)$x['amount'] > $best[$c]) { $best[$c] = (int)$x['amount']; $out[$c] = (int)$x['stage_id']; }
+    }
+    $p = pm_db()->prepare('SELECT DISTINCT supplier_id FROM payments WHERE project_id = ? AND stage_id IS NULL');
+    $p->execute([$projectId]);
+    foreach ($p->fetchAll(PDO::FETCH_COLUMN) as $c) {
+        if (isset($out[(int)$c])) continue;
+        $only = pm_supplier_stages($projectId, (int)$c);
+        if (count($only) === 1) $out[(int)$c] = (int)$only[0];
+    }
+    return $out;
+}
+
 function pm_acc_out(array $acc, array $keys): array
 {
     $out = [];
@@ -167,7 +202,7 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
         $cid = (int)$x['supplier_id'];
         $row($sid, $cid);
         $r = $rateOf($cid, $x['vat_rate']);
-        $rows[$sid][$cid]['acc']['committed'] = [(int)$x['amount'], pm_net((int)$x['amount'], $r)]; // האחרונה גוברת
+        $rows[$sid][$cid]['acc']['quote'] = [(int)$x['amount'], pm_net((int)$x['amount'], $r)]; // האחרונה גוברת
         $rows[$sid][$cid]['quote_id'] = (int)$x['id'];
         $rows[$sid][$cid]['rate'] = $r;
     }
@@ -181,7 +216,7 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
         $row($sid, $cid);
         $r = $rateOf($cid, $x['vat_rate']);
         $rows[$sid][$cid]['rate'] ??= $r;
-        if ($x['status'] === 'approved') pm_acc($rows[$sid][$cid]['acc'], 'committed', (int)$x['amount'], $r);
+        if ($x['status'] === 'approved') pm_acc($rows[$sid][$cid]['acc'], 'change', (int)$x['amount'], $r);
         $rows[$sid][$cid]['changes'][] = ['id' => (int)$x['id'], 'amount' => (int)$x['amount'] / 100, 'reason' => $x['reason'], 'status' => $x['status'],
             'days' => pm_days_since($x['updated_at'])];
     }
@@ -193,22 +228,12 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
     $proofs = pm_payment_proofs(array_map('intval', array_column($payments, 'id')));
     $next = null;
     $retHeld = [0, 0];
-    // תשלום בלי שלב (מקדמה, תשלום כללי) לספק שיש לו הצעה מאושרת — על חשבון ההצעה שלו: נכנס לשורה שלה
-    // (השלב עם ההתחייבות הגדולה), ולא נספר כהתחייבות נוספת "בלי שלב". בלי הצעה מאושרת — לשלב היחיד
-    // שהספק עובד בו (pm_supplier_stages), כדי שמקדמה של ספק באינסטלציה לא תופיע "בלי שלב"
-    $mainStage = [];
-    foreach ($rows as $s0 => $byS) foreach ($byS as $c0 => $r0) {
-        $g = $r0['acc']['committed'][0] ?? 0;
-        if ($s0 && $g > 0 && $g > ($mainStage[$c0][1] ?? 0)) $mainStage[$c0] = [$s0, $g];
-    }
+    $retAny = false; // יש עיכבון בפועל (אבני דרך עם עיכבון או שחרור) — אז מציגים אותו, גם כשכבר שוחרר (0)
+    // תשלום בלי שלב (מקדמה, תשלום כללי) — על חשבון השלב העיקרי של הספק (pm_main_stages, אותו כלל כמו בכרטסת
+    // ובפורטל), ולא נספר כהתחייבות נוספת "בלי שלב"
+    $mainStage = pm_main_stages($projectId);
     foreach ($payments as $x) {
-        $c0 = (int)$x['supplier_id'];
-        if ($x['stage_id'] || isset($mainStage[$c0])) continue;
-        $only = pm_supplier_stages($projectId, $c0);
-        if (count($only) === 1) $mainStage[$c0] = [$only[0], 0];
-    }
-    foreach ($payments as $x) {
-        $sid = (int)$x['stage_id'] ?: ($mainStage[(int)$x['supplier_id']][0] ?? 0);
+        $sid = (int)$x['stage_id'] ?: ($mainStage[(int)$x['supplier_id']] ?? 0);
         if ($scope !== null && !pm_portal_in_scope($scope, $sid ?: null, $x['unit_id'] ? (int)$x['unit_id'] : null)) continue;
         $cid = (int)$x['supplier_id'];
         $row($sid, $cid);
@@ -220,11 +245,14 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
         foreach ($proofs[(int)$x['id']] ?? [] as $pf) if ($pf['status'] === 'received') $received += (int)round($pf['received_amount'] * 100);
         $a = &$rows[$sid][$cid]['acc'];
         pm_acc($a, 'scheduled', $amount, $r);
+        // בלי שלב: העיכבון שנוכה עוד לא בשחרור (הוא נוצר עם השיוך לשלב) — נשאר במתוכנן, כדי שלא ייעלם
+        if (!$sid && $x['kind'] === 'milestone' && (int)$x['retention'] > 0) pm_acc($a, 'scheduled', (int)$x['retention'], $r);
         pm_acc($a, 'paid', $received, $r);
         if ((int)$x['index_diff']) pm_acc($a, 'index', (int)$x['index_diff'], $r);
         if (pm_payment_due($x, $stages[$sid] ?? null, $today, $p['status'])) pm_acc($a, 'due', $amount, $r);
         unset($a);
         if ($x['kind'] === 'retention') { $retHeld[0] += max(0, $amount - $received); $retHeld[1] += pm_net(max(0, $amount - $received), $r); }
+        if ($x['kind'] === 'retention' || (int)($x['retention'] ?? 0) > 0) $retAny = true;
         $rows[$sid][$cid]['milestones']++;
         // התשלום הבא — לפורטל: הקרוב שעוד לא שולם במלואו
         if ($received < $amount && !in_array($x['status'], ['received'], true)) {
@@ -239,6 +267,20 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
     }
 
     $contracts = pm_contracts_of($projectId);
+    // מתחם, לקוח של יחידה: שלב משותף — רק החלק של היחידות שלו לפי החלוקה בחוזה עם הספק (pm_contract_ratios).
+    // בלי חלוקה בחוזה — השורה מוצגת ("משותף — לא מחולק"), אבל לא נספרת בסכומים שלו
+    $share = fn() => 1.0;
+    if ($scope !== null && ($units = pm_units_of($projectId))) {
+        $sharedOf = [];
+        foreach ($rows as $s0 => $byS) if ($s0 && isset($stages[$s0]) && $stages[$s0]['unit_id'] === null)
+            foreach ($byS as $c0 => $r0) $sharedOf[$c0] = ($sharedOf[$c0] ?? 0) + pm_fin_commitment($r0['acc'])[0] / 100;
+        $share = function (int $sid, int $cid) use ($stages, $contracts, $units, $sharedOf, $scope): ?float {
+            if (!$sid || !isset($stages[$sid]) || $stages[$sid]['unit_id'] !== null) return 1.0;
+            $ratios = pm_contract_ratios(pm_contract_for($contracts, $cid, $sid), $units, $sharedOf[$cid] ?? 0);
+            if (!$ratios) return null;
+            return array_sum(array_map(fn($u) => $ratios[$u] ?? 0, $scope['units']));
+        };
+    }
     // שלבים
     $T = [];
     $outStages = [];
@@ -250,35 +292,50 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
         $S = [];
         $outRows = [];
         foreach ($rows[$sid] ?? [] as $cid => $r) {
-            $acc = $r['acc'];
-            // הפרשי הצמדה — מגדילים את ההתחייבות
-            if (!empty($acc['index'])) foreach ([0, 1] as $i) $acc['committed'][$i] = ($acc['committed'][$i] ?? 0) + $acc['index'][$i];
-            $committed = $acc['committed'][0] ?? 0;
+            $part = $share((int)$sid, (int)$cid);
+            if ($part !== null && $part <= 0) continue; // שלב משותף שהיחידות שלו לא בחלוקה שלו
+            if ($part !== null && $part < 1) foreach ($r['acc'] as $k0 => $v0) $r['acc'][$k0] = [(int)round($v0[0] * $part), (int)round($v0[1] * $part)];
+            [$committed, $committedN, $hasQuote] = pm_fin_commitment($r['acc']);
+            $acc = $r['acc'] + ['committed' => [$committed, $committedN]];
             $scheduled = $acc['scheduled'][0] ?? 0;
             $paid = $acc['paid'][0] ?? 0;
             $due = $acc['due'][0] ?? 0;
             $rate = $r['rate'] ?? $vat;
-            $base = $committed ?: $scheduled;          // יתרה — מההתחייבות, ובלי הצעה — מאבני הדרך
-            $balance = max(0, $base - $paid);
+            $balance = max(0, $committed - $paid);
+            $credit = max(0, $paid - $committed);      // שולם יותר ממה שסוכם — זיכוי אצל הספק
             $gap = $due - $paid;                       // חיובי = פיגור, שלילי = שולם מראש
-            $paidPct = $base > 0 ? (int)round($paid * 100 / $base) : 0;
+            $paidPct = $committed > 0 ? (int)round($paid * 100 / $committed) : 0;
             $progress = $s ? pm_stage_progress($s) : 0;
             $flags = [];
             if ($gap > 100) $flags[] = 'behind';
-            if ($s && $base > 0 && $paidPct > $progress + $overpay) $flags[] = 'overpaid';
-            if ($committed > 0 && abs($scheduled - $committed) > 100) $flags[] = $scheduled < $committed ? 'uncovered' : 'overscheduled';
-            if ($committed === 0 && $scheduled > 0) $flags[] = 'no_quote';
-            foreach (['committed' => $committed, 'scheduled' => $scheduled, 'due' => $due, 'paid' => $paid] as $k => $v) pm_acc($S, $k, $v, $rate);
-            if (!empty($acc['index'])) foreach ([0, 1] as $i) $S['index'][$i] = ($S['index'][$i] ?? 0) + $acc['index'][$i];
-            pm_acc($S, 'balance', $balance, $rate);
-            pm_acc($S, 'gap', $gap, $rate);
-            if ($committed) { $suppliersCommitted[0] += $committed; $suppliersCommitted[1] += pm_net($committed, $rate); }
+            if ($s && $committed > 0 && $paidPct > $progress + $overpay) $flags[] = 'overpaid';
+            if ($hasQuote && abs($scheduled - $committed) > 100) $flags[] = $scheduled < $committed ? 'uncovered' : 'overscheduled';
+            if (!$hasQuote && $scheduled > 0) $flags[] = 'no_quote';
+            if ($credit > 100) $flags[] = 'credit';
+            // נטו — לפי השיעור של כל רשומה (הצעה ותוספת יכולות להיות בשיעורים שונים); יתרה וזיכוי — באותו יחס
+            $n = fn(int $g, string $k) => $k === 'committed' ? $committedN : ($acc[$k][1] ?? pm_net($g, $rate));
+            $nOf = fn(int $g) => $committed > 0 ? (int)round($g * $committedN / $committed) : pm_net($g, $rate);
+            if ($part === null) $flags[] = 'shared';
+            foreach ($part === null ? [] : ['committed' => $committed, 'scheduled' => $scheduled, 'due' => $due, 'paid' => $paid] as $k => $v) {
+                $S[$k][0] = ($S[$k][0] ?? 0) + $v;
+                $S[$k][1] = ($S[$k][1] ?? 0) + $n($v, $k);
+            }
+            if ($part !== null) {
+                if (!empty($acc['index'])) foreach ([0, 1] as $i) $S['index'][$i] = ($S['index'][$i] ?? 0) + $acc['index'][$i];
+                foreach (['balance' => $balance, 'credit' => $credit] as $k => $v) { $S[$k][0] = ($S[$k][0] ?? 0) + $v; $S[$k][1] = ($S[$k][1] ?? 0) + $nOf($v); }
+                pm_acc($S, 'gap', $gap, $rate);
+                if ($committed) { $suppliersCommitted[0] += $committed; $suppliersCommitted[1] += $committedN; }
+            }
+            $quote = $acc['quote'] ?? [0, 0];
             $outRows[] = [
                 'supplier_id' => $cid, 'name' => $r['name'], 'quote_id' => $r['quote_id'], 'vat_rate' => $rate, 'milestones' => $r['milestones'],
-                'committed' => pm_m($committed, pm_net($committed, $rate)), 'scheduled' => pm_m($scheduled, pm_net($scheduled, $rate)),
-                'due' => pm_m($due, pm_net($due, $rate)), 'paid' => pm_m($paid, pm_net($paid, $rate)),
-                'balance' => pm_m($balance, pm_net($balance, $rate)), 'gap' => pm_m($gap, pm_net($gap, $rate)),
-                'paid_pct' => $paidPct, 'progress' => $progress, 'flags' => $portal ? array_values(array_intersect($flags, ['overpaid'])) : $flags,
+                'committed' => pm_m($committed, $committedN), 'scheduled' => pm_m($scheduled, $n($scheduled, 'scheduled')),
+                'due' => pm_m($due, $n($due, 'due')), 'paid' => pm_m($paid, $n($paid, 'paid')),
+                'balance' => pm_m($balance, $nOf($balance)), 'credit' => pm_m($credit, $nOf($credit)), 'gap' => pm_m($gap, pm_net($gap, $rate)),
+                // ההצעה עצמה, בלי התוספות — "חלוקה לתשלומים" מחלקת אותה (pm_payment_split)
+                'quote' => pm_m($quote[0], $quote[1]), 'by_milestones' => !$hasQuote,
+                'share' => $part, // מתחם, לקוח של יחידה: החלק שלו בשלב משותף (null — לא מחולק)
+                'paid_pct' => $paidPct, 'progress' => $progress, 'flags' => $portal ? array_values(array_intersect($flags, ['overpaid', 'shared', 'credit'])) : $flags,
                 'changes' => $r['changes'] ?? [], 'index' => pm_m($acc['index'][0] ?? 0, $acc['index'][1] ?? 0),
                 // החוזה עם הספק (מועדים, אבני דרך, קנס) — תקציר לשורה
                 // לספק יכולים להיות כמה חוזים — של השלב הזה (pm_contract_for); contracts — כמה יש לו בפרויקט
@@ -300,7 +357,7 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
             'progress' => $s ? pm_stage_progress($s) : 0, 'budget' => pm_m($budgetStage, pm_net($budgetStage, $vat)),
             'over_budget' => $budgetStage > 0 && $committedStage > $budgetStage,
             'rows' => $outRows,
-        ] + pm_acc_out($S, ['committed', 'scheduled', 'due', 'paid', 'balance', 'gap']);
+        ] + pm_acc_out($S, ['committed', 'scheduled', 'due', 'paid', 'balance', 'credit', 'gap']);
     }
 
     // הוצאות ישירות (כ5) — הלקוח כבר שילם: נכנסות לסוכם, למתוכנן, ל"עד היום" ולשולם (בלי פיגור ובלי יתרה)
@@ -344,15 +401,16 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
     // "תקציב היום": התקציב שהמנהל עדכן — או ההתחייבויות, כשעברו אותו
     $todayBudget = max($budget, $committedAll);
     // עיכבון: מה שנעצר בפועל (שחרורים שעוד לא שולמו); בלי אבני דרך — הערכה לפי האחוז
-    $retention = $retHeld[0] ?: (int)round(($suppliersCommitted[0]) * (float)$p['retention_pct'] / 100);
-    $totals = pm_acc_out($T, ['committed', 'scheduled', 'due', 'paid', 'balance', 'gap']) + [
+    // (אחרי שהשחרור שולם — 0, לא חזרה להערכה)
+    $retention = $retAny ? $retHeld[0] : (int)round(($suppliersCommitted[0]) * (float)$p['retention_pct'] / 100);
+    $totals = pm_acc_out($T, ['committed', 'scheduled', 'due', 'paid', 'balance', 'credit', 'gap']) + [
         'budget' => pm_m($budget, pm_net($budget, $vat)),
         'budget_initial' => pm_m($initial, pm_net($initial, $vat)),
         'budget_today' => pm_m($todayBudget, pm_net($todayBudget, $vat)),
         'budget_growth' => pm_m($todayBudget - $initial, pm_net($todayBudget - $initial, $vat)),
         'forecast' => pm_m($forecast[0], $forecast[1]),
-        'retention' => $retHeld[0] ? pm_m($retHeld[0], $retHeld[1]) : pm_m($retention, pm_net($retention, $vat)),
-        'retention_held' => (bool)$retHeld[0],
+        'retention' => $retAny ? pm_m($retHeld[0], $retHeld[1]) : pm_m($retention, pm_net($retention, $vat)),
+        'retention_held' => $retAny,
         'index' => pm_m($T['index'][0] ?? 0, $T['index'][1] ?? 0),
         'paid_pct' => $committedAll > 0 ? (int)round(($T['paid'][0] ?? 0) * 100 / $committedAll) : 0,
         'progress' => pm_project_progress($stages),
@@ -392,7 +450,9 @@ function pm_finance_units(int $projectId, array $stages, array $outStages, array
         $u = $unitOf($s['stage_id']);
         foreach ($s['rows'] as $r) {
             $ratios = $u ? [$u => 1.0] : (pm_contract_ratios(pm_contract_for($contracts, $r['supplier_id'], $s['stage_id']), $units, $sharedOf[$r['supplier_id']] ?? 0) ?: [0 => 1.0]);
-            foreach ($ratios as $to => $k) foreach (['committed', 'paid', 'balance'] as $f) $add((int)$to, $f, $r[$f], $k);
+            // השורה כבר מוקטנת לחלק של הלקוח (pm_finance_of, share) — חוזרים לשלם לפני החלוקה
+            $whole = ($r['share'] ?? 1.0) ?: 1.0;
+            foreach ($ratios as $to => $k) foreach (['committed', 'paid', 'balance'] as $f) $add((int)$to, $f, $r[$f], $k / $whole);
         }
     }
     foreach ($expenses as $x) foreach (['committed', 'paid'] as $f) $add($unitOf($x['stage_id']), $f, $x['amount']);
@@ -559,7 +619,8 @@ function pm_fin_alerts(int $projectId, array $cfg, ?string $lang = null, string 
                           WHERE p.project_id = ? AND p.status NOT IN ('received','cancelled')");
     $pay->execute([$projectId]);
     foreach ($pay->fetchAll() as $p) {
-        $v = ['title' => $p['title'], 'supplier' => $p['supplier'], 'amount' => pm_money((int)$p['amount']), 'date' => pm_short_date($p['due_date'])];
+        // הסכום — מה שמשלמים באבן הדרך ("לתשלום": בלי העיכבון, עם ההצמדה), לא הסכום ברוטו
+        $v = ['title' => $p['title'], 'supplier' => $p['supplier'], 'amount' => pm_money(pm_payment_due_amount($p)), 'date' => pm_short_date($p['due_date'])];
         $id = (int)$p['id'];
         $mine = $audience === ($p['payer'] === 'lawyer' ? 'lawyer' : 'client');
         if ($p['due_kind'] === 'date' && $p['due_date'] !== '' && $p['due_date'] <= $soon) {
@@ -584,7 +645,7 @@ function pm_fin_alerts(int $projectId, array $cfg, ?string $lang = null, string 
         }
         if ($mgr && $p['status'] === 'partial') {
             $add('wait', 'pay_partial', "partial:$id", 'יתרה פתוחה: {title} — {supplier}, נשארו {amount}', ['title' => $p['title'], 'supplier' => $p['supplier'], // i18n-ok
-                'amount' => pm_money(max(0, (int)$p['amount'] - pm_payment_received($id)))], $today, $id);
+                'amount' => pm_money(max(0, pm_payment_due_amount($p) - pm_payment_received($id)))], $today, $id);
         }
     }
     // אסמכתאות שממתינות לאישור קבלה
@@ -818,7 +879,7 @@ function pm_finance_all(array $user, array $in): array
         }
         $proofs = pm_payment_proofs(array_map('intval', array_column($payments, 'id')));
         foreach ($payments as $x) {
-            $amount = (int)$x['amount'];
+            $amount = pm_payment_due_amount($x); // בלי העיכבון — הוא בשחרור, שורה משלו
             $received = 0;
             foreach ($proofs[(int)$x['id']] ?? [] as $pf2) {
                 if ($pf2['status'] !== 'received') continue;
@@ -890,26 +951,26 @@ function pm_finance_export(array $user, array $in): never
     $sf = (int)($in['supplier_id'] ?? 0);
     $sql = "SELECT p.*, c.name AS supplier, pr.name AS project, s.name AS stage, s.status AS stage_status, s.progress AS stage_progress, s.done_at, s.plan_end
               FROM payments p JOIN contacts c ON c.id = p.supplier_id JOIN projects pr ON pr.id = p.project_id LEFT JOIN stages s ON s.id = p.stage_id
-             WHERE " . pm_project_clause($user, 'pr')[0] . " AND pr.status IN ('active','paused'" . ($all ? ",'done'" : '') . ")" . ($pf ? ' AND pr.id = ' . $pf : '') . ($sf ? ' AND p.supplier_id = ' . $sf : '') . '
+             WHERE " . pm_project_clause($user, 'pr')[0] . " AND p.status != 'cancelled' AND pr.status IN ('active','paused'" . ($all ? ",'done'" : '') . ")" . ($pf ? ' AND pr.id = ' . $pf : '') . ($sf ? ' AND p.supplier_id = ' . $sf : '') . '
              ORDER BY pr.name, s.sort, p.id';
     $st = $db->prepare($sql);
     $st->execute(pm_project_clause($user, 'pr')[1]);
     $rows = $st->fetchAll();
     $proofs = pm_payment_proofs(array_map('intval', array_column($rows, 'id')));
-    $kind = ['date' => pm_t('בתאריך'), 'stage_done' => pm_t('בגמר השלב'), 'progress' => pm_t('בהתקדמות')];
+    $kind = ['date' => pm_t('בתאריך'), 'stage_done' => pm_t('בגמר השלב'), 'progress' => pm_t('בהתקדמות'), 'advance' => pm_t('מקדמה — בתחילת העבודה'), 'handover' => pm_t('במסירה')];
     $out = fopen('php://temp', 'w+');
     fwrite($out, "\xEF\xBB\xBF");
     fputcsv($out, array_map('pm_t', ['פרויקט', 'שלב', 'ספק', 'אבן דרך', 'סכום כולל מע"מ', 'לפני מע"מ', 'מע"מ', 'מתי', 'תאריך יעד', 'סטטוס', 'שולם', 'יתרה']), ',', '"', ''); // i18n-ok — מתורגם ב-array_map('pm_t')
     foreach ($rows as $r) {
         $rate = pm_payment_vat($r);
-        $g = (int)$r['amount'];
+        $g = pm_payment_due_amount($r); // "לתשלום" — העיכבון בשורת השחרור, כך שהסכומים לא נספרים פעמיים
         $n = pm_net($g, $rate);
         $paid = 0;
         foreach ($proofs[(int)$r['id']] ?? [] as $x) if ($x['status'] === 'received') $paid += (int)round($x['received_amount'] * 100);
         $when = $kind[$r['due_kind']] ?? $r['due_kind'];
         if ($r['due_kind'] === 'progress') $when .= ' ' . (int)$r['due_pct'] . '%';
         fputcsv($out, [$r['project'], pm_t((string)$r['stage']), $r['supplier'], $r['title'], $g / 100, $n / 100, ($g - $n) / 100, $when, $r['due_date'],
-            pm_payment_label($r), $paid / 100, $r['status'] === 'cancelled' ? 0 : max(0, $g - $paid) / 100], ',', '"', '');
+            pm_payment_label($r), $paid / 100, $r['status'] === 'received' ? 0 : max(0, $g - $paid) / 100], ',', '"', '');
     }
     rewind($out);
     $csv = stream_get_contents($out);

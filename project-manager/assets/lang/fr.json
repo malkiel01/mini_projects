@@ -2225,5 +2225,10 @@
     "כמה": "Combien",
     "מי משלם": "Qui paie",
     "🚫 ביטול אבן הדרך": "🚫 Annuler cette étape de paiement",
-    "לתשלום עכשיו {amount}": "À payer maintenant {amount}"
+    "לתשלום עכשיו {amount}": "À payer maintenant {amount}",
+    "זיכוי אצל ספקים {amount}": "Crédit chez les fournisseurs {amount}",
+    "עיכבון {n}% — שוחרר": "Retenue {n}% — libérée",
+    "זיכוי {amount} — שולם מעל הסוכם": "Crédit {amount} — payé au-delà du montant convenu",
+    "זיכוי": "Crédit",
+    "שלבים משותפים שעוד לא חולקו בחוזה בין הדירות — לא נכללים בסכומים שלמעלה": "Étapes communes pas encore réparties entre les lots dans le contrat — non incluses dans les montants ci-dessus"
 }

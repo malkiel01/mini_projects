@@ -446,7 +446,7 @@ const Payments = (() => {
                 + (role === 'client' && waitLawyer ? ' ' + t('(התשלום — אחרי אישור עורך הדין)') : '');
             recipients.push({ contact: c, role, label: t(role === 'client' ? 'ללקוח' : 'לעו"ד'),
                 // i18n-none-start — שמות המשתנים בנוסח
-                text: renderMsg(key, { 'שם': c.name, 'פרויקט': project.project.name, 'פרטים': details, 'סכום': money(p.amount), 'קישור': url }, lang) });
+                text: renderMsg(key, { 'שם': c.name, 'פרויקט': project.project.name, 'פרטים': details, 'סכום': money(p.due_amount), 'קישור': url }, lang) });
                 // i18n-none-end
         }
         // מי קודם: מי שצריך לפעול עכשיו

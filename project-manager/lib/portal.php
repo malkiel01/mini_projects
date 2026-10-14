@@ -285,6 +285,7 @@ function pm_portal_view(array $a): array
     if ($role === 'client') $method = pm_client_settings((int)$a['contact']['id'])['approval_method'];
 
     // תשלומים: רק מה שכבר נשלחה עליו דרישה. פרטי הבנק — כשאפשר לשלם.
+    $main = $scope !== null ? pm_main_stages($pid) : [];
     $payments = array_map(function ($x) use ($role) {
         $x['can_pay'] = $x['payable'];
         $x['can_approve'] = $role === 'lawyer' && $x['needs_lawyer'] && !$x['lawyer'] && $x['status'] === 'requested';
@@ -292,7 +293,9 @@ function pm_portal_view(array $a): array
         $x['label'] = pm_t($x['label']);
         unset($x['quote_id'], $x['percent']);
         return $x;
-    }, array_values(array_filter(pm_payments_of($pid, true)['payments'], fn($x) => pm_portal_in_scope($scope, $x['stage_id'], $x['unit_id'] ?? null))));
+    }, array_values(array_filter(pm_payments_of($pid, true)['payments'],
+        // מקדמה בלי שלב — לפי השלב העיקרי של הספק, כמו בכספים (pm_main_stages)
+        fn($x) => pm_portal_in_scope($scope, $x['stage_id'] ?: ($main[(int)$x['supplier_id']] ?? null), $x['unit_id'] ?? null))));
     $payIds = array_column($payments, 'id');
 
     // צפייה בלבד (לקוח / עו"ד נוסף שהוגבל): אותו מידע, בלי כפתורי אישור ותשלום

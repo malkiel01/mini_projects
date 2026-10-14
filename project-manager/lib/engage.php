@@ -46,6 +46,8 @@ function pm_payments_auto_stage(int $projectId): int
         if ($u->rowCount()) {
             $n += $u->rowCount();
             pm_audit('system', 'payments.auto_stage', 'project', $projectId, ['supplier' => (int)$sid, 'stage' => $stages[0], 'count' => $u->rowCount()]);
+            // העיכבון שנוכה מהן — לשחרור של השלב (כמו ב"שיוך לשלב"), אחרת הוא לא משתחרר לעולם
+            pm_retention_sync(['id' => 0, 'display_name' => 'מערכת'], $projectId, (int)$stages[0], (int)$sid);
         }
     }
     return $n;

@@ -84,8 +84,8 @@ const FinReport = (() => {
         </dl></section>`);
         if (rows.length) out.push(`<section><h3>${e(t('לפי שלב וספק'))}</h3><div class="frp-tw"><table>
             <thead><tr><th>${e(t('שלב'))}</th><th>${e(t('ספק'))}</th><th>${e(t('סוכם'))}</th><th>${e(t('שולם'))}</th><th>${e(t('יתרה'))}</th></tr></thead>
-            <tbody>${rows.map(r => `<tr><td>${e(r.stage)}</td><td>${e(r.name)}</td><td class="n">${mv(r.committed.g ? r.committed : r.scheduled)}</td><td class="n">${mv(r.paid)}</td><td class="n">${mv(r.balance)}</td></tr>`).join('')}
-            ${sumRow(t('סה"כ ספקים'), rows.map(r => ({ ...r, committed: r.committed.g ? r.committed : r.scheduled })), ['committed', 'paid', 'balance'])}</tbody></table></div></section>`);
+            <tbody>${rows.map(r => `<tr><td>${e(r.stage)}</td><td>${e(r.name)}</td><td class="n">${mv(r.committed)}</td><td class="n">${mv(r.paid)}</td><td class="n">${mv(r.balance)}</td></tr>`).join('')}
+            ${sumRow(t('סה"כ ספקים'), rows, ['committed', 'paid', 'balance'])}</tbody></table></div></section>`);
         const ch = (src.changes || []).filter(c => c.status !== 'cancelled');
         if (ch.length) out.push(`<section><h3>${e(t('תוספות וחריגות'))}</h3><div class="frp-tw"><table>
             <thead><tr><th>${e(t('שלב'))}</th><th>${e(t('ספק'))}</th><th>${e(t('מה ולמה'))}</th><th>${e(t('סכום'))}</th><th>${e(t('סטטוס'))}</th></tr></thead>
@@ -128,7 +128,7 @@ const FinReport = (() => {
         }
         row();
         row(t('שלב'), t('ספק'), ...vatHead(t('סוכם')), ...vatHead(t('שולם')), ...vatHead(t('יתרה')));
-        for (const s of F.stages) for (const r of s.rows) row(s.stage_id ? (t(s.name) + (s.unit_name ? ' · ' + s.unit_name : '')) : t('בלי שלב'), r.name, ...m(r.committed.g ? r.committed : r.scheduled), ...m(r.paid), ...m(r.balance));
+        for (const s of F.stages) for (const r of s.rows) row(s.stage_id ? (t(s.name) + (s.unit_name ? ' · ' + s.unit_name : '')) : t('בלי שלב'), r.name, ...m(r.committed), ...m(r.paid), ...m(r.balance));
         const X = F.expenses?.items || [];
         if (X.length) {
             row();

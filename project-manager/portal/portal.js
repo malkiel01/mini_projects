@@ -50,11 +50,12 @@ function renderFinance() {
             ${row(t('תקציב היום'), T.budget_today, growth > 0 ? `<span class="fin-late">${esc(t('גדל ב-{amount}', { amount: money(growth) }))}</span>` : '')}
             ${row(t('סוכם (התחייבויות)'), T.committed, F.fee ? esc(t('כולל שכר טרחה {amount}', { amount: money(F.fee.amount.g) })) : '')}
             ${row(t('שולם'), T.paid, T.committed.g ? esc(t('{n}% מהסוכם · בוצע {p}%', { n: T.paid_pct, p: T.progress })) : '')}
-            ${row(t('יתרה לתשלום'), T.balance)}
+            ${row(t('יתרה לתשלום'), T.balance, T.credit?.g ? `<span class="fin-ok">${esc(t('זיכוי אצל ספקים {amount}', { amount: money(T.credit.g) }))}</span>` : '')}
         </dl>
         ${n ? `<p class="fin-next">💳 ${esc(t('התשלום הבא'))}: <b>${esc(n.title)}</b> · ${esc(n.supplier)} · <b>${esc(money(n.amount.g))}</b>${when ? ` · ${esc(when)}` : ''}<small class="mv-n">${esc(vatLine(n.amount))}</small></p>` : ''}
         ${(F.alerts || []).length ? `<ul class="fin-alerts">${F.alerts.map(x => `<li class="fa-${x.level}"><span aria-hidden="true">${{ late: '⚠️', soon: '⏰', wait: '⏳', info: 'ℹ️' }[x.level]}</span><span class="fa-text">${esc(x.text)}</span></li>`).join('')}</ul>` : ''}
         ${fee}
+        ${(F.stages || []).some(s => s.rows.some(r => r.flags.includes('shared'))) ? `<p class="hint">${esc(t('שלבים משותפים שעוד לא חולקו בחוזה בין הדירות — לא נכללים בסכומים שלמעלה'))}</p>` : ''}
         ${F.settings.retention_pct ? `<p class="hint">${esc(t('עיכבון לפי החוזה: {n}% מכל תשלום נשאר אצלכם עד המסירה', { n: F.settings.retention_pct }))}</p>` : ''}`;
 }
 
@@ -135,7 +136,7 @@ function render() {
             <span class="go dir-flip" aria-hidden="true">‹</span></li>`;
     }).join('') + payNow.map(p => `<li class="card" data-go="pay-${p.id}" tabindex="0" role="button">
             <span class="ficon" aria-hidden="true">${p.can_approve ? '⚖️' : '💳'}</span>
-            <div class="body"><div class="l1"><span class="one">${esc(p.title)}</span><span class="amt">${moneyVat(vatOf(p.status === 'partial' ? p.balance : p.amount, p.vat_rate))}</span></div>
+            <div class="body"><div class="l1"><span class="one">${esc(p.title)}</span><span class="amt">${moneyVat(vatOf(p.status === 'partial' ? p.balance : p.due_amount, p.vat_rate))}</span></div>
                 <div class="l2">${[p.can_approve ? t('דרישת תשלום — לאישורך') : t('לתשלום'), p.supplier_name, p.due_date ? t('עד {date}', { date: shortDate(p.due_date) }) : ''].filter(Boolean).map(esc).join(' · ')}</div></div>
             <span class="go dir-flip" aria-hidden="true">‹</span></li>`).join('') + chWait.map(c => `<li class="card" data-go="change-${c.id}" tabindex="0" role="button">
             <span class="ficon" aria-hidden="true">✍️</span>
