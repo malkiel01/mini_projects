@@ -425,11 +425,17 @@
       const ro = !canEdit(f);
       const common = { 'data-key': f.key, 'aria-label': f.label, disabled: ro };
       let n;
+      // מחושב / מתמלא לבד: על הדף — באותו גופן ויישור כמו בפלט, בשורה אחת
+      const onPageText = (o) => {
+        if (onPage) { o.classList.add('on-page'); o.style.fontSize = `calc(var(--k) * ${f.fontSize || 11}px)`;
+          o.style.textAlign = f.align === 'center' ? 'center' : f.align === 'left' ? 'left' : 'right'; }
+        return o;
+      };
       if (f.type === 'calc') {
-        return el('output', { class: 'calc-out', 'data-calc': f.key, 'aria-label': f.label }, C.display(v, f.format) || '—');
+        return onPageText(el('output', { class: 'calc-out', 'data-calc': f.key, 'aria-label': f.label }, C.display(v, f.format) || '—'));
       }
       if (f.type === 'system') {
-        return el('output', { class: 'calc-out sys-out', 'data-sys': f.key, 'aria-label': f.label, title: 'מתמלא לבד' }, sysText(f, v) || '—');
+        return onPageText(el('output', { class: 'calc-out sys-out', 'data-sys': f.key, 'aria-label': f.label, title: 'מתמלא לבד', dir: 'auto' }, sysText(f, v) || '—'));
       }
       if (f.type === 'table') return tableControl(f);
       if (f.type === 'file') {

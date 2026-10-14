@@ -85,6 +85,8 @@ function dev_log_list(array $q): array
     $args = [];
     if (!empty($q['errors'])) $where[] = "(l.status >= 400 OR l.action = 'client_error')";
     if (!empty($q['act'])) { $where[] = 'l.action LIKE ?'; $args[] = '%' . $q['act'] . '%'; }   // לא action — זה שם הפעולה של ה-API
+    // בלי הבקשות של אזור הפיתוח עצמו (הלוג מתרענן — הוא היה ממלא את הרשימה), חוץ משגיאות
+    if (!empty($q['nodev'])) $where[] = "(l.action NOT LIKE 'dev\_%' ESCAPE '\\' OR l.status >= 400)";
     if (!empty($q['user_id'])) { $where[] = 'l.user_id = ?'; $args[] = (int)$q['user_id']; }
     if (!empty($q['ref'])) { $where[] = 'l.ref LIKE ?'; $args[] = '%' . $q['ref'] . '%'; }
     if (!empty($q['before'])) { $where[] = 'l.id < ?'; $args[] = (int)$q['before']; }
