@@ -49,6 +49,9 @@ const PM_MSG_TEMPLATES = [
         "שלום {שם},\nתוספת בשלב \"{שלב}\" בפרויקט {פרויקט}: {פרטים} — {סכום} כולל מע\"מ.\nלצפייה ולאישור:\n{קישור}\n\n{מנהל}"],
     'change_order_lawyer' => ['תוספת / חריגה — לאישור עו"ד', 'עו"ד', 'לאישורך: תוספת בשלב {שלב} — {פרויקט}',
         "שלום {שם},\nהלקוח אישר תוספת בשלב \"{שלב}\" בפרויקט {פרויקט}: {פרטים} — {סכום} כולל מע\"מ.\nלאישורך:\n{קישור}\n\n{מנהל}"],
+    // חריגה מהחוזה בהסכמת כולם (lib/deviations.php) — לכל צד: לקוח, עו"ד, ספק
+    'deviation_request' => ['חריגה מהחוזה — להסכמתך', 'לקוח / עו"ד / ספק', 'להסכמתך: חריגה מהחוזה — {פרויקט}',
+        "שלום {שם},\nבפרויקט {פרויקט} מבקשים חריגה מהחוזה, והיא תחול רק אם כל הצדדים יסכימו:\n{פרטים}\n\nלפרטים, ולהסכמה או לסירוב:\n{קישור}\n\n{מנהל}"],
     // הצעת תקציב לפי שלבים (lib/budget.php) — ההצעה הראשונה וכל שינוי
     'budget_request' => ['הצעת תקציב / שינוי — לאישור', 'לקוח / עו"ד', 'לאישורך: תקציב הפרויקט — {פרויקט}',
         "שלום {שם},\n{פרטים} בפרויקט {פרויקט} — סה\"כ {סכום} כולל מע\"מ.\nהפירוט לפי שלבים, ואישור:\n{קישור}\n\n{מנהל}"],
@@ -60,7 +63,7 @@ const PM_MSG_VARS = ['{שם}', '{פרויקט}', '{מנהל}', '{כתובת}', '
 // i18n-ok-end
 
 /** נוסחים שחייבים את הקישור — בלעדיו הנמען לא יכול לפעול. */
-const PM_MSG_NEED_LINK = ['portal_link', 'quotes_sent', 'quote_lawyer', 'payment_request', 'payment_lawyer', 'quote_invite', 'proof_supplier', 'change_order', 'change_order_lawyer', 'budget_request'];
+const PM_MSG_NEED_LINK = ['portal_link', 'quotes_sent', 'quote_lawyer', 'payment_request', 'payment_lawyer', 'quote_invite', 'proof_supplier', 'change_order', 'change_order_lawyer', 'budget_request', 'deviation_request'];
 
 /** שפה ← [שם עברי ← כינוי בשפה]. בעברית — השם עצמו. */
 function pm_msg_vars(): array

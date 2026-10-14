@@ -127,7 +127,7 @@ function render() {
     const payNow = data.payments.filter(p => p.can_approve || (p.can_pay && p.payer === data.role));
     const chWait = (data.changes || []).filter(c => c.can_decide);
     const bWait = data.budget?.can_decide ? data.budget.pending : null;
-    $('#pending').hidden = !waiting.size && !payNow.length && !chWait.length && !bWait;
+    $('#pending').hidden = !waiting.size && !payNow.length && !chWait.length && !bWait && !devWaiting().length;
     $('#pending-list').innerHTML = [...waiting].map(([sid, n]) => {
         const st = data.stages.find(s => s.id === sid);
         return `<li class="card" data-go="stage-${sid}" tabindex="0" role="button">
@@ -148,8 +148,10 @@ function render() {
             <div class="body"><div class="l1"><span class="one">${esc(bWait.kind === 'initial' ? t('הצעת התקציב — לאישורך') : t('שינוי בתקציב — לאישורך'))}</span><span class="amt">${esc(money(bWait.total_to))}</span></div>
                 <div class="l2">${esc(bWait.kind === 'initial' ? t('לפי שלבים') : bWait.note)}</div></div>
             <span class="go dir-flip" aria-hidden="true">‹</span></li>` : '');
+    $('#pending-list').insertAdjacentHTML('afterbegin', devPending());
     renderChanges();
     renderBudget();
+    renderDeviations();
 
     renderFinance();
     renderExpenses();
@@ -282,8 +284,9 @@ function renderSupplier() {
     const quotesOf = id => data.my_quotes.filter(q => q.stage_id === id);
     const invited = data.stages.filter(s => s.can_quote && !quotesOf(s.id).some(q => !['declined', 'rejected', 'cancelled'].includes(q.status)));
     const confirm = data.payments.flatMap(p => p.proofs.filter(x => x.can_confirm).map(x => ({ p, x })));
-    $('#pending').hidden = !invited.length && !confirm.length;
-    $('#pending-list').innerHTML = invited.map(s => `<li class="card" data-go="sstage-${s.id}" tabindex="0" role="button">
+    $('#pending').hidden = !invited.length && !confirm.length && !devWaiting().length;
+    renderDeviations();
+    $('#pending-list').innerHTML = devPending() + invited.map(s => `<li class="card" data-go="sstage-${s.id}" tabindex="0" role="button">
             <span class="ficon" aria-hidden="true">📝</span>
             <div class="body"><div class="l1"><span class="one">${esc(sn(s))}</span></div><div class="l2">${esc(t('מבקשים ממך הצעת מחיר'))}</div></div>
             <span class="go dir-flip" aria-hidden="true">‹</span></li>`).join('')
@@ -700,6 +703,61 @@ function renderBudget() {
             <div class="lg-meta">${v.decisions.map(d => esc(`✅ ${d.by_name} · ${shortDate(d.created_at.slice(0, 10))}`)).join(' · ')}</div></li>`).join('')}</ol></details>` : ''}`;
 }
 
+/** חריגות מהחוזה שממתינות להחלטה שלי. */
+const devWaiting = () => (data.deviations || []).filter(d => d.can_decide);
+function devPending() {
+    return devWaiting().map(d => `<li class="card" data-go="dev-${d.id}" tabindex="0" role="button">
+        <span class="ficon" aria-hidden="true">⚖️</span>
+        <div class="body"><div class="l1"><span class="one">${esc(d.phase === 'revoke' ? t('ביטול חריגה מהחוזה — להסכמתך') : t('חריגה מהחוזה — להסכמתך'))}</span></div>
+            <div class="l2">${esc(d.type_label)}${d.supplier ? ' · ' + esc(d.supplier) : ''}</div></div>
+        <span class="go dir-flip" aria-hidden="true">‹</span></li>`).join('');
+}
+
+/** חריגות מהחוזה: מה, על מי, מי הסכים; חלה רק כשכולם הסכימו. */
+function renderDeviations() {
+    const L = (data.deviations || []).filter(d => d.status !== 'cancelled');
+    $('#deviations').hidden = !L.length;
+    if (!L.length) return;
+    const ICON = { approved: '✅', rejected: '✖' };
+    $('#deviations').innerHTML = `<h2 class="sec-title" id="deviations-title">⚖️ ${esc(t('חריגות מהחוזה'))}</h2>
+        <p class="hint">${esc(t('חריגה מהחוזה חלה רק כשכל הצדדים הסכימו — הלקוח, העו"ד (אם יש) והספק. עד אז — החוזה כמו שהוא.'))}</p>
+        <ul class="list dev-list">${L.map(d => `<li class="dev-item" id="dev-${d.id}">
+            <div class="dev-top"><b class="one">${esc(d.type === 'retention_pct' ? t('{type}: {n}% במקום {c}%', { type: d.type_label, n: d.value, c: d.contract_pct }) : d.type_label)}</b>
+                <span class="chip${d.status === 'approved' ? ' fin-ok' : ''}">${esc(d.status_label)}</span></div>
+            <div class="muted dev-meta">${esc(d.scope === 'project' ? t('כל הפרויקט') : d.scope === 'milestone' ? `${d.supplier} · ${d.milestone}` : d.supplier)}</div>
+            <p class="dev-desc">${esc(d.description)}</p>
+            ${d.phase === 'revoke' && ['pending', 'revoke_pending'].includes(d.status) ? `<p class="hint">${esc(t('בקשה לבטל את החריגה — חוזרים לחוזה כשכולם מסכימים.'))}</p>` : ''}
+            <ul class="dev-parties">${d.parties.map(x => `<li class="dev-party"><span>${x.decision ? ICON[x.decision] : '⏳'} ${esc(x.label)} — ${esc(x.name)}</span></li>`).join('')}</ul>
+            ${d.can_decide ? `<div class="row-btns"><button class="btn primary" data-dev="${d.id}" data-dev-act="approved">${esc(t('מסכים'))}</button>
+                <button class="btn ghost" data-dev="${d.id}" data-dev-act="rejected">${esc(t('לא מסכים'))}</button></div>` : ''}</li>`).join('')}</ul>`;
+}
+
+/** הסכמה / סירוב לחריגה — אותו חלון של הצעה ותוספת (לחיצה, ולקוח שהוגדר לו — חתימה). */
+function openDecideDeviation(id, act) {
+    const d = data.deviations.find(x => x.id === id);
+    current = { ...d, kind: 'deviation' };
+    decision = act;
+    const dlg = $('#decide-dlg'), form = $('form', dlg);
+    form.reset();
+    $('.error', form).hidden = true;
+    const sign = act === 'approved' && data.role === 'client' && data.approval_method === 'signature';
+    $('#decide-title').textContent = act === 'approved' ? t('הסכמה לחריגה מהחוזה') : t('סירוב לחריגה מהחוזה');
+    $('#decide-summary').innerHTML = `<dl>
+        <dt>${esc(t('מה'))}</dt><dd>${esc(d.type_label)}${d.type === 'retention_pct' ? ` — ${esc(t('{n}% במקום {c}%', { n: d.value, c: d.contract_pct }))}` : ''}</dd>
+        <dt>${esc(t('על מי'))}</dt><dd>${esc(d.scope === 'project' ? t('כל הפרויקט') : d.supplier + (d.milestone ? ' · ' + d.milestone : ''))}</dd>
+        <dt>${esc(t('למה'))}</dt><dd>${esc(d.description)}</dd></dl>`;
+    $('#note-label').textContent = act === 'rejected' ? t('סיבה או הערה למנהל הפרויקט') : t('הערה (לא חובה)');
+    $('#sign-box').hidden = !sign;
+    const legal = { name: data.name, type: d.type_label };
+    $('#decide-legal').textContent = act !== 'approved' ? t('החריגה לא תחול, ומנהל הפרויקט יקבל את ההערה.')
+        : d.phase === 'revoke' ? t('אני, {name}, מסכים/ה לבטל את החריגה "{type}" ולחזור לחוזה. ההסכמה נשמרת עם התאריך, השעה והפרטים.', legal)
+        : t('אני, {name}, מסכים/ה לחריגה מהחוזה: "{type}". היא תחול רק כשכל הצדדים יסכימו. ההסכמה נשמרת עם התאריך, השעה והפרטים.', legal);
+    $('#decide-go').textContent = act === 'approved' ? (sign ? t('חתימה והסכמה') : t('מסכים')) : t('לא מסכים');
+    $('#decide-go').className = 'btn ' + (act === 'approved' ? 'primary' : 'ghost danger');
+    dlg.showModal();
+    if (sign) setupSign();
+}
+
 /** אישור / דחייה של התקציב — אותו חלון של הצעה ותוספת (לחיצה או חתימה). */
 function openDecideBudget(act) {
     const B = data.budget, P = B.pending;
@@ -813,7 +871,9 @@ async function submitDecide(e) {
     const btn = $('#decide-go');
     btn.disabled = true;
     try {
-        data = current.kind === 'budget'
+        data = current.kind === 'deviation'
+            ? await call('decide-deviation', { deviation_id: current.id, decision, note: form.elements.note.value, signature: sign ? signatureData() : undefined })
+            : current.kind === 'budget'
             ? await call('decide-budget', { version_id: current.id, decision, note: form.elements.note.value, signature: sign ? signatureData() : undefined })
             : current.kind === 'change'
             ? await call('decide-change', { change_id: current.id, decision, note: form.elements.note.value, signature: sign ? signatureData() : undefined })
@@ -834,6 +894,8 @@ async function submitDecide(e) {
 document.addEventListener('click', e => {
     const act = e.target.closest('[data-act]');
     if (act) { openDecide(Number(act.dataset.q), act.dataset.act); return; }
+    const dv = e.target.closest('[data-dev]');
+    if (dv) { openDecideDeviation(Number(dv.dataset.dev), dv.dataset.devAct); return; }
     const bd = e.target.closest('[data-bd]');
     if (bd) { openDecideBudget(bd.dataset.bd); return; }
     const chg = e.target.closest('[data-chg]');

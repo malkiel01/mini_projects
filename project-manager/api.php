@@ -231,6 +231,12 @@ try {
         'POST budget-decide'  => pm_budget_decide($user, (int)($in['id'] ?? 0), (string)($in['role'] ?? ''), (string)($in['decision'] ?? ''),
                                                   (string)($in['note'] ?? ''), 'manual', (string)($in['by_name'] ?? '')),
         'POST budget-cancel'  => pm_budget_cancel($user, (int)($in['id'] ?? 0)),
+        // חריגה מהחוזה בהסכמת כולם (lib/deviations.php)
+        'GET deviations'      => pm_deviations($user, (int)($in['project_id'] ?? 0)),
+        'POST deviation'      => pm_deviation_save($user, $in),
+        'POST deviation-decide' => pm_deviation_decide($user, (int)($in['id'] ?? 0), (string)($in['party'] ?? ''), (int)($in['contact_id'] ?? 0),
+                                                    (string)($in['decision'] ?? ''), (string)($in['note'] ?? '')),
+        'POST deviation-cancel' => pm_deviation_cancel($user, (int)($in['id'] ?? 0)),
         'POST payment-invoice' => pm_payment_invoice($user, $in),
         'POST payments-stage' => pm_payments_set_stage($user, $in),
         // התקשרות: שיוך כללי של קבצים לספק × שלב (lib/engage.php)
