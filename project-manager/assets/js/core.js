@@ -135,7 +135,13 @@ async function api(action, { params = {}, body = null } = {}) {
     let data = {};
     try { data = await res.json(); } catch { /* תשובה שאינה JSON */ }
     if (res.status === 401) { location.href = 'login.html'; throw new Error(data.error || t('נדרשת כניסה')); }
-    if (!res.ok) throw new Error(data.error || t('תקלה ({status})', { status: res.status }));
+    if (!res.ok) {
+        const err = new Error(data.error || t('תקלה ({status})', { status: res.status }));
+        // ספק שלא מוגדר בתיק — מציעים להגדיר אותו עכשיו (Projects.setupSupplier), והחלון שקרא נשאר פתוח
+        if (data.setup && typeof Projects !== 'undefined' && confirm(err.message + '\n\n' + t('להגדיר אותו עכשיו?'))) Projects.setupSupplier(data.setup);
+        err.setup = data.setup || null;
+        throw err;
+    }
     // מיילים אוטומטיים שנשלחו בפעולה הזו (שלב 11)
     if (data.notified?.length) setTimeout(() => toast('✉️ ' + t('נשלח מייל ל{names}', { names: data.notified.map(n => n.name).join(', ') })), 1800);
     return data;

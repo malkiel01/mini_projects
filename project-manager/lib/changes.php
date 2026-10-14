@@ -79,6 +79,7 @@ function pm_change_save(array $user, array $in): array
     if ((int)$stage['project_id'] !== $projectId) throw new PmError('השלב לא שייך לפרויקט', 422);
     $supplierId = pm_owned_contact((int)($in['supplier_id'] ?? 0) ?: null, (int)$p['owner_id'], 'supplier', 'הספק') // i18n-ok
         ?? throw new PmError('ספק: שדה חובה', 422);
+    pm_supplier_require($projectId, $supplierId);
     $v = $in['amount'] ?? null;
     if (!is_numeric($v) || (float)$v == 0.0 || abs((float)$v) > 1e9) throw new PmError('סכום: מספר (חיובי לתוספת, שלילי להפחתה)', 422);
     $amount = (int)round((float)$v * 100);

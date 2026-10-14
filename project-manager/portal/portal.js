@@ -233,7 +233,8 @@ function quoteCard(q, low) {
         q.valid_until ? esc(t('בתוקף עד {date}', { date: shortDate(q.valid_until) })) : '',
     ].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>');
     const last = q.decisions.filter(d => d.version === q.version).slice(-1)[0];
-    const btns = q.can_decide ? `<div class="row-btns">
+    const btns = q.pending_setup ? `<p class="q3 muted">${esc(t('ממתין להשלמת פרטי הספק אצל מנהל הפרויקט — אחר כך אפשר יהיה לאשר.'))}</p>`
+        : q.can_decide ? `<div class="row-btns">
             <button class="btn ${q.recommended || q.status === 'client_approved' ? 'primary' : 'ghost'}" data-act="approved" data-q="${q.id}">✅ ${esc(t('אישור'))}</button>
             ${q.can_reject ? `<button class="btn ghost" data-act="rejected" data-q="${q.id}">${esc(t('דחייה'))}</button>` : ''}</div>` : '';
     return `<article class="qcard q-${esc(q.status)}${q.recommended ? ' rec' : ''}">

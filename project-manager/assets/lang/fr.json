@@ -2203,5 +2203,20 @@
     "צפייה והעלאת מסמכים בלבד": "Consultation et envoi de documents uniquement",
     "הקישור שלך לצפייה והעלאת מסמכים בלבד — אישורים ותשלומים נעשים בקישור של הלקוח": "Votre lien sert uniquement à consulter et envoyer des documents — les validations et paiements se font dans le lien du client",
     "ספק — בחרו את השלבים שלו בפרויקט (אין שלב מתאים? הוסיפו שלב קודם)": "Fournisseur — choisissez ses étapes dans le projet (pas d'étape adaptée ? ajoutez-en une d'abord)",
-    "👁️ הקישור שלך לצפייה ולהעלאת מסמכים. אישורים ותשלומים נעשים בקישור של הלקוח.": "👁️ Votre lien sert à consulter et envoyer des documents. Les validations et paiements se font dans le lien du client."
+    "👁️ הקישור שלך לצפייה ולהעלאת מסמכים. אישורים ותשלומים נעשים בקישור של הלקוח.": "👁️ Votre lien sert à consulter et envoyer des documents. Les validations et paiements se font dans le lien du client.",
+    "להגדיר אותו עכשיו?": "Le configurer maintenant ?",
+    "לא מוגדר בתיק": "Non configuré dans le projet",
+    "+ ספק שלא בפרויקט…": "+ Fournisseur hors projet…",
+    "בלי תחום": "Sans métier",
+    "בראש הרשימה": "En tête de liste",
+    "אחרי {n}. {stage}": "Après {n}. {stage}",
+    "לפני שליחה ללקוח ואישור — מגדירים אותו בצוות ומשלימים את פרטי הספק": "Avant l'envoi au client et la validation — ajoutez-le à l'équipe et complétez les coordonnées du fournisseur",
+    "+ שלב חדש": "+ Nouvelle étape",
+    "איפה בסדר השלבים": "Où dans l'ordre des étapes",
+    "הוספת השלב": "Ajouter l'étape",
+    "ביטול": "Annuler",
+    "למשל: תכנון אדריכלי": "p. ex. Conception architecturale",
+    "בצוות של הפרויקט, עם השלבים שלו": "dans l'équipe du projet, avec ses étapes",
+    "{name} עוד לא מוגדר כספק בתיק — חסר: {missing}": "{name} n'est pas encore configuré comme fournisseur du projet — manque : {missing}",
+    "ממתין להשלמת פרטי הספק אצל מנהל הפרויקט — אחר כך אפשר יהיה לאשר.": "En attente des coordonnées du fournisseur par le chef de projet — vous pourrez ensuite valider."
 }

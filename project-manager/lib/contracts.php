@@ -128,6 +128,7 @@ function pm_contract_save(array $user, array $in): array
     $p = pm_project_row($user, $projectId);
     $supplierId = pm_owned_contact((int)($in['supplier_id'] ?? 0) ?: null, (int)$p['owner_id'], 'supplier', 'הספק') // i18n-ok
         ?? throw new PmError('ספק: שדה חובה', 422);
+    pm_supplier_require($projectId, $supplierId);
     $int = function (string $k, int $max, string $label) use ($in): int {
         $v = $in[$k] ?? 0;
         if ($v === '' || $v === null) return 0;

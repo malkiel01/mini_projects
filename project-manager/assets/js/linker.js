@@ -56,10 +56,9 @@ const Linker = (() => {
             [project, { folders }, { payments, methods }] = await Promise.all([api('project', { params: { id: ctx.projectId } }),
                 api('folders', { params: { project_id: ctx.projectId } }), api('payments', { params: { project_id: ctx.projectId } })]);
         } catch (e) { toast(e.message, true); return; }
-        // הספקים: מתיקיות הספקים בפרויקט, ומי שעובד בשלבים
+        // הספקים: רק מי שמוגדר בתיק — בצוות (ספק של שלב, או איש צוות עם שלבים). תיקייה לבד לא מספיקה
         const sup = new Map();
-        for (const f of folders) if (f.kind === 'contact' && f.parent_id === null && f.contact_id) sup.set(f.contact_id, f.name);
-        for (const s of project.stages) { if (s.supplier_id) sup.set(s.supplier_id, s.supplier_name); for (const e of s.engaged || []) sup.set(e.supplier_id, e.name); }
+        for (const c of project.team || []) if (c.kind === 'supplier') sup.set(c.id, c.name);
         st = { files, ctx, project, payments, payMethods: methods, sup, supplier: ctx.supplier || null, stage: ctx.stage, kind: null };
         const d = dialog();
         $('#link-title', d).textContent = files.length === 1 ? t('שיוך — {name}', { name: files[0].name }) : t('שיוך {n} קבצים', { n: files.length });

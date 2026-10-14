@@ -261,13 +261,16 @@ function pm_portal_view(array $a): array
         $can = $role === 'client'
             ? !$started && in_array($x['status'], ['sent', 'declined', 'rejected'], true)
             : $x['status'] === 'client_approved';
+        // ספק שעוד לא הוקם בתיק (צוות + פרטי ספק) — ההחלטה מחכה למנהל הפרויקט (pm_supplier_require)
+        $setup = $can && pm_supplier_missing((int)$p['id'], (int)$x['supplier_id']);
+        $can = $can && !$setup;
         return [
             'id' => (int)$x['id'], 'stage_id' => (int)$x['stage_id'], 'supplier' => $x['supplier_name'], 'company' => $x['supplier_company'],
             'amount' => (int)$x['amount'] / 100, 'vat_rate' => pm_quote_vat($x), 'valid_until' => $x['valid_until'], 'terms' => $x['terms'], 'notes' => $x['notes'],
             'recommended' => (bool)$x['recommended'], 'status' => $x['status'], 'version' => (int)$x['version'],
             'file' => $x['file_id'] && !$x['file_deleted'] ? ['id' => (int)$x['file_id'], 'name' => $x['file_name'], 'mime' => $x['file_mime'], 'thumb' => (bool)$x['file_thumb']] : null,
             'can_decide' => $can, 'can_reject' => $can && in_array($x['status'], ['sent', 'client_approved'], true),
-            'decisions' => $decisions[(int)$x['id']] ?? [],
+            'decisions' => $decisions[(int)$x['id']] ?? [], 'pending_setup' => $setup,
         ];
     }, array_filter($q->fetchAll(), fn($x) => $vis($x['stage_id'])));
     $quotes = array_values($quotes);

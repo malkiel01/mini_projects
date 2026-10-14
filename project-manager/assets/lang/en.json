@@ -2185,5 +2185,20 @@
     "צפייה והעלאת מסמכים בלבד": "View and upload documents only",
     "הקישור שלך לצפייה והעלאת מסמכים בלבד — אישורים ותשלומים נעשים בקישור של הלקוח": "Your link is for viewing and uploading documents only — approvals and payments are done in the client's link",
     "ספק — בחרו את השלבים שלו בפרויקט (אין שלב מתאים? הוסיפו שלב קודם)": "Supplier — choose their stages in the project (no matching stage? add a stage first)",
-    "👁️ הקישור שלך לצפייה ולהעלאת מסמכים. אישורים ותשלומים נעשים בקישור של הלקוח.": "👁️ Your link is for viewing and uploading documents. Approvals and payments are done in the client's link."
+    "👁️ הקישור שלך לצפייה ולהעלאת מסמכים. אישורים ותשלומים נעשים בקישור של הלקוח.": "👁️ Your link is for viewing and uploading documents. Approvals and payments are done in the client's link.",
+    "להגדיר אותו עכשיו?": "Set them up now?",
+    "לא מוגדר בתיק": "Not set up in the project",
+    "+ ספק שלא בפרויקט…": "+ Supplier not in the project…",
+    "בלי תחום": "No trade",
+    "בראש הרשימה": "At the top of the list",
+    "אחרי {n}. {stage}": "After {n}. {stage}",
+    "לפני שליחה ללקוח ואישור — מגדירים אותו בצוות ומשלימים את פרטי הספק": "Before sending to the client and approving — add them to the team and complete the supplier details",
+    "+ שלב חדש": "+ New stage",
+    "איפה בסדר השלבים": "Where in the stage order",
+    "הוספת השלב": "Add the stage",
+    "ביטול": "Cancel",
+    "למשל: תכנון אדריכלי": "e.g. Architectural design",
+    "בצוות של הפרויקט, עם השלבים שלו": "in the project team, with their stages",
+    "{name} עוד לא מוגדר כספק בתיק — חסר: {missing}": "{name} isn't set up as a supplier in this project yet — missing: {missing}",
+    "ממתין להשלמת פרטי הספק אצל מנהל הפרויקט — אחר כך אפשר יהיה לאשר.": "Waiting for the project manager to complete the supplier details — then you can approve."
 }
