@@ -31,6 +31,8 @@ const Finance = (() => {
             if (k) { openContract(Number(k.dataset.contract), Number(k.dataset.stage) || null); return; }
             const as = e.target.closest('[data-assign-stage]');
             if (as) { assignStage(Number(as.dataset.assignStage)); return; }
+            const eg = e.target.closest('[data-engage]');
+            if (eg) { Engage.open(project.project.id, Number(eg.dataset.engage), Number(eg.dataset.stage) || null); return; }
             const l = e.target.closest('[data-ledger]');
             if (l) { ledger(project.project.id, Number(l.dataset.ledger)); return; }
             if (e.target.closest('[data-exp-new]')) { openExpense(null); return; }
@@ -111,8 +113,12 @@ const Finance = (() => {
         catch (e) { $('#fin-sum').innerHTML = `<p class="error">${esc(e.message)}</p>`; return; }
         render();
         if (pendingChange) { const id = pendingChange; pendingChange = null; finTab('suppliers'); openChange(id); }
-        if (pendingOpen) {
-            const o = pendingOpen; pendingOpen = null;
+        if (pendingOpen) { const o = pendingOpen; pendingOpen = null; dispatch(o); }
+    }
+
+    /** פתיחה מבחוץ (חלון קובץ, אשף השיוך, תיק ההתקשרות): תוספת / הוצאה / חוזה / תוספת חדשה מקובץ. */
+    function dispatch(o) {
+        {
             if (o.change) { finTab('suppliers'); openChange(o.change); }
             else if (o.expense && data.expenses?.items?.some(x => x.id === o.expense)) { finTab('expenses'); openExpense(o.expense); }
             else if (o.changeNew) {
@@ -122,13 +128,18 @@ const Finance = (() => {
                 coFile = o.changeNew.file;
                 $('#co-file-name').textContent = '📂 ' + coFile.name;
             }
+            else if (o.ledger) ledger(project.project.id, o.ledger);
             else if (o.supplier) { finTab('suppliers'); openContract(o.supplier, o.stage || null, { id: o.contract || 0, file: o.file || null }); }
         }
     }
 
     /** מחוץ לכספים (חלון קובץ): לפתוח תוספת / הוצאה / חוזה — אחרי שהלשונית תיטען. file — מסמך לחוזה. */
     let pendingOpen = null;
-    function openWhenReady(o, pid) { pendingOpen = o; location.hash = `#/p/${pid}/payments`; }
+    function openWhenReady(o, pid) {
+        // כבר בכספים של הפרויקט — עכשיו; אחרת — אחרי שהלשונית תיטען
+        if (data && project?.project?.id === pid && location.hash.startsWith(`#/p/${pid}/payments`)) { dispatch(o); return; }
+        pendingOpen = o; location.hash = `#/p/${pid}/payments`;
+    }
 
     /** אחרי שינוי בתשלומים / בשלבים — מחדש. */
     async function reload(p = project) { if (p) await show(p); }
@@ -278,7 +289,7 @@ const Finance = (() => {
 
     function supplierRow(s, r) {
         const flags = r.flags.map(f => FLAG[f](r)).map(x => `<span class="chip ${x.cls}">${esc(x.text)}</span>`).join('') + contractChip(r.contract);
-        const act = [];
+        const act = [`<button type="button" class="btn ghost sm" data-engage="${r.supplier_id}" data-stage="${s.stage_id || ''}">🗂️ ${esc(t('תיק'))}</button>`];
         if (r.flags.includes('uncovered') && !r.milestones && r.quote_id) act.push(`<button type="button" class="btn ghost sm" data-split="${s.stage_id}" data-supplier="${r.supplier_id}">✂️ ${esc(t('חלוקה לתשלומים'))}</button>`);
         else if (r.flags.includes('uncovered')) act.push(`<button type="button" class="btn ghost sm" data-milestone="${s.stage_id}" data-supplier="${r.supplier_id}">+ ${esc(t('אבן דרך'))}</button>`);
         if (s.stage_id) act.push(`<button type="button" class="btn ghost sm" data-co-new="${s.stage_id}" data-supplier="${r.supplier_id}">± ${esc(t('תוספת / חריגה'))}</button>`);

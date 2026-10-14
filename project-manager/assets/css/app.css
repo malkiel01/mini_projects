@@ -1009,3 +1009,28 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
     margin-top: var(--s2); padding: var(--s2) var(--s3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 4px 16px rgb(0 0 0 / .12); }
 .fsel-bar #fsel-count { flex: 1; font-size: .9rem; }
 .tile .tile-tx small { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.25; }
+
+/* תיק התקשרות (engage.js) */
+#eng-dlg .sheet-body { display: grid; gap: var(--s3); align-content: start; }
+#eng-dlg .eng-tabs { margin: 0; }
+.eng-stages .chip { cursor: pointer; min-height: 36px; }
+.eng-stages .chip.on { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+.eng-sum .eng-late dd { color: var(--danger); }
+.eng-acts { margin: 0; }
+.eng-tags { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; max-inline-size: 45%; }
+.eng-tags .chip { font-size: .72rem; min-height: 22px; padding: 0 6px; }
+.chip.eng-ok { color: var(--ok); }
+.chip.eng-warn { color: var(--star); }
+.chip.eng-bad { color: var(--danger); }
+.use-ic img { inline-size: 100%; block-size: 100%; object-fit: cover; border-radius: 10px; }
+.eng-field { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s2); }
+.eng-rep { padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); display: grid; gap: 6px; }
+.eng-rep p { margin: 0; white-space: pre-wrap; }
+.eng-rep-h { display: flex; justify-content: space-between; gap: var(--s2); align-items: baseline; }
+.eng-rep-h small { color: var(--muted); font-size: .78rem; }
+.eng-media { display: flex; flex-wrap: wrap; gap: 6px; }
+.eng-thumb { inline-size: 64px; block-size: 64px; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); overflow: hidden; cursor: pointer; display: grid; place-items: center; font-size: 1.4rem; }
+.eng-thumb img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+.stage-engaged { display: grid; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.stage-engaged h3 { margin: 0; padding: 8px var(--s3); font-size: .85rem; background: var(--bg); }
+.stage-engaged .use-row + .use-row { border-top: 1px solid var(--line); }

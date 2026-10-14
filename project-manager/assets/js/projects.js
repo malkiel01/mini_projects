@@ -574,6 +574,15 @@ const Projects = (() => {
         el.progress.oninput = progressShown;
         el.status.onchange = progressShown;
         $('[data-existing]', dlg).hidden = !id;
+        // מי עובד בשלב — ותיק ההתקשרות של כל אחד (חוזה, הצעות, אבני דרך, תיעוד, קבצים)
+        const eng = id ? [...(s.engaged || [])] : [];
+        if (s.supplier_id && !eng.some(x => x.supplier_id === s.supplier_id)) eng.unshift({ supplier_id: s.supplier_id, name: s.supplier_name || '' });
+        const engBox = $('#stage-engaged');
+        engBox.hidden = !eng.length;
+        engBox.innerHTML = eng.length ? `<h3>${esc(t('מי עובד בשלב'))}</h3>${eng.map(x => `<button type="button" class="use-row" data-engage="${x.supplier_id}">
+            <span class="use-ic" aria-hidden="true">🗂️</span><span class="use-tx"><b>${esc(x.name)}</b><small>${esc([x.milestones ? t('{n} אבני דרך', { n: x.milestones }) : '', x.amount ? money(x.amount) : '', t('תיק התקשרות')].filter(Boolean).join(' · '))}</small></span>
+            <span class="use-go" aria-hidden="true">‹</span></button>`).join('')}` : '';
+        engBox.onclick = e => { const b = e.target.closest('[data-engage]'); if (b) { dlg.close(); Engage.open(cur.project.id, Number(b.dataset.engage), id); } };
         Dev.attach(dlg, 'stage', id);
         $('[data-delete]', dlg).hidden = !!s.used && !Dev.on(); // רק שלב ריק (חוץ מסמכות מפתח)
         await fillSuppliers(el.supplier_id, Number(el.trade_id.value) || 0, s.supplier_id);

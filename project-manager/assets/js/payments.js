@@ -85,7 +85,11 @@ const Payments = (() => {
 
     let pendingOpen = null, pendingExtra = null;
     /** פתיחת אבן דרך אחרי שהלשונית תיטען. extra.proof — {id, name}: קובץ מהפרויקט כאסמכתא. */
-    function openWhenReady(id, extra = null) { pendingOpen = id; pendingExtra = extra; }
+    function openWhenReady(id, extra = null) {
+        // כבר בכספים של הפרויקט — פותחים עכשיו
+        if (project && data.payments.some(p => p.id === id) && location.hash.startsWith(`#/p/${project.project.id}/payments`)) { Finance.tab('milestones'); open(id); return; }
+        pendingOpen = id; pendingExtra = extra;
+    }
 
     /** אחרי פעולה: הרשימה, הפרויקט, והמצב הכספי (אגף הכספים). */
     async function refresh(d) {
