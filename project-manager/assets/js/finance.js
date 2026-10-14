@@ -592,7 +592,7 @@ const Finance = (() => {
         $('#ledger-dlg-title').textContent = t('כרטסת — {name}', { name: d.supplier.name });
         const one = (L, pid) => `<dl class="fin-cells">${cell(t('סוכם'), L.committed)}${cell(t('שולם'), L.paid)}${cell(t('יתרה'), L.balance)}</dl>
             ${L.missing_invoices ? `<p class="fin-stage-budget fin-warn">${esc(t('תשלומים בלי חשבונית: {n}', { n: L.missing_invoices }))}</p>` : ''}
-            ${!L.committed.g && L.entries.length ? `<p class="hint">${esc(t('עוד אין לספק הצעה שאושרה בפרויקט — לכן "סוכם" 0. אבני הדרך מוצגות כמתוכננות.'))}</p>` : ''}
+            ${L.by_milestones ? `<p class="hint">${esc(t('אין הצעה מאושרת על חלק מאבני הדרך — "סוכם" כולל אותן לפי מה שנרשם (+).'))}</p>` : ''}
             <ol class="ledger">${L.entries.map(x => ledgerRow(x, pid)).join('') || `<li class="muted">${esc(t('עוד אין תנועות'))}</li>`}</ol>`;
         const total = d.totals ? `<section class="fin-card"><h3 class="sec-title">${esc(t('בכל הפרויקטים'))}</h3><dl class="fin-cells">${cell(t('סוכם'), d.totals.committed)}${cell(t('שולם'), d.totals.paid)}${cell(t('יתרה'), d.totals.balance)}</dl>
             ${d.totals.missing_invoices ? `<p class="fin-stage-budget fin-warn">${esc(t('תשלומים בלי חשבונית: {n}', { n: d.totals.missing_invoices }))}</p>` : ''}</section>` : '';

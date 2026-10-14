@@ -2218,5 +2218,6 @@
     "למשל: תכנון אדריכלי": "p. ex. Conception architecturale",
     "בצוות של הפרויקט, עם השלבים שלו": "dans l'équipe du projet, avec ses étapes",
     "{name} עוד לא מוגדר כספק בתיק — חסר: {missing}": "{name} n'est pas encore configuré comme fournisseur du projet — manque : {missing}",
-    "ממתין להשלמת פרטי הספק אצל מנהל הפרויקט — אחר כך אפשר יהיה לאשר.": "En attente des coordonnées du fournisseur par le chef de projet — vous pourrez ensuite valider."
+    "ממתין להשלמת פרטי הספק אצל מנהל הפרויקט — אחר כך אפשר יהיה לאשר.": "En attente des coordonnées du fournisseur par le chef de projet — vous pourrez ensuite valider.",
+    "אין הצעה מאושרת על חלק מאבני הדרך — \"סוכם\" כולל אותן לפי מה שנרשם (+).": "Certaines étapes de paiement n'ont pas de devis validé — « Convenu » les inclut telles qu'enregistrées (+)."
 }
