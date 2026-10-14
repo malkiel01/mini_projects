@@ -138,3 +138,41 @@ function pm_stage_sync_suppliers(int $projectId): array
     }
     return $eng;
 }
+
+/**
+ * שיוך כללי של קבצים להתקשרות (ספק × שלב) — "מסמך אחר" (ביטוח, רישיון, תעודת אחריות, פרוטוקול):
+ * {project_id, file_ids[], supplier_id, stage_id?, note?}. הקבצים עוברים ל"ספק / מקצוע" (אם עוד לא מוינו).
+ */
+function pm_file_ref_add(array $user, array $in): array
+{
+    $projectId = (int)($in['project_id'] ?? 0);
+    $p = pm_project_row($user, $projectId);
+    $supplierId = pm_owned_contact((int)($in['supplier_id'] ?? 0) ?: null, (int)$p['owner_id'], 'supplier', 'הספק') // i18n-ok
+        ?? throw new PmError('ספק: שדה חובה', 422);
+    $stageId = (int)($in['stage_id'] ?? 0) ?: null;
+    if ($stageId) {
+        $s = pm_stage_row($user, $stageId);
+        if ((int)$s['project_id'] !== $projectId) throw new PmError('השלב לא שייך לפרויקט', 422);
+    }
+    $ids = array_values(array_unique(array_filter(array_map('intval', is_array($in['file_ids'] ?? null) ? $in['file_ids'] : []))));
+    if (!$ids) throw new PmError('לא נבחרו קבצים', 422);
+    $note = pm_str($in, 'note', 500, false, 'הערה');
+    $db = pm_db();
+    $ins = $db->prepare('INSERT OR REPLACE INTO file_refs (file_id, project_id, supplier_id, stage_id, kind, note, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)');
+    foreach ($ids as $fid) {
+        pm_file_claim($projectId, $fid, null, $supplierId, false, $stageId);
+        $ins->execute([$fid, $projectId, $supplierId, $stageId, 'doc', $note, $user['id'], pm_now()]);
+    }
+    pm_event($user, $projectId, 'file', count($ids) === 1 ? '📎 מסמך שויך ל{supplier}{stage}' : '📎 {n} מסמכים שויכו ל{supplier}{stage}',
+        ['files' => $ids, 'supplier' => $supplierId], ['n' => count($ids), 'supplier' => pm_contact_name($supplierId), 'stage' => $stageId ? ' · ' . pm_trade_folder_name($stageId) : '']);
+    return ['ok' => true, 'count' => count($ids)];
+}
+
+/** ביטול שיוך כללי: {file_id, supplier_id, stage_id?} */
+function pm_file_ref_remove(array $user, array $in): array
+{
+    $x = pm_file_row($user, (int)($in['file_id'] ?? 0));
+    pm_db()->prepare('DELETE FROM file_refs WHERE file_id = ? AND supplier_id = ? AND stage_id IS ?')
+        ->execute([(int)$x['id'], (int)($in['supplier_id'] ?? 0), (int)($in['stage_id'] ?? 0) ?: null]);
+    return ['file' => pm_file_get($user, (int)$x['id'])];
+}
