@@ -264,8 +264,8 @@ function doc_get(array $user, int $id): array
         'template_version' => (int)$d['template_version'], 'mime' => $a['mime'],
         'created_at' => $d['created_at'], 'completed_at' => $d['completed_at'], 'final_hash' => $d['final_hash'],
         'archived' => $d['archived_at'] !== null,
-        'schema' => $schema, 'values' => $values, 'progress' => doc_progress($schema, $values),
-        'events' => $events, 'chain_ok' => doc_verify_chain($id),
+        'schema' => attach_options($schema), 'values' => $values, 'progress' => doc_progress($schema, $values),
+        'ref' => $d['external_ref'], 'events' => $events, 'chain_ok' => doc_verify_chain($id),
         'participants' => participants_view($d, doc_schema($d)),
         'attachments' => attachments_of($id),
     ]];
@@ -332,6 +332,8 @@ function clean_value(array $f, $v, int $docId = 0): string
                 if ((int)$st->fetchColumn() !== count($ids)) throw new ApiError('קובץ לא שייך לשדה', 422);
             }
             return $ids ? json_encode($ids) : '';
+        case 'select':
+            return clean_select_value($f, $v);
         case 'text':
             return mb_substr(preg_replace('/[\r\n]+/', ' ', $v), 0, 2000);
         case 'table':
@@ -511,6 +513,7 @@ function doc_finalize(array $d, string $actor): void
         ->execute([$now, $hash, $d['id']]);
     log_event((int)$d['id'], $actor, 'completed', ['hash' => $hash]);
     $pdo->commit();
+    webhook_fire((int)$d['id'], 'document.completed', ['hash' => $hash]);
 }
 
 function doc_archive(array $user, array $b): array
@@ -542,3 +545,4 @@ function doc_delete(array $user, array $b): array
 
 require_once __DIR__ . '/participants.php';
 require_once __DIR__ . '/bulk.php';
+require_once __DIR__ . '/integrations.php';

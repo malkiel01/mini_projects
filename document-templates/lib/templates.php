@@ -29,7 +29,7 @@ const TPL_MIME = [
     'image/webp'      => 'image',
     DOCX_MIME         => 'docx',
 ];
-const FIELD_TYPES = ['text', 'textarea', 'number', 'date', 'checkbox', 'signature', 'file', 'table', 'calc', 'system'];
+const FIELD_TYPES = ['text', 'textarea', 'number', 'date', 'checkbox', 'signature', 'file', 'table', 'calc', 'system', 'select'];
 /** שדה שמתמלא לבד: מספר המסמך, תאריך הנפקה, שם המנפיק, כותרת, תאריך השלמה. */
 const SYSTEM_SOURCES = ['number', 'issued', 'owner', 'title', 'completed'];
 const COLUMN_TYPES = ['text', 'number', 'calc'];
@@ -216,7 +216,8 @@ function tpl_asset(array $user, int $id): never
 }
 
 /** מנקה את מה שהדפדפן שלח: רק סוגים מוכרים, מספרים בטווח, מחרוזות באורך סביר. */
-function clean_schema($s): array
+/** $sources — מקורות הנתונים שמותר לשדה בחירה להפנות אליהם (של השומר, או שכבר היו בתבנית). */
+function clean_schema($s, array $sources = []): array
 {
     if (!is_array($s)) throw new ApiError('מבנה תבנית לא תקין', 422);
     $num = fn($v, $min, $max) => (float)(is_numeric($v) ? max($min, min($max, (float)$v)) : $min);
@@ -274,7 +275,7 @@ function clean_schema($s): array
             // שלב 10: בתבנית PDF מפורק — שם השדה בטופס המקורי.
             'pdfName' => $str($f['pdfName'] ?? '', 120),
             // שלב 8: מתמלא מאיש הקשר שמקושר למסמך.
-            'contactField' => in_array($f['contactField'] ?? '', CONTACT_FIELDS, true) && !in_array($type, ['file', 'signature', 'table', 'calc', 'system'], true)
+            'contactField' => in_array($f['contactField'] ?? '', CONTACT_FIELDS, true) && !in_array($type, ['file', 'signature', 'table', 'calc', 'system', 'select'], true)
                 ? $f['contactField'] : '',
             // שלב 11: תנאי הצגה — נבדק מול שאר השדות אחרי הלולאה
             'showIf' => clean_cond($f['showIf'] ?? null, $str),
@@ -285,6 +286,10 @@ function clean_schema($s): array
         if ($type === 'system') {
             $fields[count($fields) - 1]['source'] = in_array($f['source'] ?? '', SYSTEM_SOURCES, true) ? $f['source'] : 'number';
             $fields[count($fields) - 1]['required'] = false;
+        }
+        if ($type === 'select') {
+            // בחירה מרשימה: קבועה, או ממקור נתונים חיצוני (lib/integrations.php)
+            $fields[count($fields) - 1] += clean_select($f, $str, $sources);
         }
         if ($type === 'calc') {
             $fields[count($fields) - 1] += [
@@ -387,7 +392,7 @@ function tpl_set_source(array $user, array $b): array
 function tpl_save(array $user, array $b): array
 {
     $t = tpl_owned((int)($b['id'] ?? 0), $user, 'edit');
-    $json = json_encode(clean_schema($b['schema'] ?? null), JSON_UNESCAPED_UNICODE);
+    $json = json_encode(clean_schema($b['schema'] ?? null, allowed_sources($user, $t)), JSON_UNESCAPED_UNICODE);
     if (strlen($json) > TPL_MAX_SCHEMA) throw new ApiError('התבנית גדולה מדי', 413);
 
     $pdo = db();
@@ -464,3 +469,5 @@ function tpl_delete(array $user, array $b): array
     foreach ($paths as $p) delete_file($p);
     return ['ok' => true];
 }
+
+require_once __DIR__ . '/integrations.php';   // בחירה מרשימה, מקורות נתונים

@@ -599,3 +599,45 @@ body.zoom-lock { overflow: hidden; }
   .seg-tabs button { padding: 0 var(--s1); font-size: .85rem; gap: 4px; }
   .seg-tabs .count { min-width: 18px; height: 18px; }
 }
+
+/* ── בחירה מרשימה: על הדף ובתוך הטקסט ── */
+.fill select { width: 100%; height: 100%; box-sizing: border-box; margin: 0; min-height: 0; padding: 0 2px;
+  border: 1px solid rgba(59,91,219,.45); border-radius: 2px; background: rgba(59,91,219,.07); color: #0b1f66;
+  font-family: Alef, Arial, sans-serif; line-height: 1.1; }
+.fill.required select { border-color: rgba(230,119,0,.7); }
+.fill select:disabled { background: transparent; border-color: transparent; color: #0b1f66; appearance: none; opacity: 1; }
+.inline-field select { border: 0; border-bottom: 1.5px solid #adb5bd; border-radius: 0; background: rgba(59,91,219,.06);
+  padding: 0 4px; font: inherit; color: inherit; min-height: 0; width: auto; max-width: 100%; }
+.inline-field.theirs select { background: transparent; border-bottom-style: dotted; }
+
+/* ── חיבורים: מקורות, מפתחות, תיעוד ── */
+.conn-body { display: grid; gap: var(--s3); }
+.conn-body .toolbar { align-items: flex-start; }
+.grow { flex: 1; min-width: 0; margin: 0; }
+.card-list { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); overflow: hidden; }
+.card-list .use-row { width: 100%; border: 0; border-radius: 0; background: none; text-align: start; cursor: pointer; }
+.card-list .use-row:disabled { cursor: default; }
+code.secret { display: block; padding: var(--s2); border-radius: var(--r); background: var(--bg); border: 1px dashed var(--line);
+  word-break: break-all; font-size: .85rem; user-select: all; }
+.code-box { position: relative; display: grid; gap: 4px; justify-items: start; }
+.code-box pre { margin: 0; width: 100%; box-sizing: border-box; overflow-x: auto; padding: var(--s2) var(--s3); border-radius: var(--r);
+  background: #0f172a; color: #e2e8f0; font-size: .78rem; line-height: 1.5; text-align: left; }
+.docs-api { display: grid; gap: var(--s2); }
+.docs-api .sec-title { margin: var(--s3) 0 0; }
+.endpoints { margin: 0; padding-inline-start: 18px; display: grid; gap: 6px; font-size: .9rem; }
+.endpoints code { background: var(--brand-soft); color: var(--brand); padding: 1px 6px; border-radius: 6px; font-size: .8rem; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r); }
+table.sample { border-collapse: collapse; width: 100%; font-size: .8rem; }
+table.sample th, table.sample td { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: start; white-space: nowrap; }
+table.sample th { background: var(--bg); font-weight: 600; }
+
+/* בחירה מרשימה — בגיליון השדה */
+.select-opts { display: grid; gap: var(--s2); }
+.select-opts textarea { font-family: inherit; }
+.src-pick { display: grid; gap: var(--s2); }
+.sub-title { margin: var(--s2) 0 0; font-size: .85rem; color: var(--muted); }
+.fill-map { display: grid; gap: 4px; }
+.fill-map .map-row { display: flex; align-items: center; gap: var(--s2); }
+.fill-map .map-row select { flex: 0 0 50%; min-width: 0; }
+.bad-text { color: var(--bad, #c92a2a); }
+.fill-map .map-row { padding: 0; }

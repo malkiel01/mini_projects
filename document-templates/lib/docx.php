@@ -170,6 +170,7 @@ function docx_value(array $f, string $v, array $attachments): string
 {
     return match ($f['type']) {
         'calc' => calc_display($v, $f['format'] ?? 'number'),
+        'select' => select_label($f, $v),
         'system' => in_array($f['source'] ?? '', ['issued', 'completed'], true) ? calc_display($v, 'date') : $v,
         'table' => implode("\n", array_map(fn($r) => implode(' · ', array_filter(array_map(
             fn($c) => cell_display($c, (string)($r[$c['key']] ?? '')), $f['columns'] ?? []), 'strlen')), table_rows($v))),

@@ -40,13 +40,17 @@ $session = null;
 $PUBLIC = ['health', 'register', 'verify', 'login', 'forgot', 'reset', 'me',
            // ממלא חיצוני: הזהות היא האסימון שבכותרת X-Fill-Token, לא עוגייה.
            'fill_get', 'fill_asset', 'fill_otp_send', 'fill_otp_verify', 'fill_save', 'fill_complete',
-           'fill_upload', 'fill_file'];
+           'fill_upload', 'fill_file',
+           // מערכת חיצונית: הזהות היא מפתח ה-API שבכותרת Authorization, לא עוגייה.
+           'ext_templates', 'ext_template', 'ext_issue', 'ext_document', 'ext_update', 'ext_file'];
 $POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'dev_user',
            'tpl_create', 'tpl_create_authored', 'tpl_save', 'tpl_set_source', 'tpl_archive', 'tpl_delete',
            'doc_create', 'doc_save', 'doc_complete', 'doc_archive', 'doc_delete', 'doc_downloaded',
            'part_contact', 'part_link', 'fill_otp_send', 'fill_otp_verify', 'fill_save', 'fill_complete',
            'doc_upload', 'fill_upload', 'dev_quota', 'share_set', 'share_remove', 'share_leave',
-           'contact_save', 'contact_archive', 'doc_contact', 'doc_tags', 'tpl_tags', 'bulk_preview', 'bulk_issue'];
+           'contact_save', 'contact_archive', 'doc_contact', 'doc_tags', 'tpl_tags', 'bulk_preview', 'bulk_issue',
+           'src_save', 'src_delete', 'src_sync', 'key_create', 'key_update', 'key_revoke', 'key_secret', 'key_test',
+           'ext_issue', 'ext_update'];
 
 try {
     if (in_array($action, $POSTS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -66,7 +70,7 @@ try {
         'health' => (function () {
             $probe = 'בדיקה';
             db();
-            return ['ok' => true, 'stage' => 12, 'php' => PHP_VERSION, 'sqlite' => true,
+            return ['ok' => true, 'stage' => 12, 'integrations' => true, 'curl' => function_exists('curl_init'), 'php' => PHP_VERSION, 'sqlite' => true,
                 'crypto' => unseal(seal($probe)) === $probe,
                 'mail' => function_exists('mail'), 'zip' => class_exists('ZipArchive'),
                 'finfo' => class_exists('finfo'),
@@ -128,6 +132,29 @@ try {
         'doc_tags'        => doc_tags($session, $body),
         'tpl_tags'        => tpl_tags($session, $body),
         'doc_docx'        => doc_docx($session, (int)($_GET['id'] ?? 0), !empty($_GET['preview'])),
+        // חיבורים: מקורות נתונים ומפתחות API
+        'src_list'   => src_list($session),
+        'src_save'   => src_save($session, $body),
+        'src_delete' => src_delete($session, $body),
+        'src_sync'   => src_sync($session, $body),
+        'key_list'   => key_list($session),
+        'key_create' => key_create($session, $body),
+        'key_update' => key_update($session, $body),
+        'key_revoke' => key_revoke($session, $body),
+        'key_secret' => key_secret($session, $body),
+        'key_test'   => key_test($session, $body),
+        // ה-API למערכות חיצוניות
+        'ext_templates', 'ext_template', 'ext_issue', 'ext_document', 'ext_update', 'ext_file' => (function () use ($action, $body) {
+            [$u, $k] = api_auth();
+            return match ($action) {
+                'ext_templates' => ext_templates($u),
+                'ext_template'  => ext_template($u, $_GET),
+                'ext_issue'     => ext_issue($u, $k, $body),
+                'ext_document'  => ext_document($u, $_GET),
+                'ext_update'    => ext_update($u, $body),
+                'ext_file'      => ext_file($u, $_GET),
+            };
+        })(),
         'dev_users' => dev_users(),
         'dev_user'  => dev_user_action($body, $session),
         default     => throw new ApiError('פעולה לא מוכרת', 404),

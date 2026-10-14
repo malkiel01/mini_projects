@@ -250,6 +250,9 @@ function db_migrate(PDO $pdo): void
         if (!in_array(strtok($def, ' '), $cols, true)) $pdo->exec("ALTER TABLE participants ADD COLUMN $def");
     }
 
+    // חיבורים: מקורות נתונים, מפתחות API (lib/integrations.php)
+    if (function_exists('integrations_migrate')) integrations_migrate($pdo);
+
     // היומן: אי אפשר לשנות או למחוק רשומה — גם לא בטעות בקוד עתידי.
     $pdo->exec(<<<'SQL'
         CREATE TRIGGER IF NOT EXISTS events_no_update BEFORE UPDATE ON events

@@ -598,6 +598,7 @@
     if (key === 'tpl' && val) return window.DTEditor.open(Number(val));
     if (key === 'docs') return window.DTDocs.list();
     if (key === 'contacts') return window.DTCatalog.view();
+    if (key === 'connections') return window.DTConn.view();
     if (key === 'doc' && val) return window.DTDocs.open(Number(val));
     return viewHome();
   }
