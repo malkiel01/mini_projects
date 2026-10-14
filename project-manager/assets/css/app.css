@@ -1148,3 +1148,6 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .rj-new > summary::-webkit-details-marker { display: none; }
 .dev-item > details > summary { list-style: none; cursor: pointer; }
 .dev-item > details > summary::-webkit-details-marker { display: none; }
+
+/* מטלות (DevLoop): ההסבר בחלקים — ❓ מה הבעיה · 🛠️ מה עשיתי · 💡 הצעות; שומרים את שורות החלקים */
+.dt-detail { white-space: pre-line; line-height: 1.55; }
