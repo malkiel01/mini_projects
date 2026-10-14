@@ -27,6 +27,8 @@
   const ddmmyyyy = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v) ? v.split('-').reverse().join('/') : v;
   /** שדה שמתמלא לבד: תאריכים — בפורמט ישראלי, השאר כמו שהוא. */
   const sysText = (f, v) => ['issued', 'completed'].includes(f.source) ? ddmmyyyy(v) : v;
+  /** בחירה מרשימה: מה שמוצג ומודפס — התווית. */
+  const optText = (f, v) => (f.options || []).find(o => o.value === v)?.label ?? v;
 
   function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -370,7 +372,7 @@
       values[key] = v;
       pending[key] = v;
       // אותו שדה מופיע פעמיים (בטקסט) — מעדכנים גם את העותק
-      for (const n of body.querySelectorAll(`input[data-key="${CSS.escape(key)}"]:not([type=checkbox]), textarea[data-key="${CSS.escape(key)}"]`)) {
+      for (const n of body.querySelectorAll(`input[data-key="${CSS.escape(key)}"]:not([type=checkbox]), textarea[data-key="${CSS.escape(key)}"], select[data-key="${CSS.escape(key)}"]`)) {
         if (n !== document.activeElement) n.value = v;
       }
       refreshDerived();
@@ -442,6 +444,17 @@
           onclick: () => signaturePad(f, (data) => { queue(f.key, data); renderBody(); }) },
           v ? el('img', { src: v, alt: 'חתימה' }) : '✍️ לחצו לחתימה');
         if (ro) n.disabled = true;
+      } else if (f.type === 'select') {
+        // בחירה מרשימה; בחירה ממקור חיצוני יכולה למלא שדות נוספים מהרשומה
+        const opts = f.options || [];
+        n = el('select', common, el('option', { value: '' }, onPage || inlineText ? f.label : '— בחירה —'),
+          opts.map(o => el('option', { value: o.value, selected: o.value === v }, o.label)),
+          v && !opts.some(o => o.value === v) ? el('option', { value: v, selected: true }, v) : null);
+        n.addEventListener('change', () => {
+          queue(f.key, n.value);
+          const o = opts.find(x => x.value === n.value);
+          for (const [k, val] of Object.entries(o?.data || {})) if (byKey[k] && canEdit(byKey[k])) queue(k, val);
+        });
       } else if (f.type === 'textarea') {
         n = el('textarea', { ...common, placeholder: onPage ? f.label : '' });
         n.value = v;
@@ -562,6 +575,7 @@
         switch (f.type) {
           case 'date': return esc(ddmmyyyy(v));
           case 'system': return esc(sysText(f, v));
+          case 'select': return esc(optText(f, v));
           case 'checkbox': return v === '1' ? '☒' : '☐';
           case 'calc': return esc(C.display(v, f.format));
           case 'signature': return /^data:image\/png;base64,/.test(v) ? `<img class="sig" src="${esc(v)}" alt="חתימה">` : '';
@@ -1131,7 +1145,7 @@
       }
 
       const text = f.type === 'date' ? ddmmyyyy(raw) : f.type === 'calc' ? window.DTCalc.display(raw, f.format)
-        : f.type === 'system' ? sysText(f, raw) : raw;
+        : f.type === 'system' ? sysText(f, raw) : f.type === 'select' ? optText(f, raw) : raw;
       let size = f.fontSize || 11;
       const pad = 2;
       const fits = (sz) => {

@@ -13,6 +13,7 @@
     textarea:  { label: 'טקסט ארוך',  icon: '¶',  w: 260, h: 70 },
     number:    { label: 'מספר',       icon: '#',  w: 90,  h: 20 },
     date:      { label: 'תאריך',      icon: '📅', w: 90,  h: 20 },
+    select:    { label: 'בחירה מרשימה', icon: '☰', w: 150, h: 20 },
     checkbox:  { label: 'תיבת סימון', icon: '☑',  w: 14,  h: 14 },
     signature: { label: 'חתימה',      icon: '✍️', w: 150, h: 50 },
     file:      { label: 'צירוף קובץ', icon: '📎', w: 170, h: 20 },
@@ -481,6 +482,7 @@
         page, x: clamp(cx - w / 2, 0, 1 - w), y: clamp(cy - h / 2, 0, 1 - h), w, h,
         fontSize: 11, align: 'right', overflow: 'shrink', role: 'owner',
         ...(type === 'system' ? { source: p.source } : {}), ...(type === 'calc' ? { formula: '', format: 'number' } : {}),
+        ...(type === 'select' ? { options: [] } : {}),
       };
       schema.fields.push(f);
       setPlacing(null);
@@ -645,7 +647,11 @@
       if (tab === 'design') { panel.replaceChildren(); return; }
       if (tab === 'fields') panel.replaceChildren(fieldsList());
       else if (tab === 'roles') panel.replaceChildren(rolesPanel());
-      else panel.replaceChildren(numberingPanel(), el('div', { class: 'numbering' }, el('h2', {}, 'תגיות לתבנית'),
+      else panel.replaceChildren(numberingPanel(), el('div', { class: 'numbering api-hint' }, el('h2', {}, '🔌 הנפקה ממערכת חיצונית'),
+        el('p', { class: 'hint' }, 'מערכת חיצונית (CRM, אתר) יכולה להנפיק מסמכים מהתבנית הזאת דרך ה-API, ולקבל הודעה כשמולאו.'),
+        el('p', { class: 'small' }, 'מזהה התבנית: ', el('code', { dir: 'ltr' }, String(id))),
+        el('a', { class: 'link small', href: '#connections' }, 'מפתחות ודוגמאות — ב"🔌 חיבורים"')),
+        el('div', { class: 'numbering' }, el('h2', {}, 'תגיות לתבנית'),
         window.DTCatalog.tagsInput(tpl.tags, async (tags) => {
           try { await api('tpl_tags', { id, tags }); tpl.tags = tags; }
           catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
@@ -714,7 +720,7 @@
 
       function render() {
         const auto = isAuto(f);
-        const textual = ['text', 'textarea', 'number', 'date', 'calc', 'system'].includes(f.type);
+        const textual = ['text', 'textarea', 'number', 'date', 'calc', 'system', 'select'].includes(f.type);
         const onPage = !isWord && !isAuthored;
         // סוג: טבלה נשארת טבלה. מעבר ל"מתמלא לבד" — בוחרים מקור.
         const types = f.type === 'table' ? ['table'] : [...PLACEABLE, 'system'];
@@ -724,6 +730,7 @@
           f.type = typeSel.value;
           if (f.type === 'calc') { f.formula ??= ''; f.format ??= 'number'; }
           if (f.type === 'system') f.source ??= 'number';
+          if (f.type === 'select') f.options ??= [];
           if (isAuto(f)) { f.required = false; f.contactField = ''; }
           setDirty(true); relabel(); draw(); render();
         });
@@ -756,7 +763,7 @@
               ? 'אתם ממלאים את השדה — בהנפקה או בעריכת המסמך.'
               : `${roleLabel(f.role)} ממלא את השדה דרך הקישור האישי שלו. אתם רואים את מה שמילא.`));
 
-        body.replaceChildren(
+        body.replaceChildren(...[
           group('השדה',
             input('תווית — מה רואים ליד השדה', 'label', { maxlength: 120 }),
             el('label', { class: 'f' }, el('span', {}, 'סוג'), typeSel),
@@ -771,10 +778,11 @@
             toggle('מודפס במסמך', 'כבוי — נשמר ומיוצא לאקסל, אבל לא מופיע בקובץ המודפס', () => f.print !== false, v => { f.print = v; }),
             el('div', { class: 'f' }, el('span', {}, 'מתי השדה מוצג'), condEditor(f, f, draw))),
           auto || f.type === 'signature' ? null : group('ערך',
+            f.type === 'select' ? selectPanel(f) : null,
             f.type === 'file' ? filePanel(f)
               : f.type === 'table' ? tablePanel(f)
               : input('ערך ברירת מחדל', 'default', { maxlength: 1000 }),
-            !['file', 'checkbox', 'table'].includes(f.type) ? choose('מתמלא מאיש קשר', 'contactField', {
+            !['file', 'checkbox', 'table', 'select'].includes(f.type) ? choose('מתמלא מאיש קשר', 'contactField', {
               '': '— לא —', name: 'שם', id_number: 'ת"ז / ח"פ', phone: 'טלפון', email: 'מייל', address: 'כתובת', notes: 'הערות',
             }) : null),
           textual && onPage ? group('על הדף',
@@ -787,7 +795,7 @@
             input('מפתח פנימי (לייצוא ולאקסל)', 'key', { dir: 'ltr', maxlength: 60, pattern: '[a-z0-9_]+' }),
             readOnly ? null : el('div', { class: 'ops' },
               f.placeholder ? null : el('button', { type: 'button', class: 'small', onclick: () => duplicate(f) }, 'שכפול'),
-              el('button', { type: 'button', class: 'small danger', onclick: () => removeField(f) }, 'מחיקת השדה'))));
+              el('button', { type: 'button', class: 'small danger', onclick: () => removeField(f) }, 'מחיקת השדה')))].filter(Boolean));
         if (readOnly) for (const n of body.querySelectorAll('input, select, textarea, button')) n.disabled = true;
       }
       render();
@@ -910,12 +918,12 @@
     function renderBlocks() {
       if (!isAuthored) return;
       const sheet = el('div', { class: 'doc-sheet' }, schema.body.map(blockEl));
-      pagesBox.replaceChildren(
+      pagesBox.replaceChildren(...[
         readOnly ? null : el('p', { class: 'notice' }, '✍️ כותבים את המסמך כאן. שדה = ', el('code', {}, '{{שם_השדה}}'),
-          ' בתוך הטקסט, או "+ שדה". בלוח מימין מגדירים לכל שדה סוג, חישוב ומתי מוצג.'),
+          ' בתוך הטקסט, או "+ שדה". בלשונית "🧩 שדות" מגדירים לכל שדה סוג, מי ממלא, חישוב ומתי מוצג.'),
         sheet,
         readOnly ? null : el('div', { class: 'ops add-blocks' }, el('span', { class: 'muted small' }, 'הוספה:'),
-          Object.entries(BLOCKS).map(([t, l]) => el('button', { type: 'button', class: 'small', onclick: () => addBlock(t) }, '+ ' + l))));
+          Object.entries(BLOCKS).map(([t, l]) => el('button', { type: 'button', class: 'small', onclick: () => addBlock(t) }, '+ ' + l)))].filter(Boolean));
     }
 
     function blockEl(b, i) {
@@ -1101,7 +1109,11 @@
         const isBox = src.type === 'checkbox';
         const ops = src.type === 'table' ? { filled: 'יש בה שורות', empty: 'ריקה' } : isBox ? { eq: 'מסומן?' } : COND_OPS;
         const op = el('select', { 'aria-label': 'תנאי' }, Object.entries(ops).map(([v, t]) => el('option', { value: v, selected: (target.showIf?.op || 'eq') === v }, t)));
-        const val = isBox
+        const listOpts = src.type === 'select' && !src.source ? (src.options || []) : [];
+        const val = listOpts.length
+          ? el('select', { 'aria-label': 'ערך' }, el('option', { value: '' }, '— ערך —'),
+              listOpts.map(o => el('option', { value: o.value, selected: target.showIf?.value === o.value }, o.label)))
+          : isBox
           ? el('select', { 'aria-label': 'ערך' }, el('option', { value: 'כן', selected: target.showIf?.value !== 'לא' }, 'כן'),
               el('option', { value: 'לא', selected: target.showIf?.value === 'לא' }, 'לא'))
           : el('input', { value: target.showIf?.value || '', maxlength: 200, 'aria-label': 'ערך', placeholder: 'ערך' });
@@ -1113,7 +1125,7 @@
           onChange && onChange();
         };
         op.addEventListener('change', upd);
-        val.addEventListener(isBox ? 'change' : 'input', upd);
+        val.addEventListener(val.tagName === 'SELECT' ? 'change' : 'input', upd);
         box.replaceChildren(field, op, val);
         // בפתיחה — רק מציגים; שינוי נרשם כשהמשתמש בוחר
         if (fromUser) upd(); else val.hidden = ['filled', 'empty'].includes(op.value);
@@ -1122,6 +1134,102 @@
         if (!field.value) { target.showIf = null; setDirty(true); onChange && onChange(); }
         draw_(true);
       });
+      draw_();
+      return box;
+    }
+
+    // ── בחירה מרשימה: רשימה קבועה, או ממקור נתונים חיצוני ──
+    let sourcesP = null;   // המקורות של המשתמש — נטען פעם אחת לעורך
+    const loadSources = (force) => (sourcesP = !force && sourcesP ? sourcesP
+      : api('src_list').then(r => r.sources).catch(() => []));
+
+    function selectPanel(f) {
+      f.options ??= [];
+      const box = el('div', { class: 'select-opts' });
+      const mode = f.source ? 'source' : 'list';
+      const seg = el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'מאיפה הרשימה' },
+        [['list', '✍️ רשימה קבועה'], ['source', '🔌 ממערכת חיצונית']].map(([k, t]) =>
+          el('label', {}, el('input', { type: 'radio', name: 'opt-src-' + f.id, value: k, checked: mode === k,
+            onchange: () => {
+              if (k === 'list') f.source = null;
+              else f.source = { id: 0, value_key: '', label_key: '', fills: [] };
+              setDirty(true); draw_();
+            } }), el('span', {}, t))));
+
+      function listEditor() {
+        // שורה לכל אפשרות: "ערך" או "ערך | מה שמוצג"
+        const ta = el('textarea', { rows: Math.max(4, Math.min(12, f.options.length + 1)), dir: 'auto',
+          'aria-label': 'האפשרויות', placeholder: 'שורה לכל אפשרות\nלמשל:\nקטן\nבינוני\nS | קטן (מה שמוצג)' });
+        ta.value = f.options.map(o => o.label && o.label !== o.value ? `${o.value} | ${o.label}` : o.value).join('\n');
+        const count = el('small', { class: 'muted' });
+        const parse = () => {
+          const seen = new Set();
+          f.options = ta.value.split('\n').map(l => l.split('|').map(x => x.trim())).filter(([v]) => v && !seen.has(v) && seen.add(v))
+            .map(([v, l]) => ({ value: v, label: l || v }));
+          count.textContent = f.options.length + ' אפשרויות';
+        };
+        ta.addEventListener('input', () => { parse(); setDirty(true); });
+        parse();
+        return el('label', { class: 'f' }, el('span', {}, 'האפשרויות'), ta, count);
+      }
+
+      async function sourceEditor() {
+        const holder = el('div', { class: 'src-pick' }, el('p', { class: 'hint' }, 'טוען מקורות…'));
+        const sources = await loadSources();
+        const s = f.source;
+        const render = () => {
+          const src = sources.find(x => x.id === s.id);
+          const pick = el('select', { 'aria-label': 'מקור הנתונים' }, el('option', { value: '0' }, '— בחירת מקור —'),
+            sources.map(x => el('option', { value: x.id, selected: x.id === s.id }, x.name)),
+            s.id && !src ? el('option', { value: s.id, selected: true }, 'מקור של בעל התבנית') : null);
+          pick.addEventListener('change', () => { s.id = Number(pick.value); s.value_key = ''; s.label_key = ''; s.fills = []; setDirty(true); render(); });
+          const keys = src?.keys || [];
+          const keySel = (label, prop, dflt) => {
+            const k = el('select', {}, el('option', { value: '' }, '— כמו במקור' + (dflt ? ` (${dflt})` : '') + ' —'),
+              keys.map(x => el('option', { value: x, selected: s[prop] === x }, x)));
+            k.addEventListener('change', () => { s[prop] = k.value; setDirty(true); });
+            return el('label', { class: 'f' }, el('span', {}, label), k);
+          };
+          // שדות שמתמלאים מהרשומה שנבחרה
+          const targets = schema.fields.filter(x => x !== f && ['text', 'textarea', 'number', 'date'].includes(x.type));
+          const fillRows = targets.map(x => {
+            const cur = (s.fills || []).find(m => m.key === x.key)?.from || '';
+            const k = el('select', { 'aria-label': 'ממלא את ' + x.label }, el('option', { value: '' }, '— לא —'),
+              keys.map(y => el('option', { value: y, selected: cur === y }, y)));
+            k.addEventListener('change', () => {
+              s.fills = (s.fills || []).filter(m => m.key !== x.key);
+              if (k.value) s.fills.push({ key: x.key, from: k.value });
+              setDirty(true);
+            });
+            return el('div', { class: 'map-row' }, el('span', { class: 'use-tx' }, el('b', {}, x.label)), k);
+          });
+          const status = src ? el('p', { class: 'hint' + (src.last_error ? ' bad-text' : '') }, src.last_error
+            ? '⚠ ' + src.last_error
+            : `${src.row_count} רשומות · עודכן ${src.fetched_at ? new Date(src.fetched_at).toLocaleString('he-IL') : '—'} · מתרענן כל ${src.ttl_min} דק׳`) : null;
+          const sync = src ? el('button', { type: 'button', class: 'small', onclick: async () => {
+            sync.disabled = true; sync.textContent = 'מסנכרן…';
+            try { Object.assign(src, (await api('src_sync', { id: src.id })).source); }
+            catch (e) { src.last_error = e.message; }
+            render();
+          } }, '🔄 סנכרון עכשיו') : null;
+          holder.replaceChildren(...[
+            sources.length ? null : el('p', { class: 'notice' }, 'עוד אין מקורות נתונים. מגדירים אותם ב"🔌 חיבורים": כתובת שמחזירה רשימה, ואם צריך — אסימון.'),
+            el('label', { class: 'f' }, el('span', {}, 'מקור הנתונים'), pick),
+            el('a', { class: 'link small', href: '#connections' }, '🔌 ניהול מקורות'),
+            status, sync,
+            src ? el('div', { class: 'fields two' }, keySel('הערך שנשמר', 'value_key', src.value_key), keySel('מה שמוצג ברשימה', 'label_key', src.label_key)) : null,
+            src && targets.length ? el('h4', { class: 'sub-title' }, 'הבחירה ממלאת גם') : null,
+            src && targets.length ? el('div', { class: 'fill-map' }, fillRows) : null,
+            src && !keys.length ? el('p', { class: 'hint' }, 'אין עדיין רשומות מהמקור — סנכרנו, ואז יופיעו כאן השדות שלו.') : null].filter(Boolean));
+          if (readOnly) for (const n of holder.querySelectorAll('select, button')) n.disabled = true;
+        };
+        render();
+        return holder;
+      }
+
+      async function draw_() {
+        box.replaceChildren(seg, f.source ? await sourceEditor() : listEditor());
+      }
       draw_();
       return box;
     }

@@ -271,6 +271,7 @@ function export_value(array $f, string $v, array $att)
         case 'date': return $date($v);
         case 'system': return in_array($f['source'] ?? '', ['issued', 'completed'], true) ? $date($v) : $v;
         case 'checkbox': return $v === '1' ? 'כן' : '';
+        case 'select': return select_label($f, $v);
         case 'signature': return 'נחתם';
         case 'file': return implode(', ', array_map(fn($id) => $att[$id] ?? 'קובץ', json_decode($v, true) ?: []));
         case 'table':

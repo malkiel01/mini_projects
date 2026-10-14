@@ -176,7 +176,9 @@ function part_link(array $user, array $b): array
     $url = fill_url($token);
     $sent = null;
     if ($via === 'email') {
-        $sent = mail_fill($c['email'], $c['name'], unseal($d['title_enc']), $user['display_name'] ?? '', $url);
+        // מסמך מ-API עם שם שולח — המייל בשם המערכת החיצונית
+        $from = $d['sender_enc'] ? (string)unseal($d['sender_enc']) : ($user['display_name'] ?? '');
+        $sent = mail_fill($c['email'], $c['name'], unseal($d['title_enc']), $from, $url);
         if (!$sent) throw new ApiError('שליחת המייל נכשלה. אפשר להעתיק את הקישור ולשלוח בעצמך', 502);
     }
     $text = ($c['name'] ? $c['name'] . ', ' : '') . 'מצורף מסמך למילוי ולחתימה: ' . unseal($d['title_enc']) . "\n" . $url;
@@ -253,6 +255,7 @@ function fill_get(): array
     $schema['fields'] = array_values(array_filter($schema['fields'] ?? [],
         fn($f) => empty($f['hidden']) || ($f['role'] ?? 'owner') === $p['role_key']));
     $values = array_intersect_key($values, array_flip(array_column($schema['fields'], 'key')));
+    $schema = attach_options($schema, array_column($schema['fields'], 'key'));   // בחירה ממקור — רק מה שהממלא רשאי לראות
     $locked = !in_array($d['status'], ['sent', 'in_progress'], true) || $p['completed_at'] !== null;
     return ['ok' => true, 'document' => [
         'id' => (int)$d['id'], 'number' => $d['number'], 'title' => unseal($d['title_enc']), 'status' => $d['status'],
@@ -366,6 +369,7 @@ function fill_complete(): array
     $pdo->prepare("UPDATE participants SET completed_at = ?, status = 'completed' WHERE id = ?")->execute([now_iso(), $p['id']]);
     log_event((int)$d['id'], 'participant:' . $p['id'], 'participant_completed', ['role' => role_of($schema, $p['role_key'])['label']]);
     $pdo->commit();
+    webhook_fire((int)$d['id'], 'participant.completed', ['role' => $p['role_key']]);
 
     $owner = db()->prepare('SELECT email, display_name FROM users WHERE id = ?');
     $owner->execute([$d['owner_id']]);
@@ -387,7 +391,7 @@ function fill_complete(): array
             db()->prepare("UPDATE participants SET token_hash = ?, notified_at = ?, status = CASE status WHEN 'waiting' THEN 'sent' ELSE status END WHERE id = ?")
                 ->execute([token_hash($token), now_iso(), $next['id']]);
             log_event((int)$d['id'], 'participant:' . $p['id'], 'link_issued', ['role' => role_of($schema, $next['role_key'])['label'], 'via' => 'email', 'auto' => true]);
-            mail_fill($c['email'], $c['name'], $title, $owner['display_name'], fill_url($token));
+            mail_fill($c['email'], $c['name'], $title, ($d['sender_enc'] ?? null) ? (string)unseal($d['sender_enc']) : $owner['display_name'], fill_url($token));
         } elseif ($owner['email']) {
             send_mail($owner['email'], 'משתתף סיים: ' . $title, role_of($schema, $p['role_key'])['label'] .
                 " סיים/ה למלא. הבא בתור — אין לו מייל, שלחו לו קישור בעצמכם:\n" . app_base_url() . '#doc=' . $d['id']);
