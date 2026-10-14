@@ -2230,5 +2230,10 @@
     "עיכבון {n}% — שוחרר": "Retenue {n}% — libérée",
     "זיכוי {amount} — שולם מעל הסוכם": "Crédit {amount} — payé au-delà du montant convenu",
     "זיכוי": "Crédit",
-    "שלבים משותפים שעוד לא חולקו בחוזה בין הדירות — לא נכללים בסכומים שלמעלה": "Étapes communes pas encore réparties entre les lots dans le contrat — non incluses dans les montants ci-dessus"
+    "שלבים משותפים שעוד לא חולקו בחוזה בין הדירות — לא נכללים בסכומים שלמעלה": "Étapes communes pas encore réparties entre les lots dans le contrat — non incluses dans les montants ci-dessus",
+    "מתוך {amount} — עיכבון {r} בשחרור": "sur {amount} — retenue {r} à la libération",
+    "מתוך {amount}": "sur {amount}",
+    "עיכבון {amount} — בשחרור, במסירה": "Retenue {amount} — versée à la libération, à la livraison",
+    "מתוך {total} — עיכבון {amount} נשאר עד המסירה": "sur {total} — retenue {amount} conservée jusqu'à la livraison",
+    "מתוך {amount} — {r} נשארים אצלכם כעיכבון עד המסירה": "sur {amount} — {r} reste chez vous comme retenue jusqu'à la livraison"
 }

@@ -155,11 +155,12 @@ const Payments = (() => {
             p.supplier_request && p.status === 'planned' ? `📥 ${esc(t('בקשת הספק'))}` : `${ICON[p.status]} ${esc(p.label)}`,
             dueText(p, late) ? `<span class="${late ? 'late' : ''}">${esc(dueText(p, late))}</span>` : '',
             p.status === 'partial' ? esc(t('נשאר {amount}', { amount: money(p.balance) })) : '',
-            p.kind === 'retention' ? '' : p.retention ? esc(t('לתשלום {amount} (עיכבון {r})', { amount: money(p.due_amount), r: money(p.retention) })) : '',
+            // הסכום בשורה — מה שמשלמים באבן הדרך; העיכבון כבר בשורת "שחרור עיכבון", לא פעמיים
+            p.kind === 'retention' ? '' : p.retention ? esc(t('מתוך {amount} — עיכבון {r} בשחרור', { amount: money(p.amount), r: money(p.retention) })) : '',
             p.received > 0 && !p.invoice ? `<span class="late">🧾 ${esc(t('חסרה חשבונית'))}</span>` : '',
         ].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>');
-        return `<li class="card q-row pay-${p.status}" data-payment="${p.id}" tabindex="0" role="button" aria-label="${esc(p.title)}, ${esc(money(p.amount))}, ${esc(p.label)}">
-            <div class="body"><div class="l1"><span class="one">${esc(p.title)}</span><span class="amt">${moneyVat(vatOf(p.amount, p.vat_rate))}</span></div>
+        return `<li class="card q-row pay-${p.status}" data-payment="${p.id}" tabindex="0" role="button" aria-label="${esc(p.title)}, ${esc(money(p.due_amount))}, ${esc(p.label)}">
+            <div class="body"><div class="l1"><span class="one">${esc(p.title)}</span><span class="amt">${moneyVat(vatOf(p.due_amount, p.vat_rate))}</span></div>
                 <div class="l2">${l2}</div></div></li>`;
     }
 
@@ -170,7 +171,7 @@ const Payments = (() => {
         formError(form, '');
         current = id ? data.payments.find(p => p.id === id) : null;
         const p = current || { stage_id: guessStage(), payer: defaultPayer(), needs_lawyer: hasLawyer(), due_kind: 'date', ...preset };
-        $('#payment-dlg-title').textContent = current ? `${current.title} — ${money(current.amount)}` : t('אבן דרך לתשלום');
+        $('#payment-dlg-title').textContent = current ? `${current.title} — ${money(current.due_amount)}` : t('אבן דרך לתשלום');
         // "💰 מקדמה" — בראש הרשימה, אחרי "בלי שלב": תשלום בתחילת העבודה, בלי שלב ובלי תאריך
         el.stage_id.innerHTML = options([{ value: 'advance', label: t('💰 מקדמה — בתחילת העבודה') }, ...project.stages.map(s => ({ value: s.id, label: stageName(s) }))],
             p.due_kind === 'advance' ? 'advance' : p.stage_id, t('בלי שלב'));
@@ -216,7 +217,7 @@ const Payments = (() => {
         $('#pm-head').hidden = !p;
         if (!p) return;
         const stage = p.stage_id ? project.stages.find(s => s.id === p.stage_id) : null;
-        $('#pm-amt').textContent = money(p.amount); // הסכום של אבן הדרך — כמו בכותרת וברשימה
+        $('#pm-amt').textContent = money(p.due_amount); // מה שמשלמים באבן הדרך — כמו בכותרת וברשימה (העיכבון — בשחרור)
         $('#pm-status').textContent = `${ICON[p.status] || ''} ${p.label}`;
         // למי · על איזה שלב · מתי (מקדמה — "בתחילת העבודה" אומר הכול)
         $('#pm-sub').textContent = [p.supplier_name, p.due_kind === 'advance' ? '💰 ' + t('מקדמה — בתחילת העבודה') : stage ? '🧱 ' + stageName(stage) : t('בלי שלב'),
@@ -226,7 +227,7 @@ const Payments = (() => {
             <span class="fm-track" role="progressbar" aria-label="${esc(t('התקבל'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span style="inline-size:${pct}%"></span></span>` : '';
         $('#payment-state').innerHTML = (p.supplier_request ? `<span class="chip">📥 ${esc(t('הספק ביקש'))}</span>` : '')
             + (p.file_id ? `<a class="chip" href="api.php?action=file&id=${p.file_id}" target="_blank" rel="noopener">📄 ${esc(t('המסמך של הספק'))}</a>` : '')
-            + (p.retention ? `<span class="chip">${esc(t('עיכבון {amount}', { amount: money(p.retention) }))}</span><span class="chip">${esc(t('לתשלום עכשיו {amount}', { amount: money(p.due_amount) }))}</span>` : '')
+            + (p.retention && p.kind !== 'retention' ? `<span class="chip">${esc(t('מתוך {amount}', { amount: money(p.amount) }))}</span><span class="chip">🔒 ${esc(t('עיכבון {amount} — בשחרור, במסירה', { amount: money(p.retention) }))}</span>` : '')
             + (p.lawyer ? `<span class="chip">⚖️ ${esc(t('{name} אישר', { name: p.lawyer.by }))}</span>` : '');
         $('#payment-state').hidden = !$('#payment-state').innerHTML;
         $('#pm-tab-n').textContent = p.proofs.length || '';
