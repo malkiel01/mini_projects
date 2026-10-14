@@ -2,13 +2,13 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="assets/js/i18n.js?v=87"></script>
+    <script src="assets/js/i18n.js?v=88"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=87">
-    <link rel="stylesheet" href="assets/css/devloop.css?v=87">
+    <link rel="stylesheet" href="assets/css/app.css?v=88">
+    <link rel="stylesheet" href="assets/css/devloop.css?v=88">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -409,6 +409,7 @@
                         <label class="f"><span>שולם מעל הביצוע — ביותר מ- (נקודות אחוז)</span><input name="overpay" type="number" min="0" max="100" inputmode="numeric" dir="ltr"></label>
                         <label class="f"><span>אזהרת תקציב — כשסוכם (% מהתקציב)</span><input name="budget_warn" type="number" min="1" max="100" inputmode="numeric" dir="ltr"></label>
                         <label class="f"><span>חשבונית מהספק — חסרה אחרי (ימים)</span><input name="invoice_days" type="number" min="0" max="120" inputmode="numeric" dir="ltr"></label>
+                        <label class="f"><span>🔧 ריג'קט באיחור — תזכורת לספק כל (ימים, 0 — בלי)</span><input name="reject_days" type="number" min="0" max="30" inputmode="numeric" dir="ltr"></label>
                     </div>
                     <label class="switch"><input type="checkbox" name="notify_contacts"><span>מייל ללקוח ולעו"ד על חריגה מהתקציב, גידול בתקציב, ושולם מעל הביצוע (לעו"ד)</span></label>
                     <p class="hint">כל התראה נשלחת להם פעם אחת, עם מייל הבוקר, בשפה שלהם ועם הקישור האישי. בפורטל הם רואים אותן תמיד.</p>
@@ -1455,30 +1456,30 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=87"></script>
-    <script src="assets/js/contacts.js?v=87"></script>
-    <script src="assets/js/device-contacts.js?v=87"></script>
-    <script src="assets/js/viewer.js?v=87"></script>
-    <script src="assets/js/devloop.js?v=87"></script>
-    <script src="assets/js/engage.js?v=87"></script>
-    <script src="assets/js/linker.js?v=87"></script>
-    <script src="assets/js/files.js?v=87"></script>
-    <script src="assets/js/lightbox.js?v=87"></script>
-    <script src="assets/js/field.js?v=87"></script>
+    <script src="assets/js/core.js?v=88"></script>
+    <script src="assets/js/contacts.js?v=88"></script>
+    <script src="assets/js/device-contacts.js?v=88"></script>
+    <script src="assets/js/viewer.js?v=88"></script>
+    <script src="assets/js/devloop.js?v=88"></script>
+    <script src="assets/js/engage.js?v=88"></script>
+    <script src="assets/js/linker.js?v=88"></script>
+    <script src="assets/js/files.js?v=88"></script>
+    <script src="assets/js/lightbox.js?v=88"></script>
+    <script src="assets/js/field.js?v=88"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=87"></script>
-    <script src="assets/js/projects.js?v=87"></script>
-    <script src="assets/js/quotes.js?v=87"></script>
-    <script src="assets/js/payments.js?v=87"></script>
-    <script src="assets/js/fin-report.js?v=87"></script>
-    <script src="assets/js/budget.js?v=87"></script>
-    <script src="assets/js/deviations.js?v=87"></script>
-    <script src="assets/js/rejects.js?v=87"></script>
-    <script src="assets/js/finance.js?v=87"></script>
-    <script src="assets/js/finance-all.js?v=87"></script>
-    <script src="assets/js/hebcal.js?v=87"></script>
-    <script src="assets/js/calendar.js?v=87"></script>
-    <script src="assets/js/settings.js?v=87"></script>
-    <script src="assets/js/app.js?v=87"></script>
+    <script src="assets/js/share.js?v=88"></script>
+    <script src="assets/js/projects.js?v=88"></script>
+    <script src="assets/js/quotes.js?v=88"></script>
+    <script src="assets/js/payments.js?v=88"></script>
+    <script src="assets/js/fin-report.js?v=88"></script>
+    <script src="assets/js/budget.js?v=88"></script>
+    <script src="assets/js/deviations.js?v=88"></script>
+    <script src="assets/js/rejects.js?v=88"></script>
+    <script src="assets/js/finance.js?v=88"></script>
+    <script src="assets/js/finance-all.js?v=88"></script>
+    <script src="assets/js/hebcal.js?v=88"></script>
+    <script src="assets/js/calendar.js?v=88"></script>
+    <script src="assets/js/settings.js?v=88"></script>
+    <script src="assets/js/app.js?v=88"></script>
 </body>
 </html>

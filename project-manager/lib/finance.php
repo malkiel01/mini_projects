@@ -589,6 +589,7 @@ const PM_FIN_ALERT_DEFAULTS = [
     'proof_days'      => 2,    // אסמכתא שלא אושרה — אחרי כמה ימים היא "באיחור"
     'notify_contacts' => true, // מייל ללקוח ולעו"ד על חריגה מהתקציב, גידול בתקציב ושולם מעל הביצוע
     'invoice_days'    => 14,   // חשבונית מהספק — כמה ימים אחרי שהתשלום התקבל
+    'reject_days'     => 3,    // 🔧 ריג'קט באיחור — כל כמה ימים חוזרת התזכורת לספק (0 — בלי תזכורת)
 ];
 
 function pm_fin_alert_settings(int $userId): array
@@ -616,6 +617,7 @@ function pm_fin_alert_settings_save(array $user, array $in): array
         'budget_warn'     => $int('budget_warn', 1, 100, 'אזהרת תקציב'), // i18n-ok
         'proof_days'      => $int('proof_days', 0, 60, 'ימים לאישור אסמכתא'), // i18n-ok
         'invoice_days'    => $int('invoice_days', 0, 120, 'ימים לחשבונית'), // i18n-ok
+        'reject_days'     => $int('reject_days', 0, 30, 'תזכורת על ריג\'קט'), // i18n-ok
         'notify_contacts' => !empty($in['notify_contacts']),
     ];
     pm_db()->prepare('UPDATE users SET fin_alerts = ? WHERE id = ?')->execute([json_encode($cfg), $user['id']]);
