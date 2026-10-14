@@ -18,9 +18,17 @@
     file:      { label: 'צירוף קובץ', icon: '📎', w: 170, h: 20 },
     calc:      { label: 'מחושב',      icon: 'ƒ',  w: 110, h: 20 },
     table:     { label: 'טבלה',       icon: '▦',  w: 400, h: 120 },
+    system:    { label: 'מתמלא לבד',  icon: '⚙️', w: 120, h: 20 },
   };
+  // שדה שמתמלא לבד בכל מסמך — מהמסמך עצמו
+  const SYSTEM = {
+    number: ['מספר המסמך', '#️⃣'], issued: ['תאריך הנפקה', '📅'], owner: ['שם המנפיק', '👤'],
+    title: ['כותרת המסמך', '🏷️'], completed: ['תאריך השלמה', '✅'],
+  };
+  const isAuto = (f) => f.type === 'system' || f.type === 'calc';
+  const iconOf = (f) => f.type === 'system' ? (SYSTEM[f.source] || SYSTEM.number)[1] : TYPES[f.type].icon;
   // שלב 11: טבלה חוזרת — רק בתבנית Word ובתבנית שנכתבה בכלי (על דף PDF אין לאן להתרחב)
-  const PLACEABLE = Object.keys(TYPES).filter(t => t !== 'table');
+  const PLACEABLE = Object.keys(TYPES).filter(t => t !== 'table' && t !== 'system');
   const AUTHORED = 'application/x-dt-authored';
   const FORMATS = { number: 'מספר (1,234.5)', money: 'סכום (1,234.50 ₪)', date: 'תאריך (13/10/2026)' };
   const COND_OPS = { eq: 'שווה ל', neq: 'שונה מ', filled: 'מולא', empty: 'ריק' };
@@ -226,14 +234,23 @@
     const nameInput = el('input', { class: 'tpl-name', value: tpl.name, maxlength: 120, 'aria-label': 'שם התבנית' });
     const status = el('span', { class: 'save-status muted small' });
     const saveBtn = el('button', { class: 'primary', onclick: () => save() }, 'שמירה');
-    const palette = el('div', { class: 'palette' },
-      el('span', { class: 'muted small' }, 'הוספת שדה:'),
-      PLACEABLE.map(type => [type, TYPES[type]]).map(([type, t]) =>
-        el('button', { class: 'small', 'data-type': type, title: 'לחצו, ואז לחצו על המקום בדף',
-          onclick: () => setPlacing(placing === type ? null : type) }, t.icon + ' ' + t.label)));
+    // עיצוב הטופס: "+ שדה" (אריחים בגיליון) ומקרא — מי ממלא כל צבע
+    const addBtn = el('button', { class: 'primary', onclick: () => addSheet() }, '+ שדה');
+    const legend = el('div', { class: 'legend', 'aria-label': 'מי ממלא — לפי צבע' });
+    const placingText = el('span');
+    // בזמן הצבה — ההנחיה במקום הכפתור והמקרא, באותו סרגל: הדף לא זז מתחת לאצבע
+    const placingBar = el('div', { class: 'placing-bar', hidden: true, role: 'status' }, placingText,
+      el('button', { class: 'small', onclick: () => setPlacing(null) }, 'ביטול'));
+    const palette = el('div', { class: 'palette design-bar' }, addBtn, legend, placingBar);
     const pagesBox = el('div', { class: 'pages' });
     const viewer = zoomable(pagesBox);
-    const panel = el('aside', { class: 'panel card' });
+    const panel = el('section', { class: 'panel card tab-panel', role: 'tabpanel' });
+    // לשוניות: עיצוב הטופס · שדות · ממלאים · הגדרות — מסך ארוך מפוצל, לא גלילה אחת
+    const TABS = [['design', '📄 עיצוב'], ['fields', '🧩 שדות'], ['roles', '👥 ממלאים'], ['settings', '⚙️ הגדרות']];
+    let tab = 'design';
+    try { tab = sessionStorage.getItem('dt-editor-tab') || 'design'; } catch (e) { /* אחסון חסום */ }
+    const tabsEl = el('div', { class: 'seg-tabs', role: 'tablist', 'aria-label': 'עריכת התבנית' });
+    const designView = el('div', { class: 'design-view' });
     const msg = el('div');
     const parseBox = el('div');
     let spots = [];          // שלב 10: מקומות מילוי מוצעים מהטקסט
@@ -245,16 +262,16 @@
       nameInput.disabled = true;
       saveBtn.hidden = true;
       status.hidden = true;
-      palette.hidden = true;
+      addBtn.hidden = true;
       pagesBox.classList.add('readonly');
     }
 
+    designView.append(palette, parseBox, viewer.box);
     show(
       el('div', { class: 'editor-bar card' }, nameInput, status, saveBtn),
       tpl.owner_name ? el('p', { class: 'notice' }, `👥 תבנית של ${tpl.owner_name} — ההרשאה שלך: ${window.DT.LEVEL[tpl.access]}` +
         (readOnly ? '. צפייה בלבד.' : '.')) : null,
-      palette, parseBox, msg,
-      el('div', { class: 'editor' }, viewer.box, panel));
+      tabsEl, msg, designView, panel);
 
     window.DT.setTab('home');
     window.DT.setBack('home');   // חזרה בכותרת — לתבניות
@@ -273,14 +290,12 @@
     const pageEls = [];
     const isWord = tpl.mime === DOCX;
     const isAuthored = tpl.mime === AUTHORED;
-    if (isWord || isAuthored) viewer.bar.hidden = true;   // בלי דפים — בלי זום
+    if (isWord || isAuthored) { viewer.bar.hidden = true; addBtn.hidden = true; }   // בלי דפים — בלי זום; השדות מהטקסט
     if (isAuthored) {
-      palette.hidden = true;
       pagesBox.classList.add('word', 'authored');   // הגוף מצויר בסוף הפתיחה, כשהכול מאותחל
     } else if (isWord) {
       // תבנית Word: השדות באים מהסימונים {{...}} בקובץ. אין מיקום על דף —
       // מגדירים כאן רק את השדות, ומציגים תצוגה מקדימה של הקובץ.
-      palette.hidden = true;
       pagesBox.classList.add('word');
       pagesBox.replaceChildren(el('p', { class: 'notice' }, '📝 תבנית Word — השדות הם הסימונים {{...}} שבקובץ. ' +
         'כדי להוסיף שדה: מוסיפים סימון ב-Word ומעלים מחדש. כאן מגדירים לכל שדה סוג, חובה, מי ממלא ומילוי מאיש קשר.'));
@@ -398,8 +413,8 @@
         if (placing) return;
         e.preventDefault();
         const f = addSpot(s);
-        select(f);
         renderParse();
+        editField(f);
       });
       return b;
     }
@@ -423,44 +438,73 @@
     }
 
     // ── שדות ──
-    function setPlacing(type) {
-      placing = type;
-      pagesBox.classList.toggle('placing', !!type);
-      for (const b of palette.querySelectorAll('[data-type]')) b.classList.toggle('active', b.dataset.type === type);
+    // הצבה: בוחרים סוג ב"+ שדה", ואז מקישים במקום בדף. p = { type, source? }
+    function setPlacing(p) {
+      placing = p;
+      pagesBox.classList.toggle('placing', !!p);
+      placingBar.hidden = !p;
+      legend.hidden = !!p;
+      addBtn.hidden = !!p || readOnly || isWord || isAuthored;
+      if (p) placingText.textContent = '👆 הקישו במקום בדף שבו יופיע: ' + (p.type === 'system' ? SYSTEM[p.source][0] : TYPES[p.type].label);
     }
 
-    function addField(type, page, cx, cy) {
+    /** "+ שדה": אריחים — שדות למילוי, ושדות שמתמלאים לבד. */
+    function addSheet() {
+      let dlg;
+      const pick = (p) => () => { dlg.close(); setPlacing(p); };
+      const t = (type) => { const b = window.DT.tile(TYPES[type].icon, TYPES[type].label, pick({ type })); b.dataset.type = type; return b; };
+      dlg = window.DT.sheet('הוספת שדה', [
+        el('p', { class: 'hint' }, 'בוחרים סוג, ואז מקישים במקום בדף. אחר כך — מי ממלא, הרשאות וכל השאר.'),
+        el('h3', { class: 'sec-title' }, '✍️ למילוי — אני או ממלא בקישור'),
+        el('div', { class: 'tiles' }, PLACEABLE.filter(k => k !== 'calc').map(t)),
+        el('h3', { class: 'sec-title' }, '⚙️ מתמלא לבד בכל מסמך'),
+        el('div', { class: 'tiles' },
+          Object.entries(SYSTEM).map(([src, [label, icon]]) => {
+            const b = window.DT.tile(icon, label, pick({ type: 'system', source: src }));
+            b.dataset.type = 'system:' + src;
+            return b;
+          }),
+          (() => { const b = window.DT.tile('ƒ', 'מחושב — לפי נוסחה', pick({ type: 'calc' })); b.dataset.type = 'calc'; return b; })()),
+      ]);
+    }
+
+    function addField(p, page, cx, cy) {
+      const type = p.type;
       const t = TYPES[type];
-      const p = schema.pages[page];
-      const w = clamp(t.w / p.w, 0.01, 1);
-      const h = clamp(t.h / p.h, 0.005, 1);
+      const pg = schema.pages[page];
+      const w = clamp(t.w / pg.w, 0.01, 1);
+      const h = clamp(t.h / pg.h, 0.005, 1);
       const n = schema.fields.filter(f => f.type === type).length + 1;
       const f = {
-        id: uid(), key: type + '_' + n + '_' + Math.random().toString(36).slice(2, 5), type,
-        label: t.label + ' ' + n, help: '', required: false, default: '',
+        id: uid(), key: (type === 'system' ? p.source : type) + '_' + n + '_' + Math.random().toString(36).slice(2, 5), type,
+        label: type === 'system' ? SYSTEM[p.source][0] : t.label + ' ' + n, help: '', required: false, default: '',
         page, x: clamp(cx - w / 2, 0, 1 - w), y: clamp(cy - h / 2, 0, 1 - h), w, h,
-        fontSize: 11, align: 'right', overflow: 'shrink',
+        fontSize: 11, align: 'right', overflow: 'shrink', role: 'owner',
+        ...(type === 'system' ? { source: p.source } : {}), ...(type === 'calc' ? { formula: '', format: 'number' } : {}),
       };
       schema.fields.push(f);
       setPlacing(null);
       setDirty(true);
       draw();
-      select(f);
+      editField(f);
     }
 
     function fieldEl(f) {
       const box = el('div', {
-        class: 'field t-' + f.type + ' role-' + (roleIndex(f.role) % 6) + (selected === f ? ' selected' : '') + (f.required ? ' required' : ''),
+        class: 'field t-' + f.type + (isAuto(f) ? ' auto' : ' role-' + (roleIndex(f.role) % 6)) + (selected === f ? ' selected' : '')
+          + (f.required ? ' required' : '') + (f.hidden ? ' private' : ''),
         style: `left:${f.x * 100}%; top:${f.y * 100}%; width:${f.w * 100}%; height:${f.h * 100}%`,
-        title: f.label, tabindex: 0,
-      }, el('span', { class: 'field-label' }, TYPES[f.type].icon + ' ' + f.label),
+        title: f.label + ' — לחיצה: הגדרות; גרירה: הזזה', tabindex: 0, role: 'button',
+      }, el('span', { class: 'field-label' }, iconOf(f) + ' ' + f.label),
         el('span', { class: 'handle', 'aria-hidden': 'true' }));
       box.addEventListener('pointerdown', (e) => startDrag(e, f, e.target.classList.contains('handle')));
-      box.addEventListener('focus', () => { if (selected !== f) select(f); });
+      box.addEventListener('focus', () => { if (selected !== f) { selected = f; for (const n of pagesBox.querySelectorAll('.field.selected')) n.classList.remove('selected'); box.classList.add('selected'); } });
+      box.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); editField(f); } });
       return box;
     }
 
     function draw() {
+      renderLegend();
       const sp = showSpots && !readOnly ? freeSpots() : [];
       pageEls.forEach((p, i) => p.layer.replaceChildren(
         ...sp.filter(s => s.page === i).map(spotEl),
@@ -469,7 +513,7 @@
 
     // גרירה: הזזה, או שינוי גודל מהידית. התנועה מחושבת כשבר מגודל הדף.
     function startDrag(e, f, resize) {
-      if (readOnly) { e.stopPropagation(); select(f); return; }
+      if (readOnly) { e.stopPropagation(); editField(f); return; }
       e.preventDefault();
       e.stopPropagation();
       const box = e.currentTarget;
@@ -478,7 +522,6 @@
         selected = f;
         for (const n of pagesBox.querySelectorAll('.field.selected')) n.classList.remove('selected');
         box.classList.add('selected');
-        renderPanel();
       }
       const layer = pageEls[f.page].layer;
       const r = layer.getBoundingClientRect();
@@ -503,6 +546,7 @@
         box.removeEventListener('pointerup', onUp);
         box.removeEventListener('pointercancel', onUp);
         if (moved) setDirty(true);
+        else editField(f);   // הקשה בלי גרירה — פותחת את הגדרות השדה
       };
       box.addEventListener('pointermove', onMove);
       box.addEventListener('pointerup', onUp);
@@ -514,6 +558,11 @@
       draw();
       renderPanel();
       if (isAuthored) renderBlocks();   // תצוגת הטבלה בגוף מתעדכנת אחרי עריכת עמודות
+    }
+
+    function editField(f) {
+      select(f);
+      fieldSheet(f);
     }
 
     function removeField(f) {
@@ -528,6 +577,7 @@
       }
       schema.fields = schema.fields.filter(x => x !== f);
       for (const x of schema.fields) if (x.showIf && x.showIf.key === f.key) x.showIf = null;
+      for (const d of document.querySelectorAll('dialog.field-dlg[open]')) d.close();
       setDirty(true);
       select(null);
       if (spots.length) renderParse();   // ההצעה שמתחתיו חוזרת
@@ -538,7 +588,8 @@
         y: clamp(f.y + f.h + 0.01, 0, 1 - f.h) };
       schema.fields.push(c);
       setDirty(true);
-      select(c);
+      for (const d of document.querySelectorAll('dialog.field-dlg[open]')) d.close();
+      editField(c);
     }
 
     // מקלדת: מחיקה, ובחצים — הזזה עדינה (Shift — צעד גדול).
@@ -547,6 +598,7 @@
       if (readOnly) return;
       if (!document.body.contains(pagesBox)) { document.removeEventListener('keydown', onKey); return; }
       if (e.key === 'Escape') { setPlacing(null); return; }
+      if (document.querySelector('dialog[open]')) return;   // גיליון פתוח — המקשים שלו
       if (!selected || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
       if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); removeField(selected); return; }
       const step = e.shiftKey ? 0.01 : 0.002;
@@ -560,85 +612,186 @@
       pagesBox.querySelector('.field.selected')?.focus();
     }
 
-    // ── לוח ההגדרות ──
-    function renderPanel() {
-      renderPanelInner();
-      // צפייה בלבד: הלוח מוצג, אבל אי אפשר לשנות דבר (חוץ ממעבר בין שדות).
-      if (readOnly) for (const n of panel.querySelectorAll('input, select, textarea, button:not(.link)')) n.disabled = true;
+    // ── לשוניות ולוחות ──
+    const roleLabel = (key) => (schema.roles.find(r => r.key === key) || schema.roles[0]).label;
+    /** מי מתפעל את השדה — במילים: לבד, אני, או ממלא בקישור. */
+    function whoOf(f) {
+      if (f.type === 'system') return '⚙️ מתמלא לבד';
+      if (f.type === 'calc') return 'ƒ מחושב לבד';
+      return (f.role || 'owner') === 'owner' ? '✍️ אני ממלא' : '🔗 ' + roleLabel(f.role) + ' — בקישור';
     }
 
-    function renderPanelInner() {
-      if (!selected) {
-        panel.replaceChildren(
-          el('h2', {}, `שדות (${schema.fields.length})`),
-          schema.fields.length
-            ? el('ol', { class: 'field-list' }, schema.fields.map(f => el('li', {},
-                el('button', { class: 'link', onclick: () => { select(f); scrollTo(f); } },
-                  TYPES[f.type].icon + ' ' + f.label),
-                el('span', { class: 'muted small' }, (isWord || isAuthored ? '' : ' · דף ' + (f.page + 1)) + (f.required ? ' · חובה' : '')))))
-            : el('p', { class: 'muted small' }, 'בחרו סוג שדה למעלה, ואז לחצו על המקום בדף.'),
-          el('p', { class: 'muted small' }, 'גרירה מזיזה; הפינה התחתונה משנה גודל; חצים במקלדת — הזזה עדינה; Delete — מחיקה.'),
-          rolesPanel(),
-          numberingPanel(),
-          el('div', { class: 'numbering' }, el('h2', {}, 'תגיות לתבנית'),
-            window.DTCatalog.tagsInput(tpl.tags, async (tags) => {
-              try { await api('tpl_tags', { id, tags }); tpl.tags = tags; }
-              catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
-            }, { disabled: readOnly })));
-        return;
+    function renderLegend() {
+      const used = new Set(schema.fields.filter(f => !isAuto(f)).map(f => f.role || 'owner'));
+      legend.replaceChildren(
+        ...schema.roles.map((r, i) => el('span', { class: 'chip legend-chip', title: r.key === 'owner' ? 'אני ממלא' : 'ממלא בקישור' },
+          el('span', { class: 'role-dot role-' + (i % 6) }), (r.key === 'owner' ? 'אני' : r.label + ' (קישור)') +
+            (used.has(r.key) ? '' : ' · 0'))),
+        el('span', { class: 'chip legend-chip' }, el('span', { class: 'role-dot auto' }), 'מתמלא לבד'));
+    }
+
+    function renderTabs() {
+      const count = { fields: schema.fields.length, roles: schema.roles.length };
+      tabsEl.replaceChildren(...TABS.map(([k, label]) => el('button', {
+        type: 'button', role: 'tab', 'aria-selected': String(tab === k), class: tab === k ? 'on' : '', 'data-tab': k,
+        onclick: () => { tab = k; try { sessionStorage.setItem('dt-editor-tab', k); } catch (e) { /* חסום */ } renderPanel(); },
+      }, label, count[k] != null ? el('span', { class: 'count' }, String(count[k])) : null)));
+    }
+
+    function renderPanel() {
+      renderTabs();
+      designView.hidden = tab !== 'design';
+      panel.hidden = tab === 'design';
+      if (tab === 'design') { panel.replaceChildren(); return; }
+      if (tab === 'fields') panel.replaceChildren(fieldsList());
+      else if (tab === 'roles') panel.replaceChildren(rolesPanel());
+      else panel.replaceChildren(numberingPanel(), el('div', { class: 'numbering' }, el('h2', {}, 'תגיות לתבנית'),
+        window.DTCatalog.tagsInput(tpl.tags, async (tags) => {
+          try { await api('tpl_tags', { id, tags }); tpl.tags = tags; }
+          catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
+        }, { disabled: readOnly })));
+      // צפייה בלבד: הלוח מוצג, אבל אי אפשר לשנות דבר (חוץ ממעבר בין שדות).
+      if (readOnly) for (const n of panel.querySelectorAll('input, select, textarea, button:not(.use-row)')) n.disabled = true;
+    }
+
+    /** כל השדות — לפי מי מתפעל אותם. שורה = פתיחת ההגדרות. */
+    function fieldsList() {
+      const groups = [];
+      const add = (title, hint, list) => { if (list.length) groups.push([title, hint, list]); };
+      add('✍️ אני ממלא', 'בהנפקה או בעריכת המסמך', schema.fields.filter(f => !isAuto(f) && (f.role || 'owner') === 'owner'));
+      for (const r of schema.roles.filter(r => r.key !== 'owner')) {
+        add('🔗 ' + r.label + ' — ממלא בקישור', r.auth === 'email' ? 'נכנס עם קוד במייל' : 'נכנס מהקישור', schema.fields.filter(f => !isAuto(f) && f.role === r.key));
       }
-      const f = selected;
+      add('⚙️ מתמלא לבד', 'מהמסמך עצמו או מנוסחה — אף אחד לא מקליד', schema.fields.filter(isAuto));
+      const sub = (f) => [
+        f.type === 'system' ? (SYSTEM[f.source] || SYSTEM.number)[0] : TYPES[f.type].label,
+        f.required ? 'חובה' : null,
+        isWord || isAuthored ? (f.placeholder ? '{{' + f.placeholder + '}}' : null) : 'דף ' + (f.page + 1),
+        f.hidden ? '🙈 מוסתר מהממלאים' : null,
+        f.print === false ? '🚫 לא מודפס' : null,
+        f.showIf ? '👁 מותנה' : null,
+      ].filter(Boolean).join(' · ');
+      return el('div', { class: 'fields-tab' },
+        schema.fields.length ? null : el('p', { class: 'empty' }, isWord || isAuthored
+          ? 'אין עדיין שדות — מוסיפים סימון {{שם}} בטקסט.' : 'אין עדיין שדות. בלשונית "עיצוב" — "+ שדה", ואז הקשה במקום בדף.'),
+        groups.map(([title, hint, list]) => el('section', { class: 'field-group' },
+          el('h3', { class: 'sec-title' }, title, el('small', { class: 'muted' }, ' · ' + hint)),
+          el('ul', { class: 'list field-list' }, list.map(f => el('li', {},
+            el('button', { type: 'button', class: 'use-row', 'data-key': f.key, onclick: () => editField(f) },
+              el('span', { class: 'use-ic' + (isAuto(f) ? ' auto' : ' role-' + (roleIndex(f.role) % 6)), 'aria-hidden': 'true' }, iconOf(f)),
+              el('span', { class: 'use-tx' }, el('b', {}, f.label), el('small', {}, sub(f))),
+              el('span', { class: 'chev', 'aria-hidden': 'true' }, '‹'))))))),
+        isWord || isAuthored ? null : el('p', { class: 'hint' }, 'בדף: הקשה על שדה — הגדרות; גרירה — הזזה; הפינה — גודל; חצים — הזזה עדינה; Delete — מחיקה.'));
+    }
+
+    /** הגדרות שדה אחד — בגיליון: מה, מי ממלא, הרשאות, ערך, מיקום, מתקדם. */
+    function fieldSheet(f) {
+      const body = el('div', { class: 'field-sheet' });
+      const done = el('button', { type: 'button', class: 'primary small', onclick: () => dlg.close() }, 'סיום');
+      const dlg = window.DT.sheet('הגדרות שדה', body, { action: done, onClose: () => { draw(); renderPanel(); if (isAuthored) renderBlocks(); } });
+      dlg.classList.add('field-dlg');
+      const relabel = () => { const lbl = pagesBox.querySelector('.field.selected .field-label'); if (lbl) lbl.textContent = iconOf(f) + ' ' + f.label; };
       const input = (label, prop, attrs = {}) => {
         const i = el('input', { value: f[prop] ?? '', ...attrs });
         i.addEventListener('input', () => {
           f[prop] = attrs.type === 'number' ? Number(i.value) : i.value;
           setDirty(true);
-          if (prop === 'label') { const lbl = pagesBox.querySelector('.field.selected .field-label'); if (lbl) lbl.textContent = TYPES[f.type].icon + ' ' + f.label; }
+          if (prop === 'label') relabel();
         });
-        return el('label', {}, el('span', {}, label), i);
+        return el('label', { class: 'f' }, el('span', {}, label), i);
       };
-      const select_ = (label, prop, options) => {
-        const s = el('select', {}, Object.entries(options).map(([v, t]) => el('option', { value: v, selected: f[prop] === v }, t)));
-        s.addEventListener('change', () => { f[prop] = s.value; setDirty(true); draw(); });
-        return el('label', {}, el('span', {}, label), s);
+      const choose = (label, prop, options, after) => {
+        const s = el('select', {}, Object.entries(options).map(([v, t]) => el('option', { value: v, selected: (f[prop] ?? '') === v }, t)));
+        s.addEventListener('change', () => { f[prop] = s.value; setDirty(true); draw(); after && after(); });
+        return el('label', { class: 'f' }, el('span', {}, label), s);
       };
-      const req = el('input', { type: 'checkbox', checked: f.required });
-      req.addEventListener('change', () => { f.required = req.checked; setDirty(true); draw(); });
-      const textual = ['text', 'textarea', 'number', 'date', 'calc'].includes(f.type);
-      const derived = f.type === 'calc' || f.type === 'table';
-      // סוג: שינוי מחליף את הלוח (לנוסחה יש שדות משלה). טבלה נשארת טבלה.
-      const typeSel = el('select', { disabled: f.type === 'table' },
-        (f.type === 'table' ? ['table'] : PLACEABLE).map(k => el('option', { value: k, selected: f.type === k }, TYPES[k].icon + ' ' + TYPES[k].label)));
-      typeSel.addEventListener('change', () => {
-        f.type = typeSel.value;
-        if (f.type === 'calc') { f.formula ??= ''; f.format ??= 'number'; f.required = false; f.contactField = ''; }
-        setDirty(true); draw(); renderPanel();
-      });
+      const toggle = (label, hint, get, set) => {
+        const c = el('input', { type: 'checkbox', checked: get() });
+        c.addEventListener('change', () => { set(c.checked); setDirty(true); draw(); });
+        return el('label', { class: 'switch' }, c, el('span', {}, label, hint ? el('small', { class: 'muted' }, hint) : null));
+      };
+      const group = (title, ...kids) => el('section', { class: 'fs-group' }, el('h3', { class: 'sec-title' }, title), ...kids);
 
-      panel.replaceChildren(
-        el('div', { class: 'row' }, el('h2', {}, 'הגדרות שדה'), el('button', { class: 'link small', onclick: () => select(null) }, 'כל השדות')),
-        f.placeholder ? el('p', { class: 'small muted' }, 'בקובץ: ', el('code', {}, '{{' + f.placeholder + '}}')) : null,
-        f.pdfName ? el('p', { class: 'small muted' }, 'שדה בטופס המקורי: ', el('code', { dir: 'ltr' }, f.pdfName)) : null,
-        input('תווית — מה הממלא רואה', 'label', { maxlength: 120 }),
-        el('label', {}, el('span', {}, 'סוג'), typeSel),
-        f.type === 'calc' ? calcPanel(f) : null,
-        f.type === 'table' ? tablePanel(f) : null,
-        f.type === 'calc' ? null : el('label', { class: 'inline' }, req, ' שדה חובה'),
-        schema.roles.length > 1 ? select_('מי ממלא', 'role', Object.fromEntries(schema.roles.map(r => [r.key, r.label]))) : null,
-        input('שורת עזרה (לא חובה)', 'help', { maxlength: 300 }),
-        f.type !== 'signature' && f.type !== 'file' && !derived ? input('ערך ברירת מחדל', 'default', { maxlength: 1000 }) : null,
-        f.type === 'file' ? filePanel(f) : null,
-        !['file', 'signature', 'checkbox', 'calc', 'table'].includes(f.type) ? select_('מתמלא מאיש קשר', 'contactField', {
-          '': '— לא —', name: 'שם', id_number: 'ת"ז / ח"פ', phone: 'טלפון', email: 'מייל', address: 'כתובת', notes: 'הערות',
-        }) : null,
-        textual && !isWord && !isAuthored ? input('גודל גופן', 'fontSize', { type: 'number', min: 6, max: 72 }) : null,
-        textual && !isWord && !isAuthored ? select_('יישור', 'align', { right: 'ימין', center: 'מרכז', left: 'שמאל' }) : null,
-        textual && !isWord && !isAuthored ? select_('כשהטקסט ארוך מהשדה', 'overflow', OVERFLOW) : null,
-        el('div', { class: 'numbering' }, el('h2', {}, 'מתי מוצג'), condEditor(f, f, draw)),
-        input('מפתח פנימי (לייצוא ולאקסל)', 'key', { dir: 'ltr', maxlength: 60, pattern: '[a-z0-9_]+' }),
-        el('div', { class: 'ops' },
-          f.placeholder ? null : el('button', { class: 'small', onclick: () => duplicate(f) }, 'שכפול'),
-          el('button', { class: 'small danger', onclick: () => removeField(f) }, 'מחיקה')));
+      function render() {
+        const auto = isAuto(f);
+        const textual = ['text', 'textarea', 'number', 'date', 'calc', 'system'].includes(f.type);
+        const onPage = !isWord && !isAuthored;
+        // סוג: טבלה נשארת טבלה. מעבר ל"מתמלא לבד" — בוחרים מקור.
+        const types = f.type === 'table' ? ['table'] : [...PLACEABLE, 'system'];
+        const typeSel = el('select', { disabled: f.type === 'table' },
+          types.map(k => el('option', { value: k, selected: f.type === k }, TYPES[k].icon + ' ' + TYPES[k].label)));
+        typeSel.addEventListener('change', () => {
+          f.type = typeSel.value;
+          if (f.type === 'calc') { f.formula ??= ''; f.format ??= 'number'; }
+          if (f.type === 'system') f.source ??= 'number';
+          if (isAuto(f)) { f.required = false; f.contactField = ''; }
+          setDirty(true); relabel(); draw(); render();
+        });
+        // מי ממלא: כפתורי בחירה — אני / כל ממלא בקישור / + ממלא חדש
+        const roleSeg = el('div', { class: 'role-seg', role: 'radiogroup', 'aria-label': 'מי ממלא' },
+          schema.roles.map((r, i) => el('button', { type: 'button', role: 'radio', 'aria-checked': String((f.role || 'owner') === r.key),
+            class: ((f.role || 'owner') === r.key ? 'on ' : '') + 'role-opt role-' + (i % 6), 'data-role': r.key,
+            onclick: () => { f.role = r.key; setDirty(true); draw(); render(); } },
+          el('span', { class: 'role-dot role-' + (i % 6) }), r.key === 'owner' ? 'אני' : r.label + ' (קישור)')),
+          el('button', { type: 'button', class: 'role-opt add', onclick: () => {
+            const name = (prompt('שם הממלא (למשל: לקוח, ספק, עד)', schema.roles.length === 1 ? 'לקוח' : '') || '').trim();
+            if (!name) return;
+            const r = { key: 'role_' + Math.random().toString(36).slice(2, 7), label: name.slice(0, 60), auth: 'none' };
+            schema.roles.push(r);
+            f.role = r.key;
+            setDirty(true); draw(); render();
+          } }, '+ ממלא חדש'));
+        const who = auto
+          ? (f.type === 'system'
+            ? el('div', {}, choose('מה נכנס לשדה', 'source', Object.fromEntries(Object.entries(SYSTEM).map(([k, [l, ic]]) => [k, ic + ' ' + l])), () => {
+                if (Object.values(SYSTEM).some(([l]) => l === f.label) || !f.label) { f.label = SYSTEM[f.source][0]; relabel(); render(); }
+              }),
+              el('p', { class: 'hint' }, {
+                number: 'המספר הרץ של המסמך — לפי "מספור מסמכים" בלשונית ההגדרות. נקבע בהנפקה.',
+                issued: 'התאריך שבו המסמך הונפק.', owner: 'השם של מי שהנפיק את המסמך.',
+                title: 'הכותרת שנותנים למסמך בהנפקה.', completed: 'התאריך שבו המסמך הושלם — ריק עד אז.',
+              }[f.source || 'number']))
+            : calcPanel(f))
+          : el('div', {}, roleSeg, el('p', { class: 'hint' }, (f.role || 'owner') === 'owner'
+              ? 'אתם ממלאים את השדה — בהנפקה או בעריכת המסמך.'
+              : `${roleLabel(f.role)} ממלא את השדה דרך הקישור האישי שלו. אתם רואים את מה שמילא.`));
+
+        body.replaceChildren(
+          group('השדה',
+            input('תווית — מה רואים ליד השדה', 'label', { maxlength: 120 }),
+            el('label', { class: 'f' }, el('span', {}, 'סוג'), typeSel),
+            auto ? null : input('שורת עזרה (לא חובה)', 'help', { maxlength: 300 }),
+            f.placeholder ? el('p', { class: 'hint' }, 'בקובץ: ', el('code', {}, '{{' + f.placeholder + '}}')) : null,
+            f.pdfName ? el('p', { class: 'hint' }, 'שדה בטופס המקורי: ', el('code', { dir: 'ltr' }, f.pdfName)) : null),
+          group(auto ? 'מאיפה הערך' : 'מי ממלא', who),
+          group('הרשאות ותצוגה',
+            auto ? null : toggle('שדה חובה', 'אי אפשר לסיים בלעדיו', () => !!f.required, v => { f.required = v; }),
+            schema.roles.length > 1 || f.hidden ? toggle('מוסתר מהממלאים בקישור', 'רק אתם (ומי שממלא את השדה) רואים אותו — מידע פנימי',
+              () => !!f.hidden, v => { f.hidden = v; }) : null,
+            toggle('מודפס במסמך', 'כבוי — נשמר ומיוצא לאקסל, אבל לא מופיע בקובץ המודפס', () => f.print !== false, v => { f.print = v; }),
+            el('div', { class: 'f' }, el('span', {}, 'מתי השדה מוצג'), condEditor(f, f, draw))),
+          auto || f.type === 'signature' ? null : group('ערך',
+            f.type === 'file' ? filePanel(f)
+              : f.type === 'table' ? tablePanel(f)
+              : input('ערך ברירת מחדל', 'default', { maxlength: 1000 }),
+            !['file', 'checkbox', 'table'].includes(f.type) ? choose('מתמלא מאיש קשר', 'contactField', {
+              '': '— לא —', name: 'שם', id_number: 'ת"ז / ח"פ', phone: 'טלפון', email: 'מייל', address: 'כתובת', notes: 'הערות',
+            }) : null),
+          textual && onPage ? group('על הדף',
+            el('div', { class: 'fields two' },
+              input('גודל גופן', 'fontSize', { type: 'number', min: 6, max: 72 }),
+              choose('יישור', 'align', { right: 'ימין', center: 'מרכז', left: 'שמאל' })),
+            choose('כשהטקסט ארוך מהשדה', 'overflow', OVERFLOW),
+            el('p', { class: 'hint' }, `דף ${f.page + 1}. הזזה וגודל — בגרירה על הדף.`)) : null,
+          el('details', { class: 'fs-group adv' }, el('summary', {}, 'מתקדם'),
+            input('מפתח פנימי (לייצוא ולאקסל)', 'key', { dir: 'ltr', maxlength: 60, pattern: '[a-z0-9_]+' }),
+            readOnly ? null : el('div', { class: 'ops' },
+              f.placeholder ? null : el('button', { type: 'button', class: 'small', onclick: () => duplicate(f) }, 'שכפול'),
+              el('button', { type: 'button', class: 'small danger', onclick: () => removeField(f) }, 'מחיקת השדה'))));
+        if (readOnly) for (const n of body.querySelectorAll('input, select, textarea, button')) n.disabled = true;
+      }
+      render();
+      return dlg;
     }
 
     // משתתפים: מי ממלא איזה שדה, ובאיזה סדר. "אני" תמיד ראשון ואינו נמחק.
@@ -664,14 +817,14 @@
       const seq = el('input', { type: 'checkbox', checked: schema.sequential });
       seq.addEventListener('change', () => { schema.sequential = seq.checked; setDirty(true); });
       return el('div', { class: 'numbering' },
-        el('h2', {}, 'משתתפים'),
-        el('p', { class: 'muted small' }, 'כל משתתף מקבל קישור אישי, וממלא רק את השדות שלו. משייכים שדה בהגדרות השדה.'),
+        el('h2', {}, 'מי ממלא את המסמך'),
+        el('p', { class: 'hint' }, '"אני" — אתם, בהנפקה. כל ממלא נוסף מקבל קישור אישי, וממלא רק את השדות שלו. משייכים שדה בהגדרות השדה ("מי ממלא").'),
         list,
         el('button', { class: 'small', onclick: () => {
           const n = schema.roles.length;
           schema.roles.push({ key: 'role_' + Math.random().toString(36).slice(2, 7), label: n === 1 ? 'לקוח' : 'משתתף ' + n, auth: 'none' });
           setDirty(true); renderPanel();
-        } }, '+ הוספת משתתף'),
+        } }, '+ ממלא בקישור'),
         schema.roles.length > 1 ? el('label', { class: 'inline small' }, seq, ' לפי הסדר — כל אחד מקבל את הקישור רק אחרי שהקודם סיים') : null);
     }
 
@@ -800,7 +953,7 @@
         main = f ? el('div', { class: 'block-table' },
           el('table', {}, el('thead', {}, el('tr', {}, (f.columns || []).map(c => el('th', {}, c.label + (c.type === 'calc' ? ' ƒ' : ''))))),
             el('tbody', {}, el('tr', {}, (f.columns || []).map(() => el('td', {}, '…'))))),
-          readOnly ? null : el('button', { type: 'button', class: 'link small', onclick: () => select(f) }, '⚙ ' + f.label + ' — עמודות וחישובים'))
+          readOnly ? null : el('button', { type: 'button', class: 'link small', onclick: () => editField(f) }, '⚙ ' + f.label + ' — עמודות וחישובים'))
           : el('p', { class: 'muted small' }, 'טבלה חסרה');
       } else {
         main = el('div', { class: 'block-break' }, '— מעבר עמוד —');

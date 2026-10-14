@@ -128,7 +128,7 @@ function computed_values(array $schema, array $values): array
 {
     $out = [];
     foreach ($schema['fields'] ?? [] as $f) {
-        if ($f['type'] === 'calc' || $f['type'] === 'table') $out[$f['key']] = $values[$f['key']] ?? '';
+        if (in_array($f['type'], ['calc', 'table', 'system'], true)) $out[$f['key']] = $values[$f['key']] ?? '';
     }
     return $out;
 }
@@ -146,7 +146,7 @@ function doc_values(int $docId): array
 function doc_progress(array $schema, array $values): array
 {
     // שלב 11: שדה מוסתר (תנאי הצגה) אינו חובה
-    $req = array_filter(visible_fields($schema, $values), fn($f) => $f['required'] && $f['type'] !== 'calc');
+    $req = array_filter(visible_fields($schema, $values), fn($f) => $f['required'] && !in_array($f['type'], ['calc', 'system'], true));
     $done = array_filter($req, fn($f) => trim((string)($values[$f['key']] ?? '')) !== '');
     return ['required' => count($req), 'filled' => count($done),
         'missing' => array_values(array_map(fn($f) => $f['label'], array_diff_key($req, $done)))];
@@ -178,7 +178,7 @@ function doc_create(array $user, array $b): array
             'INSERT INTO field_values (document_id, field_key, row_index, value_enc, updated_by, updated_at) VALUES (?, ?, 0, ?, ?, ?)'
         );
         foreach ($schema['fields'] as $f) {
-            if (($f['default'] ?? '') !== '' && $f['type'] !== 'calc') $ins->execute([$docId, $f['key'], seal($f['default']), 'user:' . $user['id'], $now]);
+            if (($f['default'] ?? '') !== '' && !in_array($f['type'], ['calc', 'system'], true)) $ins->execute([$docId, $f['key'], seal($f['default']), 'user:' . $user['id'], $now]);
         }
         doc_recalc($docId, $schema, 'user:' . $user['id']);
         create_participants($docId, $schema);
@@ -367,10 +367,26 @@ function doc_recalc(int $docId, array $schema, string $actor): void
 {
     $fields = $schema['fields'] ?? [];
     $hasCalc = false;
-    foreach ($fields as $f) if ($f['type'] === 'calc' || ($f['type'] === 'table' && in_array('calc', array_column($f['columns'] ?? [], 'type'), true))) $hasCalc = true;
+    foreach ($fields as $f) if (in_array($f['type'], ['calc', 'system'], true) || ($f['type'] === 'table' && in_array('calc', array_column($f['columns'] ?? [], 'type'), true))) $hasCalc = true;
     if (!$hasCalc) return;
     $values = doc_values($docId);
     $set = [];
+    // שדות שמתמלאים לבד — מהמסמך עצמו (לפני החישובים, כדי שנוסחה תוכל להשתמש בהם)
+    $sys = array_filter($fields, fn($f) => $f['type'] === 'system');
+    if ($sys) {
+        $d = db()->query('SELECT * FROM documents WHERE id = ' . $docId)->fetch();
+        foreach ($sys as $f) {
+            $v = match ($f['source'] ?? 'number') {
+                'number' => (string)$d['number'],
+                'issued' => bulk_now('Y-m-d', $d['created_at']),
+                'owner' => user_name((int)$d['owner_id']),
+                'title' => (string)unseal($d['title_enc']),
+                'completed' => $d['completed_at'] ? bulk_now('Y-m-d', $d['completed_at']) : '',
+                default => '',
+            };
+            if ($v !== ($values[$f['key']] ?? '')) $set[$f['key']] = $values[$f['key']] = $v;
+        }
+    }
     foreach ($fields as $f) {
         if ($f['type'] !== 'table') continue;
         $rows = table_rows($values[$f['key']] ?? '');
@@ -419,7 +435,7 @@ function doc_save(array $user, array $b): array
         $sentTo = $sentTo->fetchAll(PDO::FETCH_COLUMN);
         foreach ((array)($b['values'] ?? []) as $key => $v) {
             $f = $byKey[$key] ?? null;
-            if (!$f || $f['type'] === 'calc') continue;   // מחושב — רק השרת כותב
+            if (!$f || in_array($f['type'], ['calc', 'system'], true)) continue;   // מחושב / מתמלא לבד — רק השרת כותב
             if (in_array($f['role'] ?? 'owner', $sentTo, true)) {
                 throw new ApiError('השדה "' . $f['label'] . '" כבר נשלח למילוי של המשתתף', 409);
             }
@@ -481,6 +497,9 @@ function doc_complete(array $user, array $b): array
 /** נעילה וטביעת אצבע. נקרא מ"סיום" של המנפיק, או כשהמשתתף האחרון סיים. */
 function doc_finalize(array $d, string $actor): void
 {
+    // קודם תאריך ההשלמה, ואז החישובים — כך ששדה "תאריך השלמה" נכלל בטביעת האצבע
+    $now = now_iso();
+    db()->prepare('UPDATE documents SET completed_at = ? WHERE id = ?')->execute([$now, $d['id']]);
     doc_recalc((int)$d['id'], doc_schema($d), $actor);   // הערכים המחושבים — סופיים לפני טביעת האצבע
     $values = doc_values((int)$d['id']);
     ksort($values);
@@ -489,7 +508,7 @@ function doc_finalize(array $d, string $actor): void
     $pdo = db();
     $pdo->beginTransaction();
     $pdo->prepare("UPDATE documents SET status = 'completed', completed_at = ?, final_hash = ? WHERE id = ?")
-        ->execute([now_iso(), $hash, $d['id']]);
+        ->execute([$now, $hash, $d['id']]);
     log_event((int)$d['id'], $actor, 'completed', ['hash' => $hash]);
     $pdo->commit();
 }

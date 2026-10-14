@@ -59,7 +59,7 @@ function missing_for(array $schema, array $values, string $role): array
 {
     $out = [];
     foreach (visible_fields($schema, $values) as $f) {
-        if (($f['role'] ?? 'owner') === $role && $f['required'] && $f['type'] !== 'calc' && trim((string)($values[$f['key']] ?? '')) === '') $out[] = $f['label'];
+        if (($f['role'] ?? 'owner') === $role && $f['required'] && !in_array($f['type'], ['calc', 'system'], true) && trim((string)($values[$f['key']] ?? '')) === '') $out[] = $f['label'];
     }
     return $out;
 }
@@ -249,6 +249,10 @@ function fill_get(): array
     }
     $a = tpl_asset_row((int)$d['template_version_id']);
     $values = doc_values((int)$d['id']);
+    // שדה "מוסתר מהממלאים" — הממלא לא מקבל לא את השדה ולא את הערך (אלא אם הוא שלו)
+    $schema['fields'] = array_values(array_filter($schema['fields'] ?? [],
+        fn($f) => empty($f['hidden']) || ($f['role'] ?? 'owner') === $p['role_key']));
+    $values = array_intersect_key($values, array_flip(array_column($schema['fields'], 'key')));
     $locked = !in_array($d['status'], ['sent', 'in_progress'], true) || $p['completed_at'] !== null;
     return ['ok' => true, 'document' => [
         'id' => (int)$d['id'], 'number' => $d['number'], 'title' => unseal($d['title_enc']), 'status' => $d['status'],
@@ -321,7 +325,7 @@ function fill_save(array $b): array
         );
         foreach ((array)($b['values'] ?? []) as $key => $v) {
             $f = $mine[$key] ?? null;
-            if (!$f || $f['type'] === 'calc') continue;   // שדה של מישהו אחר, או מחושב — לא נוגעים, בשקט
+            if (!$f || in_array($f['type'], ['calc', 'system'], true)) continue;   // של מישהו אחר, או מתמלא לבד — לא נוגעים, בשקט
             $v = clean_value($f, $v, (int)$d['id']);
             $prev = $old[$key] ?? '';
             if ($v === $prev) continue;
@@ -341,7 +345,9 @@ function fill_save(array $b): array
         throw $e;
     }
     $values = doc_values((int)$d['id']);
-    return ['ok' => true, 'saved' => count($changes), 'saved_at' => $now, 'computed' => computed_values($schema, $values),
+    // מחושב שמוסתר מהממלאים — לא חוזר אליו (כמו ב-fill_get)
+    $seen = array_filter($schema['fields'] ?? [], fn($f) => empty($f['hidden']) || ($f['role'] ?? 'owner') === $p['role_key']);
+    return ['ok' => true, 'saved' => count($changes), 'saved_at' => $now, 'computed' => computed_values(['fields' => array_values($seen)], $values),
         'progress' => ['required' => 0, 'filled' => 0, 'missing' => missing_for($schema, $values, $p['role_key'])]];
 }
 
