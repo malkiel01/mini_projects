@@ -41,6 +41,12 @@ function scan() {
       out.push((st.overflowX === 'hidden' ? 'נחתך: ' : 'בורח מהמסגרת: ') + desc(n) + ` (${n.scrollWidth}>${n.clientWidth})`);
     }
   }
+  // תיבת קלט שנדחקה — רואים רק כמה פיקסלים ממה שכותבים
+  for (const i of root.querySelectorAll('input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]), select, textarea')) {
+    if (!i.offsetParent || i.closest('.pages, .zoom-stage, .visually-hidden, .grid')) continue;
+    const w = i.getBoundingClientRect().width;
+    if (w > 0 && w < 70) out.push(`תיבת קלט צרה מדי (${Math.round(w)}px): ` + (i.getAttribute('aria-label') || i.name || i.placeholder || i.tagName.toLowerCase()));
+  }
   for (const ta of root.querySelectorAll('.block-text')) if (ta.offsetParent && ta.offsetHeight < 12) out.push('תיבת טקסט מכווצת לגובה 0');
   for (const c of root.querySelectorAll('.page canvas')) if (c.offsetParent && c.getBoundingClientRect().width < 50) out.push('דף לא צויר (רוחב 0)');
   for (const o of root.querySelectorAll('.fill output.on-page')) if (o.scrollWidth > o.clientWidth + 2) out.push('ערך על הדף לא נכנס בשדה: ' + o.textContent);

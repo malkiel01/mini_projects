@@ -824,7 +824,7 @@
       const list = el('ol', { class: 'roles' }, schema.roles.map((r, i) => {
         const dot = el('span', { class: 'role-dot role-' + (i % 6) });
         if (r.key === 'owner') return el('li', {}, dot, el('strong', {}, r.label), ' ', el('span', { class: 'muted small' }, '— ממלא ראשון'));
-        const label = el('input', { value: r.label, maxlength: 60, 'aria-label': 'שם התפקיד' });
+        const label = el('input', { value: r.label, maxlength: 60, 'aria-label': 'שם הממלא', placeholder: 'שם הממלא (למשל: לקוח)' });
         label.addEventListener('input', () => { r.label = label.value; setDirty(true); });
         const auth = el('select', { 'aria-label': 'אימות' },
           el('option', { value: 'none', selected: r.auth !== 'email' }, 'בלי אימות'),
@@ -837,7 +837,9 @@
           schema.roles = schema.roles.filter(x => x !== r);
           setDirty(true); draw(); renderPanel();
         } }, '✕');
-        return el('li', { class: 'role-row' }, dot, label, auth, del);
+        // שורה ראשונה: צבע · שם הממלא · הסרה; מתחת — אימות. כך השם תמיד רחב וקריא
+        return el('li', { class: 'role-row' }, dot, label, del,
+          el('label', { class: 'role-auth' }, el('span', {}, 'כניסה:'), auth));
       }));
       const seq = el('input', { type: 'checkbox', checked: schema.sequential });
       seq.addEventListener('change', () => { schema.sequential = seq.checked; setDirty(true); });
