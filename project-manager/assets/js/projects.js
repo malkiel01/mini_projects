@@ -719,8 +719,9 @@ const Projects = (() => {
         renderPartners();
         const draw = () => {
             $('#team-list').innerHTML = cur.team.map(c => {
-                // ללקוח ולעו"ד — קישור אישי לפורטל. מתי נפתח לאחרונה — בשורה.
-                const portal = c.id === cur.project.client_id || c.id === cur.project.lawyer_id || c.kind === 'supplier';
+                // ללקוח, לעו"ד ולספק — קישור אישי לפורטל. מתי נפתח לאחרונה — בשורה.
+                // גם לקוח / עו"ד נוסף שנוסף לצוות (למשל בן / בת הזוג) — קישור משלו (pm_portal_co)
+                const portal = ['client', 'lawyer', 'supplier'].includes(c.kind);
                 const l = links[c.id];
                 const seen = l ? (l.last_seen_at ? t('פתח {when}', { when: when(l.last_seen_at) }) : t('קישור נשלח, עוד לא נפתח')) : '';
                 return `<li class="card">
@@ -759,12 +760,13 @@ const Projects = (() => {
         portalContact = cur.team.find(c => c.id === id);
         const dlg = $('#portal-dlg');
         formError($('form', dlg), '');
-        const role = id === cur.project.client_id ? 'client' : id === cur.project.lawyer_id ? 'lawyer' : 'supplier';
+        // לפי סוג איש הקשר — גם לקוח / עו"ד נוסף ושל יחידה במתחם
+        const role = ['client', 'lawyer'].includes(portalContact.kind) ? portalContact.kind : 'supplier';
         $('#portal-dlg-title').textContent = t('קישור אישי — {name}', { name: portalContact.name });
         $('#portal-about').textContent = t({ // i18n-ok-start
-            client: 'בקישור הלקוח רואה את התקדמות השלבים, את הצעות המחיר שנשלחו אליו (המומלצת בראש) ואת הקבצים שסומנו "גלוי" — ומאשר הצעות בעצמו, בלחיצה או בחתימה לפי הגדרות הלקוח. בלי סיסמה.',
-            lawyer: 'בקישור העו"ד רואה את הפרויקט ואת ההצעות, ומאשר הצעות שהלקוח כבר אישר בשלבים שדורשים עו"ד. בלי סיסמה.',
-            supplier: 'בקישור הספק רואה את השלבים שלו, מגיש הצעות מחיר, מבקש תשלום, מאשר שהכסף התקבל ומעדכן את פרטי הבנק שלו — בלי לראות הצעות של ספקים אחרים, פרטי לקוח או תשלומים לאחרים. בלי סיסמה.',
+            client: 'בקישור הלקוח רואה את התקדמות השלבים, את הצעות המחיר שנשלחו אליו (המומלצת בראש) ואת הקבצים שסומנו "גלוי" — מאשר הצעות בעצמו, בלחיצה או בחתימה לפי הגדרות הלקוח, ומעלה מסמכים. בלי סיסמה.',
+            lawyer: 'בקישור העו"ד רואה את הפרויקט ואת ההצעות, מאשר הצעות שהלקוח כבר אישר בשלבים שדורשים עו"ד, ומעלה מסמכים. בלי סיסמה.',
+            supplier: 'בקישור הספק רואה את השלבים שלו, מגיש הצעות מחיר, מבקש תשלום, מאשר שהכסף התקבל, מעלה מסמכים (ביטוח, רישיון, אחריות) ומעדכן את פרטי הבנק שלו — בלי לראות הצעות של ספקים אחרים, פרטי לקוח או תשלומים לאחרים. בלי סיסמה.',
         }[role]); // i18n-ok-end
         drawPortal(links[id] || null);
         dlg.showModal();

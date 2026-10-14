@@ -186,9 +186,22 @@ function render() {
 
 /** קבצים ומנהל הפרויקט — לכל התפקידים. */
 function renderCommon() {
-    // ---- קבצים ----
-    $('#files').hidden = !data.files.length;
-    $('#file-list').innerHTML = data.files.map(f => `<li class="card">
+    // ---- מסמכים ששלחתי ("📎 העלאת מסמך") ----
+    const ups = data.uploads || [];
+    const stName = id => { const s = data.stages.find(x => x.id === id); return s ? sn(s) : ''; };
+    $('#uploads').hidden = false;
+    $('#u-empty').hidden = !!ups.length;
+    $('#upload-list').innerHTML = ups.map(f => `<li class="card">
+        ${f.thumb ? `<img class="fthumb" src="${fileUrl(f.id, '&thumb=1')}" alt="" loading="lazy" width="40" height="40">` : `<span class="ficon" aria-hidden="true">📄</span>`}
+        <div class="body"><div class="l1"><span class="one">${esc(f.name)}</span></div>
+            <div class="l2">${[f.stage_id ? esc(stName(f.stage_id)) : '', fmtSize(f.size), longDate(f.at)].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>')}</div></div>
+        <a class="icon-btn" href="${fileUrl(f.id)}" target="_blank" rel="noopener" aria-label="${esc(t('פתיחת {name}', { name: f.name }))}">↗</a></li>`).join('');
+
+    // ---- קבצים (בלי מה שכבר מופיע ב"מסמכים ששלחתי") ----
+    const mine = new Set(ups.map(f => f.id));
+    const files = data.files.filter(f => !mine.has(f.id));
+    $('#files').hidden = !files.length;
+    $('#file-list').innerHTML = files.map(f => `<li class="card">
         ${f.thumb ? `<img class="fthumb" src="${fileUrl(f.id, '&thumb=1')}" alt="" loading="lazy" width="40" height="40">` : `<span class="ficon" aria-hidden="true">📄</span>`}
         <div class="body"><div class="l1"><span class="one">${esc(f.name)}</span></div>
             <div class="l2">${[esc(data.labels.file[f.type] || ''), fmtSize(f.size), longDate(f.at)].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>')}</div></div>
@@ -450,6 +463,43 @@ function openPay(id) {
 }
 
 /** תמונה — מוקטנת ל-2000px (JPEG) לפני השליחה; PDF כמו שהוא. */
+/** "📎 העלאת מסמך" — ספק בוחר גם מקצוע (לא חובה). */
+let uFile = null;
+function openUpload() {
+    const f = $('#u-dlg form');
+    f.reset();
+    $('.error', f).hidden = true;
+    uFile = null;
+    $('#u-file-name').textContent = '';
+    const sup = data.role === 'supplier';
+    $('#u-stage-box').hidden = !sup || !data.stages.length;
+    if (sup) f.elements.stage_id.innerHTML = `<option value="">${esc(t('כללי — לא למקצוע מסוים'))}</option>` + data.stages.map(s => `<option value="${s.id}">${esc(sn(s))}</option>`).join('');
+    if (sup && data.stages.length === 1) f.elements.stage_id.value = String(data.stages[0].id);
+    $('#u-dlg').showModal();
+}
+
+async function submitUpload(e) {
+    e.preventDefault();
+    const f = $('#u-dlg form'), el = f.elements, err = $('.error', f);
+    const fail = m => { err.textContent = m; err.hidden = false; };
+    if (!uFile) return fail(t('בחרו קובץ — צילום או PDF'));
+    const btn = $('#u-go');
+    btn.disabled = true;
+    try {
+        const file = await shrink(uFile);
+        if (file.size > data.max_proof) throw new Error(t('הקובץ גדול מדי — עד 8MB'));
+        const qs = new URLSearchParams({ action: 'upload', name: file.name, note: el.note.value.trim(), stage_id: el.stage_id.value || '' });
+        const res = await fetch('api.php?' + qs, { method: 'POST', body: file,
+            headers: { 'X-Portal': token, 'X-Lang': I18n.lang(), Accept: 'application/json', 'Content-Type': file.type || 'application/octet-stream' } });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(d.error || t('תקלה ({status})', { status: res.status }));
+        data = d;
+        $('#u-dlg').close();
+        render();
+        toast(t('המסמך נשלח למנהל הפרויקט'));
+    } catch (x) { fail(x.message); } finally { btn.disabled = false; }
+}
+
 async function shrink(file) {
     if (!file.type.startsWith('image/') || !('createImageBitmap' in window)) return file;
     try {
@@ -744,6 +794,9 @@ $('#s-dlg form').addEventListener('submit', submitSupplier);
 $('#s-dlg [name=file]').addEventListener('change', e => { sFile = e.target.files[0] || null; $('#s-file-name').textContent = sFile ? '📎 ' + sFile.name : ''; });
 $('#s-bank-form').addEventListener('submit', saveBank);
 $('#x-dlg form').addEventListener('submit', submitExpense);
+$('#u-add').addEventListener('click', openUpload);
+$('#u-dlg form').addEventListener('submit', submitUpload);
+$('#u-dlg [name=file]').addEventListener('change', e => { uFile = e.target.files[0] || null; $('#u-file-name').textContent = uFile ? '📎 ' + uFile.name : ''; });
 $('#x-dlg [name=file]').addEventListener('change', e => { xFile = e.target.files[0] || null; $('#x-file-name').textContent = xFile ? '📎 ' + xFile.name : ''; });
 $('#pay-dlg [name=file]').addEventListener('change', e => { proofFile = e.target.files[0] || null; $('#proof-name').textContent = proofFile ? '📎 ' + proofFile.name : ''; });
 // מקלדת בטלפון: השדה בפוקוס למרכז, והחלון בגובה הנראה
