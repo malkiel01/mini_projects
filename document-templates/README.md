@@ -441,6 +441,7 @@ dev_log            id, at, user_id, action, error_code, duration_ms   -- בלי 
 | מבנים מותאמים | ✅ "מבנה התצוגה" לתאריך ולמספר — כמו תבנית מותאמת בוורד: d/dd/M/MM/MMMM/yy/yyyy/dddd, עברי hd/hMMMM/hyy/hyyyy, מספר #,##0.00/%/₪. מנוע זהה ב-`assets/js/fmt.js` (מסך, PDF) וב-`lib/fmt.php` (Word), עם `tests/fmt-vectors.json` משותף. לוח עברי עצמאי — זהה ל-jdtojewish ב-1900–2150 |
 | "או פלוני או אלמוני" | ✅ שדה עם כמה ממלאים (`roles` במבנה; `role` נשאר הראשי). כל אחד מהם יכול למלא; חובה משותף עוצר רק את האחרון שעוד לא סיים. `field_roles` / `open_roles` ב-`lib/participants.php`, בדיקה ב-`tests/multirole.php` |
 | מטלות ושיח | ✅ קוד לכל מטלה (DT-001…), שיח בכל מטלה, מטלה חדשה מהמסך, "העתקה לצ'אט", ואסימון שדרכו Claude קורא ועונה. `lib/devtasks.php`, בדיקה ב-`tests/devtasks.php` |
+| ממלא ← איש קשר | ✅ כל ממלא בקישור מקושר לאיש קשר (`participants.contact_id`) — בלי זה אין קישור. כרטיס קיים נמצא לפי טלפון/מייל (`phone_key`), אחרת נוצר. סנכרון דו-כיווני; ממלא שסיים — לא משתנה (תיעוד). בכרטיס: `contact_fills` — המסמכים, המצב ושליחה. בתבנית: `roles[].contact` — איש קשר קבוע. ייבוא מהטלפון: Contact Picker או vcf (`assets/js/vcard.js`, `contact_import`). בדיקות: `tests/contactsync.php`, `tests/vcard.test.js` |
 | 13 — בינה מלאכותית וקרדיטים | הבא בתור |
 
 ## מטלות ושיח

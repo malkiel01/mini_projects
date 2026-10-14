@@ -255,6 +255,7 @@ function db_migrate(PDO $pdo): void
     // אזור הפיתוח: לוג מעקב מורחב, יומן ביקורת של פעולות מפתח (lib/devzone.php)
     if (function_exists('devzone_migrate')) devzone_migrate($pdo);
     if (function_exists('fonts_migrate')) fonts_migrate($pdo);
+    if (function_exists('contacts_migrate')) contacts_migrate($pdo);   // ממלא ← איש קשר
 
     // היומן: אי אפשר לשנות או למחוק רשומה — גם לא בטעות בקוד עתידי.
     $pdo->exec(<<<'SQL'

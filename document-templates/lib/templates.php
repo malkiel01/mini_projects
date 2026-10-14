@@ -218,7 +218,7 @@ function tpl_asset(array $user, int $id): never
 
 /** מנקה את מה שהדפדפן שלח: רק סוגים מוכרים, מספרים בטווח, מחרוזות באורך סביר. */
 /** $sources — מקורות הנתונים שמותר לשדה בחירה להפנות אליהם (של השומר, או שכבר היו בתבנית). */
-function clean_schema($s, array $sources = [], array $fonts = []): array
+function clean_schema($s, array $sources = [], array $fonts = [], array $contacts = []): array
 {
     if (!is_array($s)) throw new ApiError('מבנה תבנית לא תקין', 422);
     $num = fn($v, $min, $max) => (float)(is_numeric($v) ? max($min, min($max, (float)$v)) : $min);
@@ -239,6 +239,8 @@ function clean_schema($s, array $sources = [], array $fonts = []): array
             'key' => $key,
             'label' => $str($r['label'] ?? '', 60) ?: 'משתתף',
             'auth' => in_array($r['auth'] ?? '', ['none', 'email'], true) ? $r['auth'] : 'none',
+            // איש קשר קבוע (לא חובה): כל מסמך מהתבנית מקשר אליו את הממלא הזה מיד
+            'contact' => in_array((int)($r['contact'] ?? 0), $contacts, true) ? (int)$r['contact'] : 0,
         ];
     }
     $roleKeys = array_column($roles, 'key');
@@ -412,7 +414,7 @@ function tpl_set_source(array $user, array $b): array
 function tpl_save(array $user, array $b): array
 {
     $t = tpl_owned((int)($b['id'] ?? 0), $user, 'edit');
-    $json = json_encode(clean_schema($b['schema'] ?? null, allowed_sources($user, $t), allowed_fonts($user, $t)), JSON_UNESCAPED_UNICODE);
+    $json = json_encode(clean_schema($b['schema'] ?? null, allowed_sources($user, $t), allowed_fonts($user, $t), allowed_contacts($user, $t)), JSON_UNESCAPED_UNICODE);
     if (strlen($json) > TPL_MAX_SCHEMA) throw new ApiError('התבנית גדולה מדי', 413);
 
     $pdo = db();

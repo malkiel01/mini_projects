@@ -181,7 +181,7 @@ function doc_create(array $user, array $b): array
             if (($f['default'] ?? '') !== '' && !in_array($f['type'], ['calc', 'system'], true)) $ins->execute([$docId, $f['key'], seal($f['default']), 'user:' . $user['id'], $now]);
         }
         doc_recalc($docId, $schema, 'user:' . $user['id']);
-        create_participants($docId, $schema);
+        create_participants($docId, $schema, $user);
         log_event($docId, 'user:' . $user['id'], 'created', ['number' => $number, 'template_version' => (int)$t['current_version']]);
         $pdo->commit();
     } catch (Throwable $e) {

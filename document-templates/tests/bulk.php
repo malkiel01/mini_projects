@@ -126,8 +126,11 @@ check('כותרת מהעמודה, תגית הייבוא ותגית מהשורה'
 check('בלי כותרת — שם התבנית', doc_get($a, $r['created'][1]['id'])['document']['title'] === 'הסכם שכירות');
 check('איש קשר נוצר וקושר; השדה "מאיש הקשר" מולא', $g['contact'] === 'משה כהן' && $v1['phone'] === '050-1234567');
 $contacts = contact_list($a, [])['contacts'];
-check('אותו טלפון בשורה 7 — אותו איש קשר, לא כפול', count($contacts) === 2 && doc_get($a, $r['created'][2]['id'])['document']['contact_id'] === $g['contact_id']);
+check('אותו טלפון בשורה 7 — אותו איש קשר, לא כפול', count(array_filter($contacts, fn($c) => $c['name'] === 'משה כהן')) === 1
+    && doc_get($a, $r['created'][2]['id'])['document']['contact_id'] === $g['contact_id']);
 $p = array_values(array_filter($g['participants'], fn($x) => $x['role_key'] === 'client'))[0];
+check('הממלא בקישור — אותו מייל כמו איש הקשר: מקושר אליו, בלי כפילות', $p['contact_id'] === $g['contact_id']);
+check('ממלא עם מייל חדש — נוצר לו כרטיס', count($contacts) === 3 && in_array('dana@x.com', array_column($contacts, 'email'), true));
 check('משתתף "שוכר": מייל נשמר וקישור נשלח', $p['email'] === 'moshe@x.com' && $p['notified_at'] !== null);
 $mails = array_map(fn($l) => json_decode($l, true), array_filter(explode("\n", (string)@file_get_contents("$tmp/mail.log"))));
 check('נשלחו 2 מיילים (משה ודנה)', count(array_filter($mails, fn($m) => str_contains($m['body'] ?? '', 'fill.html#t='))) === 2);

@@ -1034,14 +1034,20 @@
           setDirty(true); draw(); renderPanel();
         } }, '✕');
         // שורה ראשונה: צבע · שם הממלא · הסרה; מתחת — אימות. כך השם תמיד רחב וקריא
+        // איש קשר קבוע (לא חובה): כל מסמך מהתבנית מקשר אליו את הממלא מיד
+        const fixed = el('span', { class: 'muted small' }, '…');
+        window.DTCatalog.contactPicker(r.contact || null, (c) => { r.contact = c ? c.id : 0; setDirty(true); },
+          { empty: '— בוחרים בכל מסמך —', disabled: readOnly })
+          .then(sel => fixed.replaceWith(sel)).catch(() => fixed.replaceWith(el('span', { class: 'muted small' }, '—')));
         return el('li', { class: 'role-row' }, dot, label, del,
-          el('label', { class: 'role-auth' }, el('span', {}, 'כניסה:'), auth));
+          el('label', { class: 'role-auth' }, el('span', {}, 'כניסה:'), auth),
+          el('label', { class: 'role-auth' }, el('span', {}, '👤 איש קשר:'), fixed));
       }));
       const seq = el('input', { type: 'checkbox', checked: schema.sequential });
       seq.addEventListener('change', () => { schema.sequential = seq.checked; setDirty(true); });
       return el('div', { class: 'numbering' },
         el('h2', {}, 'מי ממלא את המסמך'),
-        el('p', { class: 'hint' }, '"אני" — אתם, בהנפקה. כל ממלא נוסף מקבל קישור אישי, וממלא רק את השדות שלו. משייכים שדה בהגדרות השדה ("מי ממלא").'),
+        el('p', { class: 'hint' }, '"אני" — אתם, בהנפקה. כל ממלא נוסף מקבל קישור אישי, וממלא רק את השדות שלו. משייכים שדה בהגדרות השדה ("מי ממלא"). כל ממלא הוא איש קשר: בוחרים אותו בכל מסמך — או קובעים כאן איש קשר קבוע.'),
         list,
         el('button', { class: 'small', onclick: () => {
           const n = schema.roles.length;
