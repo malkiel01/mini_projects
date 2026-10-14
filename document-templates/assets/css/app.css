@@ -354,7 +354,11 @@ tr.archived { opacity: .6; }
 .role-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--role); flex: none; }
 .roles { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
 .roles li { display: flex; align-items: center; gap: 6px; }
-.role-row input { flex: 1; min-width: 0; }
+.roles li.role-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 6px var(--s2);
+  padding: var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.role-row input { width: 100%; min-width: 0; }
+.role-auth { grid-column: 2 / 4; display: flex; align-items: center; gap: var(--s2); font-size: .85rem; color: var(--muted); }
+.role-auth select { width: auto; flex: 1; min-width: 0; }
 
 /* מילוי: מה שלי מודגש, של אחרים — לקריאה. */
 .fill.theirs input:disabled, .fill.theirs textarea:disabled, .fill.theirs .sig-btn:disabled { border-color: transparent; background: transparent; }
