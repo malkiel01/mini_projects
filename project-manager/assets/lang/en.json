@@ -2133,5 +2133,6 @@
     "סוג שיוך לא מוכר": "Unknown link type",
     "השיוך כבר לא קיים": "The link no longer exists",
     "✂️ {name} — הוסר השיוך ל{what}, וחזר ל\"ממתין למיון\"": "✂️ {name} — link to {what} removed, back to \"Awaiting sorting\"",
-    "✂️ {name} — הוסר השיוך ל{what}": "✂️ {name} — link to {what} removed"
+    "✂️ {name} — הוסר השיוך ל{what}": "✂️ {name} — link to {what} removed",
+    "🔧 תיקון שיוכים אוטומטי: {moved} קבצים סודרו לתיקייה הנכונה · {staged} אבני דרך שויכו לשלב · {suppliers} שלבים קיבלו ספק · {merged} תיקיות כפולות אוחדו · {typed} סוגי קבצים תוקנו": "🔧 Automatic link repair: {moved} files moved to the right folder · {staged} milestones assigned to a stage · {suppliers} stages got a supplier · {merged} duplicate folders merged · {typed} file types fixed"
 }

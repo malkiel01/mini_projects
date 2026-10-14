@@ -2151,5 +2151,6 @@
     "סוג שיוך לא מוכר": "Type d'association inconnu",
     "השיוך כבר לא קיים": "L'association n'existe plus",
     "✂️ {name} — הוסר השיוך ל{what}, וחזר ל\"ממתין למיון\"": "✂️ {name} — association à {what} retirée, retour dans « À trier »",
-    "✂️ {name} — הוסר השיוך ל{what}": "✂️ {name} — association à {what} retirée"
+    "✂️ {name} — הוסר השיוך ל{what}": "✂️ {name} — association à {what} retirée",
+    "🔧 תיקון שיוכים אוטומטי: {moved} קבצים סודרו לתיקייה הנכונה · {staged} אבני דרך שויכו לשלב · {suppliers} שלבים קיבלו ספק · {merged} תיקיות כפולות אוחדו · {typed} סוגי קבצים תוקנו": "🔧 Réparation automatique des associations : {moved} fichiers rangés au bon endroit · {staged} jalons rattachés à une étape · {suppliers} étapes ont reçu un fournisseur · {merged} dossiers en double fusionnés · {typed} types de fichiers corrigés"
 }
