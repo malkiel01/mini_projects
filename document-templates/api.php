@@ -42,7 +42,7 @@ $PUBLIC = ['health', 'register', 'verify', 'login', 'forgot', 'reset', 'me',
            'fill_get', 'fill_asset', 'fill_otp_send', 'fill_otp_verify', 'fill_save', 'fill_complete',
            'fill_upload', 'fill_file'];
 $POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'dev_user',
-           'tpl_create', 'tpl_save', 'tpl_set_source', 'tpl_archive', 'tpl_delete',
+           'tpl_create', 'tpl_create_authored', 'tpl_save', 'tpl_set_source', 'tpl_archive', 'tpl_delete',
            'doc_create', 'doc_save', 'doc_complete', 'doc_archive', 'doc_delete', 'doc_downloaded',
            'part_contact', 'part_link', 'fill_otp_send', 'fill_otp_verify', 'fill_save', 'fill_complete',
            'doc_upload', 'fill_upload', 'dev_quota', 'share_set', 'share_remove', 'share_leave',
@@ -66,7 +66,7 @@ try {
         'health' => (function () {
             $probe = 'בדיקה';
             db();
-            return ['ok' => true, 'stage' => 10, 'php' => PHP_VERSION, 'sqlite' => true,
+            return ['ok' => true, 'stage' => 11, 'php' => PHP_VERSION, 'sqlite' => true,
                 'crypto' => unseal(seal($probe)) === $probe,
                 'mail' => function_exists('mail'), 'zip' => class_exists('ZipArchive'),
                 'finfo' => class_exists('finfo'),
@@ -87,6 +87,7 @@ try {
         'tpl_create'  => tpl_create($session, $_POST, $_FILES),
         'tpl_save'    => tpl_save($session, $body),
         'tpl_set_source' => tpl_set_source($session, $body),
+        'tpl_create_authored' => tpl_create_authored($session, $body),
         'tpl_archive' => tpl_archive($session, $body),
         'tpl_delete'  => tpl_delete($session, $body),
         'doc_list'       => doc_list($session, $_GET),

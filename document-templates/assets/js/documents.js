@@ -19,6 +19,8 @@
   };
   const VIA = { email: 'במייל', link: 'כקישור', whatsapp: 'בוואטסאפ' };
   const EDITABLE = ['draft', 'in_progress'];
+  const AUTHORED = 'application/x-dt-authored';
+  const PH = /\{\{\s*([^{}]{1,60}?)\s*\}\}/g;
 
   const fmtDate = (iso) => iso ? new Date(iso).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }) : '—';
   const ddmmyyyy = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v) ? v.split('-').reverse().join('/') : v;
@@ -202,6 +204,9 @@
     // מורידים Word ממולא, ורואים תצוגה מקדימה.
     const isWord = doc.mime === window.DTEditor.DOCX;
     if (isWord) mode = 'form';
+    // שלב 11: נכתב בכלי — "על המסמך" הוא הטקסט עצמו, עם השדות בתוכו
+    const isAuthored = doc.mime === AUTHORED;
+    const C = window.DTCalc;
     // שלב 7: מי שהמסמך שותף איתו — לפי הרמה. ממלא+ ממלא, עורך+ מסיים ושולח, מנהל-שותף+ משתף.
     const lvl = () => fill ? 0 : window.DT.rank(doc.access || 'owner');
     const editable = () => fill ? !doc.me.locked && !doc.me.blocked : EDITABLE.includes(doc.status) && lvl() >= 2;
@@ -214,6 +219,8 @@
       return !(doc.participants || []).some(p => p.role_key === role && p.notified_at);
     };
     const fields = doc.schema.fields;
+    const byKey = Object.fromEntries(fields.map(f => [f.key, f]));
+    const byPh = Object.fromEntries(fields.filter(f => f.placeholder).map(f => [f.placeholder, f]));
     // סדר הטופס: לפי דף, ואז מלמעלה למטה, ואז מימין לשמאל.
     const ordered = [...fields].sort((a, b) => a.page - b.page || (a.y - b.y > 0.01 ? 1 : b.y - a.y > 0.01 ? -1 : b.x - a.x));
 
@@ -248,9 +255,10 @@
           : el('button', { class: 'small', onclick: () => { side(people, journal); renderPeople(); } }, '👥 משתתפים'),
         !fill && lvl() >= 4 ? el('button', { class: 'small', onclick: () => window.DT.shareDialog('document', id, doc.title, reload) }, '🔗 שיתוף') : null,
         !fill && doc.access && doc.access !== 'owner' ? el('button', { class: 'small', onclick: () => window.DT.leave('document', id, doc.title) }, 'עזיבה') : null,
-        fill || isWord ? null : pdfBtn,
-        !fill && isWord ? el('button', { class: 'small', onclick: () => wordFile(false) }, '⬇ הורדת Word') : null,
-        isWord && !fill ? el('button', { class: 'small', onclick: () => wordFile(true) }, '👁 תצוגה מקדימה') : null,
+        fill || isWord || isAuthored ? null : pdfBtn,
+        !fill && (isWord || isAuthored) ? el('button', { class: 'small', onclick: () => wordFile(false) }, '⬇ הורדת Word') : null,
+        (isWord || isAuthored) && !fill ? el('button', { class: 'small', onclick: () => wordFile(true) }, '👁 תצוגה מקדימה') : null,
+        isAuthored && !fill ? el('button', { class: 'small', onclick: printDoc }, '🖨 הדפסה / PDF') : null,
         completeBtn, progress),
       msg,
       el('div', { class: 'editor' }, body, journal, people));
@@ -313,6 +321,11 @@
     function queue(key, v) {
       values[key] = v;
       pending[key] = v;
+      // אותו שדה מופיע פעמיים (בטקסט) — מעדכנים גם את העותק
+      for (const n of body.querySelectorAll(`input[data-key="${CSS.escape(key)}"]:not([type=checkbox]), textarea[data-key="${CSS.escape(key)}"]`)) {
+        if (n !== document.activeElement) n.value = v;
+      }
+      refreshDerived();
       setSave('warn', '● שומר…');
       markField(key, 'dirty');
       clearTimeout(timer);
@@ -330,6 +343,11 @@
       if (batch._title !== undefined) { send.title = batch._title; delete batch._title; }
       inflight = src.save(send).then(r => {
         doc.progress = r.progress;
+        // הערכים המחושבים של השרת הם הקובעים (מה שעוד ממתין לשמירה — לא דורסים)
+        if (r.computed) {
+          for (const [k, v] of Object.entries(r.computed)) if (!(k in pending)) values[k] = v;
+          refreshDerived();
+        }
         if (doc.status === 'draft' && r.saved) doc.status = 'in_progress';
         keys.forEach(k => markField(k, 'saved'));
         setSave('ok', '✓ נשמר ' + new Date(r.saved_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }));
@@ -351,11 +369,15 @@
     }
 
     // ── קלט לשדה — אותו רכיב בשתי התצוגות ──
-    function control(f, onPage) {
+    function control(f, onPage, inlineText) {
       const v = values[f.key] ?? '';
       const ro = !canEdit(f);
       const common = { 'data-key': f.key, 'aria-label': f.label, disabled: ro };
       let n;
+      if (f.type === 'calc') {
+        return el('output', { class: 'calc-out', 'data-calc': f.key, 'aria-label': f.label }, C.display(v, f.format) || '—');
+      }
+      if (f.type === 'table') return tableControl(f);
       if (f.type === 'file') {
         n = onPage
           ? el('button', { type: 'button', class: 'sig-btn file-btn', 'data-key': f.key, 'aria-label': f.label,
@@ -376,8 +398,9 @@
       } else {
         const type = { number: 'text', date: 'date', text: 'text' }[f.type] || 'text';
         n = el('input', { type, ...common, inputmode: f.type === 'number' ? 'decimal' : null,
-          dir: f.type === 'number' ? 'ltr' : null, placeholder: onPage ? f.label : '' });
+          dir: f.type === 'number' ? 'ltr' : null, placeholder: onPage || inlineText ? f.label : '' });
         n.value = v;
+        if (inlineText && type === 'text') n.size = Math.max(6, Math.min(40, (v || f.label).length + 2));
         n.addEventListener('input', () => queue(f.key, limit(f, n)));
       }
       if (onPage && f.type !== 'checkbox' && f.type !== 'signature') {
@@ -385,6 +408,150 @@
         n.style.textAlign = f.align === 'center' ? 'center' : f.align === 'left' ? 'left' : 'right';
       }
       return n;
+    }
+
+    // ── שלב 11: טבלה חוזרת, שדות מחושבים ותנאי הצגה ──
+    function tableControl(f) {
+      const cols = f.columns || [];
+      const rows = C.rows(values[f.key]);
+      const ro = !canEdit(f);
+      const tbody = el('tbody');
+      const commit = () => {
+        C.tableCompute(f, fields, values, rows).forEach((x, i) => Object.assign(rows[i], x));
+        tbody.querySelectorAll('tr').forEach((tr, i) => cols.forEach((c, j) => {
+          if (c.type === 'calc') tr.children[j].textContent = C.display(rows[i][c.key] ?? '', c.format);
+        }));
+        queue(f.key, rows.length ? JSON.stringify(rows) : '');
+      };
+      const rowEl = (r) => el('tr', {}, cols.map(c => {
+        if (c.type === 'calc') return el('td', { class: 'calc-cell' }, C.display(r[c.key] ?? '', c.format));
+        const inp = el('input', { value: r[c.key] ?? '', disabled: ro, 'aria-label': c.label,
+          inputmode: c.type === 'number' ? 'decimal' : null, dir: c.type === 'number' ? 'ltr' : null });
+        inp.addEventListener('input', () => { r[c.key] = inp.value; commit(); });
+        return el('td', { 'data-label': c.label }, inp);
+      }), ro ? null : el('td', { class: 'row-del' }, el('button', { type: 'button', class: 'link small', title: 'מחיקת שורה',
+        onclick: () => { rows.splice(rows.indexOf(r), 1); redraw(); commit(); } }, '✕')));
+      const redraw = () => tbody.replaceChildren(...rows.map(rowEl));
+      redraw();
+      return el('div', { class: 'grid-wrap', 'data-key': f.key },
+        el('table', { class: 'grid' }, el('thead', {}, el('tr', {}, cols.map(c => el('th', {}, c.label)), ro ? null : el('th'))), tbody),
+        ro ? (rows.length ? null : el('span', { class: 'muted small' }, 'אין שורות'))
+          : el('button', { type: 'button', class: 'small', onclick: () => {
+            rows.push({}); redraw();
+            tbody.lastChild?.querySelector('input')?.focus();
+          } }, '+ שורה'));
+    }
+
+    /** מחשב מחדש את השדות המחושבים (לתצוגה מיידית), ומסתיר מה שתנאי ההצגה שלו לא מתקיים. */
+    function refreshDerived() {
+      Object.assign(values, C.all(doc.schema, values));
+      for (const n of body.querySelectorAll('[data-calc]')) {
+        const f = byKey[n.dataset.calc];
+        if (f) n.textContent = C.display(values[f.key] ?? '', f.format) || '—';
+      }
+      const vis = C.visibleKeys(doc.schema, values);
+      for (const n of body.querySelectorAll('[data-vis-key]')) n.hidden = !vis.has(n.dataset.visKey);
+      for (const n of body.querySelectorAll('[data-cond]')) {
+        const c = JSON.parse(n.dataset.cond);
+        n.hidden = !(C.shown(c, fields, values) && vis.has(c.key));
+      }
+    }
+
+    // ── תצוגה: נכתב בכלי — הטקסט, והשדות בתוכו ──
+    function inline(text) {
+      const out = [];
+      const pushText = (t) => t.split('\n').forEach((line, i) => { if (i) out.push(el('br')); if (line) out.push(line); });
+      let last = 0;
+      for (const m of text.matchAll(PH)) {
+        pushText(text.slice(last, m.index));
+        last = m.index + m[0].length;
+        const f = byPh[m[1].trim()];
+        if (!f) continue;
+        const block = ['table', 'textarea', 'signature', 'file'].includes(f.type);
+        out.push(el(block ? 'div' : 'span', {
+          class: 'inline-field t-' + f.type + (canEdit(f) ? ' mine' : ' theirs') + (f.required ? ' required' : ''),
+          'data-vis-key': f.key, title: f.label + (f.help ? ' — ' + f.help : ''),
+        }, control(f, false, true)));
+      }
+      pushText(text.slice(last));
+      return out;
+    }
+
+    function renderAuthored() {
+      const sheet = el('div', { class: 'doc-sheet authored-doc' });
+      for (const b of doc.schema.body || []) {
+        const style = 'text-align:' + (b.align === 'center' ? 'center' : b.align === 'justify' ? 'justify' : 'right');
+        let n = null;
+        if (b.type === 'heading') n = el('h2', { class: 'a-h', style }, inline(b.text || ''));
+        else if (b.type === 'p') n = el('div', { class: 'a-p', style }, inline(b.text || ''));
+        else if (b.type === 'table' && byKey[b.table]) n = el('div', { class: 'a-table', 'data-vis-key': b.table }, tableControl(byKey[b.table]));
+        else if (b.type === 'break') n = el('div', { class: 'a-break' }, 'מעבר עמוד');
+        if (!n) continue;
+        if (b.showIf) n.dataset.cond = JSON.stringify(b.showIf);
+        sheet.append(n);
+      }
+      body.replaceChildren(sheet);
+    }
+
+    /** הדפסה (ומשם "שמירה כ-PDF") — המסמך עם הערכים, בלי שדות. */
+    function printDoc() {
+      const vis = C.visibleKeys(doc.schema, values);
+      const esc = (t) => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+      const table = (f) => '<table><tr>' + (f.columns || []).map(c => `<th>${esc(c.label)}</th>`).join('') + '</tr>'
+        + C.rows(values[f.key]).map(r => '<tr>' + (f.columns || []).map(c =>
+          `<td>${esc(c.type === 'calc' ? C.display(r[c.key] ?? '', c.format) : r[c.key])}</td>`).join('') + '</tr>').join('') + '</table>';
+      const val = (f) => {
+        const v = values[f.key] ?? '';
+        if (!vis.has(f.key)) return '';
+        switch (f.type) {
+          case 'date': return esc(ddmmyyyy(v));
+          case 'checkbox': return v === '1' ? '☒' : '☐';
+          case 'calc': return esc(C.display(v, f.format));
+          case 'signature': return /^data:image\/png;base64,/.test(v) ? `<img class="sig" src="${esc(v)}" alt="חתימה">` : '';
+          case 'table': return table(f);
+          case 'file': {
+            let ids = []; try { ids = JSON.parse(v || '[]'); } catch (e) { /* ריק */ }
+            return esc(ids.map(aid => (doc.attachments || []).find(a => a.id === aid)?.name || 'קובץ').join(', '));
+          }
+          default: return esc(v).replace(/\n/g, '<br>');
+        }
+      };
+      const text = (t) => {
+        let out = '', last = 0;
+        for (const m of (t || '').matchAll(PH)) {
+          out += esc(t.slice(last, m.index)).replace(/\n/g, '<br>');
+          const f = byPh[m[1].trim()];
+          out += f ? val(f) : '';
+          last = m.index + m[0].length;
+        }
+        return out + esc((t || '').slice(last)).replace(/\n/g, '<br>');
+      };
+      let html = '';
+      for (const b of doc.schema.body || []) {
+        if (b.showIf && !(C.shown(b.showIf, fields, values) && vis.has(b.showIf.key))) continue;
+        const align = ` style="text-align:${b.align === 'center' ? 'center' : b.align === 'justify' ? 'justify' : 'right'}"`;
+        if (b.type === 'heading') html += `<h1${align}>${text(b.text)}</h1>`;
+        else if (b.type === 'p') html += `<p${align}>${text(b.text)}</p>`;
+        else if (b.type === 'table' && byKey[b.table] && vis.has(b.table)) html += table(byKey[b.table]);
+        else if (b.type === 'break') html += '<div class="brk"></div>';
+      }
+      const foot = esc((doc.number ? doc.number + ' · ' : '') + doc.title)
+        + (doc.status === 'completed' && doc.final_hash ? ' · הושלם · טביעת אצבע: ' + esc(doc.final_hash.slice(0, 16)) + '…' : '');
+      const page = `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><title>${esc(doc.title)}</title><style>
+        body{font-family:Arial,'Alef',sans-serif;font-size:11pt;line-height:1.55;margin:0;color:#000}
+        @page{size:A4;margin:2cm} h1{font-size:18pt;margin:0 0 10pt} p{margin:0 0 7pt}
+        table{width:100%;border-collapse:collapse;margin:6pt 0 10pt} th,td{border:1px solid #888;padding:3pt 6pt;text-align:right}
+        th{background:#f1f3f5} .sig{height:48px;vertical-align:middle} .brk{break-after:page}
+        footer{margin-top:24pt;font-size:8pt;color:#666;border-top:1px solid #ccc;padding-top:4pt}
+      </style></head><body>${html}<footer>${foot}</footer></body></html>`;
+      const fr = el('iframe', { class: 'print-frame', title: 'הדפסה', style: 'position:fixed;width:0;height:0;border:0;inset:auto' });
+      document.body.append(fr);
+      fr.contentDocument.open();
+      fr.contentDocument.write(page);
+      fr.contentDocument.close();
+      fr.contentWindow.focus();
+      try { fr.contentWindow.print(); } catch (e) { msg.replaceChildren(notice('ההדפסה נכשלה: ' + e.message, 'bad')); }
+      setTimeout(() => fr.remove(), 60000);
     }
 
     // ── צירוף קבצים ──
@@ -497,6 +664,7 @@
         pg.visual.classList.add('page-bg');
         fields.filter(f => f.page === i).forEach(f => {
           layer.append(el('div', {
+            'data-vis-key': f.key,
             class: 'fill t-' + f.type + (f.required ? ' required' : '') + (canEdit(f) ? ' mine' : ' theirs'), 'data-key': f.key, title: f.label + (f.help ? ' — ' + f.help : ''),
             style: `left:${f.x * 100}%; top:${f.y * 100}%; width:${f.w * 100}%; height:${f.h * 100}%`,
           }, control(f, true)));
@@ -518,7 +686,7 @@
         }
         const c = control(f, false);
         // שדה עם כפתורים (קובץ, חתימה) — div: לחיצה על תווית הייתה מפעילה את הכפתור הראשון.
-        items.push(el(['file', 'signature'].includes(f.type) ? 'div' : 'label', { class: 'form-field t-' + f.type, 'data-key': f.key },
+        items.push(el(['file', 'signature', 'table', 'calc'].includes(f.type) ? 'div' : 'label', { class: 'form-field t-' + f.type, 'data-key': f.key, 'data-vis-key': f.key },
           el('span', {}, f.label, f.required ? el('b', { class: 'req', title: 'חובה' }, ' *') : null),
           c, f.help ? el('small', { class: 'muted' }, f.help) : null));
       }
@@ -530,7 +698,10 @@
       renderHeader();
       const seq = ++renderSeq;
       try {
-        if (mode === 'page') await renderPage(seq); else renderForm();
+        if (mode === 'page' && isAuthored) renderAuthored();
+        else if (mode === 'page') await renderPage(seq);
+        else renderForm();
+        refreshDerived();
       } catch (e) {
         body.replaceChildren(notice(e.message, 'bad'));
       }
@@ -844,9 +1015,10 @@
     const pages = pdf.getPages();
     const annex = [];
 
+    const vis = window.DTCalc.visibleKeys(doc.schema, values);   // שלב 11: שדה מוסתר — לא נכתב
     for (const f of doc.schema.fields) {
       let raw = values[f.key] ?? '';
-      if (raw === '' || !pages[f.page]) continue;
+      if (raw === '' || !pages[f.page] || !vis.has(f.key)) continue;
       const page = pages[f.page];
       const { width: W, height: H } = page.getSize();
       const bx = f.x * W, bw = f.w * W, bh = f.h * H, top = H - f.y * H;
@@ -872,7 +1044,7 @@
         continue;
       }
 
-      const text = f.type === 'date' ? ddmmyyyy(raw) : raw;
+      const text = f.type === 'date' ? ddmmyyyy(raw) : f.type === 'calc' ? window.DTCalc.display(raw, f.format) : raw;
       let size = f.fontSize || 11;
       const pad = 2;
       const fits = (sz) => {

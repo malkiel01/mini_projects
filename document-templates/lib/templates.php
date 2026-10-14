@@ -17,6 +17,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/contacts.php';
 require_once __DIR__ . '/docx.php';
+require_once __DIR__ . '/calc.php';
 
 const TPL_MAX_FILE_MB = 20;
 const TPL_MAX_SCHEMA  = 512 * 1024;
@@ -28,7 +29,12 @@ const TPL_MIME = [
     'image/webp'      => 'image',
     DOCX_MIME         => 'docx',
 ];
-const FIELD_TYPES = ['text', 'textarea', 'number', 'date', 'checkbox', 'signature', 'file'];
+const FIELD_TYPES = ['text', 'textarea', 'number', 'date', 'checkbox', 'signature', 'file', 'table', 'calc'];
+const COLUMN_TYPES = ['text', 'number', 'calc'];
+const COND_OPS    = ['eq', 'neq', 'filled', 'empty'];
+const BLOCK_TYPES = ['heading', 'p', 'table', 'break'];
+/** שלב 11: תבנית שנכתבה בכלי — אין קובץ מקור; הגוף נשמר במבנה התבנית. */
+const AUTHORED_MIME = 'application/x-dt-authored';
 const FILE_KINDS  = ['pdf', 'image', 'office'];
 const OVERFLOW    = ['shrink', 'annex', 'block'];
 
@@ -59,8 +65,44 @@ function tpl_asset_row(int $versionId): array
     $st = db()->prepare('SELECT * FROM template_assets WHERE template_version_id = ? ORDER BY id LIMIT 1');
     $st->execute([$versionId]);
     $a = $st->fetch();
-    if (!$a) throw new ApiError('קובץ התבנית חסר', 404);
-    return $a;
+    if ($a) return $a;
+    // תבנית שנכתבה בכלי — אין קובץ, ואין מה להגיש
+    $st = db()->prepare('SELECT t.source FROM template_versions v JOIN templates t ON t.id = v.template_id WHERE v.id = ?');
+    $st->execute([$versionId]);
+    if ($st->fetchColumn() === 'authored') return ['mime' => AUTHORED_MIME, 'path' => null, 'size' => 0];
+    throw new ApiError('קובץ התבנית חסר', 404);
+}
+
+/** קובץ המקור להגשה — 404 בתבנית שנכתבה בכלי. */
+function asset_bytes(array $a): string
+{
+    if (empty($a['path'])) throw new ApiError('לתבנית שנכתבה בכלי אין קובץ מקור', 404);
+    return load_file($a['path']);
+}
+
+/** שלב 11: תבנית חדשה שנכתבת בכלי — בלי קובץ. מתחילה בכותרת ופסקה ריקה. */
+function tpl_create_authored(array $user, array $b): array
+{
+    $name = valid_tpl_name($b['name'] ?? '');
+    $schema = ['pages' => [['w' => 595, 'h' => 842]], 'fields' => [], 'body' => [
+        ['id' => 'b1', 'type' => 'heading', 'text' => $name],
+        ['id' => 'b2', 'type' => 'p', 'text' => ''],
+    ]];
+    $pdo = db();
+    $now = now_iso();
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare("INSERT INTO templates (owner_id, name_enc, source, current_version, created_at) VALUES (?, ?, 'authored', 1, ?)")
+            ->execute([$user['id'], seal($name), $now]);
+        $tid = (int)$pdo->lastInsertId();
+        $pdo->prepare('INSERT INTO template_versions (template_id, version, schema_enc, created_at) VALUES (?, 1, ?, ?)')
+            ->execute([$tid, seal(json_encode($schema, JSON_UNESCAPED_UNICODE)), $now]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+    return ['ok' => true, 'id' => $tid];
 }
 
 function tpl_summary(array $t, ?array $user = null): array
@@ -162,7 +204,7 @@ function tpl_asset(array $user, int $id): never
 {
     $t = tpl_owned($id, $user, 'view');
     $a = tpl_asset_row((int)$t['version_id']);
-    $bytes = load_file($a['path']);
+    $bytes = asset_bytes($a);
     header('Content-Type: ' . $a['mime']);
     header('Content-Length: ' . strlen($bytes));
     header('Cache-Control: private, no-store');
@@ -230,9 +272,32 @@ function clean_schema($s): array
             // שלב 10: בתבנית PDF מפורק — שם השדה בטופס המקורי.
             'pdfName' => $str($f['pdfName'] ?? '', 120),
             // שלב 8: מתמלא מאיש הקשר שמקושר למסמך.
-            'contactField' => in_array($f['contactField'] ?? '', CONTACT_FIELDS, true) && $type !== 'file' && $type !== 'signature'
+            'contactField' => in_array($f['contactField'] ?? '', CONTACT_FIELDS, true) && !in_array($type, ['file', 'signature', 'table', 'calc'], true)
                 ? $f['contactField'] : '',
+            // שלב 11: תנאי הצגה — נבדק מול שאר השדות אחרי הלולאה
+            'showIf' => clean_cond($f['showIf'] ?? null, $str),
         ];
+        if ($type === 'calc') {
+            $fields[count($fields) - 1] += [
+                'formula' => $str($f['formula'] ?? '', 500),
+                'format' => in_array($f['format'] ?? '', CALC_FORMATS, true) ? $f['format'] : 'number',
+            ];
+        }
+        if ($type === 'table') {
+            $cols = [];
+            foreach (array_slice((array)($f['columns'] ?? []), 0, 12) as $i => $c) {
+                $ck = preg_replace('/[^a-z0-9_]/', '', strtolower((string)($c['key'] ?? '')));
+                if ($ck === '' || in_array($ck, array_column($cols, 'key'), true)) $ck = 'c' . ($i + 1) . '_' . bin2hex(random_bytes(2));
+                $ct = in_array($c['type'] ?? '', COLUMN_TYPES, true) ? $c['type'] : 'text';
+                $cols[] = ['key' => $ck, 'label' => $str($c['label'] ?? '', 60) ?: 'עמודה', 'type' => $ct]
+                    // בתבנית Word: השם בסימון {{טבלה.שם}} — נשמר גם כשמשנים את התווית
+                    + (($c['name'] ?? '') !== '' ? ['name' => $str($c['name'], 60)] : [])
+                    + ($ct === 'calc' ? ['formula' => $str($c['formula'] ?? '', 300)] : [])
+                    + ['format' => in_array($c['format'] ?? '', CALC_FORMATS, true) ? $c['format'] : 'number'];
+            }
+            if (!$cols) $cols[] = ['key' => 'c1', 'label' => 'תיאור', 'type' => 'text', 'format' => 'number'];
+            $fields[count($fields) - 1]['columns'] = $cols;
+        }
         if ($type === 'file') {
             // צירוף קובץ (שלב 6): אילו סוגים, גודל מרבי לקובץ, ואחד או כמה.
             $kinds = array_values(array_intersect(FILE_KINDS, (array)($f['accept'] ?? [])));
@@ -243,9 +308,57 @@ function clean_schema($s): array
             ];
         }
     }
+    // שלב 11: תנאים — רק על שדה אחר שקיים; נוסחאות — תקינות, עם מזהים מוכרים
+    $keysAll = array_column($fields, 'key');
+    foreach ($fields as &$f) {
+        if ($f['showIf'] && ($f['showIf']['key'] === $f['key'] || !in_array($f['showIf']['key'], $keysAll, true))) $f['showIf'] = null;
+        if ($f['type'] === 'calc' && ($err = calc_check($f['formula'], $fields))) {
+            throw new ApiError('בנוסחה של "' . $f['label'] . '": ' . $err, 422);
+        }
+        foreach ($f['columns'] ?? [] as $c) {
+            if ($c['type'] === 'calc' && ($err = calc_check($c['formula'] ?? '', $fields, $f))) {
+                throw new ApiError('בנוסחה של "' . $f['label'] . ' ← ' . $c['label'] . '": ' . $err, 422);
+            }
+        }
+    }
+    unset($f);
+
+    // שלב 11: גוף של תבנית שנכתבה בכלי — רשימת קטעים
+    $body = null;
+    if (isset($s['body']) && is_array($s['body'])) {
+        $body = [];
+        $tables = array_column(array_filter($fields, fn($f) => $f['type'] === 'table'), 'key');
+        foreach (array_slice($s['body'], 0, 400) as $i => $bl) {
+            $type = in_array($bl['type'] ?? '', BLOCK_TYPES, true) ? $bl['type'] : 'p';
+            $x = ['id' => $str($bl['id'] ?? '', 20) ?: 'b' . ($i + 1), 'type' => $type];
+            if ($type === 'heading' || $type === 'p') {
+                $x['text'] = $str($bl['text'] ?? '', $type === 'heading' ? 300 : 5000);
+                $x['align'] = in_array($bl['align'] ?? '', ['right', 'center', 'left', 'justify'], true) ? $bl['align'] : 'right';
+            }
+            if ($type === 'table') {
+                if (!in_array($bl['table'] ?? '', $tables, true)) continue;
+                $x['table'] = $bl['table'];
+            }
+            $c = clean_cond($bl['showIf'] ?? null, $str);
+            $x['showIf'] = $c && in_array($c['key'], $keysAll, true) ? $c : null;
+            $body[] = $x;
+        }
+    }
+
     return ['pages' => $pages, 'fields' => $fields, 'roles' => $roles, 'sequential' => !empty($s['sequential']),
+        ...($body !== null ? ['body' => $body] : []),
         // שלב 10: הפירוק האוטומטי כבר רץ — לא להוסיף שוב את שדות הטופס המקורי.
         'parsed' => !empty($s['parsed'])];
+}
+
+/** תנאי הצגה: {key, op, value}, או null. */
+function clean_cond($c, callable $str): ?array
+{
+    if (!is_array($c) || empty($c['key'])) return null;
+    $key = preg_replace('/[^a-z0-9_]/', '', strtolower((string)$c['key']));
+    if ($key === '') return null;
+    $op = in_array($c['op'] ?? '', COND_OPS, true) ? $c['op'] : 'eq';
+    return ['key' => $key, 'op' => $op, 'value' => in_array($op, ['filled', 'empty'], true) ? '' : $str($c['value'] ?? '', 200)];
 }
 
 /**

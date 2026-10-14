@@ -1,0 +1,79 @@
+{
+  "fields": [
+    { "key": "f1", "type": "number", "label": "כמות", "placeholder": "" },
+    { "key": "price", "type": "number", "label": "מחיר ליחידה", "placeholder": "מחיר" },
+    { "key": "start", "type": "date", "label": "תאריך התחלה" },
+    { "key": "vat_on", "type": "checkbox", "label": "כולל מע\"מ" },
+    { "key": "name", "type": "text", "label": "שם" },
+    { "key": "items", "type": "table", "label": "פריטים", "columns": [
+      { "key": "desc", "label": "תיאור", "type": "text" },
+      { "key": "qty", "label": "כמות", "type": "number" },
+      { "key": "unit", "label": "מחיר", "type": "number" },
+      { "key": "line", "label": "סה\"כ", "type": "calc", "formula": "qty * unit" }
+    ] },
+    { "key": "sub", "type": "calc", "label": "סכום ביניים", "formula": "sum(items.line)" },
+    { "key": "vat", "type": "calc", "label": "מע\"מ", "formula": "if(vat_on, round(sub * 0.18, 2), 0)" },
+    { "key": "total", "type": "calc", "label": "סה\"כ לתשלום", "formula": "סכום_ביניים + מע\"מ" },
+    { "key": "due", "type": "calc", "label": "תאריך תשלום", "formula": "days(start, 30)" }
+  ],
+  "values": {
+    "f1": "3", "price": "12.5", "start": "2026-10-13", "vat_on": "1", "name": "משה",
+    "items": "[{\"desc\":\"שולחן\",\"qty\":\"2\",\"unit\":\"450\"},{\"desc\":\"כיסא\",\"qty\":\"4\",\"unit\":\"120.5\"}]"
+  },
+  "expr": [
+    ["1 + 2 * 3", "7"],
+    ["(1 + 2) * 3", "9"],
+    ["-4 + 10 / 4", "-1.5"],
+    ["10 / 0", "0"],
+    ["f1 * מחיר", "37.5"],
+    ["כמות * מחיר_ליחידה", "37.5"],
+    ["round(10 / 3, 2)", "3.33"],
+    ["round(2.5)", "3"],
+    ["min(5, f1, 7)", "3"],
+    ["max(5, f1, 7)", "7"],
+    ["if(f1 > 2, 100, 200)", "100"],
+    ["if(f1 >= 4, 100, 200)", "200"],
+    ["f1 = 3", "1"],
+    ["f1 != 3", "0"],
+    ["name = name", "1"],
+    ["sum(items.qty)", "6"],
+    ["count(items)", "2"],
+    ["sum(פריטים.כמות) * 2", "12"],
+    ["days(start, 30)", "2026-11-12"],
+    ["days(start, -13)", "2026-09-30"],
+    ["diff(start, days(start, 45))", "45"],
+    ["vat_on * 5", "5"],
+    ["0.1 + 0.2", "0.3"],
+    ["1.005 * 1000", "1005"]
+  ],
+  "errors": ["1 +", "(1 + 2", "nope * 2", "foo(1)", "1 2", "1..2", "2 $ 3", "round()"],
+  "all": { "sub": "1382", "vat": "248.76", "total": "1630.76", "due": "2026-11-12" },
+  "table": [{ "desc": "שולחן", "qty": "2", "unit": "450", "line": "900" }, { "desc": "כיסא", "qty": "4", "unit": "120.5", "line": "482" }],
+  "display": [
+    ["1234.5", "number", "1,234.5"],
+    ["1630.76", "money", "1,630.76 ₪"],
+    ["5", "money", "5.00 ₪"],
+    ["-1234567", "number", "-1,234,567"],
+    ["2026-11-12", "date", "12/11/2026"],
+    ["", "money", ""]
+  ],
+  "visible": {
+    "fields": [
+      { "key": "has_g", "type": "checkbox", "label": "יש ערב" },
+      { "key": "g_name", "type": "text", "label": "שם הערב", "showIf": { "key": "has_g", "op": "eq", "value": "כן" } },
+      { "key": "g_id", "type": "text", "label": "ת\"ז ערב", "showIf": { "key": "g_name", "op": "filled" } },
+      { "key": "kind", "type": "text", "label": "סוג" },
+      { "key": "biz", "type": "text", "label": "ח\"פ", "showIf": { "key": "kind", "op": "eq", "value": "חברה" } },
+      { "key": "priv", "type": "text", "label": "ת\"ז", "showIf": { "key": "kind", "op": "neq", "value": "חברה" } },
+      { "key": "note", "type": "text", "label": "הערה", "showIf": { "key": "kind", "op": "empty" } }
+    ],
+    "cases": [
+      [{}, ["has_g", "kind", "priv", "note"]],
+      [{ "has_g": "1" }, ["has_g", "g_name", "kind", "priv", "note"]],
+      [{ "has_g": "1", "g_name": "דוד" }, ["has_g", "g_name", "g_id", "kind", "priv", "note"]],
+      [{ "has_g": "", "g_name": "דוד" }, ["has_g", "kind", "priv", "note"]],
+      [{ "kind": "חברה" }, ["has_g", "kind", "biz"]],
+      [{ "kind": "פרטי" }, ["has_g", "kind", "priv"]]
+    ]
+  }
+}

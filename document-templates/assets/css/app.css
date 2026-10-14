@@ -338,3 +338,60 @@ code { font-family: ui-monospace, monospace; background: var(--bg); padding: 1px
 .pages.placing .spot { pointer-events: none; }
 .upload .pdf-mode { border: 1px solid #dee2e6; border-radius: 8px; padding: 8px 12px; display: grid; gap: 6px; margin: 0; }
 .upload .pdf-mode legend { font-size: .9em; padding: 0 4px; }
+
+/* ── שלב 11: נכתב בכלי, טבלה חוזרת, מחושב, תנאים ── */
+.doc-sheet { background: #fff; color: #1d2433; border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 1px 6px rgba(0,0,0,.08);
+  padding: 32px 40px; max-width: 820px; margin: 0 auto 12px; box-sizing: border-box; }
+@media (max-width: 640px) { .doc-sheet { padding: 16px; } }
+/* עורך הגוף */
+.block { position: relative; border: 1px dashed transparent; border-radius: 6px; padding: 4px 6px 6px; margin-bottom: 6px; }
+.block:hover, .block:focus-within { border-color: #ced4da; }
+.block.conditional { border-inline-start: 3px solid #9c36b5; background: rgba(156,54,181,.04); }
+.block-tools { display: flex; gap: 6px; align-items: center; justify-content: flex-end; opacity: .55; font-size: .8rem; }
+.block:hover .block-tools, .block:focus-within .block-tools { opacity: 1; }
+.block-tools span { margin-inline-end: auto; }
+.block-main { display: flex; gap: 8px; align-items: flex-start; }
+.block-text { flex: 1; border: 0; background: transparent; resize: none; overflow: hidden; font: inherit; color: inherit;
+  line-height: 1.6; padding: 4px; min-height: 1.6em; border-radius: 4px; }
+.block-text:focus { outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent); background: #f8f9fa; }
+.block.is-heading .block-text { font-size: 1.35rem; font-weight: 700; }
+.block-side { display: flex; flex-direction: column; gap: 4px; flex: 0 0 auto; }
+.block-side select { font-size: .78rem; padding: 2px 4px; max-width: 120px; }
+.block-table table, .grid { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.block-table th, .block-table td, .grid th, .grid td { border: 1px solid #ced4da; padding: 4px 6px; text-align: right; }
+.block-table th, .grid th { background: #f1f3f5; font-weight: 600; }
+.block-break, .a-break { text-align: center; color: #868e96; font-size: .8rem; border-top: 1px dashed #adb5bd; margin: 10px 0; padding-top: 2px; }
+.cond-box { margin-top: 6px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.cond { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.cond select, .cond input { width: auto; min-width: 0; flex: 1 1 90px; }
+.add-blocks { justify-content: center; margin: 8px 0 16px; flex-wrap: wrap; }
+/* לוח: נוסחה ועמודות */
+.formula-box { display: grid; gap: 4px; }
+.formula { font-family: ui-monospace, Consolas, monospace; }
+.formula-msg { margin: 0; min-height: 1.2em; }
+.chips.refs { margin: 0; }
+.chips.refs .chip { border: 0; cursor: pointer; font: inherit; font-size: .72rem; color: inherit; }
+.table-cols .col-row { border: 1px solid var(--border); border-radius: 6px; padding: 6px; display: grid; gap: 4px; }
+.table-cols .col-row .row { gap: 4px; flex-wrap: nowrap; }
+.table-cols .col-row input, .table-cols .col-row select { min-width: 0; }
+/* מסמך: טבלה, מחושב, שדות בתוך טקסט */
+.grid-wrap { overflow-x: auto; display: grid; gap: 6px; justify-items: start; }
+.grid td input { width: 100%; min-width: 60px; box-sizing: border-box; border: 0; background: transparent; padding: 3px; font: inherit; }
+.grid td input:focus { outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent); background: #fff; }
+.grid .calc-cell { background: #f8f9fa; white-space: nowrap; }
+.grid .row-del { width: 1%; border: 0; }
+.calc-out { display: inline-block; min-width: 4ch; padding: 2px 6px; background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-radius: 4px; font-variant-numeric: tabular-nums; }
+.authored-doc { line-height: 1.75; }
+.authored-doc .a-h { margin: 0 0 12px; font-size: 1.5rem; }
+.authored-doc .a-p { margin: 0 0 10px; white-space: normal; }
+.authored-doc .a-table { margin: 6px 0 12px; }
+.inline-field input, .inline-field textarea { border: 0; border-bottom: 1.5px solid #adb5bd; border-radius: 0; background: rgba(59,91,219,.06);
+  padding: 0 4px; font: inherit; color: inherit; width: auto; min-width: 6ch; max-width: 100%; }
+.inline-field input { field-sizing: content; }
+.inline-field textarea { width: 100%; min-height: 3em; display: block; }
+.inline-field.mine.required input:placeholder-shown { border-bottom-color: #e67700; }
+.inline-field.theirs input, .inline-field.theirs textarea { background: transparent; border-bottom-style: dotted; }
+.inline-field input:focus, .inline-field textarea:focus { outline: none; border-bottom-color: var(--accent); background: rgba(59,91,219,.12); }
+span.inline-field .calc-out { padding: 0 4px; }
+.authored-btn { margin-inline-start: auto; }
