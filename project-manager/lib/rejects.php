@@ -255,19 +255,21 @@ function pm_rejects_guard_handover(int $projectId, ?int $unitId = null): void
 }
 
 /**
- * תזכורת לספק על ריג'קט שעבר את היעד ועוד לא תוקן (פתוח / הוחזר): מייל עם הקישור, ושורה בשרשור. פעם ב-3 ימים —
- * עד שהספק מדווח "תיקנתי" או שהריג'קט נסגר. נקרא מהמייל היומי (pm_digest_tick), פעם ביום.
+ * תזכורת לספק על ריג'קט שעבר את היעד ועוד לא תוקן (פתוח / הוחזר): מייל עם הקישור, ושורה בשרשור. חוזרת כל N ימים
+ * לפי הגדרת המנהל (הגדרות ← התראות, reject_days; 0 — בלי תזכורת) — עד שהספק מדווח "תיקנתי" או שהריג'קט נסגר.
+ * נקרא מהמייל היומי (pm_digest_tick), פעם ביום.
  */
 function pm_rejects_tick(): void
 {
     $db = pm_db();
     $today = pm_today();
-    $since = pm_today(-3);
-    $st = $db->prepare("SELECT r.* FROM rejects r JOIN projects p ON p.id = r.project_id WHERE r.status IN ('open','returned') AND r.supplier_id IS NOT NULL
-                         AND r.due_date != '' AND r.due_date < ? AND p.status IN ('active','paused') AND (r.reminded_at IS NULL OR r.reminded_at <= ?)");
-    $st->execute([$today, $since]);
+    $st = $db->prepare("SELECT r.*, p.owner_id FROM rejects r JOIN projects p ON p.id = r.project_id WHERE r.status IN ('open','returned') AND r.supplier_id IS NOT NULL
+                         AND r.due_date != '' AND r.due_date < ? AND p.status IN ('active','paused')");
+    $st->execute([$today]);
     $system = ['id' => 0, 'display_name' => 'מערכת']; // i18n-ok
     foreach ($st->fetchAll() as $r) {
+        $every = (int)pm_fin_alert_settings((int)$r['owner_id'])['reject_days'];
+        if ($every <= 0 || ($r['reminded_at'] !== null && $r['reminded_at'] > pm_today(-$every))) continue;
         $db->prepare('UPDATE rejects SET reminded_at = ? WHERE id = ?')->execute([$today, $r['id']]); // קודם מסמנים — שלא יישלח פעמיים
         $days = (int)((strtotime($today) - strtotime($r['due_date'])) / 86400);
         pm_reject_event((int)$r['id'], 'reminded', 'system', pm_t('מערכת'), pm_t('תזכורת לספק: עבר היעד ({date}) לפני {n} ימים', ['date' => pm_short_date($r['due_date']), 'n' => $days]), []);

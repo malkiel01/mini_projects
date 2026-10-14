@@ -43,7 +43,7 @@ const Settings = (() => {
         $('#alerts-form').addEventListener('submit', async e => {
             e.preventDefault();
             const f = $('#alerts-form'), el = f.elements;
-            const body = Object.fromEntries(['days_before', 'proof_days', 'overpay', 'budget_warn', 'invoice_days'].map(k => [k, el[k].value]));
+            const body = Object.fromEntries(['days_before', 'proof_days', 'overpay', 'budget_warn', 'invoice_days', 'reject_days'].map(k => [k, el[k].value]));
             body.notify_contacts = el.notify_contacts.checked;
             await busy($('button', f), f, async () => {
                 ({ fin_alerts: state.finAlerts } = await api('fin-alerts', { body }));
@@ -103,7 +103,7 @@ const Settings = (() => {
 
     function fillAlerts() {
         const el = $('#alerts-form').elements, c = state.finAlerts || {};
-        for (const k of ['days_before', 'proof_days', 'overpay', 'budget_warn', 'invoice_days']) el[k].value = c[k] ?? '';
+        for (const k of ['days_before', 'proof_days', 'overpay', 'budget_warn', 'invoice_days', 'reject_days']) el[k].value = c[k] ?? '';
         el.notify_contacts.checked = c.notify_contacts !== false;
     }
 

@@ -6,11 +6,14 @@
  */
 const Rejects = (() => {
     let cur = null, data = null, bound = false, current = null, showClosed = false;
+    // 🚶 סיור מסירה: הריג'קטים שהיו פתוחים כשהסיור התחיל (נשארים ברשימה גם אחרי הסימון), ומה סומן בכל אחד
+    let walk = null;
     const ICON = { pending: '🟣', open: '🔴', fixed: '🟡', returned: '↩️', done: '✅', cancelled: '⚪' };
     const ROLE = { manager: t('מנהל הפרויקט'), supplier: t('הספק'), client: t('הלקוח'), lawyer: t('עו"ד') };
     const fileUrl = (id, extra = '') => `api.php?action=file&id=${id}${extra}`;
 
     async function show(p) {
+        if (cur?.project.id !== p.project.id) walk = null;
         cur = p;
         bind();
         try { data = await api('rejects', { params: { project_id: p.project.id } }); } catch (e) { toast(e.message, true); return; }
@@ -27,8 +30,12 @@ const Rejects = (() => {
             if (e.target.closest('[data-rj-new]')) { openNew(); return; }
             if (e.target.closest('[data-rj-closed]')) { showClosed = !showClosed; render(); return; }
             if (e.target.closest('[data-rj-print]')) { print(); return; }
+            if (e.target.closest('[data-rj-walk]')) { startWalk(); return; }
+            if (e.target.closest('[data-rj-walk-end]')) { walk = null; render(); return; }
+            const w = e.target.closest('[data-walk-act]');
+            if (w) { walkAct(w, w.dataset.walkAct); return; }
             const r = e.target.closest('[data-rj]');
-            if (r) open(Number(r.dataset.rj));
+            if (r && !e.target.closest('.rj-walk-form')) open(Number(r.dataset.rj));
         });
         $('#rejects-root').addEventListener('keydown', e => { const r = e.target.closest('[data-rj]'); if (r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); open(Number(r.dataset.rj)); } });
         const f = $('#rj-dlg form');
@@ -38,6 +45,7 @@ const Rejects = (() => {
     }
 
     function render() {
+        if (walk) { renderWalk(); return; }
         const L = data.rejects, C = data.counts;
         const live = L.filter(r => !['done', 'cancelled'].includes(r.status) || showClosed);
         const pending = live.filter(r => r.status === 'pending');
@@ -51,7 +59,7 @@ const Rejects = (() => {
         badge(C.open + C.pending);
         $('#rejects-root').innerHTML = `
             <section class="fin-card rj-sum"><header class="fin-head"><h2>🔧 ${esc(t('ריג\'קטים'))}</h2>
-                <span class="row-btns">${live.length ? `<button type="button" class="btn ghost sm" data-rj-print aria-label="${esc(t('הדפסה לסיור מסירה'))}" title="${esc(t('הדפסה לסיור מסירה'))}">🖨️</button>` : ''}
+                <span class="row-btns">${C.open ? `<button type="button" class="btn ghost sm" data-rj-walk>🚶 ${esc(t('סיור'))}</button>` : ''}${live.length ? `<button type="button" class="btn ghost sm" data-rj-print aria-label="${esc(t('הדפסה לסיור מסירה'))}" title="${esc(t('הדפסה לסיור מסירה'))}">🖨️</button>` : ''}
                 <button type="button" class="btn primary sm" data-rj-new>+ ${esc(t('ריג\'קט'))}</button></span></header>
                 <div class="chip-row">${C.open ? `<span class="chip fin-late">🔴 ${esc(t('{n} פתוחים', { n: C.open - C.fixed }))}</span>` : ''}
                     ${C.fixed ? `<span class="chip fin-warn">🟡 ${esc(t('{n} לבדיקה — הספק דיווח שתיקן', { n: C.fixed }))}</span>` : ''}
@@ -114,9 +122,9 @@ const Rejects = (() => {
     }
 
     /** העלאת הקבצים שנבחרו — לתיקיית הריג'קטים; מחזיר מזהים. */
-    async function uploadPicked() {
+    async function uploadPicked(input = $('#rj-files')) {
         const ids = [];
-        for (const file of $('#rj-files').files) {
+        for (const file of input.files) {
             if (file.size > state.maxUpload) throw new Error(t('{name}: גדול מ-{mb}MB', { name: file.name, mb: Math.round(state.maxUpload / 1048576) }));
             const type = file.type.startsWith('image/') ? 'photo' : file.type.startsWith('video/') ? 'video' : 'other';
             ids.push((await Files.send(file, cur.project.id, data.folder_id, undefined, { quiet: true, type })).file.id);
@@ -184,6 +192,83 @@ const Rejects = (() => {
     }
 
     function openWhenReady(id) { pendingOpen = id; }
+
+    // ================= 🚶 סיור מסירה — מהטלפון, בשטח =================
+
+    /** מתחילים סיור: כל מה שעוד לא נסגר, לפי דירה ושלב — כרטיס לכל ריג'קט עם "✅ תקין" / "↩️ לא תוקן". */
+    function startWalk() {
+        const open = data.rejects.filter(r => ['open', 'fixed', 'returned'].includes(r.status));
+        open.sort((a, b) => (a.unit || '').localeCompare(b.unit || '') || (a.stage || '').localeCompare(b.stage || '') || a.id - b.id);
+        walk = { ids: open.map(r => r.id), marks: {}, started: Math.max(0, ...data.rejects.map(r => r.id)) };
+        render();
+        window.scrollTo({ top: 0 });
+    }
+
+    function renderWalk() {
+        const byId = new Map(data.rejects.map(r => [r.id, r]));
+        // ריג'קט חדש שנפתח בזמן הסיור — נכנס לרשימה (כבר "נבדק": הרגע רשמת אותו)
+        for (const r of data.rejects) if (!walk.ids.includes(r.id) && r.id > walk.started) { walk.ids.push(r.id); walk.marks[r.id] = 'new'; }
+        // סומן "בוצע" מהחלון (לחיצה על הכרטיס) — נחשב נבדק
+        for (const id of walk.ids) if (!walk.marks[id] && byId.get(id)?.status === 'done') walk.marks[id] = 'done';
+        const list = walk.ids.map(id => byId.get(id)).filter(Boolean);
+        const done = list.filter(r => walk.marks[r.id]).length;
+        const ok = list.filter(r => walk.marks[r.id] === 'done').length, back = list.filter(r => walk.marks[r.id] === 'returned').length;
+        $('#rejects-root').innerHTML = `
+            <section class="fin-card rj-walk-head"><header class="fin-head"><h2>🚶 ${esc(t('סיור מסירה'))}</h2>
+                <button type="button" class="btn ghost sm" data-rj-walk-end>${esc(t('סיום הסיור'))}</button></header>
+                <div class="rj-walk-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${list.length}" aria-valuenow="${done}"><i style="inline-size:${list.length ? done / list.length * 100 : 0}%"></i></div>
+                <p class="hint">${esc(t('נבדקו {done} מתוך {n}', { done, n: list.length }))}${ok ? ` · ✅ ${ok}` : ''}${back ? ` · ↩️ ${back}` : ''}</p>
+                <button type="button" class="btn ghost sm" data-rj-new>+ ${esc(t('ריג\'קט חדש שמצאנו בסיור'))}</button></section>
+            <ul class="list rj-walk-list">${list.map(walkCard).join('') || `<li class="empty">${esc(t('אין ריג\'קטים פתוחים — אפשר למסור'))}</li>`}</ul>
+            ${done === list.length && list.length ? `<p class="hint rj-walk-end">${esc(data.counts.open ? t('הסיור הסתיים. נשארו {n} פתוחים — המסירה תיפתח כשייסגרו.', { n: data.counts.open }) : t('הסיור הסתיים — הכול סגור, אפשר למסור.'))}</p>` : ''}`;
+    }
+
+    function walkCard(r) {
+        const mark = walk.marks[r.id];
+        const imgs = r.events.flatMap(e => e.files).filter(x => x.thumb || /^image\//.test(x.mime)).slice(-3);
+        const last = [...r.events].reverse().find(e => e.body && e.kind !== 'opened');
+        const where = [r.supplier, r.stage, r.unit ? '🏢 ' + r.unit : '', r.due_date ? t('עד {date}', { date: shortDate(r.due_date) }) : ''].filter(Boolean);
+        const result = mark === 'done' ? `<span class="chip fin-ok">✅ ${esc(t('תקין — נסגר'))}</span>` : mark === 'returned' ? `<span class="chip fin-late">↩️ ${esc(t('הוחזר לספק'))}</span>`
+            : mark === 'new' ? `<span class="chip">🆕 ${esc(t('נפתח בסיור'))}</span>` : '';
+        return `<li class="card rj-walk rj-${r.status}${mark ? ' rj-walk-done' : ''}" data-walk="${r.id}">
+            <div class="rj-walk-top" data-rj="${r.id}" role="button" tabindex="0"><span class="ficon" aria-hidden="true">${ICON[r.status]}</span>
+                <div class="body"><div class="l1"><b class="one">${esc(r.title)}</b>${result || `<span class="chip${r.late ? ' fin-late' : ''}">${esc(r.late ? t('באיחור') : r.status_label)}</span>`}</div>
+                <div class="l2">${where.map(esc).join('<i class="sep" aria-hidden="true">·</i>')}</div>
+                ${last ? `<div class="l2 muted">${esc(ROLE[last.by_role] || last.by_name)}: ${esc(last.body)}</div>` : ''}</div></div>
+            ${imgs.length ? `<div class="rj-files">${imgs.map(x => `<a href="${fileUrl(x.id)}" class="rj-thumb"><img src="${fileUrl(x.id, x.thumb ? '&thumb=1' : '')}" alt="${esc(x.name)}" loading="lazy"></a>`).join('')}</div>` : ''}
+            ${mark ? '' : `<div class="rj-walk-btns"><button type="button" class="btn primary" data-walk-act="done">✅ ${esc(t('תקין'))}</button>
+                <button type="button" class="btn ghost" data-walk-act="form">↩️ ${esc(t('לא תוקן'))}</button></div>
+            <div class="rj-walk-form" hidden><label class="f"><span>${esc(t('מה עוד לא תקין'))}</span><textarea rows="2"></textarea></label>
+                <label class="btn ghost sm rj-walk-cam">📷 ${esc(t('צילום'))}<input type="file" accept="image/*" capture="environment" multiple hidden></label><span class="muted rj-walk-n"></span>
+                <p class="error" role="alert" hidden></p>
+                <button type="button" class="btn primary" data-walk-act="returned">${esc(t('החזרה לספק'))}</button></div>`}</li>`;
+    }
+
+    async function walkAct(btn, action) {
+        const li = btn.closest('[data-walk]'), id = Number(li.dataset.walk), form = $('.rj-walk-form', li);
+        if (action === 'form') {
+            form.hidden = !form.hidden;
+            if (!form.hidden) {
+                $('textarea', form).focus();
+                $('input[type=file]', form).onchange = e => { const n = e.target.files.length; $('.rj-walk-n', form).textContent = n ? t('{n} תמונות', { n }) : ''; };
+            }
+            return;
+        }
+        const body = action === 'returned' ? $('textarea', form).value.trim() : '';
+        const err = $('.error', form);
+        if (action === 'returned' && !body) { err.textContent = t('כתבו למה זה לא תוקן כמו שצריך — אפשר גם לצרף תמונה'); err.hidden = false; return; }
+        btn.disabled = true;
+        try {
+            const file_ids = action === 'returned' ? await uploadPicked($('input[type=file]', form)) : [];
+            data = await api('reject-act', { body: { id, action, body, file_ids } });
+            walk.marks[id] = action;
+            render();
+            badge(data.counts.open + data.counts.pending);
+            // לכרטיס הבא שעוד לא נבדק
+            const next = $('#rejects-root .rj-walk:not(.rj-walk-done)');
+            next?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
+        } catch (e) { btn.disabled = false; toast(e.message, true); }
+    }
 
     /** המונה בלשונית "🔧 ריג'קטים" — כמה עוד לא נסגרו (כולל ממתינים לאישור). */
     function badge(n) {

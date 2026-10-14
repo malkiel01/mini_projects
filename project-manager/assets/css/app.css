@@ -1178,3 +1178,21 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
     #rj-print thead { display: table-header-group; }
     #rj-print .rp-sign { display: flex; justify-content: space-between; margin-top: 24pt; }
 }
+
+/* ===== 🚶 סיור מסירה (rejects.js — renderWalk): כרטיס לכל ריג'קט, "תקין" / "לא תוקן" גדולים לאגודל ===== */
+.rj-walk-bar { block-size: 6px; border-radius: 999px; background: var(--line); overflow: hidden; margin-top: var(--s2); }
+.rj-walk-bar i { display: block; block-size: 100%; background: var(--ok, #1a7f4b); transition: inline-size .2s; }
+.rj-walk-head .btn[data-rj-new] { margin-top: var(--s1); }
+.rj-walk-list { display: grid; gap: var(--s2); margin-top: var(--s3); border: 0; background: none; }
+.rj-walk { display: block; border: 1px solid var(--line); border-radius: var(--r, 10px); padding: var(--s3); background: var(--surface); }
+.rj-walk-top { display: flex; gap: var(--s2); align-items: flex-start; cursor: pointer; }
+.rj-walk-top .body { min-inline-size: 0; flex: 1; }
+.rj-walk .rj-files { margin-top: var(--s2); }
+.rj-walk-btns { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); margin-top: var(--s3); }
+.rj-walk-btns .btn { min-block-size: 48px; font-size: 1rem; }
+.rj-walk-form { margin-top: var(--s2); display: grid; gap: var(--s2); }
+.rj-walk-form textarea { inline-size: 100%; }
+.rj-walk-cam { justify-self: start; }
+.rj-walk-done { opacity: .7; }
+.rj-walk-end { text-align: center; margin-top: var(--s3); }
+@media (prefers-reduced-motion: reduce) { .rj-walk-bar i { transition: none; } }
