@@ -821,6 +821,39 @@ function pm_contracts_multi(PDO $pdo): void
         decided_at      TEXT
     )');
     $pdo->exec('CREATE INDEX IF NOT EXISTS budget_versions_project ON budget_versions (project_id)');
+    // חריגה מהחוזה בהסכמת כולם (lib/deviations.php): מתג לפרויקט (כבוי), החריגות, וההסכמות של כל צד — לאישור ולביטול
+    pm_add_column($pdo, 'projects', 'deviations_on', 'INTEGER NOT NULL DEFAULT 0');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS deviations (
+        id           INTEGER PRIMARY KEY,
+        project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        supplier_id  INTEGER,
+        payment_id   INTEGER,
+        type         TEXT NOT NULL,
+        value        REAL,
+        description  TEXT NOT NULL DEFAULT \'\',
+        status       TEXT NOT NULL DEFAULT \'pending\',
+        parties_json TEXT NOT NULL DEFAULT \'[]\',
+        created_by   INTEGER,
+        created_at   TEXT NOT NULL,
+        decided_at   TEXT
+    )');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS deviations_project ON deviations (project_id)');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS deviation_approvals (
+        id           INTEGER PRIMARY KEY,
+        deviation_id INTEGER NOT NULL REFERENCES deviations(id) ON DELETE CASCADE,
+        phase        TEXT NOT NULL DEFAULT \'approve\',
+        party        TEXT NOT NULL,
+        contact_id   INTEGER NOT NULL,
+        decision     TEXT NOT NULL,
+        method       TEXT NOT NULL DEFAULT \'manual\',
+        by_name      TEXT NOT NULL DEFAULT \'\',
+        note         TEXT NOT NULL DEFAULT \'\',
+        signature    TEXT NOT NULL DEFAULT \'\',
+        portal_id    INTEGER,
+        recorded_by  INTEGER,
+        ip           TEXT NOT NULL DEFAULT \'\',
+        created_at   TEXT NOT NULL
+    )');
     $pdo->exec('CREATE TABLE IF NOT EXISTS budget_decisions (
         id          INTEGER PRIMARY KEY,
         version_id  INTEGER NOT NULL REFERENCES budget_versions(id) ON DELETE CASCADE,

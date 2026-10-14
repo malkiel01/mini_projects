@@ -2,13 +2,13 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="assets/js/i18n.js?v=83"></script>
+    <script src="assets/js/i18n.js?v=84"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=83">
-    <link rel="stylesheet" href="assets/css/devloop.css?v=83">
+    <link rel="stylesheet" href="assets/css/app.css?v=84">
+    <link rel="stylesheet" href="assets/css/devloop.css?v=84">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -184,6 +184,7 @@
                 <div class="fin-body" id="fin-body">
                     <div data-fin-pane="sum"><section class="fin-card" id="fin-sum" aria-labelledby="fin-title"></section></div>
                     <div data-fin-pane="suppliers" hidden>
+                        <div id="fin-deviations"></div>
                         <p class="hint">לכל ספק — מה סוכם, מה היה צריך להיות משולם עד היום ומה שולם; ומשם: חוזה, תוספת, אבן דרך וכרטסת.</p>
                         <div id="fin-stages"></div></div>
                     <div data-fin-pane="milestones" hidden>
@@ -788,6 +789,8 @@
                     <label class="f"><span>עיכבון (%)</span><input name="retention_pct" inputmode="decimal" dir="ltr" maxlength="5"></label>
                 </div>
                 <p class="hint">החלק מכל תשלום שנשאר אצל הלקוח עד המסירה. הסטנדרט — 10%.</p>
+                <label class="switch"><input type="checkbox" name="deviations_on"><span>⚖️ לאפשר חריגה מהחוזה — רק בהסכמת הלקוח, העו"ד והספק</span></label>
+                <p class="hint">כבוי — החוזה כמו שהוא. דולק — אפשר לבקש חריגה (למשל ויתור על עיכבון), והיא חלה רק כשכל הצדדים הסכימו, כל אחד בקישור שלו.</p>
                 <label class="switch"><input type="checkbox" name="index_on"><span>צמוד למדד</span></label>
                 <div class="fields" id="index-box" hidden>
                     <label class="f wide"><span>מדד</span><input name="index_name" maxlength="60" list="index-names" placeholder="מדד תשומות הבנייה"></label>
@@ -801,6 +804,31 @@
     </dialog>
 
     <!-- ===== חלון: תוספת / חריגה (finance.js, כ4) — חדשה, או צפייה והחלטה ===== -->
+    <!-- ===== חלון: חריגה מהחוזה (assets/js/deviations.js) ===== -->
+    <dialog id="dev-dlg" aria-labelledby="dev-dlg-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="dev-dlg-title">חריגה מהחוזה</h2>
+                <button type="submit" class="btn primary">שליחה לכל הצדדים</button>
+            </header>
+            <div class="sheet-body">
+                <p class="hint">החריגה חלה רק כשכל הצדדים הסכימו: הלקוח, העו"ד (אם יש) וכל ספק שהיא נוגעת לו — כל אחד בקישור שלו. עד אז — החוזה כמו שהוא.</p>
+                <div class="fields">
+                    <label class="f wide"><span>מה</span><select name="type"></select></label>
+                    <label class="f wide"><span>על מי</span><select name="scope">
+                        <option value="supplier">ספק אחד</option><option value="milestone">אבן דרך אחת</option><option value="project">כל הפרויקט (כל הספקים)</option></select></label>
+                    <label class="f wide" id="dev-supplier-f"><span>ספק</span><select name="supplier_id"></select></label>
+                    <label class="f wide" id="dev-milestone-f" hidden><span>אבן דרך</span><select name="payment_id"></select></label>
+                    <label class="f" id="dev-value-f" hidden><span>אחוז עיכבון חדש (%)</span><input name="value" inputmode="decimal" dir="ltr" maxlength="5"></label>
+                    <label class="f wide"><span>מה בדיוק ולמה *</span><textarea name="description" rows="3" maxlength="2000"></textarea></label>
+                </div>
+                <p class="hint" id="dev-parties"></p>
+                <p class="error" role="alert" hidden></p>
+            </div>
+        </form>
+    </dialog>
+
     <dialog id="co-dlg" aria-labelledby="co-dlg-title">
         <form method="dialog" novalidate>
             <header class="sheet-head">
@@ -1390,28 +1418,29 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=83"></script>
-    <script src="assets/js/contacts.js?v=83"></script>
-    <script src="assets/js/device-contacts.js?v=83"></script>
-    <script src="assets/js/viewer.js?v=83"></script>
-    <script src="assets/js/devloop.js?v=83"></script>
-    <script src="assets/js/engage.js?v=83"></script>
-    <script src="assets/js/linker.js?v=83"></script>
-    <script src="assets/js/files.js?v=83"></script>
-    <script src="assets/js/lightbox.js?v=83"></script>
-    <script src="assets/js/field.js?v=83"></script>
+    <script src="assets/js/core.js?v=84"></script>
+    <script src="assets/js/contacts.js?v=84"></script>
+    <script src="assets/js/device-contacts.js?v=84"></script>
+    <script src="assets/js/viewer.js?v=84"></script>
+    <script src="assets/js/devloop.js?v=84"></script>
+    <script src="assets/js/engage.js?v=84"></script>
+    <script src="assets/js/linker.js?v=84"></script>
+    <script src="assets/js/files.js?v=84"></script>
+    <script src="assets/js/lightbox.js?v=84"></script>
+    <script src="assets/js/field.js?v=84"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=83"></script>
-    <script src="assets/js/projects.js?v=83"></script>
-    <script src="assets/js/quotes.js?v=83"></script>
-    <script src="assets/js/payments.js?v=83"></script>
-    <script src="assets/js/fin-report.js?v=83"></script>
-    <script src="assets/js/budget.js?v=83"></script>
-    <script src="assets/js/finance.js?v=83"></script>
-    <script src="assets/js/finance-all.js?v=83"></script>
-    <script src="assets/js/hebcal.js?v=83"></script>
-    <script src="assets/js/calendar.js?v=83"></script>
-    <script src="assets/js/settings.js?v=83"></script>
-    <script src="assets/js/app.js?v=83"></script>
+    <script src="assets/js/share.js?v=84"></script>
+    <script src="assets/js/projects.js?v=84"></script>
+    <script src="assets/js/quotes.js?v=84"></script>
+    <script src="assets/js/payments.js?v=84"></script>
+    <script src="assets/js/fin-report.js?v=84"></script>
+    <script src="assets/js/budget.js?v=84"></script>
+    <script src="assets/js/deviations.js?v=84"></script>
+    <script src="assets/js/finance.js?v=84"></script>
+    <script src="assets/js/finance-all.js?v=84"></script>
+    <script src="assets/js/hebcal.js?v=84"></script>
+    <script src="assets/js/calendar.js?v=84"></script>
+    <script src="assets/js/settings.js?v=84"></script>
+    <script src="assets/js/app.js?v=84"></script>
 </body>
 </html>

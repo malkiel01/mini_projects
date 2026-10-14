@@ -221,7 +221,9 @@ function pm_payment_save(array $user, array $in, ?array $actor = null): array
         'notes'        => pm_str($in, 'notes', 2000, false, 'מה כלול'),
         // עיכבון (לפי הגדרות הפרויקט): החלק מהתשלום שנשאר אצל הלקוח עד המסירה
         // מקדמה — בלי עיכבון (העיכבון נעצר מחשבונות הביצוע)
-        'retention'    => $kind === 'retention' || $dueKind === 'advance' ? 0 : (int)round($amount * (float)$p['retention_pct'] / 100),
+        // העיכבון — לפי החוזה, או לפי חריגה מהחוזה שכל הצדדים הסכימו לה (lib/deviations.php)
+        'retention'    => $kind === 'retention' || $dueKind === 'advance' ? 0
+            : (int)round($amount * (pm_deviation_retention_pct($projectId, $supplierId, $id) ?? (float)$p['retention_pct']) / 100),
         // "במסירה" — של איזו יחידה (מתחם); בלי — כל המתחם. ברירת מחדל: היחידה של השלב
         'unit_id'      => $dueKind === 'handover' ? (array_key_exists('unit_id', $in) ? pm_unit_of_project((int)($in['unit_id'] ?? 0) ?: null, $projectId)
                           : ($old['unit_id'] ?? ($stageId ? pm_stage_unit($stageId) : null))) : null,

@@ -21,6 +21,7 @@ require_once __DIR__ . '/changes.php';
 require_once __DIR__ . '/expenses.php';
 require_once __DIR__ . '/contracts.php';
 require_once __DIR__ . '/budget.php';
+require_once __DIR__ . '/deviations.php';
 
 const PM_FEE_TYPES = ['', 'percent', 'fixed'];
 const PM_DUE_KINDS = ['date', 'stage_done', 'progress'];
@@ -150,6 +151,7 @@ function pm_finance_settings(array $p): array
         // הצעת תקציב (lib/budget.php): פורק לשלבים — התקציב מחושב ולא נערך כאן; מי מאשר; חלוקת המשותפים בין הדירות
         'budget_broken' => pm_budget_broken((int)$p['id']), 'budget_locked' => pm_budget_locked((int)$p['id']), 'budget_approver' => $p['budget_approver'] ?: 'client',
         'unit_split' => json_decode((string)($p['unit_split'] ?? ''), true) ?: (object)[],
+        'deviations_on' => (bool)($p['deviations_on'] ?? 0), // חריגה מהחוזה בהסכמת כולם (lib/deviations.php)
     ];
 }
 
@@ -511,6 +513,13 @@ function pm_finance_settings_save(array $user, array $in): array
     if ($indexOn && ($f['index_base_month'] === '' || $f['index_base'] === null)) throw new PmError('הצמדה: צריך חודש בסיס ומדד בסיס', 422);
     // תקציב שפורק לשלבים — מחושב מהשלבים (pm_budget_sync), לא מספר שנערך כאן
     if (pm_budget_broken($projectId)) { $f['budget'] = (int)$p['budget']; $f['budget_initial'] = (int)$p['budget_initial']; }
+    if (array_key_exists('deviations_on', $in)) $f['deviations_on'] = !empty($in['deviations_on']) ? 1 : 0;
+    // חריגה מהחוזה מופעלת — אחוז העיכבון של החוזה לא משתנה בשקט כשכבר יש אבני דרך עם עיכבון: רק בחריגה בהסכמת כולם
+    if (($f['deviations_on'] ?? (int)$p['deviations_on']) && abs($f['retention_pct'] - (float)$p['retention_pct']) > 0.001) {
+        $has = pm_db()->prepare("SELECT 1 FROM payments WHERE project_id = ? AND kind = 'milestone' AND retention > 0 AND status != 'cancelled' LIMIT 1");
+        $has->execute([$projectId]);
+        if ($has->fetchColumn()) throw new PmError('העיכבון הוא חלק מהחוזה — שינוי שלו כשיש כבר אבני דרך: "⚖️ חריגה מהחוזה" בהסכמת כולם', 422);
+    }
     $appr = (string)($in['budget_approver'] ?? ($p['budget_approver'] ?: 'client'));
     if (!isset(PM_BUDGET_APPROVERS[$appr])) throw new PmError('מי מאשר את התקציב — לא מוכר', 422);
     $f['budget_approver'] = $appr;

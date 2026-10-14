@@ -258,6 +258,7 @@ const Finance = (() => {
         }).join('');
         $('#fin-stages').innerHTML = html || `<p class="empty">${esc(t('עוד אין ספקים עם הצעה או אבן דרך.'))}</p>`;
         $('#fin-extra').innerHTML = expensesSection() + feeSection();
+        Deviations.show(project, data.settings.deviations_on);
         $('#fin-n-suppliers').textContent = new Set(data.stages.flatMap(s => s.rows.map(r => r.supplier_id))).size || '';
         $('#fin-n-expenses').textContent = data.expenses?.items?.length || '';
     }
@@ -905,6 +906,7 @@ const Finance = (() => {
         $('#fin-budget-fields').hidden = !!S.budget_broken;
         $('#fin-budget-broken').hidden = !S.budget_broken;
         el.budget_approver.value = S.budget_approver || 'client';
+        el.deviations_on.checked = !!S.deviations_on;
         const units = project.units || [];
         $('#fin-split-box').hidden = units.length < 2;
         const eq = units.length ? Math.round(10000 / units.length) / 100 : 0;
@@ -937,7 +939,7 @@ const Finance = (() => {
             retention_pct: el.retention_pct.value.trim(), index_on: el.index_on.checked,
             index_name: S.index_name && indexName === t(S.index_name) ? S.index_name : indexName,
             index_base_month: el.index_base_month.value, index_base: el.index_base.value.trim(),
-            budget_approver: el.budget_approver.value,
+            budget_approver: el.budget_approver.value, deviations_on: el.deviations_on.checked,
             unit_split: Object.fromEntries($$('#fin-split [data-split-unit]').map(i => [i.dataset.splitUnit, i.value.trim()])),
         };
         await busy($('button[type=submit]', f), f, async () => {

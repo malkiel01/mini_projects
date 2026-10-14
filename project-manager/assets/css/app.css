@@ -1111,3 +1111,15 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .bd-chg li, .bd-units li { display: flex; justify-content: space-between; gap: var(--s2); padding: 4px var(--s2); font-size: .85rem; }
 .bd-chg b, .bd-units b { white-space: nowrap; font-variant-numeric: tabular-nums; }
 
+
+/* ===== חריגה מהחוזה בהסכמת כולם (assets/js/deviations.js, ובפורטל) ===== */
+.dev-box .fin-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
+.dev-list { display: grid; gap: var(--s2); }
+.dev-item { border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2) var(--s3); background: var(--surface); }
+.dev-top { display: flex; align-items: center; gap: var(--s2); }
+.dev-top .one { flex: 1; min-width: 0; }
+.dev-meta { font-size: .8rem; margin-top: 2px; }
+.dev-desc { margin: 4px 0; font-size: .88rem; white-space: pre-wrap; }
+.dev-parties { list-style: none; padding: 0; margin: 4px 0 0; display: grid; gap: 2px; }
+.dev-party { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); font-size: .84rem; min-height: 32px; }
+.dev-party > span:first-child { flex: 1; min-width: 0; }

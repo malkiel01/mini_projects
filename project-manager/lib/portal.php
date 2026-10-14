@@ -318,6 +318,7 @@ function pm_portal_view(array $a): array
         'finance' => pm_finance_of($pid, true, PM_OVERPAY_MARGIN, $scope) + ['alerts' => array_values(array_map(fn($x) => array_diff_key($x, ['key' => 1, 'sort' => 1]),
             array_filter(pm_fin_alerts($pid, pm_fin_alert_settings((int)$a['owner']['id']), pm_lang(), $role),
                 fn($x) => $scope === null || in_array($x['payment_id'], $payIds, true))))],
+        'deviations' => pm_portal_deviations($a), // חריגה מהחוזה בהסכמת כולם
         // הצעת התקציב לפי שלבים (lib/budget.php) — כשפורקה; מאשר מי שמוגדר (לקוח / עו"ד), ורק בקישור של כל הפרויקט
         'budget' => pm_budget_broken($pid) ? (function () use ($pid, $scope, $role, $a, $p) {
             $b = pm_budget_of($pid, true, $scope);
@@ -650,7 +651,7 @@ function pm_portal_supplier_view(array $a): array
         'role' => 'supplier', 'name' => $a['contact']['name'], 'lang' => pm_lang_valid($a['contact']['lang'] ?? 'he'),
         'project' => ['name' => $a['project']['name'], 'address' => $a['project']['address'], 'status' => $a['project']['status']],
         'manager' => ['name' => $a['owner']['display_name'], 'phone' => $a['owner']['phone'], 'email' => $a['owner']['email']],
-        'stages' => $stages, 'my_quotes' => $quotes, 'payments' => $payments, 'files' => $files,
+        'stages' => $stages, 'my_quotes' => $quotes, 'payments' => $payments, 'files' => $files, 'deviations' => pm_portal_deviations($a),
         // כ4: תוספות שאושרו לו, וחשבוניות שחסרות על תשלומים שהתקבלו
         'changes' => array_values(array_filter(pm_changes_of($pid), fn($x) => $x['supplier_id'] === $sid && $x['status'] === 'approved')),
         // כ5: הכרטסת שלו בפרויקט — הצעה, תוספות, תשלומים וחשבוניות, עם יתרה
@@ -775,6 +776,51 @@ function pm_portal_change_decide(array $a, array $in): array
     $v = ['who' => $a['contact']['name'], 'supplier' => $o['supplier'], 'stage' => $o['stage'], 'amount' => pm_money((int)round($o['amount'] * 100))];
     pm_portal_mail($a, pm_t($decision === 'approved' ? '{who} אישר תוספת: {supplier}, {stage}' : '{who} דחה תוספת: {supplier}, {stage}', $v, $lang),
         pm_t($decision === 'approved' ? '{who} אישר תוספת של {supplier} בשלב {stage}: {amount}.' : '{who} דחה תוספת של {supplier} בשלב {stage}: {amount}.', $v, $lang)
+        . ($note !== '' ? "\n\n" . pm_t('הערה: {note}', ['note' => $note], $lang) : ''), 'payments');
+    return pm_portal_view($a);
+}
+
+/** חריגות מהחוזה שהאיש בקישור הוא צד בהן (לקוח / עו"ד / ספק); can_decide — כשממתינה להחלטה שלו. */
+function pm_portal_deviations(array $a): array
+{
+    $role = $a['link']['role'];
+    $cid = (int)$a['contact']['id'];
+    $out = [];
+    foreach (pm_deviations_of((int)$a['project']['id'])['deviations'] as $d) {
+        if ($d['status'] === 'cancelled') continue;
+        $me = null;
+        foreach ($d['parties'] as $x) if ($x['party'] === $role && $x['contact_id'] === $cid) $me = $x;
+        if (!$me) continue;
+        unset($d['history']);
+        $out[] = $d + ['can_decide' => in_array($d['status'], ['pending', 'revoke_pending'], true) && $me['decision'] === null && empty($a['readonly'])];
+    }
+    return $out;
+}
+
+/** הסכמה / סירוב לחריגה מהחוזה מהקישור — לחיצה או חתימה (לפי הגדרות הלקוח; ספק — לחיצה). */
+function pm_portal_deviation_decide(array $a, array $in): array
+{
+    $id = (int)($in['deviation_id'] ?? 0);
+    $d = null;
+    foreach (pm_portal_deviations($a) as $x) if ($x['id'] === $id) $d = $x;
+    if (!$d || !$d['can_decide']) throw new PmError('אי אפשר להחליט על החריגה הזו עכשיו', 422);
+    $decision = (string)($in['decision'] ?? '');
+    $role = $a['link']['role'];
+    $method = $role === 'supplier' ? 'click' : pm_client_settings((int)$a['contact']['id'])['approval_method'];
+    if ($role === 'lawyer') $method = 'click';
+    $signature = '';
+    if ($decision === 'approved' && $method === 'signature') {
+        $signature = (string)($in['signature'] ?? '');
+        if (!preg_match('#^data:image/png;base64,[A-Za-z0-9+/=]+$#', $signature) || strlen($signature) > 400000) throw new PmError('נדרשת חתימה', 422);
+    }
+    $note = mb_substr(trim((string)($in['note'] ?? '')), 0, 1000);
+    pm_deviation_decide($a['owner'], $id, $role, (int)$a['contact']['id'], $decision, $note, $decision === 'approved' ? $method : 'click', $a['contact']['name'],
+        $a['actor'], ['portal_id' => (int)$a['link']['id'], 'signature' => $signature]);
+    pm_log('info', 'portal', 'portal.deviation_decide', ['data' => ['link' => (int)$a['link']['id'], 'deviation' => $id, 'role' => $role, 'decision' => $decision]]);
+    $lang = $a['owner']['lang'];
+    $v = ['who' => $a['contact']['name'], 'type' => pm_t(PM_DEVIATION_TYPES[$d['type']] ?? $d['type'], [], $lang)];
+    pm_portal_mail($a, pm_t($decision === 'approved' ? '{who} הסכים לחריגה מהחוזה: {type}' : '{who} לא הסכים לחריגה מהחוזה: {type}', $v, $lang),
+        pm_t($decision === 'approved' ? '{who} הסכים לחריגה מהחוזה: {type}.' : '{who} לא הסכים לחריגה מהחוזה: {type}.', $v, $lang)
         . ($note !== '' ? "\n\n" . pm_t('הערה: {note}', ['note' => $note], $lang) : ''), 'payments');
     return pm_portal_view($a);
 }
