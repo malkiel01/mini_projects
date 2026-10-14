@@ -42,9 +42,9 @@ $max = max(array_map('dev_code_num', $codes));
 // מטלה חדשה מהמסך
 throws('מטלה בלי כותרת', fn() => dev_task_create($dev, ['title' => ' ']), 422);
 $code = dev_task_create($dev, ['title' => 'לבדוק את הייצוא', 'area' => 'מסמכים'])['code'];
-check("קוד חדש אחרי הגבוה שבקובץ ($code)", dev_code_num($code) === $max + 1);
+check("מטלה מהמסך — מ-DT-501 ($code)", $code === 'DT-501');
 $code2 = dev_task_create($dev, ['title' => 'עוד אחת'])['code'];
-check('והבא אחריו', dev_code_num($code2) === $max + 2);
+check('והבא אחריו', $code2 === 'DT-502');
 $list = dev_items()['items'];
 check('המטלות מהמסך ברשימה, הראשונות', $list[0]['code'] === $code2 && $list[1]['source'] === 'user');
 
@@ -74,7 +74,7 @@ $k = devapi_auth();
 
 $feed = devapi_feed($k, []);
 check('ברירת מחדל: רק מטלות עם הערה חדשה', count($feed['items']) === 1 && $feed['items'][0]['code'] === $codes[0] && $feed['items'][0]['comments'][0]['new']);
-check('הקוד הבא מוצע', $feed['next_code'] === sprintf('DT-%03d', $max + 3));
+check('הקוד הבא לקובץ — בטווח של הקובץ', $feed['next_code'] === sprintf('DT-%03d', $max + 1));
 check('all=1 — הכול', count(devapi_feed($k, ['all' => 1])['items']) === count($codes) + 2);
 check('code= — אחת', count(devapi_feed($k, ['code' => $code])['items']) === 1);
 devapi_feed($k, ['mark' => 1]);
@@ -103,6 +103,14 @@ $t2 = dev_token_create($dev, []);
 db()->exec('UPDATE users SET is_developer = 0 WHERE id = 1');
 $_SERVER['HTTP_X_DEV_TOKEN'] = $t2['token'];
 throws('מי שכבר לא מפתח', fn() => devapi_auth(), 401);
+
+// התנגשות ישנה (מלפני ההפרדה): מטלה מהמסך בקוד שגם בקובץ — שתיהן מוצגות
+db()->prepare("INSERT INTO dev_tasks (code, title, created_at, updated_at) VALUES (?, 'מהמסך', ?, ?)")->execute([$codes[0], $now, $now]);
+$same = array_filter(dev_items()['items'], fn($x) => $x['code'] === $codes[0]);
+check('התנגשות: אף אחת לא נעלמת', count($same) === 2);
+check('מטלה ישנה בטווח של הקובץ — הקוד הבא לקובץ מדלג עליה', dev_next_file_code() === sprintf('DT-%03d', $max + 1));
+db()->prepare("INSERT INTO dev_tasks (code, title, created_at, updated_at) VALUES (?, 'מהמסך', ?, ?)")->execute([sprintf('DT-%03d', $max + 1), $now, $now]);
+check('…וממשיך אחריה', dev_next_file_code() === sprintf('DT-%03d', $max + 2));
 
 foreach (array_merge(glob("$tmp/files/*") ?: [], array_filter(glob("$tmp/{,.}*", GLOB_BRACE) ?: [], 'is_file')) as $f) @unlink($f);
 @rmdir("$tmp/files");

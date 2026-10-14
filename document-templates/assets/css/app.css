@@ -590,6 +590,7 @@ body.zoom-lock { overflow: hidden; }
 .fs-group .switch > span { display: grid; gap: 1px; }
 .fs-group .switch small { font-size: .78rem; }
 .fs-group .hint { margin: 0; }
+.hint.warn-hint { color: var(--text); background: color-mix(in srgb, var(--star) 14%, var(--surface)); border-radius: 8px; padding: var(--s2) var(--s3); }
 .fs-group.adv summary { cursor: pointer; font-weight: 600; color: var(--muted); min-height: var(--tap); display: flex; align-items: center; }
 .fs-group .cond { display: flex; flex-wrap: wrap; gap: 6px; }
 .fs-group .cond > * { flex: 1 1 120px; min-width: 0; }

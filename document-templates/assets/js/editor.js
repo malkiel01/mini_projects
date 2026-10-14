@@ -637,6 +637,22 @@
     // ── לשוניות ולוחות ──
     const roleLabel = (key) => (schema.roles.find(r => r.key === key) || schema.roles[0]).label;
     /** מי מתפעל את השדה — במילים: לבד, אני, או ממלא בקישור. */
+    /** ההסתרה מהממלאים — רק כשיש ממי להסתיר; ומי שממלא את השדה רואה אותו תמיד. */
+    function hiddenCtl(f, toggle) {
+      const others = hideFrom(f).map(r => r.label);
+      const fills = rolesOfF(f).filter(k => k !== 'owner').map(roleLabel);
+      const dropped = hiddenDropped === f;
+      hiddenDropped = null;
+      const note = dropped ? el('p', { class: 'hint warn-hint' }, '⚠️ ההסתרה בוטלה: עכשיו כל הממלאים בקישור ממלאים את השדה — אין ממי להסתיר אותו.') : null;
+      if (!others.length) {
+        const many = fills.length > 1;
+        return fills.length ? [note, el('p', { class: 'hint' }, `🔗 ${fills.join(' ו')} ${many ? 'ממלאים' : 'ממלא'} את השדה בקישור — ולכן ${many ? 'רואים' : 'רואה'} אותו. אי אפשר להסתיר שדה ממי שממלא אותו.`)] : note;
+      }
+      return [note, fills.length
+        ? toggle('מוסתר משאר הממלאים בקישור', `לא רואים אותו: ${others.join(', ')}. רואים: אתם ו${fills.join(' ו')}, ${fills.length > 1 ? 'שממלאים' : 'שממלא'} אותו`, () => !!f.hidden, v => { f.hidden = v; })
+        : toggle('מוסתר מהממלאים בקישור', 'רק אתם רואים אותו — מידע פנימי', () => !!f.hidden, v => { f.hidden = v; })];
+    }
+
     function whoOf(f) {
       if (f.type === 'system') return '⚙️ מתמלא לבד';
       if (f.type === 'calc') return 'ƒ מחושב לבד';
@@ -650,6 +666,14 @@
       const keep = schema.roles.map(r => r.key).filter(k => list.includes(k));   // לפי סדר הממלאים
       f.role = keep[0] || 'owner';
       f.roles = keep.length > 1 ? keep : [];
+      fixHidden(f);
+    }
+    // "מוסתר" — ממי: ממלאים בקישור שלא ממלאים את השדה. מי שממלא — תמיד רואה
+    const hideFrom = (f) => schema.roles.filter(r => r.key !== 'owner' && !rolesOfF(f).includes(r.key));
+    let hiddenDropped = null;   // שדה שההסתרה שלו בוטלה עכשיו — להסביר בגיליון
+    /** אכיפה: אין ממי להסתיר — ההסתרה מתבטלת (כמו בשרת). */
+    function fixHidden(f) {
+      if (f.hidden && !hideFrom(f).length) { f.hidden = false; hiddenDropped = f; }
     }
 
     function renderLegend() {
@@ -955,8 +979,7 @@
           group(auto ? 'מאיפה הערך' : 'מי ממלא', who),
           group('הרשאות ותצוגה',
             auto ? null : toggle('שדה חובה', 'אי אפשר לסיים בלעדיו', () => !!f.required, v => { f.required = v; }),
-            schema.roles.length > 1 || f.hidden ? toggle('מוסתר מהממלאים בקישור', 'רק אתם (ומי שממלא את השדה) רואים אותו — מידע פנימי',
-              () => !!f.hidden, v => { f.hidden = v; }) : null,
+            hiddenCtl(f, toggle),
             toggle('מודפס במסמך', 'כבוי — נשמר ומיוצא לאקסל, אבל לא מופיע בקובץ המודפס', () => f.print !== false, v => { f.print = v; }),
             el('div', { class: 'f' }, el('span', {}, 'מתי השדה מוצג'), condEditor(f, f, draw))),
           window.DTFmt.isDate(f) || window.DTFmt.isNumber(f) ? group('מבנה התצוגה', fmtPicker(f)) : null,
@@ -1006,6 +1029,8 @@
             setRoles(f, rest.length ? rest : ['owner']);
           });
           schema.roles = schema.roles.filter(x => x !== r);
+          schema.fields.forEach(fixHidden);   // בלי הממלא הזה ייתכן שאין כבר ממי להסתיר
+          hiddenDropped = null;
           setDirty(true); draw(); renderPanel();
         } }, '✕');
         // שורה ראשונה: צבע · שם הממלא · הסרה; מתחת — אימות. כך השם תמיד רחב וקריא
