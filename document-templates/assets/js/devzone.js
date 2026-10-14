@@ -3,7 +3,7 @@
 (function () {
   'use strict';
 
-  const TABS = [['users', '👥 משתמשים'], ['items', '📋 פתוח / סגור'], ['log', '🪵 לוג'], ['force', '🛡️ אכיפה'], ['health', '🩺 מצב']];
+  const TABS = [['users', '👥 משתמשים'], ['items', '📋 מטלות'], ['log', '🪵 לוג'], ['force', '🛡️ אכיפה'], ['health', '🩺 מצב']];
   const STATUS_DOC = { draft: 'טיוטה', sent: 'נשלח', in_progress: 'בתהליך', completed: 'הושלם', locked: 'נעול',
     expired: 'פג', cancelled: 'בוטל', declined: 'נדחה' };
   const when = (iso) => iso ? new Date(iso).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'medium' }) : '—';
@@ -25,45 +25,191 @@
     ({ users, items, log, force, health })[tab](body);
   }
 
-  // ── פתוח / סגור ──
+  // ── מטלות: קוד, שיח, וגישה ל-Claude ──
+  const KIND = { open: ['פתוח', 'warn', '🟡'], question: ['שאלה אליך', 'bad', '❓'], closed: ['סגור', 'ok', '✅'] };
+  const dayTime = (iso) => iso ? new Date(iso).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+
+  /** הטקסט שמדביקים לצ'אט — מטלות שממתינות ל-Claude (או כל הפתוחות). */
+  function chatText(list) {
+    const waiting = list.filter(x => x.waiting === 'claude');
+    const pick = waiting.length ? waiting : list.filter(x => x.status !== 'closed');
+    const head = waiting.length ? 'הערות שלי על מטלות — ממתינות לתשובה:' : 'המטלות הפתוחות:';
+    return [head, ...pick.map(x => {
+      const [label] = KIND[x.status] || [x.status];
+      const thread = x.comments.map(c => `  ${c.author === 'claude' ? 'Claude' : 'אני'} (${dayTime(c.at)}): ${c.body}`);
+      return [`\n${x.code} · ${x.title} [${label}]`, ...thread].join('\n');
+    })].join('\n');
+  }
+
   async function items(box) {
-    const { api, el, notice } = window.DT;
-    let r;
-    try { r = await api('dev_items'); } catch (e) { put(box, notice(e.message, 'bad')); return; }
-    const list = r.items || [];
-    const KIND = { open: ['פתוח', 'warn', '🟡'], question: ['שאלה אליך', 'bad', '❓'], closed: ['סגור', 'ok', '✅'] };
-    const counts = Object.fromEntries(Object.keys(KIND).map(k => [k, list.filter(x => x.status === k).length]));
-    let filter = counts.question || counts.open ? 'pending' : 'all';
+    const { api, el, notice, sheet } = window.DT;
+    let list = [], meta = {};
+    const params = new URLSearchParams(location.hash.split('?')[1] || '');
+    let filter = 'pending', query = '', openCode = params.get('code') || '';
     const out = el('div');
-    const seg = el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'סינון' },
-      [['pending', `פתוחים ושאלות (${counts.open + counts.question})`], ['closed', `סגורים (${counts.closed})`], ['all', 'הכול']].map(([k, t]) =>
-        el('label', {}, el('input', { type: 'radio', name: 'items-f', value: k, checked: filter === k,
-          onchange: () => { filter = k; render(); } }), el('span', {}, t))));
-    const render = () => {
-      const shown = list.filter(x => filter === 'all' || (filter === 'closed' ? x.status === 'closed' : x.status !== 'closed'));
+    const stats = el('div', { class: 'summary' });
+    const seg = el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'סינון' });
+    const search = el('input', { type: 'search', placeholder: 'קוד (DT-012) או מילה', 'aria-label': 'חיפוש מטלה',
+      oninput: () => { query = search.value.trim(); render(); } });
+
+    async function load(keep) {
+      try { const r = await api('dev_items'); list = r.items || []; meta = r; }
+      catch (e) { put(box, notice(e.message, 'bad')); return false; }
+      if (!keep && openCode) { filter = 'all'; query = openCode; search.value = openCode; }
+      return true;
+    }
+    const count = (fn) => list.filter(fn).length;
+    const FILTERS = () => [
+      ['pending', `פתוחים ושאלות (${count(x => x.status !== 'closed')})`],
+      ['claude', `ממתינות ל-Claude (${count(x => x.waiting === 'claude')})`],
+      ['closed', `סגורים (${count(x => x.status === 'closed')})`], ['all', 'הכול']];
+    const pass = (x) => ({ pending: x.status !== 'closed', claude: x.waiting === 'claude', closed: x.status === 'closed', all: true })[filter];
+    const match = (x) => !query || x.code.toLowerCase() === query.toLowerCase()
+      || [x.code, x.title, x.area, x.detail, ...x.comments.map(c => c.body)].join(' ').toLowerCase().includes(query.toLowerCase());
+
+    function thread(x) {
+      const text = el('textarea', { rows: 2, maxlength: 4000, placeholder: 'הערה, תשובה לשאלה, או בקשה — Claude יענה כאן', 'aria-label': 'הערה ל-' + x.code });
+      const msg = el('div');
+      const send = el('button', { type: 'button', class: 'primary small', onclick: async () => {
+        if (!text.value.trim()) return;
+        send.disabled = true;
+        try { await api('dev_comment', { code: x.code, body: text.value }); openCode = x.code; await load(true); render(); }
+        catch (e) { put(msg, notice(e.message, 'bad')); send.disabled = false; }
+      } }, 'שליחה');
+      const last = x.comments.length ? x.comments[x.comments.length - 1] : null;
+      return el('div', { class: 'thread' },
+        el('b', {}, '💬 שיח'),
+        x.comments.length ? el('ol', { class: 'comments' }, x.comments.map(c => el('li', { class: 'comment ' + c.author },
+          el('div', { class: 'c-head' }, el('b', {}, c.author === 'claude' ? '🤖 Claude' : '👤 ' + c.name), el('small', { class: 'muted' }, dayTime(c.at)),
+            c.author === 'user' && c === last ? el('button', { type: 'button', class: 'link small', onclick: async () => {
+              try { await api('dev_comment_delete', { id: c.id }); openCode = x.code; await load(true); render(); }
+              catch (e) { put(msg, notice(e.message, 'bad')); }
+            } }, 'מחיקה') : null),
+          el('p', { dir: 'auto' }, c.body)))) : el('p', { class: 'muted small' }, 'אין עדיין הערות.'),
+        x.waiting === 'claude' ? el('p', { class: 'hint' }, '⏳ ממתין ל-Claude — תגידו לו "תקרא את המטלות", או "העתקה לצ\'אט" למעלה.') : null,
+        msg, el('div', { class: 'c-new' }, text, send));
+    }
+
+    function statusPick(x) {
+      if (x.source !== 'user') return null;
+      const s = el('select', { 'aria-label': 'מצב', onchange: async () => {
+        try { await api('dev_task_set', { code: x.code, status: s.value }); openCode = x.code; await load(true); render(); }
+        catch (e) { alert(e.message); }
+      } }, Object.entries(KIND).map(([k, [l]]) => el('option', { value: k, selected: x.status === k }, l)));
+      return el('label', { class: 'f inline' }, el('span', {}, 'מצב'), s);
+    }
+
+    function render() {
+      put(stats, el('div', { class: 'line' },
+          el('b', {}, String(count(x => x.status === 'question'))), el('span', { class: 'muted' }, 'שאלות אליך ·'),
+          el('b', {}, String(count(x => x.status === 'open'))), el('span', { class: 'muted' }, 'פתוחים ·'),
+          el('b', {}, String(count(x => x.status === 'closed'))), el('span', { class: 'muted' }, 'סגורים ·'),
+          el('b', {}, String(count(x => x.waiting === 'claude'))), el('span', { class: 'muted' }, 'ממתינות ל-Claude')),
+        el('div', { class: 'line muted small' }, 'עודכן ' + (meta.updated || '—')));
+      put(seg, FILTERS().map(([k, t]) => el('label', {}, el('input', { type: 'radio', name: 'items-f', value: k, checked: filter === k,
+        onchange: () => { filter = k; render(); } }), el('span', {}, t))));
+      const shown = list.filter(x => (query ? true : pass(x)) && match(x));
       put(out, shown.length ? el('ul', { class: 'list card-list items' }, shown.map(x => {
         const [label, kind, ic] = KIND[x.status] || [x.status, '', '•'];
-        return el('li', {}, el('details', { class: 'item' },
+        const d = el('details', { class: 'item', 'data-code': x.code, open: x.code === openCode },
           el('summary', { class: 'use-row' },
             el('span', { class: 'use-ic', 'aria-hidden': 'true' }, ic),
-            el('span', { class: 'use-tx' }, el('b', {}, x.title),
-              el('small', {}, [x.area, x.closed ? 'נסגר ' + x.closed : x.opened ? 'נפתח ' + x.opened : '', x.pr ? 'PR #' + x.pr : '']
+            el('span', { class: 'use-tx' }, el('b', {}, el('code', { class: 'task-code', dir: 'ltr' }, x.code), ' ', x.title),
+              el('small', {}, [x.area, x.closed ? 'נסגר ' + x.closed : x.opened ? 'נפתח ' + x.opened : '', x.pr ? 'PR #' + x.pr : '',
+                x.source === 'user' ? 'נפתח מהמסך' : '', x.comments.length ? '💬 ' + x.comments.length : '']
                 .filter(Boolean).join(' · '))),
-            el('span', { class: 'badge ' + kind }, label)),
+            el('span', { class: 'badges' },
+              x.waiting === 'claude' ? el('span', { class: 'badge warn' }, 'ממתין ל-Claude') : null,
+              x.waiting === 'user' ? el('span', { class: 'badge info' }, 'Claude ענה') : null,
+              el('span', { class: 'badge ' + kind }, label))),
           el('div', { class: 'item-body' },
-            x.detail ? el('p', {}, x.detail) : null,
+            x.detail ? el('p', { dir: 'auto' }, x.detail) : null,
             x.questions?.length ? el('div', { class: 'questions' }, el('b', {}, 'שאלות פתוחות:'),
-              el('ul', {}, x.questions.map(q => el('li', {}, q)))) : null)));
-      })) : el('p', { class: 'empty' }, 'אין פריטים.'));
-    };
-    put(box, 
-      el('div', { class: 'summary' }, el('div', { class: 'line' },
-        el('b', {}, String(counts.question)), el('span', { class: 'muted' }, 'שאלות אליך ·'),
-        el('b', {}, String(counts.open)), el('span', { class: 'muted' }, 'פתוחים ·'),
-        el('b', {}, String(counts.closed)), el('span', { class: 'muted' }, 'סגורים')),
-        el('div', { class: 'line muted small' }, 'עודכן ' + (r.updated || '—'))),
-      r.note ? el('p', { class: 'hint' }, r.note) : null,
-      seg, out);
+              el('ul', {}, x.questions.map(q => el('li', {}, q)))) : null,
+            statusPick(x),
+            thread(x)));
+        d.addEventListener('toggle', () => { if (d.open) openCode = x.code; });
+        return el('li', {}, d);
+      })) : el('p', { class: 'empty' }, query ? 'לא נמצאה מטלה.' : 'אין פריטים.'));
+      const target = openCode && out.querySelector(`details[data-code="${openCode}"]`);
+      if (target) requestAnimationFrame(() => target.scrollIntoView({ block: 'nearest' }));
+    }
+
+    function newTask() {
+      const title = el('input', { maxlength: 200, placeholder: 'מה צריך לעשות' });
+      const area = el('input', { maxlength: 40, placeholder: 'למשל: עורך, מסמכים, אבטחה' });
+      const detail = el('textarea', { rows: 4, maxlength: 4000, placeholder: 'פירוט (לא חובה)' });
+      const msg = el('div');
+      const go = el('button', { type: 'button', class: 'primary small', onclick: async () => {
+        go.disabled = true;
+        try {
+          const r = await api('dev_task_create', { title: title.value, area: area.value, detail: detail.value });
+          dlg.close(); openCode = r.code; filter = 'pending'; query = ''; search.value = '';
+          await load(true); render();
+        } catch (e) { put(msg, notice(e.message, 'bad')); go.disabled = false; }
+      } }, 'פתיחה');
+      const dlg = sheet('מטלה חדשה', el('div', { class: 'field-sheet' }, msg,
+        el('label', { class: 'f' }, el('span', {}, 'כותרת'), title),
+        el('label', { class: 'f' }, el('span', {}, 'תחום'), area),
+        el('label', { class: 'f' }, el('span', {}, 'פירוט'), detail),
+        el('p', { class: 'hint' }, 'המטלה מקבלת קוד מיד. Claude יראה אותה בפעם הבאה שיקרא את המטלות.')), { action: go });
+      title.focus();
+    }
+
+    function copyChat() {
+      const text = chatText(list);
+      const area = el('textarea', { rows: 12, readonly: true, dir: 'auto', 'aria-label': 'הטקסט להדבקה' }, text);
+      const b = el('button', { type: 'button', class: 'primary small', onclick: async () => {
+        try { await navigator.clipboard.writeText(text); b.textContent = '✓ הועתק'; }
+        catch (e) { area.select(); b.textContent = 'סמנו והעתיקו'; }
+      } }, 'העתקה');
+      sheet('העתקה לצ\'אט', el('div', { class: 'field-sheet' },
+        el('p', { class: 'hint' }, 'בלי שום חיבור: מעתיקים, ומדביקים ל-Claude בצ\'אט. את התשובות שלו הוא יכתוב בקוד, או שתדביקו אותן כאן כהערה.'),
+        area), { action: b });
+    }
+
+    async function tokens() {
+      const listBox = el('div'), msg = el('div');
+      const origin = location.href.split('#')[0].replace(/[^/]*$/, '') + 'api.php';
+      async function show() {
+        let r;
+        try { r = await api('dev_token_list'); } catch (e) { put(msg, notice(e.message, 'bad')); return; }
+        put(listBox, r.tokens.length ? el('ul', { class: 'list' }, r.tokens.map(t => el('li', { class: 'wrap' },
+          el('span', {}, el('b', {}, t.label), el('small', { class: 'muted' },
+            ` · ${t.by} · נוצר ${when(t.created_at)} · שימוש אחרון: ${t.last_used_at ? when(t.last_used_at) : 'עוד לא'}`)),
+          t.revoked ? el('span', { class: 'badge' }, 'בוטל') : el('button', { type: 'button', class: 'small danger', onclick: async () => {
+            if (!confirm('לבטל את האסימון? Claude לא יוכל לקרוא איתו יותר.')) return;
+            try { await api('dev_token_revoke', { id: t.id }); show(); } catch (e) { put(msg, notice(e.message, 'bad')); }
+          } }, 'ביטול')))) : el('p', { class: 'muted small' }, 'אין אסימונים.'));
+      }
+      const create = el('button', { type: 'button', class: 'primary small', onclick: async () => {
+        try {
+          const r = await api('dev_token_create', { label: 'Claude' });
+          const say = `האסימון לקריאת המטלות: ${r.token}\nהכתובת: ${origin}?action=devapi_feed (בכותרת X-Dev-Token)`;
+          const b = el('button', { type: 'button', class: 'small', onclick: async () => {
+            try { await navigator.clipboard.writeText(say); b.textContent = '✓ הועתק'; } catch (e) { b.textContent = 'סמנו והעתיקו'; }
+          } }, 'העתקה');
+          put(msg, notice('✓ נוצר. העתיקו עכשיו — הוא לא יוצג שוב.', 'ok'),
+            el('label', { class: 'f' }, el('span', {}, 'האסימון'), el('code', { class: 'secret', dir: 'ltr' }, r.token)),
+            el('label', { class: 'f' }, el('span', {}, 'הכתובת (בכותרת X-Dev-Token)'), el('code', { class: 'secret', dir: 'ltr' }, origin + '?action=devapi_feed')),
+            el('p', { class: 'hint' }, 'ההעתקה לוקחת את שניהם יחד — מדביקים ל-Claude כמו שזה.'), b);
+          show();
+        } catch (e) { put(msg, notice(e.message, 'bad')); }
+      } }, '+ אסימון חדש');
+      sheet('🔑 גישה ל-Claude', el('div', { class: 'field-sheet' },
+        el('p', { class: 'hint' }, 'אסימון אישי שנותנים ל-Claude פעם אחת (בצ\'אט, או כסוד בהגדרות הסביבה שלו). איתו הוא קורא את המטלות ואת ההערות, ועונה בשיח — ולא שום דבר אחר במערכת. כשאומרים לו "תקרא את המטלות" — הוא קורא.'),
+        msg, listBox), { action: create });
+      show();
+    }
+
+    if (!await load(false)) return;
+    put(box, stats,
+      meta.note ? el('p', { class: 'hint' }, meta.note) : null,
+      el('div', { class: 'items-bar' },
+        el('button', { type: 'button', class: 'primary small', onclick: newTask }, '+ מטלה חדשה'),
+        el('button', { type: 'button', class: 'small', onclick: copyChat }, '📋 העתקה לצ\'אט'),
+        el('button', { type: 'button', class: 'small', onclick: tokens }, '🔑 גישה ל-Claude')),
+      search, seg, out);
     render();
   }
 
@@ -76,7 +222,7 @@
     const nodev = el('input', { type: 'checkbox', checked: true });
     const out = el('div');
     const stats = el('div', { class: 'summary' });
-    const ACTOR = { user: '👤', api: '🔑', fill: '🔗', guest: '·' };
+    const ACTOR = { user: '👤', api: '🔑', fill: '🔗', claude: '🤖', guest: '·' };
     async function load() {
       const query = {};
       if (errorsOnly.checked) query.errors = 1;

@@ -680,6 +680,30 @@ table.sample th { background: var(--bg); font-weight: 600; }
 .item-body p { margin: 0; }
 .questions { background: color-mix(in srgb, var(--danger) 8%, var(--surface)); border-radius: 8px; padding: var(--s2) var(--s3); }
 .questions ul { margin: 4px 0 0; padding-inline-start: 18px; }
+/* מטלות: קוד, שיח */
+.items-bar { display: flex; flex-wrap: wrap; gap: var(--s2); margin-block: var(--s2); }
+.task-code { font-size: .78rem; font-weight: 700; padding: 1px 6px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--brand) 35%, transparent);
+  background: var(--brand-soft); color: var(--brand); white-space: nowrap; }
+/* ברשימת המטלות הכותרת נשברת לשורות — לא נחתכת */
+.items .use-tx > b, .items .use-tx small { white-space: normal; overflow-wrap: anywhere; }
+.items .use-row { align-items: flex-start; }
+.items .badges { display: flex; flex-direction: column; align-items: end; gap: 4px; flex-shrink: 0; }
+.badge.info { --c: var(--brand); color: var(--c); border-color: color-mix(in srgb, var(--c) 40%, transparent); background: color-mix(in srgb, var(--c) 10%, var(--surface)); }
+.thread { display: grid; gap: var(--s2); border-top: 1px solid var(--line); padding-top: var(--s2); }
+.comments { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s2); }
+.comment { border-radius: 10px; padding: var(--s2) var(--s3); background: var(--bg); border: 1px solid var(--line); min-width: 0; }
+.comment.claude { background: var(--brand-soft); border-color: color-mix(in srgb, var(--brand) 25%, transparent); margin-inline-start: var(--s4); }
+.comment.user { margin-inline-end: var(--s4); }
+.comment p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0 0; }
+.c-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s2); }
+.c-head .link { margin-inline-start: auto; }
+.c-new { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--s2); align-items: end; }
+.c-new textarea { min-height: 56px; }
+.f.inline { display: flex; align-items: center; gap: var(--s2); }
+.f.inline > span { flex: none; overflow: visible; }
+.f.inline select { width: auto; min-width: 140px; }
+pre.secret { margin: 0; padding: var(--s2); border-radius: var(--r); background: var(--bg); border: 1px dashed var(--line);
+  white-space: pre-wrap; word-break: break-all; font-size: .8rem; user-select: all; text-align: left; }
 .log-table td { vertical-align: top; }
 .log-table td.wrap { white-space: normal; min-width: 220px; max-width: 480px; word-break: break-word; }
 .log-table tr.err td { background: color-mix(in srgb, var(--danger) 9%, transparent); }

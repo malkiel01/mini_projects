@@ -47,7 +47,9 @@ $PUBLIC = ['health', 'register', 'verify', 'login', 'forgot', 'reset', 'me',
            'fill_get', 'fill_asset', 'fill_otp_send', 'fill_otp_verify', 'fill_save', 'fill_complete',
            'fill_upload', 'fill_file',
            // מערכת חיצונית: הזהות היא מפתח ה-API שבכותרת Authorization, לא עוגייה.
-           'ext_templates', 'ext_template', 'ext_issue', 'ext_document', 'ext_update', 'ext_file', 'fill_font'];
+           'ext_templates', 'ext_template', 'ext_issue', 'ext_document', 'ext_update', 'ext_file', 'fill_font',
+           // Claude קורא מטלות ומשיב: הזהות היא האסימון שבכותרת X-Dev-Token.
+           'devapi_feed', 'devapi_comment'];
 $POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'dev_user',
            'tpl_create', 'tpl_create_authored', 'tpl_save', 'tpl_set_source', 'tpl_archive', 'tpl_delete',
            'doc_create', 'doc_save', 'doc_complete', 'doc_archive', 'doc_delete', 'doc_downloaded',
@@ -56,7 +58,9 @@ $POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'dev_user
            'contact_save', 'contact_archive', 'doc_contact', 'doc_tags', 'tpl_tags', 'bulk_preview', 'bulk_issue',
            'src_save', 'src_delete', 'src_sync', 'key_create', 'key_update', 'key_revoke', 'key_secret', 'key_test',
            'ext_issue', 'ext_update',
-           'client_error', 'font_upload', 'font_delete', 'dev_force', 'me_update', 'me_password', 'me_logout_others'];
+           'client_error', 'font_upload', 'font_delete', 'dev_force', 'me_update', 'me_password', 'me_logout_others',
+           'dev_task_create', 'dev_task_set', 'dev_comment', 'dev_comment_delete', 'dev_token_create', 'dev_token_revoke',
+           'devapi_comment'];
 
 try {
     if (in_array($action, $POSTS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -165,6 +169,15 @@ try {
         // אזור הפיתוח (dev_ — למפתח בלבד) והגדרות המשתמש
         'dev_log_list'   => dev_log_list($_GET),
         'dev_items'      => dev_items(),
+        'dev_task_create'    => dev_task_create($session, $body),
+        'dev_task_set'       => dev_task_set($session, $body),
+        'dev_comment'        => dev_comment($session, $body),
+        'dev_comment_delete' => dev_comment_delete($session, $body),
+        'dev_token_list'     => dev_token_list(),
+        'dev_token_create'   => dev_token_create($session, $body),
+        'dev_token_revoke'   => dev_token_revoke($session, $body),
+        'devapi_feed'    => devapi_feed(devapi_auth(), $_GET),
+        'devapi_comment' => devapi_comment(devapi_auth(), $body),
         'dev_health'     => dev_health(),
         'dev_docs'       => dev_docs($_GET),
         'dev_tpls'       => dev_tpls($_GET),
