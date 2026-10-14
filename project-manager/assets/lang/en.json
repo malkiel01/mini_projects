@@ -2040,5 +2040,16 @@
     "שיוך נוסף": "Link to another record",
     "לשייך את הקובץ ל…": "Link this file to…",
     "חוזה עם ספק": "Supplier contract",
-    "חשבונית לאבן דרך": "Milestone invoice"
+    "חשבונית לאבן דרך": "Milestone invoice",
+    "בלי ספק": "No supplier",
+    "ספקים אחרים בפרויקט": "Other suppliers in the project",
+    "שיוך לשלב": "Assign to stage",
+    "שיוך לשלב — {name}": "Assign to stage — {name}",
+    "אבני הדרך של {name} בלי שלב יעברו לשלב שתבחר — ויופיעו בשורה שלו, בכרטסת ובתיק שלו בשלב.": "{name}'s milestones without a stage will move to the stage you choose — and appear in its row, ledger and file.",
+    "{n} אבני דרך שויכו לשלב": "{n} milestones assigned to the stage",
+    "💳 {n} אבני דרך · {amount}": "💳 {n} milestones · {amount}",
+    "הצעה מאושרת": "Approved quote",
+    "של איזה ספק": "Which supplier",
+    "מספר אסמכתא / צ'ק": "Reference / cheque no.",
+    "🧱 {n} אבני דרך של {supplier} שויכו לשלב {stage}": "🧱 {n} milestones of {supplier} assigned to stage {stage}"
 }

@@ -203,7 +203,8 @@ function pm_contract_save(array $user, array $in): array
         }
         $ins = $db->prepare('INSERT INTO contract_milestones (contract_id, title, due_date, stage_ids, months, done_on, sort) VALUES (?,?,?,?,?,?,?)');
         foreach ($ms as [$t, $due, $sids, $months, $done, $i]) $ins->execute([$cid, $t, $due, $sids, $months, $done, $i]);
-        pm_file_claim($projectId, $fileId, 'contract', $supplierId);
+        // חוזה של מקצוע אחד — לתיקיית המקצוע; של כמה (או כל השלבים) — לתיקיית הספק
+        pm_file_claim($projectId, $fileId, 'contract', $supplierId, false, $stageIds && count($stageIds) === 1 ? $stageIds[0] : null);
         if ($stageIds) {
             $o = $db->prepare("SELECT id, stage_ids FROM contracts WHERE project_id = ? AND supplier_id = ? AND id != ? AND stage_ids != ''");
             $o->execute([$projectId, $supplierId, $cid]);

@@ -694,6 +694,23 @@ function pm_migrate(PDO $pdo): void
     pm_add_column($pdo, 'payments', 'unit_id', 'INTEGER');
     // מתחם, שלב 4: ללקוח של יחידה — להציג גם את השלבים המשותפים
     pm_add_column($pdo, 'projects', 'portal_shared', 'INTEGER NOT NULL DEFAULT 1');
+    // התקשרות (ספק × מקצוע, lib/engage.php): תת-תיקייה לכל מקצוע בתיקיית הספק; הספק בדיווח מהשטח;
+    // מספר אסמכתא / צ'ק; ושיוך כללי של קובץ להתקשרות (תיעוד מהשטח / מסמך אחר) — בלי רשומה
+    pm_add_column($pdo, 'folders', 'stage_id', 'INTEGER');
+    pm_add_column($pdo, 'reports', 'supplier_id', 'INTEGER');
+    pm_add_column($pdo, 'payment_proofs', 'ref_no', "TEXT NOT NULL DEFAULT ''");
+    $pdo->exec('CREATE TABLE IF NOT EXISTS file_refs (
+        file_id     INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+        project_id  INTEGER NOT NULL,
+        supplier_id INTEGER NOT NULL,
+        stage_id    INTEGER,
+        kind        TEXT NOT NULL DEFAULT \'doc\',
+        note        TEXT NOT NULL DEFAULT \'\',
+        created_by  INTEGER NOT NULL,
+        created_at  TEXT NOT NULL,
+        PRIMARY KEY (file_id, supplier_id, stage_id)
+    )');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS file_refs_engage ON file_refs (project_id, supplier_id, stage_id)');
     // כמה חוזים לאותו ספק בפרויקט (חוזה אחד לאינסטלציה וחשמל, אחר לריצוף): בלי UNIQUE, ולכל חוזה —
     // על אילו שלבים הוא חל (stage_ids: '' — כל השלבים של הספק; '[..]' — רק אלה), ושם להבחנה
     pm_contracts_multi($pdo);

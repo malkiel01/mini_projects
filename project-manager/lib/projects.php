@@ -14,6 +14,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/contacts.php';
 require_once __DIR__ . '/dev.php'; // סמכות מפתח (pm_dev_mode)
 require_once __DIR__ . '/units.php'; // מתחם ויחידות
+require_once __DIR__ . '/engage.php'; // התקשרות: ספק × מקצוע
 
 // התוויות בעברית — מתורגמות בתצוגה (pm_t_map ב-api.php, t() בדפדפן)
 // i18n-ok-start
@@ -143,6 +144,9 @@ function pm_project_get(array $user, int $id): array
 {
     $p = pm_project_row($user, $id);
     $db = pm_db();
+    // התקשרות (lib/engage.php): אבני דרך בלי שלב — לשלב היחיד של הספק; שלב בלי ספק שספק אחד עובד בו — שלו
+    pm_payments_auto_stage($id);
+    $engaged = pm_stage_sync_suppliers($id);
 
     $st = $db->prepare(
         'SELECT s.*, t.name AS trade_name, c.name AS supplier_name, c.phone AS supplier_phone, un.name AS unit_name,
@@ -161,6 +165,8 @@ function pm_project_get(array $user, int $id): array
         'plan_start' => $s['plan_start'], 'plan_end' => $s['plan_end'], 'done_at' => $s['done_at'],
         'progress' => pm_stage_progress($s), 'budget' => (int)$s['budget'] / 100, 'quotes' => (int)$s['quotes'], 'used' => (int)$s['used'],
         'unit_id' => $s['unit_id'] !== null ? (int)$s['unit_id'] : null, 'unit_name' => $s['unit_name'],
+        // מי עובד בשלב בפועל — מהצעות, אבני דרך ותוספות (גם כשלא נבחר ספק בחלון השלב)
+        'engaged' => $engaged[(int)$s['id']] ?? [],
     ], $st->fetchAll());
 
     $ev = $db->prepare('SELECT id, at, actor_id, actor_name, kind, text, data_json FROM events WHERE project_id = ? ORDER BY id DESC LIMIT 300');

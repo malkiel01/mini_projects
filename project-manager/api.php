@@ -215,6 +215,7 @@ try {
                                                   (string)($in['note'] ?? '')),
         'POST change-cancel'  => pm_change_cancel($user, (int)($in['id'] ?? 0)),
         'POST payment-invoice' => pm_payment_invoice($user, $in),
+        'POST payments-stage' => pm_payments_set_stage($user, $in),
         'GET finance-export'  => pm_finance_export($user, $in),
         // כ5: הוצאות ישירות, שכר הטרחה (אבני דרך), כרטסת ספק
         'POST expense'        => pm_expense_save($user, $in),

@@ -85,7 +85,7 @@ function pm_change_save(array $user, array $in): array
     $reason = pm_str($in, 'reason', 1000, true, 'סיבה');
     $fileId = (int)($in['file_id'] ?? 0) ?: null;
     // הלקוח צריך לראות את הפירוט; מ"ממתין למיון" — לתיקיית הספק
-    pm_file_claim($projectId, $fileId, null, $supplierId, true);
+    pm_file_claim($projectId, $fileId, null, $supplierId, true, (int)$stage['id']);
     $needsLawyer = $stage['needs_lawyer'] && $p['lawyer_id'] ? 1 : 0;
     $now = pm_now();
     $db = pm_db();

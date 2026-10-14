@@ -260,7 +260,7 @@ function pm_ledger_of(int $projectId, int $supplierId, ?string $lang = null): ar
         foreach ($pr->fetchAll() as $x) {
             $got = true;
             $add($x['paid_on'], 'paid', pm_t('התקבל תשלום — {title}', ['title' => $p['title']], $lang), -(int)$x['received_amount'], $r, ['payment_id' => (int)$p['id'],
-                'stage' => $stg, 'when' => pm_t(PM_PAY_METHODS[$x['method']] ?? $x['method'], [], $lang) . ($x['note'] !== '' ? ' · ' . $x['note'] : ''), 'files' => $files($x['file_id']), 'ref' => $ref]);
+                'stage' => $stg, 'when' => pm_t(PM_PAY_METHODS[$x['method']] ?? $x['method'], [], $lang) . (($x['ref_no'] ?? '') !== '' ? ' #' . $x['ref_no'] : '') . ($x['note'] !== '' ? ' · ' . $x['note'] : ''), 'files' => $files($x['file_id']), 'ref' => $ref]);
         }
         if ($p['invoice_at']) $add(substr($p['invoice_at'], 0, 10), 'invoice', $p['invoice_no'] !== '' ? pm_t('חשבונית {no} — {title}', ['no' => $p['invoice_no'], 'title' => $p['title']], $lang) : pm_t('חשבונית — {title}', ['title' => $p['title']], $lang), 0, $r,
             ['stage' => $stg, 'files' => $files($p['invoice_file_id']), 'ref' => $ref]);

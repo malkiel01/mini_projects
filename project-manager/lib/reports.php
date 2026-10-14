@@ -47,8 +47,9 @@ function pm_report_folder(array $user, int $projectId, ?int $stageId): int
 /** הדיווחים של פרויקט, החדש למעלה. $portal — רק הגלויים, בלי פרטים פנימיים. */
 function pm_reports_of(int $projectId, bool $portal = false): array
 {
-    $st = pm_db()->prepare('SELECT r.*, s.name AS stage_name, u.display_name AS author FROM reports r
+    $st = pm_db()->prepare('SELECT r.*, s.name AS stage_name, u.display_name AS author, c.name AS supplier_name FROM reports r
                              LEFT JOIN stages s ON s.id = r.stage_id LEFT JOIN users u ON u.id = r.created_by
+                             LEFT JOIN contacts c ON c.id = r.supplier_id
                             WHERE r.project_id = ? AND r.deleted_at IS NULL' . ($portal ? ' AND r.visible = 1' : '') . '
                             ORDER BY r.created_at DESC, r.id DESC LIMIT 300');
     $st->execute([$projectId]);
@@ -65,6 +66,8 @@ function pm_reports_of(int $projectId, bool $portal = false): array
     }
     return array_map(fn($r) => [
         'id' => (int)$r['id'], 'stage_id' => $r['stage_id'] !== null ? (int)$r['stage_id'] : null, 'stage_name' => $r['stage_name'],
+        // של איזה ספק העבודה שתועדה (התקשרות: ספק × שלב) — אופציונלי
+        'supplier_id' => isset($r['supplier_id']) && $r['supplier_id'] !== null ? (int)$r['supplier_id'] : null, 'supplier_name' => $r['supplier_name'] ?? null,
         'kind' => $r['kind'], 'text' => $r['text'], 'visible' => (bool)$r['visible'], 'at' => $r['created_at'],
         'author' => $portal ? null : $r['author'], 'media' => $media[(int)$r['id']] ?? [],
     ], $rows);
@@ -93,6 +96,9 @@ function pm_report_save(array $user, array $in): array
         if ((int)$stage['project_id'] !== $projectId) throw new PmError('השלב לא שייך לפרויקט', 422);
     }
     $text = pm_str($in, 'text', 4000, false, 'תיאור');
+    // הספק שהעבודה שלו תועדה — מאנשי הקשר של המנהל (אופציונלי)
+    $supplierId = (int)($in['supplier_id'] ?? 0) ?: null;
+    if ($supplierId) $supplierId = pm_owned_contact($supplierId, (int)pm_project_row($user, $projectId)['owner_id'], 'supplier', 'הספק'); // i18n-ok
     $fileIds = array_values(array_unique(array_map('intval', is_array($in['file_ids'] ?? null) ? $in['file_ids'] : [])));
     $media = [];
     if ($fileIds) {
@@ -114,8 +120,8 @@ function pm_report_save(array $user, array $in): array
     $db = pm_db();
     $db->beginTransaction();
     try {
-        $db->prepare('INSERT INTO reports (project_id, stage_id, kind, text, visible, created_by, created_at) VALUES (?,?,?,?,?,?,?)')
-           ->execute([$projectId, $stageId, $kind, $text, $visible, $user['id'], pm_now()]);
+        $db->prepare('INSERT INTO reports (project_id, stage_id, supplier_id, kind, text, visible, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)')
+           ->execute([$projectId, $stageId, $supplierId, $kind, $text, $visible, $user['id'], pm_now()]);
         $id = (int)$db->lastInsertId();
         $ins = $db->prepare('INSERT INTO report_files (report_id, file_id, sort) VALUES (?,?,?)');
         foreach ($fileIds as $i => $f) $ins->execute([$id, $f, $i]);

@@ -2058,5 +2058,16 @@
     "שיוך נוסף": "Rattacher à autre chose",
     "לשייך את הקובץ ל…": "Rattacher ce fichier à…",
     "חוזה עם ספק": "Contrat fournisseur",
-    "חשבונית לאבן דרך": "Facture d'un jalon"
+    "חשבונית לאבן דרך": "Facture d'un jalon",
+    "בלי ספק": "Sans fournisseur",
+    "ספקים אחרים בפרויקט": "Autres fournisseurs du projet",
+    "שיוך לשלב": "Rattacher à une étape",
+    "שיוך לשלב — {name}": "Rattacher à une étape — {name}",
+    "אבני הדרך של {name} בלי שלב יעברו לשלב שתבחר — ויופיעו בשורה שלו, בכרטסת ובתיק שלו בשלב.": "Les jalons de {name} sans étape passeront à l'étape choisie — et apparaîtront dans sa ligne, son relevé et son dossier.",
+    "{n} אבני דרך שויכו לשלב": "{n} jalons rattachés à l'étape",
+    "💳 {n} אבני דרך · {amount}": "💳 {n} jalons · {amount}",
+    "הצעה מאושרת": "Devis approuvé",
+    "של איזה ספק": "Quel fournisseur",
+    "מספר אסמכתא / צ'ק": "N° de référence / chèque",
+    "🧱 {n} אבני דרך של {supplier} שויכו לשלב {stage}": "🧱 {n} jalons de {supplier} rattachés à l'étape {stage}"
 }
