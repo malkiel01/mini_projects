@@ -494,7 +494,7 @@ function ext_fields(array $schema): array
 {
     return array_values(array_map(fn($f) => array_filter([
         'key' => $f['key'], 'label' => $f['label'], 'type' => $f['type'], 'required' => $f['required'],
-        'role' => $f['role'] ?? 'owner', 'placeholder' => $f['placeholder'] ?? '' ?: null,
+        'role' => $f['role'] ?? 'owner', 'roles' => field_roles($f), 'placeholder' => $f['placeholder'] ?? '' ?: null,
         'auto' => in_array($f['type'], ['calc', 'system'], true) ?: null,
         'options' => $f['type'] === 'select' ? array_map(fn($o) => ['value' => $o['value'], 'label' => $o['label']], select_options($f)) : null,
         'columns' => $f['type'] === 'table' ? array_map(fn($c) => ['key' => $c['key'], 'label' => $c['label'], 'type' => $c['type']], $f['columns']) : null,

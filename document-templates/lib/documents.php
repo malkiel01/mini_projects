@@ -440,7 +440,8 @@ function doc_save(array $user, array $b): array
         foreach ((array)($b['values'] ?? []) as $key => $v) {
             $f = $byKey[$key] ?? null;
             if (!$f || in_array($f['type'], ['calc', 'system'], true)) continue;   // מחושב / מתמלא לבד — רק השרת כותב
-            if (in_array($f['role'] ?? 'owner', $sentTo, true)) {
+            // נשלח לממלא — המנפיק כבר לא כותב, אלא אם השדה משותף גם לו
+            if (!in_array('owner', field_roles($f), true) && array_intersect(field_roles($f), $sentTo)) {
                 throw new ApiError('השדה "' . $f['label'] . '" כבר נשלח למילוי של המשתתף', 409);
             }
             $v = clean_value($f, $v, (int)$d['id']);

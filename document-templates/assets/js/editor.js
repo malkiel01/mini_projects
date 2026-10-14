@@ -505,7 +505,7 @@
     function fieldEl(f) {
       const box = el('div', {
         class: 'field t-' + f.type + (isAuto(f) ? ' auto' : ' role-' + (roleIndex(f.role) % 6)) + (selected === f ? ' selected' : '')
-          + (f.required ? ' required' : '') + (f.hidden ? ' private' : '') + (f.locked ? ' locked' : ''),
+          + (f.required ? ' required' : '') + (f.hidden ? ' private' : '') + (f.locked ? ' locked' : '') + (rolesOfF(f).length > 1 ? ' multi' : ''),
         style: `left:${f.x * 100}%; top:${f.y * 100}%; width:${f.w * 100}%; height:${f.h * 100}%`,
         title: f.label + (f.locked ? ' — 🔒 נעול במקומו. לחיצה: הגדרות' : ' — לחיצה: הגדרות; גרירה: הזזה'), tabindex: 0, role: 'button',
       }, el('span', { class: 'field-label va-' + (f.valign || 'middle') + ' ha-' + (f.align || 'right'),
@@ -640,7 +640,16 @@
     function whoOf(f) {
       if (f.type === 'system') return '⚙️ מתמלא לבד';
       if (f.type === 'calc') return 'ƒ מחושב לבד';
+      if (rolesOfF(f).length > 1) return '🔀 ' + rolesNames(f);
       return (f.role || 'owner') === 'owner' ? '✍️ אני ממלא' : '🔗 ' + roleLabel(f.role) + ' — בקישור';
+    }
+    // כמה ממלאים לאותו שדה ("או פלוני או אלמוני"): role — הראשון, roles — כולם
+    const rolesOfF = (f) => f.roles && f.roles.length ? f.roles : [f.role || 'owner'];
+    const rolesNames = (f) => rolesOfF(f).map(k => k === 'owner' ? 'אני' : roleLabel(k)).join(' או ');
+    function setRoles(f, list) {
+      const keep = schema.roles.map(r => r.key).filter(k => list.includes(k));   // לפי סדר הממלאים
+      f.role = keep[0] || 'owner';
+      f.roles = keep.length > 1 ? keep : [];
     }
 
     function renderLegend() {
@@ -687,9 +696,15 @@
     function fieldsList() {
       const groups = [];
       const add = (title, hint, list) => { if (list.length) groups.push([title, hint, list]); };
-      add('✍️ אני ממלא', 'בהנפקה או בעריכת המסמך', schema.fields.filter(f => !isAuto(f) && (f.role || 'owner') === 'owner'));
+      const single = (f) => !isAuto(f) && rolesOfF(f).length === 1;
+      add('✍️ אני ממלא', 'בהנפקה או בעריכת המסמך', schema.fields.filter(f => single(f) && (f.role || 'owner') === 'owner'));
       for (const r of schema.roles.filter(r => r.key !== 'owner')) {
-        add('🔗 ' + r.label + ' — ממלא בקישור', r.auth === 'email' ? 'נכנס עם קוד במייל' : 'נכנס מהקישור', schema.fields.filter(f => !isAuto(f) && f.role === r.key));
+        add('🔗 ' + r.label + ' — ממלא בקישור', r.auth === 'email' ? 'נכנס עם קוד במייל' : 'נכנס מהקישור', schema.fields.filter(f => single(f) && f.role === r.key));
+      }
+      const combos = [...new Set(schema.fields.filter(f => !isAuto(f) && rolesOfF(f).length > 1).map(f => rolesOfF(f).join('|')))];
+      for (const c of combos) {
+        const list = schema.fields.filter(f => !isAuto(f) && rolesOfF(f).join('|') === c);
+        add('🔀 ' + rolesNames(list[0]), 'כל אחד מהם יכול למלא — מספיק שאחד מילא', list);
       }
       add('⚙️ מתמלא לבד', 'מהמסמך עצמו או מנוסחה — אף אחד לא מקליד', schema.fields.filter(isAuto));
       const sub = (f) => [
@@ -893,17 +908,23 @@
           setDirty(true); relabel(); draw(); render();
         });
         // מי ממלא: כפתורי בחירה — אני / כל ממלא בקישור / + ממלא חדש
-        const roleSeg = el('div', { class: 'role-seg', role: 'radiogroup', 'aria-label': 'מי ממלא' },
-          schema.roles.map((r, i) => el('button', { type: 'button', role: 'radio', 'aria-checked': String((f.role || 'owner') === r.key),
-            class: ((f.role || 'owner') === r.key ? 'on ' : '') + 'role-opt role-' + (i % 6), 'data-role': r.key,
-            onclick: () => { f.role = r.key; setDirty(true); draw(); render(); } },
-          el('span', { class: 'role-dot role-' + (i % 6) }), r.key === 'owner' ? 'אני' : r.label + ' (קישור)')),
+        // מי ממלא — אפשר לבחור כמה: כל אחד מהם יכול למלא את השדה
+        const mine = rolesOfF(f);
+        const roleSeg = el('div', { class: 'role-seg', role: 'group', 'aria-label': 'מי ממלא — אפשר כמה' },
+          schema.roles.map((r, i) => el('button', { type: 'button', 'aria-pressed': String(mine.includes(r.key)),
+            class: (mine.includes(r.key) ? 'on ' : '') + 'role-opt role-' + (i % 6), 'data-role': r.key,
+            onclick: () => {
+              const next = mine.includes(r.key) ? mine.filter(k => k !== r.key) : [...mine, r.key];
+              if (!next.length) return;   // לפחות ממלא אחד
+              setRoles(f, next); setDirty(true); draw(); render();
+            } },
+          el('span', { class: 'role-dot role-' + (i % 6) }), r.key === 'owner' ? 'אני' : r.label + ' (קישור)', mine.includes(r.key) ? ' ✓' : '')),
           el('button', { type: 'button', class: 'role-opt add', onclick: () => {
             const name = (prompt('שם הממלא (למשל: לקוח, ספק, עד)', schema.roles.length === 1 ? 'לקוח' : '') || '').trim();
             if (!name) return;
             const r = { key: 'role_' + Math.random().toString(36).slice(2, 7), label: name.slice(0, 60), auth: 'none' };
             schema.roles.push(r);
-            f.role = r.key;
+            setRoles(f, [r.key]); // ממלא חדש מקבל את השדה; לשיתוף — לוחצים גם על ממלא נוסף
             setDirty(true); draw(); render();
           } }, '+ ממלא חדש'));
         const who = auto
@@ -917,9 +938,11 @@
                 title: 'הכותרת שנותנים למסמך בהנפקה.', completed: 'התאריך שבו המסמך הושלם — ריק עד אז.',
               }[f.source || 'number']))
             : calcPanel(f))
-          : el('div', {}, roleSeg, el('p', { class: 'hint' }, (f.role || 'owner') === 'owner'
-              ? 'אתם ממלאים את השדה — בהנפקה או בעריכת המסמך.'
-              : `${roleLabel(f.role)} ממלא את השדה דרך הקישור האישי שלו. אתם רואים את מה שמילא.`));
+          : el('div', {}, roleSeg, el('p', { class: 'hint' }, rolesOfF(f).length > 1
+              ? `🔀 ${rolesNames(f)} — כל אחד מהם יכול למלא, ומספיק שאחד מילא. בשדה חובה: ממלא שמסיים לא נחסם כל עוד אחר עוד יכול להשלים; האחרון שנשאר — כן.`
+              : (f.role || 'owner') === 'owner'
+              ? 'אתם ממלאים את השדה — בהנפקה או בעריכת המסמך. אפשר לסמן כמה ממלאים: "או אני או הלקוח".'
+              : `${roleLabel(f.role)} ממלא את השדה דרך הקישור האישי שלו. אפשר לסמן כמה ממלאים: "או פלוני או אלמוני".`));
 
         body.replaceChildren(...[
           group('השדה',
@@ -975,9 +998,13 @@
           el('option', { value: 'email', selected: r.auth === 'email' }, 'קוד במייל'));
         auth.addEventListener('change', () => { r.auth = auth.value; setDirty(true); });
         const del = el('button', { class: 'link small', title: 'הסרה', onclick: () => {
-          const used = schema.fields.filter(f => f.role === r.key).length;
-          if (used && !confirm(`ל"${r.label}" משויכים ${used} שדות. הם יעברו אליך. להסיר?`)) return;
-          schema.fields.forEach(f => { if (f.role === r.key) f.role = 'owner'; });
+          const used = schema.fields.filter(f => rolesOfF(f).includes(r.key)).length;
+          if (used && !confirm(`ל"${r.label}" משויכים ${used} שדות. שדה שרק הוא ממלא — יעבור אליך. להסיר?`)) return;
+          schema.fields.forEach(f => {
+            if (!rolesOfF(f).includes(r.key)) return;
+            const rest = rolesOfF(f).filter(k => k !== r.key);
+            setRoles(f, rest.length ? rest : ['owner']);
+          });
           schema.roles = schema.roles.filter(x => x !== r);
           setDirty(true); draw(); renderPanel();
         } }, '✕');

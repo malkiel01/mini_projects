@@ -196,9 +196,10 @@ function doc_upload(array $user, array $post, array $files): array
     $key = (string)($post['field_key'] ?? '');
     foreach ($schema['fields'] as $f) {
         if ($f['key'] !== $key) continue;
-        $st = db()->prepare('SELECT 1 FROM participants WHERE document_id = ? AND role_key = ? AND notified_at IS NOT NULL');
-        $st->execute([$d['id'], $f['role'] ?? 'owner']);
-        if ($st->fetchColumn()) throw new ApiError('השדה כבר נשלח למילוי של המשתתף', 409);
+        if (in_array('owner', field_roles($f), true)) continue;   // משותף עם המנפיק — המנפיק יכול תמיד
+        $st = db()->prepare('SELECT role_key FROM participants WHERE document_id = ? AND notified_at IS NOT NULL');
+        $st->execute([$d['id']]);
+        if (array_intersect(field_roles($f), $st->fetchAll(PDO::FETCH_COLUMN))) throw new ApiError('השדה כבר נשלח למילוי של המשתתף', 409);
     }
     return attach_file($d, $schema, $key, $files['file'] ?? [], 'user:' . $user['id']);
 }
@@ -220,7 +221,7 @@ function fill_upload(array $post, array $files): array
     [$p, $d, $schema] = fill_guard();
     $key = (string)($post['field_key'] ?? '');
     foreach ($schema['fields'] as $f) {
-        if ($f['key'] === $key && ($f['role'] ?? 'owner') !== $p['role_key']) throw new ApiError('השדה לא שלך', 403);
+        if ($f['key'] === $key && !in_array($p['role_key'], field_roles($f), true)) throw new ApiError('השדה לא שלך', 403);
     }
     return attach_file($d, $schema, $key, $files['file'] ?? [], 'participant:' . $p['id']);
 }

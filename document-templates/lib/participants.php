@@ -54,12 +54,33 @@ function contact_of(array $p): array
     return is_array($c) ? $c + ['name' => '', 'email' => '', 'phone' => ''] : ['name' => '', 'email' => '', 'phone' => ''];
 }
 
-/** שדות החובה של תפקיד אחד שעדיין ריקים. */
-function missing_for(array $schema, array $values, string $role): array
+/** מי יכול למלא את השדה: אחד, או כמה ("או פלוני או אלמוני"). */
+function field_roles(array $f): array
+{
+    return !empty($f['roles']) ? $f['roles'] : [$f['role'] ?? 'owner'];
+}
+
+/** תפקידים שעוד יכולים למלא: המנפיק (עד הסיום), וכל משתתף שעוד לא סיים. */
+function open_roles(int $docId): array
+{
+    $open = ['owner'];
+    foreach (participants_of($docId) as $p) if (!$p['completed_at']) $open[] = $p['role_key'];
+    return $open;
+}
+
+/**
+ * שדות החובה של תפקיד אחד שעדיין ריקים. שדה משותף לכמה ממלאים — לא חוסם את
+ * מי שמסיים, כל עוד יש ממלא אחר שעוד יכול להשלים אותו ($open).
+ */
+function missing_for(array $schema, array $values, string $role, ?array $open = null): array
 {
     $out = [];
     foreach (visible_fields($schema, $values) as $f) {
-        if (($f['role'] ?? 'owner') === $role && $f['required'] && !in_array($f['type'], ['calc', 'system'], true) && trim((string)($values[$f['key']] ?? '')) === '') $out[] = $f['label'];
+        $roles = field_roles($f);
+        if (!in_array($role, $roles, true) || !$f['required'] || in_array($f['type'], ['calc', 'system'], true)) continue;
+        if (trim((string)($values[$f['key']] ?? '')) !== '') continue;
+        if (count($roles) > 1 && array_intersect(array_diff($roles, [$role]), $open ?? ['owner'])) continue;
+        $out[] = $f['label'];
     }
     return $out;
 }
@@ -103,8 +124,9 @@ function participants_view(array $d, array $schema): array
     $values = doc_values((int)$d['id']);
     $list = participants_of((int)$d['id']);
     $turn = $schema['sequential'] ? current_turn($list) : null;
-    $ownerMissing = missing_for($schema, $values, 'owner');
-    return array_map(function ($p) use ($schema, $values, $turn, $ownerMissing) {
+    $open = open_roles((int)$d['id']);
+    $ownerMissing = missing_for($schema, $values, 'owner', $open);
+    return array_map(function ($p) use ($schema, $values, $turn, $ownerMissing, $open) {
         $c = contact_of($p);
         $role = role_of($schema, $p['role_key']);
         $blocked = null;
@@ -116,7 +138,7 @@ function participants_view(array $d, array $schema): array
             'name' => $c['name'], 'email' => $c['email'], 'phone' => $c['phone'],
             'status' => $p['status'], 'notified_at' => $p['notified_at'], 'opened_at' => $p['opened_at'],
             'completed_at' => $p['completed_at'], 'has_link' => $p['token_hash'] !== null,
-            'missing' => missing_for($schema, $values, $p['role_key']), 'blocked' => $blocked,
+            'missing' => missing_for($schema, $values, $p['role_key'], $open), 'blocked' => $blocked,
         ];
     }, $list);
 }
@@ -233,7 +255,7 @@ function mask_email(string $e): string
 function turn_block(array $p, array $d, array $schema): ?string
 {
     if (!$schema['sequential'] || $p['completed_at']) return null;
-    if (missing_for($schema, doc_values((int)$d['id']), 'owner')) return 'המסמך עוד לא מוכן למילוי שלך';
+    if (missing_for($schema, doc_values((int)$d['id']), 'owner', open_roles((int)$d['id']))) return 'המסמך עוד לא מוכן למילוי שלך';
     return current_turn(participants_of((int)$d['id'])) === (int)$p['id'] ? null : 'עוד לא הגיע תורך. תקבלו הודעה כשיגיע';
 }
 
@@ -253,7 +275,7 @@ function fill_get(): array
     $values = doc_values((int)$d['id']);
     // שדה "מוסתר מהממלאים" — הממלא לא מקבל לא את השדה ולא את הערך (אלא אם הוא שלו)
     $schema['fields'] = array_values(array_filter($schema['fields'] ?? [],
-        fn($f) => empty($f['hidden']) || ($f['role'] ?? 'owner') === $p['role_key']));
+        fn($f) => empty($f['hidden']) || in_array($p['role_key'], field_roles($f), true)));
     $values = array_intersect_key($values, array_flip(array_column($schema['fields'], 'key')));
     $schema = attach_options($schema, array_column($schema['fields'], 'key'));   // בחירה ממקור — רק מה שהממלא רשאי לראות
     $locked = !in_array($d['status'], ['sent', 'in_progress'], true) || $p['completed_at'] !== null;
@@ -261,7 +283,7 @@ function fill_get(): array
         'id' => (int)$d['id'], 'number' => $d['number'], 'title' => unseal($d['title_enc']), 'status' => $d['status'],
         'mime' => $a['mime'], 'schema' => $schema, 'values' => $values, 'fonts' => fonts_info($schema),
         'attachments' => attachments_of((int)$d['id'], 'participant:' . $p['id']),
-        'progress' => ['required' => 0, 'filled' => 0, 'missing' => missing_for($schema, $values, $p['role_key'])],
+        'progress' => ['required' => 0, 'filled' => 0, 'missing' => missing_for($schema, $values, $p['role_key'], open_roles((int)$d['id']))],
         'me' => [
             'role_key' => $p['role_key'], 'role' => role_of($schema, $p['role_key'])['label'], 'name' => $c['name'],
             'completed' => $p['completed_at'] !== null, 'locked' => $locked, 'blocked' => turn_block($p, $d, $schema),
@@ -313,7 +335,7 @@ function fill_guard(): array
 function fill_save(array $b): array
 {
     [$p, $d, $schema] = fill_guard();
-    $mine = array_column(array_filter($schema['fields'], fn($f) => ($f['role'] ?? 'owner') === $p['role_key']), null, 'key');
+    $mine = array_column(array_filter($schema['fields'], fn($f) => in_array($p['role_key'], field_roles($f), true)), null, 'key');
     $old = doc_values((int)$d['id']);
     $actor = 'participant:' . $p['id'];
     $now = now_iso();
@@ -349,9 +371,9 @@ function fill_save(array $b): array
     }
     $values = doc_values((int)$d['id']);
     // מחושב שמוסתר מהממלאים — לא חוזר אליו (כמו ב-fill_get)
-    $seen = array_filter($schema['fields'] ?? [], fn($f) => empty($f['hidden']) || ($f['role'] ?? 'owner') === $p['role_key']);
+    $seen = array_filter($schema['fields'] ?? [], fn($f) => empty($f['hidden']) || in_array($p['role_key'], field_roles($f), true));
     return ['ok' => true, 'saved' => count($changes), 'saved_at' => $now, 'computed' => computed_values(['fields' => array_values($seen)], $values),
-        'progress' => ['required' => 0, 'filled' => 0, 'missing' => missing_for($schema, $values, $p['role_key'])]];
+        'progress' => ['required' => 0, 'filled' => 0, 'missing' => missing_for($schema, $values, $p['role_key'], open_roles((int)$d['id']))]];
 }
 
 /**
@@ -362,7 +384,7 @@ function fill_complete(): array
 {
     [$p, $d, $schema] = fill_guard();
     $values = doc_values((int)$d['id']);
-    if ($m = missing_for($schema, $values, $p['role_key'])) throw new ApiError('חסרים שדות חובה: ' . implode(', ', $m), 422);
+    if ($m = missing_for($schema, $values, $p['role_key'], open_roles((int)$d['id']))) throw new ApiError('חסרים שדות חובה: ' . implode(', ', $m), 422);
 
     $pdo = db();
     $pdo->beginTransaction();
