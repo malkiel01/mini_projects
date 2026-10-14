@@ -6,6 +6,9 @@
     ['name', 'שם מלא / שם העסק'], ['id_number', 'ת"ז / ח"פ'], ['phone', 'טלפון'],
     ['email', 'מייל'], ['address', 'כתובת'], ['notes', 'הערות'],
   ];
+  // אווטאר: ראשי תיבות וגוון קבוע מהשם
+  const hue = (s) => [...String(s)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+  const initials = (s) => String(s).trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('');
   const parseTags = (s) => String(s || '').split(/[,،]/).map(t => t.trim()).filter(Boolean);
 
   /** שדה תגיות: טקסט מופרד בפסיקים. onChange נקרא ביציאה מהשדה, רק אם השתנה. */
@@ -98,7 +101,7 @@
     window.DT.setTab('contacts');
     const box = el('div', {}, el('p', { class: 'muted' }, 'טוען…'));
     const msg = el('div');
-    const q = el('input', { type: 'search', placeholder: 'חיפוש בשם, טלפון, ת"ז, מייל או תגית', class: 'search' });
+    const q = el('input', { type: 'search', placeholder: 'חיפוש: שם, טלפון, מייל, תגית', class: 'search', 'aria-label': 'חיפוש אנשי קשר' });
     const archived = el('input', { type: 'checkbox' });
     let all = [];
 
@@ -107,20 +110,20 @@
       const rows = all.filter(c => !term || [c.name, c.phone, c.id_number, c.email, c.address, c.tags.join(' ')]
         .join(' ').toLowerCase().includes(term));
       if (!rows.length) {
-        box.replaceChildren(el('p', { class: 'muted' }, all.length ? 'אין תוצאות.' : 'עוד אין אנשי קשר. "+ איש קשר" כדי להתחיל — או בחירה ישר מתוך מסמך.'));
+        box.replaceChildren(el('p', { class: 'empty' }, all.length ? 'אין תוצאות.' : 'עוד אין אנשי קשר. "+ איש קשר" כדי להתחיל — או בחירה ישר מתוך מסמך.'));
         return;
       }
-      box.replaceChildren(el('div', { class: 'table-wrap' }, el('table', {},
-        el('thead', {}, el('tr', {}, ['שם', 'טלפון', 'מייל', 'ת"ז / ח"פ', 'מסמכים', ''].map(h => el('th', {}, h)))),
-        el('tbody', {}, rows.map(c => el('tr', { class: c.archived ? 'archived' : '' },
-          el('td', { 'data-label': 'שם' }, el('strong', {}, c.name), chips(c.tags)),
-          el('td', { dir: 'ltr', 'data-label': 'טלפון' }, c.phone),
-          el('td', { dir: 'ltr', 'data-label': 'מייל' }, c.email),
-          el('td', { dir: 'ltr', 'data-label': 'ת"ז' }, c.id_number),
-          el('td', { 'data-label': 'מסמכים' }, c.documents ? el('a', { href: '#docs?contact=' + c.id }, String(c.documents)) : '0'),
-          el('td', { class: 'ops' },
-            el('button', { class: 'small', onclick: async () => { if (await contactDialog(c)) load(); } }, 'עריכה'),
-            el('button', { class: 'small', onclick: () => archive(c) }, c.archived ? 'שחזור' : 'ארכיון'))))))));
+      // שורה לכל איש קשר: אווטאר, שם, טלפון · מייל; לחיצה — עריכה
+      box.replaceChildren(el('ul', { class: 'list contacts' }, rows.map(c => el('li', { class: c.archived ? 'archived' : '' },
+        el('button', { type: 'button', class: 'use-row', onclick: async () => { if (await contactDialog(c)) load(); } },
+          el('span', { class: 'avatar', style: `--h:${hue(c.name)}`, 'aria-hidden': 'true' }, initials(c.name)),
+          el('span', { class: 'use-tx' }, el('strong', {}, c.name),
+            el('small', { dir: 'auto' }, [c.phone, c.email, c.id_number].filter(Boolean).join(' · ') || 'בלי פרטי קשר'),
+            chips(c.tags))),
+        c.documents ? el('a', { class: 'icon-btn docs-n', href: '#docs?contact=' + c.id, 'aria-label': `${c.documents} מסמכים`, title: 'המסמכים שלו' },
+          '🗂️', el('span', { class: 'badge-n' }, String(c.documents))) : null,
+        el('button', { class: 'icon-btn', 'aria-label': c.archived ? 'שחזור' : 'ארכיון', title: c.archived ? 'שחזור' : 'ארכיון',
+          onclick: () => archive(c) }, c.archived ? '♻️' : '🗄️')))));
     }
 
     async function load() {
@@ -134,12 +137,12 @@
 
     q.addEventListener('input', render);
     archived.addEventListener('change', load);
-    show(el('section', { class: 'card' },
-      el('div', { class: 'row' }, el('h1', {}, 'אנשי קשר'),
+    show(el('section', { class: 'screen' },
+      el('div', { class: 'toolbar' }, q,
         el('button', { class: 'primary', onclick: async () => { if (await contactDialog(null)) load(); } }, '+ איש קשר')),
-      el('p', { class: 'muted small' }, 'פרטיים לך בלבד, ונשמרים מוצפנים. במסמך — בוחרים איש קשר, והשדות שסומנו בתבנית מתמלאים לבד.'),
-      el('div', { class: 'filters' }, q, el('label', { class: 'inline small muted' }, archived, ' כולל ארכיון')),
-      msg, box));
+      el('label', { class: 'switch small' }, archived, el('span', {}, 'כולל ארכיון')),
+      msg, box,
+      el('p', { class: 'hint' }, '🔒 פרטיים לך בלבד ומוצפנים. במסמך — בוחרים איש קשר, והשדות שסומנו בתבנית מתמלאים לבד.')));
     await load();
   }
 
