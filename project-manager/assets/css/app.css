@@ -1076,3 +1076,30 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .dt-ok { color: var(--ok); margin: 0; }
 .dt-token { display: flex; align-items: center; gap: var(--s2); padding: 8px var(--s3); }
 .dt-dlg textarea { inline-size: 100%; }
+
+/* DevLoop 1: 🐞 בכותרת, אימות, צעדי בדיקה, ראיות, צילומים בשיח, הקשר טכני */
+.dev-bug { position: relative; font-size: 1.15rem; }
+.dev-bug-n { position: absolute; top: 2px; inset-inline-end: 0; min-inline-size: 18px; block-size: 18px; padding: 0 4px; border-radius: 9px;
+    background: var(--danger); color: #fff; font-size: .68rem; font-weight: 700; display: grid; place-items: center; line-height: 1; }
+.dt-item.you { border-color: var(--danger); }
+.dt-verify { padding: var(--s2) var(--s3); border-radius: var(--r); background: color-mix(in srgb, var(--star) 14%, var(--surface)); display: grid; gap: 6px; }
+.dt-verify textarea { inline-size: 100%; }
+.dt-acc, .dt-steps, .dt-ev { display: grid; gap: 4px; }
+.dt-steps ol, .dt-ev ul { margin: 0; padding-inline-start: 1.3em; display: grid; gap: 4px; }
+.dt-steps label { display: flex; gap: 6px; align-items: flex-start; }
+.dt-steps input:checked + span { text-decoration: line-through; color: var(--muted); }
+.dt-ev small { color: var(--muted); margin-inline-start: 6px; }
+.dt-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.dt-thumb img { inline-size: 84px; block-size: 84px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); display: block; }
+.dt-new-acts { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+.dt-attach { cursor: pointer; }
+.dt-ctx { font-size: .82rem; border: 1px dashed var(--line); border-radius: var(--r); padding: 6px var(--s2); }
+.dt-ctx summary { cursor: pointer; color: var(--muted); }
+.dt-ctx p { margin: 6px 0; }
+.dt-req { inline-size: 100%; border-collapse: collapse; font-size: .76rem; }
+.dt-req th, .dt-req td { border-bottom: 1px solid var(--line); padding: 2px 4px; text-align: start; }
+.dt-req tr.bad td { color: var(--danger); }
+.dt-errs { margin: 6px 0; padding-inline-start: 1.2em; color: var(--danger); font-size: .76rem; }
+.chip.dt-info { color: var(--brand); }
+.dt-steps input[type=checkbox] { inline-size: 18px; block-size: 18px; min-block-size: 0; min-inline-size: 0; flex: none; margin: 2px 0 0; padding: 0; }
+.dt-steps label span { flex: 1; }

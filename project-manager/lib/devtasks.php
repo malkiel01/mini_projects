@@ -21,7 +21,12 @@ const PM_DEV_ITEMS_FILE = __DIR__ . '/../dev/open-items.json';
 const PM_DEV_PREFIX = 'PM-';
 const PM_DEV_TOKEN_PREFIX = 'pmd_';
 const PM_DEV_COMMENT_MAX = 4000;
-const PM_DEV_STATUS = ['open', 'question', 'closed'];
+// open פתוח · in_progress בעבודה · verify ממתין לאימות שלך · question שאלה אליך · closed סגור
+const PM_DEV_STATUS = ['open', 'in_progress', 'verify', 'question', 'closed'];
+const PM_DEV_KINDS = ['bug', 'feature', 'question', 'research', 'task'];
+const PM_DEV_PRIORITY = ['high', 'normal', 'low'];
+const PM_DEV_FILE_MAX = 8 * 1048576;
+const PM_DEV_EVIDENCE = ['pr', 'commit', 'deploy', 'version', 'test', 'note'];
 const PM_DEV_RATE = 300; // בקשות בשעה לאסימון
 
 function pm_devtasks_migrate(): void
@@ -62,7 +67,52 @@ function pm_devtasks_migrate(): void
             rate_hour    TEXT NOT NULL DEFAULT '',
             rate_n       INTEGER NOT NULL DEFAULT 0
         );
+        -- מצב שנקבע מחוץ לקובץ (אימות שלך, Claude באסימון) — גובר על הקובץ אם חדש מ-status_at שבו
+        CREATE TABLE IF NOT EXISTS dev_state (
+            code   TEXT PRIMARY KEY,
+            status TEXT NOT NULL,
+            at     TEXT NOT NULL,
+            by     TEXT NOT NULL
+        );
+        -- ראיות: PR, commit, פריסה, גרסה, בדיקה — מ-Claude או אוטומטית מ-GitHub (שלב 2)
+        CREATE TABLE IF NOT EXISTS dev_evidence (
+            id    INTEGER PRIMARY KEY,
+            code  TEXT NOT NULL,
+            kind  TEXT NOT NULL,
+            ref   TEXT NOT NULL DEFAULT '',
+            url   TEXT NOT NULL DEFAULT '',
+            note  TEXT NOT NULL DEFAULT '',
+            at    TEXT NOT NULL,
+            by    TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS dev_evidence_code ON dev_evidence (code);
+        -- צילומים וקבצים בשיח (data/files/_dev — לא נדרס בפריסה)
+        CREATE TABLE IF NOT EXISTS dev_files (
+            id         INTEGER PRIMARY KEY,
+            code       TEXT NOT NULL,
+            comment_id INTEGER,
+            name       TEXT NOT NULL,
+            mime       TEXT NOT NULL,
+            size       INTEGER NOT NULL,
+            storage    TEXT NOT NULL,
+            at         TEXT NOT NULL,
+            by         TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS dev_files_code ON dev_files (code);
         SQL);
+    // שדות במטלה שנפתחה מהמסך: סוג, עדיפות, איך יודעים שזה עובד, צעדי בדיקה, ההקשר של דיווח 🐞
+    $db = pm_db();
+    foreach (['kind' => "TEXT NOT NULL DEFAULT 'task'", 'priority' => "TEXT NOT NULL DEFAULT 'normal'",
+              'acceptance' => "TEXT NOT NULL DEFAULT ''", 'steps' => "TEXT NOT NULL DEFAULT '[]'", 'context' => "TEXT NOT NULL DEFAULT ''"] as $col => $def) {
+        pm_add_column($db, 'dev_tasks', $col, $def);
+    }
+}
+
+function pm_dev_files_dir(): string
+{
+    $d = __DIR__ . '/../data/files/_dev';
+    if (!is_dir($d)) mkdir($d, 0755, true);
+    return $d;
 }
 
 // ── הרשימה ───────────────────────────────────────────────────
@@ -91,7 +141,25 @@ function pm_dev_task_list(): array
     foreach ($db->query('SELECT * FROM dev_tasks ORDER BY id DESC')->fetchAll() as $t) {
         if (isset($items[$t['code']])) continue;
         $items[$t['code']] = ['code' => $t['code'], 'area' => $t['area'], 'status' => $t['status'], 'title' => $t['title'],
-            'detail' => $t['detail'], 'opened' => substr($t['created_at'], 0, 10), 'questions' => [], 'source' => 'user'];
+            'detail' => $t['detail'], 'opened' => substr($t['created_at'], 0, 10), 'questions' => [], 'source' => 'user',
+            'kind' => $t['kind'], 'priority' => $t['priority'], 'acceptance' => $t['acceptance'],
+            'steps' => json_decode((string)$t['steps'], true) ?: [], 'context' => json_decode((string)$t['context'], true) ?: null];
+    }
+    // מצב מחוץ לקובץ (אימות, Claude) — גובר אם חדש ממה שבקובץ
+    foreach ($db->query('SELECT * FROM dev_state')->fetchAll() as $o) {
+        if (!isset($items[$o['code']]) || $items[$o['code']]['source'] !== 'code') continue;
+        // status_at בעתיד (טעות בקובץ) — לא חוסם את האימות
+        $fileAt = min((string)($items[$o['code']]['status_at'] ?? ''), pm_now());
+        if ($fileAt <= $o['at']) $items[$o['code']]['status'] = $o['status'];
+    }
+    $ev = [];
+    foreach ($db->query('SELECT * FROM dev_evidence ORDER BY id')->fetchAll() as $e) {
+        $ev[$e['code']][] = ['id' => (int)$e['id'], 'kind' => $e['kind'], 'ref' => $e['ref'], 'url' => $e['url'], 'note' => $e['note'], 'at' => $e['at'], 'by' => $e['by']];
+    }
+    $files = [];
+    foreach ($db->query('SELECT id, code, comment_id, name, mime, size, at, by FROM dev_files ORDER BY id')->fetchAll() as $f) {
+        $files[$f['code']][] = ['id' => (int)$f['id'], 'comment_id' => $f['comment_id'] !== null ? (int)$f['comment_id'] : null,
+            'name' => $f['name'], 'mime' => $f['mime'], 'size' => (int)$f['size'], 'at' => $f['at'], 'by' => $f['by']];
     }
     $names = [];
     foreach ($db->query('SELECT id, display_name FROM users')->fetchAll() as $u) $names[(int)$u['id']] = $u['display_name'];
@@ -101,6 +169,10 @@ function pm_dev_task_list(): array
             'name' => $c['author'] === 'claude' ? 'Claude' : ($names[(int)$c['user_id']] ?? '—'), 'body' => $c['body']];
     }
     foreach ($items as $code => &$x) {
+        $x += ['kind' => 'task', 'priority' => 'normal', 'acceptance' => '', 'steps' => [], 'context' => null];
+        // ראיות: מהקובץ (pr) ומהטבלה
+        $x['evidence'] = array_merge(!empty($x['pr']) ? [['kind' => 'pr', 'ref' => '#' . $x['pr'], 'url' => '', 'note' => '', 'at' => $x['closed'] ?? '', 'by' => 'code']] : [], $ev[$code] ?? []);
+        $x['files'] = $files[$code] ?? [];
         $x['comments'] = $byCode[$code] ?? [];
         $last = end($x['comments']) ?: null;
         // מי צריך להגיב עכשיו: הערה של המפתח שלא נענתה — ממתינה ל-Claude
@@ -132,22 +204,118 @@ function pm_dev_task_create(array $dev, array $b): array
 {
     $title = mb_substr(trim((string)($b['title'] ?? '')), 0, 200);
     if ($title === '') throw new PmError('חסרה כותרת', 422);
+    $kind = in_array($b['kind'] ?? '', PM_DEV_KINDS, true) ? $b['kind'] : 'task';
+    $prio = in_array($b['priority'] ?? '', PM_DEV_PRIORITY, true) ? $b['priority'] : 'normal';
+    $steps = array_values(array_filter(array_map(fn($x) => mb_substr(trim((string)$x), 0, 300), is_array($b['steps'] ?? null) ? $b['steps'] : []), 'strlen'));
     $code = pm_dev_next_code();
     $now = pm_now();
-    pm_db()->prepare('INSERT INTO dev_tasks (code, area, title, detail, status, created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)')
+    pm_db()->prepare('INSERT INTO dev_tasks (code, area, title, detail, status, created_by, created_at, updated_at, kind, priority, acceptance, steps) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
         ->execute([$code, mb_substr(trim((string)($b['area'] ?? '')), 0, 40), $title,
-            mb_substr(trim((string)($b['detail'] ?? '')), 0, PM_DEV_COMMENT_MAX), 'open', $dev['id'], $now, $now]);
+            mb_substr(trim((string)($b['detail'] ?? '')), 0, PM_DEV_COMMENT_MAX), 'open', $dev['id'], $now, $now,
+            $kind, $prio, mb_substr(trim((string)($b['acceptance'] ?? '')), 0, 2000), json_encode(array_slice($steps, 0, 20), JSON_UNESCAPED_UNICODE)]);
     return ['ok' => true, 'code' => $code];
 }
 
-/** מצב משתנה כאן רק במטלה שנפתחה מהמסך; את שבקוד — Claude סוגר בקוד. */
-function pm_dev_task_status(string $code, string $status): void
+/**
+ * מצב: מטלה מהמסך — בטבלה; מטלה מהקוד — שכבה מעל הקובץ (dev_state), שגוברת עד ש-Claude מעדכן את הקובץ
+ * (status_at חדש יותר). $by — user:<id> / claude / github.
+ */
+function pm_dev_task_status(string $code, string $status, string $by = 'user'): void
 {
     pm_devtasks_migrate();
     if (!in_array($status, PM_DEV_STATUS, true)) throw new PmError('מצב לא מוכר', 422);
-    $st = pm_db()->prepare('UPDATE dev_tasks SET status = ?, updated_at = ? WHERE code = ?');
-    $st->execute([$status, pm_now(), $code]);
-    if (!$st->rowCount()) throw new PmError('את המצב של מטלה מהקוד משנים בקוד — כתבו הערה, ו-Claude יעדכן', 409);
+    $x = pm_dev_task_get($code);
+    if ($x['source'] === 'user') {
+        pm_db()->prepare('UPDATE dev_tasks SET status = ?, updated_at = ? WHERE code = ?')->execute([$status, pm_now(), $code]);
+    } else {
+        pm_db()->prepare('INSERT INTO dev_state (code, status, at, by) VALUES (?,?,?,?) ON CONFLICT(code) DO UPDATE SET status = excluded.status, at = excluded.at, by = excluded.by')
+            ->execute([$code, $status, pm_now(), $by]);
+    }
+}
+
+/**
+ * האימות שלך: ✅ עובד אצלי — נסגר; ↩️ לא עובד — חוזר לעבודה, וההערה (חובה) נכנסת לשיח וממתינה ל-Claude.
+ */
+function pm_dev_verify(array $dev, array $b): array
+{
+    $code = (string)($b['code'] ?? '');
+    $ok = !empty($b['ok']);
+    $note = trim((string)($b['note'] ?? ''));
+    if (!$ok && $note === '') throw new PmError('מה לא עובד? כמה מילים — Claude יתקן לפיהן', 422);
+    pm_dev_task_status($code, $ok ? 'closed' : 'in_progress', 'user:' . $dev['id']);
+    $r = pm_dev_comment_add($code, 'user', (int)$dev['id'], ($ok ? '✅ אומת — עובד אצלי' : '↩️ לא עובד') . ($note !== '' ? ': ' . $note : ''));
+    pm_db()->prepare('INSERT INTO dev_evidence (code, kind, ref, url, note, at, by) VALUES (?,?,?,?,?,?,?)')
+        ->execute([$code, 'note', $ok ? 'verified' : 'rejected', '', $note, pm_now(), 'user:' . $dev['id']]);
+    return $r;
+}
+
+function pm_dev_evidence_add(string $code, string $kind, string $ref, string $url, string $note, string $by): array
+{
+    pm_dev_task_get($code);
+    if (!in_array($kind, PM_DEV_EVIDENCE, true)) throw new PmError('סוג ראיה לא מוכר', 422);
+    if ($url !== '' && !preg_match('#^https?://#i', $url)) throw new PmError('קישור — רק http/https', 422);
+    pm_db()->prepare('INSERT INTO dev_evidence (code, kind, ref, url, note, at, by) VALUES (?,?,?,?,?,?,?)')
+        ->execute([$code, $kind, mb_substr($ref, 0, 100), mb_substr($url, 0, 500), mb_substr($note, 0, 1000), pm_now(), $by]);
+    return ['ok' => true, 'id' => (int)pm_db()->lastInsertId()];
+}
+
+/** קובץ לשיח (צילום מסך, PDF) — הגוף הוא הקובץ; ?code=…&name=…&comment_id=… */
+function pm_dev_attach(string $by, array $q): array
+{
+    $code = (string)($q['code'] ?? '');
+    pm_dev_task_get($code);
+    $len = (int)($_SERVER['CONTENT_LENGTH'] ?? 0);
+    if ($len <= 0) throw new PmError('לא נבחר קובץ', 422);
+    if ($len > PM_DEV_FILE_MAX) throw new PmError('הקובץ גדול מדי — עד 8MB', 413);
+    $tmp = pm_dev_files_dir() . '/.up_' . bin2hex(random_bytes(6));
+    $in = fopen('php://input', 'rb');
+    $out = fopen($tmp, 'wb');
+    $n = stream_copy_to_stream($in, $out, PM_DEV_FILE_MAX + 1);
+    fclose($in); fclose($out);
+    $mime = pm_detect_mime($tmp, '');
+    if ($n <= 0 || $n > PM_DEV_FILE_MAX || !preg_match('#^(image/(jpeg|png|webp|gif)|application/pdf|text/plain)$#', $mime)) {
+        @unlink($tmp);
+        throw new PmError('צילום, PDF או טקסט — עד 8MB', 415);
+    }
+    $ext = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif', 'application/pdf' => 'pdf', 'text/plain' => 'txt'][$mime];
+    $storage = bin2hex(random_bytes(12)) . '.' . $ext;
+    rename($tmp, pm_dev_files_dir() . '/' . $storage);
+    $name = mb_substr(trim((string)($q['name'] ?? '')) ?: 'file.' . $ext, 0, 120);
+    pm_db()->prepare('INSERT INTO dev_files (code, comment_id, name, mime, size, storage, at, by) VALUES (?,?,?,?,?,?,?,?)')
+        ->execute([$code, (int)($q['comment_id'] ?? 0) ?: null, $name, $mime, $n, $storage, pm_now(), $by]);
+    return ['ok' => true, 'id' => (int)pm_db()->lastInsertId()];
+}
+
+/** הקובץ עצמו — למפתח (בעוגייה) ול-Claude (באסימון). */
+function pm_dev_file_out(int $id): never
+{
+    pm_devtasks_migrate();
+    $st = pm_db()->prepare('SELECT * FROM dev_files WHERE id = ?');
+    $st->execute([$id]);
+    $f = $st->fetch() ?: throw new PmError('הקובץ לא נמצא', 404);
+    $path = pm_dev_files_dir() . '/' . basename($f['storage']);
+    if (!is_file($path)) throw new PmError('הקובץ לא נמצא', 404);
+    header('Content-Type: ' . $f['mime']);
+    header('Content-Length: ' . filesize($path));
+    header('Content-Disposition: inline; filename*=UTF-8\'\'' . rawurlencode($f['name']));
+    header('X-Content-Type-Options: nosniff');
+    header("Content-Security-Policy: default-src 'none'; img-src 'self'; style-src 'unsafe-inline'");
+    readfile($path);
+    exit;
+}
+
+/**
+ * 🐞 דיווח מהמסך: כותרת, מה קרה, וההקשר שנאסף לבד (מסך, גרסה, מכשיר, הבקשות והשגיאות האחרונות).
+ * נפתח כמטלה מסוג באג; הצילומים — אחר כך ב-dev-attach.
+ */
+function pm_dev_report(array $dev, array $b): array
+{
+    $ctx = is_array($b['context'] ?? null) ? $b['context'] : [];
+    $keep = array_intersect_key($ctx, array_flip(['url', 'screen', 'ua', 'version', 'lang', 'requests', 'errors', 'at']));
+    $json = mb_substr(json_encode($keep, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), 0, 20000);
+    $r = pm_dev_task_create($dev, $b + ['kind' => 'bug']);
+    pm_db()->prepare('UPDATE dev_tasks SET context = ? WHERE code = ?')->execute([$json, $r['code']]);
+    return $r;
 }
 
 function pm_dev_comment_add(string $code, string $author, ?int $userId, string $body): array
@@ -248,12 +416,22 @@ function pm_devapi_feed(array $k, array $q): array
         'next_code' => pm_dev_next_code(), 'items' => $items];
 }
 
-/** תשובה של Claude במטלה; במטלה שנפתחה מהמסך — אפשר גם לשנות מצב. */
+/**
+ * תשובה של Claude במטלה (body), ואפשר באותה בקשה: status (גם במטלה מהקוד — שכבה מעל הקובץ),
+ * evidence [{kind, ref, url, note}], ו-steps (צעדי בדיקה — רק במטלה מהמסך). אחרי פריסה: status=verify.
+ */
 function pm_devapi_comment(array $k, array $b): array
 {
     $code = (string)($b['code'] ?? '');
-    $r = pm_dev_comment_add($code, 'claude', null, (string)($b['body'] ?? ''));
-    if (!empty($b['status'])) pm_dev_task_status($code, (string)$b['status']);
+    $r = trim((string)($b['body'] ?? '')) !== '' ? pm_dev_comment_add($code, 'claude', null, (string)$b['body']) : ['ok' => true];
+    foreach (is_array($b['evidence'] ?? null) ? $b['evidence'] : [] as $e) {
+        pm_dev_evidence_add($code, (string)($e['kind'] ?? 'note'), (string)($e['ref'] ?? ''), (string)($e['url'] ?? ''), (string)($e['note'] ?? ''), 'claude');
+    }
+    if (is_array($b['steps'] ?? null)) {
+        $steps = array_values(array_filter(array_map(fn($x) => mb_substr(trim((string)$x), 0, 300), $b['steps']), 'strlen'));
+        pm_db()->prepare('UPDATE dev_tasks SET steps = ? WHERE code = ?')->execute([json_encode(array_slice($steps, 0, 20), JSON_UNESCAPED_UNICODE), $code]);
+    }
+    if (!empty($b['status'])) pm_dev_task_status($code, (string)$b['status'], 'claude');
     return $r;
 }
 // i18n-none-end
