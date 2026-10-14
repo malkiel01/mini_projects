@@ -257,7 +257,8 @@ body:has(.top):not(:has(.tabs:not([hidden]))) { --stick: calc(var(--head) + env(
 .page { position: relative; width: 100%; max-width: 1000px; margin: 0 auto; background: #fff;
   box-shadow: 0 1px 4px rgba(0,0,0,.15); }
 .page-bg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.layer { position: absolute; inset: 0; touch-action: none; }
+/* גלילה וזום באצבע — מותרים על הדף; רק שדה בעורך (נגרר) חוסם אותם */
+.layer { position: absolute; inset: 0; touch-action: pan-x pan-y; }
 .pages.placing .layer { cursor: crosshair; outline: 2px dashed var(--accent); }
 .page-no { position: absolute; bottom: 4px; left: 8px; font-size: .75rem; color: #888; pointer-events: none; }
 
@@ -527,3 +528,19 @@ span.inline-field .calc-out { padding: 0 4px; }
 .map-row select { flex: 1 1 180px; width: auto; }
 .use-tx small.wrap { white-space: normal; }
 .bulk { display: grid; gap: var(--s3); }
+
+/* ── צופה עם זום: גלילה, צביטה, מסך מלא ── */
+.zoom-view { display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
+.zoom-stage { overflow-x: auto; direction: ltr; touch-action: pan-x pan-y; min-width: 0; overscroll-behavior-x: contain; }
+.zoom-stage > .pages { direction: rtl; margin-inline: auto; min-width: 0; }
+.zoom-stage .page { max-width: none; }
+.zoom-stage.zoomed { cursor: grab; }
+/* הסרגל צף בתחתית המסך — תמיד בהישג יד בזמן גלילה */
+.zoom-bar { order: 2; position: sticky; bottom: calc(var(--s3) + env(safe-area-inset-bottom)); z-index: 6; align-self: center;
+  display: flex; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 99px;
+  background: var(--surface); box-shadow: 0 2px 10px rgba(16, 24, 40, .18); }
+.zoom-bar .icon-btn { border: 0; border-radius: 99px; background: none; }
+.zoom-pct { min-width: 64px; min-height: var(--tap); border: 0; background: none; font-variant-numeric: tabular-nums; font-size: .9rem; border-radius: 99px; padding: 0 6px; }
+.zoom-view.full { position: fixed; inset: 0; z-index: 60; background: var(--bg); padding: calc(var(--s2) + env(safe-area-inset-top)) var(--s2) var(--s2); }
+.zoom-view.full .zoom-stage { flex: 1; overflow: auto; }
+body.zoom-lock { overflow: hidden; }

@@ -116,6 +116,83 @@
   }
 
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+  /**
+   * צופה עם זום לדפי המסמך (עורך, מילוי, ממלא חיצוני): − / 100% / + / ⛶,
+   * צביטה שמגדילה רק את המסמך (לא את האתר), הקשה כפולה, ו-Ctrl+גלגלת.
+   * גלילה באצבע אחת — רגילה. הבמה ב-ltr, כדי שחשבון הגלילה יהיה פשוט גם בעברית.
+   */
+  function zoomable(inner) {
+    const mk = (tag, cls, attrs, ...kids) => {
+      const n = document.createElement(tag);
+      if (cls) n.className = cls;
+      for (const [k, v] of Object.entries(attrs || {})) { if (k.startsWith('on')) n.addEventListener(k.slice(2), v); else n.setAttribute(k, v); }
+      n.append(...kids);
+      return n;
+    };
+    let z = 1;
+    const stage = mk('div', 'zoom-stage', {}, inner);
+    const pct = mk('button', 'zoom-pct', { type: 'button', 'aria-label': 'גודל מלא לרוחב', title: 'גודל מלא לרוחב', onclick: () => set(1) }, '100%');
+    const full = mk('button', 'icon-btn', { type: 'button', 'aria-label': 'מסך מלא', title: 'מסך מלא', onclick: () => fullscreen() }, '⛶');
+    const bar = mk('div', 'zoom-bar', { role: 'toolbar', 'aria-label': 'תצוגת המסמך' },
+      mk('button', 'icon-btn', { type: 'button', 'aria-label': 'הקטנה', title: 'הקטנה', onclick: () => set(z / 1.25) }, '−'),
+      pct,
+      mk('button', 'icon-btn', { type: 'button', 'aria-label': 'הגדלה', title: 'הגדלה', onclick: () => set(z * 1.25) }, '+'),
+      full);
+    const box = mk('div', 'zoom-view', {}, bar, stage);
+
+    /** זום סביב נקודה (במסך) — מה שמתחת לאצבעות נשאר במקום. */
+    function set(nz, cx, cy) {
+      nz = clamp(Math.round(nz * 100) / 100, 0.5, 4);
+      if (nz === z) return;
+      const r = stage.getBoundingClientRect();
+      const ax = (cx ?? r.left + r.width / 2) - r.left, ay = (cy ?? r.top + Math.min(r.height, innerHeight) / 2) - r.top;
+      const scroller = box.classList.contains('full') ? stage : null;
+      const x = stage.scrollLeft + ax, y = (scroller ? stage.scrollTop : 0) + ay;
+      const k = nz / z;
+      z = nz;
+      inner.style.width = z * 100 + '%';
+      pct.textContent = Math.round(z * 100) + '%';
+      stage.classList.toggle('zoomed', z > 1);
+      stage.scrollLeft = x * k - ax;
+      if (scroller) stage.scrollTop = y * k - ay;
+      else window.scrollBy(0, ay * (k - 1));
+    }
+    function fullscreen(on = !box.classList.contains('full')) {
+      box.classList.toggle('full', on);
+      document.body.classList.toggle('zoom-lock', on);
+      full.setAttribute('aria-label', on ? 'יציאה ממסך מלא' : 'מסך מלא');
+      full.title = full.getAttribute('aria-label');
+      full.textContent = on ? '✕' : '⛶';
+    }
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && box.classList.contains('full')) fullscreen(false); });
+
+    // צביטה בשתי אצבעות — מגדילה רק את המסמך
+    let pinch = null;
+    const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    stage.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2) pinch = { d: dist(e.touches), z };
+    }, { passive: true });
+    stage.addEventListener('touchmove', (e) => {
+      if (!pinch || e.touches.length !== 2) return;
+      e.preventDefault();
+      const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2, cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      set(pinch.z * dist(e.touches) / pinch.d, cx, cy);
+    }, { passive: false });
+    stage.addEventListener('touchend', (e) => { if (e.touches.length < 2) pinch = null; });
+    // הקשה כפולה (לא על שדה) — 200% / חזרה
+    stage.addEventListener('dblclick', (e) => {
+      if (e.target.closest('input, textarea, button, select, .field')) return;
+      set(z > 1.2 ? 1 : 2, e.clientX, e.clientY);
+    });
+    // Ctrl+גלגלת (וצביטה במשטח מגע במחשב)
+    stage.addEventListener('wheel', (e) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      set(z * Math.exp(-e.deltaY * 0.0025), e.clientX, e.clientY);
+    }, { passive: false });
+    return { box, bar, stage, set, get zoom() { return z; } };
+  }
   const uid = () => 'f' + Math.random().toString(36).slice(2, 9);
 
   async function open(id) {
@@ -155,6 +232,7 @@
         el('button', { class: 'small', 'data-type': type, title: 'לחצו, ואז לחצו על המקום בדף',
           onclick: () => setPlacing(placing === type ? null : type) }, t.icon + ' ' + t.label)));
     const pagesBox = el('div', { class: 'pages' });
+    const viewer = zoomable(pagesBox);
     const panel = el('aside', { class: 'panel card' });
     const msg = el('div');
     const parseBox = el('div');
@@ -176,7 +254,7 @@
       tpl.owner_name ? el('p', { class: 'notice' }, `👥 תבנית של ${tpl.owner_name} — ההרשאה שלך: ${window.DT.LEVEL[tpl.access]}` +
         (readOnly ? '. צפייה בלבד.' : '.')) : null,
       palette, parseBox, msg,
-      el('div', { class: 'editor' }, pagesBox, panel));
+      el('div', { class: 'editor' }, viewer.box, panel));
 
     window.DT.setTab('home');
     window.DT.setBack('home');   // חזרה בכותרת — לתבניות
@@ -195,6 +273,7 @@
     const pageEls = [];
     const isWord = tpl.mime === DOCX;
     const isAuthored = tpl.mime === AUTHORED;
+    if (isWord || isAuthored) viewer.bar.hidden = true;   // בלי דפים — בלי זום
     if (isAuthored) {
       palette.hidden = true;
       pagesBox.classList.add('word', 'authored');   // הגוף מצויר בסוף הפתיחה, כשהכול מאותחל
@@ -954,5 +1033,5 @@
     if (autoSave) save();
   }
 
-  window.DTEditor = { open, renderBackground, TYPES, wordPreview, DOCX };
+  window.DTEditor = { open, renderBackground, TYPES, wordPreview, DOCX, zoomable };
 })();
