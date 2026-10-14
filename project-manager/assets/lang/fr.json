@@ -2136,5 +2136,21 @@
     "תיק": "Dossier",
     "מי עובד בשלב": "Qui travaille sur cette étape",
     "{n} אבני דרך": "{n} jalons",
-    "תיק התקשרות": "Dossier d'engagement"
+    "תיק התקשרות": "Dossier d'engagement",
+    "הדיווח כבר לא קיים": "Le rapport n'existe plus",
+    "משויך לכאן": "Associé ici",
+    "הסרת השיוך — {what}": "Retirer l'association — {what}",
+    "להוציא את הקובץ מהדיווח מהשטח ({where})? הדיווח נשאר.": "Retirer le fichier du rapport de chantier ({where}) ? Le rapport reste.",
+    "להסיר את השיוך ל{where}?": "Retirer l'association à {where} ?",
+    "להסיר את הקובץ מ{what} ({where})? הרשומה נשארת — בלי המסמך.": "Retirer le fichier de {what} ({where}) ? L'enregistrement reste — sans le document.",
+    "השיוך הוסר — הקובץ חזר ל\"ממתין למיון\"": "Association retirée — le fichier est revenu dans « À trier »",
+    "השיוך הוסר": "Association retirée",
+    "קבצי השלב": "Fichiers de l'étape",
+    "לפי ספק — מסמכים, תשלומים ותיעוד מהשטח": "Par fournisseur — documents, paiements et documentation de chantier",
+    "לפי שלבים": "Par étape",
+    "סוג שיוך לא מוכר": "Type d'association inconnu",
+    "השיוך כבר לא קיים": "L'association n'existe plus",
+    "✂️ {name} — הוסר השיוך ל{what}, וחזר ל\"ממתין למיון\"": "✂️ {name} — association à {what} retirée, retour dans « À trier »",
+    "✂️ {name} — הוסר השיוך ל{what}": "✂️ {name} — association à {what} retirée",
+    "🔧 תיקון שיוכים אוטומטי: {moved} קבצים סודרו לתיקייה הנכונה · {staged} אבני דרך שויכו לשלב · {suppliers} שלבים קיבלו ספק · {merged} תיקיות כפולות אוחדו · {typed} סוגי קבצים תוקנו": "🔧 Réparation automatique des associations : {moved} fichiers rangés au bon endroit · {staged} jalons rattachés à une étape · {suppliers} étapes ont reçu un fournisseur · {merged} dossiers en double fusionnés · {typed} types de fichiers corrigés"
 }

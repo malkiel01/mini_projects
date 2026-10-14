@@ -49,6 +49,27 @@ const Field = (() => {
         catch (e) { toast(e.message, true); return; }
         render();
         if (pending) { const x = pending; pending = null; open(x); }
+        if (focusId) { const id = focusId; focusId = null; flash(id); }
+    }
+
+    /** מקובץ ("שימוש במערכת"): לדיווח עצמו — כל השלבים, גלילה אליו והדגשה. */
+    let focusId = null;
+    function focus(projectId, reportId) {
+        const here = project?.project?.id === projectId && location.hash.startsWith(`#/p/${projectId}/field`);
+        if (here) { $('#field-stage').value = ''; render(); flash(reportId); return; }
+        $('#field-stage').value = '';
+        focusId = reportId;
+        location.hash = `#/p/${projectId}/field`;
+    }
+    function flash(id) {
+        if (!reports.some(r => r.id === id)) { toast(t('הדיווח כבר לא קיים'), true); return; }
+        $('#field-stage').value = '';
+        render();
+        const el = $(`#report-list [data-report-id="${id}"]`);
+        if (!el) return;
+        el.scrollIntoView({ block: 'center' });
+        el.classList.add('flash');
+        setTimeout(() => el.classList.remove('flash'), 2200);
     }
 
     /** מחלון השלב: "בוצע" נבחר — עוברים לכאן עם הדיווח מוכן. */
@@ -74,7 +95,7 @@ const Field = (() => {
         const media = r.media.map((m, i) => `<li><button type="button" class="tile" data-report="${r.id}" data-media="${i}" aria-label="${esc(m.video ? t('סרטון {n}', { n: i + 1 }) : t('תמונה {n}', { n: i + 1 }))}">
             ${m.thumb ? `<img src="${fileUrl(m.id, '&thumb=1')}" alt="" loading="lazy">` : `<span aria-hidden="true">${m.video ? '🎬' : '🖼️'}</span>`}
             ${m.video ? '<i class="play" aria-hidden="true">▶</i>' : ''}</button></li>`).join('');
-        return `<article class="report${r.kind === 'done' ? ' done' : ''}${r.visible ? '' : ' hidden-r'}">
+        return `<article class="report${r.kind === 'done' ? ' done' : ''}${r.visible ? '' : ' hidden-r'}" data-report-id="${r.id}">
             <header><span class="one">${esc(r.kind === 'done' ? t('✅ {stage} — בוצע', { stage: r.stage_name || t('כללי') }) : (r.stage_name ? t(r.stage_name) : t('כללי')))}${r.supplier_name ? ' · ' + esc(r.supplier_name) : ''}</span>
                 <time datetime="${esc(r.at)}">${time}</time></header>
             ${r.text ? `<p>${esc(r.text)}</p>` : ''}
@@ -195,5 +216,5 @@ const Field = (() => {
         catch (e) { toast(e.message, true); }
     }
 
-    return { show, markDone };
+    return { show, markDone, focus };
 })();

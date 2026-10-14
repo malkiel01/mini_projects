@@ -33,6 +33,7 @@ const PM_SYSTEM_FOLDERS = [
     'inbox'   => ['ממתין למיון', '📥', 10],
     'client'  => ['הלקוח', '👤', 20],
     'lawyer'  => ['עו"ד', '⚖️', 30],
+    'stages'  => ['לפי שלבים', '🧱', 50], // שלב ← ספק — מחושב מהשיוכים (lib/links.php)
     'plans'   => ['תוכניות והיתרים', '📐', 60],
     'photos'  => ['תמונות מהשטח', '📷', 70],
     'general' => ['כללי', '📁', 80],
@@ -97,21 +98,22 @@ function pm_folders(array $user, int $projectId): array
     $p = pm_project_row($user, $projectId);
     pm_ensure_folders($p);
     $st = pm_db()->prepare(
-        "SELECT f.*, c.name AS contact_name,
-                (SELECT COUNT(*) FROM file_links l JOIN files x ON x.id = l.file_id
-                  WHERE l.folder_id = f.id AND x.deleted_at IS NULL) AS files
-           FROM folders f LEFT JOIN contacts c ON c.id = f.contact_id
+        "SELECT f.*, c.name AS contact_name FROM folders f LEFT JOIN contacts c ON c.id = f.contact_id
           WHERE f.project_id = ? ORDER BY f.sort, f.name COLLATE NOCASE"
     );
     $st->execute([$projectId]);
+    $rows = $st->fetchAll();
+    $byId = array_column($rows, null, 'id');
+    // כולל מה שמשויך לספק / לשלב בלי לשבת בתיקייה (lib/links.php)
+    $counts = pm_folder_counts($projectId, $rows);
     return array_map(fn($f) => [
         'id' => (int)$f['id'], 'parent_id' => $f['parent_id'] !== null ? (int)$f['parent_id'] : null,
         'kind' => $f['kind'], 'contact_id' => $f['contact_id'] !== null ? (int)$f['contact_id'] : null,
-        'name' => $f['kind'] === 'contact' && $f['contact_name'] ? $f['contact_name'] : ($f['kind'] === 'trade' && $f['stage_id'] ? (pm_trade_folder_name((int)$f['stage_id']) ?: $f['name']) : $f['name']),
-        'icon' => PM_SYSTEM_FOLDERS[$f['kind']][1] ?? ($f['kind'] === 'contact' ? '🧰' : ($f['kind'] === 'trade' ? '🧱' : '📁')),
+        'name' => $f['kind'] === 'contact' && $f['contact_name'] ? $f['contact_name'] : (pm_link_folder_name($f, $byId) ?? $f['name']),
+        'icon' => PM_SYSTEM_FOLDERS[$f['kind']][1] ?? ['contact' => '🧰', 'ssup' => '🧰', 'trade' => '🧱', 'tgroup' => '🧱', 'stage' => '🧱', 'sgroup' => '🧱'][$f['kind']] ?? '📁',
         'stage_id' => isset($f['stage_id']) && $f['stage_id'] !== null ? (int)$f['stage_id'] : null,
-        'files' => (int)$f['files'], 'system' => $f['kind'] !== 'custom',
-    ], $st->fetchAll());
+        'files' => $counts[(int)$f['id']] ?? 0, 'system' => $f['kind'] !== 'custom',
+    ], $rows);
 }
 
 /** שם תיקייה לתצוגה: תיקיית ספק — בשם הספק. */
@@ -184,10 +186,16 @@ function pm_files_list(array $user, int $projectId, array $f): array
     $join = '';
     if (!empty($f['folder_id'])) {
         // בתיקייה: הקבצים שלה; בחיפוש / סינון מתוך תיקייה — גם בתת-התיקיות שלה (לא בכל הפרויקט)
-        $deep = !empty($f['q']) || !empty($f['type']);
-        $where[] = $deep ? 'x.id IN (SELECT file_id FROM file_links WHERE folder_id IN (WITH RECURSIVE t(id) AS (SELECT ? UNION SELECT d.id FROM folders d JOIN t ON d.parent_id = t.id) SELECT id FROM t))'
-                         : 'x.id IN (SELECT file_id FROM file_links WHERE folder_id = ?)';
-        $args[] = (int)$f['folder_id'];
+        // והקבצים שמשויכים לספק / לשלב של התיקייה (lib/links.php)
+        $deep = !empty($f['q']) || !empty($f['type']) || !empty($f['deep']);
+        $fl = pm_db()->prepare($deep ? 'WITH RECURSIVE t(id) AS (SELECT ? UNION SELECT d.id FROM folders d JOIN t ON d.parent_id = t.id) SELECT f.* FROM folders f JOIN t ON t.id = f.id'
+                                     : 'SELECT * FROM folders WHERE id = ?');
+        $fl->execute([(int)$f['folder_id']]);
+        $tree = array_filter($fl->fetchAll(), fn($x) => (int)$x['project_id'] === $projectId);
+        if (!$tree) return [];
+        [$w, $a] = pm_folders_files_where($projectId, $tree);
+        $where[] = $w;
+        array_push($args, ...$a);
     }
     if (!empty($f['type']) && isset(PM_FILE_TYPES[$f['type']])) { $where[] = 'x.type = ?'; $args[] = $f['type']; }
     if (!empty($f['q'])) { $where[] = '(x.name LIKE ? OR x.note LIKE ?)'; $like = '%' . strtr((string)$f['q'], ['%' => '', '_' => '']) . '%'; array_push($args, $like, $like); }
@@ -239,18 +247,19 @@ function pm_file_uses(array $ids): array
                 + (array_key_exists('stage_ref', $r) ? ['stage_id' => $r['stage_ref'] !== null ? (int)$r['stage_ref'] : null] : []);
         }
     };
-    $add("SELECT q.file_id, q.id, s.name AS text, c.name AS supplier, c.id AS supplier_id, q.status FROM quotes q JOIN stages s ON s.id = q.stage_id JOIN contacts c ON c.id = q.supplier_id WHERE q.file_id IN ($in)", 'quote');
-    $add("SELECT k.file_id, k.id, k.title AS text, c.name AS supplier, c.id AS supplier_id FROM contracts k JOIN contacts c ON c.id = k.supplier_id WHERE k.file_id IN ($in)", 'contract');
-    $add("SELECT o.file_id, o.id, o.reason AS text, c.name AS supplier, c.id AS supplier_id, o.status FROM change_orders o JOIN contacts c ON c.id = o.supplier_id WHERE o.file_id IN ($in)", 'change');
-    $add("SELECT p.file_id, p.id, p.id AS payment_id, p.title AS text, c.name AS supplier, c.id AS supplier_id, p.status FROM payments p JOIN contacts c ON c.id = p.supplier_id WHERE p.file_id IN ($in)", 'payment');
-    $add("SELECT p.invoice_file_id AS file_id, p.id, p.id AS payment_id, p.title AS text, c.name AS supplier, c.id AS supplier_id, p.status FROM payments p JOIN contacts c ON c.id = p.supplier_id WHERE p.invoice_file_id IN ($in)", 'invoice');
-    $add("SELECT x.file_id, x.id, p.id AS payment_id, p.title AS text, c.name AS supplier, c.id AS supplier_id, x.status FROM payment_proofs x JOIN payments p ON p.id = x.payment_id JOIN contacts c ON c.id = p.supplier_id WHERE x.file_id IN ($in)", 'proof');
+    $add("SELECT q.file_id, q.id, s.name AS text, c.name AS supplier, c.id AS supplier_id, q.status, q.stage_id AS stage_ref FROM quotes q JOIN stages s ON s.id = q.stage_id JOIN contacts c ON c.id = q.supplier_id WHERE q.file_id IN ($in)", 'quote');
+    $add("SELECT k.file_id, k.id, k.title AS text, c.name AS supplier, c.id AS supplier_id, CASE WHEN json_valid(k.stage_ids) AND json_array_length(k.stage_ids) = 1 THEN json_extract(k.stage_ids, '$[0]') END AS stage_ref FROM contracts k JOIN contacts c ON c.id = k.supplier_id WHERE k.file_id IN ($in)", 'contract');
+    $add("SELECT o.file_id, o.id, o.reason AS text, c.name AS supplier, c.id AS supplier_id, o.status, o.stage_id AS stage_ref FROM change_orders o JOIN contacts c ON c.id = o.supplier_id WHERE o.file_id IN ($in)", 'change');
+    $add("SELECT p.file_id, p.id, p.id AS payment_id, p.title AS text, c.name AS supplier, c.id AS supplier_id, p.status, p.stage_id AS stage_ref FROM payments p JOIN contacts c ON c.id = p.supplier_id WHERE p.file_id IN ($in)", 'payment');
+    $add("SELECT p.invoice_file_id AS file_id, p.id, p.id AS payment_id, p.title AS text, c.name AS supplier, c.id AS supplier_id, p.status, p.stage_id AS stage_ref FROM payments p JOIN contacts c ON c.id = p.supplier_id WHERE p.invoice_file_id IN ($in)", 'invoice');
+    $add("SELECT x.file_id, x.id, p.id AS payment_id, p.title AS text, c.name AS supplier, c.id AS supplier_id, x.status, p.stage_id AS stage_ref FROM payment_proofs x JOIN payments p ON p.id = x.payment_id JOIN contacts c ON c.id = p.supplier_id WHERE x.file_id IN ($in)", 'proof');
     $add("SELECT e.file_id, e.id, e.title AS text FROM expenses e WHERE e.file_id IN ($in)", 'expense');
-    $add("SELECT r.file_id, r.report_id AS id, COALESCE(NULLIF(substr(x.text, 1, 60), ''), s.name, '') AS text, c.name AS supplier, c.id AS supplier_id FROM report_files r JOIN reports x ON x.id = r.report_id
-          LEFT JOIN stages s ON s.id = x.stage_id LEFT JOIN contacts c ON c.id = x.supplier_id WHERE r.file_id IN ($in)", 'report');
+    $add("SELECT r.file_id, r.report_id AS id, COALESCE(NULLIF(substr(x.text, 1, 60), ''), s.name, '') AS text, c.name AS supplier, c.id AS supplier_id, x.stage_id AS stage_ref FROM report_files r JOIN reports x ON x.id = r.report_id
+          LEFT JOIN stages s ON s.id = x.stage_id LEFT JOIN contacts c ON c.id = x.supplier_id WHERE r.file_id IN ($in) AND x.deleted_at IS NULL", 'report');
     // שיוך כללי להתקשרות (ספק × שלב) — "מסמך אחר" (lib/engage.php)
     $add("SELECT d.file_id, d.supplier_id AS id, COALESCE(s.name, '') AS text, c.name AS supplier, c.id AS supplier_id, d.stage_id AS stage_ref FROM file_refs d
           JOIN contacts c ON c.id = d.supplier_id LEFT JOIN stages s ON s.id = d.stage_id WHERE d.file_id IN ($in)", 'doc');
+    pm_uses_stage_names($out); // שם השלב לכל שיוך — לראות את השיוך המדויק (lib/links.php)
     return $out;
 }
 

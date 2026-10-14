@@ -86,8 +86,9 @@ function pm_trade_folder(int $projectId, int $supplierId, int $stageId): ?int
     $p->execute([$projectId, $supplierId]);
     $parent = (int)$p->fetchColumn();
     if (!$parent) return null;
-    $f = $db->prepare("SELECT id FROM folders WHERE project_id = ? AND parent_id = ? AND kind = 'trade' AND stage_id = ?");
-    $f->execute([$projectId, $parent, $stageId]);
+    // במתחם היא בתוך קבוצת המקצוע ("חשמל" ← דירה) — לפי ספק ושלב, לא לפי ההורה (lib/links.php)
+    $f = $db->prepare("SELECT id FROM folders WHERE project_id = ? AND kind = 'trade' AND contact_id = ? AND stage_id = ?");
+    $f->execute([$projectId, $supplierId, $stageId]);
     $id = (int)$f->fetchColumn();
     if ($id) return $id;
     $db->prepare("INSERT INTO folders (project_id, parent_id, kind, contact_id, stage_id, name, sort, created_at) VALUES (?, ?, 'trade', ?, ?, ?, 0, ?)")
@@ -98,11 +99,7 @@ function pm_trade_folder(int $projectId, int $supplierId, int $stageId): ?int
 /** לכל תיקיית ספק — תת-תיקייה לכל מקצוע שהוא עובד בו (pm_ensure_folders). */
 function pm_ensure_trade_folders(int $projectId): void
 {
-    $st = pm_db()->prepare("SELECT contact_id FROM folders WHERE project_id = ? AND kind = 'contact' AND parent_id IS NULL AND contact_id IS NOT NULL");
-    $st->execute([$projectId]);
-    foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $cid) {
-        foreach (pm_supplier_stages($projectId, (int)$cid) as $sid) pm_trade_folder($projectId, (int)$cid, $sid);
-    }
+    pm_ensure_link_tree($projectId); // ספק ← מקצוע, ושלב ← ספק (lib/links.php)
 }
 
 /**
@@ -160,8 +157,9 @@ function pm_file_ref_add(array $user, array $in): array
     $db = pm_db();
     $ins = $db->prepare('INSERT OR REPLACE INTO file_refs (file_id, project_id, supplier_id, stage_id, kind, note, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)');
     foreach ($ids as $fid) {
-        pm_file_claim($projectId, $fid, null, $supplierId, false, $stageId);
+        // קודם השיוך, אחר כך המקום — כך גם ספק שעוד אין לו תיקייה (רק מסמך) מקבל אותה (lib/links.php)
         $ins->execute([$fid, $projectId, $supplierId, $stageId, 'doc', $note, $user['id'], pm_now()]);
+        pm_file_claim($projectId, $fid, null, $supplierId, false, $stageId);
     }
     pm_event($user, $projectId, 'file', count($ids) === 1 ? '📎 מסמך שויך ל{supplier}{stage}' : '📎 {n} מסמכים שויכו ל{supplier}{stage}',
         ['files' => $ids, 'supplier' => $supplierId], ['n' => count($ids), 'supplier' => pm_contact_name($supplierId), 'stage' => $stageId ? ' · ' . pm_trade_folder_name($stageId) : '']);
@@ -251,14 +249,8 @@ function pm_engagement(array $user, array $in): array
         $fr->execute([$projectId, $supplierId]);
         $folder = (int)$fr->fetchColumn() ?: null;
     }
-    $files = $folder ? pm_files_list($user, $projectId, ['folder_id' => $folder, 'type' => '']) : [];
-    if ($folder && !$stageId) {
-        // כל המקצועות — גם מה שבתיקיות המקצוע שמתחת לתיקיית הספק
-        $sub = $db->prepare('SELECT id FROM folders WHERE project_id = ? AND parent_id = ?');
-        $sub->execute([$projectId, $folder]);
-        foreach ($sub->fetchAll(PDO::FETCH_COLUMN) as $fid) $files = array_merge($files, pm_files_list($user, $projectId, ['folder_id' => (int)$fid, 'type' => '']));
-        usort($files, fn($a, $b) => strcmp($b['created_at'], $a['created_at']));
-    }
+    // כל המקצועות — גם מה שבתיקיות המקצוע שמתחת; וכל מה שמשויך (lib/links.php)
+    $files = $folder ? pm_files_list($user, $projectId, ['folder_id' => $folder, 'type' => '', 'deep' => !$stageId]) : [];
 
     return [
         'supplier' => ['id' => (int)$sup['id'], 'name' => $sup['name'], 'phone' => $sup['phone'], 'company' => $sup['company']],

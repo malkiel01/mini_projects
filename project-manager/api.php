@@ -21,6 +21,8 @@ pm_log_install_handlers();
 pm_survey_migrate();
 // מייל התזכורות היומי — "קרון" שרץ בבקשה הראשונה אחרי 07:00. תקלה בו לא מפילה את הבקשה.
 try { pm_digest_tick(); } catch (Throwable $e) { pm_log('error', 'mail', 'digest.failed', ['message' => $e->getMessage()]); }
+// תיקון שיוכים חד-פעמי בפרויקטים קיימים (lib/links.php) — פעם אחת, בבקשה הראשונה אחרי הפריסה
+try { pm_links_repair_once(); } catch (Throwable $e) { pm_log('error', 'data', 'links.repair.failed', ['message' => $e->getMessage()]); }
 $PM_T0 = microtime(true);
 
 header('Content-Type: application/json; charset=utf-8');
@@ -220,6 +222,9 @@ try {
         'POST file-ref'       => pm_file_ref_add($user, $in),
         'GET engagement'      => pm_engagement($user, $in),
         'POST file-unref'     => pm_file_ref_remove($user, $in),
+        // שיוך דו-צדדי (lib/links.php): הסרת שיוך מחלון הקובץ; התיקייה של שלב (מחלון השלב)
+        'POST file-unlink-use' => pm_file_unlink_use($user, $in),
+        'GET stage-folder'    => pm_stage_folder($user, (int)($in['project_id'] ?? 0), (int)($in['stage_id'] ?? 0)),
         'GET finance-export'  => pm_finance_export($user, $in),
         // כ5: הוצאות ישירות, שכר הטרחה (אבני דרך), כרטסת ספק
         'POST expense'        => pm_expense_save($user, $in),

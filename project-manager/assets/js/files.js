@@ -23,8 +23,22 @@ const Files = (() => {
     /** "🧾 הצעת מחיר — אבי · חשמל": איפה הקובץ משמש. */
     function useLabel(u) {
         const [ic, l] = USE[u.kind] || ['📄', ''];
-        const what = ['quote', 'doc'].includes(u.kind) ? [u.supplier, t(u.text)] : u.kind === 'contract' ? [u.supplier, u.text] : [u.text, u.supplier];
-        return `${ic} ${t(l)} — ${what.filter(Boolean).join(' · ')}`;
+        return `${ic} ${t(l)} — ${useWhere(u)}`;
+    }
+    /** השיוך המדויק: ספק · שלב (· מה) — "נתנאל פלאי · אינסטלציה · מקדמה". */
+    function useWhere(u) {
+        const what = ['quote', 'doc', 'report'].includes(u.kind) && u.text === (u.stage || '').split(' · ')[0] ? '' : u.text;
+        return [u.supplier, u.stage ? t(u.stage) : (['doc', 'contract'].includes(u.kind) ? t('כל המקצועות') : ''), what].filter(Boolean).join(' · ');
+    }
+    /** ספק / שלב מהתיקייה: "ספק / מקצוע", "שלב / ספק" — שניהם; תיקיית ספק — הספק; שלב — השלב. */
+    function ctxOf(id) {
+        const ctx = {};
+        for (let x = folderById(id); x; x = folderById(x.parent_id)) {
+            if (['trade', 'ssup', 'stage'].includes(x.kind) && x.stage_id && ctx.stage === undefined) ctx.stage = x.stage_id;
+            if (['contact', 'ssup'].includes(x.kind) && x.contact_id && ctx.supplier === undefined) ctx.supplier = x.contact_id;
+        }
+        if (ctx.supplier === undefined) delete ctx.stage;
+        return ctx;
     }
     // סוגים שהם מסמך של רשומה — בלי שיוך, הקובץ "לא משויך" (למשל הצעה שהועלתה ב"קבצים" ולא נרשמה כהצעה)
     const RECORD_TYPES = ['quote', 'contract', 'invoice', 'proof'];
@@ -64,13 +78,8 @@ const Files = (() => {
         $('#fsel-link').addEventListener('click', () => {
             const list = files.filter(f => sel.has(f.id)).map(f => ({ id: f.id, name: f.name }));
             if (!list.length) return;
-            // מהתיקייה הנוכחית: "ספק / מקצוע" — שניהם ידועים; תיקיית ספק — הספק
-            const ctx = {};
-            for (let x = folderById(folderId); x; x = folderById(x.parent_id)) {
-                if (x.kind === 'trade' && x.stage_id) ctx.stage = x.stage_id;
-                if (x.kind === 'contact' && x.contact_id) ctx.supplier = x.contact_id;
-            }
-            if (!ctx.supplier) delete ctx.stage;
+            // מהתיקייה הנוכחית: "ספק / מקצוע" או "שלב / ספק" — שניהם ידועים; תיקיית ספק — הספק
+            const ctx = ctxOf(folderId);
             Linker.open(list, { projectId: project.id, ...ctx, onDone: () => { setSelecting(false); loadFolders().then(loadFiles); } });
         });
         for (const id of ['#folder-list', '#file-list']) {
@@ -92,7 +101,12 @@ const Files = (() => {
         $('#add-link').addEventListener('click', addLink);
         $('#file-links').addEventListener('click', e => { const b = e.target.closest('[data-unlink]'); if (b) unlink(Number(b.dataset.unlink)); });
         $('#file-delete').addEventListener('click', deleteFile);
-        $('#file-uses').addEventListener('click', e => { const b = e.target.closest('[data-use]'); if (b) goUse(current.uses[Number(b.dataset.use)]); });
+        $('#file-uses').addEventListener('click', e => {
+            const x = e.target.closest('[data-unuse]');
+            if (x) { unlinkUse(current.uses[Number(x.dataset.unuse)]); return; }
+            const b = e.target.closest('[data-use]');
+            if (b) goUse(current.uses[Number(b.dataset.use)]);
+        });
         $('#file-link-start').addEventListener('click', () => {
             const f = { id: current.id, name: current.name }, ctx = fileContext(current);
             $('#file-dlg').close();
@@ -148,7 +162,7 @@ const Files = (() => {
         $('#folder-list').innerHTML = subs.map(f => `<li class="card" data-folder="${f.id}" tabindex="0" role="button" aria-label="${esc(t(f.name))}">
             <span class="ficon" aria-hidden="true">${f.icon}</span>
             <div class="body"><div class="l1"><span class="one">${esc(t(f.name))}</span></div>
-                <div class="l2">${[f.files ? esc(t('{n} קבצים', { n: f.files })) : esc(t('ריקה')), count(f.id) ? esc(t('{n} תיקיות', { n: count(f.id) })) : ''].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>')}</div></div>
+                <div class="l2">${[f.files ? esc(t('{n} קבצים', { n: f.files })) : count(f.id) ? '' : esc(t('ריקה')), count(f.id) ? esc(t('{n} תיקיות', { n: count(f.id) })) : ''].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>')}</div></div>
             ${f.system ? '' : `<button class="icon-btn" data-edit-folder="${f.id}" aria-label="${esc(t('עריכת התיקייה {name}', { name: f.name }))}">✏️</button>`}
         </li>`).join('');
         $('#folder-list').hidden = !subs.length;
@@ -190,7 +204,8 @@ const Files = (() => {
 
     function fileRow(f) {
         const here = folderId && f.folders.find(l => l.folder_id === folderId);
-        const shortcut = here && !here.home;
+        // קיצור דרך — או משויך לכאן (ספק / שלב) בלי לשבת בתיקייה (lib/links.php)
+        const shortcut = folderId && (!here || !here.home);
         const home = f.folders.find(l => l.home);
         const thumb = f.has_thumb
             ? `<img class="fthumb" src="${fileUrl(f.id, '&thumb=1')}" alt="" loading="lazy" width="40" height="40">`
@@ -203,7 +218,7 @@ const Files = (() => {
             ${selecting ? `<span class="fsel-box" aria-hidden="true">${sel.has(f.id) ? '☑️' : '⬜'}</span>` : ''}
             ${thumb}
             <div class="body"><div class="l1"><span class="one">${esc(f.name)}</span>
-                ${f.visible ? `<span class="chip" title="${esc(t('גלוי בפורטל'))}">👁</span>` : ''}${shortcut ? `<span class="chip" title="${esc(t('קיצור דרך'))}">🔗</span>` : ''}</div>
+                ${f.visible ? `<span class="chip" title="${esc(t('גלוי בפורטל'))}">👁</span>` : ''}${shortcut ? `<span class="chip" title="${esc(here ? t('קיצור דרך') : t('משויך לכאן'))}">🔗</span>` : ''}</div>
                 <div class="l2">${meta}</div>
                 ${f.uses?.length ? `<div class="l2 f-uses">${f.uses.slice(0, 2).map(u => `<span class="chip">${esc(useLabel(u))}</span>`).join('')}${f.uses.length > 2 ? `<span class="chip">+${f.uses.length - 2}</span>` : ''}</div>`
                     : RECORD_TYPES.includes(f.type) ? `<div class="l2 f-uses"><span class="chip fin-warn">${esc(t('לא משויך — לחצו לשיוך'))}</span></div>` : ''}</div>
@@ -434,9 +449,10 @@ const Files = (() => {
         // משויך: שורה לכל רשומה (אייקון, מה, ספק · שלב) — לחיצה פותחת אותה. לא משויך: משפט אחד, והשיוך מתחת
         $('#file-uses').innerHTML = uses.length ? `<ul class="use-list">${uses.map((u, i) => {
             const [ic, l] = USE[u.kind] || ['📄', ''];
-            const sub = ['quote', 'doc'].includes(u.kind) ? [u.supplier, u.text ? t(u.text) : (u.kind === 'doc' ? t('כל המקצועות') : '')] : u.kind === 'contract' ? [u.supplier, u.text] : [u.text, u.supplier];
-            return `<li><button type="button" class="use-row" data-use="${i}"><span class="use-ic" aria-hidden="true">${ic}</span>
-                <span class="use-tx"><b>${esc(t(l))}</b><small>${esc(sub.filter(Boolean).join(' · '))}</small></span><span class="use-go" aria-hidden="true">‹</span></button></li>`;
+            // השורה — פותחת את הרשומה המדויקת; ✕ — הסרת השיוך (הרשומה נשארת)
+            return `<li class="use-li"><button type="button" class="use-row" data-use="${i}"><span class="use-ic" aria-hidden="true">${ic}</span>
+                <span class="use-tx"><b>${esc(t(l))}</b><small>${esc(useWhere(u))}</small></span><span class="use-go" aria-hidden="true">‹</span></button>
+                <button type="button" class="icon-btn use-x" data-unuse="${i}" aria-label="${esc(t('הסרת השיוך — {what}', { what: t(l) }))}">✕</button></li>`;
         }).join('')}</ul>`
             : `<p class="use-empty${RECORD_TYPES.includes(current.type) ? ' warn' : ''}">${esc(RECORD_TYPES.includes(current.type) ? t('הקובץ עוד לא משויך — בחרו למטה למה הוא שייך.') : t('הקובץ לא משמש באף רשומה.'))}</p>`;
         $('#file-link-title').textContent = uses.length ? t('שיוך נוסף') : t('לשייך את הקובץ');
@@ -445,17 +461,8 @@ const Files = (() => {
             : t('לספק במקצוע — חוזה, הצעה, תשלום, תיעוד…');
     }
 
-    /** מה ידוע מהתיקייה של הקובץ: "ספק / מקצוע" — שניהם; תיקיית ספק — הספק. */
-    function fileContext(f) {
-        const home = folderById(f.folders.find(l => l.home)?.folder_id);
-        const ctx = {};
-        for (let x = home; x; x = folderById(x.parent_id)) {
-            if (x.kind === 'trade' && x.stage_id) ctx.stage = x.stage_id;
-            if (x.kind === 'contact' && x.contact_id) ctx.supplier = x.contact_id;
-        }
-        if (ctx.stage && ctx.supplier === undefined) delete ctx.stage;
-        return ctx;
-    }
+    /** מה ידוע מהתיקייה של הקובץ (ctxOf). */
+    const fileContext = f => ctxOf(f.folders.find(l => l.home)?.folder_id);
 
     /** מהקובץ לרשומה: ההצעה, החוזה, אבן הדרך, התוספת, ההוצאה, הדיווח. */
     function goUse(u) {
@@ -466,7 +473,25 @@ const Files = (() => {
         else if (u.kind === 'change') Finance.openWhenReady({ change: u.id }, pid);
         else if (u.kind === 'expense') Finance.openWhenReady({ expense: u.id }, pid);
         else if (u.payment_id) { Payments.openWhenReady(u.payment_id); location.hash = `#/p/${pid}/payments`; }
-        else if (u.kind === 'report') location.hash = `#/p/${pid}/field`;
+        else if (u.kind === 'report') Field.focus(pid, u.id);
+        else if (u.kind === 'doc') Engage.open(pid, u.supplier_id, u.stage_id || null);
+    }
+
+    /** ✕ בשורת שיוך: הרשומה נשארת בלי הקובץ; קובץ שלא נשאר לו שיוך — חוזר ל"ממתין למיון" (lib/links.php). */
+    async function unlinkUse(u) {
+        const [, l] = USE[u.kind] || ['', ''];
+        const msg = u.kind === 'report' ? t('להוציא את הקובץ מהדיווח מהשטח ({where})? הדיווח נשאר.', { where: useWhere(u) })
+            : u.kind === 'doc' ? t('להסיר את השיוך ל{where}?', { where: useWhere(u) })
+            : t('להסיר את הקובץ מ{what} ({where})? הרשומה נשארת — בלי המסמך.', { what: t(l), where: useWhere(u) });
+        if (!confirm(msg)) return;
+        try {
+            const d = await api('file-unlink-use', { body: { file_id: current.id, kind: u.kind, id: u.id, stage_id: u.stage_id || null } });
+            current = d.file;
+            renderUses();
+            $('#file-dlg form').elements.home.value = current.folders.find(l => l.home)?.folder_id ?? '';
+            toast(d.inbox ? t('השיוך הוסר — הקובץ חזר ל"ממתין למיון"') : t('השיוך הוסר'));
+            loadFolders().then(loadFiles);
+        } catch (e) { toast(e.message, true); }
     }
 
     // ================= בחירת קובץ קיים (מהחלונות: תוספת, הוצאה, אסמכתא, חשבונית) =================
