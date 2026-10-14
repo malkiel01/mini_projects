@@ -520,3 +520,10 @@ span.inline-field .calc-out { padding: 0 4px; }
 .tile small { white-space: normal; }
 /* "דף" של מסמך נשאר בהיר גם במצב כהה — כמו נייר; השדות בתוכו לפי אותו דף */
 .doc-sheet { --surface: #fff; --ink: #16192b; --line: #e3e6eb; --bg: #f4f5f7; --muted: #5d6475; --brand-soft: #e9eef8; color-scheme: light; color: var(--ink); }
+
+/* ── שלב 12: הנפקה מאקסל ── */
+.map-row { padding: var(--s2) var(--s3); flex-wrap: wrap; }
+.map-row .use-tx { flex: 1 1 140px; }
+.map-row select { flex: 1 1 180px; width: auto; }
+.use-tx small.wrap { white-space: normal; }
+.bulk { display: grid; gap: var(--s3); }

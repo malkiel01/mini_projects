@@ -522,3 +522,4 @@ function doc_delete(array $user, array $b): array
 }
 
 require_once __DIR__ . '/participants.php';
+require_once __DIR__ . '/bulk.php';

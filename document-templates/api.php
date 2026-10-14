@@ -46,7 +46,7 @@ $POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'dev_user
            'doc_create', 'doc_save', 'doc_complete', 'doc_archive', 'doc_delete', 'doc_downloaded',
            'part_contact', 'part_link', 'fill_otp_send', 'fill_otp_verify', 'fill_save', 'fill_complete',
            'doc_upload', 'fill_upload', 'dev_quota', 'share_set', 'share_remove', 'share_leave',
-           'contact_save', 'contact_archive', 'doc_contact', 'doc_tags', 'tpl_tags'];
+           'contact_save', 'contact_archive', 'doc_contact', 'doc_tags', 'tpl_tags', 'bulk_preview', 'bulk_issue'];
 
 try {
     if (in_array($action, $POSTS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -66,7 +66,7 @@ try {
         'health' => (function () {
             $probe = 'בדיקה';
             db();
-            return ['ok' => true, 'stage' => 11, 'php' => PHP_VERSION, 'sqlite' => true,
+            return ['ok' => true, 'stage' => 12, 'php' => PHP_VERSION, 'sqlite' => true,
                 'crypto' => unseal(seal($probe)) === $probe,
                 'mail' => function_exists('mail'), 'zip' => class_exists('ZipArchive'),
                 'finfo' => class_exists('finfo'),
@@ -88,6 +88,11 @@ try {
         'tpl_save'    => tpl_save($session, $body),
         'tpl_set_source' => tpl_set_source($session, $body),
         'tpl_create_authored' => tpl_create_authored($session, $body),
+        // שלב 12: הנפקה מאקסל וייצוא
+        'bulk_preview' => bulk_preview($session, $_POST, $_FILES),
+        'bulk_issue'   => bulk_issue($session, $_POST, $_FILES),
+        'bulk_sample'  => bulk_sample($session, (int)($_GET['template_id'] ?? 0)),
+        'doc_export'   => doc_export($session, $_GET),
         'tpl_archive' => tpl_archive($session, $body),
         'tpl_delete'  => tpl_delete($session, $body),
         'doc_list'       => doc_list($session, $_GET),

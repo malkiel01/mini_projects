@@ -16,6 +16,7 @@
     restored: 'שוחזר מהארכיון', downloaded: 'הורד PDF', deleted: 'נמחק',
     link_issued: 'נשלח קישור', opened: 'נפתח', verified: 'אומת בקוד', participant_completed: 'משתתף סיים',
     file_uploaded: 'צורף קובץ', shared: 'שותף', unshared: 'שיתוף הוסר', contact_set: 'נקבע איש קשר', tags_set: 'עודכנו תגיות',
+    imported: 'נוצר מאקסל', exported: 'יוצא לאקסל',
   };
   const VIA = { email: 'במייל', link: 'כקישור', whatsapp: 'בוואטסאפ' };
   const EDITABLE = ['draft', 'in_progress'];
@@ -148,7 +149,7 @@
           sel.replaceChildren(el('option', { value: '' }, first), ...items.map(([v, t]) => el('option', { value: v, selected: String(v) === cur }, t)));
         };
         if (!f.template_id.value) keep(f.template_id, [...new Map(r.documents.map(d => [d.template_id, d.template]))], 'כל התבניות');
-        keep(f.tag, r.tags.map(t => [t, t]), 'כל התגיות');
+        keep(f.tag, [...new Set([...r.tags, f.tag.value].filter(Boolean))].map(t => [t, t]), 'כל התגיות');
         render(r.documents);
       } catch (e) {
         msg.replaceChildren(notice(e.message, 'bad'));
@@ -157,6 +158,7 @@
 
     // בחירות שמגיעות מהכתובת: #docs?template=5 / ?contact=7
     if (params.get('template')) f.template_id.append(el('option', { value: params.get('template'), selected: true }, 'התבנית הנבחרת'));
+    if (params.get('tag')) f.tag.append(el('option', { value: params.get('tag'), selected: true }, params.get('tag')));
     try {
       const cs = await window.DTCatalog.contacts();
       f.contact_id.append(...cs.map(c => el('option', { value: c.id, selected: String(c.id) === params.get('contact') }, c.name)));
@@ -167,8 +169,15 @@
     for (const [k, n] of Object.entries(f)) if (k !== 'q') n.addEventListener('change', load);
     fillViews();
     window.DT.setTab('docs');
+    // שלב 12: ייצוא לאקסל — של תבנית אחת (לכל תבנית שדות אחרים), לפי הסינון
+    const exportBtn = el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'ייצוא לאקסל', title: 'ייצוא לאקסל', onclick: async () => {
+      if (!f.template_id.value) { msg.replaceChildren(notice('בחרו תבנית בסינון (⚙️) — הייצוא הוא של תבנית אחת', 'bad')); return; }
+      msg.replaceChildren();
+      try { await window.DTBulk.exportFile(current()); }
+      catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
+    } }, '📤');
     show(el('section', { class: 'screen' },
-      el('div', { class: 'toolbar' }, f.q, filterBtn),
+      el('div', { class: 'toolbar' }, f.q, filterBtn, exportBtn),
       el('p', { class: 'hint' }, count),
       msg, box));
     await load();
