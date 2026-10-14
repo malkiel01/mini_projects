@@ -66,6 +66,8 @@ try {
     pm_lang(isset(PM_LANGS[$h]) ? $h : ($a['contact']['lang'] ?? 'he'));
     pm_log_user(['id' => null, 'username' => 'portal:' . $a['link']['id'] . ' ' . $a['contact']['name']], true);
 
+    // צפייה בלבד: הפעולות שמשנות כסף או מאשרות — חסומות (העלאת מסמך — מותרת)
+    if (in_array("$method $action", ['POST decide', 'POST pay-approve', 'POST proof', 'POST decide-change', 'POST expense'], true)) pm_portal_need_full($a);
     $result = match ("$method $action") {
         'GET view' => (function () use ($a) {
             pm_portal_seen($a);

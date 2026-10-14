@@ -2,13 +2,13 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="assets/js/i18n.js?v=73"></script>
+    <script src="assets/js/i18n.js?v=74"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=73">
-    <link rel="stylesheet" href="assets/css/devloop.css?v=73">
+    <link rel="stylesheet" href="assets/css/app.css?v=74">
+    <link rel="stylesheet" href="assets/css/devloop.css?v=74">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -1237,8 +1237,13 @@
             </header>
             <div class="sheet-body">
                 <label class="f"><span>איש קשר</span><select name="contact_id" required></select></label>
-                <label class="f"><span id="member-role-label">תפקיד בפרויקט</span><select name="role_key"></select></label>
-                <p class="hint" id="member-stage-hint" hidden>רק שלבים שיש בפרויקט. אין שלב מתאים (למשל מדידה)? הוסיפו אותו קודם במסך השלבים. שלב בלי ספק — הספק הזה יהיה הספק שלו.</p>
+                <label class="f" id="member-role-f"><span id="member-role-label">תפקיד בפרויקט</span><select name="role_key"></select></label>
+                <fieldset class="f member-stages" id="member-stages" hidden><legend>השלבים שלו בפרויקט</legend><div class="checks" id="member-stage-list"></div></fieldset>
+                <p class="hint" id="member-stage-hint" hidden>אפשר כמה שלבים. רק שלבים שיש בפרויקט — אין שלב מתאים (למשל מדידה)? הוסיפו אותו קודם במסך השלבים. שלב בלי ספק — הספק הזה יהיה הספק שלו.</p>
+                <label class="f" id="member-access-f" hidden><span>בקישור האישי</span><select name="portal_access">
+                    <option value="full">מאשר הצעות ותשלומים — כמו הלקוח</option>
+                    <option value="view">צפייה והעלאת מסמכים בלבד</option>
+                </select></label>
                 <label class="f"><span>הערה (רק לנו)</span><input name="note" maxlength="100" placeholder="למשל: זמינה אחרי 17:00, מעדיפה וואטסאפ"></label>
                 <p class="error" role="alert" hidden></p>
             </div>
@@ -1347,27 +1352,27 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=73"></script>
-    <script src="assets/js/contacts.js?v=73"></script>
-    <script src="assets/js/device-contacts.js?v=73"></script>
-    <script src="assets/js/viewer.js?v=73"></script>
-    <script src="assets/js/devloop.js?v=73"></script>
-    <script src="assets/js/engage.js?v=73"></script>
-    <script src="assets/js/linker.js?v=73"></script>
-    <script src="assets/js/files.js?v=73"></script>
-    <script src="assets/js/lightbox.js?v=73"></script>
-    <script src="assets/js/field.js?v=73"></script>
+    <script src="assets/js/core.js?v=74"></script>
+    <script src="assets/js/contacts.js?v=74"></script>
+    <script src="assets/js/device-contacts.js?v=74"></script>
+    <script src="assets/js/viewer.js?v=74"></script>
+    <script src="assets/js/devloop.js?v=74"></script>
+    <script src="assets/js/engage.js?v=74"></script>
+    <script src="assets/js/linker.js?v=74"></script>
+    <script src="assets/js/files.js?v=74"></script>
+    <script src="assets/js/lightbox.js?v=74"></script>
+    <script src="assets/js/field.js?v=74"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=73"></script>
-    <script src="assets/js/projects.js?v=73"></script>
-    <script src="assets/js/quotes.js?v=73"></script>
-    <script src="assets/js/payments.js?v=73"></script>
-    <script src="assets/js/fin-report.js?v=73"></script>
-    <script src="assets/js/finance.js?v=73"></script>
-    <script src="assets/js/finance-all.js?v=73"></script>
-    <script src="assets/js/hebcal.js?v=73"></script>
-    <script src="assets/js/calendar.js?v=73"></script>
-    <script src="assets/js/settings.js?v=73"></script>
-    <script src="assets/js/app.js?v=73"></script>
+    <script src="assets/js/share.js?v=74"></script>
+    <script src="assets/js/projects.js?v=74"></script>
+    <script src="assets/js/quotes.js?v=74"></script>
+    <script src="assets/js/payments.js?v=74"></script>
+    <script src="assets/js/fin-report.js?v=74"></script>
+    <script src="assets/js/finance.js?v=74"></script>
+    <script src="assets/js/finance-all.js?v=74"></script>
+    <script src="assets/js/hebcal.js?v=74"></script>
+    <script src="assets/js/calendar.js?v=74"></script>
+    <script src="assets/js/settings.js?v=74"></script>
+    <script src="assets/js/app.js?v=74"></script>
 </body>
 </html>

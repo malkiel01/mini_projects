@@ -2195,5 +2195,13 @@
     "רק שלבים שיש בפרויקט. אין שלב מתאים (למשל מדידה)? הוסיפו אותו קודם במסך השלבים. שלב בלי ספק — הספק הזה יהיה הספק שלו.": "Seulement les étapes du projet. Pas d'étape adaptée (p. ex. relevé) ? Ajoutez-la d'abord dans l'écran des étapes. Une étape sans fournisseur — ce fournisseur devient le sien.",
     "ספק — בחרו את השלב שלו בפרויקט (אין שלב מתאים? הוסיפו שלב קודם)": "Fournisseur — choisissez son étape dans le projet (pas d'étape adaptée ? ajoutez-en une d'abord)",
     "השלב לא נמצא בפרויקט": "L'étape est introuvable dans le projet",
-    "📋 מטלות": "📋 Tâches"
+    "📋 מטלות": "📋 Tâches",
+    "בחרו לפחות שלב אחד": "Choisissez au moins une étape",
+    "השלבים שלו בפרויקט": "Ses étapes dans le projet",
+    "אפשר כמה שלבים. רק שלבים שיש בפרויקט — אין שלב מתאים (למשל מדידה)? הוסיפו אותו קודם במסך השלבים. שלב בלי ספק — הספק הזה יהיה הספק שלו.": "Plusieurs étapes possibles. Seulement les étapes du projet — pas d'étape adaptée (par ex. relevé) ? Ajoutez-la d'abord dans l'écran des étapes. Une étape sans fournisseur — ce fournisseur devient le sien.",
+    "מאשר הצעות ותשלומים — כמו הלקוח": "Approuve les devis et les paiements — comme le client",
+    "צפייה והעלאת מסמכים בלבד": "Consultation et envoi de documents uniquement",
+    "הקישור שלך לצפייה והעלאת מסמכים בלבד — אישורים ותשלומים נעשים בקישור של הלקוח": "Votre lien sert uniquement à consulter et envoyer des documents — les validations et paiements se font dans le lien du client",
+    "ספק — בחרו את השלבים שלו בפרויקט (אין שלב מתאים? הוסיפו שלב קודם)": "Fournisseur — choisissez ses étapes dans le projet (pas d'étape adaptée ? ajoutez-en une d'abord)",
+    "👁️ הקישור שלך לצפייה ולהעלאת מסמכים. אישורים ותשלומים נעשים בקישור של הלקוח.": "👁️ Votre lien sert à consulter et envoyer des documents. Les validations et paiements se font dans le lien du client."
 }

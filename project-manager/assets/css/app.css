@@ -1048,3 +1048,11 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 
 /* אזור הפיתוח ← 📋 מטלות: העיצוב ב-devloop.css (מסונכרן מ-devloop/src) */
 #set-tasks { display: grid; gap: var(--s3); }
+
+/* צוות: ספק בכמה שלבים (תיבות סימון) */
+.member-stages { border: 0; padding: 0; margin: 0; }
+.member-stages legend { font-size: .85rem; color: var(--muted); margin-bottom: 4px; }
+.member-stages .checks { display: grid; gap: 2px; max-block-size: 40vh; overflow: auto; border: 1px solid var(--line); border-radius: var(--r); padding: 4px var(--s2); }
+.member-stages .check { display: flex; gap: var(--s2); align-items: center; min-block-size: 40px; cursor: pointer; }
+.member-stages .check input { inline-size: 20px; block-size: 20px; min-block-size: 0; min-inline-size: 0; flex: none; margin: 0; padding: 0; }
+.member-stages .check small { color: var(--muted); }

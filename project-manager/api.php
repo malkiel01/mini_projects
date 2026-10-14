@@ -149,7 +149,8 @@ try {
         'POST stages-order' => pm_stages_order($user, (int)($in['project_id'] ?? 0), is_array($in['ids'] ?? null) ? $in['ids'] : []),
         'POST note'       => pm_note($user, (int)($in['project_id'] ?? 0), (string)($in['text'] ?? '')),
         'POST member'     => pm_member($user, (int)($in['project_id'] ?? 0), (int)($in['contact_id'] ?? 0),
-                                       !empty($in['add']), (string)($in['role_key'] ?? ''), (string)($in['note'] ?? '')),
+                                       !empty($in['add']), (string)($in['role_key'] ?? ''), (string)($in['note'] ?? ''),
+                                       (string)($in['portal_access'] ?? 'full')),
         'GET member-roles' => ['roles' => PM_MEMBER_ROLES],
 
         // קבצים ותיקיות (שלב 3)

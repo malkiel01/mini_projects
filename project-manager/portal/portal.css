@@ -63,3 +63,6 @@
 .bank-box form { margin: var(--s2) 0; }
 .proofs .row-btns { margin-top: 4px; }
 .top .lang-pick { flex: none; }
+
+/* לקוח / עו"ד נוסף בצפייה בלבד */
+.readonly-note { margin: 0 0 12px; padding: 10px 12px; border-radius: 12px; background: var(--brand-soft, #eef2ff); font-size: .9rem; }
