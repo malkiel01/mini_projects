@@ -310,6 +310,13 @@
           ' 🔒 קובץ נעול — כמו תמונה; את השדות ממקמים לבד')),
       el('div', { class: 'ops' },
         el('button', { type: 'submit', class: 'primary' }, 'העלאה ופתיחה בעורך'),
+        // שלב 11: בלי קובץ — כותבים את המסמך בכלי עצמו
+        el('button', { type: 'button', class: 'authored-btn', onclick: async () => {
+          const name = upload.querySelector('[name=name]');
+          if (!name.value.trim()) { name.focus(); msg.replaceChildren(notice('קודם שם לתבנית', 'bad')); return; }
+          try { location.hash = 'tpl=' + (await api('tpl_create_authored', { name: name.value })).id; }
+          catch (err) { msg.replaceChildren(notice(err.message, 'bad')); }
+        } }, '✍️ או: לכתוב כאן, בלי קובץ'),
         el('button', { type: 'button', onclick: () => { upload.hidden = true; } }, 'ביטול')));
     upload.querySelector('[name=file]').addEventListener('change', (e) => {
       const name = upload.querySelector('[name=name]');

@@ -58,8 +58,8 @@ function contact_of(array $p): array
 function missing_for(array $schema, array $values, string $role): array
 {
     $out = [];
-    foreach ($schema['fields'] ?? [] as $f) {
-        if (($f['role'] ?? 'owner') === $role && $f['required'] && trim((string)($values[$f['key']] ?? '')) === '') $out[] = $f['label'];
+    foreach (visible_fields($schema, $values) as $f) {
+        if (($f['role'] ?? 'owner') === $role && $f['required'] && $f['type'] !== 'calc' && trim((string)($values[$f['key']] ?? '')) === '') $out[] = $f['label'];
     }
     return $out;
 }
@@ -321,7 +321,7 @@ function fill_save(array $b): array
         );
         foreach ((array)($b['values'] ?? []) as $key => $v) {
             $f = $mine[$key] ?? null;
-            if (!$f) continue;   // שדה של מישהו אחר — לא נוגעים, בשקט
+            if (!$f || $f['type'] === 'calc') continue;   // שדה של מישהו אחר, או מחושב — לא נוגעים, בשקט
             $v = clean_value($f, $v, (int)$d['id']);
             $prev = $old[$key] ?? '';
             if ($v === $prev) continue;
@@ -330,6 +330,7 @@ function fill_save(array $b): array
                 ? ['key' => $key, 'label' => $f['label'], 'signed' => $v !== '']
                 : ['key' => $key, 'label' => $f['label'], 'from' => $prev, 'to' => $v];
         }
+        if ($changes) doc_recalc((int)$d['id'], $schema, $actor);
         if ($changes) {
             $pdo->prepare("UPDATE documents SET status = 'in_progress' WHERE id = ? AND status = 'sent'")->execute([$d['id']]);
             log_event((int)$d['id'], $actor, 'values_saved', ['changes' => $changes]);
@@ -339,8 +340,9 @@ function fill_save(array $b): array
         $pdo->rollBack();
         throw $e;
     }
-    return ['ok' => true, 'saved' => count($changes), 'saved_at' => $now,
-        'progress' => ['required' => 0, 'filled' => 0, 'missing' => missing_for($schema, doc_values((int)$d['id']), $p['role_key'])]];
+    $values = doc_values((int)$d['id']);
+    return ['ok' => true, 'saved' => count($changes), 'saved_at' => $now, 'computed' => computed_values($schema, $values),
+        'progress' => ['required' => 0, 'filled' => 0, 'missing' => missing_for($schema, $values, $p['role_key'])]];
 }
 
 /**
@@ -393,7 +395,7 @@ function fill_asset(): never
     [$p, $d] = fill_context();
     if (needs_otp($p)) throw new ApiError('נדרש אימות', 401);
     $a = tpl_asset_row((int)$d['template_version_id']);
-    $bytes = load_file($a['path']);
+    $bytes = asset_bytes($a);
     header('Content-Type: ' . $a['mime']);
     header('Content-Length: ' . strlen($bytes));
     header('Cache-Control: private, no-store');

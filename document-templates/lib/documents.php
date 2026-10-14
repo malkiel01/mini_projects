@@ -123,6 +123,16 @@ function doc_owned(int $id, array $user, string $min = 'owner'): array
     return $d;
 }
 
+/** שלב 11: הערכים שהשרת מחשב (שדות מחושבים וטבלאות) — מוחזרים לדפדפן אחרי שמירה. */
+function computed_values(array $schema, array $values): array
+{
+    $out = [];
+    foreach ($schema['fields'] ?? [] as $f) {
+        if ($f['type'] === 'calc' || $f['type'] === 'table') $out[$f['key']] = $values[$f['key']] ?? '';
+    }
+    return $out;
+}
+
 function doc_values(int $docId): array
 {
     $st = db()->prepare('SELECT field_key, value_enc FROM field_values WHERE document_id = ? AND row_index = 0');
@@ -135,7 +145,8 @@ function doc_values(int $docId): array
 /** כמה שדות חובה מולאו — לרשימה ולסיום. */
 function doc_progress(array $schema, array $values): array
 {
-    $req = array_filter($schema['fields'] ?? [], fn($f) => $f['required']);
+    // שלב 11: שדה מוסתר (תנאי הצגה) אינו חובה
+    $req = array_filter(visible_fields($schema, $values), fn($f) => $f['required'] && $f['type'] !== 'calc');
     $done = array_filter($req, fn($f) => trim((string)($values[$f['key']] ?? '')) !== '');
     return ['required' => count($req), 'filled' => count($done),
         'missing' => array_values(array_map(fn($f) => $f['label'], array_diff_key($req, $done)))];
@@ -167,8 +178,9 @@ function doc_create(array $user, array $b): array
             'INSERT INTO field_values (document_id, field_key, row_index, value_enc, updated_by, updated_at) VALUES (?, ?, 0, ?, ?, ?)'
         );
         foreach ($schema['fields'] as $f) {
-            if (($f['default'] ?? '') !== '') $ins->execute([$docId, $f['key'], seal($f['default']), 'user:' . $user['id'], $now]);
+            if (($f['default'] ?? '') !== '' && $f['type'] !== 'calc') $ins->execute([$docId, $f['key'], seal($f['default']), 'user:' . $user['id'], $now]);
         }
+        doc_recalc($docId, $schema, 'user:' . $user['id']);
         create_participants($docId, $schema);
         log_event($docId, 'user:' . $user['id'], 'created', ['number' => $number, 'template_version' => (int)$t['current_version']]);
         $pdo->commit();
@@ -279,7 +291,7 @@ function doc_asset(array $user, int $id): never
 {
     $d = doc_owned($id, $user, 'view');
     $a = tpl_asset_row((int)$d['template_version_id']);
-    $bytes = load_file($a['path']);
+    $bytes = asset_bytes($a);
     header('Content-Type: ' . $a['mime']);
     header('Content-Length: ' . strlen($bytes));
     header('Cache-Control: private, no-store');
@@ -322,9 +334,59 @@ function clean_value(array $f, $v, int $docId = 0): string
             return $ids ? json_encode($ids) : '';
         case 'text':
             return mb_substr(preg_replace('/[\r\n]+/', ' ', $v), 0, 2000);
+        case 'table':
+            // שלב 11: שורות — רק העמודות של הטבלה; עמודה מחושבת מחושבת בשרת (doc_recalc)
+            $rows = $v === '' ? [] : json_decode($v, true);
+            if (!is_array($rows)) throw new ApiError('"' . $f['label'] . '": טבלה לא תקינה', 422);
+            if (count($rows) > 200) throw new ApiError('"' . $f['label'] . '": עד 200 שורות', 422);
+            $out = [];
+            foreach ($rows as $r) {
+                if (!is_array($r)) continue;
+                $row = [];
+                foreach ($f['columns'] ?? [] as $c) {
+                    if ($c['type'] === 'calc') continue;
+                    $cell = mb_substr(trim(preg_replace('/[\r\n]+/', ' ', (string)($r[$c['key']] ?? ''))), 0, 1000);
+                    if ($c['type'] === 'number' && $cell !== '' && !is_numeric($cell)) {
+                        throw new ApiError('"' . $f['label'] . ' ← ' . $c['label'] . '": נדרש מספר', 422);
+                    }
+                    $row[$c['key']] = $cell;
+                }
+                $out[] = $row;
+            }
+            return $out ? json_encode($out, JSON_UNESCAPED_UNICODE) : '';
         default:
             return mb_substr($v, 0, 20000);
     }
+}
+
+/**
+ * שלב 11: מחשב מחדש עמודות מחושבות בטבלאות ושדות מחושבים, ושומר מה שהשתנה.
+ * נגזר מהערכים — לא נרשם ביומן בנפרד (היומן מתעד את מה שהוקלד).
+ */
+function doc_recalc(int $docId, array $schema, string $actor): void
+{
+    $fields = $schema['fields'] ?? [];
+    $hasCalc = false;
+    foreach ($fields as $f) if ($f['type'] === 'calc' || ($f['type'] === 'table' && in_array('calc', array_column($f['columns'] ?? [], 'type'), true))) $hasCalc = true;
+    if (!$hasCalc) return;
+    $values = doc_values($docId);
+    $set = [];
+    foreach ($fields as $f) {
+        if ($f['type'] !== 'table') continue;
+        $rows = table_rows($values[$f['key']] ?? '');
+        if (!$rows) continue;
+        $v = json_encode(table_compute($f, $fields, $values, $rows), JSON_UNESCAPED_UNICODE);
+        if ($v !== ($values[$f['key']] ?? '')) $set[$f['key']] = $values[$f['key']] = $v;
+    }
+    $set += calc_all($schema, $values);
+    if (!$set) return;
+    $up = db()->prepare(
+        'INSERT INTO field_values (document_id, field_key, row_index, value_enc, updated_by, updated_at) VALUES (?, ?, 0, ?, ?, ?)
+         ON CONFLICT(document_id, field_key, row_index) DO UPDATE SET
+           value_enc = excluded.value_enc, updated_by = excluded.updated_by, updated_at = excluded.updated_at'
+    );
+    $now = now_iso();
+    foreach ($set as $k => $v) $up->execute([$docId, $k, seal($v), $actor, $now]);
 }
 
 /**
@@ -357,7 +419,7 @@ function doc_save(array $user, array $b): array
         $sentTo = $sentTo->fetchAll(PDO::FETCH_COLUMN);
         foreach ((array)($b['values'] ?? []) as $key => $v) {
             $f = $byKey[$key] ?? null;
-            if (!$f) continue;
+            if (!$f || $f['type'] === 'calc') continue;   // מחושב — רק השרת כותב
             if (in_array($f['role'] ?? 'owner', $sentTo, true)) {
                 throw new ApiError('השדה "' . $f['label'] . '" כבר נשלח למילוי של המשתתף', 409);
             }
@@ -384,6 +446,7 @@ function doc_save(array $user, array $b): array
                 $changes[] = ['key' => '_title', 'label' => 'כותרת', 'from' => unseal($d['title_enc']), 'to' => $title];
             }
         }
+        if ($changes) doc_recalc((int)$d['id'], $schema, $actor);
         if ($changes) {
             if ($d['status'] === 'draft') $pdo->prepare("UPDATE documents SET status = 'in_progress' WHERE id = ?")->execute([$d['id']]);
             log_event((int)$d['id'], $actor, 'values_saved', ['changes' => $changes]);
@@ -393,8 +456,9 @@ function doc_save(array $user, array $b): array
         $pdo->rollBack();
         throw $e;
     }
+    $values = doc_values((int)$d['id']);
     return ['ok' => true, 'saved' => count($changes), 'saved_at' => $now,
-        'progress' => doc_progress($schema, doc_values((int)$d['id']))];
+        'progress' => doc_progress($schema, $values), 'computed' => computed_values($schema, $values)];
 }
 
 /**
@@ -417,6 +481,7 @@ function doc_complete(array $user, array $b): array
 /** נעילה וטביעת אצבע. נקרא מ"סיום" של המנפיק, או כשהמשתתף האחרון סיים. */
 function doc_finalize(array $d, string $actor): void
 {
+    doc_recalc((int)$d['id'], doc_schema($d), $actor);   // הערכים המחושבים — סופיים לפני טביעת האצבע
     $values = doc_values((int)$d['id']);
     ksort($values);
     $hash = hash('sha256', json_encode(['template_version_id' => (int)$d['template_version_id'], 'values' => $values],
