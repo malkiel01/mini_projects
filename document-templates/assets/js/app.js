@@ -319,6 +319,12 @@
         el('div', { class: 'tiles' },
           tile(r >= 3 ? '✏️' : '👁️', r >= 3 ? 'עריכה' : 'צפייה', go(() => { location.hash = 'tpl=' + t.id; })),
           t.used ? tile('🗂️', 'מסמכים', go(() => { location.hash = 'docs?template=' + t.id; })) : null,
+          // שלב 12: הנפקה מאקסל וייצוא התשובות
+          !t.archived && t.fields && r >= 2 ? tile('📥', 'הנפקה מאקסל', go(() => window.DTBulk.open(t)), { sub: 'מסמך לכל שורה' }) : null,
+          t.used ? tile('📤', 'ייצוא לאקסל', go(async () => {
+            try { await window.DTBulk.exportFile({ template_id: t.id }); }
+            catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
+          }), { sub: 'כל התשובות' }) : null,
           r >= 4 ? tile('🔗', 'שיתוף', go(() => shareDialog('template', t.id, t.name, load))) : null,
           r >= 4 ? tile(t.archived ? '♻️' : '🗄️', t.archived ? 'שחזור' : 'ארכיון', go(() => archive(t))) : null,
           t.used || t.access !== 'owner' ? null : tile('🗑️', 'מחיקה', go(() => remove(t)), { danger: true }),
