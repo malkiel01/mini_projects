@@ -26,6 +26,7 @@ const Rejects = (() => {
         $('#rejects-root').addEventListener('click', e => {
             if (e.target.closest('[data-rj-new]')) { openNew(); return; }
             if (e.target.closest('[data-rj-closed]')) { showClosed = !showClosed; render(); return; }
+            if (e.target.closest('[data-rj-print]')) { print(); return; }
             const r = e.target.closest('[data-rj]');
             if (r) open(Number(r.dataset.rj));
         });
@@ -47,9 +48,11 @@ const Rejects = (() => {
             bySup.get(k).list.push(r);
         }
         const closedN = L.filter(r => ['done', 'cancelled'].includes(r.status)).length;
+        badge(C.open + C.pending);
         $('#rejects-root').innerHTML = `
             <section class="fin-card rj-sum"><header class="fin-head"><h2>🔧 ${esc(t('ריג\'קטים'))}</h2>
-                <button type="button" class="btn primary sm" data-rj-new>+ ${esc(t('ריג\'קט'))}</button></header>
+                <span class="row-btns">${live.length ? `<button type="button" class="btn ghost sm" data-rj-print aria-label="${esc(t('הדפסה לסיור מסירה'))}" title="${esc(t('הדפסה לסיור מסירה'))}">🖨️</button>` : ''}
+                <button type="button" class="btn primary sm" data-rj-new>+ ${esc(t('ריג\'קט'))}</button></span></header>
                 <div class="chip-row">${C.open ? `<span class="chip fin-late">🔴 ${esc(t('{n} פתוחים', { n: C.open - C.fixed }))}</span>` : ''}
                     ${C.fixed ? `<span class="chip fin-warn">🟡 ${esc(t('{n} לבדיקה — הספק דיווח שתיקן', { n: C.fixed }))}</span>` : ''}
                     ${C.pending ? `<span class="chip">🟣 ${esc(t('{n} מהלקוח — לאישורך', { n: C.pending }))}</span>` : ''}
@@ -182,5 +185,59 @@ const Rejects = (() => {
 
     function openWhenReady(id) { pendingOpen = id; }
 
-    return { show, openWhenReady };
+    /** המונה בלשונית "🔧 ריג'קטים" — כמה עוד לא נסגרו (כולל ממתינים לאישור). */
+    function badge(n) {
+        const a = $('#project-nav [data-pane="rejects"]');
+        if (!a) return;
+        let b = a.querySelector('.tab-count');
+        if (!b) { b = document.createElement('small'); b.className = 'tab-count'; a.append(' ', b); }
+        b.textContent = n ? String(n) : '';
+    }
+
+    // ================= הדפסה לסיור מסירה =================
+
+    /** דף לסיור עם הלקוח: לכל ספק טבלה — ☐ לסימון בשטח, מה לתקן, איפה, עד מתי, מצב, ההערה האחרונה ותמונה. מה שמוצג במסך (כולל הסגורים אם פתוחים). */
+    function printHtml() {
+        const L = data.rejects.filter(r => !['done', 'cancelled'].includes(r.status) || showClosed);
+        const groups = new Map();
+        for (const r of L) {
+            const k = r.status === 'pending' ? 'p' : r.supplier_id || 0;
+            if (!groups.has(k)) groups.set(k, { name: r.status === 'pending' ? t('פתח הלקוח — לאישורך') : r.supplier || t('בלי ספק'), list: [] });
+            groups.get(k).list.push(r);
+        }
+        const p = cur.project, client = p.client_id ? cur.team.find(c => c.id === p.client_id) : null;
+        const tr = r => {
+            const last = [...r.events].reverse().find(e => e.body && e.kind !== 'opened');
+            const img = r.events.flatMap(e => e.files).find(x => x.thumb || /^image\//.test(x.mime));
+            const where = [r.stage, r.unit ? '🏢 ' + r.unit : ''].filter(Boolean).join(' · ');
+            return `<tr><td class="rp-box">${['done', 'cancelled'].includes(r.status) ? '☑' : '☐'}</td>
+                <td><b>${esc(r.title)}</b>${r.events[0]?.body ? `<small>${esc(r.events[0].body)}</small>` : ''}${last ? `<small>${esc(ROLE[last.by_role] || last.by_name)}: ${esc(last.body)}</small>` : ''}</td>
+                <td>${esc(where)}</td><td>${esc(r.due_date ? shortDate(r.due_date) : '')}</td>
+                <td>${ICON[r.status]} ${esc(r.late ? t('באיחור') : r.status_label)}</td>
+                <td class="rp-img">${img ? `<img src="${fileUrl(img.id, img.thumb ? '&thumb=1' : '')}" alt="">` : ''}</td>
+                <td class="rp-note"></td></tr>`;
+        };
+        return `<div class="lp rp" dir="${document.documentElement.dir || 'rtl'}"><header class="lp-head"><h1>🔧 ${esc(t('ריג\'קטים לסיור מסירה'))} — ${esc(p.name)}</h1>
+            <p>${[client ? t('לקוח: {name}', { name: client.name }) : '', t('הודפס {date}', { date: new Date().toLocaleDateString(I18n.locale()) }), t('{n} פריטים', { n: L.length })].filter(Boolean).map(esc).join(' · ')}</p>
+            <p class="lp-note">${esc(t('סמנו ☐ בשטח מה נבדק ותקין; בעמודת "הערות" — מה עוד חסר. המסירה רק כשהכול סגור.'))}</p></header>
+            ${[...groups.values()].map(g => `<section><h2>👷 ${esc(g.name)} <small>(${g.list.length})</small></h2><table><thead><tr><th></th><th>${esc(t('מה לתקן'))}</th><th>${esc(t('איפה'))}</th>
+                <th>${esc(t('עד'))}</th><th>${esc(t('מצב'))}</th><th>${esc(t('תמונה'))}</th><th>${esc(t('הערות'))}</th></tr></thead><tbody>${g.list.map(tr).join('')}</tbody></table></section>`).join('')}
+            <footer class="rp-sign"><span>${esc(t('חתימת הלקוח'))}: ____________</span><span>${esc(t('חתימת מנהל הפרויקט'))}: ____________</span></footer></div>`;
+    }
+
+    async function print() {
+        let root = document.getElementById('rj-print');
+        if (!root) { root = document.createElement('div'); root.id = 'rj-print'; document.body.appendChild(root); }
+        root.innerHTML = printHtml();
+        // מחכים לתמונות — אחרת הן חסרות בדף המודפס (עד 4 שניות)
+        await Promise.race([Promise.all([...root.querySelectorAll('img')].map(i => i.complete ? 0 : new Promise(ok => { i.onload = i.onerror = ok; }))), new Promise(ok => setTimeout(ok, 4000))]);
+        const H = document.documentElement;
+        H.classList.add('rj-printing');
+        const done = () => { H.classList.remove('rj-printing'); root.innerHTML = ''; window.removeEventListener('afterprint', done); };
+        window.addEventListener('afterprint', done);
+        window.print();
+        setTimeout(() => { if (!matchMedia('print').matches) done(); }, 1500);
+    }
+
+    return { show, openWhenReady, badge };
 })();

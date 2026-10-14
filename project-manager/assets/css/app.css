@@ -1151,3 +1151,30 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 
 /* מטלות (DevLoop): ההסבר בחלקים — ❓ מה הבעיה · 🛠️ מה עשיתי · 💡 הצעות; שומרים את שורות החלקים */
 .dt-detail { white-space: pre-line; line-height: 1.55; }
+
+/* ===== ריג'קטים: מונה בלשונית, והדפסה לסיור מסירה (rejects.js — print) ===== */
+.tab-count { display: inline-block; min-width: 1.4em; padding: 0 4px; border-radius: 999px; background: color-mix(in srgb, var(--star) 18%, transparent); color: var(--star); font-size: .72rem; text-align: center; }
+.tab-count:empty { display: none; }
+.rj-count { font-variant-numeric: tabular-nums; }
+#rj-print { display: none; }
+@media print {
+    html.rj-printing body > *:not(#rj-print) { display: none !important; }
+    html.rj-printing #rj-print { display: block; }
+    html.rj-printing body { background: #fff; }
+    #rj-print .lp { font-size: 9.5pt; color: #000; line-height: 1.35; }
+    #rj-print h1 { font-size: 14pt; margin: 0; }
+    #rj-print h2 { font-size: 11pt; margin: 12pt 0 4pt; }
+    #rj-print .lp-head p { margin: 2pt 0; }
+    #rj-print .lp-note { font-size: 8pt; color: #444; }
+    #rj-print table { inline-size: 100%; border-collapse: collapse; }
+    #rj-print th, #rj-print td { border: 1px solid #999; padding: 3pt 4pt; text-align: start; vertical-align: top; }
+    #rj-print th { background: #eee; font-size: 8.5pt; }
+    #rj-print td small { display: block; font-size: 7.5pt; color: #444; }
+    #rj-print .rp-box { font-size: 14pt; text-align: center; inline-size: 18pt; }
+    #rj-print .rp-img { inline-size: 60pt; }
+    #rj-print .rp-img img { max-inline-size: 60pt; max-block-size: 60pt; object-fit: cover; }
+    #rj-print .rp-note { inline-size: 90pt; }
+    #rj-print tr { break-inside: avoid; }
+    #rj-print thead { display: table-header-group; }
+    #rj-print .rp-sign { display: flex; justify-content: space-between; margin-top: 24pt; }
+}

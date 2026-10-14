@@ -147,7 +147,8 @@ function pm_projects_list(array $user, string $q, string $filter): array
                    (SELECT COUNT(*) FROM stages s WHERE s.project_id = p.id) AS stages_total,
                    (SELECT COUNT(*) FROM stages s WHERE s.project_id = p.id AND s.status IN ('done','paid')) AS stages_done,
                    (SELECT s.name || '|' || s.status FROM stages s WHERE s.project_id = p.id
-                        AND s.status NOT IN ('done','paid') ORDER BY s.sort, s.id LIMIT 1) AS current_stage
+                        AND s.status NOT IN ('done','paid') ORDER BY s.sort, s.id LIMIT 1) AS current_stage,
+                   (SELECT COUNT(*) FROM rejects r WHERE r.project_id = p.id AND r.status IN ('open','fixed','returned','pending')) AS rejects_open
               FROM projects p
               LEFT JOIN contacts c ON c.id = p.client_id
               LEFT JOIN users m ON m.id = p.owner_id
@@ -177,6 +178,7 @@ function pm_projects_list(array $user, string $q, string $filter): array
             'name' => $r['name'], 'address' => $r['address'], 'kind' => $r['kind'], 'status' => $r['status'],
             'client_name' => $r['client_name'], 'last_activity_at' => $r['last_activity_at'], 'last_event' => pm_event_text($r['last_event'], $r['last_event_i18n']),
             'stages_total' => (int)$r['stages_total'], 'stages_done' => (int)$r['stages_done'], 'current_stage' => $cur,
+            'rejects_open' => (int)$r['rejects_open'], // 🔧 ריג'קטים שעוד לא נסגרו (כולל ממתינים לאישור)
         ];
     }, $st->fetchAll());
 }
@@ -229,6 +231,7 @@ function pm_project_get(array $user, int $id): array
         ],
         'stages' => $stages,
         'units'  => pm_units_of($id),
+        'rejects_open' => (int)pm_db()->query("SELECT COUNT(*) FROM rejects WHERE project_id = $id AND status IN ('open','fixed','returned','pending')")->fetchColumn(),
         // הגדרות הכספים (אגף הכספים) — לחלונות: עיכבון, הצמדה
         'finance' => pm_finance_settings($p),
         // שותף מנהל: הבעלים והשותפים; is_owner — רק הבעלים מצרף ומסיר
