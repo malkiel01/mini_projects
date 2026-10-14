@@ -104,7 +104,6 @@ const Projects = (() => {
         $('#project-dlg form').addEventListener('submit', e => { e.preventDefault(); createProject(); });
         $('#stage-dlg form').addEventListener('submit', e => { e.preventDefault(); saveStage(); });
         $('#stage-dlg [data-delete]').addEventListener('click', () => deleteStage(stageId));
-        $$('#stage-dlg [data-move]').forEach(b => b.addEventListener('click', () => moveStage(Number(b.dataset.move), stageId)));
         $('#member-dlg form').addEventListener('submit', e => { e.preventDefault(); addMember(); });
         document.addEventListener('change', e => {
             if (e.target.matches('[data-project-fields] [name=client_id]') && e.target.value === '__new') newClient(e.target);
