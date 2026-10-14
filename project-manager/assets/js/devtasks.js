@@ -7,7 +7,7 @@
 // i18n-none-start — אזור הפיתוח: למפתח בלבד, בעברית
 const DevTasks = (() => {
     const STATUS = {
-        verify: ['ממתין לאימות שלך', 'bad', '🧪'], question: ['שאלה אליך', 'bad', '❓'], in_progress: ['בעבודה', 'info', '🔵'],
+        triage: ['לבירור', 'warn', '⚠️'], verify: ['ממתין לאימות שלך', 'bad', '🧪'], question: ['שאלה אליך', 'bad', '❓'], in_progress: ['בעבודה', 'info', '🔵'],
         open: ['פתוח', 'warn', '🟡'], closed: ['סגור', 'ok', '✅'],
     };
     const KINDS = { bug: ['🐞', 'באג'], feature: ['✨', 'פיצ\'ר'], question: ['❓', 'שאלה'], research: ['🔎', 'מחקר'], task: ['🧩', 'מטלה'] };
@@ -15,13 +15,15 @@ const DevTasks = (() => {
     const EV = { pr: '🔀 PR', commit: '📌 commit', deploy: '🚀 פריסה', version: '🏷️ גרסה', test: '🧪 בדיקה', note: '📝' };
     const dayTime = iso => iso ? new Date(iso).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
     const fileUrl = (id, dl) => `api.php?action=dev-file&id=${id}${dl ? '&download=1' : ''}`;
-    const needsYou = x => x.status === 'verify' || x.status === 'question' || (x.waiting === 'user' && x.status !== 'closed');
+    // "לבירור" (שגיאה שנפתחה לבד) — לא נספרת כפתוחה ולא כממתינה לך עד שמחליטים: 👍 לטפל / 🙈 להתעלם
+    const live = x => x.status !== 'closed' && x.status !== 'triage';
+    const needsYou = x => x.status === 'verify' || x.status === 'question' || (x.waiting === 'user' && live(x));
     let box = null, list = [], meta = {}, filter = '', query = '', openCode = '';
 
     /** הטקסט שמדביקים לצ'אט — מטלות שממתינות ל-Claude (או כל הפתוחות). */
     function chatText() {
         const waiting = list.filter(x => x.waiting === 'claude');
-        const pick = waiting.length ? waiting : list.filter(x => x.status !== 'closed');
+        const pick = waiting.length ? waiting : list.filter(live);
         const head = waiting.length ? 'הערות שלי על מטלות במנהל הפרויקטים — ממתינות לתשובה:' : 'המטלות הפתוחות במנהל הפרויקטים:';
         return [head, ...pick.map(x => {
             const [label] = STATUS[x.status] || [x.status];
@@ -60,18 +62,19 @@ const DevTasks = (() => {
     }
 
     const count = fn => list.filter(fn).length;
-    const pass = x => ({ you: needsYou(x), pending: x.status !== 'closed', claude: x.waiting === 'claude' || x.status === 'open' || x.status === 'in_progress',
-        closed: x.status === 'closed', all: true })[filter];
+    const pass = x => ({ you: needsYou(x), pending: live(x), claude: live(x) && (x.waiting === 'claude' || x.status === 'open' || x.status === 'in_progress'),
+        triage: x.status === 'triage', closed: x.status === 'closed', all: true })[filter];
     const match = x => !query || x.code.toLowerCase() === query.toLowerCase()
         || [x.code, x.title, x.area, x.detail, x.acceptance, ...(x.questions || []), ...x.comments.map(c => c.body)].join(' ').toLowerCase().includes(query.toLowerCase());
-    const order = x => ({ verify: 0, question: 1, in_progress: 2, open: 3, closed: 4 })[x.status] ?? 5;
+    const order = x => ({ verify: 0, question: 1, in_progress: 2, open: 3, triage: 4, closed: 5 })[x.status] ?? 6;
 
     function draw() {
-        const filters = [['you', `ממתינות לך (${count(needsYou)})`], ['claude', `אצל Claude (${count(x => x.status !== 'closed' && !needsYou(x))})`],
-            ['pending', `כל הפתוחות (${count(x => x.status !== 'closed')})`], ['closed', `סגורות (${count(x => x.status === 'closed')})`], ['all', 'הכול']];
+        const nTri = count(x => x.status === 'triage');
+        const filters = [['you', `ממתינות לך (${count(needsYou)})`], ['claude', `אצל Claude (${count(x => live(x) && !needsYou(x))})`],
+            ['pending', `כל הפתוחות (${count(live)})`], ...(nTri ? [['triage', `⚠️ לבירור (${nTri})`]] : []), ['closed', `סגורות (${count(x => x.status === 'closed')})`], ['all', 'הכול']];
         box.innerHTML = `
             <div class="dt-stats"><b>${count(x => x.status === 'verify')}</b> לאימות · <b>${count(x => x.status === 'question')}</b> שאלות ·
-                <b>${count(x => x.status === 'in_progress')}</b> בעבודה · <b>${count(x => x.status === 'open')}</b> פתוחות · <b>${count(x => x.status === 'closed')}</b> סגורות
+                <b>${count(x => x.status === 'in_progress')}</b> בעבודה · <b>${count(x => x.status === 'open')}</b> פתוחות · <b>${count(x => x.status === 'closed')}</b> סגורות${nTri ? ` · <b>${nTri}</b> שגיאות לבירור` : ''}
                 <small>· עודכן ${esc(meta.updated || '—')}</small></div>
             ${meta.note ? `<p class="hint">${esc(meta.note)}</p>` : ''}
             <div class="row-btns wrap">
@@ -124,14 +127,15 @@ const DevTasks = (() => {
         const [kic, kl] = KINDS[x.kind] || KINDS.task;
         const [pic, pl] = PRIO[x.priority] || PRIO.normal;
         const last = x.comments[x.comments.length - 1];
-        const sub = [`${kic} ${kl}`, x.priority !== 'normal' ? `${pic} ${pl}` : '', x.area, x.closed ? 'נסגר ' + x.closed : x.opened ? 'נפתח ' + x.opened : '',
-            x.source === 'user' ? 'נפתח מהמסך' : '', x.comments.length ? '💬 ' + x.comments.length : '', x.files.length ? '📎 ' + x.files.length : ''].filter(Boolean).join(' · ');
+        const occ = x.occurrences;
+        const sub = [`${kic} ${kl}`, occ ? `×${occ.count} · אחרון ${dayTime(occ.last_at)}${occ.ignored ? ' · 🙈' : ''}` : '', x.priority !== 'normal' ? `${pic} ${pl}` : '', x.area, x.closed ? 'נסגר ' + x.closed : x.opened ? 'נפתח ' + x.opened : '',
+            x.source === 'user' && !occ ? 'נפתח מהמסך' : '', x.comments.length ? '💬 ' + x.comments.length : '', x.files.length ? '📎 ' + x.files.length : ''].filter(Boolean).join(' · ');
         const loose = x.files.filter(f => !f.comment_id || !x.comments.some(c => c.id === f.comment_id));
         const steps = x.steps || [];
         return `<li><details class="dt-item${needsYou(x) ? ' you' : ''}" data-code="${esc(x.code)}"${x.code === openCode ? ' open' : ''}>
             <summary class="use-row"><span class="use-ic" aria-hidden="true">${ic}</span>
                 <span class="use-tx"><b><code class="dt-code" dir="ltr">${esc(x.code)}</code> ${esc(x.title)}</b><small>${esc(sub)}</small></span>
-                <span class="dt-badges">${x.waiting === 'claude' && x.status !== 'closed' ? '<span class="chip dt-warn">ממתין ל-Claude</span>' : ''}${x.waiting === 'user' && x.status !== 'closed' ? '<span class="chip dt-info">Claude ענה</span>' : ''}<span class="chip dt-${kind}">${esc(label)}</span></span>
+                <span class="dt-badges">${x.waiting === 'claude' && live(x) ? '<span class="chip dt-warn">ממתין ל-Claude</span>' : ''}${x.waiting === 'user' && live(x) ? '<span class="chip dt-info">Claude ענה</span>' : ''}<span class="chip dt-${kind}">${esc(label)}</span></span>
             </summary>
             <div class="dt-body">
                 ${x.status === 'verify' ? `<div class="dt-verify"><b>🧪 נפרס — עובד אצלך?</b>
@@ -140,7 +144,12 @@ const DevTasks = (() => {
                     <div class="row-btns"><button type="button" class="btn primary sm" data-dt-ok="${esc(x.code)}">✅ עובד אצלי</button>
                         <button type="button" class="btn ghost sm danger" data-dt-no="${esc(x.code)}">↩️ לא עובד</button></div>
                     <p class="error" role="alert" hidden></p></div>` : ''}
-                ${x.detail ? `<p dir="auto">${esc(x.detail)}</p>` : ''}
+                ${x.status === 'triage' ? `<div class="dt-verify"><b>⚠️ שגיאה שנפתחה לבד מהיומן${occ ? ` — קרתה ${occ.count} פעמים` : ''}</b>
+                    <p class="hint">👍 לטפל — עוברת ל-Claude. 🙈 להתעלם — נסגרת, ומופעים חדשים רק נספרים.</p>
+                    <div class="row-btns"><button type="button" class="btn primary sm" data-dt-tri="open" data-code="${esc(x.code)}">👍 לטפל</button>
+                        <button type="button" class="btn ghost sm" data-dt-tri="ignore" data-code="${esc(x.code)}">🙈 להתעלם</button></div>
+                    <p class="error" role="alert" hidden></p></div>` : ''}
+                ${x.detail ? `<p dir="auto" class="dt-detail">${esc(x.detail)}</p>` : ''}
                 ${x.questions?.length && x.status === 'question' ? `<div class="dt-questions"><b>שאלות אליך:</b><ul>${x.questions.map(q => `<li>${esc(q)}</li>`).join('')}</ul></div>` : ''}
                 ${x.acceptance ? `<div class="dt-acc"><b>✔ איך יודעים שזה עובד</b><p dir="auto">${esc(x.acceptance)}</p></div>` : ''}
                 ${steps.length ? `<div class="dt-steps"><b>🧪 איך בודקים</b><ol>${steps.map((s, i) =>
@@ -216,6 +225,14 @@ const DevTasks = (() => {
             ok.disabled = true;
             try { await api('dev-verify', { body: { code, ok: good, note } }); toast(good ? `${code} נסגרה ✅` : `${code} חזרה ל-Claude`); await refresh(code); }
             catch (x) { fail(ok, x.message); ok.disabled = false; }
+            return;
+        }
+        const tri = e.target.closest('[data-dt-tri]');
+        if (tri) {
+            const code = tri.dataset.code, ign = tri.dataset.dtTri === 'ignore';
+            tri.disabled = true;
+            try { await api('dev-task-set', { body: ign ? { code, ignore: true } : { code, status: 'open', from: 'triage' } }); toast(ign ? `${code} — מתעלמים` : `${code} עברה ל-Claude`); await refresh(code); }
+            catch (x) { fail(tri, x.message); tri.disabled = false; }
             return;
         }
         const del = e.target.closest('[data-dt-del]');

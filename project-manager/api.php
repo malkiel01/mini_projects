@@ -292,7 +292,7 @@ try {
         // מטלות ושיח (הגדרות ← 📋 מטלות) — רק המפתח
         'GET dev-items'          => $isDev ? pm_dev_task_list() : throw new PmError('רק המפתח', 403),
         'POST dev-task-create'   => $isDev ? pm_dev_task_create($user, $in) : throw new PmError('רק המפתח', 403),
-        'POST dev-task-set'      => $isDev ? (pm_dev_task_status((string)($in['code'] ?? ''), (string)($in['status'] ?? '')) ?? ['ok' => true]) : throw new PmError('רק המפתח', 403),
+        'POST dev-task-set'      => $isDev ? pm_dev_task_set($user, $in) : throw new PmError('רק המפתח', 403),
         'POST dev-comment'       => $isDev ? pm_dev_comment_add((string)($in['code'] ?? ''), 'user', (int)$user['id'], (string)($in['body'] ?? '')) : throw new PmError('רק המפתח', 403),
         'POST dev-comment-delete' => $isDev ? pm_dev_comment_delete($user, $in) : throw new PmError('רק המפתח', 403),
         'GET dev-tokens'         => $isDev ? pm_dev_token_list() : throw new PmError('רק המפתח', 403),
