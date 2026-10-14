@@ -15,11 +15,12 @@
       "name": "תבניות מסמכים",
       "prefix": "DT-",
       "dir": "document-templates",
-      "api": "https://mbe-plus.com/mini_projects/document-templates/api.php",
+      "api": "https://www.mbe-plus.com/mini_projects/document-templates/api.php",
       "tasks_url": "https://mbe-plus.com/mini_projects/document-templates/#dev?tab=items",
       "log_url": "https://mbe-plus.com/mini_projects/document-templates/#dev?tab=log",
       "items_file": "document-templates/dev/open-items.json",
-      "token_env": "DT_DEVLOOP_TOKEN"
+      "token_env": "DT_DEVLOOP_TOKEN",
+      "note": "דרך www: סוד רשת בסביבת הענן מוצמד לפי מארח, ו-mbe-plus.com כבר נושא את האסימון של מנהל הפרויקטים — אז לתבניות המסמכים מארח נפרד (אותו אתר)."
     }
   ],
   "module": {
