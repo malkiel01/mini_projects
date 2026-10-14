@@ -58,7 +58,7 @@ function route() {
     // במסך ראשי (עם הניווט) — אין חץ חזרה. במסך פנימי — חזרה למסך הקודם, עד המסך הראשי.
     $('#back').hidden = !inner;
     $('#logo').hidden = inner;
-    $('#me-btn').hidden = inner;
+    // הפרופיל — בכל מסך, גם בתוך פרויקט (השם נחתך ב-… כשאין מקום)
     Me.close();
     $$('#nav [data-nav]').forEach(x => x.setAttribute('aria-current', x.dataset.nav === section ? 'page' : 'false'));
     document.body.dataset.view = section;
