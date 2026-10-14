@@ -242,7 +242,13 @@
     // בזמן הצבה — ההנחיה במקום הכפתור והמקרא, באותו סרגל: הדף לא זז מתחת לאצבע
     const placingBar = el('div', { class: 'placing-bar', hidden: true, role: 'status' }, placingText,
       el('button', { class: 'small', onclick: () => setPlacing(null) }, 'ביטול'));
-    const palette = el('div', { class: 'palette design-bar' }, addBtn, legend, placingBar);
+    // נעילת כל השדות בבת אחת — כשהעיצוב גמור, כדי ששום שדה לא יזוז בטעות
+    const lockAllBtn = el('button', { type: 'button', class: 'small lock-all', onclick: () => {
+      const lock = schema.fields.some(f => !f.locked);
+      for (const f of schema.fields) f.locked = lock;
+      setDirty(true); draw();
+    } });
+    const palette = el('div', { class: 'palette design-bar' }, addBtn, lockAllBtn, legend, placingBar);
     const pagesBox = el('div', { class: 'pages' });
     const viewer = zoomable(pagesBox);
     const panel = el('section', { class: 'panel card tab-panel', role: 'tabpanel' });
@@ -494,12 +500,14 @@
     function fieldEl(f) {
       const box = el('div', {
         class: 'field t-' + f.type + (isAuto(f) ? ' auto' : ' role-' + (roleIndex(f.role) % 6)) + (selected === f ? ' selected' : '')
-          + (f.required ? ' required' : '') + (f.hidden ? ' private' : ''),
+          + (f.required ? ' required' : '') + (f.hidden ? ' private' : '') + (f.locked ? ' locked' : ''),
         style: `left:${f.x * 100}%; top:${f.y * 100}%; width:${f.w * 100}%; height:${f.h * 100}%`,
-        title: f.label + ' — לחיצה: הגדרות; גרירה: הזזה', tabindex: 0, role: 'button',
+        title: f.label + (f.locked ? ' — 🔒 נעול במקומו. לחיצה: הגדרות' : ' — לחיצה: הגדרות; גרירה: הזזה'), tabindex: 0, role: 'button',
       }, el('span', { class: 'field-label' }, iconOf(f) + ' ' + f.label),
         el('span', { class: 'handle', 'aria-hidden': 'true' }));
       box.addEventListener('pointerdown', (e) => startDrag(e, f, e.target.classList.contains('handle')));
+      // נעול: לא נגרר — הקשה פותחת הגדרות, ואצבע על השדה גוללת ומגדילה את הדף כרגיל
+      box.addEventListener('click', (e) => { if (f.locked && !readOnly) { e.stopPropagation(); editField(f); } });
       box.addEventListener('focus', () => { if (selected !== f) { selected = f; for (const n of pagesBox.querySelectorAll('.field.selected')) n.classList.remove('selected'); box.classList.add('selected'); } });
       box.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); editField(f); } });
       return box;
@@ -507,6 +515,10 @@
 
     function draw() {
       renderLegend();
+      const anyOpen = schema.fields.some(f => !f.locked);
+      lockAllBtn.textContent = anyOpen ? '🔒 נעילת הכול' : '🔓 שחרור הכול';
+      lockAllBtn.title = anyOpen ? 'לנעול את כל השדות במקומם' : 'לשחרר את כל השדות להזזה';
+      lockAllBtn.hidden = readOnly || isWord || isAuthored || !schema.fields.length;
       const sp = showSpots && !readOnly ? freeSpots() : [];
       pageEls.forEach((p, i) => p.layer.replaceChildren(
         ...sp.filter(s => s.page === i).map(spotEl),
@@ -516,6 +528,7 @@
     // גרירה: הזזה, או שינוי גודל מהידית. התנועה מחושבת כשבר מגודל הדף.
     function startDrag(e, f, resize) {
       if (readOnly) { e.stopPropagation(); editField(f); return; }
+      if (f.locked) { e.stopPropagation(); return; }   // הלחיצה (click) פותחת את ההגדרות
       e.preventDefault();
       e.stopPropagation();
       const box = e.currentTarget;
@@ -586,7 +599,7 @@
     }
 
     function duplicate(f) {
-      const c = { ...f, id: uid(), key: f.key + '_2', label: f.label + ' (עותק)',
+      const c = { ...f, id: uid(), key: f.key + '_2', label: f.label + ' (עותק)', locked: false,
         y: clamp(f.y + f.h + 0.01, 0, 1 - f.h) };
       schema.fields.push(c);
       setDirty(true);
@@ -602,6 +615,7 @@
       if (e.key === 'Escape') { setPlacing(null); return; }
       if (document.querySelector('dialog[open]')) return;   // גיליון פתוח — המקשים שלו
       if (!selected || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+      if (selected.locked) return;   // נעול: לא זז בחצים ולא נמחק ב-Delete
       if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); removeField(selected); return; }
       const step = e.shiftKey ? 0.01 : 0.002;
       const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
@@ -767,6 +781,7 @@
 
         body.replaceChildren(...[
           group('השדה',
+            onPage ? toggle('🔒 נעול במקומו', 'לא זז ולא משנה גודל בטעות. כדי להזיז — משחררים כאן', () => !!f.locked, v => { f.locked = v; }) : null,
             input('תווית — מה רואים ליד השדה', 'label', { maxlength: 120 }),
             el('label', { class: 'f' }, el('span', {}, 'סוג'), typeSel),
             auto ? null : input('שורת עזרה (לא חובה)', 'help', { maxlength: 300 }),
@@ -787,12 +802,12 @@
             !['file', 'checkbox', 'table', 'select'].includes(f.type) ? choose('מתמלא מאיש קשר', 'contactField', {
               '': '— לא —', name: 'שם', id_number: 'ת"ז / ח"פ', phone: 'טלפון', email: 'מייל', address: 'כתובת', notes: 'הערות',
             }) : null),
-          textual && onPage ? group('על הדף',
-            el('div', { class: 'fields two' },
+          onPage ? group('על הדף',
+            textual ? el('div', { class: 'fields two' },
               input('גודל גופן', 'fontSize', { type: 'number', min: 6, max: 72 }),
-              choose('יישור', 'align', { right: 'ימין', center: 'מרכז', left: 'שמאל' })),
-            choose('כשהטקסט ארוך מהשדה', 'overflow', OVERFLOW),
-            el('p', { class: 'hint' }, `דף ${f.page + 1}. הזזה וגודל — בגרירה על הדף.`)) : null,
+              choose('יישור', 'align', { right: 'ימין', center: 'מרכז', left: 'שמאל' })) : null,
+            textual ? choose('כשהטקסט ארוך מהשדה', 'overflow', OVERFLOW) : null,
+            el('p', { class: 'hint' }, `דף ${f.page + 1}. ` + (f.locked ? 'נעול — אי אפשר לגרור.' : 'הזזה וגודל — בגרירה על הדף.'))) : null,
           el('details', { class: 'fs-group adv' }, el('summary', {}, 'מתקדם'),
             input('מפתח פנימי (לייצוא ולאקסל)', 'key', { dir: 'ltr', maxlength: 60, pattern: '[a-z0-9_]+' }),
             readOnly ? null : el('div', { class: 'ops' },
