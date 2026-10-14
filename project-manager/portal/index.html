@@ -2,15 +2,15 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="../assets/js/i18n.js?v=64"></script>
+    <script src="../assets/js/i18n.js?v=65"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <meta name="robots" content="noindex, nofollow">
     <meta name="referrer" content="no-referrer">
     <title>הפרויקט שלך</title>
-    <link rel="stylesheet" href="../assets/css/app.css?v=64">
-    <link rel="stylesheet" href="portal.css?v=64">
+    <link rel="stylesheet" href="../assets/css/app.css?v=65">
+    <link rel="stylesheet" href="portal.css?v=65">
     <link rel="icon" href="../assets/icon.svg">
 </head>
 <body>
@@ -112,6 +112,14 @@
                 <ol class="list rows-list" id="stage-list"></ol>
             </section>
 
+            <!-- "📎 העלאת מסמך": כל מי שיש לו קישור — ביטוח, רישיון, היתר, חוזה חתום, צילום. מגיע למנהל הפרויקט -->
+            <section id="uploads" aria-labelledby="uploads-title" hidden>
+                <div class="sec-row"><h2 class="sec-title" id="uploads-title">מסמכים ששלחתי</h2>
+                    <button type="button" class="btn ghost sm" id="u-add">📎 העלאת מסמך</button></div>
+                <ul class="list rows-list" id="upload-list"></ul>
+                <p class="hint" id="u-empty">ביטוח, רישיון, היתר, חוזה חתום או צילום — מנהל הפרויקט מקבל אותו מיד.</p>
+            </section>
+
             <section id="files" aria-labelledby="files-title" hidden>
                 <h2 class="sec-title" id="files-title">קבצים</h2>
                 <ul class="list rows-list" id="file-list"></ul>
@@ -194,6 +202,26 @@
         </form>
     </dialog>
 
+    <!-- ===== העלאת מסמך — לכל התפקידים ===== -->
+    <dialog id="u-dlg" aria-labelledby="u-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="u-title">העלאת מסמך</h2>
+                <span></span>
+            </header>
+            <div class="sheet-body">
+                <label class="btn ghost upload-btn proof-pick">📎 בחירת קובץ — צילום או PDF<input type="file" name="file" accept="image/*,application/pdf" hidden></label>
+                <p class="hint" id="u-file-name"></p>
+                <label class="f"><span>מה זה (לא חובה)</span><input name="note" maxlength="500" placeholder="למשל: ביטוח צד ג׳, תעודת אחריות, היתר"></label>
+                <label class="f" id="u-stage-box" hidden><span>למקצוע</span><select name="stage_id"></select></label>
+                <p class="hint">עד 8MB. מנהל הפרויקט מקבל עדכון, והמסמך נשמר בפרויקט.</p>
+                <p class="error" role="alert" hidden></p>
+                <button type="submit" class="btn primary" id="u-go">שליחה</button>
+            </div>
+        </form>
+    </dialog>
+
     <!-- ===== ספק: הגשת הצעה / בקשת תשלום ===== -->
     <dialog id="s-dlg" aria-labelledby="s-dlg-title">
         <form method="dialog" novalidate>
@@ -229,8 +257,8 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="../assets/js/fin-report.js?v=64"></script>
-    <script src="portal.js?v=64"></script>
+    <script src="../assets/js/fin-report.js?v=65"></script>
+    <script src="portal.js?v=65"></script>
     <script src="../assets/js/lightbox.js?v=21"></script>
 </body>
 </html>

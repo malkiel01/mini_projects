@@ -21,8 +21,6 @@ pm_log_install_handlers();
 pm_survey_migrate();
 // מייל התזכורות היומי — "קרון" שרץ בבקשה הראשונה אחרי 07:00. תקלה בו לא מפילה את הבקשה.
 try { pm_digest_tick(); } catch (Throwable $e) { pm_log('error', 'mail', 'digest.failed', ['message' => $e->getMessage()]); }
-// תיקון שיוכים חד-פעמי בפרויקטים קיימים (lib/links.php) — פעם אחת, בבקשה הראשונה אחרי הפריסה
-try { pm_links_repair_once(); } catch (Throwable $e) { pm_log('error', 'data', 'links.repair.failed', ['message' => $e->getMessage()]); }
 $PM_T0 = microtime(true);
 
 header('Content-Type: application/json; charset=utf-8');
