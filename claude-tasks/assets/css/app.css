@@ -302,29 +302,3 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .boot-error h1 { font-size: 1.3rem; }
 .boot-error p { color: var(--ink-soft); font-size: .92rem; line-height: 1.7; }
 .boot-error a { color: var(--accent); }
-
-/* ── DevLoop: הלוח המרכזי (devloop-hub.js) ─────────────────── */
-.hub-btn { position: relative; }
-.hub-n { position: absolute; top: -4px; inset-inline-end: -4px; min-width: 18px; height: 18px; padding: 0 4px;
-         border-radius: 9px; background: var(--blocked); color: #fff; font-size: .68rem; font-weight: 700;
-         display: grid; place-items: center; line-height: 1; }
-.hub-apps { display: grid; gap: 8px; margin-bottom: 14px; }
-.hub-app { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 6px; }
-.hub-app__head { display: flex; align-items: center; gap: 8px; }
-.hub-app__head b { flex: 1; min-width: 0; }
-.hub-app__head a { font-size: .82rem; color: var(--accent); }
-.hub-app .badge { cursor: default; }
-.hub-err { color: var(--blocked); font-size: .82rem; }
-.hub-items { list-style: none; display: grid; gap: 8px; }
-.hub-item a { display: grid; gap: 3px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line);
-              border-inline-start: 4px solid var(--open); text-decoration: none; color: var(--ink); }
-.hub-item a:hover { border-color: var(--ink-faint); }
-.hub-item[data-why=verify] a   { border-inline-start-color: var(--blocked); }
-.hub-item[data-why=question] a { border-inline-start-color: var(--answered); }
-.hub-item[data-why=answered] a { border-inline-start-color: var(--accent); }
-.hub-item[data-why=triage] a   { border-inline-start-color: var(--progress); }
-.hub-item small { color: var(--ink-soft); font-size: .78rem; overflow-wrap: anywhere; }
-.hub-item code { font-size: .78rem; background: var(--surface-2); border-radius: 6px; padding: 1px 5px; }
-.hub-h { font-size: .9rem; margin: 14px 0 8px; }
-.hub-src { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: .88rem; }
-.hub-src span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
