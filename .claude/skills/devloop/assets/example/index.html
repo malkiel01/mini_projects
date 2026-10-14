@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DevLoop — דוגמה</title>
+<link rel="stylesheet" href="devloop.css">
+<style>
+  /* המשתנים ש-devloop.css משתמש בהם — באפליקציה אמיתית: שפת העיצוב שלה */
+  :root { --s2: 8px; --s3: 12px; --r: 12px; --line: #e2e8f0; --surface: #fff; --bg: #f4f6fb; --muted: #64748b;
+          --brand: #2f4b8f; --brand-ink: #fff; --brand-soft: #e8eefb; --danger: #dc2626; --ok: #16a34a; --star: #d97706; }
+  body { margin: 0; font: 16px system-ui, sans-serif; background: var(--bg); color: #0f172a; }
+  header { display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: var(--brand); color: #fff; }
+  header h1 { flex: 1; font-size: 1.05rem; margin: 0; }
+  main { max-width: 860px; margin: 0 auto; padding: 12px 16px; display: grid; gap: 12px; }
+  .icon-btn { background: rgba(255,255,255,.15); border: 0; color: inherit; border-radius: 10px; min-width: 40px; min-height: 40px; cursor: pointer; }
+  .chip { border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; background: var(--surface); }
+  .btn { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; background: var(--surface); cursor: pointer; }
+  .btn.primary { background: var(--brand); color: #fff; } .hint { color: var(--muted); font-size: .85rem; }
+  nav a { color: #fff; margin-inline-start: 8px; }
+</style>
+</head>
+<body>
+<header><h1>DevLoop — דוגמה</h1><nav><a href="#/settings/tasks">📋 מטלות</a><a href="#/log">📜 יומן</a></nav><span id="me-btn"></span></header>
+<main id="view"></main>
+<script src="devloop.js"></script>
+<script>
+  // api(action, {body, params}) — החוזה ש-DevLoop מצפה לו
+  async function api(action, { body, params } = {}) {
+    const qs = new URLSearchParams({ action, ...(params || {}) });
+    const res = await fetch('api.php?' + qs, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
+    DevLoop.noteRequest({ action, method: body ? 'POST' : 'GET', status: res.status, id: res.headers.get('X-Request-Id') || '' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'תקלה (' + res.status + ')');
+    return data;
+  }
+  DevLoop.setup({ api, isDev: () => true, toast: m => console.log(m), appName: 'הדוגמה', tasksHref: '#/settings/tasks',
+    mountBefore: '#me-btn', builtinLog: true, version: () => '1', logHref: r => '#/log/' + r.req });
+  DevLoop.mount();
+  function route() {
+    const [, a = '', b = '', c = ''] = location.hash.split('/');
+    if (a === 'log') DevLoop.showLog(document.getElementById('view'), b);
+    else DevLoop.show(document.getElementById('view'), a === 'settings' && b === 'tasks' ? c : '');
+  }
+  addEventListener('hashchange', route); route();
+</script>
+</body>
+</html>

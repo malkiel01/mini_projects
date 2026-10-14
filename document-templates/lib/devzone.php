@@ -31,7 +31,7 @@ function devzone_migrate(PDO $pdo): void
     devtasks_migrate($pdo);
     // לוג המעקב: מה שצריך כדי לשחזר תקלה — בלי תוכן של משתמשים
     $cols = array_column($pdo->query('PRAGMA table_info(dev_log)')->fetchAll(), 'name');
-    foreach (['method TEXT', 'status INTEGER', 'actor TEXT', 'ref TEXT', 'ip TEXT', 'message TEXT', 'trace TEXT', 'page TEXT', 'req TEXT', 'ua TEXT'] as $def) {
+    foreach (['method TEXT', 'status INTEGER', 'actor TEXT', 'ref TEXT', 'ip TEXT', 'message TEXT', 'trace TEXT', 'page TEXT', 'req TEXT', 'ua TEXT', 'level TEXT', 'category TEXT', 'event TEXT'] as $def) {
         if (!in_array(strtok($def, ' '), $cols, true)) $pdo->exec("ALTER TABLE dev_log ADD COLUMN $def");
     }
 }
@@ -59,13 +59,17 @@ function dev_track(?array $session, string $action, float $started, int $status,
         $actor = $session ? 'user' : (str_starts_with($action, 'ext_') ? 'api' : (str_starts_with($action, 'fill_') ? 'fill' : (str_starts_with($action, 'devapi') ? 'claude' : 'guest')));
         $trace = null;
         if ($e && !($e instanceof ApiError)) $trace = basename($e->getFile()) . ':' . $e->getLine() . ' ' . get_class($e);
-        db()->prepare('INSERT INTO dev_log (at, user_id, action, error_code, duration_ms, method, status, actor, ref, ip, message, trace, page, req, ua)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        // לרמה, לקטגוריה ולאירוע — כמו ב-DevLoop: שגיאת שרת או דפדפן = error, סירוב = warn
+        $js = $action === 'client_error';
+        $level = $js || $status >= 500 ? 'error' : ($status >= 400 ? 'warn' : 'info');
+        db()->prepare('INSERT INTO dev_log (at, user_id, action, error_code, duration_ms, method, status, actor, ref, ip, message, trace, page, req, ua, level, category, event)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
             ->execute([now_iso(), $session ? (int)$session['id'] : null, mb_substr($action, 0, 60), $status >= 400 ? (string)$status : null,
                 (int)((microtime(true) - $started) * 1000), $_SERVER['REQUEST_METHOD'] ?? 'GET', $status, $actor,
                 $ref ? implode(' ', $ref) : null, client_ip(),
                 $e ? mb_substr($e->getMessage(), 0, 500) : ($extra['message'] ?? null), $extra['trace'] ?? $trace, $extra['page'] ?? null,
-                dev_req_id(), mb_substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 200)]);
+                dev_req_id(), mb_substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 200),
+                $level, $js ? 'client' : 'api', $js ? 'client.error' : 'request']);
         if (random_int(1, 200) === 1) {
             db()->prepare('DELETE FROM dev_log WHERE at < ?')->execute([gmdate('Y-m-d\TH:i:s\Z', time() - DEV_LOG_DAYS * 86400)]);
         }
@@ -99,11 +103,10 @@ function dev_log_list(array $q): array
     if (!empty($q['ref'])) { $where[] = 'l.ref LIKE ?'; $args[] = '%' . $q['ref'] . '%'; }
     if (!empty($q['req'])) { $where[] = 'l.req = ?'; $args[] = (string)$q['req']; }   // מזהה בקשה — מ-🐞 דיווח או ממטלה
     if (!empty($q['before'])) { $where[] = 'l.id < ?'; $args[] = (int)$q['before']; }
-    $st = db()->prepare('SELECT l.*, u.display_name, u.email FROM dev_log l LEFT JOIN users u ON u.id = l.user_id
+    $st = db()->prepare('SELECT l.*, ' . DT_LOG_LEVEL . ' AS lvl, u.display_name, u.email FROM dev_log l LEFT JOIN users u ON u.id = l.user_id
         WHERE ' . implode(' AND ', $where) . ' ORDER BY l.id DESC LIMIT 200');
     $st->execute($args);
     $rows = $st->fetchAll();
-    $tasks = dt_log_task_codes($rows);   // שגיאה → המטלה "לבירור" שלה (DevLoop)
     $day = gmdate('Y-m-d\TH:i:s\Z', time() - 86400);
     $stats = db()->query("SELECT COUNT(*) AS n, SUM(status >= 500) AS e5, SUM(status >= 400 AND status < 500) AS e4,
         SUM(action = 'client_error') AS js, ROUND(AVG(duration_ms)) AS avg_ms FROM dev_log WHERE at > '$day'")->fetch();
@@ -111,7 +114,7 @@ function dev_log_list(array $q): array
         'id' => (int)$r['id'], 'at' => $r['at'], 'action' => $r['action'], 'method' => $r['method'], 'status' => $r['status'] === null ? null : (int)$r['status'],
         'ms' => (int)$r['duration_ms'], 'actor' => $r['actor'], 'user' => $r['display_name'], 'email' => $r['email'], 'user_id' => $r['user_id'],
         'ref' => $r['ref'], 'ip' => $r['ip'], 'message' => $r['message'], 'trace' => $r['trace'], 'page' => $r['page'],
-        'req' => $r['req'] ?? null, 'task' => $tasks[(int)$r['id']] ?? null,
+        'req' => $r['req'] ?? null, 'level' => $r['lvl'],   // הקישור למטלה — DevLoop.decorateLog בדפדפן
     ], $rows), 'day' => array_map('intval', $stats)];
 }
 

@@ -15,6 +15,9 @@
   function view(tab, users) {
     const { el, show, setTab } = window.DT;
     setTab('dev');
+    // קישור מ-DevLoop: #dev?tab=items/DT-012 (tasksHref + '/' + קוד)
+    let code = '';
+    if (tab && tab.includes('/')) [tab, code] = [tab.split('/')[0], tab.split('/').slice(1).join('/')];
     if (!TABS.some(([k]) => k === tab)) tab = 'users';
     clearInterval(timer);
     const body = el('section', { class: 'dev-body' });
@@ -22,20 +25,22 @@
       TABS.map(([k, t]) => el('a', { href: '#dev?tab=' + k, role: 'tab', 'data-tab': k, class: tab === k ? 'on' : '',
         'aria-selected': String(tab === k) }, t)));
     show(el('div', { class: 'screen' }, tabs, body));
-    ({ users, items, log, force, health })[tab](body);
+    ({ users, items: (b) => items(b, code), log, force, health })[tab](body);
   }
 
   // ── מטלות: המודול המשותף DevLoop (assets/js/devloop.js) — קוד, שיח, אימות, ראיות, ⚠️ לבירור מהלוג ──
-  function items(box) {
+  function items(box, code) {
     box.classList.add('devloop-box');
-    DevLoop.show(box, new URLSearchParams(location.hash.split('?')[1] || '').get('code') || '');
+    DevLoop.show(box, code || new URLSearchParams(location.hash.split('?')[1] || '').get('code') || '');
   }
 
   // ── לוג מעקב ──
   async function log(box) {
     const { api, el, notice } = window.DT;
     const errorsOnly = el('input', { type: 'checkbox' });
-    const q = el('input', { type: 'search', placeholder: 'פעולה, מזהה (id=12) או מזהה בקשה', 'aria-label': 'חיפוש בלוג' });
+    // ממטלה (📜 יומן ← מזהה בקשה): #dev?tab=log&req=…
+    const q = el('input', { type: 'search', placeholder: 'פעולה, מזהה (id=12) או מזהה בקשה', 'aria-label': 'חיפוש בלוג',
+      value: new URLSearchParams(location.hash.split('?')[1] || '').get('req') || '' });
     const auto = el('input', { type: 'checkbox', checked: true });
     const nodev = el('input', { type: 'checkbox', checked: true });
     const out = el('div');
@@ -61,7 +66,8 @@
         const js = x.action === 'client_error';
         const kind = js || x.status >= 500 ? 'bad' : x.status >= 400 ? 'warn' : 'ok';
         const t = new Date(x.at);
-        return el('li', { class: 'log-row ' + kind },
+        // data-log-* ו-.dl-slot — DevLoop.decorateLog מוסיף 🔗 למטלה, או "+ מטלה" בשגיאה
+        return el('li', { class: 'log-row ' + kind, 'data-log-id': x.id, 'data-log-req': x.req || '', 'data-log-level': x.level },
           el('div', { class: 'log-l1' },
             el('span', { class: 'badge ' + kind }, js ? 'דפדפן' : String(x.status ?? '')),
             el('b', { dir: 'ltr', class: 'log-act' }, x.action),
@@ -69,18 +75,19 @@
           el('div', { class: 'log-l2 muted' },
             [(ACTOR[x.actor] || '') + ' ' + (x.user || x.ip || 'אורח'), x.ref ? el('bdi', { dir: 'ltr' }, x.ref) : null, js ? null : x.ms + 'ms', x.method,
               x.req ? el('bdi', { dir: 'ltr', class: 'log-req', title: 'מזהה הבקשה' }, '#' + x.req) : null,
-              x.task ? el('a', { href: '#dev?tab=items&code=' + x.task, class: 'log-task' }, '⚠️ ' + x.task) : null]
+              el('span', { class: 'dl-slot' })]
               .filter(Boolean).flatMap((v, i) => i ? [' · ', v] : [v])),
           x.message || x.trace || x.page ? el('div', { class: 'log-msg' }, x.message || '',
             x.trace || x.page ? el('small', { dir: 'ltr' }, [x.trace, x.page].filter(Boolean).join(' · ')) : null) : null);
       })) : el('p', { class: 'empty' }, 'אין רשומות.'));
+      DevLoop.decorateLog(out);
     }
     errorsOnly.addEventListener('change', load);
     nodev.addEventListener('change', load);
     q.addEventListener('change', load);
     timer = setInterval(() => { if (auto.checked && document.body.contains(out)) load(); else clearInterval(timer); }, 15000);
     put(box, 
-      el('p', { class: 'hint' }, 'כל בקשה לשרת: מתי, איזו פעולה, תוצאה, משך, מי (👤 משתמש · 🔑 API · 🔗 ממלא בקישור · 🤖 Claude), מזהי המסמך/התבנית, מזהה הבקשה, והודעת השגיאה. שגיאות JavaScript מהדפדפן נרשמות גם הן. בלי ערכים ובלי תוכן. נשמר 30 יום. שגיאת שרת או דפדפן נפתחת לבד כמטלה "⚠️ לבירור" — הקישור ⚠️ בשורה מוביל אליה.'),
+      el('p', { class: 'hint' }, 'כל בקשה לשרת: מתי, איזו פעולה, תוצאה, משך, מי (👤 משתמש · 🔑 API · 🔗 ממלא בקישור · 🤖 Claude), מזהי המסמך/התבנית, מזהה הבקשה, והודעת השגיאה. שגיאות JavaScript מהדפדפן נרשמות גם הן. בלי ערכים ובלי תוכן. נשמר 30 יום. שגיאת שרת או דפדפן נפתחת לבד כמטלה "⚠️ לבירור" — 🔗 בשורה מוביל אליה, ו"+ מטלה" פותח אחת משגיאה.'),
       stats,
       el('div', { class: 'toolbar' }, q, el('label', { class: 'switch small' }, errorsOnly, el('span', {}, 'רק שגיאות')),
         el('label', { class: 'switch small' }, nodev, el('span', {}, 'בלי אזור הפיתוח')),

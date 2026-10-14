@@ -80,27 +80,43 @@ check('פריסה לא פותחת מחדש מטלה שאומתה', $r['status_sk
 // ── הלוג → "⚠️ לבירור" ──
 check('מזהה בקשה — 12 תווים, קבוע לבקשה', (bool)preg_match('/^[0-9a-f]{12}$/', dev_req_id()) && dev_req_id() === dev_req_id());
 devloop_errors_sync();   // פעם ראשונה: מתחילים מעכשיו
-$log = fn(string $action, int $status, string $msg, string $req) => db()->prepare("INSERT INTO dev_log (at, user_id, action, duration_ms, method, status, actor, message, trace, page, req, ua)
-    VALUES (?, 1, ?, 5, 'POST', ?, 'user', ?, ?, ?, ?, 'test')")->execute([now_iso(), $action, $status, $msg,
-    $action === 'client_error' ? 'editor.js:12:3' : 'documents.php:88 TypeError', $action === 'client_error' ? '#tpl=4' : null, $req]);
-$log('doc_save', 500, 'Undefined index 17', 'aaaaaaaaaaa1');
-$log('doc_save', 422, 'חסר שם', 'aaaaaaaaaaa2');                       // סירוב — לא באג
-$log('client_error', 0, 'x is not a function', 'aaaaaaaaaaa3');
-$log('doc_save', 500, 'Undefined index 99', 'aaaaaaaaaaa4');             // אותה שגיאה, מספר אחר
+$log = function (string $action, int $status, string $msg, string $req) {
+    dev_track(['id' => 1], $action, microtime(true), $status, null, ['message' => $msg,
+        'trace' => $action === 'client_error' ? 'editor.js:12:3' : null, 'page' => $action === 'client_error' ? '#tpl=4' : null]);
+    db()->prepare('UPDATE dev_log SET req = ? WHERE id = (SELECT MAX(id) FROM dev_log)')->execute([$req]);   // כאילו בקשות נפרדות
+    return (int)db()->query('SELECT MAX(id) FROM dev_log')->fetchColumn();
+};
+$GLOBALS['dt_tracked'] = false;
+$id1 = $log('doc_save', 500, 'Undefined index 17', 'aaaaaaaaaaa1');
+$id2 = $log('doc_save', 422, 'חסר שם', 'aaaaaaaaaaa2');                       // סירוב — לא באג
+$id3 = $log('client_error', 0, 'x is not a function', 'aaaaaaaaaaa3');
+$id4 = $log('doc_save', 500, 'Undefined index 99', 'aaaaaaaaaaa4');             // אותה שגיאה, מספר אחר
+$lv = array_column(dt_devloop_log_rows(['ids' => [$id1, $id2, $id3]]), null, 'id');
+check('רמות בלוג: 5xx ודפדפן = error, 4xx = warn', $lv[$id1]['level'] === 'error' && $lv[$id2]['level'] === 'warn' && $lv[$id3]['level'] === 'error'
+    && $lv[$id3]['category'] === 'client' && $lv[$id3]['data']['source'] === 'editor.js' && $lv[$id3]['data']['line'] === '12');
 $made = devloop_errors_sync();
 $tri = array_values(array_filter(devloop_task_list()['items'], fn($x) => $x['status'] === 'triage'));
 check("שגיאות שרת ודפדפן נפתחו לבירור — 2 ($made), לא ה-422", $made === 2 && count($tri) === 2);
 $srv = array_values(array_filter($tri, fn($x) => str_contains($x['title'], 'שרת')))[0];
-check('אותה שגיאה פעמיים — מטלה אחת, ×2, עם מזהה הבקשה', $srv['occurrences']['count'] === 2 && $srv['context']['requests'][0]['id'] === 'aaaaaaaaaaa1');
-$rows = dev_log_list(['errors' => 1])['rows'];
-$byReq = array_column($rows, null, 'req');
-check('בלוג: השגיאה מפנה למטלה; הסירוב — לא', $byReq['aaaaaaaaaaa1']['task'] === $srv['code'] && $byReq['aaaaaaaaaaa4']['task'] === $srv['code']
-    && $byReq['aaaaaaaaaaa2']['task'] === null && $byReq['aaaaaaaaaaa3']['task'] !== null);
-check('חיפוש בלוג לפי מזהה בקשה', count(dev_log_list(['req' => 'aaaaaaaaaaa3'])['rows']) === 1);
+check('אותה שגיאה פעמיים — מטלה אחת, ×2, עם מזהה הבקשה', $srv['occurrences']['count'] === 2 && in_array($srv['context']['requests'][0]['id'], ['aaaaaaaaaaa1', 'aaaaaaaaaaa4'], true));
+$links = devloop_log_links([$id1, $id2, $id3, $id4]);
+check('מהלוג למטלה: שתי השורות של השגיאה → אותה מטלה; הסירוב — בלי', ($links['ids'][$id1] ?? '') === $srv['code'] && ($links['ids'][$id4] ?? '') === $srv['code']
+    && !isset($links['ids'][$id2]) && isset($links['ids'][$id3]));
+$il = devloop_item_log($srv['code']);
+check('מהמטלה ללוג (📜): שני המופעים', array_column($il['rows'], 'id') === [$id4, $id1]);
+check('הפיד של Claude למטלה כולל את הלוג', count(devloop_api_feed($k, ['code' => $srv['code']])['log']) === 2);
+check('חיפוש בלוג לפי מזהה בקשה', count(dev_log_list(['req' => 'aaaaaaaaaaa3'])['rows']) === 1 && dev_log_list(['req' => 'aaaaaaaaaaa3'])['rows'][0]['level'] === 'error');
+$id5 = $log('doc_get', 500, 'Division by zero', 'aaaaaaaaaaa5');
+$r = devloop_task_from_log($dev, ['log_id' => $id5]);
+check('"+ מטלה" משורה בלוג — נפתחת מטלה (פתוח)', $r['created'] && devloop_task_get($r['code'])['status'] === 'open');
+check('שוב מאותה חתימה — אותה מטלה', devloop_task_from_log($dev, ['log_id' => $id5])['code'] === $r['code'] && !devloop_task_from_log($dev, ['log_id' => $id5])['created']);
 devloop_task_set($dev, ['code' => $srv['code'], 'ignore' => true]);
-$log('doc_save', 500, 'Undefined index 5', 'aaaaaaaaaaa5');
+$log('doc_save', 500, 'Undefined index 5', 'aaaaaaaaaaa6');
 devloop_errors_sync();
 check('🙈 להתעלם — מופע חדש רק נספר', devloop_task_get($srv['code'])['status'] === 'closed' && devloop_task_get($srv['code'])['occurrences']['count'] === 3);
+dt_devloop_log_write('warn', 'auth', 'devapi.denied', ['message' => 'אסימון מטלות לא תקף']);
+$w = dt_devloop_log_rows(['limit' => 1])[0];
+check('רשומה מהמודול — בלוג, עם רמה ואירוע', $w['level'] === 'warn' && $w['event'] === 'devapi.denied' && $w['category'] === 'auth');
 
 foreach (array_merge(glob("$tmp/files/_dev/*") ?: [], glob("$tmp/files/*") ?: [], array_filter(glob("$tmp/{,.}*", GLOB_BRACE) ?: [], 'is_file')) as $f) @unlink($f);
 @rmdir("$tmp/files/_dev");

@@ -1,0 +1,31 @@
+{
+  "about": "DevLoop — ההגדרות של הריפו הזה בשביל הסקיל devloop: אילו אפליקציות עובדות עם DevLoop, איפה ה-API שלהן, והסוד עם האסימון.",
+  "apps": [
+    {
+      "name": "מנהל הפרויקטים",
+      "prefix": "PM-",
+      "dir": "project-manager",
+      "api": "https://mbe-plus.com/mini_projects/project-manager/api.php",
+      "tasks_url": "https://mbe-plus.com/mini_projects/project-manager/#/settings/tasks",
+      "log_url": "https://mbe-plus.com/mini_projects/project-manager/#/settings/log",
+      "items_file": "project-manager/dev/open-items.json",
+      "token_env": "PM_DEVLOOP_TOKEN"
+    },
+    {
+      "name": "תבניות מסמכים",
+      "prefix": "DT-",
+      "dir": "document-templates",
+      "api": "https://mbe-plus.com/mini_projects/document-templates/api.php",
+      "tasks_url": "https://mbe-plus.com/mini_projects/document-templates/#dev?tab=items",
+      "log_url": "https://mbe-plus.com/mini_projects/document-templates/#dev?tab=log",
+      "items_file": "document-templates/dev/open-items.json",
+      "token_env": "DT_DEVLOOP_TOKEN"
+    }
+  ],
+  "module": {
+    "source": "devloop/src",
+    "sync": "php devloop/tools/sync.php",
+    "note": "בריפו הזה המודול מסונכרן מ-devloop/src לכל אפליקציה (devloop/apps.json), ושער בפריסה בודק. עורכים רק במקור."
+  },
+  "deploy_evidence": ".github/workflows/deploy.yml — השלב \"DevLoop — ראיות פריסה למטלות\""
+}

@@ -33,46 +33,68 @@ devloop_setup([
         }
     },
     'item_url'     => fn(string $code) => app_base_url() . '#dev?tab=items&code=' . rawurlencode($code),
-    // לוג המעקב → "⚠️ לבירור": שגיאות שרת (5xx) ושגיאות JavaScript מהדפדפן. 4xx — סירוב רגיל, לא באג.
-    'errors_max'   => fn() => (int)db()->query('SELECT COALESCE(MAX(id), 0) FROM dev_log')->fetchColumn(),
-    'errors'       => function (int $after, int $limit): array {
-        $st = db()->prepare("SELECT * FROM dev_log WHERE id > ? AND (status >= 500 OR action = 'client_error') ORDER BY id LIMIT " . max(1, $limit));
-        $st->execute([$after]);
-        return array_map('dt_log_as_error', $st->fetchAll());
-    },
+    // היומן של הכלי (לוג המעקב, dev_log, 30 יום) — במקום היומן המובנה של DevLoop. ממנו: "⚠️ לבירור" (שגיאת שרת
+    // 5xx ושגיאת דפדפן), העקבות של 🐞, "📜 יומן" בכל מטלה, ו-🔗 / "+ מטלה" בכל שורה בלוג
+    'log' => [
+        'rows'   => 'dt_devloop_log_rows',
+        'max_id' => fn() => (int)db()->query('SELECT COALESCE(MAX(id), 0) FROM dev_log')->fetchColumn(),
+        'write'  => 'dt_devloop_log_write',
+    ],
 ]);
 
-/** שורת dev_log במבנה שהמודול מצפה לו (id, at, category, event, message, action, method, status, ms, req, ua, data). */
-function dt_log_as_error(array $r): array
+/** הרמה של שורה בלוג — שורות ישנות בלי level: לפי התוצאה. */
+const DT_LOG_LEVEL = "COALESCE(l.level, CASE WHEN l.status >= 500 OR l.action = 'client_error' THEN 'error' WHEN l.status >= 400 THEN 'warn' ELSE 'info' END)";
+
+/** שורות מלוג המעקב, בחוזה של devloop_log_rows: after, before, level (error | warn ומעלה), ids, reqs, q, limit. */
+function dt_devloop_log_rows(array $q): array
 {
-    $js = $r['action'] === 'client_error';
-    return ['id' => (int)$r['id'], 'at' => $r['at'], 'category' => $js ? 'client' : 'server', 'event' => $js ? 'js.error' : 'http.5xx',
-        'message' => (string)$r['message'], 'action' => $js ? '' : (string)$r['action'], 'method' => (string)$r['method'],
-        'status' => (int)$r['status'], 'ms' => (int)$r['duration_ms'], 'req' => (string)($r['req'] ?? ''), 'ua' => (string)($r['ua'] ?? ''),
-        'data' => array_filter(['page' => $r['page'], 'trace' => $r['trace'] ? [$r['trace']] : null])];
+    $w = ['1 = 1'];
+    $a = [];
+    if (!empty($q['after'])) { $w[] = 'l.id > ?'; $a[] = (int)$q['after']; }
+    if (!empty($q['before'])) { $w[] = 'l.id < ?'; $a[] = (int)$q['before']; }
+    if (($q['level'] ?? '') === 'error') $w[] = DT_LOG_LEVEL . " = 'error'";
+    elseif (($q['level'] ?? '') === 'warn') $w[] = DT_LOG_LEVEL . " IN ('warn', 'error')";
+    foreach (['ids' => 'l.id', 'reqs' => 'l.req'] as $k => $col) {
+        if (!array_key_exists($k, $q)) continue;
+        $vals = array_values(array_slice(array_filter((array)$q[$k], fn($v) => $v !== '' && $v !== null), 0, 200));
+        if (!$vals) return [];
+        $w[] = "$col IN (" . implode(',', array_fill(0, count($vals), '?')) . ')';
+        array_push($a, ...$vals);
+    }
+    if (!empty($q['q'])) { $w[] = '(l.action LIKE ? OR l.message LIKE ? OR l.trace LIKE ?)'; $x = '%' . strtr((string)$q['q'], ['%' => '', '_' => '']) . '%'; array_push($a, $x, $x, $x); }
+    $limit = max(1, min(500, (int)($q['limit'] ?? 100)));
+    $st = db()->prepare('SELECT l.*, ' . DT_LOG_LEVEL . ' AS lvl, u.display_name FROM dev_log l LEFT JOIN users u ON u.id = l.user_id
+        WHERE ' . implode(' AND ', $w) . ' ORDER BY l.id ' . (!empty($q['after']) ? 'ASC' : 'DESC') . " LIMIT $limit");
+    $st->execute($a);
+    return array_map('dt_log_row', $st->fetchAll());
 }
 
-/**
- * לאיזו מטלת "⚠️ לבירור" שייכת שגיאה בלוג — אותה חתימה כמו ב-devloop_errors_sync (קטגוריה, אירוע, פעולה,
- * והודעה בלי מספרים ומחרוזות). כך מהלוג קופצים למטלה, ומהמטלה (מזהה הבקשה) — ללוג.
- */
-function dt_log_task_codes(array $rows): array
+/** שורת dev_log ← שורה של DevLoop: id, at, level, category, event, message, username, method, action, status, ms, req, ua, data. */
+function dt_log_row(array $r): array
 {
-    $sigs = [];
-    foreach ($rows as $r) {
-        if (!((int)$r['status'] >= 500 || $r['action'] === 'client_error')) continue;
-        $e = dt_log_as_error($r);
-        $norm = preg_replace(['/\b[0-9a-f]{8,}\b/i', '/\d+/', '/"[^"]*"/u', "/'[^']*'/u"], ['#', '#', '"…"', "'…'"], $e['message']);
-        $sigs[(int)$r['id']] = substr(hash('sha1', $e['category'] . '|' . $e['event'] . '|' . $e['action'] . '|' . mb_substr($norm, 0, 200)), 0, 16);
+    $js = $r['action'] === 'client_error';
+    $data = array_filter(['page' => $r['page'], 'trace' => $r['trace'] && !$js ? [$r['trace']] : null]);
+    if ($js && preg_match('/^(.*?):(\d+)(?::\d+)?$/', (string)$r['trace'], $m)) $data += ['source' => $m[1], 'line' => $m[2]];
+    elseif ($js && $r['trace']) $data['source'] = $r['trace'];
+    return ['id' => (int)$r['id'], 'at' => $r['at'], 'level' => $r['lvl'] ?? ($r['level'] ?? 'info'),
+        'category' => $r['category'] ?: ($js ? 'client' : 'api'), 'event' => $r['event'] ?: ($js ? 'client.error' : 'request'),
+        'message' => (string)$r['message'], 'username' => (string)($r['display_name'] ?? ''), 'method' => (string)$r['method'],
+        'action' => $js ? '' : (string)$r['action'], 'status' => (int)$r['status'], 'ms' => (int)$r['duration_ms'],
+        'req' => (string)($r['req'] ?? ''), 'ua' => (string)($r['ua'] ?? ''), 'data' => $data];
+}
+
+/** רשומה מהמודול (למשל אסימון שנדחה) — שורה בלוג המעקב, באותה בקשה. */
+function dt_devloop_log_write(string $level, string $category, string $event, array $extra = []): void
+{
+    try {
+        db()->prepare('INSERT INTO dev_log (at, action, duration_ms, method, status, actor, ip, message, req, ua, level, category, event)
+                       VALUES (?, ?, 0, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)')
+            ->execute([now_iso(), mb_substr($event, 0, 60), $_SERVER['REQUEST_METHOD'] ?? 'GET', 'claude', client_ip(),
+                mb_substr((string)($extra['message'] ?? ''), 0, 500), dev_req_id(), mb_substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 200),
+                in_array($level, ['info', 'warn', 'error'], true) ? $level : 'info', mb_substr($category, 0, 20), mb_substr($event, 0, 60)]);
+    } catch (Throwable) {
+        // לוג שנכשל לא מפיל את הבקשה
     }
-    if (!$sigs) return [];
-    devloop_migrate();
-    $st = db()->prepare('SELECT sig, code FROM dev_err_groups WHERE sig IN (' . implode(',', array_fill(0, count(array_unique($sigs)), '?')) . ')');
-    $st->execute(array_values(array_unique($sigs)));
-    $bySig = array_column($st->fetchAll(), 'code', 'sig');
-    $out = [];
-    foreach ($sigs as $id => $sig) if (isset($bySig[$sig])) $out[$id] = $bySig[$sig];
-    return $out;
 }
 
 /** טבלאות שנוצרו לפני המודול — מה שחסר בהן (הגבלת קצב לאסימון). */

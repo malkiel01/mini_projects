@@ -7,14 +7,20 @@
 נבנה במנהל הפרויקטים (שלבים 1–2, `project-manager/README.md` — "DevLoop"), והוצא לכאן כדי שכל אפליקציה תשתמש
 באותו קוד.
 
-**איך Claude עובד עם זה** — הסקיל `.claude/skills/devloop` (הלולאה, הפקודות, קובץ המטלות, וחיבור אפליקציה חדשה).
+**איך Claude עובד עם זה** — הסקיל `.claude/skills/devloop`. הוא **נייד**: יש בו עותק של המודול (`assets/`), דוגמה
+שעובדת במערכת ריקה (`assets/example/`), CI גנרי, והחוזה ב-HTTP — כדי להתקין DevLoop גם במערכות שאין להן קשר לריפו
+הזה. מה שייחודי לריפו (אילו אפליקציות, כתובות, סוד) — ב-`.devloop.json` בשורש, והסקיל קורא משם.
+
+**היומן הוא חלק מחייב:** בלי `log` ב-`devloop_setup` — היומן המובנה (`data_dir/log.sqlite`, 30 יום); לאפליקציה עם
+יומן משלה (מנהל הפרויקטים) — `log` עם `rows` / `max_id` / `write`. ממנו: ⚠️ לבירור, העקבות של 🐞, "📜 יומן" בכל מטלה,
+ו-🔗 / "+ מטלה" בכל שורה ביומן. הפירוט: `.claude/skills/devloop/references/log.md`.
 
 ## איך זה בנוי
 
 | מה | איפה |
 | --- | --- |
 | המקור — **עורכים רק כאן** | `devloop/src/devloop.php` · `devloop.js` · `devloop.css` |
-| מי משתמש, ולאן מועתק | `devloop/apps.json` |
+| מי משתמש, ולאן מועתק | `devloop/apps.json` — האפליקציות, וגם `assets/` של הסקיל |
 | סנכרון | `php devloop/tools/sync.php` (מעתיק) · `--check` (רק בודק) |
 | שער בפריסה | `DevLoop gate` ב-`.github/workflows/deploy.yml` — עותק ששונה בתוך אפליקציה עוצר את הפריסה |
 
@@ -71,4 +77,4 @@ DevLoop.show(element);      // מסך המטלות
 | אפליקציה | מצב |
 | --- | --- |
 | `project-manager` | על המודול (מגרסה 0.71); התראות במייל (0.72) |
-| `document-templates` | על המודול (DT-…, אסימון `dtd_`); שגיאות מלוג המעקב (`dev_log`) → ⚠️ לבירור; מייל; ראיות פריסה בסוד `DT_DEVLOOP_TOKEN` |
+| `document-templates` | על המודול (DT-…, אסימון `dtd_`); היומן — לוג המעקב של הכלי (`dev_log`) דרך `log`; מייל; ראיות פריסה בסוד `DT_DEVLOOP_TOKEN` |

@@ -124,7 +124,8 @@ const Settings = (() => {
         if (pane === 'trades') renderTrades();
         if (pane === 'templates') renderTemplates();
         if (pane === 'access') loadAccess();
-        if (pane === 'log') { loadLog(); loadToken(); }
+        // #/settings/log/<מזהה בקשה> — היומן מסונן לבקשה אחת (קישור מ"📜 יומן" במטלה)
+        if (pane === 'log') { logReq = /^[0-9a-f]{6,32}$/.test(sub) ? sub : ''; loadLog(); loadToken(); }
         if (pane === 'tasks') DevLoop.show($('#set-tasks'), /^[A-Z]+-\d+$/.test(sub) ? sub : ''); // מטלות ושיח עם Claude (DevLoop — devloop.js)
     }
 
@@ -395,10 +396,15 @@ const Settings = (() => {
     const LOG_CAT = { auth: 'כניסה', api: 'בקשה', data: 'נתונים', admin: 'מפתח', client: 'דפדפן', php: 'שרת' }; // i18n-ok
     /** "12 שגיאות" — המספר מודגש, בכל סדר מילים. */
     const bold = (key, n) => esc(t(key, { n })).replace(String(n), `<b>${n}</b>`);
-    let logRows = [];
+    let logRows = [], logReq = '';
 
     async function loadLog(more = false) {
         const params = { level: $('#log-level').value, category: $('#log-cat').value, q: $('#log-q').value.trim(), limit: 200 };
+        if (logReq) params.req = logReq;
+        $('#log-req').hidden = !logReq;
+        // i18n-none-start — אזור הפיתוח
+        $('#log-req').innerHTML = logReq ? `<a class="chip on" href="#/settings/log">בקשה <span dir="ltr">${esc(logReq)}</span> ✕</a>` : '';
+        // i18n-none-end
         if (more && logRows.length) params.before_id = logRows[logRows.length - 1].id;
         await busy(null, null, async () => {
             const { entries, stats } = await api('log', { params });
@@ -411,13 +417,15 @@ const Settings = (() => {
             $('#log-list').innerHTML = logRows.map(r => {
                 const at = new Date(r.at);
                 const who = r.username || (r.user_id ? '#' + r.user_id : '');
-                return `<li><details><summary>
-                    <span class="lv ${esc(r.level)}" aria-label="${esc(r.level)}"></span>
+                // data-log-* ו-.dl-slot — DevLoop מוסיף 🔗 למטלה של השורה, או "+ מטלה" בשגיאה (decorateLog)
+                return `<li data-log-id="${r.id}" data-log-req="${esc(r.req || '')}" data-log-level="${esc(r.level)}"><details><summary>
+                    <span class="lv ${esc(r.level)}" aria-label="${esc(r.level)}"></span><span class="dl-slot"></span>
                     <span class="ev">${esc(r.event)}</span>
                     <span class="msg">${esc([LOG_CAT[r.category] ? t(LOG_CAT[r.category]) : r.category, who, r.message, r.status ? '→' + r.status : ''].filter(Boolean).join(' · '))}</span>
                     <time datetime="${esc(r.at)}">${at.toLocaleDateString(I18n.locale(), { day: 'numeric', month: 'numeric' })} ${at.toLocaleTimeString(I18n.locale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time>
                 </summary><pre>${esc(JSON.stringify({ ...r, data: r.data }, null, 1))}</pre></details></li>`;
             }).join('') || `<li><p class="empty">${esc(t('אין רשומות'))}</p></li>`;
+            DevLoop.decorateLog($('#log-list'));
         });
     }
 

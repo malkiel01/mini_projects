@@ -61,7 +61,7 @@ $POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'dev_user
            'ext_issue', 'ext_update',
            'client_error', 'font_upload', 'font_delete', 'dev_force', 'me_update', 'me_password', 'me_logout_others',
            'contact_import', 'dev-task-create', 'dev-task-set', 'dev-comment', 'dev-comment-delete', 'dev-token-create', 'dev-token-revoke',
-           'dev-verify', 'dev-report', 'dev-attach', 'devapi-comment', 'devapi-attach'];
+           'dev-verify', 'dev-report', 'dev-attach', 'dev-log-links', 'dev-task-from-log', 'devapi-comment', 'devapi-attach'];
 
 try {
     if (in_array($action, $POSTS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -181,6 +181,9 @@ try {
         'dev-report'         => devloop_report($session, $body),
         'dev-attach'         => devloop_attach('user:' . $session['id'], $_GET),
         'dev-file'           => devloop_file_out((int)($_GET['id'] ?? 0)),
+        'dev-item-log'       => ['ok' => true] + devloop_item_log((string)($_GET['code'] ?? '')),
+        'dev-log-links'      => ['ok' => true] + devloop_log_links((array)($body['ids'] ?? []), (array)($body['reqs'] ?? [])),
+        'dev-task-from-log'  => devloop_task_from_log($session, $body),
         'dev-tokens'         => ['ok' => true] + devloop_token_list(),
         'dev-token-create'   => devloop_token_create($session, $body),
         'dev-token-revoke'   => devloop_token_revoke($session, $body),

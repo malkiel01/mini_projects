@@ -4,6 +4,11 @@
     "js": "assets/js/devloop.js",
     "css": "assets/css/devloop.css"
   },
+  ".claude/skills/devloop": {
+    "php": "assets/devloop.php",
+    "js": "assets/devloop.js",
+    "css": "assets/devloop.css"
+  },
   "document-templates": {
     "php": "lib/devloop.php",
     "js": "assets/js/devloop.js",

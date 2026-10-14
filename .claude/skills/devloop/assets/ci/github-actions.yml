@@ -1,0 +1,31 @@
+# DevLoop — ראיות פריסה למטלות. שלב אחרון ב-workflow של הפריסה (אחרי שהפריסה הצליחה).
+# כל קוד מטלה בהודעת ה-commit (למשל PM-018) מקבל: 🚀 פריסה, 📌 commit, 🔀 PR — ועובר ל"🧪 ממתין לאימות".
+# מטלה שהמפתח כבר סגר — לא חוזרת. לא מפיל את הפריסה (continue-on-error), ומדלג כשאין סוד.
+#
+# להחליף: PREFIX (הקידומת), DEVLOOP_API (כתובת api.php), ושם הסוד. checkout רגיל מספיק (git log -1).
+      - name: DevLoop — ראיות פריסה למטלות
+        if: success()
+        continue-on-error: true
+        env:
+          DEVLOOP_TOKEN: ${{ secrets.DEVLOOP_TOKEN }}
+          DEVLOOP_API: https://example.com/app/api.php
+          PREFIX: PM
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_NO: ${{ github.run_number }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$DEVLOOP_TOKEN" ]; then echo "::notice::אין DEVLOOP_TOKEN — מדלג"; exit 0; fi
+          MSG="$(git log -1 --format=%B)"
+          CODES=$(printf '%s' "$MSG" | grep -oE "\b${PREFIX}-[0-9]{3}\b" | sort -u || true)
+          [ -z "$CODES" ] && { echo "אין קודי מטלות בהודעת ה-commit"; exit 0; }
+          PR=$(printf '%s' "$MSG" | head -1 | grep -oE '\(#[0-9]+\)' | tr -dc 0-9 || true)
+          SHA=$(git rev-parse --short HEAD)
+          for CODE in $CODES; do
+            BODY=$(jq -nc --arg code "$CODE" --arg run "run $RUN_NO" --arg url "$RUN_URL" --arg pr "$PR" --arg repo "$REPO" --arg sha "$SHA" '{
+              code: $code, status: "verify", by: "github",
+              evidence: ([{kind: "deploy", ref: $run, url: $url, note: ""}, {kind: "commit", ref: $sha, url: ("https://github.com/" + $repo + "/commit/" + $sha), note: ""}]
+                + (if $pr == "" then [] else [{kind: "pr", ref: ("#" + $pr), url: ("https://github.com/" + $repo + "/pull/" + $pr), note: ""}] end))}')
+            HTTP=$(curl -sS -o /tmp/devloop.json -w '%{http_code}' --max-time 30 -X POST "$DEVLOOP_API?action=devapi-comment" \
+              -H "X-Dev-Token: $DEVLOOP_TOKEN" -H 'Content-Type: application/json' --data "$BODY" || echo 000)
+            [ "$HTTP" = 200 ] && echo "$CODE ← ראיות פריסה" || echo "::warning::DevLoop: $CODE נכשל ($HTTP): $(head -c 300 /tmp/devloop.json)"
+          done

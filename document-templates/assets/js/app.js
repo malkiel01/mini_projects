@@ -636,6 +636,7 @@
       toast, isDev: () => !!(me && me.is_developer), appName: 'תבניות מסמכים', tasksHref: '#dev?tab=items',
       mountBefore: '#me-btn', headers: () => ({ 'X-CSRF': csrf }), lang: () => 'he', version: () => 'stage 12',
       trace: () => trace,
+      logHref: (r) => r.req ? '#dev?tab=log&req=' + encodeURIComponent(r.req) : '#dev?tab=log',   // 📜 יומן במטלה ← הלוג שלנו
     });
     DevLoop.mount();
   }
