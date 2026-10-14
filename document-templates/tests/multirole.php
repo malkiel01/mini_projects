@@ -50,7 +50,10 @@ check('ממלא אחד — בלי רשימה', $by['solo']['roles'] === []);
 
 $did = doc_create($a, ['template_id' => $tid])['id'];
 $parts = array_column(doc_get($a, $did)['document']['participants'], 'id', 'role_key');
-$link = fn($role) => part_link($a, ['id' => $did, 'participant_id' => $parts[$role], 'via' => 'link'])['url'];
+$link = function ($role) use ($a, &$did, &$parts) {
+    part_contact($a, ['id' => $did, 'participant_id' => $parts[$role], 'name' => 'ממלא ' . $role]);
+    return part_link($a, ['id' => $did, 'participant_id' => $parts[$role], 'via' => 'link'])['url'];
+};
 $tLink = $link('tenant');
 $gLink = $link('guarantor');
 
@@ -82,6 +85,7 @@ check('הושלם', db()->query("SELECT status FROM documents WHERE id = $did")-
 // כמה ממלאים: כל אחד יכול — גם מי שמילא שני
 $did2 = doc_create($a, ['template_id' => $tid])['id'];
 $p2 = array_column(doc_get($a, $did2)['document']['participants'], 'id', 'role_key');
+part_contact($a, ['id' => $did2, 'participant_id' => $p2['guarantor'], 'name' => 'ערב']);
 as_link(part_link($a, ['id' => $did2, 'participant_id' => $p2['guarantor'], 'via' => 'link'])['url']);
 fill_save(['values' => ['phone' => '03-111']]);
 check('הערב ממלא את הטלפון (גם בלי שהשוכר נשלח)', doc_values($did2)['phone'] === '03-111');

@@ -929,13 +929,35 @@
         el('div', { class: 'row' }, el('h2', {}, 'משתתפים'), el('button', { class: 'link small', onclick: () => { people.hidden = true; } }, 'סגירה')),
         doc.schema.sequential ? el('p', { class: 'muted small' }, 'לפי הסדר: הקישור הבא נשלח אוטומטית במייל כשהקודם מסיים.') : null,
         ...doc.participants.map(p => {
-          const name = el('input', { value: p.name, placeholder: 'שם', maxlength: 80 });
-          const email = el('input', { value: p.email, placeholder: 'מייל', type: 'email', dir: 'ltr' });
-          const phone = el('input', { value: p.phone, placeholder: 'טלפון (לוואטסאפ)', dir: 'ltr' });
+          // ממלא בקישור = איש קשר: בוחרים מהרשימה, או כותבים פרטים — והם נשמרים כאיש קשר.
+          // שינוי כאן מעדכן את הכרטיס, ועדכון בכרטיס מגיע לכאן.
+          let cid = p.contact_id || null;
+          const name = el('input', { value: p.name, placeholder: 'שם', maxlength: 80, 'aria-label': 'שם' });
+          const email = el('input', { value: p.email, placeholder: 'מייל', type: 'email', dir: 'ltr', 'aria-label': 'מייל' });
+          const phone = el('input', { value: p.phone, placeholder: 'טלפון (לוואטסאפ)', dir: 'ltr', 'aria-label': 'טלפון' });
+          const linkInfo = el('p', { class: 'muted small person-contact' });
+          const paintLink = () => linkInfo.replaceChildren(...(cid
+            ? ['👤 מקושר לאיש קשר — שינוי כאן מעדכן גם את הכרטיס. ',
+               el('button', { type: 'button', class: 'link small', onclick: async () => {
+                 const c = (await window.DTCatalog.contacts(true)).find(x => x.id === cid);
+                 if (c && await window.DTCatalog.contactDialog(c)) { await reload(); renderPeople(); }
+               } }, 'פתיחת הכרטיס')]
+            : ['📇 בוחרים מאנשי הקשר — או כותבים פרטים, והם יישמרו כאיש קשר חדש.']));
+          paintLink();
           const saveContact = async () => {
-            await api('part_contact', { id, participant_id: p.id, name: name.value, email: email.value, phone: phone.value });
-            Object.assign(p, { name: name.value, email: email.value, phone: phone.value });
+            const r = await api('part_contact', { id, participant_id: p.id, contact_id: cid || 0, name: name.value, email: email.value, phone: phone.value });
+            cid = r.contact_id;
+            if (r.contact) { name.value = r.contact.name; email.value = r.contact.email; phone.value = r.contact.phone; }
+            Object.assign(p, { contact_id: cid, name: name.value, email: email.value, phone: phone.value });
+            window.DTCatalog.contacts(true).catch(() => {});   // אולי נוצר כרטיס חדש
+            paintLink();
           };
+          const pickBox = el('span');
+          window.DTCatalog.contactPicker(cid, (c) => {
+            cid = c ? c.id : null;
+            name.value = c ? c.name : ''; email.value = c ? c.email : ''; phone.value = c ? c.phone : '';
+            paintLink();
+          }, { empty: '— בחירה מאנשי הקשר —' }).then(sel => pickBox.replaceChildren(sel)).catch(() => {});
           const act = async (via) => {
             out.replaceChildren();
             // חלון וואטסאפ נפתח עכשיו, בתוך הלחיצה — אחרי await דפדפנים חוסמים חלונות.
@@ -944,8 +966,8 @@
               await saveContact();
               const r = await api('part_link', { id, participant_id: p.id, via });
               if (wa) wa.location.href = r.whatsapp;
-              out.replaceChildren(notice(r.emailed ? 'נשלח במייל ל-' + email.value : 'הקישור החדש (הקודם בוטל):', 'ok'),
-                via === 'link' ? el('input', { class: 'link-box', value: r.url, readonly: true, dir: 'ltr', onclick: (e) => e.target.select() }) : null);
+              out.replaceChildren(...[notice(r.emailed ? 'נשלח במייל ל-' + email.value : 'הקישור החדש (הקודם בוטל):', 'ok'),
+                via === 'link' ? el('input', { class: 'link-box', value: r.url, readonly: true, dir: 'ltr', onclick: (e) => e.target.select() }) : null].filter(Boolean));
               if (via === 'link') navigator.clipboard?.writeText(r.url).catch(() => {});
               await reload();
               renderBody();   // השדות של המשתתף ננעלו אצל המנפיק
@@ -959,15 +981,13 @@
             el('div', { class: 'row' }, el('strong', {}, p.role),
               el('span', { class: 'badge ' + (done ? 'ok' : p.opened_at ? 'warn' : 'muted') }, PSTATUS[p.status] || p.status)),
             p.auth === 'email' ? el('div', { class: 'muted small' }, '🔒 אימות בקוד למייל') : null,
-            done ? null : el('div', { class: 'person-fields' }, name, email, phone, (() => {
-              const btn = el('button', { type: 'button', class: 'link small', onclick: async () => {
-                const sel = await window.DTCatalog.contactPicker(null, (c) => {
-                  if (c) { name.value = c.name; email.value = c.email; phone.value = c.phone; }
-                }, { empty: '— בחירה מאנשי הקשר —' });
-                btn.replaceWith(sel);
-              } }, '👤 מאנשי הקשר');
-              return btn;
-            })()),
+            done ? (p.name ? el('div', { class: 'muted small' }, '👤 ' + p.name) : null) : el('div', { class: 'person-fields' }, pickBox, name, email, phone,
+              el('button', { type: 'button', class: 'small', onclick: async () => {
+                out.replaceChildren();
+                try { await saveContact(); out.replaceChildren(notice(cid ? '✓ נשמר באנשי הקשר' : 'הממלא נותק מאיש הקשר', 'ok')); }
+                catch (e) { out.replaceChildren(notice(e.message, 'bad')); }
+              } }, '💾 שמירה')),
+            done ? null : linkInfo,
             p.blocked && !done ? el('p', { class: 'muted small' }, p.blocked) : null,
             done || p.blocked ? null : el('div', { class: 'ops' },
               el('button', { class: 'small primary', onclick: () => act('email') }, '✉ מייל'),

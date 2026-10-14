@@ -784,3 +784,17 @@ pre.secret { margin: 0; padding: var(--s2); border-radius: var(--r); background:
 /* שדה עם כמה ממלאים ("או פלוני או אלמוני") — מסגרת מקווקוות */
 .field.multi { border-style: dashed; border-width: 2px; }
 .shared-hint { display: block; }
+
+/* ממלא ← איש קשר; ייבוא מהטלפון */
+.person-contact { margin: 0; }
+.contact-fills { display: grid; gap: var(--s2); border-top: 1px solid var(--line); padding-top: var(--s2); }
+.fills-list > li { display: grid; gap: 4px; padding: var(--s2) 0; border-bottom: 1px solid var(--line); }
+.fills-list > li:last-child { border-bottom: 0; }
+.fill-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); min-width: 0; }
+.fill-row a { min-width: 0; overflow-wrap: anywhere; }
+.import-list { max-height: 55vh; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--r); }
+.import-list > li { padding: 0; }
+.imp-row { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); width: 100%; cursor: pointer; }
+.imp-row input { flex: none; width: 20px; height: 20px; }
+.imp-row.dup { opacity: .6; }
+.vcf-help ul { margin: var(--s1) 0 0; padding-inline-start: 18px; font-size: .85rem; color: var(--muted); }

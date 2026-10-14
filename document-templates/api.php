@@ -59,7 +59,7 @@ $POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'dev_user
            'src_save', 'src_delete', 'src_sync', 'key_create', 'key_update', 'key_revoke', 'key_secret', 'key_test',
            'ext_issue', 'ext_update',
            'client_error', 'font_upload', 'font_delete', 'dev_force', 'me_update', 'me_password', 'me_logout_others',
-           'dev_task_create', 'dev_task_set', 'dev_comment', 'dev_comment_delete', 'dev_token_create', 'dev_token_revoke',
+           'contact_import', 'dev_task_create', 'dev_task_set', 'dev_comment', 'dev_comment_delete', 'dev_token_create', 'dev_token_revoke',
            'devapi_comment'];
 
 try {
@@ -169,6 +169,8 @@ try {
         // אזור הפיתוח (dev_ — למפתח בלבד) והגדרות המשתמש
         'dev_log_list'   => dev_log_list($_GET),
         'dev_items'      => dev_items(),
+        'contact_fills'  => contact_fills($session, $_GET),
+        'contact_import' => contact_import($session, $body),
         'dev_task_create'    => dev_task_create($session, $body),
         'dev_task_set'       => dev_task_set($session, $body),
         'dev_comment'        => dev_comment($session, $body),

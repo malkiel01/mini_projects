@@ -82,6 +82,7 @@ throws('מזהה של קובץ משדה אחר', fn() => doc_save($owner, ['id' 
 
 // ── הממלא ──
 $pid = (int)db()->query('SELECT id FROM participants LIMIT 1')->fetchColumn();
+part_contact($owner, ['id' => $docId, 'participant_id' => $pid, 'name' => 'ממלא']);
 $link = part_link($owner, ['id' => $docId, 'participant_id' => $pid, 'via' => 'link']);
 $_SERVER['HTTP_X_FILL_TOKEN'] = substr($link['url'], strpos($link['url'], '#t=') + 3);
 throws('הממלא לא מעלה לשדה של המנפיק', fn() => fill_upload(['field_key' => 'contract'], ['file' => up($pdf)]), 403);

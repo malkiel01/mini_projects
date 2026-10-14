@@ -107,14 +107,22 @@ function wa_phone(string $phone): string
 
 // ── מנהל הטופס ───────────────────────────────────────────────
 
-/** נקרא מ-doc_create: שורה לכל תפקיד שאינו המנפיק, בסדר של התבנית. */
-function create_participants(int $docId, array $schema): void
+/**
+ * נקרא מ-doc_create: שורה לכל תפקיד שאינו המנפיק, בסדר של התבנית. ממלא שבתבנית יש לו
+ * איש קשר קבוע — מקושר אליו מיד (אם הכרטיס של מי שמנפיק, ולא בארכיון).
+ */
+function create_participants(int $docId, array $schema, ?array $user = null): void
 {
-    $ins = db()->prepare('INSERT INTO participants (document_id, role_key, auth, status, sort_order) VALUES (?, ?, ?, ?, ?)');
+    $ins = db()->prepare('INSERT INTO participants (document_id, role_key, auth, status, sort_order, contact_id, contact_enc) VALUES (?, ?, ?, ?, ?, ?, ?)');
     $i = 0;
     foreach ($schema['roles'] ?? [] as $r) {
         if ($r['key'] === 'owner') continue;
-        $ins->execute([$docId, $r['key'], $r['auth'] === 'email' ? 'email' : 'none', 'waiting', ++$i]);
+        $c = null;
+        if (!empty($r['contact']) && $user) {
+            try { $c = contact_view(contact_row($user, (int)$r['contact'])); } catch (ApiError $e) { $c = null; }
+            if ($c && $c['archived']) $c = null;
+        }
+        $ins->execute([$docId, $r['key'], $r['auth'] === 'email' ? 'email' : 'none', 'waiting', ++$i, $c ? $c['id'] : null, $c ? contact_snap($c) : null]);
     }
 }
 
@@ -135,7 +143,7 @@ function participants_view(array $d, array $schema): array
         elseif ($schema['sequential'] && $turn !== (int)$p['id']) $blocked = 'ממתין לתורו';
         return [
             'id' => (int)$p['id'], 'role_key' => $p['role_key'], 'role' => $role['label'], 'auth' => $p['auth'],
-            'name' => $c['name'], 'email' => $c['email'], 'phone' => $c['phone'],
+            'name' => $c['name'], 'email' => $c['email'], 'phone' => $c['phone'], 'contact_id' => $p['contact_id'] ? (int)$p['contact_id'] : null,
             'status' => $p['status'], 'notified_at' => $p['notified_at'], 'opened_at' => $p['opened_at'],
             'completed_at' => $p['completed_at'], 'has_link' => $p['token_hash'] !== null,
             'missing' => missing_for($schema, $values, $p['role_key'], $open), 'blocked' => $blocked,
@@ -153,21 +161,6 @@ function part_owned(array $user, array $b): array
     return [$d, $p];
 }
 
-function part_contact(array $user, array $b): array
-{
-    [$d, $p] = part_owned($user, $b);
-    $email = trim((string)($b['email'] ?? ''));
-    if ($email !== '') $email = valid_email($email);
-    $c = [
-        'name' => mb_substr(trim((string)($b['name'] ?? '')), 0, 80),
-        'email' => $email,
-        'phone' => mb_substr(preg_replace('/[^\d+\- ]/', '', (string)($b['phone'] ?? '')), 0, 20),
-    ];
-    if ($p['auth'] === 'email' && $c['email'] === '') throw new ApiError('לתפקיד הזה נדרש אימות במייל — חובה כתובת מייל', 422);
-    db()->prepare('UPDATE participants SET contact_enc = ? WHERE id = ?')->execute([seal(json_encode($c, JSON_UNESCAPED_UNICODE)), $p['id']]);
-    return ['ok' => true];
-}
-
 /**
  * מנפיק קישור (ומבטל את הקודם). via: email — שולח מכאן; link — רק מחזיר
  * את הקישור (להעתקה או לוואטסאפ).
@@ -180,6 +173,8 @@ function part_link(array $user, array $b): array
     $schema = doc_schema($d);
     $view = array_values(array_filter(participants_view($d, $schema), fn($x) => $x['id'] === (int)$p['id']))[0];
     if ($view['blocked']) throw new ApiError($view['blocked'], 409);
+    // ממלא בקישור הוא תמיד איש קשר — כך אפשר לעקוב ולעדכן אותו מהכרטיס
+    if (!$p['contact_id']) throw new ApiError('קודם בוחרים לממלא איש קשר — או כותבים את פרטיו, והוא יישמר באנשי הקשר', 422);
 
     $via = ($b['via'] ?? 'link') === 'email' ? 'email' : 'link';
     $c = contact_of($p);
