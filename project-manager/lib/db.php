@@ -838,6 +838,7 @@ function pm_contracts_multi(PDO $pdo): void
         closed_at   TEXT
     )');
     $pdo->exec('CREATE INDEX IF NOT EXISTS rejects_project ON rejects (project_id, status)');
+    pm_add_column($pdo, 'rejects', 'reminded_at', 'TEXT'); // תזכורת אחרונה לספק על ריג'קט באיחור (pm_rejects_tick)
     $pdo->exec('CREATE TABLE IF NOT EXISTS reject_events (
         id         INTEGER PRIMARY KEY,
         reject_id  INTEGER NOT NULL REFERENCES rejects(id) ON DELETE CASCADE,

@@ -144,6 +144,8 @@ const Projects = (() => {
                 p.stages_total ? `${p.stages_done}/${p.stages_total}` : '',
             ].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>');
             const status = (p.status !== 'active' ? `<span class="chip">${esc(state.labels.project[p.status])}</span>` : '')
+                // 🔧 ריג'קטים שעוד לא נסגרו — חוסמים מסירה
+                + (p.rejects_open ? `<span class="chip fin-warn rj-count" title="${esc(t('ריג\'קטים פתוחים'))}">🔧 ${p.rejects_open}</span>` : '')
                 // שותף מנהל: פרויקט של מנהל אחר — עם השם שלו; פרויקט שלי ששיתפתי — "משותף"
                 + (p.owner_id !== state.user.id ? `<span class="chip partner-chip" title="${esc(t('שותף מנהל'))}">🤝 ${esc(p.owner_name)}</span>` : p.shared ? `<span class="chip partner-chip">🤝 ${esc(t('משותף'))}</span>` : '');
             return `<article class="card chat" data-id="${p.id}" tabindex="0" role="link" aria-label="${esc(p.name)}">
@@ -253,6 +255,7 @@ const Projects = (() => {
 
     function render() {
         header();
+        Rejects.badge(cur.rejects_open || 0);
         if (pane === 'timeline') renderTimeline();
         if (pane === 'files') Files.show(cur.project, Number(subFolder) || 0);
         if (pane === 'stages') renderStages();

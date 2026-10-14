@@ -14,7 +14,7 @@ declare(strict_types=1);
 const PM_REJECT_STATUSES = ['pending' => 'ממתין לאישור המנהל', 'open' => 'פתוח', 'fixed' => 'הספק דיווח שתיקן', 'returned' => 'חזר — לא תוקן כמו שצריך',
     'done' => 'בוצע', 'cancelled' => 'בוטל'];
 const PM_REJECT_KINDS = ['opened' => 'נפתח', 'note' => 'הודעה', 'fixed' => 'דיווח: תיקנתי', 'done' => 'סומן בוצע', 'returned' => 'הוחזר — לא תוקן כמו שצריך',
-    'approved' => 'אושר ונשלח לספק', 'cancelled' => 'בוטל', 'reopened' => 'נפתח מחדש'];
+    'approved' => 'אושר ונשלח לספק', 'cancelled' => 'בוטל', 'reopened' => 'נפתח מחדש', 'reminded' => 'תזכורת לספק'];
 // i18n-ok-end
 const PM_REJECT_OPEN = ['open', 'fixed', 'returned']; // לא נסגרו — חוסמים מסירה (pending עוד לא אושר — לא חוסם)
 
@@ -253,3 +253,26 @@ function pm_rejects_guard_handover(int $projectId, ?int $unitId = null): void
     $list = implode(' · ', array_map(fn($s, $t) => $s . ': ' . count($t), array_keys($by), $by));
     throw new PmError('אי אפשר למסור — יש {n} ריג\'קטים פתוחים ({list}). סגרו אותם ב"🔧 ריג\'קטים"', 409, ['n' => count($open), 'list' => $list]);
 }
+
+/**
+ * תזכורת לספק על ריג'קט שעבר את היעד ועוד לא תוקן (פתוח / הוחזר): מייל עם הקישור, ושורה בשרשור. פעם ב-3 ימים —
+ * עד שהספק מדווח "תיקנתי" או שהריג'קט נסגר. נקרא מהמייל היומי (pm_digest_tick), פעם ביום.
+ */
+function pm_rejects_tick(): void
+{
+    $db = pm_db();
+    $today = pm_today();
+    $since = pm_today(-3);
+    $st = $db->prepare("SELECT r.* FROM rejects r JOIN projects p ON p.id = r.project_id WHERE r.status IN ('open','returned') AND r.supplier_id IS NOT NULL
+                         AND r.due_date != '' AND r.due_date < ? AND p.status IN ('active','paused') AND (r.reminded_at IS NULL OR r.reminded_at <= ?)");
+    $st->execute([$today, $since]);
+    $system = ['id' => 0, 'display_name' => 'מערכת']; // i18n-ok
+    foreach ($st->fetchAll() as $r) {
+        $db->prepare('UPDATE rejects SET reminded_at = ? WHERE id = ?')->execute([$today, $r['id']]); // קודם מסמנים — שלא יישלח פעמיים
+        $days = (int)((strtotime($today) - strtotime($r['due_date'])) / 86400);
+        pm_reject_event((int)$r['id'], 'reminded', 'system', pm_t('מערכת'), pm_t('תזכורת לספק: עבר היעד ({date}) לפני {n} ימים', ['date' => pm_short_date($r['due_date']), 'n' => $days]), []);
+        pm_reject_notify($system, (int)$r['id'], (int)$r['supplier_id'], 'reject_late');
+        pm_log('info', 'mail', 'reject.reminder', ['data' => ['reject' => (int)$r['id'], 'supplier' => (int)$r['supplier_id'], 'days' => $days]]);
+    }
+}
+

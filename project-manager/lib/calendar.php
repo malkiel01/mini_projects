@@ -24,6 +24,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/portal.php';
+require_once __DIR__ . '/rejects.php'; // תזכורת יומית על ריג'קטים באיחור (pm_rejects_tick)
 
 const PM_TZ = 'Asia/Jerusalem';
 const PM_WAIT_DAYS = 3;
@@ -140,6 +141,19 @@ function pm_reminders(array $user, ?string $lang = null): array
         if ($days < PM_WAIT_DAYS) continue;
         $r('wait', pm_t($p['needs_lawyer'] && !$p['lawyer_approved_at'] ? 'דרישת תשלום ממתינה לאישור עו"ד {n} ימים: {title}' : 'דרישת תשלום ממתינה לתשלום {n} ימים: {title}',
             ['n' => $days, 'title' => $p['title']], $lang), (int)$p['project_id'], 'payments', substr((string)$p['requested_at'], 0, 10));
+    }
+    // 🔧 ריג'קטים: באיחור (עבר היעד), הספק דיווח שתיקן — לבדוק, הלקוח פתח — לאשר
+    foreach ($db->query("SELECT r.project_id, r.title, r.status, r.due_date, r.updated_at, c.name AS supplier FROM rejects r LEFT JOIN contacts c ON c.id = r.supplier_id
+                          WHERE r.project_id IN ($ids) AND r.status IN ('open','returned','fixed','pending')") as $x) {
+        if (in_array($x['status'], ['open', 'returned'], true) && $x['due_date'] !== '' && $x['due_date'] < $today) {
+            $r('late', pm_t('ריג\'קט באיחור: {title} — {supplier} (עד {date})', ['title' => $x['title'], 'supplier' => (string)$x['supplier'], 'date' => pm_short_date($x['due_date'])], $lang),
+                (int)$x['project_id'], 'rejects', $x['due_date']);
+        } elseif ($x['status'] === 'fixed') {
+            $r('soon', pm_t('{supplier} דיווח שתיקן — לבדוק ולסגור: {title}', ['title' => $x['title'], 'supplier' => (string)$x['supplier']], $lang),
+                (int)$x['project_id'], 'rejects', substr((string)$x['updated_at'], 0, 10));
+        } elseif ($x['status'] === 'pending') {
+            $r('soon', pm_t('הלקוח פתח ריג\'קט — לאשר ולשייך לספק: {title}', ['title' => $x['title']], $lang), (int)$x['project_id'], 'rejects', substr((string)$x['updated_at'], 0, 10));
+        }
     }
     // שלבים: היו אמורים להתחיל / להסתיים
     foreach ($db->query("SELECT project_id, name, status, plan_start, plan_end FROM stages WHERE project_id IN ($ids) AND status NOT IN ('done','paid')") as $s) {
@@ -355,6 +369,8 @@ function pm_digest_tick(): void
         pm_log($ok ? 'info' : 'warn', 'mail', 'mail.digest', ['data' => ['to' => $to, 'items' => count($list), 'sent' => $ok]]);
         $sent++;
     }
+    // 🔧 ריג'קטים באיחור — תזכורת לספק (פעם ב-3 ימים, עד שתוקן)
+    try { pm_rejects_tick(); } catch (Throwable $e) { pm_log('error', 'mail', 'reject_reminder.failed', ['message' => $e->getMessage()]); }
     // ללקוח ולעו"ד — התראות כספיות חדשות (חריגה, גידול בתקציב, שולם מעל הביצוע), פעם אחת לכל אחת
     try { pm_fin_contact_tick(); } catch (Throwable $e) { pm_log('error', 'mail', 'fin_alert.failed', ['message' => $e->getMessage()]); }
 }
