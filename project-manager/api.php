@@ -16,6 +16,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/lib/messages.php';
 require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/lib/dev.php';
+require_once __DIR__ . '/lib/devtasks.php'; // מטלות ושיח — אזור הפיתוח
 
 pm_log_install_handlers();
 pm_survey_migrate();
@@ -74,6 +75,9 @@ try {
         'POST forgot'          => fn() => pm_forgot(pm_body()),
         'POST reset-info'      => fn() => pm_reset_info((string)(pm_body()['token'] ?? '')),
         'POST reset-password'  => fn() => pm_reset_password(pm_body()),
+        // מטלות ושיח: Claude קורא ועונה באסימון אישי (X-Dev-Token), בלי עוגייה (lib/devtasks.php)
+        'GET devapi-feed'      => fn() => pm_devapi_feed(pm_devapi_auth(), $_GET),
+        'POST devapi-comment'  => fn() => pm_devapi_comment(pm_devapi_auth(), pm_body()),
         // יומן הטלפון מושך את זה בלי עוגייה — האסימון בכתובת (lib/calendar.php)
         'GET calendar-feed'    => fn() => pm_calendar_feed((string)($_GET['t'] ?? '')),
         // שגיאת JavaScript מהדפדפן — גם לפני כניסה (מסך הכניסה). X-PM מונע הצפה מאתר זר.
@@ -281,6 +285,15 @@ try {
         'POST claim-orphans' => $isDev ? pm_claim_orphans($user, (int)($in['to'] ?? 0)) : throw new PmError('רק המפתח', 403),
         'GET log'         => $isDev ? ['entries' => pm_log_query($in), 'stats' => pm_log_stats()] : throw new PmError('רק המפתח', 403),
         'GET log-token'   => $isDev ? pm_log_token() : throw new PmError('רק המפתח', 403),
+        // מטלות ושיח (הגדרות ← 📋 מטלות) — רק המפתח
+        'GET dev-items'          => $isDev ? pm_dev_task_list() : throw new PmError('רק המפתח', 403),
+        'POST dev-task-create'   => $isDev ? pm_dev_task_create($user, $in) : throw new PmError('רק המפתח', 403),
+        'POST dev-task-set'      => $isDev ? (pm_dev_task_status((string)($in['code'] ?? ''), (string)($in['status'] ?? '')) ?? ['ok' => true]) : throw new PmError('רק המפתח', 403),
+        'POST dev-comment'       => $isDev ? pm_dev_comment_add((string)($in['code'] ?? ''), 'user', (int)$user['id'], (string)($in['body'] ?? '')) : throw new PmError('רק המפתח', 403),
+        'POST dev-comment-delete' => $isDev ? pm_dev_comment_delete($user, $in) : throw new PmError('רק המפתח', 403),
+        'GET dev-tokens'         => $isDev ? pm_dev_token_list() : throw new PmError('רק המפתח', 403),
+        'POST dev-token-create'  => $isDev ? pm_dev_token_create($user, $in) : throw new PmError('רק המפתח', 403),
+        'POST dev-token-revoke'  => $isDev ? pm_dev_token_revoke($user, $in) : throw new PmError('רק המפתח', 403),
         'POST log-token'  => $isDev ? pm_log_token(true) : throw new PmError('רק המפתח', 403),
         'POST trade'      => $isDev ? ['trades' => pm_trade_save($user, $in)] : throw new PmError('רק המפתח עורך תחומים', 403),
         'POST trade-delete' => $isDev ? ['trades' => pm_trade_delete($user, (int)($in['id'] ?? 0))] : throw new PmError('רק המפתח עורך תחומים', 403),

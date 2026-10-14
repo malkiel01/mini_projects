@@ -110,7 +110,7 @@ const Settings = (() => {
     function show(pane) {
         bind();
         // מנהל רואה רק "הודעות"; המפתח — הכול
-        const allowed = isDev() ? ['messages', 'alerts', 'general', 'trades', 'templates', 'access', 'log'] : ['messages', 'alerts'];
+        const allowed = isDev() ? ['messages', 'alerts', 'general', 'trades', 'templates', 'access', 'log', 'tasks'] : ['messages', 'alerts'];
         pane = allowed.includes(pane) ? pane : 'messages';
         $$('#view-settings [data-set]').forEach(a => a.setAttribute('aria-selected', String(a.dataset.set === pane)));
         $$('#view-settings .pane').forEach(el => { el.hidden = el.id !== 'set-' + pane; });
@@ -125,6 +125,7 @@ const Settings = (() => {
         if (pane === 'templates') renderTemplates();
         if (pane === 'access') loadAccess();
         if (pane === 'log') { loadLog(); loadToken(); }
+        if (pane === 'tasks') DevTasks.show($('#set-tasks')); // מטלות ושיח עם Claude (devtasks.js)
     }
 
     // ---- נוסחי הודעות (שלב 11) ----

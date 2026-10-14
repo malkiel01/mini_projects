@@ -2,12 +2,12 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="assets/js/i18n.js?v=67"></script>
+    <script src="assets/js/i18n.js?v=68"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=67">
+    <link rel="stylesheet" href="assets/css/app.css?v=68">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -378,6 +378,7 @@
                 <a role="tab" data-set="templates" href="#/settings/templates" class="dev-only" hidden><span>תבניות שלבים</span></a>
                 <a role="tab" data-set="access" href="#/settings/access" class="dev-only" hidden><span>מנהלים</span></a>
                 <a role="tab" data-set="log" href="#/settings/log" class="dev-only" hidden><span>יומן</span></a>
+                <a role="tab" data-set="tasks" href="#/settings/tasks" class="dev-only" hidden><span>📋 מטלות</span></a>
             </div>
             <div class="pane" id="set-messages" hidden>
                 <p class="hint"><span>כשקורה משהו שנוגע ללקוח, לעו"ד או לספק — נשלח אליו מייל אוטומטי (ללקוח — לפי "ערוצי הודעות" בכרטיס שלו). וואטסאפ ו-SMS — בלחיצה, עם אותו נוסח.</span>
@@ -469,6 +470,7 @@
                 <ul class="log-list" id="log-list"></ul>
                 <div class="toolbar end"><button class="btn ghost" id="log-more" hidden>עוד</button></div>
             </div>
+            <div class="pane" id="set-tasks" hidden></div>
             <div class="pane" id="set-access" hidden>
                 <p class="hint">הרשומים לאפליקציה הזו בלבד — נפרדים לגמרי מהמשתמשים של דף הכלים. מנהל פרויקט נרשם במסך הכניסה ומגיע לכאן לאישור. לחיצה על שורה — עריכה וכל הפעולות.</p>
                 <div class="notice" id="orphans" hidden></div>
@@ -1343,26 +1345,27 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=67"></script>
-    <script src="assets/js/contacts.js?v=67"></script>
-    <script src="assets/js/device-contacts.js?v=67"></script>
-    <script src="assets/js/viewer.js?v=67"></script>
-    <script src="assets/js/engage.js?v=67"></script>
-    <script src="assets/js/linker.js?v=67"></script>
-    <script src="assets/js/files.js?v=67"></script>
-    <script src="assets/js/lightbox.js?v=67"></script>
-    <script src="assets/js/field.js?v=67"></script>
+    <script src="assets/js/core.js?v=68"></script>
+    <script src="assets/js/contacts.js?v=68"></script>
+    <script src="assets/js/device-contacts.js?v=68"></script>
+    <script src="assets/js/viewer.js?v=68"></script>
+    <script src="assets/js/devtasks.js?v=68"></script>
+    <script src="assets/js/engage.js?v=68"></script>
+    <script src="assets/js/linker.js?v=68"></script>
+    <script src="assets/js/files.js?v=68"></script>
+    <script src="assets/js/lightbox.js?v=68"></script>
+    <script src="assets/js/field.js?v=68"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=67"></script>
-    <script src="assets/js/projects.js?v=67"></script>
-    <script src="assets/js/quotes.js?v=67"></script>
-    <script src="assets/js/payments.js?v=67"></script>
-    <script src="assets/js/fin-report.js?v=67"></script>
-    <script src="assets/js/finance.js?v=67"></script>
-    <script src="assets/js/finance-all.js?v=67"></script>
-    <script src="assets/js/hebcal.js?v=67"></script>
-    <script src="assets/js/calendar.js?v=67"></script>
-    <script src="assets/js/settings.js?v=67"></script>
-    <script src="assets/js/app.js?v=67"></script>
+    <script src="assets/js/share.js?v=68"></script>
+    <script src="assets/js/projects.js?v=68"></script>
+    <script src="assets/js/quotes.js?v=68"></script>
+    <script src="assets/js/payments.js?v=68"></script>
+    <script src="assets/js/fin-report.js?v=68"></script>
+    <script src="assets/js/finance.js?v=68"></script>
+    <script src="assets/js/finance-all.js?v=68"></script>
+    <script src="assets/js/hebcal.js?v=68"></script>
+    <script src="assets/js/calendar.js?v=68"></script>
+    <script src="assets/js/settings.js?v=68"></script>
+    <script src="assets/js/app.js?v=68"></script>
 </body>
 </html>
