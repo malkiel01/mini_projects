@@ -710,3 +710,9 @@ table.sample th { background: var(--bg); font-weight: 600; }
 .block-text { min-height: 1.6em; }
 .dev-body .toolbar, .conn-body .toolbar { flex-wrap: wrap; }
 .dev-body .toolbar > input[type=search] { flex: 1 1 180px; }
+
+/* שדה נעול במקומו: לא נגרר, בלי ידית; האצבע גוללת ומגדילה את הדף */
+.field.locked { cursor: pointer; touch-action: pan-x pan-y; }
+.field.locked .handle { display: none !important; }
+.field.locked::before { content: '🔒'; position: absolute; bottom: 0; left: 1px; font-size: 9px; line-height: 1; pointer-events: none; }
+.lock-all { flex: none; }

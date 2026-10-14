@@ -282,6 +282,8 @@ function clean_schema($s, array $sources = []): array
             // הרשאות: מוסתר מהממלאים בקישור (לא רואים לא את השדה ולא את הערך), ולהדפיס או לא
             'hidden' => !empty($f['hidden']),
             'print' => !array_key_exists('print', $f) || !empty($f['print']),
+            // נעול במקומו — בעורך לא זז ולא משנה גודל עד שמשחררים
+            'locked' => !empty($f['locked']),
         ];
         if ($type === 'system') {
             $fields[count($fields) - 1]['source'] = in_array($f['source'] ?? '', SYSTEM_SOURCES, true) ? $f['source'] : 'number';
