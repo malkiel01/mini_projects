@@ -16,6 +16,7 @@ require_once __DIR__ . '/dev.php'; // סמכות מפתח (pm_dev_mode)
 require_once __DIR__ . '/units.php'; // מתחם ויחידות
 require_once __DIR__ . '/engage.php'; // התקשרות: ספק × מקצוע
 require_once __DIR__ . '/links.php';  // שיוך דו-צדדי: ספק ← מקצוע ושלב ← ספק, והסרת שיוך
+require_once __DIR__ . '/rejects.php'; // 🔧 ריג'קטים — חוסמים מסירה
 
 // התוויות בעברית — מתורגמות בתצוגה (pm_t_map ב-api.php, t() בדפדפן)
 // i18n-ok-start
@@ -416,6 +417,8 @@ function pm_project_status(array $user, int $id, string $status): array
 {
     $p = pm_project_row($user, $id);
     if (!isset(PM_PROJECT_STATUSES[$status])) throw new PmError('סטטוס לא מוכר', 422);
+    // מסירה ("הסתיים") — רק כשכל הריג'קטים נסגרו (lib/rejects.php)
+    if ($status === 'done' && $p['status'] !== 'done') pm_rejects_guard_handover($id);
     if ($p['status'] !== $status) {
         pm_db()->prepare('UPDATE projects SET status = ?, updated_at = ? WHERE id = ?')->execute([$status, pm_now(), $id]);
         pm_event($user, $id, 'status', 'סטטוס הפרויקט: {status}', ['status' => $status], ['status' => PM_PROJECT_STATUSES[$status]]);

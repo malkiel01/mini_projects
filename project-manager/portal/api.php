@@ -95,6 +95,9 @@ try {
         'POST decide-change' => pm_portal_change_decide($a, pm_portal_json()),
         'POST decide-budget' => pm_portal_budget_decide($a, pm_portal_json()),
         'POST decide-deviation' => pm_portal_deviation_decide($a, pm_portal_json()),
+        // 🔧 ריג'קטים: קובץ לשרשור (בגוף הבקשה), והודעה / "תיקנתי" / ריג'קט חדש של הלקוח
+        'POST reject-file'   => pm_portal_reject_file($a, $_GET),
+        'POST reject-post'   => pm_portal_reject_post($a, pm_portal_json()),
         'POST s-invoice' => pm_portal_supplier_invoice($a, $_GET),
         'POST expense'   => pm_portal_expense($a, $_GET),
         'POST upload'    => pm_portal_upload($a, $_GET), // "📎 העלאת מסמך" — לכל התפקידים

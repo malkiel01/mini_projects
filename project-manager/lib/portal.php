@@ -319,6 +319,7 @@ function pm_portal_view(array $a): array
             array_filter(pm_fin_alerts($pid, pm_fin_alert_settings((int)$a['owner']['id']), pm_lang(), $role),
                 fn($x) => $scope === null || in_array($x['payment_id'], $payIds, true))))],
         'deviations' => pm_portal_deviations($a), // חריגה מהחוזה בהסכמת כולם
+        'rejects' => pm_portal_rejects($a, $scope), // 🔧 ריג'קטים
         // הצעת התקציב לפי שלבים (lib/budget.php) — כשפורקה; מאשר מי שמוגדר (לקוח / עו"ד), ורק בקישור של כל הפרויקט
         'budget' => pm_budget_broken($pid) ? (function () use ($pid, $scope, $role, $a, $p) {
             $b = pm_budget_of($pid, true, $scope);
@@ -386,11 +387,11 @@ function pm_portal_file(array $a, int $id, bool $thumb, bool $download): never
     $st->execute([$id, $a['project']['id']]);
     $x = $st->fetch();
     if ($x && $a['link']['role'] === 'supplier') {
-        if (!pm_portal_supplier_can_file($a, $x) && !pm_portal_own_upload($a, $x)) throw new PmError('הקובץ לא נמצא', 404);
+        if (!pm_portal_supplier_can_file($a, $x) && !pm_portal_own_upload($a, $x) && !pm_portal_reject_file_ok($a, $id)) throw new PmError('הקובץ לא נמצא', 404);
         pm_log('info', 'portal', 'portal.file', ['data' => ['link' => (int)$a['link']['id'], 'file' => $id, 'name' => $x['name']]]);
         pm_file_output($x, $thumb, $download);
     }
-    $ok = $x && ((int)$x['visible'] === 1 || pm_portal_own_upload($a, $x) || (function () use ($id, $a) {
+    $ok = $x && ((int)$x['visible'] === 1 || pm_portal_own_upload($a, $x) || pm_portal_reject_file_ok($a, $id) || (function () use ($id, $a) {
         $q = pm_db()->prepare("SELECT 1 FROM quotes WHERE file_id = ? AND project_id = ? AND sent_at IS NOT NULL AND status != 'cancelled'
                                UNION SELECT 1 FROM payment_proofs x JOIN payments p ON p.id = x.payment_id WHERE x.file_id = ? AND p.project_id = ?");
         $q->execute([$id, $a['project']['id'], $id, $a['project']['id']]);
@@ -651,7 +652,7 @@ function pm_portal_supplier_view(array $a): array
         'role' => 'supplier', 'name' => $a['contact']['name'], 'lang' => pm_lang_valid($a['contact']['lang'] ?? 'he'),
         'project' => ['name' => $a['project']['name'], 'address' => $a['project']['address'], 'status' => $a['project']['status']],
         'manager' => ['name' => $a['owner']['display_name'], 'phone' => $a['owner']['phone'], 'email' => $a['owner']['email']],
-        'stages' => $stages, 'my_quotes' => $quotes, 'payments' => $payments, 'files' => $files, 'deviations' => pm_portal_deviations($a),
+        'stages' => $stages, 'my_quotes' => $quotes, 'payments' => $payments, 'files' => $files, 'deviations' => pm_portal_deviations($a), 'rejects' => pm_portal_rejects($a),
         // כ4: תוספות שאושרו לו, וחשבוניות שחסרות על תשלומים שהתקבלו
         'changes' => array_values(array_filter(pm_changes_of($pid), fn($x) => $x['supplier_id'] === $sid && $x['status'] === 'approved')),
         // כ5: הכרטסת שלו בפרויקט — הצעה, תוספות, תשלומים וחשבוניות, עם יתרה
@@ -777,6 +778,88 @@ function pm_portal_change_decide(array $a, array $in): array
     pm_portal_mail($a, pm_t($decision === 'approved' ? '{who} אישר תוספת: {supplier}, {stage}' : '{who} דחה תוספת: {supplier}, {stage}', $v, $lang),
         pm_t($decision === 'approved' ? '{who} אישר תוספת של {supplier} בשלב {stage}: {amount}.' : '{who} דחה תוספת של {supplier} בשלב {stage}: {amount}.', $v, $lang)
         . ($note !== '' ? "\n\n" . pm_t('הערה: {note}', ['note' => $note], $lang) : ''), 'payments');
+    return pm_portal_view($a);
+}
+
+/** 🔧 ריג'קטים בקישור: ספק — שלו; לקוח / עו"ד — של הפרויקט (מתחם — של היחידות שלו ושל המשותף). */
+function pm_portal_rejects(array $a, ?array $scope = null): array
+{
+    $role = $a['link']['role'];
+    $r = pm_rejects_of((int)$a['project']['id'], ['role' => $role, 'contact' => (int)$a['contact']['id']]);
+    if ($scope !== null) $r['rejects'] = array_values(array_filter($r['rejects'], fn($x) => $x['unit_id'] === null || in_array($x['unit_id'], $scope['units'], true)));
+    $r['can_open'] = $role === 'client' && empty($a['readonly']); // הלקוח פותח — ממתין לאישור המנהל
+    $r['can_fix'] = $role === 'supplier';
+    return $r;
+}
+
+/** קובץ שצורף לריג'קט שהאיש בקישור רואה — פתוח לו (תמונה של הליקוי, של התיקון). */
+function pm_portal_reject_file_ok(array $a, int $fileId): bool
+{
+    foreach (pm_portal_rejects($a)['rejects'] as $r) foreach ($r['events'] as $e) foreach ($e['files'] as $f) if ($f['id'] === $fileId) return true;
+    return false;
+}
+
+/** קובץ לשרשור של ריג'קט מהקישור (תמונה / PDF בגוף הבקשה) — נשמר בתיקיית הריג'קטים; מחזיר את המזהה. */
+function pm_portal_reject_file(array $a, array $q): array
+{
+    [$tmp, $mime] = pm_portal_read_body();
+    $lang = $a['owner']['lang'];
+    $pid = (int)$a['project']['id'];
+    $name = trim((string)($q['name'] ?? '')) ?: pm_t($mime === 'application/pdf' ? 'מסמך' : 'תמונה', [], $lang) . ($mime === 'application/pdf' ? '.pdf' : '.jpg');
+    $role = $a['link']['role'];
+    // הבית — התיקייה של מי שהעלה (ספק / לקוח / עו"ד); וגם בתיקיית הריג'קטים
+    $fileId = pm_file_store($pid, $role === 'supplier' ? 'contact' : $role, $name, $tmp, str_starts_with($mime, 'image/') ? 'photo' : 'other', 0,
+        pm_t('הועלה בקישור האישי של {name}', ['name' => $a['contact']['name']], $lang), $role === 'supplier' ? (int)$a['contact']['id'] : null);
+    pm_db()->prepare('UPDATE files SET portal_id = ? WHERE id = ?')->execute([(int)$a['link']['id'], $fileId]);
+    pm_db()->prepare('INSERT OR IGNORE INTO file_links (file_id, folder_id, is_home) VALUES (?, ?, 0)')->execute([$fileId, pm_reject_folder($pid)]);
+    return ['file_id' => $fileId];
+}
+
+/**
+ * הודעה בריג'קט מהקישור: {reject_id, action: note | fixed, body, file_ids[]}. fixed — הספק: "תיקנתי" (רק המנהל סוגר).
+ * או ריג'קט חדש של הלקוח: {action: open, title, body, file_ids[]} — ממתין לאישור המנהל.
+ */
+function pm_portal_reject_post(array $a, array $in): array
+{
+    $role = $a['link']['role'];
+    $pid = (int)$a['project']['id'];
+    $files = pm_reject_files_check($pid, (array)($in['file_ids'] ?? []), (int)$a['link']['id']);
+    $body = trim((string)($in['body'] ?? ''));
+    $action = (string)($in['action'] ?? 'note');
+    $lang = $a['owner']['lang'];
+    $db = pm_db();
+    if ($action === 'open') {
+        if ($role !== 'client' || !empty($a['readonly'])) throw new PmError('רק הלקוח פותח ריג\'קט מהקישור', 403);
+        $title = mb_substr(trim((string)($in['title'] ?? '')), 0, 200);
+        if ($title === '') throw new PmError('מה צריך לתקן — שדה חובה', 422);
+        $now = pm_now();
+        $db->prepare("INSERT INTO rejects (project_id, title, status, opened_by, created_at, updated_at) VALUES (?, ?, 'pending', 'client', ?, ?)")->execute([$pid, $title, $now, $now]);
+        $id = (int)$db->lastInsertId();
+        pm_reject_event($id, 'opened', 'client', $a['contact']['name'], $body, $files, (int)$a['link']['id']);
+        pm_event($a['actor'], $pid, 'reject', '🔧 {who} פתח ריג\'קט — ממתין לאישורך: {title}', ['reject' => $id], ['who' => $a['contact']['name'], 'title' => $title]);
+        $v = ['who' => $a['contact']['name'], 'title' => $title];
+        pm_portal_mail($a, pm_t('{who} פתח ריג\'קט: {title}', $v, $lang), pm_t('{who} פתח ריג\'קט: {title}. ב"🔧 ריג\'קטים" — לאשר ולשייך לספק.', $v, $lang)
+            . ($body !== '' ? "\n\n$body" : ''), 'rejects');
+        return pm_portal_view($a);
+    }
+    $id = (int)($in['reject_id'] ?? 0);
+    $r = null;
+    foreach (pm_portal_rejects($a)['rejects'] as $x) if ($x['id'] === $id) $r = $x;
+    if (!$r) throw new PmError('הריג\'קט לא נמצא', 404);
+    if (in_array($r['status'], ['done', 'cancelled'], true)) throw new PmError('הריג\'קט כבר נסגר', 422);
+    if ($action === 'fixed') {
+        if ($role !== 'supplier' || !in_array($r['status'], ['open', 'returned'], true)) throw new PmError('אי אפשר לדווח תיקון עכשיו', 422);
+    } elseif ($action !== 'note' || ($body === '' && !$files)) throw new PmError('הודעה ריקה — כתבו משהו או צרפו קובץ', 422);
+    pm_reject_event($id, $action, $role, $a['contact']['name'], $body, $files, (int)$a['link']['id']);
+    if ($action === 'fixed') {
+        $db->prepare("UPDATE rejects SET status = 'fixed', updated_at = ? WHERE id = ?")->execute([pm_now(), $id]);
+        pm_event($a['actor'], $pid, 'reject', '🛠️ {who} דיווח שתיקן: {title} — לבדוק ולסגור', ['reject' => $id], ['who' => $a['contact']['name'], 'title' => $r['title']]);
+    }
+    $v = ['who' => $a['contact']['name'], 'title' => $r['title']];
+    pm_portal_mail($a, pm_t($action === 'fixed' ? '{who} דיווח שתיקן: {title}' : '{who} כתב בריג\'קט: {title}', $v, $lang),
+        pm_t($action === 'fixed' ? '{who} דיווח שתיקן את הריג\'קט "{title}" — לבדוק ולסמן בוצע, או להחזיר.' : '{who} כתב בריג\'קט "{title}".', $v, $lang)
+        . ($body !== '' ? "\n\n$body" : '') . ($files ? "\n" . pm_t('צורפו {n} קבצים', ['n' => count($files)], $lang) : ''), 'rejects');
+    pm_log('info', 'portal', 'portal.reject_' . $action, ['data' => ['link' => (int)$a['link']['id'], 'reject' => $id]]);
     return pm_portal_view($a);
 }
 

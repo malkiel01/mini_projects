@@ -231,6 +231,10 @@ try {
         'POST budget-decide'  => pm_budget_decide($user, (int)($in['id'] ?? 0), (string)($in['role'] ?? ''), (string)($in['decision'] ?? ''),
                                                   (string)($in['note'] ?? ''), 'manual', (string)($in['by_name'] ?? '')),
         'POST budget-cancel'  => pm_budget_cancel($user, (int)($in['id'] ?? 0)),
+        // 🔧 ריג'קטים (lib/rejects.php)
+        'GET rejects'         => pm_rejects($user, (int)($in['project_id'] ?? 0)),
+        'POST reject'         => pm_reject_save($user, $in),
+        'POST reject-act'     => pm_reject_act($user, $in),
         // חריגה מהחוזה בהסכמת כולם (lib/deviations.php)
         'GET deviations'      => pm_deviations($user, (int)($in['project_id'] ?? 0)),
         'POST deviation'      => pm_deviation_save($user, $in),

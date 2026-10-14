@@ -2,13 +2,13 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="assets/js/i18n.js?v=84"></script>
+    <script src="assets/js/i18n.js?v=85"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=84">
-    <link rel="stylesheet" href="assets/css/devloop.css?v=84">
+    <link rel="stylesheet" href="assets/css/app.css?v=85">
+    <link rel="stylesheet" href="assets/css/devloop.css?v=85">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -75,6 +75,7 @@
         <a data-pane="stages">שלבים</a>
         <a data-pane="quotes">הצעות</a>
         <a data-pane="payments">כספים</a>
+        <a data-pane="rejects">🔧 ריג'קטים</a>
         <a data-pane="team">צוות</a>
         <a data-pane="details">פרטים</a>
     </nav>
@@ -199,6 +200,9 @@
                     <div data-fin-pane="budget" hidden><div id="fin-budget"></div></div>
                 </div>
             </div>
+
+            <!-- 🔧 ריג'קטים (assets/js/rejects.js, lib/rejects.php): מטלות פתוחות לספקים, עם שרשור; חוסמים מסירה -->
+            <div class="pane" id="pane-rejects" hidden><div id="rejects-root"></div></div>
 
             <div class="pane" id="pane-team" hidden>
                 <!-- שותף מנהל: מנהלים באפליקציה שרואים ועורכים את כל הפרויקט -->
@@ -804,6 +808,39 @@
     </dialog>
 
     <!-- ===== חלון: תוספת / חריגה (finance.js, כ4) — חדשה, או צפייה והחלטה ===== -->
+    <!-- ===== חלון: ריג'קט — חדש, או השרשור והפעולות (assets/js/rejects.js) ===== -->
+    <dialog id="rj-dlg" aria-labelledby="rj-dlg-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="rj-dlg-title" class="one">ריג'קט</h2>
+                <button type="submit" class="btn primary" id="rj-save">שליחה לספק</button>
+            </header>
+            <div class="sheet-body">
+                <div id="rj-new">
+                    <div class="fields">
+                        <label class="f wide"><span>מה צריך לתקן *</span><input name="title" maxlength="200" placeholder="למשל: ברז דולף במקלחת"></label>
+                        <label class="f wide"><span>ספק *</span><select name="supplier_id"></select></label>
+                        <label class="f"><span>שלב</span><select name="stage_id"></select></label>
+                        <label class="f" id="rj-unit-f" hidden><span>דירה</span><select name="unit_id"></select></label>
+                        <label class="f"><span>עד מתי</span><input name="due_date" type="date"></label>
+                    </div>
+                </div>
+                <div id="rj-view" hidden>
+                    <div class="rj-head" id="rj-head"></div>
+                    <ol class="rj-thread" id="rj-thread"></ol>
+                </div>
+                <div id="rj-compose">
+                    <label class="f wide"><span id="rj-body-label">הסבר והערות</span><textarea name="body" rows="3" maxlength="4000"></textarea></label>
+                    <div class="row-btns wrap"><label class="btn ghost sm rj-pick">📎 תמונות ומסמכים<input type="file" id="rj-files" multiple accept="image/*,video/*,application/pdf" hidden></label>
+                        <span class="muted" id="rj-files-n"></span></div>
+                    <div class="row-btns wrap" id="rj-actions"></div>
+                </div>
+                <p class="error" role="alert" hidden></p>
+            </div>
+        </form>
+    </dialog>
+
     <!-- ===== חלון: חריגה מהחוזה (assets/js/deviations.js) ===== -->
     <dialog id="dev-dlg" aria-labelledby="dev-dlg-title">
         <form method="dialog" novalidate>
@@ -1418,29 +1455,30 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=84"></script>
-    <script src="assets/js/contacts.js?v=84"></script>
-    <script src="assets/js/device-contacts.js?v=84"></script>
-    <script src="assets/js/viewer.js?v=84"></script>
-    <script src="assets/js/devloop.js?v=84"></script>
-    <script src="assets/js/engage.js?v=84"></script>
-    <script src="assets/js/linker.js?v=84"></script>
-    <script src="assets/js/files.js?v=84"></script>
-    <script src="assets/js/lightbox.js?v=84"></script>
-    <script src="assets/js/field.js?v=84"></script>
+    <script src="assets/js/core.js?v=85"></script>
+    <script src="assets/js/contacts.js?v=85"></script>
+    <script src="assets/js/device-contacts.js?v=85"></script>
+    <script src="assets/js/viewer.js?v=85"></script>
+    <script src="assets/js/devloop.js?v=85"></script>
+    <script src="assets/js/engage.js?v=85"></script>
+    <script src="assets/js/linker.js?v=85"></script>
+    <script src="assets/js/files.js?v=85"></script>
+    <script src="assets/js/lightbox.js?v=85"></script>
+    <script src="assets/js/field.js?v=85"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=84"></script>
-    <script src="assets/js/projects.js?v=84"></script>
-    <script src="assets/js/quotes.js?v=84"></script>
-    <script src="assets/js/payments.js?v=84"></script>
-    <script src="assets/js/fin-report.js?v=84"></script>
-    <script src="assets/js/budget.js?v=84"></script>
-    <script src="assets/js/deviations.js?v=84"></script>
-    <script src="assets/js/finance.js?v=84"></script>
-    <script src="assets/js/finance-all.js?v=84"></script>
-    <script src="assets/js/hebcal.js?v=84"></script>
-    <script src="assets/js/calendar.js?v=84"></script>
-    <script src="assets/js/settings.js?v=84"></script>
-    <script src="assets/js/app.js?v=84"></script>
+    <script src="assets/js/share.js?v=85"></script>
+    <script src="assets/js/projects.js?v=85"></script>
+    <script src="assets/js/quotes.js?v=85"></script>
+    <script src="assets/js/payments.js?v=85"></script>
+    <script src="assets/js/fin-report.js?v=85"></script>
+    <script src="assets/js/budget.js?v=85"></script>
+    <script src="assets/js/deviations.js?v=85"></script>
+    <script src="assets/js/rejects.js?v=85"></script>
+    <script src="assets/js/finance.js?v=85"></script>
+    <script src="assets/js/finance-all.js?v=85"></script>
+    <script src="assets/js/hebcal.js?v=85"></script>
+    <script src="assets/js/calendar.js?v=85"></script>
+    <script src="assets/js/settings.js?v=85"></script>
+    <script src="assets/js/app.js?v=85"></script>
 </body>
 </html>

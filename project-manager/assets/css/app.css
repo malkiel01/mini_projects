@@ -1123,3 +1123,28 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .dev-parties { list-style: none; padding: 0; margin: 4px 0 0; display: grid; gap: 2px; }
 .dev-party { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); font-size: .84rem; min-height: 32px; }
 .dev-party > span:first-child { flex: 1; min-width: 0; }
+
+/* ===== 🔧 ריג'קטים (assets/js/rejects.js, ובפורטל) ===== */
+.rj-sum .fin-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
+.rj-group { margin-top: var(--s3); }
+.rj-group .sec-title small { font-weight: 400; }
+.rj-row.rj-done .one { text-decoration: line-through; color: var(--muted); }
+.rj-head p { margin: 4px 0 0; font-size: .85rem; }
+.rj-thread { list-style: none; padding: 0; margin: var(--s2) 0; display: grid; gap: var(--s2); }
+.rj-ev { border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2) var(--s3); background: var(--surface); }
+.rj-ev.by-supplier { background: color-mix(in srgb, var(--brand) 6%, var(--surface)); }
+.rj-ev.by-client { background: color-mix(in srgb, var(--star) 8%, var(--surface)); }
+.rj-ev-returned { border-color: var(--danger); }
+.rj-ev-done { border-color: var(--ok); }
+.rj-ev-h { font-size: .82rem; }
+.rj-ev-b { margin: 4px 0 0; white-space: pre-wrap; font-size: .9rem; }
+.rj-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.rj-thumb img { inline-size: 72px; block-size: 72px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); display: block; }
+.rj-pick { cursor: pointer; }
+.rj-compose { display: grid; gap: 6px; margin-top: var(--s2); }
+.rj-compose textarea, .rj-compose .rj-title { inline-size: 100%; font: inherit; font-size: 16px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); box-sizing: border-box; }
+.rj-new { margin: var(--s2) 0; }
+.rj-new > summary { list-style: none; display: inline-flex; }
+.rj-new > summary::-webkit-details-marker { display: none; }
+.dev-item > details > summary { list-style: none; cursor: pointer; }
+.dev-item > details > summary::-webkit-details-marker { display: none; }

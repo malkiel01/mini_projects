@@ -821,6 +821,39 @@ function pm_contracts_multi(PDO $pdo): void
         decided_at      TEXT
     )');
     $pdo->exec('CREATE INDEX IF NOT EXISTS budget_versions_project ON budget_versions (project_id)');
+    // 🔧 ריג'קטים (lib/rejects.php): מטלות פתוחות לספק עד המסירה, והשרשור — הודעות עם קבצים
+    $pdo->exec('CREATE TABLE IF NOT EXISTS rejects (
+        id          INTEGER PRIMARY KEY,
+        project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        supplier_id INTEGER REFERENCES contacts(id) ON DELETE SET NULL,
+        stage_id    INTEGER REFERENCES stages(id) ON DELETE SET NULL,
+        unit_id     INTEGER REFERENCES units(id) ON DELETE SET NULL,
+        title       TEXT NOT NULL,
+        due_date    TEXT NOT NULL DEFAULT \'\',
+        status      TEXT NOT NULL DEFAULT \'open\',
+        opened_by   TEXT NOT NULL DEFAULT \'manager\',
+        created_by  INTEGER,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL,
+        closed_at   TEXT
+    )');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS rejects_project ON rejects (project_id, status)');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS reject_events (
+        id         INTEGER PRIMARY KEY,
+        reject_id  INTEGER NOT NULL REFERENCES rejects(id) ON DELETE CASCADE,
+        kind       TEXT NOT NULL,
+        by_role    TEXT NOT NULL,
+        by_name    TEXT NOT NULL DEFAULT \'\',
+        body       TEXT NOT NULL DEFAULT \'\',
+        portal_id  INTEGER,
+        created_at TEXT NOT NULL
+    )');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS reject_events_reject ON reject_events (reject_id)');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS reject_event_files (
+        event_id INTEGER NOT NULL REFERENCES reject_events(id) ON DELETE CASCADE,
+        file_id  INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+        PRIMARY KEY (event_id, file_id)
+    )');
     // חריגה מהחוזה בהסכמת כולם (lib/deviations.php): מתג לפרויקט (כבוי), החריגות, וההסכמות של כל צד — לאישור ולביטול
     pm_add_column($pdo, 'projects', 'deviations_on', 'INTEGER NOT NULL DEFAULT 0');
     $pdo->exec('CREATE TABLE IF NOT EXISTS deviations (

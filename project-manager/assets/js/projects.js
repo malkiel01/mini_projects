@@ -224,7 +224,7 @@ const Projects = (() => {
 
     async function showProject(id, p, sub) {
         bind();
-        pane = ['timeline', 'field', 'files', 'stages', 'quotes', 'payments', 'team', 'details'].includes(p) ? p : 'timeline';
+        pane = ['timeline', 'field', 'files', 'stages', 'quotes', 'payments', 'rejects', 'team', 'details'].includes(p) ? p : 'timeline';
         subFolder = sub;
         $$('#project-nav a').forEach(a => {
             a.href = `#/p/${id}/${a.dataset.pane}`;
@@ -260,6 +260,7 @@ const Projects = (() => {
         if (pane === 'field') Field.show(cur);
         if (pane === 'payments') Payments.show(cur);
         if (pane === 'team') renderTeam();
+        if (pane === 'rejects') Rejects.show(cur);
         if (pane === 'details') { renderDetails(); renderUnits(); }
     }
 
@@ -283,7 +284,7 @@ const Projects = (() => {
         member_added: ['team', '👥'], member_removed: ['team', '👥'], partner: ['team', '🤝'], portal: ['team', '🔗'], portal_view: ['team', '👀'],
         message: ['team', '✉️'], appointment: ['team', '📅'],
         file: ['files', '📎'], file_move: ['files', '📁'], file_visible: ['files', '👁'], file_deleted: ['files', '🗑'],
-        note: ['notes', '💬'],
+        note: ['notes', '💬'], reject: ['stages', '🔧'],
     };
     const TL_CATS = [['all', 'הכול'], ['money', '💰 כספים'], ['quotes', '📝 הצעות'], ['stages', '🧱 שלבים ושטח'], ['team', '👥 צוות והודעות'], ['files', '📎 קבצים'], ['notes', '💬 הערות']]; // i18n-ok — מתורגם בתצוגה
     let tlCat = (() => { try { return sessionStorage.getItem('pm.tl') || 'all'; } catch { return 'all'; } })();
