@@ -64,6 +64,47 @@ function pm_owned_contact(?int $id, int $ownerId, string $kind, string $label): 
     return $id;
 }
 
+/**
+ * "מי שמקבל כסף בתיק — מוגדר בתיק": מה חסר לספק בפרויקט. [] — מוכן.
+ * project — בצוות של הפרויקט (ספק של שלב, או איש צוות עם שלבים). full — וגם פרטי ספק מלאים:
+ * טלפון, ח.פ. / ע.מ., פרטי בנק ותחום. full נדרש לכסף (אבן דרך, חוזה, תוספת) ולהצעה שנשלחת ללקוח / מאושרת;
+ * project — לשיוך מסמך ולדיווח מהשטח. הצעה ובקשת הצעה — לכל ספק (עוד לפני שבוחרים).
+ */
+function pm_supplier_missing(int $projectId, int $supplierId, string $level = 'full'): array
+{
+    $db = pm_db();
+    $miss = [];
+    $in = $db->prepare("SELECT 1 FROM stages WHERE project_id = ? AND supplier_id = ?
+                        UNION SELECT 1 FROM project_members WHERE project_id = ? AND contact_id = ? AND role_key LIKE 'stage:%'");
+    $in->execute([$projectId, $supplierId, $projectId, $supplierId]);
+    if (!$in->fetchColumn()) $miss[] = 'team';
+    if ($level === 'full') {
+        $c = $db->prepare('SELECT phone, whatsapp, tax_id, bank_json FROM contacts WHERE id = ?');
+        $c->execute([$supplierId]);
+        $r = $c->fetch() ?: [];
+        if (trim(($r['phone'] ?? '') . ($r['whatsapp'] ?? '')) === '') $miss[] = 'phone';
+        if (trim((string)($r['tax_id'] ?? '')) === '') $miss[] = 'tax_id';
+        $bank = json_decode((string)($r['bank_json'] ?? '{}'), true) ?: [];
+        if (empty($bank['bank']) || empty($bank['account'])) $miss[] = 'bank';
+        $t = $db->prepare('SELECT 1 FROM contact_trades WHERE contact_id = ?');
+        $t->execute([$supplierId]);
+        if (!$t->fetchColumn()) $miss[] = 'trade';
+    }
+    return $miss;
+}
+
+/** זורק כשהספק לא מוגדר בתיק — עם מה בדיוק חסר, ו-supplier_id כדי שהמסך יפתח את ההגדרה. */
+function pm_supplier_require(int $projectId, int $supplierId, string $level = 'full'): void
+{
+    $miss = pm_supplier_missing($projectId, $supplierId, $level);
+    if (!$miss) return;
+    $labels = ['team' => 'בצוות של הפרויקט, עם השלבים שלו', 'phone' => 'טלפון', 'tax_id' => 'ח.פ. / ע.מ.', 'bank' => 'פרטי בנק', 'trade' => 'תחום']; // i18n-ok
+    // _setup_* — לא בהודעה; api.php מחזיר אותם כ-setup, והמסך מציע "הגדרה" (בצוות / פרטי הספק)
+    throw new PmError('{name} עוד לא מוגדר כספק בתיק — חסר: {missing}', 422, ['name' => pm_contact_name($supplierId),
+        'missing' => implode(', ', array_map(fn($k) => pm_t($labels[$k]), $miss)),
+        '_setup_supplier' => $supplierId, '_setup_project' => $projectId, '_setup_missing' => implode(',', $miss)]);
+}
+
 /** רישום אירוע בציר הזמן, ועדכון "הפעילות האחרונה" של הפרויקט. */
 /**
  * שורה בציר הזמן. $text — הטקסט העברי עם {משתנים}, ו-$vars — הערכים: נשמרת העברית

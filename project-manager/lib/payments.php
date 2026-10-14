@@ -175,6 +175,7 @@ function pm_payment_save(array $user, array $in, ?array $actor = null): array
     }
     $supplierId = pm_owned_contact((int)($in['supplier_id'] ?? 0) ?: null, (int)$p['owner_id'], 'supplier', 'הספק') // i18n-ok
         ?? throw new PmError('ספק: שדה חובה', 422);
+    pm_supplier_require($projectId, $supplierId); // מי שמקבל כסף בתיק — מוגדר בתיק (צוות + פרטי ספק)
 
     // סכום, או אחוז מההצעה שאושרה בשלב
     $quote = $stageId ? pm_stage_approved_quote($stageId) : null;

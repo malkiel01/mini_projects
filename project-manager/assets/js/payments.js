@@ -234,7 +234,13 @@ const Payments = (() => {
             } catch { /* בלי אחוז */ }
         }
         const value = supplierId ?? approvedQuote?.supplier_id ?? st?.supplier_id ?? null;
-        await Projects.fillSuppliers(el.supplier_id, st?.trade_id || 0, value, teamOf(project));
+        // מי שמקבל כסף בתיק — מוגדר בתיק: רק ספקי הפרויקט, ו"+ ספק שלא בפרויקט…" מגדיר אותו בצוות וחוזר
+        await Projects.fillSuppliers(el.supplier_id, st?.trade_id || 0, value, teamOf(project), { projectOnly: true });
+        el.supplier_id.onchange = () => {
+            if (el.supplier_id.value !== '__add') return;
+            el.supplier_id.value = value ? String(value) : '';
+            Projects.openMember(0, { after: async id => { await Projects.fillSuppliers(el.supplier_id, st?.trade_id || 0, id, teamOf(project), { projectOnly: true }); el.supplier_id.value = String(id); } });
+        };
         el.supplier_id.options[0].textContent = t('בחירת ספק');
         $('#pay-mode-box').hidden = !approvedQuote;
         if (!approvedQuote) $('#payment-dlg [name=mode][value=amount]').checked = true;

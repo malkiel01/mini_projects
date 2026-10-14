@@ -1056,3 +1056,7 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .member-stages .check { display: flex; gap: var(--s2); align-items: center; min-block-size: 40px; cursor: pointer; }
 .member-stages .check input { inline-size: 20px; block-size: 20px; min-block-size: 0; min-inline-size: 0; flex: none; margin: 0; padding: 0; }
 .member-stages .check small { color: var(--muted); }
+.member-stages .check .num { color: var(--muted); font-weight: 600; margin-inline-end: 2px; }
+.member-stages .check.new { background: color-mix(in srgb, var(--ok) 12%, var(--surface)); border-radius: 8px; }
+.member-stages #member-new-stage { justify-self: start; margin-top: var(--s2); }
+.member-new-stage { display: grid; gap: var(--s2); margin-top: var(--s2); padding: var(--s2); border: 1px dashed var(--line); border-radius: var(--r); }

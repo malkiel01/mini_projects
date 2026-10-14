@@ -107,6 +107,9 @@ const Projects = (() => {
         $('#stage-dlg form').addEventListener('submit', e => { e.preventDefault(); saveStage(); });
         $('#stage-dlg [data-delete]').addEventListener('click', () => deleteStage(stageId));
         $('#member-dlg form').addEventListener('submit', e => { e.preventDefault(); addMember(); });
+        $('#member-new-stage').addEventListener('click', newStageOpen);
+        $('[data-ns-add]').addEventListener('click', newStageAdd);
+        $('[data-ns-cancel]').addEventListener('click', () => { $('#member-new-stage-f').hidden = true; });
         document.addEventListener('change', e => {
             if (e.target.matches('[data-project-fields] [name=client_id]') && e.target.value === '__new') newClient(e.target);
         });
@@ -608,17 +611,42 @@ const Projects = (() => {
         $('#stage-progress-out').textContent = `${el.progress.value}%`;
     }
 
-    /** ספקים של בעל הפרויקט — קודם מי שבתחום של השלב. */
-    async function fillSuppliers(select, tradeId, value, owners = teamOf(cur)) {
+    /** הספקים שמוגדרים בתיק — בצוות (ספק של שלב, או איש צוות עם שלבים). */
+    const projectSuppliers = () => new Set((cur?.team || []).filter(c => c.kind === 'supplier').map(c => c.id));
+
+    /**
+     * ספקים של בעל הפרויקט — קודם מי שבתחום של השלב. projectOnly — רק ספקי הפרויקט (מי שמקבל כסף בתיק — מוגדר
+     * בתיק), ובסוף "+ ספק שלא בפרויקט…" (value="__add" — החלון שקרא פותח את חלון הצוות).
+     */
+    async function fillSuppliers(select, tradeId, value, owners = teamOf(cur), { projectOnly = false } = {}) {
         let all = [];
         try { all = await contactsOf('supplier'); } catch { /* ריק */ }
-        all = all.filter(c => owners.includes(c.owner_id) && (!c.archived || c.id === value));
+        const inProject = projectSuppliers();
+        all = all.filter(c => owners.includes(c.owner_id) && (!c.archived || c.id === value) && (!projectOnly || inProject.has(c.id) || c.id === value));
+        if (projectOnly) {
+            const opt = c => ({ value: c.id, label: c.name + (c.company ? ' · ' + c.company : '') + (inProject.has(c.id) ? '' : ' · ⚠️ ' + t('לא מוגדר בתיק')) });
+            select.innerHTML = `<option value="">${esc(t('ללא'))}</option>` + options(all.map(opt), value)
+                + `<option value="__add">${esc(t('+ ספק שלא בפרויקט…'))}</option>`;
+            return;
+        }
         const opt = c => ({ value: c.id, label: c.name + (c.company ? ' · ' + c.company : '') });
         const inTrade = tradeId ? all.filter(c => c.trades.includes(tradeId)) : [];
         const rest = all.filter(c => !inTrade.includes(c));
         select.innerHTML = `<option value="">${esc(t('ללא'))}</option>`
             + (inTrade.length ? `<optgroup label="${esc(t('בתחום'))}">${options(inTrade.map(opt), value)}</optgroup>` : '')
             + (rest.length ? `<optgroup label="${esc(inTrade.length ? t('אחרים') : t('כל הספקים'))}">${options(rest.map(opt), value)}</optgroup>` : '');
+    }
+
+    /**
+     * ספק שהשרת דחה כי הוא לא מוגדר בתיק (setup: {supplier_id, project_id, missing}) — הגדרה מיד: קודם בצוות עם
+     * השלבים (חלון איש צוות), ואז פרטי הספק שחסרים (כרטיס איש הקשר). onDone — חזרה לחלון שקרא.
+     */
+    async function setupSupplier(setup, onDone = null) {
+        if (!cur || setup.project_id !== cur.project.id) return;
+        const params = setup.missing.filter(m => m !== 'team');
+        const next = () => params.length ? Contacts.open(setup.supplier_id, 'supplier', () => onDone?.()) : onDone?.();
+        if (setup.missing.includes('team')) openMember(0, { contactId: setup.supplier_id, after: next });
+        else next();
     }
 
     async function saveStage() {
@@ -808,7 +836,7 @@ const Projects = (() => {
     }
 
     // תפקידים לפי סוג איש הקשר (PM_MEMBER_ROLES בשרת); ספק — גם התחומים שלו
-    let memberRoles = null, memberContacts = new Map();
+    let memberRoles = null, memberContacts = new Map(), memberAfter = null, memberNewStage = 0;
     function fillRoles(form, contactId, value = '') {
         const c = memberContacts.get(contactId);
         const kind = c?.kind || 'supplier';
@@ -816,8 +844,9 @@ const Projects = (() => {
         const supplier = kind === 'supplier';
         const picked = new Set(/^stage:[\d,]+$/.test(value) ? value.slice(6).split(',').map(Number) : []);
         const stages = cur.stages || [];
-        $('#member-stage-list').innerHTML = stages.length ? stages.map(s => `<label class="check"><input type="checkbox" value="${s.id}"${picked.has(s.id) ? ' checked' : ''}>
-            <span>${esc(stageName(s))}${s.supplier_id && s.supplier_id !== contactId ? ` <small>· ${esc(t('יש ספק'))}</small>` : ''}</span></label>`).join('')
+        // ממוספרים לפי הסדר בפרויקט — רואים איפה כל שלב; שלב שנוסף עכשיו — מודגש
+        $('#member-stage-list').innerHTML = stages.length ? stages.map((s, i) => `<label class="check${s.id === memberNewStage ? ' new' : ''}"><input type="checkbox" value="${s.id}"${picked.has(s.id) ? ' checked' : ''}>
+            <span><b class="num">${i + 1}.</b> ${esc(stageName(s))}${s.supplier_id && s.supplier_id !== contactId ? ` <small>· ${esc(t('יש ספק'))}</small>` : ''}</span></label>`).join('')
             : `<p class="hint">${esc(t('אין שלבים בפרויקט — הוסיפו שלב קודם'))}</p>`;
         const list = Object.entries(memberRoles?.[kind] || {}).map(([value, label]) => ({ value, label: t(label) }));
         form.elements.role_key.innerHTML = options(list, value);
@@ -829,15 +858,23 @@ const Projects = (() => {
         $('#member-access-f').hidden = !['client', 'lawyer'].includes(kind);
     }
 
-    /** "+ איש צוות" — או ✏️ על איש צוות (editId): התפקיד מתוך רשימה, והערה חופשית רק לנו. */
-    async function openMember(editId = 0) {
+    /**
+     * "+ איש צוות" — או ✏️ על איש צוות (editId): התפקיד מתוך רשימה, והערה חופשית רק לנו.
+     * opts.contactId — איש קשר שבחרו מחלון אחר ("+ ספק שלא בפרויקט…", או ספק שעוד לא מוגדר בתיק);
+     * opts.after(contactId) — אחרי השמירה, חזרה לחלון שקרא.
+     */
+    async function openMember(editId = 0, opts = {}) {
         const dlg = $('#member-dlg');
         const form = $('form', dlg);
         formError(form, '');
         form.reset();
+        memberAfter = opts.after || null;
+        memberNewStage = 0;
+        $('#member-new-stage-f').hidden = true;
         if (!memberRoles) try { ({ roles: memberRoles } = await api('member-roles')); } catch { memberRoles = {}; }
         const lists = await Promise.all(['supplier', 'lawyer', 'client'].map(k => contactsOf(k).catch(() => [])));
         lists.forEach((l, i) => l.forEach(c => memberContacts.set(c.id, { ...c, kind: ['supplier', 'lawyer', 'client'][i] })));
+        if (!editId && opts.contactId && cur.team.some(c => c.id === opts.contactId && c.member)) editId = opts.contactId;
         const editing = editId ? cur.team.find(c => c.id === editId) : null;
         const inTeam = new Set(cur.team.map(c => c.id));
         if (editing) {
@@ -849,10 +886,13 @@ const Projects = (() => {
                 return items.length ? `<optgroup label="${esc(t(label))}">${options(items.map(c => ({ value: c.id, label: c.name + (c.company ? ' · ' + c.company : '') })))}</optgroup>` : '';
             }).join('');
             form.elements.contact_id.innerHTML = groups || `<option value="">${esc(t('אין אנשי קשר להוספה'))}</option>`;
+            if (opts.contactId) form.elements.contact_id.value = String(opts.contactId);
         }
         form.elements.contact_id.disabled = !!editing;
         form.elements.contact_id.onchange = () => fillRoles(form, Number(form.elements.contact_id.value));
-        fillRoles(form, editing ? editId : Number(form.elements.contact_id.value), editing?.member?.role_key || '');
+        // ספק של שלב שעוד לא נרשם בצוות — השלבים שלו כבר מסומנים
+        const own = (cur.stages || []).filter(s => s.supplier_id === Number(form.elements.contact_id.value)).map(s => s.id);
+        fillRoles(form, editing ? editId : Number(form.elements.contact_id.value), editing?.member?.role_key || (own.length ? 'stage:' + own.join(',') : ''));
         form.elements.note.value = editing?.member?.note || '';
         form.elements.portal_access.value = editing?.member?.portal_access === 'view' ? 'view' : 'full';
         $('#member-dlg-title').textContent = editing ? t('עריכה בצוות — {name}', { name: editing.name }) : t('הוספה לצוות');
@@ -871,6 +911,46 @@ const Projects = (() => {
             update(await api('member', { body: { project_id: cur.project.id, contact_id, add: true, note: form.elements.note.value,
                 role_key: supplier ? 'stage:' + ids.join(',') : form.elements.role_key.value, portal_access: form.elements.portal_access.value } }));
             $('#member-dlg').close();
+            const after = memberAfter;
+            memberAfter = null;
+            if (after) after(contact_id);
+        });
+    }
+
+    /** "+ שלב חדש" מתוך חלון איש הצוות: שם, תחום, ואחרי איזה שלב — ברירת המחדל לפי סדר התחומים. */
+    function newStageOpen() {
+        const f = $('#member-new-stage-f');
+        f.hidden = false;
+        const el = f.querySelectorAll('[data-ns]');
+        const [name, trade, after] = el;
+        name.value = '';
+        trade.innerHTML = options(state.trades.map(x => ({ value: x.id, label: t(x.name) })), '', t('בלי תחום'));
+        const fillAfter = () => {
+            const stages = cur.stages || [];
+            const tr = state.trades.find(x => x.id === Number(trade.value));
+            const sortOf = s => state.trades.find(x => x.id === s.trade_id)?.sort ?? Infinity;
+            // ברירת מחדל: אחרי השלב האחרון שהתחום שלו בא לפני התחום החדש (כמו בתבניות); בלי תחום — בסוף
+            const def = tr ? [...stages].reverse().find(s => sortOf(s) <= tr.sort)?.id ?? 0 : stages.at(-1)?.id ?? 0;
+            after.innerHTML = `<option value="0">${esc(t('בראש הרשימה'))}</option>` + stages.map((s, i) => `<option value="${s.id}"${s.id === def ? ' selected' : ''}>${esc(t('אחרי {n}. {stage}', { n: i + 1, stage: stageName(s) }))}</option>`).join('');
+        };
+        trade.onchange = fillAfter;
+        fillAfter();
+        name.focus();
+    }
+
+    async function newStageAdd() {
+        const form = $('#member-dlg form');
+        const [name, trade, after] = $('#member-new-stage-f').querySelectorAll('[data-ns]');
+        if (!name.value.trim()) { formError(form, t('שם השלב: שדה חובה')); name.focus(); return; }
+        const checked = $$('#member-stage-list input:checked').map(x => Number(x.value));
+        await busy($('[data-ns-add]'), null, async () => {
+            const before = new Set((cur.stages || []).map(s => s.id));
+            update(await api('stage', { body: { project_id: cur.project.id, name: name.value.trim(), trade_id: Number(trade.value) || null, after: Number(after.value) } }));
+            memberNewStage = (cur.stages || []).find(s => !before.has(s.id))?.id || 0;
+            $('#member-new-stage-f').hidden = true;
+            formError(form, '');
+            fillRoles(form, Number(form.elements.contact_id.value), 'stage:' + [...checked, memberNewStage].filter(Boolean).join(','));
+            $(`#member-stage-list input[value="${memberNewStage}"]`)?.closest('label')?.scrollIntoView({ block: 'nearest' });
         });
     }
 
@@ -914,5 +994,5 @@ const Projects = (() => {
         return cur;
     }
 
-    return { showList, showProject, reload, fillSuppliers };
+    return { showList, showProject, reload, fillSuppliers, openMember, setupSupplier, projectSuppliers };
 })();

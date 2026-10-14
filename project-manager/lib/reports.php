@@ -99,6 +99,7 @@ function pm_report_save(array $user, array $in): array
     // הספק שהעבודה שלו תועדה — מאנשי הקשר של המנהל (אופציונלי)
     $supplierId = (int)($in['supplier_id'] ?? 0) ?: null;
     if ($supplierId) $supplierId = pm_owned_contact($supplierId, (int)pm_project_row($user, $projectId)['owner_id'], 'supplier', 'הספק'); // i18n-ok
+    if ($supplierId) pm_supplier_require($projectId, $supplierId, 'project'); // תיעוד של ספק — רק של ספק בתיק
     $fileIds = array_values(array_unique(array_map('intval', is_array($in['file_ids'] ?? null) ? $in['file_ids'] : [])));
     $media = [];
     if ($fileIds) {

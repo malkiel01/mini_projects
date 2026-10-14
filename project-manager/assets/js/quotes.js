@@ -132,7 +132,7 @@ const Quotes = (() => {
         return `<li class="card q-row q-${q.status}${q.recommended ? ' rec' : ''}" data-quote="${q.id}" tabindex="0" role="button"
                 aria-label="${esc(q.supplier_name)}, ${esc(money(q.amount))}, ${esc(state.labels.quote[q.status])}${q.recommended ? ', ' + esc(t('מומלצת')) : ''}">
             ${pic}
-            <div class="body"><div class="l1"><span class="one">${q.recommended ? '<span aria-hidden="true">⭐ </span>' : ''}${esc(q.supplier_name)}</span>
+            <div class="body"><div class="l1"><span class="one">${q.recommended ? '<span aria-hidden="true">⭐ </span>' : ''}${esc(q.supplier_name)}</span>${!['rejected', 'declined', 'cancelled'].includes(q.status) && !Projects.projectSuppliers().has(q.supplier_id) ? `<span class="chip fin-warn" title="${esc(t('לפני שליחה ללקוח ואישור — מגדירים אותו בצוות ומשלימים את פרטי הספק'))}">⚠️ ${esc(t('לא מוגדר בתיק'))}</span>` : ''}
                 <span class="amt">${moneyVat(vatOf(q.amount, q.vat_rate))}</span></div>
                 <div class="l2">${l2}</div></div>
         </li>`;

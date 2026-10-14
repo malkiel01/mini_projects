@@ -315,7 +315,10 @@ try {
     };
     pm_reply(200, $result);
 } catch (PmError $e) {
-    pm_reply($e->getCode() ?: 400, ['error' => $e->getMessage(), '_t' => [$e->tpl, $e->vars]]);
+    // ספק שלא מוגדר בתיק (pm_supplier_require) — המסך מציע להגדיר אותו מיד
+    $setup = isset($e->vars['_setup_supplier']) ? ['setup' => ['supplier_id' => (int)$e->vars['_setup_supplier'],
+        'project_id' => (int)$e->vars['_setup_project'], 'missing' => explode(',', (string)$e->vars['_setup_missing'])]] : [];
+    pm_reply($e->getCode() ?: 400, ['error' => $e->getMessage(), '_t' => [$e->tpl, $e->vars]] + $setup);
 } catch (Throwable $e) {
     error_log('project-manager api: ' . $e->getMessage());
     // החריגה המלאה ליומן — סוג, הודעה, קובץ, שורה ומחסנית — כדי שאפשר יהיה להבין מה קרה

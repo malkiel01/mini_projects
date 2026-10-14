@@ -256,6 +256,10 @@ function pm_quotes_send(array $user, int $stageId): array
     $st->execute([$stageId]);
     $n = (int)$st->fetchColumn();
     if (!$n) throw new PmError('אין הצעות פתוחות בשלב הזה', 422);
+    // ללקוח יוצאות רק הצעות של ספקים שהוקמו בתיק — הוא יאשר, ואין לנו איך להשלים אחר כך (החלטה: PM-022)
+    $sup = $db->prepare("SELECT DISTINCT supplier_id FROM quotes WHERE stage_id = ? AND status IN ('open','sent')");
+    $sup->execute([$stageId]);
+    foreach ($sup->fetchAll(PDO::FETCH_COLUMN) as $sid) pm_supplier_require((int)$stage['project_id'], (int)$sid);
     $db->prepare("UPDATE quotes SET status = 'sent', sent_at = ?, updated_at = ? WHERE stage_id = ? AND status IN ('open','sent')")
        ->execute([pm_now(), pm_now(), $stageId]);
     pm_event($user, (int)$stage['project_id'], 'quote', $n > 1 ? 'נשלח ללקוח לאישור: {stage} ({n} הצעות)' : 'נשלח ללקוח לאישור: {stage} ({n} הצעה)',
@@ -321,6 +325,8 @@ function pm_quote_decide(array $user, int $id, string $role, string $decision, s
     }
     if ($byName === '') $byName = pm_contact_name((int)($role === 'client' ? $p['client_id'] : $p['lawyer_id'])) ?: ($role === 'client' ? 'הלקוח' : 'עו"ד'); // i18n-ok
 
+    // אישור — רק להצעה של ספק שהוקם בתיק (צוות + פרטי ספק)
+    if ($decision === 'approved') pm_supplier_require((int)$q['project_id'], (int)$q['supplier_id']);
     if ($decision === 'approved' && in_array($stage['status'], ['in_progress', 'done', 'paid'], true)) {
         throw new PmError('השלב כבר {status} — אי אפשר להחליף בו הצעה', 422, ['status' => PM_STAGE_STATUSES[$stage['status']]]);
     }
