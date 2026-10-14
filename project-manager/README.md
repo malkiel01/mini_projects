@@ -1160,8 +1160,9 @@ audit_log       id, at, actor, action, ref_kind, ref_id, data_json
 
 ## מטלות ושיח (אזור הפיתוח ← 📋 מטלות)
 
-מועתק ממסמכי התבניות (`document-templates`), בקוד `PM-`. רק למפתח: הגדרות ← 📋 מטלות. `lib/devtasks.php`,
-`assets/js/devtasks.js`.
+מועתק ממסמכי התבניות (`document-templates`), בקוד `PM-`. רק למפתח: הגדרות ← 📋 מטלות. מאז 0.71 — המודול המשותף
+DevLoop (`lib/devloop.php`, `assets/js/devloop.js`, `assets/css/devloop.css` — עותקים מסונכרנים מ-`devloop/src`,
+לא עורכים כאן); החיבור למנהל הפרויקטים — `lib/devtasks.php`, וב-`app.js` (`DevLoop.setup`).
 
 **שני מקורות, רשימה אחת.** `dev/open-items.json` הוא מה ש-Claude מנהל בקוד, ו**מתעדכן בכל שינוי שנכנס
 ל-main**: מה שנעשה נסגר (עם מספר ה-PR), ומה שמחכה להחלטה נשאר עם השאלות שלו. הטבלה `dev_tasks` — מטלות שהמפתח
@@ -1218,3 +1219,11 @@ curl -s -H "X-Dev-Token: $T" -H "Content-Type: application/json" \
   (`status_skipped`). `continue-on-error` — לעולם לא מפיל פריסה; בלי הסוד — מדלג עם הודעה.
 - **הסוד `PM_DEVLOOP_TOKEN`:** 📋 מטלות ← 🔑 גישה ל-Claude ← אסימון חדש (למשל "GitHub"); ב-GitHub: Settings → Secrets
   and variables → Actions → New repository secret, בשם `PM_DEVLOOP_TOKEN`.
+
+### DevLoop — שלב 3 (גרסה 0.71): מודול משותף
+
+המנוע של המטלות יצא מהאפליקציה ל-`devloop/` בשורש הריפו (`devloop/README.md`), כדי שכל אפליקציה תשתמש באותו קוד:
+המקור ב-`devloop/src`, העותקים כאן (`lib/devloop.php`, `assets/js/devloop.js`, `assets/css/devloop.css`), והסנכרון —
+`php devloop/tools/sync.php`. שער בפריסה עוצר עותק ששונה כאן. מה שנשאר של מנהל הפרויקטים — רק החיבור:
+`lib/devtasks.php` (מסד, שגיאה, משתמשים, יומן) ו-`DevLoop.setup` ב-`app.js` (api, CSRF, `PMTrace`). הפעולות והטבלאות
+לא השתנו — אותם `dev-…` / `devapi-…`, ואותו מידע.

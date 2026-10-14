@@ -49,7 +49,7 @@ function pm_reply(int $code, array $payload): never
     // השגיאה ביומן — בעברית; למשתמש — בשפה שלו (X-Lang, lib/i18n.php)
     if (isset($payload['error'])) $payload['error'] = isset($payload['_t']) ? pm_t(...$payload['_t']) : pm_t((string)$payload['error']);
     unset($payload['_t']);
-    // מזהה הבקשה — כמו ביומן; הדפדפן שומר את האחרונות לדיווח 🐞 (devtasks.js)
+    // מזהה הבקשה — כמו ביומן; הדפדפן שומר את האחרונות לדיווח 🐞 (DevLoop)
     if (function_exists('pm_request_id')) header('X-Request-Id: ' . pm_request_id());
     http_response_code($code);
     echo json_encode($payload, JSON_UNESCAPED_UNICODE);
@@ -78,10 +78,10 @@ try {
         'POST reset-info'      => fn() => pm_reset_info((string)(pm_body()['token'] ?? '')),
         'POST reset-password'  => fn() => pm_reset_password(pm_body()),
         // מטלות ושיח: Claude קורא ועונה באסימון אישי (X-Dev-Token), בלי עוגייה (lib/devtasks.php)
-        'GET devapi-feed'      => fn() => pm_devapi_feed(pm_devapi_auth(), $_GET),
-        'POST devapi-comment'  => fn() => pm_devapi_comment(pm_devapi_auth(), pm_body()),
-        'GET devapi-file'      => fn() => (pm_devapi_auth() and pm_dev_file_out((int)($_GET['id'] ?? 0))),
-        'POST devapi-attach'   => fn() => pm_dev_attach('claude', $_GET + ['_auth' => pm_devapi_auth()]),
+        'GET devapi-feed'      => fn() => devloop_api_feed(devloop_api_auth(), $_GET),
+        'POST devapi-comment'  => fn() => devloop_api_comment(devloop_api_auth(), pm_body()),
+        'GET devapi-file'      => fn() => (devloop_api_auth() and devloop_file_out((int)($_GET['id'] ?? 0))),
+        'POST devapi-attach'   => fn() => devloop_attach('claude', $_GET + ['_auth' => devloop_api_auth()]),
         // יומן הטלפון מושך את זה בלי עוגייה — האסימון בכתובת (lib/calendar.php)
         'GET calendar-feed'    => fn() => pm_calendar_feed((string)($_GET['t'] ?? '')),
         // שגיאת JavaScript מהדפדפן — גם לפני כניסה (מסך הכניסה). X-PM מונע הצפה מאתר זר.
@@ -290,18 +290,18 @@ try {
         'GET log'         => $isDev ? ['entries' => pm_log_query($in), 'stats' => pm_log_stats()] : throw new PmError('רק המפתח', 403),
         'GET log-token'   => $isDev ? pm_log_token() : throw new PmError('רק המפתח', 403),
         // מטלות ושיח (הגדרות ← 📋 מטלות) — רק המפתח
-        'GET dev-items'          => $isDev ? pm_dev_task_list() : throw new PmError('רק המפתח', 403),
-        'POST dev-task-create'   => $isDev ? pm_dev_task_create($user, $in) : throw new PmError('רק המפתח', 403),
-        'POST dev-task-set'      => $isDev ? pm_dev_task_set($user, $in) : throw new PmError('רק המפתח', 403),
-        'POST dev-comment'       => $isDev ? pm_dev_comment_add((string)($in['code'] ?? ''), 'user', (int)$user['id'], (string)($in['body'] ?? '')) : throw new PmError('רק המפתח', 403),
-        'POST dev-comment-delete' => $isDev ? pm_dev_comment_delete($user, $in) : throw new PmError('רק המפתח', 403),
-        'GET dev-tokens'         => $isDev ? pm_dev_token_list() : throw new PmError('רק המפתח', 403),
-        'POST dev-token-create'  => $isDev ? pm_dev_token_create($user, $in) : throw new PmError('רק המפתח', 403),
-        'POST dev-token-revoke'  => $isDev ? pm_dev_token_revoke($user, $in) : throw new PmError('רק המפתח', 403),
-        'POST dev-verify'        => $isDev ? pm_dev_verify($user, $in) : throw new PmError('רק המפתח', 403),
-        'POST dev-report'        => $isDev ? pm_dev_report($user, $in) : throw new PmError('רק המפתח', 403),
-        'POST dev-attach'        => $isDev ? pm_dev_attach('user:' . $user['id'], $_GET) : throw new PmError('רק המפתח', 403),
-        'GET dev-file'           => $isDev ? pm_dev_file_out((int)($_GET['id'] ?? 0)) : throw new PmError('רק המפתח', 403),
+        'GET dev-items'          => $isDev ? devloop_task_list() : throw new PmError('רק המפתח', 403),
+        'POST dev-task-create'   => $isDev ? devloop_task_create($user, $in) : throw new PmError('רק המפתח', 403),
+        'POST dev-task-set'      => $isDev ? devloop_task_set($user, $in) : throw new PmError('רק המפתח', 403),
+        'POST dev-comment'       => $isDev ? devloop_comment_add((string)($in['code'] ?? ''), 'user', (int)$user['id'], (string)($in['body'] ?? '')) : throw new PmError('רק המפתח', 403),
+        'POST dev-comment-delete' => $isDev ? devloop_comment_delete($user, $in) : throw new PmError('רק המפתח', 403),
+        'GET dev-tokens'         => $isDev ? devloop_token_list() : throw new PmError('רק המפתח', 403),
+        'POST dev-token-create'  => $isDev ? devloop_token_create($user, $in) : throw new PmError('רק המפתח', 403),
+        'POST dev-token-revoke'  => $isDev ? devloop_token_revoke($user, $in) : throw new PmError('רק המפתח', 403),
+        'POST dev-verify'        => $isDev ? devloop_verify($user, $in) : throw new PmError('רק המפתח', 403),
+        'POST dev-report'        => $isDev ? devloop_report($user, $in) : throw new PmError('רק המפתח', 403),
+        'POST dev-attach'        => $isDev ? devloop_attach('user:' . $user['id'], $_GET) : throw new PmError('רק המפתח', 403),
+        'GET dev-file'           => $isDev ? devloop_file_out((int)($_GET['id'] ?? 0)) : throw new PmError('רק המפתח', 403),
         'POST log-token'  => $isDev ? pm_log_token(true) : throw new PmError('רק המפתח', 403),
         'POST trade'      => $isDev ? ['trades' => pm_trade_save($user, $in)] : throw new PmError('רק המפתח עורך תחומים', 403),
         'POST trade-delete' => $isDev ? ['trades' => pm_trade_delete($user, (int)($in['id'] ?? 0))] : throw new PmError('רק המפתח עורך תחומים', 403),

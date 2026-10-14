@@ -65,6 +65,11 @@ jobs:
       - name: App registry gate (every app.json must be valid)
         run: php platform/check-apps.php
 
+      # DevLoop: מודול משותף (devloop/src) שמועתק לכל אפליקציה שמשתמשת בו (devloop/apps.json).
+      # עותק ששונה בתוך אפליקציה — נעצר כאן: עורכים במקור ומריצים php devloop/tools/sync.php.
+      - name: DevLoop gate (every copy matches devloop/src)
+        run: php devloop/tools/sync.php --check
+
       # השער: לכל אפליקציה שב-app.json שלה "gate": true — .user.ini ובלוק בראש
       # ה-.htaccess, בעותק שבמכונה הזו בלבד (לא בגיט). ראו platform/build-gate.php.
       - name: Build the platform gate
@@ -171,7 +176,7 @@ jobs:
           attempt=1
           max=4
           until rsync -rlptz \
-            --exclude='.git' --exclude='.github' \
+            --exclude='.git' --exclude='.github' --exclude='/devloop/' \
             --exclude='git-deploy/data/config.json' \
             --exclude='git-deploy/data/logs/' --exclude='git-deploy/data/cache/' \
             --exclude='renovation-punchlist/data/config.json' \
