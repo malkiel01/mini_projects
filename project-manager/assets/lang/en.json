@@ -2225,5 +2225,7 @@
     "שוחרר ושולם": "Released and paid",
     "נשאר לסוף — ישוחרר במסירה": "Held to the end — released at handover",
     "נשאר לסוף — אחרי שיוך לשלב": "Held to the end — once assigned to a stage",
-    "שוחרר העיכבון — {stage}": "Retention released — {stage}"
+    "שוחרר העיכבון — {stage}": "Retention released — {stage}",
+    "נשאר לסוף": "Held to the end",
+    "העיכבון שנעצר מאבני הדרך של השלב — משתחרר במסירה": "Retention held from this stage's milestones — released at handover"
 }

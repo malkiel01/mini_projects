@@ -744,7 +744,16 @@ body.auth { display: grid; place-items: start center; padding: max(8vh, var(--s4
 .ledger .lg-b { text-align: end; color: var(--muted); font-size: .75rem; margin-top: 2px; }
 .ledger .lg-paid .lg-d { color: var(--ok); }
 .ledger .lg-milestone { background: var(--bg); }
-/* אבן דרך עם עיכבון — מחולקת לשניים בתוך השורה */
+/* אבן דרך עם עיכבון — מחולקת לשניים: במועד שלה ובמסירה (רשימת אבני הדרך, החלון והכרטסת) */
+.pay-split { margin-top: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font-size: .82rem; }
+.pay-split > div { display: flex; align-items: baseline; gap: var(--s2); padding: 5px var(--s2); }
+.pay-split > div + div { border-top: 1px dashed var(--line); }
+.pay-split span { flex: 1; min-width: 0; }
+.pay-split b { white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
+.pay-split .ps-ret { color: var(--muted); }
+.pay-split .ps-ret.ok { color: var(--ok); }
+.pay-split .ps-ret[role="button"] { cursor: pointer; }
+.pay-split .ps-ret[role="button"]:hover, .pay-split .ps-ret[role="button"]:focus-visible { color: var(--brand); outline: none; }
 .ledger .lg-split { margin-top: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font-size: .82rem; }
 .ledger .lg-split > div { display: flex; align-items: baseline; gap: var(--s2); padding: 5px var(--s2); }
 .ledger .lg-split > div + div { border-top: 1px dashed var(--line); }
