@@ -29,7 +29,7 @@ function bulk_targets(array $schema): array
 {
     $out = [];
     foreach ($schema['fields'] ?? [] as $f) {
-        if (in_array($f['type'], ['signature', 'file', 'calc', 'table'], true)) continue;
+        if (in_array($f['type'], ['signature', 'file', 'calc', 'table', 'system'], true)) continue;
         $out['f:' . $f['key']] = [$f['label'], 'שדות'];
     }
     $out['_title'] = ['כותרת המסמך', 'מסמך'];
@@ -246,7 +246,7 @@ function bulk_sample_rows(array $t): array
     $head = ['כותרת המסמך'];
     $ex = [unseal($t['name_enc']) . ' — לדוגמה'];
     foreach ($schema['fields'] ?? [] as $f) {
-        if (in_array($f['type'], ['signature', 'file', 'calc', 'table'], true)) continue;
+        if (in_array($f['type'], ['signature', 'file', 'calc', 'table', 'system'], true)) continue;
         $head[] = $f['label'];
         $ex[] = match ($f['type']) { 'date' => bulk_now('d/m/Y'), 'number' => 100, 'checkbox' => 'כן', default => '' };
     }
@@ -269,6 +269,7 @@ function export_value(array $f, string $v, array $att)
         case 'number': return is_numeric($v) ? $v + 0 : $v;
         case 'calc': return ($f['format'] ?? '') === 'date' ? $date($v) : (is_numeric($v) ? $v + 0 : $v);
         case 'date': return $date($v);
+        case 'system': return in_array($f['source'] ?? '', ['issued', 'completed'], true) ? $date($v) : $v;
         case 'checkbox': return $v === '1' ? 'כן' : '';
         case 'signature': return 'נחתם';
         case 'file': return implode(', ', array_map(fn($id) => $att[$id] ?? 'קובץ', json_decode($v, true) ?: []));

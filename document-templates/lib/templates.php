@@ -29,7 +29,9 @@ const TPL_MIME = [
     'image/webp'      => 'image',
     DOCX_MIME         => 'docx',
 ];
-const FIELD_TYPES = ['text', 'textarea', 'number', 'date', 'checkbox', 'signature', 'file', 'table', 'calc'];
+const FIELD_TYPES = ['text', 'textarea', 'number', 'date', 'checkbox', 'signature', 'file', 'table', 'calc', 'system'];
+/** שדה שמתמלא לבד: מספר המסמך, תאריך הנפקה, שם המנפיק, כותרת, תאריך השלמה. */
+const SYSTEM_SOURCES = ['number', 'issued', 'owner', 'title', 'completed'];
 const COLUMN_TYPES = ['text', 'number', 'calc'];
 const COND_OPS    = ['eq', 'neq', 'filled', 'empty'];
 const BLOCK_TYPES = ['heading', 'p', 'table', 'break'];
@@ -272,11 +274,18 @@ function clean_schema($s): array
             // שלב 10: בתבנית PDF מפורק — שם השדה בטופס המקורי.
             'pdfName' => $str($f['pdfName'] ?? '', 120),
             // שלב 8: מתמלא מאיש הקשר שמקושר למסמך.
-            'contactField' => in_array($f['contactField'] ?? '', CONTACT_FIELDS, true) && !in_array($type, ['file', 'signature', 'table', 'calc'], true)
+            'contactField' => in_array($f['contactField'] ?? '', CONTACT_FIELDS, true) && !in_array($type, ['file', 'signature', 'table', 'calc', 'system'], true)
                 ? $f['contactField'] : '',
             // שלב 11: תנאי הצגה — נבדק מול שאר השדות אחרי הלולאה
             'showIf' => clean_cond($f['showIf'] ?? null, $str),
+            // הרשאות: מוסתר מהממלאים בקישור (לא רואים לא את השדה ולא את הערך), ולהדפיס או לא
+            'hidden' => !empty($f['hidden']),
+            'print' => !array_key_exists('print', $f) || !empty($f['print']),
         ];
+        if ($type === 'system') {
+            $fields[count($fields) - 1]['source'] = in_array($f['source'] ?? '', SYSTEM_SOURCES, true) ? $f['source'] : 'number';
+            $fields[count($fields) - 1]['required'] = false;
+        }
         if ($type === 'calc') {
             $fields[count($fields) - 1] += [
                 'formula' => $str($f['formula'] ?? '', 500),

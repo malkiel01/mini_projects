@@ -170,6 +170,7 @@ function docx_value(array $f, string $v, array $attachments): string
 {
     return match ($f['type']) {
         'calc' => calc_display($v, $f['format'] ?? 'number'),
+        'system' => in_array($f['source'] ?? '', ['issued', 'completed'], true) ? calc_display($v, 'date') : $v,
         'table' => implode("\n", array_map(fn($r) => implode(' · ', array_filter(array_map(
             fn($c) => cell_display($c, (string)($r[$c['key']] ?? '')), $f['columns'] ?? []), 'strlen')), table_rows($v))),
         'date' => preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $v, $m) ? "$m[3]/$m[2]/$m[1]" : $v,
@@ -192,7 +193,8 @@ function docx_fill(string $bytes, array $schema, array $values, array $attachmen
     $tables = [];
     foreach ($schema['fields'] as $f) {
         if (empty($f['placeholder'])) continue;
-        $v = isset($shown[$f['key']]) ? (string)($values[$f['key']] ?? '') : '';
+        // מוסתר בתנאי, או "לא להדפיס" — ריק במסמך
+        $v = isset($shown[$f['key']]) && ($f['print'] ?? true) ? (string)($values[$f['key']] ?? '') : '';
         $map[$f['placeholder']] = docx_value($f, $v, $attachments);
         if ($f['type'] === 'table') $tables[$f['placeholder']] = [$f, table_rows($v)];
     }

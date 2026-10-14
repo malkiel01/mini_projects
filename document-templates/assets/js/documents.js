@@ -25,6 +25,8 @@
 
   const fmtDate = (iso) => iso ? new Date(iso).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }) : '—';
   const ddmmyyyy = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v) ? v.split('-').reverse().join('/') : v;
+  /** שדה שמתמלא לבד: תאריכים — בפורמט ישראלי, השאר כמו שהוא. */
+  const sysText = (f, v) => ['issued', 'completed'].includes(f.source) ? ddmmyyyy(v) : v;
 
   function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -423,6 +425,9 @@
       if (f.type === 'calc') {
         return el('output', { class: 'calc-out', 'data-calc': f.key, 'aria-label': f.label }, C.display(v, f.format) || '—');
       }
+      if (f.type === 'system') {
+        return el('output', { class: 'calc-out sys-out', 'data-sys': f.key, 'aria-label': f.label, title: 'מתמלא לבד' }, sysText(f, v) || '—');
+      }
       if (f.type === 'table') return tableControl(f);
       if (f.type === 'file') {
         n = onPage
@@ -490,10 +495,15 @@
 
     /** מחשב מחדש את השדות המחושבים (לתצוגה מיידית), ומסתיר מה שתנאי ההצגה שלו לא מתקיים. */
     function refreshDerived() {
-      Object.assign(values, C.all(doc.schema, values));
+      // ממלא בקישור לא מקבל שדות מוסתרים — החישוב שלו חלקי; הערכים מהשרת קובעים
+      if (!fill) Object.assign(values, C.all(doc.schema, values));
       for (const n of body.querySelectorAll('[data-calc]')) {
         const f = byKey[n.dataset.calc];
         if (f) n.textContent = C.display(values[f.key] ?? '', f.format) || '—';
+      }
+      for (const n of body.querySelectorAll('[data-sys]')) {
+        const f = byKey[n.dataset.sys];
+        if (f) n.textContent = sysText(f, values[f.key] ?? '') || '—';
       }
       const vis = C.visibleKeys(doc.schema, values);
       for (const n of body.querySelectorAll('[data-vis-key]')) n.hidden = !vis.has(n.dataset.visKey);
@@ -548,9 +558,10 @@
           `<td>${esc(c.type === 'calc' ? C.display(r[c.key] ?? '', c.format) : r[c.key])}</td>`).join('') + '</tr>').join('') + '</table>';
       const val = (f) => {
         const v = values[f.key] ?? '';
-        if (!vis.has(f.key)) return '';
+        if (!vis.has(f.key) || f.print === false) return '';
         switch (f.type) {
           case 'date': return esc(ddmmyyyy(v));
+          case 'system': return esc(sysText(f, v));
           case 'checkbox': return v === '1' ? '☒' : '☐';
           case 'calc': return esc(C.display(v, f.format));
           case 'signature': return /^data:image\/png;base64,/.test(v) ? `<img class="sig" src="${esc(v)}" alt="חתימה">` : '';
@@ -578,7 +589,7 @@
         const align = ` style="text-align:${b.align === 'center' ? 'center' : b.align === 'justify' ? 'justify' : 'right'}"`;
         if (b.type === 'heading') html += `<h1${align}>${text(b.text)}</h1>`;
         else if (b.type === 'p') html += `<p${align}>${text(b.text)}</p>`;
-        else if (b.type === 'table' && byKey[b.table] && vis.has(b.table)) html += table(byKey[b.table]);
+        else if (b.type === 'table' && byKey[b.table] && vis.has(b.table) && byKey[b.table].print !== false) html += table(byKey[b.table]);
         else if (b.type === 'break') html += '<div class="brk"></div>';
       }
       const foot = esc((doc.number ? doc.number + ' · ' : '') + doc.title)
@@ -736,7 +747,7 @@
         }
         const c = control(f, false);
         // שדה עם כפתורים (קובץ, חתימה) — div: לחיצה על תווית הייתה מפעילה את הכפתור הראשון.
-        items.push(el(['file', 'signature', 'table', 'calc'].includes(f.type) ? 'div' : 'label', { class: 'form-field t-' + f.type, 'data-key': f.key, 'data-vis-key': f.key },
+        items.push(el(['file', 'signature', 'table', 'calc', 'system'].includes(f.type) ? 'div' : 'label', { class: 'form-field t-' + f.type, 'data-key': f.key, 'data-vis-key': f.key },
           el('span', {}, f.label, f.required ? el('b', { class: 'req', title: 'חובה' }, ' *') : null),
           c, f.help ? el('small', { class: 'muted' }, f.help) : null));
       }
@@ -1020,7 +1031,7 @@
   async function buildPdf(doc, values, srcBytes) {
     await loadScript(PDFLIB);
     await loadScript(FONTKIT);
-    const { PDFDocument, rgb } = window.PDFLib;
+    const { PDFDocument, rgb, degrees } = window.PDFLib;
     const fontBytes = await (await fetch(FONT)).arrayBuffer();
 
     let pdf;
@@ -1065,19 +1076,41 @@
     const pages = pdf.getPages();
     const annex = [];
 
+    /**
+     * הדף כפי שרואים אותו: האזור הגלוי (CropBox) והסיבוב — בדיוק כמו המסך (pdf.js).
+     * מחזיר את מידות הדף הנראה, ו-pt(u, v): נקודה בדף הנראה (מלמעלה-ימין… משמאל
+     * למעלה, y כלפי מטה) → נקודה במערכת של ה-PDF. בלי זה, שדה בדף מסובב או
+     * חתוך יוצא במקום אחר מזה שעל המסך.
+     */
+    const frame = (page) => {
+      const cb = page.getCropBox();
+      const r = ((page.getRotation().angle % 360) + 360) % 360;
+      const W = r % 180 ? cb.height : cb.width, H = r % 180 ? cb.width : cb.height;
+      const pt = (u, v) => {
+        const a = u / W, b = v / H;
+        if (r === 90) return { x: cb.x + b * cb.width, y: cb.y + a * cb.height };
+        if (r === 180) return { x: cb.x + (1 - a) * cb.width, y: cb.y + b * cb.height };
+        if (r === 270) return { x: cb.x + (1 - b) * cb.width, y: cb.y + (1 - a) * cb.height };
+        return { x: cb.x + a * cb.width, y: cb.y + (1 - b) * cb.height };
+      };
+      return { W, H, pt, rot: degrees(r) };
+    };
+
     const vis = window.DTCalc.visibleKeys(doc.schema, values);   // שלב 11: שדה מוסתר — לא נכתב
     for (const f of doc.schema.fields) {
       let raw = values[f.key] ?? '';
-      if (raw === '' || !pages[f.page] || !vis.has(f.key)) continue;
+      if (raw === '' || !pages[f.page] || !vis.has(f.key) || f.print === false) continue;   // "לא מודפס" — לא נכתב
       const page = pages[f.page];
-      const { width: W, height: H } = page.getSize();
-      const bx = f.x * W, bw = f.w * W, bh = f.h * H, top = H - f.y * H;
+      // הכול בנקודות של הדף הנראה: (bx, by) — הפינה העליונה של השדה, y כלפי מטה
+      const { W, H, pt, rot } = frame(page);
+      const bx = f.x * W, by = f.y * H, bw = f.w * W, bh = f.h * H;
 
       if (f.type === 'checkbox') {
         if (raw !== '1') continue;
-        const s = Math.min(bw, bh), cx = bx + bw / 2, cy = top - bh / 2;
-        page.drawLine({ start: { x: cx - s * 0.35, y: cy }, end: { x: cx - s * 0.08, y: cy - s * 0.3 }, thickness: Math.max(1, s / 8), color: ink });
-        page.drawLine({ start: { x: cx - s * 0.08, y: cy - s * 0.3 }, end: { x: cx + s * 0.4, y: cy + s * 0.35 }, thickness: Math.max(1, s / 8), color: ink });
+        const s = Math.min(bw, bh), cx = bx + bw / 2, cy = by + bh / 2;
+        const line = (x1, y1, x2, y2) => page.drawLine({ start: pt(x1, y1), end: pt(x2, y2), thickness: Math.max(1, s / 8), color: ink });
+        line(cx - s * 0.35, cy, cx - s * 0.08, cy + s * 0.3);
+        line(cx - s * 0.08, cy + s * 0.3, cx + s * 0.4, cy - s * 0.35);
         continue;
       }
       if (f.type === 'file') {
@@ -1090,11 +1123,15 @@
       if (f.type === 'signature') {
         const png = await pdf.embedPng(raw);
         const k = Math.min(bw / png.width, bh / png.height);
-        page.drawImage(png, { x: bx + (bw - png.width * k) / 2, y: top - bh + (bh - png.height * k) / 2, width: png.width * k, height: png.height * k });
+        const iw = png.width * k, ih = png.height * k;
+        // pdf-lib מצייר תמונה מהפינה השמאלית-תחתונה שלה, ומסובב סביבה
+        const o = pt(bx + (bw - iw) / 2, by + (bh + ih) / 2);
+        page.drawImage(png, { x: o.x, y: o.y, width: iw, height: ih, rotate: rot });
         continue;
       }
 
-      const text = f.type === 'date' ? ddmmyyyy(raw) : f.type === 'calc' ? window.DTCalc.display(raw, f.format) : raw;
+      const text = f.type === 'date' ? ddmmyyyy(raw) : f.type === 'calc' ? window.DTCalc.display(raw, f.format)
+        : f.type === 'system' ? sysText(f, raw) : raw;
       let size = f.fontSize || 11;
       const pad = 2;
       const fits = (sz) => {
@@ -1112,13 +1149,14 @@
       }
       const lh = size * 1.25;
       const blockH = r.lines.length * lh;
-      let y = top - (bh - blockH) / 2 - size;
+      let y = by + (bh - blockH) / 2 + size;   // קו הבסיס של השורה הראשונה, בדף הנראה
       for (const line of r.lines) {
         const v = pdfText(line);
         const w = font.widthOfTextAtSize(v, size);
         const x = f.align === 'left' ? bx + pad : f.align === 'center' ? bx + (bw - w) / 2 : bx + bw - w - pad;
-        page.drawText(v, { x, y, size, font, color: ink });
-        y -= lh;
+        const o = pt(x, y);
+        page.drawText(v, { x: o.x, y: o.y, size, font, color: ink, rotate: rot });
+        y += lh;
       }
     }
 
