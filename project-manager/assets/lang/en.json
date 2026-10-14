@@ -2217,5 +2217,13 @@
     "מתוך {amount}": "of {amount}",
     "עיכבון {amount} — בשחרור, במסירה": "Retention {amount} — paid in the release, at handover",
     "מתוך {total} — עיכבון {amount} נשאר עד המסירה": "of {total} — retention {amount} held until handover",
-    "מתוך {amount} — {r} נשארים אצלכם כעיכבון עד המסירה": "of {amount} — {r} stays with you as retention until handover"
+    "מתוך {amount} — {r} נשארים אצלכם כעיכבון עד המסירה": "of {amount} — {r} stays with you as retention until handover",
+    "לתשלום ({n}%)": "To pay ({n}%)",
+    "עיכבון ({n}%) — {state}": "Retention ({n}%) — {state}",
+    "נדרש לשחרור": "Release requested",
+    "שוחרר — ממתין לאישור קבלה": "Released — awaiting receipt confirmation",
+    "שוחרר ושולם": "Released and paid",
+    "נשאר לסוף — ישוחרר במסירה": "Held to the end — released at handover",
+    "נשאר לסוף — אחרי שיוך לשלב": "Held to the end — once assigned to a stage",
+    "שוחרר העיכבון — {stage}": "Retention released — {stage}"
 }
