@@ -41,7 +41,9 @@ tpl_save($a, ['id' => $tid, 'numbering' => ['scheme' => 'prefix_year_seq', 'pref
         $F('bad', 'system', 'מקור לא מוכר', ['source' => 'nope']),
         $F('cost', 'number', 'עלות פנימית', ['hidden' => true, 'print' => false]),
         $F('secret_calc', 'calc', 'רווח', ['hidden' => true, 'formula' => 'מחיר_ללקוח - עלות_פנימית']),
-        $F('price', 'number', 'מחיר ללקוח', ['locked' => true]),
+        $F('price', 'number', 'מחיר ללקוח', ['locked' => true, 'fmt' => '₪ #,##0.00']),
+        $F('due', 'date', 'מועד', ['fmt' => 'd בMMMM yyyy (hd בhMMMM hyy)']),
+        $F('note', 'text', 'הערה', ['fmt' => 'dd/MM']),
         $F('cname', 'text', 'שם הלקוח', ['role' => 'client', 'required' => true, 'hidden' => true]),
     ]]]);
 $s = tpl_get($a, $tid)['template']['schema'];
@@ -49,6 +51,9 @@ $by = array_column($s['fields'], null, 'key');
 check('מתמלא לבד: מקור נשמר; מקור לא מוכר → מספר המסמך', $by['num']['source'] === 'number' && $by['bad']['source'] === 'number');
 check('מתמלא לבד אינו חובה (גם אם סומן)', $by['num']['required'] === false);
 check('נעילה במקום נשמרת; ברירת מחדל — לא נעול', $by['price']['locked'] === true && $by['cost']['locked'] === false);
+check('מבנה תצוגה נשמר; לשדה טקסט — מתבטל', $by['price']['fmt'] === '₪ #,##0.00' && $by['note']['fmt'] === '');
+check('Word: מבנה מותאם — מספר ותאריך משולב', docx_value($by['price'], '4500', []) === '₪ 4,500.00'
+    && docx_value($by['due'], '2026-10-14', []) === '14 באוקטובר 2026 (ג׳ בחשוון תשפ״ז)');
 check('הרשאות נשמרות: מוסתר, לא להדפיס; ברירת מחדל — להדפיס', $by['cost']['hidden'] === true && $by['cost']['print'] === false && $by['price']['print'] === true);
 
 $did = doc_create($a, ['template_id' => $tid, 'title' => 'הצעה לדנה'])['id'];

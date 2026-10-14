@@ -52,7 +52,8 @@ function scan() {
   for (const o of root.querySelectorAll('.fill output.on-page')) if (o.scrollWidth > o.clientWidth + 2) out.push('ערך על הדף לא נכנס בשדה: ' + o.textContent);
   const text = root.innerText || '';
   for (const bad of ['null', 'undefined', 'NaN']) if (new RegExp('(^|[^\\w])' + bad + '([^\\w]|$)').test(text)) out.push(`מופיע "${bad}" על המסך`);
-  if (text.includes('[object Object]')) out.push('מופיע "[object Object]" על המסך');
+  const obj = /\[object [A-Za-z]+\]/.exec(text);
+  if (obj) out.push(`מופיע "${obj[0]}" על המסך`);
   return [...new Set(out)].slice(0, 15);
 }
 
@@ -127,6 +128,8 @@ function scan() {
     ['עורך — + שדה', click('.design-bar button.primary')],
     ['עורך — שדות', async () => { await p.keyboard.press('Escape'); await p.click('.seg-tabs [data-tab=fields]'); await p.waitForTimeout(300); }],
     ['עורך — הגדרות שדה', click('.field-list button:has-text("שם מלא")')],
+    ['עורך — מבנה תצוגה', async () => { await p.keyboard.press('Escape'); await p.click('.field-list button:has-text("מחיר")'); await p.waitForTimeout(300);
+      await p.selectOption('dialog select[aria-label="מבנה מוכן"]', '*'); await p.click('dialog .fmt-help summary'); await p.waitForTimeout(200); }],
     ['עורך — בחירה', async () => { await p.keyboard.press('Escape'); await p.click('.field-list button:has-text("גודל")'); await p.waitForTimeout(400); }],
     ['עורך — ממלאים', async () => { await p.keyboard.press('Escape'); await p.click('.seg-tabs [data-tab=roles]'); await p.waitForTimeout(300); }],
     ['עורך — הגדרות', click('.seg-tabs [data-tab=settings]')],

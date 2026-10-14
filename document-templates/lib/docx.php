@@ -168,6 +168,7 @@ function docx_fields(array $names): array
 /** הערך כפי שהוא נכתב במסמך. */
 function docx_value(array $f, string $v, array $attachments): string
 {
+    if (($custom = fmt_apply($f, $v)) !== null) return $custom;   // מבנה מותאם — כמו ב-PDF
     return match ($f['type']) {
         'calc' => calc_display($v, $f['format'] ?? 'number'),
         'select' => select_label($f, $v),

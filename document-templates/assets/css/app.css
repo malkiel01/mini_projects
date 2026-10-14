@@ -736,3 +736,22 @@ table.sample th { background: var(--bg); font-weight: 600; }
 .pos-dot.va-top { align-items: flex-start; } .pos-dot.va-middle { align-items: center; } .pos-dot.va-bottom { align-items: flex-end; }
 .pos-dot.ha-right { justify-content: flex-start; } .pos-dot.ha-center { justify-content: center; } .pos-dot.ha-left { justify-content: flex-end; }
 .fonts-panel label.btn { cursor: pointer; justify-self: start; }
+
+/* ── מבנה מותאם על הדף: הערך המעוצב מעל הקלט, כשלא עורכים ── */
+.fmt-wrap { position: relative; display: block; width: 100%; height: 100%; }
+.fmt-show { position: absolute; inset: 0; display: none; padding: 0 2px; overflow: hidden; white-space: nowrap; line-height: 1.1;
+  color: #0b1f66; font-family: Alef, Arial, sans-serif; pointer-events: none; }
+.fmt-wrap.has-fmt:not(:focus-within) .fmt-show { display: flex; }
+.fmt-wrap.has-fmt:not(:focus-within) input { color: transparent; }
+.fmt-wrap.has-fmt:not(:focus-within) input::-webkit-datetime-edit { color: transparent; }
+.fmt-form { display: grid; gap: 2px; }
+.fmt-preview { color: var(--muted); font-size: .8rem; }
+.fmt-preview:empty { display: none; }
+
+/* מבנה התצוגה — בהגדרות השדה */
+.fmt-picker { display: grid; gap: var(--s2); }
+.fmt-sample { margin: 0; padding: var(--s2) var(--s3); border-radius: var(--r); background: var(--brand-soft); font-size: .9rem; }
+.fmt-help summary { cursor: pointer; color: var(--brand); font-size: .85rem; }
+.fmt-help dl { display: grid; grid-template-columns: auto 1fr; gap: 4px var(--s3); margin: var(--s2) 0 0; font-size: .85rem; }
+.fmt-help dt { font-family: monospace; font-weight: 600; text-align: left; }
+.fmt-help dd { margin: 0; color: var(--muted); }

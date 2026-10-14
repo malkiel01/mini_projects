@@ -288,6 +288,8 @@ function clean_schema($s, array $sources = [], array $fonts = []): array
             // גופן (0 — ברירת המחדל) ומיקום אנכי של הטקסט בשדה
             'font' => in_array((int)($f['font'] ?? 0), $fonts, true) ? (int)$f['font'] : 0,
             'valign' => in_array($f['valign'] ?? '', ['top', 'middle', 'bottom'], true) ? $f['valign'] : 'middle',
+            // מבנה תצוגה מותאם (lib/fmt.php): תאריך — dd/MM/yyyy, hd בhMMMM hyy…; מספר — #,##0.00…
+            'fmt' => in_array($type, ['date', 'number', 'calc', 'system'], true) ? $str($f['fmt'] ?? '', 80) : '',
         ];
         if ($type === 'system') {
             $fields[count($fields) - 1]['source'] = in_array($f['source'] ?? '', SYSTEM_SOURCES, true) ? $f['source'] : 'number';
@@ -478,3 +480,4 @@ function tpl_delete(array $user, array $b): array
 
 require_once __DIR__ . '/integrations.php';   // בחירה מרשימה, מקורות נתונים
 require_once __DIR__ . '/fonts.php';   // גופנים שהמשתמש העלה
+require_once __DIR__ . '/fmt.php';     // מבנים מותאמים לתצוגת תאריך ומספר

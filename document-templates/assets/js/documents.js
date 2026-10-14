@@ -28,6 +28,9 @@
   const ddmmyyyy = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v) ? v.split('-').reverse().join('/') : v;
   /** שדה שמתמלא לבד: תאריכים — בפורמט ישראלי, השאר כמו שהוא. */
   const sysText = (f, v) => ['issued', 'completed'].includes(f.source) ? ddmmyyyy(v) : v;
+  /** ערך מחושב / מתמלא לבד — לתצוגה: המבנה המותאם של השדה, ואם אין — ברירת המחדל. */
+  const calcText = (f, v) => window.DTFmt.apply(f, v) ?? window.DTCalc.display(v, f.format);
+  const sysShown = (f, v) => window.DTFmt.apply(f, v) ?? sysText(f, v);
   /** בחירה מרשימה: מה שמוצג ומודפס — התווית. */
   const optText = (f, v) => (f.options || []).find(o => o.value === v)?.label ?? v;
 
@@ -434,10 +437,10 @@
         return o;
       };
       if (f.type === 'calc') {
-        return onPageText(el('output', { class: 'calc-out', 'data-calc': f.key, 'aria-label': f.label }, C.display(v, f.format) || '—'));
+        return onPageText(el('output', { class: 'calc-out', 'data-calc': f.key, 'aria-label': f.label }, calcText(f, v) || '—'));
       }
       if (f.type === 'system') {
-        return onPageText(el('output', { class: 'calc-out sys-out', 'data-sys': f.key, 'aria-label': f.label, title: 'מתמלא לבד', dir: 'auto' }, sysText(f, v) || '—'));
+        return onPageText(el('output', { class: 'calc-out sys-out', 'data-sys': f.key, 'aria-label': f.label, title: 'מתמלא לבד', dir: 'auto' }, sysShown(f, v) || '—'));
       }
       if (f.type === 'table') return tableControl(f);
       if (f.type === 'file') {
@@ -486,6 +489,26 @@
           n.style[f.valign === 'top' ? 'paddingBottom' : 'paddingTop'] = `calc(var(--k) * ${rest}px)`;
         }
       }
+      // מבנה מותאם (תאריך עברי, שם חודש, מספר עם פסיקים…): מוצג כשלא עורכים; בהקשה — הערך עצמו לעריכה
+      if (f.fmt && (f.type === 'date' || f.type === 'number') && !inlineText) {
+        const show = el(onPage ? 'span' : 'small', { class: onPage ? 'fmt-show' : 'fmt-preview', 'aria-hidden': onPage ? 'true' : null });
+        const wrap = el('span', { class: onPage ? 'fmt-wrap' : 'fmt-form' });
+        if (onPage) {
+          Object.assign(show.style, { fontSize: n.style.fontSize, fontFamily: n.style.fontFamily,
+            justifyContent: f.align === 'center' ? 'center' : f.align === 'left' ? 'flex-end' : 'flex-start',
+            alignItems: f.valign === 'top' ? 'flex-start' : f.valign === 'bottom' ? 'flex-end' : 'center' });
+        }
+        const upd = () => {
+          const t = window.DTFmt.apply(f, n.value);
+          show.textContent = t ? (onPage ? t : 'יוצג כך: ' + t) : '';
+          wrap.classList.toggle('has-fmt', !!t);
+        };
+        n.addEventListener('input', upd);
+        n.addEventListener('change', upd);
+        wrap.append(n, show);
+        upd();
+        return wrap;
+      }
       return n;
     }
 
@@ -527,11 +550,11 @@
       if (!fill) Object.assign(values, C.all(doc.schema, values));
       for (const n of body.querySelectorAll('[data-calc]')) {
         const f = byKey[n.dataset.calc];
-        if (f) n.textContent = C.display(values[f.key] ?? '', f.format) || '—';
+        if (f) n.textContent = calcText(f, values[f.key] ?? '') || '—';
       }
       for (const n of body.querySelectorAll('[data-sys]')) {
         const f = byKey[n.dataset.sys];
-        if (f) n.textContent = sysText(f, values[f.key] ?? '') || '—';
+        if (f) n.textContent = sysShown(f, values[f.key] ?? '') || '—';
       }
       const vis = C.visibleKeys(doc.schema, values);
       for (const n of body.querySelectorAll('[data-vis-key]')) n.hidden = !vis.has(n.dataset.visKey);
@@ -588,11 +611,12 @@
         const v = values[f.key] ?? '';
         if (!vis.has(f.key) || f.print === false) return '';
         switch (f.type) {
-          case 'date': return esc(ddmmyyyy(v));
-          case 'system': return esc(sysText(f, v));
+          case 'date': return esc(window.DTFmt.apply(f, v) ?? ddmmyyyy(v));
+          case 'number': return esc(window.DTFmt.apply(f, v) ?? v);
+          case 'system': return esc(sysShown(f, v));
           case 'select': return esc(optText(f, v));
           case 'checkbox': return v === '1' ? '☒' : '☐';
-          case 'calc': return esc(C.display(v, f.format));
+          case 'calc': return esc(calcText(f, v));
           case 'signature': return /^data:image\/png;base64,/.test(v) ? `<img class="sig" src="${esc(v)}" alt="חתימה">` : '';
           case 'table': return table(f);
           case 'file': {
@@ -1169,8 +1193,8 @@
       }
 
       const font = fonts.get(f.font) || fontDefault;
-      const text = f.type === 'date' ? ddmmyyyy(raw) : f.type === 'calc' ? window.DTCalc.display(raw, f.format)
-        : f.type === 'system' ? sysText(f, raw) : f.type === 'select' ? optText(f, raw) : raw;
+      const text = window.DTFmt.apply(f, raw) ?? (f.type === 'date' ? ddmmyyyy(raw) : f.type === 'calc' ? window.DTCalc.display(raw, f.format)
+        : f.type === 'system' ? sysText(f, raw) : f.type === 'select' ? optText(f, raw) : raw);   // מבנה מותאם קודם
       let size = f.fontSize || 11;
       const pad = 2;
       const fits = (sz) => {

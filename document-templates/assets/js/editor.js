@@ -713,6 +713,50 @@
         isWord || isAuthored ? null : el('p', { class: 'hint' }, 'בדף: הקשה על שדה — הגדרות; גרירה — הזזה; הפינה — גודל; חצים — הזזה עדינה; Delete — מחיקה.'));
     }
 
+    /**
+     * מבנה התצוגה של תאריך / מספר — כמו תבנית מותאמת בוורד: מבנים מוכנים עם
+     * דוגמה חיה, או מבנה משלכם (dd/MM/yyyy, hd בhMMMM hyy, ₪ #,##0.00…).
+     */
+    function fmtPicker(f) {
+      const F = window.DTFmt;
+      const kind = F.isDate(f) ? 'date' : 'number';
+      const sample = kind === 'date' ? new Date().toISOString().slice(0, 10) : '1234.5';
+      const show = (p) => kind === 'date' ? F.date(p, sample) : F.number(p, sample);
+      const presets = F.PRESETS[kind];
+      const sel = el('select', { 'aria-label': 'מבנה מוכן' },
+        el('option', { value: '' }, 'ברירת מחדל — ' + (kind === 'date' ? show('dd/MM/yyyy') : sample)),
+        presets.map(([p, name]) => el('option', { value: p }, `${name} — ${show(p)}`)),
+        el('option', { value: '*' }, '✏️ מבנה משלי…'));
+      const custom = el('input', { dir: 'ltr', maxlength: 80, value: f.fmt || '', 'aria-label': 'המבנה',
+        placeholder: kind === 'date' ? 'dd/MM/yyyy · hd בhMMMM hyy' : '#,##0.00' });
+      const preview = el('p', { class: 'fmt-sample' });
+      const customBox = el('label', { class: 'f' }, el('span', {}, 'המבנה'), custom);
+      // "מבנה משלי" — מצב מפורש: גם אם מה שנכתב זהה למבנה מוכן, התיבה נשארת פתוחה
+      let own = !!f.fmt && !presets.some(([p]) => p === f.fmt);
+      const sync = () => {
+        sel.value = own ? '*' : (f.fmt || '');
+        customBox.hidden = !own;
+        preview.replaceChildren('דוגמה: ', el('b', {}, f.fmt ? show(f.fmt) : (kind === 'date' ? show('dd/MM/yyyy') : sample)));
+      };
+      sel.addEventListener('change', () => {
+        own = sel.value === '*';
+        if (own) { custom.value = f.fmt || (kind === 'date' ? 'd בMMMM yyyy' : '#,##0.00'); f.fmt = custom.value; }
+        else { f.fmt = sel.value; custom.value = f.fmt; }
+        setDirty(true); sync();
+        if (own) custom.focus();
+      });
+      custom.addEventListener('input', () => { f.fmt = custom.value.trim(); setDirty(true); sync(); });
+      const help = kind === 'date'
+        ? [['d / dd', 'יום: 4 / 04'], ['M / MM', 'חודש: 3 / 03'], ['MMMM', 'שם החודש: מרץ'], ['yy / yyyy', 'שנה: 26 / 2026'], ['dddd', 'יום בשבוע: יום רביעי'],
+           ['hd', 'יום עברי: ט״ו'], ['hMMMM', 'חודש עברי: תשרי'], ['hyy / hyyyy', 'שנה עברית: תשפ״ז / ה׳תשפ״ז'], ["'text'", 'טקסט באנגלית — בגרש']]
+        : [['0', 'ספרה (גם אפס)'], ['#', 'ספרה, רק אם יש'], [',', 'הפרדת אלפים: #,##0'], ['.00', 'שתי ספרות אחרי הנקודה'], ['%', 'אחוזים (כפול 100)'], ['₪ / ש״ח', 'כל טקסט לפני או אחרי']];
+      sync();
+      return el('div', { class: 'fmt-picker' }, el('label', { class: 'f' }, el('span', {}, 'איך הערך יוצג במסמך'), sel), customBox, preview,
+        el('details', { class: 'fmt-help' }, el('summary', {}, 'סימנים שאפשר להשתמש בהם'),
+          el('dl', {}, help.flatMap(([k, v]) => [el('dt', { dir: 'ltr' }, k), el('dd', {}, v)]))),
+        el('p', { class: 'hint' }, 'הערך נשמר כמו שהוא (תאריך / מספר); המבנה קובע רק איך הוא מוצג — על הדף, ב-PDF וב-Word.'));
+    }
+
     /** הגופנים שהעליתי — רשימה, העלאה, מחיקה. */
     function fontsPanel() {
       const box = el('div', { class: 'numbering fonts-panel' }, el('h2', {}, '🔤 הגופנים שלי'));
@@ -892,6 +936,7 @@
               () => !!f.hidden, v => { f.hidden = v; }) : null,
             toggle('מודפס במסמך', 'כבוי — נשמר ומיוצא לאקסל, אבל לא מופיע בקובץ המודפס', () => f.print !== false, v => { f.print = v; }),
             el('div', { class: 'f' }, el('span', {}, 'מתי השדה מוצג'), condEditor(f, f, draw))),
+          window.DTFmt.isDate(f) || window.DTFmt.isNumber(f) ? group('מבנה התצוגה', fmtPicker(f)) : null,
           auto || f.type === 'signature' ? null : group('ערך',
             f.type === 'select' ? selectPanel(f) : null,
             f.type === 'file' ? filePanel(f)
