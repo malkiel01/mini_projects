@@ -1060,3 +1060,13 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .member-stages .check.new { background: color-mix(in srgb, var(--ok) 12%, var(--surface)); border-radius: 8px; }
 .member-stages #member-new-stage { justify-self: start; margin-top: var(--s2); }
 .member-new-stage { display: grid; gap: var(--s2); margin-top: var(--s2); padding: var(--s2); border: 1px dashed var(--line); border-radius: var(--r); }
+
+/* חלון אבן דרך: כרטיס סיכום בראש, לשוניות תשלומים / פרטים, וקבוצות בטופס */
+.pm-head { display: grid; gap: 6px; padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.pm-head-top { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
+.pm-amt { font-size: 1.5rem; font-weight: 700; direction: ltr; unicode-bidi: isolate; }
+.pm-head-sub { color: var(--muted); font-size: .88rem; overflow-wrap: anywhere; }
+.pm-head #payment-main-btns .btn { flex: 1; }
+.pm-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: var(--s3) 0 0; }
+#pm-details > .sec-title:first-child { margin-top: var(--s2); }
+.pm-cancel { justify-self: start; margin-top: var(--s3); }

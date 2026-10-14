@@ -42,6 +42,7 @@ const Payments = (() => {
         $$('#payment-dlg [name=due_kind]').forEach(r => r.addEventListener('change', dueKindChanged));
         $('#due-need-stage').addEventListener('click', () => $('#payment-dlg [name=stage_id]').focus());
         form.elements.percent.addEventListener('input', quoteHint);
+        $('#pm-tabs').addEventListener('click', e => { const b = e.target.closest('[data-pm-tab]'); if (b) pmTab(b.dataset.pmTab); });
         $('#payment-main-btns').addEventListener('click', e => {
             const b = e.target.closest('[data-do]');
             if (b) ({ request: sendRequest, lawyer: lawyerApprove })[b.dataset.do]();
@@ -191,24 +192,55 @@ const Payments = (() => {
         el.notes.value = p.notes || '';
         $(`#payment-dlg [name=mode][value=${current?.percent ? 'percent' : 'amount'}]`).checked = true;
         $(`#payment-dlg [name=payer][value=${p.payer || 'client'}]`).checked = true;
-        $('#payer-box').hidden = !hasLawyer();
+        $('#payer-box').hidden = $('#payer-title').hidden = !hasLawyer();
         $('#pay-lawyer-box').hidden = !hasLawyer();
         el.needs_lawyer.checked = !!p.needs_lawyer;
         const locked = current && !['planned', 'requested'].includes(current.status) && !Dev.on();
         Dev.attach(dlg, 'payment', current?.id);
         [...form.elements].forEach(x => { if (x.name) x.disabled = !!locked; });
         $('button[type=submit]', form).hidden = !!locked;
-        $('#payment-state').hidden = !current;
-        if (current) $('#payment-state').innerHTML = (current.supplier_request ? `<span class="chip">📥 ${esc(t('הספק ביקש'))}</span>` : '')
-            + (current.file_id ? `<a class="chip" href="api.php?action=file&id=${current.file_id}" target="_blank" rel="noopener">📄 ${esc(t('המסמך של הספק'))}</a>` : '')
-            + `<span class="chip">${ICON[current.status]} ${esc(current.label)}</span>`
-            + (current.received ? `<span class="chip">${esc(t('התקבל {amount}', { amount: money(current.received) }))}</span>` : '')
-            + (current.lawyer ? `<span class="chip">⚖️ ${esc(t('{name} אישר', { name: current.lawyer.by }))}</span>` : '');
+        drawHead();
         await stageChanged(p.supplier_id || null);
         dueKindChanged();
         calcHint();
         renderActions();
+        // אבן דרך קיימת: לשוניות — "תשלומים" (מה קרה ומה עכשיו) ו"פרטים" (הטופס). מתוכננת — קודם הפרטים
+        $('#pm-tabs').hidden = !current;
+        pmTab(current && current.status !== 'planned' ? 'money' : 'details');
         dlg.showModal();
+    }
+
+    /** כרטיס הסיכום בראש החלון: הסכום, המצב, למי · על מה · מתי, וכמה התקבל מתוך כמה. */
+    function drawHead() {
+        const p = current;
+        $('#pm-head').hidden = !p;
+        if (!p) return;
+        const stage = p.stage_id ? project.stages.find(s => s.id === p.stage_id) : null;
+        $('#pm-amt').textContent = money(p.amount); // הסכום של אבן הדרך — כמו בכותרת וברשימה
+        $('#pm-status').textContent = `${ICON[p.status] || ''} ${p.label}`;
+        // למי · על איזה שלב · מתי (מקדמה — "בתחילת העבודה" אומר הכול)
+        $('#pm-sub').textContent = [p.supplier_name, p.due_kind === 'advance' ? '💰 ' + t('מקדמה — בתחילת העבודה') : stage ? '🧱 ' + stageName(stage) : t('בלי שלב'),
+            p.due_kind === 'advance' ? '' : dueText(p)].filter(Boolean).join(' · ');
+        const total = p.due_amount ?? p.amount, pct = total ? Math.min(100, Math.round(p.received * 100 / total)) : 0;
+        $('#pm-progress').innerHTML = p.received ? `<div class="ps-line"><span class="muted">${esc(t('התקבל'))}</span> <b>${esc(money(p.received))}</b> <span class="muted">${esc(t('מתוך {total}', { total: money(total) }))}</span><span class="ps-pct">${pct}%</span></div>
+            <span class="fm-track" role="progressbar" aria-label="${esc(t('התקבל'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span style="inline-size:${pct}%"></span></span>` : '';
+        $('#payment-state').innerHTML = (p.supplier_request ? `<span class="chip">📥 ${esc(t('הספק ביקש'))}</span>` : '')
+            + (p.file_id ? `<a class="chip" href="api.php?action=file&id=${p.file_id}" target="_blank" rel="noopener">📄 ${esc(t('המסמך של הספק'))}</a>` : '')
+            + (p.retention ? `<span class="chip">${esc(t('עיכבון {amount}', { amount: money(p.retention) }))}</span><span class="chip">${esc(t('לתשלום עכשיו {amount}', { amount: money(p.due_amount) }))}</span>` : '')
+            + (p.lawyer ? `<span class="chip">⚖️ ${esc(t('{name} אישר', { name: p.lawyer.by }))}</span>` : '');
+        $('#payment-state').hidden = !$('#payment-state').innerHTML;
+        $('#pm-tab-n').textContent = p.proofs.length || '';
+        $('#pm-no-proofs').hidden = !!p.proofs.length;
+    }
+
+    /** לשונית בחלון אבן הדרך: money — אסמכתאות, דיווח ידני, חשבונית; details — הטופס וביטול. */
+    let pmTabNow = 'details';
+    function pmTab(k) {
+        pmTabNow = k;
+        const existing = !!current;
+        $('#payment-actions').hidden = !existing || k !== 'money';
+        $('#pm-details').hidden = existing && k !== 'details';
+        $$('#pm-tabs [data-pm-tab]').forEach(b => { b.classList.toggle('on', b.dataset.pmTab === k); b.setAttribute('aria-selected', String(b.dataset.pmTab === k)); });
     }
 
     /** שלב ברירת מחדל: הראשון שיש בו הצעה מאושרת, ועוד לא נסגר. */
@@ -328,7 +360,7 @@ const Payments = (() => {
 
     function renderActions() {
         const p = current;
-        $('#payment-actions').hidden = !p;
+        $('#payment-actions').hidden = !p || pmTabNow !== 'money';
         if (!p) return;
         const b = [];
         if (['planned', 'requested'].includes(p.status)) b.push(`<button type="button" class="btn primary" data-do="request">📤 ${esc(t(p.status === 'planned' ? 'שליחת דרישת תשלום' : 'שליחה שוב'))}</button>`);

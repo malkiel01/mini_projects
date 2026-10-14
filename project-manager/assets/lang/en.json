@@ -2201,5 +2201,11 @@
     "בצוות של הפרויקט, עם השלבים שלו": "in the project team, with their stages",
     "{name} עוד לא מוגדר כספק בתיק — חסר: {missing}": "{name} isn't set up as a supplier in this project yet — missing: {missing}",
     "ממתין להשלמת פרטי הספק אצל מנהל הפרויקט — אחר כך אפשר יהיה לאשר.": "Waiting for the project manager to complete the supplier details — then you can approve.",
-    "אין הצעה מאושרת על חלק מאבני הדרך — \"סוכם\" כולל אותן לפי מה שנרשם (+).": "Some milestones have no approved quote — \"Agreed\" includes them as recorded (+)."
+    "אין הצעה מאושרת על חלק מאבני הדרך — \"סוכם\" כולל אותן לפי מה שנרשם (+).": "Some milestones have no approved quote — \"Agreed\" includes them as recorded (+).",
+    "עוד לא דווח תשלום. הלקוח מעלה אסמכתא בקישור האישי שלו — או דיווח ידני כאן.": "No payment reported yet. The client uploads a proof in their personal link — or report it manually here.",
+    "למי ועל מה": "To whom and for what",
+    "כמה": "How much",
+    "מי משלם": "Who pays",
+    "🚫 ביטול אבן הדרך": "🚫 Cancel this milestone",
+    "לתשלום עכשיו {amount}": "To pay now {amount}"
 }
