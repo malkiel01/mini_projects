@@ -2,12 +2,12 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="assets/js/i18n.js?v=57"></script>
+    <script src="assets/js/i18n.js?v=58"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=57">
+    <link rel="stylesheet" href="assets/css/app.css?v=58">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -705,6 +705,7 @@
                     <label><input type="radio" name="kind" value="done"><span>✅ השלב בוצע</span></label>
                 </div>
                 <label class="f"><span id="report-stage-label">שלב</span><select name="stage_id"></select></label>
+                <label class="f"><span>של איזה ספק</span><select name="supplier_id"></select></label>
                 <label class="f"><span>מה נעשה</span><textarea name="text" rows="3" maxlength="4000" placeholder="למשל: הונחו צנרת וקופסאות בחדר הרחצה"></textarea></label>
                 <div class="row-btns">
                     <label class="btn ghost upload-btn">📸 מצלמה<input type="file" id="report-camera" accept="image/*" capture="environment" hidden></label>
@@ -997,6 +998,7 @@
                             <label class="f"><span>סכום (₪)</span><input id="mp-amount" inputmode="decimal" dir="ltr" maxlength="14"></label>
                             <label class="f"><span>תאריך</span><input id="mp-date" type="date"></label>
                             <label class="f"><span>אמצעי</span><select id="mp-method"></select></label>
+                            <label class="f"><span>מספר אסמכתא / צ'ק</span><input id="mp-ref" maxlength="40" dir="ltr" inputmode="numeric"></label>
                             <label class="f"><span>הערה</span><input id="mp-note" maxlength="1000"></label>
                         </div>
                         <div class="row-btns wrap">
@@ -1340,24 +1342,24 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=57"></script>
-    <script src="assets/js/contacts.js?v=57"></script>
-    <script src="assets/js/device-contacts.js?v=57"></script>
-    <script src="assets/js/viewer.js?v=57"></script>
-    <script src="assets/js/files.js?v=57"></script>
-    <script src="assets/js/lightbox.js?v=57"></script>
-    <script src="assets/js/field.js?v=57"></script>
+    <script src="assets/js/core.js?v=58"></script>
+    <script src="assets/js/contacts.js?v=58"></script>
+    <script src="assets/js/device-contacts.js?v=58"></script>
+    <script src="assets/js/viewer.js?v=58"></script>
+    <script src="assets/js/files.js?v=58"></script>
+    <script src="assets/js/lightbox.js?v=58"></script>
+    <script src="assets/js/field.js?v=58"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=57"></script>
-    <script src="assets/js/projects.js?v=57"></script>
-    <script src="assets/js/quotes.js?v=57"></script>
-    <script src="assets/js/payments.js?v=57"></script>
-    <script src="assets/js/fin-report.js?v=57"></script>
-    <script src="assets/js/finance.js?v=57"></script>
-    <script src="assets/js/finance-all.js?v=57"></script>
-    <script src="assets/js/hebcal.js?v=57"></script>
-    <script src="assets/js/calendar.js?v=57"></script>
-    <script src="assets/js/settings.js?v=57"></script>
-    <script src="assets/js/app.js?v=57"></script>
+    <script src="assets/js/share.js?v=58"></script>
+    <script src="assets/js/projects.js?v=58"></script>
+    <script src="assets/js/quotes.js?v=58"></script>
+    <script src="assets/js/payments.js?v=58"></script>
+    <script src="assets/js/fin-report.js?v=58"></script>
+    <script src="assets/js/finance.js?v=58"></script>
+    <script src="assets/js/finance-all.js?v=58"></script>
+    <script src="assets/js/hebcal.js?v=58"></script>
+    <script src="assets/js/calendar.js?v=58"></script>
+    <script src="assets/js/settings.js?v=58"></script>
+    <script src="assets/js/app.js?v=58"></script>
 </body>
 </html>

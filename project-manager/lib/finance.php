@@ -116,6 +116,7 @@ function pm_finance_settings(array $p): array
 
 function pm_finance(array $user, int $projectId): array
 {
+    pm_payments_auto_stage($projectId); // אבני דרך בלי שלב — לשלב היחיד של הספק (lib/engage.php)
     $p = pm_project_row($user, $projectId);
     $cfg = pm_fin_alert_settings((int)$p['owner_id']);
     return pm_finance_of($projectId, false, $cfg['overpay']) + ['alerts' => pm_fin_alerts($projectId, $cfg)];
@@ -193,11 +194,18 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
     $next = null;
     $retHeld = [0, 0];
     // תשלום בלי שלב (מקדמה, תשלום כללי) לספק שיש לו הצעה מאושרת — על חשבון ההצעה שלו: נכנס לשורה שלה
-    // (השלב עם ההתחייבות הגדולה), ולא נספר כהתחייבות נוספת "בלי שלב"
+    // (השלב עם ההתחייבות הגדולה), ולא נספר כהתחייבות נוספת "בלי שלב". בלי הצעה מאושרת — לשלב היחיד
+    // שהספק עובד בו (pm_supplier_stages), כדי שמקדמה של ספק באינסטלציה לא תופיע "בלי שלב"
     $mainStage = [];
     foreach ($rows as $s0 => $byS) foreach ($byS as $c0 => $r0) {
         $g = $r0['acc']['committed'][0] ?? 0;
         if ($s0 && $g > 0 && $g > ($mainStage[$c0][1] ?? 0)) $mainStage[$c0] = [$s0, $g];
+    }
+    foreach ($payments as $x) {
+        $c0 = (int)$x['supplier_id'];
+        if ($x['stage_id'] || isset($mainStage[$c0])) continue;
+        $only = pm_supplier_stages($projectId, $c0);
+        if (count($only) === 1) $mainStage[$c0] = [$only[0], 0];
     }
     foreach ($payments as $x) {
         $sid = (int)$x['stage_id'] ?: ($mainStage[(int)$x['supplier_id']][0] ?? 0);

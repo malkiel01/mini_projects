@@ -113,7 +113,7 @@ function pm_payment_proofs(array $ids): array
         $out[(int)$x['payment_id']][] = [
             'id' => (int)$x['id'], 'amount' => (int)$x['amount'] / 100, 'paid_on' => $x['paid_on'], 'method' => $x['method'],
             'file' => $x['file_id'] && !$x['file_deleted'] ? ['id' => (int)$x['file_id'], 'name' => $x['file_name'], 'mime' => $x['file_mime']] : null,
-            'note' => $x['note'], 'by_role' => $x['by_role'], 'by_name' => $x['by_name'], 'status' => $x['status'],
+            'note' => $x['note'], 'ref_no' => $x['ref_no'] ?? '', 'by_role' => $x['by_role'], 'by_name' => $x['by_name'], 'status' => $x['status'],
             'received_amount' => $x['received_amount'] !== null ? (int)$x['received_amount'] / 100 : null,
             'reviewed_at' => $x['reviewed_at'], 'review_note' => $x['review_note'], 'created_at' => $x['created_at'],
         ];
@@ -193,6 +193,11 @@ function pm_payment_save(array $user, array $in, ?array $actor = null): array
     // advance — מקדמה: בתחילת העבודה (עם החתימה), בלי שלב ובלי תאריך
     if (!in_array($dueKind, ['date', 'stage_done', 'progress', 'handover', 'advance'], true)) throw new PmError('מועד לא מוכר', 422);
     if ($dueKind === 'advance') $stageId = null;
+    // בלי שלב, וספק שעובד בשלב אחד בלבד — השלב שלו (כדי שלא ייווצר "בלי שלב" מיותר)
+    elseif (!$stageId && $kind === 'milestone') {
+        $only = pm_supplier_stages($projectId, $supplierId);
+        if (count($only) === 1) $stageId = $only[0];
+    }
     if (!in_array($dueKind, ['date', 'handover', 'advance'], true) && !$stageId) throw new PmError('"בגמר שלב" או "בהתקדמות" — רק כשנבחר שלב', 422);
     $duePct = (int)($in['due_pct'] ?? 0);
     if ($dueKind === 'progress' && ($duePct < 1 || $duePct > 100)) throw new PmError('התקדמות: בין 1 ל-100%', 422);
@@ -382,11 +387,13 @@ function pm_payment_proof_add(array $user, int $id, array $in, string $byRole, s
     $method = (string)($in['method'] ?? 'transfer');
     if (!isset(PM_PAY_METHODS[$method])) throw new PmError('אמצעי תשלום לא מוכר', 422);
     if (!$fileId && $byRole !== 'manager') throw new PmError('נדרשת אסמכתא — צילום ההעברה, הצ\'ק או אישור הבנק', 422);
-    pm_file_claim((int)$p['project_id'], $fileId, 'proof');
+    // האסמכתא — של הספק במקצוע (אבן הדרך שלו), לא "ממתין למיון"
+    pm_file_claim((int)$p['project_id'], $fileId, 'proof', (int)$p['supplier_id'], false, $p['stage_id'] ? (int)$p['stage_id'] : null);
+    $refNo = mb_substr(trim((string)($in['ref_no'] ?? '')), 0, 40); // מספר אסמכתא / צ'ק
     $note = mb_substr(trim((string)($in['note'] ?? '')), 0, 1000);
     $db = pm_db();
-    $db->prepare('INSERT INTO payment_proofs (payment_id, amount, paid_on, method, file_id, note, by_role, by_name, portal_id, ip, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
-       ->execute([$id, $amount, $paidOn, $method, $fileId, $note, $byRole, $byName, $portalId, (string)($_SERVER['REMOTE_ADDR'] ?? ''), pm_now()]);
+    $db->prepare('INSERT INTO payment_proofs (payment_id, amount, paid_on, method, file_id, note, ref_no, by_role, by_name, portal_id, ip, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
+       ->execute([$id, $amount, $paidOn, $method, $fileId, $note, $refNo, $byRole, $byName, $portalId, (string)($_SERVER['REMOTE_ADDR'] ?? ''), pm_now()]);
     $db->prepare("UPDATE payments SET status = 'paid', updated_at = ? WHERE id = ?")->execute([pm_now(), $id]);
     pm_event($actor, (int)$p['project_id'], 'payment',
         $fileId ? '💳 דווח תשלום: {title} — {amount} ב{method} ({date}){note}, עם אסמכתא' : '💳 דווח תשלום: {title} — {amount} ב{method} ({date}){note}',
@@ -490,7 +497,7 @@ function pm_payment_invoice(array $user, array $in, ?array $actor = null): array
     $p = pm_payment_row($user, (int)($in['id'] ?? 0));
     if (pm_payment_received((int)$p['id']) <= 0) throw new PmError('חשבונית — אחרי שהתשלום התקבל', 422);
     $fileId = (int)($in['file_id'] ?? 0) ?: null;
-    pm_file_claim((int)$p['project_id'], $fileId, 'invoice', (int)$p['supplier_id']);
+    pm_file_claim((int)$p['project_id'], $fileId, 'invoice', (int)$p['supplier_id'], false, $p['stage_id'] ? (int)$p['stage_id'] : null);
     $no = pm_str($in, 'invoice_no', 40, false, 'מספר חשבונית');
     if (!$fileId && $no === '') throw new PmError('חשבונית: מספר או קובץ', 422);
     pm_db()->prepare('UPDATE payments SET invoice_file_id = ?, invoice_no = ?, invoice_at = ?, updated_at = ? WHERE id = ?')

@@ -392,7 +392,8 @@ const Projects = (() => {
             n++;
             const l2 = [
                 x.trade_name ? esc(t(x.trade_name)) : '',
-                x.supplier_name ? esc(x.supplier_name) : `<span class="muted">${esc(t('אין ספק'))}</span>`,
+                // הספק — שנבחר בשלב, או מי שעובד בו בפועל (הצעה / אבני דרך מהכספים)
+                x.supplier_name ? esc(x.supplier_name) : (x.engaged || []).length ? esc(x.engaged.map(e => e.name).join(', ')) : `<span class="muted">${esc(t('אין ספק'))}</span>`,
                 x.plan_start || x.plan_end ? `${shortDate(x.plan_start)}–${shortDate(x.plan_end)}` : '',
                 x.needs_lawyer ? esc(t('עורך דין')) : '',
                 x.status === 'in_progress' && x.progress ? esc(t('{n}% בוצע', { n: x.progress })) : '',
@@ -406,7 +407,7 @@ const Projects = (() => {
             </div>` : stageChip(x.status);
             return `<li class="card" data-stage="${x.id}" tabindex="0" role="button" aria-label="${esc(stageName(x))}, ${esc(state.labels.stage[x.status])}">
                 <span class="num st-${esc(x.status)}" aria-hidden="true">${n}</span>
-                <div class="body"><div class="l1">${name}</div><div class="l2">${l2}</div>${miss.length ? `<div class="l2 st-miss">${esc(t('חסר: {list}', { list: miss.join(t(', ')) }))}</div>` : ''}</div>
+                <div class="body"><div class="l1">${name}</div><div class="l2">${l2}</div>${engagedNote(x) ? `<div class="l2 st-eng">${engagedNote(x)}</div>` : ''}${miss.length ? `<div class="l2 st-miss">${esc(t('חסר: {list}', { list: miss.join(t(', ')) }))}</div>` : ''}</div>
                 ${acts}
             </li>` + addHere(x.id, g.unit);
             }).join('');
@@ -524,11 +525,20 @@ const Projects = (() => {
     let stEdit = false;
 
     /** מה עוד לא מולא בשלב — רק בשלבים שעוד לא בוצעו. */
+    /** מה נבנה לשלב בכספים: "💳 3 אבני דרך · ₪162,840" — כך רואים שיש התקשרות גם כשהשלב עוד "מתוכנן". */
+    function engagedNote(x) {
+        const e = x.engaged || [], ms = e.reduce((a, y) => a + y.milestones, 0), amt = e.reduce((a, y) => a + y.amount, 0);
+        return ms ? esc(t('💳 {n} אבני דרך · {amount}', { n: ms, amount: money(amt) })) : '';
+    }
+
     function stageMissing(x) {
         if (['done', 'paid'].includes(x.status)) return [];
         const m = [];
+        const e = x.engaged || [];
         if (!x.trade_id) m.push(t('תחום'));
-        if (!x.supplier_id) m.push(x.quotes ? t('בחירת ספק') : t('ספק או הצעת מחיר'));
+        // יש מי שעובד בשלב, אבל אין הצעה מאושרת — זה מה שחסר (ולא "ספק")
+        if (!x.supplier_id && !e.length) m.push(x.quotes ? t('בחירת ספק') : t('ספק או הצעת מחיר'));
+        else if (e.length && !e.some(y => y.approved) && ['planned', 'quotes'].includes(x.status)) m.push(t('הצעה מאושרת'));
         if (!x.plan_start && !x.plan_end) m.push(t('תאריכים'));
         if (!x.budget) m.push(t('תקציב'));
         return m;

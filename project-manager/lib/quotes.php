@@ -201,7 +201,7 @@ function pm_quote_save(array $user, array $in, ?array $actor = null): array
                 ['quote' => $id, 'stage' => (int)$stage['id']], ['supplier' => $supplier, 'stage' => $stage['name'], 'amount' => pm_money($f['amount'])]);
             if ($stage['status'] === 'planned') pm_stage_set_status($actor, $stage, 'quotes');
         }
-        if ($fileId) pm_quote_file_home($projectId, $fileId, $f['supplier_id']);
+        if ($fileId) pm_quote_file_home($projectId, $fileId, $f['supplier_id'], (int)$stage['id']);
         $db->commit();
     } catch (Throwable $e) {
         $db->rollBack();
@@ -210,10 +210,10 @@ function pm_quote_save(array $user, array $in, ?array $actor = null): array
     return pm_quotes($user, $projectId) + ['saved' => $id];
 }
 
-/** הקובץ של ההצעה: "הצעת מחיר", ומ"ממתין למיון" — לתיקיית הספק (pm_file_claim — כמו בכל צירוף). */
-function pm_quote_file_home(int $projectId, int $fileId, int $supplierId): void
+/** הקובץ של ההצעה: "הצעת מחיר", ומ"ממתין למיון" — לתיקיית הספק במקצוע (pm_file_claim — כמו בכל צירוף). */
+function pm_quote_file_home(int $projectId, int $fileId, int $supplierId, ?int $stageId = null): void
 {
-    pm_file_claim($projectId, $fileId, 'quote', $supplierId);
+    pm_file_claim($projectId, $fileId, 'quote', $supplierId, false, $stageId);
 }
 
 /** ההצעה המומלצת — אחת לשלב. מה שהלקוח יראה מודגש בראש. */
@@ -228,7 +228,7 @@ function pm_quote_attach(array $user, int $id, int $fileId): array
     $file = pm_file_row($user, $fileId);
     if ((int)$file['project_id'] !== (int)$q['project_id']) throw new PmError('הקובץ לא שייך לפרויקט', 422);
     pm_db()->prepare('UPDATE quotes SET file_id = ?, updated_at = ? WHERE id = ?')->execute([$fileId, pm_now(), $id]);
-    pm_quote_file_home((int)$q['project_id'], $fileId, (int)$q['supplier_id']);
+    pm_quote_file_home((int)$q['project_id'], $fileId, (int)$q['supplier_id'], (int)$q['stage_id']);
     pm_event($user, (int)$q['project_id'], 'quote', 'צורף טופס להצעה: {supplier} — {amount}', ['quote' => $id, 'file' => $fileId],
         ['supplier' => pm_contact_name((int)$q['supplier_id']), 'amount' => pm_money((int)$q['amount'])]);
     return pm_quotes($user, (int)$q['project_id']);

@@ -30,6 +30,7 @@ const Field = (() => {
         const form = $('#report-dlg form');
         form.addEventListener('submit', e => { e.preventDefault(); save(); });
         $$('#report-dlg [name=kind]').forEach(r => r.addEventListener('change', kindChanged));
+        $('#report-dlg [name=stage_id]').addEventListener('change', suppliers);
         for (const id of ['#report-camera', '#report-pick']) {
             $(id).addEventListener('change', e => { addFiles([...e.target.files]); e.target.value = ''; });
         }
@@ -74,7 +75,7 @@ const Field = (() => {
             ${m.thumb ? `<img src="${fileUrl(m.id, '&thumb=1')}" alt="" loading="lazy">` : `<span aria-hidden="true">${m.video ? '🎬' : '🖼️'}</span>`}
             ${m.video ? '<i class="play" aria-hidden="true">▶</i>' : ''}</button></li>`).join('');
         return `<article class="report${r.kind === 'done' ? ' done' : ''}${r.visible ? '' : ' hidden-r'}">
-            <header><span class="one">${esc(r.kind === 'done' ? t('✅ {stage} — בוצע', { stage: r.stage_name || t('כללי') }) : (r.stage_name ? t(r.stage_name) : t('כללי')))}</span>
+            <header><span class="one">${esc(r.kind === 'done' ? t('✅ {stage} — בוצע', { stage: r.stage_name || t('כללי') }) : (r.stage_name ? t(r.stage_name) : t('כללי')))}${r.supplier_name ? ' · ' + esc(r.supplier_name) : ''}</span>
                 <time datetime="${esc(r.at)}">${time}</time></header>
             ${r.text ? `<p>${esc(r.text)}</p>` : ''}
             ${media ? `<ul class="media-grid">${media}</ul>` : ''}
@@ -95,10 +96,27 @@ const Field = (() => {
         el.visible.checked = true;
         $(`#report-dlg [name=kind][value=${preset.kind || 'update'}]`).checked = true;
         el.stage_id.innerHTML = options(project.stages.map(s => ({ value: s.id, label: `${stageName(s)} · ${state.labels.stage[s.status]}` })), preset.stage_id || '', t('בלי שלב — עדכון כללי'));
+        suppliers();
         drawPicked();
         kindChanged();
         $('#report-progress').innerHTML = '';
         dlg.showModal();
+    }
+
+    /**
+     * "של איזה ספק" — הספקים שעובדים בשלב שנבחר (שלו, הצעות, אבני דרך) קודם, ואז השאר. ספק יחיד בשלב — נבחר לבד,
+     * כך שהתיעוד מהשטח מגיע לתיק ההתקשרות (ספק × שלב).
+     */
+    function suppliers() {
+        const el = $('#report-dlg form').elements, s = project.stages.find(x => x.id === Number(el.stage_id.value));
+        const here = new Map();
+        if (s?.supplier_id) here.set(s.supplier_id, s.supplier_name);
+        for (const e of s?.engaged || []) here.set(e.supplier_id, e.name);
+        const all = new Map(here);
+        for (const x of project.stages) { if (x.supplier_id) all.set(x.supplier_id, x.supplier_name); for (const e of x.engaged || []) all.set(e.supplier_id, e.name); }
+        const opt = ([id, name]) => ({ value: id, label: name });
+        el.supplier_id.innerHTML = options([...here].map(opt), here.size === 1 ? [...here.keys()][0] : '', t('בלי ספק'))
+            + ([...all].filter(([id]) => !here.has(id)).length ? `<optgroup label="${esc(t('ספקים אחרים בפרויקט'))}">${options([...all].filter(([id]) => !here.has(id)).map(opt))}</optgroup>` : '');
     }
 
     function kindChanged() {
@@ -106,6 +124,7 @@ const Field = (() => {
         const sel = $('#report-dlg form').elements.stage_id;
         sel.options[0].disabled = done;
         if (done && !sel.value) sel.value = project.stages.find(s => !['done', 'paid'].includes(s.status))?.id || '';
+        suppliers();
         $('#report-stage-label').textContent = done ? t('איזה שלב בוצע *') : t('שלב');
         $('#report-dlg-title').textContent = done ? t('השלב בוצע') : t('עדכון מהשטח');
         $('#report-go').textContent = done ? t('סימון "בוצע"') : t('שליחה');
@@ -153,7 +172,7 @@ const Field = (() => {
                 ids.push(file.id);
             }
             box.innerHTML = '';
-            ({ reports } = await api('report', { body: { project_id: project.project.id, stage_id: stageId, kind, text: el.text.value, visible: el.visible.checked, file_ids: ids } }));
+            ({ reports } = await api('report', { body: { project_id: project.project.id, stage_id: stageId, supplier_id: Number(el.supplier_id.value) || null, kind, text: el.text.value, visible: el.visible.checked, file_ids: ids } }));
             picked.forEach(p => URL.revokeObjectURL(p.url));
             picked = [];
             $('#report-dlg').close();

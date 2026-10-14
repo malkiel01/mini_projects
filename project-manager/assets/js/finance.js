@@ -29,6 +29,8 @@ const Finance = (() => {
             if (c) { openChange(Number(c.dataset.co)); return; }
             const k = e.target.closest('[data-contract]');
             if (k) { openContract(Number(k.dataset.contract), Number(k.dataset.stage) || null); return; }
+            const as = e.target.closest('[data-assign-stage]');
+            if (as) { assignStage(Number(as.dataset.assignStage)); return; }
             const l = e.target.closest('[data-ledger]');
             if (l) { ledger(project.project.id, Number(l.dataset.ledger)); return; }
             if (e.target.closest('[data-exp-new]')) { openExpense(null); return; }
@@ -275,6 +277,8 @@ const Finance = (() => {
         if (s.stage_id) act.push(`<button type="button" class="btn ghost sm" data-co-new="${s.stage_id}" data-supplier="${r.supplier_id}">± ${esc(t('תוספת / חריגה'))}</button>`);
         act.push(`<button type="button" class="btn ghost sm" data-contract="${r.supplier_id}" data-stage="${s.stage_id || ''}">📄 ${esc(r.contract ? (r.contract.title || t('חוזה')) : t('+ חוזה'))}</button>`);
         act.push(`<button type="button" class="btn ghost sm" data-ledger="${r.supplier_id}">📒 ${esc(t('כרטסת'))}</button>`);
+        // "בלי שלב": אבני דרך של ספק שעובד בכמה שלבים — לבחור לאיזה (ספק בשלב אחד — שויכו כבר לבד)
+        if (!s.stage_id && r.milestones) act.unshift(`<button type="button" class="btn primary sm" data-assign-stage="${r.supplier_id}">🧱 ${esc(t('שיוך לשלב'))}</button>`);
         const changes = (r.changes || []).filter(c => c.status !== 'cancelled').map(c => `<button type="button" class="chip co-${c.status}" data-co="${c.id}">${c.amount > 0 ? '+' : '−'}${esc(money(Math.abs(c.amount)))} · ${esc(t(STATUS[c.status]))}</button>`).join('');
         return `<li class="fin-row">
             <div class="fin-row-head"><b class="one">${esc(r.name)}</b>${flags}</div>
@@ -574,6 +578,41 @@ const Finance = (() => {
         $('#ledger-body').innerHTML = total + (d.projects.map(P => `<section class="fin-stage">${d.totals ? `<h3 class="sec-title">${esc(P.name)}</h3>` : ''}${one(P, P.id)}</section>`).join('')
             || `<p class="muted">${esc(t('עוד אין לספק התחייבויות או תשלומים בפרויקטים שלך'))}</p>`);
         $('#ledger-dlg').showModal();
+    }
+
+    // ================= "שיוך לשלב" — אבני דרך בלי שלב =================
+
+    /** בחירת השלב לאבני הדרך בלי שלב של ספק: אריח לכל שלב — קודם השלבים שהוא עובד בהם. */
+    function assignStage(supplierId) {
+        const name = data.stages.flatMap(s => s.rows).find(r => r.supplier_id === supplierId)?.name || '';
+        const mine = new Set(data.stages.filter(s => s.stage_id && s.rows.some(r => r.supplier_id === supplierId)).map(s => s.stage_id));
+        for (const s of project.stages) if (s.supplier_id === supplierId || (s.engaged || []).some(e => e.supplier_id === supplierId)) mine.add(s.id);
+        const list = [...project.stages].sort((a, b) => mine.has(b.id) - mine.has(a.id));
+        let dlg = $('#assign-dlg');
+        if (!dlg) {
+            dlg = document.createElement('dialog');
+            dlg.id = 'assign-dlg';
+            dlg.setAttribute('aria-labelledby', 'assign-title');
+            dlg.innerHTML = `<form method="dialog" novalidate><header class="sheet-head"><button type="button" class="icon-btn" data-close aria-label="${esc(t('סגירה'))}">✕</button>
+                <h2 id="assign-title"></h2><span></span></header><div class="sheet-body"><p class="hint" id="assign-hint"></p><div class="attach-grid" id="assign-list"></div></div></form>`;
+            document.body.appendChild(dlg);
+            dlg.querySelector('[data-close]').addEventListener('click', () => dlg.close());
+        }
+        $('#assign-title').textContent = t('שיוך לשלב — {name}', { name });
+        $('#assign-hint').textContent = t('אבני הדרך של {name} בלי שלב יעברו לשלב שתבחר — ויופיעו בשורה שלו, בכרטסת ובתיק שלו בשלב.', { name });
+        $('#assign-list').innerHTML = list.map(s => `<button type="button" class="tile" data-to="${s.id}"><span class="tile-ic" aria-hidden="true">${mine.has(s.id) ? '🧱' : '▫️'}</span><span>${esc(stageName(s))}</span></button>`).join('');
+        $('#assign-list').onclick = async e => {
+            const b = e.target.closest('[data-to]');
+            if (!b) return;
+            await busy(b, dlg.querySelector('form'), async () => {
+                const d = await api('payments-stage', { body: { project_id: project.project.id, supplier_id: supplierId, stage_id: Number(b.dataset.to) } });
+                dlg.close();
+                take(d);
+                Payments.refreshList(await api('payments', { params: { project_id: project.project.id } }));
+                toast(t('{n} אבני דרך שויכו לשלב', { n: d.moved }));
+            });
+        };
+        dlg.showModal();
     }
 
     // ================= חוזה עם ספק — מועדים, אבני דרך וקנס =================

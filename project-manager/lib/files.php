@@ -88,6 +88,7 @@ function pm_ensure_folders(array $p): void
     foreach ($st->fetchAll() as $c) {
         if (!isset($existing['contact:' . $c['id']])) $ins->execute([$p['id'], 'contact', $c['id'], $c['name'], 40, pm_now()]);
     }
+    pm_ensure_trade_folders((int)$p['id']); // "נתנאל פלאי / אינסטלציה"
 }
 
 /** כל התיקיות של הפרויקט, עם מספר הקבצים (כולל קיצורי דרך) ומספר תת-התיקיות. */
@@ -106,8 +107,9 @@ function pm_folders(array $user, int $projectId): array
     return array_map(fn($f) => [
         'id' => (int)$f['id'], 'parent_id' => $f['parent_id'] !== null ? (int)$f['parent_id'] : null,
         'kind' => $f['kind'], 'contact_id' => $f['contact_id'] !== null ? (int)$f['contact_id'] : null,
-        'name' => $f['kind'] === 'contact' && $f['contact_name'] ? $f['contact_name'] : $f['name'],
-        'icon' => PM_SYSTEM_FOLDERS[$f['kind']][1] ?? ($f['kind'] === 'contact' ? '🧰' : '📁'),
+        'name' => $f['kind'] === 'contact' && $f['contact_name'] ? $f['contact_name'] : ($f['kind'] === 'trade' && $f['stage_id'] ? (pm_trade_folder_name((int)$f['stage_id']) ?: $f['name']) : $f['name']),
+        'icon' => PM_SYSTEM_FOLDERS[$f['kind']][1] ?? ($f['kind'] === 'contact' ? '🧰' : ($f['kind'] === 'trade' ? '🧱' : '📁')),
+        'stage_id' => isset($f['stage_id']) && $f['stage_id'] !== null ? (int)$f['stage_id'] : null,
         'files' => (int)$f['files'], 'system' => $f['kind'] !== 'custom',
     ], $st->fetchAll());
 }
@@ -249,10 +251,11 @@ function pm_file_uses(array $ids): array
 
 /**
  * קובץ שצורף לרשומה (הצעה, חוזה, תוספת, הוצאה, חשבונית, אסמכתא) — אותו טיפול מכל מקום:
- * $type — הסוג שהרשומה קובעת (null — לא משנים); קובץ שעוד ב"ממתין למיון" עובר לתיקייה שלו —
- * של הספק ($supplierId), ובלי ספק — של הלקוח; $visible — גלוי ללקוח. קובץ שכבר מוין — לא זז.
+ * $type — הסוג שהרשומה קובעת (null — לא משנים); $visible — גלוי ללקוח.
+ * המקום: של ספק במקצוע — "ספק / מקצוע" (pm_trade_folder); של ספק — תיקיית הספק; בלי ספק — הלקוח.
+ * זז רק קובץ שעוד לא מוין: מ"ממתין למיון", או מהשורש של תיקיית אותו ספק לתיקיית המקצוע. קובץ שמוין — נשאר.
  */
-function pm_file_claim(int $projectId, ?int $fileId, ?string $type, ?int $supplierId = null, bool $visible = false): ?int
+function pm_file_claim(int $projectId, ?int $fileId, ?string $type, ?int $supplierId = null, bool $visible = false, ?int $stageId = null): ?int
 {
     if (!$fileId) return null;
     $db = pm_db();
@@ -261,15 +264,21 @@ function pm_file_claim(int $projectId, ?int $fileId, ?string $type, ?int $suppli
     if (!$f->fetchColumn()) throw new PmError('הקובץ לא שייך לפרויקט', 422);
     if ($type !== null) $db->prepare('UPDATE files SET type = ? WHERE id = ?')->execute([$type, $fileId]);
     if ($visible) $db->prepare('UPDATE files SET visible = 1 WHERE id = ?')->execute([$fileId]);
-    $home = $db->prepare('SELECT f.kind, f.parent_id FROM file_links l JOIN folders f ON f.id = l.folder_id WHERE l.file_id = ? AND l.is_home = 1');
+    $home = $db->prepare('SELECT f.id, f.kind, f.parent_id, f.contact_id FROM file_links l JOIN folders f ON f.id = l.folder_id WHERE l.file_id = ? AND l.is_home = 1');
     $home->execute([$fileId]);
     $h = $home->fetch();
-    if (!$h || $h['kind'] !== 'inbox' || $h['parent_id'] !== null) return $fileId;
+    if (!$h) return $fileId;
+    $inbox = $h['kind'] === 'inbox' && $h['parent_id'] === null;
+    $supplierRoot = $h['kind'] === 'contact' && $h['parent_id'] === null && $supplierId && (int)$h['contact_id'] === $supplierId;
+    if (!$inbox && !($supplierRoot && $stageId)) return $fileId;
     pm_ensure_folders(['id' => $projectId]);
-    $to = $db->prepare('SELECT id FROM folders WHERE project_id = ? AND parent_id IS NULL AND ' . ($supplierId ? "kind = 'contact' AND contact_id = ?" : "kind = 'client' AND ? IS NULL"));
-    $to->execute([$projectId, $supplierId]);
-    $target = $to->fetchColumn();
-    if (!$target) return $fileId;
+    $target = $supplierId && $stageId ? pm_trade_folder($projectId, $supplierId, $stageId) : null;
+    if (!$target) {
+        $to = $db->prepare('SELECT id FROM folders WHERE project_id = ? AND parent_id IS NULL AND ' . ($supplierId ? "kind = 'contact' AND contact_id = ?" : "kind = 'client' AND ? IS NULL"));
+        $to->execute([$projectId, $supplierId]);
+        $target = (int)$to->fetchColumn() ?: null;
+    }
+    if (!$target || $target === (int)$h['id']) return $fileId;
     $db->prepare('DELETE FROM file_links WHERE file_id = ? AND folder_id = ?')->execute([$fileId, $target]);
     $db->prepare('UPDATE file_links SET folder_id = ? WHERE file_id = ? AND is_home = 1')->execute([$target, $fileId]);
     return $fileId;

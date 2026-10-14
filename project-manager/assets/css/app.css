@@ -982,3 +982,4 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .pdfv.in-full .pdfv-stage { flex: 1; max-block-size: none; min-block-size: 0; }
 .viewer-none { margin: auto; display: grid; justify-items: center; gap: var(--s2); padding: var(--s4); text-align: center; }
 .fv-fail { padding: var(--s3); text-align: center; }
+.rows-list .st-eng { color: var(--brand); }

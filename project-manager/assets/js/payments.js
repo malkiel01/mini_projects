@@ -332,7 +332,7 @@ const Payments = (() => {
         $('#proofs').innerHTML = p.proofs.slice().reverse().map(x => `<li class="${x.status === 'received' ? 'approved' : x.status === 'rejected' ? 'rejected' : ''}">
             <span>💳 ${esc(money(x.amount))} · ${esc(data.methods[x.method] || x.method)} · ${esc(shortDate(x.paid_on))}
                 ${x.status === 'received' ? ` — ✅ ${esc(t('התקבל {amount}', { amount: money(x.received_amount) }))}` : x.status === 'rejected' ? ` — ✖ ${esc(t('לא התקבל'))}` : ''}</span>
-            <small>${esc(x.by_name)} (${esc(role[x.by_role] ? t(role[x.by_role]) : x.by_role)}) · ${esc(new Date(x.created_at).toLocaleString(I18n.locale(), { dateStyle: 'short', timeStyle: 'short' }))}${x.note ? ' · ' + esc(x.note) : ''}${x.review_note ? ' · ' + esc(x.review_note) : ''}</small>
+            <small>${esc(x.by_name)} (${esc(role[x.by_role] ? t(role[x.by_role]) : x.by_role)}) · ${esc(new Date(x.created_at).toLocaleString(I18n.locale(), { dateStyle: 'short', timeStyle: 'short' }))}${x.ref_no ? ' · #' + esc(x.ref_no) : ''}${x.note ? ' · ' + esc(x.note) : ''}${x.review_note ? ' · ' + esc(x.review_note) : ''}</small>
             <div class="row-btns wrap">
                 ${x.file ? `<a class="btn ghost sm" href="${fileUrl(x.file.id)}" target="_blank" rel="noopener">📄 ${esc(t('האסמכתא'))}</a>` : ''}
                 ${x.status === 'pending' ? `<button type="button" class="btn primary sm" data-review="${x.id}" data-ok="1">✅ ${esc(t('התקבל'))}</button>
@@ -346,6 +346,7 @@ const Payments = (() => {
         $('#mp-date').value = today();
         $('#mp-method').innerHTML = options(Object.entries(data.methods).map(([value, label]) => ({ value, label })), 'transfer');
         $('#mp-note').value = '';
+        $('#mp-ref').value = '';
         mpFile = null;
         $('#mp-file-name').textContent = '';
         $('#payment-cancel').hidden = p.status === 'cancelled' || p.received > 0 || p.kind === 'retention';
@@ -440,7 +441,7 @@ const Payments = (() => {
     /** המנהל רושם תשלום שדווח לו (למשל בטלפון), עם אסמכתא אם יש — לתיקיית הלקוח. */
     async function manualProof() {
         const form = $('#payment-dlg form');
-        const body = { id: current.id, amount: $('#mp-amount').value.trim(), paid_on: $('#mp-date').value, method: $('#mp-method').value, note: $('#mp-note').value };
+        const body = { id: current.id, amount: $('#mp-amount').value.trim(), paid_on: $('#mp-date').value, method: $('#mp-method').value, note: $('#mp-note').value, ref_no: $('#mp-ref').value.trim() };
         if (!body.amount) { formError(form, t('סכום: שדה חובה')); return; }
         await busy($('#mp-save'), form, async () => {
             if (mpFile?.id) body.file_id = mpFile.id;
