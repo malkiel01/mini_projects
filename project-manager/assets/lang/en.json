@@ -2118,5 +2118,20 @@
     "תיק": "File",
     "מי עובד בשלב": "Who works on this stage",
     "{n} אבני דרך": "{n} milestones",
-    "תיק התקשרות": "Engagement file"
+    "תיק התקשרות": "Engagement file",
+    "הדיווח כבר לא קיים": "The report no longer exists",
+    "משויך לכאן": "Linked here",
+    "הסרת השיוך — {what}": "Remove link — {what}",
+    "להוציא את הקובץ מהדיווח מהשטח ({where})? הדיווח נשאר.": "Remove the file from the site report ({where})? The report stays.",
+    "להסיר את השיוך ל{where}?": "Remove the link to {where}?",
+    "להסיר את הקובץ מ{what} ({where})? הרשומה נשארת — בלי המסמך.": "Remove the file from {what} ({where})? The record stays — without the document.",
+    "השיוך הוסר — הקובץ חזר ל\"ממתין למיון\"": "Link removed — the file went back to \"Awaiting sorting\"",
+    "השיוך הוסר": "Link removed",
+    "קבצי השלב": "Stage files",
+    "לפי ספק — מסמכים, תשלומים ותיעוד מהשטח": "By supplier — documents, payments and site documentation",
+    "לפי שלבים": "By stage",
+    "סוג שיוך לא מוכר": "Unknown link type",
+    "השיוך כבר לא קיים": "The link no longer exists",
+    "✂️ {name} — הוסר השיוך ל{what}, וחזר ל\"ממתין למיון\"": "✂️ {name} — link to {what} removed, back to \"Awaiting sorting\"",
+    "✂️ {name} — הוסר השיוך ל{what}": "✂️ {name} — link to {what} removed"
 }

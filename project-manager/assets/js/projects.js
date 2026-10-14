@@ -582,6 +582,15 @@ const Projects = (() => {
             <span class="use-ic" aria-hidden="true">🗂️</span><span class="use-tx"><b>${esc(x.name)}</b><small>${esc([x.milestones ? t('{n} אבני דרך', { n: x.milestones }) : '', x.amount ? money(x.amount) : '', t('תיק התקשרות')].filter(Boolean).join(' · '))}</small></span>
             <span class="use-go" aria-hidden="true">‹</span></button>`).join('')}` : '';
         engBox.onclick = e => { const b = e.target.closest('[data-engage]'); if (b) { dlg.close(); Engage.open(cur.project.id, Number(b.dataset.engage), id); } };
+        // כל הקבצים של השלב, לפי ספק — עץ "לפי שלבים" בקבצים (lib/links.php)
+        $('#stage-files').hidden = !id;
+        $('#stage-files').onclick = async () => {
+            try {
+                const { folder_id } = await api('stage-folder', { params: { project_id: cur.project.id, stage_id: id } });
+                dlg.close();
+                location.hash = `#/p/${cur.project.id}/files${folder_id ? '/' + folder_id : ''}`;
+            } catch (e) { toast(e.message, true); }
+        };
         Dev.attach(dlg, 'stage', id);
         $('[data-delete]', dlg).hidden = !!s.used && !Dev.on(); // רק שלב ריק (חוץ מסמכות מפתח)
         await fillSuppliers(el.supplier_id, Number(el.trade_id.value) || 0, s.supplier_id);
