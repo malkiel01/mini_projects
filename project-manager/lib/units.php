@@ -84,6 +84,8 @@ function pm_unit_save(array $user, array $in): array
         'client_id' => array_key_exists('client_id', $in) ? pm_owned_contact((int)($in['client_id'] ?? 0) ?: null, (int)$p['owner_id'], 'client', 'הלקוח') : ($old['client_id'] ?? null), // i18n-ok
         'lawyer_id' => array_key_exists('lawyer_id', $in) ? pm_owned_contact((int)($in['lawyer_id'] ?? 0) ?: null, (int)$p['owner_id'], 'lawyer', 'עורך הדין') : ($old['lawyer_id'] ?? null), // i18n-ok
     ];
+    // מסירת הדירה — רק כשהריג'קטים שלה (ושל המשותף) נסגרו
+    if ($f['handed_over_at'] && !($old['handed_over_at'] ?? null)) pm_rejects_guard_handover($projectId, $id ?: null);
     $db = pm_db();
     $dup = $db->prepare('SELECT 1 FROM units WHERE project_id = ? AND name = ? AND id != ?');
     $dup->execute([$projectId, $f['name'], $id]);
@@ -183,6 +185,7 @@ function pm_units_handover(array $user, int $projectId, string $date): array
 {
     pm_project_row($user, $projectId);
     $date = pm_date(['d' => $date ?: pm_today()], 'd', 'תאריך המסירה'); // i18n-ok
+    pm_rejects_guard_handover($projectId); // כל היחידות — רק כשאין ריג'קט פתוח בפרויקט
     $st = pm_db()->prepare('UPDATE units SET handed_over_at = ? WHERE project_id = ? AND handed_over_at IS NULL');
     $st->execute([$date, $projectId]);
     if ($st->rowCount()) pm_event($user, $projectId, 'unit', '🔑 כל היחידות נמסרו ({n})', [], ['n' => $st->rowCount()]);

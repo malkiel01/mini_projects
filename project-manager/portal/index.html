@@ -2,15 +2,15 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="../assets/js/i18n.js?v=84"></script>
+    <script src="../assets/js/i18n.js?v=85"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <meta name="robots" content="noindex, nofollow">
     <meta name="referrer" content="no-referrer">
     <title>הפרויקט שלך</title>
-    <link rel="stylesheet" href="../assets/css/app.css?v=84">
-    <link rel="stylesheet" href="portal.css?v=84">
+    <link rel="stylesheet" href="../assets/css/app.css?v=85">
+    <link rel="stylesheet" href="portal.css?v=85">
     <link rel="icon" href="../assets/icon.svg">
 </head>
 <body>
@@ -47,6 +47,9 @@
 
             <!-- הצעת התקציב לפי שלבים (lib/budget.php): הסכומים, מה ממתין לאישור, ויומן השינויים -->
             <section id="budget" class="fin-card" aria-labelledby="budget-title" hidden></section>
+
+            <!-- 🔧 ריג'קטים (lib/rejects.php): ספק — שלו, מדווח "תיקנתי"; לקוח — הכול, ופותח ריג'קט (באישור המנהל) -->
+            <section id="rejects" class="fin-card" aria-labelledby="rejects-title" hidden></section>
 
             <!-- חריגה מהחוזה בהסכמת כולם (lib/deviations.php): לקוח, עו"ד וספק — כל אחד מסכים בקישור שלו -->
             <section id="deviations" class="fin-card" aria-labelledby="deviations-title" hidden></section>
@@ -264,8 +267,8 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="../assets/js/fin-report.js?v=84"></script>
-    <script src="portal.js?v=84"></script>
+    <script src="../assets/js/fin-report.js?v=85"></script>
+    <script src="portal.js?v=85"></script>
     <script src="../assets/js/lightbox.js?v=21"></script>
 </body>
 </html>

@@ -152,6 +152,7 @@ function render() {
     renderChanges();
     renderBudget();
     renderDeviations();
+    renderRejects();
 
     renderFinance();
     renderExpenses();
@@ -284,9 +285,10 @@ function renderSupplier() {
     const quotesOf = id => data.my_quotes.filter(q => q.stage_id === id);
     const invited = data.stages.filter(s => s.can_quote && !quotesOf(s.id).some(q => !['declined', 'rejected', 'cancelled'].includes(q.status)));
     const confirm = data.payments.flatMap(p => p.proofs.filter(x => x.can_confirm).map(x => ({ p, x })));
-    $('#pending').hidden = !invited.length && !confirm.length && !devWaiting().length;
+    $('#pending').hidden = !invited.length && !confirm.length && !devWaiting().length && !rjWaiting().length;
     renderDeviations();
-    $('#pending-list').innerHTML = devPending() + invited.map(s => `<li class="card" data-go="sstage-${s.id}" tabindex="0" role="button">
+    renderRejects();
+    $('#pending-list').innerHTML = rjPending() + devPending() + invited.map(s => `<li class="card" data-go="sstage-${s.id}" tabindex="0" role="button">
             <span class="ficon" aria-hidden="true">📝</span>
             <div class="body"><div class="l1"><span class="one">${esc(sn(s))}</span></div><div class="l2">${esc(t('מבקשים ממך הצעת מחיר'))}</div></div>
             <span class="go dir-flip" aria-hidden="true">‹</span></li>`).join('')
@@ -703,6 +705,77 @@ function renderBudget() {
             <div class="lg-meta">${v.decisions.map(d => esc(`✅ ${d.by_name} · ${shortDate(d.created_at.slice(0, 10))}`)).join(' · ')}</div></li>`).join('')}</ol></details>` : ''}`;
 }
 
+// ================= 🔧 ריג'קטים =================
+
+/** ספק: ריג'קטים שמחכים לו (פתוחים / הוחזרו). */
+const rjWaiting = () => data.role === 'supplier' ? (data.rejects?.rejects || []).filter(r => ['open', 'returned'].includes(r.status)) : [];
+function rjPending() {
+    return rjWaiting().map(r => `<li class="card" data-go="rj-${r.id}" tabindex="0" role="button">
+        <span class="ficon" aria-hidden="true">🔧</span>
+        <div class="body"><div class="l1"><span class="one">${esc(r.title)}</span></div>
+            <div class="l2">${esc(r.status === 'returned' ? t('הוחזר — לא תוקן כמו שצריך') : t('ריג\'קט לתיקון'))}${r.due_date ? ' · ' + esc(t('עד {date}', { date: shortDate(r.due_date) })) : ''}</div></div>
+        <span class="go dir-flip" aria-hidden="true">‹</span></li>`).join('');
+}
+
+/** הרשימה: כל ריג'קט נפתח לשרשור — הודעות עם תמונות ומסמכים, ותשובה (ספק: "🛠️ תיקנתי"). לקוח — גם "+ ריג'קט". */
+function renderRejects() {
+    const R = data.rejects;
+    const L = R?.rejects || [];
+    $('#rejects').hidden = !L.length && !R?.can_open;
+    if ($('#rejects').hidden) return;
+    const ICON = { pending: '🟣', open: '🔴', fixed: '🟡', returned: '↩️', done: '✅' };
+    const ROLE = { manager: t('מנהל הפרויקט'), supplier: t('הספק'), client: t('הלקוח'), lawyer: t('עו"ד') };
+    const open = L.filter(r => ['open', 'returned', 'fixed'].includes(r.status)).length;
+    const files = fs => fs.length ? `<div class="rj-files">${fs.map(x => x.thumb || /^image\//.test(x.mime) ? `<a href="${fileUrl(x.id)}" target="_blank" rel="noopener" class="rj-thumb"><img src="${fileUrl(x.id, x.thumb ? '&thumb=1' : '')}" alt="${esc(x.name)}" loading="lazy"></a>`
+        : `<a href="${fileUrl(x.id)}" target="_blank" rel="noopener" class="chip">📎 ${esc(x.name)}</a>`).join('')}</div>` : '';
+    const compose = r => `<div class="rj-compose" data-rjc="${r.id}">
+        <textarea rows="2" maxlength="4000" placeholder="${esc(R.can_fix ? t('מה עשית? (לא חובה)') : t('הודעה למנהל הפרויקט'))}"></textarea>
+        <div class="row-btns wrap"><label class="btn ghost sm rj-pick">📎 ${esc(t('תמונות ומסמכים'))}<input type="file" multiple accept="image/*,application/pdf" hidden></label><span class="muted rj-n"></span></div>
+        <div class="row-btns wrap">${R.can_fix && ['open', 'returned'].includes(r.status) ? `<button class="btn primary sm" data-rj-act="fixed">🛠️ ${esc(t('תיקנתי'))}</button>` : ''}
+            <button class="btn ghost sm" data-rj-act="note">💬 ${esc(t('שליחה'))}</button></div><p class="error" hidden></p></div>`;
+    $('#rejects').innerHTML = `<div class="sec-row"><h2 class="sec-title" id="rejects-title">🔧 ${esc(t('ריג\'קטים'))}</h2>${open ? `<span class="chip fin-late">${esc(t('{n} פתוחים', { n: open }))}</span>` : ''}</div>
+        <p class="hint">${esc(R.can_fix ? t('מה צריך לתקן לפני המסירה. כשמסיימים — "🛠️ תיקנתי" עם תמונה; מנהל הפרויקט בודק וסוגר.')
+            : t('מה הספקים צריכים לתקן לפני המסירה — המסירה רק כשהכול נסגר.'))}</p>
+        ${R.can_open ? `<details class="rj-new"><summary class="btn ghost sm">+ ${esc(t('ריג\'קט — משהו שצריך לתקן'))}</summary>
+            <div class="rj-compose" data-rjc="new"><input class="rj-title" maxlength="200" placeholder="${esc(t('מה צריך לתקן'))}">
+                <textarea rows="2" maxlength="4000" placeholder="${esc(t('פירוט (לא חובה)'))}"></textarea>
+                <div class="row-btns wrap"><label class="btn ghost sm rj-pick">📎 ${esc(t('תמונות ומסמכים'))}<input type="file" multiple accept="image/*,application/pdf" hidden></label><span class="muted rj-n"></span></div>
+                <div class="row-btns"><button class="btn primary sm" data-rj-act="open">${esc(t('שליחה למנהל הפרויקט'))}</button></div><p class="error" hidden></p></div></details>` : ''}
+        <ul class="list dev-list">${L.map(r => `<li class="dev-item" id="rj-${r.id}"><details${rjWaiting().some(x => x.id === r.id) ? ' open' : ''}>
+            <summary class="dev-top"><span aria-hidden="true">${ICON[r.status] || ''}</span><b class="one">${esc(r.title)}</b><span class="chip${r.late ? ' fin-late' : ''}">${esc(r.late ? t('באיחור') : r.status_label)}</span></summary>
+            <div class="muted dev-meta">${[R.can_fix ? '' : r.supplier, r.stage, r.unit ? '🏢 ' + r.unit : '', r.due_date ? t('עד {date}', { date: shortDate(r.due_date) }) : ''].filter(Boolean).map(esc).join(' · ')}</div>
+            <ol class="rj-thread">${r.events.map(e => `<li class="rj-ev rj-ev-${e.kind} by-${e.by_role}"><div class="rj-ev-h"><b>${esc(e.by_name || ROLE[e.by_role] || '')}</b>
+                <span class="muted">${esc(e.kind_label)} · ${esc(shortDate(e.at.slice(0, 10)))}</span></div>${e.body ? `<p class="rj-ev-b">${esc(e.body)}</p>` : ''}${files(e.files)}</li>`).join('')}</ol>
+            ${!['done', 'cancelled', 'pending'].includes(r.status) && !data.readonly ? compose(r) : ''}</details></li>`).join('')}</ul>`;
+}
+
+/** שליחה מהשרשור: קודם הקבצים (כל אחד בבקשה משלו), ואז ההודעה עם המזהים. */
+async function rejectSend(box, action) {
+    const err = $('.error', box);
+    err.hidden = true;
+    const text = $('textarea', box).value.trim(), title = $('.rj-title', box)?.value.trim() || '';
+    const picked = [...$('input[type=file]', box).files];
+    if (action === 'open' && !title) { err.textContent = t('מה צריך לתקן — שדה חובה'); err.hidden = false; return; }
+    if (action === 'note' && !text && !picked.length) { err.textContent = t('כתבו משהו או צרפו תמונה'); err.hidden = false; return; }
+    const btns = $$('button', box);
+    btns.forEach(b => { b.disabled = true; });
+    try {
+        const file_ids = [];
+        for (const file of picked) {
+            const res = await fetch('api.php?' + new URLSearchParams({ action: 'reject-file', name: file.name }), { method: 'POST',
+                headers: { 'X-Portal': token, 'X-Lang': I18n.lang(), 'Content-Type': file.type || 'application/octet-stream', Accept: 'application/json' }, body: file });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(d.error || t('תקלה ({status})', { status: res.status }));
+            file_ids.push(d.file_id);
+        }
+        const id = box.dataset.rjc;
+        data = await call('reject-post', action === 'open' ? { action, title, body: text, file_ids } : { reject_id: Number(id), action, body: text, file_ids });
+        render();
+        toast(action === 'fixed' ? t('דווח — מנהל הפרויקט יבדוק ויסגור') : action === 'open' ? t('נשלח למנהל הפרויקט') : t('נשלח'));
+        if (id !== 'new') $('#rj-' + id)?.scrollIntoView({ block: 'nearest' });
+    } catch (x) { err.textContent = x.message; err.hidden = false; btns.forEach(b => { b.disabled = false; }); }
+}
+
 /** חריגות מהחוזה שממתינות להחלטה שלי. */
 const devWaiting = () => (data.deviations || []).filter(d => d.can_decide);
 function devPending() {
@@ -894,6 +967,8 @@ async function submitDecide(e) {
 document.addEventListener('click', e => {
     const act = e.target.closest('[data-act]');
     if (act) { openDecide(Number(act.dataset.q), act.dataset.act); return; }
+    const ra = e.target.closest('[data-rj-act]');
+    if (ra) { rejectSend(ra.closest('.rj-compose'), ra.dataset.rjAct); return; }
     const dv = e.target.closest('[data-dev]');
     if (dv) { openDecideDeviation(Number(dv.dataset.dev), dv.dataset.devAct); return; }
     const bd = e.target.closest('[data-bd]');
@@ -946,3 +1021,9 @@ $('#pay-dlg [name=file]').addEventListener('change', e => { proofFile = e.target
 addEventListener('hashchange', () => location.reload());
 
 load();
+
+// כמה קבצים נבחרו — ליד הכפתור (ריג'קטים)
+document.addEventListener('change', e => {
+    const box = e.target.closest('.rj-compose');
+    if (box && e.target.type === 'file') $('.rj-n', box).textContent = e.target.files.length ? t('{n} קבצים', { n: e.target.files.length }) : '';
+});
