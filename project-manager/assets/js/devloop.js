@@ -11,8 +11,25 @@ const DevLoop = (() => {
         api: () => Promise.reject(new Error('DevLoop.setup: חסר api')), toast: m => alert(m), isDev: () => false,
         endpoint: 'api.php', appName: 'האפליקציה', tasksHref: '', mountBefore: '#me-btn',
         headers: () => ({}), lang: () => document.documentElement.lang || 'he', version: () => '',
-        trace: () => ({ requests: [], errors: [] }),
+        // trace — הבקשות והשגיאות האחרונות של האפליקציה, להקשר של 🐞. בלי trace — המודול אוסף לבד (שגיאות + noteRequest)
+        trace: () => own,
+        // logHref(row) — קישור לשורה / לבקשה ביומן של האפליקציה. בלי — היומן המובנה (DevLoop.showLog)
+        logHref: null,
+        // builtinLog — היומן המובנה של DevLoop: שגיאות JavaScript נשלחות לשרת (devloop-client-error)
+        builtinLog: false,
     };
+    const own = { requests: [], errors: [] };
+    const push = (list, x) => { list.push(x); if (list.length > 15) list.shift(); };
+    addEventListener('error', e => onJsError('error', e.message, { source: e.filename, line: e.lineno, col: e.colno, stack: e.error?.stack }));
+    addEventListener('unhandledrejection', e => onJsError('promise', String(e.reason?.message || e.reason), { stack: e.reason?.stack }));
+    function onJsError(kind, message, extra) {
+        push(own.errors, { kind, message: String(message).slice(0, 300), source: extra.source, line: extra.line, at: new Date().toISOString() });
+        if (H.builtinLog) {
+            fetch(H.endpoint + '?action=devloop-client-error', { method: 'POST', credentials: 'same-origin', keepalive: true,
+                headers: { ...H.headers(), 'Content-Type': 'application/json' },
+                body: JSON.stringify({ kind, message: String(message).slice(0, 1000), page: location.hash || location.pathname, ...extra }) }).catch(() => {});
+        }
+    }
     const $ = (sel, root = document) => root.querySelector(sel);
     const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
     const api = (...a) => H.api(...a), toast = (...a) => H.toast(...a);
@@ -64,7 +81,10 @@ const DevLoop = (() => {
             box.addEventListener('click', onClick);
             box.addEventListener('change', onChange);
             box.addEventListener('input', e => { if (e.target.id === 'dt-q') { query = e.target.value.trim(); drawList(); } });
-            box.addEventListener('toggle', e => { if (e.target.matches?.('details.dt-item') && e.target.open) openCode = e.target.dataset.code; }, true);
+            box.addEventListener('toggle', e => {
+                if (e.target.matches?.('details.dt-item') && e.target.open) openCode = e.target.dataset.code;
+                if (e.target.matches?.('details.dt-log') && e.target.open) itemLog(e.target);
+            }, true);
         }
         box.innerHTML = '<p class="hint">טוען…</p>';
         if (!await load()) return;
@@ -167,6 +187,7 @@ const DevLoop = (() => {
                     `<li><label><input type="checkbox" data-step="${esc(x.code)}:${i}"> <span>${esc(s)}</span></label></li>`).join('')}</ol></div>` : ''}
                 ${x.evidence?.length ? `<div class="dt-ev"><b>📦 ראיות</b><ul>${x.evidence.map(evRow).join('')}</ul></div>` : ''}
                 ${context(x.context)}
+                <details class="dt-log" data-log-code="${esc(x.code)}"><summary>📜 יומן — מה קרה סביב המטלה${x.occurrences ? ` (${x.occurrences.count} מופעים)` : ''}</summary><div class="dt-log-body"><p class="hint">טוען…</p></div></details>
                 ${x.source === 'user' ? `<label class="f dt-status"><span>מצב</span><select data-dt-status="${esc(x.code)}">${Object.entries(STATUS).map(([k, [l]]) =>
                     `<option value="${k}"${x.status === k ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>` : ''}
                 ${thumbs(loose)}
@@ -404,9 +425,92 @@ const DevLoop = (() => {
         load();
     }
 
-    /** האפליקציה מחברת: api, toast, isDev, endpoint, appName, tasksHref, mountBefore, headers, lang, version, trace. */
+    // ── היומן ─────────────────────────────────────────────────────
+
+    const LV = { error: '🔴', warn: '🟠', info: '⚪' };
+    const logLink = r => (H.logHref ? H.logHref(r) : '');
+    function logRow(r) {
+        const d = r.data || {};
+        const where = d.file ? `${d.file}:${d.line ?? ''}` : d.source ? `${String(d.source).split('/').pop()}:${d.line ?? ''}` : '';
+        const what = [r.method && r.action ? `${r.method} ${r.action}` : r.action, r.status ? '→' + r.status : '', r.ms != null && r.ms !== '' ? r.ms + 'ms' : '', where].filter(Boolean).join(' · ');
+        const href = logLink(r);
+        return `<li class="dt-lr ${esc(r.level)}"><div><span aria-label="${esc(r.level)}">${LV[r.level] || '•'}</span> <b dir="ltr">${esc(r.event)}</b>
+            <small>${esc(dayTime(r.at))}${r.username ? ' · ' + esc(r.username) : ''}</small></div>
+            ${r.message ? `<p dir="auto">${esc(r.message)}</p>` : ''}
+            <small dir="ltr">${esc(what)}${r.req ? ` · req ${href ? `<a href="${esc(href)}">${esc(r.req)}</a>` : esc(r.req)}` : ''}</small></li>`;
+    }
+    async function itemLog(det) {
+        if (det.dataset.loaded) return;
+        det.dataset.loaded = '1';
+        const out = det.querySelector('.dt-log-body');
+        try {
+            const r = await api('dev-item-log', { params: { code: det.dataset.logCode } });
+            out.innerHTML = r.rows.length ? `<ol class="dt-lrs">${r.rows.map(logRow).join('')}</ol>`
+                : `<p class="hint">${r.reqs.length ? 'הבקשות של הדיווח כבר לא ביומן (נמחקות אחרי תקופת השמירה).' : 'אין למטלה הזו שורות ביומן — רק דיווח 🐞 ושגיאה מהיומן מקושרים אליו.'}</p>`;
+        } catch (x) { out.innerHTML = `<p class="error">${esc(x.message)}</p>`; det.dataset.loaded = ''; }
+    }
+
+    /**
+     * 🔗 מהיומן למטלה — לתצוגת היומן של האפליקציה: לכל אלמנט [data-log-id] (עם data-log-req ו-data-log-level)
+     * שיש בו .dl-slot — קישור למטלה שלו, ובשגיאה בלי מטלה: "+ מטלה".
+     */
+    async function decorateLog(root) {
+        const els = [...root.querySelectorAll('[data-log-id]')];
+        if (!els.length || !H.isDev()) return;
+        let links;
+        try { links = await api('dev-log-links', { body: { ids: els.map(e => Number(e.dataset.logId)), reqs: [...new Set(els.map(e => e.dataset.logReq).filter(Boolean))] } }); }
+        catch { return; }
+        for (const e of els) {
+            const slot = e.querySelector('.dl-slot');
+            if (!slot) continue;
+            const code = links.ids[e.dataset.logId] || links.reqs[e.dataset.logReq];
+            slot.innerHTML = code ? `<a class="chip dl-link" href="${esc(H.tasksHref + '/' + code)}" dir="ltr">🔗 ${esc(code)}</a>`
+                : e.dataset.logLevel === 'error' ? `<button type="button" class="chip dl-new" data-dl-new="${esc(e.dataset.logId)}">+ מטלה</button>` : '';
+        }
+        if (!root.dataset.dlBound) {
+            root.dataset.dlBound = '1';
+            root.addEventListener('click', async ev => {
+                const b = ev.target.closest('[data-dl-new]');
+                if (!b) return;
+                ev.preventDefault(); ev.stopPropagation();
+                b.disabled = true;
+                try {
+                    const r = await api('dev-task-from-log', { body: { log_id: Number(b.dataset.dlNew) } });
+                    toast(r.created ? `נפתחה ${r.code}` : `כבר יש מטלה: ${r.code}`);
+                    location.hash = H.tasksHref + '/' + r.code;
+                } catch (x) { toast(x.message, true); b.disabled = false; }
+            });
+        }
+    }
+
+    /** היומן המובנה (כשלאפליקציה אין יומן משלה): רשימה עם סינון, ו-🔗 / "+ מטלה" בכל שגיאה. */
+    async function showLog(el, req = '') {
+        el.innerHTML = `<div class="row-btns wrap dt-log-tools"><select aria-label="רמה" data-ll><option value="">הכול</option><option value="warn">אזהרות ושגיאות</option><option value="error">שגיאות</option></select>
+            <input type="search" data-lq placeholder="חיפוש" aria-label="חיפוש ביומן" value="">
+            ${req ? `<button type="button" class="chip on" data-lreq>בקשה ${esc(req)} ✕</button>` : ''}</div><ol class="dt-lrs" data-lout></ol>`;
+        const draw = async () => {
+            const params = { level: el.querySelector('[data-ll]').value, q: el.querySelector('[data-lq]').value.trim() };
+            if (req) params.req = req;
+            try {
+                const r = await api('dev-log', { params });
+                const out = el.querySelector('[data-lout]');
+                out.innerHTML = r.rows.map(x => logRow(x).replace('<li class="dt-lr', `<li data-log-id="${x.id}" data-log-req="${esc(x.req)}" data-log-level="${esc(x.level)}" class="dt-lr`)
+                    .replace('</small></li>', '</small><span class="dl-slot"></span></li>')).join('') || `<li class="hint">אין שורות (נשמר ${r.days} יום).</li>`;
+                decorateLog(out);
+            } catch (x) { toast(x.message, true); }
+        };
+        el.querySelector('[data-ll]').onchange = draw;
+        el.querySelector('[data-lq]').onchange = draw;
+        el.querySelector('[data-lreq]')?.addEventListener('click', () => { req = ''; showLog(el); });
+        draw();
+    }
+
+    /** האפליקציה מדווחת על בקשה (כשאין לה trace משלה) — להקשר של 🐞. */
+    function noteRequest(r) { push(own.requests, { ...r, at: r.at || new Date().toISOString() }); }
+
+    /** האפליקציה מחברת: api, toast, isDev, endpoint, appName, tasksHref, mountBefore, headers, lang, version, trace, logHref, builtinLog. */
     function setup(cfg) { Object.assign(H, cfg); }
 
-    return { setup, show, mount, report };
+    return { setup, show, mount, report, decorateLog, showLog, noteRequest };
 })();
 // i18n-none-end

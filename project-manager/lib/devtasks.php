@@ -25,7 +25,6 @@ devloop_setup([
         return (bool)$st->fetchColumn();
     },
     'audit'        => fn(string $actor, string $action, string $kind, ?int $id, array $data = []) => pm_audit($actor, $action, $kind, $id, $data),
-    'log'          => fn(string $level, string $cat, string $event, array $extra = []) => pm_log($level, $cat, $event, $extra),
     // בקשות באסימון מסומנות 🤖 ביומן
     'as_claude'    => fn(int $tokenId) => pm_log_user(['id' => null, 'username' => '🤖 devapi:' . $tokenId], true),
     // התראות במייל למפתח: ממתינה לאימות, שאלה, Claude ענה, שגיאות חדשות (DevLoop שלב 4)
@@ -35,13 +34,41 @@ devloop_setup([
         }
     },
     'item_url'     => fn(string $code) => pm_app_url() . '/#/settings/tasks/' . rawurlencode($code),
-    // שגיאות ביומן (שרת ודפדפן) — הופכות למטלות "⚠️ לבירור"
-    'errors_max'   => fn() => (int)(pm_log_db()?->query('SELECT COALESCE(MAX(id), 0) FROM log')->fetchColumn() ?: 0),
-    'errors'       => function (int $after, int $limit): array {
-        $log = pm_log_db();
-        if (!$log) return [];
-        $st = $log->prepare("SELECT * FROM log WHERE id > ? AND level = 'error' ORDER BY id LIMIT " . max(1, $limit));
-        $st->execute([$after]);
-        return array_map(fn($r) => $r + ['data' => json_decode((string)$r['data_json'], true) ?: []], $st->fetchAll());
-    },
+    // היומן של מנהל הפרויקטים (lib/log.php, 90 יום) — במקום היומן המובנה של DevLoop. ממנו: "⚠️ לבירור",
+    // העקבות של 🐞, והקישור בשני הכיוונים בין מטלה לשורות ביומן
+    'log' => [
+        'write'  => fn(string $level, string $cat, string $event, array $extra = []) => pm_log($level, $cat, $event, $extra),
+        'max_id' => fn() => (int)(pm_log_db()?->query('SELECT COALESCE(MAX(id), 0) FROM log')->fetchColumn() ?: 0),
+        'rows'   => 'pm_devloop_log_rows',
+    ],
 ]);
+
+/** שורות מהיומן בשביל DevLoop — אותו חוזה כמו devloop_log_rows (after, before, level, ids, reqs, q, limit). */
+function pm_devloop_log_rows(array $q): array
+{
+    $db = pm_log_db();
+    if (!$db) return [];
+    $w = ['1 = 1'];
+    $a = [];
+    if (!empty($q['after'])) { $w[] = 'id > ?'; $a[] = (int)$q['after']; }
+    if (!empty($q['before'])) { $w[] = 'id < ?'; $a[] = (int)$q['before']; }
+    if (($q['level'] ?? '') === 'error') $w[] = "level = 'error'";
+    elseif (($q['level'] ?? '') === 'warn') $w[] = "level IN ('warn', 'error')";
+    foreach (['ids' => 'id', 'reqs' => 'req'] as $k => $col) {
+        if (!array_key_exists($k, $q)) continue;
+        $vals = array_values(array_slice(array_filter((array)$q[$k], fn($v) => $v !== '' && $v !== null), 0, 200));
+        if (!$vals) return [];
+        $w[] = "$col IN (" . implode(',', array_fill(0, count($vals), '?')) . ')';
+        array_push($a, ...$vals);
+    }
+    if (!empty($q['q'])) { $w[] = '(event LIKE ? OR message LIKE ? OR action LIKE ? OR data_json LIKE ?)'; $l = '%' . strtr((string)$q['q'], ['%' => '', '_' => '']) . '%'; array_push($a, $l, $l, $l, $l); }
+    $limit = max(1, min(500, (int)($q['limit'] ?? 100)));
+    $st = $db->prepare('SELECT * FROM log WHERE ' . implode(' AND ', $w) . ' ORDER BY id ' . (!empty($q['after']) ? 'ASC' : 'DESC') . " LIMIT $limit");
+    $st->execute($a);
+    return array_map(function ($r) {
+        $r['id'] = (int)$r['id'];
+        $r['data'] = json_decode((string)$r['data_json'], true) ?: [];
+        unset($r['data_json']);
+        return $r;
+    }, $st->fetchAll());
+}
