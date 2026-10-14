@@ -224,6 +224,13 @@ try {
         'POST change-decide'  => pm_change_decide($user, (int)($in['id'] ?? 0), (string)($in['role'] ?? ''), (string)($in['decision'] ?? ''),
                                                   (string)($in['note'] ?? '')),
         'POST change-cancel'  => pm_change_cancel($user, (int)($in['id'] ?? 0)),
+        // הצעת תקציב לפי שלבים (lib/budget.php)
+        'GET budget'          => pm_budget($user, (int)($in['project_id'] ?? 0)),
+        'POST budget-draft'   => pm_budget_draft_save($user, $in),
+        'POST budget-send'    => pm_budget_send($user, $in),
+        'POST budget-decide'  => pm_budget_decide($user, (int)($in['id'] ?? 0), (string)($in['role'] ?? ''), (string)($in['decision'] ?? ''),
+                                                  (string)($in['note'] ?? ''), 'manual', (string)($in['by_name'] ?? '')),
+        'POST budget-cancel'  => pm_budget_cancel($user, (int)($in['id'] ?? 0)),
         'POST payment-invoice' => pm_payment_invoice($user, $in),
         'POST payments-stage' => pm_payments_set_stage($user, $in),
         // התקשרות: שיוך כללי של קבצים לספק × שלב (lib/engage.php)

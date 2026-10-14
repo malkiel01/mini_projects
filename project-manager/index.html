@@ -2,13 +2,13 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="assets/js/i18n.js?v=82"></script>
+    <script src="assets/js/i18n.js?v=83"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=82">
-    <link rel="stylesheet" href="assets/css/devloop.css?v=82">
+    <link rel="stylesheet" href="assets/css/app.css?v=83">
+    <link rel="stylesheet" href="assets/css/devloop.css?v=83">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -179,6 +179,7 @@
                     <button type="button" role="tab" data-fin-tab="suppliers">👷 ספקים <small id="fin-n-suppliers"></small></button>
                     <button type="button" role="tab" data-fin-tab="milestones">💳 אבני דרך <small id="fin-n-milestones"></small></button>
                     <button type="button" role="tab" data-fin-tab="expenses">🧾 הוצאות <small id="fin-n-expenses"></small></button>
+                    <button type="button" role="tab" data-fin-tab="budget">📐 תקציב</button>
                 </nav>
                 <div class="fin-body" id="fin-body">
                     <div data-fin-pane="sum"><section class="fin-card" id="fin-sum" aria-labelledby="fin-title"></section></div>
@@ -193,6 +194,8 @@
                         <div class="pay-sum" id="pay-sum"></div>
                         <div id="payment-list"></div></div>
                     <div data-fin-pane="expenses" hidden><div id="fin-extra"></div></div>
+                    <!-- הצעת תקציב לפי שלבים (assets/js/budget.js, lib/budget.php) -->
+                    <div data-fin-pane="budget" hidden><div id="fin-budget"></div></div>
                 </div>
             </div>
 
@@ -752,11 +755,21 @@
             </header>
             <div class="sheet-body">
                 <h3 class="sec-title">תקציב (₪, כולל מע"מ)</h3>
-                <div class="fields">
+                <p class="hint" id="fin-budget-broken" hidden>התקציב מחושב מהצעת התקציב לפי שלבים — הסכומים נערכים ב"📐 תקציב".</p>
+                <div class="fields" id="fin-budget-fields">
                     <label class="f"><span>תקציב ראשוני</span><input name="budget_initial" inputmode="decimal" dir="ltr" maxlength="14"></label>
                     <label class="f"><span>תקציב היום</span><input name="budget" inputmode="decimal" dir="ltr" maxlength="14"></label>
                 </div>
                 <p class="hint">הראשוני — מה שסוכם בפתיחת הפרויקט. הלקוח והעו"ד רואים את שניהם, וכמה התקציב גדל.</p>
+                <div class="fields">
+                    <label class="f wide"><span>מי מאשר את הצעת התקציב ואת השינויים בה</span>
+                        <select name="budget_approver"><option value="client">הלקוח</option><option value="lawyer">עו"ד</option><option value="both">הלקוח ואז עו"ד</option></select></label>
+                </div>
+                <div id="fin-split-box" hidden>
+                    <h3 class="sec-title">חלוקה בין הדירות (%)</h3>
+                    <div class="fields" id="fin-split"></div>
+                    <p class="hint">חלק שמשותף לכמה דירות (שלב בלי דירה) — לפי האחוזים האלה, בתקציב ובעלויות לכל דירה. ריק — שווה בשווה. חלוקה שנקבעה בחוזה עם ספק גוברת.</p>
+                </div>
                 <h3 class="sec-title">שכר הטרחה של מנהל הפרויקט</h3>
                 <fieldset class="opt">
                     <legend class="sr-only">סוג שכר הטרחה</legend>
@@ -1377,27 +1390,28 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=82"></script>
-    <script src="assets/js/contacts.js?v=82"></script>
-    <script src="assets/js/device-contacts.js?v=82"></script>
-    <script src="assets/js/viewer.js?v=82"></script>
-    <script src="assets/js/devloop.js?v=82"></script>
-    <script src="assets/js/engage.js?v=82"></script>
-    <script src="assets/js/linker.js?v=82"></script>
-    <script src="assets/js/files.js?v=82"></script>
-    <script src="assets/js/lightbox.js?v=82"></script>
-    <script src="assets/js/field.js?v=82"></script>
+    <script src="assets/js/core.js?v=83"></script>
+    <script src="assets/js/contacts.js?v=83"></script>
+    <script src="assets/js/device-contacts.js?v=83"></script>
+    <script src="assets/js/viewer.js?v=83"></script>
+    <script src="assets/js/devloop.js?v=83"></script>
+    <script src="assets/js/engage.js?v=83"></script>
+    <script src="assets/js/linker.js?v=83"></script>
+    <script src="assets/js/files.js?v=83"></script>
+    <script src="assets/js/lightbox.js?v=83"></script>
+    <script src="assets/js/field.js?v=83"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=82"></script>
-    <script src="assets/js/projects.js?v=82"></script>
-    <script src="assets/js/quotes.js?v=82"></script>
-    <script src="assets/js/payments.js?v=82"></script>
-    <script src="assets/js/fin-report.js?v=82"></script>
-    <script src="assets/js/finance.js?v=82"></script>
-    <script src="assets/js/finance-all.js?v=82"></script>
-    <script src="assets/js/hebcal.js?v=82"></script>
-    <script src="assets/js/calendar.js?v=82"></script>
-    <script src="assets/js/settings.js?v=82"></script>
-    <script src="assets/js/app.js?v=82"></script>
+    <script src="assets/js/share.js?v=83"></script>
+    <script src="assets/js/projects.js?v=83"></script>
+    <script src="assets/js/quotes.js?v=83"></script>
+    <script src="assets/js/payments.js?v=83"></script>
+    <script src="assets/js/fin-report.js?v=83"></script>
+    <script src="assets/js/budget.js?v=83"></script>
+    <script src="assets/js/finance.js?v=83"></script>
+    <script src="assets/js/finance-all.js?v=83"></script>
+    <script src="assets/js/hebcal.js?v=83"></script>
+    <script src="assets/js/calendar.js?v=83"></script>
+    <script src="assets/js/settings.js?v=83"></script>
+    <script src="assets/js/app.js?v=83"></script>
 </body>
 </html>

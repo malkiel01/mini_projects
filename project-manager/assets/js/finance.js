@@ -96,19 +96,20 @@ const Finance = (() => {
     }
 
     // ---- לשוניות הכספים ----
-    const FIN_TABS = ['sum', 'suppliers', 'milestones', 'expenses'];
+    const FIN_TABS = ['sum', 'suppliers', 'milestones', 'expenses', 'budget'];
     function finTab(k) {
         if (!FIN_TABS.includes(k)) k = 'sum';
         try { sessionStorage.setItem('pm.fintab', k); } catch { /* מצב פרטי */ }
         $$('#fin-tabs [data-fin-tab]').forEach(b => { const on = b.dataset.finTab === k; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on)); });
         $$('#fin-body [data-fin-pane]').forEach(d => { d.hidden = d.dataset.finPane !== k; });
+        if (k === 'budget' && project) Budget.show(project);
     }
     const finTabNow = () => { try { return sessionStorage.getItem('pm.fintab') || 'sum'; } catch { return 'sum'; } };
 
     async function show(p) {
         bind();
-        finTab(finTabNow());
         project = p;
+        finTab(finTabNow());
         try { data = await api('finance', { params: { project_id: p.project.id } }); }
         catch (e) { $('#fin-sum').innerHTML = `<p class="error">${esc(e.message)}</p>`; return; }
         render();
@@ -900,6 +901,15 @@ const Finance = (() => {
         formError(f, '');
         el.budget_initial.value = S.budget_initial || '';
         el.budget.value = S.budget || '';
+        // פורק לשלבים — התקציב מחושב ("📐 תקציב"), לא נערך כאן
+        $('#fin-budget-fields').hidden = !!S.budget_broken;
+        $('#fin-budget-broken').hidden = !S.budget_broken;
+        el.budget_approver.value = S.budget_approver || 'client';
+        const units = project.units || [];
+        $('#fin-split-box').hidden = units.length < 2;
+        const eq = units.length ? Math.round(10000 / units.length) / 100 : 0;
+        $('#fin-split').innerHTML = units.map(u => `<label class="f"><span>${esc(u.name)}</span><input data-split-unit="${u.id}" inputmode="decimal" dir="ltr" maxlength="6"
+            value="${esc(String(S.unit_split?.[u.id] ?? ''))}" placeholder="${eq}"></label>`).join('');
         $(`#fin-dlg [name=fee_type][value="${S.fee_type}"]`).checked = true;
         el.fee_value.value = S.fee_value || '';
         el.retention_pct.value = S.retention_pct;
@@ -927,6 +937,8 @@ const Finance = (() => {
             retention_pct: el.retention_pct.value.trim(), index_on: el.index_on.checked,
             index_name: S.index_name && indexName === t(S.index_name) ? S.index_name : indexName,
             index_base_month: el.index_base_month.value, index_base: el.index_base.value.trim(),
+            budget_approver: el.budget_approver.value,
+            unit_split: Object.fromEntries($$('#fin-split [data-split-unit]').map(i => [i.dataset.splitUnit, i.value.trim()])),
         };
         await busy($('button[type=submit]', f), f, async () => {
             data = await api('finance-settings', { body });

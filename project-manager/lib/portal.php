@@ -318,6 +318,12 @@ function pm_portal_view(array $a): array
         'finance' => pm_finance_of($pid, true, PM_OVERPAY_MARGIN, $scope) + ['alerts' => array_values(array_map(fn($x) => array_diff_key($x, ['key' => 1, 'sort' => 1]),
             array_filter(pm_fin_alerts($pid, pm_fin_alert_settings((int)$a['owner']['id']), pm_lang(), $role),
                 fn($x) => $scope === null || in_array($x['payment_id'], $payIds, true))))],
+        // הצעת התקציב לפי שלבים (lib/budget.php) — כשפורקה; מאשר מי שמוגדר (לקוח / עו"ד), ורק בקישור של כל הפרויקט
+        'budget' => pm_budget_broken($pid) ? (function () use ($pid, $scope, $role, $a, $p) {
+            $b = pm_budget_of($pid, true, $scope);
+            $need = !$b['pending'] ? '' : ($b['pending']['status'] === 'client_approved' ? 'lawyer' : ($b['approver'] === 'lawyer' ? 'lawyer' : 'client'));
+            return $b + ['can_decide' => $need === $role && $scope === null && empty($a['readonly'])];
+        })() : null,
         'labels' => ['stage' => pm_t_map(PM_STAGE_STATUSES), 'quote' => pm_t_map(PM_QUOTE_STATUSES), 'file' => pm_t_map(PM_FILE_TYPES), 'method' => pm_t_map(PM_PAY_METHODS)],
         'max_proof' => PM_PROOF_MAX,
     ];
@@ -769,6 +775,34 @@ function pm_portal_change_decide(array $a, array $in): array
     $v = ['who' => $a['contact']['name'], 'supplier' => $o['supplier'], 'stage' => $o['stage'], 'amount' => pm_money((int)round($o['amount'] * 100))];
     pm_portal_mail($a, pm_t($decision === 'approved' ? '{who} אישר תוספת: {supplier}, {stage}' : '{who} דחה תוספת: {supplier}, {stage}', $v, $lang),
         pm_t($decision === 'approved' ? '{who} אישר תוספת של {supplier} בשלב {stage}: {amount}.' : '{who} דחה תוספת של {supplier} בשלב {stage}: {amount}.', $v, $lang)
+        . ($note !== '' ? "\n\n" . pm_t('הערה: {note}', ['note' => $note], $lang) : ''), 'payments');
+    return pm_portal_view($a);
+}
+
+/** החלטה על הצעת התקציב / שינוי בה מהפורטל — כמו תוספת: בלחיצה או בחתימה (לפי הגדרות הלקוח). */
+function pm_portal_budget_decide(array $a, array $in): array
+{
+    $role = $a['link']['role'];
+    if ($role === 'supplier') throw new PmError('לא זמין בקישור של ספק', 403);
+    $view = pm_portal_view($a);
+    $b = $view['budget'] ?? null;
+    $id = (int)($in['version_id'] ?? 0);
+    if (!$b || !$b['pending'] || $b['pending']['id'] !== $id || empty($b['can_decide'])) throw new PmError('אי אפשר להחליט על התקציב עכשיו', 422);
+    $decision = (string)($in['decision'] ?? '');
+    $method = $view['approval_method'];
+    $signature = '';
+    if ($decision === 'approved' && $method === 'signature') {
+        $signature = (string)($in['signature'] ?? '');
+        if (!preg_match('#^data:image/png;base64,[A-Za-z0-9+/=]+$#', $signature) || strlen($signature) > 400000) throw new PmError('נדרשת חתימה', 422);
+    }
+    $note = mb_substr(trim((string)($in['note'] ?? '')), 0, 1000);
+    pm_budget_decide($a['owner'], $id, $role, $decision, $note, $decision === 'approved' ? $method : 'click', $a['contact']['name'],
+        $a['actor'], ['portal_id' => (int)$a['link']['id'], 'signature' => $signature]);
+    pm_log('info', 'portal', 'portal.budget_decide', ['data' => ['link' => (int)$a['link']['id'], 'version' => $id, 'role' => $role, 'decision' => $decision]]);
+    $lang = $a['owner']['lang'];
+    $v = ['who' => $a['contact']['name'], 'amount' => pm_money((int)round($b['pending']['total_to'] * 100))];
+    pm_portal_mail($a, pm_t($decision === 'approved' ? '{who} אישר את התקציב: {amount}' : '{who} דחה את התקציב', $v, $lang),
+        pm_t($decision === 'approved' ? '{who} אישר את התקציב ({amount}).' : '{who} דחה את התקציב ({amount}).', $v, $lang)
         . ($note !== '' ? "\n\n" . pm_t('הערה: {note}', ['note' => $note], $lang) : ''), 'payments');
     return pm_portal_view($a);
 }

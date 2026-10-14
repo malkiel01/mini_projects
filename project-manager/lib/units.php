@@ -112,6 +112,7 @@ function pm_unit_save(array $user, array $in): array
         $db->rollBack();
         throw $e;
     }
+    pm_budget_sync($projectId); // תקציב שפורק לשלבים — תקציב הדירה מחושב (השלבים שלה + חלקה במשותפים)
     return pm_project_get($user, $projectId) + ['saved_unit' => $id];
 }
 
@@ -173,6 +174,7 @@ function pm_unit_delete(array $user, int $id, ?string $moveTo = null): array
         $db->rollBack();
         throw $e;
     }
+    pm_budget_sync((int)$u['project_id']);
     return pm_project_get($user, (int)$u['project_id']);
 }
 

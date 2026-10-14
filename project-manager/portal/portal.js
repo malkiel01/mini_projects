@@ -126,7 +126,8 @@ function render() {
     // תשלומים שממתינים לי: עו"ד — לאישור; משלם — לתשלום
     const payNow = data.payments.filter(p => p.can_approve || (p.can_pay && p.payer === data.role));
     const chWait = (data.changes || []).filter(c => c.can_decide);
-    $('#pending').hidden = !waiting.size && !payNow.length && !chWait.length;
+    const bWait = data.budget?.can_decide ? data.budget.pending : null;
+    $('#pending').hidden = !waiting.size && !payNow.length && !chWait.length && !bWait;
     $('#pending-list').innerHTML = [...waiting].map(([sid, n]) => {
         const st = data.stages.find(s => s.id === sid);
         return `<li class="card" data-go="stage-${sid}" tabindex="0" role="button">
@@ -142,8 +143,13 @@ function render() {
             <span class="ficon" aria-hidden="true">✍️</span>
             <div class="body"><div class="l1"><span class="one">${esc(c.amount > 0 ? t('תוספת לאישורך') : t('הפחתה לאישורך'))}</span><span class="amt">${moneyVat(vatOf(c.amount, c.vat_rate))}</span></div>
                 <div class="l2">${esc(c.supplier)} · ${esc(t(c.stage))}</div></div>
-            <span class="go dir-flip" aria-hidden="true">‹</span></li>`).join('');
+            <span class="go dir-flip" aria-hidden="true">‹</span></li>`).join('') + (bWait ? `<li class="card" data-go="budget" tabindex="0" role="button">
+            <span class="ficon" aria-hidden="true">📐</span>
+            <div class="body"><div class="l1"><span class="one">${esc(bWait.kind === 'initial' ? t('הצעת התקציב — לאישורך') : t('שינוי בתקציב — לאישורך'))}</span><span class="amt">${esc(money(bWait.total_to))}</span></div>
+                <div class="l2">${esc(bWait.kind === 'initial' ? t('לפי שלבים') : bWait.note)}</div></div>
+            <span class="go dir-flip" aria-hidden="true">‹</span></li>` : '');
     renderChanges();
+    renderBudget();
 
     renderFinance();
     renderExpenses();
@@ -661,6 +667,65 @@ function renderLedger() {
             ${x.delta.g ? `<div class="lg-b">${esc(t('יתרה {amount}', { amount: (x.balance < 0 ? '−' : '') + money(Math.abs(x.balance)) }))}</div>` : ''}</li>`).join('')}</ol>`;
 }
 
+/** הצעת התקציב לפי שלבים: הסכום לכל שלב, הסה"כ, מה ממתין לאישור (אישור / דחייה), ויומן השינויים. */
+function renderBudget() {
+    const B = data.budget;
+    $('#budget').hidden = !B;
+    if (!B) return;
+    const m = n => money(Math.round(n * 100) / 100);
+    const groups = new Map();
+    // ללקוח — רק שלבים שיש להם סכום
+    for (const l of B.lines.filter(x => x.today || x.initial)) { const k = l.unit_name || ''; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(l); }
+    const rows = [...groups.entries()].map(([u, ls]) => `${groups.size > 1 ? `<h3 class="bd-unit">${esc(u ? '🏢 ' + u : t('משותף'))}</h3>` : ''}
+        <ul class="list bd-rows">${ls.map(l => `<li class="bd-row bd-ro"><div class="bd-l1"><span class="one">${esc(t(l.name))}</span><b>${esc(m(l.today))}</b></div>
+            ${B.approved_once && Math.abs(l.today - l.initial) >= 0.01 ? `<div class="bd-l2 muted">${esc(t('ראשוני {amount}', { amount: m(l.initial) }))}</div>` : ''}
+            ${l.share ? `<div class="bd-l2 muted">${esc(t('החלק שלכם — {n}%', { n: l.share }))}</div>` : ''}</li>`).join('')}</ul>`).join('');
+    const P = B.pending;
+    const pend = P ? `<div class="bd-pending" id="budget-pending">
+        <p><b>${esc(P.kind === 'initial' ? t('הצעת התקציב — ממתינה לאישור') : t('שינוי בתקציב — ממתין לאישור'))}</b>${P.note ? ' · ' + esc(P.note) : ''}</p>
+        ${P.kind === 'change' ? `<ul class="list bd-chg">${P.lines.map(l => `<li><span class="one">${esc(t(l.name))}</span><b>${esc(m(l.from))} ← ${esc(m(l.to))}</b></li>`).join('')}</ul>` : ''}
+        <p>${esc(P.kind === 'initial' ? t('סה"כ {amount}', { amount: m(P.total_to) }) : t('סה"כ {from} ← {to}', { from: m(P.total_from), to: m(P.total_to) }))}</p>
+        ${B.can_decide ? `<div class="row-btns"><button class="btn primary" data-bd="approved">${esc(t('אישור'))}</button><button class="btn ghost" data-bd="rejected">${esc(t('דחייה'))}</button></div>` : ''}</div>` : '';
+    const log = B.versions.filter(v => v.status === 'approved' && v.kind === 'change');
+    $('#budget').innerHTML = `<div class="sec-row"><h2 class="sec-title" id="budget-title">📐 ${esc(t('הצעת התקציב'))}</h2>
+            ${B.state === 'locked' ? `<span class="chip fin-ok">✅ ${esc(t('אושרה'))}</span>` : ''}</div>
+        ${pend}${rows}
+        <dl class="bd-tot"><div><dt>${esc(t('שלבים'))}</dt><dd>${esc(m(B.stages_total))}</dd></div>
+            ${B.fee ? `<div><dt>${esc(t('שכר טרחה'))}</dt><dd>${esc(m(B.fee))}</dd></div>` : ''}
+            ${B.contingency ? `<div><dt>${esc(t('בלתי צפוי {n}%', { n: B.contingency_pct }))}</dt><dd>${esc(m(B.contingency))}</dd></div>` : ''}
+            <div class="bd-sum"><dt>${esc(t('סה"כ תקציב'))}</dt><dd>${esc(m(B.total))}</dd></div></dl>
+        ${log.length ? `<details><summary>📜 ${esc(t('שינויים שאושרו: {n}', { n: log.length }))}</summary><ol class="ledger">${log.map(v => `<li>
+            <div class="lg-top"><b class="lg-text">${esc(v.note || t('שינוי'))}</b><span class="lg-d">${esc(m(v.total_from))} ← ${esc(m(v.total_to))}</span></div>
+            <div class="lg-meta">${v.lines.map(l => esc(`${t(l.name)}: ${m(l.from)} ← ${m(l.to)}`)).join('<br>')}</div>
+            <div class="lg-meta">${v.decisions.map(d => esc(`✅ ${d.by_name} · ${shortDate(d.created_at.slice(0, 10))}`)).join(' · ')}</div></li>`).join('')}</ol></details>` : ''}`;
+}
+
+/** אישור / דחייה של התקציב — אותו חלון של הצעה ותוספת (לחיצה או חתימה). */
+function openDecideBudget(act) {
+    const B = data.budget, P = B.pending;
+    current = { ...P, kind: 'budget' };
+    decision = act;
+    const dlg = $('#decide-dlg'), form = $('form', dlg);
+    form.reset();
+    $('.error', form).hidden = true;
+    const sign = act === 'approved' && data.approval_method === 'signature';
+    $('#decide-title').textContent = act === 'approved' ? t('אישור התקציב') : t('דחיית התקציב');
+    $('#decide-summary').innerHTML = `<dl>
+        <dt>${esc(t('מה'))}</dt><dd>${esc(P.kind === 'initial' ? t('הצעת התקציב לפי שלבים') : t('שינוי בתקציב'))}</dd>
+        ${P.note ? `<dt>${esc(t('למה'))}</dt><dd>${esc(P.note)}</dd>` : ''}
+        <dt>${esc(t('סה"כ'))}</dt><dd><b>${esc(money(P.total_to))}</b> ${esc(t('כולל מע"מ'))}</dd></dl>`;
+    $('#note-label').textContent = act === 'rejected' ? t('סיבה או הערה למנהל הפרויקט') : t('הערה (לא חובה)');
+    $('#sign-box').hidden = !sign;
+    const legal = { name: data.name, amount: money(P.total_to) };
+    $('#decide-legal').textContent = act !== 'approved' ? t('התקציב לא ישתנה, ומנהל הפרויקט יקבל את ההערה.')
+        : sign ? t('בחתימתי אני, {name}, מאשר/ת את תקציב הפרויקט — סה"כ {amount} כולל מע"מ. האישור נשמר עם התאריך, השעה והפרטים.', legal)
+        : t('בלחיצה על "אישור" אני, {name}, מאשר/ת את תקציב הפרויקט — סה"כ {amount} כולל מע"מ. האישור נשמר עם התאריך, השעה והפרטים.', legal);
+    $('#decide-go').textContent = act === 'approved' ? (sign ? t('חתימה ואישור') : t('אישור')) : t('דחיית התקציב');
+    $('#decide-go').className = 'btn ' + (act === 'approved' ? 'primary' : 'ghost danger');
+    dlg.showModal();
+    if (sign) setupSign();
+}
+
 /** דוח כספי (כ5) — אותו דוח כמו אצל המנהל, מהנתונים שבדף. */
 function openReport() {
     FinReport.open({ project: { name: data.project.name, address: data.project.address, client: data.role === 'client' ? data.name : '' },
@@ -748,7 +813,9 @@ async function submitDecide(e) {
     const btn = $('#decide-go');
     btn.disabled = true;
     try {
-        data = current.kind === 'change'
+        data = current.kind === 'budget'
+            ? await call('decide-budget', { version_id: current.id, decision, note: form.elements.note.value, signature: sign ? signatureData() : undefined })
+            : current.kind === 'change'
             ? await call('decide-change', { change_id: current.id, decision, note: form.elements.note.value, signature: sign ? signatureData() : undefined })
             : await call('decide', { quote_id: current.id, version: current.version, decision, note: form.elements.note.value,
                 signature: sign ? signatureData() : undefined });
@@ -767,6 +834,8 @@ async function submitDecide(e) {
 document.addEventListener('click', e => {
     const act = e.target.closest('[data-act]');
     if (act) { openDecide(Number(act.dataset.q), act.dataset.act); return; }
+    const bd = e.target.closest('[data-bd]');
+    if (bd) { openDecideBudget(bd.dataset.bd); return; }
     const chg = e.target.closest('[data-chg]');
     if (chg) { openDecideChange(Number(chg.dataset.chg), chg.dataset.actChg); return; }
     if (e.target.closest('#x-add')) { openExpense(); return; }

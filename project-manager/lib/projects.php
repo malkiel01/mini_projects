@@ -359,6 +359,8 @@ function pm_project_save(array $user, array $in): array
         'due_date'   => pm_date($in, 'due_date', 'יעד מסירה'), // i18n-ok
         'notes'      => pm_str($in, 'notes', 4000, false, 'הערות'),
     ];
+    // תקציב שפורק לשלבים — מחושב מהצעת התקציב (lib/budget.php), לא נערך כאן
+    if ($existing && pm_budget_broken((int)$existing['id'])) $f['budget'] = (int)$existing['budget'];
 
     $db = pm_db();
     $db->beginTransaction();
@@ -459,6 +461,8 @@ function pm_stage_save(array $user, array $in): array
         'unit_id'      => array_key_exists('unit_id', $in) ? pm_unit_of_project((int)($in['unit_id'] ?? 0) ?: null, $projectId) : ($old['unit_id'] ?? null),
     ];
     if (in_array($status, ['done', 'paid'], true)) $f['progress'] = 100;
+    // הצעת תקציב שאושרה — נעולה: תקציב השלב משתנה רק דרך "שינוי תקציב" (lib/budget.php)
+    pm_budget_stage_guard($projectId, (int)($old['budget'] ?? 0), $f['budget']);
     // "בוצע" — רק דרך דיווח מהשטח עם תמונה (lib/reports.php)
     if (in_array($status, ['done', 'paid'], true) && !in_array($old['status'] ?? 'planned', ['done', 'paid'], true) && !pm_dev_mode($user)) {
         throw new PmError('כדי לסמן שלב "בוצע" — "דיווח מהשטח" עם לפחות תמונה אחת', 409);
@@ -497,6 +501,8 @@ function pm_stage_save(array $user, array $in): array
             if (array_key_exists('after', $in) && $in['after'] !== null && $in['after'] !== '') pm_stage_place($projectId, $newId, (int)$in['after']);
             pm_event($user, $projectId, 'stage_added', 'נוסף שלב: {stage}', ['stage' => $newId], ['stage' => $f['name']]);
         }
+        // תקציב הפרויקט והדירות — מסכום השלבים (כשהתקציב פורק לשלבים)
+        if (!$old || (int)$old['budget'] !== $f['budget'] || ($old['unit_id'] ?? null) != $f['unit_id']) pm_budget_sync($projectId);
         $surveyAdded = pm_project_survey_first($user, $projectId);
         $db->commit();
     } catch (Throwable $e) {
@@ -563,7 +569,10 @@ function pm_stage_delete(array $user, int $id): array
         $a->execute([$s['project_id'], pm_trade_id(PM_TRADE_ARCHITECT)]);
         if (!$o->fetchColumn() && $a->fetchColumn()) throw new PmError('יש בפרויקט אדריכלות — ולפניה תמיד מדידה של מודד מוסמך. אי אפשר למחוק את שלב המדידה', 422);
     }
+    // תקציב שאושר לשלב — לא נעלם במחיקה: קודם "שינוי תקציב" שמאפס אותו (ומעביר לאן שצריך)
+    pm_budget_stage_guard((int)$s['project_id'], (int)$s['budget'], 0);
     pm_db()->prepare('DELETE FROM stages WHERE id = ?')->execute([$id]);
+    pm_budget_sync((int)$s['project_id']);
     pm_event($user, (int)$s['project_id'], 'stage_removed', 'הוסר שלב: {stage}', ['stage' => $id], ['stage' => $s['name']]);
     return pm_project_get($user, (int)$s['project_id']);
 }
