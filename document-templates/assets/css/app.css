@@ -641,3 +641,38 @@ table.sample th { background: var(--bg); font-weight: 600; }
 .fill-map .map-row select { flex: 0 0 50%; min-width: 0; }
 .bad-text { color: var(--bad, #c92a2a); }
 .fill-map .map-row { padding: 0; }
+
+/* ── תפריט המשתמש (מהאווטאר בכותרת) ── */
+.me-btn { border: 2px solid rgba(255,255,255,.7); cursor: pointer; width: 36px; height: 36px; padding: 0; font: inherit; font-weight: 700; font-size: .85rem; }
+.me-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.user-menu { position: fixed; z-index: 40; top: calc(var(--head) + env(safe-area-inset-top) - 4px); inset-inline-end: 8px;
+  width: min(300px, calc(100vw - 16px)); max-height: calc(100dvh - var(--head) - 16px); overflow-y: auto;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r);
+  box-shadow: 0 12px 32px rgba(0,0,0,.2); padding: 6px; display: grid; gap: 2px; }
+.menu-head { display: flex; align-items: center; gap: var(--s2); padding: var(--s2); border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.mi-tx { display: grid; min-width: 0; text-align: start; }
+.mi-tx small { color: var(--muted); font-size: .76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-item { width: 100%; justify-content: flex-start; display: flex; align-items: center; gap: var(--s2); min-height: var(--tap); padding: 4px var(--s2); border: 0; border-radius: 8px;
+  background: none; font: inherit; color: inherit; cursor: pointer; text-align: start; }
+.menu-item:hover, .menu-item:focus-visible { background: var(--brand-soft); outline: 0; }
+.mi-ic { width: 24px; text-align: center; flex: none; }
+.menu-sep { border-top: 1px solid var(--line); margin: 4px 0 0; padding: 6px var(--s2) 2px; font-size: .72rem; color: var(--muted); font-weight: 600; }
+.menu-sep:empty { padding: 0; margin: 4px 0; }
+
+/* ── אזור הפיתוח ── */
+.seg-tabs a { flex: 1 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--tap);
+  padding: 0 var(--s3); border-bottom: 3px solid transparent; color: var(--muted); font-weight: 600; white-space: nowrap; text-decoration: none; }
+.seg-tabs a.on { color: var(--brand); border-bottom-color: var(--brand); }
+@media (max-width: 599px) { .seg-tabs a { padding: 0 var(--s1); font-size: .85rem; } }
+.dev-body { display: grid; gap: var(--s3); }
+.items .item { width: 100%; }
+.items .item > summary { list-style: none; cursor: pointer; }
+.items .item > summary::-webkit-details-marker { display: none; }
+.item-body { padding: 0 var(--s3) var(--s3); display: grid; gap: var(--s2); font-size: .9rem; }
+.item-body p { margin: 0; }
+.questions { background: color-mix(in srgb, var(--danger) 8%, var(--surface)); border-radius: 8px; padding: var(--s2) var(--s3); }
+.questions ul { margin: 4px 0 0; padding-inline-start: 18px; }
+.log-table td { vertical-align: top; }
+.log-table td.wrap { white-space: normal; min-width: 220px; max-width: 480px; word-break: break-word; }
+.log-table tr.err td { background: color-mix(in srgb, var(--danger) 9%, transparent); }
+.log-table tr.warn td { background: color-mix(in srgb, var(--star) 9%, transparent); }

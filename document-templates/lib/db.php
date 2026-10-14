@@ -252,6 +252,8 @@ function db_migrate(PDO $pdo): void
 
     // חיבורים: מקורות נתונים, מפתחות API (lib/integrations.php)
     if (function_exists('integrations_migrate')) integrations_migrate($pdo);
+    // אזור הפיתוח: לוג מעקב מורחב, יומן ביקורת של פעולות מפתח (lib/devzone.php)
+    if (function_exists('devzone_migrate')) devzone_migrate($pdo);
 
     // היומן: אי אפשר לשנות או למחוק רשומה — גם לא בטעות בקוד עתידי.
     $pdo->exec(<<<'SQL'
