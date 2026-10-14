@@ -17,7 +17,11 @@ async function init() {
     if (!lang) api('lang', { body: { lang: I18n.lang() } }).catch(() => {});
     else if (lang !== I18n.lang() && I18n.LANGS[lang] && canStore()) { I18n.set(lang); return; }
     $$('.dev-only').forEach(el => { el.hidden = !isDev(); });
-    DevTasks.mount(); // 🐞 בכותרת — למפתח: דיווח מכל מסך, ומונה המטלות שממתינות לו (devtasks.js)
+    // DevLoop (המודול המשותף, devloop.js): 🐞 בכותרת — למפתח: דיווח מכל מסך, ומונה המטלות שממתינות לו
+    DevLoop.setup({ api, toast, isDev, appName: 'מנהל הפרויקטים', // i18n-none tasksHref: '#/settings/tasks', mountBefore: '#me-btn',
+        headers: () => ({ 'X-CSRF': state.user?.csrf || '', 'X-Lang': I18n.lang() }), lang: () => I18n.lang(),
+        version: () => '0.' + ((document.querySelector('script[src*="core.js"]')?.src.match(/v=(\d+)/) || [])[1] || ''), trace: () => PMTrace });
+    DevLoop.mount();
     bindMe();
     $('#me-dev').addEventListener('click', () => { Dev.set(!Dev.on()); Me.close(); toast(Dev.on() ? t('סמכות מפתח פעילה — אפשר למחוק הכול ולערוך גם נעול') : t('סמכות מפתח כבויה')); });
     $('#dev-off').addEventListener('click', () => Dev.set(false));

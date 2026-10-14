@@ -125,7 +125,7 @@ const Settings = (() => {
         if (pane === 'templates') renderTemplates();
         if (pane === 'access') loadAccess();
         if (pane === 'log') { loadLog(); loadToken(); }
-        if (pane === 'tasks') DevTasks.show($('#set-tasks')); // מטלות ושיח עם Claude (devtasks.js)
+        if (pane === 'tasks') DevLoop.show($('#set-tasks')); // מטלות ושיח עם Claude (DevLoop — devloop.js)
     }
 
     // ---- נוסחי הודעות (שלב 11) ----

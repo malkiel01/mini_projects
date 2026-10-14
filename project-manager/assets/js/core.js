@@ -2,7 +2,7 @@
 // הזהות מהפלטפורמה; אסימון ה-CSRF מגיע מ-api.php?action=me.
 'use strict';
 
-// ---- עקבות לדיווח 🐞 (devtasks.js): הבקשות והשגיאות האחרונות, בזיכרון בלבד ----
+// ---- עקבות לדיווח 🐞 (DevLoop, devloop.js): הבקשות והשגיאות האחרונות, בזיכרון בלבד ----
 const PMTrace = { requests: [], errors: [], push(list, x, max = 15) { list.push(x); if (list.length > max) list.shift(); } };
 
 // ---- שגיאות בדפדפן נשלחות ליומן (הגדרות ← יומן) ----

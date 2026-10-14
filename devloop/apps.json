@@ -1,0 +1,7 @@
+{
+  "project-manager": {
+    "php": "lib/devloop.php",
+    "js": "assets/js/devloop.js",
+    "css": "assets/css/devloop.css"
+  }
+}

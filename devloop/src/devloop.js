@@ -1,11 +1,22 @@
-// אזור הפיתוח ← 📋 מטלות (DevLoop, שלב 1): קוד לכל מטלה (PM-001), סוג ועדיפות, "איך יודעים שזה עובד" וצעדי
-// בדיקה, ראיות (PR, פריסה, גרסה), שיח עם צילומים, ו"ממתין לאימות שלך" — ✅ עובד אצלי / ↩️ לא עובד.
-// ו-🐞 דיווח מכל מסך: מה קרה + צילום, וההקשר נאסף לבד (מסך, גרסה, בקשות ושגיאות אחרונות — PMTrace ב-core.js).
-// רק למפתח, בעברית. השרת: lib/devtasks.php; README: "מטלות ושיח".
+// DevLoop — מטלות, שיח, אימות, ראיות, ⚠️ לבירור ו-🐞 דיווח מכל מסך. מודול משותף לכל האפליקציות בריפו.
+// ⚠️ קובץ מסונכרן — לא עורכים אותו בתוך אפליקציה. המקור: devloop/src/devloop.js; אחר כך php devloop/tools/sync.php.
+// האפליקציה: DevLoop.setup({...}), DevLoop.mount() בכותרת, DevLoop.show(el) במסך המטלות. השרת: devloop.php.
 'use strict';
 
 // i18n-none-start — אזור הפיתוח: למפתח בלבד, בעברית
-const DevTasks = (() => {
+const DevLoop = (() => {
+    // החיבור לאפליקציה — DevLoop.setup({...}); ברירות המחדל: הפונקציות הגלובליות של האפליקציה, אם יש
+    const H = {
+        // api ו-isDev — חובה מהאפליקציה (DevLoop.setup); api(action, {body, params}) מחזיר את ה-JSON או זורק Error
+        api: () => Promise.reject(new Error('DevLoop.setup: חסר api')), toast: m => alert(m), isDev: () => false,
+        endpoint: 'api.php', appName: 'האפליקציה', tasksHref: '', mountBefore: '#me-btn',
+        headers: () => ({}), lang: () => document.documentElement.lang || 'he', version: () => '',
+        trace: () => ({ requests: [], errors: [] }),
+    };
+    const $ = (sel, root = document) => root.querySelector(sel);
+    const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+    const api = (...a) => H.api(...a), toast = (...a) => H.toast(...a);
+
     const STATUS = {
         triage: ['לבירור', 'warn', '⚠️'], verify: ['ממתין לאימות שלך', 'bad', '🧪'], question: ['שאלה אליך', 'bad', '❓'], in_progress: ['בעבודה', 'info', '🔵'],
         open: ['פתוח', 'warn', '🟡'], closed: ['סגור', 'ok', '✅'],
@@ -14,7 +25,7 @@ const DevTasks = (() => {
     const PRIO = { high: ['🔺', 'דחוף'], normal: ['', 'רגיל'], low: ['▽', 'נמוך'] };
     const EV = { pr: '🔀 PR', commit: '📌 commit', deploy: '🚀 פריסה', version: '🏷️ גרסה', test: '🧪 בדיקה', note: '📝' };
     const dayTime = iso => iso ? new Date(iso).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-    const fileUrl = (id, dl) => `api.php?action=dev-file&id=${id}${dl ? '&download=1' : ''}`;
+    const fileUrl = (id, dl) => `${H.endpoint}?action=dev-file&id=${id}${dl ? '&download=1' : ''}`;
     // "לבירור" (שגיאה שנפתחה לבד) — לא נספרת כפתוחה ולא כממתינה לך עד שמחליטים: 👍 לטפל / 🙈 להתעלם
     const live = x => x.status !== 'closed' && x.status !== 'triage';
     const needsYou = x => x.status === 'verify' || x.status === 'question' || (x.waiting === 'user' && live(x));
@@ -24,7 +35,7 @@ const DevTasks = (() => {
     function chatText() {
         const waiting = list.filter(x => x.waiting === 'claude');
         const pick = waiting.length ? waiting : list.filter(live);
-        const head = waiting.length ? 'הערות שלי על מטלות במנהל הפרויקטים — ממתינות לתשובה:' : 'המטלות הפתוחות במנהל הפרויקטים:';
+        const head = waiting.length ? `הערות שלי על מטלות ב${H.appName} — ממתינות לתשובה:` : `המטלות הפתוחות ב${H.appName}:`;
         return [head, ...pick.map(x => {
             const [label] = STATUS[x.status] || [x.status];
             const thread = x.comments.map(c => `  ${c.author === 'claude' ? 'Claude' : 'אני'} (${dayTime(c.at)}): ${c.body}`);
@@ -195,8 +206,8 @@ const DevTasks = (() => {
         for (const f0 of files) {
             const f = await shrink(f0);
             const qs = new URLSearchParams({ action: 'dev-attach', code, name: f.name, comment_id: String(commentId || '') });
-            const res = await fetch('api.php?' + qs, { method: 'POST', credentials: 'same-origin', body: f,
-                headers: { 'X-CSRF': state.user?.csrf || '', 'X-Lang': I18n.lang(), Accept: 'application/json', 'Content-Type': f.type || 'application/octet-stream' } });
+            const res = await fetch(H.endpoint + '?' + qs, { method: 'POST', credentials: 'same-origin', body: f,
+                headers: { ...H.headers(), Accept: 'application/json', 'Content-Type': f.type || 'application/octet-stream' } });
             if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `תקלה (${res.status})`);
         }
     }
@@ -303,9 +314,9 @@ const DevTasks = (() => {
 
     /** ההקשר של המסך הנוכחי — בלי תוכן של משתמשים: כתובת, מסך, גרסה, בקשות (פעולה, קוד, זמן, מזהה) ושגיאות. */
     function snapshot() {
-        const v = (document.querySelector('script[src*="core.js"]')?.src.match(/v=(\d+)/) || [])[1] || '';
-        return { url: location.hash || '#/', screen: `${innerWidth}×${innerHeight}`, ua: navigator.userAgent, version: '0.' + v, lang: I18n.lang(),
-            requests: PMTrace.requests.slice(-12), errors: PMTrace.errors.slice(-8), at: new Date().toISOString() };
+        const tr = H.trace();
+        return { url: location.hash || '#/', screen: `${innerWidth}×${innerHeight}`, ua: navigator.userAgent, version: H.version(), lang: H.lang(),
+            requests: (tr.requests || []).slice(-12), errors: (tr.errors || []).slice(-8), at: new Date().toISOString() };
     }
 
     /** 🐞 דיווח — מכל מסך (הכפתור בכותרת) או מכאן. */
@@ -320,7 +331,7 @@ const DevTasks = (() => {
             <label class="btn ghost upload-btn">📷 צילום מסך / קובץ<input type="file" name="files" accept="image/*,application/pdf" multiple hidden></label>
             <p class="hint dt-files-n"></p>
             <p class="hint">📎 נאסף לבד: המסך (<code dir="ltr">${esc(ctx.url)}</code>), גרסה ${esc(ctx.version)}, ${ctx.requests.length} בקשות אחרונות${bad ? ` (${bad} נכשלו)` : ''}, ${ctx.errors.length} שגיאות, והמכשיר. בלי תוכן של לקוחות.</p>
-            ${$('#dev-bug-n') && !$('#dev-bug-n').hidden ? `<p class="hint"><a href="#/settings/tasks" data-go-tasks>📋 ${esc($('#dev-bug-n').textContent)} מטלות ממתינות לך</a></p>` : ''}`,
+            ${$('#dev-bug-n') && !$('#dev-bug-n').hidden ? `<p class="hint"><a href="${esc(H.tasksHref)}" data-go-tasks>📋 ${esc($('#dev-bug-n').textContent)} מטלות ממתינות לך</a></p>` : ''}`,
             'שליחה', async d => {
                 const el = d.querySelector('form').elements;
                 if (!el.title.value.trim()) { d.fail('מה קרה — שדה חובה'); return; }
@@ -347,13 +358,13 @@ const DevTasks = (() => {
     }
 
     async function tokens() {
-        const origin = location.href.split('#')[0].replace(/[^/]*$/, '') + 'api.php';
+        const origin = new URL(H.endpoint, location.href).href;
         const dlg = sheet('🔑 גישה ל-Claude', `<p class="hint">אסימון אישי שנותנים ל-Claude פעם אחת (בצ'אט, או כסוד בהגדרות הסביבה שלו).
             איתו הוא קורא את המטלות, ההערות והצילומים, עונה בשיח ומצרף ראיות — ולא שום דבר אחר במערכת. כשאומרים לו "תקרא את המטלות" — הוא קורא.</p>
             <div class="dt-new-token"></div><div class="dt-tokens"></div>`, '+ אסימון חדש', async d => {
             try {
                 const r = await api('dev-token-create', { body: { label: 'Claude' } });
-                const say = `האסימון לקריאת המטלות של מנהל הפרויקטים: ${r.token}\nהכתובת: ${origin}?action=devapi-feed (בכותרת X-Dev-Token)`;
+                const say = `האסימון לקריאת המטלות של ${H.appName}: ${r.token}\nהכתובת: ${origin}?action=devapi-feed (בכותרת X-Dev-Token)`;
                 d.querySelector('.dt-new-token').innerHTML = `<p class="dt-ok">✓ נוצר. העתיקו עכשיו — הוא לא יוצג שוב.</p>
                     <code class="dt-secret" dir="ltr">${esc(r.token)}</code><code class="dt-secret" dir="ltr">${esc(origin)}?action=devapi-feed</code>
                     <button type="button" class="btn ghost sm" data-copy>העתקה (שניהם יחד)</button>`;
@@ -381,7 +392,7 @@ const DevTasks = (() => {
 
     /** כפתור 🐞 בכותרת — למפתח: דיווח מכל מסך, ועליו כמה מטלות ממתינות לו. */
     function mount() {
-        if (!isDev() || $('#dev-bug')) return;
+        if (!H.isDev() || $('#dev-bug')) return;
         const b = document.createElement('button');
         b.type = 'button';
         b.id = 'dev-bug';
@@ -389,10 +400,13 @@ const DevTasks = (() => {
         b.setAttribute('aria-label', '🐞 דיווח, ומטלות שממתינות לך');
         b.innerHTML = '🐞<span class="dev-bug-n" id="dev-bug-n" hidden></span>';
         b.onclick = report;
-        $('#me-btn')?.before(b);
+        $(H.mountBefore)?.before(b);
         load();
     }
 
-    return { show, mount, report };
+    /** האפליקציה מחברת: api, toast, isDev, endpoint, appName, tasksHref, mountBefore, headers, lang, version, trace. */
+    function setup(cfg) { Object.assign(H, cfg); }
+
+    return { setup, show, mount, report };
 })();
 // i18n-none-end
