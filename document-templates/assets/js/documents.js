@@ -46,7 +46,7 @@
     const msg = el('div');
     const count = el('span', { class: 'muted small' });
     const f = {
-      q: el('input', { type: 'search', placeholder: 'חיפוש: מספר, כותרת, ערך בשדה, איש קשר, תגית…', class: 'search' }),
+      q: el('input', { type: 'search', placeholder: 'חיפוש: מספר, כותרת, ערך, איש קשר', class: 'search', 'aria-label': 'חיפוש מסמכים' }),
       template_id: el('select', {}, el('option', { value: '' }, 'כל התבניות')),
       status: el('select', {}, el('option', { value: '' }, 'כל המצבים'),
         ['draft', 'sent', 'in_progress', 'completed'].map(s => el('option', { value: s }, STATUS[s][0]))),
@@ -89,29 +89,52 @@
       fillViews();
     });
 
+    const ICON = { draft: '📝', sent: '📨', in_progress: '✏️', completed: '✅' };
     function render(docs) {
       count.textContent = docs.length ? docs.length + ' מסמכים' : '';
+      const n = Object.keys(current()).filter(k => k !== 'q').length;
+      filterBtn.replaceChildren('⚙️', n ? el('span', { class: 'badge-n' }, String(n)) : '');
       if (!docs.length) {
-        box.replaceChildren(el('p', { class: 'muted' }, Object.keys(current()).length ? 'אין מסמכים שמתאימים לסינון.'
-          : 'עוד לא הונפקו מסמכים. ב"התבניות שלי" לוחצים "הנפקת מסמך" ליד תבנית.'));
+        box.replaceChildren(el('p', { class: 'empty' }, Object.keys(current()).length ? 'אין מסמכים שמתאימים לסינון.'
+          : 'עוד לא הונפקו מסמכים. ב"תבניות" לוחצים "+ מסמך" ליד תבנית.'));
         return;
       }
-      box.replaceChildren(el('div', { class: 'table-wrap' }, el('table', { class: 'docs' },
-        el('thead', {}, el('tr', {}, ['מספר', 'כותרת', 'איש קשר', 'תבנית', 'מצב', 'שדות חובה', 'נוצר'].map(h => el('th', {}, h)))),
-        el('tbody', {}, docs.map(d => {
-          const [label, kind] = STATUS[d.status] || [d.status, ''];
-          return el('tr', { class: 'clickable' + (d.archived ? ' archived' : ''), onclick: () => { location.hash = 'doc=' + d.id; } },
-            el('td', { dir: 'ltr', 'data-label': 'מספר' }, el('a', { href: '#doc=' + d.id }, d.number || '—')),
-            el('td', { 'data-label': 'כותרת' }, d.title,
-              d.owner_name ? el('span', { class: 'shared-tag small' }, ` 👥 של ${d.owner_name}`) : null,
+      box.replaceChildren(el('ul', { class: 'list docs' }, docs.map(d => {
+        const [label, kind] = STATUS[d.status] || [d.status, ''];
+        const sub = [d.template, d.contact, d.owner_name ? 'של ' + d.owner_name : null, fmtDate(d.created_at)].filter(Boolean).join(' · ');
+        return el('li', { class: d.archived ? 'archived' : '' },
+          el('a', { class: 'use-row', href: '#doc=' + d.id },
+            el('span', { class: 'use-ic', 'aria-hidden': 'true' }, ICON[d.status] || '📄'),
+            el('span', { class: 'use-tx' },
+              el('span', { class: 'l1' }, el('b', { class: 'doc-title' }, d.title), el('span', { class: 't', dir: 'ltr' }, d.number || '')),
+              el('small', {}, sub),
+              d.required && d.status !== 'completed' ? el('span', { class: 'mini-track', title: `שדות חובה: ${d.filled} מתוך ${d.required}` },
+                el('span', { style: `width:${Math.round(d.filled / d.required * 100)}%` })) : null,
               window.DTCatalog.chips(d.tags)),
-            el('td', { 'data-label': 'איש קשר' }, d.contact || ''),
-            el('td', { class: 'muted', 'data-label': 'תבנית' }, d.template),
-            el('td', { 'data-label': 'מצב' }, el('span', { class: 'badge ' + kind }, label)),
-            el('td', { 'data-label': 'שדות חובה' }, d.required ? `${d.filled}/${d.required}` : '—'),
-            el('td', { class: 'small muted', 'data-label': 'נוצר' }, fmtDate(d.created_at)));
-        })))));
+            el('span', { class: 'badge ' + kind }, label)));
+      })));
     }
+
+    // סינון — בגיליון; בראש המסך רק חיפוש וכפתור
+    const filterBtn = el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'סינון', title: 'סינון', onclick: () => {
+      window.DT.sheet('סינון מסמכים', [
+        el('div', { class: 'fields' },
+          el('label', { class: 'f' }, el('span', {}, 'תבנית'), f.template_id),
+          el('label', { class: 'f' }, el('span', {}, 'מצב'), f.status),
+          el('label', { class: 'f' }, el('span', {}, 'תגית'), f.tag),
+          el('label', { class: 'f' }, el('span', {}, 'איש קשר'), f.contact_id),
+          el('label', { class: 'f' }, el('span', {}, 'של מי'), f.by)),
+        el('div', { class: 'fields two' },
+          el('label', { class: 'f' }, el('span', {}, 'מתאריך'), f.from),
+          el('label', { class: 'f' }, el('span', {}, 'עד תאריך'), f.to)),
+        el('label', { class: 'switch' }, f.archived, el('span', {}, 'כולל ארכיון')),
+        el('label', { class: 'f' }, el('span', {}, 'תצוגות שמורות'), views),
+        el('button', { type: 'button', class: 'ghost', onclick: () => {
+          for (const [k, n] of Object.entries(f)) { if (k === 'q') continue; if (n.type === 'checkbox') n.checked = false; else n.value = ''; }
+          load();
+        } }, 'ניקוי הסינון'),
+      ], { action: el('button', { type: 'button', class: 'primary small', onclick: (e) => e.target.closest('dialog').close() }, 'הצגה') });
+    } }, '⚙️');
 
     let seq = 0;
     async function load() {
@@ -144,12 +167,9 @@
     for (const [k, n] of Object.entries(f)) if (k !== 'q') n.addEventListener('change', load);
     fillViews();
     window.DT.setTab('docs');
-    show(el('section', { class: 'card' },
-      el('div', { class: 'row' }, el('h1', {}, 'מסמכים'), count),
-      el('div', { class: 'filters' }, f.q, views),
-      el('div', { class: 'filters' }, f.template_id, f.status, f.tag, f.contact_id, f.by,
-        el('label', { class: 'inline small muted' }, 'מ-', f.from), el('label', { class: 'inline small muted' }, 'עד', f.to),
-        el('label', { class: 'inline small muted' }, f.archived, ' כולל ארכיון')),
+    show(el('section', { class: 'screen' },
+      el('div', { class: 'toolbar' }, f.q, filterBtn),
+      el('p', { class: 'hint' }, count),
       msg, box));
     await load();
   }
@@ -231,37 +251,50 @@
     const msg = el('div');
     const body = el('div', { class: 'doc-body' });
     const journal = el('aside', { class: 'panel card journal', hidden: true });
-    const modeBtn = el('button', { class: 'small', onclick: () => { mode = mode === 'page' ? 'form' : 'page';
-      try { localStorage.setItem('dt-fill-mode', mode); } catch (e) {} renderBody(); } });
-    const completeBtn = el('button', { class: 'primary small', onclick: fill ? fillDone : complete }, fill ? 'סיימתי ✓' : 'סיום ונעילה');
-    const pdfBtn = el('button', { class: 'small', onclick: downloadPdf }, '⬇ הורדת PDF');
+    // תצוגה: על המסמך / טופס — בורר מקטעים בשורה אחת
+    const modeSeg = el('fieldset', { class: 'seg mode-seg', 'aria-label': 'תצוגת המילוי' },
+      el('label', {}, el('input', { type: 'radio', name: 'dt-mode', value: 'page' }), el('span', {}, '📄 על המסמך')),
+      el('label', {}, el('input', { type: 'radio', name: 'dt-mode', value: 'form' }), el('span', {}, '☰ טופס')));
+    modeSeg.addEventListener('change', (e) => {
+      mode = e.target.value;
+      try { localStorage.setItem('dt-fill-mode', mode); } catch (err) { /* אחסון חסום */ }
+      renderBody();
+    });
+    const completeBtn = el('button', { class: 'primary', onclick: fill ? fillDone : complete }, fill ? 'סיימתי ✓' : 'סיום ונעילה');
+    // פעולה מוכרת = אייקון (עם תווית לקורא מסך); הפעולה העיקרית — עם מילה
+    const ib = (icon, label, onclick) => el('button', { type: 'button', class: 'icon-btn', 'aria-label': label, title: label, onclick }, icon);
+    const pdfBtn = ib('⬇️', 'הורדת PDF', downloadPdf);
+    const track = el('span', { class: 'track', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': 100 }, el('span'));
     const people = el('aside', { class: 'panel card people', hidden: true });
     const meta = el('div', { class: 'doc-meta' });
     const side = (panel, other) => { panel.hidden = !panel.hidden; other.hidden = true; };
 
     show(
-      el('div', { class: 'editor-bar card' },
-        fill ? null : el('a', { href: '#docs', class: 'small' }, '→ מסמכים'),
-        el('strong', { dir: 'ltr', class: 'doc-number' }, doc.number || ''),
-        title, statusBadge, saveStatus),
+      // סיכום קודם: מספר, מצב, שמירה, כותרת, והתקדמות שדות החובה
+      el('div', { class: 'summary doc-head' },
+        el('div', { class: 'line' }, el('strong', { dir: 'ltr', class: 'doc-number' }, doc.number || ''), statusBadge,
+          el('span', { class: 'spacer' }), saveStatus),
+        title, track, progress),
       fill ? null : meta,
       !fill && doc.owner_name ? el('p', { class: 'notice' }, `👥 מסמך של ${doc.owner_name} — ההרשאה שלך: ${window.DT.LEVEL[doc.access]}.`) : null,
       fill && doc.me ? el('p', { class: 'notice' }, `שלום${doc.me.name ? ' ' + doc.me.name : ''} — ממלאים כאן את השדות של "${doc.me.role}". ` +
         'השדות שלך מסומנים במסגרת; את השאר רואים לקריאה בלבד.') : null,
-      el('div', { class: 'palette' },
-        modeBtn,
-        fill ? null : el('button', { class: 'small', onclick: () => { side(journal, people); renderJournal(); } }, '📜 יומן'),
-        fill || !(doc.participants || []).length || lvl() < 3 ? null
-          : el('button', { class: 'small', onclick: () => { side(people, journal); renderPeople(); } }, '👥 משתתפים'),
-        !fill && lvl() >= 4 ? el('button', { class: 'small', onclick: () => window.DT.shareDialog('document', id, doc.title, reload) }, '🔗 שיתוף') : null,
-        !fill && doc.access && doc.access !== 'owner' ? el('button', { class: 'small', onclick: () => window.DT.leave('document', id, doc.title) }, 'עזיבה') : null,
-        fill || isWord || isAuthored ? null : pdfBtn,
-        !fill && (isWord || isAuthored) ? el('button', { class: 'small', onclick: () => wordFile(false) }, '⬇ הורדת Word') : null,
-        (isWord || isAuthored) && !fill ? el('button', { class: 'small', onclick: () => wordFile(true) }, '👁 תצוגה מקדימה') : null,
-        isAuthored && !fill ? el('button', { class: 'small', onclick: printDoc }, '🖨 הדפסה / PDF') : null,
-        completeBtn, progress),
+      el('div', { class: 'toolbar doc-actions' },
+        modeSeg,
+        el('div', { class: 'icons' },
+          fill ? null : ib('📜', 'יומן', () => { side(journal, people); renderJournal(); }),
+          fill || !(doc.participants || []).length || lvl() < 3 ? null : ib('👥', 'משתתפים', () => { side(people, journal); renderPeople(); }),
+          !fill && lvl() >= 4 ? ib('🔗', 'שיתוף', () => window.DT.shareDialog('document', id, doc.title, reload)) : null,
+          !fill && doc.access && doc.access !== 'owner' ? ib('🚪', 'עזיבה', () => window.DT.leave('document', id, doc.title)) : null,
+          fill || isWord || isAuthored ? null : pdfBtn,
+          !fill && (isWord || isAuthored) ? ib('⬇️', 'הורדת Word', () => wordFile(false)) : null,
+          (isWord || isAuthored) && !fill ? ib('👁️', 'תצוגה מקדימה', () => wordFile(true)) : null,
+          isAuthored && !fill ? ib('🖨️', 'הדפסה / PDF', printDoc) : null),
+        completeBtn),
       msg,
       el('div', { class: 'editor' }, body, journal, people));
+
+    if (!fill) window.DT.setBack('docs');   // חזרה בכותרת — לרשימת המסמכים
 
     // שלב 8: איש קשר (רק לבעלים — הכרטיסים פרטיים) ותגיות (ממלא ומעלה, גם במסמך נעול).
     async function renderMeta() {
@@ -301,9 +334,13 @@
       statusBadge.className = 'badge ' + kind;
       title.disabled = fill || !editable();
       completeBtn.hidden = !editable() || (!fill && lvl() < 3);
-      modeBtn.textContent = mode === 'page' ? '☰ למילוי כטופס' : '📄 למילוי על המסמך';
-      modeBtn.hidden = isWord;
+      for (const r of modeSeg.querySelectorAll('input')) r.checked = r.value === mode;
+      modeSeg.hidden = isWord;
       const p = doc.progress;
+      const pct = p.required ? Math.round(p.filled / p.required * 100) : 100;
+      track.hidden = !p.required || doc.status === 'completed';
+      track.setAttribute('aria-valuenow', pct);
+      track.firstChild.style.width = Math.max(pct, 2) + '%';
       if (fill) {
         progress.textContent = doc.me.blocked || (doc.me.completed ? '✓ סיימת. תודה!'
           : p.missing.length ? 'נשארו שדות חובה: ' + p.missing.join(', ') : 'כל שדות החובה שלך מלאים');
@@ -424,7 +461,7 @@
         queue(f.key, rows.length ? JSON.stringify(rows) : '');
       };
       const rowEl = (r) => el('tr', {}, cols.map(c => {
-        if (c.type === 'calc') return el('td', { class: 'calc-cell' }, C.display(r[c.key] ?? '', c.format));
+        if (c.type === 'calc') return el('td', { class: 'calc-cell', 'data-label': c.label }, C.display(r[c.key] ?? '', c.format));
         const inp = el('input', { value: r[c.key] ?? '', disabled: ro, 'aria-label': c.label,
           inputmode: c.type === 'number' ? 'decimal' : null, dir: c.type === 'number' ? 'ltr' : null });
         inp.addEventListener('input', () => { r[c.key] = inp.value; commit(); });

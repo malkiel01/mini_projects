@@ -53,8 +53,49 @@
     clearInterval(devTimer);
     leaveGuard = null;
     document.body.classList.remove('wide');
+    backTo = null;
+    backBtn.hidden = true;
+    // מעבר מסך (גם "חזרה") סוגר גיליונות וחלונות פתוחים
+    for (const d of document.querySelectorAll('dialog[open]')) d.close();
     app.replaceChildren(...nodes.filter(n => n != null));
   }
+
+  // ── חזרה בתוך האפליקציה: למסך הקודם, עד הראשי — ובראשי אין חץ ──
+  const backBtn = document.getElementById('back');
+  let backTo = null;
+  let depth = 0;   // כמה מסכים עברנו בטעינה הזו — "חזרה" לא יוצאת מהאפליקציה
+  function setBack(hash) { backTo = hash; backBtn.hidden = false; }
+  backBtn.addEventListener('click', () => { if (depth > 1) history.back(); else location.hash = backTo || 'home'; });
+
+  // --vvh: הגובה הנראה בלי המקלדת — הגיליון מתקצר, והגוף נגלל
+  (() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const set = () => document.documentElement.style.setProperty('--vvh', Math.round(vv.height) + 'px');
+    vv.addEventListener('resize', set);
+    set();
+  })();
+
+  /**
+   * גיליון: חלון במחשב, מסך מלא בטלפון. כותרת עם ✕, ופעולה עיקרית בכותרת (לא חובה).
+   * מחזיר את ה-dialog; נמחק מהדף כשנסגר.
+   */
+  function sheet(title, body, opts = {}) {
+    const dlg = el('dialog', { class: 'sheet', 'aria-label': title });
+    const head = el('header', { class: 'sheet-head' },
+      el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'סגירה', title: 'סגירה', onclick: () => dlg.close() }, '✕'),
+      el('h2', {}, title), opts.action || null);
+    dlg.append(head, el('div', { class: 'sheet-body' }, body));
+    dlg.addEventListener('close', () => { dlg.remove(); if (opts.onClose) opts.onClose(); });
+    document.body.append(dlg);
+    dlg.showModal();
+    return dlg;
+  }
+
+  /** אריח: בחירה בין פעולות. */
+  const tile = (icon, label, onclick, opts = {}) => el(opts.href ? 'a' : 'button',
+    { type: opts.href ? null : 'button', href: opts.href || null, class: 'tile' + (opts.danger ? ' danger' : ''), onclick },
+    el('span', { class: 'tile-ic', 'aria-hidden': 'true' }, icon), el('span', {}, label, opts.sub ? el('small', {}, opts.sub) : null));
 
   function notice(text, kind) {
     return el('p', { class: 'notice ' + (kind || '') }, text);
@@ -164,7 +205,10 @@
   // ── אחרי כניסה ─────────────────────────────────────────────
 
   function setTab(tab) {
-    for (const a of nav.querySelectorAll('[data-tab]')) a.classList.toggle('active', a.dataset.tab === tab);
+    for (const a of nav.querySelectorAll('[data-tab]')) {
+      a.classList.toggle('active', a.dataset.tab === tab);
+      if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    }
   }
 
   // רמות שיתוף (שלב 7). rank — להשוואה: מה מותר בכל רמה.
@@ -226,42 +270,62 @@
     catch (e) { alert(e.message); }
   }
 
-  const SOURCE = { pdf_locked: '🔒 PDF נעול', image: '🖼️ תמונה', docx: '📝 Word', pdf_parsed: '🔍 PDF מפורק', authored: '✍️ נכתב כאן' };
+  const SOURCE = { pdf_locked: 'PDF נעול', image: 'תמונה', docx: 'Word', pdf_parsed: 'PDF מפורק', authored: 'נכתב כאן' };
+  const SOURCE_IC = { pdf_locked: '📄', image: '🖼️', docx: '📝', pdf_parsed: '🔍', authored: '✍️' };
 
   async function viewHome() {
     setTab('home');
-    const list = el('div', { class: 'tpl-grid' }, el('p', { class: 'muted' }, 'טוען…'));
+    const list = el('div', {}, el('p', { class: 'empty' }, 'טוען…'));
     const msg = el('div');
+    const q = el('input', { type: 'search', placeholder: 'חיפוש תבנית', 'aria-label': 'חיפוש תבנית' });
     const showArchived = el('input', { type: 'checkbox' });
     const tagSel = el('select', { 'aria-label': 'סינון לפי תגית' }, el('option', { value: '' }, 'כל התגיות'));
-    tagSel.addEventListener('change', () => render());
+    const archLabel = el('label', { class: 'switch small' }, showArchived, el('span', {}, 'כולל ארכיון'));
+    const filters = el('div', { class: 'toolbar' }, tagSel, archLabel);
+    const summary = el('div', { class: 'summary', hidden: true });
     let all = [];
 
     function render() {
-      const items = all.filter(t => (showArchived.checked || !t.archived) && (!tagSel.value || (t.tags || []).includes(tagSel.value)));
+      const term = q.value.trim().toLowerCase();
+      const items = all.filter(t => (showArchived.checked || !t.archived) && (!tagSel.value || (t.tags || []).includes(tagSel.value))
+        && (!term || (t.name + ' ' + (t.tags || []).join(' ')).toLowerCase().includes(term)));
       if (!items.length) {
-        list.replaceChildren(el('p', { class: 'muted' }, all.length
-          ? 'כל התבניות בארכיון.'
-          : 'עוד אין תבניות. התחילו ב"תבנית חדשה" — מעלים PDF או תמונה, וממקמים עליהם שדות.'));
+        list.replaceChildren(el('p', { class: 'empty' }, all.length
+          ? (term || tagSel.value ? 'אין תבניות שמתאימות לחיפוש.' : 'כל התבניות בארכיון.')
+          : 'עוד אין תבניות. "+ תבנית חדשה" — מעלים PDF, Word או תמונה, או כותבים כאן.'));
         return;
       }
-      list.replaceChildren(...items.map(t => el('article', { class: 'tpl-card' + (t.archived ? ' archived' : '') },
-        el('a', { class: 'tpl-open', href: '#tpl=' + t.id },
-          el('strong', {}, t.name),
-          t.owner_name ? el('span', { class: 'shared-tag small' }, `👥 של ${t.owner_name} · ${LEVEL[t.access]}`) : null,
-          window.DTCatalog.chips(t.tags),
-          el('span', { class: 'muted small' }, `${SOURCE[t.source] || t.source} · ${t.pages} דפים · ${t.fields} שדות · גרסה ${t.version}`)),
-        el('div', { class: 'ops' },
-          t.archived || !t.fields || rank(t.access) < 2 ? null : el('button', { class: 'small primary', onclick: () => issue(t) }, 'הנפקת מסמך'),
-          el('a', { class: 'btn small', href: '#tpl=' + t.id }, rank(t.access) >= 3 ? 'עריכה' : 'צפייה'),
-          t.used ? el('a', { class: 'btn small', href: '#docs?template=' + t.id }, 'מסמכים') : null,
-          rank(t.access) >= 4 ? el('button', { class: 'small', onclick: () => shareDialog('template', t.id, t.name, load) }, '🔗 שיתוף') : null,
-          rank(t.access) >= 4 ? el('button', { class: 'small', onclick: () => archive(t) }, t.archived ? 'שחזור' : 'ארכיון') : null,
-          t.used || t.access !== 'owner' ? null : el('button', { class: 'small danger', onclick: () => remove(t) }, 'מחיקה'),
-          t.access === 'owner' ? null : el('button', { class: 'small', onclick: () => leave('template', t.id, t.name, load) }, 'עזיבה')))));
+      list.replaceChildren(el('ul', { class: 'list' }, items.map(t => {
+        const sub = [SOURCE[t.source] || t.source, t.fields + ' שדות', 'גרסה ' + t.version,
+          t.owner_name ? `של ${t.owner_name} · ${LEVEL[t.access]}` : null].filter(Boolean).join(' · ');
+        const canIssue = !t.archived && t.fields && rank(t.access) >= 2;
+        return el('li', { class: 'tpl-card' + (t.archived ? ' archived' : '') },
+          el('a', { class: 'use-row tpl-open', href: '#tpl=' + t.id, title: rank(t.access) >= 3 ? 'עריכת התבנית' : 'צפייה בתבנית' },
+            el('span', { class: 'use-ic', 'aria-hidden': 'true' }, SOURCE_IC[t.source] || '📄'),
+            el('span', { class: 'use-tx' }, el('strong', {}, t.name), el('small', {}, sub), window.DTCatalog.chips(t.tags))),
+          canIssue ? el('button', { class: 'small primary', 'aria-label': 'הנפקת מסמך', title: 'הנפקת מסמך מהתבנית',
+            onclick: () => issue(t) }, '+ מסמך') : null,
+          el('button', { class: 'icon-btn', 'aria-label': 'פעולות', title: 'פעולות', onclick: () => actions(t) }, '⋯'));
+      })));
     }
 
-    const usage = el('p', { class: 'muted small usage' });
+    /** פעולות על תבנית — אריחים בגיליון. */
+    function actions(t) {
+      const r = rank(t.access);
+      let dlg;
+      const go = (fn) => () => { dlg.close(); fn(); };
+      dlg = sheet(t.name, [
+        el('p', { class: 'hint' }, `${SOURCE[t.source] || t.source} · ${t.pages} דפים · ${t.fields} שדות · גרסה ${t.version}`),
+        el('div', { class: 'tiles' },
+          tile(r >= 3 ? '✏️' : '👁️', r >= 3 ? 'עריכה' : 'צפייה', go(() => { location.hash = 'tpl=' + t.id; })),
+          t.used ? tile('🗂️', 'מסמכים', go(() => { location.hash = 'docs?template=' + t.id; })) : null,
+          r >= 4 ? tile('🔗', 'שיתוף', go(() => shareDialog('template', t.id, t.name, load))) : null,
+          r >= 4 ? tile(t.archived ? '♻️' : '🗄️', t.archived ? 'שחזור' : 'ארכיון', go(() => archive(t))) : null,
+          t.used || t.access !== 'owner' ? null : tile('🗑️', 'מחיקה', go(() => remove(t)), { danger: true }),
+          t.access === 'owner' ? null : tile('🚪', 'עזיבה', go(() => leave('template', t.id, t.name, load)), { danger: true })),
+      ]);
+    }
+
     async function load() {
       try {
         const r = await api('tpl_list');
@@ -270,10 +334,20 @@
         const cur = tagSel.value;
         tagSel.replaceChildren(el('option', { value: '' }, 'כל התגיות'), ...tags.map(t => el('option', { value: t, selected: t === cur }, t)));
         tagSel.hidden = !tags.length;
+        archLabel.hidden = !all.some(t => t.archived);
+        filters.hidden = tagSel.hidden && archLabel.hidden;
         if (r.usage) {
-          const pct = Math.min(100, Math.round(r.usage.used_mb / r.usage.storage_mb * 100));
-          usage.replaceChildren(`נפח: ${r.usage.used_mb < 0.1 ? 'פחות מ-0.1' : r.usage.used_mb}MB מתוך ${r.usage.storage_mb}MB · קובץ עד ${r.usage.max_file_mb}MB `,
-            el('span', { class: 'meter' }, el('span', { style: `width:${pct}%`, class: pct > 90 ? 'full' : '' })));
+          const u = r.usage;
+          const pct = Math.min(100, Math.round(u.used_mb / u.storage_mb * 100));
+          const active = all.filter(t => !t.archived).length;
+          summary.hidden = false;
+          summary.replaceChildren(
+            el('div', { class: 'line' }, el('b', {}, String(active)), el('span', { class: 'muted' }, 'תבניות'),
+              el('span', { class: 'muted' }, '·'), el('span', { class: 'muted' }, 'נפח'),
+              el('b', { class: 'usage' }, (u.used_mb < 0.1 ? '<0.1' : u.used_mb) + 'MB'),
+              el('span', { class: 'muted' }, `מתוך ${u.storage_mb}MB`), el('span', { class: 'pct' }, pct + '%')),
+            el('span', { class: 'track', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': pct },
+              el('span', { style: `width:${Math.max(pct, 1)}%`, class: pct > 90 ? 'full' : '' })));
         }
         render();
       } catch (e) {
@@ -297,57 +371,69 @@
       catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
     }
 
-    const upload = el('form', { class: 'upload', hidden: true },
-      el('label', {}, el('span', {}, 'שם התבנית'), el('input', { name: 'name', required: true, maxlength: 120 })),
-      el('label', {}, el('span', {}, 'קובץ: PDF, Word (docx — שדות מסומנים {{כך}}) או תמונה'),
-        el('input', { name: 'file', type: 'file', required: true, accept: 'application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp' })),
+    /** תבנית חדשה: שם, ואז מקובץ (PDF / Word / תמונה) — או כותבים כאן. */
+    function newTemplate() {
+      const out = el('div');
+      const name = el('input', { name: 'name', required: true, maxlength: 120, placeholder: 'למשל: הסכם שכירות' });
+      const file = el('input', { name: 'file', type: 'file', class: 'visually-hidden',
+        accept: 'application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp' });
+      const chosen = el('p', { class: 'hint', hidden: true });
       // שלב 10: ב-PDF — לפרק (המערכת קוראת שדות וטקסט) או להשתמש כקובץ נעול.
-      el('fieldset', { class: 'pdf-mode', hidden: true },
-        el('legend', {}, 'PDF — מה לעשות איתו?'),
-        el('label', { class: 'inline' }, el('input', { type: 'radio', name: 'mode', value: 'parse', checked: true }),
-          ' 🔍 לפרק — המערכת מנסה לקרוא את שדות הטופס והטקסט, ומציעה מקומות מילוי'),
-        el('label', { class: 'inline' }, el('input', { type: 'radio', name: 'mode', value: 'locked' }),
-          ' 🔒 קובץ נעול — כמו תמונה; את השדות ממקמים לבד')),
-      el('div', { class: 'ops' },
-        el('button', { type: 'submit', class: 'primary' }, 'העלאה ופתיחה בעורך'),
-        // שלב 11: בלי קובץ — כותבים את המסמך בכלי עצמו
-        el('button', { type: 'button', class: 'authored-btn', onclick: async () => {
-          const name = upload.querySelector('[name=name]');
-          if (!name.value.trim()) { name.focus(); msg.replaceChildren(notice('קודם שם לתבנית', 'bad')); return; }
-          try { location.hash = 'tpl=' + (await api('tpl_create_authored', { name: name.value })).id; }
-          catch (err) { msg.replaceChildren(notice(err.message, 'bad')); }
-        } }, '✍️ או: לכתוב כאן, בלי קובץ'),
-        el('button', { type: 'button', onclick: () => { upload.hidden = true; } }, 'ביטול')));
-    upload.querySelector('[name=file]').addEventListener('change', (e) => {
-      const name = upload.querySelector('[name=name]');
-      const f = e.target.files[0];
-      if (f && !name.value) name.value = f.name.replace(/\.[^.]+$/, '');
-      upload.querySelector('.pdf-mode').hidden = !(f && (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)));
-    });
-    upload.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const btn = upload.querySelector('[type=submit]');
-      btn.disabled = true;
-      btn.textContent = 'מעלה…';
-      try {
-        const r = await api('tpl_create', new FormData(upload));
-        location.hash = 'tpl=' + r.id;
-      } catch (err) {
-        msg.replaceChildren(notice(err.message, 'bad'));
-        btn.disabled = false;
-        btn.textContent = 'העלאה ופתיחה בעורך';
-      }
-    });
+      const pdfMode = el('div', { class: 'pdf-mode f', hidden: true },
+        el('span', {}, 'PDF — מה לעשות איתו?'),
+        el('fieldset', { class: 'seg', 'aria-label': 'PDF — לפרק או נעול' },
+          el('label', {}, el('input', { type: 'radio', name: 'mode', value: 'parse', checked: true }), el('span', {}, '🔍 לפרק')),
+          el('label', {}, el('input', { type: 'radio', name: 'mode', value: 'locked' }), el('span', {}, '🔒 קובץ נעול'))),
+        el('small', { class: 'muted' }, 'לפרק — המערכת קוראת את שדות הטופס והטקסט ומציעה מקומות מילוי. נעול — כמו תמונה; את השדות ממקמים לבד.'));
+      const submit = el('button', { type: 'submit', class: 'primary', hidden: true }, 'העלאה ופתיחה בעורך');
+      const form = el('form', { class: 'upload-form', novalidate: true },
+        el('label', { class: 'f' }, el('span', {}, 'שם התבנית'), name),
+        el('div', { class: 'tiles' },
+          el('label', { class: 'tile' }, file, el('span', { class: 'tile-ic', 'aria-hidden': 'true' }, '📄'),
+            el('span', {}, 'מקובץ', el('small', {}, 'PDF, Word (שדות {{כך}}) או תמונה'))),
+          el('button', { type: 'button', class: 'tile authored-btn', onclick: async () => {
+            if (!name.value.trim()) { name.focus(); out.replaceChildren(notice('קודם שם לתבנית', 'bad')); return; }
+            try { const id = (await api('tpl_create_authored', { name: name.value })).id; dlg.close(); location.hash = 'tpl=' + id; }
+            catch (err) { out.replaceChildren(notice(err.message, 'bad')); }
+          } }, el('span', { class: 'tile-ic', 'aria-hidden': 'true' }, '✍️'), el('span', {}, 'לכתוב כאן, בלי קובץ', el('small', {}, 'כותרות, פסקאות, טבלה ושדות')))),
+        chosen, pdfMode, submit, out);
+      file.addEventListener('change', () => {
+        const f = file.files[0];
+        if (!f) return;
+        if (!name.value) name.value = f.name.replace(/\.[^.]+$/, '');
+        chosen.hidden = false;
+        chosen.textContent = '📎 ' + f.name;
+        pdfMode.hidden = !(f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
+        submit.hidden = false;
+      });
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!name.value.trim()) { name.focus(); out.replaceChildren(notice('קודם שם לתבנית', 'bad')); return; }
+        submit.disabled = true;
+        submit.textContent = 'מעלה…';
+        try {
+          const r = await api('tpl_create', new FormData(form));
+          dlg.close();
+          location.hash = 'tpl=' + r.id;
+        } catch (err) {
+          out.replaceChildren(notice(err.message, 'bad'));
+          submit.disabled = false;
+          submit.textContent = 'העלאה ופתיחה בעורך';
+        }
+      });
+      const dlg = sheet('תבנית חדשה', [el('p', { class: 'hint' }, 'מעלים קובץ קיים — או כותבים את המסמך כאן. התבניות שלך פרטיות ומוצפנות.'), form]);
+      name.focus();
+    }
+
+    q.addEventListener('input', render);
     showArchived.addEventListener('change', render);
 
-    show(el('section', { class: 'card' },
-      el('div', { class: 'row' },
-        el('h1', {}, 'התבניות שלי'),
-        el('button', { class: 'primary', onclick: () => { upload.hidden = false; upload.querySelector('[name=name]').focus(); } },
-          '+ תבנית חדשה')),
-      el('p', { class: 'muted small' }, 'רק אתה רואה את התבניות שלך — גם לא המפתח. הקבצים נשמרים מוצפנים.'),
-      upload, msg, list,
-      el('div', { class: 'filters' }, tagSel, el('label', { class: 'inline small muted' }, showArchived, ' להציג גם תבניות בארכיון')), usage));
+    show(el('section', { class: 'screen' },
+      summary,
+      el('div', { class: 'toolbar' }, q,
+        el('button', { class: 'primary', onclick: newTemplate }, '+ תבנית חדשה')),
+      filters, msg, list,
+      el('p', { class: 'hint' }, '🔒 רק אתה רואה את התבניות שלך — גם לא המפתח.')));
     await load();
   }
 
@@ -375,37 +461,59 @@
   async function viewDev() {
     setTab('dev');
     const msg = el('div');
-    const body = el('tbody');
-    const summary = el('p', { class: 'muted' });
+    const body = el('ul', { class: 'list' });
+    const summary = el('div', { class: 'summary' });
 
     async function load() {
       try {
         const r = await api('dev_users');
         const online = r.users.filter(u => u.online).length;
         const pending = r.users.filter(u => u.status === 'pending').length;
-        summary.textContent = `${r.users.length} חשבונות · ${online} מחוברים עכשיו · ${pending} ממתינים לאישור`;
+        summary.replaceChildren(el('div', { class: 'line' },
+          el('b', {}, String(r.users.length)), el('span', { class: 'muted' }, 'חשבונות ·'),
+          el('b', {}, String(online)), el('span', { class: 'muted' }, 'מחוברים'),
+          pending ? el('span', { class: 'badge warn' }, pending + ' ממתינים לאישור') : null));
         body.replaceChildren(...r.users.map(row));
       } catch (e) {
         msg.replaceChildren(notice(e.message, 'bad'));
       }
     }
 
+    // גוון קבוע לכל שם — לאווטאר
+    const hue = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+    const initials = (s) => s.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('');
+
     function row(u) {
       const [label, kind] = STATUS[u.status] || [u.status, ''];
       const ops = u.id === me.id ? [] : (OPS[u.status] || []);
-      return el('tr', {},
-        el('td', {}, el('span', { class: 'dot ' + (u.online ? 'on' : ''), title: u.online ? 'מחובר' : 'לא מחובר' }),
-          el('strong', {}, u.display_name), u.is_developer ? el('span', { class: 'tag' }, 'מפתח') : null,
-          el('div', { class: 'muted small', dir: 'ltr' }, u.email)),
-        el('td', { 'data-label': 'מצב' }, el('span', { class: 'badge ' + kind }, label)),
-        el('td', { class: 'small', 'data-label': 'נראה לאחרונה' }, fmtTime(u.last_seen_at),
-          el('div', { class: 'muted' }, u.devices ? u.devices + ' מכשירים' : 'אין חיבור פעיל')),
-        el('td', { class: 'small muted', 'data-label': 'נרשם' }, fmtTime(u.created_at)),
-        el('td', { class: 'small', 'data-label': 'נפח' }, u.quota
-          ? el('button', { class: 'link small', title: 'עריכת מכסות', onclick: () => quotaDialog(u) },
-              `${u.quota.used_mb}/${u.quota.storage_mb}MB`) : '—'),
-        el('td', { class: 'ops' }, ops.map(([op, text]) =>
-          el('button', { class: op === 'approve' ? 'primary small' : 'small', onclick: () => act(u, op) }, text))));
+      const pending = u.status === 'pending';
+      return el('li', {},
+        el('button', { type: 'button', class: 'use-row', onclick: () => userSheet(u, ops) },
+          el('span', { class: 'avatar', style: `--h:${hue(u.display_name)}`, 'aria-hidden': 'true' }, initials(u.display_name)),
+          el('span', { class: 'use-tx' },
+            el('span', { class: 'l1' }, el('b', {}, u.display_name), el('span', { class: 't' }, (u.online ? '🟢 ' : '') + fmtTime(u.last_seen_at))),
+            el('small', {}, el('bdi', {}, u.email), u.devices ? ` · ${u.devices} מכשירים` : '',
+              u.quota ? [' · ', el('bdi', {}, `${u.quota.used_mb}/${u.quota.storage_mb}MB`)] : '')),
+          u.is_developer ? el('span', { class: 'badge' }, 'מפתח') : el('span', { class: 'badge ' + kind }, label)),
+        pending && ops.length ? el('button', { class: 'small primary approve', onclick: () => act(u, 'approve') }, 'אישור') : null);
+    }
+
+    function userSheet(u, ops) {
+      const [label, kind] = STATUS[u.status] || [u.status, ''];
+      const ICON = { approve: '✅', reject: '🗑️', block: '⛔', unblock: '🔓', logout: '🔌', reset: '🔑' };
+      let dlg;
+      const go = (fn) => () => { dlg.close(); fn(); };
+      dlg = sheet(u.display_name, [
+        el('dl', { class: 'cells' },
+          el('div', {}, el('dt', {}, 'מצב'), el('dd', {}, el('span', { class: 'badge ' + kind }, label))),
+          el('div', {}, el('dt', {}, 'נראה לאחרונה'), el('dd', {}, fmtTime(u.last_seen_at))),
+          el('div', {}, el('dt', {}, 'נרשם'), el('dd', {}, fmtTime(u.created_at))),
+          el('div', {}, el('dt', {}, 'מכשירים'), el('dd', {}, String(u.devices || 0)))),
+        el('p', { class: 'hint', dir: 'ltr' }, u.email),
+        el('div', { class: 'tiles' },
+          ...ops.map(([op, text]) => tile(ICON[op] || '•', text, go(() => act(u, op)), { danger: ['reject', 'block'].includes(op) })),
+          u.quota ? tile('📦', 'מכסות', go(() => quotaDialog(u)), { sub: `${u.quota.used_mb}/${u.quota.storage_mb}MB` }) : null),
+      ]);
     }
 
     // מכסות לחשבון: נפח, גודל קובץ, ושירותים בתשלום (בינה מלאכותית, SMS) לעתיד.
@@ -453,13 +561,10 @@
       }
     }
 
-    show(el('section', { class: 'card' },
-      el('h1', {}, 'פיתוח — חשבונות'),
-      el('p', { class: 'muted small' }, 'כאן רואים חשבונות בלבד. תבניות ומסמכים של משתמשים אינם נגישים מכאן — לעולם.'),
-      summary, msg,
-      el('div', { class: 'table-wrap' }, el('table', {},
-        el('thead', {}, el('tr', {}, ['משתמש', 'מצב', 'נראה לאחרונה', 'נרשם', 'נפח', ''].map(h => el('th', {}, h)))),
-        body))));
+    show(el('section', { class: 'screen' },
+      summary,
+      el('p', { class: 'hint' }, '🔒 כאן רואים חשבונות בלבד. תבניות ומסמכים של משתמשים אינם נגישים מכאן — לעולם.'),
+      msg, body));
     await load();
     devTimer = setInterval(load, 30000);
   }
@@ -472,6 +577,7 @@
       return;
     }
     lastHash = location.hash;
+    depth++;
     const h = location.hash.slice(1);
     const key = h.split(/[=?]/)[0];
     const val = h.includes('=') ? h.slice(h.indexOf('=') + 1) : '';
@@ -499,6 +605,7 @@
       me = null;
     }
     nav.hidden = !me;
+    document.getElementById('logout').hidden = !me;
     document.getElementById('nav-dev').hidden = !(me && me.is_developer);
     document.getElementById('who').textContent = me ? me.name : '';
     if (me && /^(login|register|forgot)?$/.test(location.hash.slice(1))) location.hash = 'home';
@@ -515,7 +622,7 @@
 
   // לעורך (editor.js): אותם עזרים, אותה מעטפת.
   window.DT = {
-    api, el, notice, setTab, shareDialog, leave, rank, LEVEL,
+    api, el, notice, setTab, shareDialog, leave, rank, LEVEL, sheet, tile, setBack,
     show: (...n) => show(...n),
     setLeaveGuard: (fn) => { leaveGuard = fn; },
     wide: () => document.body.classList.add('wide'),

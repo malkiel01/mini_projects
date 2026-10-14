@@ -2,26 +2,25 @@
 <html lang="he" dir="rtl">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#2d4a8a">
   <title>תבניות מסמכים</title>
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/app.css">
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="#">
-      <img src="assets/icon.svg" alt="" width="32" height="32">
-      <span>תבניות מסמכים</span>
-    </a>
-    <nav id="nav" class="nav" hidden>
-      <a href="#home" data-tab="home">התבניות שלי</a>
-      <a href="#docs" data-tab="docs">מסמכים</a>
-      <a href="#contacts" data-tab="contacts">אנשי קשר</a>
-      <a href="#dev" data-tab="dev" id="nav-dev" hidden>פיתוח</a>
-      <span id="who" class="muted"></span>
-      <button id="logout" class="link">יציאה</button>
-    </nav>
+  <header class="top">
+    <button class="icon-btn" id="back" type="button" aria-label="חזרה" title="חזרה" hidden>→</button>
+    <img class="top-ic" src="assets/icon.svg" alt="" width="28" height="28">
+    <div class="titles"><h1>תבניות מסמכים</h1><div class="sub" id="who"></div></div>
+    <button class="icon-btn" id="logout" type="button" aria-label="יציאה" title="יציאה" hidden>⏻</button>
   </header>
+  <nav id="nav" class="tabs" aria-label="ניווט" hidden>
+    <a href="#home" data-tab="home">📄 תבניות</a>
+    <a href="#docs" data-tab="docs">🗂️ מסמכים</a>
+    <a href="#contacts" data-tab="contacts">👥 אנשי קשר</a>
+    <a href="#dev" data-tab="dev" id="nav-dev" hidden>⚙️ פיתוח</a>
+  </nav>
 
   <main id="app" class="shell" aria-live="polite">
     <p class="muted">טוען…</p>

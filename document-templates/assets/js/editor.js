@@ -172,14 +172,14 @@
     }
 
     show(
-      el('div', { class: 'editor-bar card' },
-        el('a', { href: '#home', class: 'small' }, '→ התבניות שלי'),
-        nameInput, status, saveBtn),
+      el('div', { class: 'editor-bar card' }, nameInput, status, saveBtn),
       tpl.owner_name ? el('p', { class: 'notice' }, `👥 תבנית של ${tpl.owner_name} — ההרשאה שלך: ${window.DT.LEVEL[tpl.access]}` +
         (readOnly ? '. צפייה בלבד.' : '.')) : null,
       palette, parseBox, msg,
       el('div', { class: 'editor' }, pagesBox, panel));
 
+    window.DT.setTab('home');
+    window.DT.setBack('home');   // חזרה בכותרת — לתבניות
     window.DT.setLeaveGuard(Object.assign(
       () => !dirty || confirm('יש שינויים שלא נשמרו. לצאת בלי לשמור?'),
       { dirty: () => dirty }));
