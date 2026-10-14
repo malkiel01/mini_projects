@@ -15,6 +15,7 @@ require_once __DIR__ . '/contacts.php';
 require_once __DIR__ . '/dev.php'; // סמכות מפתח (pm_dev_mode)
 require_once __DIR__ . '/units.php'; // מתחם ויחידות
 require_once __DIR__ . '/engage.php'; // התקשרות: ספק × מקצוע
+require_once __DIR__ . '/links.php';  // שיוך דו-צדדי: ספק ← מקצוע ושלב ← ספק, והסרת שיוך
 
 // התוויות בעברית — מתורגמות בתצוגה (pm_t_map ב-api.php, t() בדפדפן)
 // i18n-ok-start

@@ -1034,3 +1034,11 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .stage-engaged { display: grid; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
 .stage-engaged h3 { margin: 0; padding: 8px var(--s3); font-size: .85rem; background: var(--bg); }
 .stage-engaged .use-row + .use-row { border-top: 1px solid var(--line); }
+
+/* שיוך דו-צדדי (lib/links.php): שורת שיוך בחלון הקובץ — פתיחה, ו-✕ להסרה */
+.use-list .use-li { display: flex; align-items: center; }
+.use-li .use-row { flex: 1; min-inline-size: 0; }
+.use-li .use-x { flex: none; margin-inline-end: 4px; color: var(--muted); }
+.use-li .use-x:hover, .use-li .use-x:focus-visible { color: var(--danger); }
+.stage-files { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.report.flash { outline: 3px solid var(--brand); outline-offset: 2px; transition: outline-color .4s; }
