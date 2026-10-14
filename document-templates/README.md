@@ -472,8 +472,12 @@ dev_log            id, at, user_id, action, error_code, duration_ms   -- בלי 
 
 ```bash
 T=dtd_…   # האסימון
-U=https://mbe-plus.com/mini_projects/document-templates/api.php
+U=https://www.mbe-plus.com/mini_projects/document-templates/api.php   # www — ראו למטה
 curl -s -H "X-Dev-Token: $T" "$U?action=devapi-feed"           # מה שחדש · &all=1 הכול · &code=DT-012 · &mark=1
 curl -s -H "X-Dev-Token: $T" -H "Content-Type: application/json" \
      -d '{"code":"DT-012","body":"…","status":"verify","steps":["…"]}' "$U?action=devapi-comment"
 ```
+
+**האסימון בסביבת הענן — סוד רשת על `www.mbe-plus.com`.** הסוד מוצמד לבקשות לפי מארח, ו-`mbe-plus.com` כבר נושא
+את האסימון של מנהל הפרויקטים. שני סודות על אותו מארח — רק אחד נשלח. לכן לתבניות המסמכים מארח נפרד (`www`, אותו אתר):
+Allowed websites `www.mbe-plus.com`, כותרת `X-Dev-Token` בלי קידומת, הערך — `dtd_…`.
