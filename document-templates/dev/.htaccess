@@ -1,4 +1,4 @@
-# חסימת גישה ישירה: הרשימה מוצגת רק למפתח, דרך api.php (dev_items).
+# חסימת גישה ישירה: הרשימה מוצגת רק למפתח, דרך api.php (dev-items, DevLoop).
 <IfModule mod_authz_core.c>
     Require all denied
 </IfModule>

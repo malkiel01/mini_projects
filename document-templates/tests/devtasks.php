@@ -1,6 +1,7 @@
 <?php
 /**
- * בדיקות: מטלות — קוד לכל מטלה, שיח, ואסימון שדרכו Claude קורא ועונה.
+ * בדיקות: מטלות דרך המודול המשותף DevLoop — הקודים, השיח, האסימון (גם מלפני המודול), אימות וראיות,
+ * והסנכרון עם לוג המעקב: שגיאות שרת ודפדפן נפתחות לבד "⚠️ לבירור", והלוג מפנה למטלה.
  * הרצה: php document-templates/tests/devtasks.php
  */
 
@@ -26,93 +27,99 @@ function throws(string $name, callable $fn, int $status): void
     try { $fn(); check($name, false); }
     catch (ApiError $e) { check($name . " ({$e->getMessage()})", $e->status === $status); }
 }
+$mails = fn() => array_map(fn($l) => json_decode($l, true), array_filter(explode("\n", (string)@file_get_contents("$tmp/mail.log"))));
 
 $now = now_iso();
 db()->prepare("INSERT INTO users (email, password_hash, display_name, status, is_developer, created_at) VALUES ('dev@x.com', '!', 'המפתח', 'active', 1, ?)")->execute([$now]);
-db()->prepare("INSERT INTO users (email, password_hash, display_name, status, created_at) VALUES ('a@x.com', '!', 'אבי', 'active', ?)")->execute([$now]);
 $dev = db()->query('SELECT * FROM users WHERE id = 1')->fetch();
 
-// הקובץ: לכל פריט קוד ייחודי
-$file = dev_items_file()['items'];
+// ── הרשימה: הקובץ + המסך ──
+$file = devloop_items_file()['items'];
 $codes = array_column($file, 'code');
-check('לכל פריט בקובץ יש קוד', count($codes) === count($file) && !in_array('', $codes, true));
-check('הקודים ייחודיים ובמבנה DT-000', count(array_unique($codes)) === count($codes) && !array_filter($codes, fn($c) => !preg_match('/^DT-\d{3}$/', $c)));
-$max = max(array_map('dev_code_num', $codes));
+check('לכל פריט בקובץ קוד ייחודי DT-000', count(array_unique($codes)) === count($file) && !array_filter($codes, fn($c) => !preg_match('/^DT-\d{3}$/', $c)));
+$max = max(array_map('devloop_code_num', $codes));
+$openCode = array_values(array_filter($file, fn($x) => $x['status'] !== 'closed'))[0]['code'];
+$list = devloop_task_list()['items'];
+check('הרשימה: כל הקובץ, ממוין מהחדש', count($list) === count($file) && $list[0]['code'] === sprintf('DT-%03d', $max));
+$code = devloop_task_create($dev, ['title' => 'לבדוק ייצוא', 'kind' => 'bug', 'priority' => 'high'])['code'];
+check("מטלה מהמסך — הקוד הבא ($code)", $code === sprintf('DT-%03d', $max + 1) && devloop_task_get($code)['priority'] === 'high');
 
-// מטלה חדשה מהמסך
-throws('מטלה בלי כותרת', fn() => dev_task_create($dev, ['title' => ' ']), 422);
-$code = dev_task_create($dev, ['title' => 'לבדוק את הייצוא', 'area' => 'מסמכים'])['code'];
-check("מטלה מהמסך — מ-DT-501 ($code)", $code === 'DT-501');
-$code2 = dev_task_create($dev, ['title' => 'עוד אחת'])['code'];
-check('והבא אחריו', $code2 === 'DT-502');
-$list = dev_items()['items'];
-check('המטלות מהמסך ברשימה, הראשונות', $list[0]['code'] === $code2 && $list[1]['source'] === 'user');
+// ── אסימון מלפני המודול (טבלה בלי rate_*) ממשיך לעבוד ──
+$legacy = 'dtd_' . str_repeat('ab', 24);
+db()->prepare('INSERT INTO dev_tokens (token_hash, label, created_by, created_at) VALUES (?, ?, 1, ?)')->execute([token_hash($legacy), 'ישן', $now]);
+$_SERVER['HTTP_X_DEV_TOKEN'] = $legacy;
+$k = devloop_api_auth();
+check('אסימון dtd_ קיים — עובד', (int)$k['created_by'] === 1);
+$_SERVER['HTTP_X_DEV_TOKEN'] = 'pmd_' . str_repeat('ab', 24);
+throws('אסימון של אפליקציה אחרת (pmd_)', fn() => devloop_api_auth(), 401);
+$_SERVER['HTTP_X_DEV_TOKEN'] = $legacy;
 
-// שיח
-throws('הערה למטלה שלא קיימת', fn() => dev_comment($dev, ['code' => 'DT-999', 'body' => 'x']), 404);
-throws('הערה ריקה', fn() => dev_comment($dev, ['code' => $code, 'body' => '  ']), 422);
-$c1 = dev_comment($dev, ['code' => $codes[0], 'body' => "תסגור את זה\nבבקשה"])['id'];
-$x = dev_task_get($codes[0]);
-check('ההערה בשיח, וממתינה ל-Claude', count($x['comments']) === 1 && $x['waiting'] === 'claude' && $x['comments'][0]['name'] === 'המפתח');
+// ── שיח ──
+devloop_comment_add($openCode, 'user', 1, 'מה המצב?');
+$feed = devloop_api_feed($k, []);
+check('הפיד: רק מה שחדש', count($feed['items']) === 1 && $feed['items'][0]['code'] === $openCode && $feed['items'][0]['comments'][0]['new']);
+devloop_api_feed($k, ['mark' => 1]);
+$k = devloop_api_auth();
+check('אחרי סימון — אין חדש', count(devloop_api_feed($k, [])['items']) === 0);
 
-// מצב: במטלה מהמסך משתנה, במטלה מהקוד — לא
-dev_task_set($dev, ['code' => $code, 'status' => 'closed']);
-check('מטלה מהמסך נסגרה', dev_task_get($code)['status'] === 'closed');
-throws('מצב של מטלה מהקוד — רק בקוד', fn() => dev_task_set($dev, ['code' => $codes[0], 'status' => 'closed']), 409);
-throws('מצב לא מוכר', fn() => dev_task_set($dev, ['code' => $code, 'status' => 'gone']), 422);
+// ── מטלה מהקוד: Claude מעביר לאימות עם ראיות; המפתח מאמת ──
+$r = devloop_api_comment($k, ['code' => $openCode, 'body' => 'נפרס. איך בודקים: …', 'status' => 'verify',
+    'evidence' => [['kind' => 'pr', 'ref' => '#300', 'url' => 'https://github.com/x/y/pull/300']]]);
+$x = devloop_task_get($openCode);
+check('ממתינה לאימות, עם הראיה, והתור עבר למפתח', $x['status'] === 'verify' && $x['waiting'] === 'user'
+    && in_array('#300', array_column($x['evidence'], 'ref'), true));
+check('מייל למפתח: ממתינה לאימות', (bool)array_filter($mails(), fn($m) => str_contains($m['subject'], "🧪 {$openCode}") && str_contains($m['body'], '#dev?tab=items&code=' . $openCode)));
+throws('↩️ בלי לכתוב מה לא עובד', fn() => devloop_verify($dev, ['code' => $openCode, 'ok' => false]), 422);
+devloop_verify($dev, ['code' => $openCode, 'ok' => false, 'note' => 'הכפתור לא מגיב']);
+check('↩️ — חזרה לעבודה, ממתינה ל-Claude', devloop_task_get($openCode)['status'] === 'in_progress' && devloop_task_get($openCode)['waiting'] === 'claude');
+devloop_verify($dev, ['code' => $openCode, 'ok' => true]);
+check('✅ — נסגרה', devloop_task_get($openCode)['status'] === 'closed');
+$r = devloop_api_comment($k, ['code' => $openCode, 'status' => 'verify', 'by' => 'github']);
+check('פריסה לא פותחת מחדש מטלה שאומתה', $r['status_skipped'] === true && devloop_task_get($openCode)['status'] === 'closed');
 
-// אסימון
-$t = dev_token_create($dev, ['label' => 'Claude']);
-check('אסימון במבנה dtd_', (bool)preg_match('/^dtd_[0-9a-f]{48}$/', $t['token']));
-check('נשמר רק כגיבוב', !db()->query("SELECT COUNT(*) FROM dev_tokens WHERE token_hash = " . db()->quote($t['token']))->fetchColumn());
-$_SERVER['HTTP_X_DEV_TOKEN'] = '';
-throws('בלי אסימון', fn() => devapi_auth(), 401);
-$_SERVER['HTTP_X_DEV_TOKEN'] = 'dtd_' . str_repeat('0', 48);
-throws('אסימון שלא קיים', fn() => devapi_auth(), 401);
-$_SERVER['HTTP_X_DEV_TOKEN'] = $t['token'];
-$k = devapi_auth();
+// ── הלוג → "⚠️ לבירור" ──
+check('מזהה בקשה — 12 תווים, קבוע לבקשה', (bool)preg_match('/^[0-9a-f]{12}$/', dev_req_id()) && dev_req_id() === dev_req_id());
+devloop_errors_sync();   // פעם ראשונה: מתחילים מעכשיו
+$log = function (string $action, int $status, string $msg, string $req) {
+    dev_track(['id' => 1], $action, microtime(true), $status, null, ['message' => $msg,
+        'trace' => $action === 'client_error' ? 'editor.js:12:3' : null, 'page' => $action === 'client_error' ? '#tpl=4' : null]);
+    db()->prepare('UPDATE dev_log SET req = ? WHERE id = (SELECT MAX(id) FROM dev_log)')->execute([$req]);   // כאילו בקשות נפרדות
+    return (int)db()->query('SELECT MAX(id) FROM dev_log')->fetchColumn();
+};
+$GLOBALS['dt_tracked'] = false;
+$id1 = $log('doc_save', 500, 'Undefined index 17', 'aaaaaaaaaaa1');
+$id2 = $log('doc_save', 422, 'חסר שם', 'aaaaaaaaaaa2');                       // סירוב — לא באג
+$id3 = $log('client_error', 0, 'x is not a function', 'aaaaaaaaaaa3');
+$id4 = $log('doc_save', 500, 'Undefined index 99', 'aaaaaaaaaaa4');             // אותה שגיאה, מספר אחר
+$lv = array_column(dt_devloop_log_rows(['ids' => [$id1, $id2, $id3]]), null, 'id');
+check('רמות בלוג: 5xx ודפדפן = error, 4xx = warn', $lv[$id1]['level'] === 'error' && $lv[$id2]['level'] === 'warn' && $lv[$id3]['level'] === 'error'
+    && $lv[$id3]['category'] === 'client' && $lv[$id3]['data']['source'] === 'editor.js' && $lv[$id3]['data']['line'] === '12');
+$made = devloop_errors_sync();
+$tri = array_values(array_filter(devloop_task_list()['items'], fn($x) => $x['status'] === 'triage'));
+check("שגיאות שרת ודפדפן נפתחו לבירור — 2 ($made), לא ה-422", $made === 2 && count($tri) === 2);
+$srv = array_values(array_filter($tri, fn($x) => str_contains($x['title'], 'שרת')))[0];
+check('אותה שגיאה פעמיים — מטלה אחת, ×2, עם מזהה הבקשה', $srv['occurrences']['count'] === 2 && in_array($srv['context']['requests'][0]['id'], ['aaaaaaaaaaa1', 'aaaaaaaaaaa4'], true));
+$links = devloop_log_links([$id1, $id2, $id3, $id4]);
+check('מהלוג למטלה: שתי השורות של השגיאה → אותה מטלה; הסירוב — בלי', ($links['ids'][$id1] ?? '') === $srv['code'] && ($links['ids'][$id4] ?? '') === $srv['code']
+    && !isset($links['ids'][$id2]) && isset($links['ids'][$id3]));
+$il = devloop_item_log($srv['code']);
+check('מהמטלה ללוג (📜): שני המופעים', array_column($il['rows'], 'id') === [$id4, $id1]);
+check('הפיד של Claude למטלה כולל את הלוג', count(devloop_api_feed($k, ['code' => $srv['code']])['log']) === 2);
+check('חיפוש בלוג לפי מזהה בקשה', count(dev_log_list(['req' => 'aaaaaaaaaaa3'])['rows']) === 1 && dev_log_list(['req' => 'aaaaaaaaaaa3'])['rows'][0]['level'] === 'error');
+$id5 = $log('doc_get', 500, 'Division by zero', 'aaaaaaaaaaa5');
+$r = devloop_task_from_log($dev, ['log_id' => $id5]);
+check('"+ מטלה" משורה בלוג — נפתחת מטלה (פתוח)', $r['created'] && devloop_task_get($r['code'])['status'] === 'open');
+check('שוב מאותה חתימה — אותה מטלה', devloop_task_from_log($dev, ['log_id' => $id5])['code'] === $r['code'] && !devloop_task_from_log($dev, ['log_id' => $id5])['created']);
+devloop_task_set($dev, ['code' => $srv['code'], 'ignore' => true]);
+$log('doc_save', 500, 'Undefined index 5', 'aaaaaaaaaaa6');
+devloop_errors_sync();
+check('🙈 להתעלם — מופע חדש רק נספר', devloop_task_get($srv['code'])['status'] === 'closed' && devloop_task_get($srv['code'])['occurrences']['count'] === 3);
+dt_devloop_log_write('warn', 'auth', 'devapi.denied', ['message' => 'אסימון מטלות לא תקף']);
+$w = dt_devloop_log_rows(['limit' => 1])[0];
+check('רשומה מהמודול — בלוג, עם רמה ואירוע', $w['level'] === 'warn' && $w['event'] === 'devapi.denied' && $w['category'] === 'auth');
 
-$feed = devapi_feed($k, []);
-check('ברירת מחדל: רק מטלות עם הערה חדשה', count($feed['items']) === 1 && $feed['items'][0]['code'] === $codes[0] && $feed['items'][0]['comments'][0]['new']);
-check('הקוד הבא לקובץ — בטווח של הקובץ', $feed['next_code'] === sprintf('DT-%03d', $max + 1));
-check('all=1 — הכול', count(devapi_feed($k, ['all' => 1])['items']) === count($codes) + 2);
-check('code= — אחת', count(devapi_feed($k, ['code' => $code])['items']) === 1);
-devapi_feed($k, ['mark' => 1]);
-$k = devapi_auth();
-check('אחרי סימון — אין חדשות', count(devapi_feed($k, [])['items']) === 0);
-
-// Claude עונה
-devapi_comment($k, ['code' => $codes[0], 'body' => 'נסגר ב-PR הבא']);
-$x = dev_task_get($codes[0]);
-check('התשובה בשיח, והתור עבר למפתח', $x['comments'][1]['author'] === 'claude' && $x['comments'][1]['name'] === 'Claude' && $x['waiting'] === 'user');
-devapi_comment($k, ['code' => $code2, 'body' => 'בוצע', 'status' => 'closed']);
-check('Claude סוגר מטלה מהמסך', dev_task_get($code2)['status'] === 'closed');
-check('תשובה של Claude לא נחשבת "חדשה"', count(devapi_feed($k, [])['items']) === 0);
-
-// מחיקת הערה: רק שלי, ורק לפני תשובה
-throws('הערה שכבר נענתה', fn() => dev_comment_delete($dev, ['id' => $c1]), 409);
-$c2 = dev_comment($dev, ['code' => $code, 'body' => 'טעות'])['id'];
-throws('הערה של מישהו אחר', fn() => dev_comment_delete(['id' => 2], ['id' => $c2]), 404);
-dev_comment_delete($dev, ['id' => $c2]);
-check('נמחקה', !dev_task_get($code)['comments']);
-
-// ביטול, ומפתח שאיבד הרשאה
-dev_token_revoke($dev, ['id' => $t['id']]);
-throws('אסימון שבוטל', fn() => devapi_auth(), 401);
-$t2 = dev_token_create($dev, []);
-db()->exec('UPDATE users SET is_developer = 0 WHERE id = 1');
-$_SERVER['HTTP_X_DEV_TOKEN'] = $t2['token'];
-throws('מי שכבר לא מפתח', fn() => devapi_auth(), 401);
-
-// התנגשות ישנה (מלפני ההפרדה): מטלה מהמסך בקוד שגם בקובץ — שתיהן מוצגות
-db()->prepare("INSERT INTO dev_tasks (code, title, created_at, updated_at) VALUES (?, 'מהמסך', ?, ?)")->execute([$codes[0], $now, $now]);
-$same = array_filter(dev_items()['items'], fn($x) => $x['code'] === $codes[0]);
-check('התנגשות: אף אחת לא נעלמת', count($same) === 2);
-check('מטלה ישנה בטווח של הקובץ — הקוד הבא לקובץ מדלג עליה', dev_next_file_code() === sprintf('DT-%03d', $max + 1));
-db()->prepare("INSERT INTO dev_tasks (code, title, created_at, updated_at) VALUES (?, 'מהמסך', ?, ?)")->execute([sprintf('DT-%03d', $max + 1), $now, $now]);
-check('…וממשיך אחריה', dev_next_file_code() === sprintf('DT-%03d', $max + 2));
-
-foreach (array_merge(glob("$tmp/files/*") ?: [], array_filter(glob("$tmp/{,.}*", GLOB_BRACE) ?: [], 'is_file')) as $f) @unlink($f);
+foreach (array_merge(glob("$tmp/files/_dev/*") ?: [], glob("$tmp/files/*") ?: [], array_filter(glob("$tmp/{,.}*", GLOB_BRACE) ?: [], 'is_file')) as $f) @unlink($f);
+@rmdir("$tmp/files/_dev");
 @rmdir("$tmp/files");
 @rmdir($tmp);
 echo $fail ? "\n$fail נכשלו\n" : "\nהכול עבר\n";

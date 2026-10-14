@@ -1,268 +1,107 @@
 <?php
 /**
- * מטלות: לכל מטלה קוד (DT-001), ושיח — הערות של המפתח ותשובות של Claude.
+ * מטלות ושיח — אזור הפיתוח (📋 מטלות, רק למפתח). README: "מטלות ושיח (DevLoop)".
  *
- * שני מקורות שמתמזגים לרשימה אחת:
- *   dev/open-items.json — מה ש-Claude מנהל בקוד, עם כל שינוי שנכנס.
- *   הטבלה dev_tasks     — מטלה שהמפתח פתח מהמסך.
- * הקודים לא מתנגשים: בקובץ — עד DT-500; מהמסך — מ-DT-501 (Claude לא רואה את המסך כשהוא
- * מוסיף לקובץ). מטלה מהמסך ש-Claude העביר לקובץ — באותו קוד עם "moved": true, והקובץ גובר.
- * התנגשות בלי moved (מהימים שלפני ההפרדה) — מוצגות שתיהן; אף אחת לא נעלמת.
- *
- * Claude קורא את השיח בלי חיבור ישיר לחשבון: או שהמפתח מעתיק אותו לצ'אט
- * (כפתור "העתקה לצ'אט"), או באסימון אישי — devapi_feed / devapi_comment,
- * בכותרת X-Dev-Token. האסימון נשמר רק כגיבוב, ומוצג פעם אחת ביצירה.
+ * המנוע הוא המודול המשותף DevLoop (lib/devloop.php — עותק מסונכרן מ-devloop/src בשורש הריפו; לא עורכים כאן).
+ * כאן רק החיבור שלו לתבניות המסמכים: המסד, השגיאה, המשתמשים, המייל — ולוג המעקב (dev_log), שממנו
+ * שגיאות שרת (5xx) ושגיאות דפדפן נפתחות לבד כמטלות "⚠️ לבירור", ובחזרה: שורה בלוג מראה לאיזו מטלה היא שייכת.
  */
 
 declare(strict_types=1);
 
-const DEV_TOKEN_PREFIX = 'dtd_';
-const DEV_COMMENT_MAX = 4000;
-const DEV_TASK_STATUS = ['open', 'question', 'closed'];
-const DEV_USER_CODES = 500;   // מטלות מהמסך מתחילות מ-DT-501
+require_once __DIR__ . '/devloop.php';
 
+devloop_setup([
+    'db'           => fn() => db(),
+    'now'          => fn() => now_iso(),
+    'items_file'   => __DIR__ . '/../dev/open-items.json',
+    'data_dir'     => DT_DATA_DIR . '/files/_dev',      // צילומים בשיח — data/files מוחרג מ-rsync
+    'prefix'       => 'DT-',
+    'token_prefix' => 'dtd_',                            // האסימונים מלפני המודול ממשיכים לעבוד
+    'error'        => fn(string $msg, int $status, array $vars) => new ApiError(
+        strtr($msg, array_combine(array_map(fn($k) => '{' . $k . '}', array_keys($vars)), array_map('strval', $vars)) ?: []), $status),
+    'user_names'   => fn() => array_column(db()->query('SELECT id, display_name FROM users')->fetchAll(), 'display_name', 'id'),
+    'is_developer' => function (int $id): bool {
+        $st = db()->prepare("SELECT 1 FROM users WHERE id = ? AND status = 'active' AND is_developer = 1");
+        $st->execute([$id]);
+        return (bool)$st->fetchColumn();
+    },
+    // מייל למפתח: ממתינה לאימות, שאלה, Claude ענה, שגיאות חדשות לבירור
+    'notify'       => function (string $subject, string $body): void {
+        foreach (db()->query("SELECT email FROM users WHERE is_developer = 1 AND status = 'active'")->fetchAll(PDO::FETCH_COLUMN) as $to) {
+            send_mail($to, '[תבניות מסמכים] ' . $subject, $body);
+        }
+    },
+    'item_url'     => fn(string $code) => app_base_url() . '#dev?tab=items&code=' . rawurlencode($code),
+    // היומן של הכלי (לוג המעקב, dev_log, 30 יום) — במקום היומן המובנה של DevLoop. ממנו: "⚠️ לבירור" (שגיאת שרת
+    // 5xx ושגיאת דפדפן), העקבות של 🐞, "📜 יומן" בכל מטלה, ו-🔗 / "+ מטלה" בכל שורה בלוג
+    'log' => [
+        'rows'   => 'dt_devloop_log_rows',
+        'max_id' => fn() => (int)db()->query('SELECT COALESCE(MAX(id), 0) FROM dev_log')->fetchColumn(),
+        'write'  => 'dt_devloop_log_write',
+    ],
+]);
+
+/** הרמה של שורה בלוג — שורות ישנות בלי level: לפי התוצאה. */
+const DT_LOG_LEVEL = "COALESCE(l.level, CASE WHEN l.status >= 500 OR l.action = 'client_error' THEN 'error' WHEN l.status >= 400 THEN 'warn' ELSE 'info' END)";
+
+/** שורות מלוג המעקב, בחוזה של devloop_log_rows: after, before, level (error | warn ומעלה), ids, reqs, q, limit. */
+function dt_devloop_log_rows(array $q): array
+{
+    $w = ['1 = 1'];
+    $a = [];
+    if (!empty($q['after'])) { $w[] = 'l.id > ?'; $a[] = (int)$q['after']; }
+    if (!empty($q['before'])) { $w[] = 'l.id < ?'; $a[] = (int)$q['before']; }
+    if (($q['level'] ?? '') === 'error') $w[] = DT_LOG_LEVEL . " = 'error'";
+    elseif (($q['level'] ?? '') === 'warn') $w[] = DT_LOG_LEVEL . " IN ('warn', 'error')";
+    foreach (['ids' => 'l.id', 'reqs' => 'l.req'] as $k => $col) {
+        if (!array_key_exists($k, $q)) continue;
+        $vals = array_values(array_slice(array_filter((array)$q[$k], fn($v) => $v !== '' && $v !== null), 0, 200));
+        if (!$vals) return [];
+        $w[] = "$col IN (" . implode(',', array_fill(0, count($vals), '?')) . ')';
+        array_push($a, ...$vals);
+    }
+    if (!empty($q['q'])) { $w[] = '(l.action LIKE ? OR l.message LIKE ? OR l.trace LIKE ?)'; $x = '%' . strtr((string)$q['q'], ['%' => '', '_' => '']) . '%'; array_push($a, $x, $x, $x); }
+    $limit = max(1, min(500, (int)($q['limit'] ?? 100)));
+    $st = db()->prepare('SELECT l.*, ' . DT_LOG_LEVEL . ' AS lvl, u.display_name FROM dev_log l LEFT JOIN users u ON u.id = l.user_id
+        WHERE ' . implode(' AND ', $w) . ' ORDER BY l.id ' . (!empty($q['after']) ? 'ASC' : 'DESC') . " LIMIT $limit");
+    $st->execute($a);
+    return array_map('dt_log_row', $st->fetchAll());
+}
+
+/** שורת dev_log ← שורה של DevLoop: id, at, level, category, event, message, username, method, action, status, ms, req, ua, data. */
+function dt_log_row(array $r): array
+{
+    $js = $r['action'] === 'client_error';
+    $data = array_filter(['page' => $r['page'], 'trace' => $r['trace'] && !$js ? [$r['trace']] : null]);
+    if ($js && preg_match('/^(.*?):(\d+)(?::\d+)?$/', (string)$r['trace'], $m)) $data += ['source' => $m[1], 'line' => $m[2]];
+    elseif ($js && $r['trace']) $data['source'] = $r['trace'];
+    return ['id' => (int)$r['id'], 'at' => $r['at'], 'level' => $r['lvl'] ?? ($r['level'] ?? 'info'),
+        'category' => $r['category'] ?: ($js ? 'client' : 'api'), 'event' => $r['event'] ?: ($js ? 'client.error' : 'request'),
+        'message' => (string)$r['message'], 'username' => (string)($r['display_name'] ?? ''), 'method' => (string)$r['method'],
+        'action' => $js ? '' : (string)$r['action'], 'status' => (int)$r['status'], 'ms' => (int)$r['duration_ms'],
+        'req' => (string)($r['req'] ?? ''), 'ua' => (string)($r['ua'] ?? ''), 'data' => $data];
+}
+
+/** רשומה מהמודול (למשל אסימון שנדחה) — שורה בלוג המעקב, באותה בקשה. */
+function dt_devloop_log_write(string $level, string $category, string $event, array $extra = []): void
+{
+    try {
+        db()->prepare('INSERT INTO dev_log (at, action, duration_ms, method, status, actor, ip, message, req, ua, level, category, event)
+                       VALUES (?, ?, 0, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)')
+            ->execute([now_iso(), mb_substr($event, 0, 60), $_SERVER['REQUEST_METHOD'] ?? 'GET', 'claude', client_ip(),
+                mb_substr((string)($extra['message'] ?? ''), 0, 500), dev_req_id(), mb_substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 200),
+                in_array($level, ['info', 'warn', 'error'], true) ? $level : 'info', mb_substr($category, 0, 20), mb_substr($event, 0, 60)]);
+    } catch (Throwable) {
+        // לוג שנכשל לא מפיל את הבקשה
+    }
+}
+
+/** טבלאות שנוצרו לפני המודול — מה שחסר בהן (הגבלת קצב לאסימון). */
 function devtasks_migrate(PDO $pdo): void
 {
-    $pdo->exec(<<<'SQL'
-        CREATE TABLE IF NOT EXISTS dev_tasks (
-            id          INTEGER PRIMARY KEY,
-            code        TEXT NOT NULL UNIQUE,
-            area        TEXT NOT NULL DEFAULT '',
-            title       TEXT NOT NULL,
-            detail      TEXT NOT NULL DEFAULT '',
-            status      TEXT NOT NULL DEFAULT 'open',
-            created_by  INTEGER REFERENCES users(id),
-            created_at  TEXT NOT NULL,
-            updated_at  TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS dev_comments (
-            id          INTEGER PRIMARY KEY,
-            code        TEXT NOT NULL,
-            at          TEXT NOT NULL,
-            author      TEXT NOT NULL,          -- user | claude
-            user_id     INTEGER REFERENCES users(id),
-            body        TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_dev_comments_code ON dev_comments(code);
-        CREATE TABLE IF NOT EXISTS dev_tokens (
-            id           INTEGER PRIMARY KEY,
-            token_hash   TEXT NOT NULL UNIQUE,
-            label        TEXT NOT NULL,
-            created_by   INTEGER NOT NULL REFERENCES users(id),
-            created_at   TEXT NOT NULL,
-            last_used_at TEXT,
-            revoked_at   TEXT,
-            read_upto    INTEGER NOT NULL DEFAULT 0   -- ההערה האחרונה ש-Claude סימן כנקראה
-        );
-        SQL);
-}
-
-// ── הרשימה ───────────────────────────────────────────────────
-
-function dev_items_file(): array
-{
-    return is_file(DEV_ITEMS_FILE) ? (json_decode((string)file_get_contents(DEV_ITEMS_FILE), true) ?: []) : [];
-}
-
-function dev_code_num(string $code): int
-{
-    return preg_match('/^DT-(\d+)$/', $code, $m) ? (int)$m[1] : 0;
-}
-
-/** הרשימה המאוחדת, עם השיח של כל מטלה. */
-function dev_task_list(): array
-{
-    $file = dev_items_file();
-    $items = [];
-    foreach ($file['items'] ?? [] as $x) {
-        if (empty($x['code'])) continue;
-        $items[$x['code']] = $x + ['source' => 'code'];
-    }
-    foreach (db()->query('SELECT * FROM dev_tasks ORDER BY id DESC')->fetchAll() as $t) {
-        $slot = $t['code'];
-        if (isset($items[$slot])) {
-            if (!empty($items[$slot]['moved'])) continue;   // Claude העביר אותה לקובץ
-            $slot .= '#user';                                 // התנגשות ישנה — מציגים את שתיהן
-        }
-        $items[$slot] = ['code' => $t['code'], 'area' => $t['area'], 'status' => $t['status'], 'title' => $t['title'],
-            'detail' => $t['detail'], 'opened' => substr($t['created_at'], 0, 10), 'questions' => [], 'source' => 'user'];
-    }
-    $names = [];
-    foreach (db()->query('SELECT id, display_name FROM users')->fetchAll() as $u) $names[(int)$u['id']] = $u['display_name'];
-    $byCode = [];
-    foreach (db()->query('SELECT * FROM dev_comments ORDER BY id')->fetchAll() as $c) {
-        $byCode[$c['code']][] = ['id' => (int)$c['id'], 'at' => $c['at'], 'author' => $c['author'],
-            'name' => $c['author'] === 'claude' ? 'Claude' : ($names[(int)$c['user_id']] ?? '—'), 'body' => $c['body']];
-    }
-    foreach ($items as &$x) {
-        $x['comments'] = $byCode[$x['code']] ?? [];
-        $last = end($x['comments']) ?: null;
-        // מי צריך להגיב עכשיו: הערה של המפתח שלא נענתה — ממתינה ל-Claude
-        $x['waiting'] = $last ? ($last['author'] === 'claude' ? 'user' : 'claude') : null;
-        $x['last_at'] = $last['at'] ?? null;
-    }
-    unset($x);
-    // החדשים קודם (לפי הקוד), כמו בקובץ
-    uasort($items, fn($a, $b) => dev_code_num($b['code']) <=> dev_code_num($a['code']));
-    return ['updated' => $file['updated'] ?? null, 'note' => $file['note'] ?? null, 'items' => array_values($items)];
-}
-
-function dev_items(): array
-{
-    return ['ok' => true] + dev_task_list();
-}
-
-function dev_task_get(string $code): array
-{
-    foreach (dev_task_list()['items'] as $x) if ($x['code'] === $code) return $x;
-    throw new ApiError('אין מטלה ' . $code, 404);
-}
-
-/** הקוד הבא למטלה מהמסך — מ-DT-501. */
-function dev_next_code(): string
-{
-    $max = DEV_USER_CODES;
-    foreach (db()->query('SELECT code FROM dev_tasks')->fetchAll(PDO::FETCH_COLUMN) as $c) $max = max($max, dev_code_num($c));
-    return sprintf('DT-%03d', $max + 1);
-}
-
-/** הקוד הבא לפריט בקובץ — עד DT-500, אחרי כל מה שכבר תפוס בטווח (גם מהמסך, מלפני ההפרדה). */
-function dev_next_file_code(): string
-{
-    $max = 0;
-    foreach (dev_items_file()['items'] ?? [] as $x) $max = max($max, dev_code_num((string)($x['code'] ?? '')));
-    foreach (db()->query('SELECT code FROM dev_tasks')->fetchAll(PDO::FETCH_COLUMN) as $c) {
-        if (dev_code_num($c) <= DEV_USER_CODES) $max = max($max, dev_code_num($c));
-    }
-    return sprintf('DT-%03d', $max + 1);
-}
-
-function dev_task_create(array $dev, array $b): array
-{
-    $title = mb_substr(trim((string)($b['title'] ?? '')), 0, 200);
-    if ($title === '') throw new ApiError('חסרה כותרת', 422);
-    $code = dev_next_code();
-    $now = now_iso();
-    db()->prepare('INSERT INTO dev_tasks (code, area, title, detail, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-        ->execute([$code, mb_substr(trim((string)($b['area'] ?? '')), 0, 40), $title,
-            mb_substr(trim((string)($b['detail'] ?? '')), 0, DEV_COMMENT_MAX), 'open', $dev['id'], $now, $now]);
-    return ['ok' => true, 'code' => $code];
-}
-
-/** מצב משתנה כאן רק במטלה שנפתחה מהמסך; את שבקוד — Claude סוגר בקוד. */
-function dev_task_status(string $code, string $status): void
-{
-    if (!in_array($status, DEV_TASK_STATUS, true)) throw new ApiError('מצב לא מוכר', 422);
-    $st = db()->prepare('UPDATE dev_tasks SET status = ?, updated_at = ? WHERE code = ?');
-    $st->execute([$status, now_iso(), $code]);
-    if (!$st->rowCount()) throw new ApiError('את המצב של מטלה מהקוד משנים בקוד — כתבו הערה, ו-Claude יעדכן', 409);
-}
-
-function dev_task_set(array $dev, array $b): array
-{
-    dev_task_status((string)($b['code'] ?? ''), (string)($b['status'] ?? ''));
-    return ['ok' => true];
-}
-
-function dev_comment_add(string $code, string $author, ?int $userId, string $body): array
-{
-    dev_task_get($code);
-    $body = trim($body);
-    if ($body === '') throw new ApiError('ההערה ריקה', 422);
-    if (mb_strlen($body) > DEV_COMMENT_MAX) throw new ApiError('הערה עד ' . DEV_COMMENT_MAX . ' תווים', 422);
-    db()->prepare('INSERT INTO dev_comments (code, at, author, user_id, body) VALUES (?, ?, ?, ?, ?)')
-        ->execute([$code, now_iso(), $author, $userId, $body]);
-    return ['ok' => true, 'id' => (int)db()->lastInsertId()];
-}
-
-function dev_comment(array $dev, array $b): array
-{
-    return dev_comment_add((string)($b['code'] ?? ''), 'user', (int)$dev['id'], (string)($b['body'] ?? ''));
-}
-
-/** מחיקה — רק הערה שלי, ורק כל עוד לא נענתה. */
-function dev_comment_delete(array $dev, array $b): array
-{
-    $st = db()->prepare("SELECT * FROM dev_comments WHERE id = ? AND author = 'user' AND user_id = ?");
-    $st->execute([(int)($b['id'] ?? 0), $dev['id']]);
-    $c = $st->fetch() ?: throw new ApiError('ההערה לא נמצאה', 404);
-    $later = db()->prepare("SELECT COUNT(*) FROM dev_comments WHERE code = ? AND id > ? AND author = 'claude'");
-    $later->execute([$c['code'], $c['id']]);
-    if ((int)$later->fetchColumn()) throw new ApiError('כבר נענתה — אפשר להוסיף הערה חדשה', 409);
-    db()->prepare('DELETE FROM dev_comments WHERE id = ?')->execute([$c['id']]);
-    return ['ok' => true];
-}
-
-// ── אסימונים לקריאה בידי Claude ─────────────────────────────
-
-function dev_token_list(): array
-{
-    $rows = db()->query('SELECT t.id, t.label, t.created_at, t.last_used_at, t.revoked_at, u.display_name
-        FROM dev_tokens t JOIN users u ON u.id = t.created_by ORDER BY t.id DESC')->fetchAll();
-    return ['ok' => true, 'tokens' => array_map(fn($t) => ['id' => (int)$t['id'], 'label' => $t['label'], 'by' => $t['display_name'],
-        'created_at' => $t['created_at'], 'last_used_at' => $t['last_used_at'], 'revoked' => (bool)$t['revoked_at']], $rows)];
-}
-
-function dev_token_create(array $dev, array $b): array
-{
-    $label = mb_substr(trim((string)($b['label'] ?? '')), 0, 60) ?: 'Claude';
-    $token = DEV_TOKEN_PREFIX . bin2hex(random_bytes(24));
-    db()->prepare('INSERT INTO dev_tokens (token_hash, label, created_by, created_at) VALUES (?, ?, ?, ?)')
-        ->execute([token_hash($token), $label, $dev['id'], now_iso()]);
-    return ['ok' => true, 'id' => (int)db()->lastInsertId(), 'token' => $token];
-}
-
-function dev_token_revoke(array $dev, array $b): array
-{
-    $st = db()->prepare('UPDATE dev_tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL');
-    $st->execute([now_iso(), (int)($b['id'] ?? 0)]);
-    if (!$st->rowCount()) throw new ApiError('האסימון לא נמצא', 404);
-    return ['ok' => true];
-}
-
-/** האסימון שבכותרת X-Dev-Token — של מפתח פעיל, ולא בוטל. */
-function devapi_auth(): array
-{
-    $t = trim((string)($_SERVER['HTTP_X_DEV_TOKEN'] ?? ''));
-    if (!preg_match('/^' . DEV_TOKEN_PREFIX . '[0-9a-f]{48}$/', $t)) throw new ApiError('חסר אסימון (X-Dev-Token)', 401);
-    $st = db()->prepare('SELECT t.*, u.status AS user_status, u.is_developer FROM dev_tokens t JOIN users u ON u.id = t.created_by WHERE t.token_hash = ?');
-    $st->execute([token_hash($t)]);
-    $k = $st->fetch();
-    if (!$k || $k['revoked_at'] || $k['user_status'] !== 'active' || !$k['is_developer']) throw new ApiError('האסימון אינו תקף', 401);
-    $win = 'devapi:' . $k['id'] . ':' . gmdate('YmdH');
-    db()->prepare('INSERT INTO login_attempts (key, failures, locked_until) VALUES (?, 1, NULL) ON CONFLICT(key) DO UPDATE SET failures = failures + 1')->execute([$win]);
-    $n = db()->prepare('SELECT failures FROM login_attempts WHERE key = ?');
-    $n->execute([$win]);
-    if ((int)$n->fetchColumn() > 300) throw new ApiError('יותר מדי בקשות — נסו בעוד שעה', 429);
-    db()->prepare('UPDATE dev_tokens SET last_used_at = ? WHERE id = ?')->execute([now_iso(), $k['id']]);
-    return $k;
-}
-
-/**
- * מה ש-Claude קורא. ?code=DT-012 — מטלה אחת. ?all=1 — כל המטלות.
- * ברירת המחדל: רק מטלות שיש בהן הערה חדשה מאז הסימון האחרון (mark=1 מסמן).
- */
-function devapi_feed(array $k, array $q): array
-{
-    $list = dev_task_list();
-    $upto = (int)$k['read_upto'];
-    $items = $list['items'];
-    if (!empty($q['code'])) $items = array_values(array_filter($items, fn($x) => $x['code'] === $q['code']));
-    elseif (empty($q['all'])) $items = array_values(array_filter($items,
-        fn($x) => array_filter($x['comments'], fn($c) => $c['author'] === 'user' && $c['id'] > $upto)));
-    foreach ($items as &$x) foreach ($x['comments'] as &$c) $c['new'] = $c['author'] === 'user' && $c['id'] > $upto;
-    unset($x, $c);
-    $max = (int)db()->query('SELECT COALESCE(MAX(id), 0) FROM dev_comments')->fetchColumn();
-    if (!empty($q['mark'])) db()->prepare('UPDATE dev_tokens SET read_upto = ? WHERE id = ?')->execute([$max, $k['id']]);
-    return ['ok' => true, 'updated' => $list['updated'], 'read_upto' => !empty($q['mark']) ? $max : $upto,
-        'next_code' => dev_next_file_code(), 'items' => $items];
-}
-
-/** תשובה של Claude במטלה; במטלה שנפתחה מהמסך — אפשר גם לשנות מצב. */
-function devapi_comment(array $k, array $b): array
-{
-    $code = (string)($b['code'] ?? '');
-    $r = dev_comment_add($code, 'claude', null, (string)($b['body'] ?? ''));
-    if (!empty($b['status'])) dev_task_status($code, (string)$b['status']);
-    return $r;
+    $cols = array_column($pdo->query('PRAGMA table_info(dev_tokens)')->fetchAll(), 'name');
+    if (!$cols) return;   // עוד אין טבלה — המודול ייצור אותה מלאה
+    if (!in_array('rate_hour', $cols, true)) $pdo->exec("ALTER TABLE dev_tokens ADD COLUMN rate_hour TEXT NOT NULL DEFAULT ''");
+    if (!in_array('rate_n', $cols, true)) $pdo->exec('ALTER TABLE dev_tokens ADD COLUMN rate_n INTEGER NOT NULL DEFAULT 0');
 }

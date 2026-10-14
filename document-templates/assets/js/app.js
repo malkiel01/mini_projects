@@ -14,7 +14,12 @@
 
   // ── עזרים ──────────────────────────────────────────────────
 
+  // הבקשות והשגיאות האחרונות — ההקשר של 🐞 דיווח (DevLoop): פעולה, תוצאה, זמן ומזהה הבקשה (כמו בלוג). בלי תוכן.
+  const trace = { requests: [], errors: [] };
+  const keep = (list, x, n) => { list.push(x); if (list.length > n) list.shift(); };
+
   async function api(action, body, query) {
+    const t0 = performance.now();
     const opts = { credentials: 'same-origin', headers: {} };
     if (body !== undefined) {
       opts.method = 'POST';
@@ -29,6 +34,8 @@
     let res, data;
     try {
       res = await fetch('api.php?action=' + action + (query ? '&' + new URLSearchParams(query) : ''), opts);
+      keep(trace.requests, { action, method: opts.method || 'GET', status: res.status, ms: Math.round(performance.now() - t0),
+        id: res.headers.get('X-Request-Id') || '', at: new Date().toISOString() }, 30);
       data = await res.json();
     } catch (e) {
       throw new Error('אין תשובה מהשרת');
@@ -616,7 +623,29 @@
     document.getElementById('nav-dev').hidden = !(me && me.is_developer);
     document.getElementById('who').textContent = me ? me.name : '';
     if (me && /^(login|register|forgot)?$/.test(location.hash.slice(1))) location.hash = 'home';
+    devloop();
     route();
+  }
+
+  /** DevLoop (lib/devloop.php, assets/js/devloop.js): 🐞 דיווח מכל מסך, והמונה של מה שממתין למפתח. */
+  function devloop() {
+    document.getElementById('dev-bug')?.remove();
+    if (!me || !me.is_developer || typeof DevLoop === 'undefined') return;
+    DevLoop.setup({
+      api: (action, o = {}) => api(action, o.body, o.params),
+      toast, isDev: () => !!(me && me.is_developer), appName: 'תבניות מסמכים', tasksHref: '#dev?tab=items',
+      mountBefore: '#me-btn', headers: () => ({ 'X-CSRF': csrf }), lang: () => 'he', version: () => 'stage 12',
+      trace: () => trace,
+      logHref: (r) => r.req ? '#dev?tab=log&req=' + encodeURIComponent(r.req) : '#dev?tab=log',   // 📜 יומן במטלה ← הלוג שלנו
+    });
+    DevLoop.mount();
+  }
+
+  /** הודעה קצרה בתחתית המסך. */
+  function toast(message, bad) {
+    const t = el('div', { class: 'toast' + (bad ? ' bad' : ''), role: 'status' }, String(message));
+    document.body.append(t);
+    setTimeout(() => t.remove(), 3500);
   }
 
   async function logout() {
@@ -736,7 +765,10 @@
   // שגיאת JavaScript — נשלחת ללוג המעקב (עד 5 לטעינה), כדי שאפשר יהיה לדבג
   let reported = 0;
   const report = (message, where) => {
-    if (!me || reported >= 5 || !message) return;
+    if (!message) return;
+    const [, src, line] = String(where || '').match(/^(.*?):(\d+)/) || [];
+    keep(trace.errors, { message: String(message).slice(0, 300), source: src || String(where || '').slice(0, 80), line: line || '' }, 10);
+    if (!me || reported >= 5) return;
     reported++;
     api('client_error', { message: String(message).slice(0, 500), where: String(where || '').slice(0, 300), page: location.hash.slice(0, 120) }).catch(() => {});
   };

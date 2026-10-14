@@ -283,3 +283,32 @@ jobs:
             if [ "$CODE_HTTP" = 200 ]; then echo "$CODE ← ראיות פריסה ($(cat /tmp/devloop.json))"
             else echo "::warning::DevLoop: $CODE נכשל ($CODE_HTTP): $(head -c 300 /tmp/devloop.json 2>/dev/null)"; fi
           done
+
+      # DevLoop (תבניות המסמכים): אותו דבר לקודים DT-… — ראיות פריסה ומעבר ל"ממתין לאימות שלך".
+      # סוד: DT_DEVLOOP_TOKEN — אסימון מ"📋 מטלות ← 🔑 גישה ל-Claude" בתבניות המסמכים (dtd_…). בלעדיו — מדלג.
+      - name: DevLoop — ראיות פריסה למטלות (תבניות מסמכים)
+        if: success()
+        continue-on-error: true
+        env:
+          DT_DEVLOOP_TOKEN: ${{ secrets.DT_DEVLOOP_TOKEN }}
+          DT_DEVLOOP_API: https://mbe-plus.com/mini_projects/document-templates/api.php
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_NO: ${{ github.run_number }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$DT_DEVLOOP_TOKEN" ]; then echo "::notice::אין DT_DEVLOOP_TOKEN — מדלג על ראיות DevLoop של תבניות המסמכים"; exit 0; fi
+          MSG="$(git log -1 --format=%B)"
+          CODES=$(printf '%s' "$MSG" | grep -oE '\bDT-[0-9]{3}\b' | sort -u || true)
+          if [ -z "$CODES" ]; then echo "אין קודי DT- בהודעת ה-commit"; exit 0; fi
+          PR=$(printf '%s' "$MSG" | head -1 | grep -oE '\(#[0-9]+\)' | tr -dc 0-9 || true)
+          SHA=$(git rev-parse --short HEAD)
+          for CODE in $CODES; do
+            BODY=$(jq -nc --arg code "$CODE" --arg run "run $RUN_NO" --arg url "$RUN_URL" --arg pr "$PR" --arg repo "$REPO" --arg sha "$SHA" '{
+              code: $code, status: "verify", by: "github",
+              evidence: ([{kind: "deploy", ref: $run, url: $url, note: ""}, {kind: "commit", ref: $sha, url: ("https://github.com/" + $repo + "/commit/" + $sha), note: ""}]
+                + (if $pr == "" then [] else [{kind: "pr", ref: ("#" + $pr), url: ("https://github.com/" + $repo + "/pull/" + $pr), note: ""}] end))}')
+            CODE_HTTP=$(curl -sS -o /tmp/devloop-dt.json -w '%{http_code}' --max-time 30 -X POST "$DT_DEVLOOP_API?action=devapi-comment" \
+              -H "X-Dev-Token: $DT_DEVLOOP_TOKEN" -H 'Content-Type: application/json' --data "$BODY" || echo 000)
+            if [ "$CODE_HTTP" = 200 ]; then echo "$CODE ← ראיות פריסה ($(cat /tmp/devloop-dt.json))"
+            else echo "::warning::DevLoop: $CODE נכשל ($CODE_HTTP): $(head -c 300 /tmp/devloop-dt.json 2>/dev/null)"; fi
+          done

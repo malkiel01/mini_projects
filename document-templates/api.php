@@ -13,6 +13,7 @@ require_once __DIR__ . '/lib/documents.php';
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 header('Cache-Control: no-store');
+header('X-Request-Id: ' . dev_req_id());   // אותו מזהה בלוג המעקב — 🐞 דיווח ומטלות מפנים אליו
 
 function json_out(array $data, int $code = 200): never
 {
@@ -48,8 +49,8 @@ $PUBLIC = ['health', 'register', 'verify', 'login', 'forgot', 'reset', 'me',
            'fill_upload', 'fill_file',
            // מערכת חיצונית: הזהות היא מפתח ה-API שבכותרת Authorization, לא עוגייה.
            'ext_templates', 'ext_template', 'ext_issue', 'ext_document', 'ext_update', 'ext_file', 'fill_font',
-           // Claude קורא מטלות ומשיב: הזהות היא האסימון שבכותרת X-Dev-Token.
-           'devapi_feed', 'devapi_comment'];
+           // Claude קורא מטלות ומשיב (DevLoop): הזהות היא האסימון שבכותרת X-Dev-Token.
+           'devapi-feed', 'devapi-comment', 'devapi-file', 'devapi-attach'];
 $POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'dev_user',
            'tpl_create', 'tpl_create_authored', 'tpl_save', 'tpl_set_source', 'tpl_archive', 'tpl_delete',
            'doc_create', 'doc_save', 'doc_complete', 'doc_archive', 'doc_delete', 'doc_downloaded',
@@ -59,8 +60,8 @@ $POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'dev_user
            'src_save', 'src_delete', 'src_sync', 'key_create', 'key_update', 'key_revoke', 'key_secret', 'key_test',
            'ext_issue', 'ext_update',
            'client_error', 'font_upload', 'font_delete', 'dev_force', 'me_update', 'me_password', 'me_logout_others',
-           'contact_import', 'dev_task_create', 'dev_task_set', 'dev_comment', 'dev_comment_delete', 'dev_token_create', 'dev_token_revoke',
-           'devapi_comment'];
+           'contact_import', 'dev-task-create', 'dev-task-set', 'dev-comment', 'dev-comment-delete', 'dev-token-create', 'dev-token-revoke',
+           'dev-verify', 'dev-report', 'dev-attach', 'dev-log-links', 'dev-task-from-log', 'devapi-comment', 'devapi-attach'];
 
 try {
     if (in_array($action, $POSTS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -75,7 +76,7 @@ try {
             throw new ApiError('הבקשה נדחתה (CSRF). רעננו את הדף', 403);
         }
     }
-    if (str_starts_with($action, 'dev_') && !$session['is_developer']) throw new ApiError('למפתח בלבד', 403);
+    if ((str_starts_with($action, 'dev_') || str_starts_with($action, 'dev-')) && !$session['is_developer']) throw new ApiError('למפתח בלבד', 403);
 
     $result = match ($action) {
         'health' => (function () {
@@ -168,18 +169,29 @@ try {
         })(),
         // אזור הפיתוח (dev_ — למפתח בלבד) והגדרות המשתמש
         'dev_log_list'   => dev_log_list($_GET),
-        'dev_items'      => dev_items(),
         'contact_fills'  => contact_fills($session, $_GET),
         'contact_import' => contact_import($session, $body),
-        'dev_task_create'    => dev_task_create($session, $body),
-        'dev_task_set'       => dev_task_set($session, $body),
-        'dev_comment'        => dev_comment($session, $body),
-        'dev_comment_delete' => dev_comment_delete($session, $body),
-        'dev_token_list'     => dev_token_list(),
-        'dev_token_create'   => dev_token_create($session, $body),
-        'dev_token_revoke'   => dev_token_revoke($session, $body),
-        'devapi_feed'    => devapi_feed(devapi_auth(), $_GET),
-        'devapi_comment' => devapi_comment(devapi_auth(), $body),
+        // מטלות ושיח — המודול המשותף DevLoop (lib/devtasks.php), באותם שמות כמו במנהל הפרויקטים
+        'dev-items'          => ['ok' => true] + devloop_task_list(),
+        'dev-task-create'    => devloop_task_create($session, $body),
+        'dev-task-set'       => devloop_task_set($session, $body),
+        'dev-comment'        => devloop_comment_add((string)($body['code'] ?? ''), 'user', (int)$session['id'], (string)($body['body'] ?? '')),
+        'dev-comment-delete' => devloop_comment_delete($session, $body),
+        'dev-verify'         => devloop_verify($session, $body),
+        'dev-report'         => devloop_report($session, $body),
+        'dev-attach'         => devloop_attach('user:' . $session['id'], $_GET),
+        'dev-file'           => devloop_file_out((int)($_GET['id'] ?? 0)),
+        'dev-item-log'       => ['ok' => true] + devloop_item_log((string)($_GET['code'] ?? '')),
+        'dev-log-links'      => ['ok' => true] + devloop_log_links((array)($body['ids'] ?? []), (array)($body['reqs'] ?? [])),
+        'dev-task-from-log'  => devloop_task_from_log($session, $body),
+        'dev-tokens'         => ['ok' => true] + devloop_token_list(),
+        'dev-token-create'   => devloop_token_create($session, $body),
+        'dev-token-revoke'   => devloop_token_revoke($session, $body),
+        // באסימון, בלי עוגייה
+        'devapi-feed'    => devloop_api_feed(devloop_api_auth(), $_GET),
+        'devapi-comment' => devloop_api_comment(devloop_api_auth(), $body),
+        'devapi-file'    => (devloop_api_auth() and devloop_file_out((int)($_GET['id'] ?? 0))),
+        'devapi-attach'  => devloop_attach('claude', $_GET + ['_auth' => devloop_api_auth()]),
         'dev_health'     => dev_health(),
         'dev_docs'       => dev_docs($_GET),
         'dev_tpls'       => dev_tpls($_GET),
