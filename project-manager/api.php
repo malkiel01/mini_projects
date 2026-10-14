@@ -113,10 +113,10 @@ try {
 
     $result = match ("$method $action") {
         'GET me' => (function () use ($user) {
-            $d = pm_db()->prepare('SELECT digest, lang FROM users WHERE id = ?');
+            $d = pm_db()->prepare('SELECT digest, lang, theme FROM users WHERE id = ?');
             $d->execute([$user['id']]);
             $u = $d->fetch();
-            return ['user' => $user + ['digest' => (bool)$u['digest'], 'lang' => $u['lang']], 'trades' => pm_trades(), 'templates' => pm_templates(),
+            return ['user' => $user + ['digest' => (bool)$u['digest'], 'lang' => $u['lang'], 'theme' => $u['theme']], 'trades' => pm_trades(), 'templates' => pm_templates(),
                     'file_types' => pm_t_map(PM_FILE_TYPES), 'max_upload' => pm_max_upload(),
                     // מצב עצמאי: בלי חזרה לדף האפליקציות. כבוי כל עוד האפליקציה בתוך האינדקס.
                     'standalone' => pm_setting('standalone', '0') === '1',
@@ -198,6 +198,13 @@ try {
             if (!isset(PM_LANGS[$lang])) throw new PmError('שפה לא מוכרת', 422);
             pm_db()->prepare('UPDATE users SET lang = ? WHERE id = ?')->execute([$lang, $user['id']]);
             return ['lang' => $lang];
+        })(),
+        // ערכת נושא — בהירה / כהה / לפי המכשיר; נשמרת למשתמש (theme.js)
+        'POST theme'        => (function () use ($user, $in) {
+            $theme = (string)($in['theme'] ?? '');
+            if (!in_array($theme, ['system', 'light', 'dark'], true)) throw new PmError('ערכת נושא לא מוכרת', 422);
+            pm_db()->prepare('UPDATE users SET theme = ? WHERE id = ?')->execute([$theme, $user['id']]);
+            return ['theme' => $theme];
         })(),
         'POST digest'       => (function () use ($user, $in) {
             pm_db()->prepare('UPDATE users SET digest = ? WHERE id = ?')->execute([!empty($in['on']) ? 1 : 0, $user['id']]);

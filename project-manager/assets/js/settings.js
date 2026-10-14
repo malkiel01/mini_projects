@@ -9,6 +9,14 @@ const Settings = (() => {
     function bind() {
         if (bound) return;
         bound = true;
+        // ערכת נושא — מיד על המסך, ונשמרת למשתמש
+        $('#set-display').addEventListener('change', async e => {
+            if (e.target.name !== 'theme') return;
+            const prev = Theme.get();
+            Theme.apply(e.target.value);
+            try { await api('theme', { body: { theme: e.target.value } }); state.user.theme = e.target.value; }
+            catch (err) { Theme.apply(prev); toast(err.message, true); $$('#set-display [name=theme]').forEach(r => { r.checked = r.value === prev; }); }
+        });
         $('#trade-add').addEventListener('submit', async e => {
             e.preventDefault();
             const name = $('#trade-name').value.trim();
@@ -110,7 +118,7 @@ const Settings = (() => {
     function show(pane, sub = '') {
         bind();
         // מנהל רואה רק "הודעות"; המפתח — הכול
-        const allowed = isDev() ? ['messages', 'alerts', 'general', 'trades', 'templates', 'access', 'log', 'tasks'] : ['messages', 'alerts'];
+        const allowed = isDev() ? ['messages', 'alerts', 'display', 'general', 'trades', 'templates', 'access', 'log', 'tasks'] : ['messages', 'alerts', 'display'];
         pane = allowed.includes(pane) ? pane : 'messages';
         $$('#view-settings [data-set]').forEach(a => a.setAttribute('aria-selected', String(a.dataset.set === pane)));
         $$('#view-settings .pane').forEach(el => { el.hidden = el.id !== 'set-' + pane; });
@@ -121,6 +129,7 @@ const Settings = (() => {
         }
         if (pane === 'messages') renderMsgTemplates();
         if (pane === 'alerts') fillAlerts();
+        if (pane === 'display') { const v = Theme.get(); $$('#set-display [name=theme]').forEach(r => { r.checked = r.value === v; }); }
         if (pane === 'trades') renderTrades();
         if (pane === 'templates') renderTemplates();
         if (pane === 'access') loadAccess();

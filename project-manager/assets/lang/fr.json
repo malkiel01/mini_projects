@@ -2554,5 +2554,11 @@
     "החזרה לספק": "Renvoyer au fournisseur",
     "{n} תמונות": "{n} photos",
     "🔧 ריג'קט באיחור — תזכורת לספק כל (ימים, 0 — בלי)": "🔧 Réserve en retard — rappel au fournisseur tous les (jours, 0 — jamais)",
-    "תזכורת על ריג'קט": "Rappel de réserve"
+    "תזכורת על ריג'קט": "Rappel de réserve",
+    "ערכת נושא לא מוכרת": "Thème inconnu",
+    "ערכת נושא": "Thème",
+    "☀️ בהירה": "☀️ Clair",
+    "🌙 כהה": "🌙 Sombre",
+    "📱 לפי המכשיר": "📱 Selon l'appareil",
+    "\"לפי המכשיר\" — מתחלפת לבד עם הגדרות הטלפון או המחשב (למשל כהה בלילה). הבחירה שלך עוברת איתך לכל מכשיר שתיכנס ממנו.": "« Selon l'appareil » suit les réglages du téléphone ou de l'ordinateur (par ex. sombre la nuit). Votre choix vous suit sur chaque appareil où vous vous connectez."
 }

@@ -510,6 +510,7 @@ function pm_migrate(PDO $pdo): void
     // עמודות שנוספו אחרי שהטבלה כבר קיימת בשרת
     pm_add_column($pdo, 'users', 'email', "TEXT NOT NULL DEFAULT ''");
     pm_add_column($pdo, 'users', 'notes', "TEXT NOT NULL DEFAULT ''");
+    pm_add_column($pdo, 'users', 'theme', "TEXT NOT NULL DEFAULT 'system'"); // ערכת נושא: system · light · dark (הגדרות ← תצוגה)
     // שלב 6: אישור מהפורטל — מאיזה קישור, והחתימה (תמונה) כשנדרשה
     pm_add_column($pdo, 'approvals', 'portal_id', 'INTEGER');
     pm_add_column($pdo, 'approvals', 'signature', "TEXT NOT NULL DEFAULT ''");
