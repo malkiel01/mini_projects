@@ -235,7 +235,8 @@ function pm_file_uses(array $ids): array
         foreach ($db->query($sql)->fetchAll() as $r) {
             $out[(int)$r['file_id']][] = ['kind' => $kind, 'id' => (int)$r['id'], 'text' => (string)$r['text'], 'supplier' => (string)($r['supplier'] ?? ''),
                 'status' => (string)($r['status'] ?? ''), 'supplier_id' => isset($r['supplier_id']) ? (int)$r['supplier_id'] : null]
-                + (isset($r['payment_id']) ? ['payment_id' => (int)$r['payment_id']] : []);
+                + (isset($r['payment_id']) ? ['payment_id' => (int)$r['payment_id']] : [])
+                + (array_key_exists('stage_ref', $r) ? ['stage_id' => $r['stage_ref'] !== null ? (int)$r['stage_ref'] : null] : []);
         }
     };
     $add("SELECT q.file_id, q.id, s.name AS text, c.name AS supplier, c.id AS supplier_id, q.status FROM quotes q JOIN stages s ON s.id = q.stage_id JOIN contacts c ON c.id = q.supplier_id WHERE q.file_id IN ($in)", 'quote');
@@ -245,7 +246,11 @@ function pm_file_uses(array $ids): array
     $add("SELECT p.invoice_file_id AS file_id, p.id, p.id AS payment_id, p.title AS text, c.name AS supplier, c.id AS supplier_id, p.status FROM payments p JOIN contacts c ON c.id = p.supplier_id WHERE p.invoice_file_id IN ($in)", 'invoice');
     $add("SELECT x.file_id, x.id, p.id AS payment_id, p.title AS text, c.name AS supplier, c.id AS supplier_id, x.status FROM payment_proofs x JOIN payments p ON p.id = x.payment_id JOIN contacts c ON c.id = p.supplier_id WHERE x.file_id IN ($in)", 'proof');
     $add("SELECT e.file_id, e.id, e.title AS text FROM expenses e WHERE e.file_id IN ($in)", 'expense');
-    $add("SELECT r.file_id, r.report_id AS id, substr(x.text, 1, 60) AS text FROM report_files r JOIN reports x ON x.id = r.report_id WHERE r.file_id IN ($in)", 'report');
+    $add("SELECT r.file_id, r.report_id AS id, COALESCE(NULLIF(substr(x.text, 1, 60), ''), s.name, '') AS text, c.name AS supplier, c.id AS supplier_id FROM report_files r JOIN reports x ON x.id = r.report_id
+          LEFT JOIN stages s ON s.id = x.stage_id LEFT JOIN contacts c ON c.id = x.supplier_id WHERE r.file_id IN ($in)", 'report');
+    // שיוך כללי להתקשרות (ספק × שלב) — "מסמך אחר" (lib/engage.php)
+    $add("SELECT d.file_id, d.supplier_id AS id, COALESCE(s.name, '') AS text, c.name AS supplier, c.id AS supplier_id, d.stage_id AS stage_ref FROM file_refs d
+          JOIN contacts c ON c.id = d.supplier_id LEFT JOIN stages s ON s.id = d.stage_id WHERE d.file_id IN ($in)", 'doc');
     return $out;
 }
 

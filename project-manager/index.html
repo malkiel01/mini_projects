@@ -2,12 +2,12 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="assets/js/i18n.js?v=58"></script>
+    <script src="assets/js/i18n.js?v=59"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=58">
+    <link rel="stylesheet" href="assets/css/app.css?v=59">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -129,7 +129,14 @@
                 </div>
                 <ul id="folder-list" class="list rows-list"></ul>
                 <h2 class="sec-title" id="files-title" hidden></h2>
+                <div class="toolbar end" id="fsel-tools"><button type="button" class="btn ghost sm" id="fsel-toggle" aria-pressed="false">☑️ בחירה</button></div>
                 <ul id="file-list" class="list rows-list"></ul>
+                <!-- בחירה של כמה קבצים — שיוך יחד (תיעוד מהשטח / מסמך של ספק) -->
+                <div class="fsel-bar" id="fsel-bar" hidden>
+                    <span id="fsel-count"></span>
+                    <button type="button" class="btn primary" id="fsel-link">🔗 שיוך</button>
+                    <button type="button" class="icon-btn" id="fsel-cancel" aria-label="ביטול הבחירה">✕</button>
+                </div>
                 <p class="drop-hint" id="drop-hint" hidden>שחרר כאן כדי להעלות</p>
                 <div class="uploads" id="uploads" aria-live="polite"></div>
             </div>
@@ -1144,18 +1151,9 @@
                 <section class="file-uses" aria-labelledby="g-uses">
                     <h3 class="sec-title" id="g-uses">שימוש במערכת</h3>
                     <div id="file-uses"></div>
-                    <p class="attach-title" id="file-attach-title">לשייך את הקובץ ל…</p>
-                    <div class="attach-grid" id="file-attach-btns">
-                        <button type="button" class="tile" id="file-quote"><span class="tile-ic" aria-hidden="true">🧾</span><span>הצעת מחיר</span></button>
-                        <button type="button" class="tile" data-attach="contract"><span class="tile-ic" aria-hidden="true">📝</span><span>חוזה עם ספק</span></button>
-                        <button type="button" class="tile" data-attach="invoice"><span class="tile-ic" aria-hidden="true">🧾</span><span>חשבונית לאבן דרך</span></button>
-                        <button type="button" class="tile" data-attach="proof"><span class="tile-ic" aria-hidden="true">💳</span><span>אסמכתת תשלום</span></button>
-                    </div>
-                    <div class="file-attach" id="file-attach" hidden>
-                        <label class="f wide"><span id="file-attach-label"></span><select id="file-attach-to"></select></label>
-                        <p class="hint" id="file-attach-hint" hidden></p>
-                        <div class="row-btns"><button type="button" class="btn primary" id="file-attach-go">שיוך</button></div>
-                    </div>
+                    <!-- שיוך: אשף "של מי ← מקצוע ← מה זה ← לאן" (linker.js) -->
+                    <button type="button" class="link-start" id="file-link-start"><span class="tile-ic" aria-hidden="true">🔗</span>
+                        <span class="tile-tx"><b id="file-link-title">לשייך את הקובץ</b><small id="file-link-sub">לספק במקצוע — חוזה, הצעה, תשלום, תיעוד…</small></span><span class="use-go" aria-hidden="true">‹</span></button>
                 </section>
                 <h3 class="sec-title">פרטים</h3>
                 <div class="fields fd-grid">
@@ -1342,24 +1340,25 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=58"></script>
-    <script src="assets/js/contacts.js?v=58"></script>
-    <script src="assets/js/device-contacts.js?v=58"></script>
-    <script src="assets/js/viewer.js?v=58"></script>
-    <script src="assets/js/files.js?v=58"></script>
-    <script src="assets/js/lightbox.js?v=58"></script>
-    <script src="assets/js/field.js?v=58"></script>
+    <script src="assets/js/core.js?v=59"></script>
+    <script src="assets/js/contacts.js?v=59"></script>
+    <script src="assets/js/device-contacts.js?v=59"></script>
+    <script src="assets/js/viewer.js?v=59"></script>
+    <script src="assets/js/linker.js?v=59"></script>
+    <script src="assets/js/files.js?v=59"></script>
+    <script src="assets/js/lightbox.js?v=59"></script>
+    <script src="assets/js/field.js?v=59"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=58"></script>
-    <script src="assets/js/projects.js?v=58"></script>
-    <script src="assets/js/quotes.js?v=58"></script>
-    <script src="assets/js/payments.js?v=58"></script>
-    <script src="assets/js/fin-report.js?v=58"></script>
-    <script src="assets/js/finance.js?v=58"></script>
-    <script src="assets/js/finance-all.js?v=58"></script>
-    <script src="assets/js/hebcal.js?v=58"></script>
-    <script src="assets/js/calendar.js?v=58"></script>
-    <script src="assets/js/settings.js?v=58"></script>
-    <script src="assets/js/app.js?v=58"></script>
+    <script src="assets/js/share.js?v=59"></script>
+    <script src="assets/js/projects.js?v=59"></script>
+    <script src="assets/js/quotes.js?v=59"></script>
+    <script src="assets/js/payments.js?v=59"></script>
+    <script src="assets/js/fin-report.js?v=59"></script>
+    <script src="assets/js/finance.js?v=59"></script>
+    <script src="assets/js/finance-all.js?v=59"></script>
+    <script src="assets/js/hebcal.js?v=59"></script>
+    <script src="assets/js/calendar.js?v=59"></script>
+    <script src="assets/js/settings.js?v=59"></script>
+    <script src="assets/js/app.js?v=59"></script>
 </body>
 </html>

@@ -17,12 +17,13 @@ const Files = (() => {
 
     // i18n-ok-start — מתורגם בתצוגה
     const USE = { quote: ['🧾', 'הצעת מחיר'], contract: ['📝', 'חוזה'], change: ['±', 'תוספת / חריגה'], payment: ['🗓️', 'אבן דרך'],
-        invoice: ['🧾', 'חשבונית'], proof: ['💳', 'אסמכתא'], expense: ['🧾', 'הוצאה ישירה'], report: ['📷', 'דיווח מהשטח'] };
+        invoice: ['🧾', 'חשבונית'], proof: ['💳', 'אסמכתא'], expense: ['🧾', 'הוצאה ישירה'], report: ['📷', 'דיווח מהשטח'],
+        doc: ['📄', 'מסמך של הספק'] };
     // i18n-ok-end
     /** "🧾 הצעת מחיר — אבי · חשמל": איפה הקובץ משמש. */
     function useLabel(u) {
         const [ic, l] = USE[u.kind] || ['📄', ''];
-        const what = u.kind === 'quote' ? [u.supplier, t(u.text)] : u.kind === 'contract' ? [u.supplier, u.text] : [u.text, u.supplier];
+        const what = ['quote', 'doc'].includes(u.kind) ? [u.supplier, t(u.text)] : u.kind === 'contract' ? [u.supplier, u.text] : [u.text, u.supplier];
         return `${ic} ${t(l)} — ${what.filter(Boolean).join(' · ')}`;
     }
     // סוגים שהם מסמך של רשומה — בלי שיוך, הקובץ "לא משויך" (למשל הצעה שהועלתה ב"קבצים" ולא נרשמה כהצעה)
@@ -55,7 +56,22 @@ const Files = (() => {
         });
         $('#file-list').addEventListener('click', e => {
             const row = e.target.closest('[data-file]');
-            if (row) openFile(Number(row.dataset.file));
+            if (!row) return;
+            if (selecting) toggleSel(Number(row.dataset.file)); else openFile(Number(row.dataset.file));
+        });
+        $('#fsel-toggle').addEventListener('click', () => setSelecting(!selecting));
+        $('#fsel-cancel').addEventListener('click', () => setSelecting(false));
+        $('#fsel-link').addEventListener('click', () => {
+            const list = files.filter(f => sel.has(f.id)).map(f => ({ id: f.id, name: f.name }));
+            if (!list.length) return;
+            // מהתיקייה הנוכחית: "ספק / מקצוע" — שניהם ידועים; תיקיית ספק — הספק
+            const ctx = {};
+            for (let x = folderById(folderId); x; x = folderById(x.parent_id)) {
+                if (x.kind === 'trade' && x.stage_id) ctx.stage = x.stage_id;
+                if (x.kind === 'contact' && x.contact_id) ctx.supplier = x.contact_id;
+            }
+            if (!ctx.supplier) delete ctx.stage;
+            Linker.open(list, { projectId: project.id, ...ctx, onDone: () => { setSelecting(false); loadFolders().then(loadFiles); } });
         });
         for (const id of ['#folder-list', '#file-list']) {
             $(id).addEventListener('keydown', e => {
@@ -77,16 +93,10 @@ const Files = (() => {
         $('#file-links').addEventListener('click', e => { const b = e.target.closest('[data-unlink]'); if (b) unlink(Number(b.dataset.unlink)); });
         $('#file-delete').addEventListener('click', deleteFile);
         $('#file-uses').addEventListener('click', e => { const b = e.target.closest('[data-use]'); if (b) goUse(current.uses[Number(b.dataset.use)]); });
-        $('#file-attach-btns').addEventListener('click', e => { const b = e.target.closest('[data-attach]'); if (b) attachStart(b.dataset.attach); });
-        $('#file-attach-go').addEventListener('click', attachGo);
-        $('#file-dlg [name=type]').addEventListener('change', attachButtons);
-        $('#file-quote').addEventListener('click', () => {
-            // הספק — לפי התיקייה שהקובץ יושב בה
-            const home = folderById(current.folders.find(l => l.home)?.folder_id);
-            let supplier = null;
-            for (let f = home; f && !supplier; f = folderById(f.parent_id)) if (f.kind === 'contact') supplier = f.contact_id;
+        $('#file-link-start').addEventListener('click', () => {
+            const f = { id: current.id, name: current.name }, ctx = fileContext(current);
             $('#file-dlg').close();
-            Quotes.fromFile(project.id, { file_id: current.id, supplier_id: supplier });
+            Linker.open([f], { projectId: project.id, ...ctx, onDone: () => { loadFolders().then(loadFiles); } });
         });
         $('#folder-dlg form').addEventListener('submit', e => { e.preventDefault(); saveFolder(); });
         $('#folder-delete').addEventListener('click', deleteFolder);
@@ -152,6 +162,32 @@ const Files = (() => {
         $('.upload-btn').title = folderId ? t('העלאה לתיקייה הזו') : t('העלאה ל"ממתין למיון"');
     }
 
+    // ---- בחירה של כמה קבצים ----
+    let selecting = false;
+    const sel = new Set();
+    function setSelecting(on) {
+        selecting = on;
+        sel.clear();
+        $('#fsel-toggle').setAttribute('aria-pressed', String(on));
+        $('#pane-files').classList.toggle('selecting', on);
+        selBar();
+        render(!!($('#fq').value.trim() || $('#ftype').value));
+    }
+    function toggleSel(id) {
+        sel.has(id) ? sel.delete(id) : sel.add(id);
+        const row = $(`#file-list [data-file="${id}"]`);
+        row?.classList.toggle('picked', sel.has(id));
+        row?.setAttribute('aria-pressed', String(sel.has(id)));
+        const box = row?.querySelector('.fsel-box');
+        if (box) box.textContent = sel.has(id) ? '☑️' : '⬜';
+        selBar();
+    }
+    function selBar() {
+        $('#fsel-bar').hidden = !selecting;
+        $('#fsel-count').textContent = sel.size ? t('נבחרו {n}', { n: sel.size }) : t('בחרו קבצים מהרשימה');
+        $('#fsel-link').disabled = !sel.size;
+    }
+
     function fileRow(f) {
         const here = folderId && f.folders.find(l => l.folder_id === folderId);
         const shortcut = here && !here.home;
@@ -163,7 +199,8 @@ const Files = (() => {
             esc(t(state.fileTypes[f.type] || '')), fmtSize(f.size), when(f.created_at),
             home && (!folderId || home.folder_id !== folderId) ? esc(path(home.folder_id)) : '',
         ].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>');
-        return `<li class="card" data-file="${f.id}" tabindex="0" role="button" aria-label="${esc(f.name)}">
+        return `<li class="card${selecting && sel.has(f.id) ? ' picked' : ''}" data-file="${f.id}" tabindex="0" role="button" aria-label="${esc(f.name)}"${selecting ? ` aria-pressed="${sel.has(f.id)}"` : ''}>
+            ${selecting ? `<span class="fsel-box" aria-hidden="true">${sel.has(f.id) ? '☑️' : '⬜'}</span>` : ''}
             ${thumb}
             <div class="body"><div class="l1"><span class="one">${esc(f.name)}</span>
                 ${f.visible ? `<span class="chip" title="${esc(t('גלוי בפורטל'))}">👁</span>` : ''}${shortcut ? `<span class="chip" title="${esc(t('קיצור דרך'))}">🔗</span>` : ''}</div>
@@ -397,23 +434,27 @@ const Files = (() => {
         // משויך: שורה לכל רשומה (אייקון, מה, ספק · שלב) — לחיצה פותחת אותה. לא משויך: משפט אחד, והשיוך מתחת
         $('#file-uses').innerHTML = uses.length ? `<ul class="use-list">${uses.map((u, i) => {
             const [ic, l] = USE[u.kind] || ['📄', ''];
-            const sub = u.kind === 'quote' ? [u.supplier, t(u.text)] : u.kind === 'contract' ? [u.supplier, u.text] : [u.text, u.supplier];
+            const sub = ['quote', 'doc'].includes(u.kind) ? [u.supplier, u.text ? t(u.text) : (u.kind === 'doc' ? t('כל המקצועות') : '')] : u.kind === 'contract' ? [u.supplier, u.text] : [u.text, u.supplier];
             return `<li><button type="button" class="use-row" data-use="${i}"><span class="use-ic" aria-hidden="true">${ic}</span>
                 <span class="use-tx"><b>${esc(t(l))}</b><small>${esc(sub.filter(Boolean).join(' · '))}</small></span><span class="use-go" aria-hidden="true">‹</span></button></li>`;
         }).join('')}</ul>`
             : `<p class="use-empty${RECORD_TYPES.includes(current.type) ? ' warn' : ''}">${esc(RECORD_TYPES.includes(current.type) ? t('הקובץ עוד לא משויך — בחרו למטה למה הוא שייך.') : t('הקובץ לא משמש באף רשומה.'))}</p>`;
-        $('#file-attach-title').textContent = uses.length ? t('שיוך נוסף') : t('לשייך את הקובץ ל…');
-        $('#file-attach').hidden = true;
-        attachButtons();
+        $('#file-link-title').textContent = uses.length ? t('שיוך נוסף') : t('לשייך את הקובץ');
+        const ctx = fileContext(current);
+        $('#file-link-sub').textContent = ctx.supplier ? t('ל{name} — חוזה, הצעה, תשלום, תיעוד…', { name: folders.find(f => f.contact_id === ctx.supplier && f.kind === 'contact')?.name || '' })
+            : t('לספק במקצוע — חוזה, הצעה, תשלום, תיעוד…');
     }
 
-    /** כפתורי השיוך — לפי הסוג שנבחר (גם לפני שמירה); בסוג כללי — כולם. */
-    function attachButtons() {
-        const type = $('#file-dlg [name=type]').value, open = ['other', 'photo'].includes(type);
-        $('#file-quote').hidden = !(open || type === 'quote');
-        for (const b of $$('#file-attach-btns [data-attach]')) b.hidden = !(open || type === b.dataset.attach);
-        // אריח אחד — לכל הרוחב
-        $('#file-attach-btns').classList.toggle('one', $$('#file-attach-btns .tile:not([hidden])').length === 1);
+    /** מה ידוע מהתיקייה של הקובץ: "ספק / מקצוע" — שניהם; תיקיית ספק — הספק. */
+    function fileContext(f) {
+        const home = folderById(f.folders.find(l => l.home)?.folder_id);
+        const ctx = {};
+        for (let x = home; x; x = folderById(x.parent_id)) {
+            if (x.kind === 'trade' && x.stage_id) ctx.stage = x.stage_id;
+            if (x.kind === 'contact' && x.contact_id) ctx.supplier = x.contact_id;
+        }
+        if (ctx.stage && ctx.supplier === undefined) delete ctx.stage;
+        return ctx;
     }
 
     /** מהקובץ לרשומה: ההצעה, החוזה, אבן הדרך, התוספת, ההוצאה, הדיווח. */
@@ -426,51 +467,6 @@ const Files = (() => {
         else if (u.kind === 'expense') Finance.openWhenReady({ expense: u.id }, pid);
         else if (u.payment_id) { Payments.openWhenReady(u.payment_id); location.hash = `#/p/${pid}/payments`; }
         else if (u.kind === 'report') location.hash = `#/p/${pid}/field`;
-    }
-
-    let attachKind = null, attachList = [];
-    async function attachStart(kind) {
-        attachKind = kind;
-        const form = $('#file-dlg form');
-        formError(form, '');
-        attachList = [];
-        if (kind === 'contract') {
-            // הספקים של הפרויקט — מהתיקיות שלהם
-            attachList = folders.filter(f => f.kind === 'contact' && f.parent_id === null).map(f => ({ value: f.contact_id, label: f.name }));
-        } else {
-            let payments = [];
-            try { ({ payments } = await api('payments', { params: { project_id: project.id } })); } catch (e) { formError(form, e.message); return; }
-            const ok = kind === 'invoice' ? p => p.received > 0 && !p.invoice : p => ['planned', 'requested', 'partial', 'paid'].includes(p.status);
-            attachList = payments.filter(p => p.status !== 'cancelled' && ok(p)).map(p => ({ value: p.id, label: `${p.title} — ${p.supplier_name}` }));
-        }
-        $('#file-attach-label').textContent = kind === 'contract' ? t('הספק') : t('אבן הדרך');
-        $('#file-attach-to').innerHTML = options(attachList);
-        const hint = $('#file-attach-hint');
-        hint.textContent = !attachList.length ? (kind === 'contract' ? t('אין עדיין ספקים בפרויקט.') : kind === 'invoice' ? t('אין אבן דרך שהתקבל בה תשלום ועוד אין לה חשבונית.') : t('אין אבן דרך פתוחה לתשלום.'))
-            : kind === 'contract' ? t('נפתח החוזה של הספק, עם הקובץ הזה כמסמך — שם בוחרים חוזה קיים או חדש ושומרים.')
-            : kind === 'proof' ? t('נפתחת אבן הדרך, עם הקובץ כאסמכתא — שם רושמים סכום ותאריך.') : '';
-        hint.hidden = !hint.textContent;
-        $('#file-attach-go').disabled = !attachList.length;
-        $('#file-attach').hidden = false;
-    }
-
-    async function attachGo() {
-        const to = Number($('#file-attach-to').value);
-        if (!to) return;
-        const f = { id: current.id, name: current.name }, pid = project.id;
-        if (attachKind === 'invoice') {
-            await busy($('#file-attach-go'), $('#file-dlg form'), async () => {
-                await api('payment-invoice', { body: { id: to, invoice_no: '', file_id: f.id } });
-                toast(t('החשבונית נשמרה'));
-                $('#file-dlg').close();
-                await openFile(f.id);
-                await loadFolders(); await loadFiles();
-            });
-            return;
-        }
-        $('#file-dlg').close();
-        if (attachKind === 'contract') Finance.openWhenReady({ contract: null, supplier: to, file: f.id }, pid);
-        else if (attachKind === 'proof') { Payments.openWhenReady(to, { proof: f }); location.hash = `#/p/${pid}/payments`; }
     }
 
     // ================= בחירת קובץ קיים (מהחלונות: תוספת, הוצאה, אסמכתא, חשבונית) =================

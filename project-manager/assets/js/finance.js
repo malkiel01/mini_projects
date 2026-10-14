@@ -115,7 +115,14 @@ const Finance = (() => {
             const o = pendingOpen; pendingOpen = null;
             if (o.change) { finTab('suppliers'); openChange(o.change); }
             else if (o.expense && data.expenses?.items?.some(x => x.id === o.expense)) { finTab('expenses'); openExpense(o.expense); }
-            else if (o.supplier) { finTab('suppliers'); openContract(o.supplier, null, { id: o.contract || 0, file: o.file || null }); }
+            else if (o.changeNew) {
+                // תוספת מקובץ (אשף השיוך): החלון של התוספת, עם הקובץ כפירוט
+                finTab('suppliers');
+                openNewChange(o.changeNew.stage, o.changeNew.supplier);
+                coFile = o.changeNew.file;
+                $('#co-file-name').textContent = '📂 ' + coFile.name;
+            }
+            else if (o.supplier) { finTab('suppliers'); openContract(o.supplier, o.stage || null, { id: o.contract || 0, file: o.file || null }); }
         }
     }
 
@@ -309,13 +316,16 @@ const Finance = (() => {
     // ================= תוספות וחריגות (כ4) =================
 
     function openNewChange(stageId, supplierId) {
-        const s = data.stages.find(x => x.stage_id === stageId), r = s.rows.find(x => x.supplier_id === supplierId);
+        const s = data.stages.find(x => x.stage_id === stageId), r = s?.rows.find(x => x.supplier_id === supplierId);
         const f = $('#co-dlg form');
         f.reset(); formError(f, '');
         co = { new: true, stageId, supplierId };
         coFile = null; $('#co-file-name').textContent = '';
         $('#co-dlg-title').textContent = t('תוספת / חריגה');
-        $('#co-for').textContent = t('{supplier} · {stage}', { supplier: r.name, stage: stageName(s) });
+        // ספק שעוד אין לו שורה בשלב (תוספת מאשף השיוך) — השם מהשלבים של הפרויקט
+        const st0 = project.stages.find(x => x.id === stageId);
+        const sname = r?.name || (st0?.engaged || []).find(e => e.supplier_id === supplierId)?.name || (st0?.supplier_id === supplierId ? st0.supplier_name : '');
+        $('#co-for').textContent = t('{supplier} · {stage}', { supplier: sname, stage: s ? stageName(s) : (st0 ? t(st0.name) : '') });
         $('#co-new').hidden = false; $('#co-view').hidden = true; $('#co-send').hidden = false;
         Dev.attach($('#co-dlg'), 'change', null);
         $('#co-dlg').showModal();

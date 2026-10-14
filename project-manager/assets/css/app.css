@@ -983,3 +983,29 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .viewer-none { margin: auto; display: grid; justify-items: center; gap: var(--s2); padding: var(--s4); text-align: center; }
 .fv-fail { padding: var(--s3); text-align: center; }
 .rows-list .st-eng { color: var(--brand); }
+
+/* ===== אשף השיוך (linker.js) ובחירה של כמה קבצים ===== */
+.link-start { display: flex; align-items: center; gap: var(--s2); inline-size: 100%; margin-top: var(--s2); padding: 10px var(--s3); min-block-size: 56px;
+    border: 1px solid var(--brand); border-radius: var(--r); background: var(--brand-soft); color: var(--ink); font: inherit; text-align: start; cursor: pointer; }
+.link-start .tile-tx, .tile .tile-tx { display: grid; min-inline-size: 0; flex: 1; }
+.link-start small, .tile .tile-tx small { color: var(--muted); font-size: .75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.link-start .tile-ic { font-size: 1.3rem; }
+.link-path { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.link-path .chip { cursor: pointer; min-height: 28px; font-size: .8rem; background: var(--brand-soft); color: var(--brand); border-color: transparent; }
+.link-sep { color: var(--muted); }
+#link-q { margin: 0; }
+.link-list { display: grid; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--surface); }
+.link-list .use-row + .use-row { border-top: 1px solid var(--line); }
+.link-list .use-row.on { background: var(--brand-soft); }
+#link-form:not(:empty) { display: grid; gap: var(--s2); margin-top: var(--s3); padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r); }
+.link-more { margin-top: var(--s2); }
+.link-more summary { cursor: pointer; color: var(--brand); min-block-size: 36px; display: flex; align-items: center; }
+.link-more .attach-grid { margin-top: var(--s2); }
+#fsel-tools { margin: 0 0 4px; }
+#fsel-toggle[aria-pressed="true"] { background: var(--brand-soft); border-color: var(--brand); }
+.fsel-box { flex: none; font-size: 1.15rem; }
+#file-list .card.picked { background: var(--brand-soft); }
+.fsel-bar { position: sticky; bottom: calc(var(--s2) + env(safe-area-inset-bottom)); z-index: 3; display: flex; align-items: center; gap: var(--s2);
+    margin-top: var(--s2); padding: var(--s2) var(--s3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 4px 16px rgb(0 0 0 / .12); }
+.fsel-bar #fsel-count { flex: 1; font-size: .9rem; }
+.tile .tile-tx small { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.25; }

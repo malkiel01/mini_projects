@@ -124,7 +124,11 @@ function pm_report_save(array $user, array $in): array
            ->execute([$projectId, $stageId, $supplierId, $kind, $text, $visible, $user['id'], pm_now()]);
         $id = (int)$db->lastInsertId();
         $ins = $db->prepare('INSERT INTO report_files (report_id, file_id, sort) VALUES (?,?,?)');
-        foreach ($fileIds as $i => $f) $ins->execute([$id, $f, $i]);
+        foreach ($fileIds as $i => $f) {
+            $ins->execute([$id, $f, $i]);
+            // תיעוד של ספק — מ"ממתין למיון" לתיקייה שלו במקצוע (קבצים שהועלו מהשטח כבר בתיקיית השלב — נשארים)
+            if ($supplierId) pm_file_claim($projectId, $f, null, $supplierId, false, $stageId);
+        }
         pm_report_files_visible($id, (bool)$visible);
         // משפט שלם לכל צירוף: עם / בלי קבצים (אחד / כמה), עם / בלי שלב. {text} — " — <טקסט>" / ": <טקסט>" או ריק
         $n = count($fileIds);
