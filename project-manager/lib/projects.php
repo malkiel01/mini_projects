@@ -209,12 +209,19 @@ const PM_MEMBER_ROLES = [
 ];
 // i18n-ok-end
 
+/** השלבים של ספק בצוות — "stage:12" או כמה: "stage:12,15". */
+function pm_member_stage_ids(string $key): array
+{
+    if (!preg_match('/^stage:(\d+(?:,\d+)*)$/', $key, $m)) return [];
+    return array_values(array_unique(array_map('intval', explode(',', $m[1]))));
+}
+
 /** התווית של תפקיד שמור — או ברירת המחדל לסוג איש הקשר. */
 function pm_member_role_label(string $key, string $kind): string
 {
-    // ספק — השלב שהוא עושה בפרויקט ("stage:<id>"): שם השלב (ויחידה במתחם)
-    if (preg_match('/^stage:(\d+)$/', $key, $m)) {
-        $n = pm_trade_folder_name((int)$m[1]);
+    // ספק — השלבים שהוא עושה בפרויקט ("stage:<id>,<id>"): שמות השלבים (ויחידה במתחם)
+    if ($ids = pm_member_stage_ids($key)) {
+        $n = implode(' · ', array_filter(array_map(fn($id) => pm_trade_folder_name($id), $ids)));
         if ($n !== '') return $n;
     }
     if (preg_match('/^trade:(\d+)$/', $key, $m)) {
@@ -226,13 +233,16 @@ function pm_member_role_label(string $key, string $kind): string
 }
 
 /**
- * ספק שעבר לשלב אחר בצוות / הוסר מהצוות: השלב הקודם שהוא נרשם בו כספק (דרך הצוות) — משתחרר,
- * רק כשאין לו שם עבודה (הצעה, אבן דרך, תוספת). אחרת הוא נשאר הספק של השלב.
+ * ספק שהוסר משלב בצוות / מהצוות: כל שלב שהיה לו ואין לו עוד ($newKey) — משתחרר, רק כשאין לו שם עבודה
+ * (הצעה, אבן דרך, תוספת). אחרת הוא נשאר הספק של השלב.
  */
-function pm_member_release_stage(int $projectId, int $contactId, string $oldKey): void
+function pm_member_release_stage(int $projectId, int $contactId, string $oldKey, string $newKey = ''): void
 {
-    if (!preg_match('/^stage:(\d+)$/', $oldKey, $m)) return;
-    $sid = (int)$m[1];
+    foreach (array_diff(pm_member_stage_ids($oldKey), pm_member_stage_ids($newKey)) as $sid) pm_member_release_one($projectId, $contactId, $sid);
+}
+
+function pm_member_release_one(int $projectId, int $contactId, int $sid): void
+{
     $st = pm_db()->prepare("SELECT (SELECT COUNT(*) FROM quotes WHERE stage_id = :s AND supplier_id = :c AND status NOT IN ('rejected', 'declined', 'cancelled'))
                                  + (SELECT COUNT(*) FROM payments WHERE stage_id = :s AND supplier_id = :c AND status != 'cancelled')
                                  + (SELECT COUNT(*) FROM change_orders WHERE stage_id = :s AND supplier_id = :c AND status != 'cancelled')");
@@ -261,17 +271,23 @@ function pm_project_team(array $p, array $stages): array
         if ($u['lawyer_id'] && $u['lawyer_id'] !== (int)$p['lawyer_id']) { $add($u['lawyer_id'], 'עו"ד'); $team[$u['lawyer_id']]['roles'][] = '🏢 ' . $u['name']; } // i18n-ok
     }
     foreach ($stages as $s) if ($s['supplier_id']) $add($s['supplier_id'], $s['name']);
-    $m = $db->prepare('SELECT m.contact_id, m.role, m.role_key, m.note, c.kind FROM project_members m JOIN contacts c ON c.id = m.contact_id WHERE m.project_id = ?');
+    $m = $db->prepare('SELECT m.contact_id, m.role, m.role_key, m.note, m.portal_access, c.kind FROM project_members m JOIN contacts c ON c.id = m.contact_id WHERE m.project_id = ?');
     $m->execute([$p['id']]);
     foreach ($m->fetchAll() as $r) {
         $id = (int)$r['contact_id'];
         // תפקיד מהרשימה (לקוח / עו"ד נוסף — עם קישור אישי משלו, lib/portal.php: pm_portal_co); הערה — רק לנו.
         // role — טקסט חופשי מלפני הרשימה: מוצג כהערה
-        $role = pm_member_role_label((string)$r['role_key'], $r['kind']);
+        // ספק בכמה שלבים — כל שלב תווית משלו (כמו השלבים שהוא הספק שלהם), בלי כפילות
+        $ids = pm_member_stage_ids((string)$r['role_key']);
+        $roles = $ids ? array_values(array_filter(array_map(fn($sid) => pm_trade_folder_name($sid), $ids))) : [];
+        $roles = $roles ?: [pm_member_role_label((string)$r['role_key'], $r['kind'])];
         $note = trim((string)$r['note']) !== '' ? (string)$r['note'] : (string)$r['role'];
-        if (isset($team[$id])) { $team[$id]['removable'] = true; if (($r['role_key'] !== '' || !in_array($r['kind'], ['client', 'lawyer'], true)) && !in_array($role, $team[$id]['roles'], true)) $team[$id]['roles'][] = $role; }
-        else $add($id, $role, true);
-        if (isset($team[$id])) $team[$id] += ['member' => ['role_key' => (string)$r['role_key'], 'note' => $note]];
+        if (!isset($team[$id])) $add($id, array_shift($roles), true);
+        $team[$id]['removable'] = true;
+        if ($r['role_key'] !== '' || !in_array($r['kind'], ['client', 'lawyer'], true)) {
+            foreach ($roles as $role) if (!in_array($role, $team[$id]['roles'], true)) $team[$id]['roles'][] = $role;
+        }
+        if (isset($team[$id])) $team[$id] += ['member' => ['role_key' => (string)$r['role_key'], 'note' => $note, 'portal_access' => (string)$r['portal_access']]];
     }
     return array_values($team);
 }
@@ -552,7 +568,7 @@ function pm_note(array $user, int $projectId, string $text): array
     return pm_project_get($user, $projectId);
 }
 
-function pm_member(array $user, int $projectId, int $contactId, bool $add, string $roleKey, string $note = ''): array
+function pm_member(array $user, int $projectId, int $contactId, bool $add, string $roleKey, string $note = '', string $access = 'full'): array
 {
     $p = pm_project_row($user, $projectId);
     $st = pm_db()->prepare('SELECT name, kind, owner_id FROM contacts WHERE id = ?');
@@ -562,29 +578,36 @@ function pm_member(array $user, int $projectId, int $contactId, bool $add, strin
     if ($add) {
         // התפקיד — מהרשימה של סוג איש הקשר (או תחום של הספק); הערה — טקסט חופשי לתצוגה אצלנו
         $roleKey = trim($roleKey);
-        // ספק — רק שלב שקיים בפרויקט ("stage:<id>"); אין שלב מתאים — מוסיפים שלב קודם
-        $stageId = null;
+        // ספק — שלב אחד או כמה, רק שלבים שקיימים בפרויקט ("stage:<id>,<id>"); אין שלב מתאים — מוסיפים שלב קודם
+        $stages = [];
         if ($c['kind'] === 'supplier') {
-            if (!preg_match('/^stage:(\d+)$/', $roleKey, $m)) throw new PmError('ספק — בחרו את השלב שלו בפרויקט (אין שלב מתאים? הוסיפו שלב קודם)', 422);
+            $ids = pm_member_stage_ids($roleKey);
+            if (!$ids) throw new PmError('ספק — בחרו את השלבים שלו בפרויקט (אין שלב מתאים? הוסיפו שלב קודם)', 422);
             $s = pm_db()->prepare('SELECT id, supplier_id FROM stages WHERE id = ? AND project_id = ?');
-            $s->execute([(int)$m[1], $projectId]);
-            $st = $s->fetch();
-            if (!$st) throw new PmError('השלב לא נמצא בפרויקט', 422);
-            $stageId = (int)$st['id'];
+            foreach ($ids as $id) {
+                $s->execute([$id, $projectId]);
+                $stages[] = $s->fetch() ?: throw new PmError('השלב לא נמצא בפרויקט', 422);
+            }
+            $roleKey = 'stage:' . implode(',', $ids);
         } elseif ($roleKey !== '' && !isset(PM_MEMBER_ROLES[$c['kind']][$roleKey])) {
             throw new PmError('תפקיד לא מוכר', 422);
         }
         $note = mb_substr(trim($note), 0, 100);
+        // הרשאה בקישור האישי — רק ללקוח / עו"ד נוסף; לספק אין משמעות
+        $access = in_array($c['kind'], ['client', 'lawyer'], true) && $access === 'view' ? 'view' : 'full';
         $was = pm_db()->prepare('SELECT role_key FROM project_members WHERE project_id = ? AND contact_id = ?');
         $was->execute([$projectId, $contactId]);
         $old = $was->fetchColumn();
         $existed = $old !== false;
-        if ($existed && $old !== $roleKey) pm_member_release_stage($projectId, $contactId, (string)$old);
-        pm_db()->prepare("INSERT INTO project_members (project_id, contact_id, role, role_key, note) VALUES (?,?,'',?,?)
-                          ON CONFLICT(project_id, contact_id) DO UPDATE SET role = '', role_key = excluded.role_key, note = excluded.note")
-            ->execute([$projectId, $contactId, $roleKey, $note]);
+        if ($existed && $old !== $roleKey) pm_member_release_stage($projectId, $contactId, (string)$old, $roleKey);
+        pm_db()->prepare("INSERT INTO project_members (project_id, contact_id, role, role_key, note, portal_access) VALUES (?,?,'',?,?,?)
+                          ON CONFLICT(project_id, contact_id) DO UPDATE SET role = '', role_key = excluded.role_key, note = excluded.note,
+                          portal_access = excluded.portal_access")
+            ->execute([$projectId, $contactId, $roleKey, $note, $access]);
         // שלב בלי ספק — הספק הזה הוא הספק שלו (כרטיס השלב, תיקיית "ספק / מקצוע", עץ "לפי שלבים")
-        if ($stageId && !$st['supplier_id']) pm_db()->prepare('UPDATE stages SET supplier_id = ? WHERE id = ?')->execute([$contactId, $stageId]);
+        foreach ($stages as $st) {
+            if (!$st['supplier_id']) pm_db()->prepare('UPDATE stages SET supplier_id = ? WHERE id = ?')->execute([$contactId, (int)$st['id']]);
+        }
         $label = pm_member_role_label($roleKey, $c['kind']);
         pm_event($user, $projectId, 'member_added', $existed ? 'עודכן בצוות: {name} ({role})' : 'הצטרף לצוות: {name} ({role})', [], ['name' => $c['name'], 'role' => $label]);
     } else {

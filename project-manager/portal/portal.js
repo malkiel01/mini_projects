@@ -111,6 +111,8 @@ function render() {
     document.title = p.name;
     $('#subtitle').textContent = [t('שלום {name}', { name: data.name }), (data.units || []).length ? '🏢 ' + data.units.join(', ') : '', p.address].filter(Boolean).join(' · ');
     $('#subtitle').hidden = false;
+    // לקוח / עו"ד נוסף שמנהל הפרויקט הגביל — רואה הכול, מעלה מסמכים, ולא מאשר ולא משלם
+    $('#readonly-note').hidden = !data.readonly;
     const sup = data.role === 'supplier';
     for (const id of ['#s-stages', '#s-payments', '#s-bank', '#s-ledger']) $(id).hidden = !sup;
     if (sup) $('#expenses').hidden = true;
@@ -591,7 +593,7 @@ function openDecide(id, act) {
 /** הוצאות ישירות (כ5) — מה שהלקוח קנה בעצמו. הלקוח מוסיף; העו"ד רואה. */
 function renderExpenses() {
     const X = data.finance?.expenses?.items || [];
-    const client = data.role === 'client';
+    const client = data.role === 'client' && !data.readonly; // צפייה בלבד — בלי רישום הוצאה
     $('#expenses').hidden = !X.length && !client;
     $('#x-add').hidden = !client;
     $('#expense-list').innerHTML = X.map(x => `<article class="qcard">

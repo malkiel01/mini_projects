@@ -797,6 +797,8 @@ function pm_contracts_multi(PDO $pdo): void
     // איש צוות: תפקיד מתוך רשימה (PM_MEMBER_ROLES / trade:<id>) והערה חופשית — רק למנהלים. role הישן — מוצג כהערה
     pm_add_column($pdo, 'project_members', 'role_key', "TEXT NOT NULL DEFAULT ''");
     pm_add_column($pdo, 'project_members', 'note', "TEXT NOT NULL DEFAULT ''");
+    // לקוח / עו"ד נוסף בקישור האישי: full — מאשר כמו הראשי; view — צפייה והעלאת מסמכים בלבד (מנהל הפרויקט מחליט)
+    pm_add_column($pdo, 'project_members', 'portal_access', "TEXT NOT NULL DEFAULT 'full'");
 }
 
 function pm_add_column(PDO $pdo, string $table, string $col, string $def): void

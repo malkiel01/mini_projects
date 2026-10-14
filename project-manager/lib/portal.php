@@ -72,6 +72,12 @@ function pm_portal_role(array $p, int $contactId): string
     throw new PmError('קישור אישי — ללקוח, לעו"ד או לספק של הפרויקט', 422);
 }
 
+/** קישור לצפייה בלבד (לקוח / עו"ד נוסף שהוגבל) — אישורים, תשלומים והוצאות חסומים; העלאת מסמכים מותרת. */
+function pm_portal_need_full(array $a): void
+{
+    if (!empty($a['readonly'])) throw new PmError('הקישור שלך לצפייה והעלאת מסמכים בלבד — אישורים ותשלומים נעשים בקישור של הלקוח', 403);
+}
+
 /** איש הקשר הוא הלקוח / העו"ד ($col) של אחת היחידות בפרויקט. */
 function pm_unit_contact(int $projectId, string $col, int $contactId): bool
 {
@@ -185,13 +191,21 @@ function pm_portal_access(string $token): array
             && !pm_portal_co((int)$project['id'], (int)$l['contact_id'], $l['role'])) $bad('איש הקשר כבר לא ' . ($l['role'] === 'client' ? 'הלקוח' : 'העו"ד') . ' של הפרויקט');
     }
     // i18n-none-end
+    // לקוח / עו"ד נוסף שמנהל הפרויקט הגביל לצפייה — בלי אישורים ותשלומים (רק צפייה והעלאת מסמכים)
+    $readonly = false;
+    if ($l['role'] !== 'supplier' && (int)$project[$l['role'] === 'client' ? 'client_id' : 'lawyer_id'] !== (int)$l['contact_id']
+        && !pm_unit_contact((int)$project['id'], $l['role'] === 'client' ? 'client_id' : 'lawyer_id', (int)$l['contact_id'])) {
+        $ra = pm_db()->prepare('SELECT portal_access FROM project_members WHERE project_id = ? AND contact_id = ?');
+        $ra->execute([$project['id'], $l['contact_id']]);
+        $readonly = $ra->fetchColumn() === 'view';
+    }
     $u = pm_db()->prepare('SELECT id, display_name, phone, email, role, lang FROM users WHERE id = ?');
     $u->execute([$project['owner_id']]);
     $owner = $u->fetch() ?: ['id' => (int)$project['owner_id'], 'display_name' => '', 'phone' => '', 'email' => '', 'role' => 'manager', 'lang' => ''];
     // השפה של מנהל הפרויקט — למיילים אליו ולשם שבציר הזמן שלו (לא נבחרה — עברית)
     $owner['lang'] = pm_lang_valid(($owner['lang'] ?? '') ?: 'he');
     $as = ['client' => '{name} (לקוח)', 'lawyer' => '{name} (עו"ד)', 'supplier' => '{name} (ספק)'][$l['role']]; // i18n-ok
-    return ['link' => $l, 'project' => $project, 'contact' => $contact, 'owner' => ['id' => (int)$owner['id']] + $owner,
+    return ['link' => $l, 'project' => $project, 'contact' => $contact, 'owner' => ['id' => (int)$owner['id']] + $owner, 'readonly' => $readonly,
             // מי שמופיע בציר הזמן כשהלקוח / העו"ד פועל
             'actor' => ['id' => 0, 'display_name' => pm_t($as, ['name' => $contact['name']], $owner['lang']),
                         'actor' => 'portal:' . $l['id']]];
@@ -278,14 +292,20 @@ function pm_portal_view(array $a): array
     }, array_values(array_filter(pm_payments_of($pid, true)['payments'], fn($x) => pm_portal_in_scope($scope, $x['stage_id'], $x['unit_id'] ?? null))));
     $payIds = array_column($payments, 'id');
 
+    // צפייה בלבד (לקוח / עו"ד נוסף שהוגבל): אותו מידע, בלי כפתורי אישור ותשלום
+    if (!empty($a['readonly'])) {
+        $quotes = array_map(fn($q) => ['can_decide' => false, 'can_reject' => false] + $q, $quotes);
+        $payments = array_map(fn($x) => ['can_pay' => false, 'can_approve' => false] + $x, $payments);
+    }
     return [
-        'role' => $role, 'name' => $a['contact']['name'], 'approval_method' => $method, 'lang' => pm_lang_valid($a['contact']['lang'] ?? 'he'),
+        'role' => $role, 'name' => $a['contact']['name'], 'approval_method' => $method, 'readonly' => !empty($a['readonly']), 'lang' => pm_lang_valid($a['contact']['lang'] ?? 'he'),
         'project' => ['name' => $p['name'], 'address' => $p['address'], 'status' => $p['status'], 'kind' => $p['kind']],
         'manager' => ['name' => $a['owner']['display_name'], 'phone' => $a['owner']['phone'], 'email' => $a['owner']['email']],
         'stages' => $stages, 'quotes' => $quotes, 'files' => $files, 'payments' => $payments, 'uploads' => pm_portal_uploads($a),
         'units' => $scope['names'] ?? [],
         // תוספות וחריגות (כ4) — מה שנשלח אליהם; לאישור / דחייה כמו הצעה
-        'changes' => array_values(array_filter(pm_changes_of($pid, $role), fn($x) => $x['status'] !== 'cancelled' && $vis($x['stage_id'] ?? null))),
+        'changes' => array_map(fn($x) => !empty($a['readonly']) ? ['can_decide' => false] + $x : $x,
+            array_values(array_filter(pm_changes_of($pid, $role), fn($x) => $x['status'] !== 'cancelled' && $vis($x['stage_id'] ?? null)))),
         'reports' => array_values(array_filter(pm_reports_of($pid, true), fn($x) => $scope === null || (($x['stage_id'] ?? null) ? $vis($x['stage_id']) : $scope['shared']))),
         // המצב הכספי (אגף הכספים): תקציב ראשוני מול היום, סוכם, שולם, יתרה והתשלום הבא — עם מע"מ.
         // מתחם — רק של היחידות שלו; התראות — רק על התשלומים שלו

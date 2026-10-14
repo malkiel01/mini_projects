@@ -812,14 +812,21 @@ const Projects = (() => {
     function fillRoles(form, contactId, value = '') {
         const c = memberContacts.get(contactId);
         const kind = c?.kind || 'supplier';
-        // ספק — השלבים שיש בפרויקט (אין שלב מתאים — מוסיפים שלב קודם); לקוח / עו"ד — הרשימה שלהם
-        const list = kind === 'supplier'
-            ? (cur.stages || []).map(s => ({ value: 'stage:' + s.id, label: stageName(s) + (s.supplier_id && s.supplier_id !== contactId ? ' · ' + t('יש ספק') : '') }))
-            : Object.entries(memberRoles?.[kind] || {}).map(([value, label]) => ({ value, label: t(label) }));
-        form.elements.role_key.innerHTML = list.length ? options(list, value) : `<option value="">${esc(t('אין שלבים בפרויקט — הוסיפו שלב קודם'))}</option>`;
+        // ספק — השלבים שיש בפרויקט, אחד או כמה (אין שלב מתאים — מוסיפים שלב קודם); לקוח / עו"ד — הרשימה שלהם
+        const supplier = kind === 'supplier';
+        const picked = new Set(/^stage:[\d,]+$/.test(value) ? value.slice(6).split(',').map(Number) : []);
+        const stages = cur.stages || [];
+        $('#member-stage-list').innerHTML = stages.length ? stages.map(s => `<label class="check"><input type="checkbox" value="${s.id}"${picked.has(s.id) ? ' checked' : ''}>
+            <span>${esc(stageName(s))}${s.supplier_id && s.supplier_id !== contactId ? ` <small>· ${esc(t('יש ספק'))}</small>` : ''}</span></label>`).join('')
+            : `<p class="hint">${esc(t('אין שלבים בפרויקט — הוסיפו שלב קודם'))}</p>`;
+        const list = Object.entries(memberRoles?.[kind] || {}).map(([value, label]) => ({ value, label: t(label) }));
+        form.elements.role_key.innerHTML = options(list, value);
         if (value && list.some(x => x.value === value)) form.elements.role_key.value = value;
-        $('#member-role-label').textContent = kind === 'supplier' ? t('השלב שלו בפרויקט') : t('תפקיד בפרויקט');
-        $('#member-stage-hint').hidden = kind !== 'supplier';
+        $('#member-role-f').hidden = supplier;
+        $('#member-stages').hidden = !supplier;
+        $('#member-stage-hint').hidden = !supplier;
+        // לקוח / עו"ד נוסף: מה מותר לו בקישור האישי — מנהל הפרויקט מחליט
+        $('#member-access-f').hidden = !['client', 'lawyer'].includes(kind);
     }
 
     /** "+ איש צוות" — או ✏️ על איש צוות (editId): התפקיד מתוך רשימה, והערה חופשית רק לנו. */
@@ -847,6 +854,7 @@ const Projects = (() => {
         form.elements.contact_id.onchange = () => fillRoles(form, Number(form.elements.contact_id.value));
         fillRoles(form, editing ? editId : Number(form.elements.contact_id.value), editing?.member?.role_key || '');
         form.elements.note.value = editing?.member?.note || '';
+        form.elements.portal_access.value = editing?.member?.portal_access === 'view' ? 'view' : 'full';
         $('#member-dlg-title').textContent = editing ? t('עריכה בצוות — {name}', { name: editing.name }) : t('הוספה לצוות');
         $('button[type=submit]', form).textContent = editing ? t('שמירה') : t('הוספה');
         dlg.showModal();
@@ -856,8 +864,12 @@ const Projects = (() => {
         const form = $('#member-dlg form');
         const contact_id = Number(form.elements.contact_id.value);
         if (!contact_id) { formError(form, t('יש לבחור איש קשר')); return; }
+        const supplier = !$('#member-stages').hidden;
+        const ids = $$('#member-stage-list input:checked').map(x => x.value);
+        if (supplier && !ids.length) { formError(form, t('בחרו לפחות שלב אחד')); return; }
         await busy($('button[type=submit]', form), form, async () => {
-            update(await api('member', { body: { project_id: cur.project.id, contact_id, add: true, role_key: form.elements.role_key.value, note: form.elements.note.value } }));
+            update(await api('member', { body: { project_id: cur.project.id, contact_id, add: true, note: form.elements.note.value,
+                role_key: supplier ? 'stage:' + ids.join(',') : form.elements.role_key.value, portal_access: form.elements.portal_access.value } }));
             $('#member-dlg').close();
         });
     }
