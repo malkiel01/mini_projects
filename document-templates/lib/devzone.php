@@ -28,6 +28,7 @@ function devzone_migrate(PDO $pdo): void
         );
         CREATE INDEX IF NOT EXISTS idx_dev_log_at ON dev_log(at);
         SQL);
+    devtasks_migrate($pdo);
     // לוג המעקב: מה שצריך כדי לשחזר תקלה — בלי תוכן של משתמשים
     $cols = array_column($pdo->query('PRAGMA table_info(dev_log)')->fetchAll(), 'name');
     foreach (['method TEXT', 'status INTEGER', 'actor TEXT', 'ref TEXT', 'ip TEXT', 'message TEXT', 'trace TEXT', 'page TEXT'] as $def) {
@@ -49,7 +50,7 @@ function dev_track(?array $session, string $action, float $started, int $status,
             $v = $_GET[$k] ?? ($GLOBALS['dt_body'][$k] ?? null);
             if (is_numeric($v)) $ref[] = "$k=" . (int)$v;
         }
-        $actor = $session ? 'user' : (str_starts_with($action, 'ext_') ? 'api' : (str_starts_with($action, 'fill_') ? 'fill' : 'guest'));
+        $actor = $session ? 'user' : (str_starts_with($action, 'ext_') ? 'api' : (str_starts_with($action, 'fill_') ? 'fill' : (str_starts_with($action, 'devapi_') ? 'claude' : 'guest')));
         $trace = null;
         if ($e && !($e instanceof ApiError)) $trace = basename($e->getFile()) . ':' . $e->getLine() . ' ' . get_class($e);
         db()->prepare('INSERT INTO dev_log (at, user_id, action, error_code, duration_ms, method, status, actor, ref, ip, message, trace, page)
@@ -106,12 +107,7 @@ function dev_log_list(array $q): array
 
 // ── רשימת "פתוח / סגור" ──────────────────────────────────────
 
-/** הרשימה נשמרת בקוד (dev/open-items.json) — מתעדכנת עם כל שינוי שנכנס. */
-function dev_items(): array
-{
-    $items = is_file(DEV_ITEMS_FILE) ? (json_decode((string)file_get_contents(DEV_ITEMS_FILE), true) ?: []) : [];
-    return ['ok' => true] + $items;
-}
+// הרשימה, הקודים והשיח — lib/devtasks.php
 
 // ── מצב המערכת ───────────────────────────────────────────────
 
@@ -342,3 +338,5 @@ function me_logout_others(array $s): array
     $st->execute([$s['id'], $s['token_hash']]);
     return ['ok' => true, 'count' => $st->rowCount()];
 }
+
+require_once __DIR__ . '/devtasks.php';   // מטלות: קודים, שיח, אסימון לקריאה בידי Claude

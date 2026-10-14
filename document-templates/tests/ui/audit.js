@@ -140,8 +140,17 @@ function scan() {
     ['עורך — נכתב בכלי', async () => { await go('tpl=' + ids.aid)(); await p.click('.seg-tabs [data-tab=design]'); await p.waitForTimeout(400); }],
     ['פיתוח — משתמשים', go('dev?tab=users')],
     ['פיתוח — משתמש', click('.list .use-row')],
-    ['פיתוח — פתוח/סגור', go('dev?tab=items')],
-    ['פיתוח — לוג', go('dev?tab=log')],
+    ['פיתוח — מטלות', go('dev?tab=items')],
+    ['פיתוח — מטלה עם שיח', async () => {
+      await p.evaluate(async () => { const r = await window.DT.api('dev_items'); const c = r.items.find(x => x.status !== 'closed').code;
+        await window.DT.api('dev_comment', { code: c, body: 'הערה ארוכה כדי לבדוק שבירת שורות: ' + 'מילה '.repeat(40) });
+        location.hash = '#dev?tab=items&code=' + c; });
+      await p.waitForTimeout(800); }],
+    ['פיתוח — מטלה חדשה', async () => { await go('dev?tab=items')(); await p.click('button:has-text("+ מטלה חדשה")'); await p.waitForTimeout(300); }],
+    ['פיתוח — העתקה לצ\'אט', async () => { await p.keyboard.press('Escape'); await p.click('button:has-text("העתקה לצ\'אט")'); await p.waitForTimeout(300); }],
+    ['פיתוח — גישה ל-Claude', async () => { await p.keyboard.press('Escape'); await p.click('button:has-text("גישה ל-Claude")');
+      await p.click('dialog button:has-text("+ אסימון חדש")'); await p.waitForTimeout(500); }],
+    ['פיתוח — לוג', async () => { await p.keyboard.press('Escape'); await go('dev?tab=log')(); }],
     ['פיתוח — אכיפה', go('dev?tab=force')],
     ['פיתוח — אכיפה פעולות', click('.dev-body .card-list .use-row')],
     ['פיתוח — מצב', go('dev?tab=health')],

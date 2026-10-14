@@ -674,7 +674,7 @@
       item('🔌', 'חיבורים ו-API', go('connections')),
       me.is_developer ? el('div', { class: 'menu-sep' }, 'מפתח המערכת') : null,
       me.is_developer ? [
-        item('📋', 'פתוח / סגור', go('dev?tab=items'), 'מה נשאר, ושאלות אליך'),
+        item('📋', 'מטלות', go('dev?tab=items'), 'קוד, שיח, ושאלות אליך'),
         item('🪵', 'לוג מעקב', go('dev?tab=log'), 'בקשות, שגיאות, דיבוג'),
         item('🛡️', 'אכיפה', go('dev?tab=force'), 'פעולות מעבר לכללים'),
         item('👥', 'משתמשים', go('dev?tab=users')),
