@@ -21,7 +21,8 @@ async function init() {
     DevLoop.setup({ api, toast, isDev, tasksHref: '#/settings/tasks', mountBefore: '#me-btn',
         appName: 'מנהל הפרויקטים', // i18n-none
         headers: () => ({ 'X-CSRF': state.user?.csrf || '', 'X-Lang': I18n.lang() }), lang: () => I18n.lang(),
-        version: () => '0.' + ((document.querySelector('script[src*="core.js"]')?.src.match(/v=(\d+)/) || [])[1] || ''), trace: () => PMTrace });
+        version: () => '0.' + ((document.querySelector('script[src*="core.js"]')?.src.match(/v=(\d+)/) || [])[1] || ''), trace: () => PMTrace,
+        logHref: r => '#/settings/log/' + r.req }); // 📜 במטלה → היומן של מנהל הפרויקטים, מסונן לבקשה
     DevLoop.mount();
     bindMe();
     $('#me-dev').addEventListener('click', () => { Dev.set(!Dev.on()); Me.close(); toast(Dev.on() ? t('סמכות מפתח פעילה — אפשר למחוק הכול ולערוך גם נעול') : t('סמכות מפתח כבויה')); });

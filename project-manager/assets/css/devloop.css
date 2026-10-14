@@ -55,3 +55,17 @@
 .dt-errs { margin: 6px 0; padding-inline-start: 1.2em; color: var(--danger); font-size: .76rem; }
 .dt-steps input[type=checkbox] { inline-size: 18px; block-size: 18px; min-block-size: 0; min-inline-size: 0; flex: none; margin: 2px 0 0; padding: 0; }
 .dt-steps label span { flex: 1; }
+
+/* 📜 יומן — במטלה, במסך היומן המובנה, ו-🔗 / "+ מטלה" בתצוגת היומן של האפליקציה */
+.dt-log { font-size: .82rem; border: 1px dashed var(--line); border-radius: var(--r); padding: 6px var(--s2); }
+.dt-log summary { cursor: pointer; color: var(--muted); }
+.dt-lrs { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
+.dt-lr { padding: 4px 6px; border-radius: 8px; background: var(--bg); display: grid; gap: 2px; overflow-wrap: anywhere; }
+.dt-lr.error { box-shadow: inset 3px 0 0 var(--danger); }
+.dt-lr.warn { box-shadow: inset 3px 0 0 var(--star); }
+.dt-lr small { color: var(--muted); }
+.dt-lr p { margin: 0; }
+.dt-log-tools input { flex: 1; min-inline-size: 8em; }
+.dl-slot:empty { display: none; }
+.chip.dl-link, .chip.dl-new { font-size: .72rem; min-height: 22px; padding: 0 8px; cursor: pointer; text-decoration: none; }
+.chip.dl-new { color: var(--danger); }

@@ -302,6 +302,10 @@ try {
         'POST dev-report'        => $isDev ? devloop_report($user, $in) : throw new PmError('רק המפתח', 403),
         'POST dev-attach'        => $isDev ? devloop_attach('user:' . $user['id'], $_GET) : throw new PmError('רק המפתח', 403),
         'GET dev-file'           => $isDev ? devloop_file_out((int)($_GET['id'] ?? 0)) : throw new PmError('רק המפתח', 403),
+        // המטלות והיומן — בשני הכיוונים (DevLoop): השורות של מטלה, המטלה של שורה, ו"+ מטלה" משורה ביומן
+        'GET dev-item-log'       => $isDev ? devloop_item_log((string)($_GET['code'] ?? '')) : throw new PmError('רק המפתח', 403),
+        'POST dev-log-links'     => $isDev ? devloop_log_links((array)($in['ids'] ?? []), (array)($in['reqs'] ?? [])) : throw new PmError('רק המפתח', 403),
+        'POST dev-task-from-log' => $isDev ? devloop_task_from_log($user, $in) : throw new PmError('רק המפתח', 403),
         'POST log-token'  => $isDev ? pm_log_token(true) : throw new PmError('רק המפתח', 403),
         'POST trade'      => $isDev ? ['trades' => pm_trade_save($user, $in)] : throw new PmError('רק המפתח עורך תחומים', 403),
         'POST trade-delete' => $isDev ? ['trades' => pm_trade_delete($user, (int)($in['id'] ?? 0))] : throw new PmError('רק המפתח עורך תחומים', 403),
