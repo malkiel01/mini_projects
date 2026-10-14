@@ -497,7 +497,7 @@
           el('span', { class: 'avatar', style: `--h:${hue(u.display_name)}`, 'aria-hidden': 'true' }, initials(u.display_name)),
           el('span', { class: 'use-tx' },
             el('span', { class: 'l1' }, el('b', {}, u.display_name), el('span', { class: 't' }, (u.online ? '🟢 ' : '') + fmtTime(u.last_seen_at))),
-            el('small', {}, el('bdi', {}, u.email), u.devices ? ` · ${u.devices} מכשירים` : '',
+            el('small', { class: 'wrap' }, el('bdi', {}, u.email), u.devices ? ` · ${u.devices} מכשירים` : '',
               u.quota ? [' · ', el('bdi', {}, `${u.quota.used_mb}/${u.quota.storage_mb}MB`)] : '')),
           u.is_developer ? el('span', { class: 'badge' }, 'מפתח') : el('span', { class: 'badge ' + kind }, label)),
         pending && ops.length ? el('button', { class: 'small primary approve', onclick: () => act(u, 'approve') }, 'אישור') : null);

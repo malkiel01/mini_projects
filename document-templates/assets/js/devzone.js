@@ -73,12 +73,14 @@
     const errorsOnly = el('input', { type: 'checkbox' });
     const q = el('input', { type: 'search', placeholder: 'פעולה, או מזהה (id=12)', 'aria-label': 'חיפוש בלוג' });
     const auto = el('input', { type: 'checkbox', checked: true });
+    const nodev = el('input', { type: 'checkbox', checked: true });
     const out = el('div');
     const stats = el('div', { class: 'summary' });
     const ACTOR = { user: '👤', api: '🔑', fill: '🔗', guest: '·' };
     async function load() {
       const query = {};
       if (errorsOnly.checked) query.errors = 1;
+      if (nodev.checked) query.nodev = 1;
       const term = q.value.trim();
       if (/^\w+=\d+$/.test(term)) query.ref = term; else if (term) query.act = term;
       let r;
@@ -90,24 +92,32 @@
         d.e4 ? el('span', { class: 'badge warn' }, d.e4 + ' נדחו (4xx)') : null,
         d.js ? el('span', { class: 'badge bad' }, d.js + ' שגיאות בדפדפן') : null,
         el('span', { class: 'muted' }, '· ממוצע ' + (d.avg_ms || 0) + 'ms')));
-      put(out, r.rows.length ? el('div', { class: 'table-wrap' }, el('table', { class: 'sample log-table' },
-        el('thead', {}, el('tr', {}, ['זמן', 'פעולה', 'מצב', 'ms', 'מי', 'מזהים', 'פירוט'].map(h => el('th', {}, h)))),
-        el('tbody', {}, r.rows.map(x => el('tr', { class: x.action === 'client_error' || x.status >= 500 ? 'err' : x.status >= 400 ? 'warn' : '' },
-          el('td', { dir: 'ltr' }, when(x.at)),
-          el('td', { dir: 'ltr' }, (x.method || '') + ' ' + x.action),
-          el('td', {}, x.action === 'client_error' ? 'JS' : String(x.status ?? '')),
-          el('td', {}, String(x.ms)),
-          el('td', { title: x.email || '' }, (ACTOR[x.actor] || '') + ' ' + (x.user || x.ip || '')),
-          el('td', { dir: 'ltr' }, x.ref || ''),
-          el('td', { class: 'wrap' }, [x.message, x.trace, x.page].filter(Boolean).join(' · '))))))) : el('p', { class: 'empty' }, 'אין רשומות.'));
+      // כרטיס לכל בקשה: מה ומתי בשורה הראשונה, מי ועל מה בשנייה, והשגיאה — במלואה
+      put(out, r.rows.length ? el('ul', { class: 'list card-list log-list' }, r.rows.map(x => {
+        const js = x.action === 'client_error';
+        const kind = js || x.status >= 500 ? 'bad' : x.status >= 400 ? 'warn' : 'ok';
+        const t = new Date(x.at);
+        return el('li', { class: 'log-row ' + kind },
+          el('div', { class: 'log-l1' },
+            el('span', { class: 'badge ' + kind }, js ? 'דפדפן' : String(x.status ?? '')),
+            el('b', { dir: 'ltr', class: 'log-act' }, x.action),
+            el('span', { class: 'log-time muted', title: when(x.at) }, t.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))),
+          el('div', { class: 'log-l2 muted' },
+            [(ACTOR[x.actor] || '') + ' ' + (x.user || x.ip || 'אורח'), x.ref ? el('bdi', { dir: 'ltr' }, x.ref) : null, js ? null : x.ms + 'ms', x.method]
+              .filter(Boolean).flatMap((v, i) => i ? [' · ', v] : [v])),
+          x.message || x.trace || x.page ? el('div', { class: 'log-msg' }, x.message || '',
+            x.trace || x.page ? el('small', { dir: 'ltr' }, [x.trace, x.page].filter(Boolean).join(' · ')) : null) : null);
+      })) : el('p', { class: 'empty' }, 'אין רשומות.'));
     }
     errorsOnly.addEventListener('change', load);
+    nodev.addEventListener('change', load);
     q.addEventListener('change', load);
     timer = setInterval(() => { if (auto.checked && document.body.contains(out)) load(); else clearInterval(timer); }, 15000);
     put(box, 
       el('p', { class: 'hint' }, 'כל בקשה לשרת: מתי, איזו פעולה, תוצאה, משך, מי (👤 משתמש · 🔑 API · 🔗 ממלא בקישור), מזהי המסמך/התבנית, והודעת השגיאה. שגיאות JavaScript מהדפדפן נרשמות גם הן. בלי ערכים ובלי תוכן. נשמר 30 יום.'),
       stats,
       el('div', { class: 'toolbar' }, q, el('label', { class: 'switch small' }, errorsOnly, el('span', {}, 'רק שגיאות')),
+        el('label', { class: 'switch small' }, nodev, el('span', {}, 'בלי אזור הפיתוח')),
         el('label', { class: 'switch small' }, auto, el('span', {}, 'רענון אוטומטי'))),
       out);
     load();

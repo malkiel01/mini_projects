@@ -643,6 +643,8 @@
     function renderPanel() {
       renderTabs();
       designView.hidden = tab !== 'design';
+      // תיבות טקסט שגודלו כשהלשונית הייתה מוסתרת קיבלו גובה 0 — מחשבים מחדש
+      if (tab === 'design') requestAnimationFrame(() => { for (const ta of pagesBox.querySelectorAll('.block-text')) { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; } });
       panel.hidden = tab === 'design';
       if (tab === 'design') { panel.replaceChildren(); return; }
       if (tab === 'fields') panel.replaceChildren(fieldsList());
@@ -936,7 +938,7 @@
           placeholder: b.type === 'heading' ? 'כותרת' : 'טקסט. שדה: {{שם_השדה}}' });
         ta.value = b.text || '';
         ta.style.textAlign = b.align === 'center' ? 'center' : b.align === 'justify' ? 'justify' : 'right';
-        const grow = () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; };
+        const grow = () => { if (!ta.offsetParent) return; ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; };   // מוסתר — לא מודדים
         ta.addEventListener('input', () => { b.text = ta.value; setDirty(true); grow(); });
         ta.addEventListener('change', () => bodyChanged(false));
         requestAnimationFrame(grow);

@@ -680,3 +680,33 @@ table.sample th { background: var(--bg); font-weight: 600; }
 .log-table td.wrap { white-space: normal; min-width: 220px; max-width: 480px; word-break: break-word; }
 .log-table tr.err td { background: color-mix(in srgb, var(--danger) 9%, transparent); }
 .log-table tr.warn td { background: color-mix(in srgb, var(--star) 9%, transparent); }
+
+/* ── תיקונים מהסריקה העיצובית ── */
+/* פריסת רשת: רכיב רחב (טבלה, קוד) גולל בתוך עצמו — לא מרחיב את הדף הצידה */
+.screen, .dev-body, .conn-body, .docs-api, .field-sheet, .sheet-body { grid-template-columns: minmax(0, 1fr); }
+.screen > *, .dev-body > *, .conn-body > *, .docs-api > *, .code-box { min-width: 0; max-width: 100%; }
+/* אריח: טקסט ארוך יורד שורה (כפתור רגיל לא שובר שורות) */
+.tile { white-space: normal; }
+.tile > span:not(.tile-ic) { overflow-wrap: anywhere; }
+/* משבצת פרטים: מייל או כתובת ארוכים נשברים */
+.cells dd { overflow-wrap: anywhere; min-width: 0; }
+/* לוג המעקב: כרטיסים */
+.log-row { display: grid; gap: 3px; padding: var(--s2) var(--s3); border-inline-start: 3px solid transparent; }
+.log-row.bad { border-inline-start-color: var(--danger); background: color-mix(in srgb, var(--danger) 5%, var(--surface)); }
+.log-row.warn { border-inline-start-color: var(--star); }
+.log-l1 { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
+.log-act { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; font-size: .9rem; }
+.log-time { flex: none; font-size: .8rem; }
+.log-l2 { font-size: .8rem; overflow-wrap: anywhere; }
+.log-msg { font-size: .85rem; overflow-wrap: anywhere; display: grid; gap: 2px; }
+.log-msg small { color: var(--muted); font-size: .75rem; text-align: left; }
+/* כרטיס לוג: שתי שורות (ה-li של רשימה הוא flex כברירת מחדל) */
+.list > li.log-row { display: grid; align-items: start; }
+/* מחושב / מתמלא לבד על הדף: שורה אחת, בגודל השדה */
+.fill output.on-page { display: flex; align-items: center; width: 100%; height: 100%; padding: 0 2px; box-sizing: border-box;
+  white-space: nowrap; overflow: hidden; line-height: 1.1; font-family: Alef, Arial, sans-serif; color: #0b1f66; background: rgba(92,99,112,.07); }
+.fill output.on-page[style*="text-align: center"] { justify-content: center; }
+.fill output.on-page[style*="text-align: left"] { justify-content: flex-end; }
+.block-text { min-height: 1.6em; }
+.dev-body .toolbar, .conn-body .toolbar { flex-wrap: wrap; }
+.dev-body .toolbar > input[type=search] { flex: 1 1 180px; }
