@@ -276,6 +276,8 @@ function actor_name(string $actor, array $d): string
 {
     [$kind, $id] = array_pad(explode(':', $actor, 2), 2, '0');
     if ($kind === 'user') return user_name((int)$id);
+    if ($kind === 'dev') return 'מפתח המערכת (' . user_name((int)$id) . ')';
+    if ($kind === 'system') return 'המערכת';
     static $cache = [];
     if (!isset($cache[$actor])) {
         $st = db()->prepare('SELECT * FROM participants WHERE id = ?');
@@ -546,3 +548,4 @@ function doc_delete(array $user, array $b): array
 require_once __DIR__ . '/participants.php';
 require_once __DIR__ . '/bulk.php';
 require_once __DIR__ . '/integrations.php';
+require_once __DIR__ . '/devzone.php';

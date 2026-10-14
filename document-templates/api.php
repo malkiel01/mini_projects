@@ -21,20 +21,25 @@ function json_out(array $data, int $code = 200): never
     exit;
 }
 
-function dev_log(?int $userId, string $action, ?string $error, float $started): void
+/** לוג המעקב (lib/devzone.php) — פעם אחת לבקשה. */
+function track(?array $session, string $action, float $started, int $status, ?Throwable $e = null, array $extra = []): void
 {
-    try {
-        db()->prepare('INSERT INTO dev_log (at, user_id, action, error_code, duration_ms) VALUES (?, ?, ?, ?, ?)')
-            ->execute([now_iso(), $userId, $action, $error, (int)((microtime(true) - $started) * 1000)]);
-    } catch (Throwable) {
-        // יומן שנכשל לא מפיל את הבקשה.
-    }
+    if (!empty($GLOBALS['dt_tracked']) || $action === 'health' || $action === 'me' || $action === 'client_error') return;
+    $GLOBALS['dt_tracked'] = true;
+    dev_track($session, $action, $started, $status, $e, $extra);
 }
 
 $started = microtime(true);
 $action  = (string)($_GET['action'] ?? '');
 $method  = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $session = null;
+// בקשה שהסתיימה בהורדת קובץ (exit), או שנפלה בשגיאה קטלנית — נרשמת כאן
+register_shutdown_function(function () use (&$session, &$action, $started) {
+    $err = error_get_last();
+    $fatal = $err && in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true);
+    track($session, $action, $started, $fatal ? 500 : (http_response_code() ?: 200), null,
+        $fatal ? ['message' => mb_substr($err['message'], 0, 500), 'trace' => basename($err['file']) . ':' . $err['line'] . ' fatal'] : []);
+});
 
 // פעולות שלא דורשות כניסה.
 $PUBLIC = ['health', 'register', 'verify', 'login', 'forgot', 'reset', 'me',
@@ -50,12 +55,14 @@ $POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'dev_user
            'doc_upload', 'fill_upload', 'dev_quota', 'share_set', 'share_remove', 'share_leave',
            'contact_save', 'contact_archive', 'doc_contact', 'doc_tags', 'tpl_tags', 'bulk_preview', 'bulk_issue',
            'src_save', 'src_delete', 'src_sync', 'key_create', 'key_update', 'key_revoke', 'key_secret', 'key_test',
-           'ext_issue', 'ext_update'];
+           'ext_issue', 'ext_update',
+           'client_error', 'dev_force', 'me_update', 'me_password', 'me_logout_others'];
 
 try {
     if (in_array($action, $POSTS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
     $multipart = str_starts_with((string)($_SERVER['CONTENT_TYPE'] ?? ''), 'multipart/');
     $body = $method === 'POST' && !$multipart ? (json_decode((string)file_get_contents('php://input'), true) ?: []) : [];
+    $GLOBALS['dt_body'] = $body;   // ללוג: מזהים בלבד (מסמך, תבנית)
 
     $session = current_session();
     if (!in_array($action, $PUBLIC, true)) {
@@ -155,18 +162,31 @@ try {
                 'ext_file'      => ext_file($u, $_GET),
             };
         })(),
+        // אזור הפיתוח (dev_ — למפתח בלבד) והגדרות המשתמש
+        'dev_log_list'   => dev_log_list($_GET),
+        'dev_items'      => dev_items(),
+        'dev_health'     => dev_health(),
+        'dev_docs'       => dev_docs($_GET),
+        'dev_tpls'       => dev_tpls($_GET),
+        'dev_force'      => dev_force($session, $body),
+        'dev_audit_list' => dev_audit_list(),
+        'client_error'   => client_error($session, $body),
+        'me_info'        => me_sessions($session),
+        'me_update'      => me_update($session, $body),
+        'me_password'    => me_password($session, $body),
+        'me_logout_others' => me_logout_others($session),
         'dev_users' => dev_users(),
         'dev_user'  => dev_user_action($body, $session),
         default     => throw new ApiError('פעולה לא מוכרת', 404),
     };
-    if ($action !== 'health' && $action !== 'me') dev_log($session ? (int)$session['id'] : null, $action, null, $started);
+    track($session, $action, $started, 200);
     json_out($result);
 } catch (ApiError $e) {
-    dev_log($session ? (int)$session['id'] : null, $action, (string)$e->status, $started);
+    track($session, $action, $started, $e->status, $e);
     json_out(['ok' => false, 'error' => $e->getMessage()], $e->status);
 } catch (Throwable $e) {
     // הודעת השגיאה עלולה לכלול נתיבים — לא מוחזרת ללקוח.
     error_log('document-templates: ' . $e->getMessage());
-    dev_log($session ? (int)$session['id'] : null, $action, '500', $started);
+    track($session, $action, $started, 500, $e);
     json_out(['ok' => false, 'error' => 'שגיאת שרת'], 500);
 }

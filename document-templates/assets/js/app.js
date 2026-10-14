@@ -464,8 +464,7 @@
     reset: 'לשלוח למשתמש קישור לאיפוס סיסמה?',
   };
 
-  async function viewDev() {
-    setTab('dev');
+  async function viewDev(box) {
     const msg = el('div');
     const body = el('ul', { class: 'list' });
     const summary = el('div', { class: 'summary' });
@@ -567,10 +566,10 @@
       }
     }
 
-    show(el('section', { class: 'screen' },
+    box.replaceChildren(
       summary,
-      el('p', { class: 'hint' }, '🔒 כאן רואים חשבונות בלבד. תבניות ומסמכים של משתמשים אינם נגישים מכאן — לעולם.'),
-      msg, body));
+      el('p', { class: 'hint' }, '🔒 המפתח רואה חשבונות ומטא-דאטה בלבד — לא כותרות, לא ערכים ולא קבצים של משתמשים.'),
+      msg, body);
     await load();
     devTimer = setInterval(load, 30000);
   }
@@ -594,7 +593,7 @@
       if (key === 'forgot') return viewForgot();
       return viewLogin();
     }
-    if (key === 'dev' && me.is_developer) return viewDev();
+    if (key === 'dev' && me.is_developer) return window.DTDev.view(new URLSearchParams(h.split('?')[1] || '').get('tab'), viewDev);
     if (key === 'tpl' && val) return window.DTEditor.open(Number(val));
     if (key === 'docs') return window.DTDocs.list();
     if (key === 'contacts') return window.DTCatalog.view();
@@ -612,20 +611,120 @@
       me = null;
     }
     nav.hidden = !me;
-    document.getElementById('logout').hidden = !me;
+    meBtn.hidden = !me;
+    paintMe();
     document.getElementById('nav-dev').hidden = !(me && me.is_developer);
     document.getElementById('who').textContent = me ? me.name : '';
     if (me && /^(login|register|forgot)?$/.test(location.hash.slice(1))) location.hash = 'home';
     route();
   }
 
-  document.getElementById('logout').addEventListener('click', async () => {
+  async function logout() {
     try { await api('logout', {}); } catch (e) { /* יוצאים בכל מקרה */ }
     me = null;
     csrf = '';
     location.hash = 'login';
     boot();
+  }
+
+  // ── תפריט המשתמש: מהאווטאר בפינה — הגדרות, יציאה, ולמפתח: אזור הפיתוח ──
+  const meBtn = document.getElementById('me-btn');
+  const hueOf = (s) => [...String(s)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+  /** הכותרת: השם והאווטאר של המשתמש המחובר. */
+  function paintMe() {
+    document.getElementById('who').textContent = me ? me.name : '';
+    if (me) { meBtn.textContent = initialsOf(me.name); meBtn.style.setProperty('--h', hueOf(me.name)); }
+  }
+  const initialsOf = (s) => String(s).trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('');
+  let menu = null;
+  function closeMenu() {
+    if (!menu) return;
+    menu.remove(); menu = null;
+    meBtn.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('pointerdown', outside, true);
+  }
+  const outside = (e) => { if (menu && !menu.contains(e.target) && e.target !== meBtn) closeMenu(); };
+  meBtn.addEventListener('click', () => {
+    if (menu) { closeMenu(); return; }
+    const item = (icon, label, on, sub) => el('button', { type: 'button', role: 'menuitem', class: 'menu-item',
+      onclick: () => { closeMenu(); on(); } }, el('span', { class: 'mi-ic', 'aria-hidden': 'true' }, icon),
+      el('span', { class: 'mi-tx' }, label, sub ? el('small', {}, sub) : null));
+    const go = (h) => () => { location.hash = h; };
+    menu = el('div', { class: 'user-menu', role: 'menu', 'aria-label': 'תפריט המשתמש' },
+      el('div', { class: 'menu-head' }, el('span', { class: 'avatar', style: `--h:${hueOf(me.name)}`, 'aria-hidden': 'true' }, initialsOf(me.name)),
+        el('span', { class: 'mi-tx' }, el('b', {}, me.name), el('small', { dir: 'ltr' }, me.email))),
+      item('👤', 'הגדרות משתמש', userSettings, 'שם, סיסמה, מכשירים'),
+      item('🔌', 'חיבורים ו-API', go('connections')),
+      me.is_developer ? el('div', { class: 'menu-sep' }, 'מפתח המערכת') : null,
+      me.is_developer ? [
+        item('📋', 'פתוח / סגור', go('dev?tab=items'), 'מה נשאר, ושאלות אליך'),
+        item('🪵', 'לוג מעקב', go('dev?tab=log'), 'בקשות, שגיאות, דיבוג'),
+        item('🛡️', 'אכיפה', go('dev?tab=force'), 'פעולות מעבר לכללים'),
+        item('👥', 'משתמשים', go('dev?tab=users')),
+        item('🩺', 'מצב המערכת', go('dev?tab=health')),
+      ] : null,
+      el('div', { class: 'menu-sep' }),
+      item('⏻', 'יציאה', logout));
+    document.body.append(menu);
+    meBtn.setAttribute('aria-expanded', 'true');
+    document.addEventListener('pointerdown', outside, true);
+    menu.querySelector('.menu-item').focus();
   });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && menu) { closeMenu(); meBtn.focus(); } });
+  window.addEventListener('hashchange', closeMenu);
+
+  /** הגדרות המשתמש: שם, החלפת סיסמה, ניתוק מכשירים אחרים. */
+  async function userSettings() {
+    let info = {};
+    try { info = await api('me_info'); } catch (e) { /* מציגים מה שיש */ }
+    const msg = el('div');
+    const name = el('input', { value: me.name, maxlength: 60, autocomplete: 'name' });
+    const saveName = el('button', { type: 'button', class: 'small', onclick: async () => {
+      try { const r = await api('me_update', { name: name.value }); me.name = r.user.name; paintMe(); msg.replaceChildren(notice('השם עודכן', 'ok')); }
+      catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
+    } }, 'שמירת השם');
+    const cur = el('input', { type: 'password', autocomplete: 'current-password' });
+    const nw = el('input', { type: 'password', autocomplete: 'new-password', minlength: 8 });
+    const nw2 = el('input', { type: 'password', autocomplete: 'new-password' });
+    const savePw = el('button', { type: 'button', class: 'small', onclick: async () => {
+      if (nw.value !== nw2.value) { msg.replaceChildren(notice('הסיסמאות החדשות אינן זהות', 'bad')); return; }
+      try {
+        const r = await api('me_password', { current: cur.value, new: nw.value });
+        cur.value = nw.value = nw2.value = '';
+        msg.replaceChildren(notice('הסיסמה הוחלפה' + (r.other_sessions ? ` — ${r.other_sessions} מכשירים אחרים נותקו` : ''), 'ok'));
+      } catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
+    } }, 'החלפת סיסמה');
+    sheet('הגדרות משתמש', el('div', { class: 'field-sheet' },
+      el('section', { class: 'fs-group' }, el('h3', { class: 'sec-title' }, 'החשבון'),
+        el('dl', { class: 'cells' },
+          el('div', {}, el('dt', {}, 'מייל'), el('dd', { dir: 'ltr' }, me.email)),
+          el('div', {}, el('dt', {}, 'נרשם'), el('dd', {}, fmtTime(info.created_at))),
+          el('div', {}, el('dt', {}, 'מכשירים מחוברים'), el('dd', {}, String(info.devices ?? '—'))),
+          el('div', {}, el('dt', {}, 'סוג'), el('dd', {}, me.is_developer ? 'מפתח המערכת' : 'משתמש'))),
+        el('label', { class: 'f' }, el('span', {}, 'השם שמוצג'), name), saveName),
+      el('section', { class: 'fs-group' }, el('h3', { class: 'sec-title' }, 'סיסמה'),
+        el('label', { class: 'f' }, el('span', {}, 'הסיסמה הנוכחית'), cur),
+        el('div', { class: 'fields two' }, el('label', { class: 'f' }, el('span', {}, 'סיסמה חדשה (8 תווים לפחות)'), nw),
+          el('label', { class: 'f' }, el('span', {}, 'שוב'), nw2)),
+        savePw,
+        el('p', { class: 'hint' }, 'החלפת סיסמה מנתקת את כל המכשירים האחרים.')),
+      el('section', { class: 'fs-group' }, el('h3', { class: 'sec-title' }, 'מכשירים'),
+        el('button', { type: 'button', class: 'small', onclick: async () => {
+          try { const r = await api('me_logout_others', {}); msg.replaceChildren(notice(`נותקו ${r.count} מכשירים אחרים`, 'ok')); }
+          catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
+        } }, '🔌 ניתוק כל המכשירים האחרים')),
+      msg));
+  }
+
+  // שגיאת JavaScript — נשלחת ללוג המעקב (עד 5 לטעינה), כדי שאפשר יהיה לדבג
+  let reported = 0;
+  const report = (message, where) => {
+    if (!me || reported >= 5 || !message) return;
+    reported++;
+    api('client_error', { message: String(message).slice(0, 500), where: String(where || '').slice(0, 300), page: location.hash.slice(0, 120) }).catch(() => {});
+  };
+  window.addEventListener('error', (e) => report(e.message, `${(e.filename || '').split('/').pop()}:${e.lineno}:${e.colno}`));
+  window.addEventListener('unhandledrejection', (e) => report(e.reason?.message || e.reason, 'promise ' + (e.reason?.stack || '').split('\n')[1]?.trim()));
 
   // לעורך (editor.js): אותם עזרים, אותה מעטפת.
   window.DT = {

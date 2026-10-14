@@ -12,6 +12,7 @@
     cancelled: ['בוטל', 'bad'], declined: ['נדחה', 'bad'],
   };
   const EVENTS = {
+    dev_override: '🛡️ פעולת מפתח', webhook: 'הודעה למערכת חיצונית', api_issued: 'הונפק דרך API',
     created: 'נוצר', values_saved: 'נשמרו ערכים', completed: 'הושלם ונעול', archived: 'הועבר לארכיון',
     restored: 'שוחזר מהארכיון', downloaded: 'הורד PDF', deleted: 'נמחק',
     link_issued: 'נשלח קישור', opened: 'נפתח', verified: 'אומת בקוד', participant_completed: 'משתתף סיים',
