@@ -342,3 +342,151 @@ function pm_stage_folder(array $user, int $projectId, int $stageId): array
     $st->execute([$projectId, $stageId]);
     return ['folder_id' => (int)$st->fetchColumn() ?: null];
 }
+
+// ================= תיקון חד-פעמי של פרויקטים קיימים (מיגרציה) =================
+// העצים מחושבים מהשיוכים, אז רוב מה שחסר מתוקן בתצוגה לבד. כאן — מה ששמור לא נכון בנתונים:
+//  1. אבני דרך בלי שלב של ספק שעובד בשלב אחד — לשלב (pm_payments_auto_stage)
+//  2. שלב בלי ספק שספק אחד עובד בו — שלו (pm_stage_sync_suppliers)
+//  3. תיקיות כפולות (ספק, ספק / מקצוע, שלב…) — מאוחדות, בלי לאבד קובץ
+//  4. תיקיות חסרות — ספק עם מסמך / חוזה בלבד, תתי-תיקיות מקצוע, עץ "לפי שלבים"
+//  5. קובץ משויך שנשאר ב"ממתין למיון" — למקום שלו; קובץ בשורש תיקיית ספק ששייך למקצוע אחד — לתיקיית המקצוע
+//  6. סוג קובץ "אחר" של הצעה / חוזה / אסמכתא / חשבונית — לסוג הנכון
+// רץ פעם אחת, בבקשה הראשונה אחרי הפריסה (api.php), בטרנזקציה אחת; מה שתוקן — בציר הזמן של כל פרויקט.
+
+const PM_LINKS_REPAIR_KEY = 'links_repair_v1';
+
+function pm_links_repair_once(): void
+{
+    $db = pm_db();
+    $st = $db->prepare('SELECT value FROM settings WHERE key = ?');
+    $st->execute([PM_LINKS_REPAIR_KEY]);
+    if ($st->fetchColumn() !== false) return;
+    $db->exec('BEGIN IMMEDIATE');
+    try {
+        $st->execute([PM_LINKS_REPAIR_KEY]);
+        if ($st->fetchColumn() !== false) { $db->exec('COMMIT'); return; } // בקשה אחרת כבר תיקנה
+        $total = ['projects' => 0];
+        foreach ($db->query('SELECT id FROM projects ORDER BY id')->fetchAll(PDO::FETCH_COLUMN) as $pid) {
+            $r = pm_links_repair_project((int)$pid);
+            $total['projects']++;
+            foreach ($r as $k => $n) $total[$k] = ($total[$k] ?? 0) + $n;
+        }
+        $db->prepare('INSERT INTO settings (key, value) VALUES (?, ?)')->execute([PM_LINKS_REPAIR_KEY, json_encode(['at' => pm_now()] + $total)]);
+        $db->exec('COMMIT');
+        pm_audit('system', 'links.repair', 'system', null, $total);
+    } catch (Throwable $e) {
+        $db->exec('ROLLBACK');
+        // לא חוזרים על תיקון שנכשל בכל בקשה — נרשם, ונבדק ידנית
+        $db->prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')->execute([PM_LINKS_REPAIR_KEY, json_encode(['failed' => $e->getMessage(), 'at' => pm_now()])]);
+        pm_log('error', 'data', 'links.repair.failed', ['message' => $e->getMessage()]);
+    }
+}
+
+/** התיקון של פרויקט אחד. מחזיר כמה תוקן מכל סוג. */
+function pm_links_repair_project(int $pid): array
+{
+    $db = pm_db();
+    $r = ['staged' => 0, 'suppliers' => 0, 'merged' => 0, 'moved' => 0, 'typed' => 0];
+
+    // 1–2
+    $r['staged'] = pm_payments_auto_stage($pid);
+    $empty = fn() => (int)$db->query("SELECT COUNT(*) FROM stages WHERE project_id = $pid AND supplier_id IS NULL")->fetchColumn();
+    $before = $empty();
+    pm_stage_sync_suppliers($pid);
+    $r['suppliers'] = $before - $empty();
+
+    // 3. כפולות — קודם ההורים (ספק), אחר כך מה שבתוכם
+    $keys = [
+        'contact' => "kind = 'contact' AND parent_id IS NULL AND contact_id IS NOT NULL", 'stages' => "kind = 'stages'",
+        'sgroup' => "kind = 'sgroup'", 'tgroup' => "kind = 'tgroup'", 'stage' => "kind = 'stage'", 'trade' => "kind = 'trade'", 'ssup' => "kind = 'ssup'",
+    ];
+    foreach ($keys as $kind => $where) {
+        $rows = $db->query("SELECT id, contact_id, stage_id, name FROM folders WHERE project_id = $pid AND $where ORDER BY id")->fetchAll();
+        $keep = [];
+        foreach ($rows as $f) {
+            $k = in_array($kind, ['sgroup', 'tgroup'], true) ? $f['contact_id'] . ':' . $f['name'] : $f['contact_id'] . ':' . $f['stage_id'];
+            if (!isset($keep[$k])) { $keep[$k] = (int)$f['id']; continue; }
+            $to = $keep[$k];
+            $db->prepare('UPDATE OR IGNORE file_links SET folder_id = ? WHERE folder_id = ?')->execute([$to, $f['id']]);
+            // קובץ שכבר היה בשתיהן: הקיצור נמחק; אם זה היה הבית — הבית עובר לתיקייה שנשארת
+            $db->prepare('UPDATE file_links SET is_home = 1 WHERE folder_id = ? AND file_id IN (SELECT file_id FROM file_links WHERE folder_id = ? AND is_home = 1)')->execute([$to, $f['id']]);
+            $db->prepare('DELETE FROM file_links WHERE folder_id = ?')->execute([$f['id']]);
+            $db->prepare('UPDATE folders SET parent_id = ? WHERE parent_id = ?')->execute([$to, $f['id']]);
+            $db->prepare('DELETE FROM folders WHERE id = ?')->execute([$f['id']]);
+            $r['merged']++;
+        }
+    }
+
+    // 4
+    pm_ensure_folders(['id' => $pid]);
+
+    // 5–6: לפי השיוכים של כל קובץ
+    $coords = [];
+    foreach (pm_coords($pid) as [$fid, $c, $s]) $coords[$fid][] = [$c, $s];
+    $homes = $db->query("SELECT l.file_id, d.id AS folder_id, d.kind, d.parent_id, d.contact_id, x.type FROM file_links l
+                          JOIN folders d ON d.id = l.folder_id JOIN files x ON x.id = l.file_id
+                         WHERE l.is_home = 1 AND x.project_id = $pid AND x.deleted_at IS NULL")->fetchAll();
+    $uses = pm_file_uses(array_column($homes, 'file_id'));
+    $root = function (string $kind, ?int $cid = null) use ($db, $pid): ?int {
+        $st = $db->prepare("SELECT id FROM folders WHERE project_id = ? AND parent_id IS NULL AND kind = ? AND (contact_id = ? OR ? IS NULL) ORDER BY id LIMIT 1");
+        $st->execute([$pid, $kind, $cid, $cid]);
+        return (int)$st->fetchColumn() ?: null;
+    };
+    $stageFolder = function (int $sid) use ($db, $pid): ?int {
+        $st = $db->prepare("SELECT id FROM folders WHERE project_id = ? AND kind = 'stage' AND stage_id = ? LIMIT 1");
+        $st->execute([$pid, $sid]);
+        return (int)$st->fetchColumn() ?: null;
+    };
+    $move = function (int $fid, int $from, int $to) use ($db, &$r) {
+        if ($from === $to) return;
+        $db->prepare('DELETE FROM file_links WHERE file_id = ? AND folder_id = ? AND is_home = 0')->execute([$fid, $to]);
+        $db->prepare('UPDATE file_links SET folder_id = ? WHERE file_id = ? AND is_home = 1')->execute([$to, $fid]);
+        $r['moved']++;
+    };
+    $TYPE = ['quote' => 'quote', 'contract' => 'contract', 'proof' => 'proof', 'invoice' => 'invoice'];
+    foreach ($homes as $h) {
+        $fid = (int)$h['file_id'];
+        $u = $uses[$fid] ?? [];
+        $c = $coords[$fid] ?? [];
+        // 6
+        if ($h['type'] === 'other') foreach ($u as $x) if (isset($TYPE[$x['kind']])) {
+            $db->prepare("UPDATE files SET type = ? WHERE id = ? AND type = 'other'")->execute([$TYPE[$x['kind']], $fid]);
+            $r['typed']++;
+            break;
+        }
+        if (!$u && !$c) continue;
+        $sups = array_values(array_unique(array_filter(array_column($c, 0))));
+        $stagesOf = fn(?int $sup) => array_values(array_unique(array_filter(array_map(fn($p) => $sup === null || $p[0] === $sup ? $p[1] : null, $c))));
+        $general = fn(int $sup) => (bool)array_filter($c, fn($p) => $p[0] === $sup && $p[1] === null);
+        $from = (int)$h['folder_id'];
+        if ($h['kind'] === 'inbox' && $h['parent_id'] === null) {
+            // 5א: משויך — אבל עוד "ממתין למיון"
+            $to = null;
+            if (count($sups) === 1) {
+                $ss = $stagesOf($sups[0]);
+                $to = count($ss) === 1 && !$general($sups[0]) ? pm_trade_folder($pid, $sups[0], $ss[0]) : $root('contact', $sups[0]);
+            } elseif (count($sups) > 1 || !$sups) {
+                $ss = $stagesOf(null);
+                if (count($ss) === 1) $to = $stageFolder($ss[0]);                 // כמה ספקים בשלב אחד — לשלב
+                elseif (!$sups && array_filter($u, fn($x) => $x['kind'] === 'expense')) $to = $root('client'); // הוצאה ישירה — כמו pm_file_claim
+            }
+            if ($to) $move($fid, $from, $to);
+        } elseif ($h['kind'] === 'contact' && $h['parent_id'] === null && $h['contact_id']) {
+            // 5ב: בשורש תיקיית הספק, ושייך למקצוע אחד שלו — לתיקיית המקצוע
+            $sup = (int)$h['contact_id'];
+            $ss = $stagesOf($sup);
+            if (in_array($sup, $sups, true) && count($ss) === 1 && !$general($sup)) {
+                $to = pm_trade_folder($pid, $sup, $ss[0]);
+                if ($to) $move($fid, $from, $to);
+            }
+        }
+    }
+
+    if (array_sum($r) > 0) {
+        // בציר הזמן של הפרויקט — בלי להקפיץ אותו לראש הרשימה
+        $text = '🔧 תיקון שיוכים אוטומטי: {moved} קבצים סודרו לתיקייה הנכונה · {staged} אבני דרך שויכו לשלב · {suppliers} שלבים קיבלו ספק · {merged} תיקיות כפולות אוחדו · {typed} סוגי קבצים תוקנו'; // i18n-ok — המפתח במילונים (ארוך)
+        $db->prepare('INSERT INTO events (project_id, at, actor_id, actor_name, kind, text, data_json) VALUES (?,?,?,?,?,?,?)')
+           ->execute([$pid, pm_now(), 0, 'מערכת', 'file', pm_fill($text, $r), json_encode(['repair' => $r, 'i18n' => ['t' => $text, 'v' => $r]], JSON_UNESCAPED_UNICODE)]); // i18n-ok — שם השחקן בציר הזמן
+    }
+    return $r;
+}
