@@ -2207,5 +2207,10 @@
     "כמה": "How much",
     "מי משלם": "Who pays",
     "🚫 ביטול אבן הדרך": "🚫 Cancel this milestone",
-    "לתשלום עכשיו {amount}": "To pay now {amount}"
+    "לתשלום עכשיו {amount}": "To pay now {amount}",
+    "זיכוי אצל ספקים {amount}": "Supplier credit {amount}",
+    "עיכבון {n}% — שוחרר": "Retention {n}% — released",
+    "זיכוי {amount} — שולם מעל הסוכם": "Credit {amount} — paid above the agreed amount",
+    "זיכוי": "Credit",
+    "שלבים משותפים שעוד לא חולקו בחוזה בין הדירות — לא נכללים בסכומים שלמעלה": "Shared stages not yet split between the units in the contract — not included in the amounts above"
 }

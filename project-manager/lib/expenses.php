@@ -234,9 +234,7 @@ function pm_ledger_of(int $projectId, int $supplierId, ?string $lang = null): ar
     foreach ($q->fetchAll() as $x) $byStage[(int)$x['stage_id']] = $x;
     // שלב בלי הצעה מאושרת — ההתחייבות היא אבני הדרך (כמו בכספים, pm_finance: "בלי הצעה — מאבני הדרך").
     // תשלום בלי שלב (מקדמה) — על חשבון השלב העיקרי של הספק: ההצעה הגדולה, או השלב היחיד שלו
-    $mainStage = 0;
-    foreach ($byStage as $sid0 => $x) if (!$mainStage || (int)$x['amount'] > (int)$byStage[$mainStage]['amount']) $mainStage = $sid0;
-    if (!$mainStage) { $only = pm_supplier_stages($projectId, $supplierId); if (count($only) === 1) $mainStage = $only[0]; }
+    $mainStage = pm_main_stages($projectId)[$supplierId] ?? 0;
     foreach ($byStage as $x) {
         $add(substr((string)($x['approved_at'] ?: $x['updated_at']), 0, 10), 'quote', pm_t('הצעה שאושרה — {stage}', ['stage' => pm_t($x['stage'], [], $lang)], $lang), (int)$x['amount'], $rate($x['vat_rate']),
             ['stage' => $stageName[(int)$x['stage_id']] ?? '', 'files' => $files($x['file_id']), 'ref' => ['type' => 'quote', 'id' => (int)$x['id']]]);
@@ -283,7 +281,8 @@ function pm_ledger_of(int $projectId, int $supplierId, ?string $lang = null): ar
     $paid = [0, 0];
     foreach ($E as &$e) {
         $d = $e['delta'];
-        if ($d > 0 || $e['kind'] === 'change') { $committed[0] += $d; $committed[1] += pm_net($d, $e['rate']); }
+        // התחייבות: כל מה שמוסיף, וגם הפחתה והפרש הצמדה שלילי (תשלום — לא)
+        if ($d > 0 || in_array($e['kind'], ['change', 'index'], true)) { $committed[0] += $d; $committed[1] += pm_net($d, $e['rate']); }
         if (!empty($e['commit'])) $byMilestones = true;
         if ($e['kind'] === 'paid') { $paid[0] -= $d; $paid[1] += pm_net(-$d, $e['rate']); }
         $bal += $d;

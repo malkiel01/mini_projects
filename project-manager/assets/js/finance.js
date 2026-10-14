@@ -168,7 +168,7 @@ const Finance = (() => {
                 ${kpi(t('תקציב היום'), T.budget_today, growth > 0 ? `<span class="fin-late">${esc(t('גדל ב-{amount}', { amount: money(growth) }))}</span>` : '')}
                 ${kpi(t('סוכם (התחייבויות)'), T.committed, T.over_budget ? `<span class="fin-late">${esc(t('מעל התקציב'))}</span>` : '')}
                 ${kpi(t('שולם'), T.paid, T.committed.g ? esc(t('{n}% מהסוכם · בוצע {p}%', { n: T.paid_pct, p: T.progress })) : '')}
-                ${kpi(t('יתרה לתשלום'), T.balance)}
+                ${kpi(t('יתרה לתשלום'), T.balance, T.credit?.g ? `<span class="fin-ok">${esc(t('זיכוי אצל ספקים {amount}', { amount: money(T.credit.g) }))}</span>` : '')}
                 ${kpi(t('צפי סופי'), T.forecast, esc(t('סוכם, ותקציב השלבים שעוד אין להם הצעה')))}
             </dl>
             <p class="fin-terms">${terms(S, T)}</p>
@@ -224,7 +224,8 @@ const Finance = (() => {
         if (data.fee) parts.push(esc(data.fee.type === 'percent'
             ? t('שכר טרחה {n}% — {amount}', { n: data.fee.value, amount: money(data.fee.amount.g) })
             : t('שכר טרחה — {amount}', { amount: money(data.fee.amount.g) })));
-        if (S.retention_pct) parts.push(esc(T.retention_held ? t('עיכבון {n}% — נעצרו {amount}', { n: S.retention_pct, amount: money(T.retention.g) }) : t('עיכבון {n}% ({amount})', { n: S.retention_pct, amount: money(T.retention.g) })));
+        if (S.retention_pct) parts.push(esc(!T.retention_held ? t('עיכבון {n}% ({amount})', { n: S.retention_pct, amount: money(T.retention.g) })
+            : T.retention.g ? t('עיכבון {n}% — נעצרו {amount}', { n: S.retention_pct, amount: money(T.retention.g) }) : t('עיכבון {n}% — שוחרר', { n: S.retention_pct })));
         if (T.index?.g) parts.push(esc(t('הפרשי הצמדה {amount}', { amount: money(T.index.g) })));
         if (S.index_on) parts.push(esc(t('צמוד ל{index} · בסיס {month}: {base}', { index: S.index_name || t('מדד תשומות הבנייה'), month: S.index_base_month.split('-').reverse().join('/'), base: S.index_base })));
         parts.push(esc(t('מע"מ {n}%', { n: S.vat_rate })));
@@ -239,6 +240,8 @@ const Finance = (() => {
         uncovered: r => ({ cls: 'fin-warn', text: t('אבני הדרך מכסות {s} מתוך {c}', { s: money(r.scheduled.g), c: money(r.committed.g) }) }),
         overscheduled: r => ({ cls: 'fin-warn', text: t('אבני הדרך עוברות את ההצעה ({s} מול {c})', { s: money(r.scheduled.g), c: money(r.committed.g) }) }),
         no_quote: () => ({ cls: 'fin-warn', text: t('אבני דרך בלי הצעה שאושרה') }),
+        shared: () => ({ cls: 'fin-warn', text: t('משותף — לא מחולק') }),
+        credit: r => ({ cls: 'fin-ok', text: t('זיכוי {amount} — שולם מעל הסוכם', { amount: money(r.credit.g) }) }),
     };
 
     function renderStages() {
@@ -301,7 +304,7 @@ const Finance = (() => {
         return `<li class="fin-row">
             <div class="fin-row-head"><b class="one">${esc(r.name)}</b>${flags}</div>
             <dl class="fin-cells">
-                ${cell(t('סוכם'), r.committed.g ? r.committed : r.scheduled)}${cell(t('היה צריך עד היום'), r.due)}${cell(t('שולם'), r.paid)}${cell(t('יתרה'), r.balance)}
+                ${cell(t('סוכם'), r.committed)}${cell(t('היה צריך עד היום'), r.due)}${cell(t('שולם'), r.paid)}${r.credit?.g ? cell(t('זיכוי'), { g: -r.credit.g, n: -r.credit.n }) : cell(t('יתרה'), r.balance)}
             </dl>
             ${changes ? `<div class="chip-row co-row">${changes}</div>` : ''}
             ${r.index.g ? `<p class="fin-stage-budget">${esc(t('כולל הפרשי הצמדה {amount}', { amount: money(r.index.g) }))}</p>` : ''}
@@ -940,9 +943,10 @@ const Finance = (() => {
     function openSplit(stageId, supplierId) {
         const s = data.stages.find(x => x.stage_id === stageId);
         const r = s.rows.find(x => x.supplier_id === supplierId);
-        split = { stageId, amount: r.committed.g, rate: r.vat_rate, rows: presets()[0].rows.map(x => ({ ...x })) };
+        // מחלקים את ההצעה עצמה (כמו השרת) — תוספות נשארות לאבן דרך משלהן
+        split = { stageId, amount: r.quote.g, rate: r.vat_rate, rows: presets()[0].rows.map(x => ({ ...x })) };
         $('#split-dlg-title').textContent = t('חלוקה לתשלומים — {stage}', { stage: stageName(s) });
-        $('#split-quote').textContent = t('ההצעה שאושרה: {name} — {amount}', { name: r.name, amount: money(r.committed.g) });
+        $('#split-quote').textContent = t('ההצעה שאושרה: {name} — {amount}', { name: r.name, amount: money(r.quote.g) });
         $('#split-presets').innerHTML = presets().map((p, i) => `<button type="button" class="chip" data-preset="${i}">${esc(p.label)}</button>`).join('');
         formError($('#split-dlg form'), '');
         renderSplit();

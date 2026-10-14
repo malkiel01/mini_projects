@@ -141,7 +141,7 @@ function pm_payments_of(int $projectId, bool $portal = false): array
     return [
         'payments' => $list,
         'summary'  => [
-            'total'    => array_sum(array_column($live, 'amount')),
+            'total'    => array_sum(array_column($live, 'due_amount')), // "לתשלום" — העיכבון בשורת השחרור, לא פעמיים
             'received' => array_sum(array_column($live, 'received')),
             'waiting'  => count(array_filter($live, fn($p) => $p['status'] === 'paid')),
             'late'     => count(array_filter($live, fn($p) => $p['due_date'] !== '' && $p['due_date'] < gmdate('Y-m-d') && !in_array($p['status'], ['received'], true))),
@@ -301,7 +301,10 @@ function pm_retention_sync(array $user, int $projectId, int $stageId, int $suppl
         if ((int)$rel['amount'] !== $sum || ($rel['unit_id'] ?? null) != $unit) $db->prepare('UPDATE payments SET amount = ?, unit_id = ?, updated_at = ? WHERE id = ?')->execute([$sum, $unit, $now, $rel['id']]);
         return;
     }
-    $p = pm_project_row($user, $projectId);
+    // ההרשאה נבדקה אצל הקורא (גם "מערכת" — השיוך האוטומטי לשלב)
+    $pl = $db->prepare('SELECT lawyer_id FROM projects WHERE id = ?');
+    $pl->execute([$projectId]);
+    $p = ['lawyer_id' => $pl->fetchColumn()];
     $db->prepare("INSERT INTO payments (project_id, stage_id, supplier_id, title, amount, due_date, due_kind, payer, needs_lawyer, kind, vat_rate, notes, created_by, created_at, updated_at, unit_id)
                   VALUES (?, ?, ?, ?, ?, '', 'handover', 'client', ?, 'retention', ?, '', ?, ?, ?, ?)")
        ->execute([$projectId, $stageId, $supplierId, pm_t('שחרור עיכבון'), $sum, $p['lawyer_id'] ? 1 : 0, pm_vat_rate(), $user['id'], $now, $now, $unit]);
@@ -321,7 +324,7 @@ function pm_payment_request(array $user, int $id): array
         pm_db()->prepare("UPDATE payments SET status = 'requested', requested_at = ?, updated_at = ? WHERE id = ?")->execute([pm_now(), pm_now(), $id]);
         pm_event($user, (int)$p['project_id'], 'payment',
             $p['needs_lawyer'] ? 'נשלחה דרישת תשלום: {title} — {supplier}, {amount} (ממתין לאישור עו"ד)' : 'נשלחה דרישת תשלום: {title} — {supplier}, {amount}',
-            ['payment' => $id], ['title' => $p['title'], 'supplier' => pm_contact_name((int)$p['supplier_id']), 'amount' => pm_money((int)$p['amount'])]);
+            ['payment' => $id], ['title' => $p['title'], 'supplier' => pm_contact_name((int)$p['supplier_id']), 'amount' => pm_money(pm_payment_due_amount($p))]);
     }
     pm_payment_notify_request($user, $p);
     return pm_payments($user, (int)$p['project_id']);
@@ -340,7 +343,7 @@ function pm_payment_notify_request(array $actor, array $p, bool $afterLawyer = f
     $vars = fn(int $cid) => [
         'פרטים' => $p['due_date'] ? pm_t('{title} — {supplier}, עד {date}', ['title' => $p['title'], 'supplier' => $supplier, 'date' => pm_short_date($p['due_date'])], pm_contact_lang($cid))
                                   : $p['title'] . ' — ' . $supplier,
-        'סכום' => pm_money((int)$p['amount']), 'קישור' => pm_notify_link($pid, $cid),
+        'סכום' => pm_money(pm_payment_due_amount($p)), 'קישור' => pm_notify_link($pid, $cid), // "לתשלום", לא הסכום ברוטו
     ];
     // i18n-none-end
     $waitLawyer = $p['needs_lawyer'] && !$p['lawyer_approved_at'] && !$afterLawyer;
