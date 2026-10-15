@@ -59,4 +59,11 @@ function db_migrate(PDO $pdo): void
             locked_until TEXT
         );
         SQL);
+
+    // עמודות שנוספו אחרי שהמסד כבר נוצר — ALTER רק כשהן חסרות.
+    $cols = array_column($pdo->query('PRAGMA table_info(users)')->fetchAll(), 'name');
+    if (!in_array('must_change_pw', $cols, true)) {
+        // סיסמה זמנית שהמנהל קבע: המשתמש חייב להחליף אותה בכניסה הבאה.
+        $pdo->exec('ALTER TABLE users ADD COLUMN must_change_pw INTEGER NOT NULL DEFAULT 0');
+    }
 }
