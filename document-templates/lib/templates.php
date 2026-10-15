@@ -380,8 +380,10 @@ function clean_schema($s, array $sources = [], array $fonts = [], array $contact
             }
             if (!$cols) $cols[] = ['key' => 'c1', 'label' => 'תיאור', 'type' => 'text', 'format' => 'number'];
             $fields[count($fields) - 1]['columns'] = $cols;
-            // שורות רצופות עם אותו ערך בעמודה הראשונה — קבוצה אחת (למשל שני קברים באותה מכפלה)
-            $fields[count($fields) - 1]['group'] = !empty($f['group']);
+            // קיבוץ: שורות רצופות שזהות ב-N העמודות הראשונות — קבוצה אחת (למשל גוש › חלקה › שורה › אחוזה:
+            // שני קברים באותה מכפלה). 0 — בלי. true מהגרסה הקודמת = עמודה אחת
+            $g = ($f['group'] ?? 0) === true ? 1 : (int)($f['group'] ?? 0);
+            $fields[count($fields) - 1]['group'] = max(0, min($g, count($cols) - 1, 8));
         }
         if ($type === 'file') {
             // צירוף קובץ (שלב 6): אילו סוגים, גודל מרבי לקובץ, ואחד או כמה.

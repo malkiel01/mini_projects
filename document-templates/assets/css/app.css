@@ -3,10 +3,18 @@
  * המשתנים והבסיס מהסקיל; השמות הישנים בקוד (--card, --text, --accent…) מכוונים אליהם,
  * כך שכל המסכים עברו לשפה אחת, וגם מצב כהה עובד לבד.
  */
+/*
+ * ערכת נושא: לפי המכשיר (ברירת מחדל), או בחירה בהגדרות המשתמש — <html data-theme="light|dark">
+ * (assets/js/theme.js, לפני הציור). הצבעים הכהים מוגדרים פעמיים: לפי המכשיר כשלא נבחר בהיר, ובבחירה מפורשת.
+ */
 :root { color-scheme: light dark; }   /* לוח השנה, החצים ושאר הפקדים של הדפדפן — לפי ערכת הנושא */
+:root[data-theme=light] { color-scheme: light; }
+:root[data-theme=dark] { color-scheme: dark; }
 :root {
   --bg: #f4f5f7; --surface: #fff; --ink: #16192b; --muted: #5d6475; --line: #e3e6eb;
   --brand: #2d4a8a; --brand-ink: #fff; --brand-soft: #e9eef8;
+  /* רקע מלא בצבע המותג (פס עליון, כפתור ראשי, בחירה) — במצב כהה כחול עמוק עם טקסט לבן, לא תכלת חיוור */
+  --brand-fill: #2d4a8a; --brand-fill-ink: #fff; --tint: #f1f3f6;
   --danger: #b3261e; --danger-soft: #fdecea; --star: #e19a00; --ok: #1e7b3a;
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px;
   --r: 10px; --tap: 40px; --head: 48px;
@@ -15,11 +23,18 @@
   --card: var(--surface); --text: var(--ink); --accent: var(--brand); --bad: var(--danger); --border: var(--line); --warn: var(--star);
 }
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #111318; --surface: #1b1e26; --ink: #e8eaf0; --muted: #9aa1b2; --line: #2c303b;
-    --brand: #7f9fe0; --brand-ink: #0d1324; --brand-soft: #232c42; --danger: #f2a49d; --danger-soft: #3a1f1d;
+  :root:not([data-theme=light]) {
+    --bg: #111318; --surface: #1b1e26; --ink: #e8eaf0; --muted: #9aa1b2; --line: #2f3440;
+    --brand: #8fadf0; --brand-ink: #0d1324; --brand-soft: #232c42; --danger: #f2a49d; --danger-soft: #3a1f1d;
+    --brand-fill: #34539c; --brand-fill-ink: #fff; --tint: #232733;
     --star: #f5b83d; --ok: #6fcf97; --shadow: none;
   }
+}
+:root[data-theme=dark] {
+    --bg: #111318; --surface: #1b1e26; --ink: #e8eaf0; --muted: #9aa1b2; --line: #2f3440;
+    --brand: #8fadf0; --brand-ink: #0d1324; --brand-soft: #232c42; --danger: #f2a49d; --danger-soft: #3a1f1d;
+    --brand-fill: #34539c; --brand-fill-ink: #fff; --tint: #232733;
+    --star: #f5b83d; --ok: #6fcf97; --shadow: none;
 }
 
 * { box-sizing: border-box; }
@@ -47,7 +62,7 @@ input[type=checkbox], input[type=radio] { accent-color: var(--brand); width: 18p
 /* ── כותרת דביקה ולשוניות ── */
 .top { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: var(--s2);
   min-height: calc(var(--head) + env(safe-area-inset-top)); padding: env(safe-area-inset-top) var(--s2) 0;
-  background: var(--brand); color: var(--brand-ink); }
+  background: var(--brand-fill); color: var(--brand-fill-ink); }
 .top .titles { flex: 1; min-width: 0; line-height: 1.2; }
 .top h1 { margin: 0; font-size: 1.05rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .top .sub { font-size: .78rem; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -84,7 +99,8 @@ input[type=checkbox], input[type=radio] { accent-color: var(--brand); width: 18p
 .use-tx .l1 .t { margin-inline-start: auto; flex: none; font-size: .75rem; color: var(--muted); font-weight: 400; }
 .avatar { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%;
   background: hsl(var(--h, 220) 45% 88%); color: hsl(var(--h, 220) 45% 28%); font-weight: 600; font-size: .9rem; }
-@media (prefers-color-scheme: dark) { .avatar { background: hsl(var(--h, 220) 30% 26%); color: hsl(var(--h, 220) 60% 85%); } }
+@media (prefers-color-scheme: dark) { :root:not([data-theme=light]) .avatar { background: hsl(var(--h, 220) 30% 26%); color: hsl(var(--h, 220) 60% 85%); } }
+:root[data-theme=dark] .avatar { background: hsl(var(--h, 220) 30% 26%); color: hsl(var(--h, 220) 60% 85%); }
 
 /* ── אריחים, סיכום, בורר מקטעים, מתג ── */
 .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); }
@@ -108,7 +124,7 @@ input[type=checkbox], input[type=radio] { accent-color: var(--brand); width: 18p
 .seg input { position: absolute; opacity: 0; inset: 0; cursor: pointer; width: 100%; height: 100%; margin: 0; }
 .seg span { flex: 1; display: flex; align-items: center; justify-content: center; gap: 4px; min-height: 38px; padding: 0 var(--s3); white-space: nowrap; font-size: .9rem; }
 .seg label + label span { border-inline-start: 1px solid var(--line); }
-.seg input:checked + span { background: var(--brand); color: var(--brand-ink); }
+.seg input:checked + span { background: var(--brand-fill); color: var(--brand-fill-ink); }
 .seg input:focus-visible + span { outline: 2px solid var(--brand); outline-offset: -2px; }
 .switch { display: flex; align-items: center; gap: var(--s2); min-height: var(--tap); cursor: pointer; white-space: nowrap; }
 .switch input { flex: none; }
@@ -121,7 +137,7 @@ input[type=checkbox], input[type=radio] { accent-color: var(--brand); width: 18p
 .f > span { font-size: .8rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wide { grid-column: 1 / -1; }
 .badge-n { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 99px;
-  background: var(--brand); color: var(--brand-ink); font-size: .7rem; font-weight: 600; margin-inline-start: 2px; }
+  background: var(--brand-fill); color: var(--brand-fill-ink); font-size: .7rem; font-weight: 600; margin-inline-start: 2px; }
 
 /* ── גיליון: חלון במחשב, מסך מלא בטלפון ── */
 dialog.sheet { margin: auto; padding: 0; border: 0; border-radius: var(--r); color: var(--ink); background: var(--surface);
@@ -167,7 +183,7 @@ button, .btn {
   border: 1px solid var(--line); background: var(--surface); color: var(--ink);
 }
 button:disabled { opacity: .55; cursor: default; }
-button.primary, .btn.primary { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+button.primary, .btn.primary { background: var(--brand-fill); border-color: var(--brand-fill); color: var(--brand-fill-ink); }
 button.small, .btn.small { min-height: 34px; padding: 0 var(--s2); font-size: .85rem; }
 button.link { border: 0; background: none; padding: 0; min-height: 0; color: var(--brand); white-space: normal; display: inline; }
 
@@ -200,7 +216,7 @@ td.ops { display: flex; gap: 6px; flex-wrap: wrap; }
 .badge.ok, .badge.warn, .badge.bad { color: var(--c); border-color: color-mix(in srgb, var(--c) 40%, transparent); background: color-mix(in srgb, var(--c) 10%, var(--surface)); }
 .badge.ok { --c: var(--ok); } .badge.warn { --c: var(--star); } .badge.bad { --c: var(--danger); }
 .tag { font-size: .7rem; margin-inline-start: 6px; padding: 1px 6px; border-radius: 4px;
-  background: var(--accent); color: #fff; }
+  background: var(--brand-fill); color: var(--brand-fill-ink); }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
   background: var(--border); margin-inline-end: 6px; }
 .dot.on { background: var(--ok); }
@@ -232,7 +248,7 @@ td.ops { display: flex; gap: 6px; flex-wrap: wrap; }
   padding: 8px 14px; color: var(--text); background: var(--card); }
 .btn.small { padding: 4px 10px; font-size: .85rem; }
 button.danger { color: var(--bad); border-color: var(--bad); }
-button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+button.active { background: var(--brand-fill); color: var(--brand-fill-ink); border-color: var(--brand-fill); }
 .warn { color: var(--warn); }
 
 .upload { display: grid; gap: 10px; margin: 12px 0; padding: 14px; border: 1px dashed var(--border); border-radius: 10px; }
@@ -421,7 +437,7 @@ tr.archived { opacity: .6; }
 
 /* ── שלב 9: Word ── */
 .pages.word { display: block; min-width: 0; }
-.word-preview { background: #e9ecef; border-radius: 8px; overflow: auto; max-height: 80vh; }
+.word-preview { background: var(--tint); border-radius: 8px; overflow: auto; max-height: 80vh; }
 .word-preview .docx-wrapper { padding: 16px !important; background: transparent !important; }
 .word-preview .docx-wrapper > section.docx { box-shadow: 0 1px 4px rgba(0,0,0,.2); margin-bottom: 16px !important; }
 .word-dialog { max-width: 900px; }
@@ -459,7 +475,7 @@ code { font-family: ui-monospace, monospace; background: var(--bg); padding: 1px
 .block-side select { font-size: .78rem; padding: 2px 4px; max-width: 120px; }
 .block-table table, .grid { width: 100%; border-collapse: collapse; font-size: .9rem; }
 .block-table th, .block-table td, .grid th, .grid td { border: 1px solid #ced4da; padding: 4px 6px; text-align: right; }
-.block-table th, .grid th { background: #f1f3f5; font-weight: 600; }
+.block-table th, .grid th { background: var(--tint); font-weight: 600; }
 .block-break, .a-break { text-align: center; color: #868e96; font-size: .8rem; border-top: 1px dashed #adb5bd; margin: 10px 0; padding-top: 2px; }
 .cond-box { margin-top: 6px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .cond { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
@@ -477,8 +493,8 @@ code { font-family: ui-monospace, monospace; background: var(--bg); padding: 1px
 /* מסמך: טבלה, מחושב, שדות בתוך טקסט */
 .grid-wrap { overflow-x: auto; display: grid; gap: 6px; justify-items: start; }
 .grid td input { width: 100%; min-width: 60px; box-sizing: border-box; border: 0; background: transparent; padding: 3px; font: inherit; }
-.grid td input:focus { outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent); background: #fff; }
-.grid .calc-cell { background: #f8f9fa; white-space: nowrap; }
+.grid td input:focus { outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent); background: var(--surface); }
+.grid .calc-cell { background: var(--tint); white-space: nowrap; }
 .grid .row-del { width: 1%; border: 0; }
 .calc-out { display: inline-block; min-width: 4ch; padding: 2px 6px; background: color-mix(in srgb, var(--accent) 8%, transparent);
   border-radius: 4px; font-variant-numeric: tabular-nums; }
@@ -530,7 +546,7 @@ span.inline-field .calc-out { padding: 0 4px; }
 .tile > span:not(.tile-ic) { min-width: 0; }
 .tile small { white-space: normal; }
 /* "דף" של מסמך נשאר בהיר גם במצב כהה — כמו נייר; השדות בתוכו לפי אותו דף */
-.doc-sheet { --surface: #fff; --ink: #16192b; --line: #e3e6eb; --bg: #f4f5f7; --muted: #5d6475; --brand-soft: #e9eef8; color-scheme: light; color: var(--ink); }
+.doc-sheet { --surface: #fff; --ink: #16192b; --line: #e3e6eb; --bg: #f4f5f7; --muted: #5d6475; --brand-soft: #e9eef8; --tint: #f1f3f6; color-scheme: light; color: var(--ink); }
 
 /* ── שלב 12: הנפקה מאקסל ── */
 .map-row { padding: var(--s2) var(--s3); flex-wrap: wrap; }
@@ -763,7 +779,7 @@ pre.secret { margin: 0; padding: var(--s2); border-radius: var(--r); background:
 .pos-cell.on { border-color: var(--brand); background: var(--brand-soft); }
 .pos-dot { display: flex; width: 100%; height: 100%; }
 .pos-dot i { display: block; width: 14px; height: 4px; border-radius: 2px; background: var(--muted); }
-.pos-cell.on .pos-dot i { background: var(--brand); }
+.pos-cell.on .pos-dot i { background: var(--brand-fill); }
 .pos-dot.va-top { align-items: flex-start; } .pos-dot.va-middle { align-items: center; } .pos-dot.va-bottom { align-items: flex-end; }
 .pos-dot.ha-right { justify-content: flex-start; } .pos-dot.ha-center { justify-content: center; } .pos-dot.ha-left { justify-content: flex-end; }
 .fonts-panel label.btn { cursor: pointer; justify-self: start; }
@@ -793,7 +809,7 @@ pre.secret { margin: 0; padding: var(--s2); border-radius: var(--r); background:
 .fmt-cats { display: grid; gap: 2px; border: 1px solid var(--line); border-radius: var(--r); padding: 4px; }
 .fmt-cat, .fmt-item { all: unset; box-sizing: border-box; cursor: pointer; padding: 6px 10px; border-radius: 6px; font-size: .9rem; }
 .fmt-cat:hover, .fmt-item:hover { background: var(--brand-soft); }
-.fmt-cat.on, .fmt-item.on { background: var(--brand); color: #fff; }
+.fmt-cat.on, .fmt-item.on { background: var(--brand-fill); color: var(--brand-fill-ink); }
 .fmt-cat:focus-visible, .fmt-item:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 .fmt-side { display: grid; gap: var(--s3); min-width: 0; }
 .fmt-opts { display: grid; gap: var(--s3); }
@@ -890,6 +906,7 @@ dialog.dt-dlg > form { display: flex; flex-direction: column; flex: 1 1 auto; mi
 .tbl-page th { text-align: right; font-weight: 400; color: #5d6475; padding: .35em .3em; border-bottom: 1px solid #000; white-space: nowrap; }
 .tbl-page td { padding: .3em; border-top: 1px solid #d5d9e3; white-space: nowrap; }
 .tbl-page td.num { text-align: center; direction: ltr; }
+.tbl-page td.txt { white-space: normal; min-width: 4em; }
 .tbl-page.grouped tr:not(.same-grp) td { border-top-color: #000; }
 .tbl-page tbody tr:first-child td { border-top: 0; }
 .tbl-empty { position: absolute; inset: auto 0 6px; text-align: center; font-size: .8rem; color: var(--brand); }

@@ -40,7 +40,7 @@ tpl_save($a, ['id' => $tid, 'schema' => ['pages' => [['w' => 595, 'h' => 842]], 
     ['key' => 'total', 'type' => 'calc', 'label' => 'סה"כ לתשלום', 'formula' => 'מחיר_הקברים + שירות_לוויה', 'format' => 'number'] + $geo,
 ]]]);
 $f = tpl_get($a, $tid)['template']['schema']['fields'][0];
-check('טבלה על דף PDF נשמרת, עם מיקום', $f['type'] === 'table' && $f['w'] > 0.7 && $f['group'] === true);
+check('טבלה על דף PDF נשמרת, עם מיקום; קיבוץ true (ישן) = עמודה אחת', $f['type'] === 'table' && $f['w'] > 0.7 && $f['group'] === 1);
 check('עמודת בחירה: אפשרויות נקיות (בלי ריק וכפולים)', $f['columns'][1]['type'] === 'select' && $f['columns'][1]['options'] === ['קבר בודד', 'מכפלה']);
 
 $d = doc_create($a, ['template_id' => $tid])['id'];

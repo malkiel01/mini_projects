@@ -595,26 +595,25 @@
         }));
         queue(f.key, rows.length ? JSON.stringify(rows) : '');
       };
-      const first = cols[0];
-      const rowEl = (r, i) => el('tr', { class: f.group && first && i > 0 && String(rows[i - 1][first.key] ?? '') === String(r[first.key] ?? '') && r[first.key] ? 'same-grp' : null }, cols.map(c => {
+      const gn = groupN(f), gcols = cols.slice(0, gn);
+      const rowEl = (r, i) => el('tr', { class: sameGroup(f, rows, i) ? 'same-grp' : null }, cols.map(c => {
         if (c.type === 'calc') return el('td', { class: 'calc-cell', 'data-label': c.label }, C.display(r[c.key] ?? '', c.format));
         if (c.type === 'select') {
           const cur = r[c.key] ?? '';
           const sel = el('select', { disabled: ro, 'aria-label': c.label }, el('option', { value: '' }, '—'),
             [...(c.options || []), ...(cur && !(c.options || []).includes(cur) ? [cur] : [])].map(o => el('option', { value: o, selected: o === cur }, o)));
-          sel.addEventListener('change', () => { r[c.key] = sel.value; commit(); });
+          sel.addEventListener('change', () => { r[c.key] = sel.value; commit(); if (gcols.includes(c)) markGroups(); });
           return el('td', { 'data-label': c.label }, sel);
         }
         const inp = el('input', { value: r[c.key] ?? '', disabled: ro, 'aria-label': c.label,
           inputmode: c.type === 'number' ? 'decimal' : null, dir: c.type === 'number' ? 'ltr' : null });
-        inp.addEventListener('input', () => { r[c.key] = inp.value; commit(); if (f.group && c === first) markGroups(); });
+        inp.addEventListener('input', () => { r[c.key] = inp.value; commit(); if (gcols.includes(c)) markGroups(); });
         return el('td', { 'data-label': c.label }, inp);
       }), ro ? null : el('td', { class: 'row-del' }, el('button', { type: 'button', class: 'link small', title: 'מחיקת שורה',
         onclick: () => { rows.splice(rows.indexOf(r), 1); redraw(); commit(); } }, '✕')));
       const redraw = () => tbody.replaceChildren(...rows.map(rowEl));
-      // קיבוץ: שורה שממשיכה את הקבוצה של הקודמת (אותו ערך בעמודה הראשונה) — בלי קו מפריד
-      const markGroups = () => tbody.querySelectorAll('tr').forEach((tr, i) => tr.classList.toggle('same-grp',
-        !!(f.group && first && i > 0 && rows[i][first.key] && String(rows[i - 1][first.key] ?? '') === String(rows[i][first.key] ?? ''))));
+      // קיבוץ: שורה שממשיכה את הקבוצה של הקודמת (זהה בעמודות הקבוצה) — בלי קו מפריד
+      const markGroups = () => tbody.querySelectorAll('tr').forEach((tr, i) => tr.classList.toggle('same-grp', sameGroup(f, rows, i)));
       redraw();
       return el('div', { class: 'grid-wrap', 'data-key': f.key },
         el('table', { class: 'grid' }, el('thead', {}, el('tr', {}, cols.map(c => el('th', {}, c.label)), ro ? null : el('th'))), tbody),
@@ -624,26 +623,27 @@
               rows.push({}); redraw();
               tbody.lastChild?.querySelector('input, select')?.focus();
             } }, '+ שורה'),
-            // שורה נוספת באותה קבוצה (למשל הקבר השני באותה מכפלה): מעתיקה את הקבוצה ואת שאר הפרטים
-            f.group && first ? el('button', { type: 'button', class: 'small', onclick: () => {
+            // שורה נוספת באותה קבוצה (למשל הקבר השני באותה מכפלה): מעתיקה את עמודות הקבוצה
+            gn ? el('button', { type: 'button', class: 'small', onclick: () => {
               const last = rows[rows.length - 1];
-              rows.push(last ? Object.fromEntries(cols.filter(c => c.type !== 'calc').map(c => [c.key, last[c.key] ?? ''])) : {});
+              rows.push(last ? Object.fromEntries(gcols.map(c => [c.key, last[c.key] ?? ''])) : {});
               redraw(); commit();
-            } }, '+ שורה באותה ' + first.label) : null));
+              tbody.lastChild?.querySelectorAll('input, select')[gn]?.focus();
+            } }, '+ שורה באותה ' + gcols[gn - 1].label) : null));
     }
 
     /** על המסמך: הטבלה כפי שתודפס, בתוך האזור שלה; הקשה — עריכת השורות בגיליון. */
     function tablePreview(f) {
       const cols = f.columns || [];
       const rows = C.rows(values[f.key]);
-      const first = cols[0];
+      const gn = groupN(f);
       const cell = (c, r) => c.type === 'calc' ? C.display(r[c.key] ?? '', c.format) : c.type === 'number' ? C.display(r[c.key] ?? '', 'number') : (r[c.key] ?? '');
-      const t = el('table', { class: 'tbl-page' + (f.group ? ' grouped' : ''), style: `font-size: calc(var(--k) * ${f.fontSize || 9}px)` + (f.color ? `; color: ${f.color}` : '') },
+      const t = el('table', { class: 'tbl-page' + (gn ? ' grouped' : ''), style: `font-size: calc(var(--k) * ${f.fontSize || 9}px)` + (f.color ? `; color: ${f.color}` : '') },
         el('thead', {}, el('tr', {}, cols.map(c => el('th', {}, c.label)))),
         el('tbody', {}, rows.map((r, i) => {
-          const cont = f.group && first && i > 0 && r[first.key] && String(rows[i - 1][first.key] ?? '') === String(r[first.key] ?? '');
-          return el('tr', { class: cont ? 'same-grp' : null }, cols.map((c, j) => el('td', { class: c.type === 'number' || c.type === 'calc' ? 'num' : null },
-            j === 0 && cont ? '' : cell(c, r))));
+          const cont = sameGroup(f, rows, i);
+          return el('tr', { class: cont ? 'same-grp' : null }, cols.map((c, j) => el('td', { class: c.type === 'number' || c.type === 'calc' ? 'num' : c.type === 'text' ? 'txt' : null },
+            j < gn && cont ? '' : cell(c, r))));
         })));
       const edit = canEdit(f);
       const box = el('div', { class: 'tbl-box' + (edit ? ' editable' : ''), role: edit ? 'button' : null, tabindex: edit ? 0 : null,
@@ -1324,6 +1324,14 @@
     return pdf.save();
   }
 
+  /** קיבוץ בטבלה: כמה עמודות ראשונות מזהות קבוצה (גוש › חלקה › שורה › אחוזה), והאם שורה i ממשיכה את הקבוצה של הקודמת. */
+  const groupN = (f) => f.group === true ? 1 : Math.max(0, Number(f.group) || 0);
+  const sameGroup = (f, rows, i) => {
+    const n = groupN(f), cols = (f.columns || []).slice(0, n);
+    return n > 0 && i > 0 && cols.some(c => String(rows[i][c.key] ?? '') !== '')
+      && cols.every(c => String(rows[i][c.key] ?? '') === String(rows[i - 1][c.key] ?? ''));
+  };
+
   async function buildPdf(doc, values, srcBytes) {
     await loadScript(PDFLIB);
     await loadScript(FONTKIT);
@@ -1480,19 +1488,25 @@
       const cols = f.columns || [];
       const rows = C.rows(values[f.key]);
       if (!cols.length || !rows.length) return;
+      const gn = groupN(f);
       const shown = (c, r) => c.type === 'calc' ? C.display(r[c.key] ?? '', c.format) : c.type === 'number' ? C.display(r[c.key] ?? '', 'number') : String(r[c.key] ?? '');
-      const cont = (i) => f.group && i > 0 && rows[i][cols[0].key] && String(rows[i - 1][cols[0].key] ?? '') === String(rows[i][cols[0].key] ?? '');
+      const wraps = (c) => c.type === 'text';   // טקסט (למשל הערות) נשבר לכמה שורות; מספר ובחירה — שורה אחת
       const pad = 3;
-      const natural = (sz) => cols.map(c => Math.max(font.widthOfTextAtSize(pdfText(c.label), sz),
-        ...rows.map(r => font.widthOfTextAtSize(pdfText(shown(c, r)), sz))) + pad * 2);
-      let size = f.fontSize || 9;
-      const rowsFit = (sz) => Math.floor((bh - sz * 2) / (sz * 1.75));
-      while (size > 6 && (natural(size).reduce((a, b) => a + b, 0) > bw || rowsFit(size) < rows.length)) size -= 0.5;
-      const nat = natural(size);
-      const total = nat.reduce((a, b) => a + b, 0);
-      const ws = nat.map(w => w * bw / total);   // מתיחה (או כיווץ) לרוחב האזור
-      const headH = size * 2, rh = size * 1.75;
-      const fit = Math.max(0, rowsFit(size));
+      // רוחב טבעי לכל עמודה; עמודת טקסט ארוכה — עד 38% מהרוחב (והשאר נשבר לשורות)
+      const natural = (sz) => cols.map(c => {
+        const w = Math.max(font.widthOfTextAtSize(pdfText(c.label), sz), ...rows.map(r => font.widthOfTextAtSize(pdfText(shown(c, r)), sz))) + pad * 2;
+        return wraps(c) ? Math.min(w, bw * 0.38) : w;
+      });
+      const layout = (sz) => {
+        const nat = natural(sz), total = nat.reduce((a, b) => a + b, 0);
+        const ws = nat.map(w => w * bw / total);
+        const lines = rows.map(r => cols.map((c, j) => wraps(c) ? wrapLines(shown(c, r), font, sz, ws[j] - pad * 2) : [shown(c, r)]));
+        const hs = lines.map(row => Math.max(1, ...row.map(l => l.length)) * sz * 1.25 + sz * 0.6);
+        return { total, ws, lines, hs, head: sz * 2 };
+      };
+      let size = f.fontSize || 9, L = layout(size);
+      const height = (L) => L.head + L.hs.reduce((a, b) => a + b, 0);
+      while (size > 6 && (L.total > bw * 1.02 || height(L) > bh)) { size -= 0.5; L = layout(size); }
       const grey = rgb(0.45, 0.48, 0.55), light = rgb(0.82, 0.84, 0.88);
       const hline = (y, color, thickness) => page.drawLine({ start: pt(bx, y), end: pt(bx + bw, y), color, thickness });
       const text = (str, xRight, w, yBase, color, center) => {
@@ -1500,32 +1514,34 @@
         let s2 = size;
         while (s2 > 4 && font.widthOfTextAtSize(v, s2) > w - pad * 2) s2 -= 0.5;
         const tw = font.widthOfTextAtSize(v, s2);
-        const x = center ? xRight - w + (w - tw) / 2 : xRight - pad - tw;
-        const o = pt(x, yBase);
+        const o = pt(center ? xRight - w + (w - tw) / 2 : xRight - pad - tw, yBase);
         page.drawText(v, { x: o.x, y: o.y, size: s2, font, color, rotate: rot });
       };
       // כותרת
       let x = bx + bw;
-      cols.forEach((c, j) => { text(c.label, x, ws[j], by + headH * 0.66, grey, false); x -= ws[j]; });
-      hline(by + headH, ink, 0.9);
-      // שורות
-      const shownRows = rows.slice(0, fit);
-      shownRows.forEach((r, i) => {
-        const y0 = by + headH + i * rh;
-        if (i > 0) hline(y0, cont(i) ? light : (f.group ? ink : light), cont(i) ? 0.3 : (f.group ? 0.7 : 0.4));
+      cols.forEach((c, j) => { text(c.label, x, L.ws[j], by + L.head * 0.66, grey, false); x -= L.ws[j]; });
+      hline(by + L.head, ink, 0.9);
+      // שורות — עד שנגמר האזור
+      let y = by + L.head, n = 0;
+      for (let i = 0; i < rows.length; i++) {
+        if (y + L.hs[i] > by + bh + 0.5) break;
+        const cont = sameGroup(f, rows, i);
+        if (i > 0) hline(y, cont ? light : (gn ? ink : light), cont ? 0.3 : (gn ? 0.7 : 0.4));
         let xr = bx + bw;
         cols.forEach((c, j) => {
-          if (!(j === 0 && cont(i))) text(shown(c, r), xr, ws[j], y0 + rh * 0.68, ink, c.type === 'number' || c.type === 'calc');
-          xr -= ws[j];
+          if (!(j < gn && cont)) L.lines[i][j].forEach((ln, k) => text(ln, xr, L.ws[j], y + size * 1.15 + k * size * 1.25, ink, c.type === 'number' || c.type === 'calc'));
+          xr -= L.ws[j];
         });
-      });
-      hline(by + headH + shownRows.length * rh, ink, 0.6);
+        y += L.hs[i]; n++;
+      }
+      hline(y, ink, 0.6);
       // מה שלא נכנס
-      if (rows.length > fit && f.overflow === 'annex') {
-        const rest = rows.slice(fit).map((r, i) => cols.map(c => c.label + ': ' + (shown(c, r) || '—')).join(' · '));
-        annex.push({ label: f.label + ` (שורות ${fit + 1}–${rows.length})`, text: rest.join('\n') });
-        const o = pt(bx + bw - pad - font.widthOfTextAtSize(pdfText('(המשך בנספח ' + annex.length + ')'), size), by + bh - 1);
-        page.drawText(pdfText('(המשך בנספח ' + annex.length + ')'), { x: o.x, y: o.y, size, font, color: grey, rotate: rot });
+      if (n < rows.length && f.overflow === 'annex') {
+        const rest = rows.slice(n).map(r => cols.map(c => c.label + ': ' + (shown(c, r) || '—')).join(' · '));
+        annex.push({ label: f.label + ` (שורות ${n + 1}–${rows.length})`, text: rest.join('\n') });
+        const note = pdfText('(המשך בנספח ' + annex.length + ')');
+        const o = pt(bx + bw - pad - font.widthOfTextAtSize(note, size), Math.min(by + bh - 1, y + size * 1.3));
+        page.drawText(note, { x: o.x, y: o.y, size, font, color: grey, rotate: rot });
       }
     }
 
