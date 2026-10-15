@@ -245,6 +245,22 @@ function clean_schema($s, array $sources = [], array $fonts = [], array $contact
     }
     $roleKeys = array_column($roles, 'key');
 
+    // סגנונות (כמו בוורד): שם + גופן, גודל, צבע ומיקום. שדה שמקושר לסגנון מקבל ממנו את התצוגה — שינוי בסגנון משנה את כולם
+    $styles = [];
+    foreach (array_slice((array)($s['styles'] ?? []), 0, 30) as $i => $st) {
+        $sid = preg_replace('/[^a-z0-9_]/', '', strtolower((string)($st['id'] ?? ''))) ?: 's' . ($i + 1);
+        if (isset($styles[$sid])) continue;
+        $styles[$sid] = [
+            'id' => $sid,
+            'name' => $str($st['name'] ?? '', 40) ?: 'סגנון ' . ($i + 1),
+            'font' => in_array((int)($st['font'] ?? 0), $fonts, true) ? (int)$st['font'] : 0,
+            'fontSize' => (int)$num($st['fontSize'] ?? 12, 6, 72),
+            'color' => preg_match('/^#[0-9a-f]{6}$/i', (string)($st['color'] ?? '')) ? strtolower($st['color']) : '',
+            'align' => in_array($st['align'] ?? '', ['right', 'center', 'left'], true) ? $st['align'] : 'right',
+            'valign' => in_array($st['valign'] ?? '', ['top', 'middle', 'bottom'], true) ? $st['valign'] : 'middle',
+        ];
+    }
+
     $fields = [];
     $keys = [];
     foreach ((array)($s['fields'] ?? []) as $f) {
@@ -302,6 +318,11 @@ function clean_schema($s, array $sources = [], array $fonts = [], array $contact
             // מבנה תצוגה מותאם (lib/fmt.php): תאריך — dd/MM/yyyy, hd בhMMMM hyy…; מספר — #,##0.00…
             'fmt' => in_array($type, ['date', 'number', 'calc', 'system'], true) ? $str($f['fmt'] ?? '', 80) : '',
         ];
+        // סגנון: מקור התצוגה של השדה. סגנון שנמחק — הקישור נופל, והערכים נשארים
+        $nf = &$fields[count($fields) - 1];
+        $nf['style'] = isset($styles[(string)($f['style'] ?? '')]) ? (string)$f['style'] : '';
+        if ($nf['style'] !== '') foreach (['font', 'fontSize', 'color', 'align', 'valign'] as $k) $nf[$k] = $styles[$nf['style']][$k];
+        unset($nf);
         // אכיפה: "מוסתר מהממלאים בקישור" מסתיר רק ממי שלא ממלא את השדה. אם כל הממלאים בקישור
         // ממלאים אותו — אין ממי להסתיר, וזו סתירה: ההסתרה מתבטלת
         $nf = &$fields[count($fields) - 1];
@@ -386,6 +407,7 @@ function clean_schema($s, array $sources = [], array $fonts = [], array $contact
     return ['pages' => $pages, 'fields' => $fields, 'roles' => $roles, 'sequential' => !empty($s['sequential']),
         // דף אישור (טביעת אצבע + יומן) בסוף ה-PDF של מסמך שהושלם — כבוי: ה-PDF נקי, ודף האישור בכפתור נפרד
         'certificate' => !empty($s['certificate']),
+        'styles' => array_values($styles),
         ...($body !== null ? ['body' => $body] : []),
         // שלב 10: הפירוק האוטומטי כבר רץ — לא להוסיף שוב את שדות הטופס המקורי.
         'parsed' => !empty($s['parsed'])];
