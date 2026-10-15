@@ -912,7 +912,20 @@ dialog.dt-dlg > form { display: flex; flex-direction: column; flex: 1 1 auto; mi
 .tbl-empty { position: absolute; inset: auto 0 6px; text-align: center; font-size: .8rem; color: var(--brand); }
 .tbl-sheet .grid-wrap { overflow-x: auto; }
 dialog.sheet:has(.tbl-sheet) { width: min(1040px, 100vw); }
-.tbl-sheet .grid select { min-width: 7.5em; }
-.tbl-sheet .grid input { min-width: 4.5em; }
 .grid tr.same-grp td { border-top-color: transparent; }
 .grid tr.same-grp td:first-child input { color: var(--muted); }
+.dl-wrap { display: contents; }
+.list-sheet .list-grid { overflow-x: auto; max-height: 55vh; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--r); }
+dialog.sheet:has(.list-sheet) { width: min(900px, 100vw); }
+/* רוחב מינימלי לתאים — רק כשהטבלה טבלה (במחשב); בטלפון כל שורה כרטיס */
+@media (min-width: 641px) {
+  .tbl-sheet .grid select { min-width: 7.5em; }
+  .tbl-sheet .grid input { min-width: 4.5em; }
+  .list-sheet .grid input { min-width: 6em; }
+}
+/* בעורך הרשימות: הכרטיסים בתוך מסגרת עם גלילה — בלי מסגרת כפולה, וה-✕ בתוך הכרטיס */
+@media (max-width: 640px) {
+  .list-sheet .list-grid { border: 0; padding: 0; }
+  .list-sheet .grid .row-del { top: 6px; inset-inline-end: 8px; }
+}
+@media (max-width: 640px) { .grid .row-del { width: auto; } }   /* אחרי הכלל הכללי (רוחב 1%) — בכרטיס ה-✕ בגודלו */

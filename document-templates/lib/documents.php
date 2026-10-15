@@ -312,6 +312,7 @@ function doc_get(array $user, int $id): array
         'archived' => $d['archived_at'] !== null,
         'schema' => attach_options($schema), 'values' => $values, 'progress' => doc_progress($schema, $values),
         'ref' => $d['external_ref'], 'events' => $events, 'fonts' => fonts_info($schema), 'chain_ok' => doc_verify_chain($id),
+        'lists' => lists_for($schema),
         'participants' => participants_view($d, doc_schema($d)),
         'awaiting_approval' => !empty($schema['approval']) && doc_awaiting($d, doc_schema($d)),
         'attachments' => attachments_of($id),
@@ -397,7 +398,7 @@ function clean_value(array $f, $v, int $docId = 0): string
                 foreach ($f['columns'] ?? [] as $c) {
                     if ($c['type'] === 'calc') continue;
                     $cell = mb_substr(trim(preg_replace('/[\r\n]+/', ' ', (string)($r[$c['key']] ?? ''))), 0, 1000);
-                    if ($c['type'] === 'select' && $cell !== '' && !in_array($cell, $c['options'] ?? [], true)) {
+                    if ($c['type'] === 'select' && $cell !== '' && !in_array($cell, !empty($c['list']) ? list_level_values($c['list']) : ($c['options'] ?? []), true)) {
                         throw new ApiError('"' . $f['label'] . ' ← ' . $c['label'] . '": בחרו מהרשימה', 422);
                     }
                     if ($c['type'] === 'number' && $cell !== '' && !is_numeric($cell)) {

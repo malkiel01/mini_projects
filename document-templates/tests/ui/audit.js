@@ -122,7 +122,11 @@ function scan() {
     ['איש קשר — כרטיס, ממלא במסמך', async () => { await p.click('.list.contacts .use-row:has-text("דנה")'); await p.waitForTimeout(600); }],
     ['אנשי קשר — ייבוא', async () => { await p.keyboard.press('Escape'); await p.waitForTimeout(200); await p.click('button:has-text("ייבוא")'); await p.waitForTimeout(300); }],
     ['מסמך — משתתפים', async () => { await p.keyboard.press('Escape'); await go('doc=' + ids.did)(); await p.click('[aria-label="משתתפים"]'); await p.waitForTimeout(500); }],
-    ['חיבורים — מקורות', async () => { await go('connections')(); await p.click('.seg-tabs [data-tab=sources]'); await p.waitForTimeout(500); }],
+    ['חיבורים — רשימות', async () => { await go('connections')(); await p.click('.seg-tabs [data-tab=lists]'); await p.waitForTimeout(500); }],
+    ['רשימה חדשה', async () => { await p.click('.conn-body .toolbar button.primary'); await p.waitForSelector('dialog .list-sheet');
+      await p.fill('dialog .list-sheet input[placeholder^="בית עלמין"]', 'בית עלמין › גוש › חלקה'); await p.press('dialog .list-sheet input[placeholder^="בית עלמין"]', 'Tab');
+      await p.click('dialog .list-sheet button:has-text("+ שורה")'); await p.waitForTimeout(300); }],
+    ['חיבורים — מקורות', async () => { await p.keyboard.press('Escape'); await go('connections')(); await p.click('.seg-tabs [data-tab=sources]'); await p.waitForTimeout(500); }],
     ['חיבורים — מקור', click('.card-list .use-row')],
     ['חיבורים — מפתחות', async () => { await go('connections')(); await p.click('.seg-tabs [data-tab=keys]'); await p.waitForTimeout(500); }],
     ['חיבורים — מפתח', click('.card-list .use-row')],

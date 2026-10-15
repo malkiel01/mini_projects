@@ -323,6 +323,7 @@ function clean_select(array $f, callable $str, array $allowed): array
 /** האפשרויות של שדה בחירה: [{value, label, data?}]. data — רק מה שממלא שדות נוספים. */
 function select_options(array $f, ?array $allowedKeys = null): array
 {
+    if (!empty($f['list'])) return array_map(fn($v) => ['value' => $v, 'label' => $v], list_level_values($f['list']));
     if (empty($f['source'])) return $f['options'] ?? [];
     $src = $f['source'];
     $st = db()->prepare('SELECT config_enc FROM data_sources WHERE id = ?');
