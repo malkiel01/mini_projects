@@ -32,7 +32,7 @@ const TPL_MIME = [
 const FIELD_TYPES = ['text', 'textarea', 'number', 'date', 'checkbox', 'signature', 'file', 'table', 'calc', 'system', 'select'];
 /** שדה שמתמלא לבד: מספר המסמך, תאריך הנפקה, שם המנפיק, כותרת, תאריך השלמה. */
 const SYSTEM_SOURCES = ['number', 'issued', 'owner', 'title', 'completed'];
-const COLUMN_TYPES = ['text', 'number', 'calc'];
+const COLUMN_TYPES = ['text', 'number', 'calc', 'select'];
 const COND_OPS    = ['eq', 'neq', 'filled', 'empty'];
 const BLOCK_TYPES = ['heading', 'p', 'table', 'break'];
 /** שלב 11: תבנית שנכתבה בכלי — אין קובץ מקור; הגוף נשמר במבנה התבנית. */
@@ -373,10 +373,15 @@ function clean_schema($s, array $sources = [], array $fonts = [], array $contact
                     // בתבנית Word: השם בסימון {{טבלה.שם}} — נשמר גם כשמשנים את התווית
                     + (($c['name'] ?? '') !== '' ? ['name' => $str($c['name'], 60)] : [])
                     + ($ct === 'calc' ? ['formula' => $str($c['formula'] ?? '', 300)] : [])
+                    // בחירה מרשימה (למשל בודד / מכפלה) — עד 30 אפשרויות
+                    + ($ct === 'select' ? ['options' => array_values(array_unique(array_filter(array_map(fn($o) => $str($o, 60),
+                        array_slice((array)($c['options'] ?? []), 0, 30)), fn($o) => $o !== '')))] : [])
                     + ['format' => in_array($c['format'] ?? '', CALC_FORMATS, true) ? $c['format'] : 'number'];
             }
             if (!$cols) $cols[] = ['key' => 'c1', 'label' => 'תיאור', 'type' => 'text', 'format' => 'number'];
             $fields[count($fields) - 1]['columns'] = $cols;
+            // שורות רצופות עם אותו ערך בעמודה הראשונה — קבוצה אחת (למשל שני קברים באותה מכפלה)
+            $fields[count($fields) - 1]['group'] = !empty($f['group']);
         }
         if ($type === 'file') {
             // צירוף קובץ (שלב 6): אילו סוגים, גודל מרבי לקובץ, ואחד או כמה.

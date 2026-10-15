@@ -878,3 +878,24 @@ dialog.dt-dlg > form { display: flex; flex-direction: column; flex: 1 1 auto; mi
 .approval-set { display: grid; gap: var(--s2); margin-top: var(--s3); padding-top: var(--s3); border-top: 1px solid var(--line); }
 .approval-set h3 { margin: 0; font-size: 1rem; }
 .approval-set p { margin: 2px 0 0; }
+
+/* טבלה על דף PDF: כפי שתודפס; הקשה — עריכת השורות */
+.fill.t-table { overflow: hidden; }
+.tbl-box { box-sizing: border-box; display: block; width: 100%; height: 100%; overflow: hidden; position: relative;
+  background: color-mix(in srgb, var(--brand) 6%, transparent); border-radius: 2px; }
+.tbl-box.editable { cursor: pointer; }
+.tbl-box.editable:hover { background: color-mix(in srgb, var(--brand) 11%, transparent); }
+.tbl-box:focus-visible { outline: 2px solid var(--brand); }
+.tbl-page { width: 100%; border-collapse: collapse; color: #000; line-height: 1.2; font-family: Alef, Arial, sans-serif; }
+.tbl-page th { text-align: right; font-weight: 400; color: #5d6475; padding: .35em .3em; border-bottom: 1px solid #000; white-space: nowrap; }
+.tbl-page td { padding: .3em; border-top: 1px solid #d5d9e3; white-space: nowrap; }
+.tbl-page td.num { text-align: center; direction: ltr; }
+.tbl-page.grouped tr:not(.same-grp) td { border-top-color: #000; }
+.tbl-page tbody tr:first-child td { border-top: 0; }
+.tbl-empty { position: absolute; inset: auto 0 6px; text-align: center; font-size: .8rem; color: var(--brand); }
+.tbl-sheet .grid-wrap { overflow-x: auto; }
+dialog.sheet:has(.tbl-sheet) { width: min(1040px, 100vw); }
+.tbl-sheet .grid select { min-width: 7.5em; }
+.tbl-sheet .grid input { min-width: 4.5em; }
+.grid tr.same-grp td { border-top-color: transparent; }
+.grid tr.same-grp td:first-child input { color: var(--muted); }

@@ -28,8 +28,8 @@
   };
   const isAuto = (f) => f.type === 'system' || f.type === 'calc';
   const iconOf = (f) => f.type === 'system' ? (SYSTEM[f.source] || SYSTEM.number)[1] : TYPES[f.type].icon;
-  // שלב 11: טבלה חוזרת — רק בתבנית Word ובתבנית שנכתבה בכלי (על דף PDF אין לאן להתרחב)
-  const PLACEABLE = Object.keys(TYPES).filter(t => t !== 'table' && t !== 'system');
+  // טבלה חוזרת: גם על דף PDF — אזור שבתוכו השורות מודפסות כטבלה ("+ שורה" במילוי). מה שלא נכנס — לנספח
+  const PLACEABLE = Object.keys(TYPES).filter(t => t !== 'system');
   const AUTHORED = 'application/x-dt-authored';
   const FORMATS = { number: 'מספר (1,234.5)', money: 'סכום (1,234.50 ₪)', date: 'תאריך (13/10/2026)' };
   const COND_OPS = { eq: 'שווה ל', neq: 'שונה מ', filled: 'מולא', empty: 'ריק' };
@@ -342,6 +342,26 @@
     // ── שלב 10: PDF "לפרק" ──
     let report = null;
     let autoSave = false;
+    // תבנית מוכנה: PDF שנושא בתוכו את ההגדרות (קובץ מצורף dt-template.json — שדות, טבלאות, נוסחאות, ממלאים).
+    // בפתיחה הראשונה, כשעוד אין שדות: ההגדרות נכנסות כמו שהן, במקום פירוק הטופס. השרת בודק הכול בשמירה.
+    let imported = 0;
+    if (pages && pages.pdf && !schema.fields.length && !readOnly && !schema.parsed) {
+      try {
+        const att = await pages.pdf.getAttachments();
+        const it = att && Object.values(att).find(a => /^dt-template\.json$/i.test(a.filename || ''));
+        const t = it ? JSON.parse(new TextDecoder().decode(it.content)) : null;
+        if (t && Array.isArray(t.fields)) {
+          for (const r of t.roles || []) if (r && r.key && !schema.roles.some(x => x.key === r.key)) schema.roles.push(r);
+          for (const k of ['sequential', 'approval', 'fill_download', 'certificate']) if (k in t) schema[k] = !!t[k];
+          schema.fields.push(...t.fields.filter(f => f && TYPES[f.type] && schema.pages[f.page || 0]).map(f => ({
+            help: '', required: false, default: '', fontSize: 11, align: 'right', overflow: 'shrink', role: 'owner', page: 0, ...f, id: uid() })));
+          imported = schema.fields.length;
+          schema.parsed = true;   // לא לפרק גם את שדות הטופס — ההגדרות המוכנות קובעות
+          setDirty(true);
+          autoSave = imported > 0;
+        }
+      } catch (e) { /* אין הגדרות מוכנות — ממשיכים כרגיל */ }
+    }
     if (pages && pages.pdf && tpl.source === 'pdf_parsed') {
       try { report = await window.DTParse.analyze(pages.pdf); }
       catch (e) { parseBox.replaceChildren(notice('הפירוק נכשל: ' + e.message, 'bad')); }
@@ -498,6 +518,8 @@
         fontSize: 11, align: 'right', overflow: 'shrink', role: 'owner',
         ...(type === 'system' ? { source: p.source } : {}), ...(type === 'calc' ? { formula: '', format: 'number' } : {}),
         ...(type === 'select' ? { options: [] } : {}),
+        ...(type === 'table' ? { fontSize: 9, overflow: 'annex', group: false, columns: [
+          { key: 'c1', label: 'תיאור', type: 'text' }, { key: 'c2', label: 'כמות', type: 'number' }, { key: 'c3', label: 'מחיר', type: 'number' }] } : {}),
       };
       schema.fields.push(f);
       setPlacing(null);
@@ -1155,7 +1177,7 @@
 
       function render() {
         const auto = isAuto(f);
-        const textual = ['text', 'textarea', 'number', 'date', 'calc', 'system', 'select'].includes(f.type);
+        const textual = ['text', 'textarea', 'number', 'date', 'calc', 'system', 'select', 'table'].includes(f.type);   // טבלה: גופן, גודל, צבע, ומה קורה כשהשורות לא נכנסות
         const onPage = !isWord && !isAuthored;
         // סוג: טבלה נשארת טבלה. מעבר ל"מתמלא לבד" — בוחרים מקור.
         const types = f.type === 'table' ? ['table'] : [...PLACEABLE, 'system'];
@@ -1586,8 +1608,12 @@
           label.addEventListener('input', () => { c.label = label.value; setDirty(true); });
           label.addEventListener('change', draw_);
           const type = el('select', { 'aria-label': 'סוג העמודה' },
-            Object.entries({ text: 'טקסט', number: 'מספר', calc: 'ƒ מחושב' }).map(([v, t]) => el('option', { value: v, selected: c.type === v }, t)));
-          type.addEventListener('change', () => { c.type = type.value; if (c.type === 'calc') { c.formula ??= ''; c.format ??= 'number'; } setDirty(true); draw_(); });
+            Object.entries({ text: 'טקסט', number: 'מספר', select: '☰ בחירה', calc: 'ƒ מחושב' }).map(([v, t]) => el('option', { value: v, selected: c.type === v }, t)));
+          type.addEventListener('change', () => { c.type = type.value; if (c.type === 'calc') { c.formula ??= ''; c.format ??= 'number'; } if (c.type === 'select') c.options ??= []; setDirty(true); draw_(); });
+          // בחירה: אפשרות בכל שורה
+          const opts = el('textarea', { rows: 3, 'aria-label': 'אפשרויות — אחת בכל שורה', placeholder: 'אפשרות בכל שורה, למשל:\nקבר בודד\nמכפלה' });
+          opts.value = (c.options || []).join('\n');
+          opts.addEventListener('input', () => { c.options = opts.value.split('\n').map(x => x.trim()).filter(Boolean); setDirty(true); });
           const del = el('button', { type: 'button', class: 'link small', title: 'הסרה', disabled: f.columns.length < 2,
             onclick: () => { f.columns.splice(i, 1); setDirty(true); draw_(); } }, '✕');
           const fmt = el('select', { 'aria-label': 'תצוגה' }, Object.entries(FORMATS).filter(([k]) => k !== 'date')
@@ -1597,14 +1623,19 @@
             el('div', { class: 'row' }, label, type, del),
             c.name ? el('p', { class: 'small muted' }, 'בקובץ: ', el('code', {}, `{{${f.placeholder}.${c.name}}}`)) : null,
             c.type === 'calc' ? formulaInput(c, f, f.columns.filter(x => x !== c && x.type !== 'text').map(x => [colId(x), x.label])) : null,
-            c.type === 'calc' ? fmt : null);
+            c.type === 'calc' ? fmt : null,
+            c.type === 'select' ? opts : null);
         }), f.columns.length < 12 ? el('button', { type: 'button', class: 'small', onclick: () => {
           f.columns.push({ key: 'c' + Math.random().toString(36).slice(2, 7), label: 'עמודה ' + (f.columns.length + 1), type: 'text' });
           setDirty(true); draw_();
         } }, '+ עמודה') : null);
       };
       draw_();
-      return box;
+      // קיבוץ: שורות רצופות עם אותו ערך בעמודה הראשונה — קבוצה אחת בפלט (הערך פעם אחת, קו עבה בין קבוצות)
+      const grp = el('input', { type: 'checkbox', checked: !!f.group });
+      grp.addEventListener('change', () => { f.group = grp.checked; setDirty(true); });
+      return el('div', {}, box, el('label', { class: 'switch' }, grp, el('span', {}, 'קיבוץ לפי העמודה הראשונה',
+        el('small', { class: 'muted' }, 'שורות עם אותו ערך בעמודה הראשונה (למשל אותה מכפלה) מודפסות כקבוצה אחת'))));
     }
 
     /** "מוצג רק אם…": שדה, פעולה, ערך. target — שדה או קטע בגוף. */
@@ -1803,6 +1834,7 @@
     draw();
     renderPanel();
     renderBlocks();
+    if (imported) msg.replaceChildren(notice(`✓ הקובץ הגיע עם הגדרות מוכנות: ${imported} שדות, כולל טבלאות ונוסחאות — נטענו ונשמרו.`, 'ok'));
     if (autoSave) save();
   }
 
