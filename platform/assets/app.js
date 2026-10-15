@@ -157,6 +157,24 @@ function showRegister() {
     }));
 }
 
+// החלפת סיסמה: מחויבת אחרי סיסמה זמנית מהמנהל, או מרצון מהתפריט.
+function showPassword(forced) {
+    const footer = forced ? [] : [switchLink('', 'ביטול', () => start())];
+    view.replaceChildren(form({
+        title: forced ? 'בחירת סיסמה חדשה' : 'החלפת סיסמה',
+        lead: forced
+            ? 'המנהל קבע לכם סיסמה זמנית. לפני שממשיכים — בחרו סיסמה משלכם.'
+            : 'אחרי ההחלפה, שאר המכשירים שלכם יתנתקו.',
+        fields: [
+            field(forced ? 'הסיסמה הזמנית' : 'הסיסמה הנוכחית', 'current', { type: 'password', ltr: true, autocomplete: 'current-password' }),
+            field('סיסמה חדשה', 'password', { type: 'password', ltr: true, hint: 'לפחות 8 תווים', autocomplete: 'new-password' }),
+        ],
+        submit: 'שמירת הסיסמה',
+        onSubmit: async (data) => { await api('password', data); toast('✓ הסיסמה הוחלפה'); start(); },
+        footer,
+    }));
+}
+
 function showMessage(title, text, icon = '') {
     view.replaceChildren(el('div', { className: 'auth' }, [el('div', { className: 'panel msg' }, [
         icon ? el('div', { className: 'big', textContent: icon, ariaHidden: 'true' }) : logo(),
@@ -219,6 +237,7 @@ function openMenu(btn, user) {
             ? menuItem('🏠', 'האפליקציות שלי', null, { href: '#' })
             : menuItem('⚙️', 'ניהול', null, { href: '#admin', count: me.pending || 0 }));
     }
+    items.push(menuItem('🔑', 'החלפת סיסמה', () => showPassword(false)));
     if (installPrompt) items.push(menuItem('📲', 'התקנה במכשיר', installFamily));
     if (canDownload()) items.push(menuItem('⬇️', 'הורדה לשימוש בלי רשת', downloadFamily));
     items.push(el('div', { className: 'menu-sep' }), menuItem('↩', 'יציאה', logout, { cls: 'danger' }));
@@ -520,6 +539,7 @@ async function start() {
             return showMessage('החשבון ממתין לאישור',
                 'נרשמתם בהצלחה. המנהל צריך לאשר את החשבון ולבחור אילו אפליקציות יוצגו לכם.', '⏳');
         }
+        if (me.user.must_change) return showPassword(true);
         if (goNext()) return;
         if (inAdmin() && me.user.role === 'admin') {
             return await window.PlatformAdmin.show(view);

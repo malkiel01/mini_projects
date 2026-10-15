@@ -26,13 +26,15 @@ function require_admin(bool $mutating = false): array
 function admin_state(array $admin): never
 {
     $users = db()->query(
-        "SELECT id, username, display_name, role, status, created_at, last_login_at FROM users
+        "SELECT id, username, display_name, role, status, created_at, last_login_at, must_change_pw FROM users
           ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, created_at"
     )->fetchAll();
     foreach ($users as &$u) {
         $u['id'] = (int)$u['id'];
         $u['grants'] = grants_of($u['id']);
         $u['self'] = $u['id'] === (int)$admin['id'];
+        $u['must_change'] = (bool)$u['must_change_pw'];
+        unset($u['must_change_pw']);
     }
     unset($u);
 
@@ -53,6 +55,7 @@ function admin_dispatch(string $action, array $body, array $admin): never
     match ($action) {
         'admin_user_update'     => admin_user_update($body, $admin),
         'admin_user_delete'     => admin_user_delete($body, $admin),
+        'admin_user_password'   => admin_user_password($body, $admin),
         'admin_grants_set'      => admin_grants_set($body),
         'admin_category_save'   => admin_category_save($body),
         'admin_category_move'   => admin_category_move($body),
@@ -99,6 +102,22 @@ function admin_user_update(array $body, array $admin): never
     db()->prepare('UPDATE users SET status = ?, role = ? WHERE id = ?')->execute([$status, $role, $u['id']]);
     // חסימה מנתקת מיד, בכל המכשירים.
     if ($status === 'blocked') db()->prepare('DELETE FROM sessions WHERE user_id = ?')->execute([$u['id']]);
+    json_out(['ok' => true]);
+}
+
+/**
+ * איפוס סיסמה: {id, password} — סיסמה זמנית שהמנהל מוסר למשתמש. המשתמש מתנתק
+ * מכל המכשירים, ובכניסה הבאה חייב לבחור סיסמה חדשה.
+ */
+function admin_user_password(array $body, array $admin): never
+{
+    $u = target_user($body);
+    if ((int)$u['id'] === (int)$admin['id']) throw new ApiError('את הסיסמה שלך מחליפים מהתפריט האישי', 409);
+    $password = validate_password($body['password'] ?? null);
+    db()->prepare('UPDATE users SET password_hash = ?, must_change_pw = 1 WHERE id = ?')
+        ->execute([password_hash($password, PASSWORD_DEFAULT), $u['id']]);
+    db()->prepare('DELETE FROM sessions WHERE user_id = ?')->execute([$u['id']]);
+    clear_failures(['u:' . mb_strtolower($u['username'])]); // נעילה מניסיונות קודמים לא תחסום את הסיסמה החדשה
     json_out(['ok' => true]);
 }
 

@@ -5,8 +5,11 @@ window.PlatformAdmin = (() => {
     let root = null;
     let state = null;
     let tab = 'users';
-    let editing = null;   // מזהה המשתמש שעורך ההרשאות שלו פתוח
-    let flash = '';
+    let filter = 'all';     // סינון לפי סטטוס
+    let query = '';         // חיפוש בשם / שם משתמש
+    let sort = 'recent';    // recent | login | name
+    let openUser = null;    // מזהה המשתמש שהגיליון שלו פתוח
+    let sheet = null;
 
     const P = () => window.Platform;
     const el = (...a) => P().el(...a);
@@ -20,15 +23,19 @@ window.PlatformAdmin = (() => {
         state = await P().api('admin_state');
         P().setPending(pendingCount());
         render();
+        if (openUser !== null) {
+            const u = state.users.find(x => x.id === openUser);
+            u ? fillSheet(u) : closeSheet();
+        }
     }
 
-    // פעולה, ואחריה טעינה מחדש. שגיאה מוצגת בראש המסך ולא מפילה אותו.
+    // פעולה, ואחריה טעינה מחדש. התוצאה — בהודעה קופצת; שגיאה לא מפילה את המסך.
     async function act(action, body, message = '') {
         try {
             await P().api(action, body);
-            flash = message;
+            if (message) P().toast(message);
         } catch (err) {
-            flash = '⚠️ ' + err.message;
+            P().toast('⚠️ ' + err.message);
         }
         await reload();
     }
@@ -40,79 +47,237 @@ window.PlatformAdmin = (() => {
     }
 
     function render() {
-        const tabs = el('div', { className: 'admin-tabs' }, [
-            ['users', `👥 משתמשים${pendingCount() ? ` (${pendingCount()})` : ''}`],
-            ['catalog', '🗂️ אפליקציות'],
-            ['probe', '🩺 בדיקת שרת'],
-        ].map(([id, label]) => button(label, () => { tab = id; flash = ''; render(); }, tab === id ? 'active' : '')));
-
+        const n = pendingCount();
+        const tabs = el('div', { className: 'admin-tabs', role: 'tablist' }, [
+            ['users', '👥 משתמשים', n],
+            ['catalog', '🗂️ אפליקציות', 0],
+            ['probe', '🩺 שרת', 0],
+        ].map(([id, label, count]) => {
+            const b = button(label, () => { tab = id; render(); }, tab === id ? 'active' : '');
+            b.role = 'tab';
+            b.ariaSelected = String(tab === id);
+            if (count) b.append(el('span', { className: 'chip bad', textContent: String(count) }));
+            return b;
+        }));
         const body = tab === 'users' ? renderUsers() : tab === 'catalog' ? renderCatalog() : renderProbe();
-        const note = flash ? [el('div', { className: 'admin-flash', textContent: flash })] : [];
-        root.replaceChildren(el('div', { className: 'admin' }, [tabs, ...note, body]));
+        root.replaceChildren(el('div', { className: 'admin' }, [tabs, body]));
     }
 
     const pendingCount = () => state.users.filter(u => u.status === 'pending').length;
 
+    // ---------- זמנים ----------
+
+    function relTime(iso) {
+        if (!iso) return '';
+        const sec = (Date.now() - new Date(iso).getTime()) / 1000;
+        if (sec < 60) return 'עכשיו';
+        if (sec < 3600) return `לפני ${Math.round(sec / 60)} דק׳`;
+        if (sec < 86400) return `לפני ${Math.round(sec / 3600)} שע׳`;
+        const days = Math.floor(sec / 86400);
+        if (days === 1) return 'אתמול';
+        if (days < 30) return `לפני ${days} ימים`;
+        return fullDate(iso);
+    }
+    const fullDate = (iso) => iso ? new Date(iso).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric' }) : '—';
+    const fullTime = (iso) => iso ? new Date(iso).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+
     // ---------- משתמשים ----------
 
-    const STATUS = { pending: ['ממתין לאישור', 'pending'], active: ['פעיל', 'active'], blocked: ['חסום', 'blocked'] };
+    const STATUS = { pending: ['ממתין לאישור', 'warn'], active: ['פעיל', 'ok'], blocked: ['חסום', 'bad'] };
+    const FILTERS = [['all', 'הכול'], ['pending', 'ממתינים'], ['active', 'פעילים'], ['blocked', 'חסומים']];
+    const SORTS = [['recent', 'נרשמו לאחרונה'], ['login', 'כניסה אחרונה'], ['name', 'לפי שם']];
+
+    function visibleUsers() {
+        const q = query.trim().toLowerCase();
+        const list = state.users.filter(u =>
+            (filter === 'all' || u.status === filter)
+            && (!q || u.display_name.toLowerCase().includes(q) || u.username.toLowerCase().includes(q)));
+        const by = {
+            recent: (a, b) => (b.created_at || '').localeCompare(a.created_at || ''),
+            login: (a, b) => (b.last_login_at || '').localeCompare(a.last_login_at || ''),
+            name: (a, b) => a.display_name.localeCompare(b.display_name, 'he'),
+        }[sort];
+        // ממתינים תמיד למעלה — הם מה שדורש פעולה.
+        return list.sort((a, b) => ((b.status === 'pending') - (a.status === 'pending')) || by(a, b));
+    }
 
     function renderUsers() {
-        return el('div', { className: 'admin-list' }, state.users.map(userRow));
+        const count = (f) => f === 'all' ? state.users.length : state.users.filter(u => u.status === f).length;
+        const seg = el('div', { className: 'seg', role: 'radiogroup', ariaLabel: 'סינון לפי מצב' }, FILTERS.map(([id, label]) => {
+            const input = el('input', { type: 'radio', name: 'ufilter', value: id, checked: filter === id });
+            input.addEventListener('change', () => { filter = id; drawList(); });
+            const n = count(id);
+            return el('label', {}, [input, el('span', {}, [label, ...(n ? [el('small', { textContent: String(n) })] : [])])]);
+        }));
+
+        const search = el('input', { type: 'search', value: query, placeholder: 'חיפוש לפי שם או משתמש…', ariaLabel: 'חיפוש משתמש' });
+        search.addEventListener('input', () => { query = search.value; drawList(); });
+        const sortSel = el('select', { ariaLabel: 'מיון' }, SORTS.map(([v, t]) => el('option', { value: v, textContent: t })));
+        sortSel.value = sort;
+        sortSel.addEventListener('change', () => { sort = sortSel.value; drawList(); });
+
+        const list = el('ul', { className: 'list' });
+        function drawList() {
+            const users = visibleUsers();
+            list.replaceChildren(...(users.length ? users.map(userRow)
+                : [el('li', { className: 'empty', textContent: query ? 'אין משתמש שמתאים לחיפוש' : 'אין משתמשים במצב הזה' })]));
+        }
+        drawList();
+
+        return el('div', {}, [seg, el('div', { className: 'toolbar' }, [search, sortSel]), list]);
+    }
+
+    function statusChips(u) {
+        const [text, cls] = STATUS[u.status];
+        const out = [el('span', { className: `chip ${cls}`, textContent: text })];
+        if (u.role === 'admin') out.push(el('span', { className: 'chip brand', textContent: 'מנהל' }));
+        if (u.must_change) out.push(el('span', { className: 'chip', textContent: '🔑 סיסמה זמנית' }));
+        return out;
     }
 
     function userRow(u) {
-        const [statusText, statusCls] = STATUS[u.status];
-        const badges = [el('span', { className: `badge ${statusCls}`, textContent: statusText })];
-        if (u.role === 'admin') badges.push(el('span', { className: 'badge admin', textContent: 'מנהל' }));
+        const sub = [el('bdi', { textContent: u.username }), ` · נרשם ${relTime(u.created_at)}`];
+        if (u.status !== 'pending') sub.push(` · ${u.last_login_at ? 'נכנס ' + relTime(u.last_login_at) : 'עוד לא נכנס'}`);
 
-        const actions = [];
-        if (u.self) {
-            actions.push(el('span', { className: 'muted', textContent: 'זה אתה' }));
-        } else if (u.status === 'pending') {
-            actions.push(
-                button('✓ אישור', async () => {
-                    editing = u.id;
-                    await act('admin_user_update', { id: u.id, status: 'active' },
-                        `${u.display_name} אושר/ה. בחרו למטה מה יוצג לו/ה.`);
-                }, 'primary'),
-                button('דחייה', () => confirm(`למחוק את הבקשה של ${u.display_name}?`)
-                    && act('admin_user_delete', { id: u.id }, 'הבקשה נמחקה'), 'danger'),
-            );
+        const main = el('button', { type: 'button', className: 'u-main', ariaHasPopup: 'dialog' }, [
+            P().avatar(u),
+            el('span', { className: 'u-tx' }, [
+                el('span', { className: 'u-l1' }, [el('b', { textContent: u.display_name + (u.self ? ' (את/ה)' : '') }), ...statusChips(u)]),
+                el('small', {}, sub),
+            ]),
+        ]);
+        main.addEventListener('click', () => openSheet(u));
+
+        const tail = [];
+        if (u.status === 'pending') {
+            const ok = el('button', { type: 'button', className: 'icon-btn ok-btn', textContent: '✓', ariaLabel: `אישור ${u.display_name}`, title: 'אישור' });
+            ok.addEventListener('click', () => approve(u));
+            const no = el('button', { type: 'button', className: 'icon-btn no-btn', textContent: '✕', ariaLabel: `דחיית ${u.display_name}`, title: 'דחייה' });
+            no.addEventListener('click', () => reject(u));
+            tail.push(ok, no);
         } else {
-            if (u.role !== 'admin') {
-                actions.push(button(editing === u.id ? 'סגירת ההרשאות' : '🔑 הרשאות',
-                    () => { editing = editing === u.id ? null : u.id; flash = ''; render(); }));
-            }
-            if (u.status === 'active') {
-                actions.push(button('חסימה', () => confirm(`לחסום את ${u.display_name}? הוא/היא ינותק/תנותק מיד.`)
-                    && act('admin_user_update', { id: u.id, status: 'blocked' }, 'נחסם/ה'), 'danger'));
-                actions.push(u.role === 'admin'
-                    ? button('הסרת ניהול', () => act('admin_user_update', { id: u.id, role: 'user' }, 'כבר לא מנהל/ת'))
-                    : button('הפיכה למנהל', () => confirm(`מנהל רואה ועורך הכול. להפוך את ${u.display_name} למנהל?`)
-                        && act('admin_user_update', { id: u.id, role: 'admin' }, 'הפך/ה למנהל')));
-            } else {
-                actions.push(button('ביטול חסימה', () => act('admin_user_update', { id: u.id, status: 'active' }, 'החסימה בוטלה')));
-                actions.push(button('מחיקה', () => confirm(`למחוק את ${u.display_name} לצמיתות?`)
-                    && act('admin_user_delete', { id: u.id }, 'נמחק/ה'), 'danger'));
+            tail.push(el('span', { className: 'app-go', textContent: '‹', ariaHidden: 'true' }));
+        }
+        return el('li', { className: 'urow' }, [main, ...tail]);
+    }
+
+    // אישור פותח מיד את הגיליון — הצעד הבא הוא לבחור מה המשתמש יראה.
+    async function approve(u) {
+        openUser = u.id;
+        await act('admin_user_update', { id: u.id, status: 'active' }, `✓ ${u.display_name} אושר/ה — בחרו מה יוצג לו/ה`);
+        const fresh = state.users.find(x => x.id === u.id);
+        if (fresh && !sheet) openSheet(fresh);
+    }
+    function reject(u) {
+        if (confirm(`לדחות ולמחוק את הבקשה של ${u.display_name}?`)) act('admin_user_delete', { id: u.id }, 'הבקשה נדחתה');
+    }
+
+    // ---------- גיליון משתמש ----------
+
+    function openSheet(u) {
+        closeSheet();
+        openUser = u.id;
+        sheet = el('dialog', { className: 'user-sheet' });
+        sheet.addEventListener('click', (e) => { if (e.target === sheet) closeSheet(); });
+        sheet.addEventListener('close', () => { sheet?.remove(); sheet = null; openUser = null; });
+        document.body.append(sheet);
+        fillSheet(u);
+        sheet.showModal();
+    }
+    function closeSheet() { if (sheet?.open) sheet.close(); }
+
+    function fillSheet(u) {
+        if (!sheet) return;
+        const close = el('button', { type: 'button', className: 'icon-btn', textContent: '✕', ariaLabel: 'סגירה' });
+        close.addEventListener('click', closeSheet);
+        const [statusText] = STATUS[u.status];
+
+        const cells = el('dl', { className: 'cells' }, [
+            ['מצב', statusText], ['תפקיד', u.role === 'admin' ? 'מנהל' : 'משתמש'],
+            ['נרשם', fullDate(u.created_at)], ['כניסה אחרונה', u.last_login_at ? fullTime(u.last_login_at) : 'עוד לא נכנס'],
+        ].map(([k, v]) => el('div', {}, [el('dt', { textContent: k }), el('dd', { textContent: v })])));
+
+        const body = [cells];
+        if (u.must_change) body.push(el('p', { className: 'note', textContent: '🔑 קיבל/ה סיסמה זמנית — יתבקש/תתבקש לבחור סיסמה חדשה בכניסה הבאה.' }));
+
+        if (u.self) {
+            body.push(el('p', { className: 'muted small', textContent: 'זה החשבון שלך. את הסיסמה מחליפים מהתפריט האישי (האווטאר למעלה).' }));
+        } else {
+            body.push(el('div', { className: 'sheet-sec', textContent: 'פעולות' }), el('div', { className: 'tiles' }, actionTiles(u)));
+            if (u.status !== 'pending') body.push(passwordBox(u));
+            if (u.status === 'active' && u.role !== 'admin') {
+                body.push(el('div', { className: 'sheet-sec', textContent: 'מה הוא/היא רואה' }), grantsEditor(u));
+            } else if (u.role === 'admin') {
+                body.push(el('p', { className: 'muted small', textContent: 'מנהל רואה את כל האפליקציות — אין צורך בהרשאות.' }));
             }
         }
 
-        const last = u.last_login_at ? `כניסה אחרונה: ${new Date(u.last_login_at).toLocaleDateString('he-IL')}` : 'עוד לא נכנס/ה';
-        const parts = [
-            el('div', { className: 'row-head' }, [
-                el('div', {}, [
-                    el('strong', { textContent: u.display_name }),
-                    // bdi: בלעדיו כתובת מייל מתהפכת בתוך שורה עברית (gmail.com@052840).
-                    el('span', { className: 'muted' }, [' · ', el('bdi', { textContent: u.username })]),
-                    el('div', { className: 'muted small', textContent: last }),
+        sheet.replaceChildren(el('div', { className: 'sheet' }, [
+            el('div', { className: 'sheet-head' }, [
+                P().avatar(u, 'lg'),
+                el('div', { className: 'tx' }, [
+                    el('h2', { textContent: u.display_name }),
+                    el('small', {}, [el('bdi', { textContent: u.username })]),
                 ]),
-                el('div', { className: 'badges' }, badges),
+                close,
             ]),
-            el('div', { className: 'row-actions' }, actions),
+            el('div', { className: 'sheet-body' }, body),
+        ]));
+    }
+
+    function tile(icon, text, onClick, cls = '') {
+        const t = el('button', { type: 'button', className: `tile ${cls}` }, [
+            el('span', { textContent: icon, ariaHidden: 'true' }), el('span', { className: 'one', textContent: text }),
+        ]);
+        t.addEventListener('click', onClick);
+        return t;
+    }
+
+    function actionTiles(u) {
+        const name = u.display_name;
+        if (u.status === 'pending') {
+            return [tile('✓', 'אישור', () => approve(u), 'primary'), tile('✕', 'דחייה', () => reject(u), 'danger')];
+        }
+        if (u.status === 'blocked') {
+            return [
+                tile('↺', 'ביטול חסימה', () => act('admin_user_update', { id: u.id, status: 'active' }, 'החסימה בוטלה')),
+                tile('🗑️', 'מחיקה לצמיתות', () => confirm(`למחוק את ${name} לצמיתות?`)
+                    && act('admin_user_delete', { id: u.id }, 'נמחק/ה'), 'danger'),
+            ];
+        }
+        return [
+            u.role === 'admin'
+                ? tile('⬇', 'הסרת ניהול', () => act('admin_user_update', { id: u.id, role: 'user' }, 'כבר לא מנהל/ת'))
+                : tile('⭐', 'הפיכה למנהל', () => confirm(`מנהל רואה ועורך הכול. להפוך את ${name} למנהל?`)
+                    && act('admin_user_update', { id: u.id, role: 'admin' }, 'הפך/ה למנהל')),
+            tile('⛔', 'חסימה', () => confirm(`לחסום את ${name}? הוא/היא ינותק/תנותק מיד מכל המכשירים.`)
+                && act('admin_user_update', { id: u.id, status: 'blocked' }, 'נחסם/ה'), 'danger'),
         ];
-        if (editing === u.id && u.role !== 'admin' && u.status === 'active') parts.push(grantsEditor(u));
-        return el('div', { className: 'admin-row' }, parts);
+    }
+
+    // סיסמה זמנית: מוצעת אחת אקראית, גלויה כדי שאפשר יהיה להעתיק ולמסור.
+    function tempPassword() {
+        const abc = 'abcdefghjkmnpqrstuvwxyz23456789';
+        const bytes = crypto.getRandomValues(new Uint8Array(10));
+        return [...bytes].map(b => abc[b % abc.length]).join('');
+    }
+
+    function passwordBox(u) {
+        const input = el('input', { type: 'text', value: tempPassword(), dir: 'ltr', ariaLabel: 'סיסמה זמנית', autocomplete: 'off', spellcheck: false });
+        const copy = el('button', { type: 'button', className: 'icon-btn', textContent: '📋', ariaLabel: 'העתקת הסיסמה', title: 'העתקה' });
+        copy.addEventListener('click', async () => {
+            try { await navigator.clipboard.writeText(input.value); P().toast('הסיסמה הועתקה'); }
+            catch { window.prompt('העתיקו:', input.value); }
+        });
+        const set = button('קביעה', () => {
+            if (!confirm(`לקבוע ל-${u.display_name} את הסיסמה הזמנית ${input.value}?\nהוא/היא ינותק/תנותק מכל המכשירים.`)) return;
+            act('admin_user_password', { id: u.id, password: input.value }, '✓ הסיסמה הזמנית נקבעה — מסרו אותה למשתמש');
+        }, 'primary');
+        return el('div', { className: 'pw-box' }, [
+            el('div', { className: 'sheet-sec', textContent: 'איפוס סיסמה' }),
+            el('p', { className: 'muted small', textContent: 'קובעים סיסמה זמנית ומוסרים אותה. בכניסה הבאה המשתמש יחויב לבחור סיסמה משלו.' }),
+            el('div', { className: 'toolbar' }, [input, copy, set]),
+        ]);
     }
 
     // עורך ההרשאות: לכל קטגוריה "הכול", ולכל אפליקציה — לפי הקטגוריה / מותר / חסום.
@@ -156,7 +321,7 @@ window.PlatformAdmin = (() => {
         });
 
         const save = button('💾 שמירת ההרשאות', () => act('admin_grants_set',
-            { id: u.id, categories: [...cats], apps }, `ההרשאות של ${u.display_name} נשמרו`), 'primary');
+            { id: u.id, categories: [...cats], apps }, `✓ ההרשאות של ${u.display_name} נשמרו`), 'primary save-grants');
         return el('div', { className: 'grants' }, [
             el('p', { className: 'muted small', textContent:
                 'קטגוריה מסומנת כוללת גם אפליקציות שיתווספו אליה בעתיד. הרשאה לאפליקציה גוברת על הקטגוריה.' }),

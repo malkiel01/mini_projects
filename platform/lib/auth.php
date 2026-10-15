@@ -47,7 +47,7 @@ function current_user(): ?array
     if (!is_string($token) || strlen($token) !== 64) return null;
 
     $st = db()->prepare(
-        'SELECT u.id, u.username, u.display_name, u.role, u.status, s.csrf
+        'SELECT u.id, u.username, u.display_name, u.role, u.status, u.must_change_pw, s.csrf
            FROM sessions s JOIN users u ON u.id = s.user_id
           WHERE s.token_hash = ? AND s.expires_at > ?'
     );
@@ -67,6 +67,14 @@ function start_session(int $userId): void
     // ניקוי התחברויות שפג תוקפן — זול, ורץ רק בכניסה.
     db()->prepare('DELETE FROM sessions WHERE expires_at <= ?')->execute([now_iso()]);
     set_session_cookie($token, $expires);
+}
+
+/** מוחק את כל ההתחברויות של משתמש, חוץ מהנוכחית (אם נשלחה). */
+function end_other_sessions(int $userId, bool $keepCurrent): void
+{
+    $token = $_COOKIE[SESSION_COOKIE] ?? '';
+    $keep = $keepCurrent && is_string($token) ? hash('sha256', $token) : '';
+    db()->prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash != ?')->execute([$userId, $keep]);
 }
 
 function end_session(): void

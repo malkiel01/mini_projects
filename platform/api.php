@@ -8,6 +8,7 @@
  *   POST ?action=logout
  *   POST ?action=register  {username, password, display_name} → ממתין לאישור
  *   POST ?action=setup     {code, username, password, display_name} → המנהל הראשון
+ *   POST ?action=password  {current, password} — החלפת סיסמה (גם אחרי סיסמה זמנית מהמנהל)
  *
  * פעולות מנהל (lib/admin.php): GET admin_state, ו-POST admin_* — כולן דורשות
  * מנהל מחובר ו-X-CSRF.
@@ -39,6 +40,7 @@ try {
             'logout'   => action_logout(),
             'register' => action_register($body),
             'setup'    => action_setup($body),
+            'password' => action_password($body),
             default    => str_starts_with($action, 'admin_')
                 ? admin_dispatch($action, $body, require_admin(true))
                 : throw new ApiError('פעולה לא מוכרת', 404),
@@ -59,6 +61,7 @@ function public_user(array $u): array
         'display_name' => $u['display_name'],
         'role'         => $u['role'],
         'status'       => $u['status'],
+        'must_change'  => (bool)($u['must_change_pw'] ?? false),
     ];
 }
 
@@ -127,6 +130,33 @@ function action_logout(): never
         throw new ApiError('בקשה לא תקינה', 403);
     }
     end_session();
+    json_out(['ok' => true]);
+}
+
+function action_password(array $body): never
+{
+    $user = current_user();
+    if (!$user) throw new ApiError('נדרשת כניסה', 401);
+    if (!hash_equals($user['csrf'], $_SERVER['HTTP_X_CSRF'] ?? '')) throw new ApiError('בקשה לא תקינה', 403);
+
+    // אותה הגבלה כמו בכניסה: אחרת אפשר לנחש את הסיסמה הנוכחית ממכשיר מחובר.
+    $keys = ['pw:' . $user['id']];
+    $wait = lock_remaining($keys);
+    if ($wait > 0) throw new ApiError('יותר מדי ניסיונות. נסו שוב בעוד ' . (int)ceil($wait / 60) . ' דקות', 429);
+
+    $st = db()->prepare('SELECT password_hash FROM users WHERE id = ?');
+    $st->execute([$user['id']]);
+    if (!password_verify(is_string($body['current'] ?? null) ? $body['current'] : '', (string)$st->fetchColumn())) {
+        record_failure($keys);
+        throw new ApiError('הסיסמה הנוכחית שגויה', 403);
+    }
+    $password = validate_password($body['password'] ?? null);
+    if (hash_equals((string)($body['current'] ?? ''), $password)) throw new ApiError('הסיסמה החדשה זהה לנוכחית', 422);
+
+    clear_failures($keys);
+    db()->prepare('UPDATE users SET password_hash = ?, must_change_pw = 0 WHERE id = ?')
+        ->execute([password_hash($password, PASSWORD_DEFAULT), $user['id']]);
+    end_other_sessions((int)$user['id'], true); // שאר המכשירים מתנתקים
     json_out(['ok' => true]);
 }
 
