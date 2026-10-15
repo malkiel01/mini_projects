@@ -155,9 +155,15 @@ function tpl_create(array $user, array $post, array $files): array
     return tpl_create_bytes($user, $name, (string)file_get_contents($f['tmp_name']), (string)($post['mode'] ?? ''));
 }
 
-/** תבנית חדשה מתוכן קובץ — מהעלאה, או מייבוא תבנית שיוצאה (lib/porting.php). */
-function tpl_create_bytes(array $user, string $name, string $bytes, string $mode = ''): array
+/**
+ * תבנית חדשה מתוכן קובץ — מהעלאה, או מייבוא תבנית שיוצאה (lib/porting.php).
+ * Word שיוצא מהמערכת נושא בתוכו את ההגדרות — בהעלאה רגילה התבנית נבנית עם כולן.
+ */
+function tpl_create_bytes(array $user, string $name, string $bytes, string $mode = '', bool $packaged = true): array
 {
+    if ($packaged && ($pk = docx_package($bytes))) {
+        return tpl_import_package($user, $pk[0], $name, $pk[1]) + ['imported' => true];
+    }
     // הסוג נקבע מהתוכן, לא מהשם או ממה שהדפדפן הצהיר.
     $mime = (new finfo(FILEINFO_MIME_TYPE))->buffer($bytes);
     // Word הוא ZIP; finfo לא תמיד מזהה אותו בשמו. בודקים את המבנה עצמו.
