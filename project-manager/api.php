@@ -157,6 +157,9 @@ try {
         'GET folders'     => ['folders' => pm_folders($user, (int)($in['project_id'] ?? 0))],
         'POST folder'     => pm_folder_save($user, $in),
         'POST folder-delete' => pm_folder_delete($user, (int)($in['id'] ?? 0)),
+        // שיתוף לאפליקציה — התיקיות האחרונות ששיתפו אליהן
+        'GET share-recent'  => pm_share_recent($user),
+        'POST share-recent' => pm_share_recent_add($user, (int)($in['folder_id'] ?? 0)),
         'GET files'       => ['files' => pm_files_list($user, (int)($in['project_id'] ?? 0), $in)],
         'GET file'        => !empty($in['meta']) ? ['file' => pm_file_get($user, (int)($in['id'] ?? 0))]
                              : pm_file_send($user, (int)($in['id'] ?? 0), !empty($in['thumb']), !empty($in['download'])),

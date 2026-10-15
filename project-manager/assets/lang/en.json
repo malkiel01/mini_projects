@@ -2542,5 +2542,12 @@
     "☀️ בהירה": "☀️ Light",
     "🌙 כהה": "🌙 Dark",
     "📱 לפי המכשיר": "📱 Device setting",
-    "\"לפי המכשיר\" — מתחלפת לבד עם הגדרות הטלפון או המחשב (למשל כהה בלילה). הבחירה שלך עוברת איתך לכל מכשיר שתיכנס ממנו.": "\"Device setting\" follows your phone or computer settings (e.g. dark at night). Your choice follows you to every device you sign in from."
+    "\"לפי המכשיר\" — מתחלפת לבד עם הגדרות הטלפון או המחשב (למשל כהה בלילה). הבחירה שלך עוברת איתך לכל מכשיר שתיכנס ממנו.": "\"Device setting\" follows your phone or computer settings (e.g. dark at night). Your choice follows you to every device you sign in from.",
+    "אחרונים": "Recent",
+    "שמירה ל-{path} ב{project}": "Save to {path} in {project}",
+    "האחרון": "Last",
+    "תיקייה חדשה בתוך {name}": "New folder in {name}",
+    "הקבצים יישמרו בה": "The files will be saved in it",
+    "שם התיקייה החדשה (בתוך {where}):": "Name of the new folder (in {where}):",
+    "התיקייה כבר לא קיימת — בחר תיקייה אחרת": "The folder no longer exists — pick another one"
 }

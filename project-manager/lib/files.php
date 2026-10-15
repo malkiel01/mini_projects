@@ -590,3 +590,46 @@ function pm_file_delete(array $user, int $id): array
     pm_event($user, (int)$x['project_id'], 'file_deleted', '🗑️ נמחק: {name}', ['file' => $id], ['name' => $x['name']]);
     return ['ok' => true];
 }
+
+// ---- שיתוף לאפליקציה: היעדים האחרונים (assets/js/share.js) ----
+
+const PM_SHARE_RECENT_MAX = 6;
+
+/** התיקיות האחרונות ששיתפת אליהן — האחרונה קודם; רק מה שעדיין קיים ופתוח לך, ופרויקט שלא בארכיון. */
+function pm_share_recent(array $user): array
+{
+    $st = pm_db()->prepare("SELECT r.folder_id, r.project_id, r.uses, r.used_at FROM share_recent r JOIN projects p ON p.id = r.project_id
+                             WHERE r.user_id = ? AND p.status != 'archived' ORDER BY r.used_at DESC LIMIT 20");
+    $st->execute([$user['id']]);
+    $out = [];
+    $cache = [];
+    foreach ($st->fetchAll() as $r) {
+        $pid = (int)$r['project_id'];
+        try {
+            if (!isset($cache[$pid])) $cache[$pid] = ['p' => pm_project_row($user, $pid), 'f' => array_column(pm_folders($user, $pid), null, 'id')];
+        } catch (PmError) { continue; } // הפרויקט כבר לא שלך / נמחק
+        $F = $cache[$pid]['f'];
+        $f = $F[(int)$r['folder_id']] ?? null;
+        if (!$f) continue;
+        $path = [];
+        for ($x = $f; $x; $x = $x['parent_id'] ? ($F[$x['parent_id']] ?? null) : null) array_unshift($path, $x['system'] ? pm_t($x['name']) : $x['name']);
+        $out[] = ['project_id' => $pid, 'project' => $cache[$pid]['p']['name'], 'folder_id' => (int)$f['id'], 'icon' => $f['icon'],
+                  'path' => implode(' / ', $path), 'uses' => (int)$r['uses'], 'used_at' => $r['used_at']];
+        if (count($out) >= PM_SHARE_RECENT_MAX) break;
+    }
+    return ['recent' => $out];
+}
+
+/** נרשם אחרי שמירה מהשיתוף — התיקייה עולה לראש "אחרונים". שומרים עד 20 למשתמש. */
+function pm_share_recent_add(array $user, int $folderId): array
+{
+    $f = pm_folder_row($user, $folderId);
+    $db = pm_db();
+    $db->prepare('INSERT INTO share_recent (user_id, folder_id, project_id, uses, used_at) VALUES (?,?,?,1,?)
+                  ON CONFLICT (user_id, folder_id) DO UPDATE SET uses = uses + 1, used_at = excluded.used_at')
+       ->execute([$user['id'], $folderId, (int)$f['project_id'], pm_now()]);
+    $db->prepare('DELETE FROM share_recent WHERE user_id = ? AND folder_id NOT IN (SELECT folder_id FROM share_recent WHERE user_id = ? ORDER BY used_at DESC LIMIT 20)')
+       ->execute([$user['id'], $user['id']]);
+    return pm_share_recent($user);
+}
+

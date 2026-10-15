@@ -1,22 +1,22 @@
 // שיתוף לאפליקציה — שלב 4. כמו "שתף אל…" בוואטסאפ: בוחרים קבצים בגלריה או בכל
 // אפליקציה, "שיתוף" ← "פרויקטים", ונפתח המסך הזה: מה התקבל, ולאן לשמור.
 //
-//   #/share        מה התקבל + הפרויקטים (האחרונים קודם). "⚡ למיון" שומר בלחיצה
-//                  אחת ל"ממתין למיון" של הפרויקט; לחיצה על הפרויקט — בחירת תיקייה.
-//   #/share/<id>   התיקיות של הפרויקט.
+//   #/share        מה התקבל; "אחרונים" — התיקיות האחרונות ששיתפת אליהן (כמו הצ'אטים האחרונים
+//                  בוואטסאפ), לחיצה אחת שומרת; ואז הפרויקטים. "⚡ למיון" שומר בלחיצה אחת
+//                  ל"ממתין למיון" של הפרויקט; לחיצה על הפרויקט — בחירת תיקייה.
+//   #/share/<id>   התיקיות של הפרויקט, ו"+" — תיקייה חדשה (בראש או בתוך תיקייה) שהקבצים נשמרים בה.
+//   האחרונים נשמרים למשתמש בשרת (share_recent) — עוברים איתו בין מכשירים.
 //
 // הקבצים מחכים במכשיר (ShareStore, שנשמר ב-sw.js) עד שנשמרו בשרת — גם אם האפליקציה
 // נסגרה או שצריך קודם להתחבר. טקסט או קישור ששותפו נשמרים כהערה בציר הזמן.
 'use strict';
 
 const Share = (() => {
-    const LAST = 'pm.shareLast'; // היעד האחרון — מוצע ראשון בפעם הבאה
-    let items = [], projects = [], folders = [], project = null, bound = false, saving = false, urls = [];
+    let items = [], projects = [], folders = [], recent = [], project = null, bound = false, saving = false, urls = [];
 
     const entries = () => items.flatMap(it => it.files.map((file, i) => ({ item: it, file, i })));
     const noteOf = it => [...new Set([it.title, it.text, it.url].map(s => (s || '').trim()).filter(Boolean))].join('\n');
     const notes = () => items.filter(it => noteOf(it));
-    const readLast = () => { try { return JSON.parse(localStorage.getItem(LAST)) || null; } catch { return null; } };
 
     function bind() {
         if (bound) return;
@@ -28,12 +28,13 @@ const Share = (() => {
         });
         $('#share-targets').addEventListener('click', e => {
             if (saving) return;
-            const el = e.target.closest('[data-inbox], [data-folder], [data-project], [data-last]');
+            const el = e.target.closest('[data-inbox], [data-newfolder], [data-folder], [data-project], [data-recent]');
             if (!el) return;
             e.stopPropagation();
             if (el.dataset.inbox) saveToInbox(Number(el.dataset.inbox));
+            else if (el.dataset.newfolder !== undefined) newFolder(Number(el.dataset.newfolder) || null);
             else if (el.dataset.folder) save(project.id, Number(el.dataset.folder));
-            else if (el.dataset.last) { const l = readLast(); save(l.project, l.folder); }
+            else if (el.dataset.recent) { const [p, f] = el.dataset.recent.split(':').map(Number); save(p, f); }
             else if (entries().length) location.hash = '#/share/' + el.dataset.project;
             else save(Number(el.dataset.project), 0); // רק טקסט — ישר לציר הזמן
         });
@@ -122,7 +123,11 @@ const Share = (() => {
         $('#share-where').hidden = false;
         $('#share-where').textContent = t('לאן לשמור?');
         $('#sq').closest('.toolbar').hidden = false;
-        try { ({ projects } = await api('projects', { params: { filter: 'open' } })); } catch (e) { toast(e.message, true); return; }
+        try {
+            const [P, R] = await Promise.all([api('projects', { params: { filter: 'open' } }), api('share-recent').catch(() => ({ recent: [] }))]);
+            projects = P.projects;
+            recent = R.recent;
+        } catch (e) { toast(e.message, true); return; }
         renderProjects();
     }
 
@@ -130,12 +135,16 @@ const Share = (() => {
         const q = $('#sq').value.trim().toLowerCase();
         const hasFiles = entries().length > 0;
         const list = projects.filter(p => !q || [p.name, p.address, p.client_name].some(s => (s || '').toLowerCase().includes(q)));
-        const last = readLast();
-        const lastP = !q && hasFiles && last && projects.find(p => p.id === last.project);
-        $('#share-targets').innerHTML = (lastP ? `<li class="card quick" data-last="1" tabindex="0" role="button">
-                <span class="ficon" aria-hidden="true">↩️</span>
-                <div class="body"><div class="l1"><span class="one">${esc(t('כמו בפעם הקודמת'))}</span></div>
-                    <div class="l2 one">${esc(lastP.name)} / ${esc(last.label || '')}</div></div></li>` : '')
+        // אחרונים: לחיצה אחת שומרת לשם. בחיפוש — רק אלה שמתאימים
+        const rec = hasFiles ? recent.filter(r => !q || [r.project, r.path].some(s => s.toLowerCase().includes(q))) : [];
+        $('#share-targets').innerHTML = (rec.length ? `<li class="share-sec" role="presentation">🕘 ${esc(t('אחרונים'))}</li>`
+            + rec.map((r, i) => `<li class="card quick" data-recent="${r.project_id}:${r.folder_id}" tabindex="0" role="button"
+                    aria-label="${esc(t('שמירה ל-{path} ב{project}', { path: r.path, project: r.project }))}">
+                <span class="ficon" aria-hidden="true">${r.icon}</span>
+                <div class="body"><div class="l1"><span class="one">${esc(r.path)}</span>${i === 0 ? `<span class="chip">${esc(t('האחרון'))}</span>` : ''}</div>
+                    <div class="l2 one">${esc(r.project)}</div></div>
+                <span class="go" aria-hidden="true">⤴</span></li>`).join('')
+            + `<li class="share-sec" role="presentation">📁 ${esc(t('כל הפרויקטים'))}</li>` : '')
             + list.map(p => `<li class="card" data-project="${p.id}" tabindex="0" role="button" aria-label="${esc(hasFiles ? t('{name} — בחירת תיקייה', { name: p.name }) : p.name)}">
                 ${avatar(p.name)}
                 <div class="body"><div class="l1"><span class="one">${esc(p.name)}</span></div>
@@ -165,13 +174,22 @@ const Share = (() => {
         $('#share-targets').innerHTML = rows.map(([f, d]) => `<li class="card" data-folder="${f.id}" tabindex="0" role="button" style="--d:${d}">
                 <span class="ficon" aria-hidden="true">${f.icon}</span>
                 <div class="body"><div class="l1"><span class="one">${esc(t(f.name))}</span></div>
-                    <div class="l2">${esc(f.files ? t('{n} קבצים', { n: f.files }) : t('ריקה'))}</div></div></li>`).join('');
+                    <div class="l2">${esc(f.files ? t('{n} קבצים', { n: f.files }) : t('ריקה'))}</div></div>
+                <button type="button" class="icon-btn" data-newfolder="${f.id}" aria-label="${esc(t('תיקייה חדשה בתוך {name}', { name: t(f.name) }))}" title="${esc(t('תיקייה חדשה בתוך {name}', { name: t(f.name) }))}">＋</button></li>`).join('')
+            + `<li class="card share-new" data-newfolder="" tabindex="0" role="button"><span class="ficon" aria-hidden="true">📁</span>
+                <div class="body"><div class="l1"><span class="one">+ ${esc(t('תיקייה חדשה'))}</span></div>
+                    <div class="l2">${esc(t('הקבצים יישמרו בה'))}</div></div></li>`;
     }
 
-    function folderPath(id) {
-        const parts = [];
-        for (let f = folders.find(x => x.id === id); f; f = folders.find(x => x.id === f.parent_id)) parts.unshift(t(f.name));
-        return parts.join(' / ');
+    /** תיקייה חדשה מתוך השיתוף — בראש הפרויקט או בתוך תיקייה — והקבצים נשמרים בה מיד. */
+    async function newFolder(parent) {
+        const where = parent ? t(folders.find(f => f.id === parent)?.name || '') : project.name;
+        const name = (prompt(t('שם התיקייה החדשה (בתוך {where}):', { where })) || '').trim();
+        if (!name) return;
+        let id;
+        try { ({ folders, folder_id: id } = await api('folder', { body: { project_id: project.id, parent_id: parent || '', name } })); }
+        catch (e) { toast(e.message, true); return; }
+        save(project.id, id);
     }
 
     async function saveToInbox(pid) {
@@ -192,7 +210,9 @@ const Share = (() => {
         try {
             if (folder) {
                 if (!folders.some(f => f.id === folder)) await loadFolders(pid);
-                localStorage.setItem(LAST, JSON.stringify({ project: pid, folder, label: folderPath(folder) }));
+                // תיקייה שנמחקה מאז (מ"אחרונים") — חוזרים לבחירה
+                if (!folders.some(f => f.id === folder)) throw Object.assign(new Error(t('התיקייה כבר לא קיימת — בחר תיקייה אחרת')), { gone: pid });
+                api('share-recent', { body: { folder_id: folder } }).catch(() => {}); // לראש "אחרונים"
             }
             for (const it of [...items]) {
                 for (const file of [...it.files]) {
@@ -217,6 +237,7 @@ const Share = (() => {
                 else await ShareStore.put(it);
             }
         } catch (e) {
+            if (e.gone) { toast(e.message, true); location.hash = '#/share/' + e.gone; return; } // finally מנקה
             failed.push(e.message);
         } finally {
             saving = false;
