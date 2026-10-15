@@ -251,14 +251,22 @@
         const r = await api('share_list', undefined, { type, id });
         myRank = rank(r.my_level);
         add.replaceChildren(email, levelSel('view', myRank), el('button', { type: 'submit', class: 'primary small' }, 'שיתוף'));
+        // מי רואה את זה: הבעלים, ואז כל מי ששותף — שם, מייל, מאז מתי, הרמה, ו"ניתוק"
         list.replaceChildren(
-          el('div', { class: 'share-row' }, el('strong', {}, r.owner), el('span', { class: 'muted small' }, 'בעלים')),
+          el('div', { class: 'share-row' }, el('div', { class: 'share-who' }, el('strong', {}, r.owner)), el('span', { class: 'muted small' }, 'בעלים')),
+          el('p', { class: 'share-count muted small' }, r.shares.length ? `משותף עם ${r.shares.length}:` : 'עוד לא שותף עם אף אחד.'),
           ...r.shares.map(s => {
             const sel = levelSel(s.level, myRank);
+            sel.setAttribute('aria-label', 'הרשאה של ' + s.name);
             sel.addEventListener('change', () => run('share_set', { type, id, user_id: s.user_id, level: sel.value }));
             return el('div', { class: 'share-row' },
-              el('span', {}, s.name, el('span', { class: 'muted small', dir: 'ltr' }, ' ' + s.email)), sel,
-              el('button', { class: 'link small danger-text', title: 'הסרה', onclick: () => run('share_remove', { type, id, user_id: s.user_id }) }, '✕'));
+              el('div', { class: 'share-who' }, el('strong', {}, s.name || s.email),
+                el('span', { class: 'muted small', dir: 'ltr' }, s.email),
+                s.since ? el('span', { class: 'muted small' }, 'מאז ' + new Date(s.since).toLocaleDateString('he-IL')) : null),
+              el('div', { class: 'share-ctl' }, sel,
+                el('button', { type: 'button', class: 'small danger', onclick: () => {
+                  if (confirm(`לנתק את ${s.name || s.email}? הוא לא יוכל עוד לגשת ל${type === 'template' ? 'תבנית' : 'מסמך'}.`)) run('share_remove', { type, id, user_id: s.user_id });
+                } }, '🚫 ניתוק')));
           }));
       } catch (e) {
         list.replaceChildren(notice(e.message, 'bad'));
