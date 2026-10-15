@@ -120,6 +120,23 @@ foreach (['בית עלמין (אנגלית)', 'בית עלמין באנגלית'
 }
 check('רשימה כולה באנגלית — הכול רמות', $lv3 === ['Cemetery', 'Parcel']);
 
+// רשימה שנקלטה לפני הזיהוי: Cemetery ו-Block הן רמות — תיקון הופך אותן לעמודות למסמך
+$bad = list_save($a, ['name' => 'ישנה', 'levels' => ['בית עלמין', 'Cemetery', 'גוש', 'Block'],
+    'rows' => [['גבעת שאול מערב', 'Givat Shaul West', '50', '50'], ['הר המנוחות דרום', 'Har HaMenuchot South', '42', '42']]])['list'];
+$bl = array_values(array_filter(list_index($a)['lists'], fn($x) => $x['id'] === $bad['id']))[0];
+check('רשימה עם עמודות באנגלית כרמות — מסומנת לתיקון', ($bl['misplaced'] ?? []) === ['Cemetery', 'Block']);
+$rep = list_repair($a, ['id' => $bad['id']]);
+$fixed = list_get($a, ['id' => $bad['id']])['list'];
+$ft = json_decode(json_encode($fixed['translations']), true);
+check('תיקון: שתי רמות, Cemetery ← בית עלמין, והמיפוי מהרמות הישנות', $fixed['levels'] === ['בית עלמין', 'גוש'] && !isset($fixed['misplaced'])
+    && ($ft['0']['גבעת שאול מערב']['en'] ?? '') === 'Givat Shaul West' && $ft['names']['0']['en'] === 'Cemetery'
+    && $rep['map'][1] === ['level' => 0, 'lang' => 'en'] && $rep['map'][2] === ['level' => 1] && $rep['map'][3] === ['level' => 1, 'lang' => 'en']);
+$tq = tpl_create($a, ['name' => 'שתי עמודות'], ['file' => ['tmp_name' => "$tmp/u.pdf", 'error' => 0, 'size' => strlen($pdf)]])['id'];
+tpl_save($a, ['id' => $tq, 'schema' => ['pages' => [['w' => 595, 'h' => 842]], 'fields' => [
+    ['key' => 'c', 'type' => 'select', 'label' => 'בית העלמין', 'list' => ['id' => $bad['id'], 'level' => 0, 'show' => 'en', 'lang' => 'xx']] + $geo]]]);
+check('בשדה: מה הממלא רואה (show) נשמר; שפה לא מוכרת — לא', tpl_get($a, $tq)['template']['schema']['fields'][0]['list'] === ['id' => $bad['id'], 'level' => 0, 'show' => 'en']);
+list_delete($a, ['id' => $bad['id']]);
+
 // רשימה גדולה: 30,000 קברים — לא נשלחת כולה עם המסמך; האפשרויות מהשרת רמה אחרי רמה
 $csvBig = "בית עלמין,בית עלמין (en),גוש,חלקה,קבר\n";
 for ($i = 0; $i < 30000; $i++) $csvBig .= ($i < 15000 ? 'הר המנוחות,Har HaMenuchot' : 'גבעת שאול,Givat Shaul') . ',' . (100 + intdiv($i, 1000)) . ',' . (1 + intdiv($i % 1000, 100)) . ',' . ($i % 100 + 1) . "\n";

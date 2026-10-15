@@ -357,7 +357,7 @@
             if (!o || !o.list || o.list.id) return;
             const l = mine.find(x => x.name === o.list.name);
             const level = Number(o.list.level) || 0;
-            if (l && level < l.levels.length) { o.list = { id: l.id, level, ...(o.list.lang ? { lang: o.list.lang } : {}) }; return; }
+            if (l && level < l.levels.length) { o.list = { id: l.id, level, ...(o.list.show ? { show: o.list.show } : {}), ...(o.list.lang ? { lang: o.list.lang } : {}) }; return; }
             delete o.list;
             if (o.type === 'select' && !(o.options || []).length) o.type = 'text';   // בלי רשימה ובלי אפשרויות — טקסט חופשי, לא בחירה ריקה
           };
@@ -854,23 +854,48 @@
           if (Number(sel.value)) o.list = { id: Number(sel.value), level: 0 }; else delete o.list;
           setDirty(true); draw_(); if (after) after();
         });
+        const L = o.list ? o.list.level : 0;
+        const langs = cur ? [...new Set([...(cur.langs || []), ...(o.list.show ? [o.list.show] : []), ...(o.list.lang ? [o.list.lang] : [])])] : [];
+        // שם העמודה: הראשית (בעברית) — שם הרמה; עמודה לפלט — השם שלה בקובץ ("Cemetery")
+        const colName = (k) => !k ? (cur.levels[L] || 'הערך') : (cur.names && cur.names[L] && cur.names[L][k]) || LANG_NAMES[k] || k;
+        const pair = (i) => [cur.levels[i], ...langs.map(k => cur.names && cur.names[i] && cur.names[i][k]).filter(Boolean)].join(' · ');
         const lv = cur && cur.levels.length > 1 ? el('select', { 'aria-label': 'רמה', disabled: readOnly },
-          cur.levels.map((n, i) => el('option', { value: i, selected: o.list.level === i }, `${i + 1}. ${n}`))) : null;
+          cur.levels.map((n, i) => el('option', { value: i, selected: L === i }, `${i + 1}. ${pair(i)}`))) : null;
         if (lv) lv.addEventListener('change', () => { o.list.level = Number(lv.value); setDirty(true); draw_(); });
-        // מה ייכתב במסמך: בטופס בוחרים מהעמודה בעברית, ובמסמך שיוצא (PDF / Word / הדפסה) — העמודה שנבחרה כאן
-        const langs = cur ? [...new Set([...(cur.langs || []), ...(o.list.lang ? [o.list.lang] : [])])] : [];
-        const colName = (k) => (cur.names && cur.names[o.list.level] && cur.names[o.list.level][k]) || LANG_NAMES[k] || k;
-        const lang = cur ? el('select', { 'aria-label': 'שפה בפלט', disabled: readOnly },
-          el('option', { value: '' }, `${cur.levels[o.list.level] || 'הערך'} — כמו שנבחר`),
-          langs.map(k => el('option', { value: k, selected: o.list.lang === k }, colName(k)))) : null;
-        if (lang) lang.addEventListener('change', () => { if (lang.value) o.list.lang = lang.value; else delete o.list.lang; setDirty(true); });
+        // שתי בחירות מפורשות: מה הממלא רואה ובוחר, ומה נכתב במסמך — כל אחת מהעמודות של הרמה
+        const colSel = (key, label) => {
+          const s = el('select', { 'aria-label': label, disabled: readOnly },
+            ['', ...langs].map(k => el('option', { value: k, selected: (o.list[key] || '') === k }, colName(k))));
+          s.addEventListener('change', () => { if (s.value) o.list[key] = s.value; else delete o.list[key]; setDirty(true); draw_(); });
+          return s;
+        };
+        const canShow = o.type === 'select';   // בשדה טקסט הממלא כותב — מה שכתב נשמר
+        const shown = cur ? colName(canShow ? o.list.show : '') : '';
+        const written = cur ? colName(o.list.lang) : '';
+        const fix = cur && cur.misplaced && cur.misplaced.length ? el('div', { class: 'notice warn' },
+          el('p', {}, `ברשימה "${cur.name}", ${cur.misplaced.join(', ')} נקלטו כרמות נפרדות — אבל הן העמודות באנגלית של הרמות שלידן.`),
+          el('button', { type: 'button', class: 'small primary', disabled: readOnly, onclick: async (e) => {
+            e.target.disabled = true;
+            try {
+              const r = await api('list_repair', { id: cur.id });
+              // השדות בתבנית שקשורים לרשימה — לרמה החדשה (ומי שהיה על עמודה באנגלית — נכתב באנגלית)
+              const remap = (x) => { if (!x || !x.list || x.list.id !== cur.id) return; const m = r.map[x.list.level]; if (!m) return;
+                x.list.level = m.level; if (m.lang && !x.list.lang) x.list.lang = m.lang; };
+              for (const f of schema.fields) { remap(f); for (const c of f.columns || []) remap(c); }
+              myLists = null; setDirty(true); window.DT.toast('תוקן: ' + r.outputs.map(x => `${x.column} ← ${x.level}`).join(', '));
+              draw_(); if (after) after();
+            } catch (err) { window.DT.toast(err.message, true); e.target.disabled = false; }
+          } }, '🔧 לתקן: להפוך אותן לעמודות באנגלית')) : null;
         box.replaceChildren(...[el('div', { class: 'fields two' },
           el('label', { class: 'f' }, el('span', {}, '📚 ערכים מרשימה'), sel),
           lv ? el('label', { class: 'f' }, el('span', {}, 'רמה'), lv) : el('span')),
-          lang && langs.length ? el('label', { class: 'f' }, el('span', {}, '📄 עמודה שנכתבת במסמך'), lang) : null,
-          lang && langs.length ? el('p', { class: 'hint' }, 'בטופס בוחרים מהעמודה בעברית; במסמך שיוצא נכתבת העמודה שנבחרה כאן.') : null,
-          cur && !langs.length ? el('p', { class: 'hint' }, `ברשימה "${cur.name}" אין עמודה באנגלית — לכן במסמך ייכתב הערך בעברית. ` +
-            'כדי שייכתב באנגלית: מייבאים לרשימה קובץ שיש בו עמודה באנגלית ליד כל עמודה בעברית (למשל "בית עלמין, Cemetery, גוש, Block…").') : null,
+          fix,
+          cur && langs.length ? el('div', { class: 'fields two' },
+            canShow ? el('label', { class: 'f' }, el('span', {}, '👤 הממלא רואה ובוחר'), colSel('show', 'הממלא רואה ובוחר')) : null,
+            el('label', { class: 'f' }, el('span', {}, '📄 נכתב במסמך'), colSel('lang', 'נכתב במסמך'))) : null,
+          cur ? el('p', { class: 'list-io' }, el('span', {}, '👤 בטופס: ', el('b', {}, shown)), el('span', {}, '📄 במסמך: ', el('b', {}, written))) : null,
+          cur && !langs.length && !fix ? el('p', { class: 'hint' }, `ברשימה "${cur.name}" יש עמודה אחת לכל רמה — הממלא רואה, והמסמך מקבל, את אותו ערך. ` +
+            'לטופס בעברית ומסמך באנגלית: מייבאים לרשימה קובץ עם עמודה באנגלית ליד כל עמודה בעברית ("בית עלמין, Cemetery, גוש, Block…").') : null,
           !ls.length ? el('p', { class: 'hint' }, 'עוד אין רשימות. יוצרים ב"🔌 חיבורים" ← "📚 רשימות" — ידנית או מקובץ Excel.') : null,
           cur && cur.levels.length > 1 ? el('p', { class: 'hint' }, `רשימה מקוננת (${cur.levels.join(' › ')}): שדות ועמודות מאותה רשימה ברמות שמעל מסננים את האפשרויות כאן.`) : null].filter(Boolean));
       };

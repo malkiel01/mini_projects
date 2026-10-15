@@ -53,7 +53,7 @@ function tpl_export_data(array $user, int $id): array
 
     // רשימות: מזהה ← שם (אצל המייבא נוצרת / נמצאת רשימה בשם הזה)
     $lists = lists_for($schema, true);
-    $byId = fn($ref) => isset($lists[(string)$ref['id']]) ? ['name' => $lists[(string)$ref['id']]['name'], 'level' => (int)$ref['level']] + (isset($ref['lang']) ? ['lang' => $ref['lang']] : []) : null;
+    $byId = fn($ref) => isset($lists[(string)$ref['id']]) ? ['name' => $lists[(string)$ref['id']]['name'], 'level' => (int)$ref['level']] + array_intersect_key($ref, ['show' => 1, 'lang' => 1]) : null;
     foreach ($schema['fields'] ?? [] as $i => $f) {
         if (!empty($f['list'])) { $r = $byId($f['list']); if ($r) $schema['fields'][$i]['list'] = $r; else unset($schema['fields'][$i]['list']); }
         foreach ($f['columns'] ?? [] as $j => $c) {
@@ -211,7 +211,7 @@ function tpl_import_package(array $user, array $p, string $name = '', ?string $a
             $level = (int)($ref['level'] ?? 0);
             $id = $ids[$ref['name']] ?? null;
             if (!$id && isset($mine[$ref['name']]) && $level < count($mine[$ref['name']]['levels'])) $id = $mine[$ref['name']]['id'];
-            if ($id) { $o['list'] = ['id' => $id, 'level' => $level] + (isset(LIST_LANGS[$ref['lang'] ?? '']) ? ['lang' => $ref['lang']] : []); return $o; }
+            if ($id) { $o['list'] = ['id' => $id, 'level' => $level] + array_filter(['show' => $ref['show'] ?? null, 'lang' => $ref['lang'] ?? null], fn($x) => isset(LIST_LANGS[(string)$x])); return $o; }
         }
         if (($o['type'] ?? '') === 'select' && !($o['options'] ?? [])) $o['type'] = 'text';
         return $o;

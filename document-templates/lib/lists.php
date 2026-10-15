@@ -93,6 +93,7 @@ function list_view(array $r, bool $rows = false): array
     return ['id' => (int)$r['id'], 'name' => (string)unseal($r['name_enc']),
         'levels' => json_decode((string)unseal($r['levels_enc']), true) ?: [], 'row_count' => (int)$r['row_count'],
         'langs' => list_tr_langs($tr), 'names' => (object)($tr['names'] ?? []), 'updated_at' => $r['updated_at']]
+        + (($mis = list_misplaced(json_decode((string)unseal($r['levels_enc']), true) ?: [])) ? ['misplaced' => $mis] : [])
         + ($rows ? ['rows' => json_decode((string)unseal($r['rows_enc']), true) ?: [], 'translations' => (object)$tr] : []);
 }
 
@@ -226,6 +227,23 @@ function list_import(array $user, array $files, array $post = []): array
     if (count($rows) < 2) throw new ApiError('צריך שורת כותרת (שמות הרמות) ולפחות שורה אחת', 422);
     $head = array_map(fn($v) => trim((string)$v), array_shift($rows));
     while ($head && end($head) === '') array_pop($head);
+    [$levels, $clean, $tr, $outputs] = list_parse_table($head, $rows);
+    if (!empty($post['apply'])) {
+        // שמירה ישירה בשרת (רשימה גדולה — בלי לשלוח את כל השורות לדפדפן ובחזרה)
+        $id = (int)($post['id'] ?? 0);
+        $name = $id ? list_view(list_row($user, $id))['name'] : trim((string)($post['name'] ?? ''));
+        $saved = list_save($user, ['id' => $id ?: null, 'name' => $name !== '' ? $name : 'רשימה', 'levels' => $levels, 'rows' => $clean, 'translations' => $tr])['list'];
+        return ['ok' => true, 'saved' => true, 'list' => $saved, 'levels' => $levels, 'count' => count($clean), 'translated' => list_tr_langs($tr), 'outputs' => $outputs];
+    }
+    return ['ok' => true, 'levels' => $levels, 'rows' => $clean, 'translations' => (object)$tr, 'outputs' => $outputs];
+}
+
+/**
+ * כותרת + שורות → רמות, שורות נקיות, ועמודות לפלט (במסמך במקום הערך שנבחר) — מקובץ, או מתיקון רשימה קיימת.
+ * @return array{0: array, 1: array, 2: array, 3: array} [levels, rows, translations, outputs]
+ */
+function list_parse_table(array $head, array $rows): array
+{
     // עמודה לפלט (בשפה אחרת) — לא רמה בפני עצמה, אלא מה שנכתב במסמך במקום הערך שנבחר:
     //   "בית עלמין (en)" / "בית עלמין [fr]" — של הרמה בשם הזה;
     //   כותרת בלי עברית ("Cemetery", "Cemetery (en)") — של הרמה שמימינה (עמודה צמודה),
@@ -279,14 +297,29 @@ function list_import(array $user, array $files, array $post = []): array
     $tr = list_tr_clean($tr, $clean, count($levels));
     // לדיווח: איזו עמודה בקובץ נכתבת במסמך במקום איזו רמה ("Cemetery ← בית עלמין")
     $outputs = array_values(array_map(fn($i) => ['column' => $head[$i], 'level' => $levels[$trCols[$i][0]], 'lang' => $trCols[$i][1]], array_keys($trCols)));
-    if (!empty($post['apply'])) {
-        // שמירה ישירה בשרת (רשימה גדולה — בלי לשלוח את כל השורות לדפדפן ובחזרה)
-        $id = (int)($post['id'] ?? 0);
-        $name = $id ? list_view(list_row($user, $id))['name'] : trim((string)($post['name'] ?? ''));
-        $saved = list_save($user, ['id' => $id ?: null, 'name' => $name !== '' ? $name : 'רשימה', 'levels' => $levels, 'rows' => $clean, 'translations' => $tr])['list'];
-        return ['ok' => true, 'saved' => true, 'list' => $saved, 'levels' => $levels, 'count' => count($clean), 'translated' => list_tr_langs($tr), 'outputs' => $outputs];
-    }
-    return ['ok' => true, 'levels' => $levels, 'rows' => $clean, 'translations' => (object)$tr, 'outputs' => $outputs];
+    // מעמודה בקובץ לרמה: עמודת רמה ← הרמה שלה; עמודה לפלט ← הרמה שלידה (ושפתה)
+    $map = [];
+    foreach ($lvIdx as $i => $lv) $map[$i] = ['level' => $lv];
+    foreach ($trCols as $i => [$lv, $lang]) $map[$i] = ['level' => $lv, 'lang' => $lang];
+    return [$levels, $clean, $tr, $outputs, $map];
+}
+
+/** עמודות ברשימה שנראות כמו עמודה לפלט ולא כמו רמה (נקלטו לפני שהזיהוי ידע אותן): "Cemetery" ליד "בית עלמין". */
+function list_misplaced(array $levels): array
+{
+    $anyHe = (bool)preg_grep('/\p{Hebrew}/u', $levels);
+    return array_values(array_filter($levels, fn($h) => list_col_lang($h)[1] !== null || ($anyHe && !preg_match('/\p{Hebrew}/u', $h) && preg_match('/\p{L}/u', $h))));
+}
+
+/** תיקון רשימה: עמודות באנגלית שנקלטו כרמות — הופכות לעמודות למסמך של הרמה שלידן. */
+function list_repair(array $user, array $b): array
+{
+    $v = list_view(list_row($user, (int)($b['id'] ?? 0)), true);
+    if (!list_misplaced($v['levels'])) throw new ApiError('אין עמודות לתקן', 422);
+    [$levels, $clean, $tr, $outputs, $map] = list_parse_table($v['levels'], $v['rows']);
+    $saved = list_save($user, ['id' => $v['id'], 'name' => $v['name'], 'levels' => $levels, 'rows' => $clean, 'translations' => $tr])['list'];
+    // map: הרמה הישנה ← החדשה (לעדכון שדות שכבר קשורים לרשימה)
+    return ['ok' => true, 'list' => $saved, 'levels' => $levels, 'outputs' => $outputs, 'map' => $map];
 }
 
 /** הרשימות שמותר לקשור בתבנית: של המשתמש, ומה שכבר קשור בה (שותף שעורך תבנית של אחר). */
@@ -321,7 +354,9 @@ function clean_list_ref($ref, array $allowed): ?array
     $level = (int)($ref['level'] ?? 0);
     if (!$levels || $level < 0 || $level >= count($levels)) return null;
     // שפת הפלט: בוחרים בעברית, ובמסמך שיוצא — התרגום (אם יש), אחרת הערך כמו שהוא
-    return ['id' => $id, 'level' => $level] + (isset(LIST_LANGS[$ref['lang'] ?? '']) ? ['lang' => $ref['lang']] : []);
+    // show — מה הממלא רואה ובוחר; lang — מה נכתב במסמך. ריק = הערך עצמו (העמודה הראשית, בעברית)
+    return ['id' => $id, 'level' => $level] + (isset(LIST_LANGS[$ref['show'] ?? '']) ? ['show' => $ref['show']] : [])
+        + (isset(LIST_LANGS[$ref['lang'] ?? '']) ? ['lang' => $ref['lang']] : []);
 }
 
 /** הרשימות שהמסמך צריך (לסינון המקונן בדפדפן): {id: {name, levels, rows}}. */
