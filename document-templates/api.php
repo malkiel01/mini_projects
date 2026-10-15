@@ -102,7 +102,7 @@ try {
         'tpl_asset'   => tpl_asset($session, (int)($_GET['id'] ?? 0)),
         'tpl_create'  => tpl_create($session, $_POST, $_FILES),
         'tpl_import'  => tpl_import($session, $_POST, $_FILES),
-        'tpl_export'  => tpl_export($session, (int)($_GET['id'] ?? 0)),
+        'tpl_export'  => tpl_export($session, (int)($_GET['id'] ?? 0), (string)($_GET['as'] ?? 'json')),
         'tpl_save'    => tpl_save($session, $body),
         'tpl_set_source' => tpl_set_source($session, $body),
         'tpl_create_authored' => tpl_create_authored($session, $body),

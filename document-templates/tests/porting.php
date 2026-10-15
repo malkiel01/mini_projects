@@ -78,5 +78,29 @@ check('ייבוא שני: אותה רשימה — לא נוצרת שוב', count
 file_put_contents("$tmp/bad.json", '{"hello":1}');
 try { tpl_import($b, [], $up("$tmp/bad.json")); check('קובץ שאינו ייצוא — נדחה', false); } catch (ApiError $e) { check('קובץ שאינו ייצוא — נדחה', $e->status === 415); }
 
+// Word עם ההגדרות בתוכו: מעלים כמו כל Word — והתבנית נבנית עם כולן
+$w = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+$z = new ZipArchive();
+$z->open("$tmp/w.docx", ZipArchive::CREATE);
+$z->addFromString('[Content_Types].xml', '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>');
+$z->addFromString('_rels/.rels', '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="r1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>');
+$z->addFromString('word/document.xml', "<?xml version=\"1.0\" encoding=\"UTF-8\"?><w:document $w><w:body><w:p><w:r><w:t>שם: {{שם_הלקוח}} תאריך: {{תאריך}}</w:t></w:r></w:p><w:sectPr/></w:body></w:document>");
+$z->close();
+$wt = tpl_create($a, ['name' => 'חוזה'], $up("$tmp/w.docx"))['id'];
+$ws = tpl_get($a, $wt)['template']['schema'];
+$ws['fields'][0]['list'] = ['id' => $l['id'], 'level' => 0];
+$ws['fields'][0]['type'] = 'select';
+tpl_save($a, ['id' => $wt, 'schema' => $ws]);
+$wx = tpl_export_data($a, $wt);
+file_put_contents("$tmp/p.docx", docx_with_package(base64_decode($wx['asset']['data']), port_strip_asset($wx)));
+$r = tpl_create($b, ['name' => 'חוזה מיובא'], $up("$tmp/p.docx"));
+$w2 = tpl_get($b, $r['id'])['template'];
+check('Word עם ההגדרות: מזוהה בהעלאה רגילה, ונבנה מהן (כולל רשימה)', !empty($r['imported']) && $w2['source'] === 'docx'
+    && count($w2['schema']['fields']) === 2 && $w2['schema']['fields'][0]['type'] === 'select' && !empty($w2['schema']['fields'][0]['list']));
+$stored = asset_bytes(tpl_asset_row((int)tpl_owned($r['id'], $b, 'view')['version_id']));
+check('ה-Word שנשמר — נקי מההגדרות', docx_package($stored) === null);
+$plain = tpl_create($b, ['name' => 'רגיל'], $up("$tmp/w.docx"));
+check('Word רגיל — תבנית רגילה', empty($plain['imported']));
+
 echo "\n" . ($fail ? "$fail נכשלו\n" : "הכול עבר\n");
 exit($fail ? 1 : 0);

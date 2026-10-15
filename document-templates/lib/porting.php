@@ -16,10 +16,23 @@ declare(strict_types=1);
 const PORT_FORMAT  = 'dt-template';
 const PORT_VERSION = 1;
 const PORT_MAX_MB  = 40;
+const PORT_ENTRY   = 'dt-template.json';   // שם ההגדרות בתוך Word, וכקובץ מצורף בתוך PDF
 
-function tpl_export(array $user, int $id): never
+function tpl_export(array $user, int $id, string $as = 'json'): never
 {
     $out = tpl_export_data($user, $id);
+    // Word: הקובץ עצמו, וההגדרות בתוכו (dt-template.json בתוך ה-docx) — מעלים אותו כרגיל, והכול נבנה
+    if ($as === 'docx') {
+        if (($out['asset']['mime'] ?? '') !== DOCX_MIME) throw new ApiError('רק תבנית Word יוצאת כקובץ Word', 409);
+        $bytes = docx_with_package(base64_decode($out['asset']['data']), port_strip_asset($out));
+        $file = preg_replace('/[\\\/:*?"<>|]+/u', '_', $out['name']) ?: 'תבנית';
+        header('Content-Type: ' . DOCX_MIME);
+        header('Content-Length: ' . strlen($bytes));
+        header("Content-Disposition: attachment; filename=\"template.docx\"; filename*=UTF-8''" . rawurlencode($file . '.docx'));
+        header('Cache-Control: private, no-store');
+        echo $bytes;
+        exit;
+    }
     $json = json_encode($out, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
     $file = preg_replace('/[\\\\\/:*?"<>|]+/u', '_', $out['name']) ?: 'תבנית';
     header('Content-Type: application/json; charset=utf-8');
@@ -80,7 +93,49 @@ function tpl_export_data(array $user, int $id): array
     return $out;
 }
 
-/** קובץ שיוצא ← תבנית חדשה אצל המשתמש. $post['name'] — שם אחר (לא חובה). */
+/** ההגדרות בלי הקובץ המקורי — כשהן נשמרות בתוך הקובץ עצמו (PDF / Word). */
+function port_strip_asset(array $p): array
+{
+    if ($p['asset']) $p['asset'] = ['mime' => $p['asset']['mime'], 'embedded' => true];
+    return $p;
+}
+
+/** Word + ההגדרות: dt-template.json בתוך ה-docx. Word מתעלם ממנו, והמערכת קוראת אותו בהעלאה. */
+function docx_with_package(string $docx, array $p): string
+{
+    $tmp = tempnam(sys_get_temp_dir(), 'dxp');
+    file_put_contents($tmp, $docx);
+    $z = new ZipArchive();
+    if ($z->open($tmp) !== true) throw new ApiError('קובץ ה-Word פגום', 422);
+    $z->addFromString(PORT_ENTRY, json_encode($p, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+    $z->close();
+    $out = (string)file_get_contents($tmp);
+    @unlink($tmp);
+    return $out;
+}
+
+/** אם ב-docx יש הגדרות שיוצאו — [ההגדרות, ה-docx בלעדיהן]; אחרת null. */
+function docx_package(string $bytes): ?array
+{
+    if (!class_exists('ZipArchive') || !str_starts_with($bytes, 'PK')) return null;
+    $tmp = tempnam(sys_get_temp_dir(), 'dxp');
+    file_put_contents($tmp, $bytes);
+    $z = new ZipArchive();
+    $p = null;
+    if ($z->open($tmp) === true) {
+        $raw = $z->getFromName(PORT_ENTRY);
+        if ($raw !== false && is_array($j = json_decode($raw, true)) && ($j['format'] ?? '') === PORT_FORMAT) {
+            $p = $j;
+            $z->deleteName(PORT_ENTRY);   // הקובץ שנשמר — נקי מההגדרות
+        }
+        $z->close();
+    }
+    $clean = $p ? (string)file_get_contents($tmp) : $bytes;
+    @unlink($tmp);
+    return $p ? [$p, $clean] : null;
+}
+
+/** קובץ שיוצא (.dt.json) ← תבנית חדשה אצל המשתמש. $post['name'] — שם אחר (לא חובה). */
 function tpl_import(array $user, array $post, array $files): array
 {
     $f = $files['file'] ?? null;
@@ -88,17 +143,25 @@ function tpl_import(array $user, array $post, array $files): array
     if ($f['size'] > PORT_MAX_MB * 1024 * 1024) throw new ApiError('הקובץ גדול מדי', 413);
     $p = json_decode((string)file_get_contents($f['tmp_name']), true);
     if (!is_array($p) || ($p['format'] ?? '') !== PORT_FORMAT) throw new ApiError('זה לא קובץ תבנית שיוצא מהמערכת (.dt.json)', 415);
+    return tpl_import_package($user, $p, trim((string)($post['name'] ?? '')));
+}
+
+/**
+ * ההגדרות ← תבנית. $asset — הקובץ המקורי כשהוא לא בתוך ההגדרות (Word / PDF שנושאים אותן בעצמם).
+ */
+function tpl_import_package(array $user, array $p, string $name = '', ?string $asset = null): array
+{
     if ((int)($p['version'] ?? 0) > PORT_VERSION) throw new ApiError('הקובץ יוצא מגרסה חדשה יותר של המערכת', 422);
     $schema = is_array($p['schema'] ?? null) ? $p['schema'] : throw new ApiError('בקובץ אין מבנה תבנית', 422);
-    $name = valid_tpl_name(trim((string)($post['name'] ?? '')) ?: (string)($p['name'] ?? 'תבנית מיובאת'));
+    $name = valid_tpl_name($name !== '' ? $name : (string)($p['name'] ?? 'תבנית מיובאת'));
 
     // התבנית עצמה: מהקובץ המקורי, או "נכתבה בכלי"
-    if (($p['source'] ?? '') === 'authored' || empty($p['asset'])) {
+    $bytes = $asset ?? (empty($p['asset']['data']) ? null : base64_decode((string)$p['asset']['data'], true));
+    if (($p['source'] ?? '') === 'authored' || !$p['asset']) {
         $tid = tpl_create_authored($user, ['name' => $name])['id'];
     } else {
-        $bytes = base64_decode((string)($p['asset']['data'] ?? ''), true);
-        if ($bytes === false || $bytes === '') throw new ApiError('הקובץ המקורי של התבנית פגום', 422);
-        $tid = tpl_create_bytes($user, $name, $bytes, ($p['source'] ?? '') === 'pdf_parsed' ? 'parse' : '')['id'];
+        if (!$bytes) throw new ApiError('הקובץ המקורי של התבנית חסר או פגום', 422);
+        $tid = tpl_create_bytes($user, $name, $bytes, ($p['source'] ?? '') === 'pdf_parsed' ? 'parse' : '', false)['id'];
     }
 
     // רשימות: אותה רשימה (שם, רמות ושורות) — משתמשים בקיימת; אחרת נוצרת חדשה

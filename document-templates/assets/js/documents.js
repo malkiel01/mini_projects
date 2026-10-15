@@ -1398,6 +1398,8 @@
     let pdf;
     if (doc.mime === 'application/pdf') {
       pdf = await PDFDocument.load(srcBytes, { ignoreEncryption: true });
+      // הגדרות תבנית שמצורפות לקובץ (dt-template.json) — לא יוצאות במסמך שנשלח הלאה
+      try { const nm = pdf.catalog.lookup(window.PDFLib.PDFName.of('Names')); if (nm) nm.delete(window.PDFLib.PDFName.of('EmbeddedFiles')); } catch (e) { /* אין */ }
       // שלב 10: לטופס PDF יש שדות משלו, שמוצגים מעל תוכן הדף — שדה ריק עם רקע
       // היה מסתיר את מה שנכתוב. משטחים אותם לתוכן הדף לפני שכותבים מעליהם.
       try {

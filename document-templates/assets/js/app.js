@@ -332,23 +332,12 @@
             try { await window.DTBulk.exportFile({ template_id: t.id }); }
             catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
           }), { sub: 'כל התשובות' }) : null,
-          r >= 3 ? tile('📦', 'ייצוא תבנית', go(() => exportTemplate(t)), { sub: 'קובץ אחד — לשיתוף או לגיבוי' }) : null,
+          r >= 3 ? tile('📦', 'ייצוא תבנית', go(() => window.DTPort.exportDialog(t)), { sub: 'עם כל ההגדרות — PDF, Word או JSON' }) : null,
           r >= 4 ? tile('🔗', 'שיתוף', go(() => shareDialog('template', t.id, t.name, load))) : null,
           r >= 4 ? tile(t.archived ? '♻️' : '🗄️', t.archived ? 'שחזור' : 'ארכיון', go(() => archive(t))) : null,
           t.used || t.access !== 'owner' ? null : tile('🗑️', 'מחיקה', go(() => remove(t)), { danger: true }),
           t.access === 'owner' ? null : tile('🚪', 'עזיבה', go(() => leave('template', t.id, t.name, load)), { danger: true })),
       ]);
-    }
-
-    /** ייצוא: קובץ .dt.json עם הכול — הקובץ המקורי, השדות, הטבלאות, הנוסחאות, הרשימות והגופנים. */
-    async function exportTemplate(t) {
-      try {
-        const res = await fetch('api.php?action=tpl_export&id=' + t.id, { credentials: 'same-origin' });
-        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'הייצוא נכשל');
-        const a = el('a', { href: URL.createObjectURL(await res.blob()), download: t.name.replace(/[\\/:*?"<>|]+/g, '_') + '.dt.json' });
-        document.body.append(a); a.click(); a.remove();
-        window.DT.toast('הקובץ ירד. מייבאים אותו ב"+ תבנית חדשה" ← "📦 ייבוא תבנית" — גם אצל משתמש אחר.');
-      } catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
     }
 
     async function load() {
@@ -403,21 +392,39 @@
       const file = el('input', { name: 'file', type: 'file', class: 'visually-hidden',
         accept: 'application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp' });
       const chosen = el('p', { class: 'hint', hidden: true });
-      const pkg = el('input', { type: 'file', class: 'visually-hidden', accept: '.json,application/json' });
-      pkg.addEventListener('change', async () => {
-        if (!pkg.files[0]) return;
-        const fd = new FormData(); fd.append('file', pkg.files[0]);
-        if (name.value.trim()) fd.append('name', name.value.trim());
+      const pkg = el('input', { type: 'file', class: 'visually-hidden', accept: '.json,application/json,application/pdf,.pdf,.docx' });
+      // ייבוא: JSON → ההגדרות; PDF → ההגדרות שמצורפות בתוכו; Word → השרת מוצא אותן בתוכו
+      const runImport = async (f, viaPdf) => {
         out.replaceChildren(notice('מייבא…'));
         try {
-          const r = await api('tpl_import', fd);
+          let r;
+          if (viaPdf) r = await window.DTPort.importPdf(f, viaPdf, name.value.trim());
+          else if (/\.docx$/i.test(f.name)) {
+            const fd = new FormData(); fd.append('file', f); fd.append('name', name.value.trim() || f.name.replace(/\.[^.]+$/, ''));
+            r = await api('tpl_create', fd);
+            if (!r.imported) { dlg.close(); location.hash = 'tpl=' + r.id; window.DT.toast('בקובץ לא היו הגדרות שיוצאו — נוצרה תבנית Word רגילה.'); return; }
+          } else {
+            const fd = new FormData(); fd.append('file', f);
+            if (name.value.trim()) fd.append('name', name.value.trim());
+            r = await api('tpl_import', fd);
+          }
           dlg.close();
           location.hash = 'tpl=' + r.id;
           const n = (k, one, many) => k === 1 ? one : `${k} ${many}`;
           window.DT.toast('התבנית יובאה' + (r.lists ? ' · ' + n(r.lists, 'רשימה אחת', 'רשימות') : '') + (r.fonts ? ' · ' + n(r.fonts, 'גופן אחד', 'גופנים') : '')
-            + (r.notes.length ? '. שימו לב: ' + r.notes.join(' ') : ''));
+            + ((r.notes || []).length ? '. שימו לב: ' + r.notes.join(' ') : ''));
         } catch (err) { out.replaceChildren(notice(err.message, 'bad')); }
+      };
+      pkg.addEventListener('change', async () => {
+        const f = pkg.files[0];
         pkg.value = '';
+        if (!f) return;
+        if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') {
+          const p = await window.DTPort.readPdf(f);
+          if (!p) { out.replaceChildren(notice('ב-PDF הזה אין הגדרות שיוצאו מהמערכת. כדי ליצור ממנו תבנית רגילה — "מקובץ".', 'bad')); return; }
+          return runImport(f, p);
+        }
+        return runImport(f, null);
       });
       // שלב 10: ב-PDF — לפרק (המערכת קוראת שדות וטקסט) או להשתמש כקובץ נעול.
       const pdfMode = el('div', { class: 'pdf-mode f', hidden: true },
@@ -439,15 +446,19 @@
           } }, el('span', { class: 'tile-ic', 'aria-hidden': 'true' }, '✍️'), el('span', {}, 'לכתוב כאן, בלי קובץ', el('small', {}, 'כותרות, פסקאות, טבלה ושדות'))),
           // ייבוא תבנית שיוצאה (מהמערכת, ממשתמש אחר): הקובץ המקורי + המבנה + רשימות + גופנים
           el('label', { class: 'tile' }, pkg, el('span', { class: 'tile-ic', 'aria-hidden': 'true' }, '📦'),
-            el('span', {}, 'ייבוא תבנית', el('small', {}, 'קובץ .dt.json שיוצא מהמערכת')))),
+            el('span', {}, 'ייבוא תבנית', el('small', {}, 'שיוצאה מהמערכת: PDF, Word או JSON')))),
         chosen, pdfMode, submit, out);
-      file.addEventListener('change', () => {
+      let packaged = null;   // PDF שיוצא מהמערכת — עם ההגדרות בתוכו
+      file.addEventListener('change', async () => {
         const f = file.files[0];
         if (!f) return;
         if (!name.value) name.value = f.name.replace(/\.[^.]+$/, '');
         chosen.hidden = false;
         chosen.textContent = '📎 ' + f.name;
-        pdfMode.hidden = !(f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
+        const isPdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+        packaged = isPdf ? await window.DTPort.readPdf(f) : null;
+        if (packaged) chosen.textContent = `📦 ${f.name} — יוצא מהמערכת עם ההגדרות (${packaged.schema.fields.length} שדות). התבנית תיבנה עם כולן.`;
+        pdfMode.hidden = !isPdf || !!packaged;
         submit.hidden = false;
       });
       form.addEventListener('submit', async (e) => {
@@ -456,9 +467,11 @@
         submit.disabled = true;
         submit.textContent = 'מעלה…';
         try {
+          if (packaged) { await runImport(file.files[0], packaged); return; }
           const r = await api('tpl_create', new FormData(form));
           dlg.close();
           location.hash = 'tpl=' + r.id;
+          if (r.imported) window.DT.toast('הקובץ יוצא מהמערכת — התבנית נבנתה עם כל ההגדרות.');
         } catch (err) {
           out.replaceChildren(notice(err.message, 'bad'));
           submit.disabled = false;
