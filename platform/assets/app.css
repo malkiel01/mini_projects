@@ -332,6 +332,7 @@ button:disabled { opacity: .55; cursor: default; }
 .cells div { border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2) var(--s3); min-width: 0; }
 .cells dt { font-size: .74rem; color: var(--muted); }
 .cells dd { font-weight: 600; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.note.ok { background: var(--ok-soft); }
 .note { background: var(--warn-soft); color: var(--ink); border-radius: var(--r); padding: var(--s2) var(--s3); font-size: .86rem; }
 button.tile { cursor: pointer; text-align: start; font: inherit; font-size: .88rem; }
 .tile.primary { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
