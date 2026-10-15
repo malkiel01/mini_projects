@@ -585,6 +585,8 @@
         n = el('input', { type, ...common, inputmode: f.type === 'number' ? 'decimal' : null,
           dir: f.type === 'number' ? 'ltr' : null, placeholder: onPage || inlineText ? f.label : '' });
         n.value = v;
+        // תאריך: הקשה פותחת את לוח השנה (בטלפון, על הדף, הקשה בלבד לא תמיד פותחת אותו)
+        if (type === 'date') n.addEventListener('click', () => { if (!n.disabled && !n.readOnly) try { n.showPicker(); } catch (e) { /* דפדפן ישן */ } });
         if (inlineText && type === 'text') n.size = Math.max(6, Math.min(40, (v || f.label).length + 2));
         n.addEventListener('input', () => queue(f.key, limit(f, n)));
         if (f.type === 'text' && f.list) {

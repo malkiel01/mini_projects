@@ -152,7 +152,7 @@
 
     /** זום סביב נקודה (במסך) — מה שמתחת לאצבעות נשאר במקום. */
     function set(nz, cx, cy) {
-      nz = clamp(Math.round(nz * 100) / 100, 0.5, 4);
+      nz = clamp(Math.round(nz * 100) / 100, 0.5, 8);   // עד 800% — לראות שדה קטן מקרוב
       if (nz === z) return;
       const r = stage.getBoundingClientRect();
       const ax = (cx ?? r.left + r.width / 2) - r.left, ay = (cy ?? r.top + Math.min(r.height, innerHeight) / 2) - r.top;
@@ -183,6 +183,7 @@
       if (e.touches.length === 2) pinch = { d: dist(e.touches), z };
     }, { passive: true });
     stage.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 2 && !pinch) pinch = { d: dist(e.touches), z };   // האצבע השנייה נחתה בלי touchstart על הבמה
       if (!pinch || e.touches.length !== 2) return;
       e.preventDefault();
       const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2, cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
