@@ -867,6 +867,28 @@
     }
 
     /** מיקום הטקסט בשדה: רשת 3×3 — ימין/מרכז/שמאל × למעלה/אמצע/למטה. */
+    // צבע הטקסט: שחור (ברירת המחדל) · כמה מוכנים · כל צבע אחר. ריק = שחור
+    const COLORS = [['', 'שחור', '#000000'], ['#0b1f66', 'כחול כהה'], ['#1d4ed8', 'כחול'], ['#b91c1c', 'אדום'], ['#15803d', 'ירוק']];
+    function colorPicker(f) {
+      const custom = el('input', { type: 'color', value: f.color || '#000000', 'aria-label': 'צבע אחר' });
+      const row = el('div', { class: 'color-row', role: 'group', 'aria-label': 'צבע הטקסט' });
+      const all = el('button', { type: 'button', class: 'link small', onclick: () => {
+        schema.fields.forEach(x => { x.color = f.color || ''; });
+        setDirty(true); draw(); all.textContent = '✓ הוחל על כל השדות';
+      } }, 'להחיל על כל השדות');
+      const set = (v) => { f.color = v; custom.value = v || '#000000'; all.textContent = 'להחיל על כל השדות'; setDirty(true); draw(); paint(); };
+      const paint = () => {
+        const cur = f.color || '';
+        const own = cur !== '' && !COLORS.some(([v]) => v === cur);
+        row.replaceChildren(...COLORS.map(([v, label, sw]) => el('button', { type: 'button', class: 'swatch' + (cur === v ? ' on' : ''),
+          title: label, 'aria-label': label, 'aria-pressed': String(cur === v), style: `--c:${sw || v}`, onclick: () => set(v) })),
+          el('label', { class: 'swatch custom' + (own ? ' on' : ''), title: 'צבע אחר', style: own ? `--c:${cur}` : '' }, custom));
+      };
+      custom.addEventListener('input', () => set(custom.value.toLowerCase() === '#000000' ? '' : custom.value.toLowerCase()));
+      paint();
+      return el('div', { class: 'f color-pick' }, el('span', {}, 'צבע הטקסט'), row, all);
+    }
+
     function positionGrid(f) {
       const H = [['right', 'ימין'], ['center', 'מרכז'], ['left', 'שמאל']];
       const V = [['top', 'למעלה'], ['middle', 'באמצע'], ['bottom', 'למטה']];
@@ -996,6 +1018,7 @@
               fontPicker(f, relabel),
               input('גודל גופן', 'fontSize', { type: 'number', min: 6, max: 72 })) : null,
             textual ? positionGrid(f) : null,
+            textual || f.type === 'checkbox' ? colorPicker(f) : null,
             textual ? choose('כשהטקסט ארוך מהשדה', 'overflow', OVERFLOW) : null,
             el('p', { class: 'hint' }, `דף ${f.page + 1}. ` + (f.locked ? 'נעול — אי אפשר לגרור.' : 'הזזה וגודל — בגרירה על הדף.'))) : null,
           el('details', { class: 'fs-group adv' }, el('summary', {}, 'מתקדם'),
