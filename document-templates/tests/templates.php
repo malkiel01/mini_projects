@@ -109,6 +109,11 @@ tpl_delete($a, ['id' => $img]);
 check('מחיקה של תבנית שלא בשימוש — גם הקובץ נמחק', !is_file(DT_FILES_DIR . "/$imgPath"));
 throws('אחרי מחיקה — לא נמצאת', fn() => tpl_get($a, $img), 404);
 
+// צבע הטקסט: #rrggbb בלבד; ריק — שחור
+$col = fn($c) => clean_schema(['pages' => [['w' => 595, 'h' => 842]], 'fields' => [['key' => 'x', 'type' => 'text', 'page' => 0, 'x' => .1, 'y' => .1, 'w' => .2, 'h' => .03] + ($c === null ? [] : ['color' => $c])]])['fields'][0]['color'];
+check('צבע: ברירת מחדל ריק (שחור), #B91C1C נשמר באותיות קטנות, ערך לא תקין נזרק',
+    $col(null) === '' && $col('#B91C1C') === '#b91c1c' && $col('red') === '' && $col('#12345') === '' && $col('#123456;x') === '');
+
 foreach (array_merge(glob("$tmp/files/*") ?: [], array_filter(glob("$tmp/{,.}*", GLOB_BRACE) ?: [], 'is_file')) as $p) @unlink($p);
 @rmdir("$tmp/files");
 @rmdir($tmp);

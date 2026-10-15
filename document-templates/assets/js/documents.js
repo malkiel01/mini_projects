@@ -445,7 +445,8 @@
         if (onPage) { o.classList.add('on-page'); o.style.fontSize = `calc(var(--k) * ${f.fontSize || 11}px)`;
           o.style.textAlign = f.align === 'center' ? 'center' : f.align === 'left' ? 'left' : 'right';
           o.style.alignItems = f.valign === 'top' ? 'flex-start' : f.valign === 'bottom' ? 'flex-end' : 'center';
-          if (f.font) o.style.fontFamily = window.DTFonts.family(f.font); }
+          if (f.font) o.style.fontFamily = window.DTFonts.family(f.font);
+          if (f.color) o.style.color = f.color; }
         return o;
       };
       if (f.type === 'calc') {
@@ -495,6 +496,7 @@
         n.style.fontSize = `calc(var(--k) * ${f.fontSize || 11}px)`;
         n.style.textAlign = f.align === 'center' ? 'center' : f.align === 'left' ? 'left' : 'right';
         if (f.font) n.style.fontFamily = window.DTFonts.family(f.font);
+        if (f.color) { n.style.color = f.color; n.style.accentColor = f.color; }
         // למעלה / למטה: שורה אחת — הריפוד דוחף את הטקסט לקצה (בגובה השדה, בנקודות של הדף)
         if (f.type !== 'textarea' && f.type !== 'file' && f.valign && f.valign !== 'middle') {
           const rest = Math.max(0, f.h * doc.schema.pages[f.page].h - (f.fontSize || 11) * 1.3);
@@ -506,7 +508,7 @@
         const show = el(onPage ? 'span' : 'small', { class: onPage ? 'fmt-show' : 'fmt-preview', 'aria-hidden': onPage ? 'true' : null });
         const wrap = el('span', { class: onPage ? 'fmt-wrap' : 'fmt-form' });
         if (onPage) {
-          Object.assign(show.style, { fontSize: n.style.fontSize, fontFamily: n.style.fontFamily,
+          Object.assign(show.style, { fontSize: n.style.fontSize, fontFamily: n.style.fontFamily, color: n.style.color,
             justifyContent: f.align === 'center' ? 'center' : f.align === 'left' ? 'flex-end' : 'flex-start',
             alignItems: f.valign === 'top' ? 'flex-start' : f.valign === 'bottom' ? 'flex-end' : 'center' });
         }
@@ -1164,7 +1166,10 @@
       try { fonts.set(fid, await pdf.embedFont(await window.DTFonts.bytes(fid, { doc: doc.id }), { subset: true })); }
       catch (e) { /* ברירת מחדל */ }
     }
-    const ink = rgb(0.04, 0.12, 0.4);
+    // צבע הטקסט: של השדה (#rrggbb), או שחור — ברירת המחדל
+    const BLACK = rgb(0, 0, 0);
+    const inkOf = (f) => /^#[0-9a-f]{6}$/i.test(f.color || '')
+      ? rgb(...[1, 3, 5].map(i => parseInt(f.color.slice(i, i + 2), 16) / 255)) : BLACK;
     const pages = pdf.getPages();
     const annex = [];
 
@@ -1195,6 +1200,7 @@
       const page = pages[f.page];
       // הכול בנקודות של הדף הנראה: (bx, by) — הפינה העליונה של השדה, y כלפי מטה
       const { W, H, pt, rot } = frame(page);
+      const ink = inkOf(f);
       const bx = f.x * W, by = f.y * H, bw = f.w * W, bh = f.h * H;
 
       if (f.type === 'checkbox') {

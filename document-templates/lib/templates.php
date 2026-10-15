@@ -297,6 +297,8 @@ function clean_schema($s, array $sources = [], array $fonts = [], array $contact
             // גופן (0 — ברירת המחדל) ומיקום אנכי של הטקסט בשדה
             'font' => in_array((int)($f['font'] ?? 0), $fonts, true) ? (int)$f['font'] : 0,
             'valign' => in_array($f['valign'] ?? '', ['top', 'middle', 'bottom'], true) ? $f['valign'] : 'middle',
+            // צבע הטקסט (#rrggbb). ריק — שחור, ברירת המחדל
+            'color' => preg_match('/^#[0-9a-f]{6}$/i', (string)($f['color'] ?? '')) ? strtolower($f['color']) : '',
             // מבנה תצוגה מותאם (lib/fmt.php): תאריך — dd/MM/yyyy, hd בhMMMM hyy…; מספר — #,##0.00…
             'fmt' => in_array($type, ['date', 'number', 'calc', 'system'], true) ? $str($f['fmt'] ?? '', 80) : '',
         ];
