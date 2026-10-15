@@ -274,6 +274,7 @@ function fill_get(): array
     $values = array_intersect_key($values, array_flip(array_column($schema['fields'], 'key')));
     $schema = attach_options($schema, array_column($schema['fields'], 'key'));   // בחירה ממקור — רק מה שהממלא רשאי לראות
     $locked = !in_array($d['status'], ['sent', 'in_progress'], true) || $p['completed_at'] !== null;
+    $final = in_array($d['status'], ['completed', 'locked'], true);
     return ['ok' => true, 'document' => [
         'id' => (int)$d['id'], 'number' => $d['number'], 'title' => unseal($d['title_enc']), 'status' => $d['status'],
         'mime' => $a['mime'], 'schema' => $schema, 'values' => $values, 'fonts' => fonts_info($schema),
@@ -282,6 +283,10 @@ function fill_get(): array
         'me' => [
             'role_key' => $p['role_key'], 'role' => role_of($schema, $p['role_key'])['label'], 'name' => $c['name'],
             'completed' => $p['completed_at'] !== null, 'locked' => $locked, 'blocked' => turn_block($p, $d, $schema),
+            // אחרי שסיים: ממתין לאישור / אושר — ואז (אם התבנית מאפשרת) הורדה
+            'awaiting' => !$final && $schema['approval'] && doc_awaiting($d, $schema),
+            'approved' => $final, 'can_download' => $final && $schema['fill_download'],
+            'returned' => $p['completed_at'] === null ? doc_return_note((int)$d['id'], (int)$p['id']) : null,
         ],
     ]];
 }
@@ -395,10 +400,18 @@ function fill_complete(): array
     $list = participants_of((int)$d['id']);
     $done = current_turn($list) === null && !doc_progress($schema, $values)['missing'];
 
-    if ($done) {
+    if ($done && $schema['approval']) {
+        // מסלול אישור: לא ננעל לבד — ממתין לאישור של מנהל הטופס
+        log_event((int)$d['id'], 'participant:' . $p['id'], 'awaiting_approval');
+        if ($owner['email']) send_mail($owner['email'], 'ממתין לאישורך: ' . $title,
+            "כל הממלאים סיימו, והמסמך ממתין לאישורך:\n$title" . ($d['number'] ? " ({$d['number']})" : '') .
+            "\n\nלבדיקה ולאישור (או להחזרה לתיקון):\n" . app_base_url() . '#doc=' . $d['id']);
+        $done = false;
+    } elseif ($done) {
         doc_finalize($d, 'participant:' . $p['id']);
         if ($owner['email']) send_mail($owner['email'], 'המסמך הושלם: ' . $title,
             "כל המשתתפים מילאו וחתמו על המסמך:\n$title" . ($d['number'] ? " ({$d['number']})" : '') . "\n\n" . app_base_url() . '#doc=' . $d['id']);
+        if ($schema['fill_download']) notify_ready($d, $schema);
     } elseif ($schema['sequential']) {
         $next = null;
         foreach ($list as $x) if (!$x['completed_at']) { $next = $x; break; }
@@ -415,6 +428,108 @@ function fill_complete(): array
         }
     }
     return ['ok' => true, 'document_completed' => $done];
+}
+
+/** כל הממלאים סיימו וכל שדות החובה מלאים — במסלול אישור: ממתין לאישור של מנהל הטופס. */
+function doc_awaiting(array $d, array $schema): bool
+{
+    if (!in_array($d['status'], DOC_EDITABLE, true)) return false;
+    $list = participants_of((int)$d['id']);
+    return $list && current_turn($list) === null && !doc_progress($schema, doc_values((int)$d['id']))['missing'];
+}
+
+/** ההערה האחרונה שהוחזרה לממלא הזה לתיקון (אם הוחזר ועוד לא סיים שוב). */
+function doc_return_note(int $docId, int $partId): ?string
+{
+    $st = db()->prepare("SELECT detail_enc FROM events WHERE document_id = ? AND type = 'returned' ORDER BY id DESC LIMIT 1");
+    $st->execute([$docId]);
+    $e = $st->fetchColumn();
+    $x = $e ? json_decode((string)unseal($e), true) : null;
+    return $x && in_array($partId, $x['participants'] ?? [], true) ? (string)($x['note'] ?? '') : null;
+}
+
+/** המסמך הושלם (או אושר): קישור חדש לכל ממלא עם מייל — להורדת העותק שלו. הקישור הקודם מפסיק לעבוד. */
+function notify_ready(array $d, array $schema): void
+{
+    $title = (string)unseal($d['title_enc']);
+    foreach (participants_of((int)$d['id']) as $p) {
+        $c = contact_of($p);
+        if (!$c['email'] || !$p['completed_at']) continue;
+        $token = bin2hex(random_bytes(24));
+        db()->prepare('UPDATE participants SET token_hash = ?, notified_at = ? WHERE id = ?')->execute([token_hash($token), now_iso(), $p['id']]);
+        send_mail($c['email'], ($schema['approval'] ? 'המסמך אושר: ' : 'המסמך הושלם: ') . $title,
+            "שלום {$c['name']},\n\nהמסמך \"$title\"" . ($d['number'] ? " ({$d['number']})" : '') .
+            ($schema['approval'] ? ' אושר.' : ' הושלם.') . "\nלצפייה ולהורדה:\n" . fill_url($token));
+    }
+}
+
+/**
+ * מסלול אישור — החזרה לתיקון: הממלא (או כולם) פותח שוב את השדות שלו, עם הערה. מקבל קישור חדש במייל.
+ * $b: id, participant (מזהה, או 0 — כל מי שסיים), note.
+ */
+function doc_return(array $user, array $b): array
+{
+    $d = doc_owned((int)($b['id'] ?? 0), $user, 'edit');
+    if (!in_array($d['status'], DOC_EDITABLE, true)) throw new ApiError('המסמך כבר נעול', 409);
+    $note = mb_substr(trim((string)($b['note'] ?? '')), 0, 1000);
+    $pid = (int)($b['participant'] ?? 0);
+    $list = array_values(array_filter(participants_of((int)$d['id']), fn($p) => $p['completed_at'] && (!$pid || (int)$p['id'] === $pid)));
+    if (!$list) throw new ApiError('אין ממלא שסיים להחזיר אליו', 409);
+    $schema = doc_schema($d);
+    $title = (string)unseal($d['title_enc']);
+    $owner = user_name((int)$d['owner_id']);
+    $sent = 0;
+    foreach ($list as $p) {
+        db()->prepare("UPDATE participants SET completed_at = NULL, status = 'opened' WHERE id = ?")->execute([$p['id']]);
+        $c = contact_of($p);
+        if (!$c['email']) continue;
+        $token = bin2hex(random_bytes(24));
+        db()->prepare('UPDATE participants SET token_hash = ?, notified_at = ? WHERE id = ?')->execute([token_hash($token), now_iso(), $p['id']]);
+        $sent += (int)send_mail($c['email'], 'הוחזר לתיקון: ' . $title, "שלום {$c['name']},\n\n$owner החזיר/ה אליך את המסמך \"$title\" לתיקון." .
+            ($note !== '' ? "\n\nההערה:\n$note" : '') . "\n\nלמילוי:\n" . fill_url($token));
+    }
+    log_event((int)$d['id'], 'user:' . $user['id'], 'returned', ['note' => $note, 'participants' => array_map(fn($p) => (int)$p['id'], $list),
+        'roles' => array_map(fn($p) => role_of($schema, $p['role_key'])['label'], $list)]);
+    return ['ok' => true, 'returned' => count($list), 'mailed' => $sent];
+}
+
+/** הממלא מוריד את העותק שלו: רק אחרי שהמסמך הושלם (אושר), ורק אם התבנית מאפשרת. בלי שדות שמוסתרים ממנו. */
+function fill_can_download(): array
+{
+    [$p, $d, $schema] = fill_context();
+    if (needs_otp($p)) throw new ApiError('נדרש אימות', 401);
+    if (!in_array($d['status'], ['completed', 'locked'], true) || !$schema['fill_download']) throw new ApiError('המסמך עוד לא זמין להורדה', 403);
+    return [$p, $d, $schema];
+}
+
+/** ממלא: "הורדתי" — ביומן של מנהל הטופס. */
+function fill_downloaded(array $b): array
+{
+    [$p, $d] = fill_can_download();
+    log_event((int)$d['id'], 'participant:' . $p['id'], 'downloaded', ['format' => in_array($b['format'] ?? '', ['pdf', 'docx'], true) ? $b['format'] : 'pdf']);
+    return ['ok' => true];
+}
+
+/** ממלא: מסמך Word ממולא — בלי דף האישור (יש בו את היומן וכתובות IP) ובלי שדות שמוסתרים ממנו. */
+function fill_docx(): never
+{
+    [$p, $d, $schema] = fill_can_download();
+    $a = tpl_asset_row((int)$d['template_version_id']);
+    if ($a['mime'] !== DOCX_MIME && $a['mime'] !== AUTHORED_MIME) throw new ApiError('המסמך לא נוצר מתבנית Word', 409);
+    $visible = array_column(array_filter($schema['fields'] ?? [],
+        fn($f) => empty($f['hidden']) || in_array($p['role_key'], field_roles($f), true)), 'key');
+    $values = array_intersect_key(doc_values((int)$d['id']), array_flip($visible));
+    $names = array_column(attachments_of((int)$d['id']), 'name', 'id');
+    $src = $a['mime'] === AUTHORED_MIME ? authored_docx($schema, $values) : asset_bytes($a);
+    $bytes = docx_fill($src, $schema, $values, $names, []);
+    log_event((int)$d['id'], 'participant:' . $p['id'], 'downloaded', ['format' => 'docx']);
+    $name = preg_replace('/[\\\/:*?"<>|]+/u', '_', trim(($d['number'] ? $d['number'] . ' ' : '') . unseal($d['title_enc'])) ?: 'מסמך') . '.docx';
+    header('Content-Type: ' . DOCX_MIME);
+    header('Content-Length: ' . strlen($bytes));
+    header("Content-Disposition: attachment; filename=\"document.docx\"; filename*=UTF-8''" . rawurlencode($name));
+    header('Cache-Control: private, no-store');
+    echo $bytes;
+    exit;
 }
 
 function fill_asset(): never

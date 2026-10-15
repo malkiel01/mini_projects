@@ -18,6 +18,7 @@
     link_issued: 'נשלח קישור', opened: 'נפתח', verified: 'אומת בקוד', participant_completed: 'משתתף סיים',
     file_uploaded: 'צורף קובץ', shared: 'שותף', unshared: 'שיתוף הוסר', contact_set: 'נקבע איש קשר', tags_set: 'עודכנו תגיות',
     imported: 'נוצר מאקסל', exported: 'יוצא לאקסל',
+    awaiting_approval: '⏳ ממתין לאישור', approved: '✓ אושר ונעול', returned: '↩ הוחזר לתיקון',
   };
   const VIA = { email: 'במייל', link: 'כקישור', whatsapp: 'בוואטסאפ' };
   const EDITABLE = ['draft', 'in_progress'];
@@ -277,6 +278,7 @@
     const saveStatus = el('span', { class: 'save-status small' });
     const statusBadge = el('span', { class: 'badge' });
     const progress = el('span', { class: 'small muted' });
+    const stage = el('div', { class: 'doc-stage' });   // מסלול אישור: ממתין לאישור / הוחזר / אושר — ולממלא: הורדה
     const msg = el('div');
     const body = el('div', { class: 'doc-body' });
     const journal = el('aside', { class: 'panel card journal', hidden: true });
@@ -304,6 +306,7 @@
         el('div', { class: 'line' }, el('strong', { dir: 'ltr', class: 'doc-number' }, doc.number || ''), statusBadge,
           el('span', { class: 'spacer' }), saveStatus),
         title, track, progress),
+      stage,
       fill ? null : meta,
       !fill && doc.owner_name ? el('p', { class: 'notice' }, `👥 מסמך של ${doc.owner_name} — ההרשאה שלך: ${window.DT.LEVEL[doc.access]}.`) : null,
       fill && doc.me ? el('p', { class: 'notice' }, `שלום${doc.me.name ? ' ' + doc.me.name : ''} — ממלאים כאן את השדות של "${doc.me.role}". ` +
@@ -365,6 +368,8 @@
       statusBadge.className = 'badge ' + kind;
       title.disabled = fill || !editable();
       completeBtn.hidden = !editable() || (!fill && lvl() < 3);
+      if (!fill) completeBtn.textContent = doc.awaiting_approval ? '✓ אישור ונעילה' : 'סיום ונעילה';
+      renderStage();
       for (const r of modeSeg.querySelectorAll('input')) r.checked = r.value === mode;
       modeSeg.hidden = isWord;
       const p = doc.progress;
@@ -378,6 +383,52 @@
       } else {
         progress.textContent = p.required ? `שדות חובה: ${p.filled} מתוך ${p.required}` : '';
       }
+    }
+
+    /** מסלול אישור. מנהל הטופס: "ממתין לאישורך" + החזרה לתיקון. ממלא: איפה זה עומד, והורדה כשאושר. */
+    function renderStage() {
+      const parts = [];
+      if (!fill && doc.awaiting_approval) {
+        parts.push(el('div', { class: 'notice warn stage-box' },
+          el('p', {}, el('strong', {}, '⏳ ממתין לאישורך. '), 'כל הממלאים סיימו. בדקו את הערכים — ואז "✓ אישור ונעילה", או החזירו לתיקון.'),
+          lvl() >= 3 ? el('button', { type: 'button', class: 'small', onclick: returnDialog }, '↩ החזרה לתיקון') : null));
+      }
+      if (fill && doc.me) {
+        const me = doc.me;
+        if (me.returned !== null && me.returned !== undefined && !me.completed) {
+          parts.push(el('div', { class: 'notice warn' }, el('strong', {}, '↩ הוחזר אליך לתיקון. '), me.returned ? '"' + me.returned + '"' : 'תקנו ולחצו שוב "סיימתי ✓".'));
+        } else if (me.approved) {
+          parts.push(el('div', { class: 'notice ok stage-box' },
+            el('p', {}, el('strong', {}, doc.schema.approval ? '✓ המסמך אושר.' : '✓ המסמך הושלם.'), me.can_download ? ' אפשר להוריד עותק:' : ''),
+            me.can_download ? el('div', { class: 'row-btns' },
+              isWord || isAuthored ? el('button', { type: 'button', class: 'small', onclick: () => wordFile(false) }, '⬇️ הורדת Word') : null,
+              isAuthored ? el('button', { type: 'button', class: 'small', onclick: printDoc }, '🖨️ הדפסה / PDF') : null,
+              !isWord && !isAuthored ? el('button', { type: 'button', class: 'small primary', onclick: downloadPdf }, '⬇️ הורדת PDF') : null) : null));
+        } else if (me.completed && me.awaiting) {
+          parts.push(el('div', { class: 'notice' }, el('strong', {}, '⏳ ממתין לאישור. '), 'מה שמילאת נשלח. כשיאושר' + (doc.schema.fill_download ? ' — תקבלו הודעה, ותוכלו להוריד את המסמך מכאן.' : ', תקבלו הודעה.')));
+        }
+      }
+      stage.replaceChildren(...parts);
+    }
+
+    /** החזרה לתיקון: למי (ממלא אחד, או כל מי שסיים), ומה לתקן. הממלא מקבל קישור חדש במייל. */
+    function returnDialog() {
+      const done = (doc.participants || []).filter(p => p.status === 'completed');
+      const who = el('select', { 'aria-label': 'למי' }, done.length > 1 ? el('option', { value: 0 }, 'כל הממלאים') : null,
+        done.map(p => el('option', { value: p.id }, p.role + (p.name ? ' — ' + p.name : ''))));
+      const note = el('textarea', { rows: 4, maxlength: 1000, placeholder: 'מה לתקן? (נשלח לממלא במייל)' });
+      const out = el('div');
+      const go = el('button', { type: 'button', class: 'primary small', onclick: async () => {
+        go.disabled = true;
+        try {
+          const r = await api('doc_return', { id, participant: Number(who.value), note: note.value });
+          dlg.close();
+          await reload();
+          msg.replaceChildren(notice(`הוחזר לתיקון (${r.returned})` + (r.mailed ? ' — נשלח קישור חדש במייל.' : ' — אין מייל: שלחו קישור מ-👥 משתתפים.'), 'ok'));
+        } catch (e) { go.disabled = false; out.replaceChildren(notice(e.message, 'bad')); }
+      } }, 'החזרה');
+      const dlg = window.DT.sheet('↩ החזרה לתיקון', el('div', { class: 'field-sheet' },
+        el('label', { class: 'f' }, el('span', {}, 'למי'), who), el('label', { class: 'f' }, el('span', {}, 'הערה'), note), out), { action: go });
     }
 
     function setSave(state, text) {
@@ -900,6 +951,7 @@
               : el('span', {}, el('del', { class: 'muted' }, short(c.from)), ' → ', short(c.to))))) : null,
           e.detail && e.detail.number ? el('div', { class: 'small muted' }, 'מספר: ' + e.detail.number) : null,
           e.detail && e.detail.copy_of ? el('div', { class: 'small muted' }, '⧉ עותק של ' + e.detail.copy_of) : null,
+          e.detail && e.detail.roles ? el('div', { class: 'small muted' }, e.detail.roles.join(', ') + (e.detail.note ? ' · "' + e.detail.note + '"' : '')) : null,
           e.detail && e.detail.with ? el('div', { class: 'small muted' }, 'עם ' + e.detail.with + (e.detail.level ? ' · ' + e.detail.level : '')) : null,
           e.detail && e.detail.name ? el('div', { class: 'small muted' }, (e.detail.label ? e.detail.label + ': ' : '') + e.detail.name) : null,
           e.detail && e.detail.role ? el('div', { class: 'small muted' }, e.detail.role +
@@ -1035,7 +1087,8 @@
     async function wordFile(preview) {
       await flush();
       try {
-        const res = await fetch(`api.php?action=doc_docx&id=${id}${preview ? '&preview=1' : ''}`, { credentials: 'same-origin' });
+        const res = fill ? await fetch('api.php?action=fill_docx', { headers: src.asset[1] })
+          : await fetch(`api.php?action=doc_docx&id=${id}${preview ? '&preview=1' : ''}`, { credentials: 'same-origin' });
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'ההורדה נכשלה');
         const blob = await res.blob();
         if (!preview) {
@@ -1097,7 +1150,7 @@
         const a = el('a', { href: URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' })),
           download: ((doc.number ? doc.number + ' ' : '') + title.value).replace(/[\\/:*?"<>|]+/g, '_') + '.pdf' });
         document.body.append(a); a.click(); a.remove();
-        api('doc_downloaded', { id }).then(reload).catch(() => {});
+        (fill ? api('fill_downloaded', { format: 'pdf' }) : api('doc_downloaded', { id }).then(reload)).catch(() => {});
       } catch (e) {
         msg.replaceChildren(notice('הפקת ה-PDF נכשלה: ' + e.message, 'bad'));
         // נתפס כאן — ולכן לא מגיע לבד ללוג המעקב. שולחים, כדי שייפתח "⚠️ לבירור" עם ההקשר
@@ -1105,7 +1158,7 @@
           page: location.hash.slice(0, 120) }).catch(() => {});
       } finally {
         pdfBtn.disabled = false;
-        pdfBtn.textContent = '⬇ הורדת PDF';
+        pdfBtn.textContent = '⬇️';
       }
     }
 

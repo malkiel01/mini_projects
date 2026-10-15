@@ -223,6 +223,8 @@
       roles: (tpl.schema.roles && tpl.schema.roles.length ? tpl.schema.roles : [{ key: 'owner', label: 'אני (המנפיק)', auth: 'none' }]).map(r => ({ ...r })),
       sequential: !!tpl.schema.sequential,
       certificate: !!tpl.schema.certificate,
+      approval: !!tpl.schema.approval,
+      fill_download: !!tpl.schema.fill_download,
       styles: (tpl.schema.styles || []).map(x => ({ ...x })),
       parsed: !!tpl.schema.parsed,
       ...(tpl.schema.body ? { body: tpl.schema.body.map(b => ({ ...b })) } : {}),
@@ -822,7 +824,7 @@
         readOnly ? null : el('button', { type: 'button', class: 'small', onclick: () => formatDialog(f, () => { setDirty(true); paint(); draw(); }) }, '✎ עיצוב…'),
         el('p', { class: 'hint' }, 'הערך נשמר כמו שהוא; המבנה קובע רק איך הוא מוצג — על הדף, ב-PDF וב-Word.'));
     }
-    const fmtSampleValue = (f, kind) => (f.default && f.default !== '') ? f.default
+    const fmtSampleValue = (f, kind) => (f.default && !f.default.startsWith('@')) ? f.default
       : kind === 'date' ? new Date().toISOString().slice(0, 10) : kind === 'text' ? (/0/.test(f.fmt || '') ? '0521234567' : 'ישראל ישראלי') : '-1234.1';
 
     /** החלון: קטגוריות מימין, אפשרויות, סוג (הקוד), רשימת קודים — ודוגמה חיה למעלה. */
@@ -1223,6 +1225,7 @@
             f.type === 'select' ? selectPanel(f) : null,
             f.type === 'file' ? filePanel(f)
               : f.type === 'table' ? tablePanel(f)
+              : f.type === 'date' ? dateDefault(f)
               : input('ערך ברירת מחדל', 'default', { maxlength: 1000 }),
             !['file', 'checkbox', 'table', 'select'].includes(f.type) ? choose('מתמלא מאיש קשר', 'contactField', {
               '': '— לא —', name: 'שם', id_number: 'ת"ז / ח"פ', phone: 'טלפון', email: 'מייל', address: 'כתובת', notes: 'הערות',
@@ -1295,7 +1298,21 @@
           schema.roles.push({ key: 'role_' + Math.random().toString(36).slice(2, 7), label: n === 1 ? 'לקוח' : 'משתתף ' + n, auth: 'none' });
           setDirty(true); renderPanel();
         } }, '+ ממלא בקישור'),
-        schema.roles.length > 1 ? el('label', { class: 'inline small' }, seq, ' לפי הסדר — כל אחד מקבל את הקישור רק אחרי שהקודם סיים') : null);
+        schema.roles.length > 1 ? el('label', { class: 'inline small' }, seq, ' לפי הסדר — כל אחד מקבל את הקישור רק אחרי שהקודם סיים') : null,
+        schema.roles.length > 1 ? approvalPanel() : null);
+    }
+
+    /** מסלול אישור: הממלאים מסיימים → ממתין לאישור שלי → אושר (או הוחזר לתיקון) → הממלא מוריד. */
+    function approvalPanel() {
+      const sw = (prop, label, hint) => {
+        const c = el('input', { type: 'checkbox', checked: !!schema[prop], disabled: readOnly });
+        c.addEventListener('change', () => { schema[prop] = c.checked; setDirty(true); });
+        return el('div', {}, el('label', { class: 'switch' }, c, el('span', {}, label)), el('p', { class: 'small muted' }, hint));
+      };
+      return el('div', { class: 'approval-set' },
+        el('h3', {}, 'אישור והורדה'),
+        sw('approval', 'ממתין לאישור שלי', 'כשהממלאים סיימו, המסמך לא ננעל לבד: מקבלים מייל "ממתין לאישורך", ובמסמך — "✓ אישור ונעילה" או "↩ החזרה לתיקון" עם הערה.'),
+        sw('fill_download', 'הממלא יכול להוריד את המסמך', 'אחרי שהמסמך הושלם (או אושר) — הממלא מקבל במייל קישור, ומוריד ממנו את המסמך. שדה שמוסתר ממנו — לא יופיע אצלו.'));
     }
 
     // מספור המסמכים שיונפקו מהתבנית.
@@ -1317,6 +1334,28 @@
         none: '—',
       }[numbering.scheme];
     }
+    /** ברירת מחדל לתאריך: בלי / היום / היום ± ימים / תאריך קבוע. נשמר כ-"@today", "@today+30" או "2026-10-15". */
+    function dateDefault(f) {
+      const m = /^@today(?:([+-])(\d+))?$/.exec(f.default || '');
+      let kind = !f.default ? '' : m ? (m[1] ? 'rel' : 'today') : 'fixed';
+      const days = el('input', { type: 'number', class: 'days', min: -3650, max: 3650, value: m && m[1] ? (m[1] === '-' ? -m[2] : m[2]) : 30, 'aria-label': 'ימים מההנפקה' });
+      const fixed = el('input', { type: 'date', value: kind === 'fixed' ? f.default : '', 'aria-label': 'תאריך קבוע' });
+      const sel = el('select', { 'aria-label': 'ערך ברירת מחדל' }, [['', '— בלי —'], ['today', 'היום (יום ההנפקה)'], ['rel', 'היום + ימים'], ['fixed', 'תאריך קבוע']]
+        .map(([v, t]) => el('option', { value: v, selected: kind === v }, t)));
+      const extra = el('span');
+      const sync = () => {
+        const n = Math.trunc(Number(days.value) || 0);
+        f.default = kind === 'today' ? '@today' : kind === 'rel' ? (n ? '@today' + (n > 0 ? '+' : '-') + Math.abs(n) : '@today') : kind === 'fixed' ? fixed.value : '';
+        extra.replaceChildren(kind === 'rel' ? el('label', { class: 'f' }, el('span', {}, 'ימים'), days) : kind === 'fixed' ? el('label', { class: 'f' }, el('span', {}, 'תאריך'), fixed) : '');
+        setDirty(true);
+      };
+      sel.addEventListener('change', () => { kind = sel.value; sync(); });
+      days.addEventListener('input', sync); fixed.addEventListener('input', sync);
+      extra.replaceChildren(kind === 'rel' ? el('label', { class: 'f' }, el('span', {}, 'ימים'), days) : kind === 'fixed' ? el('label', { class: 'f' }, el('span', {}, 'תאריך'), fixed) : '');
+      return el('div', {}, el('div', { class: 'date-default' }, el('label', { class: 'f' }, el('span', {}, 'ערך ברירת מחדל'), sel), extra),
+        el('p', { class: 'hint' }, '"היום" — התאריך ביום שבו מנפיקים את המסמך (שעון ישראל). אפשר גם "היום + 30" למועד אחרון, או מספר שלילי לתאריך שעבר.'));
+    }
+
     /** ה-PDF שיוצא: נקי (רק המסמך), או עם דף אישור בסוף. */
     function outputPanel() {
       const cert = el('input', { type: 'checkbox', checked: !!schema.certificate, disabled: readOnly });

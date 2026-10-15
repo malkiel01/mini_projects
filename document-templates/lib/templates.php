@@ -216,6 +216,27 @@ function tpl_asset(array $user, int $id): never
     exit;
 }
 
+/**
+ * ערך ברירת מחדל. בתאריך: תאריך קבוע (2026-10-15), או יחסי ליום ההנפקה — "@today", "@today+30", "@today-7".
+ * תאריך שלא מתאים לאף אחד מהם — נמחק (אחרת השדה היה נפתח עם ערך פסול).
+ */
+function clean_default(string $type, string $v): string
+{
+    if ($type !== 'date' || $v === '') return $v;
+    if (preg_match('/^@today(?:([+-])(\d{1,4}))?$/', $v, $m)) return isset($m[1]) && (int)$m[2] !== 0 ? "@today{$m[1]}" . (int)$m[2] : '@today';
+    return preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) ? $v : '';
+}
+
+/** הערך שהשדה מקבל במסמך חדש: "@today±N" — התאריך (לפי שעון ישראל) ביום ההנפקה. */
+function field_default(array $f): string
+{
+    $v = (string)($f['default'] ?? '');
+    if (($f['type'] ?? '') !== 'date' || !preg_match('/^@today(?:([+-])(\d+))?$/', $v, $m)) return $v;
+    $d = new DateTimeImmutable('now', new DateTimeZone('Asia/Jerusalem'));
+    if (isset($m[1])) $d = $d->modify(($m[1] === '-' ? '-' : '+') . (int)$m[2] . ' days');
+    return $d->format('Y-m-d');
+}
+
 /** מנקה את מה שהדפדפן שלח: רק סוגים מוכרים, מספרים בטווח, מחרוזות באורך סביר. */
 /** $sources — מקורות הנתונים שמותר לשדה בחירה להפנות אליהם (של השומר, או שכבר היו בתבנית). */
 function clean_schema($s, array $sources = [], array $fonts = [], array $contacts = []): array
@@ -279,7 +300,7 @@ function clean_schema($s, array $sources = [], array $fonts = [], array $contact
             'label' => $str($f['label'] ?? '', 120) ?: 'שדה',
             'help' => $str($f['help'] ?? '', 300),
             'required' => !empty($f['required']),
-            'default' => $str($f['default'] ?? '', 1000),
+            'default' => clean_default($type, $str($f['default'] ?? '', 1000)),
             'page' => (int)$num($f['page'] ?? 0, 0, count($pages) - 1),
             'x' => $num($f['x'] ?? 0, 0, 1 - $w),
             'y' => $num($f['y'] ?? 0, 0, 1 - $h),
@@ -407,6 +428,10 @@ function clean_schema($s, array $sources = [], array $fonts = [], array $contact
     return ['pages' => $pages, 'fields' => $fields, 'roles' => $roles, 'sequential' => !empty($s['sequential']),
         // דף אישור (טביעת אצבע + יומן) בסוף ה-PDF של מסמך שהושלם — כבוי: ה-PDF נקי, ודף האישור בכפתור נפרד
         'certificate' => !empty($s['certificate']),
+        // מסלול אישור: כשהממלאים סיימו — המסמך ממתין לאישור שלי, ולא ננעל לבד
+        'approval' => !empty($s['approval']),
+        // הממלא יכול להוריד את המסמך מהקישור שלו, אחרי שהושלם (באישור — אחרי שאישרתי)
+        'fill_download' => !empty($s['fill_download']),
         'styles' => array_values($styles),
         ...($body !== null ? ['body' => $body] : []),
         // שלב 10: הפירוק האוטומטי כבר רץ — לא להוסיף שוב את שדות הטופס המקורי.
