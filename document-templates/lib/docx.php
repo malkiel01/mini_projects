@@ -364,6 +364,9 @@ function authored_docx(array $schema, array $values): string
 function doc_docx(array $user, int $id, bool $preview = false): never
 {
     $d = doc_owned($id, $user, 'view');
+    // ננעל רק באישור של בעל התבנית — הורדה רק אחרי שאישר
+    $ap = doc_approver($d);
+    if ($ap && $ap !== (int)$user['id'] && $d['status'] !== 'completed') throw new ApiError('הורדה — אחרי ש' . user_name($ap) . ' יאשר את המסמך', 403);
     $a = tpl_asset_row((int)$d['template_version_id']);
     if ($a['mime'] !== DOCX_MIME && $a['mime'] !== AUTHORED_MIME) throw new ApiError('המסמך לא נוצר מתבנית Word', 409);
     $schema = doc_schema($d);
