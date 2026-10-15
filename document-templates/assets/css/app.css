@@ -776,6 +776,28 @@ pre.secret { margin: 0; padding: var(--s2); border-radius: var(--r); background:
 /* מבנה התצוגה — בהגדרות השדה */
 .fmt-picker { display: grid; gap: var(--s2); }
 .fmt-sample { margin: 0; padding: var(--s2) var(--s3); border-radius: var(--r); background: var(--brand-soft); font-size: .9rem; }
+.fmt-now { margin: 0; }
+.fmt-now code { background: var(--brand-soft); padding: 1px 6px; border-radius: 4px; }
+.fmt-dlg { width: min(720px, 100vw); }
+.fmt-dialog { display: grid; gap: var(--s3); }
+.fmt-dialog .fmt-sample { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: var(--s2) var(--s3); }
+.fmt-dialog .fmt-sample .f { grid-column: 1 / -1; margin: 0; }
+.fmt-sample-out { font-size: 1.15rem; font-weight: 600; min-height: 1.5em; direction: ltr; text-align: right; unicode-bidi: plaintext; }
+.fmt-main { display: grid; grid-template-columns: 150px 1fr; gap: var(--s3); align-items: start; }
+.fmt-cats { display: grid; gap: 2px; border: 1px solid var(--line); border-radius: var(--r); padding: 4px; }
+.fmt-cat, .fmt-item { all: unset; box-sizing: border-box; cursor: pointer; padding: 6px 10px; border-radius: 6px; font-size: .9rem; }
+.fmt-cat:hover, .fmt-item:hover { background: var(--brand-soft); }
+.fmt-cat.on, .fmt-item.on { background: var(--brand); color: #fff; }
+.fmt-cat:focus-visible, .fmt-item:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.fmt-side { display: grid; gap: var(--s3); min-width: 0; }
+.fmt-opts { display: grid; gap: var(--s3); }
+.fmt-list { display: grid; gap: 2px; border: 1px solid var(--line); border-radius: var(--r); padding: 4px; max-height: 220px; overflow: auto; }
+.fmt-codes { display: grid; border: 1px solid var(--line); border-radius: var(--r); max-height: 240px; overflow: auto; }
+.fmt-code-row { display: flex; align-items: center; gap: var(--s2); padding: 2px 6px; }
+.fmt-code-row.on { background: var(--brand-soft); }
+.fmt-code { all: unset; cursor: pointer; font-family: monospace; flex: 1; min-width: 0; overflow-wrap: anywhere; padding: 4px 0; }
+.fmt-code:focus-visible { outline: 2px solid var(--brand); }
+@media (max-width: 560px) { .fmt-main { grid-template-columns: 1fr; } .fmt-cats { grid-template-columns: repeat(3, 1fr); } }
 .fmt-help summary { cursor: pointer; color: var(--brand); font-size: .85rem; }
 .fmt-help dl { display: grid; grid-template-columns: auto 1fr; gap: 4px var(--s3); margin: var(--s2) 0 0; font-size: .85rem; }
 .fmt-help dt { font-family: monospace; font-weight: 600; text-align: left; }

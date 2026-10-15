@@ -20,6 +20,8 @@ function check(string $name, bool $ok): void
 $V = json_decode((string)file_get_contents(__DIR__ . '/fmt-vectors.json'), true);
 foreach ($V['date'] as [$p, $v, $want]) check("תאריך $p ← $v = $want", fmt_date($p, $v) === $want);
 foreach ($V['number'] as [$p, $v, $want]) check("מספר $p ← $v = $want", fmt_number($p, $v) === $want);
+foreach ($V['text'] as [$p, $v, $want]) check("טקסט $p ← $v = $want", fmt_text_rich($p, $v)[0] === $want);
+foreach ($V['color'] as [$k, $p, $v, $want]) check("צבע $p ← $v = " . ($want ?? 'בלי'), ($k === 'text' ? fmt_text_rich($p, $v) : fmt_number_rich($p, $v))[1] === $want);
 
 if (function_exists('jdtojewish')) {
     $bad = 0; $n = 0;

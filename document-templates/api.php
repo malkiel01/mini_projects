@@ -60,7 +60,7 @@ $POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'dev_user
            'src_save', 'src_delete', 'src_sync', 'key_create', 'key_update', 'key_revoke', 'key_secret', 'key_test',
            'ext_issue', 'ext_update',
            'client_error', 'font_upload', 'font_delete', 'dev_force', 'me_update', 'me_password', 'me_logout_others',
-           'contact_import', 'dev-task-create', 'dev-task-set', 'dev-comment', 'dev-comment-delete', 'dev-token-create', 'dev-token-revoke',
+           'contact_import', 'fmt_code_save', 'fmt_code_delete', 'dev-task-create', 'dev-task-set', 'dev-comment', 'dev-comment-delete', 'dev-token-create', 'dev-token-revoke',
            'dev-verify', 'dev-report', 'dev-attach', 'dev-log-links', 'dev-task-from-log', 'devapi-comment', 'devapi-attach'];
 
 try {
@@ -170,6 +170,9 @@ try {
         // אזור הפיתוח (dev_ — למפתח בלבד) והגדרות המשתמש
         'dev_log_list'   => dev_log_list($_GET),
         'contact_fills'  => contact_fills($session, $_GET),
+        'fmt_codes'       => fmt_codes($session, $_GET),
+        'fmt_code_save'   => fmt_code_save($session, $body),
+        'fmt_code_delete' => fmt_code_delete($session, $body),
         'contact_import' => contact_import($session, $body),
         // מטלות ושיח — המודול המשותף DevLoop (lib/devtasks.php), באותם שמות כמו במנהל הפרויקטים
         'dev-items'          => ['ok' => true] + devloop_task_list(),

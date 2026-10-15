@@ -118,25 +118,176 @@ function fmt_date(string $pattern, string $iso): string
     return $out;
 }
 
-function fmt_number(string $pattern, string $raw): string
+// ── מספר (כמו "עיצוב תאים" באקסל) — אותו מנוע כמו ב-assets/js/fmt.js ──
+const FMT_COLORS = ['אדום' => '#c00000', 'red' => '#c00000', 'כחול' => '#0000ff', 'blue' => '#0000ff', 'ירוק' => '#008000', 'green' => '#008000',
+    'שחור' => '#000000', 'black' => '#000000', 'צהוב' => '#b8860b', 'yellow' => '#b8860b', 'סגול' => '#800080', 'magenta' => '#800080'];
+
+/** מפצל ל-; מחוץ למירכאות ולסוגריים. */
+function fmt_sections(string $p): array
 {
-    $s = trim($raw);
-    if ($s === '' || !is_numeric($s)) return $s;
-    if (!preg_match('/[#0,]*[#0](?:\.[#0]+)?/', $pattern, $core, PREG_OFFSET_CAPTURE)) return $s;
-    [$c, $at] = $core[0];
-    $n = (float)$s * (str_contains($pattern, '%') ? 100 : 1);
-    [$intPart, $frac] = array_pad(explode('.', $c), 2, '');
+    $ch = mb_str_split($p);
+    $out = [''];
+    $q = $b = false;
+    for ($i = 0, $n = count($ch); $i < $n; $i++) {
+        $c = $ch[$i];
+        if ($c === '\\' && !$q) { $out[count($out) - 1] .= $c . ($ch[$i + 1] ?? ''); $i++; continue; }
+        if ($c === '"') $q = !$q;
+        elseif (!$q && $c === '[') $b = true;
+        elseif (!$q && $c === ']') $b = false;
+        if ($c === ';' && !$q && !$b) { $out[] = ''; continue; }
+        $out[count($out) - 1] .= $c;
+    }
+    return $out;
+}
+
+/** [צבע] → [החלק בלי התגיות, הצבע]. */
+function fmt_color_tag(string $sec): array
+{
+    $color = null;
+    $sec = preg_replace_callback('/\[([^\]]*)\]/u', function ($m) use (&$color) {
+        $k = mb_strtolower(trim($m[1]));
+        if (isset(FMT_COLORS[$k])) $color = FMT_COLORS[$k];
+        return '';
+    }, $sec);
+    return [$sec, $color];
+}
+
+/** מסכה: תווי תבנית במקומם, טקסט קבוע (מירכאות, \x) — \x01. מחזיר [מערך תווים של המסכה, מערך הטקסט]. */
+function fmt_masked(string $sec): array
+{
+    $ch = mb_str_split($sec);
+    $m = $lit = [];
+    for ($i = 0, $n = count($ch); $i < $n; $i++) {
+        $c = $ch[$i];
+        if ($c === '"') {
+            $j = $i + 1;
+            while ($j < $n && $ch[$j] !== '"') { $m[] = "\x01"; $lit[] = $ch[$j]; $j++; }
+            $i = $j; continue;
+        }
+        if ($c === '\\') { $m[] = "\x01"; $lit[] = $ch[$i + 1] ?? ''; $i++; continue; }
+        $m[] = $c; $lit[] = $c;
+    }
+    return [$m, $lit];
+}
+
+/** חיפוש ביטוי במסכה — מחזיר [התאמות, אינדקס בתווים] או null. */
+function fmt_find(string $re, array $m): ?array
+{
+    $str = implode('', $m);
+    if (!preg_match($re . 'u', $str, $r, PREG_OFFSET_CAPTURE)) return null;
+    $groups = array_map(fn($g) => is_array($g) ? $g[0] : $g, $r);
+    return [$groups, mb_strlen(substr($str, 0, $r[0][1]))];
+}
+
+function fmt_lit(array $lit, int $from, ?int $to = null): string
+{
+    return implode('', array_slice($lit, $from, $to === null ? null : $to - $from));
+}
+
+/** מספר לפי ליבה (#,##0.00), בלי סימן. */
+function fmt_plain(string $core, float $n): string
+{
+    [$intPart, $frac] = array_pad(explode('.', $core), 2, '');
     $minDec = substr_count($frac, '0');
     $maxDec = strlen($frac);
-    // ספרות עשרוניות: חובה עד מספר האפסים, ואחריהן — רק מה שאינו אפס בסוף
     [$i, $f] = array_pad(explode('.', number_format(abs($n), $maxDec, '.', '')), 2, '');
     $f = substr($f, 0, $minDec) . rtrim(substr($f, $minDec), '0');
-    $str = $i . ($f !== '' ? '.' . $f : '');
-    [$i, $f] = array_pad(explode('.', $str), 2, '');
     $i = str_pad($i, substr_count($intPart, '0'), '0', STR_PAD_LEFT);
-    if (str_contains($intPart, ',')) $i = number_format((float)$i, 0, '.', ',');
+    if (str_contains($intPart, ',')) $i = preg_replace('/\B(?=(\d{3})+(?!\d))/', ',', $i);
     if (substr_count($intPart, '0') === 0 && $i === '0' && $f !== '') $i = '';
-    return ($n < 0 ? '-' : '') . substr($pattern, 0, $at) . $i . ($f !== '' ? '.' . $f : '') . substr($pattern, $at + strlen($c));
+    return $i . ($f !== '' ? '.' . $f : '');
+}
+
+/** מסכה של ספרות: הספרות ממלאות מימין; עודף — בתחילה. */
+function fmt_digit_mask(array $m, array $lit, string $raw): string
+{
+    $ph = count(array_keys($m, '0', true));
+    $dg = preg_replace('/\D/', '', $raw);
+    if (strlen($dg) < $ph) $dg = str_pad($dg, $ph, '0', STR_PAD_LEFT);
+    $out = '';
+    $k = strlen($dg);
+    for ($i = count($m) - 1; $i >= 0; $i--) $out = ($m[$i] === '0' ? $dg[--$k] : $lit[$i]) . $out;
+    return substr($dg, 0, $k) . $out;
+}
+
+function fmt_is_mask(array $m): bool
+{
+    $s = implode('', $m);
+    return (bool)preg_match('/^[0\-\s()\/\x01]+$/u', $s) && (bool)preg_match('/0[^0]+0/u', $s);
+}
+
+/** חלק אחד של מבנה מספר. $sign — להוסיף מינוס (כשאין חלק נפרד לשלילי). */
+function fmt_num_section(string $sec, float $n, bool $sign): string
+{
+    [$m, $lit] = fmt_masked($sec);
+    $minus = $sign && $n < 0 ? '-' : '';
+    if (fmt_is_mask($m)) return $minus . fmt_digit_mask($m, $lit, (string)(int)round(abs($n)));
+    if ($r = fmt_find('/([#0]+)(?:\.([#0]+))?E([+-])(0+)/', $m)) { // מדעי
+        [$g, $at] = $r;
+        $a = abs($n);
+        $dec = strlen($g[2] ?? '');
+        $e = $a == 0 ? 0 : (int)floor(log10($a));
+        $mant = $a == 0 ? 0.0 : $a / 10 ** $e;
+        if ((float)number_format($mant, $dec, '.', '') >= 10) { $e++; $mant /= 10; }
+        $body = number_format($mant, $dec, '.', '') . 'E' . ($e < 0 ? '-' : ($g[3] === '+' ? '+' : '')) . str_pad((string)abs($e), strlen($g[4]), '0', STR_PAD_LEFT);
+        return $minus . fmt_lit($lit, 0, $at) . $body . fmt_lit($lit, $at + mb_strlen($g[0]));
+    }
+    if ($r = fmt_find('/(?:([#0]+)\s+)?(\?+)\/(\?+|\d+)/', $m)) { // שבר
+        [$g, $at] = $r;
+        $a = abs($n);
+        $fixed = ctype_digit($g[3]) ? (int)$g[3] : 0;
+        $hasWhole = ($g[1] ?? '') !== '';
+        $whole = $hasWhole ? (int)floor($a) : 0;
+        $x = $a - $whole;
+        if ($fixed) { $nu = (int)round($x * $fixed); $de = $fixed; }
+        else {
+            $nu = 0; $de = 1; $err = INF;
+            for ($d = 1, $max = 10 ** strlen($g[3]) - 1; $d <= $max; $d++) {
+                $nn = (int)round($x * $d); $ee = abs($x - $nn / $d);
+                if ($ee < $err - 1e-12) { $err = $ee; $nu = $nn; $de = $d; }
+            }
+        }
+        $w = $whole;
+        if ($nu === $de) { $w++; $nu = 0; }
+        $fr = $nu ? "$nu/$de" : '';
+        $body = $hasWhole ? (($w || $fr === '') ? (string)$w : '') . ($w && $fr !== '' ? ' ' : '') . $fr : ($fr !== '' ? $fr : '0');
+        return $minus . fmt_lit($lit, 0, $at) . $body . fmt_lit($lit, $at + mb_strlen($g[0]));
+    }
+    $r = fmt_find('/[#0,]*[#0](?:\.[#0]+)?/', $m);
+    if (!$r) return fmt_lit($lit, 0);
+    [$g, $at] = $r;
+    $pct = in_array('%', $m, true) ? 100 : 1;
+    return $minus . fmt_lit($lit, 0, $at) . fmt_plain($g[0], $n * $pct) . fmt_lit($lit, $at + mb_strlen($g[0]));
+}
+
+/** מספר לפי מבנה → [טקסט, צבע]. */
+function fmt_number_rich(string $pattern, string $raw): array
+{
+    $s = trim($raw);
+    if ($s === '' || !is_numeric($s)) return [$s, null];
+    $n = (float)$s;
+    $secs = fmt_sections($pattern);
+    $sec = $secs[0]; $sign = true; $neg = false;
+    if ($n < 0 && count($secs) >= 2) { $sec = $secs[1]; $sign = false; $neg = true; }
+    elseif ($n == 0 && count($secs) >= 3) { $sec = $secs[2]; }
+    [$body, $color] = fmt_color_tag($sec);
+    return [fmt_num_section($body, $neg ? abs($n) : $n, $sign), $color];
+}
+
+function fmt_number(string $pattern, string $raw): string
+{
+    return fmt_number_rich($pattern, $raw)[0];
+}
+
+/** טקסט לפי מבנה: @ — הערך עצמו; בלי @ ועם 0 — מסכה של ספרות (טלפון, ת"ז). */
+function fmt_text_rich(string $pattern, string $raw): array
+{
+    $secs = fmt_sections($pattern);
+    [$sec, $color] = fmt_color_tag($secs[count($secs) >= 4 ? 3 : 0]);
+    [$m, $lit] = fmt_masked($sec);
+    if (in_array('@', $m, true)) return [implode('', array_map(fn($c, $l) => $c === '@' ? $raw : $l, $m, $lit)), $color];
+    if (in_array('0', $m, true) && preg_match('/\d/', $raw)) return [fmt_digit_mask($m, $lit, $raw), $color];
+    return [$raw, $color];
 }
 
 function fmt_is_date(array $f): bool
@@ -154,7 +305,53 @@ function fmt_is_number(array $f): bool
 function fmt_apply(array $f, string $raw): ?string
 {
     if (($f['fmt'] ?? '') === '' || $raw === '') return null;
-    if (fmt_is_date($f)) return fmt_date($f['fmt'], $raw);
+    if (fmt_is_date($f)) return fmt_date(fmt_color_tag($f['fmt'])[0], $raw);
     if (fmt_is_number($f)) return fmt_number($f['fmt'], $raw);
+    if (($f['type'] ?? '') === 'text') return fmt_text_rich($f['fmt'], $raw)[0];
     return null;
 }
+
+// ── מבנים שמורים (כמו "מותאם אישית" באקסל): קוד שהמשתמש כתב — נשמר לרשימה שלו, בכל התבניות ──
+const FMT_KINDS = ['number', 'date', 'text'];
+
+function fmt_migrate(PDO $pdo): void
+{
+    $pdo->exec(<<<'SQL'
+        CREATE TABLE IF NOT EXISTS fmt_codes (
+            id         INTEGER PRIMARY KEY,
+            owner_id   INTEGER NOT NULL REFERENCES users(id),
+            kind       TEXT NOT NULL,
+            code       TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE (owner_id, kind, code)
+        );
+        SQL);
+}
+
+function fmt_codes(array $user, array $q): array
+{
+    $st = db()->prepare('SELECT id, kind, code FROM fmt_codes WHERE owner_id = ? ORDER BY id');
+    $st->execute([$user['id']]);
+    return ['ok' => true, 'codes' => array_map(fn($r) => ['id' => (int)$r['id'], 'kind' => $r['kind'], 'code' => $r['code']], $st->fetchAll())];
+}
+
+function fmt_code_save(array $user, array $b): array
+{
+    $kind = in_array($b['kind'] ?? '', FMT_KINDS, true) ? $b['kind'] : throw new ApiError('סוג לא מוכר', 422);
+    $code = mb_substr(trim((string)($b['code'] ?? '')), 0, 80);
+    if ($code === '') throw new ApiError('המבנה ריק', 422);
+    $n = db()->prepare('SELECT COUNT(*) FROM fmt_codes WHERE owner_id = ?');
+    $n->execute([$user['id']]);
+    if ((int)$n->fetchColumn() >= 100) throw new ApiError('עד 100 מבנים שמורים — מחקו כמה', 409);
+    db()->prepare('INSERT OR IGNORE INTO fmt_codes (owner_id, kind, code, created_at) VALUES (?, ?, ?, ?)')->execute([$user['id'], $kind, $code, now_iso()]);
+    return ['ok' => true];
+}
+
+function fmt_code_delete(array $user, array $b): array
+{
+    $st = db()->prepare('DELETE FROM fmt_codes WHERE id = ? AND owner_id = ?');
+    $st->execute([(int)($b['id'] ?? 0), $user['id']]);
+    if (!$st->rowCount()) throw new ApiError('המבנה לא נמצא', 404);
+    return ['ok' => true];
+}
+

@@ -447,7 +447,8 @@
           o.style.textAlign = f.align === 'center' ? 'center' : f.align === 'left' ? 'left' : 'right';
           o.style.alignItems = f.valign === 'top' ? 'flex-start' : f.valign === 'bottom' ? 'flex-end' : 'center';
           if (f.font) o.style.fontFamily = window.DTFonts.family(f.font);
-          if (f.color) o.style.color = f.color; }
+          const fc = window.DTFmt.rich(f, values[f.key] ?? '')?.color;
+          if (fc || f.color) o.style.color = fc || f.color; }
         return o;
       };
       if (f.type === 'calc') {
@@ -505,7 +506,7 @@
         }
       }
       // מבנה מותאם (תאריך עברי, שם חודש, מספר עם פסיקים…): מוצג כשלא עורכים; בהקשה — הערך עצמו לעריכה
-      if (f.fmt && (f.type === 'date' || f.type === 'number') && !inlineText) {
+      if (f.fmt && (f.type === 'date' || f.type === 'number' || f.type === 'text') && !inlineText) {
         const show = el(onPage ? 'span' : 'small', { class: onPage ? 'fmt-show' : 'fmt-preview', 'aria-hidden': onPage ? 'true' : null });
         const wrap = el('span', { class: onPage ? 'fmt-wrap' : 'fmt-form' });
         if (onPage) {
@@ -514,8 +515,10 @@
             alignItems: f.valign === 'top' ? 'flex-start' : f.valign === 'bottom' ? 'flex-end' : 'center' });
         }
         const upd = () => {
-          const t = window.DTFmt.apply(f, n.value);
+          const r = window.DTFmt.rich(f, n.value);
+          const t = r && r.text;
           show.textContent = t ? (onPage ? t : 'יוצג כך: ' + t) : '';
+          if (onPage) show.style.color = (r && r.color) || n.style.color || '';   // [אדום] במבנה — גובר על צבע השדה
           wrap.classList.toggle('has-fmt', !!t);
         };
         n.addEventListener('input', upd);
@@ -628,6 +631,7 @@
         switch (f.type) {
           case 'date': return esc(window.DTFmt.apply(f, v) ?? ddmmyyyy(v));
           case 'number': return esc(window.DTFmt.apply(f, v) ?? v);
+          case 'text': return esc(window.DTFmt.apply(f, v) ?? v);
           case 'system': return esc(sysShown(f, v));
           case 'select': return esc(optText(f, v));
           case 'checkbox': return v === '1' ? '☒' : '☐';
@@ -1284,7 +1288,8 @@
       const page = pages[f.page];
       // הכול בנקודות של הדף הנראה: (bx, by) — הפינה העליונה של השדה, y כלפי מטה
       const { W, H, pt, rot } = frame(page);
-      const ink = inkOf(f);
+      const fc = window.DTFmt.rich(f, raw)?.color;   // [אדום] במבנה (למשל מספר שלילי) — גובר על צבע השדה
+      const ink = fc ? inkOf({ color: fc }) : inkOf(f);
       const bx = f.x * W, by = f.y * H, bw = f.w * W, bh = f.h * H;
 
       if (f.type === 'checkbox') {
