@@ -223,6 +223,7 @@
       roles: (tpl.schema.roles && tpl.schema.roles.length ? tpl.schema.roles : [{ key: 'owner', label: 'אני (המנפיק)', auth: 'none' }]).map(r => ({ ...r })),
       sequential: !!tpl.schema.sequential,
       certificate: !!tpl.schema.certificate,
+      styles: (tpl.schema.styles || []).map(x => ({ ...x })),
       parsed: !!tpl.schema.parsed,
       ...(tpl.schema.body ? { body: tpl.schema.body.map(b => ({ ...b })) } : {}),
     };
@@ -703,7 +704,7 @@
       if (tab === 'design') { panel.replaceChildren(); return; }
       if (tab === 'fields') panel.replaceChildren(fieldsList());
       else if (tab === 'roles') panel.replaceChildren(rolesPanel());
-      else panel.replaceChildren(outputPanel(), numberingPanel(), el('div', { class: 'numbering api-hint' }, el('h2', {}, '🔌 הנפקה ממערכת חיצונית'),
+      else panel.replaceChildren(outputPanel(), isWord || isAuthored ? el('span') : el('div', { class: 'numbering' }, el('h2', {}, '🎨 סגנונות'), stylesPanel()), numberingPanel(), el('div', { class: 'numbering api-hint' }, el('h2', {}, '🔌 הנפקה ממערכת חיצונית'),
         el('p', { class: 'hint' }, 'מערכת חיצונית (CRM, אתר) יכולה להנפיק מסמכים מהתבנית הזאת דרך ה-API, ולקבל הודעה כשמולאו.'),
         el('p', { class: 'small' }, 'מזהה התבנית: ', el('code', { dir: 'ltr' }, String(id))),
         el('a', { class: 'link small', href: '#connections' }, 'מפתחות ודוגמאות — ב"🔌 חיבורים"')),
@@ -870,7 +871,7 @@
     /** מיקום הטקסט בשדה: רשת 3×3 — ימין/מרכז/שמאל × למעלה/אמצע/למטה. */
     // צבע הטקסט: שחור (ברירת המחדל) · כמה מוכנים · כל צבע אחר. ריק = שחור
     const COLORS = [['', 'שחור', '#000000'], ['#0b1f66', 'כחול כהה'], ['#1d4ed8', 'כחול'], ['#b91c1c', 'אדום'], ['#15803d', 'ירוק']];
-    function colorPicker(f) {
+    function colorPicker(f, opts = {}) {
       const custom = el('input', { type: 'color', value: f.color || '#000000', 'aria-label': 'צבע אחר' });
       const row = el('div', { class: 'color-row', role: 'group', 'aria-label': 'צבע הטקסט' });
       const all = el('button', { type: 'button', class: 'link small', onclick: () => {
@@ -887,7 +888,96 @@
       };
       custom.addEventListener('input', () => set(custom.value.toLowerCase() === '#000000' ? '' : custom.value.toLowerCase()));
       paint();
-      return el('div', { class: 'f color-pick' }, el('span', {}, 'צבע הטקסט'), row, all);
+      return el('div', { class: 'f color-pick' }, el('span', {}, 'צבע הטקסט'), row, opts.noAll ? null : all);
+    }
+
+    // ── סגנונות (כמו בוורד): שם + גופן, גודל, צבע ומיקום. שדה מקושר מקבל אותם מהסגנון ──
+    const STYLE_PROPS = ['font', 'fontSize', 'color', 'align', 'valign'];
+    const styleOf = (f) => (f.style && schema.styles.find(x => x.id === f.style)) || null;
+    /** מעתיק מכל סגנון לשדות שלו. סגנון שנמחק — הקישור נופל, המראה נשאר. */
+    function applyStyles() {
+      for (const f of schema.fields) {
+        const st = styleOf(f);
+        if (f.style && !st) f.style = '';
+        if (st) STYLE_PROPS.forEach(k => { f[k] = st[k]; });
+      }
+    }
+    function newStyle(from, name) {
+      const st = { id: 's' + Date.now().toString(36), name: name.slice(0, 40), font: from.font || 0, fontSize: from.fontSize || 11,
+        color: from.color || '', align: from.align || 'right', valign: from.valign || 'middle' };
+      schema.styles.push(st);
+      return st;
+    }
+    /** בגיליון השדה: איזה סגנון — או בלי, או סגנון חדש מהשדה הזה. */
+    function stylePicker(f, after) {
+      const sel = el('select', { 'aria-label': 'סגנון', disabled: readOnly },
+        el('option', { value: '' }, '— בלי סגנון —'),
+        schema.styles.map(st => el('option', { value: st.id }, st.name)),
+        readOnly ? null : el('option', { value: 'new' }, '+ סגנון חדש מהשדה הזה…'),
+        readOnly || !schema.styles.length ? null : el('option', { value: 'manage' }, '✎ עריכת הסגנונות…'));
+      sel.value = f.style || '';
+      sel.addEventListener('change', () => {
+        const v = sel.value;
+        if (v === 'manage') { sel.value = f.style || ''; stylesSheet(after); return; }
+        if (v === 'new') {
+          const name = (prompt('שם הסגנון (למשל: כותרת, טקסט רגיל, הערה)', '') || '').trim();
+          if (!name) { sel.value = f.style || ''; return; }
+          f.style = newStyle(f, name).id;
+        } else f.style = v;
+        applyStyles(); setDirty(true); draw(); after();
+      });
+      return el('label', { class: 'f' }, el('span', {}, '🎨 סגנון'), sel);
+    }
+    /** תצוגה של הסגנון: אותו גופן, גודל יחסי, צבע ויישור. */
+    function styleSample(st) {
+      const n = el('div', { class: 'style-sample' }, st.name || 'אבג', ' · 123');
+      Object.assign(n.style, { fontFamily: st.font ? window.DTFonts.family(st.font) : 'Alef, Arial, sans-serif',
+        fontSize: Math.round(Math.min(40, st.fontSize * 1.3)) + 'px', color: st.color || '#000',
+        textAlign: st.align === 'center' ? 'center' : st.align === 'left' ? 'left' : 'right' });
+      return n;
+    }
+    /** ניהול הסגנונות: שם, גופן, גודל, מיקום, צבע — ומחיקה. כל שינוי חל מיד על השדות של הסגנון. */
+    function stylesPanel() {
+      const box = el('div', { class: 'styles-panel' });
+      const paint = () => {
+        const cards = schema.styles.map(st => {
+          const used = schema.fields.filter(f => f.style === st.id).length;
+          const sample = el('div');
+          const sync = () => { applyStyles(); setDirty(true); draw(); sample.replaceChildren(styleSample(st)); };
+          const name = el('input', { value: st.name, maxlength: 40, 'aria-label': 'שם הסגנון', disabled: readOnly });
+          name.addEventListener('input', () => { st.name = name.value; sync(); });
+          const size = el('input', { type: 'number', min: 6, max: 72, value: st.fontSize, disabled: readOnly });
+          size.addEventListener('input', () => { st.fontSize = Math.max(6, Math.min(72, Number(size.value) || 12)); sync(); });
+          const del = readOnly ? null : el('button', { type: 'button', class: 'link small danger-text', onclick: () => {
+            if (used && !confirm(`ב-${used} שדות. הם ישמרו את המראה הנוכחי, בלי קישור לסגנון. למחוק?`)) return;
+            schema.styles = schema.styles.filter(x => x !== st);
+            applyStyles(); setDirty(true); draw(); paint();
+          } }, 'מחיקה');
+          sample.replaceChildren(styleSample(st));
+          const card = el('div', { class: 'style-card' },
+            el('div', { class: 'style-head' }, name, el('small', { class: 'muted' }, used === 1 ? 'שדה אחד' : used ? `${used} שדות` : 'לא בשימוש'), del),
+            sample,
+            el('div', { class: 'fields two' }, fontPicker(st, sync), el('label', { class: 'f' }, el('span', {}, 'גודל גופן'), size)),
+            positionGrid(st), colorPicker(st, { noAll: true }));
+          // הבוררים (מיקום, צבע) משנים את st ישירות — אחרי כל לחיצה מעדכנים את השדות והתצוגה
+          card.addEventListener('click', () => setTimeout(sync));
+          card.addEventListener('input', () => setTimeout(sync));
+          return card;
+        });
+        box.replaceChildren(...cards,
+          schema.styles.length ? el('span') : el('p', { class: 'hint' }, 'עוד אין סגנונות. סגנון שומר גופן, גודל, צבע ומיקום בשם אחד — ומחילים אותו על שדה בבחירה. שינוי בסגנון משנה את כל השדות שלו.'),
+          readOnly ? el('span') : el('button', { type: 'button', class: 'small', onclick: () => {
+            const nm = (prompt('שם הסגנון', 'סגנון ' + (schema.styles.length + 1)) || '').trim();
+            if (!nm) return;
+            newStyle({}, nm); setDirty(true); paint();
+          } }, '+ סגנון חדש'));
+      };
+      paint();
+      return box;
+    }
+    function stylesSheet(after) {
+      window.DT.sheet('🎨 סגנונות', el('div', { class: 'field-sheet' }, stylesPanel()),
+        { onClose: () => { applyStyles(); draw(); after && after(); } });
     }
 
     function positionGrid(f) {
@@ -1015,11 +1105,15 @@
               '': '— לא —', name: 'שם', id_number: 'ת"ז / ח"פ', phone: 'טלפון', email: 'מייל', address: 'כתובת', notes: 'הערות',
             }) : null),
           onPage ? group('על הדף',
-            textual ? el('div', { class: 'fields two' },
+            textual || f.type === 'checkbox' ? stylePicker(f, render) : null,
+            styleOf(f) ? el('div', { class: 'style-linked' }, styleSample(styleOf(f)),
+              el('p', { class: 'hint' }, `הגופן, הגודל, הצבע והמיקום — מהסגנון "${styleOf(f).name}". שינוי בסגנון משנה את כל השדות שלו; לשינוי רק כאן — "בלי סגנון".`),
+              readOnly ? null : el('button', { type: 'button', class: 'link small', onclick: () => stylesSheet(render) }, '✎ עריכת הסגנון')) : null,
+            textual && !styleOf(f) ? el('div', { class: 'fields two' },
               fontPicker(f, relabel),
               input('גודל גופן', 'fontSize', { type: 'number', min: 6, max: 72 })) : null,
-            textual ? positionGrid(f) : null,
-            textual || f.type === 'checkbox' ? colorPicker(f) : null,
+            textual && !styleOf(f) ? positionGrid(f) : null,
+            (textual || f.type === 'checkbox') && !styleOf(f) ? colorPicker(f) : null,
             textual ? choose('כשהטקסט ארוך מהשדה', 'overflow', OVERFLOW) : null,
             el('p', { class: 'hint' }, `דף ${f.page + 1}. ` + (f.locked ? 'נעול — אי אפשר לגרור.' : 'הזזה וגודל — בגרירה על הדף.'))) : null,
           el('details', { class: 'fs-group adv' }, el('summary', {}, 'מתקדם'),

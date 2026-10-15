@@ -117,6 +117,18 @@ check('צבע: ברירת מחדל ריק (שחור), #B91C1C נשמר באות�
 $cs = fn($x) => clean_schema(['pages' => [['w' => 595, 'h' => 842]], 'fields' => []] + $x)['certificate'];
 check('דף אישור: כבוי כברירת מחדל, נשמר כשמופעל', $cs([]) === false && $cs(['certificate' => true]) === true);
 
+// סגנונות: שדה מקושר מקבל את התצוגה מהסגנון; סגנון שלא קיים — הקישור נופל
+$F = fn($k, $x = []) => ['key' => $k, 'type' => 'text', 'page' => 0, 'x' => .1, 'y' => .1, 'w' => .2, 'h' => .03, 'fontSize' => 9, 'color' => '#15803d'] + $x;
+$sc = clean_schema(['pages' => [['w' => 595, 'h' => 842]],
+    'styles' => [['id' => 'title', 'name' => 'כותרת', 'fontSize' => 18, 'color' => '#B91C1C', 'align' => 'center', 'valign' => 'top', 'font' => 999]],
+    'fields' => [$F('a', ['style' => 'title']), $F('b', ['style' => 'nope']), $F('c')]]);
+$by = array_column($sc['fields'], null, 'key');
+check('סגנון: השדה המקושר מקבל גודל, צבע, יישור ומיקום מהסגנון', $by['a']['style'] === 'title' && $by['a']['fontSize'] === 18
+    && $by['a']['color'] === '#b91c1c' && $by['a']['align'] === 'center' && $by['a']['valign'] === 'top');
+check('סגנון: גופן שאינו מותר — ברירת מחדל', $sc['styles'][0]['font'] === 0 && $by['a']['font'] === 0);
+check('סגנון שלא קיים — הקישור נופל, הערכים של השדה נשארים', $by['b']['style'] === '' && $by['b']['fontSize'] === 9 && $by['b']['color'] === '#15803d');
+check('שדה בלי סגנון — כמו שהוא', $by['c']['style'] === '' && $by['c']['fontSize'] === 9);
+
 foreach (array_merge(glob("$tmp/files/*") ?: [], array_filter(glob("$tmp/{,.}*", GLOB_BRACE) ?: [], 'is_file')) as $p) @unlink($p);
 @rmdir("$tmp/files");
 @rmdir($tmp);
