@@ -964,3 +964,8 @@ dialog.sheet:has(.list-sheet) { width: min(900px, 100vw); }
 .act-btn .act-word { font-size: .72rem; color: var(--muted); }
 .act-btn:hover { background: var(--brand-soft); }
 .act-btn[hidden] { display: none; }
+
+/* תוצאת פירוק ה-PDF — שורה מקופלת מתחת לדף */
+.parse-fold { border: 1px solid var(--line); border-radius: var(--r); padding: 6px 10px; background: var(--surface); }
+.parse-fold > summary { cursor: pointer; font-size: .85rem; color: var(--muted); }
+.parse-fold[open] > summary { margin-bottom: 4px; }
