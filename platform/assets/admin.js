@@ -49,17 +49,21 @@ window.PlatformAdmin = (() => {
     function render() {
         const n = pendingCount();
         const tabs = el('div', { className: 'admin-tabs', role: 'tablist' }, [
-            ['users', '👥 משתמשים', n],
-            ['catalog', '🗂️ אפליקציות', 0],
-            ['probe', '🩺 שרת', 0],
-        ].map(([id, label, count]) => {
-            const b = button(label, () => { tab = id; render(); }, tab === id ? 'active' : '');
+            ['users', '👥', 'משתמשים', n],
+            ['usage', '📊', 'שימוש', 0],
+            ['catalog', '🗂️', 'אפליקציות', 0],
+            ['probe', '🩺', 'שרת', 0],
+        ].map(([id, icon, label, count]) => {
+            const b = button('', () => { tab = id; render(); }, tab === id ? 'active' : '');
+            // בטלפון האייקון מוסתר — ארבע לשוניות בשורה אחת.
+            b.append(el('span', { className: 'tab-ic', textContent: icon, ariaHidden: 'true' }), el('span', { className: 'one', textContent: label }));
             b.role = 'tab';
             b.ariaSelected = String(tab === id);
             if (count) b.append(el('span', { className: 'chip bad', textContent: String(count) }));
             return b;
         }));
-        const body = tab === 'users' ? renderUsers() : tab === 'catalog' ? renderCatalog() : renderProbe();
+        const body = tab === 'users' ? renderUsers() : tab === 'usage' ? renderUsage()
+            : tab === 'catalog' ? renderCatalog() : renderProbe();
         root.replaceChildren(el('div', { className: 'admin' }, [tabs, body]));
     }
 
@@ -312,6 +316,7 @@ window.PlatformAdmin = (() => {
         } else {
             body.push(el('div', { className: 'sheet-sec', textContent: 'פעולות' }), el('div', { className: 'tiles' }, actionTiles(u)));
             if (u.status !== 'pending') body.push(passwordBox(u));
+            if (u.status !== 'pending') body.push(el('div', { className: 'sheet-sec', textContent: 'שימוש באפליקציות · 30 יום' }), userUsage(u));
             if (u.status === 'active' && u.role !== 'admin') {
                 body.push(el('div', { className: 'sheet-sec', textContent: 'מה הוא/היא רואה' }), grantsEditor(u));
             } else if (u.role === 'admin') {
@@ -434,6 +439,183 @@ window.PlatformAdmin = (() => {
                 'קטגוריה מסומנת כוללת גם אפליקציות שיתווספו אליה בעתיד. הרשאה לאפליקציה גוברת על הקטגוריה.' }),
             ...sections, save,
         ]);
+    }
+
+    // ---------- שימוש: כניסות לאפליקציות ----------
+    // הנתונים נרשמים בשער (platform/lib/gate.php) — רק לאפליקציות עם "gate": true.
+
+    let usageDays = 30;
+    const appInfo = (id) => state.apps.find(a => a.id === id) || { id, name: id, icon: '🧩' };
+    const plural = (n, one, many) => n === 1 ? one : `${n.toLocaleString('he-IL')} ${many}`;
+    const usageApi = (extra = '') => P().api(`admin_usage&days=${usageDays}${extra}`);
+
+    function appIc(id) {
+        const a = appInfo(id);
+        const ic = el('span', { className: 'app-ic sm', textContent: a.icon, ariaHidden: 'true' });
+        ic.style.setProperty('--h', P().hue(a.id));
+        return ic;
+    }
+
+    function cellsOf(pairs) {
+        return el('dl', { className: 'cells' }, pairs.map(([k, v]) =>
+            el('div', {}, [el('dt', { textContent: k }), el('dd', { textContent: typeof v === 'number' ? v.toLocaleString('he-IL') : v })])));
+    }
+
+    // גרף עמודות יומי: סדרה אחת בצבע המותג, ציר זמן משמאל לימין (כמקובל בגרפים),
+    // עמודות דקות עם קצה מעוגל, רשת חלשה, ותווית ריחוף לכל עמודה.
+    function barChart(daily) {
+        const NS = 'http://www.w3.org/2000/svg';
+        const svgEl = (tag, attrs) => { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); return n; };
+        // בטלפון — רוחב קטן יותר, כדי שהתוויות לא יתכווצו עם ה-SVG.
+        const W = matchMedia('(max-width: 600px)').matches ? 360 : 640, H = 170, padT = 10, padB = 22, padL = 30, padR = 6;
+        const max = Math.max(1, ...daily.map(d => d.n));
+        const step = Math.max(1, Math.ceil(max / 3));
+        const top = step * Math.ceil(max / step);
+        const plotW = W - padL - padR, plotH = H - padT - padB;
+        const slot = plotW / daily.length, gap = Math.min(2, slot * 0.25), bw = Math.max(1, slot - gap);
+        const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart-svg', role: 'img',
+            'aria-label': `כניסות ליום, ${daily.length} ימים, שיא ${max}` });
+
+        for (let v = 0; v <= top; v += step) {
+            const y = padT + plotH - (v / top) * plotH;
+            svg.append(svgEl('line', { x1: padL, x2: W - padR, y1: y, y2: y, class: v ? 'grid' : 'base' }));
+            const t = svgEl('text', { x: padL - 6, y: y + 3.5, class: 'tick', 'text-anchor': 'end' });
+            t.textContent = v;
+            svg.append(t);
+        }
+        const fmt = (d) => { const [, m, day] = d.split('-'); return `${+day}.${+m}`; };
+        const labelAt = new Set([0, Math.floor((daily.length - 1) / 2), daily.length - 1]);
+        const tip = el('div', { className: 'chart-tip', hidden: true });
+
+        daily.forEach((d, i) => {
+            const x = padL + i * slot + gap / 2;
+            const h = (d.n / top) * plotH;
+            const y = padT + plotH - h;
+            if (d.n > 0) {
+                const r = Math.min(4, bw / 2, h);
+                svg.append(svgEl('path', { class: 'bar', d:
+                    `M${x},${y + h} V${y + r} Q${x},${y} ${x + r},${y} H${x + bw - r} Q${x + bw},${y} ${x + bw},${y + r} V${y + h} Z` }));
+            }
+            if (labelAt.has(i)) {
+                const t = svgEl('text', { x: x + bw / 2, y: H - 6, class: 'tick', 'text-anchor': i === 0 ? 'start' : i === daily.length - 1 ? 'end' : 'middle' });
+                t.textContent = fmt(d.d);
+                svg.append(t);
+            }
+            // אזור ריחוף בגובה כל הגרף — גדול מהעמודה, קל לפגוע בו גם באצבע.
+            const hit = svgEl('rect', { x: padL + i * slot, y: padT, width: slot, height: plotH, class: 'hit' });
+            const show = () => {
+                tip.textContent = `${fmt(d.d)} · ${plural(d.n, 'כניסה אחת', 'כניסות')}`;
+                tip.hidden = false;
+                tip.style.left = `${((padL + (i + 0.5) * slot) / W) * 100}%`;
+            };
+            hit.addEventListener('mouseenter', show);
+            hit.addEventListener('click', show);
+            svg.append(hit);
+        });
+        svg.addEventListener('mouseleave', () => { tip.hidden = true; });
+        return el('div', { className: 'chart', dir: 'ltr' }, [svg, tip]);
+    }
+
+    function daysSeg(onChange) {
+        return el('div', { className: 'seg days', role: 'radiogroup', ariaLabel: 'טווח' }, [[7, '7 ימים'], [30, '30 יום'], [90, '90 יום']].map(([d, label]) => {
+            const input = el('input', { type: 'radio', name: 'udays', value: d, checked: usageDays === d });
+            input.addEventListener('change', () => { usageDays = d; onChange(); });
+            return el('label', {}, [input, el('span', { textContent: label })]);
+        }));
+    }
+
+    function renderUsage() {
+        const box = el('div', {}, [el('p', { className: 'status', textContent: 'טוען…' })]);
+        const load = async () => {
+            let data;
+            try { data = await usageApi(); } catch (err) { box.replaceChildren(el('p', { className: 'status error', textContent: err.message })); return; }
+            const appRows = data.apps.map(a => {
+                const info = appInfo(a.app);
+                const sub = [plural(a.n, 'כניסה אחת', 'כניסות'), plural(a.users, 'משתמש אחד', 'משתמשים')];
+                if (a.guests) sub.push(`${a.guests} מאורחים`);
+                sub.push(`אחרונה ${relTime(a.last)}`);
+                const row = el('button', { type: 'button', className: 'u-main' }, [
+                    appIc(a.app),
+                    el('span', { className: 'u-tx' }, [
+                        el('span', { className: 'u-l1' }, [el('b', { textContent: info.name })]),
+                        el('small', { textContent: sub.join(' · ') }),
+                        el('span', { className: 'track' }, [Object.assign(el('span'), { style: `width:${(a.n / data.apps[0].n) * 100}%` })]),
+                    ]),
+                ]);
+                row.addEventListener('click', () => openAppUsage(a.app));
+                return el('li', { className: 'urow' }, [row, el('span', { className: 'app-go', textContent: '‹', ariaHidden: 'true' })]);
+            });
+            const userRows = data.users.slice(0, 10).map(u => el('li', { className: 'urow' }, [el('div', { className: 'u-main static' }, [
+                P().avatar({ display_name: u.name, username: u.username }),
+                el('span', { className: 'u-tx' }, [el('b', { textContent: u.name }), el('small', { textContent: `${plural(u.n, 'כניסה אחת', 'כניסות')} · אחרונה ${relTime(u.last)}` })]),
+            ])]));
+            const cells = [['כניסות', data.total], ['משתמשים ייחודיים', data.unique]];
+            if (data.guests) cells.push(['כניסות של אורחים', data.guests]);
+            box.replaceChildren(
+                daysSeg(load),
+                el('p', { className: 'muted small hint-line', textContent: 'כל פתיחה של אפליקציה נספרת פעם אחת לכל 30 דקות. אורח = דף ציבורי בלי כניסה.' }),
+                cellsOf(cells),
+                el('h3', { textContent: 'כניסות ליום' }),
+                barChart(data.daily),
+                el('h3', { textContent: 'לפי אפליקציה' }),
+                el('ul', { className: 'list' }, appRows.length ? appRows : [el('li', { className: 'empty', textContent: 'עוד אין כניסות בטווח הזה' })]),
+                ...(userRows.length ? [el('h3', { textContent: 'המשתמשים הפעילים' }), el('ul', { className: 'list' }, userRows)] : []),
+            );
+        };
+        load();
+        return box;
+    }
+
+    async function openAppUsage(appId) {
+        const info = appInfo(appId);
+        const close = el('button', { type: 'button', className: 'icon-btn', textContent: '✕', ariaLabel: 'סגירה' });
+        const body = el('div', { className: 'sheet-body' }, [el('p', { className: 'status', textContent: 'טוען…' })]);
+        const dlg = el('dialog', { className: 'user-sheet' }, [el('div', { className: 'sheet' }, [
+            el('div', { className: 'sheet-head' }, [appIc(appId), el('div', { className: 'tx' }, [
+                el('h2', { textContent: info.name }), el('small', { textContent: `שימוש · ${usageDays} ימים אחרונים` }),
+            ]), close]),
+            body,
+        ])]);
+        close.addEventListener('click', () => dlg.close());
+        dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+        dlg.addEventListener('close', () => dlg.remove());
+        document.body.append(dlg);
+        dlg.showModal();
+
+        let data;
+        try { data = await usageApi(`&app=${encodeURIComponent(appId)}`); } catch (err) { body.replaceChildren(el('p', { className: 'status error', textContent: err.message })); return; }
+        const cells = [['כניסות', data.total], ['משתמשים', data.unique]];
+        if (data.guests) cells.push(['אורחים', data.guests]);
+        const who = data.users.map(u => el('li', { className: 'urow' }, [el('div', { className: 'u-main static' }, [
+            P().avatar({ display_name: u.name, username: u.username }),
+            el('span', { className: 'u-tx' }, [el('b', { textContent: u.name }), el('small', { textContent: `${plural(u.n, 'כניסה אחת', 'כניסות')} · אחרונה ${relTime(u.last)}` })]),
+        ])]));
+        const recent = data.recent.map(r => el('li', { className: 'vrow' }, [
+            el('span', { className: 'one', textContent: r.name ?? 'אורח' }),
+            el('span', { className: 'muted one dev', dir: 'ltr', textContent: r.device }),
+            el('time', { className: 'muted', dateTime: r.at, textContent: fullTime(r.at), title: relTime(r.at) }),
+        ]));
+        body.replaceChildren(
+            cellsOf(cells),
+            el('div', { className: 'sheet-sec', textContent: 'כניסות ליום' }), barChart(data.daily),
+            ...(who.length ? [el('div', { className: 'sheet-sec', textContent: 'מי נכנס' }), el('ul', { className: 'list' }, who)] : []),
+            el('div', { className: 'sheet-sec', textContent: 'כניסות אחרונות' }),
+            el('ul', { className: 'list' }, recent.length ? recent : [el('li', { className: 'empty', textContent: 'אין כניסות בטווח הזה' })]),
+        );
+    }
+
+    // בגיליון המשתמש: לאילו אפליקציות נכנס ב-30 הימים האחרונים.
+    function userUsage(u) {
+        const box = el('div', {}, [el('p', { className: 'muted small', textContent: 'טוען…' })]);
+        P().api(`admin_usage&days=30&user=${u.id}`).then(data => {
+            if (!data.apps.length) { box.replaceChildren(el('p', { className: 'muted small', textContent: 'לא נכנס/ה לאף אפליקציה בתקופה הזו.' })); return; }
+            box.replaceChildren(el('ul', { className: 'list' }, data.apps.map(a => el('li', { className: 'urow' }, [el('div', { className: 'u-main static' }, [
+                appIc(a.app),
+                el('span', { className: 'u-tx' }, [el('b', { textContent: appInfo(a.app).name }),
+                    el('small', { textContent: `${plural(a.n, 'כניסה אחת', 'כניסות')} · אחרונה ${relTime(a.last)}` })]),
+            ])]))));
+        }).catch(() => box.replaceChildren(el('p', { className: 'muted small', textContent: 'לא ניתן לטעון את השימוש.' })));
+        return box;
     }
 
     // ---------- קטגוריות ואפליקציות ----------

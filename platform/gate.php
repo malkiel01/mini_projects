@@ -11,7 +11,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/lib/gate.php';
 
-use function Platform\Gate\{decide, deny, base_url};
+use function Platform\Gate\{decide, deny, base_url, record_visit};
 
 const TYPES = [
     'html' => 'text/html; charset=utf-8', 'htm' => 'text/html; charset=utf-8',
@@ -62,6 +62,7 @@ $verdict = decide($app, $rel, array_diff_key($_GET, ['__gate_app' => 1, '__gate_
 if ($verdict !== null) {
     deny($verdict, $base);
 }
+if (in_array($ext, ['html', 'htm'], true)) record_visit($app);
 
 // ---- הגשה ----
 $size  = filesize($file);

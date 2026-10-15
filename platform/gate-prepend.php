@@ -31,4 +31,5 @@
     if ($verdict !== null) {
         \Platform\Gate\deny($verdict, \Platform\Gate\base_url($_SERVER['SCRIPT_NAME'] ?? '/', $rel));
     }
+    \Platform\Gate\record_visit($app);
 })();

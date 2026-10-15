@@ -267,9 +267,10 @@ button:disabled { opacity: .55; cursor: default; }
 .page-title { display: flex; align-items: center; gap: var(--s2); font-size: 1.3rem; font-weight: 700; margin: var(--s2) 0 var(--s3); }
 .admin h3 { margin: var(--s5) 0 var(--s2); font-size: .82rem; font-weight: 700; color: var(--muted); }
 .admin { margin-top: var(--s2); }
-.admin-tabs { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 4px; padding: 4px; margin-bottom: var(--s3);
+.admin-tabs { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; padding: 4px; margin-bottom: var(--s3);
     background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); }
-.admin-tabs .btn { border: 0; min-height: 38px; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: none; }
+.admin-tabs .btn { min-width: 0; padding: 0 4px; border: 0; min-height: 38px; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: none; }
+@media (max-width: 480px) { .admin-tabs .tab-ic { display: none; } }
 .admin-tabs .btn.active { background: var(--brand); color: var(--brand-ink); }
 .yes { color: var(--ok); }
 .no  { color: var(--muted); }
@@ -341,7 +342,8 @@ button.tile { cursor: pointer; text-align: start; font: inherit; font-size: .88r
 @media (min-width: 600px) { .user-sheet { width: min(560px, 100vw - 32px); } }
 .user-sheet .grants { margin: 0; border: 0; padding: 0; }
 .user-sheet .save-grants { position: sticky; bottom: 0; width: 100%; min-height: 44px; margin-top: var(--s2); }
-.admin-tabs .chip { margin-inline-start: 4px; min-height: 18px; padding: 0 6px; }
+.admin-tabs .btn { position: relative; }
+.admin-tabs .chip { position: absolute; top: 1px; inset-inline-end: 1px; min-height: 16px; padding: 0 5px; font-size: .65rem; }
 
 .notify { display: flex; align-items: center; gap: var(--s3); padding: 10px var(--s3); margin-bottom: var(--s3);
     background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); }
@@ -354,6 +356,31 @@ button.tile { cursor: pointer; text-align: start; font: inherit; font-size: .88r
 .notify.on .notify-tx small { color: var(--ok); }
 .notify-btns { display: flex; gap: 6px; flex: none; }
 .btn.sm { min-height: 34px; padding: 0 10px; font-size: .84rem; }
+
+/* --- שימוש --- */
+.hint-line { margin: 0 0 var(--s2); }
+.seg.days { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.admin .cells { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+.cells dd { font-size: 1.05rem; }
+.chart { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s2) var(--s2) 2px; }
+.chart-svg { display: block; width: 100%; height: auto; }
+.chart-svg .grid { stroke: var(--line); stroke-width: 1; }
+.chart-svg .base { stroke: color-mix(in srgb, var(--muted) 50%, var(--line)); stroke-width: 1; }
+.chart-svg .tick { fill: var(--muted); font-size: 11px; font-family: inherit; }
+.chart-svg .bar { fill: var(--brand); }
+.chart-svg .hit { fill: transparent; cursor: pointer; }
+.chart-svg .hit:hover { fill: color-mix(in srgb, var(--brand) 8%, transparent); }
+.chart-tip { position: absolute; top: 4px; transform: translateX(-50%); background: var(--ink); color: var(--bg); font-size: .78rem;
+    padding: 3px 8px; border-radius: 6px; white-space: nowrap; pointer-events: none; direction: rtl; }
+.app-ic.sm { width: 36px; height: 36px; font-size: 1.15rem; border-radius: 10px; }
+.u-main.static { cursor: default; }
+.u-main.static b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.track { display: block; height: 4px; border-radius: 99px; background: var(--bg); overflow: hidden; margin-top: 4px; }
+.track > span { display: block; height: 100%; background: var(--brand); border-radius: 99px; }
+.vrow { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto; gap: var(--s2); align-items: center;
+    padding: 10px var(--s3); border-top: 1px solid var(--line); font-size: .85rem; }
+.vrow:first-child { border-top: 0; }
+.vrow .dev { text-align: right; }
 
 /* ===== טוסט ===== */
 .toast {
