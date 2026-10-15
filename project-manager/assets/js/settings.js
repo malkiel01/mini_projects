@@ -67,6 +67,22 @@ const Settings = (() => {
                 toast(t('נשמר: מע"מ {n}%', { n: state.vatRate }));
             });
         });
+        // סיווג חכם (שלב 12)
+        $('#ai-form').addEventListener('submit', async e => {
+            e.preventDefault();
+            const f = $('#ai-form'), el = f.elements;
+            formError(f, '');
+            await busy($('button.primary', f), f, async () => {
+                ({ ai: state.ai } = await api('ai-settings', { body: { key: el.key.value.trim(), on: el.on.checked, daily_max: Number(el.daily_max.value || 0) } }));
+                el.key.value = '';
+                fillAi();
+                toast(t('נשמר'));
+            });
+        });
+        $('#ai-key-del').addEventListener('click', async () => {
+            if (!confirm(t('למחוק את המפתח? הסיווג החכם יפסיק לעבוד.'))) return;
+            try { ({ ai: state.ai } = await api('ai-settings', { body: { key: '-' } })); fillAi(); } catch (e) { toast(e.message, true); }
+        });
         $('#max-upload-form').addEventListener('submit', async e => {
             e.preventDefault();
             await busy($('#max-upload-form .btn'), null, async () => {
@@ -115,6 +131,16 @@ const Settings = (() => {
         el.notify_contacts.checked = c.notify_contacts !== false;
     }
 
+    function fillAi() {
+        const a = state.ai || {}, el = $('#ai-form').elements;
+        el.on.checked = a.has_key ? a.on : true;
+        el.daily_max.value = a.daily_max ?? 300;
+        el.key.placeholder = a.has_key ? t('מוגדר ({hint}) — להחלפה מקלידים מפתח חדש', { hint: a.key_hint }) : 'sk-ant-…';
+        $('#ai-status').textContent = !a.has_key ? t('לא מוגדר — חסר מפתח.')
+            : a.on ? t('פעיל · היום {n} סיווגים מתוך {max}', { n: a.today || 0, max: a.daily_max }) : t('כבוי');
+        $('#ai-key-del').hidden = !a.has_key || a.from_env;
+    }
+
     function show(pane, sub = '') {
         bind();
         // מנהל רואה רק "הודעות"; המפתח — הכול
@@ -123,6 +149,7 @@ const Settings = (() => {
         $$('#view-settings [data-set]').forEach(a => a.setAttribute('aria-selected', String(a.dataset.set === pane)));
         $$('#view-settings .pane').forEach(el => { el.hidden = el.id !== 'set-' + pane; });
         if (pane === 'general') {
+            fillAi();
             $('#standalone').checked = !!state.standalone;
             $('#max-upload').value = Math.round(state.maxUpload / 1048576);
             $('#vat-rate').value = state.vatRate ?? 18;

@@ -18,6 +18,83 @@
 const Share = (() => {
     let items = [], projects = [], folders = [], recent = [], project = null, bound = false, saving = false, urls = [];
     let nativeTarget = null; // "פרויקט:תיקייה" — שיתוף שהגיע דרך קיצור של תיקייה באנדרואיד
+    // שלב 12 — סיווג חכם: מה Claude זיהה בקובץ הראשון, ולאן הוא מציע. נשמר לשיתוף הזה (key) — לא מסווגים פעמיים
+    let ai = { key: '', busy: false, res: null, error: '' };
+    const AI_ICON = { invoice: '🧾', receipt: '💳', quote: '💬', contract: '📄', plan: '📐', site_photo: '📷', other: '📎' };
+    const AI_LABEL = { invoice: 'חשבונית', receipt: 'קבלה / אסמכתה', quote: 'הצעת מחיר', contract: 'חוזה', plan: 'תוכנית', site_photo: 'תמונה מהשטח', other: 'מסמך' };
+
+    /** עד 2 עמודים כ-JPEG מוקטן: תמונה — כמו שהיא; PDF — העמודים הראשונים (pdf.js). אחר — לא מסווגים. */
+    async function aiPages(file) {
+        const jpg = (src, w, h) => {
+            const k = Math.min(1, 1500 / Math.max(w, h)), c = document.createElement('canvas');
+            c.width = Math.round(w * k); c.height = Math.round(h * k);
+            c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+            return c.toDataURL('image/jpeg', 0.82).split(',')[1];
+        };
+        if (file.type.startsWith('image/') && 'createImageBitmap' in window) {
+            const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+            return [jpg(bmp, bmp.width, bmp.height)];
+        }
+        if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+            const doc = await Viewer.pdfDoc(await file.arrayBuffer());
+            const out = [];
+            for (let n = 1; n <= Math.min(2, doc.numPages); n++) {
+                const c = await Viewer.drawPage(await doc.getPage(n), 1000);
+                out.push(jpg(c, c.width, c.height));
+            }
+            return out;
+        }
+        return [];
+    }
+
+    /** מסווג את הקובץ הראשון בשיתוף (פעם אחת), ומצייר מחדש כשיש תשובה. */
+    async function classify() {
+        const first = entries()[0];
+        if (!state.ai?.on || !first) return;
+        const key = `${first.item.id}:${first.i}:${first.file.name}:${first.file.size}`;
+        if (ai.key === key) return;
+        ai = { key, busy: true, res: null, error: '' };
+        renderProjects();
+        try {
+            const pages = await aiPages(first.file);
+            if (!pages.length) { ai.busy = false; renderProjects(); return; }
+            const r = await api('ai-classify', { body: { pages, name: first.file.name } });
+            if (ai.key === key) ai.res = r;
+        } catch (e) { if (ai.key === key) ai.error = e.message; }
+        if (ai.key === key) { ai.busy = false; if (!project) renderProjects(); }
+    }
+
+    /** מה שזוהה, בשורה אחת: "חשבונית · אינסטלטור כהן · ₪4,500 · 12.10" — גם להערה על הקובץ. */
+    function aiLine(a) {
+        return [t(AI_LABEL[a.doc_type] || 'מסמך') + (a.doc_number ? ' ' + a.doc_number : ''), a.supplier, a.amount != null ? money(a.amount) : '',
+            a.date ? shortDate(a.date) : ''].filter(Boolean).join(' · ');
+    }
+
+    function aiCard() {
+        if (!state.ai?.on || !entries().length) return '';
+        const head = `<li class="share-sec" role="presentation">🤖 ${esc(t('הצעה של Claude'))}</li>`;
+        if (ai.busy) return head + `<li class="card static ai-wait"><span class="ficon" aria-hidden="true">⏳</span><div class="body"><div class="l1"><span class="one">${esc(t('Claude קורא את הקובץ…'))}</span></div>
+            <div class="l2">${esc(t('בינתיים אפשר לבחור לבד למטה'))}</div></div></li>`;
+        if (ai.error) return head + `<li class="card static"><span class="ficon" aria-hidden="true">⚠️</span><div class="body"><div class="l1"><span class="one">${esc(t('לא הצלחתי לזהות'))}</span></div>
+            <div class="l2 one">${esc(ai.error)}</div></div></li>`;
+        if (!ai.res) return '';
+        const a = ai.res.ai, s = ai.res.suggest;
+        if (!s) return head + `<li class="card static"><span class="ficon" aria-hidden="true">${AI_ICON[a.doc_type] || '📎'}</span><div class="body">
+            <div class="l1"><span class="one">${esc(aiLine(a))}</span></div><div class="l2 one">${esc(t('לא ברור לאיזה פרויקט — בחר למטה'))}</div></div></li>`;
+        return head + `<li class="card quick ai-suggest" data-ai="${s.project_id}:${s.folder_id}" tabindex="0" role="button" aria-label="${esc(t('שמירה ל-{path} ב{project}', { path: s.path, project: s.project }))}">
+            <span class="ficon" aria-hidden="true">${AI_ICON[a.doc_type] || '📎'}</span>
+            <div class="body"><div class="l1"><span class="one">${esc(s.project)} / ${esc(s.path.split(' / ').pop())}</span></div>
+                <div class="l2 one">${esc(aiLine(a))}</div>
+                ${s.reason ? `<div class="l2 muted one">${esc(s.reason)}</div>` : ''}</div>
+            <span class="go" aria-hidden="true">⤴</span></li>`;
+    }
+
+    /** סוג והערה לקובץ שזוהה (רק לקובץ הראשון — הוא שסווג). */
+    function aiFinish(it, i) {
+        const a = ai.res?.ai, first = entries()[0];
+        if (!a || !first || first.item !== it || first.i !== i) return {};
+        return { type: a.file_type, note: aiLine(a) };
+    }
 
     /** האחרונים — לאפליקציית האנדרואיד, לקיצורי השיתוף הישיר. */
     function pushNative(list) { try { window.PMNative?.setRecent(JSON.stringify(list || [])); } catch { /* גרסה ישנה של האפליקציה */ } }
@@ -53,13 +130,14 @@ const Share = (() => {
         });
         $('#share-targets').addEventListener('click', e => {
             if (saving) return;
-            const el = e.target.closest('[data-inbox], [data-newfolder], [data-folder], [data-project], [data-recent]');
+            const el = e.target.closest('[data-inbox], [data-newfolder], [data-folder], [data-project], [data-recent], [data-ai]');
             if (!el) return;
             e.stopPropagation();
             if (el.dataset.inbox) saveToInbox(Number(el.dataset.inbox));
             else if (el.dataset.newfolder !== undefined) newFolder(Number(el.dataset.newfolder) || null);
             else if (el.dataset.folder) save(project.id, Number(el.dataset.folder));
             else if (el.dataset.recent) { const [p, f] = el.dataset.recent.split(':').map(Number); save(p, f); }
+            else if (el.dataset.ai) { const [p, f] = el.dataset.ai.split(':').map(Number); save(p, f); }
             else if (entries().length) location.hash = '#/share/' + el.dataset.project;
             else save(Number(el.dataset.project), 0); // רק טקסט — ישר לציר הזמן
         });
@@ -162,6 +240,7 @@ const Share = (() => {
             recent = R.recent;
         } catch (e) { toast(e.message, true); return; }
         renderProjects();
+        classify();
     }
 
     function renderProjects() {
@@ -170,7 +249,7 @@ const Share = (() => {
         const list = projects.filter(p => !q || [p.name, p.address, p.client_name].some(s => (s || '').toLowerCase().includes(q)));
         // אחרונים: לחיצה אחת שומרת לשם. בחיפוש — רק אלה שמתאימים
         const rec = hasFiles ? recent.filter(r => !q || [r.project, r.path].some(s => s.toLowerCase().includes(q))) : [];
-        $('#share-targets').innerHTML = (rec.length ? `<li class="share-sec" role="presentation">🕘 ${esc(t('אחרונים'))}</li>`
+        $('#share-targets').innerHTML = (q ? '' : aiCard()) + (rec.length ? `<li class="share-sec" role="presentation">🕘 ${esc(t('אחרונים'))}</li>`
             + rec.map((r, i) => `<li class="card quick" data-recent="${r.project_id}:${r.folder_id}" tabindex="0" role="button"
                     aria-label="${esc(t('שמירה ל-{path} ב{project}', { path: r.path, project: r.project }))}">
                 <span class="ficon" aria-hidden="true">${r.icon}</span>
@@ -248,14 +327,16 @@ const Share = (() => {
                 api('share-recent', { body: { folder_id: folder } }).then(r => pushNative(r.recent)).catch(() => {}); // לראש "אחרונים"
             }
             for (const it of [...items]) {
+                const order = [...it.files];
                 for (const file of [...it.files]) {
+                    const finish = aiFinish(it, order.indexOf(file)); // סוג והערה ממה שזוהה
                     if (!folder) break;
                     if (file.size > state.maxUpload) { failed.push(file.name); continue; }
                     box.innerHTML = `<div class="up"><span class="one">${esc(file.name)}</span><span>0%</span><i style="width:0"></i></div>`;
                     try {
                         await Files.send(file, pid, folder, pct => {
                             box.innerHTML = `<div class="up"><span class="one">${esc(file.name)}</span><span>${pct}%</span><i style="width:${pct}%"></i></div>`;
-                        });
+                        }, finish);
                         it.files.splice(it.files.indexOf(file), 1);
                         await ShareStore.put(it); // מה שכבר עלה לא יעלה שוב אם יש ניתוק באמצע
                     } catch (e) { failed.push(`${file.name}: ${e.message}`); }

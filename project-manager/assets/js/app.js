@@ -7,7 +7,7 @@ async function init() {
     try {
         const me = await api('me');
         Object.assign(state, { user: me.user, trades: me.trades, templates: me.templates, labels: me.labels, standalone: me.standalone,
-            fileTypes: me.file_types, maxUpload: me.max_upload, msgTemplates: me.msg_templates, msgVars: me.msg_vars || {}, vatRate: me.vat_rate, finAlerts: me.fin_alerts });
+            fileTypes: me.file_types, maxUpload: me.max_upload, msgTemplates: me.msg_templates, msgVars: me.msg_vars || {}, vatRate: me.vat_rate, finAlerts: me.fin_alerts, ai: me.ai || { on: false } });
         // ערכת הנושא של המשתמש — הבחירה בשרת גוברת (עוברת איתו ממכשיר למכשיר)
         if (me.user.theme) Theme.apply(me.user.theme);
     } catch (e) {
