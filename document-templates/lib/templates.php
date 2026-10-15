@@ -239,7 +239,7 @@ function field_default(array $f): string
 
 /** מנקה את מה שהדפדפן שלח: רק סוגים מוכרים, מספרים בטווח, מחרוזות באורך סביר. */
 /** $sources — מקורות הנתונים שמותר לשדה בחירה להפנות אליהם (של השומר, או שכבר היו בתבנית). */
-function clean_schema($s, array $sources = [], array $fonts = [], array $contacts = []): array
+function clean_schema($s, array $sources = [], array $fonts = [], array $contacts = [], array $lists = []): array
 {
     if (!is_array($s)) throw new ApiError('מבנה תבנית לא תקין', 422);
     $num = fn($v, $min, $max) => (float)(is_numeric($v) ? max($min, min($max, (float)$v)) : $min);
@@ -357,6 +357,10 @@ function clean_schema($s, array $sources = [], array $fonts = [], array $contact
             // בחירה מרשימה: קבועה, או ממקור נתונים חיצוני (lib/integrations.php)
             $fields[count($fields) - 1] += clean_select($f, $str, $sources);
         }
+        // רשימת ערכים (lib/lists.php): בחירה — רק ממנה; טקסט — הצעות. מקוננת: שדות מאותה רשימה ברמות קודמות מסננים
+        if (in_array($type, ['select', 'text'], true) && ($ref = clean_list_ref($f['list'] ?? null, $lists))) {
+            $fields[count($fields) - 1]['list'] = $ref;
+        }
         if ($type === 'calc') {
             $fields[count($fields) - 1] += [
                 'formula' => $str($f['formula'] ?? '', 500),
@@ -376,6 +380,7 @@ function clean_schema($s, array $sources = [], array $fonts = [], array $contact
                     // בחירה מרשימה (למשל בודד / מכפלה) — עד 30 אפשרויות
                     + ($ct === 'select' ? ['options' => array_values(array_unique(array_filter(array_map(fn($o) => $str($o, 60),
                         array_slice((array)($c['options'] ?? []), 0, 30)), fn($o) => $o !== '')))] : [])
+                    + (in_array($ct, ['select', 'text'], true) && ($ref = clean_list_ref($c['list'] ?? null, $lists)) ? ['list' => $ref] : [])
                     + ['format' => in_array($c['format'] ?? '', CALC_FORMATS, true) ? $c['format'] : 'number'];
             }
             if (!$cols) $cols[] = ['key' => 'c1', 'label' => 'תיאור', 'type' => 'text', 'format' => 'number'];
@@ -472,7 +477,8 @@ function tpl_set_source(array $user, array $b): array
 function tpl_save(array $user, array $b): array
 {
     $t = tpl_owned((int)($b['id'] ?? 0), $user, 'edit');
-    $json = json_encode(clean_schema($b['schema'] ?? null, allowed_sources($user, $t), allowed_fonts($user, $t), allowed_contacts($user, $t)), JSON_UNESCAPED_UNICODE);
+    $json = json_encode(clean_schema($b['schema'] ?? null, allowed_sources($user, $t), allowed_fonts($user, $t), allowed_contacts($user, $t),
+        allowed_lists($user, $t)), JSON_UNESCAPED_UNICODE);
     if (strlen($json) > TPL_MAX_SCHEMA) throw new ApiError('התבנית גדולה מדי', 413);
 
     $pdo = db();
@@ -553,3 +559,4 @@ function tpl_delete(array $user, array $b): array
 require_once __DIR__ . '/integrations.php';   // בחירה מרשימה, מקורות נתונים
 require_once __DIR__ . '/fonts.php';   // גופנים שהמשתמש העלה
 require_once __DIR__ . '/fmt.php';     // מבנים מותאמים לתצוגת תאריך ומספר
+require_once __DIR__ . '/lists.php';   // רשימות ערכים — שטוחות ומקוננות

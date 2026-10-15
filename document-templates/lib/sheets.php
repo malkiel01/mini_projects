@@ -45,7 +45,8 @@ function sheet_read(string $bytes): array
     return array_map(fn($r) => array_map(fn($i) => trim((string)($r[$i] ?? '')), range(0, max(0, $width - 1))), $rows);
 }
 
-function csv_read(string $bytes): array
+/** $max — כמה שורות לקרוא לכל היותר (הנפקה מאקסל: 1,000; רשימת ערכים: הרבה יותר). */
+function csv_read(string $bytes, int $max = SHEET_MAX_ROWS): array
 {
     if (str_starts_with($bytes, "\xEF\xBB\xBF")) $bytes = substr($bytes, 3);
     if (!mb_check_encoding($bytes, 'UTF-8')) {
@@ -66,13 +67,13 @@ function csv_read(string $bytes): array
     while (($r = fgetcsv($h, 0, $d, '"', '')) !== false) {
         if ($r === [null]) $r = [''];
         $rows[] = array_map(fn($v) => (string)$v, $r);
-        if (count($rows) > SHEET_MAX_ROWS + 1) break;
+        if (count($rows) > $max + 1) break;
     }
     fclose($h);
     return $rows;
 }
 
-function xlsx_read(string $bytes): array
+function xlsx_read(string $bytes, int $max = SHEET_MAX_ROWS): array
 {
     if (!class_exists('ZipArchive')) throw new ApiError('השרת לא תומך בקובצי Excel (חסר ZipArchive). שמרו כ-CSV', 501);
     $tmp = tempnam(sys_get_temp_dir(), 'dtx');
@@ -118,7 +119,7 @@ function xlsx_read(string $bytes): array
         foreach ($ws->sheetData->row as $row) {
             $ri = (int)$row['r'] - 1;
             if ($ri < 0) $ri = count($rows);
-            if ($ri > SHEET_MAX_ROWS + 1) break;
+            if ($ri > $max + 1) break;
             $cells = [];
             $ci = 0;
             foreach ($row->c as $c) {

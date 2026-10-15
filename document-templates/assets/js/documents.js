@@ -270,6 +270,14 @@
     };
     const fields = doc.schema.fields;
     const byKey = Object.fromEntries(fields.map(f => [f.key, f]));
+    // רשימות ערכים: מה כבר נבחר ברמות של אותה רשימה — בשדות, ובשורה של טבלה. שינוי — מרענן את התלויים
+    const listKnown = (id, row, tbl) => {
+      const k = {};
+      for (const x of fields) if (x.list && x.list.id === id && values[x.key]) k[x.list.level] = values[x.key];
+      if (row && tbl) for (const c of tbl.columns || []) if (c.list && c.list.id === id && row[c.key]) k[c.list.level] = row[c.key];
+      return k;
+    };
+    const listRefresh = [];
     const byPh = Object.fromEntries(fields.filter(f => f.placeholder).map(f => [f.placeholder, f]));
     // סדר הטופס: לפי דף, ואז מלמעלה למטה, ואז מימין לשמאל.
     const ordered = [...fields].sort((a, b) => a.page - b.page || (a.y - b.y > 0.01 ? 1 : b.y - a.y > 0.01 ? -1 : b.x - a.x));
@@ -445,6 +453,7 @@
         if (n !== document.activeElement) n.value = v;
       }
       refreshDerived();
+      if (byKey[key] && (byKey[key].list || byKey[key].type === 'table')) listRefresh.forEach(fn => fn());
       setSave('warn', '● שומר…');
       markField(key, 'dirty');
       clearTimeout(timer);
@@ -523,6 +532,12 @@
           onclick: () => signaturePad(f, (data) => { queue(f.key, data); renderBody(); }) },
           v ? el('img', { src: v, alt: 'חתימה' }) : '✍️ לחצו לחתימה');
         if (ro) n.disabled = true;
+      } else if (f.type === 'select' && f.list) {
+        // רשימת ערכים — מסוננת לפי הרמות שמעל
+        n = el('select', common);
+        const paint = () => fillSelect(n, listOptions(doc.lists, f.list, listKnown(f.list.id)), values[f.key] ?? '', onPage || inlineText ? f.label : '— בחירה —');
+        paint(); listRefresh.push(paint);
+        n.addEventListener('change', () => queue(f.key, n.value));
       } else if (f.type === 'select') {
         // בחירה מרשימה; בחירה ממקור חיצוני יכולה למלא שדות נוספים מהרשומה
         const opts = f.options || [];
@@ -545,6 +560,12 @@
         n.value = v;
         if (inlineText && type === 'text') n.size = Math.max(6, Math.min(40, (v || f.label).length + 2));
         n.addEventListener('input', () => queue(f.key, limit(f, n)));
+        if (f.type === 'text' && f.list) {
+          // רשימת ערכים בשדה טקסט — הצעות (מותר לכתוב גם אחר)
+          let dl = datalistFor(n, listOptions(doc.lists, f.list, listKnown(f.list.id)));
+          listRefresh.push(() => { const d2 = datalistFor(n, listOptions(doc.lists, f.list, listKnown(f.list.id))); dl.replaceWith(d2); dl = d2; });
+          return el('span', { class: 'dl-wrap' }, n, dl);
+        }
       }
       if (onPage && f.type !== 'checkbox' && f.type !== 'signature') {
         n.style.fontSize = `calc(var(--k) * ${f.fontSize || 11}px)`;
@@ -599,15 +620,21 @@
       const rowEl = (r, i) => el('tr', { class: sameGroup(f, rows, i) ? 'same-grp' : null }, cols.map(c => {
         if (c.type === 'calc') return el('td', { class: 'calc-cell', 'data-label': c.label }, C.display(r[c.key] ?? '', c.format));
         if (c.type === 'select') {
-          const cur = r[c.key] ?? '';
-          const sel = el('select', { disabled: ro, 'aria-label': c.label }, el('option', { value: '' }, '—'),
-            [...(c.options || []), ...(cur && !(c.options || []).includes(cur) ? [cur] : [])].map(o => el('option', { value: o, selected: o === cur }, o)));
-          sel.addEventListener('change', () => { r[c.key] = sel.value; commit(); if (gcols.includes(c)) markGroups(); });
+          const sel = el('select', { disabled: ro, 'aria-label': c.label });
+          // מרשימת ערכים — מסונן לפי השדות והעמודות שמעל באותה רשימה (באותה שורה)
+          const paint = () => fillSelect(sel, c.list ? listOptions(doc.lists, c.list, listKnown(c.list.id, r, f)) : (c.options || []), r[c.key] ?? '', '—');
+          paint(); if (c.list) listRefresh.push(paint);
+          sel.addEventListener('change', () => { r[c.key] = sel.value; commit(); if (gcols.includes(c)) markGroups(); if (c.list) listRefresh.forEach(fn => fn()); });
           return el('td', { 'data-label': c.label }, sel);
         }
         const inp = el('input', { value: r[c.key] ?? '', disabled: ro, 'aria-label': c.label,
           inputmode: c.type === 'number' ? 'decimal' : null, dir: c.type === 'number' ? 'ltr' : null });
-        inp.addEventListener('input', () => { r[c.key] = inp.value; commit(); if (gcols.includes(c)) markGroups(); });
+        inp.addEventListener('input', () => { r[c.key] = inp.value; commit(); if (gcols.includes(c)) markGroups(); if (c.list) listRefresh.forEach(fn => fn()); });
+        if (c.list && c.type === 'text') {
+          let dl = datalistFor(inp, listOptions(doc.lists, c.list, listKnown(c.list.id, r, f)));
+          listRefresh.push(() => { const d2 = datalistFor(inp, listOptions(doc.lists, c.list, listKnown(c.list.id, r, f))); dl.replaceWith(d2); dl = d2; });
+          return el('td', { 'data-label': c.label }, inp, dl);
+        }
         return el('td', { 'data-label': c.label }, inp);
       }), ro ? null : el('td', { class: 'row-del' }, el('button', { type: 'button', class: 'link small', title: 'מחיקת שורה',
         onclick: () => { rows.splice(rows.indexOf(r), 1); redraw(); commit(); } }, '✕')));
@@ -928,6 +955,7 @@
     async function renderBody() {
       renderHeader();
       const seq = ++renderSeq;
+      listRefresh.length = 0;
       try {
         if (mode === 'page' && isAuthored) renderAuthored();
         else if (mode === 'page') await renderPage(seq);
@@ -1322,6 +1350,35 @@
     pdf.setTitle('דף אישור — ' + doc.title);
     pdf.setProducer('תבניות מסמכים');
     return pdf.save();
+  }
+
+  /**
+   * רשימת ערכים: האפשרויות ברמה של השדה, מסוננות לפי מה שכבר נבחר ברמות האחרות (known: {רמה: ערך}).
+   * רמה שמעל — מסננת (בית העלמין שנבחר מצמצם את הגושים); רמה שמתחת — לא מגבילה.
+   */
+  function listOptions(lists, ref, known) {
+    const L = lists && lists[String(ref.id)];
+    if (!L) return [];
+    const out = new Set();
+    for (const row of L.rows) {
+      if (!row[ref.level]) continue;
+      if (Object.entries(known).every(([lv, v]) => Number(lv) >= ref.level || !v || row[lv] === v)) out.add(row[ref.level]);
+    }
+    return [...out];
+  }
+  /** ממלא select באפשרויות, ושומר את הערך הנוכחי גם אם כבר לא ברשימה (מסומן — לא נמחק בשקט). */
+  function fillSelect(sel, opts, cur, emptyLabel) {
+    const { el } = window.DT;
+    sel.replaceChildren(el('option', { value: '' }, emptyLabel), ...opts.map(o => el('option', { value: o, selected: o === cur }, o)),
+      ...(cur && !opts.includes(cur) ? [el('option', { value: cur, selected: true }, cur + ' ⚠ לא ברשימה')] : []));
+  }
+  let dlSeq = 0;
+  /** הצעות לשדה טקסט מרשימה: <datalist> צמוד. */
+  function datalistFor(input, opts) {
+    const { el } = window.DT;
+    const dl = el('datalist', { id: 'dl-' + (++dlSeq) }, opts.map(o => el('option', { value: o })));
+    input.setAttribute('list', dl.id);
+    return dl;
   }
 
   /** קיבוץ בטבלה: כמה עמודות ראשונות מזהות קבוצה (גוש › חלקה › שורה › אחוזה), והאם שורה i ממשיכה את הקבוצה של הקודמת. */

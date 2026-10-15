@@ -1,12 +1,13 @@
-// חיבורים: מקורות נתונים (רשימות ממערכות חיצוניות לשדה "בחירה מרשימה"),
+// חיבורים: רשימות ערכים (קבועות מראש, שטוחות או מקוננות — גם מאקסל),
+// מקורות נתונים (רשימות ממערכות חיצוניות לשדה "בחירה מרשימה"),
 // מפתחות API (מערכת חיצונית מנפיקה מסמכים), ותיעוד ה-API.
 (function () {
   'use strict';
 
   const ago = (iso) => iso ? new Date(iso).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }) : 'אף פעם';
   const host = (u) => { try { return new URL(u).host; } catch (e) { return u; } };
-  let tab = 'sources';
-  try { tab = sessionStorage.getItem('dt-conn-tab') || 'sources'; } catch (e) { /* חסום */ }
+  let tab = 'lists';
+  try { tab = sessionStorage.getItem('dt-conn-tab') || 'lists'; } catch (e) { /* חסום */ }
 
   function copyBtn(text, label = 'העתקה') {
     const { el } = window.DT;
@@ -22,15 +23,105 @@
     setTab('connections');
     const tabs = el('div', { class: 'seg-tabs', role: 'tablist', 'aria-label': 'חיבורים' });
     const body = el('section', { class: 'conn-body' });
-    const TABS = [['sources', '🔌 מקורות נתונים'], ['keys', '🔑 מפתחות API'], ['docs', '📘 איך מתחברים']];
+    const TABS = [['lists', '📚 רשימות'], ['sources', '🔌 מקורות נתונים'], ['keys', '🔑 מפתחות API'], ['docs', '📘 איך מתחברים']];
     const render = () => {
       tabs.replaceChildren(...TABS.map(([k, t]) => el('button', { type: 'button', role: 'tab', 'data-tab': k,
         'aria-selected': String(tab === k), class: tab === k ? 'on' : '',
         onclick: () => { tab = k; try { sessionStorage.setItem('dt-conn-tab', k); } catch (e) { /* חסום */ } render(); } }, t)));
-      ({ sources, keys, docs })[tab](body);
+      ({ lists, sources, keys, docs })[tab](body);
     };
     show(el('div', { class: 'screen' }, tabs, body));
     render();
+  }
+
+  // ── רשימות ערכים ──
+  async function lists(box) {
+    const { api, el, notice } = window.DT;
+    box.replaceChildren(el('p', { class: 'muted' }, 'טוען…'));
+    let all;
+    try { all = (await api('list_index')).lists; } catch (e) { box.replaceChildren(notice(e.message, 'bad')); return; }
+    box.replaceChildren(
+      el('div', { class: 'toolbar' },
+        el('p', { class: 'hint grow' }, 'ערכים קבועים מראש לשדות, בכל תבנית: רשימה פשוטה (סוגי קבר), או מקוננת (בית עלמין › גוש › חלקה › שורה) — ' +
+          'בשדה הבא מופיעים רק הערכים ששייכים למה שנבחר. בעורך: הגדרות השדה ← "📚 ערכים מרשימה".'),
+        el('button', { class: 'primary', onclick: () => listSheet(null, () => lists(box)) }, '+ רשימה')),
+      all.length ? el('ul', { class: 'list card-list' }, all.map(l => el('li', {},
+        el('button', { type: 'button', class: 'use-row', onclick: () => listSheet(l, () => lists(box)) },
+          el('span', { class: 'use-ic', 'aria-hidden': 'true' }, '📚'),
+          el('span', { class: 'use-tx' }, el('b', {}, l.name),
+            el('small', {}, l.levels.join(' › ') + ' · עודכן ' + ago(l.updated_at))),
+          el('span', { class: 'badge' }, String(l.row_count))))))
+        : el('p', { class: 'empty' }, 'עוד אין רשימות. "+ רשימה" — כותבים, או מייבאים מקובץ Excel.'));
+  }
+
+  /** עריכת רשימה: שם, רמות, שורות (טבלה עם חיפוש), וייבוא מ-Excel / CSV. */
+  async function listSheet(l, after) {
+    const { api, el, notice, sheet } = window.DT;
+    let data = { name: '', levels: ['ערך'], rows: [] };
+    if (l) {
+      try { data = (await api('list_get', undefined, { id: l.id })).list; } catch (e) { window.DT.toast(e.message, true); return; }
+    }
+    const msg = el('div');
+    const name = el('input', { value: data.name, maxlength: 80, required: true, placeholder: 'למשל: מיקומי קברים' });
+    const levels = el('input', { value: data.levels.join(' › '), placeholder: 'בית עלמין › גוש › חלקה › שורה' });
+    const search = el('input', { type: 'search', placeholder: 'חיפוש בשורות', 'aria-label': 'חיפוש בשורות' });
+    const grid = el('div', { class: 'list-grid' });
+    const count = el('span', { class: 'muted small' });
+    const SHOW = 200;
+    const lv = () => levels.value.split(/[›>,|]/).map(x => x.trim()).filter(Boolean).slice(0, 8);
+    function drawGrid() {
+      const L = lv().length ? lv() : ['ערך'];
+      const q = search.value.trim();
+      const idx = data.rows.map((r, i) => i).filter(i => !q || data.rows[i].some(v => String(v).includes(q)));
+      count.textContent = `${data.rows.length} שורות` + (q ? ` · ${idx.length} מתאימות` : '') + (idx.length > SHOW ? ` · מוצגות ${SHOW} הראשונות` : '');
+      grid.replaceChildren(el('table', { class: 'grid' },
+        el('thead', {}, el('tr', {}, L.map(n => el('th', {}, n)), el('th'))),
+        el('tbody', {}, idx.slice(0, SHOW).map(i => el('tr', {}, L.map((_, j) => {
+          const inp = el('input', { value: data.rows[i][j] ?? '', 'aria-label': L[j] });
+          inp.addEventListener('input', () => { data.rows[i][j] = inp.value; });
+          return el('td', { 'data-label': L[j] }, inp);
+        }), el('td', { class: 'row-del' }, el('button', { type: 'button', class: 'link small', title: 'מחיקת שורה',
+          onclick: () => { data.rows.splice(i, 1); drawGrid(); } }, '✕')))))));
+    }
+    levels.addEventListener('change', drawGrid);
+    search.addEventListener('input', drawGrid);
+    const file = el('input', { type: 'file', accept: '.xlsx,.csv', hidden: true });
+    file.addEventListener('change', async () => {
+      if (!file.files[0]) return;
+      const fd = new FormData(); fd.append('file', file.files[0]);
+      try {
+        const r = await api('list_import', fd);
+        if (data.rows.length && !confirm(`לייבא ${r.rows.length} שורות במקום ${data.rows.length} השורות שכאן?`)) return;
+        data.rows = r.rows; levels.value = r.levels.join(' › ');
+        if (!name.value) name.value = file.files[0].name.replace(/\.[^.]+$/, '');
+        msg.replaceChildren(notice(`יובאו ${r.rows.length} שורות, ברמות: ${r.levels.join(' › ')}. בדקו ושמרו.`, 'ok'));
+        drawGrid();
+      } catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
+      file.value = '';
+    });
+    const save = el('button', { type: 'button', class: 'primary small', onclick: async () => {
+      save.disabled = true;
+      try {
+        const r = await api('list_save', { id: l ? l.id : undefined, name: name.value, levels: lv(), rows: data.rows });
+        dlg.close(); after(); window.DT.toast(`נשמר: ${r.list.name} · ${r.list.row_count} שורות`);
+      } catch (e) { msg.replaceChildren(notice(e.message, 'bad')); save.disabled = false; }
+    } }, 'שמירה');
+    const dlg = sheet(l ? 'רשימה: ' + l.name : 'רשימה חדשה', el('div', { class: 'field-sheet list-sheet' },
+      el('label', { class: 'f' }, el('span', {}, 'שם'), name),
+      el('label', { class: 'f' }, el('span', {}, 'רמות — מהכללי לפרטי, מופרדות ב-›'), levels,
+        el('small', { class: 'muted' }, 'רמה אחת — רשימה פשוטה. כמה רמות — מקוננת: כל שורה היא מסלול מלא.')),
+      el('div', { class: 'row-btns wrap' },
+        el('button', { type: 'button', class: 'small', onclick: () => file.click() }, '📥 ייבוא מ-Excel / CSV'), file,
+        el('button', { type: 'button', class: 'small', onclick: () => { data.rows.push(lv().map(() => '')); search.value = ''; drawGrid();
+          grid.querySelector('tbody tr:last-child input')?.focus(); } }, '+ שורה')),
+      el('p', { class: 'hint' }, 'בקובץ: השורה הראשונה — שמות הרמות; כל שורה אחריה — מסלול. תא ריק = כמו בשורה שמעליו (כמו שכותבים היררכיה באקסל).'),
+      msg, el('div', { class: 'row-btns' }, search, count), grid,
+      l ? el('details', { class: 'fs-group adv' }, el('summary', {}, 'מתקדם'),
+        el('button', { type: 'button', class: 'small danger', onclick: async () => {
+          if (!confirm(`למחוק את הרשימה "${l.name}"? שדות שקשורים אליה יישארו בלי רשימה.`)) return;
+          try { await api('list_delete', { id: l.id }); dlg.close(); after(); } catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
+        } }, 'מחיקת הרשימה')) : null), { action: save });
+    drawGrid();
   }
 
   // ── מקורות נתונים ──

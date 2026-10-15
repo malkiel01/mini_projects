@@ -351,6 +351,17 @@
         const it = att && Object.values(att).find(a => /^dt-template\.json$/i.test(a.filename || ''));
         const t = it ? JSON.parse(new TextDecoder().decode(it.content)) : null;
         if (t && Array.isArray(t.fields)) {
+          // רשימה לפי שם ({list: {name, level}}) — הרשימה של המשתמש בשם הזה (📚 רשימות); אין כזו — בלי רשימה
+          const mine = (await api('list_index').catch(() => ({ lists: [] }))).lists;
+          const bind = (o) => {
+            if (!o || !o.list || o.list.id) return;
+            const l = mine.find(x => x.name === o.list.name);
+            const level = Number(o.list.level) || 0;
+            if (l && level < l.levels.length) { o.list = { id: l.id, level }; return; }
+            delete o.list;
+            if (o.type === 'select' && !(o.options || []).length) o.type = 'text';   // בלי רשימה ובלי אפשרויות — טקסט חופשי, לא בחירה ריקה
+          };
+          for (const f of t.fields) { bind(f); (f.columns || []).forEach(bind); }
           for (const r of t.roles || []) if (r && r.key && !schema.roles.some(x => x.key === r.key)) schema.roles.push(r);
           for (const k of ['sequential', 'approval', 'fill_download', 'certificate']) if (k in t) schema[k] = !!t[k];
           schema.fields.push(...t.fields.filter(f => f && TYPES[f.type] && schema.pages[f.page || 0]).map(f => ({
@@ -827,6 +838,34 @@
       }
       return ['custom', o];
     }
+    // ── רשימות ערכים (🔌 חיבורים ← 📚 רשימות): שדה או עמודה ← רשימה + רמה ──
+    let myLists = null;
+    const loadLists = async () => (myLists ??= (await api('list_index').catch(() => ({ lists: [] }))).lists);
+    function listPicker(o, after) {
+      const box = el('div', { class: 'list-pick' });
+      const draw_ = async () => {
+        const ls = await loadLists();
+        const cur = o.list ? ls.find(l => l.id === o.list.id) : null;
+        const sel = el('select', { 'aria-label': 'רשימת ערכים', disabled: readOnly }, el('option', { value: '' }, '— בלי —'),
+          ls.map(l => el('option', { value: l.id, selected: !!cur && cur.id === l.id }, l.name)),
+          o.list && !cur ? el('option', { value: o.list.id, selected: true }, 'רשימה של משתמש אחר') : null);
+        sel.addEventListener('change', () => {
+          if (Number(sel.value)) o.list = { id: Number(sel.value), level: 0 }; else delete o.list;
+          setDirty(true); draw_(); if (after) after();
+        });
+        const lv = cur && cur.levels.length > 1 ? el('select', { 'aria-label': 'רמה', disabled: readOnly },
+          cur.levels.map((n, i) => el('option', { value: i, selected: o.list.level === i }, `${i + 1}. ${n}`))) : null;
+        if (lv) lv.addEventListener('change', () => { o.list.level = Number(lv.value); setDirty(true); });
+        box.replaceChildren(...[el('div', { class: 'fields two' },
+          el('label', { class: 'f' }, el('span', {}, '📚 ערכים מרשימה'), sel),
+          lv ? el('label', { class: 'f' }, el('span', {}, 'רמה'), lv) : el('span')),
+          !ls.length ? el('p', { class: 'hint' }, 'עוד אין רשימות. יוצרים ב"🔌 חיבורים" ← "📚 רשימות" — ידנית או מקובץ Excel.') : null,
+          cur && cur.levels.length > 1 ? el('p', { class: 'hint' }, `רשימה מקוננת (${cur.levels.join(' › ')}): שדות ועמודות מאותה רשימה ברמות שמעל מסננים את האפשרויות כאן.`) : null].filter(Boolean));
+      };
+      draw_();
+      return box;
+    }
+
     let myFmtCodes = null;
     const loadFmtCodes = async () => (myFmtCodes ??= (await api('fmt_codes').catch(() => ({ codes: [] }))).codes);
 
@@ -1244,7 +1283,9 @@
             el('div', { class: 'f' }, el('span', {}, 'מתי השדה מוצג'), condEditor(f, f, draw))),
           window.DTFmt.isDate(f) || window.DTFmt.isNumber(f) || f.type === 'text' ? group('מבנה התצוגה', fmtPicker(f)) : null,
           auto || f.type === 'signature' ? null : group('ערך',
-            f.type === 'select' ? selectPanel(f) : null,
+            ['select', 'text'].includes(f.type) ? listPicker(f, render) : null,
+            f.type === 'text' && f.list ? el('p', { class: 'hint' }, 'בשדה טקסט — הרשימה היא הצעות; אפשר לכתוב גם ערך אחר.') : null,
+            f.type === 'select' && !f.list ? selectPanel(f) : null,
             f.type === 'file' ? filePanel(f)
               : f.type === 'table' ? tablePanel(f)
               : f.type === 'date' ? dateDefault(f)
@@ -1624,7 +1665,8 @@
             c.name ? el('p', { class: 'small muted' }, 'בקובץ: ', el('code', {}, `{{${f.placeholder}.${c.name}}}`)) : null,
             c.type === 'calc' ? formulaInput(c, f, f.columns.filter(x => x !== c && x.type !== 'text').map(x => [colId(x), x.label])) : null,
             c.type === 'calc' ? fmt : null,
-            c.type === 'select' ? opts : null);
+            c.type === 'select' && !c.list ? opts : null,
+            ['select', 'text'].includes(c.type) ? listPicker(c, draw_) : null);
         }), f.columns.length < 12 ? el('button', { type: 'button', class: 'small', onclick: () => {
           f.columns.push({ key: 'c' + Math.random().toString(36).slice(2, 7), label: 'עמודה ' + (f.columns.length + 1), type: 'text' });
           setDirty(true); draw_();
