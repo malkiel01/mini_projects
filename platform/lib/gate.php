@@ -148,6 +148,85 @@ function deny(array $verdict, string $base): never
     exit;
 }
 
+// ---------- מעקב כניסות ----------
+// כל פתיחה של דף באפליקציה (לא כל קובץ שנטען) נרשמת בטבלה visits. אותה כניסה
+// של אותו משתמש לאותה אפליקציה בתוך 30 דקות נספרת פעם אחת. כשל ברישום לעולם
+// לא עוצר את הכלי.
+
+const VISIT_DEDUP_MIN = 30;
+const VISIT_KEEP_DAYS = 365;
+const VISIT_MAX_ROWS  = 200000;
+
+/** האם הבקשה היא פתיחת דף (ניווט) — לא fetch, לא תמונה, לא iframe. */
+function is_navigation(): bool
+{
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') return false;
+    $dest = $_SERVER['HTTP_SEC_FETCH_DEST'] ?? '';
+    if ($dest !== '') return $dest === 'document';
+    // דפדפן ישן בלי Sec-Fetch — לפי Accept
+    return str_contains($_SERVER['HTTP_ACCEPT'] ?? '', 'text/html');
+}
+
+/** תיאור קצר של המכשיר מתוך User-Agent: "iPhone · Safari". */
+function device_label(string $ua): string
+{
+    $os = match (true) {
+        str_contains($ua, 'iPhone') => 'iPhone',
+        str_contains($ua, 'iPad') => 'iPad',
+        str_contains($ua, 'Android') => 'Android',
+        str_contains($ua, 'Windows') => 'Windows',
+        str_contains($ua, 'Mac OS X') => 'Mac',
+        str_contains($ua, 'Linux') => 'Linux',
+        default => 'אחר',
+    };
+    $browser = match (true) {
+        str_contains($ua, 'Edg/') => 'Edge',
+        str_contains($ua, 'SamsungBrowser') => 'Samsung',
+        str_contains($ua, 'Firefox') || str_contains($ua, 'FxiOS') => 'Firefox',
+        str_contains($ua, 'Chrome') || str_contains($ua, 'CriOS') => 'Chrome',
+        str_contains($ua, 'Safari') => 'Safari',
+        default => '',
+    };
+    if (str_contains($ua, '; wv)')) $browser = 'אפליקציה'; // WebView של אפליקציית אנדרואיד
+    return $browser !== '' ? "$os · $browser" : $os;
+}
+
+/** רושם כניסה לאפליקציה. נקרא אחרי שהשער התיר את הבקשה. */
+function record_visit(string $app): void
+{
+    try {
+        if (!is_navigation() || !is_file(DB_FILE)) return;
+        $cfg = app_config($app);
+        if ($cfg === null || empty($cfg['gate'])) return;
+        $user = current_user();
+        $uid = $user ? (int)$user['id'] : null;
+        $ipHash = hash('sha256', ($_SERVER['REMOTE_ADDR'] ?? '') . '|' . $app);
+        $now = gmdate('Y-m-d\TH:i:s\Z');
+        $since = gmdate('Y-m-d\TH:i:s\Z', time() - VISIT_DEDUP_MIN * 60);
+
+        $db = pdo();
+        $db->exec('PRAGMA busy_timeout = 2000');
+        // אורח (דף ציבורי) מזוהה לפי IP — רק כדי לא לספור רענון כפול.
+        $dup = $uid !== null
+            ? $db->prepare('SELECT 1 FROM visits WHERE app = ? AND user_id = ? AND at > ? LIMIT 1')
+            : $db->prepare('SELECT 1 FROM visits WHERE app = ? AND user_id IS NULL AND ip_hash = ? AND at > ? LIMIT 1');
+        $dup->execute([$app, $uid ?? $ipHash, $since]);
+        if ($dup->fetchColumn()) return;
+
+        $db->prepare('INSERT INTO visits (app, user_id, at, device, ip_hash) VALUES (?,?,?,?,?)')
+            ->execute([$app, $uid, $now, device_label((string)($_SERVER['HTTP_USER_AGENT'] ?? '')), $ipHash]);
+
+        // רוטציה: מדי פעם (בערך 1 מכל 200 כניסות) — מחיקת ישן משנה, ותקרה של שורות.
+        if (random_int(1, 200) === 1) {
+            $db->prepare('DELETE FROM visits WHERE at < ?')->execute([gmdate('Y-m-d\TH:i:s\Z', time() - VISIT_KEEP_DAYS * 86400)]);
+            $db->exec('DELETE FROM visits WHERE id <= (SELECT MAX(id) FROM visits) - ' . VISIT_MAX_ROWS);
+        }
+    } catch (\Throwable $e) {
+        // הטבלה עוד לא קיימת (המסד נוצר לפני השלב הזה) — נוצרת בפעם הבאה שהדף הראשי נטען.
+        error_log('platform visits: ' . $e->getMessage());
+    }
+}
+
 /** נתיב ה-URL של שורש האתר (התיקייה שמעל platform/), מתוך הבקשה הנוכחית. */
 function base_url(string $scriptUrl, string $relativeScript): string
 {

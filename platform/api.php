@@ -32,6 +32,7 @@ try {
             'apps' => action_apps(),
             'admin_state' => admin_state(require_admin()),
             'admin_push'  => admin_push_state(require_admin()),
+            'admin_usage' => admin_usage(require_admin(), $_GET),
             default => throw new ApiError('פעולה לא מוכרת', 404),
         };
     }

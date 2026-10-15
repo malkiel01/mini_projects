@@ -53,6 +53,19 @@ function db_migrate(PDO $pdo): void
             created_at TEXT NOT NULL,
             expires_at TEXT NOT NULL
         );
+        -- כניסה לאפליקציה — נרשמת בשער (lib/gate.php, record_visit). אותה הגדרה
+        -- כתובה גם שם; שינוי באחת — לשנות גם בשנייה.
+        CREATE TABLE IF NOT EXISTS visits (
+            id      INTEGER PRIMARY KEY,
+            app     TEXT NOT NULL,
+            user_id INTEGER,
+            at      TEXT NOT NULL,
+            device  TEXT NOT NULL DEFAULT '',
+            ip_hash TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS visits_app_at  ON visits (app, at);
+        CREATE INDEX IF NOT EXISTS visits_user_at ON visits (user_id, at);
+        CREATE INDEX IF NOT EXISTS visits_at      ON visits (at);
         CREATE TABLE IF NOT EXISTS login_attempts (
             key          TEXT PRIMARY KEY,
             failures     INTEGER NOT NULL DEFAULT 0,

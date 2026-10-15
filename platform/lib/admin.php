@@ -271,3 +271,78 @@ function admin_push_test(array $admin): never
     ], [(int)$admin['id']]);
     json_out(['sent' => $sent, 'failed' => $failed]);
 }
+
+// ---------- מעקב כניסות ----------
+// הכניסות נרשמות בשער (lib/gate.php, record_visit). כאן רק קוראים ומסכמים.
+// ימים נספרים לפי שעון ישראל, לא UTC — כניסה ב-01:00 שייכת ליום שלה.
+
+const USAGE_TZ = 'Asia/Jerusalem';
+
+/**
+ * GET admin_usage&days=30                — סיכום: סך כניסות, משתמשים ייחודיים, גרף יומי, לכל אפליקציה
+ * GET admin_usage&days=30&app=<id>       — אפליקציה אחת: גרף, כניסות אחרונות, מי נכנס
+ * GET admin_usage&days=30&user=<id>      — משתמש אחד: לאילו אפליקציות נכנס
+ */
+function admin_usage(array $admin, array $q): never
+{
+    $days = in_array((int)($q['days'] ?? 30), [7, 30, 90, 365], true) ? (int)$q['days'] : 30;
+    $tz = new DateTimeZone(USAGE_TZ);
+    $from = (new DateTimeImmutable('today', $tz))->modify('-' . ($days - 1) . ' days');
+    $since = $from->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z');
+
+    $where = 'v.at >= ?';
+    $args = [$since];
+    if (isset($q['app'])) { $where .= ' AND v.app = ?'; $args[] = (string)$q['app']; }
+    if (isset($q['user'])) { $where .= ' AND v.user_id = ?'; $args[] = (int)$q['user']; }
+
+    $st = db()->prepare("SELECT v.app, v.user_id, v.at, v.device, u.display_name, u.username
+                           FROM visits v LEFT JOIN users u ON u.id = v.user_id
+                          WHERE $where ORDER BY v.at DESC");
+    $st->execute($args);
+    $rows = $st->fetchAll();
+
+    // גרף יומי: כל הימים בטווח, גם ימים בלי כניסות.
+    $daily = [];
+    for ($d = $from, $i = 0; $i < $days; $i++, $d = $d->modify('+1 day')) $daily[$d->format('Y-m-d')] = 0;
+    $apps = [];
+    $users = [];
+    foreach ($rows as $r) {
+        $day = (new DateTimeImmutable($r['at']))->setTimezone($tz)->format('Y-m-d');
+        if (isset($daily[$day])) $daily[$day]++;
+        $a = &$apps[$r['app']];
+        $a ??= ['app' => $r['app'], 'n' => 0, 'users' => [], 'guests' => 0, 'last' => $r['at']];
+        $a['n']++;
+        if ($r['user_id'] === null) $a['guests']++; else $a['users'][$r['user_id']] = true;
+        unset($a);
+        if ($r['user_id'] !== null) {
+            $u = &$users[$r['user_id']];
+            $u ??= ['id' => (int)$r['user_id'], 'name' => $r['display_name'] ?? 'משתמש שנמחק', 'username' => $r['username'] ?? '', 'n' => 0, 'last' => $r['at']];
+            $u['n']++;
+            unset($u);
+        }
+    }
+    $appList = array_values(array_map(fn($a) => [
+        'app' => $a['app'], 'n' => $a['n'], 'users' => count($a['users']), 'guests' => $a['guests'], 'last' => $a['last'],
+    ], $apps));
+    usort($appList, fn($x, $y) => $y['n'] <=> $x['n']);
+    $userList = array_values($users);
+    usort($userList, fn($x, $y) => $y['n'] <=> $x['n']);
+
+    $out = [
+        'days'   => $days,
+        'total'  => count($rows),
+        'unique' => count($users),
+        'guests' => count(array_filter($rows, fn($r) => $r['user_id'] === null)),
+        'daily'  => array_map(fn($d, $n) => ['d' => $d, 'n' => $n], array_keys($daily), $daily),
+        'apps'   => $appList,
+        'users'  => array_slice($userList, 0, 50),
+    ];
+    if (isset($q['app'])) {
+        $out['recent'] = array_map(fn($r) => [
+            'at' => $r['at'], 'device' => $r['device'],
+            'name' => $r['user_id'] === null ? null : ($r['display_name'] ?? 'משתמש שנמחק'),
+            'user_id' => $r['user_id'] === null ? null : (int)$r['user_id'],
+        ], array_slice($rows, 0, 50));
+    }
+    json_out($out);
+}
