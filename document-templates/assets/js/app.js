@@ -119,14 +119,30 @@
   }
 
   /** טופס עם שדות, כפתור ושורת הודעה. onSubmit מקבל אובייקט ערכים. */
+  /** שדה סיסמה עם 👁 — הצגה / הסתרה של מה שהוקלד. */
+  function pwField(input) {
+    const btn = el('button', { type: 'button', class: 'pw-eye', 'aria-label': 'הצגת הסיסמה', 'aria-pressed': 'false', title: 'הצגת הסיסמה' }, '👁');
+    btn.addEventListener('click', () => {
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.textContent = show ? '🙈' : '👁';
+      btn.setAttribute('aria-pressed', String(show));
+      btn.setAttribute('aria-label', show ? 'הסתרת הסיסמה' : 'הצגת הסיסמה'); btn.title = btn.getAttribute('aria-label');
+      input.focus();
+    });
+    return el('span', { class: 'pw-wrap' }, input, btn);
+  }
+
   function form(title, fields, submitText, onSubmit, footer) {
     const msg = el('div');
     const btn = el('button', { type: 'submit', class: 'primary' }, submitText);
     const f = el('form', { class: 'card form', novalidate: true },
       el('h1', {}, title),
-      fields.map(fd => el('label', {}, el('span', {}, fd.label),
-        el('input', { name: fd.name, type: fd.type || 'text', autocomplete: fd.auto || 'off',
-          required: true, minlength: fd.min || null, dir: fd.dir || null }))),
+      fields.map(fd => {
+        const inp = el('input', { name: fd.name, type: fd.type || 'text', autocomplete: fd.auto || 'off',
+          required: true, minlength: fd.min || null, dir: fd.dir || null });
+        return el('label', {}, el('span', {}, fd.label), fd.type === 'password' ? pwField(inp) : inp);
+      }),
       btn, msg, footer || null);
     f.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -800,9 +816,9 @@
           el('div', {}, el('dt', {}, 'סוג'), el('dd', {}, me.is_developer ? 'מפתח המערכת' : 'משתמש'))),
         el('label', { class: 'f' }, el('span', {}, 'השם שמוצג'), name), saveName),
       el('section', { class: 'fs-group' }, el('h3', { class: 'sec-title' }, 'סיסמה'),
-        el('label', { class: 'f' }, el('span', {}, 'הסיסמה הנוכחית'), cur),
-        el('div', { class: 'fields two' }, el('label', { class: 'f' }, el('span', {}, 'סיסמה חדשה (8 תווים לפחות)'), nw),
-          el('label', { class: 'f' }, el('span', {}, 'שוב'), nw2)),
+        el('label', { class: 'f' }, el('span', {}, 'הסיסמה הנוכחית'), pwField(cur)),
+        el('div', { class: 'fields two' }, el('label', { class: 'f' }, el('span', {}, 'סיסמה חדשה (8 תווים לפחות)'), pwField(nw)),
+          el('label', { class: 'f' }, el('span', {}, 'שוב'), pwField(nw2))),
         savePw,
         el('p', { class: 'hint' }, 'החלפת סיסמה מנתקת את כל המכשירים האחרים.')),
       el('section', { class: 'fs-group' }, el('h3', { class: 'sec-title' }, 'מכשירים'),
