@@ -770,7 +770,8 @@
     const measure = document.createElement('canvas').getContext('2d');
     function limit(f, input) {
       // בשדה רב-שורתי זה תלוי בשבירת השורות — שם נשען על ה-PDF (הקטנה), לא חוסמים.
-      if (f.overflow !== 'block' || f.type === 'textarea') return input.value;
+      // רק בטקסט חופשי: תאריך נשמר כ-2026-10-15 ומוצג אחרת — קיצוץ הופך אותו לפסול, והשדה מתרוקן
+      if (f.overflow !== 'block' || !['text', 'number'].includes(f.type)) return input.value;
       const pw = doc.schema.pages[f.page].w * f.w;
       measure.font = `${f.fontSize || 11}px ${window.DTFonts.family(f.font)}`;
       while (input.value && measure.measureText(input.value).width > pw - 4) input.value = input.value.slice(0, -1);

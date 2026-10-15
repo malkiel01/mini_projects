@@ -3,6 +3,7 @@
  * המשתנים והבסיס מהסקיל; השמות הישנים בקוד (--card, --text, --accent…) מכוונים אליהם,
  * כך שכל המסכים עברו לשפה אחת, וגם מצב כהה עובד לבד.
  */
+:root { color-scheme: light dark; }   /* לוח השנה, החצים ושאר הפקדים של הדפדפן — לפי ערכת הנושא */
 :root {
   --bg: #f4f5f7; --surface: #fff; --ink: #16192b; --muted: #5d6475; --line: #e3e6eb;
   --brand: #2d4a8a; --brand-ink: #fff; --brand-soft: #e9eef8;
