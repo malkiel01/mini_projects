@@ -49,7 +49,7 @@
         el('button', { type: 'button', class: 'use-row', onclick: () => listSheet(l, () => lists(box)) },
           el('span', { class: 'use-ic', 'aria-hidden': 'true' }, '📚'),
           el('span', { class: 'use-tx' }, el('b', {}, l.name),
-            el('small', {}, l.levels.join(' › ') + ' · עודכן ' + ago(l.updated_at))),
+            el('small', {}, l.levels.join(' › ') + ((l.langs || []).length ? ' · 🌐 ' + l.langs.join(', ') : '') + ' · עודכן ' + ago(l.updated_at))),
           el('span', { class: 'badge' }, String(l.row_count))))))
         : el('p', { class: 'empty' }, 'עוד אין רשימות. "+ רשימה" — כותבים, או מייבאים מקובץ Excel.'));
   }
@@ -57,10 +57,11 @@
   /** עריכת רשימה: שם, רמות, שורות (טבלה עם חיפוש), וייבוא מ-Excel / CSV. */
   async function listSheet(l, after) {
     const { api, el, notice, sheet } = window.DT;
-    let data = { name: '', levels: ['ערך'], rows: [] };
+    let data = { name: '', levels: ['ערך'], rows: [], translations: {} };
     if (l) {
       try { data = (await api('list_get', undefined, { id: l.id })).list; } catch (e) { window.DT.toast(e.message, true); return; }
     }
+    if (!data.translations || Array.isArray(data.translations)) data.translations = {};
     const msg = el('div');
     const name = el('input', { value: data.name, maxlength: 80, required: true, placeholder: 'למשל: מיקומי קברים' });
     const levels = el('input', { value: data.levels.join(' › '), placeholder: 'בית עלמין › גוש › חלקה › שורה' });
@@ -83,7 +84,39 @@
         }), el('td', { class: 'row-del' }, el('button', { type: 'button', class: 'link small', title: 'מחיקת שורה',
           onclick: () => { data.rows.splice(i, 1); drawGrid(); } }, '✕')))))));
     }
-    levels.addEventListener('change', drawGrid);
+    levels.addEventListener('change', () => { drawGrid(); drawTr(); });
+
+    // ── תרגומים: לכל ערך ברמה — איך הוא נכתב במסמך בשפה אחרת (בוחרים בעברית, מדפיסים באנגלית) ──
+    const LANGS = { en: 'אנגלית · English', fr: 'צרפתית · Français', ar: 'ערבית · العربية', ru: 'רוסית · Русский', es: 'ספרדית · Español', de: 'גרמנית · Deutsch' };
+    const trLevel = el('select', { 'aria-label': 'רמה לתרגום' });
+    const trLang = el('select', { 'aria-label': 'שפה' }, Object.entries(LANGS).map(([k, n]) => el('option', { value: k }, n)));
+    const trSearch = el('input', { type: 'search', placeholder: 'חיפוש ערך', 'aria-label': 'חיפוש ערך לתרגום' });
+    const trBox = el('div', { class: 'list-grid' });
+    const trCount = el('span', { class: 'muted small' });
+    function drawTr() {
+      const L = lv().length ? lv() : ['ערך'];
+      const keep = Number(trLevel.value) || 0;
+      trLevel.replaceChildren(...L.map((n, i) => el('option', { value: i, selected: i === keep }, `${i + 1}. ${n}`)));
+      const level = Math.min(keep, L.length - 1), lang = trLang.value, q = trSearch.value.trim();
+      const vals = [...new Set(data.rows.map(r => String(r[level] ?? '').trim()).filter(Boolean))];
+      const t = (data.translations[level] ??= {});
+      const shown = vals.filter(v => !q || v.includes(q) || String(t[v]?.[lang] ?? '').toLowerCase().includes(q.toLowerCase()));
+      const done = vals.filter(v => t[v]?.[lang]).length;
+      trCount.textContent = `${done} מתוך ${vals.length} מתורגמים` + (shown.length > SHOW ? ` · מוצגים ${SHOW} הראשונים` : '');
+      trBox.replaceChildren(el('table', { class: 'grid' },
+        el('thead', {}, el('tr', {}, el('th', {}, L[level] + ' (כמו שנבחר)'), el('th', {}, LANGS[lang]))),
+        el('tbody', {}, shown.slice(0, SHOW).map(v => {
+          const inp = el('input', { value: t[v]?.[lang] ?? '', dir: ['ar'].includes(lang) ? 'rtl' : 'ltr', 'aria-label': v + ' — ' + LANGS[lang] });
+          inp.addEventListener('input', () => {
+            const x = inp.value.trim();
+            if (x) (t[v] ??= {})[lang] = x; else if (t[v]) { delete t[v][lang]; if (!Object.keys(t[v]).length) delete t[v]; }
+          });
+          inp.addEventListener('change', () => { trCount.textContent = `${vals.filter(w => t[w]?.[lang]).length} מתוך ${vals.length} מתורגמים`; });
+          return el('tr', {}, el('td', { 'data-label': L[level] }, v), el('td', { 'data-label': LANGS[lang] }, inp));
+        }))));
+      if (!vals.length) trBox.replaceChildren(el('p', { class: 'muted small' }, 'אין עדיין ערכים ברמה הזו.'));
+    }
+    trLevel.addEventListener('change', drawTr); trLang.addEventListener('change', drawTr); trSearch.addEventListener('input', drawTr);
     search.addEventListener('input', drawGrid);
     const file = el('input', { type: 'file', accept: '.xlsx,.csv', hidden: true });
     file.addEventListener('change', async () => {
@@ -93,6 +126,8 @@
         const r = await api('list_import', fd);
         if (data.rows.length && !confirm(`לייבא ${r.rows.length} שורות במקום ${data.rows.length} השורות שכאן?`)) return;
         data.rows = r.rows; levels.value = r.levels.join(' › ');
+        if (r.translations && Object.keys(r.translations).length) data.translations = r.translations;
+        drawTr();
         if (!name.value) name.value = file.files[0].name.replace(/\.[^.]+$/, '');
         msg.replaceChildren(notice(`יובאו ${r.rows.length} שורות, ברמות: ${r.levels.join(' › ')}. בדקו ושמרו.`, 'ok'));
         drawGrid();
@@ -102,7 +137,7 @@
     const save = el('button', { type: 'button', class: 'primary small', onclick: async () => {
       save.disabled = true;
       try {
-        const r = await api('list_save', { id: l ? l.id : undefined, name: name.value, levels: lv(), rows: data.rows });
+        const r = await api('list_save', { id: l ? l.id : undefined, name: name.value, levels: lv(), rows: data.rows, translations: data.translations });
         dlg.close(); after(); window.DT.toast(`נשמר: ${r.list.name} · ${r.list.row_count} שורות`);
       } catch (e) { msg.replaceChildren(notice(e.message, 'bad')); save.disabled = false; }
     } }, 'שמירה');
@@ -116,12 +151,17 @@
           grid.querySelector('tbody tr:last-child input')?.focus(); } }, '+ שורה')),
       el('p', { class: 'hint' }, 'בקובץ: השורה הראשונה — שמות הרמות; כל שורה אחריה — מסלול. תא ריק = כמו בשורה שמעליו (כמו שכותבים היררכיה באקסל).'),
       msg, el('div', { class: 'row-btns' }, search, count), grid,
+      el('details', { class: 'fs-group tr-group' }, el('summary', {}, '🌐 תרגומים — הערך במסמך בשפה אחרת'),
+        el('p', { class: 'hint' }, 'בטופס בוחרים בעברית; בשדה שהוגדר לו "🌐 שפה במסמך" — נכתב במסמך התרגום מכאן. ערך בלי תרגום נכתב כמו שהוא. ' +
+          'מקובץ: עמודה בשם הרמה ושפה בסוגריים — למשל "בית עלמין (en)" או "בית עלמין (fr)".'),
+        el('div', { class: 'fields two' }, el('label', { class: 'f' }, el('span', {}, 'רמה'), trLevel), el('label', { class: 'f' }, el('span', {}, 'שפה'), trLang)),
+        el('div', { class: 'row-btns' }, trSearch, trCount), trBox),
       l ? el('details', { class: 'fs-group adv' }, el('summary', {}, 'מתקדם'),
         el('button', { type: 'button', class: 'small danger', onclick: async () => {
           if (!confirm(`למחוק את הרשימה "${l.name}"? שדות שקשורים אליה יישארו בלי רשימה.`)) return;
           try { await api('list_delete', { id: l.id }); dlg.close(); after(); } catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
         } }, 'מחיקת הרשימה')) : null), { action: save });
-    drawGrid();
+    drawGrid(); drawTr();
   }
 
   // ── מקורות נתונים ──

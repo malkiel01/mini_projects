@@ -357,7 +357,7 @@
             if (!o || !o.list || o.list.id) return;
             const l = mine.find(x => x.name === o.list.name);
             const level = Number(o.list.level) || 0;
-            if (l && level < l.levels.length) { o.list = { id: l.id, level }; return; }
+            if (l && level < l.levels.length) { o.list = { id: l.id, level, ...(o.list.lang ? { lang: o.list.lang } : {}) }; return; }
             delete o.list;
             if (o.type === 'select' && !(o.options || []).length) o.type = 'text';   // בלי רשימה ובלי אפשרויות — טקסט חופשי, לא בחירה ריקה
           };
@@ -841,6 +841,7 @@
     // ── רשימות ערכים (🔌 חיבורים ← 📚 רשימות): שדה או עמודה ← רשימה + רמה ──
     let myLists = null;
     const loadLists = async () => (myLists ??= (await api('list_index').catch(() => ({ lists: [] }))).lists);
+    const LANG_NAMES = { en: 'אנגלית · English', fr: 'צרפתית · Français', ar: 'ערבית · العربية', ru: 'רוסית · Русский', es: 'ספרדית · Español', de: 'גרמנית · Deutsch' };
     function listPicker(o, after) {
       const box = el('div', { class: 'list-pick' });
       const draw_ = async () => {
@@ -856,9 +857,17 @@
         const lv = cur && cur.levels.length > 1 ? el('select', { 'aria-label': 'רמה', disabled: readOnly },
           cur.levels.map((n, i) => el('option', { value: i, selected: o.list.level === i }, `${i + 1}. ${n}`))) : null;
         if (lv) lv.addEventListener('change', () => { o.list.level = Number(lv.value); setDirty(true); });
+        // שפה בפלט: בוחרים בעברית, ובמסמך שיוצא (PDF / Word / הדפסה) נכתב התרגום
+        const langs = cur ? [...new Set([...(cur.langs || []), ...(o.list.lang ? [o.list.lang] : [])])] : [];
+        const lang = cur ? el('select', { 'aria-label': 'שפה בפלט', disabled: readOnly },
+          el('option', { value: '' }, 'כמו שנבחר (עברית)'),
+          langs.map(k => el('option', { value: k, selected: o.list.lang === k }, LANG_NAMES[k] || k))) : null;
+        if (lang) lang.addEventListener('change', () => { if (lang.value) o.list.lang = lang.value; else delete o.list.lang; setDirty(true); });
         box.replaceChildren(...[el('div', { class: 'fields two' },
           el('label', { class: 'f' }, el('span', {}, '📚 ערכים מרשימה'), sel),
           lv ? el('label', { class: 'f' }, el('span', {}, 'רמה'), lv) : el('span')),
+          lang ? el('label', { class: 'f' }, el('span', {}, '🌐 שפה במסמך'), lang) : null,
+          cur && !langs.length ? el('p', { class: 'hint' }, 'אפשר להדפיס את הערכים בשפה אחרת (למשל אנגלית): מוסיפים תרגומים בעריכת הרשימה — "🌐 תרגומים".') : null,
           !ls.length ? el('p', { class: 'hint' }, 'עוד אין רשימות. יוצרים ב"🔌 חיבורים" ← "📚 רשימות" — ידנית או מקובץ Excel.') : null,
           cur && cur.levels.length > 1 ? el('p', { class: 'hint' }, `רשימה מקוננת (${cur.levels.join(' › ')}): שדות ועמודות מאותה רשימה ברמות שמעל מסננים את האפשרויות כאן.`) : null].filter(Boolean));
       };
