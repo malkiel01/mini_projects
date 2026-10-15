@@ -152,7 +152,7 @@
 
     /** זום סביב נקודה (במסך) — מה שמתחת לאצבעות נשאר במקום. */
     function set(nz, cx, cy) {
-      nz = clamp(Math.round(nz * 100) / 100, 0.5, 4);
+      nz = clamp(Math.round(nz * 100) / 100, 0.5, 8);   // עד 800% — לראות שדה קטן מקרוב
       if (nz === z) return;
       const r = stage.getBoundingClientRect();
       const ax = (cx ?? r.left + r.width / 2) - r.left, ay = (cy ?? r.top + Math.min(r.height, innerHeight) / 2) - r.top;
@@ -183,6 +183,7 @@
       if (e.touches.length === 2) pinch = { d: dist(e.touches), z };
     }, { passive: true });
     stage.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 2 && !pinch) pinch = { d: dist(e.touches), z };   // האצבע השנייה נחתה בלי touchstart על הבמה
       if (!pinch || e.touches.length !== 2) return;
       e.preventDefault();
       const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2, cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
@@ -270,7 +271,10 @@
     const msg = el('div');
     const parseBox = el('div');
     let spots = [];          // שלב 10: מקומות מילוי מוצעים מהטקסט
-    let showSpots = true;
+    // הצעות למקומות מילוי: כבויות כברירת מחדל; מה שבחרתם נשמר לתבנית הזו (במכשיר)
+    const spotsKey = 'dt-spots-' + id;
+    let showSpots = false, parseOpen = false;
+    try { showSpots = localStorage.getItem(spotsKey) === '1'; } catch (e) { /* אחסון חסום */ }
 
     // שלב 7: תבנית ששותפה ברמה נמוכה מ"עורך" — צפייה בלבד.
     const readOnly = window.DT.rank(tpl.access || 'owner') < 3;
@@ -282,7 +286,8 @@
       pagesBox.classList.add('readonly');
     }
 
-    designView.append(palette, parseBox, viewer.box);
+    // תוצאת הפירוק — מתחת לדף, לא מעליו (לא מסתירה את התצוגה)
+    designView.append(palette, viewer.box, parseBox);
     show(
       el('div', { class: 'editor-bar card' }, nameInput, status, saveBtn),
       tpl.owner_name ? el('p', { class: 'notice' }, `👥 תבנית של ${tpl.owner_name} — ההרשאה שלך: ${window.DT.LEVEL[tpl.access]}` +
@@ -437,18 +442,27 @@
         return;
       }
       const toggle = el('input', { type: 'checkbox', checked: showSpots });
-      toggle.addEventListener('change', () => { showSpots = toggle.checked; draw(); });
-      parseBox.replaceChildren(el('div', { class: 'notice ok parse-bar' },
-        el('strong', {}, '✅ הצלחתי. '),
-        report.fields.length ? `נמצאו ${report.fields.length} שדות טופס — הם בתבנית, במקומם. ` : 'אין בקובץ שדות טופס מובנים. ',
-        report.chars >= 20 ? 'קראתי את הטקסט' + (spots.length ? ` — ויש ${free.length} הצעות למקומות מילוי (מסומנות בקו מקווקו; לחיצה הופכת לשדה).` : ', ולא מצאתי בו מקומות מילוי ברורים.') : '',
+      toggle.addEventListener('change', () => {
+        showSpots = toggle.checked;
+        try { localStorage.setItem(spotsKey, showSpots ? '1' : '0'); } catch (e) { /* אחסון חסום */ }
+        draw();
+      });
+      // שורה מקופלת: מה הפירוק מצא, וההצעות — רק למי שמסמן
+      const fold = el('details', { class: 'parse-bar parse-fold', open: parseOpen });
+      fold.addEventListener('toggle', () => { parseOpen = fold.open; });
+      parseBox.replaceChildren(fold);
+      fold.append(
+        el('summary', {}, '🔍 פירוק הקובץ: ' + (report.fields.length ? `${report.fields.length} שדות טופס` : 'בלי שדות טופס') +
+          (spots.length ? ` · ${free.length} הצעות למקומות מילוי` : '') + (showSpots ? ' (מוצגות)' : '')),
+        el('p', { class: 'small' }, report.fields.length ? `נמצאו ${report.fields.length} שדות טופס — הם בתבנית, במקומם. ` : 'אין בקובץ שדות טופס מובנים. ',
+          report.chars >= 20 ? 'קראתי את הטקסט' + (spots.length ? ` — ויש ${free.length} הצעות למקומות מילוי. מסמנים "להציג הצעות" — והן מופיעות על הדף בקו מקווקו; לחיצה על הצעה הופכת אותה לשדה.` : ', ולא מצאתי בו מקומות מילוי ברורים.') : ''),
         el('div', { class: 'ops' },
           spots.length ? el('label', { class: 'inline small' }, toggle, ' להציג הצעות') : null,
           free.length ? el('button', { class: 'small', onclick: () => {
             for (const s of freeSpots()) addSpot(s);
             select(null); renderParse();
           } }, `+ להוסיף את כל ${free.length} ההצעות`) : null,
-          el('button', { class: 'small', onclick: () => toSource('pdf_locked') }, '🔒 להפוך לנעול'))));
+          el('button', { class: 'small', onclick: () => toSource('pdf_locked') }, '🔒 להפוך לנעול')));
     }
 
     function spotEl(s) {
