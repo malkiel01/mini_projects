@@ -152,7 +152,12 @@ function tpl_create(array $user, array $post, array $files): array
     }
     if ($f['size'] > TPL_MAX_FILE_MB * 1024 * 1024) throw new ApiError('הקובץ גדול מ-' . TPL_MAX_FILE_MB . 'MB', 413);
 
-    $bytes = (string)file_get_contents($f['tmp_name']);
+    return tpl_create_bytes($user, $name, (string)file_get_contents($f['tmp_name']), (string)($post['mode'] ?? ''));
+}
+
+/** תבנית חדשה מתוכן קובץ — מהעלאה, או מייבוא תבנית שיוצאה (lib/porting.php). */
+function tpl_create_bytes(array $user, string $name, string $bytes, string $mode = ''): array
+{
     // הסוג נקבע מהתוכן, לא מהשם או ממה שהדפדפן הצהיר.
     $mime = (new finfo(FILEINFO_MIME_TYPE))->buffer($bytes);
     // Word הוא ZIP; finfo לא תמיד מזהה אותו בשמו. בודקים את המבנה עצמו.
@@ -166,7 +171,7 @@ function tpl_create(array $user, array $post, array $files): array
     }
     // שלב 10: PDF — "לפרק" (המערכת קוראת שדות וטקסט) או "נעול" (תמונה בלבד).
     $source = TPL_MIME[$mime];
-    if ($source === 'pdf_locked' && ($post['mode'] ?? '') === 'parse') $source = 'pdf_parsed';
+    if ($source === 'pdf_locked' && $mode === 'parse') $source = 'pdf_parsed';
 
     if (function_exists('assert_room')) assert_room((int)$user['id'], strlen($bytes));
     $path = store_file($bytes);
@@ -560,3 +565,4 @@ require_once __DIR__ . '/integrations.php';   // בחירה מרשימה, מקו
 require_once __DIR__ . '/fonts.php';   // גופנים שהמשתמש העלה
 require_once __DIR__ . '/fmt.php';     // מבנים מותאמים לתצוגת תאריך ומספר
 require_once __DIR__ . '/lists.php';   // רשימות ערכים — שטוחות ומקוננות
+require_once __DIR__ . '/porting.php'; // ייצוא וייבוא של תבנית — קובץ אחד

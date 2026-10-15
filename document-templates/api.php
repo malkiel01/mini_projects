@@ -52,7 +52,7 @@ $PUBLIC = ['health', 'register', 'verify', 'login', 'forgot', 'reset', 'me',
            // Claude קורא מטלות ומשיב (DevLoop): הזהות היא האסימון שבכותרת X-Dev-Token.
            'devapi-feed', 'devapi-comment', 'devapi-file', 'devapi-attach'];
 $POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'dev_user',
-           'tpl_create', 'tpl_create_authored', 'tpl_save', 'tpl_set_source', 'tpl_archive', 'tpl_delete',
+           'tpl_create', 'tpl_create_authored', 'tpl_import', 'tpl_save', 'tpl_set_source', 'tpl_archive', 'tpl_delete',
            'doc_create', 'doc_duplicate', 'doc_return', 'doc_save', 'list_save', 'list_delete', 'list_import', 'doc_complete', 'doc_archive', 'doc_delete', 'doc_downloaded',
            'part_contact', 'part_link', 'fill_otp_send', 'fill_otp_verify', 'fill_save', 'fill_complete', 'fill_downloaded',
            'doc_upload', 'fill_upload', 'dev_quota', 'share_set', 'share_remove', 'share_leave',
@@ -101,6 +101,8 @@ try {
         'tpl_get'     => tpl_get($session, (int)($_GET['id'] ?? 0)),
         'tpl_asset'   => tpl_asset($session, (int)($_GET['id'] ?? 0)),
         'tpl_create'  => tpl_create($session, $_POST, $_FILES),
+        'tpl_import'  => tpl_import($session, $_POST, $_FILES),
+        'tpl_export'  => tpl_export($session, (int)($_GET['id'] ?? 0)),
         'tpl_save'    => tpl_save($session, $body),
         'tpl_set_source' => tpl_set_source($session, $body),
         'tpl_create_authored' => tpl_create_authored($session, $body),

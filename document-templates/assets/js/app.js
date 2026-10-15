@@ -332,11 +332,23 @@
             try { await window.DTBulk.exportFile({ template_id: t.id }); }
             catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
           }), { sub: 'כל התשובות' }) : null,
+          r >= 3 ? tile('📦', 'ייצוא תבנית', go(() => exportTemplate(t)), { sub: 'קובץ אחד — לשיתוף או לגיבוי' }) : null,
           r >= 4 ? tile('🔗', 'שיתוף', go(() => shareDialog('template', t.id, t.name, load))) : null,
           r >= 4 ? tile(t.archived ? '♻️' : '🗄️', t.archived ? 'שחזור' : 'ארכיון', go(() => archive(t))) : null,
           t.used || t.access !== 'owner' ? null : tile('🗑️', 'מחיקה', go(() => remove(t)), { danger: true }),
           t.access === 'owner' ? null : tile('🚪', 'עזיבה', go(() => leave('template', t.id, t.name, load)), { danger: true })),
       ]);
+    }
+
+    /** ייצוא: קובץ .dt.json עם הכול — הקובץ המקורי, השדות, הטבלאות, הנוסחאות, הרשימות והגופנים. */
+    async function exportTemplate(t) {
+      try {
+        const res = await fetch('api.php?action=tpl_export&id=' + t.id, { credentials: 'same-origin' });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'הייצוא נכשל');
+        const a = el('a', { href: URL.createObjectURL(await res.blob()), download: t.name.replace(/[\\/:*?"<>|]+/g, '_') + '.dt.json' });
+        document.body.append(a); a.click(); a.remove();
+        window.DT.toast('הקובץ ירד. מייבאים אותו ב"+ תבנית חדשה" ← "📦 ייבוא תבנית" — גם אצל משתמש אחר.');
+      } catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
     }
 
     async function load() {
@@ -391,6 +403,22 @@
       const file = el('input', { name: 'file', type: 'file', class: 'visually-hidden',
         accept: 'application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp' });
       const chosen = el('p', { class: 'hint', hidden: true });
+      const pkg = el('input', { type: 'file', class: 'visually-hidden', accept: '.json,application/json' });
+      pkg.addEventListener('change', async () => {
+        if (!pkg.files[0]) return;
+        const fd = new FormData(); fd.append('file', pkg.files[0]);
+        if (name.value.trim()) fd.append('name', name.value.trim());
+        out.replaceChildren(notice('מייבא…'));
+        try {
+          const r = await api('tpl_import', fd);
+          dlg.close();
+          location.hash = 'tpl=' + r.id;
+          const n = (k, one, many) => k === 1 ? one : `${k} ${many}`;
+          window.DT.toast('התבנית יובאה' + (r.lists ? ' · ' + n(r.lists, 'רשימה אחת', 'רשימות') : '') + (r.fonts ? ' · ' + n(r.fonts, 'גופן אחד', 'גופנים') : '')
+            + (r.notes.length ? '. שימו לב: ' + r.notes.join(' ') : ''));
+        } catch (err) { out.replaceChildren(notice(err.message, 'bad')); }
+        pkg.value = '';
+      });
       // שלב 10: ב-PDF — לפרק (המערכת קוראת שדות וטקסט) או להשתמש כקובץ נעול.
       const pdfMode = el('div', { class: 'pdf-mode f', hidden: true },
         el('span', {}, 'PDF — מה לעשות איתו?'),
@@ -408,7 +436,10 @@
             if (!name.value.trim()) { name.focus(); out.replaceChildren(notice('קודם שם לתבנית', 'bad')); return; }
             try { const id = (await api('tpl_create_authored', { name: name.value })).id; dlg.close(); location.hash = 'tpl=' + id; }
             catch (err) { out.replaceChildren(notice(err.message, 'bad')); }
-          } }, el('span', { class: 'tile-ic', 'aria-hidden': 'true' }, '✍️'), el('span', {}, 'לכתוב כאן, בלי קובץ', el('small', {}, 'כותרות, פסקאות, טבלה ושדות')))),
+          } }, el('span', { class: 'tile-ic', 'aria-hidden': 'true' }, '✍️'), el('span', {}, 'לכתוב כאן, בלי קובץ', el('small', {}, 'כותרות, פסקאות, טבלה ושדות'))),
+          // ייבוא תבנית שיוצאה (מהמערכת, ממשתמש אחר): הקובץ המקורי + המבנה + רשימות + גופנים
+          el('label', { class: 'tile' }, pkg, el('span', { class: 'tile-ic', 'aria-hidden': 'true' }, '📦'),
+            el('span', {}, 'ייבוא תבנית', el('small', {}, 'קובץ .dt.json שיוצא מהמערכת')))),
         chosen, pdfMode, submit, out);
       file.addEventListener('change', () => {
         const f = file.files[0];
