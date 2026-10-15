@@ -856,18 +856,20 @@
         });
         const lv = cur && cur.levels.length > 1 ? el('select', { 'aria-label': 'רמה', disabled: readOnly },
           cur.levels.map((n, i) => el('option', { value: i, selected: o.list.level === i }, `${i + 1}. ${n}`))) : null;
-        if (lv) lv.addEventListener('change', () => { o.list.level = Number(lv.value); setDirty(true); });
-        // שפה בפלט: בוחרים בעברית, ובמסמך שיוצא (PDF / Word / הדפסה) נכתב התרגום
+        if (lv) lv.addEventListener('change', () => { o.list.level = Number(lv.value); setDirty(true); draw_(); });
+        // מה ייכתב במסמך: בטופס בוחרים מהעמודה בעברית, ובמסמך שיוצא (PDF / Word / הדפסה) — העמודה שנבחרה כאן
         const langs = cur ? [...new Set([...(cur.langs || []), ...(o.list.lang ? [o.list.lang] : [])])] : [];
+        const colName = (k) => (cur.names && cur.names[o.list.level] && cur.names[o.list.level][k]) || LANG_NAMES[k] || k;
         const lang = cur ? el('select', { 'aria-label': 'שפה בפלט', disabled: readOnly },
-          el('option', { value: '' }, 'כמו שנבחר (עברית)'),
-          langs.map(k => el('option', { value: k, selected: o.list.lang === k }, LANG_NAMES[k] || k))) : null;
+          el('option', { value: '' }, `${cur.levels[o.list.level] || 'הערך'} — כמו שנבחר`),
+          langs.map(k => el('option', { value: k, selected: o.list.lang === k }, colName(k) + (colName(k) !== LANG_NAMES[k] ? ` (${k})` : '')))) : null;
         if (lang) lang.addEventListener('change', () => { if (lang.value) o.list.lang = lang.value; else delete o.list.lang; setDirty(true); });
         box.replaceChildren(...[el('div', { class: 'fields two' },
           el('label', { class: 'f' }, el('span', {}, '📚 ערכים מרשימה'), sel),
           lv ? el('label', { class: 'f' }, el('span', {}, 'רמה'), lv) : el('span')),
-          lang ? el('label', { class: 'f' }, el('span', {}, '🌐 שפה במסמך'), lang) : null,
-          cur && !langs.length ? el('p', { class: 'hint' }, 'אפשר להדפיס את הערכים בשפה אחרת (למשל אנגלית): מוסיפים תרגומים בעריכת הרשימה — "🌐 תרגומים".') : null,
+          lang ? el('label', { class: 'f' }, el('span', {}, '📄 עמודה שנכתבת במסמך'), lang) : null,
+          lang && langs.length ? el('p', { class: 'hint' }, 'בטופס בוחרים מהעמודה בעברית; במסמך שיוצא נכתבת העמודה שנבחרה כאן.') : null,
+          cur && !langs.length ? el('p', { class: 'hint' }, 'להדפסה באנגלית: עמודה באנגלית ליד כל עמודה בעברית בקובץ (למשל "בית עלמין, Cemetery, גוש, Block…") — או "🌐 תרגומים" בעריכת הרשימה.') : null,
           !ls.length ? el('p', { class: 'hint' }, 'עוד אין רשימות. יוצרים ב"🔌 חיבורים" ← "📚 רשימות" — ידנית או מקובץ Excel.') : null,
           cur && cur.levels.length > 1 ? el('p', { class: 'hint' }, `רשימה מקוננת (${cur.levels.join(' › ')}): שדות ועמודות מאותה רשימה ברמות שמעל מסננים את האפשרויות כאן.`) : null].filter(Boolean));
       };

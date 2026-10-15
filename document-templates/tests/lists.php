@@ -102,6 +102,20 @@ $it = json_decode(json_encode($imp['translations']), true);
 check('ייבוא: עמודת "(en)" / "[fr]" — תרגום, לא רמה', $imp['levels'] === ['בית עלמין', 'גוש'] && count($imp['rows']) === 3
     && $it === ['0' => ['הר המנוחות' => ['en' => 'Har HaMenuchot', 'fr' => 'Har HaMenouhot'], 'גבעת שאול' => ['en' => 'Givat Shaul']]]);
 
+// עמודה באנגלית בשם משלה: ליד כל עמודה בעברית, או כולן בסוף — מה שנכתב במסמך
+$pair = function (string $csv) use ($a, $tmp) {
+    file_put_contents("$tmp/p.csv", $csv);
+    $r = list_import($a, ['file' => ['tmp_name' => "$tmp/p.csv", 'error' => 0, 'size' => strlen($csv)]]);
+    return [$r['levels'], json_decode(json_encode($r['translations']), true)];
+};
+$want = ['names' => ['0' => ['en' => 'Cemetery'], '1' => ['en' => 'Parcel']], '0' => ['גבעת שאול מערב' => ['en' => 'Givat Shaul West']], '1' => ['ז' => ['en' => 'Z']]];
+[$lv1, $t1] = $pair("\u{FEFF}בית עלמין,Cemetery,חלקה,Parcel,קבר\nגבעת שאול מערב,Givat Shaul West,ז,Z,1\n,,,,2\n");
+check('עמודה באנגלית צמודה: לא רמה — הפלט של הרמה, בשם שלה', $lv1 === ['בית עלמין', 'חלקה', 'קבר'] && $t1 == $want);
+[$lv2, $t2] = $pair("בית עלמין,חלקה,קבר,Cemetery,Parcel\nגבעת שאול מערב,ז,1,Givat Shaul West,Z\n");
+check('עמודות באנגלית בסוף — לפי הסדר', $lv2 === ['בית עלמין', 'חלקה', 'קבר'] && $t2 == $want);
+[$lv3] = $pair("Cemetery,Parcel\nGivat Shaul,Z\n");
+check('רשימה כולה באנגלית — הכול רמות', $lv3 === ['Cemetery', 'Parcel']);
+
 // רשימה גדולה: 30,000 קברים — לא נשלחת כולה עם המסמך; האפשרויות מהשרת רמה אחרי רמה
 $csvBig = "בית עלמין,בית עלמין (en),גוש,חלקה,קבר\n";
 for ($i = 0; $i < 30000; $i++) $csvBig .= ($i < 15000 ? 'הר המנוחות,Har HaMenuchot' : 'גבעת שאול,Givat Shaul') . ',' . (100 + intdiv($i, 1000)) . ',' . (1 + intdiv($i % 1000, 100)) . ',' . ($i % 100 + 1) . "\n";

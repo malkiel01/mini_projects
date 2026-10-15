@@ -92,7 +92,7 @@ function list_view(array $r, bool $rows = false): array
     $tr = !empty($r['tr_enc']) ? (json_decode((string)unseal($r['tr_enc']), true) ?: []) : [];
     return ['id' => (int)$r['id'], 'name' => (string)unseal($r['name_enc']),
         'levels' => json_decode((string)unseal($r['levels_enc']), true) ?: [], 'row_count' => (int)$r['row_count'],
-        'langs' => list_tr_langs($tr), 'updated_at' => $r['updated_at']]
+        'langs' => list_tr_langs($tr), 'names' => (object)($tr['names'] ?? []), 'updated_at' => $r['updated_at']]
         + ($rows ? ['rows' => json_decode((string)unseal($r['rows_enc']), true) ?: [], 'translations' => (object)$tr] : []);
 }
 
@@ -100,7 +100,7 @@ function list_view(array $r, bool $rows = false): array
 function list_tr_langs(array $tr): array
 {
     $l = [];
-    foreach ($tr as $vals) foreach ((array)$vals as $t) foreach ((array)$t as $lang => $x) if ($x !== '') $l[$lang] = true;
+    foreach ($tr as $lv => $vals) if ($lv !== 'names') foreach ((array)$vals as $t) foreach ((array)$t as $lang => $x) if ($x !== '') $l[$lang] = true;
     return array_values(array_intersect(array_keys(LIST_LANGS), array_keys($l)));
 }
 
@@ -108,7 +108,13 @@ function list_tr_langs(array $tr): array
 function list_tr_clean($tr, array $rows, int $levels): array
 {
     $out = [];
+    // שמות העמודות לפלט: {"names": {"<רמה>": {"en": "Cemetery"}}}
+    foreach ((array)(((array)$tr)['names'] ?? []) as $lv => $ns) foreach ((array)$ns as $lang => $n) {
+        $n = mb_substr(trim((string)$n), 0, 80);
+        if ((int)$lv >= 0 && (int)$lv < $levels && isset(LIST_LANGS[$lang]) && $n !== '') $out['names'][(string)(int)$lv][$lang] = $n;
+    }
     foreach ((array)$tr as $lv => $vals) {
+        if ($lv === 'names') continue;
         $lv = (int)$lv;
         if ($lv < 0 || $lv >= $levels || !is_array($vals)) continue;
         $have = array_flip(array_map('strval', array_column($rows, $lv)));
@@ -220,13 +226,31 @@ function list_import(array $user, array $files, array $post = []): array
     if (count($rows) < 2) throw new ApiError('צריך שורת כותרת (שמות הרמות) ולפחות שורה אחת', 422);
     $head = array_map(fn($v) => trim((string)$v), array_shift($rows));
     while ($head && end($head) === '') array_pop($head);
-    // עמודת תרגום: "בית עלמין (en)" / "בית עלמין [fr]" — תרגום של הרמה בשם הזה, לא רמה בפני עצמה
-    $lvCols = []; $trCols = [];
+    // עמודה לפלט (בשפה אחרת) — לא רמה בפני עצמה, אלא מה שנכתב במסמך במקום הערך שנבחר:
+    //   "בית עלמין (en)" / "בית עלמין [fr]" — של הרמה בשם הזה;
+    //   כותרת בלי עברית ("Cemetery", "Cemetery (en)") — של הרמה שמימינה (עמודה צמודה),
+    //   או לפי הסדר (כל העמודות באנגלית בסוף: הראשונה — לרמה הראשונה, וכן הלאה).
+    $isHe = fn($h) => (bool)preg_match('/\p{Hebrew}/u', $h);
+    $anyHe = (bool)array_filter($head, $isHe);
+    $lvCols = []; $alt = [];
     foreach ($head as $i => $h) {
-        if (preg_match('/^(.*?)\s*[\(\[]\s*([a-z]{2})\s*[\)\]]$/u', $h, $m) && isset(LIST_LANGS[strtolower($m[2])])) $trCols[$i] = [trim($m[1]), strtolower($m[2])];
+        $lang = null; $base = $h;
+        if (preg_match('/^(.*?)\s*[\(\[]\s*([a-z]{2})\s*[\)\]]$/iu', $h, $m) && isset(LIST_LANGS[strtolower($m[2])])) { $lang = strtolower($m[2]); $base = trim($m[1]); }
+        if ($lang !== null || ($anyHe && !$isHe($h) && preg_match('/\p{L}/u', $h))) $alt[$i] = [$base, $lang ?? 'en', $h];
         else $lvCols[$i] = $h;
     }
     $levels = list_levels_clean(array_values($lvCols));
+    $lvIdx = array_flip(array_keys($lvCols));   // עמודה בקובץ ← רמה
+    $trCols = []; $taken = [];
+    foreach ($alt as $i => [$base, $lang, $h]) {
+        $lv = array_search($base, $levels, true);
+        // צמודה לרמה (עברית, אנגלית, עברית, אנגלית…) — לא כשהעמודה הבאה גם באנגלית (כולן בסוף, בגוש אחד)
+        if ($lv === false && isset($lvIdx[$i - 1]) && !isset($alt[$i + 1]) && !isset($taken[$lang][$lvIdx[$i - 1]])) $lv = $lvIdx[$i - 1];
+        if ($lv === false) for ($k = 0; $k < count($levels); $k++) if (!isset($taken[$lang][$k])) { $lv = $k; break; }   // לפי הסדר
+        if ($lv === false || isset($taken[$lang][$lv])) continue;
+        $taken[$lang][$lv] = true;
+        $trCols[$i] = [$lv, $lang, $base];
+    }
     $pos = array_flip(array_keys($lvCols));   // עמודה בקובץ ← רמה
     $plain = array_map(fn($r) => array_map(fn($i) => $r[$i] ?? '', array_keys($lvCols)), $rows);
     $clean = list_rows_clean($plain, count($levels));
@@ -235,13 +259,14 @@ function list_import(array $user, array $files, array $post = []): array
     $prev = [];
     foreach ($rows as $r) {
         foreach ($lvCols as $i => $name) { $v = trim((string)($r[$i] ?? '')); if ($v !== '') $prev[$pos[$i]] = $v; }
-        foreach ($trCols as $i => [$lvName, $lang]) {
+        foreach ($trCols as $i => [$lv, $lang]) {
             $x = trim((string)($r[$i] ?? ''));
-            $lv = array_search($lvName, $levels, true);
-            if ($x === '' || $lv === false || !isset($prev[$lv])) continue;
+            if ($x === '' || !isset($prev[$lv]) || $x === $prev[$lv]) continue;   // זהה (מספר גוש) — אין מה לתרגם
             $tr[(string)$lv][$prev[$lv]][$lang] = $x;
         }
     }
+    // שם העמודה לפלט ("Cemetery") — כך היא מוצגת בבחירה "מה ייכתב במסמך"
+    foreach ($trCols as [$lv, $lang, $base]) if ($base !== $levels[$lv]) $tr['names'][(string)$lv][$lang] = $base;
     $tr = list_tr_clean($tr, $clean, count($levels));
     if (!empty($post['apply'])) {
         // שמירה ישירה בשרת (רשימה גדולה — בלי לשלוח את כל השורות לדפדפן ובחזרה)

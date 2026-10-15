@@ -117,7 +117,7 @@
       const done = vals.filter(v => t[v]?.[lang]).length;
       trCount.textContent = `${done} מתוך ${vals.length} מתורגמים` + (shown.length > SHOW ? ` · מוצגים ${SHOW} הראשונים` : '');
       trBox.replaceChildren(el('table', { class: 'grid' },
-        el('thead', {}, el('tr', {}, el('th', {}, L[level] + ' (כמו שנבחר)'), el('th', {}, LANGS[lang]))),
+        el('thead', {}, el('tr', {}, el('th', {}, L[level] + ' (כמו שנבחר)'), el('th', {}, data.translations.names?.[level]?.[lang] || LANGS[lang]))),
         el('tbody', {}, shown.slice(0, SHOW).map(v => {
           const inp = el('input', { value: t[v]?.[lang] ?? '', dir: ['ar'].includes(lang) ? 'rtl' : 'ltr', 'aria-label': v + ' — ' + LANGS[lang] });
           inp.addEventListener('input', () => {
@@ -203,7 +203,7 @@
       msg, el('div', { class: 'row-btns' }, search, count), grid,
       el('details', { class: 'fs-group tr-group' }, el('summary', {}, '🌐 תרגומים — הערך במסמך בשפה אחרת'),
         el('p', { class: 'hint' }, 'בטופס בוחרים בעברית; בשדה שהוגדר לו "🌐 שפה במסמך" — נכתב במסמך התרגום מכאן. ערך בלי תרגום נכתב כמו שהוא. ' +
-          'מקובץ: עמודה בשם הרמה ושפה בסוגריים — למשל "בית עלמין (en)" או "בית עלמין (fr)".'),
+          'מקובץ: עמודה באנגלית ליד כל עמודה בעברית ("בית עלמין, Cemetery, גוש, Block…"), או כולן בסוף באותו סדר; לשפה אחרת — "בית עלמין (fr)".'),
         el('div', { class: 'fields two' }, el('label', { class: 'f' }, el('span', {}, 'רמה'), trLevel), el('label', { class: 'f' }, el('span', {}, 'שפה'), trLang)),
         el('div', { class: 'row-btns' }, trSearch, trCount), trBox),
       l ? el('details', { class: 'fs-group adv' }, el('summary', {}, 'מתקדם'),
