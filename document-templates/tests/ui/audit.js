@@ -68,7 +68,8 @@ function scan() {
     fs.writeFileSync(process.env.OUT + '/test.pdf', await g.pdf({ format: 'A4' }));
     await g.close();
   }
-  const ctx = await b.newContext({ viewport: { width: 1280, height: 900 } });
+  // SCHEME=dark — אותה סקירה במצב כהה
+  const ctx = await b.newContext({ viewport: { width: 1280, height: 900 }, colorScheme: process.env.SCHEME === 'dark' ? 'dark' : 'light' });
   const p = await ctx.newPage();
   const errs = []; p.on('pageerror', e => errs.push(e.message));
   // ── נתונים: שמות ארוכים בכוונה ──

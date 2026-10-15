@@ -1631,11 +1631,19 @@
         } }, '+ עמודה') : null);
       };
       draw_();
-      // קיבוץ: שורות רצופות עם אותו ערך בעמודה הראשונה — קבוצה אחת בפלט (הערך פעם אחת, קו עבה בין קבוצות)
-      const grp = el('input', { type: 'checkbox', checked: !!f.group });
-      grp.addEventListener('change', () => { f.group = grp.checked; setDirty(true); });
-      return el('div', {}, box, el('label', { class: 'switch' }, grp, el('span', {}, 'קיבוץ לפי העמודה הראשונה',
-        el('small', { class: 'muted' }, 'שורות עם אותו ערך בעמודה הראשונה (למשל אותה מכפלה) מודפסות כקבוצה אחת'))));
+      // קיבוץ: שורות רצופות שזהות ב-N העמודות הראשונות — קבוצה אחת בפלט (הערכים פעם אחת, קו עבה בין קבוצות)
+      const grp = el('select', { 'aria-label': 'קיבוץ' });
+      const fillGrp = () => {
+        const cur = f.group === true ? 1 : Number(f.group) || 0;
+        grp.replaceChildren(el('option', { value: 0, selected: !cur }, 'בלי קיבוץ'),
+          ...f.columns.slice(0, -1).map((c, i) => el('option', { value: i + 1, selected: cur === i + 1 },
+            'לפי ' + f.columns.slice(0, i + 1).map(x => x.label).join(' › '))));
+      };
+      fillGrp();
+      box.addEventListener('change', fillGrp);
+      grp.addEventListener('change', () => { f.group = Number(grp.value); setDirty(true); });
+      return el('div', {}, box, el('label', { class: 'f' }, el('span', {}, 'קיבוץ שורות'), grp),
+        el('p', { class: 'hint' }, 'שורות רצופות שזהות בעמודות האלה (למשל גוש › חלקה › שורה › אחוזה) — קבוצה אחת: הערכים מודפסים פעם אחת, וקו עבה רק בין קבוצות. במילוי: "+ שורה באותה …".'));
     }
 
     /** "מוצג רק אם…": שדה, פעולה, ערך. target — שדה או קטע בגוף. */

@@ -699,7 +699,7 @@
     menu = el('div', { class: 'user-menu', role: 'menu', 'aria-label': 'תפריט המשתמש' },
       el('div', { class: 'menu-head' }, el('span', { class: 'avatar', style: `--h:${hueOf(me.name)}`, 'aria-hidden': 'true' }, initialsOf(me.name)),
         el('span', { class: 'mi-tx' }, el('b', {}, me.name), el('small', { dir: 'ltr' }, me.email))),
-      item('👤', 'הגדרות משתמש', userSettings, 'שם, סיסמה, מכשירים'),
+      item('👤', 'הגדרות משתמש', userSettings, 'תצוגה, שם, סיסמה, מכשירים'),
       item('🔌', 'חיבורים ו-API', go('connections')),
       me.is_developer ? el('div', { class: 'menu-sep' }, 'מפתח המערכת') : null,
       me.is_developer ? [
@@ -740,7 +740,14 @@
         msg.replaceChildren(notice('הסיסמה הוחלפה' + (r.other_sessions ? ` — ${r.other_sessions} מכשירים אחרים נותקו` : ''), 'ok'));
       } catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
     } }, 'החלפת סיסמה');
+    // ערכת נושא — במכשיר הזה (assets/js/theme.js)
+    const theme = el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'ערכת נושא' },
+      [['auto', '📱 לפי המכשיר'], ['light', '☀️ בהיר'], ['dark', '🌙 כהה']].map(([v, t]) => el('label', {},
+        el('input', { type: 'radio', name: 'dt-theme', value: v, checked: (window.DTTheme ? window.DTTheme.get() : 'auto') === v }), el('span', {}, t))));
+    theme.addEventListener('change', (e) => window.DTTheme && window.DTTheme.set(e.target.value));
     sheet('הגדרות משתמש', el('div', { class: 'field-sheet' },
+      el('section', { class: 'fs-group' }, el('h3', { class: 'sec-title' }, 'תצוגה'), theme,
+        el('p', { class: 'hint' }, '"לפי המכשיר" — בהיר או כהה לפי הגדרת הטלפון או המחשב. הבחירה נשמרת במכשיר הזה.')),
       el('section', { class: 'fs-group' }, el('h3', { class: 'sec-title' }, 'החשבון'),
         el('dl', { class: 'cells' },
           el('div', {}, el('dt', {}, 'מייל'), el('dd', { dir: 'ltr' }, me.email)),
