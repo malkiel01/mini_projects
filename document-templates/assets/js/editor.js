@@ -222,6 +222,7 @@
       fields: (tpl.schema.fields || []).map(f => ({ role: 'owner', ...f })),
       roles: (tpl.schema.roles && tpl.schema.roles.length ? tpl.schema.roles : [{ key: 'owner', label: 'אני (המנפיק)', auth: 'none' }]).map(r => ({ ...r })),
       sequential: !!tpl.schema.sequential,
+      certificate: !!tpl.schema.certificate,
       parsed: !!tpl.schema.parsed,
       ...(tpl.schema.body ? { body: tpl.schema.body.map(b => ({ ...b })) } : {}),
     };
@@ -702,7 +703,7 @@
       if (tab === 'design') { panel.replaceChildren(); return; }
       if (tab === 'fields') panel.replaceChildren(fieldsList());
       else if (tab === 'roles') panel.replaceChildren(rolesPanel());
-      else panel.replaceChildren(numberingPanel(), el('div', { class: 'numbering api-hint' }, el('h2', {}, '🔌 הנפקה ממערכת חיצונית'),
+      else panel.replaceChildren(outputPanel(), numberingPanel(), el('div', { class: 'numbering api-hint' }, el('h2', {}, '🔌 הנפקה ממערכת חיצונית'),
         el('p', { class: 'hint' }, 'מערכת חיצונית (CRM, אתר) יכולה להנפיק מסמכים מהתבנית הזאת דרך ה-API, ולקבל הודעה כשמולאו.'),
         el('p', { class: 'small' }, 'מזהה התבנית: ', el('code', { dir: 'ltr' }, String(id))),
         el('a', { class: 'link small', href: '#connections' }, 'מפתחות ודוגמאות — ב"🔌 חיבורים"')),
@@ -1099,6 +1100,17 @@
         none: '—',
       }[numbering.scheme];
     }
+    /** ה-PDF שיוצא: נקי (רק המסמך), או עם דף אישור בסוף. */
+    function outputPanel() {
+      const cert = el('input', { type: 'checkbox', checked: !!schema.certificate, disabled: readOnly });
+      cert.addEventListener('change', () => { schema.certificate = cert.checked; setDirty(true); });
+      return el('div', { class: 'numbering' },
+        el('h2', {}, 'ה-PDF שיוצא'),
+        el('label', { class: 'switch' }, cert, el('span', {}, 'לצרף דף אישור בסוף המסמך שהושלם')),
+        el('p', { class: 'small' }, 'דף האישור: טביעת אצבע של הערכים ויומן הפעולות — הוכחה שהמסמך לא שונה אחרי שננעל. ' +
+          'כבוי — ה-PDF נקי, ודף האישור יורד בנפרד בכפתור 🧾 במסמך שהושלם. מתאים להפעיל בחוזה; לא במסמך שנשלח הלאה, כמו אישור.'));
+    }
+
     function numberingPanel() {
       const preview = el('strong', { dir: 'ltr' }, numberingPreview());
       const upd = (k, v) => { numbering[k] = v; numberingDirty = true; setDirty(true); preview.textContent = numberingPreview(); };

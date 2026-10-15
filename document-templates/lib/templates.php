@@ -384,6 +384,8 @@ function clean_schema($s, array $sources = [], array $fonts = [], array $contact
     }
 
     return ['pages' => $pages, 'fields' => $fields, 'roles' => $roles, 'sequential' => !empty($s['sequential']),
+        // דף אישור (טביעת אצבע + יומן) בסוף ה-PDF של מסמך שהושלם — כבוי: ה-PDF נקי, ודף האישור בכפתור נפרד
+        'certificate' => !empty($s['certificate']),
         ...($body !== null ? ['body' => $body] : []),
         // שלב 10: הפירוק האוטומטי כבר רץ — לא להוסיף שוב את שדות הטופס המקורי.
         'parsed' => !empty($s['parsed'])];

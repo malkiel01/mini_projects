@@ -316,6 +316,7 @@
           !fill && lvl() >= 4 ? ib('🔗', 'שיתוף', () => window.DT.shareDialog('document', id, doc.title, reload)) : null,
           !fill && doc.access && doc.access !== 'owner' ? ib('🚪', 'עזיבה', () => window.DT.leave('document', id, doc.title)) : null,
           fill || isWord || isAuthored ? null : pdfBtn,
+          !fill && doc.status === 'completed' && doc.final_hash ? ib('🧾', 'דף אישור', downloadCertificate) : null,
           !fill && (isWord || isAuthored) ? ib('⬇️', 'הורדת Word', () => wordFile(false)) : null,
           (isWord || isAuthored) && !fill ? ib('👁️', 'תצוגה מקדימה', () => wordFile(true)) : null,
           isAuthored && !fill ? ib('🖨️', 'הדפסה / PDF', printDoc) : null),
@@ -879,11 +880,16 @@
         el('div', { class: 'row' }, el('h2', {}, 'יומן המסמך'), el('button', { class: 'link small', onclick: () => { journal.hidden = true; } }, 'סגירה')),
         el('p', { class: 'small ' + (doc.chain_ok ? 'ok-text' : 'bad-text') },
           doc.chain_ok ? '✓ שרשרת היומן שלמה — לא נמחקה ולא שונתה אף רשומה' : '⚠ שרשרת היומן שבורה — רשומה שונתה או נמחקה'),
-        el('ol', { class: 'events' }, [...doc.events].reverse().map(e => el('li', {},
-          el('strong', {}, EVENTS[e.type] || e.type), ' ',
+        // שמירות רצופות — שורה אחת (×מספר, טווח שעות); השינויים עצמם — בלחיצה
+        el('ol', { class: 'events' }, collapseEvents(doc.events).reverse().map(e => el('li', {},
+          el('strong', {}, (EVENTS[e.type] || e.type) + (e.n > 1 ? ` ×${e.n}` : '')), ' ',
           e.by ? el('span', { class: 'small' }, '· ' + e.by + ' ') : null,
-          el('span', { class: 'muted small' }, fmtDate(e.at) + (e.ip ? ' · ' + e.ip : '')),
-          e.detail && e.detail.changes ? el('ul', { class: 'small' }, e.detail.changes.map(c => el('li', {},
+          el('span', { class: 'muted small' }, fmtDate(e.at) + (e.n > 1 && hhmm(e.until) !== hhmm(e.at) ? '–' + hhmm(e.until) : '') + (e.ip ? ' · ' + e.ip : '')),
+          e.changes.length > 3 ? el('details', { class: 'small' }, el('summary', {}, `${e.changes.length} שינויים`),
+            el('ul', {}, e.changes.map(c => el('li', {},
+            c.label + ': ', 'signed' in c ? (c.signed ? 'נחתם' : 'החתימה נמחקה')
+              : el('span', {}, el('del', { class: 'muted' }, short(c.from)), ' → ', short(c.to)))))) :
+          e.changes.length ? el('ul', { class: 'small' }, e.changes.map(c => el('li', {},
             c.label + ': ', 'signed' in c ? (c.signed ? 'נחתם' : 'החתימה נמחקה')
               : el('span', {}, el('del', { class: 'muted' }, short(c.from)), ' → ', short(c.to))))) : null,
           e.detail && e.detail.number ? el('div', { class: 'small muted' }, 'מספר: ' + e.detail.number) : null,
@@ -1045,6 +1051,18 @@
     }
 
     // ── PDF ──
+    /** דף האישור לבד: טביעת אצבע ויומן — למי שצריך הוכחה, בלי להדביק אותו למסמך. */
+    async function downloadCertificate() {
+      try {
+        const bytes = await certificatePdf(doc);
+        const a = el('a', { href: URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' })),
+          download: ('דף אישור ' + (doc.number ? doc.number + ' ' : '') + doc.title).replace(/[\\/:*?"<>|]+/g, '_') + '.pdf' });
+        document.body.append(a); a.click(); a.remove();
+      } catch (e) {
+        msg.replaceChildren(notice('הפקת דף האישור נכשלה: ' + e.message, 'bad'));
+      }
+    }
+
     async function downloadPdf() {
       pdfBtn.disabled = true;
       pdfBtn.textContent = 'מכין PDF…';
@@ -1119,6 +1137,72 @@
       out.push(line);
     }
     return out;
+  }
+
+  const A4 = [595.28, 841.89];
+  /** דפי טקסט בעברית (נספח, דף אישור) — מימין, עם מעבר לדף חדש. */
+  function pageWriter(pdf, font) {
+    const { rgb } = window.PDFLib;
+    return (heading, blocks) => {
+      let page = pdf.addPage(A4), y = A4[1] - 60;
+      const line = (t, size, color) => {
+        if (y < 50) { page = pdf.addPage(A4); y = A4[1] - 60; }
+        const v = pdfText(t);
+        page.drawText(v, { x: A4[0] - 50 - font.widthOfTextAtSize(v, size), y, size, font, color: color || rgb(0, 0, 0) });
+        y -= size * 1.5;
+      };
+      line(heading, 18);
+      y -= 6;
+      for (const b of blocks) {
+        if (b.title) line(b.title, 12, rgb(0.3, 0.3, 0.3));
+        for (const l of wrapLines(b.text, font, 11, A4[0] - 100)) line(l, 11);
+        y -= 8;
+      }
+    };
+  }
+
+  /**
+   * היומן לתצוגה: שמירות רצופות (אותו מי, אותה כתובת) — שורה אחת עם מונה וטווח שעות.
+   * רק בתצוגה; היומן עצמו (שרשרת שאי אפשר לשנות) נשאר כמו שהוא.
+   */
+  function collapseEvents(events) {
+    const out = [];
+    for (const e of events) {
+      const last = out[out.length - 1];
+      if (last && e.type === 'values_saved' && last.type === 'values_saved' && (last.by || '') === (e.by || '') && (last.ip || '') === (e.ip || '')) {
+        last.n++; last.until = e.at;
+        last.changes.push(...(e.detail?.changes || []));
+        continue;
+      }
+      out.push({ ...e, n: 1, until: e.at, changes: [...(e.detail?.changes || [])] });
+    }
+    return out;
+  }
+  const hhmm = (iso) => new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+  const eventLine = (e) => `${fmtDate(e.at)}${e.n > 1 && hhmm(e.until) !== hhmm(e.at) ? '–' + hhmm(e.until) : ''} · ${EVENTS[e.type] || e.type}`
+    + (e.n > 1 ? ` ×${e.n}` : '') + (e.ip ? ' · IP ' + e.ip : '');
+
+  /** תוכן דף האישור: המסמך, מתי, טביעת האצבע של הערכים, והיומן (מאוחד). */
+  function certBlocks(doc) {
+    return [
+      { text: `מסמך: ${doc.title}${doc.number ? ' (' + doc.number + ')' : ''}` },
+      { text: `נוצר: ${fmtDate(doc.created_at)} · הושלם: ${fmtDate(doc.completed_at)}` },
+      { text: `טביעת אצבע (SHA-256) של הערכים: ${doc.final_hash}` },
+      { title: 'יומן', text: collapseEvents(doc.events).map(eventLine).join('\n') },
+    ];
+  }
+
+  /** דף האישור לבד — PDF נפרד, למסמך שהושלם. */
+  async function certificatePdf(doc) {
+    await loadScript(PDFLIB);
+    await loadScript(FONTKIT);
+    const pdf = await window.PDFLib.PDFDocument.create();
+    pdf.registerFontkit(window.fontkit);
+    const font = await pdf.embedFont(await (await fetch(FONT)).arrayBuffer(), { subset: true });
+    pageWriter(pdf, font)('דף אישור', certBlocks(doc));
+    pdf.setTitle('דף אישור — ' + doc.title);
+    pdf.setProducer('תבניות מסמכים');
+    return pdf.save();
   }
 
   async function buildPdf(doc, values, srcBytes) {
@@ -1263,38 +1347,14 @@
     }
 
     // נספח: טקסטים שלא נכנסו בשדה, כשמנהל הטופס בחר "להמשיך בנספח".
-    const A4 = [595.28, 841.89];
-    const writePages = (heading, blocks) => {
-      let page = pdf.addPage(A4), y = A4[1] - 60;
-      const line = (t, size, color) => {
-        if (y < 50) { page = pdf.addPage(A4); y = A4[1] - 60; }
-        const v = pdfText(t);
-        page.drawText(v, { x: A4[0] - 50 - font.widthOfTextAtSize(v, size), y, size, font, color: color || rgb(0, 0, 0) });
-        y -= size * 1.5;
-      };
-      line(heading, 18);
-      y -= 6;
-      for (const b of blocks) {
-        if (b.title) line(b.title, 12, rgb(0.3, 0.3, 0.3));
-        for (const l of wrapLines(b.text, font, 11, A4[0] - 100)) line(l, 11);
-        y -= 8;
-      }
-    };
+    const writePages = pageWriter(pdf, font);
     if (annex.length) {
       writePages('נספח' + (doc.number ? ' — ' + doc.number : ''),
         annex.map((a, i) => ({ title: `(${i + 1}) ${a.label}`, text: a.text })));
     }
 
-    // דף אישור — רק למסמך שהושלם.
-    if (doc.status === 'completed' && doc.final_hash) {
-      const ev = doc.events.map(e => `${fmtDate(e.at)} · ${EVENTS[e.type] || e.type}${e.ip ? ' · IP ' + e.ip : ''}`);
-      writePages('דף אישור', [
-        { text: `מסמך: ${doc.title}${doc.number ? ' (' + doc.number + ')' : ''}` },
-        { text: `נוצר: ${fmtDate(doc.created_at)} · הושלם: ${fmtDate(doc.completed_at)}` },
-        { text: `טביעת אצבע (SHA-256) של הערכים: ${doc.final_hash}` },
-        { title: 'יומן', text: ev.join('\n') },
-      ]);
-    }
+    // דף אישור בסוף — רק אם התבנית ביקשה (ההגדרות ← "ה-PDF שיוצא"). אחרת — בכפתור 🧾 נפרד
+    if (doc.schema.certificate && doc.status === 'completed' && doc.final_hash) writePages('דף אישור', certBlocks(doc));
 
     pdf.setTitle(doc.title);
     pdf.setProducer('תבניות מסמכים');

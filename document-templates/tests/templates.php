@@ -114,6 +114,9 @@ $col = fn($c) => clean_schema(['pages' => [['w' => 595, 'h' => 842]], 'fields' =
 check('צבע: ברירת מחדל ריק (שחור), #B91C1C נשמר באותיות קטנות, ערך לא תקין נזרק',
     $col(null) === '' && $col('#B91C1C') === '#b91c1c' && $col('red') === '' && $col('#12345') === '' && $col('#123456;x') === '');
 
+$cs = fn($x) => clean_schema(['pages' => [['w' => 595, 'h' => 842]], 'fields' => []] + $x)['certificate'];
+check('דף אישור: כבוי כברירת מחדל, נשמר כשמופעל', $cs([]) === false && $cs(['certificate' => true]) === true);
+
 foreach (array_merge(glob("$tmp/files/*") ?: [], array_filter(glob("$tmp/{,.}*", GLOB_BRACE) ?: [], 'is_file')) as $p) @unlink($p);
 @rmdir("$tmp/files");
 @rmdir($tmp);
