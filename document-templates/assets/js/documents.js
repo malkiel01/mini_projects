@@ -315,6 +315,7 @@
           fill || !(doc.participants || []).length || lvl() < 3 ? null : ib('👥', 'משתתפים', () => { side(people, journal); renderPeople(); }),
           !fill && lvl() >= 4 ? ib('🔗', 'שיתוף', () => window.DT.shareDialog('document', id, doc.title, reload)) : null,
           !fill && doc.access && doc.access !== 'owner' ? ib('🚪', 'עזיבה', () => window.DT.leave('document', id, doc.title)) : null,
+          fill ? null : ib('⧉', 'שכפול — מסמך חדש עם אותם ערכים', duplicate),
           fill || isWord || isAuthored ? null : pdfBtn,
           !fill && doc.status === 'completed' && doc.final_hash ? ib('🧾', 'דף אישור', downloadCertificate) : null,
           !fill && (isWord || isAuthored) ? ib('⬇️', 'הורדת Word', () => wordFile(false)) : null,
@@ -898,6 +899,7 @@
             c.label + ': ', 'signed' in c ? (c.signed ? 'נחתם' : 'החתימה נמחקה')
               : el('span', {}, el('del', { class: 'muted' }, short(c.from)), ' → ', short(c.to))))) : null,
           e.detail && e.detail.number ? el('div', { class: 'small muted' }, 'מספר: ' + e.detail.number) : null,
+          e.detail && e.detail.copy_of ? el('div', { class: 'small muted' }, '⧉ עותק של ' + e.detail.copy_of) : null,
           e.detail && e.detail.with ? el('div', { class: 'small muted' }, 'עם ' + e.detail.with + (e.detail.level ? ' · ' + e.detail.level : '')) : null,
           e.detail && e.detail.name ? el('div', { class: 'small muted' }, (e.detail.label ? e.detail.label + ': ' : '') + e.detail.name) : null,
           e.detail && e.detail.role ? el('div', { class: 'small muted' }, e.detail.role +
@@ -1057,6 +1059,23 @@
 
     // ── PDF ──
     /** דף האישור לבד: טביעת אצבע ויומן — למי שצריך הוכחה, בלי להדביק אותו למסמך. */
+    /** שכפול: מסמך חדש מאותה תבנית עם הערכים של זה — להדפסה חוזרת או לשינוי קטן. החתימות והקבצים לא עוברים. */
+    async function duplicate(e) {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try {
+        await flush();
+        if (inflight) await inflight;
+        const r = await api('doc_duplicate', { id });
+        location.hash = 'doc=' + r.id;
+        window.DT.toast(`נוצר ${r.number || 'מסמך חדש'} — עותק של ${doc.number || 'המסמך'}` +
+          (r.skipped.length ? `. לא הועתקו (חותמים / מעלים מחדש): ${r.skipped.join(', ')}` : ''));
+      } catch (err) {
+        btn.disabled = false;
+        msg.replaceChildren(notice(err.message, 'bad'));
+      }
+    }
+
     async function downloadCertificate() {
       try {
         const bytes = await certificatePdf(doc);

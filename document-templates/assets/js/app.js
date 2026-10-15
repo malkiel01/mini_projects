@@ -777,7 +777,7 @@
 
   // לעורך (editor.js): אותם עזרים, אותה מעטפת.
   window.DT = {
-    api, el, notice, setTab, shareDialog, leave, rank, LEVEL, sheet, tile, setBack,
+    api, el, notice, setTab, shareDialog, leave, rank, LEVEL, sheet, tile, setBack, toast,
     show: (...n) => show(...n),
     setLeaveGuard: (fn) => { leaveGuard = fn; },
     wide: () => document.body.classList.add('wide'),

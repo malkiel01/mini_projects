@@ -154,7 +154,8 @@ function doc_progress(array $schema, array $values): array
 
 // ── פעולות ───────────────────────────────────────────────────
 
-function doc_create(array $user, array $b): array
+/** $copy: ערכים התחלתיים במקום ברירות המחדל (שכפול). מחזיר גם את המזהה — לשכפול שממשיך מכאן. */
+function doc_create(array $user, array $b, ?array $copy = null): array
 {
     $t = tpl_owned((int)($b['template_id'] ?? 0), $user, 'fill');
     if ($t['archived_at']) throw new ApiError('התבנית בארכיון. שחזרו אותה כדי להנפיק', 409);
@@ -178,17 +179,62 @@ function doc_create(array $user, array $b): array
             'INSERT INTO field_values (document_id, field_key, row_index, value_enc, updated_by, updated_at) VALUES (?, ?, 0, ?, ?, ?)'
         );
         foreach ($schema['fields'] as $f) {
-            if (($f['default'] ?? '') !== '' && !in_array($f['type'], ['calc', 'system'], true)) $ins->execute([$docId, $f['key'], seal($f['default']), 'user:' . $user['id'], $now]);
+            if (in_array($f['type'], ['calc', 'system'], true)) continue;
+            $v = $copy !== null && array_key_exists($f['key'], $copy['values']) ? $copy['values'][$f['key']] : ($f['default'] ?? '');
+            if ($v !== '') $ins->execute([$docId, $f['key'], seal($v), 'user:' . $user['id'], $now]);
         }
         doc_recalc($docId, $schema, 'user:' . $user['id']);
         create_participants($docId, $schema, $user);
-        log_event($docId, 'user:' . $user['id'], 'created', ['number' => $number, 'template_version' => (int)$t['current_version']]);
+        if ($copy !== null) doc_copy_extras($docId, $copy, $user);
+        log_event($docId, 'user:' . $user['id'], 'created', ['number' => $number, 'template_version' => (int)$t['current_version']]
+            + ($copy !== null ? ['copy_of' => $copy['number']] : []));
         $pdo->commit();
     } catch (Throwable $e) {
         $pdo->rollBack();
         throw $e;
     }
     return ['ok' => true, 'id' => $docId, 'number' => $number];
+}
+
+/**
+ * שכפול: מסמך חדש מאותה תבנית (בגרסה הנוכחית), עם הערכים של המסמך הזה — להדפסה חוזרת או לשינוי קטן.
+ * לא עוברים: חתימות וקבצים (שייכים למסמך שבו נחתמו / הועלו), שדות מחושבים (מחושבים מחדש), וערך
+ * ששדה בתבנית כבר לא מקבל (שדה שנמחק, סוג שהשתנה, אפשרות שהוסרה). איש הקשר והממלאים — רק במסמך שלי.
+ */
+function doc_duplicate(array $user, array $b): array
+{
+    $src = doc_owned((int)($b['id'] ?? 0), $user, 'view');
+    $old = array_column(json_decode((string)unseal($src['schema_enc']), true)['fields'] ?? [], null, 'key');
+    $t = tpl_owned((int)$src['template_id'], $user, 'fill');
+    $schema = json_decode((string)unseal($t['schema_enc']), true) ?: [];
+    $vals = doc_values((int)$src['id']);
+    $values = [];
+    foreach ($schema['fields'] ?? [] as $f) {
+        if (in_array($f['type'], ['calc', 'system', 'signature', 'file'], true)) continue;
+        if (!isset($vals[$f['key']]) || ($old[$f['key']]['type'] ?? '') !== $f['type']) continue;   // שדה שרוקן במקור — נשאר ריק
+        try { $values[$f['key']] = clean_value($f, $vals[$f['key']]); } catch (ApiError) { /* ערך שהשדה כבר לא מקבל */ }
+    }
+    $mine = (int)$src['owner_id'] === (int)$user['id'];
+    $r = doc_create($user, ['template_id' => $t['id'], 'title' => (string)unseal($src['title_enc'])], [
+        'values' => $values, 'number' => $src['number'] ?: '#' . $src['id'], 'src' => (int)$src['id'], 'mine' => $mine,
+        'contact_id' => $mine ? $src['contact_id'] : null, 'tags_enc' => $src['tags_enc'],
+    ]);
+    $skipped = array_values(array_map(fn($f) => $f['label'], array_filter($schema['fields'] ?? [],
+        fn($f) => in_array($f['type'], ['signature', 'file'], true) && ($vals[$f['key']] ?? '') !== '')));
+    return $r + ['copied' => count($values), 'skipped' => $skipped];
+}
+
+/** בשכפול: איש הקשר, התגיות, ומי ממלא כל תפקיד (בלי הקישורים — ממלא מקבל קישור חדש). */
+function doc_copy_extras(int $docId, array $copy, array $user): void
+{
+    db()->prepare('UPDATE documents SET contact_id = ?, tags_enc = ? WHERE id = ?')->execute([$copy['contact_id'], $copy['tags_enc'], $docId]);
+    if (!$copy['mine']) return;
+    $st = db()->prepare('SELECT role_key, contact_id, contact_enc FROM participants WHERE document_id = ?');
+    $st->execute([$copy['src']]);
+    $up = db()->prepare('UPDATE participants SET contact_id = ?, contact_enc = ? WHERE document_id = ? AND role_key = ?');
+    foreach ($st->fetchAll() as $p) {
+        if ($p['contact_enc'] !== null || $p['contact_id'] !== null) $up->execute([$p['contact_id'], $p['contact_enc'], $docId, $p['role_key']]);
+    }
 }
 
 function doc_list(array $user, array $q): array
