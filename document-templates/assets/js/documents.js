@@ -509,7 +509,7 @@
       if (f.type === 'system') {
         return onPageText(el('output', { class: 'calc-out sys-out', 'data-sys': f.key, 'aria-label': f.label, title: 'מתמלא לבד', dir: 'auto' }, sysShown(f, v) || '—'));
       }
-      if (f.type === 'table') return tableControl(f);
+      if (f.type === 'table') return onPage ? tablePreview(f) : tableControl(f);
       if (f.type === 'file') {
         n = onPage
           ? el('button', { type: 'button', class: 'sig-btn file-btn', 'data-key': f.key, 'aria-label': f.label,
@@ -595,23 +595,65 @@
         }));
         queue(f.key, rows.length ? JSON.stringify(rows) : '');
       };
-      const rowEl = (r) => el('tr', {}, cols.map(c => {
+      const first = cols[0];
+      const rowEl = (r, i) => el('tr', { class: f.group && first && i > 0 && String(rows[i - 1][first.key] ?? '') === String(r[first.key] ?? '') && r[first.key] ? 'same-grp' : null }, cols.map(c => {
         if (c.type === 'calc') return el('td', { class: 'calc-cell', 'data-label': c.label }, C.display(r[c.key] ?? '', c.format));
+        if (c.type === 'select') {
+          const cur = r[c.key] ?? '';
+          const sel = el('select', { disabled: ro, 'aria-label': c.label }, el('option', { value: '' }, '—'),
+            [...(c.options || []), ...(cur && !(c.options || []).includes(cur) ? [cur] : [])].map(o => el('option', { value: o, selected: o === cur }, o)));
+          sel.addEventListener('change', () => { r[c.key] = sel.value; commit(); });
+          return el('td', { 'data-label': c.label }, sel);
+        }
         const inp = el('input', { value: r[c.key] ?? '', disabled: ro, 'aria-label': c.label,
           inputmode: c.type === 'number' ? 'decimal' : null, dir: c.type === 'number' ? 'ltr' : null });
-        inp.addEventListener('input', () => { r[c.key] = inp.value; commit(); });
+        inp.addEventListener('input', () => { r[c.key] = inp.value; commit(); if (f.group && c === first) markGroups(); });
         return el('td', { 'data-label': c.label }, inp);
       }), ro ? null : el('td', { class: 'row-del' }, el('button', { type: 'button', class: 'link small', title: 'מחיקת שורה',
         onclick: () => { rows.splice(rows.indexOf(r), 1); redraw(); commit(); } }, '✕')));
       const redraw = () => tbody.replaceChildren(...rows.map(rowEl));
+      // קיבוץ: שורה שממשיכה את הקבוצה של הקודמת (אותו ערך בעמודה הראשונה) — בלי קו מפריד
+      const markGroups = () => tbody.querySelectorAll('tr').forEach((tr, i) => tr.classList.toggle('same-grp',
+        !!(f.group && first && i > 0 && rows[i][first.key] && String(rows[i - 1][first.key] ?? '') === String(rows[i][first.key] ?? ''))));
       redraw();
       return el('div', { class: 'grid-wrap', 'data-key': f.key },
         el('table', { class: 'grid' }, el('thead', {}, el('tr', {}, cols.map(c => el('th', {}, c.label)), ro ? null : el('th'))), tbody),
         ro ? (rows.length ? null : el('span', { class: 'muted small' }, 'אין שורות'))
-          : el('button', { type: 'button', class: 'small', onclick: () => {
-            rows.push({}); redraw();
-            tbody.lastChild?.querySelector('input')?.focus();
-          } }, '+ שורה'));
+          : el('div', { class: 'row-btns' },
+            el('button', { type: 'button', class: 'small', onclick: () => {
+              rows.push({}); redraw();
+              tbody.lastChild?.querySelector('input, select')?.focus();
+            } }, '+ שורה'),
+            // שורה נוספת באותה קבוצה (למשל הקבר השני באותה מכפלה): מעתיקה את הקבוצה ואת שאר הפרטים
+            f.group && first ? el('button', { type: 'button', class: 'small', onclick: () => {
+              const last = rows[rows.length - 1];
+              rows.push(last ? Object.fromEntries(cols.filter(c => c.type !== 'calc').map(c => [c.key, last[c.key] ?? ''])) : {});
+              redraw(); commit();
+            } }, '+ שורה באותה ' + first.label) : null));
+    }
+
+    /** על המסמך: הטבלה כפי שתודפס, בתוך האזור שלה; הקשה — עריכת השורות בגיליון. */
+    function tablePreview(f) {
+      const cols = f.columns || [];
+      const rows = C.rows(values[f.key]);
+      const first = cols[0];
+      const cell = (c, r) => c.type === 'calc' ? C.display(r[c.key] ?? '', c.format) : c.type === 'number' ? C.display(r[c.key] ?? '', 'number') : (r[c.key] ?? '');
+      const t = el('table', { class: 'tbl-page' + (f.group ? ' grouped' : ''), style: `font-size: calc(var(--k) * ${f.fontSize || 9}px)` + (f.color ? `; color: ${f.color}` : '') },
+        el('thead', {}, el('tr', {}, cols.map(c => el('th', {}, c.label)))),
+        el('tbody', {}, rows.map((r, i) => {
+          const cont = f.group && first && i > 0 && r[first.key] && String(rows[i - 1][first.key] ?? '') === String(r[first.key] ?? '');
+          return el('tr', { class: cont ? 'same-grp' : null }, cols.map((c, j) => el('td', { class: c.type === 'number' || c.type === 'calc' ? 'num' : null },
+            j === 0 && cont ? '' : cell(c, r))));
+        })));
+      const edit = canEdit(f);
+      const box = el('div', { class: 'tbl-box' + (edit ? ' editable' : ''), role: edit ? 'button' : null, tabindex: edit ? 0 : null,
+        'aria-label': edit ? f.label + ' — עריכת השורות' : f.label,
+        onkeydown: edit ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } } : null,
+        onclick: edit ? () => {
+          const dlg = window.DT.sheet('▦ ' + f.label, el('div', { class: 'tbl-sheet' }, tableControl(f)),
+            { action: el('button', { type: 'button', class: 'primary small', onclick: () => dlg.close() }, 'סיום'), onClose: () => renderBody() });
+        } : null }, t, rows.length ? null : el('span', { class: 'tbl-empty' }, edit ? '+ הוספת שורות' : 'אין שורות'));
+      return box;
     }
 
     /** מחשב מחדש את השדות המחושבים (לתצוגה מיידית), ומסתיר מה שתנאי ההצגה שלו לא מתקיים. */
@@ -1373,6 +1415,10 @@
         line(cx - s * 0.08, cy + s * 0.3, cx + s * 0.4, cy - s * 0.35);
         continue;
       }
+      if (f.type === 'table') {
+        drawTable(f, page, { W, H, pt, rot }, ink, fonts.get(f.font) || fontDefault, { bx, by, bw, bh });
+        continue;
+      }
       if (f.type === 'file') {
         let ids = [];
         try { ids = JSON.parse(raw); } catch (e) { /* ריק */ }
@@ -1421,6 +1467,65 @@
         const o = pt(x, y);
         page.drawText(v, { x: o.x, y: o.y, size, font, color: ink, rotate: rot });
         y += lh;
+      }
+    }
+
+    /**
+     * טבלה על הדף: כותרת + שורה לכל רשומה, מימין לשמאל, בתוך האזור של השדה. רוחב העמודות — לפי התוכן.
+     * קיבוץ: שורה שממשיכה את הקבוצה (אותו ערך בעמודה הראשונה) — בלי הערך הזה ובלי קו עבה; בין קבוצות — קו עבה.
+     * לא נכנס: קודם מקטינים את הגופן (עד 6), ומה שעדיין לא נכנס — לנספח (או נחתך, אם נבחר "להקטין").
+     */
+    function drawTable(f, page, { pt, rot }, ink, font, { bx, by, bw, bh }) {
+      const C = window.DTCalc;
+      const cols = f.columns || [];
+      const rows = C.rows(values[f.key]);
+      if (!cols.length || !rows.length) return;
+      const shown = (c, r) => c.type === 'calc' ? C.display(r[c.key] ?? '', c.format) : c.type === 'number' ? C.display(r[c.key] ?? '', 'number') : String(r[c.key] ?? '');
+      const cont = (i) => f.group && i > 0 && rows[i][cols[0].key] && String(rows[i - 1][cols[0].key] ?? '') === String(rows[i][cols[0].key] ?? '');
+      const pad = 3;
+      const natural = (sz) => cols.map(c => Math.max(font.widthOfTextAtSize(pdfText(c.label), sz),
+        ...rows.map(r => font.widthOfTextAtSize(pdfText(shown(c, r)), sz))) + pad * 2);
+      let size = f.fontSize || 9;
+      const rowsFit = (sz) => Math.floor((bh - sz * 2) / (sz * 1.75));
+      while (size > 6 && (natural(size).reduce((a, b) => a + b, 0) > bw || rowsFit(size) < rows.length)) size -= 0.5;
+      const nat = natural(size);
+      const total = nat.reduce((a, b) => a + b, 0);
+      const ws = nat.map(w => w * bw / total);   // מתיחה (או כיווץ) לרוחב האזור
+      const headH = size * 2, rh = size * 1.75;
+      const fit = Math.max(0, rowsFit(size));
+      const grey = rgb(0.45, 0.48, 0.55), light = rgb(0.82, 0.84, 0.88);
+      const hline = (y, color, thickness) => page.drawLine({ start: pt(bx, y), end: pt(bx + bw, y), color, thickness });
+      const text = (str, xRight, w, yBase, color, center) => {
+        const v = pdfText(str);
+        let s2 = size;
+        while (s2 > 4 && font.widthOfTextAtSize(v, s2) > w - pad * 2) s2 -= 0.5;
+        const tw = font.widthOfTextAtSize(v, s2);
+        const x = center ? xRight - w + (w - tw) / 2 : xRight - pad - tw;
+        const o = pt(x, yBase);
+        page.drawText(v, { x: o.x, y: o.y, size: s2, font, color, rotate: rot });
+      };
+      // כותרת
+      let x = bx + bw;
+      cols.forEach((c, j) => { text(c.label, x, ws[j], by + headH * 0.66, grey, false); x -= ws[j]; });
+      hline(by + headH, ink, 0.9);
+      // שורות
+      const shownRows = rows.slice(0, fit);
+      shownRows.forEach((r, i) => {
+        const y0 = by + headH + i * rh;
+        if (i > 0) hline(y0, cont(i) ? light : (f.group ? ink : light), cont(i) ? 0.3 : (f.group ? 0.7 : 0.4));
+        let xr = bx + bw;
+        cols.forEach((c, j) => {
+          if (!(j === 0 && cont(i))) text(shown(c, r), xr, ws[j], y0 + rh * 0.68, ink, c.type === 'number' || c.type === 'calc');
+          xr -= ws[j];
+        });
+      });
+      hline(by + headH + shownRows.length * rh, ink, 0.6);
+      // מה שלא נכנס
+      if (rows.length > fit && f.overflow === 'annex') {
+        const rest = rows.slice(fit).map((r, i) => cols.map(c => c.label + ': ' + (shown(c, r) || '—')).join(' · '));
+        annex.push({ label: f.label + ` (שורות ${fit + 1}–${rows.length})`, text: rest.join('\n') });
+        const o = pt(bx + bw - pad - font.widthOfTextAtSize(pdfText('(המשך בנספח ' + annex.length + ')'), size), by + bh - 1);
+        page.drawText(pdfText('(המשך בנספח ' + annex.length + ')'), { x: o.x, y: o.y, size, font, color: grey, rotate: rot });
       }
     }
 
