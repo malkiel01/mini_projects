@@ -277,7 +277,7 @@ function fill_get(): array
     $final = in_array($d['status'], ['completed', 'locked'], true);
     return ['ok' => true, 'document' => [
         'id' => (int)$d['id'], 'number' => $d['number'], 'title' => unseal($d['title_enc']), 'status' => $d['status'],
-        'mime' => $a['mime'], 'schema' => $schema, 'values' => $values, 'fonts' => fonts_info($schema),
+        'mime' => $a['mime'], 'schema' => $schema, 'values' => $values, 'fonts' => fonts_info($schema), 'lists' => lists_for($schema),
         'attachments' => attachments_of((int)$d['id'], 'participant:' . $p['id']),
         'progress' => ['required' => 0, 'filled' => 0, 'missing' => missing_for($schema, $values, $p['role_key'], open_roles((int)$d['id']))],
         'me' => [
