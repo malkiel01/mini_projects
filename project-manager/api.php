@@ -17,6 +17,7 @@ require_once __DIR__ . '/lib/messages.php';
 require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/lib/dev.php';
 require_once __DIR__ . '/lib/devtasks.php'; // מטלות ושיח — אזור הפיתוח
+require_once __DIR__ . '/lib/ai.php'; // שלב 12 — סיווג חכם (Claude)
 
 pm_log_install_handlers();
 pm_survey_migrate();
@@ -121,6 +122,8 @@ try {
                     // מצב עצמאי: בלי חזרה לדף האפליקציות. כבוי כל עוד האפליקציה בתוך האינדקס.
                     'standalone' => pm_setting('standalone', '0') === '1',
                     'vat_rate' => pm_vat_rate(),
+                    // שלב 12 — סיווג חכם: האם פעיל (למפתח — גם מצב ההגדרה, בלי המפתח עצמו)
+                    'ai' => $user['role'] === 'developer' ? pm_ai_status() : ['on' => pm_ai_on()],
                     'fin_alerts' => pm_fin_alert_settings((int)$user['id']),
                     'labels' => array_map('pm_t_map', ['stage' => PM_STAGE_STATUSES, 'project' => PM_PROJECT_STATUSES, 'kind' => PM_PROJECT_KINDS,
                                  'quote' => PM_QUOTE_STATUSES, 'payment' => PM_PAYMENT_STATUSES, 'method' => PM_PAY_METHODS]),
@@ -304,6 +307,9 @@ try {
             pm_audit("user:{$user['id']}", 'setting.vat_rate', 'setting', null, ['rate' => (float)$r]);
             return ['vat_rate' => (float)$r];
         })() : throw new PmError('רק המפתח', 403),
+        // שלב 12 — סיווג חכם: קובץ ששותף → מה זה, מאיזה ספק, על כמה, ולאן לשמור (lib/ai.php)
+        'POST ai-classify' => pm_ai_classify($user, $in),
+        'POST ai-settings' => $isDev ? pm_ai_settings_save($user, $in) : throw new PmError('רק המפתח', 403),
         'POST standalone' => $isDev ? (function () use ($user, $in) {
             pm_setting_set('standalone', !empty($in['on']) ? '1' : '0');
             pm_audit("user:{$user['id']}", 'setting.standalone', 'setting', null, ['on' => !empty($in['on'])]);

@@ -1226,3 +1226,10 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .theme-pick legend { font-size: .85rem; color: var(--muted); margin-bottom: var(--s1); }
 .theme-pick .seg span { min-height: var(--tap); }
 #set-display .hint { margin-top: var(--s2); }
+
+/* ===== שלב 12 — סיווג חכם ===== */
+.ai-box { border: 1px solid var(--line); border-radius: var(--r); padding: var(--s3); margin-bottom: var(--s3); display: grid; gap: var(--s2); }
+#share-targets .ai-suggest { background: color-mix(in srgb, var(--ok) 12%, var(--surface)); }
+#share-targets .ai-wait .ficon { animation: ai-pulse 1.2s ease-in-out infinite; }
+@keyframes ai-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { #share-targets .ai-wait .ficon { animation: none; } }

@@ -389,7 +389,8 @@ function pm_upload_finish(array $user, array $in): array
     $db->beginTransaction();
     try {
         $db->prepare('INSERT INTO files (project_id, name, mime, size, type, storage, thumb, visible, note, uploaded_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
-           ->execute([$u['project_id'], $u['name'], $mime, $u['size'], $type, $storage, $thumb, 0, '', $user['id'], pm_now()]);
+           // note — למשל מה שהסיווג החכם זיהה (שלב 12): "חשבונית 1234 · אינסטלטור כהן · ₪4,500 · 12.10"
+           ->execute([$u['project_id'], $u['name'], $mime, $u['size'], $type, $storage, $thumb, 0, mb_substr(trim((string)($in['note'] ?? '')), 0, 500), $user['id'], pm_now()]);
         $fileId = (int)$db->lastInsertId();
         $db->prepare('INSERT INTO file_links (file_id, folder_id, is_home) VALUES (?,?,1)')->execute([$fileId, $u['folder_id']]);
         $db->prepare('DELETE FROM uploads WHERE id = ?')->execute([$id]);
