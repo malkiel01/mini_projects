@@ -548,6 +548,10 @@ button.link { border: 0; background: none; color: var(--brand); text-decoration:
 .card.static { cursor: default; }
 .card.static:hover { background: none; }
 .card.quick { background: var(--brand-soft); }
+/* שיתוף: כותרות "אחרונים" / "כל הפרויקטים" בתוך הרשימה, ו"+ תיקייה חדשה" */
+#share-targets .share-sec { list-style: none; padding: var(--s2) var(--s3) var(--s1); font-size: .8rem; font-weight: 600; color: var(--muted); background: var(--bg); }
+#share-targets .card.quick .go { color: var(--brand); font-size: 1.1rem; }
+#share-targets .share-new .l1 { color: var(--brand); font-weight: 600; }
 .card .l2.err { color: var(--danger); }
 .btn.sm { min-height: 36px; padding: 0 var(--s2); font-size: .85rem; flex: none; }
 #view-share.busy #share-targets, #view-share.busy #share-items { opacity: .5; pointer-events: none; }

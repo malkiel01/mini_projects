@@ -270,6 +270,15 @@ function pm_migrate(PDO $pdo): void
             created_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS folders_project ON folders (project_id, parent_id);
+        -- שיתוף לאפליקציה: התיקיות האחרונות ששיתפו אליהן — מוצעות בראש מסך השיתוף (כמו הצ'אטים האחרונים בוואטסאפ)
+        CREATE TABLE IF NOT EXISTS share_recent (
+            user_id    INTEGER NOT NULL,
+            folder_id  INTEGER NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            uses       INTEGER NOT NULL DEFAULT 1,
+            used_at    TEXT NOT NULL,
+            PRIMARY KEY (user_id, folder_id)
+        );
         -- קובץ: התוכן בדיסק (data/files/<project>/<storage>), כאן — הפרטים.
         -- type: quote · proof · contract · plan · photo · video · invoice · other
         CREATE TABLE IF NOT EXISTS files (

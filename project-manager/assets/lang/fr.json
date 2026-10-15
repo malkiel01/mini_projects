@@ -2560,5 +2560,12 @@
     "☀️ בהירה": "☀️ Clair",
     "🌙 כהה": "🌙 Sombre",
     "📱 לפי המכשיר": "📱 Selon l'appareil",
-    "\"לפי המכשיר\" — מתחלפת לבד עם הגדרות הטלפון או המחשב (למשל כהה בלילה). הבחירה שלך עוברת איתך לכל מכשיר שתיכנס ממנו.": "« Selon l'appareil » suit les réglages du téléphone ou de l'ordinateur (par ex. sombre la nuit). Votre choix vous suit sur chaque appareil où vous vous connectez."
+    "\"לפי המכשיר\" — מתחלפת לבד עם הגדרות הטלפון או המחשב (למשל כהה בלילה). הבחירה שלך עוברת איתך לכל מכשיר שתיכנס ממנו.": "« Selon l'appareil » suit les réglages du téléphone ou de l'ordinateur (par ex. sombre la nuit). Votre choix vous suit sur chaque appareil où vous vous connectez.",
+    "אחרונים": "Récents",
+    "שמירה ל-{path} ב{project}": "Enregistrer dans {path} — {project}",
+    "האחרון": "Dernier",
+    "תיקייה חדשה בתוך {name}": "Nouveau dossier dans {name}",
+    "הקבצים יישמרו בה": "Les fichiers y seront enregistrés",
+    "שם התיקייה החדשה (בתוך {where}):": "Nom du nouveau dossier (dans {where}) :",
+    "התיקייה כבר לא קיימת — בחר תיקייה אחרת": "Le dossier n'existe plus — choisissez-en un autre"
 }
