@@ -256,6 +256,7 @@ function db_migrate(PDO $pdo): void
     if (function_exists('devzone_migrate')) devzone_migrate($pdo);
     if (function_exists('fonts_migrate')) fonts_migrate($pdo);
     if (function_exists('contacts_migrate')) contacts_migrate($pdo);   // ממלא ← איש קשר
+    if (function_exists('fmt_migrate')) fmt_migrate($pdo);             // מבנים שמורים
 
     // היומן: אי אפשר לשנות או למחוק רשומה — גם לא בטעות בקוד עתידי.
     $pdo->exec(<<<'SQL'

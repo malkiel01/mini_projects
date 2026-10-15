@@ -132,8 +132,10 @@ function scan() {
     ['עורך — שדות', async () => { await p.keyboard.press('Escape'); await p.click('.seg-tabs [data-tab=fields]'); await p.waitForTimeout(300); }],
     ['עורך — הגדרות שדה', click('.field-list button:has-text("שם מלא")')],
     ['עורך — מבנה תצוגה', async () => { await p.keyboard.press('Escape'); await p.click('.field-list button:has-text("מחיר")'); await p.waitForTimeout(300);
-      await p.selectOption('dialog select[aria-label="מבנה מוכן"]', '*'); await p.click('dialog .fmt-help summary'); await p.waitForTimeout(200); }],
-    ['עורך — בחירה', async () => { await p.keyboard.press('Escape'); await p.click('.field-list button:has-text("גודל")'); await p.waitForTimeout(400); }],
+      await p.click('dialog .fmt-picker button'); await p.waitForSelector('dialog.fmt-dlg'); await p.waitForTimeout(200); }],
+    ['עורך — מבנה תצוגה, מותאם אישית', async () => { await p.click('dialog.fmt-dlg .fmt-cat:has-text("מותאם אישית")');
+      await p.click('dialog.fmt-dlg .fmt-help summary'); await p.waitForTimeout(300); }],
+    ['עורך — בחירה', async () => { await p.keyboard.press('Escape'); await p.keyboard.press('Escape'); await p.click('.field-list button:has-text("גודל")'); await p.waitForTimeout(400); }],
     ['עורך — ממלאים', async () => { await p.keyboard.press('Escape'); await p.click('.seg-tabs [data-tab=roles]'); await p.waitForTimeout(300); }],
     ['עורך — הגדרות', click('.seg-tabs [data-tab=settings]')],
     ['עורך — נפתח על לשונית אחרת', async () => { await p.evaluate(() => sessionStorage.setItem('dt-editor-tab', 'settings')); await go('tpl=' + ids.tid)();

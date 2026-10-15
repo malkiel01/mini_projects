@@ -758,44 +758,167 @@
      * מבנה התצוגה של תאריך / מספר — כמו תבנית מותאמת בוורד: מבנים מוכנים עם
      * דוגמה חיה, או מבנה משלכם (dd/MM/yyyy, hd בhMMMM hyy, ₪ #,##0.00…).
      */
+    // ── מבנה התצוגה — כמו "עיצוב תאים" באקסל: קטגוריה, אפשרויות, דוגמה, וקוד (סוג) שאפשר לערוך ──
+    const fmtKind = (f) => window.DTFmt.isDate(f) ? 'date' : window.DTFmt.isNumber(f) ? 'number' : 'text';
+    const LTR = (t) => '\u2066' + t + '\u2069';   // מספר שלילי נקרא משמאל לימין גם בתוך טקסט עברי
+    const NEG = [['-', LTR('-1,234.10')], ['red', 'באדום: ' + LTR('1,234.10')], ['paren', LTR('(1,234.10)')], ['redparen', 'באדום: ' + LTR('(1,234.10)')], ['redminus', 'באדום: ' + LTR('-1,234.10')]];
+    const SYMS = [['₪ ', '₪ לפני'], [' ש״ח', 'ש״ח אחרי'], ['$', '$'], ['€', '€'], ['', 'בלי סמל']];
+    const FRACTIONS = [['# ?/?', 'עד ספרה אחת (1/4)'], ['# ??/??', 'עד שתי ספרות (21/25)'], ['# ???/???', 'עד שלוש ספרות'],
+      ['# ?/2', 'חצאים (1/2)'], ['# ?/4', 'רבעים (2/4)'], ['# ?/8', 'שמיניות (4/8)'], ['# ?/10', 'עשיריות (3/10)'], ['# ??/100', 'מאיות (30/100)']];
+    const SPECIAL = [['000-0000000', 'טלפון נייד'], ['00-0000000', 'טלפון קווי'], ['000000000', 'תעודת זהות (9 ספרות)'], ['0000000', 'מיקוד']];
+    const CATS = {
+      number: [['general', 'כללי'], ['number', 'מספר'], ['currency', 'מטבע'], ['accounting', 'חשבונאות'], ['percent', 'אחוזים'],
+        ['fraction', 'שבר'], ['scientific', 'מדעי'], ['special', 'מיוחד'], ['custom', 'מותאם אישית']],
+      date: [['general', 'כללי'], ['date', 'תאריך'], ['custom', 'מותאם אישית']],
+      text: [['general', 'כללי'], ['text', 'טקסט'], ['special', 'מיוחד'], ['custom', 'מותאם אישית']],
+    };
+    /** קוד מאפשרויות: d — ספרות אחרי הנקודה, sep — מפריד אלפים, neg — איך שלילי, sym — סמל מטבע. */
+    function fmtCode(cat, o) {
+      const base = (o.sep ? '#,##0' : '0') + (o.d ? '.' + '0'.repeat(o.d) : '');
+      const money = (b) => o.sym.startsWith(' ') ? b + o.sym : o.sym + b;
+      const negs = (b) => ({ '-': b, red: `${b};[אדום]${b}`, paren: `${b};(${b})`, redparen: `${b};[אדום](${b})`, redminus: `${b};[אדום]-${b}` })[o.neg];
+      if (cat === 'number') return negs(base);
+      if (cat === 'currency') { const b = money(base); return o.neg === '-' ? `${b};-${b}` : negs(b); }
+      if (cat === 'accounting') { const b = money('#,##0' + (o.d ? '.' + '0'.repeat(o.d) : '')); return `${b};(${b});${money('"-"')}`; }
+      if (cat === 'percent') return '0' + (o.d ? '.' + '0'.repeat(o.d) : '') + '%';
+      if (cat === 'scientific') return '0' + (o.d ? '.' + '0'.repeat(o.d) : '') + 'E+00';
+      if (cat === 'text') return '@';
+      return '';
+    }
+    /** מאיזו קטגוריה הקוד, ובאילו אפשרויות — כדי לפתוח את החלון במקום הנכון. */
+    function fmtGuess(kind, code) {
+      const o = { d: 2, sep: true, neg: '-', sym: '₪ ' };
+      if (!code) return ['general', o];
+      const dec = /\.(0+)/.exec(code.split(';')[0]); o.d = dec ? dec[1].length : 0;
+      o.sep = code.includes(',');
+      const sym = SYMS.find(([v]) => v && code.includes(v.trim())); if (sym) o.sym = sym[0];
+      const sec = code.split(';');
+      o.neg = sec.length < 2 ? '-' : /\[אדום\]\(/.test(sec[1]) ? 'redparen' : /\[אדום\]-/.test(sec[1]) ? 'redminus' : /\[אדום\]/.test(sec[1]) ? 'red' : /^\(/.test(sec[1]) ? 'paren' : '-';
+      const cands = kind === 'date' ? ['date'] : kind === 'text' ? ['text', 'special'] : ['number', 'currency', 'accounting', 'percent', 'scientific', 'fraction', 'special'];
+      for (const c of cands) {
+        if (c === 'date' && window.DTFmt.PRESETS.date.some(([p]) => p === code)) return ['date', o];
+        if (c === 'fraction' && FRACTIONS.some(([p]) => p === code)) return ['fraction', o];
+        if (c === 'special' && SPECIAL.some(([p]) => p === code)) return ['special', o];
+        if (!['date', 'fraction', 'special'].includes(c) && fmtCode(c, o) === code) return [c, o];
+      }
+      return ['custom', o];
+    }
+    let myFmtCodes = null;
+    const loadFmtCodes = async () => (myFmtCodes ??= (await api('fmt_codes').catch(() => ({ codes: [] }))).codes);
+
+    /** בגיליון השדה: המבנה הנוכחי, דוגמה, ו"עיצוב…" שפותח את החלון. */
     function fmtPicker(f) {
-      const F = window.DTFmt;
-      const kind = F.isDate(f) ? 'date' : 'number';
-      const sample = kind === 'date' ? new Date().toISOString().slice(0, 10) : '1234.5';
-      const show = (p) => kind === 'date' ? F.date(p, sample) : F.number(p, sample);
-      const presets = F.PRESETS[kind];
-      const sel = el('select', { 'aria-label': 'מבנה מוכן' },
-        el('option', { value: '' }, 'ברירת מחדל — ' + (kind === 'date' ? show('dd/MM/yyyy') : sample)),
-        presets.map(([p, name]) => el('option', { value: p }, `${name} — ${show(p)}`)),
-        el('option', { value: '*' }, '✏️ מבנה משלי…'));
-      const custom = el('input', { dir: 'ltr', maxlength: 80, value: f.fmt || '', 'aria-label': 'המבנה',
-        placeholder: kind === 'date' ? 'dd/MM/yyyy · hd בhMMMM hyy' : '#,##0.00' });
-      const preview = el('p', { class: 'fmt-sample' });
-      const customBox = el('label', { class: 'f' }, el('span', {}, 'המבנה'), custom);
-      // "מבנה משלי" — מצב מפורש: גם אם מה שנכתב זהה למבנה מוכן, התיבה נשארת פתוחה
-      let own = !!f.fmt && !presets.some(([p]) => p === f.fmt);
-      const sync = () => {
-        sel.value = own ? '*' : (f.fmt || '');
-        customBox.hidden = !own;
-        preview.replaceChildren('דוגמה: ', el('b', {}, f.fmt ? show(f.fmt) : (kind === 'date' ? show('dd/MM/yyyy') : sample)));
+      const kind = fmtKind(f);
+      const now = el('p', { class: 'fmt-now' });
+      const paint = () => {
+        const [cat] = fmtGuess(kind, f.fmt || '');
+        const r = f.fmt ? window.DTFmt.rich(f, fmtSampleValue(f, kind)) : null;
+        now.replaceChildren(el('span', { class: 'muted' }, (CATS[kind].find(([k]) => k === cat) || ['', 'מותאם אישית'])[1] + ' · '),
+          f.fmt ? el('code', { dir: 'ltr' }, f.fmt) : 'בלי מבנה',
+          ...(r ? [el('span', { class: 'muted' }, ' · דוגמה: '), el('b', { style: r.color ? `color:${r.color}` : '' }, r.text)] : []));
       };
-      sel.addEventListener('change', () => {
-        own = sel.value === '*';
-        if (own) { custom.value = f.fmt || (kind === 'date' ? 'd בMMMM yyyy' : '#,##0.00'); f.fmt = custom.value; }
-        else { f.fmt = sel.value; custom.value = f.fmt; }
-        setDirty(true); sync();
-        if (own) custom.focus();
-      });
-      custom.addEventListener('input', () => { f.fmt = custom.value.trim(); setDirty(true); sync(); });
-      const help = kind === 'date'
-        ? [['d / dd', 'יום: 4 / 04'], ['M / MM', 'חודש: 3 / 03'], ['MMMM', 'שם החודש: מרץ'], ['yy / yyyy', 'שנה: 26 / 2026'], ['dddd', 'יום בשבוע: יום רביעי'],
-           ['hd', 'יום עברי: ט״ו'], ['hMMMM', 'חודש עברי: תשרי'], ['hyy / hyyyy', 'שנה עברית: תשפ״ז / ה׳תשפ״ז'], ["'text'", 'טקסט באנגלית — בגרש']]
-        : [['0', 'ספרה (גם אפס)'], ['#', 'ספרה, רק אם יש'], [',', 'הפרדת אלפים: #,##0'], ['.00', 'שתי ספרות אחרי הנקודה'], ['%', 'אחוזים (כפול 100)'], ['₪ / ש״ח', 'כל טקסט לפני או אחרי']];
-      sync();
-      return el('div', { class: 'fmt-picker' }, el('label', { class: 'f' }, el('span', {}, 'איך הערך יוצג במסמך'), sel), customBox, preview,
-        el('details', { class: 'fmt-help' }, el('summary', {}, 'סימנים שאפשר להשתמש בהם'),
-          el('dl', {}, help.flatMap(([k, v]) => [el('dt', { dir: 'ltr' }, k), el('dd', {}, v)]))),
-        el('p', { class: 'hint' }, 'הערך נשמר כמו שהוא (תאריך / מספר); המבנה קובע רק איך הוא מוצג — על הדף, ב-PDF וב-Word.'));
+      paint();
+      return el('div', { class: 'fmt-picker' }, now,
+        readOnly ? null : el('button', { type: 'button', class: 'small', onclick: () => formatDialog(f, () => { setDirty(true); paint(); draw(); }) }, '✎ עיצוב…'),
+        el('p', { class: 'hint' }, 'הערך נשמר כמו שהוא; המבנה קובע רק איך הוא מוצג — על הדף, ב-PDF וב-Word.'));
+    }
+    const fmtSampleValue = (f, kind) => (f.default && f.default !== '') ? f.default
+      : kind === 'date' ? new Date().toISOString().slice(0, 10) : kind === 'text' ? (/0/.test(f.fmt || '') ? '0521234567' : 'ישראל ישראלי') : '-1234.1';
+
+    /** החלון: קטגוריות מימין, אפשרויות, סוג (הקוד), רשימת קודים — ודוגמה חיה למעלה. */
+    async function formatDialog(f, done) {
+      const kind = fmtKind(f);
+      let [cat, o] = fmtGuess(kind, f.fmt || '');
+      let code = f.fmt || '';
+      const sampleIn = el('input', { value: fmtSampleValue(f, kind), dir: kind === 'text' ? 'auto' : 'ltr', 'aria-label': 'ערך לדוגמה', class: 'fmt-sample-in' });
+      const sampleOut = el('div', { class: 'fmt-sample-out', 'aria-live': 'polite' });
+      const codeIn = el('input', { dir: 'ltr', maxlength: 80, 'aria-label': 'סוג (קוד המבנה)', value: code });
+      const cats = el('div', { class: 'fmt-cats', role: 'radiogroup', 'aria-label': 'קטגוריה' });
+      const opts = el('div', { class: 'fmt-opts' });
+      const err = el('div');
+      const show = () => {
+        const r = code ? window.DTFmt.rich({ ...f, fmt: code }, sampleIn.value) : null;
+        sampleOut.textContent = r ? r.text : (sampleIn.value || '—');
+        sampleOut.style.color = (r && r.color) || '';
+      };
+      const setCode = (c, fromInput) => { code = c; if (!fromInput) codeIn.value = c; show(); };
+      const regen = () => { if (!['general', 'custom', 'date', 'fraction', 'special'].includes(cat)) setCode(fmtCode(cat, o)); };
+      const num = (label, key, min, max) => {
+        const i = el('input', { type: 'number', min, max, value: o[key] });
+        i.addEventListener('input', () => { o[key] = Math.max(min, Math.min(max, Number(i.value) || 0)); regen(); });
+        return el('label', { class: 'f' }, el('span', {}, label), i);
+      };
+      const choice = (label, list, cur, pick) => el('div', { class: 'f' }, el('span', {}, label),
+        el('div', { class: 'fmt-list', role: 'listbox' }, list.map(([v, t]) => {
+          return el('button', { type: 'button', role: 'option', 'aria-selected': String(cur === v), class: 'fmt-item' + (cur === v ? ' on' : ''),
+            onclick: (e) => { pick(v); e.currentTarget.parentNode.querySelectorAll('.fmt-item').forEach(b => { b.classList.toggle('on', b === e.currentTarget); b.setAttribute('aria-selected', String(b === e.currentTarget)); }); } }, t);
+        })));
+      async function drawOpts() {
+        const sampleOf = (c) => window.DTFmt.rich({ ...f, fmt: c }, sampleIn.value)?.text ?? '';
+        const parts = [];
+        if (cat === 'general') parts.push(el('p', { class: 'hint' }, 'בלי מבנה — הערך מוצג כמו שהוא' + (kind === 'date' ? ' (dd/MM/yyyy).' : '.')));
+        if (['number', 'currency', 'accounting', 'percent', 'scientific'].includes(cat)) parts.push(num('ספרות אחרי הנקודה', 'd', 0, 6));
+        if (cat === 'number') {
+          const sep = el('input', { type: 'checkbox', checked: o.sep });
+          sep.addEventListener('change', () => { o.sep = sep.checked; regen(); });
+          parts.push(el('label', { class: 'switch' }, sep, el('span', {}, 'מפריד אלפים (,)')));
+        }
+        if (['currency', 'accounting'].includes(cat)) parts.push(choice('סמל', SYMS, o.sym, (v) => { o.sym = v; regen(); }));
+        if (['number', 'currency'].includes(cat)) parts.push(choice('מספרים שליליים', NEG, o.neg, (v) => { o.neg = v; regen(); }));
+        if (cat === 'date') parts.push(choice('סוג', window.DTFmt.PRESETS.date.map(([p, n]) => [p, `${window.DTFmt.date(p, kind === 'date' ? sampleIn.value : new Date().toISOString().slice(0, 10))}  ·  ${n}`]), code, (v) => setCode(v)));
+        if (cat === 'fraction') parts.push(choice('סוג', FRACTIONS, code, (v) => setCode(v)));
+        if (cat === 'special') parts.push(choice('סוג', SPECIAL, code, (v) => setCode(v)));
+        if (cat === 'text') parts.push(el('p', { class: 'hint' }, 'הערך מוצג בדיוק כמו שהוקלד (@). אפשר להוסיף טקסט קבוע במירכאות: "מר "@'));
+        if (cat === 'custom') {
+          const mine = (await loadFmtCodes()).filter(x => x.kind === kind);
+          const builtIn = kind === 'date' ? window.DTFmt.PRESETS.date.map(([p]) => p)
+            : kind === 'text' ? ['@', '"מר "@', ...SPECIAL.map(([p]) => p)]
+            : ['0', '0.00', '#,##0', '#,##0.00', '#,##0;-#,##0', '#,##0;[אדום]-#,##0', '#,##0.00;-#,##0.00', '#,##0.00;[אדום]-#,##0.00',
+               '₪ #,##0;-₪ #,##0', '₪ #,##0.00;[אדום]-₪ #,##0.00', '#,##0 ש״ח', '0%', '0.00%', '0.00E+00', '# ?/?', ...SPECIAL.map(([p]) => p)];
+          const list = el('div', { class: 'fmt-codes', role: 'listbox', 'aria-label': 'קודים' });
+          const paintList = () => list.replaceChildren(...[...builtIn.map(c => ({ code: c })), ...mine].map(x => el('div', { class: 'fmt-code-row' + (x.code === code ? ' on' : '') },
+            el('button', { type: 'button', class: 'fmt-code', dir: 'ltr', onclick: () => { setCode(x.code); paintList(); } }, x.code),
+            el('small', { class: 'muted', dir: 'auto' }, sampleOf(x.code)),
+            x.id ? el('button', { type: 'button', class: 'link small danger-text', title: 'מחיקה מהרשימה', onclick: async () => {
+              try { await api('fmt_code_delete', { id: x.id }); mine.splice(mine.indexOf(x), 1); myFmtCodes = myFmtCodes.filter(y => y !== x); paintList(); }
+              catch (e) { err.replaceChildren(notice(e.message, 'bad')); }
+            } }, 'מחק') : null)));
+          paintList();
+          parts.push(el('div', { class: 'f' }, el('span', {}, 'קודים — לחיצה בוחרת; את הקוד אפשר לערוך בשדה "סוג"'), list));
+          parts.push(el('details', { class: 'fmt-help' }, el('summary', {}, 'הסימנים'),
+            el('dl', {}, (kind === 'date'
+              ? [['d / dd', 'יום'], ['M / MM / MMMM', 'חודש / שם החודש'], ['yy / yyyy', 'שנה'], ['dddd', 'יום בשבוע'], ['hd / hMMMM / hyy', 'תאריך עברי'], ["'text'", 'אנגלית — בגרש']]
+              : [['0 / #', 'ספרה (חובה / רק אם יש)'], [',', 'מפריד אלפים'], ['.00', 'ספרות אחרי הנקודה'], ['%', 'אחוזים'], [';', 'חיובי;שלילי;אפס'],
+                 ['[אדום]', 'צבע: אדום, כחול, ירוק, שחור'], ['"טקסט"', 'טקסט קבוע'], ['E+00', 'מדעי'], ['?/?', 'שבר'], ['@', 'הטקסט עצמו'], ['000-0000000', 'מסכת ספרות']])
+              .flatMap(([k, v]) => [el('dt', { dir: 'ltr' }, k), el('dd', {}, v)]))));
+        }
+        opts.replaceChildren(...parts);
+      }
+      const drawCats = () => cats.replaceChildren(...CATS[kind].map(([k, t]) => el('button', { type: 'button', role: 'radio', 'aria-checked': String(cat === k),
+        class: 'fmt-cat' + (cat === k ? ' on' : ''), onclick: () => {
+          cat = k;
+          if (k === 'general') setCode('');
+          else if (k === 'date' && !window.DTFmt.PRESETS.date.some(([p]) => p === code)) setCode(window.DTFmt.PRESETS.date[0][0]);
+          else if (k === 'fraction' && !FRACTIONS.some(([p]) => p === code)) setCode(FRACTIONS[0][0]);
+          else if (k === 'special' && !SPECIAL.some(([p]) => p === code)) setCode(SPECIAL[0][0]);
+          else regen();
+          drawCats(); drawOpts();
+        } }, t)));
+      sampleIn.addEventListener('input', () => { show(); if (cat === 'custom' || cat === 'date') drawOpts(); });
+      codeIn.addEventListener('input', () => { setCode(codeIn.value.trim(), true); if (cat !== 'custom') { cat = 'custom'; drawCats(); drawOpts(); } });
+      const ok = el('button', { type: 'button', class: 'primary small', onclick: async () => {
+        f.fmt = code;
+        // קוד שאינו מהרשימה — נשמר ל"מותאם אישית" שלי, לשימוש חוזר בכל התבניות
+        if (code && cat === 'custom' && fmtGuess(kind, code)[0] === 'custom' && !(await loadFmtCodes()).some(x => x.kind === kind && x.code === code)) {
+          api('fmt_code_save', { kind, code }).then(() => { myFmtCodes = null; }).catch(() => {});
+        }
+        dlg.close(); done();
+      } }, 'אישור');
+      const dlg = window.DT.sheet('עיצוב: ' + f.label, el('div', { class: 'fmt-dialog' },
+        el('div', { class: 'fmt-sample' }, el('span', { class: 'muted' }, 'דוגמה'), sampleOut, el('label', { class: 'f' }, el('span', {}, 'ערך לבדיקה'), sampleIn)),
+        el('div', { class: 'fmt-main' }, cats, el('div', { class: 'fmt-side' }, opts, el('label', { class: 'f' }, el('span', {}, 'סוג'), codeIn), err))), { action: ok });
+      dlg.classList.add('fmt-dlg');
+      drawCats(); await drawOpts(); show();
     }
 
     /** הגופנים שהעליתי — רשימה, העלאה, מחיקה. */
@@ -1095,7 +1218,7 @@
             hiddenCtl(f, toggle),
             toggle('מודפס במסמך', 'כבוי — נשמר ומיוצא לאקסל, אבל לא מופיע בקובץ המודפס', () => f.print !== false, v => { f.print = v; }),
             el('div', { class: 'f' }, el('span', {}, 'מתי השדה מוצג'), condEditor(f, f, draw))),
-          window.DTFmt.isDate(f) || window.DTFmt.isNumber(f) ? group('מבנה התצוגה', fmtPicker(f)) : null,
+          window.DTFmt.isDate(f) || window.DTFmt.isNumber(f) || f.type === 'text' ? group('מבנה התצוגה', fmtPicker(f)) : null,
           auto || f.type === 'signature' ? null : group('ערך',
             f.type === 'select' ? selectPanel(f) : null,
             f.type === 'file' ? filePanel(f)
