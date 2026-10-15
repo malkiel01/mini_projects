@@ -70,6 +70,10 @@ function action_me(): never
         'csrf'        => $user['csrf'] ?? null,
         'setupNeeded' => !users_exist(),
         'setupReady'  => setup_code_hash() !== null,
+        // למנהל: כמה ממתינים לאישור — המונה בכותרת.
+        'pending'     => ($user['role'] ?? '') === 'admin'
+            ? (int)db()->query("SELECT COUNT(*) FROM users WHERE status = 'pending'")->fetchColumn()
+            : 0,
     ]);
 }
 

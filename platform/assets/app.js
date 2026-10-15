@@ -1,10 +1,12 @@
-// המעטפת של הפלטפורמה: כניסה, הרשמה, התקנת המנהל הראשון, והאפליקציות של המשתמש.
+// המעטפת של הפלטפורמה: כותרת, כניסה, הרשמה, התקנת המנהל הראשון, והאפליקציות של המשתמש.
 // כל הטקסט מוצב כ-textContent — שום ערך מהשרת או מ-app.json אינו מפוענח כ-HTML.
 
 const API = 'platform/api.php';
 const view = document.getElementById('view');
 const userbar = document.getElementById('userbar');
+const topbar = document.getElementById('topbar');
 let csrf = null;
+let me = null;
 
 function el(tag, props = {}, children = []) {
     const node = Object.assign(document.createElement(tag), props);
@@ -25,6 +27,36 @@ async function api(action, body) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw Object.assign(new Error(data.error || 'שגיאה בשרת'), { status: res.status });
     return data;
+}
+
+// גוון קבוע לכל מחרוזת — לאווטאר ולריבוע של האפליקציה.
+function hue(text) {
+    let h = 0;
+    for (const ch of String(text)) h = (h * 31 + ch.codePointAt(0)) % 360;
+    return h;
+}
+
+function initials(name) {
+    const parts = String(name).trim().split(/\s+/).filter(Boolean);
+    return (parts.length > 1 ? parts[0][0] + parts[1][0] : (parts[0] || '?').slice(0, 2)).toUpperCase();
+}
+
+function avatar(user, cls = '') {
+    const a = el('span', { className: `avatar ${cls}`, textContent: initials(user.display_name), ariaHidden: 'true' });
+    a.style.setProperty('--h', hue(user.username));
+    return a;
+}
+
+// הלוגו מהכותרת — לשימוש חוזר בכרטיסי הכניסה וההודעות.
+const logo = () => topbar.querySelector('.logo').cloneNode(true);
+
+let toastTimer = null;
+function toast(text) {
+    document.querySelector('.toast')?.remove();
+    const t = el('div', { className: 'toast', role: 'status', textContent: text });
+    document.body.append(t);
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.remove(), 3200);
 }
 
 // ---------- טופס כללי ----------
@@ -55,12 +87,13 @@ function form({ title, lead, fields, submit, onSubmit, footer = [] }) {
             button.disabled = false;
         }
     });
-    return el('div', { className: 'panel' }, [
+    return el('div', { className: 'auth' }, [el('div', { className: 'panel' }, [
+        logo(),
         el('h2', { textContent: title }),
         el('p', { className: 'lead', textContent: lead }),
         f,
         ...footer,
-    ]);
+    ])]);
 }
 
 function switchLink(text, linkText, onClick) {
@@ -75,12 +108,9 @@ const USERNAME_HINT = 'באנגלית, או כתובת המייל שלכם';
 
 function showSetup(me) {
     if (!me.setupReady) {
-        view.replaceChildren(el('div', { className: 'panel' }, [
-            el('h2', { textContent: 'ההתקנה ממתינה לקוד' }),
-            el('p', { className: 'lead', textContent:
-                'הסוד PLATFORM_SETUP_CODE לא הגיע לשרת. מגדירים אותו ב-GitHub ' +
-                '(Settings ← Secrets and variables ← Actions), והוא יגיע בפריסה הבאה.' }),
-        ]));
+        showMessage('ההתקנה ממתינה לקוד',
+            'הסוד PLATFORM_SETUP_CODE לא הגיע לשרת. מגדירים אותו ב-GitHub ' +
+            '(Settings ← Secrets and variables ← Actions), והוא יגיע בפריסה הבאה.', '🔑');
         return;
     }
     view.replaceChildren(form({
@@ -100,7 +130,7 @@ function showSetup(me) {
 
 function showLogin() {
     view.replaceChildren(form({
-        title: 'כניסה',
+        title: 'ברוכים הבאים',
         lead: 'נכנסים כדי לראות את האפליקציות שלכם.',
         fields: [
             field('שם משתמש', 'username', { ltr: true, autocomplete: 'username' }),
@@ -127,36 +157,109 @@ function showRegister() {
     }));
 }
 
-function showMessage(title, text) {
-    view.replaceChildren(el('div', { className: 'panel' }, [
+function showMessage(title, text, icon = '') {
+    view.replaceChildren(el('div', { className: 'auth' }, [el('div', { className: 'panel msg' }, [
+        icon ? el('div', { className: 'big', textContent: icon, ariaHidden: 'true' }) : logo(),
         el('h2', { textContent: title }),
         el('p', { className: 'lead', textContent: text }),
-    ]));
+    ])]));
+}
+
+// ---------- הכותרת העליונה ----------
+
+const inAdmin = () => location.hash === '#admin';
+
+// מסך משני (ניהול): חץ חזרה לפני הלוגו, ושם המסך מתחת לשם האתר. במסך הראשי — בלי חץ.
+function showTopbar() {
+    topbar.querySelector('.back-btn')?.remove();
+    const tx = topbar.querySelector('.brand-tx');
+    tx.querySelector('.brand-sub')?.remove();
+    if (inAdmin() && me?.user?.role === 'admin') {
+        const back = el('a', { className: 'icon-btn back-btn', href: '#', textContent: '‹', ariaLabel: 'חזרה לאפליקציות' });
+        topbar.prepend(back);
+        tx.append(el('span', { className: 'brand-sub', textContent: 'ממשק ניהול' }));
+    }
+}
+
+function closeMenu() {
+    const menu = userbar.querySelector('.menu');
+    if (!menu) return;
+    menu.remove();
+    userbar.querySelector('.me-btn')?.setAttribute('aria-expanded', 'false');
+}
+
+document.addEventListener('click', (e) => { if (!e.target.closest('.menu-wrap')) closeMenu(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
+
+function menuItem(icon, text, onClick, { cls = '', href = '', count = 0 } = {}) {
+    const item = el(href ? 'a' : 'button', { className: `menu-item ${cls}`, role: 'menuitem' }, [
+        el('span', { className: 'ic', textContent: icon, ariaHidden: 'true' }),
+        el('span', { className: 'one', textContent: text }),
+        ...(count ? [el('span', { className: 'chip bad count', textContent: String(count) })] : []),
+    ]);
+    if (href) item.href = href; else item.type = 'button';
+    item.addEventListener('click', () => { closeMenu(); onClick?.(); });
+    return item;
+}
+
+function openMenu(btn, user) {
+    const role = user.role === 'admin' ? 'מנהל' : 'משתמש';
+    const items = [
+        el('div', { className: 'menu-head' }, [
+            avatar(user, 'lg'),
+            el('div', { className: 'tx' }, [
+                el('b', { textContent: user.display_name }),
+                // bdi: בלעדיו כתובת מייל מתהפכת בתוך שורה עברית.
+                el('small', {}, [el('bdi', { textContent: user.username }), ` · ${role}`]),
+            ]),
+        ]),
+    ];
+    if (user.role === 'admin') {
+        items.push(inAdmin()
+            ? menuItem('🏠', 'האפליקציות שלי', null, { href: '#' })
+            : menuItem('⚙️', 'ניהול', null, { href: '#admin', count: me.pending || 0 }));
+    }
+    if (installPrompt) items.push(menuItem('📲', 'התקנה במכשיר', installFamily));
+    if (canDownload()) items.push(menuItem('⬇️', 'הורדה לשימוש בלי רשת', downloadFamily));
+    items.push(el('div', { className: 'menu-sep' }), menuItem('↩', 'יציאה', logout, { cls: 'danger' }));
+
+    const menu = el('div', { className: 'menu', role: 'menu' }, items);
+    btn.after(menu);
+    btn.setAttribute('aria-expanded', 'true');
+    menu.querySelector('.menu-item')?.focus();
+}
+
+async function logout() {
+    try { await api('logout', {}); } finally {
+        csrf = null;
+        await clearFamilyCache();
+        location.hash = '';
+        start();
+    }
 }
 
 function showUserbar(user) {
     if (!user) { userbar.replaceChildren(); return; }
-    const logout = el('button', { type: 'button', textContent: 'יציאה' });
-    logout.addEventListener('click', async () => {
-        try { await api('logout', {}); } finally {
-            csrf = null;
-            await clearFamilyCache();
-            start();
-        }
-    });
-    const role = user.role === 'admin' ? ' · מנהל' : '';
-    const actions = [...familyActions(), logout];
-    if (user.role === 'admin') {
-        const inAdmin = location.hash === '#admin';
-        actions.unshift(el('a', {
-            href: inAdmin ? '#' : '#admin',
-            textContent: inAdmin ? '← לאפליקציות' : '⚙️ ניהול',
-        }));
+    const actions = [];
+    if (installPrompt) {
+        const b = el('button', { type: 'button', className: 'icon-btn', textContent: '📲', ariaLabel: 'התקנה במכשיר', title: 'התקנה במכשיר' });
+        b.addEventListener('click', installFamily);
+        actions.push(b);
     }
-    userbar.replaceChildren(el('div', { className: 'userbar' }, [
-        el('span', { textContent: `שלום, ${user.display_name}${role}` }),
-        el('span', { className: 'userbar-actions' }, actions),
-    ]));
+    if (user.role === 'admin' && !inAdmin()) {
+        const a = el('a', { className: 'icon-btn', href: '#admin', textContent: '⚙️', ariaLabel: 'ניהול', title: 'ניהול' });
+        if (me.pending) a.append(el('span', { className: 'dot', textContent: String(me.pending), ariaLabel: `${me.pending} ממתינים לאישור` }));
+        actions.push(a);
+    }
+    const btn = el('button', { type: 'button', className: 'me-btn', ariaLabel: 'תפריט המשתמש', ariaHasPopup: 'menu', ariaExpanded: 'false' }, [
+        avatar(user), el('span', { className: 'caret', textContent: '▾', ariaHidden: 'true' }),
+    ]);
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (userbar.querySelector('.menu')) closeMenu(); else openMenu(btn, user);
+    });
+    actions.push(el('div', { className: 'menu-wrap' }, [btn]));
+    userbar.replaceChildren(...actions);
 }
 
 // ---------- האפליקציות ----------
@@ -170,50 +273,87 @@ async function copyLink(btn, href) {
         window.prompt('העתיקו את הקישור:', url);
         return;
     }
-    const label = btn.textContent;
-    btn.textContent = '✓ הועתק';
+    btn.textContent = '✓';
     btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = label; btn.classList.remove('copied'); }, 1800);
+    toast('הקישור הועתק');
+    setTimeout(() => { btn.textContent = '🔗'; btn.classList.remove('copied'); }, 1800);
 }
 
-// כרטיס עם כמה כניסות: הכרטיס עצמו אינו קישור, וליד כל כניסה כפתור העתקה.
-function card(app) {
-    const head = [
-        el('div', { className: 'icon', textContent: app.icon }),
-        el('h2', { textContent: app.name }),
-        el('p', { textContent: app.description }),
+function appIcon(app) {
+    const ic = el('span', { className: 'app-ic', textContent: app.icon, ariaHidden: 'true' });
+    ic.style.setProperty('--h', hue(app.id));
+    return ic;
+}
+
+// אפליקציה עם כניסה אחת — קישור. עם כמה כניסות, או עם התקנה/הורדה — גיליון בחירה.
+function appRow(app) {
+    const body = [
+        appIcon(app),
+        el('span', { className: 'app-tx' }, [
+            el('b', { textContent: app.name }),
+            el('small', { textContent: app.description }),
+        ]),
+        el('span', { className: 'app-go', textContent: '‹', ariaHidden: 'true' }),
     ];
     const extras = installLinks(app);
+    let node;
     if (!app.links.length && !extras.length) {
-        return el('a', { className: 'project-card', href: app.href }, head);
+        node = el('a', { className: 'app', href: app.href }, body);
+    } else {
+        node = el('button', { type: 'button', className: 'app', ariaHasPopup: 'dialog' }, body);
+        node.addEventListener('click', () => openAppSheet(app, extras));
     }
+    const li = el('li', {}, [node]);
+    li.dataset.search = `${app.name} ${app.description}`.toLowerCase();
+    return li;
+}
+
+function openAppSheet(app, extras) {
     const entries = app.links.length ? app.links : [{ label: '▶️ פתיחה', href: app.href }];
-    const links = entries.map(link => {
-        const btn = el('button', { type: 'button', textContent: '📋 העתקת קישור' });
-        btn.addEventListener('click', () => copyLink(btn, link.href));
-        return el('div', { className: 'entry-link' }, [
-            el('a', { href: link.href, textContent: link.label }), btn,
-        ]);
+    const rows = entries.map(link => {
+        const copy = el('button', { type: 'button', className: 'icon-btn', textContent: '🔗', ariaLabel: `העתקת קישור: ${link.label}`, title: 'העתקת קישור' });
+        copy.addEventListener('click', () => copyLink(copy, link.href));
+        return el('div', { className: 'entry' }, [el('a', { href: link.href, textContent: link.label }), copy]);
     });
-    return el('div', { className: 'project-card multi' }, [
-        ...head, el('div', { className: 'entry-links' }, links),
-        ...(extras.length ? [el('div', { className: 'install-links' }, extras)] : []),
-    ]);
+    const close = el('button', { type: 'button', className: 'icon-btn', textContent: '✕', ariaLabel: 'סגירה' });
+    const dlg = el('dialog', {}, [el('div', { className: 'sheet' }, [
+        el('div', { className: 'sheet-head' }, [
+            appIcon(app),
+            el('div', { className: 'tx' }, [el('h2', { textContent: app.name }), el('small', { textContent: app.description })]),
+            close,
+        ]),
+        el('div', { className: 'sheet-body' }, [
+            el('div', { className: 'sheet-sec', textContent: entries.length > 1 ? 'כניסות' : 'כניסה' }),
+            el('div', { className: 'entries' }, rows),
+            ...(extras.length ? [
+                el('div', { className: 'sheet-sec', textContent: 'התקנה והורדה' }),
+                el('div', { className: 'tiles' }, extras),
+            ] : []),
+        ]),
+    ])]);
+    close.addEventListener('click', () => dlg.close());
+    dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+    dlg.addEventListener('close', () => dlg.remove());
+    document.body.append(dlg);
+    dlg.showModal();
 }
 
 // ---------- התקנה והורדה (שלב 5) ----------
 
 // מה שהמנהל אישר לאפליקציה: התקנה נפרדת, APK, חנות. השרת לא שולח את מה שלא אושר.
 function installLinks(app) {
+    const tile = (icon, text, props) => el('a', { className: 'tile', ...props }, [
+        el('span', { textContent: icon, ariaHidden: 'true' }), el('span', { className: 'one', textContent: text }),
+    ]);
     const out = [];
     if (app.install.pwa) {
-        out.push(el('a', {
-            href: app.href, textContent: '📲 התקנה כאפליקציה נפרדת',
+        out.push(tile('📲', 'התקנה כאפליקציה נפרדת', {
+            href: app.href,
             title: 'פתחו את האפליקציה, ובתפריט הדפדפן בחרו "התקנה" או "הוספה למסך הבית"',
         }));
     }
-    if (app.install.apk) out.push(el('a', { href: app.install.apk, textContent: '⬇️ הורדת APK', rel: 'noopener' }));
-    if (app.install.store) out.push(el('a', { href: app.install.store, textContent: '▶️ Google Play', rel: 'noopener', target: '_blank' }));
+    if (app.install.apk) out.push(tile('⬇️', 'הורדת APK', { href: app.install.apk, rel: 'noopener' }));
+    if (app.install.store) out.push(tile('▶️', 'Google Play', { href: app.install.store, rel: 'noopener', target: '_blank' }));
     return out;
 }
 
@@ -229,36 +369,25 @@ if ('serviceWorker' in navigator) {
 window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     installPrompt = e;
-    start();
+    if (me?.user) showUserbar(me.user);
 });
 
-function familyActions() {
-    const out = [];
-    if (installPrompt) {
-        const b = el('button', { type: 'button', textContent: '📲 התקנת המשפחה' });
-        b.addEventListener('click', async () => {
-            installPrompt.prompt();
-            await installPrompt.userChoice;
-            installPrompt = null;
-            start();
-        });
-        out.push(b);
-    }
-    if ('caches' in window && currentApps.some(a => a.install.offline)) {
-        const b = el('button', { type: 'button', textContent: '⬇️ הורדה למכשיר' });
-        b.title = 'שומר במכשיר את האפליקציות שעובדות בלי רשת';
-        b.addEventListener('click', () => downloadFamily(b));
-        out.push(b);
-    }
-    return out;
+async function installFamily() {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    await installPrompt.userChoice;
+    installPrompt = null;
+    if (me?.user) showUserbar(me.user);
 }
+
+const canDownload = () => 'caches' in window && currentApps.some(a => a.install.offline);
 
 /**
  * "הורדת המשפחה": שומר במטמון את הדף של כל אפליקציה שמסומנת offline, ואת מה
  * שהוא טוען — סקריפטים (כולל import של מודולים, רמה אחת), עיצוב, תמונות,
  * וספריות מ-CDN. ה-service worker מגיש אותם כשאין רשת.
  */
-async function downloadFamily(btn) {
+async function downloadFamily() {
     const apps = currentApps.filter(a => a.install.offline);
     const cache = await caches.open(FAMILY_CACHE);
     const base = new URL('./', location.href);
@@ -281,7 +410,7 @@ async function downloadFamily(btn) {
     }
 
     for (const app of apps) {
-        btn.textContent = `⏳ ${app.name}…`;
+        toast(`⏳ מוריד: ${app.name}…`);
         const page = new URL(app.href, location.href);
         try {
             const res = await fetch(page, { credentials: 'same-origin' });
@@ -301,7 +430,7 @@ async function downloadFamily(btn) {
             done++;
         } catch { failed++; }
     }
-    btn.textContent = failed ? `✓ ${done} אפליקציות במכשיר (${failed} קבצים לא נשמרו)` : `✓ ${done} אפליקציות במכשיר`;
+    toast(failed ? `✓ ${done} אפליקציות במכשיר (${failed} קבצים לא נשמרו)` : `✓ ${done} אפליקציות זמינות בלי רשת`);
 }
 
 // ביציאה: כל מה שהורד ורשימת האפליקציות נמחקים — מי שמקבל את המכשיר אחריך לא
@@ -320,17 +449,49 @@ async function showApps() {
     const { categories, apps } = await api('apps');
     currentApps = apps;
     if (!apps.length) {
-        showMessage('עוד אין כאן אפליקציות', 'המנהל עדיין לא הקצה לכם אפליקציות. כשיקצה — הן יופיעו כאן.');
+        showMessage('עוד אין כאן אפליקציות', 'המנהל עדיין לא הקצה לכם אפליקציות. כשיקצה — הן יופיעו כאן.', '📭');
         return;
     }
+    const first = me.user.display_name.trim().split(/\s+/)[0];
+    const hello = el('div', { className: 'hello' }, [el('div', {}, [
+        el('h1', { textContent: `שלום, ${first}` }),
+        el('p', { textContent: apps.length === 1 ? 'אפליקציה אחת זמינה לך' : `${apps.length} אפליקציות זמינות לך` }),
+    ])]);
+
     const sections = categories
         .map(cat => ({ cat, apps: apps.filter(a => a.category === cat.id) }))
         .filter(s => s.apps.length)
         .map(({ cat, apps }) => el('section', { className: 'category' }, [
-            el('h2', { className: 'category-title', textContent: `${cat.icon} ${cat.name}` }),
-            el('div', { className: 'projects-grid' }, apps.map(card)),
+            el('h2', { className: 'category-title' }, [
+                el('span', { textContent: cat.icon, ariaHidden: 'true' }),
+                el('span', { textContent: cat.name }),
+                el('span', { className: 'n', textContent: `· ${apps.length}` }),
+            ]),
+            el('ul', { className: 'apps' }, apps.map(appRow)),
         ]));
-    view.replaceChildren(...sections);
+
+    const empty = el('p', { className: 'no-results', textContent: 'לא נמצאה אפליקציה בשם הזה', hidden: true });
+    const parts = [hello];
+    if (apps.length > 4) {
+        const input = el('input', { type: 'search', placeholder: 'חיפוש אפליקציה…', ariaLabel: 'חיפוש אפליקציה', autocomplete: 'off' });
+        input.addEventListener('input', () => {
+            const q = input.value.trim().toLowerCase();
+            let any = false;
+            for (const sec of sections) {
+                let shown = 0;
+                for (const li of sec.querySelectorAll('li')) {
+                    const hit = !q || li.dataset.search.includes(q);
+                    li.hidden = !hit;
+                    if (hit) shown++;
+                }
+                sec.hidden = !shown;
+                any ||= shown > 0;
+            }
+            empty.hidden = any;
+        });
+        parts.push(el('div', { className: 'search' }, [el('span', { className: 'ic', textContent: '🔍', ariaHidden: 'true' }), input]));
+    }
+    view.replaceChildren(...parts, ...sections, empty);
 }
 
 // ---------- ניתוב ----------
@@ -347,22 +508,23 @@ function goNext() {
 }
 
 async function start() {
+    closeMenu();
     try {
-        const me = await api('me');
+        me = await api('me');
         csrf = me.csrf;
+        showTopbar();
         showUserbar(me.user);
         if (me.setupNeeded) return showSetup(me);
         if (!me.user) return showLogin();
         if (me.user.status === 'pending') {
             return showMessage('החשבון ממתין לאישור',
-                'נרשמתם בהצלחה. המנהל צריך לאשר את החשבון ולבחור אילו אפליקציות יוצגו לכם.');
+                'נרשמתם בהצלחה. המנהל צריך לאשר את החשבון ולבחור אילו אפליקציות יוצגו לכם.', '⏳');
         }
         if (goNext()) return;
-        if (location.hash === '#admin' && me.user.role === 'admin') {
+        if (inAdmin() && me.user.role === 'admin') {
             return await window.PlatformAdmin.show(view);
         }
         await showApps();
-        showUserbar(me.user); // כפתור "הורדה למכשיר" תלוי ברשימה שנטענה עכשיו
     } catch (err) {
         view.replaceChildren(el('p', {
             className: 'status error',
@@ -371,8 +533,11 @@ async function start() {
     }
 }
 
-// עזרים משותפים ל-admin.js.
-window.Platform = { el, api, showMessage };
+// עזרים משותפים ל-admin.js. setPending — אחרי אישור או דחייה, כדי שהמונה בכותרת יתעדכן.
+window.Platform = {
+    el, api, showMessage, toast, avatar, hue,
+    setPending(n) { if (me) { me.pending = n; showUserbar(me.user); } },
+};
 
-window.addEventListener('hashchange', start);
+window.addEventListener('hashchange', () => { start(); window.scrollTo(0, 0); });
 start();
