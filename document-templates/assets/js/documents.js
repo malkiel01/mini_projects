@@ -1056,6 +1056,9 @@
         api('doc_downloaded', { id }).then(reload).catch(() => {});
       } catch (e) {
         msg.replaceChildren(notice('הפקת ה-PDF נכשלה: ' + e.message, 'bad'));
+        // נתפס כאן — ולכן לא מגיע לבד ללוג המעקב. שולחים, כדי שייפתח "⚠️ לבירור" עם ההקשר
+        api('client_error', { message: 'PDF: ' + String(e.message).slice(0, 400), where: String(e.stack || '').split('\n').slice(1, 3).join(' ').trim().slice(0, 300),
+          page: location.hash.slice(0, 120) }).catch(() => {});
       } finally {
         pdfBtn.disabled = false;
         pdfBtn.textContent = '⬇ הורדת PDF';
@@ -1131,18 +1134,12 @@
         const form = pdf.getForm();
         if (form.getFields().length) {
           form.flatten({ updateFieldAppearances: false });
-          // pdf-lib מוחק את השדות אבל משאיר הפניות אליהם ב-Annots של הדף — מנקים
-          for (const page of pdf.getPages()) {
-            const annots = page.node.Annots();
-            if (!annots) continue;
-            for (let i = annots.size() - 1; i >= 0; i--) {
-              const ref = annots.get(i);
-              if (ref instanceof window.PDFLib.PDFRef && !pdf.context.lookup(ref)) annots.remove(i);
-            }
-          }
+          stripForm(pdf, false);   // pdf-lib מוחק את השדות אבל משאיר הפניות אליהם ב-Annots של הדף — מנקים
         }
       } catch (e) {
-        try { const form = pdf.getForm(); for (const f of form.getFields()) form.removeField(f); } catch (e2) { /* בלי טופס */ }
+        // טופס עם הפניה שבורה (שדה שמצביע על אובייקט שלא קיים): pdf-lib לא מצליח לשטח אותו, וגם לא
+        // למחוק שדה-שדה. מורידים את שכבת הטופס כולה ישירות — התוכן של הדף נשאר, ומה שנכתוב מעליו
+        stripForm(pdf, true);
       }
     } else {
       pdf = await PDFDocument.create();
@@ -1295,7 +1292,29 @@
 
     pdf.setTitle(doc.title);
     pdf.setProducer('תבניות מסמכים');
-    return pdf.save();
+    // בלי לצייר מחדש את שדות הטופס המקורי: כבר שוטחו או הוסרו, ובטופס שבור הציור עצמו נכשל
+    return pdf.save({ updateFieldAppearances: false });
+  }
+
+  /**
+   * ניקוי שכבת הטופס של ה-PDF המקורי — בלי לקרוא את השדות דרך pdf-lib (שנכשל על הפניה שבורה).
+   * all=false: רק הפניות שבורות ב-Annots (אחרי flatten). all=true: גם כל ה-Widgets, ו-AcroForm מהקטלוג.
+   */
+  function stripForm(pdf, all) {
+    const { PDFName, PDFRef, PDFDict } = window.PDFLib;
+    try { if (all) pdf.catalog.delete(PDFName.of('AcroForm')); } catch (e) { /* אין */ }
+    for (const page of pdf.getPages()) {
+      try {
+        const annots = page.node.Annots();
+        if (!annots) continue;
+        for (let i = annots.size() - 1; i >= 0; i--) {
+          const it = annots.get(i);
+          const obj = it instanceof PDFRef ? pdf.context.lookup(it) : it;
+          const widget = obj instanceof PDFDict && String(obj.get(PDFName.of('Subtype'))) === '/Widget';
+          if (!obj || (all && widget)) annots.remove(i);
+        }
+      } catch (e) { /* דף בלי Annots תקין — ממשיכים */ }
+    }
   }
 
   window.DTDocs = { list, open, issue, pdfText };
