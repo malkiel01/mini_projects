@@ -18,6 +18,7 @@ window.PlatformAdmin = (() => {
 
     async function reload() {
         state = await P().api('admin_state');
+        P().setPending(pendingCount());
         render();
     }
 
@@ -40,8 +41,8 @@ window.PlatformAdmin = (() => {
 
     function render() {
         const tabs = el('div', { className: 'admin-tabs' }, [
-            ['users', `👥 משתמשים${pendingCount() ? ` (${pendingCount()} ממתינים)` : ''}`],
-            ['catalog', '🗂️ קטגוריות ואפליקציות'],
+            ['users', `👥 משתמשים${pendingCount() ? ` (${pendingCount()})` : ''}`],
+            ['catalog', '🗂️ אפליקציות'],
             ['probe', '🩺 בדיקת שרת'],
         ].map(([id, label]) => button(label, () => { tab = id; flash = ''; render(); }, tab === id ? 'active' : '')));
 
