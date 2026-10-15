@@ -537,7 +537,10 @@
         n = el('select', common);
         const paint = () => fillSelect(n, listOptions(doc.lists, f.list, listKnown(f.list.id)), values[f.key] ?? '', onPage || inlineText ? f.label : '— בחירה —');
         paint(); listRefresh.push(paint);
-        n.addEventListener('change', () => queue(f.key, n.value));
+        n.addEventListener('change', () => { queue(f.key, n.value); outHint(); });
+        // שפה במסמך: בוחרים בעברית — ורואים מה ייכתב
+        const outHint = () => { if (f.list.lang) n.title = n.value ? 'במסמך: ' + listOut(doc.lists, f.list, n.value) : ''; };
+        outHint();
       } else if (f.type === 'select') {
         // בחירה מרשימה; בחירה ממקור חיצוני יכולה למלא שדות נוספים מהרשומה
         const opts = f.options || [];
@@ -745,9 +748,9 @@
       const esc = (t) => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
       const table = (f) => '<table><tr>' + (f.columns || []).map(c => `<th>${esc(c.label)}</th>`).join('') + '</tr>'
         + C.rows(values[f.key]).map(r => '<tr>' + (f.columns || []).map(c =>
-          `<td>${esc(c.type === 'calc' ? C.display(r[c.key] ?? '', c.format) : r[c.key])}</td>`).join('') + '</tr>').join('') + '</table>';
+          `<td>${esc(c.type === 'calc' ? C.display(r[c.key] ?? '', c.format) : listOut(doc.lists, c.list, r[c.key]))}</td>`).join('') + '</tr>').join('') + '</table>';
       const val = (f) => {
-        const v = values[f.key] ?? '';
+        const v = f.list ? listOut(doc.lists, f.list, values[f.key]) : values[f.key] ?? '';
         if (!vis.has(f.key) || f.print === false) return '';
         switch (f.type) {
           case 'date': return esc(window.DTFmt.apply(f, v) ?? ddmmyyyy(v));
@@ -1366,6 +1369,13 @@
     }
     return [...out];
   }
+  /** הערך כפי שהוא נכתב במסמך שיוצא: התרגום לשפה שנקבעה לשדה (אם יש), אחרת הערך עצמו. */
+  function listOut(lists, ref, v) {
+    v = String(v ?? '');
+    if (!ref || !ref.lang || v === '') return v;
+    const t = lists && lists[String(ref.id)] && lists[String(ref.id)].translations;
+    return (t && t[String(ref.level)] && t[String(ref.level)][v] && t[String(ref.level)][v][ref.lang]) || v;
+  }
   /** ממלא select באפשרויות, ושומר את הערך הנוכחי גם אם כבר לא ברשימה (מסומן — לא נמחק בשקט). */
   function fillSelect(sel, opts, cur, emptyLabel) {
     const { el } = window.DT;
@@ -1504,8 +1514,9 @@
       }
 
       const font = fonts.get(f.font) || fontDefault;
-      const text = window.DTFmt.apply(f, raw) ?? (f.type === 'date' ? ddmmyyyy(raw) : f.type === 'calc' ? window.DTCalc.display(raw, f.format)
-        : f.type === 'system' ? sysText(f, raw) : f.type === 'select' ? optText(f, raw) : raw);   // מבנה מותאם קודם
+      const out = f.list ? listOut(doc.lists, f.list, raw) : raw;   // רשימת ערכים — בשפת המסמך
+      const text = window.DTFmt.apply(f, out) ?? (f.type === 'date' ? ddmmyyyy(raw) : f.type === 'calc' ? window.DTCalc.display(raw, f.format)
+        : f.type === 'system' ? sysText(f, raw) : f.type === 'select' ? optText(f, out) : out);   // מבנה מותאם קודם
       let size = f.fontSize || 11;
       const pad = 2;
       const fits = (sz) => {
@@ -1548,7 +1559,7 @@
       const rows = C.rows(values[f.key]);
       if (!cols.length || !rows.length) return;
       const gn = groupN(f);
-      const shown = (c, r) => c.type === 'calc' ? C.display(r[c.key] ?? '', c.format) : c.type === 'number' ? C.display(r[c.key] ?? '', 'number') : String(r[c.key] ?? '');
+      const shown = (c, r) => c.type === 'calc' ? C.display(r[c.key] ?? '', c.format) : c.type === 'number' ? C.display(r[c.key] ?? '', 'number') : listOut(doc.lists, c.list, r[c.key]);
       const wraps = (c) => c.type === 'text';   // טקסט (למשל הערות) נשבר לכמה שורות; מספר ובחירה — שורה אחת
       const pad = 3;
       // רוחב טבעי לכל עמודה; עמודת טקסט ארוכה — עד 38% מהרוחב (והשאר נשבר לשורות)

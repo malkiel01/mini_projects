@@ -13,6 +13,8 @@ declare(strict_types=1);
 const LIST_MAX_ROWS   = 20000;
 const LIST_MAX_LEVELS = 8;
 const LIST_MAX_MB     = 5;
+/** שפות לתרגום ערכים (השם שנבחר בעברית — ובפלט בשפה שנקבעה לשדה). */
+const LIST_LANGS = ['en' => 'English', 'fr' => 'Français', 'ar' => 'العربية', 'ru' => 'Русский', 'es' => 'Español', 'de' => 'Deutsch'];
 
 function lists_migrate(PDO $pdo): void
 {
@@ -30,6 +32,9 @@ function lists_migrate(PDO $pdo): void
         );
         CREATE INDEX IF NOT EXISTS idx_lists_owner ON value_lists(owner_id);
         SQL);
+    // תרגומים: {"<רמה>": {"<ערך>": {"en": "…", "fr": "…"}}}
+    $cols = array_column($pdo->query('PRAGMA table_info(value_lists)')->fetchAll(), 'name');
+    if (!in_array('tr_enc', $cols, true)) $pdo->exec('ALTER TABLE value_lists ADD COLUMN tr_enc TEXT');
 }
 
 /**
@@ -78,9 +83,38 @@ function list_row(array $user, int $id): array
 
 function list_view(array $r, bool $rows = false): array
 {
+    $tr = !empty($r['tr_enc']) ? (json_decode((string)unseal($r['tr_enc']), true) ?: []) : [];
     return ['id' => (int)$r['id'], 'name' => (string)unseal($r['name_enc']),
         'levels' => json_decode((string)unseal($r['levels_enc']), true) ?: [], 'row_count' => (int)$r['row_count'],
-        'updated_at' => $r['updated_at']] + ($rows ? ['rows' => json_decode((string)unseal($r['rows_enc']), true) ?: []] : []);
+        'langs' => list_tr_langs($tr), 'updated_at' => $r['updated_at']]
+        + ($rows ? ['rows' => json_decode((string)unseal($r['rows_enc']), true) ?: [], 'translations' => (object)$tr] : []);
+}
+
+/** אילו שפות יש בתרגומים. */
+function list_tr_langs(array $tr): array
+{
+    $l = [];
+    foreach ($tr as $vals) foreach ((array)$vals as $t) foreach ((array)$t as $lang => $x) if ($x !== '') $l[$lang] = true;
+    return array_values(array_intersect(array_keys(LIST_LANGS), array_keys($l)));
+}
+
+/** תרגומים נקיים: רק רמות שקיימות, ערכים שקיימים ברמה, ושפות מוכרות. */
+function list_tr_clean($tr, array $rows, int $levels): array
+{
+    $out = [];
+    foreach ((array)$tr as $lv => $vals) {
+        $lv = (int)$lv;
+        if ($lv < 0 || $lv >= $levels || !is_array($vals)) continue;
+        $have = array_flip(array_map('strval', array_column($rows, $lv)));
+        foreach ($vals as $v => $t) {
+            if (!isset($have[(string)$v]) || !is_array($t)) continue;
+            foreach ($t as $lang => $x) {
+                $x = mb_substr(trim((string)$x), 0, 200);
+                if (isset(LIST_LANGS[$lang]) && $x !== '') $out[(string)$lv][(string)$v][$lang] = $x;
+            }
+        }
+    }
+    return $out;
 }
 
 function list_index(array $user): array
@@ -95,22 +129,24 @@ function list_get(array $user, array $q): array
     return ['ok' => true, 'list' => list_view(list_row($user, (int)($q['id'] ?? 0)), true)];
 }
 
-/** {id?, name, levels: [...], rows: [[...], ...]} */
+/** {id?, name, levels: [...], rows: [[...], ...], translations?: {"<רמה>": {"<ערך>": {"en": "…"}}}} */
 function list_save(array $user, array $b): array
 {
     $name = mb_substr(trim((string)($b['name'] ?? '')), 0, 80);
     if ($name === '') throw new ApiError('לרשימה צריך שם', 422);
     $levels = list_levels_clean($b['levels'] ?? []);
     $rows = list_rows_clean((array)($b['rows'] ?? []), count($levels));
+    $tr = list_tr_clean($b['translations'] ?? [], $rows, count($levels));
     $now = now_iso();
-    $enc = [seal($name), seal(json_encode($levels, JSON_UNESCAPED_UNICODE)), seal(json_encode($rows, JSON_UNESCAPED_UNICODE)), count($rows)];
+    $enc = [seal($name), seal(json_encode($levels, JSON_UNESCAPED_UNICODE)), seal(json_encode($rows, JSON_UNESCAPED_UNICODE)), count($rows),
+        seal(json_encode((object)$tr, JSON_UNESCAPED_UNICODE))];
     if (!empty($b['id'])) {
         $r = list_row($user, (int)$b['id']);
-        db()->prepare('UPDATE value_lists SET name_enc = ?, levels_enc = ?, rows_enc = ?, row_count = ?, updated_at = ? WHERE id = ?')
+        db()->prepare('UPDATE value_lists SET name_enc = ?, levels_enc = ?, rows_enc = ?, row_count = ?, tr_enc = ?, updated_at = ? WHERE id = ?')
             ->execute([...$enc, $now, $r['id']]);
         $id = (int)$r['id'];
     } else {
-        db()->prepare('INSERT INTO value_lists (owner_id, name_enc, levels_enc, rows_enc, row_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        db()->prepare('INSERT INTO value_lists (owner_id, name_enc, levels_enc, rows_enc, row_count, tr_enc, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
             ->execute([$user['id'], ...$enc, $now, $now]);
         $id = (int)db()->lastInsertId();
     }
@@ -138,9 +174,29 @@ function list_import(array $user, array $files): array
     if (count($rows) < 2) throw new ApiError('צריך שורת כותרת (שמות הרמות) ולפחות שורה אחת', 422);
     $head = array_map(fn($v) => trim((string)$v), array_shift($rows));
     while ($head && end($head) === '') array_pop($head);
-    $levels = list_levels_clean($head);
-    $rows = list_rows_clean($rows, count($levels));
-    return ['ok' => true, 'levels' => $levels, 'rows' => $rows];
+    // עמודת תרגום: "בית עלמין (en)" / "בית עלמין [fr]" — תרגום של הרמה בשם הזה, לא רמה בפני עצמה
+    $lvCols = []; $trCols = [];
+    foreach ($head as $i => $h) {
+        if (preg_match('/^(.*?)\s*[\(\[]\s*([a-z]{2})\s*[\)\]]$/u', $h, $m) && isset(LIST_LANGS[strtolower($m[2])])) $trCols[$i] = [trim($m[1]), strtolower($m[2])];
+        else $lvCols[$i] = $h;
+    }
+    $levels = list_levels_clean(array_values($lvCols));
+    $pos = array_flip(array_keys($lvCols));   // עמודה בקובץ ← רמה
+    $plain = array_map(fn($r) => array_map(fn($i) => $r[$i] ?? '', array_keys($lvCols)), $rows);
+    $clean = list_rows_clean($plain, count($levels));
+    // התרגומים: לכל שורה — הערך ברמה (אחרי "כמו בשורה שמעל") ← התרגום שבעמודה
+    $tr = [];
+    $prev = [];
+    foreach ($rows as $r) {
+        foreach ($lvCols as $i => $name) { $v = trim((string)($r[$i] ?? '')); if ($v !== '') $prev[$pos[$i]] = $v; }
+        foreach ($trCols as $i => [$lvName, $lang]) {
+            $x = trim((string)($r[$i] ?? ''));
+            $lv = array_search($lvName, $levels, true);
+            if ($x === '' || $lv === false || !isset($prev[$lv])) continue;
+            $tr[(string)$lv][$prev[$lv]][$lang] = $x;
+        }
+    }
+    return ['ok' => true, 'levels' => $levels, 'rows' => $clean, 'translations' => (object)list_tr_clean($tr, $clean, count($levels))];
 }
 
 /** הרשימות שמותר לקשור בתבנית: של המשתמש, ומה שכבר קשור בה (שותף שעורך תבנית של אחר). */
@@ -173,7 +229,9 @@ function clean_list_ref($ref, array $allowed): ?array
     $st->execute([$id]);
     $levels = ($l = $st->fetchColumn()) ? (json_decode((string)unseal($l), true) ?: []) : [];
     $level = (int)($ref['level'] ?? 0);
-    return $levels && $level >= 0 && $level < count($levels) ? ['id' => $id, 'level' => $level] : null;
+    if (!$levels || $level < 0 || $level >= count($levels)) return null;
+    // שפת הפלט: בוחרים בעברית, ובמסמך שיוצא — התרגום (אם יש), אחרת הערך כמו שהוא
+    return ['id' => $id, 'level' => $level] + (isset(LIST_LANGS[$ref['lang'] ?? '']) ? ['lang' => $ref['lang']] : []);
 }
 
 /** הרשימות שהמסמך צריך (לסינון המקונן בדפדפן): {id: {name, levels, rows}}. */
@@ -183,7 +241,7 @@ function lists_for(array $schema): array
     foreach (schema_lists($schema) as $id) {
         $st = db()->prepare('SELECT * FROM value_lists WHERE id = ? AND deleted_at IS NULL');
         $st->execute([$id]);
-        if ($r = $st->fetch()) { $v = list_view($r, true); $out[(string)$id] = ['name' => $v['name'], 'levels' => $v['levels'], 'rows' => $v['rows']]; }
+        if ($r = $st->fetch()) { $v = list_view($r, true); $out[(string)$id] = ['name' => $v['name'], 'levels' => $v['levels'], 'rows' => $v['rows'], 'translations' => $v['translations']]; }
     }
     return $out;
 }
@@ -202,4 +260,19 @@ function list_level_values(array $ref): array
     $vals = [];
     foreach ($cache[$id] as $row) if (($row[$ref['level']] ?? '') !== '') $vals[$row[$ref['level']]] = true;
     return array_map('strval', array_keys($vals));
+}
+
+/** הערך כפי שהוא נכתב במסמך שיוצא: תרגום לשפה שנקבעה לשדה (אם יש), אחרת הערך עצמו. */
+function list_translate(?array $ref, string $v): string
+{
+    if (!$ref || empty($ref['lang']) || $v === '') return $v;
+    static $cache = [];
+    $id = (int)$ref['id'];
+    if (!array_key_exists($id, $cache)) {
+        $st = db()->prepare('SELECT tr_enc FROM value_lists WHERE id = ?');
+        $st->execute([$id]);
+        $t = $st->fetchColumn();
+        $cache[$id] = $t ? (json_decode((string)unseal($t), true) ?: []) : [];
+    }
+    return (string)($cache[$id][(string)$ref['level']][$v][$ref['lang']] ?? $v);
 }

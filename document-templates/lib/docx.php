@@ -168,6 +168,7 @@ function docx_fields(array $names): array
 /** הערך כפי שהוא נכתב במסמך. */
 function docx_value(array $f, string $v, array $attachments): string
 {
+    if (!empty($f['list']['lang'])) $v = list_translate($f['list'], $v);   // רשימת ערכים — בשפת הפלט של השדה
     if (($custom = fmt_apply($f, $v)) !== null) return $custom;   // מבנה מותאם — כמו ב-PDF
     return match ($f['type']) {
         'calc' => calc_display($v, $f['format'] ?? 'number'),
@@ -277,7 +278,7 @@ function docx_fill(string $bytes, array $schema, array $values, array $attachmen
 /** תא בטבלה כפי שהוא נכתב: עמודה מחושבת — לפי התצוגה שלה. */
 function cell_display(array $c, string $v): string
 {
-    return $c['type'] === 'calc' ? calc_display($v, $c['format'] ?? 'number') : $v;
+    return $c['type'] === 'calc' ? calc_display($v, $c['format'] ?? 'number') : list_translate($c['list'] ?? null, $v);
 }
 
 /**

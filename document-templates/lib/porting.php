@@ -53,7 +53,7 @@ function tpl_export_data(array $user, int $id): array
 
     // רשימות: מזהה ← שם (אצל המייבא נוצרת / נמצאת רשימה בשם הזה)
     $lists = lists_for($schema);
-    $byId = fn($ref) => isset($lists[(string)$ref['id']]) ? ['name' => $lists[(string)$ref['id']]['name'], 'level' => (int)$ref['level']] : null;
+    $byId = fn($ref) => isset($lists[(string)$ref['id']]) ? ['name' => $lists[(string)$ref['id']]['name'], 'level' => (int)$ref['level']] + (isset($ref['lang']) ? ['lang' => $ref['lang']] : []) : null;
     foreach ($schema['fields'] ?? [] as $i => $f) {
         if (!empty($f['list'])) { $r = $byId($f['list']); if ($r) $schema['fields'][$i]['list'] = $r; else unset($schema['fields'][$i]['list']); }
         foreach ($f['columns'] ?? [] as $j => $c) {
@@ -185,13 +185,20 @@ function tpl_import_package(array $user, array $p, string $name = '', ?string $a
         $ln = mb_substr(trim((string)$l['name']), 0, 80);
         $levels = list_levels_clean($l['levels'] ?? []);
         $rows = list_rows_clean((array)($l['rows'] ?? []), count($levels));
+        $tr = list_tr_clean($l['translations'] ?? [], $rows, count($levels));
         if (isset($mine[$ln])) {
             $have = list_get($user, ['id' => $mine[$ln]['id']])['list'];
-            if ($have['levels'] === $levels && $have['rows'] === $rows) { $ids[$l['name']] = $have['id']; continue; }
+            if ($have['levels'] === $levels && $have['rows'] === $rows) {
+                // אותה רשימה — תרגומים שחסרים אצל המייבא נוספים (לא דורסים את שלו)
+                $mt = json_decode(json_encode($have['translations']), true) ?: [];
+                $merged = array_replace_recursive($tr, $mt);
+                if ($merged != $mt) list_save($user, ['id' => $have['id'], 'name' => $have['name'], 'levels' => $levels, 'rows' => $rows, 'translations' => $merged]);
+                $ids[$l['name']] = $have['id']; continue;
+            }
             for ($k = 2; isset($mine[$ln . " ($k)"]); $k++);
             $ln .= " ($k)";
         }
-        $new = list_save($user, ['name' => $ln, 'levels' => $levels, 'rows' => $rows])['list'];
+        $new = list_save($user, ['name' => $ln, 'levels' => $levels, 'rows' => $rows, 'translations' => $tr])['list'];
         $mine[$ln] = $new;
         $ids[$l['name']] = $new['id'];
     }
@@ -204,7 +211,7 @@ function tpl_import_package(array $user, array $p, string $name = '', ?string $a
             $level = (int)($ref['level'] ?? 0);
             $id = $ids[$ref['name']] ?? null;
             if (!$id && isset($mine[$ref['name']]) && $level < count($mine[$ref['name']]['levels'])) $id = $mine[$ref['name']]['id'];
-            if ($id) { $o['list'] = ['id' => $id, 'level' => $level]; return $o; }
+            if ($id) { $o['list'] = ['id' => $id, 'level' => $level] + (isset(LIST_LANGS[$ref['lang'] ?? '']) ? ['lang' => $ref['lang']] : []); return $o; }
         }
         if (($o['type'] ?? '') === 'select' && !($o['options'] ?? [])) $o['type'] = 'text';
         return $o;

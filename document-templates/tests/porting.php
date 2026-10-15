@@ -33,7 +33,8 @@ $pdf = "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pag
 file_put_contents("$tmp/u.pdf", $pdf);
 $up = fn($p) => ['file' => ['tmp_name' => $p, 'error' => 0, 'size' => filesize($p), 'name' => basename($p)]];
 
-$l = list_save($a, ['name' => 'מיקומי קברים', 'levels' => ['בית עלמין', 'גוש'], 'rows' => [['הר המנוחות', '51'], ['', '52']]])['list'];
+$l = list_save($a, ['name' => 'מיקומי קברים', 'levels' => ['בית עלמין', 'גוש'], 'rows' => [['הר המנוחות', '51'], ['', '52']],
+    'translations' => ['0' => ['הר המנוחות' => ['en' => 'Har HaMenuchot']]]])['list'];
 $font = font_upload($a, ['name' => 'אלף'], $up(__DIR__ . '/../assets/fonts/Alef-Regular.ttf'))['font'];
 $c = contact_save($a, ['name' => 'יוסי', 'email' => 'y@x.com'])['contact'] ?? null;
 $tid = tpl_create($a, ['name' => 'הצעת מחיר', 'mode' => 'parse'], $up("$tmp/u.pdf"))['id'];
@@ -43,7 +44,7 @@ tpl_save($a, ['id' => $tid, 'numbering' => ['scheme' => 'prefix_year_seq', 'pref
     'roles' => [['key' => 'emp', 'label' => 'עובד', 'auth' => 'none', 'contact' => $c ? $c['id'] : 0]],
     'styles' => [['id' => 's1', 'name' => 'כותרת', 'font' => $font['id'], 'fontSize' => 14]],
     'fields' => [
-      ['key' => 'cem', 'type' => 'select', 'label' => 'בית העלמין', 'list' => ['id' => $l['id'], 'level' => 0], 'font' => $font['id']] + $geo,
+      ['key' => 'cem', 'type' => 'select', 'label' => 'בית העלמין', 'list' => ['id' => $l['id'], 'level' => 0, 'lang' => 'en'], 'font' => $font['id']] + $geo,
       ['key' => 'graves', 'type' => 'table', 'label' => 'קברים', 'group' => 1, 'columns' => [
         ['key' => 'gush', 'label' => 'גוש', 'type' => 'select', 'list' => ['id' => $l['id'], 'level' => 1]],
         ['key' => 'price', 'label' => 'מחיר', 'type' => 'number']]] + $geo,
@@ -52,7 +53,7 @@ tpl_save($a, ['id' => $tid, 'numbering' => ['scheme' => 'prefix_year_seq', 'pref
 
 $x = tpl_export_data($a, $tid);
 check('הקובץ: פורמט, שם, הקובץ המקורי', $x['format'] === 'dt-template' && $x['name'] === 'הצעת מחיר' && base64_decode($x['asset']['data']) === $pdf);
-check('רשימה — לפי שם, עם השורות', $x['schema']['fields'][0]['list'] === ['name' => 'מיקומי קברים', 'level' => 0] && $x['lists'][0]['rows'][1] === ['הר המנוחות', '52']);
+check('רשימה — לפי שם, עם השורות', $x['schema']['fields'][0]['list'] === ['name' => 'מיקומי קברים', 'level' => 0, 'lang' => 'en'] && $x['lists'][0]['rows'][1] === ['הר המנוחות', '52']);
 check('גופן — עם הקובץ', count($x['fonts']) === 1 && strlen(base64_decode($x['fonts'][0]['data'])) === filesize(__DIR__ . '/../assets/fonts/Alef-Regular.ttf'));
 check('איש קשר קבוע — לא עובר, ונרשם', !isset($x['schema']['roles'][0]['contact']) && ($c === null || count($x['notes']) === 1));
 check('JSON קריא (בלי בינארי מחוץ ל-base64)', json_encode($x, JSON_UNESCAPED_UNICODE) !== false);
@@ -66,7 +67,8 @@ $s2 = $t2['schema'];
 $bl = list_index($b)['lists'];
 check('נוצרה תבנית אצל המייבא, באותו שם ומקור', $t2['name'] === 'הצעת מחיר' && $t2['source'] === 'pdf_parsed' && count($s2['fields']) === 3);
 check('הרשימה נוצרה אצלו, והשדה והעמודה קשורים אליה', count($bl) === 1 && $bl[0]['row_count'] === 2
-    && $s2['fields'][0]['list'] === ['id' => $bl[0]['id'], 'level' => 0] && $s2['fields'][1]['columns'][0]['list'] === ['id' => $bl[0]['id'], 'level' => 1]);
+    && $s2['fields'][0]['list'] === ['id' => $bl[0]['id'], 'level' => 0, 'lang' => 'en'] && $s2['fields'][1]['columns'][0]['list'] === ['id' => $bl[0]['id'], 'level' => 1]);
+check('התרגומים עברו עם הרשימה', $bl[0]['langs'] === ['en'] && docx_value($s2['fields'][0], 'הר המנוחות', []) === 'Har HaMenuchot');
 $bf = font_list($b)['fonts'] ?? [];
 check('הגופן נוצר אצלו, והשדה והסגנון מצביעים עליו', count($bf) === 1 && $s2['fields'][0]['font'] === $bf[0]['id']);
 check('טבלה, קיבוץ, נוסחה, מספור ותגיות — עברו', $s2['fields'][1]['group'] === 1 && $s2['fields'][2]['formula'] === 'sum(קברים.מחיר)'

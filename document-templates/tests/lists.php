@@ -74,6 +74,34 @@ check('המסמך מגיע עם הרשימה (לסינון המקונן)', ($doc
 $t2 = tpl_create($b, ['name' => 'שלי'], ['file' => ['tmp_name' => "$tmp/u.pdf", 'error' => 0, 'size' => strlen($pdf)]])['id'];
 tpl_save($b, ['id' => $t2, 'schema' => ['pages' => [['w' => 595, 'h' => 842]], 'fields' => [['key' => 'x', 'type' => 'select', 'label' => 'x', 'list' => $ref(0)] + $geo]]]);
 check('רשימה של אחר — לא נקשרת', !isset(tpl_get($b, $t2)['template']['schema']['fields'][0]['list']));
+// תרגומים: בוחרים בעברית, ובמסמך שיוצא — בשפה שנקבעה לשדה
+$full = list_get($a, ['id' => $l['id']])['list'];
+list_save($a, ['id' => $l['id'], 'name' => $full['name'], 'levels' => $full['levels'], 'rows' => $full['rows'], 'translations' => [
+    '0' => ['הר המנוחות' => ['en' => 'Har HaMenuchot', 'fr' => 'Har HaMenouhot', 'xx' => 'bad'], 'לא קיים' => ['en' => 'Nope']],
+    '1' => ['51' => ['en' => '']], '9' => ['x' => ['en' => 'y']]]]);
+$tr = list_get($a, ['id' => $l['id']])['list'];
+$trA = json_decode(json_encode($tr['translations']), true);
+check('תרגומים נשמרים: רק ערך שקיים, שפה מוכרת ולא ריק', $trA === ['0' => ['הר המנוחות' => ['en' => 'Har HaMenuchot', 'fr' => 'Har HaMenouhot']]] && $tr['langs'] === ['en', 'fr']);
+check('ברשימת הרשימות — השפות', list_index($a)['lists'][0]['langs'] === ['en', 'fr']);
+tpl_save($a, ['id' => $tid, 'schema' => ['pages' => [['w' => 595, 'h' => 842]], 'fields' => [
+    ['key' => 'cem', 'type' => 'select', 'label' => 'בית העלמין', 'list' => $ref(0) + ['lang' => 'en']] + $geo,
+    ['key' => 'cem2', 'type' => 'select', 'label' => 'בית העלמין 2', 'list' => $ref(0) + ['lang' => 'zz']] + $geo]]]);
+$s = tpl_get($a, $tid)['template']['schema'];
+check('שפה במסמך נשמרת בשדה; שפה לא מוכרת — בלי', $s['fields'][0]['list'] === $ref(0) + ['lang' => 'en'] && $s['fields'][1]['list'] === $ref(0));
+check('בפלט: התרגום; בלי תרגום — הערך עצמו', docx_value($s['fields'][0], 'הר המנוחות', []) === 'Har HaMenuchot'
+    && docx_value($s['fields'][0], 'גבעת שאול', []) === 'גבעת שאול' && docx_value($s['fields'][1], 'הר המנוחות', []) === 'הר המנוחות');
+$d2 = doc_create($a, ['template_id' => $tid])['id'];
+doc_save($a, ['id' => $d2, 'values' => ['cem' => 'הר המנוחות']]);
+$doc = doc_get($a, $d2)['document'];
+check('הערך נשמר בעברית, והתרגומים מגיעים עם המסמך', doc_values($d2)['cem'] === 'הר המנוחות'
+    && (json_decode(json_encode($doc['lists'][(string)$l['id']]['translations']), true)['0']['הר המנוחות']['en'] ?? '') === 'Har HaMenuchot');
+$csv2 = "$tmp/l2.csv";
+file_put_contents($csv2, "בית עלמין,בית עלמין (en),גוש,בית עלמין [fr]\nהר המנוחות,Har HaMenuchot,51,Har HaMenouhot\n,,52,\nגבעת שאול,Givat Shaul,30180,\n");
+$imp = list_import($a, ['file' => ['tmp_name' => $csv2, 'error' => 0, 'size' => filesize($csv2)]]);
+$it = json_decode(json_encode($imp['translations']), true);
+check('ייבוא: עמודת "(en)" / "[fr]" — תרגום, לא רמה', $imp['levels'] === ['בית עלמין', 'גוש'] && count($imp['rows']) === 3
+    && $it === ['0' => ['הר המנוחות' => ['en' => 'Har HaMenuchot', 'fr' => 'Har HaMenouhot'], 'גבעת שאול' => ['en' => 'Givat Shaul']]]);
+
 list_delete($a, ['id' => $l['id']]);
 check('נמחקה — לא ברשימה', list_index($a)['lists'] === []);
 
