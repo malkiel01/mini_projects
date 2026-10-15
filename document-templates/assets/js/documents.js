@@ -278,6 +278,10 @@
       return k;
     };
     const listRefresh = [];
+    // רשימה גדולה: האפשרויות מגיעות מהשרת (לפי מה שנבחר ברמות שמעל); כשמגיעות — מציירים שוב
+    bigLists.cache.clear();
+    bigLists.fetch = (ref, known) => api('list_opts', { doc: fill ? undefined : id, list: ref.id, level: ref.level, known }).then(r => r.values);
+    bigLists.done = () => listRefresh.forEach(fn => fn());
     const byPh = Object.fromEntries(fields.filter(f => f.placeholder).map(f => [f.placeholder, f]));
     // סדר הטופס: לפי דף, ואז מלמעלה למטה, ואז מימין לשמאל.
     const ordered = [...fields].sort((a, b) => a.page - b.page || (a.y - b.y > 0.01 ? 1 : b.y - a.y > 0.01 ? -1 : b.x - a.x));
@@ -1359,9 +1363,23 @@
    * רשימת ערכים: האפשרויות ברמה של השדה, מסוננות לפי מה שכבר נבחר ברמות האחרות (known: {רמה: ערך}).
    * רמה שמעל — מסננת (בית העלמין שנבחר מצמצם את הגושים); רמה שמתחת — לא מגבילה.
    */
+  /** רשימה גדולה: מטמון של תשובות השרת (רשימה+רמה+מה שנבחר מעל), ומי שמביא / מצייר מחדש (נקבע ב-open). */
+  const bigLists = { cache: new Map(), pending: new Set(), fetch: null, done: null };
   function listOptions(lists, ref, known) {
     const L = lists && lists[String(ref.id)];
     if (!L) return [];
+    if (L.big) {
+      const up = {};
+      for (const [lv, v] of Object.entries(known)) if (Number(lv) < ref.level && v) up[lv] = v;
+      const k = ref.id + '|' + ref.level + '|' + JSON.stringify(up);
+      if (bigLists.cache.has(k)) return bigLists.cache.get(k);
+      if (bigLists.fetch && !bigLists.pending.has(k)) {
+        bigLists.pending.add(k);
+        bigLists.fetch(ref, up).then(v => bigLists.cache.set(k, v), () => bigLists.cache.set(k, []))
+          .finally(() => { bigLists.pending.delete(k); if (bigLists.done) bigLists.done(); });
+      }
+      return null;   // נטען
+    }
     const out = new Set();
     for (const row of L.rows) {
       if (!row[ref.level]) continue;
@@ -1379,6 +1397,11 @@
   /** ממלא select באפשרויות, ושומר את הערך הנוכחי גם אם כבר לא ברשימה (מסומן — לא נמחק בשקט). */
   function fillSelect(sel, opts, cur, emptyLabel) {
     const { el } = window.DT;
+    if (opts === null) {   // רשימה גדולה — האפשרויות בדרך מהשרת; הערך הנוכחי נשאר כמו שהוא
+      sel.replaceChildren(el('option', { value: '' }, emptyLabel), ...(cur ? [el('option', { value: cur, selected: true }, cur)] : []),
+        el('option', { value: '', disabled: true }, 'טוען…'));
+      return;
+    }
     sel.replaceChildren(el('option', { value: '' }, emptyLabel), ...opts.map(o => el('option', { value: o, selected: o === cur }, o)),
       ...(cur && !opts.includes(cur) ? [el('option', { value: cur, selected: true }, cur + ' ⚠ לא ברשימה')] : []));
   }
@@ -1386,7 +1409,7 @@
   /** הצעות לשדה טקסט מרשימה: <datalist> צמוד. */
   function datalistFor(input, opts) {
     const { el } = window.DT;
-    const dl = el('datalist', { id: 'dl-' + (++dlSeq) }, opts.map(o => el('option', { value: o })));
+    const dl = el('datalist', { id: 'dl-' + (++dlSeq) }, (opts || []).map(o => el('option', { value: o })));
     input.setAttribute('list', dl.id);
     return dl;
   }
