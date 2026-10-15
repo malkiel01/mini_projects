@@ -62,6 +62,20 @@
     save(new Blob([await pdf.save({ updateFieldAppearances: false })], { type: 'application/pdf' }), safe(t.name) + '.pdf');
   }
 
+  /** PDF עם הגדרות מוכנות (dt-template.json עם fields — כמו תבנית שהוכנה מראש): העורך מחיל אותן בפתיחה הראשונה. */
+  async function hasFields(file) {
+    try {
+      const lib = await pdfJs();
+      const doc = await lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+      for (const it of Object.values((await doc.getAttachments()) || {})) {
+        if (it.filename !== ENTRY) continue;
+        try { const p = JSON.parse(new TextDecoder().decode(it.content)); if (p && Array.isArray(p.fields) && p.fields.length) return true; }
+        catch (e) { /* לא שלנו */ }
+      }
+    } catch (e) { /* לא PDF תקין */ }
+    return false;
+  }
+
   /** PDF שיוצא מהמערכת: ההגדרות שבתוכו, או null. */
   async function readPdf(file) {
     try {
@@ -107,5 +121,5 @@
       }, { sub }))), out));
   }
 
-  window.DTPort = { exportDialog, exportAs, readPdf, importPdf };
+  window.DTPort = { exportDialog, exportAs, readPdf, importPdf, hasFields };
 })();

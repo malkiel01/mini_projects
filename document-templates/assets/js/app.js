@@ -445,7 +445,20 @@
         if (!f) return;
         if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') {
           const p = await window.DTPort.readPdf(f);
-          if (!p) { out.replaceChildren(notice('ב-PDF הזה אין הגדרות שיוצאו מהמערכת. כדי ליצור ממנו תבנית רגילה — "מקובץ".', 'bad')); return; }
+          if (!p) {
+            // הגדרות מוכנות (שדות ורשימות) בתוך ה-PDF — כמו "מקובץ": נוצרת תבנית, והעורך מחיל אותן
+            if (await window.DTPort.hasFields(f)) {
+              out.replaceChildren(notice('מייבא…'));
+              try {
+                const fd = new FormData(); fd.append('file', f); fd.append('mode', 'locked');
+                fd.append('name', name.value.trim() || f.name.replace(/\.[^.]+$/, ''));
+                const r = await api('tpl_create', fd);
+                dlg.close(); location.hash = 'tpl=' + r.id;
+              } catch (err) { out.replaceChildren(notice(err.message, 'bad')); }
+              return;
+            }
+            out.replaceChildren(notice('ב-PDF הזה אין הגדרות שיוצאו מהמערכת. כדי ליצור ממנו תבנית רגילה — "מקובץ".', 'bad')); return;
+          }
           return runImport(f, p);
         }
         return runImport(f, null);
