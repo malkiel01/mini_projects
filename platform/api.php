@@ -20,6 +20,7 @@ require __DIR__ . '/lib/http.php';
 require __DIR__ . '/lib/auth.php';
 require __DIR__ . '/lib/access.php';
 require __DIR__ . '/lib/admin.php';
+require_once __DIR__ . '/lib/push.php';
 
 try {
     $action = $_GET['action'] ?? '';
@@ -30,6 +31,7 @@ try {
             'me'   => action_me(),
             'apps' => action_apps(),
             'admin_state' => admin_state(require_admin()),
+            'admin_push'  => admin_push_state(require_admin()),
             default => throw new ApiError('פעולה לא מוכרת', 404),
         };
     }
@@ -181,7 +183,20 @@ function action_register(array $body): never
         throw $e;
     }
     start_session((int)db()->lastInsertId());
-    json_out(['ok' => true]);
+
+    // קודם התשובה למשתמש, ורק אז ההתראה למנהלים — שההרשמה לא תחכה לשירותי ההתראות.
+    respond_then_continue(['ok' => true]);
+    try {
+        push_send([
+            'title' => '👤 הרשמה חדשה',
+            'body'  => "$name ($username) ממתין/ה לאישור",
+            'tag'   => 'signup',
+            'url'   => '#admin',
+        ]);
+    } catch (Throwable $e) {
+        error_log('platform push: ' . $e->getMessage());
+    }
+    exit;
 }
 
 function action_setup(array $body): never

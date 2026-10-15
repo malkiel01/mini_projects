@@ -60,3 +60,40 @@ self.addEventListener('fetch', (e) => {
         }
     })());
 });
+
+// ---------- התראות (Web Push) — למנהל, על כל הרשמה חדשה ----------
+// המנוי נרשם מממשק המנהל (platform/assets/admin.js); השרת שולח מ-platform/lib/push.php.
+
+self.addEventListener('push', (e) => {
+    let data = {};
+    try { data = e.data ? e.data.json() : {}; } catch { /* תוכן לא תקין — הודעה כללית */ }
+    e.waitUntil(self.registration.showNotification(data.title || '🔔 כלים דיגיטליים', {
+        body: data.body || '',
+        icon: 'platform/assets/icons/icon-192.png',
+        badge: 'platform/assets/icons/favicon.png',
+        tag: data.tag || 'platform',
+        renotify: true,
+        lang: 'he',
+        dir: 'rtl',
+        data: { url: data.url || '' },
+    }));
+});
+
+self.addEventListener('notificationclick', (e) => {
+    e.notification.close();
+    // הכתובת יחסית לשורש האתר — למשל "#admin" פותח את ממשק הניהול.
+    const target = new URL('./' + (e.notification.data?.url || ''), self.registration.scope).href;
+    e.waitUntil((async () => {
+        const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        const home = new URL('./', self.registration.scope).href;
+        for (const win of wins) {
+            // חלון של הדף הראשי (לא של כלי) — מתמקדים בו ומנווטים.
+            if (win.url.split('#')[0].split('?')[0] === home && 'focus' in win) {
+                await win.focus();
+                if ('navigate' in win) await win.navigate(target);
+                return;
+            }
+        }
+        await self.clients.openWindow(target);
+    })());
+});

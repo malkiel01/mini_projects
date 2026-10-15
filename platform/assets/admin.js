@@ -124,7 +124,7 @@ window.PlatformAdmin = (() => {
         }
         drawList();
 
-        return el('div', {}, [seg, el('div', { className: 'toolbar' }, [search, sortSel]), list]);
+        return el('div', {}, [notifyCard(), seg, el('div', { className: 'toolbar' }, [search, sortSel]), list]);
     }
 
     function statusChips(u) {
@@ -170,6 +170,113 @@ window.PlatformAdmin = (() => {
     }
     function reject(u) {
         if (confirm(`לדחות ולמחוק את הבקשה של ${u.display_name}?`)) act('admin_user_delete', { id: u.id }, 'הבקשה נדחתה');
+    }
+
+    // ---------- התראה על הרשמה חדשה (Web Push) ----------
+    // המנוי שייך ל-service worker של המשפחה (family-sw.js, בשורש). באייפון Push עובד רק
+    // מאפליקציה שהותקנה למסך הבית (iOS 16.4 ומעלה) — אז קודם מסבירים איך להתקין.
+
+    const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+    const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+
+    function deviceName() {
+        const ua = navigator.userAgent;
+        const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) || isIOS() ? 'iPad' : /Android/.test(ua) ? 'Android'
+            : /Windows/.test(ua) ? 'Windows' : /Mac OS X/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : 'מכשיר';
+        const br = /Edg\//.test(ua) ? 'Edge' : /SamsungBrowser/.test(ua) ? 'Samsung' : /Firefox|FxiOS/.test(ua) ? 'Firefox'
+            : /Chrome|CriOS/.test(ua) ? 'Chrome' : /Safari/.test(ua) ? 'Safari' : '';
+        return br ? `${os} · ${br}` : os;
+    }
+
+    function b64ToBytes(s) {
+        const raw = atob((s + '='.repeat((4 - s.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/'));
+        return Uint8Array.from(raw, c => c.charCodeAt(0));
+    }
+
+    async function currentSub() {
+        const reg = await navigator.serviceWorker.ready;
+        return { reg, sub: await reg.pushManager.getSubscription() };
+    }
+
+    function notifyCard() {
+        const tx = el('small', { textContent: 'בודק…' });
+        const btns = el('div', { className: 'notify-btns' });
+        const card = el('div', { className: 'notify' }, [
+            el('span', { className: 'notify-ic', textContent: '🔔', ariaHidden: 'true' }),
+            el('div', { className: 'notify-tx' }, [el('b', { textContent: 'התראה על כל הרשמה חדשה' }), tx]),
+            btns,
+        ]);
+        const b = (text, onClick, cls = '') => { const x = button(text, onClick, `sm ${cls}`); return x; };
+
+        async function refresh() {
+            btns.replaceChildren();
+            if (!pushSupported()) {
+                tx.textContent = isIOS() && !standalone()
+                    ? 'באייפון: התקינו קודם למסך הבית (שיתוף ← "הוספה למסך הבית") ופתחו משם'
+                    : 'הדפדפן הזה לא תומך בהתראות';
+                return;
+            }
+            if (Notification.permission === 'denied') {
+                tx.textContent = 'ההתראות חסומות בדפדפן — מאפשרים אותן בהגדרות האתר';
+                return;
+            }
+            let state;
+            try {
+                const [{ sub }, server] = await Promise.all([currentSub(), P().api('admin_push')]);
+                state = { sub, server };
+            } catch { tx.textContent = 'לא ניתן לבדוק כרגע'; return; }
+            const mine = state.sub && state.server.devices.some(d => d.endpoint === state.sub.endpoint);
+            const others = state.server.devices.length - (mine ? 1 : 0);
+            const more = others > 0 ? ` · ועוד ${others} ${others === 1 ? 'מכשיר' : 'מכשירים'}` : '';
+            if (mine && Notification.permission === 'granted') {
+                card.classList.add('on');
+                tx.textContent = `פעיל במכשיר הזה${more}`;
+                btns.append(b('בדיקה', test), b('כיבוי', disable));
+            } else {
+                card.classList.remove('on');
+                tx.textContent = `כבוי במכשיר הזה${more}`;
+                btns.append(b('הפעלה', enable, 'primary'));
+            }
+            card._key = state.server.key;
+        }
+
+        async function enable() {
+            try {
+                if (await Notification.requestPermission() !== 'granted') { P().toast('לא התקבל אישור להתראות'); return refresh(); }
+                const { reg, sub: old } = await currentSub();
+                const key = card._key || (await P().api('admin_push')).key;
+                const sub = old || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) });
+                await P().api('admin_push_subscribe', { subscription: sub.toJSON(), device: deviceName() });
+                P().toast('✓ ההתראות הופעלו במכשיר הזה');
+            } catch (err) {
+                P().toast('⚠️ ' + (err.message || 'ההפעלה נכשלה'));
+            }
+            refresh();
+        }
+
+        async function disable() {
+            try {
+                const { sub } = await currentSub();
+                if (sub) {
+                    await P().api('admin_push_unsubscribe', { endpoint: sub.endpoint });
+                    await sub.unsubscribe();
+                }
+                P().toast('ההתראות כובו במכשיר הזה');
+            } catch (err) { P().toast('⚠️ ' + err.message); }
+            refresh();
+        }
+
+        async function test() {
+            try {
+                const r = await P().api('admin_push_test', {});
+                P().toast(r.sent ? `✓ נשלחה בדיקה ל-${r.sent} ${r.sent === 1 ? 'מכשיר' : 'מכשירים'}` : '⚠️ השליחה נכשלה — נסו לכבות ולהפעיל שוב');
+            } catch (err) { P().toast('⚠️ ' + err.message); }
+            refresh();
+        }
+
+        refresh();
+        return card;
     }
 
     // ---------- גיליון משתמש ----------

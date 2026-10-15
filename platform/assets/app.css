@@ -343,6 +343,18 @@ button.tile { cursor: pointer; text-align: start; font: inherit; font-size: .88r
 .user-sheet .save-grants { position: sticky; bottom: 0; width: 100%; min-height: 44px; margin-top: var(--s2); }
 .admin-tabs .chip { margin-inline-start: 4px; min-height: 18px; padding: 0 6px; }
 
+.notify { display: flex; align-items: center; gap: var(--s3); padding: 10px var(--s3); margin-bottom: var(--s3);
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); }
+.notify.on { border-color: color-mix(in srgb, var(--ok) 35%, var(--line)); }
+.notify-ic { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: var(--brand-soft); }
+.notify.on .notify-ic { background: var(--ok-soft); }
+.notify-tx { flex: 1; min-width: 0; display: grid; line-height: 1.3; }
+.notify-tx b { font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.notify-tx small { color: var(--muted); font-size: .78rem; }
+.notify.on .notify-tx small { color: var(--ok); }
+.notify-btns { display: flex; gap: 6px; flex: none; }
+.btn.sm { min-height: 34px; padding: 0 10px; font-size: .84rem; }
+
 /* ===== טוסט ===== */
 .toast {
     position: fixed; inset-inline: var(--s3); bottom: calc(var(--s4) + env(safe-area-inset-bottom)); margin: auto; width: fit-content;

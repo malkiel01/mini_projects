@@ -11,6 +11,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/access.php';
+require_once __DIR__ . '/push.php';
 
 function require_admin(bool $mutating = false): array
 {
@@ -61,6 +62,9 @@ function admin_dispatch(string $action, array $body, array $admin): never
         'admin_category_move'   => admin_category_move($body),
         'admin_category_delete' => admin_category_delete($body),
         'admin_app_update'      => admin_app_update($body),
+        'admin_push_subscribe'  => admin_push_subscribe($body, $admin),
+        'admin_push_unsubscribe'=> admin_push_unsubscribe($body, $admin),
+        'admin_push_test'       => admin_push_test($admin),
         default => throw new ApiError('פעולה לא מוכרת', 404),
     };
 }
@@ -233,4 +237,37 @@ function admin_app_update(array $body): never
                    ON CONFLICT(app_id) DO UPDATE SET category = excluded.category, hidden = excluded.hidden')
         ->execute([$app['id'], $category === $app['default_category'] ? null : $category, $hidden ? 1 : 0]);
     json_out(['ok' => true]);
+}
+
+// ---------- התראות (Web Push) ----------
+
+/** המפתח הציבורי להרשמה, והמכשירים שכבר רשומים אצל המנהל הזה. */
+function admin_push_state(array $admin): never
+{
+    json_out(['key' => push_vapid()['public'], 'devices' => push_devices((int)$admin['id'])]);
+}
+
+/** {subscription, device} */
+function admin_push_subscribe(array $body, array $admin): never
+{
+    push_subscribe((int)$admin['id'], $body['subscription'] ?? null, $body['device'] ?? '');
+    json_out(['ok' => true]);
+}
+
+/** {endpoint} */
+function admin_push_unsubscribe(array $body, array $admin): never
+{
+    push_unsubscribe((int)$admin['id'], $body['endpoint'] ?? '');
+    json_out(['ok' => true]);
+}
+
+function admin_push_test(array $admin): never
+{
+    [$sent, $failed] = push_send([
+        'title' => '🔔 בדיקה — כלים דיגיטליים',
+        'body'  => 'ההתראות עובדות. כך תדעו על כל הרשמה חדשה.',
+        'tag'   => 'test',
+        'url'   => '#admin',
+    ], [(int)$admin['id']]);
+    json_out(['sent' => $sent, 'failed' => $failed]);
 }
