@@ -238,7 +238,7 @@ function openMenu(btn, user) {
             : menuItem('⚙️', 'ניהול', null, { href: '#admin', count: me.pending || 0 }));
     }
     items.push(menuItem('🔑', 'החלפת סיסמה', () => showPassword(false)));
-    if (installPrompt) items.push(menuItem('📲', 'התקנה במכשיר', installFamily));
+    if (!isStandalone()) items.push(menuItem('📲', 'התקנה במכשיר', openInstallSheet));
     if (canDownload()) items.push(menuItem('⬇️', 'הורדה לשימוש בלי רשת', downloadFamily));
     items.push(el('div', { className: 'menu-sep' }), menuItem('↩', 'יציאה', logout, { cls: 'danger' }));
 
@@ -260,9 +260,12 @@ async function logout() {
 function showUserbar(user) {
     if (!user) { userbar.replaceChildren(); return; }
     const actions = [];
-    if (installPrompt) {
-        const b = el('button', { type: 'button', className: 'icon-btn', textContent: '📲', ariaLabel: 'התקנה במכשיר', title: 'התקנה במכשיר' });
-        b.addEventListener('click', installFamily);
+    // "התקנה" גלוי תמיד, חוץ מכשכבר פתוחים מתוך האפליקציה המותקנת.
+    if (!isStandalone()) {
+        const b = el('button', { type: 'button', className: 'install-btn' }, [
+            el('span', { textContent: '📲', ariaHidden: 'true' }), el('span', { className: 'lbl', textContent: 'התקנה' }),
+        ]);
+        b.addEventListener('click', openInstallSheet);
         actions.push(b);
     }
     if (user.role === 'admin' && !inAdmin()) {
@@ -391,12 +394,119 @@ window.addEventListener('beforeinstallprompt', (e) => {
     if (me?.user) showUserbar(me.user);
 });
 
+window.addEventListener('appinstalled', () => {
+    installPrompt = null;
+    document.querySelector('dialog.install')?.close();
+    document.querySelector('.install-banner')?.remove();
+    toast('✓ הותקן — האייקון נמצא במסך הבית');
+});
+
 async function installFamily() {
     if (!installPrompt) return;
     installPrompt.prompt();
-    await installPrompt.userChoice;
+    const { outcome } = await installPrompt.userChoice;
     installPrompt = null;
+    if (outcome === 'accepted') document.querySelector('dialog.install')?.close();
     if (me?.user) showUserbar(me.user);
+}
+
+// ---------- הסבר התקנה לפי מכשיר ----------
+// כרום/אנדרואיד/Edge נותנים beforeinstallprompt — כפתור אחד. אייפון אינו נותן: מסבירים
+// שיתוף ← "הוספה למסך הבית". שאר הדפדפנים — דרך התפריט שלהם.
+
+const UA = navigator.userAgent;
+const isIOS = () => /iPhone|iPad|iPod/.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isAndroid = () => /Android/.test(UA);
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+
+const SHARE_ICON = 'M12 3l-4 4h3v7h2V7h3l-4-4zM6 10v10h12V10h-3v2h1v6H8v-6h1v-2H6z';
+function shareIcon() {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('class', 'inline-ic');
+    svg.setAttribute('aria-label', 'שיתוף');
+    const path = document.createElementNS(NS, 'path');
+    path.setAttribute('d', SHARE_ICON);
+    svg.append(path);
+    return svg;
+}
+
+function installSteps() {
+    const step = (...parts) => el('li', {}, [el('span', { className: 'step-tx' }, parts)]);
+    if (isIOS()) {
+        const safari = !/CriOS|FxiOS|EdgiOS/.test(UA);
+        return [
+            ...(safari ? [] : [el('p', { className: 'note', textContent: 'באייפון ההתקנה הכי פשוטה מספארי — פתחו את הכתובת הזו בספארי. אם אתם בכרום: אותם צעדים, דרך כפתור השיתוף שליד שורת הכתובת.' })]),
+            el('ol', { className: 'steps' }, [
+                step('לוחצים על ', el('b', {}, ['שיתוף ', shareIcon()]), ' בתחתית המסך (באייפד — למעלה)'),
+                step('גוללים ובוחרים ', el('b', { textContent: '"הוספה למסך הבית"' })),
+                step('לוחצים ', el('b', { textContent: '"הוספה"' }), ' — והאייקון מופיע במסך הבית'),
+            ]),
+            el('p', { className: 'muted small', textContent: 'מהאייקון האפליקציה נפתחת במסך מלא, ושם אפשר גם להפעיל התראות.' }),
+        ];
+    }
+    if (isAndroid()) {
+        return [el('ol', { className: 'steps' }, [
+            step('פותחים את ', el('b', { textContent: 'תפריט הדפדפן ⋮' }), ' (למעלה בצד)'),
+            step('בוחרים ', el('b', { textContent: '"התקנת אפליקציה"' }), ' או ', el('b', { textContent: '"הוספה למסך הבית"' })),
+            step('מאשרים — והאייקון מופיע במסך הבית'),
+        ])];
+    }
+    return [el('ol', { className: 'steps' }, [
+        step('בכרום או ב-Edge: לוחצים על ', el('b', { textContent: 'סמל ההתקנה ⊕' }), ' בקצה שורת הכתובת'),
+        step('או בתפריט ⋮ ← ', el('b', { textContent: '"התקנת כלים דיגיטליים"' })),
+        step('האפליקציה תיפתח בחלון משלה, ותופיע בתפריט ההתחלה / ב-Dock'),
+    ])];
+}
+
+function openInstallSheet() {
+    closeMenu();
+    const close = el('button', { type: 'button', className: 'icon-btn', textContent: '✕', ariaLabel: 'סגירה' });
+    const body = [];
+    if (installPrompt) {
+        const go = el('button', { type: 'button', className: 'btn primary big', textContent: '📲 התקנה עכשיו' });
+        go.addEventListener('click', installFamily);
+        body.push(go);
+    } else {
+        body.push(...installSteps());
+    }
+    body.push(el('ul', { className: 'perks' }, [
+        ['⚡', 'נפתח במסך מלא, כמו אפליקציה'],
+        ['🔄', 'מתעדכן לבד — בלי חנות ובלי הורדות'],
+        ['🗑️', 'אפשר להסיר בכל רגע, כמו כל אפליקציה'],
+    ].map(([i, t]) => el('li', {}, [el('span', { textContent: i, ariaHidden: 'true' }), el('span', { textContent: t })]))));
+
+    const dlg = el('dialog', { className: 'install' }, [el('div', { className: 'sheet' }, [
+        el('div', { className: 'sheet-head' }, [
+            logo(),
+            el('div', { className: 'tx' }, [el('h2', { textContent: 'התקנת כלים דיגיטליים' }), el('small', { textContent: 'אייקון אחד במסך הבית — כל האפליקציות שלך בפנים' })]),
+            close,
+        ]),
+        el('div', { className: 'sheet-body' }, body),
+    ])]);
+    close.addEventListener('click', () => dlg.close());
+    dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+    dlg.addEventListener('close', () => dlg.remove());
+    document.body.append(dlg);
+    dlg.showModal();
+}
+
+// פס הזמנה להתקנה בראש דף האפליקציות — עד שמתקינים או סוגרים אותו.
+const BANNER_KEY = 'platform:install-banner';
+function installBanner() {
+    if (isStandalone()) return null;
+    try { if (localStorage.getItem(BANNER_KEY) === 'no') return null; } catch { /* מצב פרטי */ }
+    const go = el('button', { type: 'button', className: 'btn primary sm', textContent: 'התקנה' });
+    go.addEventListener('click', openInstallSheet);
+    const x = el('button', { type: 'button', className: 'icon-btn', textContent: '✕', ariaLabel: 'לא עכשיו' });
+    const bar = el('div', { className: 'install-banner' }, [
+        el('span', { className: 'ib-ic', textContent: '📲', ariaHidden: 'true' }),
+        el('div', { className: 'ib-tx' }, [el('b', { textContent: 'התקינו במכשיר' }), el('small', { textContent: 'אייקון במסך הבית ופתיחה במסך מלא' })]),
+        go, x,
+    ]);
+    x.addEventListener('click', () => { try { localStorage.setItem(BANNER_KEY, 'no'); } catch { /* */ } bar.remove(); });
+    return bar;
 }
 
 const canDownload = () => 'caches' in window && currentApps.some(a => a.install.offline);
@@ -491,6 +601,8 @@ async function showApps() {
 
     const empty = el('p', { className: 'no-results', textContent: 'לא נמצאה אפליקציה בשם הזה', hidden: true });
     const parts = [hello];
+    const banner = installBanner();
+    if (banner) parts.unshift(banner);
     if (apps.length > 4) {
         const input = el('input', { type: 'search', placeholder: 'חיפוש אפליקציה…', ariaLabel: 'חיפוש אפליקציה', autocomplete: 'off' });
         input.addEventListener('input', () => {

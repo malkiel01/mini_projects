@@ -382,6 +382,31 @@ button.tile { cursor: pointer; text-align: start; font: inherit; font-size: .88r
 .vrow:first-child { border-top: 0; }
 .vrow .dev { text-align: right; }
 
+/* --- התקנה --- */
+.install-btn { display: inline-flex; align-items: center; gap: 4px; height: 34px; padding: 0 10px; border-radius: 99px;
+    border: 1px solid color-mix(in srgb, var(--brand) 35%, var(--line)); background: var(--brand-soft); color: var(--brand);
+    font-size: .85rem; font-weight: 600; cursor: pointer; }
+.install-btn:hover { background: color-mix(in srgb, var(--brand) 16%, var(--surface)); }
+@media (max-width: 360px) { .install-btn .lbl { display: none; } .install-btn { padding: 0 8px; } }
+.install-banner { display: flex; align-items: center; gap: var(--s3); padding: 10px var(--s2) 10px var(--s3); margin-bottom: var(--s3);
+    border-radius: var(--r-lg); color: #fff; background: linear-gradient(135deg, #4338ca, #7c3aed); }
+.install-banner .ib-ic { font-size: 1.4rem; }
+.install-banner .ib-tx { flex: 1; min-width: 0; display: grid; line-height: 1.3; }
+.install-banner small { opacity: .85; font-size: .8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.install-banner .btn.primary { background: #fff; color: #4338ca; border-color: #fff; }
+.install-banner .icon-btn { color: #fff; }
+.install-banner .icon-btn:hover { background: rgba(255, 255, 255, .15); }
+dialog.install .logo { width: 40px; height: 40px; }
+.btn.big { width: 100%; min-height: 50px; font-size: 1.05rem; font-weight: 600; }
+.steps { list-style: none; counter-reset: s; display: grid; gap: var(--s2); }
+.steps li { counter-increment: s; display: flex; align-items: center; gap: var(--s3); padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r); }
+.steps li::before { content: counter(s); flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;
+    background: var(--brand); color: var(--brand-ink); font-weight: 700; font-size: .85rem; }
+.step-tx { line-height: 1.5; }
+.inline-ic { width: 18px; height: 18px; fill: var(--brand); vertical-align: -3px; }
+.perks { list-style: none; display: grid; gap: 6px; padding-top: var(--s2); border-top: 1px solid var(--line); }
+.perks li { display: flex; gap: var(--s2); font-size: .86rem; color: var(--muted); }
+
 /* ===== טוסט ===== */
 .toast {
     position: fixed; inset-inline: var(--s3); bottom: calc(var(--s4) + env(safe-area-inset-bottom)); margin: auto; width: fit-content;

@@ -4,6 +4,7 @@
   "description": "כל האפליקציות שלך במקום אחד",
   "lang": "he",
   "dir": "rtl",
+  "id": "../",
   "start_url": "../",
   "scope": "../",
   "display": "standalone",
