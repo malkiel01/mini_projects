@@ -539,11 +539,12 @@
       } else if (f.type === 'select' && f.list) {
         // רשימת ערכים — מסוננת לפי הרמות שמעל
         n = el('select', common);
-        const paint = () => fillSelect(n, listOptions(doc.lists, f.list, listKnown(f.list.id)), values[f.key] ?? '', onPage || inlineText ? f.label : '— בחירה —');
+        const paint = () => fillSelect(n, listOptions(doc.lists, f.list, listKnown(f.list.id)), values[f.key] ?? '', onPage || inlineText ? f.label : '— בחירה —',
+          (v) => listShow(doc.lists, f.list, v));
         paint(); listRefresh.push(paint);
         n.addEventListener('change', () => { queue(f.key, n.value); outHint(); });
         // שפה במסמך: בוחרים בעברית — ורואים מה ייכתב
-        const outHint = () => { if (f.list.lang) n.title = n.value ? 'במסמך: ' + listOut(doc.lists, f.list, n.value) : ''; };
+        const outHint = () => { if (f.list.lang !== f.list.show) n.title = n.value ? 'במסמך: ' + listOut(doc.lists, f.list, n.value) : ''; };
         outHint();
       } else if (f.type === 'select') {
         // בחירה מרשימה; בחירה ממקור חיצוני יכולה למלא שדות נוספים מהרשומה
@@ -629,7 +630,8 @@
         if (c.type === 'select') {
           const sel = el('select', { disabled: ro, 'aria-label': c.label });
           // מרשימת ערכים — מסונן לפי השדות והעמודות שמעל באותה רשימה (באותה שורה)
-          const paint = () => fillSelect(sel, c.list ? listOptions(doc.lists, c.list, listKnown(c.list.id, r, f)) : (c.options || []), r[c.key] ?? '', '—');
+          const paint = () => fillSelect(sel, c.list ? listOptions(doc.lists, c.list, listKnown(c.list.id, r, f)) : (c.options || []), r[c.key] ?? '', '—',
+            (v) => c.list ? listShow(doc.lists, c.list, v) : v);
           paint(); if (c.list) listRefresh.push(paint);
           sel.addEventListener('change', () => { r[c.key] = sel.value; commit(); if (gcols.includes(c)) markGroups(); if (c.list) listRefresh.forEach(fn => fn()); });
           return el('td', { 'data-label': c.label }, sel);
@@ -1388,22 +1390,25 @@
     return [...out];
   }
   /** הערך כפי שהוא נכתב במסמך שיוצא: התרגום לשפה שנקבעה לשדה (אם יש), אחרת הערך עצמו. */
-  function listOut(lists, ref, v) {
+  function listOut(lists, ref, v) { return listCol(lists, ref, v, ref && ref.lang); }
+  /** מה הממלא רואה בבחירה: העמודה שנקבעה לשדה ("הממלא רואה ובוחר"); הערך שנשמר — תמיד העמודה הראשית. */
+  function listShow(lists, ref, v) { return listCol(lists, ref, v, ref && ref.show); }
+  function listCol(lists, ref, v, lang) {
     v = String(v ?? '');
-    if (!ref || !ref.lang || v === '') return v;
+    if (!ref || !lang || v === '') return v;
     const t = lists && lists[String(ref.id)] && lists[String(ref.id)].translations;
-    return (t && t[String(ref.level)] && t[String(ref.level)][v] && t[String(ref.level)][v][ref.lang]) || v;
+    return (t && t[String(ref.level)] && t[String(ref.level)][v] && t[String(ref.level)][v][lang]) || v;
   }
   /** ממלא select באפשרויות, ושומר את הערך הנוכחי גם אם כבר לא ברשימה (מסומן — לא נמחק בשקט). */
-  function fillSelect(sel, opts, cur, emptyLabel) {
+  function fillSelect(sel, opts, cur, emptyLabel, label = (v) => v) {
     const { el } = window.DT;
     if (opts === null) {   // רשימה גדולה — האפשרויות בדרך מהשרת; הערך הנוכחי נשאר כמו שהוא
-      sel.replaceChildren(el('option', { value: '' }, emptyLabel), ...(cur ? [el('option', { value: cur, selected: true }, cur)] : []),
+      sel.replaceChildren(el('option', { value: '' }, emptyLabel), ...(cur ? [el('option', { value: cur, selected: true }, label(cur))] : []),
         el('option', { value: '', disabled: true }, 'טוען…'));
       return;
     }
-    sel.replaceChildren(el('option', { value: '' }, emptyLabel), ...opts.map(o => el('option', { value: o, selected: o === cur }, o)),
-      ...(cur && !opts.includes(cur) ? [el('option', { value: cur, selected: true }, cur + ' ⚠ לא ברשימה')] : []));
+    sel.replaceChildren(el('option', { value: '' }, emptyLabel), ...opts.map(o => el('option', { value: o, selected: o === cur }, label(o))),
+      ...(cur && !opts.includes(cur) ? [el('option', { value: cur, selected: true }, label(cur) + ' ⚠ לא ברשימה')] : []));
   }
   let dlSeq = 0;
   /** הצעות לשדה טקסט מרשימה: <datalist> צמוד. */

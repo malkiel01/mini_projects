@@ -929,3 +929,8 @@ dialog.sheet:has(.list-sheet) { width: min(900px, 100vw); }
   .list-sheet .grid .row-del { top: 6px; inset-inline-end: 8px; }
 }
 @media (max-width: 640px) { .grid .row-del { width: auto; } }   /* אחרי הכלל הכללי (רוחב 1%) — בכרטיס ה-✕ בגודלו */
+
+/* רשימת ערכים בשדה: מה הממלא רואה, ומה נכתב במסמך — בשורה אחת ברורה */
+.list-io { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 4px 0 8px; padding: 8px 10px; border-radius: var(--r);
+  background: color-mix(in srgb, var(--brand) 8%, var(--surface)); font-size: .92em; }
+.list-io b { color: var(--ink); }
