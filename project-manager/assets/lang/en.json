@@ -2549,5 +2549,7 @@
     "תיקייה חדשה בתוך {name}": "New folder in {name}",
     "הקבצים יישמרו בה": "The files will be saved in it",
     "שם התיקייה החדשה (בתוך {where}):": "Name of the new folder (in {where}):",
-    "התיקייה כבר לא קיימת — בחר תיקייה אחרת": "The folder no longer exists — pick another one"
+    "התיקייה כבר לא קיימת — בחר תיקייה אחרת": "The folder no longer exists — pick another one",
+    "אתה באפליקציית האנדרואיד. בתפריט \"שיתוף\" של הטלפון מופיעות התיקיות האחרונות ששיתפת אליהן — לחיצה אחת שומרת לשם.": "You're in the Android app. The phone's \"Share\" menu shows the folders you shared to recently — one tap saves there.",
+    "🤖 אפליקציית אנדרואיד — עם שיתוף ישיר לתיקיות האחרונות": "🤖 Android app — with direct share to recent folders"
 }
