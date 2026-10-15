@@ -1369,7 +1369,7 @@
         label.addEventListener('input', () => { r.label = label.value; setDirty(true); });
         const auth = el('select', { 'aria-label': 'אימות' },
           el('option', { value: 'none', selected: r.auth !== 'email' }, 'בלי אימות'),
-          el('option', { value: 'email', selected: r.auth === 'email' }, 'קוד במייל'));
+          el('option', { value: 'email', selected: r.auth === 'email' }, 'קוד למייל של איש הקשר'));
         auth.addEventListener('change', () => { r.auth = auth.value; setDirty(true); });
         const del = el('button', { class: 'link small', title: 'הסרה', onclick: () => {
           const used = schema.fields.filter(f => rolesOfF(f).includes(r.key)).length;
@@ -1392,13 +1392,16 @@
           .then(sel => fixed.replaceWith(sel)).catch(() => fixed.replaceWith(el('span', { class: 'muted small' }, '—')));
         return el('li', { class: 'role-row' }, dot, label, del,
           el('label', { class: 'role-auth' }, el('span', {}, 'כניסה:'), auth),
-          el('label', { class: 'role-auth' }, el('span', {}, '👤 איש קשר:'), fixed));
+          el('label', { class: 'role-auth' }, el('span', {}, '👤 מי בפועל:'), fixed));
       }));
       const seq = el('input', { type: 'checkbox', checked: schema.sequential });
       seq.addEventListener('change', () => { schema.sequential = seq.checked; setDirty(true); });
       return el('div', { class: 'numbering' },
         el('h2', {}, 'מי ממלא את המסמך'),
-        el('p', { class: 'hint' }, '"אני" — אתם, בהנפקה. כל ממלא נוסף מקבל קישור אישי, וממלא רק את השדות שלו. משייכים שדה בהגדרות השדה ("מי ממלא"). כל ממלא הוא איש קשר: בוחרים אותו בכל מסמך — או קובעים כאן איש קשר קבוע.'),
+        el('p', { class: 'hint' }, '"אני" — מי שמנפיק את המסמך. "ממלא בקישור" הוא תפקיד במסמך (למשל "לקוח") — לא משתמש במערכת ולא צריך חשבון. ' +
+          'מי בפועל: איש קשר (👥 אנשי קשר) — בוחרים אותו כשמנפיקים כל מסמך, או קובעים כאן אחד קבוע. אליו נשלח הקישור, ו"קוד למייל" — למייל שלו. ' +
+          'משייכים שדה לתפקיד בהגדרות השדה ("מי ממלא").'),
+        el('p', { class: 'hint' }, 'זה לא שיתוף: "📤 שיתוף" של התבנית הוא למשתמשים רשומים במערכת — צופה רואה, ממלא ועורך מנפיקים בעצמם מסמכים מהתבנית.'),
         list,
         el('button', { class: 'small', onclick: () => {
           const n = schema.roles.length;
@@ -1406,7 +1409,7 @@
           setDirty(true); renderPanel();
         } }, '+ ממלא בקישור'),
         schema.roles.length > 1 ? el('label', { class: 'inline small' }, seq, ' לפי הסדר — כל אחד מקבל את הקישור רק אחרי שהקודם סיים') : null,
-        schema.roles.length > 1 ? approvalPanel() : null);
+        approvalPanel());
     }
 
     /** מסלול אישור: הממלאים מסיימים → ממתין לאישור שלי → אושר (או הוחזר לתיקון) → הממלא מוריד. */
@@ -1416,10 +1419,13 @@
         c.addEventListener('change', () => { schema[prop] = c.checked; setDirty(true); });
         return el('div', {}, el('label', { class: 'switch' }, c, el('span', {}, label)), el('p', { class: 'small muted' }, hint));
       };
+      const links = schema.roles.length > 1;
       return el('div', { class: 'approval-set' },
         el('h3', {}, 'אישור והורדה'),
-        sw('approval', 'ממתין לאישור שלי', 'כשהממלאים סיימו, המסמך לא ננעל לבד: מקבלים מייל "ממתין לאישורך", ובמסמך — "✓ אישור ונעילה" או "↩ החזרה לתיקון" עם הערה.'),
-        sw('fill_download', 'הממלא יכול להוריד את המסמך', 'אחרי שהמסמך הושלם (או אושר) — הממלא מקבל במייל קישור, ומוריד ממנו את המסמך. שדה שמוסתר ממנו — לא יופיע אצלו.'));
+        sw('approval_owner', '🔒 מסמכים שאחרים מנפיקים — ננעלים רק באישור שלי',
+          'מי ששיתפתם איתו את התבנית (ממלא / עורך) מנפיק ממנה מסמך — אבל לא יכול לנעול אותו. הוא לוחץ "📨 שליחה לאישור", אתם מקבלים מייל ורואים את המסמך, ומאשרים או מחזירים לתיקון.'),
+        links ? sw('approval', 'ממתין לאישור שלי (ממלאים בקישור)', 'כשהממלאים בקישור סיימו, המסמך לא ננעל לבד: מי שהנפיק מקבל מייל "ממתין לאישורך", ובמסמך — "✓ אישור ונעילה" או "↩ החזרה לתיקון" עם הערה.') : null,
+        links ? sw('fill_download', 'הממלא בקישור יכול להוריד את המסמך', 'אחרי שהמסמך הושלם (או אושר) — הממלא מקבל במייל קישור, ומוריד ממנו את המסמך. שדה שמוסתר ממנו — לא יופיע אצלו.') : null);
     }
 
     // מספור המסמכים שיונפקו מהתבנית.

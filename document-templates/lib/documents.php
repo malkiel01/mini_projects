@@ -185,6 +185,11 @@ function doc_create(array $user, array $b, ?array $copy = null): array
         }
         doc_recalc($docId, $schema, 'user:' . $user['id']);
         create_participants($docId, $schema, $user);
+        // אישור רק דרך בעל התבנית: הוא רואה את המסמך ומאשר אותו (המנפיק לא נועל לבד)
+        if (!empty($schema['approval_owner']) && (int)$t['owner_id'] !== (int)$user['id']) {
+            $pdo->prepare("INSERT OR IGNORE INTO shares (object_type, object_id, user_id, level, granted_by, created_at) VALUES ('document', ?, ?, 'co_owner', ?, ?)")
+                ->execute([$docId, $t['owner_id'], $user['id'], $now]);
+        }
         if ($copy !== null) doc_copy_extras($docId, $copy, $user);
         log_event($docId, 'user:' . $user['id'], 'created', ['number' => $number, 'template_version' => (int)$t['current_version']]
             + ($copy !== null ? ['copy_of' => $copy['number']] : []));
@@ -314,7 +319,8 @@ function doc_get(array $user, int $id): array
         'ref' => $d['external_ref'], 'events' => $events, 'fonts' => fonts_info($schema), 'chain_ok' => doc_verify_chain($id),
         'lists' => lists_for($schema),
         'participants' => participants_view($d, doc_schema($d)),
-        'awaiting_approval' => !empty($schema['approval']) && doc_awaiting($d, doc_schema($d)),
+        'awaiting_approval' => (!empty($schema['approval']) || doc_approver($d)) && doc_awaiting($d, doc_schema($d)),
+        'approver' => ($ap = doc_approver($d)) ? ['name' => user_name($ap), 'me' => $ap === (int)$user['id']] : null,
         'attachments' => attachments_of($id),
     ]];
 }
@@ -546,8 +552,18 @@ function doc_complete(array $user, array $b): array
     $p = doc_progress($schema, $values);
     if ($p['missing']) throw new ApiError('חסרים שדות חובה: ' . implode(', ', $p['missing']), 422);
 
-    $approving = $schema['approval'] ?? false;
+    $approver = doc_approver($d);
+    if ($approver && $approver !== (int)$user['id']) {
+        throw new ApiError('המסמך הזה ננעל רק באישור של ' . user_name($approver) . ' — "📨 שליחה לאישור"', 403);
+    }
+    $approving = ($schema['approval'] ?? false) || $approver;
     doc_finalize($d, 'user:' . $user['id'], $approving ? 'approved' : 'completed');
+    if ($approver && (int)$d['owner_id'] !== $approver) {
+        $st = db()->prepare('SELECT email, display_name FROM users WHERE id = ?');
+        $st->execute([$d['owner_id']]);
+        if ($o = $st->fetch()) send_mail($o['email'], 'המסמך אושר: ' . unseal($d['title_enc']),
+            "שלום {$o['display_name']},\n\n" . user_name($approver) . ' אישר/ה ונעל/ה את המסמך "' . unseal($d['title_enc']) . "\".\n\n" . app_base_url() . '#doc=' . $d['id']);
+    }
     if (!empty($schema['fill_download'])) notify_ready($d, $schema);
     return ['ok' => true, 'hash' => db()->query('SELECT final_hash FROM documents WHERE id = ' . (int)$d['id'])->fetchColumn()];
 }
@@ -603,3 +619,40 @@ require_once __DIR__ . '/participants.php';
 require_once __DIR__ . '/bulk.php';
 require_once __DIR__ . '/integrations.php';
 require_once __DIR__ . '/devzone.php';
+
+/**
+ * מי מאשר את המסמך, כשהתבנית מחייבת "אישור רק דרכי": בעל התבנית — אם מישהו אחר הנפיק. אחרת null.
+ */
+function doc_approver(array $d): ?int
+{
+    $schema = doc_schema($d);
+    if (empty($schema['approval_owner'])) return null;
+    static $owners = [];
+    $tid = (int)$d['template_id'];
+    if (!isset($owners[$tid])) {
+        $st = db()->prepare('SELECT owner_id FROM templates WHERE id = ?');
+        $st->execute([$tid]);
+        $owners[$tid] = (int)$st->fetchColumn();
+    }
+    return $owners[$tid] && $owners[$tid] !== (int)$d['owner_id'] ? $owners[$tid] : null;
+}
+
+/** המנפיק שולח לאישור של בעל התבנית (כשהתבנית מחייבת "אישור רק דרכי"). */
+function doc_submit(array $user, array $b): array
+{
+    $d = doc_owned((int)($b['id'] ?? 0), $user, 'edit');
+    if (!in_array($d['status'], DOC_EDITABLE, true)) throw new ApiError('המסמך כבר נעול', 409);
+    $approver = doc_approver($d);
+    if (!$approver) throw new ApiError('במסמך הזה אין צורך באישור — אפשר לסיים', 409);
+    $schema = doc_schema($d);
+    $p = doc_progress($schema, doc_values((int)$d['id']));
+    if ($p['missing']) throw new ApiError('חסרים שדות חובה: ' . implode(', ', $p['missing']), 422);
+    log_event((int)$d['id'], 'user:' . $user['id'], 'submitted', ['to' => user_name($approver)]);
+    $st = db()->prepare('SELECT email FROM users WHERE id = ?');
+    $st->execute([$approver]);
+    $title = (string)unseal($d['title_enc']);
+    if ($mail = $st->fetchColumn()) send_mail($mail, 'ממתין לאישורך: ' . $title,
+        ($user['display_name'] ?? '') . " שלח/ה לאישורך את המסמך:\n$title" . ($d['number'] ? " ({$d['number']})" : '') .
+        "\n\nלבדיקה ולאישור (או להחזרה לתיקון):\n" . app_base_url() . '#doc=' . $d['id']);
+    return ['ok' => true, 'approver' => user_name($approver)];
+}
