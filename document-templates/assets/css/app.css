@@ -950,3 +950,8 @@ dialog.sheet:has(.list-sheet) { width: min(900px, 100vw); }
 .share-ctl select { width: auto; flex: 1 1 auto; min-width: 0; }
 .share-ctl button { flex: none; white-space: nowrap; }
 .share-count { margin: 6px 0 0; }
+
+/* אישור והורדה: התיבה ליד הכותרת שלה (לא בשורה נפרדת), והטקסט נשבר בטלפון */
+.approval-set .switch { display: flex; flex-direction: row; align-items: flex-start; white-space: normal; gap: var(--s2); }
+.approval-set .switch input { margin-top: 3px; width: auto; }
+.approval-set .switch > span { font-weight: 600; }

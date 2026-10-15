@@ -453,6 +453,8 @@ function clean_schema($s, array $sources = [], array $fonts = [], array $contact
         'certificate' => !empty($s['certificate']),
         // מסלול אישור: כשהממלאים סיימו — המסמך ממתין לאישור שלי, ולא ננעל לבד
         'approval' => !empty($s['approval']),
+        // אישור רק דרך בעל התבנית: מסמך שמישהו אחר הנפיק ממנה — ננעל רק כשבעל התבנית מאשר
+        'approval_owner' => !empty($s['approval_owner']),
         // הממלא יכול להוריד את המסמך מהקישור שלו, אחרי שהושלם (באישור — אחרי שאישרתי)
         'fill_download' => !empty($s['fill_download']),
         'styles' => array_values($styles),

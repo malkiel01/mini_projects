@@ -18,7 +18,7 @@
     link_issued: 'נשלח קישור', opened: 'נפתח', verified: 'אומת בקוד', participant_completed: 'משתתף סיים',
     file_uploaded: 'צורף קובץ', shared: 'שותף', unshared: 'שיתוף הוסר', contact_set: 'נקבע איש קשר', tags_set: 'עודכנו תגיות',
     imported: 'נוצר מאקסל', exported: 'יוצא לאקסל',
-    awaiting_approval: '⏳ ממתין לאישור', approved: '✓ אושר ונעול', returned: '↩ הוחזר לתיקון',
+    awaiting_approval: '⏳ ממתין לאישור', approved: '✓ אושר ונעול', returned: '↩ הוחזר לתיקון', submitted: '📨 נשלח לאישור',
   };
   const VIA = { email: 'במייל', link: 'כקישור', whatsapp: 'בוואטסאפ' };
   const EDITABLE = ['draft', 'in_progress'];
@@ -303,7 +303,9 @@
       try { localStorage.setItem('dt-fill-mode', mode); } catch (err) { /* אחסון חסום */ }
       renderBody();
     });
-    const completeBtn = el('button', { class: 'primary', onclick: fill ? fillDone : complete }, fill ? 'סיימתי ✓' : 'סיום ונעילה');
+    const completeBtn = el('button', { class: 'primary', onclick: () => fill ? fillDone() : waitsForOther() ? submit() : complete() }, fill ? 'סיימתי ✓' : 'סיום ונעילה');
+    // התבנית מחייבת אישור של בעליה, ומישהו אחר הנפיק: המנפיק שולח לאישור — לא נועל
+    const waitsForOther = () => !!(doc.approver && !doc.approver.me);
     // פעולה מוכרת = אייקון (עם תווית לקורא מסך); הפעולה העיקרית — עם מילה
     const ib = (icon, label, onclick) => el('button', { type: 'button', class: 'icon-btn', 'aria-label': label, title: label, onclick }, icon);
     const pdfBtn = ib('⬇️', 'הורדת PDF', downloadPdf);
@@ -380,7 +382,11 @@
       statusBadge.className = 'badge ' + kind;
       title.disabled = fill || !editable();
       completeBtn.hidden = !editable() || (!fill && lvl() < 3);
-      if (!fill) completeBtn.textContent = doc.awaiting_approval ? '✓ אישור ונעילה' : 'סיום ונעילה';
+      if (!fill) {
+        completeBtn.textContent = waitsForOther() ? (doc.awaiting_approval ? '⏳ נשלח לאישור' : '📨 שליחה לאישור של ' + doc.approver.name)
+          : doc.awaiting_approval ? '✓ אישור ונעילה' : 'סיום ונעילה';
+        completeBtn.disabled = waitsForOther() && doc.awaiting_approval;
+      }
       renderStage();
       for (const r of modeSeg.querySelectorAll('input')) r.checked = r.value === mode;
       modeSeg.hidden = isWord;
@@ -400,9 +406,15 @@
     /** מסלול אישור. מנהל הטופס: "ממתין לאישורך" + החזרה לתיקון. ממלא: איפה זה עומד, והורדה כשאושר. */
     function renderStage() {
       const parts = [];
-      if (!fill && doc.awaiting_approval) {
+      if (!fill && waitsForOther()) {
+        const back = [...(doc.events || [])].reverse().find(e => e.type === 'returned' || e.type === 'submitted');
+        parts.push(el('div', { class: 'notice' + (back && back.type === 'returned' ? ' warn' : '') },
+          doc.awaiting_approval ? [el('strong', {}, '⏳ נשלח לאישור של ' + doc.approver.name + '. '), 'כשיאשר — המסמך יינעל, ותקבלו מייל.']
+            : back && back.type === 'returned' ? [el('strong', {}, '↩ הוחזר אליך לתיקון. '), back.detail && back.detail.note ? '"' + back.detail.note + '"' : 'תקנו ושלחו שוב לאישור.']
+            : [el('strong', {}, '🔒 '), 'המסמך הזה ננעל רק באישור של ' + doc.approver.name + '. כשסיימתם — "📨 שליחה לאישור".']));
+      } else if (!fill && doc.awaiting_approval) {
         parts.push(el('div', { class: 'notice warn stage-box' },
-          el('p', {}, el('strong', {}, '⏳ ממתין לאישורך. '), 'כל הממלאים סיימו. בדקו את הערכים — ואז "✓ אישור ונעילה", או החזירו לתיקון.'),
+          el('p', {}, el('strong', {}, '⏳ ממתין לאישורך. '), doc.approver ? 'נשלח אליך לאישור. בדקו את הערכים — ואז "✓ אישור ונעילה", או החזירו לתיקון.' : 'כל הממלאים סיימו. בדקו את הערכים — ואז "✓ אישור ונעילה", או החזירו לתיקון.'),
           lvl() >= 3 ? el('button', { type: 'button', class: 'small', onclick: returnDialog }, '↩ החזרה לתיקון') : null));
       }
       if (fill && doc.me) {
@@ -1142,6 +1154,21 @@
             p.missing.length && !done ? el('div', { class: 'muted small' }, 'חסר אצלו: ' + p.missing.join(', ')) : null);
         }),
         out].filter(Boolean));
+    }
+
+    // ── שליחה לאישור (התבנית מחייבת אישור של בעליה) ──
+    async function submit() {
+      await flush();
+      if (doc.progress.required && doc.progress.filled < doc.progress.required) {
+        msg.replaceChildren(notice('חסרים שדות חובה: ' + (doc.progress.missing || []).join(', '), 'bad'));
+        return;
+      }
+      try {
+        const r = await api('doc_submit', { id });
+        await reload();
+        msg.replaceChildren(notice('נשלח לאישור של ' + r.approver + '. כשיאשר — תקבלו מייל.', 'ok'));
+        renderBody();
+      } catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
     }
 
     // ── סיום ──

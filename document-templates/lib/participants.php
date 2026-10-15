@@ -393,14 +393,16 @@ function fill_complete(): array
     $pdo->commit();
     webhook_fire((int)$d['id'], 'participant.completed', ['role' => $p['role_key']]);
 
+    // מי מקבל "ממתין לאישורך": בעל התבנית, כשהתבנית מחייבת אישור רק דרכו — אחרת מי שהנפיק
+    $approver = doc_approver($d);
     $owner = db()->prepare('SELECT email, display_name FROM users WHERE id = ?');
-    $owner->execute([$d['owner_id']]);
+    $owner->execute([$approver ?: $d['owner_id']]);
     $owner = $owner->fetch() ?: ['email' => '', 'display_name' => ''];
     $title = (string)unseal($d['title_enc']);
     $list = participants_of((int)$d['id']);
     $done = current_turn($list) === null && !doc_progress($schema, $values)['missing'];
 
-    if ($done && $schema['approval']) {
+    if ($done && ($schema['approval'] || $approver)) {
         // מסלול אישור: לא ננעל לבד — ממתין לאישור של מנהל הטופס
         log_event((int)$d['id'], 'participant:' . $p['id'], 'awaiting_approval');
         if ($owner['email']) send_mail($owner['email'], 'ממתין לאישורך: ' . $title,
@@ -434,6 +436,12 @@ function fill_complete(): array
 function doc_awaiting(array $d, array $schema): bool
 {
     if (!in_array($d['status'], DOC_EDITABLE, true)) return false;
+    // נשלח לאישור של בעל התבנית, ולא הוחזר מאז
+    if (doc_approver($d)) {
+        $st = db()->prepare("SELECT type FROM events WHERE document_id = ? AND type IN ('submitted', 'returned') ORDER BY id DESC LIMIT 1");
+        $st->execute([$d['id']]);
+        if ($st->fetchColumn() === 'submitted') return true;
+    }
     $list = participants_of((int)$d['id']);
     return $list && current_turn($list) === null && !doc_progress($schema, doc_values((int)$d['id']))['missing'];
 }
@@ -474,6 +482,18 @@ function doc_return(array $user, array $b): array
     $note = mb_substr(trim((string)($b['note'] ?? '')), 0, 1000);
     $pid = (int)($b['participant'] ?? 0);
     $list = array_values(array_filter(participants_of((int)$d['id']), fn($p) => $p['completed_at'] && (!$pid || (int)$p['id'] === $pid)));
+    $approver = doc_approver($d);
+    if (!$list && $approver && (int)$user['id'] === $approver) {
+        // אישור רק דרך בעל התבנית: מחזיר למי שהנפיק (בלי ממלאים בקישור)
+        $st = db()->prepare('SELECT email, display_name FROM users WHERE id = ?');
+        $st->execute([$d['owner_id']]);
+        $title = (string)unseal($d['title_enc']);
+        $mailed = false;
+        if ($o = $st->fetch()) $mailed = (bool)send_mail($o['email'], 'הוחזר לתיקון: ' . $title, "שלום {$o['display_name']},\n\n" . user_name($approver) .
+            " החזיר/ה אליך את המסמך \"$title\" לתיקון." . ($note !== '' ? "\n\nההערה:\n$note" : '') . "\n\n" . app_base_url() . '#doc=' . $d['id']);
+        log_event((int)$d['id'], 'user:' . $user['id'], 'returned', ['note' => $note, 'participants' => [], 'roles' => [user_name((int)$d['owner_id'])]]);
+        return ['ok' => true, 'returned' => user_name((int)$d['owner_id']), 'mailed' => $mailed];
+    }
     if (!$list) throw new ApiError('אין ממלא שסיים להחזיר אליו', 409);
     $schema = doc_schema($d);
     $title = (string)unseal($d['title_enc']);
