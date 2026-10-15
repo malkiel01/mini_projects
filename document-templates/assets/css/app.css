@@ -934,3 +934,10 @@ dialog.sheet:has(.list-sheet) { width: min(900px, 100vw); }
 .list-io { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 4px 0 8px; padding: 8px 10px; border-radius: var(--r);
   background: color-mix(in srgb, var(--brand) 8%, var(--surface)); font-size: .92em; }
 .list-io b { color: var(--ink); }
+
+/* שדה סיסמה: 👁 בצד השמאלי, בתוך השדה */
+.pw-wrap { position: relative; display: block; }
+.pw-wrap input { width: 100%; padding-inline-end: 44px; }
+.pw-eye { position: absolute; inset-inline-end: 4px; top: 50%; transform: translateY(-50%); width: 38px; height: 38px;
+  border: 0; background: none; padding: 0; font-size: 18px; line-height: 1; cursor: pointer; border-radius: var(--r); }
+.pw-eye:hover, .pw-eye:focus-visible { background: color-mix(in srgb, var(--brand) 10%, transparent); }
