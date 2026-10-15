@@ -46,15 +46,15 @@ register_shutdown_function(function () use (&$session, &$action, $started) {
 $PUBLIC = ['health', 'register', 'verify', 'login', 'forgot', 'reset', 'me',
            // ממלא חיצוני: הזהות היא האסימון שבכותרת X-Fill-Token, לא עוגייה.
            'fill_get', 'fill_asset', 'fill_otp_send', 'fill_otp_verify', 'fill_save', 'fill_complete',
-           'fill_upload', 'fill_file',
+           'fill_downloaded', 'fill_docx', 'fill_upload', 'fill_file',
            // מערכת חיצונית: הזהות היא מפתח ה-API שבכותרת Authorization, לא עוגייה.
            'ext_templates', 'ext_template', 'ext_issue', 'ext_document', 'ext_update', 'ext_file', 'fill_font',
            // Claude קורא מטלות ומשיב (DevLoop): הזהות היא האסימון שבכותרת X-Dev-Token.
            'devapi-feed', 'devapi-comment', 'devapi-file', 'devapi-attach'];
 $POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'dev_user',
            'tpl_create', 'tpl_create_authored', 'tpl_save', 'tpl_set_source', 'tpl_archive', 'tpl_delete',
-           'doc_create', 'doc_duplicate', 'doc_save', 'doc_complete', 'doc_archive', 'doc_delete', 'doc_downloaded',
-           'part_contact', 'part_link', 'fill_otp_send', 'fill_otp_verify', 'fill_save', 'fill_complete',
+           'doc_create', 'doc_duplicate', 'doc_return', 'doc_save', 'doc_complete', 'doc_archive', 'doc_delete', 'doc_downloaded',
+           'part_contact', 'part_link', 'fill_otp_send', 'fill_otp_verify', 'fill_save', 'fill_complete', 'fill_downloaded',
            'doc_upload', 'fill_upload', 'dev_quota', 'share_set', 'share_remove', 'share_leave',
            'contact_save', 'contact_archive', 'doc_contact', 'doc_tags', 'tpl_tags', 'bulk_preview', 'bulk_issue',
            'src_save', 'src_delete', 'src_sync', 'key_create', 'key_update', 'key_revoke', 'key_secret', 'key_test',
@@ -116,6 +116,7 @@ try {
         'doc_asset'      => doc_asset($session, (int)($_GET['id'] ?? 0)),
         'doc_create'     => doc_create($session, $body),
         'doc_duplicate'  => doc_duplicate($session, $body),
+        'doc_return'     => doc_return($session, $body),
         'doc_save'       => doc_save($session, $body),
         'doc_complete'   => doc_complete($session, $body),
         'doc_archive'    => doc_archive($session, $body),
@@ -129,6 +130,8 @@ try {
         'fill_otp_verify' => fill_otp_verify($body),
         'fill_save'       => fill_save($body),
         'fill_complete'   => fill_complete(),
+        'fill_downloaded' => fill_downloaded($body),
+        'fill_docx'       => fill_docx(),
         'doc_upload'      => doc_upload($session, $_POST, $_FILES),
         'doc_file'        => doc_file($session, (int)($_GET['id'] ?? 0), (int)($_GET['att'] ?? 0)),
         'fill_upload'     => fill_upload($_POST, $_FILES),

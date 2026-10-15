@@ -180,7 +180,7 @@ function doc_create(array $user, array $b, ?array $copy = null): array
         );
         foreach ($schema['fields'] as $f) {
             if (in_array($f['type'], ['calc', 'system'], true)) continue;
-            $v = $copy !== null && array_key_exists($f['key'], $copy['values']) ? $copy['values'][$f['key']] : ($f['default'] ?? '');
+            $v = $copy !== null && array_key_exists($f['key'], $copy['values']) ? $copy['values'][$f['key']] : field_default($f);
             if ($v !== '') $ins->execute([$docId, $f['key'], seal($v), 'user:' . $user['id'], $now]);
         }
         doc_recalc($docId, $schema, 'user:' . $user['id']);
@@ -313,6 +313,7 @@ function doc_get(array $user, int $id): array
         'schema' => attach_options($schema), 'values' => $values, 'progress' => doc_progress($schema, $values),
         'ref' => $d['external_ref'], 'events' => $events, 'fonts' => fonts_info($schema), 'chain_ok' => doc_verify_chain($id),
         'participants' => participants_view($d, doc_schema($d)),
+        'awaiting_approval' => !empty($schema['approval']) && doc_awaiting($d, doc_schema($d)),
         'attachments' => attachments_of($id),
     ]];
 }
@@ -541,12 +542,14 @@ function doc_complete(array $user, array $b): array
     $p = doc_progress($schema, $values);
     if ($p['missing']) throw new ApiError('חסרים שדות חובה: ' . implode(', ', $p['missing']), 422);
 
-    doc_finalize($d, 'user:' . $user['id']);
+    $approving = $schema['approval'] ?? false;
+    doc_finalize($d, 'user:' . $user['id'], $approving ? 'approved' : 'completed');
+    if (!empty($schema['fill_download'])) notify_ready($d, $schema);
     return ['ok' => true, 'hash' => db()->query('SELECT final_hash FROM documents WHERE id = ' . (int)$d['id'])->fetchColumn()];
 }
 
 /** נעילה וטביעת אצבע. נקרא מ"סיום" של המנפיק, או כשהמשתתף האחרון סיים. */
-function doc_finalize(array $d, string $actor): void
+function doc_finalize(array $d, string $actor, string $event = 'completed'): void
 {
     // קודם תאריך ההשלמה, ואז החישובים — כך ששדה "תאריך השלמה" נכלל בטביעת האצבע
     $now = now_iso();
@@ -560,7 +563,7 @@ function doc_finalize(array $d, string $actor): void
     $pdo->beginTransaction();
     $pdo->prepare("UPDATE documents SET status = 'completed', completed_at = ?, final_hash = ? WHERE id = ?")
         ->execute([$now, $hash, $d['id']]);
-    log_event((int)$d['id'], $actor, 'completed', ['hash' => $hash]);
+    log_event((int)$d['id'], $actor, $event, ['hash' => $hash]);
     $pdo->commit();
     webhook_fire((int)$d['id'], 'document.completed', ['hash' => $hash]);
 }
