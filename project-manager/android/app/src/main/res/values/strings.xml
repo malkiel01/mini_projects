@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">פרויקטים</string>
+    <string name="offline">אין חיבור לאינטרנט. בודקים את החיבור ולוחצים לנסות שוב.</string>
+    <string name="retry">לנסות שוב</string>
+    <string name="saved_download">נשמר בהורדות: %1$s</string>
+    <string name="pick">בחירת קובץ</string>
+</resources>

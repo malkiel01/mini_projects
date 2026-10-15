@@ -37,6 +37,7 @@ async function init() {
     // חץ החזרה — למסך הקודם באפליקציה (לא לדף האפליקציות, ולא מחוץ לאפליקציה)
     $('#back').addEventListener('click', e => { e.preventDefault(); goBack(); });
     // שיתוף שהגיע לפני הכניסה (או שלא נשמר) — ממשיכים ממנו
+    Share.syncNative(); // אפליקציית האנדרואיד: קיצורי השיתוף הישיר = התיקיות האחרונות
     if (!location.hash.startsWith('#/share') && await Share.pending()) location.hash = '#/share';
     else route();
 }
@@ -209,7 +210,11 @@ function bindPassword() {
 // אייפון: "הוספה למסך הבית" מספארי; שיתוף לאפליקציה שם — רק באפליקציית האייפון (שלב 14).
 
 let installPrompt = null;
-const isInstalled = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isNativeApp = () => !!window.PMNative; // אפליקציית האנדרואיד (android/)
+const isInstalled = () => isNativeApp() || matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isAndroid = () => /Android/i.test(navigator.userAgent);
+// אפליקציית האנדרואיד — מתעדכנת בכל בנייה מ-main (.github/workflows/project-manager-apk.yml)
+const APK_URL = 'https://github.com/malkiel01/mini_projects/releases/download/project-manager-apk/project-manager.apk';
 const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
 addEventListener('beforeinstallprompt', e => {
@@ -225,7 +230,9 @@ addEventListener('appinstalled', () => {
 });
 
 function renderInstall() {
-    const text = isInstalled()
+    const text = isNativeApp()
+        ? t('אתה באפליקציית האנדרואיד. בתפריט "שיתוף" של הטלפון מופיעות התיקיות האחרונות ששיתפת אליהן — לחיצה אחת שומרת לשם.')
+        : isInstalled()
         ? (isIOS() ? t('האפליקציה במסך הבית. שיתוף קבצים אליה מאפליקציות אחרות — באפליקציית האייפון, בהמשך.')
             : t('האפליקציה מותקנת. לשמירת קבצים מהגלריה, מוואטסאפ או מכל אפליקציה: "שיתוף" ← "פרויקטים".'))
         : installPrompt ? t('התקנה למסך הבית: נפתחת כאפליקציה, ומופיעה ב"שיתוף" של הטלפון — לשמירת קבצים ישר לפרויקט.')
@@ -233,6 +240,9 @@ function renderInstall() {
         : t('בכרום: תפריט ⋮ ← "התקנת אפליקציה" (או "הוספה למסך הבית").');
     $('#install-text').textContent = text;
     $('#install-btn').hidden = !installPrompt;
+    // אנדרואיד בדפדפן: גם האפליקציה — עם שיתוף ישיר לתיקיות האחרונות מתפריט השיתוף
+    $('#install-apk').hidden = isNativeApp() || isIOS() || !isAndroid();
+    $('#install-apk').href = APK_URL;
 }
 
 async function install() {

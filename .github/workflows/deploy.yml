@@ -197,6 +197,7 @@ jobs:
             --exclude='node_modules/' \
             --exclude='guarded-browser/android/' \
             --exclude='recipes-app/android/' \
+            --exclude='project-manager/android/' \
             --exclude='whatsapp-ai-scanner/android/' \
             --exclude='whatsapp-ai-scanner/data/scanner.sqlite*' \
             --exclude='whatsapp-ai-scanner/data/secret.key' \

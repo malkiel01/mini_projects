@@ -2567,5 +2567,7 @@
     "תיקייה חדשה בתוך {name}": "Nouveau dossier dans {name}",
     "הקבצים יישמרו בה": "Les fichiers y seront enregistrés",
     "שם התיקייה החדשה (בתוך {where}):": "Nom du nouveau dossier (dans {where}) :",
-    "התיקייה כבר לא קיימת — בחר תיקייה אחרת": "Le dossier n'existe plus — choisissez-en un autre"
+    "התיקייה כבר לא קיימת — בחר תיקייה אחרת": "Le dossier n'existe plus — choisissez-en un autre",
+    "אתה באפליקציית האנדרואיד. בתפריט \"שיתוף\" של הטלפון מופיעות התיקיות האחרונות ששיתפת אליהן — לחיצה אחת שומרת לשם.": "Vous êtes dans l'application Android. Le menu « Partager » du téléphone affiche les dossiers récents — un appui suffit pour y enregistrer.",
+    "🤖 אפליקציית אנדרואיד — עם שיתוף ישיר לתיקיות האחרונות": "🤖 Application Android — partage direct vers les dossiers récents"
 }

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brand">#2d4a8a</color>
+    <color name="icon_bg">#1a1a2e</color>
+    <style name="Theme.PM" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@color/brand</item>
+        <item name="android:navigationBarColor">#f4f5f7</item>
+        <item name="android:windowBackground">@color/brand</item>
+    </style>
+</resources>

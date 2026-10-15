@@ -7,12 +7,37 @@
 //   #/share/<id>   התיקיות של הפרויקט, ו"+" — תיקייה חדשה (בראש או בתוך תיקייה) שהקבצים נשמרים בה.
 //   האחרונים נשמרים למשתמש בשרת (share_recent) — עוברים איתו בין מכשירים.
 //
+// באפליקציית האנדרואיד (android/, window.PMNative): השיתוף מגיע מהאפליקציה — הקבצים נמשכים ממנה
+// (importNative) לאותו ShareStore. שיתוף דרך קיצור של תיקייה (בשורה העליונה של "שיתוף" בטלפון) מגיע
+// עם target — ונשמר ישר לשם. האחרונים נשלחים לאפליקציה (PMNative.setRecent) — הם הקיצורים האלה.
+//
 // הקבצים מחכים במכשיר (ShareStore, שנשמר ב-sw.js) עד שנשמרו בשרת — גם אם האפליקציה
 // נסגרה או שצריך קודם להתחבר. טקסט או קישור ששותפו נשמרים כהערה בציר הזמן.
 'use strict';
 
 const Share = (() => {
     let items = [], projects = [], folders = [], recent = [], project = null, bound = false, saving = false, urls = [];
+    let nativeTarget = null; // "פרויקט:תיקייה" — שיתוף שהגיע דרך קיצור של תיקייה באנדרואיד
+
+    /** האחרונים — לאפליקציית האנדרואיד, לקיצורי השיתוף הישיר. */
+    function pushNative(list) { try { window.PMNative?.setRecent(JSON.stringify(list || [])); } catch { /* גרסה ישנה של האפליקציה */ } }
+
+    /** שיתוף שהגיע לאפליקציית האנדרואיד — הקבצים עוברים ל-ShareStore, כמו שיתוף לאתר המותקן. */
+    async function importNative() {
+        if (!window.PMNative?.sharedItems) return;
+        let d;
+        try { d = JSON.parse(PMNative.sharedItems()); } catch { return; }
+        const files = [];
+        for (const f of d.files || []) {
+            const r = await fetch(d.base + f.i, { cache: 'no-store' }).catch(() => null);
+            if (r?.ok) files.push(new File([await r.blob()], f.name, { type: f.type || 'application/octet-stream' }));
+        }
+        if (!files.length && !(d.text || '').trim()) return;
+        await ShareStore.add({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: new Date().toISOString(),
+            title: d.subject || '', text: d.text || '', url: '', files });
+        PMNative.clearShared();
+        nativeTarget = d.target || null;
+    }
 
     const entries = () => items.flatMap(it => it.files.map((file, i) => ({ item: it, file, i })));
     const noteOf = it => [...new Set([it.title, it.text, it.url].map(s => (s || '').trim()).filter(Boolean))].join('\n');
@@ -55,6 +80,7 @@ const Share = (() => {
         document.title = t('שמירה לפרויקט');
         $('#share-error').hidden = sub !== 'error';
         $('#share-error').textContent = t('השיתוף לא נקלט. נסה לשתף שוב.');
+        try { await importNative(); } catch { /* נשאר באפליקציה — ננסה שוב בכניסה הבאה למסך */ }
         try { items = (await ShareStore.all()).sort((a, b) => a.at.localeCompare(b.at)); }
         catch { items = []; $('#share-error').hidden = false; $('#share-error').textContent = t('אין גישה לאחסון של הדפדפן במכשיר הזה.'); }
         renderItems();
@@ -65,6 +91,13 @@ const Share = (() => {
             $('#share-targets').innerHTML = `<p class="empty">${esc(t('אין כרגע מה לשמור. כדי לשמור לכאן קבצים מהגלריה, מוואטסאפ או מכל אפליקציה: "שיתוף" ← "פרויקטים". (צריך שהאפליקציה תהיה מותקנת — "החשבון שלי" ← התקנה.)'))}</p>`;
             return;
         }
+        // נבחרה תיקייה מתפריט השיתוף של הטלפון — שומרים ישר לשם
+        if (nativeTarget && entries().length) {
+            const [p, f] = nativeTarget.split(':').map(Number);
+            nativeTarget = null;
+            if (p && f) { save(p, f); return; }
+        }
+        nativeTarget = null;
         const pid = Number(sub);
         if (pid > 0) await showFolders(pid);
         else await showProjects();
@@ -212,7 +245,7 @@ const Share = (() => {
                 if (!folders.some(f => f.id === folder)) await loadFolders(pid);
                 // תיקייה שנמחקה מאז (מ"אחרונים") — חוזרים לבחירה
                 if (!folders.some(f => f.id === folder)) throw Object.assign(new Error(t('התיקייה כבר לא קיימת — בחר תיקייה אחרת')), { gone: pid });
-                api('share-recent', { body: { folder_id: folder } }).catch(() => {}); // לראש "אחרונים"
+                api('share-recent', { body: { folder_id: folder } }).then(r => pushNative(r.recent)).catch(() => {}); // לראש "אחרונים"
             }
             for (const it of [...items]) {
                 for (const file of [...it.files]) {
@@ -258,8 +291,14 @@ const Share = (() => {
 
     /** כמה שיתופים ממתינים — כדי לפתוח את המסך אחרי כניסה. */
     async function pending() {
+        try { if (JSON.parse(window.PMNative?.sharedItems?.() || '{}').files?.length) return 1; } catch { /* אין אפליקציה */ }
         try { return 'indexedDB' in window ? await ShareStore.count() : 0; } catch { return 0; }
     }
 
-    return { show, pending };
+    /** בכניסה לאפליקציית האנדרואיד — הקיצורים מתעדכנים לאחרונים, גם בלי שיתוף חדש. */
+    function syncNative() {
+        if (window.PMNative?.setRecent) api('share-recent').then(r => pushNative(r.recent)).catch(() => {});
+    }
+
+    return { show, pending, syncNative };
 })();
