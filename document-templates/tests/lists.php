@@ -102,6 +102,46 @@ $it = json_decode(json_encode($imp['translations']), true);
 check('ייבוא: עמודת "(en)" / "[fr]" — תרגום, לא רמה', $imp['levels'] === ['בית עלמין', 'גוש'] && count($imp['rows']) === 3
     && $it === ['0' => ['הר המנוחות' => ['en' => 'Har HaMenuchot', 'fr' => 'Har HaMenouhot'], 'גבעת שאול' => ['en' => 'Givat Shaul']]]);
 
+// רשימה גדולה: 30,000 קברים — לא נשלחת כולה עם המסמך; האפשרויות מהשרת רמה אחרי רמה
+$csvBig = "בית עלמין,בית עלמין (en),גוש,חלקה,קבר\n";
+for ($i = 0; $i < 30000; $i++) $csvBig .= ($i < 15000 ? 'הר המנוחות,Har HaMenuchot' : 'גבעת שאול,Givat Shaul') . ',' . (100 + intdiv($i, 1000)) . ',' . (1 + intdiv($i % 1000, 100)) . ',' . ($i % 100 + 1) . "\n";
+$stage = bin2hex(random_bytes(8));
+$half = intdiv(strlen($csvBig), 2);   // חיתוך באמצע — גם באמצע תו
+foreach ([substr($csvBig, 0, $half), substr($csvBig, $half)] as $i => $chunk) {
+    file_put_contents("$tmp/part$i", $chunk);
+    $res = list_import($a, ['file' => ['tmp_name' => "$tmp/part$i", 'error' => 0, 'size' => strlen($chunk)]],
+        ['stage' => $stage, 'part' => $i] + ($i ? ['last' => '1', 'apply' => '1', 'name' => 'קברים גדול'] : []));
+}
+check('ייבוא בחלקים: 30,000 שורות נשמרו ישר בשרת, עם תרגום', ($res['saved'] ?? false) && $res['count'] === 30000 && $res['list']['row_count'] === 30000
+    && $res['levels'] === ['בית עלמין', 'גוש', 'חלקה', 'קבר'] && $res['translated'] === ['en']);
+check('קובץ הביניים נמחק', !glob("$tmp/tmp/list-*"));
+$big = $res['list'];
+$g = list_get($a, ['id' => $big['id']])['list'];
+check('בעורך: רשימה גדולה — 200 שורות לתצוגה, והערכים בכל רמה', ($g['big'] ?? false) && count($g['rows']) === 200 && $g['values'][0] === ['הר המנוחות', 'גבעת שאול'] && $g['values_more'][3] === false);
+$g = list_get($a, ['id' => $big['id'], 'q' => 'גבעת'])['list'];
+check('חיפוש ברשימה גדולה', $g['matches'] === 15000 && $g['rows'][0][0] === 'גבעת שאול');
+list_save($a, ['id' => $big['id'], 'name' => 'קברים', 'keep_rows' => true, 'translations' => ['0' => ['גבעת שאול' => ['en' => 'Givat Shaul', 'fr' => 'Guivat Shaoul']]]]);
+$g = list_get($a, ['id' => $big['id']])['list'];
+check('שמירה בלי שורות: השם והתרגומים מתעדכנים, השורות נשארות', $g['name'] === 'קברים' && $g['row_count'] === 30000 && $g['langs'] === ['en', 'fr']);
+$bref = fn($lv) => ['id' => $big['id'], 'level' => $lv];
+tpl_save($a, ['id' => $tid, 'schema' => ['pages' => [['w' => 595, 'h' => 842]], 'fields' => [
+    ['key' => 'cem', 'type' => 'select', 'label' => 'בית העלמין', 'list' => $bref(0) + ['lang' => 'en']] + $geo,
+    ['key' => 'gush', 'type' => 'select', 'label' => 'גוש', 'list' => $bref(1)] + $geo,
+    ['key' => 'grave', 'type' => 'select', 'label' => 'קבר', 'list' => $bref(3)] + $geo]]]);
+$d3 = doc_create($a, ['template_id' => $tid])['id'];
+$L = doc_get($a, $d3)['document']['lists'][(string)$big['id']];
+check('עם המסמך: בלי השורות (big), עם התרגומים', ($L['big'] ?? false) && !isset($L['rows']) && json_encode($L)  !== false && strlen(json_encode($L)) < 2000);
+$o = fn($lv, $known) => list_opts($a, ['doc' => $d3, 'list' => $big['id'], 'level' => $lv, 'known' => $known])['values'];
+check('מהשרת: גושים בגבעת שאול', $o(1, ['0' => 'גבעת שאול']) === array_map('strval', range(115, 129)));
+check('מהשרת: קברים בגוש 115 חלקה 3', count($o(3, ['0' => 'גבעת שאול', '1' => '115', '2' => '3'])) === 100);
+check('רמה שמתחת לא מסננת', count($o(1, ['0' => 'הר המנוחות', '3' => '5'])) === 15);
+try { list_opts($b, ['doc' => $d3, 'list' => $big['id'], 'level' => 0]); check('משתמש אחר — לא מקבל אפשרויות', false); } catch (ApiError $e) { check('משתמש אחר — לא מקבל אפשרויות', in_array($e->status, [403, 404], true)); }
+try { list_opts($a, ['doc' => $d3, 'list' => $l['id'], 'level' => 0]); check('רשימה שלא בתבנית — לא נחשפת', false); } catch (ApiError $e) { check('רשימה שלא בתבנית — לא נחשפת', $e->status === 404); }
+doc_save($a, ['id' => $d3, 'values' => ['cem' => 'גבעת שאול', 'gush' => '120', 'grave' => '7']]);
+check('בחירה מרשימה גדולה נשמרת, ובפלט — באנגלית', doc_values($d3)['gush'] === '120' && docx_value(tpl_get($a, $tid)['template']['schema']['fields'][0], 'גבעת שאול', []) === 'Givat Shaul');
+try { doc_save($a, ['id' => $d3, 'values' => ['gush' => '999']]); check('גוש שלא ברשימה הגדולה — נדחה', false); } catch (ApiError $e) { check('גוש שלא ברשימה הגדולה — נדחה', $e->status === 422); }
+list_delete($a, ['id' => $big['id']]);
+
 list_delete($a, ['id' => $l['id']]);
 check('נמחקה — לא ברשימה', list_index($a)['lists'] === []);
 

@@ -47,13 +47,15 @@ $PUBLIC = ['health', 'register', 'verify', 'login', 'forgot', 'reset', 'me',
            // ממלא חיצוני: הזהות היא האסימון שבכותרת X-Fill-Token, לא עוגייה.
            'fill_get', 'fill_asset', 'fill_otp_send', 'fill_otp_verify', 'fill_save', 'fill_complete',
            'fill_downloaded', 'fill_docx', 'fill_upload', 'fill_file',
+           // אפשרויות מרשימה גדולה: למנהל המסמך (עוגייה) או לממלא (X-Fill-Token) — הבדיקה בתוך list_opts
+           'list_opts',
            // מערכת חיצונית: הזהות היא מפתח ה-API שבכותרת Authorization, לא עוגייה.
            'ext_templates', 'ext_template', 'ext_issue', 'ext_document', 'ext_update', 'ext_file', 'fill_font',
            // Claude קורא מטלות ומשיב (DevLoop): הזהות היא האסימון שבכותרת X-Dev-Token.
            'devapi-feed', 'devapi-comment', 'devapi-file', 'devapi-attach'];
 $POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'dev_user',
            'tpl_create', 'tpl_create_authored', 'tpl_import', 'tpl_save', 'tpl_set_source', 'tpl_archive', 'tpl_delete',
-           'doc_create', 'doc_duplicate', 'doc_return', 'doc_save', 'list_save', 'list_delete', 'list_import', 'doc_complete', 'doc_archive', 'doc_delete', 'doc_downloaded',
+           'doc_create', 'doc_duplicate', 'doc_return', 'doc_save', 'list_opts', 'list_save', 'list_delete', 'list_import', 'doc_complete', 'doc_archive', 'doc_delete', 'doc_downloaded',
            'part_contact', 'part_link', 'fill_otp_send', 'fill_otp_verify', 'fill_save', 'fill_complete', 'fill_downloaded',
            'doc_upload', 'fill_upload', 'dev_quota', 'share_set', 'share_remove', 'share_leave',
            'contact_save', 'contact_archive', 'doc_contact', 'doc_tags', 'tpl_tags', 'bulk_preview', 'bulk_issue',
@@ -122,7 +124,8 @@ try {
         'list_get'       => list_get($session, $_GET),
         'list_save'      => list_save($session, $body),
         'list_delete'    => list_delete($session, $body),
-        'list_import'    => list_import($session, $_FILES),
+        'list_import'    => list_import($session, $_FILES, $_POST),
+        'list_opts'      => list_opts($session, $body),
         'doc_return'     => doc_return($session, $body),
         'doc_save'       => doc_save($session, $body),
         'doc_complete'   => doc_complete($session, $body),

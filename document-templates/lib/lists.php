@@ -10,7 +10,13 @@
 
 declare(strict_types=1);
 
-const LIST_MAX_ROWS   = 20000;
+const LIST_MAX_ROWS   = 100000;
+/** עד כמה שורות הרשימה נשלחת כולה לדפדפן עם המסמך; מעל — "רשימה גדולה": הטופס שואל את השרת רמה אחרי רמה (list_opts). */
+const LIST_INLINE     = 3000;
+/** עד כמה שורות עורכים את הרשימה בטבלה; מעל — עורכים בקובץ ומייבאים מחדש (בעורך: חיפוש ותצוגה). */
+const LIST_EDIT_MAX   = 5000;
+/** בייבוא בחלקים (קובץ גדול ממגבלת ההעלאה של השרת) — הגודל הכולל המותר. */
+const LIST_MAX_TOTAL_MB = 30;
 const LIST_MAX_LEVELS = 8;
 const LIST_MAX_MB     = 5;
 /** שפות לתרגום ערכים (השם שנבחר בעברית — ובפלט בשפה שנקבעה לשדה). */
@@ -126,7 +132,24 @@ function list_index(array $user): array
 
 function list_get(array $user, array $q): array
 {
-    return ['ok' => true, 'list' => list_view(list_row($user, (int)($q['id'] ?? 0)), true)];
+    $v = list_view(list_row($user, (int)($q['id'] ?? 0)), true);
+    if ($v['row_count'] > LIST_EDIT_MAX) {
+        // רשימה גדולה: לא כל השורות לדפדפן — חיפוש (עד 200 תוצאות), והערכים בכל רמה (לתרגומים)
+        $needle = trim((string)($q['q'] ?? ''));
+        $match = $needle === '' ? $v['rows'] : array_values(array_filter($v['rows'], function ($r) use ($needle) {
+            foreach ($r as $x) if (mb_stripos($x, $needle) !== false) return true;
+            return false;
+        }));
+        $vals = []; $more = [];
+        foreach ($v['levels'] as $i => $_) {
+            $u = [];
+            foreach ($v['rows'] as $r) if (($r[$i] ?? '') !== '') $u[$r[$i]] = true;
+            $more[$i] = count($u) > 3000;
+            $vals[$i] = array_slice(array_map('strval', array_keys($u)), 0, 3000);
+        }
+        $v = ['big' => true, 'matches' => count($match), 'rows' => array_slice($match, 0, 200), 'values' => $vals, 'values_more' => $more] + $v;
+    }
+    return ['ok' => true, 'list' => $v];
 }
 
 /** {id?, name, levels: [...], rows: [[...], ...], translations?: {"<רמה>": {"<ערך>": {"en": "…"}}}} */
@@ -136,6 +159,11 @@ function list_save(array $user, array $b): array
     if ($name === '') throw new ApiError('לרשימה צריך שם', 422);
     $levels = list_levels_clean($b['levels'] ?? []);
     $rows = list_rows_clean((array)($b['rows'] ?? []), count($levels));
+    if (!empty($b['keep_rows']) && !empty($b['id'])) {
+        // רשימה גדולה: משנים שם ותרגומים — השורות והרמות נשארות כמו שהן בשרת
+        $cur = list_view(list_row($user, (int)$b['id']), true);
+        $levels = $cur['levels']; $rows = $cur['rows'];
+    }
     $tr = list_tr_clean($b['translations'] ?? [], $rows, count($levels));
     $now = now_iso();
     $enc = [seal($name), seal(json_encode($levels, JSON_UNESCAPED_UNICODE)), seal(json_encode($rows, JSON_UNESCAPED_UNICODE)), count($rows),
@@ -161,12 +189,30 @@ function list_delete(array $user, array $b): array
 }
 
 /** קובץ Excel / CSV → רמות (השורה הראשונה) ושורות. לא נשמר — המשתמש רואה, מתקן ושומר. */
-function list_import(array $user, array $files): array
+function list_import(array $user, array $files, array $post = []): array
 {
     $f = $files['file'] ?? null;
-    if (!$f || ($f['error'] ?? 1) !== 0) throw new ApiError('לא התקבל קובץ', 422);
-    if ($f['size'] > LIST_MAX_MB * 1024 * 1024) throw new ApiError('הקובץ גדול מדי (עד ' . LIST_MAX_MB . 'MB)', 413);
-    $bytes = (string)file_get_contents($f['tmp_name']);
+    if (!$f || ($f['error'] ?? 1) !== 0) {
+        throw new ApiError(($f['error'] ?? 0) === UPLOAD_ERR_INI_SIZE ? 'הקובץ גדול מהמותר בשרת (' . ini_get('upload_max_filesize') . ')' : 'לא התקבל קובץ', 422);
+    }
+    $stage = (string)($post['stage'] ?? '');
+    if ($stage !== '') {
+        // קובץ CSV גדול — בחלקים (כל חלק קטן ממגבלת ההעלאה של השרת), ומחברים בשרת
+        if (!preg_match('/^[0-9a-f]{16,32}$/', $stage)) throw new ApiError('ייבוא לא תקין', 422);
+        $dir = DT_DATA_DIR . '/tmp';
+        if (!is_dir($dir)) mkdir($dir, 0700, true);
+        $path = "$dir/list-{$user['id']}-$stage.csv";
+        if ((int)($post['part'] ?? 0) === 0 && is_file($path)) unlink($path);
+        foreach (glob("$dir/list-*.csv") ?: [] as $old) if (filemtime($old) < time() - 3600) @unlink($old);   // ייבוא שנזנח
+        file_put_contents($path, (string)file_get_contents($f['tmp_name']), FILE_APPEND);
+        if (filesize($path) > LIST_MAX_TOTAL_MB * 1024 * 1024) { unlink($path); throw new ApiError('הקובץ גדול מדי (עד ' . LIST_MAX_TOTAL_MB . 'MB)', 413); }
+        if (empty($post['last'])) return ['ok' => true, 'received' => true];
+        $bytes = (string)file_get_contents($path);
+        unlink($path);
+    } else {
+        if ($f['size'] > LIST_MAX_MB * 1024 * 1024) throw new ApiError('הקובץ גדול מדי (עד ' . LIST_MAX_MB . 'MB)', 413);
+        $bytes = (string)file_get_contents($f['tmp_name']);
+    }
     if ($bytes === '') throw new ApiError('הקובץ ריק', 422);
     $rows = str_starts_with($bytes, "PK\x03\x04") ? xlsx_read($bytes, LIST_MAX_ROWS) : csv_read($bytes, LIST_MAX_ROWS);
     if (count($rows) > LIST_MAX_ROWS + 1) throw new ApiError('יותר מדי שורות (עד ' . LIST_MAX_ROWS . ')', 422);
@@ -196,7 +242,15 @@ function list_import(array $user, array $files): array
             $tr[(string)$lv][$prev[$lv]][$lang] = $x;
         }
     }
-    return ['ok' => true, 'levels' => $levels, 'rows' => $clean, 'translations' => (object)list_tr_clean($tr, $clean, count($levels))];
+    $tr = list_tr_clean($tr, $clean, count($levels));
+    if (!empty($post['apply'])) {
+        // שמירה ישירה בשרת (רשימה גדולה — בלי לשלוח את כל השורות לדפדפן ובחזרה)
+        $id = (int)($post['id'] ?? 0);
+        $name = $id ? list_view(list_row($user, $id))['name'] : trim((string)($post['name'] ?? ''));
+        $saved = list_save($user, ['id' => $id ?: null, 'name' => $name !== '' ? $name : 'רשימה', 'levels' => $levels, 'rows' => $clean, 'translations' => $tr])['list'];
+        return ['ok' => true, 'saved' => true, 'list' => $saved, 'levels' => $levels, 'count' => count($clean), 'translated' => list_tr_langs($tr)];
+    }
+    return ['ok' => true, 'levels' => $levels, 'rows' => $clean, 'translations' => (object)$tr];
 }
 
 /** הרשימות שמותר לקשור בתבנית: של המשתמש, ומה שכבר קשור בה (שותף שעורך תבנית של אחר). */
@@ -235,30 +289,70 @@ function clean_list_ref($ref, array $allowed): ?array
 }
 
 /** הרשימות שהמסמך צריך (לסינון המקונן בדפדפן): {id: {name, levels, rows}}. */
-function lists_for(array $schema): array
+function lists_for(array $schema, bool $full = false): array
 {
     $out = [];
     foreach (schema_lists($schema) as $id) {
         $st = db()->prepare('SELECT * FROM value_lists WHERE id = ? AND deleted_at IS NULL');
         $st->execute([$id]);
-        if ($r = $st->fetch()) { $v = list_view($r, true); $out[(string)$id] = ['name' => $v['name'], 'levels' => $v['levels'], 'rows' => $v['rows'], 'translations' => $v['translations']]; }
+        if (!$r = $st->fetch()) continue;
+        // רשימה גדולה — בלי השורות: הטופס מבקש מהשרת רק את האפשרויות של הרמה (list_opts)
+        if (!$full && (int)$r['row_count'] > LIST_INLINE) { $v = list_view($r); $out[(string)$id] = ['name' => $v['name'], 'levels' => $v['levels'], 'big' => true, 'translations' => list_view($r, true)['translations']]; continue; }
+        $v = list_view($r, true);
+        $out[(string)$id] = ['name' => $v['name'], 'levels' => $v['levels'], 'rows' => $v['rows'], 'translations' => $v['translations']];
     }
     return $out;
+}
+
+/** השורות של רשימה (מפוענחות, פעם אחת לבקשה). */
+function list_rows_by_id(int $id): ?array
+{
+    static $cache = [];
+    if (!array_key_exists($id, $cache)) {
+        $st = db()->prepare('SELECT rows_enc FROM value_lists WHERE id = ? AND deleted_at IS NULL');
+        $st->execute([$id]);
+        $cache[$id] = ($r = $st->fetchColumn()) ? (json_decode((string)unseal($r), true) ?: []) : null;
+    }
+    return $cache[$id];
+}
+
+/**
+ * האפשרויות ברמה, מסוננות לפי מה שנבחר ברמות שמעל — לרשימה גדולה (שלא נשלחת כולה לדפדפן).
+ * מותר רק לרשימה שהמסמך משתמש בה: למנהל המסמך (doc), או לממלא בקישור (X-Fill-Token).
+ * {doc, list, level, known: {"<רמה>": "<ערך>"}}
+ */
+function list_opts(?array $session, array $b): array
+{
+    if (!empty($_SERVER['HTTP_X_FILL_TOKEN'])) {
+        [, , $schema] = fill_context();
+    } else {
+        if (!$session) throw new ApiError('נדרשת כניסה', 401);
+        $d = doc_owned((int)($b['doc'] ?? 0), $session, 'view');
+        $schema = json_decode((string)unseal($d['schema_enc']), true) ?: [];
+    }
+    $id = (int)($b['list'] ?? 0);
+    if (!in_array($id, schema_lists($schema), true)) throw new ApiError('הרשימה לא נמצאה', 404);
+    $rows = list_rows_by_id($id) ?? [];
+    $level = (int)($b['level'] ?? 0);
+    $known = [];
+    foreach ((array)($b['known'] ?? []) as $lv => $v) if ((int)$lv < $level && (string)$v !== '') $known[(int)$lv] = (string)$v;
+    $vals = [];
+    foreach ($rows as $r) {
+        if (($r[$level] ?? '') === '') continue;
+        foreach ($known as $lv => $v) if (($r[$lv] ?? '') !== $v) continue 2;
+        $vals[$r[$level]] = true;
+    }
+    $vals = array_map('strval', array_keys($vals));
+    return ['ok' => true, 'values' => array_slice($vals, 0, 5000), 'more' => count($vals) > 5000];
 }
 
 /** הערכים ברמה (בלי כפולים, לפי הסדר) — לאפשרויות של שדה בחירה ולבדיקה בשרת. */
 function list_level_values(array $ref): array
 {
-    static $cache = [];
-    $id = (int)$ref['id'];
-    if (!isset($cache[$id])) {
-        $st = db()->prepare('SELECT rows_enc FROM value_lists WHERE id = ? AND deleted_at IS NULL');
-        $st->execute([$id]);
-        $cache[$id] = ($r = $st->fetchColumn()) ? (json_decode((string)unseal($r), true) ?: []) : null;
-    }
-    if ($cache[$id] === null) return [];
+    $rows = list_rows_by_id((int)$ref['id']);
+    if ($rows === null) return [];
     $vals = [];
-    foreach ($cache[$id] as $row) if (($row[$ref['level']] ?? '') !== '') $vals[$row[$ref['level']]] = true;
+    foreach ($rows as $row) if (($row[$ref['level']] ?? '') !== '') $vals[$row[$ref['level']]] = true;
     return array_map('strval', array_keys($vals));
 }
 

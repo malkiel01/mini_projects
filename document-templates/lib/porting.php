@@ -52,7 +52,7 @@ function tpl_export_data(array $user, int $id): array
     $notes = [];
 
     // רשימות: מזהה ← שם (אצל המייבא נוצרת / נמצאת רשימה בשם הזה)
-    $lists = lists_for($schema);
+    $lists = lists_for($schema, true);
     $byId = fn($ref) => isset($lists[(string)$ref['id']]) ? ['name' => $lists[(string)$ref['id']]['name'], 'level' => (int)$ref['level']] + (isset($ref['lang']) ? ['lang' => $ref['lang']] : []) : null;
     foreach ($schema['fields'] ?? [] as $i => $f) {
         if (!empty($f['list'])) { $r = $byId($f['list']); if ($r) $schema['fields'][$i]['list'] = $r; else unset($schema['fields'][$i]['list']); }
@@ -187,7 +187,7 @@ function tpl_import_package(array $user, array $p, string $name = '', ?string $a
         $rows = list_rows_clean((array)($l['rows'] ?? []), count($levels));
         $tr = list_tr_clean($l['translations'] ?? [], $rows, count($levels));
         if (isset($mine[$ln])) {
-            $have = list_get($user, ['id' => $mine[$ln]['id']])['list'];
+            $have = list_view(list_row($user, (int)$mine[$ln]['id']), true);
             if ($have['levels'] === $levels && $have['rows'] === $rows) {
                 // אותה רשימה — תרגומים שחסרים אצל המייבא נוספים (לא דורסים את שלו)
                 $mt = json_decode(json_encode($have['translations']), true) ?: [];

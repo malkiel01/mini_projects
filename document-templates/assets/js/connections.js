@@ -70,7 +70,12 @@
     const count = el('span', { class: 'muted small' });
     const SHOW = 200;
     const lv = () => levels.value.split(/[›>,|]/).map(x => x.trim()).filter(Boolean).slice(0, 8);
+    // רשימה גדולה (אלפי שורות): לא עורכים בטבלה — מחפשים בשרת, ומעדכנים בייבוא קובץ מחדש
+    const big = !!data.big;
+    if (big) levels.disabled = true;
+    let bigTimer = 0;
     function drawGrid() {
+      if (big) return drawBig();
       const L = lv().length ? lv() : ['ערך'];
       const q = search.value.trim();
       const idx = data.rows.map((r, i) => i).filter(i => !q || data.rows[i].some(v => String(v).includes(q)));
@@ -83,6 +88,14 @@
           return el('td', { 'data-label': L[j] }, inp);
         }), el('td', { class: 'row-del' }, el('button', { type: 'button', class: 'link small', title: 'מחיקת שורה',
           onclick: () => { data.rows.splice(i, 1); drawGrid(); } }, '✕')))))));
+    }
+    function drawBig() {
+      const L = data.levels;
+      count.textContent = `${data.row_count.toLocaleString('he-IL')} שורות` + (search.value.trim() ? ` · ${data.matches.toLocaleString('he-IL')} מתאימות` : '')
+        + (data.matches > data.rows.length ? ` · מוצגות ${data.rows.length}` : '');
+      grid.replaceChildren(el('table', { class: 'grid' },
+        el('thead', {}, el('tr', {}, L.map(n => el('th', {}, n)))),
+        el('tbody', {}, data.rows.map(r => el('tr', {}, L.map((n, j) => el('td', { 'data-label': n }, r[j] || '')))))));
     }
     levels.addEventListener('change', () => { drawGrid(); drawTr(); });
 
@@ -98,7 +111,7 @@
       const keep = Number(trLevel.value) || 0;
       trLevel.replaceChildren(...L.map((n, i) => el('option', { value: i, selected: i === keep }, `${i + 1}. ${n}`)));
       const level = Math.min(keep, L.length - 1), lang = trLang.value, q = trSearch.value.trim();
-      const vals = [...new Set(data.rows.map(r => String(r[level] ?? '').trim()).filter(Boolean))];
+      const vals = big ? (data.values[level] || []) : [...new Set(data.rows.map(r => String(r[level] ?? '').trim()).filter(Boolean))];
       const t = (data.translations[level] ??= {});
       const shown = vals.filter(v => !q || v.includes(q) || String(t[v]?.[lang] ?? '').toLowerCase().includes(q.toLowerCase()));
       const done = vals.filter(v => t[v]?.[lang]).length;
@@ -115,13 +128,23 @@
           return el('tr', {}, el('td', { 'data-label': L[level] }, v), el('td', { 'data-label': LANGS[lang] }, inp));
         }))));
       if (!vals.length) trBox.replaceChildren(el('p', { class: 'muted small' }, 'אין עדיין ערכים ברמה הזו.'));
+      if (big && data.values_more[level]) trBox.prepend(el('p', { class: 'hint' }, 'ברמה הזו יש יותר מ-3,000 ערכים — מוצגים הראשונים. לתרגום של כולם: עמודת "(en)" בקובץ, וייבוא מחדש.'));
     }
     trLevel.addEventListener('change', drawTr); trLang.addEventListener('change', drawTr); trSearch.addEventListener('input', drawTr);
-    search.addEventListener('input', drawGrid);
+    search.addEventListener('input', () => {
+      if (!big) return drawGrid();
+      clearTimeout(bigTimer);
+      bigTimer = setTimeout(async () => {
+        try { const r = (await api('list_get', undefined, { id: l.id, q: search.value.trim() })).list; data.rows = r.rows; data.matches = r.matches; drawBig(); }
+        catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
+      }, 300);
+    });
     const file = el('input', { type: 'file', accept: '.xlsx,.csv', hidden: true });
     file.addEventListener('change', async () => {
       if (!file.files[0]) return;
-      const fd = new FormData(); fd.append('file', file.files[0]);
+      const fl = file.files[0];
+      if (big || fl.size > 300 * 1024) { await importDirect(fl); file.value = ''; return; }
+      const fd = new FormData(); fd.append('file', fl);
       try {
         const r = await api('list_import', fd);
         if (data.rows.length && !confirm(`לייבא ${r.rows.length} שורות במקום ${data.rows.length} השורות שכאן?`)) return;
@@ -134,10 +157,35 @@
       } catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
       file.value = '';
     });
+    /** קובץ גדול: נשלח בחלקים (כל חלק קטן ממגבלת ההעלאה של השרת), ונשמר ישר בשרת — בלי להעביר את כל השורות דרך הדפדפן. */
+    async function importDirect(fl) {
+      if (!confirm(`"${fl.name}" — קובץ גדול. הוא ייקלט ויישמר ישר ברשימה` + (l ? ' ויחליף את השורות שבה' : '') + '. להמשיך?')) return;
+      const stage = [...crypto.getRandomValues(new Uint8Array(8))].map(b => b.toString(16).padStart(2, '0')).join('');
+      const CHUNK = 1024 * 1024;
+      const parts = Math.max(1, Math.ceil(fl.size / CHUNK));
+      try {
+        let r;
+        for (let i = 0; i < parts; i++) {
+          msg.replaceChildren(notice(`מעלה… ${Math.round((i / parts) * 100)}%`));
+          const fd = new FormData();
+          fd.append('file', fl.slice(i * CHUNK, (i + 1) * CHUNK), 'part.bin');
+          fd.append('stage', stage); fd.append('part', String(i));
+          if (i === parts - 1) {
+            fd.append('last', '1'); fd.append('apply', '1');
+            if (l) fd.append('id', String(l.id)); else fd.append('name', name.value.trim() || fl.name.replace(/\.[^.]+$/, ''));
+            msg.replaceChildren(notice('קולט ושומר…'));
+          }
+          r = await api('list_import', fd);
+        }
+        dlg.close(); after();
+        window.DT.toast(`נשמר: ${r.list.name} · ${r.count.toLocaleString('he-IL')} שורות · ${r.levels.join(' › ')}` + (r.translated.length ? ' · 🌐 ' + r.translated.join(', ') : ''));
+      } catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
+    }
     const save = el('button', { type: 'button', class: 'primary small', onclick: async () => {
       save.disabled = true;
       try {
-        const r = await api('list_save', { id: l ? l.id : undefined, name: name.value, levels: lv(), rows: data.rows, translations: data.translations });
+        const r = await api('list_save', big ? { id: l.id, name: name.value, translations: data.translations, keep_rows: true }
+          : { id: l ? l.id : undefined, name: name.value, levels: lv(), rows: data.rows, translations: data.translations });
         dlg.close(); after(); window.DT.toast(`נשמר: ${r.list.name} · ${r.list.row_count} שורות`);
       } catch (e) { msg.replaceChildren(notice(e.message, 'bad')); save.disabled = false; }
     } }, 'שמירה');
@@ -147,8 +195,10 @@
         el('small', { class: 'muted' }, 'רמה אחת — רשימה פשוטה. כמה רמות — מקוננת: כל שורה היא מסלול מלא.')),
       el('div', { class: 'row-btns wrap' },
         el('button', { type: 'button', class: 'small', onclick: () => file.click() }, '📥 ייבוא מ-Excel / CSV'), file,
-        el('button', { type: 'button', class: 'small', onclick: () => { data.rows.push(lv().map(() => '')); search.value = ''; drawGrid();
+        big ? null : el('button', { type: 'button', class: 'small', onclick: () => { data.rows.push(lv().map(() => '')); search.value = ''; drawGrid();
           grid.querySelector('tbody tr:last-child input')?.focus(); } }, '+ שורה')),
+      big ? el('p', { class: 'notice' }, `רשימה גדולה (${data.row_count.toLocaleString('he-IL')} שורות): בטופס האפשרויות נטענות מהשרת לפי מה שנבחר. ` +
+        'כאן — חיפוש ותצוגה; לשינוי השורות מעדכנים את הקובץ ומייבאים מחדש. שם ותרגומים — נשמרים מכאן.') : null,
       el('p', { class: 'hint' }, 'בקובץ: השורה הראשונה — שמות הרמות; כל שורה אחריה — מסלול. תא ריק = כמו בשורה שמעליו (כמו שכותבים היררכיה באקסל).'),
       msg, el('div', { class: 'row-btns' }, search, count), grid,
       el('details', { class: 'fs-group tr-group' }, el('summary', {}, '🌐 תרגומים — הערך במסמך בשפה אחרת'),
