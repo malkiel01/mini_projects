@@ -21,7 +21,6 @@
     if (!pdfjsLib.GlobalWorkerOptions.workerSrc) pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js';
     return window.pdfjsLib;
   };
-  const b64 = (bytes) => { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(s); };
   const unb64 = (s) => Uint8Array.from(atob(s), c => c.charCodeAt(0));
   const safe = (n) => String(n || 'תבנית').replace(/[\\/:*?"<>|]+/g, '_');
   function save(blob, name) {
@@ -84,9 +83,11 @@
     const pdf = await PDFDocument.load(new Uint8Array(await file.arrayBuffer()), { ignoreEncryption: true });
     try { const names = pdf.catalog.lookup(PDFName.of('Names')); if (names) names.delete(PDFName.of('EmbeddedFiles')); } catch (e) { /* אין */ }
     const clean = await pdf.save({ updateFieldAppearances: false });
-    const pkg = { ...p, asset: { mime: 'application/pdf', data: b64(clean) } };
+    // ההגדרות לחוד, וה-PDF כקובץ רגיל (לא base64 — שלא יעבור את מגבלת ההעלאה של השרת)
+    const pkg = { ...p, asset: { mime: 'application/pdf', embedded: true } };
     const fd = new FormData();
     fd.append('file', new Blob([JSON.stringify(pkg)], { type: 'application/json' }), 'template.dt.json');
+    fd.append('asset', new Blob([clean], { type: 'application/pdf' }), 'template.pdf');
     if (name) fd.append('name', name);
     return window.DT.api('tpl_import', fd);
   }

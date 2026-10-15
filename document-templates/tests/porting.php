@@ -102,5 +102,18 @@ check('ה-Word שנשמר — נקי מההגדרות', docx_package($stored) ==
 $plain = tpl_create($b, ['name' => 'רגיל'], $up("$tmp/w.docx"));
 check('Word רגיל — תבנית רגילה', empty($plain['imported']));
 
+// קובץ שמפנה לרשימה בשם בלבד (בלי השורות בתוכו): נקשר לרשימה שכבר קיימת אצל המייבא
+$ref = ['format' => 'dt-template', 'version' => 1, 'name' => 'אישור', 'source' => 'pdf_parsed', 'lists' => [], 'fonts' => [],
+    'asset' => ['mime' => 'application/pdf', 'data' => base64_encode($pdf)],
+    'schema' => ['pages' => [['w' => 595, 'h' => 842]], 'fields' => [
+        ['key' => 'cem', 'type' => 'select', 'label' => 'בית העלמין', 'list' => ['name' => 'מיקומי קברים', 'level' => 0]] + $geo,
+        ['key' => 'grave', 'type' => 'text', 'label' => 'קבר', 'list' => ['name' => 'מיקומי קברים', 'level' => 9]] + $geo,
+        ['key' => 'x', 'type' => 'select', 'label' => 'אחר', 'list' => ['name' => 'אין כזו', 'level' => 0]] + $geo]]];
+$r = tpl_import_package($b, $ref);
+$rf = tpl_get($b, $r['id'])['template']['schema']['fields'];
+$bl = array_column(list_index($b)['lists'], null, 'name')['מיקומי קברים'];
+check('רשימה לפי שם — נקשרת לרשימה הקיימת אצל המייבא', ($rf[0]['list']['id'] ?? 0) === $bl['id'] && $rf[0]['type'] === 'select');
+check('רמה שלא קיימת — בלי רשימה; רשימה שלא קיימת — בחירה הופכת לטקסט', !isset($rf[1]['list']) && $rf[2]['type'] === 'text' && !isset($rf[2]['list']));
+
 echo "\n" . ($fail ? "$fail נכשלו\n" : "הכול עבר\n");
 exit($fail ? 1 : 0);
