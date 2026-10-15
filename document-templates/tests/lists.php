@@ -100,7 +100,7 @@ file_put_contents($csv2, "בית עלמין,בית עלמין (en),גוש,בית
 $imp = list_import($a, ['file' => ['tmp_name' => $csv2, 'error' => 0, 'size' => filesize($csv2)]]);
 $it = json_decode(json_encode($imp['translations']), true);
 check('ייבוא: עמודת "(en)" / "[fr]" — תרגום, לא רמה', $imp['levels'] === ['בית עלמין', 'גוש'] && count($imp['rows']) === 3
-    && $it === ['0' => ['הר המנוחות' => ['en' => 'Har HaMenuchot', 'fr' => 'Har HaMenouhot'], 'גבעת שאול' => ['en' => 'Givat Shaul']]]);
+    && $it === ['names' => ['0' => ['en' => 'בית עלמין (en)', 'fr' => 'בית עלמין [fr]']], '0' => ['הר המנוחות' => ['en' => 'Har HaMenuchot', 'fr' => 'Har HaMenouhot'], 'גבעת שאול' => ['en' => 'Givat Shaul']]]);
 
 // עמודה באנגלית בשם משלה: ליד כל עמודה בעברית, או כולן בסוף — מה שנכתב במסמך
 $pair = function (string $csv) use ($a, $tmp) {
@@ -114,6 +114,10 @@ check('עמודה באנגלית צמודה: לא רמה — הפלט של הר�
 [$lv2, $t2] = $pair("בית עלמין,חלקה,קבר,Cemetery,Parcel\nגבעת שאול מערב,ז,1,Givat Shaul West,Z\n");
 check('עמודות באנגלית בסוף — לפי הסדר', $lv2 === ['בית עלמין', 'חלקה', 'קבר'] && $t2 == $want);
 [$lv3] = $pair("Cemetery,Parcel\nGivat Shaul,Z\n");
+foreach (['בית עלמין (אנגלית)', 'בית עלמין באנגלית', 'בית עלמין - English', 'שם לועזי'] as $hh) {
+    [$lv4, $t4] = $pair("בית עלמין,$hh,חלקה\nגבעת שאול מערב,Givat Shaul West,ז\n");
+    check("עמודה לפלט מזוהה: \"$hh\"", $lv4 === ['בית עלמין', 'חלקה'] && ($t4['0']['גבעת שאול מערב']['en'] ?? '') === 'Givat Shaul West' && $t4['names']['0']['en'] === $hh);
+}
 check('רשימה כולה באנגלית — הכול רמות', $lv3 === ['Cemetery', 'Parcel']);
 
 // רשימה גדולה: 30,000 קברים — לא נשלחת כולה עם המסמך; האפשרויות מהשרת רמה אחרי רמה

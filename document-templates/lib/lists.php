@@ -233,10 +233,19 @@ function list_import(array $user, array $files, array $post = []): array
     $isHe = fn($h) => (bool)preg_match('/\p{Hebrew}/u', $h);
     $anyHe = (bool)array_filter($head, $isHe);
     $lvCols = []; $alt = [];
+    // מה יש בכל עמודה: ערכים בעברית / ערכים באותיות לטיניות
+    $heVal = []; $latVal = [];
+    foreach (array_slice($rows, 0, 2000) as $r) foreach ($head as $i => $_) {
+        $v = (string)($r[$i] ?? '');
+        if (preg_match('/\p{Hebrew}/u', $v)) $heVal[$i] = true;
+        elseif (preg_match('/[A-Za-z]/', $v)) $latVal[$i] = true;
+    }
     foreach ($head as $i => $h) {
-        $lang = null; $base = $h;
-        if (preg_match('/^(.*?)\s*[\(\[]\s*([a-z]{2})\s*[\)\]]$/iu', $h, $m) && isset(LIST_LANGS[strtolower($m[2])])) { $lang = strtolower($m[2]); $base = trim($m[1]); }
-        if ($lang !== null || ($anyHe && !$isHe($h) && preg_match('/\p{L}/u', $h))) $alt[$i] = [$base, $lang ?? 'en', $h];
+        [$base, $lang] = list_col_lang($h);
+        $latinHead = $anyHe && !$isHe($h) && preg_match('/\p{L}/u', $h);
+        // כותרת בעברית, אבל הערכים באנגלית — ליד עמודה שהערכים שלה בעברית: גם זו עמודה לפלט
+        $latinVals = $lang === null && !$latinHead && !empty($latVal[$i]) && empty($heVal[$i]) && !empty($heVal[$i - 1]);
+        if ($lang !== null || $latinHead || $latinVals) $alt[$i] = [$base, $lang ?? 'en', $h];
         else $lvCols[$i] = $h;
     }
     $levels = list_levels_clean(array_values($lvCols));
@@ -266,16 +275,18 @@ function list_import(array $user, array $files, array $post = []): array
         }
     }
     // שם העמודה לפלט ("Cemetery") — כך היא מוצגת בבחירה "מה ייכתב במסמך"
-    foreach ($trCols as [$lv, $lang, $base]) if ($base !== $levels[$lv]) $tr['names'][(string)$lv][$lang] = $base;
+    foreach ($trCols as $i => [$lv, $lang]) $tr['names'][(string)$lv][$lang] = $head[$i];   // כמו בקובץ
     $tr = list_tr_clean($tr, $clean, count($levels));
+    // לדיווח: איזו עמודה בקובץ נכתבת במסמך במקום איזו רמה ("Cemetery ← בית עלמין")
+    $outputs = array_values(array_map(fn($i) => ['column' => $head[$i], 'level' => $levels[$trCols[$i][0]], 'lang' => $trCols[$i][1]], array_keys($trCols)));
     if (!empty($post['apply'])) {
         // שמירה ישירה בשרת (רשימה גדולה — בלי לשלוח את כל השורות לדפדפן ובחזרה)
         $id = (int)($post['id'] ?? 0);
         $name = $id ? list_view(list_row($user, $id))['name'] : trim((string)($post['name'] ?? ''));
         $saved = list_save($user, ['id' => $id ?: null, 'name' => $name !== '' ? $name : 'רשימה', 'levels' => $levels, 'rows' => $clean, 'translations' => $tr])['list'];
-        return ['ok' => true, 'saved' => true, 'list' => $saved, 'levels' => $levels, 'count' => count($clean), 'translated' => list_tr_langs($tr)];
+        return ['ok' => true, 'saved' => true, 'list' => $saved, 'levels' => $levels, 'count' => count($clean), 'translated' => list_tr_langs($tr), 'outputs' => $outputs];
     }
-    return ['ok' => true, 'levels' => $levels, 'rows' => $clean, 'translations' => (object)$tr];
+    return ['ok' => true, 'levels' => $levels, 'rows' => $clean, 'translations' => (object)$tr, 'outputs' => $outputs];
 }
 
 /** הרשימות שמותר לקשור בתבנית: של המשתמש, ומה שכבר קשור בה (שותף שעורך תבנית של אחר). */
@@ -394,4 +405,22 @@ function list_translate(?array $ref, string $v): string
         $cache[$id] = $t ? (json_decode((string)unseal($t), true) ?: []) : [];
     }
     return (string)($cache[$id][(string)$ref['level']][$v][$ref['lang']] ?? $v);
+}
+
+/**
+ * כותרת של עמודה לפלט בשפה אחרת: "בית עלמין (en)", "בית עלמין (אנגלית)", "בית עלמין באנגלית", "בית עלמין - English".
+ * מחזיר [שם הרמה, שפה] — או [הכותרת, null] כשזו לא עמודה לפלט.
+ */
+function list_col_lang(string $h): array
+{
+    static $words = ['en' => 'en|eng|english|אנגלית|אנגלי', 'fr' => 'fr|french|français|francais|צרפתית', 'ar' => 'ar|arabic|ערבית',
+        'ru' => 'ru|russian|רוסית', 'es' => 'es|spanish|español|espanol|ספרדית', 'de' => 'de|german|deutsch|גרמנית'];
+    foreach ($words as $lang => $w) {
+        if (preg_match('/^(.+?)[\s\-–—_\/|:,]*[\(\[]\s*(?:ב)?(?:' . $w . ')\s*[\)\]]$/iu', $h, $m)
+            || preg_match('/^(.+?)[\s\-–—_\/|:,]+(?:ב)?(?:' . $w . ')$/iu', $h, $m)) {
+            $base = trim($m[1]);
+            if ($base !== '') return [$base, $lang];
+        }
+    }
+    return [$h, null];
 }
