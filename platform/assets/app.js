@@ -238,7 +238,11 @@ function openMenu(btn, user) {
             : menuItem('⚙️', 'ניהול', null, { href: '#admin', count: me.pending || 0 }));
     }
     items.push(menuItem('🔑', 'החלפת סיסמה', () => showPassword(false)));
-    if (!isStandalone()) items.push(menuItem('📲', 'התקנה במכשיר', openInstallSheet));
+    if (!isStandalone()) {
+        items.push(isInstalled()
+            ? menuItem('✓', 'מותקן במכשיר', openInstallSheet)
+            : menuItem('📲', 'התקנה במכשיר', openInstallSheet));
+    }
     if (canDownload()) items.push(menuItem('⬇️', 'הורדה לשימוש בלי רשת', downloadFamily));
     items.push(el('div', { className: 'menu-sep' }), menuItem('↩', 'יציאה', logout, { cls: 'danger' }));
 
@@ -260,8 +264,8 @@ async function logout() {
 function showUserbar(user) {
     if (!user) { userbar.replaceChildren(); return; }
     const actions = [];
-    // "התקנה" גלוי תמיד, חוץ מכשכבר פתוחים מתוך האפליקציה המותקנת.
-    if (!isStandalone()) {
+    // "התקנה" גלוי עד שהאפליקציה מותקנת במכשיר. אחרי זה — רק בתפריט ("✓ מותקן במכשיר").
+    if (!isInstalled()) {
         const b = el('button', { type: 'button', className: 'install-btn' }, [
             el('span', { textContent: '📲', ariaHidden: 'true' }), el('span', { className: 'lbl', textContent: 'התקנה' }),
         ]);
@@ -391,11 +395,13 @@ if ('serviceWorker' in navigator) {
 window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     installPrompt = e;
+    markInstalled(false); // הדפדפן מציע להתקין — סימן שהאפליקציה לא מותקנת (או שהוסרה)
     if (me?.user) showUserbar(me.user);
 });
 
 window.addEventListener('appinstalled', () => {
     installPrompt = null;
+    markInstalled(true);
     document.querySelector('dialog.install')?.close();
     document.querySelector('.install-banner')?.remove();
     toast('✓ הותקן — האייקון נמצא במסך הבית');
@@ -418,6 +424,33 @@ const UA = navigator.userAgent;
 const isIOS = () => /iPhone|iPad|iPod/.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const isAndroid = () => /Android/.test(UA);
 const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+
+// ---------- האם מותקן במכשיר הזה ----------
+// דף שנפתח בדפדפן לא יודע לבד שהאפליקציה מותקנת. שלושה סימנים, מהחזק לחלש:
+//   1. נפתחנו מתוך האפליקציה המותקנת (standalone) — רושמים במכשיר. האחסון משותף לאפליקציה
+//      ולדפדפן (אותו אתר, אותו דפדפן), כך שמעכשיו גם הלשונית בדפדפן יודעת.
+//   2. appinstalled — ההתקנה קרתה עכשיו.
+//   3. כרום באנדרואיד: getInstalledRelatedApps, לפי related_applications ב-manifest.
+// וההפך: beforeinstallprompt אומר שהאפליקציה לא מותקנת (או שהוסרה) — מוחקים את הסימון.
+const INSTALLED_KEY = 'platform:installed';
+let installedFlag = false;
+try { installedFlag = localStorage.getItem(INSTALLED_KEY) === '1'; } catch { /* מצב פרטי */ }
+
+function markInstalled(yes) {
+    if (installedFlag === yes) return;
+    installedFlag = yes;
+    try { yes ? localStorage.setItem(INSTALLED_KEY, '1') : localStorage.removeItem(INSTALLED_KEY); } catch { /* */ }
+    if (yes) document.querySelector('.install-banner')?.remove();
+    if (me?.user) showUserbar(me.user);
+}
+const isInstalled = () => isStandalone() || installedFlag;
+
+if (isStandalone()) markInstalled(true);
+if ('getInstalledRelatedApps' in navigator) {
+    navigator.getInstalledRelatedApps()
+        .then(apps => { if (apps.some(a => a.platform === 'webapp')) markInstalled(true); })
+        .catch(() => {});
+}
 
 const SHARE_ICON = 'M12 3l-4 4h3v7h2V7h3l-4-4zM6 10v10h12V10h-3v2h1v6H8v-6h1v-2H6z';
 function shareIcon() {
@@ -464,6 +497,11 @@ function openInstallSheet() {
     closeMenu();
     const close = el('button', { type: 'button', className: 'icon-btn', textContent: '✕', ariaLabel: 'סגירה' });
     const body = [];
+    if (isInstalled() && !installPrompt) {
+        body.push(el('p', { className: 'note ok', textContent:
+            '✓ האפליקציה כבר מותקנת במכשיר הזה — פותחים אותה מהאייקון במסך הבית. ' +
+            'אם הסרתם אותה, כך מתקינים שוב:' }));
+    }
     if (installPrompt) {
         const go = el('button', { type: 'button', className: 'btn primary big', textContent: '📲 התקנה עכשיו' });
         go.addEventListener('click', installFamily);
@@ -495,7 +533,7 @@ function openInstallSheet() {
 // פס הזמנה להתקנה בראש דף האפליקציות — עד שמתקינים או סוגרים אותו.
 const BANNER_KEY = 'platform:install-banner';
 function installBanner() {
-    if (isStandalone()) return null;
+    if (isInstalled()) return null;
     try { if (localStorage.getItem(BANNER_KEY) === 'no') return null; } catch { /* מצב פרטי */ }
     const go = el('button', { type: 'button', className: 'btn primary sm', textContent: 'התקנה' });
     go.addEventListener('click', openInstallSheet);
