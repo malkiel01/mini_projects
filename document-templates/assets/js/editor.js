@@ -866,11 +866,16 @@
         const colSel = (key, label) => {
           const s = el('select', { 'aria-label': label, disabled: readOnly },
             ['', ...langs].map(k => el('option', { value: k, selected: (o.list[key] || '') === k }, colName(k))));
-          s.addEventListener('change', () => { if (s.value) o.list[key] = s.value; else delete o.list[key]; setDirty(true); draw_(); });
+          s.addEventListener('change', () => {
+            if (s.value) o.list[key] = s.value; else delete o.list[key];
+            // הממלא רואה עמודה אחרת — רק בבחירה מרשימה (בשדה טקסט הוא כותב חופשי): השדה הופך לבחירה
+            const toSelect = key === 'show' && s.value && o.type === 'text';
+            if (toSelect) { o.type = 'select'; window.DT.toast('השדה הפך ל"בחירה מרשימה" — כדי שהממלא יבחר מתוך ' + colName(s.value)); }
+            setDirty(true); draw_(); if (toSelect && after) after();
+          });
           return s;
         };
-        const canShow = o.type === 'select';   // בשדה טקסט הממלא כותב — מה שכתב נשמר
-        const shown = cur ? colName(canShow ? o.list.show : '') : '';
+        const shown = cur ? colName(o.list.show) : '';
         const written = cur ? colName(o.list.lang) : '';
         const fix = cur && cur.misplaced && cur.misplaced.length ? el('div', { class: 'notice warn' },
           el('p', {}, `ברשימה "${cur.name}", ${cur.misplaced.join(', ')} נקלטו כרמות נפרדות — אבל הן העמודות באנגלית של הרמות שלידן.`),
@@ -891,9 +896,11 @@
           lv ? el('label', { class: 'f' }, el('span', {}, 'רמה'), lv) : el('span')),
           fix,
           cur && langs.length ? el('div', { class: 'fields two' },
-            canShow ? el('label', { class: 'f' }, el('span', {}, '👤 הממלא רואה ובוחר'), colSel('show', 'הממלא רואה ובוחר')) : null,
+            el('label', { class: 'f' }, el('span', {}, '👤 הממלא רואה ובוחר'), colSel('show', 'הממלא רואה ובוחר')),
             el('label', { class: 'f' }, el('span', {}, '📄 נכתב במסמך'), colSel('lang', 'נכתב במסמך'))) : null,
           cur ? el('p', { class: 'list-io' }, el('span', {}, '👤 בטופס: ', el('b', {}, shown)), el('span', {}, '📄 במסמך: ', el('b', {}, written))) : null,
+          cur && o.type === 'text' ? el('p', { class: 'hint' }, 'זה שדה טקסט: הממלא כותב חופשי, עם הצעות מ"' + colName('') + '". ' +
+            'כדי שיבחר מתוך עמודה אחרת (למשל ' + (langs.length ? colName(langs[0]) : 'באנגלית') + ') — בוחרים אותה ב"👤 הממלא רואה ובוחר", והשדה הופך לבחירה מרשימה.') : null,
           cur && !langs.length && !fix ? el('p', { class: 'hint' }, `ברשימה "${cur.name}" יש עמודה אחת לכל רמה — הממלא רואה, והמסמך מקבל, את אותו ערך. ` +
             'לטופס בעברית ומסמך באנגלית: מייבאים לרשימה קובץ עם עמודה באנגלית ליד כל עמודה בעברית ("בית עלמין, Cemetery, גוש, Block…").') : null,
           !ls.length ? el('p', { class: 'hint' }, 'עוד אין רשימות. יוצרים ב"🔌 חיבורים" ← "📚 רשימות" — ידנית או מקובץ Excel.') : null,
