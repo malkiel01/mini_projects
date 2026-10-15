@@ -54,6 +54,11 @@
         : el('p', { class: 'empty' }, 'עוד אין רשימות. "+ רשימה" — כותבים, או מייבאים מקובץ Excel.'));
   }
 
+  /** מה זוהה כעמודה לפלט (במסמך במקום הערך שנבחר) — או שלא זוהתה אף אחת. */
+  const outText = (r) => (r.outputs || []).length
+    ? ' עמודות למסמך: ' + r.outputs.map(o => `${o.column} ← ${o.level}`).join(', ') + '.'
+    : ' לא נמצאה עמודה באנגלית — אם יש בקובץ, שלחו את שורת הכותרת.';
+
   /** עריכת רשימה: שם, רמות, שורות (טבלה עם חיפוש), וייבוא מ-Excel / CSV. */
   async function listSheet(l, after) {
     const { api, el, notice, sheet } = window.DT;
@@ -152,7 +157,7 @@
         if (r.translations && Object.keys(r.translations).length) data.translations = r.translations;
         drawTr();
         if (!name.value) name.value = file.files[0].name.replace(/\.[^.]+$/, '');
-        msg.replaceChildren(notice(`יובאו ${r.rows.length} שורות, ברמות: ${r.levels.join(' › ')}. בדקו ושמרו.`, 'ok'));
+        msg.replaceChildren(notice(`יובאו ${r.rows.length} שורות, ברמות: ${r.levels.join(' › ')}.` + outText(r) + ' בדקו ושמרו.', 'ok'));
         drawGrid();
       } catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
       file.value = '';
@@ -178,7 +183,7 @@
           r = await api('list_import', fd);
         }
         dlg.close(); after();
-        window.DT.toast(`נשמר: ${r.list.name} · ${r.count.toLocaleString('he-IL')} שורות · ${r.levels.join(' › ')}` + (r.translated.length ? ' · 🌐 ' + r.translated.join(', ') : ''));
+        window.DT.toast(`נשמר: ${r.list.name} · ${r.count.toLocaleString('he-IL')} שורות · ${r.levels.join(' › ')}.` + outText(r));
       } catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
     }
     const save = el('button', { type: 'button', class: 'primary small', onclick: async () => {

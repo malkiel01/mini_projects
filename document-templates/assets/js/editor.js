@@ -862,14 +862,15 @@
         const colName = (k) => (cur.names && cur.names[o.list.level] && cur.names[o.list.level][k]) || LANG_NAMES[k] || k;
         const lang = cur ? el('select', { 'aria-label': 'שפה בפלט', disabled: readOnly },
           el('option', { value: '' }, `${cur.levels[o.list.level] || 'הערך'} — כמו שנבחר`),
-          langs.map(k => el('option', { value: k, selected: o.list.lang === k }, colName(k) + (colName(k) !== LANG_NAMES[k] ? ` (${k})` : '')))) : null;
+          langs.map(k => el('option', { value: k, selected: o.list.lang === k }, colName(k)))) : null;
         if (lang) lang.addEventListener('change', () => { if (lang.value) o.list.lang = lang.value; else delete o.list.lang; setDirty(true); });
         box.replaceChildren(...[el('div', { class: 'fields two' },
           el('label', { class: 'f' }, el('span', {}, '📚 ערכים מרשימה'), sel),
           lv ? el('label', { class: 'f' }, el('span', {}, 'רמה'), lv) : el('span')),
-          lang ? el('label', { class: 'f' }, el('span', {}, '📄 עמודה שנכתבת במסמך'), lang) : null,
+          lang && langs.length ? el('label', { class: 'f' }, el('span', {}, '📄 עמודה שנכתבת במסמך'), lang) : null,
           lang && langs.length ? el('p', { class: 'hint' }, 'בטופס בוחרים מהעמודה בעברית; במסמך שיוצא נכתבת העמודה שנבחרה כאן.') : null,
-          cur && !langs.length ? el('p', { class: 'hint' }, 'להדפסה באנגלית: עמודה באנגלית ליד כל עמודה בעברית בקובץ (למשל "בית עלמין, Cemetery, גוש, Block…") — או "🌐 תרגומים" בעריכת הרשימה.') : null,
+          cur && !langs.length ? el('p', { class: 'hint' }, `ברשימה "${cur.name}" אין עמודה באנגלית — לכן במסמך ייכתב הערך בעברית. ` +
+            'כדי שייכתב באנגלית: מייבאים לרשימה קובץ שיש בו עמודה באנגלית ליד כל עמודה בעברית (למשל "בית עלמין, Cemetery, גוש, Block…").') : null,
           !ls.length ? el('p', { class: 'hint' }, 'עוד אין רשימות. יוצרים ב"🔌 חיבורים" ← "📚 רשימות" — ידנית או מקובץ Excel.') : null,
           cur && cur.levels.length > 1 ? el('p', { class: 'hint' }, `רשימה מקוננת (${cur.levels.join(' › ')}): שדות ועמודות מאותה רשימה ברמות שמעל מסננים את האפשרויות כאן.`) : null].filter(Boolean));
       };
