@@ -138,12 +138,24 @@ function docx_package(string $bytes): ?array
 /** קובץ שיוצא (.dt.json) ← תבנית חדשה אצל המשתמש. $post['name'] — שם אחר (לא חובה). */
 function tpl_import(array $user, array $post, array $files): array
 {
-    $f = $files['file'] ?? null;
-    if (!$f || ($f['error'] ?? 1) !== 0) throw new ApiError('לא התקבל קובץ', 422);
-    if ($f['size'] > PORT_MAX_MB * 1024 * 1024) throw new ApiError('הקובץ גדול מדי', 413);
+    $f = port_upload($files['file'] ?? null);
     $p = json_decode((string)file_get_contents($f['tmp_name']), true);
     if (!is_array($p) || ($p['format'] ?? '') !== PORT_FORMAT) throw new ApiError('זה לא קובץ תבנית שיוצא מהמערכת (.dt.json)', 415);
-    return tpl_import_package($user, $p, trim((string)($post['name'] ?? '')));
+    // PDF שנושא את ההגדרות: הדפדפן שולח את ה-PDF עצמו בנפרד (asset) — בלי לנפח אותו ב-base64
+    $asset = isset($files['asset']) ? (string)file_get_contents(port_upload($files['asset'])['tmp_name']) : null;
+    return tpl_import_package($user, $p, trim((string)($post['name'] ?? '')), $asset);
+}
+
+/** קובץ שהועלה — או הודעה שאומרת מה קרה (גדול מדי לשרת, לא הגיע). */
+function port_upload(?array $f): array
+{
+    if (!$f || ($f['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) throw new ApiError('לא התקבל קובץ', 422);
+    if (in_array($f['error'], [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true)) {
+        throw new ApiError('הקובץ גדול מהמותר בשרת (' . ini_get('upload_max_filesize') . ')', 413);
+    }
+    if ($f['error'] !== UPLOAD_ERR_OK) throw new ApiError('ההעלאה נכשלה', 400);
+    if ($f['size'] > PORT_MAX_MB * 1024 * 1024) throw new ApiError('הקובץ גדול מדי', 413);
+    return $f;
 }
 
 /**
@@ -183,11 +195,18 @@ function tpl_import_package(array $user, array $p, string $name = '', ?string $a
         $mine[$ln] = $new;
         $ids[$l['name']] = $new['id'];
     }
-    $bind = function (array $o) use ($ids): array {
-        if (isset($o['list']['name'])) {
-            if (isset($ids[$o['list']['name']])) $o['list'] = ['id' => $ids[$o['list']['name']], 'level' => (int)($o['list']['level'] ?? 0)];
-            else unset($o['list']);
-        } elseif (isset($o['list'])) unset($o['list']);   // מזהה של משתמש אחר — לא שייך כאן
+    // רשימה לפי שם: מהקובץ, או רשימה שכבר קיימת אצל המייבא בשם הזה (ורמה שקיימת בה).
+    // אין כזו — בלי רשימה; ובחירה בלי רשימה ובלי אפשרויות — טקסט חופשי, לא בחירה ריקה
+    $bind = function (array $o) use ($ids, $mine): array {
+        $ref = $o['list'] ?? null;
+        unset($o['list']);
+        if (isset($ref['name'])) {
+            $level = (int)($ref['level'] ?? 0);
+            $id = $ids[$ref['name']] ?? null;
+            if (!$id && isset($mine[$ref['name']]) && $level < count($mine[$ref['name']]['levels'])) $id = $mine[$ref['name']]['id'];
+            if ($id) { $o['list'] = ['id' => $id, 'level' => $level]; return $o; }
+        }
+        if (($o['type'] ?? '') === 'select' && !($o['options'] ?? [])) $o['type'] = 'text';
         return $o;
     };
 
