@@ -301,17 +301,17 @@ check('עם העוגייה — המנהל מזוהה', (int) (currentAdmin()['id
 check('במסד נשמר רק ה-hash',
       one('SELECT 1 x FROM admin_sessions WHERE token_hash = ?', [$tok]), null);
 check('יש אסימון CSRF', strlen(csrfToken()), 32);
-$GLOBALS['GB_ADMIN_SESSION'] = null;
+forgetSessions();
 $_COOKIE[ADMIN_COOKIE] = str_repeat('a', 64);
 check('עוגייה מזויפת — אין מנהל', currentAdmin(), null);
-$_COOKIE[ADMIN_COOKIE] = $tok; $GLOBALS['GB_ADMIN_SESSION'] = null;
+$_COOKIE[ADMIN_COOKIE] = $tok; forgetSessions();
 q('UPDATE admin_sessions SET expires_at = ? WHERE user_id = ?', ['2000-01-01T00:00:00Z', $adminId]);
 check('session שפג — אין מנהל', currentAdmin(), null);
 q('UPDATE admin_sessions SET expires_at = ? WHERE user_id = ?', ['2999-01-01T00:00:00Z', $adminId]);
-$GLOBALS['GB_ADMIN_SESSION'] = null;
+forgetSessions();
 q('UPDATE users SET status = ? WHERE id = ?', ['suspended', $adminId]);
 check('מנהל מושעה — אין מנהל', currentAdmin(), null);
-$GLOBALS['GB_ADMIN_SESSION'] = null;
+forgetSessions();
 endAdminSession();
 check('יציאה מוחקת את ה-session',
       (int) one('SELECT COUNT(*) n FROM admin_sessions WHERE user_id = ?', [$adminId])['n'], 0);

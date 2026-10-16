@@ -93,6 +93,57 @@ function migrate(PDO $pdo): void {
         $pdo->exec("UPDATE policies SET mode = 'browser' WHERE mode IN ('free', 'allowlist')");
         $pdo->exec("ALTER TABLE policies ADD COLUMN migrated_posture INTEGER NOT NULL DEFAULT 1");
     }
+
+    if (!in_array('kind', $columns('admin_sessions'), true)) {
+        $pdo->exec("ALTER TABLE admin_sessions ADD COLUMN kind TEXT NOT NULL DEFAULT 'admin'");
+    }
+
+    if (!in_array('account_id', $columns('users'), true)) {
+        $pdo->exec("ALTER TABLE users ADD COLUMN account_id INTEGER NOT NULL DEFAULT 0");
+        $pdo->exec("CREATE INDEX IF NOT EXISTS idx_users_account ON users(account_id)");
+    }
+    migrateToAccounts($pdo);
+}
+
+/**
+ * המעבר לרב-דיירות (שלב 2), פעם אחת ובלי לאבד דבר.
+ *
+ * כל המשתמשים של היום הופכים לילדים בחשבון אחד — "החשבון הראשי" — עם
+ * המדיניות שלהם כמו שהיא. כל מנהל קיים הופך גם למפתח (קונסולה) וגם
+ * להורה בחשבון הזה, עם אותה סיסמה: אף אחד לא ננעל בחוץ ביום המעבר.
+ *
+ * רץ רק כשאין עדיין אף חשבון. משתמש חדש שנרשם מהאפליקציה בלי חשבון
+ * (account_id=0) משויך לחשבון הראשון — עד שהצימוד (שלב 4) יחליף את ההרשמה.
+ */
+function migrateToAccounts(PDO $pdo): void {
+    $hasAccounts = (int) $pdo->query('SELECT COUNT(*) FROM accounts')->fetchColumn() > 0;
+    $hasUsers    = (int) $pdo->query('SELECT COUNT(*) FROM users')->fetchColumn() > 0;
+
+    if (!$hasAccounts && $hasUsers) {
+        $now = nowIso();
+        $pdo->beginTransaction();
+        $st = $pdo->prepare("INSERT INTO accounts (name, status, level_max, modules, max_children,
+                             max_devices, created_at, approved_at)
+                             VALUES (?, 'active', 'browser', ?, 0, 0, ?, ?)");
+        $st->execute(['החשבון הראשי', implode(',', ACCOUNT_MODULES), $now, $now]);
+        $accountId = (int) $pdo->lastInsertId();
+
+        $admins = $pdo->query("SELECT * FROM users WHERE is_admin = 1 AND status = 'active'")->fetchAll();
+        foreach ($admins as $a) {
+            $pdo->prepare('INSERT OR IGNORE INTO developers (username, name, password_hash, created_at)
+                           VALUES (?, ?, ?, ?)')
+                ->execute([$a['username'], $a['display_name'], $a['password_hash'], $now]);
+            $pdo->prepare('INSERT OR IGNORE INTO parents (account_id, login, name, password_hash, created_at)
+                           VALUES (?, ?, ?, ?, ?)')
+                ->execute([$accountId, $a['username'], $a['display_name'], $a['password_hash'], $now]);
+        }
+        $pdo->commit();
+    }
+
+    $first = (int) $pdo->query('SELECT MIN(id) FROM accounts')->fetchColumn();
+    if ($first > 0) {
+        $pdo->prepare('UPDATE users SET account_id = ? WHERE account_id = 0')->execute([$first]);
+    }
 }
 
 /**
