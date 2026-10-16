@@ -140,7 +140,7 @@ function app_public(array $a): array
     return [
         'id' => $a['id'], 'name' => $a['name'], 'icon' => $a['icon'],
         'description' => $a['description'], 'category' => $a['category'],
-        'href' => $a['href'], 'links' => $a['links'],
+        'href' => $a['href'], 'links' => $a['links'], 'external' => $a['external'],
         // מה שהמנהל לא אישר — לא נשלח לדפדפן בכלל. "הורדת המשפחה" אינה התקנה
         // של אפליקציה נפרדת, ולכן offline לא תלוי באישור.
         'install' => [

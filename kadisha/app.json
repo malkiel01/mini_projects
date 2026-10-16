@@ -1,0 +1,17 @@
+{
+  "id": "kadisha",
+  "name": "ניהול חברה קדישא",
+  "icon": "🕯️",
+  "description": "מערכת ניהול לחברה קדישא — אתר לכניסה מהדפדפן, ואפליקציית אנדרואיד להתקנה ישירה (APK)",
+  "category": "dev",
+  "restricted": true,
+  "entry": "https://kadisha.mbe-plus.com/",
+  "links": [
+    { "label": "🌐 כניסה למערכת", "href": "https://kadisha.mbe-plus.com/" },
+    { "label": "📱 דף ההורדה לאנדרואיד", "href": "https://kadisha.mbe-plus.com/app" }
+  ],
+  "install": {
+    "pwa": false,
+    "apk": "https://kadisha.mbe-plus.com/downloads/kadisha.apk"
+  }
+}
