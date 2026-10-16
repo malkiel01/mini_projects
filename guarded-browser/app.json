@@ -6,6 +6,10 @@
   "category": "web",
   "links": [
     {
+      "label": "📲 אפליקציית הורים",
+      "href": "parent/"
+    },
+    {
       "label": "🛠️ כניסת מנהל מערכת",
       "href": "dev/"
     },
@@ -16,7 +20,9 @@
   ],
   "gate": true,
   "public": [
-    "api/index.php?do=register|login|policy|check|trace|heartbeat|ping"
+    "api/index.php?do=register|login|policy|check|trace|heartbeat|ping",
+    "parent/**",
+    "assets/**"
   ],
   "install": {
     "apk": "https://github.com/malkiel01/mini_projects/releases/download/guarded-browser-apk/migdalor.apk"
