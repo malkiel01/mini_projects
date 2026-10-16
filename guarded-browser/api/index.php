@@ -2,7 +2,7 @@
 /**
  * נקודת הקצה היחידה של האפליקציה.
  *
- * ‏?do=register | login | policy | check | heartbeat
+ * ‏?do=register | login | policy | check | heartbeat | ping
  *
  * ריכוז בקובץ אחד ולא חמישה: כל הבקשות חולקות אימות, טיפול בשגיאות
  * ופורמט תשובה, והפיצול היה מייצר חמישה עותקים של אותה חמישייה.
@@ -123,6 +123,9 @@ function policyPayload(array $user): array {
         // חסימה שמחכה לשרת היא פרסומת שכבר ירדה.
         'ad_hosts'       => adHosts(),
         'ad_css'         => adCssSelectors(),
+        // כתובת השרת הקבועה (data/config.json). האפליקציה עוברת אליה רק
+        // אחרי שבדקה ב-ping שהיא באמת עונה — כתובת שגויה לא תנתק מכשירים.
+        'server_url'     => serverUrl(),
         'categories'     => $set['categories'],
         'domain_map'     => $slim,
         'platforms'      => array_map(fn($p) => [
@@ -172,6 +175,13 @@ function tilesFor(array $set): array {
 
 try {
     $do = $_GET['do'] ?? '';
+
+    /* ── בדיקת חיים ────────────────────────────────────────────────
+     * לפני מעבר לכתובת שרת חדשה האפליקציה שואלת אותה: "אתה מגדלור?"
+     */
+    if ($do === 'ping') {
+        out(['ok' => true, 'app' => 'migdalor']);
+    }
 
     /* ── הרשמה עצמית ──────────────────────────────────────────────
      * נוצר חשבון pending בלבד. אין אסימון ואין גישה עד שהמנהל מאשר.
@@ -323,7 +333,8 @@ try {
         $quota = (int) $policy['daily_quota_min'];
         out(['ok' => true, 'allowed' => $d['allow'], 'code' => $d['code'], 'reason' => $d['reason'],
              'used_today_sec' => $used,
-             'quota_left_sec' => $quota > 0 ? max(0, $quota * 60 - $used) : -1]);
+             'quota_left_sec' => $quota > 0 ? max(0, $quota * 60 - $used) : -1,
+             'server_url' => serverUrl()]);
     }
 
     bad('פעולה לא מוכרת', 'unknown_action', 404);

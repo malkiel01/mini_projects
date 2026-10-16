@@ -19,12 +19,63 @@ object Api {
 
     class Result(val ok: Boolean, val json: JSONObject?, val error: String)
 
+    private var store: Store? = null
+    @Volatile private var root: String = BuildConfig.API_BASE
+    @Volatile private var moving = ""
+
+    /** נקרא פעם אחת מ-GuardApp: הכתובת השמורה גוברת על זו שנצרבה בבנייה. */
+    fun init(s: Store) {
+        store = s
+        val saved = s.apiBase
+        if (isHttps(saved)) root = saved
+    }
+
     /** הכתובת שאליה פנינו — כדי שכשל יצביע על היעד ולא רק על עצמו. */
     private fun hostOf(): String =
-        try { java.net.URI(BuildConfig.API_BASE).host ?: BuildConfig.API_BASE }
-        catch (e: Exception) { BuildConfig.API_BASE }
+        try { java.net.URI(root).host ?: root }
+        catch (e: Exception) { root }
 
-    private fun base() = BuildConfig.API_BASE.trimEnd('/') + "/api/index.php?do="
+    private fun base() = endpoint(root)
+
+    private fun endpoint(r: String) = r.trimEnd('/') + "/api/index.php?do="
+
+    private fun isHttps(u: String) =
+        u.startsWith("https://") && (try { java.net.URI(u).host } catch (e: Exception) { null }) != null
+
+    /**
+     * השרת הודיע על כתובת קבועה חדשה (server_url).
+     *
+     * לא עוברים בעיוורון: קודם שואלים את הכתובת החדשה ב-ping אם היא
+     * באמת מגדלור. כתובת שגויה בהגדרות השרת הייתה אחרת מנתקת כל
+     * מכשיר בבת אחת — ומכשיר נעול אי אפשר לתקן מרחוק.
+     */
+    private fun maybeMove(next: String) {
+        val target = next.trimEnd('/') + "/"
+        if (!isHttps(target) || target == root.trimEnd('/') + "/" || target == moving) return
+        moving = target
+        pool.execute {
+            var conn: HttpURLConnection? = null
+            val ok = try {
+                conn = (URL(endpoint(target) + "ping").openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 10_000
+                    readTimeout = 10_000
+                    setRequestProperty("Accept", "application/json")
+                }
+                val text = conn.inputStream.bufferedReader(Charsets.UTF_8).use(BufferedReader::readText)
+                val j = JSONObject(text)
+                j.optBoolean("ok") && j.optString("app") == "migdalor"
+            } catch (e: Exception) { false } finally { conn?.disconnect() }
+
+            if (ok) {
+                Trace.log("api.move", root + " -> " + target)
+                root = target
+                store?.apiBase = target
+            } else {
+                Trace.log("api.move.fail", target)
+            }
+            moving = ""
+        }
+    }
 
     /**
      * ‏POST עם JSON. token ריק = בקשה לא מזוהה (הרשמה, כניסה).
@@ -59,7 +110,11 @@ object Api {
                         Trace.log("api.badjson", action + " HTTP " + code + ", " + text.length + "b")
                         Result(false, null, "תשובה לא תקינה מהשרת (HTTP " + code + ")")
                     }
-                    json.optBoolean("ok") -> Result(true, json, "")
+                    json.optBoolean("ok") -> {
+                        val next = json.optString("server_url")
+                        if (next.isNotEmpty()) maybeMove(next)
+                        Result(true, json, "")
+                    }
                     else -> Result(false, json, json.optString("error", "הבקשה נדחתה"))
                 }
             } catch (e: Exception) {

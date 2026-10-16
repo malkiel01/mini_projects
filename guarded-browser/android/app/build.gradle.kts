@@ -1,7 +1,12 @@
+// מספר הגרסה (-PversionCode) והחתימה (-PkeystoreFile, -PkeystorePassword) מגיעים מה-workflow
+// (.github/workflows/android.yml). בלי חתימה — APK בחתימת debug, לבדיקה בלבד.
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
+
+val ksFile = findProperty("keystoreFile") as String?
+val buildNo = (findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
 
 android {
     namespace = "com.mbeplus.guardedbrowser"
@@ -11,8 +16,9 @@ android {
         applicationId = "com.mbeplus.guardedbrowser"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        // עולה בכל בנייה (מספר ההרצה ב-Actions) — אחרת אנדרואיד מסרב לעדכן.
+        versionCode = buildNo
+        versionName = "1.$buildNo"
 
         // כתובת השרת נקבעת בזמן בנייה. שינוי דומיין אינו דורש נגיעה בקוד.
         buildConfigField("String", "API_BASE",
@@ -24,9 +30,25 @@ android {
         viewBinding = true
     }
 
+    /*
+     * חתימה קבועה: עדכון מותקן מעל הגרסה הקודמת רק אם החתימה זהה.
+     * חתימת debug נוצרת מחדש בכל מכונת בנייה — ולכן כל APK היה "אפליקציה
+     * אחרת" שדורשת הסרה. המפתח עצמו — מוצפן בריפו, ראו android.yml.
+     */
+    signingConfigs {
+        if (ksFile != null) create("release") {
+            storeFile = file(ksFile)
+            storePassword = findProperty("keystorePassword") as String
+            keyAlias = "mg"
+            keyPassword = findProperty("keystorePassword") as String
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = if (ksFile != null) signingConfigs.getByName("release")
+                            else signingConfigs.getByName("debug")
         }
     }
 

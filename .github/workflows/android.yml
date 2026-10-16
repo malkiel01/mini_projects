@@ -1,15 +1,28 @@
 name: Build Android APK
 
-# בונה את האפליקציה ומעלה אותה כ-artifact.
+# אפליקציית הילד של מגדלור (guarded-browser/android). SPEC: guarded-browser/SPEC.md.
 #
 # הבנייה כאן ולא מקומית מפני שסביבת הפיתוח חסומה לרשת חיצונית,
 # ו-Gradle חייב להוריד את ה-SDK ואת התלויות.
 #
-# ה-APK יוצא חתום בחתימת debug: מספיק להתקנה ידנית (sideload) בטלפון,
-# ולא מספיק לחנות. חתימת release דורשת keystore שאין להחזיק בריפו.
+# חתימה קבועה — כדי שהעדכונים יותקנו מעל הגרסה הקודמת (חתימת debug משתנה בכל בנייה, ואז אנדרואיד
+# מסרב לעדכן). המפתח נוצר בבנייה הראשונה מ-main, מוצפן (AES-256) ונשמר בריפו:
+# guarded-browser/android/keystore/release.jks.enc. סיסמת ההצפנה נגזרת מהסוד DEPLOY_SSH_KEY שכבר קיים
+# (לא נדרש סוד חדש), ואינה מודפסת. מוצפן — חסר ערך בלי הסוד. זו אותה שיטה כמו ב-project-manager-apk.yml.
+# המפתח חייב להישאר סודי: מי שמחזיק בו יכול לבנות "עדכון" שמותקן מעל מגדלור במכשיר של ילד.
+# אם DEPLOY_SSH_KEY הוחלף — הפענוח נכשל והבנייה עוצרת. אז: למחוק את release.jks.enc, ובנייה חדשה
+# תיצור מפתח חדש; בכל מכשיר צריך להסיר את האפליקציה פעם אחת ולהתקין מחדש.
+#
+# בנייה מ-PR — רק בדיקות ובדיקה שהקוד נבנה (חתימת debug, artifact). רק מ-main — Release עם קישור קבוע:
+# https://github.com/malkiel01/mini_projects/releases/download/guarded-browser-apk/migdalor.apk
 
 on:
   push:
+    branches: [main]
+    paths:
+      - 'guarded-browser/android/**'
+      - '.github/workflows/android.yml'
+  pull_request:
     paths:
       - 'guarded-browser/android/**'
       - '.github/workflows/android.yml'
@@ -20,6 +33,10 @@ on:
         required: false
         default: 'https://mbe-plus.com/mini_projects/guarded-browser/'
 
+concurrency:
+  group: guarded-browser-apk-${{ github.ref }}
+  cancel-in-progress: false
+
 defaults:
   run:
     working-directory: guarded-browser/android
@@ -27,9 +44,8 @@ defaults:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # נדרש כדי לפרסם את ה-APK כ-Release (ראו השלב האחרון).
     permissions:
-      contents: write
+      contents: write   # המפתח המוצפן (בבנייה הראשונה) ו-Release
     steps:
       - uses: actions/checkout@v4
 
@@ -39,8 +55,7 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # ‏אותה סיבה כמו ב-greeting-cards-apk.yml: החבילה 'tools'
-      # שבברירת המחדל הוסרה ממאגר ה-SDK ומפילה את השלב.
+      # ‏packages במפורש: ברירת המחדל מתקינה גם את 'tools', שהוסרה ממאגר ה-SDK ומפילה את השלב.
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
@@ -48,42 +63,72 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
-
-      # הריפו אינו מכיל gradle-wrapper.jar (בינארי), ולכן ה-wrapper
-      # נוצר כאן מהגרסה שב-gradle-wrapper.properties.
-      - name: Generate the Gradle wrapper
-        run: gradle wrapper --gradle-version 8.7
+        with:
+          gradle-version: '8.7'
 
       # הבדיקות רצות לפני הבנייה: מנוע האכיפה המקומי חייב להכריע
       # בדיוק כמו זה שבשרת, ורגרסיה כאן שקולה לפרצה.
       - name: Unit tests (local policy engine)
-        run: ./gradlew test --no-daemon
+        run: gradle test --no-daemon
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon
-             -PapiBase="${{ github.event.inputs.apiBase || 'https://mbe-plus.com/mini_projects/guarded-browser/' }}"
+      - name: Signing key (main only)
+        id: key
+        if: github.ref == 'refs/heads/main'
+        env:
+          SEED: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SEED:-}" ]; then echo "::warning::אין DEPLOY_SSH_KEY — APK בחתימת debug"; exit 0; fi
+          export PASS=$(printf 'migdalor-android:%s' "$SEED" | sha256sum | cut -c1-48)
+          echo "::add-mask::$PASS"
+          mkdir -p keystore
+          if [ -f keystore/release.jks.enc ]; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:PASS -in keystore/release.jks.enc -out "$RUNNER_TEMP/release.jks" \
+              || { echo "::error::פענוח המפתח נכשל — DEPLOY_SSH_KEY הוחלף? ראו את ההסבר בראש הקובץ"; exit 1; }
+          else
+            keytool -genkeypair -keystore "$RUNNER_TEMP/release.jks" -storetype PKCS12 -alias mg -keyalg RSA -keysize 4096 -validity 36500 \
+              -storepass "$PASS" -keypass "$PASS" -dname "CN=Migdalor, O=mbe-plus, C=IL"
+            openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:PASS -in "$RUNNER_TEMP/release.jks" -out keystore/release.jks.enc
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add keystore/release.jks.enc
+            git commit -m "מגדלור — אנדרואיד: מפתח החתימה (מוצפן)"
+            git pull --rebase origin main && git push origin HEAD:main
+          fi
+          echo "PASS=$PASS" >> "$GITHUB_ENV"
+          echo "signed=1" >> "$GITHUB_OUTPUT"
+        shell: bash
+
+      - name: Build APK
+        env:
+          API_BASE: ${{ github.event.inputs.apiBase || 'https://mbe-plus.com/mini_projects/guarded-browser/' }}
+        run: |
+          set -euo pipefail
+          ARGS="-PversionCode=${{ github.run_number }} -PapiBase=$API_BASE"
+          if [ "${{ steps.key.outputs.signed }}" = "1" ]; then ARGS="$ARGS -PkeystoreFile=$RUNNER_TEMP/release.jks -PkeystorePassword=$PASS"; fi
+          gradle assembleRelease --no-daemon $ARGS
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/migdalor.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: guarded-browser-apk
-          path: guarded-browser/android/app/build/outputs/apk/debug/*.apk
+          name: migdalor-apk
+          path: ${{ runner.temp }}/migdalor.apk
           if-no-files-found: error
 
-      # ‏Artifact של Actions אינו ניתן להורדה מהטלפון. ל-Release יש קישור הורדה
-      # ישיר — והוא הקישור שבכרטיס של הכלי בדף הראשי ("⬇️ הורדת APK", ב-app.json).
-      # התג נייח ומתעדכן בכל בנייה, כך שהקישור תמיד מצביע ל-APK האחרון. רק מ-main:
-      # בנייה מענף אחר לא מחליפה את מה שהמשתמשים מורידים.
+      # ‏Artifact של Actions אינו ניתן להורדה מהטלפון. ל-Release יש קישור הורדה ישיר — והוא הקישור
+      # שבכרטיס של הכלי בדף הראשי (install.apk ב-app.json). התג נייח ומתעדכן בכל בנייה, כך שהקישור
+      # תמיד מצביע ל-APK האחרון. רק מ-main ורק חתום: בנייה אחרת לא מחליפה את מה שמשתמשים מורידים.
       - name: Publish APK to a GitHub Release (mobile-friendly)
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && steps.key.outputs.signed == '1'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: guarded-browser-apk
-          name: דפדפן מנוהל — APK (debug)
+          name: מגדלור — אפליקציית הילד
           body: |
-            APK בחתימת debug להתקנה ידנית בטלפון (sideload).
-            מתעדכן אוטומטית בכל בנייה מ-main.
-          files: guarded-browser/android/app/build/outputs/apk/debug/*.apk
+            אפליקציית הילד של מגדלור, בחתימה קבועה — כל גרסה מותקנת מעל הקודמת.
+            מתעדכנת אוטומטית בכל בנייה מ-main. גרסה 1.${{ github.run_number }}.
+          files: ${{ runner.temp }}/migdalor.apk
           fail_on_unmatched_files: true
 
       - name: Upload test report on failure

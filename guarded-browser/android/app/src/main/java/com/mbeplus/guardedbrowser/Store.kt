@@ -35,7 +35,20 @@ class Store(context: Context) {
 
     val isLoggedIn: Boolean get() = token.isNotEmpty()
 
-    fun clear() = prefs.edit().clear().apply()
+    /**
+     * כתובת השרת שהשרת עצמו הורה לעבור אליה (server_url), או ריק —
+     * ואז הכתובת שנצרבה בבנייה. כך מעבר דומיין לא מחייב התקנה מחדש.
+     */
+    var apiBase: String
+        get() = prefs.getString("api_base", "") ?: ""
+        set(v) { prefs.edit().putString("api_base", v).apply() }
+
+    /** יציאה מהחשבון. כתובת השרת נשמרת — היא של המכשיר, לא של המשתמש. */
+    fun clear() {
+        val base = apiBase
+        prefs.edit().clear().apply()
+        if (base.isNotEmpty()) apiBase = base
+    }
 
     /*
      * המדיניות נשמרת כ-JSON גולמי כפי שהתקבלה.

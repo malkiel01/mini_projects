@@ -118,6 +118,32 @@ function seedCatalog(PDO $pdo): void {
 }
 
 /** עכשיו ב-UTC, בפורמט שממוין נכון כמחרוזת. */
+/**
+ * הגדרות שרת שאינן בגיט — data/config.json (מוחרג מהפריסה כמו המסד).
+ *
+ * ‏server_url: הכתובת שהאפליקציות צריכות לפנות אליה מעכשיו. כך מעבר
+ * לדומיין אחר לא מחייב התקנה מחדש במכשירים שכבר אצל אנשים.
+ */
+function serverConfig(): array {
+    static $cfg = null;
+    if ($cfg !== null) return $cfg;
+    $raw = @file_get_contents(dataDir() . '/config.json');
+    $data = $raw === false ? null : json_decode($raw, true);
+    return $cfg = is_array($data) ? $data : [];
+}
+
+/** הכתובת הקבועה של השרת, או '' כשלא הוגדרה. */
+function serverUrl(): string {
+    return cleanServerUrl((string) (serverConfig()['server_url'] ?? ''));
+}
+
+/** רק https עם שם שרת, תמיד עם / בסוף; כל דבר אחר — ''. */
+function cleanServerUrl(string $u): string {
+    $u = trim($u);
+    if (!preg_match('~^https://[a-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._/-]*)?$~i', $u)) return '';
+    return rtrim($u, '/') . '/';
+}
+
 function nowIso(): string {
     return (new DateTimeImmutable('now', new DateTimeZone('UTC')))->format('Y-m-d\TH:i:s\Z');
 }
