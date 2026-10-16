@@ -32,7 +32,84 @@ function doc_schema(array $d): array
     $s = json_decode((string)unseal($d['schema_enc']), true) ?: [];
     $s['roles'] ??= [['key' => 'owner', 'label' => 'אני (המנפיק)', 'auth' => 'none']];
     $s['sequential'] ??= false;
+    // שיתוף למילוי: מי ממלא כל שדה במסמך הזה — גובר על התבנית (doc_assign)
+    $a = !empty($d['assign_enc']) ? (json_decode((string)unseal($d['assign_enc']), true) ?: []) : [];
+    if ($a) {
+        if (!in_array('link', array_column($s['roles'], 'key'), true)) {
+            $s['roles'][] = ['key' => 'link', 'label' => (string)($a['label'] ?? 'לקוח'), 'auth' => ($a['auth'] ?? '') === 'email' ? 'email' : 'none', 'contact' => 0];
+        }
+        $keys = array_column($s['roles'], 'key');
+        foreach ($s['fields'] ?? [] as $i => $f) {
+            if (!isset($a['fields'][$f['key']]) || !empty($f['no_link'])) continue;
+            $r = array_values(array_intersect((array)$a['fields'][$f['key']], $keys)) ?: ['owner'];
+            $s['fields'][$i]['role'] = $r[0];
+            $s['fields'][$i]['roles'] = count($r) > 1 ? $r : [];
+        }
+    }
     return $s;
+}
+
+/**
+ * שיתוף למילוי — לכל שדה: מי ממלא אותו במסמך הזה. {id, fields: {"<key>": ["owner"|"link"|<תפקיד>, ...]}, label?, auth?}
+ * שדה "לעולם לא בקישור" — תמיד רק המנפיק. ממלא שמקבל שדות ועדיין אין לו שורה — נוצרת (וזה הקישור שלו).
+ */
+function doc_assign(array $user, array $b): array
+{
+    $d = doc_owned((int)($b['id'] ?? 0), $user, 'edit');
+    if (!in_array($d['status'], DOC_EDITABLE, true)) throw new ApiError('המסמך כבר נעול', 409);
+    $base = json_decode((string)unseal($d['schema_enc']), true) ?: [];
+    $roleKeys = array_merge(array_column($base['roles'] ?? [], 'key'), ['owner', 'link']);
+    $fields = [];
+    foreach ($base['fields'] ?? [] as $f) {
+        if (in_array($f['type'], ['calc', 'system'], true) || !isset($b['fields'][$f['key']])) continue;
+        $r = array_values(array_unique(array_intersect((array)$b['fields'][$f['key']], $roleKeys)));
+        if (!empty($f['no_link'])) $r = ['owner'];
+        $fields[$f['key']] = $r ?: ['owner'];
+    }
+    $label = mb_substr(trim((string)($b['label'] ?? '')), 0, 60) ?: 'לקוח';
+    $auth = ($b['auth'] ?? '') === 'email' ? 'email' : 'none';
+    db()->prepare('UPDATE documents SET assign_enc = ? WHERE id = ?')
+        ->execute([seal(json_encode(['fields' => $fields, 'label' => $label, 'auth' => $auth], JSON_UNESCAPED_UNICODE)), $d['id']]);
+    // ממלאים: לכל תפקיד שמקבל שדה — שורה (קישור); "לקוח" שכבר לא מקבל כלום ועוד לא נשלח — יורד
+    $used = [];
+    foreach ($fields as $r) foreach ($r as $k) if ($k !== 'owner') $used[$k] = true;
+    $have = array_column(participants_of((int)$d['id']), null, 'role_key');
+    foreach (array_keys($used) as $k) {
+        if (isset($have[$k])) { if ($k === 'link') db()->prepare('UPDATE participants SET auth = ? WHERE id = ?')->execute([$auth, $have[$k]['id']]); continue; }
+        db()->prepare('INSERT INTO participants (document_id, role_key, auth, status, sort_order) VALUES (?, ?, ?, ?, ?)')
+            ->execute([$d['id'], $k, $k === 'link' ? $auth : 'none', 'waiting', count($have) + 1]);
+    }
+    if (isset($have['link']) && !isset($used['link']) && !$have['link']['notified_at'] && !$have['link']['completed_at']) {
+        db()->prepare('DELETE FROM participants WHERE id = ?')->execute([$have['link']['id']]);
+    }
+    log_event((int)$d['id'], 'user:' . $user['id'], 'assigned', ['fields' => count(array_filter($fields, fn($r) => $r !== ['owner']))]);
+    return ['ok' => true];
+}
+
+/** כל מה שנשלח למילוי בקישור: מסמך, תבנית, למי, ומה המצב. */
+function fill_shares(array $user): array
+{
+    $st = db()->prepare(
+        "SELECT p.*, d.id AS doc_id, d.number, d.title_enc, d.status AS doc_status, d.created_at AS doc_created,
+                d.owner_id, d.assign_enc, v.schema_enc, v.template_id, t.name_enc AS template_name_enc
+         FROM participants p JOIN documents d ON d.id = p.document_id
+         JOIN template_versions v ON v.id = d.template_version_id JOIN templates t ON t.id = v.template_id
+         WHERE d.deleted_at IS NULL AND d.archived_at IS NULL AND " . mine_or_shared_sql('d', 'document') . '
+         ORDER BY COALESCE(p.completed_at, p.opened_at, p.notified_at, d.created_at) DESC LIMIT 300'
+    );
+    $st->execute([':uid' => $user['id']]);
+    $out = [];
+    foreach ($st->fetchAll() as $r) {
+        $schema = doc_schema($r);
+        $c = contact_of($r);
+        $dd = array_merge($r, ['id' => (int)$r['doc_id'], 'status' => $r['doc_status']]);   // המסמך — לא השורה של הממלא
+        $awaiting = $r['doc_status'] !== 'completed' && $r['completed_at'] && (!empty($schema['approval']) || doc_approver($dd)) && doc_awaiting($dd, $schema);
+        $out[] = ['doc_id' => (int)$r['doc_id'], 'number' => $r['number'], 'title' => (string)unseal($r['title_enc']), 'template' => (string)unseal($r['template_name_enc']),
+            'role' => role_of($schema, $r['role_key'])['label'], 'name' => $c['name'], 'email' => $c['email'], 'phone' => $c['phone'],
+            'status' => $r['doc_status'] === 'completed' ? 'done' : ($awaiting ? 'awaiting' : ($r['completed_at'] ? 'filled' : ($r['opened_at'] ? 'opened' : ($r['notified_at'] ? 'sent' : 'waiting')))),
+            'sent_at' => $r['notified_at'], 'opened_at' => $r['opened_at'], 'filled_at' => $r['completed_at'], 'created_at' => $r['doc_created']];
+    }
+    return ['ok' => true, 'shares' => $out];
 }
 
 function role_of(array $schema, string $key): array

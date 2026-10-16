@@ -356,6 +356,9 @@
             try { await window.DTBulk.exportFile({ template_id: t.id }); }
             catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
           }), { sub: 'כל התשובות' }) : null,
+          !t.archived && t.fields && r >= 2 ? tile('📨', 'שליחה למילוי', go(async () => {
+            try { await window.DTDocs.issue(t.id, true); } catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
+          }), { sub: 'לקוח ממלא בקישור — אתם בוחרים אילו שדות' }) : null,
           r >= 3 ? tile('📦', 'ייצוא תבנית', go(() => window.DTPort.exportDialog(t)), { sub: 'עם כל ההגדרות — PDF, Word או JSON' }) : null,
           r >= 4 ? tile('🔗', 'שיתוף', go(() => shareDialog('template', t.id, t.name, load))) : null,
           r >= 4 ? tile(t.archived ? '♻️' : '🗄️', t.archived ? 'שחזור' : 'ארכיון', go(() => archive(t))) : null,
@@ -684,6 +687,7 @@
     if (key === 'dev' && me.is_developer) return window.DTDev.view(new URLSearchParams(h.split('?')[1] || '').get('tab'), viewDev);
     if (key === 'tpl' && val) return window.DTEditor.open(Number(val));
     if (key === 'docs') return window.DTDocs.list();
+    if (key === 'shares') return window.DTDocs.shares();
     if (key === 'contacts') return window.DTCatalog.view();
     if (key === 'connections') return window.DTConn.view();
     if (key === 'doc' && val) return window.DTDocs.open(Number(val));

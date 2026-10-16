@@ -328,6 +328,8 @@ function clean_schema($s, array $sources = [], array $fonts = [], array $contact
                 if (!in_array($main, $r, true)) array_unshift($r, $main);
                 return count($r) > 1 ? $r : [];
             })(),
+            // לעולם לא בקישור: בשיתוף למילוי — את השדה הזה לא נותנים ללקוח (רק המנפיק)
+            'no_link' => !empty($f['no_link']),
             // שלב 9: בתבנית Word — הסימון בקובץ שהשדה ממלא ({{...}}).
             'placeholder' => $str($f['placeholder'] ?? '', 60),
             // שלב 10: בתבנית PDF מפורק — שם השדה בטופס המקורי.
