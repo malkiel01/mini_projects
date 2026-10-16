@@ -1,5 +1,8 @@
 # הקוד של המעטפת נבדק מול השרת בכל טעינה — אחרת הטלפון מחזיק app.js ישן
 # ימים, ומסך שנפרס פשוט לא מופיע. מסתיים ב-304 כשלא השתנה דבר.
+# בלי זה השרת מגיש את ה-manifest בלי Content-Type, ודפדפנים מחמירים לא מזהים את המשפחה כאפליקציה.
+AddType application/manifest+json .webmanifest
+
 <IfModule mod_headers.c>
     <FilesMatch "\.(html|js|css)$">
         Header set Cache-Control "no-cache, must-revalidate"
