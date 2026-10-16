@@ -120,15 +120,18 @@ function bearerToken(): string {
 const ADMIN_COOKIE   = 'mg_admin';
 const ADMIN_TTL_DAYS = 30;
 
-/** תיקיית הפאנל, לנתיב העוגייה — כדי שלא תישלח לכלים אחרים באותו דומיין. */
+/** עוגייה לכל סוג כניסה: הפאנל הישן, קונסולת המפתח, ואפליקציית ההורה. */
+const SESSION_COOKIES = ['admin' => ADMIN_COOKIE, 'dev' => 'mg_dev', 'parent' => 'mg_parent'];
+
+/** תיקיית הסקריפט, לנתיב העוגייה — כדי שלא תישלח לכלים אחרים באותו דומיין. */
 function adminCookiePath(): string {
     $dir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/admin/x.php'));
     return rtrim($dir, '/') . '/';
 }
 
-function setAdminCookie(string $value, int $expires): void {
-    if (headers_sent()) return;
-    setcookie(ADMIN_COOKIE, $value, [
+function setSessionCookie(string $kind, string $value, int $expires): void {
+    if (headers_sent() || PHP_SAPI === 'cli') return;
+    setcookie(SESSION_COOKIES[$kind], $value, [
         'expires'  => $expires,
         'path'     => adminCookiePath(),
         'httponly' => true,
@@ -137,42 +140,67 @@ function setAdminCookie(string $value, int $expires): void {
     ]);
 }
 
-/** פותח session חדש למנהל. אסימון חדש בכל כניסה — עוגייה שהושתלה מראש אינה שווה דבר. */
-function startAdminSession(int $userId): string {
+/** שוכח את מה שנקרא מהעוגיות בבקשה הזו (לבדיקות, ואחרי כניסה/יציאה). */
+function forgetSessions(): void {
+    $GLOBALS['GB_SESSIONS'] = [];
+}
+
+/** פותח session חדש. אסימון חדש בכל כניסה — עוגייה שהושתלה מראש אינה שווה דבר. */
+function startSession(string $kind, int $userId): string {
     $token   = bin2hex(random_bytes(32));
     $expires = time() + ADMIN_TTL_DAYS * 86400;
-    q('INSERT INTO admin_sessions (token_hash, user_id, csrf, created_at, last_seen_at, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?)',
-      [hash('sha256', $token), $userId, bin2hex(random_bytes(16)), nowIso(), nowIso(),
+    q('INSERT INTO admin_sessions (token_hash, kind, user_id, csrf, created_at, last_seen_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [hash('sha256', $token), $kind, $userId, bin2hex(random_bytes(16)), nowIso(), nowIso(),
        gmdate('Y-m-d\TH:i:s\Z', $expires)]);
     // ניקוי אגבי: sessions שפג תוקפם לא נשארים במסד לנצח.
     q('DELETE FROM admin_sessions WHERE expires_at < ?', [nowIso()]);
-    setAdminCookie($token, $expires);
-    $GLOBALS['GB_ADMIN_SESSION'] = null;
+    setSessionCookie($kind, $token, $expires);
+    forgetSessions();
     return $token;
 }
 
-/** שורת ה-session הנוכחית, או null. נשמרת בזיכרון לאורך הבקשה. */
-function adminSession(): ?array {
-    if (array_key_exists('GB_ADMIN_SESSION', $GLOBALS) && $GLOBALS['GB_ADMIN_SESSION'] !== null) {
-        return $GLOBALS['GB_ADMIN_SESSION'] ?: null;
-    }
-    $token = (string) ($_COOKIE[ADMIN_COOKIE] ?? '');
+/** שורת ה-session הנוכחית מסוג מסוים, או null. נשמרת בזיכרון לאורך הבקשה. */
+function sessionRow(string $kind): ?array {
+    $cache = $GLOBALS['GB_SESSIONS'] ?? [];
+    if (array_key_exists($kind, $cache)) return $cache[$kind] ?: null;
+
+    $token = (string) ($_COOKIE[SESSION_COOKIES[$kind]] ?? '');
     $row = null;
     if (preg_match('/^[a-f0-9]{64}$/', $token)) {
-        $row = one('SELECT * FROM admin_sessions WHERE token_hash = ? AND expires_at > ?',
-                   [hash('sha256', $token), nowIso()]);
+        $row = one('SELECT * FROM admin_sessions WHERE token_hash = ? AND kind = ? AND expires_at > ?',
+                   [hash('sha256', $token), $kind, nowIso()]);
         if ($row && substr((string) $row['last_seen_at'], 0, 13) !== substr(nowIso(), 0, 13)) {
-            // חלון נגלל: מנהל פעיל לא מתנתק. עדכון פעם בשעה, לא בכל בקשה.
+            // חלון נגלל: מי שפעיל לא מתנתק. עדכון פעם בשעה, לא בכל בקשה.
             $expires = time() + ADMIN_TTL_DAYS * 86400;
             q('UPDATE admin_sessions SET last_seen_at = ?, expires_at = ? WHERE token_hash = ?',
               [nowIso(), gmdate('Y-m-d\TH:i:s\Z', $expires), $row['token_hash']]);
-            setAdminCookie($token, $expires);
+            setSessionCookie($kind, $token, $expires);
         }
     }
-    $GLOBALS['GB_ADMIN_SESSION'] = $row ?: false;
+    $GLOBALS['GB_SESSIONS'][$kind] = $row ?: false;
     return $row ?: null;
 }
+
+/** יציאה: מוחק את ה-session מהמסד ואת העוגייה. */
+function endSession(string $kind): void {
+    $token = (string) ($_COOKIE[SESSION_COOKIES[$kind]] ?? '');
+    if ($token !== '') {
+        q('DELETE FROM admin_sessions WHERE token_hash = ? AND kind = ?', [hash('sha256', $token), $kind]);
+    }
+    setSessionCookie($kind, '', time() - 3600);
+    $GLOBALS['GB_SESSIONS'][$kind] = false;
+}
+
+/** מנתק את כל הכניסות של משתמש מסוג מסוים — אחרי איפוס סיסמה או השעיה. */
+function endAllSessions(string $kind, int $userId): void {
+    q('DELETE FROM admin_sessions WHERE kind = ? AND user_id = ?', [$kind, $userId]);
+    forgetSessions();
+}
+
+/* הפאנל הישן (admin/) — אותו מנגנון, סוג 'admin'. */
+function startAdminSession(int $userId): string { return startSession('admin', $userId); }
+function adminSession(): ?array { return sessionRow('admin'); }
 
 function currentAdmin(): ?array {
     $s = adminSession();
@@ -190,13 +218,7 @@ function requireAdmin(): array {
     return $a;
 }
 
-/** יציאה: מוחק את ה-session מהמסד ואת העוגייה. */
-function endAdminSession(): void {
-    $token = (string) ($_COOKIE[ADMIN_COOKIE] ?? '');
-    if ($token !== '') q('DELETE FROM admin_sessions WHERE token_hash = ?', [hash('sha256', $token)]);
-    setAdminCookie('', time() - 3600);
-    $GLOBALS['GB_ADMIN_SESSION'] = false;
-}
+function endAdminSession(): void { endSession('admin'); }
 
 /**
  * אסימון CSRF לטפסי הפאנל — צמוד ל-session.

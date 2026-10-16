@@ -16,6 +16,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../lib/auth.php';
 require_once __DIR__ . '/../lib/alerts.php';
+require_once __DIR__ . '/../lib/accounts.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -45,10 +46,11 @@ function field(string $name, string $default = ''): string {
     return is_string($v) ? trim($v) : $default;
 }
 
-/** המשתמש המחובר, או 401. */
+/** המשתמש המחובר, או 401. חשבון מושעה חוסם את כל הילדים שבו — 403 עם הסיבה. */
 function requireUser(): array {
     $u = userByToken(bearerToken());
     if (!$u) bad('נדרשת כניסה מחדש', 'unauthorized', 401);
+    if ($block = accountBlock($u)) bad($block[1], $block[0], 403);
     return $u;
 }
 
@@ -198,10 +200,12 @@ try {
         }
 
         db()->beginTransaction();
-        q('INSERT INTO users (username, email, display_name, password_hash, status, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)',
+        // עד הצימוד (שלב 4) — נרשם לחשבון הראשון, וממתין שם לאישור.
+        $accountId = (int) (one('SELECT MIN(id) m FROM accounts')['m'] ?? 0);
+        q('INSERT INTO users (username, email, display_name, password_hash, status, created_at, account_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?)',
           [$username, mb_substr(field('email'), 0, 200), mb_substr(field('name'), 0, 80),
-           hashPassword($password), 'pending', nowIso()]);
+           hashPassword($password), 'pending', nowIso(), $accountId]);
         $uid = (int) db()->lastInsertId();
         // שורת מדיניות נוצרת מיד, כדי שהפאנל יראה משתמש שלם לעריכה.
         q('INSERT INTO policies (user_id, updated_at) VALUES (?, ?)', [$uid, nowIso()]);
@@ -237,6 +241,16 @@ try {
         if (!$state['allow']) {
             audit((int) $u['id'], 'login_denied', false, '', $state['code']);
             bad($state['reason'], $state['code'], 403);
+        }
+
+        if ($block = accountBlock($u)) {
+            audit((int) $u['id'], 'login_denied', false, '', $block[0]);
+            bad($block[1], $block[0], 403);
+        }
+        if (accountDeviceQuotaFull((int) $u['account_id'], field('device_id'))) {
+            audit((int) $u['id'], 'login_denied', false, '', 'account_devices');
+            bad('הגעתם למספר המכשירים המרבי בחשבון המשפחה. נתקו מכשיר ישן בפאנל ונסו שוב.',
+                'account_devices', 403);
         }
 
         $max   = (int) policyFor((int) $u['id'])['max_devices'];

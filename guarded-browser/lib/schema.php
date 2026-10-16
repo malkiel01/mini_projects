@@ -9,6 +9,16 @@
 
 declare(strict_types=1);
 
+/*
+ * מה המפתח יכול לפתוח לחשבון (SPEC.md, סעיף 4).
+ *
+ * רמת אכיפה מרבית — מה ההורה רשאי לאכוף במכשיר: דפדפן בלבד, גם
+ * אפליקציות, או כל המכשיר. מודולים — יכולות שנפתחות לחשבון אחת-אחת.
+ */
+const ACCOUNT_LEVELS   = ['browser', 'apps', 'device'];
+const ACCOUNT_STATUSES = ['pending', 'active', 'suspended'];
+const ACCOUNT_MODULES  = ['yt_filtered', 'yt_closed', 'search_index', 'search_web', 'reports_full'];
+
 /**
  * ‏DDL לפי סדר תלות. כל משפט רץ בנפרד כדי ששגיאה תצביע על הטבלה.
  *
@@ -223,11 +233,54 @@ function schemaStatements(): array {
     )",
     "CREATE INDEX IF NOT EXISTS idx_traces ON traces(id DESC)",
 
+    // ── רב-דיירות: חשבון = משפחה (SPEC.md, סעיפים 3–4) ─────────
+    // משתמשי users הם הילדים (פרופילים); account_id שלהם נוסף ב-migrate.
+    // הזכאויות כאן הן מה שהמפתח פתח לחשבון — ההורה פועל רק בתוכן.
+    "CREATE TABLE IF NOT EXISTS accounts (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        name         TEXT    NOT NULL,
+        status       TEXT    NOT NULL DEFAULT 'pending',
+        expires_at   TEXT    NOT NULL DEFAULT '',
+        level_max    TEXT    NOT NULL DEFAULT 'browser',
+        modules      TEXT    NOT NULL DEFAULT '',
+        max_children INTEGER NOT NULL DEFAULT 3,
+        max_devices  INTEGER NOT NULL DEFAULT 3,
+        note         TEXT    NOT NULL DEFAULT '',
+        created_at   TEXT    NOT NULL,
+        approved_at  TEXT    NOT NULL DEFAULT ''
+    )",
+
+    // הורים — מנהלי חשבון. נכנסים לאפליקציית ההורה (שלב 3).
+    "CREATE TABLE IF NOT EXISTS parents (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id     INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        login          TEXT    NOT NULL UNIQUE,
+        name           TEXT    NOT NULL DEFAULT '',
+        password_hash  TEXT    NOT NULL,
+        must_change_pw INTEGER NOT NULL DEFAULT 0,
+        status         TEXT    NOT NULL DEFAULT 'active',
+        created_at     TEXT    NOT NULL,
+        last_login_at  TEXT    NOT NULL DEFAULT ''
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_parents_account ON parents(account_id)",
+
+    // המפתח — מעל כל החשבונות. נכנס לקונסולה (dev/).
+    "CREATE TABLE IF NOT EXISTS developers (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        username       TEXT    NOT NULL UNIQUE,
+        name           TEXT    NOT NULL DEFAULT '',
+        password_hash  TEXT    NOT NULL,
+        created_at     TEXT    NOT NULL,
+        last_login_at  TEXT    NOT NULL DEFAULT ''
+    )",
+
     // ── כניסות לפאנל ────────────────────────────────────────────
     // במקום session של PHP (PHPSESSID משותף לכל האתר ופג אחרי 24
     // דקות). רק ה-hash של האסימון נשמר — דליפת הטבלה אינה מספיקה.
+    // ‏kind: admin (הפאנל הישן) · dev (קונסולת המפתח) · parent (שלב 3).
     "CREATE TABLE IF NOT EXISTS admin_sessions (
         token_hash   TEXT    PRIMARY KEY,
+        kind         TEXT    NOT NULL DEFAULT 'admin',
         user_id      INTEGER NOT NULL,
         csrf         TEXT    NOT NULL,
         created_at   TEXT    NOT NULL,
