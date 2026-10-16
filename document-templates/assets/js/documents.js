@@ -317,7 +317,11 @@
     const track = el('span', { class: 'track', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': 100 }, el('span'));
     const people = el('aside', { class: 'panel card people', hidden: true });
     const meta = el('div', { class: 'doc-meta' });
-    const side = (panel, other) => { panel.hidden = !panel.hidden; other.hidden = true; };
+    // לוח צד (יומן / שליחה למילוי): בטלפון הוא מתחת לדף — גוללים אליו כשנפתח
+    const side = (panel, other) => {
+      panel.hidden = !panel.hidden; other.hidden = true;
+      if (!panel.hidden) requestAnimationFrame(() => panel.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    };
 
     show(
       // סיכום קודם: מספר, מצב, שמירה, כותרת, והתקדמות שדות החובה
@@ -334,7 +338,11 @@
         modeSeg,
         el('div', { class: 'icons' },
           fill ? null : ib('📜', 'יומן', 'יומן', () => { side(journal, people); renderJournal(); }),
-          fill || !(doc.participants || []).length || lvl() < 3 ? null : ib('👥', 'ממלאים', 'משתתפים', () => { side(people, journal); renderPeople(); }),
+          // שליחה למילוי — תמיד גלוי: יש ממלא בקישור → הקישור שלו; אין → הסבר איך מוסיפים
+          fill || lvl() < 3 ? null : ib('🔗', 'שליחה למילוי', 'משתתפים', () => {
+            if ((doc.participants || []).length) { side(people, journal); renderPeople(); return; }
+            noLinkDialog();
+          }),
           !fill && lvl() >= 4 ? ib('📤', 'שיתוף', 'שיתוף', () => window.DT.shareDialog('document', id, doc.title, reload)) : null,
           !fill && doc.access && doc.access !== 'owner' ? ib('🚪', 'עזיבה', 'עזיבה', () => window.DT.leave('document', id, doc.title)) : null,
           fill ? null : ib('📑', 'שכפול', 'שכפול — מסמך חדש עם אותם ערכים', duplicate),
@@ -1093,10 +1101,25 @@
     const PSTATUS = { waiting: 'לא נשלח', sent: 'נשלח', opened: 'פתח', completed: '✓ סיים' };
     // ההודעה נשמרת מחוץ לרינדור: אחרי שליחה הלוח מתרענן, וההודעה צריכה להישאר.
     const out = el('div', { class: 'people-out' });
+    /** אין במסמך ממלא בקישור: מה צריך לעשות כדי לשלוח ללקוח למלא. */
+    function noLinkDialog() {
+      const go = el('button', { type: 'button', class: 'primary small', onclick: () => { dlg.close(); location.hash = 'tpl=' + doc.template_id; } }, 'פתיחת התבנית בעורך');
+      const dlg = window.DT.sheet('🔗 שליחה למילוי', el('div', { class: 'field-sheet' },
+        el('p', {}, 'כדי לשלוח ללקוח קישור למילוי, צריך בתבנית "ממלא בקישור" — ושדות שהוא ממלא:'),
+        el('ol', { class: 'steps' },
+          el('li', {}, 'בעורך התבנית ← לשונית "👥 ממלאים" ← "+ ממלא בקישור" (למשל: לקוח).'),
+          el('li', {}, 'בכל שדה שהלקוח ממלא: הגדרות השדה ← "מי ממלא" ← לקוח.'),
+          el('li', {}, 'שומרים, ומנפיקים מסמך חדש מהתבנית.'),
+          el('li', {}, 'במסמך: "🔗 שליחה למילוי" ← בוחרים איש קשר ← 📧 מייל, 💬 וואטסאפ, או 🔗 העתקת קישור.')),
+        el('p', { class: 'hint' }, 'המסמך הזה הונפק לפני שהיה בתבנית ממלא בקישור — לכן אין לו קישור. מסמך חדש מהתבנית יקבל.')),
+        { action: go });
+    }
+
     function renderPeople() {
       if (fill || people.hidden) return;
       people.replaceChildren(...[
-        el('div', { class: 'row' }, el('h2', {}, 'משתתפים'), el('button', { class: 'link small', onclick: () => { people.hidden = true; } }, 'סגירה')),
+        el('div', { class: 'row' }, el('h2', {}, '🔗 שליחה למילוי'), el('button', { class: 'link small', onclick: () => { people.hidden = true; } }, 'סגירה')),
+        el('p', { class: 'muted small' }, 'לכל ממלא: בוחרים איש קשר (או כותבים שם, מייל וטלפון) ← שולחים במייל, בוואטסאפ, או מעתיקים את הקישור ושולחים בעצמכם.'),
         doc.schema.sequential ? el('p', { class: 'muted small' }, 'לפי הסדר: הקישור הבא נשלח אוטומטית במייל כשהקודם מסיים.') : null,
         ...doc.participants.map(p => {
           // ממלא בקישור = איש קשר: בוחרים מהרשימה, או כותבים פרטים — והם נשמרים כאיש קשר.
