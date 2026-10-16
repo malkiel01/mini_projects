@@ -12,36 +12,9 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../lib/accounts.php';
+require_once __DIR__ . '/../lib/json.php';
 
-header('Content-Type: application/json; charset=utf-8');
-header('X-Content-Type-Options: nosniff');
-header('Cache-Control: no-store');
-
-function out(array $payload, int $code = 200): never {
-    http_response_code($code);
-    echo json_encode($payload, JSON_UNESCAPED_UNICODE);
-    exit;
-}
-
-function fail(string $message, int $http = 400, string $code = 'error'): never {
-    out(['ok' => false, 'error' => $message, 'code' => $code], $http);
-}
-
-function body(): array {
-    static $cache = null;
-    if ($cache !== null) return $cache;
-    $data = json_decode(file_get_contents('php://input') ?: '', true);
-    return $cache = is_array($data) ? $data : [];
-}
-
-function str(string $k): string {
-    $v = body()[$k] ?? '';
-    return is_scalar($v) ? trim((string) $v) : '';
-}
-
-function num(string $k): int {
-    return (int) (body()[$k] ?? 0);
-}
+jsonHeaders();
 
 /** מה הדף צריך כדי להחליט מה להציג: כניסה, התקנה, או הקונסולה. */
 function meState(): array {
@@ -58,11 +31,8 @@ function meState(): array {
 try {
     $action = (string) ($_GET['action'] ?? '');
 
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-        if ($action === 'me') out(meState());
-        fail('שיטה לא נתמכת', 405);
-    }
-    if (($_SERVER['HTTP_X_MIGDALOR'] ?? '') !== '1') fail('בקשה לא תקינה', 400, 'bad_origin');
+    if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'me') out(meState());
+    requirePostFrom();
 
     /* ── לפני כניסה ── */
     if ($action === 'login') {
@@ -79,10 +49,7 @@ try {
     /* ── מכאן — רק מפתח מחובר ── */
     $dev = currentDeveloper();
     if (!$dev) fail('נדרשת כניסה', 401, 'unauthorized');
-    $csrf = (string) (sessionRow('dev')['csrf'] ?? '');
-    if ($csrf === '' || !hash_equals($csrf, (string) ($_SERVER['HTTP_X_CSRF'] ?? ''))) {
-        fail('פג תוקף הדף — רעננו ונסו שוב', 400, 'csrf');
-    }
+    requireCsrf('dev');
 
     switch ($action) {
         case 'logout':

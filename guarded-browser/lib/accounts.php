@@ -286,6 +286,46 @@ function parentRemove(int $parentId): string {
     return '';
 }
 
+/* ── כניסת הורה ────────────────────────────────────────────────── */
+
+function currentParent(): ?array {
+    $s = sessionRow('parent');
+    if (!$s) return null;
+    $p = one("SELECT * FROM parents WHERE id = ? AND status = 'active'", [(int) $s['user_id']]);
+    return $p ?: null;
+}
+
+/** כניסת הורה. מוחזר [parent, שגיאה]. אותה הודעה לשם שגוי ולסיסמה שגויה. */
+function parentLogin(string $login, string $password): array {
+    $login = cleanLogin($login);
+    $key = 'parent:' . $login;
+    if (tooManyFailures($key)) return [null, 'יותר מדי ניסיונות. נסו שוב בעוד רבע שעה.'];
+    $p = one('SELECT * FROM parents WHERE login = ?', [$login]);
+    if (!$p || !password_verify($password, $p['password_hash'])) {
+        audit(0, 'login_fail', false, '', 'parent', $key);
+        return [null, 'שם כניסה או סיסמה שגויים'];
+    }
+    if ($p['status'] !== 'active') return [null, 'החשבון הזה חסום. פנו למנהל המערכת.'];
+    q('UPDATE parents SET last_login_at = ? WHERE id = ?', [nowIso(), $p['id']]);
+    startSession('parent', (int) $p['id']);
+    return [$p, ''];
+}
+
+/**
+ * החלפת סיסמה. אחרי סיסמה זמנית — חובה, ומבטל את הדגל.
+ * שאר המכשירים של ההורה מתנתקים; זה שהחליף — נשאר מחובר.
+ */
+function parentChangePassword(int $id, string $current, string $next): string {
+    $p = one('SELECT * FROM parents WHERE id = ?', [$id]);
+    if (!$p || !password_verify($current, $p['password_hash'])) return 'הסיסמה הנוכחית שגויה';
+    if ($e = passwordProblem($next)) return $e;
+    if (hash_equals($current, $next)) return 'הסיסמה החדשה זהה לישנה';
+    q('UPDATE parents SET password_hash = ?, must_change_pw = 0 WHERE id = ?', [hashPassword($next), $id]);
+    $keep = hash('sha256', (string) ($_COOKIE[SESSION_COOKIES['parent']] ?? ''));
+    q("DELETE FROM admin_sessions WHERE kind = 'parent' AND user_id = ? AND token_hash <> ?", [$id, $keep]);
+    return '';
+}
+
 /* ── המפתח ─────────────────────────────────────────────────────── */
 
 function developerCount(): int {

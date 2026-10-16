@@ -230,3 +230,29 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
     border-top: 1px solid var(--line); cursor: pointer; display: flex; align-items: center; gap: var(--s2); }
 .menu-list li:first-child button { border-top: 0; }
 .menu-list button:hover { background: var(--bg); }
+
+/* ===== אפליקציית ההורה ===== */
+.banner { display: flex; gap: var(--s2); align-items: flex-start; padding: var(--s2) var(--s3); border-radius: var(--r); margin-bottom: var(--s3);
+    border: 1px solid color-mix(in srgb, var(--c) 40%, transparent); background: color-mix(in srgb, var(--c) 10%, var(--surface)); font-size: .9rem; }
+.banner.warn { --c: var(--star); } .banner.bad { --c: var(--danger); } .banner.info { --c: var(--brand); }
+.banner b { display: block; }
+.rows { list-style: none; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.rows > li { display: flex; align-items: center; gap: var(--s2); min-block-size: 48px; padding: 4px var(--s3); border-top: 1px solid var(--line); }
+.rows > li:first-child { border-top: 0; }
+.rows .nm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rows .nm small { display: block; color: var(--muted); font-size: .78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seg.mini { flex: none; }
+.seg.mini span { min-height: 32px; padding: 0 10px; font-size: .8rem; }
+.seg.mini input[value=allow]:checked + span { background: var(--ok); color: #fff; }
+.seg.mini input[value=deny]:checked + span { background: var(--danger); color: #fff; }
+.days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.days label { position: relative; }
+.days input { position: absolute; opacity: 0; inset: 0; cursor: pointer; }
+.days span { display: grid; place-items: center; min-height: 40px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); font-weight: 600; }
+.days input:checked + span { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.days input:focus-visible + span { outline: 2px solid var(--brand); outline-offset: 2px; }
+.cred { display: grid; gap: var(--s2); }
+.cred div { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2) var(--s3); }
+.cred code { font: 600 1.2rem/1.2 ui-monospace, Menlo, Consolas, monospace; direction: ltr; color: var(--brand); user-select: all; }
+.steps { padding-inline-start: 1.2em; display: grid; gap: 4px; font-size: .9rem; }
+.seg.mini input[value=""]:checked + span { background: var(--bg); color: var(--muted); }

@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#1d4a6e">
+  <meta name="robots" content="noindex">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="מגדלור">
+  <title>מגדלור · הורים</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="../assets/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="../assets/icon-192.png">
+  <link rel="stylesheet" href="../assets/migdalor.css">
+</head>
+<body>
+  <a class="skip" href="#main">דילוג לתוכן</a>
+
+  <!-- כניסה -->
+  <section class="auth" id="auth" hidden>
+    <div class="brand">
+      <span class="big" aria-hidden="true">🗼</span>
+      <h1>מגדלור</h1>
+      <p class="muted">כניסת הורים</p>
+    </div>
+    <form id="login-form" novalidate>
+      <label class="f"><span>דוא"ל / שם כניסה</span>
+        <input name="login" type="text" inputmode="email" dir="ltr" autocomplete="username" autocapitalize="off" required></label>
+      <label class="f"><span>סיסמה</span>
+        <input name="password" type="password" dir="ltr" autocomplete="current-password" required></label>
+      <p class="error" role="alert" hidden></p>
+      <button class="btn primary" type="submit">כניסה</button>
+    </form>
+    <p class="hint" style="text-align:center">אין לכם חשבון? פנו למנהל המערכת.</p>
+  </section>
+
+  <!-- סיסמה זמנית → סיסמה משלכם -->
+  <section class="auth" id="newpass" hidden>
+    <div class="brand">
+      <span class="big" aria-hidden="true">🔑</span>
+      <h1>בחרו סיסמה משלכם</h1>
+      <p class="muted">קיבלתם סיסמה זמנית. מעכשיו — רק אתם תדעו את הסיסמה.</p>
+    </div>
+    <form id="newpass-form" novalidate>
+      <label class="f"><span>הסיסמה הזמנית</span>
+        <input name="current" type="password" dir="ltr" autocomplete="current-password" required></label>
+      <label class="f"><span>סיסמה חדשה (8 תווים לפחות)</span>
+        <input name="next" type="password" dir="ltr" autocomplete="new-password" required minlength="8"></label>
+      <label class="f"><span>שוב, לאימות</span>
+        <input name="again" type="password" dir="ltr" autocomplete="new-password" required></label>
+      <p class="error" role="alert" hidden></p>
+      <button class="btn primary" type="submit">שמירה והמשך</button>
+    </form>
+  </section>
+
+  <!-- האפליקציה -->
+  <div id="app" hidden>
+    <header class="top">
+      <span class="logo" aria-hidden="true">🗼</span>
+      <div class="titles"><h1>מגדלור</h1><div class="sub" id="family"></div></div>
+      <button class="icon-btn" id="menu-btn" aria-label="תפריט">⋮</button>
+    </header>
+    <main id="main" tabindex="-1">
+      <div id="banner"></div>
+      <div class="toolbar">
+        <h2 class="sec-title" style="flex:1;margin:0">הילדים שלי</h2>
+        <button class="btn primary" id="kid-new"><span aria-hidden="true">+</span> ילד</button>
+      </div>
+      <ul class="list" id="kids"></ul>
+    </main>
+  </div>
+
+  <!-- גיליון ילד -->
+  <dialog id="kid-dlg" aria-labelledby="kid-title">
+    <form method="dialog" novalidate id="kid-form">
+      <header class="sheet-head">
+        <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+        <h2 id="kid-title">ילד</h2>
+        <button type="submit" class="btn primary" id="kid-save" hidden>שמירה</button>
+      </header>
+      <div class="sheet-body" id="kid-body"></div>
+    </form>
+  </dialog>
+
+  <!-- ילד חדש / פרטי כניסה למכשיר -->
+  <dialog id="add-dlg" aria-labelledby="add-title">
+    <form method="dialog" novalidate id="add-form">
+      <header class="sheet-head">
+        <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+        <h2 id="add-title">ילד חדש</h2>
+      </header>
+      <div class="sheet-body" id="add-body"></div>
+    </form>
+  </dialog>
+
+  <!-- תפריט -->
+  <dialog id="menu-dlg" aria-labelledby="menu-title">
+    <form method="dialog">
+      <header class="sheet-head">
+        <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+        <h2 id="menu-title">תפריט</h2>
+      </header>
+      <div class="sheet-body">
+        <ul class="menu-list list">
+          <li><button type="button" id="m-install">📲 התקנה כאפליקציה</button></li>
+          <li><button type="button" id="m-pass">🔑 החלפת סיסמה</button></li>
+          <li><button type="button" id="m-out">🚪 יציאה</button></li>
+        </ul>
+        <section class="group" id="install-box" hidden>
+          <h3>התקנה כאפליקציה</h3>
+          <ol class="steps" id="install-steps"></ol>
+        </section>
+        <section class="group" id="pass-box" hidden>
+          <h3>החלפת סיסמה</h3>
+          <div class="fields two">
+            <label class="f"><span>נוכחית</span><input type="password" id="p-cur" dir="ltr" autocomplete="current-password"></label>
+            <label class="f"><span>חדשה (8+)</span><input type="password" id="p-new" dir="ltr" autocomplete="new-password"></label>
+          </div>
+          <button type="button" class="btn primary" id="p-go">החלפה</button>
+        </section>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" role="status" aria-live="polite" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>

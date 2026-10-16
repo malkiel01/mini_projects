@@ -9,6 +9,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../lib/auth.php';
 require_once __DIR__ . '/../lib/ui.php';
+require_once __DIR__ . '/../lib/children.php';
 
 $admin = requireAdmin();
 $uid   = (int) ($_GET['id'] ?? 0);
@@ -85,120 +86,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $msg = 'ההרשאות נשמרו';
 
     } elseif ($action === 'youtube') {
-        $m = in_array($_POST['yt_mode'] ?? '', ['off', 'restricted', 'full'], true)
-             ? $_POST['yt_mode'] : 'off';
-        upsert('platform_rules',
-               ['user_id' => $uid, 'platform' => PLATFORM_YOUTUBE],
-               ['mode' => $m,
-                'allow_search' => isset($_POST['allow_search']) ? 1 : 0,
-                'allow_shorts' => isset($_POST['allow_shorts']) ? 1 : 0],
-               ['created_at' => nowIso()]);
-        $msg = 'הגדרות יוטיוב נשמרו';
+        $err = childYouTubeSave($uid, (string) ($_POST['yt_mode'] ?? 'off'), isset($_POST['allow_search']),
+                                isset($_POST['allow_shorts']), ['off', 'restricted', 'full']);
+        [$msg, $kind] = $err ? [$err, 'bad'] : ['הגדרות יוטיוב נשמרו', 'ok'];
 
     } elseif ($action === 'yt_add') {
-        /*
-         * המנהל מדביק קישור, לא מזהה. מי שדורש מזהה ערוץ באורך 24
-         * תווים דורש ממנו לחפש אותו בעצמו — וזה בדיוק מה שהמערכת
-         * אמורה לעשות במקומו.
-         */
-        $paste = trim((string) ($_POST['yt_url'] ?? ''));
-        $p = normalizeYouTubeInput($paste);
-
-        if ($p['kind'] === 'shorts') $p['kind'] = 'video';
-
-        if (!in_array($p['kind'], ['video', 'channel', 'handle', 'playlist'], true) || $p['id'] === '') {
-            $msg = 'לא זיהיתי ערוץ, סרטון או פלייליסט. אפשר להדביק קישור, '
-                 . 'או לכתוב רק @שם-הערוץ'; $kind = 'bad';
-        } else {
-            $label = trim((string) ($_POST['yt_label'] ?? ''));
-
-            // סרטון: שואלים את יוטיוב למי הוא שייך, כדי שאפשר יהיה
-            // להציע למנהל לאשר את הערוץ כולו במקום סרטון בודד.
-            if ($p['kind'] === 'video' && $label === '') {
-                $owner = one('SELECT title FROM video_owner WHERE platform = ? AND video_id = ?',
-                             [PLATFORM_YOUTUBE, $p['id']]);
-                if (!$owner) { youTubeOwner($p['id']); $owner = one(
-                    'SELECT title FROM video_owner WHERE platform = ? AND video_id = ?',
-                    [PLATFORM_YOUTUBE, $p['id']]); }
-                $label = (string) ($owner['title'] ?? '');
-            }
-
-            upsert('platform_items',
-                   ['user_id' => $uid, 'platform' => PLATFORM_YOUTUBE,
-                    'kind' => $p['kind'], 'item_id' => $p['id']],
-                   ['label' => mb_substr($label, 0, 120),
-                    'action' => ($_POST['yt_action'] ?? 'allow') === 'deny' ? 'deny' : 'allow'],
-                   ['created_at' => nowIso()]);
-
-            // אומרים מה זוהה, לא רק "נוסף": קלט מקוצר הוא ניחוש
-            // מושכל, ומי שרואה "סרטון" במקום "ערוץ" מתקן מיד.
-            $kindName = ['channel' => 'ערוץ', 'handle' => 'ערוץ', 'video' => 'סרטון',
-                         'playlist' => 'פלייליסט'][$p['kind']];
-            $msg = "נוסף כ$kindName: {$p['id']}";
-        }
+        [$msg, $err] = childYouTubeAdd($uid, (string) ($_POST['yt_url'] ?? ''), (string) ($_POST['yt_label'] ?? ''),
+                                       (string) ($_POST['yt_action'] ?? 'allow'));
+        if ($err) { $msg = $err; $kind = 'bad'; }
 
     } elseif ($action === 'yt_del') {
-        q('DELETE FROM platform_items WHERE id = ? AND user_id = ?',
-          [(int) ($_POST['item_id'] ?? 0), $uid]);
+        childYouTubeDelete($uid, (int) ($_POST['item_id'] ?? 0));
         $msg = 'הפריט הוסר';
 
     } elseif ($action === 'add_rule') {
-        $pattern = trim((string) ($_POST['pattern'] ?? ''));
-        $scope   = in_array($_POST['scope'] ?? '', SCOPES, true) ? $_POST['scope'] : 'domain';
-        $parsed  = normalizeUrl($pattern);
-
-        /*
-         * כלל כתובת על יוטיוב הוא מלכודת, ולכן הוא מנותב מכאן.
-         *
-         * ‏youtu.be/ID מפנה מיד ל-youtube.com/watch — דומיין אחר,
-         * שהכלל כבר אינו חל עליו. ההכרעה נופלת אז לכללי הפלטפורמה,
-         * והמנהל רואה "חסום" על כתובת שהוא בטוח שהתיר. במקום להסביר
-         * את זה בהערה, הקלט נשמר במקום שבו הוא באמת נאכף.
-         */
-        if ($parsed && platformOf($parsed['host']) === PLATFORM_YOUTUBE) {
-            $p = normalizeYouTubeInput($pattern);
-            if ($p['kind'] === 'shorts') $p['kind'] = 'video';
-
-            if (in_array($p['kind'], ['video', 'channel', 'handle', 'playlist'], true)) {
-                upsert('platform_items',
-                       ['user_id' => $uid, 'platform' => PLATFORM_YOUTUBE,
-                        'kind' => $p['kind'], 'item_id' => $p['id']],
-                       ['label' => mb_substr(trim((string) ($_POST['label'] ?? '')), 0, 120),
-                        'action' => ($_POST['rule_action'] ?? 'allow') === 'deny' ? 'deny' : 'allow'],
-                       ['created_at' => nowIso()]);
-                $kindName = ['channel' => 'ערוץ', 'handle' => 'ערוץ', 'video' => 'סרטון',
-                             'playlist' => 'פלייליסט'][$p['kind']];
-                $msg = "זו כתובת יוטיוב, ולכן היא נוספה לרשימת יוטיוב כ$kindName — "
-                     . 'שם היא נאכפת. כלל כתובת רגיל לא היה עובד עליה.';
-            } else {
-                $msg = 'זו כתובת יוטיוב שלא זיהיתי כערוץ, סרטון או פלייליסט. '
-                     . 'נסו להוסיף אותה באזור יוטיוב.'; $kind = 'bad';
-            }
-        } elseif (!$parsed) {
-            $msg = 'הכתובת אינה תקינה'; $kind = 'bad';
-        } else {
-            q('INSERT INTO rules (user_id, label, pattern, scope, action, show_tile, sort_order, created_at)
-               VALUES (?,?,?,?,?,?,?,?)',
-              [$uid, mb_substr(trim((string) ($_POST['label'] ?? '')), 0, 80), $pattern, $scope,
-               ($_POST['rule_action'] ?? 'allow') === 'deny' ? 'deny' : 'allow',
-               isset($_POST['show_tile']) ? 1 : 0,
-               (int) ($_POST['sort_order'] ?? 0), nowIso()]);
-            $msg = 'הכלל נוסף';
-        }
+        [$msg, $err] = childRuleAdd($uid, (string) ($_POST['pattern'] ?? ''), (string) ($_POST['scope'] ?? 'domain'),
+                                    (string) ($_POST['label'] ?? ''), (string) ($_POST['rule_action'] ?? 'allow'),
+                                    isset($_POST['show_tile']));
+        if ($err) { $msg = $err; $kind = 'bad'; }
 
     } elseif ($action === 'del_rule') {
-        q('DELETE FROM rules WHERE id = ? AND user_id = ?', [(int) ($_POST['rule_id'] ?? 0), $uid]);
+        childRuleDelete($uid, (int) ($_POST['rule_id'] ?? 0));
         $msg = 'הכלל נמחק';
     } elseif ($action === 'toggle_rule') {
-        q('UPDATE rules SET enabled = 1 - enabled WHERE id = ? AND user_id = ?',
-          [(int) ($_POST['rule_id'] ?? 0), $uid]);
+        childRuleToggle($uid, (int) ($_POST['rule_id'] ?? 0));
         $msg = 'מצב הכלל התחלף';
     } elseif ($action === 'del_device') {
-        q('DELETE FROM devices WHERE id = ? AND user_id = ?',
-          [(int) ($_POST['device_id'] ?? 0), $uid]);
+        childDeviceDelete($uid, (int) ($_POST['device_id'] ?? 0));
         $msg = 'המכשיר נותק';
     } elseif ($action === 'reset_usage') {
-        q('DELETE FROM usage WHERE user_id = ? AND day = ?', [$uid, todayIn(policyFor($uid)['timezone'])]);
+        childUsageReset($uid);
         $msg = 'מכסת היום אופסה';
     }
 
