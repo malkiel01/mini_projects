@@ -316,7 +316,7 @@ function appRow(app) {
     const body = [
         appIcon(app),
         el('span', { className: 'app-tx' }, [
-            el('b', { textContent: app.name }),
+            el('b', {}, [app.name, ...(app.external ? [el('span', { className: 'ext', textContent: '↗', title: 'אתר חיצוני' })] : [])]),
             el('small', { textContent: app.description }),
         ]),
         el('span', { className: 'app-go', textContent: '‹', ariaHidden: 'true' }),

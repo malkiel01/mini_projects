@@ -167,6 +167,7 @@ main {
 .app-tx { flex: 1; min-width: 0; display: grid; gap: 1px; }
 .app-tx b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .app-tx small { color: var(--muted); font-size: .84rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app-tx .ext { margin-inline-start: 6px; color: var(--muted); font-weight: 400; font-size: .85em; }
 .app-go { flex: none; color: var(--muted); font-size: 1.3rem; }
 .app .chip { margin-inline-start: auto; }
 

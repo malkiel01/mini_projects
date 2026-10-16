@@ -43,10 +43,11 @@ function registry_load(): array
             'description' => $app['description'],
             'restricted'  => $app['restricted'] ?? false,
             'category'    => $app['category'],
-            'href'        => $folder . '/' . ($app['entry'] ?? ''),
+            'href'        => registry_href($folder, $app['entry'] ?? ''),
+            'external'    => registry_is_external($app['entry'] ?? ''),
             'install'     => registry_install($folder, $app['install'] ?? []),
             'links'       => array_map(
-                fn($l) => ['label' => $l['label'], 'href' => $folder . '/' . $l['href']],
+                fn($l) => ['label' => $l['label'], 'href' => registry_href($folder, $l['href'])],
                 $app['links'] ?? []
             ),
         ];
@@ -85,7 +86,12 @@ function registry_validate(string $folder, $app, array $categoryIds): ?string
         if (!is_string($app[$key] ?? null) || trim($app[$key]) === '') return "חסר '$key'";
     }
     if (!in_array($app['category'], $categoryIds, true)) return "קטגוריה לא מוכרת: '{$app['category']}'";
-    if (isset($app['entry']) && !registry_safe_path($app['entry'])) return "entry לא תקין";
+    if (isset($app['entry']) && !registry_safe_path($app['entry']) && !registry_is_external($app['entry'])) {
+        return "entry: נתיב יחסי בתיקייה, או כתובת https של אפליקציה חיצונית";
+    }
+    if (registry_is_external($app['entry'] ?? '') && !empty($app['gate'])) {
+        return 'אפליקציה חיצונית (entry ב-https) לא יכולה להיות מאחורי השער';
+    }
     if (isset($app['gate']) && !is_bool($app['gate'])) return "gate חייב להיות true או false";
     if (isset($app['restricted']) && !is_bool($app['restricted'])) return "restricted חייב להיות true או false";
     $install = $app['install'] ?? [];
@@ -103,11 +109,28 @@ function registry_validate(string $folder, $app, array $categoryIds): ?string
         if (!is_string($p) || !registry_safe_path(explode('?', $p, 2)[0])) return 'נתיב לא תקין ב-public';
     }
     foreach ($app['links'] ?? [] as $l) {
-        if (!is_string($l['label'] ?? null) || !is_string($l['href'] ?? null) || !registry_safe_path($l['href'])) {
+        if (!is_string($l['label'] ?? null) || !is_string($l['href'] ?? null)
+            || (!registry_safe_path($l['href']) && !registry_is_external($l['href']))) {
             return 'קישור לא תקין ב-links';
         }
     }
     return null;
+}
+
+/**
+ * אפליקציה חיצונית — יושבת בדומיין אחר (למשל kadisha.mbe-plus.com) ורק נרשמת כאן:
+ * התיקייה מכילה app.json (ו-README) בלבד, ו-entry / links הם כתובות https מלאות.
+ * השער ומעקב הכניסות לא חלים עליה — הבקשות לא עוברות בשרת הזה.
+ */
+function registry_is_external($url): bool
+{
+    return is_string($url) && (bool)preg_match('#^https://[a-z0-9.-]+(/|$)#i', $url);
+}
+
+/** הכתובת שהדף מקשר אליה: כתובת חיצונית כמו שהיא, ונתיב יחסי — בתוך תיקיית הכלי. */
+function registry_href(string $folder, string $path): string
+{
+    return registry_is_external($path) ? $path : "$folder/$path";
 }
 
 /** נתיב יחסי בתוך תיקיית הכלי בלבד: בלי סכמה, בלי '..' ובלי '/' בהתחלה. */
