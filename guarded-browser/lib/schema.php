@@ -223,5 +223,17 @@ function schemaStatements(): array {
     )",
     "CREATE INDEX IF NOT EXISTS idx_traces ON traces(id DESC)",
 
+    // ── כניסות לפאנל ────────────────────────────────────────────
+    // במקום session של PHP (PHPSESSID משותף לכל האתר ופג אחרי 24
+    // דקות). רק ה-hash של האסימון נשמר — דליפת הטבלה אינה מספיקה.
+    "CREATE TABLE IF NOT EXISTS admin_sessions (
+        token_hash   TEXT    PRIMARY KEY,
+        user_id      INTEGER NOT NULL,
+        csrf         TEXT    NOT NULL,
+        created_at   TEXT    NOT NULL,
+        last_seen_at TEXT    NOT NULL,
+        expires_at   TEXT    NOT NULL
+    )",
+
     ];
 }

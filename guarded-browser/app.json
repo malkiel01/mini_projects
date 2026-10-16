@@ -1,20 +1,20 @@
 {
   "id": "guarded-browser",
-  "name": "דפדפן מנוהל",
-  "icon": "🛡️",
-  "description": "אפליקציית אנדרואיד שהיא דפדפן: נכנסים אליה אחרי הרשמה, והמנהל קובע לכל משתמש מה מותר לו לפתוח ומתי — לפי אתר, קטגוריה וסוג תוכן, עם חסימת פרסומות. כאן — פאנל הניהול: אישור משתמשים, הרשאות והתרעות.",
+  "name": "מגדלור",
+  "icon": "🗼",
+  "description": "מערכת פיקוח למכשירי ילדים: אפליקציה נעולה במכשיר הילד, וההורה קובע מה מותר לפתוח ומתי — לפי אתר, קטגוריה וסוג תוכן, עם יוטיוב לפי ערוצים וחסימת פרסומות.",
   "category": "web",
   "links": [
     {
-      "label": "🔐 פאנל ניהול",
+      "label": "🛠️ כניסת מנהל מערכת",
       "href": "admin/"
     }
   ],
   "gate": true,
   "public": [
-    "api/index.php?do=register|login|policy|check|trace|heartbeat"
+    "api/index.php?do=register|login|policy|check|trace|heartbeat|ping"
   ],
   "install": {
-    "apk": "https://github.com/malkiel01/mini_projects/releases/download/guarded-browser-apk/app-debug.apk"
+    "apk": "https://github.com/malkiel01/mini_projects/releases/download/guarded-browser-apk/migdalor.apk"
   }
 }

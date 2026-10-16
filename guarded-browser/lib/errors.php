@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 /** האם מותר להראות את הפרטים על המסך. */
 function mayShowErrors(): bool {
-    return session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['admin_id']);
+    return !empty($GLOBALS['GB_ADMIN_ID']);
 }
 
 function errorLogPath(): string {

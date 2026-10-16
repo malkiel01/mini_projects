@@ -36,8 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           [$uid, MODE_FREE, nowIso()]);
         db()->commit();
 
-        startAdminSession();
-        $_SESSION['admin_id'] = $uid;
+        startAdminSession($uid);
         header('Location: index.php');
         exit;
     }

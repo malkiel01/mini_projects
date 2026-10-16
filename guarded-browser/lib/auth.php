@@ -4,7 +4,7 @@
  *
  * שני עולמות נפרדים בכוונה:
  *   • האפליקציה מזדהה באסימון מכשיר ארוך-חיים (Bearer).
- *   • פאנל הניהול מזדהה בעוגיית session רגילה של PHP.
+ *   • פאנל הניהול מזדהה בעוגייה משלו (mg_admin), שהאסימון שלה נשמר במסד.
  * ערבוב ביניהם היה נותן לאסימון של אפליקציה גישה לפאנל.
  */
 
@@ -109,25 +109,78 @@ function bearerToken(): string {
     return preg_match('/^Bearer\s+(\S+)$/i', trim($h), $m) ? $m[1] : '';
 }
 
-/* ── פאנל הניהול ────────────────────────────────────────────────── */
+/* ── פאנל הניהול ────────────────────────────────────────────────
+ *
+ * עוגייה משלנו ולא session של PHP. ה-session המובנה נקרא PHPSESSID,
+ * יושב בנתיב שורש האתר — כלומר משותף לכל כלי באותו דומיין — ובאחסון
+ * משותף נמחק אחרי 24 דקות בלי פעילות. מנהל שמגדיר הרשאות מהטלפון
+ * התנתק באמצע עבודה. כאן: אסימון אקראי בעוגייה, ובמסד רק ה-hash שלו.
+ */
 
-function startAdminSession(): void {
-    if (session_status() === PHP_SESSION_NONE) {
-        session_set_cookie_params([
-            'httponly' => true,
-            'samesite' => 'Lax',
-            'secure'   => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
-        ]);
-        session_start();
+const ADMIN_COOKIE   = 'mg_admin';
+const ADMIN_TTL_DAYS = 30;
+
+/** תיקיית הפאנל, לנתיב העוגייה — כדי שלא תישלח לכלים אחרים באותו דומיין. */
+function adminCookiePath(): string {
+    $dir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/admin/x.php'));
+    return rtrim($dir, '/') . '/';
+}
+
+function setAdminCookie(string $value, int $expires): void {
+    if (headers_sent()) return;
+    setcookie(ADMIN_COOKIE, $value, [
+        'expires'  => $expires,
+        'path'     => adminCookiePath(),
+        'httponly' => true,
+        'samesite' => 'Lax',
+        'secure'   => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+    ]);
+}
+
+/** פותח session חדש למנהל. אסימון חדש בכל כניסה — עוגייה שהושתלה מראש אינה שווה דבר. */
+function startAdminSession(int $userId): string {
+    $token   = bin2hex(random_bytes(32));
+    $expires = time() + ADMIN_TTL_DAYS * 86400;
+    q('INSERT INTO admin_sessions (token_hash, user_id, csrf, created_at, last_seen_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?)',
+      [hash('sha256', $token), $userId, bin2hex(random_bytes(16)), nowIso(), nowIso(),
+       gmdate('Y-m-d\TH:i:s\Z', $expires)]);
+    // ניקוי אגבי: sessions שפג תוקפם לא נשארים במסד לנצח.
+    q('DELETE FROM admin_sessions WHERE expires_at < ?', [nowIso()]);
+    setAdminCookie($token, $expires);
+    $GLOBALS['GB_ADMIN_SESSION'] = null;
+    return $token;
+}
+
+/** שורת ה-session הנוכחית, או null. נשמרת בזיכרון לאורך הבקשה. */
+function adminSession(): ?array {
+    if (array_key_exists('GB_ADMIN_SESSION', $GLOBALS) && $GLOBALS['GB_ADMIN_SESSION'] !== null) {
+        return $GLOBALS['GB_ADMIN_SESSION'] ?: null;
     }
+    $token = (string) ($_COOKIE[ADMIN_COOKIE] ?? '');
+    $row = null;
+    if (preg_match('/^[a-f0-9]{64}$/', $token)) {
+        $row = one('SELECT * FROM admin_sessions WHERE token_hash = ? AND expires_at > ?',
+                   [hash('sha256', $token), nowIso()]);
+        if ($row && substr((string) $row['last_seen_at'], 0, 13) !== substr(nowIso(), 0, 13)) {
+            // חלון נגלל: מנהל פעיל לא מתנתק. עדכון פעם בשעה, לא בכל בקשה.
+            $expires = time() + ADMIN_TTL_DAYS * 86400;
+            q('UPDATE admin_sessions SET last_seen_at = ?, expires_at = ? WHERE token_hash = ?',
+              [nowIso(), gmdate('Y-m-d\TH:i:s\Z', $expires), $row['token_hash']]);
+            setAdminCookie($token, $expires);
+        }
+    }
+    $GLOBALS['GB_ADMIN_SESSION'] = $row ?: false;
+    return $row ?: null;
 }
 
 function currentAdmin(): ?array {
-    startAdminSession();
-    $id = (int) ($_SESSION['admin_id'] ?? 0);
-    if ($id <= 0) return null;
+    $s = adminSession();
+    if (!$s) return null;
 
-    $u = one('SELECT * FROM users WHERE id = ? AND is_admin = 1 AND status = ?', [$id, 'active']);
+    $u = one('SELECT * FROM users WHERE id = ? AND is_admin = 1 AND status = ?',
+             [(int) $s['user_id'], 'active']);
+    $GLOBALS['GB_ADMIN_ID'] = $u ? (int) $u['id'] : 0;
     return $u ?: null;
 }
 
@@ -137,21 +190,28 @@ function requireAdmin(): array {
     return $a;
 }
 
+/** יציאה: מוחק את ה-session מהמסד ואת העוגייה. */
+function endAdminSession(): void {
+    $token = (string) ($_COOKIE[ADMIN_COOKIE] ?? '');
+    if ($token !== '') q('DELETE FROM admin_sessions WHERE token_hash = ?', [hash('sha256', $token)]);
+    setAdminCookie('', time() - 3600);
+    $GLOBALS['GB_ADMIN_SESSION'] = false;
+}
+
 /**
- * אסימון CSRF לטפסי הפאנל.
+ * אסימון CSRF לטפסי הפאנל — צמוד ל-session.
  *
  * הפאנל משנה הרשאות של משתמשים, ולכן טופס שנשלח מאתר אחר בזמן
  * שהמנהל מחובר הוא בדיוק התרחיש שצריך למנוע.
  */
 function csrfToken(): string {
-    startAdminSession();
-    return $_SESSION['csrf'] ??= bin2hex(random_bytes(16));
+    return (string) (adminSession()['csrf'] ?? '');
 }
 
 function checkCsrf(): void {
-    startAdminSession();
     $sent = (string) ($_POST['csrf'] ?? '');
-    if ($sent === '' || !hash_equals((string) ($_SESSION['csrf'] ?? ''), $sent)) {
+    $have = csrfToken();
+    if ($sent === '' || $have === '' || !hash_equals($have, $sent)) {
         http_response_code(400);
         exit('בקשה לא תקינה (CSRF)');
     }

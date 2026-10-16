@@ -16,10 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $u = one('SELECT * FROM users WHERE username = ? AND is_admin = 1', [$username]);
         if ($u && password_verify($password, $u['password_hash']) && $u['status'] === 'active') {
-            startAdminSession();
-            // מזהה חדש לאחר כניסה — כך עוגייה שהושתלה מראש אינה שווה דבר.
-            session_regenerate_id(true);
-            $_SESSION['admin_id'] = (int) $u['id'];
+            startAdminSession((int) $u['id']);
             audit((int) $u['id'], 'admin_login', true, '', 'ok');
             header('Location: index.php');
             exit;

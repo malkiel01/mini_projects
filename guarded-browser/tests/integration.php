@@ -290,6 +290,43 @@ check('האסימון בטל', userByToken($token2), null);
 check('והחשבון חסום',
       accountState(one('SELECT * FROM users WHERE id = ?', [$uid]), $now)['code'], 'suspended');
 
+echo "\n— כניסת מנהל: עוגייה משלנו —\n";
+q('INSERT INTO users (username, password_hash, status, is_admin, created_at) VALUES (?,?,?,1,?)',
+  ['boss', hashPassword('sod12345'), 'active', nowIso()]);
+$adminId = (int) db()->lastInsertId();
+check('בלי עוגייה — אין מנהל', currentAdmin(), null);
+$tok = startAdminSession($adminId);
+$_COOKIE[ADMIN_COOKIE] = $tok;
+check('עם העוגייה — המנהל מזוהה', (int) (currentAdmin()['id'] ?? 0), $adminId);
+check('במסד נשמר רק ה-hash',
+      one('SELECT 1 x FROM admin_sessions WHERE token_hash = ?', [$tok]), null);
+check('יש אסימון CSRF', strlen(csrfToken()), 32);
+$GLOBALS['GB_ADMIN_SESSION'] = null;
+$_COOKIE[ADMIN_COOKIE] = str_repeat('a', 64);
+check('עוגייה מזויפת — אין מנהל', currentAdmin(), null);
+$_COOKIE[ADMIN_COOKIE] = $tok; $GLOBALS['GB_ADMIN_SESSION'] = null;
+q('UPDATE admin_sessions SET expires_at = ? WHERE user_id = ?', ['2000-01-01T00:00:00Z', $adminId]);
+check('session שפג — אין מנהל', currentAdmin(), null);
+q('UPDATE admin_sessions SET expires_at = ? WHERE user_id = ?', ['2999-01-01T00:00:00Z', $adminId]);
+$GLOBALS['GB_ADMIN_SESSION'] = null;
+q('UPDATE users SET status = ? WHERE id = ?', ['suspended', $adminId]);
+check('מנהל מושעה — אין מנהל', currentAdmin(), null);
+$GLOBALS['GB_ADMIN_SESSION'] = null;
+endAdminSession();
+check('יציאה מוחקת את ה-session',
+      (int) one('SELECT COUNT(*) n FROM admin_sessions WHERE user_id = ?', [$adminId])['n'], 0);
+unset($_COOKIE[ADMIN_COOKIE]);
+
+echo "\n— כתובת השרת מההגדרות —\n";
+check('בלי קובץ — ריק', serverUrl(), '');
+check('https תקין מקבל / בסוף', cleanServerUrl('https://migdalor.mbe-plus.com'),
+      'https://migdalor.mbe-plus.com/');
+check('עם נתיב', cleanServerUrl('https://mbe-plus.com/mini_projects/guarded-browser/'),
+      'https://mbe-plus.com/mini_projects/guarded-browser/');
+check('http נדחה', cleanServerUrl('http://mbe-plus.com/'), '');
+check('שאילתה נדחית', cleanServerUrl('https://evil.com/?x=1'), '');
+check('זבל נדחה', cleanServerUrl('javascript:alert(1)'), '');
+
 echo "\n— יומן —\n";
 audit($uid, 'nav', false, 'https://x.com', 'not_listed');
 check('הרשומה נכתבה',
