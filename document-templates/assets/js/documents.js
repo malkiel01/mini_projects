@@ -186,16 +186,48 @@
       catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
     } }, '📤');
     show(el('section', { class: 'screen' },
-      el('div', { class: 'toolbar' }, f.q, filterBtn, exportBtn),
+      el('div', { class: 'toolbar' }, f.q, filterBtn, exportBtn, el('a', { class: 'btn small', href: '#shares' }, '📨 שיתופים')),
       el('p', { class: 'hint' }, count),
       msg, box));
     await load();
   }
 
-  async function issue(templateId) {
+  async function issue(templateId, share) {
     const { api } = window.DT;
     const r = await api('doc_create', { template_id: templateId });
+    // שליחה למילוי: המסמך נפתח ישר בבחירה "מי ממלא מה"
+    if (share) try { sessionStorage.setItem('dt-share-setup', String(r.id)); } catch (e) { /* אחסון חסום */ }
     location.hash = 'doc=' + r.id;
+  }
+
+  // ── שיתופים: כל מה שנשלח למילוי בקישור, ומה המצב ──
+  const SHARE_ST = { waiting: ['לא נשלח', 'muted'], sent: ['נשלח', ''], opened: ['נפתח', 'warn'], filled: ['מילא', 'ok'],
+    awaiting: ['⏳ ממתין לאישורך', 'warn'], done: ['✓ הושלם', 'ok'] };
+  async function shares() {
+    const { api, el, notice, show } = window.DT;
+    window.DT.setTab('docs');
+    show(el('p', { class: 'muted' }, 'טוען…'));
+    let list;
+    try { list = (await api('fill_shares')).shares; } catch (e) { show(notice(e.message, 'bad')); return; }
+    const filt = el('select', { 'aria-label': 'סינון לפי מצב' }, el('option', { value: '' }, 'כל המצבים'),
+      Object.entries(SHARE_ST).map(([k, [t]]) => el('option', { value: k }, t)));
+    const box = el('div');
+    const when = (s) => s ? new Date(s).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+    const paint = () => {
+      const rows = list.filter(s => !filt.value || s.status === filt.value);
+      box.replaceChildren(rows.length ? el('ul', { class: 'list card-list shares-list' }, rows.map(s => el('li', {},
+        el('a', { class: 'use-row', href: '#doc=' + s.doc_id },
+          el('span', { class: 'use-ic', 'aria-hidden': 'true' }, '📨'),
+          el('span', { class: 'use-tx' }, el('b', {}, (s.name || s.role) + (s.name && s.role !== 'לקוח' ? ' · ' + s.role : '')),
+            el('small', {}, [s.template, s.number, s.filled_at ? 'מילא ' + when(s.filled_at) : s.opened_at ? 'פתח ' + when(s.opened_at) : s.sent_at ? 'נשלח ' + when(s.sent_at) : 'נוצר ' + when(s.created_at)].filter(Boolean).join(' · '))),
+          el('span', { class: 'badge ' + SHARE_ST[s.status][1] }, SHARE_ST[s.status][0])))))
+        : el('p', { class: 'empty' }, list.length ? 'אין שיתופים במצב הזה.' : 'עוד לא נשלח שום טופס למילוי. מתבנית: ⋯ ← "📨 שליחה למילוי".'));
+    };
+    filt.addEventListener('change', paint);
+    paint();
+    show(el('div', { class: 'toolbar' }, el('h1', { class: 'grow' }, '📨 שיתופים למילוי'), filt,
+      el('a', { class: 'btn small', href: '#docs' }, '🗂️ כל המסמכים')),
+      el('p', { class: 'hint' }, 'כל טופס ששלחתם למילוי בקישור — למי, ממה, ומה המצב. לחיצה פותחת את המסמך.'), box);
   }
 
   // ── מסמך ─────────────────────────────────────────────────
@@ -340,8 +372,9 @@
           fill ? null : ib('📜', 'יומן', 'יומן', () => { side(journal, people); renderJournal(); }),
           // שליחה למילוי — תמיד גלוי: יש ממלא בקישור → הקישור שלו; אין → הסבר איך מוסיפים
           fill || lvl() < 3 ? null : ib('🔗', 'שליחה למילוי', 'משתתפים', () => {
-            if ((doc.participants || []).length) { side(people, journal); renderPeople(); return; }
-            noLinkDialog();
+            // אין עדיין ממלא בקישור — קודם "מי ממלא מה"; יש — ישר למי לשלוח (ושם "⚙️ מי ממלא מה" לשינוי)
+            if (editable() && !(doc.participants || []).length) return shareSetup();
+            side(people, journal); renderPeople();
           }),
           !fill && lvl() >= 4 ? ib('📤', 'שיתוף', 'שיתוף', () => window.DT.shareDialog('document', id, doc.title, reload)) : null,
           !fill && doc.access && doc.access !== 'owner' ? ib('🚪', 'עזיבה', 'עזיבה', () => window.DT.leave('document', id, doc.title)) : null,
@@ -356,6 +389,9 @@
       el('div', { class: 'editor' }, body, journal, people));
 
     if (!fill) window.DT.setBack('docs');   // חזרה בכותרת — לרשימת המסמכים
+    try {
+      if (!fill && sessionStorage.getItem('dt-share-setup') === String(id)) { sessionStorage.removeItem('dt-share-setup'); setTimeout(shareSetup, 300); }
+    } catch (e) { /* אחסון חסום */ }
 
     // שלב 8: איש קשר (רק לבעלים — הכרטיסים פרטיים) ותגיות (ממלא ומעלה, גם במסמך נעול).
     async function renderMeta() {
@@ -1101,6 +1137,61 @@
     const PSTATUS = { waiting: 'לא נשלח', sent: 'נשלח', opened: 'פתח', completed: '✓ סיים' };
     // ההודעה נשמרת מחוץ לרינדור: אחרי שליחה הלוח מתרענן, וההודעה צריכה להישאר.
     const out = el('div', { class: 'people-out' });
+    /**
+     * שליחה למילוי — שלב 1: לכל שדה, מי ממלא אותו במסמך הזה (👤 אני / 🔗 הלקוח / שנינו).
+     * שדה "לעולם לא בקישור" — נעול על "אני". אחרי השמירה — שלב 2: למי לשלוח (הלוח "שליחה למילוי").
+     */
+    function shareSetup() {
+      const roles = (doc.schema.roles || []).filter(r => r.key !== 'owner');
+      const link = roles.find(r => r.key === 'link');
+      const others = roles.filter(r => r.key !== 'link');
+      const label = el('input', { value: link ? link.label : 'לקוח', maxlength: 60, placeholder: 'למשל: משפחת כהן, לקוח' });
+      const auth = el('input', { type: 'checkbox', checked: !!(link && link.auth === 'email') });
+      // אפשרויות לכל שדה: אני, הלקוח, שנינו — ותפקידים שכבר מוגדרים בתבנית
+      const opts = [['owner', '👤 אני'], ['link', '🔗 הלקוח'], ['owner,link', '👤🔗 שנינו'], ...others.map(r => [r.key, '🔗 ' + r.label])];
+      const list = (doc.schema.fields || []).filter(f => !['calc', 'system'].includes(f.type));
+      const rolesOf = (f) => (f.roles && f.roles.length ? f.roles : [f.role || 'owner']).join(',');
+      const sels = list.map(f => {
+        const cur = rolesOf(f);
+        const s = el('select', { 'aria-label': 'מי ממלא: ' + f.label, disabled: !!f.no_link },
+          ...(f.no_link ? [el('option', { value: 'owner', selected: true }, '🔒 רק אני')]
+            : opts.map(([v, t]) => el('option', { value: v, selected: v === cur }, t)).concat(opts.some(([v]) => v === cur) ? [] : [el('option', { value: cur, selected: true }, cur)])));
+        return [f, s];
+      });
+      const count = el('p', { class: 'share-count small' });
+      const recount = () => {
+        const n = sels.filter(([, s]) => s.value.split(',').some(k => k !== 'owner')).length;
+        count.textContent = n ? `🔗 הלקוח ממלא ${n} שדות. את השאר — אתם (אפשר למלא אותם לפני השליחה או אחריה).` : 'עוד לא בחרתם אף שדה ללקוח.';
+      };
+      sels.forEach(([, s]) => s.addEventListener('change', recount));
+      recount();
+      const all = (v) => { for (const [f, s] of sels) if (!f.no_link) s.value = v; recount(); };
+      const out = el('div');
+      const go = el('button', { type: 'button', class: 'primary small', onclick: async () => {
+        const fields = Object.fromEntries(sels.map(([f, s]) => [f.key, s.value.split(',')]));
+        if (!Object.values(fields).some(r => r.some(k => k !== 'owner'))) { out.replaceChildren(notice('בחרו לפחות שדה אחד שהלקוח ממלא', 'bad')); return; }
+        go.disabled = true;
+        try {
+          await flush();
+          await api('doc_assign', { id, fields, label: label.value, auth: auth.checked ? 'email' : 'none' });
+          dlg.close();
+          await reload();
+          renderBody();
+          people.hidden = true; side(people, journal); renderPeople();
+          msg.replaceChildren(notice('✓ נקבע מי ממלא מה. עכשיו — למי לשלוח: בוחרים איש קשר ושולחים, או מעתיקים קישור.', 'ok'));
+        } catch (e) { go.disabled = false; out.replaceChildren(notice(e.message, 'bad')); }
+      } }, 'הלאה: למי לשלוח ←');
+      const dlg = window.DT.sheet('📨 שליחה למילוי — מי ממלא מה', el('div', { class: 'field-sheet share-setup' },
+        el('p', { class: 'hint' }, 'לכל שדה: מי ממלא אותו במסמך הזה. ההגדרה של השיתוף הזה בלבד — התבנית לא משתנה. שדה "🔒 רק אני" נקבע בתבנית ולא ניתן ללקוח.'),
+        el('div', { class: 'fields two' }, el('label', { class: 'f' }, el('span', {}, 'שם הממלא (רואים אותו בקישור ובשיתופים)'), label),
+          el('label', { class: 'switch' }, auth, el('span', {}, 'קוד אימות למייל לפני מילוי'))),
+        el('div', { class: 'row-btns' }, el('button', { type: 'button', class: 'small', onclick: () => all('link') }, 'הכול ללקוח'),
+          el('button', { type: 'button', class: 'small', onclick: () => all('owner') }, 'הכול אצלי')),
+        el('ul', { class: 'assign-list' }, sels.map(([f, s]) => el('li', {},
+          el('span', { class: 'assign-label' }, (f.type === 'file' ? '📎 ' : '') + f.label + (f.required ? ' *' : '')), s))),
+        count, out), { action: go });
+    }
+
     /** אין במסמך ממלא בקישור: מה צריך לעשות כדי לשלוח ללקוח למלא. */
     function noLinkDialog() {
       const go = el('button', { type: 'button', class: 'primary small', onclick: () => { dlg.close(); location.hash = 'tpl=' + doc.template_id; } }, 'פתיחת התבנית בעורך');
@@ -1119,6 +1210,8 @@
       if (fill || people.hidden) return;
       people.replaceChildren(...[
         el('div', { class: 'row' }, el('h2', {}, '🔗 שליחה למילוי'), el('button', { class: 'link small', onclick: () => { people.hidden = true; } }, 'סגירה')),
+        editable() && lvl() >= 3 && !doc.participants.some(p => p.status === 'completed')
+          ? el('button', { type: 'button', class: 'small', onclick: shareSetup }, '⚙️ מי ממלא מה — שדות הלקוח בשיתוף הזה') : null,
         el('p', { class: 'muted small' }, 'לכל ממלא: בוחרים איש קשר (או כותבים שם, מייל וטלפון) ← שולחים במייל, בוואטסאפ, או מעתיקים את הקישור ושולחים בעצמכם.'),
         doc.schema.sequential ? el('p', { class: 'muted small' }, 'לפי הסדר: הקישור הבא נשלח אוטומטית במייל כשהקודם מסיים.') : null,
         ...doc.participants.map(p => {
@@ -1743,5 +1836,5 @@
     }
   }
 
-  window.DTDocs = { list, open, issue, pdfText };
+  window.DTDocs = { list, open, issue, pdfText, shares };
 })();

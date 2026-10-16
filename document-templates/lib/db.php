@@ -250,6 +250,10 @@ function db_migrate(PDO $pdo): void
         if (!in_array(strtok($def, ' '), $cols, true)) $pdo->exec("ALTER TABLE participants ADD COLUMN $def");
     }
 
+    // שיתוף למילוי: מי ממלא כל שדה במסמך הזה (גובר על התבנית) — lib/participants.php, doc_assign
+    $cols = array_column($pdo->query('PRAGMA table_info(documents)')->fetchAll(), 'name');
+    if (!in_array('assign_enc', $cols, true)) $pdo->exec('ALTER TABLE documents ADD COLUMN assign_enc TEXT');
+
     // חיבורים: מקורות נתונים, מפתחות API (lib/integrations.php)
     if (function_exists('integrations_migrate')) integrations_migrate($pdo);
     // אזור הפיתוח: לוג מעקב מורחב, יומן ביקורת של פעולות מפתח (lib/devzone.php)

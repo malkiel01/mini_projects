@@ -295,7 +295,7 @@ function doc_contact_name(array $d, array $user): ?string
 function doc_get(array $user, int $id): array
 {
     $d = doc_owned($id, $user, 'view');
-    $schema = json_decode((string)unseal($d['schema_enc']), true) ?: [];
+    $schema = doc_schema($d);   // כולל מי ממלא מה בשיתוף הזה
     $values = doc_values($id);
     $a = tpl_asset_row((int)$d['template_version_id']);
 
@@ -474,7 +474,7 @@ function doc_save(array $user, array $b): array
 {
     $d = doc_owned((int)($b['id'] ?? 0), $user, 'fill');
     if (!in_array($d['status'], DOC_EDITABLE, true)) throw new ApiError('המסמך נעול', 409);
-    $schema = json_decode((string)unseal($d['schema_enc']), true) ?: [];
+    $schema = doc_schema($d);   // כולל מי ממלא מה בשיתוף
     $byKey = array_column($schema['fields'] ?? [], null, 'key');
     $old = doc_values((int)$d['id']);
     $actor = 'user:' . $user['id'];
@@ -547,7 +547,7 @@ function doc_complete(array $user, array $b): array
 {
     $d = doc_owned((int)($b['id'] ?? 0), $user, 'edit');
     if (!in_array($d['status'], DOC_EDITABLE, true)) throw new ApiError('המסמך כבר הושלם', 409);
-    $schema = json_decode((string)unseal($d['schema_enc']), true) ?: [];
+    $schema = doc_schema($d);
     $values = doc_values((int)$d['id']);
     $p = doc_progress($schema, $values);
     if ($p['missing']) throw new ApiError('חסרים שדות חובה: ' . implode(', ', $p['missing']), 422);
