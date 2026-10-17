@@ -7,6 +7,7 @@
 'use strict';
 
 const API = 'api.php';
+const APK = 'https://github.com/malkiel01/mini_projects/releases/download/guarded-browser-apk/migdalor.apk';
 const DAYS = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
 const MODES = { kiosk: ['🧩 אריחים בלבד', 'רק האתרים והערוצים שאישרתם, כאריחים. אין שורת כתובת.'],
                 browser: ['🌐 דפדפן', 'יש שורת כתובת. מה שנפתח בה — לפי מה שקבעתם כאן.'] };
@@ -169,7 +170,7 @@ async function loadKids() {
             el('span', { class: 'avatar', style: `--h:${hue(k.name)}`, ariaHidden: 'true', text: initials(k.name) }),
             el('div', { class: 'body' }, [
                 el('div', { class: 'l1' }, [el('span', { text: k.name }), el('span', { class: 't', text: ago(k.last_seen_at) })]),
-                el('div', { class: 'l2', text: (k.requests ? `🙋 ${k.requests} · ` : '') + `⏱️ היום ${mins(k.used_sec)}${quota}`
+                el('div', { class: 'l2', text: (k.requests ? `🙋 ${k.requests} · ` : '') + (k.outdated ? '⬆️ · ' : '') + `⏱️ היום ${mins(k.used_sec)}${quota}`
                     + (k.blocked_today ? ` · 🚫 ${k.blocked_today} חסימות` : '') + ` · 📱 ${k.devices}` }),
             ]),
             chip,
@@ -394,16 +395,48 @@ function kidSites() {
     ];
 }
 
+/** שורת הגרסה של מכשיר: מה מותקן, ומה המצב מול הגרסה האחרונה. */
+function appLine(d) {
+    const a = d.app, latest = K.latest_app;
+    if (a.status === 'unknown') return a.requested ? '⏳ ישנה — נשלחו לו הוראות מעבר' : '⚠️ גרסה ישנה (לא מדווחת)';
+    if (a.status === 'outdated') return a.requested ? `⏳ ${a.version_name} — מחכה שהילד יאשר עדכון` : `⬆️ ${a.version_name} · יש ${latest.name}`;
+    return `✓ ${a.version_name} — מעודכנת`;
+}
+
+function updateDevice(d) {
+    if (d.app.requested) {
+        if (confirm('לבטל את בקשת העדכון?')) act('device_update_cancel', { device_id: d.id }, 'בוטל');
+        return;
+    }
+    const old = d.app.status === 'unknown';
+    if (!confirm(old
+        ? `ב${d.name || 'מכשיר'} מותקנת גרסה ישנה, שלא יודעת להתעדכן לבד.\n\nהיא תיחסם ותציג לילד הוראות מעבר לגרסה החדשה. כדאי להיות לידו — ראו "איך מעבירים מכשיר ישן" למטה.\n\nלשלוח?`
+        : `לבקש עדכון ל-${K.latest_app.name}?\n\nבפתיחה הבאה של האפליקציה הילד יתבקש לאשר הורדה והתקנה. ההגדרות והחיבור נשמרים.`)) return;
+    act('device_update', { device_id: d.id }, old ? 'נשלח — יופיע לילד בפעם הבאה שיפתח' : 'נשלח — הילד יתבקש לעדכן');
+}
+
 function kidDev() {
     const list = K.device_list.length ? el('ul', { class: 'rows' }, K.device_list.map(d => el('li', {}, [
         el('span', { text: '📱', ariaHidden: 'true' }),
-        el('span', { class: 'nm' }, [d.name || 'מכשיר', el('small', { text: ago(d.last_seen_at) })]),
+        el('span', { class: 'nm' }, [d.name || 'מכשיר', el('small', { text: `${appLine(d)} · ${ago(d.last_seen_at)}` })]),
+        d.app.status !== 'current' ? el('button', { type: 'button', class: d.app.requested ? 'btn ghost sm' : 'btn primary sm',
+            text: d.app.requested ? '⏳ נשלח' : '⬆️ עדכון', onclick: () => updateDevice(d) }) : null,
         el('button', { type: 'button', class: 'icon-btn', text: '✕', ariaLabel: 'ניתוק', onclick: () => {
             if (confirm(`לנתק את ${d.name || 'המכשיר'}?`)) act('device_del', { device_id: d.id }, 'נותק');
         } }),
     ]))) : el('p', { class: 'empty', text: 'אין מכשיר מחובר.' });
+    const anyOld = K.device_list.some(d => d.app.status === 'unknown');
     return [
         list,
+        anyOld ? group('איך מעבירים מכשיר ישן', 'פעם אחת — אחר כך הכול מתעדכן מכאן', [
+            el('ol', { class: 'steps' }, [
+                el('li', { text: 'במכשיר של הילד: מוחקים את האפליקציה הישנה ("דפדפן מנוהל" או מגדלור ישן). גרסה ישנה מאוד נחתמה אחרת, ולכן אי אפשר להתקין עליה.' }),
+                el('li', {}, ['מורידים ומתקינים את מגדלור: ', el('a', { href: APK, text: 'הורדת האפליקציה' }), ' (או בכרטיס "מגדלור" בדף הכלים).']),
+                el('li', { text: 'פותחים את מגדלור ← "📷 סריקת קוד", ומכאן: "📷 חיבור מכשיר חדש" למטה.' }),
+                el('li', { text: 'מנתקים כאן את המכשיר הישן (✕).' }),
+            ]),
+            el('p', { class: 'hint', text: 'מגדלור מגרסה 1.37 ומעלה אפשר פשוט להתקין מעל הקיים — החיבור נשמר.' }),
+        ]) : null,
         group('חיבור מכשיר', '', [
             el('button', { type: 'button', class: 'btn primary', text: '📷 חיבור מכשיר חדש', onclick: () => openPair() }),
             el('p', { class: 'hint', text: 'מציגים קוד, והמכשיר של הילד סורק אותו — בלי סיסמה.' }),

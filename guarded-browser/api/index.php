@@ -19,6 +19,7 @@ require_once __DIR__ . '/../lib/alerts.php';
 require_once __DIR__ . '/../lib/children.php';
 require_once __DIR__ . '/../lib/push.php';
 require_once __DIR__ . '/../lib/activity.php';
+require_once __DIR__ . '/../lib/appversion.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -70,6 +71,8 @@ function policyPayload(array $user): array {
 
     $used  = usedTodaySeconds($uid, $tz);
     $state = evaluate($user, $policy, $set, nowIn($tz), ['url' => '', 'used_today' => $used]);
+    $dev   = (int) ($user['device_row_id'] ?? 0);
+    if ($block = upgradeBlock($dev)) $state = decision(false, 'app_update', $block);
 
     $quota = (int) $policy['daily_quota_min'];
 
@@ -141,6 +144,8 @@ function policyPayload(array $user): array {
             'allow_shorts' => (bool) $p['allow_shorts'],
         ], $set['platforms']),
         'platform_items' => $set['platform_items'],
+        // ההורה ביקש לעדכן, ויש גרסה חדשה — האפליקציה מציעה לילד להתקין (1.42 ומעלה).
+        'update' => $dev ? deviceUpdateOffer($dev) : null,
         'state' => [
             'allowed'        => $state['allow'],
             'code'           => $state['code'],
@@ -328,6 +333,7 @@ try {
             if (!$d['allow']) checkProbing($uid, $url);
         }
 
+        if ($block = upgradeBlock((int) $user['device_row_id'])) $d = decision(false, 'app_update', $block);
         out(['ok' => true, 'allowed' => $d['allow'], 'code' => $d['code'], 'reason' => $d['reason']]);
     }
 
@@ -398,8 +404,10 @@ try {
             'session' => (int) (body()['session_sec'] ?? 0),
         ]);
 
+        if ($block = upgradeBlock((int) $user['device_row_id'])) $d = decision(false, 'app_update', $block);
         $quota = (int) $policy['daily_quota_min'];
         out(['ok' => true, 'allowed' => $d['allow'], 'code' => $d['code'], 'reason' => $d['reason'],
+             'update' => deviceUpdateOffer((int) $user['device_row_id']),
              'used_today_sec' => $used,
              'quota_left_sec' => $quota > 0 ? max(0, $quota * 60 - $used) : -1,
              'server_url' => serverUrl(), 'rev' => policyRev($uid)]);

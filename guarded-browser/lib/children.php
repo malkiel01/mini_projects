@@ -373,6 +373,7 @@ function childDetail(array $u, array $allowedYt): array {
         'device_list' => array_map(fn($d) => [
             'id' => (int) $d['id'], 'name' => $d['device_name'], 'created_at' => $d['created_at'],
             'last_seen_at' => $d['last_seen_at'],
+            'app_version' => (int) ($d['app_version'] ?? 0), 'update_requested_at' => (string) ($d['update_requested_at'] ?? ''),
         ], all('SELECT * FROM devices WHERE user_id = ? ORDER BY last_seen_at DESC', [$id])),
     ];
 }

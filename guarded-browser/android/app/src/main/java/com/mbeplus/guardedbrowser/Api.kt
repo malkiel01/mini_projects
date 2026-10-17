@@ -110,6 +110,8 @@ object Api {
                     setRequestProperty("Content-Type", "application/json; charset=utf-8")
                     setRequestProperty("Accept", "application/json")
                     if (token.isNotEmpty()) setRequestProperty("Authorization", "Bearer $token")
+                    // הגרסה — כדי שההורה יראה מה מותקן, ויוכל לבקש עדכון.
+                    setRequestProperty("X-Migdalor-App", BuildConfig.VERSION_CODE.toString())
                 }
                 conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
 

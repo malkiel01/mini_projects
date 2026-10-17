@@ -290,6 +290,13 @@ function schemaStatements(): array {
         used_at    TEXT    NOT NULL DEFAULT ''
     )",
 
+    // ── מידע כללי שנשמר בשרת (למשל הגרסה האחרונה של האפליקציה, במטמון) ──
+    "CREATE TABLE IF NOT EXISTS app_meta (
+        key        TEXT PRIMARY KEY,
+        value      TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL DEFAULT ''
+    )",
+
     // ── פעילות לפי אתר (שלב 7) ────────────────────────────────
     // מסוכם: זמן וכניסות לכל אתר ביום. נכתב רק כשרמת הדיווח אינה "כבוי".
     "CREATE TABLE IF NOT EXISTS site_usage (
