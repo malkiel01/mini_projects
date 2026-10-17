@@ -49,6 +49,7 @@ function admin_state(array $admin): never
             'id' => $a['id'], 'name' => $a['name'], 'icon' => $a['icon'],
             'category' => $a['category'], 'default_category' => $a['default_category'],
             'hidden' => $a['hidden'], 'install_ok' => $a['install_ok'], 'restricted' => $a['restricted'],
+            'gate' => (bool)$a['gate'], 'external' => $a['external'], 'detached' => $a['detached'], 'connected' => $a['connected'],
             'can_install' => $a['install']['pwa'] || $a['install']['apk'] || $a['install']['store'],
         ], apps_effective()),
     ]);
@@ -225,7 +226,7 @@ function admin_category_delete(array $body): never
 
 // ---------- אפליקציות ----------
 
-/** {id, category?, hidden?, install_ok?} */
+/** {id, category?, hidden?, install_ok?, detached?} */
 function admin_app_update(array $body): never
 {
     $apps = array_column(apps_effective(), null, 'id');
@@ -235,6 +236,12 @@ function admin_app_update(array $body): never
     $category = $body['category'] ?? $app['category'];
     if (!in_array($category, array_column(categories_list(), 'id'), true)) throw new ApiError('קטגוריה לא מוכרת', 422);
     $hidden = (bool)($body['hidden'] ?? $app['hidden']);
+    if (isset($body['detached'])) {
+        if (empty($app['gate'])) throw new ApiError('האפליקציה הזו כבר עומדת לבד — אין לה שער', 409);
+        db()->prepare($body['detached'] ? 'INSERT OR IGNORE INTO app_detached (app_id, detached_at) VALUES (?, ?)'
+                                        : 'DELETE FROM app_detached WHERE app_id = ? AND ? IS NOT NULL')
+            ->execute([$app['id'], now_iso()]);
+    }
     if (isset($body['install_ok'])) {
         db()->prepare($body['install_ok'] ? 'DELETE FROM install_hidden WHERE app_id = ?'
                                           : 'INSERT OR IGNORE INTO install_hidden (app_id) VALUES (?)')->execute([$app['id']]);

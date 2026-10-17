@@ -98,10 +98,28 @@ function can_use(array $user, string $app, array $cfg): bool
  * ההכרעה. מחזיר null כשמותר; אחרת [קוד HTTP, סיבה].
  * @param array $params פרמטרי הבקשה (לתבניות כמו api.php?action=…)
  */
+/**
+ * המנהל ניתק את האפליקציה מהפלטפורמה (ממשק המנהל ← אפליקציות ← "🔌 מחוברת"): השער מעביר הכול,
+ * ומעקב הכניסות לא נרשם — האפליקציה עומדת לבד, כמו אפליקציה חיצונית. הטבלה נוצרת ב-access.php;
+ * עוד לא קיימת → אף אפליקציה לא מנותקת.
+ */
+function is_detached(string $app): bool
+{
+    if (!is_file(DB_FILE)) return false;
+    try {
+        $st = pdo()->prepare('SELECT 1 FROM app_detached WHERE app_id = ?');
+        $st->execute([$app]);
+        return (bool)$st->fetchColumn();
+    } catch (\PDOException) {
+        return false;
+    }
+}
+
 function decide(string $app, string $path, array $params): ?array
 {
     $cfg = app_config($app);
     if ($cfg === null || empty($cfg['gate'])) return null;      // לא רשום, או בלי שער
+    if (is_detached($app)) return null;                          // נותקה מהפלטפורמה
     if (is_public($cfg, $path, $params)) return null;
 
     try {
@@ -197,7 +215,7 @@ function record_visit(string $app): void
     try {
         if (!is_navigation() || !is_file(DB_FILE)) return;
         $cfg = app_config($app);
-        if ($cfg === null || empty($cfg['gate'])) return;
+        if ($cfg === null || empty($cfg['gate']) || is_detached($app)) return;
         $user = current_user();
         $uid = $user ? (int)$user['id'] : null;
         $ipHash = hash('sha256', ($_SERVER['REMOTE_ADDR'] ?? '') . '|' . $app);

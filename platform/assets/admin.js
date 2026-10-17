@@ -769,6 +769,26 @@ window.PlatformAdmin = (() => {
         return t;
     }
 
+    // ---------- חיבור לפלטפורמה ----------
+    // מחוברת: נכנסים רק עם חשבון בפלטפורמה והרשאה לאפליקציה (השער). מנותקת: עומדת לבד —
+    // כל מי שיש לו את הכתובת נכנס, והכניסה (אם יש) היא של האפליקציה עצמה. כמו קדישא.
+    function connectionControl(app) {
+        if (!app.gate) {
+            return el('span', { className: 'chip', title: app.external ? 'אפליקציה בדומיין אחר' : 'אין לה שער ב-app.json',
+                textContent: app.external ? '↗ חיצונית — עומדת לבד' : '🔓 עומדת לבד' });
+        }
+        const box = el('input', { type: 'checkbox', checked: app.connected });
+        box.addEventListener('change', () => {
+            if (!box.checked && !confirm(`לנתק את "${app.name}" מהפלטפורמה?\n\n` +
+                'מעכשיו כל מי שיש לו את הכתובת ייכנס בלי חשבון בפלטפורמה ובלי הרשאה. ' +
+                'אם יש לאפליקציה כניסה משלה — היא שתשמור עליה. כניסות לא יירשמו בלשונית "שימוש".\n\n' +
+                'אפשר לחבר מחדש בכל רגע.')) { box.checked = true; return; }
+            act('admin_app_update', { id: app.id, detached: !box.checked },
+                box.checked ? `${app.name}: מחוברת — רק עם חשבון והרשאה` : `${app.name}: נותקה — עומדת לבד`);
+        });
+        return el('label', { className: `small conn-toggle${app.connected ? '' : ' off'}` }, [box, app.connected ? ' 🔌 מחוברת' : ' 🔌 מנותקת']);
+    }
+
     // ---------- קטגוריות ואפליקציות ----------
 
     function renderCatalog() {
@@ -811,6 +831,7 @@ window.PlatformAdmin = (() => {
                     inst.checked ? `${app.name}: התקנה והורדה מוצגות` : `${app.name}: התקנה והורדה הוסתרו`));
                 row.push(el('label', { className: 'small' }, [inst, ' 📲 התקנה והורדה']));
             }
+            row.push(connectionControl(app));
             return el('div', { className: `app-row${app.hidden ? ' is-hidden' : ''}` }, row);
         });
 
@@ -818,7 +839,8 @@ window.PlatformAdmin = (() => {
             el('h3', { textContent: 'קטגוריות' }), ...cats, add,
             el('h3', { textContent: 'אפליקציות' }),
             el('p', { className: 'muted small', textContent: 'אפליקציה מוסתרת לא מוצגת לאף אחד, גם לא למי שקיבל הרשאה — רק כאן. ' +
-                '"📲 התקנה והורדה" — מסומן כברירת מחדל: מי שרואה את האפליקציה יכול גם להתקין אותה (כאפליקציה נפרדת, APK או חנות). מורידים את הסימון כדי להסתיר.' }),
+                '"📲 התקנה והורדה" — מסומן כברירת מחדל: מי שרואה את האפליקציה יכול גם להתקין אותה (כאפליקציה נפרדת, APK או חנות). מורידים את הסימון כדי להסתיר. ' +
+                '"🔌 מחוברת" — נכנסים לאפליקציה רק עם חשבון בפלטפורמה והרשאה אליה. מורידים את הסימון כדי לנתק אותה: היא תעמוד לבד, כמו קדישא.' }),
             ...apps,
         ]);
     }

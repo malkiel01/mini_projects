@@ -42,6 +42,7 @@ function registry_load(): array
             'icon'        => $app['icon'],
             'description' => $app['description'],
             'restricted'  => $app['restricted'] ?? false,
+            'gate'        => $app['gate'] ?? false,
             'category'    => $app['category'],
             'href'        => registry_href($folder, $app['entry'] ?? ''),
             'external'    => registry_is_external($app['entry'] ?? ''),

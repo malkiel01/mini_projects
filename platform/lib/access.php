@@ -42,6 +42,8 @@ function access_migrate(): void
         -- מסוגלת להתקין מוצג לכולם, והמנהל רק יכול להסתיר (install_hidden). הטבלה נשארת, לא בשימוש.
         CREATE TABLE IF NOT EXISTS install_approvals (app_id TEXT PRIMARY KEY);
         CREATE TABLE IF NOT EXISTS install_hidden (app_id TEXT PRIMARY KEY);
+        -- אפליקציה שהמנהל ניתק מהפלטפורמה: השער לא חוסם אותה (lib/gate.php, is_detached).
+        CREATE TABLE IF NOT EXISTS app_detached (app_id TEXT PRIMARY KEY, detached_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS grants (
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             kind    TEXT NOT NULL CHECK (kind IN ('app','category')),
@@ -80,6 +82,7 @@ function apps_effective(): array
     foreach (db()->query('SELECT * FROM app_overrides') as $o) $overrides[$o['app_id']] = $o;
     $known = array_column(categories_list(), 'id');
     $installHidden = array_flip(db()->query('SELECT app_id FROM install_hidden')->fetchAll(PDO::FETCH_COLUMN));
+    $detached = array_flip(db()->query('SELECT app_id FROM app_detached')->fetchAll(PDO::FETCH_COLUMN));
 
     $apps = [];
     foreach (registry_load()['apps'] as $app) {
@@ -90,6 +93,10 @@ function apps_effective(): array
         if (!in_array($app['category'], $known, true)) $app['category'] = 'other';
         $app['hidden'] = (bool)($o['hidden'] ?? false);
         $app['install_ok'] = !isset($installHidden[$app['id']]);
+        // מחוברת = השער פעיל: נכנסים רק עם חשבון בפלטפורמה והרשאה לאפליקציה.
+        // מנותקת = עומדת לבד — אפליקציה חיצונית, בלי שער ב-app.json, או שהמנהל ניתק.
+        $app['detached'] = isset($detached[$app['id']]);
+        $app['connected'] = !empty($app['gate']) && !$app['detached'];
         $apps[] = $app;
     }
     return $apps;

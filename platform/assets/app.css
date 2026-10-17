@@ -433,6 +433,8 @@ dialog.install .logo { width: 40px; height: 40px; }
 .panel .sso-actions button.link-btn { justify-self: center; width: auto; height: auto; min-height: 40px; margin: 0; padding: 0 var(--s3);
     background: none; color: var(--muted); font-weight: 500; }
 
+.conn-toggle.off { color: var(--warn); font-weight: 600; }
+
 /* ===== טוסט ===== */
 .toast {
     position: fixed; inset-inline: var(--s3); bottom: calc(var(--s4) + env(safe-area-inset-bottom)); margin: auto; width: fit-content;
