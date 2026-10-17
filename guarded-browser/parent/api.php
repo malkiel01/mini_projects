@@ -14,6 +14,7 @@ require_once __DIR__ . '/../lib/children.php';
 require_once __DIR__ . '/../lib/json.php';
 require_once __DIR__ . '/../lib/push.php';
 require_once __DIR__ . '/../lib/activity.php';
+require_once __DIR__ . '/../lib/appversion.php';
 
 jsonHeaders();
 
@@ -57,7 +58,12 @@ function myChild(array $parent): array {
 
 function detail(array $parent, int $childId): array {
     $c = childOf((int) $parent['account_id'], $childId);
-    return childDetail($c, youTubeModesFor((int) $parent['account_id']));
+    $out = childDetail($c, youTubeModesFor((int) $parent['account_id']));
+    // גרסת האפליקציה בכל מכשיר, מול האחרונה שפורסמה.
+    $latest = latestApp();
+    $out['latest_app'] = $latest;
+    foreach ($out['device_list'] as &$d) $d['app'] = deviceAppState($d, $latest);
+    return $out;
 }
 
 try {
@@ -101,7 +107,14 @@ try {
         case 'children':
             $rows = all('SELECT * FROM users WHERE account_id = ? AND is_admin = 0
                          ORDER BY CASE status WHEN \'pending\' THEN 0 ELSE 1 END, id', [$aid]);
-            out(['ok' => true, 'children' => array_map('childCard', $rows)]);
+            $latest = latestApp();
+            out(['ok' => true, 'children' => array_map(function ($u) use ($latest) {
+                $card = childCard($u);
+                // מכשירים שצריכים עדכון — לסימן ⬆️ בכרטיס.
+                $card['outdated'] = count(array_filter(all('SELECT app_version FROM devices WHERE user_id = ?', [$u['id']]),
+                    fn($d) => deviceAppState($d, $latest)['status'] !== 'current'));
+                return $card;
+            }, $rows)]);
 
         case 'child':
             out(['ok' => true, 'child' => detail($parent, (int) myChild($parent)['id'])]);
@@ -167,6 +180,16 @@ try {
         case 'rule_toggle':
             $c = myChild($parent);
             childRuleToggle((int) $c['id'], num('rule_id'));
+            out(['ok' => true, 'child' => detail($parent, (int) $c['id'])]);
+
+        case 'device_update':
+            $c = myChild($parent);
+            if ($err = requestDeviceUpdate((int) $c['id'], num('device_id'))) fail($err);
+            out(['ok' => true, 'child' => detail($parent, (int) $c['id'])]);
+
+        case 'device_update_cancel':
+            $c = myChild($parent);
+            cancelDeviceUpdate((int) $c['id'], num('device_id'));
             out(['ok' => true, 'child' => detail($parent, (int) $c['id'])]);
 
         case 'device_del':

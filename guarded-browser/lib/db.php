@@ -111,6 +111,11 @@ function migrate(PDO $pdo): void {
         $pdo->exec("ALTER TABLE users ADD COLUMN account_id INTEGER NOT NULL DEFAULT 0");
         $pdo->exec("CREATE INDEX IF NOT EXISTS idx_users_account ON users(account_id)");
     }
+    // גרסת האפליקציה בכל מכשיר (מכותרת X-Migdalor-App), ובקשת עדכון מההורה.
+    if (!in_array('app_version', $columns('devices'), true)) {
+        $pdo->exec("ALTER TABLE devices ADD COLUMN app_version INTEGER NOT NULL DEFAULT 0");
+        $pdo->exec("ALTER TABLE devices ADD COLUMN update_requested_at TEXT NOT NULL DEFAULT ''");
+    }
     // שלב 7: רמת הדיווח להורה, וזמן לכל כתובת בהיסטוריה המלאה.
     if (!in_array('report_level', $columns('policies'), true)) {
         $pdo->exec("ALTER TABLE policies ADD COLUMN report_level TEXT NOT NULL DEFAULT 'summary'");

@@ -86,6 +86,8 @@ class HomeActivity : AppCompatActivity() {
             b.progress.visibility = View.GONE
             if (!r.ok && r.json?.optString("code") == "unauthorized") { unpair(); return@policy }
             if (r.ok && r.json != null) store.savePolicy(r.json)
+            // ההורה ביקש לעדכן, ויש גרסה חדשה.
+            r.json?.optJSONObject("update")?.let { Updater.offer(this, it) }
 
             state = r.json?.optJSONObject("state")
             allowed = state?.optBoolean("allowed") ?: true
@@ -212,6 +214,7 @@ class HomeActivity : AppCompatActivity() {
             "🌐" to "${tiles.count { it.kind != "youtube" }} אתרים מאושרים",
             "▶️" to "${tiles.count { it.kind == "youtube" }} ערוצים וסרטונים ביוטיוב",
             "⭐" to "לחיצה ארוכה על אריח — מוסיפה למועדפים",
+            "ℹ️" to "גרסה ${BuildConfig.VERSION_NAME}",
         )
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
