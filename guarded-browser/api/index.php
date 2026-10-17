@@ -144,7 +144,7 @@ function policyPayload(array $user): array {
             'allow_shorts' => (bool) $p['allow_shorts'],
         ], $set['platforms']),
         'platform_items' => $set['platform_items'],
-        // ההורה ביקש לעדכן, ויש גרסה חדשה — האפליקציה מציעה לילד להתקין (1.42 ומעלה).
+        // ההורה ביקש לעדכן, ויש גרסה חדשה — האפליקציה מציעה לילד להתקין (1.43 ומעלה).
         'update' => $dev ? deviceUpdateOffer($dev) : null,
         'state' => [
             'allowed'        => $state['allow'],
