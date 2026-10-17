@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- מסלול ההקמה: רשימת הרשאות שהילד מאשר (עם ההורה), לפני הכניסה למגדלור. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:layoutDirection="rtl" android:background="@color/bg">
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center_vertical"
+        android:background="@color/brand" android:padding="14dp">
+        <ImageView android:layout_width="30dp" android:layout_height="30dp"
+            android:src="@drawable/logo" android:importantForAccessibility="no"/>
+        <TextView android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+            android:text="הקמת מגדלור" android:textSize="18sp" android:textStyle="bold"
+            android:textColor="@color/brand_ink" android:layout_marginStart="10dp"/>
+    </LinearLayout>
+
+    <ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:padding="16dp">
+
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="עוד כמה אישורים, ומגדלור יכול לשמור על המכשיר. כל אישור נפתח במסך של אנדרואיד — כדאי שההורה יהיה לידכם."
+                android:textColor="@color/dim" android:textSize="14sp" android:layout_marginBottom="12dp"/>
+
+            <LinearLayout android:id="@+id/steps" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:orientation="vertical"/>
+        </LinearLayout>
+    </ScrollView>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:padding="16dp" android:background="@color/surface"
+        android:elevation="8dp">
+        <com.google.android.material.button.MaterialButton android:id="@+id/cont"
+            style="@style/MgButton" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="המשך למגדלור"/>
+        <TextView android:id="@+id/contHint" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:gravity="center" android:textColor="@color/dim"
+            android:textSize="13sp" android:layout_marginTop="6dp"/>
+    </LinearLayout>
+</LinearLayout>

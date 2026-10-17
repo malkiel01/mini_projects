@@ -112,6 +112,8 @@ object Api {
                     if (token.isNotEmpty()) setRequestProperty("Authorization", "Bearer $token")
                     // הגרסה — כדי שההורה יראה מה מותקן, ויוכל לבקש עדכון.
                     setRequestProperty("X-Migdalor-App", BuildConfig.VERSION_CODE.toString())
+                    // ההרשאות שניתנו במכשיר (מסלול ההקמה) — כדי שההורה יראה מה חסר.
+                    setRequestProperty("X-Migdalor-Perms", (store?.perms ?: 0).toString())
                 }
                 conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
 

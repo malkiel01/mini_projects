@@ -152,6 +152,11 @@ class Store(context: Context) {
         return on
     }
 
+    /** ביטים של ההרשאות שניתנו במכשיר (Setup.flags) — נשלח לשרת כדי שההורה יראה. */
+    var perms: Int
+        get() = prefs.getInt("perms", 0)
+        set(v) { prefs.edit().putInt("perms", v).apply() }
+
     /** גיל המדיניות השמורה. מדיניות עתיקה מדי אינה בסיס להמשך גלישה. */
     fun policyAgeMinutes(): Long {
         val at = prefs.getLong("policy_at", 0L)

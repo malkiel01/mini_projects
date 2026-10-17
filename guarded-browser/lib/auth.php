@@ -97,6 +97,11 @@ function userByToken(string $token): ?array {
     // גרסת האפליקציה — רק מ-1.43 היא שולחת אותה. בלי הכותרת: גרסה ישנה, או "דפדפן מנוהל".
     $ver = (int) ($_SERVER['HTTP_X_MIGDALOR_APP'] ?? 0);
     if ($ver > 0) q('UPDATE devices SET app_version = ? WHERE id = ? AND app_version != ?', [$ver, $row['device_row_id'], $ver]);
+    // מצב ההרשאות במכשיר (מסלול ההקמה) — נשמר לתצוגה אצל ההורה.
+    if (isset($_SERVER['HTTP_X_MIGDALOR_PERMS'])) {
+        $perms = (int) $_SERVER['HTTP_X_MIGDALOR_PERMS'];
+        q('UPDATE devices SET perms = ? WHERE id = ? AND perms != ?', [$perms, $row['device_row_id'], $perms]);
+    }
     q('UPDATE users SET last_seen_at = ? WHERE id = ?', [$now, $row['id']]);
     return $row;
 }

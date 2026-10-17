@@ -17,6 +17,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- עדכון האפליקציה כשההורה מבקש: הורדה ופתיחת מסך ההתקנה של אנדרואיד (הילד מאשר). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <!-- פטור מאופטימיזציית סוללה, כדי שהאכיפה לא תיעצר ברקע (מבוקש במסלול ההקמה). -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
 
     <application
         android:name=".GuardApp"
@@ -44,6 +46,17 @@
             android:screenOrientation="fullSensor" tools:replace="screenOrientation"/>
 
         <activity android:name=".HomeActivity" android:exported="false"/>
+        <activity android:name=".SetupActivity" android:exported="false"/>
+
+        <!-- מנהל מכשיר: הפעלה דרך מסך האישור של אנדרואיד, מופיע בהגדרות. -->
+        <receiver android:name=".MigdalorAdmin" android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data android:name="android.app.device_admin"
+                android:resource="@xml/device_admin"/>
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED"/>
+            </intent-filter>
+        </receiver>
 
         <!-- ‏excludeFromRecents ו-noHistory אינם מוגדרים כאן בכוונה:
              חסימת התצוגה המקדימה נקבעת לפי ההרשאה, ב-FLAG_SECURE.

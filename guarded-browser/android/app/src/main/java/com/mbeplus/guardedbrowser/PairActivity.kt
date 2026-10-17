@@ -95,7 +95,9 @@ class PairActivity : AppCompatActivity() {
     } catch (e: Exception) { "" }
 
     private fun goHome() {
-        startActivity(Intent(this, HomeActivity::class.java))
+        // אחרי הצימוד — קודם מסלול ההקמה (ההרשאות), ורק אז הבית.
+        store.perms = Setup.flags(this)
+        startActivity(Intent(this, if (Setup.ready(this)) HomeActivity::class.java else SetupActivity::class.java))
         finish()
     }
 }

@@ -116,6 +116,10 @@ function migrate(PDO $pdo): void {
         $pdo->exec("ALTER TABLE devices ADD COLUMN app_version INTEGER NOT NULL DEFAULT 0");
         $pdo->exec("ALTER TABLE devices ADD COLUMN update_requested_at TEXT NOT NULL DEFAULT ''");
     }
+    // ההרשאות שניתנו במכשיר (מסלול ההקמה), כמסכת ביטים מכותרת X-Migdalor-Perms.
+    if (!in_array('perms', $columns('devices'), true)) {
+        $pdo->exec("ALTER TABLE devices ADD COLUMN perms INTEGER NOT NULL DEFAULT 0");
+    }
     // שלב 7: רמת הדיווח להורה, וזמן לכל כתובת בהיסטוריה המלאה.
     if (!in_array('report_level', $columns('policies'), true)) {
         $pdo->exec("ALTER TABLE policies ADD COLUMN report_level TEXT NOT NULL DEFAULT 'summary'");
