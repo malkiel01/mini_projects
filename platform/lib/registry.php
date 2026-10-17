@@ -43,6 +43,7 @@ function registry_load(): array
             'description' => $app['description'],
             'restricted'  => $app['restricted'] ?? false,
             'gate'        => $app['gate'] ?? false,
+            'sso_returns' => array_values($app['sso']['return'] ?? []),
             'category'    => $app['category'],
             'href'        => registry_href($folder, $app['entry'] ?? ''),
             'external'    => registry_is_external($app['entry'] ?? ''),
@@ -95,6 +96,14 @@ function registry_validate(string $folder, $app, array $categoryIds): ?string
     }
     if (isset($app['gate']) && !is_bool($app['gate'])) return "gate חייב להיות true או false";
     if (isset($app['restricted']) && !is_bool($app['restricted'])) return "restricted חייב להיות true או false";
+    // כניסה מאוחדת: "sso": {"return": ["https://…/sso/callback"]} — כתובות החזרה המותרות, התאמה מדויקת.
+    if (isset($app['sso'])) {
+        $ret = $app['sso']['return'] ?? null;
+        if (!is_array($ret) || !$ret || count($ret) > 10) return 'sso.return: רשימה של 1–10 כתובות';
+        foreach ($ret as $u) {
+            if (!is_string($u) || !preg_match('#^https://[^/?\#@\s]+(/[^\#\s]*)?$#i', $u)) return "sso.return: כתובת https מלאה, בלי # ($u)";
+        }
+    }
     $install = $app['install'] ?? [];
     if (!is_array($install)) return 'install חייב להיות אובייקט';
     foreach (['pwa', 'offline'] as $k) {
