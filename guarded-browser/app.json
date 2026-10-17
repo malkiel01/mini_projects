@@ -22,9 +22,10 @@
   "public": [
     "api/index.php?do=register|login|pair|policy|check|yt_allowed|trace|heartbeat|ping|request|requests",
     "parent/**",
-    "assets/**"
+    "assets/**",
+    "download.php"
   ],
   "install": {
-    "apk": "https://github.com/malkiel01/mini_projects/releases/download/guarded-browser-apk/migdalor.apk"
+    "apk": "download.php"
   }
 }

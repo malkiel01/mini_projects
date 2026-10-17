@@ -17,7 +17,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/platforms.php';
 
-const APK_URL = 'https://github.com/malkiel01/mini_projects/releases/download/guarded-browser-apk/migdalor.apk';
+// ההורדה עוברת דרך השרת שלנו (download.php) — ההפניה של GitHub נתקעה בטלפונים.
+const APK_URL = 'https://mbe-plus.com/mini_projects/guarded-browser/download.php';
 const APK_LATEST_URL = 'https://github.com/malkiel01/mini_projects/releases/download/guarded-browser-apk/latest.json';
 const APK_LATEST_TTL = 1800;
 
@@ -70,7 +71,7 @@ function deviceUpdateOffer(int $deviceRowId): ?array {
         if ($latest) q("UPDATE devices SET update_requested_at = '' WHERE id = ?", [$deviceRowId]);
         return null;
     }
-    return ['version_code' => $latest['code'], 'version_name' => $latest['name'], 'url' => APK_URL];
+    return ['version_code' => $latest['code'], 'version_name' => $latest['name'], 'url' => (serverUrl() ?: '') !== '' ? serverUrl() . 'download.php' : APK_URL];
 }
 
 /**
