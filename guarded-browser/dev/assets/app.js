@@ -473,6 +473,31 @@ async function loadSystem() {
             el('div', { class: 'l2', text: `${d.account || '—'} · ${d.device_name || 'מכשיר'}` }),
         ]),
     ])) : [el('li', { class: 'empty', text: 'כל המכשירים התחברו ביממה האחרונה.' })]));
+    renderSearch(s.search);
+}
+
+/** חיפוש: מצב האינדקס, סריקה עכשיו, ומפתח Brave (לילדים במצב "הכול פתוח"). */
+function renderSearch(x) {
+    const key = el('input', { type: 'password', dir: 'ltr', placeholder: x.brave ? '•••• (שמור — הדביקו כדי להחליף)' : 'BSA…', autocomplete: 'off', ariaLabel: 'מפתח Brave Search' });
+    $('#sys-search').replaceChildren(
+        el('dl', { class: 'cells k4' }, [['מקורות', x.sources], ['דפים', x.pages], ['ממתינים לכותרת', x.pending],
+            ['מנוע', x.fts ? 'FTS5' : 'LIKE']].map(([t, n]) => el('div', {}, [el('dt', { text: t }), el('dd', { text: String(n) })]))),
+        el('p', { class: 'hint', text: x.last_run ? `סריקה אחרונה: ${ago(x.last_run)}. נסרק לבד אחרי שימוש — כל מקור פעם ביום.` : 'עוד לא נסרק.' }),
+        x.errors.length ? el('ul', { class: 'list' }, x.errors.map(e => el('li', { class: 'card static' }, [
+            el('div', { class: 'body' }, [el('div', { class: 'l1', text: e.ref }), el('div', { class: 'l2', text: e.error })])]))) : '',
+        el('button', { type: 'button', class: 'btn', text: '🔄 סריקה עכשיו', onclick: async ev => {
+            ev.target.disabled = true; ev.target.textContent = 'סורק… (עד 20 שניות)';
+            try { const r = await call('search_tick', {}); toast(`נסרקו ${r.scanned} מקורות`); renderSearch(r.search); }
+            catch (e) { toast(e.message, true); ev.target.disabled = false; }
+        } }),
+        el('label', { class: 'f', style: 'margin-top:12px' }, [el('span', { text: `מפתח Brave Search ${x.brave ? '✓ מוגדר' : '— לא מוגדר'}` }), key]),
+        el('p', { class: 'hint' }, ['לחיפוש ברשת לילדים במצב "הכול פתוח". מפתח חינמי: ',
+            el('bdi', { dir: 'ltr', text: 'api-dashboard.search.brave.com' }), '. בלי מפתח — הם מחפשים באתרים שאושרו.']),
+        el('button', { type: 'button', class: 'btn primary', text: 'שמירת המפתח', onclick: async () => {
+            try { const r = await call('brave_key', { key: key.value }); toast(key.value ? 'נשמר' : 'נמחק'); renderSearch(r.search); }
+            catch (e) { toast(e.message, true); }
+        } }),
+    );
 }
 
 /* ── תפריט ─────────────────────────────────────────────────────── */

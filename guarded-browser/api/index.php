@@ -20,6 +20,7 @@ require_once __DIR__ . '/../lib/children.php';
 require_once __DIR__ . '/../lib/push.php';
 require_once __DIR__ . '/../lib/activity.php';
 require_once __DIR__ . '/../lib/appversion.php';
+require_once __DIR__ . '/../lib/search.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -381,6 +382,17 @@ try {
         out(['ok' => true, 'requests' => requestsOfChild((int) $user['id']), 'rev' => policyRev((int) $user['id'])]);
     }
 
+    /* ── חיפוש (שלב 8) ───────────────────────────────────────────
+     * אינדקס משלנו או Brave — לפי ברירת המחדל של הילד; כל תוצאה מסוננת אצלו.
+     * אחרי התשובה — צעד סריקה קטן, כך שהאינדקס מתעדכן מהשימוש עצמו.
+     */
+    if ($do === 'search') {
+        $user = requireUser();
+        $r = searchFor($user, field('q'));
+        searchTickAfterResponse(4);
+        out(['ok' => true] + $r);
+    }
+
     /* ── פעימה ─────────────────────────────────────────────────────
      * צוברת זמן צפייה ומחזירה את המצב. זה גם ערוץ הניתוק: מנהל
      * שמשעה חשבון או מוחק מכשיר — הפעימה הבאה מחזירה סירוב.
@@ -397,6 +409,7 @@ try {
         // הכתובת שעל המסך — כדי שההורה יראה כמה זמן בכל אתר (שלב 7).
         activityBeat($uid, field('url'), $seconds, $tz);
         if (mt_rand(1, 500) === 1) activityCleanup();
+        if (mt_rand(1, 40) === 1) searchTickAfterResponse(4);
 
         $used = usedTodaySeconds($uid, $tz);
         $d = evaluate($user, $policy, ruleSetFor($uid), nowIn($tz), [

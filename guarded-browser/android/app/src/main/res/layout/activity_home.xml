@@ -8,8 +8,9 @@
         android:orientation="horizontal" android:gravity="center_vertical"
         android:background="@color/brand" android:paddingStart="16dp" android:paddingEnd="4dp"
         android:paddingTop="10dp" android:paddingBottom="10dp">
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="🗼" android:textSize="22sp" android:importantForAccessibility="no"/>
+        <ImageView android:layout_width="34dp" android:layout_height="34dp"
+            android:src="@drawable/logo"
+            android:importantForAccessibility="no"/>
         <LinearLayout android:layout_width="0dp" android:layout_weight="1"
             android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginStart="10dp">
             <TextView android:id="@+id/greeting" android:layout_width="match_parent"
@@ -56,6 +57,14 @@
             <GridLayout android:id="@+id/grid" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:columnCount="2"
                 android:layout_marginTop="8dp"/>
+
+            <!-- תוצאות חיפוש (שלב 8): מהאינדקס של האתרים שאושרו, או מהרשת — כבר מסוננות בשרת. -->
+            <TextView android:id="@+id/resultsTitle" style="@style/MgSection"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="🔎 תוצאות" android:visibility="gone"/>
+            <LinearLayout android:id="@+id/results" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:orientation="vertical"
+                android:background="@drawable/bg_card" android:visibility="gone"/>
 
             <TextView android:id="@+id/empty" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:padding="24dp" android:gravity="center"

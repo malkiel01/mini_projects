@@ -297,6 +297,33 @@ function schemaStatements(): array {
         updated_at TEXT NOT NULL DEFAULT ''
     )",
 
+    // ── אינדקס החיפוש (שלב 8) ─────────────────────────────────
+    // מקור = מה שמאושר לילד כלשהו (אתר, דף, ערוץ, פלייליסט, סרטון). דף = מה שנמצא בו.
+    // הטבלה הווירטואלית search_fts (FTS5) נוצרת ב-lib/search.php — אם השרת תומך.
+    "CREATE TABLE IF NOT EXISTS search_sources (
+        id       INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind     TEXT NOT NULL,
+        ref      TEXT NOT NULL,
+        meta     TEXT NOT NULL DEFAULT '',
+        pages    INTEGER NOT NULL DEFAULT 0,
+        next_at  TEXT NOT NULL DEFAULT '',
+        last_run TEXT NOT NULL DEFAULT '',
+        error    TEXT NOT NULL DEFAULT '',
+        UNIQUE (kind, ref)
+    )",
+    "CREATE TABLE IF NOT EXISTS search_pages (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_id   INTEGER NOT NULL,
+        url         TEXT NOT NULL UNIQUE,
+        host        TEXT NOT NULL DEFAULT '',
+        kind        TEXT NOT NULL DEFAULT 'page',
+        title       TEXT NOT NULL DEFAULT '',
+        body        TEXT NOT NULL DEFAULT '',
+        needs_fetch INTEGER NOT NULL DEFAULT 0,
+        fetched_at  TEXT NOT NULL DEFAULT ''
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_search_pages_source ON search_pages(source_id)",
+
     // ── פעילות לפי אתר (שלב 7) ────────────────────────────────
     // מסוכם: זמן וכניסות לכל אתר ביום. נכתב רק כשרמת הדיווח אינה "כבוי".
     "CREATE TABLE IF NOT EXISTS site_usage (
