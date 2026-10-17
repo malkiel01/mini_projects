@@ -197,8 +197,16 @@ class PolicyEngineTest {
             yt("https://youtube.com/@Torah"), r, ytItems, true).allow)
         assertTrue(PolicyEngine.youTubeVerdict(
             yt("https://youtube.com/watch?v=vid_ok"), r, ytItems, true).allow)
+        // מוגבל: Short הוא סרטון — סרטון מאושר עובר גם כשמתג ה-Shorts כבוי.
+        assertTrue(PolicyEngine.youTubeVerdict(
+            yt("https://youtube.com/shorts/vid_ok"), r, ytItems, true).allow)
+    }
+
+    @Test fun shortsSwitchGovernsFullMode() {
         assertEquals("yt_no_shorts", PolicyEngine.youTubeVerdict(
-            yt("https://youtube.com/shorts/vid_ok"), r, ytItems, true).code)
+            yt("https://youtube.com/shorts/anything1"), PlatformRule("full", allowShorts = false), ytItems, true).code)
+        assertTrue(PolicyEngine.youTubeVerdict(
+            yt("https://youtube.com/shorts/anything1"), PlatformRule("full", allowShorts = true), ytItems, true).allow)
     }
 
     /**

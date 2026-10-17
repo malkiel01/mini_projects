@@ -94,6 +94,15 @@ function migrate(PDO $pdo): void {
         $pdo->exec("ALTER TABLE policies ADD COLUMN migrated_posture INTEGER NOT NULL DEFAULT 1");
     }
 
+    /*
+     * שלב 5: מתג ה-Shorts קובע עכשיו את מצב "פתוח" (קודם לא השפיע בו כלל).
+     * מי שכבר במצב פתוח — ממשיך לקבל Shorts, כדי שלא ייחסמו לו פתאום.
+     */
+    if (!in_array('shorts_v2', $columns('platform_rules'), true)) {
+        $pdo->exec("UPDATE platform_rules SET allow_shorts = 1 WHERE mode = 'full'");
+        $pdo->exec("ALTER TABLE platform_rules ADD COLUMN shorts_v2 INTEGER NOT NULL DEFAULT 1");
+    }
+
     if (!in_array('kind', $columns('admin_sessions'), true)) {
         $pdo->exec("ALTER TABLE admin_sessions ADD COLUMN kind TEXT NOT NULL DEFAULT 'admin'");
     }

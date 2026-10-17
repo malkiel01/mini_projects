@@ -354,7 +354,13 @@ object PolicyEngine {
                 return Verdict(false, "yt_item_denied", "הפריט הזה ביוטיוב חסום עבורך")
             }
         }
-        if (rule.mode == "full") return Verdict(true, "yt_full")
+        if (rule.mode == "full") {
+            // במצב פתוח המתג קובע את פיד ה-Shorts כולו (שלב 5).
+            if (ref.kind == "shorts" && !rule.allowShorts) {
+                return Verdict(false, "yt_no_shorts", "סרטוני Shorts חסומים בחשבון שלך")
+            }
+            return Verdict(true, "yt_full")
+        }
 
         if (ref.kind == "search") {
             return if (rule.allowSearch) Verdict(true, "yt_search")
@@ -364,9 +370,7 @@ object PolicyEngine {
             return Verdict(false, "yt_no_browse",
                 "אפשר לפתוח רק את הערוצים והסרטונים שאושרו לך, לא את יוטיוב עצמו")
         }
-        if (ref.kind == "shorts" && !rule.allowShorts) {
-            return Verdict(false, "yt_no_shorts", "סרטוני Shorts חסומים בחשבון שלך")
-        }
+        // במצב מוגבל Short הוא סרטון לכל דבר: מותר אם הוא מערוץ שאושר (שלב 5).
         if (ref.kind in listOf("channel", "handle", "playlist")) {
             return if (action(ref.kind, ref.id) == "allow") Verdict(true, "yt_item_allowed")
             else Verdict(false, "yt_not_approved", "הערוץ הזה אינו ברשימה שאושרה לך")

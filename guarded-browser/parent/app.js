@@ -340,7 +340,9 @@ function kidYt() {
         group('יוטיוב', '', [mode, hint,
             el('div', { class: 'mods' }, [
                 el('label', { class: 'switch' }, [search, el('span', { text: '🔎 חיפוש ביוטיוב' })]),
-                el('label', { class: 'switch' }, [shorts, el('span', { text: '📱 סרטוני Shorts' })]),
+                el('label', { class: 'switch' }, [shorts, el('span', {}, ['📱 פיד Shorts',
+                    el('small', { text: 'במצב "פתוח". בערוצים שאישרתם ה-Shorts שלהם תמיד מוצגים',
+                        style: 'display:block;color:var(--muted);font-size:.78rem' })])]),
             ]),
             el('button', { type: 'button', class: 'btn primary', text: 'שמירת יוטיוב', onclick: () => act('youtube', {
                 mode: $('[name=yt_mode]:checked').value, allow_search: search.checked, allow_shorts: shorts.checked }, 'נשמר') }),

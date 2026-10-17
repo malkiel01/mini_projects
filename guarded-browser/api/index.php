@@ -2,7 +2,7 @@
 /**
  * נקודת הקצה היחידה של האפליקציה.
  *
- * ‏?do=register | login | pair | policy | check | heartbeat | ping
+ * ‏?do=register | login | pair | policy | check | yt_allowed | heartbeat | ping
  *
  * ריכוז בקובץ אחד ולא חמישה: כל הבקשות חולקות אימות, טיפול בשגיאות
  * ופורמט תשובה, והפיצול היה מייצר חמישה עותקים של אותה חמישייה.
@@ -339,6 +339,16 @@ try {
 
         q('DELETE FROM traces WHERE id NOT IN (SELECT id FROM traces ORDER BY id DESC LIMIT 30)');
         out(['ok' => true]);
+    }
+
+    /* ── סינון הצעות ביוטיוב (שלב 5) ─────────────────────────────
+     * הדף שולח את מזהי הסרטונים שמוצגים בו; השרת עונה מי מהם מערוץ
+     * מאושר. מה שלא אושר — נעלם מהדף, ולא רק נחסם כשלוחצים עליו.
+     */
+    if ($do === 'yt_allowed') {
+        $user = requireUser();
+        $ids = body()['ids'] ?? [];
+        out(['ok' => true, 'verdicts' => (object) youTubeVideoVerdicts(ruleSetFor((int) $user['id']), is_array($ids) ? $ids : [])]);
     }
 
     /* ── פעימה ─────────────────────────────────────────────────────

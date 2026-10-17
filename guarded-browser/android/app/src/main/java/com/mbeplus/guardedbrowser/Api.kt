@@ -194,6 +194,10 @@ object Api {
             if (clientAllowed != null) put("client_allowed", clientAllowed)
         }, token, cb)
 
+    /** אילו מהסרטונים שבדף יוטיוב מערוץ מאושר — לסינון ההצעות (שלב 5). */
+    fun ytAllowed(token: String, ids: List<String>, cb: (Result) -> Unit) =
+        call("yt_allowed", JSONObject().apply { put("ids", org.json.JSONArray(ids)) }, token, cb)
+
     /** שולח את רישום האבחון לשרת, לצפייה בפאנל. */
     fun trace(token: String, label: String, body: String, cb: (Result) -> Unit) =
         call("trace", JSONObject().apply {
