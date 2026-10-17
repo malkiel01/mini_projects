@@ -9,6 +9,8 @@
  *   POST ?action=register  {username, password, display_name} → ממתין לאישור
  *   POST ?action=setup     {code, username, password, display_name} → המנהל הראשון
  *   POST ?action=password  {current, password} — החלפת סיסמה (גם אחרי סיסמה זמנית מהמנהל)
+ *   GET  ?action=sso_mine  האפליקציות שהמשתמש אישר להן כניסה מאוחדת
+ *   POST ?action=sso_revoke {client_id} — ביטול חיבור
  *
  * פעולות מנהל (lib/admin.php): GET admin_state, ו-POST admin_* — כולן דורשות
  * מנהל מחובר ו-X-CSRF.
@@ -21,6 +23,7 @@ require __DIR__ . '/lib/auth.php';
 require __DIR__ . '/lib/access.php';
 require __DIR__ . '/lib/admin.php';
 require_once __DIR__ . '/lib/push.php';
+require_once __DIR__ . '/lib/sso.php';
 
 try {
     $action = $_GET['action'] ?? '';
@@ -30,6 +33,7 @@ try {
         match ($action) {
             'me'   => action_me(),
             'apps' => action_apps(),
+            'sso_mine' => action_sso_mine(),
             'admin_state' => admin_state(require_admin()),
             'admin_push'  => admin_push_state(require_admin()),
             'admin_usage' => admin_usage(require_admin(), $_GET),
@@ -44,6 +48,7 @@ try {
             'register' => action_register($body),
             'setup'    => action_setup($body),
             'password' => action_password($body),
+            'sso_revoke' => action_sso_revoke($body),
             default    => str_starts_with($action, 'admin_')
                 ? admin_dispatch($action, $body, require_admin(true))
                 : throw new ApiError('פעולה לא מוכרת', 404),
@@ -133,6 +138,22 @@ function action_logout(): never
         throw new ApiError('בקשה לא תקינה', 403);
     }
     end_session();
+    json_out(['ok' => true]);
+}
+
+function action_sso_mine(): never
+{
+    $user = current_user();
+    if (!$user) throw new ApiError('נדרשת כניסה', 401);
+    json_out(['consents' => sso_consents_of((int)$user['id'])]);
+}
+
+function action_sso_revoke(array $body): never
+{
+    $user = current_user();
+    if (!$user) throw new ApiError('נדרשת כניסה', 401);
+    if (!hash_equals($user['csrf'], $_SERVER['HTTP_X_CSRF'] ?? '')) throw new ApiError('בקשה לא תקינה', 403);
+    sso_revoke((int)$user['id'], (string)($body['client_id'] ?? ''), 'user');
     json_out(['ok' => true]);
 }
 

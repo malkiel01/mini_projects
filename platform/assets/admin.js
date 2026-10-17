@@ -52,6 +52,7 @@ window.PlatformAdmin = (() => {
             ['users', '👥', 'משתמשים', n],
             ['usage', '📊', 'שימוש', 0],
             ['catalog', '🗂️', 'אפליקציות', 0],
+            ['sso', '🔗', 'חיבורים', 0],
             ['probe', '🩺', 'שרת', 0],
         ].map(([id, icon, label, count]) => {
             const b = button('', () => { tab = id; render(); }, tab === id ? 'active' : '');
@@ -63,7 +64,7 @@ window.PlatformAdmin = (() => {
             return b;
         }));
         const body = tab === 'users' ? renderUsers() : tab === 'usage' ? renderUsage()
-            : tab === 'catalog' ? renderCatalog() : renderProbe();
+            : tab === 'catalog' ? renderCatalog() : tab === 'sso' ? renderSso() : renderProbe();
         root.replaceChildren(el('div', { className: 'admin' }, [tabs, body]));
     }
 
@@ -317,6 +318,7 @@ window.PlatformAdmin = (() => {
             body.push(el('div', { className: 'sheet-sec', textContent: 'פעולות' }), el('div', { className: 'tiles' }, actionTiles(u)));
             if (u.status !== 'pending') body.push(passwordBox(u));
             if (u.status !== 'pending') body.push(el('div', { className: 'sheet-sec', textContent: 'שימוש באפליקציות · 30 יום' }), userUsage(u));
+            if (u.sso?.length) body.push(el('div', { className: 'sheet-sec', textContent: 'כניסה מאוחדת — אישר/ה ל' }), userSso(u));
             if (u.status === 'active' && u.role !== 'admin') {
                 body.push(el('div', { className: 'sheet-sec', textContent: 'מה הוא/היא רואה' }), grantsEditor(u));
             } else if (u.role === 'admin') {
@@ -616,6 +618,155 @@ window.PlatformAdmin = (() => {
             ])]))));
         }).catch(() => box.replaceChildren(el('p', { className: 'muted small', textContent: 'לא ניתן לטעון את השימוש.' })));
         return box;
+    }
+
+    // ---------- כניסה מאוחדת: האפליקציות שמזהות משתמשים דרך הפלטפורמה ----------
+    // הצד של הספק — platform/sso.php. המדריך לאפליקציות — platform/docs/sso.md.
+
+    const ssoUrl = () => new URL('platform/sso.php', location.href).href;
+
+    function userSso(u) {
+        return el('ul', { className: 'list' }, u.sso.map(c => {
+            const x = el('button', { type: 'button', className: 'btn sm danger', textContent: 'ניתוק' });
+            x.addEventListener('click', () => confirm(`לנתק את ${u.display_name} מ-${c.name}? בכניסה הבאה יתבקש/תתבקש לאשר שוב.`)
+                && act('admin_sso_revoke', { user_id: u.id, client_id: c.client_id }, 'נותק/ה'));
+            return el('li', { className: 'urow' }, [el('div', { className: 'u-main static' }, [
+                el('span', { className: 'app-ic sm', textContent: '🔗', ariaHidden: 'true' }),
+                el('span', { className: 'u-tx' }, [el('b', { textContent: c.name }),
+                    el('small', { textContent: `אושר ${relTime(c.granted_at)}${c.last_used_at ? ' · נכנס ' + relTime(c.last_used_at) : ''}` })]),
+            ]), x]);
+        }));
+    }
+
+    function renderSso() {
+        const add = button('+ אפליקציה חדשה', () => openSsoClient(null), 'primary');
+        const rows = state.sso.map(c => {
+            const sub = [c.id, c.users === 1 ? 'משתמש אחד' : `${c.users} משתמשים`];
+            if (c.last_used) sub.push(`בשימוש ${relTime(c.last_used)}`);
+            const row = el('button', { type: 'button', className: 'u-main' }, [
+                el('span', { className: 'app-ic sm', textContent: '🔗', ariaHidden: 'true' }),
+                el('span', { className: 'u-tx' }, [
+                    el('span', { className: 'u-l1' }, [el('b', { textContent: c.name }),
+                        ...(c.disabled ? [el('span', { className: 'chip bad', textContent: 'מושבת' })] : [])]),
+                    el('small', { textContent: sub.join(' · ') }),
+                ]),
+            ]);
+            row.addEventListener('click', () => openSsoClient(c));
+            return el('li', { className: 'urow' }, [row, el('span', { className: 'app-go', textContent: '‹', ariaHidden: 'true' })]);
+        });
+        return el('div', {}, [
+            el('p', { className: 'muted small hint-line', textContent:
+                '"כניסה עם חשבון כלים דיגיטליים" — אפליקציה שרשומה כאן יכולה לזהות משתמש דרך הפלטפורמה. ' +
+                'היא מקבלת רק מזהה ושם, ולכל אפליקציה נשארים החשבונות והסיסמאות שלה.' }),
+            el('div', { className: 'toolbar' }, [add]),
+            el('ul', { className: 'list' }, rows.length ? rows : [el('li', { className: 'empty', textContent: 'עוד אין אפליקציות מחוברות' })]),
+        ]);
+    }
+
+    // גיליון של לקוח: פרטים, כתובות חזרה, סוד, השבתה ומחיקה. סוד חדש מוצג פעם אחת בלבד.
+    function openSsoClient(c, secret = null) {
+        const isNew = !c;
+        const close = el('button', { type: 'button', className: 'icon-btn', textContent: '✕', ariaLabel: 'סגירה' });
+        const id = el('input', { value: c?.id ?? '', dir: 'ltr', placeholder: 'migdalor', disabled: !isNew, ariaLabel: 'מזהה' });
+        const name = el('input', { value: c?.name ?? '', placeholder: 'מגדלור', ariaLabel: 'שם' });
+        const returns = el('textarea', { value: (c?.returns ?? []).join('\n'), dir: 'ltr', rows: 3,
+            placeholder: 'https://app.example.com/sso/callback', ariaLabel: 'כתובות חזרה' });
+        const field = (label, input, hint = '') => el('label', { className: 'f' }, [
+            el('span', { textContent: label }), input, ...(hint ? [el('small', { className: 'muted', textContent: hint })] : []),
+        ]);
+        const save = button(isNew ? 'יצירה' : 'שמירה', async () => {
+            try {
+                const r = await P().api('admin_sso_save', { id: id.value, name: name.value, returns: returns.value.split('\n') });
+                dlg.close();
+                await reload();
+                const fresh = state.sso.find(x => x.id === id.value.trim().toLowerCase());
+                if (fresh) openSsoClient(fresh, r.secret);
+                P().toast(isNew ? '✓ נוצרה' : '✓ נשמר');
+            } catch (err) { P().toast('⚠️ ' + err.message); }
+        }, 'primary');
+
+        const body = [];
+        if (secret) {
+            const copy = el('button', { type: 'button', className: 'icon-btn', textContent: '📋', ariaLabel: 'העתקת הסוד' });
+            copy.addEventListener('click', async () => {
+                try { await navigator.clipboard.writeText(secret); P().toast('הסוד הועתק'); } catch { window.prompt('העתיקו:', secret); }
+            });
+            body.push(el('div', { className: 'note' }, [
+                el('b', { textContent: '🔑 הסוד של האפליקציה — מוצג עכשיו בלבד' }),
+                el('div', { className: 'secret-row' }, [el('code', { textContent: secret, dir: 'ltr' }), copy]),
+                el('small', { textContent: 'שמרו אותו בשרת של האפליקציה (קובץ הגדרות או סוד בפריסה) — לא בקוד ולא בדפדפן. אבד? "סוד חדש".' }),
+            ]));
+        }
+        body.push(field('מזהה (client)', id, isNew ? 'אותיות קטנות באנגלית, ספרות ומקף. לא משתנה אחר כך.' : ''),
+            field('שם — כך המשתמש יראה במסך האישור', name),
+            field('כתובות חזרה — אחת בכל שורה', returns, 'https מלאה, בדיוק כפי שהאפליקציה תשלח. כתובת אחרת תידחה.'),
+            save);
+
+        if (!isNew) {
+            const start = `${ssoUrl()}?client=${encodeURIComponent(c.id)}&state=…&return=${encodeURIComponent(c.returns[0] || '')}`;
+            body.push(el('div', { className: 'sheet-sec', textContent: 'לחיבור האפליקציה' }),
+                el('dl', { className: 'kv' }, [
+                    ['כתובת הכניסה', start], ['החלפת קוד (POST, שרת-לשרת)', `${ssoUrl()}?action=token`],
+                ].map(([k, v]) => el('div', {}, [el('dt', { textContent: k }), el('dd', { dir: 'ltr', textContent: v })]))),
+                el('p', { className: 'muted small', textContent: 'המדריך המלא לאפליקציה: platform/docs/sso.md בריפו.' }),
+                el('div', { className: 'sheet-sec', textContent: 'פעולות' }),
+                el('div', { className: 'tiles' }, [
+                    tileBtn('🔑', 'סוד חדש', async () => {
+                        if (!confirm('ליצור סוד חדש? הסוד הקודם יפסיק לעבוד מיד, וצריך לעדכן אותו באפליקציה.')) return;
+                        try { const r = await P().api('admin_sso_rotate', { id: c.id }); dlg.close(); openSsoClient(c, r.secret); }
+                        catch (err) { P().toast('⚠️ ' + err.message); }
+                    }),
+                    tileBtn(c.disabled ? '↺' : '⏸', c.disabled ? 'הפעלה מחדש' : 'השבתה', async () => {
+                        dlg.close();
+                        await act('admin_sso_toggle', { id: c.id, disabled: !c.disabled }, c.disabled ? 'הופעלה' : 'הושבתה — לא תקבל קודים חדשים');
+                    }),
+                    tileBtn('🗑️', 'מחיקה', async () => {
+                        if (!confirm(`למחוק את "${c.name}"? כל המשתמשים ינותקו ממנה. החשבונות שבתוך האפליקציה לא נפגעים.`)) return;
+                        dlg.close();
+                        await act('admin_sso_delete', { id: c.id }, 'נמחקה');
+                    }, 'danger'),
+                ]));
+            const users = state.users.filter(u => u.sso?.some(s => s.client_id === c.id));
+            body.push(el('div', { className: 'sheet-sec', textContent: `משתמשים שאישרו (${users.length})` }),
+                users.length
+                    ? el('ul', { className: 'list' }, users.map(u => {
+                        const s = u.sso.find(x => x.client_id === c.id);
+                        const x = el('button', { type: 'button', className: 'btn sm danger', textContent: 'ניתוק' });
+                        x.addEventListener('click', async () => {
+                            if (!confirm(`לנתק את ${u.display_name}?`)) return;
+                            dlg.close();
+                            await act('admin_sso_revoke', { user_id: u.id, client_id: c.id }, 'נותק/ה');
+                        });
+                        return el('li', { className: 'urow' }, [el('div', { className: 'u-main static' }, [P().avatar(u),
+                            el('span', { className: 'u-tx' }, [el('b', { textContent: u.display_name }),
+                                el('small', { textContent: `אושר ${relTime(s.granted_at)}${s.last_used_at ? ' · נכנס ' + relTime(s.last_used_at) : ''}` })]),
+                        ]), x]);
+                    }))
+                    : el('p', { className: 'muted small', textContent: 'עוד אף אחד לא נכנס דרכה.' }));
+        }
+
+        const dlg = el('dialog', { className: 'user-sheet' }, [el('div', { className: 'sheet' }, [
+            el('div', { className: 'sheet-head' }, [
+                el('span', { className: 'app-ic sm', textContent: '🔗', ariaHidden: 'true' }),
+                el('div', { className: 'tx' }, [el('h2', { textContent: isNew ? 'אפליקציה חדשה לכניסה המאוחדת' : c.name }),
+                    el('small', { textContent: isNew ? 'אחרי היצירה יוצג הסוד — פעם אחת' : c.id })]),
+                close,
+            ]),
+            el('div', { className: 'sheet-body' }, body),
+        ])]);
+        close.addEventListener('click', () => dlg.close());
+        dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+        dlg.addEventListener('close', () => dlg.remove());
+        document.body.append(dlg);
+        dlg.showModal();
+    }
+
+    function tileBtn(icon, text, onClick, cls = '') {
+        const t = el('button', { type: 'button', className: `tile ${cls}` }, [
+            el('span', { textContent: icon, ariaHidden: 'true' }), el('span', { className: 'one', textContent: text }),
+        ]);
+        t.addEventListener('click', onClick);
+        return t;
     }
 
     // ---------- קטגוריות ואפליקציות ----------
