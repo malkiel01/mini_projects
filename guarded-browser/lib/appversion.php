@@ -22,10 +22,13 @@ const APK_URL = 'https://mbe-plus.com/mini_projects/guarded-browser/download.php
 const APK_LATEST_URL = 'https://github.com/malkiel01/mini_projects/releases/download/guarded-browser-apk/latest.json';
 const APK_LATEST_TTL = 1800;
 
-/** הגרסה האחרונה שפורסמה: ['code' => 45, 'name' => '1.45'], או null כשלא ידוע. ‏$fetch — להחלפה בבדיקות. */
-function latestApp(?callable $fetch = null): ?array {
+/**
+ * הגרסה האחרונה שפורסמה: ['code' => 45, 'name' => '1.45'], או null כשלא ידוע. ‏$fetch — להחלפה בבדיקות.
+ * ‏$ttl — כמה זמן לסמוך על המטמון. ההורדה עצמה (download.php) שואלת כמעט תמיד מחדש.
+ */
+function latestApp(?callable $fetch = null, int $ttl = APK_LATEST_TTL): ?array {
     $row = one("SELECT value, updated_at FROM app_meta WHERE key = 'apk_latest'");
-    $fresh = $row && strtotime((string) $row['updated_at']) > time() - APK_LATEST_TTL;
+    $fresh = $row && strtotime((string) $row['updated_at']) > time() - $ttl;
     if (!$fresh) {
         $r = ($fetch ?? fn() => httpGet(APK_LATEST_URL, 4000))();
         $j = ($r['status'] ?? 0) === 200 ? json_decode((string) $r['body'], true) : null;

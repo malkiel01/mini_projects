@@ -50,7 +50,8 @@ function apkFile(int $code): string {
 }
 
 try {
-    $latest = latestApp();
+    // דקה ולא חצי שעה: מי שמוריד רגע אחרי בנייה חדשה — מקבל אותה, לא את הקודמת.
+    $latest = latestApp(null, 60);
     $file = $latest ? apkFile($latest['code']) : '';
 } catch (Throwable $e) {
     error_log('migdalor download: ' . $e->getMessage());
