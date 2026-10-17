@@ -38,9 +38,10 @@ function access_migrate(): void
             category TEXT,
             hidden   INTEGER NOT NULL DEFAULT 0
         );
-        CREATE TABLE IF NOT EXISTS install_approvals (
-            app_id TEXT PRIMARY KEY  -- המנהל אישר להציג התקנה/הורדה לאפליקציה הזו
-        );
+        -- לשעבר: המנהל אישר התקנה לכל אפליקציה בנפרד. מאז 2026-10-18 — "חנות": מה שאפליקציה
+        -- מסוגלת להתקין מוצג לכולם, והמנהל רק יכול להסתיר (install_hidden). הטבלה נשארת, לא בשימוש.
+        CREATE TABLE IF NOT EXISTS install_approvals (app_id TEXT PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS install_hidden (app_id TEXT PRIMARY KEY);
         CREATE TABLE IF NOT EXISTS grants (
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             kind    TEXT NOT NULL CHECK (kind IN ('app','category')),
@@ -78,7 +79,7 @@ function apps_effective(): array
     $overrides = [];
     foreach (db()->query('SELECT * FROM app_overrides') as $o) $overrides[$o['app_id']] = $o;
     $known = array_column(categories_list(), 'id');
-    $approved = array_flip(db()->query('SELECT app_id FROM install_approvals')->fetchAll(PDO::FETCH_COLUMN));
+    $installHidden = array_flip(db()->query('SELECT app_id FROM install_hidden')->fetchAll(PDO::FETCH_COLUMN));
 
     $apps = [];
     foreach (registry_load()['apps'] as $app) {
@@ -88,7 +89,7 @@ function apps_effective(): array
         // קטגוריה שנמחקה — האפליקציה לא נעלמת, היא עוברת ל"אחר".
         if (!in_array($app['category'], $known, true)) $app['category'] = 'other';
         $app['hidden'] = (bool)($o['hidden'] ?? false);
-        $app['install_ok'] = isset($approved[$app['id']]);
+        $app['install_ok'] = !isset($installHidden[$app['id']]);
         $apps[] = $app;
     }
     return $apps;

@@ -123,7 +123,7 @@ function sso_consent_page(array $client, array $user, string $return): never
         <h2>כניסה ל{$name}</h2>
         <p class="lead"><b>{$name}</b> (<bdi>{$host}</bdi>) מבקשת לזהות אותך בעזרת חשבון כלים דיגיטליים.</p>
         <ul class="perks">
-          <li><span aria-hidden="true">✓</span><span>יימסרו לה רק השם שלך ומספר מזהה</span></li>
+          <li><span aria-hidden="true">✓</span><span>יימסרו לה רק השם שלך, המייל ומספר מזהה</span></li>
           <li><span aria-hidden="true">✕</span><span>לא הסיסמה, ולא אילו אפליקציות יש לך</span></li>
           <li><span aria-hidden="true">↩</span><span>אפשר לבטל בכל רגע: בתפריט האישי ← "חיבורים"</span></li>
         </ul>

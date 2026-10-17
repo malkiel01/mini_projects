@@ -804,7 +804,7 @@ window.PlatformAdmin = (() => {
                 el('span', { textContent: `${app.icon} ${app.name}` }), sel,
                 el('label', { className: 'small' }, [hidden, ' מוסתרת']),
             ];
-            // התקנה נפרדת / APK / חנות — מוצגים למשתמשים רק אחרי אישור כאן.
+            // התקנה נפרדת / APK / חנות — מוצגים לכולם (כמו בחנות); כאן אפשר להסתיר.
             if (app.can_install) {
                 const inst = el('input', { type: 'checkbox', checked: app.install_ok });
                 inst.addEventListener('change', () => act('admin_app_update', { id: app.id, install_ok: inst.checked },
@@ -818,7 +818,7 @@ window.PlatformAdmin = (() => {
             el('h3', { textContent: 'קטגוריות' }), ...cats, add,
             el('h3', { textContent: 'אפליקציות' }),
             el('p', { className: 'muted small', textContent: 'אפליקציה מוסתרת לא מוצגת לאף אחד, גם לא למי שקיבל הרשאה — רק כאן. ' +
-                '"📲 התקנה והורדה" מציג למשתמשים את ההתקנה כאפליקציה נפרדת, את ה-APK או את החנות — רק לאפליקציות שיש להן אחד מאלה.' }),
+                '"📲 התקנה והורדה" — מסומן כברירת מחדל: מי שרואה את האפליקציה יכול גם להתקין אותה (כאפליקציה נפרדת, APK או חנות). מורידים את הסימון כדי להסתיר.' }),
             ...apps,
         ]);
     }
