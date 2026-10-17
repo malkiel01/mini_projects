@@ -20,7 +20,7 @@
   ],
   "gate": true,
   "public": [
-    "api/index.php?do=register|login|pair|policy|check|yt_allowed|trace|heartbeat|ping",
+    "api/index.php?do=register|login|pair|policy|check|yt_allowed|trace|heartbeat|ping|request|requests",
     "parent/**",
     "assets/**"
   ],

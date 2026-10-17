@@ -102,6 +102,8 @@ class BrowserActivity : AppCompatActivity() {
 
     companion object { private const val BEAT_SEC = 30 }
 
+    private val watcher by lazy { RequestWatcher(store) { url, ok -> onAnswer(url, ok) } }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -124,7 +126,7 @@ class BrowserActivity : AppCompatActivity() {
 
         // ההכרעה הראשונה לפני שנטען משהו: גם הכניסה עצמה נבדקת.
         val v = PolicyEngine.evaluate(policy, ruleSet, start, true, usedSec, sessionSec)
-        if (!v.allow && !v.needsServer) { refuse(v.reason.ifEmpty { "הכתובת אינה מותרת" }); return }
+        if (!v.allow && !v.needsServer) { refuse(v.reason.ifEmpty { "הכתובת אינה מותרת" }, v.code, start); return }
 
         Trace.reset()
         Trace.log("browser.open", "sdk=" + Build.VERSION.SDK_INT +
@@ -260,7 +262,7 @@ class BrowserActivity : AppCompatActivity() {
                     askServerThenLoad(url)
                     return true
                 }
-                refuse(v.reason)
+                refuse(v.reason, v.code, url)
                 return true      // הניווט נבלע; הדף הנוכחי נשאר
             }
 
@@ -347,7 +349,7 @@ class BrowserActivity : AppCompatActivity() {
             if (r.json?.optString("code") == "unauthorized") { refuse("נדרשת כניסה מחדש"); return@check }
             // שגיאת רשת אינה סירוב: r.json ריק פירושו שלא הצלחנו לשאול.
             if (r.json != null && !r.json.optBoolean("allowed", true)) {
-                refuse(r.json.optString("reason", "הכתובת אינה מותרת"))
+                refuse(r.json.optString("reason", "הכתובת אינה מותרת"), r.json.optString("code"), url)
             }
         }
     }
@@ -361,7 +363,11 @@ class BrowserActivity : AppCompatActivity() {
             usedSec = j.optInt("used_today_sec", usedSec)
             if (!j.optBoolean("allowed", true)) {
                 refuse(j.optString("reason", "הגישה הופסקה"))
+                return@heartbeat
             }
+            // ההורה שינה משהו (או אישר בקשה) — מדיניות חדשה תוך פעימה אחת.
+            val rev = j.optString("rev")
+            if (rev.isNotEmpty() && rev != store.rev) refreshPolicy()
         }
     }
 
@@ -393,10 +399,10 @@ class BrowserActivity : AppCompatActivity() {
                 when {
                     j == null -> revert("אין חיבור לשרת, ולא ניתן לוודא שהכתובת מותרת")
                     j.optBoolean("allowed") -> { lastAllowed = url; hideCover() }
-                    else -> revert(j.optString("reason", "הכתובת אינה מותרת"))
+                    else -> revert(j.optString("reason", "הכתובת אינה מותרת"), j.optString("code"), url)
                 }
             }
-            else -> revert(v.reason)
+            else -> revert(v.reason, v.code, url)
         }
     }
 
@@ -441,15 +447,23 @@ class BrowserActivity : AppCompatActivity() {
         b.cover.visibility = View.GONE
     }
 
-    /** מחזיר לכתובת המותרת האחרונה, ומסביר למה. */
-    private fun revert(reason: String) {
+    /**
+     * מחזיר לכתובת המותרת האחרונה, ומסביר למה. כשאפשר לבקש (שלב 6) — ההסבר
+     * בא עם "🙋 בקש גישה", ואם ההורה מאשר הדף ייפתח בלי לחפש אותו שוב.
+     */
+    private fun revert(reason: String, code: String = "", url: String = "") {
         if (closing) return
         ticker.removeCallbacks(coverTimeout)
         b.web.stopLoading()
-        toast(reason.ifEmpty { "הכתובת אינה מותרת בחשבון שלך" })
+        val msg = reason.ifEmpty { "הכתובת אינה מותרת בחשבון שלך" }
+        if (AccessRequest.canAsk(code, url)) {
+            com.google.android.material.snackbar.Snackbar.make(b.root, msg, 7000)
+                .setAction("🙋 בקש גישה") { AccessRequest.ask(this, store, url) { watcher.kick() } }
+                .show()
+        } else toast(msg)
 
         val back = lastAllowed
-        if (back.isEmpty()) { refuse(reason); return }
+        if (back.isEmpty()) { refuse(reason, code, url); return }
 
         /*
          * חזרה בהיסטוריה, לא טעינה מחדש (שלב 5).
@@ -543,8 +557,18 @@ class BrowserActivity : AppCompatActivity() {
             runOnUiThread { resolveVideos(ids.take(30)) }
         }
 
+        /** לחיצה על סרטון או ערוץ שלא אושרו נעצרה בדף — ואפשר לבקש אותם (שלב 6). */
         @JavascriptInterface
-        fun blocked() { runOnUiThread { toast("זה לא מערוץ שאושר לך") } }
+        fun blocked(href: String) {
+            val url = if (href.startsWith("/")) "https://m.youtube.com$href" else href
+            runOnUiThread {
+                if (closing) return@runOnUiThread
+                if (!AccessRequest.canAsk("yt_not_approved", url)) { toast("זה לא מערוץ שאושר לך"); return@runOnUiThread }
+                com.google.android.material.snackbar.Snackbar.make(b.root, "זה לא מערוץ שאושר לך", 7000)
+                    .setAction("🙋 בקש גישה") { AccessRequest.ask(this@BrowserActivity, store, url) { watcher.kick() } }
+                    .show()
+            }
+        }
     }
 
     private fun resolveVideos(ids: List<String>) {
@@ -655,13 +679,16 @@ class BrowserActivity : AppCompatActivity() {
             when {
                 j == null -> refuse("אין חיבור לשרת, ולא ניתן לוודא שהכתובת מותרת")
                 j.optBoolean("allowed") -> { lastAllowed = url; b.web.loadUrl(url) }
-                else -> refuse(j.optString("reason", "הכתובת אינה מותרת"))
+                else -> refuse(j.optString("reason", "הכתובת אינה מותרת"), j.optString("code"), url)
             }
         }
     }
 
-    /** מסך סירוב אחד לכל הסיבות. סוגר את הדפדפן — לא רק את הדף. */
-    private fun refuse(reason: String) {
+    /**
+     * מסך סירוב אחד לכל הסיבות. סוגר את הדפדפן — לא רק את הדף.
+     * ‏code ו-url — כדי להציע "בקש גישה" כשהחסימה היא על האתר (שלב 6).
+     */
+    private fun refuse(reason: String, code: String = "", url: String = "") {
         if (closing) return
         closing = true
 
@@ -685,12 +712,54 @@ class BrowserActivity : AppCompatActivity() {
             return
         }
 
-        AlertDialog.Builder(this)
+        val dlg = AlertDialog.Builder(this)
             .setTitle("הגישה נחסמה")
             .setMessage(reason.ifEmpty { "הכתובת אינה מותרת בחשבון שלך" })
             .setCancelable(false)
             .setPositiveButton("סגירה") { _, _ -> finish() }
+        if (AccessRequest.canAsk(code, url)) {
+            dlg.setNeutralButton("🙋 בקש גישה") { _, _ ->
+                // ביטול — חוזרים למסך הבית, לא נשארים על דף ריק.
+                AccessRequest.ask(this, store, url, onCancel = { finish() }) { waitFor(url) }
+            }
+        }
+        dlg.show()
+    }
+
+    /**
+     * נשלחה בקשה מתוך מסך הסירוב: ממתינים כאן. ההורה אישר — הדפדפן נפתח מחדש
+     * על אותה כתובת; דחה — אומרים את זה. "סגירה" — וההמתנה עוברת למסך הבית.
+     */
+    private var waiting: AlertDialog? = null
+    private var waitingUrl = ""
+
+    private fun waitFor(url: String) {
+        waitingUrl = url
+        waiting = AlertDialog.Builder(this)
+            .setTitle("🙋 הבקשה נשלחה")
+            .setMessage("מחכים לתשובה של ההורה על ${AccessRequest.hostOf(url)}.\nאם יאשר — הדף ייפתח לבד.")
+            .setCancelable(false)
+            .setPositiveButton("סגירה") { _, _ -> finish() }
             .show()
+        watcher.kick()
+    }
+
+    private fun onAnswer(url: String, approved: Boolean) {
+        if (closing && url == waitingUrl) {
+            if (approved) {
+                waiting?.dismiss()
+                startActivity(android.content.Intent(this, BrowserActivity::class.java).putExtra("url", url))
+                finish()
+            } else {
+                waiting?.setTitle("ההורה לא אישר הפעם")
+                waiting?.setMessage("אפשר לדבר איתו, או לבקש שוב מאוחר יותר.")
+            }
+            return
+        }
+        if (closing) return
+        policy = store.policy(); ruleSet = store.ruleSet()
+        if (approved) { toast("✅ ההורה אישר — ${AccessRequest.hostOf(url)}"); lastAllowed = url; b.web.loadUrl(url) }
+        else toast("ההורה לא אישר את ${AccessRequest.hostOf(url)}")
     }
 
     private fun toast(s: String) =
@@ -901,6 +970,7 @@ class BrowserActivity : AppCompatActivity() {
         // חזרנו למסך — אין עוד סיבה להתראה.
         if (!background) GuardService.stop(this)
         refreshPolicy()
+        if (store.pendingRequests().isNotEmpty()) watcher.start()
     }
 
     /**
@@ -925,6 +995,7 @@ class BrowserActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         onScreen = false
+        watcher.stop()
         Trace.log("onPause", state())
 
         /*

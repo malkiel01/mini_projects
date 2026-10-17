@@ -2,7 +2,7 @@
 /**
  * נקודת הקצה היחידה של האפליקציה.
  *
- * ‏?do=register | login | pair | policy | check | yt_allowed | heartbeat | ping
+ * ‏?do=register | login | pair | policy | check | yt_allowed | heartbeat | ping | request | requests
  *
  * ריכוז בקובץ אחד ולא חמישה: כל הבקשות חולקות אימות, טיפול בשגיאות
  * ופורמט תשובה, והפיצול היה מייצר חמישה עותקים של אותה חמישייה.
@@ -17,6 +17,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../lib/auth.php';
 require_once __DIR__ . '/../lib/alerts.php';
 require_once __DIR__ . '/../lib/children.php';
+require_once __DIR__ . '/../lib/push.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -112,6 +113,7 @@ function policyPayload(array $user): array {
             'scope'     => $r['scope'],
             'action'    => $r['action'],
             'show_tile' => (bool) $r['show_tile'],
+            'expires_at' => (string) ($r['expires_at'] ?? ''),
         ], $set['rules']),
         /*
          * אריחים — מה שמוצג במסך הפתיחה.
@@ -128,6 +130,8 @@ function policyPayload(array $user): array {
         // כתובת השרת הקבועה (data/config.json). האפליקציה עוברת אליה רק
         // אחרי שבדקה ב-ping שהיא באמת עונה — כתובת שגויה לא תנתק מכשירים.
         'server_url'     => serverUrl(),
+        // טביעת האצבע של המדיניות — הפעימה משווה אליה (policyRev).
+        'rev'            => policyRev($uid),
         'categories'     => $set['categories'],
         'domain_map'     => $slim,
         'platforms'      => array_map(fn($p) => [
@@ -351,6 +355,24 @@ try {
         out(['ok' => true, 'verdicts' => (object) youTubeVideoVerdicts(ruleSetFor((int) $user['id']), is_array($ids) ? $ids : [])]);
     }
 
+    /* ── בקש גישה (שלב 6) ─────────────────────────────────────────
+     * הילד נחסם ומבקש; ההורים בחשבון מקבלים צלצול — אחרי שהתשובה כבר
+     * יצאה לילד, כדי ששירות ההתראות לא יעכב אותו.
+     */
+    if ($do === 'request') {
+        $user = requireUser();
+        [$id, $msg, $err] = requestCreate($user, field('url'), field('note'));
+        if ($err) bad($err, 'request_refused');
+        pushAfterResponse();
+        out(['ok' => true, 'id' => $id, 'message' => $msg]);
+    }
+
+    /* ── האם ההורה ענה ── המכשיר שואל כל עוד יש לו בקשה ממתינה. */
+    if ($do === 'requests') {
+        $user = requireUser();
+        out(['ok' => true, 'requests' => requestsOfChild((int) $user['id']), 'rev' => policyRev((int) $user['id'])]);
+    }
+
     /* ── פעימה ─────────────────────────────────────────────────────
      * צוברת זמן צפייה ומחזירה את המצב. זה גם ערוץ הניתוק: מנהל
      * שמשעה חשבון או מוחק מכשיר — הפעימה הבאה מחזירה סירוב.
@@ -375,7 +397,7 @@ try {
         out(['ok' => true, 'allowed' => $d['allow'], 'code' => $d['code'], 'reason' => $d['reason'],
              'used_today_sec' => $used,
              'quota_left_sec' => $quota > 0 ? max(0, $quota * 60 - $used) : -1,
-             'server_url' => serverUrl()]);
+             'server_url' => serverUrl(), 'rev' => policyRev($uid)]);
     }
 
     bad('פעולה לא מוכרת', 'unknown_action', 404);

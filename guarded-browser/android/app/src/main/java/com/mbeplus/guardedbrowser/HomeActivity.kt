@@ -29,6 +29,20 @@ class HomeActivity : AppCompatActivity() {
     private var allowed = true
     private var query = ""
 
+    /** בקשה שנשלחה מהדפדפן ונענתה כשהילד כבר במסך הבית (שלב 6). */
+    private val watcher by lazy {
+        RequestWatcher(store) { url, ok ->
+            val host = AccessRequest.hostOf(url)
+            if (ok) {
+                Toast.makeText(this, "✅ ההורה אישר את $host", Toast.LENGTH_LONG).show()
+                refresh(); open(url)
+            } else {
+                MaterialAlertDialogBuilder(this).setTitle("ההורה לא אישר הפעם")
+                    .setMessage("הבקשה ל-$host נדחתה.").setPositiveButton("הבנתי", null).show()
+            }
+        }
+    }
+
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         store = Store(this)
@@ -51,6 +65,12 @@ class HomeActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         refresh()
+        if (store.pendingRequests().isNotEmpty()) watcher.start()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (::store.isInitialized) watcher.stop()
     }
 
     /**
@@ -78,6 +98,8 @@ class HomeActivity : AppCompatActivity() {
                 !r.ok && r.json == null -> "אין חיבור לשרת — מוצגים האתרים שנשמרו" to R.drawable.bg_status_warn
                 !r.ok -> reason to R.drawable.bg_status_danger
                 !allowed -> reason.ifEmpty { "הגלישה חסומה כרגע" } to R.drawable.bg_status_danger
+                store.pendingRequests().isNotEmpty() -> "🙋 מחכים לתשובה מההורה: " +
+                    store.pendingRequests().values.joinToString(", ") { AccessRequest.hostOf(it) } to R.drawable.bg_status_warn
                 else -> "" to 0
             }
             b.status.text = text

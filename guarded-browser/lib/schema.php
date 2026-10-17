@@ -288,6 +288,49 @@ function schemaStatements(): array {
         used_at    TEXT    NOT NULL DEFAULT ''
     )",
 
+    // ── בקש גישה (שלב 6) ───────────────────────────────────────
+    // ילד שנחסם מבקש; הורה בחשבון מאשר או דוחה. ‏scope: page · site · hour.
+    // ‏rule_id — הכלל שנוצר באישור (0 ביוטיוב, שם נוצר פריט ולא כלל).
+    "CREATE TABLE IF NOT EXISTS access_requests (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id  INTEGER NOT NULL,
+        child_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        url         TEXT    NOT NULL,
+        host        TEXT    NOT NULL,
+        note        TEXT    NOT NULL DEFAULT '',
+        code        TEXT    NOT NULL DEFAULT '',
+        status      TEXT    NOT NULL DEFAULT 'pending',
+        scope       TEXT    NOT NULL DEFAULT '',
+        decided_by  INTEGER NOT NULL DEFAULT 0,
+        decided_at  TEXT    NOT NULL DEFAULT '',
+        created_at  TEXT    NOT NULL
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_requests_account ON access_requests(account_id, status)",
+    "CREATE INDEX IF NOT EXISTS idx_requests_child ON access_requests(child_id, created_at)",
+
+    // ── התראות להורה (Web Push) ────────────────────────────────
+    // נשלח רק "צלצול" ריק; התוכן נמשך מהשרת עם העוגייה (lib/push.php).
+    "CREATE TABLE IF NOT EXISTS push_vapid (
+        id          INTEGER PRIMARY KEY,
+        private_pem TEXT NOT NULL,
+        public_key  TEXT NOT NULL,
+        created_at  TEXT NOT NULL
+    )",
+    "CREATE TABLE IF NOT EXISTS push_subs (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        parent_id   INTEGER NOT NULL,
+        endpoint    TEXT    NOT NULL UNIQUE,
+        fails       INTEGER NOT NULL DEFAULT 0,
+        last_ok_at  TEXT    NOT NULL DEFAULT '',
+        delivered_at TEXT   NOT NULL DEFAULT '',
+        created_at  TEXT    NOT NULL
+    )",
+    // עד איפה צלצלנו להורה — לכל ההורה; מה נמסר — לכל מכשיר (push_subs.delivered_at).
+    "CREATE TABLE IF NOT EXISTS push_state (
+        parent_id    INTEGER PRIMARY KEY,
+        pinged_at    TEXT NOT NULL DEFAULT ''
+    )",
+
     // ‏kind: admin (הפאנל הישן) · dev (קונסולת המפתח) · parent (שלב 3).
     "CREATE TABLE IF NOT EXISTS admin_sessions (
         token_hash   TEXT    PRIMARY KEY,

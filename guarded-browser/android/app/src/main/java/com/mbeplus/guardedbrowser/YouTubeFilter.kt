@@ -14,7 +14,8 @@ import org.json.JSONArray
  *   • קישור לערוץ — מוצג רק אם הערוץ אושר.
  *
  * ולחיצה על קישור שאינו מאושר נעצרת לפני שיוטיוב מנווט (האזנה בשלב
- * ה-capture). כך אין "קפיצה" חזרה — לא הייתה יציאה מלכתחילה.
+ * ה-capture). כך אין "קפיצה" חזרה — לא הייתה יציאה מלכתחילה. הכתובת נמסרת
+ * לאפליקציה (MgYt.blocked), שמציעה לילד "בקש גישה" (שלב 6).
  *
  * זו שכבת נוחות: האכיפה עצמה נשארת ב-enforceCurrent ובשרת. דף שעוקף את
  * הסקריפט עדיין לא יפתח סרטון לא מאושר.
@@ -79,7 +80,7 @@ object YouTubeFilter {
   var a=e.target && e.target.closest ? e.target.closest('a[href]') : null; if(!a) return;
   var href=a.getAttribute('href')||'', id=vid(href), bad=false;
   if(id) bad = V[id]!=='allow'; else { var x=chan(href); if(x) bad=!chanOk(x); }
-  if(bad){ e.preventDefault(); e.stopImmediatePropagation(); try{ MgYt.blocked(); }catch(err){} }
+  if(bad){ e.preventDefault(); e.stopImmediatePropagation(); try{ MgYt.blocked(a.href); }catch(err){} }
  }, true);
  new MutationObserver(later).observe(document.documentElement, {childList:true, subtree:true});
  window.__mgYt = { scan: scan, verdicts: function(m){ for(var id in m) V[id] = m[id] ? 'allow' : 'deny'; scan(); } };

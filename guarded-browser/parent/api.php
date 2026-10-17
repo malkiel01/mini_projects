@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../lib/children.php';
 require_once __DIR__ . '/../lib/json.php';
+require_once __DIR__ . '/../lib/push.php';
 
 jsonHeaders();
 
@@ -62,6 +63,16 @@ try {
     $action = (string) ($_GET['action'] ?? '');
 
     if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'me') out(meState());
+
+    /*
+     * ה-service worker התעורר מצלצול ושואל מה חדש. ‏GET בלי CSRF: אין לו את
+     * האסימון, והפעולה רק קוראת (ומסמנת כנמסר). העוגייה עדיין נדרשת.
+     */
+    if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'push_pending') {
+        $p = currentParent();
+        $ep = (string) ($_GET['ep'] ?? '');
+        out(['ok' => true, 'items' => $p && !$p['must_change_pw'] ? pushPending($p, $ep) : []]);
+    }
     requirePostFrom();
 
     if ($action === 'login') {
@@ -168,6 +179,30 @@ try {
             [$code, $exp] = pairCreate((int) $c['id']);
             out(['ok' => true, 'code' => $code, 'expires_at' => $exp, 'server' => serverBase(),
                  'qr' => 'migdalor:pair?c=' . $code . '&s=' . rawurlencode(serverBase())]);
+
+        /* ── בקשות גישה (שלב 6) ── */
+        case 'requests':
+            requestsCleanup();
+            out(['ok' => true, 'requests' => requestList($aid)]);
+
+        case 'request_decide':
+            [$msg, $err] = requestDecide($aid, $pid, num('req'), str('decision'), str('scope') ?: 'page');
+            if ($err) fail($err);
+            out(['ok' => true, 'message' => $msg, 'requests' => requestList($aid)]);
+
+        /* ── התראות לטלפון ── */
+        case 'push_key':
+            $k = pushKeys();
+            if (!$k) fail('השרת אינו תומך בהתראות');
+            out(['ok' => true, 'key' => $k['public']]);
+
+        case 'push_sub':
+            if ($err = pushSubscribe($pid, str('endpoint'))) fail($err);
+            out(['ok' => true]);
+
+        case 'push_unsub':
+            pushUnsubscribe($pid, str('endpoint'));
+            out(['ok' => true]);
 
         case 'usage_reset':
             $c = myChild($parent);
