@@ -44,6 +44,25 @@ function latestApp(?callable $fetch = null, int $ttl = APK_LATEST_TTL): ?array {
     return $code > 0 ? ['code' => $code, 'name' => '1.' . $code] : null;
 }
 
+/* ── הרשאות המכשיר (מסלול ההקמה) — אותם ביטים כמו Setup.kt ── */
+const PERM_NOTIF = 1, PERM_BATTERY = 2, PERM_ADMIN = 4, PERM_INSTALL = 8;
+const PERM_REQUIRED = 3;   // NOTIF | BATTERY
+const PERM_NAMES = [PERM_NOTIF => 'התראות', PERM_BATTERY => 'ריצה רציפה', PERM_ADMIN => 'ניהול מכשיר', PERM_INSTALL => 'עדכונים'];
+
+/** מצב ההרשאות של מכשיר: מה ניתן, מה חסר, והאם החיוני כולו קיים. */
+function devicePermsState(int $perms): array {
+    $missing = [];
+    foreach (PERM_NAMES as $bit => $name) if (!($perms & $bit)) $missing[$bit] = $name;
+    $requiredMissing = array_values(array_intersect_key($missing, array_flip([PERM_NOTIF, PERM_BATTERY])));
+    return [
+        'ok'       => ($perms & PERM_REQUIRED) === PERM_REQUIRED,
+        'complete' => count($missing) === 0,
+        'missing'  => array_values($missing),
+        'required_missing' => $requiredMissing,
+        'admin'    => (bool) ($perms & PERM_ADMIN),
+    ];
+}
+
 /** מה ההורה רואה על מכשיר: גרסה, האם יש חדשה, האם כבר ביקש. */
 function deviceAppState(array $d, ?array $latest): array {
     $v = (int) ($d['app_version'] ?? 0);

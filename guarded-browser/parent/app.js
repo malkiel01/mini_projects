@@ -170,7 +170,7 @@ async function loadKids() {
             el('span', { class: 'avatar', style: `--h:${hue(k.name)}`, ariaHidden: 'true', text: initials(k.name) }),
             el('div', { class: 'body' }, [
                 el('div', { class: 'l1' }, [el('span', { text: k.name }), el('span', { class: 't', text: ago(k.last_seen_at) })]),
-                el('div', { class: 'l2', text: (k.requests ? `🙋 ${k.requests} · ` : '') + (k.outdated ? '⬆️ · ' : '') + `⏱️ היום ${mins(k.used_sec)}${quota}`
+                el('div', { class: 'l2', text: (k.requests ? `🙋 ${k.requests} · ` : '') + (k.perms_bad ? '🛡️ · ' : '') + (k.outdated ? '⬆️ · ' : '') + `⏱️ היום ${mins(k.used_sec)}${quota}`
                     + (k.blocked_today ? ` · 🚫 ${k.blocked_today} חסימות` : '') + ` · 📱 ${k.devices}` }),
             ]),
             chip,
@@ -403,6 +403,14 @@ function appLine(d) {
     return `✓ ${a.version_name} — מעודכנת`;
 }
 
+/** שורת ההרשאות של מכשיר (מסלול ההקמה): מה חסר, או ✓. */
+function permLine(p) {
+    if (!p) return '';
+    if (p.required_missing.length) return `⚠️ חסרות הרשאות חיוניות: ${p.required_missing.join('، ')}`;
+    if (!p.admin) return '🛡️ ניהול מכשיר לא מופעל (מומלץ)';
+    return p.complete ? '✓ כל ההרשאות' : `הרשאות: חסר ${p.missing.join('، ')}`;
+}
+
 function updateDevice(d) {
     if (d.app.requested) {
         if (confirm('לבטל את בקשת העדכון?')) act('device_update_cancel', { device_id: d.id }, 'בוטל');
@@ -418,7 +426,9 @@ function updateDevice(d) {
 function kidDev() {
     const list = K.device_list.length ? el('ul', { class: 'rows' }, K.device_list.map(d => el('li', {}, [
         el('span', { text: '📱', ariaHidden: 'true' }),
-        el('span', { class: 'nm' }, [d.name || 'מכשיר', el('small', { text: `${appLine(d)} · ${ago(d.last_seen_at)}` })]),
+        el('span', { class: 'nm' }, [d.name || 'מכשיר',
+            el('small', { text: `${appLine(d)} · ${ago(d.last_seen_at)}` }),
+            el('small', { text: permLine(d.perms), style: `color:${d.perms.ok ? 'var(--muted)' : 'var(--danger)'}` })]),
         d.app.status !== 'current' ? el('button', { type: 'button', class: d.app.requested ? 'btn ghost sm' : 'btn primary sm',
             text: d.app.requested ? '⏳ נשלח' : '⬆️ עדכון', onclick: () => updateDevice(d) }) : null,
         el('button', { type: 'button', class: 'icon-btn', text: '✕', ariaLabel: 'ניתוק', onclick: () => {

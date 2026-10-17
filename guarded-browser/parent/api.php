@@ -63,7 +63,7 @@ function detail(array $parent, int $childId): array {
     // גרסת האפליקציה בכל מכשיר, מול האחרונה שפורסמה.
     $latest = latestApp();
     $out['latest_app'] = $latest;
-    foreach ($out['device_list'] as &$d) $d['app'] = deviceAppState($d, $latest);
+    foreach ($out['device_list'] as &$d) { $d['app'] = deviceAppState($d, $latest); $d['perms'] = devicePermsState((int) $d['perms']); }
     return $out;
 }
 
@@ -116,6 +116,9 @@ try {
                 // מכשירים שצריכים עדכון — לסימן ⬆️ בכרטיס.
                 $card['outdated'] = count(array_filter(all('SELECT app_version FROM devices WHERE user_id = ?', [$u['id']]),
                     fn($d) => deviceAppState($d, $latest)['status'] !== 'current'));
+                // מכשירים שחסרה בהם הרשאה חיונית (מסלול ההקמה) — לסימן 🛡️ בכרטיס.
+                $card['perms_bad'] = count(array_filter(all('SELECT perms FROM devices WHERE user_id = ?', [$u['id']]),
+                    fn($d) => !devicePermsState((int) $d['perms'])['ok']));
                 return $card;
             }, $rows)]);
 

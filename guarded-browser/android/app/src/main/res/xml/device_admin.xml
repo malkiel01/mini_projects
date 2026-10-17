@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- מדיניות מנהל המכשיר של מגדלור: נעילת מסך בלבד, לעת עתה.
+     עצם ההפעלה (דרך מסך האישור של אנדרואיד) הופכת את ההסרה לפעולה מכוונת —
+     צריך קודם לבטל את "מנהל המכשיר" בהגדרות, מה שההורה שולט בו. -->
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-policies>
+        <force-lock/>
+    </uses-policies>
+</device-admin>

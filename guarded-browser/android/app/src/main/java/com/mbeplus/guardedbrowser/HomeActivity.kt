@@ -68,6 +68,9 @@ class HomeActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // שער ההקמה: בלי ההרשאות החיוניות לא נכנסים למגדלור.
+        store.perms = Setup.flags(this)
+        if (!Setup.ready(this)) { startActivity(Intent(this, SetupActivity::class.java)); return }
         refresh()
         if (store.pendingRequests().isNotEmpty()) watcher.start()
     }
