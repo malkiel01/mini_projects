@@ -285,7 +285,7 @@
   };
 
   /** חלון שיתוף עם בעלי חשבון — לתבנית או למסמך. למעלה: מי כבר רואה. למטה: הוספה. */
-  async function shareDialog(type, id, title, after) {
+  async function shareDialog(type, id, title, after, opts = {}) {
     const what = type === 'template' ? 'התבנית' : 'המסמך';
     const list = el('ul', { class: 'share-list' }, el('li', { class: 'empty' }, 'טוען…'));
     const out = el('div');
@@ -381,19 +381,26 @@
     }
     const submit = el('button', { type: 'submit', class: 'primary' }, '➕ שיתוף');
     const viaHint = el('p', { class: 'hint' });
+    // מי שרק ממלא טופס לא צריך חשבון: קישור מילוי בוואטסאפ ("📨 שליחה למילוי"), לא הזמנה לחשבון
+    const toFill = type === 'template' ? () => window.DTDocs.issue(id, true) : opts.fill;
+    const fillBox = toFill ? el('div', { class: 'share-fill' },
+      el('div', {}, el('strong', {}, 'רק ממלא טופס? לא צריך חשבון'),
+        el('small', {}, type === 'template' ? 'נוצר מסמך, בוחרים אילו שדות הוא ממלא, ושולחים לו קישור בוואטסאפ.' : 'בוחרים אילו שדות הוא ממלא, ושולחים לו קישור בוואטסאפ.')),
+      el('button', { type: 'button', class: 'small', onclick: () => { dlg.close(); Promise.resolve(toFill()).catch(e => toast(e.message, true)); } }, '📨 שליחה למילוי')) : null;
     const phoneRow = el('div', { class: 'share-phone' }, phone, pname);
     function setVia(v) {
       const p = v === 'phone';
       email.hidden = p; email.required = !p;
       phoneRow.hidden = !p; phone.required = p;
+      if (fillBox) fillBox.hidden = !p;
       submit.textContent = p ? '💬 שליחה בוואטסאפ' : '➕ שיתוף';
       viaHint.textContent = p
-        ? 'נשלח קישור אישי. הוא נכנס או נרשם דרכו — והשיתוף נוצר לחשבון שלו.'
+        ? 'לשותף עם חשבון: נשלח קישור אישי, הוא נכנס או נרשם דרכו — והשיתוף נוצר לחשבון שלו.'
         : 'למשתמש שכבר רשום. לקוח שרק ממלא טופס — דרך "📨 שליחה למילוי".';
     }
     const add = el('form', { class: 'card share-add' },
       el('h3', {}, 'שיתוף עם עוד מישהו'),
-      viaSeg, email, phoneRow, seg, levelHint, submit, viaHint);
+      viaSeg, fillBox, email, phoneRow, seg, levelHint, submit, viaHint);
     setVia('email');
     add.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -404,7 +411,7 @@
       submit.disabled = false;
     });
     const count = el('span', { class: 'count' });
-    sheet('👥 שיתוף — ' + title, el('div', { class: 'share-sheet' },
+    const dlg = sheet('👥 שיתוף — ' + title, el('div', { class: 'share-sheet' },
       el('h3', { class: 'share-title' }, `מי רואה את ${what}`, count),
       list, out, add));
     await load();
