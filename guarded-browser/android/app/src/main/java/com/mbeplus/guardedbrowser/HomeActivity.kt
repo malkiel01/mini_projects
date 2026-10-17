@@ -92,7 +92,7 @@ class HomeActivity : AppCompatActivity() {
         Api.policy(store.token) { r ->
             b.progress.visibility = View.GONE
             if (!r.ok && r.json?.optString("code") == "unauthorized") { unpair(); return@policy }
-            if (r.ok && r.json != null) { store.savePolicy(r.json); reportApps() }
+            if (r.ok && r.json != null) { store.savePolicy(r.json); reportApps(); Enforcer.apply(this, store) }
             // ההורה ביקש לעדכן, ויש גרסה חדשה.
             r.json?.optJSONObject("update")?.let { Updater.offer(this, it) }
 

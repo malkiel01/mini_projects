@@ -303,3 +303,24 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 .apps .seg.mini { flex: none; width: auto; }
 .apps .seg.mini input[value=allow]:checked + span { background: var(--ok); color: #fff; }
 .apps .seg.mini input[value=block]:checked + span { background: var(--danger); color: #fff; }
+
+/* ── מצב אכיפה (שלב 11) ─────────────────────────────────────────── */
+.enf { border: 1px solid var(--line); border-radius: var(--r); padding: var(--s3); margin-top: var(--s2); background: var(--surface); }
+.enf.ok { border-color: color-mix(in srgb, var(--ok) 40%, var(--line)); background: color-mix(in srgb, var(--ok) 6%, var(--surface)); }
+.enf.warn { border-color: color-mix(in srgb, var(--star) 45%, var(--line)); background: color-mix(in srgb, var(--star) 7%, var(--surface)); }
+.enf-head { display: flex; align-items: center; gap: var(--s2); }
+.enf-head b { flex: 1; }
+.enf-more { background: none; border: 0; color: var(--brand); font-size: .85rem; cursor: pointer; padding: 4px; }
+.enf-sub { margin: 4px 0 0; color: var(--muted); font-size: .85rem; }
+.enf-detail { margin-top: var(--s2); border-top: 1px solid var(--line); }
+.enf-row { display: flex; align-items: center; gap: var(--s2); padding: 8px 0; border-top: 1px solid var(--line); }
+.enf-row:first-child { border-top: 0; }
+.enf-ic { flex: none; font-size: 15px; }
+.enf-nm { flex: 1; min-width: 0; font-size: .9rem; }
+.enf-nm small { display: block; color: var(--muted); font-size: .78rem; }
+.enf-st { flex: none; font-size: .78rem; font-weight: 600; }
+.enf-st.full { color: var(--ok); } .enf-st.partial { color: var(--star); } .enf-st.none { color: var(--danger); }
+
+/* ── פקודה להעתקה (קונסולת המפתח) ──────────────────────────────── */
+.cmd { font: .8rem/1.5 ui-monospace, Menlo, Consolas, monospace; background: var(--bg); border: 1px solid var(--line);
+       border-radius: var(--r); padding: var(--s2) var(--s3); margin: var(--s2) 0; overflow-x: auto; white-space: pre; user-select: all; }

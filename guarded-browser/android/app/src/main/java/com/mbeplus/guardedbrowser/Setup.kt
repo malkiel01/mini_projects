@@ -27,6 +27,7 @@ object Setup {
     const val ADMIN = 4
     const val INSTALL = 8
     const val ACCESS = 16
+    const val OWNER = 32
 
     class Step(
         val key: Int,
@@ -85,7 +86,11 @@ object Setup {
     fun pendingRequired(ctx: Context): List<Step> = steps(ctx).filter { it.required && !it.done(ctx) }
 
     /** מצב כל ההרשאות כמספר ביטים — לדיווח ולזיכרון במכשיר. */
-    fun flags(ctx: Context): Int = steps(ctx).fold(0) { f, s -> if (s.done(ctx)) f or s.key else f }
+    fun flags(ctx: Context): Int {
+        var f = steps(ctx).fold(0) { acc, s -> if (s.done(ctx)) acc or s.key else acc }
+        if (Enforcer.isOwner(ctx)) f = f or OWNER   // בעל מכשיר — מדווח גם הוא
+        return f
+    }
 
     /** האם כל החיוניות ניתנו — לשער הכניסה. */
     fun ready(ctx: Context): Boolean = pendingRequired(ctx).isEmpty()

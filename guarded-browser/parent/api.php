@@ -17,6 +17,7 @@ require_once __DIR__ . '/../lib/activity.php';
 require_once __DIR__ . '/../lib/appversion.php';
 require_once __DIR__ . '/../lib/search.php';
 require_once __DIR__ . '/../lib/appcontrol.php';
+require_once __DIR__ . '/../lib/enforce.php';
 
 jsonHeaders();
 
@@ -65,6 +66,8 @@ function detail(array $parent, int $childId): array {
     $latest = latestApp();
     $out['latest_app'] = $latest;
     foreach ($out['device_list'] as &$d) { $d['app'] = deviceAppState($d, $latest); $d['perms'] = devicePermsState((int) $d['perms']); }
+    unset($d);
+    $out['enforcement'] = enforcementState((int) $parent['account_id'], $childId);
     return $out;
 }
 

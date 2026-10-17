@@ -92,6 +92,11 @@ class Store(context: Context) {
     val appsBlocked: Set<String> get() = strSet("apps_blocked")
     val appsAllowed: Set<String> get() = strSet("apps_allowed")
 
+    /** חבילות שמגדלור השעה (בעל מכשיר) — כדי לבטל השעיה כשהן כבר לא חסומות. */
+    var suspended: Set<String>
+        get() = strSet("suspended")
+        set(v) { prefs.edit().putString("suspended", JSONArray(v.toList()).toString()).apply() }
+
     /** חבילות ה-launcher במכשיר — לא נחסמות. נשמר כשמדווחים את האפליקציות. */
     var launchers: Set<String>
         get() = strSet("launchers")
