@@ -9,6 +9,8 @@
  *   POST ?action=register  {username, password, display_name} → ממתין לאישור
  *   POST ?action=setup     {code, username, password, display_name} → המנהל הראשון
  *   POST ?action=password  {current, password} — החלפת סיסמה (גם אחרי סיסמה זמנית מהמנהל)
+ *   GET  ?action=installs&device=<id>  מה מותקן במכשיר הזה {app_id: method}
+ *   POST ?action=install_mark {device, label, app, installed, method}
  *   GET  ?action=sso_mine  האפליקציות שהמשתמש אישר להן כניסה מאוחדת
  *   POST ?action=sso_revoke {client_id} — ביטול חיבור
  *
@@ -24,6 +26,7 @@ require __DIR__ . '/lib/access.php';
 require __DIR__ . '/lib/admin.php';
 require_once __DIR__ . '/lib/push.php';
 require_once __DIR__ . '/lib/sso.php';
+require_once __DIR__ . '/lib/installs.php';
 
 try {
     $action = $_GET['action'] ?? '';
@@ -34,6 +37,7 @@ try {
             'me'   => action_me(),
             'apps' => action_apps(),
             'sso_mine' => action_sso_mine(),
+            'installs' => action_installs(),
             'admin_state' => admin_state(require_admin()),
             'admin_push'  => admin_push_state(require_admin()),
             'admin_usage' => admin_usage(require_admin(), $_GET),
@@ -49,6 +53,7 @@ try {
             'setup'    => action_setup($body),
             'password' => action_password($body),
             'sso_revoke' => action_sso_revoke($body),
+            'install_mark' => action_install_mark($body),
             default    => str_starts_with($action, 'admin_')
                 ? admin_dispatch($action, $body, require_admin(true))
                 : throw new ApiError('פעולה לא מוכרת', 404),
@@ -138,6 +143,22 @@ function action_logout(): never
         throw new ApiError('בקשה לא תקינה', 403);
     }
     end_session();
+    json_out(['ok' => true]);
+}
+
+function action_installs(): never
+{
+    $user = current_user();
+    if (!$user) throw new ApiError('נדרשת כניסה', 401);
+    json_out(['installed' => (object)installs_on_device((int)$user['id'], installs_valid_device($_GET['device'] ?? null))]);
+}
+
+function action_install_mark(array $body): never
+{
+    $user = current_user();
+    if (!$user) throw new ApiError('נדרשת כניסה', 401);
+    if (!hash_equals($user['csrf'], $_SERVER['HTTP_X_CSRF'] ?? '')) throw new ApiError('בקשה לא תקינה', 403);
+    installs_mark((int)$user['id'], $body);
     json_out(['ok' => true]);
 }
 
