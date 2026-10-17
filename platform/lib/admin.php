@@ -236,8 +236,8 @@ function admin_app_update(array $body): never
     if (!in_array($category, array_column(categories_list(), 'id'), true)) throw new ApiError('קטגוריה לא מוכרת', 422);
     $hidden = (bool)($body['hidden'] ?? $app['hidden']);
     if (isset($body['install_ok'])) {
-        db()->prepare($body['install_ok'] ? 'INSERT OR IGNORE INTO install_approvals (app_id) VALUES (?)'
-                                          : 'DELETE FROM install_approvals WHERE app_id = ?')->execute([$app['id']]);
+        db()->prepare($body['install_ok'] ? 'DELETE FROM install_hidden WHERE app_id = ?'
+                                          : 'INSERT OR IGNORE INTO install_hidden (app_id) VALUES (?)')->execute([$app['id']]);
     }
 
     // קטגוריה זהה לברירת המחדל של app.json לא נשמרת — כך שינוי עתידי ב-app.json ייכנס.

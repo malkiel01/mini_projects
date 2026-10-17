@@ -187,7 +187,7 @@ function sso_exchange(array $body): array
         throw new ApiError('קוד לא תקין, פג או כבר נוצל', 400);
     }
 
-    $st = db()->prepare('SELECT id, display_name, status FROM users WHERE id = ?');
+    $st = db()->prepare('SELECT id, username, display_name, status FROM users WHERE id = ?');
     $st->execute([$row['user_id']]);
     $user = $st->fetch();
     if (!$user || $user['status'] !== 'active' || !sso_has_consent((int)$user['id'], $client['id'])) {
@@ -198,8 +198,23 @@ function sso_exchange(array $body): array
     clear_failures($keys);
     sso_log($client['id'], (int)$user['id'], 'token');
     $now = time();
-    // רק מזהה ושם — לא סיסמה, לא הרשאות ולא רשימת אפליקציות.
-    return ['sub' => (string)$user['id'], 'name' => $user['display_name'], 'iat' => $now, 'exp' => $now + 300];
+    // מזהה, שם ומייל — לא סיסמה, לא הרשאות ולא רשימת אפליקציות. המייל הוא מה שמאחד חשבונות:
+    // אפליקציה שיש בה כבר חשבון באותו מייל — מקשרת אליו (docs/sso.md, "איחוד לפי מייל").
+    return [
+        'sub'   => (string)$user['id'],
+        'name'  => $user['display_name'],
+        'email' => sso_email_of($user['username']),
+        // לא נשלח מייל אימות — את הזהות אישר מנהל הפלטפורמה כשאישר את ההרשמה.
+        'email_verified' => false,
+        'iat' => $now, 'exp' => $now + 300,
+    ];
+}
+
+/** המייל של המשתמש — שם המשתמש, כשהוא כתובת מייל. אחרת null. */
+function sso_email_of(string $username): ?string
+{
+    $email = filter_var(trim($username), FILTER_VALIDATE_EMAIL);
+    return $email === false ? null : mb_strtolower($email);
 }
 
 // ---------- ניהול הלקוחות (ממשק המנהל) ----------

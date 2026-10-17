@@ -102,7 +102,7 @@ function switchLink(text, linkText, onClick) {
     return el('div', { className: 'switch' }, [text + ' ', btn]);
 }
 
-const USERNAME_HINT = 'באנגלית, או כתובת המייל שלכם';
+const USERNAME_HINT = 'מומלץ: כתובת המייל שלכם — לפיה תזוהו גם באפליקציות';
 
 // ---------- המסכים ----------
 
@@ -124,7 +124,7 @@ function showSetup(me) {
             field('סיסמה', 'password', { type: 'password', ltr: true, hint: 'לפחות 8 תווים', autocomplete: 'new-password' }),
         ],
         submit: 'יצירת המנהל',
-        onSubmit: async (data) => { await api('setup', data); start(); },
+        onSubmit: async (data) => { await api('setup', data); justSignedIn = true; start(); },
     }));
 }
 
@@ -137,7 +137,7 @@ function showLogin() {
             field('סיסמה', 'password', { type: 'password', ltr: true, autocomplete: 'current-password' }),
         ],
         submit: 'כניסה',
-        onSubmit: async (data) => { await api('login', data); start(); },
+        onSubmit: async (data) => { await api('login', data); justSignedIn = true; start(); },
         footer: [switchLink('אין לכם חשבון?', 'הרשמה', showRegister)],
     }));
 }
@@ -152,7 +152,7 @@ function showRegister() {
             field('סיסמה', 'password', { type: 'password', ltr: true, hint: 'לפחות 8 תווים', autocomplete: 'new-password' }),
         ],
         submit: 'הרשמה',
-        onSubmit: async (data) => { await api('register', data); start(); },
+        onSubmit: async (data) => { await api('register', data); justSignedIn = true; start(); },
         footer: [switchLink('כבר רשומים?', 'כניסה', showLogin)],
     }));
 }
@@ -170,7 +170,7 @@ function showPassword(forced) {
             field('סיסמה חדשה', 'password', { type: 'password', ltr: true, hint: 'לפחות 8 תווים', autocomplete: 'new-password' }),
         ],
         submit: 'שמירת הסיסמה',
-        onSubmit: async (data) => { await api('password', data); toast('✓ הסיסמה הוחלפה'); start(); },
+        onSubmit: async (data) => { await api('password', data); toast('✓ הסיסמה הוחלפה'); justSignedIn = forced; start(); },
         footer,
     }));
 }
@@ -187,7 +187,7 @@ async function openConnections() {
             close,
         ]),
         el('div', { className: 'sheet-body' }, [list,
-            el('p', { className: 'muted small', textContent: 'אפליקציה מחוברת מקבלת רק את השם שלך ומספר מזהה. ניתוק לא מוחק את החשבון שלך בתוכה — רק את הכניסה דרך כאן.' })]),
+            el('p', { className: 'muted small', textContent: 'אפליקציה מחוברת מקבלת רק את השם שלך, המייל ומספר מזהה. ניתוק לא מוחק את החשבון שלך בתוכה — רק את הכניסה דרך כאן.' })]),
     ])]);
     close.addEventListener('click', () => dlg.close());
     dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
@@ -349,6 +349,13 @@ async function copyLink(btn, href) {
     setTimeout(() => { btn.textContent = '🔗'; btn.classList.remove('copied'); }, 1800);
 }
 
+// הפלטפורמה היא חנות/משגר, לא מעטפת: אפליקציה נפתחת בחלון (או לשונית) משלה, והפלטפורמה
+// נשארת מאחור. בלי זה, באפליקציה המותקנת הכלי "תפס" את החלון — וכשחוזרים לכלים הדיגיטליים
+// אנדרואיד מחזיר את מה שהיה פתוח בו, כלומר את האפליקציה האחרונה.
+function openProps(href) {
+    return { href, target: '_blank', rel: 'noopener' };
+}
+
 function appIcon(app) {
     const ic = el('span', { className: 'app-ic', textContent: app.icon, ariaHidden: 'true' });
     ic.style.setProperty('--h', hue(app.id));
@@ -368,7 +375,7 @@ function appRow(app) {
     const extras = installLinks(app);
     let node;
     if (!app.links.length && !extras.length) {
-        node = el('a', { className: 'app', href: app.href }, body);
+        node = el('a', { className: 'app', ...openProps(app.href) }, body);
     } else {
         node = el('button', { type: 'button', className: 'app', ariaHasPopup: 'dialog' }, body);
         node.addEventListener('click', () => openAppSheet(app, extras));
@@ -383,7 +390,7 @@ function openAppSheet(app, extras) {
     const rows = entries.map(link => {
         const copy = el('button', { type: 'button', className: 'icon-btn', textContent: '🔗', ariaLabel: `העתקת קישור: ${link.label}`, title: 'העתקת קישור' });
         copy.addEventListener('click', () => copyLink(copy, link.href));
-        return el('div', { className: 'entry' }, [el('a', { href: link.href, textContent: link.label }), copy]);
+        return el('div', { className: 'entry' }, [el('a', { ...openProps(link.href), textContent: link.label }), copy]);
     });
     const close = el('button', { type: 'button', className: 'icon-btn', textContent: '✕', ariaLabel: 'סגירה' });
     const dlg = el('dialog', {}, [el('div', { className: 'sheet' }, [
@@ -718,6 +725,11 @@ async function showApps() {
 
 // השער מפנה לכאן עם ?next=<הכתובת שבוקשה>. אחרי כניסה — חוזרים אליה, רק אם
 // היא נתיב באותו אתר (לא //אתר-אחר ולא https://…).
+// ?next מכובד רק מיד אחרי כניסה (או החלפת סיסמה זמנית): השער או הכניסה המאוחדת שלחו לכאן
+// משתמש לא מחובר, והוא נכנס עכשיו. בכל מצב אחר הפרמטר נמחק מהכתובת — אחרת כתובת עם ?next
+// שנשמרה (סימנייה, היסטוריה, האפליקציה המותקנת) הייתה מקפיצה כל פעם לאפליקציה במקום לפלטפורמה.
+let justSignedIn = false;
+
 function goNext() {
     const next = new URLSearchParams(location.search).get('next');
     if (next && next.startsWith('/') && !next.startsWith('//')) {
@@ -741,7 +753,9 @@ async function start() {
                 'נרשמתם בהצלחה. המנהל צריך לאשר את החשבון ולבחור אילו אפליקציות יוצגו לכם.', '⏳');
         }
         if (me.user.must_change) return showPassword(true);
-        if (goNext()) return;
+        if (justSignedIn && goNext()) return;
+        justSignedIn = false;
+        if (new URLSearchParams(location.search).has('next')) history.replaceState(null, '', location.pathname + location.hash);
         if (inAdmin() && me.user.role === 'admin') {
             return await window.PlatformAdmin.show(view);
         }
