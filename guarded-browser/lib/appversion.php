@@ -45,9 +45,9 @@ function latestApp(?callable $fetch = null, int $ttl = APK_LATEST_TTL): ?array {
 }
 
 /* ── הרשאות המכשיר (מסלול ההקמה) — אותם ביטים כמו Setup.kt ── */
-const PERM_NOTIF = 1, PERM_BATTERY = 2, PERM_ADMIN = 4, PERM_INSTALL = 8;
+const PERM_NOTIF = 1, PERM_BATTERY = 2, PERM_ADMIN = 4, PERM_INSTALL = 8, PERM_ACCESS = 16;
 const PERM_REQUIRED = 3;   // NOTIF | BATTERY
-const PERM_NAMES = [PERM_NOTIF => 'התראות', PERM_BATTERY => 'ריצה רציפה', PERM_ADMIN => 'ניהול מכשיר', PERM_INSTALL => 'עדכונים'];
+const PERM_NAMES = [PERM_NOTIF => 'התראות', PERM_BATTERY => 'ריצה רציפה', PERM_ACCESS => 'ניהול אפליקציות', PERM_ADMIN => 'ניהול מכשיר', PERM_INSTALL => 'עדכונים'];
 
 /** מצב ההרשאות של מכשיר: מה ניתן, מה חסר, והאם החיוני כולו קיים. */
 function devicePermsState(int $perms): array {

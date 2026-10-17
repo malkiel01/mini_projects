@@ -43,11 +43,11 @@ class SetupActivity : AppCompatActivity() {
         render()
     }
 
-    private fun allFlags() = Setup.steps().fold(0) { f, s -> f or s.key }
+    private fun allFlags() = Setup.steps(this).fold(0) { f, s -> f or s.key }
 
     private fun render() {
         b.steps.removeAllViews()
-        for (step in Setup.steps()) {
+        for (step in Setup.steps(this)) {
             val done = step.done(this)
             val v = layoutInflater.inflate(R.layout.item_setup, b.steps, false)
             v.findViewById<TextView>(R.id.stIcon).text = step.icon

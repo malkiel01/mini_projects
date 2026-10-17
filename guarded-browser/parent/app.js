@@ -181,13 +181,18 @@ async function loadKids() {
 /* ── גיליון ילד ────────────────────────────────────────────────── */
 
 let K = null, tab = 'sum';
-const TABS = [['sum', '📋 סיכום'], ['act', '📊 פעילות'], ['access', '🔐 גישה'], ['time', '⏰ זמנים'],
-              ['yt', '▶️ יוטיוב'], ['sites', '🌐 אתרים'], ['dev', '📱 מכשירים']];
+const TABS_BASE = [['sum', '📋 סיכום'], ['act', '📊 פעילות'], ['access', '🔐 גישה'], ['time', '⏰ זמנים'],
+                   ['yt', '▶️ יוטיוב'], ['sites', '🌐 אתרים'], ['dev', '📱 מכשירים']];
+// לשונית "אפליקציות" רק לחשבון ברמת אפליקציות/מכשיר (המפתח פותח).
+const appsAllowed = () => S.account && (S.account.level_max === 'apps' || S.account.level_max === 'device');
+const tabsFor = () => appsAllowed()
+    ? [...TABS_BASE.slice(0, 6), ['apps', '📲 אפליקציות'], TABS_BASE[6]] : TABS_BASE;
 
 async function openKid(id) {
     try { K = (await call('child', { id })).child; } catch (e) { toast(e.message, true); return; }
-    A = null;
+    A = null; AP = null;
     tab = sessionStorage.getItem('mg:tab') || 'sum';
+    if (!tabsFor().some(([k]) => k === tab)) tab = 'sum';
     renderKid();
     const d = $('#kid-dlg'); if (!d.open) d.showModal();
 }
@@ -205,10 +210,11 @@ async function act(action, extra = {}, ok = '') {
 function renderKid() {
     $('#kid-title').textContent = K.name;
     $('#kid-save').hidden = !['access', 'time'].includes(tab);
-    const tabs = el('div', { class: 'seg-tabs', role: 'tablist', style: 'grid-template-columns:repeat(4,minmax(0,1fr))' },
-        TABS.map(([k, label]) => el('button', { type: 'button', role: 'tab', ariaSelected: String(tab === k),
+    const T = tabsFor();
+    const tabs = el('div', { class: 'seg-tabs', role: 'tablist', style: `grid-template-columns:repeat(4,minmax(0,1fr))` },
+        T.map(([k, label]) => el('button', { type: 'button', role: 'tab', ariaSelected: String(tab === k),
             text: label, onclick: () => { tab = k; sessionStorage.setItem('mg:tab', k); renderKid(); } })));
-    const body = { sum: kidSum, act: kidAct, access: kidAccess, time: kidTime, yt: kidYt, sites: kidSites, dev: kidDev }[tab]();
+    const body = { sum: kidSum, act: kidAct, access: kidAccess, time: kidTime, yt: kidYt, sites: kidSites, dev: kidDev, apps: kidApps }[tab]();
     $('#kid-body').replaceChildren(tabs, ...body.filter(Boolean));
 }
 
@@ -707,6 +713,54 @@ function showCreds(name, username, password, newId = 0) {
         el('p', { class: 'hint', text: 'הילד מתחיל עם הכול חסום. פתחו לו אתרים וערוצים בגיליון שלו.' }),
         el('button', { type: 'button', class: 'btn ghost', text: 'סגירה', onclick: () => $('#add-dlg').close() }));
     if (!$('#add-dlg').open) $('#add-dlg').showModal();
+}
+
+/* ── ניהול אפליקציות (שלב 11) ───────────────────────────────────── */
+
+const APOST = { allow_all: ['🔓 הכול פתוח', 'כל האפליקציות פתוחות, חוץ ממה שתחסמו.'],
+                deny_all: ['🔒 רק מה שאישרתי', 'רק האפליקציות שתאשרו ייפתחו. השאר חסומות.'] };
+let AP = null;
+
+async function loadApps() {
+    const kid = K.id;
+    try { AP = { ...(await call('apps', { id: kid })).apps, kid }; }
+    catch (e) { AP = { kid, error: e.message }; }
+    if (tab === 'apps' && K && K.id === kid) renderKid();
+}
+
+function kidApps() {
+    if (!AP || AP.kid !== K.id) { loadApps(); return [el('p', { class: 'empty', text: 'טוען…' })]; }
+    if (AP.error) return [el('p', { class: 'error', text: AP.error })];
+    const hint = el('p', { class: 'hint', text: APOST[AP.posture][1] });
+    const posture = seg('apps_posture', Object.entries(APOST).map(([k, v]) => [k, v[0]]), AP.posture,
+        { cols: 2, onchange: async v => {
+            try { AP = { ...(await call('apps_posture', { id: K.id, posture: v })).apps, kid: K.id }; toast('נשמר'); }
+            catch (e) { toast(e.message, true); } renderKid();
+        } });
+    const row = a => el('li', {}, [
+        el('span', { class: 'app-ic', ariaHidden: 'true', text: a.system ? '⚙️' : '📱' }),
+        el('span', { class: 'nm' }, [a.label, el('small', { dir: 'ltr', text: a.package })]),
+        seg(`ap_${a.package}`, [['allow', '✅'], ['', '—'], ['block', '🚫']], a.action,
+            { cls: 'seg mini', onchange: async v => {
+                try { AP = { ...(await call('app_rule', { id: K.id, package: a.package, app_action: v })).apps, kid: K.id }; }
+                catch (e) { toast(e.message, true); } renderKid();
+            } }),
+    ]);
+    const list = AP.apps.length
+        ? el('ul', { class: 'rows apps' }, AP.apps.map(row))
+        : el('div', { class: 'banner info' }, [el('span', { text: '📲' }), el('div', {}, [
+            el('b', { text: 'מחכים שהמכשיר ידווח' }),
+            'ברגע שהילד יפתח את מגדלור עם ההרשאה, רשימת האפליקציות שלו תופיע כאן.'])]);
+    const warn = AP.access_missing > 0 && AP.devices > 0
+        ? el('div', { class: 'banner warn' }, [el('span', { text: '⚠️' }), el('div', {}, [
+            el('b', { text: 'החסימה עוד לא נאכפת' }),
+            `במכשיר של ${K.name} חסר אישור "ניהול אפליקציות". פתחו במכשיר: מגדלור ← הקמה, או הגדרות ← נגישות ← מגדלור.`])])
+        : null;
+    return [
+        warn,
+        group('ברירת מחדל', '', [posture, hint]),
+        group('האפליקציות במכשיר', AP.apps.length ? `${AP.blocked_count} חסומות · ✅ מותר · — כברירת המחדל · 🚫 חסום` : '', [list]),
+    ];
 }
 
 /* ── בקשות גישה (שלב 6) ─────────────────────────────────────────── */

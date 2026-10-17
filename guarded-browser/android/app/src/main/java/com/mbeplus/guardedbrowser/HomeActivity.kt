@@ -92,7 +92,7 @@ class HomeActivity : AppCompatActivity() {
         Api.policy(store.token) { r ->
             b.progress.visibility = View.GONE
             if (!r.ok && r.json?.optString("code") == "unauthorized") { unpair(); return@policy }
-            if (r.ok && r.json != null) store.savePolicy(r.json)
+            if (r.ok && r.json != null) { store.savePolicy(r.json); reportApps() }
             // ההורה ביקש לעדכן, ויש גרסה חדשה.
             r.json?.optJSONObject("update")?.let { Updater.offer(this, it) }
 
@@ -119,6 +119,33 @@ class HomeActivity : AppCompatActivity() {
             b.search.hint = if (canType) "🔎 חיפוש או כתובת" else "🔎 חיפוש"
             draw()
         }
+    }
+
+    /** מדווח לשרת אילו אפליקציות (עם מסך פתיחה) מותקנות — פעם אחת בכל ריצה, רק כשמנהלים. */
+    private var appsReported = false
+    private fun reportApps() {
+        if (appsReported || !store.appsManage) return
+        appsReported = true
+        Thread {
+            try {
+                val pm = packageManager
+                val main = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+                val arr = org.json.JSONArray()
+                val launchers = mutableSetOf<String>()
+                for (ri in pm.queryIntentActivities(main, 0)) {
+                    val pkg = ri.activityInfo.packageName
+                    if (pkg == store.ownPackage) continue
+                    val label = ri.loadLabel(pm).toString()
+                    val sys = (ri.activityInfo.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+                    arr.put(org.json.JSONObject().apply { put("p", pkg); put("n", label); put("s", if (sys) 1 else 0) })
+                }
+                // חבילת ה-launcher הנוכחית — לא נחסמת.
+                pm.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)
+                    ?.activityInfo?.packageName?.let { launchers.add(it) }
+                store.launchers = launchers
+                if (arr.length() > 0) Api.apps(store.token, arr) { }
+            } catch (e: Exception) { Trace.log("reportApps.fail", e.message ?: "") }
+        }.start()
     }
 
     private fun quotaLine(): String {

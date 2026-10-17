@@ -16,6 +16,7 @@ require_once __DIR__ . '/../lib/push.php';
 require_once __DIR__ . '/../lib/activity.php';
 require_once __DIR__ . '/../lib/appversion.php';
 require_once __DIR__ . '/../lib/search.php';
+require_once __DIR__ . '/../lib/appcontrol.php';
 
 jsonHeaders();
 
@@ -209,6 +210,20 @@ try {
             [$code, $exp] = pairCreate((int) $c['id']);
             out(['ok' => true, 'code' => $code, 'expires_at' => $exp, 'server' => serverBase(),
                  'qr' => 'migdalor:pair?c=' . $code . '&s=' . rawurlencode(serverBase())]);
+
+        /* ── ניהול אפליקציות (שלב 11) ── */
+        case 'apps':
+            out(['ok' => true, 'apps' => appsList($aid, (int) myChild($parent)['id'])]);
+
+        case 'apps_posture':
+            $c = myChild($parent);
+            if ($err = appsSavePosture((int) $c['id'], str('posture'))) fail($err);
+            out(['ok' => true, 'apps' => appsList($aid, (int) $c['id'])]);
+
+        case 'app_rule':
+            $c = myChild($parent);
+            if ($err = appsSaveRule((int) $c['id'], str('package'), str('app_action'))) fail($err);
+            out(['ok' => true, 'apps' => appsList($aid, (int) $c['id'])]);
 
         /* ── פעילות (שלב 7) ── */
         case 'activity':

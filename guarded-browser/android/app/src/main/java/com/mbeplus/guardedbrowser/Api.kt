@@ -220,6 +220,10 @@ object Api {
         call("requests", JSONObject(), token, cb)
 
     /** ‏url — מה שעל המסך עכשיו: ההורה רואה כמה זמן בכל אתר (שלב 7), לפי רמת הדיווח שבחר. */
+    /** דיווח האפליקציות המותקנות (שלב 11), כדי שההורה יכריע עליהן. */
+    fun apps(token: String, list: org.json.JSONArray, cb: (Result) -> Unit) =
+        call("apps", JSONObject().apply { put("apps", list) }, token, cb)
+
     /** חיפוש (שלב 8): השרת בוחר מנוע לפי הילד ומסנן כל תוצאה. */
     fun search(token: String, q: String, cb: (Result) -> Unit) =
         call("search", JSONObject().apply { put("q", q) }, token, cb)

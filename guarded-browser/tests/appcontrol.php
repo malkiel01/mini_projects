@@ -1,0 +1,76 @@
+<?php
+/**
+ * בדיקות לניהול אפליקציות המכשיר (שלב 11): רמת חשבון, דיווח, הכרעות, ברירת מחדל, בידוד.
+ *
+ *   php guarded-browser/tests/appcontrol.php
+ */
+declare(strict_types=1);
+if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
+$tmp = sys_get_temp_dir() . '/gb-app-' . getmypid();
+@mkdir($tmp, 0775, true); putenv("GB_DATA_DIR=$tmp");
+register_shutdown_function(function () use ($tmp) { foreach (glob("$tmp/*") ?: [] as $f) @unlink($f); @rmdir($tmp); });
+require_once __DIR__ . '/../lib/appcontrol.php';
+$pass = 0; $fail = 0;
+function check(string $name, $got, $want) {
+    global $pass, $fail;
+    if ($got === $want) { $pass++; echo "  ok   $name\n"; return; }
+    $fail++;
+    echo "  FAIL $name\n       got:  " . json_encode($got, JSON_UNESCAPED_UNICODE)
+       . "\n       want: " . json_encode($want, JSON_UNESCAPED_UNICODE) . "\n";
+}
+db();
+[$aApps] = accountCreate(['name' => 'כהן', 'level_max' => 'apps'], 'dana@x.com', 'דנה');
+[$aBrowser] = accountCreate(['name' => 'לוי', 'level_max' => 'browser'], 'avi@x.com', 'אבי');
+[$kid] = childCreate($aApps, 'נועה');
+[$kidB] = childCreate($aBrowser, 'דני');
+$user = fn(int $id, int $acc) => ['id' => $id, 'account_id' => $acc] + (array) one('SELECT * FROM users WHERE id = ?', [$id]);
+
+echo "\n— רמת החשבון —\n";
+check('apps — מותר', accountAppsAllowed($aApps), true);
+check('browser — לא', accountAppsAllowed($aBrowser), false);
+check('חשבון דפדפן — payload manage=false', appsPayload($user($kidB, $aBrowser)), ['manage' => false]);
+check('חבילה לא תקינה נדחית', cleanPackage('Not A Package'), '');
+check('חבילה תקינה', cleanPackage('com.whatsapp'), 'com.whatsapp');
+
+echo "\n— דיווח מהמכשיר —\n";
+check('נקלטו 3', appsReport($kid, [
+    ['p' => 'com.whatsapp', 'n' => 'וואטסאפ'],
+    ['p' => 'com.android.chrome', 'n' => 'Chrome', 's' => 0],
+    ['p' => 'com.supercell.clashofclans', 'n' => 'Clash'],
+    ['p' => 'bad pkg', 'n' => 'x']]), 3);
+check('רשימת ההורה — 3 אפליקציות', count(appsList($aApps, $kid)['apps']), 3);
+check('ממוינות לפי שם', array_column(appsList($aApps, $kid)['apps'], 'label'), ['Chrome', 'Clash', 'וואטסאפ']);
+
+echo "\n— ברירת מחדל והכרעות —\n";
+check('ברירת מחדל allow_all — כלום לא חסום', appsPayload($user($kid, $aApps))['blocked'], []);
+check('allow_all + בלי כלל — לא חסום', appBlocked('allow_all', ''), false);
+check('allow_all + block — חסום', appBlocked('allow_all', 'block'), true);
+check('deny_all + בלי כלל — חסום', appBlocked('deny_all', ''), true);
+check('deny_all + allow — מותר', appBlocked('deny_all', 'allow'), false);
+appsSaveRule($kid, 'com.supercell.clashofclans', 'block');
+check('חסימת משחק', appsPayload($user($kid, $aApps))['blocked'], ['com.supercell.clashofclans']);
+$l = appsList($aApps, $kid);
+check('ברשימת ההורה — מסומן חסום', array_values(array_filter($l['apps'], fn($a) => $a['package'] === 'com.supercell.clashofclans'))[0]['blocked'], true);
+check('מונה חסומות', $l['blocked_count'], 1);
+
+echo "\n— deny_all —\n";
+check('מעבר ל-deny_all', appsSavePosture($kid, 'deny_all'), '');
+appsSaveRule($kid, 'com.whatsapp', 'allow');
+$p = appsPayload($user($kid, $aApps));
+check('רק וואטסאפ מותר', [$p['posture'], $p['allowed']], ['deny_all', ['com.whatsapp']]);
+check('ברירת מחדל לא מוכרת', appsSavePosture($kid, 'x'), 'ברירת מחדל לא מוכרת');
+
+echo "\n— ניקוי כלל —\n";
+appsSaveRule($kid, 'com.whatsapp', '');
+check('הוסר הכלל', isset(appRules($kid)['com.whatsapp']), false);
+
+echo "\n— בידוד —\n";
+check('חשבון דפדפן — דיווח לא נשמר דרך ה-API (appsReport ישיר כן, אבל appsList חסום)', appsList($aBrowser, $kidB), ['manage' => false]);
+check('הילד של לוי לא רואה אפליקציות של נועה', count(appsList($aApps, $kid)['apps']), 3);
+childDelete($kid);
+check('מחיקת ילד מוחקת אפליקציות וכללים',
+      (int) one('SELECT COUNT(*) n FROM device_apps WHERE child_id = ?', [$kid])['n']
+    + (int) one('SELECT COUNT(*) n FROM app_rules WHERE child_id = ?', [$kid])['n'], 0);
+
+echo "\n$pass עברו, $fail נכשלו\n";
+exit($fail ? 1 : 0);
