@@ -94,7 +94,7 @@ function userByToken(string $token): ?array {
 
     $now = nowIso();
     q('UPDATE devices SET last_seen_at = ? WHERE id = ?', [$now, $row['device_row_id']]);
-    // גרסת האפליקציה — רק מ-1.42 היא שולחת אותה. בלי הכותרת: גרסה ישנה, או "דפדפן מנוהל".
+    // גרסת האפליקציה — רק מ-1.43 היא שולחת אותה. בלי הכותרת: גרסה ישנה, או "דפדפן מנוהל".
     $ver = (int) ($_SERVER['HTTP_X_MIGDALOR_APP'] ?? 0);
     if ($ver > 0) q('UPDATE devices SET app_version = ? WHERE id = ? AND app_version != ?', [$ver, $row['device_row_id'], $ver]);
     q('UPDATE users SET last_seen_at = ? WHERE id = ?', [$now, $row['id']]);
