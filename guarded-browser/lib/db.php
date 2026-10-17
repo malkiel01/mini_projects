@@ -111,6 +111,13 @@ function migrate(PDO $pdo): void {
         $pdo->exec("ALTER TABLE users ADD COLUMN account_id INTEGER NOT NULL DEFAULT 0");
         $pdo->exec("CREATE INDEX IF NOT EXISTS idx_users_account ON users(account_id)");
     }
+    // שלב 7: רמת הדיווח להורה, וזמן לכל כתובת בהיסטוריה המלאה.
+    if (!in_array('report_level', $columns('policies'), true)) {
+        $pdo->exec("ALTER TABLE policies ADD COLUMN report_level TEXT NOT NULL DEFAULT 'summary'");
+    }
+    if (!in_array('seconds', $columns('audit'), true)) {
+        $pdo->exec("ALTER TABLE audit ADD COLUMN seconds INTEGER NOT NULL DEFAULT 0");
+    }
     // שלב 6: היתר "לשעה" מבקשת גישה — כלל עם תפוגה. '' = קבוע.
     if (!in_array('expires_at', $columns('rules'), true)) {
         $pdo->exec("ALTER TABLE rules ADD COLUMN expires_at TEXT NOT NULL DEFAULT ''");

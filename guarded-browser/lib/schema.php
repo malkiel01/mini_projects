@@ -17,6 +17,8 @@ declare(strict_types=1);
  */
 const ACCOUNT_LEVELS   = ['browser', 'apps', 'device'];
 const ACCOUNT_STATUSES = ['pending', 'active', 'suspended'];
+/** רמות הדיווח להורה (שלב 7). ‏full דורש את המודול reports_full בחשבון. */
+const REPORT_LEVELS = ['full', 'summary', 'off'];
 const ACCOUNT_MODULES  = ['yt_filtered', 'yt_closed', 'search_index', 'search_web', 'reports_full'];
 
 /**
@@ -286,6 +288,17 @@ function schemaStatements(): array {
         created_at TEXT    NOT NULL,
         expires_at TEXT    NOT NULL,
         used_at    TEXT    NOT NULL DEFAULT ''
+    )",
+
+    // ── פעילות לפי אתר (שלב 7) ────────────────────────────────
+    // מסוכם: זמן וכניסות לכל אתר ביום. נכתב רק כשרמת הדיווח אינה "כבוי".
+    "CREATE TABLE IF NOT EXISTS site_usage (
+        user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        day      TEXT    NOT NULL,
+        host     TEXT    NOT NULL,
+        seconds  INTEGER NOT NULL DEFAULT 0,
+        visits   INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (user_id, day, host)
     )",
 
     // ── בקש גישה (שלב 6) ───────────────────────────────────────
