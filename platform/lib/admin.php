@@ -69,10 +69,7 @@ function admin_dispatch(string $action, array $body, array $admin): never
         'admin_push_subscribe'  => admin_push_subscribe($body, $admin),
         'admin_push_unsubscribe'=> admin_push_unsubscribe($body, $admin),
         'admin_push_test'       => admin_push_test($admin),
-        'admin_sso_save'        => json_out(['ok' => true, 'secret' => sso_client_save($body)]),
-        'admin_sso_rotate'      => json_out(['ok' => true, 'secret' => sso_client_rotate((string)($body['id'] ?? ''))]),
         'admin_sso_toggle'      => admin_sso_toggle($body),
-        'admin_sso_delete'      => admin_sso_delete($body),
         'admin_sso_revoke'      => admin_sso_revoke($body),
         default => throw new ApiError('פעולה לא מוכרת', 404),
     };
@@ -364,24 +361,10 @@ function admin_usage(array $admin, array $q): never
 
 // ---------- כניסה מאוחדת: הלקוחות וההסכמות ----------
 
-/** {id, disabled} — לקוח מושבת לא מקבל קודים חדשים, וקוד שכבר ניתן לא יוחלף. */
+/** {id, disabled} — כניסה מאוחדת לאפליקציה: פעילה / כבויה. לחיצה אחת. */
 function admin_sso_toggle(array $body): never
 {
-    $c = sso_client((string)($body['id'] ?? ''));
-    if (!$c) throw new ApiError('הלקוח לא נמצא', 404);
-    db()->prepare('UPDATE sso_clients SET disabled = ? WHERE id = ?')->execute([!empty($body['disabled']) ? 1 : 0, $c['id']]);
-    sso_log($c['id'], null, !empty($body['disabled']) ? 'disabled' : 'enabled');
-    json_out(['ok' => true]);
-}
-
-/** {id} — מוחק את הלקוח וכל ההסכמות שלו. האפליקציה עצמה וחשבונותיה לא נפגעים. */
-function admin_sso_delete(array $body): never
-{
-    $c = sso_client((string)($body['id'] ?? ''));
-    if (!$c) throw new ApiError('הלקוח לא נמצא', 404);
-    db()->prepare('DELETE FROM sso_codes WHERE client_id = ?')->execute([$c['id']]);
-    db()->prepare('DELETE FROM sso_clients WHERE id = ?')->execute([$c['id']]); // sso_consents — ב-CASCADE
-    sso_log($c['id'], null, 'deleted');
+    sso_set_disabled((string)($body['id'] ?? ''), !empty($body['disabled']));
     json_out(['ok' => true]);
 }
 

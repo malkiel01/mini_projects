@@ -3,11 +3,11 @@
  * כניסה מאוחדת — נקודות הקצה (lib/sso.php: הלוגיקה; docs/sso.md: המדריך לאפליקציות).
  *
  *   GET  sso.php?client=<id>&state=<…>&return=<כתובת חזרה>   — הדפדפן של המשתמש
- *   POST sso.php?client=…&state=…&return=…                    — "אישור" / "ביטול" במסך ההסכמה
- *   POST sso.php?action=token  {client, client_secret, code, return} — שרת האפליקציה, JSON או טופס
+ *   POST sso.php?client=…&state=…&return=…                    — "המשך" / "ביטול" במסך האישור
+ *   GET  sso.php?action=key                                   — המפתח הציבורי לבדיקת החתימה
  *
- * כתובת חזרה שאינה רשומה ללקוח לא מקבלת הפניה לעולם — רק דף שגיאה. בלי זה, sso.php היה
- * "redirect פתוח" שמוסר קודים לכל אתר.
+ * בחזרה: <return>?token=<זהות חתומה>&state=… (או ?error=access_denied&state=…).
+ * כתובת חזרה שאינה ב-"sso.return" של ה-app.json — רק דף שגיאה, לעולם לא הפניה.
  */
 
 declare(strict_types=1);
@@ -22,26 +22,24 @@ header('Referrer-Policy: no-referrer');                   // הקוד בכתוב
 header('Cache-Control: no-store');
 
 try {
-    if (($_GET['action'] ?? '') === 'token') {
-        if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') throw new ApiError('POST בלבד', 405);
-        $raw = (string)file_get_contents('php://input');
-        $body = str_contains($_SERVER['CONTENT_TYPE'] ?? '', 'json') ? (json_decode($raw, true) ?: []) : $_POST;
-        json_out(sso_exchange(is_array($body) ? $body : []));
+    if (($_GET['action'] ?? '') === 'key') {
+        header('Access-Control-Allow-Origin: *');        // ציבורי בכוונה — זה רק המפתח לבדיקה
+        header('Cache-Control: public, max-age=3600');
+        json_out(['alg' => 'Ed25519', 'key' => sso_keys()['public_key'], 'issuer' => sso_issuer()]);
     }
     sso_authorize();
 } catch (ApiError $e) {
-    if (($_GET['action'] ?? '') === 'token') json_out(['error' => $e->getMessage()], $e->status);
     sso_page($e->status, 'לא ניתן להמשיך', $e->getMessage());
 } catch (Throwable $e) {
     error_log('platform sso: ' . $e);
-    if (($_GET['action'] ?? '') === 'token') json_out(['error' => 'שגיאה בשרת'], 500);
     sso_page(500, 'שגיאה בשרת', 'נסו שוב בעוד רגע.');
 }
 
 function sso_authorize(): never
 {
     $client = sso_client(is_string($_GET['client'] ?? null) ? $_GET['client'] : '');
-    if (!$client || $client['disabled']) throw new ApiError('האפליקציה לא רשומה לכניסה המאוחדת', 400);
+    if (!$client) throw new ApiError('האפליקציה לא רשומה לכניסה המאוחדת', 400);
+    if ($client['disabled']) throw new ApiError('הכניסה המאוחדת לאפליקציה הזו כבויה כרגע', 403);
     $return = is_string($_GET['return'] ?? null) ? $_GET['return'] : '';
     if (!in_array($return, $client['returns'], true)) {
         sso_log($client['id'], null, 'bad-return');
@@ -68,7 +66,7 @@ function sso_authorize(): never
     } elseif (!sso_has_consent((int)$user['id'], $client['id'])) {
         sso_consent_page($client, $user, $return);
     }
-    sso_go(sso_redirect_url($return, ['code' => sso_issue_code($client, $user, $return), 'state' => $state]));
+    sso_go(sso_redirect_url($return, ['token' => sso_issue_token($client, $user, $return, $state), 'state' => $state]));
 }
 
 function sso_go(string $url): never

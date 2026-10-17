@@ -7,10 +7,13 @@
  * עצמאית מהמעטפת"). הדרישות: guarded-browser/docs/sso-request.md. המדריך לאפליקציות:
  * platform/docs/sso.md.
  *
- *   אפליקציה ── redirect ──▶ platform/sso.php?client=…&state=…&return=…
+ *   אפליקציה ── redirect ──▶ platform/sso.php?client=<id>&state=…&return=…
  *                            (לא מחובר → כניסה רגילה וחזרה; פעם ראשונה → מסך אישור)
- *   אפליקציה ◀── redirect ── return?code=…&state=…
- *   אפליקציה ── POST sso.php?action=token {client, client_secret, code, return} ──▶ {sub, name, …}
+ *   אפליקציה ◀── redirect ── return?token=<זהות חתומה>&state=…
+ *   האפליקציה בודקת את החתימה במפתח הציבורי (sso.php?action=key) — בלי סוד, בלי העתקת קודים.
+ *
+ * "לקוח" = אפליקציה שה-app.json שלה מצהיר "sso": {"return": [...]}. היא נכנסת לכניסה המאוחדת
+ * לבד, והמנהל רק יכול להשבית אותה (לחיצה אחת). sso_clients הוא שיקוף של הרישום + דגל השבתה.
  */
 
 declare(strict_types=1);
@@ -18,7 +21,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/auth.php';
 
-const SSO_CODE_SECONDS = 60;
+const SSO_TOKEN_SECONDS = 120;
 const SSO_LOG_DAYS     = 90;
 const SSO_MAX_RETURNS  = 10;
 
@@ -52,6 +55,13 @@ function sso_migrate(): void
             last_used_at TEXT,
             PRIMARY KEY (user_id, client_id)
         );
+        -- זוג המפתחות של הפלטפורמה (Ed25519). הציבורי — לכל אפליקציה; הפרטי לא יוצא מהמסד.
+        CREATE TABLE IF NOT EXISTS sso_keys (
+            id         INTEGER PRIMARY KEY CHECK (id = 1),
+            public_key TEXT NOT NULL,
+            secret_key TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS sso_log (
             id        INTEGER PRIMARY KEY,
             at        TEXT NOT NULL,
@@ -73,15 +83,34 @@ function sso_log(string $client, ?int $userId, string $event): void
     }
 }
 
+/**
+ * מסנכרן את sso_clients מהרישום (app.json עם "sso"), ומחזיר את הלקוחות הפעילים ברישום.
+ * השם וכתובות החזרה תמיד מ-app.json; ההשבתה — מהמסד (המנהל).
+ */
+function sso_sync_clients(): array
+{
+    static $clients = null;
+    if ($clients !== null) return $clients;
+    sso_migrate();
+    require_once __DIR__ . '/registry.php';
+    $clients = [];
+    $up = db()->prepare(
+        "INSERT INTO sso_clients (id, name, secret_hash, returns, created_at) VALUES (?, ?, '', ?, ?)
+         ON CONFLICT(id) DO UPDATE SET name = excluded.name, returns = excluded.returns"
+    );
+    $disabled = array_flip(db()->query('SELECT id FROM sso_clients WHERE disabled = 1')->fetchAll(PDO::FETCH_COLUMN));
+    foreach (registry_load()['apps'] as $app) {
+        if (!$app['sso_returns']) continue;
+        $up->execute([$app['id'], $app['name'], json_encode($app['sso_returns']), now_iso()]);
+        $clients[$app['id']] = ['id' => $app['id'], 'name' => $app['name'], 'icon' => $app['icon'],
+            'returns' => $app['sso_returns'], 'disabled' => isset($disabled[$app['id']])];
+    }
+    return $clients;
+}
+
 function sso_client(string $id): ?array
 {
-    sso_migrate();
-    $st = db()->prepare('SELECT * FROM sso_clients WHERE id = ?');
-    $st->execute([$id]);
-    $c = $st->fetch();
-    if (!$c) return null;
-    $c['returns'] = json_decode($c['returns'], true) ?: [];
-    return $c;
+    return sso_sync_clients()[$id] ?? null;
 }
 
 /** כתובת חזרה: https בלבד, בלי #, ובלי פרטי משתמש. */
@@ -98,17 +127,65 @@ function sso_redirect_url(string $return, array $params): string
     return $return . (str_contains($return, '?') ? '&' : '?') . http_build_query($params);
 }
 
-/** מנפיק code חד-פעמי, ומעדכן את "בשימוש לאחרונה". */
-function sso_issue_code(array $client, array $user, string $return): string
+/** זוג המפתחות — נוצר בפעם הראשונה. */
+function sso_keys(): array
 {
-    $code = bin2hex(random_bytes(32));
-    db()->prepare('DELETE FROM sso_codes WHERE expires_at <= ?')->execute([now_iso()]);
-    db()->prepare('INSERT INTO sso_codes (code_hash, client_id, user_id, return_url, expires_at) VALUES (?,?,?,?,?)')
-        ->execute([hash('sha256', $code), $client['id'], $user['id'], $return, gmdate('Y-m-d\TH:i:s\Z', time() + SSO_CODE_SECONDS)]);
+    sso_migrate();
+    $row = db()->query('SELECT public_key, secret_key FROM sso_keys WHERE id = 1')->fetch();
+    if ($row) return $row;
+    $pair = sodium_crypto_sign_keypair();
+    db()->prepare('INSERT OR IGNORE INTO sso_keys (id, public_key, secret_key, created_at) VALUES (1, ?, ?, ?)')
+        ->execute([sso_b64u(sodium_crypto_sign_publickey($pair)), sso_b64u(sodium_crypto_sign_secretkey($pair)), now_iso()]);
+    return db()->query('SELECT public_key, secret_key FROM sso_keys WHERE id = 1')->fetch();
+}
+
+function sso_b64u(string $bin): string
+{
+    return rtrim(strtr(base64_encode($bin), '+/', '-_'), '=');
+}
+
+function sso_b64u_decode(string $s): string
+{
+    return (string)base64_decode(strtr($s, '-_', '+/'), true);
+}
+
+/** הכתובת של הפלטפורמה — "המנפיק" שבתוך כל זהות. */
+function sso_issuer(): string
+{
+    $https = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+    return ($https ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . cookie_path();
+}
+
+/**
+ * זהות חתומה לאפליקציה אחת: <payload>.<חתימה>, שניהם base64url. החתימה (Ed25519) על מחרוזת
+ * ה-payload כמו שהיא. קשורה לאפליקציה (aud), ל-state שלה ולכתובת החזרה, ותקפה שתי דקות.
+ * רק מזהה, שם ומייל — לא סיסמה, לא הרשאות ולא רשימת אפליקציות.
+ */
+function sso_issue_token(array $client, array $user, string $return, string $state): string
+{
+    $st = db()->prepare('SELECT username FROM users WHERE id = ?');
+    $st->execute([$user['id']]);
+    $now = time();
+    $payload = sso_b64u(json_encode([
+        'iss'   => sso_issuer(),
+        'aud'   => $client['id'],
+        'sub'   => (string)$user['id'],
+        'name'  => $user['display_name'],
+        // המייל הוא מה שמאחד חשבונות (docs/sso.md, "איחוד לפי מייל"). לא נשלח מייל אימות —
+        // את הזהות אישר מנהל הפלטפורמה כשאישר את ההרשמה.
+        'email' => sso_email_of((string)$st->fetchColumn()),
+        'email_verified' => false,
+        'state' => $state,
+        'return' => $return,
+        'iat'   => $now,
+        'exp'   => $now + SSO_TOKEN_SECONDS,
+        'jti'   => bin2hex(random_bytes(12)),
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    $sig = sodium_crypto_sign_detached($payload, sso_b64u_decode(sso_keys()['secret_key']));
     db()->prepare('UPDATE sso_consents SET last_used_at = ? WHERE user_id = ? AND client_id = ?')
         ->execute([now_iso(), $user['id'], $client['id']]);
-    sso_log($client['id'], (int)$user['id'], 'code');
-    return $code;
+    sso_log($client['id'], (int)$user['id'], 'token');
+    return $payload . '.' . sso_b64u($sig);
 }
 
 function sso_has_consent(int $userId, string $clientId): bool
@@ -130,7 +207,6 @@ function sso_revoke(int $userId, string $clientId, string $by): void
 {
     sso_migrate();
     db()->prepare('DELETE FROM sso_consents WHERE user_id = ? AND client_id = ?')->execute([$userId, $clientId]);
-    db()->prepare('DELETE FROM sso_codes WHERE user_id = ? AND client_id = ?')->execute([$userId, $clientId]);
     sso_log($clientId, $userId, "revoke:$by");
 }
 
@@ -147,69 +223,6 @@ function sso_consents_of(int $userId): array
     return $st->fetchAll();
 }
 
-/**
- * החלפת code בזהות — בקשת שרת-לשרת מהאפליקציה.
- * @return array{sub: string, name: string, iat: int, exp: int}
- */
-function sso_exchange(array $body): array
-{
-    sso_migrate();
-    $keys = ['sso:' . client_ip()];
-    if (lock_remaining($keys) > 0) throw new ApiError('יותר מדי ניסיונות', 429);
-
-    $clientId = is_string($body['client'] ?? null) ? $body['client'] : '';
-    $secret   = is_string($body['client_secret'] ?? null) ? $body['client_secret'] : '';
-    $code     = is_string($body['code'] ?? null) ? $body['code'] : '';
-    $return   = is_string($body['return'] ?? null) ? $body['return'] : '';
-
-    $client = sso_client($clientId);
-    // גם ללקוח שאינו קיים מריצים password_verify — שזמן התגובה לא יסגיר אילו לקוחות קיימים.
-    $okSecret = password_verify($secret, $client['secret_hash'] ?? '$2y$10$rxAGOCUktx7c3KoNsrn5quXX6u4.mqw4TkeXZk1yylgcrXjz.UZFa');
-    if (!$client || !$okSecret || $client['disabled']) {
-        record_failure($keys);
-        sso_log($clientId, null, 'token:bad-client');
-        throw new ApiError('לקוח או סוד שגויים', 401);
-    }
-
-    $pdo = db();
-    $pdo->exec('BEGIN IMMEDIATE');
-    $st = $pdo->prepare('SELECT * FROM sso_codes WHERE code_hash = ?');
-    $st->execute([hash('sha256', $code)]);
-    $row = $st->fetch();
-    // code חד-פעמי: נמחק כבר עכשיו, גם אם משהו אחר בבקשה שגוי.
-    if ($row) $pdo->prepare('DELETE FROM sso_codes WHERE code_hash = ?')->execute([$row['code_hash']]);
-    $pdo->exec('COMMIT');
-
-    if (!$row || $row['client_id'] !== $client['id'] || !hash_equals($row['return_url'], $return)
-        || $row['expires_at'] <= now_iso()) {
-        record_failure($keys);
-        sso_log($client['id'], $row ? (int)$row['user_id'] : null, 'token:bad-code');
-        throw new ApiError('קוד לא תקין, פג או כבר נוצל', 400);
-    }
-
-    $st = db()->prepare('SELECT id, username, display_name, status FROM users WHERE id = ?');
-    $st->execute([$row['user_id']]);
-    $user = $st->fetch();
-    if (!$user || $user['status'] !== 'active' || !sso_has_consent((int)$user['id'], $client['id'])) {
-        sso_log($client['id'], (int)$row['user_id'], 'token:user-inactive');
-        throw new ApiError('המשתמש אינו פעיל או ביטל את החיבור', 403);
-    }
-
-    clear_failures($keys);
-    sso_log($client['id'], (int)$user['id'], 'token');
-    $now = time();
-    // מזהה, שם ומייל — לא סיסמה, לא הרשאות ולא רשימת אפליקציות. המייל הוא מה שמאחד חשבונות:
-    // אפליקציה שיש בה כבר חשבון באותו מייל — מקשרת אליו (docs/sso.md, "איחוד לפי מייל").
-    return [
-        'sub'   => (string)$user['id'],
-        'name'  => $user['display_name'],
-        'email' => sso_email_of($user['username']),
-        // לא נשלח מייל אימות — את הזהות אישר מנהל הפלטפורמה כשאישר את ההרשמה.
-        'email_verified' => false,
-        'iat' => $now, 'exp' => $now + 300,
-    ];
-}
-
 /** המייל של המשתמש — שם המשתמש, כשהוא כתובת מייל. אחרת null. */
 function sso_email_of(string $username): ?string
 {
@@ -217,59 +230,24 @@ function sso_email_of(string $username): ?string
     return $email === false ? null : mb_strtolower($email);
 }
 
-// ---------- ניהול הלקוחות (ממשק המנהל) ----------
+// ---------- ממשק המנהל ----------
 
+/** האפליקציות שמצהירות על כניסה מאוחדת, עם מספר המשתמשים שאישרו. */
 function sso_clients_state(): array
 {
-    sso_migrate();
-    $rows = db()->query(
-        'SELECT c.id, c.name, c.returns, c.disabled, c.created_at,
-                (SELECT COUNT(*) FROM sso_consents s WHERE s.client_id = c.id) AS users,
-                (SELECT MAX(last_used_at) FROM sso_consents s WHERE s.client_id = c.id) AS last_used
-           FROM sso_clients c ORDER BY c.name'
-    )->fetchAll();
-    foreach ($rows as &$r) {
-        $r['returns'] = json_decode($r['returns'], true) ?: [];
-        $r['disabled'] = (bool)$r['disabled'];
-        $r['users'] = (int)$r['users'];
+    $out = [];
+    $st = db()->prepare('SELECT COUNT(*) AS users, MAX(last_used_at) AS last_used FROM sso_consents WHERE client_id = ?');
+    foreach (sso_sync_clients() as $c) {
+        $st->execute([$c['id']]);
+        $out[] = $c + array_map(fn($v) => $v, $st->fetch());
     }
-    return $rows;
+    foreach ($out as &$c) $c['users'] = (int)$c['users'];
+    return $out;
 }
 
-function sso_new_secret(): string
+function sso_set_disabled(string $id, bool $disabled): void
 {
-    return 'mps_' . bin2hex(random_bytes(24));
-}
-
-/** {id, name, returns: [url…]} — יוצר (ומחזיר סוד חדש, פעם אחת) או מעדכן. */
-function sso_client_save(array $body): ?string
-{
-    sso_migrate();
-    $id = is_string($body['id'] ?? null) ? strtolower(trim($body['id'])) : '';
-    if (!preg_match('/^[a-z0-9][a-z0-9-]{1,39}$/', $id)) throw new ApiError('מזהה: 2–40 תווים — אותיות קטנות באנגלית, ספרות ומקף', 422);
-    $name = is_string($body['name'] ?? null) ? trim($body['name']) : '';
-    if ($name === '' || mb_strlen($name) > 60) throw new ApiError('שם: 1–60 תווים', 422);
-    $returns = array_values(array_unique(array_filter(array_map(
-        fn($u) => is_string($u) ? trim($u) : '', (array)($body['returns'] ?? [])
-    ))));
-    if (!$returns || count($returns) > SSO_MAX_RETURNS) throw new ApiError('צריך כתובת חזרה אחת לפחות (עד ' . SSO_MAX_RETURNS . ')', 422);
-    foreach ($returns as $u) if (!sso_valid_return($u)) throw new ApiError("כתובת חזרה לא תקינה: $u — https מלאה, בלי #", 422);
-
-    if (sso_client($id)) {
-        db()->prepare('UPDATE sso_clients SET name = ?, returns = ? WHERE id = ?')->execute([$name, json_encode($returns), $id]);
-        return null;
-    }
-    $secret = sso_new_secret();
-    db()->prepare('INSERT INTO sso_clients (id, name, secret_hash, returns, created_at) VALUES (?,?,?,?,?)')
-        ->execute([$id, $name, password_hash($secret, PASSWORD_DEFAULT), json_encode($returns), now_iso()]);
-    return $secret;
-}
-
-function sso_client_rotate(string $id): string
-{
-    if (!sso_client($id)) throw new ApiError('הלקוח לא נמצא', 404);
-    $secret = sso_new_secret();
-    db()->prepare('UPDATE sso_clients SET secret_hash = ? WHERE id = ?')->execute([password_hash($secret, PASSWORD_DEFAULT), $id]);
-    sso_log($id, null, 'secret-rotated');
-    return $secret;
+    if (!sso_client($id)) throw new ApiError('האפליקציה לא מצהירה על כניסה מאוחדת', 404);
+    db()->prepare('UPDATE sso_clients SET disabled = ? WHERE id = ?')->execute([$disabled ? 1 : 0, $id]);
+    sso_log($id, null, $disabled ? 'disabled' : 'enabled');
 }
