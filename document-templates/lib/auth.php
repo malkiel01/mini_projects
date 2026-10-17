@@ -173,7 +173,9 @@ function auth_register(array $b): array
         $u = ['id' => (int)db()->lastInsertId(), 'status' => 'unverified'];
     }
     if ($u['status'] === 'unverified') {
-        $payload = json_encode(['hash' => password_hash($pass, PASSWORD_DEFAULT), 'name' => $name], JSON_UNESCAPED_UNICODE);
+        // הגיע מהזמנה בוואטסאפ: האסימון נשמר באימות, והשיתוף נוצר כשהכתובת מאומתת
+        $invite = preg_match('/^[0-9a-f]{48}$/', (string)($b['invite'] ?? '')) ? (string)$b['invite'] : null;
+        $payload = json_encode(['hash' => password_hash($pass, PASSWORD_DEFAULT), 'name' => $name, 'invite' => $invite], JSON_UNESCAPED_UNICODE);
         mail_verify($email, $name, issue_email_token((int)$u['id'], 'verify', VERIFY_HOURS * 3600, $payload));
     }
     return ['ok' => true, 'message' => 'שלחנו מייל לאימות הכתובת. הקישור בתוקף 48 שעות.'];
@@ -194,6 +196,16 @@ function auth_verify(array $b): array
 
     $first = (int)$pdo->query('SELECT COUNT(*) FROM users WHERE is_developer = 1')->fetchColumn() === 0;
     $status = $first ? 'active' : 'pending';
+    // הזמנה ממפתח היא האישור עצמו: החשבון פעיל מיד. הזמנה ממשתמש רגיל — השיתוף נוצר, והחשבון ממתין לאישור.
+    $invited = null;
+    if (!empty($p['invite']) && function_exists('invite_redeem')) {
+        try { $invited = invite_redeem((int)$u['id'], (string)$p['invite']); } catch (ApiError) { $invited = null; }
+    }
+    if ($invited) {
+        $st = $pdo->prepare("SELECT is_developer FROM users WHERE id = ? AND status = 'active'");
+        $st->execute([$invited['inviter']]);
+        if ((int)$st->fetchColumn() === 1) $status = 'active';
+    }
     $pdo->prepare(
         'UPDATE users SET password_hash = ?, display_name = ?, status = ?, is_developer = ?, email_verified_at = ? WHERE id = ?'
     )->execute([$p['hash'], $p['name'], $status, $first ? 1 : 0, now_iso(), $u['id']]);
@@ -206,7 +218,9 @@ function auth_verify(array $b): array
         'status' => $status,
         'message' => $first
             ? 'הכתובת אומתה. זה החשבון הראשון — הוא חשבון המפתח, ופעיל מיד.'
-            : 'הכתובת אומתה. הבקשה ממתינה לאישור, ותקבלו גישה ברגע שתאושר.',
+            : ($status === 'active'
+                ? 'הכתובת אומתה והחשבון פעיל. אפשר להיכנס — מה ששותף איתך כבר מחכה.'
+                : 'הכתובת אומתה. הבקשה ממתינה לאישור, ותקבלו גישה ברגע שתאושר.'),
     ];
 }
 

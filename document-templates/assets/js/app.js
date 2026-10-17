@@ -186,7 +186,7 @@
       { name: 'password2', label: 'סיסמה שוב', type: 'password', auto: 'new-password', min: 8 },
     ], 'הרשמה', async (v, msg) => {
       if (v.password !== v.password2) throw new Error('הסיסמאות אינן זהות');
-      const r = await api('register', { name: v.name, email: v.email, password: v.password });
+      const r = await api('register', { name: v.name, email: v.email, password: v.password, invite: pendingInvite() || undefined });
       show(notice(r.message, 'ok'),
         el('p', { class: 'muted' }, 'אחרי האימות הבקשה עוברת לאישור. לא הגיע מייל? בדקו בספאם.'),
         links(['חזרה לכניסה', '#login']));
@@ -225,6 +225,43 @@
     }
   }
 
+  // ── הזמנה לשיתוף (קישור מוואטסאפ) ─────────────────────────
+
+  // האסימון נשמר עד שהשיתוף נוצר — גם אם בדרך עוברים בהרשמה ובאימות מייל
+  const pendingInvite = () => { try { return localStorage.getItem('dt-invite') || ''; } catch (e) { return ''; } };
+  const keepInvite = (t) => { try { t ? localStorage.setItem('dt-invite', t) : localStorage.removeItem('dt-invite'); } catch (e) { /* פרטי */ } };
+
+  async function viewInvite(token) {
+    keepInvite(token);
+    show(el('p', { class: 'muted' }, 'טוען…'));
+    let r;
+    try { r = await api('invite_info', undefined, { token }); }
+    catch (e) { keepInvite(''); return show(notice(e.message, 'bad'), links([me ? 'למסך הראשי' : 'כניסה', me ? '#home' : '#login'])); }
+    const kind = r.type === 'template' ? 'התבנית' : 'המסמך';
+    const head = el('div', { class: 'invite-head' }, el('span', { class: 'invite-ic', 'aria-hidden': 'true' }, r.type === 'template' ? '📄' : '📝'),
+      el('div', {}, el('small', {}, `${r.from} שיתף/ה איתך את ${kind}`), el('strong', {}, r.title),
+        el('span', { class: 'badge' }, (LEVEL_IC[r.level] || '') + ' ' + r.level_name)));
+    if (!me) {
+      return show(el('div', { class: 'card invite-card' }, head,
+        r.used ? notice('הקישור הזה כבר נוצל. אם זה היה אתה — פשוט נכנסים. אחרת, בקשו מהשולח קישור חדש.', 'warn')
+          : el('p', { class: 'hint' }, 'כדי לפתוח — נכנסים לחשבון, או נרשמים אם אין. אחרי זה השיתוף מחכה לך.'),
+        el('div', { class: 'invite-btns' }, el('a', { class: 'btn primary', href: '#register' }, '✍️ הרשמה'), el('a', { class: 'btn', href: '#login' }, 'כבר רשום? כניסה'))));
+    }
+    const msg = el('div');
+    const go = el('button', { type: 'button', class: 'primary', onclick: async () => {
+      go.disabled = true;
+      try {
+        const a = await api('invite_accept', { token });
+        keepInvite('');
+        toast('✓ ' + kind + ' נוספ' + (r.type === 'template' ? 'ה' : '') + ' לחשבון שלך');
+        location.hash = (a.type === 'template' ? 'tpl=' : 'doc=') + a.id;
+      } catch (e) { go.disabled = false; keepInvite(''); msg.replaceChildren(notice(e.message, 'bad')); }
+    } }, '✓ קבלת השיתוף');
+    show(el('div', { class: 'card invite-card' }, head,
+      el('p', { class: 'hint' }, `השיתוף יתווסף לחשבון של ${me.name}.`), go, msg));
+    if (r.used) go.click();   // כבר נוצל (בהרשמה) — אם בחשבון הזה, פשוט פותחים
+  }
+
   // ── אחרי כניסה ─────────────────────────────────────────────
 
   function setTab(tab) {
@@ -253,6 +290,13 @@
     const list = el('ul', { class: 'share-list' }, el('li', { class: 'empty' }, 'טוען…'));
     const out = el('div');
     const email = el('input', { type: 'email', inputmode: 'email', autocomplete: 'email', placeholder: 'name@example.com', dir: 'ltr', required: true, 'aria-label': 'מייל' });
+    // שיתוף בטלפון: הזמנה בקישור חד-פעמי בוואטסאפ — מי שפותח נכנס או נרשם, והשיתוף נוצר לחשבון שלו
+    const phone = el('input', { type: 'tel', inputmode: 'tel', autocomplete: 'tel', placeholder: '050-0000000', dir: 'ltr', 'aria-label': 'טלפון' });
+    const pname = el('input', { type: 'text', autocomplete: 'name', placeholder: 'שם (לא חובה)', 'aria-label': 'שם' });
+    const viaSeg = el('div', { class: 'seg share-via', role: 'radiogroup', 'aria-label': 'איך לשתף' },
+      ...[['email', '📧 מייל'], ['phone', '💬 וואטסאפ']].map(([v, t]) => el('label', {},
+        el('input', { type: 'radio', name: 'share-via', value: v, checked: v === 'email', onchange: () => setVia(v) }), el('span', {}, t))));
+    const byPhone = () => (viaSeg.querySelector('input:checked') || {}).value === 'phone';
     const levelHint = el('p', { class: 'hint share-hint' });
     const seg = el('div', { class: 'seg share-seg', role: 'radiogroup', 'aria-label': 'הרשאה' });
     const avatar = (name) => el('span', { class: 'avatar', style: `--h:${hueOf(name)}`, 'aria-hidden': 'true' }, initialsOf(name));
@@ -273,7 +317,8 @@
           el('span', {}, LEVEL_IC[k] + ' ' + LEVEL[k]))));
         if (!seg.querySelector('input:checked')) seg.querySelector('input').checked = true;
         showHint();
-        count.textContent = r.shares.length ? String(r.shares.length + 1) : '';
+        const invites = r.invites || [];
+        count.textContent = r.shares.length + invites.length ? String(r.shares.length + invites.length + 1) : '';
         // הבעלים ראשון, ואחריו כל מי ששותף: שם, מייל ומאז מתי — ומשמאל ההרשאה וניתוק
         list.replaceChildren(
           el('li', { class: 'share-row owner' }, avatar(r.owner),
@@ -291,7 +336,19 @@
                   if (confirm(`לנתק את ${name}?\nהגישה שלו ${type === 'template' ? 'לתבנית' : 'למסמך'} תיחסם מיד.`)) run('share_remove', { type, id, user_id: s.user_id }, `✓ ${name} נותק`);
                 } }, '🚫 ניתוק')));
           }),
-          ...(r.shares.length ? [] : [el('li', { class: 'share-none' }, `עוד לא שיתפת את ${what} עם אף אחד.`)]));
+          // הזמנות בוואטסאפ שעוד לא נפתחו
+          ...invites.map(i => {
+            const name = i.name || i.phone;
+            return el('li', { class: 'share-row invite' }, el('span', { class: 'avatar', 'aria-hidden': 'true' }, '💬'),
+              el('div', { class: 'share-who' }, el('strong', {}, name),
+                el('small', {}, '⏳ ממתין שייכנס · ' + LEVEL_IC[i.level] + ' ' + LEVEL[i.level] + (i.name ? ' · ' : ''), i.name ? el('span', { dir: 'ltr' }, i.phone) : '')),
+              el('div', { class: 'share-ctl' },
+                el('button', { type: 'button', class: 'small', 'aria-label': 'שליחה חוזרת ל' + name, onclick: () => invite('share_invite_resend', { type, id, invite_id: i.id }) }, '💬 שוב'),
+                el('button', { type: 'button', class: 'small share-cut', 'aria-label': 'ביטול ההזמנה של ' + name, onclick: () => {
+                  if (confirm(`לבטל את ההזמנה של ${name}?\nהקישור שנשלח לו יפסיק לעבוד.`)) run('share_invite_cancel', { type, id, invite_id: i.id }, '✓ ההזמנה בוטלה');
+                } }, '🚫 ביטול')));
+          }),
+          ...(r.shares.length || invites.length ? [] : [el('li', { class: 'share-none' }, `עוד לא שיתפת את ${what} עם אף אחד.`)]));
       } catch (e) {
         list.replaceChildren(el('li', {}, notice(e.message, 'bad')));
       }
@@ -301,15 +358,49 @@
       try { await api(action, body); await load(); if (ok) toast(ok); if (after) after(); return true; }
       catch (e) { out.replaceChildren(notice(e.message, 'bad')); return false; }
     }
+    /** הזמנה בוואטסאפ: החלון נפתח מיד (אחרת הדפדפן חוסם), והכתובת נקבעת כשהקישור מוכן. */
+    async function invite(action, body) {
+      out.replaceChildren();
+      const wa = window.open('', '_blank');
+      try {
+        const r = await api(action, body);
+        if (wa) wa.location.href = r.whatsapp; else location.href = r.whatsapp;
+        const copy = el('button', { type: 'button', class: 'small', onclick: async () => {
+          try { await navigator.clipboard.writeText(r.text); toast('✓ ההודעה והקישור הועתקו'); } catch (e) { prompt('העתיקו את הקישור:', r.link); }
+        } }, '📋 העתקת ההודעה');
+        out.replaceChildren(el('div', { class: 'notice ok share-sent' },
+          el('span', {}, '✓ ההזמנה מוכנה בוואטסאפ. הקישור אישי וחד-פעמי, ובתוקף 14 יום.'), copy));
+        await load();
+        if (after) after();
+        return true;
+      } catch (e) {
+        if (wa) wa.close();
+        out.replaceChildren(notice(e.message, 'bad'));
+        return false;
+      }
+    }
     const submit = el('button', { type: 'submit', class: 'primary' }, '➕ שיתוף');
+    const viaHint = el('p', { class: 'hint' });
+    const phoneRow = el('div', { class: 'share-phone' }, phone, pname);
+    function setVia(v) {
+      const p = v === 'phone';
+      email.hidden = p; email.required = !p;
+      phoneRow.hidden = !p; phone.required = p;
+      submit.textContent = p ? '💬 שליחה בוואטסאפ' : '➕ שיתוף';
+      viaHint.textContent = p
+        ? 'נשלח קישור אישי. הוא נכנס או נרשם דרכו — והשיתוף נוצר לחשבון שלו.'
+        : 'למשתמש שכבר רשום. לקוח שרק ממלא טופס — דרך "📨 שליחה למילוי".';
+    }
     const add = el('form', { class: 'card share-add' },
       el('h3', {}, 'שיתוף עם עוד מישהו'),
-      email, seg, levelHint, submit,
-      el('p', { class: 'hint' }, 'רק למשתמש רשום. לקוח בלי חשבון — דרך "📨 שליחה למילוי".'));
+      viaSeg, email, phoneRow, seg, levelHint, submit, viaHint);
+    setVia('email');
     add.addEventListener('submit', async (e) => {
       e.preventDefault();
       submit.disabled = true;
-      if (await run('share_set', { type, id, email: email.value, level: pickLevel() }, '✓ שותף')) email.value = '';
+      if (byPhone()) {
+        if (await invite('share_invite', { type, id, phone: phone.value, name: pname.value, level: pickLevel() })) { phone.value = ''; pname.value = ''; }
+      } else if (await run('share_set', { type, id, email: email.value, level: pickLevel() }, '✓ שותף')) email.value = '';
       submit.disabled = false;
     });
     const count = el('span', { class: 'count' });
@@ -703,6 +794,7 @@
     const val = h.includes('=') ? h.slice(h.indexOf('=') + 1) : '';
     if (key === 'verify' && val) return viewVerify(val);
     if (key === 'reset' && val) return viewReset(val);
+    if (key === 'invite' && val) return viewInvite(val);
     if (!me) {
       if (key === 'register') return viewRegister();
       if (key === 'forgot') return viewForgot();
@@ -731,7 +823,7 @@
     paintMe();
     document.getElementById('nav-dev').hidden = !(me && me.is_developer);
     document.getElementById('who').textContent = me ? me.name : '';
-    if (me && /^(login|register|forgot)?$/.test(location.hash.slice(1))) location.hash = 'home';
+    if (me && /^(login|register|forgot)?$/.test(location.hash.slice(1))) location.hash = pendingInvite() ? 'invite=' + pendingInvite() : 'home';
     devloop();
     route();
   }

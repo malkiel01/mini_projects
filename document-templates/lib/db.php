@@ -254,6 +254,26 @@ function db_migrate(PDO $pdo): void
     $cols = array_column($pdo->query('PRAGMA table_info(documents)')->fetchAll(), 'name');
     if (!in_array('assign_enc', $cols, true)) $pdo->exec('ALTER TABLE documents ADD COLUMN assign_enc TEXT');
 
+    // שיתוף בטלפון: הזמנה בקישור חד-פעמי, שנשלח בוואטסאפ (lib/sharing.php, share_invite)
+    $pdo->exec(<<<'SQL'
+        CREATE TABLE IF NOT EXISTS share_invites (
+            id          INTEGER PRIMARY KEY,
+            object_type TEXT NOT NULL CHECK (object_type IN ('template','document')),
+            object_id   INTEGER NOT NULL,
+            level       TEXT NOT NULL CHECK (level IN ('view','fill','edit','co_owner')),
+            token_hash  TEXT NOT NULL UNIQUE,
+            name_enc    TEXT,
+            phone_enc   TEXT,
+            created_by  INTEGER NOT NULL REFERENCES users(id),
+            created_at  TEXT NOT NULL,
+            expires_at  TEXT NOT NULL,
+            used_by     INTEGER REFERENCES users(id),
+            used_at     TEXT,
+            revoked_at  TEXT
+        );
+        CREATE INDEX IF NOT EXISTS share_invites_obj ON share_invites (object_type, object_id);
+        SQL);
+
     // חיבורים: מקורות נתונים, מפתחות API (lib/integrations.php)
     if (function_exists('integrations_migrate')) integrations_migrate($pdo);
     // אזור הפיתוח: לוג מעקב מורחב, יומן ביקורת של פעולות מפתח (lib/devzone.php)
