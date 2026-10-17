@@ -175,6 +175,49 @@ function showPassword(forced) {
     }));
 }
 
+// אפליקציות שאישרתי להן "כניסה עם חשבון כלים דיגיטליים" (platform/sso.php) — וניתוק.
+async function openConnections() {
+    const close = el('button', { type: 'button', className: 'icon-btn', textContent: '✕', ariaLabel: 'סגירה' });
+    const list = el('div', {}, [el('p', { className: 'muted small', textContent: 'טוען…' })]);
+    const dlg = el('dialog', {}, [el('div', { className: 'sheet' }, [
+        el('div', { className: 'sheet-head' }, [
+            el('span', { className: 'app-ic', textContent: '🔗', ariaHidden: 'true' }),
+            el('div', { className: 'tx' }, [el('h2', { textContent: 'חיבורים לאפליקציות' }),
+                el('small', { textContent: 'אפליקציות שנכנסים אליהן עם החשבון הזה' })]),
+            close,
+        ]),
+        el('div', { className: 'sheet-body' }, [list,
+            el('p', { className: 'muted small', textContent: 'אפליקציה מחוברת מקבלת רק את השם שלך ומספר מזהה. ניתוק לא מוחק את החשבון שלך בתוכה — רק את הכניסה דרך כאן.' })]),
+    ])]);
+    close.addEventListener('click', () => dlg.close());
+    dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+    dlg.addEventListener('close', () => dlg.remove());
+    document.body.append(dlg);
+    dlg.showModal();
+
+    async function load() {
+        try {
+            const { consents } = await api('sso_mine');
+            list.replaceChildren(consents.length
+                ? el('div', { className: 'entries' }, consents.map(c => {
+                    const x = el('button', { type: 'button', className: 'btn danger', textContent: 'ניתוק' });
+                    x.addEventListener('click', async () => {
+                        if (!confirm(`לנתק את ${c.name}? בכניסה הבאה דרכה תתבקשו לאשר שוב.`)) return;
+                        try { await api('sso_revoke', { client_id: c.client_id }); toast('נותק'); } catch (err) { toast('⚠️ ' + err.message); }
+                        load();
+                    });
+                    return el('div', { className: 'entry conn' }, [
+                        el('span', { className: 'conn-tx' }, [el('b', { textContent: c.name }),
+                            el('small', { textContent: `אושר ${new Date(c.granted_at).toLocaleDateString('he-IL')}` })]),
+                        x,
+                    ]);
+                }))
+                : el('p', { className: 'muted', textContent: 'עוד לא אישרת לאף אפליקציה להיכנס עם החשבון הזה.' }));
+        } catch (err) { list.replaceChildren(el('p', { className: 'status error', textContent: err.message })); }
+    }
+    load();
+}
+
 function showMessage(title, text, icon = '') {
     view.replaceChildren(el('div', { className: 'auth' }, [el('div', { className: 'panel msg' }, [
         icon ? el('div', { className: 'big', textContent: icon, ariaHidden: 'true' }) : logo(),
@@ -238,6 +281,7 @@ function openMenu(btn, user) {
             : menuItem('⚙️', 'ניהול', null, { href: '#admin', count: me.pending || 0 }));
     }
     items.push(menuItem('🔑', 'החלפת סיסמה', () => showPassword(false)));
+    items.push(menuItem('🔗', 'חיבורים לאפליקציות', openConnections));
     if (!isStandalone()) {
         items.push(isInstalled()
             ? menuItem('✓', 'מותקן במכשיר', openInstallSheet)
