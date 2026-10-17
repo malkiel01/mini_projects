@@ -7,7 +7,7 @@
 'use strict';
 
 const API = 'api.php';
-const APK = 'https://github.com/malkiel01/mini_projects/releases/download/guarded-browser-apk/migdalor.apk';
+const APK = '../download.php';   // מהשרת שלנו, בלי ההפניה של GitHub
 const DAYS = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
 const MODES = { kiosk: ['🧩 אריחים בלבד', 'רק האתרים והערוצים שאישרתם, כאריחים. אין שורת כתובת.'],
                 browser: ['🌐 דפדפן', 'יש שורת כתובת. מה שנפתח בה — לפי מה שקבעתם כאן.'] };
