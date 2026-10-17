@@ -113,6 +113,23 @@ class Store(context: Context) {
 
     fun displayName(): String = prefs.getString("name", "") ?: ""
 
+    /**
+     * מועדפים — כתובות של אריחים, בסדר שהילד בחר. נשמרים במכשיר בלבד:
+     * זה סידור אישי, לא הרשאה; אריח שההורה הסיר פשוט לא יוצג.
+     */
+    fun favorites(): List<String> = try {
+        val a = JSONArray(prefs.getString("favs", "[]") ?: "[]")
+        (0 until a.length()).map { a.getString(it) }
+    } catch (e: Exception) { emptyList() }
+
+    fun toggleFavorite(url: String): Boolean {
+        val list = favorites().toMutableList()
+        val on = !list.remove(url)
+        if (on) list.add(url)
+        prefs.edit().putString("favs", JSONArray(list).toString()).apply()
+        return on
+    }
+
     /** גיל המדיניות השמורה. מדיניות עתיקה מדי אינה בסיס להמשך גלישה. */
     fun policyAgeMinutes(): Long {
         val at = prefs.getLong("policy_at", 0L)

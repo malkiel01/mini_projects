@@ -277,6 +277,17 @@ function schemaStatements(): array {
     // ── כניסות לפאנל ────────────────────────────────────────────
     // במקום session של PHP (PHPSESSID משותף לכל האתר ופג אחרי 24
     // דקות). רק ה-hash של האסימון נשמר — דליפת הטבלה אינה מספיקה.
+    // ── צימוד מכשיר (שלב 4) ────────────────────────────────────
+    // קוד חד-פעמי שההורה מציג (QR או הקלדה), תקף 10 דקות, קשור לילד אחד.
+    // רק ה-hash נשמר; קוד חדש לאותו ילד מבטל את הקודם.
+    "CREATE TABLE IF NOT EXISTS pair_codes (
+        code_hash  TEXT    PRIMARY KEY,
+        child_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TEXT    NOT NULL,
+        expires_at TEXT    NOT NULL,
+        used_at    TEXT    NOT NULL DEFAULT ''
+    )",
+
     // ‏kind: admin (הפאנל הישן) · dev (קונסולת המפתח) · parent (שלב 3).
     "CREATE TABLE IF NOT EXISTS admin_sessions (
         token_hash   TEXT    PRIMARY KEY,

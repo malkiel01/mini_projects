@@ -5,9 +5,10 @@
  * תמיד קודם רשת; המטמון רק כשאין. ה-API לא נשמר לעולם — נתוני ילדים לא
  * יושבים במטמון של מכשיר, וגם מצב ישן היה מטעה הורה שמאשר משהו "עכשיו".
  */
-const CACHE = 'migdalor-parent-v1';
+const CACHE = 'migdalor-parent-v2';
 const SHELL = ['./', 'index.html', 'app.js', 'manifest.webmanifest',
-               '../assets/migdalor.css', '../assets/icon.svg', '../assets/icon-192.png'];
+               '../assets/migdalor.css', '../assets/icon.svg', '../assets/icon-192.png',
+               '../assets/vendor/qrcode.js'];
 
 self.addEventListener('install', e => {
     e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

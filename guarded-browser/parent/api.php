@@ -35,6 +35,17 @@ function meState(): array {
     ];
 }
 
+/**
+ * כתובת השרת כפי שהמכשיר צריך אותה — מההגדרות (server_url), ואם אין,
+ * מהבקשה הזו עצמה: התיקייה שמעל parent/.
+ */
+function serverBase(): string {
+    if ($u = serverUrl()) return $u;
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $dir = rtrim(str_replace('\\', '/', dirname(dirname($_SERVER['SCRIPT_NAME'] ?? '/x/parent/api.php'))), '/');
+    return $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $dir . '/';
+}
+
 /** הילד מהבקשה — רק אם הוא בחשבון של ההורה המחובר. */
 function myChild(array $parent): array {
     $c = childOf((int) $parent['account_id'], num('id'));
@@ -150,6 +161,13 @@ try {
             $c = myChild($parent);
             childDeviceDelete((int) $c['id'], num('device_id'));
             out(['ok' => true, 'child' => detail($parent, (int) $c['id'])]);
+
+        case 'pair_create':
+            $c = myChild($parent);
+            if ($c['status'] !== 'active') fail('הילד מושהה — החזירו אותו קודם');
+            [$code, $exp] = pairCreate((int) $c['id']);
+            out(['ok' => true, 'code' => $code, 'expires_at' => $exp, 'server' => serverBase(),
+                 'qr' => 'migdalor:pair?c=' . $code . '&s=' . rawurlencode(serverBase())]);
 
         case 'usage_reset':
             $c = myChild($parent);

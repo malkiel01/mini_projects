@@ -398,14 +398,68 @@ function kidDev() {
     return [
         list,
         group('חיבור מכשיר', '', [
-            el('ol', { class: 'steps' }, [
-                el('li', { text: 'במכשיר של הילד: הורידו את אפליקציית מגדלור (הכפתור בדף הכלים).' }),
-                el('li', {}, ['היכנסו עם שם המשתמש ', el('code', { text: K.username, dir: 'ltr' }), ' והסיסמה שקיבלתם.']),
-                el('li', { text: 'שכחתם את הסיסמה? "פרטי כניסה חדשים" בלשונית סיכום.' }),
-            ]),
-            el('p', { class: 'hint', text: 'בקרוב: חיבור בסריקת קוד, בלי סיסמה.' }),
+            el('button', { type: 'button', class: 'btn primary', text: '📷 חיבור מכשיר חדש', onclick: () => openPair() }),
+            el('p', { class: 'hint', text: 'מציגים קוד, והמכשיר של הילד סורק אותו — בלי סיסמה.' }),
+            el('details', {}, [el('summary', { class: 'muted', text: 'או בשם משתמש וסיסמה (מכשיר ישן)' }),
+                el('ol', { class: 'steps' }, [
+                    el('li', {}, ['באפליקציה: "כניסה עם שם משתמש", ושם המשתמש ', el('code', { text: K.username, dir: 'ltr' }), '.']),
+                    el('li', { text: 'הסיסמה — זו שקיבלתם, או "פרטי כניסה חדשים" בלשונית סיכום.' }),
+                ])]),
         ]),
     ];
+}
+
+/* ── חיבור מכשיר (QR) ──────────────────────────────────────────── */
+
+let pairTimer = null;
+
+async function openPair() {
+    // לפי מזהים ולא לפי מספר: מכשיר חדש יכול להחליף ישן (מכסת מכשירים לילד), והמספר לא ישתנה.
+    const kid = K, before = new Set(K.device_list.map(d => d.id));
+    let r;
+    try { r = await call('pair_create', { id: kid.id }); } catch (e) { toast(e.message, true); return; }
+
+    const qr = qrcode(0, 'M');
+    qr.addData(r.qr);
+    qr.make();
+    const svg = new DOMParser().parseFromString(qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true }), 'image/svg+xml').documentElement;
+    svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', 'קוד QR לחיבור המכשיר');
+    svg.style.cssText = 'inline-size:min(72vw,280px);block-size:auto;background:#fff;border-radius:10px';
+
+    const left = el('p', { class: 'hint', style: 'text-align:center' });
+    const pretty = r.code.slice(0, 4) + '-' + r.code.slice(4);
+    $('#pair-title').textContent = `חיבור מכשיר — ${kid.name}`;
+    $('#pair-body').replaceChildren(
+        el('ol', { class: 'steps' }, [
+            el('li', { text: 'במכשיר של הילד: פותחים את מגדלור.' }),
+            el('li', { text: 'לוחצים "📷 סריקת קוד" ומכוונים למסך הזה.' }),
+        ]),
+        el('div', { style: 'display:grid;justify-items:center;gap:8px' }, [svg,
+            el('p', { class: 'muted', text: 'או מקלידים את הקוד:' }),
+            el('div', { class: 'pw' }, [el('code', { text: pretty })])]),
+        left,
+    );
+    const d = $('#pair-dlg'); if (!d.open) d.showModal();
+
+    clearInterval(pairTimer);
+    const until = new Date(r.expires_at).getTime();
+    let ticks = 0;
+    pairTimer = setInterval(async () => {
+        if (!d.open) { clearInterval(pairTimer); return; }
+        const sec = Math.max(0, Math.round((until - Date.now()) / 1000));
+        left.textContent = sec ? `הקוד תקף עוד ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}` : 'פג תוקף הקוד — סגרו ופתחו שוב.';
+        if (!sec) { clearInterval(pairTimer); return; }
+        if (++ticks % 3) return;   // בדיקה כל 3 שניות: האם המכשיר כבר הצטרף
+        try {
+            const c = (await call('child', { id: kid.id })).child;
+            const fresh = c.device_list.find(x => !before.has(x.id));
+            if (fresh) {
+                clearInterval(pairTimer); d.close();
+                if (K && K.id === c.id) { K = c; renderKid(); }
+                loadKids(); toast(`המכשיר חובר ✓ ${fresh.name || ''}`);
+            }
+        } catch { /* ננסה שוב בעוד רגע */ }
+    }, 1000);
 }
 
 /* ── ילד חדש ───────────────────────────────────────────────────── */
@@ -418,7 +472,7 @@ $('#kid-new').addEventListener('click', () => {
         err.hidden = true; go.disabled = true;
         try {
             const r = await call('child_add', { name: name.value });
-            loadKids(); showCreds(name.value.trim(), r.username, r.password);
+            loadKids(); showCreds(name.value.trim(), r.username, r.password, r.id);
         } catch (x) { err.textContent = x.message; err.hidden = false; }
         go.disabled = false;
     });
@@ -429,13 +483,17 @@ $('#kid-new').addEventListener('click', () => {
     $('#add-dlg').showModal(); name.focus();
 });
 
-function showCreds(name, username, password) {
+function showCreds(name, username, password, newId = 0) {
     const copy = text => async () => {
         try { await navigator.clipboard.writeText(text); toast('הועתק'); } catch { toast('סמנו והעתיקו ידנית', true); }
     };
     $('#add-title').textContent = `פרטי כניסה — ${name}`;
     $('#add-body').replaceChildren(
-        el('p', { class: 'hint', text: 'מוצגים פעם אחת. במכשיר של הילד: התקינו את מגדלור והיכנסו עם:' }),
+        newId ? el('button', { type: 'button', class: 'btn primary', text: '📷 חיבור המכשיר שלו עכשיו', onclick: async () => {
+            $('#add-dlg').close(); await openKid(newId); if (K) openPair();
+        } }) : null,
+        el('p', { class: 'hint', text: newId ? 'או, במכשיר ישן — כניסה עם שם משתמש. הפרטים מוצגים פעם אחת:'
+            : 'מוצגים פעם אחת. במכשיר של הילד: "כניסה עם שם משתמש", ואז:' }),
         el('div', { class: 'cred' }, [
             el('div', {}, [el('span', { class: 'muted', text: 'שם משתמש' }), el('code', { text: username }),
                 el('button', { type: 'button', class: 'icon-btn', text: '📋', ariaLabel: 'העתקת שם המשתמש', onclick: copy(username) })]),

@@ -1,42 +1,65 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- הבית של הילד: כותרת, מצב, חיפוש, מועדפים, וכל מה שמותר — כאריחים. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent" android:layout_height="match_parent"
-    android:orientation="vertical" android:layoutDirection="rtl">
+    android:orientation="vertical" android:layoutDirection="rtl" android:background="@color/bg">
 
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:padding="16dp" android:gravity="center_vertical">
-        <TextView android:id="@+id/greeting" android:layout_width="0dp" android:layout_weight="1"
-            android:layout_height="wrap_content" android:textSize="19sp" android:textStyle="bold"/>
-        <Button android:id="@+id/logout" android:layout_width="wrap_content"
-            android:layout_height="wrap_content" android:text="יציאה"
-            style="?attr/borderlessButtonStyle"/>
+        android:orientation="horizontal" android:gravity="center_vertical"
+        android:background="@color/brand" android:paddingStart="16dp" android:paddingEnd="4dp"
+        android:paddingTop="10dp" android:paddingBottom="10dp">
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="🗼" android:textSize="22sp" android:importantForAccessibility="no"/>
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginStart="10dp">
+            <TextView android:id="@+id/greeting" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:textSize="18sp" android:textStyle="bold"
+                android:textColor="@color/brand_ink" android:maxLines="1" android:ellipsize="end"/>
+            <TextView android:id="@+id/headSub" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:textSize="13sp"
+                android:textColor="@color/brand_ink" android:alpha="0.85" android:maxLines="1" android:ellipsize="end"/>
+        </LinearLayout>
+        <com.google.android.material.button.MaterialButton android:id="@+id/settings"
+            style="@style/Widget.Material3.Button.TextButton" android:layout_width="48dp"
+            android:layout_height="48dp" android:insetTop="0dp" android:insetBottom="0dp"
+            android:padding="0dp" android:text="⚙️" android:textSize="20sp"
+            android:contentDescription="ההגדרות שלי"/>
     </LinearLayout>
 
-    <TextView android:id="@+id/status" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:paddingHorizontal="16dp"
-        android:paddingBottom="10dp" android:textColor="@color/dim"/>
-
-    <LinearLayout android:id="@+id/urlRow" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:orientation="horizontal"
-        android:paddingHorizontal="16dp" android:paddingBottom="10dp" android:visibility="gone">
-        <EditText android:id="@+id/urlInput" android:layout_width="0dp" android:layout_weight="1"
-            android:layout_height="wrap_content" android:hint="כתובת" android:inputType="textUri"
-            android:layoutDirection="ltr" android:textDirection="ltr"/>
-        <Button android:id="@+id/openUrl" android:layout_width="wrap_content"
-            android:layout_height="wrap_content" android:text="פתיחה"/>
-    </LinearLayout>
-
-    <ProgressBar android:id="@+id/progress" android:layout_width="wrap_content"
-        android:layout_height="wrap_content" android:layout_gravity="center"
+    <ProgressBar android:id="@+id/progress" style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent" android:layout_height="4dp" android:indeterminate="true"
         android:visibility="gone"/>
 
-    <TextView android:id="@+id/empty" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:padding="24dp" android:gravity="center"
-        android:textColor="@color/dim" android:visibility="gone"/>
+    <ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:padding="12dp">
 
-    <ScrollView android:layout_width="match_parent" android:layout_height="match_parent">
-        <LinearLayout android:id="@+id/tiles" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:orientation="vertical"
-            android:padding="12dp"/>
+            <TextView android:id="@+id/status" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:padding="12dp" android:textSize="15sp"
+                android:textColor="@color/ink" android:layout_marginBottom="12dp" android:visibility="gone"/>
+
+            <EditText android:id="@+id/search" android:layout_width="match_parent"
+                android:layout_height="48dp" android:background="@drawable/bg_input"
+                android:drawablePadding="8dp" android:hint="חיפוש באתרים שלי" android:inputType="textUri"
+                android:imeOptions="actionSearch" android:importantForAutofill="no"
+                android:textColor="@color/ink" android:textColorHint="@color/dim" android:textSize="16sp"/>
+
+            <TextView android:id="@+id/favTitle" style="@style/MgSection"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="⭐ מועדפים" android:visibility="gone"/>
+            <GridLayout android:id="@+id/favGrid" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:columnCount="2" android:visibility="gone"/>
+
+            <TextView android:id="@+id/allTitle" style="@style/MgSection"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="כל האתרים שלי" android:visibility="gone"/>
+            <GridLayout android:id="@+id/grid" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:columnCount="2"
+                android:layout_marginTop="8dp"/>
+
+            <TextView android:id="@+id/empty" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:padding="24dp" android:gravity="center"
+                android:textColor="@color/dim" android:visibility="gone"/>
+        </LinearLayout>
     </ScrollView>
 </LinearLayout>

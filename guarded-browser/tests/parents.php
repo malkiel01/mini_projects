@@ -97,6 +97,26 @@ check('יוטיוב: מצב ופריטים', [$d['youtube']['mode'], count($d['y
 check('כללים', count($d['rules']), 1);
 check('כרטיס: מכסה', $d['quota_min'], 60);
 
+echo "\n— צימוד בקוד —\n";
+[$code, $exp] = pairCreate($k1);
+check('קוד בן 8 תווים', (bool) preg_match('/^[a-z0-9]{8}$/', $code), true);
+check('קוד לא תקין', pairRedeem('abc', 'P', 'd1')[2], 'הקוד לא תקין — 8 אותיות וספרות');
+check('קוד שגוי', pairRedeem('zzzzzzzz', 'P', 'd1')[2], 'הקוד לא נמצא או שפג תוקפו. בקשו מההורה קוד חדש.');
+[$code2] = pairCreate($k1);
+check('קוד חדש מבטל את הקודם', pairRedeem($code, 'P', 'd1')[2], 'הקוד לא נמצא או שפג תוקפו. בקשו מההורה קוד חדש.');
+[$pu, $ptok, $err] = pairRedeem(strtoupper(substr($code2, 0, 4)) . '-' . substr($code2, 4), 'Pixel', 'd1');
+check('צימוד עם הקוד הנוכחי (גם באותיות גדולות ועם מקף)', $err, '');
+check('האסימון מזהה את הילד', (int) (userByToken($ptok)['id'] ?? 0), $k1);
+check('קוד שנוצל לא עובד שוב', pairRedeem($code2, 'P2', 'd2')[2], 'הקוד לא נמצא או שפג תוקפו. בקשו מההורה קוד חדש.');
+[$code3] = pairCreate($k1);
+q('UPDATE pair_codes SET expires_at = ? WHERE child_id = ?', ['2000-01-01T00:00:00Z', $k1]);
+check('קוד שפג', pairRedeem($code3, 'P', 'd3')[2], 'הקוד לא נמצא או שפג תוקפו. בקשו מההורה קוד חדש.');
+q("UPDATE users SET status = 'suspended' WHERE id = ?", [$k1]);
+[$code4] = pairCreate($k1);
+check('ילד מושהה לא מצטמד', pairRedeem($code4, 'P', 'd4')[2], 'הילד הזה מושהה. ההורה צריך להחזיר אותו קודם.');
+q("UPDATE users SET status = 'active' WHERE id = ?", [$k1]);
+check('...ואחרי ההחזרה הקוד עוד תקף', pairRedeem($code4, 'P', 'd4')[2], '');
+
 echo "\n— סיסמה חדשה ומחיקה —\n";
 registerDevice($k1, 'Phone', 'p1', 0);
 $np = childNewPassword($k1);

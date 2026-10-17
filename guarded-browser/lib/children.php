@@ -72,6 +72,54 @@ function childDelete(int $childId): void {
     db()->commit();
 }
 
+/* ── צימוד מכשיר ─────────────────────────────────────────────── */
+
+const PAIR_TTL_MIN = 10;
+
+/** הקוד כפי שמוקלד: אותיות קטנות, בלי רווחים ומקפים. */
+function cleanPairCode(string $code): string {
+    return strtolower(preg_replace('/[\s-]+/', '', $code));
+}
+
+/**
+ * קוד צימוד חדש לילד. מוחזר [קוד, תוקף]. קוד קודם שלא נוצל — מבוטל:
+ * רק הקוד שמוצג עכשיו על המסך של ההורה צריך לעבוד.
+ */
+function pairCreate(int $childId): array {
+    q("DELETE FROM pair_codes WHERE child_id = ? AND used_at = ''", [$childId]);
+    q('DELETE FROM pair_codes WHERE expires_at < ?', [nowIso()]);
+    $code = tempPassword(8);
+    $exp = gmdate('Y-m-d\TH:i:s\Z', time() + PAIR_TTL_MIN * 60);
+    q('INSERT INTO pair_codes (code_hash, child_id, created_at, expires_at) VALUES (?, ?, ?, ?)',
+      [hash('sha256', $code), $childId, nowIso(), $exp]);
+    return [$code, $exp];
+}
+
+/**
+ * מכשיר מצטרף בקוד. מוחזר [ילד, אסימון, שגיאה].
+ *
+ * אותה שרשרת בדיקות כמו בכניסה בסיסמה: הילד פעיל, החשבון לא חוסם,
+ * ומכסת המכשירים של החשבון. הקוד נשרף רק אחרי שהכול עבר — קוד שנכשל
+ * בגלל מכסה עדיין תקף אחרי שההורה ניתק מכשיר ישן.
+ */
+function pairRedeem(string $code, string $deviceName, string $deviceId): array {
+    $code = cleanPairCode($code);
+    if (!preg_match('/^[a-z0-9]{8}$/', $code)) return [null, '', 'הקוד לא תקין — 8 אותיות וספרות'];
+    $row = one("SELECT * FROM pair_codes WHERE code_hash = ? AND used_at = '' AND expires_at > ?",
+               [hash('sha256', $code), nowIso()]);
+    if (!$row) return [null, '', 'הקוד לא נמצא או שפג תוקפו. בקשו מההורה קוד חדש.'];
+    $u = one('SELECT * FROM users WHERE id = ?', [$row['child_id']]);
+    if (!$u) return [null, '', 'הקוד לא נמצא או שפג תוקפו. בקשו מההורה קוד חדש.'];
+    if ($u['status'] !== 'active') return [null, '', 'הילד הזה מושהה. ההורה צריך להחזיר אותו קודם.'];
+    if ($block = accountBlock($u)) return [null, '', $block[1]];
+    if (accountDeviceQuotaFull((int) $u['account_id'], $deviceId)) {
+        return [null, '', 'הגעתם למספר המכשירים המרבי בחשבון. נתקו מכשיר ישן באפליקציית ההורה.'];
+    }
+    $token = registerDevice((int) $u['id'], $deviceName, $deviceId, (int) policyFor((int) $u['id'])['max_devices']);
+    q('UPDATE pair_codes SET used_at = ? WHERE code_hash = ?', [nowIso(), $row['code_hash']]);
+    return [$u, $token, ''];
+}
+
 /* ── מדיניות ───────────────────────────────────────────────────── */
 
 /**

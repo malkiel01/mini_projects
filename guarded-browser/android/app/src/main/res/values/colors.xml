@@ -1,6 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- שפת "הטלפון קודם" של מגדלור — אותם צבעים כמו ב-assets/migdalor.css. -->
 <resources>
-    <color name="brand">#2563EB</color>
-    <color name="dim">#6B7280</color>
+    <color name="brand">#1D4A6E</color>
+    <color name="brand_ink">#FFFFFF</color>
+    <color name="brand_soft">#E6EFF6</color>
+    <color name="bg">#F4F5F7</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="ink">#16192B</color>
+    <color name="dim">#5D6475</color>
     <color name="line">#E3E6EB</color>
+    <color name="ok">#1E7B3A</color>
+    <color name="warn">#B26E00</color>
+    <color name="danger">#B3261E</color>
+    <color name="ok_soft">#E8F3EC</color>
+    <color name="warn_soft">#FFF5E0</color>
+    <color name="danger_soft">#FDECEA</color>
 </resources>
