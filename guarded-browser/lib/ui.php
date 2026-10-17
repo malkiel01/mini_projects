@@ -243,7 +243,8 @@ function layoutTop(string $title, ?array $admin = null): void {
      * התרעה שממתינה שהמנהל ייכנס למסך הנכון אינה התרעה. כאן היא
      * חוסמת את המבט בכל מקום שאליו הוא ייכנס.
      */
-    if ($admin) {
+    // בדף ההתרעות עצמו הפס מיותר — הן כבר על המסך.
+    if ($admin && basename($_SERVER['SCRIPT_NAME'] ?? '') !== 'alerts.php') {
         $open = openAlertCount();
         if ($open > 0) {
             echo '<div class="alarm"><strong>' . $open . ' התרעות אבטחה פתוחות</strong> — '
