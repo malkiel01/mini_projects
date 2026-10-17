@@ -43,7 +43,7 @@ register_shutdown_function(function () use (&$session, &$action, $started) {
 });
 
 // פעולות שלא דורשות כניסה.
-$PUBLIC = ['health', 'register', 'verify', 'login', 'forgot', 'reset', 'me',
+$PUBLIC = ['health', 'register', 'verify', 'login', 'forgot', 'reset', 'me', 'invite_info',
            // ממלא חיצוני: הזהות היא האסימון שבכותרת X-Fill-Token, לא עוגייה.
            'fill_get', 'fill_asset', 'fill_otp_send', 'fill_otp_verify', 'fill_save', 'fill_complete',
            'fill_downloaded', 'fill_docx', 'fill_upload', 'fill_file',
@@ -57,7 +57,7 @@ $POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'dev_user
            'tpl_create', 'tpl_create_authored', 'tpl_import', 'tpl_save', 'tpl_set_source', 'tpl_archive', 'tpl_delete',
            'doc_create', 'doc_duplicate', 'doc_return', 'doc_save', 'doc_submit', 'doc_assign', 'list_opts', 'list_save', 'list_repair', 'list_delete', 'list_import', 'doc_complete', 'doc_archive', 'doc_delete', 'doc_downloaded',
            'part_contact', 'part_link', 'fill_otp_send', 'fill_otp_verify', 'fill_save', 'fill_complete', 'fill_downloaded',
-           'doc_upload', 'fill_upload', 'dev_quota', 'share_set', 'share_remove', 'share_leave',
+           'doc_upload', 'fill_upload', 'dev_quota', 'share_set', 'share_remove', 'share_leave', 'share_invite', 'share_invite_resend', 'share_invite_cancel', 'invite_accept',
            'contact_save', 'contact_archive', 'doc_contact', 'doc_tags', 'tpl_tags', 'bulk_preview', 'bulk_issue',
            'src_save', 'src_delete', 'src_sync', 'key_create', 'key_update', 'key_revoke', 'key_secret', 'key_test',
            'ext_issue', 'ext_update',
@@ -155,6 +155,11 @@ try {
         'share_set'       => share_set($session, $body),
         'share_remove'    => share_remove($session, $body),
         'share_leave'     => share_leave($session, $body),
+        'share_invite'        => share_invite($session, $body),
+        'share_invite_resend' => share_invite_resend($session, $body),
+        'share_invite_cancel' => share_invite_cancel($session, $body),
+        'invite_info'     => invite_info((string)($_GET['token'] ?? '')),
+        'invite_accept'   => invite_accept($session, $body),
         'contact_list'    => contact_list($session, $_GET),
         'contact_save'    => contact_save($session, $body),
         'contact_archive' => contact_archive($session, $body),

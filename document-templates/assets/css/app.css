@@ -964,6 +964,23 @@ dialog.sheet:has(.list-sheet) { width: min(900px, 100vw); }
 .share-hint { margin: 0; min-height: 1.3em; }
 .share-add .primary { min-height: var(--tap); }
 .share-add .hint:last-child { margin: 0; }
+.share-via { display: grid; grid-template-columns: 1fr 1fr; }
+.share-phone { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+.share-phone[hidden], .share-add input[hidden] { display: none; }
+.share-phone input { width: 100%; min-width: 0; min-height: var(--tap); font: inherit; font-size: 16px; padding: 0 var(--s3);
+  border-radius: var(--r); border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+.share-row.invite .avatar { background: color-mix(in srgb, var(--ok) 14%, var(--surface)); }
+.share-sent { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+.share-sent span { flex: 1 1 200px; }
+.invite-card { display: grid; gap: var(--s3); max-width: 480px; margin: var(--s4) auto; }
+.invite-head { display: flex; gap: var(--s3); align-items: center; }
+.invite-head > div { display: grid; gap: 2px; min-width: 0; }
+.invite-head small { color: var(--muted); }
+.invite-head strong { font-size: 1.1rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.invite-head .badge { justify-self: start; }
+.invite-ic { flex: none; display: grid; place-items: center; width: 48px; height: 48px; border-radius: var(--r); background: var(--brand-soft); font-size: 1.5rem; }
+.invite-btns { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+.invite-btns .btn { display: inline-flex; align-items: center; justify-content: center; min-height: var(--tap); text-decoration: none; }
 /* טלפון צר: ההרשאה וניתוק יורדים לשורה שנייה, מתחת לשם */
 @media (max-width: 419px) {
   .share-row:not(.owner) { flex-wrap: wrap; }
