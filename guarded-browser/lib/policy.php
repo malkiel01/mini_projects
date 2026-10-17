@@ -213,7 +213,13 @@ function youTubeVerdict(array $url, array $rule, array $items, bool $isMainFrame
         }
     }
 
-    if ($mode === 'full') return decision(true, 'yt_full');
+    if ($mode === 'full') {
+        // במצב פתוח המתג קובע את פיד ה-Shorts כולו (שלב 5).
+        if ($kind === 'shorts' && !($rule['allow_shorts'] ?? 0)) {
+            return decision(false, 'yt_no_shorts', 'סרטוני Shorts חסומים בחשבון שלך');
+        }
+        return decision(true, 'yt_full');
+    }
 
     /* ── מצב מוגבל: רק מה שאושר ─────────────────────────────────── */
 
@@ -228,10 +234,11 @@ function youTubeVerdict(array $url, array $rule, array $items, bool $isMainFrame
             'אפשר לפתוח רק את הערוצים והסרטונים שאושרו לך, לא את יוטיוב עצמו');
     }
 
-    if ($kind === 'shorts' && !($rule['allow_shorts'] ?? 0)) {
-        return decision(false, 'yt_no_shorts', 'סרטוני Shorts חסומים בחשבון שלך');
-    }
-
+    /*
+     * במצב מוגבל Short הוא סרטון לכל דבר: מותר אם הוא מערוץ שאושר.
+     * המתג "Shorts" חסם אותם כאן גם בערוץ מאושר, והילד ראה ערוץ בלי
+     * ה-Shorts שלו (שלב 5). פיד Shorts כללי אינו נפתח בכל מקרה — אין לו ערוץ.
+     */
     if ($kind === 'channel' || $kind === 'handle' || $kind === 'playlist') {
         return $itemAction($kind, $id) === 'allow'
             ? decision(true, 'yt_item_allowed')
@@ -275,6 +282,28 @@ function youTubeVerdict(array $url, array $rule, array $items, bool $isMainFrame
     }
 
     return decision(false, 'yt_not_approved', 'הכתובת הזו ביוטיוב אינה מאושרת');
+}
+
+/**
+ * הכרעה לרשימת סרטונים בבת אחת — לסינון ההצעות בתוך דף יוטיוב (שלב 5).
+ *
+ * הדף מציג עשרות סרטונים מערוצים שונים; המכשיר לא יודע לאיזה ערוץ כל אחד
+ * שייך, והשרת כן (oembed, במטמון). מוחזר [videoId => מותר?]. מזהה לא תקין
+ * — נזרק; עד 30 בבקשה, כדי שדף עמוס לא יהפוך לפניות רבות מדי ליוטיוב.
+ */
+function youTubeVideoVerdicts(array $set, array $ids): array {
+    $rule  = $set['platforms'][PLATFORM_YOUTUBE] ?? ['mode' => 'off'];
+    $items = $set['platform_items'][PLATFORM_YOUTUBE] ?? [];
+    $clean = [];
+    foreach ($ids as $id) {
+        if (is_string($id) && preg_match('/^[A-Za-z0-9_-]{6,15}$/', $id)) $clean[$id] = true;
+    }
+    $out = [];
+    foreach (array_slice(array_keys($clean), 0, 30) as $id) {
+        $url = normalizeUrl('https://www.youtube.com/watch?v=' . $id);
+        $out[$id] = (bool) youTubeVerdict($url, $rule, $items, true, $set['owner_of'] ?? null)['allow'];
+    }
+    return $out;
 }
 
 /* ── סוגי תוכן ─────────────────────────────────────────────────── */

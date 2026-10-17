@@ -201,6 +201,7 @@ class BrowserActivity : AppCompatActivity() {
         CookieManager.getInstance().setAcceptThirdPartyCookies(b.web, true)
 
         b.web.addJavascriptInterface(MediaBridge(), "GBMedia")
+        b.web.addJavascriptInterface(YtBridge(), "MgYt")
 
         b.web.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView?, p: Int) {
@@ -304,6 +305,7 @@ class BrowserActivity : AppCompatActivity() {
             override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
                 b.address.text = url
                 enforceCurrent(url)
+                styleRestrictedYouTube(url)
                 hideAds()
                 watchMedia()
             }
@@ -448,8 +450,22 @@ class BrowserActivity : AppCompatActivity() {
 
         val back = lastAllowed
         if (back.isEmpty()) { refuse(reason); return }
-        // הכיסוי נשאר עד שהדף המותר נטען, אחרת נראה שוב מה שנחסם.
-        b.web.post { b.web.loadUrl(back) }
+
+        /*
+         * חזרה בהיסטוריה, לא טעינה מחדש (שלב 5).
+         *
+         * ‏loadUrl בונה את הדף מאפס — ביוטיוב זה אומר חזרה לראש הערוץ, בלי
+         * הגלילה, הלשונית והנקודה בסרטון. ‏goBackOrForward לרשומה של הכתובת
+         * המותרת מחזיר את המצב כמו שהיה. רק כשהיא לא בהיסטוריה — טוענים מחדש.
+         * הכיסוי נשאר עד שהדף המותר מוצג, אחרת נראה שוב מה שנחסם.
+         */
+        val list = b.web.copyBackForwardList()
+        var steps = 0
+        for (i in list.currentIndex - 1 downTo 0) {
+            if (list.getItemAtIndex(i)?.url == back) { steps = i - list.currentIndex; break }
+        }
+        Trace.log("revert", if (steps < 0) "history $steps" else "reload")
+        b.web.post { if (steps < 0) b.web.goBackOrForward(steps) else b.web.loadUrl(back) }
     }
 
     /**
@@ -471,10 +487,10 @@ class BrowserActivity : AppCompatActivity() {
                 append("ytd-searchbox,#search,#search-form,#center.ytd-masthead,")
                 append("ytd-search-header-renderer,")
             }
+            // ההמלצות עצמן כבר לא מוסתרות כאן בגורף: YouTubeFilter מסתיר כל
+            // פריט שאינו מערוץ מאושר, ומשאיר את מה שכן — "עוד מאותו ערוץ".
             append("#guide,#guide-button,ytd-mini-guide-renderer,tp-yt-app-drawer,")
-            append("#related,ytd-compact-video-renderer,ytd-watch-next-secondary-results-renderer,")
-            append(".ytp-endscreen-content,.ytp-ce-element,.ytp-pause-overlay,")
-            append("ytd-reel-shelf-renderer,ytd-rich-shelf-renderer")
+            append(".ytp-pause-overlay")
         }
         /*
          * ‏MutationObserver ולא הזרקה חד-פעמית: יוטיוב מרנדר את הדף
@@ -493,6 +509,70 @@ class BrowserActivity : AppCompatActivity() {
             "{childList:true,subtree:true});}" +
             "}catch(e){}})()"
         b.web.evaluateJavascript(js, null)
+        filterYouTube()
+    }
+
+    /* ── סינון ההצעות ביוטיוב (שלב 5) ─────────────────────────────── */
+
+    /** הכרעות שכבר ידועות, לכל משך הריצה — כדי שגלילה חוזרת לא תשאל שוב. */
+    private val ytKnown = HashMap<String, Boolean>()
+
+    private fun ytItems(kind: String): Map<String, String> =
+        ruleSet.platformItems[PolicyEngine.PLATFORM_YOUTUBE]?.get(kind) ?: emptyMap()
+
+    private fun filterYouTube() {
+        val allowed = { m: Map<String, String> -> m.filterValues { it == "allow" }.keys }
+        val known = HashMap<String, Boolean>(ytKnown)
+        for ((id, a) in ytItems("video")) known[id] = a == "allow"
+        b.web.evaluateJavascript(
+            YouTubeFilter.script(allowed(ytItems("handle")), allowed(ytItems("channel")), known), null)
+    }
+
+    /**
+     * הדף שואל על סרטונים שמוצגים בו. מה שידוע מקומית — עונים מיד; השאר
+     * — שאלה אחת לשרת, שיודע לאיזה ערוץ כל סרטון שייך.
+     *
+     * גם דף עוין יכול לקרוא לזה. הוא יקבל רק "מותר / לא מותר" על סרטונים —
+     * מידע שהיה מקבל ממילא בניסיון לפתוח אותם.
+     */
+    inner class YtBridge {
+        @JavascriptInterface
+        fun ask(json: String) {
+            val ids = try { org.json.JSONArray(json).let { a -> (0 until a.length()).map { a.getString(it) } } }
+                      catch (e: Exception) { return }
+            runOnUiThread { resolveVideos(ids.take(30)) }
+        }
+
+        @JavascriptInterface
+        fun blocked() { runOnUiThread { toast("זה לא מערוץ שאושר לך") } }
+    }
+
+    private fun resolveVideos(ids: List<String>) {
+        val local = HashMap<String, Boolean>()
+        val unknown = ArrayList<String>()
+        for (id in ids) {
+            when {
+                ytItems("video")[id] == "allow" -> local[id] = true
+                ytItems("video")[id] == "deny" -> local[id] = false
+                ytKnown.containsKey(id) -> local[id] = ytKnown.getValue(id)
+                else -> unknown.add(id)
+            }
+        }
+        if (local.isNotEmpty()) pushVerdicts(local)
+        if (unknown.isEmpty()) return
+        Api.ytAllowed(store.token, unknown) { r ->
+            val v = r.json?.optJSONObject("verdicts") ?: return@ytAllowed   // בלי תשובה — נשאר מוסתר
+            val got = HashMap<String, Boolean>()
+            for (id in unknown) if (v.has(id)) got[id] = v.optBoolean(id)
+            ytKnown.putAll(got)
+            pushVerdicts(got)
+        }
+    }
+
+    private fun pushVerdicts(m: Map<String, Boolean>) {
+        if (closing || m.isEmpty()) return
+        val json = org.json.JSONObject(m as Map<*, *>).toString()
+        b.web.evaluateJavascript("window.__mgYt&&window.__mgYt.verdicts($json)", null)
     }
 
     /**

@@ -230,12 +230,25 @@ check('פענוח שנכשל סוגר ולא פותח',
 check('ובלי פענוח כלל — גם סוגר',
       youTubeVerdict($ytUrl('https://youtube.com/watch?v=x'),
                      $restricted, $ytItems, true, null)['code'], 'yt_owner_unknown');
-check('Shorts חסום כברירת מחדל',
+check('מוגבל: Short מערוץ מאושר — מותר, גם כשהמתג כבוי',
       youTubeVerdict($ytUrl('https://youtube.com/shorts/vid_ok'),
-                     $restricted, $ytItems, true, $owner)['code'], 'yt_no_shorts');
-check('Shorts מאושר כשהופעל',
+                     $restricted, $ytItems, true, $owner)['allow'], true);
+check('מוגבל: Short מערוץ שלא אושר — חסום',
+      youTubeVerdict($ytUrl('https://youtube.com/shorts/vid_other'),
+                     $restricted, $ytItems, true, $owner)['allow'], false);
+check('פתוח: Shorts חסום כשהמתג כבוי',
       youTubeVerdict($ytUrl('https://youtube.com/shorts/vid_ok'),
-                     ['mode' => 'restricted', 'allow_shorts' => 1], $ytItems, true, $owner)['allow'], true);
+                     ['mode' => 'full', 'allow_shorts' => 0], $ytItems, true, $owner)['code'], 'yt_no_shorts');
+$vset = ['platforms' => [PLATFORM_YOUTUBE => $restricted], 'platform_items' => [PLATFORM_YOUTUBE => $ytItems],
+         'owner_of' => $owner];
+$vv = youTubeVideoVerdicts($vset, ['vid_ok', 'vid_other', 'bad id!', 'vid_ok', 42]);
+check('סינון הצעות: מאושר ולא מאושר', $vv, ['vid_ok' => true, 'vid_other' => false]);
+check('סינון הצעות: יוטיוב כבוי — הכול לא', youTubeVideoVerdicts(
+      ['platforms' => [PLATFORM_YOUTUBE => ['mode' => 'off']]] + $vset, ['vid_ok']), ['vid_ok' => false]);
+check('סינון הצעות: עד 30', count(youTubeVideoVerdicts($vset, array_map(fn($i) => 'vid' . str_pad((string) $i, 5, '0', STR_PAD_LEFT), range(1, 50)))), 30);
+check('פתוח: Shorts מותר כשהמתג דלוק',
+      youTubeVerdict($ytUrl('https://youtube.com/shorts/vid_ok'),
+                     ['mode' => 'full', 'allow_shorts' => 1], $ytItems, true, $owner)['allow'], true);
 /*
  * בלי המעבר הזה, מצב מוגבל היה חוסם את זרם הווידאו של הסרטון שכן
  * אושר — והמשתמש היה רואה מסך שחור במקום את מה שהותר לו.
