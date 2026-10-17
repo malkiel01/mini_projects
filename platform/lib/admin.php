@@ -13,6 +13,7 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/access.php';
 require_once __DIR__ . '/push.php';
 require_once __DIR__ . '/sso.php';
+require_once __DIR__ . '/installs.php';
 
 function require_admin(bool $mutating = false): array
 {
@@ -37,6 +38,7 @@ function admin_state(array $admin): never
         $u['self'] = $u['id'] === (int)$admin['id'];
         $u['must_change'] = (bool)$u['must_change_pw'];
         $u['sso'] = sso_consents_of($u['id']);
+        $u['devices'] = installs_devices_of($u['id']);
         unset($u['must_change_pw']);
     }
     unset($u);

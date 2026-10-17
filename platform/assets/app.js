@@ -367,7 +367,8 @@ function appRow(app) {
     const body = [
         appIcon(app),
         el('span', { className: 'app-tx' }, [
-            el('b', {}, [app.name, ...(app.external ? [el('span', { className: 'ext', textContent: '↗', title: 'אתר חיצוני' })] : [])]),
+            el('b', {}, [app.name, ...(app.external ? [el('span', { className: 'ext', textContent: '↗', title: 'אתר חיצוני' })] : []),
+                el('span', { className: 'chip ok inst-chip', textContent: '✓ מותקנת', hidden: true })]),
             el('small', { textContent: app.description }),
         ]),
         el('span', { className: 'app-go', textContent: '‹', ariaHidden: 'true' }),
@@ -382,7 +383,71 @@ function appRow(app) {
     }
     const li = el('li', {}, [node]);
     li.dataset.search = `${app.name} ${app.description}`.toLowerCase();
+    li.dataset.app = app.id;
+    if (extras.length) li.dataset.can = '1';
+    paintInstalled(li, app.id);
     return li;
+}
+
+// ---------- מה מותקן במכשיר הזה (lib/installs.php) ----------
+// אתר לא רואה מה מותקן בטלפון. לכן: לחיצה על התקנה מסמנת, והמשתמש יכול לסמן ולבטל בעצמו.
+
+let installedHere = {};   // {app_id: method}
+
+function deviceId() {
+    try {
+        let id = localStorage.getItem('platform:device');
+        if (!/^[a-f0-9]{32}$/.test(id || '')) {
+            id = [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('');
+            localStorage.setItem('platform:device', id);
+        }
+        return id;
+    } catch { return null; }   // בלי אחסון (מצב פרטי) — בלי מעקב
+}
+
+function deviceLabel() {
+    const os = /iPhone/.test(UA) ? 'iPhone' : /iPad/.test(UA) || isIOS() ? 'iPad' : /Android/.test(UA) ? 'Android'
+        : /Windows/.test(UA) ? 'Windows' : /Mac OS X/.test(UA) ? 'Mac' : /Linux/.test(UA) ? 'Linux' : 'מכשיר';
+    const br = /Edg\//.test(UA) ? 'Edge' : /SamsungBrowser/.test(UA) ? 'Samsung' : /Firefox|FxiOS/.test(UA) ? 'Firefox'
+        : /Chrome|CriOS/.test(UA) ? 'Chrome' : /Safari/.test(UA) ? 'Safari' : '';
+    return br ? `${os} · ${br}` : os;
+}
+
+async function loadInstalls() {
+    const id = deviceId();
+    if (!id || !me?.user) return;
+    try { installedHere = (await api(`installs&device=${id}`)).installed || {}; } catch { installedHere = {}; }
+}
+
+async function markInstall(appId, installed, method = 'manual') {
+    const id = deviceId();
+    if (!id || !me?.user || me.user.status !== 'active') return;
+    if (installed) installedHere[appId] = method; else delete installedHere[appId];
+    try { await api('install_mark', { device: id, label: deviceLabel(), app: appId, installed, method }); } catch { /* נסה בפעם הבאה */ }
+    document.querySelectorAll(`li[data-app="${CSS.escape(appId)}"]`).forEach(li => paintInstalled(li, appId));
+    document.querySelectorAll(`.inst-status[data-app="${CSS.escape(appId)}"]`).forEach(l => {
+        l.querySelector('input').checked = installed;
+        l.classList.toggle('on', installed);
+    });
+}
+
+function paintInstalled(li, appId) {
+    li.dataset.inst = installedHere[appId] ? 'yes' : li.dataset.can ? 'can' : 'no';
+    li.querySelector('.inst-chip')?.toggleAttribute('hidden', !installedHere[appId]);
+}
+
+// בגיליון האפליקציה: "מותקנת במכשיר הזה" — לסמן או לבטל בלחיצה.
+function installStatus(app) {
+    const box = el('input', { type: 'checkbox', checked: !!installedHere[app.id] });
+    const label = el('label', { className: `inst-status${installedHere[app.id] ? ' on' : ''}` }, [box,
+        el('span', { textContent: 'מותקנת במכשיר הזה' })]);
+    label.dataset.app = app.id;
+    box.addEventListener('change', () => {
+        label.classList.toggle('on', box.checked);
+        markInstall(app.id, box.checked, 'manual');
+        toast(box.checked ? '✓ סומנה כמותקנת במכשיר הזה' : 'הסימון בוטל');
+    });
+    return label;
 }
 
 function openAppSheet(app, extras) {
@@ -404,6 +469,7 @@ function openAppSheet(app, extras) {
             el('div', { className: 'entries' }, rows),
             ...(extras.length ? [
                 el('div', { className: 'sheet-sec', textContent: 'התקנה והורדה' }),
+                installStatus(app),
                 el('div', { className: 'tiles' }, extras),
             ] : []),
         ]),
@@ -431,6 +497,9 @@ function installLinks(app) {
     }
     if (app.install.apk) out.push(tile('⬇️', 'הורדת APK', { href: app.install.apk, rel: 'noopener' }));
     if (app.install.store) out.push(tile('▶️', 'Google Play', { href: app.install.store, rel: 'noopener', target: '_blank' }));
+    // לחיצה על התקנה / הורדה = "התקנתי במכשיר הזה". אפשר לבטל בגיליון.
+    const methods = [app.install.pwa && 'pwa', app.install.apk && 'apk', app.install.store && 'store'].filter(Boolean);
+    out.forEach((t, i) => t.addEventListener('click', () => markInstall(app.id, true, methods[i])));
     return out;
 }
 
@@ -671,7 +740,7 @@ async function clearFamilyCache() {
 }
 
 async function showApps() {
-    const { categories, apps } = await api('apps');
+    const [{ categories, apps }] = await Promise.all([api('apps'), loadInstalls()]);
     currentApps = apps;
     if (!apps.length) {
         showMessage('עוד אין כאן אפליקציות', 'המנהל עדיין לא הקצה לכם אפליקציות. כשיקצה — הן יופיעו כאן.', '📭');
@@ -699,24 +768,38 @@ async function showApps() {
     const parts = [hello];
     const banner = installBanner();
     if (banner) parts.unshift(banner);
+    // חיפוש + סינון לפי המכשיר הזה: הכול / מותקנות / אפשר להתקין.
+    let q = '', only = 'all';
+    function applyFilter() {
+        let any = false;
+        for (const sec of sections) {
+            let shown = 0;
+            for (const li of sec.querySelectorAll('li')) {
+                const hit = (!q || li.dataset.search.includes(q))
+                    && (only === 'all' || (only === 'yes' ? li.dataset.inst === 'yes' : li.dataset.inst === 'can'));
+                li.hidden = !hit;
+                if (hit) shown++;
+            }
+            sec.hidden = !shown;
+            any ||= shown > 0;
+        }
+        empty.textContent = only === 'yes' ? 'עוד לא סימנת אפליקציה כמותקנת במכשיר הזה'
+            : only === 'can' ? 'כל מה שאפשר להתקין — כבר מותקן כאן ✓' : 'לא נמצאה אפליקציה בשם הזה';
+        empty.hidden = any;
+    }
     if (apps.length > 4) {
         const input = el('input', { type: 'search', placeholder: 'חיפוש אפליקציה…', ariaLabel: 'חיפוש אפליקציה', autocomplete: 'off' });
-        input.addEventListener('input', () => {
-            const q = input.value.trim().toLowerCase();
-            let any = false;
-            for (const sec of sections) {
-                let shown = 0;
-                for (const li of sec.querySelectorAll('li')) {
-                    const hit = !q || li.dataset.search.includes(q);
-                    li.hidden = !hit;
-                    if (hit) shown++;
-                }
-                sec.hidden = !shown;
-                any ||= shown > 0;
-            }
-            empty.hidden = any;
-        });
+        input.addEventListener('input', () => { q = input.value.trim().toLowerCase(); applyFilter(); });
         parts.push(el('div', { className: 'search' }, [el('span', { className: 'ic', textContent: '🔍', ariaHidden: 'true' }), input]));
+    }
+    if (deviceId() && apps.some(a => a.install.pwa || a.install.apk || a.install.store)) {
+        const seg = el('div', { className: 'seg dev-filter', role: 'radiogroup', ariaLabel: 'במכשיר הזה' },
+            [['all', 'הכול'], ['yes', '✓ מותקנות כאן'], ['can', '📲 אפשר להתקין']].map(([v, t]) => {
+                const r = el('input', { type: 'radio', name: 'devf', value: v, checked: v === 'all' });
+                r.addEventListener('change', () => { only = v; applyFilter(); });
+                return el('label', {}, [r, el('span', { textContent: t })]);
+            }));
+        parts.push(seg);
     }
     view.replaceChildren(...parts, ...sections, empty);
 }
@@ -760,6 +843,8 @@ async function start() {
             return await window.PlatformAdmin.show(view);
         }
         await showApps();
+        // הפלטפורמה עצמה מותקנת כאן — נרשם לבד, כדי שהמנהל יראה באיזה מכשיר.
+        if (isInstalled() && !installedHere._platform) markInstall('_platform', true, 'auto');
     } catch (err) {
         view.replaceChildren(el('p', {
             className: 'status error',

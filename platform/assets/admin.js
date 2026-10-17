@@ -326,6 +326,8 @@ window.PlatformAdmin = (() => {
             }
         }
 
+        if (u.devices?.length) body.push(el('div', { className: 'sheet-sec', textContent: 'מכשירים — מה מותקן' }), userDevices(u));
+
         sheet.replaceChildren(el('div', { className: 'sheet' }, [
             el('div', { className: 'sheet-head' }, [
                 P().avatar(u, 'lg'),
@@ -622,6 +624,19 @@ window.PlatformAdmin = (() => {
 
     // ---------- כניסה מאוחדת: האפליקציות שמזהות משתמשים דרך הפלטפורמה ----------
     // הצד של הספק — platform/sso.php. המדריך לאפליקציות — platform/docs/sso.md.
+
+    // מה מותקן בכל מכשיר של המשתמש (lib/installs.php). "_platform" — הכלים הדיגיטליים עצמם.
+    const METHOD = { pwa: 'אפליקציה', apk: 'APK', store: 'Google Play', manual: 'סימון ידני', auto: 'זוהה לבד' };
+    function userDevices(u) {
+        return el('ul', { className: 'list' }, u.devices.map(d => el('li', { className: 'dev-row' }, [
+            el('div', { className: 'dev-head' }, [el('b', { textContent: `📱 ${d.device}` }),
+                el('small', { className: 'muted', textContent: `עודכן ${relTime(d.updated_at)}` })]),
+            el('div', { className: 'chips-row' }, d.apps.map(a => {
+                const info = a.app_id === '_platform' ? { icon: '🧩', name: 'כלים דיגיטליים' } : appInfo(a.app_id);
+                return el('span', { className: 'chip ok', title: METHOD[a.method] || a.method, textContent: `${info.icon} ${info.name}` });
+            })),
+        ])));
+    }
 
     function userSso(u) {
         return el('ul', { className: 'list' }, u.sso.map(c => {
