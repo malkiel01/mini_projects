@@ -254,9 +254,38 @@ function kidSum() {
                 el('div', {}, [el('dt', { text: 'נראה' }), el('dd', { text: ago(K.last_seen_at) })]),
             ]),
         ]),
+        enforceCard(K.enforcement),
         el('div', { class: 'tiles' }, tiles.map(([ic, t, fn]) => el('button', { type: 'button', class: 'tile', onclick: fn },
             [el('span', { class: 'tile-ic', text: ic }), t]))),
-    ];
+    ].filter(Boolean);
+}
+
+/* ── מצב אכיפה: מה באמת נאכף (שלב 11) ───────────────────────────── */
+
+const ENF_ICON = { full: '✅', partial: '🟡', none: '⚠️', na: '·' };
+const ENF_SUM = {
+    full: ['ok', '🛡️ הכול נאכף', 'כל ההגדרות נאכפות בכל המכשירים.'],
+    needs_access: ['warn', '🟡 אכיפה חלקית', 'חלק מההגדרות דורשות את אישור "ניהול אפליקציות" במכשיר.'],
+    needs_owner: ['warn', '🛡️ אכיפה לא הרמטית', 'חלק מההגדרות דורשות "בעל מכשיר" — התקנה על מכשיר נקי.'],
+    no_device: ['', '📱 אין מכשיר מחובר', 'חברו מכשיר כדי שההגדרות ייאכפו.'],
+};
+
+function enforceCard(e) {
+    if (!e) return null;
+    const [cls, title, sub] = ENF_SUM[e.summary] || ENF_SUM.full;
+    const rows = e.rows.filter(r => r.status !== 'na');
+    const dlg = el('div', { class: 'enf-detail', hidden: true }, rows.map(r => el('div', { class: 'enf-row' }, [
+        el('span', { class: 'enf-ic', text: ENF_ICON[r.status], ariaHidden: 'true' }),
+        el('span', { class: 'enf-nm' }, [r.label, r.hint && r.status !== 'full' ? el('small', { text: r.hint }) : null]),
+        el('span', { class: `enf-st ${r.status}`, text: { full: 'נאכף', partial: 'חלקי', none: 'לא נאכף' }[r.status] || '' }),
+    ])));
+    const toggle = el('button', { type: 'button', class: 'enf-more', text: 'פירוט ▾',
+        onclick: () => { const h = dlg.hidden; dlg.hidden = !h; toggle.textContent = h ? 'פחות ▴' : 'פירוט ▾'; } });
+    return el('section', { class: `enf ${cls}` }, [
+        el('div', { class: 'enf-head' }, [el('b', { text: title }), toggle]),
+        el('p', { class: 'enf-sub', text: sub }),
+        dlg,
+    ]);
 }
 
 function kidAccess() {

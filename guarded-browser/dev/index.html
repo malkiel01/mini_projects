@@ -63,6 +63,19 @@
         <ul class="list" id="sys-silent"></ul>
         <h2 class="sec-title">🔎 חיפוש</h2>
         <div id="sys-search"></div>
+        <h2 class="sec-title">🛡️ בעל מכשיר (אכיפה הרמטית)</h2>
+        <div class="card">
+          <p class="hint">הרמה הגבוהה: חסימת הסרה, השעיית אפליקציות, מניעת איפוס וקיוסק. דורשת מכשיר
+            <b>נקי</b> (אחרי איפוס להגדרות יצרן, בלי חשבון גוגל), בחיבור למחשב פעם אחת:</p>
+          <ol class="steps">
+            <li>במכשיר הנקי: הגדרות ← אודות ← להקיש 7 פעמים על "מספר Build" (מצב מפתח), ואז הגדרות ←
+              אפשרויות מפתח ← ניפוי USB.</li>
+            <li>מחברים למחשב, ומריצים:</li>
+          </ol>
+          <pre class="cmd" dir="ltr">adb shell dpm set-device-owner com.mbeplus.guardedbrowser/.MigdalorAdmin</pre>
+          <p class="hint">אחר כך פותחים את מגדלור ומצמדים כרגיל. מרגע זה האכיפה הרמטית, וההורה יראה
+            "הכול נאכף". בלי זה — האכיפה עדיין אמיתית (דרך נגישות), רק פחות הרמטית.</p>
+        </div>
       </section>
     </main>
   </div>
