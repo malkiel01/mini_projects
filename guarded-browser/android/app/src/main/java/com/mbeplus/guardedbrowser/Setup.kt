@@ -26,6 +26,7 @@ object Setup {
     const val BATTERY = 2
     const val ADMIN = 4
     const val INSTALL = 8
+    const val ACCESS = 16
 
     class Step(
         val key: Int,
@@ -37,7 +38,7 @@ object Setup {
         val open: (Activity) -> Unit,
     )
 
-    fun steps(): List<Step> = listOf(
+    fun steps(ctx: Context): List<Step> = listOf(
         Step(NOTIF, "🔔", "התראות",
             "כדי שמגדלור יוכל להציג שהוא פועל, ולהודיע כשמשהו נחסם.", true,
             { ctx -> Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
@@ -65,6 +66,12 @@ object Setup {
             { ctx -> DeviceAdmin.active(ctx) },
             { act -> act.startActivity(DeviceAdmin.enableIntent(act)) }),
 
+        Step(ACCESS, "📲", "ניהול אפליקציות",
+            "כדי שמגדלור יוכל לחסום אפליקציות אחרות שההורה חסם. נדרש בחשבון שמנהל אפליקציות.",
+            Store(ctx).appsManage,
+            { c -> accessibilityOn(c) },
+            { act -> try { act.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } catch (e: Exception) {} }),
+
         Step(INSTALL, "⬆️", "עדכונים",
             "כדי שמגדלור יוכל להתקין עדכון שההורה שולח, בלי להוריד ידנית.", false,
             { ctx -> Build.VERSION.SDK_INT < Build.VERSION_CODES.O || ctx.packageManager.canRequestPackageInstalls() },
@@ -75,11 +82,19 @@ object Setup {
             }),
     )
 
-    fun pendingRequired(ctx: Context): List<Step> = steps().filter { it.required && !it.done(ctx) }
+    fun pendingRequired(ctx: Context): List<Step> = steps(ctx).filter { it.required && !it.done(ctx) }
 
     /** מצב כל ההרשאות כמספר ביטים — לדיווח ולזיכרון במכשיר. */
-    fun flags(ctx: Context): Int = steps().fold(0) { f, s -> if (s.done(ctx)) f or s.key else f }
+    fun flags(ctx: Context): Int = steps(ctx).fold(0) { f, s -> if (s.done(ctx)) f or s.key else f }
 
     /** האם כל החיוניות ניתנו — לשער הכניסה. */
     fun ready(ctx: Context): Boolean = pendingRequired(ctx).isEmpty()
+
+    /** האם שירות הנגישות של מגדלור דלוק. */
+    fun accessibilityOn(ctx: Context): Boolean {
+        val want = ctx.packageName + "/" + AppGuardService::class.java.name
+        val flat = Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
+        return flat.split(':').any { it.equals(want, true) ||
+            (it.startsWith(ctx.packageName + "/", true) && it.endsWith("AppGuardService", true)) }
+    }
 }

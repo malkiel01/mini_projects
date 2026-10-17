@@ -120,6 +120,10 @@ function migrate(PDO $pdo): void {
     if (!in_array('perms', $columns('devices'), true)) {
         $pdo->exec("ALTER TABLE devices ADD COLUMN perms INTEGER NOT NULL DEFAULT 0");
     }
+    // שלב 11: ברירת המחדל לאפליקציות (allow_all — חוסם רק מה שסומן; deny_all — רק מה שאושר).
+    if (!in_array('apps_posture', $columns('policies'), true)) {
+        $pdo->exec("ALTER TABLE policies ADD COLUMN apps_posture TEXT NOT NULL DEFAULT 'allow_all'");
+    }
     // שלב 7: רמת הדיווח להורה, וזמן לכל כתובת בהיסטוריה המלאה.
     if (!in_array('report_level', $columns('policies'), true)) {
         $pdo->exec("ALTER TABLE policies ADD COLUMN report_level TEXT NOT NULL DEFAULT 'summary'");

@@ -21,6 +21,7 @@ require_once __DIR__ . '/../lib/push.php';
 require_once __DIR__ . '/../lib/activity.php';
 require_once __DIR__ . '/../lib/appversion.php';
 require_once __DIR__ . '/../lib/search.php';
+require_once __DIR__ . '/../lib/appcontrol.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -147,6 +148,8 @@ function policyPayload(array $user): array {
         'platform_items' => $set['platform_items'],
         // ההורה ביקש לעדכן, ויש גרסה חדשה — האפליקציה מציעה לילד להתקין (1.43 ומעלה).
         'update' => $dev ? deviceUpdateOffer($dev) : null,
+        // ניהול אפליקציות המכשיר (שלב 11) — manage=false לדפדפן בלבד.
+        'apps' => appsPayload($user),
         'state' => [
             'allowed'        => $state['allow'],
             'code'           => $state['code'],
@@ -380,6 +383,16 @@ try {
     if ($do === 'requests') {
         $user = requireUser();
         out(['ok' => true, 'requests' => requestsOfChild((int) $user['id']), 'rev' => policyRev((int) $user['id'])]);
+    }
+
+    /* ── דיווח האפליקציות המותקנות (שלב 11) ───────────────────────
+     * המכשיר שולח אילו אפליקציות (עם מסך פתיחה) מותקנות, כדי שההורה יכריע עליהן.
+     */
+    if ($do === 'apps') {
+        $user = requireUser();
+        $list = body()['apps'] ?? [];
+        out(['ok' => true, 'saved' => accountAppsAllowed((int) $user['account_id']) && is_array($list)
+             ? appsReport((int) $user['id'], $list) : 0]);
     }
 
     /* ── חיפוש (שלב 8) ───────────────────────────────────────────

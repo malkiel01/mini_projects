@@ -295,3 +295,11 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 .history .day-head { font-weight: 600; font-size: .8rem; color: var(--muted); background: var(--bg); min-height: 0; padding-block: 6px; }
 .history .url { font: .8rem/1.3 ui-monospace, Menlo, Consolas, monospace; }
 .cells.k3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* ── ניהול אפליקציות (שלב 11) ──────────────────────────────────── */
+.apps .app-ic { flex: none; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px;
+                background: var(--brand-soft); font-size: 17px; }
+.apps .nm small { font-family: ui-monospace, Menlo, Consolas, monospace; }
+.apps .seg.mini { flex: none; width: auto; }
+.apps .seg.mini input[value=allow]:checked + span { background: var(--ok); color: #fff; }
+.apps .seg.mini input[value=block]:checked + span { background: var(--danger); color: #fff; }

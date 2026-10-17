@@ -16,6 +16,9 @@ import org.json.JSONObject
  */
 class Store(context: Context) {
 
+    /** שם החבילה שלנו — כדי לא לחסום את מגדלור עצמו. */
+    val ownPackage: String = context.packageName
+
     private val prefs: SharedPreferences = try {
         val key = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
@@ -71,7 +74,33 @@ class Store(context: Context) {
             .putString("rev", payload.optString("rev"))
             .putLong("policy_at", System.currentTimeMillis())
             .apply()
+        saveApps(payload.optJSONObject("apps"))
     }
+
+    /** מדיניות האפליקציות (שלב 11) כפי שהתקבלה מהשרת. */
+    fun saveApps(a: JSONObject?) {
+        prefs.edit()
+            .putBoolean("apps_manage", a?.optBoolean("manage") ?: false)
+            .putString("apps_posture", a?.optString("posture", "allow_all") ?: "allow_all")
+            .putString("apps_blocked", a?.optJSONArray("blocked")?.toString() ?: "[]")
+            .putString("apps_allowed", a?.optJSONArray("allowed")?.toString() ?: "[]")
+            .apply()
+    }
+
+    val appsManage: Boolean get() = prefs.getBoolean("apps_manage", false)
+    val appsPosture: String get() = prefs.getString("apps_posture", "allow_all") ?: "allow_all"
+    val appsBlocked: Set<String> get() = strSet("apps_blocked")
+    val appsAllowed: Set<String> get() = strSet("apps_allowed")
+
+    /** חבילות ה-launcher במכשיר — לא נחסמות. נשמר כשמדווחים את האפליקציות. */
+    var launchers: Set<String>
+        get() = strSet("launchers")
+        set(v) { prefs.edit().putString("launchers", JSONArray(v.toList()).toString()).apply() }
+
+    private fun strSet(key: String): Set<String> = try {
+        val a = JSONArray(prefs.getString(key, "[]") ?: "[]")
+        (0 until a.length()).map { a.getString(it) }.toSet()
+    } catch (e: Exception) { emptySet() }
 
     fun policy(): Policy =
         try { Policy.from(JSONObject(prefs.getString("policy", "{}") ?: "{}")) }

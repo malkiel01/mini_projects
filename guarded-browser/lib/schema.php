@@ -297,6 +297,24 @@ function schemaStatements(): array {
         updated_at TEXT NOT NULL DEFAULT ''
     )",
 
+    // ── ניהול אפליקציות המכשיר (שלב 11) ───────────────────────
+    // מה שהמכשיר דיווח שמותקן אצל הילד (אפליקציות עם מסך פתיחה), וההכרעה לכל חבילה.
+    "CREATE TABLE IF NOT EXISTS device_apps (
+        child_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        package    TEXT NOT NULL,
+        label      TEXT NOT NULL DEFAULT '',
+        is_system  INTEGER NOT NULL DEFAULT 0,
+        last_seen  TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (child_id, package)
+    )",
+    "CREATE TABLE IF NOT EXISTS app_rules (
+        child_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        package    TEXT NOT NULL,
+        action     TEXT NOT NULL DEFAULT 'block',
+        created_at TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (child_id, package)
+    )",
+
     // ── אינדקס החיפוש (שלב 8) ─────────────────────────────────
     // מקור = מה שמאושר לילד כלשהו (אתר, דף, ערוץ, פלייליסט, סרטון). דף = מה שנמצא בו.
     // הטבלה הווירטואלית search_fts (FTS5) נוצרת ב-lib/search.php — אם השרת תומך.

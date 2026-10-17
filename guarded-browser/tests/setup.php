@@ -34,8 +34,8 @@ check('ריק — חסר הכול, לא תקין', devicePermsState(0)['ok'], fa
 check('...והחיוניות שחסרות', devicePermsState(0)['required_missing'], ['התראות', 'ריצה רציפה']);
 check('רק החיוניות (3) — תקין', devicePermsState(PERM_REQUIRED)['ok'], true);
 check('...אבל לא הושלם (אין ניהול)', devicePermsState(PERM_REQUIRED)['complete'], false);
-check('...וחסר ברשימה', devicePermsState(PERM_REQUIRED)['missing'], ['ניהול מכשיר', 'עדכונים']);
-check('הכול (15) — הושלם', devicePermsState(15)['complete'], true);
+check('...וחסר ברשימה', devicePermsState(PERM_REQUIRED)['missing'], ['ניהול אפליקציות', 'ניהול מכשיר', 'עדכונים']);
+check('הכול (31) — הושלם', devicePermsState(31)['complete'], true);
 check('רק התראות — עוד חסרה ריצה', devicePermsState(PERM_NOTIF)['ok'], false);
 check('ניהול דלוק', devicePermsState(PERM_ADMIN | PERM_REQUIRED)['admin'], true);
 
@@ -47,14 +47,14 @@ check('נשמר מהכותרת', (int) $dev()['perms'], 7);
 unset($_SERVER['HTTP_X_MIGDALOR_PERMS']);
 userByToken($tok);
 check('בלי כותרת — לא משתנה (גרסה ישנה)', (int) $dev()['perms'], 7);
-$_SERVER['HTTP_X_MIGDALOR_PERMS'] = '15';
+$_SERVER['HTTP_X_MIGDALOR_PERMS'] = '31';
 userByToken($tok);
-check('עדכון למצב חדש', (int) $dev()['perms'], 15);
+check('עדכון למצב חדש', (int) $dev()['perms'], 31);
 unset($_SERVER['HTTP_X_MIGDALOR_PERMS']);
 
 echo "\n— בגיליון הילד —\n";
 $detail = childDetail(one('SELECT * FROM users WHERE id = ?', [$kid]), ['off']);
-check('רשימת המכשירים כוללת perms', (int) $detail['device_list'][0]['perms'], 15);
+check('רשימת המכשירים כוללת perms', (int) $detail['device_list'][0]['perms'], 31);
 
 echo "\n$pass עברו, $fail נכשלו\n";
 exit($fail ? 1 : 0);
