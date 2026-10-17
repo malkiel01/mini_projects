@@ -238,60 +238,84 @@
   const LEVEL = { view: 'צופה', fill: 'ממלא', edit: 'עורך', co_owner: 'מנהל-שותף', owner: 'בעלים' };
   const rank = (l) => ({ view: 1, fill: 2, edit: 3, co_owner: 4, owner: 5 }[l] || 0);
 
-  /** חלון שיתוף — לתבנית או למסמך. */
+  // מה כל הרשאה מתירה — משפט אחד, מתחלף לפי הבחירה
+  const LEVEL_IC = { view: '👁', fill: '✍️', edit: '✏️', co_owner: '🔑' };
+  const LEVEL_HINT = {
+    template: { view: 'רואה את התבנית, בלי לשנות ובלי להנפיק.', fill: 'מנפיק ממנה מסמכים משלו וממלא אותם.',
+      edit: 'עורך את התבנית עצמה — שדות, עיצוב והגדרות.', co_owner: 'כמו עורך, ובנוסף משתף אחרים ומעביר לארכיון.' },
+    document: { view: 'רואה את המסמך ואת היומן שלו.', fill: 'ממלא את השדות במסמך.',
+      edit: 'ממלא, מסיים ושולח למשתתפים.', co_owner: 'כמו עורך, ובנוסף משתף אחרים ומעביר לארכיון.' },
+  };
+
+  /** חלון שיתוף עם בעלי חשבון — לתבנית או למסמך. למעלה: מי כבר רואה. למטה: הוספה. */
   async function shareDialog(type, id, title, after) {
-    const list = el('div', { class: 'share-list' }, el('p', { class: 'muted small' }, 'טוען…'));
+    const what = type === 'template' ? 'התבנית' : 'המסמך';
+    const list = el('ul', { class: 'share-list' }, el('li', { class: 'empty' }, 'טוען…'));
     const out = el('div');
-    const email = el('input', { type: 'email', placeholder: 'מייל של משתמש רשום', dir: 'ltr', required: true });
-    const levelSel = (cur, max) => el('select', {}, Object.entries(LEVEL).filter(([k]) => k !== 'owner' && rank(k) <= max)
-      .map(([k, t]) => el('option', { value: k, selected: k === cur }, t)));
+    const email = el('input', { type: 'email', inputmode: 'email', autocomplete: 'email', placeholder: 'name@example.com', dir: 'ltr', required: true, 'aria-label': 'מייל' });
+    const levelHint = el('p', { class: 'hint share-hint' });
+    const seg = el('div', { class: 'seg share-seg', role: 'radiogroup', 'aria-label': 'הרשאה' });
+    const avatar = (name) => el('span', { class: 'avatar', style: `--h:${hueOf(name)}`, 'aria-hidden': 'true' }, initialsOf(name));
+    const levelSel = (cur, max, name) => {
+      return el('select', { 'aria-label': 'הרשאה של ' + name }, Object.entries(LEVEL).filter(([k]) => k !== 'owner' && rank(k) <= max)
+        .map(([k, t]) => el('option', { value: k, selected: k === cur }, LEVEL_IC[k] + ' ' + t)));
+    };
+    const pickLevel = () => (seg.querySelector('input:checked') || {}).value || 'view';
+    const showHint = () => { levelHint.textContent = LEVEL_HINT[type][pickLevel()] || ''; };
     let myRank = 4;
     async function load() {
       try {
         const r = await api('share_list', undefined, { type, id });
+        const prev = pickLevel();
         myRank = rank(r.my_level);
-        add.replaceChildren(email, levelSel('view', myRank), el('button', { type: 'submit', class: 'primary small' }, 'שיתוף'));
-        // מי רואה את זה: הבעלים, ואז כל מי ששותף — שם, מייל, מאז מתי, הרמה, ו"ניתוק"
+        seg.replaceChildren(...Object.keys(LEVEL_IC).filter(k => rank(k) <= myRank).map(k => el('label', {},
+          el('input', { type: 'radio', name: 'share-level', value: k, checked: k === prev, onchange: showHint }),
+          el('span', {}, LEVEL_IC[k] + ' ' + LEVEL[k]))));
+        if (!seg.querySelector('input:checked')) seg.querySelector('input').checked = true;
+        showHint();
+        count.textContent = r.shares.length ? String(r.shares.length + 1) : '';
+        // הבעלים ראשון, ואחריו כל מי ששותף: שם, מייל ומאז מתי — ומשמאל ההרשאה וניתוק
         list.replaceChildren(
-          el('div', { class: 'share-row' }, el('div', { class: 'share-who' }, el('strong', {}, r.owner)), el('span', { class: 'muted small' }, 'בעלים')),
-          el('p', { class: 'share-count muted small' }, r.shares.length ? `משותף עם ${r.shares.length}:` : 'עוד לא שותף עם אף אחד.'),
+          el('li', { class: 'share-row owner' }, avatar(r.owner),
+            el('div', { class: 'share-who' }, el('strong', {}, r.owner), el('small', {}, 'יצר את ' + what)),
+            el('span', { class: 'badge' }, '👑 בעלים')),
           ...r.shares.map(s => {
-            const sel = levelSel(s.level, myRank);
-            sel.setAttribute('aria-label', 'הרשאה של ' + s.name);
-            sel.addEventListener('change', () => run('share_set', { type, id, user_id: s.user_id, level: sel.value }));
-            return el('div', { class: 'share-row' },
-              el('div', { class: 'share-who' }, el('strong', {}, s.name || s.email),
-                el('span', { class: 'muted small', dir: 'ltr' }, s.email),
-                s.since ? el('span', { class: 'muted small' }, 'מאז ' + new Date(s.since).toLocaleDateString('he-IL')) : null),
+            const name = s.name || s.email;
+            const sel = levelSel(s.level, myRank, name);
+            sel.addEventListener('change', () => run('share_set', { type, id, user_id: s.user_id, level: sel.value }, `✓ ההרשאה של ${name} עודכנה`));
+            return el('li', { class: 'share-row' }, avatar(name),
+              el('div', { class: 'share-who' }, el('strong', {}, name),
+                el('small', {}, el('span', { dir: 'ltr' }, s.email), s.since ? ' · מאז ' + new Date(s.since).toLocaleDateString('he-IL') : '')),
               el('div', { class: 'share-ctl' }, sel,
-                el('button', { type: 'button', class: 'small danger', onclick: () => {
-                  if (confirm(`לנתק את ${s.name || s.email}? הוא לא יוכל עוד לגשת ל${type === 'template' ? 'תבנית' : 'מסמך'}.`)) run('share_remove', { type, id, user_id: s.user_id });
+                el('button', { type: 'button', class: 'small share-cut', 'aria-label': 'ניתוק ' + name, onclick: () => {
+                  if (confirm(`לנתק את ${name}?\nהגישה שלו ${type === 'template' ? 'לתבנית' : 'למסמך'} תיחסם מיד.`)) run('share_remove', { type, id, user_id: s.user_id }, `✓ ${name} נותק`);
                 } }, '🚫 ניתוק')));
-          }));
+          }),
+          ...(r.shares.length ? [] : [el('li', { class: 'share-none' }, `עוד לא שיתפת את ${what} עם אף אחד.`)]));
       } catch (e) {
-        list.replaceChildren(notice(e.message, 'bad'));
+        list.replaceChildren(el('li', {}, notice(e.message, 'bad')));
       }
     }
-    async function run(action, body) {
+    async function run(action, body, ok) {
       out.replaceChildren();
-      try { await api(action, body); await load(); if (after) after(); }
-      catch (e) { out.replaceChildren(notice(e.message, 'bad')); }
+      try { await api(action, body); await load(); if (ok) toast(ok); if (after) after(); return true; }
+      catch (e) { out.replaceChildren(notice(e.message, 'bad')); return false; }
     }
-    const add = el('form', { class: 'share-add' });
-    add.addEventListener('submit', (e) => {
+    const submit = el('button', { type: 'submit', class: 'primary' }, '➕ שיתוף');
+    const add = el('form', { class: 'card share-add' },
+      el('h3', {}, 'שיתוף עם עוד מישהו'),
+      email, seg, levelHint, submit,
+      el('p', { class: 'hint' }, 'רק למשתמש רשום. לקוח בלי חשבון — דרך "📨 שליחה למילוי".'));
+    add.addEventListener('submit', async (e) => {
       e.preventDefault();
-      run('share_set', { type, id, email: email.value, level: add.querySelector('select').value }).then(() => { email.value = ''; });
+      submit.disabled = true;
+      if (await run('share_set', { type, id, email: email.value, level: pickLevel() }, '✓ שותף')) email.value = '';
+      submit.disabled = false;
     });
-    const dlg = el('dialog', { class: 'sig-dialog' },
-      el('h2', {}, 'שיתוף — ' + title),
-      el('p', { class: 'muted small' }, type === 'template'
-        ? 'צופה — רואה. ממלא — מנפיק ממנה מסמכים משלו. עורך — עורך את התבנית. מנהל-שותף — גם משתף ומעביר לארכיון.'
-        : 'צופה — רואה ויומן. ממלא — ממלא שדות. עורך — גם מסיים ושולח למשתתפים. מנהל-שותף — גם משתף ומעביר לארכיון.'),
-      list, add, out,
-      el('div', { class: 'ops' }, el('button', { onclick: () => dlg.close() }, 'סגירה')));
-    dlg.addEventListener('close', () => dlg.remove());
-    document.body.append(dlg);
-    dlg.showModal();
+    const count = el('span', { class: 'count' });
+    sheet('👥 שיתוף — ' + title, el('div', { class: 'share-sheet' },
+      el('h3', { class: 'share-title' }, `מי רואה את ${what}`, count),
+      list, out, add));
     await load();
   }
 
