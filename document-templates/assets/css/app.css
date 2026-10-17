@@ -413,14 +413,6 @@ tr.archived { opacity: .6; }
 
 /* ── שלב 7: שיתוף ── */
 .shared-tag { color: var(--accent); }
-.share-list { display: grid; gap: 6px; margin: 8px 0; }
-.share-row { display: flex; align-items: center; gap: 8px; justify-content: space-between; padding: 6px 0;
-  border-bottom: 1px solid var(--border); }
-.share-row > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.share-add { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
-.share-add input { flex: 1; min-width: 180px; }
-.share-add input, .share-row select, .share-add select { font: inherit; padding: 6px 8px; border-radius: 8px;
-  border: 1px solid var(--border); background: var(--bg); color: var(--text); }
 .pages.readonly .field { cursor: pointer; }
 
 /* ── שלב 8: קטלוג ── */
@@ -942,14 +934,43 @@ dialog.sheet:has(.list-sheet) { width: min(900px, 100vw); }
   border: 0; background: none; padding: 0; font-size: 18px; line-height: 1; cursor: pointer; border-radius: var(--r); }
 .pw-eye:hover, .pw-eye:focus-visible { background: color-mix(in srgb, var(--brand) 10%, transparent); }
 
-/* שיתוף: שם ומייל מעל, הרשאה ו"ניתוק" מתחת — לא נדחסים בטלפון */
-.share-row { flex-wrap: wrap; }
-.share-who { display: flex; flex-direction: column; gap: 1px; flex: 1 1 160px; min-width: 0; }
-.share-who > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.share-ctl { display: flex; gap: 6px; align-items: center; flex: 0 1 auto; }
-.share-ctl select { width: auto; flex: 1 1 auto; min-width: 0; }
-.share-ctl button { flex: none; white-space: nowrap; }
 .share-count { margin: 6px 0 0; }
+/* שיתוף עם בעלי חשבון: רשימה אחת במסגרת, ומתחתיה כרטיס הוספה */
+.share-sheet { display: grid; gap: var(--s3); }
+.share-title { display: flex; align-items: center; gap: var(--s2); margin: 0; font-size: .95rem; }
+.share-title .count:empty { display: none; }
+.share-title .count { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 99px;
+  background: var(--brand-soft); color: var(--brand); font-size: .72rem; }
+.share-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.share-row { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); min-width: 0; }
+.share-list > li + li { border-top: 1px solid var(--line); }
+.share-who { display: flex; flex-direction: column; gap: 1px; flex: 1 1 auto; min-width: 0; }
+.share-who > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.share-who small { color: var(--muted); font-size: .8rem; }
+.share-ctl { display: flex; gap: var(--s1); align-items: center; flex: none; }
+.share-ctl select { width: auto; min-height: var(--tap); font: inherit; font-size: 16px; padding: 0 var(--s2); border-radius: var(--r);
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+.share-cut { min-height: var(--tap); color: var(--danger); white-space: nowrap; }
+.share-cut:hover { background: var(--danger-soft); }
+.share-none { color: var(--muted); font-size: .9rem; padding: var(--s3); background: color-mix(in srgb, var(--brand-soft) 50%, var(--surface)); }
+.share-list > .empty { padding: var(--s3); }
+.share-add { display: grid; gap: var(--s2); margin: 0; }
+.share-add h3 { margin: 0; font-size: .95rem; }
+.share-add input[type=email] { width: 100%; min-height: var(--tap); font: inherit; font-size: 16px; padding: 0 var(--s3);
+  border-radius: var(--r); border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+.share-seg { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; overflow: hidden; background: var(--line); }
+.share-seg span { padding: 0 var(--s1); background: var(--surface); }
+.share-seg label + label span { border: 0; }
+.share-hint { margin: 0; min-height: 1.3em; }
+.share-add .primary { min-height: var(--tap); }
+.share-add .hint:last-child { margin: 0; }
+/* טלפון צר: ההרשאה וניתוק יורדים לשורה שנייה, מתחת לשם */
+@media (max-width: 419px) {
+  .share-row:not(.owner) { flex-wrap: wrap; }
+  .share-row:not(.owner) .share-who { flex-basis: calc(100% - 48px); }
+  .share-row:not(.owner) .share-ctl { flex: 1 1 100%; padding-inline-start: 48px; }
+  .share-ctl select { flex: 1; min-width: 0; }
+}
 
 /* אישור והורדה: התיבה ליד הכותרת שלה (לא בשורה נפרדת), והטקסט נשבר בטלפון */
 .approval-set .switch { display: flex; flex-direction: row; align-items: flex-start; white-space: normal; gap: var(--s2); }
