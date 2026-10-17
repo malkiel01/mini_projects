@@ -55,7 +55,11 @@ class HomeActivity : AppCompatActivity() {
         b.search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, c: Int, d: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, c: Int, d: Int) {}
-            override fun afterTextChanged(s: Editable?) { query = s?.toString()?.trim() ?: ""; draw() }
+            override fun afterTextChanged(s: Editable?) {
+                query = s?.toString()?.trim() ?: ""
+                if (query.isEmpty()) showResults(null)
+                draw()
+            }
         })
         b.search.setOnEditorActionListener { _, id, _ ->
             if (id == EditorInfo.IME_ACTION_SEARCH || id == EditorInfo.IME_ACTION_GO) { submitSearch(); true } else false
@@ -109,7 +113,7 @@ class HomeActivity : AppCompatActivity() {
             if (style != 0) b.status.setBackgroundResource(style)
 
             val canType = store.policy().mode == Policy.MODE_BROWSER
-            b.search.hint = if (canType) "חיפוש או כתובת" else "חיפוש באתרים שלי"
+            b.search.hint = if (canType) "🔎 חיפוש או כתובת" else "🔎 חיפוש"
             draw()
         }
     }
@@ -150,8 +154,8 @@ class HomeActivity : AppCompatActivity() {
 
         b.empty.visibility = if (shown.isEmpty()) View.VISIBLE else View.GONE
         b.empty.text = when {
-            q.isNotEmpty() && store.policy().mode == Policy.MODE_BROWSER -> "לא נמצא באתרים שלך. Enter — לפתוח כתובת."
-            q.isNotEmpty() -> "לא נמצא באתרים שלך."
+            q.isNotEmpty() && store.policy().mode == Policy.MODE_BROWSER -> "לא באריחים. 🔎 Enter — חיפוש, או כתובת לפתיחה."
+            q.isNotEmpty() -> "לא באריחים. 🔎 Enter — חיפוש."
             else -> "עוד אין לך אתרים. ההורה מוסיף אותם מהאפליקציה שלו."
         }
     }
@@ -194,8 +198,52 @@ class HomeActivity : AppCompatActivity() {
         when {
             hits.size == 1 -> open(hits[0].url)
             store.policy().mode == Policy.MODE_BROWSER && query.contains('.') && !query.contains(' ') -> open(query)
-            hits.isEmpty() -> Toast.makeText(this, "חיפוש ברשת — בקרוב. כרגע: רק באתרים שלך.", Toast.LENGTH_SHORT).show()
+            else -> runSearch(query)
         }
+    }
+
+    /** חיפוש בשרת: אינדקס האתרים שאושרו, או הרשת — לפי מה שההורה קבע. התוצאות כבר מסוננות. */
+    private fun runSearch(q: String) {
+        b.progress.visibility = View.VISIBLE
+        (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+            .hideSoftInputFromWindow(b.search.windowToken, 0)
+        Api.search(store.token, q) { r ->
+            b.progress.visibility = View.GONE
+            if (query != q) return@search          // הוקלד משהו אחר בינתיים
+            val j = r.json
+            if (!r.ok || j == null) { Toast.makeText(this, r.error.ifEmpty { "החיפוש לא הצליח" }, Toast.LENGTH_LONG).show(); return@search }
+            showResults(j)
+        }
+    }
+
+    private fun showResults(j: JSONObject?) {
+        b.results.removeAllViews()
+        if (j == null) { b.results.visibility = View.GONE; b.resultsTitle.visibility = View.GONE; return }
+        val list = j.optJSONArray("results")
+        val n = list?.length() ?: 0
+        b.resultsTitle.visibility = View.VISIBLE
+        b.resultsTitle.text = when {
+            n == 0 -> "🔎 " + j.optString("note").ifEmpty { "לא נמצא. אפשר לנסות מילה אחרת." }
+            j.optString("engine") == "web" -> "🔎 תוצאות מהרשת"
+            else -> "🔎 תוצאות באתרים שלך"
+        }
+        for (i in 0 until n) {
+            val o = list!!.getJSONObject(i)
+            val url = o.optString("url")
+            val v = layoutInflater.inflate(R.layout.item_result, b.results, false)
+            v.findViewById<TextView>(R.id.resIcon).text = when (o.optString("kind")) {
+                "video", "channel", "playlist" -> "▶️"
+                else -> "🌐"
+            }
+            v.findViewById<TextView>(R.id.resTitle).text = o.optString("title")
+            v.findViewById<TextView>(R.id.resHost).text = o.optString("host")
+            v.findViewById<TextView>(R.id.resSnippet).apply {
+                text = o.optString("snippet"); visibility = if (text.isNullOrEmpty()) View.GONE else View.VISIBLE
+            }
+            v.setOnClickListener { if (allowed) open(url) }
+            b.results.addView(v)
+        }
+        b.results.visibility = if (n > 0) View.VISIBLE else View.GONE
     }
 
     private fun open(url: String) {

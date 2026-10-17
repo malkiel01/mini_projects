@@ -15,6 +15,7 @@ require_once __DIR__ . '/../lib/json.php';
 require_once __DIR__ . '/../lib/push.php';
 require_once __DIR__ . '/../lib/activity.php';
 require_once __DIR__ . '/../lib/appversion.php';
+require_once __DIR__ . '/../lib/search.php';
 
 jsonHeaders();
 
@@ -100,6 +101,8 @@ try {
         if ($err) fail($err);
         out(['ok' => true]);
     }
+    // אתר או ערוץ שנוסף עכשיו — נכנס לאינדקס החיפוש כבר אחרי התשובה, לא מחר.
+    if (in_array($action, ['rule_add', 'yt_add', 'request_decide', 'children'], true)) searchTickAfterResponse(5);
     // סיסמה זמנית — שום דבר אחר עד שהוחלפה.
     if ($parent['must_change_pw']) fail('יש לבחור סיסמה חדשה לפני שממשיכים', 403, 'must_change');
 

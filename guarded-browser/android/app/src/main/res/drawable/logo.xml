@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- הלוגו בתוך האפליקציה — בדיוק assets/icon.svg (ריבוע כחול מעוגל + המגדלור). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="64dp" android:height="64dp" android:viewportWidth="64" android:viewportHeight="64">
+    <path android:fillColor="#1D4A6E" android:pathData="M14,0L50,0A14,14 0,0 1,64 14L64,50A14,14 0,0 1,50 64L14,64A14,14 0,0 1,0 50L0,14A14,14 0,0 1,14 0Z"/>
+    <path android:fillColor="#F5B83D" android:pathData="M22,14L42,14L39,18L25,18Z"/>
+    <path android:strokeColor="#F5B83D" android:strokeWidth="3" android:strokeLineCap="round"
+        android:strokeAlpha="0.8" android:pathData="M8,20L24,24M56,20L40,24"/>
+    <path android:fillColor="#FFFFFF" android:pathData="M25,22L39,22L43,54L21,54Z"/>
+    <path android:strokeColor="#C0392B" android:strokeWidth="4" android:pathData="M24,32L40,32M23,42L41,42"/>
+    <path android:fillColor="#8AB8DC" android:pathData="M18,54L46,54A2,2 0,0 1,46 58L18,58A2,2 0,0 1,18 54Z"/>
+</vector>

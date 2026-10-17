@@ -218,6 +218,10 @@ object Api {
         call("requests", JSONObject(), token, cb)
 
     /** ‏url — מה שעל המסך עכשיו: ההורה רואה כמה זמן בכל אתר (שלב 7), לפי רמת הדיווח שבחר. */
+    /** חיפוש (שלב 8): השרת בוחר מנוע לפי הילד ומסנן כל תוצאה. */
+    fun search(token: String, q: String, cb: (Result) -> Unit) =
+        call("search", JSONObject().apply { put("q", q) }, token, cb)
+
     fun heartbeat(token: String, seconds: Int, sessionSec: Int, url: String = "", cb: (Result) -> Unit) =
         call("heartbeat", JSONObject().apply {
             put("seconds", seconds); put("session_sec", sessionSec); put("url", url)
