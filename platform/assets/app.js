@@ -389,10 +389,12 @@ function appRow(app) {
     return li;
 }
 
-// ---------- מה מותקן במכשיר הזה (lib/installs.php) ----------
-// אתר לא רואה מה מותקן בטלפון. לכן: לחיצה על התקנה מסמנת, והמשתמש יכול לסמן ולבטל בעצמו.
+// ---------- מה באמת מותקן במכשיר הזה (lib/installs.php) ----------
+// לא "זוכרים שלחצו". הבדיקה נעשית במכשיר: בכל דף של אפליקציה מחוברת רץ pwa-beacon.js (השער
+// מוסיף אותו) ומדווח מה הדפדפן אומר — נפתחה מהאייקון / getInstalledRelatedApps / beforeinstallprompt.
+// כאן רק מציגים את מה שדווח. APK — הדפדפן לא יכול לבדוק, ולכן לא מוצג עליו "מותקנת".
 
-let installedHere = {};   // {app_id: method}
+let installedHere = {};   // {app_id: {state, how, checked_at}}
 
 function deviceId() {
     try {
@@ -419,35 +421,37 @@ async function loadInstalls() {
     try { installedHere = (await api(`installs&device=${id}`)).installed || {}; } catch { installedHere = {}; }
 }
 
-async function markInstall(appId, installed, method = 'manual') {
+// דיווח על הפלטפורמה עצמה — מאותם מקורות (מצב אפליקציה / הדפדפן / beforeinstallprompt).
+function reportInstall(appId, state, how) {
     const id = deviceId();
-    if (!id || !me?.user || me.user.status !== 'active') return;
-    if (installed) installedHere[appId] = method; else delete installedHere[appId];
-    try { await api('install_mark', { device: id, label: deviceLabel(), app: appId, installed, method }); } catch { /* נסה בפעם הבאה */ }
-    document.querySelectorAll(`li[data-app="${CSS.escape(appId)}"]`).forEach(li => paintInstalled(li, appId));
-    document.querySelectorAll(`.inst-status[data-app="${CSS.escape(appId)}"]`).forEach(l => {
-        l.querySelector('input').checked = installed;
-        l.classList.toggle('on', installed);
-    });
+    if (!id) return;
+    installedHere[appId] = { state, how, checked_at: new Date().toISOString() };
+    fetch(`${API}?action=install_report`, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-Platform': '1' },
+        body: JSON.stringify({ device: id, label: deviceLabel(), app: appId, state, how }),
+    }).catch(() => {});
 }
+
+const isInstalledHere = (appId) => installedHere[appId]?.state === 'installed';
 
 function paintInstalled(li, appId) {
-    li.dataset.inst = installedHere[appId] ? 'yes' : li.dataset.can ? 'can' : 'no';
-    li.querySelector('.inst-chip')?.toggleAttribute('hidden', !installedHere[appId]);
+    li.dataset.inst = isInstalledHere(appId) ? 'yes' : li.dataset.can ? 'can' : 'no';
+    li.querySelector('.inst-chip')?.toggleAttribute('hidden', !isInstalledHere(appId));
 }
 
-// בגיליון האפליקציה: "מותקנת במכשיר הזה" — לסמן או לבטל בלחיצה.
+const HOW = { opened: 'נפתחה מהאייקון', detected: 'הדפדפן אישר', installed: 'הותקנה מכאן', prompt: 'הדפדפן אישר' };
+
+// בגיליון האפליקציה: מה ידוע באמת על המכשיר הזה. קריאה בלבד — אין "לסמן ידנית".
 function installStatus(app) {
-    const box = el('input', { type: 'checkbox', checked: !!installedHere[app.id] });
-    const label = el('label', { className: `inst-status${installedHere[app.id] ? ' on' : ''}` }, [box,
-        el('span', { textContent: 'מותקנת במכשיר הזה' })]);
-    label.dataset.app = app.id;
-    box.addEventListener('change', () => {
-        label.classList.toggle('on', box.checked);
-        markInstall(app.id, box.checked, 'manual');
-        toast(box.checked ? '✓ סומנה כמותקנת במכשיר הזה' : 'הסימון בוטל');
-    });
-    return label;
+    const info = installedHere[app.id];
+    const when = info ? new Date(info.checked_at).toLocaleDateString('he-IL') : '';
+    let cls = '', text;
+    if (info?.state === 'installed') { cls = 'on'; text = `✓ מותקנת במכשיר הזה — ${HOW[info.how] || 'נבדק'}, ${when}`; }
+    else if (info?.state === 'not_installed') { cls = 'off'; text = `לא מותקנת במכשיר הזה (${HOW.prompt}, ${when})`; }
+    else if (app.install.pwa) text = 'עוד לא נבדק במכשיר הזה — הבדיקה נעשית לבד בפתיחה הראשונה של האפליקציה';
+    else text = 'אפליקציית אנדרואיד (APK) — דפדפן לא יכול לבדוק אם היא מותקנת';
+    return el('p', { className: `inst-status ${cls}`, textContent: text });
 }
 
 function openAppSheet(app, extras) {
@@ -490,16 +494,13 @@ function installLinks(app) {
     ]);
     const out = [];
     if (app.install.pwa) {
-        out.push(tile('📲', 'התקנה כאפליקציה נפרדת', {
-            href: app.href,
-            title: 'פתחו את האפליקציה, ובתפריט הדפדפן בחרו "התקנה" או "הוספה למסך הבית"',
-        }));
+        // פותח את האפליקציה בחלון משלה עם ?pwa-install=1 — שם pwa-beacon.js מציג "התקנה" (בלחיצה
+        // כשהדפדפן מאפשר, אחרת ההסבר המדויק למכשיר). ההתקנה חייבת לקרות מתוך הדף של האפליקציה.
+        const href = app.href + (app.href.includes('?') ? '&' : '?') + 'pwa-install=1';
+        out.push(tile('📲', isInstalledHere(app.id) ? 'מותקנת — התקנה מחדש' : 'התקנה כאפליקציה', openProps(href)));
     }
     if (app.install.apk) out.push(tile('⬇️', 'הורדת APK', { href: app.install.apk, rel: 'noopener' }));
     if (app.install.store) out.push(tile('▶️', 'Google Play', { href: app.install.store, rel: 'noopener', target: '_blank' }));
-    // לחיצה על התקנה / הורדה = "התקנתי במכשיר הזה". אפשר לבטל בגיליון.
-    const methods = [app.install.pwa && 'pwa', app.install.apk && 'apk', app.install.store && 'store'].filter(Boolean);
-    out.forEach((t, i) => t.addEventListener('click', () => markInstall(app.id, true, methods[i])));
     return out;
 }
 
@@ -516,12 +517,14 @@ window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     installPrompt = e;
     markInstalled(false); // הדפדפן מציע להתקין — סימן שהאפליקציה לא מותקנת (או שהוסרה)
+    reportInstall('_platform', 'not_installed', 'prompt');
     if (me?.user) showUserbar(me.user);
 });
 
 window.addEventListener('appinstalled', () => {
     installPrompt = null;
     markInstalled(true);
+    reportInstall('_platform', 'installed', 'installed');
     document.querySelector('dialog.install')?.close();
     document.querySelector('.install-banner')?.remove();
     toast('✓ הותקן — האייקון נמצא במסך הבית');
@@ -565,10 +568,10 @@ function markInstalled(yes) {
 }
 const isInstalled = () => isStandalone() || installedFlag;
 
-if (isStandalone()) markInstalled(true);
+if (isStandalone()) { markInstalled(true); reportInstall('_platform', 'installed', 'opened'); }
 if ('getInstalledRelatedApps' in navigator) {
     navigator.getInstalledRelatedApps()
-        .then(apps => { if (apps.some(a => a.platform === 'webapp')) markInstalled(true); })
+        .then(apps => { if (apps.some(a => a.platform === 'webapp')) { markInstalled(true); reportInstall('_platform', 'installed', 'detected'); } })
         .catch(() => {});
 }
 
@@ -843,8 +846,6 @@ async function start() {
             return await window.PlatformAdmin.show(view);
         }
         await showApps();
-        // הפלטפורמה עצמה מותקנת כאן — נרשם לבד, כדי שהמנהל יראה באיזה מכשיר.
-        if (isInstalled() && !installedHere._platform) markInstall('_platform', true, 'auto');
     } catch (err) {
         view.replaceChildren(el('p', {
             className: 'status error',

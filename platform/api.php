@@ -9,8 +9,8 @@
  *   POST ?action=register  {username, password, display_name} → ממתין לאישור
  *   POST ?action=setup     {code, username, password, display_name} → המנהל הראשון
  *   POST ?action=password  {current, password} — החלפת סיסמה (גם אחרי סיסמה זמנית מהמנהל)
- *   GET  ?action=installs&device=<id>  מה מותקן במכשיר הזה {app_id: method}
- *   POST ?action=install_mark {device, label, app, installed, method}
+ *   GET  ?action=installs&device=<id>  מה ידוע על המכשיר הזה {app_id: {state, how, checked_at}}
+ *   POST ?action=install_report {device, label, app, state, how} — מהמכשיר (pwa-beacon.js / app.js)
  *   GET  ?action=sso_mine  האפליקציות שהמשתמש אישר להן כניסה מאוחדת
  *   POST ?action=sso_revoke {client_id} — ביטול חיבור
  *
@@ -53,7 +53,7 @@ try {
             'setup'    => action_setup($body),
             'password' => action_password($body),
             'sso_revoke' => action_sso_revoke($body),
-            'install_mark' => action_install_mark($body),
+            'install_report' => action_install_report($body),
             default    => str_starts_with($action, 'admin_')
                 ? admin_dispatch($action, $body, require_admin(true))
                 : throw new ApiError('פעולה לא מוכרת', 404),
@@ -153,12 +153,13 @@ function action_installs(): never
     json_out(['installed' => (object)installs_on_device((int)$user['id'], installs_valid_device($_GET['device'] ?? null))]);
 }
 
-function action_install_mark(array $body): never
+// דיווח מהמכשיר: מותקנת / לא מותקנת — רק מה שהדפדפן אישר (lib/installs.php). בלי CSRF:
+// הכותרת X-Platform חוסמת אתר זר (json_body), והדיווח משנה רק את המכשיר של המשתמש עצמו.
+function action_install_report(array $body): never
 {
     $user = current_user();
     if (!$user) throw new ApiError('נדרשת כניסה', 401);
-    if (!hash_equals($user['csrf'], $_SERVER['HTTP_X_CSRF'] ?? '')) throw new ApiError('בקשה לא תקינה', 403);
-    installs_mark((int)$user['id'], $body);
+    installs_report((int)$user['id'], $body);
     json_out(['ok' => true]);
 }
 

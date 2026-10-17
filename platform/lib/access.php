@@ -97,6 +97,9 @@ function apps_effective(): array
         // מנותקת = עומדת לבד — אפליקציה חיצונית, בלי שער ב-app.json, או שהמנהל ניתק.
         $app['detached'] = isset($detached[$app['id']]);
         $app['connected'] = !empty($app['gate']) && !$app['detached'];
+        // אכיפת PWA: כל אפליקציה מחוברת ניתנת להתקנה — אם אין לה manifest משלה, השער נותן לה
+        // אחד (platform/pwa.php, lib/pwa.php).
+        if ($app['connected']) $app['install']['pwa'] = true;
         $apps[] = $app;
     }
     return $apps;
