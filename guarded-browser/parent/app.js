@@ -1,7 +1,7 @@
 /*
  * מגדלור — אפליקציית ההורה (SPEC.md, סעיף 10).
  *
- * מסך בית עם בקשות הגישה והילדים, וגיליון לכל ילד: סיכום · גישה · זמנים · יוטיוב · אתרים · מכשירים.
+ * מסך בית עם בקשות הגישה והילדים, וגיליון לכל ילד: סיכום · פעילות · גישה · זמנים · יוטיוב · אתרים · מכשירים.
  * כל הטקסט מוצב כ-textContent — שמות וכתובות מגיעים מבחוץ. כל שינוי נושא X-Migdalor ו-X-CSRF.
  */
 'use strict';
@@ -180,11 +180,12 @@ async function loadKids() {
 /* ── גיליון ילד ────────────────────────────────────────────────── */
 
 let K = null, tab = 'sum';
-const TABS = [['sum', '📋 סיכום'], ['access', '🔐 גישה'], ['time', '⏰ זמנים'], ['yt', '▶️ יוטיוב'],
-              ['sites', '🌐 אתרים'], ['dev', '📱 מכשירים']];
+const TABS = [['sum', '📋 סיכום'], ['act', '📊 פעילות'], ['access', '🔐 גישה'], ['time', '⏰ זמנים'],
+              ['yt', '▶️ יוטיוב'], ['sites', '🌐 אתרים'], ['dev', '📱 מכשירים']];
 
 async function openKid(id) {
     try { K = (await call('child', { id })).child; } catch (e) { toast(e.message, true); return; }
+    A = null;
     tab = sessionStorage.getItem('mg:tab') || 'sum';
     renderKid();
     const d = $('#kid-dlg'); if (!d.open) d.showModal();
@@ -203,10 +204,10 @@ async function act(action, extra = {}, ok = '') {
 function renderKid() {
     $('#kid-title').textContent = K.name;
     $('#kid-save').hidden = !['access', 'time'].includes(tab);
-    const tabs = el('div', { class: 'seg-tabs', role: 'tablist', style: 'grid-template-columns:repeat(3,minmax(0,1fr))' },
+    const tabs = el('div', { class: 'seg-tabs', role: 'tablist', style: 'grid-template-columns:repeat(4,minmax(0,1fr))' },
         TABS.map(([k, label]) => el('button', { type: 'button', role: 'tab', ariaSelected: String(tab === k),
             text: label, onclick: () => { tab = k; sessionStorage.setItem('mg:tab', k); renderKid(); } })));
-    const body = { sum: kidSum, access: kidAccess, time: kidTime, yt: kidYt, sites: kidSites, dev: kidDev }[tab]();
+    const body = { sum: kidSum, act: kidAct, access: kidAccess, time: kidTime, yt: kidYt, sites: kidSites, dev: kidDev }[tab]();
     $('#kid-body').replaceChildren(tabs, ...body.filter(Boolean));
 }
 
@@ -413,6 +414,160 @@ function kidDev() {
                 ])]),
         ]),
     ];
+}
+
+/* ── פעילות (שלב 7) ────────────────────────────────────────────── */
+
+const LEVELS = { full: ['🔍 מלא', 'כל כתובת שנפתחה, מתי וכמה זמן. נשמר 90 יום.'],
+                 summary: ['📊 מסוכם', 'כמה זמן בכל אתר ובכל יום — בלי הכתובות עצמן.'],
+                 off: ['🙈 כבוי', 'רק זמן המסך היומי. על אתרים לא נשמר כלום.'] };
+let A = null, actDays = 7, actLoading = false;
+
+/** טעינה אחת בכל פעם; שגיאה נשמרת ב-A ומוצגת עם "נסו שוב" — לא נטען שוב לבד. */
+async function loadAct() {
+    const kid = K.id, days = actDays;
+    actLoading = true;
+    try { A = { ...(await call('activity', { id: kid, days })).activity, kid }; }
+    catch (e) { A = { kid, days, error: e.message }; }
+    actLoading = false;
+    if (tab === 'act' && K && K.id === kid) renderKid();
+}
+
+const hhmm = iso => new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+const dayName = (d, long = false) => new Date(d + 'T12:00:00').toLocaleDateString('he-IL', long
+    ? { weekday: 'long', day: 'numeric', month: 'numeric' } : { weekday: 'narrow' });
+
+function kidAct() {
+    if (!A || A.kid !== K.id || A.days !== actDays) { if (!actLoading) loadAct(); return [el('p', { class: 'empty', text: 'טוען…' })]; }
+    if (A.error) return [el('p', { class: 'error', text: A.error }),
+        el('button', { type: 'button', class: 'btn ghost', text: 'נסו שוב', onclick: () => { A = null; renderKid(); } })];
+    const hint = el('p', { class: 'hint', text: LEVELS[A.level][1] });
+    const level = seg('report_level', Object.entries(LEVELS).map(([k, v]) => [k, v[0]]), A.level, {
+        cols: 3, disabled: Object.keys(LEVELS).filter(k => !A.levels.includes(k)),
+        onchange: async v => {
+            const down = (A.level === 'full' && v !== 'full') || (A.level === 'summary' && v === 'off');
+            if (down && !confirm('מה שכבר נשמר מעבר לרמה החדשה יימחק. להמשיך?')) { renderKid(); return; }
+            try { A = { ...(await call('report_level', { id: K.id, level: v, days: actDays })).activity, kid: K.id }; toast('נשמר'); }
+            catch (e) { toast(e.message, true); }
+            renderKid();
+        } });
+    const days = seg('act_days', [['7', 'שבוע'], ['30', '30 יום']], String(actDays), { cols: 2,
+        onchange: v => { actDays = Number(v); A = null; renderKid(); } });
+    const avg = Math.round(A.total_sec / A.days);
+    const sitesMax = Math.max(1, ...A.sites.map(x => x.seconds));
+    return [
+        group('כמה לראות', '', [level, hint,
+            A.levels.includes('full') ? null : el('p', { class: 'hint', text: 'דיווח מלא — לפי החבילה של החשבון. אפשר לבקש ממנהל המערכת.' })]),
+        days,
+        el('dl', { class: 'cells k3' }, [
+            el('div', {}, [el('dt', { text: 'סה"כ' }), el('dd', { text: mins(A.total_sec) })]),
+            el('div', {}, [el('dt', { text: 'ממוצע ליום' }), el('dd', { text: mins(avg) })]),
+            el('div', {}, [el('dt', { text: 'חסימות' }), el('dd', { text: String(A.blocked_count) })]),
+        ]),
+        group('זמן מסך לפי יום', 'בדקות', [dayChart(A.daily, K.quota_min)]),
+        A.level === 'off' ? null : group('אתרים', A.sites.length ? 'לפי זמן' : '', [A.sites.length
+            ? el('ul', { class: 'rows meter-rows' }, A.sites.map(x => el('li', {}, [
+                el('span', { class: 'nm' }, [el('bdi', { dir: 'ltr', text: x.host }),
+                    el('small', { text: `${mins(x.seconds)} · ${x.visits} כניסות` })]),
+                el('span', { class: 'meter', ariaHidden: 'true' }, [el('span', { style: `inline-size:${Math.max(3, Math.round(x.seconds / sitesMax * 100))}%` })]),
+            ])))
+            : el('p', { class: 'empty', text: 'עוד אין פעילות באתרים בתקופה הזו.' })]),
+        group('ניסיונות שנחסמו', 'תמיד נשמרים', [A.blocks.length
+            ? el('ul', { class: 'rows' }, A.blocks.map(x => el('li', {}, [
+                el('span', { text: '🚫', ariaHidden: 'true' }),
+                el('span', { class: 'nm' }, [el('bdi', { dir: 'ltr', text: x.host }), el('small', { text: x.reason })]),
+                el('span', { class: 'muted when', text: whenShort(x.at) }),
+            ])))
+            : el('p', { class: 'empty', text: 'אין חסימות בתקופה הזו 👍' })]),
+        A.level === 'full' ? group('היסטוריה', 'כל כתובת', [historyList(A.history)]) : null,
+    ];
+}
+
+function whenShort(iso) {
+    const d = new Date(iso), today = new Date().toDateString() === d.toDateString();
+    return today ? hhmm(iso) : `${d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })} ${hhmm(iso)}`;
+}
+
+/** בלי https://www., ועם עברית קריאה במקום %D7%90… */
+function readableUrl(u) {
+    let t = u.replace(/^https?:\/\/(www\.)?/, '');
+    try { t = decodeURI(t); } catch { /* כתובת עם קידוד שבור — כמו שהיא */ }
+    return t;
+}
+
+function historyList(rows) {
+    if (!rows.length) return el('p', { class: 'empty', text: 'עוד אין כתובות בתקופה הזו.' });
+    const out = [];
+    let last = '';
+    for (const r of rows) {
+        const day = new Date(r.at).toDateString();
+        if (day !== last) {
+            last = day;
+            out.push(el('li', { class: 'day-head', text: new Date(r.at).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'numeric' }) }));
+        }
+        out.push(el('li', {}, [
+            el('span', { class: 'muted when', text: hhmm(r.at) }),
+            el('span', { class: 'nm' }, [el('bdi', { dir: 'ltr', class: 'url', text: readableUrl(r.url) }),
+                r.seconds ? el('small', { text: mins(r.seconds) }) : null]),
+        ]));
+    }
+    return el('ul', { class: 'rows history' }, out);
+}
+
+/**
+ * עמודות של דקות ליום — סדרה אחת, בלי מקרא (הכותרת אומרת מה מוצג). 4px עיגול בקצה,
+ * ריבוע בבסיס, רווח 2px בין עמודות. מגע/ריחוף — תווית עם היום והדקות; קו מכסה, אם יש.
+ * הטבלה מתחת — לקוראי מסך ולמי שרוצה מספרים.
+ */
+function dayChart(daily, quotaMin) {
+    const W = 340, H = 140, padT = 18, padB = 22, padS = 28;
+    const minsOf = d => Math.round(d.seconds / 60);
+    const top = Math.max(quotaMin || 0, ...daily.map(minsOf), 10);
+    const step = top <= 30 ? 10 : top <= 90 ? 30 : top <= 240 ? 60 : 120;
+    const yMax = Math.ceil(top / step) * step;
+    const n = daily.length, slot = (W - padS) / n, bw = Math.min(24, slot - 2);
+    const y = v => padT + (H - padT - padB) * (1 - v / yMax);
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('class', 'chart');
+    svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', 'זמן מסך לפי יום, בדקות');
+    const add = (tag, attrs, text) => { const e = document.createElementNS(NS, tag);
+        for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (text != null) e.textContent = text; svg.append(e); return e; };
+    // ציר וקווי רשת — עדינים. RTL: הימים מימין לשמאל, כמו בלוח שנה עברי; המספרים בצד ימין.
+    for (let v = 0; v <= yMax; v += step) {
+        add('line', { x1: 0, x2: W - padS, y1: y(v), y2: y(v), class: v ? 'grid' : 'base' });
+        add('text', { x: W - padS + 4, y: y(v) + 4, class: 'tick', 'text-anchor': 'start' }, String(v));
+    }
+    if (quotaMin) {
+        add('line', { x1: 0, x2: W - padS, y1: y(quotaMin), y2: y(quotaMin), class: 'quota' });
+        add('text', { x: 2, y: y(quotaMin) - 4, class: 'tick', 'text-anchor': 'start' }, `מכסה ${quotaMin}`);
+    }
+    const tip = el('div', { class: 'chart-tip', hidden: true, role: 'status' });
+    const peak = daily.reduce((m, d, i) => minsOf(d) > minsOf(daily[m]) ? i : m, 0);
+    daily.forEach((d, i) => {
+        const v = minsOf(d), cx = W - padS - slot * (i + .5), x0 = cx - bw / 2, y0 = y(v), base = y(0);
+        if (v > 0) {
+            const r = Math.min(4, bw / 2, base - y0);
+            add('path', { class: 'bar', d: `M${x0},${base} V${y0 + r} Q${x0},${y0} ${x0 + r},${y0} H${x0 + bw - r} Q${x0 + bw},${y0} ${x0 + bw},${y0 + r} V${base} Z` });
+        }
+        if (n <= 7 || i % 5 === (n - 1) % 5) {
+            add('text', { x: cx, y: H - 6, class: 'tick', 'text-anchor': 'middle' },
+                n <= 7 ? dayName(d.day) : new Date(d.day + 'T12:00:00').toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' }));
+        }
+        if (i === peak && v > 0) add('text', { x: cx, y: y0 - 5, class: 'val', 'text-anchor': 'middle' }, String(v));
+        const hit = add('rect', { x: cx - slot / 2, y: 0, width: slot, height: H, class: 'hit', tabindex: '0' });
+        const show = () => {
+            tip.textContent = `${dayName(d.day, true)} · ${mins(d.seconds)}`; tip.hidden = false;
+            tip.style.insetInlineEnd = `${Math.min(70, Math.max(0, (padS + slot * i) / W * 100 - 10))}%`;
+            svg.querySelectorAll('.hit.on').forEach(h => h.classList.remove('on')); hit.classList.add('on');
+        };
+        hit.addEventListener('pointerenter', show); hit.addEventListener('click', show); hit.addEventListener('focus', show);
+    });
+    svg.addEventListener('pointerleave', () => { tip.hidden = true; svg.querySelectorAll('.hit.on').forEach(h => h.classList.remove('on')); });
+    const table = el('details', { class: 'chart-table' }, [el('summary', { class: 'muted', text: 'כטבלה' }),
+        el('table', {}, [el('tbody', {}, [...daily].reverse().map(d => el('tr', {}, [
+            el('td', { text: dayName(d.day, true) }), el('td', { text: mins(d.seconds) })])))])]);
+    return el('div', { class: 'chart-box' }, [svg, tip, table]);
 }
 
 /* ── חיבור מכשיר (QR) ──────────────────────────────────────────── */

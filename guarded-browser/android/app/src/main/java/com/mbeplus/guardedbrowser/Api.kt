@@ -215,8 +215,9 @@ object Api {
     fun requests(token: String, cb: (Result) -> Unit) =
         call("requests", JSONObject(), token, cb)
 
-    fun heartbeat(token: String, seconds: Int, sessionSec: Int, cb: (Result) -> Unit) =
+    /** ‏url — מה שעל המסך עכשיו: ההורה רואה כמה זמן בכל אתר (שלב 7), לפי רמת הדיווח שבחר. */
+    fun heartbeat(token: String, seconds: Int, sessionSec: Int, url: String = "", cb: (Result) -> Unit) =
         call("heartbeat", JSONObject().apply {
-            put("seconds", seconds); put("session_sec", sessionSec)
+            put("seconds", seconds); put("session_sec", sessionSec); put("url", url)
         }, token, cb)
 }

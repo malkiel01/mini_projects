@@ -356,7 +356,8 @@ class BrowserActivity : AppCompatActivity() {
 
     /** פעימה: צוברת זמן, ומביאה את המצב. זה גם ערוץ הניתוק מרחוק. */
     private fun sendBeat() {
-        Api.heartbeat(store.token, BEAT_SEC, sessionSec) { r ->
+        val url = b.web.url?.takeIf { it.startsWith("http") && !closing } ?: ""
+        Api.heartbeat(store.token, BEAT_SEC, sessionSec, url) { r ->
             val j = r.json ?: return@heartbeat        // אין רשת — ממשיכים
             if (j.optString("code") == "unauthorized") { refuse("נדרשת כניסה מחדש"); return@heartbeat }
 

@@ -13,6 +13,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../lib/children.php';
 require_once __DIR__ . '/../lib/json.php';
 require_once __DIR__ . '/../lib/push.php';
+require_once __DIR__ . '/../lib/activity.php';
 
 jsonHeaders();
 
@@ -179,6 +180,17 @@ try {
             [$code, $exp] = pairCreate((int) $c['id']);
             out(['ok' => true, 'code' => $code, 'expires_at' => $exp, 'server' => serverBase(),
                  'qr' => 'migdalor:pair?c=' . $code . '&s=' . rawurlencode(serverBase())]);
+
+        /* ── פעילות (שלב 7) ── */
+        case 'activity':
+            $c = myChild($parent);
+            if (mt_rand(1, 20) === 1) activityCleanup();
+            out(['ok' => true, 'activity' => activityReport($aid, (int) $c['id'], num('days'))]);
+
+        case 'report_level':
+            $c = myChild($parent);
+            if ($err = reportLevelSave($aid, (int) $c['id'], str('level'))) fail($err);
+            out(['ok' => true, 'activity' => activityReport($aid, (int) $c['id'], num('days'))]);
 
         /* ── בקשות גישה (שלב 6) ── */
         case 'requests':

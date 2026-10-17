@@ -18,6 +18,7 @@ require_once __DIR__ . '/../lib/auth.php';
 require_once __DIR__ . '/../lib/alerts.php';
 require_once __DIR__ . '/../lib/children.php';
 require_once __DIR__ . '/../lib/push.php';
+require_once __DIR__ . '/../lib/activity.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -307,7 +308,8 @@ try {
         ]);
 
         // ניווט בלבד נרשם. משאב נלווה היה מציף את היומן באלפי שורות.
-        if ($main) audit($uid, 'nav', $d['allow'], $url, $d['code']);
+        // מה נשמר — לפי רמת הדיווח שההורה בחר (lib/activity.php). חסימה — תמיד.
+        if ($main) activityNav($uid, $url, $d, $tz);
 
         /*
          * מה שהאפליקציה החליטה, כדי שאפשר יהיה להשוות.
@@ -386,6 +388,9 @@ try {
         // חסם עליון לפעימה: דיווח מנופח לא יוכל לשרוף מכסה של יום.
         $seconds = max(0, min(300, (int) (body()['seconds'] ?? 0)));
         addUsage($uid, $tz, $seconds);
+        // הכתובת שעל המסך — כדי שההורה יראה כמה זמן בכל אתר (שלב 7).
+        activityBeat($uid, field('url'), $seconds, $tz);
+        if (mt_rand(1, 500) === 1) activityCleanup();
 
         $used = usedTodaySeconds($uid, $tz);
         $d = evaluate($user, $policy, ruleSetFor($uid), nowIn($tz), [
