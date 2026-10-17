@@ -93,6 +93,17 @@
     </form>
   </dialog>
 
+  <!-- חיבור מכשיר: QR + קוד -->
+  <dialog id="pair-dlg" aria-labelledby="pair-title">
+    <form method="dialog">
+      <header class="sheet-head">
+        <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+        <h2 id="pair-title">חיבור מכשיר</h2>
+      </header>
+      <div class="sheet-body" id="pair-body"></div>
+    </form>
+  </dialog>
+
   <!-- תפריט -->
   <dialog id="menu-dlg" aria-labelledby="menu-title">
     <form method="dialog">
@@ -123,6 +134,7 @@
   </dialog>
 
   <div class="toast" role="status" aria-live="polite" hidden></div>
+  <script src="../assets/vendor/qrcode.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

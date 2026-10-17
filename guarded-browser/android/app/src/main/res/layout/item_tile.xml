@@ -1,12 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- אריח: אייקון בריבוע, שם, ושם האתר. לחיצה ארוכה — מועדף. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="wrap_content"
-    android:orientation="vertical" android:padding="16dp" android:layout_margin="4dp"
-    android:background="?attr/selectableItemBackground" android:clickable="true"
-    android:focusable="true" android:layoutDirection="rtl">
-    <TextView android:id="@+id/tileLabel" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:textSize="17sp" android:textStyle="bold"/>
-    <TextView android:id="@+id/tileUrl" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:textSize="13sp"
-        android:textColor="@color/dim" android:layoutDirection="ltr" android:textDirection="ltr"/>
+    android:layout_width="0dp" android:layout_height="wrap_content"
+    android:orientation="horizontal" android:gravity="center_vertical"
+    android:padding="10dp" android:minHeight="64dp" android:background="@drawable/bg_tile"
+    android:clickable="true" android:focusable="true" android:layoutDirection="rtl">
+    <TextView android:id="@+id/tileIcon" android:layout_width="40dp" android:layout_height="40dp"
+        android:background="@drawable/bg_icon" android:gravity="center" android:textSize="18sp"
+        android:importantForAccessibility="no"/>
+    <LinearLayout android:layout_width="0dp" android:layout_weight="1"
+        android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginStart="10dp">
+        <TextView android:id="@+id/tileLabel" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:textSize="15sp" android:textStyle="bold"
+            android:textColor="@color/ink" android:maxLines="1" android:ellipsize="end"/>
+        <TextView android:id="@+id/tileUrl" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:textSize="12sp" android:textColor="@color/dim"
+            android:maxLines="1" android:ellipsize="end" android:textDirection="ltr" android:gravity="start"/>
+    </LinearLayout>
+    <TextView android:id="@+id/tileStar" android:layout_width="wrap_content"
+        android:layout_height="wrap_content" android:text="⭐" android:textSize="12sp"
+        android:visibility="gone" android:importantForAccessibility="no"/>
 </LinearLayout>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brand">#8AB8DC</color>
+    <color name="brand_ink">#0B1A26</color>
+    <color name="brand_soft">#1F3142</color>
+    <color name="bg">#111318</color>
+    <color name="surface">#1B1E26</color>
+    <color name="ink">#E8EAF0</color>
+    <color name="dim">#9AA1B2</color>
+    <color name="line">#2C303B</color>
+    <color name="ok">#6FCF97</color>
+    <color name="warn">#F5B83D</color>
+    <color name="danger">#F2A49D</color>
+    <color name="ok_soft">#1C2E24</color>
+    <color name="warn_soft">#33290F</color>
+    <color name="danger_soft">#3A1F1D</color>
+</resources>

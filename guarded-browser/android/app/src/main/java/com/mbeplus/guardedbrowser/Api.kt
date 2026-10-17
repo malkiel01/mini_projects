@@ -37,6 +37,21 @@ object Api {
 
     private fun base() = endpoint(root)
 
+    /** כתובת השרת הנוכחית (עם / בסוף) — לאפליקציית ההורה שנפתחת מתוך האפליקציה. */
+    fun root(): String = root.trimEnd('/') + "/"
+
+    /**
+     * שרת שה-QR של ההורה הצביע עליו. רק לפני צימוד (אין אסימון), ורק https —
+     * אחרי הצימוד הכתובת משתנה רק דרך server_url מהשרת עצמו, אחרי ping.
+     */
+    fun useServer(url: String): Boolean {
+        val target = url.trimEnd('/') + "/"
+        if (!isHttps(target) || store?.isLoggedIn == true) return false
+        root = target
+        store?.apiBase = target
+        return true
+    }
+
     private fun endpoint(r: String) = r.trimEnd('/') + "/api/index.php?do="
 
     private fun isHttps(u: String) =
@@ -154,6 +169,12 @@ object Api {
         call("login", JSONObject().apply {
             put("username", username); put("password", password)
             put("device_name", deviceName); put("device_id", deviceId)
+        }, cb = cb)
+
+    /** צימוד בקוד מאפליקציית ההורה — במקום שם משתמש וסיסמה. */
+    fun pair(code: String, deviceName: String, deviceId: String, cb: (Result) -> Unit) =
+        call("pair", JSONObject().apply {
+            put("code", code); put("device_name", deviceName); put("device_id", deviceId)
         }, cb = cb)
 
     fun policy(token: String, cb: (Result) -> Unit) =

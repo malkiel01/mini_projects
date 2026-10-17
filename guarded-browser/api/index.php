@@ -2,7 +2,7 @@
 /**
  * נקודת הקצה היחידה של האפליקציה.
  *
- * ‏?do=register | login | policy | check | heartbeat | ping
+ * ‏?do=register | login | pair | policy | check | heartbeat | ping
  *
  * ריכוז בקובץ אחד ולא חמישה: כל הבקשות חולקות אימות, טיפול בשגיאות
  * ופורמט תשובה, והפיצול היה מייצר חמישה עותקים של אותה חמישייה.
@@ -16,7 +16,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../lib/auth.php';
 require_once __DIR__ . '/../lib/alerts.php';
-require_once __DIR__ . '/../lib/accounts.php';
+require_once __DIR__ . '/../lib/children.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -257,6 +257,23 @@ try {
         $token = registerDevice((int) $u['id'], field('device_name'), field('device_id'), $max);
         audit((int) $u['id'], 'login', true, '', 'ok', field('device_name'));
 
+        out(['ok' => true, 'token' => $token] + policyPayload($u));
+    }
+
+    /* ── צימוד בקוד (שלב 4) ──────────────────────────────────────
+     * ההורה מציג QR או קוד; המכשיר שולח אותו ומקבל אסימון — בלי סיסמה.
+     * הגבלת ניסיונות לפי IP: קוד בן 8 תווים, תקף 10 דקות, ו-8 ניסיונות
+     * ברבע שעה — ניחוש אינו אפשרי מעשית.
+     */
+    if ($do === 'pair') {
+        $ipKey = 'pair:' . ($_SERVER['REMOTE_ADDR'] ?? '');
+        if (tooManyFailures($ipKey)) bad('יותר מדי ניסיונות. נסו שוב בעוד רבע שעה.', 'rate_limited', 429);
+        [$u, $token, $err] = pairRedeem(field('code'), field('device_name'), field('device_id'));
+        if ($err) {
+            audit(0, 'login_fail', false, '', 'pair', $ipKey);
+            bad($err, 'pair_failed', 400);
+        }
+        audit((int) $u['id'], 'paired', true, '', 'ok', field('device_name'));
         out(['ok' => true, 'token' => $token] + policyPayload($u));
     }
 
