@@ -256,3 +256,15 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 .cred code { font: 600 1.2rem/1.2 ui-monospace, Menlo, Consolas, monospace; direction: ltr; color: var(--brand); user-select: all; }
 .steps { padding-inline-start: 1.2em; display: grid; gap: 4px; font-size: .9rem; }
 .seg.mini input[value=""]:checked + span { background: var(--bg); color: var(--muted); }
+
+/* ── בקשות גישה (שלב 6) ─────────────────────────────────────────── */
+#requests .list { border-color: color-mix(in srgb, var(--star) 45%, var(--line)); }
+.card.req { cursor: default; }
+.card.req:hover { background: none; }
+.card.req .l2[dir="ltr"] { color: var(--ink); }
+.req-url { font: .85rem/1.4 ui-monospace, Menlo, Consolas, monospace; overflow-wrap: anywhere; padding: var(--s2) var(--s3);
+           background: var(--bg); border: 1px solid var(--line); border-radius: var(--r); margin: 0 0 var(--s2); }
+.recent { margin-top: var(--s4); }
+.recent summary { cursor: pointer; padding: var(--s2) 0; }
+#req-title .chip { vertical-align: middle; margin-inline-start: 4px; }
+#requests:not([hidden]) + .toolbar { margin-top: var(--s4); }

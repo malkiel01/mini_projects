@@ -62,11 +62,20 @@
     </header>
     <main id="main" tabindex="-1">
       <div id="banner"></div>
+      <div id="push-nudge"></div>
+      <section id="requests" hidden aria-labelledby="req-title">
+        <h2 class="sec-title" id="req-title">🙋 בקשות גישה <span class="chip warn" id="req-count"></span></h2>
+        <ul class="list" id="req-list"></ul>
+      </section>
       <div class="toolbar">
         <h2 class="sec-title" style="flex:1;margin:0">הילדים שלי</h2>
         <button class="btn primary" id="kid-new"><span aria-hidden="true">+</span> ילד</button>
       </div>
       <ul class="list" id="kids"></ul>
+      <details class="recent" id="req-recent" hidden>
+        <summary class="muted">בקשות שטופלו לאחרונה</summary>
+        <ul class="list" id="req-done"></ul>
+      </details>
     </main>
   </div>
 
@@ -104,6 +113,17 @@
     </form>
   </dialog>
 
+  <!-- אישור בקשה -->
+  <dialog id="req-dlg" aria-labelledby="req-dlg-title">
+    <form method="dialog">
+      <header class="sheet-head">
+        <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+        <h2 id="req-dlg-title">אישור בקשה</h2>
+      </header>
+      <div class="sheet-body" id="req-dlg-body"></div>
+    </form>
+  </dialog>
+
   <!-- תפריט -->
   <dialog id="menu-dlg" aria-labelledby="menu-title">
     <form method="dialog">
@@ -113,6 +133,7 @@
       </header>
       <div class="sheet-body">
         <ul class="menu-list list">
+          <li><button type="button" id="m-push">🔔 התראות לטלפון</button></li>
           <li><button type="button" id="m-install">📲 התקנה כאפליקציה</button></li>
           <li><button type="button" id="m-pass">🔑 החלפת סיסמה</button></li>
           <li><button type="button" id="m-out">🚪 יציאה</button></li>

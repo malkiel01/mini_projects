@@ -68,6 +68,7 @@ function childNewPassword(int $childId): string {
 function childDelete(int $childId): void {
     db()->beginTransaction();
     foreach (['audit', 'alerts', 'traces'] as $t) q("DELETE FROM $t WHERE user_id = ?", [$childId]);
+    q('DELETE FROM access_requests WHERE child_id = ?', [$childId]);
     q('DELETE FROM users WHERE id = ?', [$childId]);   // השאר — ON DELETE CASCADE
     db()->commit();
 }
@@ -319,6 +320,7 @@ function childCard(array $u): array {
         'status'        => $u['status'],
         'last_seen_at'  => $u['last_seen_at'],
         'devices'       => (int) one('SELECT COUNT(*) n FROM devices WHERE user_id = ?', [$id])['n'],
+        'requests'      => (int) one("SELECT COUNT(*) n FROM access_requests WHERE child_id = ? AND status = 'pending'", [$id])['n'],
         'used_sec'      => $used,
         'quota_min'     => $quota,
         'allowed_now'   => (bool) $live['allow'],
@@ -352,7 +354,9 @@ function childDetail(array $u, array $allowedYt): array {
         'rules' => array_map(fn($r) => [
             'id' => (int) $r['id'], 'label' => $r['label'], 'pattern' => $r['pattern'], 'scope' => $r['scope'],
             'action' => $r['action'], 'show_tile' => (bool) $r['show_tile'], 'enabled' => (bool) $r['enabled'],
-        ], all('SELECT * FROM rules WHERE user_id = ? ORDER BY sort_order, id', [$id])),
+            'expires_at' => (string) ($r['expires_at'] ?? ''),
+        ], all("SELECT * FROM rules WHERE user_id = ? AND (expires_at = '' OR expires_at > ?) ORDER BY sort_order, id",
+               [$id, nowIso()])),
         'youtube' => (function () use ($id, $allowedYt) {
             $r = platformRulesFor($id)[PLATFORM_YOUTUBE] ?? ['mode' => 'off', 'allow_search' => 0, 'allow_shorts' => 0];
             return [

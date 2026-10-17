@@ -207,6 +207,14 @@ object Api {
             put("sdk", android.os.Build.VERSION.SDK_INT)
         }, token, cb)
 
+    /** בקש גישה (שלב 6): ההורה מקבל התראה. ‏note — "למה?", לא חובה. */
+    fun request(token: String, url: String, note: String, cb: (Result) -> Unit) =
+        call("request", JSONObject().apply { put("url", url); put("note", note) }, token, cb)
+
+    /** הבקשות של הילד מהיממה האחרונה, עם המצב שלהן. */
+    fun requests(token: String, cb: (Result) -> Unit) =
+        call("requests", JSONObject(), token, cb)
+
     fun heartbeat(token: String, seconds: Int, sessionSec: Int, cb: (Result) -> Unit) =
         call("heartbeat", JSONObject().apply {
             put("seconds", seconds); put("session_sec", sessionSec)

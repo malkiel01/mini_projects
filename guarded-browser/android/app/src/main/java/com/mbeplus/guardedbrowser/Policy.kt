@@ -26,6 +26,8 @@ data class Rule(
     val scope: String,      // exact | domain | domain_plus
     val action: String,     // allow | deny
     val showTile: Boolean,
+    /** היתר "לשעה" מבקש גישה (שלב 6): עד מתי, ISO ב-UTC. ריק — קבוע. */
+    val expiresAt: String = "",
 ) {
     companion object {
         fun from(o: JSONObject) = Rule(
@@ -34,6 +36,7 @@ data class Rule(
             scope = o.optString("scope", "domain"),
             action = o.optString("action", "allow"),
             showTile = o.optBoolean("show_tile", true),
+            expiresAt = o.optString("expires_at", ""),
         )
     }
 }
@@ -517,6 +520,18 @@ object PolicyEngine {
 
     fun stringList(arr: JSONArray?): List<String> =
         (0 until (arr?.length() ?: 0)).map { arr!!.optString(it) }.filter { it.isNotEmpty() }
+
+    /**
+     * רק כללים שלא פג תוקפם — כמו rulesFor בשרת. ‏nowIso באותה צורה שהשרת כותב
+     * (‎2026-10-17T20:00:00Z), ולכן השוואת מחרוזות היא השוואת זמנים.
+     * בלי זה, מכשיר בלי רשת היה ממשיך ליהנות מ"שעה" שנגמרה.
+     */
+    fun liveRules(rules: List<Rule>, nowIso: String): List<Rule> =
+        rules.filter { it.expiresAt.isEmpty() || it.expiresAt > nowIso }
+
+    fun nowIso(ms: Long = System.currentTimeMillis()): String =
+        java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
+            .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date(ms))
 
     fun rulesFrom(arr: JSONArray?): List<Rule> =
         (0 until (arr?.length() ?: 0)).map { Rule.from(arr!!.getJSONObject(it)) }

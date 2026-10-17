@@ -68,6 +68,7 @@ class Store(context: Context) {
             .putString("ad_hosts", payload.optJSONArray("ad_hosts")?.toString() ?: "[]")
             .putString("ad_css", payload.optString("ad_css"))
             .putString("name", payload.optJSONObject("user")?.optString("name") ?: "")
+            .putString("rev", payload.optString("rev"))
             .putLong("policy_at", System.currentTimeMillis())
             .apply()
     }
@@ -77,8 +78,29 @@ class Store(context: Context) {
         catch (e: Exception) { Policy() }
 
     fun rules(): List<Rule> = try {
-        PolicyEngine.rulesFrom(JSONArray(prefs.getString("rules", "[]") ?: "[]"))
+        PolicyEngine.liveRules(PolicyEngine.rulesFrom(JSONArray(prefs.getString("rules", "[]") ?: "[]")),
+                               PolicyEngine.nowIso())
     } catch (e: Exception) { emptyList() }
+
+    /** טביעת האצבע של המדיניות השמורה; הפעימה משווה אליה (שלב 6). */
+    val rev: String get() = prefs.getString("rev", "") ?: ""
+
+    /*
+     * בקשות גישה שנשלחו ועוד לא נענו: מזהה → כתובת. המכשיר שואל עליהן
+     * (RequestWatcher) עד שההורה עונה, ואז פותח את הדף לבד.
+     */
+    fun pendingRequests(): Map<Int, String> = try {
+        val o = JSONObject(prefs.getString("pending_req", "{}") ?: "{}")
+        o.keys().asSequence().associate { it.toInt() to o.getString(it) }
+    } catch (e: Exception) { emptyMap() }
+
+    fun addPendingRequest(id: Int, url: String) = savePending(pendingRequests() + (id to url))
+    fun removePendingRequest(id: Int) = savePending(pendingRequests() - id)
+
+    private fun savePending(m: Map<Int, String>) {
+        val o = JSONObject(); for ((k, v) in m) o.put(k.toString(), v)
+        prefs.edit().putString("pending_req", o.toString()).apply()
+    }
 
     /**
      * האריחים שהשרת שלח.

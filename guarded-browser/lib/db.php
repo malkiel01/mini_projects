@@ -111,6 +111,10 @@ function migrate(PDO $pdo): void {
         $pdo->exec("ALTER TABLE users ADD COLUMN account_id INTEGER NOT NULL DEFAULT 0");
         $pdo->exec("CREATE INDEX IF NOT EXISTS idx_users_account ON users(account_id)");
     }
+    // שלב 6: היתר "לשעה" מבקשת גישה — כלל עם תפוגה. '' = קבוע.
+    if (!in_array('expires_at', $columns('rules'), true)) {
+        $pdo->exec("ALTER TABLE rules ADD COLUMN expires_at TEXT NOT NULL DEFAULT ''");
+    }
     migrateToAccounts($pdo);
 }
 
@@ -290,8 +294,10 @@ function policyFor(int $userId): array {
 }
 
 function rulesFor(int $userId): array {
-    return all('SELECT * FROM rules WHERE user_id = ? AND enabled = 1
-                ORDER BY sort_order, id', [$userId]);
+    // כלל שפג תוקפו (היתר לשעה) פשוט אינו קיים מבחינת המנוע.
+    return all("SELECT * FROM rules WHERE user_id = ? AND enabled = 1
+                AND (expires_at = '' OR expires_at > ?)
+                ORDER BY sort_order, id", [$userId, nowIso()]);
 }
 
 function usedTodaySeconds(int $userId, string $tz): int {
@@ -411,4 +417,19 @@ function ruleSetFor(int $userId): array {
         'platform_items' => platformItemsFor($userId),
         'owner_of'       => fn(string $v) => youTubeOwner($v),   // ['channel'=>…, 'handle'=>…]
     ];
+}
+
+/**
+ * טביעת אצבע של כל מה שהמכשיר אוכף (שלב 6).
+ *
+ * הפעימה מחזירה אותה, והמכשיר מושך מדיניות מחדש רק כשהיא השתנתה — כך אישור
+ * של בקשה, או שינוי שההורה עשה, מגיעים תוך פעימה אחת (30 שניות) ולא רק בכניסה
+ * הבאה לדפדפן. גם כלל "לשעה" שפג משנה אותה, כי rulesFor כבר לא מחזיר אותו.
+ */
+function policyRev(int $userId): string {
+    $user = one('SELECT status FROM users WHERE id = ?', [$userId]);
+    return substr(md5(json_encode([
+        $user['status'] ?? '', policyFor($userId), rulesFor($userId), categoryRulesFor($userId),
+        platformRulesFor($userId), platformItemsFor($userId),
+    ])), 0, 12);
 }

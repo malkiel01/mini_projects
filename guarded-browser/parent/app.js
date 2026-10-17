@@ -1,7 +1,7 @@
 /*
  * מגדלור — אפליקציית ההורה (SPEC.md, סעיף 10).
  *
- * מסך בית עם הילדים, וגיליון לכל ילד: סיכום · גישה · זמנים · יוטיוב · אתרים · מכשירים.
+ * מסך בית עם בקשות הגישה והילדים, וגיליון לכל ילד: סיכום · גישה · זמנים · יוטיוב · אתרים · מכשירים.
  * כל הטקסט מוצב כ-textContent — שמות וכתובות מגיעים מבחוץ. כל שינוי נושא X-Migdalor ו-X-CSRF.
  */
 'use strict';
@@ -109,6 +109,9 @@ async function boot() {
     $('#family').textContent = `${S.account.name} · ${S.me.name || S.me.login}`;
     renderBanner();
     loadKids();
+    await loadRequests();
+    fromNotification();
+    renderPushNudge();
 }
 
 function showOnly(sel, then) {
@@ -166,7 +169,7 @@ async function loadKids() {
             el('span', { class: 'avatar', style: `--h:${hue(k.name)}`, ariaHidden: 'true', text: initials(k.name) }),
             el('div', { class: 'body' }, [
                 el('div', { class: 'l1' }, [el('span', { text: k.name }), el('span', { class: 't', text: ago(k.last_seen_at) })]),
-                el('div', { class: 'l2', text: `⏱️ היום ${mins(k.used_sec)}${quota}`
+                el('div', { class: 'l2', text: (k.requests ? `🙋 ${k.requests} · ` : '') + `⏱️ היום ${mins(k.used_sec)}${quota}`
                     + (k.blocked_today ? ` · 🚫 ${k.blocked_today} חסימות` : '') + ` · 📱 ${k.devices}` }),
             ]),
             chip,
@@ -360,7 +363,8 @@ function kidSites() {
     const rows = K.rules.length ? el('ul', { class: 'rows' }, K.rules.map(r => el('li', { style: r.enabled ? '' : 'opacity:.55' }, [
         el('span', { text: r.action === 'deny' ? '🚫' : '✅', ariaHidden: 'true' }),
         el('span', { class: 'nm' }, [r.label || r.pattern,
-            el('small', { text: `${r.label ? r.pattern + ' · ' : ''}${SCOPES[r.scope] || r.scope}${r.enabled ? '' : ' · מושבת'}` })]),
+            el('small', { text: `${r.label ? r.pattern + ' · ' : ''}${SCOPES[r.scope] || r.scope}${r.enabled ? '' : ' · מושבת'}`
+                + (r.expires_at ? ` · עד ${new Date(r.expires_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}` : '') })]),
         el('button', { type: 'button', class: 'icon-btn', text: r.enabled ? '⏸️' : '▶️', ariaLabel: r.enabled ? 'השבתה' : 'הפעלה',
             onclick: () => act('rule_toggle', { rule_id: r.id }) }),
         el('button', { type: 'button', class: 'icon-btn', text: '🗑️', ariaLabel: 'מחיקה', onclick: () => {
@@ -507,6 +511,142 @@ function showCreds(name, username, password, newId = 0) {
     if (!$('#add-dlg').open) $('#add-dlg').showModal();
 }
 
+/* ── בקשות גישה (שלב 6) ─────────────────────────────────────────── */
+
+const RSCOPE = { page: ['📄 הדף הזה', 'רק הכתובת שהוא ביקש.'], site: ['🌐 כל האתר', 'כל הדפים באתר, ויופיע לו כאריח.'],
+                 hour: ['⏳ לשעה', 'כל האתר, לשעה אחת. אחר כך נסגר לבד.'] };
+const RSCOPE_YT = { page: ['🎬 הסרטון הזה', 'רק הסרטון שביקש.'], site: ['📺 כל הערוץ', 'כל הסרטונים של הערוץ — נוסף לרשימת יוטיוב.'] };
+let R = [];
+
+async function loadRequests() {
+    try { R = (await call('requests', {})).requests; } catch (e) { return; }
+    renderRequests();
+}
+
+function renderRequests() {
+    const open = R.filter(r => r.status === 'pending'), done = R.filter(r => r.status !== 'pending');
+    $('#requests').hidden = !open.length;
+    $('#req-count').textContent = String(open.length);
+    $('#req-list').replaceChildren(...open.map(r => el('li', { class: 'card req' }, [
+        el('span', { class: 'avatar', style: `--h:${hue(r.child)}`, ariaHidden: 'true', text: initials(r.child) }),
+        el('div', { class: 'body' }, [
+            el('div', { class: 'l1' }, [el('span', { text: r.child }), el('span', { class: 't', text: ago(r.created_at).replace('מחובר עכשיו', 'עכשיו') })]),
+            el('div', { class: 'l2', dir: 'ltr', style: 'text-align:end', text: r.host }),
+            r.note ? el('div', { class: 'l2', text: `"${r.note}"` }) : null,
+        ]),
+        el('button', { type: 'button', class: 'icon-btn', text: '✕', ariaLabel: `דחייה — ${r.host}`, onclick: () => decide(r, 'deny') }),
+        el('button', { type: 'button', class: 'btn primary sm', text: '✓ אישור', onclick: () => openDecide(r) }),
+    ])));
+    $('#req-recent').hidden = !done.length;
+    $('#req-done').replaceChildren(...done.slice(0, 15).map(r => el('li', { class: 'card', style: 'cursor:default' }, [
+        el('span', { text: r.status === 'approved' ? '✅' : '🚫', ariaHidden: 'true' }),
+        el('div', { class: 'body' }, [
+            el('div', { class: 'l1' }, [el('span', { text: `${r.child} · ${r.host}` })]),
+            el('div', { class: 'l2', text: r.status === 'approved'
+                ? `אושר — ${((r.scopes.length === 2 ? RSCOPE_YT : RSCOPE)[r.scope] || [r.scope])[0]}` : 'נדחה' }),
+        ]),
+    ])));
+}
+
+function openDecide(r) {
+    const yt = r.scopes.length === 2, map = yt ? RSCOPE_YT : RSCOPE;
+    const hint = el('p', { class: 'hint', text: map[r.scopes[0]][1] });
+    const pick = seg('req_scope', r.scopes.map(k => [k, map[k][0]]), r.scopes[0],
+        { cols: r.scopes.length, onchange: v => { hint.textContent = map[v][1]; } });
+    $('#req-dlg-title').textContent = `${r.child} מבקש/ת`;
+    $('#req-dlg-body').replaceChildren(
+        el('p', { class: 'req-url', dir: 'ltr', text: r.url }),
+        r.note ? el('p', { class: 'hint', text: `למה: "${r.note}"` }) : null,
+        group('מה לפתוח', '', [pick, hint]),
+        el('div', { class: 'row-btns' }, [
+            el('button', { type: 'button', class: 'btn ghost', text: '✕ דחייה', onclick: () => { $('#req-dlg').close(); decide(r, 'deny'); } }),
+            el('button', { type: 'button', class: 'btn primary', text: '✓ אישור', onclick: () => {
+                $('#req-dlg').close(); decide(r, 'approve', $('[name=req_scope]:checked').value); } }),
+        ]));
+    if (!$('#req-dlg').open) $('#req-dlg').showModal();
+}
+
+async function decide(r, decision, scope = 'page') {
+    try {
+        const res = await call('request_decide', { req: r.id, decision, scope });
+        R = res.requests; renderRequests(); loadKids(); toast(res.message);
+    } catch (e) { toast(e.message, true); loadRequests(); }
+}
+
+/** נפתח מהתראה: ‏?req=ID (ו-&d=approve|deny מהכפתורים שבהתראה). */
+function fromNotification() {
+    const q = new URLSearchParams(location.search), id = Number(q.get('req'));
+    if (!id) return;
+    history.replaceState(null, '', location.pathname);
+    const r = R.find(x => x.id === id);
+    if (!r) return;
+    if (r.status !== 'pending') { toast(r.status === 'approved' ? 'כבר אושר' : 'כבר נדחה'); return; }
+    if (q.get('d') === 'deny') decide(r, 'deny'); else openDecide(r);
+}
+
+// כשהאפליקציה פתוחה — רענון כל חצי דקה, ומיד כשחוזרים אליה.
+setInterval(() => { if (S.me && !document.hidden) loadRequests(); }, 30000);
+document.addEventListener('visibilitychange', () => { if (S.me && !document.hidden) { loadRequests(); loadKids(); } });
+navigator.serviceWorker?.addEventListener('message', e => {
+    if (e.data?.type === 'open' && e.data.url) { history.replaceState(null, '', e.data.url); loadRequests().then(fromNotification); }
+});
+
+/* ── התראות לטלפון ─────────────────────────────────────────────── */
+
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const b64 = s => Uint8Array.from(atob((s + '==='.slice((s.length + 3) % 4)).replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+
+async function pushSub() {
+    if (!pushSupported()) return null;
+    const reg = await navigator.serviceWorker.ready;
+    return reg.pushManager.getSubscription();
+}
+
+async function pushOn() {
+    if (!pushSupported()) {
+        const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+        toast(ios ? 'באייפון: קודם "הוספה למסך הבית", ואז מפעילים מהאפליקציה' : 'הדפדפן הזה לא תומך בהתראות', true);
+        return false;
+    }
+    if (await Notification.requestPermission() !== 'granted') { toast('ההתראות חסומות בהגדרות הדפדפן', true); return false; }
+    try {
+        const { key } = await call('push_key', {});
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription()
+            || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(key) });
+        await call('push_sub', { endpoint: sub.endpoint });
+        toast('🔔 ההתראות פועלות — תשמעו כשילד מבקש גישה');
+        return true;
+    } catch (e) { toast(e.message || 'ההפעלה נכשלה', true); return false; }
+}
+
+async function pushOff() {
+    const sub = await pushSub();
+    if (sub) { try { await call('push_unsub', { endpoint: sub.endpoint }); } catch { } await sub.unsubscribe(); }
+    toast('ההתראות כובו');
+}
+
+async function renderPushNudge() {
+    const box = $('#push-nudge');
+    if (!pushSupported() || Notification.permission === 'denied' || await pushSub() || localStorage.getItem('mg:nudge') === 'no') {
+        box.replaceChildren(); return;
+    }
+    box.replaceChildren(el('div', { class: 'banner info' }, [el('span', { text: '🔔', ariaHidden: 'true' }), el('div', {}, [
+        el('b', { text: 'התראה כשילד מבקש גישה' }), 'בלי זה תראו בקשות רק כשתפתחו את האפליקציה.',
+        el('div', { class: 'row-btns', style: 'margin-top:8px' }, [
+            el('button', { type: 'button', class: 'btn ghost sm', text: 'לא עכשיו', onclick: () => {
+                try { localStorage.setItem('mg:nudge', 'no'); } catch { } box.replaceChildren(); } }),
+            el('button', { type: 'button', class: 'btn primary sm', text: 'הפעלה', onclick: async () => { if (await pushOn()) box.replaceChildren(); } }),
+        ])])]));
+}
+
+$('#m-push').addEventListener('click', async () => {
+    $('#menu-dlg').close();
+    if (await pushSub()) { if (confirm('לכבות את ההתראות בטלפון הזה?')) await pushOff(); }
+    else await pushOn();
+    renderPushNudge();
+});
+
 /* ── תפריט והתקנה ─────────────────────────────────────────────── */
 
 let installPrompt = null;
@@ -516,6 +656,7 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
 $('#menu-btn').addEventListener('click', () => {
     $('#pass-box').hidden = true; $('#install-box').hidden = true;
     $('#m-install').hidden = matchMedia('(display-mode: standalone)').matches;
+    pushSub().then(s => { $('#m-push').textContent = s ? '🔕 כיבוי ההתראות לטלפון' : '🔔 התראות לטלפון'; }).catch(() => {});
     $('#menu-dlg').showModal();
 });
 $('#m-install').addEventListener('click', async () => {
