@@ -2,6 +2,7 @@
 <!-- שפת "הטלפון קודם" של מגדלור — אותם צבעים כמו ב-assets/migdalor.css. -->
 <resources>
     <color name="brand">#1D4A6E</color>
+    <color name="ic_launcher_background">#1D4A6E</color>
     <color name="brand_ink">#FFFFFF</color>
     <color name="brand_soft">#E6EFF6</color>
     <color name="bg">#F4F5F7</color>
