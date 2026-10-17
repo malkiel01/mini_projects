@@ -10,6 +10,7 @@
 declare(strict_types=1);
 
 require __DIR__ . '/lib/gate.php';
+require __DIR__ . '/lib/pwa.php';
 
 use function Platform\Gate\{decide, deny, base_url, record_visit};
 
@@ -64,10 +65,22 @@ if ($verdict !== null) {
 }
 if (in_array($ext, ['html', 'htm'], true)) record_visit($app);
 
+// דף HTML / manifest של אפליקציה מחוברת — מוגשים עם התוספות של הפלטפורמה (lib/pwa.php):
+// בדיקת ההתקנה והפס "התקנה" בדף, ו-related_applications ב-manifest. קטנים — נקראים לזיכרון.
+$cfg = \Platform\Gate\app_config($app);
+$patched = null;
+if (\Platform\Pwa\applies($app, $cfg) && filesize($file) < 2_000_000) {
+    if (in_array($ext, ['html', 'htm'], true)) {
+        $patched = \Platform\Pwa\inject_html((string)file_get_contents($file), $app, $cfg, $base);
+    } elseif ($ext === 'webmanifest' || ($ext === 'json' && preg_match('#(^|/)manifest\.json$#', $rel))) {
+        $patched = \Platform\Pwa\patch_manifest((string)file_get_contents($file), \Platform\Pwa\absolute($base . $app . '/' . $rel));
+    }
+}
+
 // ---- הגשה ----
-$size  = filesize($file);
+$size  = $patched !== null ? strlen($patched) : filesize($file);
 $mtime = filemtime($file);
-$etag  = '"' . dechex($mtime) . '-' . dechex($size) . '"';
+$etag  = '"' . dechex($mtime) . '-' . dechex($size) . ($patched !== null ? '-p' : '') . '"';
 header('Content-Type: ' . TYPES[$ext]);
 header('ETag: ' . $etag);
 header('Last-Modified: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
@@ -98,6 +111,10 @@ if (preg_match('/^bytes=(\d*)-(\d*)$/', $_SERVER['HTTP_RANGE'] ?? '', $m) && ($m
 }
 header('Content-Length: ' . ($end - $start + 1));
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'HEAD') exit;
+if ($patched !== null) {
+    echo substr($patched, $start, $end - $start + 1);
+    exit;
+}
 
 $fh = fopen($file, 'rb');
 fseek($fh, $start);

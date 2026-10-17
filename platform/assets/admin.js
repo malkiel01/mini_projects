@@ -626,14 +626,16 @@ window.PlatformAdmin = (() => {
     // הצד של הספק — platform/sso.php. המדריך לאפליקציות — platform/docs/sso.md.
 
     // מה מותקן בכל מכשיר של המשתמש (lib/installs.php). "_platform" — הכלים הדיגיטליים עצמם.
-    const METHOD = { pwa: 'אפליקציה', apk: 'APK', store: 'Google Play', manual: 'סימון ידני', auto: 'זוהה לבד' };
+    const HOW = { opened: 'נפתחה מהאייקון', detected: 'הדפדפן אישר', installed: 'הותקנה', prompt: 'הדפדפן אישר שלא' };
     function userDevices(u) {
         return el('ul', { className: 'list' }, u.devices.map(d => el('li', { className: 'dev-row' }, [
             el('div', { className: 'dev-head' }, [el('b', { textContent: `📱 ${d.device}` }),
-                el('small', { className: 'muted', textContent: `עודכן ${relTime(d.updated_at)}` })]),
+                el('small', { className: 'muted', textContent: `נבדק ${relTime(d.checked_at)}` })]),
+            // ירוק — מותקנת (אומת במכשיר); אפור מחוק — הדפדפן אישר שלא מותקנת.
             el('div', { className: 'chips-row' }, d.apps.map(a => {
                 const info = a.app_id === '_platform' ? { icon: '🧩', name: 'כלים דיגיטליים' } : appInfo(a.app_id);
-                return el('span', { className: 'chip ok', title: METHOD[a.method] || a.method, textContent: `${info.icon} ${info.name}` });
+                return el('span', { className: `chip ${a.state === 'installed' ? 'ok' : 'gone'}`,
+                    title: `${HOW[a.how] || a.how} · ${relTime(a.checked_at)}`, textContent: `${info.icon} ${info.name}` });
             })),
         ])));
     }
