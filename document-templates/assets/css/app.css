@@ -981,6 +981,12 @@ dialog.sheet:has(.list-sheet) { width: min(900px, 100vw); }
 .invite-ic { flex: none; display: grid; place-items: center; width: 48px; height: 48px; border-radius: var(--r); background: var(--brand-soft); font-size: 1.5rem; }
 .invite-btns { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
 .invite-btns .btn { display: inline-flex; align-items: center; justify-content: center; min-height: var(--tap); text-decoration: none; }
+.share-fill { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); border-radius: var(--r);
+  border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent); background: color-mix(in srgb, var(--ok) 8%, var(--surface)); }
+.share-fill[hidden] { display: none; }
+.share-fill > div { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.share-fill small { color: var(--muted); }
+.share-fill button { flex: none; min-height: var(--tap); white-space: nowrap; }
 /* טלפון צר: ההרשאה וניתוק יורדים לשורה שנייה, מתחת לשם */
 @media (max-width: 419px) {
   .share-row:not(.owner) { flex-wrap: wrap; }

@@ -371,12 +371,8 @@
         el('div', { class: 'icons' },
           fill ? null : ib('📜', 'יומן', 'יומן', () => { side(journal, people); renderJournal(); }),
           // שליחה למילוי — תמיד גלוי: יש ממלא בקישור → הקישור שלו; אין → הסבר איך מוסיפים
-          fill || lvl() < 3 ? null : ib('🔗', 'שליחה למילוי', 'משתתפים', () => {
-            // אין עדיין ממלא בקישור — קודם "מי ממלא מה"; יש — ישר למי לשלוח (ושם "⚙️ מי ממלא מה" לשינוי)
-            if (editable() && !(doc.participants || []).length) return shareSetup();
-            side(people, journal); renderPeople();
-          }),
-          !fill && lvl() >= 4 ? ib('📤', 'שיתוף', 'שיתוף', () => window.DT.shareDialog('document', id, doc.title, reload)) : null,
+          fill || lvl() < 3 ? null : ib('🔗', 'שליחה למילוי', 'משתתפים', openFill),
+          !fill && lvl() >= 4 ? ib('📤', 'שיתוף', 'שיתוף', () => window.DT.shareDialog('document', id, doc.title, reload, { fill: lvl() >= 3 ? openFill : null })) : null,
           !fill && doc.access && doc.access !== 'owner' ? ib('🚪', 'עזיבה', 'עזיבה', () => window.DT.leave('document', id, doc.title)) : null,
           fill ? null : ib('📑', 'שכפול', 'שכפול — מסמך חדש עם אותם ערכים', duplicate),
           fill || isWord || isAuthored ? null : outBtn(pdfBtn),
@@ -1206,13 +1202,19 @@
         { action: go });
     }
 
+    // שליחה למילוי: אין עדיין ממלא בקישור — קודם "מי ממלא מה"; יש — ישר למי לשלוח (ושם "⚙️ מי ממלא מה" לשינוי)
+    function openFill() {
+      if (editable() && !(doc.participants || []).length) return shareSetup();
+      side(people, journal); renderPeople();
+    }
+
     function renderPeople() {
       if (fill || people.hidden) return;
       people.replaceChildren(...[
         el('div', { class: 'row' }, el('h2', {}, '🔗 שליחה למילוי'), el('button', { class: 'link small', onclick: () => { people.hidden = true; } }, 'סגירה')),
         editable() && lvl() >= 3 && !doc.participants.some(p => p.status === 'completed')
           ? el('button', { type: 'button', class: 'small', onclick: shareSetup }, '⚙️ מי ממלא מה — שדות הלקוח בשיתוף הזה') : null,
-        el('p', { class: 'muted small' }, 'לכל ממלא: בוחרים איש קשר (או כותבים שם, מייל וטלפון) ← שולחים במייל, בוואטסאפ, או מעתיקים את הקישור ושולחים בעצמכם.'),
+        el('p', { class: 'muted small' }, 'לכל ממלא: בוחרים איש קשר, או כותבים פרטים ← שולחים. 💬 לוואטסאפ מספיק מספר טלפון — בלי מייל ובלי חשבון.'),
         doc.schema.sequential ? el('p', { class: 'muted small' }, 'לפי הסדר: הקישור הבא נשלח אוטומטית במייל כשהקודם מסיים.') : null,
         ...doc.participants.map(p => {
           // ממלא בקישור = איש קשר: בוחרים מהרשימה, או כותבים פרטים — והם נשמרים כאיש קשר.
@@ -1263,6 +1265,14 @@
             }
           };
           const done = !!p.completed_at;
+          // וואטסאפ — לטלפון בלי חשבון ובלי מייל. הכפתור הראשי הוא מה שיש: טלפון בלי מייל → וואטסאפ
+          const waBtn = el('button', { class: 'small', onclick: () => act('whatsapp') }, '💬 וואטסאפ');
+          const mailBtn = el('button', { class: 'small', onclick: () => act('email') }, '✉ מייל');
+          const paintMain = () => {
+            const wa = phone.value.trim() !== '' && email.value.trim() === '';
+            waBtn.classList.toggle('primary', wa); mailBtn.classList.toggle('primary', !wa);
+          };
+          phone.addEventListener('input', paintMain); email.addEventListener('input', paintMain); paintMain();
           return el('div', { class: 'person' },
             el('div', { class: 'row' }, el('strong', {}, p.role),
               el('span', { class: 'badge ' + (done ? 'ok' : p.opened_at ? 'warn' : 'muted') }, PSTATUS[p.status] || p.status)),
@@ -1276,8 +1286,7 @@
             done ? null : linkInfo,
             p.blocked && !done ? el('p', { class: 'muted small' }, p.blocked) : null,
             done || p.blocked ? null : el('div', { class: 'ops' },
-              el('button', { class: 'small primary', onclick: () => act('email') }, '✉ מייל'),
-              el('button', { class: 'small', onclick: () => act('whatsapp') }, 'וואטסאפ'),
+              waBtn, mailBtn,
               el('button', { class: 'small', onclick: () => act('link') }, '🔗 העתקת קישור')),
             p.missing.length && !done ? el('div', { class: 'muted small' }, 'חסר אצלו: ' + p.missing.join(', ')) : null);
         }),
