@@ -1253,3 +1253,10 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .sg-item .one { color: var(--brand); font-weight: 600; }
 .sg-item .muted, .sg-line .muted { font-size: .8rem; }
 .sg-un .sg-line { border-style: solid; }
+
+/* צוות: בשורה רק חיוג ו-⋯; הפעולות עם מילים — בשורה שנפתחת מתחת */
+.team-row { flex-wrap: wrap; }
+.team-row .acts .icon-btn[data-team-more] { font-weight: 700; color: var(--muted); }
+.team-row .team-more { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: var(--s1); padding-block: var(--s1) 0; }
+.team-row .team-more[hidden] { display: none; }
+.team-row .team-more .btn { flex: 1 1 auto; }
