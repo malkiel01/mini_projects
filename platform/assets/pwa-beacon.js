@@ -15,6 +15,7 @@
     if (!me || window.__platformPwa) return;
     window.__platformPwa = true;
     const APP = me.dataset.app, NAME = me.dataset.name || APP, API = me.dataset.api;
+    const BANNER = me.dataset.banner !== '0';   // "install": {"banner": false} ב-app.json
     const UA = navigator.userAgent;
     const isIOS = /iPhone|iPad|iPod/.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const isMobile = isIOS || /Android/.test(UA);
@@ -94,7 +95,7 @@
     const KEY = `platform:pwa-bar:${APP}`;
     const dismissed = () => { try { return Number(localStorage.getItem(KEY) || 0) > Date.now(); } catch { return false; } };
     function maybeShow() {
-        if (bar || installed || (!forced && (!isMobile || dismissed()))) return;
+        if (!BANNER || bar || installed || (!forced && (!isMobile || dismissed()))) return;
         bar = makeBar();
     }
     // נותנים לבדיקות רגע — שלא יופיע פס לאפליקציה שכבר מותקנת.

@@ -106,7 +106,7 @@ function registry_validate(string $folder, $app, array $categoryIds): ?string
     }
     $install = $app['install'] ?? [];
     if (!is_array($install)) return 'install חייב להיות אובייקט';
-    foreach (['pwa', 'offline'] as $k) {
+    foreach (['pwa', 'offline', 'banner'] as $k) {
         if (isset($install[$k]) && !is_bool($install[$k])) return "install.$k חייב להיות true או false";
     }
     if (isset($install['apk']) && !preg_match('#^https://#', (string)$install['apk']) && !registry_safe_path($install['apk'])) {

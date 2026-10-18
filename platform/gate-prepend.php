@@ -33,12 +33,12 @@
     }
     \Platform\Gate\record_visit($app);
 
-    // דף PHP של אפליקציה מחוברת — בדיקת ההתקנה והפס "התקנה" (lib/pwa.php).
+    // דף PHP של אפליקציה מחוברת — בדיקת ההתקנה והפס "התקנה" (lib/pwa.php). לא בדף ציבורי.
     try {
         require_once __DIR__ . '/lib/pwa.php';
         $cfg = \Platform\Gate\app_config($app);
         if (\Platform\Pwa\applies($app, $cfg)) {
-            \Platform\Pwa\inject_php_page($app, $cfg, \Platform\Gate\base_url($_SERVER['SCRIPT_NAME'] ?? '/', $rel));
+            \Platform\Pwa\inject_php_page($app, $cfg, \Platform\Gate\base_url($_SERVER['SCRIPT_NAME'] ?? '/', $rel), $path, $params);
         }
     } catch (\Throwable $e) {
         error_log('platform pwa: ' . $e->getMessage());   // לעולם לא מפיל את הכלי
