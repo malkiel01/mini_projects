@@ -55,7 +55,7 @@ function pm_changes_of(int $projectId, string $role = ''): array
     }
     return array_map(fn($o) => [
         'id' => (int)$o['id'], 'stage_id' => (int)$o['stage_id'], 'stage' => $o['stage'], 'supplier_id' => (int)$o['supplier_id'], 'supplier' => $o['supplier'],
-        'amount' => (int)$o['amount'] / 100, 'vat_rate' => $o['vat_exempt'] ? 0.0 : ($o['vat_rate'] !== null ? (float)$o['vat_rate'] : pm_vat_rate()),
+        'amount' => (int)$o['amount'] / 100, 'vat_rate' => $o['vat_exempt'] ? 0.0 : ($o['vat_rate'] !== null ? (float)$o['vat_rate'] : pm_vat_rate($projectId)),
         'reason' => $o['reason'], 'status' => $o['status'], 'label' => pm_t(PM_CHANGE_STATUSES[$o['status']] ?? $o['status']),
         'needs_lawyer' => (bool)$o['needs_lawyer'], 'created_at' => $o['created_at'], 'updated_at' => $o['updated_at'],
         'file' => $o['file_id'] && !$o['file_deleted'] ? ['id' => (int)$o['file_id'], 'name' => $o['file_name']] : null,
@@ -92,7 +92,7 @@ function pm_change_save(array $user, array $in): array
     $db = pm_db();
     $db->prepare('INSERT INTO change_orders (project_id, stage_id, supplier_id, amount, reason, file_id, status, needs_lawyer, vat_rate, created_by, created_at, updated_at)
                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
-       ->execute([$projectId, $stage['id'], $supplierId, $amount, $reason, $fileId, 'sent', $needsLawyer, pm_vat_rate(), $user['id'], $now, $now]);
+       ->execute([$projectId, $stage['id'], $supplierId, $amount, $reason, $fileId, 'sent', $needsLawyer, pm_vat_rate($projectId), $user['id'], $now, $now]);
     $id = (int)$db->lastInsertId();
     $supplier = pm_contact_name($supplierId);
     pm_event($user, $projectId, 'change', $amount > 0 ? 'תוספת לאישור הלקוח: {supplier}, {stage} — {amount}: {reason}' : 'הפחתה לאישור הלקוח: {supplier}, {stage} — {amount}: {reason}',

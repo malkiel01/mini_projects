@@ -2585,5 +2585,10 @@
     "השירות סירב לסווג את הקובץ": "The service declined to classify the file",
     "לא התקבלה תשובה מהסיווג": "No answer from the classification",
     "הסכומים": "Amounts",
-    "כולל מע\"מ {n}%": "Incl. {n}% VAT"
+    "כולל מע\"מ {n}%": "Incl. {n}% VAT",
+    "דווח ששולם {amount} — ממתין לאישור קבלה": "Reported paid {amount} — awaiting receipt confirmation",
+    "התשלום נרשם כשולם": "The payment was recorded as paid",
+    "מע\"מ (%)": "VAT (%)",
+    "מע\"מ — לסכומים חדשים בפרויקט (הצעות, אבני דרך, הוצאות). מה שכבר נרשם נשאר בשיעור שלו.": "VAT — for new amounts in the project (quotes, milestones, expenses). What's already recorded keeps its rate.",
+    "הכסף כבר הועבר לספק — לרשום כ\"שולם\"": "The money was already transferred to the supplier — record as \"paid\""
 }

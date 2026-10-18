@@ -55,7 +55,7 @@ function pm_expense_fields(int $projectId, array $in): array
     return [
         'title' => pm_str($in, 'title', 200, true, 'מה נקנה'), // i18n-ok
         'amount' => pm_quote_amount($in['amount'] ?? null),
-        'vat_rate' => array_key_exists('vat', $in) && !$in['vat'] ? 0.0 : pm_vat_rate(),
+        'vat_rate' => array_key_exists('vat', $in) && !$in['vat'] ? 0.0 : pm_vat_rate($projectId),
         'spent_on' => $spent, 'stage_id' => $stageId,
         'notes' => pm_str($in, 'notes', 1000, false, 'הערה'), // i18n-ok
     ];
@@ -124,7 +124,7 @@ function pm_fee_payments_of(int $projectId): array
     $st = pm_db()->prepare('SELECT * FROM fee_payments WHERE project_id = ? ORDER BY CASE WHEN due_date = \'\' THEN 1 ELSE 0 END, due_date, id');
     $st->execute([$projectId]);
     $today = pm_today();
-    $vat = pm_vat_rate();
+    $vat = pm_vat_rate($projectId);
     return array_map(fn($x) => [
         'id' => (int)$x['id'], 'title' => $x['title'], 'amount' => pm_m((int)$x['amount'], pm_net((int)$x['amount'], $vat)),
         'due_date' => $x['due_date'], 'notes' => $x['notes'],
@@ -198,7 +198,7 @@ function pm_fee_payment_delete(array $user, int $id): array
 function pm_ledger_of(int $projectId, int $supplierId, ?string $lang = null): array
 {
     $db = pm_db();
-    $vat = pm_vat_rate();
+    $vat = pm_vat_rate($projectId);
     $ex = $db->prepare('SELECT vat_exempt FROM contacts WHERE id = ?');
     $ex->execute([$supplierId]);
     $exempt = (bool)$ex->fetchColumn();
@@ -377,7 +377,7 @@ function pm_my_income(array $projects): array
                 $next = ['project_id' => (int)$p['id'], 'project' => $p['name'], 'title' => $x['title'], 'amount' => $x['amount'], 'date' => $x['due_date']];
             }
         }
-        $vat = pm_vat_rate();
+        $vat = pm_vat_rate((int)$p['id']);
         foreach (['amount' => $F['amount'], 'received' => $F['paid'], 'balance' => $F['balance']] as $k => $m) {
             $T[$k][0] += (int)round($m['g'] * 100);
             $T[$k][1] += (int)round($m['n'] * 100);

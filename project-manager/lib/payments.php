@@ -98,7 +98,7 @@ function pm_payment_vat(array $p): float
         $st->execute([$cid]);
         $exempt[$cid] = (bool)$st->fetchColumn();
     }
-    return $exempt[$cid] ? 0.0 : (isset($p['vat_rate']) && $p['vat_rate'] !== null ? (float)$p['vat_rate'] : pm_vat_rate());
+    return $exempt[$cid] ? 0.0 : (isset($p['vat_rate']) && $p['vat_rate'] !== null ? (float)$p['vat_rate'] : pm_vat_rate((int)$p['project_id']));
 }
 
 function pm_payment_proofs(array $ids): array
@@ -260,7 +260,7 @@ function pm_payment_save(array $user, array $in, ?array $actor = null): array
         $cols = implode(', ', array_keys($f));
         $qs = implode(', ', array_fill(0, count($f), '?'));
         $db->prepare("INSERT INTO payments ($cols, project_id, vat_rate, created_by, created_at, updated_at) VALUES ($qs, ?, ?, ?, ?, ?)")
-           ->execute(array_merge(array_values($f), [$projectId, pm_vat_rate(), $user['id'], $now, $now]));
+           ->execute(array_merge(array_values($f), [$projectId, pm_vat_rate($projectId), $user['id'], $now, $now]));
         $id = (int)$db->lastInsertId();
         pm_event($actor, $projectId, 'payment', $f['due_date'] ? 'אבן דרך לתשלום: {title} — {supplier}, {amount} עד {date}' : 'אבן דרך לתשלום: {title} — {supplier}, {amount}',
             ['payment' => $id], $ev);
@@ -309,7 +309,7 @@ function pm_retention_sync(array $user, int $projectId, int $stageId, int $suppl
     $p = ['lawyer_id' => $pl->fetchColumn()];
     $db->prepare("INSERT INTO payments (project_id, stage_id, supplier_id, title, amount, due_date, due_kind, payer, needs_lawyer, kind, vat_rate, notes, created_by, created_at, updated_at, unit_id)
                   VALUES (?, ?, ?, ?, ?, '', 'handover', 'client', ?, 'retention', ?, '', ?, ?, ?, ?)")
-       ->execute([$projectId, $stageId, $supplierId, pm_t('שחרור עיכבון'), $sum, $p['lawyer_id'] ? 1 : 0, pm_vat_rate(), $user['id'], $now, $now, $unit]);
+       ->execute([$projectId, $stageId, $supplierId, pm_t('שחרור עיכבון'), $sum, $p['lawyer_id'] ? 1 : 0, pm_vat_rate($projectId), $user['id'], $now, $now, $unit]);
 }
 
 function pm_short_date(string $ymd): string
@@ -401,6 +401,10 @@ function pm_payment_proof_add(array $user, int $id, array $in, string $byRole, s
     $db->prepare('INSERT INTO payment_proofs (payment_id, amount, paid_on, method, file_id, note, ref_no, by_role, by_name, portal_id, ip, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
        ->execute([$id, $amount, $paidOn, $method, $fileId, $note, $refNo, $byRole, $byName, $portalId, (string)($_SERVER['REMOTE_ADDR'] ?? ''), pm_now()]);
     $db->prepare("UPDATE payments SET status = 'paid', updated_at = ? WHERE id = ?")->execute([pm_now(), $id]);
+    // המנהל רושם תשלום שכבר עבר לספק ("✅ הכסף הועבר") — נרשם מיד כ"התקבל", בלי לחכות לאישור הספק
+    if ($byRole === 'manager' && !empty($in['received'])) {
+        return pm_payment_proof_review($user, (int)$db->lastInsertId(), true, null, '', $actor);
+    }
     pm_event($actor, (int)$p['project_id'], 'payment',
         $fileId ? '💳 דווח תשלום: {title} — {amount} ב{method} ({date}){note}, עם אסמכתא' : '💳 דווח תשלום: {title} — {amount} ב{method} ({date}){note}',
         ['payment' => $id], ['title' => $p['title'], 'amount' => pm_money($amount), 'method' => PM_PAY_METHODS[$method],
