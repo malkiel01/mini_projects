@@ -1030,3 +1030,88 @@ function pm_finance_export(array $user, array $in): never
     echo $csv;
     exit;
 }
+
+/**
+ * 💡 הצעות לאבני דרך — מה שסוכם (או תוקצב) ועוד לא מתוכנן לתשלום. לכל ספק בכל שלב: סוכם פחות מה שכבר באבני דרך.
+ *   • יש חוזה עם הספק שאבני הדרך שלו (הנספח) כוללות את השלב — אבן דרך לכל אחת שעוד לא הושגה, במועד שלה, והפער
+ *     מחולק ביניהן שווה בשווה.
+ *   • אין חוזה, ואין עדיין אבני דרך — חצי באמצע העבודה (התקדמות 50%) וחצי בגמר השלב.
+ *   • כבר יש אבני דרך — היתרה בגמר השלב.
+ *   • שלב עם תקציב בלי הצעה מאושרת — לפי התקציב, לספק של השלב (אם יש); בלי ספק — רק תזכורת ("תקציב שטרם מומש").
+ * המנהל מאשר כל הצעה בחלון אבן הדרך (נפתח ממולא) — שום דבר לא נוצר לבד.
+ */
+function pm_milestone_suggestions(int $projectId): array
+{
+    $db = pm_db();
+    $fin = pm_finance_of($projectId);
+    $contracts = pm_contracts_of($projectId);
+    $st = $db->prepare('SELECT id, name, supplier_id, budget, status FROM stages WHERE project_id = ?');
+    $st->execute([$projectId]);
+    $stages = array_column($st->fetchAll(), null, 'id');
+    $mem = $db->prepare("SELECT contact_id, role_key FROM project_members WHERE project_id = ? AND role_key LIKE 'stage:%'");
+    $mem->execute([$projectId]);
+    $stageSup = [];
+    foreach ($mem->fetchAll() as $m) $stageSup[(int)substr($m['role_key'], 6)][] = (int)$m['contact_id'];
+    $names = [];
+    $nameOf = function (int $id) use (&$names, $db): string {
+        if (!isset($names[$id])) { $q = $db->prepare('SELECT name FROM contacts WHERE id = ?'); $q->execute([$id]); $names[$id] = (string)$q->fetchColumn(); }
+        return $names[$id];
+    };
+    $out = [];
+    $unassigned = [];
+    // אבני דרך לתשלום שכבר קיימות — אבן דרך של החוזה שכבר יש לה תשלום (באותו שם או מועד) לא מוצעת שוב
+    $ex = $db->prepare("SELECT supplier_id, stage_id, title, due_date FROM payments WHERE project_id = ? AND status != 'cancelled' AND kind != 'retention'");
+    $ex->execute([$projectId]);
+    $existing = $ex->fetchAll();
+    $plan = function (int $sid, int $cid, float $gap, string $source, bool $hasMilestones) use ($contracts, $stages, $existing): array {
+        $c = pm_contract_for($contracts, $cid, $sid);
+        $mine = array_filter($existing, fn($x) => (int)$x['supplier_id'] === $cid && (int)$x['stage_id'] === $sid);
+        $covered = fn($m) => (bool)array_filter($mine, fn($x) => trim($x['title']) === trim($m['title']) || ($x['due_date'] !== '' && $x['due_date'] === $m['due_date']));
+        $cms = $c ? array_values(array_filter($c['milestones'], fn($m) => in_array($sid, $m['stage_ids'], true) && !in_array($m['status'], ['done', 'done_late'], true)
+            && $m['due_date'] !== '' && !$covered($m))) : [];
+        $name = $stages[$sid]['name'] ?? '';
+        if ($cms) {
+            $n = count($cms);
+            $each = floor($gap / $n);
+            return ['source' => 'contract', 'items' => array_map(fn($m, $i) => ['title' => $m['title'], 'amount' => $i === $n - 1 ? round($gap - $each * ($n - 1), 2) : $each,
+                'due_kind' => 'date', 'due_date' => $m['due_date']], $cms, array_keys($cms))];
+        }
+        if (!$hasMilestones && $gap >= 2000) {
+            $half = floor($gap / 2);
+            return ['source' => $source, 'items' => [
+                ['title' => pm_t('{stage} — באמצע העבודה', ['stage' => pm_t($name)]), 'amount' => $half, 'due_kind' => 'progress', 'due_pct' => 50],
+                ['title' => pm_t('{stage} — בגמר השלב', ['stage' => pm_t($name)]), 'amount' => round($gap - $half, 2), 'due_kind' => 'stage_done']]];
+        }
+        return ['source' => $source, 'items' => [['title' => pm_t('{stage} — יתרה בגמר השלב', ['stage' => pm_t($name)]), 'amount' => round($gap, 2), 'due_kind' => 'stage_done']]];
+    };
+    foreach ($fin['stages'] as $s) {
+        $sid = (int)($s['stage_id'] ?? 0);
+        if (!$sid || !isset($stages[$sid]) || in_array($stages[$sid]['status'], ['paid'], true)) continue;
+        $committedStage = 0.0;
+        foreach ($s['rows'] as $r) {
+            $committedStage += $r['committed']['g'];
+            $gap = round($r['committed']['g'] - $r['scheduled']['g'], 2);
+            if ($gap < 100) continue; // פחות מ-₪100 — לא שווה אבן דרך
+            $out[] = ['stage_id' => $sid, 'stage' => $s['name'], 'supplier_id' => (int)$r['supplier_id'], 'supplier' => $r['name'],
+                'committed' => $r['committed']['g'], 'scheduled' => $r['scheduled']['g'], 'gap' => $gap]
+                + $plan($sid, (int)$r['supplier_id'], $gap, $r['by_milestones'] ? 'agreed' : 'quote', $r['milestones'] > 0);
+        }
+        // תקציב שעוד לא מכוסה בהצעה / בסיכום עם ספק
+        $budget = $s['budget']['g'];
+        $left = round($budget - $committedStage, 2);
+        if ($budget > 0 && $committedStage <= 0 && $left >= 100) {
+            $sups = array_values(array_unique(array_filter(array_merge($stages[$sid]['supplier_id'] ? [(int)$stages[$sid]['supplier_id']] : [], $stageSup[$sid] ?? []))));
+            if (count($sups) === 1) {
+                $out[] = ['stage_id' => $sid, 'stage' => $s['name'], 'supplier_id' => $sups[0], 'supplier' => $nameOf($sups[0]),
+                    'committed' => 0, 'scheduled' => 0, 'gap' => $left, 'by_budget' => true] + $plan($sid, $sups[0], $left, 'budget', false);
+            } else {
+                $unassigned[] = ['stage_id' => $sid, 'stage' => $s['name'], 'budget' => $budget, 'suppliers' => count($sups)];
+            }
+        }
+    }
+    $L = ['contract' => 'לפי החוזה', 'quote' => 'לפי ההצעה המאושרת', 'agreed' => 'לפי מה שסוכם', 'budget' => 'לפי התקציב — עוד אין הצעה מאושרת']; // i18n-ok
+    foreach ($out as &$o) $o['source_label'] = pm_t($L[$o['source']]);
+    unset($o);
+    return ['suggestions' => $out, 'unassigned' => $unassigned,
+        'gap_total' => round(array_sum(array_column($out, 'gap')), 2), 'unassigned_total' => round(array_sum(array_column($unassigned, 'budget')), 2)];
+}

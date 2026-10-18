@@ -20,6 +20,13 @@ const Payments = (() => {
         if (bound) return;
         bound = true;
         $('#add-payment').addEventListener('click', () => open(null));
+        // 💡 הצעות: פריט — נפתח החלון ממולא (מאשרים); "הוספת כולן" — כל ההצעות של הספק בשלב, בבת אחת
+        $('#pay-suggest').addEventListener('click', e => {
+            const one = e.target.closest('[data-sg-item]');
+            if (one) { const [g, i] = one.dataset.sgItem.split(':').map(Number); open(null, presetOf(data.suggest.suggestions[g], data.suggest.suggestions[g].items[i])); return; }
+            const all = e.target.closest('[data-sg-all]');
+            if (all) addAll(Number(all.dataset.sgAll), all);
+        });
         $('#payment-list').addEventListener('click', e => {
             const row = e.target.closest('[data-payment]');
             if (row) open(Number(row.dataset.payment));
@@ -111,6 +118,52 @@ const Payments = (() => {
         open(null, { stage_id: stageId, supplier_id: supplierId });
     }
 
+    // ================= 💡 הצעות לאבני דרך =================
+
+    const presetOf = (g, it) => ({ stage_id: g.stage_id, supplier_id: g.supplier_id, title: it.title, amount: it.amount,
+        due_kind: it.due_kind, due_date: it.due_date || '', due_pct: it.due_pct || 50 });
+    const whenOf = it => it.due_kind === 'date' ? t('עד {date}', { date: shortDate(it.due_date) }) : it.due_kind === 'progress' ? t('בהתקדמות {n}%', { n: it.due_pct }) : t('בגמר השלב');
+
+    /** הכרטיס: לכל ספק בשלב — סוכם, מתוכנן, חסר, ומה מוצע; ולמטה — תקציב שעוד אין לו ספק או הצעה. */
+    function renderSuggest() {
+        const S = data.suggest;
+        const box = $('#pay-suggest');
+        if (!S || (!S.suggestions.length && !S.unassigned.length)) { box.innerHTML = ''; return; }
+        const open_ = (() => { try { return localStorage.getItem('pm.sgOpen') !== '0'; } catch { return true; } })();
+        box.innerHTML = `<details class="fin-card sg"${open_ ? ' open' : ''}><summary class="sg-head"><b>💡 ${esc(t('הצעות לאבני דרך'))}</b>
+                <span class="chip fin-warn">${esc(t('חסר לתכנן {amount}', { amount: money(S.gap_total) }))}</span></summary>
+            <p class="hint">${esc(t('מה שסוכם עם ספק (או תוקצב לשלב) ועוד לא מתוכנן באבני דרך. לחיצה על הצעה — נפתח החלון ממולא, ומאשרים.'))}</p>
+            ${S.suggestions.map((g, gi) => `<section class="sg-group">
+                <div class="sg-top"><span class="one"><b>${esc(t(g.stage))}</b> · ${esc(g.supplier)}</span><span class="chip">${esc(g.source_label)}</span></div>
+                <div class="muted sg-nums">${esc([g.committed ? t('סוכם {amount}', { amount: money(g.committed) }) : '', g.scheduled ? t('מתוכנן {amount}', { amount: money(g.scheduled) }) : '',
+                    t('חסר {amount}', { amount: money(g.gap) })].filter(Boolean).join(' · '))}</div>
+                <ul class="sg-items">${g.items.map((it, i) => `<li><button type="button" class="sg-item" data-sg-item="${gi}:${i}">
+                    <span class="one">＋ ${esc(it.title.startsWith(t(g.stage) + ' — ') ? it.title.slice(t(g.stage).length + 3) : it.title)}</span><span class="muted">${esc(whenOf(it))}</span><b>${esc(money(it.amount))}</b></button></li>`).join('')}</ul>
+                ${g.items.length > 1 ? `<button type="button" class="btn ghost sm" data-sg-all="${gi}">${esc(t('➕ הוספת {n} אבני הדרך', { n: g.items.length }))}</button>` : ''}
+            </section>`).join('')}
+            ${S.unassigned.length ? `<section class="sg-group sg-un"><div class="sg-top"><b>${esc(t('תקציב שטרם מומש'))}</b><span class="muted">${esc(money(S.unassigned_total))}</span></div>
+                <ul class="sg-items">${S.unassigned.map(u => `<li class="sg-line"><span class="one">${esc(t(u.stage))}</span><span class="muted">${esc(u.suppliers ? t('כמה ספקים — בוחרים אבן דרך לכל אחד') : t('אין עדיין ספק או הצעה מאושרת'))}</span><b>${esc(money(u.budget))}</b></li>`).join('')}</ul>
+                <p class="hint">${esc(t('כדי לתכנן תשלום צריך ספק: מבקשים הצעות בלשונית "הצעות", או משייכים ספק לשלב.'))}</p></section>` : ''}
+        </details>`;
+        $('details', box).addEventListener('toggle', e => { try { localStorage.setItem('pm.sgOpen', e.target.open ? '1' : '0'); } catch { /* מצב פרטי */ } });
+    }
+
+    /** כל ההצעות של ספק בשלב — נוצרות כאבני דרך מתוכננות (אפשר לערוך כל אחת אחר כך). */
+    async function addAll(gi, btn) {
+        const g = data.suggest.suggestions[gi];
+        if (!confirm(t('להוסיף {n} אבני דרך ל{supplier} ({amount})?', { n: g.items.length, supplier: g.supplier, amount: money(g.gap) }))) return;
+        btn.disabled = true;
+        try {
+            let d;
+            for (const it of g.items) {
+                d = await api('payment', { body: { project_id: project.project.id, stage_id: g.stage_id, supplier_id: g.supplier_id, title: it.title, amount: String(it.amount),
+                    percent: '', due_kind: it.due_kind, due_pct: it.due_pct || null, due_date: it.due_kind === 'date' ? it.due_date : '', payer: defaultPayer(), needs_lawyer: hasLawyer(), notes: '' } });
+            }
+            await refresh(d);
+            toast(t('נוספו {n} אבני דרך', { n: g.items.length }));
+        } catch (e) { btn.disabled = false; toast(e.message, true); }
+    }
+
     /** מתי משלמים — לשורה ולחלון. */
     function dueText(p, late) {
         if (p.due_kind === 'advance') return t('מקדמה — בתחילת העבודה');
@@ -121,6 +174,7 @@ const Payments = (() => {
     }
 
     function render() {
+        renderSuggest();
         const s = data.summary;
         // תקציר: כמה התקבל מתוך כמה, עם פס התקדמות; ממתינים לאישור ובאיחור — תגיות
         const pct = s.total ? Math.min(100, Math.round(s.received * 100 / s.total)) : 0;
@@ -197,7 +251,7 @@ const Payments = (() => {
         el.stage_id.innerHTML = options([{ value: 'advance', label: t('💰 מקדמה — בתחילת העבודה') }, ...project.stages.map(s => ({ value: s.id, label: stageName(s) }))],
             p.due_kind === 'advance' ? 'advance' : p.stage_id, t('בלי שלב'));
         el.title.value = p.title || '';
-        el.amount.value = current ? String(current.amount) : '';
+        el.amount.value = current ? String(current.amount) : (p.amount ? String(p.amount) : '');
         el.percent.value = current?.percent ?? '';
         el.due_date.value = p.due_date || '';
         // מקדמה — אין לה כפתור ב"מתי משלמים" (היא נבחרת ברשימת השלבים); כל מועד לא מוכר — "בתאריך"

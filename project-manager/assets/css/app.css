@@ -1237,3 +1237,19 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 /* הצעת תקציב: כולל / לפני מע"מ */
 .bd-vat { margin: var(--s2) 0; }
 .bd-tot .bd-other dt, .bd-tot .bd-other dd { color: var(--muted); font-size: .85rem; }
+
+/* 💡 הצעות לאבני דרך (payments.js — renderSuggest) */
+.sg { margin-bottom: var(--s3); }
+.sg-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); cursor: pointer; list-style: none; }
+.sg-head::-webkit-details-marker { display: none; }
+.sg-group { border-top: 1px solid var(--line); padding-top: var(--s2); margin-top: var(--s2); display: grid; gap: var(--s1); }
+.sg-top { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); min-width: 0; }
+.sg-nums { font-size: .85rem; }
+.sg-items { list-style: none; display: grid; gap: var(--s1); }
+.sg-item, .sg-line { inline-size: 100%; display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: var(--s2); min-height: var(--tap);
+    padding: var(--s1) var(--s2); border: 1px dashed var(--line); border-radius: var(--r); background: var(--surface); text-align: start; }
+.sg-item { cursor: pointer; border-color: color-mix(in srgb, var(--brand) 40%, var(--line)); }
+.sg-item:hover { background: var(--brand-soft); }
+.sg-item .one { color: var(--brand); font-weight: 600; }
+.sg-item .muted, .sg-line .muted { font-size: .8rem; }
+.sg-un .sg-line { border-style: solid; }
