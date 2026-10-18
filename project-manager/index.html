@@ -2,14 +2,14 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="assets/js/i18n.js?v=93"></script>
-    <script src="assets/js/theme.js?v=93"></script>
+    <script src="assets/js/i18n.js?v=94"></script>
+    <script src="assets/js/theme.js?v=94"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=93">
-    <link rel="stylesheet" href="assets/css/devloop.css?v=93">
+    <link rel="stylesheet" href="assets/css/app.css?v=94">
+    <link rel="stylesheet" href="assets/css/devloop.css?v=94">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -819,7 +819,9 @@
                 <h3 class="sec-title">לפי החוזה</h3>
                 <div class="fields">
                     <label class="f"><span>עיכבון (%)</span><input name="retention_pct" inputmode="decimal" dir="ltr" maxlength="5"></label>
+                    <label class="f"><span>מע"מ (%)</span><input name="vat_rate" inputmode="decimal" dir="ltr" maxlength="5"></label>
                 </div>
+                <p class="hint">מע"מ — לסכומים חדשים בפרויקט (הצעות, אבני דרך, הוצאות). מה שכבר נרשם נשאר בשיעור שלו.</p>
                 <p class="hint">החלק מכל תשלום שנשאר אצל הלקוח עד המסירה. הסטנדרט — 10%.</p>
                 <label class="switch"><input type="checkbox" name="deviations_on"><span>⚖️ לאפשר חריגה מהחוזה — רק בהסכמת הלקוח, העו"ד והספק</span></label>
                 <p class="hint">כבוי — החוזה כמו שהוא. דולק — אפשר לבקש חריגה (למשל ויתור על עיכבון), והיא חלה רק כשכל הצדדים הסכימו, כל אחד בקישור שלו.</p>
@@ -1131,6 +1133,8 @@
                             <label class="f"><span>מספר אסמכתא / צ'ק</span><input id="mp-ref" maxlength="40" dir="ltr" inputmode="numeric"></label>
                             <label class="f"><span>הערה</span><input id="mp-note" maxlength="1000"></label>
                         </div>
+                        <!-- מסומן: נרשם כ"התקבל" מיד (lib/payments.php). לא מסומן: "דווח ששולם" — עד שהספק / המנהל מאשרים קבלה -->
+                        <label class="switch"><input type="checkbox" id="mp-received" checked><span>הכסף כבר הועבר לספק — לרשום כ"שולם"</span></label>
                         <div class="row-btns wrap">
                             <label class="btn ghost upload-btn">📎 אסמכתא<input type="file" id="mp-file" accept="image/*,application/pdf" hidden></label>
                         <button type="button" class="btn ghost" id="mp-existing">📂 מהקבצים</button>
@@ -1484,30 +1488,30 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=93"></script>
-    <script src="assets/js/contacts.js?v=93"></script>
-    <script src="assets/js/device-contacts.js?v=93"></script>
-    <script src="assets/js/viewer.js?v=93"></script>
-    <script src="assets/js/devloop.js?v=93"></script>
-    <script src="assets/js/engage.js?v=93"></script>
-    <script src="assets/js/linker.js?v=93"></script>
-    <script src="assets/js/files.js?v=93"></script>
-    <script src="assets/js/lightbox.js?v=93"></script>
-    <script src="assets/js/field.js?v=93"></script>
+    <script src="assets/js/core.js?v=94"></script>
+    <script src="assets/js/contacts.js?v=94"></script>
+    <script src="assets/js/device-contacts.js?v=94"></script>
+    <script src="assets/js/viewer.js?v=94"></script>
+    <script src="assets/js/devloop.js?v=94"></script>
+    <script src="assets/js/engage.js?v=94"></script>
+    <script src="assets/js/linker.js?v=94"></script>
+    <script src="assets/js/files.js?v=94"></script>
+    <script src="assets/js/lightbox.js?v=94"></script>
+    <script src="assets/js/field.js?v=94"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=93"></script>
-    <script src="assets/js/projects.js?v=93"></script>
-    <script src="assets/js/quotes.js?v=93"></script>
-    <script src="assets/js/payments.js?v=93"></script>
-    <script src="assets/js/fin-report.js?v=93"></script>
-    <script src="assets/js/budget.js?v=93"></script>
-    <script src="assets/js/deviations.js?v=93"></script>
-    <script src="assets/js/rejects.js?v=93"></script>
-    <script src="assets/js/finance.js?v=93"></script>
-    <script src="assets/js/finance-all.js?v=93"></script>
-    <script src="assets/js/hebcal.js?v=93"></script>
-    <script src="assets/js/calendar.js?v=93"></script>
-    <script src="assets/js/settings.js?v=93"></script>
-    <script src="assets/js/app.js?v=93"></script>
+    <script src="assets/js/share.js?v=94"></script>
+    <script src="assets/js/projects.js?v=94"></script>
+    <script src="assets/js/quotes.js?v=94"></script>
+    <script src="assets/js/payments.js?v=94"></script>
+    <script src="assets/js/fin-report.js?v=94"></script>
+    <script src="assets/js/budget.js?v=94"></script>
+    <script src="assets/js/deviations.js?v=94"></script>
+    <script src="assets/js/rejects.js?v=94"></script>
+    <script src="assets/js/finance.js?v=94"></script>
+    <script src="assets/js/finance-all.js?v=94"></script>
+    <script src="assets/js/hebcal.js?v=94"></script>
+    <script src="assets/js/calendar.js?v=94"></script>
+    <script src="assets/js/settings.js?v=94"></script>
+    <script src="assets/js/app.js?v=94"></script>
 </body>
 </html>

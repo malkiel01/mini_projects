@@ -915,6 +915,7 @@ const Finance = (() => {
         $(`#fin-dlg [name=fee_type][value="${S.fee_type}"]`).checked = true;
         el.fee_value.value = S.fee_value || '';
         el.retention_pct.value = S.retention_pct;
+        el.vat_rate.value = S.vat_rate ?? 18;
         el.index_on.checked = S.index_on;
         el.index_name.value = S.index_name ? t(S.index_name) : '';
         el.index_base_month.value = S.index_base_month || '';
@@ -936,7 +937,7 @@ const Finance = (() => {
         const body = {
             project_id: project.project.id, budget_initial: el.budget_initial.value.trim(), budget: el.budget.value.trim(),
             fee_type: $('#fin-dlg [name=fee_type]:checked').value, fee_value: el.fee_value.value.trim(),
-            retention_pct: el.retention_pct.value.trim(), index_on: el.index_on.checked,
+            retention_pct: el.retention_pct.value.trim(), vat_rate: el.vat_rate.value.trim(), index_on: el.index_on.checked,
             index_name: S.index_name && indexName === t(S.index_name) ? S.index_name : indexName,
             index_base_month: el.index_base_month.value, index_base: el.index_base.value.trim(),
             budget_approver: el.budget_approver.value, deviations_on: el.deviations_on.checked,

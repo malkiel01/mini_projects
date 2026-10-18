@@ -28,8 +28,18 @@ const PM_DUE_KINDS = ['date', 'stage_done', 'progress'];
 /** שולם יותר מהביצוע ביותר מזה (נקודות אחוז) — מסומן. */
 const PM_OVERPAY_MARGIN = 10;
 
-function pm_vat_rate(): float
+/**
+ * שיעור המע"מ לסכומים חדשים. לפרויקט — מהגדרות הפרויקט (projects.vat_rate) אם נקבע שם; אחרת — הכללי
+ * (הגדרות ← כללי, 18). סכום שכבר נשמר שומר את השיעור שלו (vat_rate בשורה) — שינוי לא משנה את מה שכבר סוכם.
+ */
+function pm_vat_rate(?int $projectId = null): float
 {
+    if ($projectId) {
+        $st = pm_db()->prepare('SELECT vat_rate FROM projects WHERE id = ?');
+        $st->execute([$projectId]);
+        $v = $st->fetchColumn();
+        if ($v !== false && $v !== null && $v !== '' && (float)$v >= 0 && (float)$v <= 50) return (float)$v;
+    }
     $r = (float)pm_setting('vat_rate', '18');
     return $r >= 0 && $r <= 50 ? $r : 18.0;
 }
@@ -147,7 +157,8 @@ function pm_finance_settings(array $p): array
         'retention_pct' => (float)$p['retention_pct'],
         'index_on' => (bool)$p['index_on'], 'index_name' => $p['index_name'],
         'index_base_month' => $p['index_base_month'], 'index_base' => $p['index_base'] !== null ? (float)$p['index_base'] : null,
-        'vat_rate' => pm_vat_rate(),
+        'vat_rate' => pm_vat_rate((int)$p['id']), // של הפרויקט אם נקבע, אחרת הכללי
+        'vat_default' => pm_vat_rate(),
         // הצעת תקציב (lib/budget.php): פורק לשלבים — התקציב מחושב ולא נערך כאן; מי מאשר; חלוקת המשותפים בין הדירות
         'budget_broken' => pm_budget_broken((int)$p['id']), 'budget_locked' => pm_budget_locked((int)$p['id']), 'budget_approver' => $p['budget_approver'] ?: 'client',
         'unit_split' => json_decode((string)($p['unit_split'] ?? ''), true) ?: (object)[],
@@ -176,7 +187,7 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
     $pr->execute([$projectId]);
     $p = $pr->fetch() ?: throw new PmError('הפרויקט לא נמצא', 404);
     $today = pm_today();
-    $vat = pm_vat_rate();
+    $vat = pm_vat_rate($projectId);
 
     $st = $db->prepare('SELECT s.*, u.name AS unit_name FROM stages s LEFT JOIN units u ON u.id = s.unit_id WHERE s.project_id = ? ORDER BY s.sort, s.id');
     $st->execute([$projectId]);
@@ -520,6 +531,8 @@ function pm_finance_settings_save(array $user, array $in): array
         $has->execute([$projectId]);
         if ($has->fetchColumn()) throw new PmError('העיכבון הוא חלק מהחוזה — שינוי שלו כשיש כבר אבני דרך: "⚖️ חריגה מהחוזה" בהסכמת כולם', 422);
     }
+    // מע"מ לפרויקט — לסכומים חדשים בו (מה שכבר נשמר שומר את השיעור שלו); ריק — הכללי
+    if (array_key_exists('vat_rate', $in)) $f['vat_rate'] = ($in['vat_rate'] === '' || $in['vat_rate'] === null) ? null : $num('vat_rate', 50, 'מע"מ'); // i18n-ok
     $appr = (string)($in['budget_approver'] ?? ($p['budget_approver'] ?: 'client'));
     if (!isset(PM_BUDGET_APPROVERS[$appr])) throw new PmError('מי מאשר את התקציב — לא מוכר', 422);
     $f['budget_approver'] = $appr;

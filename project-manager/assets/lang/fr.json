@@ -2603,5 +2603,10 @@
     "השירות סירב לסווג את הקובץ": "Le service a refusé de classer le fichier",
     "לא התקבלה תשובה מהסיווג": "Aucune réponse de la classification",
     "הסכומים": "Montants",
-    "כולל מע\"מ {n}%": "TVA {n}% incluse"
+    "כולל מע\"מ {n}%": "TVA {n}% incluse",
+    "דווח ששולם {amount} — ממתין לאישור קבלה": "Paiement déclaré {amount} — en attente de confirmation",
+    "התשלום נרשם כשולם": "Le paiement a été enregistré comme payé",
+    "מע\"מ (%)": "TVA (%)",
+    "מע\"מ — לסכומים חדשים בפרויקט (הצעות, אבני דרך, הוצאות). מה שכבר נרשם נשאר בשיעור שלו.": "TVA — pour les nouveaux montants du projet (devis, jalons, dépenses). Ce qui est déjà enregistré garde son taux.",
+    "הכסף כבר הועבר לספק — לרשום כ\"שולם\"": "L'argent a déjà été versé au fournisseur — enregistrer comme « payé »"
 }

@@ -124,7 +124,9 @@ const Payments = (() => {
         const s = data.summary;
         // תקציר: כמה התקבל מתוך כמה, עם פס התקדמות; ממתינים לאישור ובאיחור — תגיות
         const pct = s.total ? Math.min(100, Math.round(s.received * 100 / s.total)) : 0;
-        const tags = [s.waiting ? `<span class="chip">${esc(t('{n} לאישור קבלה', { n: s.waiting }))}</span>` : '',
+        // דווח ששולם ועוד לא אושר שהתקבל — עם הסכום, שלא ייראה כאילו לא נרשם כלום
+        const reported = data.payments.reduce((a, p) => a + (p.proofs || []).filter(x => x.status === 'pending').reduce((b, x) => b + Number(x.amount || 0), 0), 0);
+        const tags = [s.waiting ? `<span class="chip fin-warn">⏳ ${esc(reported ? t('דווח ששולם {amount} — ממתין לאישור קבלה', { amount: money(reported) }) : t('{n} לאישור קבלה', { n: s.waiting }))}</span>` : '',
             s.late ? `<span class="chip fin-late">${esc(t('{n} באיחור', { n: s.late }))}</span>` : ''].join('');
         $('#pay-sum').hidden = !data.payments.length;
         $('#pay-sum').innerHTML = `<div class="ps-line"><span class="muted">${esc(t('התקבל'))}</span> <b>${esc(money(s.received))}</b>${s.total ? ` <span class="muted">${esc(t('מתוך {total}', { total: money(s.total) }))}</span><span class="ps-pct">${pct}%</span>` : ''}</div>
@@ -506,7 +508,8 @@ const Payments = (() => {
     /** המנהל רושם תשלום שדווח לו (למשל בטלפון), עם אסמכתא אם יש — לתיקיית הלקוח. */
     async function manualProof() {
         const form = $('#payment-dlg form');
-        const body = { id: current.id, amount: $('#mp-amount').value.trim(), paid_on: $('#mp-date').value, method: $('#mp-method').value, note: $('#mp-note').value, ref_no: $('#mp-ref').value.trim() };
+        const body = { id: current.id, amount: $('#mp-amount').value.trim(), paid_on: $('#mp-date').value, method: $('#mp-method').value, note: $('#mp-note').value, ref_no: $('#mp-ref').value.trim(),
+            received: $('#mp-received').checked }; // מסומן — נרשם כ"התקבל" מיד
         if (!body.amount) { formError(form, t('סכום: שדה חובה')); return; }
         await busy($('#mp-save'), form, async () => {
             if (mpFile?.id) body.file_id = mpFile.id;
@@ -518,7 +521,7 @@ const Payments = (() => {
             }
             await refresh(await api('payment-proof', { body }));
             $('#payment-dlg').close();
-            toast(t('התשלום נרשם — אשר כשהכסף התקבל'));
+            toast(body.received ? t('התשלום נרשם כשולם') : t('התשלום נרשם — אשר כשהכסף התקבל'));
         });
     }
 
