@@ -336,7 +336,7 @@ function showUserbar(user) {
 
 // העתקת קישור ישיר לכניסה — הכתובת נבנית מהדף הנוכחי, כך שהיא נכונה בכל דומיין.
 async function copyLink(btn, href) {
-    const url = new URL(href, location.href).href;
+    const url = new URL(href, document.baseURI).href;
     try {
         await navigator.clipboard.writeText(url);
     } catch {
@@ -687,7 +687,7 @@ const canDownload = () => 'caches' in window && currentApps.some(a => a.install.
 async function downloadFamily() {
     const apps = currentApps.filter(a => a.install.offline);
     const cache = await caches.open(FAMILY_CACHE);
-    const base = new URL('./', location.href);
+    const base = new URL('./', document.baseURI);
     const allowed = (u) => (u.origin === location.origin && u.pathname.startsWith(base.pathname)) || CDN_HOSTS.includes(u.hostname);
     let done = 0, failed = 0;
 
@@ -708,7 +708,7 @@ async function downloadFamily() {
 
     for (const app of apps) {
         toast(`⏳ מוריד: ${app.name}…`);
-        const page = new URL(app.href, location.href);
+        const page = new URL(app.href, document.baseURI);
         try {
             const res = await fetch(page, { credentials: 'same-origin' });
             if (!res.ok || res.redirected) { failed++; continue; }
@@ -737,7 +737,7 @@ async function clearFamilyCache() {
     try {
         await caches.delete(FAMILY_CACHE);
         const c = await caches.open(FAMILY_CACHE);
-        await c.addAll(['./', 'index.html', 'platform/assets/app.js', 'platform/assets/admin.js',
+        await c.addAll(['./', 'index.html', 'platform/home/', 'platform/assets/app.js', 'platform/assets/admin.js',
             'platform/assets/app.css', 'platform/manifest.webmanifest', 'platform/assets/icons/icon-192.png']);
     } catch { /* בלי רשת — יימלא בפעם הבאה */ }
 }
@@ -861,4 +861,13 @@ window.Platform = {
 };
 
 window.addEventListener('hashchange', () => { start(); window.scrollTo(0, 0); });
+// באפליקציה המותקנת הדף יושב ב-platform/home/ עם <base> לשורש — וקישור "#admin" היה מוביל לשורש
+// (מחוץ לאפליקציה). קישורי # מנותבים כאן, בתוך הדף הנוכחי.
+document.addEventListener('click', (e) => {
+    const a = e.target.closest?.('a[href^="#"]');
+    if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    e.preventDefault();
+    const hash = a.getAttribute('href');
+    if ((location.hash || '#') === hash) start(); else location.hash = hash;
+});
 start();
