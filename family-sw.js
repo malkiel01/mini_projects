@@ -10,7 +10,7 @@
 
 const CACHE = 'family-v1';
 const SHELL = [
-    './', 'index.html',
+    './', 'index.html', 'platform/home/',
     'platform/assets/app.js', 'platform/assets/admin.js', 'platform/assets/app.css',
     'platform/manifest.webmanifest', 'platform/assets/icons/icon-192.png',
 ];
@@ -55,6 +55,8 @@ self.addEventListener('fetch', (e) => {
             if (e.request.mode === 'navigate') {
                 const shell = await cache.match('./');
                 if (shell && url.pathname === new URL('./', self.registration.scope).pathname) return shell;
+                const home = await cache.match('platform/home/');
+                if (home && url.pathname === new URL('platform/home/', self.registration.scope).pathname) return home;
             }
             throw err;
         }
@@ -82,13 +84,14 @@ self.addEventListener('push', (e) => {
 self.addEventListener('notificationclick', (e) => {
     e.notification.close();
     // הכתובת יחסית לשורש האתר — למשל "#admin" פותח את ממשק הניהול.
-    const target = new URL('./' + (e.notification.data?.url || ''), self.registration.scope).href;
+    // נפתח באפליקציה המותקנת: הבית שלה הוא platform/home/ (ראו platform/home/index.php).
+    const target = new URL('platform/home/' + (e.notification.data?.url || ''), self.registration.scope).href;
     e.waitUntil((async () => {
         const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-        const home = new URL('./', self.registration.scope).href;
+        const homes = [new URL('./', self.registration.scope).href, new URL('platform/home/', self.registration.scope).href];
         for (const win of wins) {
             // חלון של הדף הראשי (לא של כלי) — מתמקדים בו ומנווטים.
-            if (win.url.split('#')[0].split('?')[0] === home && 'focus' in win) {
+            if (homes.includes(win.url.split('#')[0].split('?')[0]) && 'focus' in win) {
                 await win.focus();
                 if ('navigate' in win) await win.navigate(target);
                 return;
