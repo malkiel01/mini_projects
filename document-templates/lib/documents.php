@@ -611,6 +611,8 @@ function doc_delete(array $user, array $b): array
     $d = doc_owned((int)($b['id'] ?? 0), $user, 'owner');
     if ($d['status'] !== 'draft') throw new ApiError('במסמך כבר מולאו פרטים — אפשר רק להעביר לארכיון', 409);
     db()->prepare('UPDATE documents SET deleted_at = ? WHERE id = ?')->execute([now_iso(), $d['id']]);
+    db()->prepare("UPDATE share_invites SET revoked_at = ? WHERE object_type = 'document' AND object_id = ? AND used_at IS NULL AND revoked_at IS NULL")
+        ->execute([now_iso(), $d['id']]);
     log_event((int)$d['id'], 'user:' . $user['id'], 'deleted');
     return ['ok' => true];
 }

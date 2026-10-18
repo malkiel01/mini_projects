@@ -326,6 +326,12 @@
             el('span', { class: 'badge' }, '👑 בעלים')),
           ...r.shares.map(s => {
             const name = s.name || s.email;
+            // המאשר של מסמך "רק באישור שלי" — מוגן; מנהל-שותף — רק הבעלים משנה אותו
+            const locked = s.user_id === r.approver ? '✓ המאשר' : s.level === 'co_owner' && myRank < 5 ? LEVEL_IC.co_owner + ' ' + LEVEL.co_owner : null;
+            if (locked) return el('li', { class: 'share-row' }, avatar(name),
+              el('div', { class: 'share-who' }, el('strong', {}, name),
+                el('small', {}, el('span', { dir: 'ltr' }, s.email), s.since ? ' · מאז ' + new Date(s.since).toLocaleDateString('he-IL') : '')),
+              el('span', { class: 'badge' }, locked));
             const sel = levelSel(s.level, myRank, name);
             sel.addEventListener('change', () => run('share_set', { type, id, user_id: s.user_id, level: sel.value }, `✓ ההרשאה של ${name} עודכנה`));
             return el('li', { class: 'share-row' }, avatar(name),
@@ -858,6 +864,7 @@
 
   async function logout() {
     try { await api('logout', {}); } catch (e) { /* יוצאים בכל מקרה */ }
+    keepInvite('');   // הזמנה שלא נוצלה לא עוברת למי שייכנס אחריו באותו מכשיר
     me = null;
     csrf = '';
     location.hash = 'login';

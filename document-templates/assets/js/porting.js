@@ -56,6 +56,14 @@
     const pdf = await PDFDocument.load(unb64(p.asset.data), { ignoreEncryption: true });
     // הגדרות ישנות שכבר מצורפות לקובץ — מוחלפות, לא נערמות
     try { const names = pdf.catalog.lookup(PDFName.of('Names')); if (names) names.delete(PDFName.of('EmbeddedFiles')); } catch (e) { /* אין */ }
+    try { pdf.catalog.delete(PDFName.of('AF')); } catch (e) { /* אין */ }   // pdf-lib מצרף גם ל-AF
+    try {   // והקובץ עצמו — pdf-lib שומר גם אובייקטים בלי הפניה
+      for (const [ref, obj] of pdf.context.enumerateIndirectObjects()) {
+        const dict = obj instanceof window.PDFLib.PDFStream ? obj.dict : obj instanceof window.PDFLib.PDFDict ? obj : null;
+        const type = dict && dict.get(PDFName.of('Type'));
+        if (type && ['/EmbeddedFile', '/Filespec'].includes(String(type))) pdf.context.delete(ref);
+      }
+    } catch (e) { /* אין */ }
     const settings = { ...p, asset: { mime: p.asset.mime, embedded: true } };
     await pdf.attach(new TextEncoder().encode(JSON.stringify(settings)), ENTRY,
       { mimeType: 'application/json', description: 'הגדרות התבנית — תבניות מסמכים', creationDate: new Date(), modificationDate: new Date() });
@@ -96,6 +104,14 @@
     const { PDFDocument, PDFName } = await pdfLib();
     const pdf = await PDFDocument.load(new Uint8Array(await file.arrayBuffer()), { ignoreEncryption: true });
     try { const names = pdf.catalog.lookup(PDFName.of('Names')); if (names) names.delete(PDFName.of('EmbeddedFiles')); } catch (e) { /* אין */ }
+    try { pdf.catalog.delete(PDFName.of('AF')); } catch (e) { /* אין */ }   // pdf-lib מצרף גם ל-AF
+    try {   // והקובץ עצמו — pdf-lib שומר גם אובייקטים בלי הפניה
+      for (const [ref, obj] of pdf.context.enumerateIndirectObjects()) {
+        const dict = obj instanceof window.PDFLib.PDFStream ? obj.dict : obj instanceof window.PDFLib.PDFDict ? obj : null;
+        const type = dict && dict.get(PDFName.of('Type'));
+        if (type && ['/EmbeddedFile', '/Filespec'].includes(String(type))) pdf.context.delete(ref);
+      }
+    } catch (e) { /* אין */ }
     const clean = await pdf.save({ updateFieldAppearances: false });
     // ההגדרות לחוד, וה-PDF כקובץ רגיל (לא base64 — שלא יעבור את מגבלת ההעלאה של השרת)
     const pkg = { ...p, asset: { mime: 'application/pdf', embedded: true } };

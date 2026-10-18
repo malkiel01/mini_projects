@@ -88,8 +88,9 @@ function share_list(array $user, array $q): array
     $st->execute([$type, $row['id'], now_iso()]);
     $invites = array_map(fn($i) => ['id' => (int)$i['id'], 'name' => (string)unseal($i['name_enc']),
         'phone' => (string)unseal($i['phone_enc']), 'level' => $i['level'], 'since' => $i['created_at']], $st->fetchAll());
+    $approver = $type === 'document' && function_exists('doc_approver') ? doc_approver($row) : null;
     return ['ok' => true, 'owner' => user_name((int)$row['owner_id']), 'my_level' => $row['access'],
-        'shares' => $shares, 'invites' => $invites];
+        'shares' => $shares, 'invites' => $invites, 'approver' => $approver];
 }
 
 /**
@@ -118,6 +119,9 @@ function share_set(array $user, array $b): array
     $st = db()->prepare('SELECT level FROM shares WHERE object_type = ? AND object_id = ? AND user_id = ?');
     $st->execute([$type, $row['id'], $target['id']]);
     $existing = $st->fetchColumn();
+    // מנהל-שותף לא משנה הרשאה של מנהל-שותף אחר — רק הבעלים (כמו בניתוק)
+    if ($existing === 'co_owner' && $row['access'] !== 'owner') throw new ApiError('רק הבעלים משנה הרשאה של מנהל-שותף', 403);
+    share_guard_approver($type, $row, (int)$target['id']);
     db()->prepare(
         'INSERT INTO shares (object_type, object_id, user_id, level, granted_by, created_at) VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(object_type, object_id, user_id) DO UPDATE SET level = excluded.level, granted_by = excluded.granted_by'
@@ -136,6 +140,16 @@ function share_set(array $user, array $b): array
     return ['ok' => true];
 }
 
+/**
+ * מסמך שננעל רק באישור של בעל התבנית: הגישה של המאשר היא שיתוף "מנהל-שותף" על מסמך של המנפיק.
+ * אסור לנתק אותו או לשנות לו הרשאה (וגם הוא לא עוזב) — אחרת המסמך נתקע בלי מי שיאשר.
+ */
+function share_guard_approver(string $type, array $row, int $uid): void
+{
+    if ($type !== 'document' || !function_exists('doc_approver')) return;
+    if (doc_approver($row) === $uid) throw new ApiError('זה המאשר של המסמך — אי אפשר לנתק אותו או לשנות לו הרשאה', 403);
+}
+
 function share_remove(array $user, array $b): array
 {
     [$type, $row] = share_target($user, $b);
@@ -148,6 +162,7 @@ function share_remove(array $user, array $b): array
     if ($lvl === 'co_owner' && $row['access'] !== 'owner' && $uid !== (int)$user['id']) {
         throw new ApiError('רק הבעלים מסיר מנהל-שותף', 403);
     }
+    share_guard_approver($type, $row, $uid);
     db()->prepare('DELETE FROM shares WHERE object_type = ? AND object_id = ? AND user_id = ?')->execute([$type, $row['id'], $uid]);
     if ($type === 'document') log_event((int)$row['id'], 'user:' . $user['id'], 'unshared', ['with' => user_name($uid)]);
     return ['ok' => true];
@@ -157,6 +172,10 @@ function share_remove(array $user, array $b): array
 function share_leave(array $user, array $b): array
 {
     $type = ($b['type'] ?? '') === 'document' ? 'document' : 'template';
+    if ($type === 'document') {
+        try { $d = doc_owned((int)($b['id'] ?? 0), $user, 'view'); } catch (ApiError $e) { $d = null; }
+        if ($d) share_guard_approver($type, $d, (int)$user['id']);
+    }
     $st = db()->prepare('DELETE FROM shares WHERE object_type = ? AND object_id = ? AND user_id = ?');
     $st->execute([$type, (int)($b['id'] ?? 0), $user['id']]);
     if (!$st->rowCount()) throw new ApiError('השיתוף לא נמצא', 404);
@@ -257,12 +276,23 @@ function invite_target(array $inv): ?array
     return $st->fetch() ?: null;
 }
 
+/**
+ * ההזמנה עדיין תקפה: הדבר קיים, ומי שיצר אותה עדיין מנהל אותו ברמה שהוא נתן. מי שנותק או הורד בדרגה —
+ * ההזמנות שלו נופלות איתו; ותבנית שנמחקה ומספרה חזר לתבנית אחרת — לא שלו, ולכן לא תקפה.
+ */
+function invite_alive(array $inv, ?array $obj): bool
+{
+    if (!$obj || !empty($obj['deleted_at']) || $inv['revoked_at']) return false;
+    $lvl = access_level($inv['object_type'], (int)$obj['id'], (int)$obj['owner_id'], ['id' => (int)$inv['created_by']]);
+    return $lvl !== null && LEVELS[$lvl] >= LEVELS['co_owner'] && LEVELS[$lvl] >= LEVELS[$inv['level']];
+}
+
 /** בלי כניסה: מה ההזמנה (למסך שמזמין להתחבר). מי שמחזיק את הקישור הוא המוזמן. */
 function invite_info(string $token): array
 {
     $inv = invite_row($token);
     $obj = $inv ? invite_target($inv) : null;
-    if (!$inv || !$obj || $inv['revoked_at'] || ($inv['used_at'] === null && $inv['expires_at'] <= now_iso())) {
+    if (!$inv || !invite_alive($inv, $obj) || ($inv['used_at'] === null && $inv['expires_at'] <= now_iso())) {
         throw new ApiError('ההזמנה אינה בתוקף. בקשו מהשולח הזמנה חדשה', 410);
     }
     $type = $inv['object_type'];
@@ -282,7 +312,7 @@ function invite_redeem(int $userId, string $token): array
     try {
         $inv = invite_row($token);
         $obj = $inv ? invite_target($inv) : null;
-        if (!$inv || !$obj || $inv['revoked_at']) throw new ApiError('ההזמנה אינה בתוקף. בקשו מהשולח הזמנה חדשה', 410);
+        if (!$inv || !invite_alive($inv, $obj)) throw new ApiError('ההזמנה אינה בתוקף. בקשו מהשולח הזמנה חדשה', 410);
         $type = $inv['object_type'];
         if ($inv['used_at'] !== null) {
             if ((int)$inv['used_by'] !== $userId) throw new ApiError('ההזמנה כבר נוצלה בחשבון אחר. בקשו מהשולח הזמנה חדשה', 409);

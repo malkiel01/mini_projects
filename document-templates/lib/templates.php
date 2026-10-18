@@ -496,8 +496,14 @@ function tpl_set_source(array $user, array $b): array
 function tpl_save(array $user, array $b): array
 {
     $t = tpl_owned((int)($b['id'] ?? 0), $user, 'edit');
-    $json = json_encode(clean_schema($b['schema'] ?? null, allowed_sources($user, $t), allowed_fonts($user, $t), allowed_contacts($user, $t),
-        allowed_lists($user, $t)), JSON_UNESCAPED_UNICODE);
+    $schema = clean_schema($b['schema'] ?? null, allowed_sources($user, $t), allowed_fonts($user, $t), allowed_contacts($user, $t),
+        allowed_lists($user, $t));
+    // "ננעלים רק באישור שלי" — רק הבעלים משנה. עורך ששומר את התבנית לא יכול לכבות את האישור שנועד לעצור אותו
+    if ($t['access'] !== 'owner') {
+        $prev = json_decode((string)unseal($t['schema_enc']), true) ?: [];
+        $schema['approval_owner'] = !empty($prev['approval_owner']);
+    }
+    $json = json_encode($schema, JSON_UNESCAPED_UNICODE);
     if (strlen($json) > TPL_MAX_SCHEMA) throw new ApiError('התבנית גדולה מדי', 413);
 
     $pdo = db();
@@ -569,6 +575,8 @@ function tpl_delete(array $user, array $b): array
     $pdo->prepare('DELETE FROM template_versions WHERE template_id = ?')->execute([$t['id']]);
     $pdo->prepare('DELETE FROM counters WHERE template_id = ?')->execute([$t['id']]);
     $pdo->prepare("DELETE FROM shares WHERE object_type = 'template' AND object_id = ?")->execute([$t['id']]);
+    // הזמנות פתוחות — נמחקות עם התבנית (המספר שלה עלול לחזור לתבנית אחרת)
+    $pdo->prepare("DELETE FROM share_invites WHERE object_type = 'template' AND object_id = ?")->execute([$t['id']]);
     $pdo->prepare('DELETE FROM templates WHERE id = ?')->execute([$t['id']]);
     $pdo->commit();
     foreach ($paths as $p) delete_file($p);
