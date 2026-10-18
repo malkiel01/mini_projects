@@ -73,8 +73,8 @@ const Budget = (() => {
             <section class="fin-card bd">
                 <header class="fin-head"><h2>📐 ${esc(t('הצעת תקציב'))}</h2>${head}</header>
                 <div class="seg bd-vat" role="radiogroup" aria-label="${esc(t('הסכומים'))}">
-                    <label><input type="radio" name="bd-vat" value="gross"${B.vat_mode !== 'net' ? ' checked' : ''}><span>${esc(t('כולל מע"מ'))}</span></label>
                     <label><input type="radio" name="bd-vat" value="net"${B.vat_mode === 'net' ? ' checked' : ''}><span>${esc(t('לפני מע"מ'))}</span></label>
+                    <label><input type="radio" name="bd-vat" value="gross"${B.vat_mode !== 'net' ? ' checked' : ''}><span>${esc(t('כולל מע"מ'))}</span></label>
                 </div>
                 ${intro ? `<p class="hint">${esc(intro)}</p>` : ''}
                 ${B.pending ? pending(B.pending) : ''}
