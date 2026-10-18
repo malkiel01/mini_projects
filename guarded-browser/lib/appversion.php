@@ -33,15 +33,34 @@ function latestApp(?callable $fetch = null, int $ttl = APK_LATEST_TTL): ?array {
         $r = ($fetch ?? fn() => httpGet(APK_LATEST_URL, 4000))();
         $j = ($r['status'] ?? 0) === 200 ? json_decode((string) $r['body'], true) : null;
         if (is_array($j) && (int) ($j['version_code'] ?? 0) > 0) {
-            upsert('app_meta', ['key' => 'apk_latest'], ['value' => json_encode(['code' => (int) $j['version_code']]), 'updated_at' => nowIso()]);
-            $row = ['value' => json_encode(['code' => (int) $j['version_code']])];
+            $val = json_encode(['code' => (int) $j['version_code'], 'cert' => (string) ($j['cert_sha256'] ?? '')]);
+            upsert('app_meta', ['key' => 'apk_latest'], ['value' => $val, 'updated_at' => nowIso()]);
+            $row = ['value' => $val];
         } elseif ($row) {
             // השליפה נכשלה — ממשיכים עם הישן, ולא מנסים שוב בכל בקשה.
             q("UPDATE app_meta SET updated_at = ? WHERE key = 'apk_latest'", [nowIso()]);
         }
     }
-    $code = (int) (json_decode((string) ($row['value'] ?? ''), true)['code'] ?? 0);
-    return $code > 0 ? ['code' => $code, 'name' => '1.' . $code] : null;
+    $data = json_decode((string) ($row['value'] ?? ''), true) ?: [];
+    $code = (int) ($data['code'] ?? 0);
+    return $code > 0 ? ['code' => $code, 'name' => '1.' . $code, 'cert' => (string) ($data['cert'] ?? '')] : null;
+}
+
+/**
+ * תצורת ההקצאה (QR provisioning) של "בעל מכשיר": מה שאנדרואיד מצפה לו ב-QR במסך הפתיחה של
+ * מכשיר מאופס. ‏null אם עדיין אין טביעת אצבע של תעודת החתימה (בנייה ישנה לפני cert_sha256).
+ */
+function provisionConfig(): ?array {
+    $latest = latestApp();
+    if (!$latest || ($latest['cert'] ?? '') === '') return null;
+    return [
+        'android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME'
+            => 'com.mbeplus.guardedbrowser/com.mbeplus.guardedbrowser.MigdalorAdmin',
+        'android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION' => (serverUrl() ?: 'https://mbe-plus.com/mini_projects/guarded-browser/') . 'download.php',
+        'android.app.extra.PROVISIONING_DEVICE_ADMIN_SIGNATURE_CHECKSUM' => $latest['cert'],
+        'android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED' => true,
+        'android.app.extra.PROVISIONING_SKIP_ENCRYPTION' => false,
+    ];
 }
 
 /* ── הרשאות המכשיר (מסלול ההקמה) — אותם ביטים כמו Setup.kt ── */

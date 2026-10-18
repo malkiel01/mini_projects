@@ -108,8 +108,16 @@ jobs:
           if [ "${{ steps.key.outputs.signed }}" = "1" ]; then ARGS="$ARGS -PkeystoreFile=$RUNNER_TEMP/release.jks -PkeystorePassword=$PASS"; fi
           gradle assembleRelease --no-daemon $ARGS
           cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/migdalor.apk"
-          # הגרסה האחרונה — השרת קורא אותה כדי להראות להורה אם יש עדכון (lib/appversion.php).
-          printf '{"version_code": %s, "version_name": "1.%s"}\n' "${{ github.run_number }}" "${{ github.run_number }}" > "$RUNNER_TEMP/latest.json"
+          # טביעת האצבע של תעודת החתימה (SHA-256, base64url) — נדרשת ל-QR provisioning של בעל מכשיר.
+          # קבועה כל עוד מפתח החתימה לא השתנה. '' בבנייה לא-חתומה.
+          CHK=""
+          if [ "${{ steps.key.outputs.signed }}" = "1" ]; then
+            CHK=$(keytool -exportcert -alias mg -keystore "$RUNNER_TEMP/release.jks" -storepass "$PASS" 2>/dev/null \
+                  | openssl dgst -sha256 -binary | openssl base64 | tr '+/' '-_' | tr -d '=')
+          fi
+          # הגרסה האחרונה + טביעת האצבע — השרת קורא אותן (lib/appversion.php).
+          printf '{"version_code": %s, "version_name": "1.%s", "cert_sha256": "%s"}\n' \
+            "${{ github.run_number }}" "${{ github.run_number }}" "$CHK" > "$RUNNER_TEMP/latest.json"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

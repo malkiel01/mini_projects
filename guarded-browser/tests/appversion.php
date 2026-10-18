@@ -38,11 +38,11 @@ $dev = fn(string $t) => one('SELECT * FROM devices WHERE token_hash = ?', [token
 echo "\n— הגרסה האחרונה —\n";
 $calls = 0;
 $ok = function () use (&$calls) { $calls++; return ['status' => 200, 'body' => '{"version_code": 45, "version_name": "1.45"}']; };
-check('נקראת מ-latest.json', latestApp($ok), ['code' => 45, 'name' => '1.45']);
-check('ובמטמון — בלי פנייה נוספת', [latestApp($ok), $calls], [['code' => 45, 'name' => '1.45'], 1]);
+check('נקראת מ-latest.json', latestApp($ok), ['code' => 45, 'name' => '1.45', 'cert' => '']);
+check('ובמטמון — בלי פנייה נוספת', [latestApp($ok), $calls], [['code' => 45, 'name' => '1.45', 'cert' => ''], 1]);
 q("UPDATE app_meta SET updated_at = '2020-01-01T00:00:00Z'");
 $bad = fn() => ['status' => 404, 'body' => 'Not Found'];
-check('שליפה שנכשלה — נשארים עם הישן', latestApp($bad), ['code' => 45, 'name' => '1.45']);
+check('שליפה שנכשלה — נשארים עם הישן', latestApp($bad), ['code' => 45, 'name' => '1.45', 'cert' => '']);
 q('DELETE FROM app_meta');
 check('אין מידע בכלל — null', latestApp($bad), null);
 latestApp($ok);
@@ -72,6 +72,17 @@ unset($_SERVER['HTTP_X_MIGDALOR_APP']);
 check('אחרי העדכון — אין הצעה', deviceUpdateOffer((int) $dev($tNew)['id']), null);
 check('...והבקשה נמחקה', $dev($tNew)['update_requested_at'], '');
 check('מעודכן — אין מה לבקש', requestDeviceUpdate($kid, (int) $dev($tNew)['id']), 'המכשיר כבר בגרסה האחרונה');
+
+echo "\n— תצורת הקצאה (QR) —\n";
+check('בלי cert — אין הקצאה', provisionConfig(), null);
+q("DELETE FROM app_meta");
+$okCert = fn() => ['status' => 200, 'body' => '{"version_code": 60, "version_name": "1.60", "cert_sha256": "ABC123checksum"}'];
+latestApp($okCert);
+$prov = provisionConfig();
+check('רכיב מנהל המכשיר', $prov['android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME'], 'com.mbeplus.guardedbrowser/com.mbeplus.guardedbrowser.MigdalorAdmin');
+check('טביעת האצבע', $prov['android.app.extra.PROVISIONING_DEVICE_ADMIN_SIGNATURE_CHECKSUM'], 'ABC123checksum');
+check('מקור ההורדה', str_ends_with($prov['android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION'], 'download.php'), true);
+check('שומר אפליקציות מערכת', $prov['android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED'], true);
 
 echo "\n— אפליקציה ישנה —\n";
 check('בלי בקשה — לא נחסמת', upgradeBlock((int) $dev($tOld)['id']), '');
