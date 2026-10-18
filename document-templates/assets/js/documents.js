@@ -1593,6 +1593,25 @@
       && cols.every(c => String(rows[i][c.key] ?? '') === String(rows[i - 1][c.key] ?? ''));
   };
 
+  /**
+   * הגדרות התבנית שמצורפות לקובץ (dt-template.json) — לא יוצאות במסמך. pdf-lib שם קובץ מצורף בשני מקומות:
+   * Names/EmbeddedFiles וגם AF בקטלוג; מוחקים את שניהם, אחרת ההגדרות (רשימות, גופנים, שדות נסתרים) נשארות.
+   */
+  function stripAttachments(pdf) {
+    const { PDFName } = window.PDFLib;
+    try { const nm = pdf.catalog.lookup(PDFName.of('Names')); if (nm) nm.delete(PDFName.of('EmbeddedFiles')); } catch (e) { /* אין */ }
+    try { pdf.catalog.delete(PDFName.of('AF')); } catch (e) { /* אין */ }
+    // והקובץ עצמו: pdf-lib שומר כל אובייקט שבקובץ, גם אם כבר אין אליו הפניה
+    try {
+      const { PDFDict, PDFStream } = window.PDFLib;
+      for (const [ref, obj] of pdf.context.enumerateIndirectObjects()) {
+        const dict = obj instanceof PDFStream ? obj.dict : obj instanceof PDFDict ? obj : null;
+        const type = dict && dict.get(PDFName.of('Type'));
+        if (type && ['/EmbeddedFile', '/Filespec'].includes(String(type))) pdf.context.delete(ref);
+      }
+    } catch (e) { /* אין */ }
+  }
+
   async function buildPdf(doc, values, srcBytes) {
     await loadScript(PDFLIB);
     await loadScript(FONTKIT);
@@ -1603,7 +1622,7 @@
     if (doc.mime === 'application/pdf') {
       pdf = await PDFDocument.load(srcBytes, { ignoreEncryption: true });
       // הגדרות תבנית שמצורפות לקובץ (dt-template.json) — לא יוצאות במסמך שנשלח הלאה
-      try { const nm = pdf.catalog.lookup(window.PDFLib.PDFName.of('Names')); if (nm) nm.delete(window.PDFLib.PDFName.of('EmbeddedFiles')); } catch (e) { /* אין */ }
+      stripAttachments(pdf);
       // שלב 10: לטופס PDF יש שדות משלו, שמוצגים מעל תוכן הדף — שדה ריק עם רקע
       // היה מסתיר את מה שנכתוב. משטחים אותם לתוכן הדף לפני שכותבים מעליהם.
       try {
