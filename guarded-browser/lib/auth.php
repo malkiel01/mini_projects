@@ -87,8 +87,13 @@ function registerDevice(int $userId, string $deviceName, string $deviceId, int $
 function userByToken(string $token): ?array {
     if ($token === '') return null;
 
-    $row = one('SELECT u.*, d.id AS device_row_id FROM devices d
+    // ‏a.* של החשבון כ-account_status / account_expires_at: התוקף והמצב של *מנוי המשפחה*
+    // (SPEC סעיף 5) נאכפים על המכשיר, לא רק המצב הפרטני של הילד.
+    $row = one('SELECT u.*, d.id AS device_row_id,
+                       a.status AS account_status, a.expires_at AS account_expires_at
+                FROM devices d
                 JOIN users u ON u.id = d.user_id
+                LEFT JOIN accounts a ON a.id = u.account_id
                 WHERE d.token_hash = ?', [tokenHash($token)]);
     if (!$row) return null;
 

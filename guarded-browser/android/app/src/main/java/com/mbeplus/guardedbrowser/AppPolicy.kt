@@ -16,6 +16,8 @@ object AppPolicy {
 
     /** האם לחסום את החבילה הזו עכשיו, לפי המדיניות השמורה. */
     fun blocked(store: Store, pkg: String): Boolean {
+        // משוחרר (SPEC סעיף 5) — כל המגבלות נפתחות, כולל חסימת אפליקציות אחרות.
+        if (store.released) return false
         if (pkg.isEmpty() || !store.appsManage) return false
         if (pkg == store.ownPackage || pkg in ALWAYS || pkg in store.launchers) return false
         if (pkg in store.appsAllowed) return false

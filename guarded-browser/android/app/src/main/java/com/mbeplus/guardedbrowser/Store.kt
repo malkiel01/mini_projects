@@ -72,10 +72,33 @@ class Store(context: Context) {
             .putString("ad_css", payload.optString("ad_css"))
             .putString("name", payload.optJSONObject("user")?.optString("name") ?: "")
             .putString("rev", payload.optString("rev"))
+            .putInt("account_id", payload.optInt("account_id"))
             .putLong("policy_at", System.currentTimeMillis())
             .apply()
+        pinSignKey(payload.optString("sign_pubkey"))
         saveApps(payload.optJSONObject("apps"))
     }
+
+    /**
+     * המפתח הציבורי של השרת לאימות הודעות חתומות (שחרור, server_url).
+     * מוצמד בפעם הראשונה (TOFU, ברגע הצימוד המהימן) ואינו משתנה — כך MITM מאוחר לא יחליף אותו.
+     */
+    var signPubKey: String
+        get() = prefs.getString("sign_pubkey", "") ?: ""
+        private set(v) { prefs.edit().putString("sign_pubkey", v).apply() }
+
+    fun pinSignKey(k: String) { if (k.isNotEmpty() && signPubKey.isEmpty()) signPubKey = k }
+
+    /** זהות החשבון של המכשיר — לאימות ש-acct של אסימון השחרור תואם. */
+    val accountId: Int get() = prefs.getInt("account_id", 0)
+
+    /**
+     * המכשיר קיבל שחרור חתום: המנוי הסתיים, כל המגבלות פתוחות, ומוצג "המנוי של ההורים הסתיים".
+     * נשמר כך שגם בלי רשת המכשיר נשאר משוחרר — עד שיתקבל שוב חשבון פעיל (הארכה).
+     */
+    var released: Boolean
+        get() = prefs.getBoolean("released", false)
+        set(v) { prefs.edit().putBoolean("released", v).apply() }
 
     /** מדיניות האפליקציות (שלב 11) כפי שהתקבלה מהשרת. */
     fun saveApps(a: JSONObject?) {
@@ -107,9 +130,12 @@ class Store(context: Context) {
         (0 until a.length()).map { a.getString(it) }.toSet()
     } catch (e: Exception) { emptySet() }
 
-    fun policy(): Policy =
-        try { Policy.from(JSONObject(prefs.getString("policy", "{}") ?: "{}")) }
+    fun policy(): Policy {
+        // משוחרר — אין אכיפה: דפדפן פתוח לגמרי, גם במצב לא מקוון.
+        if (released) return Policy(mode = Policy.MODE_BROWSER, posture = Policy.POSTURE_ALLOW)
+        return try { Policy.from(JSONObject(prefs.getString("policy", "{}") ?: "{}")) }
         catch (e: Exception) { Policy() }
+    }
 
     fun rules(): List<Rule> = try {
         PolicyEngine.liveRules(PolicyEngine.rulesFrom(JSONArray(prefs.getString("rules", "[]") ?: "[]")),
@@ -150,8 +176,8 @@ class Store(context: Context) {
         }
     } catch (e: Exception) { emptyList() }
 
-    /** כל מה שהמנוע צריך, כפי שהתקבל מהשרת. */
-    fun ruleSet(): RuleSet = try {
+    /** כל מה שהמנוע צריך, כפי שהתקבל מהשרת. משוחרר — אין כללים, הכול פתוח. */
+    fun ruleSet(): RuleSet = if (released) RuleSet() else try {
         RuleSet(
             rules = rules(),
             categories = PolicyEngine.stringMap(obj("categories")),

@@ -330,16 +330,45 @@ function matchContentType(array $policy, string $url, string $declared = ''): ar
 
 /* ── תנאי החשבון ───────────────────────────────────────────────── */
 
+const EXPIRY_WARN_DAYS = 7;    // כמה ימים לפני התוקף מתחילה האזהרה
+const EXPIRY_GRACE_DAYS = 3;   // כמה ימים אחרי התוקף נמשכת האכיפה (חסד) לפני השחרור
+
+/**
+ * שלב התוקף (SPEC.md, סעיף 5): none|ok|soon|grace|released.
+ *   ok      — רחוק מהתוקף.
+ *   soon    — עד 7 ימים לפני (אזהרה; האכיפה מלאה).
+ *   grace   — עד 3 ימים אחרי התוקף (חסד; האכיפה עדיין מלאה).
+ *   released— אחרי החסד; כל המגבלות משתחררות.
+ * יום התוקף עצמו עדיין בתוקף (soon), לא grace.
+ */
+function expiryStage(string $expiresAt, ?DateTimeImmutable $now = null): string {
+    if ($expiresAt === '') return 'none';
+    $now ??= new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    $today = $now->format('Y-m-d');
+    if ($expiresAt >= $today) {
+        return $expiresAt <= $now->modify('+' . EXPIRY_WARN_DAYS . ' days')->format('Y-m-d') ? 'soon' : 'ok';
+    }
+    $graceEnd = (new DateTimeImmutable($expiresAt, new DateTimeZone('UTC')))
+        ->modify('+' . EXPIRY_GRACE_DAYS . ' days')->format('Y-m-d');
+    return $today <= $graceEnd ? 'grace' : 'released';
+}
+
+/**
+ * מצב החשבון והמנוי. התוקף נלקח מהחשבון (account_expires_at) כשהוא קיים — זה מנוי המשפחה;
+ * רק בלעדיו נופלים לשדה הפרטני. כך השחרור חל על כל ילדי החשבון יחד.
+ */
 function accountState(array $user, DateTimeImmutable $now): array {
-    $status = (string) ($user['status'] ?? 'pending');
+    $status = (string) ($user['account_status'] ?? $user['status'] ?? 'pending');
 
     if ($status === 'pending')   return decision(false, 'pending', 'החשבון ממתין לאישור המנהל');
     if ($status === 'suspended') return decision(false, 'suspended', 'החשבון הושעה');
     if ($status !== 'active')    return decision(false, 'inactive', 'החשבון אינו פעיל');
 
-    $expires = (string) ($user['expires_at'] ?? '');
-    if ($expires !== '' && $now > new DateTimeImmutable($expires)) {
-        return decision(false, 'expired', 'תוקף החשבון פג');
+    $expires = (string) ($user['account_expires_at'] ?? $user['expires_at'] ?? '');
+    // חסד (grace) — התוקף עבר אך האכיפה נמשכת, ולכן מצב פעיל.
+    // משוחרר (released) — כל המגבלות נפתחות; evaluate עוצר כאן ואינו בודק זמן/כתובות.
+    if (expiryStage($expires, $now) === 'released') {
+        return decision(true, 'released');
     }
     return decision(true, 'active');
 }
@@ -420,6 +449,8 @@ function withinSession(array $policy, int $sessionSeconds): array {
 function evaluate(array $user, array $policy, array $set, DateTimeImmutable $now, array $ctx): array {
     $d = accountState($user, $now);
     if (!$d['allow']) return $d;
+    // משוחרר — אין שום אכיפה. לא בודקים חלון, מכסה או כתובת.
+    if (($d['code'] ?? '') === 'released') return decision(true, 'released');
 
     foreach ([withinWindow($policy, $now),
               withinQuota($policy, (int) ($ctx['used_today'] ?? 0)),

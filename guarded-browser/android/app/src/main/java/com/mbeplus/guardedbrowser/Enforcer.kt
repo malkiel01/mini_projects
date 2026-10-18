@@ -64,6 +64,28 @@ object Enforcer {
         return out
     }
 
+    /**
+     * שחרור (SPEC סעיף 5): המנוי הסתיים — מסירים כל אכיפה הרמטית, אבל נשארים "בעל מכשיר"
+     * כדי שהארכה תחזיר אכיפה בלי התקנה מחדש. ‏relinquish() מוותר גם על הבעלות עצמה.
+     */
+    fun release(ctx: Context, store: Store) {
+        if (!isOwner(ctx)) return
+        val dpm = dpm(ctx)
+        val admin = DeviceAdmin.component(ctx)
+        unsuspendAll(ctx, store)
+        trySet { dpm.setUninstallBlocked(admin, ctx.packageName, false) }
+        for (r in listOf(UserManager.DISALLOW_FACTORY_RESET, UserManager.DISALLOW_SAFE_BOOT,
+                         UserManager.DISALLOW_ADD_USER, UserManager.DISALLOW_DEBUGGING_FEATURES)) {
+            trySet { dpm.clearUserRestriction(admin, r) }
+        }
+    }
+
+    /** ההורה מחק את הילדים: מגדלור מסיר את עצמו כבעל מכשיר, והמכשיר חוזר לטלפון רגיל. */
+    fun relinquish(ctx: Context, store: Store) {
+        release(ctx, store)
+        trySet { if (isOwner(ctx)) dpm(ctx).clearDeviceOwnerApp(ctx.packageName) }
+    }
+
     private fun suspend(ctx: Context, pkgs: List<String>, on: Boolean) {
         if (pkgs.isEmpty()) return
         trySet { dpm(ctx).setPackagesSuspended(DeviceAdmin.component(ctx), pkgs.toTypedArray(), on) }

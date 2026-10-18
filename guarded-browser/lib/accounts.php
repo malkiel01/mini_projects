@@ -41,14 +41,12 @@ function cleanDate(string $d): string {
     return ($dt && $dt->format('Y-m-d') === $d) ? $d : '';
 }
 
-/** מצב התוקף לתצוגה: none (אין תוקף) · ok · soon (עד 7 ימים) · expired. */
+/**
+ * מצב התוקף לתצוגה: none · ok · soon (אזהרה) · grace (חסד, התוקף עבר אך האכיפה נמשכת) ·
+ * released (משוחרר). השלבים עצמם ב-expiryStage() שב-policy.php — מקור אמת אחד.
+ */
 function expiryState(string $expiresAt, ?DateTimeImmutable $now = null): string {
-    if ($expiresAt === '') return 'none';
-    $now ??= new DateTimeImmutable('now', new DateTimeZone('UTC'));
-    $today = $now->format('Y-m-d');
-    if ($expiresAt < $today) return 'expired';
-    $soon = $now->modify('+7 days')->format('Y-m-d');
-    return $expiresAt <= $soon ? 'soon' : 'ok';
+    return expiryStage($expiresAt, $now);
 }
 
 function moduleList(string $csv): array {

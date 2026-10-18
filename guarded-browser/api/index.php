@@ -22,6 +22,7 @@ require_once __DIR__ . '/../lib/activity.php';
 require_once __DIR__ . '/../lib/appversion.php';
 require_once __DIR__ . '/../lib/search.php';
 require_once __DIR__ . '/../lib/appcontrol.php';
+require_once __DIR__ . '/../lib/signing.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -75,6 +76,11 @@ function policyPayload(array $user): array {
     $state = evaluate($user, $policy, $set, nowIn($tz), ['url' => '', 'used_today' => $used]);
     $dev   = (int) ($user['device_row_id'] ?? 0);
     if ($block = upgradeBlock($dev)) $state = decision(false, 'app_update', $block);
+
+    // שחרור (SPEC סעיף 5): המינוי של ההורה הסתיים — המכשיר פותח הכול, אבל רק מול אסימון
+    // חתום (סעיף 13). "אין חיבור" אינו "פג תוקף": בלי האסימון החתום הזה הוא ממשיך לאכוף.
+    $acct    = (int) ($user['account_id'] ?? 0);
+    $release = ($state['code'] ?? '') === 'released' ? releaseToken($acct) : null;
 
     $quota = (int) $policy['daily_quota_min'];
 
@@ -136,6 +142,12 @@ function policyPayload(array $user): array {
         // כתובת השרת הקבועה (data/config.json). האפליקציה עוברת אליה רק
         // אחרי שבדקה ב-ping שהיא באמת עונה — כתובת שגויה לא תנתק מכשירים.
         'server_url'     => serverUrl(),
+        // זהות החשבון, ואסימון השחרור החתום (רק כשמשוחרר). המכשיר מאמת שהחתימה
+        // תקפה וש-acct תואם — ורק אז מסיר מגבלות ומציג "המנוי של ההורים הסתיים".
+        'account_id'     => $acct,
+        'release'        => $release,
+        // המפתח הציבורי לאימות חתימות. המכשיר מצמיד אותו בפעם הראשונה (TOFU) ומאמת מולו.
+        'sign_pubkey'    => signingPublicKey(),
         // טביעת האצבע של המדיניות — הפעימה משווה אליה (policyRev).
         'rev'            => policyRev($uid),
         'categories'     => $set['categories'],

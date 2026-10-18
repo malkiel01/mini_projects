@@ -209,6 +209,21 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 .auth .brand h1 { font-size: 1.3rem; }
 .auth form { display: grid; gap: var(--s2); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s3); }
 .auth .btn.primary { inline-size: 100%; }
+
+/* משוחרר: מסך נעילה (SPEC סעיף 5) */
+.card.lock { display: block; cursor: default; text-align: center; background: var(--surface);
+    border: 1px solid var(--line); border-radius: var(--r); padding: var(--s4); }
+.card.lock:hover { background: var(--surface); }
+.lock-icon { font-size: 3rem; display: block; margin-block-end: var(--s2); }
+.card.lock h1 { font-size: 1.3rem; margin: 0 0 var(--s2); }
+.lock-sub { font-weight: 600; margin: 0 0 var(--s2); }
+.lock-note { color: var(--muted); font-size: .9rem; margin: 0 0 var(--s3); text-align: start; }
+.lock-actions { display: grid; gap: var(--s2); }
+.lock-actions .btn { inline-size: 100%; border: 1px solid var(--line); }
+.lock-actions .btn.danger { border-color: var(--danger); }
+.link { background: none; border: 0; color: var(--muted); text-decoration: underline;
+    cursor: pointer; margin-block-start: var(--s3); min-height: var(--tap); }
+
 .cells.k4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .cells.k4 dd { font-size: 1.2rem; }
 @media (max-width: 380px) { .cells.k4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

@@ -271,7 +271,20 @@ check('וסרטון מאושר נפתח',
 echo "\n— תנאי חשבון וזמן —\n";
 check('ממתין לאישור', accountState($user(['status' => 'pending']), $now)['code'], 'pending');
 check('מושעה',        accountState($user(['status' => 'suspended']), $now)['code'], 'suspended');
-check('תוקף פג',      accountState($user(['expires_at' => '2026-01-01']), $now)['code'], 'expired');
+// שלב 10: חסד — התוקף עבר אך האכיפה נמשכת (מצב פעיל); משוחרר — פותח הכול.
+check('שלב: רחוק',   expiryStage('2026-12-01', $now), 'ok');
+check('שלב: אזהרה',  expiryStage('2026-08-30', $now), 'soon');
+check('שלב: יום התוקף עדיין בתוקף', expiryStage('2026-08-26', $now), 'soon');
+check('שלב: חסד',    expiryStage('2026-08-25', $now), 'grace');
+check('שלב: קצה החסד', expiryStage('2026-08-23', $now), 'grace');
+check('שלב: משוחרר', expiryStage('2026-08-22', $now), 'released');
+check('חסד עדיין אוכף', accountState($user(['expires_at' => '2026-08-25']), $now)['code'], 'active');
+check('משוחרר — פותח', accountState($user(['expires_at' => '2026-01-01']), $now)['code'], 'released');
+check('משוחרר allow',  accountState($user(['expires_at' => '2026-01-01']), $now)['allow'], true);
+check('תוקף חשבון גובר על הפרטני',
+      accountState($user(['expires_at' => '2099-01-01', 'account_expires_at' => '2026-01-01']), $now)['code'], 'released');
+check('משוחרר — evaluate פותח כל כתובת',
+      evaluate($user(['expires_at' => '2026-01-01']), $pol(), $set(), $now, ['url' => 'https://x.com'])['code'], 'released');
 $win = $pol(['window_start' => '16:00', 'window_end' => '22:00']);
 check('בתוך החלון',      withinWindow($win, $at('2026-08-26 18:00'))['allow'], true);
 check('בדיוק בסיום',     withinWindow($win, $at('2026-08-26 22:00'))['allow'], false);

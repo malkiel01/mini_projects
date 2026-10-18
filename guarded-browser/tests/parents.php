@@ -128,5 +128,15 @@ check('מחיקה — הילד נעלם', childOf($a1, $k1), null);
 check('...והיומן שלו נמחק', (int) one('SELECT COUNT(*) n FROM audit WHERE user_id = ?', [$k1])['n'], 0);
 check('...והכללים', (int) one('SELECT COUNT(*) n FROM rules WHERE user_id = ?', [$k1])['n'], 0);
 
+echo "\n— שחרור: מחיקת כל הילדים (release_cleanup) —\n";
+$rn = new DateTimeImmutable('2026-10-16', new DateTimeZone('UTC'));
+check('חשבון פעיל אינו משוחרר', expiryState('2027-01-01', $rn) !== 'released', true);
+check('תוקף שעבר מזמן — משוחרר', expiryState('2026-09-01', $rn), 'released');
+childCreate($a2, 'תמר'); childCreate($a2, 'רוני');
+$before = (int) one('SELECT COUNT(*) n FROM users WHERE account_id = ? AND is_admin = 0', [$a2])['n'];
+check('יש ילדים בחשבון', $before > 0, true);
+foreach (all('SELECT id FROM users WHERE account_id = ? AND is_admin = 0', [$a2]) as $r) childDelete((int) $r['id']);
+check('אחרי השחרור — אין ילדים', (int) one('SELECT COUNT(*) n FROM users WHERE account_id = ? AND is_admin = 0', [$a2])['n'], 0);
+
 echo "\n════ עברו: $pass · נכשלו: $fail ════\n";
 exit($fail === 0 ? 0 : 1);
