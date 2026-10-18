@@ -240,6 +240,7 @@ try {
         // הצעת תקציב לפי שלבים (lib/budget.php)
         'GET budget'          => pm_budget($user, (int)($in['project_id'] ?? 0)),
         'POST budget-draft'   => pm_budget_draft_save($user, $in),
+        'POST budget-vat'   => pm_budget_vat_mode($user, $in),
         'POST budget-send'    => pm_budget_send($user, $in),
         'POST budget-decide'  => pm_budget_decide($user, (int)($in['id'] ?? 0), (string)($in['role'] ?? ''), (string)($in['decision'] ?? ''),
                                                   (string)($in['note'] ?? ''), 'manual', (string)($in['by_name'] ?? '')),

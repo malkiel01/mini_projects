@@ -2601,5 +2601,7 @@
     "התמונה גדולה מדי לסיווג": "L'image est trop grande pour être classée",
     "הגעתם למכסת הסיווגים היומית": "Vous avez atteint la limite quotidienne",
     "השירות סירב לסווג את הקובץ": "Le service a refusé de classer le fichier",
-    "לא התקבלה תשובה מהסיווג": "Aucune réponse de la classification"
+    "לא התקבלה תשובה מהסיווג": "Aucune réponse de la classification",
+    "הסכומים": "Montants",
+    "כולל מע\"מ {n}%": "TVA {n}% incluse"
 }

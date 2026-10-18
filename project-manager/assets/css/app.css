@@ -1233,3 +1233,7 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 #share-targets .ai-wait .ficon { animation: ai-pulse 1.2s ease-in-out infinite; }
 @keyframes ai-pulse { 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { #share-targets .ai-wait .ficon { animation: none; } }
+
+/* הצעת תקציב: כולל / לפני מע"מ */
+.bd-vat { margin: var(--s2) 0; }
+.bd-tot .bd-other dt, .bd-tot .bd-other dd { color: var(--muted); font-size: .85rem; }

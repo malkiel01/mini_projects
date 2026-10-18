@@ -813,6 +813,7 @@ function pm_contracts_multi(PDO $pdo): void
     // (JSON {unit_id: אחוז}; ריק — שווה בשווה), ותקציב ראשוני לשלב (באגורות). גרסאות — ההצעה וכל שינוי, וההחלטות עליהן.
     pm_add_column($pdo, 'projects', 'budget_approver', "TEXT NOT NULL DEFAULT 'client'");
     pm_add_column($pdo, 'projects', 'contingency_pct', 'REAL NOT NULL DEFAULT 0');
+    pm_add_column($pdo, 'projects', 'budget_vat', "TEXT NOT NULL DEFAULT 'gross'"); // הצעת התקציב מוצגת ונערכת: gross — כולל מע"מ, net — לפני מע"מ (נשמר תמיד כולל)
     pm_add_column($pdo, 'projects', 'unit_split', "TEXT NOT NULL DEFAULT ''");
     pm_add_column($pdo, 'stages', 'budget_initial', 'INTEGER NOT NULL DEFAULT 0');
     $pdo->exec('CREATE TABLE IF NOT EXISTS budget_versions (

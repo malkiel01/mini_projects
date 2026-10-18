@@ -131,6 +131,8 @@ function pm_budget_of(int $projectId, bool $portal = false, ?array $scope = null
         'approver' => $p['budget_approver'] ?: 'client',
         'approver_name' => pm_t(PM_BUDGET_APPROVERS[$p['budget_approver'] ?: 'client'] ?? 'הלקוח'),
         'contingency_pct' => (float)$p['contingency_pct'],
+        // הסכומים נשמרים תמיד כולל מע"מ (כמו כל הכספים); vat_mode — איך המנהל רואה ועורך: כולל / לפני מע"מ
+        'vat_mode' => ($p['budget_vat'] ?? '') === 'net' ? 'net' : 'gross', 'vat_rate' => pm_vat_rate(),
         'fee_type' => $p['fee_type'], 'fee_value' => (float)$p['fee_value'],
         'lines' => $lines,
         'stages_total' => $sum / 100, 'fee' => $fee / 100, 'contingency' => $cont / 100, 'total' => ($sum + $fee + $cont) / 100,
@@ -183,6 +185,16 @@ function pm_budget_draft_save(array $user, array $in): array
         $db->rollBack();
         throw $e;
     }
+    return pm_budget_of($projectId);
+}
+
+/** איך הצעת התקציב מוצגת ונערכת — כולל מע"מ או לפני מע"מ. רק תצוגה: הסכומים נשמרים כולל מע"מ. */
+function pm_budget_vat_mode(array $user, array $in): array
+{
+    $projectId = (int)($in['project_id'] ?? 0);
+    pm_project_row($user, $projectId);
+    $mode = ($in['mode'] ?? '') === 'net' ? 'net' : 'gross';
+    pm_db()->prepare('UPDATE projects SET budget_vat = ? WHERE id = ?')->execute([$mode, $projectId]);
     return pm_budget_of($projectId);
 }
 
