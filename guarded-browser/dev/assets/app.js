@@ -474,6 +474,32 @@ async function loadSystem() {
         ]),
     ])) : [el('li', { class: 'empty', text: 'כל המכשירים התחברו ביממה האחרונה.' })]));
     renderSearch(s.search);
+    renderProvision(s.provision);
+}
+
+/** QR להקצאת "בעל מכשיר" בלי מחשב: סורקים אותו במסך הפתיחה של מכשיר מאופס. */
+function renderProvision(cfg) {
+    const box = $('#sys-provision');
+    if (!cfg) { box.replaceChildren(el('p', { class: 'hint', text: 'QR להקצאה יהיה זמין אחרי הבנייה הבאה של האפליקציה.' })); return; }
+    const steps = el('ol', { class: 'steps' }, [
+        'או בלי מחשב: מאפסים את המכשיר להגדרות יצרן.',
+        'במסך הפתיחה (ברוכים הבאים) מקישים 6 פעמים על אותו מקום עד שנפתח סורק QR.',
+        'סורקים את הקוד הזה. המכשיר יוריד את מגדלור ויגדיר אותו כבעל מכשיר לבד.',
+    ].map(t => el('li', { text: t })));
+    const holder = el('div', { style: 'display:grid;justify-items:center;gap:8px;margin-top:8px' });
+    const btn = el('button', { type: 'button', class: 'btn', text: '📱 הצגת QR להקצאה' });
+    btn.addEventListener('click', () => {
+        if (holder.firstChild) { holder.replaceChildren(); btn.textContent = '📱 הצגת QR להקצאה'; return; }
+        try {
+            const qr = qrcode(0, 'M'); qr.addData(JSON.stringify(cfg)); qr.make();
+            const svg = new DOMParser().parseFromString(qr.createSvgTag({ cellSize: 5, margin: 2, scalable: true }), 'image/svg+xml').documentElement;
+            svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', 'קוד QR להקצאת בעל מכשיר');
+            svg.style.cssText = 'inline-size:min(80vw,320px);block-size:auto;background:#fff;border-radius:10px;padding:6px';
+            holder.replaceChildren(svg, el('p', { class: 'hint', text: 'מיועד למכשיר מאופס בלבד.' }));
+            btn.textContent = 'הסתרה';
+        } catch (e) { toast('יצירת ה-QR נכשלה', true); }
+    });
+    box.replaceChildren(el('p', { class: 'hint', style: 'margin-top:12px', text: '— או בלי מחשב, ב-QR —' }), steps, btn, holder);
 }
 
 /** חיפוש: מצב האינדקס, סריקה עכשיו, ומפתח Brave (לילדים במצב "הכול פתוח"). */

@@ -396,7 +396,11 @@ Actions → Build Android APK → Run workflow
 ```
 adb shell dpm set-device-owner com.mbeplus.guardedbrowser/.MigdalorAdmin
 ```
-ואז מצמדים כרגיל. ההדרכה המלאה בקונסולת המפתח ← מערכת. ‏QR provisioning — שלב הבא.
+ואז מצמדים כרגיל. **או בלי מחשב** — QR provisioning: בקונסולת המפתח ← מערכת ← "📱 הצגת QR להקצאה".
+מאפסים את המכשיר, ובמסך הפתיחה מקישים 6 פעמים ← סורק QR ← סורקים את הקוד; המכשיר מוריד את מגדלור
+ומגדיר אותו כבעל מכשיר לבד. ה-QR נבנה מ-`provisionConfig()` עם טביעת האצבע של תעודת החתימה
+(`cert_sha256` ב-latest.json, שה-CI מפרסם), כתובת ההורדה (`download.php`), ו-
+`LEAVE_ALL_SYSTEM_APPS_ENABLED` כדי לא למחוק אפליקציות מערכת.
 
 ## ניהול אפליקציות המכשיר (שלב 11 באפיון) — נגישות
 

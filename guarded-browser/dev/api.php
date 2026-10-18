@@ -14,6 +14,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../lib/accounts.php';
 require_once __DIR__ . '/../lib/json.php';
 require_once __DIR__ . '/../lib/search.php';
+require_once __DIR__ . '/../lib/appversion.php';
 
 jsonHeaders();
 
@@ -104,7 +105,7 @@ try {
             out(['ok' => true, 'account' => accountDetail((int) ($p['account_id'] ?? 0))]);
 
         case 'system':
-            out(['ok' => true, 'system' => systemOverview() + ['search' => searchStatus()]]);
+            out(['ok' => true, 'system' => systemOverview() + ['search' => searchStatus(), 'provision' => provisionConfig()]]);
 
         /* ── חיפוש (שלב 8): מפתח Brave, וסריקה עכשיו ── */
         case 'brave_key':
