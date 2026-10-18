@@ -354,15 +354,19 @@ function expiryStage(string $expiresAt, ?DateTimeImmutable $now = null): string 
 }
 
 /**
- * מצב החשבון והמנוי. התוקף נלקח מהחשבון (account_expires_at) כשהוא קיים — זה מנוי המשפחה;
- * רק בלעדיו נופלים לשדה הפרטני. כך השחרור חל על כל ילדי החשבון יחד.
+ * מצב החשבון והמנוי. *שני* מצבים חוסמים, כל אחד לחוד:
+ *   • מצב החשבון (account_status) — המנוי של המשפחה (השעיה/אישור ברמת החשבון).
+ *   • מצב הילד (status) — השעיה פרטנית של ילד בודד בתוך חשבון פעיל.
+ * ‏account_status חסר (כניסה/צימוד, בלי חיבור לחשבון) — נחשב פעיל, והחסימה ברמת החשבון
+ * נבדקת שם בנפרד (accountBlock). התוקף נלקח מהחשבון (account_expires_at) — מנוי המשפחה.
  */
 function accountState(array $user, DateTimeImmutable $now): array {
-    $status = (string) ($user['account_status'] ?? $user['status'] ?? 'pending');
-
-    if ($status === 'pending')   return decision(false, 'pending', 'החשבון ממתין לאישור המנהל');
-    if ($status === 'suspended') return decision(false, 'suspended', 'החשבון הושעה');
-    if ($status !== 'active')    return decision(false, 'inactive', 'החשבון אינו פעיל');
+    foreach ([(string) ($user['account_status'] ?? 'active'),
+              (string) ($user['status'] ?? 'pending')] as $status) {
+        if ($status === 'pending')   return decision(false, 'pending', 'החשבון ממתין לאישור המנהל');
+        if ($status === 'suspended') return decision(false, 'suspended', 'החשבון הושעה');
+        if ($status !== 'active')    return decision(false, 'inactive', 'החשבון אינו פעיל');
+    }
 
     $expires = (string) ($user['account_expires_at'] ?? $user['expires_at'] ?? '');
     // חסד (grace) — התוקף עבר אך האכיפה נמשכת, ולכן מצב פעיל.

@@ -271,6 +271,15 @@ check('וסרטון מאושר נפתח',
 echo "\n— תנאי חשבון וזמן —\n";
 check('ממתין לאישור', accountState($user(['status' => 'pending']), $now)['code'], 'pending');
 check('מושעה',        accountState($user(['status' => 'suspended']), $now)['code'], 'suspended');
+// שני המצבים חוסמים לחוד: השעיית חשבון, והשעיית ילד בודד בחשבון פעיל.
+check('חשבון מושעה חוסם',
+      accountState($user(['account_status' => 'suspended', 'status' => 'active']), $now)['code'], 'suspended');
+check('ילד מושעה נחסם גם כשהחשבון פעיל',
+      accountState($user(['account_status' => 'active', 'status' => 'suspended']), $now)['code'], 'suspended');
+check('חשבון ממתין חוסם',
+      accountState($user(['account_status' => 'pending', 'status' => 'active']), $now)['code'], 'pending');
+check('שניהם פעילים — עובר',
+      accountState($user(['account_status' => 'active', 'status' => 'active']), $now)['allow'], true);
 // שלב 10: חסד — התוקף עבר אך האכיפה נמשכת (מצב פעיל); משוחרר — פותח הכול.
 check('שלב: רחוק',   expiryStage('2026-12-01', $now), 'ok');
 check('שלב: אזהרה',  expiryStage('2026-08-30', $now), 'soon');
