@@ -480,6 +480,8 @@ const Payments = (() => {
     }
 
     async function save() {
+        // דיווח תשלום פתוח — "שמירה" למעלה רושמת אותו (קודם נשמרו רק הפרטים, והתשלום הלך לאיבוד)
+        if (current && !$('#manual-proof').hidden && $('#manual-proof').open && $('#mp-amount').value.trim()) return manualProof();
         const form = $('#payment-dlg form'), el = form.elements;
         const pct = $('#payment-dlg [name=mode]:checked').value === 'percent';
         const body = {
