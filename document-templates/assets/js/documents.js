@@ -4,6 +4,7 @@
 
   const PDFLIB = 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
   const FONTKIT = 'https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js';
+  const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';   // רק לקריאת הרקע (איפה מותר לחתוך)
   const FONT = 'assets/fonts/Alef-Regular.ttf';
 
   const STATUS = {
@@ -1754,6 +1755,50 @@
      * הטבלה והשוליים התחתונים חוזרים בכל דף; מה שאחרי הטבלה — רק בדף האחרון. אחרת (נספח / הקטנה) — כרגיל.
      * הרקע נבנה מחדש מעותק של הדף, באזורים חתוכים. דף מסובב או חתוך (CropBox) — נשאר כמו שהוא.
      */
+    /**
+     * איפה יש דיו ברקע: לכל נקודה לגובה הדף (מלמעלה) — האם יש בה משהו מצויר. נקרא מהקובץ המקורי
+     * (pdf.js, או התמונה עצמה). לא הצליח — null, והחיתוך נשאר במקום שנקבע.
+     */
+    async function inkRows(pageIndex, W, H) {
+      try {
+        const c = document.createElement('canvas');
+        c.width = Math.ceil(W); c.height = Math.ceil(H);
+        const ctx = c.getContext('2d', { willReadFrequently: true });
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+        if (doc.mime === 'application/pdf') {
+          if (!window.pdfjsLib) await loadScript(PDFJS + 'pdf.min.js');
+          if (!pdfjsLib.GlobalWorkerOptions.workerSrc) pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js';
+          const src = await pdfjsLib.getDocument({ data: new Uint8Array(srcBytes).slice() }).promise;
+          const pg = await src.getPage(pageIndex + 1);
+          const vp = pg.getViewport({ scale: c.width / pg.getViewport({ scale: 1 }).width });
+          await pg.render({ canvasContext: ctx, viewport: vp }).promise;
+        } else {
+          const bmp = await createImageBitmap(new Blob([srcBytes]));
+          ctx.drawImage(bmp, 0, 0, c.width, c.height);
+        }
+        const d = ctx.getImageData(0, 0, c.width, c.height).data;
+        const rows = new Uint8Array(c.height);
+        for (let y = 0; y < c.height; y++) {
+          for (let x = 0; x < c.width; x++) {
+            const i = (y * c.width + x) * 4;
+            if (d[i] < 225 || d[i + 1] < 225 || d[i + 2] < 225) { rows[y] = 1; break; }
+          }
+        }
+        return rows;
+      } catch (e) { return null; }
+    }
+    /** הקו הריק הקרוב ל-v (בטווח של ~15 מ״מ, בין lo ל-hi). אין — v כמו שהוא. */
+    function snapBlank(rows, v, lo, hi) {
+      if (!rows) return v;
+      const blank = (y) => { const r = Math.round(y); return r >= 0 && r < rows.length && !rows[r]; };
+      if (blank(v)) return v;
+      for (let d = 1; d <= 42; d++) {
+        if (v + d <= hi && blank(v + d)) return v + d;
+        if (v - d >= lo && blank(v - d)) return v - d;
+      }
+      return v;
+    }
+
     async function layoutFlows(vis) {
       const { pushGraphicsState, popGraphicsState, rectangle, clip, endPath, PDFName } = window.PDFLib;
       const out = new Map();
@@ -1764,8 +1809,11 @@
         if ((src.getRotation().angle % 360) || cb.x || cb.y || mb.x || mb.y || Math.abs(cb.width - mb.width) > 0.5 || Math.abs(cb.height - mb.height) > 0.5) continue;
         const W = cb.width, H0 = cb.height;
         const font = fonts.get(f.font) || fontDefault;
-        const bx = f.x * W, tTop = f.y * H0, bw = f.w * W, bh = f.h * H0, tb = tTop + bh;
-        const fe = Math.min(H0, Math.max(tb, H0 - (Number(f.keep_bottom ?? 25) || 0) * 72 / 25.4));
+        const bx = f.x * W, tTop = f.y * H0, bw = f.w * W, bh = f.h * H0;
+        // קווי החיתוך — בשורה ריקה של הרקע, לא באמצע שורת טקסט (שאחרת חציה עולה וחציה נשאר)
+        const ink = await inkRows(f.page, W, H0);
+        const tb = snapBlank(ink, tTop + bh, tTop, H0);
+        const fe = snapBlank(ink, Math.min(H0, Math.max(tb, H0 - (Number(f.keep_bottom ?? 25) || 0) * 72 / 25.4)), tb, H0);
         const sum = (a) => a.reduce((x, y) => x + y, 0);
         const long = f.overflow === 'grow' || f.overflow === 'pages';
         const M = measureTable(f, font, bw, long ? Infinity : bh);   // דף ארוך / דפים — לא מקטינים את הגופן בשביל הגובה
