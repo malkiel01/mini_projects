@@ -84,9 +84,20 @@ const Projects = (() => {
             const b = e.target.closest('[data-remove]');
             if (b) removeMember(Number(b.dataset.remove), b.dataset.name);
             const ed = e.target.closest('[data-member-edit]');
-            if (ed) openMember(Number(ed.dataset.memberEdit));
+            if (ed) editMember(Number(ed.dataset.memberEdit));
             const l = e.target.closest('[data-portal]');
             if (l) openPortal(Number(l.dataset.portal));
+            // לחיצה על השורה (לא על פעולה) — פותחת / סוגרת את הפעולות שלה
+            if (b || ed || l || e.target.closest('a, .team-more')) return;
+            const row = e.target.closest('[data-team-open]');
+            if (!row) return;
+            const id = Number(row.dataset.teamOpen);
+            openTeam = openTeam === id ? 0 : id;
+            $$('#team-list .team-row').forEach(r => {
+                const on = Number(r.dataset.teamOpen) === openTeam;
+                $('.team-more', r).hidden = !on;
+                $('[data-team-more]', r).setAttribute('aria-expanded', String(on));
+            });
         });
         $('#portal-create').addEventListener('click', () => portalDo('get'));
         $('#portal-renew').addEventListener('click', () => portalDo('renew'));
@@ -756,6 +767,19 @@ const Projects = (() => {
         } catch (e) { toast(e.message, true); }
     }
 
+    let openTeam = 0;
+
+    /**
+     * ✏️ לכל איש צוות: מי שנוסף לצוות, וגם ספק שהגיע מהשלב — בחלון הצוות (השלבים שלו מסומנים);
+     * לקוח / עו"ד של הפרויקט או של יחידה — נקבעים בפרטי הפרויקט, ולכן לשם.
+     */
+    function editMember(id) {
+        const c = cur.team.find(x => x.id === id);
+        if (!c) return;
+        if (c.member || c.kind === 'supplier') { openMember(id); return; }
+        location.hash = `#/p/${cur.project.id}/details`;
+    }
+
     async function renderTeam() {
         renderPartners();
         const draw = () => {
@@ -765,12 +789,23 @@ const Projects = (() => {
                 const portal = ['client', 'lawyer', 'supplier'].includes(c.kind);
                 const l = links[c.id];
                 const seen = l ? (l.last_seen_at ? t('פתח {when}', { when: when(l.last_seen_at) }) : t('קישור נשלח, עוד לא נפתח')) : '';
-                return `<li class="card">
+                // בשורה — רק חיוג ו-⋯; לחיצה על השורה פותחת מתחתיה את כל הפעולות, עם מילים (המקום לשם)
+                const wa = c.whatsapp || c.phone;
+                const more = [
+                    portal ? `<button type="button" class="btn ghost sm" data-portal="${c.id}">🔗 ${esc(t('קישור אישי'))}</button>` : '',
+                    wa ? `<a class="btn ghost sm" href="https://wa.me/${esc(waNumber(wa))}" target="_blank" rel="noopener">💬 ${esc(t('וואטסאפ'))}</a>` : '',
+                    c.email ? `<a class="btn ghost sm" href="mailto:${esc(c.email)}">✉️ ${esc(t('אימייל'))}</a>` : '',
+                    `<button type="button" class="btn ghost sm" data-member-edit="${c.id}">✏️ ${esc(t('עריכה'))}</button>`,
+                    c.removable ? `<button type="button" class="btn ghost sm danger" data-remove="${c.id}" data-name="${esc(c.name)}">✕ ${esc(t('הסרה'))}</button>` : '',
+                ].join('');
+                const open = openTeam === c.id;
+                return `<li class="card team-row" data-team-open="${c.id}">
                 ${avatar(c.name)}
                 <div class="body"><div class="l1">${esc(c.name)}${c.company ? `<span class="sub">${esc(c.company)}</span>` : ''}</div>
-                    <div class="l2">${[...c.roles.map(r => esc(t(r))), seen ? esc(seen) : ''].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>')}</div>
+                    <div class="l2 one">${[...c.roles.map(r => esc(t(r))), seen ? esc(seen) : ''].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>')}</div>
                     ${c.member?.note ? `<div class="l2 member-note">📝 ${esc(c.member.note)}</div>` : ''}</div>
-                <div class="acts">${portal ? `<button class="icon-btn" data-portal="${c.id}" aria-label="${esc(t('הקישור האישי של {name}', { name: c.name }))}" title="${esc(t('קישור אישי'))}">🔗</button>` : ''}${contactActs(c)}${c.member ? `<button class="icon-btn" data-member-edit="${c.id}" aria-label="${esc(t('עריכת התפקיד של {name}', { name: c.name }))}">✏️</button>` : ''}${c.removable ? `<button class="icon-btn" data-remove="${c.id}" data-name="${esc(c.name)}" aria-label="${esc(t('הסרת {name} מהצוות', { name: c.name }))}">✕</button>` : ''}</div>
+                <div class="acts">${c.phone ? `<a class="icon-btn" href="tel:${esc(digits(c.phone))}" aria-label="${esc(t('חיוג ל{name}', { name: c.name }))}">📞</a>` : ''}<button type="button" class="icon-btn" data-team-more="${c.id}" aria-expanded="${open}" aria-label="${esc(t('פעולות — {name}', { name: c.name }))}">⋯</button></div>
+                <div class="team-more row-btns"${open ? '' : ' hidden'}>${more}</div>
             </li>`;
             }).join('') || `<p class="empty">${esc(t('עוד אין צוות. שייך לקוח בפרטים, או ספק לשלב.'))}</p>`;
         };
