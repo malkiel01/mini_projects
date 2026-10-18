@@ -92,7 +92,12 @@ class HomeActivity : AppCompatActivity() {
         Api.policy(store.token) { r ->
             b.progress.visibility = View.GONE
             if (!r.ok && r.json?.optString("code") == "unauthorized") { unpair(); return@policy }
-            if (r.ok && r.json != null) { store.savePolicy(r.json); reportApps(); Enforcer.apply(this, store) }
+            if (r.ok && r.json != null) {
+                store.savePolicy(r.json)
+                applyRelease(r.json)
+                reportApps()
+                if (!store.released) Enforcer.apply(this, store)
+            }
             // ההורה ביקש לעדכן, ויש גרסה חדשה.
             r.json?.optJSONObject("update")?.let { Updater.offer(this, it) }
 
@@ -104,6 +109,7 @@ class HomeActivity : AppCompatActivity() {
             b.headSub.text = quotaLine()
 
             val (text, style) = when {
+                store.released -> "המנוי של ההורים הסתיים — אין יותר הגבלה במכשיר" to R.drawable.bg_status_warn
                 !r.ok && r.json == null -> "אין חיבור לשרת — מוצגים האתרים שנשמרו" to R.drawable.bg_status_warn
                 !r.ok -> reason to R.drawable.bg_status_danger
                 !allowed -> reason.ifEmpty { "הגלישה חסומה כרגע" } to R.drawable.bg_status_danger
@@ -118,6 +124,26 @@ class HomeActivity : AppCompatActivity() {
             val canType = store.policy().mode == Policy.MODE_BROWSER
             b.search.hint = if (canType) "🔎 חיפוש או כתובת" else "🔎 חיפוש"
             draw()
+        }
+    }
+
+    /**
+     * שחרור חתום (SPEC סעיף 5): אסימון תקף → מצב משוחרר (מגבלות נפתחות, בעלות המכשיר משתחררת
+     * מאכיפה). הארכה → חזרה לאכיפה. בלי אסימון תקף לא נכנסים ולא יוצאים ממצב משוחרר.
+     */
+    private fun applyRelease(payload: JSONObject) {
+        val token = payload.optString("release")
+        val valid = token.isNotEmpty() &&
+            Release.isReleaseFor(token, store.signPubKey, payload.optInt("account_id"))
+        if (valid && !store.released) {
+            store.released = true
+            Enforcer.release(this, store)
+            Trace.log("release", "acct=${payload.optInt("account_id")}")
+        } else if (token.isEmpty() && store.released) {
+            // השרת לא שולח יותר אסימון שחרור — החשבון הוארך. חוזרים לאכיפה.
+            store.released = false
+            Enforcer.apply(this, store)
+            Trace.log("release.renewed", "")
         }
     }
 
@@ -314,6 +340,9 @@ class HomeActivity : AppCompatActivity() {
 
     /** המכשיר נותק (ההורה ניתק, או אסימון שבוטל) — חזרה למסך הצימוד. */
     private fun unpair() {
+        // כבר משוחרר ועכשיו נותק = ההורה מחק את הילדים: מגדלור מוותר על בעלות המכשיר
+        // והמכשיר חוזר לטלפון רגיל. (ניתוק בלי שחרור קודם = מכשיר שאבד — נשארים בעלים.)
+        if (store.released) Enforcer.relinquish(this, store)
         store.clear()
         startActivity(Intent(this, PairActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))

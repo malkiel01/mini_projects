@@ -53,6 +53,24 @@
     </form>
   </section>
 
+  <!-- משוחרר: המנוי הסתיים (SPEC סעיף 5). הפאנל נעול; רק הסדרה או מחיקת הילדים. -->
+  <section class="auth" id="released" hidden>
+    <div class="card lock">
+      <span class="lock-icon" aria-hidden="true">🗼</span>
+      <h1>המנוי של המשפחה הסתיים</h1>
+      <p class="lock-sub" id="released-sub"></p>
+      <p class="lock-note">המכשירים של הילדים כבר אינם מוגבלים, ומוצג בהם שהמנוי הסתיים. אפשר
+        להסדיר את המנוי כדי שהשמירה תחזור, או למחוק את חשבונות הילדים — ואז מגדלור מסיר את עצמו
+        מהמכשירים והם חוזרים לטלפון רגיל.</p>
+      <div class="lock-actions">
+        <button class="btn primary" id="released-renew">איך מסדירים מנוי</button>
+        <button class="btn danger" id="released-cleanup">מחיקת חשבונות הילדים</button>
+      </div>
+      <p class="hint" id="released-renew-help" hidden></p>
+      <button class="link" id="released-logout">יציאה</button>
+    </div>
+  </section>
+
   <!-- האפליקציה -->
   <div id="app" hidden>
     <header class="top">

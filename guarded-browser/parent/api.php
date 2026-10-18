@@ -105,6 +105,15 @@ try {
         if ($err) fail($err);
         out(['ok' => true]);
     }
+    // משוחרר (SPEC סעיף 5): מחיקת כל חשבונות הילדים. מגדלור שבמכשירים יסיר את עצמו בפעימה הבאה.
+    // מותר רק כשהמנוי באמת משוחרר — לא דרך לנקות ילדים בזמן חשבון פעיל.
+    if ($action === 'release_cleanup') {
+        $a = accountRow($aid);
+        if (!$a || expiryState((string) $a['expires_at']) !== 'released') fail('החשבון אינו משוחרר');
+        $ids = all('SELECT id FROM users WHERE account_id = ? AND is_admin = 0', [$aid]);
+        foreach ($ids as $r) childDelete((int) $r['id']);
+        out(['ok' => true, 'deleted' => count($ids)]);
+    }
     // אתר או ערוץ שנוסף עכשיו — נכנס לאינדקס החיפוש כבר אחרי התשובה, לא מחר.
     if (in_array($action, ['rule_add', 'yt_add', 'request_decide', 'children'], true)) searchTickAfterResponse(5);
     // סיסמה זמנית — שום דבר אחר עד שהוחלפה.

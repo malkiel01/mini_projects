@@ -106,6 +106,8 @@ async function boot() {
     if (!me.me) return showOnly('#auth', () => $('#login-form').login.focus());
     Object.assign(S, { me: me.me, csrf: me.csrf, account: me.account, catalogs: me.catalogs });
     if (me.me.must_change) return showOnly('#newpass', () => $('#newpass-form').current.focus());
+    // משוחרר — הפאנל נעול. אין טעם להגדיר דבר כשהאכיפה כבויה.
+    if (S.account.expiry === 'released') return renderReleaseLock();
     showOnly('#app');
     $('#family').textContent = `${S.account.name} · ${S.me.name || S.me.login}`;
     renderBanner();
@@ -116,8 +118,38 @@ async function boot() {
 }
 
 function showOnly(sel, then) {
-    for (const s of ['#auth', '#newpass', '#app']) $(s).hidden = s !== sel;
+    for (const s of ['#auth', '#newpass', '#released', '#app']) $(s).hidden = s !== sel;
     if (then) then();
+}
+
+/* ── משוחרר: מסך נעילה (SPEC סעיף 5) ───────────────────────────── */
+
+async function releaseChildCount() {
+    try { return (await call('children', {})).children.length; } catch { return null; }
+}
+
+function renderReleaseLock() {
+    showOnly('#released');
+    $('#released-sub').textContent = `${S.account.name} — תוקף המנוי הסתיים.`;
+    releaseChildCount().then(n => {
+        const btn = $('#released-cleanup');
+        if (n === 0) { btn.disabled = true; btn.textContent = 'אין חשבונות ילדים למחוק'; }
+        else if (n != null) btn.textContent = `מחיקת ${n} חשבונות הילדים`;
+    });
+    $('#released-renew').onclick = () => {
+        const h = $('#released-renew-help');
+        h.textContent = 'הסדרת המנוי נעשית מול מנהל המערכת. אחרי ההסדרה — הפאנל והאכיפה חוזרים לבד בפעימה הבאה של המכשיר.';
+        h.hidden = false;
+    };
+    $('#released-cleanup').onclick = async () => {
+        if (!confirm('למחוק את כל חשבונות הילדים? מגדלור יוסר מהמכשירים שלהם, והם יחזרו לטלפון רגיל. אי אפשר לבטל.')) return;
+        try {
+            const r = await call('release_cleanup', { confirm: true });
+            alert(`נמחקו ${r.deleted} חשבונות. המכשירים יסירו את מגדלור בפעימה הבאה.`);
+            location.reload();
+        } catch (e) { toast(e.message, true); }
+    };
+    $('#released-logout').onclick = async () => { try { await call('logout', {}); } catch {} location.reload(); };
 }
 
 $('#login-form').addEventListener('submit', async e => {
@@ -139,11 +171,15 @@ $('#newpass-form').addEventListener('submit', async e => {
 
 function renderBanner() {
     const a = S.account, box = $('#banner');
+    const until = a.expires_at ? new Date(a.expires_at + 'T12:00:00Z').toLocaleDateString('he-IL') : '';
     const msg = a.status === 'suspended' ? ['bad', '⏸️', 'החשבון מושעה', 'המכשירים של הילדים חסומים. פנו למנהל המערכת.']
         : a.status === 'pending' ? ['warn', '⏳', 'החשבון ממתין לאישור', 'אפשר להגדיר כבר עכשיו; המכשירים ייפתחו אחרי האישור.']
-        : a.expiry === 'expired' ? ['bad', '⚠️', 'תוקף החשבון הסתיים', 'כדי שהשמירה על הילדים תימשך — פנו למנהל המערכת.']
+        // חסד: התוקף עבר אך השמירה עדיין פעילה לכמה ימים. פס אדום — להסדיר עכשיו.
+        : a.expiry === 'grace' ? ['bad', '⚠️', `תוקף החשבון הסתיים (${until})`,
+            'השמירה על הילדים עדיין פעילה, אך רק לעוד כמה ימים. הסדירו מול מנהל המערכת כדי שהיא לא תיפסק.']
+        // אזהרה: פס צהוב, 7 ימים לפני.
         : a.expiry === 'soon' ? ['warn', '⏰', 'תוקף החשבון מסתיים בקרוב',
-            `עד ${new Date(a.expires_at + 'T12:00:00Z').toLocaleDateString('he-IL')}. פנו למנהל המערכת להארכה.`]
+            `עד ${until}. פנו למנהל המערכת להארכה.`]
         : null;
     box.replaceChildren(msg ? el('div', { class: `banner ${msg[0]}`, role: 'status' }, [
         el('span', { text: msg[1], ariaHidden: 'true' }), el('div', {}, [el('b', { text: msg[2] }), msg[3]])]) : '');

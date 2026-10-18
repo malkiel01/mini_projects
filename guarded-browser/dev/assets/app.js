@@ -87,7 +87,8 @@ function chipStatus(s) {
     return el('span', { class: `chip ${c}`, text: t });
 }
 function chipExpiry(a) {
-    if (a.expiry === 'expired') return el('span', { class: 'chip bad', text: 'פג תוקף' });
+    if (a.expiry === 'released') return el('span', { class: 'chip bad', text: 'משוחרר' });
+    if (a.expiry === 'grace') return el('span', { class: 'chip bad', text: 'בחסד' });
     if (a.expiry === 'soon') return el('span', { class: 'chip warn', text: 'תוקף קרוב' });
     return null;
 }
@@ -161,13 +162,13 @@ function renderAccounts() {
     $('#acc-sum').replaceChildren(...[
         ['פעילים', count(a => a.status === 'active')],
         ['ממתינים', count(a => a.status === 'pending')],
-        ['תוקף קרוב', count(a => a.expiry === 'soon' || a.expiry === 'expired')],
+        ['תוקף קרוב/עבר', count(a => a.expiry === 'soon' || a.expiry === 'grace' || a.expiry === 'released')],
         ['מכשירים', A.reduce((s, a) => s + a.devices, 0)],
     ].map(([t, n]) => el('div', {}, [el('dt', { text: t }), el('dd', { text: String(n) })])));
 
     const q = state.q.trim().toLowerCase();
     const rows = A.filter(a => {
-        if (state.filter === 'soon' && !(a.expiry === 'soon' || a.expiry === 'expired')) return false;
+        if (state.filter === 'soon' && !(a.expiry === 'soon' || a.expiry === 'grace' || a.expiry === 'released')) return false;
         if (['pending', 'active', 'suspended'].includes(state.filter) && a.status !== state.filter) return false;
         return !q || a.name.toLowerCase().includes(q);
     });
@@ -475,6 +476,22 @@ async function loadSystem() {
     ])) : [el('li', { class: 'empty', text: 'כל המכשירים התחברו ביממה האחרונה.' })]));
     renderSearch(s.search);
     renderProvision(s.provision);
+    renderSignKey(s.sign_pubkey);
+}
+
+/** המפתח הציבורי של השרת לחתימת הודעות (שחרור, server_url). נצרב באפליקציה. */
+function renderSignKey(pub) {
+    const box = $('#sys-signkey');
+    if (!box) return;
+    if (!pub) { box.replaceChildren(el('p', { class: 'hint', text: 'מפתח החתימה ייווצר בבקשה הראשונה.' })); return; }
+    const code = el('code', { text: pub, style: 'word-break:break-all;font-size:.85em' });
+    const copy = el('button', { type: 'button', class: 'btn', text: 'העתקה' });
+    copy.addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(pub); toast('הועתק'); } catch { toast('ההעתקה נכשלה', true); }
+    });
+    box.replaceChildren(
+        el('p', { class: 'hint', text: 'המפתח הציבורי (Ed25519) לאימות הודעות חתומות. המכשיר מצמיד אותו בצימוד, ואפשר לצרוב אותו בבנייה:' }),
+        code, copy);
 }
 
 /** QR להקצאת "בעל מכשיר" בלי מחשב: סורקים אותו במסך הפתיחה של מכשיר מאופס. */

@@ -232,6 +232,10 @@ function nowIso(): string {
     return (new DateTimeImmutable('now', new DateTimeZone('UTC')))->format('Y-m-d\TH:i:s\Z');
 }
 
+/** base64url בלי ריפוד — של בתים גולמיים, ובחזרה. */
+function b64u(string $bin): string { return rtrim(strtr(base64_encode($bin), '+/', '-_'), '='); }
+function b64ud(string $s): string { return (string) base64_decode(strtr($s, '-_', '+/'), true); }
+
 function zoneOf(string $tz): DateTimeZone {
     try { return new DateTimeZone($tz); }
     catch (Exception) { return new DateTimeZone('Asia/Jerusalem'); }

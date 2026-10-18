@@ -27,7 +27,7 @@ const PUSH_TTL = 86400;            // שירות ההתראות שומר צלצ�
 const PUSH_HOSTS = ['fcm.googleapis.com', 'updates.push.services.mozilla.com', 'push.services.mozilla.com',
                     'web.push.apple.com', 'notify.windows.com'];   // וגם תת־דומיינים שלהם
 
-function b64u(string $bin): string { return rtrim(strtr(base64_encode($bin), '+/', '-_'), '='); }
+// b64u — ב-db.php (משותף עם החתימה).
 
 /* ── מפתח VAPID ────────────────────────────────────────────────── */
 
