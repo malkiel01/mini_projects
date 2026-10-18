@@ -82,7 +82,7 @@ $r = doc_return($owner, ['id' => $docId, 'note' => 'חסרות שעות של י�
 check('הוחזר לתיקון, ונשלח קישור חדש במייל', $r['returned'] === 1 && $r['mailed'] === 1);
 $m = last_mail_to('yossi@x.com');
 check('במייל: ההערה', str_contains($m['body'] ?? '', 'חסרות שעות של יום ראשון'));
-throws('הקישור הישן כבר לא עובד', fn() => fill_get(), 404);
+check('המייל מביא את אותו קישור שכבר אצלו (גם אם קיבל אותו בוואטסאפ)', fill_get()['ok'] ?? false);
 preg_match('/#t=([0-9a-f]{48})/', $m['body'], $mm); $_SERVER['HTTP_X_FILL_TOKEN'] = $mm[1];
 $me = fill_get()['document']['me'];
 check('אצל העובד: פתוח שוב, עם ההערה', !$me['completed'] && !$me['locked'] && $me['returned'] === 'חסרות שעות של יום ראשון');

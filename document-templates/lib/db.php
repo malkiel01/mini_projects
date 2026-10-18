@@ -245,8 +245,9 @@ function db_migrate(PDO $pdo): void
 
     // שלב 5: סדר המשתתפים, וקוד חד-פעמי במייל לאימות זהות.
     $cols = array_column($pdo->query('PRAGMA table_info(participants)')->fetchAll(), 'name');
+    // token_enc — אותו קישור אפשר לשלוח שוב (בלי לבטל את מה שכבר נשלח); link_via — איך נשלח (וואטסאפ — בלי קוד)
     foreach (['sort_order INTEGER NOT NULL DEFAULT 0', 'otp_hash TEXT', 'otp_expires_at TEXT',
-              'otp_attempts INTEGER NOT NULL DEFAULT 0', 'verified_at TEXT', 'notified_at TEXT'] as $def) {
+              'otp_attempts INTEGER NOT NULL DEFAULT 0', 'verified_at TEXT', 'notified_at TEXT', 'token_enc TEXT', 'link_via TEXT'] as $def) {
         if (!in_array(strtok($def, ' '), $cols, true)) $pdo->exec("ALTER TABLE participants ADD COLUMN $def");
     }
 

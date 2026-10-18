@@ -69,7 +69,8 @@ throws('קישור לפני שהמנפיק מילא', fn() => part_link($owner, 
 doc_save($owner, ['id' => $docId, 'values' => ['price' => '5000', 'tenant_name' => 'מילוי מראש']]);
 check('לפני שליחה — המנפיק יכול למלא מראש שדה של משתתף', doc_get($owner, $docId)['document']['values']['tenant_name'] === 'מילוי מראש');
 throws('ברצף: הערב עוד לא בתור', fn() => part_link($owner, ['id' => $docId, 'participant_id' => $pg]), 409);
-throws('אימות במייל בלי כתובת', fn() => part_contact($owner, ['id' => $docId, 'participant_id' => $pg, 'name' => 'דן']), 422);
+part_contact($owner, ['id' => $docId, 'participant_id' => $pg, 'name' => 'דן']);
+check('אימות במייל בלי כתובת — שמירת איש הקשר לא נחסמת', true);
 part_contact($owner, ['id' => $docId, 'participant_id' => $pt, 'name' => 'משה', 'email' => 'moshe@x.com', 'phone' => '050-1234567']);
 part_contact($owner, ['id' => $docId, 'participant_id' => $pg, 'name' => 'דן', 'email' => 'dan@x.com']);
 throws('משתמש אחר לא מנפיק קישור', fn() => part_link($other, ['id' => $docId, 'participant_id' => $pt]), 404);
@@ -81,13 +82,17 @@ check('נשלח מייל עם הקישור', str_contains(last_mail_to('moshe@x.
 check('המסמך פתוח למילוי (נשלח / בתהליך)', in_array(doc_get($owner, $docId)['document']['status'], ['sent', 'in_progress'], true));
 throws('אחרי שליחה — המנפיק לא משנה שדה של השוכר', fn() => doc_save($owner, ['id' => $docId, 'values' => ['tenant_name' => 'x']]), 409);
 
+check('שליחה חוזרת — אותו קישור (מה שכבר נשלח לא מתבטל)', $l2['url'] === $l1['url']);
+$l3 = part_link($owner, ['id' => $docId, 'participant_id' => $pt, 'renew' => true]);
+check('"קישור חדש" — כתובת אחרת', $l3['url'] !== $l1['url']);
 as_token($l1['url']);
-throws('קישור ישן בוטל אחרי הנפקה חדשה', fn() => fill_get(), 404);
+throws('קישור ישן בוטל אחרי "קישור חדש"', fn() => fill_get(), 404);
+as_token($l3['url']);
 $_SERVER['HTTP_X_FILL_TOKEN'] = 'not-a-token';
 throws('אסימון לא תקין', fn() => fill_get(), 404);
 
 // ── השוכר ──
-as_token($l2['url']);
+as_token($l3['url']);
 $f = fill_get()['document'];
 check('השוכר רואה את המסמך ואת תפקידו', $f['me']['role'] === 'שוכר' && $f['values']['price'] === '5000');
 check('לשוכר אין יומן ואין פרטי משתתפים', !isset($f['events']) && !isset($f['participants']));
@@ -123,9 +128,9 @@ $doc = doc_get($owner, $docId)['document'];
 check('מצב: הושלם, עם טביעת אצבע', $doc['status'] === 'completed' && strlen((string)$doc['final_hash']) === 64);
 check('מנהל הטופס קיבל מייל', str_contains(last_mail_to('owner@x.com')['subject'] ?? '', 'הושלם'));
 $types = array_column($doc['events'], 'type');
-check('יומן מלא', $types === ['created', 'values_saved', 'link_issued', 'link_issued', 'opened', 'values_saved',
+check('יומן מלא', $types === ['created', 'values_saved', 'link_issued', 'link_issued', 'link_issued', 'opened', 'values_saved',
     'values_saved', 'participant_completed', 'link_issued', 'verified', 'opened', 'values_saved', 'participant_completed', 'completed']);
-check('ביומן: מי עשה מה (משתתף, לא משתמש)', $doc['events'][5]['actor'] === "participant:$pt");
+check('ביומן: מי עשה מה (משתתף, לא משתמש)', $doc['events'][6]['actor'] === "participant:$pt");
 check('שרשרת היומן שלמה', $doc['chain_ok'] === true);
 throws('אחרי השלמה — קישור כבר לא מאפשר שינוי', fn() => fill_save(['values' => ['g_name' => 'x']]), 409);
 

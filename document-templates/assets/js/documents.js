@@ -373,7 +373,7 @@
           fill ? null : ib('📜', 'יומן', 'יומן', () => { side(journal, people); renderJournal(); }),
           // שליחה למילוי — תמיד גלוי: יש ממלא בקישור → הקישור שלו; אין → הסבר איך מוסיפים
           fill || lvl() < 3 ? null : ib('🔗', 'שליחה למילוי', 'משתתפים', openFill),
-          !fill && lvl() >= 4 ? ib('📤', 'שיתוף', 'שיתוף', () => window.DT.shareDialog('document', id, doc.title, reload, { fill: lvl() >= 3 ? openFill : null })) : null,
+          !fill && lvl() >= 4 ? ib('👥', 'צוות', 'שיתוף עם צוות', () => window.DT.shareDialog('document', id, doc.title, reload, { fill: lvl() >= 3 ? openFill : null })) : null,
           !fill && doc.access && doc.access !== 'owner' ? ib('🚪', 'עזיבה', 'עזיבה', () => window.DT.leave('document', id, doc.title)) : null,
           fill ? null : ib('📑', 'שכפול', 'שכפול — מסמך חדש עם אותם ערכים', duplicate),
           fill || isWord || isAuthored ? null : outBtn(pdfBtn),
@@ -1181,26 +1181,12 @@
       const dlg = window.DT.sheet('📨 שליחה למילוי — מי ממלא מה', el('div', { class: 'field-sheet share-setup' },
         el('p', { class: 'hint' }, 'לכל שדה: מי ממלא אותו במסמך הזה. ההגדרה של השיתוף הזה בלבד — התבנית לא משתנה. שדה "🔒 רק אני" נקבע בתבנית ולא ניתן ללקוח.'),
         el('div', { class: 'fields two' }, el('label', { class: 'f' }, el('span', {}, 'שם הממלא (רואים אותו בקישור ובשיתופים)'), label),
-          el('label', { class: 'switch' }, auth, el('span', {}, 'קוד אימות למייל לפני מילוי'))),
+          el('label', { class: 'switch' }, auth, el('span', {}, 'קוד אימות למייל לפני מילוי', el('small', { class: 'muted' }, 'לא בקישור שנשלח בוואטסאפ')))),
         el('div', { class: 'row-btns' }, el('button', { type: 'button', class: 'small', onclick: () => all('link') }, 'הכול ללקוח'),
           el('button', { type: 'button', class: 'small', onclick: () => all('owner') }, 'הכול אצלי')),
         el('ul', { class: 'assign-list' }, sels.map(([f, s]) => el('li', {},
           el('span', { class: 'assign-label' }, (f.type === 'file' ? '📎 ' : '') + f.label + (f.required ? ' *' : '')), s))),
         count, out), { action: go });
-    }
-
-    /** אין במסמך ממלא בקישור: מה צריך לעשות כדי לשלוח ללקוח למלא. */
-    function noLinkDialog() {
-      const go = el('button', { type: 'button', class: 'primary small', onclick: () => { dlg.close(); location.hash = 'tpl=' + doc.template_id; } }, 'פתיחת התבנית בעורך');
-      const dlg = window.DT.sheet('🔗 שליחה למילוי', el('div', { class: 'field-sheet' },
-        el('p', {}, 'כדי לשלוח ללקוח קישור למילוי, צריך בתבנית "ממלא בקישור" — ושדות שהוא ממלא:'),
-        el('ol', { class: 'steps' },
-          el('li', {}, 'בעורך התבנית ← לשונית "👥 ממלאים" ← "+ ממלא בקישור" (למשל: לקוח).'),
-          el('li', {}, 'בכל שדה שהלקוח ממלא: הגדרות השדה ← "מי ממלא" ← לקוח.'),
-          el('li', {}, 'שומרים, ומנפיקים מסמך חדש מהתבנית.'),
-          el('li', {}, 'במסמך: "🔗 שליחה למילוי" ← בוחרים איש קשר ← 📧 מייל, 💬 וואטסאפ, או 🔗 העתקת קישור.')),
-        el('p', { class: 'hint' }, 'המסמך הזה הונפק לפני שהיה בתבנית ממלא בקישור — לכן אין לו קישור. מסמך חדש מהתבנית יקבל.')),
-        { action: go });
     }
 
     // שליחה למילוי: אין עדיין ממלא בקישור — קודם "מי ממלא מה"; יש — ישר למי לשלוח (ושם "⚙️ מי ממלא מה" לשינוי)
@@ -1235,6 +1221,7 @@
           paintLink();
           const saveContact = async () => {
             const r = await api('part_contact', { id, participant_id: p.id, contact_id: cid || 0, name: name.value, email: email.value, phone: phone.value });
+            if (r.revoked) window.DT.toast('הנמען השתנה — הקישור הקודם בוטל. שלחו קישור לנמען החדש', true);
             cid = r.contact_id;
             if (r.contact) { name.value = r.contact.name; email.value = r.contact.email; phone.value = r.contact.phone; }
             Object.assign(p, { contact_id: cid, name: name.value, email: email.value, phone: phone.value });
@@ -1247,15 +1234,16 @@
             name.value = c ? c.name : ''; email.value = c ? c.email : ''; phone.value = c ? c.phone : '';
             paintLink();
           }, { empty: '— בחירה מאנשי הקשר —' }).then(sel => pickBox.replaceChildren(sel)).catch(() => {});
-          const act = async (via) => {
+          const act = async (via, renew) => {
             out.replaceChildren();
             // חלון וואטסאפ נפתח עכשיו, בתוך הלחיצה — אחרי await דפדפנים חוסמים חלונות.
             const wa = via === 'whatsapp' ? window.open('', '_blank') : null;
             try {
               await saveContact();
-              const r = await api('part_link', { id, participant_id: p.id, via });
+              const r = await api('part_link', { id, participant_id: p.id, via, renew: !!renew });
               if (wa) wa.location.href = r.whatsapp;
-              out.replaceChildren(...[notice(r.emailed ? 'נשלח במייל ל-' + email.value : 'הקישור החדש (הקודם בוטל):', 'ok'),
+              out.replaceChildren(...[notice(r.emailed ? 'נשלח במייל ל-' + email.value
+                : r.renewed ? 'קישור חדש — הקודם הפסיק לעבוד:' : via === 'whatsapp' ? '✓ נפתח וואטסאפ עם הקישור' : 'הקישור:', 'ok'),
                 via === 'link' ? el('input', { class: 'link-box', value: r.url, readonly: true, dir: 'ltr', onclick: (e) => e.target.select() }) : null].filter(Boolean));
               if (via === 'link') navigator.clipboard?.writeText(r.url).catch(() => {});
               await reload();
@@ -1277,7 +1265,7 @@
           return el('div', { class: 'person' },
             el('div', { class: 'row' }, el('strong', {}, p.role),
               el('span', { class: 'badge ' + (done ? 'ok' : p.opened_at ? 'warn' : 'muted') }, PSTATUS[p.status] || p.status)),
-            p.auth === 'email' ? el('div', { class: 'muted small' }, '🔒 אימות בקוד למייל') : null,
+            p.auth === 'email' ? el('div', { class: 'muted small' }, '🔒 קוד אימות למייל — כשנשלח במייל או בהעתקה. בוואטסאפ נכנסים בלי קוד') : null,
             done ? (p.name ? el('div', { class: 'muted small' }, '👤 ' + p.name) : null) : el('div', { class: 'person-fields' }, pickBox, name, email, phone,
               el('button', { type: 'button', class: 'small', onclick: async () => {
                 out.replaceChildren();
@@ -1288,7 +1276,10 @@
             p.blocked && !done ? el('p', { class: 'muted small' }, p.blocked) : null,
             done || p.blocked ? null : el('div', { class: 'ops' },
               waBtn, mailBtn,
-              el('button', { class: 'small', onclick: () => act('link') }, '🔗 העתקת קישור')),
+              el('button', { class: 'small', onclick: () => act('link') }, '🔗 העתקת קישור'),
+              p.has_link ? el('button', { class: 'small link', title: 'הקישור שנשלח מפסיק לעבוד', onclick: () => {
+                if (confirm('ליצור קישור חדש? הקישור שכבר נשלח יפסיק לעבוד.')) act('link', true);
+              } }, '🔄 קישור חדש') : null),
             p.missing.length && !done ? el('div', { class: 'muted small' }, 'חסר אצלו: ' + p.missing.join(', ')) : null);
         }),
         out].filter(Boolean));

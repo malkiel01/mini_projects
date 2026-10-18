@@ -214,10 +214,17 @@ function part_contact(array $user, array $b): array
         $c['name'] = $c['name'] ?: ($c['email'] ?: $c['phone']);
         $c['id'] = contact_save($user, ['name' => $c['name'], 'email' => $c['email'], 'phone' => $c['phone']])['id'];
     }
-    if ($p['auth'] === 'email' && ($c['email'] ?? '') === '') throw new ApiError('לממלא הזה נדרש אימות במייל — חובה כתובת מייל', 422);
     db()->prepare('UPDATE participants SET contact_enc = ?, contact_id = ? WHERE id = ?')
         ->execute([$c ? contact_snap($c) : null, $c ? (int)$c['id'] : null, $p['id']]);
-    return ['ok' => true, 'contact_id' => $c ? (int)$c['id'] : null, 'contact' => $c ? ['name' => $c['name'], 'email' => $c['email'], 'phone' => $c['phone']] : null];
+    // נמען אחר — הקישור הקודם (והאימות שעבר) לא שלו: מתבטל, והחדש יקבל קישור משלו
+    $revoked = false;
+    if ($p['token_hash'] && $p['contact_id'] && (int)$p['contact_id'] !== (int)($c['id'] ?? 0)) {
+        db()->prepare("UPDATE participants SET token_hash = NULL, token_enc = NULL, verified_at = NULL, link_via = NULL,
+            status = CASE WHEN status IN ('sent','opened') THEN 'waiting' ELSE status END WHERE id = ?")->execute([$p['id']]);
+        log_event((int)$d['id'], 'user:' . $user['id'], 'link_revoked', ['reason' => 'נמען אחר']);
+        $revoked = true;
+    }
+    return ['ok' => true, 'revoked' => $revoked, 'contact_id' => $c ? (int)$c['id'] : null, 'contact' => $c ? ['name' => $c['name'], 'email' => $c['email'], 'phone' => $c['phone']] : null];
 }
 
 /** איפה איש הקשר ממלא: מסמך, תפקיד, מצב — ומה אפשר לעשות משם (שליחת קישור). */

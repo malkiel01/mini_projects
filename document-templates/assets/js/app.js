@@ -278,15 +278,21 @@
   // מה כל הרשאה מתירה — משפט אחד, מתחלף לפי הבחירה
   const LEVEL_IC = { view: '👁', fill: '✍️', edit: '✏️', co_owner: '🔑' };
   const LEVEL_HINT = {
-    template: { view: 'רואה את התבנית, בלי לשנות ובלי להנפיק.', fill: 'מנפיק ממנה מסמכים משלו וממלא אותם.',
+    template: { view: 'רואה את התבנית, בלי לשנות ובלי להנפיק.', fill: 'מנפיק ממנה מסמכים משלו (הם שלו), ושולח אותם למילוי.',
       edit: 'עורך את התבנית עצמה — שדות, עיצוב והגדרות.', co_owner: 'כמו עורך, ובנוסף משתף אחרים ומעביר לארכיון.' },
-    document: { view: 'רואה את המסמך ואת היומן שלו.', fill: 'ממלא את השדות במסמך.',
+    document: { view: 'רואה את המסמך ואת היומן שלו.', fill: 'מעדכן שדות במסמך, בלי לסיים ובלי לשלוח.',
       edit: 'ממלא, מסיים ושולח למשתתפים.', co_owner: 'כמו עורך, ובנוסף משתף אחרים ומעביר לארכיון.' },
   };
 
-  /** חלון שיתוף עם בעלי חשבון — לתבנית או למסמך. למעלה: מי כבר רואה. למטה: הוספה. */
+  /**
+   * חלון "שיתוף עם צוות" — לבעלי חשבון בלבד (עובדים, שותפים), לתבנית או למסמך. למעלה: מי כבר רואה.
+   * למטה: הוספה. לקוח שרק ממלא טופס לא מגיע לכאן — "📨 שליחה למילוי" נפרד (קישור, בלי חשבון).
+   */
   async function shareDialog(type, id, title, after, opts = {}) {
     const what = type === 'template' ? 'התבנית' : 'המסמך';
+    // "ממלא" שמור ללקוח בקישור; בצוות — מנפיק (תבנית) / מעדכן (מסמך)
+    const LV = (k) => k === 'fill' ? (type === 'template' ? 'מנפיק' : 'מעדכן') : LEVEL[k];
+    const IC = (k) => k === 'fill' && type === 'template' ? '📄' : LEVEL_IC[k];
     const list = el('ul', { class: 'share-list' }, el('li', { class: 'empty' }, 'טוען…'));
     const out = el('div');
     const email = el('input', { type: 'email', inputmode: 'email', autocomplete: 'email', placeholder: 'name@example.com', dir: 'ltr', required: true, 'aria-label': 'מייל' });
@@ -294,7 +300,7 @@
     const phone = el('input', { type: 'tel', inputmode: 'tel', autocomplete: 'tel', placeholder: '050-0000000', dir: 'ltr', 'aria-label': 'טלפון' });
     const pname = el('input', { type: 'text', autocomplete: 'name', placeholder: 'שם (לא חובה)', 'aria-label': 'שם' });
     const viaSeg = el('div', { class: 'seg share-via', role: 'radiogroup', 'aria-label': 'איך לשתף' },
-      ...[['email', '📧 מייל'], ['phone', '💬 וואטסאפ']].map(([v, t]) => el('label', {},
+      ...[['email', '📧 במייל'], ['phone', '💬 הזמנה בוואטסאפ']].map(([v, t]) => el('label', {},
         el('input', { type: 'radio', name: 'share-via', value: v, checked: v === 'email', onchange: () => setVia(v) }), el('span', {}, t))));
     const byPhone = () => (viaSeg.querySelector('input:checked') || {}).value === 'phone';
     const levelHint = el('p', { class: 'hint share-hint' });
@@ -302,7 +308,7 @@
     const avatar = (name) => el('span', { class: 'avatar', style: `--h:${hueOf(name)}`, 'aria-hidden': 'true' }, initialsOf(name));
     const levelSel = (cur, max, name) => {
       return el('select', { 'aria-label': 'הרשאה של ' + name }, Object.entries(LEVEL).filter(([k]) => k !== 'owner' && rank(k) <= max)
-        .map(([k, t]) => el('option', { value: k, selected: k === cur }, LEVEL_IC[k] + ' ' + t)));
+        .map(([k]) => el('option', { value: k, selected: k === cur }, IC(k) + ' ' + LV(k))));
     };
     const pickLevel = () => (seg.querySelector('input:checked') || {}).value || 'view';
     const showHint = () => { levelHint.textContent = LEVEL_HINT[type][pickLevel()] || ''; };
@@ -314,7 +320,7 @@
         myRank = rank(r.my_level);
         seg.replaceChildren(...Object.keys(LEVEL_IC).filter(k => rank(k) <= myRank).map(k => el('label', {},
           el('input', { type: 'radio', name: 'share-level', value: k, checked: k === prev, onchange: showHint }),
-          el('span', {}, LEVEL_IC[k] + ' ' + LEVEL[k]))));
+          el('span', {}, IC(k) + ' ' + LV(k)))));
         if (!seg.querySelector('input:checked')) seg.querySelector('input').checked = true;
         showHint();
         const invites = r.invites || [];
@@ -327,7 +333,7 @@
           ...r.shares.map(s => {
             const name = s.name || s.email;
             // המאשר של מסמך "רק באישור שלי" — מוגן; מנהל-שותף — רק הבעלים משנה אותו
-            const locked = s.user_id === r.approver ? '✓ המאשר' : s.level === 'co_owner' && myRank < 5 ? LEVEL_IC.co_owner + ' ' + LEVEL.co_owner : null;
+            const locked = s.user_id === r.approver ? '✓ המאשר' : s.level === 'co_owner' && myRank < 5 ? IC('co_owner') + ' ' + LV('co_owner') : null;
             if (locked) return el('li', { class: 'share-row' }, avatar(name),
               el('div', { class: 'share-who' }, el('strong', {}, name),
                 el('small', {}, el('span', { dir: 'ltr' }, s.email), s.since ? ' · מאז ' + new Date(s.since).toLocaleDateString('he-IL') : '')),
@@ -347,7 +353,7 @@
             const name = i.name || i.phone;
             return el('li', { class: 'share-row invite' }, el('span', { class: 'avatar', 'aria-hidden': 'true' }, '💬'),
               el('div', { class: 'share-who' }, el('strong', {}, name),
-                el('small', {}, '⏳ ממתין שייכנס · ' + LEVEL_IC[i.level] + ' ' + LEVEL[i.level] + (i.name ? ' · ' : ''), i.name ? el('span', { dir: 'ltr' }, i.phone) : '')),
+                el('small', {}, '⏳ ממתין שייכנס · ' + IC(i.level) + ' ' + LV(i.level) + (i.name ? ' · ' : ''), i.name ? el('span', { dir: 'ltr' }, i.phone) : '')),
               el('div', { class: 'share-ctl' },
                 el('button', { type: 'button', class: 'small', 'aria-label': 'שליחה חוזרת ל' + name, onclick: () => invite('share_invite_resend', { type, id, invite_id: i.id }) }, '💬 שוב'),
                 el('button', { type: 'button', class: 'small share-cut', 'aria-label': 'ביטול ההזמנה של ' + name, onclick: () => {
@@ -390,23 +396,22 @@
     // מי שרק ממלא טופס לא צריך חשבון: קישור מילוי בוואטסאפ ("📨 שליחה למילוי"), לא הזמנה לחשבון
     const toFill = type === 'template' ? () => window.DTDocs.issue(id, true) : opts.fill;
     const fillBox = toFill ? el('div', { class: 'share-fill' },
-      el('div', {}, el('strong', {}, 'רק ממלא טופס? לא צריך חשבון'),
-        el('small', {}, type === 'template' ? 'נוצר מסמך, בוחרים אילו שדות הוא ממלא, ושולחים לו קישור בוואטסאפ.' : 'בוחרים אילו שדות הוא ממלא, ושולחים לו קישור בוואטסאפ.')),
+      el('div', {}, el('strong', {}, 'לקוח שרק ממלא טופס?'),
+        el('small', {}, 'לא כאן — הוא לא צריך חשבון. שולחים לו קישור למילוי, בוואטסאפ או במייל.')),
       el('button', { type: 'button', class: 'small', onclick: () => { dlg.close(); Promise.resolve(toFill()).catch(e => toast(e.message, true)); } }, '📨 שליחה למילוי')) : null;
     const phoneRow = el('div', { class: 'share-phone' }, phone, pname);
     function setVia(v) {
       const p = v === 'phone';
       email.hidden = p; email.required = !p;
       phoneRow.hidden = !p; phone.required = p;
-      if (fillBox) fillBox.hidden = !p;
-      submit.textContent = p ? '💬 שליחה בוואטסאפ' : '➕ שיתוף';
+      submit.textContent = p ? '💬 שליחת הזמנה בוואטסאפ' : '➕ שיתוף';
       viaHint.textContent = p
-        ? 'לשותף עם חשבון: נשלח קישור אישי, הוא נכנס או נרשם דרכו — והשיתוף נוצר לחשבון שלו.'
-        : 'למשתמש שכבר רשום. לקוח שרק ממלא טופס — דרך "📨 שליחה למילוי".';
+        ? 'לעובד או שותף שעוד אין לו חשבון: מקבל קישור אישי, נרשם דרכו — והשיתוף נוצר לחשבון שלו.'
+        : 'לעובד או שותף שכבר רשום במערכת.';
     }
     const add = el('form', { class: 'card share-add' },
-      el('h3', {}, 'שיתוף עם עוד מישהו'),
-      viaSeg, fillBox, email, phoneRow, seg, levelHint, submit, viaHint);
+      el('h3', {}, 'הוספה לצוות'),
+      viaSeg, email, phoneRow, seg, levelHint, submit, viaHint);
     setVia('email');
     add.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -417,8 +422,9 @@
       submit.disabled = false;
     });
     const count = el('span', { class: 'count' });
-    const dlg = sheet('👥 שיתוף — ' + title, el('div', { class: 'share-sheet' },
-      el('h3', { class: 'share-title' }, `מי רואה את ${what}`, count),
+    const dlg = sheet('👥 שיתוף עם צוות — ' + title, el('div', { class: 'share-sheet' },
+      fillBox,
+      el('h3', { class: 'share-title' }, `מי בצוות של ${what}`, count),
       list, out, add));
     await load();
   }
@@ -456,7 +462,7 @@
       }
       list.replaceChildren(el('ul', { class: 'list' }, items.map(t => {
         const sub = [SOURCE[t.source] || t.source, t.fields + ' שדות', 'גרסה ' + t.version,
-          t.owner_name ? `של ${t.owner_name} · ${LEVEL[t.access]}` : null].filter(Boolean).join(' · ');
+          t.owner_name ? `של ${t.owner_name} · ${t.access === 'fill' ? 'מנפיק' : LEVEL[t.access]}` : null].filter(Boolean).join(' · ');
         const canIssue = !t.archived && t.fields && rank(t.access) >= 2;
         return el('li', { class: 'tpl-card' + (t.archived ? ' archived' : '') },
           el('a', { class: 'use-row tpl-open', href: '#tpl=' + t.id, title: rank(t.access) >= 3 ? 'עריכת התבנית' : 'צפייה בתבנית' },
@@ -488,7 +494,7 @@
             try { await window.DTDocs.issue(t.id, true); } catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
           }), { sub: 'לקוח ממלא בקישור — אתם בוחרים אילו שדות' }) : null,
           r >= 3 ? tile('📦', 'ייצוא תבנית', go(() => window.DTPort.exportDialog(t)), { sub: 'עם כל ההגדרות — PDF, Word או JSON' }) : null,
-          r >= 4 ? tile('🔗', 'שיתוף', go(() => shareDialog('template', t.id, t.name, load))) : null,
+          r >= 4 ? tile('👥', 'שיתוף עם צוות', go(() => shareDialog('template', t.id, t.name, load)), { sub: 'עובדים ושותפים עם חשבון' }) : null,
           r >= 4 ? tile(t.archived ? '♻️' : '🗄️', t.archived ? 'שחזור' : 'ארכיון', go(() => archive(t))) : null,
           t.used || t.access !== 'owner' ? null : tile('🗑️', 'מחיקה', go(() => remove(t)), { danger: true }),
           t.access === 'owner' ? null : tile('🚪', 'עזיבה', go(() => leave('template', t.id, t.name, load)), { danger: true })),
