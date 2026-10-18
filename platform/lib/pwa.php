@@ -25,6 +25,21 @@ function applies(string $app, ?array $cfg): bool
     return $cfg !== null && !empty($cfg['gate']) && !\Platform\Gate\is_detached($app);
 }
 
+/**
+ * האם להוסיף לדף הזה את הסקריפט וה-manifest: אפליקציה מחוברת, דף שאינו ציבורי, ומשתמש מחובר
+ * לפלטפורמה. דף ציבורי (טופס ללקוח, תפריט, קישור צפייה) שייך ללקוח של האפליקציה — לא מציעים לו
+ * להתקין את האפליקציה כולה, לא מכסים לו כפתורים ולא שומרים אצלו מזהה מכשיר.
+ */
+function wanted(string $app, ?array $cfg, string $path, array $params): bool
+{
+    if (!applies($app, $cfg) || \Platform\Gate\is_public($cfg, $path, $params)) return false;
+    try {
+        return \Platform\Gate\current_user() !== null;
+    } catch (\Throwable) {
+        return false;
+    }
+}
+
 /** נתיב ה-manifest של הכלי עצמו (יחסי לתיקייה שלו), או null. */
 function own_manifest(string $app): ?string
 {
@@ -42,7 +57,10 @@ function inject_html(string $html, string $app, array $cfg, string $base): strin
     $e = fn(string $s) => htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
     $tags = '<script src="' . $e($base . 'platform/assets/pwa-beacon.js') . '" defer'
           . ' data-app="' . $e($app) . '" data-name="' . $e((string)($cfg['name'] ?? $app)) . '"'
-          . ' data-api="' . $e($base . 'platform/api.php') . '"></script>';
+          . ' data-api="' . $e($base . 'platform/api.php') . '"'
+          // "install": {"banner": false} ב-app.json — בלי הפס "התקנה"; בדיקת ההתקנה נשארת.
+          . (($cfg['install']['banner'] ?? true) === false ? ' data-banner="0"' : '')
+          . '></script>';
     if (!preg_match('/<link[^>]+rel=["\']?manifest/i', $html)) {
         $tags .= '<link rel="manifest" href="' . $e($base . 'platform/pwa.php?app=' . rawurlencode($app)) . '">';
         if (!preg_match('/apple-touch-icon/i', $html)) {
@@ -94,8 +112,9 @@ function absolute(string $path): string
  * gate-prepend: לדף PHP של כלי — מאזין לפלט, ואם הוא HTML מוסיף את התגים. רק בפתיחת דף
  * (ניווט GET), לא ב-API או בהורדות — אלה לא נאגרים בזיכרון.
  */
-function inject_php_page(string $app, array $cfg, string $base): void
+function inject_php_page(string $app, array $cfg, string $base, string $path, array $params): void
 {
+    if (!wanted($app, $cfg, $path, $params)) return;
     if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') return;
     $dest = $_SERVER['HTTP_SEC_FETCH_DEST'] ?? '';
     if ($dest !== '' ? $dest !== 'document' : !str_contains($_SERVER['HTTP_ACCEPT'] ?? '', 'text/html')) return;

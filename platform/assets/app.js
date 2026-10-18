@@ -819,7 +819,9 @@ let justSignedIn = false;
 function goNext() {
     const next = new URLSearchParams(location.search).get('next');
     if (next && next.startsWith('/') && !next.startsWith('//')) {
-        location.replace(next);
+        // מה שאחרי # (#invite=…, #reset=…) לא מגיע לשרת, ולכן אינו ב-?next. הדפדפן משאיר אותו
+        // בכתובת אחרי הפניית השער (הפניה בלי # שומרת את ה-# המקורי) — ומכאן מחזירים אותו לכלי.
+        location.replace(next.includes('#') ? next : next + location.hash);
         return true;
     }
     return false;
