@@ -543,7 +543,7 @@
         fontSize: 11, align: 'right', overflow: 'shrink', role: 'owner',
         ...(type === 'system' ? { source: p.source } : {}), ...(type === 'calc' ? { formula: '', format: 'number' } : {}),
         ...(type === 'select' ? { options: [] } : {}),
-        ...(type === 'table' ? { fontSize: 9, overflow: 'annex', group: false, columns: [
+        ...(type === 'table' ? { fontSize: 9, overflow: 'pages', fit: 'rows', keep_bottom: 25, group: false, columns: [
           { key: 'c1', label: 'תיאור', type: 'text' }, { key: 'c2', label: 'כמות', type: 'number' }, { key: 'c3', label: 'מחיר', type: 'number' }] } : {}),
       };
       schema.fields.push(f);
@@ -1271,6 +1271,27 @@
         return el('label', { class: 'switch' }, c, el('span', {}, label, hint ? el('small', { class: 'muted' }, hint) : null));
       };
       const group = (title, ...kids) => el('section', { class: 'fs-group' }, el('h3', { class: 'sec-title' }, title), ...kids);
+      // טבלה על הדף: גובה לפי מספר השורות (מה שמתחת עולה אחריה), ומה קורה כשהיא ארוכה מהדף
+      const tableFit = () => {
+        const fit = el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'גובה הטבלה' },
+          ...[['rows', '📏 לפי מספר השורות'], ['fixed', '▭ קבוע']].map(([v, t]) => el('label', {},
+            el('input', { type: 'radio', name: 'tbl-fit-' + f.id, value: v, checked: (f.fit || 'fixed') === v,
+              onchange: () => { f.fit = v; setDirty(true); draw(); render(); } }), el('span', {}, t))));
+        const rows = f.fit === 'rows';
+        return el('div', { class: 'tbl-fit' },
+          el('div', { class: 'f' }, el('span', {}, 'גובה הטבלה במסמך'), fit),
+          el('p', { class: 'hint' }, rows
+            ? 'הטבלה תופסת רק את השורות שמולאו, ומה שמתחתיה בדף עולה אחריה — בלי רווח ריק. המסגרת על הדף = הגובה המרבי בדף אחד.'
+            : 'הטבלה תופסת תמיד את כל המסגרת שעל הדף, גם כשיש מעט שורות.'),
+          choose(rows ? 'כשהשורות לא נכנסות בדף' : 'כשהשורות לא נכנסות במסגרת', 'overflow', rows ? {
+            pages: 'לשבור לדפים — כותרת הטבלה חוזרת בכל דף',
+            grow: 'דף אחד ארוך — הדף מתארך לפי הטבלה',
+            annex: 'להמשיך בנספח בסוף המסמך',
+            shrink: 'להקטין גופן עד שייכנס',
+          } : { annex: OVERFLOW.annex, shrink: OVERFLOW.shrink }),
+          rows ? input('שוליים תחתונים שלא זזים (מ״מ)', 'keep_bottom', { type: 'number', min: 0, max: 150, placeholder: '25' }) : null,
+          rows ? el('p', { class: 'hint' }, 'למשל הכותרת התחתונה של נייר המכתבים — נשארת בתחתית הדף, וכל מה שבין הטבלה לבינה זז.') : null);
+      };
 
       function render() {
         const auto = isAuto(f);
@@ -1362,7 +1383,7 @@
               input('גודל גופן', 'fontSize', { type: 'number', min: 6, max: 72 })) : null,
             textual && !styleOf(f) ? positionGrid(f) : null,
             (textual || f.type === 'checkbox') && !styleOf(f) ? colorPicker(f) : null,
-            textual ? choose('כשהטקסט ארוך מהשדה', 'overflow', OVERFLOW) : null,
+            f.type === 'table' ? tableFit() : textual ? choose('כשהטקסט ארוך מהשדה', 'overflow', OVERFLOW) : null,
             el('p', { class: 'hint' }, `דף ${f.page + 1}. ` + (f.locked ? 'נעול — אי אפשר לגרור.' : 'הזזה וגודל — בגרירה על הדף.'))) : null,
           el('details', { class: 'fs-group adv' }, el('summary', {}, 'מתקדם'),
             input('מפתח פנימי (לייצוא ולאקסל)', 'key', { dir: 'ltr', maxlength: 60, pattern: '[a-z0-9_]+' }),

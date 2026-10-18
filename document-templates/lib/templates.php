@@ -38,7 +38,8 @@ const BLOCK_TYPES = ['heading', 'p', 'table', 'break'];
 /** שלב 11: תבנית שנכתבה בכלי — אין קובץ מקור; הגוף נשמר במבנה התבנית. */
 const AUTHORED_MIME = 'application/x-dt-authored';
 const FILE_KINDS  = ['pdf', 'image', 'office'];
-const OVERFLOW    = ['shrink', 'annex', 'block'];
+// grow / pages — לטבלה: הדף מתארך, או נשבר לדפים (assets/js/documents.js, layoutFlows)
+const OVERFLOW    = ['shrink', 'annex', 'block', 'grow', 'pages'];
 
 function valid_tpl_name($n): string
 {
@@ -402,6 +403,9 @@ function clean_schema($s, array $sources = [], array $fonts = [], array $contact
             // שני קברים באותה מכפלה). 0 — בלי. true מהגרסה הקודמת = עמודה אחת
             $g = ($f['group'] ?? 0) === true ? 1 : (int)($f['group'] ?? 0);
             $fields[count($fields) - 1]['group'] = max(0, min($g, count($cols) - 1, 8));
+            // גובה: rows — לפי מספר השורות, ומה שמתחת לטבלה עולה אחריה (עד השוליים התחתונים, במ״מ, שלא זזים)
+            $fields[count($fields) - 1]['fit'] = ($f['fit'] ?? '') === 'rows' ? 'rows' : 'fixed';
+            $fields[count($fields) - 1]['keep_bottom'] = (int)$num($f['keep_bottom'] ?? 25, 0, 150);
         }
         if ($type === 'file') {
             // צירוף קובץ (שלב 6): אילו סוגים, גודל מרבי לקובץ, ואחד או כמה.

@@ -1667,32 +1667,38 @@
     };
 
     const vis = window.DTCalc.visibleKeys(doc.schema, values);   // שלב 11: שדה מוסתר — לא נכתב
+    const flows = await layoutFlows(vis);
     for (const f of doc.schema.fields) {
+      if ((values[f.key] ?? '') === '' || !pages[f.page] || !vis.has(f.key) || f.print === false) continue;   // "לא מודפס" — לא נכתב
+      const fl = flows.get(f.page);
+      // דף עם טבלה "לפי מספר השורות": השדה יכול לעבור מקום, או לחזור בכמה דפים
+      for (const P of fl ? fl.place(f) : [{ page: pages[f.page], fr: frame(pages[f.page]), dv: 0 }]) await drawField(f, P.page, P.fr, P.dv);
+    }
+
+    async function drawField(f, page, fr, dv) {
       let raw = values[f.key] ?? '';
-      if (raw === '' || !pages[f.page] || !vis.has(f.key) || f.print === false) continue;   // "לא מודפס" — לא נכתב
-      const page = pages[f.page];
-      // הכול בנקודות של הדף הנראה: (bx, by) — הפינה העליונה של השדה, y כלפי מטה
-      const { W, H, pt, rot } = frame(page);
+      // הכול בנקודות של הדף הנראה: (bx, by) — הפינה העליונה של השדה, y כלפי מטה. H0 — גובה הדף המקורי
+      const { W, H, pt, rot } = fr, H0 = fr.H0 ?? fr.H;
       const fc = window.DTFmt.rich(f, raw)?.color;   // [אדום] במבנה (למשל מספר שלילי) — גובר על צבע השדה
       const ink = fc ? inkOf({ color: fc }) : inkOf(f);
-      const bx = f.x * W, by = f.y * H, bw = f.w * W, bh = f.h * H;
+      const bx = f.x * W, by = f.y * H0 + dv, bw = f.w * W, bh = f.h * H0;   // dv — הזזה אחרי טבלה שמתכווצת / מתארכת
 
       if (f.type === 'checkbox') {
-        if (raw !== '1') continue;
+        if (raw !== '1') return;
         const s = Math.min(bw, bh), cx = bx + bw / 2, cy = by + bh / 2;
         const line = (x1, y1, x2, y2) => page.drawLine({ start: pt(x1, y1), end: pt(x2, y2), thickness: Math.max(1, s / 8), color: ink });
         line(cx - s * 0.35, cy, cx - s * 0.08, cy + s * 0.3);
         line(cx - s * 0.08, cy + s * 0.3, cx + s * 0.4, cy - s * 0.35);
-        continue;
+        return;
       }
       if (f.type === 'table') {
-        drawTable(f, page, { W, H, pt, rot }, ink, fonts.get(f.font) || fontDefault, { bx, by, bw, bh });
-        continue;
+        if (!flows.has(f.page) || flows.get(f.page).table !== f) drawTable(f, page, { W, H, pt, rot }, ink, fonts.get(f.font) || fontDefault, { bx, by, bw, bh });
+        return;
       }
       if (f.type === 'file') {
         let ids = [];
         try { ids = JSON.parse(raw); } catch (e) { /* ריק */ }
-        if (!ids.length) continue;
+        if (!ids.length) return;
         const names = ids.map(aid => (doc.attachments || []).find(a => a.id === aid)?.name || 'קובץ');
         raw = 'מצורף: ' + names.join(', ');
       }
@@ -1703,7 +1709,7 @@
         // pdf-lib מצייר תמונה מהפינה השמאלית-תחתונה שלה, ומסובב סביבה
         const o = pt(bx + (bw - iw) / 2, by + (bh + ih) / 2);
         page.drawImage(png, { x: o.x, y: o.y, width: iw, height: ih, rotate: rot });
-        continue;
+        return;
       }
 
       const font = fonts.get(f.font) || fontDefault;
@@ -1742,16 +1748,107 @@
     }
 
     /**
+     * טבלה "לפי מספר השורות" (fit: 'rows'): הטבלה תופסת רק את השורות שיש, ומה שמתחתיה ברקע (מחירים, פרטי בנק…)
+     * עולה אחריה — עד "השוליים התחתונים" (keep_bottom, מ״מ), שנשארים במקומם (כותרת תחתונה של נייר המכתבים).
+     * ארוכה מהאזור שלה: overflow 'grow' — הדף מתארך; 'pages' — נשברת לדפים, והחלק העליון של הדף, כותרת
+     * הטבלה והשוליים התחתונים חוזרים בכל דף; מה שאחרי הטבלה — רק בדף האחרון. אחרת (נספח / הקטנה) — כרגיל.
+     * הרקע נבנה מחדש מעותק של הדף, באזורים חתוכים. דף מסובב או חתוך (CropBox) — נשאר כמו שהוא.
+     */
+    async function layoutFlows(vis) {
+      const { pushGraphicsState, popGraphicsState, rectangle, clip, endPath, PDFName } = window.PDFLib;
+      const out = new Map();
+      for (const f of doc.schema.fields) {
+        if (f.type !== 'table' || f.fit !== 'rows' || out.has(f.page) || !pages[f.page] || !vis.has(f.key) || f.print === false) continue;
+        const src = pages[f.page];
+        const cb = src.getCropBox(), mb = src.getMediaBox();
+        if ((src.getRotation().angle % 360) || cb.x || cb.y || mb.x || mb.y || Math.abs(cb.width - mb.width) > 0.5 || Math.abs(cb.height - mb.height) > 0.5) continue;
+        const W = cb.width, H0 = cb.height;
+        const font = fonts.get(f.font) || fontDefault;
+        const bx = f.x * W, tTop = f.y * H0, bw = f.w * W, bh = f.h * H0, tb = tTop + bh;
+        const fe = Math.min(H0, Math.max(tb, H0 - (Number(f.keep_bottom ?? 25) || 0) * 72 / 25.4));
+        const sum = (a) => a.reduce((x, y) => x + y, 0);
+        const long = f.overflow === 'grow' || f.overflow === 'pages';
+        const M = measureTable(f, font, bw, long ? Infinity : bh);   // דף ארוך / דפים — לא מקטינים את הגופן בשביל הגובה
+        const n = M.rows.length;
+        const chunks = [];   // {from, to, R}: השורות בכל דף, והגובה שהטבלה תופסת בו
+        if (!n || !M.cols.length) chunks.push({ from: 0, to: 0, R: 0 });
+        else if (f.overflow === 'pages') {
+          for (let i = 0; i < n;) {
+            const rest = M.head + sum(M.hs.slice(i));
+            if (rest <= bh + 0.5) { chunks.push({ from: i, to: n, R: rest }); i = n; break; }
+            let j = i, R = M.head;
+            while (j < n && R + M.hs[j] <= fe - tTop + 0.5) R += M.hs[j++];
+            if (j === i) R += M.hs[j++];   // שורה גבוהה מדף שלם — לפחות שורה אחת בכל דף
+            chunks.push({ from: i, to: j, R });
+            i = j;
+            if (i >= n) chunks.push({ from: n, to: n, R: 0 });   // לא נשאר מקום למה שאחרי הטבלה — דף משלו
+          }
+        } else if (f.overflow === 'grow') chunks.push({ from: 0, to: n, R: M.head + sum(M.hs) });
+        else {
+          // נספח / הקטנה: כמו בטבלה קבועה — רק מה שנכנס באזור, ומה שאחריו עולה
+          let R = M.head, k = 0;
+          while (k < n && R + M.hs[k] <= bh + 0.5) R += M.hs[k++];
+          if (k < n && f.overflow === 'annex') R = Math.min(bh, R + M.size * 1.6);
+          chunks.push({ from: 0, to: n, R, clipped: true });
+        }
+        const copy = (await pdf.copyPages(pdf, [pdf.getPages().indexOf(src)]))[0];
+        const emb = await pdf.embedPage(copy);
+        const built = [];
+        for (let k = 0; k < chunks.length; k++) {
+          const last = k === chunks.length - 1, ch = chunks[k];
+          const delta = last ? tTop + ch.R - tb : 0;        // כמה זז מה שאחרי הטבלה (שלילי — עולה)
+          const extra = f.overflow === 'grow' ? Math.max(0, delta) : 0;   // דף ארוך: בכמה הדף מתארך
+          const Ht = H0 + extra;
+          let page = src;
+          if (k > 0) page = pdf.insertPage(pdf.getPages().indexOf(built[k - 1].page) + 1, [W, Ht]);
+          else {
+            // מנקים את התוכן של הדף ומציירים אותו מחדש מהעותק
+            src.node.set(PDFName.of('Contents'), pdf.context.obj([]));
+            src.contentStream = undefined; src.contentStreamRef = undefined;
+          }
+          for (const box of ['MediaBox', 'CropBox', 'BleedBox', 'TrimBox', 'ArtBox']) {
+            if (box === 'MediaBox' || page.node.get(PDFName.of(box))) page.node.set(PDFName.of(box), pdf.context.obj([0, 0, W, Ht]));
+          }
+          const region = (v0, v1, s) => {
+            if (v1 - v0 < 0.5) return;
+            page.pushOperators(pushGraphicsState(), rectangle(0, Ht - (v1 + s), W, v1 - v0), clip(), endPath());
+            page.drawPage(emb, { x: 0, y: Ht - s - H0 });
+            page.pushOperators(popGraphicsState());
+          };
+          region(0, tTop, 0);
+          if (last) region(tb, fe, delta);
+          region(fe, H0, extra);
+          const fr = { W, H: Ht, H0, pt: (u, v) => ({ x: u, y: Ht - v }), rot: degrees(0) };
+          built.push({ page, fr, delta, extra, last });
+          if (ch.to > ch.from || (ch.clipped && n)) {
+            drawTable(f, page, fr, inkOf(f), font, { bx, by: tTop, bw, bh: ch.clipped ? bh : ch.R + 1 },
+              ch.clipped ? null : { M, from: ch.from, to: ch.to });
+          }
+        }
+        out.set(f.page, {
+          table: f,
+          // מעל הטבלה — בכל דף; אחרי הטבלה — בדף האחרון, במקום החדש; בשוליים התחתונים — בכל דף, בתחתית
+          place: (g) => {
+            const v = g.y * H0;
+            if (v >= fe - 0.5) return built.map(b => ({ page: b.page, fr: b.fr, dv: b.extra }));
+            if (v >= tb - 0.5) { const b = built[built.length - 1]; return [{ page: b.page, fr: b.fr, dv: b.delta }]; }
+            return built.map(b => ({ page: b.page, fr: b.fr, dv: 0 }));
+          },
+        });
+      }
+      return out;
+    }
+
+    /**
      * טבלה על הדף: כותרת + שורה לכל רשומה, מימין לשמאל, בתוך האזור של השדה. רוחב העמודות — לפי התוכן.
      * קיבוץ: שורה שממשיכה את הקבוצה (אותו ערך בעמודה הראשונה) — בלי הערך הזה ובלי קו עבה; בין קבוצות — קו עבה.
      * לא נכנס: קודם מקטינים את הגופן (עד 6), ומה שעדיין לא נכנס — לנספח (או נחתך, אם נבחר "להקטין").
      */
-    function drawTable(f, page, { pt, rot }, ink, font, { bx, by, bw, bh }) {
+    /** מידות הטבלה: גודל הגופן, רוחב העמודות וגובה כל שורה. bh = Infinity — מקטינים רק בשביל הרוחב. */
+    function measureTable(f, font, bw, bh) {
       const C = window.DTCalc;
       const cols = f.columns || [];
       const rows = C.rows(values[f.key]);
-      if (!cols.length || !rows.length) return;
-      const gn = groupN(f);
       const shown = (c, r) => c.type === 'calc' ? C.display(r[c.key] ?? '', c.format) : c.type === 'number' ? C.display(r[c.key] ?? '', 'number') : listOut(doc.lists, c.list, r[c.key]);
       const wraps = (c) => c.type === 'text';   // טקסט (למשל הערות) נשבר לכמה שורות; מספר ובחירה — שורה אחת
       const pad = 3;
@@ -1767,9 +1864,24 @@
         const hs = lines.map(row => Math.max(1, ...row.map(l => l.length)) * sz * 1.25 + sz * 0.6);
         return { total, ws, lines, hs, head: sz * 2 };
       };
-      let size = f.fontSize || 9, L = layout(size);
+      let size = f.fontSize || 9, L = rows.length && cols.length ? layout(size) : { total: 0, ws: [], lines: [], hs: [], head: size * 2 };
       const height = (L) => L.head + L.hs.reduce((a, b) => a + b, 0);
-      while (size > 6 && (L.total > bw * 1.02 || height(L) > bh)) { size -= 0.5; L = layout(size); }
+      while (rows.length && cols.length && size > 6 && (L.total > bw * 1.02 || height(L) > bh)) { size -= 0.5; L = layout(size); }
+      return { size, L, rows, cols, pad, shown, head: L.head, hs: L.hs };
+    }
+
+    /**
+     * טבלה על הדף: כותרת + שורה לכל רשומה, מימין לשמאל, בתוך האזור של השדה. רוחב העמודות — לפי התוכן.
+     * קיבוץ: שורה שממשיכה את הקבוצה (אותו ערך בעמודה הראשונה) — בלי הערך הזה ובלי קו עבה; בין קבוצות — קו עבה.
+     * לא נכנס: קודם מקטינים את הגופן (עד 6), ומה שעדיין לא נכנס — לנספח (או נחתך, אם נבחר "להקטין").
+     * part — חלק מטבלה שנשברת לדפים: {M, from, to} — השורות האלה בלבד, בלי לבדוק גובה.
+     */
+    function drawTable(f, page, { pt, rot }, ink, font, { bx, by, bw, bh }, part) {
+      const M = part ? part.M : measureTable(f, font, bw, bh);
+      const { size, L, rows, cols, pad, shown } = M;
+      if (!cols.length || !rows.length) return;
+      const gn = groupN(f);
+      const from = part ? part.from : 0, to = part ? part.to : rows.length;
       const grey = rgb(0.45, 0.48, 0.55), light = rgb(0.82, 0.84, 0.88);
       const hline = (y, color, thickness) => page.drawLine({ start: pt(bx, y), end: pt(bx + bw, y), color, thickness });
       const text = (str, xRight, w, yBase, color, center) => {
@@ -1785,11 +1897,11 @@
       cols.forEach((c, j) => { text(c.label, x, L.ws[j], by + L.head * 0.66, grey, false); x -= L.ws[j]; });
       hline(by + L.head, ink, 0.9);
       // שורות — עד שנגמר האזור
-      let y = by + L.head, n = 0;
-      for (let i = 0; i < rows.length; i++) {
-        if (y + L.hs[i] > by + bh + 0.5) break;
-        const cont = sameGroup(f, rows, i);
-        if (i > 0) hline(y, cont ? light : (gn ? ink : light), cont ? 0.3 : (gn ? 0.7 : 0.4));
+      let y = by + L.head, n = from;
+      for (let i = from; i < to; i++) {
+        if (!part && y + L.hs[i] > by + bh + 0.5) break;
+        const cont = i > from && sameGroup(f, rows, i);   // בתחילת דף — הקבוצה נכתבת שוב
+        if (i > from) hline(y, cont ? light : (gn ? ink : light), cont ? 0.3 : (gn ? 0.7 : 0.4));
         let xr = bx + bw;
         cols.forEach((c, j) => {
           if (!(j < gn && cont)) L.lines[i][j].forEach((ln, k) => text(ln, xr, L.ws[j], y + size * 1.15 + k * size * 1.25, ink, c.type === 'number' || c.type === 'calc'));
@@ -1799,7 +1911,7 @@
       }
       hline(y, ink, 0.6);
       // מה שלא נכנס
-      if (n < rows.length && f.overflow === 'annex') {
+      if (!part && n < rows.length && f.overflow === 'annex') {
         const rest = rows.slice(n).map(r => cols.map(c => c.label + ': ' + (shown(c, r) || '—')).join(' · '));
         annex.push({ label: f.label + ` (שורות ${n + 1}–${rows.length})`, text: rest.join('\n') });
         const note = pdfText('(המשך בנספח ' + annex.length + ')');
