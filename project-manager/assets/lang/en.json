@@ -2583,5 +2583,7 @@
     "התמונה גדולה מדי לסיווג": "The image is too large to classify",
     "הגעתם למכסת הסיווגים היומית": "You've reached the daily classification limit",
     "השירות סירב לסווג את הקובץ": "The service declined to classify the file",
-    "לא התקבלה תשובה מהסיווג": "No answer from the classification"
+    "לא התקבלה תשובה מהסיווג": "No answer from the classification",
+    "הסכומים": "Amounts",
+    "כולל מע\"מ {n}%": "Incl. {n}% VAT"
 }
