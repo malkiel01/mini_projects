@@ -7,8 +7,9 @@
   "entry": "index.html",
   "gate": true,
   "public": [
+    "index.html",
     "fill.html",
     "assets/**",
-    "api.php?action=fill_get|fill_asset|fill_otp_send|fill_otp_verify|fill_save|fill_complete|fill_upload|fill_file|ext_templates|ext_template|ext_issue|ext_document|ext_update|ext_file|fill_font|devapi-feed|devapi-comment|devapi-file|devapi-attach"
+    "api.php?action=health|me|register|verify|login|forgot|reset|invite_info|fill_get|fill_asset|fill_otp_send|fill_otp_verify|fill_save|fill_complete|fill_downloaded|fill_docx|fill_upload|fill_file|list_opts|fill_font|ext_templates|ext_template|ext_issue|ext_document|ext_update|ext_file|devapi-feed|devapi-comment|devapi-file|devapi-attach"
   ]
 }
