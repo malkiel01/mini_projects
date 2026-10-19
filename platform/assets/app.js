@@ -517,6 +517,45 @@ function openAppSheet(app, extras) {
 
 // ---------- התקנה והורדה (שלב 5) ----------
 
+// התקנת אפליקציה מתוך הכלים הדיגיטליים המותקנים. אנדרואיד: intent עם package של כרום פותח את הכתובת
+// בכרום עצמו (לא בחלונית), ושם pwa-beacon.js מציג "התקנה" בלחיצה. אם המכשיר לא מצליח — ההסבר
+// הידני והעתקת הקישור. אייפון: מתקינים רק מספארי — מעתיקים את הקישור ופותחים שם.
+function openInstallElsewhere(app, url) {
+    const u = new URL(url);
+    const intent = `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=${u.protocol.replace(':', '')};` +
+        `package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(url)};end`;
+    const close = el('button', { type: 'button', className: 'icon-btn', textContent: '✕', ariaLabel: 'סגירה' });
+    const copy = el('button', { type: 'button', className: 'btn big', textContent: '🔗 העתקת הקישור' });
+    copy.addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(url); toast('הקישור הועתק'); } catch { window.prompt('העתיקו את הקישור:', url); }
+    });
+    const body = isAndroid() ? [
+        el('p', { className: 'lead', textContent: 'מתוך האפליקציה המותקנת אנדרואיד פותח אפליקציות בחלונית, ושם אי אפשר להתקין. פותחים בכרום — ושם לוחצים "התקנה".' }),
+        el('a', { className: 'btn primary big', href: intent, textContent: '📲 פתיחה בכרום להתקנה' }),
+        el('ol', { className: 'steps' }, [
+            'נפתחה חלונית עם ✕ למעלה? תפריט <b>⋮</b> ← <b>"פתיחה ב-Chrome"</b>',
+            'בכרום, בפס הסגול בתחתית — <b>"התקנה"</b>',
+        ].map(h => el('li', {}, [el('span', { className: 'step-tx', innerHTML: h })]))),
+        copy,
+    ] : [
+        el('p', { className: 'lead', textContent: 'באייפון מתקינים רק מספארי. מעתיקים את הקישור, פותחים אותו בספארי, ושם: שיתוף ← "הוספה למסך הבית".' }),
+        copy,
+    ];
+    const dlg = el('dialog', { className: 'install' }, [el('div', { className: 'sheet' }, [
+        el('div', { className: 'sheet-head' }, [
+            appIcon(app),
+            el('div', { className: 'tx' }, [el('h2', { textContent: `התקנת ${app.name}` }), el('small', { textContent: 'אייקון משלה במסך הבית' })]),
+            close,
+        ]),
+        el('div', { className: 'sheet-body' }, body),
+    ])]);
+    close.addEventListener('click', () => dlg.close());
+    dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+    dlg.addEventListener('close', () => dlg.remove());
+    document.body.append(dlg);
+    dlg.showModal();
+}
+
 // מה שהמנהל אישר לאפליקציה: התקנה נפרדת, APK, חנות. השרת לא שולח את מה שלא אושר.
 function installLinks(app) {
     const tile = (icon, text, props) => el('a', { className: 'tile', ...props }, [
@@ -527,7 +566,13 @@ function installLinks(app) {
         // פותח את האפליקציה בחלון משלה עם ?pwa-install=1 — שם pwa-beacon.js מציג "התקנה" (בלחיצה
         // כשהדפדפן מאפשר, אחרת ההסבר המדויק למכשיר). ההתקנה חייבת לקרות מתוך הדף של האפליקציה.
         const href = app.href + (app.href.includes('?') ? '&' : '?') + 'pwa-install=1';
-        out.push(tile('📲', isInstalledHere(app.id) ? 'מותקנת — התקנה מחדש' : 'התקנה כאפליקציה', openProps(href)));
+        const t = tile('📲', isInstalledHere(app.id) ? 'מותקנת — התקנה מחדש' : 'התקנה כאפליקציה', openProps(href));
+        // מתוך הכלים הדיגיטליים המותקנים בטלפון קישור נפתח בחלונית של הדפדפן (באנדרואיד Custom Tab עם ✕),
+        // ושם אי אפשר להתקין. לכן — לא קישור רגיל, אלא פתיחה בדפדפן עצמו.
+        if (isStandalone() && (isAndroid() || isIOS())) {
+            t.addEventListener('click', (e) => { e.preventDefault(); openInstallElsewhere(app, new URL(href, document.baseURI).href); });
+        }
+        out.push(t);
     }
     if (app.install.apk) out.push(tile('⬇️', 'הורדת APK', { href: app.install.apk, rel: 'noopener' }));
     if (app.install.store) out.push(tile('▶️', 'Google Play', { href: app.install.store, rel: 'noopener', target: '_blank' }));
