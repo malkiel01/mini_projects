@@ -587,18 +587,47 @@ function doc_return_note(int $docId, int $partId): ?string
 }
 
 /** המסמך הושלם (או אושר): מייל לכל ממלא עם מייל — להורדת העותק שלו, באותו קישור שכבר אצלו. */
-function notify_ready(array $d, array $schema): void
+function notify_ready(array $d, array $schema): array
 {
-    $title = (string)unseal($d['title_enc']);
+    $wa = [];
     foreach (participants_of((int)$d['id']) as $p) {
+        if (!$p['completed_at']) continue;
         $c = contact_of($p);
-        if (!$c['email'] || !$p['completed_at']) continue;
         $token = part_token($p);   // אותו קישור שכבר אצלו — גם אם קיבל אותו בוואטסאפ
         db()->prepare('UPDATE participants SET notified_at = ? WHERE id = ?')->execute([now_iso(), $p['id']]);
-        send_mail($c['email'], ($schema['approval'] ? 'המסמך אושר: ' : 'המסמך הושלם: ') . $title,
-            "שלום {$c['name']},\n\nהמסמך \"$title\"" . ($d['number'] ? " ({$d['number']})" : '') .
-            ($schema['approval'] ? ' אושר.' : ' הושלם.') . "\nלצפייה ולהורדה:\n" . fill_url($token));
+        $text = ready_text($d, $schema);
+        if ($c['email']) send_mail($c['email'], ($schema['approval'] ? 'המסמך אושר: ' : 'המסמך הושלם: ') . (string)unseal($d['title_enc']),
+            "שלום {$c['name']},\n\n$text\n" . fill_url($token));
+        else $wa[] = wa_notice($p, $text, fill_url($token));   // בלי מייל — השולח שולח בוואטסאפ
     }
+    return $wa;
+}
+
+function ready_text(array $d, array $schema): string
+{
+    return 'המסמך "' . unseal($d['title_enc']) . '"' . ($d['number'] ? " ({$d['number']})" : '') .
+        ($schema['approval'] ? ' אושר.' : ' הושלם.') . ' לצפייה ולהורדה:';
+}
+
+/**
+ * הודעה לממלא בלי מייל: השולח שולח אותה בעצמו — וואטסאפ עם ההודעה (ברירת המחדל), או הקישור להעתקה.
+ */
+function wa_notice(array $p, string $text, string $url): array
+{
+    $c = contact_of($p);
+    $msg = ($c['name'] ? $c['name'] . ', ' : '') . $text . "\n" . $url;
+    return ['participant_id' => (int)$p['id'], 'name' => $c['name'], 'url' => $url, 'text' => $msg,
+        'whatsapp' => 'https://wa.me/' . ($c['phone'] ? wa_phone($c['phone']) : '') . '?text=' . rawurlencode($msg)];
+}
+
+/** העותק המוכן — לממלא שסיים, כשהמסמך הושלם (התבנית מאפשרת לממלאים להוריד). לשליחה ידנית בוואטסאפ. */
+function part_notify(array $user, array $b): array
+{
+    [$d, $p] = part_owned($user, $b);
+    $schema = doc_schema($d);
+    if ($d['status'] !== 'completed' || empty($schema['fill_download'])) throw new ApiError('אין עותק לשלוח — המסמך לא הושלם, או שהתבנית לא מאפשרת לממלאים להוריד', 409);
+    if (!$p['completed_at']) throw new ApiError('המשתתף לא סיים', 409);
+    return ['ok' => true] + wa_notice($p, ready_text($d, $schema), fill_url(part_token($p)));
 }
 
 /**
@@ -629,18 +658,19 @@ function doc_return(array $user, array $b): array
     $title = (string)unseal($d['title_enc']);
     $owner = user_name((int)$d['owner_id']);
     $sent = 0;
+    $wa = [];
     foreach ($list as $p) {
         db()->prepare("UPDATE participants SET completed_at = NULL, status = 'opened' WHERE id = ?")->execute([$p['id']]);
         $c = contact_of($p);
-        if (!$c['email']) continue;
         $token = part_token($p);
         db()->prepare('UPDATE participants SET notified_at = ? WHERE id = ?')->execute([now_iso(), $p['id']]);
-        $sent += (int)send_mail($c['email'], 'הוחזר לתיקון: ' . $title, "שלום {$c['name']},\n\n$owner החזיר/ה אליך את המסמך \"$title\" לתיקון." .
-            ($note !== '' ? "\n\nההערה:\n$note" : '') . "\n\nלמילוי:\n" . fill_url($token));
+        $text = "$owner החזיר/ה אליך את המסמך \"$title\" לתיקון." . ($note !== '' ? "\n\nההערה:\n$note" : '') . "\n\nלמילוי:";
+        if ($c['email']) $sent += (int)send_mail($c['email'], 'הוחזר לתיקון: ' . $title, "שלום {$c['name']},\n\n$text\n" . fill_url($token));
+        else $wa[] = wa_notice($p, $text, fill_url($token));   // בלי מייל — השולח שולח בוואטסאפ
     }
     log_event((int)$d['id'], 'user:' . $user['id'], 'returned', ['note' => $note, 'participants' => array_map(fn($p) => (int)$p['id'], $list),
         'roles' => array_map(fn($p) => role_of($schema, $p['role_key'])['label'], $list)]);
-    return ['ok' => true, 'returned' => count($list), 'mailed' => $sent];
+    return ['ok' => true, 'returned' => count($list), 'mailed' => $sent, 'notify' => $wa];
 }
 
 /** הממלא מוריד את העותק שלו: רק אחרי שהמסמך הושלם (אושר), ורק אם התבנית מאפשרת. בלי שדות שמוסתרים ממנו. */

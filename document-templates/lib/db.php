@@ -34,6 +34,10 @@ function db(): PDO
     $pdo->exec('PRAGMA foreign_keys = ON');
     $pdo->exec('PRAGMA busy_timeout = 5000');
     db_migrate($pdo);
+    // פעם אחת: ההגדרות המוכנות נמחקות מקובצי המקור של תבניות קיימות (lib/pdfclean.php)
+    if (function_exists('pdf_settings_sweep')) {
+        try { pdf_settings_sweep(); } catch (Throwable) { /* ינסה שוב בבקשה הבאה */ }
+    }
     return $pdo;
 }
 
