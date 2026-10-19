@@ -31,7 +31,7 @@ $csrf = Auth::csrfToken();
         <nav class="topbar-nav">
             <button id="btn-refresh" class="btn btn-ghost" type="button">🔄 רענן רשימת ריפוז</button>
             <a href="settings.php" class="btn btn-ghost">⚙ הגדרות</a>
-            <a href="logout.php" class="btn btn-ghost">יציאה</a>
+            <?php if (!Auth::platformUser()): ?><a href="logout.php" class="btn btn-ghost">יציאה</a><?php endif; ?>
         </nav>
     </div>
 </header>
