@@ -622,63 +622,106 @@ function col(int $i): string
     return $s;
 }
 
-/** גיליון: שורות של תאים ['v' => ערך, 'f' => נוסחה, 's' => סגנון]. */
+/**
+ * גיליון: שורות של תאים ['v' => ערך, 'f' => נוסחה, 's' => סגנון, 'rich' => [[טקסט, פונט], …]].
+ * גובה כל שורה נקבע כאן (ולא נמדד באקסל) — כך אפשר לדעת מראש איפה כל עמוד A4 נגמר:
+ * מספרי העמודים בדף הריכוז, ההמשך שלהם בין גיליונות, ומעבר עמוד לפני כותרת שלא תיתקע בתחתית.
+ */
 final class Sheet
 {
     public array $rows = [];
     public array $merges = [];
+    public array $breaks = [];     // מעבר עמוד אחרי השורה הזו
     public int $r = 0;
+    public int $firstPage = 1;
+    public bool $footer = true;
+    public ?array $image = null;   // ['row' => …, 'emu' => [w, h], 'off' => emu מימין, 'path' => …, 'ext' => …]
+    /** @var array<int,int> שורה → עמוד (יחסית לגיליון, מ-0) */
+    public array $pageOf = [];
 
-    public function __construct(public string $name, public array $widths) {}
+    public function __construct(public string $name, public array $widths, public float $pageH) {}
 
-    public function add(array $cells, ?float $height = null): int
+    public function add(array $cells, float $height, bool $keepNext = false): int
     {
-        $this->rows[++$this->r] = ['cells' => $cells, 'h' => $height];
+        $this->rows[++$this->r] = ['cells' => $cells, 'h' => round($height, 1), 'keep' => $keepNext];
         return $this->r;
     }
 
-    public function skip(): void { $this->r++; }
+    public function gap(float $h = 8): void { $this->add([], $h); }
 
-    public function title(string $text, int $style = 2): void
+    /** שורה ממוזגת על כל הרוחב. */
+    public function line(array $cell, float $height, bool $keepNext = false): int
     {
-        $r = $this->add([['v' => $text, 's' => $style]], 22);
+        $r = $this->add([$cell], $height, $keepNext);
         $this->merges[] = 'A' . $r . ':' . col(count($this->widths) - 1) . $r;
+        return $r;
     }
 
-    public function xml(): string
+    /** מחשב עמודים: שורות בגובה ידוע, ומעבר עמוד לפני קבוצת "keep" שלא נכנסת (כותרת + כותרת טבלה + שורה). */
+    public function paginate(): int
+    {
+        $page = 0; $used = 0.0;
+        $rows = $this->rows;
+        $keys = array_keys($rows);
+        foreach ($keys as $i => $r) {
+            $h = $rows[$r]['h'];
+            // קבוצה: השורה הזו וכל השורות שאחריה שמסומנות keep, ועוד שורה אחת
+            $group = $h;
+            for ($j = $i; $j < count($keys) - 1 && $rows[$keys[$j]]['keep']; $j++) $group += $rows[$keys[$j + 1]]['h'];
+            if ($used > 0 && $used + ($rows[$r]['keep'] ? $group : $h) > $this->pageH) {
+                $this->breaks[] = $r - 1;
+                $page++; $used = 0.0;
+                // שורת רווח בראש עמוד — לא נספרת
+                if (!$rows[$r]['cells']) { $this->pageOf[$r] = $page; continue; }
+            }
+            $used += $h;
+            $this->pageOf[$r] = $page;
+        }
+        return $page + 1;
+    }
+
+    public function xml(?string $drawingRel = null): string
     {
         $cols = '';
         foreach ($this->widths as $i => $w) $cols .= '<col min="' . ($i + 1) . '" max="' . ($i + 1) . '" width="' . $w . '" customWidth="1"/>';
         $data = '';
         foreach ($this->rows as $r => $row) {
-            $data .= '<row r="' . $r . '"' . ($row['h'] ? ' ht="' . $row['h'] . '" customHeight="1"' : '') . '>';
+            $data .= '<row r="' . $r . '" ht="' . $row['h'] . '" customHeight="1">';
             foreach ($row['cells'] as $i => $c) {
                 if ($c === null) continue;
                 $ref = col($i) . $r;
                 $s = (int)($c['s'] ?? 0);
                 if (isset($c['f'])) {
                     $data .= "<c r=\"$ref\" s=\"$s\"><f>" . xml(ltrim($c['f'], '=')) . '</f>' . (isset($c['v']) ? '<v>' . (int)$c['v'] . '</v>' : '') . '</c>';
+                } elseif (isset($c['rich'])) {
+                    $runs = '';
+                    foreach ($c['rich'] as [$t, $font]) $runs .= '<r><rPr>' . $font . '</rPr><t xml:space="preserve">' . xml($t) . '</t></r>';
+                    $data .= "<c r=\"$ref\" s=\"$s\" t=\"inlineStr\"><is>$runs</is></c>";
                 } elseif (is_int($c['v'] ?? null) || is_float($c['v'] ?? null)) {
                     $data .= "<c r=\"$ref\" s=\"$s\"><v>" . $c['v'] . '</v></c>';
                 } elseif (($c['v'] ?? '') !== '' || $s) {
                     // טקסט בלי עברית ("01-04/2026, 05-12/2026") — משמאל לימין, אחרת הגיליון הימני הופך את סדר החלקים
-                    if ($s === 4 && !preg_match('/\p{Hebrew}/u', (string)$c['v']) && preg_match('/\d/', (string)$c['v'])) $s = 11;
+                    if ($s === XS_TEXT && !preg_match('/\p{Hebrew}/u', (string)$c['v']) && preg_match('/\d/', (string)$c['v'])) $s = XS_LTR;
                     $data .= "<c r=\"$ref\" s=\"$s\" t=\"inlineStr\"><is><t xml:space=\"preserve\">" . xml((string)($c['v'] ?? '')) . '</t></is></c>';
                 }
             }
             $data .= '</row>';
         }
         $st = doc_st();
-        $in = fn($mm) => round($mm / 25.4, 2);   // מ"מ → אינץ'
+        $in = fn($mm) => round($mm / 25.4, 3);   // מ"מ → אינץ'
         $merge = $this->merges ? '<mergeCells count="' . count($this->merges) . '">' . implode('', array_map(fn($m) => "<mergeCell ref=\"$m\"/>", $this->merges)) . '</mergeCells>' : '';
+        $breaks = $this->breaks ? '<rowBreaks count="' . count($this->breaks) . '" manualBreakCount="' . count($this->breaks) . '">'
+            . implode('', array_map(fn($b) => '<brk id="' . $b . '" max="16383" man="1"/>', $this->breaks)) . '</rowBreaks>' : '';
+        $footer = $st['page_numbers'] && $this->footer ? '<headerFooter><oddFooter>&amp;C&amp;P</oddFooter></headerFooter>' : '';
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
             . 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>'
-            . '<sheetViews><sheetView rightToLeft="1" workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="16"/>'
+            . '<sheetViews><sheetView rightToLeft="1" showGridLines="0" workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="16"/>'
             . "<cols>$cols</cols><sheetData>$data</sheetData>$merge"
             . '<printOptions horizontalCentered="1"/><pageMargins left="' . $in($st['margin_side']) . '" right="' . $in($st['margin_side']) . '" top="' . $in($st['margin_top'])
-            . '" bottom="' . $in($st['margin_bottom']) . '" header="0.3" footer="0.3"/>'
-            . '<pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"/>'
-            . ($st['page_numbers'] ? '<headerFooter><oddFooter>&amp;C&amp;P</oddFooter></headerFooter>' : '') . '</worksheet>';
+            . '" bottom="' . $in($st['margin_bottom']) . '" header="0.2" footer="' . $in(min(10, $st['margin_bottom'] / 2)) . '"/>'
+            // רוחב = עמוד אחד; גובה — כמה עמודים שצריך. העמודות מחושבות כך שלא יהיה צורך להקטין
+            . '<pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0" firstPageNumber="' . $this->firstPage . '" useFirstPageNumber="1"/>'
+            . $footer . $breaks . ($drawingRel ? '<drawing r:id="' . $drawingRel . '"/>' : '') . '</worksheet>';
     }
 }
 
@@ -708,151 +751,284 @@ function calc_formula(array $c): string
     return '=' . $c['monthly'] . '*' . ($to - $from + 1);
 }
 
+// סגנונות התאים באקסל (cellXfs) — המספרים נבנים ב-xlsx_styles() באותו סדר
+const XS_TITLE = 1, XS_HEAD = 2, XS_TEXT = 3, XS_NUM = 4, XS_TOT_T = 5, XS_TOT_N = 6, XS_NOTE = 7, XS_CAP = 8, XS_SEC = 9,
+    XS_IDX = 10, XS_LTR = 11, XS_ADDR = 12, XS_C_ORG = 13, XS_C_SUB = 14, XS_C_TITLE = 15, XS_C_SMALL = 16, XS_PARA = 17,
+    XS_P_HEAD = 18, XS_P_CENTER = 19, XS_BULLET = 20, XS_LABEL = 21, XS_REF = 22, XS_TOT_W = 23;
+
+function xlsx_styles(array $st): string
+{
+    $f = xml($st['font']);
+    $u = $st['underline'] ? '<u/>' : '';
+    $font = fn(float $sz, bool $b = false, bool $und = false, string $color = '') => '<font>' . ($b ? '<b/>' : '') . ($und ? $u : '')
+        . '<sz val="' . $sz . '"/>' . ($color ? '<color rgb="' . $color . '"/>' : '') . '<name val="' . $f . '"/></font>';
+    [$X, $T, $H, $TI, $C] = [$st['size_text'], $st['size_table'], $st['size_head'], $st['size_title'], $st['size_cover']];
+    $fonts = [$font($T), $font($T, true), $font($TI, true, true), $font(max(6, $T - 2), false, false, 'FF555555'), $font($H, true, true),
+        $font($X, true, true), $font($C, true), $font(round($C * .75 * 2) / 2, true), $font($C + 2, true), $font($X + 1, true),
+        $font($X), $font($H + 1, true, true), $font($T, true)];
+    $al = $st['title_align'] === 'right' ? 'right' : 'center';
+    $xf = fn(int $font, string $align, int $fill = 0, int $border = 0, int $num = 0, string $extra = '') => '<xf' . ($num ? ' numFmtId="' . $num . '" applyNumberFormat="1"' : '')
+        . ' fontId="' . $font . '" fillId="' . $fill . '" borderId="' . $border . '" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment ' . $align . $extra . '/></xf>';
+    $rtl = ' readingOrder="2"';
+    $xfs = [
+        '<xf/>',
+        $xf(2, "horizontal=\"$al\" vertical=\"center\"$rtl"),                                   // 1 כותרת עמוד
+        $xf(1, 'horizontal="center" vertical="center" wrapText="1"' . $rtl, 2, 1),              // 2 כותרת טבלה
+        $xf(0, 'horizontal="right" vertical="center" wrapText="1"' . $rtl, 0, 1),               // 3 טקסט במסגרת
+        $xf(0, 'horizontal="center" vertical="center"', 0, 1, 164),                             // 4 מספר
+        $xf(1, 'horizontal="right" vertical="center"' . $rtl, 3, 1),                            // 5 סה"כ — טקסט
+        $xf(1, 'horizontal="center" vertical="center"', 3, 1, 164),                             // 6 סה"כ — מספר
+        $xf(12, 'horizontal="right" vertical="top" wrapText="1"' . $rtl),                       // 7 הערה אחרי טבלה
+        $xf(5, "horizontal=\"$al\" vertical=\"bottom\"$rtl"),                                   // 8 כותרת טבלה בקופה
+        $xf(4, "horizontal=\"$al\" vertical=\"bottom\"$rtl"),                                   // 9 מקטע בריכוז
+        $xf(0, 'horizontal="center" vertical="center"', 0, 1),                                  // 10 מספור
+        $xf(0, 'horizontal="center" vertical="center" wrapText="1" readingOrder="1"', 0, 1),    // 11 טקסט בלי עברית
+        $xf(11, "horizontal=\"$al\" vertical=\"center\"$rtl"),                                  // 12 כתובת הקופה
+        $xf(6, 'horizontal="center" vertical="center" wrapText="1"' . $rtl),                    // 13 שער: הארגון
+        $xf(7, 'horizontal="center" vertical="center" wrapText="1"' . $rtl),                    // 14 שער: תת-כותרת
+        $xf(8, 'horizontal="center" vertical="center"' . $rtl),                                 // 15 שער: הכותרת
+        $xf(9, 'horizontal="center" vertical="center" wrapText="1"' . $rtl),                    // 16 שער: מוגשת / חותמים
+        $xf(10, 'horizontal="right" vertical="top" wrapText="1"' . $rtl),                       // 17 פסקה
+        $xf(4, 'horizontal="right" vertical="bottom"' . $rtl),                                  // 18 כותרת בתכנית
+        $xf(11, "horizontal=\"$al\" vertical=\"center\"$rtl"),                                  // 19 "מבוא"
+        $xf(10, 'horizontal="right" vertical="top" wrapText="1" indent="1"' . $rtl),            // 20 תבליט
+        $xf(1, 'horizontal="right" vertical="center" wrapText="1"' . $rtl, 0, 1),               // 21 שורת ריכוז
+        $xf(0, 'horizontal="center" vertical="center"' . $rtl, 0, 1),                           // 22 "עמ' X עד Y"
+        $xf(1, 'horizontal="right" vertical="center" wrapText="1"' . $rtl, 3, 1),               // 23 סה"כ — טקסט ארוך
+    ];
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        . '<numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0;(#,##0);0"/></numFmts>'
+        . '<fonts count="' . count($fonts) . '">' . implode('', $fonts) . '</fonts>'
+        . '<fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
+        . '<fill><patternFill patternType="solid"><fgColor rgb="FFE7E6E6"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF2F2F2"/></patternFill></fill></fills>'
+        . '<borders count="2"><border/><border><left style="thin"/><right style="thin"/><top style="thin"/><bottom style="thin"/></border></borders>'
+        . '<cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="' . count($xfs) . '">' . implode('', $xfs) . '</cellXfs></styleSheet>';
+}
+
+/**
+ * אקסל — כמו ה-Word: שער · תכנית עבודה · דף ריכוז · גיליון לכל קופה · נספח, כל אחד בעמודי A4,
+ * באותן עמודות, כותרות וגדלים (עיצוב המסמך). והנוסחאות: סה"כ = SUM, שורה חודשית = נוסחה,
+ * שורה מקבלת = סכום המעבירות, ריכוז = הפניות לתאים בגיליונות הקופות. מספרי העמודים ממשיכים בין הגיליונות.
+ */
 function export_xlsx(array $s, int $id): never
 {
     $d = doc_model($s, $id);
-    $xs = doc_st($d['style']);
-    $xf = xml($xs['font']);
+    $st = doc_st($d['style']);
+    [$X, $T, $H, $TI, $C] = [$st['size_text'], $st['size_table'], $st['size_head'], $st['size_title'], $st['size_cover']];
     $used = [];
-    // סגנונות (cellXfs): 0 רגיל · 1 מודגש · 2 כותרת גדולה במרכז · 3 כותרת טבלה · 4 טקסט במסגרת · 5 מספר במסגרת
-    // 6 סה"כ טקסט · 7 סה"כ מספר · 8 הערה קטנה · 9 כותרת קטע במרכז, קו תחתון · 10 מספר במרכז (מספור)
-    $sheets = [];
-    $cells = [];   // line id → [sheet, row]  (העמודה: D קודם · E ניצול · F מוצע)
+    $pt = fn(float $size, int $lines = 1) => round($size * 1.32 * $lines + 4, 1);          // גובה שורה בנקודות
+    $pageH = (297 - $st['margin_top'] - $st['margin_bottom']) / 25.4 * 72 - 6;
+    // רוחב: התוכן של עמוד A4 (פחות השוליים) ביחידות של אקסל (תו ≈ 7.5px ב-96dpi), עם מרווח — כדי שלא יוקטן בהדפסה
+    $units = ((210 - 2 * $st['margin_side']) / 25.4 * 96 * .94 - 30) / 7.6;
+    $W = fn(array $pct) => array_map(fn($p) => round($units * $p / 100, 1), $pct);
+    /** כמה שורות תופס טקסט בעמודה ברוחב $w (יחידות אקסל) בגופן $size. */
+    // אות עברית ≈ חצי מגובה הגופן; יחידת רוחב ≈ 7.5px — כ-10 אותיות ליחידה בגופן 11 (עם מרווח ביטחון: חיתוך גרוע מרווח)
+    $lines = fn(string $t, float $w, float $size) => max(1, array_sum(array_map(fn($p) => max(1, (int)ceil(mb_strlen($p) / max(1, $w * 10 / $size))), explode("\n", $t))));
+    $runFont = fn(float $sz, bool $b = false, string $color = '') => ($b ? '<b/>' : '') . '<sz val="' . $sz . '"/>' . ($color ? '<color rgb="' . $color . '"/>' : '') . '<rFont val="' . xml($st['font']) . '"/>';
 
+    $sheets = [];
+    $cells = [];   // line id → [sheet, row]  (העמודה: C קודם · D ניצול · E מוצע)
+    $total = array_sum($W([100]));
+
+    // ── שער ──
+    $cover = null;
+    if ($st['show_cover']) {
+        $cover = new Sheet(sheet_name('שער', $used), [round($units / .94, 1)], $pageH);   // שער — כל רוחב העמוד, כמו ב-Word
+        $cover->footer = false;
+        $c = $d['cover'];
+        $cover->gap(60);
+        $cover->line(['v' => $c['org'], 's' => XS_C_ORG], $pt($C, $lines($c['org'], $total, $C)));
+        if ($c['subtitle']) { $cover->gap(10); $cover->line(['v' => $c['subtitle'], 's' => XS_C_SUB], $pt($C * .75, $lines($c['subtitle'], $total, $C * .75))); }
+        if ($c['has_logo']) {
+            $q = db()->prepare('SELECT * FROM orgs WHERE id = ?');
+            $q->execute([$c['logo_org']]);
+            $path = org_logo_path($q->fetch());
+            if ($path && ($sz = getimagesize($path))) {
+                $w = 5.0; $h = $w * $sz[1] / max(1, $sz[0]);   // ס"מ, כמו ב-Word
+                if ($h > 6) { $w *= 6 / $h; $h = 6; }
+                $cover->gap(20);
+                $row = $cover->add([], $h / 2.54 * 72 + 4);
+                $widthEmu = (int)(((210 - 2 * $st['margin_side']) / 10) * 360000 * .94);
+                $cover->image = ['row' => $row, 'emu' => [(int)($w * 360000), (int)($h * 360000)], 'off' => max(0, (int)(($widthEmu - $w * 360000) / 2)),
+                    'path' => $path, 'ext' => str_ends_with($path, '.png') ? 'png' : 'jpeg'];
+                $cover->gap(20);
+            } else $cover->gap(110);
+        } else $cover->gap(110);
+        $cover->line(['v' => $c['title'], 's' => XS_C_TITLE], $pt($C + 2));
+        if ($c['submitted_to']) { $cover->gap(14); $cover->line(['v' => $c['submitted_to'], 's' => XS_C_SMALL], $pt($X + 1, $lines($c['submitted_to'], $total, $X + 1))); }
+        $cover->gap(40);
+        foreach ($c['signers'] as $sg) {
+            $t = implode("\n", array_merge([$sg['name']], $sg['titles']));
+            $cover->line(['v' => $t, 's' => XS_C_SMALL], $pt($X + 1, count($sg['titles']) + 1));
+            $cover->gap(12);
+        }
+        $sheets[] = $cover;
+    }
+
+    // ── תכנית עבודה ──
+    if ($st['show_plan'] && $d['plan']['blocks']) {
+        $pl = new Sheet(sheet_name('תכנית עבודה', $used), $W([100]), $pageH);
+        $pl->line(['v' => $d['plan']['title'], 's' => XS_TITLE], $pt($TI) + 6, true);
+        foreach ($d['plan']['blocks'] as $bl) {
+            match ($bl['type']) {
+                'center' => [$pl->gap(4), $pl->line(['v' => $bl['text'], 's' => XS_P_CENTER], $pt($H + 1), true)],
+                'heading' => [$pl->gap(6), $pl->line(['v' => $bl['text'], 's' => XS_P_HEAD], $pt($H, $lines($bl['text'], $total, $H)), true)],
+                'bullet' => $pl->line(['v' => '•  ' . $bl['text'], 's' => XS_BULLET], $pt($X, $lines($bl['text'], $total - 3, $X))),
+                default => $pl->line(['v' => $bl['text'], 's' => XS_PARA], $pt($X, $lines($bl['text'], $total, $X)) + 2),
+            };
+        }
+        $sheets[] = $pl;
+    }
+
+    // ── קופות: כמו ב-Word — # · סעיף (ושורה שנייה, והערת התא) · קודם · ניצול · מוצע ──
+    $fw = $W([7, 39, 18, 18, 18]);
     $sumName = sheet_name('ריכוז', $used);
     $fundSheets = [];
+    $colH = $pt($T, max(array_map(fn($t) => $lines($t, $fw[2], $T + 1), [$d['cols']['prev'], $d['cols']['actual'], $d['cols']['cur']])));
     foreach ($d['funds'] as $f) {
-        $sh = new Sheet(sheet_name(preg_replace('/^(הכנסות והוצאות|הכנסות|הוצאות) – /u', '', $f['title']), $used), [6, 34, 30, 15, 17, 15, 26]);
-        $sh->title($f['title']);
-        if ($f['address']) $sh->title($f['address'], 9);
-        $totals = [];
+        $sh = new Sheet(sheet_name(preg_replace('/^(הכנסות והוצאות|הכנסות|הוצאות) – /u', '', $f['title']), $used), $fw, $pageH);
+        $sh->line(['v' => $f['title'], 's' => XS_TITLE], $pt($TI) + 4, true);
+        if ($f['address']) $sh->line(['v' => $f['address'], 's' => XS_ADDR], $pt($H + 1) + 4, true);
         foreach ($f['tables'] as $t) {
-            $sh->skip();
-            $sh->title($t['caption'], 9);
-            $sh->add([['v' => '#', 's' => 3], ['v' => DIRECTIONS[$t['dir']], 's' => 3], ['v' => 'פירוט', 's' => 3],
-                ['v' => str_replace("\n", ' ', $d['cols']['prev']), 's' => 3], ['v' => str_replace("\n", ' ', $d['cols']['actual']), 's' => 3],
-                ['v' => str_replace("\n", ' ', $d['cols']['cur']), 's' => 3], ['v' => 'הערה', 's' => 3]], 32);
+            $sh->gap(10);
+            $sh->line(['v' => $t['caption'], 's' => XS_CAP], $pt($X) + 4, true);
+            $sh->add([['v' => '', 's' => XS_HEAD], ['v' => DIRECTIONS[$t['dir']], 's' => XS_HEAD], ['v' => $d['cols']['prev'], 's' => XS_HEAD],
+                ['v' => $d['cols']['actual'], 's' => XS_HEAD], ['v' => $d['cols']['cur'], 's' => XS_HEAD]], $colH, true);
             $first = $sh->r + 1;
             foreach ($t['rows'] as $r) {
                 $row = $sh->r + 1;
                 $cells[$r['id']] = [$sh->name, $row];
-                $cur = ['v' => (int)$r['cur'], 's' => 5];
+                $cur = ['v' => (int)$r['cur'], 's' => XS_NUM];
                 if ($r['calc']) $cur['f'] = calc_formula($r['calc']);
-                $sh->add([['v' => $r['n'], 's' => 10], ['v' => $r['title'], 's' => 4], ['v' => (string)$r['subtitle'], 's' => 4],
-                    ['v' => $r['prev'] === null ? null : (int)$r['prev'], 's' => 5], ['v' => $r['actual'] === null ? null : (int)$r['actual'], 's' => 5],
-                    $cur, ['v' => $r['note'], 's' => 8]]);
+                $rich = [[$r['title'], $runFont($T, true)]];
+                $n = $lines($r['title'], $fw[1], $T);
+                if ($r['subtitle']) { $rich[] = ["\n" . $r['subtitle'], $runFont(max(6, $T - 1))]; $n += $lines($r['subtitle'], $fw[1], $T - 1); }
+                if ($r['note']) { $rich[] = ["\n" . $r['note'], $runFont(max(6, $T - 2), false, 'FF555555')]; $n += $lines($r['note'], $fw[1], $T - 2); }
+                $sh->add([['v' => $r['n'] . '.', 's' => XS_IDX], ['rich' => $rich, 's' => XS_TEXT],
+                    ['v' => $r['prev'] === null ? null : (int)$r['prev'], 's' => XS_NUM], ['v' => $r['actual'] === null ? null : (int)$r['actual'], 's' => XS_NUM], $cur],
+                    $pt($T, $n));
             }
             $last = $sh->r;
-            $sh->add([['v' => '', 's' => 6], ['v' => 'סה"כ', 's' => 6], ['v' => '', 's' => 6],
-                ['f' => "=SUM(D$first:D$last)", 'v' => $t['total']['prev'], 's' => 7], ['f' => "=SUM(E$first:E$last)", 'v' => $t['total']['actual'], 's' => 7],
-                ['f' => "=SUM(F$first:F$last)", 'v' => $t['total']['cur'], 's' => 7], ['v' => '', 's' => 6]]);
-            $totals[$t['dir']] = $sh->r;
-            foreach ($t['notes'] as $n) $sh->add([null, ['v' => $n, 's' => 8]]);
+            $sh->add([['v' => '', 's' => XS_TOT_T], ['v' => 'סה"כ', 's' => XS_TOT_T],
+                ['f' => "=SUM(C$first:C$last)", 'v' => $t['total']['prev'], 's' => XS_TOT_N], ['f' => "=SUM(D$first:D$last)", 'v' => $t['total']['actual'], 's' => XS_TOT_N],
+                ['f' => "=SUM(E$first:E$last)", 'v' => $t['total']['cur'], 's' => XS_TOT_N]], $pt($T));
+            foreach ($t['notes'] as $nt) $sh->line(['v' => $nt, 's' => XS_NOTE], $pt($T, $lines($nt, $total, $T)) + 4);
         }
-        if (isset($totals['income'], $totals['expense'])) {
-            $sh->skip();
-            $sh->add([null, ['v' => 'עודף / (גירעון)', 's' => 1], null, null, null,
-                ['f' => "=F{$totals['income']}-F{$totals['expense']}", 's' => 7]]);
-        }
-        foreach ($f['notes'] as $n) { $sh->skip(); $sh->add([null, ['v' => $n, 's' => 8]]); }
+        foreach ($f['notes'] as $nt) { $sh->gap(6); $sh->line(['v' => $nt, 's' => XS_NOTE], $pt($T, $lines($nt, $total, $T)) + 4); }
         $fundSheets[$f['id']] = $sh;
-        $sheets[] = $sh;
-    }
-
-    // שורות "רק בריכוז" — בגיליון הקופה שלהן, מתחת לטבלאות
-    foreach ($d['summary_only'] as $l) {
-        $sh = $fundSheets[$l['fund_id']] ?? null;
-        if (!$sh) continue;
-        $sh->skip();
-        $row = $sh->add([['v' => '', 's' => 4], ['v' => $l['title'] . ' (רק בריכוז)', 's' => 4], ['v' => (string)$l['subtitle'], 's' => 4],
-            ['v' => $l['prev'] === null ? null : (int)$l['prev'], 's' => 5], ['v' => $l['actual'] === null ? null : (int)$l['actual'], 's' => 5],
-            ['v' => (int)$l['cur'], 's' => 5]]);
-        $cells[$l['id']] = [$sh->name, $row];
     }
 
     // העברות: שורה מקבלת = סכום המעבירות (כשכולן בחוברת הזו)
+    $byName = [];
+    foreach ($fundSheets as $sh) $byName[$sh->name] = $sh;
     foreach ($d['funds'] as $f) foreach ($f['tables'] as $t) foreach ($t['rows'] as $r) {
         if ($r['transfer_role'] !== 'income' || !$r['transfer']) continue;
         $refs = array_values(array_filter(array_map(fn($gid) => $cells[$gid] ?? null, $r['transfer'])));
         if (count($refs) !== count($r['transfer'])) continue;
         [$shName, $row] = $cells[$r['id']];
-        $sh = array_values(array_filter($sheets, fn($x) => $x->name === $shName))[0];
-        foreach (['D' => 3, 'E' => 4, 'F' => 5] as $L => $ci) {
-            $sh->rows[$row]['cells'][$ci]['f'] = '=' . implode('+', array_map(fn($x) => ($x[0] === $shName ? '' : q($x[0]) . '!') . $L . $x[1], $refs));
+        foreach (['C' => 2, 'D' => 3, 'E' => 4] as $L => $ci) {
+            $byName[$shName]->rows[$row]['cells'][$ci]['f'] = '=' . implode('+', array_map(fn($x) => ($x[0] === $shName ? '' : q($x[0]) . '!') . $L . $x[1], $refs));
         }
     }
 
-    // דף הריכוז: כל שורה = הפניות לתאים של השורות שלה
-    $sum = new Sheet($sumName, [40, 18, 20, 18]);
-    $sum->title($d['summary']['title']);
-    $byRow = [];
-    foreach ($d['line_row'] as $lid => $key) if (isset($cells[$lid])) $byRow[$key][] = $cells[$lid];
-    foreach ($d['summary']['sections'] as $sec) {
-        $sum->skip();
-        $sum->title($sec['title'], 9);
-        $sum->add([['v' => '', 's' => 3], ['v' => str_replace("\n", ' ', $d['cols']['prev']), 's' => 3],
-            ['v' => str_replace("\n", ' ', $d['cols']['actual']), 's' => 3], ['v' => str_replace("\n", ' ', $d['cols']['cur']), 's' => 3]], 32);
-        $first = $sum->r + 1;
-        foreach ($sec['rows'] as $r) {
-            $refs = $byRow[$r['key']] ?? [];
-            $f = fn($L) => $refs ? '=' . implode('+', array_map(fn($x) => q($x[0]) . "!$L{$x[1]}", $refs)) : null;
-            $sum->add([['v' => $r['label'], 's' => 4],
-                ['f' => $f('D'), 'v' => $r['prev'], 's' => 5], ['f' => $f('E'), 'v' => $r['actual'], 's' => 5], ['f' => $f('F'), 'v' => $r['cur'], 's' => 5]]);
-            foreach ([1, 2, 3] as $ci) if ($sum->rows[$sum->r]['cells'][$ci]['f'] === null) unset($sum->rows[$sum->r]['cells'][$ci]['f']);
+    // ── מספרי עמודים: לפי הסדר במסמך — שער · תכנית · ריכוז · קופות · נספח ──
+    // הריכוז צריך את העמודים של הקופות, והקופות — את מספר העמודים של הריכוז. הריכוז נבנה פעמיים: פעם למדידה, פעם עם המספרים
+    $order = $sheets;   // שער ותכנית עבודה
+    $buildSummary = function (array $pageOfFund) use ($d, $st, $sumName, $W, $pt, $T, $TI, $H, $lines, $cells, $pageH): Sheet {
+        $sw = $W([34, 17, 17, 17, 15]);
+        $sum = new Sheet($sumName, $sw, $pageH);
+        $sum->line(['v' => $d['summary']['title'], 's' => XS_TITLE], $pt($TI) + 6, true);
+        $byRow = [];
+        foreach ($d['line_row'] as $lid => $key) if (isset($cells[$lid])) $byRow[$key][] = $cells[$lid];
+        $only = [];
+        foreach ($d['summary_only'] as $l) $only[$d['line_row'][$l['id']] ?? ''][] = $l;
+        foreach ($d['summary']['sections'] as $sec) {
+            $sum->gap(10);
+            $sum->line(['v' => $sec['title'], 's' => XS_SEC], $pt($H) + 4, true);
+            $sum->add([['v' => '', 's' => XS_HEAD], ['v' => $d['cols']['prev'], 's' => XS_HEAD], ['v' => $d['cols']['actual'], 's' => XS_HEAD],
+                ['v' => $d['cols']['cur'], 's' => XS_HEAD], ['v' => 'פירוט', 's' => XS_HEAD]], $pt($T, 2), true);
+            $first = $sum->r + 1;
+            foreach ($sec['rows'] as $r) {
+                $refs = $byRow[$r['key']] ?? [];
+                // שורה "רק בריכוז" (ההלוואה בחבר"ק) — אין לה תא בגיליון קופה: הסכום שלה נכתב כאן
+                $const = fn($k) => array_sum(array_map(fn($l) => (int)$l[$k], $only[$r['key']] ?? []));
+                $f = fn($L, $k) => $refs ? '=' . implode('+', array_map(fn($x) => q($x[0]) . "!$L{$x[1]}", $refs)) . ($const($k) ? '+' . $const($k) : '') : null;
+                $pages = array_values(array_filter(array_map(fn($fid) => $pageOfFund[$fid] ?? null, $r['funds'])));
+                $ref = $pages ? (min($pages) === max($pages) ? "עמ' " . min($pages) : "עמ' " . min($pages) . ' עד ' . max($pages)) : '';
+                $cellsRow = [['v' => $r['label'], 's' => XS_LABEL]];
+                foreach ([['C', 'prev', 'prev'], ['D', 'actual', 'prev_actual'], ['E', 'cur', 'amount']] as [$L, $k, $lk]) {
+                    $fx = $f($L, $k === 'prev' ? 'prev' : ($k === 'actual' ? 'actual' : 'cur'));
+                    $cellsRow[] = $fx ? ['f' => $fx, 'v' => $r[$k], 's' => XS_NUM] : ['v' => $r[$k] === null ? null : (int)$r[$k], 's' => XS_NUM];
+                }
+                $cellsRow[] = ['v' => $ref, 's' => XS_REF];
+                $sum->add($cellsRow, $pt($T, $lines($r['label'], $sw[0], $T)));
+            }
+            $last = $sum->r;
+            $sum->add([['v' => 'סה"כ', 's' => XS_TOT_T], ['f' => "=SUM(B$first:B$last)", 'v' => $sec['total']['prev'], 's' => XS_TOT_N],
+                ['f' => "=SUM(C$first:C$last)", 'v' => $sec['total']['actual'], 's' => XS_TOT_N], ['f' => "=SUM(D$first:D$last)", 'v' => $sec['total']['cur'], 's' => XS_TOT_N],
+                ['v' => '', 's' => XS_TOT_T]], $pt($T));
         }
-        $last = $sum->r;
-        $sum->add([['v' => 'סה"כ', 's' => 6], ['f' => "=SUM(B$first:B$last)", 'v' => $sec['total']['prev'], 's' => 7],
-            ['f' => "=SUM(C$first:C$last)", 'v' => $sec['total']['actual'], 's' => 7], ['f' => "=SUM(D$first:D$last)", 'v' => $sec['total']['cur'], 's' => 7]]);
+        if ($d['summary']['note']) { $sum->gap(10); $sum->line(['v' => $d['summary']['note'], 's' => XS_NOTE], $pt($T) + 4); }
+        return $sum;
+    };
+    // בדף הריכוז העמודות זזות באחת (אין #): B קודם · C ניצול · D מוצע — ההפניות לקופות נשארות C/D/E
+    $start = 1;
+    foreach ($order as $sh) { $sh->firstPage = $start; $start += $sh->paginate(); }
+    $sum = $st['show_summary'] ? $buildSummary([]) : null;
+    $sumPages = $sum ? $sum->paginate() : 0;
+    $pageOfFund = [];
+    $p = $start + $sumPages;
+    foreach ($fundSheets as $fid => $sh) { $sh->firstPage = $p; $pageOfFund[$fid] = $p; $p += $sh->paginate(); }
+    if ($sum) {
+        $sum = $buildSummary($pageOfFund);
+        $sum->firstPage = $start;
+        $sum->paginate();
+        $order[] = $sum;
     }
-    if ($d['summary']['note']) { $sum->skip(); $sum->add([['v' => $d['summary']['note'], 's' => 1]]); }
-    array_unshift($sheets, $sum);
+    // שורות "רק בריכוז" כשאין דף ריכוז — לא נעלמות: בגיליון הקופה שלהן, מתחת לטבלאות
+    if (!$sum) foreach ($d['summary_only'] as $l) {
+        $sh = $fundSheets[$l['fund_id']] ?? null;
+        if (!$sh) continue;
+        $sh->gap(10);
+        $sh->add([['v' => '', 's' => XS_TEXT], ['v' => $l['title'] . ' (רק בריכוז)', 's' => XS_TEXT],
+            ['v' => $l['prev'] === null ? null : (int)$l['prev'], 's' => XS_NUM], ['v' => $l['actual'] === null ? null : (int)$l['actual'], 's' => XS_NUM],
+            ['v' => (int)$l['cur'], 's' => XS_NUM]], $pt($T));
+    }
+    foreach ($fundSheets as $sh) $order[] = $sh;
 
-    // נספח
-    if ($d['appendix']) {
-        $ap = new Sheet(sheet_name('נספח שכירויות', $used), [28, 28, 18, 18, 22]);
-        $ap->title($d['appendix']['title']);
-        foreach ($d['appendix']['groups'] as $g) {
-            $ap->skip();
-            $ap->title($g['title'], 9);
-            $c = $d['appendix_cols'];
-            $ap->add([['v' => 'נכס', 's' => 3], ['v' => $c['tenant'], 's' => 3], ['v' => str_replace("\n", ' ', $c['monthly']), 's' => 3],
-                ['v' => str_replace("\n", ' ', $c['annual']), 's' => 3], ['v' => $c['period'], 's' => 3]], 32);
+    // ── נספח ──
+    if ($st['show_appendix'] && $d['appendix']) {
+        $aw = $W([22, 24, 18, 18, 18]);
+        $ap = new Sheet(sheet_name('נספח שכירויות', $used), $aw, $pageH);
+        $ap->firstPage = $p;
+        $c = $d['appendix_cols'];
+        foreach ($d['appendix']['groups'] as $gi => $g) {
+            if ($gi) $ap->gap(16);
+            $ap->line(['v' => $d['appendix']['title'], 's' => XS_ADDR], $pt($H + 1) + 4, true);
+            $ap->line(['v' => $g['title'], 's' => XS_ADDR], $pt($H + 1) + 4, true);
+            $hl = max(array_map(fn($t, $w) => $lines($t, $w, $T + 1), [$c['property'], $c['tenant'], $c['monthly'], $c['annual'], $c['period']], $aw));
+            $ap->add([['v' => $c['property'], 's' => XS_HEAD], ['v' => $c['tenant'], 's' => XS_HEAD], ['v' => $c['monthly'], 's' => XS_HEAD],
+                ['v' => $c['annual'], 's' => XS_HEAD], ['v' => $c['period'], 's' => XS_HEAD]], $pt($T, $hl), true);
             $first = $ap->r + 1;
             $lastProp = null;
             foreach ($g['rows'] as $r) {
                 $m = str_replace(',', '', $r['monthly']);
-                $ap->add([['v' => $r['property'] === $lastProp ? '' : str_replace("\n", ' – ', $r['property']), 's' => 4], ['v' => $r['tenant'], 's' => 4],
-                    is_numeric($m) ? ['v' => (int)$m, 's' => 5] : ['v' => $r['monthly'], 's' => 4], ['v' => (int)$r['annual'], 's' => 5], ['v' => $r['period'], 's' => 4]]);
+                $prop = $r['property'] === $lastProp ? '' : $r['property'];
+                $n = max($lines($prop, $aw[0], $T), substr_count($r['monthly'], ' / ') + 1, substr_count($r['period'], ', ') + 1, $lines((string)$r['tenant'], $aw[1], $T));
+                $ap->add([$prop === '' ? ['v' => '', 's' => XS_TEXT] : ['rich' => [[$prop, $runFont($T, true)]], 's' => XS_TEXT], ['v' => $r['tenant'], 's' => XS_TEXT],
+                    is_numeric($m) ? ['v' => (int)$m, 's' => XS_NUM] : ['v' => str_replace(' / ', "\n", $r['monthly']), 's' => XS_LTR],
+                    ['v' => (int)$r['annual'], 's' => XS_NUM], ['v' => str_replace(', ', "\n", $r['period']), 's' => XS_LTR]], $pt($T, $n));
                 $lastProp = $r['property'];
             }
             $last = $ap->r;
-            $ap->add([['v' => 'סה"כ ' . $g['title'], 's' => 6], ['v' => '', 's' => 6], ['v' => $g['monthly'], 's' => 7],
-                ['f' => "=SUM(D$first:D$last)", 'v' => $g['annual'], 's' => 7], ['v' => '', 's' => 6]]);
+            $ap->add([['v' => 'סה"כ ' . $g['title'], 's' => XS_TOT_W], ['v' => 'סה"כ', 's' => XS_TOT_T], ['v' => $g['monthly'], 's' => XS_TOT_N],
+                ['f' => "=SUM(D$first:D$last)", 'v' => $g['annual'], 's' => XS_TOT_N], ['v' => '', 's' => XS_TOT_T]], $pt($T, $lines('סה"כ ' . $g['title'], $aw[0], $T + 1)));
         }
-        $sheets[] = $ap;
+        $ap->paginate();
+        $order[] = $ap;
     }
-
-    $styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-        . '<numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0;(#,##0);0"/></numFmts>'
-        . '<fonts count="4"><font><sz val="' . $xs['size_table'] . '"/><name val="' . $xf . '"/></font><font><b/><sz val="' . $xs['size_table'] . '"/><name val="' . $xf . '"/></font>'
-        . '<font><b/>' . ($xs['underline'] ? '<u/>' : '') . '<sz val="' . $xs['size_title'] . '"/><name val="' . $xf . '"/></font><font><sz val="' . max(6, $xs['size_table'] - 2) . '"/><color rgb="FF555555"/><name val="' . $xf . '"/></font></fonts>'
-        . '<fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
-        . '<fill><patternFill patternType="solid"><fgColor rgb="FFE7E6E6"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF2F2F2"/></patternFill></fill></fills>'
-        . '<borders count="2"><border/><border><left style="thin"/><right style="thin"/><top style="thin"/><bottom style="thin"/></border></borders>'
-        . '<cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="12">'
-        . '<xf/>'
-        . '<xf fontId="1" applyFont="1" applyAlignment="1"><alignment readingOrder="2"/></xf>'
-        . '<xf fontId="2" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center" readingOrder="2"/></xf>'
-        . '<xf fontId="1" fillId="2" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1" readingOrder="2"/></xf>'
-        . '<xf borderId="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1" readingOrder="2"/></xf>'
-        . '<xf numFmtId="164" borderId="1" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>'
-        . '<xf fontId="1" fillId="3" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment readingOrder="2"/></xf>'
-        . '<xf numFmtId="164" fontId="1" fillId="3" borderId="1" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>'
-        . '<xf fontId="3" applyFont="1" applyAlignment="1"><alignment wrapText="1" vertical="center" readingOrder="2"/></xf>'
-        . '<xf fontId="1" applyFont="1" applyAlignment="1"><alignment horizontal="center" readingOrder="2"/></xf>'
-        . '<xf borderId="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" readingOrder="2"/></xf>'
-        . '<xf borderId="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1" readingOrder="1"/></xf>'   // 11: טקסט בלי עברית (טווחים) — משמאל לימין
-        . '</cellXfs></styleSheet>';
+    $sheets = $order;
+    $styles = xlsx_styles($st);
     $wb = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
         . 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView rightToLeft="1"/></bookViews><sheets>';
     $wbRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
@@ -860,6 +1036,10 @@ function export_xlsx(array $s, int $id): never
         . '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>'
         . '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
         . '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>';
+    if (array_filter($sheets, fn($x) => $x->image)) {
+        $types .= '<Default Extension="png" ContentType="image/png"/><Default Extension="jpeg" ContentType="image/jpeg"/>'
+            . '<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>';
+    }
     foreach ($sheets as $i => $sh) {
         $n = $i + 1;
         $wb .= '<sheet name="' . xml($sh->name) . '" sheetId="' . $n . '" r:id="rs' . $n . '"/>';
@@ -880,7 +1060,24 @@ function export_xlsx(array $s, int $id): never
     $zip->addFromString('xl/workbook.xml', $wb);
     $zip->addFromString('xl/_rels/workbook.xml.rels', $wbRels);
     $zip->addFromString('xl/styles.xml', $styles);
-    foreach ($sheets as $i => $sh) $zip->addFromString('xl/worksheets/sheet' . ($i + 1) . '.xml', $sh->xml());
+    foreach ($sheets as $i => $sh) {
+        $zip->addFromString('xl/worksheets/sheet' . ($i + 1) . '.xml', $sh->xml($sh->image ? 'rDraw' : null));
+        if (!$sh->image) continue;
+        // הלוגו בשער: תמונה מעוגנת לשורה שלה, באמצע הרוחב
+        $im = $sh->image;
+        [$cx, $cy] = $im['emu'];
+        $zip->addFromString('xl/worksheets/_rels/sheet' . ($i + 1) . '.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            . '<Relationship Id="rDraw" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>');
+        $zip->addFromString('xl/drawings/drawing1.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            . '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            . '<xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:colOff>' . $im['off'] . '</xdr:colOff><xdr:row>' . ($im['row'] - 1) . '</xdr:row><xdr:rowOff>25400</xdr:rowOff></xdr:from>'
+            . '<xdr:ext cx="' . $cx . '" cy="' . $cy . '"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="2" name="logo"/><xdr:cNvPicPr/></xdr:nvPicPr>'
+            . '<xdr:blipFill><a:blip r:embed="rImg"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>'
+            . '<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' . $cx . '" cy="' . $cy . '"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor></xdr:wsDr>');
+        $zip->addFromString('xl/drawings/_rels/drawing1.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            . '<Relationship Id="rImg" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/logo.' . $im['ext'] . '"/></Relationships>');
+        $zip->addFile($im['path'], 'xl/media/logo.' . $im['ext']);
+    }
     $zip->close();
     if (defined('OB_EXPORT_SINK')) { rename($tmp, OB_EXPORT_SINK . '.xlsx'); throw new RuntimeException('sink'); }
     send_download($tmp, $d['file'] . '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

@@ -98,7 +98,9 @@ $f = export('export_xlsx', $s, $bid, 'xlsx');
 check($z->open($f) === true, 'קובץ xlsx נפתח');
 $wb = $z->getFromName('xl/workbook.xml');
 preg_match_all('/<sheet name="([^"]+)"/', $wb, $m);
-check($m[1][0] === 'ריכוז' && in_array('נספח שכירויות', $m[1], true) && count($m[1]) === 5, 'גיליונות: ריכוז, קופה לכל קופה, נספח');
+check(array_slice($m[1], 0, 3) === ['שער', 'תכנית עבודה', 'ריכוז'] && end($m[1]) === 'נספח שכירויות' && count($m[1]) === 7,
+    'גיליונות כמו ב-Word: שער, תכנית עבודה, ריכוז, גיליון לכל קופה, נספח');
+$sumIdx = array_search('ריכוז', $m[1], true) + 1;
 $all = '';
 for ($i = 1; $i <= count($m[1]); $i++) {
     $x = $z->getFromName("xl/worksheets/sheet$i.xml");
@@ -107,9 +109,17 @@ for ($i = 1; $i <= count($m[1]); $i++) {
 }
 check(str_contains($all, 'rightToLeft="1"') && str_contains($all, 'paperSize="9"') && str_contains($all, 'fitToWidth="1"'), 'מימין לשמאל, A4, התאמה לרוחב');
 check(str_contains($all, '<f>135000*4+141750*8</f>'), 'שורה חודשית = נוסחה: 135000*4+141750*8');
-check(preg_match("~<f>'הקדש א'!F\\d+\\+'הקדש ב'!F\\d+</f>~u", $all) === 1, 'שורה מקבלת = סכום המעבירות בגיליונות שלהן');
-check(preg_match('~<f>SUM\(F\d+:F\d+\)</f>~', $all) === 1 || substr_count($all, '<f>SUM(F') >= 2, 'סה"כ = SUM');
-check(str_contains(html_entity_decode($z->getFromName('xl/worksheets/sheet1.xml'), ENT_QUOTES | ENT_XML1), "'הקדש א'!F"), 'דף הריכוז מפנה לתאים בגיליונות הקופות');
+check(preg_match("~<f>'הקדש א'!E\\d+\\+'הקדש ב'!E\\d+</f>~u", $all) === 1, 'שורה מקבלת = סכום המעבירות בגיליונות שלהן');
+check(substr_count($all, '<f>SUM(E') >= 2 && substr_count($all, '<f>SUM(C') >= 2, 'סה"כ = SUM');
+$sumX = html_entity_decode($z->getFromName("xl/worksheets/sheet$sumIdx.xml"), ENT_QUOTES | ENT_XML1);
+check(str_contains($sumX, "'הקדש א'!E"), 'דף הריכוז מפנה לתאים בגיליונות הקופות');
+check(str_contains($sumX, '+50') || str_contains($sumX, '<v>50</v>'), 'שורה "רק בריכוז" — הסכום שלה בדף הריכוז');
+check(preg_match("~עמ' \\d+~u", $sumX) === 1, 'פירוט: מספרי העמודים של הקופות');
+preg_match_all('/firstPageNumber="(\d+)"/', $all, $fp);
+check($fp[1][0] === '1' && $fp[1][1] === '2' && count(array_unique($fp[1])) === count($fp[1]) && $fp[1] === array_map('strval', array_values(array_unique(array_map('intval', $fp[1])))),
+    'מספרי העמודים ממשיכים מגיליון לגיליון: ' . implode(', ', $fp[1]));
+check(!str_contains($z->getFromName('xl/worksheets/sheet1.xml'), 'oddFooter') && substr_count($all, '<oddFooter>') === count($m[1]) - 1, 'בשער — בלי מספר עמוד');
+check(substr_count($all, 'customHeight="1"') > 30 && str_contains($all, 'showGridLines="0"'), 'גובה לכל שורה, ובלי קווי רשת — כמו המסמך');
 check(str_contains($wb, 'fullCalcOnLoad="1"'), 'אקסל מחשב הכול בפתיחה');
 check(substr_count($z->getFromName('xl/styles.xml'), 'readingOrder="2"') >= 8, 'כיווניות: תאי טקסט באקסל — סדר קריאה מימין לשמאל');
 check(preg_match('~s="11" t="inlineStr"><is><t xml:space="preserve">01-\d\d/2026~', $all) === 1, 'כיווניות: תקופה בלי עברית — תא משמאל לימין');
