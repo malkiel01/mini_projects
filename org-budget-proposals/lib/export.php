@@ -252,7 +252,8 @@ function w_p(string $text, array $o = []): string
 {
     $ppr = '<w:pPr>' . (!empty($o['break']) ? '<w:pageBreakBefore/>' : '') . (!empty($o['keep']) ? '<w:keepNext/>' : '')
         . ($o['numbered'] ?? '') . '<w:bidi/><w:spacing w:before="' . ($o['before'] ?? 0) . '" w:after="' . ($o['after'] ?? 60) . '"/>'
-        . '<w:jc w:val="' . (['right' => 'right', 'center' => 'center', 'left' => 'left'][$o['align'] ?? 'right']) . '"/></w:pPr>';
+        // ימין = תחילת פסקה מימין לשמאל, ולכן בלי jc: Word מפרש left/right בפסקת bidi הפוך מ-LibreOffice
+        . (($o['align'] ?? 'right') === 'right' ? '' : '<w:jc w:val="' . (['center' => 'center', 'left' => 'left'][$o['align']]) . '"/>') . '</w:pPr>';
     $runs = '';
     foreach (explode("\n", $text) as $i => $line) {
         if ($i) $runs .= '<w:r><w:br/></w:r>';
@@ -261,12 +262,40 @@ function w_p(string $text, array $o = []): string
     return '<w:p>' . $ppr . ($o['bookmark'] ?? '') . $runs . ($o['bookmark_end'] ?? '') . ($o['tail'] ?? '') . '</w:p>';
 }
 
+/**
+ * קטעים משמאל לימין בתוך טקסט עברי: מספרים (‎-1,000‏, 50%, 30.09.2025, 01-04/2026) ומילים באנגלית ("AI", "Word PDF").
+ * רווח נבלע רק בין שתי מילים באנגלית — מספרים מופרדים ברווח נשארים בסדר של עברית.
+ */
+const LTR_SPAN = "~(?<![\\p{L}\\p{N}])[-+]?(?=[A-Za-z0-9])[A-Za-z0-9]+(?:[.,:/\\-+&_'’][A-Za-z0-9]+)*%?(?: (?=[A-Za-z])[A-Za-z0-9]+(?:[.,:/\\-+&_'’][A-Za-z0-9]+)*)*~u";
+
+/** הטקסט בקטעים [טקסט, משמאל-לימין?] — כל השאר (עברית, רווחים, סוגריים, ₪) מימין לשמאל. */
+function bidi_split(string $text): array
+{
+    $out = [];
+    $at = 0;
+    preg_match_all(LTR_SPAN, $text, $m, PREG_OFFSET_CAPTURE);
+    foreach ($m[0] as [$s, $pos]) {
+        if ($pos > $at) $out[] = [substr($text, $at, $pos - $at), false];
+        $out[] = [$s, true];
+        $at = $pos + strlen($s);
+    }
+    if ($at < strlen($text)) $out[] = [substr($text, $at), false];
+    return $out ?: [['', false]];
+}
+
+/**
+ * ריצות טקסט כמו ש-Word כותב כשמקלידים עברית מעורבת: <w:rtl/> רק על העברית, ומספרים ואנגלית בריצה משמאל לימין.
+ * <w:rtl/> על ריצה של מספרים גורם ל-Word להפוך תאריכים וטווחים (2026/01-04) ולהעביר מינוס לצד השני.
+ */
 function w_r(string $text, array $o = []): string
 {
     $sz = (int)round(($o['size'] ?? 11) * 2);
-    $rpr = '<w:rPr><w:rtl/>' . (!empty($o['bold']) ? '<w:b/><w:bCs/>' : '') . (!empty($o['u']) ? '<w:u w:val="single"/>' : '')
-        . "<w:sz w:val=\"$sz\"/><w:szCs w:val=\"$sz\"/></w:rPr>";
-    return '<w:r>' . $rpr . '<w:t xml:space="preserve">' . xml($text) . '</w:t></w:r>';
+    $fmt = (!empty($o['bold']) ? '<w:b/><w:bCs/>' : '') . (!empty($o['u']) ? '<w:u w:val="single"/>' : '') . "<w:sz w:val=\"$sz\"/><w:szCs w:val=\"$sz\"/>";
+    $out = '';
+    foreach (bidi_split($text) as [$s, $ltr]) {
+        $out .= '<w:r><w:rPr>' . ($ltr ? '' : '<w:rtl/>') . $fmt . '</w:rPr><w:t xml:space="preserve">' . xml($s) . '</w:t></w:r>';
+    }
+    return $out;
 }
 
 /** שדה PAGEREF לסימנייה — Word מחשב את מספר העמוד ($cached — עד העדכון). */
@@ -274,7 +303,8 @@ function w_pageref(string $bookmark, int $cached): string
 {
     $r = fn($inner) => '<w:r><w:rPr><w:rtl/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr>' . $inner . '</w:r>';
     return $r('<w:fldChar w:fldCharType="begin"/>') . $r('<w:instrText xml:space="preserve"> PAGEREF ' . $bookmark . ' \h </w:instrText>')
-        . $r('<w:fldChar w:fldCharType="separate"/>') . $r('<w:t>' . $cached . '</w:t>') . $r('<w:fldChar w:fldCharType="end"/>');
+        . $r('<w:fldChar w:fldCharType="separate"/>') . '<w:r><w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr><w:t>' . $cached . '</w:t></w:r>'
+        . $r('<w:fldChar w:fldCharType="end"/>');
 }
 
 /**
@@ -537,6 +567,8 @@ final class Sheet
                 } elseif (is_int($c['v'] ?? null) || is_float($c['v'] ?? null)) {
                     $data .= "<c r=\"$ref\" s=\"$s\"><v>" . $c['v'] . '</v></c>';
                 } elseif (($c['v'] ?? '') !== '' || $s) {
+                    // טקסט בלי עברית ("01-04/2026, 05-12/2026") — משמאל לימין, אחרת הגיליון הימני הופך את סדר החלקים
+                    if ($s === 4 && !preg_match('/\p{Hebrew}/u', (string)$c['v']) && preg_match('/\d/', (string)$c['v'])) $s = 11;
                     $data .= "<c r=\"$ref\" s=\"$s\" t=\"inlineStr\"><is><t xml:space=\"preserve\">" . xml((string)($c['v'] ?? '')) . '</t></is></c>';
                 }
             }
@@ -708,18 +740,19 @@ function export_xlsx(array $s, int $id): never
         . '<fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
         . '<fill><patternFill patternType="solid"><fgColor rgb="FFE7E6E6"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF2F2F2"/></patternFill></fill></fills>'
         . '<borders count="2"><border/><border><left style="thin"/><right style="thin"/><top style="thin"/><bottom style="thin"/></border></borders>'
-        . '<cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="11">'
+        . '<cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="12">'
         . '<xf/>'
-        . '<xf fontId="1" applyFont="1"/>'
-        . '<xf fontId="2" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>'
-        . '<xf fontId="1" fillId="2" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>'
-        . '<xf borderId="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>'
+        . '<xf fontId="1" applyFont="1" applyAlignment="1"><alignment readingOrder="2"/></xf>'
+        . '<xf fontId="2" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center" readingOrder="2"/></xf>'
+        . '<xf fontId="1" fillId="2" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1" readingOrder="2"/></xf>'
+        . '<xf borderId="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1" readingOrder="2"/></xf>'
         . '<xf numFmtId="164" borderId="1" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>'
-        . '<xf fontId="1" fillId="3" borderId="1" applyFont="1" applyFill="1" applyBorder="1"/>'
+        . '<xf fontId="1" fillId="3" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment readingOrder="2"/></xf>'
         . '<xf numFmtId="164" fontId="1" fillId="3" borderId="1" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>'
-        . '<xf fontId="3" applyFont="1" applyAlignment="1"><alignment wrapText="1" vertical="center"/></xf>'
-        . '<xf fontId="1" applyFont="1" applyAlignment="1"><alignment horizontal="center"/></xf>'
-        . '<xf borderId="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>'
+        . '<xf fontId="3" applyFont="1" applyAlignment="1"><alignment wrapText="1" vertical="center" readingOrder="2"/></xf>'
+        . '<xf fontId="1" applyFont="1" applyAlignment="1"><alignment horizontal="center" readingOrder="2"/></xf>'
+        . '<xf borderId="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" readingOrder="2"/></xf>'
+        . '<xf borderId="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1" readingOrder="1"/></xf>'   // 11: טקסט בלי עברית (טווחים) — משמאל לימין
         . '</cellXfs></styleSheet>';
     $wb = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
         . 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView rightToLeft="1"/></bookViews><sheets>';
