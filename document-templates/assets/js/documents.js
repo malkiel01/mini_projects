@@ -338,7 +338,10 @@
     });
     const completeBtn = el('button', { class: 'primary', onclick: () => fill ? fillDone() : waitsForOther() ? submit() : complete() }, fill ? 'סיימתי ✓' : 'סיום ונעילה');
     // התבנית מחייבת אישור של בעליה, ומישהו אחר הנפיק: המנפיק שולח לאישור — לא נועל
-    const waitsForOther = () => !!(doc.approver && !doc.approver.me);
+    // מי מסיים במקומי: המאשר (התבנית מחייבת אישור של בעליה), או — לממלא בחשבון בלי הרשאת סיום — בעל התבנית
+    const approverOther = () => !!(doc.approver && !doc.approver.me);
+    const handTo = () => approverOther() ? doc.approver : doc.finisher;
+    const waitsForOther = () => !!handTo();
     // כל פעולה — אייקון ומילה (אייקון לבד לא אומר מה הוא עושה); הפירוט המלא — בריחוף ולקורא מסך
     const ib = (icon, word, label, onclick) => el('button', { type: 'button', class: 'act-btn', 'aria-label': label, title: label, onclick },
       el('span', { 'aria-hidden': 'true' }, icon), el('span', { class: 'act-word' }, word));
@@ -346,7 +349,7 @@
     // הורדה / הדפסה: מסמך שננעל רק באישור של בעל התבנית — רק אחרי שאושר
     const outBtns = [];
     const outBtn = (b) => { if (b) outBtns.push(b); return b; };
-    const outLocked = () => waitsForOther() && doc.status !== 'completed';
+    const outLocked = () => approverOther() && doc.status !== 'completed';
     const track = el('span', { class: 'track', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': 100 }, el('span'));
     const people = el('aside', { class: 'panel card people', hidden: true });
     const meta = el('div', { class: 'doc-meta' });
@@ -427,9 +430,10 @@
       statusBadge.textContent = label;
       statusBadge.className = 'badge ' + kind;
       title.disabled = fill || !editable();
-      completeBtn.hidden = !editable() || (!fill && lvl() < 3);
+      completeBtn.hidden = !editable() || (!fill && lvl() < 3 && !doc.finisher);
       if (!fill) {
-        completeBtn.textContent = waitsForOther() ? (doc.awaiting_approval ? '⏳ נשלח לאישור' : '📨 שליחה לאישור של ' + doc.approver.name)
+        completeBtn.textContent = waitsForOther() ? (doc.awaiting_approval ? (doc.finisher ? '⏳ נשלח אל ' + doc.finisher.name : '⏳ נשלח לאישור')
+          : doc.finisher ? 'סיימתי ✓' : '📨 שליחה לאישור של ' + doc.approver.name)
           : doc.awaiting_approval ? '✓ אישור ונעילה' : 'סיום ונעילה';
         completeBtn.disabled = waitsForOther() && doc.awaiting_approval;
         for (const b of outBtns) b.hidden = outLocked();
@@ -456,13 +460,15 @@
       if (!fill && waitsForOther()) {
         const back = [...(doc.events || [])].reverse().find(e => e.type === 'returned' || e.type === 'submitted');
         parts.push(el('div', { class: 'notice' + (back && back.type === 'returned' ? ' warn' : '') },
-          doc.awaiting_approval ? [el('strong', {}, '⏳ נשלח לאישור של ' + doc.approver.name + '. '), 'כשיאשר — המסמך יינעל, ותקבלו מייל.']
-            : back && back.type === 'returned' ? [el('strong', {}, '↩ הוחזר אליך לתיקון. '), back.detail && back.detail.note ? '"' + back.detail.note + '"' : 'תקנו ושלחו שוב לאישור.']
+          doc.awaiting_approval ? [el('strong', {}, (doc.finisher ? '⏳ נשלח אל ' : '⏳ נשלח לאישור של ') + handTo().name + '. '), doc.finisher ? 'כשיסיים — המסמך יינעל.' : 'כשיאשר — המסמך יינעל, ותקבלו מייל.']
+            : back && back.type === 'returned' ? [el('strong', {}, '↩ הוחזר אליך לתיקון. '), back.detail && back.detail.note ? '"' + back.detail.note + '"' : doc.finisher ? 'תקנו ולחצו שוב "סיימתי ✓".' : 'תקנו ושלחו שוב לאישור.']
+            : doc.finisher ? [el('strong', {}, '✍️ '), 'כשסיימתם למלא — "סיימתי ✓", והמסמך יעבור אל ' + doc.finisher.name + ' לסיום ולנעילה.']
             : [el('strong', {}, '🔒 '), 'המסמך הזה ננעל רק באישור של ' + doc.approver.name + '. כשסיימתם — "📨 שליחה לאישור".'],
-          el('p', { class: 'small muted' }, 'הורדה והדפסה — אחרי שיאושר.')));
+          doc.finisher ? null : el('p', { class: 'small muted' }, 'הורדה והדפסה — אחרי שיאושר.')));
       } else if (!fill && doc.awaiting_approval) {
         parts.push(el('div', { class: 'notice warn stage-box' },
-          el('p', {}, el('strong', {}, '⏳ ממתין לאישורך. '), doc.approver ? 'נשלח אליך לאישור. בדקו את הערכים — ואז "✓ אישור ונעילה", או החזירו לתיקון.' : 'כל הממלאים סיימו. בדקו את הערכים — ואז "✓ אישור ונעילה", או החזירו לתיקון.'),
+          el('p', {}, el('strong', {}, '⏳ ממתין לאישורך. '), doc.approver ? 'נשלח אליך לאישור. בדקו את הערכים — ואז "✓ אישור ונעילה", או החזירו לתיקון.'
+            : doc.submitted_by ? doc.submitted_by + ' סיים/ה למלא ושלח/ה אליך. בדקו את הערכים — ואז "✓ אישור ונעילה", או החזירו לתיקון.' : 'כל הממלאים סיימו. בדקו את הערכים — ואז "✓ אישור ונעילה", או החזירו לתיקון.'),
           lvl() >= 3 ? el('button', { type: 'button', class: 'small', onclick: returnDialog }, '↩ החזרה לתיקון') : null));
       }
       if (fill && doc.me) {
@@ -486,7 +492,8 @@
     /** החזרה לתיקון: למי (ממלא אחד, או כל מי שסיים), ומה לתקן. הממלא מקבל קישור חדש במייל. */
     function returnDialog() {
       const done = (doc.participants || []).filter(p => p.status === 'completed');
-      const who = el('select', { 'aria-label': 'למי' }, done.length > 1 ? el('option', { value: 0 }, 'כל הממלאים') : null,
+      const who = el('select', { 'aria-label': 'למי' }, done.length > 1 ? el('option', { value: 0 }, 'כל הממלאים')
+        : !done.length && doc.submitted_by ? el('option', { value: 0 }, doc.submitted_by) : null,
         done.map(p => el('option', { value: p.id }, p.role + (p.name ? ' — ' + p.name : ''))));
       const note = el('textarea', { rows: 4, maxlength: 1000, placeholder: 'מה לתקן? (נשלח לממלא במייל)' });
       const out = el('div');
@@ -1300,7 +1307,7 @@
       try {
         const r = await api('doc_submit', { id });
         await reload();
-        msg.replaceChildren(notice('נשלח לאישור של ' + r.approver + '. כשיאשר — תקבלו מייל.', 'ok'));
+        msg.replaceChildren(notice(doc.finisher ? '✓ נשלח אל ' + r.approver + ' לסיום ולנעילה.' : 'נשלח לאישור של ' + r.approver + '. כשיאשר — תקבלו מייל.', 'ok'));
         renderBody();
       } catch (e) { msg.replaceChildren(notice(e.message, 'bad')); }
     }

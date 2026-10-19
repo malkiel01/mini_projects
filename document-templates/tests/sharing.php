@@ -68,8 +68,8 @@ throws('זר עדיין 404', fn() => tpl_get($c, $tid), 404);
 share_set($a, ['type' => 'template', 'id' => $tid, 'email' => 'b@x.com', 'level' => 'fill']);
 $bd = doc_create($b, ['template_id' => $tid])['id'];
 check('המסמך שבתיה הנפיקה — שלה', doc_get($b, $bd)['document']['access'] === 'owner');
-throws('הבעלים של התבנית לא רואה את המסמך של בתיה', fn() => doc_get($a, $bd), 404);
-check('אבי לא רואה אותו ברשימה', doc_list($a, [])['documents'] === []);
+check('הבעלים של התבנית רואה את המסמך של בתיה — כעורך', doc_get($a, $bd)['document']['access'] === 'edit');
+check('אבי רואה אותו ברשימה', array_column(doc_list($a, [])['documents'], 'id') === [$bd]);
 throws('ממלא לא עורך תבנית', fn() => tpl_save($b, ['id' => $tid, 'schema' => $schema]), 403);
 
 // ── תבנית: עורך / מנהל-שותף ──

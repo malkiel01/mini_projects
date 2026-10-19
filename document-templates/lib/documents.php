@@ -320,8 +320,11 @@ function doc_get(array $user, int $id): array
         'ref' => $d['external_ref'], 'events' => $events, 'fonts' => fonts_info($schema), 'chain_ok' => doc_verify_chain($id),
         'lists' => lists_for($schema),
         'participants' => array_map(fn($p) => $manage ? $p : ['email' => '', 'phone' => ''] + $p, participants_view($d, doc_schema($d))),
-        'awaiting_approval' => (!empty($schema['approval']) || doc_approver($d)) && doc_awaiting($d, doc_schema($d)),
+        'awaiting_approval' => (!empty($schema['approval']) || doc_approver($d) || doc_submitter($d) !== null) && doc_awaiting($d, doc_schema($d)),
         'approver' => ($ap = doc_approver($d)) ? ['name' => user_name($ap), 'me' => $ap === (int)$user['id']] : null,
+        // ממלא בחשבון בלי הרשאת סיום: "סיימתי" מעביר אל בעל התבנית
+        'finisher' => !$ap && ($fi = doc_finisher($d, $user)) ? ['name' => user_name($fi)] : null,
+        'submitted_by' => ($sb = doc_submitter($d)) ? user_name($sb) : null,
         'attachments' => attachments_of($id),
     ]];
 }
@@ -641,22 +644,40 @@ function doc_approver(array $d): ?int
     return $owners[$tid] && $owners[$tid] !== (int)$d['owner_id'] ? $owners[$tid] : null;
 }
 
-/** המנפיק שולח לאישור של בעל התבנית (כשהתבנית מחייבת "אישור רק דרכי"). */
+/**
+ * "שליחה לאישור" / "סיימתי": המנפיק שולח לאישור של בעל התבנית (כשהתבנית מחייבת "אישור רק דרכי"),
+ * או ממלא בחשבון (בלי הרשאה לסיים) מסיים — והמסמך עובר לבעל התבנית, שמסיים ונועל או מחזיר לתיקון.
+ */
 function doc_submit(array $user, array $b): array
 {
-    $d = doc_owned((int)($b['id'] ?? 0), $user, 'edit');
+    $d = doc_owned((int)($b['id'] ?? 0), $user, 'fill');
     if (!in_array($d['status'], DOC_EDITABLE, true)) throw new ApiError('המסמך כבר נעול', 409);
-    $approver = doc_approver($d);
-    if (!$approver) throw new ApiError('במסמך הזה אין צורך באישור — אפשר לסיים', 409);
+    $to = doc_finisher($d, $user);
+    if (!$to) throw new ApiError('במסמך הזה אין צורך באישור — אפשר לסיים', 409);
     $schema = doc_schema($d);
     $p = doc_progress($schema, doc_values((int)$d['id']));
     if ($p['missing']) throw new ApiError('חסרים שדות חובה: ' . implode(', ', $p['missing']), 422);
-    log_event((int)$d['id'], 'user:' . $user['id'], 'submitted', ['to' => user_name($approver)]);
-    $st = db()->prepare('SELECT email FROM users WHERE id = ?');
-    $st->execute([$approver]);
+    $approval = $to === doc_approver($d);
+    log_event((int)$d['id'], 'user:' . $user['id'], 'submitted', ['to' => user_name($to)]);
     $title = (string)unseal($d['title_enc']);
-    if ($mail = $st->fetchColumn()) send_mail($mail, 'ממתין לאישורך: ' . $title,
-        ($user['display_name'] ?? '') . " שלח/ה לאישורך את המסמך:\n$title" . ($d['number'] ? " ({$d['number']})" : '') .
-        "\n\nלבדיקה ולאישור (או להחזרה לתיקון):\n" . app_base_url() . '#doc=' . $d['id']);
-    return ['ok' => true, 'approver' => user_name($approver)];
+    $st = db()->prepare('SELECT email FROM users WHERE id = ?');
+    foreach (array_unique([$to, (int)$d['owner_id']]) as $uid) {
+        if ($uid === (int)$user['id']) continue;
+        $st->execute([$uid]);
+        if ($mail = $st->fetchColumn()) send_mail($mail, ($approval ? 'ממתין לאישורך: ' : 'סיימו למלא: ') . $title,
+            ($user['display_name'] ?? '') . ($approval ? ' שלח/ה לאישורך את המסמך:' : ' סיים/ה למלא את המסמך:') . "\n$title" . ($d['number'] ? " ({$d['number']})" : '') .
+            ($uid === $to ? "\n\nלבדיקה, לסיום ולנעילה (או להחזרה לתיקון):\n" : "\n\n" . user_name($to) . " יסיים/תסיים וינעל/תנעל אותו.\n") . app_base_url() . '#doc=' . $d['id']);
+    }
+    return ['ok' => true, 'approver' => user_name($to)];
+}
+
+/**
+ * מי מסיים במקום המשתמש: מאשר (בעל התבנית, כשהיא מחייבת "אישור רק דרכי"), או — לממלא בלי הרשאת סיום —
+ * בעל התבנית. null: המשתמש מסיים בעצמו.
+ */
+function doc_finisher(array $d, array $user): ?int
+{
+    if ($ap = doc_approver($d)) return $ap === (int)$user['id'] ? null : $ap;
+    if (LEVELS[$d['access']] >= LEVELS['edit']) return null;
+    return doc_template_owner((int)$d['id']) ?: null;
 }

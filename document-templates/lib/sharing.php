@@ -10,7 +10,8 @@
  *   co_owner  מנהל-שותף — הכול, כולל שיתוף הלאה וארכיון. לא מוחק — רק הבעלים.
  *
  * תבנית ומסמך משותפים כל אחד בנפרד: שיתוף תבנית לא חושף את המסמכים
- * שהונפקו ממנה, ולהפך. מסמך שמנפיקים מתבנית משותפת שייך למי שהנפיק.
+ * שהונפקו ממנה, ולהפך. מסמך שמנפיקים מתבנית משותפת שייך למי שהנפיק —
+ * אבל בעל התבנית רואה כל מסמך שהונפק ממנה, ברמת "עורך" לפחות (מסיים, מחזיר לתיקון).
  *
  * מי שאין לו גישה בכלל מקבל 404 — כמו לפני השיתוף, לא מגלים שהדבר קיים.
  * מי שיש לו גישה, אבל ברמה נמוכה מדי, מקבל 403 עם הסבר.
@@ -22,6 +23,8 @@ require_once __DIR__ . '/auth.php';
 
 const LEVELS = ['view' => 1, 'fill' => 2, 'edit' => 3, 'co_owner' => 4, 'owner' => 5];
 const LEVEL_NAMES = ['view' => 'צופה', 'fill' => 'ממלא', 'edit' => 'עורך', 'co_owner' => 'מנהל-שותף', 'owner' => 'בעלים'];
+/** הרמה שבעל התבנית מקבל בכל מסמך שהונפק ממנה (אם לא שותף איתו ביותר). */
+const TPL_OWNER_DOC_LEVEL = 'edit';
 
 /** הרמה של המשתמש בדבר, או null. $ownerId — של הדבר עצמו. */
 function access_level(string $type, int $id, int $ownerId, array $user): ?string
@@ -29,8 +32,17 @@ function access_level(string $type, int $id, int $ownerId, array $user): ?string
     if ($ownerId === (int)$user['id']) return 'owner';
     $st = db()->prepare('SELECT level FROM shares WHERE object_type = ? AND object_id = ? AND user_id = ?');
     $st->execute([$type, $id, $user['id']]);
-    $l = $st->fetchColumn();
-    return $l ?: null;
+    $l = $st->fetchColumn() ?: null;
+    if ($type === 'document' && (!$l || LEVELS[$l] < LEVELS[TPL_OWNER_DOC_LEVEL]) && doc_template_owner($id) === (int)$user['id']) return TPL_OWNER_DOC_LEVEL;
+    return $l;
+}
+
+/** בעל התבנית שממנה הונפק המסמך. */
+function doc_template_owner(int $docId): int
+{
+    $st = db()->prepare('SELECT t.owner_id FROM documents d JOIN template_versions v ON v.id = d.template_version_id JOIN templates t ON t.id = v.template_id WHERE d.id = ?');
+    $st->execute([$docId]);
+    return (int)$st->fetchColumn();
 }
 
 /** זורק 404 בלי גישה, 403 ברמה נמוכה. מחזיר את הרמה בפועל. */
@@ -46,7 +58,8 @@ function require_level(?string $have, string $min, string $notFound): string
 /** תנאי SQL: הדבר שלי, או משותף איתי. */
 function mine_or_shared_sql(string $alias, string $type): string
 {
-    return "($alias.owner_id = :uid OR $alias.id IN (SELECT object_id FROM shares WHERE object_type = '$type' AND user_id = :uid))";
+    $tpl = $type === 'document' ? " OR $alias.template_version_id IN (SELECT tv.id FROM template_versions tv JOIN templates tt ON tt.id = tv.template_id WHERE tt.owner_id = :uid)" : '';
+    return "($alias.owner_id = :uid OR $alias.id IN (SELECT object_id FROM shares WHERE object_type = '$type' AND user_id = :uid)$tpl)";
 }
 
 function user_name(int $id): string
