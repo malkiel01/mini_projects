@@ -576,6 +576,11 @@ function installLinks(app) {
     }
     if (app.install.apk) out.push(tile('⬇️', 'הורדת APK', { href: app.install.apk, rel: 'noopener' }));
     if (app.install.store) out.push(tile('▶️', 'Google Play', { href: app.install.store, rel: 'noopener', target: '_blank' }));
+    // תיקיית החנות — רק למנהל (השרת לא שולח את זה לאחרים): הקבצים להעלאה ל-Play Console.
+    if (app.install.release) {
+        out.push(tile('📦', 'AAB לחנות · מנהל', { href: app.install.release.aab, rel: 'noopener' }));
+        out.push(tile('🗂️', 'הגדרות לחנות · מנהל', { href: app.install.release.listing, rel: 'noopener' }));
+    }
     return out;
 }
 

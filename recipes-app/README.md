@@ -116,7 +116,7 @@ no-cache` ל-HTML/JS/CSS. בלעדיו הטלפון מחזיק גרסה ישנה
 
 > מ-2026-10-19 האפליקציה נבנית לכתובת שמאחורי השער (`mbe-plus.com/mini_projects/recipes-app/`), ותופסת
 > קישורים רק בתיקייה הזאת. כל בנייה מ-main מתפרסמת ל"תיקיית החנות" — Release קבוע `recipes-app-store`
-> (APK, AAB, `store-listing.zip`, `assetlinks.json`), וה-APK מוצג בפלטפורמה (`install.apk`).
+> (APK, AAB, `store-listing.zip`, `assetlinks.json`), והפלטפורמה מציגה ממנו APK לכולם, AAB וקובץ החנות למנהל (`"install": {"release": "recipes-app-store"}`).
 > מסך מלא בלי שורת כתובת — `assetlinks.json` בשורש `mbe-plus.com`. מחובר/מנותק לשער — בשרת, בלי גרסה חדשה.
 
 `android/` — אפליקציה לחנות של גוגל: פותחת את האתר ב-Chrome במסך מלא, בלי שורת כתובת, בכתובת

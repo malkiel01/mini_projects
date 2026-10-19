@@ -9,7 +9,7 @@
 | --- | --- |
 | חבילה | `com.mbeplus.recipes` |
 | כתובת | `https://mbe-plus.com/mini_projects/recipes-app/` — מאחורי השער של הפלטפורמה (מ-2026-10-19). האפליקציה תופסת קישורים **רק בתיקייה הזאת** (`pathPrefix`): על הדומיין יש עוד כלים. `recipes.mbe-plus.com` מפנה לכאן |
-| תיקיית החנות | Release קבוע `recipes-app-store`: `recipes.apk`, `recipes.aab`, `store-listing.zip`, `assetlinks.json`, `build.json` — `https://github.com/malkiel01/mini_projects/releases/tag/recipes-app-store` |
+| תיקיית החנות | Release קבוע `recipes-app-store`: `recipes-app.apk`, `recipes-app.aab`, `store-listing.zip`, `assetlinks.json`, `build.json` — `https://github.com/malkiel01/mini_projects/releases/tag/recipes-app-store` |
 | חשבון מפתחים | פרטי — לפני פרסום: בדיקה סגורה עם **12 בודקים, 14 יום ברצף** |
 | בנייה | `.github/workflows/recipes-twa.yml` — AAB לחנות ו-APK לבדיקה |
 | אישור האתר | `assetlinks.json` מתיקיית החנות — להעלות ל-`https://mbe-plus.com/.well-known/assetlinks.json` (שורש הדומיין, מחוץ לפריסה). קובץ משותף לכל האפליקציות על הדומיין — רשימה, רשומה לכל חבילה |
@@ -39,7 +39,9 @@ GitHub → **Settings** → **Secrets and variables** → **Actions** → **New 
 
 | Name | Secret |
 | --- | --- |
-| `RECIPES_KEYSTORE_PASSWORD` | סיסמה ארוכה — **לפחות 16 תווים**, אקראית |
+| `ANDROID_KEYSTORE_PASSWORD` | סיסמה ארוכה — **לפחות 16 תווים**, אקראית. **משותפת לכל האפליקציות** (`platform/docs/rollout.md`, צעד 5) — אם כבר קיימת, לא ליצור חדשה |
+
+`RECIPES_KEYSTORE_PASSWORD` (הסוד הישן) נקרא רק כגיבוי, כשהמשותף לא קיים.
 
 **לשמור את הסיסמה גם אצלך** (מנהל סיסמאות). בבנייה הראשונה נוצר מפתח ההעלאה ונשמר בריפו
 **מוצפן בסיסמה הזאת** (`keystore/upload.jks.enc`). מוצפן הוא חסר ערך בלי הסיסמה. גוגל מחזיקה

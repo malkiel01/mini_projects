@@ -32,7 +32,7 @@
 | `assetlinks.json` | הרשומה של האפליקציה בשורש `mbe-plus.com` (מסך מלא בלי שורת כתובת) |
 | `build.json` | מספר הבנייה, הכתובת, סוג החתימה, טביעת מפתח ההעלאה |
 
-אצל המתכונים זה כבר עובד: `recipes-app-store`, ו-`install.apk` ב-app.json מצביע על `recipes.apk`.
+אצל המתכונים זה כבר עובד: `recipes-app-store`, ו-`"install": {"release": "recipes-app-store"}` ב-app.json.
 
 ## 3. מה הפלטפורמה צריכה לבנות
 

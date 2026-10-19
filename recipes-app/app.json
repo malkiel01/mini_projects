@@ -27,6 +27,6 @@
     "assets/css/app.css"
   ],
   "install": {
-    "apk": "https://github.com/malkiel01/mini_projects/releases/download/recipes-app-store/recipes.apk"
+    "release": "recipes-app-store"
   }
 }
