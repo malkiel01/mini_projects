@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/lib/config.php';
 require_once __DIR__ . '/lib/auth.php';
+require_once __DIR__ . '/lib/pwa.php';
 require_once __DIR__ . '/lib/github.php';
 
 Auth::require_();
@@ -68,6 +69,7 @@ $tokenMasked = $settings['github_token'] ? '•••••••' . substr($set
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>git-deploy · הגדרות</title>
+<?php pwa_head(); ?>
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>

@@ -9,6 +9,7 @@
 
 require_once __DIR__ . '/lib/config.php';
 require_once __DIR__ . '/lib/auth.php';
+require_once __DIR__ . '/lib/pwa.php';
 require_once __DIR__ . '/lib/ipstore.php';
 
 if (!Config::exists()) {
@@ -121,6 +122,7 @@ $EVENT_LABELS = [
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
 <title>git-deploy · ניהול IPs</title>
+<?php pwa_head(); ?>
 <link rel="stylesheet" href="assets/style.css">
 <style>
     .ip-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }

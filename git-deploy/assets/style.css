@@ -61,7 +61,7 @@ code { font-family: 'Courier New', ui-monospace, monospace; background: #eef0f4;
 .alert-error { background: #ffebee; color: #b71c1c; border: 1px solid #ef9a9a; }
 
 /* ---- Repo cards ---- */
-.repo-list { display: grid; gap: 16px; }
+.repo-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }   /* minmax: נתיב ארוך לא מרחיב את הדף בטלפון */
 .repo-card { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #e5e7eb; }
 .repo-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
 .repo-card h2 { margin: 0 0 4px; font-size: 1.15rem; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -73,8 +73,8 @@ code { font-family: 'Courier New', ui-monospace, monospace; background: #eef0f4;
 /* ---- Paths ---- */
 .paths { display: flex; flex-direction: column; gap: 10px; padding-top: 10px; border-top: 1px dashed #e5e7eb; }
 .path-row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 12px; background: #f9fafb; border-radius: 8px; border: 1px solid #eef0f4; flex-wrap: wrap; }
-.path-info { flex: 1; min-width: 200px; }
-.path-line code { font-size: 0.92rem; background: white; border: 1px solid #e5e7eb; }
+.path-info { flex: 1; min-width: min(200px, 100%); }
+.path-line code { font-size: 0.92rem; background: white; border: 1px solid #e5e7eb; overflow-wrap: anywhere; }
 .path-meta { margin-top: 4px; display: flex; gap: 4px; flex-wrap: wrap; }
 .path-commit-msg { margin-top: 4px; font-size: 0.88rem; color: #333; font-style: italic; }
 .path-actions { display: flex; gap: 6px; align-items: center; }

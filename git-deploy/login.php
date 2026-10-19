@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/lib/config.php';
 require_once __DIR__ . '/lib/auth.php';
+require_once __DIR__ . '/lib/pwa.php';
 
 if (!Config::exists()) {
     header('Location: setup.php');
@@ -35,6 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>git-deploy · כניסה</title>
+<?php pwa_head(); ?>
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body class="page-auth">
