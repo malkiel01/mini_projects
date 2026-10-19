@@ -118,12 +118,17 @@ function attach_file(array $d, array $schema, string $fieldKey, array $file, str
     if ($file['size'] > $maxMb * 1048576) throw new ApiError("הקובץ גדול מ-{$maxMb}MB", 413);
 
     $bytes = (string)file_get_contents($file['tmp_name']);
-    $mime = (new finfo(FILEINFO_MIME_TYPE))->buffer($bytes);
-    $allowed = array_merge(...array_map(fn($k) => FILE_MIME[$k] ?? [], $f['accept'] ?? ['pdf', 'image']));
+    $mime = office_mime($bytes, (new finfo(FILEINFO_MIME_TYPE))->buffer($bytes));
+    $accept = $f['accept'] ?? ['pdf', 'image'];
+    $allowed = array_merge(...array_map(fn($k) => FILE_MIME[$k] ?? [], $accept));
     if (!in_array($mime, $allowed, true)) {
         $names = ['pdf' => 'PDF', 'image' => 'תמונה', 'office' => 'Word/Excel'];
-        throw new ApiError('סוג קובץ לא מתאים לשדה. מותר: ' . implode(', ', array_map(fn($k) => $names[$k], $f['accept'])), 415);
+        throw new ApiError('סוג קובץ לא מתאים לשדה. מותר: ' . implode(', ', array_map(fn($k) => $names[$k] ?? $k, $accept)), 415);
     }
+    // תקרה לשדה — גם קבצים שהוחלפו נמחקים (purge_attachments), אבל לא נותנים לשדה אחד לגדול בלי סוף
+    $st = db()->prepare('SELECT COUNT(*) FROM attachments WHERE document_id = ? AND field_key = ?');
+    $st->execute([$d['id'], $fieldKey]);
+    if ((int)$st->fetchColumn() >= FILES_PER_FIELD) throw new ApiError('יותר מדי קבצים בשדה הזה (עד ' . FILES_PER_FIELD . ')', 429);
     assert_room((int)$d['owner_id'], strlen($bytes));
 
     $name = mb_substr(preg_replace('/[\x00-\x1f\/\\\\]+/u', '_', basename((string)($file['name'] ?? 'קובץ'))), 0, 150) ?: 'קובץ';
@@ -156,8 +161,57 @@ function attach_file(array $d, array $schema, string $fieldKey, array $file, str
         delete_file($path);
         throw $e;
     }
+    purge_attachments((int)$d['id']);   // קובץ שהוחלף בשדה של קובץ אחד — נמחק, ולא נספר יותר במכסה
     return ['ok' => true, 'attachment' => ['id' => $attId, 'field_key' => $fieldKey, 'name' => $name, 'mime' => $mime,
         'size' => strlen($bytes), 'mine' => true], 'value' => json_encode($ids)];
+}
+
+const FILES_PER_FIELD = 30;
+
+/**
+ * Word / Excel / PowerPoint שמזוהים כ-zip (או octet-stream) — לפי מה שבתוכם. אחרת — הסוג כמו שזוהה.
+ */
+function office_mime(string $bytes, string $mime): string
+{
+    if (!in_array($mime, ['application/zip', 'application/octet-stream', 'application/x-zip-compressed'], true) || !str_starts_with($bytes, "PK")) return $mime;
+    $tmp = tempnam(sys_get_temp_dir(), 'dtz');
+    file_put_contents($tmp, $bytes);
+    $zip = new ZipArchive();
+    $out = $mime;
+    if (class_exists('ZipArchive') && $zip->open($tmp) === true) {
+        if ($zip->locateName('word/document.xml') !== false) $out = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        elseif ($zip->locateName('xl/workbook.xml') !== false) $out = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        elseif ($zip->locateName('ppt/presentation.xml') !== false) $out = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+        $zip->close();
+    }
+    @unlink($tmp);
+    return $out;
+}
+
+/**
+ * קבצים של ממלא חיצוני שכבר לא בשום שדה (הוחלפו או הוסרו) — נמחקים מהדיסק ומהמכסה, כל עוד המסמך
+ * לא הושלם. אחרת לקוח יכול למלא את המכסה של בעל המסמך בהחלפות חוזרות. קבצים שבעלי חשבון העלו —
+ * נשארים לתיעוד, כמו קודם. במסמך שהושלם לא נוגעים: הקבצים הם חלק ממה שנחתם.
+ */
+function purge_attachments(int $docId): void
+{
+    $st = db()->prepare('SELECT status FROM documents WHERE id = ?');
+    $st->execute([$docId]);
+    if (!in_array($st->fetchColumn(), DOC_EDITABLE, true)) return;
+    $used = [];
+    $st = db()->prepare('SELECT value_enc FROM field_values WHERE document_id = ?');
+    $st->execute([$docId]);
+    foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $enc) {
+        $v = json_decode((string)unseal($enc), true);
+        if (is_array($v)) foreach ($v as $id) if (is_int($id)) $used[$id] = true;
+    }
+    $st = db()->prepare("SELECT id, path FROM attachments WHERE document_id = ? AND uploaded_by LIKE 'participant:%'");
+    $st->execute([$docId]);
+    foreach ($st->fetchAll() as $a) {
+        if (isset($used[(int)$a['id']])) continue;
+        db()->prepare('DELETE FROM attachments WHERE id = ?')->execute([$a['id']]);
+        delete_file($a['path']);
+    }
 }
 
 function attachments_of(int $docId, ?string $onlyBy = null): array

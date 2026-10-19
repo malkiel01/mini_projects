@@ -90,7 +90,8 @@ $a = fill_upload(['field_key' => 'id_card'], ['file' => up($png, 'תז.png')]);
 fill_upload(['field_key' => 'id_card'], ['file' => up($pdf, 'תז-גב.pdf')]);
 check('שדה של קובץ אחד — העלאה שנייה מחליפה', json_decode($d()['values']['id_card'], true) !== [$a['attachment']['id']]);
 $fa = fill_get()['document']['attachments'];
-check('הממלא רואה רק את הקבצים שלו', count($fa) === 2 && !in_array('חוזה חתום.pdf', array_column($fa, 'name'), true));
+check('הממלא רואה רק את הקבצים שלו', count($fa) === 1 && !in_array('חוזה חתום.pdf', array_column($fa, 'name'), true));
+check('הקובץ שהוחלף אצל הממלא — נמחק (לא נספר במכסה)', (int)db()->query("SELECT COUNT(*) FROM attachments WHERE id = {$a['attachment']['id']}")->fetchColumn() === 0);
 throws('הממלא לא מוריד קובץ של המנפיק', fn() => fill_file(1), 404);
 throws('המנפיק לא שולח לממלא קובץ במקום שליחה', fn() => doc_upload($owner, ['id' => $docId, 'field_key' => 'id_card'], ['file' => up($png)]), 409);
 

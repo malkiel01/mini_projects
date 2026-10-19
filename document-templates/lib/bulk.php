@@ -298,6 +298,9 @@ function export_rows(array $user, array $t, array $q): array
     $docs = [];
     foreach ($list as $view) {
         $d = doc_owned($view['id'], $user, 'view');
+        // ננעל רק באישור של בעל התבנית — התשובות לא יוצאות לאקסל לפני שאישר
+        $ap = function_exists('doc_approver') ? doc_approver($d) : null;
+        if ($ap && $ap !== (int)$user['id'] && $d['status'] !== 'completed') continue;
         $s = json_decode((string)unseal($d['schema_enc']), true) ?: [];
         foreach ($s['fields'] ?? [] as $f) $fields[$f['key']] ??= $f;   // שדות של גרסאות קודמות — בסוף
         $docs[] = [$view, $d, doc_values($view['id'])];

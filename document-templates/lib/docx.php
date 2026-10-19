@@ -373,7 +373,8 @@ function doc_docx(array $user, int $id, bool $preview = false): never
     $names = array_column(attachments_of($id), 'name', 'id');
 
     $appendix = [];
-    if ($d['status'] === 'completed' && $d['final_hash']) {
+    // דף אישור (עם היומן וכתובות ה-IP) — רק כשהתבנית ביקשה, כמו ב-PDF
+    if (!empty($schema['certificate']) && $d['status'] === 'completed' && $d['final_hash']) {
         $title = (string)unseal($d['title_enc']);
         $appendix = ['דף אישור', "מסמך: $title" . ($d['number'] ? " ({$d['number']})" : ''),
             'נוצר: ' . $d['created_at'] . ' · הושלם: ' . $d['completed_at'],

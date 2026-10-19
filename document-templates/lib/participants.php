@@ -474,6 +474,7 @@ function fill_save(array $b): array
     $values = doc_values((int)$d['id']);
     // מחושב שמוסתר מהממלאים — לא חוזר אליו (כמו ב-fill_get)
     $seen = array_filter($schema['fields'] ?? [], fn($f) => empty($f['hidden']) || in_array($p['role_key'], field_roles($f), true));
+    purge_attachments((int)$d['id']);
     return ['ok' => true, 'saved' => count($changes), 'saved_at' => $now, 'computed' => computed_values(['fields' => array_values($seen)], $values),
         'progress' => ['required' => 0, 'filled' => 0, 'missing' => missing_for($schema, $values, $p['role_key'], open_roles((int)$d['id']))]];
 }
@@ -641,7 +642,8 @@ function fill_docx(): never
     $visible = array_column(array_filter($schema['fields'] ?? [],
         fn($f) => empty($f['hidden']) || in_array($p['role_key'], field_roles($f), true)), 'key');
     $values = array_intersect_key(doc_values((int)$d['id']), array_flip($visible));
-    $names = array_column(attachments_of((int)$d['id']), 'name', 'id');
+    // רק השמות של הקבצים שהוא העלה — של אחרים: "קובץ" (כמו ב-PDF שלו)
+    $names = array_column(attachments_of((int)$d['id'], 'participant:' . $p['id']), 'name', 'id');
     $src = $a['mime'] === AUTHORED_MIME ? authored_docx($schema, $values) : asset_bytes($a);
     $bytes = docx_fill($src, $schema, $values, $names, []);
     log_event((int)$d['id'], 'participant:' . $p['id'], 'downloaded', ['format' => 'docx']);
@@ -659,6 +661,8 @@ function fill_asset(): never
     [$p, $d] = fill_context();
     if (needs_otp($p)) throw new ApiError('נדרש אימות', 401);
     $a = tpl_asset_row((int)$d['template_version_id']);
+    // Word — הממלא רואה טופס, לא את קובץ המקור (שבו גם שמות של שדות נסתרים)
+    if ($a['mime'] === DOCX_MIME) throw new ApiError('אין קובץ רקע למסמך הזה', 404);
     $bytes = asset_bytes($a);
     header('Content-Type: ' . $a['mime']);
     header('Content-Length: ' . strlen($bytes));
