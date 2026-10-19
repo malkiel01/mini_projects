@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.mbeplus.carpentry",
+      "sha256_cert_fingerprints": [
+        "24:32:53:43:FE:C9:EE:AA:CA:7A:C4:E7:E7:DE:B9:4C:0E:A3:1B:52:68:CA:83:DC:AF:06:BF:FD:7D:36:30:E8"
+      ]
+    }
+  }
+]
