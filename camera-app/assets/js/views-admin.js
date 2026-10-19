@@ -167,10 +167,12 @@ export async function renderSettings(container, q = {}) {
 async function usersTab(pane) {
   let users = (await api('users')).users;
   const draw = () => {
-    pane.innerHTML = `<div class="actions" style="margin-bottom:10px"><button class="btn btn--primary btn--sm" data-add type="button">+ משתמש</button><span class="hint">מנהל: הכול · מפעיל: צופה, מקליט, מסובב, מקטלג · צופה: רק צופה</span></div>
-      <div class="list">${users.map((u) => `<div class="item"><div class="item__main"><b>${esc(u.display_name)} <span class="badge">${esc(ROLE_LABEL[u.role])}</span> ${u.blocked ? '<span class="badge badge--err">חסום</span>' : ''}</b><small class="mono">${esc(u.username)}</small> <small>· כניסה אחרונה ${esc(timeAgo(u.last_login_at))}</small></div>
+    // מחוברת: משתמשים נפתחים כשהם נכנסים דרך הכלים הדיגיטליים — אין יצירה עם סיסמה.
+    pane.innerHTML = `<div class="actions" style="margin-bottom:10px">${state.platform ? '' : '<button class="btn btn--primary btn--sm" data-add type="button">+ משתמש</button>'}<span class="hint">מנהל: הכול · מפעיל: צופה, מקליט, מסובב, מקטלג · צופה: רק צופה</span></div>
+      ${state.platform ? '<p class="hint" style="margin-bottom:10px">הכניסה דרך הכלים הדיגיטליים. מי שמקבל שם הרשאה נכנס כאן כצופה — ותפקיד אחר נותנים כאן. משתמש ותיק מתחבר לבד לפי המייל שבחשבון שלו.</p>' : ''}
+      <div class="list">${users.map((u) => `<div class="item"><div class="item__main"><b>${esc(u.display_name)} <span class="badge">${esc(ROLE_LABEL[u.role])}</span> ${u.blocked ? '<span class="badge badge--err">חסום</span>' : ''} ${u.linked ? '<span class="badge" title="מקושר לחשבון בכלים הדיגיטליים">🔗</span>' : ''}</b><small class="mono">${esc(u.username)}${u.email ? ' · ' + esc(u.email) : ''}</small> <small>· כניסה אחרונה ${esc(timeAgo(u.last_login_at))}</small></div>
         <button class="btn btn--sm" data-edit="${u.id}" type="button">✎</button>${u.id !== state.user.id ? `<button class="btn btn--sm btn--ghost" data-del="${u.id}" type="button">✕</button>` : ''}</div>`).join('')}</div>`;
-    pane.querySelector('[data-add]').onclick = () => edit(null);
+    pane.querySelector('[data-add]')?.addEventListener('click', () => edit(null));
     pane.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => edit(users.find((u) => u.id === +b.dataset.edit)));
     pane.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
       const u = users.find((x) => x.id === +b.dataset.del);
@@ -183,7 +185,8 @@ async function usersTab(pane) {
       <div class="field"><label>שם משתמש</label><input name="username" value="${esc(u?.username || '')}" ${u ? 'disabled' : 'required'} minlength="3" maxlength="32" autocapitalize="off" class="mono"></div>
       <div class="field"><label>שם תצוגה</label><input name="display_name" value="${esc(u?.display_name || '')}" maxlength="60"></div>
       <div class="field"><label>תפקיד</label><select name="role">${['admin', 'operator', 'viewer'].map((k) => `<option value="${k}" ${(u?.role || 'viewer') === k ? 'selected' : ''}>${ROLE_LABEL[k]}</option>`).join('')}</select></div>
-      <div class="field"><label>סיסמה ${u ? '<span class="hint">(ריק = לא לשנות)</span>' : ''}</label><input name="password" type="password" ${u ? '' : 'required'} minlength="8" autocomplete="new-password"></div>
+      <div class="field"><label>מייל <span class="hint">(לחיבור אוטומטי בכניסה דרך הכלים הדיגיטליים)</span></label><input name="email" type="email" value="${esc(u?.email || '')}" dir="ltr" autocomplete="off"></div>
+      ${state.platform ? '' : `<div class="field"><label>סיסמה ${u ? '<span class="hint">(ריק = לא לשנות)</span>' : ''}</label><input name="password" type="password" ${u ? '' : 'required'} minlength="8" autocomplete="new-password"></div>`}
       ${u ? `<label class="check"><input type="checkbox" name="blocked" ${u.blocked ? 'checked' : ''}> חסום</label>` : ''}
     </form>`, actions: [{ label: 'ביטול', value: null }, { label: 'שמור', cls: 'btn--primary', onClick: async (box) => {
       const f = box.querySelector('[data-f]'); if (!f.reportValidity()) return false;
@@ -283,6 +286,7 @@ async function systemTab(pane) {
 /* ───────── החשבון שלי ───────── */
 
 export function renderMe(container) {
+  if (state.platform) return renderMePlatform(container);
   container.innerHTML = `<div class="section-head"><h2>החשבון שלי</h2></div>
     <div class="card card--auth"><table class="kv"><tr><th>שם</th><td>${esc(state.user.display_name)}</td></tr><tr><th>משתמש</th><td class="mono">${esc(state.user.username)}</td></tr><tr><th>תפקיד</th><td>${esc(ROLE_LABEL[state.user.role])}</td></tr></table>
       <form data-f style="margin-top:14px">
@@ -293,5 +297,26 @@ export function renderMe(container) {
   container.querySelector('[data-f]').onsubmit = async (e) => {
     e.preventDefault();
     try { await api('change-password', formData(e.target)); toast('הסיסמה שונתה', 'ok'); e.target.reset(); } catch (err) { toast(err.message, 'err'); }
+  };
+}
+
+/** מחוברת: אין סיסמה לשנות. מי שנכנס כחשבון חדש ונזכר שיש לו ישן — מחבר אותו כאן. */
+function renderMePlatform(container) {
+  container.innerHTML = `<div class="section-head"><h2>החשבון שלי</h2></div>
+    <div class="card card--auth"><table class="kv"><tr><th>שם</th><td>${esc(state.user.display_name)}</td></tr><tr><th>משתמש</th><td class="mono">${esc(state.user.username)}</td></tr><tr><th>תפקיד</th><td>${esc(ROLE_LABEL[state.user.role])}</td></tr><tr><th>כניסה</th><td>דרך הכלים הדיגיטליים${state.platform.email ? ` · <span dir="ltr">${esc(state.platform.email)}</span>` : ''}</td></tr></table>
+      ${state.platform.can_link ? `<form data-f style="margin-top:14px">
+        <p class="hint" style="margin-bottom:10px">יש לך חשבון ישן כאן, בשם משתמש וסיסמה? חבר אותו — ותיכנס אליו מעכשיו. החשבון הנוכחי, שנפתח עכשיו, יימחק.</p>
+        <div class="field"><label>שם המשתמש הישן</label><input name="username" required autocapitalize="off"></div>
+        <div class="field"><label>הסיסמה הישנה</label><input name="password" type="password" required autocomplete="current-password"></div>
+        <div class="actions actions--end"><button class="btn btn--primary" type="submit">חבר את החשבון הישן</button></div>
+      </form>` : ''}</div>`;
+  const f = container.querySelector('[data-f]');
+  if (f) f.onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api('platform-link', formData(e.target));
+      toast('החשבון חובר', 'ok');
+      setTimeout(() => location.reload(), 600);
+    } catch (err) { toast(err.message, 'err'); }
   };
 }

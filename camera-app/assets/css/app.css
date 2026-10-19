@@ -262,3 +262,7 @@ pre.mono { padding: 10px; overflow-x: auto; white-space: pre; text-align: left; 
   .rec-page { display: grid; grid-template-columns: 1fr 360px; gap: 14px; align-items: start; }
 }
 .kbd { display: inline-block; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 0 6px; font-size: .78rem; font-family: ui-monospace, monospace; background: var(--bg); direction: ltr; }
+
+/* מחוברת לפלטפורמה: הודעה במקום טופס הכניסה (חסום / לא זמינה). */
+.platform-msg { text-align: center; padding: 20px 8px; color: var(--muted); }
+.platform-msg b { display: block; margin-bottom: 6px; color: var(--ink); }

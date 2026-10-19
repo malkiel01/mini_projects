@@ -62,7 +62,8 @@ $in     = body();
 $action = $_GET['action'] ?? (is_string($in['action'] ?? null) ? $in['action'] : '');
 
 // בלי סשן: מה שמוביל לכניסה. הגשר מזדהה בטוקן משלו ולא בסשן.
-$public        = ['me', 'setup', 'login'];
+// platform-link / platform-new — מסך החיבור החד-פעמי, לפני שיש חשבון (הזהות מהשער, לא מהגוף).
+$public        = ['me', 'setup', 'login', 'platform-link', 'platform-new'];
 $bridgeActions = ['bridge-pair', 'bridge-heartbeat', 'bridge-command-done'];
 
 try {
@@ -82,25 +83,39 @@ try {
     case 'me':
         ok(['user' => $user ? ['id' => (int) $user['id'], 'username' => $user['username'],
                                'display_name' => $user['display_name'], 'role' => $user['role']] : null,
-            'needs_setup' => userCount() === 0,
+            'needs_setup' => !platformMode() && userCount() === 0,
+            // null = מנותקת (כניסה בסיסמה). אחרת: state ok / pending (מסך החיבור) / blocked.
+            'platform' => platformInfo(),
             'assets_version' => assetsVersion()]);
 
+    case 'platform-new':
+        $u = platformCreateAccount();
+        ok(['user' => ['id' => (int) $u['id'], 'username' => $u['username'], 'display_name' => $u['display_name'], 'role' => $u['role']]]);
+
+    case 'platform-link':
+        $u = platformLinkOldAccount((string) ($in['username'] ?? ''), (string) ($in['password'] ?? ''));
+        ok(['user' => ['id' => (int) $u['id'], 'username' => $u['username'], 'display_name' => $u['display_name'], 'role' => $u['role']]]);
+
     case 'setup': {
+        denyInPlatformMode();
         $id = setupFirstAdmin((string) ($in['username'] ?? ''), (string) ($in['password'] ?? ''), (string) ($in['display_name'] ?? ''));
         $u = login((string) $in['username'], (string) $in['password']);
         ok(['user' => ['id' => $id, 'username' => $u['username'], 'display_name' => $u['display_name'], 'role' => 'admin']]);
     }
 
     case 'login': {
+        denyInPlatformMode();
         $u = login((string) ($in['username'] ?? ''), (string) ($in['password'] ?? ''));
         ok(['user' => ['id' => (int) $u['id'], 'username' => $u['username'], 'display_name' => $u['display_name'], 'role' => $u['role']]]);
     }
 
     case 'logout':
-        logout();
+        // מחוברת: היציאה היא מהפלטפורמה; כאן אין סשן משלנו לנקות.
+        if (!platformMode()) logout();
         ok();
 
     case 'change-password':
+        denyInPlatformMode();
         changePassword($uid, (string) ($in['current'] ?? ''), (string) ($in['new'] ?? ''));
         ok();
 
@@ -109,7 +124,9 @@ try {
         ok(['users' => listUsers()]);
 
     case 'user-create':
+        // מחוברת: משתמשים נפתחים כשהם נכנסים דרך הפלטפורמה; יצירה עם סיסמה — מוסתרת וחסומה.
         requireAdmin();
+        denyInPlatformMode();
         ok(['id' => createUser((string) ($in['username'] ?? ''), (string) ($in['password'] ?? ''),
                                 (string) ($in['display_name'] ?? ''), (string) ($in['role'] ?? 'viewer'))]);
 

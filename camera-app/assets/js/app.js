@@ -12,7 +12,8 @@ import { renderTopics, renderEvents, renderBridges, renderSettings, renderMe } f
 
 /* ───────── API ───────── */
 
-export const state = { user: null, overview: null, assetsVersion: null };
+// platform: null = מנותקת (כניסה בסיסמה); אחרת { state, name, email, can_link } — מ-me.
+export const state = { user: null, overview: null, assetsVersion: null, platform: null };
 
 export async function api(action, data = {}) {
   let res;
@@ -25,7 +26,7 @@ export async function api(action, data = {}) {
   }
   const j = await res.json().catch(() => ({ success: false, error: 'תשובה לא תקינה מהשרת' }));
   if (!j.success) {
-    if (res.status === 401 && action !== 'login' && action !== 'me') { state.user = null; showGuest(); }
+    if (res.status === 401 && !['login', 'me', 'platform-link'].includes(action)) { state.user = null; showGuest(); }
     throw new Error(j.error || 'שגיאה');
   }
   return j;
@@ -224,15 +225,26 @@ function showGuest(needsSetup = false) {
   document.getElementById('nav').hidden = true;
   document.getElementById('logout').hidden = true;
   document.getElementById('who').textContent = '';
-  document.getElementById('setup-form').hidden = !needsSetup;
-  document.getElementById('login-form').hidden = needsSetup;
+  // מחוברת לפלטפורמה: אין כניסה ואין התקנה בסיסמה — רק מסך החיבור, או הודעה.
+  const p = state.platform;
+  document.getElementById('setup-form').hidden = !!p || !needsSetup;
+  document.getElementById('login-form').hidden = !!p || needsSetup;
+  const pane = document.getElementById('platform-pane');
+  const msg = document.getElementById('platform-msg');
+  pane.hidden = p?.state !== 'pending';
+  pane.querySelector('[data-name]').textContent = p?.name || '';
+  msg.hidden = !p || p.state === 'pending';
+  msg.innerHTML = p?.state === 'blocked'
+    ? '<b>החשבון שלך באפליקציה חסום</b>פנו למנהל המצלמות'
+    : '<b>הכניסה לא זמינה כרגע</b>נסו לרענן בעוד רגע';
 }
 
 function showApp() {
   document.getElementById('guest').hidden = true;
   document.getElementById('app').hidden = false;
   document.getElementById('nav').hidden = false;
-  document.getElementById('logout').hidden = false;
+  // מחוברת: יוצאים מהפלטפורמה, לא מכאן.
+  document.getElementById('logout').hidden = !!state.platform;
   const who = document.getElementById('who');
   who.innerHTML = `<a href="#/me" style="color:inherit;text-decoration:none">${esc(state.user.display_name)} · ${esc(ROLE_LABEL[state.user.role])}</a>`;
   document.querySelectorAll('#nav [data-admin]').forEach((a) => { a.hidden = !isAdmin(); });
@@ -243,6 +255,7 @@ async function boot() {
   try { me = await api('me'); }
   catch (err) { document.getElementById('view').innerHTML = ''; showGuest(false); toast(err.message, 'err'); return; }
   state.assetsVersion = me.assets_version;
+  state.platform = me.platform || null;
   if (me.user) {
     state.user = me.user;
     await refreshOverview().catch(() => {});
@@ -272,6 +285,23 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
     await refreshOverview().catch(() => {});
     showApp(); route();
   } catch (err) { toast(err.message, 'err'); }
+});
+
+async function enterAs(j) {
+  state.user = j.user;
+  state.platform = (await api('me')).platform || null;
+  await refreshOverview().catch(() => {});
+  showApp(); route();
+}
+
+document.getElementById('platform-link-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try { await enterAs(await api('platform-link', formData(e.target))); toast('החשבון חובר', 'ok'); }
+  catch (err) { toast(err.message, 'err'); }
+});
+
+document.getElementById('platform-new').addEventListener('click', async () => {
+  try { await enterAs(await api('platform-new')); } catch (err) { toast(err.message, 'err'); }
 });
 
 document.getElementById('logout').addEventListener('click', async () => {

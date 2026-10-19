@@ -218,6 +218,20 @@ function migrate(PDO $pdo): void {
             updated_at TEXT NOT NULL
         );
     ");
+
+    // הכניסה דרך הפלטפורמה (platform/docs/auth.md): הקישור לחשבון הפלטפורמה, והמייל שלפיו מאחדים.
+    // ALTER ולא בתוך ה-CREATE — מסד קיים בשרת כבר יש בו טבלת users.
+    $cols = array_column($pdo->query('PRAGMA table_info(users)')->fetchAll(), 'name');
+    $add = [
+        'platform_sub'     => 'TEXT',
+        'email'            => 'TEXT',
+        'platform_created' => 'INTEGER NOT NULL DEFAULT 0',   // נפתח דרך הפלטפורמה, בלי סיסמה משלו
+        'linked_at'        => 'TEXT',
+    ];
+    foreach ($add as $col => $type) {
+        if (!in_array($col, $cols, true)) $pdo->exec("ALTER TABLE users ADD COLUMN $col $type");
+    }
+    $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_platform_sub ON users(platform_sub)');
 }
 
 function settingGet(string $key, string $default = ''): string {
