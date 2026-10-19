@@ -3,8 +3,11 @@
  * ה-API של סורק הוואטסאפ.
  *
  * שני קהלים:
- *   הבעלים — דרך הדפדפן: התקנה, כניסה, הגדרת חשבונות, שאלות ותשובות.
- *   הגשר   — אפליקציית האנדרואיד: מזרימה הודעות שנסרקו.
+ *   המשתמש — דרך הדפדפן: כניסה, הגדרת חשבונות, שאלות ותשובות. מחוברת
+ *            לפלטפורמה — הכניסה אוטומטית (resolveUser); מנותקת — בסיסמה.
+ *   הגשר   — אפליקציית האנדרואיד: מזרימה הודעות שנסרקו, באסימון של משתמש.
+ *
+ * כל משתמש רואה רק את שלו: כל פעולה רצה בשם currentUserId בלבד.
  *
  * כל בקשה POST עם JSON, פרט ל-GET של state (מי אני / מה מוגדר).
  */
@@ -48,23 +51,33 @@ $action = $_GET['action'] ?? ($_POST['action'] ?? '');
 $in     = body();
 
 try {
+    resolveUser();
+
     switch ($action) {
 
-        /* ── מצב כללי (GET) ─────────────────────────────────────── */
+        /* ── מצב כללי ───────────────────────────────────────────── */
         case 'state':
+            $me = me();
             ok([
-                'configured' => ownerConfigured(),
-                'owner'      => isOwner(),
+                'user'       => isUser(),
+                // מחוברת לפלטפורמה: אין מסך כניסה ואין כפתור יציאה — היציאה היא מהפלטפורמה.
+                'platform'   => platformIdentity() !== null,
+                'name'       => $me['name'] ?? '',
+                'configured' => anyUser(),
+                'can_link'   => canLinkOld(),
+                'offer_link' => canLinkOld() && empty($me['link_dismissed']),
             ]);
 
-        /* ── התקנה וכניסה ───────────────────────────────────────── */
+        /* ── הכניסה הישנה — רק כשהאפליקציה מנותקת ───────────────── */
         case 'setup':
-            if (ownerConfigured()) fail('כבר הוגדר');
-            setupOwner((string) ($in['password'] ?? ''));
+            if (!passwordLoginAllowed()) fail('הכניסה היא דרך הכלים הדיגיטליים', 403);
+            if (anyUser()) fail('כבר הוגדר');
+            setupFirstUser((string) ($in['password'] ?? ''));
             login((string) ($in['password'] ?? ''));
-            ok(['pair_token' => owner()['pair_token']]);
+            ok(['pair_token' => me()['pair_token']]);
 
         case 'login':
+            if (!passwordLoginAllowed()) fail('הכניסה היא דרך הכלים הדיגיטליים', 403);
             if (!login((string) ($in['password'] ?? ''))) fail('סיסמה שגויה', 401);
             ok();
 
@@ -72,17 +85,28 @@ try {
             logout();
             ok();
 
-        /* ── הגדרות (בעלים) ─────────────────────────────────────── */
+        /* ── מסך החיבור החד-פעמי ────────────────────────────────── */
+        case 'link_account':
+            requireUser();
+            linkOldAccount((string) ($in['password'] ?? ''));
+            ok(['name' => me()['name'] ?? '']);
+
+        case 'dismiss_link':
+            requireUser();
+            dismissLink();
+            ok();
+
+        /* ── הגדרות (משתמש) ─────────────────────────────────────── */
         case 'settings':
-            requireOwner();
+            requireUser();
             ok([
                 'ai'          => aiSettingsView(),
-                'pair_token'  => owner()['pair_token'],
-                'log_token'   => ownerLogToken(),
+                'pair_token'  => me()['pair_token'],
+                'log_token'   => myLogToken(),
             ]);
 
         case 'save_ai':
-            requireOwner();
+            requireUser();
             saveAiSettings(
                 (string) ($in['provider'] ?? 'anthropic'),
                 (string) ($in['model'] ?? ''),
@@ -92,24 +116,24 @@ try {
             ok(['ai' => aiSettingsView()]);
 
         case 'rotate_token':
-            requireOwner();
+            requireUser();
             ok(['pair_token' => rotatePairToken()]);
 
         case 'rotate_log_token':
-            requireOwner();
+            requireUser();
             ok(['log_token' => rotateLogToken()]);
 
         case 'list_models':
-            requireOwner();
+            requireUser();
             ok(['models' => fetchProviderModels()]);
 
-        /* ── חשבונות (בעלים) ────────────────────────────────────── */
+        /* ── חשבונות (משתמש) ────────────────────────────────────── */
         case 'accounts':
-            requireOwner();
+            requireUser();
             ok(['accounts' => listAccounts()]);
 
         case 'add_account':
-            requireOwner();
+            requireUser();
             $a = createAccount(
                 (string) ($in['label'] ?? ''),
                 (string) ($in['kind'] ?? 'personal'),
@@ -118,18 +142,18 @@ try {
             ok(['account' => $a]);
 
         case 'set_account_package':
-            requireOwner();
+            requireUser();
             setAccountPackage((int) ($in['id'] ?? 0), (string) ($in['package'] ?? ''));
             ok(['accounts' => listAccounts()]);
 
         case 'delete_account':
-            requireOwner();
+            requireUser();
             deleteAccount((int) ($in['id'] ?? 0));
             ok();
 
-        /* ── שאלה ותשובה (בעלים) ───────────────────────────────── */
+        /* ── שאלה ותשובה (משתמש) ───────────────────────────────── */
         case 'ask':
-            requireOwner();
+            requireUser();
             $question = trim((string) ($in['question'] ?? ''));
             if ($question === '') fail('לא נשאלה שאלה');
             if (mb_strlen($question) > 1000) fail('השאלה ארוכה מדי');
@@ -139,7 +163,7 @@ try {
             $to   = isset($in['to'])   && $in['to']   !== '' ? (int) strtotime((string) $in['to'] . ' 23:59:59') : null;
 
             $collected = collectMessages($accountId, $from ?: null, $to ?: null, $question);
-            $answer = answerQuestion(ownerAiConn(), $question, $collected, ownerAnswerLang());
+            $answer = answerQuestion(userAiConn(), $question, $collected, userAnswerLang());
             ok([
                 'answer'       => $answer,
                 'used'         => count($collected['messages']),
@@ -178,11 +202,11 @@ try {
                 str_field($in, 'detail', 3500));
             ok();
 
-        // קריאת היומן. מורשית באסימון יומן (כדי שאפשר יהיה למשוך מבחוץ)
-        // או בסשן בעלים (לתצוגה באתר).
+        // קריאת היומן — של משתמש אחד. מורשית באסימון היומן שלו (כדי שאפשר
+        // יהיה למשוך מבחוץ) או בכניסה שלו (לתצוגה באתר).
         case 'logs':
             $token = (string) ($_GET['token'] ?? ($in['token'] ?? ''));
-            if (!isOwner() && !logTokenValid($token)) fail('אסימון יומן שגוי', 401);
+            if ($token !== '' ? !useLogToken($token) : !isUser()) fail('אסימון יומן שגוי', 401);
             ok(['logs' => recentLogs((int) ($_GET['limit'] ?? ($in['limit'] ?? 300)))]);
 
         /* ── בליעה (גשר) ────────────────────────────────────────── */

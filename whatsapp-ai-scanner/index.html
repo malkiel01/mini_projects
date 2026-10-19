@@ -25,6 +25,18 @@
             <p id="gateMsg" class="msg" role="alert"></p>
         </section>
 
+        <!-- מסך החיבור החד-פעמי: חשבון ישן מלפני הכניסה דרך הכלים הדיגיטליים -->
+        <section id="link" class="card" hidden>
+            <h2 data-i18n="link_title">יש לך כבר חשבון בסורק?</h2>
+            <p class="muted" data-i18n="link_hint">אם השתמשת בסורק לפני הכניסה דרך הכלים הדיגיטליים — הקלד את הסיסמה הישנה, וההתכתבויות, החשבונות והגשר שלך יחזרו. אחרת — "אין לי חשבון", ומתחילים חשבון חדש.</p>
+            <input id="linkPw" type="password" data-i18n-ph="link_pw_ph" placeholder="הסיסמה הישנה של הסורק" autocomplete="current-password">
+            <div class="row">
+                <button id="linkBtn" class="primary" data-i18n="link_yes">יש לי כבר חשבון — חבר</button>
+                <button id="noLinkBtn" class="ghost" data-i18n="link_no">אין לי חשבון</button>
+            </div>
+            <p id="linkMsg" class="msg" role="alert"></p>
+        </section>
+
         <!-- שאלה ותשובה -->
         <section id="ask" class="card" hidden>
             <h2 data-i18n="ask_title">שאלה על ההתכתבויות</h2>
@@ -97,6 +109,12 @@
             <button id="rotateLogTokenBtn" class="ghost small" data-i18n="rotate_log">גלגל אסימון יומן חדש</button>
             <button id="viewLogsBtn" class="ghost small" data-i18n="view_logs">הצג לוגים אחרונים</button>
             <pre id="logsView" class="logs" hidden></pre>
+
+            <div id="linkLater" hidden>
+                <h3 data-i18n="link_later_title">חשבון ישן</h3>
+                <p class="muted" data-i18n="link_later_hint">השתמשת בסורק לפני הכניסה דרך הכלים הדיגיטליים? אפשר לחבר את החשבון הישן גם עכשיו.</p>
+                <button id="openLinkBtn" class="ghost small" data-i18n="link_open">חיבור חשבון ישן</button>
+            </div>
 
             <p id="settingsMsg" class="msg"></p>
         </section>
