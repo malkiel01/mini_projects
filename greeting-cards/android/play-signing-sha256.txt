@@ -1,0 +1,3 @@
+# טביעת SHA-256 של מפתח החתימה של גוגל (Play App Signing) — שורה לכל טביעת אצבע.
+# מ-Play Console → Test and release → App integrity → App signing → "App signing key certificate".
+# הבנייה הבאה מוסיפה אותה ל-assetlinks.json שבתיקיית החנות.
