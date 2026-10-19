@@ -10,6 +10,14 @@
     "api.php?action=bridge-pair|bridge-heartbeat|bridge-command-done",
     "upload.php",
     "cron.php",
-    "bridge/**"
-  ]
+    "bridge/**",
+    "privacy.html",
+    "manifest.webmanifest",
+    "service-worker.js",
+    "assets/icons/**",
+    "assets/icon.svg"
+  ],
+  "install": {
+    "release": "camera-app-store"
+  }
 }
