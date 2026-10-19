@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>הטמעת נתונים לריכוז לקוחות</title>
+    <meta name="theme-color" content="#1a1a2e">
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="icon" href="./assets/icons/icon-192.png" type="image/png">
+    <link rel="apple-touch-icon" href="./assets/icons/icon-192.png">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="הטמעת נתונים">
     <script src="https://unpkg.com/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
     <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -2609,5 +2616,11 @@
             return btoa(binary);
         }
     </script>
+<script>
+// התקנה כאפליקציה (PWA) — service-worker.js
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(() => {}));
+}
+</script>
 </body>
 </html>

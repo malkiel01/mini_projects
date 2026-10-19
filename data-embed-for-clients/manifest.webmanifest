@@ -1,0 +1,19 @@
+{
+  "name": "הטמעת נתונים לריכוז לקוחות",
+  "short_name": "הטמעת נתונים",
+  "description": "העלאת תמונה או PDF, שדות טקסט, תמונה וחתימה, והפקת קבצי PDF מרובים עם טקסט מותאם אישית לכל לקוח.",
+  "lang": "he",
+  "dir": "rtl",
+  "id": "./",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f0f2f5",
+  "theme_color": "#1a1a2e",
+  "icons": [
+    { "src": "./assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./assets/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "./assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
