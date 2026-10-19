@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.mbeplus.gitdeploy",
+      "sha256_cert_fingerprints": [
+        "48:69:E5:53:60:3A:5C:51:70:E0:18:D1:35:A8:5A:9D:CF:AD:A7:07:21:F2:34:2A:92:A8:CF:31:CC:16:9D:9D"
+      ]
+    }
+  }
+]
