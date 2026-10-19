@@ -10,6 +10,9 @@
     "release": "greeting-cards-store"
   },
   "public": [
-    "privacy.html"
+    "privacy.html",
+    "manifest.webmanifest",
+    "service-worker.js",
+    "assets/icons/**"
   ]
 }
