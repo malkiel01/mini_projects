@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>אנליסט מסד נתונים</title>
+<meta name="theme-color" content="#1a1a2e">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./assets/icons/icon-192.png">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -948,6 +952,23 @@
   @keyframes slideIn {
     from { opacity: 0; transform: translateY(-10px); }
     to { opacity: 1; transform: translateY(0); }
+  }
+  /* =========================================================
+     PHONE — מותקן כאפליקציה (PWA / אנדרואיד): הרשימה מעל התוכן, לא לצידו
+     ========================================================= */
+  @media (max-width: 760px) {
+    .main-header { padding: 10px 12px; gap: 10px; }
+    .main-header h1 { font-size: 1rem; }
+    .layout { flex-direction: column; }
+    .sidebar {
+      width: 100%; max-height: 30vh;
+      border-left: none; border-bottom: 1px solid #e0e0e0;
+    }
+    .sidebar-list { max-height: none; }
+    .table-header-bar { padding: 10px 12px; }
+    .tabs-bar { padding: 0 8px; }
+    .tab-btn { padding: 10px 12px; }
+    .tab-content, .dashboard-content { padding: 12px; }
   }
 </style>
 </head>
@@ -4068,6 +4089,12 @@ async function renderExportTab(c) {
       preview.innerHTML = `<div class="empty-state">❌ ${escapeHtml(err.message)}</div>`;
     }
   });
+}
+</script>
+<script>
+// התקנה כאפליקציה (manifest.webmanifest + service-worker.js)
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(() => {}));
 }
 </script>
 </body>

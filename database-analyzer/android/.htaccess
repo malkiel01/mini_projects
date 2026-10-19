@@ -1,0 +1,8 @@
+# קוד המקור של אפליקציית האנדרואיד — לא לגלישה. (deploy.yml אינו מחריג את התיקייה — ראה ../README.md)
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>

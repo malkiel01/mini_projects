@@ -5,5 +5,14 @@
   "description": "כלי ניתוח וניהול מסדי נתונים MySQL - צפייה במבנה, תוכן, קשרים בין טבלאות (רשימה ותרשים ויזואלי), הוספה/מחיקה של שורות ועמודות, וייצוא ל-JSON.",
   "category": "dev",
   "entry": "index.html",
-  "gate": true
+  "gate": true,
+  "public": [
+    "manifest.webmanifest",
+    "service-worker.js",
+    "assets/icons/**",
+    "assets/icon.svg"
+  ],
+  "install": {
+    "release": "database-analyzer-store"
+  }
 }
