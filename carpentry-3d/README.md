@@ -234,6 +234,19 @@ angle }` — סיבוב סביב הקו האנכי שב-pivot (ציר משמאל
 מקבילה לצירים עם ציר עובי וציר סיבים, ומידות החיתוך נגזרות מהם ב-`cutSize`
 — מקום אחד, כך שרשימת החיתוך והתלת מימד לא יכולים לסתור זה את זה.
 
+## התקנה: PWA, אנדרואיד ותיקיית חנות (צעד 6, 2026-10-19)
+
+שלוש דרכים, כמו המתכונים:
+
+- **PWA** — `manifest.webmanifest` + `service-worker.js` (קיים).
+- **אנדרואיד (TWA)** — `android/`, העתק של `recipes-app/android/`. חבילה `com.mbeplus.carpentry`,
+  נפתחת על `/mini_projects/carpentry-3d/` ותופסת קישורים רק שם. בנייה: `.github/workflows/carpentry-3d-twa.yml`,
+  חתימה בסוד המשותף `ANDROID_KEYSTORE_PASSWORD`.
+- **תיקיית חנות** — Release `carpentry-3d-store` (`"install": {"release": ...}` ב-`app.json`): APK, AAB,
+  `store-listing.zip` (`android/STORE.md` + `android/store/`), `assetlinks.json`, `build.json`.
+  מה ממלאים ב-Play Console — `android/STORE.md`. מדיניות הפרטיות לחנות: `privacy.html` (ציבורי).
+- `android/.htaccess` חוסם הגשה של קוד המקור מהאתר (התיקייה נפרסת עם שאר האפליקציה).
+
 ## מה הוכרע
 
 | שאלה | הכרעה |

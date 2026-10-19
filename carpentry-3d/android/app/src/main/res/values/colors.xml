@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- צבעי האתר (manifest.webmanifest, assets/icon.svg): רקע שמנת וגוון אלון -->
+<resources>
+    <color name="colorPrimary">#B9772F</color>
+    <color name="navigationColor">#FFFFFF</color>
+    <color name="backgroundColor">#F4EFE7</color>
+    <color name="iconBackground">#F4EFE7</color>
+</resources>
