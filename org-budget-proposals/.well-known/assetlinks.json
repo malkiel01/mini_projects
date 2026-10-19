@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.mbeplus.orgbudget",
+      "sha256_cert_fingerprints": [
+        "B5:F9:20:20:75:9F:3F:13:BA:B7:41:C6:FF:FC:6B:D1:64:96:56:3C:74:24:17:FB:A4:75:F8:3D:7F:63:81:8B"
+      ]
+    }
+  }
+]
