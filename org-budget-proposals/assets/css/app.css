@@ -351,6 +351,8 @@ table.grid tr.has-err td, table.grid tr.has-err th.title { background: color-mix
 .grid-bar { position: sticky; bottom: 0; z-index: 3; display: flex; gap: var(--s2); padding: var(--s2) 0 calc(var(--s2) + env(safe-area-inset-bottom));
     background: var(--bg); border-top: 1px solid var(--line); margin-top: var(--s3); }
 .grid-bar .btn.primary { flex: 1; }
+.grid-zoom { display: flex; align-items: center; gap: 2px; justify-content: flex-end; margin-top: var(--s2); }
+.grid-zoom .z-val { min-width: 92px; text-align: center; font-size: .85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .grid-layout { display: flex; flex-direction: column; }
 .grid-layout .grid-issues { order: -1; }   /* בטלפון — מעל הטבלאות */
 
