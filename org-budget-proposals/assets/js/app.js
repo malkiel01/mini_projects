@@ -196,7 +196,7 @@ function render() {
         window.onbeforeunload = null;
     }
     menu.hidden = true;
-    document.body.classList.remove('print-mode');
+    document.body.classList.remove('print-mode', 'grid-mode');
     const hash = location.hash;
     const meBtn = $('#me-btn');
     meBtn.hidden = !S.user;
@@ -1057,23 +1057,54 @@ async function viewGrid(id) {
         put(main, h('p.error', { role: 'alert' }, err.message));
         return;
     }
+    document.body.classList.add('grid-mode');
     const b = d.budget, edit = canEdit(d.org.role) && b.status === 'draft';
     S.gridHash = location.hash;
     setHeader('עריכה כטבלה', `הצעת ${b.year} · ${d.org.name}`, true);
-    const NUMS = [['prev_budget', `תקציב ${b.year - 1}`], ['prev_actual', `ניצול ${b.year - 1}`], ['amount', `מוצע ${b.year}`], ['actual', `ניצול ${b.year}`]];
-    const rows = [];          // { line|null, fund, dir, inputs:{}, tr }
-    let fresh = 0;
+    // העמודות — כמו במסמך: תקציב השנה הקודמת · ניצול · ההצעה; ניצול השנה — עמודה נוספת, לסוף השנה
+    const NUMS = [['prev_budget', `הצעת תקציב\n${b.year - 1}`], ['prev_actual', `ניצול תקציב\n${b.prev_actual_as_of ? 'עד ' + fmtDay(b.prev_actual_as_of) : b.year - 1}`],
+        ['amount', `הצעת תקציב\n${b.year}`], ['actual', `ניצול\n${b.year}`]];
+    const SHORT = { prev_budget: `תקציב ${b.year - 1}`, prev_actual: `ניצול ${b.year - 1}`, amount: `מוצע ${b.year}`, actual: `ניצול ${b.year}` };
+    const rows = [];          // { line|null, fund, dir, inputs:{}, tr, msg, table }
+    const notes = [];         // { fund, dir, ta, orig }
     const bar = h('div.grid-bar');
     const sumCard = h('div.summary');
+    const issuesBox = h('aside.grid-issues', { 'aria-live': 'polite' });
     const fundBal = {};
+    const openCmt = {};
+    for (const c of d.comments) if (!c.resolved && c.line_id) (openCmt[c.line_id] ??= []).push(c);
 
     // שורה שאי אפשר לשנות לה סכום כאן: חודשית (מחושבת) או מקבלת מכמה העברות (סכום המעבירות)
     const lockedAmount = l => l && (l.calc ? 'חודשי × חודשים — עריכה בשורה' : l.transfer_role === 'income' && (l.transfer || []).length > 1 ? 'סכום ההעברות — משתנה בקופות המעבירות' : '');
     const value = (r, k) => k === 'title' || k === 'subtitle' ? r.inputs[k].value.trim() : toNum(r.inputs[k].value);
     const changed = r => {
-        if (!r.line) return value(r, 'title') !== '';
+        if (!r.line) return value(r, 'title') !== '' || NUMS.some(([k]) => r.inputs[k].value.trim() !== '');
         return ['title', 'subtitle', ...NUMS.map(n => n[0])].some(k => r.inputs[k] && !r.inputs[k].readOnly && (value(r, k) ?? '') !== (r.line[k] ?? ''));
     };
+    const pct = (a, z) => Math.round((a - z) / z * 100);
+
+    /** הערות ואזהרות לשורה — מחושבות בכל הקלדה. err חוסם שמירה; warn — לתשומת לב. */
+    const issues = r => {
+        const out = [];
+        const v = k => value(r, k);
+        const bad = NUMS.filter(([k]) => Number.isNaN(v(k)));
+        if (bad.length) out.push(['err', `מספר לא תקין: ${bad.map(([k]) => SHORT[k]).join(', ')}`]);
+        if (!v('title') && (r.line || NUMS.some(([k]) => r.inputs[k].value.trim() !== ''))) out.push(['err', 'חסר שם לסעיף']);
+        if (bad.length) return out;
+        const am = v('amount'), pb = v('prev_budget'), pa = v('prev_actual');
+        if (am < 0) out.push(['warn', 'סכום שלילי']);
+        if (am !== null && pb && Math.abs(am - pb) >= 5000 && Math.abs(pct(am, pb)) >= 50)
+            out.push(['warn', `${am > pb ? 'עלייה' : 'ירידה'} של ${Math.abs(pct(am, pb))}% מול ${b.year - 1} (${money(pb)} ← ${money(am)})`]);
+        if (am && !pb && pb !== null && r.line) out.push(['info', `סעיף שלא היה ב-${b.year - 1}`]);
+        if (pa !== null && pb !== null && pa > pb && pa - pb >= 1000) out.push(['warn', `הניצול ב-${b.year - 1} גבוה מהתקציב ב-${money(pa - pb)}`]);
+        const title = v('title');
+        if (title && rows.some(o => o !== r && o.table === r.table && value(o, 'title') === title && value(o, 'subtitle') === v('subtitle')))
+            out.push(['warn', 'שם כפול בטבלה']);
+        if (r.line && openCmt[r.line.id]) out.push(['note', ...openCmt[r.line.id].map(c => `💬 ${c.by}: ${c.body}`)].slice(0, 2));
+        return out;
+    };
+    const ICON = { err: '⛔', warn: '⚠️', info: 'ℹ️', note: '' };
+
     const recalc = () => {
         for (const t of main.querySelectorAll('table.grid')) {
             const mine = rows.filter(r => r.table === t);
@@ -1082,61 +1113,86 @@ async function viewGrid(id) {
                 t.querySelector(`tfoot [data-k=${k}]`).textContent = money(tot);
             }
         }
+        const all = [];
         let inc = 0, exp = 0;
         for (const f of d.funds) {
             const amt = dir => rows.filter(r => r.fund.id === f.id && r.dir === dir).reduce((a, r) => a + (value(r, 'amount') || 0), 0);
             const diff = amt('income') - amt('expense');
             inc += amt('income'); exp += amt('expense');
             fundBal[f.id].replaceChildren(balChip(diff));
+            if (diff) all.push({ level: 'warn', where: f.name, text: diff > 0 ? `עודף ${money(diff)} — הכנסות מול הוצאות` : `גירעון ${money(-diff)} — הכנסות מול הוצאות`, el: fundBal[f.id] });
+        }
+        for (const r of rows) {
+            const list = issues(r);
+            r.tr.classList.toggle('dirty', changed(r));
+            r.tr.classList.toggle('has-err', list.some(x => x[0] === 'err'));
+            r.msg.replaceChildren(...list.map(([lvl, ...txt]) => h(`div.m.${lvl}`, ICON[lvl] ? ICON[lvl] + ' ' : '', txt.join(' · '))));
+            for (const [lvl, ...txt] of list) if (lvl !== 'note') all.push({ level: lvl, where: `${r.fund.name} · ${value(r, 'title') || 'שורה חדשה'}`, text: txt.join(' · '), el: r.inputs.title });
         }
         sumCard.replaceChildren(h('div.line', h('span.muted', 'הכנסות'), h('b', money(inc)), h('span.muted', '· הוצאות'), h('b', money(exp)),
             h('span.pct', { style: `color:var(--${inc === exp ? 'ok' : 'danger'})` }, inc === exp ? 'מאוזן' : money(inc - exp))));
-        const n = rows.filter(changed).length;
-        for (const r of rows) r.tr.classList.toggle('dirty', changed(r));
+        const order = { err: 0, warn: 1, info: 2 };
+        all.sort((x, y) => order[x.level] - order[y.level]);
+        const errs = all.filter(x => x.level === 'err').length;
+        issuesBox.replaceChildren(h('h3', all.length ? `הערות ואזהרות · ${all.length}` : '✓ אין הערות'),
+            all.length ? h('ul', ...all.map(x => h('li', h('button', { type: 'button', class: x.level, onclick: () => { x.el.scrollIntoView({ block: 'center' }); x.el.focus?.(); } },
+                h('b', ICON[x.level], ' ', x.where), h('span', x.text))))) : h('p.hint', { style: 'margin:0' }, 'כל הקופות מאוזנות, ואין שינויים חריגים.'));
+        const n = rows.filter(changed).length + notes.filter(x => x.ta.value !== x.orig).length;
         bar.hidden = !edit || !n;
-        save.textContent = `שמירה · ${n} ${n === 1 ? 'שורה' : 'שורות'}`;
+        save.textContent = errs ? `⛔ ${errs} שגיאות — לתקן לפני שמירה` : `שמירה · ${n} ${n === 1 ? 'שינוי' : 'שינויים'}`;
+        save.disabled = !!errs;
         window.onbeforeunload = n ? () => true : null;
     };
 
-    const numCell = (r, k, val, lock) => {
+    const numCell = (r, k, val, lock, note) => {
         const inp = h('input', { value: fmtNum(val), inputMode: 'numeric', dir: 'ltr', autocomplete: 'off', readOnly: !edit || !!lock,
-            'aria-label': `${NUMS.find(n => n[0] === k)[1]} — ${r.line?.title || 'שורה חדשה'}`, title: lock || '' });
+            'aria-label': `${SHORT[k]} — ${r.line?.title || 'שורה חדשה'}`, title: lock || '' });
         inp.addEventListener('input', recalc);
         inp.addEventListener('blur', () => { const v = toNum(inp.value); if (Number.isFinite(v)) inp.value = fmtNum(v); });
         r.inputs[k] = inp;
-        return h('td.num', inp);
+        return h(`td.num.c-${k}`, inp, note ? h('small.cell-note', note) : null);
     };
     const rowEl = (r, i) => {
         const l = r.line;
         const lock = lockedAmount(l);
         const recvLock = l && l.transfer_role === 'income' && (l.transfer || []).length > 1 ? lock : '';
-        r.inputs.title = h('input', { value: l?.title || '', maxLength: 160, readOnly: !edit, placeholder: l ? '' : 'שורה חדשה…', 'aria-label': 'שם הסעיף' });
+        r.inputs.title = h('input.t', { value: l?.title || '', maxLength: 160, readOnly: !edit, placeholder: l ? '' : 'שורה חדשה…', 'aria-label': 'שם הסעיף' });
         // שורה שנייה ריקה — מוסתרת עד שעומדים על השורה (כדי שהטבלה תישאר צפופה)
         r.inputs.subtitle = h(`input.sub${l?.subtitle ? '' : '.empty'}`, { value: l?.subtitle || '', maxLength: 200, readOnly: !edit, placeholder: edit ? 'שורה שנייה' : '', 'aria-label': 'שורה שנייה' });
         for (const k of ['title', 'subtitle']) r.inputs[k].addEventListener('input', recalc);
         r.summaryOnly = !!l?.summary_only;
+        r.msg = h('div.row-msg');
+        const note = l ? [l.calc_note, l.cell_note].filter(Boolean).join(' · ') : '';
         r.tr = h('tr',
-            h('th.title', { scope: 'row' },
-                h('span.n', l ? `${i + 1}.` : '+',
-                    l && (l.transfer || l.lease || l.calc || l.summary_only) ? h('small', l.transfer ? '🔁' : '', l.lease ? '🏠' : '', l.calc ? '🧮' : '', l.summary_only ? '∑' : '') : null),
-                h('div', r.inputs.title, r.inputs.subtitle)),
-            ...NUMS.map(([k]) => numCell(r, k, l ? l[k] : null, k === 'amount' ? lock : (k !== 'actual' ? recvLock : ''))));
+            h('td.n', l ? `${i + 1}.` : '+',
+                l && (l.transfer || l.lease || l.calc || l.summary_only) ? h('small', l.transfer ? '🔁' : '', l.lease ? '🏠' : '', l.calc ? '🧮' : '', l.summary_only ? '∑' : '') : null),
+            h('th.title', { scope: 'row' }, h('div', r.inputs.title, r.inputs.subtitle, r.msg)),
+            ...NUMS.map(([k]) => numCell(r, k, l ? l[k] : null, k === 'amount' ? lock : (k !== 'actual' ? recvLock : ''), k === 'amount' ? note : '')));
         return r.tr;
     };
     const table = (f, dir) => {
         const lines = d.lines.filter(l => l.fund_id === f.id && l.direction === dir);
         const tbody = h('tbody');
-        const t = h('table.grid', h('caption', `${DIR_LABEL[dir]} – ${f.name}`),
-            h('thead', h('tr', h('th.title', { scope: 'col' }, DIR_LABEL[dir]), ...NUMS.map(([, label]) => h('th', { scope: 'col' }, label)))),
+        const t = h('table.grid',
+            h('colgroup', h('col.c-n'), h('col.c-title'), ...NUMS.map(([k]) => h(`col.c-${k}`))),
+            h('thead', h('tr', h('th.n', { scope: 'col' }), h('th.title', { scope: 'col' }, DIR_LABEL[dir]),
+                ...NUMS.map(([k, label]) => h(`th.c-${k}`, { scope: 'col' }, ...label.split('\n').flatMap((x, i) => i ? [h('br'), x] : [x]))))),
             tbody,
-            h('tfoot', h('tr', h('th.title', { scope: 'row' }, 'סה"כ'), ...NUMS.map(([k]) => h('td.num', { 'data-k': k })))));
+            h('tfoot', h('tr', h('td.n'), h('th.title', { scope: 'row' }, 'סה"כ'), ...NUMS.map(([k]) => h(`td.num.c-${k}`, { 'data-k': k })))));
         lines.forEach((l, i) => { const r = { line: l, fund: f, dir, inputs: {}, table: t }; rows.push(r); tbody.append(rowEl(r, i)); });
         const add = h('button.btn.ghost.sm', { type: 'button' }, '+ שורה');
         add.addEventListener('click', () => {
-            const r = { line: null, fund: f, dir, inputs: {}, table: t, key: ++fresh };
+            const r = { line: null, fund: f, dir, inputs: {}, table: t };
             rows.push(r); tbody.append(rowEl(r)); r.inputs.title.focus(); recalc();
         });
-        return [h('div.grid-wrap', t), edit ? h('div', { style: 'margin:4px 0 12px' }, add) : null];
+        // הערות אחרי הטבלה — כמו במסמך, ונשמרות יחד עם השורות
+        const key = `notes_${dir}`;
+        const ta = h('textarea.grid-note', { rows: 1, maxLength: 3000, readOnly: !edit, placeholder: edit ? 'הערה אחרי הטבלה (לא חובה) — למשל: * בשל העברת עובדי חב"ק השתנו הסעיפים' : '', 'aria-label': `הערות אחרי טבלת ה${DIR_LABEL[dir]} — ${f.name}` }, f[key] || '');
+        const fit = () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 2 + 'px'; };
+        ta.addEventListener('input', () => { fit(); recalc(); });
+        requestAnimationFrame(fit);
+        notes.push({ fund: f, dir, ta, orig: f[key] || '' });
+        return [h('h4.grid-cap', `${DIR_LABEL[dir]} – ${f.name}`), h('div.grid-wrap', t), (edit || ta.value) ? ta : null, edit ? h('div.grid-add', add) : null];
     };
 
     const save = h('button.btn.primary', { type: 'button' });
@@ -1148,31 +1204,40 @@ async function viewGrid(id) {
             for (const k of ['title', 'subtitle', ...NUMS.map(n => n[0])]) {
                 if (r.inputs[k].readOnly) continue;
                 const v = value(r, k);
-                if (Number.isNaN(v)) throw new Error(`"${value(r, 'title') || 'שורה חדשה'}": מספר לא תקין`);
                 if (!r.line || (v ?? '') !== (r.line[k] ?? '')) x[k] = v;
             }
             if (!r.line && x.amount === undefined) x.amount = 0;
             if (r.line) x.title ??= r.line.title;
             out.push(x);
         }
-        await api('lines_batch', { budget_id: b.id, lines: out });
+        if (out.length) await api('lines_batch', { budget_id: b.id, lines: out });
+        const nchg = notes.filter(x => x.ta.value !== x.orig);
+        for (const x of nchg) {
+            const f = x.fund;
+            await api('bfund_set', { budget_id: b.id, fund_id: f.id, row_income: f.row_income, row_expense: f.row_expense,
+                notes_income: x.dir === 'income' ? x.ta.value : (notes.find(o => o.fund === f && o.dir === 'income')?.ta.value ?? f.notes_income),
+                notes_expense: x.dir === 'expense' ? x.ta.value : (notes.find(o => o.fund === f && o.dir === 'expense')?.ta.value ?? f.notes_expense) });
+        }
         window.onbeforeunload = null;
-        toast(`נשמרו ${out.length} שורות`);
+        toast(`נשמר: ${out.length} שורות${nchg.length ? ` ו-${nchg.length} הערות` : ''}`);
         viewGrid(id);
     }));
     bar.append(save, undo);
 
-    put(main, sumCard,
-        h('p.hint', edit
-            ? 'כל הקופות כמו במסמך. משנים כאן כמה שרוצים, ושומרים פעם אחת. 🧮 חודשית ו-🔁 העברה מכמה קופות — הסכום נגזר, ומשנים אותו בעריכת השורה. 🏠 שכירות · ∑ רק בריכוז. "+ שורה" מוסיף שורה לטבלה.'
-            : 'ההצעה ' + STATUS_CHIP[b.status][0] + ' — לקריאה בלבד. לעריכה — להחזיר לטיוטה (⋯ במסך ההצעה).'),
-        ...d.funds.map(f => {
-            fundBal[f.id] = h('span');
-            const dirs = b.expense_first ? ['expense', 'income'] : ['income', 'expense'];
-            return h('section.grid-fund',
-                h('div.grid-head', h('b', FUND_IC[f.kind], ' ', f.name), f.address ? h('small', f.address) : null, fundBal[f.id]),
-                ...dirs.flatMap(dir => table(f, dir)));
-        }),
+    put(main, h('div.grid-top', sumCard,
+            h('p.hint', edit
+                ? 'כל הקופות כמו במסמך. משנים כמה שרוצים ושומרים פעם אחת; ההערות והאזהרות מתעדכנות תוך כדי הקלדה. 🧮 חודשית ו-🔁 העברה מכמה קופות — הסכום נגזר, ומשנים אותו בעריכת השורה. 🏠 שכירות · ∑ רק בריכוז.'
+                : 'ההצעה ' + STATUS_CHIP[b.status][0] + ' — לקריאה בלבד. לעריכה — להחזיר לטיוטה (⋯ במסך ההצעה).')),
+        h('div.grid-layout',
+            h('div.grid-doc', ...d.funds.map(f => {
+                fundBal[f.id] = h('span.grid-bal');
+                const dirs = b.expense_first ? ['expense', 'income'] : ['income', 'expense'];
+                return h('section.grid-fund',
+                    h('div.grid-head', h('h3', FUND_IC[f.kind], ' ', `הכנסות והוצאות – ${f.name}`), fundBal[f.id]),
+                    f.address ? h('p.grid-addr', f.address) : null,
+                    ...dirs.flatMap(dir => table(f, dir)));
+            })),
+            issuesBox),
         bar);
     recalc();
 }
