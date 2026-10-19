@@ -103,7 +103,15 @@ $action = $_GET['action'] ?? (is_string($in['action'] ?? null) ? $in['action'] :
 // נקודות קצה שאינן דורשות התחברות — הן כל מה שמוביל אליה.
 // נקודות קצה שאינן דורשות התחברות — הן כל מה שמוביל אליה, ובנוסף
 // עיון במתכונים ציבוריים: אורח שמגיע מקישור צריך לראות מתכון.
-$public = ['register', 'login', 'me', 'request-reset', 'resend-verification', 'tags', 'search', 'recipe', 'heartbeat'];
+$public = ['register', 'login', 'me', 'request-reset', 'resend-verification', 'tags', 'search', 'recipe', 'heartbeat',
+           'platform-link', 'platform-new'];
+
+// מחוברת לכלים הדיגיטליים (lib/platform.php): נכנסים רק דרכם. הכניסה וההרשמה של האפליקציה חסומות —
+// הסיסמה הישנה לא נמחקת, ועובדת שוב כשהאפליקציה מנותקת.
+$platformId = platformIdentity();
+if ($platformId && in_array($action, ['register', 'login', 'request-reset', 'resend-verification'], true)) {
+    fail('הכניסה לאפליקציה היא דרך הכלים הדיגיטליים', 403);
+}
 
 $user = currentUser();
 // ייבוא ברקע: אם העובד אמור לרוץ ושתק — מעירים אותו (lib/scout_job.php). וכך גם עובד האינדקס.
@@ -129,7 +137,29 @@ try {
     case 'me':
         // הדף שואל את זה בטעינה כדי לדעת אם להציג כניסה או את האפליקציה.
         // מחזיר success גם לאורח — "אינך מחובר" אינו שגיאה.
-        ok(['user' => $user ? clientUser($user) : null, 'assets_version' => assetsVersion()]);
+        // platform — מחוברת לכלים הדיגיטליים. בלי user: מסך החיבור החד-פעמי, או "חסום".
+        $platform = null;
+        if ($platformId) {
+            $acc = $user ? null : platformAccount($platformId);
+            $platform = ['name' => $platformId['name'], 'email' => $platformId['email'],
+                         'blocked' => $acc !== null && (int) $acc['blocked'] === 1];
+        }
+        ok(['user' => $user ? clientUser($user) : null, 'platform' => $platform, 'assets_version' => assetsVersion()]);
+
+    // מסך החיבור החד-פעמי (lib/platform.php) — גם מהתפריט, למי שנזכר אחר כך
+    case 'platform-link': {
+        if (!$platformId) fail('האפליקציה אינה מחוברת לכלים הדיגיטליים', 403);
+        $u = platformLinkOld($platformId, str_field($in, 'username', 254), (string) ($in['password'] ?? ''));
+        $GLOBALS['__user'] = currentUser();
+        ok(['user' => clientUser($GLOBALS['__user'] ?? $u)]);
+    }
+
+    case 'platform-new': {
+        if (!$platformId) fail('האפליקציה אינה מחוברת לכלים הדיגיטליים', 403);
+        $u = platformCreateAccount($platformId);
+        $GLOBALS['__user'] = currentUser();
+        ok(['user' => clientUser($GLOBALS['__user'] ?? $u)]);
+    }
 
     case 'register': {
         $res = createUser(

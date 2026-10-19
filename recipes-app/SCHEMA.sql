@@ -33,7 +33,17 @@ CREATE TABLE users (
   limit_quota_bytes INTEGER,   -- דריסה אישית. NULL = יורש מ-app_settings
   last_mail_at   TEXT,         -- מתי נשלח לאחרונה דוא״ל למשתמש
   last_mail_ok   INTEGER,      -- האם ה-MTA קיבל אותו. NULL = לא נשלח
-  created_at     TEXT    NOT NULL
+  created_at     TEXT    NOT NULL,
+  platform_sub   TEXT          -- חשבון הכלים הדיגיטליים המקושר (lib/platform.php). NULL = לא מקושר
+);
+-- sub אחד — חשבון אחד לכל היותר
+CREATE UNIQUE INDEX idx_users_platform_sub ON users(platform_sub) WHERE platform_sub IS NOT NULL;
+
+-- ניסיונות לחבר חשבון ישן לחשבון הכלים הדיגיטליים: 5 כשלים → נעילה של רבע שעה, לפי sub
+CREATE TABLE platform_link_attempts (
+  sub          TEXT PRIMARY KEY,
+  fails        INTEGER NOT NULL DEFAULT 0,
+  locked_until INTEGER NOT NULL DEFAULT 0
 );
 
 -- הגדרות ציבוריות של המפתח: תקרת סרטון, מקצב, תקרת תמונה. מה שאינו כאן

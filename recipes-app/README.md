@@ -15,6 +15,8 @@
 | [`lib/errors.php`](./lib/errors.php) | הבדלה בין שגיאה למשתמש לתקלה שלנו |
 | [`tools/schema-check.py`](./tools/schema-check.py) | מריץ את הסכימה, מוכיח שההבטחות עובדות, ומוודא ש-`SCHEMA.sql` ו-`lib/db.php` לא נפרדו |
 | [`tools/auth-check.php`](./tools/auth-check.php) | מריץ את שכבת החשבונות על מסד זמני |
+| [`lib/platform.php`](./lib/platform.php) + [`tools/platform-check.php`](./tools/platform-check.php) | הכניסה דרך הכלים הדיגיטליים ומסך החיבור החד-פעמי |
+| [`lib/platform.php`](./lib/platform.php) + [`tools/platform-check.php`](./tools/platform-check.php) | הכניסה דרך הכלים הדיגיטליים ומסך החיבור החד-פעמי |
 | [`tools/recipes-check.php`](./tools/recipes-check.php) | מריץ את שכבת המתכונים על מסד זמני |
 | [`tools/social-check.php`](./tools/social-check.php) | תגובות, פתקים פרטיים ומועדפים — על מסד זמני |
 | [`tools/log-check.php`](./tools/log-check.php) | היומן וטוקן הצפייה — על מסד זמני |
@@ -33,6 +35,7 @@
 ```bash
 python3 recipes-app/tools/schema-check.py    # הסכימה וההבטחות שלה
 php     recipes-app/tools/auth-check.php     # שכבת החשבונות
+php     recipes-app/tools/platform-check.php # הכניסה דרך הכלים הדיגיטליים
 php     recipes-app/tools/recipes-check.php  # שכבת המתכונים
 php     recipes-app/tools/social-check.php   # תגובות, פתקים, מועדפים
 php     recipes-app/tools/log-check.php      # יומן וטוקן צפייה
@@ -94,6 +97,17 @@ no-cache` ל-HTML/JS/CSS. בלעדיו הטלפון מחזיק גרסה ישנה
 מ-2026-10-19 `"gate": true` ב-`app.json` (החלטת בעל המערכת). כדי להיכנס צריך חשבון בפלטפורמה
 **ו**הרשאה לאפליקציה — ואחר כך, כמו קודם, החשבון של המתכונים עצמם. המשתמשים, המסד והעוגייה נשארים
 של האפליקציה. ניתוק בלחיצה: ⚙️ ← אפליקציות ← "🔌 מחוברת".
+
+**ההתחברות** (`lib/platform.php`, לפי `platform/docs/auth.md`; נבדק ב-`tools/platform-check.php`):
+
+- **מחוברת:** השער כותב `$_SERVER['PLATFORM_USER']`, והוא קובע מי המשתמש — בלי מסך ובלי סיסמה. חשבון לפי
+  `platform_sub`; אין — חשבון באותו דוא"ל (רק כשהפלטפורמה אימתה אותו), ומתקשר מעצמו; אין — **מסך חיבור
+  חד-פעמי**: "יש לי כבר חשבון" (שם משתמש וסיסמה ישנים, 5 ניסיונות → רבע שעה) או "אין לי חשבון" (חשבון
+  חדש, פעיל). ההצעה נשארת בתפריט: "🔗 חיבור חשבון ישן" — הישן מקבל את ה-sub, והחדש מתנתק.
+- **כניסה, הרשמה ואיפוס של האפליקציה — חסומים** כל עוד יש זהות מהשער (403). **הסיסמה הישנה לא נמחקת.**
+- **יציאה מהפלטפורמה = יציאה מכאן:** סשן שנפתח דרך הפלטפורמה נסגר כשאין זהות. כפתור היציאה מוסתר.
+- **מנותקת** (🔌): אין זהות, והכניסה בסיסמה עובדת כמו קודם. חשבון שנפתח דרך "אין לי חשבון" — בלי
+  סיסמה ידועה; "שכחתי סיסמה" קובע אחת. ("כניסה עם הכלים הדיגיטליים" למנותקת — `sso.md`, טרם.)
 
 **ציבורי (`public`)** — רק מה שמגיעים אליו בלי חשבון בפלטפורמה:
 

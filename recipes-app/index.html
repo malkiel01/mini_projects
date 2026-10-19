@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-title" content="מתכונים">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="apple-touch-icon" href="./assets/icons/icon-192.png">
-<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-11y">
+<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-19a">
 </head>
 <body>
 
@@ -50,6 +50,7 @@
         <div class="menu__group">
           <span class="menu__label">החשבון שלי</span>
           <a href="#/settings">הגדרות פרטיות</a>
+          <a href="#/link-account" data-platform hidden>🔗 חיבור חשבון ישן</a>
         </div>
         <div class="menu__group" data-dev hidden>
           <span class="menu__label">ניהול</span>
@@ -128,6 +129,23 @@
       <button class="link" type="button" data-goto="login">חזרה לכניסה</button>
     </form>
 
+    <!-- מחוברת לכלים הדיגיטליים, ואין עוד חשבון באפליקציה (lib/platform.php) — פעם אחת -->
+    <section class="form pane" data-pane="platform" hidden>
+      <p>נכנסת דרך הכלים הדיגיטליים בתור <b id="platform-name"></b>.</p>
+      <p class="muted">יש לך כבר חשבון במתכונים, אולי בשם משתמש או בדוא"ל אחר? אפשר לחבר אותו פעם אחת,
+        ולחזור למתכונים שלך.</p>
+      <form id="platform-link-form" class="form">
+        <label>שם משתמש או דוא"ל של החשבון הישן
+          <input name="username" required autocomplete="username" autocapitalize="off">
+        </label>
+        <label>הסיסמה הישנה
+          <input name="password" type="password" required autocomplete="current-password">
+        </label>
+        <button class="btn btn--primary" type="submit">יש לי כבר חשבון — חיבור</button>
+      </form>
+      <button id="platform-new" class="btn" type="button">אין לי חשבון — פתיחת חשבון חדש</button>
+    </section>
+
     <p id="guest-msg" class="note" hidden></p>
     <p class="muted small guest-legal">בהרשמה את/ה מסכים/ה ל<a href="./privacy.html" target="_blank" rel="noopener">מדיניות הפרטיות</a> · <a href="./delete-account.html" target="_blank" rel="noopener">מחיקת חשבון</a></p>
   </section>
@@ -138,6 +156,6 @@
   <div id="view" class="view"></div>
 </main>
 
-<script type="module" src="./assets/js/app.js?v=2026-10-11y"></script>
+<script type="module" src="./assets/js/app.js?v=2026-10-19a"></script>
 </body>
 </html>
