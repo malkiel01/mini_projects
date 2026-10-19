@@ -104,6 +104,22 @@
 
 המעבר `blocked → answered` קורה מאליו כשאדם מגיב על מטלה חסומה. אין סטטוס לזכור לשנות ביד.
 
+## כניסה דרך הכלים הדיגיטליים
+
+הלוח מאחורי השער של הפלטפורמה (`platform/docs/auth.md`). הקוד: `lib/platform.php`; הבדיקות: `tests/login.php`.
+
+- **מחוברת:** השער מעביר את הזהות ב‑`$_SERVER['PLATFORM_USER']`, והכניסה אוטומטית — בלי מסך ובלי סיסמה.
+  החשבון נמצא לפי `sub`, ואם אין — לפי מייל (רק חשבון שעוד לא מקושר).
+- **אין התאמה — מסך חד‑פעמי:** "יש לי כבר חשבון" (שם משתמש וסיסמה ישנים, 5 ניסיונות ← נעילה לרבע שעה)
+  או "אין לי חשבון" — חשבון חדש, פעיל. אין כאן הרשמה עצמית, ולכן התפקיד `member`; `admin` רק למשתמש
+  הראשון. מי שבחר "אין לי חשבון" ונזכר אחר כך — הגדרות ← "יש לי כבר חשבון ישן", ומה שיצר בחשבון החדש
+  עובר לישן.
+- **הסיסמה הישנה לא נמחקת** — רק חסומה כל עוד הלוח מחובר.
+- **מנותקת — רק בסיס:** הכניסה בסיסמה חוזרת לעבוד (אלא אם המנהל כיבה "סיסמה משלה"). המצב נקרא מ‑
+  `sso.php?action=config` ונשמר לדקה ב‑`data/platform-config.json`. הפלטפורמה לא עונה ואף פעם לא ענתה —
+  "הכניסה לא זמינה כרגע".
+- **אסימוני העובד וה‑API שלהם — בלי שינוי.** הם בכותרת, לא בעוגייה, ולא עוברים בקוד הזה.
+
 ## הפעלה
 
 1. להיכנס לכתובת. **המשתמש הראשון שנרשם הופך למנהל**, וההרשמה נסגרת אחריו.
@@ -122,7 +138,7 @@ SQLite בקובץ יחיד, `data/tasks.sqlite`. נבחר על פני MySQL כי
 
 `POST api.php?action=<פעולה>`, גוף JSON. בני אדם מזוהים בעוגיית סשן; עובדים בכותרות `X-Worker-Token` ו‑`X-Worker-Name`.
 
-**בני אדם:** `login` · `logout` · `me` · `bootstrap-status` · `register-first` · `create-user` · `worker-token` · `topics` · `create-topic` · `update-topic` · `tasks` · `task` · `create-task` · `update-task` · `add-note`
+**בני אדם:** `login` · `logout` · `me` · `platform-new` · `platform-link` · `bootstrap-status` · `register-first` · `create-user` · `worker-token` · `topics` · `create-topic` · `update-topic` · `tasks` · `task` · `create-task` · `update-task` · `add-note`
 
 **פלטפורמה:** `my-connections` · `connect-github` · `disconnect-github` · `providers` · `connect-provider` · `disconnect-provider` · `set-default-provider` · `test-provider` · `repos` · `create-repo` · `projects` · `create-project` · `project` · `people` · `set-member` · `remove-member` · `repo-tree` · `repo-write`
 

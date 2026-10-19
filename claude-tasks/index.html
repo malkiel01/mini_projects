@@ -35,6 +35,32 @@
   </form>
 </div>
 
+<!-- ── מסך חיבור חד-פעמי: נכנסו דרך הפלטפורמה, ואין חשבון מקושר ───── -->
+<div class="gate" id="linkGate" hidden>
+  <div class="gate__card">
+    <h1>מטלות לקלוד</h1>
+    <p class="gate__sub" id="linkHello">ברוכים הבאים</p>
+    <p class="hint">יש לכם כבר חשבון כאן, עם שם משתמש וסיסמה? חברו אותו פעם אחת, ותמשיכו עם המטלות שלכם.</p>
+    <div class="stack" id="linkChoice">
+      <button type="button" class="btn btn--primary btn--wide" id="linkHave">יש לי כבר חשבון</button>
+      <button type="button" class="btn btn--ghost btn--wide" id="linkNew">אין לי חשבון</button>
+    </div>
+    <form class="stack" id="linkForm" hidden>
+      <label class="field">
+        <span>שם משתמש</span>
+        <input type="text" id="lUser" autocomplete="username" dir="ltr" required>
+      </label>
+      <label class="field">
+        <span>סיסמה</span>
+        <input type="password" id="lPass" autocomplete="current-password" required>
+      </label>
+      <button type="submit" class="btn btn--primary btn--wide">חיבור</button>
+      <button type="button" class="btn btn--ghost btn--wide" id="linkBack">חזרה</button>
+    </form>
+    <p class="gate__err" id="linkErr" hidden></p>
+  </div>
+</div>
+
 <!-- ── האפליקציה ─────────────────────────────────────────────── -->
 <div class="app" id="app" hidden>
 
@@ -321,6 +347,20 @@
       <button type="button" class="icon-btn" data-close="settings">✕</button>
     </header>
     <div class="sheet__body">
+      <section id="oldAccount" hidden>
+        <h3>יש לי כבר חשבון ישן</h3>
+        <p class="hint">
+          החשבון הזה נפתח בכניסה דרך הכלים הדיגיטליים. אם היה לכם כאן חשבון קודם, עם שם משתמש
+          וסיסמה — חברו אותו, ומה שיצרתם בחשבון הזה יעבור אליו.
+        </p>
+        <form class="stack" id="oldForm">
+          <label class="field"><span>שם משתמש</span><input type="text" id="oUser" dir="ltr" autocomplete="username"></label>
+          <label class="field"><span>סיסמה</span><input type="password" id="oPass" autocomplete="current-password"></label>
+          <button type="submit" class="btn btn--ghost">חיבור</button>
+        </form>
+        <hr>
+      </section>
+
       <h3>חיבור Claude</h3>
       <p class="hint">
         זה האסימון שמאפשר לסשן Claude או ל‑cron בשרת למשוך מטלות ולכתוב חזרה.

@@ -18,6 +18,7 @@ require_once __DIR__ . '/lib/github.php';
 require_once __DIR__ . '/lib/projects.php';
 require_once __DIR__ . '/lib/engine.php';
 require_once __DIR__ . '/lib/skills.php';
+require_once __DIR__ . '/lib/platform.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -83,6 +84,21 @@ $user   = currentUser();
 $scope  = workerScope();
 $worker = $scope['name'] ?? null;
 
+/*
+ * כניסה דרך הפלטפורמה (lib/platform.php). השער העביר זהות — היא לבדה קובעת
+ * מי המשתמש; pending = זהות בלי חשבון, והמסך החד-פעמי מחליט. אין זהות
+ * והאפליקציה מחוברת — יציאה מהפלטפורמה היא יציאה מכאן. אסימון עובד לא
+ * עובר כאן בכלל.
+ */
+$identity = $scope ? null : platformIdentity();
+$pending  = null;
+if ($identity) {
+    ['user' => $user, 'pending' => $pending] = platformResolve($identity);
+} elseif ($user && !$scope && platformMode()['state'] === 'connected') {
+    logout();
+    $user = null;
+}
+
 /**
  * מטלה שעובד רשאי לגעת בה.
  *
@@ -102,7 +118,7 @@ function workerTask(?array $scope, int $id): array {
  * פעולות פתוחות: כניסה, והרשמה כל עוד אין אף משתמש. ההרשמה נסגרת מאליה
  * ברגע שקיים משתמש ראשון, כדי שהמערכת לא תישאר פתוחה להרשמה לכל עובר.
  */
-$public = ['login', 'bootstrap-status', 'register-first'];
+$public = ['login', 'bootstrap-status', 'register-first', 'platform-new', 'platform-link'];
 
 if (!in_array($action, $public, true) && !$user && !$worker) {
     fail('נדרשת התחברות', 401);
@@ -120,9 +136,28 @@ try {
     /* ── כניסה וחשבונות ────────────────────────────────────────── */
 
     case 'bootstrap-status':
-        ok(['has_users' => userCount() > 0, 'user' => $user]);
+        ok(['has_users' => userCount() > 0, 'user' => $user,
+            'platform' => (bool) $identity,
+            'pending'  => $pending ? ['name' => $pending['name'], 'email' => $pending['email']] : null,
+            'login_blocked' => ($user || $identity) ? null : passwordLoginBlocked()]);
+
+    /** המסך החד-פעמי: "אין לי חשבון" — חשבון חדש, פעיל. */
+    case 'platform-new':
+        if (!$pending) fail('אין חשבון לפתוח — כבר נכנסתם, או שהכניסה אינה דרך הכלים הדיגיטליים', 409);
+        ok(['user' => platformCreateAccount($pending)['user']]);
+
+    /**
+     * "יש לי כבר חשבון" — מהמסך החד-פעמי, או מההגדרות למי שנזכר אחרי שנפתח
+     * לו חשבון חדש.
+     */
+    case 'platform-link':
+        if (!$identity) fail('החיבור זמין רק בכניסה דרך הכלים הדיגיטליים', 403);
+        if ($user && empty($user['link_offer'])) fail('החשבון הזה כבר מחובר', 409);
+        ok(['user' => platformLinkOld($identity, str_field($in, 'username', 32),
+                                      (string) ($in['password'] ?? ''))['user']]);
 
     case 'register-first':
+        if ($blocked = passwordLoginBlocked()) fail($blocked, 403);
         if (userCount() > 0) fail('ההרשמה סגורה — בקשו ממנהל המערכת לפתוח לכם חשבון', 403);
         $created = createUser(
             str_field($in, 'username', 32),
@@ -133,6 +168,7 @@ try {
         ok(['user' => $created]);
 
     case 'login':
+        if ($blocked = passwordLoginBlocked()) fail($blocked, 403);
         $u = login(str_field($in, 'username', 32), (string) ($in['password'] ?? ''));
         if (!$u) fail('שם משתמש או סיסמה שגויים', 401);
         ok(['user' => $u]);
