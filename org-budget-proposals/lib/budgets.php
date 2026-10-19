@@ -107,6 +107,8 @@ function budgets_migrate(PDO $pdo): void
     add_columns($pdo, 'budget_lines', ['summary_only INTEGER NOT NULL DEFAULT 0', 'lease INTEGER NOT NULL DEFAULT 0',
         'lease_property TEXT', 'lease_tenant TEXT', 'lease_monthly TEXT', 'lease_annual INTEGER', 'lease_period TEXT']);
     add_columns($pdo, 'budgets', ['expense_first INTEGER NOT NULL DEFAULT 0']);
+    // עיצוב המסמך (lib/export.php, DOC_STYLE) — JSON של מה ששונה מברירת המחדל
+    add_columns($pdo, 'orgs', ['doc_style TEXT']);
 }
 
 /** עמודה חדשה בטבלה קיימת — רק אם עוד אין. */

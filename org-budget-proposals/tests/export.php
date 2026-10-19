@@ -130,6 +130,37 @@ file_put_contents($txt, 'not an image');
 try { org_logo_upload($s, ['org_id' => $r['org_id']], ['logo' => ['tmp_name' => $txt, 'error' => 0, 'size' => 12]]); check(false, 'קובץ שאינו תמונה נדחה'); }
 catch (ApiError $e) { check($e->status === 422, 'קובץ שאינו תמונה נדחה → ' . $e->getMessage()); }
 
+echo "עיצוב המסמך\n";
+check(doc_model($s, $bid)['style'] === DOC_STYLE && doc_model($s, $bid)['style_from'] === 'default', 'בלי הגדרה — ברירת המחדל');
+check(doc_style_in(['size_text' => '11', 'size_table' => 99, 'underline' => 0, 'font' => 'Arial']) === ['size_table' => 16, 'underline' => false],
+    'קלט: רק מה ששונה מברירת המחדל, ובגבולות (טבלה עד 16)');
+try { doc_style_in(['font' => 'Comic Sans']); check(false, 'גופן לא מוכר נדחה'); } catch (ApiError $e) { check($e->status === 422, 'גופן לא מוכר נדחה'); }
+$res = org_style_set($s, ['org_id' => $r['org_id'], 'style' => ['font' => 'David', 'size_table' => 12, 'title_align' => 'right', 'underline' => false,
+    'margin_side' => 15, 'page_numbers' => false, 'fund_new_page' => false, 'show_plan' => false]]);
+check($res['from'] === 'own' && $res['style']['font'] === 'David', 'נשמר לארגון');
+$f = export('export_docx', $s, $bid, 'docx');
+$z->open($f);
+$doc = $z->getFromName('word/document.xml');
+$sty = $z->getFromName('word/styles.xml');
+check(str_contains($sty, 'w:ascii="David"') && str_contains($sty, 'w:cs="David"'), 'Word: הגופן');
+check(str_contains($doc, '<w:sz w:val="24"/>') && !str_contains($doc, '<w:u w:val="single"/>'), 'Word: גודל הטבלה (12) ובלי קו תחתון');
+check(str_contains($doc, 'w:right="851"') && !str_contains($doc, 'footerReference'), 'Word: שוליים 15 מ"מ ובלי מספרי עמודים');
+check(!str_contains($doc, 'תכנית עבודה לשנת') && substr_count($doc, '<w:pageBreakBefore/>') === 3,
+    'Word: בלי תכנית עבודה, והקופות ברצף — מעבר עמוד רק לריכוז, לקופה הראשונה ולנספח');
+$z->close();
+$f = export('export_xlsx', $s, $bid, 'xlsx');
+$z->open($f);
+check(str_contains($z->getFromName('xl/styles.xml'), '<name val="David"/>') && !str_contains($z->getFromName('xl/worksheets/sheet1.xml'), 'oddFooter'), 'אקסל: הגופן, ובלי מספר עמוד');
+$z->close();
+$sub = db()->query('SELECT id FROM orgs WHERE parent_id IS NOT NULL LIMIT 1')->fetchColumn();
+if ($sub) {
+    $st = db()->prepare('SELECT * FROM orgs WHERE id = ?');
+    $st->execute([$sub]);
+    check(org_doc_style($st->fetch())['from'] === 'parent', 'תת-ארגון בלי עיצוב משלו — של הארגון הראשי');
+}
+org_style_set($s, ['org_id' => $r['org_id'], 'style' => null]);
+check(doc_model($s, $bid)['style'] === DOC_STYLE, 'חזרה לברירת המחדל');
+
 exec('rm -rf ' . escapeshellarg($tmp));
 echo $fails ? "\n✕ $fails בדיקות נכשלו\n" : "\n✓ הכול עבר\n";
 exit($fails ? 1 : 0);

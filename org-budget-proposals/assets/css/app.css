@@ -259,27 +259,31 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 /* ===== המסמך (שלב 5): עמודי A4 על המסך, ובהדפסה — רק הם ===== */
 .print-mode main { max-width: none; padding-inline: 4px; }
 .doc-bar { display: flex; flex-wrap: wrap; gap: var(--s2); margin: 0 auto var(--s3); max-width: 860px; }
-.doc { --fit: 1; zoom: var(--fit); width: 196mm; margin: 0 auto; color: #000; font: 11pt/1.35 Arial, 'Noto Sans Hebrew', sans-serif; }
-.doc .pg { background: #fff; padding: 12mm 0 10mm; margin-bottom: 6mm; box-shadow: 0 1px 4px rgba(0, 0, 0, .25); padding-inline: 8mm; width: 196mm; box-sizing: border-box; }   /* תוכן 180מ"מ — כמו בהדפסה */
+.doc { --fit: 1; zoom: var(--fit); --m-side: 20mm; --fs-text: 11; --fs-table: 10; --fs-title: 14; --fs-head: 12; --fs-cover: 24; --doc-line: 1.1; --doc-u: underline; --doc-align: center;
+    width: calc(210mm - 2 * var(--m-side) + 16mm); margin: 0 auto; color: #000;
+    font: calc(var(--fs-text) * 1pt) / calc(var(--doc-line) * 1.2) var(--doc-font, Arial, 'Noto Sans Hebrew', sans-serif); }
+/* עמוד על המסך: רוחב התוכן כמו בהדפסה (A4 פחות השוליים שנבחרו), ועוד ריפוד צר */
+.doc .pg { background: #fff; padding: 12mm 0 10mm; margin-bottom: 6mm; box-shadow: 0 1px 4px rgba(0, 0, 0, .25); padding-inline: 8mm; width: calc(210mm - 2 * var(--m-side) + 16mm); box-sizing: border-box; }
+.doc .fund-flow + .fund-flow { margin-top: 10mm; }
 .doc .cover { text-align: center; padding-top: 25mm; }
-.doc .c-org { font-size: 24pt; font-weight: 700; }
-.doc .c-sub { font-size: 18pt; font-weight: 700; margin-top: 6mm; }
+.doc .c-org { font-size: calc(var(--fs-cover) * 1pt); font-weight: 700; }
+.doc .c-sub { font-size: calc(var(--fs-cover) * .75pt); font-weight: 700; margin-top: 6mm; }
 .doc .c-logo { display: block; max-width: 50mm; max-height: 60mm; margin: 14mm auto; }
-.doc .c-title { font-size: 26pt; font-weight: 700; margin: 10mm 0 6mm; }
-.doc .c-to { font-weight: 700; margin-bottom: 18mm; }
-.doc .c-sign p { font-weight: 700; margin-bottom: 5mm; }
-.doc .d-title { font-size: 14pt; text-align: center; text-decoration: underline; margin-bottom: 4mm; }
-.doc .d-center { font-size: 13pt; text-align: center; text-decoration: underline; margin: 0 0 4mm; }
-.doc .d-head { font-size: 12pt; text-decoration: underline; margin: 4mm 0 1mm; }
-.doc .d-cap { font-size: 11pt; text-align: center; text-decoration: underline; margin: 5mm 0 1.5mm; break-after: avoid; }
+.doc .c-title { font-size: calc((var(--fs-cover) + 2) * 1pt); font-weight: 700; margin: 10mm 0 6mm; }
+.doc .c-to { font-weight: 700; margin-bottom: 18mm; font-size: calc((var(--fs-text) + 1) * 1pt); }
+.doc .c-sign p { font-weight: 700; margin-bottom: 5mm; font-size: calc((var(--fs-text) + 1) * 1pt); }
+.doc .d-title { font-size: calc(var(--fs-title) * 1pt); text-align: var(--doc-align); text-decoration: var(--doc-u); margin-bottom: 4mm; break-after: avoid; }
+.doc .d-center { font-size: calc((var(--fs-head) + 1) * 1pt); text-align: var(--doc-align); text-decoration: var(--doc-u); margin: 0 0 4mm; }
+.doc .d-head { font-size: calc(var(--fs-head) * 1pt); text-decoration: var(--doc-u); margin: 4mm 0 1mm; }
+.doc .d-cap { font-size: calc(var(--fs-head) * 1pt); text-align: var(--doc-align); text-decoration: var(--doc-u); margin: 5mm 0 1.5mm; break-after: avoid; }
 .doc .d-para { margin-bottom: 2mm; }
 .doc .d-bullet { margin-inline-start: 4mm; }
-.doc .d-note { font-size: 10pt; font-weight: 700; margin-top: 3mm; }
-.doc .dt { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 9.5pt; }
+.doc .d-note { font-size: calc(var(--fs-table) * 1pt); font-weight: 700; margin-top: 3mm; }
+.doc .dt { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: calc(var(--fs-table) * .95pt); }
 .doc .dt th, .doc .dt td { border: 1px solid #000; padding: 1mm 1.5mm; vertical-align: middle; overflow-wrap: anywhere; }
 .doc .dt th { background: #e7e6e6; font-weight: 700; text-align: center; }
 .doc .dt td.n { text-align: center; }
-.doc .dt td small { font-size: 8pt; }
+.doc .dt td small { font-size: calc((var(--fs-table) - 2) * 1pt); }
 .doc .dt tr { break-inside: avoid; }
 .doc .dt tr.tot td { background: #f2f2f2; font-weight: 700; }
 @page { size: A4; margin: 15mm 15mm 18mm; @bottom-center { content: counter(page); font: 10pt Arial, sans-serif; } }

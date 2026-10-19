@@ -1664,7 +1664,7 @@ async function viewPrint(id) {
         return;
     }
     document.title = d.file;
-    const c = d.cover, cols = d.cols;
+    const c = d.cover, cols = d.cols, st = d.style;
     const br = t => String(t ?? '').split('\n').flatMap((x, i) => i ? [h('br'), x] : [x]);
     // מספר בבידוד משמאל לימין — אחרת בדף עברי מינוס עובר לצד הימני ("1,000-")
     const num = v => (v === null || v === undefined) ? '' : h('bdi', { dir: 'ltr' }, Number(v).toLocaleString('he-IL'));
@@ -1674,19 +1674,18 @@ async function viewPrint(id) {
     const td = (v, cls = '') => h(`td${cls ? '.' + cls : ''}`, v);
     const pg = (...kids) => h('section.pg', ...kids);
 
-    const cover = pg(h('div.cover',
+    const cover = !st.show_cover ? null : pg(h('div.cover',
         h('p.c-org', c.org), c.subtitle ? h('p.c-sub', c.subtitle) : null,
         c.has_logo ? h('img.c-logo', { src: fileUrl('org_logo', c.logo_org), alt: '' }) : h('div', { style: 'height:40mm' }),
         h('p.c-title', c.title), c.submitted_to ? h('p.c-to', c.submitted_to) : null,
         h('div.c-sign', ...c.signers.map(s => h('p', h('b', s.name), ...s.titles.map(t => [h('br'), t]))))));
-    cover.classList.add('first');
 
-    const plan = d.plan.blocks.length ? pg(h('h2.d-title', d.plan.title), ...d.plan.blocks.map(b =>
+    const plan = st.show_plan && d.plan.blocks.length ? pg(h('h2.d-title', d.plan.title), ...d.plan.blocks.map(b =>
         b.type === 'center' ? h('h3.d-center', b.text) : b.type === 'heading' ? h('h3.d-head', b.text)
             : b.type === 'bullet' ? h('p.d-bullet', '• ', b.text) : h('p.d-para', b.text))) : null;
 
     const refs = [];
-    const summary = pg(h('h2.d-title', d.summary.title), ...d.summary.sections.map(sec => [
+    const summary = !st.show_summary ? null : pg(h('h2.d-title', d.summary.title), ...d.summary.sections.map(sec => [
         h('h3.d-cap', sec.title),
         table(['', cols.prev, cols.actual, cols.cur, 'פירוט'], [
             ...sec.rows.map(r => {
@@ -1698,8 +1697,9 @@ async function viewPrint(id) {
         ], [34, 17, 17, 17, 15])]),
         d.summary.note ? h('p.d-note', d.summary.note) : null);
 
+    // כל קופה בעמוד חדש — או ברצף, בעמוד אחד שנמשך (st.fund_new_page)
     const funds = d.funds.map(f => {
-        const s = pg(h('h2.d-title', f.title), f.address ? h('h3.d-center', f.address) : null,
+        const s = (st.fund_new_page ? pg : (...k) => h('div.fund-flow', ...k))(h('h2.d-title', f.title), f.address ? h('h3.d-center', f.address) : null,
             ...f.tables.map(t => [h('h3.d-cap', t.caption), table(['', DIR_LABEL[t.dir], cols.prev, cols.actual, cols.cur], [
                 ...t.rows.map(r => h('tr', td(r.n + '.', 'n'), td([h('b', r.title), r.subtitle ? [h('br'), h('small', r.subtitle)] : null]),
                     td(num(r.prev), 'n'), td(num(r.actual), 'n'), td([num(r.cur), r.note ? [h('br'), h('small', r.note)] : null], 'n'))),
@@ -1711,7 +1711,7 @@ async function viewPrint(id) {
     });
 
     const ac = d.appendix_cols;
-    const appendix = d.appendix ? pg(...d.appendix.groups.map(g => {
+    const appendix = st.show_appendix && d.appendix ? pg(...d.appendix.groups.map(g => {
         let last = null;
         return [h('h2.d-title', d.appendix.title), h('h3.d-cap', g.title), table([ac.property, ac.tenant, ac.monthly, ac.annual, ac.period], [
             ...g.rows.map(r => { const p = r.property === last ? '' : r.property; last = r.property;
@@ -1720,20 +1720,26 @@ async function viewPrint(id) {
         ], [22, 24, 18, 18, 18])];
     })) : null;
 
-    const doc = h('div.doc', cover, plan, summary, ...funds, appendix);
+    const doc = h('div.doc', cover, plan, summary, ...(st.fund_new_page ? funds : funds.length ? [pg(...funds)] : []), appendix);
+    doc.querySelector('.pg')?.classList.add('first');
+    applyDocStyle(doc, st);
     const bar = h('div.doc-bar', h('button.btn.primary', { type: 'button', onclick: () => window.print() }, '🖨️ הדפסה / שמירה כ-PDF'),
         ...exportButtons(id).slice(1),
+        d.can_edit ? h('button.btn.ghost', { type: 'button', onclick: () => docStyleSheet(d, id) }, '🖋️ עיצוב המסמך') : null,
         h('p.hint', { style: 'margin:0;flex-basis:100%' }, 'ב"הדפסה" בוחרים "שמירה כ-PDF". מספרי העמודים בדף הריכוז מחושבים לפי העמודים כאן.'));
     put(main, bar, doc);
 
     // מספרי עמודים: כל חלק מתחיל בעמוד חדש; גובה עמוד A4 פחות השוליים (מ"מ → פיקסלים ב-96dpi)
     await (document.fonts?.ready || Promise.resolve());
-    const pageH = (297 - 15 - 18) * 96 / 25.4;
+    const mm = 96 / 25.4;
+    const pageH = (297 - st.margin_top - st.margin_bottom) * mm;
     let page = 1;
     const pageOf = {};
     for (const s of doc.querySelectorAll('.pg')) {
         if (s.dataset.fund) pageOf[s.dataset.fund] = page;
-        page += Math.max(1, Math.ceil((s.scrollHeight - 22 * 96 / 25.4 - 2) / pageH));   // בלי הריפוד של העמוד על המסך
+        // קופות ברצף: העמוד של כל קופה — לפי המקום שלה בתוך החלק
+        for (const f of s.querySelectorAll('.fund-flow')) pageOf[f.dataset.fund] = page + Math.max(0, Math.floor((f.offsetTop - s.offsetTop - 12 * mm - 2) / pageH));
+        page += Math.max(1, Math.ceil((s.scrollHeight - 22 * mm - 2) / pageH));   // בלי הריפוד של העמוד על המסך
     }
     for (const [el, ids] of refs) {
         const ps = ids.map(i => pageOf[i]).filter(Boolean);
@@ -1744,6 +1750,53 @@ async function viewPrint(id) {
     const fit = () => doc.style.setProperty('--fit', Math.min(1, (main.clientWidth - 8) / doc.scrollWidth));
     fit();
     window.addEventListener('resize', fit, { once: true });
+}
+
+// ── עיצוב המסמך: גופן, גדלים, כותרות, שוליים, עימוד, ואילו חלקים — לארגון (ותת-ארגון יורש) ──
+
+function applyDocStyle(doc, st) {
+    const v = { '--doc-font': `'${st.font}', Arial, 'Noto Sans Hebrew', sans-serif`, '--fs-text': st.size_text, '--fs-table': st.size_table,
+        '--fs-title': st.size_title, '--fs-head': st.size_head, '--fs-cover': st.size_cover, '--doc-line': st.line,
+        '--doc-u': st.underline ? 'underline' : 'none', '--doc-align': st.title_align === 'right' ? 'start' : 'center',
+        '--m-top': `${st.margin_top}mm`, '--m-bottom': `${st.margin_bottom}mm`, '--m-side': `${st.margin_side}mm` };
+    for (const [k, x] of Object.entries(v)) doc.style.setProperty(k, x);
+    // @page לא מקבל משתנים — כלל משלו, שמוחלף בכל פתיחה של המסמך
+    let pageCss = document.getElementById('doc-page');
+    if (!pageCss) document.head.append(pageCss = h('style', { id: 'doc-page' }));
+    pageCss.textContent = `@page { margin: ${st.margin_top}mm ${st.margin_side}mm ${st.margin_bottom}mm; }`
+        + (st.page_numbers ? (st.show_cover ? '' : '@page :first { @bottom-center { content: counter(page); } }') : '@page { @bottom-center { content: none; } }');
+}
+
+function docStyleSheet(d, id) {
+    const st = d.style, def = d.style_default;
+    const num = (label, name, step = .5) => h('label.f', h('span', label),
+        h('input', { name, type: 'number', step, value: st[name], inputMode: 'decimal', dir: 'ltr', placeholder: String(def[name]) }));
+    const sw = (name, label) => h('label.switch', h('input', { type: 'checkbox', name, value: '1', checked: !!st[name] }), h('span', label));
+    const from = { own: `העיצוב של ${d.org_name}.`, parent: 'כרגע — העיצוב של הארגון הראשי. שמירה כאן תיתן לתת-הארגון עיצוב משלו.', default: 'כרגע — ברירת המחדל.' }[d.style_from];
+    const reset = h('button.btn.ghost', { type: 'button' }, d.is_sub ? '↺ כמו הארגון הראשי' : '↺ ברירת המחדל');
+    reset.addEventListener('click', busy(reset, async () => {
+        await api('org_style_set', { org_id: d.org_id, style: null }); sheet.close(); toast('העיצוב חזר לברירת המחדל'); viewPrint(id);
+    }));
+    formSheet('🖋️ עיצוב המסמך', [
+        h('p.hint', `חל על כל ההצעות של ${d.org_name} — במסך, ב-PDF, ב-Word ובאקסל. ${from}`),
+        h('label.f', h('span', 'גופן'), h('select', { name: 'font' }, ...d.fonts.map(f => h('option', { value: f, selected: f === st.font, style: `font-family:'${f}'` }, f)))),
+        h('section.group', h('h3', 'גודל הכתב', h('small', 'בנקודות')),
+            h('div.fields', num('טקסט', 'size_text'), num('טבלאות', 'size_table'), num('כותרת עמוד', 'size_title'), num('כותרת משנה', 'size_head'), num('שם הארגון בשער', 'size_cover'))),
+        h('section.group', h('h3', 'כותרות'),
+            seg('title_align', [['center', 'במרכז'], ['right', 'לימין']], st.title_align, 'יישור הכותרות'),
+            sw('underline', 'קו תחתון בכותרות'),
+            h('label.f', h('span', 'ריווח שורות'), h('select', { name: 'line' }, ...[1, 1.1, 1.15, 1.25, 1.5, 2].map(x => h('option', { value: x, selected: x === +st.line }, String(x)))))),
+        h('section.group', h('h3', 'עימוד', h('small', 'שוליים במ"מ')),
+            h('div.fields', num('עליון', 'margin_top', 1), num('תחתון', 'margin_bottom', 1), num('צדדים', 'margin_side', 1)),
+            sw('fund_new_page', 'כל קופה בעמוד חדש'), sw('page_numbers', 'מספרי עמודים')),
+        h('section.group', h('h3', 'חלקי המסמך'),
+            sw('show_cover', 'שער'), sw('show_plan', 'תכנית עבודה'), sw('show_summary', 'דף ריכוז'), sw('show_appendix', 'נספח שכירויות')),
+    ], async x => {
+        const style = {};
+        for (const k of Object.keys(def)) style[k] = typeof def[k] === 'boolean' ? !!x[k] : typeof def[k] === 'number' ? (x[k] === '' ? def[k] : +x[k]) : x[k];
+        await api('org_style_set', { org_id: d.org_id, style });
+        toast('העיצוב נשמר'); viewPrint(id);
+    }, [h('div.row-btns', reset)]);
 }
 
 // ── לוגו לשער ──
