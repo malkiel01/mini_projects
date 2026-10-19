@@ -1,0 +1,11 @@
+# חסימת גישה ישירה לכל תיקיית הנתונים.
+#
+# כאן יושבים חשבונות המשתמשים (סיסמה מוצפנת ואסימון כניסה), אנשי הקשר, העיצובים
+# והרקעים שהמשתמשים העלו, וסיסמת המנהל. הכול מוגש רק דרך api.php, שבודק מי המבקש.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>
