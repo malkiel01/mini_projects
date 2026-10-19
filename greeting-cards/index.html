@@ -1112,7 +1112,8 @@
 <body>
 
 <!-- ─── Auth Overlay ───────────────────────────────── -->
-<div class="auth-overlay" id="authOverlay">
+<!-- מוסתר עד ש-checkAuth יודע שאין משתמש: כשהאפליקציה מחוברת לפלטפורמה הוא לא מופיע בכלל. -->
+<div class="auth-overlay hidden" id="authOverlay">
     <div class="auth-box">
         <h1>🎆 כרטיסי ברכה</h1>
         <div class="subtitle">התחברו כדי לשמור את אנשי הקשר והכרטיסים שלכם</div>
@@ -4386,6 +4387,7 @@ async function checkAuth() {
             return true;
         }
     } catch (e) {}
+    document.getElementById('authOverlay').classList.remove('hidden');
     return false;
 }
 
