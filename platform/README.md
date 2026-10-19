@@ -374,7 +374,8 @@ Google (`sso.php?action=config`). ההרשאה בפלטפורמה היא האי�
 `store-listing.zip` (טקסטים, תמונות, תשובות למדיניות, Data safety), `assetlinks.json`, `build.json`. APK — לכולם;
 AAB וקובץ ההגדרות — רק למנהל (גיליון האפליקציה). הקבצים עצמם ב-Release ציבורי: אין בהם סוד — זה התוכן שממילא
 בחנות. התבנית לאפליקציית אנדרואיד (TWA): `recipes-app/android/` ו-`.github/workflows/recipes-twa.yml` — מעתיקים,
-לא משנים את המקור. מפתח העלאה לכל אפליקציה, מוצפן בתיקייה שלה; Play App Signing — גוגל מחזיקה את מפתח החתימה.
+לא משנים את המקור. מפתח העלאה לכל אפליקציה, מוצפן בתיקייה שלה, ו**סיסמה אחת לכולם** — הסוד
+`ANDROID_KEYSTORE_PASSWORD` (הוכרע 2026-10-19); Play App Signing — גוגל מחזיקה את מפתח החתימה.
 
 **`assetlinks.json` משותף** — `https://mbe-plus.com/.well-known/assetlinks.json`, מחוץ ל-DEPLOY_PATH (הותר
 2026-10-19). הפריסה מאחדת (`tools/assetlinks.php`): הקיים בשרת (שום רשומה לא נמחקת) + `assetlinks.json` מתיקיית
