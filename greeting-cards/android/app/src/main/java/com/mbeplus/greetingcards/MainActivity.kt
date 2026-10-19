@@ -67,8 +67,15 @@ class MainActivity : AppCompatActivity() {
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                val url = request.url.toString()
-                return if (url.contains("mbe-plus.com/mini_projects/greeting-cards")) {
+                // הכלי מאחורי השער של הפלטפורמה: בלי כניסה, השער מפנה לדף הכניסה
+                // ‏(/mini_projects/?next=…). הוא חייב להיפתח כאן, כדי שעוגיית הכניסה
+                // תישמר ב-WebView ולא בדפדפן חיצוני.
+                val path = request.url.path ?: ""
+                val inApp = request.url.host == "mbe-plus.com" && (
+                    path.startsWith("/mini_projects/greeting-cards") ||
+                    path == "/mini_projects/" || path == "/mini_projects/index.html"
+                )
+                return if (inApp) {
                     false
                 } else {
                     startActivity(Intent(Intent.ACTION_VIEW, request.url))
