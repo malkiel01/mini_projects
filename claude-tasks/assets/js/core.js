@@ -33,6 +33,7 @@ export function set(selector, prop, value) {
 export const state = {
 
   user: null,
+  platform: false,
   topics: [],
   topicId: null,
   status: 'active',

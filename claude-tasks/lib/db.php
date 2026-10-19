@@ -179,6 +179,18 @@ function migrate(PDO $pdo): void {
     addColumn($pdo, 'users', 'default_provider', "TEXT NOT NULL DEFAULT ''");
     addColumn($pdo, 'tasks', 'project_id',        'INTEGER');
 
+    // כניסה דרך הפלטפורמה (lib/platform.php). platform_sub ריק = לא מקושר.
+    // link_offer = נפתח דרך הפלטפורמה, ועוד אפשר לחבר אליו חשבון ישן.
+    addColumn($pdo, 'users', 'platform_sub', "TEXT NOT NULL DEFAULT ''");
+    addColumn($pdo, 'users', 'email',        "TEXT NOT NULL DEFAULT ''");
+    addColumn($pdo, 'users', 'link_offer',   'INTEGER NOT NULL DEFAULT 0');
+    $pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_sub ON users(platform_sub) WHERE platform_sub <> ''");
+    $pdo->exec('CREATE TABLE IF NOT EXISTS login_locks (
+                    lock_key     TEXT PRIMARY KEY,
+                    fails        INTEGER NOT NULL DEFAULT 0,
+                    locked_until INTEGER NOT NULL DEFAULT 0
+                )');
+
     // מי מבצע את המטלה. ריק = ברירת המחדל של מי שפתח אותה.
     addColumn($pdo, 'tasks', 'provider',          "TEXT NOT NULL DEFAULT ''");
     addColumn($pdo, 'tasks', 'model',             "TEXT NOT NULL DEFAULT ''");

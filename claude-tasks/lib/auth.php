@@ -34,7 +34,7 @@ function currentUser(): ?array {
     // כולל את שדות הפרופיל שכל בקשה נזקקת להם. הסודות עצמם אינם כאן —
     // הם נשלפים ומפוענחים רק בנקודה שבה משתמשים בהם.
     $st = db()->prepare('SELECT id, username, display_name, role, github_login, github_scopes,
-                                default_provider
+                                default_provider, email, length(platform_sub) > 0 AS platform_linked, link_offer
                            FROM users WHERE id = ?');
     $st->execute([$_SESSION['uid']]);
     return $st->fetch() ?: null;

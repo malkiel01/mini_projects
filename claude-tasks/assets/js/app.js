@@ -38,7 +38,17 @@ let gateMode = 'login';
 
 async function boot() {
   const info = await api('bootstrap-status');
+  state.platform = !!info.platform;
   if (info.user) { state.user = info.user; return enterApp(); }
+  if (info.pending) return showLinkGate(info.pending);
+
+  // מחוברת לפלטפורמה (או שהיא לא עונה): אין כאן כניסה בסיסמה — רק ההסבר.
+  if (info.login_blocked) {
+    $('#gateSub').textContent = info.login_blocked;
+    $$('#gateForm .field, #gSubmit').forEach((n) => { n.hidden = true; });
+    $('#gate').hidden = false;
+    return;
+  }
 
   gateMode = info.has_users ? 'login' : 'register';
   $('#gateSub').textContent = gateMode === 'login'
@@ -66,9 +76,63 @@ on('#gateForm', 'submit', async (e) => {
   }
 });
 
+/* ── מסך חיבור חד-פעמי (platform/docs/auth.md, סעיף 4) ───────── */
+
+function showLinkGate(identity) {
+  $('#linkHello').textContent = identity.name ? `ברוכים הבאים, ${identity.name}` : 'ברוכים הבאים';
+  $('#linkGate').hidden = false;
+}
+
+function linkError(ex) {
+  $('#linkErr').textContent = ex.message;
+  $('#linkErr').hidden = false;
+}
+
+on('#linkHave', 'click', () => {
+  $('#linkChoice').hidden = true;
+  $('#linkForm').hidden = false;
+  $('#lUser').focus();
+});
+
+on('#linkBack', 'click', () => {
+  $('#linkForm').hidden = true;
+  $('#linkChoice').hidden = false;
+  $('#linkErr').hidden = true;
+});
+
+on('#linkNew', 'click', async () => {
+  try {
+    state.user = (await api('platform-new')).user;
+    $('#linkGate').hidden = true;
+    enterApp();
+  } catch (ex) { linkError(ex); }
+});
+
+on('#linkForm', 'submit', async (e) => {
+  e.preventDefault();
+  $('#linkErr').hidden = true;
+  try {
+    state.user = (await api('platform-link', { username: $('#lUser').value, password: $('#lPass').value })).user;
+    $('#linkGate').hidden = true;
+    enterApp();
+  } catch (ex) { linkError(ex); }
+});
+
+// מי שבחר "אין לי חשבון" ונזכר אחר כך — מההגדרות.
+on('#oldForm', 'submit', async (e) => {
+  e.preventDefault();
+  try {
+    await api('platform-link', { username: $('#oUser').value, password: $('#oPass').value });
+    location.reload();
+  } catch (ex) { toast(ex.message, 'error'); }
+});
+
 async function enterApp() {
   set('#app', 'hidden', false);
   set('#adminBtn', 'hidden', state.user?.role !== 'admin');
+  // דרך הפלטפורמה: היציאה היא מהפלטפורמה, לא מכאן.
+  set('#logoutBtn', 'hidden', state.platform);
+  set('#oldAccount', 'hidden', !(state.platform && Number(state.user?.link_offer)));
 
   await loadTopics();
   await refresh();
