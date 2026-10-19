@@ -79,4 +79,21 @@ function db_migrate(PDO $pdo): void
         // סיסמה זמנית שהמנהל קבע: המשתמש חייב להחליף אותה בכניסה הבאה.
         $pdo->exec('ALTER TABLE users ADD COLUMN must_change_pw INTEGER NOT NULL DEFAULT 0');
     }
+    // אימות מייל בהרשמה (lib/email.php). למשתמשים ותיקים אין מייל — הם אושרו לפני שהיה אימות.
+    if (!in_array('email', $cols, true)) {
+        $pdo->exec('ALTER TABLE users ADD COLUMN email TEXT');
+        $pdo->exec('ALTER TABLE users ADD COLUMN email_verified_at TEXT');
+    }
+    $pdo->exec(<<<'SQL'
+        CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(email) WHERE email IS NOT NULL;
+        CREATE TABLE IF NOT EXISTS email_tokens (
+            token_hash TEXT PRIMARY KEY,
+            user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            expires_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+        SQL);
 }

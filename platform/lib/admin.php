@@ -14,6 +14,7 @@ require_once __DIR__ . '/access.php';
 require_once __DIR__ . '/push.php';
 require_once __DIR__ . '/sso.php';
 require_once __DIR__ . '/installs.php';
+require_once __DIR__ . '/email.php';
 
 function require_admin(bool $mutating = false): array
 {
@@ -29,7 +30,7 @@ function require_admin(bool $mutating = false): array
 function admin_state(array $admin): never
 {
     $users = db()->query(
-        "SELECT id, username, display_name, role, status, created_at, last_login_at, must_change_pw FROM users
+        "SELECT id, username, display_name, role, status, created_at, last_login_at, must_change_pw, email, email_verified_at FROM users
           ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, created_at"
     )->fetchAll();
     foreach ($users as &$u) {
@@ -39,12 +40,14 @@ function admin_state(array $admin): never
         $u['must_change'] = (bool)$u['must_change_pw'];
         $u['sso'] = sso_consents_of($u['id']);
         $u['devices'] = installs_devices_of($u['id']);
-        unset($u['must_change_pw']);
+        $u['email_verified'] = empty($u['email']) || !empty($u['email_verified_at']);
+        unset($u['must_change_pw'], $u['email_verified_at']);
     }
     unset($u);
 
     json_out([
         'users'      => $users,
+        'settings'   => ['require_approval' => approval_required()],
         'sso'        => sso_clients_state(),
         'categories' => categories_list(),
         'apps'       => array_map(fn($a) => [
@@ -71,10 +74,22 @@ function admin_dispatch(string $action, array $body, array $admin): never
         'admin_push_subscribe'  => admin_push_subscribe($body, $admin),
         'admin_push_unsubscribe'=> admin_push_unsubscribe($body, $admin),
         'admin_push_test'       => admin_push_test($admin, $body),
+        'admin_settings'        => admin_settings($body),
         'admin_sso_toggle'      => admin_sso_toggle($body),
         'admin_sso_revoke'      => admin_sso_revoke($body),
         default => throw new ApiError('פעולה לא מוכרת', 404),
     };
+}
+
+// ---------- הגדרות ----------
+
+/** require_approval: האם הרשמה חדשה (אחרי אימות המייל) ממתינה לאישור המנהל. */
+function admin_settings(array $body): never
+{
+    if (array_key_exists('require_approval', $body)) {
+        setting_set('require_approval', $body['require_approval'] ? '1' : '0');
+    }
+    json_out(['ok' => true, 'settings' => ['require_approval' => approval_required()]]);
 }
 
 // ---------- משתמשים ----------

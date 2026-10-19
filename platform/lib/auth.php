@@ -47,7 +47,7 @@ function current_user(): ?array
     if (!is_string($token) || strlen($token) !== 64) return null;
 
     $st = db()->prepare(
-        'SELECT u.id, u.username, u.display_name, u.role, u.status, u.must_change_pw, s.csrf
+        'SELECT u.id, u.username, u.display_name, u.role, u.status, u.must_change_pw, u.email, u.email_verified_at, s.csrf
            FROM sessions s JOIN users u ON u.id = s.user_id
           WHERE s.token_hash = ? AND s.expires_at > ?'
     );

@@ -133,7 +133,7 @@ function showLogin() {
         title: 'ברוכים הבאים',
         lead: 'נכנסים כדי לראות את האפליקציות שלכם.',
         fields: [
-            field('שם משתמש', 'username', { ltr: true, autocomplete: 'username' }),
+            field('מייל או שם משתמש', 'username', { ltr: true, autocomplete: 'username' }),
             field('סיסמה', 'password', { type: 'password', ltr: true, autocomplete: 'current-password' }),
         ],
         submit: 'כניסה',
@@ -145,10 +145,10 @@ function showLogin() {
 function showRegister() {
     view.replaceChildren(form({
         title: 'הרשמה',
-        lead: 'אחרי ההרשמה המנהל מאשר את החשבון ובוחר אילו אפליקציות יוצגו לכם.',
+        lead: 'אחרי ההרשמה יישלח אליכם מייל עם קישור לאימות הכתובת.',
         fields: [
             field('השם שלכם', 'display_name', { autocomplete: 'name' }),
-            field('שם משתמש', 'username', { ltr: true, hint: USERNAME_HINT, autocomplete: 'username' }),
+            field('מייל', 'email', { type: 'email', ltr: true, hint: 'בו נכנסים — גם לאפליקציות שמתחברות לכלים הדיגיטליים', autocomplete: 'email' }),
             field('סיסמה', 'password', { type: 'password', ltr: true, hint: 'לפחות 8 תווים', autocomplete: 'new-password' }),
         ],
         submit: 'הרשמה',
@@ -216,6 +216,36 @@ async function openConnections() {
         } catch (err) { list.replaceChildren(el('p', { className: 'status error', textContent: err.message })); }
     }
     load();
+}
+
+// נרשם ועוד לא לחץ על הקישור במייל — הכתובת, ו"שליחה שוב".
+function showVerifyPending(user) {
+    const again = el('button', { type: 'button', className: 'btn sm', textContent: 'לא קיבלתי — שליחה שוב' });
+    again.addEventListener('click', async () => {
+        again.disabled = true;
+        try { await api('resend_verify', {}); toast('✓ נשלח מייל חדש'); } catch (err) { toast('⚠️ ' + err.message); }
+        again.disabled = false;
+    });
+    view.replaceChildren(el('div', { className: 'auth' }, [el('div', { className: 'panel msg' }, [
+        el('div', { className: 'big', textContent: '📧', ariaHidden: 'true' }),
+        el('h2', { textContent: 'בדקו את המייל' }),
+        el('p', { className: 'lead' }, ['שלחנו קישור לאימות אל ', el('bdi', { textContent: user.email }),
+            '. לוחצים עליו — ואפשר להמשיך. לא מוצאים? בדקו גם בתיקיית הספאם.']),
+        again,
+    ])]));
+}
+
+// הקישור מהמייל: #verify=<אסימון>. מאמתים, מוחקים את האסימון מהכתובת, וממשיכים כרגיל.
+async function consumeVerifyLink() {
+    const m = location.hash.match(/^#verify=([a-f0-9]{48})$/);
+    if (!m) return;
+    history.replaceState(null, '', location.pathname + location.search);
+    try {
+        const r = await api('verify', { token: m[1] });
+        toast(r.status === 'active' ? '✓ המייל אומת — החשבון פעיל' : '✓ המייל אומת — ממתין לאישור המנהל');
+    } catch (err) {
+        toast('⚠️ ' + err.message);
+    }
 }
 
 function showMessage(title, text, icon = '') {
@@ -885,12 +915,15 @@ function goNext() {
 async function start() {
     closeMenu();
     try {
+        await consumeVerifyLink();
         me = await api('me');
         csrf = me.csrf;
         showTopbar();
         showUserbar(me.user);
         if (me.setupNeeded) return showSetup(me);
         if (!me.user) return showLogin();
+        // ממתין ועוד לא אימת את המייל. מי שהמנהל כבר אישר — נכנס גם בלי (המנהל החליט).
+        if (me.user.status === 'pending' && !me.user.email_verified) return showVerifyPending(me.user);
         if (me.user.status === 'pending') {
             return showMessage('החשבון ממתין לאישור',
                 'נרשמתם בהצלחה. המנהל צריך לאשר את החשבון ולבחור אילו אפליקציות יוצגו לכם.', '⏳');

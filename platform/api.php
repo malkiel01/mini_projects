@@ -27,6 +27,7 @@ require __DIR__ . '/lib/admin.php';
 require_once __DIR__ . '/lib/push.php';
 require_once __DIR__ . '/lib/sso.php';
 require_once __DIR__ . '/lib/installs.php';
+require_once __DIR__ . '/lib/email.php';
 
 try {
     $action = $_GET['action'] ?? '';
@@ -50,6 +51,8 @@ try {
             'login'    => action_login($body),
             'logout'   => action_logout(),
             'register' => action_register($body),
+            'verify'   => action_verify($body),
+            'resend_verify' => action_resend_verify(),
             'setup'    => action_setup($body),
             'password' => action_password($body),
             'sso_revoke' => action_sso_revoke($body),
@@ -75,6 +78,9 @@ function public_user(array $u): array
         'role'         => $u['role'],
         'status'       => $u['status'],
         'must_change'  => (bool)($u['must_change_pw'] ?? false),
+        'email'        => $u['email'] ?? null,
+        // בלי מייל = משתמש ותיק, שנרשם לפני שהיה אימות — לא נדרש ממנו.
+        'email_verified' => empty($u['email']) || !empty($u['email_verified_at']),
     ];
 }
 
@@ -112,8 +118,9 @@ function action_login(array $body): never
         throw new ApiError('יותר מדי ניסיונות. נסו שוב בעוד ' . (int)ceil($wait / 60) . ' דקות', 429);
     }
 
-    $st = db()->prepare('SELECT * FROM users WHERE username = ?');
-    $st->execute([$username]);
+    // נכנסים בשם המשתמש או במייל (נרשמים חדשים — המייל הוא שם המשתמש).
+    $st = db()->prepare('SELECT * FROM users WHERE username = ? OR email = ?');
+    $st->execute([$username, mb_strtolower($username)]);
     $user = $st->fetch();
 
     // גם למשתמש שאינו קיים מריצים password_verify — כדי שזמן התגובה לא יסגיר
@@ -214,33 +221,68 @@ function action_register(array $body): never
     $keys = ['reg:' . client_ip()];
     if (lock_remaining($keys) > 0) throw new ApiError('יותר מדי הרשמות מהרשת הזו. נסו מאוחר יותר', 429);
 
-    $username = validate_username($body['username'] ?? null);
+    // המייל הוא גם שם המשתמש: בו נכנסים, ובו מתאחדים החשבונות באפליקציות (docs/sso.md).
+    $email    = validate_email($body['email'] ?? null);
     $password = validate_password($body['password'] ?? null);
     $name     = validate_display_name($body['display_name'] ?? null);
 
     record_failure($keys); // כל הרשמה נספרת; החמישית נועלת לרבע שעה
     try {
-        db()->prepare('INSERT INTO users (username, password_hash, display_name, role, status, created_at) VALUES (?,?,?,?,?,?)')
-            ->execute([$username, password_hash($password, PASSWORD_DEFAULT), $name, 'user', 'pending', now_iso()]);
+        db()->prepare('INSERT INTO users (username, email, password_hash, display_name, role, status, created_at) VALUES (?,?,?,?,?,?,?)')
+            ->execute([$email, $email, password_hash($password, PASSWORD_DEFAULT), $name, 'user', 'pending', now_iso()]);
     } catch (PDOException $e) {
-        if (str_contains($e->getMessage(), 'UNIQUE')) throw new ApiError('שם המשתמש תפוס', 409);
+        if (str_contains($e->getMessage(), 'UNIQUE')) throw new ApiError('המייל הזה כבר רשום — נכנסים בו', 409);
         throw $e;
     }
-    start_session((int)db()->lastInsertId());
+    $id = (int)db()->lastInsertId();
+    start_session($id);
 
-    // קודם התשובה למשתמש, ורק אז ההתראה למנהלים — שההרשמה לא תחכה לשירותי ההתראות.
+    // קודם התשובה, ורק אז המייל — שההרשמה לא תחכה לשרת הדואר. למנהל מודיעים רק אחרי האימות.
     respond_then_continue(['ok' => true]);
     try {
-        push_send([
-            'title' => '👤 הרשמה חדשה',
-            'body'  => "$name ($username) ממתין/ה לאישור",
-            'tag'   => 'signup',
-            'url'   => '#admin',
-        ]);
+        if (!verify_send($id, $email, $name)) error_log("platform mail: verify to $email failed");
+    } catch (Throwable $e) {
+        error_log('platform mail: ' . $e->getMessage());
+    }
+    exit;
+}
+
+/** הקישור מהמייל (#verify=…): המייל אומת. ממתין לאישור → התראה למנהל; בלי צורך באישור → פעיל. */
+function action_verify(array $body): never
+{
+    $keys = ['verify:' . client_ip()];
+    if (lock_remaining($keys) > 0) throw new ApiError('יותר מדי ניסיונות. נסו מאוחר יותר', 429);
+    try {
+        $user = verify_consume(is_string($body['token'] ?? null) ? $body['token'] : '');
+    } catch (ApiError $e) {
+        record_failure($keys);
+        throw $e;
+    }
+    respond_then_continue(['ok' => true, 'status' => $user['status']]);
+    try {
+        $who = "{$user['display_name']} ({$user['email']})";
+        push_send($user['status'] === 'pending'
+            ? ['title' => '👤 הרשמה חדשה', 'body' => "$who אימת/ה את המייל וממתין/ה לאישור", 'tag' => 'signup', 'url' => '#admin']
+            : ['title' => '👤 משתמש חדש', 'body' => "$who נרשם/ה ואימת/ה את המייל — בחרו מה יוצג לו/ה", 'tag' => 'signup', 'url' => '#admin']);
     } catch (Throwable $e) {
         error_log('platform push: ' . $e->getMessage());
     }
     exit;
+}
+
+/** "לא קיבלתי מייל" — מייל אימות חדש למשתמש המחובר. מוגבל כמו כניסה: אחרי 5 — רבע שעה. */
+function action_resend_verify(): never
+{
+    $user = current_user();
+    if (!$user) throw new ApiError('נדרשת כניסה', 401);
+    if (empty($user['email']) || !empty($user['email_verified_at'])) throw new ApiError('המייל כבר אומת', 409);
+    $keys = ['resend:' . $user['id']];
+    if (lock_remaining($keys) > 0) throw new ApiError('נשלחו כבר כמה מיילים. נסו שוב מאוחר יותר', 429);
+    record_failure($keys);
+    if (!verify_send((int)$user['id'], $user['email'], $user['display_name'])) {
+        throw new ApiError('שליחת המייל נכשלה. נסו שוב בעוד כמה דקות', 502);
+    }
+    json_out(['ok' => true]);
 }
 
 function action_setup(array $body): never

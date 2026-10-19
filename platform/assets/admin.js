@@ -129,7 +129,32 @@ window.PlatformAdmin = (() => {
         }
         drawList();
 
-        return el('div', {}, [notifyCard(), seg, el('div', { className: 'toolbar' }, [search, sortSel]), list]);
+        return el('div', {}, [notifyCard(), approvalCard(), seg, el('div', { className: 'toolbar' }, [search, sortSel]), list]);
+    }
+
+    // הרשמה חדשה: תמיד מאמתת מייל. המתג — האם אחרי האימות היא ממתינה גם לאישור המנהל.
+    function approvalCard() {
+        const sw = el('input', { type: 'checkbox', checked: state.settings?.require_approval !== false, ariaLabel: 'כל הרשמה דורשת את האישור שלי' });
+        const tx = el('small');
+        const paint = () => {
+            tx.textContent = sw.checked
+                ? 'מי שנרשם מאמת את המייל, ואחר כך ממתין לאישור שלך'
+                : 'מי שנרשם ומאמת את המייל — נכנס מיד, בלי אישור';
+        };
+        sw.addEventListener('change', async () => {
+            try {
+                const r = await P().api('admin_settings', { require_approval: sw.checked });
+                state.settings = r.settings;
+                P().toast(sw.checked ? '✓ הרשמה חדשה תמתין לאישור שלך' : '✓ הרשמה חדשה תיפתח אחרי אימות המייל');
+            } catch (err) { sw.checked = !sw.checked; P().toast('⚠️ ' + err.message); }
+            paint();
+        });
+        paint();
+        return el('div', { className: 'notify' }, [
+            el('span', { className: 'notify-ic', textContent: '✅', ariaHidden: 'true' }),
+            el('div', { className: 'notify-tx' }, [el('b', { textContent: 'כל הרשמה דורשת את האישור שלי' }), tx]),
+            el('label', { className: 'toggle' }, [sw, el('span', { ariaHidden: 'true' })]),
+        ]);
     }
 
     function statusChips(u) {
@@ -137,6 +162,7 @@ window.PlatformAdmin = (() => {
         const out = [el('span', { className: `chip ${cls}`, textContent: text })];
         if (u.role === 'admin') out.push(el('span', { className: 'chip brand', textContent: 'מנהל' }));
         if (u.must_change) out.push(el('span', { className: 'chip', textContent: '🔑 סיסמה זמנית' }));
+        if (!u.email_verified) out.push(el('span', { className: 'chip warn', textContent: '📧 מייל לא אומת' }));
         return out;
     }
 
