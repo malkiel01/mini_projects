@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.mbeplus.claudetasks",
+      "sha256_cert_fingerprints": [
+        "59:E6:44:14:A2:E3:EB:E2:C2:46:05:0B:34:46:AA:C7:CF:58:47:A9:17:7D:D7:EB:51:E6:CE:DF:3E:57:EC:59"
+      ]
+    }
+  }
+]
