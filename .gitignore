@@ -4,3 +4,4 @@ project-manager/lib/recovery-code.php
 document-templates/data/*.sqlite*
 document-templates/data/secret.key
 document-templates/data/files/
+org-budget-proposals/data/*.sqlite*

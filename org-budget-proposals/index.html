@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#2d4a8a">
+  <title>הצעות תקציב לארגונים</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
+  <link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+  <a class="skip" href="#main">דילוג לתוכן</a>
+  <header class="top">
+    <button class="icon-btn" id="back" aria-label="חזרה" hidden>→</button>
+    <div class="titles"><h1 id="title">הצעות תקציב</h1><div class="sub" id="subtitle"></div></div>
+    <button class="me" id="me-btn" aria-label="תפריט משתמש" aria-haspopup="menu" hidden></button>
+  </header>
+  <div class="menu" id="menu" role="menu" hidden></div>
+  <main id="main" tabindex="-1"><p class="empty">טוען…</p></main>
+  <div class="toast" role="status" hidden></div>
+
+  <dialog id="sheet" aria-labelledby="sheet-title">
+    <form method="dialog" novalidate>
+      <header class="sheet-head">
+        <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+        <h2 id="sheet-title"></h2>
+        <span id="sheet-action"></span>
+      </header>
+      <div class="sheet-body" id="sheet-body"></div>
+    </form>
+  </dialog>
+
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
