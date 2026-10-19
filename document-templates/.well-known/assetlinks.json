@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.mbeplus.doctemplates",
+      "sha256_cert_fingerprints": [
+        "45:7B:B9:4D:4C:D6:62:A2:5A:80:C0:11:5E:59:94:99:3C:1A:43:51:3E:0D:C0:5F:5B:F1:94:CC:BF:46:59:7E"
+      ]
+    }
+  }
+]
