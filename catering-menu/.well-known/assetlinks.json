@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.mbeplus.catering",
+      "sha256_cert_fingerprints": [
+        "31:39:BA:DD:88:CE:B4:70:3C:48:96:E7:33:A7:8C:13:96:0A:01:F9:D9:9E:6B:40:ED:FF:B7:11:03:5F:C3:08"
+      ]
+    }
+  }
+]
