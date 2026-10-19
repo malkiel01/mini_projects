@@ -158,7 +158,7 @@ function dev_audit(array $dev, string $op, string $type, int $id, string $reason
 function dev_audit_list(): array
 {
     $rows = db()->query('SELECT a.*, u.display_name FROM dev_audit a JOIN users u ON u.id = a.dev_id ORDER BY a.id DESC LIMIT 200')->fetchAll();
-    $labels = array_map(fn($d) => $d['label'], DEV_USER_OPS);
+    $labels = array_map(fn($d) => $d['label'], DEV_USER_OPS) + (defined('DEV_ORG_OPS') ? DEV_ORG_OPS : []);
     return ['ok' => true, 'audit' => array_map(fn($a) => [
         'at' => $a['at'], 'by' => $a['display_name'], 'op' => $a['op'], 'label' => $labels[$a['op']] ?? $a['op'],
         'type' => $a['target_type'], 'id' => (int)$a['target_id'], 'reason' => $a['reason'],

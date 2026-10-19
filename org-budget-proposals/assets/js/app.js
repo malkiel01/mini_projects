@@ -134,7 +134,8 @@ function openSheet(title, body, action = null) {
 
 // ── כותרת ותפריט ─────────────────────────────────────────────
 
-function setHeader(title, sub = '', back = false) {
+function setHeader(title, sub = '', back = false, actions = []) {
+    $('#head-actions').replaceChildren(...actions.filter(Boolean));
     $('#title').textContent = title;
     $('#subtitle').textContent = sub;
     $('#back').hidden = !back;
@@ -195,6 +196,7 @@ function render() {
     if (!S.user) return viewAuth();
     if (hash === '#/me') return viewMe();
     if (hash === '#/dev' && S.user.is_developer) return viewDev();
+    if ((m = hash.match(/^#\/org\/(\d+)$/))) return viewOrg(+m[1]);
     return viewHome();
 }
 window.addEventListener('hashchange', render);
@@ -288,20 +290,20 @@ function viewReset(token) {
 
 // ── הבית ────────────────────────────────────────────────────
 
-function viewHome() {
+async function viewHome() {
     setHeader('הצעות תקציב', S.user.name);
-    const steps = [
-        ['חשבונות ואזור פיתוח', true],
-        ['ארגונים, תת-ארגון, חברים, קופות, גורמים וסעיפים', false],
-        ['הצעת תקציב: שורות, חישוב חודשי, העברות, ריכוז, טיוטות והערות', false],
-        ['שכירויות ונספח, שנה קודמת וניצול, קליטת 2025–2026', false],
-        ['פלט במבנה המדויק: Word, PDF ואקסל', false],
-    ];
+    main.replaceChildren(h('p.empty', 'טוען…'));
+    const { orgs } = await api('org_list').catch(err => (toast(err.message, true), { orgs: [] }));
+    const add = h('button.btn.primary', { type: 'button', onclick: () => orgSheet() }, h('span', { 'aria-hidden': 'true' }, '+'), ' ארגון');
     main.replaceChildren(
-        h('p.sec-title', 'הארגונים שלי'),
-        h('p.empty', 'הארגונים וההצעות ייפתחו כאן בשלב הבא.'),
-        h('p.sec-title', 'מה נבנה'),
-        h('ol.steps.list', ...steps.map(([t, done]) => h('li', { className: done ? 'done' : '' }, t))),
+        h('div.toolbar', h('p.sec-title', { style: 'flex:1;margin:0' }, 'הארגונים שלי'), add),
+        orgs.length
+            ? h('ul.list', ...orgs.map(o => h('li', h('button.use-row', { type: 'button', onclick: () => (location.hash = `#/org/${o.id}`) },
+                h('span.use-ic', { 'aria-hidden': 'true' }, '🏛️'),
+                h('span.use-tx', h('b.one', o.name),
+                    h('small', [ROLE_LABEL[o.role], `${o.funds} קופות`, o.subs ? `${o.subs} תתי-ארגונים` : null, `${o.members} חברים`].filter(Boolean).join(' · '))),
+                h('span.use-go', { 'aria-hidden': 'true' }, '‹')))))
+            : h('p.empty', 'עוד אין ארגונים. "+ ארגון" כדי לפתוח את הראשון — או בקש מבעלים של ארגון להוסיף אותך.'),
     );
 }
 
@@ -356,7 +358,7 @@ async function viewMe() {
 
 // ── אזור הפיתוח ─────────────────────────────────────────────
 
-const DEV_TABS = [['users', '👥 משתמשים'], ['log', '🪵 לוג'], ['audit', '🛡️ אכיפה'], ['health', '🩺 מצב']];
+const DEV_TABS = [['users', '👥 משתמשים'], ['orgs', '🏛️ ארגונים'], ['log', '🪵 לוג'], ['audit', '🛡️ אכיפה'], ['health', '🩺 מצב']];
 
 async function viewDev() {
     setHeader('אזור הפיתוח', 'למפתח בלבד', true);
@@ -367,7 +369,7 @@ async function viewDev() {
     main.replaceChildren(tabs, box);
     box.replaceChildren(h('p.empty', 'טוען…'));
     try {
-        await ({ users: devUsers, log: devLog, audit: devAudit, health: devHealth })[S.devTab](box, tabs);
+        await ({ users: devUsers, orgs: devOrgs, log: devLog, audit: devAudit, health: devHealth })[S.devTab](box, tabs);
     } catch (err) {
         box.replaceChildren(h('p.error', { role: 'alert' }, err.message));
     }
@@ -465,7 +467,7 @@ async function devAudit(box) {
         h('p.hint', 'כל פעולת מפתח — מי, מתי, על מה ולמה. אי אפשר למחוק מהיומן הזה.'),
         audit.length ? h('ul.list', ...audit.map(a => h('li.card',
             h('div.body',
-                h('div.l1', h('span', a.label, a.detail?.email ? ` · ${a.detail.email}` : ''), h('span.t', fmtDate(a.at))),
+                h('div.l1', h('span', a.label, a.detail?.email || a.detail?.name ? ` · ${a.detail.email || a.detail.name}` : ''), h('span.t', fmtDate(a.at))),
                 h('div.l2', a.by, a.reason ? [h('i.sep', '·'), a.reason] : null))))) : h('p.empty', 'עוד אין פעולות'));
 }
 
@@ -487,6 +489,363 @@ async function devHealth(box) {
             h('div', h('dt', 'data ניתנת לכתיבה'), h('dd', yes(x.data_writable))),
             h('div', h('dt', 'שליחת מייל'), h('dd', yes(x.mail))),
             h('div', h('dt', 'HTTPS'), h('dd', yes(x.https)))));
+}
+
+// ── ארגונים (שלב 2) ─────────────────────────────────────────
+
+const ROLE_LABEL = { owner: 'בעלים', editor: 'עורך', viewer: 'צופה' };
+const ROLE_HINT = { owner: 'הכול, כולל חברים ומחיקה', editor: 'בונה הצעות, קופות וגורמים', viewer: 'קריאה, הורדה והערות' };
+const FUND_IC = { operating: '🏢', hekdesh: '🕍', secular: '🏠', fund: '💰' };
+const CONTACT_IC = { supplier: '🧾', customer: '🤝', both: '🔁' };
+const canEdit = role => role === 'owner' || role === 'editor';
+
+/** בורר מקטעים: [[ערך, תווית], …] */
+function seg(name, options, value, label) {
+    return h('fieldset.seg', { 'aria-label': label }, ...options.map(([v, l]) =>
+        h('label', h('input', { type: 'radio', name, value: v, checked: v === value }), h('span', l))));
+}
+
+/** טופס בתוך גיליון: כפתור "שמירה" בכותרת, שגיאה בגוף. onSave מקבל את ערכי הטופס. */
+function formSheet(title, fields, onSave, extra = []) {
+    const err = h('p.error', { role: 'alert', hidden: true });
+    const save = h('button.btn.primary', { type: 'button' }, 'שמירה');
+    const body = h('div', { style: 'display:grid;gap:12px' }, ...fields, err, ...extra);
+    save.addEventListener('click', busy(save, async () => {
+        const data = Object.fromEntries(new FormData(sheet.querySelector('form')).entries());
+        await onSave(data);
+        sheet.close();
+    }, err));
+    openSheet(title, body, save);
+    sheet.querySelector('input:not([type=radio]), textarea')?.focus();
+}
+
+const field = (label, name, value = '', opts = {}) =>
+    h(`label.f${opts.wide ? '.wide' : ''}`, h('span', label),
+        opts.area ? h('textarea', { name, rows: 3, maxLength: opts.max || 2000 }, value || '')
+            : h('input', { name, value: value || '', maxLength: opts.max || 160, ...(opts.attrs || {}) }));
+
+/** פתיחת ארגון חדש, תת-ארגון (parent), או עריכת פרטים (org). */
+function orgSheet(org = null, parent = null) {
+    formSheet(org ? 'פרטי הארגון' : parent ? `תת-ארגון ב${parent.name}` : 'ארגון חדש', [
+        h('div.fields',
+            field('שם *', 'name', org?.name, { wide: true, max: 120 }),
+            field('תת-כותרת (מופיעה בשער)', 'subtitle', org?.subtitle, { wide: true })),
+        org ? field('הערות', 'notes', org.notes, { area: true }) : null,
+        !org && !parent ? h('p.hint', 'אתה תהיה הבעלים. תיפתח קופה "ארגון שוטף"; הקדשות וקרנות מוסיפים אחר כך.') : null,
+    ].filter(Boolean), async d => {
+        if (org) { await api('org_update', { org_id: org.id, ...d }); toast('נשמר'); viewOrg(org.id); return; }
+        const r = await api('org_create', { ...d, parent_id: parent?.id || null });
+        location.hash = `#/org/${r.id}`;
+    });
+}
+
+async function viewOrg(id) {
+    main.replaceChildren(h('p.empty', 'טוען…'));
+    let d;
+    try { d = await api('org_get', null, `&id=${id}`); } catch (err) {
+        setHeader('ארגון', '', true);
+        main.replaceChildren(h('p.error', { role: 'alert' }, err.message), h('button.btn.ghost', { type: 'button', onclick: () => (location.hash = '#/') }, 'לארגונים שלי'));
+        return;
+    }
+    const o = d.org, edit = canEdit(o.role), root = !o.parent;
+    S.org = d;
+    setHeader(o.name, o.parent ? `תת-ארגון · ${o.parent.name}` : `${ROLE_LABEL[o.role]}${o.subtitle ? ' · ' + o.subtitle : ''}`, true, [
+        h('button.icon-btn', { type: 'button', 'aria-label': 'היסטוריה', title: 'היסטוריה', onclick: () => orgHistory(o) }, '🕓'),
+        edit ? h('button.icon-btn', { type: 'button', 'aria-label': 'פרטי הארגון', title: 'פרטי הארגון', onclick: () => orgSettings(d) }, '✏️') : null,
+    ]);
+
+    const tabs = [
+        ['funds', '🏦 קופות', d.funds.length],
+        root ? ['subs', '🏛️ תתי-ארגונים', d.subs.length] : null,
+        ['contacts', '👥 גורמים', d.contacts.length],
+        ['cats', '🏷️ סעיפים', d.categories.length],
+        root ? ['members', '🔐 חברים', d.members.length] : null,
+    ].filter(Boolean);
+    const key = `ob-org-tab-${id}`;
+    let cur = sessionStorage.getItem(key);
+    if (!tabs.some(t => t[0] === cur)) cur = 'funds';
+    const box = h('div');
+    const bar = h('div.seg-tabs', { role: 'tablist', style: `grid-template-columns:repeat(${tabs.length},minmax(0,1fr))` }, ...tabs.map(([k, l, n]) =>
+        h('button', { role: 'tab', type: 'button', 'aria-selected': String(k === cur),
+            onclick: () => { sessionStorage.setItem(key, k); viewOrg(id); } }, l, h('small', n || ''))));
+    main.replaceChildren(bar, box);
+    ({ funds: orgFunds, subs: orgSubs, contacts: orgContacts, cats: orgCats, members: orgMembers })[cur](box, d);
+}
+
+function orgSettings(d) {
+    const o = d.org;
+    const del = h('button.btn.ghost.danger', { type: 'button' }, o.parent ? '🗑️ מחיקת תת-הארגון' : '🗑️ מחיקת הארגון');
+    del.addEventListener('click', () => {
+        if (!o.parent && o.role !== 'owner') return toast('רק בעלים מוחק ארגון', true);
+        formSheet(o.parent ? 'מחיקת תת-ארגון' : 'מחיקת ארגון', [
+            h('p.error', o.parent ? 'תת-הארגון וכל הקופות שלו יימחקו.' : 'הארגון, תתי-הארגונים וכל הקופות יימחקו לכל החברים.'),
+            field(`לאישור — הקלידו: ${o.name}`, 'confirm', '', { wide: true, max: 120 }),
+        ], async x => {
+            await api('org_delete', { org_id: o.id, confirm: x.confirm });
+            toast('נמחק');
+            location.hash = o.parent ? `#/org/${o.parent.id}` : '#/';
+        });
+    });
+    orgSheet(o);
+    $('#sheet-body').append(h('section.group', h('h3', 'אזור מסוכן'), del));
+}
+
+async function orgHistory(o) {
+    openSheet('היסטוריה', h('p.empty', 'טוען…'));
+    try {
+        const { events } = await api('org_history', null, `&id=${o.id}`);
+        const what = e => {
+            const x = e.detail || {};
+            return [x.name, x.role && ROLE_LABEL[x.role], x.from && `היה ${ROLE_LABEL[x.from]}`, x.org && x.org !== o.name ? x.org : null, x.op, x.reason].filter(Boolean).join(' · ');
+        };
+        $('#sheet-body').replaceChildren(events.length ? h('ul.list', ...events.map(e => h('li.card',
+            h('div.body', h('div.l1', h('span', e.label), h('span.t', fmtDate(e.at))),
+                h('div.l2', e.by || 'מערכת', what(e) ? [h('i.sep', '·'), what(e)] : null))))) : h('p.empty', 'אין עדיין שינויים'));
+    } catch (err) { $('#sheet-body').replaceChildren(h('p.error', err.message)); }
+}
+
+// ── קופות ──
+
+function orgFunds(box, d) {
+    const o = d.org, edit = canEdit(o.role);
+    const sorting = sessionStorage.getItem('ob-fund-sort') === '1' && edit;
+    const move = async (i, dir) => {
+        const ids = d.funds.map(f => f.id);
+        [ids[i], ids[i + dir]] = [ids[i + dir], ids[i]];
+        await api('fund_order', { org_id: o.id, ids }).catch(err => toast(err.message, true));
+        viewOrg(o.id);
+    };
+    box.replaceChildren(
+        h('p.hint', 'כל קופה מאוזנת בפני עצמה — הכנסות מול הוצאות. הסדר כאן הוא סדר הדפים במסמך.'),
+        edit ? h('div.toolbar', { style: 'justify-content:flex-end' },
+            d.funds.length > 1 ? h('button.btn.ghost', { type: 'button', 'aria-pressed': String(sorting),
+                onclick: () => { sessionStorage.setItem('ob-fund-sort', sorting ? '0' : '1'); viewOrg(o.id); } }, sorting ? '✓ סיום סידור' : '↕️ סידור') : null,
+            h('button.btn.primary', { type: 'button', onclick: () => fundSheet(d) }, h('span', { 'aria-hidden': 'true' }, '+'), ' קופה')) : null,
+        d.funds.length ? h('ul.list', ...d.funds.map((f, i) => h('li', { style: 'display:flex;align-items:center' },
+            h('button.use-row', { type: 'button', onclick: () => fundSheet(d, f) },
+                h('span.use-ic', { 'aria-hidden': 'true' }, FUND_IC[f.kind]),
+                h('span.use-tx', h('b.one', f.name), h('small', [d.labels.funds[f.kind], f.address].filter(Boolean).join(' · '))),
+                sorting ? null : h('span.use-go', { 'aria-hidden': 'true' }, '‹')),
+            sorting ? h('span.row-btns', { style: 'gap:0;padding-inline-end:4px' },
+                h('button.icon-btn', { type: 'button', 'aria-label': 'למעלה', disabled: i === 0, onclick: () => move(i, -1) }, '▲'),
+                h('button.icon-btn', { type: 'button', 'aria-label': 'למטה', disabled: i === d.funds.length - 1, onclick: () => move(i, 1) }, '▼')) : null)))
+            : h('p.empty', 'אין קופות'));
+}
+
+function fundSheet(d, f = null) {
+    const o = d.org, edit = canEdit(o.role);
+    const kinds = Object.entries(d.labels.funds);
+    const fields = [
+        seg('kind', kinds, f?.kind || (d.funds.length ? 'hekdesh' : 'operating'), 'סוג הקופה'),
+        h('div.fields',
+            field('שם *', 'name', f?.name, { wide: true, max: 120 }),
+            field('כתובת (מופיעה מתחת לשם במסמך)', 'address', f?.address, { wide: true }),
+            field('חשבון בנק', 'bank', f?.bank, { wide: true })),
+        field('הערות', 'notes', f?.notes, { area: true }),
+    ];
+    if (!edit) {
+        openSheet(f.name, h('dl.kv', h('dt', 'סוג'), h('dd', d.labels.funds[f.kind]), h('dt', 'כתובת'), h('dd', f.address || '—'),
+            h('dt', 'חשבון בנק'), h('dd', f.bank || '—'), h('dt', 'הערות'), h('dd', f.notes || '—')));
+        return;
+    }
+    const extra = [];
+    if (f) {
+        const rm = h('button.btn.ghost.danger', { type: 'button' }, '🗑️ הסרת הקופה');
+        rm.addEventListener('click', busy(rm, async () => {
+            if (!confirm(`להסיר את "${f.name}"?`)) return;
+            await api('fund_archive', { org_id: o.id, id: f.id }); sheet.close(); toast('הקופה הוסרה'); viewOrg(o.id);
+        }));
+        extra.push(h('div.row-btns', rm));
+    }
+    formSheet(f ? 'עריכת קופה' : 'קופה חדשה', fields, async x => {
+        await api('fund_save', { org_id: o.id, id: f?.id || null, ...x });
+        toast('נשמר'); viewOrg(o.id);
+    }, extra);
+}
+
+// ── תתי-ארגונים ──
+
+function orgSubs(box, d) {
+    const o = d.org;
+    box.replaceChildren(
+        h('p.hint', 'יחידה בתוך הארגון עם קופות ומסמך הצעה משלה (למשל חברה קדישא). החברים, הגורמים והסעיפים — משותפים.'),
+        canEdit(o.role) ? h('div.toolbar', { style: 'justify-content:flex-end' },
+            h('button.btn.primary', { type: 'button', onclick: () => orgSheet(null, o) }, h('span', { 'aria-hidden': 'true' }, '+'), ' תת-ארגון')) : null,
+        d.subs.length ? h('ul.list', ...d.subs.map(x => h('li', h('button.use-row', { type: 'button', onclick: () => (location.hash = `#/org/${x.id}`) },
+            h('span.use-ic', { 'aria-hidden': 'true' }, '🏛️'),
+            h('span.use-tx', h('b.one', x.name), h('small', [x.subtitle, `${x.funds} קופות`].filter(Boolean).join(' · '))),
+            h('span.use-go', { 'aria-hidden': 'true' }, '‹')))))
+            : h('p.empty', 'אין תתי-ארגונים'));
+}
+
+// ── גורמים ──
+
+function orgContacts(box, d) {
+    const o = d.org, edit = canEdit(o.role);
+    const filt = sessionStorage.getItem('ob-contact-filter') || 'all';
+    const q = h('input', { type: 'search', placeholder: 'חיפוש', 'aria-label': 'חיפוש גורם' });
+    const list = h('div');
+    const draw = () => {
+        const t = q.value.trim();
+        const rows = d.contacts.filter(c => (filt === 'all' || c.kind === filt || c.kind === 'both')
+            && (!t || [c.name, c.phone, c.email, c.tax_id].some(v => (v || '').includes(t))));
+        list.replaceChildren(rows.length ? h('ul.list', ...rows.map(c => h('li', h('button.use-row', { type: 'button', onclick: () => contactSheet(d, c) },
+            h('span.use-ic', { 'aria-hidden': 'true' }, CONTACT_IC[c.kind]),
+            h('span.use-tx', h('b.one', c.name), h('small', [d.labels.contacts[c.kind], c.phone, c.email].filter(Boolean).join(' · '))),
+            h('span.use-go', { 'aria-hidden': 'true' }, '‹')))))
+            : h('p.empty', d.contacts.length ? 'לא נמצא' : 'עוד אין גורמים. שוכרים, ספקים ונותני שירות — כאן.'));
+    };
+    q.addEventListener('input', draw);
+    const filter = seg('cf', [['all', 'הכול'], ['customer', 'לקוחות'], ['supplier', 'ספקים']], filt, 'סינון');
+    filter.addEventListener('change', e => { sessionStorage.setItem('ob-contact-filter', e.target.value); viewOrg(o.id); });
+    box.replaceChildren(
+        h('p.hint', o.parent ? 'הגורמים משותפים לכל הארגון.' : 'לקוח — מי שמשלם לארגון (שוכר, תורם). ספק — מי שהארגון משלם לו.'),
+        h('div.toolbar', q, edit ? h('button.btn.primary', { type: 'button', onclick: () => contactSheet(d) }, h('span', { 'aria-hidden': 'true' }, '+'), ' גורם') : null),
+        h('div', { style: 'margin-bottom:8px' }, filter), list);
+    draw();
+}
+
+function contactSheet(d, c = null) {
+    const o = d.org;
+    if (!canEdit(o.role)) {
+        openSheet(c.name, h('dl.kv', h('dt', 'סוג'), h('dd', d.labels.contacts[c.kind]), h('dt', 'טלפון'), h('dd', { dir: 'ltr', style: 'text-align:end' }, c.phone || '—'),
+            h('dt', 'מייל'), h('dd', { dir: 'ltr', style: 'text-align:end' }, c.email || '—'), h('dt', 'ח"פ / ת"ז'), h('dd', c.tax_id || '—'), h('dt', 'הערות'), h('dd', c.notes || '—')));
+        return;
+    }
+    const extra = [];
+    if (c) {
+        const rm = h('button.btn.ghost.danger', { type: 'button' }, '🗑️ הסרת הגורם');
+        rm.addEventListener('click', busy(rm, async () => {
+            if (!confirm(`להסיר את "${c.name}"?`)) return;
+            await api('contact_archive', { org_id: o.id, id: c.id }); sheet.close(); toast('הוסר'); viewOrg(o.id);
+        }));
+        extra.push(h('div.row-btns', rm));
+    }
+    formSheet(c ? 'עריכת גורם' : 'גורם חדש', [
+        seg('kind', Object.entries(d.labels.contacts), c?.kind || 'customer', 'סוג'),
+        h('div.fields',
+            field('שם *', 'name', c?.name, { wide: true, max: 120 }),
+            field('טלפון', 'phone', c?.phone, { max: 40, attrs: { type: 'tel', dir: 'ltr', inputMode: 'tel' } }),
+            field('מייל', 'email', c?.email, { max: 190, attrs: { type: 'email', dir: 'ltr' } }),
+            field('ח"פ / ת"ז', 'tax_id', c?.tax_id, { max: 20, attrs: { dir: 'ltr', inputMode: 'numeric' } })),
+        field('הערות', 'notes', c?.notes, { area: true }),
+    ], async x => {
+        await api('contact_save', { org_id: o.id, id: c?.id || null, ...x });
+        toast('נשמר'); viewOrg(o.id);
+    }, extra);
+}
+
+// ── סעיפים ──
+
+function orgCats(box, d) {
+    const o = d.org, edit = canEdit(o.role);
+    const group = (kind, title) => {
+        const rows = d.categories.filter(c => c.kind === kind);
+        return [h('p.sec-title', title, h('span.muted', ` · ${rows.length}`)),
+            rows.length ? h('ul.list', ...rows.map(c => h('li', h('button.use-row', { type: 'button', disabled: !edit, onclick: () => catSheet(d, c) },
+                h('span.use-tx', h('b.one', c.name)), edit ? h('span.use-go', { 'aria-hidden': 'true' }, '✏️') : null))))
+                : h('p.empty', 'אין עדיין')];
+    };
+    box.replaceChildren(
+        h('p.hint', 'קטלוג שמות לשורות ההצעה (משרדיות, עמלות בנק, דמי שימוש…) — בוחרים מהם בבניית ההצעה. משותף לכל הארגון.'),
+        edit ? h('div.toolbar', { style: 'justify-content:flex-end' },
+            h('button.btn.primary', { type: 'button', onclick: () => catSheet(d) }, h('span', { 'aria-hidden': 'true' }, '+'), ' סעיף')) : null,
+        ...group('expense', 'הוצאות'), ...group('income', 'הכנסות'));
+}
+
+function catSheet(d, c = null) {
+    const o = d.org;
+    const extra = [];
+    if (c) {
+        const rm = h('button.btn.ghost.danger', { type: 'button' }, '🗑️ הסרת הסעיף');
+        rm.addEventListener('click', busy(rm, async () => {
+            await api('cat_archive', { org_id: o.id, id: c.id }); sheet.close(); toast('הוסר'); viewOrg(o.id);
+        }));
+        extra.push(h('div.row-btns', rm));
+    }
+    formSheet(c ? 'עריכת סעיף' : 'סעיף חדש', [
+        seg('kind', Object.entries(d.labels.categories), c?.kind || 'expense', 'סוג'),
+        field('שם הסעיף *', 'name', c?.name, { wide: true, max: 120 }),
+    ], async x => {
+        await api('cat_save', { org_id: o.id, id: c?.id || null, ...x });
+        toast('נשמר'); viewOrg(o.id);
+    }, extra);
+}
+
+// ── חברים ──
+
+function orgMembers(box, d) {
+    const o = d.org, owner = o.role === 'owner';
+    const me = d.members.find(m => m.me);
+    const leave = h('button.btn.ghost.danger', { type: 'button' }, '🚪 עזיבת הארגון');
+    leave.addEventListener('click', busy(leave, async () => {
+        if (!confirm('לעזוב את הארגון? לא תוכל לראות אותו עד שיוסיפו אותך שוב.')) return;
+        await api('member_remove', { org_id: o.id, user_id: me.user_id }); location.hash = '#/';
+    }));
+    box.replaceChildren(
+        h('p.hint', 'בעלים — ' + ROLE_HINT.owner + '. עורך — ' + ROLE_HINT.editor + '. צופה — ' + ROLE_HINT.viewer + '.'),
+        owner ? h('div.toolbar', { style: 'justify-content:flex-end' },
+            h('button.btn.primary', { type: 'button', onclick: () => memberAdd(d) }, h('span', { 'aria-hidden': 'true' }, '+'), ' חבר')) : null,
+        h('ul.list', ...d.members.map(m => h('li.card', { tabindex: owner ? 0 : -1, role: owner ? 'button' : null, onclick: () => owner && memberSheet(d, m) },
+            h('span.avatar', { style: `--h:${hue(m.email)}`, 'aria-hidden': 'true' }, initials(m.name)),
+            h('div.body', h('div.l1', h('span', m.name, m.me ? ' (אני)' : '')), h('div.l2', { dir: 'ltr', style: 'text-align:end' }, m.email)),
+            h(`span.chip.${m.role === 'owner' ? 'ok' : 'x'}`, ROLE_LABEL[m.role])))),
+        h('div.row-btns', { style: 'margin-top:12px' }, leave));
+}
+
+function memberAdd(d) {
+    formSheet('הוספת חבר', [
+        h('p.hint', 'לפי המייל שאיתו נרשם לאפליקציה. מי שעוד לא רשום — צריך להירשם ולקבל אישור קודם.'),
+        field('מייל *', 'email', '', { wide: true, max: 190, attrs: { type: 'email', dir: 'ltr', autocomplete: 'off' } }),
+        seg('role', [['viewer', 'צופה'], ['editor', 'עורך'], ['owner', 'בעלים']], 'editor', 'תפקיד'),
+    ], async x => {
+        const r = await api('member_add', { org_id: d.org.id, ...x });
+        toast(r.message); viewOrg(d.org.id);
+    });
+}
+
+function memberSheet(d, m) {
+    const rm = h('button.btn.ghost.danger', { type: 'button' }, m.me ? '🚪 עזיבה' : '🗑️ הסרה מהארגון');
+    rm.addEventListener('click', busy(rm, async () => {
+        if (!confirm(`להסיר את ${m.name} מהארגון?`)) return;
+        await api('member_remove', { org_id: d.org.id, user_id: m.user_id }); sheet.close();
+        if (m.me) location.hash = '#/'; else { toast('הוסר'); viewOrg(d.org.id); }
+    }));
+    formSheet(m.name, [
+        h('dl.kv', h('dt', 'מייל'), h('dd', { dir: 'ltr', style: 'text-align:end' }, m.email), h('dt', 'נוסף'), h('dd', fmtDate(m.added_at))),
+        seg('role', [['viewer', 'צופה'], ['editor', 'עורך'], ['owner', 'בעלים']], m.role, 'תפקיד'),
+    ], async x => {
+        await api('member_set', { org_id: d.org.id, user_id: m.user_id, role: x.role });
+        toast('התפקיד עודכן'); viewOrg(d.org.id);
+    }, [h('div.row-btns', rm)]);
+}
+
+// ── אזור הפיתוח: ארגונים ──
+
+async function devOrgs(box) {
+    const { orgs } = await api('dev_orgs');
+    box.replaceChildren(
+        h('p.hint', 'מטא-דאטה בלבד: שם, יוצר, חברים. מחיקה ושחזור — עם סיבה, ונרשמים ביומן האכיפה ובהיסטוריה של הארגון.'),
+        orgs.length ? h('ul.list', ...orgs.map(x => h('li.card', { tabindex: 0, role: 'button', onclick: () => devOrgSheet(x) },
+            h('span.use-ic', { 'aria-hidden': 'true' }, '🏛️'),
+            h('div.body', h('div.l1', h('span', x.name), h('span.t', `#${x.id}`)),
+                h('div.l2', [x.creator, `${x.members} חברים`, x.subs ? `${x.subs} תתי-ארגונים` : null, fmtDate(x.created_at)].filter(Boolean).join(' · '))),
+            x.deleted ? h('span.chip.bad', 'מחוק') : null))) : h('p.empty', 'אין ארגונים'));
+}
+
+function devOrgSheet(x) {
+    const op = x.deleted ? 'restore' : 'delete';
+    formSheet(`${x.name} · #${x.id}`, [
+        h('dl.kv', h('dt', 'יוצר'), h('dd', x.creator), h('dt', 'נוצר'), h('dd', fmtDate(x.created_at)), h('dt', 'חברים'), h('dd', x.members),
+            h('dt', 'מצב'), h('dd', x.deleted ? 'מחוק' : 'פעיל')),
+        h('p.hint', x.deleted ? 'שחזור מחזיר את הארגון ואת תתי-הארגונים שנמחקו איתו.' : 'מחיקה רכה — אפשר לשחזר מכאן.'),
+        field('סיבה *', 'reason', '', { wide: true, max: 300 }),
+        field(`לאישור — הקלידו את המזהה ${x.id}`, 'confirm', '', { wide: true, max: 20, attrs: { dir: 'ltr', inputMode: 'numeric' } }),
+    ], async f => {
+        const r = await api('dev_org_force', { op, id: x.id, ...f });
+        toast(r.message); viewDev();
+    });
+    $('#sheet-action').firstChild.textContent = x.deleted ? 'שחזור' : 'מחיקה';
 }
 
 // ── התחלה ───────────────────────────────────────────────────
