@@ -120,6 +120,19 @@
   "הכניסה לא זמינה כרגע".
 - **אסימוני העובד וה‑API שלהם — בלי שינוי.** הם בכותרת, לא בעוגייה, ולא עוברים בקוד הזה.
 
+## התקנה בטלפון
+
+שלוש דרכים, כמו במתכונים (`platform/docs/rollout.md`, צעד 6):
+
+- **PWA** — `manifest.webmanifest` ו‑`service-worker.js` (רשת קודם; `*.php` ו‑`data/` לעולם לא במטמון).
+  המניפסט, ה‑service worker, הסמלים ו‑`privacy.html` ב‑`"public"` של `app.json` — הדפדפן מושך אותם בלי עוגייה.
+- **APK** — עטיפת TWA ב‑`android/` (חבילה `com.mbeplus.claudetasks`, תופסת קישורים רק בתיקייה הזאת).
+  נבנית ב‑`.github/workflows/claude-tasks-twa.yml` בכל שינוי ב‑`android/`, חתומה במפתח העלאה משלה
+  (מוצפן ב‑`android/keystore/` בסוד המשותף `ANDROID_KEYSTORE_PASSWORD`).
+- **תיקיית חנות** — Release קבוע `claude-tasks-store` (`"install": {"release": ...}`): APK, AAB,
+  `store-listing.zip` (`android/STORE.md` + `android/store/`), `assetlinks.json`, `build.json`.
+  מה ממלאים ב‑Play Console — `android/STORE.md`.
+
 ## הפעלה
 
 1. להיכנס לכתובת. **המשתמש הראשון שנרשם הופך למנהל**, וההרשמה נסגרת אחריו.

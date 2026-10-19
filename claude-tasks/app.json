@@ -8,6 +8,14 @@
   "gate": true,
   "public": [
     "api.php",
-    "health.php"
-  ]
+    "health.php",
+    "privacy.html",
+    "manifest.webmanifest",
+    "service-worker.js",
+    "assets/icons/**",
+    "assets/icon.svg"
+  ],
+  "install": {
+    "release": "claude-tasks-store"
+  }
 }
