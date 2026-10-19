@@ -7,7 +7,7 @@
 <meta name="description" content="ניהול מצלמות IP מהדפדפן — שידור חי, הקלטה, נגן עם ציר זמן, צילומי מסך וקיטלוג בתיקיות נושא.">
 <meta name="theme-color" content="#0b1220">
 <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./assets/css/app.css?v=2026-09-22a">
+<link rel="stylesheet" href="./assets/css/app.css?v=2026-10-19a">
 </head>
 <body>
 
@@ -47,6 +47,18 @@
       <div class="field"><label>סיסמה</label><input name="password" type="password" required autocomplete="current-password"></div>
       <div class="actions actions--end"><button class="btn btn--primary" type="submit">היכנס</button></div>
     </form>
+    <!-- מחוברת לפלטפורמה, ואין חשבון תואם: מסך החיבור, פעם אחת (platform/docs/auth.md סעיף 4). -->
+    <div id="platform-pane" hidden>
+      <h2 class="card__title">שלום <span data-name></span></h2>
+      <p class="hint" style="margin-bottom:12px">יש לך כבר חשבון באפליקציית המצלמות, בשם משתמש וסיסמה? חבר אותו פעם אחת וחזור להקלטות ולהגדרות שלך.</p>
+      <form id="platform-link-form" autocomplete="off">
+        <div class="field"><label>שם המשתמש הישן</label><input name="username" required autocapitalize="off"></div>
+        <div class="field"><label>הסיסמה הישנה</label><input name="password" type="password" required autocomplete="current-password"></div>
+        <div class="actions actions--end"><button class="btn btn--primary" type="submit">יש לי כבר חשבון — חבר</button></div>
+      </form>
+      <div class="actions actions--end" style="margin-top:12px"><button id="platform-new" class="btn" type="button">אין לי חשבון — המשך</button></div>
+    </div>
+    <div id="platform-msg" class="platform-msg" hidden></div>
   </section>
 </main>
 
@@ -58,6 +70,6 @@
 <div id="toast-root"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js" defer></script>
-<script type="module" src="./assets/js/main.js?v=2026-09-22a"></script>
+<script type="module" src="./assets/js/main.js?v=2026-10-19a"></script>
 </body>
 </html>
