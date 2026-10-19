@@ -82,8 +82,15 @@ $doc = $z->getFromName('word/document.xml');
 check(xml_ok($doc) && xml_ok($z->getFromName('word/styles.xml')) && xml_ok($z->getFromName('word/footer1.xml')), 'כל ה-XML תקין');
 check(str_contains($doc, '<w:bidiVisual/>') && str_contains($doc, '<w:rtl/>'), 'מימין לשמאל: טבלאות וטקסט');
 check(substr_count($doc, 'PAGEREF fund') >= 2 && str_contains($doc, 'w:name="fund'), 'מספרי עמודים בריכוז — שדות PAGEREF לסימניות של הקופות');
-check(str_contains($doc, '135,000 ₪ לחודש') && str_contains($doc, 'הצעת תקציב לשנת 2026'), 'הערה בתא והשער');
+check(str_contains($doc, '>135,000</w:t>') && str_contains($doc, ' ₪ לחודש') && str_contains($doc, 'הצעת תקציב לשנת </w:t>'), 'הערה בתא והשער');
 check(str_contains($z->getFromName('word/settings.xml'), 'updateFields'), 'Word מעדכן את השדות בפתיחה');
+check(preg_match('~<w:rPr>(?:(?!</w:rPr>).)*<w:rtl/>(?:(?!</w:rPr>).)*</w:rPr><w:t[^>]*>[^<]*[0-9]~u', $doc) === 0,
+    'כיווניות: אין ספרות בריצה מימין לשמאל (Word הופך בהן תאריכים ומינוס)');
+check(preg_match('~<w:rPr><w:sz[^>]*/><w:szCs[^>]*/></w:rPr><w:t xml:space="preserve">135,000</w:t>~', $doc) === 1
+    && str_contains($doc, '<w:t xml:space="preserve"> ₪ לחודש'), 'כיווניות: "135,000 ₪ לחודש" — המספר בריצה משמאל לימין, העברית מימין לשמאל');
+check(bidi_split('סדנת AI בינה')[1] === ['AI', true] && bidi_split('-1,000') === [['-1,000', true]]
+    && bidi_split('01-04/2026, 05-12/2026') === [['01-04/2026', true], [', ', false], ['05-12/2026', true]], 'כיווניות: אנגלית, מינוס וטווחי תאריכים');
+check(!str_contains($doc, '<w:jc w:val="right"/>'), 'יישור לימין בלי jc — Word ו-LibreOffice מפרשים אותו הפוך בפסקה מימין לשמאל');
 $z->close();
 
 echo "אקסל\n";
@@ -104,6 +111,8 @@ check(preg_match("~<f>'הקדש א'!F\\d+\\+'הקדש ב'!F\\d+</f>~u", $all) ==
 check(preg_match('~<f>SUM\(F\d+:F\d+\)</f>~', $all) === 1 || substr_count($all, '<f>SUM(F') >= 2, 'סה"כ = SUM');
 check(str_contains(html_entity_decode($z->getFromName('xl/worksheets/sheet1.xml'), ENT_QUOTES | ENT_XML1), "'הקדש א'!F"), 'דף הריכוז מפנה לתאים בגיליונות הקופות');
 check(str_contains($wb, 'fullCalcOnLoad="1"'), 'אקסל מחשב הכול בפתיחה');
+check(substr_count($z->getFromName('xl/styles.xml'), 'readingOrder="2"') >= 8, 'כיווניות: תאי טקסט באקסל — סדר קריאה מימין לשמאל');
+check(preg_match('~s="11" t="inlineStr"><is><t xml:space="preserve">01-\d\d/2026~', $all) === 1, 'כיווניות: תקופה בלי עברית — תא משמאל לימין');
 $z->close();
 
 echo "לוגו\n";

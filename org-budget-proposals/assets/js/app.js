@@ -1444,7 +1444,8 @@ async function viewPrint(id) {
     document.title = d.file;
     const c = d.cover, cols = d.cols;
     const br = t => String(t ?? '').split('\n').flatMap((x, i) => i ? [h('br'), x] : [x]);
-    const num = v => (v === null || v === undefined) ? '' : Number(v).toLocaleString('he-IL');
+    // מספר בבידוד משמאל לימין — אחרת בדף עברי מינוס עובר לצד הימני ("1,000-")
+    const num = v => (v === null || v === undefined) ? '' : h('bdi', { dir: 'ltr' }, Number(v).toLocaleString('he-IL'));
     const table = (head, rows, widths) => h('table.dt',
         h('colgroup', ...widths.map(w => h('col', { style: `width:${w}%` }))),
         h('thead', h('tr', ...head.map(x => h('th', br(x))))), h('tbody', ...rows));
