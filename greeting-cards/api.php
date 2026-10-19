@@ -63,7 +63,9 @@ try {
         case 'register':    handleRegister($usersDir, $input); break;
         case 'login':       handleLogin($usersDir, $input); break;
         case 'logout':      handleLogout(); break;
-        case 'check_auth':  handleCheckAuth($usersDir, $token, (bool)$platformUser); break;
+        case 'check_auth':  handleCheckAuth($usersDir, $token, $platformUser); break;
+        case 'link_account':    linkOldAccount($usersDir, $platformUser, $input); break;
+        case 'dismiss_link':    dismissLink($usersDir, $platformUser); break;
 
         // ─── Contacts (require auth) ────────────────
         case 'save_contacts':   requireAuth($usersDir, $token); saveContacts($usersDir, $token, $input); break;
@@ -199,16 +201,81 @@ function handleLogout() {
     respond(true, 'התנתקת');
 }
 
-function handleCheckAuth($usersDir, $token, $platform = false) {
+function handleCheckAuth($usersDir, $token, $platformUser = null) {
     if (!$token) respond(false, 'לא מחובר');
     $profile = findUserByToken($usersDir, $token);
     if (!$profile) respond(false, 'לא מחובר');
+    $canLink = $platformUser && isAutoAccount($profile);
     respond(true, 'מחובר', [
         'token' => $token,
         'username' => $profile['username'],
         'displayName' => $profile['displayName'] ?? $profile['username'],
-        'platform' => $platform,
+        'platform' => (bool)$platformUser,
+        // חשבון שנפתח לבד בכניסה הראשונה — אפשר עדיין לחבר אליו חשבון ישן.
+        'canLink' => $canLink,
+        'offerLink' => $canLink && empty($profile['linkDismissed']),
     ]);
+}
+
+/** חשבון שנפתח לבד למשתמש פלטפורמה (ולא חשבון ישן שחובר אליו). */
+function isAutoAccount($profile) {
+    return strpos(basename($profile['_dir'] ?? ''), 'platform_') === 0;
+}
+
+/**
+ * חיבור חשבון ישן (שם משתמש וסיסמה מלפני השער) למשתמש הפלטפורמה. מכאן והלאה הוא החשבון שלו,
+ * והחשבון שנפתח לבד מתנתק. 5 ניסיונות שגויים → נעילה של 15 דקות, כדי שאי אפשר יהיה לנחש סיסמאות.
+ */
+function linkOldAccount($usersDir, $platformUser, $input) {
+    if (!$platformUser) respond(false, 'החיבור זמין רק בכניסה דרך הכלים הדיגיטליים');
+    $autoFile = $platformUser['_file'];
+    $auto = json_decode(file_get_contents($autoFile), true);
+    if (!isAutoAccount(['_dir' => dirname($autoFile)])) respond(false, 'כבר חובר חשבון');
+
+    $lockedUntil = (int)($auto['linkLockedUntil'] ?? 0);
+    if ($lockedUntil > time()) respond(false, 'יותר מדי ניסיונות. נסו שוב בעוד ' . ceil(($lockedUntil - time()) / 60) . ' דקות');
+
+    $username = trim($input['username'] ?? '');
+    $password = (string)($input['password'] ?? '');
+    $oldFile = $usersDir . '/' . safeFilename($username) . '/profile.json';
+    $old = ($username !== '' && file_exists($oldFile)) ? json_decode(file_get_contents($oldFile), true) : null;
+    $ok = $old && !empty($old['passwordHash']) && empty($old['platformSub'])
+        && password_verify($password, $old['passwordHash']);
+
+    if (!$ok) {
+        $fails = (int)($auto['linkFails'] ?? 0) + 1;
+        $auto['linkFails'] = $fails >= 5 ? 0 : $fails;
+        if ($fails >= 5) $auto['linkLockedUntil'] = time() + 15 * 60;
+        file_put_contents($autoFile, json_encode($auto, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        respond(false, 'שם משתמש או סיסמה שגויים');
+    }
+
+    // החשבון הישן עובר לפלטפורמה: מקושר ל-sub, ובלי סיסמה — מעכשיו נכנסים אליו רק דרך הפלטפורמה.
+    $old['platformSub'] = $platformUser['platformSub'];
+    $old['passwordHash'] = '';
+    $old['linkedAt'] = date('c');
+    if (empty($old['token'])) $old['token'] = bin2hex(random_bytes(32));
+    file_put_contents($oldFile, json_encode($old, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+
+    // החשבון שנפתח לבד נשאר בשרת, אבל כבר לא מקושר לאיש.
+    $auto['replacedBy'] = $old['username'];
+    unset($auto['platformSub'], $auto['token']);
+    file_put_contents($autoFile, json_encode($auto, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+
+    respond(true, 'החשבון חובר', [
+        'token' => $old['token'],
+        'username' => $old['username'],
+        'displayName' => $old['displayName'] ?? $old['username'],
+    ]);
+}
+
+/** "אין לי חשבון ישן" — ההצעה לא תופיע שוב (נשארת בתפריט המשתמש). */
+function dismissLink($usersDir, $platformUser) {
+    if (!$platformUser) respond(false, 'לא מחובר');
+    $p = json_decode(file_get_contents($platformUser['_file']), true);
+    $p['linkDismissed'] = true;
+    file_put_contents($platformUser['_file'], json_encode($p, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    respond(true, 'OK');
 }
 
 /**
@@ -252,6 +319,7 @@ function platformAccount($usersDir) {
         $profile['lastLogin'] = date('c');
         file_put_contents($file, json_encode($profile, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
     }
+    $profile['_file'] = $file;
     return $profile;
 }
 

@@ -97,7 +97,7 @@
             font-weight: 600;
             font-size: 0.9rem;
         }
-        input[type="text"], input[type="number"], select, textarea {
+        input[type="text"], input[type="password"], input[type="number"], select, textarea {
             width: 100%;
             padding: 10px 12px;
             border: 2px solid #e0e0e0;
@@ -4382,8 +4382,9 @@ async function checkAuth() {
         const data = await res.json();
         if (data.success) {
             authToken = data.token || getCookie('gc_token');
-            currentUser = { username: data.username, displayName: data.displayName, platform: !!data.platform };
+            currentUser = { username: data.username, displayName: data.displayName, platform: !!data.platform, canLink: !!data.canLink };
             onAuthSuccess();
+            if (data.offerLink) showLinkAccount(true);
             return true;
         }
     } catch (e) {}
@@ -4401,11 +4402,59 @@ function showUserMenu() {
         <h2>👤 ${escapeHtml(currentUser.displayName)}</h2>
         <p style="color:#666;margin-bottom:16px">@${escapeHtml(currentUser.username)}</p>
         <div class="modal-actions">
+            ${currentUser.canLink ? '<button class="btn btn-outline" onclick="showLinkAccount(false)">🔗 חיבור חשבון ישן</button>' : ''}
             ${currentUser.platform ? '' : '<button class="btn btn-outline" onclick="doLogout()">🚪 התנתק</button>'}
             <button class="btn btn-outline" onclick="closeModal()">סגור</button>
         </div>
     `;
     showModal(html);
+}
+
+/* חיבור חשבון ישן: מי שהיה לו חשבון בכרטיסי ברכה לפני הכניסה דרך הכלים הדיגיטליים מכניס פעם
+   אחת את שם המשתמש והסיסמה הישנים, ומאז זה החשבון שלו — עם אנשי הקשר והעיצובים שבו. */
+function showLinkAccount(firstTime) {
+    showModal(`
+        <h2>🔗 יש לך חשבון ישן?</h2>
+        <p style="color:#666;margin-bottom:16px">אם נרשמת לכרטיסי ברכה בעבר, הכנס את שם המשתמש והסיסמה הישנים.
+        אנשי הקשר והעיצובים שלך יחזרו, ומעכשיו תיכנס אליהם דרך הכלים הדיגיטליים.</p>
+        <div class="form-group"><label>שם משתמש ישן</label>
+            <input type="text" id="linkUser" autocomplete="username"></div>
+        <div class="form-group"><label>סיסמה ישנה</label>
+            <input type="password" id="linkPass" autocomplete="current-password"></div>
+        <div id="linkError" style="color:#c0392b;min-height:1.2em;margin-bottom:8px"></div>
+        <div class="modal-actions">
+            <button class="btn btn-primary" onclick="doLinkAccount()">חבר את החשבון</button>
+            ${firstTime ? '<button class="btn btn-outline" onclick="dismissLinkAccount()">אין לי חשבון ישן</button>'
+                        : '<button class="btn btn-outline" onclick="closeModal()">סגור</button>'}
+        </div>
+    `);
+}
+
+async function doLinkAccount() {
+    const username = document.getElementById('linkUser').value.trim();
+    const password = document.getElementById('linkPass').value;
+    const err = document.getElementById('linkError');
+    if (!username || !password) { err.textContent = 'נא למלא שם משתמש וסיסמה'; return; }
+    try {
+        const res = await fetch(API_URL + '?action=link_account', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+        if (!data.success) { err.textContent = data.message; return; }
+        closeModal();
+        toast('החשבון חובר ✓', 'success');
+        // טוענים מחדש, כדי שאנשי הקשר, הרקעים והעיצובים יגיעו מהחשבון הישן.
+        setTimeout(() => location.reload(), 800);
+    } catch (e) {
+        err.textContent = 'שגיאת חיבור לשרת';
+    }
+}
+
+async function dismissLinkAccount() {
+    closeModal();
+    try { await fetch(API_URL + '?action=dismiss_link', { method: 'POST' }); } catch (e) {}
 }
 
 async function doLogout() {
