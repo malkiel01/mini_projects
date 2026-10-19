@@ -20,6 +20,8 @@
 4. **משתמשים קיימים מבחוץ** — חשבון בפלטפורמה והרשאה, **לפני** המיזוג.
 5. **אנדרואיד ותיקיית חנות** (כשמעלים לחנות) — התבנית: `recipes-app/android/` ו-`recipes-twa.yml`, מעתיקים
    לתיקייה (לא משנים את המקור). משתנים: `appPath`, חבילה `com.mbeplus.<app>`, מפתח העלאה משלה (מוצפן בתיקייה).
+   **סיסמה אחת לכל המפתחות** (הוכרע 2026-10-19): הסוד `ANDROID_KEYSTORE_PASSWORD` ב-GitHub — כל workflow קורא
+   אותו. (המתכונים — `RECIPES_KEYSTORE_PASSWORD` היום; עוברת ל-`ANDROID_KEYSTORE_PASSWORD`, עם הישן כגיבוי.)
    Release `<app>-store`, וב-app.json: `"install": {"release": "<app>-store"}`. אפליקציה עם APK נייטיב —
    מוסיפים AAB, `store-listing.zip` ותיקיית חנות באותו מבנה.
 
