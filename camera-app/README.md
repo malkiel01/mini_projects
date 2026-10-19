@@ -51,6 +51,20 @@
 - מערכת ריקה ומחוברת: הנכנס הראשון הוא המנהל (במקום מסך ההתקנה).
 - הגשר, ההעלאות וה-cron לא השתנו — הם בטוקן / במפתח, לא במשתמש.
 
+## התקנה בטלפון — PWA, APK וחנות
+
+לפי `platform/docs/rollout.md` צעד 6, בתבנית של המתכונים (מועתקת, לא משותפת).
+
+- **PWA:** `manifest.webmanifest` + `service-worker.js` (רשת קודם; `*.php`, `data/` ו-`bridge/` — תמיד
+  מהשרת, הקלטה לא נשמרת במטמון). המניפסט, ה-SW, האייקונים ו-`privacy.html` — ב-`public` של `app.json`.
+- **אנדרואיד (TWA):** `android/` — חבילה `com.mbeplus.camera`, תופסת קישורים רק ב-`/mini_projects/camera-app/`.
+  נבנית ב-`.github/workflows/camera-app-twa.yml` בכל שינוי ב-`android/`, חתומה בסוד `ANDROID_KEYSTORE_PASSWORD`.
+- **תיקיית החנות:** Release `camera-app-store` — `camera-app.apk`, `camera-app.aab`, `store-listing.zip`
+  (`android/STORE.md` + `android/store/`), `assetlinks.json`, `build.json`. מה ממלאים ב-Play Console — `android/STORE.md`.
+- **התמונות:** `node camera-app/tools/store-assets.mjs` — אייקונים, סמלי אנדרואיד, באנר וצילומי מסך (390px,
+  נתוני הדגמה על שרת זמני) מ-`assets/icon.svg`.
+- **בלי כיוון מסך קבוע** (`orientation: any`): וידאו מהמצלמה נוח לראות לרוחב.
+
 ## הרצת הבדיקות
 
 ```bash
