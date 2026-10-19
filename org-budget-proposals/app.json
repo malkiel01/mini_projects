@@ -14,5 +14,8 @@
     "sw.js",
     "assets/**",
     "api.php?action=health|me|register|verify|login|forgot|reset"
-  ]
+  ],
+  "install": {
+    "release": "org-budget-proposals-store"
+  }
 }
