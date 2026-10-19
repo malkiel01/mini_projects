@@ -366,4 +366,7 @@
     }
 
     init();
+
+    // התקנה כאפליקציה (PWA) — service-worker.js. נכשל בשקט: התפריט עובד גם בלעדיו
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('service-worker.js').catch(() => {});
 })();

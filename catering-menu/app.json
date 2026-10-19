@@ -19,6 +19,12 @@
     "index.html",
     "assets/**",
     "api.php?action=order|menu|config|logo|font|tick",
-    "admin/manifest.webmanifest"
-  ]
+    "admin/manifest.webmanifest",
+    "manifest.webmanifest",
+    "service-worker.js",
+    "privacy.html"
+  ],
+  "install": {
+    "release": "catering-menu-store"
+  }
 }

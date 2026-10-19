@@ -393,6 +393,27 @@ catering-menu/
 **איפוס סיסמה:** מוחקים את `catering-menu/data/config.json` דרך מנהל הקבצים של
 cPanel. בכניסה הבאה לממשק קובעים סיסמה חדשה.
 
+## התקנה: אפליקציה, APK וחנות
+
+שלוש דרכי התקנה, כמו המתכונים (`platform/docs/rollout.md`, צעד 6). כולן פותחות את **התפריט
+הציבורי**; ממשק המנהל ממשיך להיות מותקן לחוד (`admin/manifest.webmanifest`).
+
+| דרך | מה | קבצים |
+| --- | --- | --- |
+| **PWA** | "התקנה כאפליקציה" מהדפדפן | `manifest.webmanifest`, `service-worker.js` (נרשם מ-`assets/js/app.js`) |
+| **APK** | עטיפת TWA סביב `https://mbe-plus.com/mini_projects/catering-menu/`, חבילה `com.mbeplus.catering` | `android/` — הועתק מ-`recipes-app/android/` |
+| **חנות** | Release קבוע `catering-menu-store`: APK, AAB, `store-listing.zip`, `assetlinks.json`, `build.json` | `.github/workflows/catering-menu-twa.yml`; טקסטים ותשובות — `android/STORE.md` |
+
+- **ה-service worker:** רשת קודם, והמטמון רק כשאין רשת. `api.php`, `data/` ו-`admin/` — לא נוגע בהם
+  בכלל (לממשק המנהל יש `admin/sw.js` משלו, בלי מטמון). התפריט עצמו (`api.php?action=menu`) תמיד
+  מהשרת, ולכן בלי רשת נפתח רק השלד.
+- **ציבורי מאחורי השער** (`app.json`): המניפסט, ה-service worker, `privacy.html` (מדיניות הפרטיות שגוגל
+  דורשת), והאייקונים (`assets/**`).
+- **חתימה:** הסוד המשותף `ANDROID_KEYSTORE_PASSWORD`. מפתח ההעלאה נוצר בבנייה הראשונה ונשמר מוצפן
+  ב-`android/keystore/upload.jks.enc` — **לא למחוק**.
+- **צילומי המסך לחנות** (`android/store/screenshots/`) — מהאפליקציה עצמה ב-390px, עם התפריט האמיתי
+  והזמנות הדגמה בשמות בדויים.
+
 ## טרם הוכרע
 
 | # | שאלה | מה נבנה בינתיים |
