@@ -123,3 +123,16 @@ php frame-browser/tests/inspect.php
 ```
 
 92 בדיקות: חסימות SSRF, הכרעת ההטמעה על כל צירוף הכותרות, זיהוי מסך אתגר של שירות הגנה, הכרעת מועמד שלא ניתן לבדיקה, פענוח הפניות יחסיות, וחילוץ כותרת עברית.
+
+## התקנה כאפליקציה
+
+שלוש דרכים, כמו המתכונים (`platform/docs/rollout.md`, צעד 6):
+
+- **PWA** — `manifest.webmanifest` ו-`service-worker.js` (רשת קודם; `api.php` לעולם לא נשמר במטמון). הם
+  והאייקונים ב-`"public"` של `app.json` — הדפדפן מוריד אותם בלי עוגייה.
+- **אנדרואיד (TWA)** — `android/`, עטיפה סביב `https://mbe-plus.com/mini_projects/frame-browser/`, חבילה
+  `com.mbeplus.framebrowser`. נבנית ב-`.github/workflows/frame-browser-twa.yml` בכל שינוי ב-`android/`.
+- **תיקיית חנות** — Release `frame-browser-store`: APK, AAB, `store-listing.zip`, `assetlinks.json`, `build.json`.
+  מה ממלאים ב-Play Console — `android/STORE.md`.
+
+בלי נעילת כיוון מסך, בניגוד למתכונים: פריסה של שתיים או ארבע מסגרות נוחה לרוחב.
