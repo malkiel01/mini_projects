@@ -5,5 +5,14 @@
   "description": "מדביקים כתובת והדף נפתח כאן בפנים, כמה במקביל. בודק מראש אם האתר מרשה הטמעה, ואומר את הסיבה במקום להשאיר מלבן ריק.",
   "category": "web",
   "entry": "index.html",
-  "gate": true
+  "gate": true,
+  "public": [
+    "manifest.webmanifest",
+    "service-worker.js",
+    "assets/icons/**",
+    "assets/icon.svg"
+  ],
+  "install": {
+    "release": "frame-browser-store"
+  }
 }

@@ -7,6 +7,11 @@
 <meta name="description" content="פותח כתובות בתוך הדף, כמה במקביל, ואומר מראש איזה אתר מרשה הטמעה ואיזה לא.">
 <meta name="theme-color" content="#0f172a">
 <link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./assets/icons/icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="דפדפן משובץ">
 <link rel="stylesheet" href="./assets/css/app.css">
 </head>
 <body>
@@ -127,5 +132,11 @@
 <div class="toasts" id="toasts" aria-live="polite"></div>
 
 <script type="module" src="./assets/js/app.js"></script>
+<script>
+// התקנה כאפליקציה (PWA) — service-worker.js
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(() => {}));
+}
+</script>
 </body>
 </html>
