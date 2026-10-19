@@ -24,6 +24,19 @@
    אותו. (המתכונים — `RECIPES_KEYSTORE_PASSWORD` היום; עוברת ל-`ANDROID_KEYSTORE_PASSWORD`, עם הישן כגיבוי.)
    Release `<app>-store`, וב-app.json: `"install": {"release": "<app>-store"}`. אפליקציה עם APK נייטיב —
    מוסיפים AAB, `store-listing.zip` ותיקיית חנות באותו מבנה.
+6. **כל אפליקציה — שלוש דרכי התקנה, כמו המתכונים** (הוכרע 2026-10-19): בכרטיס בפלטפורמה — "התקנה
+   כאפליקציה" (PWA), "הורדת APK", ולמנהל "AAB לחנות" ו"הגדרות לחנות".
+   - **PWA:** `manifest.webmanifest` בשורש התיקייה (שם, אייקונים 192/512 ו-maskable, `start_url` ו-`scope`
+     יחסיים — `./`, `display: standalone`, `lang: he`, `dir: rtl`) ו-service worker. ב-`"public"` של app.json:
+     המניפסט, ה-service worker והאייקונים (הדפדפן מוריד אותם בלי עוגיות). כלי עם `"install": {"offline": true}` —
+     ה-service worker שומר את כל מה שצריך לעבודה בלי רשת.
+   - **אנדרואיד (TWA):** עטיפה סביב `https://mbe-plus.com/mini_projects/<app>/`, כמו `recipes-app/android/` ו-
+     `recipes-twa.yml` (מעתיקים, לא משנים את המקור), עם `pathPrefix` לתיקייה. הכניסה בתוך האפליקציה — דרך
+     השער, כמו בדפדפן (Chrome משתף את העוגייה).
+   - **תיקיית חנות** — לפי צעד 5. `store-listing.zip` עם טקסטים, סמל, באנר וצילומי מסך **של האפליקציה הזו**.
+   - **בדיקה לפני "סיים":** אחרי הפריסה וה-Release — הכרטיס בפלטפורמה מציג את ארבעת הכפתורים, וה-APK
+     נפתח במסך מלא (בלי שורת כתובת) אחרי שה-assetlinks נפרס.
+   - **חריגים:** סורק וואטסאפ ומגדלור — אפליקציות אנדרואיד אמיתיות, לא עטיפה; בלי PWA. קדישא — מחוץ לכל זה.
 
 ## הכרעות בעל המערכת (2026-10-19) — לכל הצ'אטים
 
@@ -54,7 +67,7 @@
 | project-manager | ✅ | ✅ | ✅ APK | 3 (התחברות), 5 (תיקיית חנות) |
 | document-templates | ✅ | ✅ | — | 3 |
 | greeting-cards | ✅ (#422) | ✅ — חובר (#424–#426) | ✅ APK | הסיסמה הישנה נמחקת בחיבור — לתקן: רק לחסום (3); 5 |
-| recipes-app | ⏳ PR #423 | ✅ | ✅ TWA — הדוגמה | למזג #423, אחרי ההפניה ב-cPanel (2); 3 |
+| recipes-app | ✅ (#423) | ✅ — חובר (#423) | ✅ TWA — הדוגמה | — |
 | guarded-browser (מגדלור) | ✅ | ✅ | ✅ APK | 3; 5 |
 | whatsapp-ai-scanner | ✅ | ✅ | ✅ APK | 3; 5 |
 | org-budget-proposals | ✅ | ✅ | — | 3 |
@@ -65,6 +78,17 @@
 | git-deploy | ✅ | רק סיסמת כניסה | — | לדלג על login.php למשתמש פלטפורמה, ולבטל את חסימת ה-IP |
 | data-embed-for-clients, renovation-punchlist, file-merger | ✅ | — | — | — |
 | database-analyzer, frame-browser, pdf-merger, sketches-3d, sukkah-sketch | ✅ | — | — | — |
+
+## צעד 6 — מה חסר לכל אפליקציה (2026-10-19)
+
+| אפליקציה | PWA | אנדרואיד + תיקיית חנות |
+| --- | --- | --- |
+| recipes-app | ✅ | ✅ — הדוגמה |
+| project-manager | ✅ | ✅ (#442) |
+| greeting-cards | **חסר** | ✅ |
+| document-templates, carpentry-3d, org-budget-proposals, file-merger, renovation-punchlist | ✅ | **חסר** |
+| camera-app, claude-tasks, git-deploy, catering-menu, data-embed-for-clients, database-analyzer, frame-browser, pdf-merger, sketches-3d, sukkah-sketch | **חסר** | **חסר** |
+| whatsapp-ai-scanner, guarded-browser | — (נייטיב) | ✅ |
 
 ## ההודעה להדבקה בצ'אט של אפליקציה
 
