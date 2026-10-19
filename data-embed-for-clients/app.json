@@ -10,6 +10,13 @@
     "sign.html",
     "track.html",
     "signed/**",
-    "api.php?action=get_template|save_signed|list_signed|render"
-  ]
+    "api.php?action=get_template|save_signed|list_signed|render",
+    "manifest.webmanifest",
+    "service-worker.js",
+    "assets/icons/**",
+    "assets/icon.svg"
+  ],
+  "install": {
+    "release": "data-embed-for-clients-store"
+  }
 }
