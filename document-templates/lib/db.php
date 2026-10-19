@@ -255,6 +255,13 @@ function db_migrate(PDO $pdo): void
         if (!in_array(strtok($def, ' '), $cols, true)) $pdo->exec("ALTER TABLE participants ADD COLUMN $def");
     }
 
+    // התחברות דרך הפלטפורמה (lib/platform.php): הקישור לחשבון בכלים הדיגיטליים, ומאיפה נפתח החשבון
+    $cols = array_column($pdo->query('PRAGMA table_info(users)')->fetchAll(), 'name');
+    foreach (['platform_sub TEXT', 'platform_linked_at TEXT', 'created_via TEXT'] as $def) {
+        if (!in_array(strtok($def, ' '), $cols, true)) $pdo->exec("ALTER TABLE users ADD COLUMN $def");
+    }
+    $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_platform_sub ON users(platform_sub)');
+
     // שיתוף למילוי: מי ממלא כל שדה במסמך הזה (גובר על התבנית) — lib/participants.php, doc_assign
     $cols = array_column($pdo->query('PRAGMA table_info(documents)')->fetchAll(), 'name');
     if (!in_array('assign_enc', $cols, true)) $pdo->exec('ALTER TABLE documents ADD COLUMN assign_enc TEXT');

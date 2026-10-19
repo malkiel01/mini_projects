@@ -6,6 +6,9 @@
   const app = document.getElementById('app');
   const nav = document.getElementById('nav');
   let me = null;
+  // הכניסה דרך הכלים הדיגיטליים (lib/platform.php): mode — connected / detached / unavailable
+  let platform = { mode: 'detached' };
+  const viaPlatform = () => platform.mode !== 'detached';
   let csrf = '';
   let devTimer = null;
   // עורך עם שינויים לא שמורים מחזיר כאן פונקציה ששואלת לפני יציאה.
@@ -24,6 +27,7 @@
     if (body !== undefined) {
       opts.method = 'POST';
       if (csrf) opts.headers['X-CSRF'] = csrf;
+      if (action.startsWith('platform_')) opts.headers['X-DT-Platform'] = '1';   // מסך החיבור — רק מהאפליקציה עצמה
       if (body instanceof FormData) {
         opts.body = body;
       } else {
@@ -225,6 +229,55 @@
     }
   }
 
+  // ── כניסה דרך הכלים הדיגיטליים (platform/docs/auth.md) ────────
+
+  /** מסך הכניסה של הפלטפורמה, וחזרה לכאן — כולל ה-# (הזמנה, מסמך). */
+  const platformLogin = () => platform.login_url + encodeURIComponent(location.hash);
+  const platformHome = () => (platform.login_url || '../').split('?')[0];
+
+  function viewPlatformLogin(note) {
+    if (platform.mode === 'unavailable') {
+      return show(el('div', { class: 'card invite-card' }, el('h2', {}, 'הכניסה לא זמינה כרגע'),
+        el('p', { class: 'hint' }, 'הכניסה היא דרך הכלים הדיגיטליים, והם לא עונים כרגע. נסו שוב בעוד כמה דקות.'),
+        el('div', { class: 'invite-btns' }, el('button', { type: 'button', class: 'primary', onclick: () => boot() }, '↻ ניסיון חוזר'))));
+    }
+    show(el('div', { class: 'card invite-card' },
+      platform.blocked ? notice(platform.blocked, 'bad') : null,
+      note ? notice(note, 'warn') : null,
+      el('h2', {}, 'כניסה'),
+      el('p', { class: 'hint' }, 'הכניסה לתבניות המסמכים היא דרך החשבון שלך בכלים הדיגיטליים.'),
+      platform.blocked ? null : el('div', { class: 'invite-btns' }, el('a', { class: 'btn primary', href: platformLogin() }, '🔑 כניסה דרך הכלים הדיגיטליים'))));
+  }
+
+  /** "יש לי כבר חשבון" — מייל וסיסמה ישנים, פעם אחת. onDone: אחרי שהחשבון חובר. */
+  function linkForm(onDone) {
+    return form('יש לי כבר חשבון', [
+      { name: 'email', label: 'המייל של החשבון הישן', type: 'email', auto: 'username', dir: 'ltr' },
+      { name: 'password', label: 'הסיסמה הישנה', type: 'password', auto: 'current-password' },
+    ], 'חיבור החשבון', async (v) => {
+      const r = await api('platform_link', v);
+      toast('✓ החשבון של ' + r.name + ' חובר');
+      await onDone();
+    });
+  }
+
+  /** מסך חיבור חד-פעמי: אין באפליקציה חשבון באותו מייל — אולי יש ישן במייל אחר. */
+  function viewPlatformLink() {
+    const who = [platform.name, platform.email].filter(Boolean).join(' · ');
+    const fresh = el('button', { type: 'button', class: 'primary', onclick: async () => {
+      fresh.disabled = true;
+      try { await api('platform_new', {}); await boot(); }
+      catch (e) { fresh.disabled = false; out.replaceChildren(notice(e.message, 'bad')); }
+    } }, '✨ אין לי חשבון — פתיחת חשבון חדש');
+    const out = el('div');
+    show(el('div', { class: 'card invite-card' },
+        el('h2', {}, 'ברוכים הבאים לתבניות מסמכים'),
+        el('p', {}, 'נכנסת בתור ', el('strong', { dir: 'auto' }, who), '.'),
+        el('p', { class: 'hint' }, 'אין כאן חשבון במייל הזה. אם היה לך חשבון בתבניות המסמכים במייל אחר — חברו אותו, ותחזרו לתבניות ולמסמכים שלכם. אחרת — חשבון חדש נפתח מיד.'),
+        el('div', { class: 'invite-btns' }, fresh), out),
+      linkForm(boot));
+  }
+
   // ── הזמנה לשיתוף (קישור מוואטסאפ) ─────────────────────────
 
   // האסימון נשמר עד שהשיתוף נוצר — גם אם בדרך עוברים בהרשמה ובאימות מייל
@@ -241,6 +294,11 @@
     const head = el('div', { class: 'invite-head' }, el('span', { class: 'invite-ic', 'aria-hidden': 'true' }, r.type === 'template' ? '📄' : '📝'),
       el('div', {}, el('small', {}, `${r.from} שיתף/ה איתך את ${kind}`), el('strong', {}, r.title),
         el('span', { class: 'badge' }, (LEVEL_IC[r.level] || '') + ' ' + r.level_name)));
+    if (!me && viaPlatform()) {
+      return show(el('div', { class: 'card invite-card' }, head,
+        el('p', { class: 'hint' }, 'כדי לפתוח — נכנסים דרך הכלים הדיגיטליים. אחרי הכניסה השיתוף מחכה לך כאן.'),
+        el('div', { class: 'invite-btns' }, el('a', { class: 'btn primary', href: platformLogin() }, '🔑 כניסה דרך הכלים הדיגיטליים'))));
+    }
     if (!me) {
       return show(el('div', { class: 'card invite-card' }, head,
         r.used ? notice('הקישור הזה כבר נוצל. אם זה היה אתה — פשוט נכנסים. אחרת, בקשו מהשולח קישור חדש.', 'warn')
@@ -812,9 +870,13 @@
     const h = location.hash.slice(1);
     const key = h.split(/[=?]/)[0];
     const val = h.includes('=') ? h.slice(h.indexOf('=') + 1) : '';
+    if (key === 'invite' && val) return viewInvite(val);
+    if (!me && viaPlatform()) {
+      if (platform.link) return viewPlatformLink();
+      return viewPlatformLogin(['verify', 'reset', 'register', 'forgot'].includes(key) ? 'ההרשמה והסיסמה של האפליקציה הוחלפו בכניסה דרך הכלים הדיגיטליים.' : '');
+    }
     if (key === 'verify' && val) return viewVerify(val);
     if (key === 'reset' && val) return viewReset(val);
-    if (key === 'invite' && val) return viewInvite(val);
     if (!me) {
       if (key === 'register') return viewRegister();
       if (key === 'forgot') return viewForgot();
@@ -835,6 +897,7 @@
       const r = await api('me');
       me = r.user;
       csrf = r.csrf || '';
+      platform = r.platform || { mode: 'detached' };
     } catch (e) {
       me = null;
     }
@@ -843,7 +906,7 @@
     paintMe();
     document.getElementById('nav-dev').hidden = !(me && me.is_developer);
     document.getElementById('who').textContent = me ? me.name : '';
-    if (me && /^(login|register|forgot)?$/.test(location.hash.slice(1))) location.hash = pendingInvite() ? 'invite=' + pendingInvite() : 'home';
+    if (me && /^(login|register|forgot|verify=.*|reset=.*)?$/.test(location.hash.slice(1))) location.hash = pendingInvite() ? 'invite=' + pendingInvite() : 'home';
     devloop();
     route();
   }
@@ -931,8 +994,11 @@
         item('👥', 'משתמשים', go('dev?tab=users')),
         item('🩺', 'מצב המערכת', go('dev?tab=health')),
       ] : null,
+      viaPlatform() && platform.can_relink ? item('🔗', 'חיבור חשבון ישן', relink, 'היה לך חשבון כאן במייל אחר?') : null,
       el('div', { class: 'menu-sep' }),
-      item(logoutIcon(), 'יציאה', logout));
+      // דרך הפלטפורמה — יוצאים מהפלטפורמה (יציאה ממנה = יציאה מכל האפליקציות)
+      viaPlatform() ? item(logoutIcon(), 'לכלים הדיגיטליים', () => { location.href = platformHome(); }, 'יציאה — משם')
+        : item(logoutIcon(), 'יציאה', logout));
     document.body.append(menu);
     meBtn.setAttribute('aria-expanded', 'true');
     document.addEventListener('pointerdown', outside, true);
@@ -940,6 +1006,13 @@
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && menu) { closeMenu(); meBtn.focus(); } });
   window.addEventListener('hashchange', closeMenu);
+
+  /** חשבון שנפתח דרך הפלטפורמה ועוד ריק — מחליפים אותו בחשבון ישן. */
+  function relink() {
+    const dlg = sheet('🔗 חיבור חשבון ישן', el('div', { class: 'field-sheet' },
+      el('p', { class: 'hint' }, 'החשבון שנפתח עכשיו (ריק) יוחלף בחשבון הישן — עם התבניות והמסמכים שלו.'),
+      linkForm(async () => { dlg.close(); await boot(); })));
+  }
 
   /** הגדרות המשתמש: שם, החלפת סיסמה, ניתוק מכשירים אחרים. */
   async function userSettings() {
@@ -977,6 +1050,8 @@
           el('div', {}, el('dt', {}, 'מכשירים מחוברים'), el('dd', {}, String(info.devices ?? '—'))),
           el('div', {}, el('dt', {}, 'סוג'), el('dd', {}, me.is_developer ? 'מפתח המערכת' : 'משתמש'))),
         el('label', { class: 'f' }, el('span', {}, 'השם שמוצג'), name), saveName),
+      viaPlatform() ? el('section', { class: 'fs-group' }, el('h3', { class: 'sec-title' }, 'סיסמה'),
+        el('p', { class: 'hint' }, 'הכניסה היא דרך הכלים הדיגיטליים — הסיסמה מתחלפת שם.')) :
       el('section', { class: 'fs-group' }, el('h3', { class: 'sec-title' }, 'סיסמה'),
         el('label', { class: 'f' }, el('span', {}, 'הסיסמה הנוכחית'), pwField(cur)),
         el('div', { class: 'fields two' }, el('label', { class: 'f' }, el('span', {}, 'סיסמה חדשה (8 תווים לפחות)'), pwField(nw)),
