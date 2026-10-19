@@ -36,6 +36,20 @@
   </form>
 </div>
 
+<!-- מסך חיבור חד-פעמי: מי שנכנס דרך הכלים הדיגיטליים ונפתח לו חשבון חדש — אולי יש לו חשבון ישן. -->
+<div class="auth" id="link" hidden>
+  <form class="auth__card" id="link-form" autocomplete="on">
+    <h1>🪚 נגרות בתלת מימד</h1>
+    <h2>יש לך כבר חשבון כאן?</h2>
+    <p class="muted">אם נכנסת בעבר בדוא"ל וסיסמה (אולי בכתובת אחרת) — היכנס פעם אחת, והפרויקטים שלך יחזרו אליך. מכאן והלאה הכניסה רק דרך הכלים הדיגיטליים.</p>
+    <label><span>דוא"ל של החשבון הישן</span><input name="email" type="email" required autocomplete="username" dir="ltr"></label>
+    <label><span>סיסמה</span><input name="password" type="password" required autocomplete="current-password" dir="ltr"></label>
+    <p class="auth__error" id="link-error"></p>
+    <button type="submit" class="btn btn--accent">חיבור החשבון הישן</button>
+    <button type="button" class="btn" id="link-skip">אין לי חשבון ישן</button>
+  </form>
+</div>
+
 <div id="app" hidden class="app">
 <header class="bar">
   <div class="bar__titles">
@@ -60,6 +74,7 @@
         <button type="button" class="menu__mobile" id="btn-types-m" hidden>🧩 סוגי מוצרים</button>
         <button type="button" class="menu__mobile" id="btn-lab-m" hidden>🧪 מעבדת מוצרים</button>
         <button type="button" class="menu__mobile" id="btn-users-m" hidden>⚙️ ניהול</button>
+        <button type="button" id="btn-link" hidden>🔗 חיבור חשבון ישן</button>
         <button type="button" id="btn-password">החלפת סיסמה</button>
         <button type="button" id="btn-logout">יציאה</button>
       </div>

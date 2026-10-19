@@ -156,6 +156,14 @@ function migrate(PDO $pdo): void {
     foreach (['valid_from', 'valid_until', 'last_login_at'] as $c) {
         if (!in_array($c, $ucols, true)) $pdo->exec("ALTER TABLE users ADD COLUMN $c TEXT");
     }
+    // כניסה דרך הפלטפורמה (lib/auth.php, "הפלטפורמה"): platform_sub — הקישור לחשבון בפלטפורמה;
+    // auto_created — חשבון שנפתח לבד בכניסה הראשונה, ואפשר עוד לחבר אליו חשבון ישן; link_* — מסך החיבור.
+    foreach (['platform_sub' => 'TEXT', 'linked_at' => 'TEXT', 'auto_created' => 'INTEGER NOT NULL DEFAULT 0',
+              'link_dismissed' => 'INTEGER NOT NULL DEFAULT 0', 'link_fails' => 'INTEGER NOT NULL DEFAULT 0',
+              'link_locked_until' => 'INTEGER NOT NULL DEFAULT 0'] as $c => $type) {
+        if (!in_array($c, $ucols, true)) $pdo->exec("ALTER TABLE users ADD COLUMN $c $type");
+    }
+    $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS users_platform_sub ON users(platform_sub)');
     // הסבה: פרויקטים ישנים עם שם לקוח כטקסט מקבלים רשומת לקוח (אותו שם = אותו לקוח).
     $orphans = $pdo->query("SELECT id, owner_id, client FROM projects WHERE client_id IS NULL AND client <> ''")->fetchAll();
     foreach ($orphans as $o) {
