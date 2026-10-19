@@ -318,6 +318,8 @@ const Settings = (() => {
                 esc(u.status === 'pending' ? t('נרשם {date}', { date: day(u.created_at) }) : u.last_login_at ? t('נכנס {date}', { date: day(u.last_login_at) }) : t('לא נכנס עדיין')),
                 u.projects ? esc(t('{n} פרויקטים', { n: u.projects })) : '',
                 u.reset_pending ? esc(t('נשלח איפוס')) : '',
+                // מחוברת לפלטפורמה: מי כבר נכנס דרך הכלים הדיגיטליים (lib/platform.php)
+                state.platform?.connected ? esc(u.linked ? t('🔗 מקושר') : t('לא מקושר עדיין')) : '',
             ].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>');
             const chip = u.role === 'developer' ? `<span class="chip">${esc(t('מפתח'))}</span>` : `<span class="chip us-${u.status}">${esc(t(USER_STATUS[u.status]))}</span>`;
             const quick = u.status === 'pending' ? `<button class="btn primary" data-quick="approve" data-id="${u.id}">${esc(t('אישור'))}</button>` : '';
@@ -363,7 +365,7 @@ const Settings = (() => {
             pending: ['approve', 'reject'],
             active: ['reset', 'logout', 'block', 'delete'],
             blocked: ['unblock', 'reset', 'delete'],
-        }[u.status];
+        }[u.status].filter(a => !(a === 'reset' && state.platform?.connected)); // מחוברת — אין סיסמה לאפס
         // i18n-ok-start
         const LABEL = { approve: 'אישור', reject: 'דחיית הבקשה', reset: 'שליחת איפוס סיסמה', logout: 'ניתוק מכל המכשירים',
                         block: 'חסימה', unblock: 'שחרור חסימה', delete: 'מחיקה' };

@@ -2,14 +2,14 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <script src="assets/js/i18n.js?v=98"></script>
-    <script src="assets/js/theme.js?v=98"></script>
+    <script src="assets/js/i18n.js?v=99"></script>
+    <script src="assets/js/theme.js?v=99"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=98">
-    <link rel="stylesheet" href="assets/css/devloop.css?v=98">
+    <link rel="stylesheet" href="assets/css/app.css?v=99">
+    <link rel="stylesheet" href="assets/css/devloop.css?v=99">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -1478,6 +1478,12 @@
             <button type="button" class="btn ghost" id="install-btn" hidden>📲 התקנת האפליקציה</button>
             <a class="btn ghost" id="install-apk" hidden>🤖 אפליקציית אנדרואיד — עם שיתוף ישיר לתיקיות האחרונות</a>
         </div>
+        <!-- מחוברת לפלטפורמה (lib/platform.php): אין סיסמה כאן — רק החיבור לחשבון ישן, למי שנזכר אחר כך -->
+        <div class="sheet-body platform-box" id="platform-box" hidden>
+            <h3 class="sec-title">כניסה</h3>
+            <p class="hint">🔐 נכנסים דרך הכלים הדיגיטליים — בלי סיסמה נפרדת לאפליקציה.</p>
+            <button type="button" class="btn ghost" id="platform-link-open" hidden>🔗 יש לי חשבון ישן באפליקציה — לחבר אותו</button>
+        </div>
         <form method="dialog" id="password-form" class="sheet-body" novalidate>
             <h3 class="sec-title">שינוי סיסמה</h3>
                 <label class="f"><span>הסיסמה הנוכחית</span><input name="current" type="password" autocomplete="current-password" dir="ltr" required></label>
@@ -1489,31 +1495,60 @@
         </form>
     </dialog>
 
+    <!-- מסך החיבור החד-פעמי (platform/docs/auth.md, סעיף 4): חשבון שנפתח עכשיו דרך הכלים הדיגיטליים — אולי יש
+         לו חשבון ישן באפליקציה (בשם משתמש, או במייל אחר). פעם אחת; אחר כך — מ"החשבון שלי" -->
+    <dialog id="link-dlg" aria-labelledby="link-dlg-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <span></span>
+                <h2 id="link-dlg-title">ברוך הבא</h2>
+                <span></span>
+            </header>
+            <div class="sheet-body">
+                <p class="hint">יש לך כבר חשבון באפליקציה — מלפני הכניסה דרך הכלים הדיגיטליים? חבר אותו פעם אחת, וכל הפרויקטים שלך כאן.</p>
+                <div class="row-btns" id="link-choose">
+                    <button type="button" class="btn primary" id="link-have">יש לי כבר חשבון</button>
+                    <button type="button" class="btn ghost" id="link-none">אין לי חשבון</button>
+                </div>
+                <div class="fields" id="link-fields" hidden>
+                    <label class="f"><span>שם משתמש או אימייל — של החשבון הישן</span><input name="username" maxlength="100" autocomplete="username" dir="ltr" autocapitalize="off" spellcheck="false"></label>
+                    <label class="f"><span>הסיסמה הישנה</span><input name="password" type="password" maxlength="200" autocomplete="current-password" dir="ltr"></label>
+                    <p class="hint">פעם אחת בלבד — מכאן והלאה נכנסים דרך הכלים הדיגיטליים.</p>
+                    <p class="error" role="alert" hidden></p>
+                    <div class="row-btns">
+                        <button type="submit" class="btn primary">חיבור החשבון</button>
+                        <button type="button" class="btn ghost" id="link-cancel">ביטול</button>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </dialog>
+
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="assets/js/core.js?v=98"></script>
-    <script src="assets/js/contacts.js?v=98"></script>
-    <script src="assets/js/device-contacts.js?v=98"></script>
-    <script src="assets/js/viewer.js?v=98"></script>
-    <script src="assets/js/devloop.js?v=98"></script>
-    <script src="assets/js/engage.js?v=98"></script>
-    <script src="assets/js/linker.js?v=98"></script>
-    <script src="assets/js/files.js?v=98"></script>
-    <script src="assets/js/lightbox.js?v=98"></script>
-    <script src="assets/js/field.js?v=98"></script>
+    <script src="assets/js/core.js?v=99"></script>
+    <script src="assets/js/contacts.js?v=99"></script>
+    <script src="assets/js/device-contacts.js?v=99"></script>
+    <script src="assets/js/viewer.js?v=99"></script>
+    <script src="assets/js/devloop.js?v=99"></script>
+    <script src="assets/js/engage.js?v=99"></script>
+    <script src="assets/js/linker.js?v=99"></script>
+    <script src="assets/js/files.js?v=99"></script>
+    <script src="assets/js/lightbox.js?v=99"></script>
+    <script src="assets/js/field.js?v=99"></script>
     <script src="assets/js/share-store.js?v=1"></script>
-    <script src="assets/js/share.js?v=98"></script>
-    <script src="assets/js/projects.js?v=98"></script>
-    <script src="assets/js/quotes.js?v=98"></script>
-    <script src="assets/js/payments.js?v=98"></script>
-    <script src="assets/js/fin-report.js?v=98"></script>
-    <script src="assets/js/budget.js?v=98"></script>
-    <script src="assets/js/deviations.js?v=98"></script>
-    <script src="assets/js/rejects.js?v=98"></script>
-    <script src="assets/js/finance.js?v=98"></script>
-    <script src="assets/js/finance-all.js?v=98"></script>
-    <script src="assets/js/hebcal.js?v=98"></script>
-    <script src="assets/js/calendar.js?v=98"></script>
-    <script src="assets/js/settings.js?v=98"></script>
-    <script src="assets/js/app.js?v=98"></script>
+    <script src="assets/js/share.js?v=99"></script>
+    <script src="assets/js/projects.js?v=99"></script>
+    <script src="assets/js/quotes.js?v=99"></script>
+    <script src="assets/js/payments.js?v=99"></script>
+    <script src="assets/js/fin-report.js?v=99"></script>
+    <script src="assets/js/budget.js?v=99"></script>
+    <script src="assets/js/deviations.js?v=99"></script>
+    <script src="assets/js/rejects.js?v=99"></script>
+    <script src="assets/js/finance.js?v=99"></script>
+    <script src="assets/js/finance-all.js?v=99"></script>
+    <script src="assets/js/hebcal.js?v=99"></script>
+    <script src="assets/js/calendar.js?v=99"></script>
+    <script src="assets/js/settings.js?v=99"></script>
+    <script src="assets/js/app.js?v=99"></script>
 </body>
 </html>

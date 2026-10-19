@@ -7,7 +7,8 @@ async function init() {
     try {
         const me = await api('me');
         Object.assign(state, { user: me.user, trades: me.trades, templates: me.templates, labels: me.labels, standalone: me.standalone,
-            fileTypes: me.file_types, maxUpload: me.max_upload, msgTemplates: me.msg_templates, msgVars: me.msg_vars || {}, vatRate: me.vat_rate, finAlerts: me.fin_alerts, ai: me.ai || { on: false } });
+            fileTypes: me.file_types, maxUpload: me.max_upload, msgTemplates: me.msg_templates, msgVars: me.msg_vars || {}, vatRate: me.vat_rate, finAlerts: me.fin_alerts, ai: me.ai || { on: false },
+            platform: me.platform || { connected: false } });
         // ערכת הנושא של המשתמש — הבחירה בשרת גוברת (עוברת איתו ממכשיר למכשיר)
         if (me.user.theme) Theme.apply(me.user.theme);
     } catch (e) {
@@ -31,7 +32,10 @@ async function init() {
     $('#dev-off').addEventListener('click', () => Dev.set(false));
     Dev.show();
     $('#logout').addEventListener('click', logout);
+    // מחוברת לפלטפורמה: יוצאים מהכלים הדיגיטליים (וזה מוציא מכאן), לא מהאפליקציה
+    $('#logout').hidden = !!state.platform.connected;
     bindPassword();
+    bindLink();
     bindInstall();
     addEventListener('hashchange', route);
     // חץ החזרה — למסך הקודם באפליקציה (לא לדף האפליקציות, ולא מחוץ לאפליקציה)
@@ -175,6 +179,10 @@ function openAccount() {
     pf.elements.email.value = state.user.email || '';
     pf.elements.phone.value = state.user.phone || '';
     renderInstall();
+    const pl = state.platform;
+    $('#password-form').hidden = !!pl.connected;
+    $('#platform-box').hidden = !pl.connected;
+    $('#platform-link-open').hidden = !pl.can_link;
     $('#password-dlg').showModal();
 }
 
@@ -204,6 +212,34 @@ function bindPassword() {
     });
 }
 
+// ---- מסך החיבור החד-פעמי (lib/platform.php) ----
+// חשבון שנפתח עכשיו דרך הכלים הדיגיטליים: "יש לי כבר חשבון" — שם המשתמש והסיסמה הישנים, פעם אחת, והחשבון
+// הישן (עם הפרויקטים) מתחבר; "אין לי חשבון" — ההצעה לא חוזרת, ונשארת ב"החשבון שלי".
+
+function bindLink() {
+    const dlg = $('#link-dlg'), form = $('form', dlg);
+    const choose = on => { $('#link-choose').hidden = !on; $('#link-fields').hidden = on; formError(form, ''); };
+    $('#link-have').addEventListener('click', () => { choose(false); form.elements.username.focus(); });
+    $('#link-cancel').addEventListener('click', () => choose(true));
+    $('#link-none').addEventListener('click', async () => {
+        await api('platform-dismiss', { body: {} }).catch(() => {});
+        state.platform.link_offer = false;
+        dlg.close();
+    });
+    dlg.addEventListener('cancel', e => e.preventDefault()); // בחירה אחת מהשתיים — לא Esc
+    form.addEventListener('submit', async e => {
+        e.preventDefault();
+        const el = form.elements;
+        if (!el.username.value.trim() || !el.password.value) { formError(form, t('יש למלא שם משתמש וסיסמה')); return; }
+        await busy($('button[type=submit]', form), form, async () => {
+            await api('platform-link', { body: { username: el.username.value.trim(), password: el.password.value } });
+            location.reload(); // החשבון הישן — עם הפרויקטים שלו
+        });
+    });
+    $('#platform-link-open').addEventListener('click', () => { $('#password-dlg').close(); choose(false); dlg.showModal(); });
+    if (state.platform.link_offer) { choose(true); dlg.showModal(); }
+}
+
 // ---- התקנה במכשיר ----
 // אנדרואיד/מחשב: הדפדפן מציע התקנה (beforeinstallprompt) — כפתור 📲 בכותרת ובחשבון.
 // אחרי ההתקנה האפליקציה מופיעה ב"שיתוף" של הטלפון (share_target במניפסט).
@@ -213,8 +249,8 @@ let installPrompt = null;
 const isNativeApp = () => !!window.PMNative; // אפליקציית האנדרואיד (android/)
 const isInstalled = () => isNativeApp() || matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 const isAndroid = () => /Android/i.test(navigator.userAgent);
-// אפליקציית האנדרואיד — מתעדכנת בכל בנייה מ-main (.github/workflows/project-manager-apk.yml)
-const APK_URL = 'https://github.com/malkiel01/mini_projects/releases/download/project-manager-apk/project-manager.apk';
+// אפליקציית האנדרואיד — תיקיית החנות, מתעדכנת בכל בנייה מ-main (.github/workflows/project-manager-apk.yml)
+const APK_URL = 'https://github.com/malkiel01/mini_projects/releases/download/project-manager-store/project-manager.apk';
 const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
 addEventListener('beforeinstallprompt', e => {

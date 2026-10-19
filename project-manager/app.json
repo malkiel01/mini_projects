@@ -8,11 +8,10 @@
   "gate": true,
   "restricted": true,
   "install": {
-    "apk": "https://github.com/malkiel01/mini_projects/releases/download/project-manager-apk/project-manager.apk"
+    "release": "project-manager-store"
   },
   "public": [
-    "index.html",
-    "login.html",
+    "privacy.html",
     "api.php",
     "log.php",
     "manifest.webmanifest",
@@ -21,5 +20,5 @@
     "portal/",
     "portal/**"
   ],
-  "version": "0.98"
+  "version": "0.99"
 }

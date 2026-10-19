@@ -25,7 +25,7 @@ document.addEventListener('focusin', e => {
     if (e.target.matches('input, textarea, select')) setTimeout(() => e.target.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300);
 });
 
-const $ = s => document.querySelector(s);
+const $ = (s, root = document) => root.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 let csrf = null, mode = 'login', resetToken = null, state = {};
 
@@ -92,7 +92,8 @@ function showWaiting(title, text, canRetry = true) {
     $('#waiting-title').textContent = title;
     $('#waiting-text').textContent = text;
     $('#recheck').hidden = !canRetry;
-    $('#logout').hidden = !csrf;
+    $('#logout').hidden = !csrf || !!state.platform; // מחוברת — יוצאים מהכלים הדיגיטליים, לא מכאן
+    $('#platform-login').hidden = true;
 }
 
 /** לאן ממשיכים: לאפליקציה, למסך "ממתין", להקמה, לאיפוס, או לכניסה. */
@@ -101,6 +102,16 @@ async function route() {
     state = data;
     csrf = data.csrf || null;
     const user = data.user;
+    // מחוברת לפלטפורמה: אין כאן כניסה בסיסמה. מחובר לכלים הדיגיטליים עם הרשאה — נכנס לבד (lib/platform.php);
+    // לא — לכניסה שם, וחזרה לכאן אחריה
+    if (data.platform && !user) {
+        showWaiting(t('הכניסה היא דרך הכלים הדיגיטליים'), t('נכנסים פעם אחת לכלים הדיגיטליים — ומשם האפליקציה נפתחת לבד, בלי סיסמה נוספת.'));
+        $('#recheck').hidden = true;
+        $('#platform-login').href = '../?next=' + encodeURIComponent(new URL('./', location.href).pathname);
+        $('#platform-login').hidden = false;
+        $('.big', $('#waiting')).textContent = '🔐';
+        return;
+    }
     if (resetToken) return startReset();
     if (data.setup_needed) {
         if (!data.recovery_set) {

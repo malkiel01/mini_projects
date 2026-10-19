@@ -7,6 +7,7 @@
  * הפלטפורמה, ולכן כל ההגנה כאן: בלי משתמש פעיל — 401; כל POST דורש X-CSRF.
  * חריגים, לפני כניסה: auth (מצב), login, register, setup, logout,
  * forgot, reset-info, reset-password, client-error.
+ * מחוברת לפלטפורמה — המשתמש נקבע מהזהות שהשער כותב (lib/platform.php), והכניסה בסיסמה חסומה.
  *
  * הפורטל של הלקוח והעו"ד — API נפרד ב-portal/api.php (lib/portal.php).
  */
@@ -68,6 +69,8 @@ $action = (string)($_GET['action'] ?? '');
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 try {
+    // מחוברת לפלטפורמה: הזהות מהשער קובעת מי המשתמש — בכל בקשה, בלי מסך (lib/platform.php)
+    pm_platform_resolve();
     // לפני כניסה
     $pre = match ("$method $action") {
         'GET auth'      => fn() => pm_auth_state(),
@@ -122,6 +125,8 @@ try {
                     // מצב עצמאי: בלי חזרה לדף האפליקציות. כבוי כל עוד האפליקציה בתוך האינדקס.
                     'standalone' => pm_setting('standalone', '0') === '1',
                     'vat_rate' => pm_vat_rate(),
+                    // הכניסה דרך הפלטפורמה: מחוברת? מקושר? מסך החיבור החד-פעמי (lib/platform.php)
+                    'platform' => pm_platform_state($user),
                     // שלב 12 — סיווג חכם: האם פעיל (למפתח — גם מצב ההגדרה, בלי המפתח עצמו)
                     'ai' => $user['role'] === 'developer' ? pm_ai_status() : ['on' => pm_ai_on()],
                     'fin_alerts' => pm_fin_alert_settings((int)$user['id']),
@@ -316,6 +321,8 @@ try {
             pm_audit("user:{$user['id']}", 'setting.standalone', 'setting', null, ['on' => !empty($in['on'])]);
             return ['standalone' => !empty($in['on'])];
         })() : throw new PmError('רק המפתח', 403),
+        'POST platform-link'    => pm_platform_link($user, $in),    // "יש לי כבר חשבון" — מסך החיבור החד-פעמי
+        'POST platform-dismiss' => pm_platform_dismiss($user),      // "אין לי חשבון"
         'POST password'   => pm_change_password($user, $in),
         'POST profile'    => pm_update_profile($user, $in),
         'GET users'       => $isDev ? ['users' => pm_users_list(), 'orphans' => pm_orphans(), 'mail' => pm_mail_available()] : throw new PmError('רק המפתח', 403),

@@ -520,6 +520,12 @@ function pm_migrate(PDO $pdo): void
     pm_add_column($pdo, 'users', 'email', "TEXT NOT NULL DEFAULT ''");
     pm_add_column($pdo, 'users', 'notes', "TEXT NOT NULL DEFAULT ''");
     pm_add_column($pdo, 'users', 'theme', "TEXT NOT NULL DEFAULT 'system'"); // ערכת נושא: system · light · dark (הגדרות ← תצוגה)
+    // כניסה דרך הפלטפורמה (lib/platform.php): הקישור ל-sub, חשבון שנפתח לבד, ומסך החיבור שנדחה; ה-session — מאיפה
+    pm_add_column($pdo, 'users', 'platform_sub', 'TEXT');
+    pm_add_column($pdo, 'users', 'platform_auto', 'INTEGER NOT NULL DEFAULT 0');
+    pm_add_column($pdo, 'users', 'link_dismissed', 'INTEGER NOT NULL DEFAULT 0');
+    $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS users_platform_sub ON users (platform_sub) WHERE platform_sub IS NOT NULL');
+    pm_add_column($pdo, 'sessions', 'via', "TEXT NOT NULL DEFAULT 'password'");
     // שלב 6: אישור מהפורטל — מאיזה קישור, והחתימה (תמונה) כשנדרשה
     pm_add_column($pdo, 'approvals', 'portal_id', 'INTEGER');
     pm_add_column($pdo, 'approvals', 'signature', "TEXT NOT NULL DEFAULT ''");

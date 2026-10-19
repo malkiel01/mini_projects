@@ -2,15 +2,25 @@ name: Build Project Manager APK
 # אפליקציית האנדרואיד של ניהול הפרויקטים (project-manager/android) — האתר בתוך WebView, ושיתוף ישיר
 # מתפריט "שיתוף" של הטלפון לתיקיות האחרונות. README: project-manager/README.md, "אפליקציית אנדרואיד".
 #
-# חתימה קבועה — כדי שהעדכונים יותקנו מעל הגרסה הקודמת (חתימת debug משתנה בכל בנייה, ואז אנדרואיד
-# מסרב לעדכן). המפתח נוצר בבנייה הראשונה מ-main, מוצפן (AES-256) ונשמר בריפו:
-# project-manager/android/keystore/release.jks.enc. סיסמת ההצפנה נגזרת מהסוד DEPLOY_SSH_KEY שכבר קיים
-# (לא נדרש סוד חדש), ואינה מודפסת. מוצפן — חסר ערך בלי הסוד.
-# אם DEPLOY_SSH_KEY הוחלף — הפענוח נכשל והבנייה עוצרת. אז: למחוק את release.jks.enc, ובנייה חדשה
-# תיצור מפתח חדש; בטלפון צריך להסיר את האפליקציה פעם אחת ולהתקין מחדש.
+# תיקיית החנות (platform/docs/rollout.md, צעד 5): Release קבוע project-manager-store, שה-app.json מצביע עליו
+# ("install": {"release": "project-manager-store"}). שמות קבועים, מתעדכנים בכל בנייה מ-main:
 #
-# בנייה מ-PR — רק בדיקה שהקוד נבנה (חתימת debug, artifact). רק מ-main — Release עם קישור הורדה קבוע:
-# https://github.com/malkiel01/mini_projects/releases/download/project-manager-apk/project-manager.apk
+#   project-manager.apk   התקנה ידנית בטלפון — "⬇️ הורדת APK" בכרטיס, ו"אפליקציית אנדרואיד" בחשבון שלי
+#   project-manager.aab   העלאה ל-Play Console
+#   store-listing.zip     טקסטים, תמונות ותשובות למדיניות — project-manager/android/store/
+#   assetlinks.json       טביעות המפתח — הפריסה מאחדת אותו לשורש הדומיין (platform/tools/assetlinks.php)
+#   build.json            מה נבנה: גרסה, חתימה, commit
+#
+# מפתח ההעלאה: הסוד המשותף ANDROID_KEYSTORE_PASSWORD — סיסמה אחת לכל מפתחות ההעלאה של האפליקציות.
+# המפתח מוצפן בה (AES-256) ושמור בריפו: project-manager/android/keystore/upload.jks.enc. מוצפן — חסר ערך בלי
+# הסיסמה. גוגל מחזיקה מפתח חתימה משלה (Play App Signing), ולכן גם מפתח העלאה שאבד מוחלף דרך התמיכה שלהם.
+#
+# המעבר (פעם אחת, 2026-10-19): עד עכשיו ה-APK נחתם במפתח keystore/release.jks.enc, שסיסמתו נגזרה מ-DEPLOY_SSH_KEY.
+# בבנייה הראשונה מ-main עם הסוד, אותו מפתח בדיוק עובר לסיסמה החדשה ונשמר כ-upload.jks.enc — כך האפליקציה שכבר
+# מותקנת בטלפונים מתעדכנת מעל, בלי להסיר ולהתקין. release.jks.enc נשאר בריפו כגיבוי ואינו נקרא יותר.
+#
+# מענף אחר / PR — רק בדיקה שהקוד נבנה (APK בחתימת debug, artifact). ה-Release מתעדכן רק מ-main.
+# ה-Release הישן project-manager-apk כבר לא מתעדכן — הקישורים עברו לתיקיית החנות.
 on:
   push:
     branches: [main]
@@ -36,9 +46,20 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # המפתח המוצפן (בבנייה הראשונה) ו-Release
+      contents: write   # המפתח המוצפן (במעבר) ו-Release
+    env:
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      KS_ENC: keystore/upload.jks.enc
+      PUBLISH: ${{ github.ref == 'refs/heads/main' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # ה-commit של המפתח נדחף אחרי pull --rebase
+
+      # versionCode עולה בכל בנייה — כל העלאה לחנות חייבת מספר גבוה מהקודם. +100: גבוה מכל APK שנבנה לפני
+      # המעבר (אז versionCode = מספר ההרצה), כך שהעדכון מותקן מעליו.
+      - name: Version
+        run: echo "VERSION_CODE=$((100 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
 
       - name: Setup JDK 17
         uses: actions/setup-java@v4
@@ -52,64 +73,158 @@ jobs:
         with:
           packages: 'platform-tools'
 
+      # גרסה מפורשת: AGP 8.13 (targetSdk 36) דורש Gradle 8.13 ומעלה, וה-9.x שב-runner אינו תואם ל-AGP 8.x
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: '8.7'
+          gradle-version: '8.14.3'
 
-      - name: Signing key (main only)
+      - name: Signing key
         id: key
-        if: github.ref == 'refs/heads/main'
         env:
           SEED: ${{ secrets.DEPLOY_SSH_KEY }}
-        run: |
-          set -euo pipefail
-          if [ -z "${SEED:-}" ]; then echo "::warning::אין DEPLOY_SSH_KEY — APK בחתימת debug"; exit 0; fi
-          export PASS=$(printf 'pm-android:%s' "$SEED" | sha256sum | cut -c1-48)
-          echo "::add-mask::$PASS"
-          mkdir -p keystore
-          if [ -f keystore/release.jks.enc ]; then
-            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:PASS -in keystore/release.jks.enc -out "$RUNNER_TEMP/release.jks" \
-              || { echo "::error::פענוח המפתח נכשל — DEPLOY_SSH_KEY הוחלף? ראו את ההסבר בראש הקובץ"; exit 1; }
-          else
-            keytool -genkeypair -keystore "$RUNNER_TEMP/release.jks" -storetype PKCS12 -alias pm -keyalg RSA -keysize 4096 -validity 36500 \
-              -storepass "$PASS" -keypass "$PASS" -dname "CN=Project Manager, O=mbe-plus, C=IL"
-            openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:PASS -in "$RUNNER_TEMP/release.jks" -out keystore/release.jks.enc
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add keystore/release.jks.enc
-            git commit -m "ניהול פרויקטים — אנדרואיד: מפתח החתימה (מוצפן)"
-            git pull --rebase origin main && git push origin HEAD:main
-          fi
-          echo "PASS=$PASS" >> "$GITHUB_ENV"
-          echo "signed=1" >> "$GITHUB_OUTPUT"
         shell: bash
-
-      - name: Build APK
         run: |
           set -euo pipefail
-          ARGS="-PversionCode=${{ github.run_number }}"
-          if [ "${{ steps.key.outputs.signed }}" = "1" ]; then ARGS="$ARGS -PkeystoreFile=$RUNNER_TEMP/release.jks -PkeystorePassword=$PASS"; fi
-          gradle assembleRelease --no-daemon $ARGS
-          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/project-manager.apk"
+          if [ "$PUBLISH" != "true" ]; then
+            echo "mode=check" >> "$GITHUB_OUTPUT"; echo "ענף משנה — רק בדיקה שהקוד נבנה"; exit 0
+          fi
+          if [ -z "$ANDROID_KEYSTORE_PASSWORD" ]; then
+            echo "::error::אין סוד ANDROID_KEYSTORE_PASSWORD — בלעדיו אין חתימה, וה-APK לא יתעדכן מעל המותקן"; exit 1
+          fi
+          if [ ${#ANDROID_KEYSTORE_PASSWORD} -lt 16 ]; then
+            echo "::error::הסיסמה בסוד ANDROID_KEYSTORE_PASSWORD קצרה מ-16 תווים — המפתח המוצפן יושב בריפו ציבורי"; exit 1
+          fi
+          KS="$RUNNER_TEMP/upload.jks"
+          sha() { keytool -list -v -keystore "$1" -alias pm -storepass "$2" | grep -m1 'SHA256:' | sed 's/.*SHA256: *//'; }
+          if [ -f "$KS_ENC" ]; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in "$KS_ENC" -out "$KS" -pass env:ANDROID_KEYSTORE_PASSWORD \
+              || { echo "::error::הסיסמה בסוד אינה פותחת את המפתח שבריפו. אל תמחקו את הקובץ — האפליקציה חתומה בו"; exit 1; }
+          elif [ -f keystore/release.jks.enc ]; then
+            # המעבר: אותו מפתח, מהסיסמה הנגזרת מ-DEPLOY_SSH_KEY לסיסמה המשותפת
+            [ -n "${SEED:-}" ] || { echo "::error::המעבר דורש את DEPLOY_SSH_KEY (לפתוח את המפתח הקיים)"; exit 1; }
+            export OLD=$(printf 'pm-android:%s' "$SEED" | sha256sum | cut -c1-48)
+            echo "::add-mask::$OLD"
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:OLD -in keystore/release.jks.enc -out "$RUNNER_TEMP/old.jks" \
+              || { echo "::error::פענוח המפתח הקיים נכשל — DEPLOY_SSH_KEY הוחלף?"; exit 1; }
+            keytool -importkeystore -noprompt -srckeystore "$RUNNER_TEMP/old.jks" -srcstoretype PKCS12 -srcstorepass "$OLD" \
+              -srcalias pm -srckeypass "$OLD" -destkeystore "$KS" -deststoretype PKCS12 \
+              -deststorepass "$ANDROID_KEYSTORE_PASSWORD" -destkeypass "$ANDROID_KEYSTORE_PASSWORD" -destalias pm
+            [ "$(sha "$RUNNER_TEMP/old.jks" "$OLD")" = "$(sha "$KS" "$ANDROID_KEYSTORE_PASSWORD")" ] \
+              || { echo "::error::המפתח שהועבר שונה מהמקורי — עוצר"; exit 1; }
+            openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in "$KS" -out "$KS_ENC" -pass env:ANDROID_KEYSTORE_PASSWORD
+            rm -f "$RUNNER_TEMP/old.jks"
+            echo "המפתח הקיים הועבר לסיסמה המשותפת ונשמר: project-manager/android/$KS_ENC"
+          else
+            keytool -genkeypair -keystore "$KS" -storetype PKCS12 -alias pm -keyalg RSA -keysize 4096 -validity 36500 \
+              -storepass "$ANDROID_KEYSTORE_PASSWORD" -keypass "$ANDROID_KEYSTORE_PASSWORD" -dname "CN=Project Manager, O=mbe-plus, C=IL"
+            mkdir -p keystore
+            openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in "$KS" -out "$KS_ENC" -pass env:ANDROID_KEYSTORE_PASSWORD
+            echo "נוצר מפתח העלאה חדש: project-manager/android/$KS_ENC"
+          fi
+          echo "sha=$(sha "$KS" "$ANDROID_KEYSTORE_PASSWORD")" >> "$GITHUB_OUTPUT"
+          echo "mode=release" >> "$GITHUB_OUTPUT"
 
-      - name: Upload APK
+      - name: Build (release — AAB and APK)
+        if: steps.key.outputs.mode == 'release'
+        run: |
+          gradle bundleRelease assembleRelease --no-daemon -PversionCode="$VERSION_CODE" \
+            -PkeystoreFile="$RUNNER_TEMP/upload.jks" -PkeystorePassword="$ANDROID_KEYSTORE_PASSWORD"
+          mkdir -p "$RUNNER_TEMP/out"
+          cp app/build/outputs/bundle/release/app-release.aab "$RUNNER_TEMP/out/project-manager.aab"
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/out/project-manager.apk"
+
+      - name: Build (check — debug APK)
+        if: steps.key.outputs.mode != 'release'
+        run: |
+          gradle assembleRelease --no-daemon -PversionCode="$VERSION_CODE"
+          mkdir -p "$RUNNER_TEMP/out"
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/out/project-manager.apk"
+
+      # טביעות המפתח: מפתח ההעלאה (APK שהותקן ידנית) ומפתח החתימה של גוגל (מה שמותקן מהחנות, מ-Play
+      # Console → App integrity), מ-play-signing-sha256.txt.
+      - name: Write assetlinks.json
+        if: steps.key.outputs.mode == 'release'
+        env:
+          UPLOAD_SHA: ${{ steps.key.outputs.sha }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re
+          shas = [os.environ['UPLOAD_SHA'].strip()]
+          for line in open('play-signing-sha256.txt', encoding='utf-8'):
+              line = line.split('#')[0].strip().upper()
+              if re.fullmatch(r'([0-9A-F]{2}:){31}[0-9A-F]{2}', line) and line not in shas:
+                  shas.append(line)
+          links = [{
+              'relation': ['delegate_permission/common.handle_all_urls'],
+              'target': {'namespace': 'android_app', 'package_name': 'com.mbeplus.projectmanager', 'sha256_cert_fingerprints': shas},
+          }]
+          open(os.path.join(os.environ['RUNNER_TEMP'], 'out', 'assetlinks.json'), 'w', encoding='utf-8').write(json.dumps(links, indent=2) + '\n')
+          print('assetlinks.json:', shas)
+          PY
+
+      - name: Store listing and build.json
+        if: steps.key.outputs.mode == 'release'
+        env:
+          SHA: ${{ steps.key.outputs.sha }}
+        run: |
+          (cd store && zip -qr "$RUNNER_TEMP/out/store-listing.zip" .)
+          jq -n --arg sha "$SHA" --arg commit "$GITHUB_SHA" --argjson code "$VERSION_CODE" \
+            '{app: "project-manager", package: "com.mbeplus.projectmanager", versionCode: $code, versionName: ("1." + ($code | tostring)),
+              signed: true, uploadKeySha256: $sha, commit: $commit, built: (now | todate)}' > "$RUNNER_TEMP/out/build.json"
+          cat "$RUNNER_TEMP/out/build.json"
+
+      - name: Save the encrypted key to the repo
+        if: steps.key.outputs.mode == 'release'
+        run: |
+          git add "$KS_ENC"
+          if git diff --cached --quiet; then echo "המפתח כבר בריפו"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "ניהול פרויקטים — אנדרואיד: מפתח ההעלאה בסיסמה המשותפת (בנייה $VERSION_CODE)"
+          for i in 1 2 3; do
+            # --autostash: הבנייה משאירה קבצים ששונו, ובלעדיו pull --rebase מסרב
+            git pull --rebase --autostash origin "$GITHUB_REF_NAME" && git push origin "HEAD:$GITHUB_REF_NAME" && exit 0
+            sleep $((i * 5))
+          done
+          echo "::error::לא הצלחתי לשמור את המפתח המוצפן בריפו — אל תעלו לחנות את הבנייה הזאת"; exit 1
+
+      - name: Upload (Artifacts)
         uses: actions/upload-artifact@v4
         with:
-          name: project-manager-apk
-          path: ${{ runner.temp }}/project-manager.apk
+          name: project-manager-${{ env.VERSION_CODE }}
+          path: ${{ runner.temp }}/out/*
           if-no-files-found: error
 
-      # ‏Artifact לא ניתן להורדה מהטלפון; ל-Release יש קישור ישיר וקבוע — הוא שבמסך "התקנה במכשיר"
-      # (assets/js/app.js, APK_URL) וב-app.json. רק מ-main ורק חתום.
-      - name: Publish to a GitHub Release
-        if: github.ref == 'refs/heads/main' && steps.key.outputs.signed == '1'
+      # תיקיית החנות: Artifact של Actions אינו ניתן להורדה מהטלפון, ל-Release יש קישור ישיר וקבוע.
+      - name: Publish the store folder (Release project-manager-store)
+        if: steps.key.outputs.mode == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: project-manager-apk
-          name: ניהול פרויקטים — אפליקציית אנדרואיד
+          tag_name: project-manager-store
+          name: ניהול פרויקטים — תיקיית החנות
+          make_latest: false
           body: |
-            אפליקציית האנדרואיד של ניהול הפרויקטים — עם שיתוף ישיר לתיקיות האחרונות מתפריט "שיתוף".
-            מתעדכנת אוטומטית בכל בנייה מ-main. גרסה ${{ github.run_number }}.
-          files: ${{ runner.temp }}/project-manager.apk
+            מתעדכן לבד בכל בנייה מ-main (`.github/workflows/project-manager-apk.yml`).
+            - `project-manager.apk` — התקנה ידנית בטלפון (מתעדכן מעל הגרסה המותקנת)
+            - `project-manager.aab` — להעלאה ל-Play Console
+            - `store-listing.zip` — טקסטים, תמונות ותשובות למדיניות
+            - `assetlinks.json`, `build.json`
+          files: ${{ runner.temp }}/out/*
           fail_on_unmatched_files: true
+
+      - name: Summary
+        env:
+          MODE: ${{ steps.key.outputs.mode }}
+          SHA: ${{ steps.key.outputs.sha }}
+        run: |
+          {
+            echo "## ניהול פרויקטים — אנדרואיד, בנייה $VERSION_CODE"
+            if [ "$MODE" = "release" ]; then
+              echo "- **חתום** — APK, AAB ו-store-listing.zip ב-Release \`project-manager-store\`"
+              echo "- טביעת מפתח ההעלאה (SHA-256): \`$SHA\`"
+              echo "- אחרי ההעלאה הראשונה: Play Console → App integrity → את ה-SHA-256 של **App signing key** להוסיף ל-\`project-manager/android/play-signing-sha256.txt\`"
+            else
+              echo "- ענף משנה: רק בדיקה שהקוד נבנה. ה-Release מתעדכן מ-main"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
