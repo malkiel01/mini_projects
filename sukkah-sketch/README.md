@@ -31,8 +31,11 @@
 | מצגת הזוויות — רק החיתוכים המשופעים: מעלות, ומי נסוג בכמה | `angles.html`, `assets/js/angles.js`, `assets/css/angles.css` |
 | מצגת הזוויות כ-PDF | `angles.pdf` — `node build-pdf.js angles` |
 | `three.js` r128, עותק מקומי | `vendor/three.min.js` |
+| התקנה כאפליקציה (PWA) — עובד בלי רשת | `manifest.webmanifest`, `service-worker.js`, `assets/icons/` |
+| אפליקציית אנדרואיד (TWA) ותיקיית החנות | `android/` — הכול ב-`android/STORE.md`; בנייה: `.github/workflows/sukkah-sketch-twa.yml` |
+| מדיניות פרטיות (לחנות; ציבורית) | `privacy.html` |
 | אייקון | `assets/icon.svg` |
-| כרטיס בדף הראשי | `../index.html` |
+| הרישום בפלטפורמה | `app.json` |
 
 **מקור אמת אחד למידות.** `model.js` מחשב את הגבול, הקורות, העמודים והמחברים
 ומחזיר אותם כנתונים. `index.html` מצייר אותם בתלת־ממד; `parts.html` מציג
@@ -155,3 +158,16 @@
 התיקייה נפרסת אוטומטית עם שאר הריפו דרך `.github/workflows/deploy.yml`, ללא
 הגדרה ייעודית. הכול רץ בדפדפן — אין קוד PHP ואין תיקיית נתונים, ולכן אין
 צורך ב-`--exclude`.
+
+## התקנה: PWA, אנדרואיד ותיקיית חנות
+
+שלוש דרכים, כמו במתכונים (`platform/docs/rollout.md`, צעד 6):
+
+- **PWA** — `manifest.webmanifest` + `service-worker.js`. ה-service worker שומר בהתקנה את כל הכלי:
+  שלושת הדפים, הסקריפטים, `vendor/three.min.js` ושני קובצי ה-PDF. רשת קודם, מטמון כשאין רשת. three.js
+  מ-CDN נכשל מיד בלי רשת והדף עובר לעותק המקומי. תשובה שהופנתה (השער שולח לכניסה) לא נשמרת.
+  **אחרי שינוי ברשימת הקבצים — להעלות את `CACHE_VERSION`.**
+- **APK / AAB** — TWA בחבילה `com.mbeplus.sukkah`, נבנית ב-`sukkah-sketch-twa.yml` בכל שינוי ב-`android/`.
+- **תיקיית חנות** — Release `sukkah-sketch-store` (`"install": {"release": ...}` ב-`app.json`).
+
+ב-`"public"`: המניפסט, ה-service worker, הסמלים ו-`privacy.html` — כל השאר מאחורי השער.

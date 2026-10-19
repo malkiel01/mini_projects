@@ -1,0 +1,8 @@
+.gradle/
+build/
+app/build/
+local.properties
+# נוצרים בבנייה (gradle wrapper) — לא בריפו, כמו בשאר אפליקציות האנדרואיד כאן
+gradlew
+gradlew.bat
+gradle/wrapper/gradle-wrapper.jar

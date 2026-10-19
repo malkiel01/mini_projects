@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>סוכה למרפסת · שלד תלת‑ממדי</title>
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0f172a">
+<link rel="apple-touch-icon" href="assets/icons/icon-192.png">
 <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#eef0ea;--panel:#fbfbf7;--ink:#1d241f;--mute:#5d6a60;--line:#c9cfc4;--accent:#b3261e;--on:#1d241f;--onink:#fbfbf7;--scene:#e6e9e1}
@@ -222,5 +225,6 @@ window.addEventListener('resize',fit);fit();view('iso');
   s.onerror=function(){load(list.slice(1));};document.head.appendChild(s);
 })(['https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js','https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js','vendor/three.min.js']);
 </script>
+<script>if('serviceWorker' in navigator)navigator.serviceWorker.register('service-worker.js').catch(function(){});</script>
 </body>
 </html>
