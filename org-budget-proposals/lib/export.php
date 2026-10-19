@@ -80,6 +80,80 @@ function org_logo_serve(array $s, int $orgId): never
 
 // ── מודל המסמך ───────────────────────────────────────────────
 
+// ── עיצוב המסמך: גופן, גדלים, כותרות, שוליים, עימוד ואילו חלקים נכנסים ──
+
+/** גופנים שיש להם עברית ב-Word. במסך / PDF — הגופן אם מותקן, ואחריו Arial. */
+const DOC_FONTS = ['Arial', 'David', 'Frank Ruehl', 'Narkisim', 'Miriam', 'Times New Roman', 'Tahoma', 'Calibri', 'Gisha', 'Noto Sans Hebrew'];
+
+/** ברירת המחדל — כמו ההצעות שמוגשות היום. גדלים בנקודות, שוליים במ"מ. */
+const DOC_STYLE = [
+    'font' => 'Arial',
+    'size_text' => 11, 'size_table' => 10, 'size_title' => 14, 'size_head' => 12, 'size_cover' => 24,
+    'underline' => true, 'title_align' => 'center', 'line' => 1.1,
+    'margin_top' => 20, 'margin_bottom' => 20, 'margin_side' => 20,
+    'page_numbers' => true, 'fund_new_page' => true,
+    'show_cover' => true, 'show_plan' => true, 'show_summary' => true, 'show_appendix' => true,
+];
+const DOC_LIMITS = ['size_text' => [7, 20], 'size_table' => [6, 16], 'size_title' => [9, 30], 'size_head' => [8, 24], 'size_cover' => [12, 48],
+    'line' => [1, 2.5], 'margin_top' => [5, 50], 'margin_bottom' => [5, 50], 'margin_side' => [5, 50]];
+
+/** קלט → רק מה ששונה מברירת המחדל, בגבולות. */
+function doc_style_in(array $in): array
+{
+    $out = [];
+    foreach (DOC_STYLE as $k => $def) {
+        if (!array_key_exists($k, $in) || $in[$k] === null || $in[$k] === '') continue;
+        $v = $in[$k];
+        if (is_bool($def)) $v = (bool)$v;
+        elseif ($k === 'font') $v = in_array($v, DOC_FONTS, true) ? $v : throw new ApiError('גופן לא מוכר', 422);
+        elseif ($k === 'title_align') $v = in_array($v, ['center', 'right'], true) ? $v : throw new ApiError('יישור לא תקין', 422);
+        else {
+            if (!is_numeric($v)) throw new ApiError('מספר לא תקין בעיצוב המסמך', 422);
+            [$lo, $hi] = DOC_LIMITS[$k];
+            $v = round(max($lo, min($hi, (float)$v)) * 2) / 2;   // חצאי נקודה / מ"מ
+            if ($k === 'line') $v = round(max($lo, min($hi, (float)$in[$k])), 2);
+            elseif ($v == (int)$v) $v = (int)$v;
+        }
+        if (is_bool($def) || is_string($def) ? $v !== $def : (float)$v !== (float)$def) $out[$k] = $v;
+    }
+    return $out;
+}
+
+/** העיצוב בפועל של ארגון: שלו, ואם אין — של הארגון הראשי, ועל זה ברירת המחדל. */
+function org_doc_style(array $org): array
+{
+    $own = json_decode((string)($org['doc_style'] ?? ''), true);
+    $from = is_array($own) ? 'own' : 'default';
+    if (!is_array($own) && !empty($org['parent_id'])) {
+        $st = db()->prepare('SELECT doc_style FROM orgs WHERE id = ?');
+        $st->execute([$org['parent_id']]);
+        $own = json_decode((string)$st->fetchColumn(), true);
+        if (is_array($own)) $from = 'parent';
+    }
+    return ['style' => array_merge(DOC_STYLE, is_array($own) ? $own : []), 'from' => $from];
+}
+
+/** שמירת העיצוב של ארגון. style = null — חזרה לברירת המחדל (בתת-ארגון: לעיצוב של הארגון הראשי). */
+function org_style_set(array $s, array $b): array
+{
+    $org = org_access($s, (int)($b['org_id'] ?? 0), 'editor');
+    $style = is_array($b['style'] ?? null) ? doc_style_in($b['style']) : null;
+    db()->prepare('UPDATE orgs SET doc_style = ?, updated_at = ? WHERE id = ?')
+        ->execute([$style === null ? null : json_encode($style, JSON_UNESCAPED_UNICODE), now_iso(), $org['id']]);
+    org_event($org['root_id'], $s, 'org_update', ['id' => (int)$org['id'], 'name' => $org['name'], 'doc_style' => $style === null ? 'reset' : 'set']);
+    $st = db()->prepare('SELECT * FROM orgs WHERE id = ?');
+    $st->execute([$org['id']]);
+    return ['ok' => true] + org_doc_style($st->fetch());
+}
+
+/** העיצוב של ייצוא Word שרץ עכשיו (נקבע ב-export_docx). */
+function doc_st(?array $set = null): array
+{
+    static $cur = DOC_STYLE;
+    if ($set !== null) $cur = $set;
+    return $cur;
+}
+
 function fmt_day(?string $d): string
 {
     return $d ? implode('.', array_reverse(explode('-', $d))) : '';
@@ -194,8 +268,11 @@ function doc_model(array $s, int $budgetId): array
             ? "row:$rid" : auto_row($f, $l['direction'])['key'];
     }
 
+    $ds = org_doc_style($org);
     return [
         'budget_id' => $b['id'], 'year' => $y, 'status' => $b['status'], 'expense_first' => $b['expense_first'],
+        'style' => $ds['style'], 'style_from' => $ds['from'], 'org_id' => (int)$org['id'], 'fonts' => DOC_FONTS, 'style_default' => DOC_STYLE,
+        'can_edit' => canEditRole($g['org']['role']), 'org_name' => $org['name'], 'is_sub' => (bool)$org['parent_id'],
         'file' => preg_replace('/[\\\\\/:*?"<>|]+/u', '', "הצעת תקציב $y – {$org['name']}"),
         'cover' => [
             'org' => $root['name'], 'subtitle' => $org['parent_id'] ? $org['name'] : $org['subtitle'],
@@ -301,9 +378,10 @@ function w_r(string $text, array $o = []): string
 /** שדה PAGEREF לסימנייה — Word מחשב את מספר העמוד ($cached — עד העדכון). */
 function w_pageref(string $bookmark, int $cached): string
 {
-    $r = fn($inner) => '<w:r><w:rPr><w:rtl/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr>' . $inner . '</w:r>';
+    $sz = (int)round(doc_st()['size_table'] * 2);
+    $r = fn($inner) => '<w:r><w:rPr><w:rtl/><w:sz w:val="' . $sz . '"/><w:szCs w:val="' . $sz . '"/></w:rPr>' . $inner . '</w:r>';
     return $r('<w:fldChar w:fldCharType="begin"/>') . $r('<w:instrText xml:space="preserve"> PAGEREF ' . $bookmark . ' \h </w:instrText>')
-        . $r('<w:fldChar w:fldCharType="separate"/>') . '<w:r><w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr><w:t>' . $cached . '</w:t></w:r>'
+        . $r('<w:fldChar w:fldCharType="separate"/>') . '<w:r><w:rPr><w:sz w:val="' . $sz . '"/><w:szCs w:val="' . $sz . '"/></w:rPr><w:t>' . $cached . '</w:t></w:r>'
         . $r('<w:fldChar w:fldCharType="end"/>');
 }
 
@@ -328,7 +406,7 @@ function w_table(array $widths, array $rows, array $o = []): string
             $out .= '<w:tc><w:tcPr><w:tcW w:w="' . (int)($widths[$j] * 50) . '" w:type="pct"/>'
                 . ($fill ? '<w:shd w:val="clear" w:color="auto" w:fill="' . $fill . '"/>' : '') . '<w:vAlign w:val="center"/></w:tcPr>'
                 . ($c['xml'] ?? w_p((string)($c['text'] ?? ''), ['bold' => $head || !empty($c['bold']), 'align' => $c['align'] ?? ($head ? 'center' : 'right'),
-                    'size' => $c['size'] ?? 10, 'after' => 0]))
+                    'size' => $c['size'] ?? doc_st()['size_table'], 'after' => 0]))
                 . '</w:tc>';
         }
         $out .= '</w:tr>';
@@ -339,8 +417,9 @@ function w_table(array $widths, array $rows, array $o = []): string
 /** תא סכום: הסכום, ומתחתיו ההערה (קטנה). */
 function w_amount($v, string $note = '', bool $bold = false): array
 {
-    return ['xml' => w_p(n0($v), ['align' => 'center', 'size' => 10, 'after' => 0, 'bold' => $bold])
-        . ($note !== '' ? w_p($note, ['align' => 'center', 'size' => 8, 'after' => 0]) : '')];
+    $t = doc_st()['size_table'];
+    return ['xml' => w_p(n0($v), ['align' => 'center', 'size' => $t, 'after' => 0, 'bold' => $bold])
+        . ($note !== '' ? w_p($note, ['align' => 'center', 'size' => max(6, $t - 2), 'after' => 0]) : '')];
 }
 
 function w_logo(array $img): string
@@ -360,6 +439,12 @@ function export_docx(array $s, int $id): never
     $d = doc_model($s, $id);
     $c = $d['cover'];
     $body = '';
+    $ds = doc_st($d['style']);
+    [$X, $T, $H, $TI, $C] = [$ds['size_text'], $ds['size_table'], $ds['size_head'], $ds['size_title'], $ds['size_cover']];
+    $u = $ds['underline'];
+    $al = $ds['title_align'];
+    $first = true;   // החלק הראשון במסמך לא מתחיל בעמוד חדש
+    $brk = function () use (&$first) { $b = !$first; $first = false; return $b; };
 
     // שער
     $logo = null;
@@ -373,34 +458,38 @@ function export_docx(array $s, int $id): never
             $logo = ['path' => $path, 'ext' => str_ends_with($path, '.png') ? 'png' : 'jpeg', 'emu' => [(int)($w * 360000), (int)($h * 360000)]];
         }
     }
-    $body .= w_p($c['org'], ['bold' => true, 'size' => 24, 'align' => 'center', 'before' => 1200, 'after' => 200]);
-    if ($c['subtitle']) $body .= w_p($c['subtitle'], ['bold' => true, 'size' => 18, 'align' => 'center', 'after' => 200]);
-    $body .= $logo ? w_logo($logo) : w_p('', ['after' => 1600]);
-    $body .= w_p($c['title'], ['bold' => true, 'size' => 26, 'align' => 'center', 'before' => 400, 'after' => 400]);
-    if ($c['submitted_to']) $body .= w_p($c['submitted_to'], ['bold' => true, 'size' => 12, 'align' => 'center', 'after' => 800]);
-    foreach ($c['signers'] as $sg) {
-        $body .= w_p($sg['name'], ['bold' => true, 'size' => 12, 'align' => 'center', 'after' => 0]);
-        foreach ($sg['titles'] as $t) $body .= w_p($t, ['bold' => true, 'size' => 12, 'align' => 'center', 'after' => 0]);
-        $body .= w_p('', ['after' => 200]);
+    if ($ds['show_cover']) {
+        $first = false;
+        $body .= w_p($c['org'], ['bold' => true, 'size' => $C, 'align' => 'center', 'before' => 1200, 'after' => 200]);
+        if ($c['subtitle']) $body .= w_p($c['subtitle'], ['bold' => true, 'size' => round($C * .75 * 2) / 2, 'align' => 'center', 'after' => 200]);
+        $body .= $logo ? w_logo($logo) : w_p('', ['after' => 1600]);
+        $body .= w_p($c['title'], ['bold' => true, 'size' => $C + 2, 'align' => 'center', 'before' => 400, 'after' => 400]);
+        if ($c['submitted_to']) $body .= w_p($c['submitted_to'], ['bold' => true, 'size' => $X + 1, 'align' => 'center', 'after' => 800]);
+        foreach ($c['signers'] as $sg) {
+            $body .= w_p($sg['name'], ['bold' => true, 'size' => $X + 1, 'align' => 'center', 'after' => 0]);
+            foreach ($sg['titles'] as $t) $body .= w_p($t, ['bold' => true, 'size' => $X + 1, 'align' => 'center', 'after' => 0]);
+            $body .= w_p('', ['after' => 200]);
+        }
     }
 
     // תכנית עבודה
-    if ($d['plan']['blocks']) {
-        $body .= w_p($d['plan']['title'], ['bold' => true, 'u' => true, 'size' => 14, 'align' => 'center', 'break' => true, 'after' => 200]);
+    if ($ds['show_plan'] && $d['plan']['blocks']) {
+        $body .= w_p($d['plan']['title'], ['bold' => true, 'u' => $u, 'size' => $TI, 'align' => $al, 'break' => $brk(), 'after' => 200]);
         foreach ($d['plan']['blocks'] as $bl) {
             $body .= match ($bl['type']) {
-                'center' => w_p($bl['text'], ['bold' => true, 'u' => true, 'size' => 13, 'align' => 'center', 'after' => 160]),
-                'heading' => w_p($bl['text'], ['bold' => true, 'u' => true, 'size' => 12, 'before' => 160, 'keep' => true]),
-                'bullet' => w_p('•  ' . $bl['text'], ['size' => 11]),
-                default => w_p($bl['text'], ['size' => 11, 'after' => 120]),
+                'center' => w_p($bl['text'], ['bold' => true, 'u' => $u, 'size' => $H + 1, 'align' => $al, 'after' => 160]),
+                'heading' => w_p($bl['text'], ['bold' => true, 'u' => $u, 'size' => $H, 'before' => 160, 'keep' => true]),
+                'bullet' => w_p('•  ' . $bl['text'], ['size' => $X]),
+                default => w_p($bl['text'], ['size' => $X, 'after' => 120]),
             };
         }
     }
 
     // דף ריכוז
-    $body .= w_p($d['summary']['title'], ['bold' => true, 'u' => true, 'size' => 14, 'align' => 'center', 'break' => true, 'after' => 200]);
+    if ($ds['show_summary']) {
+    $body .= w_p($d['summary']['title'], ['bold' => true, 'u' => $u, 'size' => $TI, 'align' => $al, 'break' => $brk(), 'after' => 200]);
     foreach ($d['summary']['sections'] as $sec) {
-        $body .= w_p($sec['title'], ['bold' => true, 'u' => true, 'size' => 12, 'align' => 'center', 'before' => 200, 'keep' => true]);
+        $body .= w_p($sec['title'], ['bold' => true, 'u' => $u, 'size' => $H, 'align' => $al, 'before' => 200, 'keep' => true]);
         $rows = [['', $d['cols']['prev'], $d['cols']['actual'], $d['cols']['cur'], 'פירוט']];
         foreach ($sec['rows'] as $r) {
             $ref = '';
@@ -409,8 +498,8 @@ function export_docx(array $s, int $id): never
                 $fa = $fz = null;
                 foreach ($d['funds'] as $f) if (in_array($f['id'], $r['funds'], true)) { $fa ??= $f['id']; $fz = $f['id']; }
                 // "עמ' 7 עד 12": מילה בין שני השדות — כך הסדר נכון בכל מעבד תמלילים (מקף בין שני שדות מתהפך בפסקה מימין לשמאל)
-                $ref = w_r("עמ' ", ['size' => 10]) . w_pageref("fund$fa", $a)
-                    . ($fz !== $fa ? w_r(' עד ', ['size' => 10]) . w_pageref("fund$fz", $z) : '');
+                $ref = w_r("עמ' ", ['size' => $T]) . w_pageref("fund$fa", $a)
+                    . ($fz !== $fa ? w_r(' עד ', ['size' => $T]) . w_pageref("fund$fz", $z) : '');
             }
             $rows[] = [['text' => $r['label'], 'bold' => true], w_amount($r['prev']), w_amount($r['actual']), w_amount($r['cur']),
                 ['xml' => '<w:p><w:pPr><w:bidi/><w:jc w:val="center"/><w:spacing w:after="0"/></w:pPr>' . $ref . '</w:p>']];
@@ -419,37 +508,40 @@ function export_docx(array $s, int $id): never
             w_amount($sec['total']['actual'], '', true) + ['fill' => 'F2F2F2'], w_amount($sec['total']['cur'], '', true) + ['fill' => 'F2F2F2'], ['text' => '', 'fill' => 'F2F2F2']];
         $body .= w_table([34, 17, 17, 17, 15], $rows, ['header' => true]);
     }
-    if ($d['summary']['note']) $body .= w_p($d['summary']['note'], ['bold' => true, 'size' => 10, 'before' => 200]);
+    if ($d['summary']['note']) $body .= w_p($d['summary']['note'], ['bold' => true, 'size' => $T, 'before' => 200]);
+    }
 
     // דף לכל קופה
     foreach ($d['funds'] as $i => $f) {
         $bm = '<w:bookmarkStart w:id="' . ($i + 10) . '" w:name="fund' . $f['id'] . '"/>';
-        $body .= w_p($f['title'], ['bold' => true, 'u' => true, 'size' => 14, 'align' => 'center', 'break' => true, 'after' => 60,
+        $nb = $brk();
+        $body .= w_p($f['title'], ['bold' => true, 'u' => $u, 'size' => $TI, 'align' => $al, 'break' => $nb && ($ds['fund_new_page'] || $i === 0),
+            'before' => $nb && !$ds['fund_new_page'] && $i ? 480 : 0, 'after' => 60, 'keep' => true,
             'bookmark' => $bm, 'bookmark_end' => '<w:bookmarkEnd w:id="' . ($i + 10) . '"/>']);
-        if ($f['address']) $body .= w_p($f['address'], ['bold' => true, 'u' => true, 'size' => 13, 'align' => 'center', 'after' => 200]);
+        if ($f['address']) $body .= w_p($f['address'], ['bold' => true, 'u' => $u, 'size' => $H + 1, 'align' => $al, 'after' => 200, 'keep' => true]);
         foreach ($f['tables'] as $t) {
-            $body .= w_p($t['caption'], ['bold' => true, 'u' => true, 'size' => 11, 'align' => 'center', 'before' => 240, 'keep' => true]);
+            $body .= w_p($t['caption'], ['bold' => true, 'u' => $u, 'size' => $X, 'align' => $al, 'before' => 240, 'keep' => true]);
             $rows = [['', DIRECTIONS[$t['dir']], $d['cols']['prev'], $d['cols']['actual'], $d['cols']['cur']]];
             foreach ($t['rows'] as $r) {
                 $rows[] = [['text' => $r['n'] . '.', 'align' => 'center'],
-                    ['xml' => w_p($r['title'], ['bold' => true, 'size' => 10, 'after' => 0]) . ($r['subtitle'] ? w_p($r['subtitle'], ['size' => 9, 'after' => 0]) : '')],
+                    ['xml' => w_p($r['title'], ['bold' => true, 'size' => $T, 'after' => 0]) . ($r['subtitle'] ? w_p($r['subtitle'], ['size' => max(6, $T - 1), 'after' => 0]) : '')],
                     w_amount($r['prev']), w_amount($r['actual']), w_amount($r['cur'], $r['note'])];
             }
             $g = ['fill' => 'F2F2F2'];
             $rows[] = [['text' => '', 'fill' => 'F2F2F2'], ['text' => 'סה"כ', 'bold' => true, 'fill' => 'F2F2F2'],
                 w_amount($t['total']['prev'], '', true) + $g, w_amount($t['total']['actual'], '', true) + $g, w_amount($t['total']['cur'], '', true) + $g];
             $body .= w_table([7, 39, 18, 18, 18], $rows, ['header' => true]);
-            foreach ($t['notes'] as $n) $body .= w_p($n, ['size' => 10, 'bold' => true, 'before' => 120]);
+            foreach ($t['notes'] as $n) $body .= w_p($n, ['size' => $T, 'bold' => true, 'before' => 120]);
         }
-        foreach ($f['notes'] as $n) $body .= w_p($n, ['size' => 10, 'bold' => true, 'before' => 120]);
+        foreach ($f['notes'] as $n) $body .= w_p($n, ['size' => $T, 'bold' => true, 'before' => 120]);
     }
 
     // נספח שכירויות
-    if ($d['appendix']) {
+    if ($ds['show_appendix'] && $d['appendix']) {
         $ac = $d['appendix_cols'];
         foreach ($d['appendix']['groups'] as $gi => $grp) {
-            $body .= w_p($d['appendix']['title'], ['bold' => true, 'u' => true, 'size' => 13, 'align' => 'center', 'break' => $gi === 0, 'before' => $gi ? 400 : 0]);
-            $body .= w_p($grp['title'], ['bold' => true, 'u' => true, 'size' => 13, 'align' => 'center', 'after' => 160, 'keep' => true]);
+            $body .= w_p($d['appendix']['title'], ['bold' => true, 'u' => $u, 'size' => $H + 1, 'align' => $al, 'break' => $gi === 0 && $brk(), 'before' => $gi ? 400 : 0, 'keep' => true]);
+            $body .= w_p($grp['title'], ['bold' => true, 'u' => $u, 'size' => $H + 1, 'align' => $al, 'after' => 160, 'keep' => true]);
             $rows = [[$ac['property'], $ac['tenant'], $ac['monthly'], $ac['annual'], $ac['period']]];
             $last = null;
             foreach ($grp['rows'] as $r) {
@@ -465,8 +557,10 @@ function export_docx(array $s, int $id): never
         }
     }
 
-    $sect = '<w:sectPr><w:footerReference w:type="default" r:id="rFooter"/><w:pgSz w:w="11906" w:h="16838"/>'
-        . '<w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="567" w:footer="567" w:gutter="0"/><w:titlePg/><w:bidi/></w:sectPr>';
+    $tw = fn($mm) => (int)round($mm * 56.7);   // מ"מ → twips
+    $sect = '<w:sectPr>' . ($ds['page_numbers'] ? '<w:footerReference w:type="default" r:id="rFooter"/>' : '') . '<w:pgSz w:w="11906" w:h="16838"/>'
+        . '<w:pgMar w:top="' . $tw($ds['margin_top']) . '" w:right="' . $tw($ds['margin_side']) . '" w:bottom="' . $tw($ds['margin_bottom']) . '" w:left="' . $tw($ds['margin_side'])
+        . '" w:header="567" w:footer="' . $tw(min(10, $ds['margin_bottom'] / 2)) . '" w:gutter="0"/>' . ($ds['show_cover'] ? '<w:titlePg/>' : '') . '<w:bidi/></w:sectPr>';
     $ns = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
         . 'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"';
     $doc = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ' . $ns . '><w:body>' . $body . $sect . '</w:body></w:document>';
@@ -474,9 +568,9 @@ function export_docx(array $s, int $id): never
         . '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>'
         . '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:ftr>';
     $styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-        . '<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial" w:eastAsia="Arial"/>'
-        . '<w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="he-IL" w:bidi="he-IL"/></w:rPr></w:rPrDefault>'
-        . '<w:pPrDefault><w:pPr><w:bidi/><w:spacing w:after="60" w:line="264" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>'
+        . '<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="' . xml($ds['font']) . '" w:hAnsi="' . xml($ds['font']) . '" w:cs="' . xml($ds['font']) . '" w:eastAsia="' . xml($ds['font']) . '"/>'
+        . '<w:sz w:val="' . (int)round($X * 2) . '"/><w:szCs w:val="' . (int)round($X * 2) . '"/><w:lang w:val="he-IL" w:bidi="he-IL"/></w:rPr></w:rPrDefault>'
+        . '<w:pPrDefault><w:pPr><w:bidi/><w:spacing w:after="60" w:line="' . (int)round(240 * $ds['line']) . '" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>'
         . '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>';
     $settings = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
         . '<w:updateFields w:val="true"/><w:defaultTabStop w:val="720"/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>';
@@ -574,14 +668,17 @@ final class Sheet
             }
             $data .= '</row>';
         }
+        $st = doc_st();
+        $in = fn($mm) => round($mm / 25.4, 2);   // מ"מ → אינץ'
         $merge = $this->merges ? '<mergeCells count="' . count($this->merges) . '">' . implode('', array_map(fn($m) => "<mergeCell ref=\"$m\"/>", $this->merges)) . '</mergeCells>' : '';
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
             . 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>'
             . '<sheetViews><sheetView rightToLeft="1" workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="16"/>'
             . "<cols>$cols</cols><sheetData>$data</sheetData>$merge"
-            . '<printOptions horizontalCentered="1"/><pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>'
+            . '<printOptions horizontalCentered="1"/><pageMargins left="' . $in($st['margin_side']) . '" right="' . $in($st['margin_side']) . '" top="' . $in($st['margin_top'])
+            . '" bottom="' . $in($st['margin_bottom']) . '" header="0.3" footer="0.3"/>'
             . '<pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"/>'
-            . '<headerFooter><oddFooter>&amp;C&amp;P</oddFooter></headerFooter></worksheet>';
+            . ($st['page_numbers'] ? '<headerFooter><oddFooter>&amp;C&amp;P</oddFooter></headerFooter>' : '') . '</worksheet>';
     }
 }
 
@@ -614,6 +711,8 @@ function calc_formula(array $c): string
 function export_xlsx(array $s, int $id): never
 {
     $d = doc_model($s, $id);
+    $xs = doc_st($d['style']);
+    $xf = xml($xs['font']);
     $used = [];
     // סגנונות (cellXfs): 0 רגיל · 1 מודגש · 2 כותרת גדולה במרכז · 3 כותרת טבלה · 4 טקסט במסגרת · 5 מספר במסגרת
     // 6 סה"כ טקסט · 7 סה"כ מספר · 8 הערה קטנה · 9 כותרת קטע במרכז, קו תחתון · 10 מספר במרכז (מספור)
@@ -735,8 +834,8 @@ function export_xlsx(array $s, int $id): never
 
     $styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
         . '<numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0;(#,##0);0"/></numFmts>'
-        . '<fonts count="4"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><name val="Arial"/></font>'
-        . '<font><b/><u/><sz val="14"/><name val="Arial"/></font><font><sz val="9"/><color rgb="FF555555"/><name val="Arial"/></font></fonts>'
+        . '<fonts count="4"><font><sz val="' . $xs['size_table'] . '"/><name val="' . $xf . '"/></font><font><b/><sz val="' . $xs['size_table'] . '"/><name val="' . $xf . '"/></font>'
+        . '<font><b/>' . ($xs['underline'] ? '<u/>' : '') . '<sz val="' . $xs['size_title'] . '"/><name val="' . $xf . '"/></font><font><sz val="' . max(6, $xs['size_table'] - 2) . '"/><color rgb="FF555555"/><name val="' . $xf . '"/></font></fonts>'
         . '<fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
         . '<fill><patternFill patternType="solid"><fgColor rgb="FFE7E6E6"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF2F2F2"/></patternFill></fill></fills>'
         . '<borders count="2"><border/><border><left style="thin"/><right style="thin"/><top style="thin"/><bottom style="thin"/></border></borders>'

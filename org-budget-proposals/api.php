@@ -47,7 +47,7 @@ const PLATFORM_ACTIONS = ['platform_link', 'platform_new'];
 const PASSWORD_ACTIONS = ['register', 'verify', 'login', 'logout', 'forgot', 'reset', 'me_password'];
 const POST_ACTIONS   = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'client_error',
                         'me_update', 'me_password', 'me_logout_others', 'dev_user', 'dev_org_force',
-                        'org_create', 'org_update', 'org_delete', 'member_add', 'member_set', 'member_remove',
+                        'org_create', 'org_update', 'org_style_set', 'org_delete', 'member_add', 'member_set', 'member_remove',
                         'fund_save', 'fund_archive', 'fund_order', 'contact_save', 'contact_archive', 'cat_save', 'cat_archive',
                         'budget_create', 'budget_update', 'budget_status', 'budget_duplicate', 'budget_delete', 'bfund_set', 'bfund_toggle',
                         'line_save', 'lines_batch', 'line_delete', 'line_order', 'transfer_create', 'srow_save', 'srow_delete', 'srow_order',
@@ -95,6 +95,7 @@ try {
         'org_history'     => org_history($session, (int)($_GET['id'] ?? 0)),
         'org_create'      => org_create($session, $body),
         'org_update'      => org_update($session, $body),
+        'org_style_set'   => org_style_set($session, $body),
         'org_delete'      => org_delete($session, $body),
         'member_add'      => member_add($session, $body),
         'member_set'      => member_set($session, $body),
