@@ -1046,6 +1046,15 @@ function budFunds(box, d) {
 
 // ── עריכה כטבלה: כל הקופות, כמו במסמך — ושמירה אחת לכל השינויים ──
 
+/** כניסה לתא מסמנת את כל התוכן — מקלידים ישר ערך חדש. העכבר לא מבטל את הסימון בשחרור. */
+function selectOnFocus(inp) {
+    let fresh = false;
+    inp.addEventListener('focus', () => { fresh = true; requestAnimationFrame(() => inp.select()); });
+    inp.addEventListener('mouseup', e => { if (fresh) { e.preventDefault(); fresh = false; } });
+    inp.addEventListener('blur', () => { fresh = false; });
+    return inp;
+}
+
 const toNum = v => { const t = String(v ?? '').replace(/[,\s₪]/g, ''); return t === '' ? null : /^-?\d+(\.\d+)?$/.test(t) ? Math.round(+t) : NaN; };
 const fmtNum = n => n === null || n === undefined || n === '' ? '' : Number(n).toLocaleString('en-US');
 
@@ -1149,6 +1158,7 @@ async function viewGrid(id) {
             'aria-label': `${SHORT[k]} — ${r.line?.title || 'שורה חדשה'}`, title: lock || '' });
         inp.addEventListener('input', recalc);
         inp.addEventListener('blur', () => { const v = toNum(inp.value); if (Number.isFinite(v)) inp.value = fmtNum(v); });
+        selectOnFocus(inp);
         r.inputs[k] = inp;
         return h(`td.num.c-${k}`, inp, note ? h('small.cell-note', note) : null);
     };
@@ -1159,7 +1169,7 @@ async function viewGrid(id) {
         r.inputs.title = h('input.t', { value: l?.title || '', maxLength: 160, readOnly: !edit, placeholder: l ? '' : 'שורה חדשה…', 'aria-label': 'שם הסעיף' });
         // שורה שנייה ריקה — מוסתרת עד שעומדים על השורה (כדי שהטבלה תישאר צפופה)
         r.inputs.subtitle = h(`input.sub${l?.subtitle ? '' : '.empty'}`, { value: l?.subtitle || '', maxLength: 200, readOnly: !edit, placeholder: edit ? 'שורה שנייה' : '', 'aria-label': 'שורה שנייה' });
-        for (const k of ['title', 'subtitle']) r.inputs[k].addEventListener('input', recalc);
+        for (const k of ['title', 'subtitle']) { r.inputs[k].addEventListener('input', recalc); selectOnFocus(r.inputs[k]); }
         r.summaryOnly = !!l?.summary_only;
         r.msg = h('div.row-msg');
         const note = l ? [l.calc_note, l.cell_note].filter(Boolean).join(' · ') : '';
@@ -1224,22 +1234,55 @@ async function viewGrid(id) {
     }));
     bar.append(save, undo);
 
+    // גודל התצוגה: ברירת המחדל — מה שמתאים למסך (כל העמודות נראות, בטלפון לא פחות מ-80%); אפשר להקטין ולהגדיל
+    const doc = h('div.grid-doc', ...d.funds.map(f => {
+        fundBal[f.id] = h('span.grid-bal');
+        const dirs = b.expense_first ? ['expense', 'income'] : ['income', 'expense'];
+        return h('section.grid-fund',
+            h('div.grid-head', h('h3', FUND_IC[f.kind], ' ', `הכנסות והוצאות – ${f.name}`), fundBal[f.id]),
+            f.address ? h('p.grid-addr', f.address) : null,
+            ...dirs.flatMap(dir => table(f, dir)));
+    }));
+    const zLabel = h('output.z-val', { 'aria-live': 'polite' });
+    const zoomKey = 'ob-grid-zoom';
+    const fitZoom = () => {
+        doc.style.zoom = 1;
+        const t = doc.querySelector('table.grid');
+        const need = t ? t.scrollWidth : 0, have = t ? t.parentElement.clientWidth : 0;
+        const min = innerWidth < 900 ? .8 : .6;
+        return have && need > have + 1 ? Math.max(min, Math.floor(have / need * 20) / 20) : 1;
+    };
+    let auto = true;
+    const setZoom = z => {
+        z = Math.round(Math.min(1.6, Math.max(.5, z)) * 20) / 20;
+        doc.style.zoom = z;
+        zLabel.textContent = `${Math.round(z * 100)}%${auto ? ' · מותאם' : ''}`;
+        try { auto ? localStorage.removeItem(zoomKey) : localStorage.setItem(zoomKey, String(z)); } catch {}
+    };
+    const cur = () => +doc.style.zoom || 1;
+    const zbtn = (label, aria, fn) => h('button.icon-btn', { type: 'button', 'aria-label': aria, title: aria, onclick: fn }, label);
+    const zoomBox = h('div.grid-zoom', { role: 'group', 'aria-label': 'גודל התצוגה' },
+        h('span.muted', '🔍'),
+        zbtn('−', 'הקטנה', () => { auto = false; setZoom(cur() - .1); }),
+        zLabel,
+        zbtn('+', 'הגדלה', () => { auto = false; setZoom(cur() + .1); }),
+        zbtn('↺', 'התאמה למסך', () => { auto = true; setZoom(fitZoom()); }));
+
     put(main, h('div.grid-top', sumCard,
             h('p.hint', edit
                 ? 'כל הקופות כמו במסמך. משנים כמה שרוצים ושומרים פעם אחת; ההערות והאזהרות מתעדכנות תוך כדי הקלדה. 🧮 חודשית ו-🔁 העברה מכמה קופות — הסכום נגזר, ומשנים אותו בעריכת השורה. 🏠 שכירות · ∑ רק בריכוז.'
                 : 'ההצעה ' + STATUS_CHIP[b.status][0] + ' — לקריאה בלבד. לעריכה — להחזיר לטיוטה (⋯ במסך ההצעה).')),
-        h('div.grid-layout',
-            h('div.grid-doc', ...d.funds.map(f => {
-                fundBal[f.id] = h('span.grid-bal');
-                const dirs = b.expense_first ? ['expense', 'income'] : ['income', 'expense'];
-                return h('section.grid-fund',
-                    h('div.grid-head', h('h3', FUND_IC[f.kind], ' ', `הכנסות והוצאות – ${f.name}`), fundBal[f.id]),
-                    f.address ? h('p.grid-addr', f.address) : null,
-                    ...dirs.flatMap(dir => table(f, dir)));
-            })),
-            issuesBox),
+        zoomBox,
+        h('div.grid-layout', doc, issuesBox),
         bar);
     recalc();
+    let saved = null;
+    try { saved = +localStorage.getItem(zoomKey) || null; } catch {}
+    auto = !saved;
+    setZoom(saved || fitZoom());
+    // מסך שמשנה גודל (סיבוב טלפון, חלון) — ההתאמה האוטומטית מתעדכנת
+    const onResize = () => { if (!doc.isConnected) return removeEventListener('resize', onResize); if (auto) setZoom(fitZoom()); };
+    addEventListener('resize', onResize);
 }
 
 // ── קופה בתוך ההצעה: טבלת הכנסות / הוצאות ──
