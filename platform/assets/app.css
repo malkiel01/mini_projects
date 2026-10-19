@@ -436,6 +436,7 @@ dialog.install .logo { width: 40px; height: 40px; }
     background: none; color: var(--muted); font-weight: 500; }
 
 .conn-toggle.off { color: var(--warn); font-weight: 600; }
+.login-opts { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 
 /* מתג (checkbox בתחפושת) */
 .toggle { position: relative; flex: none; display: inline-flex; width: 46px; height: 28px; cursor: pointer; }

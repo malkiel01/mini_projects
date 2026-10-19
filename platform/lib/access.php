@@ -44,6 +44,13 @@ function access_migrate(): void
         CREATE TABLE IF NOT EXISTS install_hidden (app_id TEXT PRIMARY KEY);
         -- אפליקציה שהמנהל ניתק מהפלטפורמה: השער לא חוסם אותה (lib/gate.php, is_detached).
         CREATE TABLE IF NOT EXISTS app_detached (app_id TEXT PRIMARY KEY, detached_at TEXT NOT NULL);
+        -- שיטות הכניסה של אפליקציה כשהיא מנותקת (docs/auth.md, סעיף 6). מחוברת — רק דרך הפלטפורמה.
+        -- אין שורה = ברירת המחדל: סיסמה משלה פתוחה, Google סגור.
+        CREATE TABLE IF NOT EXISTS app_login (
+            app_id   TEXT PRIMARY KEY,
+            password INTEGER NOT NULL DEFAULT 1,
+            google   INTEGER NOT NULL DEFAULT 0
+        );
         CREATE TABLE IF NOT EXISTS grants (
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             kind    TEXT NOT NULL CHECK (kind IN ('app','category')),
@@ -83,6 +90,8 @@ function apps_effective(): array
     $known = array_column(categories_list(), 'id');
     $installHidden = array_flip(db()->query('SELECT app_id FROM install_hidden')->fetchAll(PDO::FETCH_COLUMN));
     $detached = array_flip(db()->query('SELECT app_id FROM app_detached')->fetchAll(PDO::FETCH_COLUMN));
+    $login = [];
+    foreach (db()->query('SELECT * FROM app_login') as $l) $login[$l['app_id']] = $l;
 
     $apps = [];
     foreach (registry_load()['apps'] as $app) {
@@ -97,6 +106,11 @@ function apps_effective(): array
         // מנותקת = עומדת לבד — אפליקציה חיצונית, בלי שער ב-app.json, או שהמנהל ניתק.
         $app['detached'] = isset($detached[$app['id']]);
         $app['connected'] = !empty($app['gate']) && !$app['detached'];
+        // שיטות הכניסה (docs/auth.md): מחוברת — רק דרך הפלטפורמה; מנותקת — לפי הגדרת המנהל.
+        $l = $login[$app['id']] ?? null;
+        $app['login'] = $app['connected']
+            ? ['platform' => true, 'password' => false, 'google' => false]
+            : ['platform' => true, 'password' => (bool)($l['password'] ?? true), 'google' => (bool)($l['google'] ?? false)];
         // אכיפת PWA: כל אפליקציה מחוברת ניתנת להתקנה — אם אין לה manifest משלה, השער נותן לה
         // אחד (platform/pwa.php, lib/pwa.php).
         if ($app['connected']) $app['install']['pwa'] = true;
