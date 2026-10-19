@@ -60,8 +60,8 @@ try {
 
     switch ($action) {
         // ─── Auth ────────────────────────────────────
-        case 'register':    handleRegister($usersDir, $input); break;
-        case 'login':       handleLogin($usersDir, $input); break;
+        case 'register':    requirePasswordLogin($dataDir); handleRegister($usersDir, $input); break;
+        case 'login':       requirePasswordLogin($dataDir); handleLogin($usersDir, $input); break;
         case 'logout':      handleLogout(); break;
         case 'check_auth':  handleCheckAuth($usersDir, $token, $platformUser); break;
         case 'link_account':    linkOldAccount($usersDir, $platformUser, $input); break;
@@ -126,6 +126,29 @@ try {
 // ═══════════════════════════════════════════════════════
 // Auth Functions
 // ═══════════════════════════════════════════════════════
+
+/**
+ * כניסה והרשמה בסיסמה של האפליקציה — רק כשהיא מנותקת מהשער, והמנהל השאיר את "סיסמה משלה" פתוחה
+ * (⚙️ ← אפליקציות). ההגדרה נקראת מהפלטפורמה (sso.php?action=config) ונשמרת לדקה. הפלטפורמה לא
+ * זמינה — ההגדרה האחרונה שנקראה; אף פעם לא נקראה — פתוח, כדי שאפליקציה שיצאה לדרך עצמאית לא תינעל.
+ */
+function requirePasswordLogin($dataDir) {
+    $cache = $dataDir . '/login-config.json';
+    $cached = is_file($cache) ? json_decode((string)file_get_contents($cache), true) : null;
+    $login = $cached['login'] ?? null;
+    if (!$cached || time() - (int)($cached['at'] ?? 0) > 60) {
+        $ctx = stream_context_create(['http' => ['timeout' => 4, 'ignore_errors' => true]]);
+        $raw = @file_get_contents('https://mbe-plus.com/mini_projects/platform/sso.php?action=config&client=greeting-cards', false, $ctx);
+        $config = $raw ? json_decode($raw, true) : null;
+        if (is_array($config['login'] ?? null)) {
+            $login = $config['login'];
+            file_put_contents($cache, json_encode(['at' => time(), 'login' => $login]));
+        }
+    }
+    if (is_array($login) && empty($login['password'])) {
+        respond(false, 'הכניסה בסיסמה כבויה — היכנסו דרך הכלים הדיגיטליים', ['platform' => true]);
+    }
+}
 
 function handleRegister($usersDir, $input) {
     $username = trim($input['username'] ?? '');
@@ -250,9 +273,9 @@ function linkOldAccount($usersDir, $platformUser, $input) {
         respond(false, 'שם משתמש או סיסמה שגויים');
     }
 
-    // החשבון הישן עובר לפלטפורמה: מקושר ל-sub, ובלי סיסמה — מעכשיו נכנסים אליו רק דרך הפלטפורמה.
+    // החשבון הישן עובר לפלטפורמה: מקושר ל-sub. הסיסמה נשארת — היא רק חסומה כל עוד האפליקציה מחוברת
+    // (login חסום כשיש PLATFORM_USER). מנותקת, והמנהל פתח "סיסמה משלה" — היא עובדת שוב (auth.md, סעיף 4).
     $old['platformSub'] = $platformUser['platformSub'];
-    $old['passwordHash'] = '';
     $old['linkedAt'] = date('c');
     if (empty($old['token'])) $old['token'] = bin2hex(random_bytes(32));
     file_put_contents($oldFile, json_encode($old, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
