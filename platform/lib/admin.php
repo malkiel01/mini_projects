@@ -70,7 +70,7 @@ function admin_dispatch(string $action, array $body, array $admin): never
         'admin_app_update'      => admin_app_update($body),
         'admin_push_subscribe'  => admin_push_subscribe($body, $admin),
         'admin_push_unsubscribe'=> admin_push_unsubscribe($body, $admin),
-        'admin_push_test'       => admin_push_test($admin),
+        'admin_push_test'       => admin_push_test($admin, $body),
         'admin_sso_toggle'      => admin_sso_toggle($body),
         'admin_sso_revoke'      => admin_sso_revoke($body),
         default => throw new ApiError('פעולה לא מוכרת', 404),
@@ -275,14 +275,25 @@ function admin_push_unsubscribe(array $body, array $admin): never
     json_out(['ok' => true]);
 }
 
-function admin_push_test(array $admin): never
+/**
+ * התראת בדיקה. delay (עד 60 שניות) — עונים מיד ושולחים אחר כך, כדי שאפשר יהיה לסגור את האפליקציה
+ * ולראות שההתראה מגיעה גם כשהיא סגורה (כמו התראה אמיתית על הרשמה).
+ */
+function admin_push_test(array $admin, array $body): never
 {
+    $delay = max(0, min(60, (int)($body['delay'] ?? 0)));
+    if ($delay > 0) {
+        respond_then_continue(['scheduled' => $delay]);
+        set_time_limit($delay + 60);
+        sleep($delay);
+    }
     [$sent, $failed] = push_send([
         'title' => '🔔 בדיקה — כלים דיגיטליים',
         'body'  => 'ההתראות עובדות. כך תדעו על כל הרשמה חדשה.',
         'tag'   => 'test',
         'url'   => '#admin',
     ], [(int)$admin['id']]);
+    if ($delay > 0) exit;
     json_out(['sent' => $sent, 'failed' => $failed]);
 }
 

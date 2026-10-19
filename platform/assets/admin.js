@@ -237,7 +237,7 @@ window.PlatformAdmin = (() => {
             if (mine && Notification.permission === 'granted') {
                 card.classList.add('on');
                 tx.textContent = `פעיל במכשיר הזה${more}`;
-                btns.append(b('בדיקה', test), b('כיבוי', disable));
+                btns.append(b('בדיקה', test), b('בדיקה כשסגור', testClosed), b('כיבוי', disable));
             } else {
                 card.classList.remove('on');
                 tx.textContent = `כבוי במכשיר הזה${more}`;
@@ -278,6 +278,14 @@ window.PlatformAdmin = (() => {
                 P().toast(r.sent ? `✓ נשלחה בדיקה ל-${r.sent} ${r.sent === 1 ? 'מכשיר' : 'מכשירים'}` : '⚠️ השליחה נכשלה — נסו לכבות ולהפעיל שוב');
             } catch (err) { P().toast('⚠️ ' + err.message); }
             refresh();
+        }
+
+        // השרת שולח בעוד 20 שניות — בינתיים סוגרים את האפליקציה, וההתראה צריכה להגיע בכל זאת.
+        async function testClosed() {
+            try {
+                await P().api('admin_push_test', { delay: 20 });
+                P().toast('⏳ סגרו עכשיו את האפליקציה — ההתראה תגיע בעוד 20 שניות');
+            } catch (err) { P().toast('⚠️ ' + err.message); }
         }
 
         refresh();
