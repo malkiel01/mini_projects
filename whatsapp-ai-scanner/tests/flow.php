@@ -26,7 +26,8 @@ function check(string $name, bool $cond): void {
     if (!$cond) $failed++;
 }
 
-// 1. חשבונות
+// 1. חשבונות — של משתמש
+currentUserId(createUser([])['id']);
 $biz = createAccount('הביזנס שלי', 'business');
 $pri = createAccount('פרטי', 'personal');
 check('נוצרו שני חשבונות', count(listAccounts()) === 2);
@@ -94,7 +95,7 @@ saveAiSettings('anthropic', 'claude-haiku-4-5-20251001', 'sk-ant-abcd1234abcd123
 $view = aiSettingsView();
 check('המפתח מסומן כקיים', $view['has_key'] === true);
 check('רק זנב המפתח נחשף', $view['key_tail'] === 'abcd' && strlen($view['key_tail']) === 4);
-$rawKey = db()->query("SELECT ai_key_enc FROM owner WHERE id=1")->fetchColumn();
+$rawKey = db()->query("SELECT ai_key_enc FROM users WHERE id=1")->fetchColumn();
 check('המפתח מוצפן במסד', strpos($rawKey, 'sk-ant') === false && $rawKey !== '');
 
 // ניקוי

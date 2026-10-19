@@ -1,6 +1,7 @@
 <?php
 /**
- * חשבונות הוואטסאפ שהבעלים הגדיר.
+ * חשבונות הוואטסאפ שהמשתמש הגדיר. כל פעולה כאן מסוננת למשתמש הנוכחי
+ * (currentUserId) — משתמש לא רואה, לא קולט ולא מוחק חשבון של אחר.
  *
  * חשבון אינו החיבור עצמו — הוא תווית שהבעלים נותן ("ביזנס", "פרטי"),
  * וכל הודעה נקלטת תחת חשבון אחד. ההפרדה מאפשרת לשאול שאלה על הביזנס
@@ -27,14 +28,16 @@ function normalizePackage(string $pkg): string {
 }
 
 function listAccounts(): array {
-    return db()->query('SELECT a.*,
+    $st = db()->prepare('SELECT a.*,
                                (SELECT COUNT(*) FROM messages m WHERE m.account_id = a.id) AS message_count
-                          FROM accounts a ORDER BY a.created_at')->fetchAll();
+                          FROM accounts a WHERE a.user_id = ? ORDER BY a.created_at');
+    $st->execute([currentUserId()]);
+    return $st->fetchAll();
 }
 
 function getAccount(int $id): ?array {
-    $st = db()->prepare('SELECT * FROM accounts WHERE id = ?');
-    $st->execute([$id]);
+    $st = db()->prepare('SELECT * FROM accounts WHERE id = ? AND user_id = ?');
+    $st->execute([$id, currentUserId()]);
     return $st->fetch() ?: null;
 }
 
@@ -47,20 +50,22 @@ function createAccount(string $label, string $kind, string $package = ''): array
         throw new InvalidArgumentException('סוג חשבון לא מוכר');
     }
     $package = normalizePackage($package);
-    $st = db()->prepare('INSERT INTO accounts (label, kind, wa_package, created_at) VALUES (?, ?, ?, ?)');
-    $st->execute([$label, $kind, $package, time()]);
+    if (currentUserId() <= 0) throw new InvalidArgumentException('אין משתמש');
+    $st = db()->prepare('INSERT INTO accounts (user_id, label, kind, wa_package, created_at) VALUES (?, ?, ?, ?, ?)');
+    $st->execute([currentUserId(), $label, $kind, $package, time()]);
     return getAccount((int) db()->lastInsertId());
 }
 
 /** מעדכן את חבילת האפליקציה של חשבון. */
 function setAccountPackage(int $id, string $package): void {
     $package = normalizePackage($package);
-    db()->prepare('UPDATE accounts SET wa_package = ? WHERE id = ?')->execute([$package, $id]);
+    db()->prepare('UPDATE accounts SET wa_package = ? WHERE id = ? AND user_id = ?')
+        ->execute([$package, $id, currentUserId()]);
 }
 
 function deleteAccount(int $id): void {
     // המחיקה מפילה גם את ההודעות (ON DELETE CASCADE) — הבעלים מבקש
     // למחוק חשבון בדיוק כשהוא רוצה שההיסטוריה שלו לא תישאר בשרת.
-    $st = db()->prepare('DELETE FROM accounts WHERE id = ?');
-    $st->execute([$id]);
+    $st = db()->prepare('DELETE FROM accounts WHERE id = ? AND user_id = ?');
+    $st->execute([$id, currentUserId()]);
 }

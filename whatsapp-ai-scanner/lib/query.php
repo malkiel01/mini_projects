@@ -106,11 +106,12 @@ function looksMonetary(string $body): bool {
  * למודל את המתאימות ביותר. כך שאלה רחבה מוצאת מידע ישן, לא רק אחרון.
  */
 function collectMessages(?int $accountId, ?int $from, ?int $to, string $question = ''): array {
-    $where = [];
-    $args  = [];
-    if ($accountId !== null) { $where[] = 'account_id = ?'; $args[] = $accountId; }
-    if ($from !== null)      { $where[] = 'sent_at >= ?';   $args[] = $from; }
-    if ($to !== null)        { $where[] = 'sent_at <= ?';   $args[] = $to; }
+    // תמיד רק ההודעות של המשתמש הנוכחי — גם כשנשאל על "כל החשבונות".
+    $where = ['a.user_id = ?'];
+    $args  = [currentUserId()];
+    if ($accountId !== null) { $where[] = 'm.account_id = ?'; $args[] = $accountId; }
+    if ($from !== null)      { $where[] = 'm.sent_at >= ?';   $args[] = $from; }
+    if ($to !== null)        { $where[] = 'm.sent_at <= ?';   $args[] = $to; }
     $clause = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
     $sql = "SELECT m.*, a.label AS account_label, a.kind AS account_kind

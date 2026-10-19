@@ -17,6 +17,7 @@ require_once __DIR__ . '/../lib/ingest.php';
 $failed = 0;
 function check(string $n, bool $c): void { global $failed; echo ($c?"  ok  ":"  FAIL")."  $n\n"; if(!$c)$failed++; }
 
+currentUserId(createUser([])['id']);
 $acc = createAccount('פרטי', 'personal');
 
 // הודעה כספית ישנה

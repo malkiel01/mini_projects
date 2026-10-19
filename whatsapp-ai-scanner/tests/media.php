@@ -22,8 +22,9 @@ function check(string $name, bool $cond): void {
     if (!$cond) $failed++;
 }
 
-// מגדיר מפתח AI לבעלים (נדרש ל-ownerAiConn בתוך ingestMediaFile).
-setupOwner('password123');
+// משתמש עם מפתח AI (נדרש ל-userAiConn בתוך ingestMediaFile).
+setupFirstUser('password123');
+currentUserId(1);
 saveAiSettings('anthropic', 'claude-haiku-4-5-20251001', 'sk-ant-testtesttesttest');
 
 $acc = createAccount('פרטי', 'personal');
@@ -41,7 +42,7 @@ $transport = function ($provider, $url, $json, $key) {
     ])];
 };
 
-// מחליף את aiExtractFile? לא — ingestMediaFile קורא ל-ownerAiConn+aiExtractFile
+// מחליף את aiExtractFile? לא — ingestMediaFile קורא ל-userAiConn+aiExtractFile
 // ישירות. כדי להזריק תחבורה, נבדוק את aiExtractFile לחוד, ואת ingest עם
 // עקיפה זמנית דרך קבוע גלובלי לא קיים — לכן נבדוק בשתי רמות:
 

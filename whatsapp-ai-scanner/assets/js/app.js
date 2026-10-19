@@ -37,13 +37,15 @@ function openTab(name) {
 document.querySelectorAll('.tabs button').forEach((b) =>
     b.addEventListener('click', () => openTab(b.dataset.tab)));
 
-/* ── התקנה / כניסה ────────────────────────────────────────────── */
+/* ── כניסה ───────────────────────────────────────────────────────
+ * מחוברת לפלטפורמה — המשתמש כבר מזוהה (השער), ואין מסך כניסה ולא כפתור
+ * יציאה. מנותקת — הכניסה הישנה בסיסמה (או התקנה ראשונה כשאין משתמשים). */
 let configured = false;
 
 async function boot() {
     const state = await api('state');
     configured = state.configured;
-    if (state.owner) return enterApp();
+    if (state.user) return enterApp(state);
     show($('gate'), true);
     $('gateTitle').textContent = configured ? t('login') : t('first_setup');
     $('gateHint').textContent = configured ? t('login_hint') : t('setup_hint');
@@ -63,7 +65,7 @@ $('gateBtn').addEventListener('click', async () => {
             await api('setup', { password: pw });
         }
         $('pw').value = '';
-        enterApp();
+        enterApp(await api('state'));
     } catch (e) {
         msg.textContent = e.message;
         msg.className = 'msg err';
@@ -71,13 +73,46 @@ $('gateBtn').addEventListener('click', async () => {
 });
 $('pw').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('gateBtn').click(); });
 
-function enterApp() {
+function enterApp(state) {
     show($('gate'), false);
     show($('tabs'), true);
-    show($('logoutBtn'), true);
+    show($('logoutBtn'), !state.platform);
+    show($('linkLater'), !!state.can_link);
     openTab('ask');
     loadAccounts();   // כדי למלא את בורר החשבונות בשאלה
+    if (state.offer_link) openLink();
 }
+
+/* ── מסך החיבור החד-פעמי (חשבון ישן) ─────────────────────────── */
+function openLink() {
+    show($('link'), true);
+    $('link').scrollIntoView({ block: 'start' });
+}
+
+$('linkBtn').addEventListener('click', async () => {
+    const msg = $('linkMsg');
+    msg.textContent = '';
+    msg.className = 'msg';
+    try {
+        await api('link_account', { password: $('linkPw').value });
+        location.reload();   // הכול נטען מחדש — מהחשבון הישן
+    } catch (e) {
+        msg.textContent = e.message;
+        msg.className = 'msg err';
+    }
+});
+$('linkPw').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('linkBtn').click(); });
+
+$('noLinkBtn').addEventListener('click', async () => {
+    await api('dismiss_link').catch(() => {});
+    $('linkPw').value = '';
+    show($('link'), false);
+});
+
+$('openLinkBtn').addEventListener('click', () => {
+    openTab('ask');
+    openLink();
+});
 
 $('logoutBtn').addEventListener('click', async () => {
     await api('logout').catch(() => {});

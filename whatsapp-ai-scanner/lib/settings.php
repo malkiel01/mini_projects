@@ -1,6 +1,7 @@
 <?php
 /**
- * הגדרות ה-AI של הבעלים.
+ * הגדרות ה-AI — לכל משתמש משלו (ספק, מודל, מפתח, שפה). מפתח של משתמש אחד
+ * לעולם לא משמש משתמש אחר: כל אחד משלם על השאלות שלו.
  *
  * המפתח נשמר מוצפן (ai_key_enc) ומפוענח רק ברגע הפנייה למודל. שאר
  * המערכת מקבלת אובייקט חיבור מוכן ולא נוגעת במפתח הגלוי.
@@ -27,22 +28,22 @@ const ANSWER_LANGS = [
     'auto' => 'כשפת השאלה',
 ];
 
-/** שפת התשובה השמורה של הבעלים, עם נפילה לעברית אם לא תקינה. */
-function ownerAnswerLang(): string {
-    $l = (string) (owner()['answer_lang'] ?? 'he');
+/** שפת התשובה השמורה של המשתמש, עם נפילה לעברית אם לא תקינה. */
+function userAnswerLang(): string {
+    $l = (string) (me()['answer_lang'] ?? 'he');
     return array_key_exists($l, ANSWER_LANGS) ? $l : 'he';
 }
 
 /** מחזיר את הגדרות ה-AI לתצוגה — בלי המפתח עצמו, רק זנב לזיהוי. */
 function aiSettingsView(): array {
-    $o = owner();
+    $o = me();
     $key = decryptSecret($o['ai_key_enc'] ?? '');
     return [
         'provider'     => $o['ai_provider'] ?? 'anthropic',
         'model'        => $o['ai_model'] ?? '',
         'key_tail'     => secretTail($key),
         'has_key'      => $key !== '',
-        'answer_lang'  => ownerAnswerLang(),
+        'answer_lang'  => userAnswerLang(),
         'answer_langs' => array_map(
             fn($c, $l) => ['code' => $c, 'label' => $l],
             array_keys(ANSWER_LANGS), ANSWER_LANGS),
@@ -63,7 +64,7 @@ function aiSettingsView(): array {
  * שהוא תקין.
  */
 function fetchProviderModels(): array {
-    $conn = ownerAiConn();   // זורק AppError אם אין מפתח
+    $conn = userAiConn();   // זורק AppError אם אין מפתח
     return listProviderModels($conn['provider'], $conn['key']);
 }
 
@@ -82,12 +83,12 @@ function saveAiSettings(string $provider, string $model, ?string $key, ?string $
         checkProviderKey($provider, $key);   // זורק על מפתח שגוי-צורה
         $fields['ai_key_enc'] = encryptSecret($key);
     }
-    updateOwner($fields);
+    updateMe($fields);
 }
 
 /** אובייקט החיבור המלא לפנייה — עם המפתח המפוענח. */
-function ownerAiConn(): array {
-    $o = owner();
+function userAiConn(): array {
+    $o = me();
     $key = decryptSecret($o['ai_key_enc'] ?? '');
     if ($key === '') throw new AppError('לא הוגדר מפתח AI. הגדר אותו במסך ההגדרות.');
     return [

@@ -9,6 +9,8 @@ import android.provider.Settings
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.mbeplus.wascanner.databinding.ActivitySetupBinding
 import java.io.File
 
@@ -39,6 +41,13 @@ class SetupActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         b = ActivitySetupBinding.inflate(layoutInflater)
         setContentView(b.root)
+        // targetSdk 35+ מצייר מקצה לקצה: בלי זה הכותרת נכנסת מתחת לשורת המצב.
+        val pad = b.root.paddingTop
+        ViewCompat.setOnApplyWindowInsetsListener(b.root) { v, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
+            v.setPadding(pad + bars.left, pad + bars.top, pad + bars.right, pad + bars.bottom)
+            insets
+        }
         store = Store(this)
 
         b.server.setText(store.serverBase)

@@ -2,14 +2,15 @@
   "id": "whatsapp-ai-scanner",
   "name": "סורק וואטסאפ חכם",
   "icon": "💬",
-  "description": "שאילת שאלות בשפה חופשית על היסטוריית הוואטסאפ — מי התכתב מתי, מי שלח אסמכתת תשלום ועוד. השרת שומר את ההודעות מוצפנות ועונה דרך בינה מלאכותית; אפליקציית גשר לאנדרואיד קוראת את המסך דרך שירות נגישות. הצד השרתי עובד ונבדק; הגשר בשלד.",
+  "description": "שאילת שאלות בשפה חופשית על היסטוריית הוואטסאפ — מי התכתב מתי, מי שלח אסמכתת תשלום ועוד. כל משתמש רואה רק את ההודעות שלו; השרת שומר אותן מוצפנות ועונה דרך בינה מלאכותית, ואפליקציית גשר לאנדרואיד קוראת את המסך דרך שירות נגישות.",
   "category": "web",
   "entry": "index.html",
   "gate": true,
   "public": [
-    "api/index.php?action=ping|bridge_accounts|media|log|ingest|logs"
+    "api/index.php?action=ping|bridge_accounts|media|log|ingest|logs",
+    "privacy.html"
   ],
   "install": {
-    "apk": "https://github.com/malkiel01/mini_projects/releases/download/wascanner-apk/app-debug.apk"
+    "release": "whatsapp-ai-scanner-store"
   }
 }

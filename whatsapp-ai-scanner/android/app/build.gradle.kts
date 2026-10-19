@@ -1,3 +1,10 @@
+// גשר סורק הוואטסאפ — אפליקציה נייטיב (שירות נגישות), לא WebView.
+//
+// בזמן בנייה (מ-.github/workflows/wascanner-apk.yml):
+//   -PapiBase=…         כתובת השרת
+//   -PversionCode=N     עולה בכל בנייה — כל העלאה לחנות חייבת מספר גבוה מהקודם
+//   חתימה: WAS_KEYSTORE_FILE + ANDROID_KEYSTORE_PASSWORD (מפתח ההעלאה, alias "upload")
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -5,14 +12,14 @@ plugins {
 
 android {
     namespace = "com.mbeplus.wascanner"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.mbeplus.wascanner"
         minSdk = 24
-        targetSdk = 34
-        versionCode = 2
-        versionName = "0.2"
+        targetSdk = 36
+        versionCode = ((findProperty("versionCode") as String?) ?: "2").toInt()
+        versionName = "0.3"
 
         // כתובת השרת נקבעת בזמן בנייה, כמו ב-guarded-browser.
         buildConfigField("String", "API_BASE",
@@ -24,28 +31,44 @@ android {
         viewBinding = true
     }
 
-    // ה-APK יוצא בחתימת debug ל-sideload (במפתח ה-debug האוטומטי של
-    // הבנייה). כברירת מחדל, כש-minSdk >= 24, ‏AGP משמיט את חתימת v1
-    // (JAR) ומשאיר רק v2. על אנדרואיד תקני v2 מספיק, אבל מתקין
-    // החבילות של יצרנים מסוימים (Xiaomi/HyperOS) דוחה APK בלי v1 עם
-    // "החבילה פגומה / האפליקציה לא הותקנה" — גם בהתקנה נקייה. לכן
-    // מכריחים כאן v1+v2 יחד, לתאימות התקנה מרבית.
+    // חתימת v1+v2 יחד: כברירת מחדל, כש-minSdk >= 24, ‏AGP משמיט את חתימת v1
+    // (JAR) ומשאיר רק v2. על אנדרואיד תקני v2 מספיק, אבל מתקין החבילות של
+    // יצרנים מסוימים (Xiaomi/HyperOS) דוחה APK בלי v1 עם "החבילה פגומה /
+    // האפליקציה לא הותקנה" — גם בהתקנה נקייה. לכן מכריחים כאן v1+v2 יחד,
+    // לתאימות התקנה מרבית — גם ב-debug וגם במפתח ההעלאה.
     signingConfigs {
         getByName("debug") {
             enableV1Signing = true
             enableV2Signing = true
         }
+        create("upload") {
+            val file = System.getenv("WAS_KEYSTORE_FILE")
+            if (file != null) {
+                storeFile = file(file)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = "upload"
+                keyPassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                enableV1Signing = true
+                enableV2Signing = true
+            }
+        }
     }
 
     buildTypes {
-        release { isMinifyEnabled = false }
+        release {
+            isMinifyEnabled = false
+            if (System.getenv("WAS_KEYSTORE_FILE") != null) signingConfig = signingConfigs.getByName("upload")
+        }
     }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
+}
+
+kotlin {
+    compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
 }
 
 /*

@@ -49,7 +49,7 @@ function ingestMediaFile(int $accountId, string $filename, string $mime,
     }
 
     // חילוץ דרך המודל של הבעלים.
-    $text = aiExtractFile(ownerAiConn(), $mime, $bytes);
+    $text = aiExtractFile(userAiConn(), $mime, $bytes);
 
     // שמירה כהודעה — כך זה נכנס לחיפוש הרגיל.
     $body = "📎 קובץ: $filename\n" . $text;

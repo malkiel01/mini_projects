@@ -1,13 +1,25 @@
-name: Build WA-Scanner bridge APK
+# בונה את גשר סורק הוואטסאפ (whatsapp-ai-scanner/android) ומפרסם את "תיקיית החנות" שלו:
+# Release קבוע whatsapp-ai-scanner-store (platform/docs/rollout.md, צעד 5), שה-app.json מצביע עליו
+# ("install": {"release": "whatsapp-ai-scanner-store"}). שמות הקבצים קבועים, והם מתעדכנים בכל בנייה מ-main:
+#
+#   whatsapp-ai-scanner.apk   התקנה ידנית בטלפון — הקישור "⬇️ הורדת APK" בכרטיס של הכלי
+#   whatsapp-ai-scanner.aab   העלאה ל-Play Console (רק עם מפתח ההעלאה)
+#   store-listing.zip         טקסטים, תמונות ותשובות למדיניות — whatsapp-ai-scanner/android/store/
+#   assetlinks.json           טביעות המפתח — הפריסה מאחדת אותו לשורש הדומיין (platform/tools/assetlinks.php)
+#   build.json                מה נבנה: גרסה, חתימה, commit
+#
+# מפתח ההעלאה: הסוד המשותף ANDROID_KEYSTORE_PASSWORD (Settings → Secrets → Actions) — סיסמה אחת לכל
+# מפתחות ההעלאה של האפליקציות. בבנייה הראשונה מ-main עם הסוד נוצר מפתח, מוצפן בסיסמה (AES-256) ונשמר
+# בריפו — whatsapp-ai-scanner/android/keystore/upload.jks.enc. מוצפן הוא חסר ערך בלי הסיסמה. גוגל מחזיקה
+# מפתח חתימה משלה (Play App Signing), ולכן גם מפתח העלאה שאבד מוחלף דרך התמיכה שלהם.
+# בלי הסוד — APK בחתימת debug בלבד, בלי AAB.
+#
+# מענף אחר — רק בדיקה שהקוד נבנה (APK debug ב-Artifacts). ה-Release מתעדכן רק מ-main.
+#
+# הבנייה כאן ולא מקומית: סביבת הפיתוח חסומה לרשת חיצונית, ו-Gradle חייב להוריד את ה-SDK ואת התלויות.
+# ה-Release הישן wascanner-apk (APK בחתימת debug) כבר לא מתעדכן — הקישור בכרטיס עבר לתיקיית החנות.
 
-# בונה את אפליקציית הגשר ומעלה אותה כ-artifact.
-#
-# הבנייה כאן ולא מקומית: סביבת הפיתוח חסומה לרשת חיצונית, ו-Gradle
-# חייב להוריד את ה-SDK ואת התלויות. אותה סיבה ואותו מבנה כמו
-# android.yml של guarded-browser.
-#
-# ה-APK יוצא בחתימת debug: מספיק להתקנה ידנית בטלפון (sideload),
-# לא לחנות. חתימת release דורשת keystore שאין להחזיק בריפו.
+name: Build WA-Scanner bridge (APK + Google Play)
 
 on:
   push:
@@ -21,6 +33,13 @@ on:
         required: false
         default: 'https://mbe-plus.com/mini_projects/whatsapp-ai-scanner/'
 
+permissions:
+  contents: write   # ה-Release, ושמירת המפתח המוצפן בריפו
+
+concurrency:
+  group: wascanner-android-${{ github.ref }}
+  cancel-in-progress: false
+
 defaults:
   run:
     working-directory: whatsapp-ai-scanner/android
@@ -28,11 +47,19 @@ defaults:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # נדרש כדי לפרסם את ה-APK כ-Release (ראו השלב האחרון).
-    permissions:
-      contents: write
+    env:
+      API_BASE: ${{ inputs.apiBase || 'https://mbe-plus.com/mini_projects/whatsapp-ai-scanner/' }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      KS_ENC: keystore/upload.jks.enc
+      PUBLISH: ${{ github.ref == 'refs/heads/main' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # ה-commit של המפתח נדחף אחרי pull --rebase
+
+      # versionCode עולה בכל בנייה — כל העלאה לחנות חייבת מספר גבוה מהקודם.
+      - name: Version
+        run: echo "VERSION_CODE=$((100 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
 
       - name: Setup JDK 17
         uses: actions/setup-java@v4
@@ -40,41 +67,159 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      # ‏packages נדרש במפורש: ברירת המחדל של הפעולה מתקינה גם את החבילה 'tools', שהוסרה ממאגר
+      # ה-SDK — sdkmanager נכשל עליה לפני שהבנייה בכלל מתחילה.
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools'
 
+      # גרסה מפורשת: ה-gradle שמותקן ב-runner (9.x) אינו תואם ל-AGP 8.x (כמו ב-recipes-twa.yml).
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.14.3'
 
-      # הריפו אינו מכיל gradle-wrapper.jar (בינארי), ולכן ה-wrapper
-      # נוצר כאן מהגרסה שב-gradle-wrapper.properties.
       - name: Generate the Gradle wrapper
-        run: gradle wrapper --gradle-version 8.7
+        run: gradle wrapper --gradle-version 8.14.3
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon
-             -PapiBase="${{ github.event.inputs.apiBase || 'https://mbe-plus.com/mini_projects/whatsapp-ai-scanner/' }}"
+      - name: Signing key
+        id: key
+        run: |
+          if [ "$PUBLISH" != "true" ]; then
+            echo "mode=check" >> "$GITHUB_OUTPUT"; echo "ענף משנה — רק בדיקה שהקוד נבנה"; exit 0
+          fi
+          if [ -z "$ANDROID_KEYSTORE_PASSWORD" ]; then
+            echo "mode=debug" >> "$GITHUB_OUTPUT"
+            echo "::warning::אין סוד ANDROID_KEYSTORE_PASSWORD — נבנה APK בחתימת debug בלבד (התקנה ידנית), בלי AAB לחנות."
+            exit 0
+          fi
+          if [ ${#ANDROID_KEYSTORE_PASSWORD} -lt 16 ]; then
+            echo "::error::הסיסמה בסוד ANDROID_KEYSTORE_PASSWORD קצרה מ-16 תווים — המפתח המוצפן יושב בריפו ציבורי"
+            exit 1
+          fi
+          if [ ! -f "$KS_ENC" ]; then
+            keytool -genkeypair -keystore "$RUNNER_TEMP/upload.jks" -storetype PKCS12 -alias upload \
+              -keyalg RSA -keysize 4096 -validity 10000 \
+              -storepass "$ANDROID_KEYSTORE_PASSWORD" -keypass "$ANDROID_KEYSTORE_PASSWORD" \
+              -dname "CN=MBE Plus WhatsApp Scanner, O=mbe-plus.com, C=IL"
+            mkdir -p keystore
+            openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+              -in "$RUNNER_TEMP/upload.jks" -out "$KS_ENC" -pass env:ANDROID_KEYSTORE_PASSWORD
+            echo "נוצר מפתח העלאה חדש, ונשמר מוצפן: whatsapp-ai-scanner/android/$KS_ENC"
+          else
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+              -in "$KS_ENC" -out "$RUNNER_TEMP/upload.jks" -pass env:ANDROID_KEYSTORE_PASSWORD \
+              || { echo "::error::הסיסמה בסוד אינה פותחת את המפתח שבריפו. אל תמחקו את הקובץ — האפליקציה בחנות חתומה בו"; exit 1; }
+          fi
+          SHA=$(keytool -list -v -keystore "$RUNNER_TEMP/upload.jks" -alias upload -storepass "$ANDROID_KEYSTORE_PASSWORD" \
+                | grep -m1 'SHA256:' | sed 's/.*SHA256: *//')
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "mode=release" >> "$GITHUB_OUTPUT"
+          echo "WAS_KEYSTORE_FILE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
 
-      - name: Upload APK
+      - name: Build (release — AAB and APK)
+        if: steps.key.outputs.mode == 'release'
+        run: |
+          ./gradlew bundleRelease assembleRelease --no-daemon -PapiBase="$API_BASE" -PversionCode="$VERSION_CODE"
+          mkdir -p "$RUNNER_TEMP/out"
+          cp app/build/outputs/bundle/release/app-release.aab "$RUNNER_TEMP/out/whatsapp-ai-scanner.aab"
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/out/whatsapp-ai-scanner.apk"
+
+      - name: Build (debug APK)
+        if: steps.key.outputs.mode != 'release'
+        run: |
+          ./gradlew assembleDebug --no-daemon -PapiBase="$API_BASE" -PversionCode="$VERSION_CODE"
+          mkdir -p "$RUNNER_TEMP/out"
+          cp app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/out/whatsapp-ai-scanner.apk"
+
+      # טביעות המפתח: מפתח ההעלאה (APK שהותקן ידנית) ומפתח החתימה של גוגל (מה שמותקן מהחנות, מ-Play
+      # Console → App integrity), מ-play-signing-sha256.txt.
+      - name: Write assetlinks.json
+        if: steps.key.outputs.mode == 'release'
+        env:
+          UPLOAD_SHA: ${{ steps.key.outputs.sha }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re
+          shas = [os.environ['UPLOAD_SHA'].strip()]
+          for line in open('play-signing-sha256.txt', encoding='utf-8'):
+              line = line.split('#')[0].strip().upper()
+              if re.fullmatch(r'([0-9A-F]{2}:){31}[0-9A-F]{2}', line) and line not in shas:
+                  shas.append(line)
+          links = [{
+              'relation': ['delegate_permission/common.handle_all_urls'],
+              'target': {'namespace': 'android_app', 'package_name': 'com.mbeplus.wascanner', 'sha256_cert_fingerprints': shas},
+          }]
+          open(os.path.join(os.environ['RUNNER_TEMP'], 'out', 'assetlinks.json'), 'w', encoding='utf-8').write(json.dumps(links, indent=2) + '\n')
+          print('assetlinks.json:', shas)
+          PY
+
+      - name: Store listing and build.json
+        if: steps.key.outputs.mode != 'check'
+        env:
+          MODE: ${{ steps.key.outputs.mode }}
+          SHA: ${{ steps.key.outputs.sha }}
+        run: |
+          (cd store && zip -qr "$RUNNER_TEMP/out/store-listing.zip" .)
+          jq -n --arg mode "$MODE" --arg sha "$SHA" --arg commit "$GITHUB_SHA" --argjson code "$VERSION_CODE" \
+            --arg name "$(grep -o 'versionName = "[^"]*"' app/build.gradle.kts | cut -d'"' -f2)" \
+            '{app: "whatsapp-ai-scanner", package: "com.mbeplus.wascanner", versionCode: $code, versionName: $name,
+              signed: ($mode == "release"), uploadKeySha256: (if $sha == "" then null else $sha end),
+              commit: $commit, built: (now | todate)}' > "$RUNNER_TEMP/out/build.json"
+          cat "$RUNNER_TEMP/out/build.json"
+
+      - name: Save the encrypted key to the repo
+        if: steps.key.outputs.mode == 'release'
+        run: |
+          git add "$KS_ENC"
+          if git diff --cached --quiet; then echo "המפתח כבר בריפו"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "סורק וואטסאפ: מפתח העלאה מוצפן (נוצר בבנייה $VERSION_CODE)"
+          for i in 1 2 3; do
+            # --autostash: הבנייה משאירה קבצים ששונו (gradle wrapper), ובלעדיו pull --rebase מסרב
+            git pull --rebase --autostash origin "$GITHUB_REF_NAME" && git push origin "HEAD:$GITHUB_REF_NAME" && exit 0
+            sleep $((i * 5))
+          done
+          echo "::error::לא הצלחתי לשמור את המפתח המוצפן בריפו — אל תעלו לחנות את הבנייה הזאת"; exit 1
+
+      - name: Upload (Artifacts)
         uses: actions/upload-artifact@v4
         with:
-          name: wascanner-bridge-apk
-          path: whatsapp-ai-scanner/android/app/build/outputs/apk/debug/*.apk
+          name: whatsapp-ai-scanner-${{ env.VERSION_CODE }}
+          path: ${{ runner.temp }}/out/*
           if-no-files-found: error
 
-      # ‏Artifact של Actions אינו ניתן להורדה מדפדפן בטלפון — אין שם
-      # כפתור הורדה. לקובץ ב-Release יש קישור הורדה ישיר שעובד גם
-      # בנייד. התג נייח (wascanner-apk) ומתעדכן בכל בנייה, כך שהקישור
-      # תמיד מצביע ל-APK האחרון.
-      - name: Publish APK to a GitHub Release (mobile-friendly)
+      # תיקיית החנות: Artifact של Actions אינו ניתן להורדה מהטלפון, ל-Release יש קישור ישיר וקבוע.
+      - name: Publish the store folder (Release whatsapp-ai-scanner-store)
+        if: steps.key.outputs.mode != 'check'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: wascanner-apk
-          name: גשר סורק וואטסאפ — APK (debug)
+          tag_name: whatsapp-ai-scanner-store
+          name: גשר סורק וואטסאפ — תיקיית החנות
+          make_latest: false
           body: |
-            APK בחתימת debug להתקנה ידנית בטלפון (sideload).
-            מתעדכן אוטומטית בכל בנייה של הגשר.
-          files: whatsapp-ai-scanner/android/app/build/outputs/apk/debug/*.apk
+            מתעדכן לבד בכל בנייה מ-main (`.github/workflows/wascanner-apk.yml`).
+            - `whatsapp-ai-scanner.apk` — התקנה ידנית בטלפון
+            - `whatsapp-ai-scanner.aab` — להעלאה ל-Play Console (רק כשהבנייה חתומה)
+            - `store-listing.zip` — טקסטים, תמונות ותשובות למדיניות
+            - `assetlinks.json`, `build.json`
+          files: ${{ runner.temp }}/out/*
           fail_on_unmatched_files: true
+
+      - name: Summary
+        env:
+          MODE: ${{ steps.key.outputs.mode }}
+          SHA: ${{ steps.key.outputs.sha }}
+        run: |
+          {
+            echo "## גשר סורק וואטסאפ — בנייה $VERSION_CODE"
+            case "$MODE" in
+              release) echo "- **חתום** — APK, AAB ו-store-listing.zip ב-Release \`whatsapp-ai-scanner-store\`"
+                       echo "- טביעת מפתח ההעלאה (SHA-256): \`$SHA\`"
+                       echo "- אחרי ההעלאה הראשונה: Play Console → App integrity → את ה-SHA-256 של **App signing key** להוסיף ל-\`whatsapp-ai-scanner/android/play-signing-sha256.txt\`" ;;
+              debug)   echo "- **APK בחתימת debug בלבד** — אין סוד \`ANDROID_KEYSTORE_PASSWORD\`. לחנות: להוסיף את הסוד ולבנות שוב" ;;
+              *)       echo "- ענף משנה: רק בדיקה שהקוד נבנה. ה-Release מתעדכן מ-main" ;;
+            esac
+          } >> "$GITHUB_STEP_SUMMARY"
