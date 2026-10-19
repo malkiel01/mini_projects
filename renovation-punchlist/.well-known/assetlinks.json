@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.mbeplus.punchlist",
+      "sha256_cert_fingerprints": [
+        "F4:F4:04:8B:8F:7C:8D:23:2C:6C:F5:B5:18:95:89:49:51:8E:BB:8F:8C:CF:B9:33:04:DD:77:39:06:EF:02:D9"
+      ]
+    }
+  }
+]
