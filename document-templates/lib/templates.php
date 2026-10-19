@@ -543,6 +543,7 @@ function tpl_save(array $user, array $b): array
         $pdo->rollBack();
         throw $e;
     }
+    tpl_clean_asset((int)$t['version_id'], $schema);   // ההגדרות כבר בתבנית — לא נשארות בקובץ שנשלח לממלאים
     return ['ok' => true, 'version' => $version];
 }
 
@@ -589,3 +590,4 @@ require_once __DIR__ . '/fonts.php';   // גופנים שהמשתמש העלה
 require_once __DIR__ . '/fmt.php';     // מבנים מותאמים לתצוגת תאריך ומספר
 require_once __DIR__ . '/lists.php';   // רשימות ערכים — שטוחות ומקוננות
 require_once __DIR__ . '/porting.php'; // ייצוא וייבוא של תבנית — קובץ אחד
+require_once __DIR__ . '/pdfclean.php'; // ההגדרות המוכנות — נמחקות מקובץ המקור אחרי שנקראו

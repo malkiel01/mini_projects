@@ -569,8 +569,8 @@ function doc_complete(array $user, array $b): array
         if ($o = $st->fetch()) send_mail($o['email'], 'המסמך אושר: ' . unseal($d['title_enc']),
             "שלום {$o['display_name']},\n\n" . user_name($approver) . ' אישר/ה ונעל/ה את המסמך "' . unseal($d['title_enc']) . "\".\n\n" . app_base_url() . '#doc=' . $d['id']);
     }
-    if (!empty($schema['fill_download'])) notify_ready($d, $schema);
-    return ['ok' => true, 'hash' => db()->query('SELECT final_hash FROM documents WHERE id = ' . (int)$d['id'])->fetchColumn()];
+    $wa = !empty($schema['fill_download']) ? notify_ready($d, $schema) : [];
+    return ['ok' => true, 'hash' => db()->query('SELECT final_hash FROM documents WHERE id = ' . (int)$d['id'])->fetchColumn(), 'notify' => $wa];
 }
 
 /** נעילה וטביעת אצבע. נקרא מ"סיום" של המנפיק, או כשהמשתתף האחרון סיים. */

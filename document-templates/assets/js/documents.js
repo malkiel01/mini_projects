@@ -490,6 +490,23 @@
     }
 
     /** החזרה לתיקון: למי (ממלא אחד, או כל מי שסיים), ומה לתקן. הממלא מקבל קישור חדש במייל. */
+    /**
+     * לממלאים בלי מייל — ההודעה יוצאת ממך: וואטסאפ עם ההודעה כברירת מחדל, או הקישור להעתקה.
+     * list: [{name, url, whatsapp}] מהשרת.
+     */
+    function waSend(list, title) {
+      if (!list || !list.length) return;
+      window.DT.sheet(title, el('div', { class: 'field-sheet' },
+        el('p', { class: 'muted small' }, list.length > 1 ? 'לממלאים האלה אין מייל — שלחו להם בעצמכם:' : 'לממלא אין מייל — שלחו לו בעצמכם:'),
+        ...list.map(w => el('div', { class: 'person' },
+          el('strong', {}, w.name || 'ממלא'),
+          el('a', { class: 'btn primary', href: w.whatsapp, target: '_blank', rel: 'noopener' }, '💬 שליחה בוואטסאפ'),
+          el('div', { class: 'row' },
+            el('input', { class: 'link-box', value: w.url, readonly: true, dir: 'ltr', 'aria-label': 'הקישור', onclick: (e) => e.target.select() }),
+            el('button', { type: 'button', class: 'small', onclick: () => navigator.clipboard?.writeText(w.url)
+              .then(() => window.DT.toast('✓ הקישור הועתק'), () => window.DT.toast('ההעתקה נחסמה — סמנו את הקישור והעתיקו', true)) }, '📋 העתקה'))))));
+    }
+
     function returnDialog() {
       const done = (doc.participants || []).filter(p => p.status === 'completed');
       const who = el('select', { 'aria-label': 'למי' }, done.length > 1 ? el('option', { value: 0 }, 'כל הממלאים')
@@ -503,7 +520,8 @@
           const r = await api('doc_return', { id, participant: Number(who.value), note: note.value });
           dlg.close();
           await reload();
-          msg.replaceChildren(notice(`הוחזר לתיקון (${r.returned})` + (r.mailed ? ' — נשלח קישור חדש במייל.' : ' — אין מייל: שלחו קישור מ-👥 משתתפים.'), 'ok'));
+          msg.replaceChildren(notice(`הוחזר לתיקון (${r.returned})` + (r.mailed ? ' — נשלח במייל.' : ''), 'ok'));
+          waSend(r.notify, '↩ הוחזר לתיקון — שליחה לממלא');
         } catch (e) { go.disabled = false; out.replaceChildren(notice(e.message, 'bad')); }
       } }, 'החזרה');
       const dlg = window.DT.sheet('↩ החזרה לתיקון', el('div', { class: 'field-sheet' },
@@ -1273,7 +1291,12 @@
             el('div', { class: 'row' }, el('strong', {}, p.role),
               el('span', { class: 'badge ' + (done ? 'ok' : p.opened_at ? 'warn' : 'muted') }, PSTATUS[p.status] || p.status)),
             p.auth === 'email' ? el('div', { class: 'muted small' }, '🔒 קוד אימות למייל — כשנשלח במייל או בהעתקה. בוואטסאפ נכנסים בלי קוד') : null,
-            done ? (p.name ? el('div', { class: 'muted small' }, '👤 ' + p.name) : null) : el('div', { class: 'person-fields' }, pickBox, name, email, phone,
+            done ? (p.name ? el('div', { class: 'muted small' }, '👤 ' + p.name) : null) : null,
+            done && !p.email && doc.status === 'completed' && doc.schema.fill_download ? el('button', { type: 'button', class: 'small', onclick: async () => {
+              try { const r = await api('part_notify', { id, participant_id: p.id }); waSend([r], '✓ המסמך מוכן — שליחה לממלא'); }
+              catch (e) { out.replaceChildren(notice(e.message, 'bad')); }
+            } }, '💬 שליחת העותק המוכן') : null,
+            done ? null : el('div', { class: 'person-fields' }, pickBox, name, email, phone,
               el('button', { type: 'button', class: 'small', onclick: async () => {
                 out.replaceChildren();
                 try { await saveContact(); out.replaceChildren(notice(cid ? '✓ נשמר באנשי הקשר' : 'הממלא נותק מאיש הקשר', 'ok')); }
@@ -1321,10 +1344,11 @@
       }
       if (!confirm('לסיים ולנעול את המסמך? אחרי זה אי אפשר לשנות בו דבר.')) return;
       try {
-        await api('doc_complete', { id });
+        const r = await api('doc_complete', { id });
         await reload();
         msg.replaceChildren(notice('המסמך הושלם וננעל. אפשר להוריד PDF.', 'ok'));
         renderBody();
+        waSend(r.notify, '✓ המסמך מוכן — שליחה לממלא');
       } catch (e) {
         msg.replaceChildren(notice(e.message, 'bad'));
       }
