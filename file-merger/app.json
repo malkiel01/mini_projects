@@ -9,6 +9,10 @@
   "public": [
     "manifest.webmanifest",
     "service-worker.js",
-    "assets/icons/**"
-  ]
+    "assets/icons/**",
+    "privacy.html"
+  ],
+  "install": {
+    "release": "file-merger-store"
+  }
 }

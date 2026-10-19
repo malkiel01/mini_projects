@@ -15,3 +15,15 @@
 ב-`service-worker.js`**, אחרת מבקרים חוזרים ימשיכו לקבל את הגרסה הישנה מהמטמון.
 
 מקור עצמאי ומלא (עם רישיון והוראות עדכון הספריות): https://github.com/malkiel01/file-merger
+
+## התקנה — PWA, אנדרואיד ותיקיית חנות
+
+* **PWA** — `manifest.webmanifest` + `service-worker.js` (למעלה).
+* **אנדרואיד (TWA)** — `android/`, חבילה `com.mbeplus.filemerger`, נפתחת על `.../mini_projects/file-merger/`
+  בלבד. מועתק מהתבנית של המתכונים; נבנה ב-`.github/workflows/file-merger-twa.yml` בכל שינוי ב-`android/`.
+* **תיקיית חנות** — Release קבוע `file-merger-store` (`"install": {"release": ...}` ב-`app.json`):
+  `file-merger.apk`, `file-merger.aab`, `store-listing.zip`, `assetlinks.json`, `build.json`.
+  הטקסטים לחנות ותשובות המדיניות — `android/STORE.md`; מדיניות הפרטיות — `privacy.html` (ציבורי, מחוץ לשער).
+
+הצילומים ב-`android/store/screenshots/` צולמו ב-Playwright ברוחב 390px עם קבצי הדגמה. אחרי שינוי עיצוב
+גדול — לצלם מחדש.
