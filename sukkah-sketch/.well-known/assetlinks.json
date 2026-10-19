@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.mbeplus.sukkah",
+      "sha256_cert_fingerprints": [
+        "19:21:7A:8F:22:05:46:85:65:56:14:AA:AB:BF:6C:9A:F6:AD:86:8A:48:A6:01:85:A0:5F:75:8E:4F:DE:F7:1D"
+      ]
+    }
+  }
+]
