@@ -68,6 +68,11 @@ function doc_assign(array $user, array $b): array
     }
     $label = mb_substr(trim((string)($b['label'] ?? '')), 0, 60) ?: 'לקוח';
     $auth = ($b['auth'] ?? '') === 'email' ? 'email' : 'none';
+    // קוד למייל אחרי שהקישור כבר נשלח (לא בוואטסאפ) — רק אם יש לו מייל; אחרת הוא נתקע באמצע
+    $cur = array_column(participants_of((int)$d['id']), null, 'role_key')['link'] ?? null;
+    if ($auth === 'email' && $cur && $cur['notified_at'] && ($cur['link_via'] ?? '') !== 'whatsapp' && !$cur['verified_at'] && contact_of($cur)['email'] === '') {
+        throw new ApiError('הקישור כבר נשלח לממלא בלי מייל — אי אפשר לדרוש ממנו קוד למייל', 422);
+    }
     db()->prepare('UPDATE documents SET assign_enc = ? WHERE id = ?')
         ->execute([seal(json_encode(['fields' => $fields, 'label' => $label, 'auth' => $auth], JSON_UNESCAPED_UNICODE)), $d['id']]);
     // ממלאים: לכל תפקיד שמקבל שדה — שורה (קישור); "לקוח" שכבר לא מקבל כלום ועוד לא נשלח — יורד
@@ -79,8 +84,9 @@ function doc_assign(array $user, array $b): array
         db()->prepare('INSERT INTO participants (document_id, role_key, auth, status, sort_order) VALUES (?, ?, ?, ?, ?)')
             ->execute([$d['id'], $k, $k === 'link' ? $auth : 'none', 'waiting', count($have) + 1]);
     }
-    if (isset($have['link']) && !isset($used['link']) && !$have['link']['notified_at'] && !$have['link']['completed_at']) {
-        db()->prepare('DELETE FROM participants WHERE id = ?')->execute([$have['link']['id']]);
+    // ממלא שלא מקבל אף שדה ועוד לא נשלח — יורד (גם תפקיד מהתבנית: אחרת "לקוח" כפול, והמסמך לא נסגר לעולם)
+    foreach ($have as $k => $row) {
+        if (!isset($used[$k]) && !$row['notified_at'] && !$row['completed_at']) db()->prepare('DELETE FROM participants WHERE id = ?')->execute([$row['id']]);
     }
     log_event((int)$d['id'], 'user:' . $user['id'], 'assigned', ['fields' => count(array_filter($fields, fn($r) => $r !== ['owner']))]);
     return ['ok' => true];
@@ -222,7 +228,7 @@ function participants_view(array $d, array $schema): array
             'id' => (int)$p['id'], 'role_key' => $p['role_key'], 'role' => $role['label'], 'auth' => $p['auth'],
             'name' => $c['name'], 'email' => $c['email'], 'phone' => $c['phone'], 'contact_id' => $p['contact_id'] ? (int)$p['contact_id'] : null,
             'status' => $p['status'], 'notified_at' => $p['notified_at'], 'opened_at' => $p['opened_at'],
-            'completed_at' => $p['completed_at'], 'has_link' => $p['token_hash'] !== null,
+            'completed_at' => $p['completed_at'], 'has_link' => $p['token_hash'] !== null, 'link_via' => $p['link_via'] ?? null,
             'missing' => missing_for($schema, $values, $p['role_key'], $open), 'blocked' => $blocked,
         ];
     }, $list);
@@ -253,20 +259,16 @@ function part_link(array $user, array $b): array
     // ממלא בקישור הוא תמיד איש קשר — כך אפשר לעקוב ולעדכן אותו מהכרטיס
     if (!$p['contact_id']) throw new ApiError('קודם בוחרים לממלא איש קשר — או כותבים את פרטיו, והוא יישמר באנשי הקשר', 422);
 
-    $via = ($b['via'] ?? 'link') === 'email' ? 'email' : 'link';
+    $via = in_array($b['via'] ?? '', ['email', 'whatsapp'], true) ? $b['via'] : 'link';
     $c = contact_of($p);
     if ($via === 'email' && $c['email'] === '') throw new ApiError('אין כתובת מייל למשתתף', 422);
+    // קוד אימות למייל — לא בוואטסאפ. בשליחה אחרת צריך מייל לקוד
+    if ($p['auth'] === 'email' && $via !== 'whatsapp' && $c['email'] === '' && !$p['verified_at']) {
+        throw new ApiError('לממלא הזה נדרש קוד אימות במייל, ואין לו מייל. שלחו בוואטסאפ (בלי קוד), או הוסיפו מייל', 422);
+    }
 
-    $token = bin2hex(random_bytes(24));
-    $now = now_iso();
-    $pdo = db();
-    $pdo->beginTransaction();
-    $pdo->prepare("UPDATE participants SET token_hash = ?, notified_at = ?, status = CASE status WHEN 'waiting' THEN 'sent' ELSE status END WHERE id = ?")
-        ->execute([token_hash($token), $now, $p['id']]);
-    if ($d['status'] === 'draft') $pdo->prepare("UPDATE documents SET status = 'sent' WHERE id = ?")->execute([$d['id']]);
-    log_event((int)$d['id'], 'user:' . $user['id'], 'link_issued', ['role' => $view['role'], 'via' => $via]);
-    $pdo->commit();
-
+    $renew = !empty($b['renew']);
+    $token = part_token($p, $renew);
     $url = fill_url($token);
     $sent = null;
     if ($via === 'email') {
@@ -275,8 +277,15 @@ function part_link(array $user, array $b): array
         $sent = mail_fill($c['email'], $c['name'], unseal($d['title_enc']), $from, $url);
         if (!$sent) throw new ApiError('שליחת המייל נכשלה. אפשר להעתיק את הקישור ולשלוח בעצמך', 502);
     }
+    $pdo = db();
+    $pdo->beginTransaction();
+    $pdo->prepare("UPDATE participants SET notified_at = ?, link_via = ?, status = CASE status WHEN 'waiting' THEN 'sent' ELSE status END WHERE id = ?")
+        ->execute([now_iso(), $via, $p['id']]);
+    if ($d['status'] === 'draft') $pdo->prepare("UPDATE documents SET status = 'sent' WHERE id = ?")->execute([$d['id']]);
+    log_event((int)$d['id'], 'user:' . $user['id'], 'link_issued', ['role' => $view['role'], 'via' => $via, 'renew' => $renew]);
+    $pdo->commit();
     $text = ($c['name'] ? $c['name'] . ', ' : '') . 'מצורף מסמך למילוי ולחתימה: ' . unseal($d['title_enc']) . "\n" . $url;
-    return ['ok' => true, 'url' => $url, 'emailed' => (bool)$sent,
+    return ['ok' => true, 'url' => $url, 'emailed' => (bool)$sent, 'renewed' => $renew,
         'whatsapp' => 'https://wa.me/' . ($c['phone'] ? wa_phone($c['phone']) : '') . '?text=' . rawurlencode($text)];
 }
 
@@ -296,7 +305,7 @@ function fill_context(?string $token = null): array
     if (!preg_match('/^[0-9a-f]{48}$/', $token)) throw new ApiError('הקישור אינו תקין', 404);
     $st = db()->prepare(
         'SELECT p.*, d.id AS doc_id FROM participants p JOIN documents d ON d.id = p.document_id
-         WHERE p.token_hash = ? AND d.deleted_at IS NULL'
+         WHERE p.token_hash = ? AND d.deleted_at IS NULL AND d.archived_at IS NULL'
     );
     $st->execute([token_hash($token)]);
     $p = $st->fetch();
@@ -312,9 +321,25 @@ function fill_context(?string $token = null): array
     return [$p, $d, doc_schema($d)];
 }
 
+/** קוד למייל — רק כשנדרש, ולא בקישור שנשלח בוואטסאפ (עד שיהיה אימות בוואטסאפ). */
 function needs_otp(array $p): bool
 {
-    return $p['auth'] === 'email' && !$p['verified_at'];
+    return $p['auth'] === 'email' && !$p['verified_at'] && ($p['link_via'] ?? '') !== 'whatsapp';
+}
+
+/**
+ * הקישור של הממלא: אותו קישור כל עוד לא ביקשו חדש — שליחה חוזרת (וואטסאפ, העתקה, מייל, אישור,
+ * החזרה לתיקון) לא מבטלת את מה שכבר אצלו. $renew — קישור חדש, והקודם מפסיק לעבוד.
+ */
+function part_token(array $p, bool $renew = false): string
+{
+    if (!$renew && !empty($p['token_enc']) && $p['token_hash']) {
+        $t = (string)unseal($p['token_enc']);
+        if (preg_match('/^[0-9a-f]{48}$/', $t) && hash_equals((string)$p['token_hash'], token_hash($t))) return $t;
+    }
+    $t = bin2hex(random_bytes(24));
+    db()->prepare('UPDATE participants SET token_hash = ?, token_enc = ? WHERE id = ?')->execute([token_hash($t), seal($t), $p['id']]);
+    return $t;
 }
 
 function mask_email(string $e): string
@@ -496,9 +521,9 @@ function fill_complete(): array
         foreach ($list as $x) if (!$x['completed_at']) { $next = $x; break; }
         $c = $next ? contact_of($next) : null;
         if ($next && $c['email']) {
-            $token = bin2hex(random_bytes(24));
-            db()->prepare("UPDATE participants SET token_hash = ?, notified_at = ?, status = CASE status WHEN 'waiting' THEN 'sent' ELSE status END WHERE id = ?")
-                ->execute([token_hash($token), now_iso(), $next['id']]);
+            $token = part_token($next);
+            db()->prepare("UPDATE participants SET notified_at = ?, link_via = 'email', status = CASE status WHEN 'waiting' THEN 'sent' ELSE status END WHERE id = ?")
+                ->execute([now_iso(), $next['id']]);
             log_event((int)$d['id'], 'participant:' . $p['id'], 'link_issued', ['role' => role_of($schema, $next['role_key'])['label'], 'via' => 'email', 'auto' => true]);
             mail_fill($c['email'], $c['name'], $title, ($d['sender_enc'] ?? null) ? (string)unseal($d['sender_enc']) : $owner['display_name'], fill_url($token));
         } elseif ($owner['email']) {
@@ -533,15 +558,15 @@ function doc_return_note(int $docId, int $partId): ?string
     return $x && in_array($partId, $x['participants'] ?? [], true) ? (string)($x['note'] ?? '') : null;
 }
 
-/** המסמך הושלם (או אושר): קישור חדש לכל ממלא עם מייל — להורדת העותק שלו. הקישור הקודם מפסיק לעבוד. */
+/** המסמך הושלם (או אושר): מייל לכל ממלא עם מייל — להורדת העותק שלו, באותו קישור שכבר אצלו. */
 function notify_ready(array $d, array $schema): void
 {
     $title = (string)unseal($d['title_enc']);
     foreach (participants_of((int)$d['id']) as $p) {
         $c = contact_of($p);
         if (!$c['email'] || !$p['completed_at']) continue;
-        $token = bin2hex(random_bytes(24));
-        db()->prepare('UPDATE participants SET token_hash = ?, notified_at = ? WHERE id = ?')->execute([token_hash($token), now_iso(), $p['id']]);
+        $token = part_token($p);   // אותו קישור שכבר אצלו — גם אם קיבל אותו בוואטסאפ
+        db()->prepare('UPDATE participants SET notified_at = ? WHERE id = ?')->execute([now_iso(), $p['id']]);
         send_mail($c['email'], ($schema['approval'] ? 'המסמך אושר: ' : 'המסמך הושלם: ') . $title,
             "שלום {$c['name']},\n\nהמסמך \"$title\"" . ($d['number'] ? " ({$d['number']})" : '') .
             ($schema['approval'] ? ' אושר.' : ' הושלם.') . "\nלצפייה ולהורדה:\n" . fill_url($token));
@@ -580,8 +605,8 @@ function doc_return(array $user, array $b): array
         db()->prepare("UPDATE participants SET completed_at = NULL, status = 'opened' WHERE id = ?")->execute([$p['id']]);
         $c = contact_of($p);
         if (!$c['email']) continue;
-        $token = bin2hex(random_bytes(24));
-        db()->prepare('UPDATE participants SET token_hash = ?, notified_at = ? WHERE id = ?')->execute([token_hash($token), now_iso(), $p['id']]);
+        $token = part_token($p);
+        db()->prepare('UPDATE participants SET notified_at = ? WHERE id = ?')->execute([now_iso(), $p['id']]);
         $sent += (int)send_mail($c['email'], 'הוחזר לתיקון: ' . $title, "שלום {$c['name']},\n\n$owner החזיר/ה אליך את המסמך \"$title\" לתיקון." .
             ($note !== '' ? "\n\nההערה:\n$note" : '') . "\n\nלמילוי:\n" . fill_url($token));
     }

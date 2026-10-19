@@ -43,8 +43,24 @@
   const show = (...nodes) => app.replaceChildren(...nodes.filter(n => n != null));
 
   let guard = null;
+  // גיליון (למשל עריכת שורות בטבלה במחשב) והודעה קצרה — כמו באפליקציה
+  function sheet(title, body, opts = {}) {
+    const dlg = el('dialog', { class: 'sheet', 'aria-label': title });
+    dlg.append(el('header', { class: 'sheet-head' },
+      el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'סגירה', title: 'סגירה', onclick: () => dlg.close() }, '✕'),
+      el('h2', {}, title), opts.action || null), el('div', { class: 'sheet-body' }, body));
+    dlg.addEventListener('close', () => { dlg.remove(); if (opts.onClose) opts.onClose(); });
+    document.body.append(dlg);
+    dlg.showModal();
+    return dlg;
+  }
+  function toast(message, bad) {
+    const t = el('div', { class: 'toast' + (bad ? ' bad' : ''), role: 'status' }, String(message));
+    document.body.append(t);
+    setTimeout(() => t.remove(), 3500);
+  }
   window.DT = {
-    api, el, notice, show,
+    api, el, notice, show, sheet, toast,
     setTab: () => {},
     setLeaveGuard: (fn) => { guard = fn; },
     wide: () => document.body.classList.add('wide'),
