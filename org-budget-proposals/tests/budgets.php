@@ -127,6 +127,34 @@ check($def($mesila, 'row_expense') === null, 'קופה שהוסרה מהשורה
 srow_order($editor, ['budget_id' => $b, 'ids' => [$r2, $r]]);
 check(array_column(budget_get($editor, $b)['rows'], 'id') === [$r2, $r], 'סדר שורות הריכוז משתנה מהממשק');
 srow_delete($editor, ['budget_id' => $b, 'id' => $r2]);
+
+echo "עריכה כטבלה\n";
+$g = budget_get($editor, $b);
+$gen = line($g, 'הכנסות כלליות');
+$give = line($g, 'החזר הלוואה מהקדש לארגון (השקעות בנכס)');
+$r = lines_batch($editor, ['budget_id' => $b, 'lines' => [
+    ['id' => $gen['id'], 'title' => 'הכנסות כלליות', 'prev_actual' => 67000, 'amount' => 81000],
+    ['id' => $give['id'], 'amount' => 260000],
+    ['fund_id' => $ops, 'direction' => 'expense', 'title' => 'ביטוחי מנהל משרה', 'prev_budget' => 0, 'amount' => 25000],
+]]);
+$g = budget_get($editor, $b);
+check(line($g, 'הכנסות כלליות')['amount'] === 81000 && line($g, 'הכנסות כלליות')['prev_actual'] === 67000, 'כמה שורות בבת אחת — שורה רגילה');
+check(line($g, 'החזר הלוואה מהקדש לארגון (השקעות בנכס)')['summary_row_id'] === $give['summary_row_id']
+    && line($g, 'הכנסות מהחזר הלוואה מהקדשות')['amount'] === 260000, 'מעבירה: רק הסכום השתנה, שורת הריכוז נשארה — והמקבלת מתעדכנת');
+check(line($g, 'ביטוחי מנהל משרה')['amount'] === 25000 && count($r['ids']) === 3, 'שורה חדשה מהטבלה');
+$calcLine = array_values(array_filter($g['lines'], fn($l) => $l['calc']))[0];
+expect_error(fn() => lines_batch($editor, ['budget_id' => $b, 'lines' => [
+    ['id' => $gen['id'], 'amount' => 1],
+    ['id' => $calcLine['id'], 'amount' => 5],
+]]), 422, 'שורה חודשית — אין לשנות לה סכום מהטבלה');
+check(line(budget_get($editor, $b), 'הכנסות כלליות')['amount'] === 81000, 'שגיאה בשורה אחת — שום דבר לא נשמר');
+$calcAfter = array_column(budget_get($editor, $b)['lines'], null, 'id')[$calcLine['id']];
+lines_batch($editor, ['budget_id' => $b, 'lines' => [['id' => $calcLine['id'], 'prev_actual' => 1215000]]]);
+$calcAfter2 = array_column(budget_get($editor, $b)['lines'], null, 'id')[$calcLine['id']];
+check($calcAfter2['calc'] === $calcAfter['calc'] && $calcAfter2['lease'] === $calcAfter['lease'] && $calcAfter2['prev_actual'] === 1215000,
+    'שורה חודשית: עמודה אחרת משתנה, החישוב והשכירות נשארים');
+lines_batch($editor, ['budget_id' => $b, 'lines' => [['id' => $gen['id'], 'amount' => 80000], ['id' => $give['id'], 'amount' => 258000]]]);
+line_delete($editor, ['budget_id' => $b, 'id' => line(budget_get($editor, $b), 'ביטוחי מנהל משרה')['id']]);
 bfund_set($editor, ['budget_id' => $b, 'fund_id' => $mesila, 'notes_expense' => '* הערה אחרי הטבלה']);
 check(array_column(budget_get($editor, $b)['funds'], null, 'id')[$mesila]['notes_expense'] === '* הערה אחרי הטבלה', 'הערה אחרי הטבלה של קופה');
 check(budget_get($editor, $b)['summary']['income'] === 780756 + 1674000 + 80000 + 69000 + 258000, 'סה"כ הכנסות');
