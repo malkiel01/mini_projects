@@ -9,5 +9,21 @@
       "label": "🍲 כניסה לאפליקציה",
       "href": ""
     }
+  ],
+  "gate": true,
+  "public": [
+    "verify.php",
+    "reset.php",
+    "privacy.html",
+    "delete-account.html",
+    "logs.php",
+    "index-worker.php",
+    "scout-worker.php",
+    "api.php?action=push-pending",
+    "manifest.webmanifest",
+    "service-worker.js",
+    "assets/icons/**",
+    "assets/icon.svg",
+    "assets/css/app.css"
   ]
 }
