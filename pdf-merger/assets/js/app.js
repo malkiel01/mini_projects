@@ -1,8 +1,7 @@
 (function () {
   'use strict';
 
-  pdfjsLib.GlobalWorkerOptions.workerSrc =
-    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'assets/vendor/pdf.worker.min.js';
 
   var files = [];
   var currentStep = 1;
@@ -859,5 +858,8 @@
   // init
   goToStep(1);
   renderFileList();
+
+  // התקנה כאפליקציה ועבודה בלי רשת
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('service-worker.js').catch(function () {});
 
 })();

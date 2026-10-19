@@ -7,6 +7,14 @@
   "entry": "index.html",
   "gate": true,
   "install": {
-    "offline": true
-  }
+    "offline": true,
+    "release": "pdf-merger-store"
+  },
+  "public": [
+    "manifest.webmanifest",
+    "service-worker.js",
+    "assets/icons/**",
+    "assets/icon.svg",
+    "privacy.html"
+  ]
 }

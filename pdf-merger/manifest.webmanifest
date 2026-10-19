@@ -1,0 +1,20 @@
+{
+  "name": "איחוד PDF ותמונות",
+  "short_name": "איחוד PDF",
+  "description": "מאחדים קבצי PDF ותמונות לקובץ PDF אחד — סדר בגרירה, תצוגה מקדימה, סיבוב ופיצול. הכול בטלפון, בלי שרת.",
+  "lang": "he",
+  "dir": "rtl",
+  "id": "./",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f6fb",
+  "theme_color": "#1a1a2e",
+  "icons": [
+    { "src": "./assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./assets/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "./assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
