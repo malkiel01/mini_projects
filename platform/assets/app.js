@@ -660,6 +660,61 @@ function openInstallSheet() {
     dlg.showModal();
 }
 
+// התקנה ישנה: לפני platform/home/ (README, "הפלטפורמה תמיד נפתחת על רשימת האפליקציות") הטווח של
+// האפליקציה המותקנת היה כל האתר — כלי שנפתח ממנה נשאר בתוך החלון שלה, וחזרה לאייקון החזירה את הכלי
+// האחרון. מנגנון דף האינטרנט לא יכול לתקן את זה בהתקנה הקיימת: רק התקנה מחדש (או עדכון שהדפדפן
+// עושה לבד, לפעמים אחרי ימים). מזהים אותה כך: פתוחה כאפליקציה, אבל לא מ-platform/home/.
+const oldInstall = () => isStandalone() && !location.pathname.includes('/platform/home/');
+
+function oldInstallBanner() {
+    if (!oldInstall()) return null;
+    const how = el('button', { type: 'button', className: 'btn primary sm', textContent: 'איך?' });
+    how.addEventListener('click', openReinstallSheet);
+    return el('div', { className: 'install-banner update', role: 'alert' }, [
+        el('span', { className: 'ib-ic', textContent: '⚠️', ariaHidden: 'true' }),
+        el('div', { className: 'ib-tx' }, [
+            el('b', { textContent: 'צריך להתקין מחדש' }),
+            el('small', { textContent: 'בגרסה הזו אפליקציות נפתחות בתוך החלון הזה' }),
+        ]),
+        how,
+    ]);
+}
+
+function openReinstallSheet() {
+    const url = new URL('./', document.baseURI).href;
+    const step = (html) => el('li', {}, [el('span', { className: 'step-tx', innerHTML: html })]);
+    const steps = isIOS() ? [
+        'לחיצה ארוכה על האייקון <b>כלים דיגיטליים</b> במסך הבית ← <b>"מחיקת אפליקציה"</b> (או "הסרת סימנייה")',
+        `פותחים בספארי את <b dir="ltr">${url}</b>`,
+        'שיתוף ← <b>"הוספה למסך הבית"</b> ← "הוספה"',
+    ] : isAndroid() ? [
+        'לחיצה ארוכה על האייקון <b>כלים דיגיטליים</b> במסך הבית ← <b>"הסרת התקנה"</b>',
+        `פותחים בכרום את <b dir="ltr">${url}</b>`,
+        'לוחצים <b>"התקנה"</b> בראש הדף (או ⋮ ← <b>"התקנת אפליקציה"</b>)',
+    ] : [
+        'בחלון הזה: תפריט ⋮ למעלה ← <b>"הסרת ההתקנה של כלים דיגיטליים"</b>',
+        `פותחים בדפדפן את <b dir="ltr">${url}</b>`,
+        'לוחצים על <b>סמל ההתקנה ⊕</b> בקצה שורת הכתובת',
+    ];
+    const close = el('button', { type: 'button', className: 'icon-btn', textContent: '✕', ariaLabel: 'סגירה' });
+    const dlg = el('dialog', { className: 'install' }, [el('div', { className: 'sheet' }, [
+        el('div', { className: 'sheet-head' }, [
+            logo(),
+            el('div', { className: 'tx' }, [el('h2', { textContent: 'התקנה מחדש' }), el('small', { textContent: 'פעם אחת — ומאז הכלים הדיגיטליים תמיד נפתחים על הרשימה' })]),
+            close,
+        ]),
+        el('div', { className: 'sheet-body' }, [
+            el('p', { className: 'lead', textContent: 'האפליקציה במכשיר הותקנה בגרסה ישנה, שבה כל אפליקציה נפתחת בתוך החלון של הכלים הדיגיטליים — ולכן חזרה לאייקון מחזירה את האפליקציה האחרונה. בגרסה החדשה כל אפליקציה נפתחת בחלון משלה.' }),
+            el('ol', { className: 'steps' }, steps.map(step)),
+        ]),
+    ])]);
+    close.addEventListener('click', () => dlg.close());
+    dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+    dlg.addEventListener('close', () => dlg.remove());
+    document.body.append(dlg);
+    dlg.showModal();
+}
+
 // פס הזמנה להתקנה בראש דף האפליקציות — עד שמתקינים או סוגרים אותו.
 const BANNER_KEY = 'platform:install-banner';
 function installBanner() {
@@ -769,7 +824,7 @@ async function showApps() {
 
     const empty = el('p', { className: 'no-results', textContent: 'לא נמצאה אפליקציה בשם הזה', hidden: true });
     const parts = [hello];
-    const banner = installBanner();
+    const banner = oldInstallBanner() || installBanner();
     if (banner) parts.unshift(banner);
     // חיפוש + סינון לפי המכשיר הזה: הכול / מותקנות / אפשר להתקין.
     let q = '', only = 'all';
