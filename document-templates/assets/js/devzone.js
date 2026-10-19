@@ -220,9 +220,27 @@
       el('dl', { class: 'cells' }, cell('בקשות', h.day.requests),
         cell('שגיאות שרת', h.day.errors ? el('a', { href: '#dev?tab=log', class: 'badge bad' }, String(h.day.errors)) : yes(true, '0')),
         cell('שגיאות בדפדפן', h.day.js_errors ? el('a', { href: '#dev?tab=log', class: 'badge bad' }, String(h.day.js_errors)) : yes(true, '0'))),
+      el('h3', { class: 'sec-title' }, 'הגדרות בתוך קובצי PDF'),
+      pdfClean(h.pdf_clean, cell, yes),
       el('h3', { class: 'sec-title' }, 'שלמות היומנים'),
       h.chain_broken.length ? notice('⚠ שרשרת היומן שבורה במסמכים: ' + h.chain_broken.map(x => '#' + x).join(', '), 'bad')
         : notice('✓ שרשרת היומן שלמה בכל המסמכים שנבדקו (300 האחרונים).', 'ok'));
+  }
+
+  /** הניקוי החד-פעמי, ומה נמצא עכשיו בקבצים (נבדק בכל טעינה). */
+  function pdfClean(c, cell, yes) {
+    const { el, notice } = window.DT;
+    const when = c.sweep_at ? new Date(c.sweep_at).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }) : null;
+    return el('div', {},
+      el('dl', { class: 'cells' },
+        cell('ניקוי חד-פעמי', when ? yes(true, '✓ ' + when) : yes(false, '', 'טרם רץ')),
+        c.sweep_cleaned !== null ? cell('נוקו בו', c.sweep_cleaned) : null,
+        cell('קובצי PDF', c.files), cell('נקיים', c.clean),
+        cell('עם הגדרות', c.dirty ? el('span', { class: 'badge bad' }, String(c.dirty)) : yes(true, '0')),
+        cell('ממתינים לעורך', c.waiting),
+        c.missing ? cell('קובץ חסר', el('span', { class: 'badge bad' }, String(c.missing))) : null),
+      c.dirty ? notice('⚠ יש קבצים שעדיין נושאים הגדרות — הם ינוקו בשמירה הבאה של התבנית.', 'bad')
+        : notice('✓ אין הגדרות בקבצים שנשלחים לממלאים.' + (c.waiting ? ' ' + c.waiting + ' תבניות עוד לא נפתחו בעורך — ההגדרות שלהן נחוצות לפתיחה הראשונה, ויימחקו בשמירה.' : ''), 'ok'));
   }
 
   window.DTDev = { view };

@@ -53,6 +53,9 @@ pdf_settings_sweep();
 check('ניקוי חד-פעמי: תבנית קיימת — נוקתה', pdf_strip_settings($asset($t2)) === null);
 check('ניקוי חד-פעמי: תבנית שהעורך עוד לא פתח — נשארת (ההגדרות עוד נחוצות)', pdf_strip_settings($asset($t3)) !== null);
 check('ניקוי חד-פעמי — מסומן, לא רץ שוב', is_file("$tmp/pdf-settings-cleaned"));
+$st = pdf_settings_status();
+check('סטטוס לאזור המפתח: מתי רץ וכמה נוקו', $st['sweep_at'] !== null && $st['sweep_cleaned'] === 1);
+check('סטטוס: 3 קבצים — 2 נקיים, 0 עם הגדרות, 1 ממתין לעורך', [$st['files'], $st['clean'], $st['dirty'], $st['waiting']] === [3, 2, 0, 1]);
 
 // (1) וואטסאפ ללקוח בלי מייל
 $d = doc_create($owner, ['template_id' => $tid])['id'];
