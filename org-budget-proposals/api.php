@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/lib/export.php';
+require_once __DIR__ . '/lib/export.php';   // ← budgets ← orgs ← dev ← platform ← auth ← db
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -40,21 +40,27 @@ $session = null;
 
 // פעולות שלא דורשות כניסה לאפליקציה.
 const PUBLIC_ACTIONS = ['health', 'me', 'register', 'verify', 'login', 'forgot', 'reset'];
+// המסך החד-פעמי של מי שנכנס דרך הפלטפורמה ואין לו עוד חשבון — זהות מהשער, בלי session (lib/platform.php).
+// לא ציבוריות: השער מעביר אותן רק למי שיש לו הרשאה.
+const PLATFORM_ACTIONS = ['platform_link', 'platform_new'];
+// בסיסמה של האפליקציה — רק כשהיא מנותקת מהפלטפורמה.
+const PASSWORD_ACTIONS = ['register', 'verify', 'login', 'logout', 'forgot', 'reset', 'me_password'];
 const POST_ACTIONS   = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'client_error',
                         'me_update', 'me_password', 'me_logout_others', 'dev_user', 'dev_org_force',
                         'org_create', 'org_update', 'org_delete', 'member_add', 'member_set', 'member_remove',
                         'fund_save', 'fund_archive', 'fund_order', 'contact_save', 'contact_archive', 'cat_save', 'cat_archive',
                         'budget_create', 'budget_update', 'budget_status', 'budget_duplicate', 'budget_delete', 'bfund_set', 'bfund_toggle',
                         'line_save', 'line_delete', 'line_order', 'transfer_create', 'srow_save', 'srow_delete', 'srow_order',
-                        'comment_add', 'comment_set', 'org_import', 'org_logo_upload'];
+                        'comment_add', 'comment_set', 'org_import', 'org_logo_upload', 'platform_link', 'platform_new'];
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
     $body = $method === 'POST' ? (json_decode((string)file_get_contents('php://input'), true) ?: []) : [];
     $GLOBALS['ob_body'] = $body;
 
-    $session = current_session();
-    if (!in_array($action, PUBLIC_ACTIONS, true)) {
+    [$session, $platform] = resolve_session();
+    if (in_array($action, PASSWORD_ACTIONS, true)) require_password_login();
+    if (!in_array($action, PUBLIC_ACTIONS, true) && !in_array($action, PLATFORM_ACTIONS, true)) {
         if (!$session) throw new ApiError('נדרשת כניסה', 401);
         if ($method === 'POST' && !hash_equals($session['csrf'], (string)($_SERVER['HTTP_X_CSRF'] ?? ''))) {
             throw new ApiError('הבקשה נדחתה (CSRF). רעננו את הדף', 403);
@@ -68,8 +74,10 @@ try {
             return ['ok' => true, 'stage' => 5, 'php' => PHP_VERSION];
         })(),
         'me' => $session
-            ? ['ok' => true, 'user' => public_user($session), 'csrf' => $session['csrf']]
-            : ['ok' => true, 'user' => null],
+            ? ['ok' => true, 'user' => public_user($session), 'csrf' => $session['csrf'], 'platform' => $platform]
+            : ['ok' => true, 'user' => null, 'platform' => $platform],
+        'platform_link' => platform_link($body),
+        'platform_new'  => platform_new(),
         'register' => auth_register($body),
         'verify'   => auth_verify($body),
         'login'    => (function () use ($body) { $r = auth_login($body); unset($r['token']); return $r; })(),

@@ -253,17 +253,23 @@ function auth_login(array $b): array
             ->execute([password_hash($pass, PASSWORD_DEFAULT), $u['id']]);
     }
 
+    return ['ok' => true, 'token' => new_session((int)$u['id'])];
+}
+
+/** session חדש לחשבון, בעוגייה. מחזיר את האסימון. */
+function new_session(int $userId): string
+{
     $token = bin2hex(random_bytes(32));
     $now = now_iso();
     db()->prepare(
         'INSERT INTO sessions (token_hash, user_id, csrf, device, ip, created_at, last_seen_at, expires_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-    )->execute([token_hash($token), $u['id'], bin2hex(random_bytes(16)),
+    )->execute([token_hash($token), $userId, bin2hex(random_bytes(16)),
         mb_substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 200), client_ip(),
         $now, $now, iso_in(SESSION_DAYS * 86400)]);
-    db()->prepare('UPDATE users SET last_login_at = ?, last_seen_at = ? WHERE id = ?')->execute([$now, $now, $u['id']]);
+    db()->prepare('UPDATE users SET last_login_at = ?, last_seen_at = ? WHERE id = ?')->execute([$now, $now, $userId]);
     set_session_cookie($token, time() + SESSION_DAYS * 86400);
-    return ['ok' => true, 'token' => $token];
+    return $token;
 }
 
 /** המשתמש של העוגייה, או null. מעדכן "נראה לאחרונה" פעם בדקה לכל היותר. */

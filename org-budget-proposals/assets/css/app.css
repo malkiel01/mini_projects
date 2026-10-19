@@ -75,6 +75,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--brand); outline:
 .btn, .icon-btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--s1); min-height: var(--tap);
     border-radius: var(--r); cursor: pointer; white-space: nowrap; text-decoration: none; border: 1px solid transparent; background: none; }
 .btn { padding: 0 var(--s3); }
+a.btn { text-decoration: none; }
 .btn.sm { min-height: 34px; padding: 0 var(--s2); font-size: .85rem; }
 .icon-btn { min-width: var(--tap); font-size: 1.1rem; }
 .primary { background: var(--brand); color: var(--brand-ink); }
