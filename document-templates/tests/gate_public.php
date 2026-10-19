@@ -34,7 +34,7 @@ $missing = array_values(array_diff($app, $gate));
 check('כל פעולה ציבורית של האפליקציה פתוחה בשער' . ($missing ? ' — חסר: ' . implode(', ', $missing) : ''), !$missing);
 $extra = array_values(array_diff($gate, $app));
 check('השער לא פותח פעולה שהאפליקציה דורשת לה כניסה' . ($extra ? ' — עודף: ' . implode(', ', $extra) : ''), !$extra);
-foreach (['index.html', 'fill.html', 'assets/**'] as $p) check("דף פתוח בשער: $p", in_array($p, $paths, true));
+foreach (['index.html', 'fill.html', 'manifest.webmanifest', 'assets/**'] as $p) check("דף פתוח בשער: $p", in_array($p, $paths, true));
 
 echo $fail ? "\n✗ $fail נכשלו\n" : "\n✓ הכול עבר\n";
 exit($fail ? 1 : 0);
