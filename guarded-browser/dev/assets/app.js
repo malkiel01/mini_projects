@@ -108,18 +108,28 @@ async function boot() {
     try { me = await call('me'); }
     catch (e) { document.body.append(el('p', { class: 'error', text: e.message, style: 'margin:16px' })); return; }
     state.csrf = me.csrf;
+    state.platform = me.platform;
+    if (me.link) return showAuth(false, true);
     if (!me.me) return showAuth(me.setup);
     state.me = me.me;
+    // מחוברת לפלטפורמה: אין סיסמה ויציאה משלנו — רק חיבור חשבון ישן, למי שנזכר אחר כך.
+    $('#m-pass').hidden = $('#m-out').hidden = me.platform;
+    $('#m-link').hidden = !me.platform;
     $('#who').textContent = `מנהל מערכת · ${me.me.name || me.me.username}`;
     $('#auth').hidden = true; $('#app').hidden = false;
     route();
 }
 
-function showAuth(setup) {
+/** ‏link — המסך החד-פעמי: חיבור החשבון הישן לחשבון בפלטפורמה, או חשבון חדש. */
+function showAuth(setup, link = false) {
     $('#auth').hidden = false; $('#app').hidden = true;
-    $('#auth-sub').textContent = setup ? 'התקנה ראשונה — יצירת מנהל המערכת' : 'כניסת מנהל מערכת';
+    $('#auth-sub').textContent = link ? 'יש לך כבר חשבון מנהל מערכת?'
+        : setup ? 'התקנה ראשונה — יצירת מנהל המערכת' : 'כניסת מנהל מערכת';
     $('#f-name').hidden = !setup;
-    $('#auth-go').textContent = setup ? 'יצירה וכניסה' : 'כניסה';
+    $('#auth-link').hidden = !link;
+    // מהתפריט (כבר מחובר) — "חזרה" במקום חשבון חדש.
+    $('#auth-new').textContent = state.me ? 'חזרה' : 'אין לי חשבון — פתיחת חשבון חדש';
+    $('#auth-go').textContent = link ? 'חיבור החשבון הישן' : setup ? 'יצירה וכניסה' : 'כניסה';
     const form = $('#auth-form');
     form.password.autocomplete = setup ? 'new-password' : 'current-password';
     form.onsubmit = async e => {
@@ -127,7 +137,7 @@ function showAuth(setup) {
         const err = $('.error', form); err.hidden = true;
         const btn = $('#auth-go'); btn.disabled = true;
         try {
-            await call(setup ? 'setup' : 'login', {
+            await call(link ? 'link' : setup ? 'setup' : 'login', {
                 username: form.username.value.trim(), password: form.password.value, name: form.name.value,
             });
             location.reload();
@@ -548,6 +558,11 @@ function renderSearch(x) {
 $('#menu-btn').addEventListener('click', () => { $('#pass-box').hidden = true; $('#menu-dlg').showModal(); });
 $('#m-pass').addEventListener('click', () => { $('#pass-box').hidden = false; $('#p-cur').focus(); });
 $('#m-admin').addEventListener('click', () => { location.href = '../admin/'; });
+$('#m-link').addEventListener('click', () => { $('#menu-dlg').close(); showAuth(false, true); });
+$('#auth-new').addEventListener('click', async () => {
+    if (state.me) return location.reload();
+    try { await call('link_new', {}); location.reload(); } catch (x) { toast(x.message, true); }
+});
 $('#m-out').addEventListener('click', async () => { try { await call('logout', {}); } finally { location.reload(); } });
 $('#p-go').addEventListener('click', async () => {
     try {

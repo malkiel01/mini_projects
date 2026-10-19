@@ -19,12 +19,18 @@ require_once __DIR__ . '/../lib/signing.php';
 
 jsonHeaders();
 
-/** מה הדף צריך כדי להחליט מה להציג: כניסה, התקנה, או הקונסולה. */
+/**
+ * מה הדף צריך כדי להחליט מה להציג: כניסה, התקנה, המסך החד-פעמי, או הקונסולה.
+ * ‏platform — מחוברת לפלטפורמה: אין כניסה, התקנה ויציאה משלנו. ‏link — הזהות עוד לא קושרה לחשבון.
+ */
 function meState(): array {
     $d = currentDeveloper();
+    $platform = platformIdentity() !== null;
     return [
         'ok'    => true,
-        'setup' => developerCount() === 0,
+        'platform' => $platform,
+        'link'  => $platform && !$d,
+        'setup' => !$platform && developerCount() === 0,
         'me'    => $d ? ['id' => (int) $d['id'], 'username' => $d['username'], 'name' => $d['name']] : null,
         'csrf'  => $d ? (string) (sessionRow('dev')['csrf'] ?? '') : '',
         'meta'  => ['levels' => ACCOUNT_LEVELS, 'modules' => ACCOUNT_MODULES],
@@ -49,6 +55,19 @@ try {
         out(['ok' => true]);
     }
 
+    /* ── המסך החד-פעמי (מחוברת לפלטפורמה): "יש לי כבר חשבון" — גם מהתפריט, למי שנזכר אחר כך ── */
+    if ($action === 'link' || $action === 'link_new') {
+        $id = platformIdentity();
+        if (!$id) fail('האפליקציה לא מחוברת לפלטפורמה');
+        if ($action === 'link') {
+            if ($err = platformLinkOld('dev', $id, str('username'), (string) (body()['password'] ?? ''))) fail($err);
+        } elseif (!platformLinked('dev', $id)) {
+            platformCreate('dev', $id);
+        }
+        forgetSessions();
+        out(meState());
+    }
+
     /* ── מכאן — רק מפתח מחובר ── */
     $dev = currentDeveloper();
     if (!$dev) fail('נדרשת כניסה', 401, 'unauthorized');
@@ -56,6 +75,8 @@ try {
 
     switch ($action) {
         case 'logout':
+            // מחוברת: היציאה היא מהפלטפורמה — אחרת הבקשה הבאה הייתה מכניסה שוב.
+            if (platformIdentity()) fail('היציאה היא מהכלים הדיגיטליים');
             endSession('dev');
             out(['ok' => true]);
 

@@ -331,6 +331,8 @@ function developerCount(): int {
 }
 
 function currentDeveloper(): ?array {
+    // מחוברת לפלטפורמה: הזהות מהשער קובעת מי המפתח (lib/platform.php), לא העוגייה שהדפדפן שלח.
+    if (($id = platformIdentity()) && !platformSession('dev', $id)) return null;
     $s = sessionRow('dev');
     if (!$s) return null;
     $d = one('SELECT id, username, name, created_at, last_login_at FROM developers WHERE id = ?',
@@ -341,6 +343,8 @@ function currentDeveloper(): ?array {
 
 /** כניסת מפתח. מוחזר [developer, שגיאה]. */
 function developerLogin(string $username, string $password): array {
+    if (platformIdentity()) return [null, 'הכניסה היא דרך הכלים הדיגיטליים'];
+    if (!passwordLoginOpen()) return [null, 'הכניסה בסיסמה כבויה — היכנסו דרך הכלים הדיגיטליים'];
     $key = 'dev:' . $username;
     if (tooManyFailures($key)) return [null, 'יותר מדי ניסיונות. נסו שוב בעוד רבע שעה.'];
     $d = one('SELECT * FROM developers WHERE username = ?', [$username]);
@@ -356,6 +360,7 @@ function developerLogin(string $username, string $password): array {
 /** המפתח הראשון — רק כשאין אף אחד. אחר כך המסך נסגר לתמיד. */
 function developerSetup(string $username, string $name, string $password): array {
     if (developerCount() > 0) return [0, 'כבר יש מנהל מערכת'];
+    if (platformIdentity()) return [0, 'הכניסה היא דרך הכלים הדיגיטליים'];
     if ($e = usernameProblem($username)) return [0, $e];
     if ($e = passwordProblem($password)) return [0, $e];
     q('INSERT INTO developers (username, name, password_hash, created_at, last_login_at) VALUES (?, ?, ?, ?, ?)',

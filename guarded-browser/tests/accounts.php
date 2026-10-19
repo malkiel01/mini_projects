@@ -138,7 +138,10 @@ check('כניסה תקינה', $err, '');
 $tok = (string) one("SELECT token_hash FROM admin_sessions WHERE kind = 'dev'")['token_hash'];
 check('נפתח session מסוג dev', $tok !== '', true);
 check('עוגיית מנהל ישן לא פותחת את הקונסולה', (function () {
-    $_COOKIE['mg_admin'] = str_repeat('b', 64); forgetSessions(); return currentDeveloper();
+    // בלי עוגיית המפתח מהכניסה שלמעלה — רק עוגיית מנהל.
+    $keep = $_COOKIE['mg_dev'] ?? null; unset($_COOKIE['mg_dev']);
+    $_COOKIE['mg_admin'] = str_repeat('b', 64); forgetSessions();
+    $d = currentDeveloper(); $_COOKIE['mg_dev'] = $keep; forgetSessions(); return $d;
 })(), null);
 check('החלפת סיסמה — הנוכחית שגויה', developerChangePassword((int) $d['id'], 'nope', 'newpass123'),
       'הסיסמה הנוכחית שגויה');

@@ -135,6 +135,14 @@ function migrate(PDO $pdo): void {
     if (!in_array('expires_at', $columns('rules'), true)) {
         $pdo->exec("ALTER TABLE rules ADD COLUMN expires_at TEXT NOT NULL DEFAULT ''");
     }
+    // כניסה דרך הפלטפורמה (lib/platform.php): החשבון בממשק הניהול מקושר ל-sub של חשבון הפלטפורמה.
+    if (!in_array('platform_sub', $columns('users'), true)) {
+        $pdo->exec("ALTER TABLE users ADD COLUMN platform_sub TEXT NOT NULL DEFAULT ''");
+    }
+    $have = $columns('developers');
+    foreach (['email', 'platform_sub'] as $col) {
+        if (!in_array($col, $have, true)) $pdo->exec("ALTER TABLE developers ADD COLUMN $col TEXT NOT NULL DEFAULT ''");
+    }
     migrateToAccounts($pdo);
 }
 
