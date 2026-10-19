@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.mbeplus.pdfmerger",
+      "sha256_cert_fingerprints": [
+        "9F:21:72:BD:35:DA:4B:2A:47:10:20:FE:C6:99:A7:52:9A:F3:7E:08:CD:69:8E:98:07:9A:99:62:B8:00:B0:88"
+      ]
+    }
+  }
+]
