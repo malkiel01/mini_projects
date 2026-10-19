@@ -6,7 +6,10 @@
 # בלי הסוד — רק APK בחתימת debug, להתקנה ידנית בלבד.
 #
 # מפתח ההעלאה (upload key):
-#   הסוד RECIPES_KEYSTORE_PASSWORD (Settings → Secrets → Actions) — סיסמה ארוכה שהמשתמש בוחר.
+#   הסוד המשותף ANDROID_KEYSTORE_PASSWORD (Settings → Secrets → Actions) — סיסמה אחת לכל מפתחות
+#   ההעלאה של האפליקציות (platform/docs/rollout.md, צעד 5). גיבוי: RECIPES_KEYSTORE_PASSWORD, הסוד
+#   הישן של המתכונים — נקרא רק כשהמשותף לא קיים. בתוך ה-workflow שניהם נכנסים ל-RECIPES_KEYSTORE_PASSWORD,
+#   השם שה-Gradle (app/build.gradle.kts) קורא.
 #   בבנייה הראשונה עם הסוד: נוצר מפתח, מוצפן בסיסמה (AES-256) ונשמר בריפו —
 #   recipes-app/android/keystore/upload.jks.enc. מוצפן הוא חסר ערך בלי הסיסמה,
 #   ובכל בנייה אחריה הוא מפוענח וחותם. גוגל מחזיקה מפתח חתימה משלה (Play App
@@ -49,7 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       APP_HOST: ${{ inputs.appHost || 'recipes.mbe-plus.com' }}
-      RECIPES_KEYSTORE_PASSWORD: ${{ secrets.RECIPES_KEYSTORE_PASSWORD }}
+      RECIPES_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || secrets.RECIPES_KEYSTORE_PASSWORD }}
       KS_ENC: keystore/upload.jks.enc
     steps:
       - uses: actions/checkout@v4
@@ -90,11 +93,11 @@ jobs:
         run: |
           if [ -z "$RECIPES_KEYSTORE_PASSWORD" ]; then
             echo "mode=debug" >> "$GITHUB_OUTPUT"
-            echo "::warning::אין סוד RECIPES_KEYSTORE_PASSWORD — נבנה APK בחתימת debug בלבד (התקנה ידנית). לחנות צריך את הסוד."
+            echo "::warning::אין סוד ANDROID_KEYSTORE_PASSWORD (וגם לא RECIPES_KEYSTORE_PASSWORD) — נבנה APK בחתימת debug בלבד (התקנה ידנית). לחנות צריך את הסוד."
             exit 0
           fi
           if [ ${#RECIPES_KEYSTORE_PASSWORD} -lt 16 ]; then
-            echo "::error::הסיסמה בסוד RECIPES_KEYSTORE_PASSWORD קצרה מ-16 תווים — המפתח המוצפן יושב בריפו ציבורי"
+            echo "::error::הסיסמה בסוד (ANDROID_KEYSTORE_PASSWORD) קצרה מ-16 תווים — המפתח המוצפן יושב בריפו ציבורי"
             exit 1
           fi
           if [ ! -f "$KS_ENC" ]; then
@@ -199,6 +202,6 @@ jobs:
               echo "- טביעת מפתח ההעלאה (SHA-256): \`$SHA\`"
               echo "- אחרי ההעלאה הראשונה: Play Console → App integrity → App signing → את ה-SHA-256 של **App signing key** להוסיף ל-\`recipes-app/android/play-signing-sha256.txt\`"
             else
-              echo "- **APK בחתימת debug בלבד** — אין סוד \`RECIPES_KEYSTORE_PASSWORD\`. לחנות: להוסיף את הסוד ולבנות שוב"
+              echo "- **APK בחתימת debug בלבד** — אין סוד \`ANDROID_KEYSTORE_PASSWORD\`. לחנות: להוסיף את הסוד ולבנות שוב"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
