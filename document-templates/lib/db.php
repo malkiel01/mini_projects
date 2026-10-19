@@ -32,7 +32,7 @@ function db(): PDO
     ]);
     $pdo->exec('PRAGMA journal_mode = WAL');
     $pdo->exec('PRAGMA foreign_keys = ON');
-    $pdo->exec('PRAGMA busy_timeout = 5000');
+    $pdo->exec('PRAGMA busy_timeout = 15000');   // כתיבה של בקשה אחרת — ממתינים לה עד 15 שניות לפני "database is locked"
     db_migrate($pdo);
     // פעם אחת: ההגדרות המוכנות נמחקות מקובצי המקור של תבניות קיימות (lib/pdfclean.php)
     if (function_exists('pdf_settings_sweep')) {
