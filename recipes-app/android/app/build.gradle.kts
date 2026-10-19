@@ -6,7 +6,9 @@
 // Chrome רגילה עם שורת כתובת. כל עדכון באתר מגיע לאפליקציה מיד, בלי גרסה חדשה בחנות.
 //
 // בזמן בנייה (מ-.github/workflows/recipes-twa.yml):
-//   -PappHost=recipes.mbe-plus.com    הדומיין של האפליקציה (חייב להיות שורש של דומיין)
+//   -PappHost=mbe-plus.com                      הדומיין (שם, בשורש, יושב assetlinks.json)
+//   -PappPath=/mini_projects/recipes-app/       התיקייה של האפליקציה בדומיין. על הדומיין יושבים
+//                                               עוד הרבה כלים — האפליקציה פותחת ותופסת קישורים רק כאן
 //   -PversionCode=N                   עולה בכל העלאה לחנות
 //   חתימה: RECIPES_KEYSTORE_FILE + RECIPES_KEYSTORE_PASSWORD (מפתח ההעלאה, alias "upload")
 
@@ -14,8 +16,9 @@ plugins {
     id("com.android.application")
 }
 
-val appHost = (findProperty("appHost") as String?) ?: "recipes.mbe-plus.com"
-val launchUrl = "https://$appHost/"
+val appHost = (findProperty("appHost") as String?) ?: "mbe-plus.com"
+val appPath = (findProperty("appPath") as String?) ?: "/mini_projects/recipes-app/"
+val launchUrl = "https://$appHost$appPath"
 
 android {
     namespace = "com.mbeplus.recipes"
@@ -30,6 +33,7 @@ android {
 
         resValue("string", "hostName", appHost)
         resValue("string", "launchUrl", launchUrl)
+        resValue("string", "pathPrefix", appPath)
         resValue("string", "providerAuthority", "com.mbeplus.recipes.fileprovider")
         // האישור ההדדי: האפליקציה מצהירה על האתר, והאתר (assetlinks.json) על האפליקציה
         resValue("string", "assetStatements",

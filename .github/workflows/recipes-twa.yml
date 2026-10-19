@@ -5,6 +5,14 @@
 #   recipes-<גרסה>.apk   להתקנה ידנית בטלפון לבדיקה (אותה חתימה)
 # בלי הסוד — רק APK בחתימת debug, להתקנה ידנית בלבד.
 #
+# "תיקיית החנות" — Release קבוע בשם recipes-app-store, מתעדכן בכל בנייה חתומה מ-main:
+#   https://github.com/malkiel01/mini_projects/releases/download/recipes-app-store/<קובץ>
+#   recipes.apk          התקנה ישירה בטלפון (install.apk ב-app.json)
+#   recipes.aab          להעלאה ל-Play Console
+#   store-listing.zip    כל מה שממלאים בחנות: STORE.md (טקסטים, תשובות מדיניות) + store/ (סמל, באנר, צילומי מסך)
+#   assetlinks.json      להעלות ל-https://mbe-plus.com/.well-known/assetlinks.json — מסך מלא בלי שורת כתובת
+#   build.json           מספר הבנייה, הכתובת, טביעות החתימה
+#
 # מפתח ההעלאה (upload key):
 #   הסוד RECIPES_KEYSTORE_PASSWORD (Settings → Secrets → Actions) — סיסמה ארוכה שהמשתמש בוחר.
 #   בבנייה הראשונה עם הסוד: נוצר מפתח, מוצפן בסיסמה (AES-256) ונשמר בריפו —
@@ -29,9 +37,13 @@ on:
   workflow_dispatch:
     inputs:
       appHost:
-        description: 'הדומיין של האפליקציה (שורש של דומיין — שם יושב assetlinks.json)'
+        description: 'הדומיין (בשורש שלו יושב assetlinks.json)'
         required: false
-        default: 'recipes.mbe-plus.com'
+        default: 'mbe-plus.com'
+      appPath:
+        description: 'התיקייה של האפליקציה בדומיין'
+        required: false
+        default: '/mini_projects/recipes-app/'
 
 permissions:
   contents: write   # שמירת המפתח המוצפן ו-assetlinks.json בריפו
@@ -48,7 +60,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      APP_HOST: ${{ inputs.appHost || 'recipes.mbe-plus.com' }}
+      APP_HOST: ${{ inputs.appHost || 'mbe-plus.com' }}
+      APP_PATH: ${{ inputs.appPath || '/mini_projects/recipes-app/' }}
       RECIPES_KEYSTORE_PASSWORD: ${{ secrets.RECIPES_KEYSTORE_PASSWORD }}
       KS_ENC: keystore/upload.jks.enc
     steps:
@@ -121,7 +134,7 @@ jobs:
       - name: Build (release — AAB and APK)
         if: steps.key.outputs.mode == 'release'
         run: |
-          ./gradlew bundleRelease assembleRelease --no-daemon -PappHost="$APP_HOST" -PversionCode="$VERSION_CODE"
+          ./gradlew bundleRelease assembleRelease --no-daemon -PappHost="$APP_HOST" -PappPath="$APP_PATH" -PversionCode="$VERSION_CODE"
           mkdir -p "$RUNNER_TEMP/out"
           cp app/build/outputs/bundle/release/app-release.aab "$RUNNER_TEMP/out/recipes-$VERSION_CODE.aab"
           cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/out/recipes-$VERSION_CODE.apk"
@@ -129,7 +142,7 @@ jobs:
       - name: Build (debug APK — no signing secret)
         if: steps.key.outputs.mode == 'debug'
         run: |
-          ./gradlew assembleDebug --no-daemon -PappHost="$APP_HOST" -PversionCode="$VERSION_CODE"
+          ./gradlew assembleDebug --no-daemon -PappHost="$APP_HOST" -PappPath="$APP_PATH" -PversionCode="$VERSION_CODE"
           mkdir -p "$RUNNER_TEMP/out"
           cp app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/out/recipes-$VERSION_CODE-debug.apk"
 
@@ -179,6 +192,40 @@ jobs:
           done
           echo "::error::לא הצלחתי לשמור את המפתח המוצפן בריפו — אל תעלו לחנות את הבנייה הזאת"; exit 1
 
+      # תיקיית החנות: שמות קבועים, כך שהקישור לא משתנה בין בנייה לבנייה.
+      # בלי הסוד — רק APK בחתימת debug (להתקנה ידנית) ותיק החנות; בלי AAB ובלי assetlinks.
+      - name: Prepare the store folder
+        env:
+          MODE: ${{ steps.key.outputs.mode }}
+          SHA: ${{ steps.key.outputs.sha }}
+        run: |
+          set -euo pipefail
+          D="$RUNNER_TEMP/store"; mkdir -p "$D"
+          if [ "$MODE" = "release" ]; then
+            cp "$RUNNER_TEMP/out/recipes-$VERSION_CODE.apk" "$D/recipes.apk"
+            cp "$RUNNER_TEMP/out/recipes-$VERSION_CODE.aab" "$D/recipes.aab"
+            cp ../.well-known/assetlinks.json "$D/assetlinks.json"
+          else
+            cp "$RUNNER_TEMP/out/recipes-$VERSION_CODE-debug.apk" "$D/recipes.apk"
+          fi
+          zip -qr "$D/store-listing.zip" STORE.md store
+          python3 -c 'import json,os,datetime; print(json.dumps({"versionCode": int(os.environ["VERSION_CODE"]), "signing": os.environ["MODE"], "url": "https://" + os.environ["APP_HOST"] + os.environ["APP_PATH"], "uploadKeySha256": os.environ.get("SHA") or None, "builtAt": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")}, indent=2))' > "$D/build.json"
+          ls -la "$D"
+
+      # Release מחליף קבצים בשם זהה. כשבנייה חתומה מחליפה debug — recipes.aab ו-assetlinks.json מתווספים.
+      - name: Publish the store folder (GitHub Release)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: recipes-app-store
+          name: מתכונים — תיקיית החנות
+          body: |
+            אפליקציית המתכונים לחנות של גוגל — בנייה ${{ env.VERSION_CODE }} (${{ steps.key.outputs.mode }}). מתעדכנת בכל בנייה מ-main.
+            recipes.apk להתקנה · recipes.aab ל-Play Console · store-listing.zip לטקסטים ולתמונות · assetlinks.json לשורש mbe-plus.com · build.json
+            בחתימת debug: רק APK להתקנה ידנית — לחנות צריך את הסוד RECIPES_KEYSTORE_PASSWORD.
+          files: ${{ runner.temp }}/store/*
+          fail_on_unmatched_files: true
+
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
@@ -193,7 +240,7 @@ jobs:
         run: |
           {
             echo "## אפליקציית המתכונים — בנייה $VERSION_CODE"
-            echo "- דומיין: \`$APP_HOST\`"
+            echo "- כתובת: \`https://$APP_HOST$APP_PATH\`"
             if [ "$MODE" = "release" ]; then
               echo "- **AAB לחנות** ו-APK לבדיקה — ב-Artifacts למטה"
               echo "- טביעת מפתח ההעלאה (SHA-256): \`$SHA\`"
