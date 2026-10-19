@@ -11,8 +11,11 @@
 | דף הכלי | `index.html` |
 | עיצוב | `assets/css/app.css` |
 | קוד | `assets/js/app.js` |
-| אייקון | `assets/icon.svg` |
-| כרטיס בדף הראשי | `../index.html` |
+| אייקון | `assets/icon.svg`, ובגדלים — `assets/icons/` |
+| רישום בפלטפורמה | `app.json` |
+| התקנה (PWA) | `manifest.webmanifest`, `service-worker.js` |
+| מדיניות פרטיות (לחנות) | `privacy.html` |
+| אנדרואיד ותיקיית חנות | `android/` — ראה `android/STORE.md` |
 
 הקובייה המסתובבת שבדף היא **מציין מקום**: ציור קווים על `<canvas>` בלי שום
 ספרייה, שנועד להראות שהתיקייה חיה ושהנכסים נטענים מהשרת. היא תוחלף במנוע
@@ -27,6 +30,27 @@
 - **אחסון** — הכול בדפדפן (כמו `file-merger`), או צד שרת עם `data/` (כמו
   `renovation-punchlist`). ההכרעה הזו משפיעה על `deploy.yml`: תיקיית נתונים
   שנכתבת בשרת חייבת `--exclude` משלה, אחרת פריסה תדרוס אותה.
+
+## התקנה — שלוש דרכים (platform/docs/rollout.md, צעד 6)
+
+- **PWA** — `manifest.webmanifest` ו-`service-worker.js`. הכלי מסומן `"install": {"offline": true}`:
+  ה-service worker שומר כבר בהתקנה את כל הקבצים (הדף, העיצוב, הקוד והאייקונים), כך שמהפתיחה
+  הראשונה הכלי עובד גם בלי רשת. רשת קודם — אחרי פריסה מקבלים מיד את הגרסה החדשה. תשובה שהגיעה
+  דרך הפניה (השער שולח לכניסה) לא נשמרת במטמון. כשמוסיפים קובץ שהכלי טוען — להוסיף ל-`SHELL`
+  ולהעלות את `CACHE_VERSION`.
+- **APK ו-AAB לחנות** — TWA ב-`android/` (חבילה `com.mbeplus.sketches3d`), נבנה ב-
+  `.github/workflows/sketches-3d-twa.yml` לתיקיית החנות — Release `sketches-3d-store`
+  (`"install": {"release": "sketches-3d-store"}`).
+- **הגדרות לחנות** — `store-listing.zip` באותו Release: `android/STORE.md` ו-`android/store/`.
+
+**מאחורי השער** (`"public"` ב-app.json) — מה שהדפדפן ו-Play Console מורידים בלי עוגייה: המניפסט,
+ה-service worker, האייקונים, העיצוב ו-`privacy.html`.
+
+**הוכרע בדרך:**
+- הקנבס חתך את הקובייה (קנה מידה קבוע 78 בקנבס של 260px) — עכשיו יחסי לגודל הקנבס (`SCALE = 0.24`),
+  כך שהיא נכנסת בכל זווית ובכל רוחב.
+- שם קצר: "שרטוטים 3D". אוריינטציה חופשית (`any`) — כלי תלת־ממד נוח גם לרוחב.
+- `privacy.html` חדש — Play Console דורש מדיניות פרטיות בכתובת ציבורית.
 
 ## פריסה
 
