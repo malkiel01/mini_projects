@@ -10,12 +10,16 @@
  *   <app>/.htaccess   בלוק בראש הקובץ: כל קובץ שאינו PHP עובר דרך platform/gate.php
  *
  * ‏--root הוא הנתיב בשרת (DEPLOY_PATH). נתיב ה-URL נגזר ממנו: מה שאחרי public_html.
+ * ‏--host — הדומיין הראשי (mbe-plus.com). כתובת של אפליקציה שאינה תחתיו — סאב-דומיין שהשורש שלו הוא
+ * תיקיית האפליקציה (recipes.mbe-plus.com) — מופנית לכתובת הראשית: השער לא עובד שם (העוגייה לא מגיעה,
+ * והנתיב ל-platform/gate.php לא קיים). כך לא צריך הפניה ידנית ב-cPanel.
  */
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 
 require __DIR__ . '/lib/registry.php';
 
-$opts = getopt('', ['root:']);
+$opts = getopt('', ['root:', 'host:']);
+$host = strtolower((string)($opts['host'] ?? ''));
 $serverRoot = rtrim((string)($opts['root'] ?? ''), '/');
 if ($serverRoot === '' || $serverRoot[0] !== '/') {
     fwrite(STDERR, "::error::build-gate: חסר --root (DEPLOY_PATH)\n");
@@ -47,11 +51,20 @@ foreach (glob(REGISTRY_ROOT . '/*/app.json') as $file) {
         "; נוצר בפריסה (platform/build-gate.php) — השער של הפלטפורמה.\nauto_prepend_file = \"$prepend\"\n");
 
     $gate = "{$base}platform/gate.php?__gate_app=$app&__gate_path=";
+    // סאב-דומיין שהשורש שלו הוא התיקייה הזו → הכתובת הראשית. 301 ל-GET, 307 לשאר (שומר POST).
+    $redirect = $host === '' ? '' : <<<HT
+            RewriteCond %{REQUEST_URI} !^{$base}
+            RewriteCond %{REQUEST_METHOD} ^(GET|HEAD)$
+            RewriteRule ^(.*)$ https://$host{$base}$app/\$1 [R=301,L,QSA]
+            RewriteCond %{REQUEST_URI} !^{$base}
+            RewriteRule ^(.*)$ https://$host{$base}$app/\$1 [R=307,L,QSA]
+
+        HT;
     $block = <<<HT
         # >>> platform-gate — נוצר בפריסה (platform/build-gate.php). לא לערוך כאן.
         <IfModule mod_rewrite.c>
             RewriteEngine On
-            # תיקייה עם index.html (ובלי index.php) — הדף שלה עובר דרך השער.
+        {$redirect}    # תיקייה עם index.html (ובלי index.php) — הדף שלה עובר דרך השער.
             RewriteCond %{REQUEST_URI} /$
             RewriteCond %{REQUEST_FILENAME} -d
             RewriteCond %{REQUEST_FILENAME}/index.html -f
