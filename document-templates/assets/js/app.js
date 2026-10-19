@@ -342,7 +342,8 @@
             sel.addEventListener('change', () => run('share_set', { type, id, user_id: s.user_id, level: sel.value }, `✓ ההרשאה של ${name} עודכנה`));
             return el('li', { class: 'share-row' }, avatar(name),
               el('div', { class: 'share-who' }, el('strong', {}, name),
-                el('small', {}, el('span', { dir: 'ltr' }, s.email), s.since ? ' · מאז ' + new Date(s.since).toLocaleDateString('he-IL') : '')),
+                el('small', {}, el('span', { dir: 'ltr' }, s.email), s.since ? ' · מאז ' + new Date(s.since).toLocaleDateString('he-IL') : '',
+                  s.pending ? ' · ⏳ החשבון ממתין לאישור' : s.blocked ? ' · 🚫 החשבון חסום' : '')),
               el('div', { class: 'share-ctl' }, sel,
                 el('button', { type: 'button', class: 'small share-cut', 'aria-label': 'ניתוק ' + name, onclick: () => {
                   if (confirm(`לנתק את ${name}?\nהגישה שלו ${type === 'template' ? 'לתבנית' : 'למסמך'} תיחסם מיד.`)) run('share_remove', { type, id, user_id: s.user_id }, `✓ ${name} נותק`);
@@ -430,7 +431,7 @@
   }
 
   async function leave(type, id, title, after) {
-    if (!confirm(`לעזוב את "${title}"? היא תיעלם מהרשימה שלך.`)) return;
+    if (!confirm(`לעזוב את "${title}"? ${type === 'template' ? 'התבנית תיעלם' : 'המסמך ייעלם'} מהרשימה שלך.`)) return;
     try { await api('share_leave', { type, id }); after ? after() : (location.hash = type === 'template' ? 'home' : 'docs'); }
     catch (e) { alert(e.message); }
   }

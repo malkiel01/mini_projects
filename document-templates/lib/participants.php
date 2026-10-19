@@ -24,6 +24,7 @@ require_once __DIR__ . '/documents.php';
 const OTP_MINUTES  = 10;
 const OTP_MAX_TRY  = 5;
 const OTP_COOLDOWN = 60;
+const OTP_MAX_SENDS = 8;   // קודים ליום לממלא אחד
 
 // ── עזרים ────────────────────────────────────────────────────
 
@@ -106,8 +107,12 @@ function fill_shares(array $user): array
     $st->execute([':uid' => $user['id']]);
     $out = [];
     foreach ($st->fetchAll() as $r) {
+        if (!$r['notified_at'] && !$r['assign_enc']) continue;   // ממלא מתבנית במסמך שאף פעם לא נשלח — זה לא "שיתוף"
         $schema = doc_schema($r);
         $c = contact_of($r);
+        // פרטי הקשר של הלקוח — רק למי שמנהל את המסמך (עורך ומעלה)
+        $lvl = access_level('document', (int)$r['doc_id'], (int)$r['owner_id'], $user);
+        if (LEVELS[$lvl ?? 'view'] < LEVELS['edit']) { $c['email'] = ''; $c['phone'] = ''; }
         $dd = array_merge($r, ['id' => (int)$r['doc_id'], 'status' => $r['doc_status']]);   // המסמך — לא השורה של הממלא
         $awaiting = $r['doc_status'] !== 'completed' && $r['completed_at'] && (!empty($schema['approval']) || doc_approver($dd)) && doc_awaiting($dd, $schema);
         $out[] = ['doc_id' => (int)$r['doc_id'], 'number' => $r['number'], 'title' => (string)unseal($r['title_enc']), 'template' => (string)unseal($r['template_name_enc']),
@@ -289,6 +294,18 @@ function part_link(array $user, array $b): array
         'whatsapp' => 'https://wa.me/' . ($c['phone'] ? wa_phone($c['phone']) : '') . '?text=' . rawurlencode($text)];
 }
 
+/** ביטול הקישור של ממלא — בלי לשלוח חדש. הקישור שאצלו מפסיק לעבוד. */
+function part_revoke(array $user, array $b): array
+{
+    [$d, $p] = part_owned($user, $b);
+    if ($p['completed_at']) throw new ApiError('המשתתף כבר סיים', 409);
+    if (!$p['token_hash']) throw new ApiError('אין לו קישור פעיל', 409);
+    db()->prepare("UPDATE participants SET token_hash = NULL, token_enc = NULL, link_via = NULL, verified_at = NULL,
+        status = CASE WHEN status IN ('sent','opened') THEN 'waiting' ELSE status END WHERE id = ?")->execute([$p['id']]);
+    log_event((int)$d['id'], 'user:' . $user['id'], 'link_revoked', ['role' => role_of(doc_schema($d), $p['role_key'])['label']]);
+    return ['ok' => true];
+}
+
 function mail_fill(string $to, string $name, string $title, string $from, string $url): bool
 {
     return send_mail($to, 'מסמך למילוי ולחתימה: ' . $title,
@@ -400,7 +417,12 @@ function fill_otp_send(): array
     if ($p['otp_expires_at'] && strtotime($p['otp_expires_at']) - OTP_MINUTES * 60 + OTP_COOLDOWN > time()) {
         throw new ApiError('קוד נשלח לפני רגע. אפשר לבקש שוב בעוד דקה', 429);
     }
+    // תקרה ליום: כל שליחה מאפסת את מונה הניסיונות, ובלי תקרה אפשר היה לנחש בלי סוף
+    $st = db()->prepare("SELECT COUNT(*) FROM events WHERE document_id = ? AND actor = ? AND type = 'otp_sent' AND at > ?");
+    $st->execute([$p['doc_id'], 'participant:' . $p['id'], gmdate('Y-m-d\TH:i:s\Z', time() - 86400)]);
+    if ((int)$st->fetchColumn() >= OTP_MAX_SENDS) throw new ApiError('נשלחו יותר מדי קודים היום. נסו שוב מחר, או בקשו קישור חדש ממי ששלח', 429);
     $code = (string)random_int(100000, 999999);
+    log_event((int)$p['doc_id'], 'participant:' . $p['id'], 'otp_sent');
     db()->prepare('UPDATE participants SET otp_hash = ?, otp_expires_at = ?, otp_attempts = 0 WHERE id = ?')
         ->execute([password_hash($code, PASSWORD_DEFAULT), iso_in(OTP_MINUTES * 60), $p['id']]);
     $c = contact_of($p);

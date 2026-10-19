@@ -75,13 +75,13 @@ function share_list(array $user, array $q): array
 {
     [$type, $row] = share_target($user, $q);
     $st = db()->prepare(
-        'SELECT s.user_id, s.level, s.created_at, u.display_name, u.email
+        "SELECT s.user_id, s.level, s.created_at, u.display_name, u.email, u.status
          FROM shares s JOIN users u ON u.id = s.user_id
-         WHERE s.object_type = ? AND s.object_id = ? ORDER BY s.created_at'
+         WHERE s.object_type = ? AND s.object_id = ? AND u.status != 'deleted' ORDER BY s.created_at"
     );
     $st->execute([$type, $row['id']]);
     $shares = array_map(fn($s) => ['user_id' => (int)$s['user_id'], 'name' => $s['display_name'], 'email' => $s['email'],
-        'level' => $s['level'], 'since' => $s['created_at']], $st->fetchAll());
+        'level' => $s['level'], 'since' => $s['created_at'], 'pending' => $s['status'] === 'pending', 'blocked' => $s['status'] === 'blocked'], $st->fetchAll());
     // הזמנות בוואטסאפ שעוד לא נוצלו — מופיעות ברשימה כ"ממתין", עם ביטול ושליחה חוזרת
     $st = db()->prepare('SELECT * FROM share_invites WHERE object_type = ? AND object_id = ? AND used_at IS NULL
         AND revoked_at IS NULL AND expires_at > ? ORDER BY created_at');
@@ -204,7 +204,8 @@ function invite_message(array $user, string $type, array $row, array $inv, strin
     $title = (string)unseal($type === 'template' ? $row['name_enc'] : $row['title_enc']);
     $link = app_base_url() . '#invite=' . $token;
     $name = (string)unseal($inv['name_enc']);
-    $text = ($name !== '' ? "שלום $name,\n" : '') . ($user['display_name'] ?? '') . ' שיתף/ה איתך את ' .
+    $from = user_name((int)($inv['created_by'] ?? $user['id'])) ?: ($user['display_name'] ?? '');   // מי שהזמין — גם בשליחה חוזרת
+    $text = ($name !== '' ? "שלום $name,\n" : '') . $from . ' שיתף/ה איתך את ' .
         ($type === 'template' ? 'התבנית' : 'המסמך') . " \"$title\" (" . LEVEL_NAMES[$inv['level']] . ").\n" .
         "לפתיחה — נכנסים או נרשמים דרך הקישור:\n$link";
     $phone = (string)unseal($inv['phone_enc']);
@@ -318,7 +319,12 @@ function invite_redeem(int $userId, string $token): array
             if ((int)$inv['used_by'] !== $userId) throw new ApiError('ההזמנה כבר נוצלה בחשבון אחר. בקשו מהשולח הזמנה חדשה', 409);
         } else {
             if ($inv['expires_at'] <= now_iso()) throw new ApiError('ההזמנה פגה. בקשו מהשולח הזמנה חדשה', 410);
-            if ((int)$obj['owner_id'] !== $userId) {
+            if ((int)$obj['owner_id'] === $userId) {
+                // הבעלים פתח את ההזמנה שלו (למשל כדי לבדוק אותה) — לא שורפים אותה למוזמן
+                $pdo->commit();
+                return ['ok' => true, 'type' => $type, 'id' => (int)$obj['id'], 'inviter' => (int)$inv['created_by']];
+            }
+            {
                 // שיתוף קיים ברמה גבוהה יותר — לא מורידים אותו
                 $st = $pdo->prepare('SELECT level FROM shares WHERE object_type = ? AND object_id = ? AND user_id = ?');
                 $st->execute([$type, $obj['id'], $userId]);

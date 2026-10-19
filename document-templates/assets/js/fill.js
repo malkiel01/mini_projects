@@ -79,10 +79,10 @@
         await api('fill_otp_send', {});
         msg.replaceChildren(notice('נשלח קוד ל-' + info.email + '. הוא בתוקף 10 דקות.', 'ok'));
         code.focus();
+        setTimeout(() => { sendBtn.disabled = false; }, 60000);   // אחרי שליחה — דקה עד הבאה
       } catch (e) {
         msg.replaceChildren(notice(e.message, 'bad'));
-      } finally {
-        setTimeout(() => { sendBtn.disabled = false; }, 60000);
+        sendBtn.disabled = false;   // נכשל — אפשר לנסות שוב מיד
       }
     }
     const form = el('form', { class: 'card form' },

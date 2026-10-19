@@ -16,7 +16,7 @@
     dev_override: '🛡️ פעולת מפתח', webhook: 'הודעה למערכת חיצונית', api_issued: 'הונפק דרך API',
     created: 'נוצר', values_saved: 'נשמרו ערכים', completed: 'הושלם ונעול', archived: 'הועבר לארכיון',
     restored: 'שוחזר מהארכיון', downloaded: 'הורד PDF', deleted: 'נמחק',
-    link_issued: 'נשלח קישור', opened: 'נפתח', verified: 'אומת בקוד', participant_completed: 'משתתף סיים',
+    link_issued: 'נשלח קישור', link_revoked: 'הקישור בוטל', otp_sent: 'נשלח קוד', opened: 'נפתח', verified: 'אומת בקוד', participant_completed: 'משתתף סיים',
     file_uploaded: 'צורף קובץ', shared: 'שותף', unshared: 'שיתוף הוסר', contact_set: 'נקבע איש קשר', tags_set: 'עודכנו תגיות',
     imported: 'נוצר מאקסל', exported: 'יוצא לאקסל',
     awaiting_approval: '⏳ ממתין לאישור', approved: '✓ אושר ונעול', returned: '↩ הוחזר לתיקון', submitted: '📨 נשלח לאישור',
@@ -1279,7 +1279,12 @@
               el('button', { class: 'small', onclick: () => act('link') }, '🔗 העתקת קישור'),
               p.has_link ? el('button', { class: 'small link', title: 'הקישור שנשלח מפסיק לעבוד', onclick: () => {
                 if (confirm('ליצור קישור חדש? הקישור שכבר נשלח יפסיק לעבוד.')) act('link', true);
-              } }, '🔄 קישור חדש') : null),
+              } }, '🔄 קישור חדש') : null,
+              p.has_link ? el('button', { class: 'small link danger', title: 'הקישור שנשלח מפסיק לעבוד, ולא נשלח חדש', onclick: async () => {
+                if (!confirm('לבטל את הקישור? מי שקיבל אותו לא יוכל להיכנס.')) return;
+                try { await api('part_revoke', { id, participant_id: p.id }); await reload(); renderPeople(); window.DT.toast('✓ הקישור בוטל'); }
+                catch (e) { out.replaceChildren(notice(e.message, 'bad')); }
+              } }, '🚫 ביטול קישור') : null),
             p.missing.length && !done ? el('div', { class: 'muted small' }, 'חסר אצלו: ' + p.missing.join(', ')) : null);
         }),
         out].filter(Boolean));
