@@ -258,6 +258,42 @@ jobs:
           done
           echo "Deploy complete (נסיון $attempt מתוך $max)"
 
+      # Digital Asset Links: קובץ אחד לכל הדומיין (https://mbe-plus.com/.well-known/assetlinks.json) — בלעדיו
+      # אפליקציית אנדרואיד (TWA) נפתחת עם שורת כתובת. הקובץ יושב בשורש הדומיין, מחוץ ל-DEPLOY_PATH (הותר
+      # במפורש, 2026-10-19). מאוחד מהקיים בשרת (שום רשומה לא נמחקת), מתיקיית החנות של כל אפליקציה
+      # ("install.release") ומ-<app>/.well-known/assetlinks.json — platform/tools/assetlinks.php.
+      # לא מפיל את הפריסה.
+      - name: Digital Asset Links — assetlinks.json משותף בשורש הדומיין
+        if: success()
+        continue-on-error: true
+        env:
+          SITE_ROOT: https://mbe-plus.com
+          DEST: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -uo pipefail
+          case "$DEPLOY_PATH" in */mini_projects|*/mini_projects/) ;; *) echo "::notice::DEPLOY_PATH אינו <שורש>/mini_projects — מדלג"; exit 0 ;; esac
+          W="$RUNNER_TEMP/assetlinks"; mkdir -p "$W"
+          curl -sfL --max-time 20 "$SITE_ROOT/.well-known/assetlinks.json" -o "$W/existing.json" || rm -f "$W/existing.json"
+          for f in */app.json; do
+            rel=$(jq -r '.install.release // empty' "$f")
+            [ -n "$rel" ] || continue
+            curl -sfL --max-time 30 "https://github.com/${{ github.repository }}/releases/download/$rel/assetlinks.json" -o "$W/$rel.json" \
+              || { echo "::notice::אין assetlinks.json ב-$rel"; rm -f "$W/$rel.json"; }
+          done
+          php platform/tools/assetlinks.php $(ls "$W"/existing.json 2>/dev/null) "$W"/*-store.json */.well-known/assetlinks.json > "$W/merged.json" 2>/dev/null
+          if [ "$(jq 'length' "$W/merged.json")" -eq 0 ]; then echo "אין אפליקציות חתומות — אין מה לפרסם"; exit 0; fi
+          if [ -f "$W/existing.json" ] && [ "$(jq -S . "$W/existing.json")" = "$(jq -S . "$W/merged.json")" ]; then echo "assetlinks.json כבר מעודכן"; exit 0; fi
+          ROOT="${DEPLOY_PATH%/}"; ROOT="${ROOT%/mini_projects}"
+          SSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30"
+          for i in 1 2 3; do
+            if $SSH "$DEST" "mkdir -p '$ROOT/.well-known'" && rsync -tz -e "$SSH" "$W/merged.json" "$DEST:$ROOT/.well-known/assetlinks.json"; then
+              echo "assetlinks.json עודכן: $(jq -r '[.[].target.package_name] | join(", ")' "$W/merged.json")"; exit 0
+            fi
+            sleep 60
+          done
+          echo "::warning::לא הצלחתי לכתוב את assetlinks.json לשורש הדומיין"
+
       # DevLoop (מנהל הפרויקטים, "מטלות ושיח"): אחרי פריסה מוצלחת — כל קוד מטלה (PM-017) בהודעת ה-commit
       # מקבל ראיות (הפריסה וה-PR) ועובר ל"ממתין לאימות שלך". לא מפיל את הפריסה, ומדלג כשאין סוד.
       # סוד: PM_DEVLOOP_TOKEN — אסימון מ"🔑 גישה ל-Claude" באזור הפיתוח (pmd_…).

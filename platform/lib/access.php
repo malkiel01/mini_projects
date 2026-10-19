@@ -157,10 +157,11 @@ function visible_for(array $user): array
     if (array_filter($apps, fn($a) => $a['category'] === 'other')) {
         $categories[] = ['id' => 'other', 'name' => 'אחר', 'icon' => '📦'];
     }
-    return ['categories' => $categories, 'apps' => array_map('app_public', $apps)];
+    $admin = $user['role'] === 'admin';
+    return ['categories' => $categories, 'apps' => array_map(fn($a) => app_public($a, $admin), $apps)];
 }
 
-function app_public(array $a): array
+function app_public(array $a, bool $admin = false): array
 {
     return [
         'id' => $a['id'], 'name' => $a['name'], 'icon' => $a['icon'],
@@ -173,6 +174,10 @@ function app_public(array $a): array
             'apk'     => $a['install_ok'] ? $a['install']['apk'] : null,
             'store'   => $a['install_ok'] ? $a['install']['store'] : null,
             'offline' => $a['install']['offline'],
+            // תיקיית החנות: AAB וקובץ ההגדרות ל-Play Console — רק למנהל (הקבצים עצמם ב-Release ציבורי;
+            // אין בהם סוד — זה התוכן שממילא יופיע בחנות).
+            'release' => $admin && $a['install_ok'] && $a['install']['release']
+                ? ['aab' => $a['install']['release']['aab'], 'listing' => $a['install']['release']['listing']] : null,
         ],
     ];
 }
