@@ -8,6 +8,8 @@
  *
  * שלושה תפקידים: admin (הכול), carpenter (הפרויקטים שלו ותעריפיו), viewer
  * (צפייה בלבד — לקוח עם קישור אינו משתמש כלל; הוא מגיע דרך share_token).
+ *
+ * כשהאפליקציה מחוברת לפלטפורמה — הכניסה רק דרכה, אוטומטית; ראו "הפלטפורמה" בסוף הקובץ.
  */
 
 declare(strict_types=1);
@@ -40,6 +42,7 @@ function publicUser(array $u): array {
             'role' => $u['role'], 'blocked' => (int) $u['blocked'] === 1, 'created_at' => $u['created_at'],
             'valid_from' => $u['valid_from'] ?? null, 'valid_until' => $u['valid_until'] ?? null,
             'last_login_at' => $u['last_login_at'] ?? null, 'in_period' => userInPeriod($u),
+            'linked' => !empty($u['platform_sub']),
             'projects' => isset($u['projects']) ? (int) $u['projects'] : null];
 }
 
@@ -58,8 +61,26 @@ function validDate(?string $d): ?string {
     return $d;
 }
 
+/**
+ * המשתמש המחובר. כשהאפליקציה מחוברת לפלטפורמה — הזהות שהשער כתב קובעת, והסשן רק עוקב אחריה;
+ * חשבון חסום או מחוץ לתוקף נדחה עם הסיבה (403). מנותקת — הסשן של הכניסה בסיסמה, כמו תמיד.
+ */
 function currentUser(): ?array {
     sessionStart();
+    $pid = platformIdentity();
+    if ($pid) {
+        $u = platformAccount($pid);
+        // החסימות והתוקף של האפליקציה חלים בנוסף להרשאה בפלטפורמה.
+        if ((int) $u['blocked'] === 1) throw new AppError('החשבון חסום — פנו למנהל', 403);
+        if (!userInPeriod($u)) throw new AppError('החשבון אינו בתוקף — פנו למנהל', 403);
+        if ((int) ($_SESSION['uid'] ?? 0) !== (int) $u['id']) {
+            // כניסה ראשונה בסשן הזה, או שמישהו אחר נכנס לפלטפורמה באותו דפדפן — מחליפים.
+            if (PHP_SAPI !== 'cli') session_regenerate_id(true);
+            $_SESSION['uid'] = (int) $u['id'];
+            db()->prepare('UPDATE users SET last_login_at = ? WHERE id = ?')->execute([nowIso(), $u['id']]);
+        }
+        return $u;
+    }
     if (empty($_SESSION['uid'])) return null;
     $st = db()->prepare('SELECT * FROM users WHERE id = ?');
     $st->execute([$_SESSION['uid']]);
@@ -239,4 +260,111 @@ function adminUpdateUser(array $admin, int $id, array $patch): array {
         db()->prepare('UPDATE users SET ' . implode(', ', $sets) . ' WHERE id = ?')->execute($vals);
     }
     return publicUser(getUser($id));
+}
+
+// ---- הפלטפורמה ----
+//
+// מחוברת לשער: מי שנכנס לפלטפורמה ויש לו הרשאה לאפליקציה — נכנס אוטומטית (platform/docs/auth.md,
+// sso.md סעיף 0). החשבון: המקושר ל-sub; אין — חשבון באותו מייל, ומקשרים; אין — חשבון חדש, פעיל, כמו
+// שהמנהל היה פותח (נגר, בלי תוקף), ובמסד ריק — המנהל. הכניסה בסיסמה חסומה כל עוד יש זהות, אבל הסיסמה
+// לא נמחקת: כשהאפליקציה מנותקת היא עובדת שוב.
+
+/** הזהות שהשער כתב: {sub, name, email, email_verified}. מפתח שאינו HTTP_* — לא ניתן לזייף בבקשה. */
+function platformIdentity(): ?array {
+    $id = json_decode((string) ($_SERVER['PLATFORM_USER'] ?? ''), true);
+    if (!is_array($id) || !is_string($id['sub'] ?? null) || $id['sub'] === '') return null;
+    return $id;
+}
+
+/** החשבון באפליקציה של משתמש הפלטפורמה — מקושר, לפי מייל, או חדש. */
+function platformAccount(array $id): array {
+    $pdo = db();
+    $sub = $id['sub'];
+    $st = $pdo->prepare('SELECT * FROM users WHERE platform_sub = ?');
+    $st->execute([$sub]);
+    if ($u = $st->fetch()) return $u;
+
+    $email = is_string($id['email'] ?? null) ? mb_strtolower(trim($id['email'])) : '';
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) $email = '';
+    if ($email !== '') {
+        $st = $pdo->prepare('SELECT * FROM users WHERE email = ? COLLATE NOCASE');
+        $st->execute([$email]);
+        if ($u = $st->fetch()) {
+            if ($u['platform_sub'] !== null) throw new AppError('כתובת הדוא"ל הזו כבר מקושרת לחשבון אחר — פנו למנהל', 403);
+            $pdo->prepare('UPDATE users SET platform_sub = ?, linked_at = ? WHERE id = ?')->execute([$sub, nowIso(), $u['id']]);
+            error_log("carpentry-3d: חשבון {$u['id']} ({$email}) קושר לפלטפורמה לפי מייל");
+            return getUser((int) $u['id']);
+        }
+    }
+
+    // חשבון חדש. בלי מייל (משתמש ותיק בפלטפורמה) — כתובת פנימית, רק כדי שהעמודה הייחודית תתמלא.
+    $name = trim((string) ($id['name'] ?? ''));
+    $name = mb_substr($name !== '' ? $name : ($email !== '' ? explode('@', $email)[0] : 'משתמש'), 0, 60);
+    $role = userCount() === 0 ? 'admin' : 'carpenter';
+    $pdo->prepare('INSERT INTO users (email, name, role, password_hash, created_at, platform_sub, linked_at, auto_created) VALUES (?,?,?,?,?,?,?,1)')
+        ->execute([$email !== '' ? $email : 'platform-' . substr(hash('sha256', $sub), 0, 16) . '@platform.invalid',
+                   $name, $role, '', nowIso(), $sub, nowIso()]);
+    return getUser((int) $pdo->lastInsertId());
+}
+
+/** יש בכלל חשבון ישן (בסיסמה, לא מקושר) שאפשר לחבר — אחרת אין טעם במסך החיבור. */
+function hasLinkableAccounts(): bool {
+    return (bool) db()->query("SELECT 1 FROM users WHERE platform_sub IS NULL AND password_hash <> '' LIMIT 1")->fetchColumn();
+}
+
+/** מה `me` מחזיר על מסך החיבור: מותר לחבר (מהתפריט), והאם להציע אותו עכשיו. */
+function linkState(array $u): array {
+    $can = (int) $u['auto_created'] === 1 && hasLinkableAccounts();
+    return ['can_link' => $can, 'offer_link' => $can && (int) $u['link_dismissed'] === 0];
+}
+
+/**
+ * מסך החיבור החד-פעמי: "יש לי כבר חשבון" — דוא"ל וסיסמה של החשבון הישן. מכאן הוא החשבון של משתמש
+ * הפלטפורמה; מה שנוצר בחשבון שנפתח לבד עובר אליו, וזה נמחק. 5 ניסיונות שגויים → נעילה לרבע שעה.
+ * הסיסמה הישנה נשארת (auth.md, סעיף 4).
+ */
+function linkOldAccount(array $auto, string $email, string $password): array {
+    if ((int) $auto['auto_created'] !== 1) throw new AppError('החשבון כבר מחובר', 409);
+    $locked = (int) $auto['link_locked_until'] - time();
+    if ($locked > 0) throw new AppError('יותר מדי ניסיונות. נסו שוב בעוד ' . (int) ceil($locked / 60) . ' דקות', 429);
+
+    $pdo = db();
+    $st = $pdo->prepare('SELECT * FROM users WHERE email = ? COLLATE NOCASE');
+    $st->execute([mb_strtolower(trim($email))]);
+    $old = $st->fetch();
+    $ok = $old && (int) $old['id'] !== (int) $auto['id'] && $old['platform_sub'] === null
+        && $old['password_hash'] !== '' && password_verify($password, $old['password_hash']);
+    if (!$ok) {
+        $fails = (int) $auto['link_fails'] + 1;
+        $pdo->prepare('UPDATE users SET link_fails = ?, link_locked_until = ? WHERE id = ?')
+            ->execute([$fails >= 5 ? 0 : $fails, $fails >= 5 ? time() + 15 * 60 : 0, $auto['id']]);
+        throw new AppError('דוא"ל או סיסמה שגויים', 401);
+    }
+    // מנהל יחיד שמתחבר לחשבון שאינו מנהל — המערכת הייתה נשארת בלי מנהל.
+    if ($auto['role'] === 'admin' && $old['role'] !== 'admin'
+        && (int) $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'admin'")->fetchColumn() === 1) {
+        throw new AppError('החשבון הזה הוא המנהל היחיד — אי אפשר להחליף אותו בחשבון שאינו מנהל', 409);
+    }
+
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare('UPDATE users SET platform_sub = NULL WHERE id = ?')->execute([$auto['id']]);
+        $pdo->prepare('UPDATE users SET platform_sub = ?, linked_at = ? WHERE id = ?')->execute([$auto['platform_sub'], nowIso(), $old['id']]);
+        foreach (['projects' => 'owner_id', 'assemblies' => 'owner_id', 'clients' => 'created_by', 'product_types' => 'created_by'] as $t => $c) {
+            $pdo->prepare("UPDATE $t SET $c = ? WHERE $c = ?")->execute([$old['id'], $auto['id']]);
+        }
+        $pdo->prepare('INSERT OR IGNORE INTO rates (user_id, key, value) SELECT ?, key, value FROM rates WHERE user_id = ?')->execute([$old['id'], $auto['id']]);
+        $pdo->prepare('DELETE FROM users WHERE id = ?')->execute([$auto['id']]);
+        $pdo->commit();
+    } catch (Throwable $e) { $pdo->rollBack(); throw $e; }
+    error_log("carpentry-3d: חשבון {$old['id']} חובר לפלטפורמה במסך החיבור (במקום {$auto['id']})");
+
+    sessionStart();
+    $_SESSION['uid'] = (int) $old['id'];
+    return getUser((int) $old['id']);
+}
+
+/** "אין לי חשבון" — ההצעה לא חוזרת; נשארת בתפריט המשתמש. */
+function dismissLink(array $u): void {
+    db()->prepare('UPDATE users SET link_dismissed = 1 WHERE id = ?')->execute([$u['id']]);
 }

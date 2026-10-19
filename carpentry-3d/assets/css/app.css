@@ -441,6 +441,7 @@ body.has-fs { overflow: hidden; }
 }
 .auth__card input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .auth__error { color: #b42318; font-size: 0.9rem; min-height: 1.2em; }
+.auth__card .btn { justify-content: center; }
 .auth__card .btn--accent { justify-content: center; padding: 11px; font-size: 1rem; }
 .auth__back { color: var(--muted); font-size: 0.85rem; text-align: center; }
 

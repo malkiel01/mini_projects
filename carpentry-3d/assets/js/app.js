@@ -43,6 +43,7 @@ const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').
 
 const state = {
   user: null,
+  platform: false,     // נכנס דרך הכלים הדיגיטליים (האפליקציה מחוברת לפלטפורמה)
   types: [],
   project: null,       // { id, name, client, client_id, status, template_key, product_type_id, values, share_token }
   values: {},
@@ -92,17 +93,46 @@ function toast(msg, kind = 'info') {
   clearTimeout(toast.t);
   toast.t = setTimeout(() => el.classList.remove('is-on'), kind === 'error' ? 5000 : 2200);
 }
-const onError = (err) => { console.error(err); toast(err.message || String(err), 'error'); if (err.status === 401) showAuth(); };
+const onError = (err) => { console.error(err); toast(err.message || String(err), 'error'); if (err.status === 401 && !state.platform) showAuth(); };
 
 // ---------- כניסה ----------
 async function boot() {
   try {
     const r = await api('me');
     state.user = r.user;
-    if (!r.user) { showAuth(r.setup); return; }
+    state.platform = r.platform;
+    if (!r.user) { r.platform ? showDenied(r.denied) : showAuth(r.setup); return; }
+    $('#btn-link').hidden = !r.can_link;
     await enter();
-  } catch (err) { onError(err); showAuth(false); }
+    if (r.offer_link) $('#link').hidden = false;
+  } catch (err) { onError(err); if (!state.platform) showAuth(false); }
 }
+
+// מחוברת לפלטפורמה ואין כניסה (חשבון חסום / לא בתוקף) — רק ההודעה, בלי טופס: הסיסמה כאן חסומה.
+function showDenied(msg) {
+  showAuth(false);
+  $('#auth-title').textContent = msg || 'הכניסה לא זמינה כרגע';
+  $('#auth-hint').textContent = '';
+  for (const el of $('#auth-form').querySelectorAll('label, button')) el.hidden = true;
+}
+
+// ---------- מסך החיבור החד-פעמי ----------
+$('#link-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  try {
+    await api('link-account', { email: f.email.value, password: f.password.value });
+    location.reload();   // עכשיו זה החשבון הישן — טוענים הכול מחדש
+  } catch (err) {
+    if (err.status === 403) location.reload();   // חובר, אבל החשבון הישן חסום — me יציג את הסיבה
+    else $('#link-error').textContent = err.message;
+  }
+});
+$('#link-skip').addEventListener('click', async () => {
+  $('#link').hidden = true;
+  try { await api('link-dismiss'); } catch (err) { onError(err); }
+});
+$('#btn-link').addEventListener('click', () => { $('#link-error').textContent = ''; $('#link').hidden = false; });
 
 function showAuth(setup = false) {
   const box = $('#auth');
@@ -139,6 +169,9 @@ async function enter() {
   const u = state.user;
   $('#user-name').textContent = u.name;
   document.body.dataset.role = u.role;
+  // דרך הפלטפורמה אין סיסמה להחליף ואין יציאה מכאן — היציאה היא מהכלים הדיגיטליים.
+  $('#btn-password').hidden = !!state.platform;
+  $('#btn-logout').hidden = !!state.platform;
   $('#btn-users').hidden = u.role !== 'admin';
   $('#btn-types').hidden = u.role !== 'admin';
   $('#btn-users-m').hidden = u.role !== 'admin';
@@ -1143,7 +1176,7 @@ async function showUsers(tab) {
         const self = u.id === state.user.id;
         return `<article class="ucard ${u.blocked || !u.in_period ? 'is-off' : ''}" data-id="${u.id}">
           <div class="ucard__head"><input name="name" value="${esc(u.name)}"><span class="tag ${st.tag}">${esc(st.text)}</span>${self ? '<span class="muted">(אתה)</span>' : ''}</div>
-          <div class="ucard__email">${esc(u.email)}</div>
+          <div class="ucard__email">${esc(u.email)}${u.linked ? ' <span class="muted" title="נכנס דרך הכלים הדיגיטליים">🔗</span>' : ''}</div>
           <div class="ucard__row"><span>תפקיד</span><select name="role" ${self ? 'disabled' : ''}>${Object.entries(roleNames).map(([k, v]) => `<option value="${k}" ${u.role === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
           <div class="ucard__row"><span>תקופה</span><span class="ucard__period"><input type="date" name="valid_from" value="${esc(u.valid_from || '')}" title="מתאריך"> <small class="muted">עד</small> <input type="date" name="valid_until" value="${esc(u.valid_until || '')}" title="עד תאריך"></span></div>
           <div class="ucard__meta"><span>פרויקטים: ${u.projects ?? 0}</span><span>כניסה אחרונה: ${u.last_login_at ? `${fmtDate(u.last_login_at)} ${fmtTime(u.last_login_at)}` : 'אף פעם'}</span><span>נוצר ${fmtDate(u.created_at)}</span></div>

@@ -49,12 +49,31 @@ $in     = body();
 $action = $_GET['action'] ?? (is_string($in['action'] ?? null) ? $in['action'] : '');
 
 try {
+    // מחוברת לפלטפורמה: הכניסה רק דרכה. הסיסמה של האפליקציה חסומה (לא נמחקת), והיציאה — מהפלטפורמה.
+    if (platformIdentity() && in_array($action, ['setup', 'login', 'logout', 'change-password'], true)) {
+        fail('הכניסה היא דרך הכלים הדיגיטליים', 403);
+    }
+
     switch ($action) {
         // ---- כניסה וחשבונות ----
         case 'me': {
+            if (platformIdentity()) {
+                try { $u = currentUser(); }
+                catch (AppError $e) { ok(['user' => null, 'platform' => true, 'denied' => $e->getMessage()]); }
+                ok(['user' => publicUser($u), 'platform' => true] + linkState($u));
+            }
             $u = currentUser();
-            ok(['user' => $u ? publicUser($u) : null, 'setup' => userCount() === 0]);
+            ok(['user' => $u ? publicUser($u) : null, 'setup' => userCount() === 0, 'platform' => false]);
         }
+        case 'link-account': {
+            $u = requireUser();
+            if (!platformIdentity()) fail('החיבור זמין רק בכניסה דרך הכלים הדיגיטליים', 403);
+            linkOldAccount($u, s($in, 'email'), (string) ($in['password'] ?? ''));
+            ok(['user' => publicUser(requireUser())]);   // חסימה או תוקף של החשבון הישן — חלים מיד
+        }
+        case 'link-dismiss':
+            dismissLink(requireUser());
+            ok();
         case 'setup':
             ok(['user' => setupAdmin(s($in, 'email'), (string) ($in['password'] ?? ''), s($in, 'name', 60))]);
         case 'login':
