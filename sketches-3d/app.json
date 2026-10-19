@@ -2,11 +2,20 @@
   "id": "sketches-3d",
   "name": "שרטוטים בתלת מימד",
   "icon": "📐",
-  "description": "כלי לשרטוט ולצפייה במודלים תלת־ממדיים. כרגע שלד בלבד — התשתית עומדת ונפרסת, והתכן ייכתב לפי האפיון.",
+  "description": "כלי לשרטוט ולצפייה במודלים תלת־ממדיים. כרגע שלד בלבד — התשתית עומדת ונפרסת, והתכן ייכתב לפי האפיון. ניתן להתקנה כאפליקציה בטלפון, ועובד גם בלי רשת.",
   "category": "design",
   "entry": "index.html",
   "gate": true,
   "install": {
-    "offline": true
-  }
+    "offline": true,
+    "release": "sketches-3d-store"
+  },
+  "public": [
+    "manifest.webmanifest",
+    "service-worker.js",
+    "assets/icons/**",
+    "assets/icon.svg",
+    "assets/css/app.css",
+    "privacy.html"
+  ]
 }

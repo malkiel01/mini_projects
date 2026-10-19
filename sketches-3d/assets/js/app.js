@@ -18,7 +18,9 @@ const EDGES = [
 ];
 
 const DISTANCE = 4;   // מרחק הצופה מהראשית, ביחידות המודל
-const SCALE = 78;     // פיקסלים ליחידה במישור ההטלה
+// פיקסלים ליחידה במישור ההטלה, יחסית לגודל הקנבס: הקודקוד הרחוק ביותר מגיע
+// ל-1.92 יחידות מהמרכז (בכל זווית), ולכן 0.24 משאיר שוליים. 78 קבוע חתך את הקובייה.
+const SCALE = 0.24;
 
 // הקנבס מוצג ב-CSS ביחידות לוגיות; ללא כפל ב-devicePixelRatio
 // הקווים יוצאים מטושטשים במסכים צפופים.
@@ -46,7 +48,7 @@ function rotate([x, y, z], angle) {
 
 function project([x, y, z], size) {
   const depth = DISTANCE / (DISTANCE - z);
-  return [size / 2 + x * SCALE * depth, size / 2 + y * SCALE * depth];
+  return [size / 2 + x * SCALE * size * depth, size / 2 + y * SCALE * size * depth];
 }
 
 function draw(angle) {

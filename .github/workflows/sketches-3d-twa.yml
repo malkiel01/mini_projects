@@ -1,0 +1,256 @@
+# בונה את שרטוטים בתלת מימד לחנות של גוגל (TWA — sketches-3d/android). הועתק מ-recipes-twa.yml
+# (platform/docs/rollout.md, צעדים 5–6); המקור לא שונה.
+#
+# תוצרים (artifact "sketches-3d-play"):
+#   sketches-3d-<גרסה>.aab   להעלאה ל-Play Console (חתום במפתח ההעלאה)
+#   sketches-3d-<גרסה>.apk   להתקנה ידנית בטלפון לבדיקה (אותה חתימה)
+# בלי הסוד — רק APK בחתימת debug, להתקנה ידנית בלבד.
+#
+# "תיקיית החנות" — Release קבוע בשם sketches-3d-store, מתעדכן בכל בנייה מ-main. השמות — לפי
+# הפלטפורמה ("install": {"release": ...} ב-app.json, platform/lib/registry.php):
+#   https://github.com/malkiel01/mini_projects/releases/download/sketches-3d-store/<קובץ>
+#   sketches-3d.apk      התקנה ישירה בטלפון
+#   sketches-3d.aab      להעלאה ל-Play Console
+#   store-listing.zip    כל מה שממלאים בחנות: STORE.md (טקסטים, תשובות מדיניות) + store/ (סמל, באנר, צילומי מסך)
+#   assetlinks.json      הפריסה מאחדת אותו לשורש הדומיין (deploy.yml, platform/tools/assetlinks.php)
+#   build.json           מספר הבנייה, הכתובת, טביעות החתימה
+#
+# מפתח ההעלאה (upload key):
+#   הסוד המשותף ANDROID_KEYSTORE_PASSWORD (Settings → Secrets → Actions) — סיסמה אחת לכל מפתחות
+#   ההעלאה של האפליקציות (platform/docs/rollout.md, צעד 5).
+#   בבנייה הראשונה עם הסוד: נוצר מפתח, מוצפן בסיסמה (AES-256) ונשמר בריפו —
+#   sketches-3d/android/keystore/upload.jks.enc. מוצפן הוא חסר ערך בלי הסיסמה,
+#   ובכל בנייה אחריה הוא מפוענח וחותם. גוגל מחזיקה מפתח חתימה משלה (Play App
+#   Signing), ולכן גם מפתח העלאה שאבד — מוחלף דרך התמיכה שלהם, בלי לאבד את האפליקציה.
+#
+# Digital Asset Links: אחרי החתימה נכתב sketches-3d/.well-known/assetlinks.json —
+# טביעת מפתח ההעלאה, ועוד הטביעות שב-sketches-3d/android/play-signing-sha256.txt
+# (של גוגל, מ-Play Console → App integrity). זה מה שמאפשר לאתר לאשר את האפליקציה.
+# commit שה-workflow עושה לא מפעיל את deploy.yml (כלל של גיטהאב) — הקובץ עולה לשרת
+# בפריסה הבאה.
+
+name: Build Sketches 3D app (Google Play)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sketches-3d/android/**'
+      - '.github/workflows/sketches-3d-twa.yml'
+  workflow_dispatch:
+    inputs:
+      appHost:
+        description: 'הדומיין (בשורש שלו יושב assetlinks.json)'
+        required: false
+        default: 'mbe-plus.com'
+      appPath:
+        description: 'התיקייה של האפליקציה בדומיין'
+        required: false
+        default: '/mini_projects/sketches-3d/'
+
+permissions:
+  contents: write   # שמירת המפתח המוצפן ו-assetlinks.json בריפו
+
+concurrency:
+  group: sketches-3d-twa
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: sketches-3d/android
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      APP_HOST: ${{ inputs.appHost || 'mbe-plus.com' }}
+      APP_PATH: ${{ inputs.appPath || '/mini_projects/sketches-3d/' }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      KS_ENC: keystore/upload.jks.enc
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # ה-commit בסוף נדחף אחרי pull --rebase
+
+      # versionCode עולה בכל בנייה — כל העלאה לחנות חייבת מספר גבוה מהקודם.
+      # (ביטויי ${{ }} של גיטהאב לא עושים חשבון, ולכן כאן)
+      - name: Version
+        run: echo "VERSION_CODE=$((100 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # כמו ב-greeting-cards-apk.yml: בלי packages מפורש הפעולה מנסה להתקין את
+      # 'tools', שהוסרה ממאגר ה-SDK. את הפלטפורמה וכלי הבנייה Gradle מוריד לבד.
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+
+      # גרסה מפורשת: ה-gradle שמותקן ב-runner (9.8 ומעלה) אינו תואם ל-AGP 8.x —
+      # "relies on InternalProblems, a Gradle internal API that was removed in Gradle 9.6.0".
+      # gradle wrapper מגדיר את הפרויקט, ולכן כבר הוא צריך גרסה תואמת.
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Generate the Gradle wrapper
+        run: gradle wrapper --gradle-version 8.14.3
+
+      - name: Signing key
+        id: key
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_PASSWORD" ]; then
+            echo "mode=debug" >> "$GITHUB_OUTPUT"
+            echo "::warning::אין סוד ANDROID_KEYSTORE_PASSWORD — נבנה APK בחתימת debug בלבד (התקנה ידנית). לחנות צריך את הסוד."
+            exit 0
+          fi
+          if [ ${#ANDROID_KEYSTORE_PASSWORD} -lt 16 ]; then
+            echo "::error::הסיסמה בסוד (ANDROID_KEYSTORE_PASSWORD) קצרה מ-16 תווים — המפתח המוצפן יושב בריפו ציבורי"
+            exit 1
+          fi
+          if [ ! -f "$KS_ENC" ]; then
+            keytool -genkeypair -keystore "$RUNNER_TEMP/upload.jks" -storetype PKCS12 -alias upload \
+              -keyalg RSA -keysize 4096 -validity 10000 \
+              -storepass "$ANDROID_KEYSTORE_PASSWORD" -keypass "$ANDROID_KEYSTORE_PASSWORD" \
+              -dname "CN=MBE Plus Sketches 3D, O=mbe-plus.com, C=IL"
+            mkdir -p keystore
+            openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+              -in "$RUNNER_TEMP/upload.jks" -out "$KS_ENC" -pass env:ANDROID_KEYSTORE_PASSWORD
+            echo "new=1" >> "$GITHUB_OUTPUT"
+            echo "נוצר מפתח העלאה חדש, ונשמר מוצפן: sketches-3d/android/$KS_ENC"
+          else
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+              -in "$KS_ENC" -out "$RUNNER_TEMP/upload.jks" -pass env:ANDROID_KEYSTORE_PASSWORD \
+              || { echo "::error::הסיסמה בסוד אינה פותחת את המפתח שבריפו. אל תמחקו את הקובץ — האפליקציה בחנות חתומה בו"; exit 1; }
+          fi
+          SHA=$(keytool -list -v -keystore "$RUNNER_TEMP/upload.jks" -alias upload -storepass "$ANDROID_KEYSTORE_PASSWORD" \
+                | grep -m1 'SHA256:' | sed 's/.*SHA256: *//')
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "mode=release" >> "$GITHUB_OUTPUT"
+          echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+
+      - name: Build (release — AAB and APK)
+        if: steps.key.outputs.mode == 'release'
+        run: |
+          ./gradlew bundleRelease assembleRelease --no-daemon -PappHost="$APP_HOST" -PappPath="$APP_PATH" -PversionCode="$VERSION_CODE"
+          mkdir -p "$RUNNER_TEMP/out"
+          cp app/build/outputs/bundle/release/app-release.aab "$RUNNER_TEMP/out/sketches-3d-$VERSION_CODE.aab"
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/out/sketches-3d-$VERSION_CODE.apk"
+
+      - name: Build (debug APK — no signing secret)
+        if: steps.key.outputs.mode == 'debug'
+        run: |
+          ./gradlew assembleDebug --no-daemon -PappHost="$APP_HOST" -PappPath="$APP_PATH" -PversionCode="$VERSION_CODE"
+          mkdir -p "$RUNNER_TEMP/out"
+          cp app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/out/sketches-3d-$VERSION_CODE-debug.apk"
+
+      # הטביעות שהאתר מאשר: מפתח ההעלאה (להתקנה ידנית של ה-APK) ומפתח החתימה של
+      # גוגל (מה שמותקן מהחנות). בלי הנכונה — האפליקציה נפתחת עם שורת כתובת.
+      - name: Write assetlinks.json
+        if: steps.key.outputs.mode == 'release'
+        env:
+          UPLOAD_SHA: ${{ steps.key.outputs.sha }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re
+          shas = [os.environ['UPLOAD_SHA'].strip()]
+          try:
+              for line in open('play-signing-sha256.txt', encoding='utf-8'):
+                  line = line.split('#')[0].strip().upper()
+                  if re.fullmatch(r'([0-9A-F]{2}:){31}[0-9A-F]{2}', line) and line not in shas:
+                      shas.append(line)
+          except FileNotFoundError:
+              pass
+          links = [{
+              'relation': ['delegate_permission/common.handle_all_urls'],
+              'target': {'namespace': 'android_app', 'package_name': 'com.mbeplus.sketches3d', 'sha256_cert_fingerprints': shas},
+          }]
+          path = '../.well-known/assetlinks.json'
+          os.makedirs(os.path.dirname(path), exist_ok=True)
+          new = json.dumps(links, indent=2) + '\n'
+          old = open(path, encoding='utf-8').read() if os.path.exists(path) else ''
+          if new != old:
+              open(path, 'w', encoding='utf-8').write(new)
+              print('assetlinks.json עודכן:', shas)
+          else:
+              print('assetlinks.json ללא שינוי')
+          PY
+
+      - name: Save the encrypted key and assetlinks.json to the repo
+        if: steps.key.outputs.mode == 'release'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$KS_ENC" ../.well-known/assetlinks.json
+          if git diff --cached --quiet; then echo "אין מה לשמור"; exit 0; fi
+          git commit -m "שרטוטים בתלת מימד: מפתח העלאה מוצפן ו-assetlinks.json (נוצרו בבנייה $VERSION_CODE)"
+          for i in 1 2 3; do
+            # --autostash: הבנייה משאירה קבצים ששונו (gradle wrapper), ובלעדיו pull --rebase מסרב —
+            # "cannot pull with rebase: You have unstaged changes" (בנייה 105: המפתח נוצר ואבד)
+            git pull --rebase --autostash origin "$GITHUB_REF_NAME" && git push origin "HEAD:$GITHUB_REF_NAME" && exit 0
+            sleep $((i * 5))
+          done
+          echo "::error::לא הצלחתי לשמור את המפתח המוצפן בריפו — אל תעלו לחנות את הבנייה הזאת"; exit 1
+
+      # תיקיית החנות: שמות קבועים, כך שהקישור לא משתנה בין בנייה לבנייה.
+      # בלי הסוד — רק APK בחתימת debug (להתקנה ידנית) ותיק החנות; בלי AAB ובלי assetlinks.
+      - name: Prepare the store folder
+        env:
+          MODE: ${{ steps.key.outputs.mode }}
+          SHA: ${{ steps.key.outputs.sha }}
+        run: |
+          set -euo pipefail
+          D="$RUNNER_TEMP/store"; mkdir -p "$D"
+          if [ "$MODE" = "release" ]; then
+            cp "$RUNNER_TEMP/out/sketches-3d-$VERSION_CODE.apk" "$D/sketches-3d.apk"
+            cp "$RUNNER_TEMP/out/sketches-3d-$VERSION_CODE.aab" "$D/sketches-3d.aab"
+            cp ../.well-known/assetlinks.json "$D/assetlinks.json"
+          else
+            cp "$RUNNER_TEMP/out/sketches-3d-$VERSION_CODE-debug.apk" "$D/sketches-3d.apk"
+          fi
+          zip -qr "$D/store-listing.zip" STORE.md store
+          python3 -c 'import json,os,datetime; print(json.dumps({"versionCode": int(os.environ["VERSION_CODE"]), "signing": os.environ["MODE"], "url": "https://" + os.environ["APP_HOST"] + os.environ["APP_PATH"], "uploadKeySha256": os.environ.get("SHA") or None, "builtAt": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")}, indent=2))' > "$D/build.json"
+          ls -la "$D"
+
+      # Release מחליף קבצים בשם זהה. כשבנייה חתומה מחליפה debug — sketches-3d.aab ו-assetlinks.json מתווספים.
+      - name: Publish the store folder (GitHub Release)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: sketches-3d-store
+          name: שרטוטים בתלת מימד — תיקיית החנות
+          body: |
+            שרטוטים בתלת מימד לחנות של גוגל — בנייה ${{ env.VERSION_CODE }} (${{ steps.key.outputs.mode }}). מתעדכנת בכל בנייה מ-main.
+            sketches-3d.apk להתקנה · sketches-3d.aab ל-Play Console · store-listing.zip לטקסטים ולתמונות · assetlinks.json (מאוחד לשורש mbe-plus.com בפריסה) · build.json
+            בחתימת debug: רק APK להתקנה ידנית — לחנות צריך את הסוד ANDROID_KEYSTORE_PASSWORD.
+          files: ${{ runner.temp }}/store/*
+          fail_on_unmatched_files: true
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: sketches-3d-play-${{ env.VERSION_CODE }}
+          path: ${{ runner.temp }}/out/*
+          if-no-files-found: error
+
+      - name: Summary
+        env:
+          MODE: ${{ steps.key.outputs.mode }}
+          SHA: ${{ steps.key.outputs.sha }}
+        run: |
+          {
+            echo "## שרטוטים בתלת מימד — בנייה $VERSION_CODE"
+            echo "- כתובת: \`https://$APP_HOST$APP_PATH\`"
+            if [ "$MODE" = "release" ]; then
+              echo "- **AAB לחנות** ו-APK לבדיקה — ב-Artifacts למטה"
+              echo "- טביעת מפתח ההעלאה (SHA-256): \`$SHA\`"
+              echo "- אחרי ההעלאה הראשונה: Play Console → App integrity → App signing → את ה-SHA-256 של **App signing key** להוסיף ל-\`sketches-3d/android/play-signing-sha256.txt\`"
+            else
+              echo "- **APK בחתימת debug בלבד** — אין סוד \`ANDROID_KEYSTORE_PASSWORD\`. לחנות: להוסיף את הסוד ולבנות שוב"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
