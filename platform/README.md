@@ -353,8 +353,12 @@ Google (`sso.php?action=config`). ההרשאה בפלטפורמה היא האי�
 | רמה | כלים |
 | --- | --- |
 | חסום לגמרי | database-analyzer, frame-browser, pdf-merger, sketches-3d, sukkah-sketch, git-deploy, file-merger (חוץ מקובצי ה-PWA) |
-| חסום, עם `public` | camera-app (הגשר, העלאות, cron), carpentry-3d (קישור הצפייה ללקוח), catering-menu (התפריט הציבורי וההזמנות), claude-tasks (ה-API — יש לו אסימוני עובד משלו), data-embed-for-clients (חתימה ומעקב), renovation-punchlist (סנכרון), whatsapp-ai-scanner ו-guarded-browser (אפליקציות האנדרואיד) |
-| בלי שער | recipes-app (דומיין משלו `recipes.mbe-plus.com` — העוגייה לא מגיעה אליו — ומשתמשים והרשמה משלו), greeting-cards (אפליקציית האנדרואיד שלה היא WebView על דף הכלי) |
+| חסום, עם `public` | camera-app (הגשר, העלאות, cron), carpentry-3d (קישור הצפייה ללקוח), catering-menu (התפריט הציבורי וההזמנות), claude-tasks (ה-API — יש לו אסימוני עובד משלו), data-embed-for-clients (חתימה ומעקב), renovation-punchlist (סנכרון), whatsapp-ai-scanner ו-guarded-browser (אפליקציות האנדרואיד), project-manager ו-document-templates (כניסה משלהן + קישורים למשתתפים מבחוץ), greeting-cards (2026-10-19, #422 — כניסה רק דרך הפלטפורמה) |
+| בלי שער | kadisha (חיצונית, עצמאית לגמרי). recipes-app — עוברת (PR #423): הסאב-דומיין `recipes.mbe-plus.com` מפנה (301, ב-cPanel) לתיקייה, כי השער לא עובד בסאב-דומיין: העוגייה לא מגיעה אליו (נקבעת בלי `domain`), ובלוק ה-rewrite מפנה ל-`/mini_projects/platform/gate.php` — נתיב שלא קיים תחת השורש שלו |
+
+**כל אפליקציה, חוץ מקדישא, מאחורי השער** (הוכרע 2026-10-19). סאב-דומיין קיים — מפנים אותו ב-cPanel לתיקייה
+**לפני** המיזוג (שורש נפרד וריק לסאב-דומיין, Redirect עם Wild Card): ההפניה לא יכולה לשבת ב-`.htaccess` של
+האפליקציה, כי `build-gate.php` כותב את הבלוק שלו לפניה. עובדים שמעירים את עצמם ב-HTTP — לעקוב אחרי הפניה.
 
 כלי חדש עם כתובות שמכונה או לקוח ניגשים אליהן — להוסיף אותן ל-`public` לפני
 `"gate": true`. כתובת ציבורית אינה פרוצה: הכלי ממשיך לבדוק בה את מה שבדק עד
@@ -364,6 +368,17 @@ Google (`sso.php?action=config`). ההרשאה בפלטפורמה היא האי�
 `--delete`), אבל השער רואה שהוא כבוי ומעביר הכול.
 
 ## התקנה והורדה (שלב 5)
+
+**תיקיית החנות** — `"install": {"release": "<app>-store"}` ב-app.json: Release קבוע ב-GitHub שמתעדכן בכל בנייה,
+בשמות קבועים — `<app>.apk` (או מה ש-`install.apk` אומר), אותו שם ב-`.aab` להעלאה ל-Play Console,
+`store-listing.zip` (טקסטים, תמונות, תשובות למדיניות, Data safety), `assetlinks.json`, `build.json`. APK — לכולם;
+AAB וקובץ ההגדרות — רק למנהל (גיליון האפליקציה). הקבצים עצמם ב-Release ציבורי: אין בהם סוד — זה התוכן שממילא
+בחנות. התבנית לאפליקציית אנדרואיד (TWA): `recipes-app/android/` ו-`.github/workflows/recipes-twa.yml` — מעתיקים,
+לא משנים את המקור. מפתח העלאה לכל אפליקציה, מוצפן בתיקייה שלה; Play App Signing — גוגל מחזיקה את מפתח החתימה.
+
+**`assetlinks.json` משותף** — `https://mbe-plus.com/.well-known/assetlinks.json`, מחוץ ל-DEPLOY_PATH (הותר
+2026-10-19). הפריסה מאחדת (`tools/assetlinks.php`): הקיים בשרת (שום רשומה לא נמחקת) + `assetlinks.json` מתיקיית
+החנות של כל אפליקציה + `<app>/.well-known/assetlinks.json`. רשומה לכל חבילה; חבילה בלי טביעת אצבע — לא נכתבת.
 
 - **הפלטפורמה תמיד נפתחת על רשימת האפליקציות** — הטווח (scope) של האפליקציה המותקנת הוא רק
   `platform/home/`, לא שורש האתר. כשהטווח כלל את כל הכלים, כלי שנפתח "תפס" את חלון הפלטפורמה,

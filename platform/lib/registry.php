@@ -66,16 +66,35 @@ function registry_load(): array
  *   offline — "הורדת המשפחה" שומרת אותה במכשיר, לשימוש בלי רשת
  *   apk     — קישור להורדת APK (https, או נתיב יחסי לתיקיית הכלי)
  *   store   — קישור לדף ב-Google Play
+ *   release — "תיקיית החנות": Release קבוע ב-GitHub (<app>-store) שמתעדכן בכל בנייה. ממנו נגזרים:
+ *             APK (אם apk לא הוגדר — <app>.apk), AAB לחנות (אותו שם, .aab), store-listing.zip
+ *             (טקסטים, תמונות ותשובות למדיניות של Play Console) ו-assetlinks.json (מאוחד בפריסה לשורש
+ *             הדומיין — platform/tools/assetlinks.php). AAB וקובץ ההגדרות מוצגים רק למנהל.
  */
+const REGISTRY_RELEASES = 'https://github.com/malkiel01/mini_projects/releases/download/';
+
 function registry_install(string $folder, array $install): array
 {
     $apk = $install['apk'] ?? null;
     if (is_string($apk) && !str_starts_with($apk, 'https://')) $apk = "$folder/$apk";
+    $store = null;
+    if (is_string($install['release'] ?? null)) {
+        $base = REGISTRY_RELEASES . $install['release'] . '/';
+        $apk ??= "$base$folder.apk";
+        $stem = preg_replace('/\.apk$/i', '', basename((string)parse_url($apk, PHP_URL_PATH)));
+        $store = [
+            'release'     => $install['release'],
+            'aab'         => "$base$stem.aab",
+            'listing'     => "{$base}store-listing.zip",
+            'assetlinks'  => "{$base}assetlinks.json",
+        ];
+    }
     return [
         'pwa'     => $install['pwa'] ?? is_file(REGISTRY_ROOT . "/$folder/manifest.webmanifest"),
         'offline' => $install['offline'] ?? false,
         'apk'     => $apk,
         'store'   => $install['store'] ?? null,
+        'release' => $store,
     ];
 }
 
@@ -111,6 +130,9 @@ function registry_validate(string $folder, $app, array $categoryIds): ?string
     }
     if (isset($install['apk']) && !preg_match('#^https://#', (string)$install['apk']) && !registry_safe_path($install['apk'])) {
         return 'install.apk: כתובת https או נתיב יחסי';
+    }
+    if (isset($install['release']) && !preg_match('/^[a-z0-9][a-z0-9-]*-store$/', (string)$install['release'])) {
+        return 'install.release: שם ה-Release של תיקיית החנות, <app>-store';
     }
     if (isset($install['store']) && !preg_match('#^https://play\.google\.com/#', (string)$install['store'])) {
         return 'install.store: קישור ל-play.google.com';
