@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.mbeplus.sketches3d",
+      "sha256_cert_fingerprints": [
+        "1F:87:6A:F8:9E:5F:F2:9C:D2:1A:C9:B5:68:98:49:E4:AD:D7:50:17:24:40:90:2E:73:FE:22:25:42:F8:EF:22"
+      ]
+    }
+  }
+]
