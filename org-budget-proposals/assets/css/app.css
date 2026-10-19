@@ -249,3 +249,8 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 .steps li::before { counter-increment: s; content: counter(s); flex: none; display: grid; place-items: center; width: 22px; height: 22px;
     border-radius: 50%; background: var(--brand-soft); color: var(--brand); font-size: .75rem; font-weight: 600; }
 .steps li.done::before { content: '✓'; background: color-mix(in srgb, var(--ok) 15%, var(--surface)); color: var(--ok); }
+
+/* שדה סיסמה עם עינית. השדה ltr, אז הסוף שלו (padding-inline-end) הוא ימין — וזו תחילת השורה בדף העברי */
+.pw { position: relative; }
+.pw input { padding-inline-end: calc(var(--tap) + 4px); }
+.pw .eye { position: absolute; inset-block: 0; inset-inline-start: 0; font-size: 1rem; }

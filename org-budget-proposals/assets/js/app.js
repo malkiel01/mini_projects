@@ -89,6 +89,22 @@ function busy(btn, fn, errBox) {
     };
 }
 
+/** שדה סיסמה עם עינית: 👁️ מציגה את הסיסמה, 🙈 מסתירה שוב. */
+function pwField(label, name, autocomplete) {
+    const input = h('input', { name, type: 'password', dir: 'ltr', autocomplete, required: true });
+    const eye = h('button.icon-btn.eye', { type: 'button', 'aria-label': 'הצגת הסיסמה', 'aria-pressed': 'false' }, '👁️');
+    eye.addEventListener('click', e => {
+        e.preventDefault();
+        const show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        eye.textContent = show ? '🙈' : '👁️';
+        eye.setAttribute('aria-label', show ? 'הסתרת הסיסמה' : 'הצגת הסיסמה');
+        eye.setAttribute('aria-pressed', String(show));
+        input.focus();
+    });
+    return h('label.f', h('span', label), h('div.pw', input, eye));
+}
+
 // גובה נראה בלי המקלדת — הגיליון מתקצר והכול נגלל
 (() => {
     const vv = window.visualViewport; if (!vv) return;
@@ -216,7 +232,7 @@ function viewAuth(mode = sessionStorage.getItem('ob-auth') || 'login') {
         form = h('form.panel', { novalidate: true },
             h('label.f', h('span', 'שם מלא'), h('input', { name: 'name', autocomplete: 'name', required: true, maxLength: 60 })),
             h('label.f', h('span', 'מייל'), h('input', { name: 'email', type: 'email', dir: 'ltr', autocomplete: 'email', required: true })),
-            h('label.f', h('span', 'סיסמה (לפחות 8 תווים)'), h('input', { name: 'password', type: 'password', dir: 'ltr', autocomplete: 'new-password', required: true })),
+            pwField('סיסמה (לפחות 8 תווים)', 'password', 'new-password'),
             h('p.hint', 'אחרי ההרשמה יישלח מייל לאימות הכתובת, והחשבון ימתין לאישור.'),
             err, done, btn);
         form.addEventListener('submit', busy(btn, async () => {
@@ -227,7 +243,7 @@ function viewAuth(mode = sessionStorage.getItem('ob-auth') || 'login') {
         const btn = h('button.btn.primary', { type: 'submit' }, 'כניסה');
         form = h('form.panel', { novalidate: true },
             h('label.f', h('span', 'מייל'), h('input', { name: 'email', type: 'email', dir: 'ltr', autocomplete: 'username', required: true })),
-            h('label.f', h('span', 'סיסמה'), h('input', { name: 'password', type: 'password', dir: 'ltr', autocomplete: 'current-password', required: true })),
+            pwField('סיסמה', 'password', 'current-password'),
             err, btn,
             h('button.link', { type: 'button', onclick: () => viewAuth('forgot') }, 'שכחתי סיסמה'));
         form.addEventListener('submit', busy(btn, async () => {
@@ -258,7 +274,7 @@ function viewReset(token) {
     const err = h('p.error', { role: 'alert', hidden: true });
     const btn = h('button.btn.primary', { type: 'submit' }, 'שמירת הסיסמה');
     const form = h('form.panel', { novalidate: true },
-        h('label.f', h('span', 'סיסמה חדשה (לפחות 8 תווים)'), h('input', { name: 'password', type: 'password', dir: 'ltr', autocomplete: 'new-password', required: true })),
+        pwField('סיסמה חדשה (לפחות 8 תווים)', 'password', 'new-password'),
         err, btn);
     form.addEventListener('submit', busy(btn, async () => {
         const r = await api('reset', { token, password: formData(form).password });
@@ -311,8 +327,8 @@ async function viewMe() {
     const pwBtn = h('button.btn.primary', { type: 'submit' }, 'החלפת סיסמה');
     const pwForm = h('form.panel', { novalidate: true },
         h('div.fields',
-            h('label.f', h('span', 'סיסמה נוכחית'), h('input', { name: 'current', type: 'password', dir: 'ltr', autocomplete: 'current-password' })),
-            h('label.f', h('span', 'סיסמה חדשה'), h('input', { name: 'new', type: 'password', dir: 'ltr', autocomplete: 'new-password' }))),
+            pwField('סיסמה נוכחית', 'current', 'current-password'),
+            pwField('סיסמה חדשה', 'new', 'new-password')),
         h('p.hint', 'החלפת הסיסמה מנתקת את שאר המכשירים.'),
         pwErr, pwBtn);
     pwForm.addEventListener('submit', busy(pwBtn, async () => {
