@@ -75,7 +75,7 @@ jobs:
       - name: Build the platform gate
         env:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-        run: php platform/build-gate.php --root="$DEPLOY_PATH"
+        run: php platform/build-gate.php --root="$DEPLOY_PATH" --host=mbe-plus.com
 
       # קוד ההתקנה של המנהל הראשון (platform/). לשרת עולה רק ה-hash שלו, לקובץ
       # שחסום מהדפדפן (platform/lib/.htaccess); הקוד עצמו לא נכתב לשום מקום.

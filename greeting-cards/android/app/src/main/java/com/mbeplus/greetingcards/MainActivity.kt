@@ -11,8 +11,11 @@ import android.os.Environment
 import android.provider.Settings
 import android.webkit.*
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.mbeplus.greetingcards.databinding.ActivityMainBinding
 
 /**
@@ -39,6 +42,26 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // מ-targetSdk 35 האפליקציה מצוירת מתחת לשורת המצב ולסרגל הניווט (edge-to-edge). הריווח מחזיר
+        // את הדף לשטח הגלוי — וגם מעל המקלדת, כדי ששדה טקסט בתחתית הדף לא יוסתר.
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
+            v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            WindowInsetsCompat.CONSUMED
+        }
+
+        // "חזרה" חוזרת בתוך הדף. onBackPressed כבר לא נקרא באנדרואיד 16 עם targetSdk 36 (predictive back).
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (binding.webView.canGoBack()) {
+                    binding.webView.goBack()
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                }
+            }
+        })
 
         setupWebView()
         binding.webView.loadUrl(BuildConfig.WEB_URL)
@@ -148,14 +171,6 @@ class MainActivity : AppCompatActivity() {
             } else null
             fileUploadCallback?.onReceiveValue(result)
             fileUploadCallback = null
-        }
-    }
-
-    override fun onBackPressed() {
-        if (binding.webView.canGoBack()) {
-            binding.webView.goBack()
-        } else {
-            super.onBackPressed()
         }
     }
 

@@ -7,6 +7,9 @@
   "entry": "index.html",
   "gate": true,
   "install": {
-    "apk": "https://github.com/malkiel01/mini_projects/releases/download/greeting-cards-apk/app-debug.apk"
-  }
+    "release": "greeting-cards-store"
+  },
+  "public": [
+    "privacy.html"
+  ]
 }
