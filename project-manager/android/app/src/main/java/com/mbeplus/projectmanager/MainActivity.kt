@@ -14,6 +14,8 @@ import android.provider.MediaStore
 import android.util.Base64
 import android.view.Gravity
 import android.view.View
+import android.view.WindowInsets
+import android.window.OnBackInvokedDispatcher
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.URLUtil
@@ -61,7 +63,19 @@ class MainActivity : Activity() {
         super.onCreate(state)
         web = WebView(this)
         offline = offlineView()
-        setContentView(FrameLayout(this).apply { addView(web); addView(offline) })
+        val root = FrameLayout(this).apply { addView(web); addView(offline) }
+        setContentView(root)
+        // targetSdk 35 ומעלה: אנדרואיד 15 מצייר את האפליקציה מתחת לשורת המצב, לשורת הניווט ולמקלדת (edge-to-edge,
+        // ו-adjustResize כבר לא מקטין את החלון). מרווח לפי ה-insets — כך האתר לא נחתך, והשדה נשאר מעל המקלדת.
+        if (Build.VERSION.SDK_INT >= 30) root.setOnApplyWindowInsetsListener { v, insets ->
+            val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.ime() or WindowInsets.Type.displayCutout())
+            v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            WindowInsets.CONSUMED
+        }
+        // targetSdk 36: "חזרה" כבר לא מגיעה ל-onBackPressed (predictive back) — נרשמים אליה כאן
+        if (Build.VERSION.SDK_INT >= 33) {
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) { back() }
+        }
 
         web.settings.apply {
             javaScriptEnabled = true
@@ -101,7 +115,10 @@ class MainActivity : Activity() {
     }
 
     @Deprecated("Deprecated in Java")
-    override fun onBackPressed() {
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() = back() // אנדרואיד 12 ומטה
+
+    private fun back() {
         if (offline.visibility == View.VISIBLE) { finish(); return }
         // "חזרה" של האתר: במסך פנימי — למסך הקודם; במסך הראשי — יוצאים
         web.evaluateJavascript("(function(){ var b = document.getElementById('back'); if (b && !b.hidden && location.hash && location.hash !== '#/') { b.click(); return 1; } return 0; })()") {

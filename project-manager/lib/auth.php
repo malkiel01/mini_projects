@@ -29,6 +29,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/mail.php';
+require_once __DIR__ . '/platform.php'; // כניסה דרך הפלטפורמה (platform/docs/auth.md)
 
 const PM_COOKIE = 'pm_session';
 const PM_SESSION_DAYS = 30;
@@ -51,16 +52,20 @@ function pm_users_exist(): bool
     return (bool)pm_db()->query('SELECT 1 FROM users LIMIT 1')->fetchColumn();
 }
 
-/** המשתמש המחובר — [id, username, display_name, email, role, status, lang, csrf] — או null (גם ממתין). */
-function pm_session_user(): ?array
+/**
+ * המשתמש המחובר — [id, username, display_name, email, role, status, lang, csrf, via] — או null (גם ממתין).
+ * via: password · platform (lib/platform.php). $reset — אחרי שה-session הוחלף באמצע הבקשה.
+ */
+function pm_session_user(bool $reset = false): ?array
 {
     static $cached = false;
+    if ($reset) $cached = false;
     if ($cached !== false) return $cached;
     $cached = null;
     $token = $_COOKIE[PM_COOKIE] ?? '';
     if (!is_string($token) || strlen($token) !== 64) return null;
     $st = pm_db()->prepare(
-        'SELECT u.id, u.username, u.display_name, u.email, u.phone, u.role, u.status, u.lang, s.csrf
+        'SELECT u.id, u.username, u.display_name, u.email, u.phone, u.role, u.status, u.lang, s.csrf, s.via
            FROM sessions s JOIN users u ON u.id = s.user_id
           WHERE s.token_hash = ? AND s.expires_at > ?'
     );
@@ -95,16 +100,17 @@ function pm_set_cookie(string $value, int $expires): void
     ]);
 }
 
-function pm_start_session(int $userId): void
+function pm_start_session(int $userId, string $via = 'password'): void
 {
     $token = bin2hex(random_bytes(32));
     $expires = time() + PM_SESSION_DAYS * 86400;
     $db = pm_db();
-    $db->prepare('INSERT INTO sessions (token_hash, user_id, csrf, created_at, expires_at) VALUES (?,?,?,?,?)')
-       ->execute([hash('sha256', $token), $userId, bin2hex(random_bytes(16)), pm_now(), gmdate('Y-m-d\TH:i:s\Z', $expires)]);
+    $db->prepare('INSERT INTO sessions (token_hash, user_id, csrf, created_at, expires_at, via) VALUES (?,?,?,?,?,?)')
+       ->execute([hash('sha256', $token), $userId, bin2hex(random_bytes(16)), pm_now(), gmdate('Y-m-d\TH:i:s\Z', $expires), $via]);
     $db->prepare('UPDATE users SET last_login_at = ? WHERE id = ?')->execute([pm_now(), $userId]);
     $db->prepare('DELETE FROM sessions WHERE expires_at <= ?')->execute([pm_now()]);
     pm_set_cookie($token, $expires);
+    $_COOKIE[PM_COOKIE] = $token; // אותה בקשה כבר רואה את ה-session (lib/platform.php)
 }
 
 function pm_end_session(): void
@@ -114,6 +120,7 @@ function pm_end_session(): void
         pm_db()->prepare('DELETE FROM sessions WHERE token_hash = ?')->execute([hash('sha256', $token)]);
     }
     pm_set_cookie('', time() - 3600);
+    unset($_COOKIE[PM_COOKIE]);
 }
 
 // ---- הגבלת ניסיונות ----
@@ -277,12 +284,15 @@ function pm_auth_state(): array
         'setup_needed'  => !pm_users_exist(),
         'recovery_set'  => pm_recovery_hash() !== null,
         'mail'          => pm_mail_available(),
+        // מחוברת לפלטפורמה: אין כניסה בסיסמה — מסך הכניסה מפנה לכלים הדיגיטליים
+        'platform'      => pm_platform_connected(),
     ];
 }
 
 function pm_login(array $in): array
 {
     pm_require_app_header();
+    pm_platform_block_password('כניסה בסיסמה'); // i18n-none — רק ליומן
     $login = is_string($in['username'] ?? null) ? trim($in['username']) : '';
     $password = is_string($in['password'] ?? null) ? $in['password'] : '';
     $keys = ['u:' . mb_strtolower($login)];
@@ -329,6 +339,7 @@ function pm_login(array $in): array
 function pm_register(array $in): array
 {
     pm_require_app_header();
+    pm_platform_block_password('הרשמה'); // i18n-none — רק ליומן
     if (!pm_users_exist()) throw new PmError('האפליקציה עוד לא הוקמה — קודם המפתח', 409);
     $keys = ['reg:' . pm_client_ip()];
     if (pm_lock_remaining($keys) > 0) {
@@ -373,6 +384,7 @@ function pm_register(array $in): array
 function pm_setup(array $in): array
 {
     pm_require_app_header();
+    pm_platform_block_password('הקמה'); // i18n-none — רק ליומן
     if (pm_users_exist()) throw new PmError('המפתח כבר הוקם', 409);
     pm_check_recovery((string)($in['code'] ?? ''), 'setup');
     $username = pm_valid_username($in['username'] ?? null);
@@ -394,6 +406,7 @@ function pm_setup(array $in): array
 function pm_forgot(array $in): array
 {
     pm_require_app_header();
+    pm_platform_block_password('שחזור סיסמה'); // i18n-none — רק ליומן
     $login = is_string($in['login'] ?? null) ? trim($in['login']) : '';
     $keys = ['forgot:' . pm_client_ip()];
     if (pm_lock_remaining($keys) > 0) throw new PmError('יותר מדי בקשות. נסו שוב מאוחר יותר', 429);
@@ -451,6 +464,7 @@ function pm_reset_info(string $token): array
 function pm_reset_password(array $in): array
 {
     pm_require_app_header();
+    pm_platform_block_password('איפוס סיסמה'); // i18n-none — רק ליומן
     $r = pm_reset_row((string)($in['token'] ?? ''));
     $password = pm_valid_password($in['password'] ?? null);
     $db = pm_db();
@@ -477,6 +491,7 @@ function pm_logout(?array $u): array
 
 function pm_change_password(array $u, array $in): array
 {
+    pm_platform_block_password('החלפת סיסמה'); // i18n-none — רק ליומן
     $st = pm_db()->prepare('SELECT password_hash FROM users WHERE id = ?');
     $st->execute([$u['id']]);
     if (!password_verify((string)($in['current'] ?? ''), (string)$st->fetchColumn())) {
@@ -520,6 +535,7 @@ function pm_public_user(array $r): array
         'email' => $r['email'], 'phone' => $r['phone'], 'role' => $r['role'], 'status' => $r['status'],
         'notes' => $r['notes'] ?? '', 'created_at' => $r['created_at'], 'approved_at' => $r['approved_at'],
         'last_login_at' => $r['last_login_at'], 'lang' => $r['lang'] ?? '',
+        'linked' => ($r['platform_sub'] ?? null) !== null, // מקושר לחשבון בפלטפורמה
     ];
 }
 

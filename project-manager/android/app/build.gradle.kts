@@ -1,5 +1,6 @@
-// הכתובת של האתר (-PwebUrl), מספר הגרסה (-PversionCode) והחתימה (-PkeystoreFile …) מגיעים מה-workflow
-// (.github/workflows/project-manager-apk.yml). בלי חתימה — APK בחתימת debug, לבדיקה בלבד.
+// הכתובת של האתר (-PwebUrl), מספר הגרסה (-PversionCode) והחתימה (-PkeystoreFile, -PkeystorePassword) מגיעים
+// מה-workflow (.github/workflows/project-manager-apk.yml). החתימה — מפתח ההעלאה לחנות (alias "pm"), שהוא אותו
+// מפתח שחתם על ה-APK מההתחלה, כך שהעדכונים מותקנים מעל. בלי חתימה — APK בחתימת debug, לבדיקה בלבד.
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -11,12 +12,12 @@ val ksFile = findProperty("keystoreFile") as String?
 
 android {
     namespace = "com.mbeplus.projectmanager"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.mbeplus.projectmanager"
         minSdk = 24
-        targetSdk = 34
+        targetSdk = 36 // Google Play: אפליקציה חדשה ועדכונים — API 36
         versionCode = vCode
         versionName = "1.$vCode"
         buildConfigField("String", "WEB_URL", "\"$webUrl\"")
@@ -43,10 +44,13 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
 
     // הסמל — אותו קובץ של האתר (../assets/icon-maskable-512.png), מועתק לבנייה; לא מוחזק פעמיים בריפו
     sourceSets["main"].res.srcDir(layout.buildDirectory.dir("generated/pm-icon"))
+}
+
+kotlin {
+    compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
 }
 
 val copyIcon by tasks.registering(Copy::class) {
