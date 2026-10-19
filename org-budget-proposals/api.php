@@ -50,7 +50,7 @@ const POST_ACTIONS   = ['register', 'verify', 'login', 'forgot', 'reset', 'logou
                         'org_create', 'org_update', 'org_delete', 'member_add', 'member_set', 'member_remove',
                         'fund_save', 'fund_archive', 'fund_order', 'contact_save', 'contact_archive', 'cat_save', 'cat_archive',
                         'budget_create', 'budget_update', 'budget_status', 'budget_duplicate', 'budget_delete', 'bfund_set', 'bfund_toggle',
-                        'line_save', 'line_delete', 'line_order', 'transfer_create', 'srow_save', 'srow_delete', 'srow_order',
+                        'line_save', 'lines_batch', 'line_delete', 'line_order', 'transfer_create', 'srow_save', 'srow_delete', 'srow_order',
                         'comment_add', 'comment_set', 'org_import', 'org_logo_upload', 'platform_link', 'platform_new'];
 
 try {
@@ -117,6 +117,7 @@ try {
         'bfund_set'        => bfund_set($session, $body),
         'bfund_toggle'     => bfund_toggle($session, $body),
         'line_save'        => line_save($session, $body),
+        'lines_batch'      => lines_batch($session, $body),
         'line_delete'      => line_delete($session, $body),
         'line_order'       => line_order($session, $body),
         'transfer_create'  => transfer_create($session, $body),

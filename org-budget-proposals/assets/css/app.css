@@ -292,3 +292,37 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
     .doc .pg { box-shadow: none; margin: 0; padding: 0; width: auto; break-before: page; }
     .doc .pg.first { break-before: auto; }
 }
+
+/* ===== עריכה כטבלה: כל הקופות כמו במסמך. הטבלה נגללת לרוחב בתוך המסגרת — הדף לא ===== */
+.grid-fund { margin-top: var(--s4); }
+.grid-head { display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s2); min-width: 0; }
+.grid-head b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.grid-head small { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.grid-head > span:last-child { margin-inline-start: auto; flex: none; }
+.grid-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+table.grid { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 560px; font-size: .9rem; }
+table.grid caption { text-align: start; font-weight: 600; padding: var(--s2) var(--s3); color: var(--muted); font-size: .85rem; }
+table.grid th, table.grid td { border-top: 1px solid var(--line); padding: 2px; vertical-align: top; }
+table.grid thead th { background: var(--bg); font-weight: 600; font-size: .8rem; color: var(--muted); padding: var(--s2) 4px; white-space: nowrap; }
+table.grid th.title { position: sticky; inset-inline-start: 0; z-index: 1; background: var(--surface); text-align: start; width: 36%; min-width: 150px;
+    border-inline-end: 1px solid var(--line); }
+table.grid thead th.title, table.grid tfoot th.title { background: var(--bg); }
+table.grid tbody th.title > div { display: grid; gap: 2px; white-space: normal; }
+table.grid tbody th.title .n { float: inline-start; width: 24px; color: var(--muted); font-size: .75rem; padding-top: 11px; text-align: center; display: grid; gap: 2px; }
+table.grid tbody th.title .n small { font-size: .7rem; line-height: 1.1; overflow-wrap: anywhere; }
+table.grid input.sub.empty { display: none; }
+table.grid tr:focus-within input.sub.empty { display: block; }
+table.grid input { width: 100%; min-height: 40px; font-size: 16px; border: 1px solid transparent; border-radius: 6px; background: transparent; padding: 4px 6px; color: var(--ink); }
+table.grid input.sub { min-height: 30px; font-size: 14px; color: var(--muted); }
+table.grid input:not([readonly]):hover { border-color: var(--line); }
+table.grid input:focus { border-color: var(--brand); background: var(--surface); outline: none; box-shadow: 0 0 0 2px var(--brand-soft); }
+table.grid input[readonly] { color: var(--muted); }
+table.grid td.num input { text-align: end; font-variant-numeric: tabular-nums; }
+table.grid td.num { min-width: 96px; }
+table.grid tfoot th, table.grid tfoot td { background: var(--bg); font-weight: 700; padding: var(--s2) 8px; text-align: end; font-variant-numeric: tabular-nums; }
+table.grid tfoot th.title { text-align: start; }
+table.grid tr.dirty th.title { box-shadow: inset 3px 0 0 var(--brand); }
+table.grid tr.dirty td { background: color-mix(in srgb, var(--brand) 5%, var(--surface)); }
+.grid-bar { position: sticky; bottom: 0; z-index: 3; display: flex; gap: var(--s2); padding: var(--s2) 0 calc(var(--s2) + env(safe-area-inset-bottom));
+    background: var(--bg); border-top: 1px solid var(--line); margin-top: var(--s3); }
+.grid-bar .btn.primary { flex: 1; }

@@ -701,36 +701,99 @@ function line_save(array $s, array $b): array
 {
     $bud = budget_access($s, (int)($b['budget_id'] ?? 0), true);
     $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        $id = line_apply($bud, $b);
+        touch_budget((int)$bud['id']);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+    return ['ok' => true, 'id' => $id];
+}
+
+/** שמירת שורה אחת (חדשה או קיימת) — בתוך טרנזקציה של מי שקורא. */
+function line_apply(array $bud, array $b): int
+{
+    $pdo = db();
     $id = (int)($b['id'] ?? 0);
-    $now = now_iso();
     if ($id) {
         $st = $pdo->prepare('SELECT * FROM budget_lines WHERE id = ? AND budget_id = ?');
         $st->execute([$id, $bud['id']]);
         $old = $st->fetch() ?: throw new ApiError('השורה לא נמצאה', 404);
         $v = line_values($bud, $b, $old['direction']);
-        $pdo->beginTransaction();
-        try {
-            $pdo->prepare('UPDATE budget_lines SET title = ?, subtitle = ?, contact_id = ?, amount = ?, calc = ?, cell_note = ?,
-                    prev_budget = ?, prev_actual = ?, actual = ?, summary_row_id = ?, updated_at = ?, '
-                    . implode(' = ?, ', LINE_EXTRA) . ' = ? WHERE id = ?')
-                ->execute([$v['title'], $v['subtitle'], $v['contact_id'], $v['amount'], $v['calc'], $v['cell_note'],
-                    $v['prev_budget'], $v['prev_actual'], $v['actual'], $v['summary_row_id'], $now,
-                    ...array_map(fn($c) => $v[$c], LINE_EXTRA), $id]);
-            if ($old['transfer_id']) sync_transfer((string)$old['transfer_id'], $id, $v, $old['direction']);
-            touch_budget((int)$bud['id']);
-            $pdo->commit();
-        } catch (Throwable $e) {
-            $pdo->rollBack();
-            throw $e;
-        }
-        return ['ok' => true, 'id' => $id];
+        $pdo->prepare('UPDATE budget_lines SET title = ?, subtitle = ?, contact_id = ?, amount = ?, calc = ?, cell_note = ?,
+                prev_budget = ?, prev_actual = ?, actual = ?, summary_row_id = ?, updated_at = ?, '
+                . implode(' = ?, ', LINE_EXTRA) . ' = ? WHERE id = ?')
+            ->execute([$v['title'], $v['subtitle'], $v['contact_id'], $v['amount'], $v['calc'], $v['cell_note'],
+                $v['prev_budget'], $v['prev_actual'], $v['actual'], $v['summary_row_id'], now_iso(),
+                ...array_map(fn($c) => $v[$c], LINE_EXTRA), $id]);
+        if ($old['transfer_id']) sync_transfer((string)$old['transfer_id'], $id, $v, $old['direction']);
+        return $id;
     }
     $dir = one_of($b['direction'] ?? '', DIRECTIONS, 'כיוון');
     $fid = budget_fund_of($bud, (int)($b['fund_id'] ?? 0));
-    $v = line_values($bud, $b, $dir);
-    $id = insert_line((int)$bud['id'], $fid, $dir, $v, null);
-    touch_budget((int)$bud['id']);
-    return ['ok' => true, 'id' => $id];
+    return insert_line((int)$bud['id'], $fid, $dir, line_values($bud, $b, $dir), null);
+}
+
+/** עמודות שעריכה כטבלה משנה; כל השאר (חישוב, שכירות, גורם, שורת ריכוז…) נשאר כמו שהוא. */
+const GRID_FIELDS = ['title', 'subtitle', 'prev_budget', 'prev_actual', 'amount', 'actual'];
+
+/**
+ * עריכה כטבלה: כמה שורות בבת אחת — הכול או כלום. שורה קיימת: רק העמודות שנשלחו משתנות.
+ * שורה מחושבת (חודשי × חודשים) — הסכום שלה נגזר, ולכן אין לשלוח לה amount.
+ */
+function lines_batch(array $s, array $b): array
+{
+    $bud = budget_access($s, (int)($b['budget_id'] ?? 0), true);
+    $rows = (array)($b['lines'] ?? []);
+    if (count($rows) > 500) throw new ApiError('יותר מדי שורות בבת אחת', 422);
+    $pdo = db();
+    $ids = [];
+    $pdo->beginTransaction();
+    try {
+        foreach ($rows as $i => $r) {
+            if (!is_array($r)) throw new ApiError('שורה ' . ($i + 1) . ': לא תקינה', 422);
+            $id = (int)($r['id'] ?? 0);
+            $old = null;
+            $in = array_intersect_key($r, array_flip(GRID_FIELDS));
+            try {
+                if ($id) {
+                    $st = $pdo->prepare('SELECT * FROM budget_lines WHERE id = ? AND budget_id = ?');
+                    $st->execute([$id, $bud['id']]);
+                    $old = $st->fetch() ?: throw new ApiError('השורה לא נמצאה', 404);
+                    if ($old['calc'] && array_key_exists('amount', $in)) throw new ApiError('הסכום מחושב (חודשי × חודשים) — משנים אותו בעריכת השורה', 422);
+                    $ids[] = line_apply($bud, ['id' => $id] + $in + line_input($old));
+                } else {
+                    $ids[] = line_apply($bud, $in + ['fund_id' => $r['fund_id'] ?? 0, 'direction' => $r['direction'] ?? '']);
+                }
+            } catch (ApiError $e) {
+                $t = trim((string)($r['title'] ?? ($old['title'] ?? '')));
+                throw new ApiError(($t !== '' ? "\"$t\": " : 'שורה חדשה: ') . $e->getMessage(), $e->status);
+            }
+        }
+        touch_budget((int)$bud['id']);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+    return ['ok' => true, 'ids' => $ids];
+}
+
+/** שורה מהמסד בצורת קלט של line_values — כדי לשמור אותה מחדש בלי לאבד אף שדה. */
+function line_input(array $l): array
+{
+    $calc = $l['calc'] ? json_decode((string)$l['calc'], true) : null;
+    return [
+        'title' => $l['title'], 'subtitle' => $l['subtitle'], 'contact_id' => $l['contact_id'],
+        'amount' => $l['amount'], 'calc' => $calc, 'cell_note' => $l['cell_note'],
+        'prev_budget' => $l['prev_budget'], 'prev_actual' => $l['prev_actual'], 'actual' => $l['actual'],
+        'summary_row_id' => $l['summary_row_id'], 'summary_only' => (int)$l['summary_only'],
+        'lease' => $l['lease'] ? ['property' => $l['lease_property'], 'tenant' => $l['lease_tenant'], 'monthly' => $l['lease_monthly'],
+            'annual' => $l['lease_annual'], 'period' => $l['lease_period']] : null,
+    ];
 }
 
 function budget_fund_of(array $bud, int $fid): int
