@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>כרטיסי ברכה לשנה טובה</title>
+    <meta name="theme-color" content="#1a1a2e">
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="icon" href="./assets/icons/icon-192.png" type="image/png">
+    <link rel="apple-touch-icon" href="./assets/icons/icon-192.png">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="כרטיסי ברכה">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;700;900&family=Rubik:wght@400;700&family=Assistant:wght@400;700&family=Secular+One&family=Suez+One&family=Varela+Round&family=Alef:wght@400;700&family=Noto+Sans+Hebrew:wght@400;700;900&family=Noto+Serif+Hebrew:wght@400;700&family=Karantina:wght@400;700&family=Amatic+SC:wght@400;700&family=Frank+Ruhl+Libre:wght@400;700&display=swap">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -6917,6 +6924,12 @@ switchStep = function(n) {
     if (n === 5) initWhatsAppSection();
 };
 
+</script>
+<script>
+// התקנה כאפליקציה (PWA) — service-worker.js
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(() => {}));
+}
 </script>
 </body>
 </html>
