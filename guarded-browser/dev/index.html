@@ -27,6 +27,12 @@
       <p class="error" role="alert" hidden></p>
       <button class="btn primary" type="submit" id="auth-go">כניסה</button>
     </form>
+    <!-- מחוברת לפלטפורמה, והזהות עוד לא קושרה: המסך החד-פעמי (platform/docs/auth.md, סעיף 4) -->
+    <div id="auth-link" hidden>
+      <p class="hint">פעם אחת: אם נכנסת לכאן בעבר בשם משתמש וסיסמה, היכנס בהם — החשבון יחובר לחשבון שלך
+        בכלים הדיגיטליים, ומכאן הכניסה תהיה אוטומטית.</p>
+      <button class="btn ghost" type="button" id="auth-new">אין לי חשבון — פתיחת חשבון חדש</button>
+    </div>
   </section>
 
   <!-- הקונסולה -->
@@ -124,6 +130,7 @@
       <div class="sheet-body">
         <ul class="menu-list list">
           <li><button type="button" id="m-pass">🔑 החלפת סיסמה</button></li>
+          <li><button type="button" id="m-link" hidden>🔗 חיבור חשבון ישן</button></li>
           <li><button type="button" id="m-admin">🔐 פאנל ההרשאות (זמני, עד אפליקציית ההורה)</button></li>
           <li><button type="button" id="m-out">🚪 יציאה</button></li>
         </ul>

@@ -23,9 +23,10 @@
     "api/index.php?do=register|login|pair|policy|check|yt_allowed|trace|heartbeat|ping|request|requests|search|apps",
     "parent/**",
     "assets/**",
-    "download.php"
+    "download.php",
+    "privacy.html"
   ],
   "install": {
-    "apk": "download.php"
+    "release": "guarded-browser-store"
   }
 }

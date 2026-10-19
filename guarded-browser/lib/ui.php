@@ -14,6 +14,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/catalog.php';
 require_once __DIR__ . '/adblock.php';
+require_once __DIR__ . '/platform.php';
 
 function h(?string $s): string {
     return htmlspecialchars((string) $s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
@@ -231,7 +232,11 @@ function layoutTop(string $title, ?array $admin = null): void {
       echo $n ? ' <span class="badge">' . $n . '</span>' : ''; ?></a>
     <a href="audit.php">יומן</a>
     <a href="health.php">אבחון</a>
+    <?php if (platformIdentity()): /* מחוברת: היציאה היא מהכלים הדיגיטליים */ ?>
+    <a href="login.php?link=1">חשבון ישן</a>
+    <?php else: ?>
     <a href="logout.php">יציאה</a>
+    <?php endif; ?>
   </nav>
   <?php endif; ?>
 </header>

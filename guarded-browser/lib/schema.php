@@ -45,7 +45,8 @@ function schemaStatements(): array {
         note          TEXT    NOT NULL DEFAULT '',
         created_at    TEXT    NOT NULL,
         approved_at   TEXT    NOT NULL DEFAULT '',
-        last_seen_at  TEXT    NOT NULL DEFAULT ''
+        last_seen_at  TEXT    NOT NULL DEFAULT '',
+        platform_sub  TEXT    NOT NULL DEFAULT ''
     )",
 
     // ── מדיניות לכל משתמש ──────────────────────────────────────
@@ -271,7 +272,9 @@ function schemaStatements(): array {
         id             INTEGER PRIMARY KEY AUTOINCREMENT,
         username       TEXT    NOT NULL UNIQUE,
         name           TEXT    NOT NULL DEFAULT '',
+        email          TEXT    NOT NULL DEFAULT '',
         password_hash  TEXT    NOT NULL,
+        platform_sub   TEXT    NOT NULL DEFAULT '',
         created_at     TEXT    NOT NULL,
         last_login_at  TEXT    NOT NULL DEFAULT ''
     )",

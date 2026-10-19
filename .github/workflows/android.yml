@@ -5,16 +5,24 @@ name: Build Android APK
 # הבנייה כאן ולא מקומית מפני שסביבת הפיתוח חסומה לרשת חיצונית,
 # ו-Gradle חייב להוריד את ה-SDK ואת התלויות.
 #
-# חתימה קבועה — כדי שהעדכונים יותקנו מעל הגרסה הקודמת (חתימת debug משתנה בכל בנייה, ואז אנדרואיד
-# מסרב לעדכן). המפתח נוצר בבנייה הראשונה מ-main, מוצפן (AES-256) ונשמר בריפו:
-# guarded-browser/android/keystore/release.jks.enc. סיסמת ההצפנה נגזרת מהסוד DEPLOY_SSH_KEY שכבר קיים
-# (לא נדרש סוד חדש), ואינה מודפסת. מוצפן — חסר ערך בלי הסוד. זו אותה שיטה כמו ב-project-manager-apk.yml.
-# המפתח חייב להישאר סודי: מי שמחזיק בו יכול לבנות "עדכון" שמותקן מעל מגדלור במכשיר של ילד.
-# אם DEPLOY_SSH_KEY הוחלף — הפענוח נכשל והבנייה עוצרת. אז: למחוק את release.jks.enc, ובנייה חדשה
-# תיצור מפתח חדש; בכל מכשיר צריך להסיר את האפליקציה פעם אחת ולהתקין מחדש.
+# שני Releases, שניהם מתעדכנים בכל בנייה מ-main ורק בחתימה הקבועה:
+#   guarded-browser-apk     migdalor.apk + latest.json — הקיים. ממנו השרת יודע מה הגרסה האחרונה
+#                           (lib/appversion.php), download.php מוריד, וה-QR של "בעל מכשיר" נשען עליו.
+#                           https://github.com/malkiel01/mini_projects/releases/download/guarded-browser-apk/migdalor.apk
+#   guarded-browser-store   "תיקיית החנות" (platform/docs/rollout.md, צעד 5), שה-app.json מצביע עליה:
+#                           guarded-browser.apk, guarded-browser.aab, store-listing.zip, build.json.
+#                           פירוט: guarded-browser/android/STORE.md.
 #
-# בנייה מ-PR — רק בדיקות ובדיקה שהקוד נבנה (חתימת debug, artifact). רק מ-main — Release עם קישור קבוע:
-# https://github.com/malkiel01/mini_projects/releases/download/guarded-browser-apk/migdalor.apk
+# חתימה קבועה — כדי שהעדכונים יותקנו מעל הגרסה הקודמת (חתימת debug משתנה בכל בנייה, ואז אנדרואיד
+# מסרב לעדכן). המפתח (alias mg) מוצפן (AES-256) בריפו: guarded-browser/android/keystore/signing.jks.enc,
+# בסוד המשותף ANDROID_KEYSTORE_PASSWORD — סיסמה אחת לכל מפתחות האפליקציות. מוצפן — חסר ערך בלי הסוד.
+# המפתח חייב להישאר סודי: מי שמחזיק בו יכול לבנות "עדכון" שמותקן מעל מגדלור במכשיר של ילד.
+#
+# מעבר חד-פעמי: עד 2026-10-19 המפתח היה מוצפן בסיסמה שנגזרה מ-DEPLOY_SSH_KEY (keystore/release.jks.enc).
+# הבנייה הראשונה מ-main פותחת אותו, מעבירה לסיסמה החדשה, בודקת שטביעת המפתח זהה, ושומרת את
+# signing.jks.enc במקום הישן. אותו מפתח — המכשירים מתעדכנים כרגיל.
+#
+# בנייה מ-PR — רק בדיקות ובדיקה שהקוד נבנה (APK ו-AAB בחתימת debug, artifact).
 
 on:
   push:
@@ -45,9 +53,21 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # המפתח המוצפן (בבנייה הראשונה) ו-Release
+      contents: write   # המפתח המוצפן (בבנייה הראשונה / במעבר) ו-Releases
+    env:
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      KS_ENC: keystore/signing.jks.enc
+      KS_LEGACY: keystore/release.jks.enc
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # ה-commit של המפתח נדחף אחרי pull --rebase
+
+      # מחוץ לריפו: המפתח הפתוח לא יכול להיכנס ל-commit בטעות.
+      - name: Paths
+        run: |
+          echo "KS=$RUNNER_TEMP/keys/release.jks" >> "$GITHUB_ENV"
+          echo "OUT=$RUNNER_TEMP/out" >> "$GITHUB_ENV"
 
       - name: Setup JDK 17
         uses: actions/setup-java@v4
@@ -75,60 +95,114 @@ jobs:
         id: key
         if: github.ref == 'refs/heads/main'
         env:
-          SEED: ${{ secrets.DEPLOY_SSH_KEY }}
+          LEGACY_SEED: ${{ secrets.DEPLOY_SSH_KEY }}
+        shell: bash
         run: |
           set -euo pipefail
-          if [ -z "${SEED:-}" ]; then echo "::warning::אין DEPLOY_SSH_KEY — APK בחתימת debug"; exit 0; fi
-          export PASS=$(printf 'migdalor-android:%s' "$SEED" | sha256sum | cut -c1-48)
-          echo "::add-mask::$PASS"
-          mkdir -p keystore
-          if [ -f keystore/release.jks.enc ]; then
-            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:PASS -in keystore/release.jks.enc -out "$RUNNER_TEMP/release.jks" \
-              || { echo "::error::פענוח המפתח נכשל — DEPLOY_SSH_KEY הוחלף? ראו את ההסבר בראש הקובץ"; exit 1; }
+          if [ -z "${ANDROID_KEYSTORE_PASSWORD:-}" ]; then
+            echo "::warning::אין סוד ANDROID_KEYSTORE_PASSWORD — APK בחתימת debug, בלי Releases"; exit 0
+          fi
+          if [ ${#ANDROID_KEYSTORE_PASSWORD} -lt 16 ]; then
+            echo "::error::הסיסמה בסוד ANDROID_KEYSTORE_PASSWORD קצרה מ-16 תווים — המפתח המוצפן יושב בריפו ציבורי"; exit 1
+          fi
+          mkdir -p "$(dirname "$KS")"
+          # טביעת המפתח (SHA-256) — לזהות שזה אותו מפתח לפני ואחרי המעבר.
+          # הפלט נשמר קודם למשתנה: grep שיוצא באמצע צינור מפיל את keytool ב-SIGPIPE, ו-pipefail עוצר את השלב.
+          fp() { local o; o=$(keytool -list -v -keystore "$1" -storetype PKCS12 -alias mg -storepass "$2"); sed -n '/SHA256:/{s/^.*SHA256: *//p;q}' <<<"$o"; }
+          enc() { openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:ANDROID_KEYSTORE_PASSWORD -in "$KS" -out "$KS_ENC"; }
+
+          if [ -f "$KS_ENC" ]; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:ANDROID_KEYSTORE_PASSWORD -in "$KS_ENC" -out "$KS" \
+              || { echo "::error::הסיסמה בסוד אינה פותחת את המפתח שבריפו. אל תמחקו את הקובץ — המכשירים חתומים בו"; exit 1; }
+            MSG=""
+          elif [ -f "$KS_LEGACY" ]; then
+            # המעבר: אותו מפתח, הצפנה בסוד החדש.
+            [ -n "${LEGACY_SEED:-}" ] || { echo "::error::למעבר החד-פעמי נדרש DEPLOY_SSH_KEY (המפתח הישן מוצפן בו)"; exit 1; }
+            export LEGACY=$(printf 'migdalor-android:%s' "$LEGACY_SEED" | sha256sum | cut -c1-48)
+            echo "::add-mask::$LEGACY"
+            OLDKS="$(dirname "$KS")/legacy.jks"
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:LEGACY -in "$KS_LEGACY" -out "$OLDKS" \
+              || { echo "::error::פענוח המפתח הישן נכשל — DEPLOY_SSH_KEY הוחלף? אל תמחקו את release.jks.enc"; exit 1; }
+            keytool -importkeystore -noprompt \
+              -srckeystore "$OLDKS" -srcstoretype PKCS12 -srcstorepass "$LEGACY" -srcalias mg -srckeypass "$LEGACY" \
+              -destkeystore "$KS" -deststoretype PKCS12 -deststorepass "$ANDROID_KEYSTORE_PASSWORD" \
+              -destkeypass "$ANDROID_KEYSTORE_PASSWORD" -destalias mg
+            A=$(fp "$OLDKS" "$LEGACY"); B=$(fp "$KS" "$ANDROID_KEYSTORE_PASSWORD")
+            if [ -z "$A" ] || [ "$A" != "$B" ]; then echo "::error::טביעת המפתח השתנתה במעבר — עוצר בלי לשמור"; exit 1; fi
+            enc
+            git rm -q "$KS_LEGACY"
+            MSG="מגדלור — אנדרואיד: המפתח הקיים מוצפן עכשיו ב-ANDROID_KEYSTORE_PASSWORD (טביעה $B)"
           else
-            keytool -genkeypair -keystore "$RUNNER_TEMP/release.jks" -storetype PKCS12 -alias mg -keyalg RSA -keysize 4096 -validity 36500 \
-              -storepass "$PASS" -keypass "$PASS" -dname "CN=Migdalor, O=mbe-plus, C=IL"
-            openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:PASS -in "$RUNNER_TEMP/release.jks" -out keystore/release.jks.enc
+            keytool -genkeypair -keystore "$KS" -storetype PKCS12 -alias mg -keyalg RSA -keysize 4096 -validity 36500 \
+              -storepass "$ANDROID_KEYSTORE_PASSWORD" -keypass "$ANDROID_KEYSTORE_PASSWORD" -dname "CN=Migdalor, O=mbe-plus, C=IL"
+            enc
+            MSG="מגדלור — אנדרואיד: מפתח החתימה (מוצפן)"
+          fi
+
+          if [ -n "$MSG" ]; then
+            # לפני השמירה: הקובץ המוצפן נפתח בסוד, ובו אותו מפתח.
+            CHECK="$(dirname "$KS")/check.jks"
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:ANDROID_KEYSTORE_PASSWORD -in "$KS_ENC" -out "$CHECK"
+            [ "$(fp "$CHECK" "$ANDROID_KEYSTORE_PASSWORD")" = "$(fp "$KS" "$ANDROID_KEYSTORE_PASSWORD")" ] \
+              || { echo "::error::הקובץ המוצפן לא נפתח כמו שצריך — עוצר בלי לשמור"; exit 1; }
+            git add "$KS_ENC"
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add keystore/release.jks.enc
-            git commit -m "מגדלור — אנדרואיד: מפתח החתימה (מוצפן)"
-            git pull --rebase origin main && git push origin HEAD:main
+            git commit -q -m "$MSG"
+            for i in 1 2 3; do
+              git pull -q --rebase --autostash origin main && git push -q origin HEAD:main && break
+              [ "$i" = 3 ] && { echo "::error::לא הצלחתי לשמור את המפתח המוצפן בריפו"; exit 1; }
+              sleep $((i * 5))
+            done
+            echo "$MSG"
           fi
-          echo "PASS=$PASS" >> "$GITHUB_ENV"
+          echo "sha=$(fp "$KS" "$ANDROID_KEYSTORE_PASSWORD")" >> "$GITHUB_OUTPUT"
           echo "signed=1" >> "$GITHUB_OUTPUT"
-        shell: bash
 
-      - name: Build APK
+      - name: Build APK and AAB
         env:
           API_BASE: ${{ github.event.inputs.apiBase || 'https://mbe-plus.com/mini_projects/guarded-browser/' }}
+          SIGNED: ${{ steps.key.outputs.signed }}
+        shell: bash
         run: |
           set -euo pipefail
           ARGS="-PversionCode=${{ github.run_number }} -PapiBase=$API_BASE"
-          if [ "${{ steps.key.outputs.signed }}" = "1" ]; then ARGS="$ARGS -PkeystoreFile=$RUNNER_TEMP/release.jks -PkeystorePassword=$PASS"; fi
-          gradle assembleRelease --no-daemon $ARGS
-          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/migdalor.apk"
+          # הסיסמה דרך משתנה סביבה (ORG_GRADLE_PROJECT_*), לא בשורת הפקודה.
+          if [ "$SIGNED" = "1" ]; then ARGS="$ARGS -PkeystoreFile=$KS"; export ORG_GRADLE_PROJECT_keystorePassword="$ANDROID_KEYSTORE_PASSWORD"; fi
+          gradle assembleRelease bundleRelease --no-daemon $ARGS
+          mkdir -p "$OUT/store"
+          cp app/build/outputs/apk/release/app-release.apk "$OUT/migdalor.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$OUT/store/guarded-browser.apk"
+          cp app/build/outputs/bundle/release/app-release.aab "$OUT/store/guarded-browser.aab"
+          (cd store && zip -qr "$OUT/store/store-listing.zip" .)
           # טביעת האצבע של תעודת החתימה (SHA-256, base64url) — נדרשת ל-QR provisioning של בעל מכשיר.
           # קבועה כל עוד מפתח החתימה לא השתנה. '' בבנייה לא-חתומה.
           CHK=""
-          if [ "${{ steps.key.outputs.signed }}" = "1" ]; then
-            CHK=$(keytool -exportcert -alias mg -keystore "$RUNNER_TEMP/release.jks" -storepass "$PASS" 2>/dev/null \
+          if [ "$SIGNED" = "1" ]; then
+            CHK=$(keytool -exportcert -alias mg -keystore "$KS" -storepass "$ANDROID_KEYSTORE_PASSWORD" 2>/dev/null \
                   | openssl dgst -sha256 -binary | openssl base64 | tr '+/' '-_' | tr -d '=')
           fi
           # הגרסה האחרונה + טביעת האצבע — השרת קורא אותן (lib/appversion.php).
           printf '{"version_code": %s, "version_name": "1.%s", "cert_sha256": "%s"}\n' \
-            "${{ github.run_number }}" "${{ github.run_number }}" "$CHK" > "$RUNNER_TEMP/latest.json"
+            "${{ github.run_number }}" "${{ github.run_number }}" "$CHK" > "$OUT/latest.json"
+          jq -n --arg sha "${{ steps.key.outputs.sha }}" --arg commit "$GITHUB_SHA" --argjson code "${{ github.run_number }}" \
+            '{app: "guarded-browser", package: "com.mbeplus.guardedbrowser", versionCode: $code, versionName: "1.\($code)",
+              signed: ($sha != ""), signingKeySha256: (if $sha == "" then null else $sha end),
+              commit: $commit, built: (now | todate)}' > "$OUT/store/build.json"
+          cat "$OUT/store/build.json"
 
-      - name: Upload APK
+      - name: Upload (Artifacts)
         uses: actions/upload-artifact@v4
         with:
-          name: migdalor-apk
-          path: ${{ runner.temp }}/migdalor.apk
+          name: migdalor-${{ github.run_number }}
+          path: |
+            ${{ env.OUT }}/migdalor.apk
+            ${{ env.OUT }}/store/*
           if-no-files-found: error
 
-      # ‏Artifact של Actions אינו ניתן להורדה מהטלפון. ל-Release יש קישור הורדה ישיר — והוא הקישור
-      # שבכרטיס של הכלי בדף הראשי (install.apk ב-app.json). התג נייח ומתעדכן בכל בנייה, כך שהקישור
-      # תמיד מצביע ל-APK האחרון. רק מ-main ורק חתום: בנייה אחרת לא מחליפה את מה שמשתמשים מורידים.
+      # ‏Artifact של Actions אינו ניתן להורדה מהטלפון. ל-Release יש קישור הורדה ישיר. התג נייח ומתעדכן
+      # בכל בנייה, כך שהקישור תמיד מצביע ל-APK האחרון. רק מ-main ורק חתום: בנייה אחרת לא מחליפה את מה
+      # שמשתמשים מורידים.
       - name: Publish APK to a GitHub Release (mobile-friendly)
         if: github.ref == 'refs/heads/main' && steps.key.outputs.signed == '1'
         uses: softprops/action-gh-release@v2
@@ -139,9 +213,44 @@ jobs:
             אפליקציית הילד של מגדלור, בחתימה קבועה — כל גרסה מותקנת מעל הקודמת.
             מתעדכנת אוטומטית בכל בנייה מ-main. גרסה 1.${{ github.run_number }}.
           files: |
-            ${{ runner.temp }}/migdalor.apk
-            ${{ runner.temp }}/latest.json
+            ${{ env.OUT }}/migdalor.apk
+            ${{ env.OUT }}/latest.json
           fail_on_unmatched_files: true
+
+      - name: Publish the store folder (Release guarded-browser-store)
+        if: github.ref == 'refs/heads/main' && steps.key.outputs.signed == '1'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: guarded-browser-store
+          name: מגדלור — תיקיית החנות
+          make_latest: false
+          body: |
+            מתעדכן לבד בכל בנייה מ-main (`.github/workflows/android.yml`). גרסה 1.${{ github.run_number }}.
+            - `guarded-browser.apk` — התקנה ידנית בטלפון
+            - `guarded-browser.aab` — להעלאה ל-Play Console (מה עוד חסר לפני ההעלאה: `guarded-browser/android/STORE.md`)
+            - `store-listing.zip` — טקסטים, תמונות ותשובות למדיניות
+            - `build.json`
+          files: ${{ env.OUT }}/store/*
+          fail_on_unmatched_files: true
+
+      - name: Summary
+        if: always()
+        env:
+          SIGNED: ${{ steps.key.outputs.signed }}
+          SHA: ${{ steps.key.outputs.sha }}
+        shell: bash
+        run: |
+          {
+            echo "## מגדלור — בנייה 1.${{ github.run_number }}"
+            if [ "$SIGNED" = "1" ]; then
+              echo "- **חתום** — Releases \`guarded-browser-apk\` ו-\`guarded-browser-store\`"
+              echo "- טביעת מפתח החתימה (SHA-256): \`$SHA\`"
+            elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+              echo "- **בלי חתימה** — אין סוד \`ANDROID_KEYSTORE_PASSWORD\`. ה-Releases לא עודכנו"
+            else
+              echo "- ענף משנה: רק בדיקות ובדיקה שהקוד נבנה. ה-Releases מתעדכנים מ-main"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload test report on failure
         if: failure()

@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/alerts.php';
+require_once __DIR__ . '/platform.php';
 
 /**
  * ‏Argon2id אם קיים, ואחרת ברירת המחדל של PHP.
@@ -169,6 +170,8 @@ function startSession(string $kind, int $userId): string {
     // ניקוי אגבי: sessions שפג תוקפם לא נשארים במסד לנצח.
     q('DELETE FROM admin_sessions WHERE expires_at < ?', [nowIso()]);
     setSessionCookie($kind, $token, $expires);
+    // גם לשאר הבקשה הזו: כניסה דרך הפלטפורמה פותחת session וממשיכה מיד לקרוא אותו.
+    $_COOKIE[SESSION_COOKIES[$kind]] = $token;
     forgetSessions();
     return $token;
 }
@@ -202,6 +205,7 @@ function endSession(string $kind): void {
         q('DELETE FROM admin_sessions WHERE token_hash = ? AND kind = ?', [hash('sha256', $token), $kind]);
     }
     setSessionCookie($kind, '', time() - 3600);
+    unset($_COOKIE[SESSION_COOKIES[$kind]]);
     $GLOBALS['GB_SESSIONS'][$kind] = false;
 }
 
@@ -216,6 +220,8 @@ function startAdminSession(int $userId): string { return startSession('admin', $
 function adminSession(): ?array { return sessionRow('admin'); }
 
 function currentAdmin(): ?array {
+    // מחוברת לפלטפורמה: הזהות מהשער קובעת מי המנהל (lib/platform.php), לא העוגייה שהדפדפן שלח.
+    if (($id = platformIdentity()) && !platformSession('admin', $id)) return null;
     $s = adminSession();
     if (!$s) return null;
 

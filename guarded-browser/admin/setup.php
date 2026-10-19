@@ -9,6 +9,9 @@ declare(strict_types=1);
 require_once __DIR__ . '/../lib/auth.php';
 require_once __DIR__ . '/../lib/ui.php';
 
+// מחוברת לפלטפורמה: החשבון נפתח בכניסה הראשונה דרכה (lib/platform.php) — לא כאן.
+if (platformIdentity()) { header('Location: login.php'); exit; }
+
 $exists = one('SELECT id FROM users WHERE is_admin = 1');
 $msg = ''; $kind = 'bad';
 
@@ -32,8 +35,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
            VALUES (?, ?, ?, ?, 1, ?, ?)',
           [$username, 'מנהל', hashPassword($password), 'active', nowIso(), nowIso()]);
         $uid = (int) db()->lastInsertId();
-        q('INSERT INTO policies (user_id, mode, updated_at) VALUES (?, ?, ?)',
-          [$uid, MODE_FREE, nowIso()]);
+        // ‏MODE_FREE כבר לא קיים (mode פוצל ל-mode ו-posture) — ברירות המחדל של הטבלה, כמו באישור ב-index.php.
+        q('INSERT OR IGNORE INTO policies (user_id, updated_at) VALUES (?, ?)', [$uid, nowIso()]);
         db()->commit();
 
         startAdminSession($uid);
