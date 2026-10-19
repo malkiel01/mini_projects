@@ -7,7 +7,7 @@
   "entry": "index.html",
   "gate": true,
   "restricted": true,
-  "version": "0.3",
+  "version": "0.4",
   "public": [
     "index.html",
     "manifest.webmanifest",

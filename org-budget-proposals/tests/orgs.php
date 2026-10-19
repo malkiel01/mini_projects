@@ -12,7 +12,7 @@ define('OB_DATA_DIR', $tmp);
 define('OB_MAIL_SINK', $tmp . '/mail.jsonl');
 $_SERVER['REMOTE_ADDR'] = '10.0.0.2';
 
-require __DIR__ . '/../lib/orgs.php';
+require __DIR__ . '/../lib/budgets.php';   // org_get סופר גם הצעות
 
 $fails = 0;
 function check(bool $ok, string $what): void

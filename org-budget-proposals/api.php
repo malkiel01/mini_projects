@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/lib/orgs.php';
+require_once __DIR__ . '/lib/budgets.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -43,7 +43,10 @@ const PUBLIC_ACTIONS = ['health', 'me', 'register', 'verify', 'login', 'forgot',
 const POST_ACTIONS   = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'client_error',
                         'me_update', 'me_password', 'me_logout_others', 'dev_user', 'dev_org_force',
                         'org_create', 'org_update', 'org_delete', 'member_add', 'member_set', 'member_remove',
-                        'fund_save', 'fund_archive', 'fund_order', 'contact_save', 'contact_archive', 'cat_save', 'cat_archive'];
+                        'fund_save', 'fund_archive', 'fund_order', 'contact_save', 'contact_archive', 'cat_save', 'cat_archive',
+                        'budget_create', 'budget_update', 'budget_status', 'budget_duplicate', 'budget_delete', 'bfund_set', 'bfund_toggle',
+                        'line_save', 'line_delete', 'line_order', 'transfer_create', 'srow_save', 'srow_delete', 'srow_order',
+                        'comment_add', 'comment_set'];
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -62,7 +65,7 @@ try {
     $result = match ($action) {
         'health' => (function () {
             db();
-            return ['ok' => true, 'stage' => 2, 'php' => PHP_VERSION];
+            return ['ok' => true, 'stage' => 3, 'php' => PHP_VERSION];
         })(),
         'me' => $session
             ? ['ok' => true, 'user' => public_user($session), 'csrf' => $session['csrf']]
@@ -95,6 +98,25 @@ try {
         'contact_archive' => contact_archive($session, $body),
         'cat_save'        => cat_save($session, $body),
         'cat_archive'     => cat_archive($session, $body),
+        // הצעות — שלב 3 (lib/budgets.php)
+        'budget_list'      => budget_list($session, (int)($_GET['org_id'] ?? 0)),
+        'budget_get'       => budget_get($session, (int)($_GET['id'] ?? 0)),
+        'budget_create'    => budget_create($session, $body),
+        'budget_update'    => budget_update($session, $body),
+        'budget_status'    => budget_status($session, $body),
+        'budget_duplicate' => budget_duplicate($session, $body),
+        'budget_delete'    => budget_delete($session, $body),
+        'bfund_set'        => bfund_set($session, $body),
+        'bfund_toggle'     => bfund_toggle($session, $body),
+        'line_save'        => line_save($session, $body),
+        'line_delete'      => line_delete($session, $body),
+        'line_order'       => line_order($session, $body),
+        'transfer_create'  => transfer_create($session, $body),
+        'srow_save'        => srow_save($session, $body),
+        'srow_delete'      => srow_delete($session, $body),
+        'srow_order'       => srow_order($session, $body),
+        'comment_add'      => comment_add($session, $body),
+        'comment_set'      => comment_set($session, $body),
         // אזור הפיתוח
         'dev_orgs'       => dev_orgs($_GET),
         'dev_org_force'  => dev_org_force($session, $body),

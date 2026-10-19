@@ -265,6 +265,11 @@ function org_get(array $s, int $id): array
             'user_id' => (int)$m['user_id'], 'role' => $m['role'], 'name' => $m['display_name'], 'email' => $m['email'],
             'added_at' => $m['added_at'], 'me' => (int)$m['user_id'] === (int)$s['id'],
         ], $members->fetchAll()),
+        'budgets' => (function () use ($id) {
+            $st = db()->prepare('SELECT COUNT(*) FROM budgets WHERE org_id = ? AND deleted_at IS NULL');
+            $st->execute([$id]);
+            return (int)$st->fetchColumn();
+        })(),
         'labels' => ['roles' => ROLE_LABELS, 'funds' => FUND_KINDS, 'contacts' => CONTACT_KINDS, 'categories' => CAT_KINDS],
     ];
 }
@@ -494,6 +499,7 @@ const EVENT_LABELS = [
     'fund_create' => 'הוספת קופה', 'fund_update' => 'עדכון קופה', 'fund_archive' => 'הסרת קופה',
     'contact_create' => 'הוספת גורם', 'contact_update' => 'עדכון גורם', 'contact_archive' => 'הסרת גורם',
     'cat_create' => 'הוספת סעיף', 'cat_update' => 'עדכון סעיף', 'cat_archive' => 'הסרת סעיף',
+    'budget_create' => 'פתיחת הצעת תקציב', 'budget_status' => 'שינוי מצב הצעה', 'budget_delete' => 'מחיקת הצעה',
     'dev_force' => 'פעולת מפתח',
 ];
 

@@ -36,6 +36,11 @@ function h(tag, attrs, ...kids) {
     return el;
 }
 
+/** כמו replaceChildren, אבל משטח מערכים ומדלג על null / false — כדי שתוכן מותנה לא יוצג כ-"null" */
+function put(el, ...kids) {
+    el.replaceChildren(...kids.flat(Infinity).filter(k => k !== null && k !== undefined && k !== false));
+}
+
 async function api(action, body, query = '') {
     const opt = { method: body ? 'POST' : 'GET', headers: { Accept: 'application/json' }, credentials: 'same-origin' };
     if (body) {
@@ -175,7 +180,7 @@ async function boot() {
         const r = await api('me');
         S.user = r.user; S.csrf = r.csrf || '';
     } catch (err) {
-        main.replaceChildren(h('p.error', { role: 'alert' }, err.message));
+        put(main, h('p.error', { role: 'alert' }, err.message));
         return;
     }
     render();
@@ -197,6 +202,7 @@ function render() {
     if (hash === '#/me') return viewMe();
     if (hash === '#/dev' && S.user.is_developer) return viewDev();
     if ((m = hash.match(/^#\/org\/(\d+)$/))) return viewOrg(+m[1]);
+    if ((m = hash.match(/^#\/budget\/(\d+)(?:\/fund\/(\d+))?$/))) return viewBudget(+m[1], m[2] ? +m[2] : null);
     return viewHome();
 }
 window.addEventListener('hashchange', render);
@@ -253,12 +259,12 @@ function viewAuth(mode = sessionStorage.getItem('ob-auth') || 'login') {
             await boot();
         }, err));
     }
-    main.replaceChildren(h('div.auth', brand('קופות, הקדשות, ריכוז ונספח — במסמך אחד'), mode === 'forgot' ? null : seg, form));
+    put(main, h('div.auth', brand('קופות, הקדשות, ריכוז ונספח — במסמך אחד'), mode === 'forgot' ? null : seg, form));
 }
 
 async function viewVerify(token) {
     setHeader('אימות מייל');
-    main.replaceChildren(h('div.auth', brand('אימות כתובת המייל'), h('p.empty', 'מאמת…')));
+    put(main, h('div.auth', brand('אימות כתובת המייל'), h('p.empty', 'מאמת…')));
     let box;
     try {
         const r = await api('verify', { token });
@@ -267,7 +273,7 @@ async function viewVerify(token) {
         box = h('p.error', { role: 'alert' }, err.message);
     }
     history.replaceState(null, '', location.pathname);
-    main.replaceChildren(h('div.auth', brand('אימות כתובת המייל'), box,
+    put(main, h('div.auth', brand('אימות כתובת המייל'), box,
         h('button.btn.primary', { type: 'button', onclick: () => render() }, S.user ? 'המשך' : 'לכניסה')));
 }
 
@@ -282,20 +288,20 @@ function viewReset(token) {
         const r = await api('reset', { token, password: formData(form).password });
         history.replaceState(null, '', location.pathname);
         S.user = null; S.csrf = '';
-        main.replaceChildren(h('div.auth', brand('סיסמה חדשה'), h('p.ok-msg', r.message),
+        put(main, h('div.auth', brand('סיסמה חדשה'), h('p.ok-msg', r.message),
             h('button.btn.primary', { type: 'button', onclick: () => viewAuth('login') }, 'לכניסה')));
     }, err));
-    main.replaceChildren(h('div.auth', brand('קביעת סיסמה חדשה'), form));
+    put(main, h('div.auth', brand('קביעת סיסמה חדשה'), form));
 }
 
 // ── הבית ────────────────────────────────────────────────────
 
 async function viewHome() {
     setHeader('הצעות תקציב', S.user.name);
-    main.replaceChildren(h('p.empty', 'טוען…'));
+    put(main, h('p.empty', 'טוען…'));
     const { orgs } = await api('org_list').catch(err => (toast(err.message, true), { orgs: [] }));
     const add = h('button.btn.primary', { type: 'button', onclick: () => orgSheet() }, h('span', { 'aria-hidden': 'true' }, '+'), ' ארגון');
-    main.replaceChildren(
+    put(main, 
         h('div.toolbar', h('p.sec-title', { style: 'flex:1;margin:0' }, 'הארגונים שלי'), add),
         orgs.length
             ? h('ul.list', ...orgs.map(o => h('li', h('button.use-row', { type: 'button', onclick: () => (location.hash = `#/org/${o.id}`) },
@@ -311,7 +317,7 @@ async function viewHome() {
 
 async function viewMe() {
     setHeader('הגדרות משתמש', '', true);
-    main.replaceChildren(h('p.empty', 'טוען…'));
+    put(main, h('p.empty', 'טוען…'));
     const info = await api('me_info').catch(err => (toast(err.message, true), null));
     if (!info) return;
 
@@ -344,7 +350,7 @@ async function viewMe() {
         toast(`${r.count} מכשירים נותקו`); viewMe();
     }));
 
-    main.replaceChildren(
+    put(main, 
         h('dl.cells',
             h('div', h('dt', 'מייל'), h('dd.one', { dir: 'ltr' }, info.email)),
             h('div', h('dt', 'נרשם'), h('dd', fmtDate(info.created_at))),
@@ -366,12 +372,12 @@ async function viewDev() {
     const tabs = h('div.seg-tabs', { role: 'tablist' }, ...DEV_TABS.map(([k, l]) =>
         h('button', { role: 'tab', type: 'button', 'aria-selected': String(S.devTab === k), dataset: { tab: k },
             onclick: () => { S.devTab = k; sessionStorage.setItem('ob-dev-tab', k); viewDev(); } }, l, h('small'))));
-    main.replaceChildren(tabs, box);
-    box.replaceChildren(h('p.empty', 'טוען…'));
+    put(main, tabs, box);
+    put(box, h('p.empty', 'טוען…'));
     try {
         await ({ users: devUsers, orgs: devOrgs, log: devLog, audit: devAudit, health: devHealth })[S.devTab](box, tabs);
     } catch (err) {
-        box.replaceChildren(h('p.error', { role: 'alert' }, err.message));
+        put(box, h('p.error', { role: 'alert' }, err.message));
     }
 }
 
@@ -393,7 +399,7 @@ async function devUsers(box, tabs) {
                 h('div.l2', { dir: 'ltr', style: 'text-align:end' }, u.email)),
             h(`span.chip.${cls || 'x'}`, label));
     }));
-    box.replaceChildren(
+    put(box, 
         h('p.hint', 'ממתינים — למעלה. לחיצה על משתמש: פרטים ופעולות. כל פעולה נרשמת ביומן האכיפה.'),
         users.length ? list : h('p.empty', 'אין עדיין משתמשים'));
 }
@@ -453,7 +459,7 @@ async function devLog(box) {
             h('div.l2', x.user || 'אורח', h('i.sep', { 'aria-hidden': 'true' }, '·'), `${x.ms}ms`, x.message ? [h('i.sep', '·'), x.message] : null),
             pre);
     });
-    box.replaceChildren(
+    put(box, 
         h('div.stat-line',
             h('span.chip', `יממה: ${d.n} בקשות`), h('span.chip.bad', `${d.e5} שגיאות שרת`),
             h('span.chip.warn', `${d.e4} סירובים`), h('span.chip.bad', `${d.js} JS`), h('span.chip', `ממוצע ${d.avg_ms}ms`)),
@@ -463,7 +469,7 @@ async function devLog(box) {
 
 async function devAudit(box) {
     const { audit } = await api('dev_audit_list');
-    box.replaceChildren(
+    put(box, 
         h('p.hint', 'כל פעולת מפתח — מי, מתי, על מה ולמה. אי אפשר למחוק מהיומן הזה.'),
         audit.length ? h('ul.list', ...audit.map(a => h('li.card',
             h('div.body',
@@ -474,7 +480,7 @@ async function devAudit(box) {
 async function devHealth(box) {
     const { health: x } = await api('dev_health');
     const yes = v => (v ? '✓' : '✕');
-    box.replaceChildren(
+    put(box, 
         h('dl.cells',
             h('div', h('dt', 'משתמשים פעילים'), h('dd', x.counts.users)),
             h('div', h('dt', 'ממתינים'), h('dd', x.counts.pending)),
@@ -540,11 +546,11 @@ function orgSheet(org = null, parent = null) {
 }
 
 async function viewOrg(id) {
-    main.replaceChildren(h('p.empty', 'טוען…'));
+    put(main, h('p.empty', 'טוען…'));
     let d;
     try { d = await api('org_get', null, `&id=${id}`); } catch (err) {
         setHeader('ארגון', '', true);
-        main.replaceChildren(h('p.error', { role: 'alert' }, err.message), h('button.btn.ghost', { type: 'button', onclick: () => (location.hash = '#/') }, 'לארגונים שלי'));
+        put(main, h('p.error', { role: 'alert' }, err.message), h('button.btn.ghost', { type: 'button', onclick: () => (location.hash = '#/') }, 'לארגונים שלי'));
         return;
     }
     const o = d.org, edit = canEdit(o.role), root = !o.parent;
@@ -555,6 +561,7 @@ async function viewOrg(id) {
     ]);
 
     const tabs = [
+        ['budgets', '📑 הצעות', d.budgets],
         ['funds', '🏦 קופות', d.funds.length],
         root ? ['subs', '🏛️ תתי-ארגונים', d.subs.length] : null,
         ['contacts', '👥 גורמים', d.contacts.length],
@@ -563,13 +570,13 @@ async function viewOrg(id) {
     ].filter(Boolean);
     const key = `ob-org-tab-${id}`;
     let cur = sessionStorage.getItem(key);
-    if (!tabs.some(t => t[0] === cur)) cur = 'funds';
+    if (!tabs.some(t => t[0] === cur)) cur = 'budgets';
     const box = h('div');
-    const bar = h('div.seg-tabs', { role: 'tablist', style: `grid-template-columns:repeat(${tabs.length},minmax(0,1fr))` }, ...tabs.map(([k, l, n]) =>
+    const bar = h('div.seg-tabs', { role: 'tablist', style: `grid-template-columns:repeat(${Math.min(tabs.length, 3)},minmax(0,1fr))` }, ...tabs.map(([k, l, n]) =>
         h('button', { role: 'tab', type: 'button', 'aria-selected': String(k === cur),
             onclick: () => { sessionStorage.setItem(key, k); viewOrg(id); } }, l, h('small', n || ''))));
-    main.replaceChildren(bar, box);
-    ({ funds: orgFunds, subs: orgSubs, contacts: orgContacts, cats: orgCats, members: orgMembers })[cur](box, d);
+    put(main, bar, box);
+    ({ budgets: orgBudgets, funds: orgFunds, subs: orgSubs, contacts: orgContacts, cats: orgCats, members: orgMembers })[cur](box, d);
 }
 
 function orgSettings(d) {
@@ -615,7 +622,7 @@ function orgFunds(box, d) {
         await api('fund_order', { org_id: o.id, ids }).catch(err => toast(err.message, true));
         viewOrg(o.id);
     };
-    box.replaceChildren(
+    put(box, 
         h('p.hint', 'כל קופה מאוזנת בפני עצמה — הכנסות מול הוצאות. הסדר כאן הוא סדר הדפים במסמך.'),
         edit ? h('div.toolbar', { style: 'justify-content:flex-end' },
             d.funds.length > 1 ? h('button.btn.ghost', { type: 'button', 'aria-pressed': String(sorting),
@@ -667,7 +674,7 @@ function fundSheet(d, f = null) {
 
 function orgSubs(box, d) {
     const o = d.org;
-    box.replaceChildren(
+    put(box, 
         h('p.hint', 'יחידה בתוך הארגון עם קופות ומסמך הצעה משלה (למשל חברה קדישא). החברים, הגורמים והסעיפים — משותפים.'),
         canEdit(o.role) ? h('div.toolbar', { style: 'justify-content:flex-end' },
             h('button.btn.primary', { type: 'button', onclick: () => orgSheet(null, o) }, h('span', { 'aria-hidden': 'true' }, '+'), ' תת-ארגון')) : null,
@@ -689,7 +696,7 @@ function orgContacts(box, d) {
         const t = q.value.trim();
         const rows = d.contacts.filter(c => (filt === 'all' || c.kind === filt || c.kind === 'both')
             && (!t || [c.name, c.phone, c.email, c.tax_id].some(v => (v || '').includes(t))));
-        list.replaceChildren(rows.length ? h('ul.list', ...rows.map(c => h('li', h('button.use-row', { type: 'button', onclick: () => contactSheet(d, c) },
+        put(list, rows.length ? h('ul.list', ...rows.map(c => h('li', h('button.use-row', { type: 'button', onclick: () => contactSheet(d, c) },
             h('span.use-ic', { 'aria-hidden': 'true' }, CONTACT_IC[c.kind]),
             h('span.use-tx', h('b.one', c.name), h('small', [d.labels.contacts[c.kind], c.phone, c.email].filter(Boolean).join(' · '))),
             h('span.use-go', { 'aria-hidden': 'true' }, '‹')))))
@@ -698,7 +705,7 @@ function orgContacts(box, d) {
     q.addEventListener('input', draw);
     const filter = seg('cf', [['all', 'הכול'], ['customer', 'לקוחות'], ['supplier', 'ספקים']], filt, 'סינון');
     filter.addEventListener('change', e => { sessionStorage.setItem('ob-contact-filter', e.target.value); viewOrg(o.id); });
-    box.replaceChildren(
+    put(box, 
         h('p.hint', o.parent ? 'הגורמים משותפים לכל הארגון.' : 'לקוח — מי שמשלם לארגון (שוכר, תורם). ספק — מי שהארגון משלם לו.'),
         h('div.toolbar', q, edit ? h('button.btn.primary', { type: 'button', onclick: () => contactSheet(d) }, h('span', { 'aria-hidden': 'true' }, '+'), ' גורם') : null),
         h('div', { style: 'margin-bottom:8px' }, filter), list);
@@ -746,7 +753,7 @@ function orgCats(box, d) {
                 h('span.use-tx', h('b.one', c.name)), edit ? h('span.use-go', { 'aria-hidden': 'true' }, '✏️') : null))))
                 : h('p.empty', 'אין עדיין')];
     };
-    box.replaceChildren(
+    put(box, 
         h('p.hint', 'קטלוג שמות לשורות ההצעה (משרדיות, עמלות בנק, דמי שימוש…) — בוחרים מהם בבניית ההצעה. משותף לכל הארגון.'),
         edit ? h('div.toolbar', { style: 'justify-content:flex-end' },
             h('button.btn.primary', { type: 'button', onclick: () => catSheet(d) }, h('span', { 'aria-hidden': 'true' }, '+'), ' סעיף')) : null,
@@ -782,7 +789,7 @@ function orgMembers(box, d) {
         if (!confirm('לעזוב את הארגון? לא תוכל לראות אותו עד שיוסיפו אותך שוב.')) return;
         await api('member_remove', { org_id: o.id, user_id: me.user_id }); location.hash = '#/';
     }));
-    box.replaceChildren(
+    put(box, 
         h('p.hint', 'בעלים — ' + ROLE_HINT.owner + '. עורך — ' + ROLE_HINT.editor + '. צופה — ' + ROLE_HINT.viewer + '.'),
         owner ? h('div.toolbar', { style: 'justify-content:flex-end' },
             h('button.btn.primary', { type: 'button', onclick: () => memberAdd(d) }, h('span', { 'aria-hidden': 'true' }, '+'), ' חבר')) : null,
@@ -824,7 +831,7 @@ function memberSheet(d, m) {
 
 async function devOrgs(box) {
     const { orgs } = await api('dev_orgs');
-    box.replaceChildren(
+    put(box, 
         h('p.hint', 'מטא-דאטה בלבד: שם, יוצר, חברים. מחיקה ושחזור — עם סיבה, ונרשמים ביומן האכיפה ובהיסטוריה של הארגון.'),
         orgs.length ? h('ul.list', ...orgs.map(x => h('li.card', { tabindex: 0, role: 'button', onclick: () => devOrgSheet(x) },
             h('span.use-ic', { 'aria-hidden': 'true' }, '🏛️'),
@@ -846,6 +853,481 @@ function devOrgSheet(x) {
         toast(r.message); viewDev();
     });
     $('#sheet-action').firstChild.textContent = x.deleted ? 'שחזור' : 'מחיקה';
+}
+
+// ── הצעות תקציב (שלב 3) ─────────────────────────────────────
+
+const STATUS_CHIP = { draft: ['טיוטה', 'warn'], submitted: ['הוגשה', 'x'], approved: ['אושרה', 'ok'] };
+const DIR_LABEL = { income: 'הכנסות', expense: 'הוצאות' };
+const money = n => (n === null || n === undefined || n === '') ? '—' : Number(n).toLocaleString('he-IL');
+/** קלט כסף: מציג עם פסיקים, שולח כמו שהוקלד (השרת מנקה פסיקים) */
+function moneyField(label, name, value, opts = {}) {
+    const input = h('input', { name, value: value === null || value === undefined || value === '' ? '' : Number(value).toLocaleString('en-US'),
+        inputMode: 'numeric', dir: 'ltr', maxLength: 16, autocomplete: 'off', ...(opts.attrs || {}) });
+    input.addEventListener('blur', () => {
+        const v = input.value.replace(/[,\s₪]/g, '');
+        if (/^-?\d+(\.\d+)?$/.test(v)) input.value = Math.round(+v).toLocaleString('en-US');
+    });
+    return h(`label.f${opts.wide ? '.wide' : ''}`, h('span', label), input);
+}
+const balChip = diff => diff === 0 ? h('span.chip.ok', 'מאוזנת') : diff > 0 ? h('span.chip.warn', `עודף ${money(diff)}`) : h('span.chip.bad', `גירעון ${money(-diff)}`);
+const fmtDay = d => d ? d.split('-').reverse().join('.') : '';
+
+// ── רשימת ההצעות בארגון ──
+
+async function orgBudgets(box, d) {
+    const o = d.org, edit = canEdit(o.role);
+    put(box, h('p.empty', 'טוען…'));
+    const { budgets } = await api('budget_list', null, `&org_id=${o.id}`);
+    put(box, 
+        h('p.hint', 'הצעת תקציב לשנה. הצעה חדשה יכולה להיבנות על השנה הקודמת — הסכומים שלה הופכים לעמודות "שנה קודמת".'),
+        edit ? h('div.toolbar', { style: 'justify-content:flex-end' },
+            h('button.btn.primary', { type: 'button', onclick: () => budgetNewSheet(o, budgets) }, h('span', { 'aria-hidden': 'true' }, '+'), ' הצעה')) : null,
+        budgets.length ? h('ul.list', ...budgets.map(b => {
+            const [sl, sc] = STATUS_CHIP[b.status];
+            return h('li', h('button.use-row', { type: 'button', onclick: () => (location.hash = `#/budget/${b.id}`) },
+                h('span.use-ic', { 'aria-hidden': 'true', style: 'font-weight:700;font-size:.85rem' }, b.year),
+                h('span.use-tx', h('b.one', `הצעת תקציב ${b.year}`, b.title ? ` · ${b.title}` : ''),
+                    h('small', `הכנסות ${money(b.income)} · הוצאות ${money(b.expense)}`, b.open_comments ? ` · 💬 ${b.open_comments}` : '')),
+                h(`span.chip.${sc}`, sl)));
+        })) : h('p.empty', 'עוד אין הצעות'));
+}
+
+function budgetNewSheet(o, budgets) {
+    const next = budgets.length ? Math.max(...budgets.map(b => b.year)) + 1 : new Date().getFullYear() + 1;
+    const base = h('select', { name: 'based_on_id' },
+        h('option', { value: '' }, 'מאפס — בלי שנה קודמת'),
+        ...budgets.map((b, i) => h('option', { value: b.id, selected: i === 0 }, `הצעת ${b.year}${b.title ? ' · ' + b.title : ''} (${STATUS_CHIP[b.status][0]})`)));
+    formSheet('הצעה חדשה', [
+        h('div.fields',
+            field('שנה *', 'year', String(next), { max: 4, attrs: { inputMode: 'numeric', dir: 'ltr' } }),
+            field('כותרת (לא חובה)', 'title', '', { max: 80, attrs: { placeholder: 'למשל: גרסה לוועדה' } })),
+        budgets.length ? h('label.f', h('span', 'על בסיס'), base) : null,
+        h('p.hint', budgets.length ? 'מועתקים: הקופות, השורות, החישובים, ההעברות, הריכוז, תכנית העבודה והחותמים.' : 'כל קופות הארגון ייכנסו להצעה.'),
+    ].filter(Boolean), async x => {
+        const r = await api('budget_create', { org_id: o.id, ...x });
+        location.hash = `#/budget/${r.id}`;
+    });
+}
+
+// ── מסך ההצעה ──
+
+async function viewBudget(id, fundId = null) {
+    put(main, h('p.empty', 'טוען…'));
+    let d;
+    try { d = await api('budget_get', null, `&id=${id}`); } catch (err) {
+        setHeader('הצעת תקציב', '', true);
+        put(main, h('p.error', { role: 'alert' }, err.message));
+        return;
+    }
+    S.bud = d;
+    d.edit = canEdit(d.org.role) && d.budget.status === 'draft';
+    if (fundId) return viewBudgetFund(d, fundId);
+    const b = d.budget, [sl, sc] = STATUS_CHIP[b.status];
+    const open = d.comments.filter(c => !c.resolved).length;
+    setHeader(`הצעת תקציב ${b.year}${b.title ? ' · ' + b.title : ''}`, `${d.org.name} · ${sl}`, true, [
+        h('button.icon-btn', { type: 'button', 'aria-label': 'פעולות על ההצעה', title: 'פעולות', onclick: () => budgetActions(d) }, '⋯'),
+    ]);
+    const sm = d.summary;
+    const card = h('div.summary',
+        h('div.line', h('span.muted', 'הכנסות'), h('b', money(sm.income)), h('span.muted', '· הוצאות'), h('b', money(sm.expense)),
+            h('span.pct', { style: `color:var(--${sm.income === sm.expense ? 'ok' : 'danger'})` }, sm.income === sm.expense ? 'מאוזן' : money(sm.income - sm.expense))),
+        h('div.chips', h(`span.chip.${sc}`, sl),
+            sm.unbalanced ? h('span.chip.bad', `${sm.unbalanced} קופות לא מאוזנות`) : h('span.chip.ok', 'כל הקופות מאוזנות'),
+            open ? h('span.chip.warn', `💬 ${open} הערות פתוחות`) : null),
+        !d.edit && canEdit(d.org.role) ? h('p.hint', { style: 'margin:0' }, 'ההצעה נעולה. לעריכה — "⋯" ← החזרה לטיוטה.') : null);
+    const tabs = [['funds', '🏦 קופות', d.funds.length], ['summary', '📊 ריכוז', ''], ['plan', '📝 שער ותכנית', ''], ['comments', '💬 הערות', open || '']];
+    let cur = sessionStorage.getItem('ob-bud-tab') || 'funds';
+    if (!tabs.some(t => t[0] === cur)) cur = 'funds';
+    const box = h('div');
+    put(main, card,
+        h('div.seg-tabs', { role: 'tablist', style: 'grid-template-columns:repeat(4,minmax(0,1fr))' }, ...tabs.map(([k, l, n]) =>
+            h('button', { role: 'tab', type: 'button', 'aria-selected': String(k === cur),
+                onclick: () => { sessionStorage.setItem('ob-bud-tab', k); viewBudget(id); } }, l, h('small', n || '')))),
+        box);
+    ({ funds: budFunds, summary: budSummary, plan: budPlan, comments: budComments })[cur](box, d);
+}
+
+function budFunds(box, d) {
+    const bal = Object.fromEntries(d.summary.balance.map(x => [x.fund_id, x]));
+    const notIn = d.targets.filter(t => t.org_id === d.org.id && !d.funds.some(f => f.id === t.id));
+    put(box, 
+        h('p.hint', 'כל קופה — דף במסמך: הכנסות מול הוצאות. לחיצה פותחת את השורות.'),
+        h('ul.list', ...d.funds.map(f => {
+            const x = bal[f.id];
+            return h('li', h('button.use-row', { type: 'button', onclick: () => (location.hash = `#/budget/${d.budget.id}/fund/${f.id}`) },
+                h('span.use-ic', { 'aria-hidden': 'true' }, FUND_IC[f.kind]),
+                h('span.use-tx', h('b.one', f.name), h('small', `הכנסות ${money(x.income)} · הוצאות ${money(x.expense)}`)),
+                balChip(x.diff)));
+        })),
+        d.edit && notIn.length ? h('div.row-btns', { style: 'margin-top:12px' }, h('button.btn.ghost', { type: 'button', onclick: () => {
+            const pick = h('div.tiles', ...notIn.map(t => h('button.tile', { type: 'button', onclick: async () => {
+                await api('bfund_toggle', { budget_id: d.budget.id, fund_id: t.id, include: 1 }).catch(e => toast(e.message, true));
+                sheet.close(); viewBudget(d.budget.id);
+            } }, h('span.tile-ic', { 'aria-hidden': 'true' }, FUND_IC[t.kind]), t.name)));
+            openSheet('הוספת קופה להצעה', [h('p.hint', 'קופות שנוספו לארגון אחרי שההצעה נפתחה.'), pick]);
+        } }, '+ קופה שלא בהצעה')) : null);
+}
+
+// ── קופה בתוך ההצעה: טבלת הכנסות / הוצאות ──
+
+function viewBudgetFund(d, fundId) {
+    const b = d.budget;
+    const f = d.funds.find(x => x.id === fundId);
+    if (!f) { location.hash = `#/budget/${b.id}`; return; }
+    const dir = sessionStorage.getItem('ob-fund-dir') || 'income';
+    setHeader(f.name, `הצעת ${b.year} · ${f.address || d.org.name}`, true);
+    const bal = d.summary.balance.find(x => x.fund_id === fundId);
+    const lines = d.lines.filter(l => l.fund_id === fundId && l.direction === dir);
+    const sorting = d.edit && sessionStorage.getItem('ob-line-sort') === '1';
+    const cmt = Object.groupBy ? Object.groupBy(d.comments.filter(c => !c.resolved && c.line_id), c => c.line_id) : {};
+    const move = async (i, step) => {
+        const ids = lines.map(l => l.id);
+        [ids[i], ids[i + step]] = [ids[i + step], ids[i]];
+        await api('line_order', { budget_id: b.id, ids }).catch(e => toast(e.message, true));
+        viewBudget(b.id, fundId);
+    };
+    const total = k => lines.reduce((a, l) => a + (l[k] || 0), 0);
+    const dseg = seg('dir', [['income', `הכנסות ${money(bal.income)}`], ['expense', `הוצאות ${money(bal.expense)}`]], dir, 'הכנסות או הוצאות');
+    dseg.addEventListener('change', e => { sessionStorage.setItem('ob-fund-dir', e.target.value); viewBudget(b.id, fundId); });
+
+    const rows = lines.map((l, i) => h('li.card', { tabindex: 0, role: 'button', onclick: () => sorting || lineSheet(d, f, dir, l), onkeydown: e => e.key === 'Enter' && lineSheet(d, f, dir, l) },
+        h('span.avatar', { style: '--h:220;width:28px;height:28px;font-size:.75rem', 'aria-hidden': 'true' }, i + 1),
+        h('div.body',
+            h('div.l1', h('span', l.transfer ? '🔁 ' : '', l.title), h('span.t', { style: 'font-weight:700;color:var(--ink);font-size:.95rem' }, money(l.amount))),
+            l.subtitle ? h('div.l2', l.subtitle) : null,
+            h('div.l2', `קודם ${money(l.prev_budget)} · ניצול ${money(l.prev_actual)}`, l.calc_note || l.cell_note ? ` · ${[l.calc_note, l.cell_note].filter(Boolean).join(' · ')}` : '',
+                cmt[l.id] ? ` · 💬 ${cmt[l.id].length}` : '')),
+        sorting ? h('span.row-btns', { style: 'gap:0' },
+            h('button.icon-btn', { type: 'button', 'aria-label': 'למעלה', disabled: i === 0, onclick: e => { e.stopPropagation(); move(i, -1); } }, '▲'),
+            h('button.icon-btn', { type: 'button', 'aria-label': 'למטה', disabled: i === lines.length - 1, onclick: e => { e.stopPropagation(); move(i, 1); } }, '▼')) : null));
+
+    const notesKey = `notes_${dir}`;
+    const notes = h('textarea', { rows: 2, maxLength: 3000, disabled: !d.edit, placeholder: d.edit ? 'למשל: * בשל העברת עובדי חב"ק השתנו הסעיפים' : '' }, f[notesKey] || '');
+    notes.addEventListener('change', async () => {
+        try {
+            await api('bfund_set', { budget_id: b.id, fund_id: f.id, notes_income: dir === 'income' ? notes.value : f.notes_income,
+                notes_expense: dir === 'expense' ? notes.value : f.notes_expense, row_income: f.row_income, row_expense: f.row_expense });
+            f[notesKey] = notes.value; toast('ההערה נשמרה');
+        } catch (e) { toast(e.message, true); }
+    });
+
+    put(main, 
+        h('div.summary', h('div.line', h('span.muted', 'הכנסות'), h('b', money(bal.income)), h('span.muted', '· הוצאות'), h('b', money(bal.expense)),
+            h('span.pct', { style: `color:var(--${bal.diff ? 'danger' : 'ok'})` }, bal.diff ? (bal.diff > 0 ? 'עודף ' : 'גירעון ') + money(Math.abs(bal.diff)) : 'מאוזנת'))),
+        h('div', { style: 'margin-bottom:8px' }, dseg),
+        d.edit ? h('div.toolbar', { style: 'justify-content:flex-end;flex-wrap:wrap' },
+            lines.length > 1 ? h('button.btn.ghost', { type: 'button', onclick: () => { sessionStorage.setItem('ob-line-sort', sorting ? '0' : '1'); viewBudget(b.id, fundId); } }, sorting ? '✓ סיום' : '↕️ סידור') : null,
+            dir === 'expense' ? h('button.btn.ghost', { type: 'button', onclick: () => transferSheet(d, f) }, '🔁 העברה') : null,
+            h('button.btn.primary', { type: 'button', onclick: () => lineSheet(d, f, dir) }, h('span', { 'aria-hidden': 'true' }, '+'), ' שורה')) : null,
+        lines.length ? h('ul.list', ...rows,
+            h('li.card', { style: 'cursor:default;background:var(--bg)' }, h('div.body',
+                h('div.l1', h('span', 'סה"כ'), h('span.t', { style: 'font-weight:700;color:var(--ink);font-size:.95rem' }, money(total('amount')))),
+                h('div.l2', `קודם ${money(total('prev_budget'))} · ניצול ${money(total('prev_actual'))}`))))
+            : h('p.empty', d.edit ? `אין עדיין ${DIR_LABEL[dir]}. "+ שורה" כדי להוסיף.` : `אין ${DIR_LABEL[dir]}`),
+        h('p.sec-title', 'הערות אחרי הטבלה'), notes);
+}
+
+function lineSheet(d, f, dir, l = null) {
+    const b = d.budget, edit = d.edit;
+    const isCalc = !!l?.calc;
+    const c = l?.calc || {};
+    const list = `cats-${dir}`;
+    const preview = h('p.hint', { style: 'margin:0' });
+    const modeSeg = seg('mode', [['fixed', 'סכום שנתי'], ['calc', 'חודשי × חודשים']], isCalc ? 'calc' : 'fixed', 'אופן החישוב');
+    const fixedBox = h('div.fields', moneyField('סכום מוצע ' + b.year, 'amount', l?.amount ?? ''));
+    const months = Array.from({ length: 12 }, (_, i) => i + 1);
+    const mSel = (name, val) => h('select', { name }, ...months.map(m => h('option', { value: m, selected: m === val }, m)));
+    const calcBox = h('div.fields',
+        moneyField('סכום לחודש', 'monthly', c.monthly ?? ''),
+        h('label.f', h('span', 'מחודש · עד חודש'), h('div', { style: 'display:flex;gap:6px' }, mSel('from', c.from || 1), mSel('to', c.to || 12))),
+        h('label.f', h('span', 'שינוי מחודש (לא חובה)'), h('select', { name: 'change_month' }, h('option', { value: '' }, '—'), ...months.slice(1).map(m => h('option', { value: m, selected: m === c.change_month }, m)))),
+        h('label.f', h('span', 'שינוי ב-%'), h('input', { name: 'change_pct', value: c.change_pct ?? '', inputMode: 'decimal', dir: 'ltr', placeholder: '5' })));
+    const show = () => {
+        const calc = modeSeg.querySelector('input:checked').value === 'calc';
+        fixedBox.hidden = calc; calcBox.hidden = !calc;
+        if (calc) {
+            const v = k => calcBox.querySelector(`[name=${k}]`).value;
+            const mon = +String(v('monthly')).replace(/[,\s]/g, '') || 0, from = +v('from'), to = Math.max(from, +v('to'));
+            const chm = +v('change_month'), pct = +v('change_pct') || 0;
+            const after = Math.round(mon * (1 + pct / 100));
+            const tot = chm > from && chm <= to && pct ? mon * (chm - from) + after * (to - chm + 1) : mon * (to - from + 1);
+            preview.textContent = `סה"כ לשנה: ${money(tot)} ₪`;
+        } else preview.textContent = '';
+    };
+    modeSeg.addEventListener('change', show);
+    calcBox.addEventListener('input', show);
+    calcBox.addEventListener('change', show);
+
+    const rowsDir = d.rows.filter(r => r.direction === dir);
+    const contact = h('select', { name: 'contact_id' }, h('option', { value: '' }, '— בלי —'),
+        ...d.contacts.map(x => h('option', { value: x.id, selected: x.id === l?.contact_id }, x.name)));
+    const srow = h('select', { name: 'summary_row_id' }, h('option', { value: '' }, 'לפי הקופה (ברירת מחדל)'),
+        ...rowsDir.map(r => h('option', { value: r.id, selected: r.id === l?.summary_row_id }, `${r.section} ← ${r.label}`)));
+
+    const lineComments = l ? d.comments.filter(x => x.line_id === l.id) : [];
+    const commentBox = l ? commentsBlock(d, lineComments, l.id, () => lineSheet(d, f, dir, d.lines.find(x => x.id === l.id))) : null;
+
+    if (!edit && l) {
+        openSheet(l.title, [
+            h('dl.kv',
+                l.subtitle ? [h('dt', 'שורה שנייה'), h('dd', l.subtitle)] : null,
+                h('dt', `מוצע ${b.year}`), h('dd', h('b', money(l.amount)), l.calc_note ? ` · ${l.calc_note}` : ''),
+                h('dt', `תקציב ${b.year - 1}`), h('dd', money(l.prev_budget)),
+                h('dt', `ניצול ${b.year - 1}`), h('dd', money(l.prev_actual)),
+                h('dt', `ניצול ${b.year}`), h('dd', money(l.actual)),
+                l.contact ? [h('dt', 'גורם'), h('dd', l.contact)] : null,
+                l.transfer ? [h('dt', 'העברה'), h('dd', l.transfer.map(p => `${p.fund} · ${p.org}`).join(', ') || 'הצד השני עוד לא בהצעה')] : null),
+            commentBox]);
+        return;
+    }
+    const extra = [];
+    if (l) {
+        const rm = h('button.btn.ghost.danger', { type: 'button' }, l.transfer ? '🗑️ מחיקת ההעברה (שני הצדדים)' : '🗑️ מחיקת השורה');
+        rm.addEventListener('click', busy(rm, async () => {
+            if (!confirm(l.transfer ? 'למחוק את ההעברה — השורה כאן והשורה בקופה השנייה?' : `למחוק את "${l.title}"?`)) return;
+            await api('line_delete', { budget_id: b.id, id: l.id }); sheet.close(); toast('נמחק'); viewBudget(b.id, f.id);
+        }));
+        extra.push(h('div.row-btns', rm));
+        if (commentBox) extra.push(commentBox);
+    }
+    formSheet(l ? 'עריכת שורה' : `שורת ${dir === 'income' ? 'הכנסה' : 'הוצאה'} — ${f.name}`, [
+        l?.transfer ? h('p.hint', '🔁 העברה ' + (dir === 'expense' ? 'אל ' : 'מ') + (l.transfer.map(p => `${p.fund} (${p.org})`).join(', ') || 'קופה שעוד אין לה הצעה בשנה הזו') + '. הסכומים משתנים בשני הצדדים יחד.') : null,
+        h('datalist', { id: list }, ...d.categories.filter(x => x.kind === dir).map(x => h('option', { value: x.name }))),
+        h('div.fields',
+            field('שם הסעיף *', 'title', l?.title, { wide: true, max: 160, attrs: { list } }),
+            field('שורה שנייה (פירוט)', 'subtitle', l?.subtitle, { wide: true, max: 200, attrs: { placeholder: 'למשל: מנהלת חשבונות 50%' } })),
+        modeSeg, fixedBox, calcBox, preview,
+        h('div.fields',
+            moneyField(`תקציב ${b.year - 1}`, 'prev_budget', l?.prev_budget),
+            moneyField(`ניצול ${b.year - 1}${b.prev_actual_as_of ? ' עד ' + fmtDay(b.prev_actual_as_of) : ''}`, 'prev_actual', l?.prev_actual),
+            moneyField(`ניצול ${b.year} (בפועל)`, 'actual', l?.actual)),
+        field('הערה בתא (מתחת לסכום)', 'cell_note', l?.cell_note, { wide: true, max: 160 }),
+        h('div.fields', h('label.f', h('span', 'גורם (לקוח / ספק)'), contact), h('label.f', h('span', 'שורת ריכוז'), srow)),
+    ].filter(Boolean), async x => {
+        const body = { budget_id: b.id, id: l?.id || null, fund_id: f.id, direction: dir, title: x.title, subtitle: x.subtitle,
+            contact_id: x.contact_id || null, prev_budget: x.prev_budget, prev_actual: x.prev_actual, actual: x.actual,
+            cell_note: x.cell_note, summary_row_id: x.summary_row_id || null };
+        if (x.mode === 'calc') body.calc = { monthly: x.monthly, from: x.from, to: x.to, change_month: x.change_month || 0, change_pct: x.change_pct || 0 };
+        else body.amount = x.amount;
+        await api('line_save', body);
+        toast('נשמר'); viewBudget(b.id, f.id);
+    }, extra);
+    show();
+}
+
+function transferSheet(d, f) {
+    const b = d.budget;
+    const to = h('select', { name: 'to_fund_id' }, ...d.targets.filter(t => t.id !== f.id).map(t =>
+        h('option', { value: t.id }, t.org_id === d.org.id ? t.name : `${t.name} · ${t.org}`)));
+    const tFrom = h('input', { name: 'title_from', maxLength: 160 });
+    const tTo = h('input', { name: 'title_to', maxLength: 160 });
+    const fill = () => {
+        const t = d.targets.find(x => x.id === +to.value);
+        if (!tFrom.dataset.touched) tFrom.value = `העברה ל${t.name}`;
+        if (!tTo.dataset.touched) tTo.value = `העברה מ${f.name}`;
+    };
+    [tFrom, tTo].forEach(i => i.addEventListener('input', () => { i.dataset.touched = '1'; }));
+    to.addEventListener('change', fill);
+    formSheet(`העברה מ${f.name}`, [
+        h('p.hint', 'שתי שורות שתמיד שוות: הוצאה כאן, והכנסה בקופה השנייה (גם בהצעה של תת-הארגון או של הארגון הראשי, באותה שנה).'),
+        h('label.f', h('span', 'אל קופה'), to),
+        h('div.fields', moneyField(`סכום ${b.year} *`, 'amount', ''), moneyField(`תקציב ${b.year - 1}`, 'prev_budget', ''), moneyField(`ניצול ${b.year - 1}`, 'prev_actual', '')),
+        h('label.f', h('span', 'שם השורה כאן (הוצאה)'), tFrom),
+        h('label.f', h('span', 'שם השורה שם (הכנסה)'), tTo),
+    ], async x => {
+        const r = await api('transfer_create', { budget_id: b.id, from_fund_id: f.id, ...x });
+        toast(r.to_budget === b.id ? 'ההעברה נוספה בשתי הקופות' : 'ההעברה נוספה — גם בהצעה של הארגון השני');
+        viewBudget(b.id, f.id);
+    });
+    fill();
+}
+
+// ── ריכוז ──
+
+function budSummary(box, d) {
+    const b = d.budget;
+    const head = h('div.l2', { style: 'display:flex;gap:8px;justify-content:flex-end;padding:4px 12px' },
+        h('span', `${b.year - 1}`), h('span', `ניצול${b.prev_actual_as_of ? ' עד ' + fmtDay(b.prev_actual_as_of) : ''}`), h('b', `${b.year}`));
+    const cells = (r, bold) => h('div.l2', { style: 'display:flex;gap:10px;justify-content:flex-end' },
+        h('span', money(r.prev_budget)), h('span', money(r.prev_actual)), h(bold ? 'b' : 'span', { style: 'color:var(--ink)' }, money(r.amount)));
+    const sec = s => [h('p.sec-title', s.title),
+        h('ul.list', ...s.rows.map(r => {
+            const defined = r.key.startsWith('row:');
+            return h('li.card', { tabindex: d.edit ? 0 : -1, role: d.edit ? 'button' : null, onclick: () => d.edit && srowSheet(d, r) },
+                h('div.body', h('div.l1', h('span', r.label), defined ? null : h('span.t', 'אוטומטית')), cells(r, false)));
+        }), h('li.card', { style: 'cursor:default;background:var(--bg)' }, h('div.body', h('div.l1', h('span', 'סה"כ')), cells(s.total, true))))];
+    const note = h('textarea', { rows: 2, maxLength: 500, disabled: !d.edit }, b.summary_note || '');
+    note.addEventListener('change', () => saveBudgetFields(d, { summary_note: note.value }));
+    put(box, 
+        h('p.hint', 'דף הריכוז: כל שורה כאן = סכום של שורות מהקופות. שורה "אוטומטית" נבנית לפי סוג הקופה; לחיצה עליה הופכת אותה לשורה שאפשר לשנות לה שם ומקטע.'),
+        d.edit ? h('div.toolbar', { style: 'justify-content:flex-end' },
+            h('button.btn.primary', { type: 'button', onclick: () => srowSheet(d) }, h('span', { 'aria-hidden': 'true' }, '+'), ' שורת ריכוז')) : null,
+        d.summary.sections.length ? [head, ...d.summary.sections.flatMap(sec)] : h('p.empty', 'אין עדיין שורות בהצעה'),
+        h('p.sec-title', 'הערה מתחת לריכוז'), note);
+}
+
+function srowSheet(d, r = null) {
+    const b = d.budget;
+    const defined = r && r.key.startsWith('row:');
+    const rid = defined ? +r.key.slice(4) : null;
+    const dir = r ? r.direction : 'income';
+    const sections = [...new Set(d.summary.sections.map(s => s.title).concat(d.rows.map(x => x.section)))];
+    const fundsBox = h('div.chips', ...d.funds.map(f => h('label', h('input', { type: 'checkbox', name: 'fund_ids', value: f.id, checked: r ? r.funds.includes(f.id) : false }), h('span', f.name))));
+    const extra = [];
+    if (defined) {
+        const rm = h('button.btn.ghost.danger', { type: 'button' }, '🗑️ מחיקת שורת הריכוז');
+        rm.addEventListener('click', busy(rm, async () => {
+            await api('srow_delete', { budget_id: b.id, id: rid }); sheet.close(); toast('נמחקה — השורות שלה חוזרות לברירת המחדל'); viewBudget(b.id);
+        }));
+        extra.push(h('div.row-btns', rm));
+    }
+    formSheet(defined ? 'שורת ריכוז' : r ? 'הפיכה לשורת ריכוז' : 'שורת ריכוז חדשה', [
+        r ? null : seg('direction', [['income', 'הכנסות'], ['expense', 'הוצאות']], dir, 'כיוון'),
+        h('datalist', { id: 'sections' }, ...sections.map(s => h('option', { value: s }))),
+        h('div.fields',
+            field('כותרת הטבלה (מקטע) *', 'section', r?.section, { wide: true, max: 120, attrs: { list: 'sections', placeholder: 'למשל: הכנסות מהקדשות' } }),
+            field('שם השורה *', 'label', r?.label, { wide: true, max: 160 })),
+        defined ? h('p.hint', 'שורות משויכות לשורת ריכוז בעריכת השורה, או כברירת מחדל של קופה.') : h('section.group', h('h3', 'הקופות שנכנסות לשורה הזו', h('small', 'כל השורות שלהן בכיוון הזה')), fundsBox),
+    ].filter(Boolean), async x => {
+        const ids = [...fundsBox.querySelectorAll('input:checked')].map(i => +i.value);
+        await api('srow_save', { budget_id: b.id, id: rid, direction: x.direction || dir, section: x.section, label: x.label, fund_ids: ids });
+        toast('נשמר'); viewBudget(b.id);
+    }, extra);
+}
+
+// ── שער ותכנית עבודה ──
+
+async function saveBudgetFields(d, patch) {
+    const b = d.budget;
+    try {
+        await api('budget_update', { budget_id: b.id, title: b.title, submitted_to: b.submitted_to, signers: b.signers, work_plan: b.work_plan,
+            summary_note: b.summary_note, prev_actual_as_of: b.prev_actual_as_of, actual_as_of: b.actual_as_of, ...patch });
+        Object.assign(b, patch); toast('נשמר');
+    } catch (e) { toast(e.message, true); }
+}
+
+/** תכנית העבודה כטקסט פשוט: "# כותרת" = פרק (א. ב. …), "- " = תבליט, שורה ריקה = פסקה. */
+function renderPlan(text) {
+    const letters = 'אבגדהוזחטיכלמנסעפצקרשת';
+    let n = 0, ul = null;
+    const out = [];
+    for (const raw of (text || '').split('\n')) {
+        const t = raw.trim();
+        if (t.startsWith('# ')) { ul = null; out.push(h('p', { style: 'font-weight:700;text-decoration:underline;margin-top:8px' }, `${letters[n++] || n}. ${t.slice(2)}`)); }
+        else if (t.startsWith('- ')) { if (!ul) out.push(ul = h('ul', { style: 'padding-inline-start:20px' })); ul.append(h('li', t.slice(2))); }
+        else if (t) { ul = null; out.push(h('p', t)); }
+        else ul = null;
+    }
+    return out;
+}
+
+function budPlan(box, d) {
+    const b = d.budget, edit = d.edit;
+    const signers = h('textarea', { rows: 3, disabled: !edit, placeholder: 'שם — תפקיד, תפקיד נוסף\nלמשל: אבשלום מלכה — יו"ר ועדת כספים, ממ"מ גזבר הארגון' },
+        (b.signers || []).map(s => s.name + (s.titles.length ? ' — ' + s.titles.join(', ') : '')).join('\n'));
+    const plan = h('textarea', { rows: 12, disabled: !edit, maxLength: 30000, placeholder: 'מבוא\n# הקדשות\nפסקה…\n- תבליט' }, b.work_plan || '');
+    const prev = h('div', { style: 'background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px;display:grid;gap:4px' });
+    const drawPrev = () => prev.replaceChildren(h('p', { style: 'font-weight:700;text-align:center' }, `תכנית עבודה לשנת ${b.year}`), ...renderPlan(plan.value));
+    plan.addEventListener('input', drawPrev);
+    const save = h('button.btn.primary', { type: 'button' }, 'שמירה');
+    save.addEventListener('click', busy(save, async () => {
+        const v = k => box.querySelector(`[name=${k}]`).value;
+        await saveBudgetFields(d, {
+            title: v('title'), submitted_to: v('submitted_to'), work_plan: plan.value, prev_actual_as_of: v('prev_actual_as_of'), actual_as_of: v('actual_as_of'),
+            signers: signers.value.split('\n').map(x => x.trim()).filter(Boolean).map(x => {
+                const [name, rest = ''] = x.split(/\s+[—–-]\s+/);
+                return { name: name.trim(), titles: rest.split(',').map(t => t.trim()).filter(Boolean) };
+            }),
+        });
+        viewBudget(b.id);
+    }));
+    const dis = { disabled: !edit };
+    drawPrev();
+    put(box, 
+        h('p.hint', 'השער ותכנית העבודה של המסמך. השם, תת-הכותרת והלוגו — מפרטי הארגון.'),
+        h('section.panel',
+            h('div.fields',
+                field('כותרת ההצעה (לא חובה)', 'title', b.title, { wide: true, max: 80, attrs: dis }),
+                field('מוגשת ל…', 'submitted_to', b.submitted_to, { wide: true, max: 200, attrs: dis }),
+                h('label.f', h('span', `ניצול ${b.year - 1} — עד תאריך`), h('input', { type: 'date', name: 'prev_actual_as_of', value: b.prev_actual_as_of || '', dir: 'ltr', ...dis })),
+                h('label.f', h('span', `ניצול ${b.year} — עד תאריך`), h('input', { type: 'date', name: 'actual_as_of', value: b.actual_as_of || '', dir: 'ltr', ...dis }))),
+            h('label.f', h('span', 'חותמים — שורה לכל אחד'), signers),
+            h('label.f', h('span', 'תכנית העבודה — "# " פרק, "- " תבליט'), plan),
+            edit ? save : null),
+        h('p.sec-title', 'תצוגה'), prev);
+}
+
+// ── הערות ──
+
+function commentsBlock(d, list, lineId, after) {
+    const b = d.budget;
+    const ta = h('textarea', { rows: 2, maxLength: 2000, placeholder: 'הערה…' });
+    const send = h('button.btn.primary', { type: 'button' }, 'שליחה');
+    send.addEventListener('click', busy(send, async () => {
+        if (!ta.value.trim()) return;
+        await api('comment_add', { budget_id: b.id, line_id: lineId, body: ta.value });
+        const fresh = await api('budget_get', null, `&id=${b.id}`);
+        Object.assign(d, fresh, { edit: d.edit });
+        after();
+    }));
+    const act = (c, op) => async () => {
+        await api('comment_set', { budget_id: b.id, id: c.id, op }).catch(e => toast(e.message, true));
+        const fresh = await api('budget_get', null, `&id=${b.id}`);
+        Object.assign(d, fresh, { edit: d.edit });
+        after();
+    };
+    const lineTitle = id => d.lines.find(l => l.id === id)?.title;
+    return h('section.group', h('h3', '💬 הערות', h('small', list.length ? `${list.filter(c => !c.resolved).length} פתוחות` : '')),
+        ...list.map(c => h('div', { style: `border:1px solid var(--line);border-radius:var(--r);padding:8px;${c.resolved ? 'opacity:.6' : ''}` },
+            h('div.l2', { style: 'color:var(--muted);font-size:.8rem' }, `${c.by} · ${fmtDate(c.at)}`, !lineId && c.line_id ? ` · על "${lineTitle(c.line_id) || 'שורה שנמחקה'}"` : '', c.resolved ? ' · ✓ טופל' : ''),
+            h('p', { style: 'white-space:pre-wrap' }, c.body),
+            h('div', { style: 'display:flex;gap:4px;justify-content:flex-end' },
+                (c.mine || canEdit(d.org.role)) ? h('button.btn.sm.ghost', { type: 'button', onclick: act(c, c.resolved ? 'reopen' : 'resolve') }, c.resolved ? 'פתיחה מחדש' : '✓ טופל') : null,
+                c.mine ? h('button.btn.sm.ghost.danger', { type: 'button', onclick: act(c, 'delete') }, 'מחיקה') : null))),
+        ta, h('div.row-btns', send));
+}
+
+function budComments(box, d) {
+    const list = [...d.comments].sort((a, b) => a.resolved - b.resolved || b.id - a.id);
+    put(box, h('p.hint', 'הערות על ההצעה — של כל החברים, גם צופים. הערה על שורה מסוימת — מתוך השורה.'),
+        commentsBlock(d, list, null, () => viewBudget(d.budget.id)));
+}
+
+// ── פעולות על ההצעה ──
+
+function budgetActions(d) {
+    const b = d.budget, role = d.org.role;
+    const go = (label, fn, cls = 'ghost') => {
+        const btn = h(`button.btn.${cls}`, { type: 'button' }, label);
+        btn.addEventListener('click', busy(btn, fn));
+        return btn;
+    };
+    const status = to => async () => { await api('budget_status', { budget_id: b.id, status: to }); sheet.close(); toast('המצב עודכן'); viewBudget(b.id); };
+    const btns = [];
+    if (canEdit(role) && b.status === 'draft') btns.push(go('📨 הגשה (נעילה)', status('submitted'), 'primary'));
+    if (canEdit(role) && b.status === 'submitted') btns.push(go('↩ החזרה לטיוטה', status('draft')));
+    if (role === 'owner' && b.status === 'submitted') btns.push(go('✓ אישור', status('approved'), 'primary'));
+    if (role === 'owner' && b.status === 'approved') btns.push(go('ביטול אישור', status('submitted')));
+    if (canEdit(role)) btns.push(go('⧉ עותק (גרסה נוספת)', async () => {
+        const r = await api('budget_duplicate', { budget_id: b.id }); sheet.close(); location.hash = `#/budget/${r.id}`;
+    }));
+    const del = h('button.btn.ghost.danger', { type: 'button' }, '🗑️ מחיקת ההצעה');
+    del.addEventListener('click', () => formSheet('מחיקת הצעה', [
+        h('p.error', 'ההצעה תימחק. העברות שלה ימשיכו להופיע בצד השני כשורות רגילות.'),
+        field(`לאישור — הקלידו את השנה ${b.year}`, 'confirm', '', { wide: true, max: 4, attrs: { inputMode: 'numeric', dir: 'ltr' } }),
+    ], async x => {
+        await api('budget_delete', { budget_id: b.id, confirm: x.confirm });
+        location.hash = `#/org/${d.org.id}`;
+    }));
+    openSheet(`הצעת ${b.year}`, [
+        h('dl.kv', h('dt', 'מצב'), h('dd', STATUS_CHIP[b.status][0], b.status_at ? ` · ${fmtDate(b.status_at)}` : ''),
+            h('dt', 'עודכנה'), h('dd', fmtDate(b.updated_at)), h('dt', 'ארגון'), h('dd', d.org.name)),
+        h('p.hint', 'טיוטה — עורכים. הוגשה — נעולה (עורך מחזיר לטיוטה). אושרה — רק בעלים. הערות אפשר תמיד.'),
+        btns.length ? h('div.row-btns.wrap', ...btns) : null,
+        h('button.btn.ghost', { type: 'button', onclick: () => { sheet.close(); location.hash = `#/org/${d.org.id}`; } }, '🏛️ לארגון'),
+        canEdit(role) ? h('section.group', h('h3', 'אזור מסוכן'), del) : null,
+    ].filter(Boolean));
 }
 
 // ── התחלה ───────────────────────────────────────────────────
