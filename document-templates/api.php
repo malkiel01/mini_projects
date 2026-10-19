@@ -9,6 +9,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/lib/documents.php';
+require_once __DIR__ . '/lib/platform.php';   // כניסה דרך הכלים הדיגיטליים
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -53,7 +54,7 @@ $PUBLIC = ['health', 'register', 'verify', 'login', 'forgot', 'reset', 'me', 'in
            'ext_templates', 'ext_template', 'ext_issue', 'ext_document', 'ext_update', 'ext_file', 'fill_font',
            // Claude קורא מטלות ומשיב (DevLoop): הזהות היא האסימון שבכותרת X-Dev-Token.
            'devapi-feed', 'devapi-comment', 'devapi-file', 'devapi-attach'];
-$POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'dev_user',
+$POSTS  = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'platform_link', 'platform_new', 'dev_user',
            'tpl_create', 'tpl_create_authored', 'tpl_import', 'tpl_save', 'tpl_set_source', 'tpl_archive', 'tpl_delete',
            'doc_create', 'doc_duplicate', 'doc_return', 'doc_save', 'doc_submit', 'doc_assign', 'list_opts', 'list_save', 'list_repair', 'list_delete', 'list_import', 'doc_complete', 'doc_archive', 'doc_delete', 'doc_downloaded',
            'part_contact', 'part_link', 'part_revoke', 'part_notify', 'fill_otp_send', 'fill_otp_verify', 'fill_save', 'fill_complete', 'fill_downloaded',
@@ -71,8 +72,11 @@ try {
     $body = $method === 'POST' && !$multipart ? (json_decode((string)file_get_contents('php://input'), true) ?: []) : [];
     $GLOBALS['dt_body'] = $body;   // ללוג: מזהים בלבד (מסמך, תבנית)
 
-    $session = current_session();
-    if (!in_array($action, $PUBLIC, true)) {
+    platform_guard($action);   // מחוברת לפלטפורמה: הרשמה, כניסה ו"שכחתי סיסמה" חסומות
+    [$session, $platform] = platform_sync();
+    // מסך החיבור החד-פעמי — לפני שיש חשבון. רק עם זהות מהשער (platform_require)
+    $linking = in_array($action, ['platform_link', 'platform_new'], true);
+    if (!in_array($action, $PUBLIC, true) && !$linking) {
         if (!$session) throw new ApiError('נדרשת כניסה', 401);
         if ($method === 'POST' && !hash_equals($session['csrf'], (string)($_SERVER['HTTP_X_CSRF'] ?? ''))) {
             throw new ApiError('הבקשה נדחתה (CSRF). רעננו את הדף', 403);
@@ -90,9 +94,12 @@ try {
                 'finfo' => class_exists('finfo'),
                 'upload_max' => ini_get('upload_max_filesize'), 'post_max' => ini_get('post_max_size')];
         })(),
-        'me' => $session
+        'me' => ($session
             ? ['ok' => true, 'user' => public_user($session), 'csrf' => $session['csrf']]
-            : ['ok' => true, 'user' => null],
+            : ['ok' => true, 'user' => null])
+            + ['platform' => $platform + ($session && $platform['mode'] !== 'detached' ? ['can_relink' => platform_can_relink($session)] : [])],
+        'platform_link' => platform_link($session, $body),
+        'platform_new'  => platform_new($body),
         'register'  => auth_register($body),
         'verify'    => auth_verify($body),
         'login'     => (function () use ($body) { $r = auth_login($body); unset($r['token']); return $r; })(),
