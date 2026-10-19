@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.mbeplus.camera",
+      "sha256_cert_fingerprints": [
+        "0E:05:A4:98:F2:2C:78:0F:0A:28:1F:C6:40:CB:E2:DB:F2:D6:49:29:D2:D3:E8:63:33:CC:FD:41:A4:B7:DF:4D"
+      ]
+    }
+  }
+]
