@@ -13,11 +13,15 @@
   "gate": true,
   "public": [
     "view.html",
+    "privacy.html",
     "api.php?action=view|view-assembly",
     "assets/**",
     "vendor/**",
     "data/media/**",
     "manifest.webmanifest",
     "service-worker.js"
-  ]
+  ],
+  "install": {
+    "release": "carpentry-3d-store"
+  }
 }
