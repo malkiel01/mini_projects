@@ -34,7 +34,19 @@ class Auth {
         return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
     }
 
+    /**
+     * משתמש הפלטפורמה, כשהאפליקציה מחוברת. השער כותב את PLATFORM_USER רק למי שיש לו הרשאה,
+     * ורק כשהאפליקציה מחוברת — מפתח שאינו HTTP_*, ולכן לקוח לא יכול לזייף אותו בכותרת.
+     * מנותקת — אין זהות, והכניסה בסיסמה (וחסימת ה-IP) חוזרות לעבוד כמו קודם.
+     */
+    public static function platformUser() {
+        $identity = json_decode($_SERVER['PLATFORM_USER'] ?? '', true);
+        return (is_array($identity) && !empty($identity['sub'])) ? $identity : null;
+    }
+
     public static function ipAllowed($ip = null) {
+        // מחוברת לפלטפורמה: הפלטפורמה שומרת על הגישה, ואין חסימת IP.
+        if (self::platformUser()) return true;
         if ($ip === null) $ip = self::clientIp();
         $allowed = Config::get('settings')['allowed_ips'] ?? [];
         return self::ipAllowedBy($ip, is_array($allowed) ? $allowed : []);
@@ -78,6 +90,8 @@ class Auth {
 
     public static function isLoggedIn() {
         self::start();
+        // משתמש פלטפורמה עם הרשאה מדלג על login.php.
+        if (self::platformUser()) return true;
         return !empty($_SESSION['authed']) && !empty($_SESSION['ip_at_login']) && $_SESSION['ip_at_login'] === self::clientIp();
     }
 

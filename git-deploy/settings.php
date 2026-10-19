@@ -76,7 +76,7 @@ $tokenMasked = $settings['github_token'] ? '•••••••' . substr($set
         <div class="brand"><span class="brand-icon">🚀</span><span>git-deploy</span></div>
         <nav class="topbar-nav">
             <a href="index.php" class="btn btn-ghost">← חזרה לדשבורד</a>
-            <a href="logout.php" class="btn btn-ghost">יציאה</a>
+            <?php if (!Auth::platformUser()): ?><a href="logout.php" class="btn btn-ghost">יציאה</a><?php endif; ?>
         </nav>
     </div>
 </header>
