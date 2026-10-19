@@ -479,7 +479,8 @@ function installStatus(app) {
     let cls = '', text;
     if (info?.state === 'installed') { cls = 'on'; text = `✓ מותקנת במכשיר הזה — ${HOW[info.how] || 'נבדק'}, ${when}`; }
     else if (info?.state === 'not_installed') { cls = 'off'; text = `לא מותקנת במכשיר הזה (${HOW.prompt}, ${when})`; }
-    else if (app.install.pwa) text = 'עוד לא נבדק במכשיר הזה — הבדיקה נעשית לבד בפתיחה הראשונה של האפליקציה';
+    else if (isAndroid() && app.install.apk) text = 'אפליקציית אנדרואיד — "התקנה" מוריד אותה; בפעם הראשונה אנדרואיד מבקש לאשר התקנה מהמקור הזה';
+    else if (app.install.pwa) text ='עוד לא נבדק במכשיר הזה — הבדיקה נעשית לבד בפתיחה הראשונה של האפליקציה';
     else text = 'אפליקציית אנדרואיד (APK) — דפדפן לא יכול לבדוק אם היא מותקנת';
     return el('p', { className: `inst-status ${cls}`, textContent: text });
 }
@@ -562,7 +563,11 @@ function installLinks(app) {
         el('span', { textContent: icon, ariaHidden: 'true' }), el('span', { className: 'one', textContent: text }),
     ]);
     const out = [];
-    if (app.install.pwa) {
+    // אנדרואיד עם APK: כפתור אחד שמוריד ומתקין. PWA לא — מתוך הכלים הדיגיטליים המותקנים כל קישור נפתח
+    // בחלונית של הדפדפן (גם intent לכרום), ושם אי אפשר להתקין. ה-APK (TWA) נפתח במסך מלא עם אייקון משלו.
+    const apkFirst = isAndroid() && app.install.apk;
+    if (apkFirst) out.push(tile('📲', 'התקנה', { href: app.install.apk, rel: 'noopener' }));
+    if (app.install.pwa && !apkFirst) {
         // פותח את האפליקציה בחלון משלה עם ?pwa-install=1 — שם pwa-beacon.js מציג "התקנה" (בלחיצה
         // כשהדפדפן מאפשר, אחרת ההסבר המדויק למכשיר). ההתקנה חייבת לקרות מתוך הדף של האפליקציה.
         const href = app.href + (app.href.includes('?') ? '&' : '?') + 'pwa-install=1';
@@ -574,7 +579,7 @@ function installLinks(app) {
         }
         out.push(t);
     }
-    if (app.install.apk) out.push(tile('⬇️', 'הורדת APK', { href: app.install.apk, rel: 'noopener' }));
+    if (app.install.apk && !apkFirst) out.push(tile('⬇️', 'הורדת APK', { href: app.install.apk, rel: 'noopener' }));
     if (app.install.store) out.push(tile('▶️', 'Google Play', { href: app.install.store, rel: 'noopener', target: '_blank' }));
     // תיקיית החנות — רק למנהל (השרת לא שולח את זה לאחרים): הקבצים להעלאה ל-Play Console.
     if (app.install.release) {
