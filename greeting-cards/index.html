@@ -4380,8 +4380,8 @@ async function checkAuth() {
         const res = await fetch(API_URL + '?action=check_auth', { credentials: 'include' });
         const data = await res.json();
         if (data.success) {
-            authToken = getCookie('gc_token');
-            currentUser = { username: data.username, displayName: data.displayName };
+            authToken = data.token || getCookie('gc_token');
+            currentUser = { username: data.username, displayName: data.displayName, platform: !!data.platform };
             onAuthSuccess();
             return true;
         }
@@ -4399,7 +4399,7 @@ function showUserMenu() {
         <h2>👤 ${escapeHtml(currentUser.displayName)}</h2>
         <p style="color:#666;margin-bottom:16px">@${escapeHtml(currentUser.username)}</p>
         <div class="modal-actions">
-            <button class="btn btn-outline" onclick="doLogout()">🚪 התנתק</button>
+            ${currentUser.platform ? '' : '<button class="btn btn-outline" onclick="doLogout()">🚪 התנתק</button>'}
             <button class="btn btn-outline" onclick="closeModal()">סגור</button>
         </div>
     `;

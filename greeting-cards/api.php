@@ -47,13 +47,23 @@ if (!$input) $input = $_POST;
 $token = $_SERVER['HTTP_X_AUTH_TOKEN']
     ?? $_GET['token'] ?? $input['token'] ?? $_COOKIE['gc_token'] ?? '';
 
+// מחוברת לפלטפורמה: השער כותב את הזהות ל-PLATFORM_USER (רק למי שיש לו הרשאה). היא קובעת מי
+// המשתמש — האסימון שהדפדפן שלח לא נחשב, כך שאי אפשר להיכנס לחשבון אחר. ראו platform/docs/sso.md.
+$platformUser = platformAccount($usersDir);
+if ($platformUser) $token = $platformUser['token'];
+
 try {
+    // כניסה בסיסמה של האפליקציה חסומה כשהיא מחוברת לפלטפורמה.
+    if ($platformUser && in_array($action, ['register', 'login', 'logout'], true)) {
+        respond(false, 'הכניסה היא דרך הכלים הדיגיטליים', ['platform' => true]);
+    }
+
     switch ($action) {
         // ─── Auth ────────────────────────────────────
         case 'register':    handleRegister($usersDir, $input); break;
         case 'login':       handleLogin($usersDir, $input); break;
         case 'logout':      handleLogout(); break;
-        case 'check_auth':  handleCheckAuth($usersDir, $token); break;
+        case 'check_auth':  handleCheckAuth($usersDir, $token, (bool)$platformUser); break;
 
         // ─── Contacts (require auth) ────────────────
         case 'save_contacts':   requireAuth($usersDir, $token); saveContacts($usersDir, $token, $input); break;
@@ -189,14 +199,60 @@ function handleLogout() {
     respond(true, 'התנתקת');
 }
 
-function handleCheckAuth($usersDir, $token) {
+function handleCheckAuth($usersDir, $token, $platform = false) {
     if (!$token) respond(false, 'לא מחובר');
     $profile = findUserByToken($usersDir, $token);
     if (!$profile) respond(false, 'לא מחובר');
     respond(true, 'מחובר', [
+        'token' => $token,
         'username' => $profile['username'],
         'displayName' => $profile['displayName'] ?? $profile['username'],
+        'platform' => $platform,
     ]);
+}
+
+/**
+ * החשבון באפליקציה של מי שנכנס דרך הפלטפורמה, או null כשאין זהות (האפליקציה מנותקת מהשער).
+ *
+ * חשבון שמקושר ל-sub, ואם אין — חשבון חדש (ההרשאה בפלטפורמה היא האישור). אין איחוד לפי מייל:
+ * שם משתמש באפליקציה אינו יכול להכיל @, ולכן אף חשבון ישן אינו מייל.
+ */
+function platformAccount($usersDir) {
+    $identity = json_decode($_SERVER['PLATFORM_USER'] ?? '', true);
+    $sub = (string)($identity['sub'] ?? '');
+    if ($sub === '') return null;
+
+    $file = null;
+    foreach (glob($usersDir . '/*/profile.json') as $f) {
+        $p = json_decode(file_get_contents($f), true);
+        if ($p && (string)($p['platformSub'] ?? '') === $sub) { $file = $f; break; }
+    }
+
+    if ($file) {
+        $profile = json_decode(file_get_contents($file), true);
+    } else {
+        $dir = $usersDir . '/platform_' . safeFilename($sub);
+        if (!is_dir($dir)) mkdir($dir, 0755, true);
+        $file = $dir . '/profile.json';
+        $name = trim((string)($identity['name'] ?? ''));
+        $profile = [
+            'username' => ($identity['email'] ?? '') ?: 'platform-' . $sub,
+            'displayName' => $name !== '' ? $name : 'משתמש',
+            'passwordHash' => '',
+            'created' => date('c'),
+        ];
+        foreach (['contacts.json', 'user_data.json'] as $empty) {
+            if (!file_exists("$dir/$empty")) file_put_contents("$dir/$empty", '[]');
+        }
+    }
+
+    if (empty($profile['token'])) {
+        $profile['platformSub'] = $sub;
+        $profile['token'] = bin2hex(random_bytes(32));
+        $profile['lastLogin'] = date('c');
+        file_put_contents($file, json_encode($profile, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    }
+    return $profile;
 }
 
 function requireAuth($usersDir, $token) {
