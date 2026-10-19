@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/lib/import.php';
+require_once __DIR__ . '/lib/export.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -46,7 +46,7 @@ const POST_ACTIONS   = ['register', 'verify', 'login', 'forgot', 'reset', 'logou
                         'fund_save', 'fund_archive', 'fund_order', 'contact_save', 'contact_archive', 'cat_save', 'cat_archive',
                         'budget_create', 'budget_update', 'budget_status', 'budget_duplicate', 'budget_delete', 'bfund_set', 'bfund_toggle',
                         'line_save', 'line_delete', 'line_order', 'transfer_create', 'srow_save', 'srow_delete', 'srow_order',
-                        'comment_add', 'comment_set', 'org_import'];
+                        'comment_add', 'comment_set', 'org_import', 'org_logo_upload'];
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -65,7 +65,7 @@ try {
     $result = match ($action) {
         'health' => (function () {
             db();
-            return ['ok' => true, 'stage' => 4, 'php' => PHP_VERSION];
+            return ['ok' => true, 'stage' => 5, 'php' => PHP_VERSION];
         })(),
         'me' => $session
             ? ['ok' => true, 'user' => public_user($session), 'csrf' => $session['csrf']]
@@ -118,6 +118,12 @@ try {
         'comment_add'      => comment_add($session, $body),
         'comment_set'      => comment_set($session, $body),
         'org_import'       => org_import($session, $body),
+        // הפלט — שלב 5 (lib/export.php). docx / xlsx / לוגו יוצאים כקובץ (exit), לא כ-JSON
+        'budget_doc'       => budget_doc($session, (int)($_GET['id'] ?? 0)),
+        'budget_docx'      => export_docx($session, (int)($_GET['id'] ?? 0)),
+        'budget_xlsx'      => export_xlsx($session, (int)($_GET['id'] ?? 0)),
+        'org_logo'         => org_logo_serve($session, (int)($_GET['id'] ?? 0)),
+        'org_logo_upload'  => org_logo_upload($session, $_POST, $_FILES),
         // אזור הפיתוח
         'dev_orgs'       => dev_orgs($_GET),
         'dev_org_force'  => dev_org_force($session, $body),
