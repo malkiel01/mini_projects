@@ -388,6 +388,12 @@ dev_log            id, at, user_id, action, error_code, duration_ms   -- בלי 
 לקבצי הפלטפורמה, אין שימוש בעוגייה שלה, וכל הנתיבים יחסיים לתיקייה — כך שהעברה
 לדומיין משלה היא העתקת תיקייה. (השער של הפלטפורמה — שאלה 2.)
 
+**התקנה — שלוש דרכים** (`platform/docs/rollout.md`, צעד 6): PWA (`manifest.webmanifest`); אפליקציית
+אנדרואיד TWA ב-`android/` (חבילה `com.mbeplus.doctemplates`, נבנית ב-
+`.github/workflows/document-templates-twa.yml`); ותיקיית חנות — Release `document-templates-store` עם APK,
+AAB, `store-listing.zip`, `assetlinks.json` ו-`build.json`. הוראות החנות והטקסטים: `android/STORE.md`.
+לפני הגשה לחנות חסרים עוד דף מדיניות פרטיות ומחיקת חשבון (שם, סעיף א).
+
 ---
 
 ## 14. שלבי בנייה
