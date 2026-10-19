@@ -561,14 +561,19 @@ function fill_complete(): array
 function doc_awaiting(array $d, array $schema): bool
 {
     if (!in_array($d['status'], DOC_EDITABLE, true)) return false;
-    // נשלח לאישור של בעל התבנית, ולא הוחזר מאז
-    if (doc_approver($d)) {
-        $st = db()->prepare("SELECT type FROM events WHERE document_id = ? AND type IN ('submitted', 'returned') ORDER BY id DESC LIMIT 1");
-        $st->execute([$d['id']]);
-        if ($st->fetchColumn() === 'submitted') return true;
-    }
+    // נשלח לאישור של בעל התבנית, או ממלא בחשבון לחץ "סיימתי" — ולא הוחזר מאז
+    if (doc_submitter($d) !== null) return true;
     $list = participants_of((int)$d['id']);
     return $list && current_turn($list) === null && !doc_progress($schema, doc_values((int)$d['id']))['missing'];
+}
+
+/** מי שלח את המסמך ("שליחה לאישור" / "סיימתי"), אם לא הוחזר מאז. */
+function doc_submitter(array $d): ?int
+{
+    $st = db()->prepare("SELECT type, actor FROM events WHERE document_id = ? AND type IN ('submitted', 'returned') ORDER BY id DESC LIMIT 1");
+    $st->execute([$d['id']]);
+    $e = $st->fetch();
+    return $e && $e['type'] === 'submitted' && str_starts_with($e['actor'], 'user:') ? (int)substr($e['actor'], 5) : null;
 }
 
 /** ההערה האחרונה שהוחזרה לממלא הזה לתיקון (אם הוחזר ועוד לא סיים שוב). */
@@ -607,17 +612,17 @@ function doc_return(array $user, array $b): array
     $note = mb_substr(trim((string)($b['note'] ?? '')), 0, 1000);
     $pid = (int)($b['participant'] ?? 0);
     $list = array_values(array_filter(participants_of((int)$d['id']), fn($p) => $p['completed_at'] && (!$pid || (int)$p['id'] === $pid)));
-    $approver = doc_approver($d);
-    if (!$list && $approver && (int)$user['id'] === $approver) {
-        // אישור רק דרך בעל התבנית: מחזיר למי שהנפיק (בלי ממלאים בקישור)
+    $by = doc_submitter($d);
+    if (!$list && $by !== null && $by !== (int)$user['id']) {
+        // נשלח מחשבון ("שליחה לאישור" של המנפיק, או "סיימתי" של ממלא) — חוזר אליו
         $st = db()->prepare('SELECT email, display_name FROM users WHERE id = ?');
-        $st->execute([$d['owner_id']]);
+        $st->execute([$by]);
         $title = (string)unseal($d['title_enc']);
         $mailed = false;
-        if ($o = $st->fetch()) $mailed = (bool)send_mail($o['email'], 'הוחזר לתיקון: ' . $title, "שלום {$o['display_name']},\n\n" . user_name($approver) .
+        if ($o = $st->fetch()) $mailed = (bool)send_mail($o['email'], 'הוחזר לתיקון: ' . $title, "שלום {$o['display_name']},\n\n" . user_name((int)$user['id']) .
             " החזיר/ה אליך את המסמך \"$title\" לתיקון." . ($note !== '' ? "\n\nההערה:\n$note" : '') . "\n\n" . app_base_url() . '#doc=' . $d['id']);
-        log_event((int)$d['id'], 'user:' . $user['id'], 'returned', ['note' => $note, 'participants' => [], 'roles' => [user_name((int)$d['owner_id'])]]);
-        return ['ok' => true, 'returned' => user_name((int)$d['owner_id']), 'mailed' => $mailed];
+        log_event((int)$d['id'], 'user:' . $user['id'], 'returned', ['note' => $note, 'participants' => [], 'roles' => [user_name($by)]]);
+        return ['ok' => true, 'returned' => user_name($by), 'mailed' => $mailed];
     }
     if (!$list) throw new ApiError('אין ממלא שסיים להחזיר אליו', 409);
     $schema = doc_schema($d);
