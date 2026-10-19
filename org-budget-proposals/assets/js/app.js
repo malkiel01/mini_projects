@@ -8,7 +8,7 @@
  */
 'use strict';
 
-const S = { user: null, csrf: '', devTab: sessionStorage.getItem('ob-dev-tab') || 'users' };
+const S = { user: null, csrf: '', platform: { state: 'off' }, devTab: sessionStorage.getItem('ob-dev-tab') || 'users' };
 const $ = sel => document.querySelector(sel);
 const main = $('#main');
 
@@ -56,7 +56,7 @@ async function api(action, body, query = '') {
         throw new Error(res ? `שגיאת שרת (${res.status})` : 'אין חיבור לשרת');
     }
     if (!data.ok) {
-        if (res.status === 401 && S.user) { S.user = null; render(); }
+        if (res.status === 401 && S.user) { S.user = null; boot(); }   // boot — גם מצב הכניסה דרך הפלטפורמה
         const err = new Error(data.error || 'שגיאה');
         err.status = res.status;
         throw err;
@@ -160,7 +160,10 @@ $('#me-btn').addEventListener('click', e => {
         item('📑', 'הארגונים שלי', () => (location.hash = '#/')),
         item('⚙️', 'הגדרות משתמש', () => (location.hash = '#/me')),
         S.user.is_developer ? item('🛠️', 'אזור הפיתוח', () => (location.hash = '#/dev')) : null,
-        item('🚪', 'יציאה', logout),
+        S.platform.can_link ? item('🔗', 'חיבור חשבון ישן', () => viewLink(true)) : null,
+        // מחוברת לפלטפורמה: היציאה היא מהכלים הדיגיטליים, והיא מוציאה גם מכאן
+        connected() ? item('🧰', 'לכלים הדיגיטליים', () => (location.href = new URL('../', location.href).href))
+                    : item('🚪', 'יציאה', logout),
     );
     menu.hidden = false;
 });
@@ -178,7 +181,7 @@ async function logout() {
 async function boot() {
     try {
         const r = await api('me');
-        S.user = r.user; S.csrf = r.csrf || '';
+        S.user = r.user; S.csrf = r.csrf || ''; S.platform = r.platform || { state: 'off' };
     } catch (err) {
         put(main, h('p.error', { role: 'alert' }, err.message));
         return;
@@ -199,7 +202,7 @@ function render() {
     if ((m = hash.match(/^#verify=([0-9a-f]{48})$/))) return viewVerify(m[1]);
     if ((m = hash.match(/^#reset=([0-9a-f]{48})$/))) return viewReset(m[1]);
 
-    if (!S.user) return viewAuth();
+    if (!S.user) return viewNoUser();
     if (hash === '#/me') return viewMe();
     if (hash === '#/dev' && S.user.is_developer) return viewDev();
     if ((m = hash.match(/^#\/org\/(\d+)$/))) return viewOrg(+m[1]);
@@ -208,6 +211,64 @@ function render() {
     return viewHome();
 }
 window.addEventListener('hashchange', render);
+
+// ── כניסה דרך הפלטפורמה (lib/platform.php) ──────────────────
+
+/** האפליקציה מחוברת לפלטפורמה — הכניסה, היציאה והסיסמה הן שם. */
+const connected = () => S.platform.state !== 'off';
+
+function viewNoUser() {
+    const st = S.platform.state;
+    if (st === 'off') return viewAuth();
+    if (st === 'link') return viewLink(false);
+    setHeader('הצעות תקציב');
+    const box = (...kids) => put(main, h('div.auth', brand('קופות, הקדשות, ריכוז ונספח — במסמך אחד'), h('div.panel', ...kids)));
+    if (st === 'blocked') return box(h('p.error', { role: 'alert' }, 'החשבון חסום באפליקציה. פנו למפתח.'));
+    if (st === 'unavailable') {
+        return box(h('p.error', { role: 'alert' }, 'הכניסה לא זמינה כרגע. נסו שוב בעוד כמה דקות.'),
+            h('button.btn.primary', { type: 'button', onclick: boot }, 'לנסות שוב'));
+    }
+    // login — דף ציבורי בלי זהות: לא נכנסו לפלטפורמה, או שאין הרשאה לאפליקציה
+    const next = location.pathname + location.search + location.hash;
+    return box(h('p', 'הכניסה היא דרך הכלים הדיגיטליים.'),
+        h('a.btn.primary', { href: new URL('../', location.href).pathname + '?next=' + encodeURIComponent(next) }, 'כניסה'),
+        h('p.hint', 'כבר נכנסתם ועדיין רואים את המסך הזה? אין לכם הרשאה לאפליקציה — פנו למנהל.'));
+}
+
+/**
+ * המסך החד-פעמי: מי שנכנס דרך הפלטפורמה ואין לו חשבון באותו מייל — אולי יש לו חשבון ישן במייל אחר.
+ * fromMenu — מהתפריט, אחרי שכבר נפתח חשבון חדש: החשבון הישן מחליף אותו.
+ */
+function viewLink(fromMenu) {
+    setHeader('חיבור חשבון', '', fromMenu);
+    const err = h('p.error', { role: 'alert', hidden: true });
+    const btn = h('button.btn.primary', { type: 'submit' }, 'חיבור החשבון');
+    const form = h('form.panel', { novalidate: true },
+        h('p.hint', 'נכנסים פעם אחת במייל ובסיסמה של החשבון הישן, ומכאן — דרך הכלים הדיגיטליים.'),
+        h('label.f', h('span', 'מייל'), h('input', { name: 'email', type: 'email', dir: 'ltr', autocomplete: 'username', required: true })),
+        pwField('סיסמה', 'password', 'current-password'),
+        fromMenu ? h('p.hint', 'החשבון שנפתח עכשיו ינותק, והחשבון הישן יבוא במקומו.') : null,
+        err, btn);
+    form.addEventListener('submit', busy(btn, async () => {
+        await api('platform_link', formData(form));
+        location.hash = '#/';
+        await boot();
+        toast('החשבון חובר');
+    }, err));
+
+    const intro = h('p', S.platform.name ? `שלום ${S.platform.name}. ` : '',
+        'יש לך כבר חשבון באפליקציה הזו — במייל אחר?');
+    if (fromMenu) return put(main, h('div.auth', brand('חיבור חשבון ישן'), form));
+
+    const err2 = h('p.error', { role: 'alert', hidden: true });
+    const fresh = h('button.btn.ghost', { type: 'button' }, 'אין לי חשבון — להמשיך');
+    fresh.addEventListener('click', busy(fresh, async () => {
+        await api('platform_new', {});
+        await boot();
+    }, err2));
+    put(main, h('div.auth', brand('פעם אחת, לפני שמתחילים'), h('div.panel', intro,
+        h('p.hint', 'אפשר לחבר גם אחר כך, מהתפריט האישי.')), form, h('div.row-btns', fresh), err2));
+}
 
 // ── כניסה והרשמה ────────────────────────────────────────────
 
@@ -360,7 +421,7 @@ async function viewMe() {
             h('div', h('dt', 'מכשירים מחוברים'), h('dd', info.devices)),
             info.is_developer ? h('div', h('dt', 'תפקיד'), h('dd', '🛠️ מפתח')) : null),
         h('p.sec-title', 'שם'), nameForm,
-        h('p.sec-title', 'סיסמה'), pwForm,
+        connected() ? null : [h('p.sec-title', 'סיסמה'), pwForm],
         h('p.sec-title', 'מכשירים'), h('div.row-btns', outBtn),
     );
 }

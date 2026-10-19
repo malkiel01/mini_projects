@@ -55,6 +55,7 @@ function db(): PDO
     $pdo->exec('PRAGMA foreign_keys = ON');
     $pdo->exec('PRAGMA busy_timeout = 15000');
     db_migrate($pdo);
+    if (function_exists('platform_migrate')) platform_migrate($pdo);  // כניסה דרך הפלטפורמה — lib/platform.php
     if (function_exists('orgs_migrate')) orgs_migrate($pdo);        // שלב 2 — lib/orgs.php
     if (function_exists('budgets_migrate')) budgets_migrate($pdo);  // שלב 3 — lib/budgets.php
     return $pdo;

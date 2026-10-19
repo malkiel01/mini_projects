@@ -9,7 +9,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/platform.php';
 
 const DEV_LOG_DAYS = 30;
 
