@@ -199,7 +199,7 @@ function auth_verify(array $b): array
     // הזמנה ממפתח היא האישור עצמו: החשבון פעיל מיד. הזמנה ממשתמש רגיל — השיתוף נוצר, והחשבון ממתין לאישור.
     $invited = null;
     if (!empty($p['invite']) && function_exists('invite_redeem')) {
-        try { $invited = invite_redeem((int)$u['id'], (string)$p['invite']); } catch (ApiError) { $invited = null; }
+        try { $invited = invite_redeem((int)$u['id'], (string)$p['invite']); } catch (Throwable) { $invited = null; }
     }
     if ($invited) {
         $st = $pdo->prepare("SELECT is_developer FROM users WHERE id = ? AND status = 'active'");

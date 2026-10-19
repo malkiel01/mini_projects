@@ -267,6 +267,7 @@ function clean_schema($s, array $sources = [], array $fonts = [], array $contact
     $roles = [['key' => 'owner', 'label' => 'אני (המנפיק)', 'auth' => 'none']];
     foreach (array_slice((array)($s['roles'] ?? []), 0, 20) as $r) {
         $key = preg_replace('/[^a-z0-9_]/', '', strtolower((string)($r['key'] ?? '')));
+        if ($key === 'link') $key = 'link_role';   // "link" שמור ללקוח של "שליחה למילוי"
         if ($key === '' || $key === 'owner' || in_array($key, array_column($roles, 'key'), true)) continue;
         $roles[] = [
             'key' => $key,

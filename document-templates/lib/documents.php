@@ -301,8 +301,9 @@ function doc_get(array $user, int $id): array
 
     $st = db()->prepare('SELECT * FROM events WHERE document_id = ? ORDER BY id');
     $st->execute([$id]);
+    $manage = LEVELS[$d['access']] >= LEVELS['edit'];   // כתובות IP ופרטי קשר של לקוחות — רק למי שמנהל את המסמך
     $events = array_map(fn($e) => [
-        'type' => $e['type'], 'actor' => $e['actor'], 'by' => actor_name($e['actor'], $d), 'at' => $e['at'], 'ip' => $e['ip'],
+        'type' => $e['type'], 'actor' => $e['actor'], 'by' => actor_name($e['actor'], $d), 'at' => $e['at'], 'ip' => $manage ? $e['ip'] : null,
         'detail' => $e['detail_enc'] === null ? null : json_decode((string)unseal($e['detail_enc']), true),
     ], $st->fetchAll());
 
@@ -318,7 +319,7 @@ function doc_get(array $user, int $id): array
         'schema' => attach_options($schema), 'values' => $values, 'progress' => doc_progress($schema, $values),
         'ref' => $d['external_ref'], 'events' => $events, 'fonts' => fonts_info($schema), 'chain_ok' => doc_verify_chain($id),
         'lists' => lists_for($schema),
-        'participants' => participants_view($d, doc_schema($d)),
+        'participants' => array_map(fn($p) => $manage ? $p : ['email' => '', 'phone' => ''] + $p, participants_view($d, doc_schema($d))),
         'awaiting_approval' => (!empty($schema['approval']) || doc_approver($d)) && doc_awaiting($d, doc_schema($d)),
         'approver' => ($ap = doc_approver($d)) ? ['name' => user_name($ap), 'me' => $ap === (int)$user['id']] : null,
         'attachments' => attachments_of($id),

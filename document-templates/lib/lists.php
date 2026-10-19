@@ -395,7 +395,8 @@ function list_rows_by_id(int $id): ?array
 function list_opts(?array $session, array $b): array
 {
     if (!empty($_SERVER['HTTP_X_FILL_TOKEN'])) {
-        [, , $schema] = fill_context();
+        [$p, , $schema] = fill_context();
+        if (needs_otp($p)) throw new ApiError('נדרש אימות', 401);
     } else {
         if (!$session) throw new ApiError('נדרשת כניסה', 401);
         $d = doc_owned((int)($b['doc'] ?? 0), $session, 'view');

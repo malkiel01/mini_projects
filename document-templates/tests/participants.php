@@ -129,7 +129,7 @@ check('מצב: הושלם, עם טביעת אצבע', $doc['status'] === 'comple
 check('מנהל הטופס קיבל מייל', str_contains(last_mail_to('owner@x.com')['subject'] ?? '', 'הושלם'));
 $types = array_column($doc['events'], 'type');
 check('יומן מלא', $types === ['created', 'values_saved', 'link_issued', 'link_issued', 'link_issued', 'opened', 'values_saved',
-    'values_saved', 'participant_completed', 'link_issued', 'verified', 'opened', 'values_saved', 'participant_completed', 'completed']);
+    'values_saved', 'participant_completed', 'link_issued', 'otp_sent', 'verified', 'opened', 'values_saved', 'participant_completed', 'completed']);
 check('ביומן: מי עשה מה (משתתף, לא משתמש)', $doc['events'][6]['actor'] === "participant:$pt");
 check('שרשרת היומן שלמה', $doc['chain_ok'] === true);
 throws('אחרי השלמה — קישור כבר לא מאפשר שינוי', fn() => fill_save(['values' => ['g_name' => 'x']]), 409);
