@@ -29,7 +29,7 @@ function h(tag, attrs, ...kids) {
         else if (k in el && k !== 'list' && k !== 'form') el[k] = v;
         else el.setAttribute(k, v === true ? '' : v);
     }
-    for (const kid of kids.flat()) {
+    for (const kid of kids.flat(Infinity)) {
         if (kid === null || kid === undefined || kid === false) continue;
         el.append(kid instanceof Node ? kid : String(kid));
     }
@@ -188,6 +188,7 @@ async function boot() {
 
 function render() {
     menu.hidden = true;
+    document.body.classList.remove('print-mode');
     const hash = location.hash;
     const meBtn = $('#me-btn');
     meBtn.hidden = !S.user;
@@ -202,6 +203,7 @@ function render() {
     if (hash === '#/me') return viewMe();
     if (hash === '#/dev' && S.user.is_developer) return viewDev();
     if ((m = hash.match(/^#\/org\/(\d+)$/))) return viewOrg(+m[1]);
+    if ((m = hash.match(/^#\/budget\/(\d+)\/print$/))) return viewPrint(+m[1]);
     if ((m = hash.match(/^#\/budget\/(\d+)(?:\/fund\/(\d+))?$/))) return viewBudget(+m[1], m[2] ? +m[2] : null);
     return viewHome();
 }
@@ -595,7 +597,7 @@ function orgSettings(d) {
         });
     });
     orgSheet(o);
-    $('#sheet-body').append(h('section.group', h('h3', 'אזור מסוכן'), del));
+    $('#sheet-body').append(logoSection(o), h('section.group', h('h3', 'אזור מסוכן'), del));
 }
 
 async function orgHistory(o) {
@@ -927,6 +929,7 @@ async function viewBudget(id, fundId = null) {
     const b = d.budget, [sl, sc] = STATUS_CHIP[b.status];
     const open = d.comments.filter(c => !c.resolved).length;
     setHeader(`הצעת תקציב ${b.year}${b.title ? ' · ' + b.title : ''}`, `${d.org.name} · ${sl}`, true, [
+        h('a.icon-btn', { href: `#/budget/${id}/print`, 'aria-label': 'המסמך להדפסה', title: 'המסמך' }, '📄'),
         h('button.icon-btn', { type: 'button', 'aria-label': 'פעולות על ההצעה', title: 'פעולות', onclick: () => budgetActions(d) }, '⋯'),
     ]);
     const sm = d.summary;
@@ -1404,10 +1407,144 @@ function budgetActions(d) {
         h('dl.kv', h('dt', 'מצב'), h('dd', STATUS_CHIP[b.status][0], b.status_at ? ` · ${fmtDate(b.status_at)}` : ''),
             h('dt', 'עודכנה'), h('dd', fmtDate(b.updated_at)), h('dt', 'ארגון'), h('dd', d.org.name)),
         h('p.hint', 'טיוטה — עורכים. הוגשה — נעולה (עורך מחזיר לטיוטה). אושרה — רק בעלים. הערות אפשר תמיד.'),
-        btns.length ? h('div.row-btns.wrap', ...btns) : null,
+        h('section.group', h('h3', 'המסמך', h('small', 'שער, תכנית עבודה, ריכוז, קופות ונספח')),
+            h('div.row-btns.wrap', ...exportButtons(b.id).map(a => (a.addEventListener('click', () => sheet.close()), a)))),
+        btns.length ? h('section.group', h('h3', 'מצב'), h('div.row-btns.wrap', ...btns)) : null,
         h('button.btn.ghost', { type: 'button', onclick: () => { sheet.close(); location.hash = `#/org/${d.org.id}`; } }, '🏛️ לארגון'),
         canEdit(role) ? h('section.group', h('h3', 'אזור מסוכן'), del) : null,
     ].filter(Boolean));
+}
+
+// ── המסמך: תצוגה להדפסה / PDF, והורדות (שלב 5) ───────────────
+
+const fileUrl = (action, id) => `api.php?action=${action}&id=${id}`;
+
+/** כפתורי הפלט — בתפריט ⋯ של ההצעה ובראש מסך המסמך. */
+function exportButtons(id) {
+    return [
+        h('a.btn.ghost', { href: `#/budget/${id}/print` }, '🖨️ מסמך / PDF'),
+        h('a.btn.ghost', { href: fileUrl('budget_docx', id), download: '' }, '⬇️ Word'),
+        h('a.btn.ghost', { href: fileUrl('budget_xlsx', id), download: '' }, '⬇️ Excel'),
+    ];
+}
+
+/**
+ * מסך המסמך: כל העמודים כמו בהדפסה (A4), ו"הדפסה" — הדפדפן שומר כ-PDF.
+ * מספרי העמודים בדף הריכוז ("עמ' 6 עד 10") נמדדים אחרי הציור: גובה כל חלק ÷ גובה עמוד.
+ */
+async function viewPrint(id) {
+    document.body.classList.add('print-mode');
+    setHeader('המסמך', '', true);
+    put(main, h('p.empty', 'בונה את המסמך…'));
+    let d;
+    try { d = (await api('budget_doc', null, `&id=${id}`)).doc; } catch (err) {
+        put(main, h('p.error', { role: 'alert' }, err.message));
+        return;
+    }
+    document.title = d.file;
+    const c = d.cover, cols = d.cols;
+    const br = t => String(t ?? '').split('\n').flatMap((x, i) => i ? [h('br'), x] : [x]);
+    const num = v => (v === null || v === undefined) ? '' : Number(v).toLocaleString('he-IL');
+    const table = (head, rows, widths) => h('table.dt',
+        h('colgroup', ...widths.map(w => h('col', { style: `width:${w}%` }))),
+        h('thead', h('tr', ...head.map(x => h('th', br(x))))), h('tbody', ...rows));
+    const td = (v, cls = '') => h(`td${cls ? '.' + cls : ''}`, v);
+    const pg = (...kids) => h('section.pg', ...kids);
+
+    const cover = pg(h('div.cover',
+        h('p.c-org', c.org), c.subtitle ? h('p.c-sub', c.subtitle) : null,
+        c.has_logo ? h('img.c-logo', { src: fileUrl('org_logo', c.logo_org), alt: '' }) : h('div', { style: 'height:40mm' }),
+        h('p.c-title', c.title), c.submitted_to ? h('p.c-to', c.submitted_to) : null,
+        h('div.c-sign', ...c.signers.map(s => h('p', h('b', s.name), ...s.titles.map(t => [h('br'), t]))))));
+    cover.classList.add('first');
+
+    const plan = d.plan.blocks.length ? pg(h('h2.d-title', d.plan.title), ...d.plan.blocks.map(b =>
+        b.type === 'center' ? h('h3.d-center', b.text) : b.type === 'heading' ? h('h3.d-head', b.text)
+            : b.type === 'bullet' ? h('p.d-bullet', '• ', b.text) : h('p.d-para', b.text))) : null;
+
+    const refs = [];
+    const summary = pg(h('h2.d-title', d.summary.title), ...d.summary.sections.map(sec => [
+        h('h3.d-cap', sec.title),
+        table(['', cols.prev, cols.actual, cols.cur, 'פירוט'], [
+            ...sec.rows.map(r => {
+                const ref = h('span');
+                if (r.funds.length) refs.push([ref, r.funds]);
+                return h('tr', td(h('b', br(r.label))), td(num(r.prev), 'n'), td(num(r.actual), 'n'), td(num(r.cur), 'n'), td(ref, 'n'));
+            }),
+            h('tr.tot', td('סה"כ'), td(num(sec.total.prev), 'n'), td(num(sec.total.actual), 'n'), td(num(sec.total.cur), 'n'), td('')),
+        ], [34, 17, 17, 17, 15])]),
+        d.summary.note ? h('p.d-note', d.summary.note) : null);
+
+    const funds = d.funds.map(f => {
+        const s = pg(h('h2.d-title', f.title), f.address ? h('h3.d-center', f.address) : null,
+            ...f.tables.map(t => [h('h3.d-cap', t.caption), table(['', DIR_LABEL[t.dir], cols.prev, cols.actual, cols.cur], [
+                ...t.rows.map(r => h('tr', td(r.n + '.', 'n'), td([h('b', r.title), r.subtitle ? [h('br'), h('small', r.subtitle)] : null]),
+                    td(num(r.prev), 'n'), td(num(r.actual), 'n'), td([num(r.cur), r.note ? [h('br'), h('small', r.note)] : null], 'n'))),
+                h('tr.tot', td(''), td('סה"כ'), td(num(t.total.prev), 'n'), td(num(t.total.actual), 'n'), td(num(t.total.cur), 'n')),
+            ], [7, 39, 18, 18, 18]), ...t.notes.map(n => h('p.d-note', n))]),
+            ...f.notes.map(n => h('p.d-note', n)));
+        s.dataset.fund = f.id;
+        return s;
+    });
+
+    const ac = d.appendix_cols;
+    const appendix = d.appendix ? pg(...d.appendix.groups.map(g => {
+        let last = null;
+        return [h('h2.d-title', d.appendix.title), h('h3.d-cap', g.title), table([ac.property, ac.tenant, ac.monthly, ac.annual, ac.period], [
+            ...g.rows.map(r => { const p = r.property === last ? '' : r.property; last = r.property;
+                return h('tr', td(h('b', br(p))), td(r.tenant), td(br(r.monthly.replace(' / ', '\n')), 'n'), td(num(r.annual), 'n'), td(br(r.period.replace(', ', '\n')), 'n')); }),
+            h('tr.tot', td(`סה"כ ${g.title}`), td('סה"כ'), td(num(g.monthly), 'n'), td(num(g.annual), 'n'), td('')),
+        ], [22, 24, 18, 18, 18])];
+    })) : null;
+
+    const doc = h('div.doc', cover, plan, summary, ...funds, appendix);
+    const bar = h('div.doc-bar', h('button.btn.primary', { type: 'button', onclick: () => window.print() }, '🖨️ הדפסה / שמירה כ-PDF'),
+        ...exportButtons(id).slice(1),
+        h('p.hint', { style: 'margin:0;flex-basis:100%' }, 'ב"הדפסה" בוחרים "שמירה כ-PDF". מספרי העמודים בדף הריכוז מחושבים לפי העמודים כאן.'));
+    put(main, bar, doc);
+
+    // מספרי עמודים: כל חלק מתחיל בעמוד חדש; גובה עמוד A4 פחות השוליים (מ"מ → פיקסלים ב-96dpi)
+    await (document.fonts?.ready || Promise.resolve());
+    const pageH = (297 - 15 - 18) * 96 / 25.4;
+    let page = 1;
+    const pageOf = {};
+    for (const s of doc.querySelectorAll('.pg')) {
+        if (s.dataset.fund) pageOf[s.dataset.fund] = page;
+        page += Math.max(1, Math.ceil((s.scrollHeight - 22 * 96 / 25.4 - 2) / pageH));   // בלי הריפוד של העמוד על המסך
+    }
+    for (const [el, ids] of refs) {
+        const ps = ids.map(i => pageOf[i]).filter(Boolean);
+        if (!ps.length) continue;
+        const a = Math.min(...ps), z = Math.max(...ps);
+        el.textContent = a === z ? `עמ' ${a}` : `עמ' ${a} עד ${z}`;
+    }
+    const fit = () => doc.style.setProperty('--fit', Math.min(1, (main.clientWidth - 8) / doc.scrollWidth));
+    fit();
+    window.addEventListener('resize', fit, { once: true });
+}
+
+// ── לוגו לשער ──
+
+function logoSection(o) {
+    const img = h('img', { alt: 'הלוגו', style: 'max-height:96px;max-width:160px;display:block' });
+    img.src = `${fileUrl('org_logo', o.id)}&t=${Date.now()}`;
+    img.onerror = () => { img.hidden = true; none.hidden = false; };
+    const none = h('p.hint', { hidden: true, style: 'margin:0' }, 'אין לוגו — בשער יופיע מקום ריק. תת-ארגון בלי לוגו משתמש בלוגו של הארגון הראשי.');
+    const file = h('input', { type: 'file', accept: 'image/png,image/jpeg', hidden: true });
+    const send = async remove => {
+        const fd = new FormData();
+        fd.append('org_id', o.id);
+        if (remove) fd.append('remove', '1'); else fd.append('logo', file.files[0]);
+        const res = await fetch('api.php?action=org_logo_upload', { method: 'POST', body: fd, headers: { 'X-CSRF': S.csrf }, credentials: 'same-origin' });
+        const r = await res.json().catch(() => ({ ok: false, error: 'שגיאת שרת' }));
+        if (!r.ok) return toast(r.error, true);
+        toast(remove ? 'הלוגו הוסר' : 'הלוגו נשמר');
+        img.hidden = false; none.hidden = true; img.src = `${fileUrl('org_logo', o.id)}&t=${Date.now()}`;
+    };
+    file.addEventListener('change', () => file.files[0] && send(false));
+    return h('section.group', h('h3', 'לוגו לשער', h('small', 'PNG או JPG, עד 1.5MB')), img, none,
+        h('div.row-btns', h('button.btn.ghost', { type: 'button', onclick: () => file.click() }, '🖼️ בחירת לוגו'),
+            h('button.btn.ghost.danger', { type: 'button', onclick: () => send(true) }, 'הסרה')), file);
 }
 
 // ── התחלה ───────────────────────────────────────────────────

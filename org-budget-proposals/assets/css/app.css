@@ -254,3 +254,40 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 .pw { position: relative; }
 .pw input { padding-inline-end: calc(var(--tap) + 4px); }
 .pw .eye { position: absolute; inset-block: 0; inset-inline-start: 0; font-size: 1rem; }
+
+/* ===== המסמך (שלב 5): עמודי A4 על המסך, ובהדפסה — רק הם ===== */
+.print-mode main { max-width: none; padding-inline: 4px; }
+.doc-bar { display: flex; flex-wrap: wrap; gap: var(--s2); margin: 0 auto var(--s3); max-width: 860px; }
+.doc { --fit: 1; zoom: var(--fit); width: 196mm; margin: 0 auto; color: #000; font: 11pt/1.35 Arial, 'Noto Sans Hebrew', sans-serif; }
+.doc .pg { background: #fff; padding: 12mm 0 10mm; margin-bottom: 6mm; box-shadow: 0 1px 4px rgba(0, 0, 0, .25); padding-inline: 8mm; width: 196mm; box-sizing: border-box; }   /* תוכן 180מ"מ — כמו בהדפסה */
+.doc .cover { text-align: center; padding-top: 25mm; }
+.doc .c-org { font-size: 24pt; font-weight: 700; }
+.doc .c-sub { font-size: 18pt; font-weight: 700; margin-top: 6mm; }
+.doc .c-logo { display: block; max-width: 50mm; max-height: 60mm; margin: 14mm auto; }
+.doc .c-title { font-size: 26pt; font-weight: 700; margin: 10mm 0 6mm; }
+.doc .c-to { font-weight: 700; margin-bottom: 18mm; }
+.doc .c-sign p { font-weight: 700; margin-bottom: 5mm; }
+.doc .d-title { font-size: 14pt; text-align: center; text-decoration: underline; margin-bottom: 4mm; }
+.doc .d-center { font-size: 13pt; text-align: center; text-decoration: underline; margin: 0 0 4mm; }
+.doc .d-head { font-size: 12pt; text-decoration: underline; margin: 4mm 0 1mm; }
+.doc .d-cap { font-size: 11pt; text-align: center; text-decoration: underline; margin: 5mm 0 1.5mm; break-after: avoid; }
+.doc .d-para { margin-bottom: 2mm; }
+.doc .d-bullet { margin-inline-start: 4mm; }
+.doc .d-note { font-size: 10pt; font-weight: 700; margin-top: 3mm; }
+.doc .dt { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 9.5pt; }
+.doc .dt th, .doc .dt td { border: 1px solid #000; padding: 1mm 1.5mm; vertical-align: middle; overflow-wrap: anywhere; }
+.doc .dt th { background: #e7e6e6; font-weight: 700; text-align: center; }
+.doc .dt td.n { text-align: center; }
+.doc .dt td small { font-size: 8pt; }
+.doc .dt tr { break-inside: avoid; }
+.doc .dt tr.tot td { background: #f2f2f2; font-weight: 700; }
+@page { size: A4; margin: 15mm 15mm 18mm; @bottom-center { content: counter(page); font: 10pt Arial, sans-serif; } }
+@page :first { @bottom-center { content: none; } }
+@media print {
+    body.print-mode { background: #fff; }
+    body.print-mode .top, body.print-mode .doc-bar, body.print-mode .toast, body.print-mode .skip, body.print-mode #menu { display: none !important; }
+    body.print-mode main { padding: 0; }
+    .doc { zoom: 1 !important; width: auto; }
+    .doc .pg { box-shadow: none; margin: 0; padding: 0; width: auto; break-before: page; }
+    .doc .pg.first { break-before: auto; }
+}
