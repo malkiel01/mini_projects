@@ -1,0 +1,9 @@
+# קוד המקור של אפליקציית האנדרואיד — לא לגלישה: הפריסה מעלה את כל התיקייה,
+# ו-keystore/ מכיל את מפתח ההעלאה (מוצפן).
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>
