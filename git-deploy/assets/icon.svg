@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- git-deploy: טיל (פריסה) על רקע הכותרת של האפליקציה -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1a1a2e"/>
+      <stop offset="1" stop-color="#16213e"/>
+    </linearGradient>
+    <linearGradient id="fire" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd166"/>
+      <stop offset="1" stop-color="#f3722c"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <g transform="rotate(45 256 256)">
+    <path d="M256 392 C236 430 240 452 256 470 C272 452 276 430 256 392 Z" fill="url(#fire)"/>
+    <path d="M214 330 L170 372 L176 300 Z" fill="#e63946"/>
+    <path d="M298 330 L342 372 L336 300 Z" fill="#e63946"/>
+    <path d="M256 70 C306 120 322 200 314 300 L304 360 L208 360 L198 300 C190 200 206 120 256 70 Z" fill="#f8f9fb"/>
+    <path d="M256 70 C276 90 291 114 300 142 L212 142 C221 114 236 90 256 70 Z" fill="#e63946"/>
+    <circle cx="256" cy="228" r="34" fill="#16213e"/>
+    <circle cx="256" cy="228" r="22" fill="#4cc9f0"/>
+    <rect x="236" y="360" width="40" height="22" rx="6" fill="#adb5bd"/>
+  </g>
+</svg>
