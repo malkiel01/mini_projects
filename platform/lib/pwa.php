@@ -26,13 +26,22 @@ function applies(string $app, ?array $cfg): bool
 }
 
 /**
- * האם להוסיף לדף הזה את הסקריפט וה-manifest: אפליקציה מחוברת, דף שאינו ציבורי, ומשתמש מחובר
- * לפלטפורמה. דף ציבורי (טופס ללקוח, תפריט, קישור צפייה) שייך ללקוח של האפליקציה — לא מציעים לו
- * להתקין את האפליקציה כולה, לא מכסים לו כפתורים ולא שומרים אצלו מזהה מכשיר.
+ * האם להוסיף לדף הזה את הסקריפט וה-manifest: אפליקציה מחוברת ומשתמש מחובר לפלטפורמה.
+ * דף ציבורי (טופס ללקוח, תפריט, קישור צפייה) שייך ללקוח של האפליקציה — לא מציעים לו להתקין את
+ * האפליקציה כולה, לא מכסים לו כפתורים ולא שומרים אצלו מזהה מכשיר. חוץ משני מקרים שרק הפלטפורמה
+ * יוצרת: ?pwa-install (הכפתור "התקנה כאפליקציה") ו-?pwa-launch (נפתחה מהאייקון שלה). בלעדיהם
+ * אפליקציה שהדף הראשי שלה ציבורי — כי יש לה כניסה משלה, כמו ניהול פרויקטים — לא הייתה ניתנת להתקנה.
+ * ?pwa-install נשמר גם בעוגייה קצרה (INSTALL_COOKIE, נכתבת ב-pwa-beacon.js): אפליקציה שמעבירה מיד לדף
+ * כניסה משלה מאבדת את הפרמטר בדרך, וההתקנה צריכה להמשיך גם שם.
  */
+const INSTALL_COOKIE = 'platform-pwa-install';
+
 function wanted(string $app, ?array $cfg, string $path, array $params): bool
 {
-    if (!applies($app, $cfg) || \Platform\Gate\is_public($cfg, $path, $params)) return false;
+    if (!applies($app, $cfg)) return false;
+    if (\Platform\Gate\is_public($cfg, $path, $params)
+        && !isset($params['pwa-install']) && !isset($params['pwa-launch'])
+        && ($_COOKIE[INSTALL_COOKIE] ?? '') !== $app) return false;
     try {
         return \Platform\Gate\current_user() !== null;
     } catch (\Throwable) {
