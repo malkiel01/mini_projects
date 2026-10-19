@@ -10,6 +10,10 @@
     "api.php?action=ping|pull|push|media-upload|media-file",
     "assets/icons/**",
     "manifest.webmanifest",
-    "service-worker.js"
-  ]
+    "service-worker.js",
+    "privacy.html"
+  ],
+  "install": {
+    "release": "renovation-punchlist-store"
+  }
 }
