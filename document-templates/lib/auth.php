@@ -308,9 +308,12 @@ function current_session(?string $token = null): ?array
     if (!$row) return null;
 
     if (time() - strtotime($row['s_seen']) > 60) {
-        $now = now_iso();
-        db()->prepare('UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?')->execute([$now, $row['token_hash']]);
-        db()->prepare('UPDATE users SET last_seen_at = ? WHERE id = ?')->execute([$now, $row['id']]);
+        // "נראה לאחרונה" — לא חיוני. מסד תפוס (כתיבה ארוכה של בקשה אחרת) לא מפיל בגללו את הבקשה; יתעדכן בפעם הבאה
+        try {
+            $now = now_iso();
+            db()->prepare('UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?')->execute([$now, $row['token_hash']]);
+            db()->prepare('UPDATE users SET last_seen_at = ? WHERE id = ?')->execute([$now, $row['id']]);
+        } catch (PDOException) { /* database is locked */ }
     }
     return $row;
 }
