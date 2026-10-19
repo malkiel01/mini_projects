@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/lib/dev.php';
+require_once __DIR__ . '/lib/orgs.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -41,7 +41,9 @@ $session = null;
 // פעולות שלא דורשות כניסה לאפליקציה.
 const PUBLIC_ACTIONS = ['health', 'me', 'register', 'verify', 'login', 'forgot', 'reset'];
 const POST_ACTIONS   = ['register', 'verify', 'login', 'forgot', 'reset', 'logout', 'client_error',
-                        'me_update', 'me_password', 'me_logout_others', 'dev_user'];
+                        'me_update', 'me_password', 'me_logout_others', 'dev_user', 'dev_org_force',
+                        'org_create', 'org_update', 'org_delete', 'member_add', 'member_set', 'member_remove',
+                        'fund_save', 'fund_archive', 'fund_order', 'contact_save', 'contact_archive', 'cat_save', 'cat_archive'];
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -60,7 +62,7 @@ try {
     $result = match ($action) {
         'health' => (function () {
             db();
-            return ['ok' => true, 'stage' => 1, 'php' => PHP_VERSION];
+            return ['ok' => true, 'stage' => 2, 'php' => PHP_VERSION];
         })(),
         'me' => $session
             ? ['ok' => true, 'user' => public_user($session), 'csrf' => $session['csrf']]
@@ -76,7 +78,26 @@ try {
         'me_update'        => me_update($session, $body),
         'me_password'      => me_password($session, $body),
         'me_logout_others' => me_logout_others($session),
+        // ארגונים — שלב 2 (lib/orgs.php)
+        'org_list'        => org_list($session),
+        'org_get'         => org_get($session, (int)($_GET['id'] ?? 0)),
+        'org_history'     => org_history($session, (int)($_GET['id'] ?? 0)),
+        'org_create'      => org_create($session, $body),
+        'org_update'      => org_update($session, $body),
+        'org_delete'      => org_delete($session, $body),
+        'member_add'      => member_add($session, $body),
+        'member_set'      => member_set($session, $body),
+        'member_remove'   => member_remove($session, $body),
+        'fund_save'       => fund_save($session, $body),
+        'fund_archive'    => fund_archive($session, $body),
+        'fund_order'      => fund_order($session, $body),
+        'contact_save'    => contact_save($session, $body),
+        'contact_archive' => contact_archive($session, $body),
+        'cat_save'        => cat_save($session, $body),
+        'cat_archive'     => cat_archive($session, $body),
         // אזור הפיתוח
+        'dev_orgs'       => dev_orgs($_GET),
+        'dev_org_force'  => dev_org_force($session, $body),
         'dev_users'      => dev_users(),
         'dev_user'       => dev_user_action($body, $session),
         'dev_log_list'   => dev_log_list($_GET),
