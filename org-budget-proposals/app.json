@@ -1,0 +1,18 @@
+{
+  "id": "org-budget-proposals",
+  "name": "הצעות תקציב לארגונים",
+  "icon": "📑",
+  "description": "בניית הצעת תקציב שנתית לארגון: קופות והקדשות, הכנסות והוצאות, ריכוז ונספח שכירויות — על בסיס השנה הקודמת, ובפלט Word, PDF ואקסל. בבנייה.",
+  "category": "documents",
+  "entry": "index.html",
+  "gate": true,
+  "restricted": true,
+  "version": "0.1",
+  "public": [
+    "index.html",
+    "manifest.webmanifest",
+    "sw.js",
+    "assets/**",
+    "api.php?action=health|me|register|verify|login|forgot|reset"
+  ]
+}
