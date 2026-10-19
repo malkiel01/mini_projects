@@ -4,9 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>איחוד PDF ותמונות</title>
+    <meta name="theme-color" content="#1a1a2e">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
     <link rel="stylesheet" href="assets/css/app.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- הספריות בתיקייה (לא מ-CDN) — כדי שהכלי יעבוד גם בלי רשת, מהמטמון של service-worker.js -->
+    <script src="assets/vendor/pdf-lib.min.js"></script>
+    <script src="assets/vendor/pdf.min.js"></script>
 </head>
 <body>
     <div class="topbar">
