@@ -32,6 +32,22 @@
         \Platform\Gate\deny($verdict, \Platform\Gate\base_url($_SERVER['SCRIPT_NAME'] ?? '/', $rel));
     }
     \Platform\Gate\record_visit($app);
+    $base = \Platform\Gate\base_url($_SERVER['SCRIPT_NAME'] ?? '/', $rel);
+    \Platform\Gate\touch_session($base);
+
+    // אפליקציה מחוברת: מי המשתמש — בלי redirect ובלי מסך (docs/auth.md, סעיף 7; docs/sso.md).
+    // רק כשיש לו הרשאה אליה. מפתח שאינו HTTP_* — לקוח לא יכול לזייף אותו בכותרת.
+    unset($_SERVER['PLATFORM_USER']);
+    try {
+        $cfg = \Platform\Gate\app_config($app);
+        $user = \Platform\Gate\current_user();
+        if ($cfg && !empty($cfg['gate']) && !\Platform\Gate\is_detached($app) && $user
+            && \Platform\Gate\can_use($user, $app, $cfg)) {
+            $_SERVER['PLATFORM_USER'] = json_encode(\Platform\Gate\identity($user), JSON_UNESCAPED_UNICODE);
+        }
+    } catch (\Throwable $e) {
+        error_log('platform identity: ' . $e->getMessage());
+    }
 
     // דף PHP של אפליקציה מחוברת — בדיקת ההתקנה והפס "התקנה" (lib/pwa.php). לא בדף ציבורי.
     try {

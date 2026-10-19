@@ -5,6 +5,7 @@
  *   GET  sso.php?client=<id>&state=<…>&return=<כתובת חזרה>   — הדפדפן של המשתמש
  *   POST sso.php?client=…&state=…&return=…                    — "המשך" / "ביטול" במסך האישור
  *   GET  sso.php?action=key                                   — המפתח הציבורי לבדיקת החתימה
+ *   GET  sso.php?action=config&client=<id>                    — מחוברת? ואילו שיטות כניסה פתוחות (docs/auth.md)
  *
  * בחזרה: <return>?token=<זהות חתומה>&state=… (או ?error=access_denied&state=…).
  * כתובת חזרה שאינה ב-"sso.return" של ה-app.json — רק דף שגיאה, לעולם לא הפניה.
@@ -15,6 +16,7 @@ declare(strict_types=1);
 require __DIR__ . '/lib/http.php';
 require __DIR__ . '/lib/auth.php';
 require __DIR__ . '/lib/sso.php';
+require_once __DIR__ . '/lib/access.php';
 
 header('X-Frame-Options: DENY');                          // מסך האישור לא ייטען במסגרת זרה (clickjacking)
 header("Content-Security-Policy: frame-ancestors 'none'");
@@ -26,6 +28,14 @@ try {
         header('Access-Control-Allow-Origin: *');        // ציבורי בכוונה — זה רק המפתח לבדיקה
         header('Cache-Control: public, max-age=3600');
         json_out(['alg' => 'Ed25519', 'key' => sso_keys()['public_key'], 'issuer' => sso_issuer()]);
+    }
+    if (($_GET['action'] ?? '') === 'config') {
+        // ציבורי: האפליקציה (גם בדומיין אחר) קוראת כאן איך נכנסים אליה — הפלטפורמה שולטת, היא מקיימת.
+        header('Access-Control-Allow-Origin: *');
+        header('Cache-Control: public, max-age=60');
+        $app = sso_app(is_string($_GET['client'] ?? null) ? $_GET['client'] : '');
+        if (!$app) json_out(['error' => 'האפליקציה לא רשומה'], 404);
+        json_out(['app' => $app['id'], 'connected' => $app['connected'], 'login' => $app['login']]);
     }
     sso_authorize();
 } catch (ApiError $e) {
@@ -56,6 +66,13 @@ function sso_authorize(): never
     }
     if ($user['status'] !== 'active') throw new ApiError('החשבון שלך עוד ממתין לאישור המנהל', 403);
 
+    // ההרשאה בפלטפורמה היא האישור (docs/auth.md, סעיף 3) — ונבדקת בכל כניסה, גם לאפליקציה מנותקת.
+    $app = sso_app($client['id']);
+    if ($user['role'] !== 'admin' && (!$app || !can_see($app, grants_of((int)$user['id'])))) {
+        sso_log($client['id'], (int)$user['id'], 'no-access');
+        throw new ApiError('אין לך הרשאת גישה לאפליקציה הזו — פנו למנהל', 403);
+    }
+
     if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if (!hash_equals($user['csrf'], (string)($_POST['csrf'] ?? ''))) throw new ApiError('בקשה לא תקינה — נסו שוב', 403);
         if (($_POST['decision'] ?? '') !== 'allow') {
@@ -63,10 +80,20 @@ function sso_authorize(): never
             sso_go(sso_redirect_url($return, ['error' => 'access_denied', 'state' => $state]));
         }
         sso_grant((int)$user['id'], $client['id']);
+    } elseif ($app && $app['connected']) {
+        // מחוברת — היא שלנו: בלי מסך אישור, הכניסה אוטומטית (docs/auth.md, סעיף 2).
+        if (!sso_has_consent((int)$user['id'], $client['id'])) sso_grant((int)$user['id'], $client['id']);
     } elseif (!sso_has_consent((int)$user['id'], $client['id'])) {
-        sso_consent_page($client, $user, $return);
+        sso_consent_page($client, $user, $return);   // מנותקת — פעם אחת, כמו בגוגל
     }
     sso_go(sso_redirect_url($return, ['token' => sso_issue_token($client, $user, $return, $state), 'state' => $state]));
+}
+
+/** האפליקציה כפי שהפלטפורמה רואה אותה (מחוברת, שיטות כניסה, קטגוריה) — או null. */
+function sso_app(string $id): ?array
+{
+    foreach (apps_effective() as $a) if ($a['id'] === $id) return $a;
+    return null;
 }
 
 function sso_go(string $url): never

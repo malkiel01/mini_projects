@@ -55,6 +55,7 @@ function admin_state(array $admin): never
             'category' => $a['category'], 'default_category' => $a['default_category'],
             'hidden' => $a['hidden'], 'install_ok' => $a['install_ok'], 'restricted' => $a['restricted'],
             'gate' => (bool)$a['gate'], 'external' => $a['external'], 'detached' => $a['detached'], 'connected' => $a['connected'],
+            'login' => $a['login'],
             'can_install' => $a['install']['pwa'] || $a['install']['apk'] || $a['install']['store'],
         ], apps_effective()),
     ]);
@@ -255,6 +256,13 @@ function admin_app_update(array $body): never
         db()->prepare($body['detached'] ? 'INSERT OR IGNORE INTO app_detached (app_id, detached_at) VALUES (?, ?)'
                                         : 'DELETE FROM app_detached WHERE app_id = ? AND ? IS NOT NULL')
             ->execute([$app['id'], now_iso()]);
+    }
+    // שיטות הכניסה כשהאפליקציה מנותקת (docs/auth.md, סעיף 6). נשמרות גם כשהיא מחוברת — לניתוק הבא.
+    if (isset($body['login_password']) || isset($body['login_google'])) {
+        $cur = $app['connected'] ? ['password' => true, 'google' => false] : $app['login'];
+        db()->prepare('INSERT INTO app_login (app_id, password, google) VALUES (?,?,?)
+                       ON CONFLICT(app_id) DO UPDATE SET password = excluded.password, google = excluded.google')
+            ->execute([$app['id'], (int)(bool)($body['login_password'] ?? $cur['password']), (int)(bool)($body['login_google'] ?? $cur['google'])]);
     }
     if (isset($body['install_ok'])) {
         db()->prepare($body['install_ok'] ? 'DELETE FROM install_hidden WHERE app_id = ?'

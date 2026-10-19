@@ -21,6 +21,7 @@ namespace Platform\Gate;
 const ROOT = __DIR__ . '/../..';
 const DB_FILE = __DIR__ . '/../data/platform.sqlite';
 const COOKIE = 'mp_session';
+const SESSION_DAYS = 182;   // כמו ב-auth.php: חצי שנה מהשימוש האחרון (docs/auth.md, סעיף 5)
 
 /** הגדרות השער של אפליקציה מתוך ה-app.json שלה, או null אם אינה רשומה. */
 function app_config(string $app): ?array
@@ -51,18 +52,58 @@ function is_public(array $cfg, string $path, array $params): bool
     return false;
 }
 
-/** המשתמש המחובר: [id, role, status] או null. */
+/** המשתמש המחובר: [id, role, status, username, display_name, email, email_verified_at, expires_at] או null. */
 function current_user(): ?array
 {
+    static $cache = [];
     $token = $_COOKIE[COOKIE] ?? '';
     if (!is_string($token) || strlen($token) !== 64 || !is_file(DB_FILE)) return null;
+    if (array_key_exists($token, $cache)) return $cache[$token];
     $st = pdo()->prepare(
-        'SELECT u.id, u.role, u.status FROM sessions s JOIN users u ON u.id = s.user_id
+        'SELECT u.id, u.role, u.status, u.username, u.display_name, u.email, u.email_verified_at, s.expires_at
+           FROM sessions s JOIN users u ON u.id = s.user_id
           WHERE s.token_hash = ? AND s.expires_at > ?'
     );
     $st->execute([hash('sha256', $token), gmdate('Y-m-d\TH:i:s\Z')]);
     $u = $st->fetch(\PDO::FETCH_ASSOC);
-    return $u && $u['status'] === 'active' ? $u : null;
+    return $cache[$token] = ($u && $u['status'] === 'active' ? $u : null);
+}
+
+/**
+ * חצי שנה מהשימוש האחרון: כל בקשה לאפליקציה מחוברת מאריכה את ההתחברות (פעם ביום לכל היותר, כדי
+ * לא לכתוב למסד בכל בקשה). בלי זה מי שעובד רק באפליקציות, בלי לפתוח את הפלטפורמה, היה מתנתק.
+ */
+function touch_session(string $base): void
+{
+    try {
+        $u = current_user();
+        if (!$u || strtotime($u['expires_at']) > time() + (SESSION_DAYS - 1) * 86400 || headers_sent()) return;
+        $expires = time() + SESSION_DAYS * 86400;
+        pdo()->prepare('UPDATE sessions SET expires_at = ? WHERE token_hash = ?')
+            ->execute([gmdate('Y-m-d\TH:i:s\Z', $expires), hash('sha256', (string)$_COOKIE[COOKIE])]);
+        setcookie(COOKIE, (string)$_COOKIE[COOKIE], [
+            'expires' => $expires, 'path' => $base, 'httponly' => true, 'samesite' => 'Lax',
+            'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+        ]);
+    } catch (\Throwable $e) {
+        error_log('platform gate session: ' . $e->getMessage());   // לעולם לא עוצר את הכלי
+    }
+}
+
+/**
+ * הזהות שהשער מעביר לאפליקציה מחוברת (docs/auth.md, סעיף 7): מי המשתמש, בלי redirect ובלי מסך.
+ * רק למשתמש שיש לו הרשאה לאפליקציה. אותם שדות כמו בזהות החתומה של הכניסה המאוחדת (lib/sso.php).
+ */
+function identity(array $user): array
+{
+    $verified = !empty($user['email']) && !empty($user['email_verified_at']);
+    $email = $verified ? $user['email'] : filter_var((string)$user['username'], FILTER_VALIDATE_EMAIL);
+    return [
+        'sub'            => (string)$user['id'],
+        'name'           => (string)$user['display_name'],
+        'email'          => $email ? mb_strtolower((string)$email) : null,
+        'email_verified' => $verified,
+    ];
 }
 
 function pdo(): \PDO
@@ -148,7 +189,7 @@ function deny(array $verdict, string $base): never
     header('Cache-Control: no-store');
     $messages = [
         'login'     => 'נדרשת כניסה',
-        'forbidden' => 'אין לך הרשאה לאפליקציה הזו',
+        'forbidden' => 'אין לך הרשאת גישה לאפליקציה הזו — פנו למנהל',
         'error'     => 'תקלה זמנית בבדיקת ההרשאה',
     ];
     if ($isPage) {

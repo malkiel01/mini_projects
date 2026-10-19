@@ -13,7 +13,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/db.php';
 
 const SESSION_COOKIE   = 'mp_session';
-const SESSION_DAYS     = 30;
+const SESSION_DAYS     = 182;  // חצי שנה מהשימוש האחרון — מתחדש (docs/auth.md, סעיף 5; גם lib/gate.php)
 const MAX_FAILURES     = 5;
 const LOCK_MINUTES     = 15;
 const MIN_PASSWORD_LEN = 8;
@@ -47,13 +47,20 @@ function current_user(): ?array
     if (!is_string($token) || strlen($token) !== 64) return null;
 
     $st = db()->prepare(
-        'SELECT u.id, u.username, u.display_name, u.role, u.status, u.must_change_pw, u.email, u.email_verified_at, s.csrf
+        'SELECT u.id, u.username, u.display_name, u.role, u.status, u.must_change_pw, u.email, u.email_verified_at, s.csrf, s.expires_at
            FROM sessions s JOIN users u ON u.id = s.user_id
           WHERE s.token_hash = ? AND s.expires_at > ?'
     );
     $st->execute([hash('sha256', $token), now_iso()]);
     $row = $st->fetch();
     if ($row && $row['status'] !== 'blocked') $cached = $row;
+    // מתחדש: חצי שנה מהשימוש האחרון. כותבים למסד פעם ביום לכל היותר.
+    if ($cached && strtotime($cached['expires_at']) < time() + (SESSION_DAYS - 1) * 86400 && !headers_sent()) {
+        $expires = time() + SESSION_DAYS * 86400;
+        db()->prepare('UPDATE sessions SET expires_at = ? WHERE token_hash = ?')
+            ->execute([gmdate('Y-m-d\TH:i:s\Z', $expires), hash('sha256', $token)]);
+        set_session_cookie($token, $expires);
+    }
     return $cached;
 }
 

@@ -782,6 +782,23 @@ window.PlatformAdmin = (() => {
         return el('label', { className: `small conn-toggle${app.connected ? '' : ' off'}` }, [box, app.connected ? ' 🔌 מחוברת' : ' 🔌 מנותקת']);
     }
 
+    // שיטות הכניסה (platform/docs/auth.md): מחוברת — רק דרך הכלים הדיגיטליים, אוטומטית. מנותקת — המנהל
+    // בוחר מה עוד פתוח; "כניסה עם הכלים הדיגיטליים" תמיד פתוחה. האפליקציה קוראת את זה (sso.php?action=config).
+    function loginControl(app) {
+        if (app.external && !app.gate) return el('span');
+        if (app.connected) return el('span', { className: 'chip', textContent: '🔑 כניסה: דרך הכלים הדיגיטליים בלבד' });
+        const opt = (key, text) => {
+            const box = el('input', { type: 'checkbox', checked: app.login[key] });
+            box.addEventListener('change', () => act('admin_app_update', { id: app.id, [`login_${key}`]: box.checked },
+                `${app.name}: ${text} — ${box.checked ? 'פתוחה' : 'סגורה'}`));
+            return el('label', { className: 'small' }, [box, ' ' + text]);
+        };
+        return el('span', { className: 'login-opts' }, [
+            el('span', { className: 'small muted', textContent: '🔑 כניסה: הכלים הדיגיטליים +' }),
+            opt('password', 'סיסמה משלה'), opt('google', 'Google'),
+        ]);
+    }
+
     // ---------- קטגוריות ואפליקציות ----------
 
     function renderCatalog() {
@@ -824,7 +841,7 @@ window.PlatformAdmin = (() => {
                     inst.checked ? `${app.name}: התקנה והורדה מוצגות` : `${app.name}: התקנה והורדה הוסתרו`));
                 row.push(el('label', { className: 'small' }, [inst, ' 📲 התקנה והורדה']));
             }
-            row.push(connectionControl(app));
+            row.push(connectionControl(app), loginControl(app));
             return el('div', { className: `app-row${app.hidden ? ' is-hidden' : ''}` }, row);
         });
 
@@ -833,7 +850,8 @@ window.PlatformAdmin = (() => {
             el('h3', { textContent: 'אפליקציות' }),
             el('p', { className: 'muted small', textContent: 'אפליקציה מוסתרת לא מוצגת לאף אחד, גם לא למי שקיבל הרשאה — רק כאן. ' +
                 '"📲 התקנה והורדה" — מסומן כברירת מחדל: מי שרואה את האפליקציה יכול גם להתקין אותה (כאפליקציה נפרדת, APK או חנות). מורידים את הסימון כדי להסתיר. ' +
-                '"🔌 מחוברת" — נכנסים לאפליקציה רק עם חשבון בפלטפורמה והרשאה אליה. מורידים את הסימון כדי לנתק אותה: היא תעמוד לבד, כמו קדישא.' }),
+                '"🔌 מחוברת" — נכנסים לאפליקציה רק עם חשבון בפלטפורמה והרשאה אליה, והכניסה אליה אוטומטית. מורידים את הסימון כדי לנתק אותה: היא תעמוד לבד, ' +
+                'ובוחרים איך עוד אפשר להיכנס אליה (סיסמה משלה, Google). אפשר לחבר מחדש בכל רגע.' }),
             ...apps,
         ]);
     }

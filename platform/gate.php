@@ -64,6 +64,7 @@ $verdict = decide($app, $rel, $params);
 if ($verdict !== null) {
     deny($verdict, $base);
 }
+\Platform\Gate\touch_session($base);
 if (in_array($ext, ['html', 'htm'], true)) record_visit($app);
 
 // דף HTML / manifest של אפליקציה מחוברת — מוגשים עם התוספות של הפלטפורמה (lib/pwa.php):
