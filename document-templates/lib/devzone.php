@@ -150,6 +150,7 @@ function dev_health(): array
             'errors' => $count("SELECT COUNT(*) FROM dev_log WHERE at > '$day' AND status >= 500"),
             'js_errors' => $count("SELECT COUNT(*) FROM dev_log WHERE at > '$day' AND action = 'client_error'"),
         ],
+        'pdf_clean' => pdf_settings_status(),   // ההגדרות המוכנות שבתוך קובצי PDF — lib/pdfclean.php
         'chain_broken' => array_values(array_filter(
             array_map('intval', db()->query('SELECT id FROM documents WHERE deleted_at IS NULL ORDER BY id DESC LIMIT 300')->fetchAll(PDO::FETCH_COLUMN)),
             fn($id) => !doc_verify_chain($id))),

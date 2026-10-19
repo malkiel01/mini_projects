@@ -86,10 +86,39 @@ function pdf_settings_sweep(): void
          JOIN templates t ON t.id = v.template_id AND v.version = t.current_version
          WHERE a.mime = 'application/pdf'"
     )->fetchAll();
+    $cleaned = 0;
     foreach ($rows as $r) {
         $schema = json_decode((string)unseal($r['schema_enc']), true) ?: [];
         if (empty($schema['fields']) && empty($schema['parsed'])) continue;
-        try { asset_clean_settings($r['path']); } catch (Throwable) { /* קובץ חסר — ממשיכים */ }
+        try { $cleaned += (int)asset_clean_settings($r['path']); } catch (Throwable) { /* קובץ חסר — ממשיכים */ }
     }
-    @file_put_contents($mark, now_iso());
+    @file_put_contents($mark, json_encode(['at' => now_iso(), 'cleaned' => $cleaned]));
+}
+
+/**
+ * לאזור המפתח: מתי רץ הניקוי החד-פעמי, וכמה קבצים עדיין נושאים הגדרות — נבדק עכשיו, קובץ-קובץ.
+ * waiting: תבניות שהעורך עוד לא פתח (ההגדרות עוד נחוצות — יתנקו בשמירה הראשונה).
+ */
+function pdf_settings_status(): array
+{
+    $mark = DT_DATA_DIR . '/pdf-settings-cleaned';
+    $raw = is_file($mark) ? (string)file_get_contents($mark) : '';
+    $j = json_decode($raw, true);
+    $out = ['sweep_at' => is_array($j) ? $j['at'] : ($raw ?: null), 'sweep_cleaned' => is_array($j) ? (int)$j['cleaned'] : null,
+        'files' => 0, 'clean' => 0, 'dirty' => 0, 'waiting' => 0, 'missing' => 0];
+    $rows = db()->query(
+        "SELECT a.path, MAX(v.schema_enc) AS schema_enc FROM template_assets a
+         JOIN template_versions v ON v.id = a.template_version_id
+         JOIN templates t ON t.id = v.template_id AND v.version = t.current_version AND t.deleted_at IS NULL
+         WHERE a.mime = 'application/pdf' GROUP BY a.path"
+    )->fetchAll();
+    foreach ($rows as $r) {
+        $out['files']++;
+        try { $dirty = pdf_strip_settings(load_file($r['path'])) !== null; }
+        catch (Throwable) { $out['missing']++; continue; }
+        if (!$dirty) { $out['clean']++; continue; }
+        $schema = json_decode((string)unseal($r['schema_enc']), true) ?: [];
+        $out[empty($schema['fields']) && empty($schema['parsed']) ? 'waiting' : 'dirty']++;
+    }
+    return $out;
 }
