@@ -20,7 +20,12 @@
     const isIOS = /iPhone|iPad|iPod/.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const isMobile = isIOS || /Android/.test(UA);
     const params = new URLSearchParams(location.search);
-    const forced = params.has('pwa-install');
+    // ?pwa-install — הכפתור "התקנה כאפליקציה" בפלטפורמה. נשמר בעוגייה ל-15 דקות, כי אפליקציה שמעבירה
+    // מיד לדף כניסה משלה מאבדת את הפרמטר; השער (lib/pwa.php) מוסיף את הסקריפט גם לדף ההוא.
+    const INSTALL_COOKIE = 'platform-pwa-install';
+    const forced = params.has('pwa-install') || document.cookie.split('; ').includes(`${INSTALL_COOKIE}=${APP}`);
+    const endForced = () => { document.cookie = `${INSTALL_COOKIE}=; path=/; max-age=0; samesite=lax`; };
+    if (params.has('pwa-install')) document.cookie = `${INSTALL_COOKIE}=${APP}; path=/; max-age=900; samesite=lax`;
     const appMode = ['standalone', 'fullscreen', 'minimal-ui'].some(m => matchMedia(`(display-mode: ${m})`).matches)
         || navigator.standalone === true;
     // "מצב אפליקציה" לבד לא מוכיח שהאפליקציה הזו מותקנת — היא יכולה לרוץ בתוך החלון של
@@ -65,7 +70,7 @@
         }).catch(() => {});
     }
 
-    if (standalone) { report('installed', 'opened'); return; }   // נפתחה מהאייקון — אין מה להציע
+    if (standalone) { report('installed', 'opened'); endForced(); return; }   // נפתחה מהאייקון — אין מה להציע
     if (appMode) return;   // בתוך חלון של אפליקציה אחרת — לא מדווחים ולא מציגים פס
 
     let promptEvent = null, installed = false, bar = null;
@@ -79,6 +84,7 @@
     addEventListener('appinstalled', () => {
         installed = true;
         report('installed', 'installed');
+        endForced();
         bar?.done();
     });
     if ('getInstalledRelatedApps' in navigator) {
@@ -86,6 +92,7 @@
             if (list.some(a => a.platform === 'webapp')) {
                 installed = true;
                 report('installed', 'detected');
+                endForced();
                 bar?.remove();
             }
         }).catch(() => {});
@@ -146,6 +153,7 @@
         });
         root.querySelector('.x').addEventListener('click', () => {
             try { localStorage.setItem(KEY, String(Date.now() + 3 * 86400000)); } catch { /* */ }
+            endForced();
             api.remove();
         });
         document.body.append(host);
