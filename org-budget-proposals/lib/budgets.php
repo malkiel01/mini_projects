@@ -948,10 +948,14 @@ function srow_save(array $s, array $b): array
     $section = text_in($b['section'] ?? '', 120, 'כותרת הטבלה', true);
     $label = text_in($b['label'] ?? '', 160, 'שם השורה', true);
     $id = (int)($b['id'] ?? 0);
+    $isNew = !$id;
     if ($id) {
         $st = db()->prepare('UPDATE summary_rows SET section = ?, label = ? WHERE id = ? AND budget_id = ?');
         $st->execute([$section, $label, $id, $bud['id']]);
         if (!$st->rowCount()) throw new ApiError('שורת הריכוז לא נמצאה', 404);
+        $st = db()->prepare('SELECT direction FROM summary_rows WHERE id = ?');
+        $st->execute([$id]);
+        $dir = (string)$st->fetchColumn();
     } else {
         $dir = one_of($b['direction'] ?? '', DIRECTIONS, 'כיוון');
         $st = db()->prepare('SELECT COALESCE(MAX(sort), -1) + 1 FROM summary_rows WHERE budget_id = ?');
@@ -959,8 +963,12 @@ function srow_save(array $s, array $b): array
         db()->prepare('INSERT INTO summary_rows (budget_id, direction, section, label, sort) VALUES (?, ?, ?, ?, ?)')
             ->execute([$bud['id'], $dir, $section, $label, (int)$st->fetchColumn()]);
         $id = (int)db()->lastInsertId();
-        // שיוך קופות: כל הקופות שנבחרו מקבלות את השורה כברירת מחדל לכיוון הזה
+    }
+    // שיוך קופות: הקופות שנבחרו מקבלות את השורה כברירת מחדל לכיוון הזה. בעריכה — גם הסרה של מי שלא נבחרה
+    // (בלי fund_ids בעריכה — השיוך לא משתנה)
+    if ($isNew || array_key_exists('fund_ids', $b)) {
         $col = $dir === 'income' ? 'row_income' : 'row_expense';
+        if (!$isNew) db()->prepare("UPDATE budget_funds SET $col = NULL WHERE budget_id = ? AND $col = ?")->execute([$bud['id'], $id]);
         $st = db()->prepare("UPDATE budget_funds SET $col = ? WHERE budget_id = ? AND fund_id = ?");
         foreach (array_map('intval', (array)($b['fund_ids'] ?? [])) as $fid) $st->execute([$id, $bud['id'], $fid]);
     }
@@ -986,6 +994,7 @@ function srow_order(array $s, array $b): array
     $bud = budget_access($s, (int)($b['budget_id'] ?? 0), true);
     $st = db()->prepare('UPDATE summary_rows SET sort = ? WHERE id = ? AND budget_id = ?');
     foreach (array_map('intval', (array)($b['ids'] ?? [])) as $i => $id) $st->execute([$i, $id, $bud['id']]);
+    touch_budget((int)$bud['id']);
     return ['ok' => true];
 }
 

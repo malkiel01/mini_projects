@@ -1301,11 +1301,27 @@ function budSummary(box, d) {
         }), h('li.card', { style: 'cursor:default;background:var(--bg)' }, h('div.body', h('div.l1', h('span', 'סה"כ')), cells(s.total, true))))];
     const note = h('textarea', { rows: 2, maxLength: 500, disabled: !d.edit }, b.summary_note || '');
     note.addEventListener('change', () => saveBudgetFields(d, { summary_note: note.value }));
+    // סידור: השורות המוגדרות, לפי הסדר במסמך (מקטע הכנסות ומקטע הוצאות יכולים להתחלף, כמו בארגון הקהילות)
+    const sorting = d.edit && sessionStorage.getItem('ob-srow-sort') === '1' && d.rows.length > 1;
+    const move = async (i, step) => {
+        const ids = d.rows.map(x => x.id);
+        [ids[i], ids[i + step]] = [ids[i + step], ids[i]];
+        await api('srow_order', { budget_id: b.id, ids }).catch(e => toast(e.message, true));
+        viewBudget(b.id);
+    };
+    const sortList = () => [h('p.hint', 'הסדר של השורות שהוגדרו — כך הן יופיעו בדף הריכוז. שורות אוטומטיות באות אחריהן.'),
+        h('ul.list', ...d.rows.map((x, i) => h('li.card', { style: 'cursor:default' },
+            h('div.body', h('div.l1', h('span', x.label)), h('div.l2', `${DIR_LABEL[x.direction]} · ${x.section}`)),
+            h('span.row-btns', { style: 'gap:0' },
+                h('button.icon-btn', { type: 'button', 'aria-label': 'למעלה', disabled: i === 0, onclick: () => move(i, -1) }, '▲'),
+                h('button.icon-btn', { type: 'button', 'aria-label': 'למטה', disabled: i === d.rows.length - 1, onclick: () => move(i, 1) }, '▼')))))];
     put(box, 
         h('p.hint', 'דף הריכוז: כל שורה כאן = סכום של שורות מהקופות. שורה "אוטומטית" נבנית לפי סוג הקופה; לחיצה עליה הופכת אותה לשורה שאפשר לשנות לה שם ומקטע.'),
         d.edit ? h('div.toolbar', { style: 'justify-content:flex-end' },
-            h('button.btn.primary', { type: 'button', onclick: () => srowSheet(d) }, h('span', { 'aria-hidden': 'true' }, '+'), ' שורת ריכוז')) : null,
-        d.summary.sections.length ? [head, ...d.summary.sections.flatMap(sec)] : h('p.empty', 'אין עדיין שורות בהצעה'),
+            d.rows.length > 1 ? h('button.btn.ghost', { type: 'button', 'aria-pressed': String(sorting),
+                onclick: () => { sessionStorage.setItem('ob-srow-sort', sorting ? '0' : '1'); viewBudget(b.id); } }, sorting ? '✓ סיום' : '↕️ סידור') : null,
+            sorting ? null : h('button.btn.primary', { type: 'button', onclick: () => srowSheet(d) }, h('span', { 'aria-hidden': 'true' }, '+'), ' שורת ריכוז')) : null,
+        sorting ? sortList() : d.summary.sections.length ? [head, ...d.summary.sections.flatMap(sec)] : h('p.empty', 'אין עדיין שורות בהצעה'),
         h('p.sec-title', 'הערה מתחת לריכוז'), note);
 }
 
@@ -1315,7 +1331,9 @@ function srowSheet(d, r = null) {
     const rid = defined ? +r.key.slice(4) : null;
     const dir = r ? r.direction : 'income';
     const sections = [...new Set(d.summary.sections.map(s => s.title).concat(d.rows.map(x => x.section)))];
-    const fundsBox = h('div.chips', ...d.funds.map(f => h('label', h('input', { type: 'checkbox', name: 'fund_ids', value: f.id, checked: r ? r.funds.includes(f.id) : false }), h('span', f.name))));
+    // שורה מוגדרת — הקופות שהיא ברירת המחדל שלהן; אוטומטית — הקופות שהשורות שלהן נכנסות אליה עכשיו
+    const isDefault = f => defined ? f[`row_${dir}`] === rid : r ? r.funds.includes(f.id) : false;
+    const fundsBox = h('div.chips', ...d.funds.map(f => h('label', h('input', { type: 'checkbox', name: 'fund_ids', value: f.id, checked: isDefault(f) }), h('span', f.name))));
     const extra = [];
     if (defined) {
         const rm = h('button.btn.ghost.danger', { type: 'button' }, '🗑️ מחיקת שורת הריכוז');
@@ -1330,7 +1348,8 @@ function srowSheet(d, r = null) {
         h('div.fields',
             field('כותרת הטבלה (מקטע) *', 'section', r?.section, { wide: true, max: 120, attrs: { list: 'sections', placeholder: 'למשל: הכנסות מהקדשות' } }),
             field('שם השורה *', 'label', r?.label, { wide: true, max: 160 })),
-        defined ? h('p.hint', 'שורות משויכות לשורת ריכוז בעריכת השורה, או כברירת מחדל של קופה.') : h('section.group', h('h3', 'הקופות שנכנסות לשורה הזו', h('small', 'כל השורות שלהן בכיוון הזה')), fundsBox),
+        h('section.group', h('h3', 'הקופות שנכנסות לשורה הזו', h('small', 'כל השורות שלהן בכיוון הזה')), fundsBox,
+            h('p.hint', { style: 'margin:0' }, 'שורה בודדת משייכים לשורת ריכוז אחרת בעריכת השורה ("שורת ריכוז").')),
     ].filter(Boolean), async x => {
         const ids = [...fundsBox.querySelectorAll('input:checked')].map(i => +i.value);
         await api('srow_save', { budget_id: b.id, id: rid, direction: x.direction || dir, section: x.section, label: x.label, fund_ids: ids });

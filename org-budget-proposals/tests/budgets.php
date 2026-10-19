@@ -116,6 +116,17 @@ $sec = array_values(array_filter($g['summary']['sections'], fn($x) => $x['title'
 check($sec['rows'][0]['amount'] === 258000 && $sec['total']['amount'] === 258000, 'שורה ששויכה לשורת ריכוז — בתוך המקטע שלה, עם סה"כ');
 expect_error(fn() => line_save($editor, ['budget_id' => $b, 'id' => line($g, 'הכנסות כלליות')['id'], 'title' => 'הכנסות כלליות', 'amount' => 80000, 'summary_row_id' => $r]),
     422, 'שורת הכנסה לא משויכת לשורת ריכוז של הוצאות');
+$def = fn($fid, $col) => array_column(budget_get($editor, $b)['funds'], null, 'id')[$fid][$col];
+$r2 = srow_save($editor, ['budget_id' => $b, 'direction' => 'expense', 'section' => 'הוצאות מהקדשות', 'label' => 'הוצ\' הקדשות דתיים'])['id'];
+srow_save($editor, ['budget_id' => $b, 'id' => $r2, 'section' => 'הוצאות מהקדשות', 'label' => 'הוצ\' הקדשות דתיים', 'fund_ids' => [$mesila]]);
+check($def($mesila, 'row_expense') === $r2, 'שורת ריכוז קיימת: אפשר לבחור לה קופות (ברירת המחדל) גם אחרי שנוצרה');
+srow_save($editor, ['budget_id' => $b, 'id' => $r2, 'section' => 'הוצאות מהקדשות', 'label' => 'הוצ\' הקדשות דתיים']);
+check($def($mesila, 'row_expense') === $r2, 'עריכה בלי fund_ids — השיוך נשאר');
+srow_save($editor, ['budget_id' => $b, 'id' => $r2, 'section' => 'הוצאות מהקדשות', 'label' => 'הוצ\' הקדשות דתיים', 'fund_ids' => []]);
+check($def($mesila, 'row_expense') === null, 'קופה שהוסרה מהשורה — חוזרת לברירת המחדל');
+srow_order($editor, ['budget_id' => $b, 'ids' => [$r2, $r]]);
+check(array_column(budget_get($editor, $b)['rows'], 'id') === [$r2, $r], 'סדר שורות הריכוז משתנה מהממשק');
+srow_delete($editor, ['budget_id' => $b, 'id' => $r2]);
 bfund_set($editor, ['budget_id' => $b, 'fund_id' => $mesila, 'notes_expense' => '* הערה אחרי הטבלה']);
 check(array_column(budget_get($editor, $b)['funds'], null, 'id')[$mesila]['notes_expense'] === '* הערה אחרי הטבלה', 'הערה אחרי הטבלה של קופה');
 check(budget_get($editor, $b)['summary']['income'] === 780756 + 1674000 + 80000 + 69000 + 258000, 'סה"כ הכנסות');
