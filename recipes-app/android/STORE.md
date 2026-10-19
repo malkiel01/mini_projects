@@ -38,7 +38,9 @@ GitHub → **Settings** → **Secrets and variables** → **Actions** → **New 
 
 | Name | Secret |
 | --- | --- |
-| `RECIPES_KEYSTORE_PASSWORD` | סיסמה ארוכה — **לפחות 16 תווים**, אקראית |
+| `ANDROID_KEYSTORE_PASSWORD` | סיסמה ארוכה — **לפחות 16 תווים**, אקראית. **משותפת לכל האפליקציות** (`platform/docs/rollout.md`, צעד 5) — אם כבר קיימת, לא ליצור חדשה |
+
+`RECIPES_KEYSTORE_PASSWORD` (הסוד הישן) נקרא רק כגיבוי, כשהמשותף לא קיים.
 
 **לשמור את הסיסמה גם אצלך** (מנהל סיסמאות). בבנייה הראשונה נוצר מפתח ההעלאה ונשמר בריפו
 **מוצפן בסיסמה הזאת** (`keystore/upload.jks.enc`). מוצפן הוא חסר ערך בלי הסיסמה. גוגל מחזיקה
