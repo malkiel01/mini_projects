@@ -499,7 +499,7 @@ const EVENT_LABELS = [
     'fund_create' => 'הוספת קופה', 'fund_update' => 'עדכון קופה', 'fund_archive' => 'הסרת קופה',
     'contact_create' => 'הוספת גורם', 'contact_update' => 'עדכון גורם', 'contact_archive' => 'הסרת גורם',
     'cat_create' => 'הוספת סעיף', 'cat_update' => 'עדכון סעיף', 'cat_archive' => 'הסרת סעיף',
-    'budget_create' => 'פתיחת הצעת תקציב', 'budget_status' => 'שינוי מצב הצעה', 'budget_delete' => 'מחיקת הצעה',
+    'budget_create' => 'פתיחת הצעת תקציב', 'budget_status' => 'שינוי מצב הצעה', 'budget_delete' => 'מחיקת הצעה', 'org_import' => 'ייבוא מקובץ',
     'dev_force' => 'פעולת מפתח',
 ];
 

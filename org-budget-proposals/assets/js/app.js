@@ -301,8 +301,9 @@ async function viewHome() {
     put(main, h('p.empty', 'טוען…'));
     const { orgs } = await api('org_list').catch(err => (toast(err.message, true), { orgs: [] }));
     const add = h('button.btn.primary', { type: 'button', onclick: () => orgSheet() }, h('span', { 'aria-hidden': 'true' }, '+'), ' ארגון');
+    const imp = h('button.icon-btn', { type: 'button', 'aria-label': 'ייבוא ארגון מקובץ', title: 'ייבוא מקובץ', onclick: importSheet }, '📥');
     put(main, 
-        h('div.toolbar', h('p.sec-title', { style: 'flex:1;margin:0' }, 'הארגונים שלי'), add),
+        h('div.toolbar', h('p.sec-title', { style: 'flex:1;margin:0' }, 'הארגונים שלי'), imp, add),
         orgs.length
             ? h('ul.list', ...orgs.map(o => h('li', h('button.use-row', { type: 'button', onclick: () => (location.hash = `#/org/${o.id}`) },
                 h('span.use-ic', { 'aria-hidden': 'true' }, '🏛️'),
@@ -936,16 +937,17 @@ async function viewBudget(id, fundId = null) {
             sm.unbalanced ? h('span.chip.bad', `${sm.unbalanced} קופות לא מאוזנות`) : h('span.chip.ok', 'כל הקופות מאוזנות'),
             open ? h('span.chip.warn', `💬 ${open} הערות פתוחות`) : null),
         !d.edit && canEdit(d.org.role) ? h('p.hint', { style: 'margin:0' }, 'ההצעה נעולה. לעריכה — "⋯" ← החזרה לטיוטה.') : null);
-    const tabs = [['funds', '🏦 קופות', d.funds.length], ['summary', '📊 ריכוז', ''], ['plan', '📝 שער ותכנית', ''], ['comments', '💬 הערות', open || '']];
+    const leases = d.appendix.reduce((a, g) => a + g.rows.length, 0);
+    const tabs = [['funds', '🏦 קופות', d.funds.length], ['summary', '📊 ריכוז', ''], ['appendix', '🏠 נספח', leases || ''], ['plan', '📝 שער ותכנית', ''], ['comments', '💬 הערות', open || '']];
     let cur = sessionStorage.getItem('ob-bud-tab') || 'funds';
     if (!tabs.some(t => t[0] === cur)) cur = 'funds';
     const box = h('div');
     put(main, card,
-        h('div.seg-tabs', { role: 'tablist', style: 'grid-template-columns:repeat(4,minmax(0,1fr))' }, ...tabs.map(([k, l, n]) =>
+        h('div.seg-tabs', { role: 'tablist', style: 'grid-template-columns:repeat(5,minmax(0,1fr))' }, ...tabs.map(([k, l, n]) =>
             h('button', { role: 'tab', type: 'button', 'aria-selected': String(k === cur),
                 onclick: () => { sessionStorage.setItem('ob-bud-tab', k); viewBudget(id); } }, l, h('small', n || '')))),
         box);
-    ({ funds: budFunds, summary: budSummary, plan: budPlan, comments: budComments })[cur](box, d);
+    ({ funds: budFunds, summary: budSummary, appendix: budAppendix, plan: budPlan, comments: budComments })[cur](box, d);
 }
 
 function budFunds(box, d) {
@@ -975,7 +977,7 @@ function viewBudgetFund(d, fundId) {
     const b = d.budget;
     const f = d.funds.find(x => x.id === fundId);
     if (!f) { location.hash = `#/budget/${b.id}`; return; }
-    const dir = sessionStorage.getItem('ob-fund-dir') || 'income';
+    const dir = sessionStorage.getItem('ob-fund-dir') || (b.expense_first ? 'expense' : 'income');
     setHeader(f.name, `הצעת ${b.year} · ${f.address || d.org.name}`, true);
     const bal = d.summary.balance.find(x => x.fund_id === fundId);
     const lines = d.lines.filter(l => l.fund_id === fundId && l.direction === dir);
@@ -987,14 +989,16 @@ function viewBudgetFund(d, fundId) {
         await api('line_order', { budget_id: b.id, ids }).catch(e => toast(e.message, true));
         viewBudget(b.id, fundId);
     };
-    const total = k => lines.reduce((a, l) => a + (l[k] || 0), 0);
-    const dseg = seg('dir', [['income', `הכנסות ${money(bal.income)}`], ['expense', `הוצאות ${money(bal.expense)}`]], dir, 'הכנסות או הוצאות');
+    // שורה "רק בריכוז" (למשל הלוואה בחבר"ק) — לא נספרת בסה"כ של הטבלה, כמו במסמך
+    const total = k => lines.reduce((a, l) => a + (l.summary_only ? 0 : (l[k] || 0)), 0);
+    const dirs = [['income', `הכנסות ${money(bal.income)}`], ['expense', `הוצאות ${money(bal.expense)}`]];
+    const dseg = seg('dir', b.expense_first ? dirs.reverse() : dirs, dir, 'הכנסות או הוצאות');
     dseg.addEventListener('change', e => { sessionStorage.setItem('ob-fund-dir', e.target.value); viewBudget(b.id, fundId); });
 
     const rows = lines.map((l, i) => h('li.card', { tabindex: 0, role: 'button', onclick: () => sorting || lineSheet(d, f, dir, l), onkeydown: e => e.key === 'Enter' && lineSheet(d, f, dir, l) },
         h('span.avatar', { style: '--h:220;width:28px;height:28px;font-size:.75rem', 'aria-hidden': 'true' }, i + 1),
         h('div.body',
-            h('div.l1', h('span', l.transfer ? '🔁 ' : '', l.title), h('span.t', { style: 'font-weight:700;color:var(--ink);font-size:.95rem' }, money(l.amount))),
+            h('div.l1', h('span', l.transfer ? '🔁 ' : '', l.lease ? '🏠 ' : '', l.title, l.summary_only ? h('span.chip', { style: 'margin-inline-start:6px' }, 'רק בריכוז') : null), h('span.t', { style: 'font-weight:700;color:var(--ink);font-size:.95rem' }, money(l.amount))),
             l.subtitle ? h('div.l2', l.subtitle) : null,
             h('div.l2', `קודם ${money(l.prev_budget)} · ניצול ${money(l.prev_actual)}`, l.calc_note || l.cell_note ? ` · ${[l.calc_note, l.cell_note].filter(Boolean).join(' · ')}` : '',
                 cmt[l.id] ? ` · 💬 ${cmt[l.id].length}` : '')),
@@ -1077,6 +1081,7 @@ function lineSheet(d, f, dir, l = null) {
                 h('dt', `ניצול ${b.year - 1}`), h('dd', money(l.prev_actual)),
                 h('dt', `ניצול ${b.year}`), h('dd', money(l.actual)),
                 l.contact ? [h('dt', 'גורם'), h('dd', l.contact)] : null,
+                l.lease ? [h('dt', 'שכירות'), h('dd', [l.lease.property, l.lease.tenant].filter(Boolean).join(' · ') || 'כן — בנספח')] : null,
                 l.transfer ? [h('dt', 'העברה'), h('dd', l.transfer.map(p => `${p.fund} · ${p.org}`).join(', ') || 'הצד השני עוד לא בהצעה')] : null),
             commentBox]);
         return;
@@ -1104,10 +1109,13 @@ function lineSheet(d, f, dir, l = null) {
             moneyField(`ניצול ${b.year} (בפועל)`, 'actual', l?.actual)),
         field('הערה בתא (מתחת לסכום)', 'cell_note', l?.cell_note, { wide: true, max: 160 }),
         h('div.fields', h('label.f', h('span', 'גורם (לקוח / ספק)'), contact), h('label.f', h('span', 'שורת ריכוז'), srow)),
+        h('label.switch', h('input', { type: 'checkbox', name: 'summary_only', value: '1', checked: !!l?.summary_only }), h('span', 'רק בדף הריכוז (לא בטבלת הקופה)')),
+        dir === 'income' ? leaseBox(d, f, l) : null,
     ].filter(Boolean), async x => {
         const body = { budget_id: b.id, id: l?.id || null, fund_id: f.id, direction: dir, title: x.title, subtitle: x.subtitle,
             contact_id: x.contact_id || null, prev_budget: x.prev_budget, prev_actual: x.prev_actual, actual: x.actual,
-            cell_note: x.cell_note, summary_row_id: x.summary_row_id || null };
+            cell_note: x.cell_note, summary_row_id: x.summary_row_id || null, summary_only: x.summary_only ? 1 : 0,
+            lease: x.lease ? { property: x.lease_property, tenant: x.lease_tenant, monthly: x.lease_monthly, annual: x.lease_annual, period: x.lease_period } : null };
         if (x.mode === 'calc') body.calc = { monthly: x.monthly, from: x.from, to: x.to, change_month: x.change_month || 0, change_pct: x.change_pct || 0 };
         else body.amount = x.amount;
         await api('line_save', body);
@@ -1128,19 +1136,89 @@ function transferSheet(d, f) {
         if (!tTo.dataset.touched) tTo.value = `העברה מ${f.name}`;
     };
     [tFrom, tTo].forEach(i => i.addEventListener('input', () => { i.dataset.touched = '1'; }));
-    to.addEventListener('change', fill);
+    const join = h('select', { name: 'to_line_id' });
+    const joinBox = h('label.f', h('span', 'בקופה שם'), join);
+    const fillJoin = () => {
+        const t = d.targets.find(x => x.id === +to.value);
+        const inc = t.org_id === d.org.id ? d.lines.filter(l => l.fund_id === t.id && l.direction === 'income') : [];
+        join.replaceChildren(h('option', { value: '' }, 'שורת הכנסה חדשה'),
+            ...inc.map(l => h('option', { value: l.id }, `להצטרף ל"${l.title}"${l.transfer ? ' (כבר מקבלת ' + l.transfer.length + ')' : ''}`)));
+        joinBox.hidden = !inc.length;
+        tTo.closest('label').hidden = !!join.value;
+    };
+    join.addEventListener('change', fillJoin);
+    to.addEventListener('change', () => { fill(); fillJoin(); });
     formSheet(`העברה מ${f.name}`, [
         h('p.hint', 'שתי שורות שתמיד שוות: הוצאה כאן, והכנסה בקופה השנייה (גם בהצעה של תת-הארגון או של הארגון הראשי, באותה שנה).'),
         h('label.f', h('span', 'אל קופה'), to),
+        joinBox,
         h('div.fields', moneyField(`סכום ${b.year} *`, 'amount', ''), moneyField(`תקציב ${b.year - 1}`, 'prev_budget', ''), moneyField(`ניצול ${b.year - 1}`, 'prev_actual', '')),
         h('label.f', h('span', 'שם השורה כאן (הוצאה)'), tFrom),
         h('label.f', h('span', 'שם השורה שם (הכנסה)'), tTo),
+        h('p.hint', 'כמה קופות שמעבירות לאותה שורה (למשל שלושה הקדשים → "הכנסות מהחזר הלוואה מהקדשות") — בוחרים "להצטרף". הסכום שם = סכום כל המעבירות.'),
     ], async x => {
+        if (!x.to_line_id) delete x.to_line_id;
         const r = await api('transfer_create', { budget_id: b.id, from_fund_id: f.id, ...x });
         toast(r.to_budget === b.id ? 'ההעברה נוספה בשתי הקופות' : 'ההעברה נוספה — גם בהצעה של הארגון השני');
         viewBudget(b.id, f.id);
     });
-    fill();
+    fill(); fillJoin();
+}
+
+/** שכירות: השורה נכנסת לנספח "דוח הכנסות — נכסים והקדשות". שדה ריק = נגזר מהשורה. */
+function leaseBox(d, f, l) {
+    const on = !!l?.lease, x = l?.lease || {};
+    const hek = f.kind === 'hekdesh' || f.kind === 'secular';
+    const box = h('div.fields', { hidden: !on },
+        field('נכס', 'lease_property', x.property, { max: 160, attrs: { placeholder: hek ? `${f.name}${f.address ? ' · ' + f.address : ''}` : (l?.title || 'שם השורה') } }),
+        field('שוכר', 'lease_tenant', x.tenant, { max: 160, attrs: { placeholder: hek ? (l?.title || 'שם השורה') : (l?.subtitle || '') } }),
+        field('שכירות לחודש (לא כולל מע"מ)', 'lease_monthly', x.monthly, { max: 60, attrs: { dir: 'ltr', placeholder: 'מהחישוב החודשי' } }),
+        moneyField('סה"כ לשנה (לא כולל מע"מ)', 'lease_annual', x.annual, { attrs: { placeholder: 'כמו הסכום' } }),
+        field('תקופת השכירות', 'lease_period', x.period, { max: 60, attrs: { dir: 'ltr', placeholder: `01-12/${d.budget.year}` } }));
+    const sw = h('input', { type: 'checkbox', name: 'lease', value: '1', checked: on, onchange: e => { box.hidden = !e.target.checked; } });
+    return h('section.group', h('label.switch', sw, h('span', '🏠 שכירות — בנספח השכירויות')), box);
+}
+
+// ── נספח השכירויות ──
+
+function budAppendix(box, d) {
+    const b = d.budget;
+    const row = r => h('li.card', { tabindex: 0, role: 'button', onclick: () => {
+            const l = d.lines.find(x => x.id === r.line_id);
+            lineSheet(d, d.funds.find(x => x.id === r.fund_id), 'income', l);
+        } },
+        h('div.body',
+            h('div.l1', h('span', r.property.split('\n')[0]), h('span.t', { style: 'font-weight:700;color:var(--ink);font-size:.95rem' }, money(r.annual))),
+            h('div.l2', [r.tenant, `${r.monthly} לחודש`, r.period].filter(Boolean).join(' · '))));
+    put(box,
+        h('p.hint', `דוח הכנסות — נכסים והקדשות לשנת ${b.year}. כל שורת הכנסה שמסומנת 🏠 שכירות. הסכומים לא כוללים מע"מ.`),
+        d.appendix.length ? d.appendix.map(g => [
+            h('p.sec-title', g.title),
+            h('ul.list', ...g.rows.map(row),
+                h('li.card', { style: 'cursor:default;background:var(--bg)' }, h('div.body',
+                    h('div.l1', h('span', `סה"כ ${g.title}`), h('span.t', { style: 'font-weight:700;color:var(--ink);font-size:.95rem' }, money(g.annual))),
+                    h('div.l2', `${money(g.monthly)} לחודש`))))]) : h('p.empty', 'אין עדיין שורות שכירות. בעריכת שורת הכנסה — "🏠 שכירות".'));
+}
+
+// ── ייבוא ארגון מקובץ ──
+
+function importSheet() {
+    const file = h('input', { type: 'file', accept: '.json,application/json' });
+    const err = h('p.error', { role: 'alert', hidden: true });
+    const go = h('button.btn.primary', { type: 'button' }, 'ייבוא');
+    go.addEventListener('click', busy(go, async () => {
+        const fl = file.files[0];
+        if (!fl) throw new Error('בחר קובץ');
+        let data;
+        try { data = JSON.parse(await fl.text()); } catch { throw new Error('הקובץ אינו JSON תקין'); }
+        const r = await api('org_import', { data });
+        sheet.close();
+        toast(`יובאו ${r.budgets} הצעות, ${r.lines} שורות`);
+        location.hash = `#/org/${r.org_id}`;
+    }, err));
+    openSheet('ייבוא ארגון מקובץ', [
+        h('p.hint', 'קובץ JSON במבנה של הכלי (README, "קובץ ייבוא"): ארגון, תתי-ארגונים, קופות, והצעות של כמה שנים. נוצר ארגון חדש, ואתה הבעלים.'),
+        h('label.f', h('span', 'קובץ'), file), err], go);
 }
 
 // ── ריכוז ──
@@ -1202,19 +1280,20 @@ async function saveBudgetFields(d, patch) {
     const b = d.budget;
     try {
         await api('budget_update', { budget_id: b.id, title: b.title, submitted_to: b.submitted_to, signers: b.signers, work_plan: b.work_plan,
-            summary_note: b.summary_note, prev_actual_as_of: b.prev_actual_as_of, actual_as_of: b.actual_as_of, ...patch });
+            summary_note: b.summary_note, prev_actual_as_of: b.prev_actual_as_of, actual_as_of: b.actual_as_of, expense_first: b.expense_first, ...patch });
         Object.assign(b, patch); toast('נשמר');
     } catch (e) { toast(e.message, true); }
 }
 
-/** תכנית העבודה כטקסט פשוט: "# כותרת" = פרק (א. ב. …), "- " = תבליט, שורה ריקה = פסקה. */
+/** תכנית העבודה כטקסט פשוט: "# כותרת" = פרק (א. ב. …), "## כותרת" = כותרת בלי אות, "- " = תבליט. */
 function renderPlan(text) {
     const letters = 'אבגדהוזחטיכלמנסעפצקרשת';
     let n = 0, ul = null;
     const out = [];
     for (const raw of (text || '').split('\n')) {
         const t = raw.trim();
-        if (t.startsWith('# ')) { ul = null; out.push(h('p', { style: 'font-weight:700;text-decoration:underline;margin-top:8px' }, `${letters[n++] || n}. ${t.slice(2)}`)); }
+        if (t.startsWith('## ')) { ul = null; out.push(h('p', { style: 'font-weight:700;text-decoration:underline;margin-top:8px' }, t.slice(3))); }
+        else if (t.startsWith('# ')) { ul = null; out.push(h('p', { style: 'font-weight:700;text-decoration:underline;margin-top:8px' }, `${letters[n++] || n}. ${t.slice(2)}`)); }
         else if (t.startsWith('- ')) { if (!ul) out.push(ul = h('ul', { style: 'padding-inline-start:20px' })); ul.append(h('li', t.slice(2))); }
         else if (t) { ul = null; out.push(h('p', t)); }
         else ul = null;
@@ -1234,7 +1313,7 @@ function budPlan(box, d) {
     save.addEventListener('click', busy(save, async () => {
         const v = k => box.querySelector(`[name=${k}]`).value;
         await saveBudgetFields(d, {
-            title: v('title'), submitted_to: v('submitted_to'), work_plan: plan.value, prev_actual_as_of: v('prev_actual_as_of'), actual_as_of: v('actual_as_of'),
+            title: v('title'), submitted_to: v('submitted_to'), work_plan: plan.value, expense_first: box.querySelector('[name=expense_first]').checked, prev_actual_as_of: v('prev_actual_as_of'), actual_as_of: v('actual_as_of'),
             signers: signers.value.split('\n').map(x => x.trim()).filter(Boolean).map(x => {
                 const [name, rest = ''] = x.split(/\s+[—–-]\s+/);
                 return { name: name.trim(), titles: rest.split(',').map(t => t.trim()).filter(Boolean) };
@@ -1252,8 +1331,9 @@ function budPlan(box, d) {
                 field('מוגשת ל…', 'submitted_to', b.submitted_to, { wide: true, max: 200, attrs: dis }),
                 h('label.f', h('span', `ניצול ${b.year - 1} — עד תאריך`), h('input', { type: 'date', name: 'prev_actual_as_of', value: b.prev_actual_as_of || '', dir: 'ltr', ...dis })),
                 h('label.f', h('span', `ניצול ${b.year} — עד תאריך`), h('input', { type: 'date', name: 'actual_as_of', value: b.actual_as_of || '', dir: 'ltr', ...dis }))),
+            h('label.switch', h('input', { type: 'checkbox', name: 'expense_first', checked: !!b.expense_first, ...dis }), h('span', 'בכל קופה — הוצאות לפני הכנסות (כמו בחבר"ק)')),
             h('label.f', h('span', 'חותמים — שורה לכל אחד'), signers),
-            h('label.f', h('span', 'תכנית העבודה — "# " פרק, "- " תבליט'), plan),
+            h('label.f', h('span', 'תכנית העבודה — "# " פרק ממוספר, "## " כותרת, "- " תבליט'), plan),
             edit ? save : null),
         h('p.sec-title', 'תצוגה'), prev);
 }

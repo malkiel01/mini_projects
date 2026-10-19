@@ -103,7 +103,23 @@ function budgets_migrate(PDO $pdo): void
         );
         CREATE INDEX IF NOT EXISTS idx_comments_budget ON budget_comments(budget_id, id);
         SQL);
+    // שלב 4: שכירות (לנספח), שורה שמופיעה רק בריכוז, וסדר הוצאות-קודם
+    add_columns($pdo, 'budget_lines', ['summary_only INTEGER NOT NULL DEFAULT 0', 'lease INTEGER NOT NULL DEFAULT 0',
+        'lease_property TEXT', 'lease_tenant TEXT', 'lease_monthly TEXT', 'lease_annual INTEGER', 'lease_period TEXT']);
+    add_columns($pdo, 'budgets', ['expense_first INTEGER NOT NULL DEFAULT 0']);
 }
+
+/** עמודה חדשה בטבלה קיימת — רק אם עוד אין. */
+function add_columns(PDO $pdo, string $table, array $defs): void
+{
+    $have = array_column($pdo->query("PRAGMA table_info($table)")->fetchAll(), 'name');
+    foreach ($defs as $def) {
+        if (!in_array(strtok($def, ' '), $have, true)) $pdo->exec("ALTER TABLE $table ADD COLUMN $def");
+    }
+}
+
+/** עמודות השורה שמועתקות / נשמרות כמו שהן (חוץ מהמזהים והסכומים של השנה). */
+const LINE_EXTRA = ['summary_only', 'lease', 'lease_property', 'lease_tenant', 'lease_monthly', 'lease_annual', 'lease_period'];
 
 // ── עזרים ────────────────────────────────────────────────────
 
@@ -224,13 +240,13 @@ function budget_create(array $s, array $b): array
     $pdo->beginTransaction();
     try {
         $pdo->prepare('INSERT INTO budgets (org_id, year, title, based_on_id, submitted_to, signers, work_plan, summary_note,
-                prev_actual_as_of, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+                prev_actual_as_of, created_by, created_at, updated_at, expense_first) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
             ->execute([$org['id'], $year, $title, $baseId,
                 $base['submitted_to'] ?? 'מוגשת לדיון בוועדת הכספים, בהנהלה ובמליאת המועצה',
                 $base['signers'] ?? null,
                 $base ? year_shift((string)$base['work_plan'], (int)$base['year'], $year) : null,
                 $base['summary_note'] ?? '** ביצוע התקציב והתוכנית השנתית מותנה בהכנסות בפועל',
-                $base['actual_as_of'] ?? null, $s['id'], $now, $now]);
+                $base['actual_as_of'] ?? null, $s['id'], $now, $now, (int)($base['expense_first'] ?? 0)]);
         $id = (int)$pdo->lastInsertId();
         if ($base) copy_budget_body((int)$base['id'], $id, $org['id'], fn($tid) => $tid ? substr(hash('sha256', "$tid:$year"), 0, 16) : null, true);
         else foreach (org_funds($org['id']) as $f) {
@@ -286,8 +302,8 @@ function copy_budget_body(int $fromId, int $toId, int $orgId, callable $tid, boo
     $lines = $pdo->prepare('SELECT * FROM budget_lines WHERE budget_id = ? ORDER BY id');
     $lines->execute([$fromId]);
     $ins = $pdo->prepare('INSERT INTO budget_lines (budget_id, fund_id, direction, sort, lineage, title, subtitle, contact_id, amount, calc,
-            cell_note, prev_budget, prev_actual, actual, summary_row_id, transfer_id, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            cell_note, prev_budget, prev_actual, actual, summary_row_id, transfer_id, created_at, updated_at, ' . implode(', ', LINE_EXTRA) . ')
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?' . str_repeat(', ?', count(LINE_EXTRA)) . ')');
     $now = now_iso();
     foreach ($lines->fetchAll() as $l) {
         if (!in_array($l['fund_id'], $active)) continue;
@@ -296,7 +312,8 @@ function copy_budget_body(int $fromId, int $toId, int $orgId, callable $tid, boo
             $newYear ? $l['amount'] : $l['prev_budget'],
             $newYear ? $l['actual'] : $l['prev_actual'],
             $newYear ? null : $l['actual'],
-            $map($l['summary_row_id']), $tid($l['transfer_id']), $now, $now]);
+            $map($l['summary_row_id']), $tid($l['transfer_id']), $now, $now,
+            ...array_map(fn($c) => $l[$c], LINE_EXTRA)]);
     }
 }
 
@@ -351,7 +368,7 @@ function budget_get(array $s, int $id): array
         'id' => (int)$b['id'], 'year' => (int)$b['year'], 'title' => $b['title'], 'status' => $b['status'],
         'submitted_to' => $b['submitted_to'], 'signers' => json_decode((string)$b['signers'], true) ?: [],
         'work_plan' => $b['work_plan'], 'summary_note' => $b['summary_note'],
-        'prev_actual_as_of' => $b['prev_actual_as_of'], 'actual_as_of' => $b['actual_as_of'],
+        'prev_actual_as_of' => $b['prev_actual_as_of'], 'actual_as_of' => $b['actual_as_of'], 'expense_first' => (bool)$b['expense_first'],
         'based_on_id' => $b['based_on_id'] ? (int)$b['based_on_id'] : null,
         'created_at' => $b['created_at'], 'updated_at' => $b['updated_at'], 'status_at' => $b['status_at'],
     ];
@@ -368,10 +385,14 @@ function budget_get(array $s, int $id): array
         'cell_note' => $l['cell_note'], 'calc_note' => $l['calc'] ? calc_amount(json_decode($l['calc'], true))[1] : null, 'prev_budget' => $l['prev_budget'] === null ? null : (int)$l['prev_budget'],
         'prev_actual' => $l['prev_actual'] === null ? null : (int)$l['prev_actual'], 'actual' => $l['actual'] === null ? null : (int)$l['actual'],
         'summary_row_id' => $l['summary_row_id'] === null ? null : (int)$l['summary_row_id'],
+        'summary_only' => (bool)$l['summary_only'],
+        'lease' => $l['lease'] ? ['property' => $l['lease_property'], 'tenant' => $l['lease_tenant'], 'monthly' => $l['lease_monthly'],
+            'annual' => $l['lease_annual'] === null ? null : (int)$l['lease_annual'], 'period' => $l['lease_period']] : null,
+        'transfer_role' => $l['transfer_id'] ? $l['direction'] : null,
         'transfer' => $l['transfer_id'] ? array_values(array_map(fn($p) => [
             'line_id' => (int)$p['id'], 'budget_id' => (int)$p['budget_id'], 'fund' => $p['fund'], 'org' => $p['org'],
             'year' => (int)$p['year'], 'same_budget' => (int)$p['budget_id'] === $id,
-        ], array_filter($partners[$l['transfer_id']] ?? [], fn($p) => (int)$p['id'] !== (int)$l['id']))) : null,
+        ], array_filter($partners[$l['transfer_id']] ?? [], fn($p) => $p['direction'] !== $l['direction']))) : null,   // הצד השני בלבד: למעבירה — המקבלת; למקבלת — המעבירות
     ], $lines);
 
     return ['ok' => true, 'budget' => $out,
@@ -380,6 +401,7 @@ function budget_get(array $s, int $id): array
         'funds' => $fundsOut, 'lines' => $linesOut,
         'rows' => array_map(fn($r) => ['id' => (int)$r['id'], 'direction' => $r['direction'], 'section' => $r['section'], 'label' => $r['label'], 'sort' => (int)$r['sort']], $rows),
         'summary' => budget_summary($fundsOut, $linesOut, $rows),
+        'appendix' => lease_appendix((int)$b['year'], $fundsOut, $linesOut),
         'comments' => array_map(fn($c) => [
             'id' => (int)$c['id'], 'line_id' => $c['line_id'] === null ? null : (int)$c['line_id'], 'by' => $c['display_name'],
             'mine' => (int)$c['user_id'] === (int)$s['id'], 'body' => $c['body'], 'at' => $c['at'], 'resolved' => $c['resolved_at'] !== null,
@@ -435,7 +457,9 @@ function budget_summary(array $funds, array $lines, array $rows): array
         $buckets[$key]['lines']++;
         if (!in_array($f['id'], $buckets[$key]['funds'], true)) $buckets[$key]['funds'][] = $f['id'];
     }
-    usort($buckets, fn($a, $b) => [$a['direction'] === 'income' ? 0 : 1, $a['order']] <=> [$b['direction'] === 'income' ? 0 : 1, $b['order']]);
+    // שורות מוגדרות — לפי הסדר שנקבע (בחבר"ק הוצאות לפני הכנסות); אחריהן האוטומטיות, הכנסות קודם
+    usort($buckets, fn($a, $b) => [$a['order'] >= 10000 ? 1 : 0, $a['order'] >= 10000 && $a['direction'] === 'expense' ? 1 : 0, $a['order']]
+        <=> [$b['order'] >= 10000 ? 1 : 0, $b['order'] >= 10000 && $b['direction'] === 'expense' ? 1 : 0, $b['order']]);
     $sections = [];
     foreach ($buckets as $r) {
         $sk = $r['direction'] . '|' . $r['section'];
@@ -457,6 +481,55 @@ function budget_summary(array $funds, array $lines, array $rows): array
         'balance' => $balance, 'unbalanced' => count(array_filter($balance, fn($x) => $x['diff'] !== 0))];
 }
 
+// ── נספח השכירויות ───────────────────────────────────────────
+
+const LEASE_GROUPS = ['operating' => 'נכסים', 'fund' => 'נכסים', 'hekdesh' => 'הקדשות דתיים', 'secular' => 'הקדשות חילוני'];
+
+/**
+ * "דוח הכנסות — נכסים והקדשות": כל שורת הכנסה שסומנה כשכירות. מה שלא הוקלד בשכירות — נגזר מהשורה:
+ * נכס (בהקדש — שם הקופה וכתובתה; בארגון — שם השורה), שוכר (הגורם / השורה השנייה), חודשי ותקופה
+ * (מהחישוב החודשי), ושנתי (הסכום).
+ */
+function lease_appendix(int $year, array $funds, array $lines): array
+{
+    $fundById = array_column($funds, null, 'id');
+    $order = array_flip(array_column($funds, 'id'));
+    $groups = [];
+    foreach (array_unique(LEASE_GROUPS) as $t) $groups[$t] = ['title' => $t, 'rows' => [], 'monthly' => 0, 'annual' => 0];
+    $rows = array_filter($lines, fn($l) => $l['lease'] && isset($fundById[$l['fund_id']]));
+    usort($rows, fn($a, $b) => [$order[$a['fund_id']], $a['sort'], $a['id']] <=> [$order[$b['fund_id']], $b['sort'], $b['id']]);
+    foreach ($rows as $l) {
+        $f = $fundById[$l['fund_id']];
+        $c = $l['calc'];
+        $hek = in_array($f['kind'], ['hekdesh', 'secular'], true);
+        $monthly = $l['lease']['monthly'];
+        $period = $l['lease']['period'];
+        if ($c) {
+            $two = !empty($c['change_month']);
+            $after = $two ? (int)round($c['monthly'] * (1 + $c['change_pct'] / 100)) : null;
+            $monthly ??= number_format($c['monthly']) . ($two ? ' / ' . number_format($after) : '');
+            $period ??= $two
+                ? sprintf('%02d-%02d/%d, %02d-%02d/%d', $c['from'], $c['change_month'] - 1, $year, $c['change_month'], $c['to'], $year)
+                : sprintf('%02d-%02d/%d', $c['from'], $c['to'], $year);
+        }
+        $monthly ??= number_format((int)round($l['amount'] / 12));
+        $period ??= "01-12/$year";
+        $annual = $l['lease']['annual'] ?? $l['amount'];
+        $g = LEASE_GROUPS[$f['kind']];
+        $groups[$g]['rows'][] = [
+            'line_id' => $l['id'], 'fund_id' => $f['id'],
+            'property' => $l['lease']['property'] ?? ($hek ? trim($f['name'] . ($f['address'] ? "
+" . $f['address'] : '')) : $l['title']),
+            'tenant' => $l['lease']['tenant'] ?? ($hek ? $l['title'] : ($l['contact'] ?? $l['subtitle'] ?? '')),
+            'monthly' => $monthly, 'annual' => $annual, 'period' => $period,
+        ];
+        preg_match_all('/[\d,]+/', $monthly, $m);
+        $groups[$g]['monthly'] += array_sum(array_map(fn($x) => (int)str_replace(',', '', $x), $m[0]));
+        $groups[$g]['annual'] += $annual;
+    }
+    return array_values(array_filter($groups, fn($g) => $g['rows']));
+}
+
 function budget_update(array $s, array $b): array
 {
     $bud = budget_access($s, (int)($b['budget_id'] ?? 0), true);
@@ -468,12 +541,12 @@ function budget_update(array $s, array $b): array
         $signers[] = ['name' => $name, 'titles' => $titles];
     }
     db()->prepare('UPDATE budgets SET title = ?, submitted_to = ?, signers = ?, work_plan = ?, summary_note = ?,
-            prev_actual_as_of = ?, actual_as_of = ?, updated_at = ? WHERE id = ?')
+            prev_actual_as_of = ?, actual_as_of = ?, expense_first = ?, updated_at = ? WHERE id = ?')
         ->execute([text_in($b['title'] ?? '', 80, 'כותרת'), text_in($b['submitted_to'] ?? '', 200, 'מוגשת ל'),
             json_encode($signers, JSON_UNESCAPED_UNICODE), text_in($b['work_plan'] ?? '', 30000, 'תכנית העבודה'),
             text_in($b['summary_note'] ?? '', 500, 'הערת הריכוז'),
             date_in($b['prev_actual_as_of'] ?? '', 'ניצול עד'), date_in($b['actual_as_of'] ?? '', 'ניצול השנה עד'),
-            now_iso(), $bud['id']]);
+            empty($b['expense_first']) ? 0 : 1, now_iso(), $bud['id']]);
     return ['ok' => true];
 }
 
@@ -503,10 +576,10 @@ function budget_duplicate(array $s, array $b): array
     $pdo->beginTransaction();
     try {
         $pdo->prepare('INSERT INTO budgets (org_id, year, title, based_on_id, submitted_to, signers, work_plan, summary_note,
-                prev_actual_as_of, actual_as_of, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+                prev_actual_as_of, actual_as_of, created_by, created_at, updated_at, expense_first) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
             ->execute([$bud['org_id'], $bud['year'], text_in(($bud['title'] ? $bud['title'] . ' — ' : '') . 'עותק', 80, 'כותרת'), $bud['based_on_id'],
                 $bud['submitted_to'], $bud['signers'], $bud['work_plan'], $bud['summary_note'], $bud['prev_actual_as_of'], $bud['actual_as_of'],
-                $s['id'], $now, $now]);
+                $s['id'], $now, $now, (int)$bud['expense_first']]);
         $id = (int)$pdo->lastInsertId();
         $fresh = [];
         copy_budget_body((int)$bud['id'], $id, (int)$bud['org_id'], function ($tid) use (&$fresh) {
@@ -610,7 +683,18 @@ function line_values(array $bud, array $b, string $dir): array
         'prev_actual' => money_in($b['prev_actual'] ?? null, 'ניצול שנה קודמת'),
         'actual' => money_in($b['actual'] ?? null, 'ניצול השנה'),
         'summary_row_id' => ($r = (int)($b['summary_row_id'] ?? 0)) ? summary_row_of((int)$bud['id'], $r, $dir) : null,
-    ];
+        'summary_only' => empty($b['summary_only']) ? 0 : 1,
+    ] + lease_values($b, $dir);
+}
+
+/** שכירות (לנספח): רק בשורת הכנסה. ריק = נגזר מהשורה (חודשי, שנתי, תקופה). */
+function lease_values(array $b, string $dir): array
+{
+    $l = $b['lease'] ?? null;
+    if (!is_array($l) || $dir !== 'income') return ['lease' => 0, 'lease_property' => null, 'lease_tenant' => null, 'lease_monthly' => null, 'lease_annual' => null, 'lease_period' => null];
+    return ['lease' => 1, 'lease_property' => text_in($l['property'] ?? '', 160, 'נכס'), 'lease_tenant' => text_in($l['tenant'] ?? '', 160, 'שוכר'),
+        'lease_monthly' => text_in($l['monthly'] ?? '', 60, 'שכירות לחודש'), 'lease_annual' => money_in($l['annual'] ?? null, 'שכירות לשנה'),
+        'lease_period' => text_in($l['period'] ?? '', 60, 'תקופה')];
 }
 
 function line_save(array $s, array $b): array
@@ -627,10 +711,12 @@ function line_save(array $s, array $b): array
         $pdo->beginTransaction();
         try {
             $pdo->prepare('UPDATE budget_lines SET title = ?, subtitle = ?, contact_id = ?, amount = ?, calc = ?, cell_note = ?,
-                    prev_budget = ?, prev_actual = ?, actual = ?, summary_row_id = ?, updated_at = ? WHERE id = ?')
+                    prev_budget = ?, prev_actual = ?, actual = ?, summary_row_id = ?, updated_at = ?, '
+                    . implode(' = ?, ', LINE_EXTRA) . ' = ? WHERE id = ?')
                 ->execute([$v['title'], $v['subtitle'], $v['contact_id'], $v['amount'], $v['calc'], $v['cell_note'],
-                    $v['prev_budget'], $v['prev_actual'], $v['actual'], $v['summary_row_id'], $now, $id]);
-            if ($old['transfer_id']) sync_transfer((string)$old['transfer_id'], $id, $v);
+                    $v['prev_budget'], $v['prev_actual'], $v['actual'], $v['summary_row_id'], $now,
+                    ...array_map(fn($c) => $v[$c], LINE_EXTRA), $id]);
+            if ($old['transfer_id']) sync_transfer((string)$old['transfer_id'], $id, $v, $old['direction']);
             touch_budget((int)$bud['id']);
             $pdo->commit();
         } catch (Throwable $e) {
@@ -662,27 +748,79 @@ function insert_line(int $budgetId, int $fid, string $dir, array $v, ?string $tr
     $st->execute([$budgetId, $fid, $dir]);
     $now = now_iso();
     $pdo->prepare('INSERT INTO budget_lines (budget_id, fund_id, direction, sort, lineage, title, subtitle, contact_id, amount, calc, cell_note,
-            prev_budget, prev_actual, actual, summary_row_id, transfer_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        ->execute([$budgetId, $fid, $dir, (int)$st->fetchColumn(), new_lineage(), $v['title'], $v['subtitle'] ?? null, $v['contact_id'] ?? null,
+            prev_budget, prev_actual, actual, summary_row_id, transfer_id, created_at, updated_at, ' . implode(', ', LINE_EXTRA) . ')
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?' . str_repeat(', ?', count(LINE_EXTRA)) . ')')
+        ->execute([$budgetId, $fid, $dir, (int)$st->fetchColumn(), $v['lineage'] ?? new_lineage(), $v['title'], $v['subtitle'] ?? null, $v['contact_id'] ?? null,
             $v['amount'], $v['calc'] ?? null, $v['cell_note'] ?? null, $v['prev_budget'] ?? null, $v['prev_actual'] ?? null, $v['actual'] ?? null,
-            $v['summary_row_id'] ?? null, $transfer, $now, $now]);
+            $v['summary_row_id'] ?? null, $transfer, $now, $now,
+            ...array_map(fn($c) => $v[$c] ?? (in_array($c, ['summary_only', 'lease'], true) ? 0 : null), LINE_EXTRA)]);
     return (int)$pdo->lastInsertId();
 }
 
 /**
- * העברה: הסכומים (מוצע, ניצול, שנה קודמת) של הצד השני תמיד זהים.
+ * העברה = קבוצת שורות עם אותו transfer_id: שורת הכנסה אחת (המקבלת) ושורת הוצאה אחת או יותר
+ * (המעבירות). המקבלת תמיד = סכום המעבירות — במוצע, בניצול ובשנה הקודמת. כך שלושה הקדשים
+ * מעבירים לשורה אחת בארגון ("הכנסות מהחזר הלוואה מהקדשות" = 258,000 + 4,400 + 227,000).
+ *
+ * עריכת מעבירה → המקבלת מחושבת מחדש. עריכת מקבלת עם מעבירה אחת → המעבירה מקבלת את הסכום;
+ * עם כמה מעבירות — הסכום שלה נגזר, ושינוי שלו נדחה.
  * צד שנמצא בהצעה נעולה — חוסם את השינוי, כדי שהשניים לא ייפרדו.
  */
-function sync_transfer(string $tid, int $lineId, array $v): void
+function sync_transfer(string $tid, int $lineId, array $v, string $dir): void
 {
-    $st = db()->prepare('SELECT l.id, l.budget_id, b.status, o.name FROM budget_lines l JOIN budgets b ON b.id = l.budget_id AND b.deleted_at IS NULL
-        JOIN orgs o ON o.id = b.org_id WHERE l.transfer_id = ? AND l.id != ?');
-    $st->execute([$tid, $lineId]);
-    foreach ($st->fetchAll() as $p) {
-        if ($p['status'] !== 'draft') throw new ApiError("הצד השני של ההעברה (הצעה של {$p['name']}) נעול — קודם להחזיר אותה לטיוטה", 409);
-        db()->prepare('UPDATE budget_lines SET amount = ?, calc = ?, cell_note = ?, prev_budget = ?, prev_actual = ?, actual = ?, updated_at = ? WHERE id = ?')
-            ->execute([$v['amount'], $v['calc'], $v['cell_note'], $v['prev_budget'], $v['prev_actual'], $v['actual'], now_iso(), $p['id']]);
-        touch_budget((int)$p['budget_id']);
+    $group = transfer_group($tid);
+    $givers = array_values(array_filter($group, fn($p) => $p['direction'] === 'expense'));
+    if ($dir === 'income') {
+        $others = array_values(array_filter($givers, fn($p) => (int)$p['id'] !== $lineId));
+        if (count($others) === 1) {
+            set_line_amounts($others[0], $v);
+        } elseif (count($others) > 1) {
+            $sum = transfer_sum($others);
+            if ($sum['amount'] !== $v['amount']) {
+                throw new ApiError('הסכום של שורה זו נגזר מ-' . count($others) . ' העברות (' . number_format($sum['amount']) . ') — משנים אותו בקופות המעבירות', 409);
+            }
+            recompute_receiver($tid);   // גם העמודות האחרות — תמיד סכום המעבירות
+        }
+        return;
+    }
+    recompute_receiver($tid);
+}
+
+/** כל השורות בקבוצת העברה (בהצעות שלא נמחקו), עם מצב ההצעה. */
+function transfer_group(string $tid): array
+{
+    $st = db()->prepare('SELECT l.*, b.status, o.name AS org_name FROM budget_lines l JOIN budgets b ON b.id = l.budget_id AND b.deleted_at IS NULL
+        JOIN orgs o ON o.id = b.org_id WHERE l.transfer_id = ?');
+    $st->execute([$tid]);
+    return $st->fetchAll();
+}
+
+function transfer_sum(array $givers): array
+{
+    $sum = fn($k) => array_reduce($givers, fn($a, $p) => $p[$k] === null ? $a : (int)$a + (int)$p[$k], null);
+    return ['amount' => (int)$sum('amount'), 'prev_budget' => $sum('prev_budget'), 'prev_actual' => $sum('prev_actual'), 'actual' => $sum('actual')];
+}
+
+function set_line_amounts(array $p, array $v): void
+{
+    if ($p['status'] !== 'draft') throw new ApiError("הצד השני של ההעברה (הצעה של {$p['org_name']}) נעול — קודם להחזיר אותה לטיוטה", 409);
+    db()->prepare('UPDATE budget_lines SET amount = ?, calc = ?, cell_note = ?, prev_budget = ?, prev_actual = ?, actual = ?, updated_at = ? WHERE id = ?')
+        ->execute([$v['amount'], $v['calc'] ?? null, $v['cell_note'] ?? null, $v['prev_budget'], $v['prev_actual'], $v['actual'], now_iso(), $p['id']]);
+    touch_budget((int)$p['budget_id']);
+}
+
+/** המקבלת = סכום המעבירות. */
+function recompute_receiver(string $tid): void
+{
+    $group = transfer_group($tid);
+    $givers = array_values(array_filter($group, fn($p) => $p['direction'] === 'expense'));
+    foreach ($group as $p) {
+        if ($p['direction'] !== 'income') continue;
+        $sum = transfer_sum($givers);
+        if ($sum['amount'] === (int)$p['amount'] && $sum['prev_budget'] === ($p['prev_budget'] === null ? null : (int)$p['prev_budget'])
+            && $sum['prev_actual'] === ($p['prev_actual'] === null ? null : (int)$p['prev_actual']) && $sum['actual'] === ($p['actual'] === null ? null : (int)$p['actual'])) continue;
+        // שורה מקבלת עם מעבירה אחת יכולה להחזיק חישוב חודשי משותף; עם כמה — סכום בלבד
+        set_line_amounts($p, $sum + (count($givers) === 1 ? ['calc' => $givers[0]['calc'], 'cell_note' => $givers[0]['cell_note']] : ['calc' => null, 'cell_note' => $p['cell_note']]));
     }
 }
 
@@ -696,6 +834,16 @@ function line_delete(array $s, array $b): array
     $pdo = db();
     $pdo->beginTransaction();
     try {
+        $givers = $l['transfer_id'] ? array_filter(transfer_group((string)$l['transfer_id']), fn($p) => $p['direction'] === 'expense') : [];
+        if ($l['transfer_id'] && $l['direction'] === 'expense' && count($givers) > 1) {
+            // אחת מכמה מעבירות: רק היא נמחקת, והמקבלת מחושבת מחדש
+            $pdo->prepare('DELETE FROM budget_lines WHERE id = ?')->execute([$l['id']]);
+            $pdo->prepare('UPDATE budget_comments SET line_id = NULL WHERE line_id = ?')->execute([$l['id']]);
+            recompute_receiver((string)$l['transfer_id']);
+            touch_budget((int)$bud['id']);
+            $pdo->commit();
+            return ['ok' => true, 'partner_deleted' => false];
+        }
         if ($l['transfer_id']) {
             $p = $pdo->prepare('SELECT l.id, l.budget_id, b.status FROM budget_lines l JOIN budgets b ON b.id = l.budget_id WHERE l.transfer_id = ? AND l.id != ? AND b.deleted_at IS NULL');
             $p->execute([$l['transfer_id'], $l['id']]);
@@ -760,15 +908,28 @@ function transfer_create(array $s, array $b): array
     }
     $pdo->prepare('INSERT OR IGNORE INTO budget_funds (budget_id, fund_id) VALUES (?, ?)')->execute([$toBudget, $toFund]);
 
+    $join = (int)($b['to_line_id'] ?? 0) ?: null;
+    if ($join) {
+        // הצטרפות לשורת הכנסה קיימת בקופת היעד: היא הופכת למקבלת, והסכום שלה = סכום המעבירות
+        $st = $pdo->prepare("SELECT * FROM budget_lines WHERE id = ? AND budget_id = ? AND fund_id = ? AND direction = 'income'");
+        $st->execute([$join, $toBudget, $toFund]);
+        $recv = $st->fetch() ?: throw new ApiError('שורת ההכנסה לא נמצאה בקופת היעד', 404);
+    }
     $amount = money_in($b['amount'] ?? null, 'סכום', false);
     $prevB = money_in($b['prev_budget'] ?? null, 'תקציב שנה קודמת');
     $prevA = money_in($b['prev_actual'] ?? null, 'ניצול שנה קודמת');
     $base = ['amount' => $amount, 'prev_budget' => $prevB, 'prev_actual' => $prevA];
-    $tid = new_lineage();
+    $tid = $join && $recv['transfer_id'] ? (string)$recv['transfer_id'] : new_lineage();
     $pdo->beginTransaction();
     try {
         $a = insert_line((int)$bud['id'], $from, 'expense', $base + ['title' => text_in($b['title_from'] ?? '', 160, 'שם השורה בקופה המעבירה', true)], $tid);
-        $z = insert_line($toBudget, $toFund, 'income', $base + ['title' => text_in($b['title_to'] ?? '', 160, 'שם השורה בקופה המקבלת', true)], $tid);
+        if ($join) {
+            $pdo->prepare('UPDATE budget_lines SET transfer_id = ? WHERE id = ?')->execute([$tid, $join]);
+            recompute_receiver($tid);
+            $z = $join;
+        } else {
+            $z = insert_line($toBudget, $toFund, 'income', $base + ['title' => text_in($b['title_to'] ?? '', 160, 'שם השורה בקופה המקבלת', true)], $tid);
+        }
         touch_budget((int)$bud['id']);
         if ($toBudget !== (int)$bud['id']) touch_budget($toBudget);
         $pdo->commit();
