@@ -534,6 +534,7 @@ function doc_save(array $user, array $b): array
         $pdo->rollBack();
         throw $e;
     }
+    if (function_exists('purge_attachments')) purge_attachments((int)$d['id']);   // קובץ שהוסר משדה — נמחק
     $values = doc_values((int)$d['id']);
     return ['ok' => true, 'saved' => count($changes), 'saved_at' => $now,
         'progress' => doc_progress($schema, $values), 'computed' => computed_values($schema, $values)];
