@@ -17,6 +17,7 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/mail.php';
 require_once __DIR__ . '/log.php';
 require_once __DIR__ . '/errors.php';
+require_once __DIR__ . '/platform.php';
 
 const VERIFY_TTL_HOURS = 24;
 const RESET_TTL_HOURS  = 1;
@@ -43,6 +44,21 @@ function sessionStart(): void {
 
 function currentUser(): ?array {
     sessionStart();
+    // מחוברת לכלים הדיגיטליים (lib/platform.php): הזהות מהשער קובעת — לא הסשן ולא העוגייה הארוכה.
+    // סשן של מישהו אחר (התחלף המשתמש בפלטפורמה) מוחלף. אין חשבון — null, והדף מציג את מסך החיבור.
+    if ($pid = platformIdentity()) {
+        $u = platformAccount($pid);
+        if (!$u || (int) $u['blocked'] === 1) { unset($_SESSION['uid'], $_SESSION['platform_sub']); return null; }
+        if (($_SESSION['uid'] ?? null) !== (int) $u['id']) {
+            if (PHP_SAPI !== 'cli') session_regenerate_id(true);
+            $_SESSION['uid'] = (int) $u['id'];
+        }
+        $_SESSION['platform_sub'] = $pid['sub'];
+        return array_intersect_key($u, array_flip(['id', 'username', 'email', 'display_name', 'role',
+                                                  'email_verified', 'blocked', 'storage_used']));
+    }
+    // סשן שנפתח דרך הפלטפורמה, וכבר אין זהות (יציאה מהפלטפורמה, או שהאפליקציה נותקה) — נסגר
+    if (!empty($_SESSION['platform_sub'])) { logout(); return null; }
     // הסשן נמחק (24 דקות בלי פעילות בשרת, או דפדפן שנסגר) — העוגייה הארוכה מחזירה אותו
     if (empty($_SESSION['uid'])) keepRestore();
     if (empty($_SESSION['uid'])) return null;

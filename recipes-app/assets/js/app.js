@@ -199,6 +199,8 @@ function say(text, kind) {
 let resumeHash = '';
 function sessionLost() {
   if (!state.user) return;
+  // דרך הכלים הדיגיטליים — רענון: השער מחזיר לכניסה שלהם, או מזהה אותי מחדש
+  if (state.platform) { location.reload(); return; }
   resumeHash = location.hash;
   setUser(null);
   view.innerHTML = '';
@@ -311,6 +313,35 @@ $('#forgot-form').addEventListener('submit', (e) => {
   });
 });
 
+// מחוברת לכלים הדיגיטליים, ואין עוד חשבון (lib/platform.php): מסך החיבור החד-פעמי, במקום הכניסה וההרשמה
+function showPlatformLink(platform) {
+  $('.guest__card .tabs').hidden = true;
+  $('#platform-name').textContent = platform.name || platform.email;
+  showPane('platform');
+  if (platform.blocked) {
+    $$('[data-pane="platform"] form, #platform-new').forEach((el) => { el.hidden = true; });
+    say('החשבון שלך באפליקציה חסום. אפשר לפנות למנהל האפליקציה.', 'err');
+  }
+}
+
+$('#platform-link-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const f = e.target;
+  withButton(f, async () => {
+    const res = await api('platform-link', { username: f.username.value, password: f.password.value });
+    f.reset();
+    setUser(res.user); route();
+  });
+});
+
+$('#platform-new').addEventListener('click', async (e) => {
+  const btn = e.target;
+  btn.disabled = true;
+  try { const res = await api('platform-new'); setUser(res.user); route(); }
+  catch (err) { say(err.message, 'err'); }
+  finally { btn.disabled = false; }
+});
+
 $('#logout').addEventListener('click', async () => {
   try { await api('logout'); }
   finally { resumeHash = ''; setUser(null); view.innerHTML = ''; showPane('login'); }
@@ -322,7 +353,9 @@ function setUser(user) {
   guest.hidden = on;
   app.hidden = !on;
   $('#who').hidden = !on;
-  $('#logout').hidden = !on;
+  // דרך הכלים הדיגיטליים — יוצאים מהפלטפורמה, לא מכאן (הזהות הייתה מחזירה אותי מיד)
+  $('#logout').hidden = !on || Boolean(state.platform);
+  $$('[data-platform]').forEach((a) => { a.hidden = !(on && state.platform); });
   $('#menu').hidden = !on;
   $('#bell').hidden = !on;
   $$('[data-dev]').forEach((a) => { a.hidden = !(on && user.is_developer); });
@@ -386,6 +419,7 @@ async function route() {
     else if (h === '#/settings') await renderSettingsPrivate();
     else if (h === '#/settings/public') await renderSettingsPublic();
     else if (h === '#/settings/users') await renderUsers();
+    else if (h === '#/link-account' && state.platform) renderLinkAccount();
     else go('#/');
   } catch (err) {
     view.innerHTML = `<section class="card"><p class="note note--err">${esc(err.message)}</p>
@@ -4599,10 +4633,41 @@ async function renderDiag() {
     </section>`;
 }
 
+// ───────────────────────── חיבור חשבון ישן (מהתפריט) ─────────────────────────
+
+// מי שבחר "אין לי חשבון" ונזכר אחר כך: החשבון הישן מקבל את חשבון הכלים הדיגיטליים, והחדש מתנתק ממנו
+function renderLinkAccount() {
+  view.innerHTML = `<section class="card form">
+      <h2>🔗 חיבור חשבון ישן</h2>
+      <p class="muted">יש לך חשבון ישן במתכונים, בשם משתמש או בדוא"ל אחר? אחרי החיבור תיכנס אליו דרך הכלים
+        הדיגיטליים, עם כל המתכונים שלו. החשבון הנוכחי יתנתק ויישאר כמו שהוא.</p>
+      <form id="link-old" class="form">
+        <label>שם משתמש או דוא"ל של החשבון הישן
+          <input name="username" required autocomplete="username" autocapitalize="off"></label>
+        <label>הסיסמה הישנה
+          <input name="password" type="password" required autocomplete="current-password"></label>
+        <button class="btn btn--primary" type="submit">חיבור</button>
+      </form>
+      <p class="note" hidden></p>
+    </section>`;
+  const f = $('#link-old'), out = $('.note', view);
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = $('button', f); btn.disabled = true;
+    try { const res = await api('platform-link', { username: f.username.value, password: f.password.value }); setUser(res.user); go('#/'); }
+    catch (err) { out.textContent = err.message; out.className = 'note note--err'; out.hidden = false; }
+    finally { btn.disabled = false; }
+  });
+}
+
 // ───────────────────────── טעינה ─────────────────────────
 
 api('me')
-  .then(({ user, assets_version }) => { setUser(user); checkVersion(assets_version); if (user) route(); })
+  .then(({ user, platform, assets_version }) => {
+    state.platform = platform || null;
+    setUser(user); checkVersion(assets_version);
+    if (user) route(); else if (platform) showPlatformLink(platform);
+  })
   .catch(() => { setUser(null); say('לא הצלחתי להגיע לשרת. יש לרענן את הדף.', 'err'); });
 
 // התקנה כאפליקציה + שלד בלי רשת (service-worker.js). כשל ברישום אינו מפריע לאפליקציה.

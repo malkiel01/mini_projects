@@ -15,6 +15,8 @@
 | [`lib/errors.php`](./lib/errors.php) | הבדלה בין שגיאה למשתמש לתקלה שלנו |
 | [`tools/schema-check.py`](./tools/schema-check.py) | מריץ את הסכימה, מוכיח שההבטחות עובדות, ומוודא ש-`SCHEMA.sql` ו-`lib/db.php` לא נפרדו |
 | [`tools/auth-check.php`](./tools/auth-check.php) | מריץ את שכבת החשבונות על מסד זמני |
+| [`lib/platform.php`](./lib/platform.php) + [`tools/platform-check.php`](./tools/platform-check.php) | הכניסה דרך הכלים הדיגיטליים ומסך החיבור החד-פעמי |
+| [`lib/platform.php`](./lib/platform.php) + [`tools/platform-check.php`](./tools/platform-check.php) | הכניסה דרך הכלים הדיגיטליים ומסך החיבור החד-פעמי |
 | [`tools/recipes-check.php`](./tools/recipes-check.php) | מריץ את שכבת המתכונים על מסד זמני |
 | [`tools/social-check.php`](./tools/social-check.php) | תגובות, פתקים פרטיים ומועדפים — על מסד זמני |
 | [`tools/log-check.php`](./tools/log-check.php) | היומן וטוקן הצפייה — על מסד זמני |
@@ -33,6 +35,7 @@
 ```bash
 python3 recipes-app/tools/schema-check.py    # הסכימה וההבטחות שלה
 php     recipes-app/tools/auth-check.php     # שכבת החשבונות
+php     recipes-app/tools/platform-check.php # הכניסה דרך הכלים הדיגיטליים
 php     recipes-app/tools/recipes-check.php  # שכבת המתכונים
 php     recipes-app/tools/social-check.php   # תגובות, פתקים, מועדפים
 php     recipes-app/tools/log-check.php      # יומן וטוקן צפייה
@@ -89,7 +92,46 @@ no-cache` ל-HTML/JS/CSS. בלעדיו הטלפון מחזיק גרסה ישנה
 עריכה, מחיקה), חיפוש בשם וברכיבים, מדיה, הגדרות וניהול משתמשים, תגובות בשתי רמות,
 פתק פרטי על כל מתכון, מועדפים ששורדים מחיקה של המקור, אבחון למנהל, ויומן.
 
+## מאחורי השער של הפלטפורמה
+
+מ-2026-10-19 `"gate": true` ב-`app.json` (החלטת בעל המערכת). כדי להיכנס צריך חשבון בפלטפורמה
+**ו**הרשאה לאפליקציה — ואחר כך, כמו קודם, החשבון של המתכונים עצמם. המשתמשים, המסד והעוגייה נשארים
+של האפליקציה. ניתוק בלחיצה: ⚙️ ← אפליקציות ← "🔌 מחוברת".
+
+**ההתחברות** (`lib/platform.php`, לפי `platform/docs/auth.md`; נבדק ב-`tools/platform-check.php`):
+
+- **מחוברת:** השער כותב `$_SERVER['PLATFORM_USER']`, והוא קובע מי המשתמש — בלי מסך ובלי סיסמה. חשבון לפי
+  `platform_sub`; אין — חשבון באותו דוא"ל (רק כשהפלטפורמה אימתה אותו), ומתקשר מעצמו; אין — **מסך חיבור
+  חד-פעמי**: "יש לי כבר חשבון" (שם משתמש וסיסמה ישנים, 5 ניסיונות → רבע שעה) או "אין לי חשבון" (חשבון
+  חדש, פעיל). ההצעה נשארת בתפריט: "🔗 חיבור חשבון ישן" — הישן מקבל את ה-sub, והחדש מתנתק.
+- **כניסה, הרשמה ואיפוס של האפליקציה — חסומים** כל עוד יש זהות מהשער (403). **הסיסמה הישנה לא נמחקת.**
+- **יציאה מהפלטפורמה = יציאה מכאן:** סשן שנפתח דרך הפלטפורמה נסגר כשאין זהות. כפתור היציאה מוסתר.
+- **מנותקת** (🔌): אין זהות, והכניסה בסיסמה עובדת כמו קודם. חשבון שנפתח דרך "אין לי חשבון" — בלי
+  סיסמה ידועה; "שכחתי סיסמה" קובע אחת. ("כניסה עם הכלים הדיגיטליים" למנותקת — `sso.md`, טרם.)
+
+**ציבורי (`public`)** — רק מה שמגיעים אליו בלי חשבון בפלטפורמה:
+
+| כתובת | מי מגיע |
+| --- | --- |
+| `verify.php`, `reset.php` + `assets/css/app.css`, `assets/icon.svg` | קישורים מהדוא"ל |
+| `privacy.html`, `delete-account.html` | החנות של גוגל, כל אחד |
+| `index-worker.php`, `scout-worker.php` | השרת עצמו (cURL) ו-cron — מוגנים במפתח |
+| `logs.php` | צפייה ביומן — מוגן בטוקן |
+| `api.php?action=push-pending` | ה-service worker ברקע, כשהגיעה התראה — דורש עדיין כניסה לאפליקציה |
+| `manifest.webmanifest`, `service-worker.js`, `assets/icons/**` | הדפדפן בהתקנה (בלי עוגיות) |
+
+**הסאב-דומיין `recipes.mbe-plus.com` מפנה (301) ל-`mbe-plus.com/mini_projects/recipes-app/`.**
+השער מחליט לפי נתיב הקובץ ולא לפי הדומיין, ועוגיית הפלטפורמה לא מגיעה לסאב-דומיין — כך שבלי
+ההפניה כל בקשה שם נחסמת. ההפניה מוגדרת ב-cPanel (שורש נפרד לסאב-דומיין + Redirect), לא כאן: בלוק
+השער נכתב בראש ה-`.htaccess` הזה ורץ לפני כל כלל שלנו. העובדים עוקבים אחרי הפניה (`workerKick`),
+כך ש-`base_url` ישן ממשיך לעבוד.
+
 ## בחנות של גוגל (TWA)
+
+> מ-2026-10-19 האפליקציה נבנית לכתובת שמאחורי השער (`mbe-plus.com/mini_projects/recipes-app/`), ותופסת
+> קישורים רק בתיקייה הזאת. כל בנייה מ-main מתפרסמת ל"תיקיית החנות" — Release קבוע `recipes-app-store`
+> (APK, AAB, `store-listing.zip`, `assetlinks.json`), והפלטפורמה מציגה ממנו APK לכולם, AAB וקובץ החנות למנהל (`"install": {"release": "recipes-app-store"}`).
+> מסך מלא בלי שורת כתובת — `assetlinks.json` בשורש `mbe-plus.com`. מחובר/מנותק לשער — בשרת, בלי גרסה חדשה.
 
 `android/` — אפליקציה לחנות של גוגל: פותחת את האתר ב-Chrome במסך מלא, בלי שורת כתובת, בכתובת
 `https://recipes.mbe-plus.com/` (סאב-דומיין שתיקיית השורש שלו היא התיקייה הזאת). עדכון באתר

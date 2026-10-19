@@ -89,7 +89,15 @@ function migrate(PDO $pdo): void {
             limit_quota_bytes INTEGER,   -- NULL = יורש מההגדרה הציבורית
             last_mail_at   TEXT,         -- מתי נשלח לאחרונה דוא״ל למשתמש
             last_mail_ok   INTEGER,      -- האם ה-MTA קיבל אותו. NULL = לא נשלח
-            created_at     TEXT    NOT NULL
+            created_at     TEXT    NOT NULL,
+            platform_sub   TEXT          -- חשבון הכלים הדיגיטליים המקושר (lib/platform.php). NULL = לא מקושר
+        );
+
+        -- ניסיונות לחבר חשבון ישן לחשבון הכלים הדיגיטליים: 5 כשלים → נעילה של רבע שעה, לפי sub
+        CREATE TABLE IF NOT EXISTS platform_link_attempts (
+            sub          TEXT PRIMARY KEY,
+            fails        INTEGER NOT NULL DEFAULT 0,
+            locked_until INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS app_settings (
@@ -772,6 +780,9 @@ function migrate(PDO $pdo): void {
     addColumnIfMissing($pdo, 'shopping_list_recipes', 'factor', 'REAL NOT NULL DEFAULT 1');
     addColumnIfMissing($pdo, 'shopping_list_items', 'amount_max', 'REAL');
     addColumnIfMissing($pdo, 'shopping_list_items', 'recipe_count', 'INTEGER NOT NULL DEFAULT 1');
+    // מחוברת לכלים הדיגיטליים (lib/platform.php): sub אחד — חשבון אחד לכל היותר
+    addColumnIfMissing($pdo, 'users', 'platform_sub', 'TEXT');
+    $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_platform_sub ON users(platform_sub) WHERE platform_sub IS NOT NULL');
 
     // ריפוי חד־כיווני: מנהל שנוצר לפני שהמשתמש הראשון אומת אוטומטית.
     // בלי זה, אם mail() לא פעל בשרת, המנהל היחיד נעול בחוץ לתמיד.

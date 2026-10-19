@@ -140,6 +140,8 @@ function workerKick(string $url, string $ua): string {
         $opts = [
             CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT_MS => 3000, CURLOPT_CONNECTTIMEOUT_MS => 2000,
             CURLOPT_NOSIGNAL => true, CURLOPT_NOPROXY => '127.0.0.1,localhost', CURLOPT_USERAGENT => $ua,
+            // base_url שנשמר בסאב-דומיין הישן מפנה עכשיו לכתובת שמאחורי השער — לעקוב
+            CURLOPT_FOLLOWLOCATION => true, CURLOPT_MAXREDIRS => 3,
         ];
         if ($cookie !== '') $opts[CURLOPT_COOKIE] = $cookie;
         curl_setopt_array($ch, $opts);
