@@ -163,18 +163,21 @@ function sso_issuer(): string
  */
 function sso_issue_token(array $client, array $user, string $return, string $state): string
 {
-    $st = db()->prepare('SELECT username FROM users WHERE id = ?');
+    $st = db()->prepare('SELECT username, email, email_verified_at FROM users WHERE id = ?');
     $st->execute([$user['id']]);
+    $row = $st->fetch();
+    // מייל שאומת בהרשמה (lib/email.php) — email_verified: true. משתמש ותיק בלי מייל: שם המשתמש,
+    // אם הוא כתובת מייל — לא אומת בקישור; את הזהות אישר המנהל כשאישר את ההרשמה.
+    $verified = !empty($row['email']) && !empty($row['email_verified_at']);
     $now = time();
     $payload = sso_b64u(json_encode([
         'iss'   => sso_issuer(),
         'aud'   => $client['id'],
         'sub'   => (string)$user['id'],
         'name'  => $user['display_name'],
-        // המייל הוא מה שמאחד חשבונות (docs/sso.md, "איחוד לפי מייל"). לא נשלח מייל אימות —
-        // את הזהות אישר מנהל הפלטפורמה כשאישר את ההרשמה.
-        'email' => sso_email_of((string)$st->fetchColumn()),
-        'email_verified' => false,
+        // המייל הוא מה שמאחד חשבונות (docs/sso.md, "איחוד לפי מייל").
+        'email' => $verified ? $row['email'] : sso_email_of((string)($row['username'] ?? '')),
+        'email_verified' => $verified,
         'state' => $state,
         'return' => $return,
         'iat'   => $now,
