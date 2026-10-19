@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.mbeplus.dbanalyzer",
+      "sha256_cert_fingerprints": [
+        "9D:35:D6:98:8D:60:EE:2B:D8:C0:28:26:BB:16:BD:91:4D:43:AE:42:63:28:F0:6B:6C:79:6C:B1:12:81:A3:C8"
+      ]
+    }
+  }
+]
