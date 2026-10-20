@@ -84,7 +84,7 @@ for ($i = 1; $i <= 70; $i++) {
     ]];
 }
 $corpus['long-table'] = ['title' => 'טבלה ארוכה', 'json' => $doc([$hd('תקציב', 1), $p($sentence(10, 20)), ['type' => 'table', 'content' => $rows], $p($sentence(10, 30))]),
-    'page' => null, 'known' => 'טבלה גבוהה מעמוד לא נשברת בין שורות על המסך — אב-טיפוס בשלב 0, חלק 4'];
+    'page' => null, 'known_pdf' => 'רוחב העמודות ב-PDF מחושב אחרת מהעורך (בעורך — שווה), ולכן נכנסות יותר שורות לעמוד; גם סדר הטקסט בטבלה ב-pdftotext שונה — לטיפול: יישור מנוע ה-PDF והעורך'];
 
 foreach ($corpus as $name => $d) {
     file_put_contents(__DIR__ . "/$name.json", json_encode($d, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");

@@ -79,6 +79,10 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
     background: #fff; color: #889; padding: 0 6px; font-family: system-ui, sans-serif; }
 .wp-doc .wp-page-break.ProseMirror-selectednode { border-top-color: #2d4a8a; }
 .wp-break { display: block; pointer-events: none; user-select: none; }
+/* טבלה שנמשכת לעמוד הבא: שורת רווח בלי גבולות, ושורת הכותרת חוזרת (עותק, לא ניתן לעריכה) */
+.wp-doc tr.wp-break-row { display: table-row; }
+.wp-doc tr.wp-break-row > td { padding: 0; border: none; background: none; }
+.wp-doc tr.wp-repeat { pointer-events: none; user-select: none; }
 .wp-doc .ProseMirror-gapcursor { display: none; }
 
 /* תמונות: מסגרת בגודל שעל הדף (--bw × --bh, אחרי חיתוך וסיבוב); בתוכה חלון החיתוך שמסתובב סביב המרכז */
@@ -123,6 +127,7 @@ html.wp-no-page-zoom, html.wp-no-page-zoom body, .wp-editor, .wp-stage { touch-a
     .wp-pages { display: none !important; }
     .wp-sheet .wp-doc { padding: 0 !important; min-height: 0 !important; }
     .wp-break { block-size: 0 !important; height: 0 !important; break-before: page; page-break-before: always; }
+    .wp-break-row > td { height: 0 !important; }
     .wp-page-break { border: 0 !important; }
     .wp-page-break::after { display: none !important; }
     .wp-img-handle { display: none !important; }
