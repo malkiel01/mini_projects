@@ -110,6 +110,7 @@ object Enforcer {
         rawBlockList(ctx, store) - AppPolicy.SETTINGS
 
     private fun rawBlockList(ctx: Context, store: Store): Set<String> {
+        AppPolicy.scan(ctx, force = true)
         if (store.appsPosture != "deny_all") {
             return store.appsBlocked.filter { AppPolicy.blocked(store, it) }.toSet()
         }

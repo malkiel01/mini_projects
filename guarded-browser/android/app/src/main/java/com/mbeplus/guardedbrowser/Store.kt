@@ -127,10 +127,15 @@ class Store(context: Context) {
         get() = strSet("suspended")
         set(v) { prefs.edit().putString("suspended", JSONArray(v.toList()).toString()).apply() }
 
-    /** חבילות ה-launcher במכשיר — לא נחסמות. נשמר כשמדווחים את האפליקציות. */
+    /** חבילות ה-launcher (מסכי הבית) והמקלדות במכשיר — לא נחסמות לעולם. AppPolicy.scan. */
     var launchers: Set<String>
         get() = strSet("launchers")
         set(v) { prefs.edit().putString("launchers", JSONArray(v.toList()).toString()).apply() }
+
+    /** האפליקציות שיש להן אייקון לפתיחה — רק עליהן חל "רק מה שאישרתי". AppPolicy.scan. */
+    var launchable: Set<String>
+        get() = strSet("launchable")
+        set(v) { prefs.edit().putString("launchable", JSONArray(v.toList()).toString()).apply() }
 
     private fun strSet(key: String): Set<String> = try {
         val a = JSONArray(prefs.getString(key, "[]") ?: "[]")

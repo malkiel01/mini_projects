@@ -30,6 +30,7 @@ class AppGuardService : AccessibilityService() {
                 try { Updater.lock(this) } catch (e: Exception) { Trace.log("appguard.update", e.message ?: "") }
             }
         }
+        AppPolicy.scan(this)
         if (!AppPolicy.blocked(store, pkg)) return
 
         // מונע הצפה: אותה אפליקציה תוך שנייה — כבר טיפלנו.
