@@ -13,7 +13,7 @@
     "manifest.webmanifest",
     "sw.js",
     "assets/**",
-    "api.php?action=health|me|register|verify|login|forgot|reset"
+    "api.php?action=health|me|register|verify|login|forgot|reset|embed_key"
   ],
   "install": {
     "release": "org-budget-proposals-store"

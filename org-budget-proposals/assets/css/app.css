@@ -397,3 +397,14 @@ table.grid tr.has-err td, table.grid tr.has-err th.title { background: color-mix
 @media (min-width: 900px) and (prefers-color-scheme: dark) {
     .grid-fund { box-shadow: 0 0 0 1px var(--line); }
 }
+
+/* עורך התמלילים — מסך מלא בטלפון, חלון רחב במחשב (word-processor/docs/integration.md) */
+body.wp-open { overflow: hidden; }
+.wp-overlay { position: fixed; inset: 0; z-index: 1000; background: var(--bg); }
+.wp-box { block-size: 100dvh; inline-size: 100%; }
+.wp-box iframe { display: block; border: 0; inline-size: 100%; }
+@media (min-width: 1000px) {
+    .wp-overlay { background: rgba(0, 0, 0, .45); padding: 2dvh 2vw; }
+    .wp-box { block-size: 96dvh; max-inline-size: 1280px; margin-inline: auto; border-radius: var(--r); overflow: hidden; background: #fff; }
+}
+.plan-html { min-width: 0; overflow-x: auto; }
