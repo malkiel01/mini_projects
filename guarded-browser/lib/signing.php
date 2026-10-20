@@ -65,9 +65,19 @@ function verifyToken(string $token, ?string $pubB64u = null): ?array {
     return is_array($claims) ? $claims : null;
 }
 
-/** אסימון שחרור לחשבון: אומר למכשיר "המינוי הסתיים — שחרר את כל המגבלות". */
-function releaseToken(int $accountId): string {
-    return signClaims(['typ' => 'release', 'acct' => $accountId]);
+/** כמה זמן אסימון שחרור תקף. השרת מנפיק חדש בכל משיכת מדיניות, כך שמכשיר משוחרר מחדש אותו לבד. */
+const RELEASE_TTL = 7 * 86400;
+
+/**
+ * אסימון שחרור: "המינוי הסתיים — שחרר את כל המגבלות".
+ *
+ * סקירה, 2026-10-20 — שלב 8: קודם {typ, acct} בלבד — אותו אסימון לנצח, לכל ילד בחשבון. עכשיו קשור לילד
+ * (child) ומוגבל בזמן (iat, ‏exp). המכשיר מאמת מול החשבון והילד *שהוצמדו בצימוד*, לא מול מה שבאותה תשובה.
+ */
+function releaseToken(int $accountId, int $childId = 0, ?int $now = null): string {
+    $now ??= time();
+    return signClaims(['typ' => 'release', 'acct' => $accountId, 'child' => $childId,
+                       'iat' => $now, 'exp' => $now + RELEASE_TTL]);
 }
 
 /** כמה זמן קוד ה-QR של "העברה בלי אינטרנט" תקף. */
