@@ -172,6 +172,8 @@ function app_public(array $a, bool $admin = false): array
         'install' => [
             'pwa'     => $a['install_ok'] && $a['install']['pwa'],
             'apk'     => $a['install_ok'] ? $a['install']['apk'] : null,
+            // חבילה וגרסה אחרונה — כדי להציג "פתיחה" / "עדכון" כשהאפליקציה כבר מותקנת
+            'android' => $a['install_ok'] ? ($a['install']['android'] ?? null) : null,
             'store'   => $a['install_ok'] ? $a['install']['store'] : null,
             'offline' => $a['install']['offline'],
             // תיקיית החנות: AAB וקובץ ההגדרות ל-Play Console — רק למנהל (הקבצים עצמם ב-Release ציבורי;

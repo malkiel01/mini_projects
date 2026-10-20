@@ -70,18 +70,33 @@ function registry_load(): array
  *             APK (אם apk לא הוגדר — <app>.apk), AAB לחנות (אותו שם, .aab), store-listing.zip
  *             (טקסטים, תמונות ותשובות למדיניות של Play Console) ו-assetlinks.json (מאוחד בפריסה לשורש
  *             הדומיין — platform/tools/assetlinks.php). AAB וקובץ ההגדרות מוצגים רק למנהל.
+ *             הקבצים מוגשים מהשרת שלנו: הפריסה מעתיקה כל Release ל-platform/downloads/<app>/
+ *             (platform/tools/store-mirror.sh) עם meta.json — גרסה וחבילה. בלי העותק — מ-GitHub.
  */
 const REGISTRY_RELEASES = 'https://github.com/malkiel01/mini_projects/releases/download/';
+const REGISTRY_DOWNLOADS = 'platform/downloads';
 
 function registry_install(string $folder, array $install): array
 {
     $apk = $install['apk'] ?? null;
     if (is_string($apk) && !str_starts_with($apk, 'https://')) $apk = "$folder/$apk";
     $store = null;
+    $android = null;
     if (is_string($install['release'] ?? null)) {
         $base = REGISTRY_RELEASES . $install['release'] . '/';
-        $apk ??= "$base$folder.apk";
-        $stem = preg_replace('/\.apk$/i', '', basename((string)parse_url($apk, PHP_URL_PATH)));
+        $stem = preg_replace('/\.apk$/i', '', basename((string)parse_url($apk ?? "$folder.apk", PHP_URL_PATH)));
+        // העותק בשרת (store-mirror.sh): קישורים אצלנו, ומה שצריך כדי לדעת אם מותקנת ובאיזו גרסה
+        $local = REGISTRY_DOWNLOADS . "/$folder/";
+        $meta = json_decode((string)@file_get_contents(REGISTRY_ROOT . "/{$local}meta.json"), true);
+        if (is_array($meta) && is_file(REGISTRY_ROOT . "/$local$stem.apk")) {
+            $base = $local;
+            $apk = "$local$stem.apk";
+            $android = [
+                'package' => is_string($meta['package'] ?? null) ? $meta['package'] : null,
+                'version' => is_int($meta['versionCode'] ?? null) ? $meta['versionCode'] : null,
+            ];
+        }
+        $apk ??= "$base$stem.apk";
         $store = [
             'release'     => $install['release'],
             'aab'         => "$base$stem.aab",
@@ -93,6 +108,7 @@ function registry_install(string $folder, array $install): array
         'pwa'     => $install['pwa'] ?? is_file(REGISTRY_ROOT . "/$folder/manifest.webmanifest"),
         'offline' => $install['offline'] ?? false,
         'apk'     => $apk,
+        'android' => $android,
         'store'   => $install['store'] ?? null,
         'release' => $store,
     ];

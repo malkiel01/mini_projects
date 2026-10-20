@@ -378,6 +378,14 @@ AAB וקובץ ההגדרות — רק למנהל (גיליון האפליקצי
 לא משנים את המקור. מפתח העלאה לכל אפליקציה, מוצפן בתיקייה שלה, ו**סיסמה אחת לכולם** — הסוד
 `ANDROID_KEYSTORE_PASSWORD` (הוכרע 2026-10-19); Play App Signing — גוגל מחזיקה את מפתח החתימה.
 
+**ההורדה מהשרת שלנו, לא מ-GitHub** (2026-10-20): `tools/store-mirror.sh` מעתיק כל Release ל-
+`platform/downloads/<app>/` עם `meta.json` (גרסה — `versionCode`, וחבילה — מ-`assetlinks.json`). רץ בסוף כל פריסה
+וכל שעה (`store-mirror.yml` — בניית אנדרואיד מעדכנת את ה-Release בלי פריסה). בלי עותק — הקישור נשאר ל-GitHub.
+באנדרואיד הכרטיס מציג לפי מה שמותקן במכשיר: **"התקנה · גרסה N"** / **"פתיחה"** (intent ישר לאפליקציה) +
+**"עדכון לגרסה N"** כשיש חדשה. "מותקנת" — `navigator.getInstalledRelatedApps`: החבילות רשומות ב-
+`related_applications` של `platform/manifest.webmanifest` (**אפליקציה חדשה — להוסיף שם את החבילה**), והאפליקציה
+מצהירה על האתר (`asset_statements` ב-TWA). הגרסה שמותקנת — נרשמת במכשיר כשמורידים מהכפתור (אנדרואיד לא מגלה אותה).
+
 **`assetlinks.json` משותף** — `https://mbe-plus.com/.well-known/assetlinks.json`, מחוץ ל-DEPLOY_PATH (הותר
 2026-10-19). הפריסה מאחדת (`tools/assetlinks.php`): הקיים בשרת (שום רשומה לא נמחקת) + `assetlinks.json` מתיקיית
 החנות של כל אפליקציה + `<app>/.well-known/assetlinks.json`. רשומה לכל חבילה; חבילה בלי טביעת אצבע — לא נכתבת.
