@@ -14,7 +14,8 @@ import android.os.UserManager
  *   נפתחות בכלל), חסימת הסרת מגדלור, מניעת איפוס להגדרות יצרן, מניעת מצב בטוח והוספת משתמשים.
  *   בלי בעל מכשיר — שירות הנגישות עושה אכיפה רכה (מסך חסימה), וזו עדיין הגנה אמיתית.
  *
- *   מה *לעולם לא* מושעה: מגדלור, המסך הראשי, המערכת, חייגן, הגדרות (AppPolicy.ALWAYS).
+ *   מה *לעולם לא* מושעה: מגדלור, המסך הראשי, המערכת, חייגן (AppPolicy.ALWAYS), וההגדרות — חסימה שלהן
+ *   רק בנגישות, כדי שמגדלור יוכל לפתוח אותן להקמה ולעדכון (AppPolicy.openSettings).
  */
 object Enforcer {
 
@@ -104,7 +105,11 @@ object Enforcer {
     }
 
     /** איזה חבילות צריכות להיות מושעות עכשיו. */
-    private fun blockList(ctx: Context, store: Store): Set<String> {
+    private fun blockList(ctx: Context, store: Store): Set<String> =
+        // ההגדרות לא מושעות לעולם — אחרת מגדלור לא יוכל לפתוח אותן להקמה ולעדכון. החסימה שלהן — בנגישות.
+        rawBlockList(ctx, store) - AppPolicy.SETTINGS
+
+    private fun rawBlockList(ctx: Context, store: Store): Set<String> {
         if (store.appsPosture != "deny_all") {
             return store.appsBlocked.filter { AppPolicy.blocked(store, it) }.toSet()
         }
