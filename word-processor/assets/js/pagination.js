@@ -66,10 +66,18 @@ export const Pages = Extension.create({
                         tried.set(res.sig, res);
                         ext.storage.pages = pick.pages;
                         ext.options.onLayout(pick);
-                        const deco = DecorationSet.create(view.state.doc, pick.breaks.map(b => Decoration.widget(b.pos, spacer(b.h, b.page), {
-                            side: -1, key: `pb${b.page}-${Math.round(b.h)}`, ignoreSelection: true,
-                            marks: [],   // מחוץ לכל סימון (גודל גופן וכו'): בהדפסה Chrome לא שובר עמוד בתוך span
-                        })));
+                        const deco = DecorationSet.create(view.state.doc, pick.breaks.flatMap(b => {
+                            const out = [Decoration.widget(b.pos, spacer(b.h, b.page, b.row), {
+                                side: -2, key: `pb${b.page}-${Math.round(b.h)}${b.row ? 'r' : ''}`, ignoreSelection: true,
+                                marks: [],   // מחוץ לכל סימון (גודל גופן וכו'): בהדפסה Chrome לא שובר עמוד בתוך span
+                            })];
+                            // טבלה שנמשכת: שורת הכותרת חוזרת בראש העמוד (כמו ב-Word וב-PDF)
+                            if (b.repeat != null) {
+                                const hdr = view.nodeDOM(b.repeat);
+                                if (hdr) out.push(Decoration.widget(b.pos, repeatRow(hdr), { side: -1, key: `rp${b.page}-${b.repeat}`, ignoreSelection: true, marks: [] }));
+                            }
+                            return out;
+                        }));
                         view.dispatch(view.state.tr.setMeta(pagesKey, { deco, sig: pick.sig }).setMeta('addToHistory', false));
                     });
                 };
@@ -115,7 +123,31 @@ function earlier(a, b) {
     return a.breaks.length > b.breaks.length;
 }
 
-function spacer(h, page) {
+/** שורת הכותרת של טבלה — עותק לקריאה בלבד, בראש עמוד שהטבלה נמשכת אליו. */
+function repeatRow(tr) {
+    const el = tr.cloneNode(true);
+    el.classList.add('wp-repeat');
+    el.contentEditable = 'false';
+    el.setAttribute('aria-hidden', 'true');
+    el.querySelectorAll('.column-resize-handle, .selectedCell').forEach(x => x.classList.remove('selectedCell'));
+    return el;
+}
+
+/** row — מספר העמודות כשהרווח בתוך טבלה (0 — רווח רגיל). */
+function spacer(h, page, row = 0) {
+    if (row) {
+        // בתוך טבלה: שורה ריקה על כל הרוחב (span בתוך tbody אינו חוקי)
+        const tr = document.createElement('tr');
+        tr.className = 'wp-break wp-break-row';
+        tr.contentEditable = 'false';
+        tr.setAttribute('aria-hidden', 'true');
+        tr.dataset.page = page;
+        const td = document.createElement('td');
+        td.colSpan = row;   // בדיוק מספר העמודות: יותר מזה מוסיף עמודות לטבלה (table-layout: fixed) ומכווץ את כולן
+        td.style.height = h + 'px';
+        tr.append(td);
+        return tr;
+    }
     const el = document.createElement('span');
     el.className = 'wp-break';
     el.contentEditable = 'false';
@@ -134,7 +166,7 @@ function measure(view, g) {
     const rr = root.getBoundingClientRect();
     const zoom = rr.height && root.offsetHeight ? rr.height / root.offsetHeight : 1;
     // הרווחים הקיימים: [top פיזי, גובה] — כדי להמיר מיקום פיזי ללוגי
-    const spacers = [...root.querySelectorAll('.wp-break')].map(el => {
+    const spacers = [...root.querySelectorAll('.wp-break, .wp-repeat')].map(el => {
         const r = el.getBoundingClientRect();
         return [(r.top - rr.top) / zoom, r.height / zoom];
     }).sort((a, b) => a[0] - b[0]);
@@ -164,6 +196,7 @@ function measure(view, g) {
             }
             if (CONTAINERS.has(name)) { visit(child, cpos + 1, name === 'listItem' ? brk : (offset === 0 ? at : null)); return; }
             if (TEXTBLOCKS.has(name)) { lines(view, dom, child, cpos, brk, logical, rr, zoom, units, name === 'heading'); return; }
+            if (name === 'table') { rows(view, child, cpos, brk, box, units); return; }
             const b = box(dom);
             units.push({ top: b.top, bottom: b.bottom, pos: brk, kind: 'block' });
         });
@@ -201,8 +234,9 @@ function measure(view, g) {
         while (j - 1 > firstOnPage && units[j - 1].heading) j--;
         if (j <= firstOnPage) j = i;
         const used = units[j].top - pageTop;
-        breaks.push({ pos: units[j].pos, h: Math.max(0, g.pageH + g.gap - used), page: page + 1 });
-        pageTop = units[j].top;
+        const rep = units[j].repeat;   // שורה באמצע טבלה: גם השבירה בתוך הטבלה, וגם שורת הכותרת חוזרת (תופסת מקום)
+        breaks.push({ pos: units[j].pos, h: Math.max(0, g.pageH + g.gap - used), page: page + 1, row: units[j].row || 0, repeat: rep ? rep.pos : null });
+        pageTop = units[j].top - (rep ? rep.h : 0);
         page++;
         firstOnPage = j;
         i = j + 1;
@@ -215,6 +249,25 @@ function measure(view, g) {
  * השורות של פסקה/כותרת: מלבנים של הטקסט והתמונות שבשורה (לא של הרווחים שלנו), מקובצים לפי גובה.
  * לכל שורה — המיקום במסמך שבו היא מתחילה (חיפוש בינארי ב-coordsAtPos).
  */
+/**
+ * טבלה: כל שורה — יחידה (שבירה בין שורות, לא בתוך שורה). שורת כותרת (כל התאים th) בראש הטבלה נשארת עם השורה
+ * שאחריה, וחוזרת בראש כל עמוד שהטבלה נמשכת אליו — repeat: {pos, h}.
+ */
+function rows(view, table, tpos, brk, box, units) {
+    let repeat = null;
+    let cols = 0;
+    table.firstChild?.forEach(cell => { cols += cell.attrs.colspan || 1; });
+    table.forEach((row, off) => {
+        const rpos = tpos + 1 + off;
+        const tr = view.nodeDOM(rpos);
+        if (!(tr instanceof HTMLElement)) return;
+        const b = box(tr);
+        const header = off === 0 && row.childCount > 0 && row.content.content.every(c => c.type.name === 'tableHeader');
+        units.push({ top: b.top, bottom: b.bottom, pos: off === 0 ? brk : rpos, kind: 'block', row: off > 0 ? cols : 0, heading: header, repeat: off > 0 ? repeat : null });
+        if (header) repeat = { pos: rpos, h: b.bottom - b.top };
+    });
+}
+
 function lines(view, dom, node, pos, brk, logical, rr, zoom, units, heading) {
     const para = pos;
     const rects = [];
