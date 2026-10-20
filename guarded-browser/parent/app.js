@@ -873,7 +873,7 @@ function kidApps() {
     const row = a => el('li', {}, [
         el('span', { class: 'app-ic', ariaHidden: 'true', text: a.system ? '⚙️' : '📱' }),
         el('span', { class: 'nm' }, [a.label, el('small', { dir: 'ltr', text: a.package })]),
-        seg(`ap_${a.package}`, [['allow', '✅'], ['', '—'], ['block', '🚫']], a.action,
+        a.locked ? el('small', { class: 'muted', text: '✅ תמיד — דרכו מגדלור מתעדכן' }) : seg(`ap_${a.package}`, [['allow', '✅'], ['', '—'], ['block', '🚫']], a.action,
             { cls: 'seg mini', onchange: async v => {
                 try { AP = { ...(await call('app_rule', { id: K.id, package: a.package, app_action: v })).apps, kid: K.id }; }
                 catch (e) { toast(e.message, true); } renderKid();
