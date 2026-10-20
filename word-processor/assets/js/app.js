@@ -5,6 +5,7 @@
 import { createWordEditor, h, toast, sheet, field, when } from './editor.js';
 
 const tab = Math.random().toString(36).slice(2);
+const GUIDE = 'https://github.com/malkiel01/mini_projects/blob/main/word-processor/docs/integration.md';
 const main = document.getElementById('main');
 const top = document.querySelector('header.top');
 let me = null;
@@ -270,7 +271,8 @@ async function adminView() {
     header({ back: true, title: 'לקוחות הטמעה', sub: 'אפליקציות שמטמיעות את העורך' });
     const list = h('ul.list', h('li.empty', 'טוען…'));
     main.textContent = '';
-    main.append(h('p.hint', 'אפליקציה נרשמת לבד (platform/docs/embed.md). מאותו דומיין ומהתיקייה שלה — פעילה מיד; מדומיין אחר, או אחרי שינוי כתובות — ממתינה לאישור כאן.'), list);
+    main.append(h('p.hint', 'אפליקציה נרשמת לבד. מאותו דומיין ומהתיקייה שלה — פעילה מיד; מדומיין אחר, או אחרי שינוי כתובות — ממתינה לאישור כאן. ',
+        h('a', { href: GUIDE, target: '_blank', rel: 'noopener' }, 'מדריך ההתממשקות')), list);
     const load = async () => {
         try {
             const { clients } = await api('admin_clients');

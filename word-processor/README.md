@@ -53,6 +53,14 @@
   מאוחדות לאחת לכל משתמש בכל 10 דקות, עד 100; שחזור יוצר גרסה חדשה).
 - **🔗 לקוחות הטמעה** (מנהל בלבד): רשימת האפליקציות הרשומות, אישור לקוח ממתין, כיבוי.
 
+### מדריך ההתממשקות — לאפליקציה שרוצה את העורך
+**`word-processor/docs/integration.md`** — כל מה שאפליקציה מארחת צריכה, צעד אחרי צעד, עם שני חלקים מוכנים:
+- `client/WordProcessorClient.php` — **מעתיקים** לתיקיית האפליקציה: מפתחות (במסד שלה), רישום, חתימה, וכל `doc_*`.
+- `assets/js/host.js` — נטען מהעורך בדף של המארחת: ה-iframe, בדיקת המקור, `expired`, גובה אוטומטי, `save()` לפני סגירה.
+
+נבדק מקצה לקצה במארחת שנבנתה לפי המדריך בלבד, ממקור אחר: רישום → ממתין → אישור ב-🔗, עריכה, שמירה, מצב קטע,
+רענון ה-iframe (expired), ייצוא text/pdf, יצירה/העתקה/מחיקה/רשימה.
+
 ### ההטמעה — `platform/docs/embed.md` כפי שהוא
 - **רישום** `client_register` (פרק 1): המפתח מורד מ-`key_url`. פעיל מיד רק כש-`key_url` באותו מקור כמו העורך
   **ובתיקייה של הלקוח עצמו** (`/mini_projects/<client>/…`) — כך אפליקציה אחרת באותו דומיין לא יכולה להירשם בשם
@@ -86,7 +94,9 @@
 app.json  index.html  embed.php  api.php  .htaccess
 lib/        db.php (סכמה) · page.php (הגדרות עמוד) · docs.php (מסמכים, גרסאות, נעילה, תמונות) · pdf.php + pdf/ (מנוע ה-PDF)
             embed.php (רישום, חתימה, טוקן, סשן) · export.php · import.php · users.php · selftest.php
-assets/js/  editor.js (העורך) · extensions.js · pagination.js · paste.js · app.js · embed.js
+assets/js/  editor.js (העורך) · extensions.js · pagination.js · paste.js · app.js · embed.js · host.js (למארחת)
+client/     WordProcessorClient.php — הלקוח שמארחות מעתיקות
+docs/       integration.md — מדריך ההתממשקות
 assets/css/ app.css (שפת העיצוב) · editor.css · fonts.css
 vendor/     tiptap.js · fonts/ — ראו vendor/README.md
 tests/      run.php — php word-processor/tests/run.php
