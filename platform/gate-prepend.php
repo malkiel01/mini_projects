@@ -27,6 +27,8 @@
         if (is_array($json)) $params += array_filter($json, 'is_scalar');
     }
 
+    // ?platform-handoff — התחברות שהועברה מהכלים הדיגיטליים (lib/gate.php)
+    \Platform\Gate\handoff_consume($app, \Platform\Gate\base_url($_SERVER['SCRIPT_NAME'] ?? '/', $rel));
     $verdict = \Platform\Gate\decide($app, $path, $params);
     if ($verdict !== null) {
         \Platform\Gate\diag_nav('gate:' . $verdict[1], $app);
