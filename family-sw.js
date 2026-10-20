@@ -11,7 +11,7 @@
 const CACHE = 'family-v1';
 const SHELL = [
     './', 'index.html', 'platform/home/',
-    'platform/assets/app.js', 'platform/assets/admin.js', 'platform/assets/app.css',
+    'platform/assets/app.js', 'platform/assets/admin.js', 'platform/assets/app.css', 'platform/assets/diag.js',
     'platform/manifest.webmanifest', 'platform/assets/icons/icon-192.png',
 ];
 // ספריות חיצוניות שכלים טוענים — נשמרות כשהורדו, כדי שהכלי יעבוד בלי רשת.

@@ -53,6 +53,7 @@ window.PlatformAdmin = (() => {
             ['usage', '📊', 'שימוש', 0],
             ['catalog', '🗂️', 'אפליקציות', 0],
             ['sso', '🔗', 'חיבורים', 0],
+            ['diag', '📜', 'יומן', 0],
             ['probe', '🩺', 'שרת', 0],
         ].map(([id, icon, label, count]) => {
             const b = button('', () => { tab = id; render(); }, tab === id ? 'active' : '');
@@ -64,7 +65,7 @@ window.PlatformAdmin = (() => {
             return b;
         }));
         const body = tab === 'users' ? renderUsers() : tab === 'usage' ? renderUsage()
-            : tab === 'catalog' ? renderCatalog() : tab === 'sso' ? renderSso() : renderProbe();
+            : tab === 'catalog' ? renderCatalog() : tab === 'sso' ? renderSso() : tab === 'diag' ? renderDiag() : renderProbe();
         root.replaceChildren(el('div', { className: 'admin' }, [tabs, body]));
     }
 
@@ -868,6 +869,79 @@ window.PlatformAdmin = (() => {
         } catch (err) {
             return { status: 0, text: err.message };
         }
+    }
+
+
+    // ---------- יומן אבחון (platform/lib/diag.php) ----------
+    // מה קרה בכל מכשיר: באיזו עטיפה נפתח דף (דפדפן / PWA / APK — WebView או TWA), האם עוגיית הכניסה
+    // הגיעה, למה השער הפנה לכניסה ולאן חזרו. "📋 העתקה לצ'אט" — כדי ש-Claude יראה בדיוק מה קרה.
+    const diagFilter = { user: '', app: '', q: '' };
+
+    function diagTime(iso) {
+        const d = new Date(iso);
+        return d.toLocaleString('he-IL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    function diagSummary(r) {
+        const i = r.info || {};
+        const bits = [i.label || (r.event.startsWith('gate:') ? r.device : ''), i.wrapper, i.mode && i.mode !== 'browser' ? `mode:${i.mode}` : '', i.cookie ? `עוגייה:${i.cookie}` : '',
+            i.opener ? `נפתח מ:${i.opener.replace('android-app://', '')}` : '', i.fetch_site ? `site:${i.fetch_site}` : '',
+            i.requested_with ? `X-Requested-With:${i.requested_with}` : '', i.next ? `next:${i.next}` : '',
+            i.apps ? `מותקנות:${i.apps}` : '', i.app && r.event.startsWith('client:') && i.app !== r.app ? `→${i.app}` : '',
+            i.version ? `גרסה:${i.version}` : '', i.pkg || ''];
+        return bits.filter(Boolean).join(' · ');
+    }
+
+    function diagText(rows) {
+        return ['יומן אבחון — כלים דיגיטליים (חדש למעלה)', ...rows.map(r => [
+            diagTime(r.at), r.event, r.app || '-', r.user_name || (r.user_id ? `#${r.user_id}` : 'לא מחובר'),
+            /^[a-f0-9]{32}$/.test(r.device || '') ? `מכשיר:${r.device.slice(0, 8)}` : '', diagSummary(r), `נתיב:${r.path || ''}`,
+            r.referrer ? `מקור:${r.referrer}` : '', `UA:${r.ua || ''}`,
+            `info:${JSON.stringify(r.info || {})}`,
+        ].filter(Boolean).join(' | '))].join('\n');
+    }
+
+    function renderDiag() {
+        let rows = [];
+        const list = el('div', { className: 'diag-list' }, [el('p', { className: 'status', textContent: 'טוען…' })]);
+        const userSel = el('select', { ariaLabel: 'משתמש' }, [el('option', { value: '', textContent: 'כל המשתמשים' }),
+            ...state.users.map(u => el('option', { value: String(u.id), textContent: u.display_name, selected: diagFilter.user === String(u.id) }))]);
+        const appSel = el('select', { ariaLabel: 'אפליקציה' }, [el('option', { value: '', textContent: 'כל האפליקציות' }),
+            el('option', { value: 'platform', textContent: 'הכלים הדיגיטליים', selected: diagFilter.app === 'platform' }),
+            ...state.apps.map(a => el('option', { value: a.id, textContent: a.name, selected: diagFilter.app === a.id }))]);
+        const q = el('input', { type: 'search', placeholder: 'חיפוש: webview, gate:login, Samsung…', value: diagFilter.q });
+        const load = async () => {
+            Object.assign(diagFilter, { user: userSel.value, app: appSel.value, q: q.value.trim() });
+            list.replaceChildren(el('p', { className: 'status', textContent: 'טוען…' }));
+            const qs = Object.entries(diagFilter).filter(([, v]) => v).map(([k, v]) => `&${k}=${encodeURIComponent(v)}`).join('');
+            try { rows = (await P().api(`admin_diag&limit=300${qs}`)).rows; }
+            catch (err) { list.replaceChildren(el('p', { className: 'status error', textContent: err.message })); return; }
+            if (!rows.length) { list.replaceChildren(el('p', { className: 'muted', textContent: 'אין עדיין רשומות — פתחו אפליקציה בטלפון ורעננו.' })); return; }
+            list.replaceChildren(...rows.map(r => el('div', { className: `diag-row ${r.event.startsWith('gate:') && r.event !== 'gate:ok' ? 'bad' : ''}` }, [
+                el('div', { className: 'diag-head' }, [
+                    el('b', { textContent: r.event }), el('span', { textContent: r.app || '' }),
+                    el('span', { textContent: r.user_name || (r.user_id ? `#${r.user_id}` : 'לא מחובר') }),
+                    el('time', { textContent: diagTime(r.at) }),
+                ]),
+                el('div', { className: 'diag-sum', textContent: diagSummary(r) }),
+                el('div', { className: 'diag-path', textContent: r.path + (r.referrer ? `  ← ${r.referrer}` : '') }),
+            ])));
+        };
+        [userSel, appSel].forEach(x => x.addEventListener('change', load));
+        q.addEventListener('keydown', (e) => { if (e.key === 'Enter') load(); });
+        const copy = button("📋 העתקה לצ'אט", async () => {
+            const text = diagText(rows);
+            try { await navigator.clipboard.writeText(text); copy.textContent = '✓ הועתק'; }
+            catch { window.prompt('העתיקו:', text); }
+        }, 'primary');
+        load();
+        return el('div', {}, [
+            el('p', { className: 'muted small', textContent:
+                'כל פתיחת דף, בכל מכשיר: באיזו עטיפה (דפדפן / אפליקציה מותקנת / APK), האם הכניסה הגיעה, ולמה השער ביקש להתחבר. ' +
+                'משחזרים את הבעיה בטלפון, מרעננים כאן, ומעתיקים לצ׳אט. נשמר 14 יום.' }),
+            el('div', { className: 'diag-tools' }, [userSel, appSel, q, button('🔄 רענון', load), copy]),
+            list,
+        ]);
     }
 
     function renderProbe() {

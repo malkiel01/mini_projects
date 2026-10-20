@@ -28,6 +28,8 @@ require_once __DIR__ . '/lib/push.php';
 require_once __DIR__ . '/lib/sso.php';
 require_once __DIR__ . '/lib/installs.php';
 require_once __DIR__ . '/lib/email.php';
+require_once __DIR__ . '/lib/gate.php';
+require_once __DIR__ . '/lib/diag.php';
 
 try {
     $action = $_GET['action'] ?? '';
@@ -42,6 +44,7 @@ try {
             'admin_state' => admin_state(require_admin()),
             'admin_push'  => admin_push_state(require_admin()),
             'admin_usage' => admin_usage(require_admin(), $_GET),
+            'admin_diag'  => admin_diag(require_admin(), $_GET),
             default => throw new ApiError('פעולה לא מוכרת', 404),
         };
     }
@@ -57,6 +60,7 @@ try {
             'password' => action_password($body),
             'sso_revoke' => action_sso_revoke($body),
             'install_report' => action_install_report($body),
+            'diag'     => action_diag($body),
             default    => str_starts_with($action, 'admin_')
                 ? admin_dispatch($action, $body, require_admin(true))
                 : throw new ApiError('פעולה לא מוכרת', 404),
@@ -167,6 +171,38 @@ function action_install_report(array $body): never
     $user = current_user();
     if (!$user) throw new ApiError('נדרשת כניסה', 401);
     installs_report((int)$user['id'], $body);
+    json_out(['ok' => true]);
+}
+
+/**
+ * יומן אבחון מהדפדפן (assets/diag.js, lib/diag.php). פתוח גם בלי כניסה — דווקא הדפים שלפני הכניסה
+ * מעניינים. בלי השפעה על שום דבר; תקרה לכל מכשיר כדי שלא יציפו את היומן.
+ */
+function action_diag(array $body): never
+{
+    $device = is_string($body['device'] ?? null) && preg_match('/^[a-f0-9]{32}$/', $body['device']) ? $body['device'] : null;
+    $event = is_string($body['event'] ?? null) && preg_match('/^[a-z0-9:_-]{1,40}$/', $body['event']) ? $body['event'] : null;
+    if ($event === null) throw new ApiError('בקשה לא תקינה', 400);
+    $st = db()->prepare("SELECT COUNT(*) FROM diag_log WHERE device = ? AND at > ?");
+    try {
+        $st->execute([$device ?? 'ip:' . substr(hash('sha256', client_ip()), 0, 16), gmdate('Y-m-d\TH:i:s\Z', time() - 60)]);
+        if ((int)$st->fetchColumn() > 60) json_out(['ok' => true, 'skipped' => true]);
+    } catch (Throwable) { /* הטבלה עוד לא נוצרה */ }
+    $info = is_array($body['info'] ?? null) ? $body['info'] : [];
+    $info = array_slice(array_map(fn($v) => is_scalar($v) || $v === null ? (is_string($v) ? mb_substr($v, 0, 300) : $v)
+        : mb_substr((string)json_encode($v, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), 0, 600), $info), 0, 25, true);
+    $user = current_user();
+    $ua = (string)($_SERVER['HTTP_USER_AGENT'] ?? '');
+    \Platform\Diag\write(db(), [
+        'event' => 'client:' . $event,
+        'app' => is_string($body['app'] ?? null) && preg_match('/^[a-z0-9][a-z0-9-]{0,40}$/', $body['app']) ? $body['app'] : null,
+        'user_id' => $user ? (int)$user['id'] : null,
+        'device' => $device ?? 'ip:' . substr(hash('sha256', client_ip()), 0, 16),
+        'ua' => $ua,
+        'path' => is_string($body['path'] ?? null) ? $body['path'] : '',
+        'referrer' => is_string($body['referrer'] ?? null) ? $body['referrer'] : '',
+        'info' => $info + ['label' => \Platform\Gate\device_label($ua)],
+    ]);
     json_out(['ok' => true]);
 }
 

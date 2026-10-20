@@ -62,10 +62,14 @@ $rel = substr($file, strlen($appDir) + 1);
 $params = array_diff_key($_GET, ['__gate_app' => 1, '__gate_path' => 1]);
 $verdict = decide($app, $rel, $params);
 if ($verdict !== null) {
+    \Platform\Gate\diag_nav('gate:' . $verdict[1], $app);
     deny($verdict, $base);
 }
 \Platform\Gate\touch_session($base);
-if (in_array($ext, ['html', 'htm'], true)) record_visit($app);
+if (in_array($ext, ['html', 'htm'], true)) {
+    record_visit($app);
+    \Platform\Gate\diag_nav('gate:ok', $app);
+}
 
 // דף HTML / manifest של אפליקציה מחוברת — מוגשים עם התוספות של הפלטפורמה (lib/pwa.php):
 // בדיקת ההתקנה והפס "התקנה" בדף (רק בדף שאינו ציבורי, למשתמש מחובר), ו-related_applications
@@ -74,9 +78,8 @@ $cfg = \Platform\Gate\app_config($app);
 $patched = null;
 if (\Platform\Pwa\applies($app, $cfg) && filesize($file) < 2_000_000) {
     if (in_array($ext, ['html', 'htm'], true)) {
-        if (\Platform\Pwa\wanted($app, $cfg, $rel, $params)) {
-            $patched = \Platform\Pwa\inject_html((string)file_get_contents($file), $app, $cfg, $base);
-        }
+        $patched = \Platform\Pwa\inject_html((string)file_get_contents($file), $app, $cfg, $base,
+            \Platform\Pwa\wanted($app, $cfg, $rel, $params));
     } elseif ($ext === 'webmanifest' || ($ext === 'json' && preg_match('#(^|/)manifest\.json$#', $rel))) {
         $patched = \Platform\Pwa\patch_manifest((string)file_get_contents($file), \Platform\Pwa\absolute($base . $app . '/' . $rel));
     }

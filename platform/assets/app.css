@@ -295,6 +295,15 @@ button:disabled { opacity: .55; cursor: default; }
 .icon-input { width: 3.2em; text-align: center; }
 .app-row > span:first-child { flex: 1; min-width: 140px; font-weight: 600; }
 .app-row.is-hidden { opacity: .55; }
+/* --- יומן אבחון (⚙️ ← 📜) --- */
+.diag-tools { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--s2); margin: var(--s3) 0; }
+.diag-list { display: grid; gap: 6px; }
+.diag-row { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 8px 10px; font-size: .82rem; min-width: 0; }
+.diag-row.bad { border-color: color-mix(in srgb, var(--bad, #c0392b) 45%, var(--line)); }
+.diag-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.diag-head time { margin-inline-start: auto; color: var(--muted); font-size: .76rem; }
+.diag-sum { color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
+.diag-path { direction: ltr; text-align: left; font-size: .74rem; color: var(--muted); overflow-wrap: anywhere; margin-top: 2px; }
 .probe-out {
     direction: ltr; text-align: left; white-space: pre-wrap; word-break: break-all;
     background: #151827; color: #e8eaf0; border-radius: var(--r); padding: 14px;
