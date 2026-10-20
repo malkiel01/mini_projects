@@ -95,6 +95,11 @@ class Store(context: Context) {
     /** זהות החשבון של המכשיר — לאימות ש-acct של אסימון השחרור תואם. */
     val accountId: Int get() = prefs.getInt("account_id", 0)
 
+    /** ‏issued_at של תשובת המדיניות האחרונה שהוחלה (PolicySync) — תשובה ישנה ממנה נזרקת. */
+    var policySeq: Long
+        get() = prefs.getLong("policy_seq", 0L)
+        set(v) { prefs.edit().putLong("policy_seq", v).apply() }
+
     /** מזהה הילד — לקוד "העברה בלי אינטרנט" (OfflinePolicy). 0 — שרת ישן שעוד לא שלח. */
     val childId: Int get() = prefs.getInt("child_id", 0)
 

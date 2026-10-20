@@ -117,16 +117,11 @@ class HomeActivity : AppCompatActivity() {
             b.progress.visibility = View.GONE
             if (!r.ok && r.json?.optString("code") == "unauthorized") { unpair(); return@policy }
             if (r.ok && r.json != null) {
-                store.savePolicy(r.json)
-                applyRelease(r.json)
+                PolicySync.apply(this, r.json, "home")
                 reportApps()
-                if (!store.released) Enforcer.apply(this, store)
             }
             // יש גרסה חדשה — עדכון חובה: נועלים עד ההתקנה.
-            if (r.ok) {
-                Updater.note(this, r.json?.optJSONObject("update"))
-                if (Updater.required(this)) { Updater.lock(this); return@policy }
-            }
+            if (r.ok && Updater.required(this)) { Updater.lock(this); return@policy }
 
             state = r.json?.optJSONObject("state")
             allowed = state?.optBoolean("allowed") ?: true
@@ -151,26 +146,6 @@ class HomeActivity : AppCompatActivity() {
             val canType = store.policy().mode == Policy.MODE_BROWSER
             b.search.hint = if (canType) "🔎 חיפוש או כתובת" else "🔎 חיפוש"
             draw()
-        }
-    }
-
-    /**
-     * שחרור חתום (SPEC סעיף 5): אסימון תקף → מצב משוחרר (מגבלות נפתחות, בעלות המכשיר משתחררת
-     * מאכיפה). הארכה → חזרה לאכיפה. בלי אסימון תקף לא נכנסים ולא יוצאים ממצב משוחרר.
-     */
-    private fun applyRelease(payload: JSONObject) {
-        val token = payload.optString("release")
-        val valid = token.isNotEmpty() &&
-            Release.isReleaseFor(token, store.signPubKey, payload.optInt("account_id"))
-        if (valid && !store.released) {
-            store.released = true
-            Enforcer.release(this, store)
-            Trace.log("release", "acct=${payload.optInt("account_id")}")
-        } else if (token.isEmpty() && store.released) {
-            // השרת לא שולח יותר אסימון שחרור — החשבון הוארך. חוזרים לאכיפה.
-            store.released = false
-            Enforcer.apply(this, store)
-            Trace.log("release.renewed", "")
         }
     }
 

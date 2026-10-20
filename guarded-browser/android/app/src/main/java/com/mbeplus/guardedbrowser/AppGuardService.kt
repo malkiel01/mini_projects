@@ -63,9 +63,7 @@ class AppGuardService : AccessibilityService() {
         lastUpdateCheck = now
         Api.policy(store.token) { r ->
             if (!r.ok || r.json == null) return@policy
-            store.savePolicy(r.json)
-            if (!store.released) Enforcer.apply(this, store)
-            Updater.note(this, r.json.optJSONObject("update"))
+            PolicySync.apply(this, r.json, "guard")
             if (!Updater.required(this)) return@policy
             if (Enforcer.isOwner(this)) { Updater.run(this); return@policy }
             if (pkg == store.ownPackage || pkg.contains("packageinstaller")) return@policy

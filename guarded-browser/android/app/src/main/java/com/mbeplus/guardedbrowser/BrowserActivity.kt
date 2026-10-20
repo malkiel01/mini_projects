@@ -112,17 +112,15 @@ class BrowserActivity : AppCompatActivity() {
         ruleSet = store.ruleSet()
 
         // חסימת צילום מסך חייבת לקרות לפני setContentView כדי לחול
-        // גם על התצוגה המקדימה במחליף האפליקציות.
-        if (policy.blockScreenshots) {
-            window.setFlags(WindowManager.LayoutParams.FLAG_SECURE,
-                            WindowManager.LayoutParams.FLAG_SECURE)
-        }
+        // גם על התצוגה המקדימה במחליף האפליקציות. משתנה גם תוך כדי (onPolicyChanged).
+        applySecureFlag()
 
         b = ActivityBrowserBinding.inflate(layoutInflater)
         setContentView(b.root)
 
         val start = intent.getStringExtra("url") ?: ""
         setupWebView()
+        PolicySync.listen(onPolicyChanged)
 
         // ההכרעה הראשונה לפני שנטען משהו: גם הכניסה עצמה נבדקת.
         val v = PolicyEngine.evaluate(policy, ruleSet, start, true, usedSec, sessionSec)
@@ -369,6 +367,14 @@ class BrowserActivity : AppCompatActivity() {
             if (!j.optBoolean("allowed", true)) {
                 refuse(j.optString("reason", "הגישה הופסקה"))
                 return@heartbeat
+            }
+            // הדף שעל המסך נבדק גם בשרת (היתר זמני שפג, אתר שהוסר) — חזרה ממנו, לא סגירת הכול.
+            j.optJSONObject("page")?.let { p ->
+                if (!p.optBoolean("allowed", false) && url.isNotEmpty() && b.web.url == url) {
+                    if (lastAllowed == url) lastAllowed = ""
+                    showCover()
+                    revert(p.optString("reason", "הכתובת אינה מותרת"), p.optString("code"), url)
+                }
             }
             // ההורה שינה משהו (או אישר בקשה) — מדיניות חדשה תוך פעימה אחת.
             val rev = j.optString("rev")
@@ -993,12 +999,39 @@ class BrowserActivity : AppCompatActivity() {
         Api.policy(store.token) { r ->
             val j = r.json ?: return@policy
             if (!j.optBoolean("ok")) return@policy
+            // ההחלה עצמה — ב-PolicySync, והמסך הזה מקבל onPolicyChanged כמו מכל מסלול אחר.
+            PolicySync.apply(this, j, "browser")
+        }
+    }
 
-            store.savePolicy(j)
+    /** מדיניות חדשה, מכל מסלול (PolicySync) — מוחלת על המסך הפתוח, לא רק על הניווט הבא. */
+    private val onPolicyChanged: () -> Unit = {
+        if (!closing) {
             policy = store.policy()
             ruleSet = store.ruleSet()
+            applySecureFlag()
             b.pip.visibility = View.VISIBLE
+            if (Updater.required(this)) { Updater.lock(this); finish() }
+            else recheckCurrent("policy")
         }
+    }
+
+    /**
+     * בדיקה מחודשת של הדף שעל המסך — גם אם כבר הותר (סקירה, 2026-10-20: enforceCurrent דילג על
+     * הכתובת המותרת האחרונה, ולכן היתר שהוסר לא עצר דף פתוח). עוצר ניגון עד ההכרעה; כתובת שנאסרה —
+     * חזרה, ואם אין לאן — סגירה.
+     */
+    private fun recheckCurrent(why: String) {
+        val url = b.web.url?.takeIf { it.startsWith("http") } ?: return
+        Trace.log("recheck", why)
+        if (lastAllowed == url) lastAllowed = ""
+        enforceCurrent(url)
+    }
+
+    /** חסימת צילום מסך לפי המדיניות הנוכחית — מוסיפה או מסירה, בלי לפתוח את המסך מחדש. */
+    private fun applySecureFlag() {
+        if (policy.blockScreenshots) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
     }
 
     override fun onPause() {
@@ -1038,6 +1071,7 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        PolicySync.unlisten(onPolicyChanged)
         ticker.removeCallbacks(beat)
         ticker.removeCallbacks(coverTimeout)
         background = false

@@ -27,11 +27,7 @@ class UpdateJob : JobService() {
         // המדיניות המלאה ולא פעימה: כך גם הגדרות המכשיר שההורה שינה נאכפות ב"בעל מכשיר" בלי שהילד יפתח
         // את מגדלור (Enforcer), והתשובה כוללת גם את העדכון.
         Api.policy(store.token) { r ->
-            if (r.ok && r.json != null) {
-                store.savePolicy(r.json)
-                if (!store.released) Enforcer.apply(this, store)
-                Updater.note(this, r.json.optJSONObject("update"))
-            }
+            if (r.ok && r.json != null) PolicySync.apply(this, r.json, "job")
             if (Updater.required(this)) {
                 if (Enforcer.isOwner(this)) Updater.run(this) else notifyUpdate(this)
             }
