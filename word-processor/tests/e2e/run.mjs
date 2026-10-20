@@ -86,9 +86,12 @@ const t = {
     },
     /** מחכה שהעימוד יתייצב: גופנים נטענו, ומספר המעברים לא משתנה חצי שנייה. */
     async settle(p) {
+        // כל הגופנים נטענים מראש: הדפדפן טוען גופן רק כשמשתמשים בו, ובמחשב איטי (CI) המדידה הראשונה יכולה לתפוס
+        // את גופן הגיבוי. העורך עצמו מודד שוב כשגופן נטען (loadingdone) — כאן רק מחכים לתוצאה הסופית
+        await p.evaluate(() => Promise.all([...document.fonts].map(f => f.load().catch(() => null))));
         await p.evaluate(() => document.fonts.ready);
         let last = '', same = 0;
-        for (let i = 0; i < 100 && same < 5; i++) {
+        for (let i = 0; i < 150 && same < 10; i++) {
             const sig = await p.evaluate(() => document.fonts.status + [...document.querySelectorAll('.wp-break')].map(b => b.dataset.page + ':' + b.style.height).join('|'));
             same = sig === last ? same + 1 : 0;
             last = sig;
