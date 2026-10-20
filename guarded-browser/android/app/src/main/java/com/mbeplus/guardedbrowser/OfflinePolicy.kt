@@ -44,6 +44,7 @@ object OfflinePolicy {
         store.offlineIat = iat
         if (!store.released) Enforcer.apply(ctx, store)
         Trace.log("offline.apply", "iat=$iat")
+        PolicySync.changed()   // מסכים פתוחים (הדפדפן) מחילים על עצמם
         return true to "ההגדרות מההורה הופעלו ✓"
     }
 }

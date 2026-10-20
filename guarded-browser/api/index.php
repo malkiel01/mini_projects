@@ -24,6 +24,7 @@ require_once __DIR__ . '/../lib/search.php';
 require_once __DIR__ . '/../lib/appcontrol.php';
 require_once __DIR__ . '/../lib/signing.php';
 require_once __DIR__ . '/../lib/devicesettings.php';
+require_once __DIR__ . '/../lib/heartbeat.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -153,6 +154,9 @@ function policyPayload(array $user): array {
         'sign_pubkey'    => signingPublicKey(),
         // טביעת האצבע של המדיניות — הפעימה משווה אליה (policyRev).
         'rev'            => policyRev($uid),
+        // רצף התשובות (מילישניות של השרת): המכשיר דוחה תשובה ישנה מזו שכבר החיל — תשובה איטית
+        // שהגיעה אחרי חדשה לא תדרוס מדיניות חדשה (PolicySync.kt).
+        'issued_at'      => (int) floor(microtime(true) * 1000),
         'categories'     => $set['categories'],
         'domain_map'     => $slim,
         'platforms'      => array_map(fn($p) => [
@@ -433,32 +437,11 @@ try {
      * שמשעה חשבון או מוחק מכשיר — הפעימה הבאה מחזירה סירוב.
      */
     if ($do === 'heartbeat') {
-        $user   = requireUser();
-        $uid    = (int) $user['id'];
-        $policy = policyFor($uid);
-        $tz     = (string) $policy['timezone'];
-
-        // חסם עליון לפעימה: דיווח מנופח לא יוכל לשרוף מכסה של יום.
-        $seconds = max(0, min(300, (int) (body()['seconds'] ?? 0)));
-        addUsage($uid, $tz, $seconds);
-        // הכתובת שעל המסך — כדי שההורה יראה כמה זמן בכל אתר (שלב 7).
-        activityBeat($uid, field('url'), $seconds, $tz);
+        $user = requireUser();
+        $out = heartbeatPayload($user, (int) (body()['seconds'] ?? 0), field('url'), (int) (body()['session_sec'] ?? 0));
         if (mt_rand(1, 500) === 1) activityCleanup();
         if (mt_rand(1, 40) === 1) searchTickAfterResponse(4);
-
-        $used = usedTodaySeconds($uid, $tz);
-        $d = evaluate($user, $policy, ruleSetFor($uid), nowIn($tz), [
-            'url' => '', 'used_today' => $used,
-            'session' => (int) (body()['session_sec'] ?? 0),
-        ]);
-
-        if ($block = upgradeBlock((int) $user['device_row_id'])) $d = decision(false, 'app_update', $block);
-        $quota = (int) $policy['daily_quota_min'];
-        out(['ok' => true, 'allowed' => $d['allow'], 'code' => $d['code'], 'reason' => $d['reason'],
-             'update' => deviceUpdateOffer((int) $user['device_row_id']),
-             'used_today_sec' => $used,
-             'quota_left_sec' => $quota > 0 ? max(0, $quota * 60 - $used) : -1,
-             'server_url' => serverUrl(), 'rev' => policyRev($uid)]);
+        out($out);
     }
 
     bad('פעולה לא מוכרת', 'unknown_action', 404);
