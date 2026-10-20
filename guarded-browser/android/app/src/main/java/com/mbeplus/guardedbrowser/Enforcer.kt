@@ -62,15 +62,19 @@ object Enforcer {
         trySet { dpm(ctx).setCameraDisabled(DeviceAdmin.component(ctx), false) }
     }
 
-    private fun applySettings(ctx: Context, store: Store) {
+    /** מחיל כל הגדרה, ומחזיר לכל מפתח אם ההחלה הצליחה (ok) או נכשלה (fail) — לדוח האכיפה. */
+    private fun applySettings(ctx: Context, store: Store): Map<String, String> {
         val dpm = dpm(ctx)
         val admin = DeviceAdmin.component(ctx)
+        val out = mutableMapOf<String, String>()
         for ((key, v) in SETTINGS) {
             val on = blocked(store, key, v.second)
-            for (r in v.first) trySet { if (on) dpm.addUserRestriction(admin, r) else dpm.clearUserRestriction(admin, r) }
+            val ok = v.first.map { r -> ok { if (on) dpm.addUserRestriction(admin, r) else dpm.clearUserRestriction(admin, r) } }.all { it }
+            out[key] = if (ok) "ok" else "fail"
         }
-        trySet { dpm.setCameraDisabled(admin, blocked(store, "camera", false)) }
-        trySet { dpm.setScreenCaptureDisabled(admin, blocked(store, "screenshot", false)) }
+        out["camera"] = if (ok { dpm.setCameraDisabled(admin, blocked(store, "camera", false)) }) "ok" else "fail"
+        out["screenshot"] = if (ok { dpm.setScreenCaptureDisabled(admin, blocked(store, "screenshot", false)) }) "ok" else "fail"
+        return out
     }
 
     /**
@@ -92,25 +96,34 @@ object Enforcer {
     private fun dpm(ctx: Context) =
         ctx.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
 
-    /** מפעיל את כל האכיפה ההרמטית. בטוח להרצה חוזרת. */
+    /**
+     * מפעיל את כל האכיפה ההרמטית ("בעל מכשיר"), ושולח דוח אמיתי — מה הוחל ומה נכשל (EnforceReport).
+     * בטוח להרצה חוזרת. השעיה שנכשלה אינה נרשמת כמושעית, ולכן תנוסה שוב בהחלה הבאה.
+     */
     fun apply(ctx: Context, store: Store) {
-        if (!isOwner(ctx)) return
+        if (!isOwner(ctx)) { EnforceReport.send(ctx, store, emptyMap(), emptyList()); return }
         val dpm = dpm(ctx)
         val admin = DeviceAdmin.component(ctx)
 
         // הגנה על עצמנו ועל המכשיר.
         trySet { dpm.setUninstallBlocked(admin, ctx.packageName, true) }
         for (r in ALWAYS) trySet { dpm.addUserRestriction(admin, r) }
-        applySettings(ctx, store)
+        val settings = applySettings(ctx, store)
 
-        if (!store.appsManage) { unsuspendAll(ctx, store); return }
+        if (!store.appsManage) {
+            unsuspendAll(ctx, store)
+            EnforceReport.send(ctx, store, settings, emptyList())
+            return
+        }
 
         // רשימת החבילות לחסום: ב-deny_all הכול חוץ מהמאושרות, אחרת רק המסומנות.
         val block = blockList(ctx, store)
         val prev = store.suspended
-        suspend(ctx, (block - prev).toList(), true)
-        suspend(ctx, (prev - block).toList(), false)
-        store.suspended = block
+        val failOn = suspend(ctx, (block - prev).toList(), true)
+        val failOff = suspend(ctx, (prev - block).toList(), false)
+        store.suspended = EnforceMath.nextSuspended(block, prev, failOn, failOff)
+        if (failOn.isNotEmpty()) Trace.log("enforce.suspend_fail", failOn.joinToString(","))
+        EnforceReport.send(ctx, store, settings, failOn)
     }
 
     /** איזה חבילות צריכות להיות מושעות עכשיו. */
@@ -157,17 +170,25 @@ object Enforcer {
         trySet { if (isOwner(ctx)) dpm(ctx).clearDeviceOwnerApp(ctx.packageName) }
     }
 
-    private fun suspend(ctx: Context, pkgs: List<String>, on: Boolean) {
-        if (pkgs.isEmpty()) return
-        trySet { dpm(ctx).setPackagesSuspended(DeviceAdmin.component(ctx), pkgs.toTypedArray(), on) }
+    /**
+     * משעה או מחזיר חבילות, ומחזיר את אלה שאנדרואיד לא הצליח (setPackagesSuspended מחזיר אותן —
+     * פעם התעלמנו מזה, והן נרשמו כמושעות ולא נוסו שוב). חריגה = כולן נכשלו.
+     */
+    private fun suspend(ctx: Context, pkgs: List<String>, on: Boolean): List<String> {
+        if (pkgs.isEmpty()) return emptyList()
+        return try {
+            dpm(ctx).setPackagesSuspended(DeviceAdmin.component(ctx), pkgs.toTypedArray(), on)?.toList() ?: emptyList()
+        } catch (e: Exception) { Trace.log("enforce.fail", e.message ?: ""); pkgs }
     }
 
     private fun unsuspendAll(ctx: Context, store: Store) {
-        suspend(ctx, store.suspended.toList(), false)
-        store.suspended = emptySet()
+        store.suspended = suspend(ctx, store.suspended.toList(), false).toSet()
     }
 
     private inline fun trySet(block: () -> Unit) {
         try { block() } catch (e: Exception) { Trace.log("enforce.fail", e.message ?: "") }
     }
+
+    private inline fun ok(block: () -> Unit): Boolean =
+        try { block(); true } catch (e: Exception) { Trace.log("enforce.fail", e.message ?: ""); false }
 }

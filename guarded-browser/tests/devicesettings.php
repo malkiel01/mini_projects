@@ -48,13 +48,17 @@ $rev = policyRev($kid);
 deviceSettingSave($kid, 'bluetooth', true);
 check('שינוי מחליף את טביעת המדיניות (המכשיר מתעדכן בפעימה)', policyRev($kid) !== $rev, true);
 
-echo "\n— מצב האכיפה —\n";
+echo "\n— מצב האכיפה (לפי הדוח מהמכשיר) —\n";
 registerDevice($kid, 'Galaxy', 'g1', 2);
 $row = fn() => array_values(array_filter(enforcementState($a, $kid)['rows'], fn($r) => $r['key'] === 'device'))[0];
+$dev = (int) one("SELECT id FROM devices WHERE device_id = 'g1'")['id'];
+$okAll = fn() => array_fill_keys(array_keys(array_filter(deviceSettings($kid))), 'ok');
+check('המכשיר עוד לא דיווח — לא "נאכף"', $row()['status'], 'unknown');
+enforceReportSave($dev, ['rev' => policyRev($kid), 'owner' => false, 'access' => true]);
 check('בלי "בעל מכשיר" — לא נאכף', $row()['status'], 'none');
 check('...והסיכום מסמן', enforcementState($a, $kid)['summary'], 'needs_owner');
-q('UPDATE devices SET perms = 63 WHERE user_id = ?', [$kid]);
-check('"בעל מכשיר" — נאכף', $row()['status'], 'full');
+enforceReportSave($dev, ['rev' => policyRev($kid), 'owner' => true, 'access' => true, 'settings' => $okAll()]);
+check('"בעל מכשיר", וכל ההגדרות הוחלו — נאכף', $row()['status'], 'full');
 
 echo "\n$pass עברו, $fail נכשלו\n";
 exit($fail ? 1 : 0);

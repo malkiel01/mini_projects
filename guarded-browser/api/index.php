@@ -25,6 +25,7 @@ require_once __DIR__ . '/../lib/appcontrol.php';
 require_once __DIR__ . '/../lib/signing.php';
 require_once __DIR__ . '/../lib/devicesettings.php';
 require_once __DIR__ . '/../lib/heartbeat.php';
+require_once __DIR__ . '/../lib/enforce.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -436,6 +437,13 @@ try {
      * צוברת זמן צפייה ומחזירה את המצב. זה גם ערוץ הניתוק: מנהל
      * שמשעה חשבון או מוחק מכשיר — הפעימה הבאה מחזירה סירוב.
      */
+    /* ── דוח אכיפה: מה הוחל בפועל במכשיר ומה נכשל (lib/enforce.php) ── */
+    if ($do === 'enforce_report') {
+        $user = requireUser();
+        enforceReportSave((int) $user['device_row_id'], (array) body());
+        out(['ok' => true]);
+    }
+
     if ($do === 'heartbeat') {
         $user = requireUser();
         $b = body()['batches'] ?? null;

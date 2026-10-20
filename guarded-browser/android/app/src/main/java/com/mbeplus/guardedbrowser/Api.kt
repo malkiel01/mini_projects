@@ -228,6 +228,9 @@ object Api {
     fun search(token: String, q: String, cb: (Result) -> Unit) =
         call("search", JSONObject().apply { put("q", q) }, token, cb)
 
+    /** דוח האכיפה: מה הוחל ומה נכשל (EnforceReport). */
+    fun enforceReport(token: String, body: JSONObject, cb: (Result) -> Unit) = call("enforce_report", body, token, cb)
+
     fun heartbeat(token: String, seconds: Int, sessionSec: Int, url: String = "",
                   batches: org.json.JSONArray? = null, cb: (Result) -> Unit) =
         call("heartbeat", JSONObject().apply {

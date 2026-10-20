@@ -313,9 +313,10 @@ function kidSum() {
 
 /* ── מצב אכיפה: מה באמת נאכף (שלב 11) ───────────────────────────── */
 
-const ENF_ICON = { full: '✅', partial: '🟡', none: '⚠️', na: '·' };
+const ENF_ICON = { full: '✅', partial: '🟡', none: '⚠️', na: '·', unknown: '❔' };
 const ENF_SUM = {
-    full: ['ok', '🛡️ הכול נאכף', 'כל ההגדרות נאכפות בכל המכשירים.'],
+    full: ['ok', '🛡️ הכול נאכף', 'כל ההגדרות נאכפות בכל המכשירים — לפי מה שהמכשירים דיווחו.'],
+    unverified: ['', '❔ עוד לא אומת', 'המכשיר עוד לא דיווח מה הוחל אחרי השינוי האחרון. זה מתעדכן בסנכרון הבא (פתיחת מגדלור).'],
     needs_access: ['warn', '🟡 אכיפה חלקית', 'חלק מההגדרות דורשות את אישור "ניהול אפליקציות" במכשיר.'],
     needs_owner: ['warn', '🛡️ אכיפה לא הרמטית', 'חלק מההגדרות דורשות "בעל מכשיר" — התקנה על מכשיר נקי.'],
     no_device: ['', '📱 אין מכשיר מחובר', 'חברו מכשיר כדי שההגדרות ייאכפו.'],
@@ -328,8 +329,12 @@ function enforceCard(e) {
     const dlg = el('div', { class: 'enf-detail', hidden: true }, rows.map(r => el('div', { class: 'enf-row' }, [
         el('span', { class: 'enf-ic', text: ENF_ICON[r.status], ariaHidden: 'true' }),
         el('span', { class: 'enf-nm' }, [r.label, r.hint && r.status !== 'full' ? el('small', { text: r.hint }) : null]),
-        el('span', { class: `enf-st ${r.status}`, text: { full: 'נאכף', partial: 'חלקי', none: 'לא נאכף' }[r.status] || '' }),
+        el('span', { class: `enf-st ${r.status}`, text: { full: 'נאכף', partial: 'חלקי', none: 'לא נאכף', unknown: 'לא דווח' }[r.status] || '' }),
     ])));
+    // מתי כל מכשיר דיווח — דוח ישן אינו אימות עדכני.
+    const STATE = { fresh: 'עדכני', pending: 'ממתין לסנכרון', stale: 'דוח ישן', none: 'לא דיווח (גרסה ישנה)' };
+    (e.devices || []).forEach(d => dlg.append(el('p', { class: 'hint',
+        text: `📱 ${d.name || 'מכשיר'}: ${STATE[d.state] || d.state}${d.reported_at ? ' · דווח ' + ago(d.reported_at) : ''}` })));
     const toggle = el('button', { type: 'button', class: 'enf-more', text: 'פירוט ▾',
         onclick: () => { const h = dlg.hidden; dlg.hidden = !h; toggle.textContent = h ? 'פחות ▴' : 'פירוט ▾'; } });
     return el('section', { class: `enf ${cls}` }, [

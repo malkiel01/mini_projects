@@ -294,6 +294,14 @@ class Store(context: Context) {
         get() = prefs.getLong("last_sync_ms", 0L)
         set(v) { prefs.edit().putLong("last_sync_ms", v).apply() }
 
+    /** הדוח האחרון שנשלח (EnforceReport) — לא שולחים שוב אותו דוח, אלא אם התיישן. */
+    var enforceHash: String
+        get() = prefs.getString("enforce_hash", "") ?: ""
+        set(v) { prefs.edit().putString("enforce_hash", v).apply() }
+    var enforceAt: Long
+        get() = prefs.getLong("enforce_at", 0L)
+        set(v) { prefs.edit().putLong("enforce_at", v).apply() }
+
     /** ביטים של ההרשאות שניתנו במכשיר (Setup.flags) — נשלח לשרת כדי שההורה יראה. */
     var perms: Int
         get() = prefs.getInt("perms", 0)
