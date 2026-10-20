@@ -28,7 +28,7 @@ function json_out(array $data, int $code = 200): never
 /** לוג המעקב — פעם אחת לבקשה. health / me / client_error לא נרשמות (הן נקראות כל הזמן). */
 function track(?array $session, string $action, float $started, int $status, ?Throwable $e = null): void
 {
-    if (!empty($GLOBALS['ob_tracked']) || in_array($action, ['health', 'me', 'client_error'], true)) return;
+    if (!empty($GLOBALS['ob_tracked']) || in_array($action, ['health', 'me', 'client_error', 'embed_key'], true)) return;
     $GLOBALS['ob_tracked'] = true;
     dev_track($session, $action, $started, $status, $e);
 }
@@ -39,7 +39,8 @@ $method  = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $session = null;
 
 // פעולות שלא דורשות כניסה לאפליקציה.
-const PUBLIC_ACTIONS = ['health', 'me', 'register', 'verify', 'login', 'forgot', 'reset'];
+// embed_key — המפתח הציבורי שעורך התמלילים מוריד כדי לאמת את החתימות שלנו (lib/plan_doc.php). אין בו סוד.
+const PUBLIC_ACTIONS = ['health', 'me', 'register', 'verify', 'login', 'forgot', 'reset', 'embed_key'];
 // המסך החד-פעמי של מי שנכנס דרך הפלטפורמה ואין לו עוד חשבון — זהות מהשער, בלי session (lib/platform.php).
 // לא ציבוריות: השער מעביר אותן רק למי שיש לו הרשאה.
 const PLATFORM_ACTIONS = ['platform_link', 'platform_new'];
@@ -51,7 +52,7 @@ const POST_ACTIONS   = ['register', 'verify', 'login', 'forgot', 'reset', 'logou
                         'fund_save', 'fund_archive', 'fund_order', 'contact_save', 'contact_archive', 'cat_save', 'cat_archive',
                         'budget_create', 'budget_update', 'budget_status', 'budget_duplicate', 'budget_delete', 'bfund_set', 'bfund_toggle',
                         'line_save', 'lines_batch', 'line_delete', 'line_order', 'transfer_create', 'srow_save', 'srow_delete', 'srow_order',
-                        'comment_add', 'comment_set', 'org_import', 'org_logo_upload', 'platform_link', 'platform_new'];
+                        'comment_add', 'comment_set', 'editor_session', 'plan_sync', 'org_import', 'org_logo_upload', 'platform_link', 'platform_new'];
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -128,6 +129,10 @@ try {
         'comment_add'      => comment_add($session, $body),
         'comment_set'      => comment_set($session, $body),
         'org_import'       => org_import($session, $body),
+        // תכנית העבודה בעורך התמלילים (lib/plan_doc.php)
+        'embed_key'        => wp()->publicKeys(),
+        'editor_session'   => editor_session($session, $body),
+        'plan_sync'        => plan_sync($session, $body),
         // הפלט — שלב 5 (lib/export.php). docx / xlsx / לוגו יוצאים כקובץ (exit), לא כ-JSON
         'budget_doc'       => budget_doc($session, (int)($_GET['id'] ?? 0)),
         'budget_docx'      => export_docx($session, (int)($_GET['id'] ?? 0)),

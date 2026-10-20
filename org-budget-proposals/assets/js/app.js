@@ -195,6 +195,7 @@ function render() {
         if (!confirm('יש שינויים שלא נשמרו בטבלה. לצאת בלי לשמור?')) { history.replaceState(null, '', S.gridHash); return; }
         window.onbeforeunload = null;
     }
+    if (S.wpClose) S.wpClose(true);   // ניווט (גם "חזרה" באנדרואיד) כשהעורך פתוח — שומרים וסוגרים
     menu.hidden = true;
     document.body.classList.remove('print-mode', 'grid-mode');
     const hash = location.hash;
@@ -1618,6 +1619,67 @@ async function saveBudgetFields(d, patch) {
     } catch (e) { toast(e.message, true); }
 }
 
+/** תכנית העבודה מהעורך — העותק השמור (HTML ו-CSS של העורך, ממוקד ב-.wp-doc). */
+function planHtml(v) {
+    const el = h('div.plan-html');
+    el.innerHTML = `<style>${v.css || ''}</style>${v.html || ''}`;
+    return el;
+}
+
+// ── עורך התמלילים (word-processor/docs/integration.md) ──
+
+const WP_HOST = 'https://mbe-plus.com/mini_projects/word-processor/assets/js/host.js';
+let wpLoading = null;
+
+function loadWordProcessor() {
+    if (window.WordProcessor) return Promise.resolve(window.WordProcessor);
+    return wpLoading ??= new Promise((ok, fail) => {
+        const sc = h('script', { src: WP_HOST });
+        sc.onload = () => window.WordProcessor ? ok(window.WordProcessor) : fail(new Error('עורך התמלילים לא נטען'));
+        sc.onerror = () => { wpLoading = null; sc.remove(); fail(new Error('עורך התמלילים לא זמין כרגע — נסו שוב בעוד רגע')); };
+        document.head.append(sc);
+    });
+}
+
+/** העורך במסך מלא (במחשב — חלון רחב). בסגירה: שמירה, ואז העותק של הפלט נמשך לשרת שלנו (plan_sync). */
+async function openPlanEditor(b, after) {
+    if (S.wpClose) return;
+    let WP;
+    try { WP = await loadWordProcessor(); } catch (e) { toast(e.message, true); return; }
+    const box = h('div.wp-box');
+    const wrap = h('div.wp-overlay', { role: 'dialog', 'aria-label': `תכנית עבודה לשנת ${b.year}` }, box);
+    document.body.append(wrap);
+    document.body.classList.add('wp-open');
+    let timer = null, closing = false;
+    const sync = () => api('plan_sync', { budget_id: b.id })
+        .then(r => { if (r.plan_view) { b.plan_view = r.plan_view; b.plan_doc = true; } })
+        .catch(e => toast(e.message, true));
+    const ed = WP.mount(box, {
+        session: () => api('editor_session', { budget_id: b.id }),
+        onReady: () => { b.plan_doc = true; },
+        onSaved: () => { clearTimeout(timer); timer = setTimeout(sync, 1500); },
+        onClose: () => close(false),
+        onLock: l => toast(`פתוח לעריכה אצל ${l.by} — נפתח לקריאה בלבד`),
+        onError: e => {
+            if (e.code === 'session') { toast(e.message, true); close(true); }
+            else if (e.code === 'offline') toast('עורך התמלילים לא זמין כרגע — השינויים יישמרו כשיחזור', true);
+        },
+    });
+    async function close(quiet) {
+        if (closing) return;
+        closing = true;
+        if (!(await ed.save()) && !quiet && !confirm('השינויים האחרונים לא נשמרו. לסגור בכל זאת?')) { closing = false; return; }
+        S.wpClose = null;
+        clearTimeout(timer);
+        ed.destroy();
+        wrap.remove();
+        document.body.classList.remove('wp-open');
+        await sync();
+        after();
+    }
+    S.wpClose = close;
+}
+
 /** תכנית העבודה כטקסט פשוט: "# כותרת" = פרק (א. ב. …), "## כותרת" = כותרת בלי אות, "- " = תבליט. */
 function renderPlan(text) {
     const letters = 'אבגדהוזחטיכלמנסעפצקרשת';
@@ -1638,15 +1700,18 @@ function budPlan(box, d) {
     const b = d.budget, edit = d.edit;
     const signers = h('textarea', { rows: 3, disabled: !edit, placeholder: 'שם — תפקיד, תפקיד נוסף\nלמשל: אבשלום מלכה — יו"ר ועדת כספים, ממ"מ גזבר הארגון' },
         (b.signers || []).map(s => s.name + (s.titles.length ? ' — ' + s.titles.join(', ') : '')).join('\n'));
-    const plan = h('textarea', { rows: 12, disabled: !edit, maxLength: 30000, placeholder: 'מבוא\n# הקדשות\nפסקה…\n- תבליט' }, b.work_plan || '');
-    const prev = h('div', { style: 'background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px;display:grid;gap:4px' });
-    const drawPrev = () => prev.replaceChildren(h('p', { style: 'font-weight:700;text-align:center' }, `תכנית עבודה לשנת ${b.year}`), ...renderPlan(plan.value));
-    plan.addEventListener('input', drawPrev);
+    const prev = h('div', { style: 'background:#fff;color:#000;border:1px solid var(--line);border-radius:var(--r);padding:12px;display:grid;gap:4px' });
+    const drawPrev = () => prev.replaceChildren(h('p', { style: 'font-weight:700;text-align:center' }, `תכנית עבודה לשנת ${b.year}`),
+        ...(b.plan_view ? [planHtml(b.plan_view)] : b.work_plan ? renderPlan(b.work_plan) : [h('p.hint', 'עוד לא נכתבה תכנית עבודה.')]));
+    const openEd = h('button.btn.primary', { type: 'button' }, edit ? '📝 עריכת תכנית העבודה' : '👁️ פתיחה בעורך');
+    const hint = h('p.hint', 'נערכת בעורך התמלילים — כמו ב-Word: כותרות, רשימות, טבלאות, תמונות ועימוד. נשמרת לבד תוך כדי כתיבה.'
+        + (!b.plan_doc && b.work_plan ? ' בפתיחה הראשונה הטקסט הקיים עובר לעורך.' : ''));
+    openEd.addEventListener('click', () => openPlanEditor(b, () => { hint.textContent = hint.textContent.replace(' בפתיחה הראשונה הטקסט הקיים עובר לעורך.', ''); drawPrev(); }));
     const save = h('button.btn.primary', { type: 'button' }, 'שמירה');
     save.addEventListener('click', busy(save, async () => {
         const v = k => box.querySelector(`[name=${k}]`).value;
         await saveBudgetFields(d, {
-            title: v('title'), submitted_to: v('submitted_to'), work_plan: plan.value, expense_first: box.querySelector('[name=expense_first]').checked, prev_actual_as_of: v('prev_actual_as_of'), actual_as_of: v('actual_as_of'),
+            title: v('title'), submitted_to: v('submitted_to'), expense_first: box.querySelector('[name=expense_first]').checked, prev_actual_as_of: v('prev_actual_as_of'), actual_as_of: v('actual_as_of'),
             signers: signers.value.split('\n').map(x => x.trim()).filter(Boolean).map(x => {
                 const [name, rest = ''] = x.split(/\s+[—–-]\s+/);
                 return { name: name.trim(), titles: rest.split(',').map(t => t.trim()).filter(Boolean) };
@@ -1666,9 +1731,10 @@ function budPlan(box, d) {
                 h('label.f', h('span', `ניצול ${b.year} — עד תאריך`), h('input', { type: 'date', name: 'actual_as_of', value: b.actual_as_of || '', dir: 'ltr', ...dis }))),
             h('label.switch', h('input', { type: 'checkbox', name: 'expense_first', checked: !!b.expense_first, ...dis }), h('span', 'בכל קופה — הוצאות לפני הכנסות (כמו בחבר"ק)')),
             h('label.f', h('span', 'חותמים — שורה לכל אחד'), signers),
-            h('label.f', h('span', 'תכנית העבודה — "# " פרק ממוספר, "## " כותרת, "- " תבליט'), plan),
             edit ? save : null),
-        h('p.sec-title', 'תצוגה'), prev);
+        h('p.sec-title', 'תכנית העבודה'),
+        hint,
+        h('div', { style: 'display:flex;justify-content:flex-start' }, openEd), prev);
 }
 
 // ── הערות ──
@@ -1788,7 +1854,8 @@ async function viewPrint(id) {
         h('p.c-title', c.title), c.submitted_to ? h('p.c-to', c.submitted_to) : null,
         h('div.c-sign', ...c.signers.map(s => h('p', h('b', s.name), ...s.titles.map(t => [h('br'), t]))))));
 
-    const plan = st.show_plan && d.plan.blocks.length ? pg(h('h2.d-title', d.plan.title), ...d.plan.blocks.map(b =>
+    const plan = st.show_plan && d.plan.blocks.length && d.plan.view ? pg(h('h2.d-title', d.plan.title), planHtml(d.plan.view))
+        : st.show_plan && d.plan.blocks.length ? pg(h('h2.d-title', d.plan.title), ...d.plan.blocks.map(b =>
         b.type === 'center' ? h('h3.d-center', b.text) : b.type === 'heading' ? h('h3.d-head', b.text)
             : b.type === 'bullet' ? h('p.d-bullet', '• ', b.text) : h('p.d-para', b.text))) : null;
 
