@@ -2,10 +2,10 @@
 /**
  * אפליקציית ההורה — JSON בלבד. ‏?action=…  (SPEC.md, סעיף 10)
  *
- * ציבורי מבחינת שער הפלטפורמה (הורים אינם משתמשי mini_projects), ולכן כל
- * ההגנה כאן: עוגייה mg_parent, X-Migdalor ו-X-CSRF בכל שינוי, והגבלת ניסיונות
- * בכניסה. וכל פעולה על ילד עוברת ב-childOf — הורה רואה ומשנה רק את
- * הילדים שבחשבון שלו. מזהה של ילד מחשבון אחר נראה בדיוק כמו מזהה שלא קיים.
+ * מאחורי שער הפלטפורמה: כל ההורים נכנסים בחשבון הפלטפורמה שלהם (בעל המערכת, 2026-10-20), והזהות
+ * מגיעה מ-PLATFORM_USER (lib/platform.php). הכניסה בסיסמה של מגדלור — רק כשהאפליקציה מנותקת מהשער.
+ * בנוסף: עוגייה mg_parent, X-Migdalor ו-X-CSRF בכל שינוי. וכל פעולה על ילד עוברת ב-childOf — הורה
+ * רואה ומשנה רק את הילדים שבחשבון שלו. מזהה של ילד מחשבון אחר נראה בדיוק כמו מזהה שלא קיים.
  */
 
 declare(strict_types=1);
@@ -21,15 +21,20 @@ require_once __DIR__ . '/../lib/enforce.php';
 
 jsonHeaders();
 
-/** מה הדף צריך: מי מחובר, מה מצב החשבון, ומה החשבון רשאי לתת. */
+/**
+ * מה הדף צריך: מי מחובר, מה מצב החשבון, ומה החשבון רשאי לתת. ‏platform — מחוברת לפלטפורמה: אין כניסה,
+ * סיסמה ויציאה משלנו. ‏link — הזהות עוד לא מקושרת לאף הורה (המסך החד-פעמי, או "אין לך חשבון משפחה").
+ */
 function meState(): array {
     $p = currentParent();
-    if (!$p) return ['ok' => true, 'me' => null];
+    $platform = platformIdentity() !== null;
+    if (!$p) return ['ok' => true, 'me' => null, 'platform' => $platform, 'link' => $platform];
     $a = accountRow((int) $p['account_id']);
     return [
         'ok'   => true,
+        'platform' => $platform,
         'me'   => ['id' => (int) $p['id'], 'login' => $p['login'], 'name' => $p['name'],
-                   'must_change' => (bool) $p['must_change_pw']],
+                   'must_change' => !$platform && (bool) $p['must_change_pw']],
         'csrf' => (string) (sessionRow('parent')['csrf'] ?? ''),
         'account' => [
             'name' => $a['name'], 'status' => $a['status'], 'expires_at' => $a['expires_at'],
@@ -83,7 +88,7 @@ try {
     if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'push_pending') {
         $p = currentParent();
         $ep = (string) ($_GET['ep'] ?? '');
-        out(['ok' => true, 'items' => $p && !$p['must_change_pw'] ? pushPending($p, $ep) : []]);
+        out(['ok' => true, 'items' => $p && (platformIdentity() || !$p['must_change_pw']) ? pushPending($p, $ep) : []]);
     }
     requirePostFrom();
 
@@ -93,12 +98,24 @@ try {
         out(['ok' => true]);
     }
 
+    /* המסך החד-פעמי: "יש לי כבר חשבון" — שם הכניסה והסיסמה הישנים של מגדלור. גם מהתפריט. */
+    if ($action === 'link') {
+        $id = platformIdentity();
+        if (!$id) fail('האפליקציה לא מחוברת לפלטפורמה');
+        if ($err = platformLinkOld('parent', $id, str('login'), (string) (body()['password'] ?? ''))) fail($err);
+        forgetSessions();
+        out(meState());
+    }
+
     $parent = currentParent();
     if (!$parent) fail('נדרשת כניסה', 401, 'unauthorized');
     requireCsrf('parent');
     $pid = (int) $parent['id'];
     $aid = (int) $parent['account_id'];
+    $viaPlatform = platformIdentity() !== null;
 
+    // מחוברת: היציאה והסיסמה הן של הכלים הדיגיטליים, לא שלנו.
+    if ($viaPlatform && in_array($action, ['logout', 'password'], true)) fail('זה נעשה בחשבון של הכלים הדיגיטליים');
     if ($action === 'logout') { endSession('parent'); out(['ok' => true]); }
     if ($action === 'password') {
         $err = parentChangePassword($pid, (string) (body()['current'] ?? ''), (string) (body()['next'] ?? ''));
@@ -117,7 +134,7 @@ try {
     // אתר או ערוץ שנוסף עכשיו — נכנס לאינדקס החיפוש כבר אחרי התשובה, לא מחר.
     if (in_array($action, ['rule_add', 'yt_add', 'request_decide', 'children'], true)) searchTickAfterResponse(5);
     // סיסמה זמנית — שום דבר אחר עד שהוחלפה.
-    if ($parent['must_change_pw']) fail('יש לבחור סיסמה חדשה לפני שממשיכים', 403, 'must_change');
+    if (!$viaPlatform && $parent['must_change_pw']) fail('יש לבחור סיסמה חדשה לפני שממשיכים', 403, 'must_change');
 
     switch ($action) {
         case 'children':

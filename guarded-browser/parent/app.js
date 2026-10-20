@@ -103,8 +103,13 @@ async function boot() {
     let me;
     try { me = await call('me'); }
     catch (e) { document.body.append(el('p', { class: 'error', text: e.message, style: 'margin:16px' })); return; }
+    // מחוברת לפלטפורמה, והזהות עוד לא מקושרת להורה — המסך החד-פעמי.
+    if (!me.me && me.link) return showOnly('#linkacc', () => $('#link-form').login.focus());
     if (!me.me) return showOnly('#auth', () => $('#login-form').login.focus());
-    Object.assign(S, { me: me.me, csrf: me.csrf, account: me.account, catalogs: me.catalogs });
+    Object.assign(S, { me: me.me, csrf: me.csrf, account: me.account, catalogs: me.catalogs, platform: me.platform });
+    // מחוברת: הסיסמה והיציאה שייכות לכלים הדיגיטליים.
+    $('#m-pass').hidden = $('#m-out').hidden = !!me.platform;
+    $('#m-link').hidden = !me.platform;
     if (me.me.must_change) return showOnly('#newpass', () => $('#newpass-form').current.focus());
     // משוחרר — הפאנל נעול. אין טעם להגדיר דבר כשהאכיפה כבויה.
     if (S.account.expiry === 'released') return renderReleaseLock();
@@ -118,7 +123,7 @@ async function boot() {
 }
 
 function showOnly(sel, then) {
-    for (const s of ['#auth', '#newpass', '#released', '#app']) $(s).hidden = s !== sel;
+    for (const s of ['#auth', '#linkacc', '#newpass', '#released', '#app']) $(s).hidden = s !== sel;
     if (then) then();
 }
 
@@ -149,6 +154,7 @@ function renderReleaseLock() {
             location.reload();
         } catch (e) { toast(e.message, true); }
     };
+    $('#released-logout').hidden = !!S.platform;   // מחוברת — היציאה מהכלים הדיגיטליים
     $('#released-logout').onclick = async () => { try { await call('logout', {}); } catch {} location.reload(); };
 }
 
@@ -159,6 +165,15 @@ $('#login-form').addEventListener('submit', async e => {
     try { await call('login', { login: f.login.value, password: f.password.value }); location.reload(); }
     catch (x) { err.textContent = x.message; err.hidden = false; btn.disabled = false; }
 });
+
+$('#link-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const f = e.target, err = $('.error', f), btn = $('button', f);
+    err.hidden = true; btn.disabled = true;
+    try { await call('link', { login: f.login.value, password: f.password.value }); location.reload(); }
+    catch (x) { err.textContent = x.message; err.hidden = false; btn.disabled = false; }
+});
+$('#link-back').addEventListener('click', () => location.reload());
 
 $('#newpass-form').addEventListener('submit', async e => {
     e.preventDefault();
@@ -1016,6 +1031,12 @@ $('#m-install').addEventListener('click', async () => {
     $('#install-box').hidden = false;
 });
 $('#m-pass').addEventListener('click', () => { $('#pass-box').hidden = false; $('#p-cur').focus(); });
+$('#m-link').addEventListener('click', () => {
+    $('#menu-dlg').close();
+    $('#link-sub').textContent = 'חיבור חשבון ישן';
+    $('#link-none').hidden = true; $('#link-back').hidden = false;
+    showOnly('#linkacc', () => $('#link-form').login.focus());
+});
 $('#m-out').addEventListener('click', async () => { try { await call('logout', {}); } finally { location.reload(); } });
 $('#p-go').addEventListener('click', async () => {
     try {

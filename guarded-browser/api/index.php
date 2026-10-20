@@ -211,6 +211,11 @@ try {
         out(['ok' => true, 'app' => 'migdalor']);
     }
 
+    /* ── המפתח הציבורי להזמנת הורים לפלטפורמה (app.json → "provision", platform/docs/sso.md סעיף 6) ── */
+    if ($do === 'platform_key') {
+        out(provisionKeyPayload());
+    }
+
     /* ── הרשמה עצמית ──────────────────────────────────────────────
      * נוצר חשבון pending בלבד. אין אסימון ואין גישה עד שהמנהל מאשר.
      */

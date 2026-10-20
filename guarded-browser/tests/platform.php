@@ -116,5 +116,44 @@ q("UPDATE users SET status = 'suspended' WHERE id = ?", [$new['id']]);
 asPlatform($moshe);
 check('מנהל מושעה — אין כניסה, ואין חשבון חדש במקומו', [currentAdmin(), (int) one('SELECT COUNT(*) n FROM users WHERE is_admin = 1')['n']], [null, 3]);
 
+
+echo "\n— אפליקציית ההורים — רק דרך הפלטפורמה —\n";
+[$acc] = accountCreate(['name' => 'כהן'], 'dana@example.com', 'דנה');
+q("INSERT INTO parents (account_id, login, name, password_hash, created_at) VALUES (?, 'avi', 'אבי', ?, ?)",
+  [$acc, hashPassword('avi12345'), nowIso()]);
+$dana = ['sub' => '21', 'name' => 'דנה', 'email' => 'Dana@Example.com'];
+asPlatform($dana);
+check('דנה — מקושרת לפי המייל, אוטומטית', currentParent()['login'] ?? null, 'dana@example.com');
+check('...וה-sub נשמר', one("SELECT platform_sub FROM parents WHERE login = 'dana@example.com'")['platform_sub'], '21');
+check('כניסה בסיסמה של מגדלור — חסומה', parentLogin('dana@example.com', 'x')[1], 'הכניסה היא דרך הכלים הדיגיטליים');
+$stranger = ['sub' => '22', 'name' => 'זר', 'email' => 'nobody@example.com'];
+asPlatform($stranger);
+check('בלי חשבון משפחה — לא נפתח חשבון לבד', currentParent(), null);
+check('...ולא נוצר הורה', (int) one('SELECT COUNT(*) n FROM parents')['n'], 2);
+check('אבי (שם כניסה בלי מייל) — מתחבר במסך החד-פעמי', platformLinkOld('parent', platformIdentity(), 'AVI', 'avi12345'), '');
+asPlatform($stranger);
+check('...ומעכשיו נכנס אוטומטית', currentParent()['login'] ?? null, 'avi');
+
+echo "\n— הזמנה לפלטפורמה (חתימה) —\n";
+$sent = null;
+$fake = function (string $body, array $headers) use (&$sent): array {
+    $sent = [$body, $headers];
+    return ['status' => 200, 'body' => '{"status":"invited","sub":"99"}'];
+};
+q("INSERT INTO parents (account_id, login, name, password_hash, created_at) VALUES (?, 'new@example.com', 'חדש', 'x', ?)", [$acc, nowIso()]);
+$newId = (int) db()->lastInsertId();
+check('הזמנה', parentInvite($newId, $fake), ['invited', '']);
+check('...ה-sub נשמר להורה', one('SELECT platform_sub FROM parents WHERE id = ?', [$newId])['platform_sub'], '99');
+$h = [];
+foreach ($sent[1] as $line) { [$k, $v] = explode(': ', $line, 2); $h[$k] = $v; }
+[$kid, $sig] = explode('.', $h['X-Embed-Signature'], 2);
+$key = base64_decode(provisionKeyPayload()['keys'][0]['key']);
+$msg = "provision\n{$h['X-Embed-Time']}\n{$h['X-Embed-Nonce']}\n" . hash('sha256', $sent[0]);
+check('החתימה מתאמתת מול המפתח הציבורי (כמו בפלטפורמה)', sodium_crypto_sign_verify_detached(base64_decode($sig), $msg, $key), true);
+check('...לקוח ו-next נכונים', [$h['X-Embed-Client'], json_decode($sent[0], true)['next']],
+      ['guarded-browser', '/mini_projects/guarded-browser/parent/']);
+check('שם כניסה בלי מייל — אי אפשר להזמין', parentInvite((int) one("SELECT id FROM parents WHERE login = 'avi'")['id'], $fake)[1],
+      'אין מייל — אי אפשר להזמין לפלטפורמה');
+
 echo "\n$pass עברו, $fail נכשלו\n";
 exit($fail ? 1 : 0);
