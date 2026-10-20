@@ -20,7 +20,10 @@ require_once __DIR__ . '/platforms.php';
 // ההורדה עוברת דרך השרת שלנו (download.php) — ההפניה של GitHub נתקעה בטלפונים.
 const APK_URL = 'https://mbe-plus.com/mini_projects/guarded-browser/download.php';
 const APK_LATEST_URL = 'https://github.com/malkiel01/mini_projects/releases/download/guarded-browser-apk/latest.json';
-const APK_LATEST_TTL = 1800;
+// שתי דקות: אחרי כל בנייה המכשירים צריכים לראות את הגרסה החדשה מיד. עם 30 דקות (עד 2026-10-20) ההורה
+// ראה "מעודכנת" על גרסה ישנה, והעדכון החובה לא נשלח לילד עד חצי שעה אחרי שהגרסה יצאה. שליפה שנכשלת לא
+// חוזרת על עצמה בכל בקשה — המטמון מתחדש גם אז (latestApp).
+const APK_LATEST_TTL = 120;
 
 /**
  * הגרסה האחרונה שפורסמה: ['code' => 45, 'name' => '1.45'], או null כשלא ידוע. ‏$fetch — להחלפה בבדיקות.
