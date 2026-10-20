@@ -39,15 +39,23 @@ export default async function (t) {
         const printStarts = t.pdfPages(printPdf).map(heb);
 
         const diff = (a, b) => {
-            if (a.length !== b.length) return `${a.length} עמודים מול ${b.length}`;
             const i = a.findIndex((x, k) => x !== b[k]);
-            return i < 0 ? '' : `עמוד ${i + 1}: "${a[i]}" מול "${b[i]}"`;
+            const at = i < 0 ? '' : `עמוד ${i + 1}: "${a[i]}" מול "${b[i] ?? '—'}"`;
+            if (a.length !== b.length) return `${a.length} עמודים מול ${b.length}${at ? ' — ' + at : ''}`;
+            return at;
         };
         for (const [name, other] of [['PDF מהשרת', pdfStarts], ['הדפסה', printStarts]]) {
             const d = diff(edStarts, other);
-            const label = `${c.title}: העורך ו${name} — אותם עמודים`;
-            if (d && process.env.DEBUG) console.log({ editor: ed.map(x => x.slice(0, 50)), [name]: name === 'הדפסה' ? t.pdfPages(printPdf).map(x => x.slice(0, 80)) : t.pdfPages(pdf).map(x => x.slice(0, 80)) });
             const known = c.known || (name === 'PDF מהשרת' ? c.known_pdf : null);
+            const label = `${c.title}: העורך ו${name} — אותם עמודים`;
+            if (d && !known && process.env.E2E_ARTIFACTS) {   // ב-CI: הקבצים נשמרים להורדה מההרצה
+                const { copyFileSync, mkdirSync } = await import('node:fs');
+                mkdirSync(process.env.E2E_ARTIFACTS, { recursive: true });
+                copyFileSync(name === 'הדפסה' ? printPdf : pdf, join(process.env.E2E_ARTIFACTS, `${f}.${name === 'הדפסה' ? 'print' : 'server'}.pdf`));
+                writeFileSync(join(process.env.E2E_ARTIFACTS, `${f}.editor.txt`), ed.join('\n—— עמוד ——\n'));
+                await p.screenshot({ path: join(process.env.E2E_ARTIFACTS, `${f}.editor.png`), fullPage: true });
+            }
+            if (d && process.env.DEBUG) console.log({ editor: ed.map(x => x.slice(0, 50)), [name]: name === 'הדפסה' ? t.pdfPages(printPdf).map(x => x.slice(0, 80)) : t.pdfPages(pdf).map(x => x.slice(0, 80)) });
             if (d && known) t.known(label, `${d} (${known})`);
             // הבדל ידוע שלא הופיע — עובר. חלקם תלויים בשורה גבולית שהעיגול שלה משתנה בין מחשבים (ב-CI ומקומית)
             else if (!d && known) t.ok(label, true, 'ההבדל הידוע לא הופיע כאן — אם זה קבוע, להסיר אותו מ-tests/corpus/make.php');
