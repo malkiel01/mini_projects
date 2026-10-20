@@ -56,30 +56,30 @@ object Setup {
                 .isIgnoringBatteryOptimizations(ctx.packageName) },
             { act ->
                 try {
-                    act.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    AppPolicy.openSettings(act, Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
                         Uri.parse("package:" + act.packageName)))
                 } catch (e: Exception) {
-                    act.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                    AppPolicy.openSettings(act, Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
                 }
             }),
 
         Step(ADMIN, "🛡️", "הגנה על ההגדרות",
             "מגדיר את מגדלור כמנהל מכשיר: אי אפשר להסיר אותו בלי ההורה, ואפשר לנעול את המסך. מופיע בהגדרות — שקוף לגמרי.", true,
             { ctx -> Enforcer.isOwner(ctx) || DeviceAdmin.active(ctx) },
-            { act -> act.startActivity(DeviceAdmin.enableIntent(act)) }),
+            { act -> AppPolicy.openSettings(act, DeviceAdmin.enableIntent(act)) }),
 
         Step(ACCESS, "📲", "ניהול אפליקציות",
             "כדי שמגדלור יוכל לחסום אפליקציות אחרות שההורה חסם, ולהקפיץ את מסך העדכון.",
             true,
             { c -> accessibilityOn(c) },
-            { act -> try { act.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } catch (e: Exception) {} }),
+            { act -> try { AppPolicy.openSettings(act, Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } catch (e: Exception) {} }),
 
         Step(INSTALL, "⬆️", "עדכונים",
             "כדי שמגדלור יוכל להתקין את העדכונים — עדכון הוא חובה.", true,
             { ctx -> Enforcer.isOwner(ctx) || Build.VERSION.SDK_INT < Build.VERSION_CODES.O || ctx.packageManager.canRequestPackageInstalls() },
             { act ->
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-                    try { act.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    try { AppPolicy.openSettings(act, Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                         Uri.parse("package:" + act.packageName))) } catch (e: Exception) {}
             }),
     )

@@ -931,6 +931,8 @@ class BrowserActivity : AppCompatActivity() {
         (if (ok) "\u2713 " else "\u2717 ") + label + (if (ok) "" else "\n     " + hint)
 
     private fun openPipSettings() {
+        // ההורה חסם את ההגדרות — לא פותחים אותן מכאן (שם אפשר היה להמשיך לכל מסך הגדרות אחר).
+        if (AppPolicy.blocked(store, AppPolicy.SETTINGS.first())) { toast("ההגדרות חסומות — בקשו מההורה"); return }
         try {
             startActivity(Intent("android.settings.PICTURE_IN_PICTURE_SETTINGS")
                 .setData(android.net.Uri.parse("package:$packageName")))

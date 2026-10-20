@@ -83,7 +83,7 @@ class UpdateActivity : AppCompatActivity() {
         // בלי בעל מכשיר, אנדרואיד 8+ דורש היתר "התקנת אפליקציות לא מוכרות" — פעם אחת, בהגדרות.
         if (!Enforcer.isOwner(this) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
             msg.text = "במסך הבא מדליקים \"לאפשר מהמקור הזה\", חוזרים, ולוחצים שוב \"עדכון עכשיו\"."
-            try { startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))) }
+            try { AppPolicy.openSettings(this, Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))) }
             catch (e: Exception) { Trace.log("update.settings", e.message ?: "") }
             return
         }

@@ -117,6 +117,11 @@ class Store(context: Context) {
     val appsBlocked: Set<String> get() = strSet("apps_blocked")
     val appsAllowed: Set<String> get() = strSet("apps_allowed")
 
+    /** עד מתי ההגדרות פתוחות למרות חסימה — כי מגדלור עצמו פתח אותן (AppPolicy.openSettings). */
+    var settingsPassUntil: Long
+        get() = prefs.getLong("settings_pass", 0L)
+        set(v) { prefs.edit().putLong("settings_pass", v).apply() }
+
     /** חבילות שמגדלור השעה (בעל מכשיר) — כדי לבטל השעיה כשהן כבר לא חסומות. */
     var suspended: Set<String>
         get() = strSet("suspended")
