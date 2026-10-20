@@ -34,6 +34,27 @@
     <p class="hint" style="text-align:center">אין לכם חשבון? פנו למנהל המערכת.</p>
   </section>
 
+  <!-- מחוברת לפלטפורמה, והחשבון עוד לא מקושר להורה במגדלור: המסך החד-פעמי (platform/docs/auth.md, סעיף 4) -->
+  <section class="auth" id="linkacc" hidden>
+    <div class="brand">
+      <span class="big" aria-hidden="true">🗼</span>
+      <h1>מגדלור</h1>
+      <p class="muted" id="link-sub">החשבון שלך עוד לא מחובר למשפחה במגדלור</p>
+    </div>
+    <p class="hint">אם קיבלת בעבר שם כניסה וסיסמה למגדלור — היכנס בהם פעם אחת, והחשבון יחובר. מכאן הכניסה תהיה
+      אוטומטית.</p>
+    <form id="link-form" novalidate>
+      <label class="f"><span>דוא"ל / שם כניסה במגדלור</span>
+        <input name="login" type="text" inputmode="email" dir="ltr" autocomplete="username" autocapitalize="off" required></label>
+      <label class="f"><span>סיסמה במגדלור</span>
+        <input name="password" type="password" dir="ltr" autocomplete="current-password" required></label>
+      <p class="error" role="alert" hidden></p>
+      <button class="btn primary" type="submit">חיבור החשבון</button>
+    </form>
+    <p class="hint" style="text-align:center" id="link-none">אין לך חשבון משפחה במגדלור? פנו למנהל המערכת — הוא יפתח לכם חשבון.</p>
+    <button class="btn ghost" type="button" id="link-back" hidden>חזרה</button>
+  </section>
+
   <!-- סיסמה זמנית → סיסמה משלכם -->
   <section class="auth" id="newpass" hidden>
     <div class="brand">
@@ -154,6 +175,7 @@
           <li><button type="button" id="m-push">🔔 התראות לטלפון</button></li>
           <li><button type="button" id="m-install">📲 התקנה כאפליקציה</button></li>
           <li><button type="button" id="m-pass">🔑 החלפת סיסמה</button></li>
+          <li><button type="button" id="m-link" hidden>🔗 חיבור חשבון ישן</button></li>
           <li><button type="button" id="m-out">🚪 יציאה</button></li>
         </ul>
         <section class="group" id="install-box" hidden>

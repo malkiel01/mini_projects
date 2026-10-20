@@ -139,6 +139,9 @@ function migrate(PDO $pdo): void {
     if (!in_array('platform_sub', $columns('users'), true)) {
         $pdo->exec("ALTER TABLE users ADD COLUMN platform_sub TEXT NOT NULL DEFAULT ''");
     }
+    if (!in_array('platform_sub', $columns('parents'), true)) {
+        $pdo->exec("ALTER TABLE parents ADD COLUMN platform_sub TEXT NOT NULL DEFAULT ''");
+    }
     $have = $columns('developers');
     foreach (['email', 'platform_sub'] as $col) {
         if (!in_array($col, $have, true)) $pdo->exec("ALTER TABLE developers ADD COLUMN $col TEXT NOT NULL DEFAULT ''");

@@ -102,7 +102,7 @@ function accountDetail(int $id): ?array {
     $view['parent_list'] = array_map(fn($p) => [
         'id' => (int) $p['id'], 'login' => $p['login'], 'name' => $p['name'],
         'status' => $p['status'], 'must_change_pw' => (bool) $p['must_change_pw'],
-        'last_login_at' => $p['last_login_at'],
+        'last_login_at' => $p['last_login_at'], 'platform' => (string) $p['platform_sub'] !== '',
     ], all('SELECT * FROM parents WHERE account_id = ? ORDER BY id', [$id]));
     $view['child_list'] = array_map(fn($u) => [
         'id' => (int) $u['id'], 'name' => $u['display_name'] ?: $u['username'],
@@ -287,6 +287,8 @@ function parentRemove(int $parentId): string {
 /* ── כניסת הורה ────────────────────────────────────────────────── */
 
 function currentParent(): ?array {
+    // כל ההורים נכנסים דרך הפלטפורמה (lib/platform.php): הזהות מהשער קובעת מי ההורה, לא העוגייה.
+    if (($id = platformIdentity()) && !platformSession('parent', $id)) return null;
     $s = sessionRow('parent');
     if (!$s) return null;
     $p = one("SELECT * FROM parents WHERE id = ? AND status = 'active'", [(int) $s['user_id']]);
@@ -295,6 +297,8 @@ function currentParent(): ?array {
 
 /** כניסת הורה. מוחזר [parent, שגיאה]. אותה הודעה לשם שגוי ולסיסמה שגויה. */
 function parentLogin(string $login, string $password): array {
+    if (platformIdentity()) return [null, 'הכניסה היא דרך הכלים הדיגיטליים'];
+    if (!passwordLoginOpen()) return [null, 'הכניסה בסיסמה כבויה — היכנסו דרך הכלים הדיגיטליים'];
     $login = cleanLogin($login);
     $key = 'parent:' . $login;
     if (tooManyFailures($key)) return [null, 'יותר מדי ניסיונות. נסו שוב בעוד רבע שעה.'];
