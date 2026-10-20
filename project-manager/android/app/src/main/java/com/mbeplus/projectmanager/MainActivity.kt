@@ -164,12 +164,14 @@ class MainActivity : Activity() {
 
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             val url = request.url
-            val inside = (url.scheme == "https" || url.scheme == "http") && url.host == Uri.parse(base).host
-            // הכלים הדיגיטליים (platform/) — בדפדפן, שם המשתמש מחובר; משם "כניסה עם הכלים הדיגיטליים" חוזרת לכאן
-            // עם ?platform-handoff. sso.php נשאר בפנים: הכניסה המאוחדת של האתר חוזרת אליו עם token באותה עוגייה.
-            val platform = inside && (url.path ?: "").startsWith("/mini_projects/platform/") &&
-                !(url.path ?: "").startsWith("/mini_projects/platform/sso.php")
-            if (inside && !platform) return false
+            val http = (url.scheme == "https" || url.scheme == "http") && url.host == Uri.parse(base).host
+            // בפנים רק האפליקציה עצמה, ו-sso.php (הכניסה המאוחדת חוזרת אליו עם token באותה עוגייה). כל השאר —
+            // גם הכלים הדיגיטליים (/mini_projects/, ?next=…) ו-platform/handoff.php — בדפדפן; משם חוזרים מחוברים
+            val path = url.path ?: ""
+            val home = Uri.parse(base).path ?: "/"
+            val inside = http && (path.startsWith(home) || path == home.trimEnd('/') ||
+                path.startsWith(home.trimEnd('/').substringBeforeLast('/') + "/platform/sso.php"))
+            if (inside) return false
             // וואטסאפ, טלפון, מייל, ניווט ואתרים אחרים — באפליקציה המתאימה
             try {
                 val i = if (url.scheme == "intent") Intent.parseUri(url.toString(), Intent.URI_INTENT_SCHEME) else Intent(Intent.ACTION_VIEW, url)
