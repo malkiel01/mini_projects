@@ -1,0 +1,55 @@
+# בדיקה חיה של עורך התמלילים מול השרת — אחרי כל פריסה מוצלחת.
+#
+# לא פורס דבר. קורא ל-word-processor/api.php?action=selftest: העורך נרשם כלקוח של עצמו ועובר את כל
+# מסלול ההטמעה ב-HTTP אמיתי (client_register → embed_session חתום → embed.php → embed_open → embed_save →
+# doc_export → replay → doc_delete), ומחזיר כן/לא לכל שלב. בנוסף: השער חוסם את האפליקציה עצמה, ו-client_register
+# ציבורי. הפריסה היחידה היא deploy.yml.
+#
+# workflow_run רץ רק מענף ברירת המחדל — לכן הקובץ פועל רק כשהוא ב-main.
+name: Word processor smoke
+
+on:
+  workflow_run:
+    workflows: ['Deploy to production']
+    types: [completed]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  smoke:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      BASE: https://mbe-plus.com/mini_projects/word-processor
+    steps:
+      - name: השער חוסם את האפליקציה בלי כניסה
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' -b 'humans_21909=1' "$BASE/index.html")
+          echo "index.html → $code"
+          case "$code" in 302|303|401|403) ;; *) echo "::error::index.html החזיר $code — השער לא חוסם"; exit 1 ;; esac
+
+      - name: client_register ציבורי ועונה JSON
+        run: |
+          out=$(curl -s -b 'humans_21909=1' -X POST -H 'Content-Type: application/json' -d '{"client":"X"}' "$BASE/api.php?action=client_register")
+          echo "$out"
+          echo "$out" | jq -e '.code == "bad_client"' > /dev/null || { echo "::error::client_register לא ענה כמצופה"; exit 1; }
+
+      - name: embed.php בלי טוקן — דף "פג"
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' -b 'humans_21909=1' "$BASE/embed.php?t=0")
+          echo "embed.php → $code"
+          [ "$code" = 200 ] || { echo "::error::embed.php החזיר $code"; exit 1; }
+
+      - name: selftest — כל מסלול ההטמעה
+        run: |
+          for i in 1 2 3; do
+            out=$(curl -s --max-time 60 -b 'humans_21909=1' "$BASE/api.php?action=selftest")
+            echo "$out" | jq . || echo "$out"
+            if echo "$out" | jq -e '.code == "rate"' > /dev/null 2>&1; then sleep 25; continue; fi
+            break
+          done
+          echo "$out" | jq -r '.checks[]? | (if .ok then "✓ " else "✗ " end) + .check + " " + (.detail // "")'
+          echo "$out" | jq -e '.ok == true' > /dev/null || { echo "::error::selftest נכשל"; exit 1; }
+          echo "conclusion: selftest ok"

@@ -5,3 +5,6 @@ document-templates/data/*.sqlite*
 document-templates/data/secret.key
 document-templates/data/files/
 org-budget-proposals/data/*.sqlite*
+word-processor/data/*.sqlite*
+word-processor/data/media/
+word-processor/data/sso-config.json
