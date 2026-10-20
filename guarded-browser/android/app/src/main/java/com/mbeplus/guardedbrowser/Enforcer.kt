@@ -53,6 +53,15 @@ object Enforcer {
     private fun blocked(store: Store, key: String, default: Boolean) = store.deviceSetting(key) ?: default
 
     /** מפעיל או מסיר כל הגדרה לפי מה שההורה בחר. */
+    /**
+     * המצלמה פתוחה זמנית — לסריקת קוד מההורה כשההורה חסם את המצלמה (OfflinePolicy). אחרי הסריקה
+     * Enforcer.apply מחזיר את החסימה.
+     */
+    fun allowCamera(ctx: Context) {
+        if (!isOwner(ctx)) return
+        trySet { dpm(ctx).setCameraDisabled(DeviceAdmin.component(ctx), false) }
+    }
+
     private fun applySettings(ctx: Context, store: Store) {
         val dpm = dpm(ctx)
         val admin = DeviceAdmin.component(ctx)

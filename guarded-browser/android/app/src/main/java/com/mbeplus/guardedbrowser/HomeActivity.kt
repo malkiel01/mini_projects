@@ -29,6 +29,28 @@ class HomeActivity : AppCompatActivity() {
     private var allowed = true
     private var query = ""
 
+    /** סריקת קוד מההורה — הגדרות בלי אינטרנט (OfflinePolicy). אחרי הסריקה Enforcer מחזיר את חסימת המצלמה. */
+    private val offlineScan = registerForActivityResult(com.journeyapps.barcodescanner.ScanContract()) { r ->
+        val text = r?.contents
+        val (ok, msg) = when {
+            text == null -> false to ""
+            !OfflinePolicy.isCode(text) -> false to "זה לא קוד הגדרות. פותחים באפליקציית ההורה: הגדרות המכשיר ← \"📷 העברה בקוד\"."
+            else -> OfflinePolicy.apply(this, text)
+        }
+        if (!ok && !store.released) Enforcer.apply(this, store)   // ביטול או קוד שנדחה — המצלמה חוזרת לחסימה
+        if (msg.isNotEmpty()) Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+        if (ok) refresh()
+    }
+
+    private fun scanParentCode() {
+        Enforcer.allowCamera(this)
+        offlineScan.launch(com.journeyapps.barcodescanner.ScanOptions()
+            .setDesiredBarcodeFormats(com.journeyapps.barcodescanner.ScanOptions.QR_CODE)
+            .setPrompt("כוונו את המצלמה לקוד שבאפליקציית ההורה")
+            .setBeepEnabled(false)
+            .setOrientationLocked(false))
+    }
+
     /** בקשה שנשלחה מהדפדפן ונענתה כשהילד כבר במסך הבית (שלב 6). */
     private val watcher by lazy {
         RequestWatcher(store) { url, ok ->
@@ -334,6 +356,8 @@ class HomeActivity : AppCompatActivity() {
             .setView(box)
             .setPositiveButton("סגירה", null)
             .setNeutralButton("👨‍👩‍👧 כניסת הורה") { _, _ -> startActivity(Intent(this, ParentActivity::class.java)) }
+            // הגדרות מההורה בלי אינטרנט — QR חתום שההורה מציג (OfflinePolicy).
+            .setNegativeButton("📷 קוד מההורה") { _, _ -> scanParentCode() }
             .show()
     }
 

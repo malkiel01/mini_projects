@@ -70,6 +70,21 @@ function releaseToken(int $accountId): string {
     return signClaims(['typ' => 'release', 'acct' => $accountId]);
 }
 
+/** כמה זמן קוד ה-QR של "העברה בלי אינטרנט" תקף. */
+const OFFLINE_TTL = 900;
+
+/**
+ * הגדרות בלי אינטרנט: ההורה מציג QR, ומכשיר הילד סורק ומפעיל — גם כשאין לו רשת (למשל אחרי שנחסמה).
+ * ‏dev — הגדרות המכשיר ({מפתח: חסום?}); ‏apps — מדיניות האפליקציות (manage/posture/blocked/allowed).
+ * המכשיר מקבל רק אם החתימה תקפה, acct ו-child שלו, exp עוד לא עבר, ו-iat חדש מהקוד האחרון שהפעיל
+ * (כך אי אפשר להחזיר קוד ישן שצולם). כשהמכשיר חוזר לרשת — המדיניות מהשרת זהה, כי נבנתה מאותם נתונים.
+ */
+function offlineToken(int $accountId, int $childId, array $device, array $apps): string {
+    $now = time();
+    return signClaims(['typ' => 'offline', 'acct' => $accountId, 'child' => $childId,
+                       'iat' => $now, 'exp' => $now + OFFLINE_TTL, 'dev' => $device, 'apps' => $apps]);
+}
+
 /** אסימון server_url חדש — מעתיק מכשירים נעולים לדומיין אחר בלי התקנה מחדש. */
 function serverUrlToken(string $url): string {
     return signClaims(['typ' => 'server_url', 'url' => $url]);

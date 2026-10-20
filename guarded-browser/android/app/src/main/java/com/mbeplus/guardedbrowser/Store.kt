@@ -73,6 +73,7 @@ class Store(context: Context) {
             .putString("name", payload.optJSONObject("user")?.optString("name") ?: "")
             .putString("rev", payload.optString("rev"))
             .putInt("account_id", payload.optInt("account_id"))
+            .putInt("child_id", payload.optInt("child_id"))
             .putLong("policy_at", System.currentTimeMillis())
             .apply()
         // הגדרות המכשיר שההורה קבע ({מפתח: חסום?}) — Enforcer מפעיל אותן ב"בעל מכשיר".
@@ -93,6 +94,17 @@ class Store(context: Context) {
 
     /** זהות החשבון של המכשיר — לאימות ש-acct של אסימון השחרור תואם. */
     val accountId: Int get() = prefs.getInt("account_id", 0)
+
+    /** מזהה הילד — לקוד "העברה בלי אינטרנט" (OfflinePolicy). 0 — שרת ישן שעוד לא שלח. */
+    val childId: Int get() = prefs.getInt("child_id", 0)
+
+    /** ‏iat של הקוד האחרון שהופעל בלי אינטרנט — קוד ישן ממנו (או אותו קוד שוב) נדחה. */
+    var offlineIat: Long
+        get() = prefs.getLong("offline_iat", 0L)
+        set(v) { prefs.edit().putLong("offline_iat", v).apply() }
+
+    /** הגדרות המכשיר מקוד בלי אינטרנט — כמו "device" במדיניות מהשרת. */
+    fun saveDevice(d: JSONObject) { prefs.edit().putString("device", d.toString()).apply() }
 
     /**
      * המכשיר קיבל שחרור חתום: המנוי הסתיים, כל המגבלות פתוחות, ומוצג "המנוי של ההורים הסתיים".
