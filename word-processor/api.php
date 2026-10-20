@@ -12,6 +12,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/lib/embed.php';
 require_once __DIR__ . '/lib/export.php';
 require_once __DIR__ . '/lib/import.php';
+require_once __DIR__ . '/lib/pdf.php';
 require_once __DIR__ . '/lib/users.php';
 
 header('X-Content-Type-Options: nosniff');
@@ -72,7 +73,9 @@ function do_export(array $row, string $format, $version, bool $absolute): array
         case 'json': return ['json' => $json, 'page' => $page];
         case 'docx':
             send_file(export_docx($json, $page, $title), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', ($title ?: 'מסמך') . '.docx');
-        default: throw new ApiError('פורמט לא נתמך: html, ooxml, docx, text, json', 'bad_format');
+        case 'pdf':
+            send_file(export_pdf($json, $page, $title), 'application/pdf', ($title ?: 'מסמך') . '.pdf');
+        default: throw new ApiError('פורמט לא נתמך: html, ooxml, docx, pdf, text, json', 'bad_format');
     }
 }
 
@@ -351,7 +354,7 @@ function app_action(string $action, array $in): never
             $fmt = (string)($_GET['format'] ?? 'docx');
             if ($fmt === 'text') send_file(export_text(doc_json($row)), 'text/plain; charset=utf-8', ($row['title'] ?: 'מסמך') . '.txt');
             if ($fmt === 'json') send_file(json_encode(['title' => $row['title'], 'json' => doc_json($row), 'page' => doc_page($row)], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), 'application/json', ($row['title'] ?: 'מסמך') . '.json');
-            do_export($row, 'docx', null, true);
+            do_export($row, $fmt === 'pdf' ? 'pdf' : 'docx', null, true);
         case 'admin_clients':
             need_admin($acc);
             $rows = db()->query('SELECT id, name, key_url, origins, status, created_at, updated_at FROM clients ORDER BY created_at')->fetchAll();

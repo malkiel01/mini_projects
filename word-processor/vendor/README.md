@@ -4,6 +4,7 @@
 | --- | --- | --- |
 | `tiptap.js` | TipTap 3.31.3 + ProseMirror, ארוז לקובץ ESM אחד (esbuild) | MIT |
 | `fonts/*.woff2` | David Libre, Frank Ruhl Libre, Miriam Libre, Heebo, Assistant, Rubik, Alef (עברית + לטינית, 400/700, מ-@fontsource) | OFL-1.1 |
+| `fonts/pdf/*.woff` | אותם גופנים ב-WOFF 1 (zlib) — ש-PHP פותח בלי הרחבה, להטמעה ב-PDF מהשרת (`lib/pdf/font.php`) | OFL-1.1 |
 
 רק החבילות החינמיות של TipTap: `core`, `pm`, `starter-kit`, `extension-text-style`, `text-align`,
 `highlight`, `subscript`, `superscript`, `table`. **ההרחבות בתשלום אסורות** (embed.md, פרק 0) — העימוד,
