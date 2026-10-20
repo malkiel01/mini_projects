@@ -24,10 +24,12 @@ class AppGuardService : AccessibilityService() {
     private var lastBlocked = ""
     private var lastAt = 0L
     private var lastUpdateNag = 0L
+    private var lastUpdateCheck = 0L
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
+        checkUpdate(pkg)
         // עדכון חובה (Updater): מסך העדכון קופץ במעבר בין אפליקציות — לכל היותר פעם בשתי דקות,
         // ולא מעל מגדלור עצמו (שם הוא כבר מוצג) או מעל מסך האישור של ההתקנה.
         if (Updater.required(this) && pkg != store.ownPackage && !pkg.contains("packageinstaller")) {
@@ -47,6 +49,29 @@ class AppGuardService : AccessibilityService() {
         AppPolicy.scan(this)
         if (!AppPolicy.blocked(store, pkg)) return
         bounce(pkg, removal = false)
+    }
+
+    /**
+     * בדיקת עדכון מכאן — לא רק מ-UpdateJob. שירות הנגישות חי כל הזמן (המערכת מחזיקה אותו), ואילו
+     * JobScheduler בטלפונים זולים נדחה או נהרג, ואז המכשיר לא ידע שיש גרסה חדשה ומסך העדכון לא קפץ
+     * כשמגדלור סגור (בעל המערכת, 2026-10-20). לכל היותר פעם ב-5 דקות, במעבר בין אפליקציות.
+     * שירות נגישות רשאי לפתוח מסך מהרקע, ולכן מסך העדכון עולה מיד — בלי תלות בהיתר "מסך מלא".
+     */
+    private fun checkUpdate(pkg: String) {
+        val now = System.currentTimeMillis()
+        if (now - lastUpdateCheck < 5 * 60_000 || !store.isLoggedIn) return
+        lastUpdateCheck = now
+        Api.policy(store.token) { r ->
+            if (!r.ok || r.json == null) return@policy
+            store.savePolicy(r.json)
+            if (!store.released) Enforcer.apply(this, store)
+            Updater.note(this, r.json.optJSONObject("update"))
+            if (!Updater.required(this)) return@policy
+            if (Enforcer.isOwner(this)) { Updater.run(this); return@policy }
+            if (pkg == store.ownPackage || pkg.contains("packageinstaller")) return@policy
+            lastUpdateNag = System.currentTimeMillis()
+            try { Updater.lock(this) } catch (e: Exception) { Trace.log("appguard.update", e.message ?: "") }
+        }
     }
 
     /** חזרה הביתה + מסך חסימה. מונע הצפה: אותו מקור תוך 1.5 שניות — כבר טיפלנו. */
